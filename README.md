@@ -14,7 +14,7 @@ Cam sipariş akışı için web uygulaması:
 
 - **Uygulama:** Next.js 15 (App Router) + Prisma 6 + PostgreSQL
 - **Prototip:** `prototype/index.html` — tarayıcıda açılan, verisi yerelde tutulan tanıtım sürümü (tüm ekranların taslağı)
-- **Canlı demo:** GitHub Codespaces'te örnek verilerle çalışan gerçek uygulama — [DEMO.md](DEMO.md)
+- **Canlı demo:** GitHub Codespaces'te örnek verilerle çalışan gerçek uygulama — [aç](https://codespaces.new/erhan1977tr-lang/Takip/tree/backend?quickstart=1) · [DEMO.md](DEMO.md)
 
 ## Durum
 

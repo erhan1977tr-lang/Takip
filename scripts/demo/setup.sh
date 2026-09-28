@@ -4,6 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# Kurulum sürerken adreste 502 yerine "hazırlanıyor" sayfası görünsün
+rm -f /tmp/takip-error.txt
+echo "Paketler kuruluyor (ilk açılışta birkaç dakika sürer)…" > /tmp/takip-step.txt
+if ! node -e "fetch('http://127.0.0.1:3000/').then(()=>process.exit(0),()=>process.exit(1))" 2>/dev/null; then
+  setsid nohup node scripts/demo/status-server.mjs > /dev/null 2>&1 < /dev/null &
+fi
+
 if [ ! -f .env ]; then
   secret=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
   cat > .env <<ENV
@@ -18,5 +25,8 @@ ENV
   echo ".env oluşturuldu."
 fi
 
-npm ci --no-audit --no-fund
+if ! npm ci --no-audit --no-fund 2>&1 | tee /tmp/takip-npm.log; then
+  tail -40 /tmp/takip-npm.log > /tmp/takip-error.txt
+  exit 1
+fi
 sha256sum package-lock.json > node_modules/.demo-lock

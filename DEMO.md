@@ -5,12 +5,22 @@ ve dört rolün hesabı kendiliğinden kurulur. **Bu ortam yalnızca deneme içi
 
 ## Açmak (ilk sefer 5–10 dakika sürer)
 
-1. GitHub'da **erhan1977tr-lang/Takip** deposunu açın ve dal seçiciden **backend**'i seçin.
-2. Yeşil **Code** düğmesi → **Codespaces** sekmesi → **Create codespace on backend**.
-3. Tarayıcıda bir düzenleyici açılır; alttaki terminalde kurulum ilerler. Bitince uygulama kendiliğinden yeni sekmede açılır.
-   Açılmazsa alttaki **Ports** sekmesinde **Takip (3000)** satırındaki küre simgesine tıklayın.
-4. Şifre, soldaki dosya listesindeki **DEMO-GIRIS.txt** dosyasındadır (tüm demo hesapları için aynı).
+1. Bu bağlantıyı açın: **https://codespaces.new/erhan1977tr-lang/Takip/tree/backend?quickstart=1**
+   (daha önce açtığınız bir Codespace varsa onu devam ettirmeyi önerir). Açılan sayfada **Create codespace** deyin.
+   > Depo sayfasındaki yeşil **Code** düğmesiyle açacaksanız dalın **backend** olduğundan emin olun.
+   > Varsayılan **main** dalında demo kurulumu yoktur; orada açılan Codespace'te adres *502* hatası verir.
+2. Tarayıcıda bir düzenleyici açılır; alttaki terminalde kurulum ilerler. Uygulamanın adresi hemen açılır ve
+   hazırlık bitene kadar **"Takip hazırlanıyor…"** sayfasını gösterir; bitince kendiliğinden giriş ekranına geçer.
+   Adres açılmazsa alttaki **Ports** sekmesinde **Takip (3000)** satırındaki küre simgesine tıklayın.
+3. Şifre, soldaki dosya listesindeki **DEMO-GIRIS.txt** dosyasındadır (tüm demo hesapları için aynı).
    Giriş ekranındaki demo hesaplarından birine tıklayınca e-posta kendiliğinden dolar.
+
+## Sorun olursa
+
+- **502 hatası:** Codespace büyük ihtimalle *main* dalında açıldı. Düzenleyicinin sol alt köşesinde dal adı yazar.
+  *main* yazıyorsa o Codespace'i silin (github.com/codespaces) ve yukarıdaki bağlantıyla yeniden açın.
+- **"Takip başlatılamadı" sayfası:** Alttaki terminale `npm run demo` yazın. Düzelmezse sayfanın ekran görüntüsünü gönderin.
+- Terminal kapandıysa: üst menü ☰ → *Terminal* → *New Terminal*.
 
 ## Hesaplar
 

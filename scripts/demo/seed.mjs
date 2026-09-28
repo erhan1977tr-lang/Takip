@@ -13,7 +13,7 @@ if (process.env.DEMO_MODE !== '1') {
   process.exit(1);
 }
 
-const db = new PrismaClient();
+const prisma = new PrismaClient();
 const CRED_FILE = path.resolve('DEMO-GIRIS.txt');
 const UPLOAD = path.resolve(process.env.UPLOAD_DIR || './uploads');
 const NOW = Date.now();
@@ -86,7 +86,8 @@ async function store(name, content) {
 }
 
 // ---------- kurulum ----------
-async function main() {
+/** Tümü tek işlemde: yarıda kalırsa hiçbir şey yazılmaz, bir sonraki açılışta baştan denenir. */
+async function main(db) {
   const admin0 = await db.user.findUnique({ where: { email: DEMO_ACCOUNTS[0].email } });
   if (admin0) {
     const hasFile = await fs.access(CRED_FILE).then(() => true, () => false);
@@ -300,7 +301,7 @@ async function main() {
 }
 
 try {
-  await main();
+  await prisma.$transaction((tx) => main(tx), { timeout: 180_000, maxWait: 20_000 });
 } finally {
-  await db.$disconnect();
+  await prisma.$disconnect();
 }
