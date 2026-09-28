@@ -1,0 +1,20 @@
+{
+  // GitHub Codespaces demo ortamı: uygulama + PostgreSQL + örnek veriler.
+  // Açılınca kurulum kendiliğinden yapılır ve uygulama 3000 portunda açılır. Ayrıntı: DEMO.md
+  "name": "Takip demo",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Takip", "onAutoForward": "openBrowser" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "postCreateCommand": "bash scripts/demo/setup.sh",
+  "postStartCommand": "bash scripts/demo/start.sh",
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "customizations": {
+    "codespaces": { "openFiles": ["DEMO.md"] }
+  }
+}

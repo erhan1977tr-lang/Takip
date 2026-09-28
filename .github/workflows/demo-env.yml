@@ -1,0 +1,53 @@
+name: Demo ortamı (Codespaces)
+
+# .devcontainer yapılandırmasını GitHub Codespaces'teki gibi kurup başlatır:
+# kurulum, örnek veriler, derleme, uygulamanın açılması ve yeniden başlatma.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '.devcontainer/**'
+      - 'scripts/demo/**'
+      - 'server/demo/**'
+      - 'next.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/demo-env.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: demo-env-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  devcontainer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Devcontainer CLI
+        run: npm install -g @devcontainers/cli@0 --no-audit --no-fund
+
+      - name: Ortamı kur ve başlat (postCreate + postStart)
+        run: scripts/ci-step.sh "devcontainer up" devcontainer up --workspace-folder .
+
+      - name: Uygulama açık mı, örnek veriler yüklü mü
+        run: |
+          scripts/ci-step.sh "demo kontrol" devcontainer exec --workspace-folder . bash -c '
+            set -e
+            node -e "fetch(\"http://127.0.0.1:3000/login\").then(async r => { const t = await r.text(); if (!r.ok || !t.includes(\"Demo ortamı\")) { console.error(r.status, t.slice(0, 500)); process.exit(1); } console.log(\"giriş sayfası tamam\"); })"
+            grep -q "Şifre (tüm hesaplar): Takip-" DEMO-GIRIS.txt
+            cat DEMO-GIRIS.txt'
+
+      - name: Yeniden başlatma (Codespace durup açılınca olduğu gibi)
+        run: |
+          scripts/ci-step.sh "demo yeniden başlat" devcontainer exec --workspace-folder . bash scripts/demo/start.sh
+          scripts/ci-step.sh "demo kontrol 2" devcontainer exec --workspace-folder . node -e "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+
+      - name: Günlükler (hata varsa)
+        if: failure()
+        run: devcontainer exec --workspace-folder . bash -c 'tail -80 /tmp/takip.log; tail -80 /tmp/takip-build.log' || true

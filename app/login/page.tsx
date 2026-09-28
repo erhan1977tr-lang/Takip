@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/session';
 import { homeFor } from '@/lib/roles';
 import { AuthCard } from '../AuthCard';
 import { loginAction } from './actions';
+import { DEMO_ACCOUNTS, isDemo } from '@/server/demo/accounts.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,17 @@ export default async function LoginPage({
         <button type="submit" className="btn btn-primary btn-block">Giriş yap</button>
       </form>
       <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>Hesabınız yoksa firma yöneticinize başvurun.</p>
+      {isDemo() && (
+        <div className="alert alert-warn demo-accounts" style={{ marginTop: 16, marginBottom: 0 }}>
+          <b>Demo ortamı</b> — örnek verilerle çalışır. Bir hesap seçin:
+          <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
+            {DEMO_ACCOUNTS.map((a) => (
+              <li key={a.email}><a href={`/login?email=${encodeURIComponent(a.email)}`}>{a.email}</a> — {a.label}</li>
+            ))}
+          </ul>
+          <span className="small">Şifre, demo ortamındaki <code>DEMO-GIRIS.txt</code> dosyasındadır.</span>
+        </div>
+      )}
     </AuthCard>
   );
 }

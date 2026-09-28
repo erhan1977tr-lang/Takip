@@ -1,0 +1,22 @@
+# Codespaces / devcontainer için: uygulama konteyneri ve PostgreSQL.
+# Uygulama konteyneri veritabanının ağını paylaşır; veritabanına localhost:5432 ile erişilir.
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    network_mode: service:db
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: takip
+      POSTGRES_PASSWORD: takip
+      POSTGRES_DB: takip
+    volumes:
+      - takip-demo-db:/var/lib/postgresql/data
+
+volumes:
+  takip-demo-db:

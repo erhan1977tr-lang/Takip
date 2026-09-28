@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth/session';
-import { NAV, ROLE_LABEL } from '@/lib/roles';
+import { NAV, ROLE_LABEL, type NavItem } from '@/lib/roles';
+import { isDemo } from '@/server/demo/accounts.js';
 import { NavLinks } from './NavLinks';
 import { logoutAction } from './actions';
 
@@ -7,7 +8,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const nav = NAV[user.appRole];
+  const demo = isDemo();
+  const nav: NavItem[] = demo && user.appRole === 'ADMIN'
+    ? [...NAV.ADMIN, { section: 'Demo' }, { href: '/demo/posta', label: 'Demo posta kutusu' }]
+    : NAV[user.appRole];
   const firm = user.customer?.name;
   const sub = user.appRole === 'MUSTERI' && firm ? `${ROLE_LABEL[user.appRole]} · ${firm}` : ROLE_LABEL[user.appRole];
 
@@ -30,9 +34,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
               <div className="sub">{sub}</div>
             </div>
           </div>
-          <form action={logoutAction}>
-            <button type="submit" className="btn btn-link">Çıkış</button>
-          </form>
+          <div className="row" style={{ gap: 8 }}>
+            {demo && <span className="badge badge-warn" title="Örnek verilerle çalışan demo ortamı">DEMO</span>}
+            <form action={logoutAction}>
+              <button type="submit" className="btn btn-link">Çıkış</button>
+            </form>
+          </div>
         </header>
         <NavLinks items={nav} variant="mobile" />
         <main className="content">{children}</main>

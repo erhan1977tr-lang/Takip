@@ -10,3 +10,6 @@ playwright-report/
 .uploads/
 .outbox/
 uploads/
+
+# Demo ortamı (Codespaces)
+DEMO-GIRIS.txt

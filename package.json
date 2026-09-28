@@ -14,7 +14,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "create-admin": "node scripts/create-admin.mjs",
-    "mail:test": "node --env-file=.env scripts/test-mail.mjs"
+    "mail:test": "node --env-file=.env scripts/test-mail.mjs",
+    "demo": "bash scripts/demo/start.sh"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

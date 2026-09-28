@@ -114,6 +114,23 @@ jobs:
       - name: Uçtan uca testler
         run: scripts/ci-step.sh "e2e" npx playwright test
 
+      - name: Demo ortamı (örnek veriler + demo testleri)
+        env:
+          DATABASE_URL: postgresql://takip:takip@localhost:5432/takip_demo?schema=public
+          DEMO_MODE: '1'
+          DEMO_URL: http://127.0.0.1:3001
+          APP_URL: http://127.0.0.1:3001
+          UPLOAD_DIR: ${{ github.workspace }}/.demo-uploads
+          MAIL_OUTBOX_DIR: ${{ github.workspace }}/.demo-outbox
+        run: |
+          PGPASSWORD=takip psql -h localhost -U takip -d takip -qc 'CREATE DATABASE takip_demo'
+          scripts/ci-step.sh "demo migrate" npx prisma migrate deploy
+          scripts/ci-step.sh "demo seed" node scripts/demo/seed.mjs
+          scripts/ci-step.sh "demo seed (ikinci kez)" node scripts/demo/seed.mjs
+          PORT=3001 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > demo-server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3001/login && break; sleep 1; done
+          scripts/ci-step.sh "demo e2e" npx playwright test e2e/demo.spec.ts || { tail -50 demo-server.log; exit 1; }
+
       - name: Ekran görüntülerini ci-screenshots dalına yaz
         if: always() && github.event_name == 'push'
         run: |

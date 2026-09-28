@@ -1,3 +1,9 @@
+// GitHub Codespaces'te uygulama *.app.github.dev adresinden açılır; sunucu işlemleri (server actions)
+// bu adresten gelen istekleri kabul etsin. Yalnızca Codespaces içinde derlenince eklenir.
+const codespaceOrigins = process.env.CODESPACES === 'true'
+  ? [`*.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || 'app.github.dev'}`, 'localhost:3000']
+  : undefined;
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -5,7 +11,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   serverExternalPackages: ['nodemailer'],
   experimental: {
-    serverActions: { bodySizeLimit: '250mb' },
+    serverActions: { bodySizeLimit: '250mb', ...(codespaceOrigins ? { allowedOrigins: codespaceOrigins } : {}) },
   },
 };
 export default nextConfig;
