@@ -112,7 +112,7 @@ jobs:
         run: scripts/ci-step.sh "playwright install" npx playwright install --with-deps chromium
 
       - name: Uçtan uca testler
-        run: scripts/ci-step.sh "e2e" npx playwright test
+        run: scripts/ci-step.sh "e2e" bash -c 'npx playwright test 2>&1 | tee e2e.log; exit ${PIPESTATUS[0]}'
 
       - name: Demo ortamı (örnek veriler + demo testleri)
         env:
@@ -129,7 +129,7 @@ jobs:
           scripts/ci-step.sh "demo seed (ikinci kez)" node scripts/demo/seed.mjs
           PORT=3001 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > demo-server.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3001/login && break; sleep 1; done
-          scripts/ci-step.sh "demo e2e" npx playwright test e2e/demo.spec.ts || { tail -50 demo-server.log; exit 1; }
+          scripts/ci-step.sh "demo e2e" bash -c 'npx playwright test e2e/demo.spec.ts 2>&1 | tee demo-e2e.log; exit ${PIPESTATUS[0]}' || { tail -50 demo-server.log; exit 1; }
 
       - name: Ekran görüntülerini ci-screenshots dalına yaz
         if: always() && github.event_name == 'push'
@@ -146,6 +146,9 @@ jobs:
         if: failure()
         run: |
           shopt -s nullglob
+          for f in e2e.log demo-e2e.log; do
+            [ -f "$f" ] && scripts/ci-step.sh "$f hataları" bash -c "grep -nE '✘|Error:|Expected|Received|Timeout|Locator:|waiting for|spec.ts:[0-9]+' '$f' | grep -v 'attachment' | head -60; exit 1" || true
+          done
           for f in test-results/*/error-context.md; do
             scripts/ci-step.sh "sayfa: $(basename "$(dirname "$f")" | cut -c1-60)" bash -c "sed -n '1,120p' '$f'; exit 1" || true
           done
