@@ -2,14 +2,15 @@
 // TAKİP - Sipariş ve Üretim Portalı — Veri Modeli (Prisma / PostgreSQL)
 // =========================================================
 // Akış özeti:
-//  1) Müşteri (customer portal user) sipariş girer -> Order (status: YENI)
-//  2) Satış ekibi görür -> çizim gerekiyorsa Drawing talebi açar (status: CIZIM_GEREKLI)
-//     gerekmiyorsa Offer (teklif) doldurup Sistem Yöneticisi'ne gönderir (status: FIYAT_BEKLIYOR)
-//  3) Sistem Yöneticisi fiyatı girer -> Price -> müşteri panelinde görünür (status: FIYATLANDI)
-//  4) Çizim ekibi çizer, sipariş sahibine gönderir (status: ONAY_BEKLIYOR)
-//     -> müşteri onaylar (status: URETIMDE) ya da revizyon ister (status: REVIZYON, revisionCount++)
-//  5) Yükleme tarihine göre Shipment'a bağlanır, takvimde gruplanır
-//  6) Her durum değişikliği AuditLog'a düşer (silinemez, sadece okunur)
+//  1) Müşteri sipariş gönderir -> Order.status = YENI
+//  2) Satış dosyayı kontrol eder: çizim gerekiyorsa çizim ekibine yönlendirir (drawingTrack = GEREKLI),
+//     gerekmiyorsa drawingTrack = YOK. Her iki durumda status = HAZIRLANIYOR ve teklif taslağı açılır.
+//  3) İki hat bağımsız yürür:
+//     - Çizim: çizimci üstlenir -> çizimi yükler -> müşteri onaylar ya da revizyon ister
+//     - Teklif: satış yazar -> sistem yöneticisi fiyatı onaylar -> teklif müşteride görünür
+//     Müşteri teklifi ONAYLAMAZ, yalnızca görür. Müşterinin tek onayı çizim onayıdır.
+//  4) Çizim onaylı (ya da gereksiz) ve teklif müşterideyse satış siparişi üretime alır (URETIMDE)
+//  5) Yükleme -> arşiv. Her olay OrderEvent'e, her değişiklik AuditLog'a yazılır.
 // =========================================================
 
 generator client {
@@ -104,7 +105,7 @@ model User {
   sessions           Session[]
   orderNotes         OrderNote[]
   orderFiles         OrderFile[]
-  statusChanges      OrderStatusHistory[] @relation("StatusChangedBy")
+  orderEvents        OrderEvent[] @relation("OrderEventBy")
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -190,21 +191,24 @@ model Customer {
 // SİPARİŞ
 // ---------------------------------------------------------
 
+// Siparişin genel aşaması. Çizim ve teklif, HAZIRLANIYOR aşamasında birbirinden bağımsız yürür.
 enum OrderStatus {
-  YENI                // müşteri girdi, satış inceliyor ("İnceleniyor")
-  CIZIM_GEREKLI       // satış çizim ekibine yönlendirdi
-  CIZIM_YAPILIYOR
-  DXF_DWG_GELDI       // müşteri hazır çizim gönderdi
-  ONAY_BEKLIYOR       // çizim sipariş sahibine gönderildi
-  REVIZYON_ISTENDI
-  TEKLIF_HAZIRLANIYOR // satış teklif tablosunu dolduruyor (çizim onaylandı ya da çizim gerekmedi)
-  FIYAT_BEKLIYOR      // teklif yönetime gitti, fiyat onayı bekleniyor
-  FIYATLANDI          // yönetici fiyatı onayladı, teklif müşteride; müşteri onayı bekleniyor
-  URETIMDE
-  ESKALASYON          // üst kademeye taşınan
+  YENI         // müşteri gönderdi, satış inceliyor ("İnceleniyor")
+  HAZIRLANIYOR // satış karar verdi; çizim (gerekiyorsa) ve teklif paralel hazırlanıyor
+  URETIMDE     // satış üretime aldı (çizim onaylı ya da gereksiz + teklif müşteride)
   YUKLENDI
   ARSIVLENDI
   IPTAL
+}
+
+// Çizim hattı: müşteri yalnızca burada onay verir.
+enum DrawingTrack {
+  YOK              // çizim gerekmiyor
+  GEREKLI          // satış çizim ekibine yönlendirdi, henüz üstlenilmedi
+  YAPILIYOR        // çizimci üstlendi
+  ONAY_BEKLIYOR    // çizim müşterinin onayında
+  REVIZYON_ISTENDI // müşteri revizyon istedi
+  ONAYLANDI        // müşteri onayladı
 }
 
 model Order {
@@ -216,7 +220,8 @@ model Order {
   customerOrderNo   Int         // müşterinin kendi numarası; orderNo = firma ön eki + bu sayı
   title             String?     // "Gabi panou dus" gibi kısa açıklama
   status            OrderStatus @default(YENI)
-  needsDrawing      Boolean     @default(false)
+  drawingTrack      DrawingTrack @default(YOK)
+  drawingSince      DateTime?   // çizim hattının son değiştiği an (SLA için)
   onHold            Boolean     @default(false) // "Beklemeye al": listelerde ve yüklemede görünmez
   camEtiket         String?     // yönetici girer; boşsa firmanın varsayılanı
   sandikEtiket      String?
@@ -241,7 +246,7 @@ model Order {
   crates            Crate[]
   shipmentId        String?
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
-  statusHistory     OrderStatusHistory[]
+  events            OrderEvent[]
   files             OrderFile[]
   notes             OrderNote[]
 
@@ -250,22 +255,23 @@ model Order {
 
   @@unique([customerId, customerOrderNo])
   @@index([status])
+  @@index([drawingTrack])
   @@index([customerId])
   @@index([estimatedShipDate])
 }
 
-model OrderStatusHistory {
-  id        String      @id @default(cuid())
+// Sipariş olay geçmişi ("Hareketler"). event kodları server/orders/rules.js içindeki EVENTS ile tanımlıdır.
+model OrderEvent {
+  id        String   @id @default(cuid())
   orderId   String
-  order     Order       @relation(fields: [orderId], references: [id])
-  fromStatus OrderStatus?
-  toStatus  OrderStatus
-  changedAt DateTime    @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event     String
   note      String?
-  changedById String?
-  changedBy   User?     @relation("StatusChangedBy", fields: [changedById], references: [id])
+  userId    String?
+  user      User?    @relation("OrderEventBy", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
 
-  @@index([orderId])
+  @@index([orderId, createdAt])
 }
 
 enum OrderFileKind {
@@ -342,6 +348,8 @@ model Offer {
   orderId     String
   order       Order       @relation(fields: [orderId], references: [id])
   status      OfferStatus @default(HAZIRLANIYOR)
+  statusSince DateTime    @default(now()) // SLA için
+  sentAt      DateTime?   // müşteriye gönderildiği an
   currency    String      @default("EUR")
   amount      Decimal     @default(0) @db.Decimal(12, 2) // "Teklif Tutarı" (satırların toplamı)
   lines       OfferLine[]

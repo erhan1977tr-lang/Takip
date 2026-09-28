@@ -52,3 +52,37 @@ export async function createUser(page: Page, u: { email: string; name: string; r
   await page.click('form.card button[type=submit]');
   await expect(page.getByText(`${u.email} → ${u.firm} firmasına atandı ve davet e-postası gönderildi.`)).toBeVisible();
 }
+
+export const GLASS = '66.3 Temper Lamine Cam (Şeffaf)';
+export const SALES = 'satis@e2e.test';
+export const DRAWER = 'cizim@e2e.test';
+export const TEAM_PW = 'Ekip2026abc';
+
+/** Ayrı bir tarayıcı oturumunda giriş yapar; onay pencerelerini otomatik kabul eder. */
+export async function as(browser: import('@playwright/test').Browser, email: string, pw: string): Promise<Page> {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  page.on('dialog', (d) => d.accept());
+  await login(page, email, pw);
+  return page;
+}
+
+/** Müşteri olarak yeni sipariş oluşturur, sipariş kimliğini döndürür. */
+export async function newOrder(page: Page, title: string, fileName: string): Promise<string> {
+  await page.goto('/siparisler/yeni');
+  await page.fill('#title', title);
+  await page.setInputFiles('#files', { name: fileName, mimeType: 'application/octet-stream', buffer: Buffer.from(`test dosyası ${title}`) });
+  await page.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
+  await page.getByLabel('Adet', { exact: true }).fill('3');
+  await page.getByRole('button', { name: 'Siparişi gönder' }).click();
+  await expect(page).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
+  await expect(page.getByText('Siparişiniz alındı.')).toBeVisible();
+  return /\/siparisler\/([a-z0-9]+)/.exec(page.url())![1];
+}
+
+/** Teklif tablosunun ilk satırını doldurur (1000 × 2000 mm, adet siparişten gelir). */
+export async function fillOffer(page: Page, price = '41,5') {
+  await page.getByLabel('En', { exact: true }).first().fill('1000');
+  await page.getByLabel('Boy', { exact: true }).first().fill('2000');
+  await page.getByLabel('Birim fiyat').first().fill(price);
+}

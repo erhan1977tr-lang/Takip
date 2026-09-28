@@ -13,18 +13,20 @@ export const NAV: Record<AppRole, NavItem[]> = {
   ADMIN: [
     { section: 'Operasyon' },
     { href: '/siparisler', label: 'Siparişler' },
+    { href: '/teklifler', label: 'Teklifler' },
     { section: 'Kişiler' },
     { href: '/admin/users', label: 'Kullanıcılar' },
     { href: '/admin/firms', label: 'Müşteriler' },
     { section: 'Tanımlar' },
     { href: '/admin/katalog', label: 'Cam Kataloğu' },
   ],
-  SATIS: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
+  SATIS: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }, { href: '/teklifler', label: 'Teklifler' }],
   CIZIM: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
   MUSTERI: [
     { section: 'Müşteri portalı' },
     { href: '/siparisler', label: 'Siparişlerim' },
     { href: '/siparisler/yeni', label: 'Yeni Sipariş' },
+    { href: '/teklifler', label: 'Tekliflerim' },
   ],
 };
 

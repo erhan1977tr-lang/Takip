@@ -1,36 +1,14 @@
-import { test, expect, type Browser, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, createUser, firstLogin, login, outboxCodeFor } from './helpers';
+import { test, expect } from '@playwright/test';
+import {
+  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, SALES, TEAM_PW as PW,
+  as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor,
+} from './helpers';
 
-// Sipariş akışı: teklif yolu ve çizim yolu, rol yetkileri, firma izolasyonu, iç notlar.
+// Sipariş akışı: çizim ve teklif hatları bağımsız; müşteri yalnızca çizimi onaylar, teklifi görür.
 test.describe.configure({ mode: 'serial' });
 
-const SALES = 'satis@e2e.test';
-const DRAWER = 'cizim@e2e.test';
 const BETA = 'beta@betacam.test';
-const PW = 'Ekip2026abc';
-const GLASS = '66.3 Temper Lamine Cam (Şeffaf)';
-
 const ids: { a?: string; b?: string; drawing?: string } = {};
-
-async function as(browser: Browser, email: string, pw: string): Promise<Page> {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  page.on('dialog', (d) => d.accept());
-  await login(page, email, pw);
-  return page;
-}
-
-async function newOrder(page: Page, title: string, fileName: string): Promise<string> {
-  await page.goto('/siparisler/yeni');
-  await page.fill('#title', title);
-  await page.setInputFiles('#files', { name: fileName, mimeType: 'application/octet-stream', buffer: Buffer.from(`test dosyası ${title}`) });
-  await page.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await page.getByLabel('Adet', { exact: true }).fill('3');
-  await page.getByRole('button', { name: 'Siparişi gönder' }).click();
-  await expect(page).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
-  await expect(page.getByText('Siparişiniz alındı.')).toBeVisible();
-  return /\/siparisler\/([a-z0-9]+)/.exec(page.url())![1];
-}
 
 test('hazırlık: katalog, satış, çizim ve ikinci müşteri', async ({ page }) => {
   await login(page, ADMIN, ADMIN_PW);
@@ -59,50 +37,56 @@ test('hazırlık: katalog, satış, çizim ve ikinci müşteri', async ({ page }
   }
 });
 
-test('teklif yolu: sipariş → teklif → yönetici onayı → müşteri onayı → yükleme', async ({ browser }) => {
+test('teklif yolu: çizim gerekmez → teklif → yönetici onayı → müşteri görür (onaylamaz) → üretim', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  // Bu müşterinin onay yetkisi 01-onboarding'de verildi.
   ids.a = await newOrder(cust, 'Duş kabini', 'Darius.dwg');
   await expect(cust.getByText('UNS1').first()).toBeVisible();
 
   const sales = await as(browser, SALES, PW);
   await expect(sales.getByRole('heading', { name: 'Satış Paneli' })).toBeVisible();
-  const row = sales.locator('tr', { hasText: 'UNS1' }).first();
+  const row = sales.locator('.card', { hasText: 'Yeni siparişler — karar bekliyor' }).locator('tr', { hasText: 'UNS1' });
   await expect(row).toBeVisible();
   await expect(row.getByText('Üns**********')).toBeVisible(); // satış tam adı görmez
   await sales.goto(`/siparisler/${ids.a}`);
   await expect(sales.getByText('Ünsal Cam', { exact: true })).toHaveCount(0);
-  await sales.getByRole('button', { name: 'Teklife Gönder (çizim gerekmiyor)' }).click();
-  await expect(sales.getByText('Teklif tablosu açıldı.')).toBeVisible();
+  await expect(sales.getByText('Sıradaki adım: Çizim Ekibine Gönder · Teklife Gönder')).toBeVisible();
+  await expect(sales.getByRole('button', { name: 'Beklemeye Al' })).toBeVisible();
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.getByText('Çizim gerekmiyor olarak işaretlendi.')).toBeVisible();
   await expect(sales.getByLabel('Açıklama').first()).toHaveValue(GLASS);
-  await sales.getByLabel('En', { exact: true }).first().fill('1000');
-  await sales.getByLabel('Boy', { exact: true }).first().fill('2000');
-  await sales.getByLabel('Birim fiyat').first().fill('41,5');
-  await expect(sales.locator('tfoot')).toContainText('249,00 EUR');
+  await fillOffer(sales);
+  await expect(sales.locator('.offer-table tfoot')).toContainText('249,00 EUR');
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
-  await expect(sales.getByText('Fiyat onayında').first()).toBeVisible();
+  await expect(sales.getByText('Üretime almak için bekleniyor:')).toBeVisible();
+  await expect(sales.getByRole('button', { name: 'Üretime al' })).toHaveCount(0);
 
-  // Müşteri henüz teklifi göremez
+  // Müşteri, yönetici onaylamadan teklifi göremez
   await cust.goto(`/siparisler/${ids.a}`);
   await expect(cust.getByRole('heading', { name: 'Teklifiniz' })).toHaveCount(0);
 
   const admin = await as(browser, ADMIN, ADMIN_PW);
-  await admin.goto('/siparisler');
-  await expect(admin.locator('.card', { hasText: 'Fiyat onayı bekleyen teklifler' }).getByText('UNS1')).toBeVisible();
+  await admin.goto('/teklifler');
+  await expect(admin.locator('.card', { hasText: 'Yönetici onayında' }).getByRole('link', { name: 'UNS1' })).toBeVisible();
   await admin.goto(`/siparisler/${ids.a}`);
   await expect(admin.getByText('Ünsal Cam').first()).toBeVisible(); // yönetici tam adı görür
   await admin.fill('#sandikEtiket', 'SB-M');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
   await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
 
+  // Müşteri teklifi görür ama onaylamaz
   await cust.goto(`/siparisler/${ids.a}`);
-  await expect(cust.getByText('Teklifiniz hazır').first()).toBeVisible();
+  await expect(cust.getByRole('heading', { name: 'Teklifiniz' })).toBeVisible();
   await expect(cust.locator('#teklif tfoot')).toContainText('249,00 EUR');
-  await cust.getByRole('button', { name: 'Teklifi onayla ve üretime al' }).click();
-  await expect(cust.getByText('Teklifi onayladınız. Siparişiniz üretime alındı.')).toBeVisible();
+  await expect(cust.getByRole('button', { name: /onayla/i })).toHaveCount(0);
+  await cust.goto('/teklifler');
+  await expect(cust.getByRole('link', { name: 'UNS1' })).toBeVisible();
+  await expect(cust.getByText('249,00 EUR')).toBeVisible();
 
+  // Satış üretime alır
   await sales.goto(`/siparisler/${ids.a}`);
+  await sales.getByRole('button', { name: 'Üretime al' }).click();
+  await expect(sales.getByText('Sipariş üretime alındı.')).toBeVisible();
   await sales.getByRole('button', { name: 'Yüklendi olarak işaretle' }).click();
   await expect(sales.getByText('Sipariş yüklendi olarak işaretlendi.')).toBeVisible();
   await sales.getByRole('button', { name: 'Arşivle' }).click();
@@ -112,20 +96,36 @@ test('teklif yolu: sipariş → teklif → yönetici onayı → müşteri onayı
   await expect(cust.getByRole('link', { name: 'UNS1' })).toBeVisible();
 });
 
-test('çizim yolu: çizime gönder → üstlen → yükle → revizyon → v2 → onay', async ({ browser }) => {
+test('çizim yolu: çizim ve teklif paralel yürür; üretim ikisi de tamamlanınca açılır', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   ids.b = await newOrder(cust, 'Merdiven korkuluğu', 'korkuluk.pdf');
 
   const sales = await as(browser, SALES, PW);
   await sales.goto(`/siparisler/${ids.b}`);
   await sales.getByRole('button', { name: 'Çizim Ekibine Gönder' }).click();
-  await expect(sales.getByText('Sipariş çizim ekibine gönderildi.')).toBeVisible();
+  await expect(sales.getByText('Sipariş çizim ekibine yönlendirildi.')).toBeVisible();
+
+  // Satış, çizim beklemeden teklifi yazar
+  await fillOffer(sales);
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(`/siparisler/${ids.b}`);
+  await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
+  await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
+
+  // Teklif müşteride ama çizim bitmediği için üretime alınamaz
+  await sales.goto(`/siparisler/${ids.b}`);
+  await expect(sales.getByRole('button', { name: 'Üretime al' })).toHaveCount(0);
+  await expect(sales.getByText('Çizim henüz tamamlanmadı')).toBeVisible();
+  await cust.goto(`/siparisler/${ids.b}`);
+  await expect(cust.getByRole('heading', { name: 'Teklifiniz' })).toBeVisible();
+  await expect(cust.getByText('Çizim hazırlanıyor').first()).toBeVisible();
 
   const drawer = await as(browser, DRAWER, PW);
   await expect(drawer.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
-  await expect(drawer.locator('.card', { hasText: 'Çizim işleri' }).getByText('UNS2')).toBeVisible();
-  // Çizimsiz sipariş çizim ekibine görünmez
-  const hidden = await drawer.goto(`/siparisler/${ids.a}`);
+  await expect(drawer.locator('.card', { hasText: 'Çizim işleri' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
+  const hidden = await drawer.goto(`/siparisler/${ids.a}`); // çizimsiz sipariş çizim ekibine görünmez
   expect(hidden?.status()).toBe(404);
 
   await drawer.goto(`/siparisler/${ids.b}`);
@@ -152,14 +152,40 @@ test('çizim yolu: çizime gönder → üstlen → yükle → revizyon → v2 �
   await drawer.getByRole('button', { name: 'Yükle ve onaya gönder' }).click();
   await expect(drawer.getByText('v2 · güncel')).toBeVisible();
 
+  await sales.goto(`/siparisler/${ids.b}`);
+  await expect(sales.getByText('Çizim müşteri onayında')).toBeVisible();
+
   await cust.goto(`/siparisler/${ids.b}`);
   await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
-  await expect(cust.getByText('Çizimi onayladınız. Teklifiniz hazırlanıyor.')).toBeVisible();
+  await expect(cust.getByText('Çizimi onayladınız.')).toBeVisible();
 
   await sales.goto('/siparisler');
-  const row = sales.locator('.card', { hasText: 'Teklif hazırlanacaklar' }).locator('tr', { hasText: 'UNS2' });
+  const row = sales.locator('.card', { hasText: 'Üretime alınabilecekler' }).locator('tr', { hasText: 'UNS2' });
   await expect(row).toBeVisible();
   await expect(row.getByText('v2 · 1 tur')).toBeVisible();
+  await sales.goto(`/siparisler/${ids.b}`);
+  await expect(sales.getByRole('button', { name: 'Üretime al' })).toBeVisible();
+});
+
+test('teklif revizyonu: müşteri yeni sürüm onaylanana kadar eski teklifi görür', async ({ browser }) => {
+  const sales = await as(browser, SALES, PW);
+  await sales.goto(`/siparisler/${ids.b}`);
+  await sales.getByRole('button', { name: 'Teklifi revize et' }).click();
+  await expect(sales.getByText('Teklifin yeni sürümü açıldı.')).toBeVisible();
+  await sales.getByLabel('Birim fiyat').first().fill('50');
+  await expect(sales.locator('.offer-table tfoot')).toContainText('300,00 EUR');
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByRole('button', { name: 'Üretime al' })).toHaveCount(0);
+
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.goto(`/siparisler/${ids.b}`);
+  await expect(cust.locator('#teklif tfoot')).toContainText('249,00 EUR');
+
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(`/siparisler/${ids.b}`);
+  await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
+  await cust.goto(`/siparisler/${ids.b}`);
+  await expect(cust.locator('#teklif tfoot')).toContainText('300,00 EUR');
 });
 
 test('notlar: iç not müşteriye görünmez', async ({ browser }) => {

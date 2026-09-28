@@ -6,7 +6,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
-import { fileProblem, nextShipDate, slaDeadlineFor } from '@/server/orders/rules.js';
+import { fileProblem, nextShipDate, slaDeadline } from '@/server/orders/rules.js';
 
 export type NewOrderState = { error?: string; values?: { title: string; no: string; glasses: { id: string; qty: string }[] } };
 
@@ -60,13 +60,13 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
       const o = await tx.order.create({
         data: {
           orderNo, customerOrderNo: no, title, customerId: firm.id, createdById: user.id,
-          status: 'YENI', slaDeadline: slaDeadlineFor('YENI'), estimatedShipDate: nextShipDate(),
+          status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: new Date() }), estimatedShipDate: nextShipDate(),
           camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket,
           items: { create: items },
           files: { create: stored.map((s) => ({ ...s, kind: 'CUSTOMER' as const, uploadedById: user.id })) },
         },
       });
-      await tx.orderStatusHistory.create({ data: { orderId: o.id, fromStatus: null, toStatus: 'YENI', note: 'Sipariş gönderildi', changedById: user.id } });
+      await tx.orderEvent.create({ data: { orderId: o.id, event: 'CREATED', userId: user.id } });
       return o;
     });
     orderId = order.id;

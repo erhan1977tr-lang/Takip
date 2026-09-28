@@ -4,16 +4,20 @@ import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
 import { customerLabel, orderScope } from '@/lib/orders';
 import { fmtDate, fmtMonth } from '@/lib/format';
-import { StatusBadge } from '@/components/StatusBadge';
-import { CLOSED, STATUS, slaInfo } from '@/server/orders/rules.js';
+import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
+import { CLOSED, customerSummary, productionBlockers, slaInfo } from '@/server/orders/rules.js';
 
 const listInclude = {
   customer: { select: { name: true } },
   drawings: { select: { id: true } },
+  offers: { orderBy: { createdAt: 'desc' }, select: { status: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof listInclude }>;
 
 type SP = Record<string, string | undefined>;
+
+const offerOf = (o: Row) => o.offers[0]?.status ?? null;
+const sentOf = (o: Row) => (o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null);
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser();
@@ -39,6 +43,15 @@ function Sla({ deadline }: { deadline: Date | null }) {
   return <span className={s.over ? 'sla-over' : s.risk ? 'sla-risk' : 'sla-ok'}>● {s.text}</span>;
 }
 
+function GroupRows({ label, cols, children }: { label: string; cols: number; children: React.ReactNode }) {
+  return (
+    <>
+      {label && <tr className="group-row"><td colSpan={cols}>{label}</td></tr>}
+      {children}
+    </>
+  );
+}
+
 // ---------------- Müşteri ----------------
 async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const archive = sp.view === 'archive';
@@ -46,13 +59,12 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     where: {
       ...orderScope(user),
       ...searchWhere(sp.q),
-      status: archive ? { in: ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'] } : { notIn: ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'] },
+      status: archive ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },
     },
     include: listInclude,
     orderBy: [{ estimatedShipDate: archive ? 'desc' : 'asc' }, { createdAt: 'desc' }],
   });
-  const active = archive ? [] : orders;
-  const count = (f: (o: Row) => boolean) => active.filter(f).length;
+  const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
   const groups = new Map<string, Row[]>();
   for (const o of orders) {
     const k = o.estimatedShipDate ? fmtMonth(o.estimatedShipDate) : 'Tarih belirlenmedi';
@@ -66,16 +78,18 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           <h1>{user.customer?.name} — Siparişlerim</h1>
           <p className="muted">Sipariş bilgisini ve teknik dosyanızı yükleyin; sürecin tamamını buradan izleyin.</p>
         </div>
-        <Link href="/siparisler/yeni" className="btn btn-primary">+ Yeni Sipariş</Link>
+        <div className="row">
+          <Link href="/teklifler" className="btn">Tekliflerim</Link>
+          <Link href="/siparisler/yeni" className="btn btn-primary">+ Yeni Sipariş</Link>
+        </div>
       </div>
-      {sp.ok === 'created' && <div className="alert alert-ok">Siparişiniz alındı. Satış ekibi inceleyip size dönecek.</div>}
 
       {!archive && (
         <div className="stats">
-          <div className="stat" style={{ borderLeftColor: '#f59e0b' }}><div className="k">Onayınız bekleniyor</div><div className="v">{count((o) => o.status === 'ONAY_BEKLIYOR' || o.status === 'FIYATLANDI')}<small>sipariş</small></div></div>
-          <div className="stat" style={{ borderLeftColor: '#7c3aed' }}><div className="k">Çizim hazırlanıyor</div><div className="v">{count((o) => ['CIZIM_GEREKLI', 'CIZIM_YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.status))}<small>sipariş</small></div></div>
+          <div className="stat" style={{ borderLeftColor: '#f59e0b' }}><div className="k">Onayınız bekleniyor</div><div className="v">{count((o) => o.status === 'HAZIRLANIYOR' && o.drawingTrack === 'ONAY_BEKLIYOR')}<small>çizim</small></div></div>
+          <div className="stat" style={{ borderLeftColor: '#7c3aed' }}><div className="k">Çizim hazırlanıyor</div><div className="v">{count((o) => o.status === 'HAZIRLANIYOR' && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack))}<small>sipariş</small></div></div>
           <div className="stat" style={{ borderLeftColor: '#047857' }}><div className="k">Onaylandı, üretimde</div><div className="v">{count((o) => o.status === 'URETIMDE')}<small>sipariş</small></div></div>
-          <div className="stat"><div className="k">Toplam aktif</div><div className="v">{active.length}<small>sipariş</small></div></div>
+          <div className="stat"><div className="k">Toplam aktif</div><div className="v">{orders.length}<small>sipariş</small></div></div>
         </div>
       )}
 
@@ -102,8 +116,8 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                     {list.map((o) => (
                       <tr key={o.id}>
                         <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
-                        <td><StatusBadge status={o.status} customer /></td>
-                        <td className="hide-sm">{STATUS[o.status as keyof typeof STATUS]?.next}</td>
+                        <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer={sentOf(o)} /></td>
+                        <td className="hide-sm">{customerSummary({ status: o.status, drawing: o.drawingTrack, offer: sentOf(o) }).next}</td>
                         <td>{fmtDate(o.actualShipDate ?? o.estimatedShipDate)}</td>
                         <td className="actions"><Link href={`/siparisler/${o.id}`} className="btn">Detay</Link></td>
                       </tr>
@@ -119,15 +133,6 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   );
 }
 
-function GroupRows({ label, cols, children }: { label: string; cols: number; children: React.ReactNode }) {
-  return (
-    <>
-      <tr className="group-row"><td colSpan={cols}>{label}</td></tr>
-      {children}
-    </>
-  );
-}
-
 // ---------------- İç ekip ----------------
 function InternalTable({ user, rows, empty, group = true }: { user: CurrentUser; rows: Row[]; empty: string; group?: boolean }) {
   if (rows.length === 0) return <div className="empty">{empty}</div>;
@@ -139,16 +144,17 @@ function InternalTable({ user, rows, empty, group = true }: { user: CurrentUser;
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Sipariş</th><th>Müşteri</th><th>Durum</th><th className="hide-sm">Çizim</th><th className="hide-sm">Revizyon</th><th>SLA</th><th>Tahmini yükleme</th><th /></tr></thead>
+        <thead><tr><th>Sipariş</th><th>Müşteri</th><th>Durum</th><th>Çizim</th><th>Teklif</th><th className="hide-sm">Revizyon</th><th>SLA</th><th>Tahmini yükleme</th><th /></tr></thead>
         <tbody>
           {[...groups.entries()].map(([label, list]) => (
-            <GroupRows key={label || 'all'} label={label ? `${label} (${list.length})` : ''} cols={8}>
+            <GroupRows key={label || 'all'} label={label ? `${label} (${list.length})` : ''} cols={9}>
               {list.map((o) => (
                 <tr key={o.id}>
                   <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
                   <td className="mono">{customerLabel(user, o.customer.name)}</td>
-                  <td><StatusBadge status={o.status} onHold={o.onHold} /></td>
-                  <td className="hide-sm">{o.needsDrawing ? `${o.drawings.length} çizim` : <span className="muted">Çizimsiz</span>}</td>
+                  <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
+                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{o.drawings.length} çizim</div>}</>}</td>
+                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <OfferBadge status={offerOf(o)} />}</td>
                   <td className="hide-sm">{o.revisionCount > 0 ? <span className="badge badge-danger">v{o.drawings.length} · {o.revisionCount} tur</span> : '—'}</td>
                   <td>{o.onHold ? <span className="muted">—</span> : <Sla deadline={o.slaDeadline} />}</td>
                   <td>{fmtDate(o.estimatedShipDate)}</td>
@@ -176,10 +182,10 @@ function Section({ title, count, tone, children }: { title: string; count: numbe
 
 async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const view = sp.view ?? 'work';
-  const base: Prisma.OrderWhereInput = { ...orderScope(user), ...searchWhere(sp.q) };
   const rows = await db.order.findMany({
     where: {
-      ...base,
+      ...orderScope(user),
+      ...searchWhere(sp.q),
       status: view === 'archive' ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },
     },
     include: listInclude,
@@ -188,20 +194,25 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   });
 
   const now = Date.now();
-  const late = (o: Row) => !o.onHold && o.slaDeadline && o.slaDeadline.getTime() - now < 6 * 3_600_000;
+  const active = rows.filter((o) => !o.onHold);
+  const prep = active.filter((o) => o.status === 'HAZIRLANIYOR');
   const role = user.appRole;
   const myTurn: { title: string; rows: Row[]; empty: string }[] = [];
   if (role === 'SATIS' || role === 'ADMIN') {
-    myTurn.push({ title: 'Yeni siparişler — karar bekliyor', rows: rows.filter((o) => o.status === 'YENI' && !o.onHold), empty: 'Karar bekleyen sipariş yok.' });
-    myTurn.push({ title: 'Teklif hazırlanacaklar', rows: rows.filter((o) => o.status === 'TEKLIF_HAZIRLANIYOR' && !o.onHold), empty: 'Hazırlanacak teklif yok.' });
+    myTurn.push({ title: 'Yeni siparişler — karar bekliyor', rows: active.filter((o) => o.status === 'YENI'), empty: 'Karar bekleyen sipariş yok.' });
+    myTurn.push({ title: 'Teklif hazırlanacaklar', rows: prep.filter((o) => offerOf(o) === null || offerOf(o) === 'HAZIRLANIYOR'), empty: 'Hazırlanacak teklif yok.' });
   }
   if (role === 'ADMIN') {
-    myTurn.push({ title: 'Fiyat onayı bekleyen teklifler', rows: rows.filter((o) => o.status === 'FIYAT_BEKLIYOR' && !o.onHold), empty: 'Onay bekleyen teklif yok.' });
+    myTurn.push({ title: 'Fiyat onayı bekleyen teklifler', rows: prep.filter((o) => offerOf(o) === 'YONETIMDE'), empty: 'Onay bekleyen teklif yok.' });
+  }
+  if (role === 'SATIS' || role === 'ADMIN') {
+    myTurn.push({ title: 'Üretime alınabilecekler', rows: prep.filter((o) => productionBlockers({ status: o.status, drawing: o.drawingTrack, offer: offerOf(o) }).length === 0), empty: 'Üretime hazır sipariş yok.' });
   }
   if (role === 'CIZIM') {
-    myTurn.push({ title: 'Çizim işleri', rows: rows.filter((o) => ['CIZIM_GEREKLI', 'CIZIM_YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.status) && !o.onHold), empty: 'Bekleyen çizim işi yok.' });
+    myTurn.push({ title: 'Çizim işleri', rows: prep.filter((o) => ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack)), empty: 'Bekleyen çizim işi yok.' });
+    myTurn.push({ title: 'Müşteri onayında', rows: prep.filter((o) => o.drawingTrack === 'ONAY_BEKLIYOR'), empty: 'Müşteri onayında çizim yok.' });
   }
-  const risky = rows.filter(late);
+  const risky = active.filter((o) => o.slaDeadline && o.slaDeadline.getTime() - now < 6 * 3_600_000);
   const held = rows.filter((o) => o.onHold);
 
   return (

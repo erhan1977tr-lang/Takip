@@ -8,7 +8,7 @@ import { resolveKey } from '@/lib/storage';
 export const dynamic = 'force-dynamic';
 
 // /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<Drawing id>
-export async function GET(_req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new Response('Giriş gerekli', { status: 401 });
   const { kind, id } = await ctx.params;
@@ -30,12 +30,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ kind: string; 
   if (!full || !fs.existsSync(full)) return new Response('Dosya diskte bulunamadı', { status: 404 });
   const stat = fs.statSync(full);
   const ascii = file.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+  // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir.
+  const ext = file.name.toLowerCase().split('.').pop() ?? '';
+  const INLINE: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+  const inline = new URL(req.url).searchParams.get('ac') === '1' && ext in INLINE;
   const stream = Readable.toWeb(fs.createReadStream(full)) as unknown as ReadableStream;
   return new Response(stream, {
     headers: {
-      'Content-Type': file.mime || 'application/octet-stream',
+      'Content-Type': inline ? INLINE[ext] : 'application/octet-stream',
       'Content-Length': String(stat.size),
-      'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     },

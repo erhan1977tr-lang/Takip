@@ -1,25 +1,25 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
-import { customerLabel, loadOrder, type OrderDetail } from '@/lib/orders';
+import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } from '@/lib/orders';
 import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { ROLE_LABEL } from '@/lib/roles';
-import { StatusBadge } from '@/components/StatusBadge';
+import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor } from './OfferEditor';
 import {
-  STAGES, STATUS, availableActions, offerLineTotals, slaInfo, stageIndex, whoseTurn,
+  EVENTS, STAGES, availableActions, customerSummary, offerLineTotals, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  acceptOfferAction, addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction,
-  markProductionAction, markShippedAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
-  startDrawingAction, startOfferAction, uploadDrawingAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction, markProductionAction,
+  markShippedAction, noDrawingAction, requestRevisionAction, reviseOfferAction, sendToDrawingAction, setShipDateAction,
+  startDrawingAction, uploadDrawingAction,
 } from './actions';
 
 const OK: Record<string, string> = {
   created: 'Siparişiniz alındı. Satış ekibi inceleyip size dönecek.',
-  to_drawing: 'Sipariş çizim ekibine gönderildi.',
-  to_offer: 'Teklif tablosu açıldı. Satırları doldurup yöneticiye gönderin.',
+  to_drawing: 'Sipariş çizim ekibine yönlendirildi. Teklifi de şimdi hazırlayabilirsiniz.',
+  to_offer: 'Çizim gerekmiyor olarak işaretlendi. Teklif tablosunu doldurup yöneticiye gönderin.',
   held: 'Sipariş beklemeye alındı.',
   unheld: 'Sipariş beklemeden çıkarıldı.',
   ship_date: 'Tahmini yükleme tarihi güncellendi.',
@@ -29,16 +29,40 @@ const OK: Record<string, string> = {
   cancelled: 'Sipariş iptal edildi.',
   drawing_started: 'Çizim işini üstlendiniz.',
   drawing_uploaded: 'Çizim yüklendi ve müşterinin onayına gönderildi.',
-  drawing_approved: 'Çizimi onayladınız. Teklifiniz hazırlanıyor.',
+  drawing_approved: 'Çizimi onayladınız. Teşekkürler.',
   revision_requested: 'Revizyon talebiniz çizim ekibine iletildi.',
-  offer_accepted: 'Teklifi onayladınız. Siparişiniz üretime alındı.',
   files_added: 'Dosyalar eklendi.',
   note_added: 'Not eklendi.',
   offer_saved: 'Teklif taslak olarak kaydedildi.',
   offer_submit: 'Teklif sistem yöneticisinin onayına gönderildi.',
   offer_approve: 'Fiyat onaylandı; teklif müşterinin panelinde.',
   offer_return: 'Teklif satışa geri gönderildi.',
+  offer_revising: 'Teklifin yeni sürümü açıldı. Müşteri, yeni sürüm onaylanana kadar önceki teklifi görmeye devam eder.',
 };
+
+// "Sıradaki adım" satırında gösterilen işlemler
+const STEP_LABEL: Record<string, string> = {
+  send_to_drawing: 'Çizim Ekibine Gönder', no_drawing: 'Teklife Gönder', edit_offer: 'Teklifi hazırla', approve_price: 'Fiyatı onayla',
+  mark_production: 'Üretime al', start_drawing: 'Çizimi üstlen', upload_drawing: 'Çizimi yükle', approve_drawing: 'Çizimi onayla',
+  request_revision: 'Revizyon iste', mark_shipped: 'Yüklendi olarak işaretle', archive: 'Arşivle', unhold: 'Beklemeden çıkar',
+};
+
+function turnText(order: OrderDetail): string {
+  if (order.onHold) return 'Beklemede';
+  const offer = currentOffer(order)?.status ?? null;
+  if (order.status === 'YENI') return 'satış';
+  if (order.status === 'URETIMDE') return 'satış (yükleme)';
+  if (order.status === 'YUKLENDI') return 'satış (arşiv)';
+  if (order.status !== 'HAZIRLANIYOR') return '—';
+  const parts: string[] = [];
+  const d = order.drawingTrack;
+  if (d === 'GEREKLI' || d === 'YAPILIYOR' || d === 'REVIZYON_ISTENDI') parts.push('çizim ekibi');
+  if (d === 'ONAY_BEKLIYOR') parts.push('müşteri (çizim onayı)');
+  if (offer === null || offer === 'HAZIRLANIYOR') parts.push('satış (teklif)');
+  if (offer === 'YONETIMDE') parts.push('sistem yöneticisi (fiyat onayı)');
+  if (productionBlockers({ status: order.status, drawing: d, offer }).length === 0) parts.push('satış (üretime alma)');
+  return parts.join(' · ') || '—';
+}
 
 export default async function OrderPage({
   params,
@@ -52,15 +76,20 @@ export default async function OrderPage({
   const sp = await searchParams;
   const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
-  const acts = availableActions({ role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove });
+  const offer = currentOffer(order);
+  const sent = sentOffer(order);
+  const acts = availableActions({
+    role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
+    drawing: order.drawingTrack, offer: offer?.status ?? null,
+  });
   const can = (a: string) => acts.includes(a);
-  const offer = order.offers[0];
-  const sla = isCustomer || order.onHold ? null : slaInfo(order.slaDeadline);
+  const sla = isCustomer ? null : slaInfo(order.slaDeadline);
   const stage = stageIndex(order.status);
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
-  const catalog = can('edit_offer') || can('approve_price')
+  const catalog = editable
     ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })).map((g) => g.name)
     : [];
+  const shownOffer = isCustomer ? sent : editable ? undefined : offer;
 
   return (
     <>
@@ -70,7 +99,9 @@ export default async function OrderPage({
           <h1>{order.title || order.orderNo}</h1>
           <div className="row">
             <span className="mono muted">{order.orderNo}</span>
-            <StatusBadge status={order.status} customer={isCustomer} onHold={!isCustomer && order.onHold} />
+            {isCustomer
+              ? <CustomerBadge status={order.status} drawing={order.drawingTrack} offer={sent ? 'GONDERILDI' : null} />
+              : <OrderBadge status={order.status} onHold={order.onHold} />}
             {!isCustomer && <span className="muted small">· {customerLabel(user, order.customer.name)}</span>}
           </div>
         </div>
@@ -83,40 +114,54 @@ export default async function OrderPage({
       <div className="card">
         <div className="stepper">
           {STAGES.map((label, i) => {
-            const skipped = i === 2 && !order.needsDrawing && stage > 2;
             const cls = i < stage ? 'done' : i === stage ? 'current' : '';
             return (
-              <div key={label} className={`step ${cls} ${skipped ? 'skipped' : ''}`}>
+              <div key={label} className={`step ${cls}`}>
                 <div className="dot">{i < stage ? '✓' : String(i + 1).padStart(2, '0')}</div>
-                <div className="lbl">{label}{skipped ? ' (gerekmedi)' : ''}</div>
+                <div className="lbl">{label}</div>
+                {i === stage && sla && <div className={`sla-chip ${sla.over ? 'over' : ''}`}>{sla.text}</div>}
               </div>
             );
           })}
         </div>
+        {order.status === 'HAZIRLANIYOR' && (
+          <div className="tracks">
+            <div className="track">
+              <span className="k">Çizim</span>
+              {isCustomer
+                ? <span>{order.drawingTrack === 'YOK' ? 'Gerekmiyor' : customerSummary({ status: 'HAZIRLANIYOR', drawing: order.drawingTrack }).label}</span>
+                : <DrawingBadge track={order.drawingTrack} />}
+            </div>
+            <div className="track">
+              <span className="k">Teklif</span>
+              {isCustomer ? <span>{sent ? 'Teklifiniz hazır' : 'Hazırlanıyor'}</span> : <OfferBadge status={offer?.status} />}
+            </div>
+          </div>
+        )}
       </div>
 
-      <ActionPanel order={order} user={user} can={can} />
+      {isCustomer ? <CustomerActions order={order} user={user} can={can} /> : <InternalActions order={order} user={user} can={can} acts={acts} />}
 
       {editable && offer && (
-            <OfferEditor
-              orderId={order.id}
-              mode={can('approve_price') ? 'admin' : 'sales'}
-              currency={offer.currency}
-              catalog={catalog}
-              statusLabel={offer.status === 'YONETIMDE' ? 'yönetimde' : offer.status === 'GONDERILDI' ? 'müşteride' : 'satışta hazırlanıyor'}
-              camEtiket={order.camEtiket ?? order.customer.camEtiket ?? ''}
-              sandikEtiket={order.sandikEtiket ?? order.customer.sandikEtiket ?? ''}
-              initial={offer.lines.map((l) => ({
-                description: l.description, poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
-                adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
-              }))}
-            />
+        <OfferEditor
+          orderId={order.id}
+          mode={can('approve_price') ? 'admin' : 'sales'}
+          currency={offer.currency}
+          catalog={catalog}
+          statusLabel={offer.status === 'YONETIMDE' ? 'yönetici onayında' : sent ? 'yeni sürüm satışta hazırlanıyor' : 'satışta hazırlanıyor'}
+          camEtiket={order.camEtiket ?? order.customer.camEtiket ?? ''}
+          sandikEtiket={order.sandikEtiket ?? order.customer.sandikEtiket ?? ''}
+          initial={offer.lines.map((l) => ({
+            description: l.description, poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
+            adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
+          }))}
+        />
       )}
 
       <div className="detail-grid">
         <div>
-          {!editable && offer && (!isCustomer || offer.status === 'GONDERILDI') && <OfferView order={order} isCustomer={isCustomer} />}
-
+          {shownOffer && <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} canRevise={can('revise_offer')} />}
+          {editable && sent && <OfferView order={order} offer={sent} isCustomer={false} canRevise={false} title="Müşterideki geçerli teklif" />}
           <Drawings order={order} user={user} />
           <Files order={order} user={user} canAdd={can('add_file')} />
           <Notes order={order} user={user} />
@@ -132,8 +177,8 @@ export default async function OrderPage({
               <tr><td>Sipariş tarihi</td><td>{fmtDate(order.createdAt)}</td></tr>
               <tr><td>Tahmini yükleme</td><td>{fmtDate(order.estimatedShipDate)}</td></tr>
               {order.actualShipDate && <tr><td>Yüklendi</td><td>{fmtDate(order.actualShipDate)}</td></tr>}
-              <tr><td>Çizim</td><td>{order.status === 'YENI' && !isCustomer ? 'Karar bekliyor' : order.needsDrawing ? 'Gerekli' : 'Gerekmiyor'}</td></tr>
-              {order.needsDrawing && <tr><td>Revizyon</td><td>{order.revisionCount} tur</td></tr>}
+              <tr><td>Çizim</td><td>{order.status === 'YENI' ? (isCustomer ? '—' : 'Karar bekliyor') : order.drawingTrack === 'YOK' ? 'Gerekmiyor' : 'Gerekli'}</td></tr>
+              {order.drawingTrack !== 'YOK' && <tr><td>Revizyon</td><td>{order.revisionCount} tur</td></tr>}
               {order.assignedDrawer && !isCustomer && <tr><td>Çizimci</td><td>{order.assignedDrawer.name || order.assignedDrawer.email}</td></tr>}
               {!isCustomer && <tr><td>Cam / sandık etiketi</td><td>{order.camEtiket ?? '—'} / {order.sandikEtiket ?? '—'}</td></tr>}
             </tbody></table>
@@ -149,12 +194,18 @@ export default async function OrderPage({
           <div className="card">
             <h2>Hareketler</h2>
             <ul className="timeline">
-              {order.statusHistory.map((h) => (
-                <li key={h.id}>
-                  <div><b>{isCustomer ? STATUS[h.toStatus as keyof typeof STATUS]?.customer : STATUS[h.toStatus as keyof typeof STATUS]?.label}</b>{h.note ? ` — ${h.note}` : ''}</div>
-                  <div className="when">{fmtDateTime(h.changedAt)}{!isCustomer && h.changedBy ? ` · ${h.changedBy.name || h.changedBy.email}` : ''}</div>
-                </li>
-              ))}
+              {order.events.map((e) => {
+                const def = EVENTS[e.event as keyof typeof EVENTS];
+                if (isCustomer && !def?.customer) return null;
+                const label = isCustomer ? def.customer : def?.label ?? e.event;
+                const showNote = e.note && (!isCustomer || ('note' in def && def.note));
+                return (
+                  <li key={e.id}>
+                    <div><b>{label}</b>{showNote ? ` — ${e.note}` : ''}</div>
+                    <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${e.user.name || e.user.email}` : ''}</div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </aside>
@@ -163,48 +214,24 @@ export default async function OrderPage({
   );
 }
 
-function ActionPanel({ order, user, can }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean }) {
-  const isCustomer = user.appRole === 'MUSTERI';
+// ---------------- işlem kartları ----------------
+function CustomerActions({ order, user, can }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean }) {
+  const s = customerSummary({ status: order.status, drawing: order.drawingTrack, offer: sentOffer(order) ? 'GONDERILDI' : null });
   const hidden = <input type="hidden" name="id" value={order.id} />;
-  const main: React.ReactNode[] = [];
-
-  if (can('send_to_drawing')) main.push(<form key="d" action={sendToDrawingAction}>{hidden}<button className="btn btn-primary">Çizim Ekibine Gönder</button></form>);
-  if (can('start_offer')) main.push(<form key="o" action={startOfferAction}>{hidden}<button className="btn btn-primary">Teklife Gönder (çizim gerekmiyor)</button></form>);
-  if (can('start_drawing')) main.push(<form key="sd" action={startDrawingAction}>{hidden}<button className="btn btn-primary">Çizimi üstlen</button></form>);
-  if (can('approve_drawing')) main.push(<form key="ad" action={approveDrawingAction}>{hidden}<button className="btn btn-primary">Çizimi onayla</button></form>);
-  if (can('accept_offer')) main.push(<form key="ao" action={acceptOfferAction}>{hidden}<ConfirmButtonPrimary message="Teklifi onaylıyor musunuz? Siparişiniz üretime alınacak.">Teklifi onayla ve üretime al</ConfirmButtonPrimary></form>);
-  if (can('mark_production')) main.push(<form key="mp" action={markProductionAction}>{hidden}<ConfirmButtonPrimary message="Müşteri teklifi onayladı mı? Sipariş üretime alınacak.">Müşteri onayladı — üretime al</ConfirmButtonPrimary></form>);
-  if (can('mark_shipped')) main.push(<form key="ms" action={markShippedAction}>{hidden}<button className="btn btn-primary">Yüklendi olarak işaretle</button></form>);
-  if (can('archive')) main.push(<form key="ar" action={archiveAction}>{hidden}<button className="btn">Arşivle</button></form>);
-  if (can('hold')) main.push(<form key="h" action={holdAction}>{hidden}<input type="hidden" name="hold" value="1" /><button className="btn">Beklemeye Al</button></form>);
-  if (can('unhold')) main.push(<form key="uh" action={holdAction}>{hidden}<input type="hidden" name="hold" value="0" /><button className="btn btn-primary">Beklemeden çıkar</button></form>);
-
-  const turn = whoseTurn(order.status, order.onHold);
-  const noActions = main.length === 0 && !can('upload_drawing') && !can('request_revision') && !can('set_ship_date') && !can('edit_offer') && !can('approve_price');
-
+  const waiting = order.drawingTrack === 'ONAY_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
   return (
-    <div className="card turn">
-      <h2 style={{ marginBottom: 4 }}>{isCustomer ? STATUS[order.status as keyof typeof STATUS]?.next : `Sıra: ${turn}`}</h2>
-      {!isCustomer && <p className="muted small">Rolünüz: {ROLE_LABEL[user.appRole]}</p>}
-      {isCustomer && order.status === 'ONAY_BEKLIYOR' && !user.canApprove && (
+    <div className={`card ${waiting ? 'turn' : ''}`}>
+      <h2 style={{ marginBottom: 4 }}>{s.next}</h2>
+      {waiting && !user.canApprove && (
         <div className="alert alert-warn" style={{ marginTop: 8 }}>Çizim onayınızı bekliyor. Hesabınızın onay yetkisi yok; firmanızdaki onay yetkili kullanıcı onaylayabilir. Siz revizyon isteyebilirsiniz.</div>
       )}
-      {isCustomer && order.status === 'FIYATLANDI' && !user.canApprove && (
-        <div className="alert alert-warn" style={{ marginTop: 8 }}>Teklifiniz hazır. Onaylamak için firmanızdaki onay yetkili kullanıcıya haber verin.</div>
-      )}
-      {main.length > 0 && <div className="row" style={{ marginTop: 10 }}>{main}</div>}
-
-      {can('upload_drawing') && (
-        <form action={uploadDrawingAction} style={{ marginTop: 14 }}>
+      {waiting && <p className="muted small">Çizimi aşağıdaki “Teknik çizimler” bölümünden indirip inceleyin.</p>}
+      {can('approve_drawing') && (
+        <form action={approveDrawingAction} style={{ marginTop: 10 }}>
           {hidden}
-          <label htmlFor="drawing-file">{order.status === 'REVIZYON_ISTENDI' ? 'Revize çizimi yükle' : 'Çizimi yükle'} (v{order.drawings.length + 1}) — yüklenince müşterinin onayına gider</label>
-          <div className="row">
-            <input id="drawing-file" name="file" type="file" required accept=".pdf,.dwg,.dxf,.jpg,.jpeg,.png,.zip" style={{ flex: 1 }} />
-            <button className="btn btn-primary">Yükle ve onaya gönder</button>
-          </div>
+          <ConfirmButton primary message="Çizimi onaylıyor musunuz?">Çizimi onayla</ConfirmButton>
         </form>
       )}
-
       {can('request_revision') && (
         <form action={requestRevisionAction} style={{ marginTop: 14 }}>
           {hidden}
@@ -213,44 +240,109 @@ function ActionPanel({ order, user, can }: { order: OrderDetail; user: CurrentUs
           <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-danger">Revizyon iste</button></div>
         </form>
       )}
-
-      {can('set_ship_date') && (
-        <form action={setShipDateAction} className="row" style={{ marginTop: 14 }}>
-          {hidden}
-          <label htmlFor="ship-date" style={{ margin: 0 }}>Tahmini yükleme</label>
-          <input id="ship-date" name="date" type="date" defaultValue={isoDay(order.estimatedShipDate)} style={{ width: 'auto' }} required />
-          <button className="btn">Tarihi güncelle</button>
-        </form>
-      )}
-
-      {can('cancel') && (
-        <details style={{ marginTop: 14 }}>
-          <summary className="small muted" style={{ cursor: 'pointer' }}>Siparişi iptal et</summary>
-          <form action={cancelAction} className="row" style={{ marginTop: 8 }}>
-            {hidden}
-            <input name="note" type="text" required placeholder="İptal nedeni" style={{ flex: 1 }} />
-            <ConfirmButton danger message="Sipariş iptal edilsin mi? Bu işlem geri alınamaz.">İptal et</ConfirmButton>
-          </form>
-        </details>
-      )}
-
-      {noActions && <p className="muted small" style={{ marginTop: 6 }}>{isCustomer ? 'Şu an sizden beklenen bir işlem yok.' : 'Bu durumda sizin rolünüz için bir işlem yok.'}</p>}
+      {!waiting && <p className="muted small">Şu an sizden beklenen bir işlem yok.</p>}
     </div>
   );
 }
 
-function ConfirmButtonPrimary({ message, children }: { message: string; children: React.ReactNode }) {
-  return <ConfirmButton message={message} primary>{children}</ConfirmButton>;
+function InternalActions({ order, user, can, acts }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[] }) {
+  const hidden = <input type="hidden" name="id" value={order.id} />;
+  const offerStatus = currentOffer(order)?.status ?? null;
+  const steps = acts.filter((a) => STEP_LABEL[a]).map((a) => STEP_LABEL[a]);
+  const blockers = order.status === 'HAZIRLANIYOR' && !order.onHold && (user.appRole === 'SATIS' || user.appRole === 'ADMIN')
+    ? productionBlockers({ status: order.status, drawing: order.drawingTrack, offer: offerStatus })
+    : [];
+  const buttons: React.ReactNode[] = [];
+  const btn = (key: string, action: (fd: FormData) => Promise<void>, label: string, extra?: React.ReactNode, confirm?: string) =>
+    buttons.push(
+      <form key={key} action={action}>
+        {hidden}{extra}
+        {confirm ? <ConfirmButton primary message={confirm}>{label}</ConfirmButton> : <button className="btn btn-primary">{label}</button>}
+      </form>
+    );
+
+  if (can('send_to_drawing')) btn('d', sendToDrawingAction, 'Çizim Ekibine Gönder');
+  if (can('no_drawing')) btn('o', noDrawingAction, 'Teklife Gönder');
+  if (can('start_drawing')) btn('sd', startDrawingAction, 'Çizimi üstlen');
+  if (can('mark_production')) btn('mp', markProductionAction, 'Üretime al', undefined, 'Sipariş üretime alınsın mı?');
+  if (can('mark_shipped')) btn('ms', markShippedAction, 'Yüklendi olarak işaretle');
+  if (can('archive')) btn('ar', archiveAction, 'Arşivle');
+  if (can('hold')) btn('h', holdAction, 'Beklemeye Al', <input type="hidden" name="hold" value="1" />);
+  if (can('unhold')) btn('uh', holdAction, 'Beklemeden çıkar', <input type="hidden" name="hold" value="0" />);
+
+  const hasForms = can('upload_drawing') || can('set_ship_date') || can('cancel');
+
+  return (
+    <>
+      <div className="card">
+        <h2 style={{ marginBottom: 4 }}>Sıra {turnText(order)} tarafında.</h2>
+        <p className="muted small">
+          {steps.length ? <>Sıradaki adım: {steps.join(' · ')}</> : 'Bu durumda sizin rolünüz için bir işlem yok.'}
+          {' '}· Rolünüz: {ROLE_LABEL[user.appRole]}
+        </p>
+      </div>
+
+      {(buttons.length > 0 || hasForms || blockers.length > 0) && (
+        <div className="card turn">
+          <h2 style={{ marginBottom: 2 }}>Yapılabilecek işlemler</h2>
+          <p className="muted small">Bu durumda siparişi ilerletebileceğiniz komutlar.</p>
+          {buttons.length > 0 && <div className="row" style={{ marginTop: 10 }}>{buttons}</div>}
+
+          {blockers.length > 0 && (
+            <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0 }}>
+              <b>Üretime almak için bekleniyor:</b> {blockers.join(' · ')}
+            </div>
+          )}
+
+          {can('upload_drawing') && (
+            <form action={uploadDrawingAction} style={{ marginTop: 14 }}>
+              {hidden}
+              <label htmlFor="drawing-file">{order.drawingTrack === 'REVIZYON_ISTENDI' ? 'Revize çizimi yükle' : 'Çizimi yükle'} (v{order.drawings.length + 1}) — yüklenince müşterinin onayına gider</label>
+              <div className="row">
+                <input id="drawing-file" name="file" type="file" required accept=".pdf,.dwg,.dxf,.jpg,.jpeg,.png,.zip" style={{ flex: 1 }} />
+                <button className="btn btn-primary">Yükle ve onaya gönder</button>
+              </div>
+            </form>
+          )}
+
+          {can('set_ship_date') && (
+            <form action={setShipDateAction} className="row" style={{ marginTop: 14 }}>
+              {hidden}
+              <label htmlFor="ship-date" style={{ margin: 0 }}>Tahmini yükleme</label>
+              <input id="ship-date" name="date" type="date" defaultValue={isoDay(order.estimatedShipDate)} style={{ width: 'auto' }} required />
+              <button className="btn">Tarihi güncelle</button>
+            </form>
+          )}
+
+          {can('cancel') && (
+            <details style={{ marginTop: 14 }}>
+              <summary className="small muted" style={{ cursor: 'pointer' }}>Siparişi iptal et</summary>
+              <form action={cancelAction} className="row" style={{ marginTop: 8 }}>
+                {hidden}
+                <input name="note" type="text" required placeholder="İptal nedeni" style={{ flex: 1 }} />
+                <ConfirmButton danger message="Sipariş iptal edilsin mi? Bu işlem geri alınamaz.">İptal et</ConfirmButton>
+              </form>
+            </details>
+          )}
+        </div>
+      )}
+    </>
+  );
 }
 
-function OfferView({ order, isCustomer }: { order: OrderDetail; isCustomer: boolean }) {
-  const offer = order.offers[0];
-  const total = order.price?.amount ?? offer.amount;
+// ---------------- teklif ----------------
+type Offer = OrderDetail['offers'][number];
+
+function OfferView({ order, offer, isCustomer, canRevise, title }: { order: OrderDetail; offer: Offer; isCustomer: boolean; canRevise: boolean; title?: string }) {
+  const total = offer.status === 'GONDERILDI' && order.price && isCustomer ? order.price.amount : offer.amount;
   return (
-    <div className="card" id="teklif">
+    <div className="card" id={title ? undefined : 'teklif'}>
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>{isCustomer ? 'Teklifiniz' : 'Teklif'}</h2>
-        {!isCustomer && <span className="badge">{offer.status === 'YONETIMDE' ? 'yönetimde' : offer.status === 'GONDERILDI' ? 'müşteride' : 'satışta'}</span>}
+        <h2 style={{ margin: 0 }}>{title ?? (isCustomer ? 'Teklifiniz' : 'Teklif')}</h2>
+        <span className="row">
+          {!isCustomer && <OfferBadge status={offer.status} />}
+          {offer.sentAt && <span className="muted small">{isCustomer ? '' : 'Gönderildi: '}{fmtDate(offer.sentAt)}</span>}
+        </span>
       </div>
       <div className="table-wrap">
         <table>
@@ -272,13 +364,22 @@ function OfferView({ order, isCustomer }: { order: OrderDetail; isCustomer: bool
           <tfoot><tr><td colSpan={8}>Toplam</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td></tr></tfoot>
         </table>
       </div>
-      <p className="muted small" style={{ marginTop: 8 }}>Fiyatlar KDV hariçtir.</p>
+      <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+        <p className="muted small" style={{ margin: 0 }}>Fiyatlar KDV hariçtir.</p>
+        {canRevise && (
+          <form action={reviseOfferAction}>
+            <input type="hidden" name="id" value={order.id} />
+            <ConfirmButton message="Teklifin yeni bir sürümü açılsın mı? Müşteri, yeni sürüm onaylanana kadar mevcut teklifi görmeye devam eder.">Teklifi revize et</ConfirmButton>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
 
+// ---------------- çizim, dosya, not ----------------
 function Drawings({ order, user }: { order: OrderDetail; user: CurrentUser }) {
-  if (!order.needsDrawing && order.drawings.length === 0) return null;
+  if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
   const isCustomer = user.appRole === 'MUSTERI';
   return (
     <div className="card">
@@ -298,7 +399,7 @@ function Drawings({ order, user }: { order: OrderDetail; user: CurrentUser }) {
                   {' '}{d.fileSize ? fmtBytes(d.fileSize) : ''} · {fmtDateTime(d.createdAt)}{!isCustomer ? ` · ${d.uploadedBy.name || d.uploadedBy.email}` : ''}
                 </div>
               </div>
-              <a className="btn" href={`/dosya/cizim/${d.id}`}>İndir</a>
+              <FileButtons href={`/dosya/cizim/${d.id}`} name={d.fileName ?? ''} />
             </div>
             {d.revisions.map((r) => (
               <div key={r.id} className="note" style={{ marginLeft: 50 }}>
@@ -313,12 +414,23 @@ function Drawings({ order, user }: { order: OrderDetail; user: CurrentUser }) {
   );
 }
 
+const VIEWABLE = ['pdf', 'png', 'jpg', 'jpeg'];
+function FileButtons({ href, name }: { href: string; name: string }) {
+  const ext = name.toLowerCase().split('.').pop() ?? '';
+  return (
+    <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+      {VIEWABLE.includes(ext) && <a className="btn" href={`${href}?ac=1`} target="_blank" rel="noopener">Aç</a>}
+      <a className="btn" href={href}>İndir</a>
+    </span>
+  );
+}
+
 function Files({ order, user, canAdd }: { order: OrderDetail; user: CurrentUser; canAdd: boolean }) {
   const isCustomer = user.appRole === 'MUSTERI';
   const files = order.files.filter((f) => !isCustomer || f.kind === 'CUSTOMER');
   return (
     <div className="card">
-      <h2>{isCustomer ? 'Sipariş dosyalarınız' : 'Sipariş dosyaları'}</h2>
+      <h2>{isCustomer ? 'Sipariş dosyalarınız' : 'Müşteri sipariş dosyaları'}</h2>
       {files.length === 0 && <p className="muted">Dosya yok.</p>}
       {files.map((f) => (
         <div key={f.id} className="file-row">
@@ -330,7 +442,7 @@ function Files({ order, user, canAdd }: { order: OrderDetail; user: CurrentUser;
               {!isCustomer && <> · {f.kind === 'CUSTOMER' ? 'müşteri' : <span className="badge badge-muted">iç dosya</span>}</>}
             </div>
           </div>
-          <a className="btn" href={`/dosya/siparis/${f.id}`}>İndir</a>
+          <FileButtons href={`/dosya/siparis/${f.id}`} name={f.name} />
         </div>
       ))}
       {canAdd && (

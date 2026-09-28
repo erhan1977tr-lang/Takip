@@ -2,10 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
-import { loadOrder, transition, type OrderDetail } from '@/lib/orders';
+import { currentOffer, loadOrder, logEvent, refreshSla, type OrderDetail } from '@/lib/orders';
 import { audit } from '@/lib/audit';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
 import { availableActions, fileProblem, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
@@ -13,47 +13,64 @@ import { availableActions, fileProblem, offerTotals, parseDateOnly } from '@/ser
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
 
+function actionsFor(user: CurrentUser, order: OrderDetail) {
+  return availableActions({
+    role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
+    drawing: order.drawingTrack, offer: currentOffer(order)?.status ?? null,
+  });
+}
+
 async function guard(formData: FormData, action: string): Promise<{ user: CurrentUser; order: OrderDetail }> {
   const user = await requireUser();
-  const id = String(formData.get('id') ?? '');
-  const order = await loadOrder(id, user);
-  const allowed = availableActions({ role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove });
-  if (!allowed.includes(action)) redirect(err(order.id, 'Bu işlem şu anda yapılamaz (sipariş durumu değişmiş olabilir). Sayfayı yenileyin.'));
+  const order = await loadOrder(String(formData.get('id') ?? ''), user);
+  if (!actionsFor(user, order).includes(action)) {
+    redirect(err(order.id, 'Bu işlem şu anda yapılamaz (sipariş durumu değişmiş olabilir). Sayfayı yenileyin.'));
+  }
   return { user, order };
 }
 
 function done(id: string, ok: string): never {
   revalidatePath('/siparisler');
+  revalidatePath('/teklifler');
   revalidatePath(`/siparisler/${id}`);
   redirect(back(id, `ok=${ok}`));
 }
 
-/** Teklif yoksa siparişin cam kalemlerinden bir taslak oluşturur. */
-async function ensureOfferDraft(tx: Prisma.TransactionClient, order: OrderDetail, userId: string) {
-  const existing = await tx.offer.findFirst({ where: { orderId: order.id }, orderBy: { createdAt: 'desc' } });
-  if (existing) {
-    if (existing.status !== 'HAZIRLANIYOR') await tx.offer.update({ where: { id: existing.id }, data: { status: 'HAZIRLANIYOR' } });
-    return;
-  }
+type Tx = Prisma.TransactionClient;
+
+/** Teklif yoksa siparişin cam kalemlerinden bir taslak açar. */
+async function ensureOfferDraft(tx: Tx, order: OrderDetail, userId: string) {
+  if (order.offers.length) return;
   const src: { glassName: string | null; camAdedi: number }[] = order.items.length ? order.items : [{ glassName: '', camAdedi: 1 }];
-  const lines = src.map((it, i) => ({
-    sortOrder: i, description: it.glassName || '', adet: Math.max(1, it.camAdedi || 1), unit: 'm2',
-  }));
-  await tx.offer.create({ data: { orderId: order.id, createdById: userId, lines: { create: lines } } });
+  await tx.offer.create({
+    data: {
+      orderId: order.id, createdById: userId,
+      lines: { create: src.map((it, i) => ({ sortOrder: i, description: it.glassName || '', adet: Math.max(1, it.camAdedi || 1), unit: 'm2' })) },
+    },
+  });
 }
 
-// ---------------- Satış ----------------
+// ---------------- Satış kararı ----------------
+/** Çizim gerekli: çizim ekibine yönlendir. Teklif hattı da açılır, satış teklifi paralel yazabilir. */
 export async function sendToDrawingAction(formData: FormData) {
   const { user, order } = await guard(formData, 'send_to_drawing');
-  await db.$transaction((tx) => transition(tx, order, 'CIZIM_GEREKLI', user.id, 'Çizim ekibine gönderildi', { needsDrawing: true }));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', drawingSince: new Date() } });
+    await ensureOfferDraft(tx, order, user.id);
+    await logEvent(tx, order.id, 'SENT_TO_DRAWING', user.id);
+    await refreshSla(tx, order.id);
+  });
   done(order.id, 'to_drawing');
 }
 
-export async function startOfferAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'start_offer');
+/** Çizim gerekmiyor: doğrudan teklife geç. */
+export async function noDrawingAction(formData: FormData) {
+  const { user, order } = await guard(formData, 'no_drawing');
   await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'HAZIRLANIYOR', drawingTrack: 'YOK', drawingSince: null } });
     await ensureOfferDraft(tx, order, user.id);
-    await transition(tx, order, 'TEKLIF_HAZIRLANIYOR', user.id, 'Çizim gerekmedi, teklif hazırlanıyor', { needsDrawing: false });
+    await logEvent(tx, order.id, 'NO_DRAWING', user.id);
+    await refreshSla(tx, order.id);
   });
   done(order.id, 'to_offer');
 }
@@ -64,11 +81,9 @@ export async function holdAction(formData: FormData) {
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
   await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id: order.id }, data: { onHold: hold } });
-    await tx.orderStatusHistory.create({
-      data: { orderId: order.id, fromStatus: order.status, toStatus: order.status, changedById: user.id, note: hold ? `Beklemeye alındı${note ? `: ${note}` : ''}` : 'Beklemeden çıkarıldı' },
-    });
+    await logEvent(tx, order.id, hold ? 'HOLD' : 'UNHOLD', user.id, note || null);
+    await refreshSla(tx, order.id);
   });
-  await audit(hold ? 'ORDER_HOLD' : 'ORDER_UNHOLD', 'Order', order.id, user.id, { note });
   done(order.id, hold ? 'held' : 'unheld');
 }
 
@@ -76,26 +91,39 @@ export async function setShipDateAction(formData: FormData) {
   const { user, order } = await guard(formData, 'set_ship_date');
   const d = parseDateOnly(String(formData.get('date') ?? ''));
   if (!d) redirect(err(order.id, 'Geçerli bir tarih seçin.'));
-  await db.order.update({ where: { id: order.id }, data: { estimatedShipDate: d } });
-  await audit('ORDER_SHIP_DATE', 'Order', order.id, user.id, { from: order.estimatedShipDate, to: d });
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { estimatedShipDate: d } });
+    await logEvent(tx, order.id, 'SHIP_DATE', user.id, d.toISOString().slice(0, 10).split('-').reverse().join('.'));
+  });
   done(order.id, 'ship_date');
 }
 
+/** Satış üretime alır: çizim onaylı (ya da gereksiz) ve teklif müşteride olmalı. */
 export async function markProductionAction(formData: FormData) {
   const { user, order } = await guard(formData, 'mark_production');
-  await db.$transaction((tx) => transition(tx, order, 'URETIMDE', user.id, 'Teklif müşteri adına onaylandı, üretime alındı'));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'URETIMDE' } });
+    await logEvent(tx, order.id, 'PRODUCTION', user.id);
+    await refreshSla(tx, order.id);
+  });
   done(order.id, 'production');
 }
 
 export async function markShippedAction(formData: FormData) {
   const { user, order } = await guard(formData, 'mark_shipped');
-  await db.$transaction((tx) => transition(tx, order, 'YUKLENDI', user.id, null, { actualShipDate: new Date() }));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'YUKLENDI', actualShipDate: new Date() } });
+    await logEvent(tx, order.id, 'SHIPPED', user.id);
+  });
   done(order.id, 'shipped');
 }
 
 export async function archiveAction(formData: FormData) {
   const { user, order } = await guard(formData, 'archive');
-  await db.$transaction((tx) => transition(tx, order, 'ARSIVLENDI', user.id));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'ARSIVLENDI' } });
+    await logEvent(tx, order.id, 'ARCHIVED', user.id);
+  });
   done(order.id, 'archived');
 }
 
@@ -103,14 +131,25 @@ export async function cancelAction(formData: FormData) {
   const { user, order } = await guard(formData, 'cancel');
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
   if (!note) redirect(err(order.id, 'İptal nedeni yazın.'));
-  await db.$transaction((tx) => transition(tx, order, 'IPTAL', user.id, note));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data: { status: 'IPTAL' } });
+    await logEvent(tx, order.id, 'CANCELLED', user.id, note);
+    await refreshSla(tx, order.id);
+  });
   done(order.id, 'cancelled');
 }
 
-// ---------------- Çizim ----------------
+// ---------------- Çizim hattı ----------------
 export async function startDrawingAction(formData: FormData) {
   const { user, order } = await guard(formData, 'start_drawing');
-  await db.$transaction((tx) => transition(tx, order, 'CIZIM_YAPILIYOR', user.id, null, { assignedDrawer: { connect: { id: user.id } } }));
+  await db.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id: order.id },
+      data: { drawingTrack: 'YAPILIYOR', drawingSince: new Date(), assignedDrawer: { connect: { id: user.id } } },
+    });
+    await logEvent(tx, order.id, 'DRAWING_STARTED', user.id);
+    await refreshSla(tx, order.id);
+  });
   done(order.id, 'drawing_started');
 }
 
@@ -130,7 +169,9 @@ export async function uploadDrawingAction(formData: FormData) {
           status: 'ONAY_BEKLIYOR', uploadedById: user.id,
         },
       });
-      await transition(tx, order, 'ONAY_BEKLIYOR', user.id, `Çizim v${version} onaya gönderildi`);
+      await tx.order.update({ where: { id: order.id }, data: { drawingTrack: 'ONAY_BEKLIYOR', drawingSince: new Date() } });
+      await logEvent(tx, order.id, 'DRAWING_UPLOADED', user.id, `v${version}`);
+      await refreshSla(tx, order.id);
     });
   } catch (e) {
     await removeUpload(stored.storageKey);
@@ -139,14 +180,15 @@ export async function uploadDrawingAction(formData: FormData) {
   done(order.id, 'drawing_uploaded');
 }
 
-// ---------------- Müşteri ----------------
+/** Müşterinin tek onayı: çizim onayı. Teklif hattını etkilemez. */
 export async function approveDrawingAction(formData: FormData) {
   const { user, order } = await guard(formData, 'approve_drawing');
   const latest = order.drawings[order.drawings.length - 1];
   await db.$transaction(async (tx) => {
     if (latest) await tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI' } });
-    await ensureOfferDraft(tx, order, user.id);
-    await transition(tx, order, 'TEKLIF_HAZIRLANIYOR', user.id, `Çizim v${latest?.version ?? '?'} müşteri tarafından onaylandı`);
+    await tx.order.update({ where: { id: order.id }, data: { drawingTrack: 'ONAYLANDI', drawingSince: new Date() } });
+    await logEvent(tx, order.id, 'DRAWING_APPROVED', user.id, latest ? `v${latest.version}` : null);
+    await refreshSla(tx, order.id);
   });
   done(order.id, 'drawing_approved');
 }
@@ -161,15 +203,14 @@ export async function requestRevisionAction(formData: FormData) {
       await tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI' } });
       await tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: user.id, comment } });
     }
-    await transition(tx, order, 'REVIZYON_ISTENDI', user.id, comment, { revisionCount: { increment: 1 } });
+    await tx.order.update({
+      where: { id: order.id },
+      data: { drawingTrack: 'REVIZYON_ISTENDI', drawingSince: new Date(), revisionCount: { increment: 1 } },
+    });
+    await logEvent(tx, order.id, 'REVISION_REQUESTED', user.id, comment);
+    await refreshSla(tx, order.id);
   });
   done(order.id, 'revision_requested');
-}
-
-export async function acceptOfferAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'accept_offer');
-  await db.$transaction((tx) => transition(tx, order, 'URETIMDE', user.id, 'Teklif müşteri tarafından onaylandı'));
-  done(order.id, 'offer_accepted');
 }
 
 // ---------------- Ortak ----------------
@@ -205,7 +246,7 @@ export async function addNoteAction(formData: FormData) {
   done(order.id, 'note_added');
 }
 
-// ---------------- Teklif tablosu ----------------
+// ---------------- Teklif hattı ----------------
 type LineInput = { description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string };
 
 function readLines(formData: FormData): LineInput[] | string {
@@ -231,47 +272,70 @@ export async function saveOfferAction(formData: FormData) {
   const user = await requireUser(['SATIS', 'ADMIN']);
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   const intent = String(formData.get('intent') ?? 'save');
-  const acts = availableActions({ role: user.appRole, status: order.status, onHold: order.onHold });
-  const canEdit = acts.includes('edit_offer') || acts.includes('approve_price');
-  if (!canEdit) redirect(err(order.id, 'Teklif şu anda düzenlenemez.'));
-  const offer = order.offers[0];
+  const acts = actionsFor(user, order);
+  if (!acts.includes('edit_offer') && !acts.includes('approve_price')) redirect(err(order.id, 'Teklif şu anda düzenlenemez.'));
+  const offer = currentOffer(order);
   if (!offer) redirect(err(order.id, 'Teklif bulunamadı.'));
 
   const lines = readLines(formData);
   if (typeof lines === 'string') redirect(err(order.id, lines));
-  if ((intent === 'submit' || intent === 'approve') && lines.length === 0) redirect(err(order.id, 'Teklifte en az bir satır olmalı.'));
-  if ((intent === 'submit' || intent === 'approve') && lines.some((l) => l.unit === 'm2' && (!l.enMm || !l.boyMm))) {
-    redirect(err(order.id, 'm² ile fiyatlanan satırlarda en ve boy girilmeli.'));
-  }
+  const finalize = intent === 'submit' || intent === 'approve';
+  if (finalize && lines.length === 0) redirect(err(order.id, 'Teklifte en az bir satır olmalı.'));
+  if (finalize && lines.some((l) => l.unit === 'm2' && (!l.enMm || !l.boyMm))) redirect(err(order.id, 'm² ile fiyatlanan satırlarda en ve boy girilmeli.'));
   const totals = offerTotals(lines);
+  const amount = totals.amount.toFixed(2);
   const isAdmin = user.appRole === 'ADMIN';
   const camEtiket = String(formData.get('camEtiket') ?? '').trim().slice(0, 120) || null;
   const sandikEtiket = String(formData.get('sandikEtiket') ?? '').trim().slice(0, 120) || null;
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
   if (intent === 'return' && !returnNote) redirect(err(order.id, 'Satışa geri gönderme nedenini yazın.'));
+  const now = new Date();
 
   await db.$transaction(async (tx) => {
     await tx.offerLine.deleteMany({ where: { offerId: offer.id } });
     await tx.offerLine.createMany({ data: lines.map((l, i) => ({ ...l, offerId: offer.id, sortOrder: i })) });
-    await tx.offer.update({ where: { id: offer.id }, data: { amount: totals.amount.toFixed(2) } });
-    if (isAdmin) await tx.order.update({ where: { id: order.id }, data: { camEtiket, sandikEtiket } });
+    await tx.offer.update({ where: { id: offer.id }, data: { amount } });
+    if (isAdmin && acts.includes('approve_price')) await tx.order.update({ where: { id: order.id }, data: { camEtiket, sandikEtiket } });
 
     if (intent === 'submit' && acts.includes('submit_offer')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE' } });
-      await transition(tx, order, 'FIYAT_BEKLIYOR', user.id, `Teklif yönetime gönderildi (${totals.amount.toFixed(2)} ${offer.currency})`);
+      await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE', statusSince: now } });
+      await logEvent(tx, order.id, 'OFFER_SUBMITTED', user.id, `${amount} ${offer.currency}`);
     } else if (intent === 'approve' && acts.includes('approve_price')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI' } });
+      await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now } });
       await tx.price.upsert({
         where: { orderId: order.id },
-        create: { orderId: order.id, amount: totals.amount.toFixed(2), setById: user.id },
-        update: { amount: totals.amount.toFixed(2), setById: user.id, setAt: new Date() },
+        create: { orderId: order.id, amount, setById: user.id },
+        update: { amount, setById: user.id, setAt: now },
       });
-      await transition(tx, order, 'FIYATLANDI', user.id, `Fiyat onaylandı, teklif müşteriye gönderildi (${totals.amount.toFixed(2)} ${offer.currency})`);
+      await logEvent(tx, order.id, 'OFFER_SENT', user.id, `${amount} ${offer.currency}`);
     } else if (intent === 'return' && acts.includes('return_offer')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR' } });
-      await transition(tx, order, 'TEKLIF_HAZIRLANIYOR', user.id, `Satışa geri gönderildi: ${returnNote}`);
+      await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
+      await logEvent(tx, order.id, 'OFFER_RETURNED', user.id, returnNote);
     }
+    await refreshSla(tx, order.id);
   });
-  await audit('OFFER_SAVED', 'Offer', offer.id, user.id, { intent, amount: totals.amount, lines: lines.length });
+  await audit('OFFER_SAVED', 'Offer', offer.id, user.id, { intent, amount, lines: lines.length });
   done(order.id, intent === 'save' ? 'offer_saved' : `offer_${intent}`);
+}
+
+/** Müşteriye gitmiş teklifi revize etmek için yeni bir taslak açar; müşteri bu arada eski teklifi görmeye devam eder. */
+export async function reviseOfferAction(formData: FormData) {
+  const { user, order } = await guard(formData, 'revise_offer');
+  const prev = currentOffer(order);
+  if (!prev) redirect(err(order.id, 'Teklif bulunamadı.'));
+  await db.$transaction(async (tx) => {
+    await tx.offer.create({
+      data: {
+        orderId: order.id, createdById: user.id, currency: prev.currency, amount: prev.amount,
+        lines: {
+          create: prev.lines.map((l) => ({
+            sortOrder: l.sortOrder, description: l.description, poz: l.poz, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, unitPrice: l.unitPrice,
+          })),
+        },
+      },
+    });
+    await logEvent(tx, order.id, 'OFFER_REVISED', user.id);
+    await refreshSla(tx, order.id);
+  });
+  done(order.id, 'offer_revising');
 }
