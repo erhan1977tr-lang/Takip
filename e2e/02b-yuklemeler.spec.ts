@@ -8,7 +8,8 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   const sales = await as(browser, SALES, PW);
   await sales.goto('/siparisler?view=all&q=UNS2');
   await sales.getByRole('link', { name: 'UNS2' }).first().click();
-  const orderUrl = sales.url().split('?')[0];
+  await expect(sales).toHaveURL(/\/siparisler\/[a-z0-9]+$/);
+  const orderUrl = sales.url();
   await sales.fill('#ship-date', LOAD_DAY);
   await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
   await expect(sales.locator('.alert-ok')).toContainText('Tahmini yükleme tarihi güncellendi');
