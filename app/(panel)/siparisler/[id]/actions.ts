@@ -75,6 +75,33 @@ export async function noDrawingAction(formData: FormData) {
   done(order.id, 'to_offer');
 }
 
+/**
+ * Satış kararını geri alır (teklif hâlâ satıştayken): sipariş yeniden karar bekler.
+ * Teklif taslağı silinmez; karar yeniden verildiğinde kaldığı yerden devam edilir.
+ */
+async function undoDecision(formData: FormData, action: 'undo_drawing' | 'undo_no_drawing') {
+  const { user, order } = await guard(formData, action);
+  await db.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id: order.id },
+      data: { status: 'YENI', drawingTrack: 'YOK', drawingSince: null, assignedDrawer: { disconnect: true } },
+    });
+    await logEvent(tx, order.id, action === 'undo_drawing' ? 'UNDO_DRAWING' : 'UNDO_NO_DRAWING', user.id);
+    await refreshSla(tx, order.id);
+  });
+  done(order.id, action);
+}
+
+/** "Çizime Göndermeyi Geri Al" — çizim müşteriye gitmeden önce. */
+export async function undoDrawingAction(formData: FormData) {
+  await undoDecision(formData, 'undo_drawing');
+}
+
+/** "Teklife Göndermeyi Geri Al" */
+export async function undoNoDrawingAction(formData: FormData) {
+  await undoDecision(formData, 'undo_no_drawing');
+}
+
 export async function holdAction(formData: FormData) {
   const hold = String(formData.get('hold')) === '1';
   const { user, order } = await guard(formData, hold ? 'hold' : 'unhold');
@@ -258,12 +285,28 @@ function readLines(formData: FormData): LineInput[] | string {
   return lines;
 }
 
-/** intent: save | submit (satış) · save | approve | return (yönetici) */
+/** Müşteriye gidecek teklif için eksik ya da null. */
+function finalProblem(lines: LineInput[]): string | null {
+  if (lines.length === 0) return 'Teklifte en az bir satır olmalı.';
+  if (lines.some((l) => l.unit === 'm2' && (!l.enMm || !l.boyMm))) return 'm² ile fiyatlanan satırlarda en ve boy girilmeli.';
+  return null;
+}
+
+const labels = (formData: FormData) => ({
+  camEtiket: String(formData.get('camEtiket') ?? '').trim().slice(0, 120) || null,
+  sandikEtiket: String(formData.get('sandikEtiket') ?? '').trim().slice(0, 120) || null,
+});
+
+/**
+ * intent: save | submit (satış) · save | approve | return (yönetici, fiyat onayında)
+ *         update (yönetici, teklif müşterideyken: yeni sürüm hemen müşteriye gider)
+ */
 export async function saveOfferAction(formData: FormData) {
   const user = await requireUser(['SATIS', 'ADMIN']);
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   const intent = String(formData.get('intent') ?? 'save');
   const acts = actionsFor(user, order);
+  if (intent === 'update') return updateSentOffer(user, order, acts, formData);
   if (!acts.includes('edit_offer') && !acts.includes('approve_price')) redirect(err(order.id, 'Teklif şu anda düzenlenemez.'));
   const offer = currentOffer(order);
   if (!offer) redirect(err(order.id, 'Teklif bulunamadı.'));
@@ -271,13 +314,12 @@ export async function saveOfferAction(formData: FormData) {
   const lines = readLines(formData);
   if (typeof lines === 'string') redirect(err(order.id, lines));
   const finalize = intent === 'submit' || intent === 'approve';
-  if (finalize && lines.length === 0) redirect(err(order.id, 'Teklifte en az bir satır olmalı.'));
-  if (finalize && lines.some((l) => l.unit === 'm2' && (!l.enMm || !l.boyMm))) redirect(err(order.id, 'm² ile fiyatlanan satırlarda en ve boy girilmeli.'));
+  const problem = finalize ? finalProblem(lines) : null;
+  if (problem) redirect(err(order.id, problem));
   const totals = offerTotals(lines);
   const amount = totals.amount.toFixed(2);
   const isAdmin = user.appRole === 'ADMIN';
-  const camEtiket = String(formData.get('camEtiket') ?? '').trim().slice(0, 120) || null;
-  const sandikEtiket = String(formData.get('sandikEtiket') ?? '').trim().slice(0, 120) || null;
+  const { camEtiket, sandikEtiket } = labels(formData);
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
   if (intent === 'return' && !returnNote) redirect(err(order.id, 'Satışa geri gönderme nedenini yazın.'));
   const now = new Date();
@@ -310,24 +352,47 @@ export async function saveOfferAction(formData: FormData) {
   done(order.id, intent === 'save' ? 'offer_saved' : produced ? `offer_${intent}_production` : `offer_${intent}`);
 }
 
-/** Müşteriye gitmiş teklifi revize etmek için yeni bir taslak açar; müşteri bu arada eski teklifi görmeye devam eder. */
-export async function reviseOfferAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'revise_offer');
+/**
+ * Yönetici, müşterideki teklifi günceller (ör. çizim revizyonu ölçüleri değiştirdi). Eski sürüm silinmez;
+ * yeni sürüm doğrudan müşteriye gönderilmiş olarak kaydedilir ve fiyat güncellenir. Satış bu işlemi yapamaz.
+ */
+async function updateSentOffer(user: CurrentUser, order: OrderDetail, acts: string[], formData: FormData): Promise<never> {
+  if (!acts.includes('update_offer')) redirect(err(order.id, 'Teklif şu anda güncellenemez.'));
   const prev = currentOffer(order);
   if (!prev) redirect(err(order.id, 'Teklif bulunamadı.'));
-  await db.$transaction(async (tx) => {
-    await tx.offer.create({
+  const lines = readLines(formData);
+  if (typeof lines === 'string') redirect(err(order.id, lines));
+  const problem = finalProblem(lines);
+  if (problem) redirect(err(order.id, problem));
+  const amount = offerTotals(lines).amount.toFixed(2);
+  const note = String(formData.get('updateNote') ?? '').trim().slice(0, 1000);
+  const now = new Date();
+  const created = await db.$transaction(async (tx) => {
+    const o = await tx.offer.create({
       data: {
-        orderId: order.id, createdById: user.id, currency: prev.currency, amount: prev.amount,
-        lines: {
-          create: prev.lines.map((l) => ({
-            sortOrder: l.sortOrder, description: l.description, poz: l.poz, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, unitPrice: l.unitPrice,
-          })),
-        },
+        orderId: order.id, createdById: user.id, currency: prev.currency, amount,
+        status: 'GONDERILDI', statusSince: now, sentAt: now,
+        lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
       },
     });
-    await logEvent(tx, order.id, 'OFFER_REVISED', user.id);
-    await refreshSla(tx, order.id);
+    await tx.price.upsert({
+      where: { orderId: order.id },
+      create: { orderId: order.id, amount, setById: user.id },
+      update: { amount, setById: user.id, setAt: now },
+    });
+    await tx.order.update({ where: { id: order.id }, data: labels(formData) });
+    await logEvent(tx, order.id, 'OFFER_UPDATED', user.id, `${Number(prev.amount).toFixed(2)} → ${amount} ${prev.currency}${note ? ` · ${note}` : ''}`);
+    return o;
   });
-  done(order.id, 'offer_revising');
+  await audit('OFFER_UPDATED', 'Offer', created.id, user.id, { from: Number(prev.amount).toFixed(2), amount, lines: lines.length });
+  done(order.id, 'offer_updated');
+}
+
+/** Yönetici, teklif gönderildikten sonra gelen çizimi kontrol etti ve teklifte değişiklik gerekmiyor. */
+export async function checkOfferAction(formData: FormData) {
+  const { user, order } = await guard(formData, 'update_offer');
+  await db.$transaction(async (tx) => {
+    await logEvent(tx, order.id, 'OFFER_CHECKED', user.id, order.drawings.length ? `v${order.drawings.length}` : null);
+  });
+  done(order.id, 'offer_checked');
 }

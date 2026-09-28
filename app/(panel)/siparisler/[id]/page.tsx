@@ -8,12 +8,12 @@ import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/component
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor } from './OfferEditor';
 import {
-  EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, productionBlockers, slaInfo, stageIndex,
+  EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction,
-  markShippedAction, noDrawingAction, requestRevisionAction, reviseOfferAction, sendToDrawingAction, setShipDateAction,
-  startDrawingAction, uploadDrawingAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
+  markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
+  startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
 } from './actions';
 
 const OK: Record<string, string> = {
@@ -39,7 +39,10 @@ const OK: Record<string, string> = {
   offer_approve: 'Fiyat onaylandı; teklif müşterinin panelinde.',
   offer_approve_production: 'Fiyat onaylandı; teklif müşterinin panelinde. Çizim onaylı (ya da gereksiz) olduğu için sipariş otomatik olarak üretime alındı.',
   offer_return: 'Teklif satışa geri gönderildi.',
-  offer_revising: 'Teklifin yeni sürümü açıldı. Müşteri, yeni sürüm onaylanana kadar önceki teklifi görmeye devam eder.',
+  offer_updated: 'Teklif güncellendi; müşteri yeni sürümü görüyor.',
+  offer_checked: 'Teklif yeni çizime göre güncel olarak işaretlendi.',
+  undo_drawing: 'Çizime gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
+  undo_no_drawing: 'Teklife gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
 };
 
 // "Sıradaki adım" satırında gösterilen işlemler
@@ -87,10 +90,19 @@ export default async function OrderPage({
   const sla = isCustomer ? null : slaInfo(order.slaDeadline);
   const stage = stageIndex(order.status);
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
-  const catalog = editable
+  const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
+  const catalog = editable || updating
     ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })).map((g) => g.name)
     : [];
-  const shownOffer = isCustomer ? sent : editable ? undefined : offer;
+  const shownOffer = isCustomer ? sent : editable || updating ? undefined : offer;
+  const sentVersions = order.offers.filter((o) => o.status === 'GONDERILDI').length;
+  const lastDrawing = order.drawings[order.drawings.length - 1];
+  // Teklif müşteriye gittikten sonra yeni çizim geldiyse ölçüler değişmiş olabilir (events en yeniden eskiye sıralı)
+  const needsCheck = !isCustomer && user.appRole !== 'CIZIM' && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
+    offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null, lastDrawing: lastDrawing ?? null,
+    checkedAt: order.events.find((e) => e.event === 'OFFER_CHECKED')?.createdAt ?? null,
+  });
+  const updateHref = `/siparisler/${order.id}?teklif=guncelle#teklif`;
 
   return (
     <>
@@ -141,15 +153,34 @@ export default async function OrderPage({
         )}
       </div>
 
+      {needsCheck && lastDrawing && (
+        <div className="alert alert-warn">
+          <b>Teklif müşteriye gönderildikten sonra revize çizim yüklendi (v{lastDrawing.version}, {fmtDateTime(lastDrawing.createdAt)}).</b>{' '}
+          {can('update_offer')
+            ? 'Ölçüler değiştiyse teklifi güncelleyin; değişmediyse güncel olarak işaretleyin.'
+            : 'Ölçüler değiştiyse teklifin güncellenmesi için sistem yöneticisine haber verin. Gönderilmiş teklifi yalnızca yönetici değiştirebilir.'}
+          {can('update_offer') && !updating && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <Link href={updateHref} className="btn btn-primary">Teklifi güncelle</Link>
+              <form action={checkOfferAction}>
+                <input type="hidden" name="id" value={order.id} />
+                <button className="btn">Teklif güncel, değişiklik yok</button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
       {isCustomer ? <CustomerActions order={order} user={user} can={can} /> : <InternalActions order={order} user={user} can={can} acts={acts} />}
 
-      {editable && offer && (
+      {(editable || updating) && offer && (
         <OfferEditor
           orderId={order.id}
-          mode={can('approve_price') ? 'admin' : 'sales'}
+          mode={updating ? 'update' : can('approve_price') ? 'admin' : 'sales'}
+          cancelHref={`/siparisler/${order.id}#teklif`}
           currency={offer.currency}
           catalog={catalog}
-          statusLabel={offer.status === 'YONETIMDE' ? 'yönetici onayında' : sent ? 'yeni sürüm satışta hazırlanıyor' : 'satışta hazırlanıyor'}
+          statusLabel={updating ? `müşteride · sürüm ${sentVersions + 1} hazırlanıyor` : offer.status === 'YONETIMDE' ? 'yönetici onayında' : 'satışta hazırlanıyor'}
           camEtiket={order.camEtiket ?? order.customer.camEtiket ?? ''}
           sandikEtiket={order.sandikEtiket ?? order.customer.sandikEtiket ?? ''}
           initial={offer.lines.map((l) => ({
@@ -161,8 +192,9 @@ export default async function OrderPage({
 
       <div className="detail-grid">
         <div>
-          {shownOffer && <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} canRevise={can('revise_offer')} />}
-          {editable && sent && <OfferView order={order} offer={sent} isCustomer={false} canRevise={false} title="Müşterideki geçerli teklif" />}
+          {shownOffer && (
+            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} />
+          )}
           <Drawings order={order} user={user} />
           <Files order={order} user={user} canAdd={can('add_file')} />
           <Notes order={order} user={user} />
@@ -267,6 +299,10 @@ function InternalActions({ order, user, can, acts }: { order: OrderDetail; user:
   if (can('start_drawing')) btn('sd', startDrawingAction, 'Çizimi üstlen');
   if (can('mark_shipped')) btn('ms', markShippedAction, 'Yüklendi olarak işaretle');
   if (can('archive')) btn('ar', archiveAction, 'Arşivle');
+  const undo = (key: string, action: (fd: FormData) => Promise<void>, label: string, message: string) =>
+    buttons.push(<form key={key} action={action}>{hidden}<ConfirmButton message={message}>{label}</ConfirmButton></form>);
+  if (can('undo_drawing')) undo('ud', undoDrawingAction, 'Çizime Göndermeyi Geri Al', 'Çizime gönderme geri alınsın mı? Sipariş yeniden karar bekler; teklif taslağı korunur.');
+  if (can('undo_no_drawing')) undo('un', undoNoDrawingAction, 'Teklife Göndermeyi Geri Al', 'Teklife gönderme geri alınsın mı? Sipariş yeniden karar bekler; teklif taslağı korunur.');
   if (can('hold')) btn('h', holdAction, 'Beklemeye Al', <input type="hidden" name="hold" value="1" />);
   if (can('unhold')) btn('uh', holdAction, 'Beklemeden çıkar', <input type="hidden" name="hold" value="0" />);
 
@@ -333,15 +369,17 @@ function InternalActions({ order, user, can, acts }: { order: OrderDetail; user:
 // ---------------- teklif ----------------
 type Offer = OrderDetail['offers'][number];
 
-function OfferView({ order, offer, isCustomer, canRevise, title }: { order: OrderDetail; offer: Offer; isCustomer: boolean; canRevise: boolean; title?: string }) {
+function OfferView({ order, offer, isCustomer, versions, updateHref }: { order: OrderDetail; offer: Offer; isCustomer: boolean; versions: number; updateHref?: string }) {
   const total = offer.status === 'GONDERILDI' && order.price && isCustomer ? order.price.amount : offer.amount;
+  const updated = offer.status === 'GONDERILDI' && versions > 1;
   return (
-    <div className="card" id={title ? undefined : 'teklif'}>
+    <div className="card" id="teklif">
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>{title ?? (isCustomer ? 'Teklifiniz' : 'Teklif')}</h2>
+        <h2 style={{ margin: 0 }}>{isCustomer ? 'Teklifiniz' : 'Teklif'}</h2>
         <span className="row">
           {!isCustomer && <OfferBadge status={offer.status} />}
-          {offer.sentAt && <span className="muted small">{isCustomer ? '' : 'Gönderildi: '}{fmtDate(offer.sentAt)}</span>}
+          {!isCustomer && updated && <span className="badge badge-info">sürüm {versions}</span>}
+          {offer.sentAt && <span className="muted small">{updated ? 'Güncellendi: ' : isCustomer ? '' : 'Gönderildi: '}{fmtDate(offer.sentAt)}</span>}
         </span>
       </div>
       <div className="table-wrap">
@@ -366,12 +404,7 @@ function OfferView({ order, offer, isCustomer, canRevise, title }: { order: Orde
       </div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>Fiyatlar KDV hariçtir.</p>
-        {canRevise && (
-          <form action={reviseOfferAction}>
-            <input type="hidden" name="id" value={order.id} />
-            <ConfirmButton message="Teklifin yeni bir sürümü açılsın mı? Müşteri, yeni sürüm onaylanana kadar mevcut teklifi görmeye devam eder.">Teklifi revize et</ConfirmButton>
-          </form>
-        )}
+        {updateHref && <Link href={updateHref} className="btn">Teklifi güncelle</Link>}
       </div>
     </div>
   );

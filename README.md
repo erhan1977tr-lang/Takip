@@ -8,7 +8,9 @@ Cam sipariş akışı için web uygulaması:
    - **Çizim:** çizimci çizer → müşteri onaylar ya da revizyon ister (müşterinin tek onayı budur)
    - **Teklif:** satış yazar → sistem yöneticisi fiyatı onaylar → teklif müşterinin panelinde görünür (müşteri onaylamaz)
 4. Çizim onaylı (ya da gereksiz) ve teklif müşterideyse sipariş **otomatik olarak üretime geçer** (beklemedeki sipariş geçmez) → yükleme → arşiv.
-5. Siparişi yalnızca sistem yöneticisi iptal edebilir.
+5. Satış, teklif hâlâ kendisindeyken kararını geri alabilir: **Çizime Göndermeyi Geri Al** (çizim müşteriye gitmeden önce) ve **Teklife Göndermeyi Geri Al**. Sipariş yeniden karar bekler, teklif taslağı korunur.
+6. Teklif yöneticiye gönderildikten sonra satış değişiklik yapamaz. Müşterideki teklifi yalnızca sistem yöneticisi **günceller** (hazırlıkta ya da üretimde); yeni sürüm hemen müşteriye görünür, eski sürüm kayıtta kalır. Teklif gönderildikten sonra revize çizim gelirse yöneticinin listesinde **Teklif kontrolü** altında çıkar: teklifi günceller ya da “değişiklik yok” der.
+7. Siparişi yalnızca sistem yöneticisi iptal edebilir.
 
 - **Uygulama:** Next.js 15 (App Router) + Prisma 6 + PostgreSQL
 - **Prototip:** `prototype/index.html` — tarayıcıda açılan, verisi yerelde tutulan tanıtım sürümü (tüm ekranların taslağı)
@@ -20,7 +22,7 @@ Cam sipariş akışı için web uygulaması:
 | Giriş, ilk giriş (e-posta kodu + şifre belirleme), oturum | ✅ |
 | Yönetici: Müşteriler (firmalar), Kullanıcılar, davet / şifre sıfırlama / pasifleştirme | ✅ |
 | Davet e-postası (SMTP, TR / RO / EN) | ✅ |
-| Siparişler: müşteri siparişi (dosya + cam kataloğu), satış kararı, paralel çizim ve teklif hatları, çizim revizyonu, teklif revizyonu, yönetici fiyat onayı, üretim, yükleme, arşiv | ✅ |
+| Siparişler: müşteri siparişi (dosya + cam kataloğu), satış kararı, paralel çizim ve teklif hatları, satış kararını geri alma, çizim revizyonu, yönetici fiyat onayı ve teklif güncelleme, üretim, yükleme, arşiv | ✅ |
 | Teklifler sayfası (müşteri: Tekliflerim, iç ekip: durumlara göre) | ✅ |
 | Notlar (iç not), hareket geçmişi, SLA, müşteri adı maskeleme, yetkili dosya indirme | ✅ |
 | Cam Kataloğu (yönetici) | ✅ |

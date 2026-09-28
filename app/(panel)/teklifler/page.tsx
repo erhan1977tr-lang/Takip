@@ -69,7 +69,8 @@ const GROUPS: { status: OfferStatus; title: string; empty: string }[] = [
 
 async function InternalOffers({ user }: { user: CurrentUser }) {
   const orders = await db.order.findMany({
-    where: { ...orderScope(user), status: { notIn: CLOSED as OrderStatus[] }, offers: { some: {} } },
+    // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
+    where: { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } },
     include,
     orderBy: [{ estimatedShipDate: 'asc' }, { createdAt: 'asc' }],
     take: 500,

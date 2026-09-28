@@ -10,7 +10,9 @@ const fmt = (n: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigit
 
 export function OfferEditor(props: {
   orderId: string;
-  mode: 'sales' | 'admin';
+  /** sales: satış taslağı · admin: fiyat onayı · update: yönetici müşterideki teklifi günceller */
+  mode: 'sales' | 'admin' | 'update';
+  cancelHref?: string;
   currency: string;
   catalog: string[];
   initial: Omit<Line, 'key'>[];
@@ -24,6 +26,7 @@ export function OfferEditor(props: {
   const totals = useMemo(() => offerTotals(lines), [lines]);
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const isAdmin = props.mode === 'admin';
+  const isUpdate = props.mode === 'update';
   // Hangi düğmeye basıldığı gizli alana yazılır (tarayıcıdan bağımsız, güvenilir yol).
   const intentRef = useRef<HTMLInputElement>(null);
   const intent = (v: string) => () => {
@@ -33,13 +36,18 @@ export function OfferEditor(props: {
   return (
     <form action={saveOfferAction} className="card" id="teklif">
       <input type="hidden" name="id" value={props.orderId} />
-      <input type="hidden" name="intent" defaultValue="save" ref={intentRef} />
+      <input type="hidden" name="intent" defaultValue={isUpdate ? 'update' : 'save'} ref={intentRef} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>Teklif tablosu <span className="badge">{props.statusLabel}</span></h2>
         <span className="muted small">Metraj = en × boy × adet (m²). Tutar m² satırlarında metraj × fiyat, adet satırlarında adet × fiyat.</span>
       </div>
 
-      {isAdmin && (
+      {isUpdate && (
+        <div className="alert alert-info" style={{ marginBottom: 14 }}>
+          Müşterideki teklifi güncelliyorsunuz. Kaydettiğinizde yeni sürüm hemen müşterinin panelinde görünür; önceki sürüm kayıtlarda kalır.
+        </div>
+      )}
+      {(isAdmin || isUpdate) && (
         <div className="grid-2" style={{ marginBottom: 14 }}>
           <div><label htmlFor="camEtiket">Cam etiketi</label><input id="camEtiket" name="camEtiket" type="text" defaultValue={props.camEtiket} /></div>
           <div><label htmlFor="sandikEtiket">Sandık etiketi</label><input id="sandikEtiket" name="sandikEtiket" type="text" defaultValue={props.sandikEtiket} /></div>
@@ -98,9 +106,22 @@ export function OfferEditor(props: {
           <input id="returnNote" name="returnNote" type="text" placeholder="örn. 3. satırın fiyatını kontrol edin" />
         </div>
       )}
+      {isUpdate && (
+        <div className="field" style={{ marginTop: 14 }}>
+          <label htmlFor="updateNote">Güncelleme notu (müşteri görmez)</label>
+          <input id="updateNote" name="updateNote" type="text" placeholder="örn. v2 çizime göre ölçüler güncellendi" />
+        </div>
+      )}
       <div className="row end" style={{ marginTop: 14 }}>
-        <button type="submit" onClick={intent('save')} className="btn">Taslak olarak kaydet</button>
-        {isAdmin ? (
+        {isUpdate ? (
+          <>
+            <a href={props.cancelHref ?? '#'} className="btn">Vazgeç</a>
+            <button type="submit" onClick={intent('update')} className="btn btn-primary">Teklifi güncelle ve müşteriye gönder</button>
+          </>
+        ) : (
+          <button type="submit" onClick={intent('save')} className="btn">Taslak olarak kaydet</button>
+        )}
+        {isUpdate ? null : isAdmin ? (
           <>
             <button type="submit" onClick={intent('return')} className="btn btn-danger">Satışa geri gönder</button>
             <button type="submit" onClick={intent('approve')} className="btn btn-primary">Fiyatı onayla ve müşteriye gönder</button>
@@ -110,7 +131,11 @@ export function OfferEditor(props: {
         )}
       </div>
       <p className="muted small" style={{ marginTop: 8 }}>
-        {isAdmin ? 'Onayladığınızda teklif müşterinin panelinde görünür.' : 'Teklif doğrudan müşteriye gitmez; önce sistem yöneticisinin onayına düşer.'}
+        {isUpdate
+          ? 'Teklif müşteriye gönderildikten sonra yalnızca sistem yöneticisi değiştirebilir.'
+          : isAdmin
+            ? 'Onayladığınızda teklif müşterinin panelinde görünür.'
+            : 'Teklif doğrudan müşteriye gitmez; önce sistem yöneticisinin onayına düşer. Gönderdikten sonra değişikliği yalnızca yönetici yapabilir.'}
       </p>
     </form>
   );

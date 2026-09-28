@@ -5,12 +5,13 @@ import { requireUser, type CurrentUser } from '@/lib/auth/session';
 import { customerLabel, orderScope } from '@/lib/orders';
 import { fmtDate, fmtMonth } from '@/lib/format';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
-import { CLOSED, customerSummary, slaInfo } from '@/server/orders/rules.js';
+import { CLOSED, customerSummary, offerNeedsCheck, slaInfo } from '@/server/orders/rules.js';
 
 const listInclude = {
   customer: { select: { name: true } },
-  drawings: { select: { id: true } },
-  offers: { orderBy: { createdAt: 'desc' }, select: { status: true } },
+  drawings: { orderBy: { version: 'asc' }, select: { id: true, version: true, createdAt: true } },
+  offers: { orderBy: { createdAt: 'desc' }, select: { status: true, sentAt: true } },
+  events: { where: { event: 'OFFER_CHECKED' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof listInclude }>;
 
@@ -18,6 +19,13 @@ type SP = Record<string, string | undefined>;
 
 const offerOf = (o: Row) => o.offers[0]?.status ?? null;
 const sentOf = (o: Row) => (o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null);
+/** Teklif müşteriye gittikten sonra yeni çizim yüklenmiş ve yönetici henüz bakmamış. */
+const needsOfferCheck = (o: Row) =>
+  (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE') &&
+  offerNeedsCheck({
+    offer: offerOf(o), sentAt: o.offers[0]?.sentAt ?? null,
+    lastDrawing: o.drawings[o.drawings.length - 1] ?? null, checkedAt: o.events[0]?.createdAt ?? null,
+  });
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser();
@@ -204,6 +212,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   }
   if (role === 'ADMIN') {
     myTurn.push({ title: 'Fiyat onayı bekleyen teklifler', rows: prep.filter((o) => offerOf(o) === 'YONETIMDE'), empty: 'Onay bekleyen teklif yok.' });
+    myTurn.push({ title: 'Teklif kontrolü — gönderimden sonra revize çizim geldi', rows: active.filter(needsOfferCheck), empty: 'Kontrol bekleyen teklif yok.' });
   }
   if (role === 'CIZIM') {
     myTurn.push({ title: 'Çizim işleri', rows: prep.filter((o) => ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack)), empty: 'Bekleyen çizim işi yok.' });

@@ -1,11 +1,13 @@
 // Sipariş iş kuralları — Next.js'ten bağımsız, birim testli.
 //
 // Akış:
-//   YENI ──satış karar verir──▶ HAZIRLANIYOR ──satış üretime alır──▶ URETIMDE ─▶ YUKLENDI ─▶ ARSIVLENDI
+//   YENI ──satış karar verir──▶ HAZIRLANIYOR ──otomatik──▶ URETIMDE ─▶ YUKLENDI ─▶ ARSIVLENDI
 //   HAZIRLANIYOR içinde iki bağımsız hat vardır:
 //     Çizim hattı (drawingTrack): YOK | GEREKLI → YAPILIYOR → ONAY_BEKLIYOR ⇄ REVIZYON_ISTENDI → ONAYLANDI
 //     Teklif hattı (offer.status): HAZIRLANIYOR (satış) → YONETIMDE (yönetici) → GONDERILDI (müşteri görür)
 //   Müşteri yalnızca çizimi onaylar; teklifi onaylamaz, sadece görür.
+//   Satış kararını (çizime / teklife gönder) teklif satıştayken geri alabilir; teklif yöneticiye gittikten sonra
+//   değişikliği yalnızca yönetici yapar. Müşterideki teklifi yönetici her an günceller (yeni sürüm olarak).
 //   Otomatik üretim: çizim YOK ya da ONAYLANDI  +  teklif GONDERILDI olunca sipariş kendiliğinden URETIMDE olur
 //   (beklemedeki sipariş geçmez; beklemeden çıkarılınca yeniden kontrol edilir). İptal yalnızca yöneticidedir.
 
@@ -92,7 +94,20 @@ export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', off
   return !onHold && productionBlockers({ status, drawing, offer }).length === 0;
 }
 
-export const STAGES = ['Alındı', 'Satış incelemesi', 'Çizim ve teklif', 'Üretim', 'Yükleme'];
+/**
+ * Müşterideki teklif, gönderildikten (ya da yöneticinin son kontrolünden) sonra yüklenen revize çizimden eski mi?
+ * Revizyon ölçüleri değiştirmiş olabilir; yönetici teklifi güncellemeli ya da güncel olduğunu işaretlemeli.
+ * İlk çizim (v1) müşterinin dosyasından çizildiği için teklifle aynı kabul edilir.
+ * @param {{offer?: string|null, sentAt?: Date|string|null, lastDrawing?: {version: number, createdAt: Date|string}|null, checkedAt?: Date|string|null}} p
+ * @returns {boolean}
+ */
+export function offerNeedsCheck({ offer = null, sentAt = null, lastDrawing = null, checkedAt = null }) {
+  if (offer !== 'GONDERILDI' || !sentAt || !lastDrawing || lastDrawing.version < 2) return false;
+  const seen = Math.max(new Date(sentAt).getTime(), checkedAt ? new Date(checkedAt).getTime() : 0);
+  return new Date(lastDrawing.createdAt).getTime() > seen;
+}
+
+export const STAGES =['Alındı', 'Satış incelemesi', 'Çizim ve teklif', 'Üretim', 'Yükleme'];
 
 /** Adım çubuğunda o anki adımın sırası (0 tabanlı). Arşivde tümü tamamlanmış sayılır. */
 export function stageIndex(status) {
@@ -174,6 +189,10 @@ export const EVENTS = {
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi', customer: null },
   OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   OFFER_REVISED: { label: 'Teklif revize ediliyor', customer: null },
+  OFFER_UPDATED: { label: 'Teklif yönetici tarafından güncellendi', customer: 'Teklifiniz güncellendi' },
+  OFFER_CHECKED: { label: 'Yönetici teklifi yeni çizime göre kontrol etti, değişiklik yok', customer: null },
+  UNDO_DRAWING: { label: 'Çizime gönderme geri alındı', customer: 'Sipariş yeniden inceleniyor' },
+  UNDO_NO_DRAWING: { label: 'Teklife gönderme geri alındı', customer: null },
   PRODUCTION: { label: 'Otomatik olarak üretime alındı', customer: 'Üretime alındı' },
   SHIPPED: { label: 'Yüklendi', customer: 'Yüklendi' },
   ARCHIVED: { label: 'Arşivlendi', customer: 'Arşivlendi' },
@@ -252,11 +271,19 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     return a;
   }
 
+  const admin = role === 'ADMIN';
+  // Teklif henüz satışta (yöneticiye gönderilmedi). Gönderildikten sonra satış hiçbir değişiklik yapamaz.
+  const offerAtSales = offer === null || offer === 'HAZIRLANIYOR';
+
   if (sales && status === 'YENI') a.push('send_to_drawing', 'no_drawing');
-  if (sales && preparing && drawing === 'YOK') a.push('send_to_drawing');
-  if (sales && preparing && (offer === null || offer === 'HAZIRLANIYOR')) a.push('edit_offer', 'submit_offer');
-  if (sales && preparing && offer === 'GONDERILDI') a.push('revise_offer');
-  if (role === 'ADMIN' && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
+  if (preparing && drawing === 'YOK' && (admin || (sales && offerAtSales))) a.push('send_to_drawing');
+  if (sales && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
+  if (admin && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
+  // Müşterideki teklifi yalnızca yönetici günceller (çizim revizyonu ölçüleri değiştirdiyse; üretimdeyken de).
+  if (admin && (preparing || status === 'URETIMDE') && offer === 'GONDERILDI') a.push('update_offer');
+  // Satış kararını geri alma: teklif hâlâ satıştayken ve çizim müşteriye gitmeden. Sipariş yeniden karar bekler.
+  if (sales && preparing && offerAtSales && (drawing === 'GEREKLI' || drawing === 'YAPILIYOR')) a.push('undo_drawing');
+  if (sales && preparing && offerAtSales && drawing === 'YOK') a.push('undo_no_drawing');
 
   if (drawer && preparing && drawing === 'GEREKLI') a.push('start_drawing');
   if (drawer && preparing && (drawing === 'YAPILIYOR' || drawing === 'REVIZYON_ISTENDI')) a.push('upload_drawing');

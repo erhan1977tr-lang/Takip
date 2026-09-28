@@ -61,6 +61,8 @@ test('ekran görüntüleri', async ({ browser }) => {
     ['12-yonetici-kullanicilar', '/admin/users'],
     ['13-yonetici-musteriler', '/admin/firms'],
     ['14-yonetici-katalog', '/admin/katalog'],
+    ['15-yonetici-teklif-guncelle', `${uns2}?teklif=guncelle`],
+    ['16-yonetici-siparisler', '/siparisler'],
   ]);
   await shoot(browser, [CUSTOMER, CUST_PW], [
     ['02-musteri-siparislerim', '/siparisler'],

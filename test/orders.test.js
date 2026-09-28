@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce, offerNeedsCheck,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
 } from '../server/orders/rules.js';
 
@@ -45,13 +45,53 @@ test('çizim sürerken satış teklifi yazabilir (hatlar bağımsız)', () => {
 test('çizimsiz başlayan siparişe sonradan çizim istenebilir', () => {
   assert.ok(has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'HAZIRLANIYOR' }, 'send_to_drawing'));
   assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'YAPILIYOR' }, 'send_to_drawing'));
+  assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }, 'send_to_drawing'));
+  assert.ok(has({ role: 'ADMIN', status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }, 'send_to_drawing'));
 });
 
 test('fiyat onayını yalnızca yönetici verir', () => {
   assert.ok(has({ role: 'ADMIN', status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }, 'approve_price'));
   assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }, 'approve_price'));
   assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }, 'edit_offer'));
-  assert.ok(has({ role: 'SATIS', status: 'HAZIRLANIYOR', offer: 'GONDERILDI' }, 'revise_offer'));
+});
+
+test('teklif satıştan çıktıktan sonra satış değişiklik yapamaz; müşterideki teklifi yalnızca yönetici günceller', () => {
+  for (const offer of ['YONETIMDE', 'GONDERILDI']) {
+    for (const drawing of ['YOK', 'GEREKLI', 'YAPILIYOR', 'ONAY_BEKLIYOR', 'REVIZYON_ISTENDI']) {
+      const a = availableActions({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing, offer });
+      assert.ok(!a.some((x) => /offer|undo|send_to_drawing/.test(x)), `${drawing}/${offer}: ${a}`);
+    }
+  }
+  assert.ok(has({ role: 'ADMIN', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }, 'update_offer'));
+  assert.ok(has({ role: 'ADMIN', status: 'URETIMDE', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }, 'update_offer'));
+  assert.ok(!has({ role: 'ADMIN', status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }, 'update_offer'));
+  assert.ok(!has({ role: 'ADMIN', status: 'YUKLENDI', offer: 'GONDERILDI' }, 'update_offer'));
+  assert.ok(!has({ role: 'SATIS', status: 'URETIMDE', offer: 'GONDERILDI' }, 'update_offer'));
+});
+
+test('satış kararını geri alma: teklif satıştayken ve çizim müşteriye gitmeden', () => {
+  for (const drawing of ['GEREKLI', 'YAPILIYOR']) {
+    for (const offer of [null, 'HAZIRLANIYOR']) assert.ok(has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing, offer }, 'undo_drawing'), `${drawing}/${offer}`);
+  }
+  for (const drawing of ['ONAY_BEKLIYOR', 'REVIZYON_ISTENDI', 'ONAYLANDI']) {
+    assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing, offer: 'HAZIRLANIYOR' }, 'undo_drawing'), drawing);
+  }
+  assert.ok(has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'HAZIRLANIYOR' }, 'undo_no_drawing'));
+  assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'GEREKLI', offer: 'HAZIRLANIYOR' }, 'undo_no_drawing'));
+  assert.ok(!has({ role: 'SATIS', status: 'YENI' }, 'undo_drawing'));
+  assert.ok(!has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'GEREKLI' }, 'undo_drawing'));
+  assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', onHold: true, drawing: 'GEREKLI' }, 'undo_drawing'));
+});
+
+test('teklif gönderildikten sonra yüklenen revize çizim teklif kontrolü ister', () => {
+  const sentAt = new Date('2026-09-28T10:00:00Z');
+  const v2 = { version: 2, createdAt: new Date('2026-09-28T12:00:00Z') };
+  assert.equal(offerNeedsCheck({ offer: 'GONDERILDI', sentAt, lastDrawing: v2 }), true);
+  assert.equal(offerNeedsCheck({ offer: 'GONDERILDI', sentAt, lastDrawing: { ...v2, version: 1 } }), false); // ilk çizim
+  assert.equal(offerNeedsCheck({ offer: 'GONDERILDI', sentAt, lastDrawing: { version: 3, createdAt: new Date('2026-09-28T09:00:00Z') } }), false);
+  assert.equal(offerNeedsCheck({ offer: 'GONDERILDI', sentAt, lastDrawing: v2, checkedAt: new Date('2026-09-28T13:00:00Z') }), false);
+  assert.equal(offerNeedsCheck({ offer: 'YONETIMDE', sentAt, lastDrawing: v2 }), false);
+  assert.equal(offerNeedsCheck({ offer: 'GONDERILDI', sentAt, lastDrawing: null }), false);
 });
 
 test('otomatik üretim: çizim onaylı ya da gereksiz + teklif müşteride; beklemede geçmez', () => {

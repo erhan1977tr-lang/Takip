@@ -100,7 +100,7 @@ test('teklif yolu: çizim gerekmez → teklif → yönetici onayı → otomatik 
   await expect(cust.getByRole('link', { name: 'UNS1' })).toBeVisible();
 });
 
-test('çizim yolu: çizim ve teklif paralel; teklif revizyonu; çizim onayıyla otomatik üretim', async ({ browser }) => {
+test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici günceller; çizim onayıyla otomatik üretim', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   ids.b = await newOrder(cust, 'Merdiven korkuluğu', 'korkuluk.pdf');
 
@@ -159,21 +159,38 @@ test('çizim yolu: çizim ve teklif paralel; teklif revizyonu; çizim onayıyla 
   await sales.goto(`/siparisler/${ids.b}`);
   await expect(sales.getByText('Çizim müşteri onayında')).toBeVisible();
 
-  // Çizim revizyonu ölçüleri değiştirdi: satış teklifi revize eder; müşteri yeni sürüm onaylanana kadar eskisini görür
-  await sales.getByRole('button', { name: 'Teklifi revize et' }).click();
-  await expect(sales.getByText('Teklifin yeni sürümü açıldı.')).toBeVisible();
-  await sales.getByLabel('Birim fiyat').first().fill('50');
-  await expect(sales.locator('.offer-table tfoot')).toContainText('300,00 EUR');
-  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
-  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
-  await cust.goto(`/siparisler/${ids.b}`);
-  await expect(cust.locator('#teklif tfoot')).toContainText('249,00 EUR');
+  // Teklif müşterideyken gelen revize çizim: satış teklifi değiştiremez, yöneticiye haber vermesi istenir
+  await expect(sales.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi')).toBeVisible();
+  await expect(sales.getByText('sistem yöneticisine haber verin')).toBeVisible();
+  await expect(sales.getByRole('link', { name: 'Teklifi güncelle' })).toHaveCount(0);
+  await expect(sales.locator('.offer-table')).toHaveCount(0);
+  await expect(sales.getByRole('button', { name: /Geri Al/ })).toHaveCount(0);
+
+  // Yönetici: listede "Teklif kontrolü" altında görür, teklifi günceller; müşteri yeni fiyatı hemen görür
+  await admin.goto('/siparisler');
+  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
   await admin.goto(`/siparisler/${ids.b}`);
-  await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
-  await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
+  await admin.getByRole('link', { name: 'Teklifi güncelle' }).first().click();
+  await expect(admin.getByText('Müşterideki teklifi güncelliyorsunuz.')).toBeVisible();
+  await admin.getByLabel('Birim fiyat').first().fill('50');
+  await expect(admin.locator('.offer-table tfoot')).toContainText('300,00 EUR');
+  await admin.fill('#updateNote', 'v2 çizime göre');
+  await admin.getByRole('button', { name: 'Teklifi güncelle ve müşteriye gönder' }).click();
+  await expect(admin.locator('.alert-ok')).toContainText('Teklif güncellendi; müşteri yeni sürümü görüyor.');
+  await expect(admin.locator('.timeline')).toContainText('249.00 → 300.00 EUR · v2 çizime göre');
+  await expect(admin.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi')).toHaveCount(0);
+  await expect(admin.getByText('sürüm 2', { exact: true })).toBeVisible();
   await expect(admin.getByText('otomatik olarak üretime alındı')).toHaveCount(0); // çizim hâlâ müşteride
+  await admin.goto('/siparisler');
+  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' }).getByRole('link', { name: 'UNS2' })).toHaveCount(0);
+
   await cust.goto(`/siparisler/${ids.b}`);
   await expect(cust.locator('#teklif tfoot')).toContainText('300,00 EUR');
+  await expect(cust.locator('.timeline')).toContainText('Teklifiniz güncellendi');
+  await expect(cust.locator('.timeline')).not.toContainText('v2 çizime göre'); // iç not müşteriye gitmez
+  await cust.goto('/teklifler');
+  await expect(cust.getByText('300,00 EUR')).toBeVisible();
+  await cust.goto(`/siparisler/${ids.b}`);
 
   // Müşteri çizimi onaylar → teklif de müşteride olduğu için otomatik üretim
   await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
@@ -218,6 +235,37 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Beklemeden çıkar' }).click();
   await expect(sales.locator('.alert-ok')).toContainText('otomatik olarak üretime alındı');
+});
+
+test('satış kararını geri alır; teklif yöneticiye gidince satış değişiklik yapamaz', async ({ browser }) => {
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  const id = await newOrder(cust, 'Balkon camı', 'balkon.pdf');
+  const sales = await as(browser, SALES, PW);
+  await sales.goto(`/siparisler/${id}`);
+  await sales.getByRole('button', { name: 'Çizim Ekibine Gönder' }).click();
+  await expect(sales.getByText('Sipariş çizim ekibine yönlendirildi.')).toBeVisible();
+  await fillOffer(sales);
+  await sales.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
+  await expect(sales.getByText('Teklif taslak olarak kaydedildi.')).toBeVisible();
+
+  await sales.getByRole('button', { name: 'Çizime Göndermeyi Geri Al' }).click();
+  await expect(sales.getByText('Çizime gönderme geri alındı.')).toBeVisible();
+  await expect(sales.getByText('Sıradaki adım: Çizim Ekibine Gönder · Teklife Gönder')).toBeVisible();
+  const drawer = await as(browser, DRAWER, PW);
+  expect((await drawer.goto(`/siparisler/${id}`))?.status()).toBe(404); // çizim işi çizim ekibinden kalktı
+
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.getByText('Çizim gerekmiyor olarak işaretlendi.')).toBeVisible();
+  await expect(sales.locator('.offer-table tfoot')).toContainText('249,00 EUR'); // taslak korundu
+  await sales.getByRole('button', { name: 'Teklife Göndermeyi Geri Al' }).click();
+  await expect(sales.getByText('Teklife gönderme geri alındı.')).toBeVisible();
+
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
+  await expect(sales.getByRole('button', { name: /Geri Al/ })).toHaveCount(0);
+  await expect(sales.getByRole('button', { name: 'Çizim Ekibine Gönder' })).toHaveCount(0);
+  await expect(sales.locator('.offer-table')).toHaveCount(0);
 });
 
 test('notlar: iç not müşteriye görünmez', async ({ browser }) => {
