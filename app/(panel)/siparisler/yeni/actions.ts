@@ -37,7 +37,7 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   if (glasses.length === 0) return fail('En az bir cam kombinasyonu seçin.');
   const catalog = await db.glassProduct.findMany({ where: { id: { in: glasses.map((g) => g.id) }, isActive: true } });
   const byId = new Map(catalog.map((c) => [c.id, c]));
-  const items = [];
+  const items: { glassName: string; camAdedi: number }[] = [];
   for (const g of glasses) {
     const product = byId.get(g.id);
     const qty = Number(g.qty);
