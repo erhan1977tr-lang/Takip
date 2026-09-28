@@ -56,7 +56,7 @@ jobs:
           echo "yeni süreç: '$new'"
           dx bash -c 'ps -eo pid,args | grep -E "next|status-server" | grep -v grep'
           [ -n "$new" ] && [ "$old" != "$new" ] || { echo "sunucu yeniden başlatılmadı"; exit 1; }
-          if [ -n "$old" ] && dx bash -c "kill -0 $old 2>/dev/null"; then echo "eski sunucu hâlâ çalışıyor"; exit 1; fi
+          if [ -n "$old" ] && dx bash -c "ps -o stat= -p $old | grep -qv Z"; then echo "eski sunucu hâlâ çalışıyor"; exit 1; fi
           dx node -e "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))" || { echo "yeni sunucu cevap vermiyor"; exit 1; }
           echo "yeniden başlatma tamam"
           SH

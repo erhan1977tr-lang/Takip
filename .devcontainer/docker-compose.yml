@@ -6,6 +6,7 @@ services:
     volumes:
       - ../..:/workspaces:cached
     command: sleep infinity
+    init: true # durdurulan süreçleri toplar (zombi süreç kalmaz)
     network_mode: service:db
 
   db:
