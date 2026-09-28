@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "OfferLine" ADD COLUMN     "free" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "kind" TEXT NOT NULL DEFAULT 'CAM';
+
