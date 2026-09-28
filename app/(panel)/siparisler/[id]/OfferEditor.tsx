@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { offerLineTotals, offerTotals } from '@/server/orders/rules.js';
 import { saveOfferAction } from './actions';
 
@@ -24,10 +24,16 @@ export function OfferEditor(props: {
   const totals = useMemo(() => offerTotals(lines), [lines]);
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const isAdmin = props.mode === 'admin';
+  // Hangi düğmeye basıldığı gizli alana yazılır (tarayıcıdan bağımsız, güvenilir yol).
+  const intentRef = useRef<HTMLInputElement>(null);
+  const intent = (v: string) => () => {
+    if (intentRef.current) intentRef.current.value = v;
+  };
 
   return (
     <form action={saveOfferAction} className="card" id="teklif">
       <input type="hidden" name="id" value={props.orderId} />
+      <input type="hidden" name="intent" defaultValue="save" ref={intentRef} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>Teklif tablosu <span className="badge">{props.statusLabel}</span></h2>
         <span className="muted small">Metraj = en × boy × adet (m²). Tutar m² satırlarında metraj × fiyat, adet satırlarında adet × fiyat.</span>
@@ -93,14 +99,14 @@ export function OfferEditor(props: {
         </div>
       )}
       <div className="row end" style={{ marginTop: 14 }}>
-        <button type="submit" name="intent" value="save" className="btn">Taslak olarak kaydet</button>
+        <button type="submit" onClick={intent('save')} className="btn">Taslak olarak kaydet</button>
         {isAdmin ? (
           <>
-            <button type="submit" name="intent" value="return" className="btn btn-danger">Satışa geri gönder</button>
-            <button type="submit" name="intent" value="approve" className="btn btn-primary">Fiyatı onayla ve müşteriye gönder</button>
+            <button type="submit" onClick={intent('return')} className="btn btn-danger">Satışa geri gönder</button>
+            <button type="submit" onClick={intent('approve')} className="btn btn-primary">Fiyatı onayla ve müşteriye gönder</button>
           </>
         ) : (
-          <button type="submit" name="intent" value="submit" className="btn btn-primary">Teklifi yöneticiye gönder</button>
+          <button type="submit" onClick={intent('submit')} className="btn btn-primary">Teklifi yöneticiye gönder</button>
         )}
       </div>
       <p className="muted small" style={{ marginTop: 8 }}>

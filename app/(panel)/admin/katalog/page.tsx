@@ -47,12 +47,13 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
                     </td>
                     <td>{g.isActive ? <span className="badge badge-ok">Aktif</span> : <span className="badge badge-muted">Pasif</span>}</td>
                     <td className="actions">
-                      <form action={updateGlassAction}>
-                        <input type="hidden" name="id" value={g.id} />
-                        <button className="btn btn-link" name="intent" value="up" disabled={i === 0} aria-label="Yukarı">↑</button>
-                        <button className="btn btn-link" name="intent" value="down" disabled={i === items.length - 1} aria-label="Aşağı">↓</button>
-                        <button className="btn btn-link" name="intent" value="toggle">{g.isActive ? 'Pasifleştir' : 'Etkinleştir'}</button>
-                      </form>
+                      {([['up', '↑', 'Yukarı', i === 0], ['down', '↓', 'Aşağı', i === items.length - 1], ['toggle', g.isActive ? 'Pasifleştir' : 'Etkinleştir', undefined, false]] as const).map(([it, label, aria, disabled]) => (
+                        <form key={it} action={updateGlassAction}>
+                          <input type="hidden" name="id" value={g.id} />
+                          <input type="hidden" name="intent" value={it} />
+                          <button className="btn btn-link" disabled={disabled} aria-label={aria}>{label}</button>
+                        </form>
+                      ))}
                     </td>
                   </tr>
                 ))}

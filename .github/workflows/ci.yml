@@ -113,6 +113,14 @@ jobs:
       - name: Uçtan uca testler
         run: scripts/ci-step.sh "e2e" npx playwright test
 
+      - name: Test hata bağlamı (hata varsa)
+        if: failure()
+        run: |
+          shopt -s nullglob
+          for f in test-results/*/error-context.md; do
+            scripts/ci-step.sh "sayfa: $(basename "$(dirname "$f")" | cut -c1-60)" bash -c "sed -n '1,120p' '$f'; exit 1" || true
+          done
+
       - name: Sunucu günlüğü (hata varsa)
         if: failure()
         run: |
