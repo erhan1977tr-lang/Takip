@@ -217,7 +217,7 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
 
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Beklemeden çıkar' }).click();
-  await expect(sales.getByText('otomatik olarak üretime alındı')).toBeVisible();
+  await expect(sales.locator('.alert-ok')).toContainText('otomatik olarak üretime alındı');
 });
 
 test('notlar: iç not müşteriye görünmez', async ({ browser }) => {
