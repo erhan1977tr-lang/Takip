@@ -1,15 +1,38 @@
 {
   "name": "takip",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Takip — sipariş ve üretim portalı",
   "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.js\"",
+    "e2e": "playwright test",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "create-admin": "node scripts/create-admin.mjs",
     "mail:test": "node --env-file=.env scripts/test-mail.mjs"
   },
   "dependencies": {
-    "nodemailer": "^6.9.16"
+    "@prisma/client": "6.19.3",
+    "next": "15.5.26",
+    "nodemailer": "^6.10.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
-  "engines": { "node": ">=20.6" }
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "prisma": "6.19.3",
+    "typescript": "~5.9.0"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
 }

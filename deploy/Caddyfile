@@ -1,0 +1,15 @@
+# HTTPS sertifikası Let's Encrypt'ten otomatik alınır ve yenilenir.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 110MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy app:3000
+}

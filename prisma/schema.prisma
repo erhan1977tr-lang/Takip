@@ -13,7 +13,8 @@
 // =========================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -28,6 +29,14 @@ datasource db {
 enum UserType {
   INTERNAL // Sistem Yöneticisi, Satış, Çizim Ekibi
   CUSTOMER // Müşteri panelini kullanan kişiler
+}
+
+// Uygulamadaki panel/rol. Ayrıntılı yetkiler ileride Role/RolePermission ile genişletilir.
+enum AppRole {
+  ADMIN   // Sistem Yöneticisi
+  SATIS
+  CIZIM
+  MUSTERI
 }
 
 model Role {
@@ -72,11 +81,14 @@ model User {
   passwordHash String?
   phone        String?
   language     String     @default("tr")
+  appRole      AppRole
+  unit         String?    // birim etiketi: "fabrika satış", "fabrika çizim"...
+  canApprove   Boolean    @default(false) // müşteri tarafında çizim onaylayabilir
   roleId       String?
   role         Role?      @relation(fields: [roleId], references: [id])
   teamTags     TeamTagOnUser[]
 
-  // Müşteri portalı kullanıcısıysa hangi müşteriye bağlı olduğu
+  // Bağlı olduğu firma: müşteri kullanıcıları için müşteri firması, iç ekip için fabrika
   customerId   String?
   customer     Customer?  @relation(fields: [customerId], references: [id])
 
@@ -89,6 +101,7 @@ model User {
   notifications      Notification[]
   auditLogs          AuditLog[]
   invites            UserInvite[]
+  sessions           Session[]
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -112,6 +125,20 @@ model UserInvite {
   @@index([userId, usedAt])
 }
 
+// Oturum: tarayıcıdaki çerezde rastgele bir belirteç durur, burada yalnızca özeti saklanır.
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+
+  @@index([userId])
+}
+
 model TeamTag {
   id    String @id @default(cuid())
   name  String @unique // "Ekip etiketleri" menüsündeki gruplamalar
@@ -131,9 +158,20 @@ model TeamTagOnUser {
 // MÜŞTERİ
 // ---------------------------------------------------------
 
+enum CustomerType {
+  CUSTOMER // müşteri firması
+  FACTORY  // fabrika (iç ekip bu firmaya bağlıdır)
+}
+
+// Firma: hem müşteri firmaları hem fabrika(lar) burada tutulur.
 model Customer {
   id            String   @id @default(cuid())
-  name          String   // "Miru Glass", "FOL Expert", "Pelet Construct"...
+  name          String   @unique // "Miru Glass", "FOL Expert", "Pelet Construct"...
+  type          CustomerType @default(CUSTOMER)
+  prefix        String?  @unique // sipariş no ön eki: "MIR" → MIR5; müşteri firmalarında zorunlu
+  groupName     String?
+  camEtiket     String?  // varsayılan cam etiketi
+  sandikEtiket  String?  // varsayılan sandık etiketi (fiziksel etiket ve nakliye listesi)
   contactPerson String?  // "Darius", "Mitariu", "Gabi panou dus" gibi
   email         String?
   phone         String?

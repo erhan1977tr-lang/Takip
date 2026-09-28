@@ -14,7 +14,7 @@ function normEmail(email) {
 
 export function hashCode(code, email, secret) {
   if (!secret || String(secret).length < 32) {
-    throw new Error('INVITE_CODE_SECRET en az 32 karakter olmalı');
+    throw new Error('AUTH_SECRET en az 32 karakter olmalı');
   }
   return crypto.createHmac('sha256', secret).update(`${normEmail(email)}:${code}`).digest('hex');
 }
