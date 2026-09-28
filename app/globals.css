@@ -113,9 +113,12 @@ td.actions form { display: inline; }
   background-size: 50px 50px;
 }
 .auth-card { width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 28px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-.brand { display: flex; align-items: baseline; gap: 8px; }
-.brand b { font-size: 24px; letter-spacing: .02em; }
+.brand-logo { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.brand-logo img { display: block; max-width: 100%; height: auto; }
 .version { font-size: 11px; background: #f1f5f9; color: var(--muted); padding: 2px 8px; border-radius: 999px; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 18px; }
+.auth-brand .brand-logo { align-items: center; }
+.auth-product { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--muted); margin-top: 10px; }
 .steps { display: flex; gap: 4px; margin: 16px 0 4px; }
 .steps div { height: 4px; flex: 1; border-radius: 2px; background: #e2e8f0; }
 .steps div.on { background: var(--primary); }
@@ -125,8 +128,9 @@ td.actions form { display: inline; }
 /* ---------- panel iskeleti ---------- */
 .shell { min-height: 100vh; display: flex; }
 .sidebar { width: 232px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--border); padding: 18px 14px; }
-.sidebar .brand { margin-bottom: 2px; }
-.sidebar .tag { font-size: 10px; letter-spacing: .08em; color: var(--faint); margin-bottom: 20px; }
+.sidebar .brand-logo { padding: 2px 8px 0; }
+.sidebar .tag { font-size: 10px; letter-spacing: .08em; color: var(--faint); margin: 10px 8px 12px; }
+.topbar-brand { display: none; }
 .nav-section { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 14px 8px 6px; }
 .nav a { display: block; padding: 8px 10px; border-radius: 8px; color: #475569; text-decoration: none; font-weight: 500; }
 .nav a:hover { background: #f8fafc; }
@@ -150,6 +154,10 @@ td.actions form { display: inline; }
   .grid, .grid-2 { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
   .topbar { padding: 10px 12px; }
+  .topbar-brand { display: block; flex-shrink: 0; padding-right: 10px; border-right: 1px solid var(--border); }
+  .topbar-brand .brand-logo { gap: 2px; align-items: center; }
+  .topbar-brand .version { font-size: 9px; padding: 0 6px; }
+  .topbar > .who { flex: 1; }
 }
 
 /* ---------- siparişler ---------- */
@@ -259,3 +267,7 @@ tr.sub-line td.desc, tr.sub-line td:nth-child(2) { padding-left: 26px; }
 .line-actions { display: flex; flex-wrap: wrap; gap: 0 6px; }
 .line-actions .btn-link { padding: 2px 0; font-size: 12px; }
 input.input-missing { background: #fef2f2; border-color: #f87171; }
+
+/* hata ekranı */
+.error-view h1 { font-size: 20px; margin: 0 0 6px; }
+.error-view .hint { word-break: break-word; }

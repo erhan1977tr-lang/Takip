@@ -79,7 +79,10 @@ run "Örnek veriler yükleniyor…" node scripts/demo/seed.mjs
 
 rev=$(git rev-parse HEAD 2>/dev/null || echo yok)
 if [ "$(cat .next/.demo-build 2>/dev/null)" != "$rev" ] || [ ! -f .next/standalone/server.js ]; then
-  step "Uygulama derleniyor (1-3 dakika)…"
+  # Derleme .next klasörünü baştan yazar; eski sunucu çalışmaya devam ederse sayfalar bozulur
+  # ("Application error"). Bu yüzden derleme boyunca adreste durum sayfası gösterilir.
+  status_page
+  step "Uygulama güncelleniyor, derleniyor (1-3 dakika)…"
   npm run build > "$STEPLOG" 2>&1 || fail "Derleme başarısız oldu."
   rm -rf .next/standalone/.next/static
   cp -r .next/static .next/standalone/.next/static

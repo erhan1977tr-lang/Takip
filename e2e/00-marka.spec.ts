@@ -1,0 +1,15 @@
+import { test, expect } from '@playwright/test';
+import fs from 'node:fs';
+
+const VERSION = JSON.parse(fs.readFileSync('package.json', 'utf8')).version as string;
+
+test('giriş ekranında logo, sürüm numarası ve sekme simgesi', async ({ page }) => {
+  await page.goto('/login');
+  const logo = page.getByAltText('GKH Digital');
+  await expect(logo).toBeVisible();
+  expect(await logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.getByText(`v${VERSION}`, { exact: true })).toBeVisible();
+  const icon = await page.request.get('/icon.png');
+  expect(icon.status()).toBe(200);
+  expect(icon.headers()['content-type']).toContain('image/png');
+});

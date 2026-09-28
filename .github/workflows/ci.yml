@@ -43,6 +43,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Sürüm numarası artırıldı mı
+        # Uygulama kodu değiştiyse package.json sürümü bir önceki gönderimden büyük olmalı (logonun altında görünür)
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          before='${{ github.event.before }}'
+          git fetch -q --depth=1 origin "$before" 2>/dev/null || { echo "önceki commit alınamadı, atlanıyor"; exit 0; }
+          if git diff --quiet "$before" HEAD -- app lib server components assets prisma/schema.prisma scripts/demo next.config.mjs; then
+            echo "uygulama kodu değişmedi"; exit 0
+          fi
+          old=$(git show "$before:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          new=$(node -p "require('./package.json').version")
+          echo "önceki: $old  şimdiki: $new"
+          node -e '
+            const [a, b] = process.argv.slice(1).map((v) => v.split(".").map(Number));
+            const cmp = a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            process.exit(cmp < 0 ? 0 : 1);
+          ' "$old" "$new" || { echo "::error title=Sürüm artırılmadı::Uygulama kodu değişti ama package.json sürümü ($new) önceki gönderimden ($old) büyük değil. Sürümü artırın ve CHANGELOG.md'ye ekleyin."; exit 1; }
+
       - name: Paketleri kur
         run: |
           if [ -f package-lock.json ]; then scripts/ci-step.sh "npm ci" npm ci; else scripts/ci-step.sh "npm install" npm install --no-audit --no-fund; fi

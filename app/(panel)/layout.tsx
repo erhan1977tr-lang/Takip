@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth/session';
 import { NAV, ROLE_LABEL, type NavItem } from '@/lib/roles';
 import { isDemo } from '@/server/demo/accounts.js';
 import { NavLinks } from './NavLinks';
+import { BrandLogo } from '@/components/BrandLogo';
 import { logoutAction } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -18,15 +19,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <b>TAKİP</b>
-          <span className="version">v2.25</span>
-        </div>
-        <div className="tag">SİPARİŞ VE ÜRETİM PORTALI</div>
+        <BrandLogo />
+        <div className="tag">TAKİP · SİPARİŞ VE ÜRETİM PORTALI</div>
         <NavLinks items={nav} variant="side" />
       </aside>
       <div className="main">
         <header className="topbar">
+          <div className="topbar-brand"><BrandLogo compact /></div>
           <div className="who">
             <div className="avatar">{(user.name || user.email).charAt(0).toUpperCase()}</div>
             <div style={{ minWidth: 0 }}>
