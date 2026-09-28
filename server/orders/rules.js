@@ -36,7 +36,11 @@ export const OFFER = {
 export const CLOSED = ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'];
 export const ACTIVE_DRAWING = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
-/** Müşterinin gördüğü tek satırlık durum ve sıradaki adım. */
+/**
+ * Müşterinin gördüğü tek satırlık durum ve sıradaki adım.
+ * @param {{status: string, drawing?: string, offer?: string|null}} p
+ * @returns {{label: string, tone: string, next: string}}
+ */
 export function customerSummary({ status, drawing = 'YOK', offer = null }) {
   if (status === 'YENI') return { label: 'İnceleniyor', tone: 'muted', next: 'Satış ekibi inceliyor' };
   if (status === 'HAZIRLANIYOR') {
@@ -52,7 +56,11 @@ export function customerSummary({ status, drawing = 'YOK', offer = null }) {
   return { label: 'İptal', tone: 'muted', next: '—' };
 }
 
-/** Üretime almak için eksik kalanlar (boş dizi = hazır). */
+/**
+ * Üretime almak için eksik kalanlar (boş dizi = hazır).
+ * @param {{status: string, drawing?: string, offer?: string|null}} p
+ * @returns {string[]}
+ */
 export function productionBlockers({ status, drawing = 'YOK', offer = null }) {
   if (status !== 'HAZIRLANIYOR') return ['Sipariş hazırlık aşamasında değil'];
   const b = [];
@@ -80,6 +88,7 @@ const addH = (d, h) => new Date(new Date(d).getTime() + h * 3_600_000);
 
 /**
  * En yakın SLA son tarihi. Beklemede, müşteri onayı beklenirken ya da kapanmış siparişte SLA işlemez.
+ * @param {{status: string, onHold?: boolean, createdAt: Date|string, drawing?: string, drawingSince?: Date|null, offer?: string|null, offerSince?: Date|null}} p
  * @returns {Date|null}
  */
 export function slaDeadline({ status, onHold = false, createdAt, drawing = 'YOK', drawingSince = null, offer = null, offerSince = null }) {
