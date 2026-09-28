@@ -7,7 +7,8 @@ Cam sipariş akışı için web uygulaması:
 3. İki hat bağımsız yürür:
    - **Çizim:** çizimci çizer → müşteri onaylar ya da revizyon ister (müşterinin tek onayı budur)
    - **Teklif:** satış yazar → sistem yöneticisi fiyatı onaylar → teklif müşterinin panelinde görünür (müşteri onaylamaz)
-4. Çizim onaylı (ya da gereksiz) ve teklif müşterideyse satış **Üretime al** der → yükleme → arşiv.
+4. Çizim onaylı (ya da gereksiz) ve teklif müşterideyse sipariş **otomatik olarak üretime geçer** (beklemedeki sipariş geçmez) → yükleme → arşiv.
+5. Siparişi yalnızca sistem yöneticisi iptal edebilir.
 
 - **Uygulama:** Next.js 15 (App Router) + Prisma 6 + PostgreSQL
 - **Prototip:** `prototype/index.html` — tarayıcıda açılan, verisi yerelde tutulan tanıtım sürümü (tüm ekranların taslağı)

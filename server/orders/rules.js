@@ -6,7 +6,8 @@
 //     Çizim hattı (drawingTrack): YOK | GEREKLI → YAPILIYOR → ONAY_BEKLIYOR ⇄ REVIZYON_ISTENDI → ONAYLANDI
 //     Teklif hattı (offer.status): HAZIRLANIYOR (satış) → YONETIMDE (yönetici) → GONDERILDI (müşteri görür)
 //   Müşteri yalnızca çizimi onaylar; teklifi onaylamaz, sadece görür.
-//   Üretime alma koşulu: çizim YOK ya da ONAYLANDI  +  teklif GONDERILDI.
+//   Otomatik üretim: çizim YOK ya da ONAYLANDI  +  teklif GONDERILDI olunca sipariş kendiliğinden URETIMDE olur
+//   (beklemedeki sipariş geçmez; beklemeden çıkarılınca yeniden kontrol edilir). İptal yalnızca yöneticidedir.
 
 export const ORDER_STATUS = {
   YENI: { label: 'İnceleniyor', tone: 'muted' },
@@ -69,7 +70,7 @@ export function customerDrawingLabel(drawing) {
 }
 
 /**
- * Üretime almak için eksik kalanlar (boş dizi = hazır).
+ * Otomatik üretime geçmek için eksik kalanlar (boş dizi = koşullar tamam).
  * @param {{status: string, drawing?: string, offer?: string|null}} p
  * @returns {string[]}
  */
@@ -80,6 +81,15 @@ export function productionBlockers({ status, drawing = 'YOK', offer = null }) {
   else if (drawing !== 'YOK' && drawing !== 'ONAYLANDI') b.push('Çizim henüz tamamlanmadı');
   if (offer !== 'GONDERILDI') b.push(offer === 'YONETIMDE' ? 'Teklif yönetici onayında' : 'Teklif henüz müşteriye gönderilmedi');
   return b;
+}
+
+/**
+ * Sipariş şimdi otomatik olarak üretime geçmeli mi?
+ * @param {{status: string, onHold?: boolean, drawing?: string, offer?: string|null}} p
+ * @returns {boolean}
+ */
+export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', offer = null }) {
+  return !onHold && productionBlockers({ status, drawing, offer }).length === 0;
 }
 
 export const STAGES = ['Alındı', 'Satış incelemesi', 'Çizim ve teklif', 'Üretim', 'Yükleme'];
@@ -164,7 +174,7 @@ export const EVENTS = {
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi', customer: null },
   OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   OFFER_REVISED: { label: 'Teklif revize ediliyor', customer: null },
-  PRODUCTION: { label: 'Üretime alındı', customer: 'Üretime alındı' },
+  PRODUCTION: { label: 'Otomatik olarak üretime alındı', customer: 'Üretime alındı' },
   SHIPPED: { label: 'Yüklendi', customer: 'Yüklendi' },
   ARCHIVED: { label: 'Arşivlendi', customer: 'Arşivlendi' },
   CANCELLED: { label: 'İptal edildi', customer: 'İptal edildi', note: true },
@@ -247,7 +257,6 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (sales && preparing && (offer === null || offer === 'HAZIRLANIYOR')) a.push('edit_offer', 'submit_offer');
   if (sales && preparing && offer === 'GONDERILDI') a.push('revise_offer');
   if (role === 'ADMIN' && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
-  if (sales && preparing && productionBlockers({ status, drawing, offer }).length === 0) a.push('mark_production');
 
   if (drawer && preparing && drawing === 'GEREKLI') a.push('start_drawing');
   if (drawer && preparing && (drawing === 'YAPILIYOR' || drawing === 'REVIZYON_ISTENDI')) a.push('upload_drawing');

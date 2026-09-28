@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
 } from '../server/orders/rules.js';
 
@@ -54,17 +54,28 @@ test('fiyat onayını yalnızca yönetici verir', () => {
   assert.ok(has({ role: 'SATIS', status: 'HAZIRLANIYOR', offer: 'GONDERILDI' }, 'revise_offer'));
 });
 
-test('üretime alma: çizim onaylı ya da gereksiz + teklif müşteride', () => {
-  const ok = (drawing, offer) => has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing, offer }, 'mark_production');
-  assert.equal(ok('YOK', 'GONDERILDI'), true);
-  assert.equal(ok('ONAYLANDI', 'GONDERILDI'), true);
-  assert.equal(ok('ONAY_BEKLIYOR', 'GONDERILDI'), false);
-  assert.equal(ok('YAPILIYOR', 'GONDERILDI'), false);
-  assert.equal(ok('ONAYLANDI', 'YONETIMDE'), false);
-  assert.equal(ok('ONAYLANDI', null), false);
+test('otomatik üretim: çizim onaylı ya da gereksiz + teklif müşteride; beklemede geçmez', () => {
+  const auto = (drawing, offer, onHold = false) => shouldAutoProduce({ status: 'HAZIRLANIYOR', onHold, drawing, offer });
+  assert.equal(auto('YOK', 'GONDERILDI'), true);
+  assert.equal(auto('ONAYLANDI', 'GONDERILDI'), true);
+  assert.equal(auto('ONAYLANDI', 'GONDERILDI', true), false);
+  assert.equal(auto('ONAY_BEKLIYOR', 'GONDERILDI'), false);
+  assert.equal(auto('YAPILIYOR', 'GONDERILDI'), false);
+  assert.equal(auto('ONAYLANDI', 'YONETIMDE'), false);
+  assert.equal(auto('ONAYLANDI', null), false);
+  assert.equal(shouldAutoProduce({ status: 'YENI', drawing: 'YOK', offer: 'GONDERILDI' }), false);
+  assert.equal(shouldAutoProduce({ status: 'URETIMDE', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }), false);
   assert.deepEqual(productionBlockers({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'YONETIMDE' }), ['Çizim müşteri onayında', 'Teklif yönetici onayında']);
-  assert.deepEqual(productionBlockers({ status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }), []);
-  assert.ok(!has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }, 'mark_production'));
+});
+
+test('elle üretime alma ve satışın reddetmesi yok; iptal yalnızca yönetici', () => {
+  for (const role of ['SATIS', 'ADMIN', 'CIZIM', 'MUSTERI']) {
+    const a = availableActions({ role, status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI', canApprove: true });
+    assert.ok(!a.includes('mark_production'), role);
+    assert.ok(!a.some((x) => /reject/.test(x)), role);
+    assert.equal(a.includes('cancel'), role === 'ADMIN', role);
+  }
+  assert.ok(!availableActions({ role: 'SATIS', status: 'YENI' }).includes('cancel'));
 });
 
 test('çizim ekibi', () => {

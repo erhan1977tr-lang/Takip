@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
-import { currentOffer, loadOrder, logEvent, refreshSla, type OrderDetail } from '@/lib/orders';
+import { currentOffer, loadOrder, logEvent, maybeAutoProduction, refreshSla, type OrderDetail } from '@/lib/orders';
 import { audit } from '@/lib/audit';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
 import { availableActions, fileProblem, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
@@ -79,12 +79,13 @@ export async function holdAction(formData: FormData) {
   const hold = String(formData.get('hold')) === '1';
   const { user, order } = await guard(formData, hold ? 'hold' : 'unhold');
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
-  await db.$transaction(async (tx) => {
+  const produced = await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id: order.id }, data: { onHold: hold } });
     await logEvent(tx, order.id, hold ? 'HOLD' : 'UNHOLD', user.id, note || null);
     await refreshSla(tx, order.id);
+    return hold ? false : maybeAutoProduction(tx, order.id, user.id);
   });
-  done(order.id, hold ? 'held' : 'unheld');
+  done(order.id, hold ? 'held' : produced ? 'unheld_production' : 'unheld');
 }
 
 export async function setShipDateAction(formData: FormData) {
@@ -96,17 +97,6 @@ export async function setShipDateAction(formData: FormData) {
     await logEvent(tx, order.id, 'SHIP_DATE', user.id, d.toISOString().slice(0, 10).split('-').reverse().join('.'));
   });
   done(order.id, 'ship_date');
-}
-
-/** Satış üretime alır: çizim onaylı (ya da gereksiz) ve teklif müşteride olmalı. */
-export async function markProductionAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'mark_production');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'URETIMDE' } });
-    await logEvent(tx, order.id, 'PRODUCTION', user.id);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'production');
 }
 
 export async function markShippedAction(formData: FormData) {
@@ -184,13 +174,14 @@ export async function uploadDrawingAction(formData: FormData) {
 export async function approveDrawingAction(formData: FormData) {
   const { user, order } = await guard(formData, 'approve_drawing');
   const latest = order.drawings[order.drawings.length - 1];
-  await db.$transaction(async (tx) => {
+  const produced = await db.$transaction(async (tx) => {
     if (latest) await tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI' } });
     await tx.order.update({ where: { id: order.id }, data: { drawingTrack: 'ONAYLANDI', drawingSince: new Date() } });
     await logEvent(tx, order.id, 'DRAWING_APPROVED', user.id, latest ? `v${latest.version}` : null);
     await refreshSla(tx, order.id);
+    return maybeAutoProduction(tx, order.id, user.id);
   });
-  done(order.id, 'drawing_approved');
+  done(order.id, produced ? 'drawing_approved_production' : 'drawing_approved');
 }
 
 export async function requestRevisionAction(formData: FormData) {
@@ -291,7 +282,7 @@ export async function saveOfferAction(formData: FormData) {
   if (intent === 'return' && !returnNote) redirect(err(order.id, 'Satışa geri gönderme nedenini yazın.'));
   const now = new Date();
 
-  await db.$transaction(async (tx) => {
+  const produced = await db.$transaction(async (tx) => {
     await tx.offerLine.deleteMany({ where: { offerId: offer.id } });
     await tx.offerLine.createMany({ data: lines.map((l, i) => ({ ...l, offerId: offer.id, sortOrder: i })) });
     await tx.offer.update({ where: { id: offer.id }, data: { amount } });
@@ -313,9 +304,10 @@ export async function saveOfferAction(formData: FormData) {
       await logEvent(tx, order.id, 'OFFER_RETURNED', user.id, returnNote);
     }
     await refreshSla(tx, order.id);
+    return intent === 'approve' ? maybeAutoProduction(tx, order.id, user.id) : false;
   });
   await audit('OFFER_SAVED', 'Offer', offer.id, user.id, { intent, amount, lines: lines.length });
-  done(order.id, intent === 'save' ? 'offer_saved' : `offer_${intent}`);
+  done(order.id, intent === 'save' ? 'offer_saved' : produced ? `offer_${intent}_production` : `offer_${intent}`);
 }
 
 /** Müşteriye gitmiş teklifi revize etmek için yeni bir taslak açar; müşteri bu arada eski teklifi görmeye devam eder. */

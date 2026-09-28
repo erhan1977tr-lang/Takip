@@ -11,7 +11,7 @@ import {
   EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction, markProductionAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction,
   markShippedAction, noDrawingAction, requestRevisionAction, reviseOfferAction, sendToDrawingAction, setShipDateAction,
   startDrawingAction, uploadDrawingAction,
 } from './actions';
@@ -22,20 +22,22 @@ const OK: Record<string, string> = {
   to_offer: 'Çizim gerekmiyor olarak işaretlendi. Teklif tablosunu doldurup yöneticiye gönderin.',
   held: 'Sipariş beklemeye alındı.',
   unheld: 'Sipariş beklemeden çıkarıldı.',
+  unheld_production: 'Sipariş beklemeden çıkarıldı ve koşullar tamam olduğu için otomatik olarak üretime alındı.',
   ship_date: 'Tahmini yükleme tarihi güncellendi.',
-  production: 'Sipariş üretime alındı.',
   shipped: 'Sipariş yüklendi olarak işaretlendi.',
   archived: 'Sipariş arşivlendi.',
   cancelled: 'Sipariş iptal edildi.',
   drawing_started: 'Çizim işini üstlendiniz.',
   drawing_uploaded: 'Çizim yüklendi ve müşterinin onayına gönderildi.',
   drawing_approved: 'Çizimi onayladınız. Teşekkürler.',
+  drawing_approved_production: 'Çizimi onayladınız. Teklifiniz de hazır olduğu için siparişiniz üretime alındı.',
   revision_requested: 'Revizyon talebiniz çizim ekibine iletildi.',
   files_added: 'Dosyalar eklendi.',
   note_added: 'Not eklendi.',
   offer_saved: 'Teklif taslak olarak kaydedildi.',
   offer_submit: 'Teklif sistem yöneticisinin onayına gönderildi.',
   offer_approve: 'Fiyat onaylandı; teklif müşterinin panelinde.',
+  offer_approve_production: 'Fiyat onaylandı; teklif müşterinin panelinde. Çizim onaylı (ya da gereksiz) olduğu için sipariş otomatik olarak üretime alındı.',
   offer_return: 'Teklif satışa geri gönderildi.',
   offer_revising: 'Teklifin yeni sürümü açıldı. Müşteri, yeni sürüm onaylanana kadar önceki teklifi görmeye devam eder.',
 };
@@ -43,7 +45,7 @@ const OK: Record<string, string> = {
 // "Sıradaki adım" satırında gösterilen işlemler
 const STEP_LABEL: Record<string, string> = {
   send_to_drawing: 'Çizim Ekibine Gönder', no_drawing: 'Teklife Gönder', edit_offer: 'Teklifi hazırla', approve_price: 'Fiyatı onayla',
-  mark_production: 'Üretime al', start_drawing: 'Çizimi üstlen', upload_drawing: 'Çizimi yükle', approve_drawing: 'Çizimi onayla',
+  start_drawing: 'Çizimi üstlen', upload_drawing: 'Çizimi yükle', approve_drawing: 'Çizimi onayla',
   request_revision: 'Revizyon iste', mark_shipped: 'Yüklendi olarak işaretle', archive: 'Arşivle', unhold: 'Beklemeden çıkar',
 };
 
@@ -60,7 +62,6 @@ function turnText(order: OrderDetail): string {
   if (d === 'ONAY_BEKLIYOR') parts.push('müşteri (çizim onayı)');
   if (offer === null || offer === 'HAZIRLANIYOR') parts.push('satış (teklif)');
   if (offer === 'YONETIMDE') parts.push('sistem yöneticisi (fiyat onayı)');
-  if (productionBlockers({ status: order.status, drawing: d, offer }).length === 0) parts.push('satış (üretime alma)');
   return parts.join(' · ') || '—';
 }
 
@@ -264,7 +265,6 @@ function InternalActions({ order, user, can, acts }: { order: OrderDetail; user:
   if (can('send_to_drawing')) btn('d', sendToDrawingAction, 'Çizim Ekibine Gönder');
   if (can('no_drawing')) btn('o', noDrawingAction, 'Teklife Gönder');
   if (can('start_drawing')) btn('sd', startDrawingAction, 'Çizimi üstlen');
-  if (can('mark_production')) btn('mp', markProductionAction, 'Üretime al', undefined, 'Sipariş üretime alınsın mı?');
   if (can('mark_shipped')) btn('ms', markShippedAction, 'Yüklendi olarak işaretle');
   if (can('archive')) btn('ar', archiveAction, 'Arşivle');
   if (can('hold')) btn('h', holdAction, 'Beklemeye Al', <input type="hidden" name="hold" value="1" />);
@@ -290,7 +290,7 @@ function InternalActions({ order, user, can, acts }: { order: OrderDetail; user:
 
           {blockers.length > 0 && (
             <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0 }}>
-              <b>Üretime almak için bekleniyor:</b> {blockers.join(' · ')}
+              <b>Otomatik üretime geçmesi için bekleniyor:</b> {blockers.join(' · ')}
             </div>
           )}
 

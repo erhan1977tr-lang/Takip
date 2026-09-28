@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import type { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
-import { canSeeCustomerName, maskName, slaDeadline } from '../server/orders/rules.js';
+import { canSeeCustomerName, maskName, shouldAutoProduce, slaDeadline } from '../server/orders/rules.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -73,6 +73,21 @@ export async function refreshSla(tx: Tx, orderId: string) {
     offer: offer?.status ?? null, offerSince: offer?.statusSince ?? null,
   });
   await tx.order.update({ where: { id: orderId }, data: { slaDeadline: deadline } });
+}
+
+/**
+ * Çizim onaylı (ya da gereksiz) ve teklif müşterideyse siparişi otomatik olarak üretime alır.
+ * Beklemedeki sipariş geçmez. Üretime geçtiyse true döner.
+ */
+export async function maybeAutoProduction(tx: Tx, orderId: string, userId: string | null): Promise<boolean> {
+  const o = await tx.order.findUniqueOrThrow({
+    where: { id: orderId },
+    include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
+  });
+  if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null })) return false;
+  await tx.order.update({ where: { id: orderId }, data: { status: 'URETIMDE', slaDeadline: null } });
+  await logEvent(tx, orderId, 'PRODUCTION', userId, o.drawingTrack === 'YOK' ? 'Teklif müşteriye gönderildi' : 'Çizim onaylandı ve teklif müşteride');
+  return true;
 }
 
 /** Bir sonraki müşteri sipariş numarası önerisi (son numara + 1). */

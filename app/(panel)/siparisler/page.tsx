@@ -5,7 +5,7 @@ import { requireUser, type CurrentUser } from '@/lib/auth/session';
 import { customerLabel, orderScope } from '@/lib/orders';
 import { fmtDate, fmtMonth } from '@/lib/format';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
-import { CLOSED, customerSummary, productionBlockers, slaInfo } from '@/server/orders/rules.js';
+import { CLOSED, customerSummary, slaInfo } from '@/server/orders/rules.js';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -204,9 +204,6 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   }
   if (role === 'ADMIN') {
     myTurn.push({ title: 'Fiyat onayı bekleyen teklifler', rows: prep.filter((o) => offerOf(o) === 'YONETIMDE'), empty: 'Onay bekleyen teklif yok.' });
-  }
-  if (role === 'SATIS' || role === 'ADMIN') {
-    myTurn.push({ title: 'Üretime alınabilecekler', rows: prep.filter((o) => productionBlockers({ status: o.status, drawing: o.drawingTrack, offer: offerOf(o) }).length === 0), empty: 'Üretime hazır sipariş yok.' });
   }
   if (role === 'CIZIM') {
     myTurn.push({ title: 'Çizim işleri', rows: prep.filter((o) => ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack)), empty: 'Bekleyen çizim işi yok.' });

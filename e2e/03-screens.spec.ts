@@ -55,7 +55,7 @@ test('ekran görüntüleri', async ({ browser }) => {
   await sales.setViewportSize({ width: 1440, height: 900 });
   await sales.screenshot({ path: path.join(DIR!, 'masaustu-08-satis-cizim-surerken-teklif.png'), fullPage: true });
   await sales.context().close();
-  await shoot(browser, [SALES, TEAM_PW], [['09-satis-uretime-hazir', uns2], ['10-satis-teklifler', '/teklifler']]);
+  await shoot(browser, [SALES, TEAM_PW], [['09-satis-uretimde', uns2], ['10-satis-teklifler', '/teklifler']]);
   await shoot(browser, ['cizim@e2e.test', TEAM_PW], [['11-cizim-paneli', '/siparisler']]);
   await shoot(browser, [ADMIN, ADMIN_PW], [
     ['12-yonetici-kullanicilar', '/admin/users'],
