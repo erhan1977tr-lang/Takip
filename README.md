@@ -1,7 +1,13 @@
 # Takip — Sipariş ve Üretim Portalı
 
 Cam sipariş akışı için web uygulaması:
-sipariş → satış kararı (çizim / teklif / beklemeye al) → çizim ve müşteri onayı → teklif → yönetici fiyat onayı → üretim → yükleme.
+
+1. Müşteri siparişi ve dosyasını gönderir.
+2. Satış dosyayı kontrol eder: **Çizim Ekibine Gönder**, **Teklife Gönder** ya da **Beklemeye Al**.
+3. İki hat bağımsız yürür:
+   - **Çizim:** çizimci çizer → müşteri onaylar ya da revizyon ister (müşterinin tek onayı budur)
+   - **Teklif:** satış yazar → sistem yöneticisi fiyatı onaylar → teklif müşterinin panelinde görünür (müşteri onaylamaz)
+4. Çizim onaylı (ya da gereksiz) ve teklif müşterideyse satış **Üretime al** der → yükleme → arşiv.
 
 - **Uygulama:** Next.js 15 (App Router) + Prisma 6 + PostgreSQL
 - **Prototip:** `prototype/index.html` — tarayıcıda açılan, verisi yerelde tutulan tanıtım sürümü (tüm ekranların taslağı)
@@ -13,7 +19,8 @@ sipariş → satış kararı (çizim / teklif / beklemeye al) → çizim ve mü�
 | Giriş, ilk giriş (e-posta kodu + şifre belirleme), oturum | ✅ |
 | Yönetici: Müşteriler (firmalar), Kullanıcılar, davet / şifre sıfırlama / pasifleştirme | ✅ |
 | Davet e-postası (SMTP, TR / RO / EN) | ✅ |
-| Siparişler: müşteri siparişi (dosya + cam kataloğu), satış kararı, çizim ve revizyon, teklif tablosu, yönetici fiyat onayı, müşteri onayı, üretim, yükleme, arşiv | ✅ |
+| Siparişler: müşteri siparişi (dosya + cam kataloğu), satış kararı, paralel çizim ve teklif hatları, çizim revizyonu, teklif revizyonu, yönetici fiyat onayı, üretim, yükleme, arşiv | ✅ |
+| Teklifler sayfası (müşteri: Tekliflerim, iç ekip: durumlara göre) | ✅ |
 | Notlar (iç not), hareket geçmişi, SLA, müşteri adı maskeleme, yetkili dosya indirme | ✅ |
 | Cam Kataloğu (yönetici) | ✅ |
 | Yükleme takvimi, teklif PDF/Excel, bildirimler | ⏳ |

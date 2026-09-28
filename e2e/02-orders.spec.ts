@@ -158,6 +158,7 @@ test('çizim yolu: çizim ve teklif paralel yürür; üretim ikisi de tamamlanı
   await cust.goto(`/siparisler/${ids.b}`);
   await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
   await expect(cust.getByText('Çizimi onayladınız.')).toBeVisible();
+  await expect(cust.locator('.track', { hasText: 'Çizim' })).toContainText('Onaylandı');
 
   await sales.goto('/siparisler');
   const row = sales.locator('.card', { hasText: 'Üretime alınabilecekler' }).locator('tr', { hasText: 'UNS2' });

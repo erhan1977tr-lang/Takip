@@ -8,7 +8,7 @@ import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/component
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor } from './OfferEditor';
 import {
-  EVENTS, STAGES, availableActions, customerSummary, offerLineTotals, productionBlockers, slaInfo, stageIndex,
+  EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, holdAction, markProductionAction,
@@ -129,7 +129,7 @@ export default async function OrderPage({
             <div className="track">
               <span className="k">Çizim</span>
               {isCustomer
-                ? <span>{order.drawingTrack === 'YOK' ? 'Gerekmiyor' : customerSummary({ status: 'HAZIRLANIYOR', drawing: order.drawingTrack }).label}</span>
+                ? <span>{customerDrawingLabel(order.drawingTrack)}</span>
                 : <DrawingBadge track={order.drawingTrack} />}
             </div>
             <div className="track">

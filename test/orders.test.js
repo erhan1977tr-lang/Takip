@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, productionBlockers,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
 } from '../server/orders/rules.js';
 
@@ -87,6 +87,9 @@ test('müşterinin gördüğü durum', () => {
   assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }).label, 'Teklifiniz hazır');
   assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }).label, 'Hazırlanıyor');
   assert.equal(customerSummary({ status: 'URETIMDE' }).label, 'Onaylandı, üretimde');
+  assert.equal(customerDrawingLabel('ONAYLANDI'), 'Onaylandı');
+  assert.equal(customerDrawingLabel('YAPILIYOR'), 'Hazırlanıyor');
+  assert.equal(customerDrawingLabel('ONAY_BEKLIYOR'), 'Onayınız bekleniyor');
 });
 
 test('SLA: en yakın son tarih; beklemede ve müşteri onayında işlemez', () => {

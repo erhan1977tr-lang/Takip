@@ -57,6 +57,18 @@ export function customerSummary({ status, drawing = 'YOK', offer = null }) {
 }
 
 /**
+ * Müşteriye gösterilen çizim hattı durumu.
+ * @param {string} drawing
+ * @returns {string}
+ */
+export function customerDrawingLabel(drawing) {
+  return {
+    YOK: 'Gerekmiyor', GEREKLI: 'Hazırlanıyor', YAPILIYOR: 'Hazırlanıyor',
+    ONAY_BEKLIYOR: 'Onayınız bekleniyor', REVIZYON_ISTENDI: 'Revizyon hazırlanıyor', ONAYLANDI: 'Onaylandı',
+  }[drawing] ?? drawing;
+}
+
+/**
  * Üretime almak için eksik kalanlar (boş dizi = hazır).
  * @param {{status: string, drawing?: string, offer?: string|null}} p
  * @returns {string[]}
