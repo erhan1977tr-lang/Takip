@@ -35,7 +35,7 @@ p { margin: 0 0 8px; }
 
 /* ---------- form ---------- */
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-input[type='text'], input[type='email'], input[type='password'], input[type='tel'], select, textarea {
+input[type='text'], input[type='email'], input[type='password'], input[type='tel'], input[type='number'], input[type='date'], input[type='search'], input:not([type]), select, textarea {
   width: 100%;
   font: inherit;
   padding: 9px 11px;
@@ -61,6 +61,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
   background: #fff; color: var(--text); cursor: pointer; text-decoration: none;
 }
 .btn:hover { background: #f8fafc; }
+.btn:disabled, .btn[disabled] { opacity: .45; cursor: not-allowed; }
+.btn-primary:disabled:hover { background: var(--primary); }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn-primary:hover { background: #1e40af; }
 .btn-danger { color: var(--danger); border-color: #fecaca; }
@@ -198,7 +200,9 @@ td.actions form { display: inline; }
 .note { padding: 10px 12px; border-radius: 8px; background: #f8fafc; margin-bottom: 8px; }
 .note.internal { background: #fffbeb; border: 1px dashed #fcd34d; }
 .note .meta { font-size: 11px; color: var(--faint); margin-top: 4px; }
+.offer-table { min-width: 980px; }
 .offer-table input, .offer-table select { padding: 6px 8px; font-size: 13px; }
+.offer-table td.desc { min-width: 240px; }
 .offer-table td { padding: 6px 6px; }
 .offer-table tfoot td { font-weight: 700; background: #f8fafc; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

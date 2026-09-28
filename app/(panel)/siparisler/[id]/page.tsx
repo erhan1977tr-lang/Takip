@@ -57,6 +57,7 @@ export default async function OrderPage({
   const offer = order.offers[0];
   const sla = isCustomer || order.onHold ? null : slaInfo(order.slaDeadline);
   const stage = stageIndex(order.status);
+  const editable = !!offer && (can('edit_offer') || can('approve_price'));
   const catalog = can('edit_offer') || can('approve_price')
     ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })).map((g) => g.name)
     : [];
@@ -94,11 +95,9 @@ export default async function OrderPage({
         </div>
       </div>
 
-      <div className="detail-grid">
-        <div>
-          <ActionPanel order={order} user={user} can={can} />
+      <ActionPanel order={order} user={user} can={can} />
 
-          {offer && (can('edit_offer') || can('approve_price')) ? (
+      {editable && offer && (
             <OfferEditor
               orderId={order.id}
               mode={can('approve_price') ? 'admin' : 'sales'}
@@ -112,9 +111,11 @@ export default async function OrderPage({
                 adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
               }))}
             />
-          ) : (
-            offer && (!isCustomer || offer.status === 'GONDERILDI') && <OfferView order={order} isCustomer={isCustomer} />
-          )}
+      )}
+
+      <div className="detail-grid">
+        <div>
+          {!editable && offer && (!isCustomer || offer.status === 'GONDERILDI') && <OfferView order={order} isCustomer={isCustomer} />}
 
           <Drawings order={order} user={user} />
           <Files order={order} user={user} canAdd={can('add_file')} />

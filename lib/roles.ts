@@ -21,7 +21,11 @@ export const NAV: Record<AppRole, NavItem[]> = {
   ],
   SATIS: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
   CIZIM: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
-  MUSTERI: [{ section: 'Müşteri portalı' }, { href: '/siparisler', label: 'Siparişlerim' }],
+  MUSTERI: [
+    { section: 'Müşteri portalı' },
+    { href: '/siparisler', label: 'Siparişlerim' },
+    { href: '/siparisler/yeni', label: 'Yeni Sipariş' },
+  ],
 };
 
 export function homeFor(role: AppRole): string {

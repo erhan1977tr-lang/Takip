@@ -50,7 +50,7 @@ export function OfferEditor(props: {
       <div className="table-wrap">
         <table className="offer-table">
           <thead>
-            <tr><th>#</th><th style={{ minWidth: 200 }}>Açıklama</th><th>Poz</th><th>En (mm)</th><th>Boy (mm)</th><th>Adet</th><th>Birim</th><th className="num">Metraj</th><th>Birim fiyat</th><th className="num">Tutar</th><th /></tr>
+            <tr><th>#</th><th>Açıklama</th><th>Poz</th><th>En (mm)</th><th>Boy (mm)</th><th>Adet</th><th>Birim</th><th className="num">Metraj</th><th>Birim fiyat</th><th className="num">Tutar</th><th /></tr>
           </thead>
           <tbody>
             {lines.map((l, i) => {
@@ -58,19 +58,19 @@ export function OfferEditor(props: {
               return (
                 <tr key={l.key}>
                   <td className="muted">{i + 1}</td>
-                  <td><input name="l_desc" list="catalog" value={l.description} onChange={(e) => set(l.key, { description: e.target.value })} aria-label="Açıklama" /></td>
-                  <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 70 }} aria-label="Poz" /></td>
-                  <td><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} style={{ width: 80 }} aria-label="En" /></td>
-                  <td><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} style={{ width: 80 }} aria-label="Boy" /></td>
-                  <td><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} style={{ width: 60 }} aria-label="Adet" /></td>
+                  <td className="desc"><input name="l_desc" list="catalog" value={l.description} onChange={(e) => set(l.key, { description: e.target.value })} aria-label="Açıklama" /></td>
+                  <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label="Poz" /></td>
+                  <td><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label="En" /></td>
+                  <td><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label="Boy" /></td>
+                  <td><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} style={{ width: 58 }} aria-label="Adet" /></td>
                   <td>
-                    <select name="l_unit" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label="Birim">
+                    <select name="l_unit" style={{ width: 78 }} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label="Birim">
                       <option value="m2">m²</option>
                       <option value="adet">adet</option>
                     </select>
                   </td>
                   <td className="num">{fmt(t.metraj)}</td>
-                  <td><input name="l_price" inputMode="decimal" value={l.unitPrice} onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 90 }} aria-label="Birim fiyat" /></td>
+                  <td><input name="l_price" inputMode="decimal" value={l.unitPrice} onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }} aria-label="Birim fiyat" /></td>
                   <td className="num">{fmt(t.amount)}</td>
                   <td>{lines.length > 1 && <button type="button" className="btn btn-link danger" aria-label="Satırı sil" onClick={() => setLines(lines.filter((x) => x.key !== l.key))}>✕</button>}</td>
                 </tr>
