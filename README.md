@@ -13,7 +13,10 @@ sipariş → satış kararı (çizim / teklif / beklemeye al) → çizim ve mü�
 | Giriş, ilk giriş (e-posta kodu + şifre belirleme), oturum | ✅ |
 | Yönetici: Müşteriler (firmalar), Kullanıcılar, davet / şifre sıfırlama / pasifleştirme | ✅ |
 | Davet e-postası (SMTP, TR / RO / EN) | ✅ |
-| Siparişler, teklif, çizim, yükleme takvimi | ⏳ prototipten taşınacak |
+| Siparişler: müşteri siparişi (dosya + cam kataloğu), satış kararı, çizim ve revizyon, teklif tablosu, yönetici fiyat onayı, müşteri onayı, üretim, yükleme, arşiv | ✅ |
+| Notlar (iç not), hareket geçmişi, SLA, müşteri adı maskeleme, yetkili dosya indirme | ✅ |
+| Cam Kataloğu (yönetici) | ✅ |
+| Yükleme takvimi, teklif PDF/Excel, bildirimler | ⏳ |
 | Sunucuya otomatik kurulum | ⏳ sunucu hazır olunca |
 
 ## Klasörler
@@ -51,7 +54,9 @@ npm test          # birim testleri (e-posta şablonu, davet kodu)
 npm run e2e       # uçtan uca testler (çalışan uygulama ve MAIL_OUTBOX_DIR gerekir)
 ```
 
-Her `git push`'ta GitHub Actions şema doğrulama, migration, birim testleri, tip kontrolü, derleme, uçtan uca testler ve Docker imajı derlemesini çalıştırır.
+Her `git push`'ta GitHub Actions şema doğrulama, migration, birim testleri, tip kontrolü, derleme, uçtan uca testler ve Docker imajı derlemesini çalıştırır. Ana ekranların masaüstü ve mobil ekran görüntüleri `ci-screenshots` dalına yazılır.
+
+Sipariş durumları ve kim ne yapabilir: `server/orders/rules.js` (birim testleri `test/orders.test.js`).
 
 ## E-posta (SMTP)
 
