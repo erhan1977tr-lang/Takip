@@ -1,40 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, firstLogin, outboxCodeFor } from './helpers';
 
 // Akış: yönetici ilk girişi → firma → kullanıcı daveti → müşterinin ilk girişi → yetki kontrolü
 test.describe.configure({ mode: 'serial' });
-
-const ADMIN = 'admin@e2e.test';
-const CUSTOMER = 'ali@unsal.test';
-const ADMIN_PW = 'Yonetici2026';
-const CUST_PW = 'Musteri2026x';
-
-function outboxCodeFor(email: string): string {
-  const dir = process.env.MAIL_OUTBOX_DIR;
-  if (!dir) throw new Error('MAIL_OUTBOX_DIR ayarlı değil');
-  const files = fs.readdirSync(dir).filter((f) => f.includes(email)).sort();
-  expect(files.length, `outbox'ta ${email} için e-posta yok`).toBeGreaterThan(0);
-  const msg = JSON.parse(fs.readFileSync(path.join(dir, files[files.length - 1]), 'utf8'));
-  expect(msg.subject).toContain('Takip');
-  const m = /(\d{6})/.exec(msg.text);
-  if (!m) throw new Error('E-postada kod bulunamadı');
-  return m[1];
-}
-
-async function firstLogin(page: Page, email: string, code: string, password: string) {
-  await page.goto('/login');
-  await page.fill('#email', email);
-  await page.click('button[type=submit]');
-  await expect(page).toHaveURL(/\/setup\?email=/);
-  await page.fill('#code', code);
-  await page.click('button[type=submit]');
-  await expect(page.getByRole('heading', { name: 'Şifrenizi belirleyin', exact: true })).toBeVisible();
-  await page.fill('#password', password);
-  await page.fill('#password2', password);
-  await page.click('button[type=submit]');
-}
 
 test('yönetici komut satırından oluşturulur ve ilk girişte şifresini belirler', async ({ page }) => {
   const out = execFileSync('node', ['scripts/create-admin.mjs', ADMIN, 'E2E Yönetici', '--factory', 'GKH Trading'], {
@@ -53,7 +22,8 @@ test('yönetici komut satırından oluşturulur ve ilk girişte şifresini belir
   await expect(page.getByText('Doğrulama kodu hatalı ya da geçersiz.')).toBeVisible();
 
   await firstLogin(page, ADMIN, code!, ADMIN_PW);
-  await expect(page).toHaveURL(/\/admin\/users$/);
+  await expect(page).toHaveURL(/\/siparisler$/);
+  await page.goto('/admin/users');
   await expect(page.getByRole('heading', { name: 'Kullanıcılar', exact: true })).toBeVisible();
 });
 
@@ -62,7 +32,7 @@ test('yönetici firma oluşturur ve müşteri kullanıcısını davet eder', asy
   await page.fill('#email', ADMIN);
   await page.fill('#password', ADMIN_PW);
   await page.click('button[type=submit]');
-  await expect(page).toHaveURL(/\/admin\/users$/);
+  await expect(page).toHaveURL(/\/siparisler$/);
 
   await page.goto('/admin/firms');
   await page.fill('#f-name', 'Ünsal Cam');
@@ -89,8 +59,7 @@ test('yönetici firma oluşturur ve müşteri kullanıcısını davet eder', asy
 test('davet edilen müşteri kodla girer, şifresini belirler ve yalnızca kendi paneline erişir', async ({ page }) => {
   const code = outboxCodeFor(CUSTOMER);
   await firstLogin(page, CUSTOMER, code, CUST_PW);
-  await expect(page).toHaveURL(/\/siparisler$/);
-  await expect(page.getByRole('heading', { name: 'Siparişlerim', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ünsal Cam — Siparişlerim', exact: true })).toBeVisible();
   await expect(page.getByText('Müşteri · Ünsal Cam')).toBeVisible();
 
   // Yönetici sayfasına giremez

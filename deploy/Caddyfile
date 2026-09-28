@@ -2,7 +2,7 @@
 {$APP_DOMAIN} {
 	encode zstd gzip
 	request_body {
-		max_size 110MB
+		max_size 260MB
 	}
 	header {
 		Strict-Transport-Security "max-age=31536000"

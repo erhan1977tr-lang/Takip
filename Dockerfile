@@ -23,8 +23,9 @@ ENV NODE_ENV=production
 CMD ["npx", "prisma", "migrate", "deploy"]
 
 FROM base AS runner
-ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
-RUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 UPLOAD_DIR=/data/uploads
+RUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app app \
+  && mkdir -p /data/uploads && chown -R app:app /data
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
 COPY --from=builder --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma

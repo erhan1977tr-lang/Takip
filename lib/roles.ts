@@ -16,6 +16,8 @@ export const NAV: Record<AppRole, NavItem[]> = {
     { section: 'Kişiler' },
     { href: '/admin/users', label: 'Kullanıcılar' },
     { href: '/admin/firms', label: 'Müşteriler' },
+    { section: 'Tanımlar' },
+    { href: '/admin/katalog', label: 'Cam Kataloğu' },
   ],
   SATIS: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
   CIZIM: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
@@ -23,5 +25,5 @@ export const NAV: Record<AppRole, NavItem[]> = {
 };
 
 export function homeFor(role: AppRole): string {
-  return role === 'ADMIN' ? '/admin/users' : '/siparisler';
+  return '/siparisler';
 }

@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/auth/session';
 import { inviteStatus } from '@/lib/invite';
 import { ROLE_LABEL } from '@/lib/roles';
 import { CreateUserForm } from './UserForm';
-import { ConfirmButton } from './ConfirmButton';
+import { ConfirmButton } from '@/components/ConfirmButton';
 import { resetPasswordAction, sendInviteAction, toggleActiveAction } from './actions';
 
 const OK: Record<string, string> = {

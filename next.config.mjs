@@ -5,7 +5,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   serverExternalPackages: ['nodemailer'],
   experimental: {
-    serverActions: { bodySizeLimit: '2mb' },
+    serverActions: { bodySizeLimit: '250mb' },
   },
 };
 export default nextConfig;
