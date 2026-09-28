@@ -210,25 +210,59 @@ function num(v) {
 }
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** Satırın metrajı (m²) ve tutarı. unit: 'm2' → metraj × fiyat; 'adet' → adet × fiyat. */
+export const LINE_KIND = { CAM: 'Cam', CNC: 'CNC', DELIK: 'Delik' };
+const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
+
+/**
+ * Satırın metrajı (m²) ve tutarı. unit: 'm2' → metraj × fiyat; 'adet' → adet × fiyat.
+ * CNC / delik satırları her zaman adet × fiyattır ve metraja girmez. Bedelsiz satırın tutarı 0'dır.
+ */
 export function offerLineTotals(line) {
+  const sub = isSub(line);
   const en = num(line.enMm), boy = num(line.boyMm), adet = Math.max(0, Math.trunc(num(line.adet)));
-  const price = num(line.unitPrice);
-  const metraj = en > 0 && boy > 0 ? round2(((en * boy) / 1_000_000) * adet) : 0;
-  const amount = line.unit === 'adet' ? round2(adet * price) : round2(metraj * price);
+  const price = line.free ? 0 : num(line.unitPrice);
+  const metraj = !sub && en > 0 && boy > 0 ? round2(((en * boy) / 1_000_000) * adet) : 0;
+  const amount = sub || line.unit === 'adet' ? round2(adet * price) : round2(metraj * price);
   return { metraj, amount };
 }
+/** Toplamlar. adet = cam adedi (CNC / delik adetleri ayrı sayılır). */
 export function offerTotals(lines) {
   return lines.reduce(
     (acc, l) => {
       const t = offerLineTotals(l);
+      const n = Math.max(0, Math.trunc(num(l.adet)));
       acc.metraj = round2(acc.metraj + t.metraj);
       acc.amount = round2(acc.amount + t.amount);
-      acc.adet += Math.max(0, Math.trunc(num(l.adet)));
+      if (l.kind === 'CNC') acc.cnc += n;
+      else if (l.kind === 'DELIK') acc.delik += n;
+      else acc.adet += n;
       return acc;
     },
-    { metraj: 0, amount: 0, adet: 0 }
+    { metraj: 0, amount: 0, adet: 0, cnc: 0, delik: 0 }
   );
+}
+
+/**
+ * Müşteriye gidecek teklifte eksikler (boş dizi = tamam): fiyatsız satır (bedelsiz değilse),
+ * m² satırında ölçü eksikliği, üstünde cam satırı olmayan CNC / delik satırı.
+ * @param {{kind?: string, description?: string, enMm?: any, boyMm?: any, unit?: string, unitPrice?: any, free?: boolean}[]} lines
+ * @returns {string[]}
+ */
+export function offerProblems(lines) {
+  if (lines.length === 0) return ['Teklifte en az bir satır olmalı.'];
+  const p = [];
+  const noPrice = [];
+  let glassNo = 0, seenGlass = false;
+  for (const l of lines) {
+    const sub = isSub(l);
+    if (!sub) { glassNo += 1; seenGlass = true; }
+    const label = sub ? `${glassNo}. ${LINE_KIND[l.kind]}` : `${glassNo}. satır`;
+    if (sub && !seenGlass) p.push(`${LINE_KIND[l.kind]} satırı bir cam satırının altında olmalı.`);
+    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push(`${label}: m² ile fiyatlanan satırda en ve boy girilmeli.`);
+    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(label);
+  }
+  if (noPrice.length) p.push(`${noPrice.length} satırın fiyatı boş: ${noPrice.join(', ')}. Fiyat girin ya da satırı bedelsiz işaretleyin.`);
+  return p;
 }
 
 // ---------- dosyalar ----------

@@ -39,15 +39,19 @@ const num = (v) => {
 /**
  * Bir siparişin yükü.
  * @param {{
- *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any}[],
+ *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string}[],
  *   items?: {camAdedi: number}[],
  *   crates?: {netAgirlik?: any, brutAgirlik?: any, daraKg?: any}[],
  * }} p
- * @returns {{metraj: number, camAdet: number, netKg: number, crates: number, grossKg: number, realCrates: boolean}}
+ * @returns {{metraj: number, camAdet: number, cnc: number, delik: number, netKg: number, crates: number, grossKg: number, realCrates: boolean}}
  */
 export function orderLoad({ lines = [], items = [], crates = [] }) {
-  let metraj = 0, camAdet = 0, glassKg = 0;
-  const glassLines = lines.filter((l) => (l.unit ?? 'm2') === 'm2');
+  let metraj = 0, camAdet = 0, glassKg = 0, cnc = 0, delik = 0;
+  for (const l of lines) {
+    if (l.kind === 'CNC') cnc += Math.max(0, Math.trunc(num(l.adet)));
+    if (l.kind === 'DELIK') delik += Math.max(0, Math.trunc(num(l.adet)));
+  }
+  const glassLines = lines.filter((l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2');
   for (const l of glassLines) {
     const m = offerLineTotals({ ...l, unit: 'm2', unitPrice: 0 }).metraj;
     metraj = round2(metraj + m);
@@ -63,10 +67,10 @@ export function orderLoad({ lines = [], items = [], crates = [] }) {
       const net = c.netAgirlik != null ? num(c.netAgirlik) : glassKg / crates.length;
       return s + (c.brutAgirlik != null ? num(c.brutAgirlik) : net + (c.daraKg != null ? num(c.daraKg) : CRATE_TARE_KG));
     }, 0));
-    return { metraj, camAdet, netKg, crates: crates.length, grossKg, realCrates: true };
+    return { metraj, camAdet, cnc, delik, netKg, crates: crates.length, grossKg, realCrates: true };
   }
   const n = glassKg > 0 ? Math.ceil(glassKg / CRATE_MAX_KG) : 0;
-  return { metraj, camAdet, netKg: glassKg, crates: n, grossKg: glassKg + n * CRATE_TARE_KG, realCrates: false };
+  return { metraj, camAdet, cnc, delik, netKg: glassKg, crates: n, grossKg: glassKg + n * CRATE_TARE_KG, realCrates: false };
 }
 
 /**
@@ -75,16 +79,18 @@ export function orderLoad({ lines = [], items = [], crates = [] }) {
  * @param {ReturnType<typeof orderLoad>[]} loads
  */
 export function sumLoads(loads) {
-  let metraj = 0, camAdet = 0, netKg = 0, realCrates = 0, realGross = 0, estNet = 0;
+  let metraj = 0, camAdet = 0, cnc = 0, delik = 0, netKg = 0, realCrates = 0, realGross = 0, estNet = 0;
   for (const l of loads) {
     metraj = round2(metraj + l.metraj);
     camAdet += l.camAdet;
+    cnc += l.cnc ?? 0;
+    delik += l.delik ?? 0;
     netKg += l.netKg;
     if (l.realCrates) { realCrates += l.crates; realGross += l.grossKg; } else estNet += l.netKg;
   }
   const est = estNet > 0 ? Math.ceil(estNet / CRATE_MAX_KG) : 0;
   return {
-    orders: loads.length, metraj, camAdet, netKg,
+    orders: loads.length, metraj, camAdet, cnc, delik, netKg,
     crates: realCrates + est, grossKg: realGross + estNet + est * CRATE_TARE_KG,
     estimatedCrates: est, estimatedNetKg: estNet,
   };

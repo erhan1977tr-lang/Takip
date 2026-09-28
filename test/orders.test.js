@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce, offerNeedsCheck,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
 } from '../server/orders/rules.js';
 
@@ -183,7 +183,23 @@ test('müşteri adı maskeleme', () => {
 test('teklif satırı: m² ve adet', () => {
   assert.deepEqual(offerLineTotals({ enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '41,5' }), { metraj: 6, amount: 249 });
   assert.deepEqual(offerLineTotals({ adet: 4, unit: 'adet', unitPrice: 12.5 }), { metraj: 0, amount: 50 });
-  assert.deepEqual(offerTotals([{ enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: 10 }, { adet: 1, unit: 'adet', unitPrice: 5 }]), { metraj: 2, amount: 25, adet: 3 });
+  assert.deepEqual(offerTotals([{ enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: 10 }, { adet: 1, unit: 'adet', unitPrice: 5 }]), { metraj: 2, amount: 25, adet: 3, cnc: 0, delik: 0 });
+});
+
+test('CNC / delik satırları ve bedelsiz', () => {
+  const lines = [
+    { kind: 'CAM', description: '8mm', enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '24' }, // 6 m² × 24 = 144
+    { kind: 'CNC', description: '', enMm: 1000, boyMm: 2000, adet: 2, unit: 'adet', unitPrice: '15' }, // 30, metraja girmez
+    { kind: 'DELIK', description: '', adet: 12, unit: 'adet', unitPrice: '2', free: true }, // bedelsiz
+  ];
+  assert.deepEqual(offerTotals(lines), { metraj: 6, amount: 174, adet: 3, cnc: 2, delik: 12 });
+  assert.deepEqual(offerProblems(lines), []);
+  const p = offerProblems([lines[0], { ...lines[1], unitPrice: '' }, { ...lines[2], free: false, unitPrice: '0' }]);
+  assert.equal(p.length, 1);
+  assert.match(p[0], /2 satırın fiyatı boş: 1\. CNC, 1\. Delik/);
+  assert.match(offerProblems([lines[1]]).join(' '), /cam satırının altında/);
+  assert.match(offerProblems([{ ...lines[0], enMm: null }]).join(' '), /en ve boy/);
+  assert.deepEqual(offerProblems([]), ['Teklifte en az bir satır olmalı.']);
 });
 
 test('dosya kontrolü', () => {

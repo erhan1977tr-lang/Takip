@@ -169,7 +169,7 @@ async function main() {
           lines: {
             create: lines.map((l, i) => ({
               sortOrder: i, description: l.description, poz: l.poz ?? null, enMm: l.enMm ?? null, boyMm: l.boyMm ?? null,
-              adet: l.adet, unit: l.unit ?? 'm2', unitPrice: String(l.unitPrice ?? 0),
+              adet: l.adet, unit: l.unit ?? 'm2', unitPrice: String(l.unitPrice ?? 0), kind: l.kind ?? 'CAM', free: !!l.free,
             })),
           },
         },
@@ -249,8 +249,15 @@ async function main() {
     drawing: 'YAPILIYOR', drawingSince: 10, drawer: true,
     items: [['8mm Temperli Cam', 8]],
     files: [custPdf(105, 'Balkon', ['8 panel, 900 x 1800 mm'])],
-    offer: { status: 'YONETIMDE', since: 3, lines: [{ description: '8mm Temperli Cam', enMm: 900, boyMm: 1800, adet: 8, unitPrice: 42 }] },
-    events: [['CREATED', 20, cust], ['SENT_TO_DRAWING', 18, sales], ['DRAWING_STARTED', 10, drawer], ['OFFER_SUBMITTED', 3, sales, '544.32 EUR']],
+    offer: {
+      status: 'YONETIMDE', since: 3,
+      lines: [
+        { description: '8mm Temperli Cam', enMm: 900, boyMm: 1800, adet: 8, unitPrice: 42 },
+        { kind: 'CNC', description: 'Kulp yuvası', adet: 8, unit: 'adet', unitPrice: 6 },
+        { kind: 'DELIK', description: 'Menteşe deliği', adet: 16, unit: 'adet', unitPrice: 1.5, free: true },
+      ],
+    },
+    events: [['CREATED', 20, cust], ['SENT_TO_DRAWING', 18, sales], ['DRAWING_STARTED', 10, drawer], ['OFFER_SUBMITTED', 3, sales, '592.32 EUR']],
   });
   // 6) Çizime yeni gönderildi; teklif taslağı fiyatsız (satış "Çizime Göndermeyi Geri Al" diyebilir)
   await order({

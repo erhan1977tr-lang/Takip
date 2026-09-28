@@ -268,6 +268,34 @@ test('satış kararını geri alır; teklif yöneticiye gidince satış değişi
   await expect(sales.locator('.offer-table')).toHaveCount(0);
 });
 
+test('teklifte CNC ve delik alt satırları; fiyatsız satırla teklif gönderilemez', async ({ browser }) => {
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  const id = await newOrder(cust, 'Mutfak dolap camı', 'dolap.pdf');
+  const sales = await as(browser, SALES, PW);
+  await sales.goto(`/siparisler/${id}`);
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.getByText('Çizim gerekmiyor olarak işaretlendi.')).toBeVisible();
+  await fillOffer(sales);
+  await sales.getByRole('button', { name: '+CNC' }).click();
+  await sales.getByRole('button', { name: '+Delik' }).click();
+  await expect(sales.getByText('2 satırın fiyatı boş: 1. CNC, 1. Delik')).toBeVisible();
+  await expect(sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' })).toBeDisabled();
+
+  await sales.getByLabel('CNC açıklaması').fill('Kulp yuvası');
+  await sales.getByLabel('CNC adedi').fill('2');
+  await sales.getByLabel('CNC fiyatı').fill('15');
+  await sales.getByLabel('Delik adedi').fill('4');
+  await sales.locator('tr.sub-line', { hasText: 'Delik' }).getByRole('button', { name: 'bedelsiz' }).click();
+  await expect(sales.locator('.offer-table tfoot')).toContainText('3 cam · 2 CNC · 4 delik');
+  await expect(sales.locator('.offer-table tfoot')).toContainText('279,00 EUR'); // 249 + 2 × 15, delik bedelsiz
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
+  const view = sales.locator('#teklif');
+  await expect(view.locator('tr.sub-line', { hasText: 'Kulp yuvası' })).toContainText('CNC');
+  await expect(view.locator('tr.sub-line', { hasText: 'Delik' })).toContainText('bedelsiz');
+  await expect(view.locator('tfoot')).toContainText('279,00 EUR');
+});
+
 test('notlar: iç not müşteriye görünmez', async ({ browser }) => {
   const sales = await as(browser, SALES, PW);
   await sales.goto(`/siparisler/${ids.b}`);

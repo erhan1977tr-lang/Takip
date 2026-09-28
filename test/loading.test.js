@@ -17,7 +17,7 @@ test('sipariş yükü: tahmini sandık (1700 kg) ve 50 kg dara', () => {
       { description: 'Aparat', adet: 20, unit: 'adet' },
     ],
   });
-  assert.deepEqual(l, { metraj: 6, camAdet: 3, netKg: 120, crates: 1, grossKg: 170, realCrates: false });
+  assert.deepEqual(l, { metraj: 6, camAdet: 3, cnc: 0, delik: 0, netKg: 120, crates: 1, grossKg: 170, realCrates: false });
   const big = orderLoad({ lines: [{ description: '10mm', enMm: 3000, boyMm: 2000, adet: 12 }] }); // 72 m² × 25 = 1800
   assert.equal(big.crates, 2);
   assert.equal(big.grossKg, 1900);
@@ -32,6 +32,17 @@ test('gerçek sandık kayıtları tahminin önüne geçer', () => {
   assert.equal(l.realCrates, true);
   assert.equal(l.netKg, 178); // 118 + 120/2
   assert.equal(l.grossKg, 175 + 60 + 50);
+});
+
+test('CNC ve delik adetleri ayrı sayılır, ağırlığa girmez', () => {
+  const l = orderLoad({ lines: [
+    { description: '8mm', enMm: 1000, boyMm: 1000, adet: 2 },
+    { kind: 'CNC', description: 'CNC', adet: 2, unit: 'adet' },
+    { kind: 'DELIK', description: 'Delik', adet: 8, unit: 'adet' },
+  ] });
+  assert.deepEqual([l.camAdet, l.cnc, l.delik, l.netKg], [2, 2, 8, 40]);
+  const s = sumLoads([l, l]);
+  assert.deepEqual([s.cnc, s.delik], [4, 16]);
 });
 
 test('siparişsiz satır: cam adedi sipariş kalemlerinden', () => {

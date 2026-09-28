@@ -15,6 +15,7 @@ type Group = { key: string; label: string; entries: Entry[]; total: ReturnType<t
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const kg = (n: number) => fmtNum(n, 0);
+const dash = (n: number) => (n ? String(n) : '–');
 
 /** Bir günün siparişlerini müşteriye göre gruplar; sandıklar müşteriler arasında karışmaz. */
 function groupDay(entries: Entry[], user: CurrentUser): { groups: Group[]; total: ReturnType<typeof sumLoads> & { amount: number } } {
@@ -27,11 +28,12 @@ function groupDay(entries: Entry[], user: CurrentUser): { groups: Group[]; total
   const t = groups.reduce(
     (acc, g) => ({
       orders: acc.orders + g.total.orders, metraj: Math.round((acc.metraj + g.total.metraj) * 100) / 100, camAdet: acc.camAdet + g.total.camAdet,
+      cnc: acc.cnc + g.total.cnc, delik: acc.delik + g.total.delik,
       netKg: acc.netKg + g.total.netKg, crates: acc.crates + g.total.crates, grossKg: acc.grossKg + g.total.grossKg,
       estimatedCrates: acc.estimatedCrates + g.total.estimatedCrates, estimatedNetKg: acc.estimatedNetKg + g.total.estimatedNetKg,
       amount: acc.amount + g.amount,
     }),
-    { orders: 0, metraj: 0, camAdet: 0, netKg: 0, crates: 0, grossKg: 0, estimatedCrates: 0, estimatedNetKg: 0, amount: 0 },
+    { orders: 0, metraj: 0, camAdet: 0, cnc: 0, delik: 0, netKg: 0, crates: 0, grossKg: 0, estimatedCrates: 0, estimatedNetKg: 0, amount: 0 },
   );
   return { groups, total: t };
 }
@@ -199,7 +201,7 @@ function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day:
               <thead>
                 <tr>
                   <th>{isCustomer ? 'Sipariş' : 'Müşteri / sipariş'}</th>{!isCustomer && <th className="num">Sipariş</th>}
-                  <th className="num">Cam</th><th className="num">Metraj</th><th className="num">Net ağırlık</th>
+                  <th className="num">Cam</th><th className="num">CNC</th><th className="num">Delik</th><th className="num">Metraj</th><th className="num">Net ağırlık</th>
                   <th className="num">Sandık</th><th className="num">Brüt ağırlık</th><th className="num">Teklif tutarı</th>
                 </tr>
               </thead>
@@ -211,7 +213,7 @@ function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day:
               <tfoot>
                 <tr>
                   <td>Toplam</td>{!isCustomer && <td className="num">{total.orders}</td>}
-                  <td className="num">{total.camAdet}</td><td className="num">{fmtNum(total.metraj)}</td><td className="num">{kg(total.netKg)}</td>
+                  <td className="num">{total.camAdet}</td><td className="num">{dash(total.cnc)}</td><td className="num">{dash(total.delik)}</td><td className="num">{fmtNum(total.metraj)}</td><td className="num">{kg(total.netKg)}</td>
                   <td className="num">{total.crates}</td><td className="num">{kg(total.grossKg)}</td>
                   <td className="num">{total.amount ? fmtMoney(total.amount) : '—'}</td>
                 </tr>
@@ -234,6 +236,8 @@ function GroupRows({ g, isCustomer }: { g: Group; isCustomer: boolean }) {
       </td>
       {!isCustomer && <td />}
       <td className="num">{load.camAdet}</td>
+      <td className="num">{dash(load.cnc)}</td>
+      <td className="num">{dash(load.delik)}</td>
       <td className="num">{fmtNum(load.metraj)}</td>
       <td className="num">{kg(load.netKg)}</td>
       <td className="num">{load.realCrates ? <>{load.crates} <span className="badge badge-ok">gerçek</span></> : <span className="muted">tahmini</span>}</td>
@@ -246,7 +250,7 @@ function GroupRows({ g, isCustomer }: { g: Group; isCustomer: boolean }) {
     <>
       <tr className="group-total">
         <td><b>{g.label}</b></td><td className="num">{g.total.orders}</td>
-        <td className="num">{g.total.camAdet}</td><td className="num">{fmtNum(g.total.metraj)}</td><td className="num">{kg(g.total.netKg)}</td>
+        <td className="num">{g.total.camAdet}</td><td className="num">{dash(g.total.cnc)}</td><td className="num">{dash(g.total.delik)}</td><td className="num">{fmtNum(g.total.metraj)}</td><td className="num">{kg(g.total.netKg)}</td>
         <td className="num">{g.total.crates}</td><td className="num">{kg(g.total.grossKg)}</td>
         <td className="num">{g.amount ? fmtMoney(g.amount) : '—'}</td>
       </tr>

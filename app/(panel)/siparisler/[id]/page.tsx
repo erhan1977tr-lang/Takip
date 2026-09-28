@@ -10,7 +10,7 @@ import { OfferEditor } from './OfferEditor';
 import { loadOf } from '@/lib/loading';
 import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
 import {
-  EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  EVENTS, LINE_KIND, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, saveCratesAction,
@@ -189,6 +189,7 @@ export default async function OrderPage({
           initial={offer.lines.map((l) => ({
             description: l.description, poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
+            kind: l.kind, free: l.free,
           }))}
         />
       )}
@@ -390,18 +391,30 @@ function OfferView({ order, offer, isCustomer, versions, updateHref }: { order: 
         <table>
           <thead><tr><th>#</th><th>Açıklama</th><th>Poz</th><th className="num">En</th><th className="num">Boy</th><th className="num">Adet</th><th className="num">Metraj</th><th className="num">Birim fiyat</th><th className="num">Tutar</th></tr></thead>
           <tbody>
-            {offer.lines.map((l, i) => {
-              const t = offerLineTotals({ ...l, unitPrice: l.unitPrice.toString() });
-              return (
-                <tr key={l.id}>
-                  <td className="muted">{i + 1}</td><td>{l.description}</td><td>{l.poz ?? ''}</td>
-                  <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
-                  <td className="num">{l.unit === 'm2' ? `${fmtNum(t.metraj)} m²` : '—'}</td>
-                  <td className="num">{fmtNum(l.unitPrice.toString())} / {l.unit === 'm2' ? 'm²' : 'adet'}</td>
-                  <td className="num">{fmtNum(t.amount)}</td>
-                </tr>
-              );
-            })}
+            {(() => {
+              let n = 0;
+              return offer.lines.map((l) => {
+                const t = offerLineTotals({ ...l, unitPrice: l.unitPrice.toString() });
+                const sub = l.kind === 'CNC' || l.kind === 'DELIK';
+                if (!sub) n += 1;
+                const kindLabel = LINE_KIND[l.kind as keyof typeof LINE_KIND];
+                return (
+                  <tr key={l.id} className={sub ? 'sub-line' : undefined}>
+                    <td className="muted">{sub ? '' : n}</td>
+                    <td>
+                      {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
+                      {sub && l.description === kindLabel ? '' : l.description}
+                      {l.free && <> <span className="badge badge-ok">bedelsiz</span></>}
+                    </td>
+                    <td>{l.poz ?? ''}</td>
+                    <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
+                    <td className="num">{!sub && l.unit === 'm2' ? `${fmtNum(t.metraj)} m²` : '—'}</td>
+                    <td className="num">{l.free ? 'bedelsiz' : `${fmtNum(l.unitPrice.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : 'adet'}`}</td>
+                    <td className="num">{fmtNum(t.amount)}</td>
+                  </tr>
+                );
+              });
+            })()}
           </tbody>
           <tfoot><tr><td colSpan={8}>Toplam</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td></tr></tfoot>
         </table>

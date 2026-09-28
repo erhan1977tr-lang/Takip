@@ -252,3 +252,10 @@ tr.row-sel td { background: #eff6ff; }
   .cal-count { min-width: 20px; height: 20px; font-size: 11px; margin-left: 0; }
   .cal-top { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
+
+/* teklif: CNC / delik alt satırları */
+tr.sub-line td { background: #f5f8fc; }
+tr.sub-line td.desc, tr.sub-line td:nth-child(2) { padding-left: 26px; }
+.line-actions { display: flex; flex-wrap: wrap; gap: 0 6px; }
+.line-actions .btn-link { padding: 2px 0; font-size: 12px; }
+input.input-missing { background: #fef2f2; border-color: #f87171; }

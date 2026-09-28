@@ -374,6 +374,8 @@ model OfferLine {
   adet        Int     @default(1)
   unit        String  @default("m2") // "m2" | "adet"
   unitPrice   Decimal @default(0) @db.Decimal(12, 2)
+  kind        String  @default("CAM") // CAM | CNC | DELIK — CNC ve delik satırları üstlerindeki cam satırına aittir
+  free        Boolean @default(false) // bedelsiz: fiyat 0 kabul edilir
 }
 
 model Price {

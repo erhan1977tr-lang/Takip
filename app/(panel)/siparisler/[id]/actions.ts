@@ -8,7 +8,7 @@ import { requireUser, type CurrentUser } from '@/lib/auth/session';
 import { currentOffer, loadOrder, logEvent, maybeAutoProduction, refreshSla, type OrderDetail } from '@/lib/orders';
 import { audit } from '@/lib/audit';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
-import { availableActions, fileProblem, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { LINE_KIND, availableActions, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -289,14 +289,18 @@ export async function addNoteAction(formData: FormData) {
 }
 
 // ---------------- Teklif hattı ----------------
-type LineInput = { description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string };
+type LineInput = { description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean };
 
 function readLines(formData: FormData): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
+  const kinds = col('l_kind'), free = col('l_free');
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
-    if (!desc[i] && !en[i] && !boy[i] && !price[i]) continue; // boş satır
+    const kind = kinds[i] === 'CNC' || kinds[i] === 'DELIK' ? kinds[i] : 'CAM';
+    const sub = kind !== 'CAM';
+    if (!sub && !desc[i] && !en[i] && !boy[i] && !price[i]) continue; // boş cam satırı
+    if (sub && !desc[i]) desc[i] = LINE_KIND[kind as keyof typeof LINE_KIND];
     const toInt = (s: string) => (s ? Math.trunc(Number(s.replace(',', '.'))) : null);
     const e = toInt(en[i]), b = toInt(boy[i]), a = toInt(adet[i]) ?? 1;
     const p = Number((price[i] || '0').replace(',', '.'));
@@ -304,16 +308,19 @@ function readLines(formData: FormData): LineInput[] | string {
     if ((e !== null && (e <= 0 || e > 10000)) || (b !== null && (b <= 0 || b > 10000))) return `${i + 1}. satırda ölçü 1–10000 mm arasında olmalı.`;
     if (!Number.isFinite(a) || a <= 0 || a > 100000) return `${i + 1}. satırda adet geçersiz.`;
     if (!Number.isFinite(p) || p < 0 || p > 1_000_000) return `${i + 1}. satırda fiyat geçersiz.`;
-    lines.push({ description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a, unit: unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: p.toFixed(2) });
+    const isFree = free[i] === '1';
+    lines.push({
+      description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a,
+      unit: sub || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree,
+    });
   }
   return lines;
 }
 
 /** Müşteriye gidecek teklif için eksik ya da null. */
 function finalProblem(lines: LineInput[]): string | null {
-  if (lines.length === 0) return 'Teklifte en az bir satır olmalı.';
-  if (lines.some((l) => l.unit === 'm2' && (!l.enMm || !l.boyMm))) return 'm² ile fiyatlanan satırlarda en ve boy girilmeli.';
-  return null;
+  const p = offerProblems(lines);
+  return p.length ? p.join(' ') : null;
 }
 
 const labels = (formData: FormData) => ({
