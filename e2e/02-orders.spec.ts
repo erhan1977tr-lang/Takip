@@ -175,6 +175,7 @@ test('teklif revizyonu: müşteri yeni sürüm onaylanana kadar eski teklifi gö
   await sales.getByLabel('Birim fiyat').first().fill('50');
   await expect(sales.locator('.offer-table tfoot')).toContainText('300,00 EUR');
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
   await expect(sales.getByRole('button', { name: 'Üretime al' })).toHaveCount(0);
 
   const cust = await as(browser, CUSTOMER, CUST_PW);
@@ -184,6 +185,7 @@ test('teklif revizyonu: müşteri yeni sürüm onaylanana kadar eski teklifi gö
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${ids.b}`);
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
+  await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
   await cust.goto(`/siparisler/${ids.b}`);
   await expect(cust.locator('#teklif tfoot')).toContainText('300,00 EUR');
 });
