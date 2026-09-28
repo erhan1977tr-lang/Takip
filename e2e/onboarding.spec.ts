@@ -30,7 +30,7 @@ async function firstLogin(page: Page, email: string, code: string, password: str
   await expect(page).toHaveURL(/\/setup\?email=/);
   await page.fill('#code', code);
   await page.click('button[type=submit]');
-  await expect(page.getByRole('heading', { name: 'Şifrenizi belirleyin' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Şifrenizi belirleyin', exact: true })).toBeVisible();
   await page.fill('#password', password);
   await page.fill('#password2', password);
   await page.click('button[type=submit]');
@@ -54,7 +54,7 @@ test('yönetici komut satırından oluşturulur ve ilk girişte şifresini belir
 
   await firstLogin(page, ADMIN, code!, ADMIN_PW);
   await expect(page).toHaveURL(/\/admin\/users$/);
-  await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar', exact: true })).toBeVisible();
 });
 
 test('yönetici firma oluşturur ve müşteri kullanıcısını davet eder', async ({ page }) => {
@@ -90,7 +90,7 @@ test('davet edilen müşteri kodla girer, şifresini belirler ve yalnızca kendi
   const code = outboxCodeFor(CUSTOMER);
   await firstLogin(page, CUSTOMER, code, CUST_PW);
   await expect(page).toHaveURL(/\/siparisler$/);
-  await expect(page.getByRole('heading', { name: 'Siparişlerim' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Siparişlerim', exact: true })).toBeVisible();
   await expect(page.getByText('Müşteri · Ünsal Cam')).toBeVisible();
 
   // Yönetici sayfasına giremez
