@@ -1,0 +1,358 @@
+// =========================================================
+// TAKİP - Sipariş ve Üretim Portalı — Veri Modeli (Prisma / PostgreSQL)
+// =========================================================
+// Akış özeti:
+//  1) Müşteri (customer portal user) sipariş girer -> Order (status: YENI)
+//  2) Satış ekibi görür -> çizim gerekiyorsa Drawing talebi açar (status: CIZIM_GEREKLI)
+//     gerekmiyorsa Offer (teklif) doldurup Sistem Yöneticisi'ne gönderir (status: FIYAT_BEKLIYOR)
+//  3) Sistem Yöneticisi fiyatı girer -> Price -> müşteri panelinde görünür (status: FIYATLANDI)
+//  4) Çizim ekibi çizer, sipariş sahibine gönderir (status: ONAY_BEKLIYOR)
+//     -> müşteri onaylar (status: URETIMDE) ya da revizyon ister (status: REVIZYON, revisionCount++)
+//  5) Yükleme tarihine göre Shipment'a bağlanır, takvimde gruplanır
+//  6) Her durum değişikliği AuditLog'a düşer (silinemez, sadece okunur)
+// =========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// KİMLİK / YETKİ
+// ---------------------------------------------------------
+
+enum UserType {
+  INTERNAL // Sistem Yöneticisi, Satış, Çizim Ekibi
+  CUSTOMER // Müşteri panelini kullanan kişiler
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique // "Sistem Yöneticisi", "Satış", "Çizim Ekibi", "Organizatör"...
+  description String?
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime     @default(now())
+}
+
+enum PermissionKey {
+  ORDER_VIEW
+  ORDER_EDIT
+  ORDER_APPROVE
+  OFFER_CREATE
+  PRICE_SET
+  DRAWING_UPLOAD
+  DRAWING_APPROVE
+  SHIPMENT_MANAGE
+  USER_MANAGE
+  CUSTOMER_MANAGE
+  SETTINGS_MANAGE
+  AUDIT_VIEW
+}
+
+model RolePermission {
+  id     String        @id @default(cuid())
+  roleId String
+  role   Role          @relation(fields: [roleId], references: [id])
+  key    PermissionKey
+
+  @@unique([roleId, key])
+}
+
+model User {
+  id           String     @id @default(cuid())
+  type         UserType
+  name         String
+  email        String     @unique
+  passwordHash String
+  phone        String?
+  language     String     @default("tr")
+  roleId       String?
+  role         Role?      @relation(fields: [roleId], references: [id])
+  teamTags     TeamTagOnUser[]
+
+  // Müşteri portalı kullanıcısıysa hangi müşteriye bağlı olduğu
+  customerId   String?
+  customer     Customer?  @relation(fields: [customerId], references: [id])
+
+  // İlişkiler (bu kullanıcının oluşturduğu/atandığı kayıtlar)
+  ordersCreated      Order[]        @relation("OrderCreatedBy")
+  ordersAssignedDraw Order[]        @relation("OrderAssignedDrawer")
+  offersCreated      Offer[]        @relation("OfferCreatedBy")
+  pricesSet          Price[]        @relation("PriceSetBy")
+  drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model TeamTag {
+  id    String @id @default(cuid())
+  name  String @unique // "Ekip etiketleri" menüsündeki gruplamalar
+  users TeamTagOnUser[]
+}
+
+model TeamTagOnUser {
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  teamTagId String
+  teamTag   TeamTag @relation(fields: [teamTagId], references: [id])
+
+  @@id([userId, teamTagId])
+}
+
+// ---------------------------------------------------------
+// MÜŞTERİ
+// ---------------------------------------------------------
+
+model Customer {
+  id            String   @id @default(cuid())
+  name          String   // "Miru Glass", "FOL Expert", "Pelet Construct"...
+  contactPerson String?  // "Darius", "Mitariu", "Gabi panou dus" gibi
+  email         String?
+  phone         String?
+  address       String?
+  taxId         String?
+  users         User[]   // müşteri panelini kullanan kişiler
+  orders        Order[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// SİPARİŞ
+// ---------------------------------------------------------
+
+enum OrderStatus {
+  YENI                // müşteri girdi, satış inceliyor ("İnceleniyor")
+  CIZIM_GEREKLI       // satış çizim ekibine yönlendirdi
+  CIZIM_YAPILIYOR
+  DXF_DWG_GELDI       // müşteri hazır çizim gönderdi
+  ONAY_BEKLIYOR       // çizim sipariş sahibine gönderildi
+  REVIZYON_ISTENDI
+  FIYAT_BEKLIYOR      // çizim gerekmedi, teklif admin'e gitti
+  FIYATLANDI          // admin fiyat girdi, müşteride görünüyor
+  URETIMDE
+  ESKALASYON          // üst kademeye taşınan
+  YUKLENDI
+  ARSIVLENDI
+  IPTAL
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  orderNo           String      @unique // "MIR5", "PEL10", "FOL4"
+  customerId        String
+  customer          Customer    @relation(fields: [customerId], references: [id])
+
+  title             String?     // "Gabi panou dus" gibi kısa açıklama
+  status            OrderStatus @default(YENI)
+  needsDrawing      Boolean     @default(false)
+
+  createdById       String
+  createdBy         User        @relation("OrderCreatedBy", fields: [createdById], references: [id])
+
+  assignedDrawerId  String?
+  assignedDrawer    User?       @relation("OrderAssignedDrawer", fields: [assignedDrawerId], references: [id])
+
+  slaDeadline       DateTime?   // "15.0 sa kaldı" / "38.1 sa gecikme" hesaplanır
+  estimatedShipDate DateTime?   // Tahmini Yükleme
+  actualShipDate    DateTime?
+
+  revisionCount     Int         @default(0)
+  isEscalated       Boolean     @default(false)
+
+  items             OrderItem[]
+  offers            Offer[]
+  price             Price?
+  drawings          Drawing[]
+  crates            Crate[]
+  shipmentId        String?
+  shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
+  statusHistory     OrderStatusHistory[]
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  fromStatus OrderStatus?
+  toStatus  OrderStatus
+  changedAt DateTime    @default(now())
+  note      String?
+}
+
+// Cam kalemleri: metraj, cam adedi, CNC, delik, ağırlık — Yüklemeler özetindeki sütunlarla birebir
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id])
+  camAdedi    Int     @default(0)
+  cnc         String? // CNC açıklaması, yoksa null ("–")
+  delikSayisi Int?    // "DELİK" sütunu
+  metraj      Decimal @db.Decimal(10, 2) // m²
+  netAgirlik  Decimal @db.Decimal(10, 2) // kg — GERÇEK kayıt (satış girerse tahmini ezer)
+  brutAgirlik Decimal? @db.Decimal(10, 2)
+}
+
+// ---------------------------------------------------------
+// TEKLİF / FİYAT
+// ---------------------------------------------------------
+
+model Offer {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  amount      Decimal  @db.Decimal(12, 2) // "Teklif Tutarı"
+  createdById String
+  createdBy   User     @relation("OfferCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Price {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  amount    Decimal  @db.Decimal(12, 2) // "Satış Tutarı" — sistem yöneticisi girer
+  setById   String
+  setBy     User     @relation("PriceSetBy", fields: [setById], references: [id])
+  setAt     DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// ÇİZİM
+// ---------------------------------------------------------
+
+enum DrawingSource {
+  FABRIKA // "Çizim işleri — fabrika çizecek"
+  MUSTERI_DXF_DWG // müşteri hazır çizim gönderdi
+}
+
+enum DrawingStatus {
+  BEKLIYOR
+  YAPILIYOR
+  ONAY_BEKLIYOR
+  ONAYLANDI
+  REVIZYON_ISTENDI
+}
+
+model Drawing {
+  id           String        @id @default(cuid())
+  orderId      String
+  order        Order         @relation(fields: [orderId], references: [id])
+  source       DrawingSource @default(FABRIKA)
+  version      Int           @default(1)
+  fileUrl      String
+  status       DrawingStatus @default(BEKLIYOR)
+  uploadedById String
+  uploadedBy   User          @relation("DrawingUploadedBy", fields: [uploadedById], references: [id])
+  revisions    DrawingRevision[]
+  createdAt    DateTime      @default(now())
+}
+
+model DrawingRevision {
+  id            String   @id @default(cuid())
+  drawingId     String
+  drawing       Drawing  @relation(fields: [drawingId], references: [id])
+  requestedById String
+  comment       String
+  createdAt     DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// SANDIK (paketleme)
+// ---------------------------------------------------------
+
+model Crate {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id])
+  crateNo     Int
+  dimensions  String? // "Sandık ölçüleri"
+  netAgirlik  Decimal? @db.Decimal(10, 2)
+  brutAgirlik Decimal? @db.Decimal(10, 2)
+  daraKg      Decimal  @default(50) @db.Decimal(6, 2) // varsayılan dara
+}
+
+// ---------------------------------------------------------
+// YÜKLEME / TAKVİM
+// ---------------------------------------------------------
+
+enum ShipmentStatus {
+  PLANLANDI
+  BEKLEMEDE // "Beklemeye alınanlar bu listede görünmez"
+  YUKLENDI
+  IPTAL
+}
+
+model Shipment {
+  id        String         @id @default(cuid())
+  date      DateTime       // Yükleme günü
+  status    ShipmentStatus @default(PLANLANDI)
+  orders    Order[]
+  createdAt DateTime       @default(now())
+}
+
+// ---------------------------------------------------------
+// SÜREÇ KURALLARI (Ayarlar / Onay politikaları / SLA)
+// ---------------------------------------------------------
+
+model SlaPolicy {
+  id          String   @id @default(cuid())
+  stageName   String   // "İnceleniyor", "Çizim Yapılıyor" vb.
+  maxHours    Int
+  escalateTo  String?  // eskalasyon rolü/kullanıcı id
+  isActive    Boolean  @default(true)
+}
+
+model ApprovalPolicy {
+  id           String  @id @default(cuid())
+  name         String
+  maxRevisions Int     @default(3)
+  description  String?
+  isActive     Boolean @default(true)
+}
+
+// ---------------------------------------------------------
+// BİLDİRİM
+// ---------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// DENETİM KAYDI — sadece okunur, hiçbir kayıt silinemez
+// ---------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // "ORDER_STATUS_CHANGE", "PRICE_SET", "USER_LOGIN" vb.
+  entityType String   // "Order", "Drawing", "Price"...
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
