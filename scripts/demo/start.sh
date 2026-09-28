@@ -45,7 +45,9 @@ fi
 
 if [ ! -f .env ]; then bash scripts/demo/setup.sh || fail "Kurulum başarısız oldu." /tmp/takip-npm.log; fi
 
-if [ "${CODESPACES:-}" = "true" ] && git diff --quiet && git diff --cached --quiet; then
+if [ "${CODESPACES:-}" = "true" ]; then
+  # Derleme next-env.d.ts'yi değiştirir; güncellemeyi engellemesin. Başka yerel değişiklik çakışırsa git pull güvenle vazgeçer.
+  git checkout -- next-env.d.ts 2>/dev/null || true
   step "Son sürüm çekiliyor…"
   before=$(git rev-parse HEAD)
   git pull --ff-only -q || echo "  (güncelleme çekilemedi, mevcut sürümle devam ediliyor)"
