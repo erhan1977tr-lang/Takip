@@ -19,6 +19,10 @@ ve dört rolün hesabı kendiliğinden kurulur. **Bu ortam yalnızca deneme içi
 
 - **502 hatası:** Codespace büyük ihtimalle *main* dalında açıldı. Düzenleyicinin sol alt köşesinde dal adı yazar.
   *main* yazıyorsa o Codespace'i silin (github.com/codespaces) ve yukarıdaki bağlantıyla yeniden açın.
+- **Uygulama çalıştığı hâlde 502 (Ports sekmesinde 3000 satırında `next-server` görünüyorsa):** Codespaces'in bilinen
+  bir port yönlendirme hatasıdır. Ports sekmesinde 3000 satırına sağ tıklayın → *Port Visibility* → *Public*,
+  adresi yenileyin; sonra isterseniz tekrar *Private* yapın. Olmazsa satıra sağ tıklayıp *Stop Forwarding Port* deyin,
+  ardından *Forward a Port* → `3000` ile yeniden ekleyin.
 - **"Takip başlatılamadı" sayfası:** Alttaki terminale `npm run demo` yazın. Düzelmezse sayfanın ekran görüntüsünü gönderin.
 - Terminal kapandıysa: üst menü ☰ → *Terminal* → *New Terminal*.
 

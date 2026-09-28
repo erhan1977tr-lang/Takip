@@ -8,7 +8,7 @@
   "shutdownAction": "stopCompose",
   "forwardPorts": [3000],
   "portsAttributes": {
-    "3000": { "label": "Takip", "onAutoForward": "openBrowser" }
+    "3000": { "label": "Takip", "protocol": "http", "onAutoForward": "openBrowser" }
   },
   "otherPortsAttributes": { "onAutoForward": "ignore" },
   "postCreateCommand": "bash scripts/demo/setup.sh",

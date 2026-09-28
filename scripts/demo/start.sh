@@ -11,10 +11,17 @@ LOG=/tmp/takip.log
 STEPLOG=/tmp/takip-steplog.txt
 
 step() { echo "▶ $1"; echo "$1" > /tmp/takip-step.txt; }
-status_page() {
+port_busy() { node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"; }
+# 3000 portundaki her şeyi durdurur. Next sunucusu süreç adını "next-server (vX)" olarak değiştirdiği için iki adla aranır.
+stop_port() {
   pkill -f "scripts/demo/status-server.mjs" 2>/dev/null
   pkill -f ".next/standalone/server.js" 2>/dev/null
-  sleep 1
+  pkill -f "next-server" 2>/dev/null
+  for _ in $(seq 1 20); do port_busy || return 0; sleep 0.5; done
+  pkill -9 -f "next-server" 2>/dev/null; pkill -9 -f ".next/standalone/server.js" 2>/dev/null; sleep 1
+}
+status_page() {
+  stop_port
   setsid nohup node scripts/demo/status-server.mjs > /dev/null 2>&1 < /dev/null &
 }
 fail() {
@@ -40,7 +47,12 @@ if [ ! -f .env ]; then bash scripts/demo/setup.sh || fail "Kurulum başarısız 
 
 if [ "${CODESPACES:-}" = "true" ] && git diff --quiet && git diff --cached --quiet; then
   step "Son sürüm çekiliyor…"
+  before=$(git rev-parse HEAD)
   git pull --ff-only -q || echo "  (güncelleme çekilemedi, mevcut sürümle devam ediliyor)"
+  # Betiğin kendisi de güncellenmiş olabilir: yeni sürümüyle baştan çalıştır
+  if [ "$(git rev-parse HEAD)" != "$before" ] && [ -z "${DEMO_REEXEC:-}" ]; then
+    exec env DEMO_REEXEC=1 bash scripts/demo/start.sh
+  fi
 fi
 if ! sha256sum -c --status node_modules/.demo-lock 2>/dev/null; then
   run "Paketler güncelleniyor…" npm ci --no-audit --no-fund
@@ -73,12 +85,15 @@ if [ "$(cat .next/.demo-build 2>/dev/null)" != "$rev" ] || [ ! -f .next/standalo
 fi
 
 step "Uygulama başlatılıyor…"
-pkill -f "scripts/demo/status-server.mjs" 2>/dev/null
-pkill -f ".next/standalone/server.js" 2>/dev/null
-sleep 1
-PORT=3000 HOSTNAME=0.0.0.0 setsid nohup node .next/standalone/server.js > "$LOG" 2>&1 < /dev/null &
+stop_port
+# IPv6 varsa "::" (hem IPv4 hem IPv6 bağlantılarını kabul eder), yoksa 0.0.0.0
+HOST=$(node -e "const s=require('net').createServer();s.on('error',()=>{console.log('0.0.0.0')});s.listen(0,'::',()=>{console.log('::');s.close()})")
+PORT=3000 HOSTNAME="$HOST" setsid nohup node .next/standalone/server.js > "$LOG" 2>&1 < /dev/null &
+APP_PID=$!
+echo "$APP_PID" > /tmp/takip.pid
 
 for i in $(seq 1 60); do
+  if ! kill -0 "$APP_PID" 2>/dev/null; then status_page; fail "Uygulama açılamadı." "$LOG"; fi
   if node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"; then
     echo ""
     echo "✔ Takip çalışıyor: ${APP_URL}"
