@@ -1,0 +1,15 @@
+{
+  "name": "takip",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Takip — sipariş ve üretim portalı",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "mail:test": "node --env-file=.env scripts/test-mail.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  },
+  "engines": { "node": ">=20.6" }
+}

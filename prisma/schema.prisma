@@ -68,7 +68,8 @@ model User {
   type         UserType
   name         String
   email        String     @unique
-  passwordHash String
+  // Yönetici hesabı yalnızca e-postayla açar; kullanıcı ilk girişte davet koduyla şifresini belirleyene kadar boştur.
+  passwordHash String?
   phone        String?
   language     String     @default("tr")
   roleId       String?
@@ -87,10 +88,28 @@ model User {
   drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
   notifications      Notification[]
   auditLogs          AuditLog[]
+  invites            UserInvite[]
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+}
+
+// İlk giriş / şifre sıfırlama için e-postayla gönderilen 6 haneli kod.
+// Kodun kendisi saklanmaz; yalnızca HMAC özeti (server/auth/inviteCode.js).
+// Yeni kod üretildiğinde kullanıcının açık davetleri usedAt ile kapatılır.
+model UserInvite {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0) // MAX_ATTEMPTS'e ulaşınca kilitlenir
+  usedAt    DateTime?
+  sentAt    DateTime? // davet e-postası gönderildiyse; null ise "Davet edilmedi"
+  createdAt DateTime  @default(now())
+
+  @@index([userId, usedAt])
 }
 
 model TeamTag {
