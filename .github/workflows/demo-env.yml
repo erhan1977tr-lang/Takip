@@ -45,13 +45,23 @@ jobs:
 
       - name: Yeniden başlatma (Codespace durup açılınca olduğu gibi)
         run: |
-          old=$(devcontainer exec --workspace-folder . cat /tmp/takip.pid | tail -1)
-          scripts/ci-step.sh "demo yeniden başlat" devcontainer exec --workspace-folder . bash scripts/demo/start.sh
-          new=$(devcontainer exec --workspace-folder . cat /tmp/takip.pid | tail -1)
-          echo "eski süreç: $old  yeni süreç: $new"
-          [ -n "$new" ] && [ "$old" != "$new" ] || { echo "::error title=yeniden başlatma::eski sunucu durdurulmadı"; exit 1; }
-          scripts/ci-step.sh "eski sunucu kapandı mı" devcontainer exec --workspace-folder . bash -c "! kill -0 $old 2>/dev/null"
-          scripts/ci-step.sh "demo kontrol 2" devcontainer exec --workspace-folder . node -e "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+          cat > /tmp/restart-check.sh <<'SH'
+          set -u
+          dx() { devcontainer exec --workspace-folder . "$@"; }
+          old=$(dx bash -c 'cat /tmp/takip.pid 2>/dev/null' | tail -1)
+          echo "eski süreç: '$old'"
+          dx bash -c 'ps -eo pid,args | grep -E "next|status-server" | grep -v grep'
+          dx bash scripts/demo/start.sh || { echo "start.sh başarısız"; dx bash -c 'tail -40 /tmp/takip.log'; exit 1; }
+          new=$(dx bash -c 'cat /tmp/takip.pid 2>/dev/null' | tail -1)
+          echo "yeni süreç: '$new'"
+          dx bash -c 'ps -eo pid,args | grep -E "next|status-server" | grep -v grep'
+          [ -n "$new" ] && [ "$old" != "$new" ] || { echo "sunucu yeniden başlatılmadı"; exit 1; }
+          if [ -n "$old" ] && dx bash -c "kill -0 $old 2>/dev/null"; then echo "eski sunucu hâlâ çalışıyor"; exit 1; fi
+          dx node -e "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))" || { echo "yeni sunucu cevap vermiyor"; exit 1; }
+          echo "yeniden başlatma tamam"
+          SH
+          sed -i 's/^          //' /tmp/restart-check.sh
+          scripts/ci-step.sh "demo yeniden başlat" bash /tmp/restart-check.sh
 
       - name: Günlükler (hata varsa)
         if: failure()
