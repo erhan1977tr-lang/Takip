@@ -33,6 +33,7 @@ jobs:
       COOKIE_SECURE: 'false'
       APP_URL: http://localhost:3000
       MAIL_OUTBOX_DIR: ${{ github.workspace }}/.outbox
+      SCREENSHOT_DIR: ${{ github.workspace }}/.screens
       UPLOAD_DIR: ${{ github.workspace }}/.uploads
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
@@ -112,6 +113,17 @@ jobs:
 
       - name: Uçtan uca testler
         run: scripts/ci-step.sh "e2e" npx playwright test
+
+      - name: Ekran görüntülerini ci-screenshots dalına yaz
+        if: always() && github.event_name == 'push'
+        run: |
+          [ -d .screens ] || exit 0
+          cd .screens
+          git init -q -b ci-screenshots
+          printf 'Kaynak commit: %s\nDal: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > README.txt
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898279+github-actions[bot]@users.noreply.github.com" commit -qm "Ekran görüntüleri: ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-screenshots
 
       - name: Test hata bağlamı (hata varsa)
         if: failure()
