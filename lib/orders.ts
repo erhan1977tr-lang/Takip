@@ -28,6 +28,7 @@ export const orderDetailInclude = {
   },
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
   price: true,
+  crates: { orderBy: { crateNo: 'asc' } },
   notes: { orderBy: { createdAt: 'asc' }, include: { user: { select: { name: true, email: true, appRole: true } } } },
   events: { orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true, email: true } } } },
   assignedDrawer: { select: { name: true, email: true } },

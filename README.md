@@ -27,7 +27,8 @@ Cam sipariş akışı için web uygulaması:
 | Teklifler sayfası (müşteri: Tekliflerim, iç ekip: durumlara göre) | ✅ |
 | Notlar (iç not), hareket geçmişi, SLA, müşteri adı maskeleme, yetkili dosya indirme | ✅ |
 | Cam Kataloğu (yönetici) | ✅ |
-| Yükleme takvimi, teklif PDF/Excel, bildirimler | ⏳ |
+| Yükleme takvimi (satış/yönetici ve müşteri), sandık ölçü/ağırlık kaydı, yük tahmini | ✅ |
+| Excel/PDF çıktıları (döküm, nakliye listesi, sandık etiketi, teklif), bildirimler | ⏳ |
 | Sunucuya otomatik kurulum | ⏳ sunucu hazır olunca |
 
 ## Klasörler

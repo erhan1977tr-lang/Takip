@@ -7,11 +7,13 @@ import { ROLE_LABEL } from '@/lib/roles';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor } from './OfferEditor';
+import { loadOf } from '@/lib/loading';
+import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
 import {
   EVENTS, STAGES, availableActions, customerDrawingLabel, customerSummary, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, saveCratesAction,
   markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
   startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
 } from './actions';
@@ -42,6 +44,7 @@ const OK: Record<string, string> = {
   offer_updated: 'Teklif güncellendi; müşteri yeni sürümü görüyor.',
   offer_checked: 'Teklif yeni çizime göre güncel olarak işaretlendi.',
   undo_drawing: 'Çizime gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
+  crates_saved: 'Sandık ölçü ve ağırlıkları kaydedildi; yükleme planı güncellendi.',
   undo_no_drawing: 'Teklife gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
 };
 
@@ -195,6 +198,7 @@ export default async function OrderPage({
           {shownOffer && (
             <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} />
           )}
+          {!isCustomer && order.status !== 'YENI' && <Crates order={order} canEdit={can('edit_crates')} />}
           <Drawings order={order} user={user} />
           <Files order={order} user={user} canAdd={can('add_file')} />
           <Notes order={order} user={user} />
@@ -406,6 +410,51 @@ function OfferView({ order, offer, isCustomer, versions, updateHref }: { order: 
         <p className="muted small" style={{ margin: 0 }}>Fiyatlar KDV hariçtir.</p>
         {updateHref && <Link href={updateHref} className="btn">Teklifi güncelle</Link>}
       </div>
+    </div>
+  );
+}
+
+// ---------------- sandıklar ----------------
+function Crates({ order, canEdit }: { order: OrderDetail; canEdit: boolean }) {
+  const load = loadOf(order, false);
+  const blanks = Math.max(1, 2 - order.crates.length) + (order.crates.length ? 0 : 1);
+  const rows = [...order.crates.map((c) => ({ key: c.id, dim: c.dimensions ?? '', net: c.netAgirlik?.toString() ?? '', brut: c.brutAgirlik?.toString() ?? '' })),
+    ...Array.from({ length: canEdit ? blanks : 0 }, (_, i) => ({ key: `new${i}`, dim: '', net: '', brut: '' }))];
+  return (
+    <div className="card" id="sandik">
+      <h2>Sandık ölçüleri ve ağırlıkları</h2>
+      <p className="muted small">
+        Yükleme planı: {fmtNum(load.metraj)} m² · {load.camAdet} cam · net {fmtNum(load.netKg, 0)} kg · {load.crates} sandık · brüt {fmtNum(load.grossKg, 0)} kg
+        {load.realCrates
+          ? ' (girilen gerçek kayıtlar).'
+          : ` (tahmin: cam ağırlığı ${fmtNum(CRATE_MAX_KG, 0)} kg'a bölünüp yukarı yuvarlanır, sandık başına ${CRATE_TARE_KG} kg dara). Gerçek ölçü ve ağırlıkları girince tahminin önüne geçer.`}
+      </p>
+      {rows.length > 0 && (
+        <form action={saveCratesAction}>
+          <input type="hidden" name="id" value={order.id} />
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Ölçü (ör. 2400×1600×900 mm)</th><th>Net (kg)</th><th>Brüt (kg)</th></tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.key}>
+                    <td className="muted">{i + 1}</td>
+                    <td><input name="c_dim" defaultValue={r.dim} disabled={!canEdit} aria-label="Sandık ölçüsü" /></td>
+                    <td><input name="c_net" inputMode="decimal" defaultValue={r.net} disabled={!canEdit} style={{ width: 100 }} aria-label="Net kg" /></td>
+                    <td><input name="c_brut" inputMode="decimal" defaultValue={r.brut} disabled={!canEdit} style={{ width: 100 }} aria-label="Brüt kg" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {canEdit && (
+            <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+              <span className="hint">Daha fazla sandık için kaydedin; yeni boş satır açılır. Satırı silmek için alanlarını boşaltın.</span>
+              <button className="btn btn-primary">Sandıkları kaydet</button>
+            </div>
+          )}
+        </form>
+      )}
     </div>
   );
 }

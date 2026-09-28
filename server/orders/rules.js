@@ -199,6 +199,7 @@ export const EVENTS = {
   CANCELLED: { label: 'İptal edildi', customer: 'İptal edildi', note: true },
   HOLD: { label: 'Beklemeye alındı', customer: null },
   UNHOLD: { label: 'Beklemeden çıkarıldı', customer: null },
+  CRATES: { label: 'Sandık ölçü ve ağırlıkları güncellendi', customer: null },
   SHIP_DATE: { label: 'Tahmini yükleme tarihi değişti', customer: 'Tahmini yükleme tarihi güncellendi', note: true },
 };
 
@@ -288,6 +289,7 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (drawer && preparing && drawing === 'GEREKLI') a.push('start_drawing');
   if (drawer && preparing && (drawing === 'YAPILIYOR' || drawing === 'REVIZYON_ISTENDI')) a.push('upload_drawing');
 
+  if (sales && ['HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI'].includes(status)) a.push('edit_crates');
   if (sales && status === 'URETIMDE') a.push('mark_shipped');
   if (sales && status === 'YUKLENDI') a.push('archive');
   if (sales && !closed) a.push('hold', 'set_ship_date');

@@ -231,6 +231,30 @@ export async function requestRevisionAction(formData: FormData) {
   done(order.id, 'revision_requested');
 }
 
+// ---------------- Sandıklar ----------------
+/** Sandık ölçü ve ağırlıkları (gerçek kayıt). Boş bırakılan satırlar silinir. */
+export async function saveCratesAction(formData: FormData) {
+  const { user, order } = await guard(formData, 'edit_crates');
+  const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
+  const dim = col('c_dim'), net = col('c_net'), brut = col('c_brut');
+  const toKg = (s: string) => (s ? Number(s.replace(',', '.')) : null);
+  const rows: { dimensions: string | null; netAgirlik: number | null; brutAgirlik: number | null }[] = [];
+  for (let i = 0; i < dim.length; i++) {
+    if (!dim[i] && !net[i] && !brut[i]) continue;
+    const n = toKg(net[i]), b = toKg(brut[i]);
+    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(order.id, `${i + 1}. sandıkta ağırlık geçersiz.`));
+    if (n !== null && b !== null && b < n) redirect(err(order.id, `${i + 1}. sandıkta brüt ağırlık netten küçük olamaz.`));
+    rows.push({ dimensions: dim[i] ? dim[i].slice(0, 80) : null, netAgirlik: n, brutAgirlik: b });
+  }
+  await db.$transaction(async (tx) => {
+    await tx.crate.deleteMany({ where: { orderId: order.id } });
+    if (rows.length) await tx.crate.createMany({ data: rows.map((r, i) => ({ ...r, orderId: order.id, crateNo: i + 1 })) });
+    await logEvent(tx, order.id, 'CRATES', user.id, `${rows.length} sandık`);
+  });
+  revalidatePath('/yuklemeler');
+  done(order.id, 'crates_saved');
+}
+
 // ---------------- Ortak ----------------
 export async function addFilesAction(formData: FormData) {
   const { user, order } = await guard(formData, 'add_file');
