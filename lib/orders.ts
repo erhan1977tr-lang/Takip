@@ -2,14 +2,13 @@ import { notFound } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
-import { canSeeCustomerName, maskName, shouldAutoProduce, slaDeadline } from '../server/orders/rules.js';
+import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
+import { orderScope as scopeFor } from '../server/orders/scope.js';
 
-/** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; denetimci hepsini. */
+/** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
-  if (user.appRole === 'MUSTERI') return { customerId: user.customerId ?? '__none__' };
-  if (user.appRole === 'CIZIM') return { drawingTrack: { not: 'YOK' } };
-  return {};
+  return scopeFor(user) as Prisma.OrderWhereInput;
 }
 
 export function customerLabel(user: CurrentUser, name: string): string {
@@ -109,46 +108,5 @@ export function sentOffer(order: { offers: OfferRow[] }): OfferRow | undefined {
   return order.offers.find((o) => o.status === 'GONDERILDI');
 }
 
-type Tx = Prisma.TransactionClient;
-
-export async function logEvent(tx: Tx, orderId: string, event: string, userId: string | null, note?: string | null) {
-  await tx.orderEvent.create({ data: { orderId, event, userId, note: note ?? null } });
-  await tx.auditLog.create({ data: { action: `ORDER_${event}`, entityType: 'Order', entityId: orderId, userId, details: note ? { note } : undefined } });
-}
-
-/** Siparişin SLA son tarihini güncel çizim ve teklif durumuna göre yeniden hesaplar. */
-export async function refreshSla(tx: Tx, orderId: string) {
-  const o = await tx.order.findUniqueOrThrow({
-    where: { id: orderId },
-    include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
-  });
-  const offer = o.offers[0];
-  const deadline = slaDeadline({
-    status: o.status, onHold: o.onHold, createdAt: o.createdAt,
-    drawing: o.drawingTrack, drawingSince: o.drawingSince,
-    offer: offer?.status ?? null, offerSince: offer?.statusSince ?? null,
-  });
-  await tx.order.update({ where: { id: orderId }, data: { slaDeadline: deadline } });
-}
-
-/**
- * Çizim onaylı (ya da gereksiz) ve teklif müşterideyse siparişi otomatik olarak üretime alır.
- * Beklemedeki sipariş geçmez. Üretime geçtiyse true döner.
- */
-export async function maybeAutoProduction(tx: Tx, orderId: string, userId: string | null): Promise<boolean> {
-  const o = await tx.order.findUniqueOrThrow({
-    where: { id: orderId },
-    include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
-  });
-  if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null })) return false;
-  await tx.order.update({ where: { id: orderId }, data: { status: 'URETIMDE', slaDeadline: null } });
-  // Not bir koddur; ekranda events.PRODUCTION.<kod> olarak çevrilir (lib/labels.ts → eventNoteText)
-  await logEvent(tx, orderId, 'PRODUCTION', userId, o.drawingTrack === 'YOK' ? 'no_drawing' : 'drawing_approved');
-  return true;
-}
-
-/** Bir sonraki müşteri sipariş numarası önerisi (son numara + 1). */
-export async function suggestCustomerOrderNo(customerId: string): Promise<number> {
-  const last = await db.order.aggregate({ where: { customerId }, _max: { customerOrderNo: true } });
-  return (last._max.customerOrderNo ?? 0) + 1;
-}
+// Sipariş numarası önerisi ve iş akışı işlemleri: server/orders/create.js ve server/orders/transitions.js
+export { suggestNextNo } from '../server/orders/create.js';

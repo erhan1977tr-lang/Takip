@@ -257,12 +257,21 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   }
   const risky = active.filter((o) => o.slaDeadline && o.slaDeadline.getTime() - now < 6 * 3_600_000);
   const held = rows.filter((o) => o.onHold);
+  // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
+  const infected = userCan(user, 'SETTINGS_MANAGE')
+    ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } }))
+    : 0;
 
   return (
     <>
       <div className="page-head">
         <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
+      {infected > 0 && (
+        <div className="alert alert-error">
+          {t('orders.internal.infectedBanner', { n: infected })} <Link href="/admin/entegrasyonlar#antivirus">{t('orders.internal.infectedLink')}</Link>
+        </div>
+      )}
       <div className="tabs">
         {hasTurn && <Link href="/siparisler" className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
         <Link href={hasTurn ? '/siparisler?view=all' : '/siparisler'} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>

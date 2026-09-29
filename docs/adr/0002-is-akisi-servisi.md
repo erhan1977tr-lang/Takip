@@ -1,6 +1,6 @@
 # 0002 — İş akışı geçişleri tek domain servisinde
 
-**Durum:** Kabul · 29.09.2026
+**Durum:** Uygulandı (3.5.0) · 29.09.2026
 
 ## Bağlam
 Bugün durum değişiklikleri birkaç server action içinde `tx.order.update(...)` ile yapılıyor. Tanım,
@@ -22,3 +22,13 @@ Eşzamanlı düzenleme için sipariş satırında `version` alanıyla iyimser ki
 ## Sonuçlar
 - Aşama 0'da iskelet ve testleri eklenir; mevcut server action'lar Aşama 2'den itibaren bu servise taşınır.
 - Durum sütununu doğrudan güncelleyen kod incelemede reddedilir.
+
+## Uygulama notları (3.5.0)
+- Cam siparişinin 21 işlemi `server/orders/transitions.js` → `runOrderAction` üzerinden: akış kontrolü mevcut
+  kurallarla (`availableActions`), değişiklik + `OrderEvent` (önceki/sonraki durum) + `AuditLog` (rol, IP) +
+  `NotificationOutbox` tek veritabanı işleminde. Otomatik üretime geçiş aynı işlemde ayrı bir geçmiş kaydıdır.
+- İyimser kilit: her işlem `Order.version`'ı artırır (satır kilidi); aynı anda gelen ikinci işlem `CONFLICT` alır.
+  Teklif düzenleyicisi sayfanın sürümünü gönderir; çizim onayı/revizyonu ekrandaki çizim sürümünü (`drawingId`) gönderir,
+  bu arada yeni sürüm yüklendiyse `STALE_DRAWING`.
+- Sipariş oluşturma `server/orders/create.js` (firma bazlı `pg_advisory_xact_lock`, numara kuralı: karar 5).
+- Notlar ve dosya ekleme durum değişikliği değildir; yetki kontrolüyle doğrudan yazılır (dosya eklemek denetime girer).

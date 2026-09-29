@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { orderScope } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
+import { audit } from '@/lib/audit';
 import { resolveKey } from '@/lib/storage';
 import { getT } from '@/lib/i18n';
 
@@ -18,18 +19,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   const { kind, id } = await ctx.params;
   const scope = orderScope(user);
 
-  let file: { storageKey: string; name: string; mime: string | null } | null = null;
+  let file: { storageKey: string; name: string; mime: string | null; scanStatus: string; orderId: string } | null = null;
   if (kind === 'siparis') {
     const f = await db.orderFile.findFirst({
       // İç ekip dosyalarını yalnızca iç ekip görür; başka firmanın dosyası kapsam dışıdır → 404
       where: { id, order: scope, ...(userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { kind: 'CUSTOMER' }) },
     });
-    if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime };
+    if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.orderId };
   } else if (kind === 'cizim') {
     const d = await db.drawing.findFirst({ where: { id, order: scope } });
-    if (d) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: null };
+    if (d) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
   }
   if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
+  // Virüslü dosya karantinadadır; kimseye verilmez
+  if (file.scanStatus === 'INFECTED') return new Response(t('common.fileInfected'), { status: 403 });
+  // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
+  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'Drawing' : 'OrderFile', id, user.id, { orderId: file.orderId, name: file.name });
 
   const full = resolveKey(file.storageKey);
   if (!full || !fs.existsSync(full)) return new Response(t('common.fileMissing'), { status: 404 });

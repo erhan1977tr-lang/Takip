@@ -24,4 +24,5 @@ export default {
   fileLoginRequired: 'Este necesară autentificarea',
   fileNotFound: 'Fișierul nu a fost găsit',
   fileMissing: 'Fișierul nu a fost găsit pe disc',
+  fileInfected: 'În acest fișier a fost găsit un virus; din motive de siguranță nu poate fi descărcat.',
 };

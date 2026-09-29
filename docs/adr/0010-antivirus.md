@@ -1,6 +1,6 @@
 # 0010 — Yüklenen dosyalar için antivirüs
 
-**Durum:** Kabul (uygulama Aşama 2, ayar ekranı Aşama 2/8) · 29.09.2026
+**Durum:** Uygulandı (3.5.0) · 29.09.2026
 
 ## Bağlam
 Müşteriler ve iç ekip teknik dosya yükler (PDF, DWG, DXF, STEP, ZIP, Office, görsel; dosya başına 100 MB'a kadar).
@@ -15,7 +15,9 @@ yönetilen antivirüs taraması istedi (karar 10).
 - Akış: dosya önce karantina alanına yazılır → taranır → temizse kalıcı depolamaya taşınır ve kayda
   `scanStatus=CLEAN` yazılır. Virüslüyse dosya silinir, yükleme reddedilir, kullanıcıya iki dilde mesaj gösterilir,
   denetim kaydı ve yöneticiye bildirim oluşur.
-- Taranmamış (`PENDING`) ya da `INFECTED` dosya hiç kimseye indirilmez; dosya indirme yetkisine bu kontrol eklenir.
+- `INFECTED` dosya hiç kimseye indirilmez (karantina: `UPLOAD_DIR/.karantina`). Ürün sahibinin kararıyla tarayıcıya
+  ulaşılamadığında dosya kabul edilir ve `PENDING` ("taranmadı") işaretlenir; bu dosya uyarı rozetiyle indirilebilir,
+  arka plan işçisi (`scripts/worker.mjs`, sunucuda `worker` servisi) dakikada bir tarar.
 - **Yönetici → Entegrasyonlar → Antivirüs** ayarları:
   - Durum: kapalı / açık
   - Tarayıcı erişilemezse: yüklemeyi reddet (önerilen) / kabul et, "taranmadı" diye işaretle ve sonra tara
@@ -28,3 +30,11 @@ yönetilen antivirüs taraması istedi (karar 10).
 ## Sonuçlar
 - Sunucuda ClamAV yaklaşık 1–1,5 GB bellek kullanır; Contabo sunucusunun belleği buna göre seçilmeli.
 - Mevcut yüklenmiş dosyalar kurulumdan sonra bir kez toplu taranır.
+
+## Uygulama notları (3.5.0)
+- İstemci: `server/files/clamav.js` (INSTREAM/PING/VERSION, ek paket yok). Saklama akışı: `server/files/store.js`
+  (içerik türü kontrolü `server/files/signature.js`, SHA-256, tarama, kalıcı yere taşıma).
+- Ayarlar: `IntegrationSetting` tablosu, anahtar `antivirus` (açık/kapalı, adres, port, ulaşılamazsa kabul/reddet);
+  kayıt olmadığında `CLAMAV_HOST` tanımlıysa açık. Her değişiklik denetim kaydına önce/sonra değerleriyle yazılır.
+- Sunucu: `deploy/clamav` (resmî imaj + 150 MB akış/dosya sınırı), `worker` servisi, `takip antivirus` komutu.
+- CI: uçtan uca testler gerçek ClamAV ile çalışır (ZIP içinde EICAR reddedilir, yönetici testi başarılı).

@@ -33,11 +33,39 @@ services:
     environment:
       DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
       UPLOAD_DIR: /data/uploads
+      CLAMAV_HOST: clamav
     volumes:
       - uploads:/data/uploads
     depends_on:
       db:
         condition: service_healthy
+
+  # Arka plan işçisi: taranmamış dosyaları antivirüsten geçirir (ileride bildirim gönderimi)
+  worker:
+    image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}-tools
+    restart: unless-stopped
+    command: ["node", "scripts/worker.mjs"]
+    logging: *logging
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
+      UPLOAD_DIR: /data/uploads
+      CLAMAV_HOST: clamav
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Antivirüs (ClamAV). ~1–1,5 GB bellek; ilk açılışta virüs tanımları birkaç dakikada yüklenir.
+  # Ulaşılamadığı sürece yüklenen dosyalar "taranmadı" işaretlenir ve işçi sonra tarar.
+  clamav:
+    build: ./clamav
+    image: takip-clamav:latest
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - clamav-db:/var/lib/clamav
 
   tools:
     image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}-tools
@@ -45,6 +73,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
+      CLAMAV_HOST: clamav
     depends_on:
       db:
         condition: service_healthy
@@ -69,5 +98,6 @@ services:
 volumes:
   db-data:
   uploads:
+  clamav-db:
   caddy-data:
   caddy-config:

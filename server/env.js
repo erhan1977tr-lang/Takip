@@ -57,6 +57,8 @@ export const ENV_VARS = {
   INVITE_CODE_TTL_HOURS: { group: 'app', parse: parseInt10(1, 24 * 30), default: 24, desc: 'Davet / şifre kodunun geçerlilik süresi (saat)' },
   APP_TIMEZONE: { group: 'app', parse: parseTimeZone, default: 'Europe/Bucharest', desc: 'Tarihlerin gösterildiği saat dilimi' },
   UPLOAD_DIR: { group: 'app', default: './uploads', desc: 'Yüklenen dosyaların klasörü (herkese açık olmamalı)' },
+  CLAMAV_HOST: { group: 'app', desc: 'Antivirüs (clamd) adresi; tanımlıysa yüklenen dosyalar taranır (sunucuda: clamav)' },
+  CLAMAV_PORT: { group: 'app', parse: parseInt10(1, 65535), default: 3310, desc: 'Antivirüs (clamd) portu' },
 
   // --- veritabanı ---
   DATABASE_URL: { group: 'db', required: true, secret: true, parse: parseUrl(['postgresql:', 'postgres:']), desc: 'PostgreSQL bağlantısı' },

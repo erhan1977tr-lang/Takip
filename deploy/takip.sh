@@ -9,6 +9,7 @@
 #   takip log [SATIR]                uygulamanın son günlük satırları
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
 #   takip github                     GitHub erişim anahtarını (token) yenile
+#   takip antivirus                  antivirüs (ClamAV) çalışıyor ve test virüsünü yakalıyor mu
 #
 # Otomatik güncelleme (systemd: takip-deploy.timer, 2 dakikada bir → takip _otomatik):
 #   izlenen daldaki son commit GitHub'daki CI testlerinden geçtiyse sunucuda derlenir,
@@ -366,6 +367,8 @@ cmd_backup() {
   f=$(backup_db elle) || { say "✘ Veritabanı yedeği alınamadı."; return 1; }
   g=$(backup_files) || { say "✘ Dosya yedeği alınamadı."; return 1; }
   docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
+  # Pazar günleri antivirüs motorunun yeni sürümü alınır (virüs tanımları zaten sürekli güncellenir)
+  if [ "$(date +%u)" = 7 ]; then compose build --pull clamav >/dev/null 2>&1 && compose up -d clamav >/dev/null 2>&1 || true; fi
   say "✔ Yedek: ${f:-—}"
   say "✔ Dosyalar: ${g:-—}"
   say "Not: yedekler bu sunucuda duruyor ($BACKUPS). Sunucu dışına kopyalanması ayrıca ayarlanacak."
@@ -381,6 +384,7 @@ main() {
     _ilk) first_deploy ;;
     _ci) gate "$(git -C "$SRC" rev-parse "$1")" ;;
     github) cmd_github ;;
+    antivirus | av) compose run --rm tools node scripts/av-check.mjs ;;
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
     yedek | backup) cmd_backup ;;
@@ -389,7 +393,7 @@ main() {
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,11p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,12p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

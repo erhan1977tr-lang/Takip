@@ -166,6 +166,9 @@ export default {
     internal: 'iç dosya',
     add: 'Dosya ekle',
     internalHint: 'İç ekibin eklediği dosyaları müşteri görmez.',
+    scanPending: 'taranmadı',
+    scanPendingTitle: 'Virüs taraması henüz yapılamadı; kısa süre içinde otomatik taranacak.',
+    infected: 'virüslü — karantinada',
   },
   notes: {
     title: 'Notlar',
@@ -198,5 +201,7 @@ export default {
     offerNotFound: 'Teklif bulunamadı.',
     returnReason: 'Satışa geri gönderme nedenini yazın.',
     offerNotUpdatable: 'Teklif şu anda güncellenemez.',
+    conflict: 'Sipariş siz bakarken başka biri tarafından değiştirildi. Sayfayı yenileyip tekrar deneyin.',
+    staleDrawing: 'Bu arada yeni bir çizim sürümü yüklendi. Lütfen önce yeni sürümü inceleyin.',
   },
 };

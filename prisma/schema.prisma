@@ -114,6 +114,7 @@ model User {
   drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
   notifications      Notification[]
   auditLogs          AuditLog[]
+  settingsUpdated    IntegrationSetting[]
   invites            UserInvite[]
   sessions           Session[]
   orderNotes         OrderNote[]
@@ -217,6 +218,22 @@ model Customer {
 // SİPARİŞ
 // ---------------------------------------------------------
 
+// Sipariş tipleri (CLAUDE.md "Order types"). Yeni tip bir satır olarak eklenir; ekranlar ve numara biçimi buradan.
+// İlk kayıtlar migration'da ve seed'de (prisma/seed/data/order-types.js).
+model OrderType {
+  code         String   @id // GLASS_ORDER, PROFILE_ORDER
+  nameRo       String
+  nameTr       String
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  numberFormat String   @default("{CODE}{SEQ}")
+  usesSales    Boolean  @default(true) // false → satış kuyruklarına girmez
+  usesDrawing  Boolean  @default(true) // false → çizim kuyruklarına girmez
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // Siparişin genel aşaması. Çizim ve teklif, HAZIRLANIYOR aşamasında birbirinden bağımsız yürür.
 enum OrderStatus {
   YENI         // müşteri gönderdi, satış inceliyor ("İnceleniyor")
@@ -239,11 +256,15 @@ enum DrawingTrack {
 
 model Order {
   id                String      @id @default(cuid())
-  orderNo           String      @unique // "MIR5", "PEL10", "FOL4"
+  orderNo           String      @unique // firma kodu + müşterinin sipariş numarası: "GLA68" (karar 5)
   customerId        String
   customer          Customer    @relation(fields: [customerId], references: [id])
+  orderTypeCode     String      @default("GLASS_ORDER")
+  orderType         OrderType   @relation(fields: [orderTypeCode], references: [code])
+  // İyimser kilit: her iş akışı işleminde bir artar; aynı anda yapılan iki işlemden ikincisi reddedilir.
+  version           Int         @default(0)
 
-  customerOrderNo   Int         // müşterinin kendi numarası; orderNo = firma ön eki + bu sayı
+  customerOrderNo   Int         // müşterinin sipariş numarası: formda bir sonraki numarayla gelir, müşteri değiştirebilir
   title             String?     // "Gabi panou dus" gibi kısa açıklama
   status            OrderStatus @default(YENI)
   drawingTrack      DrawingTrack @default(YOK)
@@ -275,11 +296,13 @@ model Order {
   events            OrderEvent[]
   files             OrderFile[]
   notes             OrderNote[]
+  outbox            NotificationOutbox[]
 
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
   @@unique([customerId, customerOrderNo])
+  @@index([orderTypeCode])
   @@index([status])
   @@index([drawingTrack])
   @@index([customerId])
@@ -287,17 +310,29 @@ model Order {
 }
 
 // Sipariş olay geçmişi ("Hareketler"). event kodları server/orders/rules.js içindeki EVENTS ile tanımlıdır.
+// Sipariş geçmişi: her iş akışı işlemi bir satır (durum değiştirdiyse önceki → sonraki durumla birlikte).
 model OrderEvent {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  event     String
-  note      String?
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event      String
+  note       String?
+  fromStatus OrderStatus?
+  toStatus   OrderStatus?
   userId    String?
   user      User?    @relation("OrderEventBy", fields: [userId], references: [id])
   createdAt DateTime @default(now())
 
   @@index([orderId, createdAt])
+}
+
+// Antivirüs taraması (ADR 0010). PENDING: taranmadı (tarayıcıya ulaşılamadı ya da eski dosya) → işçi sonra tarar.
+// SKIPPED: antivirüs kapalıyken yüklendi. INFECTED: karantinada, indirilemez.
+enum FileScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  SKIPPED
 }
 
 enum OrderFileKind {
@@ -314,7 +349,11 @@ model OrderFile {
   name         String        // özgün dosya adı
   storageKey   String        @unique
   size         Int
-  mime         String?
+  mime         String?       // içerikten belirlenir (uzantıya güvenilmez)
+  checksum     String?       // SHA-256 (hex)
+  scanStatus   FileScanStatus @default(PENDING)
+  scanSignature String?      // virüs adı (INFECTED)
+  scannedAt    DateTime?
   uploadedById String
   uploadedBy   User          @relation(fields: [uploadedById], references: [id])
   createdAt    DateTime      @default(now())
@@ -440,6 +479,11 @@ model Drawing {
   fileUrl      String        // UPLOAD_DIR altındaki depolama anahtarı
   fileName     String?
   fileSize     Int?
+  mime         String?
+  checksum     String?
+  scanStatus   FileScanStatus @default(PENDING)
+  scanSignature String?
+  scannedAt    DateTime?
   status       DrawingStatus @default(BEKLIYOR)
   uploadedById String
   uploadedBy   User          @relation("DrawingUploadedBy", fields: [uploadedById], references: [id])
@@ -524,6 +568,39 @@ model Notification {
   createdAt DateTime @default(now())
 }
 
+// Bildirim kuyruğu (ADR 0006): iş akışı işlemi aynı veritabanı işleminde buraya yazar; gönderim ayrı çalışır (Aşama 8).
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationOutbox {
+  id          String       @id @default(cuid())
+  type        String       // ORDER_SENT_TO_DRAWING, ORDER_OFFER_SENT, FILE_INFECTED...
+  orderId     String?
+  order       Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payload     Json?
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  lastError   String?
+  availableAt DateTime     @default(now())
+  sentAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([status, availableAt])
+}
+
+// Entegrasyon ayarları (yönetici → Entegrasyonlar). Sır içermez; sırlar yalnızca sunucudaki .env'de.
+model IntegrationSetting {
+  key         String   @id // "antivirus"
+  value       Json
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt
+}
+
 // ---------------------------------------------------------
 // DENETİM KAYDI — sadece okunur, hiçbir kayıt silinemez
 // ---------------------------------------------------------
@@ -532,7 +609,9 @@ model AuditLog {
   id         String   @id @default(cuid())
   userId     String?
   user       User?    @relation(fields: [userId], references: [id])
-  action     String   // "ORDER_STATUS_CHANGE", "PRICE_SET", "USER_LOGIN" vb.
+  actorRole  String?  // işlemi yapanın o anki rolü
+  ip         String?
+  action     String   // "ORDER_TRANSITION", "PRICE_SET", "USER_LOGIN" vb.
   entityType String   // "Order", "Drawing", "Price"...
   entityId   String?
   details    Json?

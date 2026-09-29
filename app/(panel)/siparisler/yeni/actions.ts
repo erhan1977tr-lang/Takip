@@ -1,14 +1,18 @@
 'use server';
 
+// Yeni cam siparişi. Numara kuralı ve kayıt server/orders/create.js'te (createGlassOrder);
+// burada form okuma, dosya kaydı (içerik kontrolü + antivirüs) ve mesajlar.
 import { redirect } from 'next/navigation';
-import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
-import { audit } from '@/lib/audit';
 import { getT } from '@/lib/i18n';
-import { fileProblemText } from '@/lib/labels';
-import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
-import { fileProblem, nextShipDate, slaDeadline } from '@/server/orders/rules.js';
+import { fileProblemText, workflowErrorText } from '@/lib/labels';
+import { actorOf } from '@/lib/actor';
+import { filesFrom } from '@/lib/storage';
+import { discardFiles, storeFiles } from '@/lib/uploads';
+import { fileProblem } from '@/server/orders/rules.js';
+import { createGlassOrder } from '@/server/orders/create.js';
+import { WorkflowError } from '@/server/domain/workflow.js';
 
 export type NewOrderState = { error?: string; values?: { title: string; no: string; glasses: { id: string; qty: string }[] } };
 
@@ -18,6 +22,7 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   const firm = user.customer;
   const title = String(formData.get('title') ?? '').trim().slice(0, 160);
   const noRaw = String(formData.get('customerOrderNo') ?? '').trim();
+  const suggestedRaw = String(formData.get('suggestedNo') ?? '').trim();
   const glassIds = formData.getAll('glassId').map(String);
   const glassQty = formData.getAll('glassQty').map(String);
   const glasses = glassIds.map((id, i) => ({ id, qty: glassQty[i] ?? '1' })).filter((g) => g.id);
@@ -28,6 +33,7 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   if (!title) return fail(t('newOrder.errors.titleRequired'));
   const no = Number(noRaw);
   if (!Number.isInteger(no) || no <= 0 || no > 9_999_999) return fail(t('newOrder.errors.badNumber'));
+  const suggestedNo = /^\d+$/.test(suggestedRaw) ? Number(suggestedRaw) : null;
 
   const files = filesFrom(formData, 'files');
   if (files.length === 0) return fail(t('newOrder.errors.noFiles'));
@@ -49,38 +55,21 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
     items.push({ glassName: product.name, camAdedi: qty });
   }
 
-  const orderNo = `${firm.prefix}${no}`;
-  if (await db.order.findFirst({ where: { OR: [{ orderNo }, { customerId: firm.id, customerOrderNo: no }] } })) {
-    return fail(t('newOrder.errors.duplicate', { orderNo }));
-  }
-
-  // Önce dosyalar diske yazılır; veritabanı kaydı başarısız olursa geri silinir.
-  const stored: StoredFile[] = [];
+  // Dosyalar önce kaydedilir (içerik kontrolü + antivirüs); sipariş kaydı başarısız olursa geri silinir.
+  const stored = await storeFiles(files, { userId: user.id });
+  if (!stored.ok) return fail(fileProblemText(t, stored.problem)!);
   let orderId: string;
   try {
-    for (const f of files) stored.push(await saveUpload(f));
-    const order = await db.$transaction(async (tx) => {
-      const o = await tx.order.create({
-        data: {
-          orderNo, customerOrderNo: no, title, customerId: firm.id, createdById: user.id,
-          status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: new Date() }), estimatedShipDate: nextShipDate(),
-          camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket,
-          items: { create: items },
-          files: { create: stored.map((s) => ({ ...s, kind: 'CUSTOMER' as const, uploadedById: user.id })) },
-        },
-      });
-      await tx.orderEvent.create({ data: { orderId: o.id, event: 'CREATED', userId: user.id } });
-      return o;
+    const created = await createGlassOrder(db, {
+      actor: await actorOf(user), firm: { id: firm.id, prefix: firm.prefix, camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket },
+      title, requestedNo: no, suggestedNo, items, files: stored.stored,
     });
-    orderId = order.id;
+    orderId = created.id;
   } catch (err) {
-    await Promise.all(stored.map((s) => removeUpload(s.storageKey)));
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return fail(t('newOrder.errors.duplicate', { orderNo }));
-    }
+    await discardFiles(stored.stored);
+    if (err instanceof WorkflowError) return fail(workflowErrorText(t, err.code, err.details as Record<string, unknown>));
     console.error('Sipariş oluşturulamadı', err);
     return fail(t('newOrder.errors.saveFailed'));
   }
-  await audit('ORDER_CREATE', 'Order', orderId, user.id, { orderNo, files: stored.length });
   redirect(`/siparisler/${orderId}?ok=created`);
 }

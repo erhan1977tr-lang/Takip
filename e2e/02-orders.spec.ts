@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
-  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, SALES, TEAM_PW as PW,
+  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, SALES, TEAM_PW as PW, sampleFile,
   as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor,
 } from './helpers';
 
@@ -135,7 +135,7 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await drawer.goto(`/siparisler/${ids.b}`);
   await drawer.getByRole('button', { name: 'Çizimi üstlen' }).click();
   await expect(drawer.getByText('Çizim işini üstlendiniz.')).toBeVisible();
-  await drawer.setInputFiles('#drawing-file', { name: 'korkuluk-v1.dxf', mimeType: 'application/octet-stream', buffer: Buffer.from('dxf v1') });
+  await drawer.setInputFiles('#drawing-file', sampleFile('korkuluk-v1.dxf', 'dxf v1'));
   await drawer.getByRole('button', { name: 'Yükle ve onaya gönder' }).click();
   await expect(drawer.getByText('Çizim yüklendi ve müşterinin onayına gönderildi.')).toBeVisible();
 
@@ -145,14 +145,14 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   ids.drawing = href!.split('/').pop();
   const dl = await cust.request.get(href!);
   expect(dl.status()).toBe(200);
-  expect(await dl.text()).toBe('dxf v1');
+  expect(await dl.text()).toContain('dxf v1');
   await cust.fill('#rev-comment', 'Korkuluk yüksekliği 1100 mm olmalı');
   await cust.getByRole('button', { name: 'Revizyon iste' }).click();
   await expect(cust.getByText('Revizyon talebiniz çizim ekibine iletildi.')).toBeVisible();
 
   await drawer.goto(`/siparisler/${ids.b}`);
   await expect(drawer.getByText('Korkuluk yüksekliği 1100 mm olmalı').first()).toBeVisible();
-  await drawer.setInputFiles('#drawing-file', { name: 'korkuluk-v2.dxf', mimeType: 'application/octet-stream', buffer: Buffer.from('dxf v2') });
+  await drawer.setInputFiles('#drawing-file', sampleFile('korkuluk-v2.dxf', 'dxf v2'));
   await drawer.getByRole('button', { name: 'Yükle ve onaya gönder' }).click();
   await expect(drawer.getByText('v2 · güncel')).toBeVisible();
 
@@ -219,7 +219,7 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
   const drawer = await as(browser, DRAWER, PW);
   await drawer.goto(`/siparisler/${id}`);
   await drawer.getByRole('button', { name: 'Çizimi üstlen' }).click();
-  await drawer.setInputFiles('#drawing-file', { name: 'vitrin.dxf', mimeType: 'application/octet-stream', buffer: Buffer.from('dxf') });
+  await drawer.setInputFiles('#drawing-file', sampleFile('vitrin.dxf', 'dxf'));
   await drawer.getByRole('button', { name: 'Yükle ve onaya gönder' }).click();
   await expect(drawer.getByText('Çizim yüklendi ve müşterinin onayına gönderildi.')).toBeVisible();
 

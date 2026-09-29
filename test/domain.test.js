@@ -75,11 +75,11 @@ const base = { id: 'o1', status: 'A', orderType: 'TEST_ORDER', version: 1, secre
 test('transitionOrder: geçerli geçiş durum + geçmiş + denetim + outbox yazar, temizlenmiş sonuç döner', async () => {
   const { db, deps, store, outbox } = fakeDb(base);
   const out = await transitionOrder({ db, workflow: wf, orderId: 'o1', action: 'START', actor: sales, payload: { note: 'n' }, deps });
-  assert.deepEqual(out, { id: 'o1', status: 'B', secret: undefined });
+  assert.deepEqual(out.order, { id: 'o1', status: 'B', secret: undefined });
   assert.equal(store.order.status, 'B');
-  assert.deepEqual(store.history, [{ orderId: 'o1', from: 'A', to: 'B', action: 'START', actorId: 'u2', note: 'n' }]);
+  assert.deepEqual(store.history, [{ orderId: 'o1', event: 'START', from: 'A', to: 'B', action: 'START', actorId: 'u2', note: 'n' }]);
   assert.equal(store.audit.length, 1);
-  assert.deepEqual(store.audit[0].details, { action: 'START', from: 'A', to: 'B', role: 'SATIS' });
+  assert.deepEqual(store.audit[0].details, { action: 'START', events: ['START'], from: 'A', to: 'B', role: 'SATIS' });
   assert.deepEqual(outbox.events.map((e) => e.type), ['ORDER_START']);
 });
 
@@ -125,4 +125,29 @@ test('audit/outbox: biçim kontrolü', () => {
   });
   assert.equal(outboxEvent('ORDER_SENT', { orderId: 'o1' }).status, 'PENDING');
   assert.throws(() => outboxEvent('bad'), /BÜYÜK_HARF/);
+});
+
+test('transitionOrder: işlem birden çok geçmiş kaydı üretebilir (ör. onay + otomatik üretim)', async () => {
+  const { db, deps, store, outbox } = fakeDb({ ...base, status: 'B' });
+  deps.apply = async (_tx, o) => {
+    store.order = { ...store.order, status: 'C', version: store.order.version + 1 };
+    return {
+      order: { ...store.order },
+      entries: [{ event: 'APPROVED', from: 'B', to: 'B', note: 'v2' }, { event: 'PRODUCTION', from: 'B', to: 'C' }],
+      audit: { amount: '10.00' },
+      result: { produced: true },
+    };
+  };
+  const out = await transitionOrder({ db, workflow: wf, orderId: 'o1', action: 'FINISH', actor: admin, payload: { ok: true }, deps });
+  assert.deepEqual(out.result, { produced: true });
+  assert.deepEqual(store.history.map((h) => [h.event, h.from, h.to, h.note]), [['APPROVED', 'B', 'B', 'v2'], ['PRODUCTION', 'B', 'C', null]]);
+  assert.deepEqual(store.audit[0].details, { action: 'FINISH', events: ['APPROVED', 'PRODUCTION'], from: 'B', to: 'C', amount: '10.00', role: 'ADMIN' });
+  assert.deepEqual(outbox.events.map((e) => e.type), ['ORDER_APPROVED', 'ORDER_PRODUCTION']);
+});
+
+test('transitionOrder: geçmiş kaydı olmayan işlem (ör. taslak kaydetme) yalnızca denetim bırakır', async () => {
+  const { db, deps, store, outbox } = fakeDb(base);
+  deps.apply = async () => ({ order: { ...store.order }, entries: [] });
+  await transitionOrder({ db, workflow: wf, orderId: 'o1', action: 'NOTE', actor: sales, deps });
+  assert.deepEqual([store.history.length, store.audit.length, outbox.events.length], [0, 1, 0]);
 });

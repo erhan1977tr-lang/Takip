@@ -83,7 +83,11 @@ async function store(name, content) {
   const full = path.join(UPLOAD, key);
   await fs.mkdir(path.dirname(full), { recursive: true });
   await fs.writeFile(full, content);
-  return { storageKey: key, name, size: content.length, mime: name.endsWith('.pdf') ? 'application/pdf' : null };
+  // Örnek dosyalar antivirüsten geçirilmez (demo): "tarama kapalıyken yüklendi" (SKIPPED)
+  return {
+    storageKey: key, name, size: content.length, mime: name.endsWith('.pdf') ? 'application/pdf' : null,
+    checksum: crypto.createHash('sha256').update(content).digest('hex'), scanStatus: 'SKIPPED',
+  };
 }
 
 // ---------- kurulum ----------
@@ -199,7 +203,10 @@ async function main(db) {
         { w: d.w, h: d.h, label: d.label },
       ));
       const dr = await db.drawing.create({
-        data: { orderId: rec.id, version: d.v, fileUrl: f.storageKey, fileName: f.name, fileSize: f.size, status: d.status, uploadedById: drawer.id, createdAt: ago(d.hoursAgo) },
+        data: {
+          orderId: rec.id, version: d.v, fileUrl: f.storageKey, fileName: f.name, fileSize: f.size, mime: f.mime,
+          checksum: f.checksum, scanStatus: 'SKIPPED', status: d.status, uploadedById: drawer.id, createdAt: ago(d.hoursAgo),
+        },
       });
       if (d.revision) await db.drawingRevision.create({ data: { drawingId: dr.id, requestedById: cust.id, comment: d.revision, createdAt: ago(d.hoursAgo - 4) } });
     }

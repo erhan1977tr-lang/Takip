@@ -24,4 +24,5 @@ export default {
   fileLoginRequired: 'Giriş gerekli',
   fileNotFound: 'Dosya bulunamadı',
   fileMissing: 'Dosya diskte bulunamadı',
+  fileInfected: 'Bu dosyada virüs bulundu; güvenlik için indirilemez.',
 };

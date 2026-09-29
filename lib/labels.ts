@@ -1,5 +1,5 @@
 // İş kurallarının döndürdüğü kodları (server/orders/rules.js) ekranda gösterilecek metne çevirir.
-import type { Dict, MsgKey, T } from './i18n';
+import type { Dict, MsgKey, T, TParams } from './i18n';
 import { EVENTS, customerSummary } from '@/server/orders/rules.js';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 
@@ -40,6 +40,28 @@ export function eventNoteText(t: T, event: string, note: string | null | undefin
   if (event === 'PRODUCTION' && (note === 'no_drawing' || note === 'drawing_approved')) return t(k(`events.PRODUCTION.${note}`));
   if (event === 'CRATES' && /^\d+$/.test(note)) return t('events.CRATES.count', { n: note });
   return note;
+}
+
+/** İş akışı hatası (WorkflowError.code) → metin. */
+const WORKFLOW_ERRORS: Record<string, string> = {
+  NOT_ALLOWED: 'order.errors.notAllowed',
+  UNKNOWN_ACTION: 'order.errors.notAllowed',
+  WRONG_ORDER_TYPE: 'order.errors.notAllowed',
+  NOT_FOUND: 'order.errors.notAllowed',
+  CONFLICT: 'order.errors.conflict',
+  STALE_DRAWING: 'order.errors.staleDrawing',
+  OFFER_NOT_FOUND: 'order.errors.offerNotFound',
+  INVALID_DATE: 'order.errors.invalidDate',
+  CANCEL_REASON: 'order.errors.cancelReason',
+  REVISION_COMMENT: 'order.errors.revisionComment',
+  RETURN_REASON: 'order.errors.returnReason',
+  DRAWING_FILE: 'order.errors.drawingFile',
+  NO_FIRM: 'newOrder.errors.noFirm',
+  BAD_NUMBER: 'newOrder.errors.badNumber',
+  DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
+};
+export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
+  return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);
 }
 
 /** Dosya kontrolü sonucu (fileProblem) → metin; sorun yoksa null. */

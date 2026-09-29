@@ -286,3 +286,9 @@ input.input-missing { background: #fef2f2; border-color: #f87171; }
 /* teklif görünümü: uzun (Romence) sütun başlıkları iki satıra inebilir, açıklama sütunu fazla daralmaz */
 #teklif th { white-space: normal; }
 #teklif td:nth-child(2) { min-width: 150px; }
+
+/* Yeni sipariş: tip seçimi */
+.type-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.type-card { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: inherit; }
+.type-card:hover { border-color: var(--primary, #2563eb); }
+.type-card .btn { align-self: flex-start; margin-top: auto; }

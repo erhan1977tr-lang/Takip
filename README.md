@@ -29,7 +29,9 @@ Cam sipariş akışı için web uygulaması:
 | Cam Kataloğu (yönetici) | ✅ |
 | Yükleme takvimi (satış/yönetici ve müşteri), sandık ölçü/ağırlık kaydı, yük tahmini | ✅ |
 | Romence / Türkçe arayüz, IP'ye göre giriş dili, dil seçimi | ✅ |
-| Excel/PDF çıktıları (döküm, nakliye listesi, sandık etiketi, teklif), bildirimler | ⏳ |
+| Yüklenen dosyalarda içerik türü kontrolü ve antivirüs (ClamAV), karantina, yönetici Entegrasyonlar sayfası | ✅ |
+| Tek iş akışı servisi: her işlemde geçmiş + denetim + bildirim kuyruğu, eşzamanlı işlem koruması | ✅ |
+| Excel/PDF çıktıları (döküm, nakliye listesi, sandık etiketi, teklif), bildirim gönderimi | ⏳ |
 | Sunucu kurulumu ve otomatik güncelleme (testlerden geçen sürüm kendiliğinden yayınlanır) — [deploy/README.md](deploy/README.md) | ✅ |
 
 ## Diller

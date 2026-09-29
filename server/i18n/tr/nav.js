@@ -10,6 +10,7 @@ export default {
   users: 'Kullanıcılar',
   firms: 'Müşteriler',
   catalog: 'Cam Kataloğu',
+  integrations: 'Entegrasyonlar',
   myOrders: 'Siparişlerim',
   newOrder: 'Yeni Sipariş',
   myOffers: 'Tekliflerim',

@@ -36,8 +36,15 @@ jobs:
       SCREENSHOT_DIR: ${{ github.workspace }}/.screens
       UPLOAD_DIR: ${{ github.workspace }}/.uploads
       NEXT_TELEMETRY_DISABLED: '1'
+      # Antivirüs: sunucudakiyle aynı ClamAV imajı (deploy/clamav); uçtan uca testler gerçek taramayla çalışır
+      CLAMAV_HOST: 127.0.0.1
     steps:
       - uses: actions/checkout@v4
+
+      - name: Antivirüs (ClamAV) başlat — testler çalışırken ısınır
+        run: |
+          docker build -q -t takip-clamav deploy/clamav
+          docker run -d --name clamav -p 3310:3310 takip-clamav
 
       - uses: actions/setup-node@v4
         with:
@@ -142,6 +149,20 @@ jobs:
 
       - name: Derle
         run: scripts/ci-step.sh "next build" npm run build
+
+      - name: Antivirüs hazır mı (en fazla 5 dakika)
+        run: |
+          node -e "import('./server/files/clamav.js').then(async (m) => {
+            for (let i = 0; i < 60; i++) {
+              if (await m.ping({ host: '127.0.0.1', port: 3310 })) {
+                const r = await m.scanBuffer(m.eicar(), { host: '127.0.0.1', port: 3310 });
+                console.log((await m.version({ host: '127.0.0.1', port: 3310 })).raw, JSON.stringify(r));
+                process.exit(r.status === 'infected' ? 0 : 1);
+              }
+              await new Promise((r) => setTimeout(r, 5000));
+            }
+            process.exit(1);
+          })" || { docker logs --tail 60 clamav; exit 1; }
 
       - name: Sunucuyu başlat
         run: |

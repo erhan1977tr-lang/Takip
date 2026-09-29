@@ -2,6 +2,16 @@
 export default {
   title: 'Comandă nouă',
   back: '← Comenzile mele',
+  // Alegerea tipului de comandă (când sunt active mai multe tipuri)
+  selector: {
+    title: 'Ce doriți să comandați?',
+    intro: 'Alegeți tipul comenzii.',
+    choose: 'Alege',
+    desc: {
+      GLASS_ORDER: 'Sticlă pe măsură: fișier tehnic, aprobarea desenului și ofertă.',
+      PROFILE_ORDER: 'Din depozit: garnituri, plastice, profile aluminiu și accesorii.',
+    },
+  },
   form: {
     info: {
       title: 'Datele comenzii',

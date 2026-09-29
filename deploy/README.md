@@ -1,12 +1,13 @@
 # Sunucu kurulumu (Contabo ya da herhangi bir VPS)
 
-Uygulama tek bir sunucuda Docker ile çalışır: **PostgreSQL** (veritabanı), **uygulama** (Next.js) ve **Caddy**
-(HTTPS sertifikasını Let's Encrypt'ten kendisi alır ve yeniler). Sunucu, GitHub'daki `backend` dalını izler:
+Uygulama tek bir sunucuda Docker ile çalışır: **PostgreSQL** (veritabanı), **uygulama** (Next.js), **Caddy**
+(HTTPS sertifikasını Let's Encrypt'ten kendisi alır ve yeniler), **ClamAV** (yüklenen dosyaların virüs taraması)
+ve **işçi** (taranamamış dosyaları sonradan tarar). Sunucu, GitHub'daki `backend` dalını izler:
 testlerden (CI) geçen her yeni sürümü birkaç dakika içinde kendisi yayınlar.
 
 ## Kurulum (bir kez, ~15 dakika)
 
-Gerekli: Ubuntu 22.04 / 24.04 ya da Debian 12, en az 4 GB bellek, root erişimi.
+Gerekli: Ubuntu 22.04 / 24.04 ya da Debian 12, en az 4 GB bellek (antivirüsle birlikte 8 GB önerilir), root erişimi.
 
 0. **GitHub erişim anahtarı** (depo özel olduğu için sunucunun kodu okuyabilmesi gerekir):
    github.com → sağ üstte profil → **Settings** → **Developer settings** → **Personal access tokens** →
@@ -46,6 +47,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip log` | Uygulamanın son günlük satırları |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
+| `takip antivirus` | Antivirüs çalışıyor mu, test virüsünü (EICAR) yakalıyor mu; bekleyen ve karantinadaki dosya sayısı |
 
 ## Otomatik güncelleme nasıl çalışır
 

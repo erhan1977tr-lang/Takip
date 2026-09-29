@@ -17,6 +17,8 @@ const fmt = (n: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigit
 
 export function OfferEditor(props: {
   orderId: string;
+  /** Siparişin sayfa açıldığındaki sürümü (iyimser kilit) */
+  version: number;
   /** sales: satış taslağı · admin: fiyat onayı · update: yönetici müşterideki teklifi günceller */
   mode: 'sales' | 'admin' | 'update';
   cancelHref?: string;
@@ -71,6 +73,8 @@ export function OfferEditor(props: {
   return (
     <form action={saveOfferAction} className="card" id="teklif">
       <input type="hidden" name="id" value={props.orderId} />
+      {/* Sayfanın gösterdiği sipariş sürümü: bu arada biri siparişi değiştirdiyse kayıt reddedilir */}
+      <input type="hidden" name="v" value={props.version} />
       <input type="hidden" name="intent" defaultValue={isUpdate ? 'update' : 'save'} ref={intentRef} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>{m.editor.title} <span className="badge">{props.statusLabel}</span></h2>

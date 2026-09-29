@@ -1,249 +1,182 @@
 'use server';
 
+// Sipariş sayfasının işlemleri. Kurallar ve kayıt server/orders/transitions.js'te (runOrderAction):
+// burada yalnızca oturum, form okuma, dosya kaydı ve kullanıcıya gösterilecek mesaj var.
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
-import type { Prisma } from '@prisma/client';
+import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { type CurrentUser, requirePermission } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT, type Dict, type T } from '@/lib/i18n';
-import { fileProblemText, offerProblemTexts } from '@/lib/labels';
-import { currentOffer, loadOrder, logEvent, maybeAutoProduction, refreshSla, type OrderDetail } from '@/lib/orders';
+import { fileProblemText, offerProblemTexts, workflowErrorText } from '@/lib/labels';
+import { loadOrder } from '@/lib/orders';
+import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
-import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
+import { filesFrom } from '@/lib/storage';
+import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { availableActions, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
-
-function actionsFor(user: CurrentUser, order: OrderDetail) {
-  return availableActions({
-    role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: currentOffer(order)?.status ?? null,
-  });
-}
-
-async function guard(formData: FormData, action: string): Promise<{ user: CurrentUser; order: OrderDetail }> {
-  // Eylemin geçerliliği availableActions'ta (yetki matrisine göre); denetimci için liste boştur.
-  const user = await requirePermission('ORDER_VIEW');
-  const order = await loadOrder(String(formData.get('id') ?? ''), user);
-  if (!actionsFor(user, order).includes(action)) {
-    const { t } = await getT();
-    redirect(err(order.id, t('order.errors.notAllowed')));
-  }
-  return { user, order };
-}
+const orderIdOf = (formData: FormData) => String(formData.get('id') ?? '');
+/** Formda sayfanın gösterdiği sipariş sürümü varsa (teklif düzenleyici) aynı anda yapılan değişiklik yakalanır. */
+const expectedVersion = (formData: FormData) => {
+  const v = formData.get('v');
+  return v === null || v === '' ? undefined : Number(v);
+};
 
 function done(id: string, ok: string): never {
   revalidatePath('/siparisler');
   revalidatePath('/teklifler');
+  revalidatePath('/yuklemeler');
   revalidatePath(`/siparisler/${id}`);
   redirect(back(id, `ok=${ok}`));
 }
 
-type Tx = Prisma.TransactionClient;
+/**
+ * İşlemi çalıştırır; iş akışı hatasını kullanıcının dilinde mesajla sayfaya döndürür.
+ * @returns işlemin sonucu (ör. otomatik üretime geçti mi)
+ */
+async function act(
+  user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {},
+): Promise<{ produced?: boolean; drawingId?: string; version?: number } | null> {
+  try {
+    const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
+    return res.result;
+  } catch (e) {
+    if (e instanceof WorkflowError) {
+      if (e.code === 'NOT_FOUND') notFound();
+      const { t } = await getT();
+      redirect(err(orderId, workflowErrorText(t, e.code, e.details as Record<string, unknown>)));
+    }
+    throw e;
+  }
+}
 
-/** Teklif yoksa siparişin cam kalemlerinden bir taslak açar. */
-async function ensureOfferDraft(tx: Tx, order: OrderDetail, userId: string) {
-  if (order.offers.length) return;
-  const src: { glassName: string | null; camAdedi: number }[] = order.items.length ? order.items : [{ glassName: '', camAdedi: 1 }];
-  await tx.offer.create({
-    data: {
-      orderId: order.id, createdById: userId,
-      lines: { create: src.map((it, i) => ({ sortOrder: i, description: it.glassName || '', adet: Math.max(1, it.camAdedi || 1), unit: 'm2' })) },
-    },
+/** Dosya kaydetmeden önce ön kontrol (asıl kontrol yine işlemin kendisinde yapılır). */
+async function ensureAllowed(user: CurrentUser, orderId: string, action: string) {
+  const order = await loadOrder(orderId, user);
+  const acts = availableActions({
+    role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
+    drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null,
   });
+  if (!acts.includes(action)) {
+    const { t } = await getT();
+    redirect(err(order.id, t('order.errors.notAllowed')));
+  }
+  return order;
+}
+
+/** Basit işlemler: yalnızca sipariş kimliği (ve varsa not) */
+async function simple(formData: FormData, action: string, ok: string, payload: Record<string, unknown> = {}) {
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
+  await act(user, id, action, payload);
+  done(id, ok);
 }
 
 // ---------------- Satış kararı ----------------
 /** Çizim gerekli: çizim ekibine yönlendir. Teklif hattı da açılır, satış teklifi paralel yazabilir. */
 export async function sendToDrawingAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'send_to_drawing');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', drawingSince: new Date() } });
-    await ensureOfferDraft(tx, order, user.id);
-    await logEvent(tx, order.id, 'SENT_TO_DRAWING', user.id);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'to_drawing');
+  await simple(formData, 'send_to_drawing', 'to_drawing');
 }
 
 /** Çizim gerekmiyor: doğrudan teklife geç. */
 export async function noDrawingAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'no_drawing');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'HAZIRLANIYOR', drawingTrack: 'YOK', drawingSince: null } });
-    await ensureOfferDraft(tx, order, user.id);
-    await logEvent(tx, order.id, 'NO_DRAWING', user.id);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'to_offer');
+  await simple(formData, 'no_drawing', 'to_offer');
 }
 
-/**
- * Satış kararını geri alır (teklif hâlâ satıştayken): sipariş yeniden karar bekler.
- * Teklif taslağı silinmez; karar yeniden verildiğinde kaldığı yerden devam edilir.
- */
-async function undoDecision(formData: FormData, action: 'undo_drawing' | 'undo_no_drawing') {
-  const { user, order } = await guard(formData, action);
-  await db.$transaction(async (tx) => {
-    await tx.order.update({
-      where: { id: order.id },
-      data: { status: 'YENI', drawingTrack: 'YOK', drawingSince: null, assignedDrawer: { disconnect: true } },
-    });
-    await logEvent(tx, order.id, action === 'undo_drawing' ? 'UNDO_DRAWING' : 'UNDO_NO_DRAWING', user.id);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, action);
-}
-
-/** "Çizime Göndermeyi Geri Al" — çizim müşteriye gitmeden önce. */
+/** "Çizime Göndermeyi Geri Al" — çizim müşteriye gitmeden önce. Teklif taslağı korunur. */
 export async function undoDrawingAction(formData: FormData) {
-  await undoDecision(formData, 'undo_drawing');
+  await simple(formData, 'undo_drawing', 'undo_drawing');
 }
 
 /** "Teklife Göndermeyi Geri Al" */
 export async function undoNoDrawingAction(formData: FormData) {
-  await undoDecision(formData, 'undo_no_drawing');
+  await simple(formData, 'undo_no_drawing', 'undo_no_drawing');
 }
 
 export async function holdAction(formData: FormData) {
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const hold = String(formData.get('hold')) === '1';
-  const { user, order } = await guard(formData, hold ? 'hold' : 'unhold');
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
-  const produced = await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { onHold: hold } });
-    await logEvent(tx, order.id, hold ? 'HOLD' : 'UNHOLD', user.id, note || null);
-    await refreshSla(tx, order.id);
-    return hold ? false : maybeAutoProduction(tx, order.id, user.id);
-  });
-  done(order.id, hold ? 'held' : produced ? 'unheld_production' : 'unheld');
+  const res = await act(user, id, hold ? 'hold' : 'unhold', { note });
+  done(id, hold ? 'held' : res?.produced ? 'unheld_production' : 'unheld');
 }
 
 export async function setShipDateAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'set_ship_date');
-  const { t } = await getT();
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const d = parseDateOnly(String(formData.get('date') ?? ''));
-  if (!d) redirect(err(order.id, t('order.errors.invalidDate')));
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { estimatedShipDate: d } });
-    await logEvent(tx, order.id, 'SHIP_DATE', user.id, d.toISOString().slice(0, 10).split('-').reverse().join('.'));
-  });
-  done(order.id, 'ship_date');
+  if (!d) {
+    const { t } = await getT();
+    redirect(err(id, t('order.errors.invalidDate')));
+  }
+  await act(user, id, 'set_ship_date', { date: d });
+  done(id, 'ship_date');
 }
 
 export async function markShippedAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'mark_shipped');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'YUKLENDI', actualShipDate: new Date() } });
-    await logEvent(tx, order.id, 'SHIPPED', user.id);
-  });
-  done(order.id, 'shipped');
+  await simple(formData, 'mark_shipped', 'shipped');
 }
 
 export async function archiveAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'archive');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'ARSIVLENDI' } });
-    await logEvent(tx, order.id, 'ARCHIVED', user.id);
-  });
-  done(order.id, 'archived');
+  await simple(formData, 'archive', 'archived');
 }
 
 export async function cancelAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'cancel');
-  const { t } = await getT();
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
-  if (!note) redirect(err(order.id, t('order.errors.cancelReason')));
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id: order.id }, data: { status: 'IPTAL' } });
-    await logEvent(tx, order.id, 'CANCELLED', user.id, note);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'cancelled');
+  await simple(formData, 'cancel', 'cancelled', { note });
 }
 
 // ---------------- Çizim hattı ----------------
 export async function startDrawingAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'start_drawing');
-  await db.$transaction(async (tx) => {
-    await tx.order.update({
-      where: { id: order.id },
-      data: { drawingTrack: 'YAPILIYOR', drawingSince: new Date(), assignedDrawer: { connect: { id: user.id } } },
-    });
-    await logEvent(tx, order.id, 'DRAWING_STARTED', user.id);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'drawing_started');
+  await simple(formData, 'start_drawing', 'drawing_started');
 }
 
 export async function uploadDrawingAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'upload_drawing');
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const { t } = await getT();
   const file = filesFrom(formData, 'file')[0];
-  if (!file) redirect(err(order.id, t('order.errors.drawingFile')));
+  if (!file) redirect(err(id, t('order.errors.drawingFile')));
   const problem = fileProblemText(t, fileProblem(file.name, file.size));
-  if (problem) redirect(err(order.id, problem));
-  const stored = await saveUpload(file);
-  const version = order.drawings.length + 1;
+  if (problem) redirect(err(id, problem));
+  // Yetki ve durum kontrolü dosya kaydedilmeden önce de yapılır (boşuna tarama/yazma olmasın)
+  await ensureAllowed(user, id, 'upload_drawing');
+  const stored = await storeFiles([file], { userId: user.id, orderId: id });
+  if (!stored.ok) redirect(err(id, fileProblemText(t, stored.problem)!));
   try {
-    await db.$transaction(async (tx) => {
-      await tx.drawing.create({
-        data: {
-          orderId: order.id, version, fileUrl: stored.storageKey, fileName: stored.name, fileSize: stored.size,
-          status: 'ONAY_BEKLIYOR', uploadedById: user.id,
-        },
-      });
-      await tx.order.update({ where: { id: order.id }, data: { drawingTrack: 'ONAY_BEKLIYOR', drawingSince: new Date() } });
-      await logEvent(tx, order.id, 'DRAWING_UPLOADED', user.id, `v${version}`);
-      await refreshSla(tx, order.id);
-    });
+    await act(user, id, 'upload_drawing', { file: stored.stored[0] });
   } catch (e) {
-    await removeUpload(stored.storageKey);
+    await discardFiles(stored.stored);
     throw e;
   }
-  done(order.id, 'drawing_uploaded');
+  done(id, 'drawing_uploaded');
 }
 
-/** Müşterinin tek onayı: çizim onayı. Teklif hattını etkilemez. */
+/** Müşterinin tek onayı: çizim onayı. Ekranda gördüğü sürüm (drawingId) hâlâ son sürüm olmalı. */
 export async function approveDrawingAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'approve_drawing');
-  const latest = order.drawings[order.drawings.length - 1];
-  const produced = await db.$transaction(async (tx) => {
-    if (latest) await tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI' } });
-    await tx.order.update({ where: { id: order.id }, data: { drawingTrack: 'ONAYLANDI', drawingSince: new Date() } });
-    await logEvent(tx, order.id, 'DRAWING_APPROVED', user.id, latest ? `v${latest.version}` : null);
-    await refreshSla(tx, order.id);
-    return maybeAutoProduction(tx, order.id, user.id);
-  });
-  done(order.id, produced ? 'drawing_approved_production' : 'drawing_approved');
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
+  const drawingId = String(formData.get('drawingId') ?? '') || undefined;
+  const res = await act(user, id, 'approve_drawing', { drawingId });
+  done(id, res?.produced ? 'drawing_approved_production' : 'drawing_approved');
 }
 
 export async function requestRevisionAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'request_revision');
-  const { t } = await getT();
   const comment = String(formData.get('comment') ?? '').trim().slice(0, 2000);
-  if (!comment) redirect(err(order.id, t('order.errors.revisionComment')));
-  const latest = order.drawings[order.drawings.length - 1];
-  await db.$transaction(async (tx) => {
-    if (latest) {
-      await tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI' } });
-      await tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: user.id, comment } });
-    }
-    await tx.order.update({
-      where: { id: order.id },
-      data: { drawingTrack: 'REVIZYON_ISTENDI', drawingSince: new Date(), revisionCount: { increment: 1 } },
-    });
-    await logEvent(tx, order.id, 'REVISION_REQUESTED', user.id, comment);
-    await refreshSla(tx, order.id);
-  });
-  done(order.id, 'revision_requested');
+  const drawingId = String(formData.get('drawingId') ?? '') || undefined;
+  await simple(formData, 'request_revision', 'revision_requested', { comment, drawingId });
 }
 
 // ---------------- Sandıklar ----------------
 /** Sandık ölçü ve ağırlıkları (gerçek kayıt). Boş bırakılan satırlar silinir. */
 export async function saveCratesAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'edit_crates');
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const { t } = await getT();
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const dim = col('c_dim'), net = col('c_net'), brut = col('c_brut');
@@ -252,23 +185,19 @@ export async function saveCratesAction(formData: FormData) {
   for (let i = 0; i < dim.length; i++) {
     if (!dim[i] && !net[i] && !brut[i]) continue;
     const n = toKg(net[i]), b = toKg(brut[i]);
-    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(order.id, t('order.errors.crateWeight', { n: i + 1 })));
-    if (n !== null && b !== null && b < n) redirect(err(order.id, t('order.errors.crateGross', { n: i + 1 })));
+    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(id, t('order.errors.crateWeight', { n: i + 1 })));
+    if (n !== null && b !== null && b < n) redirect(err(id, t('order.errors.crateGross', { n: i + 1 })));
     rows.push({ dimensions: dim[i] ? dim[i].slice(0, 80) : null, netAgirlik: n, brutAgirlik: b });
   }
-  await db.$transaction(async (tx) => {
-    await tx.crate.deleteMany({ where: { orderId: order.id } });
-    if (rows.length) await tx.crate.createMany({ data: rows.map((r, i) => ({ ...r, orderId: order.id, crateNo: i + 1 })) });
-    // Not yalnızca sandık sayısıdır; ekranda events.CRATES.count olarak çevrilir (lib/labels.ts → eventNoteText)
-    await logEvent(tx, order.id, 'CRATES', user.id, String(rows.length));
-  });
-  revalidatePath('/yuklemeler');
-  done(order.id, 'crates_saved');
+  await act(user, id, 'edit_crates', { rows });
+  done(id, 'crates_saved');
 }
 
 // ---------------- Ortak ----------------
+/** Dosya eklemek bir durum değişikliği değildir: yetki ve durum kontrolünden sonra dosyalar kaydedilir. */
 export async function addFilesAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'add_file');
+  const user = await requirePermission('FILE_UPLOAD');
+  const order = await ensureAllowed(user, orderIdOf(formData), 'add_file');
   const { t } = await getT();
   const files = filesFrom(formData, 'files');
   if (!files.length) redirect(err(order.id, t('order.errors.noFiles')));
@@ -276,23 +205,24 @@ export async function addFilesAction(formData: FormData) {
     const p = fileProblemText(t, fileProblem(f.name, f.size));
     if (p) redirect(err(order.id, p));
   }
-  const stored: StoredFile[] = [];
+  const stored = await storeFiles(files, { userId: user.id, orderId: order.id });
+  if (!stored.ok) redirect(err(order.id, fileProblemText(t, stored.problem)!));
+  const kind = userCan(user, 'FILE_INTERNAL_VIEW') ? ('INTERNAL' as const) : ('CUSTOMER' as const);
   try {
-    for (const f of files) stored.push(await saveUpload(f));
     await db.orderFile.createMany({
-      data: stored.map((s) => ({ ...s, orderId: order.id, uploadedById: user.id, kind: user.appRole === 'MUSTERI' ? ('CUSTOMER' as const) : ('INTERNAL' as const) })),
+      data: stored.stored.map((s: StoredUpload) => ({ ...s, orderId: order.id, uploadedById: user.id, kind })),
     });
   } catch (e) {
-    await Promise.all(stored.map((s) => removeUpload(s.storageKey)));
+    await discardFiles(stored.stored);
     throw e;
   }
-  await audit('ORDER_FILES_ADDED', 'Order', order.id, user.id, { count: stored.length });
+  await audit('ORDER_FILES_ADDED', 'Order', order.id, user.id, { count: stored.stored.length, names: stored.stored.map((s) => s.name) });
   done(order.id, 'files_added');
 }
 
 export async function addNoteAction(formData: FormData) {
   const user = await requirePermission('NOTE_ADD');
-  const order = await loadOrder(String(formData.get('id') ?? ''), user);
+  const order = await loadOrder(orderIdOf(formData), user);
   const { t } = await getT();
   const text = String(formData.get('text') ?? '').trim().slice(0, 4000);
   if (!text) redirect(err(order.id, t('order.errors.emptyNote')));
@@ -341,104 +271,39 @@ const labels = (formData: FormData) => ({
   sandikEtiket: String(formData.get('sandikEtiket') ?? '').trim().slice(0, 120) || null,
 });
 
+const INTENT_ACTION: Record<string, string> = {
+  save: 'save_offer', submit: 'submit_offer', approve: 'approve_offer', return: 'return_offer', update: 'update_offer',
+};
+
 /**
  * intent: save | submit (satış) · save | approve | return (yönetici, fiyat onayında)
  *         update (yönetici, teklif müşterideyken: yeni sürüm hemen müşteriye gider)
  */
 export async function saveOfferAction(formData: FormData) {
   const user = await requirePermission('OFFER_PREPARE');
-  const order = await loadOrder(String(formData.get('id') ?? ''), user);
+  const id = orderIdOf(formData);
   const intent = String(formData.get('intent') ?? 'save');
-  const acts = actionsFor(user, order);
-  if (intent === 'update') return updateSentOffer(user, order, acts, formData);
+  const action = INTENT_ACTION[intent];
   const { t, m } = await getT();
-  if (!acts.includes('edit_offer') && !acts.includes('approve_price')) redirect(err(order.id, t('order.errors.offerNotEditable')));
-  const offer = currentOffer(order);
-  if (!offer) redirect(err(order.id, t('order.errors.offerNotFound')));
+  if (!action) redirect(err(id, t('order.errors.offerNotEditable')));
 
   const lines = readLines(formData, t);
-  if (typeof lines === 'string') redirect(err(order.id, lines));
-  const finalize = intent === 'submit' || intent === 'approve';
+  if (typeof lines === 'string') redirect(err(id, lines));
+  const finalize = intent === 'submit' || intent === 'approve' || intent === 'update';
   const problem = finalize ? finalProblem(lines, m) : null;
-  if (problem) redirect(err(order.id, problem));
-  const totals = offerTotals(lines);
-  const amount = totals.amount.toFixed(2);
-  const isAdmin = userCan(user, 'OFFER_SEND');
-  const { camEtiket, sandikEtiket } = labels(formData);
-  const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
-  if (intent === 'return' && !returnNote) redirect(err(order.id, t('order.errors.returnReason')));
-  const now = new Date();
-
-  const produced = await db.$transaction(async (tx) => {
-    await tx.offerLine.deleteMany({ where: { offerId: offer.id } });
-    await tx.offerLine.createMany({ data: lines.map((l, i) => ({ ...l, offerId: offer.id, sortOrder: i })) });
-    await tx.offer.update({ where: { id: offer.id }, data: { amount } });
-    if (isAdmin && acts.includes('approve_price')) await tx.order.update({ where: { id: order.id }, data: { camEtiket, sandikEtiket } });
-
-    if (intent === 'submit' && acts.includes('submit_offer')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE', statusSince: now } });
-      await logEvent(tx, order.id, 'OFFER_SUBMITTED', user.id, `${amount} ${offer.currency}`);
-    } else if (intent === 'approve' && acts.includes('approve_price')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now } });
-      await tx.price.upsert({
-        where: { orderId: order.id },
-        create: { orderId: order.id, amount, setById: user.id },
-        update: { amount, setById: user.id, setAt: now },
-      });
-      await logEvent(tx, order.id, 'OFFER_SENT', user.id, `${amount} ${offer.currency}`);
-    } else if (intent === 'return' && acts.includes('return_offer')) {
-      await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
-      await logEvent(tx, order.id, 'OFFER_RETURNED', user.id, returnNote);
-    }
-    await refreshSla(tx, order.id);
-    return intent === 'approve' ? maybeAutoProduction(tx, order.id, user.id) : false;
-  });
-  await audit('OFFER_SAVED', 'Offer', offer.id, user.id, { intent, amount, lines: lines.length });
-  done(order.id, intent === 'save' ? 'offer_saved' : produced ? `offer_${intent}_production` : `offer_${intent}`);
-}
-
-/**
- * Yönetici, müşterideki teklifi günceller (ör. çizim revizyonu ölçüleri değiştirdi). Eski sürüm silinmez;
- * yeni sürüm doğrudan müşteriye gönderilmiş olarak kaydedilir ve fiyat güncellenir. Satış bu işlemi yapamaz.
- */
-async function updateSentOffer(user: CurrentUser, order: OrderDetail, acts: string[], formData: FormData): Promise<never> {
-  const { t, m } = await getT();
-  if (!acts.includes('update_offer')) redirect(err(order.id, t('order.errors.offerNotUpdatable')));
-  const prev = currentOffer(order);
-  if (!prev) redirect(err(order.id, t('order.errors.offerNotFound')));
-  const lines = readLines(formData, t);
-  if (typeof lines === 'string') redirect(err(order.id, lines));
-  const problem = finalProblem(lines, m);
-  if (problem) redirect(err(order.id, problem));
+  if (problem) redirect(err(id, problem));
   const amount = offerTotals(lines).amount.toFixed(2);
+  const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
   const note = String(formData.get('updateNote') ?? '').trim().slice(0, 1000);
-  const now = new Date();
-  const created = await db.$transaction(async (tx) => {
-    const o = await tx.offer.create({
-      data: {
-        orderId: order.id, createdById: user.id, currency: prev.currency, amount,
-        status: 'GONDERILDI', statusSince: now, sentAt: now,
-        lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
-      },
-    });
-    await tx.price.upsert({
-      where: { orderId: order.id },
-      create: { orderId: order.id, amount, setById: user.id },
-      update: { amount, setById: user.id, setAt: now },
-    });
-    await tx.order.update({ where: { id: order.id }, data: labels(formData) });
-    await logEvent(tx, order.id, 'OFFER_UPDATED', user.id, `${Number(prev.amount).toFixed(2)} → ${amount} ${prev.currency}${note ? ` · ${note}` : ''}`);
-    return o;
+
+  const res = await act(user, id, action, {
+    lines, amount, returnNote, note, labels: labels(formData), expectedVersion: expectedVersion(formData),
   });
-  await audit('OFFER_UPDATED', 'Offer', created.id, user.id, { from: Number(prev.amount).toFixed(2), amount, lines: lines.length });
-  done(order.id, 'offer_updated');
+  if (intent === 'update') done(id, 'offer_updated');
+  done(id, intent === 'save' ? 'offer_saved' : res?.produced ? `offer_${intent}_production` : `offer_${intent}`);
 }
 
 /** Yönetici, teklif gönderildikten sonra gelen çizimi kontrol etti ve teklifte değişiklik gerekmiyor. */
 export async function checkOfferAction(formData: FormData) {
-  const { user, order } = await guard(formData, 'update_offer');
-  await db.$transaction(async (tx) => {
-    await logEvent(tx, order.id, 'OFFER_CHECKED', user.id, order.drawings.length ? `v${order.drawings.length}` : null);
-  });
-  done(order.id, 'offer_checked');
+  await simple(formData, 'check_offer', 'offer_checked');
 }

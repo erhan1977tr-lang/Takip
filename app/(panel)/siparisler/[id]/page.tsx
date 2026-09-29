@@ -14,7 +14,7 @@ import { OfferEditor } from './OfferEditor';
 import { loadOf } from '@/lib/loading';
 import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
 import {
-  STAGES, availableActions, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  ALLOWED_EXT, STAGES, availableActions, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, saveCratesAction,
@@ -164,6 +164,7 @@ export default async function OrderPage({
       {(editable || updating) && offer && (
         <OfferEditor
           orderId={order.id}
+          version={order.version}
           mode={updating ? 'update' : can('approve_price') ? 'admin' : 'sales'}
           cancelHref={`/siparisler/${order.id}#teklif`}
           currency={offer.currency}
@@ -243,7 +244,9 @@ export default async function OrderPage({
 // ---------------- işlem kartları ----------------
 function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; t: T }) {
   const s = customerSummaryText(t, { status: order.status, drawing: order.drawingTrack, offer: sentOffer(order) ? 'GONDERILDI' : null });
-  const hidden = <input type="hidden" name="id" value={order.id} />;
+  const latest = order.drawings[order.drawings.length - 1];
+  // Müşteri ekranda gördüğü sürüme karar verir; bu arada yeni sürüm yüklendiyse işlem reddedilir
+  const hidden = <><input type="hidden" name="id" value={order.id} />{latest && <input type="hidden" name="drawingId" value={latest.id} />}</>;
   const waiting = order.drawingTrack === 'ONAY_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
   return (
     <div className={`card ${waiting ? 'turn' : ''}`}>
@@ -328,7 +331,7 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
               {hidden}
               <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v: order.drawings.length + 1 })}</label>
               <div className="row">
-                <input id="drawing-file" name="file" type="file" required accept=".pdf,.dwg,.dxf,.jpg,.jpeg,.png,.zip" style={{ flex: 1 }} />
+                <input id="drawing-file" name="file" type="file" required accept={ACCEPT} style={{ flex: 1 }} />
                 <button className="btn btn-primary">{t('order.upload.submit')}</button>
               </div>
             </form>
@@ -490,10 +493,11 @@ function Drawings({ order, user, t }: { order: OrderDetail; user: CurrentUser; t
                 <div className="small muted">
                   <span className={`badge ${i === 0 ? 'badge-info' : 'badge-muted'}`}>v{d.version}{i === 0 ? ` · ${t('order.drawings.current')}` : ''}</span>{' '}
                   {d.status === 'ONAYLANDI' ? <span className="badge badge-ok">{t('order.drawings.approved')}</span> : d.status === 'REVIZYON_ISTENDI' ? <span className="badge badge-danger">{t('order.drawings.revisionRequested')}</span> : d.status === 'ONAY_BEKLIYOR' ? <span className="badge badge-warn">{t('order.drawings.pending')}</span> : null}
+                  {' '}<ScanBadge status={d.scanStatus} t={t} />
                   {' '}{d.fileSize ? fmtBytes(d.fileSize) : ''} · {fmtDateTime(d.createdAt)}{!isCustomer ? ` · ${d.uploadedBy.name || d.uploadedBy.email}` : ''}
                 </div>
               </div>
-              <FileButtons href={`/dosya/cizim/${d.id}`} name={d.fileName ?? ''} t={t} />
+              <FileButtons href={`/dosya/cizim/${d.id}`} name={d.fileName ?? ''} scanStatus={d.scanStatus} t={t} />
             </div>
             {d.revisions.map((r) => (
               <div key={r.id} className="note" style={{ marginLeft: 50 }}>
@@ -508,8 +512,19 @@ function Drawings({ order, user, t }: { order: OrderDetail; user: CurrentUser; t
   );
 }
 
+// Müşterinin ve çizimcinin yükleyebileceği türler (server/orders/rules.js → ALLOWED_EXT)
+const ACCEPT = ALLOWED_EXT.map((e: string) => `.${e}`).join(',');
 const VIEWABLE = ['pdf', 'png', 'jpg', 'jpeg'];
-function FileButtons({ href, name, t }: { href: string; name: string; t: T }) {
+
+/** Antivirüs durumu: taranmadı (uyarı) ya da virüslü (karantina, indirilemez). Temiz/tarama kapalı → rozet yok. */
+function ScanBadge({ status, t }: { status: string; t: T }) {
+  if (status === 'PENDING') return <span className="badge badge-warn" title={t('order.files.scanPendingTitle')}>{t('order.files.scanPending')}</span>;
+  if (status === 'INFECTED') return <span className="badge badge-danger">{t('order.files.infected')}</span>;
+  return null;
+}
+
+function FileButtons({ href, name, scanStatus, t }: { href: string; name: string; scanStatus: string; t: T }) {
+  if (scanStatus === 'INFECTED') return null;
   const ext = name.toLowerCase().split('.').pop() ?? '';
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
@@ -532,17 +547,18 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
           <div className="grow">
             <div className="fname">{f.name}</div>
             <div className="small muted">
+              <ScanBadge status={f.scanStatus} t={t} />{f.scanStatus === 'PENDING' || f.scanStatus === 'INFECTED' ? ' ' : ''}
               {fmtBytes(f.size)} · {fmtDateTime(f.createdAt)}
               {!isCustomer && <> · {f.kind === 'CUSTOMER' ? t('order.files.fromCustomer') : <span className="badge badge-muted">{t('order.files.internal')}</span>}</>}
             </div>
           </div>
-          <FileButtons href={`/dosya/siparis/${f.id}`} name={f.name} t={t} />
+          <FileButtons href={`/dosya/siparis/${f.id}`} name={f.name} scanStatus={f.scanStatus} t={t} />
         </div>
       ))}
       {canAdd && (
         <form action={addFilesAction} className="row" style={{ marginTop: 10 }}>
           <input type="hidden" name="id" value={order.id} />
-          <input name="files" type="file" multiple required accept=".pdf,.dwg,.dxf,.step,.stp,.igs,.iges,.xls,.xlsx,.doc,.docx,.zip,.jpg,.jpeg,.png" style={{ flex: 1 }} aria-label={t('order.files.add')} />
+          <input name="files" type="file" multiple required accept={ACCEPT} style={{ flex: 1 }} aria-label={t('order.files.add')} />
           <button className="btn">{t('order.files.add')}</button>
         </form>
       )}

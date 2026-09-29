@@ -41,6 +41,8 @@ export default {
     },
   },
   internal: {
+    infectedBanner: 'Karantinada {n} virüslü dosya var; bu dosyalar indirilemez.',
+    infectedLink: 'Entegrasyonlar →',
     titles: {
       drawing: 'Çizim Paneli',
       admin: 'Siparişler',

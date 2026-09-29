@@ -67,11 +67,65 @@ export async function as(browser: import('@playwright/test').Browser, email: str
   return page;
 }
 
+/**
+ * Uzantısına uygun içerikte örnek dosya (sunucu türü içerikten kontrol eder; uzantıya güvenmez).
+ * label içeriğe yazılır ki indirilen dosya doğrulanabilsin.
+ */
+export function sampleFile(name: string, label = name): { name: string; mimeType: string; buffer: Buffer } {
+  const ext = name.toLowerCase().split('.').pop();
+  let buffer: Buffer;
+  if (ext === 'pdf') buffer = Buffer.from(`%PDF-1.4\n% ${label}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`, 'latin1');
+  else if (ext === 'dxf') buffer = Buffer.from(`999\n${label}\n0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n`, 'latin1');
+  else if (ext === 'dwg') buffer = Buffer.concat([Buffer.from('AC1032', 'latin1'), Buffer.alloc(32), Buffer.from(label)]);
+  else if (ext === 'xlsx' || ext === 'docx' || ext === 'zip') buffer = zipOf([{ name: 'icerik.txt', data: Buffer.from(label) }]);
+  else if (ext === 'png') buffer = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(label)]);
+  else buffer = Buffer.from(label);
+  return { name, mimeType: 'application/octet-stream', buffer };
+}
+
+/** Sıkıştırmasız (store) basit ZIP arşivi. */
+export function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (buf: Buffer) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const e of entries) {
+    const nameBuf = Buffer.from(e.name);
+    const crc = crc32(e.data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10); local.writeUInt16LE(0x21, 12); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(e.data.length, 18); local.writeUInt32LE(e.data.length, 22); local.writeUInt16LE(nameBuf.length, 26); local.writeUInt16LE(0, 28);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10); central.writeUInt16LE(0, 12); central.writeUInt16LE(0x21, 14); central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(e.data.length, 20); central.writeUInt32LE(e.data.length, 24); central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBuf, e.data);
+    centrals.push(central, nameBuf);
+    offset += 30 + nameBuf.length + e.data.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+
 /** Müşteri olarak yeni sipariş oluşturur, sipariş kimliğini döndürür. */
 export async function newOrder(page: Page, title: string, fileName: string): Promise<string> {
   await page.goto('/siparisler/yeni');
   await page.fill('#title', title);
-  await page.setInputFiles('#files', { name: fileName, mimeType: 'application/octet-stream', buffer: Buffer.from(`test dosyası ${title}`) });
+  await page.setInputFiles('#files', sampleFile(fileName, `test dosyası ${title}`));
   await page.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
   await page.getByLabel('Adet', { exact: true }).fill('3');
   await page.getByRole('button', { name: 'Siparişi gönder' }).click();

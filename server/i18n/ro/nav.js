@@ -9,6 +9,7 @@ export default {
   loadings: 'Încărcări',
   users: 'Utilizatori',
   firms: 'Clienți',
+  integrations: 'Integrări',
   catalog: 'Catalog sticlă',
   myOrders: 'Comenzile mele',
   newOrder: 'Comandă nouă',

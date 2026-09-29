@@ -40,6 +40,8 @@ export default {
     },
   },
   internal: {
+    infectedBanner: 'În carantină sunt {n} fișiere infectate; acestea nu pot fi descărcate.',
+    infectedLink: 'Integrări →',
     titles: {
       drawing: 'Panou desen',
       admin: 'Comenzi',

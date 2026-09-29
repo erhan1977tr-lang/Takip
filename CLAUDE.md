@@ -378,7 +378,7 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 2. **Customer does not approve the offer.** The order moves to production automatically when (drawing approved OR drawing not required) AND the Admin has sent the offer to the customer. "CUSTOMER-VISIBLE OFFER / APPROVAL" above means "visible", not "customer approval step".
 3. **Sales cannot reject/cancel an order.** Only Admin can cancel.
 4. **Two-tier pricing.** Sales enters its own prices (*sales price / sales amount*). Admin creates an *admin copy* as a new quote version and enters customer prices (*offer price / offer amount*). The customer sees only Admin prices. Admin prices are visible to Admin only (and to the customer after Send to Customer). Admin screens (quote, loading) show both columns side by side.
-5. **Order number** `GLA68` is system-generated, transactional and unique. The customer's own order/reference number is a separate field.
+5. **Order number = company code + the customer's order number** (`GLA68`). The customer's number is mandatory, pre-filled with the company's next sequential number, and the customer may change it on the New Order form (fixed after creation). Company codes are unique, so order numbers never collide across companies; within a company the DB enforces uniqueness. If the customer kept the suggested number and a concurrent order took it, the next free number is assigned automatically (`server/orders/create.js`, per-company advisory lock).
 6. **Routes stay shared** (`/siparisler`, `/teklifler`, `/yuklemeler`, `/admin/...`); the role decides what the page shows. No `/customer`, `/sales` route prefixes.
 7. **Masking is fixed length:** first 3 characters + 10 `*` (e.g. `GLA**********`), applied server-side. This intentionally hides the name length.
 8. **Inspector is read-only** in the first release (no write actions).
@@ -388,6 +388,8 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 12. **Passwords:** minimum 6 characters (at least one letter and one digit). Login and code entry are throttled: 5 failures per e-mail+IP, 20 per e-mail, 30 per IP within 15 minutes.
 13. **Company code is exactly 3 letters A–Z** everywhere (DB CHECK constraint). Existing longer/shorter codes were migrated and their order numbers renamed. A company's code cannot change once it has orders.
 14. **"Act on behalf of customer"** is postponed to Phase 9.
+15. **Allowed upload types** (customer and drawing team): PDF, DWG, DXF, STEP/STP, IGS/IGES, XLS/XLSX, DOC/DOCX, ZIP, JPG/JPEG, PNG; max 100 MB per file. The content must match the extension (`server/files/signature.js`).
+16. **Antivirus unavailable → accept, mark "not scanned" (PENDING), scan later** (worker). PENDING files are downloadable with a warning badge; INFECTED files are quarantined and never served. Admin can switch the policy to "reject" on Admin → Integrations.
 
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
@@ -395,5 +397,7 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 - Every change to app code bumps `package.json` version and adds a `CHANGELOG.md` entry (enforced in CI).
 - Environment variables are declared and validated in `server/env.js`; add new ones there and to `.env.example`. Secrets never go into code, chat or git.
 - Schema changes: edit `prisma/schema.prisma`; CI generates the migration on working branches. Hand-written SQL (triggers, constraints Prisma can't express) goes into its own dated migration folder.
+- Workflow: every order state change goes through `runOrderAction` (`server/orders/transitions.js`, on top of `server/domain/transition.js`): permission/state check, one DB transaction with history (`OrderEvent` from/to), audit (role + IP) and outbox, optimistic lock on `Order.version`. Server actions only parse forms and map `WorkflowError` codes to messages. Uploads go through `storeFiles` (`lib/uploads.ts` → `server/files/store.js`: content check, SHA-256, ClamAV).
+- Hand-written migrations must be timestamped with the current UTC time (CI names generated migrations with its run time; a later-named hand-written file would run after them).
 - Authorization: pages/actions call `requirePermission('<PERMISSION>')`; the matrix is `server/auth/permissions.js` (never check role names for access). Data for a page is loaded through `lib/orders.ts` (`loadOrder` / `sanitizeRows`), which strips what the role may not see (masked company, internal notes/files, drafts, admin price).
 - Checks: `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:db` (needs `TEST_DATABASE_URL`), `npm run e2e`.

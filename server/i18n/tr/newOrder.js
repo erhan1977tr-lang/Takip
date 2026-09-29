@@ -2,6 +2,16 @@
 export default {
   title: 'Yeni Sipariş',
   back: '← Siparişlerim',
+  // Sipariş tipi seçimi (birden çok tip etkinken)
+  selector: {
+    title: 'Ne sipariş etmek istiyorsunuz?',
+    intro: 'Sipariş tipini seçin.',
+    choose: 'Seç',
+    desc: {
+      GLASS_ORDER: 'Ölçüye göre cam: teknik dosya, çizim onayı ve teklif.',
+      PROFILE_ORDER: 'Depodan conta, plastik, alüminyum profil ve aksesuar.',
+    },
+  },
   form: {
     info: {
       title: 'Sipariş bilgileri',

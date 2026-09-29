@@ -54,6 +54,18 @@ jobs:
           grep -qE 'Tek kullanımlık kod: .*[0-9]{6}' install.log
           sudo takip durum
 
+      - name: Antivirüs ve arka plan işçisi sunucuda çalışıyor
+        run: |
+          compose() { sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml "$@"; }
+          compose ps --status running --services | tee servisler.txt
+          grep -qx worker servisler.txt && grep -qx clamav servisler.txt
+          for i in $(seq 1 30); do
+            if sudo takip antivirus; then exit 0; fi
+            sleep 10
+          done
+          compose logs --tail 60 clamav worker
+          exit 1
+
       - name: CI kapısı (gerçek GitHub API; CI'nin yazdığı commit'te üst commit'in sonucu)
         env:
           GH: ${{ secrets.GITHUB_TOKEN }}

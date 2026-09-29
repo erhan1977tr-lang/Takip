@@ -33,6 +33,8 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, m }: { ca
           <div>
             <label htmlFor="no">{m.info.number}</label>
             <input id="no" name="customerOrderNo" type="text" inputMode="numeric" required value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, ''))} />
+            {/* Önerilen numara değiştirilmediyse ve bu arada başka sipariş aldıysa sunucu bir sonraki numarayı verir */}
+            <input type="hidden" name="suggestedNo" value={suggestedNo} />
             <div className="hint">{rich(m.info.numberHint, { code: <b>{prefix}{no || '…'}</b> })}</div>
           </div>
         </div>

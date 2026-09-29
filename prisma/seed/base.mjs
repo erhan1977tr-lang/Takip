@@ -4,8 +4,9 @@
 // Demo verisi ayrı: scripts/demo/seed.mjs (bu dosyayı önce çalıştırır).
 import { pathToFileURL } from 'node:url';
 import { rolesStep } from './steps/roles.mjs';
+import { orderTypesStep } from './steps/order-types.mjs';
 
-export const STEPS = [rolesStep];
+export const STEPS = [rolesStep, orderTypesStep];
 
 /** @param {import('@prisma/client').PrismaClient} db */
 export async function runBaseSeed(db, { log = console.log } = {}) {

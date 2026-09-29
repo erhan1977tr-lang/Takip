@@ -166,6 +166,9 @@ export default {
     internal: 'fișier intern',
     add: 'Adaugă fișiere',
     internalHint: 'Clientul nu vede fișierele adăugate de echipa internă.',
+    scanPending: 'nescanat',
+    scanPendingTitle: 'Scanarea antivirus nu a putut fi făcută încă; fișierul va fi scanat automat în curând.',
+    infected: 'infectat — în carantină',
   },
   notes: {
     title: 'Note',
@@ -198,5 +201,7 @@ export default {
     offerNotFound: 'Oferta nu a fost găsită.',
     returnReason: 'Introduceți motivul returnării la vânzări.',
     offerNotUpdatable: 'Oferta nu poate fi actualizată în acest moment.',
+    conflict: 'Comanda a fost modificată de altcineva între timp. Reîncărcați pagina și încercați din nou.',
+    staleDrawing: 'Între timp a fost încărcată o nouă versiune a desenului. Vă rugăm să o verificați mai întâi.',
   },
 };

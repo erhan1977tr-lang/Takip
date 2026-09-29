@@ -69,6 +69,13 @@ else
 fi
 
 step "Veritabanı hazırlanıyor…"
+# Rol yetkileri her açılışta temel veriden yeniden yazılır; 3.2.x'ten kalan eski yetki satırları
+# 3.3.0'daki yetki listesi değişikliğini (migration) bozmasın diye önce silinir.
+npx prisma db execute --stdin --schema prisma/schema.prisma >/dev/null 2>&1 <<'SQL' || true
+DO $$ BEGIN
+  IF to_regclass('"RolePermission"') IS NOT NULL THEN DELETE FROM "RolePermission"; END IF;
+END $$;
+SQL
 for i in $(seq 1 30); do
   if npx prisma migrate deploy > "$STEPLOG" 2>&1; then break; fi
   [ "$i" = 30 ] && fail "Veritabanı hazırlanamadı."
