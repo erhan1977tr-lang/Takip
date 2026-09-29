@@ -22,3 +22,11 @@ test('sürüm adresi (/surum) yayındaki sürümü verir', async ({ request }) =
   expect(body.version).toBe(VERSION);
   expect(typeof body.build).toBe('string');
 });
+
+test('arama motorları siteyi taramaz (robots.txt)', async ({ request }) => {
+  const res = await request.get('/robots.txt');
+  expect(res.status()).toBe(200);
+  const body = await res.text();
+  expect(body).toContain('User-Agent: *');
+  expect(body).toContain('Disallow: /');
+});
