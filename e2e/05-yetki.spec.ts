@@ -45,32 +45,37 @@ test('denetimci: yönetici ekler; tüm siparişleri tam firma adıyla görür, h
 });
 
 test('dosyalar: müşteri başka firmanın ya da iç ekibin dosyasını adresini bilse de indiremez', async ({ browser }) => {
+  // Beta Cam müşterisi, Ünsal Cam'in dosya ve çizimlerini (02 testlerinden) adresini bilerek istemeye çalışır
+  const BETA = 'beta@betacam.test';
   const { PrismaClient } = await import('@prisma/client');
   const db = new PrismaClient();
-  const me = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER } });
-  const foreign = await db.orderFile.findFirst({ where: { order: { customerId: { not: me.customerId! } } } });
-  const internal = await db.orderFile.findFirst({ where: { kind: 'INTERNAL', order: { customerId: me.customerId! } } });
-  const own = await db.orderFile.findFirst({ where: { kind: 'CUSTOMER', order: { customerId: me.customerId! } } });
-  const foreignDrawing = await db.drawing.findFirst({ where: { order: { customerId: { not: me.customerId! } } } });
+  const me = await db.user.findUniqueOrThrow({ where: { email: BETA } });
+  const other = { order: { customerId: { not: me.customerId! } } };
+  const mine = { order: { customerId: me.customerId! } };
+  const foreignFile = await db.orderFile.findFirst({ where: other });
+  const foreignDrawing = await db.drawing.findFirst({ where: other });
+  const ownFile = await db.orderFile.findFirst({ where: { kind: 'CUSTOMER', ...mine } });
+  const ownInternal = await db.orderFile.findFirst({ where: { kind: 'INTERNAL', ...mine } });
   await db.$disconnect();
-  expect(foreign, 'başka firmanın dosyası (02 testlerinden)').toBeTruthy();
+  expect(foreignFile || foreignDrawing, 'başka firmanın dosyası ya da çizimi (02 testlerinden)').toBeTruthy();
 
-  const cust = await as(browser, CUSTOMER, CUST_PW);
+  const cust = await as(browser, BETA, TEAM_PW);
   const status = async (url: string) => (await cust.request.get(url)).status();
   const anon = await browser.newContext();
+  const anyForeign = foreignDrawing ? `/dosya/cizim/${foreignDrawing.id}` : `/dosya/siparis/${foreignFile!.id}`;
   const got = {
-    own: own ? await status(`/dosya/siparis/${own.id}`) : 'yok',
-    foreign: await status(`/dosya/siparis/${foreign!.id}`),
-    internal: internal ? await status(`/dosya/siparis/${internal.id}`) : 'yok',
+    ownFile: ownFile ? await status(`/dosya/siparis/${ownFile.id}`) : 'yok',
+    ownInternal: ownInternal ? await status(`/dosya/siparis/${ownInternal.id}`) : 'yok',
+    foreignFile: foreignFile ? await status(`/dosya/siparis/${foreignFile.id}`) : 'yok',
     foreignDrawing: foreignDrawing ? await status(`/dosya/cizim/${foreignDrawing.id}`) : 'yok',
-    anonymous: (await anon.request.get(`/dosya/siparis/${foreign!.id}`)).status(),
+    anonymous: (await anon.request.get(anyForeign)).status(),
   };
   await anon.close();
   await cust.context().close();
   expect(got).toEqual({
-    own: own ? 200 : 'yok',
-    foreign: 404,
-    internal: internal ? 404 : 'yok',
+    ownFile: ownFile ? 200 : 'yok',
+    ownInternal: ownInternal ? 404 : 'yok',
+    foreignFile: foreignFile ? 404 : 'yok',
     foreignDrawing: foreignDrawing ? 404 : 'yok',
     anonymous: 401,
   });
