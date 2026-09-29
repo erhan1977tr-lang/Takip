@@ -224,7 +224,9 @@ function Section({ title, count, tone, children }: { title: string; count: numbe
 
 async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t } = await getT();
-  const view = sp.view ?? 'work';
+  // "Sıra bende" yalnızca işlem yapan rollerde; denetimci doğrudan tüm aktif siparişleri görür
+  const hasTurn = userCan(user, 'ORDER_REVIEW') || userCan(user, 'DRAWING_WORK');
+  const view = sp.view ?? (hasTurn ? 'work' : 'all');
   const rows = sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
@@ -262,8 +264,8 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
         <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
       <div className="tabs">
-        <Link href="/siparisler" className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>
-        <Link href="/siparisler?view=all" className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
+        {hasTurn && <Link href="/siparisler" className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
+        <Link href={hasTurn ? '/siparisler?view=all' : '/siparisler'} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
         <Link href="/siparisler?view=archive" className={view === 'archive' ? 'active' : ''}>{t('orders.tabs.archive')}</Link>
       </div>
       <form className="toolbar">

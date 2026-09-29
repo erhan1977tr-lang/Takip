@@ -45,7 +45,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | Aşama | Kapsam | Mevcut durum |
 |-------|--------|--------------|
 | 0 | Depo, ortam, migration, test, lint, seed, mimari kararlar | 3.2.x'te tamamlandı |
-| 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.1'de tamamlandı** |
+| 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.2'de tamamlandı** |
 | 2 | Sipariş tipleri, numaralandırma, dosya, not, geçmiş, denetim servisi | Tek tip (cam); dosya/not/geçmiş var; antivirüs ve dosya özeti (checksum) eksik |
 | 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | Var |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | Büyük ölçüde var |

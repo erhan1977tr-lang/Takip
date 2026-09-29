@@ -14,7 +14,7 @@
   ya da istemci bileşen özelliklerine hiç girmez.
 - Yönetici fiyatı (ADR 0009) aynı kuralla korunur: yönetici dışındaki iç kullanıcılara hiç gönderilmez.
 
-## Uygulama (Aşama 1, 3.3.1)
+## Uygulama (Aşama 1, 3.3.2)
 - **Yetki matrisi** `server/auth/permissions.js` (tek kaynak; `test/permissions.test.js` tam matrisi sabitler).
   Sayfa ve server action'lar `requirePermission('...')` çağırır; iş akışı eylemleri `availableActions` içinde yine
   yetkilere göre hesaplanır. Rol adıyla erişim kontrolü yapılmaz (rol adı yalnızca görünüm farkları için).
