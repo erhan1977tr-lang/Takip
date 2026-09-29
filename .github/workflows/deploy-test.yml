@@ -1,0 +1,104 @@
+name: Sunucu kurulumu
+
+# deploy/install.sh ve deploy/takip.sh temiz bir Ubuntu makinede baştan sona denenir:
+# kurulum, HTTPS, ilk yönetici, yeniden kurulum (anahtarlar korunur), güncelleme, yalnızca belge değişikliği,
+# derlemesi bozuk sürümün yayınlanmaması ve yedek.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'deploy/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'app/surum/**'
+      - '.github/workflows/deploy-test.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      SITE: https://localhost
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Betik denetimi (shellcheck)
+        run: shellcheck -S warning deploy/install.sh deploy/takip.sh
+
+      - name: Kurulum (temiz makine)
+        run: |
+          git checkout -B "$GITHUB_REF_NAME"
+          sudo git config --global --add safe.directory '*'
+          sudo env TAKIP_REPO_URL="file://$GITHUB_WORKSPACE" TAKIP_SKIP_CI_GATE=1 TAKIP_NO_FIREWALL=1 TAKIP_SKIP_UPGRADE=1 \
+            bash deploy/install.sh --branch "$GITHUB_REF_NAME" --domain localhost \
+            --admin-email yonetici@kurulum.test --admin-name "Kurulum Testi" --factory "GKH Trading" 2>&1 | tee install.log
+          sudo systemctl stop takip-deploy.timer takip-deploy.service || true
+
+      - name: Site ve ilk yönetici
+        run: |
+          set -x
+          curl -fsSk "$SITE/login" | grep -q 'GKH Digital'
+          ver=$(jq -r .version package.json)
+          curl -fsSk "$SITE/surum" | tee /dev/stderr | jq -e --arg v "$ver" --arg b "${GITHUB_SHA::7}" '.version == $v and .build == $b'
+          grep -qE 'Tek kullanımlık kod: .*[0-9]{6}' install.log
+          sudo takip durum
+
+      - name: Yeniden kurulum anahtarları korur
+        run: |
+          before=$(sudo grep '^AUTH_SECRET=' /opt/takip/.env)
+          sudo env TAKIP_REPO_URL="file://$GITHUB_WORKSPACE" TAKIP_SKIP_CI_GATE=1 TAKIP_NO_FIREWALL=1 TAKIP_SKIP_UPGRADE=1 \
+            bash deploy/install.sh --branch "$GITHUB_REF_NAME" --domain localhost 2>&1 | tee install2.log
+          sudo systemctl stop takip-deploy.timer takip-deploy.service || true
+          [ "$before" = "$(sudo grep '^AUTH_SECRET=' /opt/takip/.env)" ]
+          grep -q 'Yönetici hesabı zaten var' install2.log
+          grep -q 'zaten yayında' install2.log
+
+      - name: Güncelleme yayınlanır
+        run: |
+          git config user.name ci && git config user.email ci@kurulum.test
+          echo "// güncelleme testi $(date +%s)" >> app/surum/route.ts
+          git commit -qam "güncelleme testi"
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
+          new=$(git rev-parse --short=7 HEAD)
+          curl -fsSk "$SITE/surum" | jq -e --arg b "$new" '.build == $b'
+
+      - name: Yalnızca belge değişikliği yeniden derlenmez
+        run: |
+          echo "test" >> docs/decisions.md
+          git commit -qam "belge testi"
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle | tee belge.log
+          grep -q 'yalnızca test/belge değişti' belge.log
+          [ "$(sudo cat /opt/takip/state/deployed)" = "$(git rev-parse HEAD)" ]
+
+      - name: Derlemesi bozuk sürüm yayınlanmaz, site çalışmaya devam eder
+        run: |
+          prev=$(curl -fsSk "$SITE/surum" | jq -r .build)
+          echo "export const bozuk: number = 'metin';" > lib/bozuk.ts
+          echo "import { bozuk } from '@/lib/bozuk'; export const x = bozuk;" >> app/surum/route.ts
+          git add -A && git commit -qm "bozuk sürüm testi"
+          if sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle; then echo "bozuk sürüm yayınlanmamalıydı"; exit 1; fi
+          curl -fsSk "$SITE/surum" | jq -e --arg b "$prev" '.build == $b'
+          sudo grep -q 'derleme başarısız' /opt/takip/logs/deploy.log
+          # Aynı commit bir daha denenmez
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle | grep -q 'daha önce yayınlanamadı'
+
+      - name: Yedek
+        run: |
+          sudo takip yedek
+          sudo ls -la /opt/takip/backups
+          sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
+          sudo systemctl list-timers --all | grep -E 'takip-(deploy|backup)'
+
+      - name: Günlükler (hata varsa)
+        if: failure()
+        run: |
+          sudo tail -n 60 /opt/takip/logs/*.log || true
+          sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml ps || true
+          sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml logs --tail 80 || true

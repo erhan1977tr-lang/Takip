@@ -28,6 +28,13 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 13 | Firma kodu | Tüm sistemde **tam 3 harf** (A–Z). Eski kodlar 3 harfe çevrildi, siparişlerin numaraları da yeni koda göre güncellendi. Siparişi olan firmanın kodu değişmez. |
 | 14 | Müşteri adına işlem | Aşama 9'a kaldı. |
 
+## Sunucu (29.09.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 15 | Sunucu | Contabo VPS, **gerçek kullanım** (örnek veri yok). Adres şimdilik IP'den ücretsiz `*.sslip.io` (HTTPS). |
+| 16 | Güncelleme | `backend` dalına gelen ve testlerden geçen her sürüm sunucuda kendiliğinden yayınlanır (ADR 0012). |
+
 ## Hâlâ açık olan konular (uygulamadan önce sorulacak)
 
 - `GLA64-1` gibi eklerin anlamı → şimdilik üretilmez; müşteri numarası alanında serbest metin olarak durur.

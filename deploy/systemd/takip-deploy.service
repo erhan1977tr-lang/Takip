@@ -1,0 +1,11 @@
+[Unit]
+Description=Takip — testlerden geçmiş yeni sürüm varsa yayınla
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/takip _otomatik
+TimeoutStartSec=45min
+Nice=5

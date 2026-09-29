@@ -1,13 +1,16 @@
-# Sunucudaki çalışma düzeni. Bu klasör sunucuda /opt/takip altına kopyalanır; .env yalnızca sunucuda durur.
-#   docker compose run --rm tools            → migration uygular + temel verileri yükler
-#   docker compose run --rm tools npm run create-admin -- e-posta "Ad Soyad"
-#   docker compose up -d                     → uygulamayı başlatır / günceller
+# Sunucudaki çalışma düzeni (deploy/install.sh kurar, deploy/takip.sh yönetir). Kaynak /opt/takip/src,
+# ayarlar ve gizli anahtarlar /opt/takip/.env (bu klasördeki .env ona bağlantıdır; git'e girmez).
+# Sunucuda doğrudan compose yerine "takip" komutu kullanılır: takip durum | guncelle | smtp | yonetici | yedek | log
+# İmajlar sunucuda derlenir: takip:<commit> (uygulama) ve takip:<commit>-tools (migration, seed, betikler).
 name: takip
 
 services:
   db:
     image: postgres:17
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '5' }
     environment:
       POSTGRES_USER: takip
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env içinde tanımlı olmalı}
@@ -23,6 +26,9 @@ services:
   app:
     image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}
     restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options: { max-size: 10m, max-file: '5' }
     env_file: .env
     environment:
       DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
@@ -46,6 +52,7 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"

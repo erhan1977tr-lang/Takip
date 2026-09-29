@@ -86,6 +86,7 @@ export const ENV_VARS = {
   SCREENSHOT_DIR: { group: 'dev', desc: 'Uçtan uca testlerin ekran görüntüsü klasörü' },
 
   // --- platformun verdiği (örnek dosyada yok) ---
+  GIT_SHA: { example: false, desc: 'Derlenen commit; sunucu kurulumu Docker imajına yazar (deploy/takip.sh)' },
   CODESPACES: { example: false, desc: 'GitHub Codespaces içinde "true"' },
   GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: { example: false, desc: 'Codespaces port yönlendirme alan adı' },
 };

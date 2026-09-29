@@ -31,6 +31,9 @@ COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
 COPY --from=builder --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=app:app /app/node_modules/@prisma ./node_modules/@prisma
+# Derlenen commit (sunucu kurulumu verir; /surum ve logonun üzerindeki ipucunda görünür)
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

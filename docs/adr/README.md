@@ -16,3 +16,4 @@ yeni bir ADR yazılır ve eskisinin durumu "Yerini aldı: ADR xxxx" olarak günc
 | 0009 | İki kademeli fiyat: satış fiyatı ve yönetim kopyası | Kabul |
 | 0010 | Yüklenen dosyalar için antivirüs | Kabul |
 | 0011 | Ortam değişkenleri ve doğrulama | Kabul |
+| 0012 | Sunucu kurulumu ve otomatik güncelleme | Kabul |

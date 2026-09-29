@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.4.0 — 29.09.2026 · Sunucu
+
+- Sunucu kurulumu tek komutla: Docker, HTTPS (Let's Encrypt), güvenlik duvarı, fail2ban, otomatik güvenlik yamaları,
+  veritabanı, ilk yönetici hesabı. Gizli anahtarlar sunucunun kendisinde üretilir.
+- Otomatik güncelleme: GitHub'daki testlerden geçen her sürüm birkaç dakika içinde sunucuda yayınlanır; öncesinde
+  veritabanı yedeklenir, yeni sürüm açılmazsa önceki sürüme dönülür.
+- Sunucu aracı `takip`: durum, e-posta (SMTP) ayarı, yönetici hesabı, yedek, günlük.
+- Her gece veritabanı ve dosya yedeği.
+- `/surum` adresi yayındaki sürümü gösterir; logonun üzerine gelince derlenen commit de görünür.
+
 ## 3.3.2 — 29.09.2026 · Aşama 1 (giriş, roller, yetkiler, firmalar)
 
 - **Denetimci** rolü: yönetici kullanıcı eklerken seçebilir. Tüm siparişleri tam firma adıyla, iç notları ve iç dosyaları görür;

@@ -30,7 +30,7 @@ Cam sipariş akışı için web uygulaması:
 | Yükleme takvimi (satış/yönetici ve müşteri), sandık ölçü/ağırlık kaydı, yük tahmini | ✅ |
 | Romence / Türkçe arayüz, IP'ye göre giriş dili, dil seçimi | ✅ |
 | Excel/PDF çıktıları (döküm, nakliye listesi, sandık etiketi, teklif), bildirimler | ⏳ |
-| Sunucuya otomatik kurulum | ⏳ sunucu hazır olunca |
+| Sunucu kurulumu ve otomatik güncelleme (testlerden geçen sürüm kendiliğinden yayınlanır) — [deploy/README.md](deploy/README.md) | ✅ |
 
 ## Diller
 
@@ -51,7 +51,7 @@ server/              e-posta ve davet kodu (Next'ten bağımsız, birim testli)
 prisma/              veritabanı şeması ve migration'lar
 scripts/             create-admin, test-mail, CI yardımcıları
 e2e/                 Playwright uçtan uca testleri
-deploy/              sunucu düzeni (docker compose + Caddy)
+deploy/              sunucu kurulumu (install.sh), sunucu aracı (takip.sh), docker compose + Caddy
 prototype/           tanıtım prototipi
 .devcontainer/       Codespaces demo ortamı (scripts/demo/)
 ```

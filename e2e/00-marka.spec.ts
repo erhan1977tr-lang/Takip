@@ -13,3 +13,12 @@ test('giriş ekranında logo, sürüm numarası ve sekme simgesi', async ({ page
   expect(icon.status()).toBe(200);
   expect(icon.headers()['content-type']).toContain('image/png');
 });
+
+test('sürüm adresi (/surum) yayındaki sürümü verir', async ({ request }) => {
+  const res = await request.get('/surum');
+  expect(res.status()).toBe(200);
+  expect(res.headers()['cache-control']).toContain('no-store');
+  const body = await res.json();
+  expect(body.version).toBe(VERSION);
+  expect(typeof body.build).toBe('string');
+});
