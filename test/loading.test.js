@@ -79,3 +79,9 @@ test('takvim ızgarası pazartesiden başlar', () => {
   const r = gridRange('2026-09');
   assert.ok(r.from < new Date('2026-08-31T00:00:00Z') && r.to > new Date('2026-10-04T23:59:59Z'));
 });
+
+test('yük: katalogdaki ağırlık (teklif satırındaki kopya) açıklamadan tahminin önüne geçer', () => {
+  const line = { description: '8mm Temperli Cam', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', kind: 'CAM' };
+  assert.equal(orderLoad({ lines: [line] }).netKg, 40); // açıklamadan 20 kg/m²
+  assert.equal(orderLoad({ lines: [{ ...line, weightKgM2: 25 }] }).netKg, 50);
+});

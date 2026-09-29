@@ -13,9 +13,9 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.fill('#ship-date', LOAD_DAY);
   await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
   await expect(sales.locator('.alert-ok')).toContainText('Tahmini yükleme tarihi güncellendi');
-  // 6 m² × 31,2 kg/m² (6+6 mm cam + 3 PVB) ≈ 187 kg → 1 sandık, brüt 237 kg
+  // 6 m² × 30 kg/m² (katalogdaki ağırlık, karar 22) = 180 kg → 1 sandık, brüt 230 kg
   await expect(sales.locator('#sandik')).toContainText('6,00 m²');
-  await expect(sales.locator('#sandik')).toContainText('net 187 kg · 1 sandık · brüt 237 kg');
+  await expect(sales.locator('#sandik')).toContainText('net 180 kg · 1 sandık · brüt 230 kg');
 
   await sales.getByRole('link', { name: 'Yüklemeler' }).first().click();
   await expect(sales.getByRole('heading', { name: 'Yüklemeler', exact: true })).toBeVisible();
@@ -24,7 +24,7 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   const table = sales.locator('.load-table');
   await expect(table.getByRole('link', { name: 'UNS2' })).toBeVisible();
   await expect(table).toContainText('Üns**********'); // satış tam adı görmez
-  await expect(table.locator('tfoot')).toContainText('237');
+  await expect(table.locator('tfoot')).toContainText('230');
   await expect(sales.locator('.cal-day.sel')).toContainText('Üns**********');
   await sales.goto('/yuklemeler?view=liste&ay=2027-03');
   await expect(sales.getByRole('link', { name: '19.03.2027' })).toBeVisible();
