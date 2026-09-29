@@ -26,7 +26,7 @@ dbTest('temel seed: roller ve yetkiler kurulur', async () => {
 dbTest('temel seed: tekrar çalıştırılabilir ve elle eklenen fazla yetkiyi geri alır', async () => {
   await runBaseSeed(db, { log: () => {} });
   const inspector = await db.role.findUniqueOrThrow({ where: { name: 'DENETIMCI' } });
-  await db.rolePermission.create({ data: { roleId: inspector.id, key: 'PRICE_SET' } });
+  await db.rolePermission.create({ data: { roleId: inspector.id, key: 'OFFER_SEND' } });
   await runBaseSeed(db, { log: () => {} });
   assert.deepEqual(await snapshot(), expected);
   assert.equal(await db.role.count(), ROLES.length);
