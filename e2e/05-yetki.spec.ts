@@ -56,15 +56,24 @@ test('dosyalar: müşteri başka firmanın ya da iç ekibin dosyasını adresini
   expect(foreign, 'başka firmanın dosyası (02 testlerinden)').toBeTruthy();
 
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  if (own) expect((await cust.request.get(`/dosya/siparis/${own.id}`)).status()).toBe(200);
-  expect((await cust.request.get(`/dosya/siparis/${foreign!.id}`)).status()).toBe(404);
-  if (internal) expect((await cust.request.get(`/dosya/siparis/${internal.id}`)).status()).toBe(404);
-  if (foreignDrawing) expect((await cust.request.get(`/dosya/cizim/${foreignDrawing.id}`)).status()).toBe(404);
-  await cust.context().close();
-
+  const status = async (url: string) => (await cust.request.get(url)).status();
   const anon = await browser.newContext();
-  expect((await anon.request.get(`/dosya/siparis/${foreign!.id}`)).status()).toBe(401);
+  const got = {
+    own: own ? await status(`/dosya/siparis/${own.id}`) : 'yok',
+    foreign: await status(`/dosya/siparis/${foreign!.id}`),
+    internal: internal ? await status(`/dosya/siparis/${internal.id}`) : 'yok',
+    foreignDrawing: foreignDrawing ? await status(`/dosya/cizim/${foreignDrawing.id}`) : 'yok',
+    anonymous: (await anon.request.get(`/dosya/siparis/${foreign!.id}`)).status(),
+  };
   await anon.close();
+  await cust.context().close();
+  expect(got).toEqual({
+    own: own ? 200 : 'yok',
+    foreign: 404,
+    internal: internal ? 404 : 'yok',
+    foreignDrawing: foreignDrawing ? 404 : 'yok',
+    anonymous: 401,
+  });
 });
 
 test('giriş: 5 hatalı denemeden sonra kilit, doğru şifre de açmaz; mesaj iki dilde', async ({ page }) => {

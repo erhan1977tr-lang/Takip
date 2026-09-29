@@ -193,7 +193,7 @@ jobs:
         run: |
           shopt -s nullglob
           for f in e2e.log demo-e2e.log; do
-            [ -f "$f" ] && scripts/ci-step.sh "$f hataları" bash -c "grep -nE '✘|Error:|Expected|Received|Timeout|Locator:|waiting for|spec.ts:[0-9]+' '$f' | grep -v 'attachment' | head -60; exit 1" || true
+            [ -f "$f" ] && scripts/ci-step.sh "$f hataları" bash -c "grep -nE '✘|Error:|Expected|Received|Timeout|Locator:|waiting for|spec.ts:[0-9]+|^ *[-+] ' '$f' | grep -vE 'attachment|✓|^[0-9]+: +- +[0-9]+ \\[' | head -60; exit 1" || true
           done
           for f in test-results/*/error-context.md; do
             scripts/ci-step.sh "sayfa: $(basename "$(dirname "$f")" | cut -c1-60)" bash -c "sed -n '1,120p' '$f'; exit 1" || true
