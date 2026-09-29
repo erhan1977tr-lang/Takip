@@ -37,7 +37,7 @@ test('yönetici: katalog Excel\'i önizlenir, onaylanınca yüklenir ve geri ind
   await page.fill('input[name=q]', 'ULTRA CLEAR');
   await page.getByRole('button', { name: 'Ara' }).click();
   const row = page.locator('tr', { hasText: '10 MM TEMPER CAM' }).filter({ hasText: 'ULTRA CLEAR' });
-  await row.getByRole('button', { name: 'Pasifleştir' }).click();
+  await row.locator('button', { hasText: 'Pasifleştir' }).click();
   await expect(row.getByText('Pasif', { exact: true })).toBeVisible();
 });
 
