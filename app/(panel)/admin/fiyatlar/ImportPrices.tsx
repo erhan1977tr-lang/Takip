@@ -6,7 +6,7 @@ import { interpolate } from '@/server/i18n/interpolate.js';
 import { confirmPriceImportAction, previewPriceImportAction, type PriceImportPreview } from './actions';
 
 /** Fiyat Excel'i: önce önizleme (değişecek / aynı / katalogda olmayan / hatalı), sonra onay. */
-export function ImportPrices({ tableId, m }: { tableId: string; m: Dict['pricing']['import'] }) {
+export function ImportPrices({ tableId, kind, m }: { tableId: string; kind: 'SALES' | 'CUSTOMER'; m: Dict['pricing']['import'] }) {
   const [state, action, pending] = useActionState<PriceImportPreview, FormData>(previewPriceImportAction, {});
   const p = state.preview;
   const has = p ? p.set.length > 0 || !!p.fixed : false;
@@ -16,6 +16,7 @@ export function ImportPrices({ tableId, m }: { tableId: string; m: Dict['pricing
       <p className="muted small">{m.intro}</p>
       <form action={action} className="row" style={{ marginTop: 8 }}>
         <input type="hidden" name="tableId" value={tableId} />
+        <input type="hidden" name="kind" value={kind} />
         <input type="file" name="file" accept=".xlsx" required aria-label={m.file} style={{ flex: 1 }} />
         <button type="submit" className="btn" disabled={pending}>{pending ? m.reading : m.preview}</button>
       </form>
@@ -54,6 +55,7 @@ export function ImportPrices({ tableId, m }: { tableId: string; m: Dict['pricing
           {has ? (
             <form action={confirmPriceImportAction} className="row" style={{ marginTop: 12 }}>
               <input type="hidden" name="tableId" value={tableId} />
+        <input type="hidden" name="kind" value={kind} />
               <input type="hidden" name="payload" value={p.payload} />
               <button type="submit" className="btn btn-primary">{m.confirm}</button>
             </form>

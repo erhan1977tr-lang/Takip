@@ -123,7 +123,14 @@ dbTest('geçiş: teklif yolu → yönetici gönderir → otomatik üretim (iki g
   await run(o.id, 'save_offer', 'sales', { lines, amount: '40.00' });
   await run(o.id, 'submit_offer', 'sales', { lines, amount: '40.00' });
   assert.equal(await codeOf(run(o.id, 'approve_offer', 'sales', { lines, amount: '40.00' })), 'NOT_ALLOWED', 'satış teklifi müşteriye gönderemez');
-  const res = await run(o.id, 'approve_offer', 'admin', { lines, amount: '41.00', labels: { camEtiket: 'GLA-CAM', sandikEtiket: 'GLA-S' } });
+  // Yönetici müşteri fiyatını girmeden gönderemez (karar 4); satış fiyatı (40) satırda kalır
+  const saved = await db.offerLine.findMany({ where: { offer: { orderId: o.id } } });
+  const adminLines = lines.map((l, i) => ({ ...l, id: saved[i].id }));
+  assert.equal(await codeOf(run(o.id, 'approve_offer', 'admin', { lines: adminLines })), 'OFFER_PRICE_MISSING');
+  const res = await run(o.id, 'approve_offer', 'admin', { lines: adminLines.map((l) => ({ ...l, offerPrice: '41.00', unitPrice: '999.00' })), labels: { camEtiket: 'GLA-CAM', sandikEtiket: 'GLA-S' } });
+  const offer = await db.offer.findFirstOrThrow({ where: { orderId: o.id }, include: { lines: true } });
+  assert.deepEqual([String(offer.amount), String(offer.offerAmount), String(offer.lines[0].unitPrice), String(offer.lines[0].offerPrice)], ['40', '41', '40', '41'],
+    'yönetici satış fiyatını değiştiremez; iki tutar ayrı saklanır');
   assert.equal(res.result.produced, true);
   const order = await db.order.findUniqueOrThrow({ where: { id: o.id }, include: { price: true, events: { orderBy: { createdAt: 'asc' } } } });
   assert.deepEqual([order.status, String(order.price.amount), order.sandikEtiket], ['URETIMDE', '41', 'GLA-S']);

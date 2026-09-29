@@ -11,11 +11,11 @@ import {
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
-import { loadPricing, pricingForUser } from '@/server/pricing/tables.js';
+import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
 import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
-  ALLOWED_EXT, STAGES, availableActions, drawingFlags, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
@@ -83,6 +83,21 @@ export default async function OrderPage({
     ? await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })
     : [];
   const catalog = glasses.map((g) => glassLabel(g, locale));
+  // Müşteriye özel fiyatlar (yönetici; karar 32): yöneticinin eklediği satırın müşteri fiyatı buradan dolar
+  let customerPricing: EditorPricing | null = null;
+  if ((editable || updating) && offer && userCan(user, 'OFFER_SEND')) {
+    const cp = await pricingForCustomer(db, order.customerId);
+    if (cp && cp.currency === offer.currency) {
+      const glass: Record<string, number> = {};
+      for (const g of glasses) {
+        const price = cp.prices.get(g.id);
+        if (price == null) continue;
+        glass[glassLabel(g, locale)] = price;
+        glass[glassLabel(g, 'tr')] = price;
+      }
+      customerPricing = { name: cp.name, glass, holePrice: cp.holePrice, cncPrice: cp.cncPrice };
+    }
+  }
   // Fiyat tablosu (karar 26): teklifin tablosu; eski teklifte tablo yoksa satışçının kendi tablosu
   let pricing: EditorPricing | null = null;
   if ((editable || updating) && offer && userCan(user, 'OFFER_PREPARE')) {
@@ -190,6 +205,7 @@ export default async function OrderPage({
           currency={offer.currency}
           catalog={catalog}
           pricing={pricing}
+          customerPricing={customerPricing}
           statusLabel={updating ? t('offer.editor.statusUpdating', { n: sentVersions + 1 }) : offer.status === 'YONETIMDE' ? t('offer.editor.statusAdmin') : t('offer.editor.statusSales')}
           camEtiket={order.camEtiket ?? order.customer.camEtiket ?? ''}
           sandikEtiket={order.sandikEtiket ?? order.customer.sandikEtiket ?? ''}
@@ -198,6 +214,7 @@ export default async function OrderPage({
             poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
+            id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '',
           }))}
           m={m.offer}
           common={m.common}
@@ -209,7 +226,7 @@ export default async function OrderPage({
       <div className="detail-grid">
         <div>
           {shownOffer && (
-            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} />
+            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} />
           )}
           {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
           <Drawings order={order} user={user} can={can} t={t} />
@@ -405,9 +422,11 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro' }) {
-  // Müşteri ve denetimci müşteriye giden (yönetici) tutarı görür
-  const total = offer.status === 'GONDERILDI' && order.price && finalPrice ? order.price.amount : offer.amount;
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean }) {
+  // Veriler role göre temizlendi (lib/orders.ts → offerPrices): müşteri/denetimcide unitPrice ve amount müşteri fiyatıdır,
+  // satışta satış fiyatı. Yönetici iki fiyatı yan yana görür (karar 4).
+  const total = offer.status === 'GONDERILDI' && order.price && finalPrice && !admin ? order.price.amount : offer.amount;
+  const offerTotal = admin ? offerTotals(atOfferPrice(offer.lines.map((l) => ({ ...l, unitPrice: l.unitPrice.toString(), offerPrice: l.offerPrice?.toString() ?? null })))).amount : 0;
   const updated = offer.status === 'GONDERILDI' && versions > 1;
   return (
     <div className="card" id="teklif">
@@ -427,12 +446,13 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{t('offer.cols.unitPrice')}</th><th className="num">{t('offer.cols.amount')}</th></tr></thead>
+          <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th></tr></thead>
           <tbody>
             {(() => {
               let n = 0;
               return offer.lines.map((l) => {
-                const tot = offerLineTotals({ ...l, unitPrice: l.unitPrice.toString() });
+                const tot = offerLineTotals({ ...l, unitPrice: (admin ? l.offerPrice ?? 0 : l.unitPrice).toString() });
+                const unitTxt = (v: { toString(): string } | null) => (v == null ? '—' : `${fmtNum(v.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : t('common.unitPiece')}`);
                 const sub = l.kind === 'CNC' || l.kind === 'DELIK';
                 if (!sub) n += 1;
                 const kindLabel = sub ? lineKindText(t, l.kind) : '';
@@ -449,14 +469,21 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                     <td>{l.poz ?? ''}</td>
                     <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
                     <td className="num">{!sub && l.unit === 'm2' ? `${fmtNum(tot.metraj)} m²` : '—'}</td>
-                    <td className="num">{l.free ? t('offer.free') : `${fmtNum(l.unitPrice.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : t('common.unitPiece')}`}</td>
+                    <td className={`num${admin ? ' muted' : ''}`}>{l.free ? t('offer.free') : unitTxt(l.unitPrice)}</td>
+                    {admin && <td className="num">{l.free ? t('offer.free') : unitTxt(l.offerPrice)}</td>}
                     <td className="num">{fmtNum(tot.amount)}</td>
                   </tr>
                 );
               });
             })()}
           </tbody>
-          <tfoot><tr><td colSpan={8}>{t('common.total')}</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td></tr></tfoot>
+          <tfoot>
+            {admin ? (
+              <tr><td colSpan={7}>{t('common.total')}</td><td className="num muted">{fmtMoney(offer.amount.toString(), offer.currency)}</td><td /><td className="num"><b>{fmtMoney(offerTotal.toFixed(2), offer.currency)}</b></td></tr>
+            ) : (
+              <tr><td colSpan={8}>{t('common.total')}</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td></tr>
+            )}
+          </tfoot>
         </table>
       </div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>

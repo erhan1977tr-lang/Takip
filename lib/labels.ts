@@ -57,6 +57,7 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   RETURN_REASON: 'order.errors.returnReason',
   DRAWING_FILE: 'order.errors.drawingFile',
   DRAWING_NO_DRAFT: 'order.errors.drawingNoDraft',
+  OFFER_PRICE_MISSING: 'order.errors.offerPriceMissing',
   DRAWING_EMPTY: 'order.errors.drawingEmpty',
   DRAWING_INFECTED: 'order.errors.drawingInfected',
   DRAWING_SCAN_PENDING: 'order.errors.drawingScanPending',

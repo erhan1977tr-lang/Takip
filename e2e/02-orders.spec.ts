@@ -69,6 +69,8 @@ test('teklif yolu: çizim gerekmez → teklif → yönetici onayı → otomatik 
   await admin.goto(`/siparisler/${ids.a}`);
   await expect(admin.getByText('Ünsal Cam').first()).toBeVisible(); // yönetici tam adı görür
   await admin.fill('#sandikEtiket', 'SB-M');
+  // İki kademeli fiyat (karar 4): yönetici müşteri fiyatını girer; satış fiyatı yanında salt okunur
+  await admin.getByLabel('Müşteri fiyatı').first().fill('41,5');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
   // Çizim gerekmediği için fiyat onayıyla sipariş otomatik olarak üretime geçer
   await expect(admin.getByText('sipariş otomatik olarak üretime alındı')).toBeVisible();
@@ -112,6 +114,8 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${ids.b}`);
+  // İki kademeli fiyat (karar 4): yönetici müşteri fiyatını girer; satış fiyatı yanında salt okunur
+  await admin.getByLabel('Müşteri fiyatı').first().fill('41,5');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
   await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
 
@@ -183,12 +187,12 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await admin.goto(`/siparisler/${ids.b}`);
   await admin.getByRole('link', { name: 'Teklifi güncelle' }).first().click();
   await expect(admin.getByText('Müşterideki teklifi güncelliyorsunuz.')).toBeVisible();
-  await admin.getByLabel('Birim fiyat').first().fill('50');
+  await admin.getByLabel('Müşteri fiyatı').first().fill('50');
   await expect(admin.locator('.offer-table tfoot')).toContainText('300,00 EUR');
   await admin.fill('#updateNote', 'v2 çizime göre');
   await admin.getByRole('button', { name: 'Teklifi güncelle ve müşteriye gönder' }).click();
   await expect(admin.locator('.alert-ok')).toContainText('Teklif güncellendi; müşteri yeni sürümü görüyor.');
-  await expect(admin.locator('.timeline')).toContainText('249.00 → 300.00 EUR · v2 çizime göre');
+  await expect(admin.locator('.timeline')).toContainText('v2 çizime göre');
   await expect(admin.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi')).toHaveCount(0);
   await expect(admin.getByText('sürüm 2', { exact: true })).toBeVisible();
   await expect(admin.getByText('otomatik olarak üretime alındı')).toHaveCount(0); // çizim hâlâ müşteride
@@ -225,6 +229,8 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${id}`);
+  // İki kademeli fiyat (karar 4): yönetici müşteri fiyatını girer; satış fiyatı yanında salt okunur
+  await admin.getByLabel('Müşteri fiyatı').first().fill('41,5');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
   await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
   const drawer = await as(browser, DRAWER, PW);

@@ -11,6 +11,7 @@ export default {
   firms: 'Müşteriler',
   catalog: 'Cam Kataloğu',
   prices: 'Fiyat Tabloları',
+  customerPrices: 'Müşteri Fiyatları',
   alerts: 'Önemli kararlar',
   integrations: 'Entegrasyonlar',
   myOrders: 'Siparişlerim',

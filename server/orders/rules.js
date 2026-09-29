@@ -241,6 +241,14 @@ export function offerTotals(lines) {
 }
 
 /**
+ * Satırları müşteri fiyatıyla (offerPrice) değerlendirmek için: tutar ve eksik kontrolü müşteri fiyatı üzerinden yapılır
+ * (karar 4: yönetici müşteri fiyatını girer; unitPrice satış fiyatıdır).
+ * @template {{ offerPrice?: unknown }} L
+ * @param {L[]} lines
+ */
+export const atOfferPrice = (lines) => lines.map((l) => ({ ...l, unitPrice: l.offerPrice == null ? '' : String(l.offerPrice) }));
+
+/**
  * Müşteriye gidecek teklifte eksikler (boş dizi = tamam): fiyatsız satır (bedelsiz değilse),
  * m² satırında ölçü eksikliği, üstünde cam satırı olmayan CNC / delik satırı.
  * Metne çevirmek için: server/i18n/format.js → formatOfferProblems.

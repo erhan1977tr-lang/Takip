@@ -21,6 +21,7 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { section: 'nav.definitions' },
     { href: '/admin/katalog', key: 'nav.catalog' },
     { href: '/admin/fiyatlar', key: 'nav.prices' },
+    { href: '/admin/musteri-fiyatlari', key: 'nav.customerPrices' },
     { href: '/admin/entegrasyonlar', key: 'nav.integrations' },
   ],
   SATIS: [

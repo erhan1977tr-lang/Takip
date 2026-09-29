@@ -17,7 +17,9 @@ export const dynamic = 'force-dynamic';
 type SP = Record<string, string | undefined>;
 type Entry = { o: LoadRow; load: Load };
 type Total = ReturnType<typeof groupLoad>;
-type Group = { key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number };
+type Group = { key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number; salesAmount: number };
+/** Hangi tutar sütunları görünür (karar 4): yönetici ikisini yan yana, satış yalnız satış tutarını, müşteri/denetimci yalnız teklif tutarını */
+type Money = { sales: boolean; offer: boolean };
 
 const kg = (n: number) => fmtNum(n, 0);
 const dash = (n: number) => (n ? String(n) : '–');
@@ -37,7 +39,7 @@ function counter(m: Dict, intl: string) {
  * Bir günün siparişlerini müşteriye göre gruplar; sandıklar müşteriler arasında karışmaz. Müşterinin o gün için
  * girilmiş sandıkları varsa o müşterinin ağırlık ve sandık sayısı onlardan gelir (server/loading/crates.js → groupLoad).
  */
-function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = []): { groups: Group[]; total: Total & { amount: number } } {
+function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = []): { groups: Group[]; total: Total & { amount: number; salesAmount: number } } {
   const map = new Map<string, { name: string; entries: Entry[]; crates: CrateRow[] }>();
   const at = (id: string, name: string) => {
     if (!map.has(id)) map.set(id, { name, entries: [], crates: [] });
@@ -49,6 +51,7 @@ function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = []):
   const groups = [...map.entries()].map(([key, g]) => ({
     key, label: customerLabel(user, g.name), entries: g.entries, crates: g.crates,
     total: groupLoad(g.entries.map((e) => e.load), g.crates), amount: g.entries.reduce((s, e) => s + (e.load.amount ?? 0), 0),
+    salesAmount: g.entries.reduce((s, e) => s + (e.load.salesAmount ?? 0), 0),
   })).sort((a, b) => b.total.metraj - a.total.metraj);
   const t = groups.reduce(
     (acc, g) => ({
@@ -56,9 +59,9 @@ function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = []):
       cnc: acc.cnc + g.total.cnc, delik: acc.delik + g.total.delik,
       netKg: acc.netKg + g.total.netKg, crates: acc.crates + g.total.crates, grossKg: acc.grossKg + g.total.grossKg,
       estimatedCrates: acc.estimatedCrates + g.total.estimatedCrates, estimatedNetKg: acc.estimatedNetKg + g.total.estimatedNetKg,
-      realCrates: acc.realCrates || g.total.realCrates, amount: acc.amount + g.amount,
+      realCrates: acc.realCrates || g.total.realCrates, amount: acc.amount + g.amount, salesAmount: acc.salesAmount + g.salesAmount,
     }),
-    { orders: 0, metraj: 0, camAdet: 0, cnc: 0, delik: 0, netKg: 0, crates: 0, grossKg: 0, estimatedCrates: 0, estimatedNetKg: 0, realCrates: false, amount: 0 },
+    { orders: 0, metraj: 0, camAdet: 0, cnc: 0, delik: 0, netKg: 0, crates: 0, grossKg: 0, estimatedCrates: 0, estimatedNetKg: 0, realCrates: false, amount: 0, salesAmount: 0 },
   );
   return { groups, total: t };
 }
@@ -225,6 +228,7 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
   const { count } = counter(m, intl);
   const { groups, total } = groupDay(entries, user, crates);
   const canEdit = userCan(user, 'CRATE_EDIT');
+  const money: Money = { sales: userCan(user, 'OFFER_PREPARE'), offer: userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW') };
   return (
     <div className="card" id="gun">
       <div className="row" style={{ marginBottom: 12 }}>
@@ -259,12 +263,13 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
                 <tr>
                   <th>{isCustomer ? t('loading.day.cols.order') : t('loading.day.cols.customerOrder')}</th>{!isCustomer && <th className="num">{t('loading.day.cols.orders')}</th>}
                   <th className="num">{t('loading.day.cols.glass')}</th><th className="num">{t('loading.day.cols.cnc')}</th><th className="num">{t('loading.day.cols.holes')}</th><th className="num">{t('loading.day.cols.metraj')}</th><th className="num">{t('loading.day.cols.net')}</th>
-                  <th className="num">{t('loading.day.cols.crates')}</th><th className="num">{t('loading.day.cols.gross')}</th><th className="num">{t('loading.day.cols.amount')}</th>
+                  <th className="num">{t('loading.day.cols.crates')}</th><th className="num">{t('loading.day.cols.gross')}</th>
+                  {money.sales && <th className="num">{t('loading.day.cols.salesAmount')}</th>}{money.offer && <th className="num">{t('loading.day.cols.amount')}</th>}
                 </tr>
               </thead>
               <tbody>
                 {groups.map((g) => (
-                  <GroupRows key={g.key} g={g} isCustomer={isCustomer} canEdit={canEdit} day={day} dayCrates={crates} user={user} m={m} />
+                  <GroupRows key={g.key} g={g} isCustomer={isCustomer} money={money} canEdit={canEdit} day={day} dayCrates={crates} user={user} m={m} />
                 ))}
               </tbody>
               <tfoot>
@@ -272,7 +277,8 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
                   <td>{t('common.total')}</td>{!isCustomer && <td className="num">{total.orders}</td>}
                   <td className="num">{total.camAdet}</td><td className="num">{dash(total.cnc)}</td><td className="num">{dash(total.delik)}</td><td className="num">{fmtNum(total.metraj)}</td><td className="num">{kg(total.netKg)}</td>
                   <td className="num">{total.crates}</td><td className="num">{kg(total.grossKg)}</td>
-                  <td className="num">{total.amount ? fmtMoney(total.amount) : '—'}</td>
+                  {money.sales && <td className="num">{total.salesAmount ? fmtMoney(total.salesAmount) : '—'}</td>}
+                  {money.offer && <td className="num">{total.amount ? fmtMoney(total.amount) : '—'}</td>}
                 </tr>
               </tfoot>
             </table>
@@ -283,7 +289,7 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
   );
 }
 
-async function GroupRows({ g, isCustomer, canEdit, day, dayCrates, user, m }: { g: Group; isCustomer: boolean; canEdit: boolean; day: string; dayCrates: CrateRow[]; user: CurrentUser; m: Dict }) {
+async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, m }: { g: Group; isCustomer: boolean; money: Money; canEdit: boolean; day: string; dayCrates: CrateRow[]; user: CurrentUser; m: Dict }) {
   const { t } = await getT();
   const cratesOf = (orderId: string) => g.crates.filter((c) => c.orders.some((x) => x.orderId === orderId)).map((c) => c.crateNo);
   const orderRows = g.entries.map(({ o, load }) => {
@@ -303,7 +309,8 @@ async function GroupRows({ g, isCustomer, canEdit, day, dayCrates, user, m }: { 
         <td className="num">{kg(load.netKg)}</td>
         <td className="num">{nos.length ? <span title={t('loading.day.real')}>#{nos.join(', #')}</span> : g.total.realCrates ? '' : <span className="muted">{t('loading.day.estimated')}</span>}</td>
         <td className="num"><span className="muted">—</span></td>
-        <td className="num">{load.amount != null ? fmtMoney(load.amount, load.currency) : <span className="muted">—</span>}</td>
+        {money.sales && <td className="num">{load.salesAmount != null ? fmtMoney(load.salesAmount, load.currency) : <span className="muted">—</span>}</td>}
+        {money.offer && <td className="num">{load.amount != null ? fmtMoney(load.amount, load.currency) : <span className="muted">—</span>}</td>}
       </tr>
     );
   });
@@ -313,7 +320,8 @@ async function GroupRows({ g, isCustomer, canEdit, day, dayCrates, user, m }: { 
       <td className="num">{g.total.camAdet}</td><td className="num">{dash(g.total.cnc)}</td><td className="num">{dash(g.total.delik)}</td><td className="num">{fmtNum(g.total.metraj)}</td><td className="num">{kg(g.total.netKg)}</td>
       <td className="num">{g.total.crates}{' '}{g.total.realCrates ? <span className="badge badge-ok">{t('loading.day.real')}</span> : <span className="muted small">{t('loading.day.estimated')}</span>}</td>
       <td className="num">{kg(g.total.grossKg)}</td>
-      <td className="num">{g.amount ? fmtMoney(g.amount) : '—'}</td>
+      {money.sales && <td className="num">{g.salesAmount ? fmtMoney(g.salesAmount) : '—'}</td>}
+      {money.offer && <td className="num">{g.amount ? fmtMoney(g.amount) : '—'}</td>}
     </tr>
   );
   if (isCustomer) return <>{orderRows}{g.crates.length > 0 && groupTotal}</>;
@@ -329,7 +337,7 @@ async function GroupRows({ g, isCustomer, canEdit, day, dayCrates, user, m }: { 
       {groupTotal}
       {orderRows}
       <tr className="crate-row">
-        <td colSpan={10}>
+        <td colSpan={9 + (money.sales ? 1 : 0) + (money.offer ? 1 : 0)}>
           <details open={g.crates.length > 0 || undefined}>
             <summary>{t('loading.day.crates.toggle')} · {t('loading.day.crates.count', { n: g.crates.length })}</summary>
             {canEdit ? (

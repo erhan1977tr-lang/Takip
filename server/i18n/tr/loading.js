@@ -86,6 +86,7 @@ export default {
       net: 'Net ağırlık',
       crates: 'Sandık',
       gross: 'Brüt ağırlık',
+      salesAmount: 'Satış tutarı',
       amount: 'Teklif tutarı',
     },
     real: 'gerçek',

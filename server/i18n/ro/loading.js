@@ -86,6 +86,7 @@ export default {
       net: 'Greutate netă',
       crates: 'Lăzi',
       gross: 'Greutate brută',
+      salesAmount: 'Valoare vânzare',
       amount: 'Valoare ofertă',
     },
     real: 'real',

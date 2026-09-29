@@ -29,7 +29,8 @@ export default {
       offerStatus: 'Ofertă',
       lines: 'Rânduri',
       ship: 'Livrare',
-      amount: 'Valoare',
+      amount: 'Valoare vânzare',
+      offerAmount: 'Valoare client',
     },
   },
   // Grupate după starea ultimei oferte (HAZIRLANIYOR · YONETIMDE · GONDERILDI)

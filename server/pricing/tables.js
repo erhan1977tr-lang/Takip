@@ -177,7 +177,7 @@ export async function loadPricing(db, tableId) {
 export async function pricingForUser(db, userId) {
   const [user, tables] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { priceTableId: true } }),
-    db.priceTable.findMany({ where: { isActive: true }, select: { id: true, isActive: true, isDefault: true } }),
+    db.priceTable.findMany({ where: { isActive: true, kind: 'SALES' }, select: { id: true, isActive: true, isDefault: true } }),
   ]);
   const t = user ? resolveTable(user, tables) : null;
   return t ? loadPricing(db, t.id) : null;
@@ -283,10 +283,11 @@ export function priceOverrides(lines) {
 const lockTables = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('price-tables', 0))`;
 
 /**
- * Tablo ekler ya da düzenler. İlk tablo kendiliğinden varsayılan olur.
+ * Tablo ekler ya da düzenler. İlk satış tablosu kendiliğinden varsayılan olur (müşteri tablolarında varsayılan yok).
+ * @param {'SALES' | 'CUSTOMER'} [kind]  yeni tablonun türü
  * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CURRENCY_LOCKED' }>}
  */
-export async function saveTable(db, id, value, actor) {
+export async function saveTable(db, id, value, actor, kind = 'SALES') {
   return db.$transaction(async (tx) => {
     await lockTables(tx);
     const clash = await tx.priceTable.findFirst({ where: { name: { equals: value.name, mode: 'insensitive' }, ...(id ? { NOT: { id } } : {}) } });
@@ -303,9 +304,9 @@ export async function saveTable(db, id, value, actor) {
       }, actor);
       return { ok: true, id };
     }
-    const first = (await tx.priceTable.count()) === 0;
-    const t = await tx.priceTable.create({ data: { ...value, isDefault: first } });
-    await writeAudit(tx, { action: 'PRICE_TABLE_CREATE', entityType: 'PriceTable', entityId: t.id, userId: actor.id, details: { ...value, isDefault: first } }, actor);
+    const first = kind === 'SALES' && (await tx.priceTable.count({ where: { kind: 'SALES' } })) === 0;
+    const t = await tx.priceTable.create({ data: { ...value, kind, isDefault: first } });
+    await writeAudit(tx, { action: 'PRICE_TABLE_CREATE', entityType: 'PriceTable', entityId: t.id, userId: actor.id, details: { ...value, kind, isDefault: first } }, actor);
     return { ok: true, id: t.id };
   });
 }
@@ -326,8 +327,9 @@ export async function changeTable(db, id, intent, actor) {
       if (t.isDefault && t.isActive) return { ok: false, code: 'IS_DEFAULT' };
       await tx.priceTable.update({ where: { id }, data: { isActive: !t.isActive } });
     } else if (intent === 'default') {
+      if (t.kind !== 'SALES') return { ok: false, code: 'NOT_FOUND' };
       if (!t.isActive) return { ok: false, code: 'INACTIVE' };
-      await tx.priceTable.updateMany({ where: { isDefault: true, NOT: { id } }, data: { isDefault: false } });
+      await tx.priceTable.updateMany({ where: { kind: 'SALES', isDefault: true, NOT: { id } }, data: { isDefault: false } });
       await tx.priceTable.update({ where: { id }, data: { isDefault: true } });
     } else if (intent === 'delete') {
       if (t.isDefault) return { ok: false, code: 'IS_DEFAULT' };
@@ -399,11 +401,54 @@ export async function assignTable(db, userId, tableId, actor, canPrepare) {
   return db.$transaction(async (tx) => {
     const u = await tx.user.findUnique({ where: { id: userId } });
     if (!u || u.type !== 'INTERNAL' || !canPrepare(u.appRole)) return { ok: false, code: 'NOT_FOUND' };
-    if (tableId && !(await tx.priceTable.findUnique({ where: { id: tableId } }))) return { ok: false, code: 'NOT_FOUND' };
+    if (tableId && !(await tx.priceTable.findFirst({ where: { id: tableId, kind: 'SALES' } }))) return { ok: false, code: 'NOT_FOUND' };
     await tx.user.update({ where: { id: userId }, data: { priceTableId: tableId } });
     await writeAudit(tx, {
       action: 'PRICE_TABLE_ASSIGN', entityType: 'User', entityId: userId, userId: actor.id,
       details: { user: u.email, before: u.priceTableId, after: tableId },
+    }, actor);
+    return { ok: true };
+  });
+}
+
+// ---------------- Müşteri fiyatları (karar 4 + 32) ----------------
+
+/** Müşteri firmasının etkin müşteri fiyat tablosu (ya da null). */
+export async function pricingForCustomer(db, customerId) {
+  const c = await db.customer.findUnique({ where: { id: customerId }, select: { priceTable: { select: { id: true, kind: true, isActive: true } } } });
+  const t = c?.priceTable;
+  return t && t.kind === 'CUSTOMER' && t.isActive ? loadPricing(db, t.id) : null;
+}
+
+/**
+ * Yönetim kopyasında müşteri fiyatı boş satırları müşteri fiyat tablosundan doldurur (cam m² fiyatı; delik / CNC adet
+ * fiyatı). Tabloda yoksa boş kalır, yönetici elle girer. Dolu satıra dokunulmaz.
+ * @template {{ kind: string, glassProductId?: string | null, offerPrice?: unknown }} L
+ * @param {L[]} lines
+ * @returns {L[]}
+ */
+export function prefillOfferPrices(lines, pricing) {
+  if (!pricing) return lines;
+  return lines.map((l) => {
+    if (l.offerPrice != null && l.offerPrice !== '') return l;
+    const p = tablePrice(pricing, l.kind, l.glassProductId ?? null);
+    return p == null ? l : { ...l, offerPrice: p };
+  });
+}
+
+/**
+ * Müşteri firmasını müşteri fiyat tablosuna bağlar (tableId null → bağlantı kaldırılır).
+ * @returns {Promise<{ ok: true } | { ok: false, code: 'NOT_FOUND' }>}
+ */
+export async function assignCustomerTable(db, customerId, tableId, actor) {
+  return db.$transaction(async (tx) => {
+    const c = await tx.customer.findUnique({ where: { id: customerId } });
+    if (!c || c.type !== 'CUSTOMER') return { ok: false, code: 'NOT_FOUND' };
+    if (tableId && !(await tx.priceTable.findFirst({ where: { id: tableId, kind: 'CUSTOMER' } }))) return { ok: false, code: 'NOT_FOUND' };
+    await tx.customer.update({ where: { id: customerId }, data: { priceTableId: tableId } });
+    await writeAudit(tx, {
+      action: 'CUSTOMER_PRICE_TABLE_ASSIGN', entityType: 'Customer', entityId: customerId, userId: actor.id,
+      details: { customer: c.name, before: c.priceTableId, after: tableId },
     }, actor);
     return { ok: true };
   });

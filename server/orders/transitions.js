@@ -6,10 +6,10 @@
 import { transitionOrder } from '../domain/transition.js';
 import { WorkflowError } from '../domain/workflow.js';
 import { can } from '../auth/permissions.js';
-import { availableActions, drawingFlags, shouldAutoProduce, slaDeadline } from './rules.js';
+import { atOfferPrice, availableActions, drawingFlags, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
-import { enrichLines, loadPricing, prefillLines, pricingForUser } from '../pricing/tables.js';
+import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForCustomer, pricingForUser } from '../pricing/tables.js';
 import { recordPriceOverrides } from '../pricing/alerts.js';
 import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
@@ -159,38 +159,104 @@ function latestDrawing(h) {
 // Her işlem h üzerinden çalışır: h.set(veri) siparişi günceller, h.event(kod, not) geçmişe yazar,
 // h.sla = true ise sonda SLA yeniden hesaplanır, h.auto = true ise otomatik üretim denenir.
 
+const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice'];
+const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, sortOrder: i });
+const priceNum = (v) => (v == null || v === '' ? null : Number(v));
+
+/**
+ * Satırların iki fiyatı (karar 4): unitPrice = satış fiyatı (satış girer), offerPrice = müşteri fiyatı (yönetici girer).
+ * Satırlar (ölçü, adet, satır ekleme/silme) ortaktır: yönetici değiştirince satışın gördüğü teklif de değişir.
+ *  - satış kaydederken müşteri fiyatına dokunulmaz (formunda yoktur);
+ *  - yönetici kaydederken satış fiyatına dokunulmaz (yeni satırın satış fiyatı 0).
+ * @param {object[]} lines  completeLines() sonucu; satırın `id`'si varsa mevcut satırdır
+ * @param {object[]} existing  mevcut satırlar (id → satır)
+ */
+function mergePrices(lines, existing, admin) {
+  const byId = new Map(existing.map((l) => [l.id, l]));
+  return lines.map((l) => {
+    const old = l.id ? byId.get(l.id) : undefined;
+    return {
+      ...l,
+      unitPrice: admin ? (old ? old.unitPrice : 0) : l.unitPrice,
+      offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
+    };
+  });
+}
+
+/** Satırları mevcut teklife yazar: eşleşen satır güncellenir, yeni satır eklenir, gelmeyen satır silinir. */
+async function writeLines(tx, offerId, lines, existing) {
+  const keep = new Set();
+  const ids = new Set(existing.map((l) => l.id));
+  for (const [i, l] of lines.entries()) {
+    if (l.id && ids.has(l.id)) {
+      keep.add(l.id);
+      await tx.offerLine.update({ where: { id: l.id }, data: lineData(l, i) });
+    } else {
+      await tx.offerLine.create({ data: { ...lineData(l, i), offerId } });
+    }
+  }
+  const gone = existing.filter((l) => !keep.has(l.id)).map((l) => l.id);
+  if (gone.length) await tx.offerLine.deleteMany({ where: { id: { in: gone } } });
+  return tx.offerLine.findMany({ where: { offerId }, orderBy: { sortOrder: 'asc' } });
+}
+
+/** Satış tutarı ve müşteri tutarı (sunucuda hesaplanır; tarayıcıdan gelen tutara güvenilmez). */
+function amounts(lines) {
+  const plain = lines.map((l) => ({ ...l, unitPrice: String(l.unitPrice ?? 0) }));
+  return { amount: offerTotals(plain).amount.toFixed(2), offerAmount: offerTotals(atOfferPrice(lines)).amount.toFixed(2) };
+}
+
+/** Müşteriye gidecek teklifte müşteri fiyatı eksik satır olmamalı. */
+function requireOfferPrices(lines) {
+  const p = offerProblems(atOfferPrice(lines));
+  if (p.length) throw new WorkflowError('OFFER_PRICE_MISSING', { problems: p });
+}
+
 async function offerEdit(h, intent) {
   const { tx, order, actor, payload, now } = h;
   const offer = latestOffer(order);
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
-  const { amount } = payload;
-  const lines = await completeLines(h, offer, payload.lines);
-  await tx.offerLine.deleteMany({ where: { offerId: offer.id } });
-  await tx.offerLine.createMany({ data: lines.map((l, i) => ({ ...l, offerId: offer.id, sortOrder: i })) });
-  await tx.offer.update({ where: { id: offer.id }, data: { amount } });
+  const admin = can(actor.role, 'OFFER_SEND');
+  const merged = mergePrices(await completeLines(h, offer, payload.lines), offer.lines, admin);
+  let saved = await writeLines(tx, offer.id, merged, offer.lines);
+  // Satış yöneticiye gönderirken müşteri fiyatı boş satırlar müşterinin fiyat tablosundan dolar (karar 32)
+  if (intent === 'submit') {
+    const pricing = await pricingForCustomer(tx, order.customerId);
+    if (pricing && pricing.currency === offer.currency) {
+      const filled = prefillOfferPrices(saved, pricing);
+      for (const [i, l] of filled.entries()) {
+        if (l !== saved[i]) await tx.offerLine.update({ where: { id: l.id }, data: { offerPrice: l.offerPrice } });
+      }
+      saved = filled;
+    }
+  }
+  const { amount, offerAmount } = amounts(saved);
+  await tx.offer.update({ where: { id: offer.id }, data: { amount, offerAmount: admin || intent === 'submit' ? offerAmount : undefined } });
   // Etiketleri yalnızca yönetici, fiyat onayı sırasında girer
-  if (can(actor.role, 'OFFER_SEND') && offer.status === 'YONETIMDE' && payload.labels) await h.set(payload.labels);
+  if (admin && offer.status === 'YONETIMDE' && payload.labels) await h.set(payload.labels);
 
   if (intent === 'submit') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE', statusSince: now } });
     h.event('OFFER_SUBMITTED', money(amount, offer.currency));
     // Liste fiyatından farklı fiyat → yöneticinin "Önemli kararlar" listesi
-    h.overrides = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines, actor, now });
+    h.overrides = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines: saved, actor, now });
   } else if (intent === 'approve') {
-    await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now } });
+    requireOfferPrices(saved);
+    await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now, offerAmount } });
     await tx.price.upsert({
       where: { orderId: order.id },
-      create: { orderId: order.id, amount, setById: actor.id },
-      update: { amount, setById: actor.id, setAt: now },
+      create: { orderId: order.id, amount: offerAmount, setById: actor.id },
+      update: { amount: offerAmount, setById: actor.id, setAt: now },
     });
-    h.event('OFFER_SENT', money(amount, offer.currency));
+    // Olay notunda tutar yok: geçmişi satış da görür, müşteri fiyatını görmemeli (tutarlar denetim kaydında)
+    h.event('OFFER_SENT');
     h.auto = true;
   } else if (intent === 'return') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
     h.event('OFFER_RETURNED', payload.returnNote);
   }
   h.sla = true;
-  h.audit = { offerId: offer.id, intent, amount, lines: lines.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}) };
+  h.audit = { offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}) };
 }
 
 const ACTIONS = {
@@ -368,24 +434,27 @@ const ACTIONS = {
     const { tx, order, actor, payload, now } = h;
     const prev = latestOffer(order);
     if (!prev) throw new WorkflowError('OFFER_NOT_FOUND');
-    const { amount } = payload;
-    const lines = await completeLines(h, prev, payload.lines);
+    const lines = mergePrices(await completeLines(h, prev, payload.lines), prev.lines, true);
+    requireOfferPrices(lines);
+    const { amount, offerAmount } = amounts(lines);
+    // Müşteriye gitmiş teklif değişmez: yeni sürüm açılır ve hemen müşteriye gönderilmiş sayılır
     const created = await tx.offer.create({
       data: {
-        orderId: order.id, createdById: actor.id, currency: prev.currency, amount, priceTableId: prev.priceTableId ?? null,
+        orderId: order.id, createdById: actor.id, currency: prev.currency, amount, offerAmount, priceTableId: prev.priceTableId ?? null,
         status: 'GONDERILDI', statusSince: now, sentAt: now,
-        lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
+        lines: { create: lines.map((l, i) => lineData(l, i)) },
       },
     });
     await tx.price.upsert({
       where: { orderId: order.id },
-      create: { orderId: order.id, amount, setById: actor.id },
-      update: { amount, setById: actor.id, setAt: now },
+      create: { orderId: order.id, amount: offerAmount, setById: actor.id },
+      update: { amount: offerAmount, setById: actor.id, setAt: now },
     });
     if (payload.labels) await h.set(payload.labels);
-    const from = Number(prev.amount).toFixed(2);
-    h.event('OFFER_UPDATED', `${from} → ${money(amount, prev.currency)}${payload.note ? ` · ${payload.note}` : ''}`);
-    h.audit = { offerId: created.id, from, amount, lines: lines.length };
+    const from = prev.offerAmount != null ? Number(prev.offerAmount).toFixed(2) : Number(prev.amount).toFixed(2);
+    // Olay notu yalnızca yöneticinin açıklaması (tutarlar denetim kaydında; satış müşteri fiyatını görmez)
+    h.event('OFFER_UPDATED', payload.note || null);
+    h.audit = { offerId: created.id, from, offerAmount, amount, lines: lines.length };
   },
   async check_offer(h) {
     h.event('OFFER_CHECKED', h.order.drawings.length ? `v${h.order.drawings.length}` : null);

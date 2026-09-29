@@ -45,8 +45,12 @@ export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'price'>, customerV
     lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null })),
     items: o.items,
   });
-  const amount = sent ? Number(o.price?.amount ?? sent.amount) : null;
-  return { ...load, amount, currency: sent?.currency ?? 'EUR' };
+  // amount: müşteriye giden (yönetici) tutar · salesAmount: satış tutarı (karar 4; hangisi görünür: sayfa yetkiye göre seçer,
+  // veriler zaten role göre temizlenmiştir — satışa müşteri tutarı, müşteriye satış tutarı hiç gelmez)
+  const amount = sent ? Number(o.price?.amount ?? sent.offerAmount ?? sent.amount) : null;
+  const cur = sent ?? o.offers[0];
+  const salesAmount = cur ? Number(cur.amount) : null;
+  return { ...load, amount, salesAmount, currency: cur?.currency ?? 'EUR' };
 }
 export type Load = ReturnType<typeof loadOf>;
 

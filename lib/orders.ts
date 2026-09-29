@@ -30,10 +30,37 @@ export function sanitizeCustomer<C extends { name: string }>(user: CurrentUser, 
   return out as C;
 }
 
+type PriceView = 'admin' | 'customer' | 'sales';
+/** Fiyat görünümü (karar 4): yönetici iki fiyatı da görür; müşteri ve denetimci yalnızca müşteri fiyatını; satış yalnızca kendi fiyatını. */
+function priceView(user: CurrentUser): PriceView {
+  if (userCan(user, 'OFFER_SEND')) return 'admin';
+  return userCan(user, 'PRICE_FINAL_VIEW') ? 'customer' : 'sales';
+}
+type OfferLike = { amount: unknown; offerAmount?: unknown; lines?: { unitPrice: unknown; offerPrice?: unknown; listPrice?: unknown }[] };
+/**
+ * Teklif fiyatlarını role göre temizler. Müşteri/denetimci için "fiyat" müşteri fiyatıdır (satırda unitPrice ve
+ * teklifte amount alanına yazılır; satış fiyatı hiç gitmez). Satış müşteri fiyatını hiç almaz.
+ * Eski teklifler (3.10 öncesi, offerAmount yok): gönderilen tutar zaten yöneticinin tutarıydı.
+ */
+function offerPrices<O extends OfferLike>(view: PriceView, o: O): O {
+  if (view === 'admin') return o;
+  if (view === 'sales') {
+    return { ...o, offerAmount: null, ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, offerPrice: null })) } : {}) } as O;
+  }
+  const legacy = o.offerAmount == null;
+  return {
+    ...o,
+    amount: legacy ? o.amount : o.offerAmount,
+    offerAmount: null,
+    ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, unitPrice: legacy ? l.unitPrice : l.offerPrice ?? ZERO, offerPrice: null, listPrice: null })) } : {}),
+  } as O;
+}
+
 /**
  * Liste sorgularının satırlarını temizler (sanitizeOrder ile aynı kurallar; satırda olan alanlara uygulanır).
  */
-export function sanitizeRows<R extends { customer: { name: string }; price?: unknown; offers?: { status: string }[] }>(user: CurrentUser, rows: R[]): R[] {
+export function sanitizeRows<R extends { customer: { name: string }; price?: unknown; offers?: ({ status: string } & Partial<OfferLike>)[] }>(user: CurrentUser, rows: R[]): R[] {
+  const view = priceView(user);
   const priceOk = userCan(user, 'PRICE_FINAL_VIEW');
   const drafts = userCan(user, 'OFFER_DRAFT_VIEW');
   const offersOk = userCan(user, 'OFFER_VIEW');
@@ -41,7 +68,8 @@ export function sanitizeRows<R extends { customer: { name: string }; price?: unk
     const out: R = { ...r, customer: sanitizeCustomer(user, r.customer) };
     if ('price' in r && !priceOk) out.price = null as R['price'];
     if (r.offers) {
-      out.offers = (!offersOk ? [] : drafts ? r.offers : r.offers.filter((o) => o.status === 'GONDERILDI')) as R['offers'];
+      const visible = !offersOk ? [] : drafts ? r.offers : r.offers.filter((o) => o.status === 'GONDERILDI');
+      out.offers = visible.map((o) => ('amount' in o ? offerPrices(view, o as OfferLike & typeof o) : o)) as R['offers'];
     }
     return out;
   });
@@ -97,6 +125,9 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   if (!userCan(user, 'OFFER_PREPARE')) {
     offers = offers.map((o) => ({ ...o, priceTableId: null, lines: o.lines.map((l) => ({ ...l, listPrice: null })) }));
   }
+  // İki kademeli fiyat (karar 4)
+  const view = priceView(user);
+  offers = offers.map((o) => offerPrices(view, o));
   // Çizim: müşteri taslak sürümü (henüz gönderilmemiş) hiç görmez; iç not yalnızca iç ekibe gider
   let drawings = order.drawings;
   if (!userCan(user, 'FILE_INTERNAL_VIEW')) drawings = drawings.filter((d) => d.status !== 'TASLAK');

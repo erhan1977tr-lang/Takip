@@ -209,6 +209,7 @@ export default {
     invalidDate: 'Selectați o dată validă.',
     cancelReason: 'Introduceți motivul anulării.',
     drawingFile: 'Selectați fișierul desenului.',
+    offerPriceMissing: 'Există rânduri fără preț pentru client; introduceți prețul clientului pe toate rândurile.',
     drawingNoDraft: 'Nu există o ciornă de desen de trimis.',
     drawingEmpty: 'Ciorna nu are fișiere; încărcați mai întâi fișiere.',
     drawingInfected: 'Ciorna conține un fișier infectat; scoateți acel fișier.',

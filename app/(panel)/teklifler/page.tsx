@@ -83,6 +83,8 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
     take: 500,
   }));
   const latest = (o: Row) => o.offers[0];
+  // Yönetici satış tutarı ile müşteri tutarını yan yana görür (karar 4); satış yalnızca kendi tutarını
+  const admin = userCan(user, 'OFFER_SEND');
   return (
     <>
       <div className="page-head">
@@ -100,7 +102,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
                   <thead>
                     <tr>
                       <th>{t('offers.internal.cols.offer')}</th><th>{t('offers.internal.cols.customer')}</th><th>{t('offers.internal.cols.orderStatus')}</th><th>{t('offers.internal.cols.offerStatus')}</th>
-                      <th className="num">{t('offers.internal.cols.lines')}</th><th>{t('offers.internal.cols.ship')}</th><th className="num">{t('offers.internal.cols.amount')}</th><th />
+                      <th className="num">{t('offers.internal.cols.lines')}</th><th>{t('offers.internal.cols.ship')}</th><th className="num">{t('offers.internal.cols.amount')}</th>{admin && <th className="num">{t('offers.internal.cols.offerAmount')}</th>}<th />
                     </tr>
                   </thead>
                   <tbody>
@@ -115,6 +117,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
                           <td className="num">{of._count.lines}</td>
                           <td>{fmtDate(o.estimatedShipDate)}</td>
                           <td className="num">{fmtMoney(of.amount.toString(), of.currency)}</td>
+                          {admin && <td className="num">{of.offerAmount != null ? <b>{fmtMoney(of.offerAmount.toString(), of.currency)}</b> : <span className="muted">—</span>}</td>}
                           <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('common.open')}</Link></td>
                         </tr>
                       );

@@ -29,7 +29,8 @@ export default {
       offerStatus: 'Teklif',
       lines: 'Satır',
       ship: 'Teslim',
-      amount: 'Tutar',
+      amount: 'Satış tutarı',
+      offerAmount: 'Müşteri tutarı',
     },
   },
   // Son teklifin durumuna göre gruplar (HAZIRLANIYOR · YONETIMDE · GONDERILDI)

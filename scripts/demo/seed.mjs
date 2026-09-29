@@ -210,12 +210,15 @@ async function main(db) {
       const amount = offerTotals(lines).amount.toFixed(2);
       await db.offer.create({
         data: {
+          // Demo: müşteri fiyatı satış fiyatıyla aynı (yönetici gönderdiği / fiyatladığı tekliflerde)
           orderId: rec.id, status: st, statusSince: ago(since), sentAt: sentAgo != null ? ago(sentAgo) : null, amount,
+          offerAmount: st === 'HAZIRLANIYOR' ? null : amount,
           createdById: sales.id, createdAt: ago(since),
           lines: {
             create: lines.map((l, i) => ({
               sortOrder: i, description: l.description, poz: l.poz ?? null, enMm: l.enMm ?? null, boyMm: l.boyMm ?? null,
               adet: l.adet, unit: l.unit ?? 'm2', unitPrice: String(l.unitPrice ?? 0), kind: l.kind ?? 'CAM', free: !!l.free,
+              offerPrice: st === 'HAZIRLANIYOR' ? null : String(l.unitPrice ?? 0),
             })),
           },
         },

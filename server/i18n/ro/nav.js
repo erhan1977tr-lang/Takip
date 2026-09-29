@@ -12,6 +12,7 @@ export default {
   integrations: 'Integrări',
   catalog: 'Catalog sticlă',
   prices: 'Liste de prețuri',
+  customerPrices: 'Prețuri clienți',
   alerts: 'Decizii importante',
   myOrders: 'Comenzile mele',
   newOrder: 'Comandă nouă',

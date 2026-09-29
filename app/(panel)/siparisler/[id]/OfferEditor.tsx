@@ -4,20 +4,24 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
+import { atOfferPrice, offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
 import { saveOfferAction } from './actions';
 
-/** listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir. */
-type Line = { key: number; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string };
+/**
+ * listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir.
+ * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
+ */
+type Line = { key: number; id: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
 
 let seq = 1000;
-const blankGlass = (): Line => ({ key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false, listPrice: '' });
-const blankSub = (kind: 'CNC' | 'DELIK', price: number | null): Line => {
-  const p = price != null ? price.toFixed(2) : '';
-  return { key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'adet', unitPrice: p, kind, free: false, listPrice: p };
+const blankGlass = (): Line => ({ key: seq++, id: '', description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false, listPrice: '', offerPrice: '' });
+const money2 = (n: number | null | undefined) => (n != null ? n.toFixed(2) : '');
+const blankSub = (kind: 'CNC' | 'DELIK', price: number | null, customerPrice: number | null): Line => {
+  const p = money2(price);
+  return { key: seq++, id: '', description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'adet', unitPrice: p, kind, free: false, listPrice: p, offerPrice: money2(customerPrice) };
 };
 const upper = (s: string) => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('tr-TR');
 const samePrice = (a: string, b: string) => Math.abs(Number(a.replace(',', '.') || 0) - Number(b.replace(',', '.') || 0)) < 0.005;
@@ -34,6 +38,8 @@ export function OfferEditor(props: {
   currency: string;
   catalog: string[];
   pricing: EditorPricing | null;
+  /** Müşteriye özel fiyatlar (yönetici; karar 32): yeni satırın müşteri fiyatı buradan dolar */
+  customerPricing?: EditorPricing | null;
   initial: Omit<Line, 'key'>[];
   camEtiket: string;
   sandikEtiket: string;
@@ -48,8 +54,14 @@ export function OfferEditor(props: {
   const [lines, setLines] = useState<Line[]>(() =>
     props.initial.length ? props.initial.map((l, i) => ({ key: i, ...l })) : [blankGlass()]
   );
+  // Yönetici (fiyat onayı ve güncelleme) müşteri fiyatıyla çalışır; satış fiyatı yalnızca yanında görünür
+  const adminMode = props.mode !== 'sales';
   const totals = useMemo(() => offerTotals(lines), [lines]);
-  const problems = useMemo(() => offerProblems(lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice)), [lines]);
+  const offerTot = useMemo(() => offerTotals(atOfferPrice(lines)), [lines]);
+  const problems = useMemo(() => {
+    const used = lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice || l.offerPrice);
+    return offerProblems(adminMode ? atOfferPrice(used) : used);
+  }, [lines, adminMode]);
   const problemTexts = useMemo(
     () => formatOfferProblems(problems, { offerProblems: props.problemsMsg, lineKind }),
     [problems, props.problemsMsg, lineKind]
@@ -58,19 +70,27 @@ export function OfferEditor(props: {
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const glassPrices = useMemo(() => new Map(Object.entries(props.pricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.pricing]);
-  /** Cam adı değişince liste fiyatı da değişir; fiyat boşsa ya da liste fiyatıysa yeni liste fiyatı yazılır. */
+  const customerGlass = useMemo(() => new Map(Object.entries(props.customerPricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.customerPricing]);
+  /**
+   * Cam adı değişince liste fiyatı da değişir; fiyat boşsa ya da liste fiyatıysa yeni liste fiyatı yazılır.
+   * Yöneticide: müşteri fiyatı boşsa müşterinin fiyat tablosundaki fiyat yazılır.
+   */
   const setDescription = (l: Line, description: string) => {
     if (l.kind !== 'CAM') return set(l.key, { description });
     const p = glassPrices.get(upper(description));
     const listPrice = p != null ? p.toFixed(2) : '';
     const follow = !l.unitPrice || (l.listPrice !== '' && samePrice(l.unitPrice, l.listPrice));
-    set(l.key, { description, listPrice, ...(follow ? { unitPrice: listPrice } : {}) });
+    const cp = adminMode && !l.offerPrice ? customerGlass.get(upper(description)) : undefined;
+    set(l.key, { description, listPrice, ...(follow && !adminMode ? { unitPrice: listPrice } : {}), ...(cp != null ? { offerPrice: cp.toFixed(2) } : {}) });
   };
   /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
   const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
     let i = ls.findIndex((l) => l.key === key) + 1;
     while (i < ls.length && ls[i].kind !== 'CAM') i++;
-    return [...ls.slice(0, i), blankSub(kind, kind === 'CNC' ? props.pricing?.cncPrice ?? null : props.pricing?.holePrice ?? null), ...ls.slice(i)];
+    const cust = adminMode ? (kind === 'CNC' ? props.customerPricing?.cncPrice : props.customerPricing?.holePrice) ?? null : null;
+    const sub = blankSub(kind, kind === 'CNC' ? props.pricing?.cncPrice ?? null : props.pricing?.holePrice ?? null, cust);
+    // Yöneticinin eklediği satırın satış fiyatı yoktur (satış fiyatını satış girer)
+    return [...ls.slice(0, i), adminMode ? { ...sub, unitPrice: '', listPrice: '' } : sub, ...ls.slice(i)];
   });
   /** Cam satırı silinince altındaki CNC / delik satırları da silinir. */
   const remove = (key: number) => setLines((ls) => {
@@ -119,18 +139,20 @@ export function OfferEditor(props: {
       <div className="table-wrap">
         <table className="offer-table">
           <thead>
-            <tr><th>#</th><th>{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th>{m.cols.unitPrice}</th><th className="num">{m.cols.amount}</th><th /></tr>
+            <tr><th>#</th><th>{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th>{adminMode ? m.cols.salesPrice : m.cols.unitPrice}</th>{adminMode && <th>{m.cols.offerPrice}</th>}<th className="num">{adminMode ? m.cols.offerAmount : m.cols.amount}</th><th /></tr>
           </thead>
           <tbody>
             {lines.map((l) => {
-              const tot = offerLineTotals(l);
+              const tot = offerLineTotals(adminMode ? { ...l, unitPrice: l.offerPrice } : l);
               const sub = l.kind !== 'CAM';
               if (!sub) glassNo += 1;
               const kind = kindName(l.kind);
-              const missing = !l.free && !(Number(l.unitPrice.replace(',', '.')) > 0) && (sub || !!(l.description || l.enMm || l.boyMm));
+              const shownPrice = adminMode ? l.offerPrice : l.unitPrice;
+              const missing = !l.free && !(Number(shownPrice.replace(',', '.')) > 0) && (sub || !!(l.description || l.enMm || l.boyMm));
               return (
                 <tr key={l.key} className={sub ? 'sub-line' : undefined}>
                   <td className="muted">{sub ? '' : glassNo}
+                    <input type="hidden" name="l_id" value={l.id} />
                     <input type="hidden" name="l_kind" value={l.kind} />
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
                   </td>
@@ -162,16 +184,31 @@ export function OfferEditor(props: {
                   </td>
                   <td className="num">{sub ? '' : fmt(tot.metraj)}</td>
                   <td>
-                    <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
-                      onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
-                      aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
-                    {l.free && <input type="hidden" name="l_price" value="0" />}
+                    {adminMode ? (
+                      // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz
+                      <><input type="hidden" name="l_price" value={l.free ? '0' : l.unitPrice} /><span className="muted">{l.unitPrice ? fmt(Number(l.unitPrice.replace(',', '.'))) : '—'}</span></>
+                    ) : (
+                      <>
+                        <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
+                          onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
+                          aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
+                        {l.free && <input type="hidden" name="l_price" value="0" />}
+                      </>
+                    )}
                     {l.listPrice !== '' && (
                       l.free || !samePrice(l.unitPrice, l.listPrice)
                         ? <div className="small list-changed">{interpolate(isAdmin ? m.editor.listChangedAdmin : m.editor.listChanged, { p: fmt(Number(l.listPrice)) })}</div>
                         : <div className="small muted">{interpolate(m.editor.listPrice, { p: fmt(Number(l.listPrice)) })}</div>
                     )}
                   </td>
+                  {adminMode && (
+                    <td>
+                      <input name="l_oprice" inputMode="decimal" value={l.free ? '' : l.offerPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
+                        onChange={(e) => set(l.key, { offerPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
+                        aria-label={sub ? interpolate(m.editor.subOfferPriceAria, { kind }) : m.cols.offerPrice} />
+                      {l.free && <input type="hidden" name="l_oprice" value="0" />}
+                    </td>
+                  )}
                   <td className="num">{fmt(tot.amount)}</td>
                   <td>
                     <div className="line-actions">
@@ -195,14 +232,23 @@ export function OfferEditor(props: {
               </td>
               <td />
               <td className="num">{fmt(totals.metraj)} m²</td>
-              <td />
-              <td className="num">{fmt(totals.amount)} {props.currency}</td>
+              {adminMode ? <td className="num muted">{fmt(totals.amount)}</td> : <td />}
+              {adminMode && <td />}
+              <td className="num">{fmt(adminMode ? offerTot.amount : totals.amount)} {props.currency}</td>
               <td />
             </tr>
           </tfoot>
         </table>
       </div>
-      <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
+      <div className="row" style={{ justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
+        <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
+        {adminMode && (
+          <span className="small">
+            {interpolate(m.editor.twoTotals, { sales: fmt(totals.amount), offer: fmt(offerTot.amount), diff: fmt(offerTot.amount - totals.amount), cur: props.currency })}
+          </span>
+        )}
+      </div>
+      <p className="muted small" style={{ margin: '6px 0 0' }}>{common.pricesExclVat}{adminMode && props.customerPricing ? ` · ${interpolate(m.editor.customerTableInfo, { name: props.customerPricing.name })}` : ''}</p>
 
       {problems.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>

@@ -2,6 +2,17 @@
 export default {
   title: 'Liste de prețuri',
   intro: 'Sursa prețurilor unitare pe care vânzătorii le trec în ofertă. Oferta vânzătorului vine cu prețurile completate; dacă vânzătorul le modifică, apare în lista „Decizii importante” a administratorului.',
+  // Prețuri pentru clienți (decizia 32)
+  customer: {
+    title: 'Prețuri clienți',
+    intro: 'Prețuri speciale pentru clienți. O firmă client este legată de o listă; când vânzătorul trimite oferta administratorului, prețurile pentru client vin automat din această listă. La clientul fără listă sau la sticla fără preț în listă, prețul pentru client rămâne gol și îl introduce administratorul.',
+    colFirms: 'Clienți legați',
+    assignTitle: '{name} — Firme client',
+    assignIntro: 'O firmă client are o singură listă de prețuri pentru client. Aceeași listă poate fi folosită de mai multe firme.',
+    colFirm: 'Firmă client',
+    noFirms: 'Nu există firme client.',
+    none: 'Fără listă (prețul pentru client se introduce manual)',
+  },
   create: {
     title: 'Listă de prețuri nouă',
     name: 'Denumirea listei',

@@ -397,6 +397,8 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 
 21. **Drawing workflow (Phase 4):** drawer uploads files to a draft version (`TASLAK`, invisible to customer; several files per version in `DrawingFile`), then "Send to customer" with a confirm dialog (`send_drawing`); every file must be antivirus-CLEAN to send. Sent versions are immutable; drawer may withdraw a sent version with a reason before the customer decides (`GERI_CEKILDI`). Single active drawer → auto-assigned on "send to drawing". SLA overdue = red badge + top of queues only. decisions.md #28–31.
 
+22. **Two-tier pricing as implemented (Phase 5, refines #4):** offer lines are shared between Sales and Admin (Admin may change dimensions/qty/lines and Sales sees it); each line has `unitPrice` (sales price, Sales only) and `offerPrice` (customer price, Admin). Admin cannot change sales prices; Sales never receives offer prices (`lib/orders.ts → offerPrices`), customer/inspector receive only offer prices. Customer-specific price tables (`PriceTable.kind = CUSTOMER`, linked per `Customer`) pre-fill offer prices when Sales submits; otherwise empty. Every line needs an offer price before Send to Customer. Event notes never carry amounts. Prices are shown excl. VAT. decisions.md #32–34.
+
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
 - UI strings only via `server/i18n/{tr,ro}/*.js` — never hard-code visible text. Both locales must have the same keys (enforced by `test/i18n.test.js`).

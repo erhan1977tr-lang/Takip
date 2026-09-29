@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
 import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
-import { assignTable, changeTable, pricingForUser, savePrices, saveTable } from '../../server/pricing/tables.js';
+import { assignCustomerTable, assignTable, changeTable, pricingForUser, savePrices, saveTable } from '../../server/pricing/tables.js';
 import { openAlertCount, resolveAlert } from '../../server/pricing/alerts.js';
 import { can } from '../../server/auth/permissions.js';
 
@@ -142,4 +142,62 @@ dbTest('fiyat tablosu: teklifte kullanılan tablo silinemez, para birimi değiş
   await run(o.id, 'save_offer', 'sales2', { lines: before.lines.map(lineOf), amount: '52.00' });
   const afterSave = await offerOf(o.id);
   assert.deepEqual([Number(afterSave.lines[0].listPrice), Number(afterSave.lines[0].unitPrice)], [26, 26]);
+});
+
+dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; satırlar ortak, fiyatlar ayrı (karar 4, 32)', async () => {
+  const ct = await saveTable(db, null, { name: 'Müşteri Özel', currency: 'EUR', holePrice: 5, cncPrice: null }, admin(), 'CUSTOMER');
+  assert.ok(ct.ok);
+  const t = await db.priceTable.findUniqueOrThrow({ where: { id: ct.id } });
+  assert.deepEqual([t.kind, t.isDefault], ['CUSTOMER', false], 'müşteri tablosu varsayılan olmaz');
+  assert.deepEqual(await changeTable(db, ct.id, 'default', admin()), { ok: false, code: 'NOT_FOUND' });
+  await savePrices(db, ct.id, { [glass.id]: 50 }, admin());
+  assert.deepEqual(await assignCustomerTable(db, firm.id, ct.id, admin()), { ok: true });
+  assert.deepEqual(await assignCustomerTable(db, firm.id, tables.std, admin()), { ok: false, code: 'NOT_FOUND' }, 'satış tablosu müşteriye bağlanamaz');
+
+  const o = await newOrder();
+  await run(o.id, 'no_drawing', 'sales');
+  let offer = await offerOf(o.id);
+  const salesLines = [
+    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, unitPrice: '30.00' },
+    { id: null, description: '', poz: null, enMm: null, boyMm: null, adet: 4, unit: 'adet', unitPrice: '3.00', kind: 'DELIK', free: false },
+  ];
+  await run(o.id, 'submit_offer', 'sales', { lines: salesLines });
+  offer = await offerOf(o.id);
+  // cam 1 m² × 2 adet: satış 30 → 60 + delik 4 × 3 = 72 · müşteri 50 → 100 + delik 4 × 5 = 120
+  assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]), [['CAM', 30, 50], ['DELIK', 3, 5]]);
+  assert.deepEqual([Number(offer.amount), Number(offer.offerAmount)], [72, 120]);
+
+  // Yönetici ölçüyü değiştirir, müşteri fiyatını düzeltir, satır ekler → satış fiyatı değişmez, satır satışta da değişir
+  const adminLines = [
+    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, boyMm: 2000, offerPrice: '55.00', unitPrice: '1.00' },
+    { ...lineOf(offer.lines[1]), id: offer.lines[1].id, offerPrice: '5.00' },
+    { id: null, description: '', poz: null, enMm: null, boyMm: null, adet: 1, unit: 'adet', unitPrice: '0', kind: 'CNC', free: false, offerPrice: '20.00' },
+  ];
+  await run(o.id, 'save_offer', 'admin', { lines: adminLines });
+  offer = await offerOf(o.id);
+  assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]),
+    [['CAM', 30, 55], ['DELIK', 3, 5], ['CNC', 0, 20]]);
+  assert.equal(offer.lines[0].boyMm, 2000);
+  // Yönetici satışa geri gönderir; satış yeniden kaydeder → müşteri fiyatları korunur
+  await run(o.id, 'return_offer', 'admin', { lines: adminLines, returnNote: 'bak' });
+  offer = await offerOf(o.id);
+  await run(o.id, 'save_offer', 'sales', { lines: offer.lines.map((l) => ({ ...lineOf(l), id: l.id, unitPrice: l.kind === 'CNC' ? '15.00' : String(l.unitPrice) })) });
+  offer = await offerOf(o.id);
+  assert.deepEqual(offer.lines.map((l) => [Number(l.unitPrice), Number(l.offerPrice)]), [[30, 55], [3, 5], [15, 20]]);
+  await run(o.id, 'submit_offer', 'sales', { lines: offer.lines.map((l) => ({ ...lineOf(l), id: l.id })) });
+  offer = await offerOf(o.id);
+  await run(o.id, 'approve_offer', 'admin', { lines: offer.lines.map((l) => ({ ...lineOf(l), id: l.id, offerPrice: String(l.offerPrice) })) });
+  const sent = await db.offer.findFirstOrThrow({ where: { orderId: o.id, status: 'GONDERILDI' }, include: { lines: true } });
+  const price = await db.price.findUniqueOrThrow({ where: { orderId: o.id } });
+  // cam 2 m² × 2 adet = 4 m²: satış 120 + 12 + 15 = 147 · müşteri 220 + 20 + 20 = 260
+  assert.deepEqual([Number(sent.amount), Number(sent.offerAmount), Number(price.amount)], [147, 260, 260]);
+  // Olay geçmişi (satış da görür) müşteri tutarını içermez
+  const ev = await db.orderEvent.findFirstOrThrow({ where: { orderId: o.id, event: 'OFFER_SENT' } });
+  assert.equal(ev.note, null);
+  // Gönderilmiş teklif değişmez: güncelleme yeni sürüm açar, satış fiyatları taşınır
+  await run(o.id, 'update_offer', 'admin', { lines: sent.lines.sort((x, y) => x.sortOrder - y.sortOrder).map((l) => ({ ...lineOf(l), id: l.id, offerPrice: l.kind === 'CAM' ? '60.00' : String(l.offerPrice) })), note: 'indirim yok' });
+  const versions = await db.offer.findMany({ where: { orderId: o.id, status: 'GONDERILDI' }, orderBy: { createdAt: 'asc' }, include: { lines: true } });
+  assert.equal(versions.length, 2);
+  assert.equal(Number(versions[0].offerAmount), 260, 'eski sürüm değişmedi');
+  assert.deepEqual([Number(versions[1].amount), Number(versions[1].offerAmount)], [147, 280]);
 });

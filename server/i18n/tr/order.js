@@ -209,6 +209,7 @@ export default {
     invalidDate: 'Geçerli bir tarih seçin.',
     cancelReason: 'İptal nedeni yazın.',
     drawingFile: 'Çizim dosyası seçin.',
+    offerPriceMissing: 'Müşteri fiyatı girilmemiş satır var; tüm satırlara müşteri fiyatı girin.',
     drawingNoDraft: 'Gönderilecek taslak çizim yok.',
     drawingEmpty: 'Taslakta dosya yok; önce dosya yükleyin.',
     drawingInfected: 'Taslakta virüslü dosya var; o dosyayı çıkarın.',

@@ -2,6 +2,17 @@
 export default {
   title: 'Fiyat Tabloları',
   intro: 'Satışçıların teklife yazacağı birim fiyatların kaynağı. Satışçının teklifine fiyatlar dolu gelir; satışçı değiştirirse yöneticinin “Önemli kararlar” listesine düşer.',
+  // Müşteri fiyatları (karar 32)
+  customer: {
+    title: 'Müşteri Fiyatları',
+    intro: 'Müşteriye özel fiyatlar. Bir müşteri firması bir tabloya bağlanır; satış teklifi yöneticiye gönderince müşteri fiyatları bu tablodan kendiliğinden gelir. Tablosu olmayan müşteride ya da tabloda fiyatı olmayan camda müşteri fiyatı boş gelir, yönetici elle girer.',
+    colFirms: 'Bağlı müşteri',
+    assignTitle: '{name} — Müşteri firmaları',
+    assignIntro: 'Bir müşteri firmasının tek müşteri fiyat tablosu olur. Aynı tabloyu birden çok firma kullanabilir.',
+    colFirm: 'Müşteri firması',
+    noFirms: 'Müşteri firması yok.',
+    none: 'Tablo yok (müşteri fiyatı elle girilir)',
+  },
   create: {
     title: 'Yeni fiyat tablosu',
     name: 'Tablo adı',

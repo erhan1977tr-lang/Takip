@@ -14,7 +14,7 @@ import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
-import { availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { atOfferPrice, availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
@@ -245,17 +245,19 @@ export async function addNoteAction(formData: FormData) {
 }
 
 // ---------------- Teklif hattı ----------------
-type LineInput = { description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean };
+/** id: mevcut satır (boş → yeni) · offerPrice: müşteri fiyatı (yalnızca yönetici formunda; satış formunda undefined) */
+type LineInput = { id: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
 
 function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
-  const kinds = col('l_kind'), free = col('l_free');
+  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice');
+  const withOffer = oprice.length > 0;
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
     const kind = kinds[i] === 'CNC' || kinds[i] === 'DELIK' ? kinds[i] : 'CAM';
     const sub = kind !== 'CAM';
-    if (!sub && !desc[i] && !en[i] && !boy[i] && !price[i]) continue; // boş cam satırı
+    if (!sub && !desc[i] && !en[i] && !boy[i] && !price[i] && !oprice[i]) continue; // boş cam satırı
     const toInt = (s: string) => (s ? Math.trunc(Number(s.replace(',', '.'))) : null);
     const e = toInt(en[i]), b = toInt(boy[i]), a = toInt(adet[i]) ?? 1;
     const p = Number((price[i] || '0').replace(',', '.'));
@@ -264,10 +266,14 @@ function readLines(formData: FormData, t: T): LineInput[] | string {
     if ((e !== null && (e <= 0 || e > 10000)) || (b !== null && (b <= 0 || b > 10000))) return t('order.errors.lineDims', { n: i + 1 });
     if (!Number.isFinite(a) || a <= 0 || a > 100000) return t('order.errors.lineQty', { n: i + 1 });
     if (!Number.isFinite(p) || p < 0 || p > 1_000_000) return t('order.errors.linePrice', { n: i + 1 });
+    const op = withOffer && oprice[i] ? Number(oprice[i].replace(',', '.')) : null;
+    if (op !== null && (!Number.isFinite(op) || op < 0 || op > 1_000_000)) return t('order.errors.linePrice', { n: i + 1 });
     const isFree = free[i] === '1';
     lines.push({
       description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a,
       unit: sub || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree,
+      id: ids[i] || null,
+      ...(withOffer ? { offerPrice: isFree ? '0.00' : op === null ? null : op.toFixed(2) } : {}),
     });
   }
   return lines;
@@ -302,8 +308,9 @@ export async function saveOfferAction(formData: FormData) {
 
   const lines = readLines(formData, t);
   if (typeof lines === 'string') redirect(err(id, lines));
-  const finalize = intent === 'submit' || intent === 'approve' || intent === 'update';
-  const problem = finalize ? finalProblem(lines, m) : null;
+  // Satış gönderirken satış fiyatları, yönetici müşteriye gönderirken müşteri fiyatları eksiksiz olmalı (karar 4)
+  const problem = intent === 'submit' ? finalProblem(lines, m)
+    : intent === 'approve' || intent === 'update' ? finalProblem(atOfferPrice(lines) as LineInput[], m) : null;
   if (problem) redirect(err(id, problem));
   const amount = offerTotals(lines).amount.toFixed(2);
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);

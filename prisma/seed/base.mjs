@@ -7,8 +7,9 @@ import { rolesStep } from './steps/roles.mjs';
 import { orderTypesStep } from './steps/order-types.mjs';
 import { cratesStep } from './steps/crates.mjs';
 import { drawingFilesStep } from './steps/drawing-files.mjs';
+import { offerPricesStep } from './steps/offer-prices.mjs';
 
-export const STEPS = [rolesStep, orderTypesStep, cratesStep, drawingFilesStep];
+export const STEPS = [rolesStep, orderTypesStep, cratesStep, drawingFilesStep, offerPricesStep];
 
 /** @param {import('@prisma/client').PrismaClient} db */
 export async function runBaseSeed(db, { log = console.log } = {}) {

@@ -11,11 +11,20 @@ import { can } from '@/server/auth/permissions.js';
 import { glassLabel } from '@/server/catalog/glass.js';
 import { XlsxError, readXlsx } from '@/server/files/xlsx.js';
 import {
-  MAX_PRICE_ROWS, assignTable, changeTable, parsePrice, parsePriceSheet, planPriceImport, savePrices, saveTable, validateTable,
+  MAX_PRICE_ROWS, assignCustomerTable, assignTable, changeTable, parsePrice, parsePriceSheet, planPriceImport, savePrices, saveTable, validateTable,
 } from '@/server/pricing/tables.js';
 
 const MAX_FILE = 5 * 1024 * 1024;
-const back = (tableId: string | null, q: string) => `/admin/fiyatlar?${tableId ? `tablo=${encodeURIComponent(tableId)}&` : ''}${q}`;
+type Kind = 'SALES' | 'CUSTOMER';
+/** Satış fiyat tabloları ya da müşteri fiyatları (karar 26 / 32) — formdaki gizli `kind` alanından */
+const kindOf = (formData: FormData): Kind => (formData.get('kind') === 'CUSTOMER' ? 'CUSTOMER' : 'SALES');
+const basePath = (kind: Kind) => (kind === 'CUSTOMER' ? '/admin/musteri-fiyatlari' : '/admin/fiyatlar');
+const back = (formData: FormData, tableId: string | null, q: string) =>
+  `${basePath(kindOf(formData))}?${tableId ? `tablo=${encodeURIComponent(tableId)}&` : ''}${q}`;
+const refresh = () => {
+  refresh();
+  revalidatePath('/admin/musteri-fiyatlari');
+};
 
 /** Tablo ekle (tableId boş) ya da bilgilerini düzenle. */
 export async function saveTableAction(formData: FormData) {
@@ -25,11 +34,11 @@ export async function saveTableAction(formData: FormData) {
     name: formData.get('name'), currency: formData.get('currency'),
     holePrice: formData.get('holePrice'), cncPrice: formData.get('cncPrice'),
   });
-  if (!res.ok) redirect(back(id, `error=invalid&what=${res.errors.join(',')}`));
-  const r = await saveTable(db, id, res.value, await actorOf(admin));
-  if (!r.ok) redirect(back(id, `error=${r.code.toLowerCase()}`));
-  revalidatePath('/admin/fiyatlar');
-  redirect(back(r.id, id ? 'ok=saved' : 'ok=created'));
+  if (!res.ok) redirect(back(formData, id, `error=invalid&what=${res.errors.join(',')}`));
+  const r = await saveTable(db, id, res.value, await actorOf(admin), kindOf(formData));
+  if (!r.ok) redirect(back(formData, id, `error=${r.code.toLowerCase()}`));
+  refresh();
+  redirect(back(formData, r.id, id ? 'ok=saved' : 'ok=created'));
 }
 
 /** Pasif / aktif, varsayılan yap, sil. */
@@ -37,11 +46,11 @@ export async function changeTableAction(formData: FormData) {
   const admin = await requirePermission('PRICE_TABLE_MANAGE');
   const id = String(formData.get('tableId') ?? '');
   const intent = String(formData.get('intent') ?? '');
-  if (!['toggle', 'default', 'delete'].includes(intent)) redirect(back(null, 'error=not_found'));
+  if (!['toggle', 'default', 'delete'].includes(intent)) redirect(back(formData, null, 'error=not_found'));
   const r = await changeTable(db, id, intent as 'toggle' | 'default' | 'delete', await actorOf(admin));
-  revalidatePath('/admin/fiyatlar');
-  if (!r.ok) redirect(back(id, `error=${r.code.toLowerCase()}`));
-  redirect(intent === 'delete' ? back(null, 'ok=deleted') : back(id, 'ok=saved'));
+  refresh();
+  if (!r.ok) redirect(back(formData, id, `error=${r.code.toLowerCase()}`));
+  redirect(intent === 'delete' ? back(formData, null, 'ok=deleted') : back(formData, id, 'ok=saved'));
 }
 
 export type SavePricesState = { error?: string; ok?: string; savedAt?: number };
@@ -70,7 +79,7 @@ export async function savePricesAction(_prev: SavePricesState, formData: FormDat
   }
   const r = await savePrices(db, tableId, changes, await actorOf(admin));
   if (!r.ok) return { error: t('pricing.msg.not_found') };
-  revalidatePath('/admin/fiyatlar');
+  refresh();
   return { ok: r.changed ? t('pricing.msg.pricesSaved', { n: r.changed }) : t('pricing.msg.noChange'), savedAt: Date.now() };
 }
 
@@ -145,25 +154,25 @@ export async function confirmPriceImportAction(formData: FormData) {
   try {
     raw = JSON.parse(String(formData.get('payload') ?? ''));
   } catch {
-    redirect(back(tableId, 'error=import_failed'));
+    redirect(back(formData, tableId, 'error=import_failed'));
   }
   const prices: Record<string, number> = {};
   for (const [gid, v] of Object.entries(raw?.prices ?? {}).slice(0, MAX_PRICE_ROWS)) {
     const p = parsePrice(v);
-    if (p == null || Number.isNaN(p)) redirect(back(tableId, 'error=import_failed'));
+    if (p == null || Number.isNaN(p)) redirect(back(formData, tableId, 'error=import_failed'));
     prices[gid] = p;
   }
   const extra: { holePrice?: number; cncPrice?: number } = {};
   for (const k of ['holePrice', 'cncPrice'] as const) {
     if (raw?.extra?.[k] === undefined) continue;
     const p = parsePrice(raw.extra[k]);
-    if (p == null || Number.isNaN(p)) redirect(back(tableId, 'error=import_failed'));
+    if (p == null || Number.isNaN(p)) redirect(back(formData, tableId, 'error=import_failed'));
     extra[k] = p;
   }
   const r = await savePrices(db, tableId, prices, await actorOf(admin), extra, 'excel');
-  if (!r.ok) redirect(back(tableId, 'error=not_found'));
-  revalidatePath('/admin/fiyatlar');
-  redirect(back(tableId, `ok=imported&n=${r.changed}`));
+  if (!r.ok) redirect(back(formData, tableId, 'error=not_found'));
+  refresh();
+  redirect(back(formData, tableId, `ok=imported&n=${r.changed}`));
 }
 
 /** Satışçıyı tabloya ata ya da atamayı kaldır. */
@@ -173,6 +182,17 @@ export async function assignTableAction(formData: FormData) {
   const userId = String(formData.get('userId') ?? '');
   const remove = formData.get('intent') === 'unassign';
   const r = await assignTable(db, userId, remove ? null : tableId, await actorOf(admin), (role: string) => can(role, 'OFFER_PREPARE'));
-  revalidatePath('/admin/fiyatlar');
-  redirect(back(tableId, r.ok ? 'ok=assigned' : 'error=not_found'));
+  refresh();
+  redirect(back(formData, tableId, r.ok ? 'ok=assigned' : 'error=not_found'));
+}
+
+/** Müşteri firmasını müşteri fiyat tablosuna bağla ya da bağlantıyı kaldır (karar 32). */
+export async function assignCustomerTableAction(formData: FormData) {
+  const admin = await requirePermission('PRICE_TABLE_MANAGE');
+  const tableId = String(formData.get('tableId') ?? '');
+  const customerId = String(formData.get('customerId') ?? '');
+  const remove = formData.get('intent') === 'unassign';
+  const r = await assignCustomerTable(db, customerId, remove ? null : tableId, await actorOf(admin));
+  refresh();
+  redirect(back(formData, tableId, r.ok ? 'ok=assigned' : 'error=not_found'));
 }

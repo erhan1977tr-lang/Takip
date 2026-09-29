@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.10.0 — 29.09.2026 · Aşama 5 (teklif: iki kademeli fiyat)
+
+- **Satış fiyatı ↔ müşteri fiyatı:** satış kendi fiyatını girer; yönetici fiyat onayında her satıra **müşteri fiyatı**
+  girer. Yönetici ekranında satış fiyatı (salt okunur) ve müşteri fiyatı yan yana; altında satış tutarı, müşteri tutarı ve
+  fark. Yönetici satış fiyatını değiştiremez.
+- **Satırlar ortak:** yönetici ölçü, adet değiştirir ya da satır ekler/silerse satışın teklifi de aynı şekilde güncellenir.
+  Satışa geri gönderilip yeniden gelen teklifte yöneticinin müşteri fiyatları korunur.
+- **Müşteri Fiyatları** (Yönetim): müşteriye özel fiyat tabloları (cam m² fiyatı, delik / CNC fiyatı, Excel ile yükleme);
+  müşteri firması bir tabloya bağlanır. Satış teklifi yöneticiye gönderince müşteri fiyatları kendiliğinden dolar; tablosu
+  olmayan müşteride boş gelir.
+- Tüm satırlara müşteri fiyatı girilmeden teklif müşteriye gönderilemez.
+- **Kim neyi görür:** müşteri ve denetimci yalnızca müşteri fiyatını, satış yalnızca kendi fiyatını görür (sunucuda
+  ayrılır; satışa giden hiçbir sayfada müşteri fiyatı yok). Teklifler ve Yüklemeler sayfasında yönetici satış tutarı ile
+  müşteri tutarını yan yana görür.
+- Müşteriye giden teklif değişmez; yöneticinin güncellemesi yeni sürüm açar. Fiyatlar KDV hariç.
+- Önceden gönderilmiş teklifler güncellemede kendiliğinden yeni düzene taşınır.
+
 ## 3.9.0 — 29.09.2026 · Aşama 4 (çizim akışı)
 
 - **İki adımlı gönderim:** çizimci dosyaları önce **taslağa** yükler (müşteri görmez), sonra "Müşteriye gönder"e basar;
