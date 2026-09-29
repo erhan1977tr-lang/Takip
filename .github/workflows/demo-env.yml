@@ -39,7 +39,7 @@ jobs:
         run: |
           scripts/ci-step.sh "demo kontrol" devcontainer exec --workspace-folder . bash -c '
             set -e
-            node -e "fetch(\"http://127.0.0.1:3000/login\").then(async r => { const t = await r.text(); if (!r.ok || !t.includes(\"Demo ortamı\")) { console.error(r.status, t.slice(0, 500)); process.exit(1); } console.log(\"giriş sayfası tamam\"); })"
+            node -e "fetch(\"http://127.0.0.1:3000/login\").then(async r => { const t = await r.text(); if (!r.ok || !t.includes(\"DEMO-GIRIS.txt\")) { console.error(r.status, t.slice(0, 500)); process.exit(1); } console.log(\"giriş sayfası tamam\"); })"
             grep -q "Şifre (tüm hesaplar): Takip-" DEMO-GIRIS.txt
             cat DEMO-GIRIS.txt'
 

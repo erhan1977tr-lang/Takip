@@ -282,3 +282,7 @@ input.input-missing { background: #fef2f2; border-color: #f87171; }
 @media (max-width: 800px) {
   .lang-select { padding: 4px 22px 4px 6px; font-size: 12px; max-width: 92px; }
 }
+
+/* teklif görünümü: uzun (Romence) sütun başlıkları iki satıra inebilir, açıklama sütunu fazla daralmaz */
+#teklif th { white-space: normal; }
+#teklif td:nth-child(2) { min-width: 150px; }
