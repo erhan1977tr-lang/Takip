@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
 import { saveDayCrates, validateCrates } from '../../server/loading/crates.js';
 import { cratesStep } from '../../prisma/seed/steps/crates.mjs';
+import { runOrderAction } from '../../server/orders/transitions.js';
 
 let db;
 let a;
@@ -91,4 +92,35 @@ dbTest('sandık: eski düzendeki (sipariş başına) sandıklar yükleme günün
   assert.deepEqual([moved[0].crateNo, moved[0].orderId, moved[0].customerId, moved[0].shipDay.toISOString().slice(0, 10), moved[0].orders[0].orderId],
     [16, null, a.id, DAY, orders.a2.id], 'o gün 15 ve 17 dolu → ilk boş numara 16');
   assert.equal(await cratesStep.run(db), '0 sandık taşındı', 'tekrar çalıştırılabilir');
+});
+
+dbTest('sandık: siparişin yükleme günü değişince sandıkları da yeni güne taşınır (numara doluysa kayar)', async () => {
+  const D2 = '2027-07-01';
+  const D3 = '2027-07-08';
+  const at = new Date(`${D2}T09:00:00Z`);
+  const c1 = await db.order.update({ where: { id: orders.a1.id }, data: { estimatedShipDate: at } });
+  const c2 = await db.order.update({ where: { id: orders.a2.id }, data: { estimatedShipDate: at } });
+  await db.order.update({ where: { id: orders.b1.id }, data: { estimatedShipDate: new Date(`${D3}T09:00:00Z`) } });
+  await saveDayCrates(db, { day: D3, customerId: b.id, actor: actor(), rows: rows([{ crateNo: '5' }]) });
+  await saveDayCrates(db, {
+    day: D2, customerId: a.id, actor: actor(),
+    rows: rows([{ crateNo: '5', orderIds: [c1.id] }, { crateNo: '6', orderIds: [c1.id, c2.id] }, { crateNo: '7' }]),
+  });
+  const move = (orderId, day) => runOrderAction(db, {
+    orderId, action: 'set_ship_date', actor: { id: sales.id, role: 'SATIS', canApprove: false, customerId: sales.customerId, ip: '127.0.0.1' },
+    payload: { date: new Date(`${day}T09:00:00Z`) },
+  });
+  const state = async () => (await db.crate.findMany({ where: { customerId: a.id, shipDay: { in: [new Date(`${D2}T00:00:00Z`), new Date(`${D3}T00:00:00Z`)] } }, include: { orders: true }, orderBy: [{ shipDay: 'asc' }, { crateNo: 'asc' }] }))
+    .map((c) => [c.shipDay.toISOString().slice(0, 10), c.crateNo, c.orders.map((o) => (o.orderId === c1.id ? 'c1' : 'c2')).sort().join('+')]);
+
+  // c1 taşınır: yalnız c1'i taşıyan 5 → yeni günde 5 dolu (Beta) → 6; ortak 6 kalır, c1 bağı kalkar; belirsiz 7 kalır (c2 hâlâ orada)
+  await move(c1.id, D3);
+  assert.deepEqual(await state(), [[D2, 6, 'c2'], [D2, 7, ''], [D3, 6, 'c1']]);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'CRATES_MOVE', entityId: c1.id } });
+  assert.deepEqual([audit.details.moved, audit.details.unlinked], [[{ from: 5, to: 6 }], [6]]);
+
+  // c2 de taşınır: 6 (artık yalnız c2) → 7; eski günde sipariş kalmadığı için belirsiz 7 de → 8
+  await move(c2.id, D3);
+  assert.deepEqual(await state(), [[D3, 6, 'c1'], [D3, 7, 'c2'], [D3, 8, '']]);
+  assert.equal(await db.crate.count({ where: { customerId: b.id, shipDay: new Date(`${D3}T00:00:00Z`), crateNo: 5 } }), 1, 'başka müşterinin sandığına dokunulmaz');
 });

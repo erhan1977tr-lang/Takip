@@ -151,3 +151,45 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
     return { ok: true, count: rows.length };
   });
 }
+
+/**
+ * Siparişin yükleme günü değişince (tahmini tarih güncellendi ya da "yüklendi" işaretlendi) sandıkları da yeni güne taşınır:
+ *  - yalnızca bu siparişi taşıyan sandık siparişle birlikte taşınır;
+ *  - siparişi belirtilmemiş sandık, müşterinin eski günde başka siparişi kalmadıysa taşınır;
+ *  - başka siparişleri de taşıyan sandık eski günde kalır, bu siparişle bağı kaldırılır.
+ * Yeni günde numara doluysa ilk boş numaraya kayar. İş akışı işleminin içinde (aynı tx) çağrılır; sipariş zaten güncellenmiştir.
+ * @returns {Promise<{ moved: { from: number, to: number }[], unlinked: number[] }>}
+ */
+export async function moveOrderCrates(tx, { orderId, customerId, fromDay, toDay, actor }) {
+  const none = { moved: [], unlinked: [] };
+  if (!fromDay || !toDay || fromDay === toDay) return none;
+  const crates = await tx.crate.findMany({ where: { shipDay: dayDate(fromDay), customerId }, include: { orders: true }, orderBy: { crateNo: 'asc' } });
+  if (crates.length === 0) return none;
+  for (const d of [fromDay, toDay].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crates:${d}`}, 0))`;
+  const remaining = (await dayOrders(tx, customerId, fromDay)).filter((o) => o.id !== orderId);
+  const toMove = [];
+  const unlink = [];
+  for (const c of crates) {
+    const ids = c.orders.map((x) => x.orderId);
+    if (ids.includes(orderId)) (ids.every((id) => id === orderId) ? toMove : unlink).push(c);
+    else if (ids.length === 0 && remaining.length === 0) toMove.push(c);
+  }
+  const used = new Set((await tx.crate.findMany({ where: { shipDay: dayDate(toDay) }, select: { crateNo: true } })).map((c) => c.crateNo));
+  const moved = [];
+  for (const c of toMove) {
+    let no = c.crateNo;
+    while (used.has(no)) no++;
+    used.add(no);
+    await tx.crate.update({ where: { id: c.id }, data: { shipDay: dayDate(toDay), crateNo: no, updatedById: actor.id } });
+    moved.push({ from: c.crateNo, to: no });
+  }
+  for (const c of unlink) await tx.crateOrder.delete({ where: { crateId_orderId: { crateId: c.id, orderId } } });
+  const result = { moved, unlinked: unlink.map((c) => c.crateNo) };
+  if (moved.length || unlink.length) {
+    await writeAudit(tx, {
+      action: 'CRATES_MOVE', entityType: 'Order', entityId: orderId, userId: actor.id,
+      details: { from: fromDay, to: toDay, ...result },
+    }, actor);
+  }
+  return result;
+}

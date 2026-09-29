@@ -11,6 +11,8 @@ import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { enrichLines, loadPricing, prefillLines, pricingForUser } from '../pricing/tables.js';
 import { recordPriceOverrides } from '../pricing/alerts.js';
+import { moveOrderCrates } from '../loading/crates.js';
+import { dayKey } from './loading.js';
 
 export { WorkflowError };
 
@@ -131,6 +133,16 @@ async function completeLines(h, offer, lines) {
 }
 
 const money = (amount, currency) => `${amount} ${currency}`;
+
+/** Yükleme günü değiştiyse siparişin sandıkları da yeni güne taşınır (server/loading/crates.js). */
+async function followCrates(h, newDate) {
+  const old = h.order.actualShipDate ?? h.order.estimatedShipDate;
+  if (!old || !newDate) return;
+  const r = await moveOrderCrates(h.tx, {
+    orderId: h.order.id, customerId: h.order.customerId, fromDay: dayKey(old), toDay: dayKey(newDate), actor: h.actor,
+  });
+  if (r.moved.length || r.unlinked.length) h.audit = { ...(h.audit ?? {}), crates: r };
+}
 const dayText = (d) => d.toISOString().slice(0, 10).split('-').reverse().join('.');
 
 function latestDrawing(h) {
@@ -216,10 +228,12 @@ const ACTIONS = {
     const d = h.payload.date;
     if (!(d instanceof Date) || Number.isNaN(d.getTime())) throw new WorkflowError('INVALID_DATE');
     await h.set({ estimatedShipDate: d });
+    await followCrates(h, h.order.actualShipDate ?? d);
     h.event('SHIP_DATE', dayText(d));
   },
   async mark_shipped(h) {
     await h.set({ status: 'YUKLENDI', actualShipDate: h.now });
+    await followCrates(h, h.now);
     h.event('SHIPPED');
   },
   async archive(h) {
