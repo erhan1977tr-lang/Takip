@@ -36,6 +36,18 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 18 | Antivirüs ulaşılamazsa | Dosya kabul edilir, "taranmadı" işaretlenir, işçi sonra tarar. "Taranmadı" dosya uyarıyla indirilebilir; virüslü dosya karantinada, indirilemez. Yönetici Entegrasyonlar'dan "reddet"e çevirebilir. |
 | 19 | Sunucu belleği | 8 GB; ClamAV (~1,5 GB) aynı sunucuda çalışır. |
 
+## Aşama 3 kararları (29.09.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 20 | Cam adları | Katalogda her camın Türkçe ve Romence adı + rengi (İngilizcesi Excel'de durur). **Herkes camı seçtiği arayüz dilinde görür** (müşteri de iç ekip de). Sipariş satırı iki dildeki adı ve ağırlığı sipariş anındaki haliyle saklar. |
+| 21 | Cam kataloğu Excel'i | Yönetici kataloğu Excel'le indirip yükler. Düzen ürün sahibinin dosyasıyla aynı: `Cam adı (TR) · Renk (TR) · Cam adı (RO) · Renk (RO) · Cam adı (EN) · Renk (EN) · Ağırlık (kg/m²) · Aktif`. Cam, Türkçe ad + renkten tanınır; yüklemede önce önizleme, sonra onay. Dosyada olmayan cama dokunulmaz (silinmez). |
+| 22 | Cam ağırlığı | kg/m², zorunlu. Yüklemelerde (ağırlık hesabı) kullanılır; **tekliflerde görünmez**. |
+| 23 | Pasif cam | Hiçbir seçim listesinde görünmez; formdan gönderilirse sunucu reddeder. Eski siparişler değişmez. |
+| 24 | Taslak sipariş | Müşteri "Taslak kaydet" ile formu yarım bırakabilir. Taslak sipariş değildir: numarası, SLA'sı yoktur, satışa ve kuyruklara düşmez; yalnızca firmanın müşteri kullanıcıları görür. Numara ve SLA "Gönder"de kesinleşir. |
+| 25 | Müşteriden bilgi isteme | Yapılmayacak: satış beklemeye alır, iletişim telefonla ya da notla yürür. |
+| 26 | Fiyat tabloları (Aşama 3b) | Yönetici fiyat tabloları tutar (cam başına birim fiyat; delik ve CNC için sabit fiyat), Excel'le yükler; her satışçı bir tabloya atanır, atanmayan varsayılanı kullanır. Satışın teklifine fiyatlar dolu gelir; satışçı değiştirebilir, değiştirirse yöneticinin **Önemli kararlar** listesine ve giriş ekranına uyarı düşer. "Açık tekliflere uygula" yok. |
+
 ## Sunucu (29.09.2026)
 
 | # | Konu | Karar |
@@ -62,7 +74,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | 0 | Depo, ortam, migration, test, lint, seed, mimari kararlar | 3.2.x'te tamamlandı |
 | 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.2'de tamamlandı** |
 | 2 | Sipariş tipleri, numaralandırma, dosya, not, geçmiş, denetim servisi | **3.5.0'da tamamlandı** |
-| 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | Var |
+| 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.0): katalog, taslak, kuyruklar** · 3b: fiyat tabloları |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | Büyük ölçüde var |
 | 5 | Satış teklifi, yönetici fiyatı, müşteriye gönderim | Var; iki kademeli fiyat (yönetim kopyası) eksik |
 | 6 | Profil siparişi ve profil kataloğu | Yok (katalog verisi `prisma/seed/data` içinde hazır) |

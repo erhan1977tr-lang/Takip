@@ -5,10 +5,14 @@ import { getT } from '@/lib/i18n';
 import { suggestNextNo } from '@/lib/orders';
 import { fmtDate } from '@/lib/format';
 import { nextShipDate } from '@/server/orders/rules.js';
-import { NewOrderForm } from './NewOrderForm';
+import { glassLabel } from '@/server/catalog/glass.js';
+import { readDraftItems } from '@/server/orders/drafts.js';
+import { NewOrderForm, type DraftData, type GlassOption } from './NewOrderForm';
+import { deleteDraftAction } from './actions';
 
 // Yeni sipariş: önce sipariş tipi seçilir (tipler veritabanından; yalnızca etkin olanlar).
 // Tek tip etkinken seçim ekranı atlanır. Profil siparişi Aşama 6'da etkinleşir.
+// ?taslak=<id>: kaydedilmiş taslaktan devam.
 export default async function NewOrderPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePermission('ORDER_CREATE');
   const { t, m, locale } = await getT();
@@ -17,8 +21,23 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) {
     return <div className="alert alert-warn">{t('newOrder.errors.noFirm')}</div>;
   }
+
+  const draftRow = sp.taslak
+    ? await db.orderDraft.findFirst({ where: { id: sp.taslak, customerId: firm.id }, include: { files: { orderBy: { createdAt: 'asc' } } } })
+    : null;
+  if (sp.taslak && !draftRow) {
+    return (
+      <>
+        <div className="page-head"><p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p></div>
+        <div className="alert alert-warn">{t('newOrder.errors.draftGone')}</div>
+      </>
+    );
+  }
+
   const types = await db.orderType.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
-  const chosen = types.find((x) => x.code === sp.tip) ?? (types.length === 1 ? types[0] : undefined);
+  const chosen = draftRow
+    ? types.find((x) => x.code === draftRow.orderTypeCode)
+    : types.find((x) => x.code === sp.tip) ?? (types.length === 1 ? types[0] : undefined);
 
   if (!chosen) {
     return (
@@ -41,17 +60,49 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     );
   }
 
-  const [catalog, suggestedNo] = await Promise.all([
-    db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
+  const [products, suggestedNo] = await Promise.all([
+    // Pasif cam hiçbir listede görünmez
+    db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] }),
     suggestNextNo(db, firm.id),
   ]);
+  const catalog: GlassOption[] = products.map((p) => ({
+    id: p.id, group: locale === 'tr' ? p.nameTr : p.nameRo, label: glassLabel(p, locale),
+  }));
+
+  let draft: DraftData | undefined;
+  let droppedGlass = 0;
+  if (draftRow) {
+    const active = new Set(products.map((p) => p.id));
+    const lines = readDraftItems(draftRow.items);
+    const usable = lines.filter((l) => active.has(l.glassProductId));
+    droppedGlass = lines.length - usable.length;
+    draft = {
+      id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',
+      no: draftRow.customerOrderNo != null ? String(draftRow.customerOrderNo) : null,
+      lines: usable.map((l) => ({ id: l.glassProductId, qty: String(l.qty) })),
+      files: draftRow.files.map((f) => ({ id: f.id, name: f.name, size: f.size, pending: f.scanStatus === 'PENDING' })),
+    };
+  }
+
   return (
     <>
       <div className="page-head">
         <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
-        <h1>{t('newOrder.title')}</h1>
+        <h1>{draft ? t('newOrder.draftTitle') : t('newOrder.title')}</h1>
+        {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
       </div>
-      <NewOrderForm catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(nextShipDate())} m={m.newOrder.form} />
+      {sp.ok === 'draft' && <div className="alert alert-ok">{t('newOrder.draftSaved')}</div>}
+      {droppedGlass > 0 && <div className="alert alert-warn">{t('newOrder.draftGlassGone', { n: droppedGlass })}</div>}
+      <NewOrderForm
+        key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
+        catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(nextShipDate())} draft={draft} m={m.newOrder.form}
+      />
+      {draftRow && (
+        <form action={deleteDraftAction} className="row" style={{ justifyContent: 'flex-end' }}>
+          <input type="hidden" name="draftId" value={draftRow.id} />
+          <button type="submit" className="btn btn-link danger">{t('newOrder.deleteDraft')}</button>
+        </form>
+      )}
     </>
   );
 }

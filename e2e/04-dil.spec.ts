@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, GLASS_RO } from './helpers';
 
 // Romence / Türkçe: giriş sayfasının dili (IP, tarayıcı dili), dil düğmeleri, girişte panele taşınan dil.
 test.describe.configure({ mode: 'serial' });
@@ -107,5 +107,10 @@ test('müşteri Romence panelde siparişini ve teklifini görür', async ({ brow
   await page.getByRole('link', { name: 'UNS2' }).first().click();
   await expect(page.getByRole('heading', { name: 'Oferta dvs.' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(RAW_KEY);
+  // Cam adı seçilen dilde (karar 20): Romence panelde Romence ad, Türkçesi görünmez
+  await expect(page.getByText(`${GLASS_RO} × 3`)).toBeVisible();
+  await expect(page.getByText(`${GLASS} × 3`)).toHaveCount(0);
   await shot(page, '05-musteri-siparis');
+  await page.goto('/siparisler/yeni');
+  await expect(page.getByLabel('Sticlă', { exact: true }).locator('option', { hasText: GLASS_RO })).toHaveCount(1);
 });

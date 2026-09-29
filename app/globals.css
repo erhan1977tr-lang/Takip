@@ -292,3 +292,7 @@ input.input-missing { background: #fef2f2; border-color: #f87171; }
 .type-card { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: inherit; }
 .type-card:hover { border-color: var(--primary, #2563eb); }
 .type-card .btn { align-self: flex-start; margin-top: auto; }
+
+/* Taslaktaki dosyalar (yeni sipariş formu) */
+.file-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 6px; }
+.file-list li { gap: 10px; flex-wrap: wrap; }

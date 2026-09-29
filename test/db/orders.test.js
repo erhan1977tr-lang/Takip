@@ -46,7 +46,7 @@ dbTest('numara: aynı anda 10 sipariş → 10 farklı ardışık numara (öneril
   const first = await suggestNextNo(db, firm.id);
   const results = await Promise.all(Array.from({ length: 10 }, (_, i) => createGlassOrder(db, {
     actor: actor(people.cust), firm, title: `Eşzamanlı ${i}`, requestedNo: first, suggestedNo: first,
-    items: [{ glassName: 'Cam', camAdedi: 1 }],
+    items: [{ glassName: 'Cam', camAdedi: 1 }], files: [fileMeta(`c${i}`)],
   })));
   const nos = results.map((r) => r.customerOrderNo).sort((a, b) => a - b);
   assert.deepEqual(nos, Array.from({ length: 10 }, (_, i) => first + i));
@@ -58,13 +58,13 @@ dbTest('numara: aynı anda 10 sipariş → 10 farklı ardışık numara (öneril
 dbTest('numara: müşterinin yazdığı numara doluysa kaydedilmez; boşsa yazdığı numara kullanılır', async () => {
   const taken = (await db.order.findFirst({ where: { customerId: firm.id } })).customerOrderNo;
   const next = await suggestNextNo(db, firm.id);
-  const dup = createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: taken, suggestedNo: next, items: [] });
+  const dup = createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: taken, suggestedNo: next, items: [], files: [fileMeta('d1')] });
   assert.equal(await codeOf(dup), 'DUPLICATE_NUMBER');
-  const custom = await createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: 500, suggestedNo: next, items: [] });
+  const custom = await createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: 500, suggestedNo: next, items: [], files: [fileMeta('d2')] });
   assert.deepEqual([custom.orderNo, custom.bumped], ['GLA500', false]);
   assert.equal(await suggestNextNo(db, firm.id), 501);
   // Başka firma aynı numarayı kullanabilir (kodlar farklı)
-  const ale = await createGlassOrder(db, { actor: actor(people.other), firm: otherFirm, title: 'x', requestedNo: 500, suggestedNo: 1, items: [] });
+  const ale = await createGlassOrder(db, { actor: actor(people.other), firm: otherFirm, title: 'x', requestedNo: 500, suggestedNo: 1, items: [], files: [fileMeta('d3')] });
   assert.equal(ale.orderNo, 'ALE500');
 });
 

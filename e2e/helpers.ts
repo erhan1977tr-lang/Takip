@@ -54,6 +54,17 @@ export async function createUser(page: Page, u: { email: string; name: string; r
 }
 
 export const GLASS = '66.3 Temper Lamine Cam (Şeffaf)';
+export const GLASS_RO = 'Sticlă securizată laminată 6.6.3 (transparentă)';
+
+/** Yönetici → Cam kataloğu: renksiz tek cam ekler (Türkçe + Romence ad, ağırlık). */
+export async function addGlass(page: Page, nameTr: string, nameRo: string, weight = '30') {
+  await page.goto('/admin/katalog');
+  await page.fill('#nameTr', nameTr);
+  await page.fill('#nameRo', nameRo);
+  await page.fill('#weightKgM2', weight);
+  await page.getByRole('button', { name: 'Kataloğa ekle' }).click();
+  await expect(page.getByText('Cam kataloğa eklendi.')).toBeVisible();
+}
 export const SALES = 'satis@e2e.test';
 export const DRAWER = 'cizim@e2e.test';
 export const TEAM_PW = 'Ekip2026abc';

@@ -2,6 +2,11 @@
 export default {
   title: 'Yeni Sipariş',
   back: '← Siparişlerim',
+  draftTitle: 'Taslak sipariş',
+  draftSavedAt: 'Son kayıt: {date}. Taslak yalnızca firmanızda görünür; gönderene kadar fabrikaya gitmez.',
+  draftSaved: 'Taslak kaydedildi. İstediğiniz zaman “Siparişlerim” sayfasından devam edebilirsiniz.',
+  draftGlassGone: 'Taslaktaki {n} cam artık katalogda yok; lütfen yeniden seçin.',
+  deleteDraft: 'Taslağı sil',
   // Sipariş tipi seçimi (birden çok tip etkinken)
   selector: {
     title: 'Ne sipariş etmek istiyorsunuz?',
@@ -25,6 +30,9 @@ export default {
       title: 'Sipariş dosyaları (zorunlu)',
       selected: '{n} dosya seçildi',
       pick: 'Dosya seçmek için tıklayın',
+      pickMore: 'Başka dosya eklemek için tıklayın',
+      remove: 'Çıkar',
+      scanPending: 'Taranmadı',
       limits: 'PDF · DWG · DXF · STEP · STP · IGS · IGES · XLS · XLSX · DOC · DOCX · ZIP · JPG · PNG — dosya başına en fazla 100 MB, toplam 250 MB',
     },
     glass: {
@@ -37,7 +45,14 @@ export default {
       remove: 'Kaldır',
       add: '+ Cam ekle',
     },
+    note: {
+      title: 'Ek bilgi (isteğe bağlı)',
+      intro: 'Satış ekibine iletmek istediğiniz bilgi. Siparişin notlarında görünür.',
+      placeholder: 'örn. kenar işlemi, montaj notu…',
+    },
     submit: {
+      needTitle: 'Sipariş adını yazın.',
+      draft: 'Taslak kaydet',
       needFile: 'Göndermek için en az bir dosya yüklemelisiniz.',
       needGlass: 'Cam kombinasyonu seçmelisiniz.',
       sending: 'Gönderiliyor…',
@@ -52,7 +67,10 @@ export default {
     tooManyFiles: 'Tek seferde en fazla 20 dosya yükleyebilirsiniz.',
     noGlass: 'En az bir cam kombinasyonu seçin.',
     glassGone: 'Seçilen camlardan biri artık katalogda yok; sayfayı yenileyip tekrar seçin.',
-    badQty: 'Cam adedi pozitif bir tam sayı olmalı.',
+    badQty: 'Cam adedi 1 ile {max} arasında bir tam sayı olmalı.',
+    tooManyLines: 'Bir siparişte en fazla 50 cam satırı olabilir.',
+    noteTooLong: 'Ek bilgi en fazla {n} karakter olabilir.',
+    draftGone: 'Taslak bulunamadı (silinmiş ya da gönderilmiş olabilir).',
     duplicate: '{orderNo} numaralı bir sipariş zaten var; farklı bir numara girin.',
     saveFailed: 'Sipariş kaydedilemedi, lütfen tekrar deneyin.',
   },

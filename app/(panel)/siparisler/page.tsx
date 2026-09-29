@@ -9,7 +9,9 @@ import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtMonth } from '@/lib/format';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
-import { CLOSED, offerNeedsCheck, slaInfo } from '@/server/orders/rules.js';
+import { CLOSED, slaInfo } from '@/server/orders/rules.js';
+import { latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
+import { deleteDraftAction } from './yeni/actions';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -32,16 +34,8 @@ function counter(m: Dict, intl: string) {
   return { unit, count: (noun: Noun, n: number) => `${n} ${unit(noun, n)}` };
 }
 
-const offerOf = (o: Row) => o.offers[0]?.status ?? null;
+const offerOf = (o: Row) => latestOfferStatus(o);
 const sentOf = (o: Row) => (o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null);
-/** Teklif müşteriye gittikten sonra yeni çizim yüklenmiş ve yönetici henüz bakmamış. */
-const needsOfferCheck = (o: Row) =>
-  (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE') &&
-  offerNeedsCheck({
-    offer: offerOf(o), sentAt: o.offers[0]?.sentAt ?? null,
-    lastDrawing: o.drawings[o.drawings.length - 1] ?? null, checkedAt: o.events[0]?.createdAt ?? null,
-  });
-
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requirePermission('ORDER_VIEW');
   const sp = await searchParams;
@@ -96,6 +90,10 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     const k = o.estimatedShipDate ? fmtMonth(o.estimatedShipDate, locale) : t('orders.customer.noDate');
     groups.set(k, [...(groups.get(k) ?? []), o]);
   }
+  // Taslaklar yalnızca bu firmanın müşteri kullanıcılarına görünür (sipariş değildir)
+  const drafts = archive || !user.customerId ? [] : await db.orderDraft.findMany({
+    where: { customerId: user.customerId }, orderBy: { updatedAt: 'desc' }, include: { _count: { select: { files: true } } },
+  });
   const awaiting = count((o) => o.status === 'HAZIRLANIYOR' && o.drawingTrack === 'ONAY_BEKLIYOR');
   const drawing = count((o) => o.status === 'HAZIRLANIYOR' && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack));
   const production = count((o) => o.status === 'URETIMDE');
@@ -119,6 +117,38 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           <div className="stat" style={{ borderLeftColor: '#7c3aed' }}><div className="k">{t('status.customer.drawing.label')}</div><div className="v">{drawing}<small>{unit('order', drawing)}</small></div></div>
           <div className="stat" style={{ borderLeftColor: '#047857' }}><div className="k">{t('status.customer.production.label')}</div><div className="v">{production}<small>{unit('order', production)}</small></div></div>
           <div className="stat"><div className="k">{t('orders.customer.totalActive')}</div><div className="v">{orders.length}<small>{unit('order', orders.length)}</small></div></div>
+        </div>
+      )}
+
+      {sp.ok === 'draftDeleted' && <div className="alert alert-ok">{t('orders.customer.drafts.deleted')}</div>}
+      {sp.ok === 'draftGone' && <div className="alert alert-warn">{t('orders.customer.drafts.gone')}</div>}
+      {drafts.length > 0 && (
+        <div className="card card-flush">
+          <div className="card-head">
+            <h2 style={{ margin: 0 }}>{t('orders.customer.drafts.title')} <span className="badge">{drafts.length}</span></h2>
+            <span className="muted small">{t('orders.customer.drafts.intro')}</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <tbody>
+                {drafts.map((d) => (
+                  <tr key={d.id}>
+                    <td>
+                      <Link href={`/siparisler/yeni?taslak=${d.id}`}>{d.title || t('orders.customer.drafts.untitled')}</Link>
+                      <div className="muted small">{t('orders.customer.drafts.saved', { date: fmtDate(d.updatedAt) })} · {t('orders.customer.drafts.files', { n: d._count.files })}</div>
+                    </td>
+                    <td className="actions">
+                      <Link href={`/siparisler/yeni?taslak=${d.id}`} className="btn">{t('orders.customer.drafts.continue')}</Link>
+                      <form action={deleteDraftAction}>
+                        <input type="hidden" name="draftId" value={d.id} />
+                        <button type="submit" className="btn btn-link danger">{t('orders.customer.drafts.delete')}</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -238,25 +268,8 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     take: 300,
   }));
 
-  const now = Date.now();
-  const active = rows.filter((o) => !o.onHold);
-  const prep = active.filter((o) => o.status === 'HAZIRLANIYOR');
   const role = user.appRole;
-  const myTurn: { title: string; rows: Row[]; empty: string }[] = [];
-  if (userCan(user, 'ORDER_REVIEW')) {
-    myTurn.push({ title: t('orders.internal.sections.newOrders.title'), rows: active.filter((o) => o.status === 'YENI'), empty: t('orders.internal.sections.newOrders.empty') });
-    myTurn.push({ title: t('orders.internal.sections.offersToPrepare.title'), rows: prep.filter((o) => offerOf(o) === null || offerOf(o) === 'HAZIRLANIYOR'), empty: t('orders.internal.sections.offersToPrepare.empty') });
-  }
-  if (userCan(user, 'OFFER_SEND')) {
-    myTurn.push({ title: t('orders.internal.sections.priceApproval.title'), rows: prep.filter((o) => offerOf(o) === 'YONETIMDE'), empty: t('orders.internal.sections.priceApproval.empty') });
-    myTurn.push({ title: t('orders.internal.sections.offerCheck.title'), rows: active.filter(needsOfferCheck), empty: t('orders.internal.sections.offerCheck.empty') });
-  }
-  if (userCan(user, 'DRAWING_WORK') && !userCan(user, 'ORDER_REVIEW')) {
-    myTurn.push({ title: t('orders.internal.sections.drawingJobs.title'), rows: prep.filter((o) => ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack)), empty: t('orders.internal.sections.drawingJobs.empty') });
-    myTurn.push({ title: t('orders.internal.sections.atCustomer.title'), rows: prep.filter((o) => o.drawingTrack === 'ONAY_BEKLIYOR'), empty: t('orders.internal.sections.atCustomer.empty') });
-  }
-  const risky = active.filter((o) => o.slaDeadline && o.slaDeadline.getTime() - now < 6 * 3_600_000);
-  const held = rows.filter((o) => o.onHold);
+  const queues = queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK') });
   // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
   const infected = userCan(user, 'SETTINGS_MANAGE')
     ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } }))
@@ -285,19 +298,21 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
 
       {view === 'work' && (
         <>
-          {myTurn.map((s) => (
-            <Section key={s.title} title={s.title} count={s.rows.length}>
-              <InternalTable user={user} rows={s.rows} empty={s.empty} />
-            </Section>
-          ))}
-          <Section title={t('orders.internal.sections.sla.title')} count={risky.length} tone={risky.length ? 'badge-danger' : ''}>
-            <InternalTable user={user} rows={risky} empty={t('orders.internal.sections.sla.empty')} />
-          </Section>
-          {held.length > 0 && (
-            <Section title={t('status.onHold')} count={held.length}>
-              <InternalTable user={user} rows={held} empty="" />
-            </Section>
-          )}
+          {queues.map((q) => {
+            if (q.key === 'held') {
+              return (
+                <Section key={q.key} title={t('status.onHold')} count={q.rows.length}>
+                  <InternalTable user={user} rows={q.rows} empty="" />
+                </Section>
+              );
+            }
+            const k = q.key as Exclude<keyof Dict['orders']['internal']['sections'], 'active' | 'archive' | 'none'>;
+            return (
+              <Section key={q.key} title={t(`orders.internal.sections.${k}.title`)} count={q.rows.length} tone={q.key === 'sla' && q.rows.length ? 'badge-danger' : undefined}>
+                <InternalTable user={user} rows={q.rows} empty={t(`orders.internal.sections.${k}.empty`)} />
+              </Section>
+            );
+          })}
         </>
       )}
       {view !== 'work' && (

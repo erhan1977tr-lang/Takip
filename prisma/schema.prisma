@@ -120,6 +120,8 @@ model User {
   orderNotes         OrderNote[]
   orderFiles         OrderFile[]
   orderEvents        OrderEvent[] @relation("OrderEventBy")
+  orderDrafts        OrderDraft[]
+  orderDraftFiles    OrderDraftFile[]
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -210,6 +212,7 @@ model Customer {
   taxId         String?
   users         User[]   // müşteri panelini kullanan kişiler
   orders        Order[]
+  orderDrafts   OrderDraft[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -309,6 +312,46 @@ model Order {
   @@index([estimatedShipDate])
 }
 
+// Taslak sipariş: müşteri formu yarım bırakıp sonra devam eder. Sipariş değildir — numarası, SLA'sı, geçmişi yoktur,
+// satışın hiçbir listesine düşmez; yalnızca firmanın müşteri kullanıcıları görür. "Gönder"de sipariş olur ve silinir.
+model OrderDraft {
+  id              String   @id @default(cuid())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  orderTypeCode   String   @default("GLASS_ORDER")
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id])
+  title           String?
+  customerOrderNo Int?     // müşteri kendi numarasını yazdıysa; boşsa gönderirken bir sonraki numara önerilir
+  note            String?  // "Ek bilgi": gönderilince müşterinin görebildiği not olur
+  items           Json     @default("[]") // [{ glassProductId, qty }]
+  files           OrderDraftFile[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([customerId])
+}
+
+// Taslağa yüklenen dosya (içerik kontrolü ve antivirüsten geçmiş). Gönderilince siparişin dosyası olur.
+model OrderDraftFile {
+  id            String         @id @default(cuid())
+  draftId       String
+  draft         OrderDraft     @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  name          String
+  storageKey    String         @unique
+  size          Int
+  mime          String?
+  checksum      String?
+  scanStatus    FileScanStatus @default(PENDING)
+  scanSignature String?
+  scannedAt     DateTime?
+  uploadedById  String
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+  createdAt     DateTime       @default(now())
+
+  @@index([draftId])
+}
+
 // Sipariş olay geçmişi ("Hareketler"). event kodları server/orders/rules.js içindeki EVENTS ile tanımlıdır.
 // Sipariş geçmişi: her iş akışı işlemi bir satır (durum değiştirdiyse önceki → sonraki durumla birlikte).
 model OrderEvent {
@@ -375,13 +418,24 @@ model OrderNote {
   @@index([orderId])
 }
 
-// Cam kataloğu: müşteri yeni siparişte buradan seçer.
+// Cam kataloğu: müşteri yeni siparişte buradan seçer (yönetici → Katalog; Excel ile de yüklenir).
+// Aynı cam Türkçe ad + Türkçe renkten tanınır. Kullanıcı camı seçtiği dilde görür. Pasif cam hiçbir listede görünmez.
 model GlassProduct {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  nameTr     String
+  colorTr    String   @default("")
+  nameRo     String
+  colorRo    String   @default("")
+  nameEn     String?  // Excel'de durur; arayüzde İngilizce yok (karar 9)
+  colorEn    String?
+  weightKgM2 Decimal? @db.Decimal(6, 2) // kg/m² — yüklemelerde ağırlık hesabı; tekliflerde görünmez
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+  orderItems OrderItem[]
+
+  @@unique([nameTr, colorTr])
 }
 
 // Cam kalemleri: metraj, cam adedi, CNC, delik, ağırlık — Yüklemeler özetindeki sütunlarla birebir
@@ -389,7 +443,12 @@ model OrderItem {
   id          String  @id @default(cuid())
   orderId     String
   order       Order   @relation(fields: [orderId], references: [id])
-  glassName   String? // müşterinin katalogdan seçtiği cam
+  // Müşterinin katalogdan seçtiği cam ve sipariş anındaki kopyası (katalog sonradan değişse de sipariş değişmez)
+  glassProductId  String?
+  glassProduct    GlassProduct? @relation(fields: [glassProductId], references: [id], onDelete: SetNull)
+  glassName       String?  // Türkçe ad — renk
+  glassNameRo     String?  // Romence ad — renk
+  glassWeightKgM2 Decimal? @db.Decimal(6, 2)
   camAdedi    Int     @default(0)
   cnc         String? // CNC açıklaması, yoksa null ("–")
   delikSayisi Int?    // "DELİK" sütunu

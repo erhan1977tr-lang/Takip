@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
-  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, SALES, TEAM_PW as PW, sampleFile,
-  as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor,
+  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, GLASS_RO, SALES, TEAM_PW as PW, sampleFile,
+  addGlass, as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor,
 } from './helpers';
 
 // Sipariş akışı: çizim ve teklif hatları bağımsız; müşteri yalnızca çizimi onaylar, teklifi görür.
@@ -13,11 +13,8 @@ const ids: { a?: string; b?: string; drawing?: string } = {};
 test('hazırlık: katalog, satış, çizim ve ikinci müşteri', async ({ page }) => {
   await login(page, ADMIN, ADMIN_PW);
   await page.goto('/admin/katalog');
-  await page.getByLabel('Cam adı').first().fill(GLASS);
-  await page.getByRole('button', { name: 'Kataloğa ekle' }).click();
-  await expect(page.getByText('Cam kataloğa eklendi.')).toBeVisible();
-  await page.getByPlaceholder(/örn\. 66\.3/).fill('4mm Float Cam');
-  await page.getByRole('button', { name: 'Kataloğa ekle' }).click();
+  await addGlass(page, GLASS, GLASS_RO);
+  await addGlass(page, '4mm Float Cam', 'Sticlă float 4 mm');
 
   await page.goto('/admin/firms');
   await page.fill('#f-name', 'Beta Cam');

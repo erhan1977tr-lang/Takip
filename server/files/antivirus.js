@@ -6,6 +6,7 @@ import { ping, scanFile, version } from './clamav.js';
 import { quarantine, resolveKey } from './store.js';
 
 export const AV_KEY = 'antivirus';
+const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', orderDraftFile: 'OrderDraftFile' };
 export const AV_STATUS_KEY = 'antivirus.status';
 
 /**
@@ -77,9 +78,12 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
   if (!settings.enabled) return { ...out, stopped: 'disabled' };
   const files = await db.orderFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
   const drawings = await db.drawing.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
+  // Taslak siparişin dosyaları da taranır (gönderilince tarama sonucuyla siparişe geçer)
+  const draftFiles = await db.orderDraftFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
   const items = [
     ...files.map((f) => ({ model: 'orderFile', id: f.id, orderId: f.orderId, key: f.storageKey, name: f.name })),
     ...drawings.map((d) => ({ model: 'drawing', id: d.id, orderId: d.orderId, key: d.fileUrl, name: d.fileName || `v${d.version}` })),
+    ...draftFiles.map((f) => ({ model: 'orderDraftFile', id: f.id, orderId: null, key: f.storageKey, name: f.name })),
   ];
   for (const it of items) {
     const full = resolveKey(it.key);
@@ -107,7 +111,7 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
     await db.$transaction(async (tx) => {
       await tx[it.model].update({ where: { id: it.id }, data: { scanStatus: 'INFECTED', scanSignature: r.signature, scannedAt: new Date() } });
       await writeAudit(tx, {
-        action: 'FILE_INFECTED', entityType: it.model === 'drawing' ? 'Drawing' : 'OrderFile', entityId: it.id,
+        action: 'FILE_INFECTED', entityType: ENTITY[it.model], entityId: it.id,
         details: { orderId: it.orderId, name: it.name, signature: r.signature, when: 'arka plan taraması' },
       });
       await enqueueOutbox(tx, outboxEvent('FILE_INFECTED', { orderId: it.orderId, payload: { name: it.name, signature: r.signature } }));

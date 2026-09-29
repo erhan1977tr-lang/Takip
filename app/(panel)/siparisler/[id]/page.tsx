@@ -13,6 +13,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor } from './OfferEditor';
 import { loadOf } from '@/lib/loading';
 import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
+import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
   ALLOWED_EXT, STAGES, availableActions, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
@@ -61,7 +62,7 @@ export default async function OrderPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await requirePermission('ORDER_VIEW');
-  const { t, m } = await getT();
+  const { t, m, locale } = await getT();
   const { id } = await params;
   const sp = await searchParams;
   const order = await loadOrder(id, user);
@@ -78,7 +79,7 @@ export default async function OrderPage({
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
   const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
   const catalog = editable || updating
-    ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })).map((g) => g.name)
+    ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })).map((g) => glassLabel(g, locale))
     : [];
   // Veri zaten sunucuda temizlendi (lib/orders.ts → sanitizeOrder); çizim ekibi teklif görmez,
   // müşteri ve denetimci yalnızca müşteriye gönderilmiş teklifi görür.
@@ -214,7 +215,7 @@ export default async function OrderPage({
               <>
                 <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {order.items.map((it) => <li key={it.id}>{it.glassName || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
+                  {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
                 </ul>
               </>
             )}

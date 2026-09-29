@@ -149,10 +149,27 @@ async function main(db) {
   }
   const { ADMIN: admin, SATIS: sales, CIZIM: drawer, MUSTERI: cust } = users;
 
-  const GLASSES = ['4mm Float Cam', '6mm Temperli Cam', '8mm Temperli Cam', '10mm Temperli Cam', '44.2 Lamine Cam', '66.2 Temper Lamine Cam (Şeffaf)', '8mm Temperli Füme Cam'];
-  for (const [i, name] of GLASSES.entries()) {
-    await db.glassProduct.upsert({ where: { name }, create: { name, sortOrder: i }, update: {} });
+  // Cam kataloğu: Türkçe ad, Romence ad, ağırlık (kg/m²)
+  const GLASSES = [
+    ['4mm Float Cam', 'Sticlă float 4 mm', 10],
+    ['6mm Temperli Cam', 'Sticlă securizată 6 mm', 15],
+    ['8mm Temperli Cam', 'Sticlă securizată 8 mm', 20],
+    ['10mm Temperli Cam', 'Sticlă securizată 10 mm', 25],
+    ['44.2 Lamine Cam', 'Sticlă laminată 4.4.2', 20],
+    ['66.2 Temper Lamine Cam (Şeffaf)', 'Sticlă securizată laminată 6.6.2 (transparentă)', 30],
+    ['8mm Temperli Füme Cam', 'Sticlă securizată 8 mm (gri)', 20],
+  ];
+  const glassByTr = new Map();
+  for (const [i, [nameTr, nameRo, weightKgM2]] of GLASSES.entries()) {
+    const g = await db.glassProduct.upsert({
+      where: { nameTr_colorTr: { nameTr, colorTr: '' } }, create: { nameTr, nameRo, weightKgM2, sortOrder: (i + 1) * 10 }, update: {},
+    });
+    glassByTr.set(nameTr, g);
   }
+  const itemOf = ([glassName, camAdedi]) => {
+    const g = glassByTr.get(glassName);
+    return { glassName, camAdedi, glassProductId: g?.id ?? null, glassNameRo: g?.nameRo ?? null, glassWeightKgM2: g?.weightKgM2 ?? null };
+  };
 
   // ---------- sipariş yardımcıları ----------
   async function order(o) {
@@ -173,7 +190,7 @@ async function main(db) {
         }),
         estimatedShipDate: nextShipDate(createdAt), actualShipDate: o.shippedHoursAgo != null ? ago(o.shippedHoursAgo) : null,
         createdAt,
-        items: { create: o.items.map(([glassName, camAdedi]) => ({ glassName, camAdedi })) },
+        items: { create: o.items.map(itemOf) },
         files: { create: files.map((s) => ({ ...s, kind: 'CUSTOMER', uploadedById: cust.id, createdAt })) },
       },
     });

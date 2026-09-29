@@ -2,6 +2,11 @@
 export default {
   title: 'Comandă nouă',
   back: '← Comenzile mele',
+  draftTitle: 'Ciornă de comandă',
+  draftSavedAt: 'Ultima salvare: {date}. Ciorna este vizibilă doar în firma dvs.; nu ajunge la fabrică până nu o trimiteți.',
+  draftSaved: 'Ciorna a fost salvată. Puteți continua oricând din pagina „Comenzile mele”.',
+  draftGlassGone: '{n} tipuri de sticlă din ciornă nu mai există în catalog; selectați din nou.',
+  deleteDraft: 'Șterge ciorna',
   // Alegerea tipului de comandă (când sunt active mai multe tipuri)
   selector: {
     title: 'Ce doriți să comandați?',
@@ -25,6 +30,9 @@ export default {
       title: 'Fișierele comenzii (obligatoriu)',
       selected: 'Fișiere selectate: {n}',
       pick: 'Faceți clic pentru a selecta fișierele',
+      pickMore: 'Faceți clic pentru a adăuga alte fișiere',
+      remove: 'Elimină',
+      scanPending: 'Nescanat',
       limits: 'PDF · DWG · DXF · STEP · STP · IGS · IGES · XLS · XLSX · DOC · DOCX · ZIP · JPG · PNG — maximum 100 MB per fișier, 250 MB în total',
     },
     glass: {
@@ -37,7 +45,14 @@ export default {
       remove: 'Elimină',
       add: '+ Adaugă sticlă',
     },
+    note: {
+      title: 'Informații suplimentare (opțional)',
+      intro: 'Informații pe care doriți să le transmiteți echipei de vânzări. Apar în notele comenzii.',
+      placeholder: 'ex. prelucrarea marginilor, notă de montaj…',
+    },
     submit: {
+      needTitle: 'Scrieți denumirea comenzii.',
+      draft: 'Salvează ciorna',
       needFile: 'Pentru a trimite comanda, încărcați cel puțin un fișier.',
       needGlass: 'Selectați o combinație de sticlă.',
       sending: 'Se trimite…',
@@ -52,7 +67,10 @@ export default {
     tooManyFiles: 'Puteți încărca cel mult 20 de fișiere odată.',
     noGlass: 'Selectați cel puțin o combinație de sticlă.',
     glassGone: 'Una dintre sticlele selectate nu mai există în catalog; reîncărcați pagina și selectați din nou.',
-    badQty: 'Numărul de bucăți de sticlă trebuie să fie un număr întreg pozitiv.',
+    badQty: 'Numărul de bucăți trebuie să fie un număr întreg între 1 și {max}.',
+    tooManyLines: 'O comandă poate avea cel mult 50 de rânduri de sticlă.',
+    noteTooLong: 'Informațiile suplimentare pot avea cel mult {n} caractere.',
+    draftGone: 'Ciorna nu a fost găsită (poate a fost ștearsă sau trimisă).',
     duplicate: 'Există deja o comandă cu numărul {orderNo}; introduceți un alt număr.',
     saveFailed: 'Comanda nu a putut fi salvată; vă rugăm să încercați din nou.',
   },
