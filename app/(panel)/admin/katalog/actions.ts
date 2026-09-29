@@ -18,7 +18,7 @@ const MAX_FILE = 5 * 1024 * 1024;
 
 export async function saveGlassAction(formData: FormData) {
   const admin = await requirePermission('CATALOG_MANAGE');
-  const id = String(formData.get('id') ?? '') || null;
+  const id = String(formData.get('glassId') ?? '') || null;
   const res = validateGlass({
     nameTr: formData.get('nameTr'), colorTr: formData.get('colorTr'), nameRo: formData.get('nameRo'), colorRo: formData.get('colorRo'),
     nameEn: formData.get('nameEn'), colorEn: formData.get('colorEn'), weightKgM2: formData.get('weightKgM2'),
@@ -34,7 +34,7 @@ export async function saveGlassAction(formData: FormData) {
 
 export async function changeGlassAction(formData: FormData) {
   const admin = await requirePermission('CATALOG_MANAGE');
-  const id = String(formData.get('id') ?? '');
+  const id = String(formData.get('glassId') ?? '');
   const intent = String(formData.get('intent') ?? '');
   if (!['toggle', 'up', 'down'].includes(intent)) redirect(back('error=not_found'));
   const found = await changeGlass(db, id, intent as 'toggle' | 'up' | 'down', await actorOf(admin));

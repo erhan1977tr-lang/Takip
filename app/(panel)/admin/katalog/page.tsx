@@ -61,7 +61,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
 
       <form action={saveGlassAction} className="card" key={editing?.id ?? 'new'}>
         <h2>{editing ? t('admin.catalog.editTitle') : t('admin.catalog.addTitle')}</h2>
-        {editing && <input type="hidden" name="id" value={editing.id} />}
+        {editing && <input type="hidden" name="glassId" value={editing.id} />}
         <div className="grid-2">
           <div>
             <label htmlFor="nameTr">{t('admin.catalog.field.nameTr')}</label>
@@ -139,7 +139,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
                         ['toggle', g.isActive ? t('admin.catalog.deactivate') : t('admin.catalog.activate'), undefined, false],
                       ] as const).map(([it, label, aria, disabled]) => (
                         <form key={it} action={changeGlassAction}>
-                          <input type="hidden" name="id" value={g.id} />
+                          <input type="hidden" name="glassId" value={g.id} />
                           <input type="hidden" name="intent" value={it} />
                           <input type="hidden" name="keep" value={keep} />
                           <button className="btn btn-link" disabled={disabled} aria-label={aria}>{label}</button>
