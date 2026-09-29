@@ -143,9 +143,8 @@ test('beklemede yalnızca beklemeden çıkarılabilir; kapanmış siparişte iş
   assert.deepEqual(availableActions({ role: 'SATIS', status: 'HAZIRLANIYOR', onHold: true, drawing: 'GEREKLI' }), ['unhold']);
   assert.deepEqual(availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', onHold: true, drawing: 'GEREKLI' }), []);
   assert.deepEqual(availableActions({ role: 'ADMIN', status: 'ARSIVLENDI' }), []);
-  assert.deepEqual(availableActions({ role: 'SATIS', status: 'YUKLENDI' }), ['edit_crates', 'archive']);
-  assert.ok(!has({ role: 'CIZIM', status: 'URETIMDE' }, 'edit_crates'));
-  assert.ok(!has({ role: 'MUSTERI', status: 'URETIMDE' }, 'edit_crates'));
+  // Sandıklar sipariş sayfasında değil, yükleme sekmesinde girilir (server/loading/crates.js)
+  assert.deepEqual(availableActions({ role: 'SATIS', status: 'YUKLENDI' }), ['archive']);
   assert.ok(has({ role: 'SATIS', status: 'URETIMDE' }, 'mark_shipped'));
 });
 

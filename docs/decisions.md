@@ -46,6 +46,7 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 23 | Pasif cam | Hiçbir seçim listesinde görünmez; formdan gönderilirse sunucu reddeder. Eski siparişler değişmez. |
 | 24 | Taslak sipariş | Müşteri "Taslak kaydet" ile formu yarım bırakabilir. Taslak sipariş değildir: numarası, SLA'sı yoktur, satışa ve kuyruklara düşmez; yalnızca firmanın müşteri kullanıcıları görür. Numara ve SLA "Gönder"de kesinleşir. |
 | 25 | Müşteriden bilgi isteme | Yapılmayacak: satış beklemeye alır, iletişim telefonla ya da notla yürür. |
+| 27 | Sandıklar | Sandık ölçü (uzunluk/genişlik/yükseklik) ve son ağırlıkları **Yüklemeler sekmesinde**, yükleme günü + müşteri bazında girilir; satış ya da yönetici girer. Sandık no o gün içinde tektir; sandığın hangi siparişleri taşıdığı seçilir. Sipariş sayfasında giriş yok. |
 | 26 | Fiyat tabloları (Aşama 3b) | Yönetici fiyat tabloları tutar (cam başına birim fiyat; delik ve CNC için sabit fiyat), Excel'le yükler; her satışçı bir tabloya atanır, atanmayan varsayılanı kullanır. Satışın teklifine fiyatlar dolu gelir; satışçı değiştirebilir, değiştirirse yöneticinin **Önemli kararlar** listesine ve giriş ekranına uyarı düşer. "Açık tekliflere uygula" yok. |
 
 ## Sunucu (29.09.2026)

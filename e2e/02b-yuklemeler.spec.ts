@@ -13,9 +13,11 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.fill('#ship-date', LOAD_DAY);
   await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
   await expect(sales.locator('.alert-ok')).toContainText('Tahmini yükleme tarihi güncellendi');
-  // 6 m² × 30 kg/m² (katalogdaki ağırlık, karar 22) = 180 kg → 1 sandık, brüt 230 kg
+  // 6 m² × 30 kg/m² (katalogdaki ağırlık, karar 22) = 180 kg → 1 sandık, brüt 230 kg (yükleme sekmesinde)
   await expect(sales.locator('#sandik')).toContainText('6,00 m²');
-  await expect(sales.locator('#sandik')).toContainText('net 180 kg · 1 sandık · brüt 230 kg');
+  await expect(sales.locator('#sandik')).toContainText('net 180 kg');
+  await expect(sales.locator('#sandik')).toContainText('Henüz sandık girilmedi.');
+  await expect(sales.getByRole('button', { name: 'Sandıkları kaydet' })).toHaveCount(0); // sipariş sayfasında giriş yok
 
   await sales.getByRole('link', { name: 'Yüklemeler' }).first().click();
   await expect(sales.getByRole('heading', { name: 'Yüklemeler', exact: true })).toBeVisible();
@@ -29,17 +31,28 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.goto('/yuklemeler?view=liste&ay=2027-03');
   await expect(sales.getByRole('link', { name: '19.03.2027' })).toBeVisible();
 
-  // Gerçek sandık kaydı tahminin önüne geçer
-  await sales.goto(orderUrl);
-  await sales.getByLabel('Sandık ölçüsü').first().fill('2400×1600×900');
-  await sales.getByLabel('Net kg').first().fill('190');
-  await sales.getByLabel('Brüt kg').first().fill('260');
-  await sales.getByRole('button', { name: 'Sandıkları kaydet' }).click();
-  await expect(sales.locator('.alert-ok')).toContainText('Sandık ölçü ve ağırlıkları kaydedildi');
-  await expect(sales.getByLabel('Sandık ölçüsü').first()).toHaveValue('2400×1600×900');
+  // Gerçek sandık kaydı yükleme sekmesinde (müşteri + gün): tahminin önüne geçer
   await sales.goto(`/yuklemeler?gun=${LOAD_DAY}`);
+  await sales.locator('.crate-row summary').first().click();
+  await sales.getByRole('button', { name: '+ Sandık ekle' }).click();
+  await sales.getByLabel('Uzunluk (mm) (1)').fill('2400');
+  await sales.getByLabel('Genişlik (mm) (1)').fill('1600');
+  await sales.getByLabel('Yükseklik (mm) (1)').fill('900');
+  await sales.getByLabel('Net ağırlık (kg) (1)').fill('190');
+  await sales.getByLabel('Brüt ağırlık (kg) (1)').fill('150');
+  await sales.getByRole('button', { name: 'Sandıkları kaydet' }).click();
+  await expect(sales.locator('.crate-editor .alert-error')).toContainText('brüt ağırlık netten küçük olamaz');
+  await sales.getByLabel('Brüt ağırlık (kg) (1)').fill('260');
+  await expect(sales.locator('.crate-editor')).toContainText('Net 190 kg · Brüt 260 kg');
+  await sales.getByRole('button', { name: 'Sandıkları kaydet' }).click();
+  await expect(sales.locator('.crate-editor .alert-ok')).toContainText('Sandıklar kaydedildi.');
+  await sales.reload();
   await expect(sales.locator('.load-table tfoot')).toContainText('260');
-  await expect(sales.locator('.load-table').getByText('gerçek')).toBeVisible();
+  await expect(sales.locator('.load-table').getByText('gerçek').first()).toBeVisible();
+  await expect(sales.getByLabel('Uzunluk (mm) (1)')).toHaveValue('2400');
+  await expect(sales.locator('.crate-editor .badge')).toContainText('güncellendi');
+  await sales.goto(orderUrl);
+  await expect(sales.locator('#sandik')).toContainText('Bu siparişin camları şu sandıklarda: 1.');
 
   // Müşteri kendi takviminde görür; teklif tutarı müşteriye gönderilmiş tekliften
   const cust = await as(browser, CUSTOMER, CUST_PW);

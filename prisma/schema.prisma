@@ -75,6 +75,7 @@ enum PermissionKey {
   CATALOG_MANAGE
   PRICE_TABLE_MANAGE
   ALERT_VIEW
+  CRATE_EDIT
   SETTINGS_MANAGE
   AUDIT_VIEW
 }
@@ -121,6 +122,7 @@ model User {
   priceTableId       String?
   priceTable         PriceTable?    @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
   alertsCreated      AdminAlert[]   @relation("AlertCreatedBy")
+  cratesUpdated      Crate[]        @relation("CrateUpdatedBy")
   alertsResolved     AdminAlert[]   @relation("AlertResolvedBy")
   invites            UserInvite[]
   sessions           Session[]
@@ -220,6 +222,7 @@ model Customer {
   users         User[]   // müşteri panelini kullanan kişiler
   orders        Order[]
   orderDrafts   OrderDraft[]
+  crates        Crate[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -300,7 +303,8 @@ model Order {
   offers            Offer[]
   price             Price?
   drawings          Drawing[]
-  crates            Crate[]
+  crates            Crate[]      // eski düzen (sipariş başına sandık); taşıma adımı yeni düzene çevirir
+  crateLinks        CrateOrder[] // sipariş hangi sandıklarda (yükleme sekmesinde seçilir)
   shipmentId        String?
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
   events            OrderEvent[]
@@ -631,15 +635,40 @@ model DrawingRevision {
 // SANDIK (paketleme)
 // ---------------------------------------------------------
 
+// Sandık: yükleme sekmesinde, yükleme günü + müşteri için girilir (satış ya da yönetici).
+// Sandık numarası o gün içinde tektir (müşteriler arasında da); hangi siparişlerin camlarını taşıdığı CrateOrder'da.
 model Crate {
-  id          String  @id @default(cuid())
-  orderId     String
-  order       Order   @relation(fields: [orderId], references: [id])
+  id          String    @id @default(cuid())
+  shipDay     DateTime? @db.Date // yükleme günü
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  orderId     String?   // eski düzen: sipariş başına sandık (prisma/seed/steps/crates.mjs yeni düzene taşır)
+  order       Order?    @relation(fields: [orderId], references: [id])
   crateNo     Int
-  dimensions  String? // "Sandık ölçüleri"
-  netAgirlik  Decimal? @db.Decimal(10, 2)
-  brutAgirlik Decimal? @db.Decimal(10, 2)
-  daraKg      Decimal  @default(50) @db.Decimal(6, 2) // varsayılan dara
+  lengthMm    Int?      // uzunluk
+  widthMm     Int?      // genişlik
+  heightMm    Int?      // yükseklik
+  dimensions  String?   // eski düzende serbest metin ölçü
+  netAgirlik  Decimal?  @db.Decimal(10, 2)
+  brutAgirlik Decimal?  @db.Decimal(10, 2)
+  daraKg      Decimal   @default(50) @db.Decimal(6, 2) // brüt girilmezse net + dara
+  note        String?
+  orders      CrateOrder[]
+  updatedAt   DateTime  @default(now()) @updatedAt
+  updatedById String?
+  updatedBy   User?     @relation("CrateUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([shipDay, customerId])
+}
+
+model CrateOrder {
+  crateId String
+  crate   Crate  @relation(fields: [crateId], references: [id], onDelete: Cascade)
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@id([crateId, orderId])
+  @@index([orderId])
 }
 
 // ---------------------------------------------------------

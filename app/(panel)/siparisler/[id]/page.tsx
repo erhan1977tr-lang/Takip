@@ -12,14 +12,13 @@ import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/component
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { loadPricing, pricingForUser } from '@/server/pricing/tables.js';
-import { loadOf } from '@/lib/loading';
-import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
+import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
   ALLOWED_EXT, STAGES, availableActions, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, saveCratesAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
   markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
   startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
 } from './actions';
@@ -210,7 +209,7 @@ export default async function OrderPage({
           {shownOffer && (
             <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} />
           )}
-          {!isCustomer && order.status !== 'YENI' && <Crates order={order} canEdit={can('edit_crates')} t={t} />}
+          {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
           <Drawings order={order} user={user} t={t} />
           <Files order={order} user={user} canAdd={can('add_file')} t={t} />
           <Notes order={order} user={user} t={t} />
@@ -452,46 +451,19 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
 }
 
 // ---------------- sandıklar ----------------
-function Crates({ order, canEdit, t }: { order: OrderDetail; canEdit: boolean; t: T }) {
+function Crates({ order, t }: { order: OrderDetail; t: T }) {
   const load = loadOf(order, false);
-  const blanks = Math.max(1, 2 - order.crates.length) + (order.crates.length ? 0 : 1);
-  const rows = [...order.crates.map((c) => ({ key: c.id, dim: c.dimensions ?? '', net: c.netAgirlik?.toString() ?? '', brut: c.brutAgirlik?.toString() ?? '' })),
-    ...Array.from({ length: canEdit ? blanks : 0 }, (_, i) => ({ key: `new${i}`, dim: '', net: '', brut: '' }))];
+  const day = shipDay(order);
+  const nos = [...new Set(order.crateLinks.map((l) => l.crate.crateNo))].sort((a, b) => a - b);
   return (
     <div className="card" id="sandik">
       <h2>{t('order.crates.title')}</h2>
+      <p className="muted small">{t('order.crates.plan', { m2: fmtNum(load.metraj), glass: load.camAdet, net: fmtNum(load.netKg, 0) })}</p>
+      <p>{nos.length ? t('order.crates.linked', { list: nos.join(', ') }) : <span className="muted">{t('order.crates.none')}</span>}</p>
       <p className="muted small">
-        {t('order.crates.plan', { m2: fmtNum(load.metraj), glass: load.camAdet, net: fmtNum(load.netKg, 0), crates: load.crates, gross: fmtNum(load.grossKg, 0) })}{' '}
-        {load.realCrates
-          ? t('order.crates.real')
-          : t('order.crates.estimate', { max: fmtNum(CRATE_MAX_KG, 0), tare: CRATE_TARE_KG })}
+        {t('order.crates.where')}{' '}
+        {day && <Link href={`/yuklemeler?ay=${day.slice(0, 7)}&gun=${day}#gun`}>{t('order.crates.open')}</Link>}
       </p>
-      {rows.length > 0 && (
-        <form action={saveCratesAction}>
-          <input type="hidden" name="id" value={order.id} />
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>#</th><th>{t('order.crates.dim')}</th><th>{t('order.crates.net')}</th><th>{t('order.crates.gross')}</th></tr></thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={r.key}>
-                    <td className="muted">{i + 1}</td>
-                    <td><input name="c_dim" defaultValue={r.dim} disabled={!canEdit} aria-label={t('order.crates.dimAria')} /></td>
-                    <td><input name="c_net" inputMode="decimal" defaultValue={r.net} disabled={!canEdit} style={{ width: 100 }} aria-label={t('order.crates.netAria')} /></td>
-                    <td><input name="c_brut" inputMode="decimal" defaultValue={r.brut} disabled={!canEdit} style={{ width: 100 }} aria-label={t('order.crates.grossAria')} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {canEdit && (
-            <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
-              <span className="hint">{t('order.crates.hint')}</span>
-              <button className="btn btn-primary">{t('order.crates.save')}</button>
-            </div>
-          )}
-        </form>
-      )}
     </div>
   );
 }

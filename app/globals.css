@@ -298,3 +298,12 @@ input.input-changed { background: #eff6ff; border-color: #60a5fa; }
 /* Taslaktaki dosyalar (yeni sipariş formu) */
 .file-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 6px; }
 .file-list li { gap: 10px; flex-wrap: wrap; }
+
+/* Yükleme sekmesi: sandık girişi (müşteri satırının altında açılır) */
+.load-table tr.crate-row > td { background: #f8fafc; padding: 6px 12px 12px; }
+.load-table tr.crate-row summary { cursor: pointer; font-size: 13px; color: #1d4ed8; padding: 4px 0; }
+.crate-editor { background: #fff; border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 12px; margin-top: 6px; }
+.crate-table td, .crate-table th { padding: 4px 6px; white-space: nowrap; }
+.crate-table input { padding: 4px 6px; }
+.crate-orders { display: flex; flex-wrap: wrap; gap: 4px; }
+.crate-orders .crate-pick { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; }

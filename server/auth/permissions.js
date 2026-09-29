@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   OFFER_SEND: 'Fiyatı onaylar, teklifi müşteriye gönderir, gönderilmiş teklifi günceller',
   PRICE_FINAL_VIEW: 'Müşteriye giden (yönetici) fiyatı görür',
   SHIPMENT_VIEW: 'Yükleme takvimini görür',
+  CRATE_EDIT: 'Yükleme sekmesinde sandık ölçü ve ağırlıklarını girer',
   FILE_UPLOAD: 'Siparişe dosya ekler',
   FILE_INTERNAL_VIEW: 'İç ekip dosyalarını görür',
   NOTE_ADD: 'Not yazar',
@@ -41,7 +42,7 @@ const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE'];
 export const ROLE_PERMISSIONS = {
   ADMIN: Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p)),
   SATIS: [
-    'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW',
+    'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW', 'CRATE_EDIT',
     'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW',
   ],
   CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],

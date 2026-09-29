@@ -38,7 +38,6 @@ export const REQUIRES = {
   upload_drawing: ['upload_drawing'],
   approve_drawing: ['approve_drawing'],
   request_revision: ['request_revision'],
-  edit_crates: ['edit_crates'],
   save_offer: ['edit_offer', 'approve_price'],
   submit_offer: ['submit_offer'],
   approve_offer: ['approve_price'],
@@ -276,13 +275,6 @@ const ACTIONS = {
     h.event('REVISION_REQUESTED', comment);
     h.sla = true;
     if (latest) h.audit = { drawingId: latest.id, version: latest.version };
-  },
-  async edit_crates(h) {
-    const rows = h.payload.rows ?? [];
-    await h.tx.crate.deleteMany({ where: { orderId: h.order.id } });
-    if (rows.length) await h.tx.crate.createMany({ data: rows.map((r, i) => ({ ...r, orderId: h.order.id, crateNo: i + 1 })) });
-    // Not yalnızca sandık sayısıdır; ekranda events.CRATES.count olarak çevrilir
-    h.event('CRATES', String(rows.length));
   },
   save_offer: (h) => offerEdit(h, 'save'),
   submit_offer: (h) => offerEdit(h, 'submit'),

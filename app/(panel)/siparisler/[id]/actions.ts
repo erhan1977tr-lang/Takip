@@ -174,25 +174,6 @@ export async function requestRevisionAction(formData: FormData) {
 
 // ---------------- Sandıklar ----------------
 /** Sandık ölçü ve ağırlıkları (gerçek kayıt). Boş bırakılan satırlar silinir. */
-export async function saveCratesAction(formData: FormData) {
-  const user = await requirePermission('ORDER_VIEW');
-  const id = orderIdOf(formData);
-  const { t } = await getT();
-  const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
-  const dim = col('c_dim'), net = col('c_net'), brut = col('c_brut');
-  const toKg = (s: string) => (s ? Number(s.replace(',', '.')) : null);
-  const rows: { dimensions: string | null; netAgirlik: number | null; brutAgirlik: number | null }[] = [];
-  for (let i = 0; i < dim.length; i++) {
-    if (!dim[i] && !net[i] && !brut[i]) continue;
-    const n = toKg(net[i]), b = toKg(brut[i]);
-    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(id, t('order.errors.crateWeight', { n: i + 1 })));
-    if (n !== null && b !== null && b < n) redirect(err(id, t('order.errors.crateGross', { n: i + 1 })));
-    rows.push({ dimensions: dim[i] ? dim[i].slice(0, 80) : null, netAgirlik: n, brutAgirlik: b });
-  }
-  await act(user, id, 'edit_crates', { rows });
-  done(id, 'crates_saved');
-}
-
 // ---------------- Ortak ----------------
 /** Dosya eklemek bir durum değişikliği değildir: yetki ve durum kontrolünden sonra dosyalar kaydedilir. */
 export async function addFilesAction(formData: FormData) {

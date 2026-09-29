@@ -5,8 +5,9 @@
 import { pathToFileURL } from 'node:url';
 import { rolesStep } from './steps/roles.mjs';
 import { orderTypesStep } from './steps/order-types.mjs';
+import { cratesStep } from './steps/crates.mjs';
 
-export const STEPS = [rolesStep, orderTypesStep];
+export const STEPS = [rolesStep, orderTypesStep, cratesStep];
 
 /** @param {import('@prisma/client').PrismaClient} db */
 export async function runBaseSeed(db, { log = console.log } = {}) {
