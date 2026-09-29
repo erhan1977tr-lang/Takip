@@ -22,7 +22,7 @@ const basePath = (kind: Kind) => (kind === 'CUSTOMER' ? '/admin/musteri-fiyatlar
 const back = (formData: FormData, tableId: string | null, q: string) =>
   `${basePath(kindOf(formData))}?${tableId ? `tablo=${encodeURIComponent(tableId)}&` : ''}${q}`;
 const refresh = () => {
-  refresh();
+  revalidatePath('/admin/fiyatlar');
   revalidatePath('/admin/musteri-fiyatlari');
 };
 

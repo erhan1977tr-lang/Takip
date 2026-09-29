@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.10.0 — 29.09.2026 · Aşama 5 (teklif: iki kademeli fiyat)
+## 3.10.1 — 29.09.2026 · Aşama 5 (teklif: iki kademeli fiyat)
 
 - **Satış fiyatı ↔ müşteri fiyatı:** satış kendi fiyatını girer; yönetici fiyat onayında her satıra **müşteri fiyatı**
   girer. Yönetici ekranında satış fiyatı (salt okunur) ve müşteri fiyatı yan yana; altında satış tutarı, müşteri tutarı ve
