@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Takip — sunucu kurulumu. Ubuntu 22.04 / 24.04 ya da Debian 12 çalışan bir sunucuda root olarak BİR KEZ çalıştırılır:
+# Takip — sunucu kurulumu. Ubuntu 22.04 / 24.04 ya da Debian 12 çalışan bir sunucuda root olarak BİR KEZ çalıştırılır.
+# Depo özel (private) olduğu için önce GitHub erişim anahtarı (yalnızca okuma izinli fine-grained token) sorulur:
 #
-#   curl -fsSL https://raw.githubusercontent.com/erhan1977tr-lang/Takip/backend/deploy/install.sh | bash
+#   read -rsp "GitHub anahtarı: " GH_TOKEN && echo && export GH_TOKEN && curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+#     -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/erhan1977tr-lang/Takip/contents/deploy/install.sh?ref=backend" | bash
+#
+# Anahtar yalnızca bu sunucuda /opt/takip/github-token dosyasında saklanır (chmod 600).
 #
 # Yaptıkları: sistem güncellemeleri ve güvenlik (güvenlik duvarı, fail2ban, otomatik güvenlik yamaları), Docker,
 # uygulamanın indirilmesi, gizli anahtarların BU SUNUCUDA üretilmesi (/opt/takip/.env), HTTPS (Caddy + Let's Encrypt),
@@ -17,8 +21,10 @@
 set -Eeuo pipefail
 
 main() {
-  local REPO_URL=${TAKIP_REPO_URL:-https://github.com/erhan1977tr-lang/Takip.git}
+  local SLUG=erhan1977tr-lang/Takip
+  local REPO_URL=${TAKIP_REPO_URL:-https://github.com/$SLUG.git}
   local BASE=/opt/takip
+  local TOKEN=${GH_TOKEN:-${GITHUB_TOKEN:-}}
   local BRANCH=backend DOMAIN="" ADMIN_EMAIL="" ADMIN_NAME="" FACTORY=""
   while [ $# -gt 0 ]; do
     case $1 in
@@ -38,6 +44,21 @@ main() {
     ubuntu:22.04 | ubuntu:24.04 | debian:12 | debian:13) ok "İşletim sistemi: $PRETTY_NAME" ;;
     *) die "Desteklenmeyen işletim sistemi: $PRETTY_NAME. Ubuntu 22.04/24.04 ya da Debian 12 gerekli." ;;
   esac
+
+  # ---------- GitHub erişimi ----------
+  if [[ $REPO_URL == https://github.com/* ]]; then
+    if [ -z "$TOKEN" ] && [ -s "$BASE/github-token" ]; then TOKEN=$(cat "$BASE/github-token"); fi
+    [ -n "$TOKEN" ] || ask_secret TOKEN "GitHub erişim anahtarı (token; yazarken görünmez)"
+    command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq curl >/dev/null; }
+    local code
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/$SLUG" || true)
+    [ "$code" = 200 ] || die "GitHub anahtarı Takip deposunu okuyamıyor (HTTP $code). Depo erişimi: yalnızca Takip; izin: Contents → Read-only."
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/$SLUG/actions/runs?per_page=1" || true)
+    [ "$code" = 200 ] || die "GitHub anahtarında 'Actions → Read-only' izni eksik (HTTP $code)."
+    mkdir -p "$BASE"
+    (umask 077 && printf '%s\n' "$TOKEN" >"$BASE/github-token")
+    ok "GitHub erişimi doğrulandı (anahtar: $BASE/github-token)"
+  fi
 
   # ---------- sorular ----------
   if [ -f "$BASE/.env" ]; then
@@ -96,12 +117,15 @@ main() {
   step "Uygulama indiriliyor ($BRANCH dalı)"
   mkdir -p "$BASE/state" "$BASE/logs" "$BASE/backups"
   chmod 700 "$BASE/backups"
+  # Anahtar git ayarına yazılmaz; git her seferinde dosyadan okur.
+  local helper="!f() { test \"\$1\" = get || exit 0; echo username=x-access-token; printf 'password=%s\\n' \"\$(cat $BASE/github-token)\"; }; f"
   if [ -d "$BASE/src/.git" ]; then
     git -C "$BASE/src" remote set-url origin "$REPO_URL"
-    git -C "$BASE/src" fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   else
-    git clone --quiet --branch "$BRANCH" "$REPO_URL" "$BASE/src"
+    git -c credential.helper= -c credential.helper="$helper" clone --quiet --branch "$BRANCH" "$REPO_URL" "$BASE/src"
   fi
+  git -C "$BASE/src" config credential.helper "$helper"
+  git -C "$BASE/src" fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   echo "$BRANCH" >"$BASE/state/branch"
   ok "Kaynak: $BASE/src"
 
@@ -209,6 +233,15 @@ ask() { # ask DEĞİŞKEN "soru" [varsayılan]
   read -rp "$2${3:+ [$3]}: " __v <&3 || true
   exec 3<&-
   printf -v "$1" '%s' "${__v:-${3:-}}"
+}
+
+ask_secret() { # ask_secret DEĞİŞKEN "soru"  (yazılan ekranda görünmez)
+  local __v=""
+  if ! { exec 3</dev/tty; } 2>/dev/null; then die "$2 gerekli (GH_TOKEN ortam değişkeniyle verin)."; fi
+  read -rsp "$2: " __v <&3 || true
+  echo >&2
+  exec 3<&-
+  printf -v "$1" '%s' "$__v"
 }
 
 set_env() { # set_env DOSYA ANAHTAR DEĞER

@@ -9,8 +9,11 @@ yansımasını istedi. Ortam: **gerçek kullanım** (örnek veri yok), adres: su
 ## Karar
 - **Tek sunucu, Docker Compose:** PostgreSQL + uygulama + Caddy (Let's Encrypt). Veritabanı dışarıya açık değil.
 - **Çekme (pull) usulü yayın:** sunucu 2 dakikada bir GitHub'daki dalı kontrol eder; GitHub'a sunucu için hiçbir
-  gizli anahtar (SSH, token) konmaz, sunucuya dışarıdan erişim gerekmez. Depo herkese açık olduğu için okuma serbest.
-- **CI kapısı:** yalnızca `build-test` işi başarılı olan commit yayınlanır. CI'nin GITHUB_TOKEN ile yazdığı commit'ler
+  gizli anahtar (SSH anahtarı, sunucu adresi) konmaz, sunucuya dışarıdan erişim gerekmez. Depo özel olduğu için
+  sunucu, ürün sahibinin oluşturduğu **yalnızca okuma izinli, tek depoyla sınırlı** bir fine-grained token kullanır
+  (Contents: Read, Actions: Read). Anahtar yalnızca sunucuda `/opt/takip/github-token` dosyasında durur; git'e
+  bir kimlik yardımcısıyla dosyadan verilir, uygulama konteynerine girmez. Süresi dolunca `takip github`.
+- **CI kapısı:** yalnızca GitHub Actions'taki `CI` iş akışı başarılı olan commit yayınlanır. CI'nin GITHUB_TOKEN ile yazdığı commit'ler
   yeni CI başlatmadığı için, "CI:" ile başlayan bot commit'lerinde üst commit'in sonucu kullanılır (içerik o koşuda
   üretilip test edildi).
 - **İmaj sunucuda derlenir** (`takip:<commit>`, `takip:<commit>-tools`); dış kayıt defteri ve kimlik bilgisi gerekmez.

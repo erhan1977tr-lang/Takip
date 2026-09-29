@@ -8,11 +8,12 @@
 #   takip yedek                      veritabanı ve dosyaların yedeğini al (her gece kendiliğinden de alınır)
 #   takip log [SATIR]                uygulamanın son günlük satırları
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
+#   takip github                     GitHub erişim anahtarını (token) yenile
 #
 # Otomatik güncelleme (systemd: takip-deploy.timer, 2 dakikada bir → takip _otomatik):
-#   izlenen daldaki son commit GitHub'daki CI testlerinden (build-test) geçtiyse sunucuda derlenir,
+#   izlenen daldaki son commit GitHub'daki CI testlerinden geçtiyse sunucuda derlenir,
 #   veritabanı yedeklenir, migration uygulanır ve yeni sürüm başlatılır. Açılmazsa önceki sürüme dönülür.
-#   Testlerden geçmeyen commit hiç yayınlanmaz.
+#   Testlerden geçmeyen commit hiç yayınlanmaz. Depo özel: GitHub'a /opt/takip/github-token ile bağlanılır.
 set -Eeuo pipefail
 
 # Güncelleme sırasında bu dosya git tarafından değiştirilebilir; bash betiği satır satır okuduğu için
@@ -32,7 +33,8 @@ LOGS=$BASE/logs
 BACKUPS=$BASE/backups
 REPO_SLUG=${TAKIP_REPO:-erhan1977tr-lang/Takip}
 API=https://api.github.com/repos/$REPO_SLUG
-CI_CHECK=build-test
+TOKEN_FILE=$BASE/github-token
+CI_WORKFLOW=CI
 VERBOSE=${VERBOSE:-0}
 
 mkdir -p "$STATE" "$LOGS" "$BACKUPS"
@@ -63,16 +65,48 @@ env_set() {
   mv "$tmp" "$ENV_FILE"
 }
 
+# Aynı hata her 2 dakikada bir tekrar yazılmasın: yalnızca değişince kayda geçer (stdout'a yazmaz).
+note_error() {
+  if [ "$*" != "$(cat "$STATE/last_error" 2>/dev/null || true)" ]; then
+    echo "$*" >"$STATE/last_error"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ✘ $*" >>"$LOGS/deploy.log"
+  fi
+  echo "✘ $*" >&2
+}
+clear_error() { rm -f "$STATE/last_error"; }
+
+# ---------- GitHub ----------
+# Depo özel (private): sunucu, yalnızca okuma izinli bir erişim anahtarıyla (fine-grained token) bağlanır.
+# Anahtar yalnızca $TOKEN_FILE dosyasında durur (chmod 600); uygulamanın ortamına girmez.
+token() { if [ -n "${GITHUB_TOKEN:-}" ]; then echo "$GITHUB_TOKEN"; else cat "$TOKEN_FILE" 2>/dev/null || true; fi; }
+gh_curl() { # gh_curl YOL → gövde + son satırda HTTP kodu
+  local t a=(-sS --max-time 20 -w '\n%{http_code}' -H 'Accept: application/vnd.github+json')
+  t=$(token)
+  if [ -n "$t" ]; then a+=(-H "Authorization: Bearer $t"); fi
+  curl "${a[@]}" "$API$1"
+}
+
 # ---------- CI kontrolü ----------
-# Bir commit'in GitHub'daki CI sonucu: success | failure | pending | none | cancelled
+# Bir commit'in GitHub Actions'taki "CI" iş akışı sonucu: success | failure | pending | none | cancelled
+# (stdout'a yalnızca sonuç yazılır)
 ci_state() {
-  local out n st co
-  out=$(curl -fsS --max-time 20 -H 'Accept: application/vnd.github+json' \
-    "$API/commits/$1/check-runs?check_name=$CI_CHECK&per_page=10") || { echo pending; return; }
-  n=$(jq '.total_count' <<<"$out")
-  if [ "$n" = 0 ]; then echo none; return; fi
-  st=$(jq -r '.check_runs | sort_by(.started_at) | last | .status' <<<"$out")
-  co=$(jq -r '.check_runs | sort_by(.started_at) | last | .conclusion' <<<"$out")
+  local resp code run st co
+  resp=$(gh_curl "/actions/runs?head_sha=$1&per_page=30") || { echo pending; return; }
+  code=${resp##*$'\n'}
+  resp=${resp%$'\n'*}
+  case $code in
+    200) ;;
+    401 | 403 | 404)
+      note_error "GitHub anahtarı geçersiz, süresi dolmuş ya da izni eksik (HTTP $code). Yenilemek için: takip github"
+      echo pending
+      return
+      ;;
+    *) echo pending; return ;;
+  esac
+  run=$(jq -c --arg n "$CI_WORKFLOW" '[.workflow_runs[] | select(.name == $n)] | sort_by(.created_at) | last // empty' <<<"$resp")
+  if [ -z "$run" ]; then echo none; return; fi
+  st=$(jq -r .status <<<"$run")
+  co=$(jq -r .conclusion <<<"$run")
   if [ "$st" != completed ]; then echo pending
   elif [ "$co" = success ]; then echo success
   elif [ "$co" = cancelled ]; then echo cancelled
@@ -211,7 +245,10 @@ auto_deploy() {
   if ! flock -n 9; then info "Başka bir güncelleme sürüyor."; return 0; fi
   local b head current g
   b=$(branch)
-  git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b"
+  if ! git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b" 2>"$STATE/fetch.err"; then
+    note_error "GitHub'dan güncelleme alınamadı: $(tr '\n' ' ' <"$STATE/fetch.err" | cut -c1-200) — anahtarın süresi dolmuş olabilir: takip github"
+    return 1
+  fi
   head=$(git -C "$SRC" rev-parse "origin/$b")
   current=$(cat "$STATE/deployed" 2>/dev/null || true)
   if [ "$head" = "$current" ]; then info "Güncel: $(version_of "$head") ($(short "$head"))."; return 0; fi
@@ -220,6 +257,7 @@ auto_deploy() {
     return 0
   fi
   g=$(gate "$head")
+  [ -f "$STATE/last_error" ] && grep -q 'GitHub' "$STATE/last_error" && [ "$g" != pending ] && clear_error
   case $g in
     pending) info "$(short "$head") için testler sürüyor; bitince yayınlanacak."; return 0 ;;
     failure)
@@ -258,6 +296,7 @@ first_deploy() {
 # ---------- komutlar ----------
 cmd_status() {
   local d; d=$(cat "$STATE/deployed" 2>/dev/null || true)
+  if [ -s "$STATE/last_error" ]; then say "⚠ Son hata: $(cat "$STATE/last_error")"; say ""; fi
   say "Adres    : $(env_get APP_URL)"
   say "Dal      : $(branch)"
   if [ -n "$d" ]; then
@@ -307,6 +346,21 @@ cmd_admin() {
   compose run --rm tools node scripts/create-admin.mjs "$email" "$name" --factory "$factory" "$@"
 }
 
+cmd_github() {
+  say "GitHub erişim anahtarı (fine-grained token): yalnızca Takip deposu; izinler: Contents → Read-only, Actions → Read-only."
+  say "Oluşturmak için: github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens."
+  local t code
+  tty_read t "Anahtar (yazarken görünmez): " gizli
+  [ -n "$t" ] || { say "Boş bırakıldı; hiçbir şey değişmedi."; return 1; }
+  code=$(GITHUB_TOKEN=$t gh_curl "" | tail -n1 || true)
+  [ "$code" = 200 ] || { say "✘ Anahtar Takip deposunu okuyamıyor (HTTP $code). Depo erişimi ve Contents: Read iznini kontrol edin."; return 1; }
+  code=$(GITHUB_TOKEN=$t gh_curl "/actions/runs?per_page=1" | tail -n1 || true)
+  [ "$code" = 200 ] || { say "✘ Anahtarda 'Actions: Read-only' izni eksik (HTTP $code)."; return 1; }
+  (umask 077 && printf '%s\n' "$t" >"$TOKEN_FILE")
+  clear_error
+  say "✔ Anahtar kaydedildi ($TOKEN_FILE). Otomatik güncelleme bununla devam edecek."
+}
+
 cmd_backup() {
   local f g
   f=$(backup_db elle) || { say "✘ Veritabanı yedeği alınamadı."; return 1; }
@@ -325,6 +379,8 @@ main() {
     guncelle | update) VERBOSE=1 auto_deploy ;;
     _otomatik) auto_deploy ;;
     _ilk) first_deploy ;;
+    _ci) gate "$(git -C "$SRC" rev-parse "$1")" ;;
+    github) cmd_github ;;
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
     yedek | backup) cmd_backup ;;

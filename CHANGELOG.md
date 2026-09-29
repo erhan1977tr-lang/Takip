@@ -7,7 +7,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 ## 3.4.0 — 29.09.2026 · Sunucu
 
 - Sunucu kurulumu tek komutla: Docker, HTTPS (Let's Encrypt), güvenlik duvarı, fail2ban, otomatik güvenlik yamaları,
-  veritabanı, ilk yönetici hesabı. Gizli anahtarlar sunucunun kendisinde üretilir.
+  veritabanı, ilk yönetici hesabı. Gizli anahtarlar sunucunun kendisinde üretilir. Depo özel olduğu için sunucu
+  GitHub'a yalnızca okuma izinli bir erişim anahtarıyla bağlanır (anahtar yalnızca sunucuda durur).
 - Otomatik güncelleme: GitHub'daki testlerden geçen her sürüm birkaç dakika içinde sunucuda yayınlanır; öncesinde
   veritabanı yedeklenir, yeni sürüm açılmazsa önceki sürüme dönülür.
 - Sunucu aracı `takip`: durum, e-posta (SMTP) ayarı, yönetici hesabı, yedek, günlük.

@@ -8,15 +8,23 @@ testlerden (CI) geçen her yeni sürümü birkaç dakika içinde kendisi yayınl
 
 Gerekli: Ubuntu 22.04 / 24.04 ya da Debian 12, en az 4 GB bellek, root erişimi.
 
+0. **GitHub erişim anahtarı** (depo özel olduğu için sunucunun kodu okuyabilmesi gerekir):
+   github.com → sağ üstte profil → **Settings** → **Developer settings** → **Personal access tokens** →
+   **Fine-grained tokens** → **Generate new token**
+   - Token name: `Takip sunucu` · Expiration: 1 yıl (dolunca sunucuda `takip github` ile yenilenir)
+   - Repository access: **Only select repositories** → `Takip`
+   - Permissions → Repository permissions: **Contents: Read-only**, **Actions: Read-only**
+   - **Generate token** → çıkan `github_pat_…` anahtarını kopyalayın. Yalnızca sunucuda soruluca yapıştırın;
+     başka hiçbir yere (sohbet, e-posta) yazmayın.
 1. Bilgisayarınızda **PowerShell** (Windows) ya da **Terminal** (Mac) açın ve sunucuya bağlanın:
    ```
    ssh root@SUNUCU_IP_ADRESI
    ```
    İlk bağlantıda `yes` yazın. Şifreyi yazarken ekranda hiçbir şey görünmez; yazıp Enter'a basın.
    **Şifreyi hiçbir yere (sohbet, e-posta) yapıştırmayın.**
-2. Şu satırı yapıştırıp Enter'a basın:
+2. Şu satırı yapıştırıp Enter'a basın; `GitHub anahtarı:` sorusunda anahtarı yapıştırın (ekranda görünmez):
    ```
-   curl -fsSL https://raw.githubusercontent.com/erhan1977tr-lang/Takip/backend/deploy/install.sh | bash
+   read -rsp "GitHub anahtarı: " GH_TOKEN && echo && export GH_TOKEN && curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/erhan1977tr-lang/Takip/contents/deploy/install.sh?ref=backend" | bash
    ```
 3. Sorulanları yanıtlayın: ilk yöneticinin e-postası, adı soyadı, şirket adı.
 4. Sonunda ekranda **adres** ve **tek kullanımlık kod** çıkar. Adresi açın → e-postanızı yazın → şifre alanını
@@ -37,6 +45,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip yedek` | Hemen yedek al |
 | `takip log` | Uygulamanın son günlük satırları |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
+| `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
 
 ## Otomatik güncelleme nasıl çalışır
 
@@ -52,6 +61,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 
 ```
 /opt/takip/.env        ayarlar ve gizli anahtarlar (yalnızca bu sunucuda; kurulumda üretilir, chmod 600)
+/opt/takip/github-token  GitHub okuma anahtarı (chmod 600; uygulamanın ortamına girmez)
 /opt/takip/src         uygulamanın kaynağı (git)
 /opt/takip/backups     veritabanı (14 gün) ve dosya (7 gün) yedekleri — her gece ~03:30 ve her yayından önce
 /opt/takip/logs        yayın ve derleme kayıtları

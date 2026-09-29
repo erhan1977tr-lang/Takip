@@ -14,6 +14,10 @@ on:
       - '.github/workflows/deploy-test.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: deploy-test-${{ github.ref }}
   cancel-in-progress: true
@@ -49,6 +53,19 @@ jobs:
           curl -fsSk "$SITE/surum" | tee /dev/stderr | jq -e --arg v "$ver" --arg b "${GITHUB_SHA::7}" '.version == $v and .build == $b'
           grep -qE 'Tek kullanımlık kod: .*[0-9]{6}' install.log
           sudo takip durum
+
+      - name: CI kapısı (gerçek GitHub API; CI'nin yazdığı commit'te üst commit'in sonucu)
+        env:
+          GH: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gate() { sudo env GITHUB_TOKEN="$GH" takip _ci "$1"; }
+          [ "$(gate 1e117de)" = success ]
+          [ "$(gate 7c76031)" = failure ]
+          [ "$(gate d75ccda)" = failure ]
+          [ "$(gate cf140a5)" = success ]
+          # Geçersiz anahtar: yayın yapılmaz ("pending"), hata kayda geçer
+          [ "$(sudo env GITHUB_TOKEN=gecersiz takip _ci 1e117de 2>/dev/null)" = pending ]
+          sudo grep -q 'GitHub anahtarı geçersiz' /opt/takip/logs/deploy.log
 
       - name: Yeniden kurulum anahtarları korur
         run: |
