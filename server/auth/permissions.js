@@ -29,6 +29,8 @@ export const PERMISSIONS = {
   USER_MANAGE: 'Kullanıcıları yönetir',
   CUSTOMER_MANAGE: 'Firmaları yönetir',
   CATALOG_MANAGE: 'Katalogları yönetir',
+  PRICE_TABLE_MANAGE: 'Fiyat tablolarını ve satışçı atamalarını yönetir',
+  ALERT_VIEW: 'Önemli kararlar listesini görür ve kapatır',
   SETTINGS_MANAGE: 'Ayarlar ve entegrasyonlar',
   AUDIT_VIEW: 'Denetim kaydını görür',
 };

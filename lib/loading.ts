@@ -43,7 +43,7 @@ export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'crates' | 'price'>
   const sent = o.offers.find((x) => x.status === 'GONDERILDI');
   const offer = customerView ? sent : sent ?? o.offers[0];
   const load = orderLoad({
-    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind })),
+    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null })),
     items: o.items,
     crates: o.crates.map((c) => ({
       netAgirlik: c.netAgirlik != null ? Number(c.netAgirlik) : null,

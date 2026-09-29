@@ -10,7 +10,8 @@ import {
 } from '@/lib/labels';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
-import { OfferEditor } from './OfferEditor';
+import { OfferEditor, type EditorPricing } from './OfferEditor';
+import { loadPricing, pricingForUser } from '@/server/pricing/tables.js';
 import { loadOf } from '@/lib/loading';
 import { CRATE_MAX_KG, CRATE_TARE_KG } from '@/server/orders/loading.js';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
@@ -78,9 +79,26 @@ export default async function OrderPage({
   const stage = stageIndex(order.status);
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
   const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
-  const catalog = editable || updating
-    ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })).map((g) => glassLabel(g, locale))
+  const glasses = editable || updating
+    ? await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })
     : [];
+  const catalog = glasses.map((g) => glassLabel(g, locale));
+  // Fiyat tablosu (karar 26): teklifin tablosu; eski teklifte tablo yoksa satışçının kendi tablosu
+  let pricing: EditorPricing | null = null;
+  if ((editable || updating) && offer && userCan(user, 'OFFER_PREPARE')) {
+    const p = offer.priceTableId ? await loadPricing(db, offer.priceTableId)
+      : !userCan(user, 'OFFER_SEND') ? await pricingForUser(db, user.id) : null;
+    if (p && p.currency === offer.currency) {
+      const glass: Record<string, number> = {};
+      for (const g of glasses) {
+        const price = p.prices.get(g.id);
+        if (price == null) continue;
+        glass[glassLabel(g, locale)] = price;
+        glass[glassLabel(g, 'tr')] = price;
+      }
+      pricing = { name: p.name, glass, holePrice: p.holePrice, cncPrice: p.cncPrice };
+    }
+  }
   // Veri zaten sunucuda temizlendi (lib/orders.ts → sanitizeOrder); çizim ekibi teklif görmez,
   // müşteri ve denetimci yalnızca müşteriye gönderilmiş teklifi görür.
   const shownOffer = !userCan(user, 'OFFER_VIEW') ? undefined : isCustomer ? sent : editable || updating ? undefined : offer;
@@ -170,13 +188,15 @@ export default async function OrderPage({
           cancelHref={`/siparisler/${order.id}#teklif`}
           currency={offer.currency}
           catalog={catalog}
+          pricing={pricing}
           statusLabel={updating ? t('offer.editor.statusUpdating', { n: sentVersions + 1 }) : offer.status === 'YONETIMDE' ? t('offer.editor.statusAdmin') : t('offer.editor.statusSales')}
           camEtiket={order.camEtiket ?? order.customer.camEtiket ?? ''}
           sandikEtiket={order.sandikEtiket ?? order.customer.sandikEtiket ?? ''}
           initial={offer.lines.map((l) => ({
-            description: l.description, poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
+            description: locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description,
+            poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
-            kind: l.kind, free: l.free,
+            kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
           }))}
           m={m.offer}
           common={m.common}
@@ -188,7 +208,7 @@ export default async function OrderPage({
       <div className="detail-grid">
         <div>
           {shownOffer && (
-            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} />
+            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} />
           )}
           {!isCustomer && order.status !== 'YENI' && <Crates order={order} canEdit={can('edit_crates')} t={t} />}
           <Drawings order={order} user={user} t={t} />
@@ -369,7 +389,7 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro' }) {
   // Müşteri ve denetimci müşteriye giden (yönetici) tutarı görür
   const total = offer.status === 'GONDERILDI' && order.price && finalPrice ? order.price.amount : offer.amount;
   const updated = offer.status === 'GONDERILDI' && versions > 1;
@@ -400,7 +420,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                 const sub = l.kind === 'CNC' || l.kind === 'DELIK';
                 if (!sub) n += 1;
                 const kindLabel = sub ? lineKindText(t, l.kind) : '';
-                const desc = sub && (l.description === kindLabel || l.description === LEGACY_SUB_DESC[l.kind]) ? '' : l.description;
+                const desc = sub && (l.description === kindLabel || l.description === LEGACY_SUB_DESC[l.kind]) ? ''
+                  : locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
                 return (
                   <tr key={l.id} className={sub ? 'sub-line' : undefined}>
                     <td className="muted">{sub ? '' : n}</td>

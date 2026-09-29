@@ -10,6 +10,8 @@ export default {
   users: 'Kullanıcılar',
   firms: 'Müşteriler',
   catalog: 'Cam Kataloğu',
+  prices: 'Fiyat Tabloları',
+  alerts: 'Önemli kararlar',
   integrations: 'Entegrasyonlar',
   myOrders: 'Siparişlerim',
   newOrder: 'Yeni Sipariş',

@@ -74,7 +74,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | 0 | Depo, ortam, migration, test, lint, seed, mimari kararlar | 3.2.x'te tamamlandı |
 | 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.2'de tamamlandı** |
 | 2 | Sipariş tipleri, numaralandırma, dosya, not, geçmiş, denetim servisi | **3.5.0'da tamamlandı** |
-| 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.0): katalog, taslak, kuyruklar** · 3b: fiyat tabloları |
+| 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.x): katalog, taslak, kuyruklar · 3b (3.7.0): fiyat tabloları, Önemli kararlar** |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | Büyük ölçüde var |
 | 5 | Satış teklifi, yönetici fiyatı, müşteriye gönderim | Var; iki kademeli fiyat (yönetim kopyası) eksik |
 | 6 | Profil siparişi ve profil kataloğu | Yok (katalog verisi `prisma/seed/data` içinde hazır) |

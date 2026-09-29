@@ -166,6 +166,14 @@ async function main(db) {
     });
     glassByTr.set(nameTr, g);
   }
+  // Fiyat tablosu (varsayılan): demo satışçının teklifine fiyatlar dolu gelir; delik ve CNC sabit fiyatlı
+  const PRICES = [18, 26, 32, 40, 34, 62];
+  await db.priceTable.create({
+    data: {
+      name: 'GKH — Standart 2026', currency: 'EUR', holePrice: 3, cncPrice: 12, isDefault: true,
+      items: { create: GLASSES.slice(0, PRICES.length).map(([nameTr], i) => ({ glassProductId: glassByTr.get(nameTr).id, unitPrice: PRICES[i] })) },
+    },
+  });
   const itemOf = ([glassName, camAdedi]) => {
     const g = glassByTr.get(glassName);
     return { glassName, camAdedi, glassProductId: g?.id ?? null, glassNameRo: g?.nameRo ?? null, glassWeightKgM2: g?.weightKgM2 ?? null };

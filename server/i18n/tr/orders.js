@@ -54,6 +54,8 @@ export default {
   internal: {
     infectedBanner: 'Karantinada {n} virüslü dosya var; bu dosyalar indirilemez.',
     infectedLink: 'Entegrasyonlar →',
+    alertsBanner: '{n} önemli karar bekliyor (ör. satışçı liste fiyatını değiştirdi).',
+    alertsLink: 'Önemli kararlar →',
     titles: {
       drawing: 'Çizim Paneli',
       admin: 'Siparişler',

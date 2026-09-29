@@ -39,7 +39,7 @@ const num = (v) => {
 /**
  * Bir siparişin yükü.
  * @param {{
- *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string}[],
+ *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null}[],
  *   items?: {camAdedi: number}[],
  *   crates?: {netAgirlik?: any, brutAgirlik?: any, daraKg?: any}[],
  * }} p
@@ -56,7 +56,8 @@ export function orderLoad({ lines = [], items = [], crates = [] }) {
     const m = offerLineTotals({ ...l, unit: 'm2', unitPrice: 0 }).metraj;
     metraj = round2(metraj + m);
     camAdet += Math.max(0, Math.trunc(num(l.adet)));
-    glassKg += m * (glassKgPerM2(l.description) ?? DEFAULT_KG_PER_M2);
+    // Katalogdaki ağırlık (teklif satırındaki anlık kopya) önce; yoksa açıklamadan tahmin
+    glassKg += m * ((l.weightKgM2 != null ? num(l.weightKgM2) : null) ?? glassKgPerM2(l.description) ?? DEFAULT_KG_PER_M2);
   }
   if (glassLines.length === 0) camAdet = items.reduce((s, it) => s + Math.max(0, it.camAdedi || 0), 0);
   glassKg = Math.round(glassKg);

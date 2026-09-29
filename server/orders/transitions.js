@@ -9,6 +9,8 @@ import { can } from '../auth/permissions.js';
 import { availableActions, shouldAutoProduce, slaDeadline } from './rules.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
+import { enrichLines, loadPricing, prefillLines, pricingForUser } from '../pricing/tables.js';
+import { recordPriceOverrides } from '../pricing/alerts.js';
 
 export { WorkflowError };
 
@@ -94,15 +96,39 @@ export async function autoProduction(tx, orderId) {
 }
 
 /** Teklif yoksa siparişin cam kalemlerinden bir taslak açar. */
+/**
+ * Satışçının ilk teklif taslağı: siparişin camları, satışçının fiyat tablosundaki liste fiyatlarıyla (karar 26).
+ * Tablo yoksa fiyatlar boş gelir, satışçı elle girer.
+ */
 async function ensureOfferDraft(tx, order, userId) {
   if (order.offers.length) return;
+  const pricing = await pricingForUser(tx, userId);
   const src = order.items.length ? order.items : [{ glassName: '', camAdedi: 1 }];
   await tx.offer.create({
     data: {
       orderId: order.id, createdById: userId,
-      lines: { create: src.map((it, i) => ({ sortOrder: i, description: it.glassName || '', adet: Math.max(1, it.camAdedi || 1), unit: 'm2' })) },
+      ...(pricing ? { priceTableId: pricing.id, currency: pricing.currency } : {}),
+      lines: { create: prefillLines(src, pricing) },
     },
   });
+}
+
+/**
+ * Kaydedilecek satırları katalog ve fiyat tablosuyla tamamlar (cam, iki dildeki ad, ağırlık, liste fiyatı).
+ * Teklifin tablosu yoksa (eski teklif) ve kaydeden satışçıysa onun tablosu bağlanır (para birimi aynıysa).
+ */
+async function completeLines(h, offer, lines) {
+  const { tx, order, actor } = h;
+  let pricing = await loadPricing(tx, offer.priceTableId);
+  if (!pricing && can(actor.role, 'OFFER_PREPARE') && !can(actor.role, 'OFFER_SEND')) {
+    const own = await pricingForUser(tx, actor.id);
+    if (own && own.currency === offer.currency) {
+      pricing = own;
+      await tx.offer.update({ where: { id: offer.id }, data: { priceTableId: own.id } });
+    }
+  }
+  const glasses = await tx.glassProduct.findMany();
+  return enrichLines(lines, { glasses, items: order.items, previous: offer.lines ?? [], pricing });
 }
 
 const money = (amount, currency) => `${amount} ${currency}`;
@@ -123,7 +149,8 @@ async function offerEdit(h, intent) {
   const { tx, order, actor, payload, now } = h;
   const offer = latestOffer(order);
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
-  const { lines, amount } = payload;
+  const { amount } = payload;
+  const lines = await completeLines(h, offer, payload.lines);
   await tx.offerLine.deleteMany({ where: { offerId: offer.id } });
   await tx.offerLine.createMany({ data: lines.map((l, i) => ({ ...l, offerId: offer.id, sortOrder: i })) });
   await tx.offer.update({ where: { id: offer.id }, data: { amount } });
@@ -133,6 +160,8 @@ async function offerEdit(h, intent) {
   if (intent === 'submit') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE', statusSince: now } });
     h.event('OFFER_SUBMITTED', money(amount, offer.currency));
+    // Liste fiyatından farklı fiyat → yöneticinin "Önemli kararlar" listesi
+    h.overrides = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines, actor, now });
   } else if (intent === 'approve') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now } });
     await tx.price.upsert({
@@ -147,7 +176,7 @@ async function offerEdit(h, intent) {
     h.event('OFFER_RETURNED', payload.returnNote);
   }
   h.sla = true;
-  h.audit = { offerId: offer.id, intent, amount, lines: lines.length };
+  h.audit = { offerId: offer.id, intent, amount, lines: lines.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}) };
 }
 
 const ACTIONS = {
@@ -267,10 +296,11 @@ const ACTIONS = {
     const { tx, order, actor, payload, now } = h;
     const prev = latestOffer(order);
     if (!prev) throw new WorkflowError('OFFER_NOT_FOUND');
-    const { lines, amount } = payload;
+    const { amount } = payload;
+    const lines = await completeLines(h, prev, payload.lines);
     const created = await tx.offer.create({
       data: {
-        orderId: order.id, createdById: actor.id, currency: prev.currency, amount,
+        orderId: order.id, createdById: actor.id, currency: prev.currency, amount, priceTableId: prev.priceTableId ?? null,
         status: 'GONDERILDI', statusSince: now, sentAt: now,
         lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
       },
@@ -325,7 +355,7 @@ export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
         const entries = [];
         const h = {
           tx, order, actor, payload, now: new Date(), status: order.status,
-          sla: false, auto: false, audit: undefined, result: undefined,
+          sla: false, auto: false, audit: undefined, result: undefined, overrides: 0,
           async set(data) {
             await tx.order.update({ where: { id: order.id }, data });
             if (data.status) h.status = data.status;

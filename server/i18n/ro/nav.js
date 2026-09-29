@@ -11,6 +11,8 @@ export default {
   firms: 'Clienți',
   integrations: 'Integrări',
   catalog: 'Catalog sticlă',
+  prices: 'Liste de prețuri',
+  alerts: 'Decizii importante',
   myOrders: 'Comenzile mele',
   newOrder: 'Comandă nouă',
   myOffers: 'Ofertele mele',

@@ -53,6 +53,8 @@ export default {
   internal: {
     infectedBanner: 'În carantină sunt {n} fișiere infectate; acestea nu pot fi descărcate.',
     infectedLink: 'Integrări →',
+    alertsBanner: '{n} decizii importante așteaptă (ex. vânzătorul a modificat prețul de listă).',
+    alertsLink: 'Decizii importante →',
     titles: {
       drawing: 'Panou desen',
       admin: 'Comenzi',

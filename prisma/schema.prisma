@@ -115,6 +115,11 @@ model User {
   notifications      Notification[]
   auditLogs          AuditLog[]
   settingsUpdated    IntegrationSetting[]
+  // Satışçının fiyat tablosu (Aşama 3b): tek tablo; boşsa varsayılan tablo kullanılır
+  priceTableId       String?
+  priceTable         PriceTable?    @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
+  alertsCreated      AdminAlert[]   @relation("AlertCreatedBy")
+  alertsResolved     AdminAlert[]   @relation("AlertResolvedBy")
   invites            UserInvite[]
   sessions           Session[]
   orderNotes         OrderNote[]
@@ -298,6 +303,7 @@ model Order {
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
   events            OrderEvent[]
   files             OrderFile[]
+  alerts            AdminAlert[]
   notes             OrderNote[]
   outbox            NotificationOutbox[]
 
@@ -434,6 +440,7 @@ model GlassProduct {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
   orderItems OrderItem[]
+  prices     PriceTableItem[]
 
   @@unique([nameTr, colorTr])
 }
@@ -483,6 +490,10 @@ model Offer {
   updatedAt   DateTime    @updatedAt
 
   @@index([orderId])
+  // Satır fiyatlarının geldiği fiyat tablosu (teklif açılırken satışçının tablosu)
+  priceTableId String?
+  priceTable   PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
+  alerts       AdminAlert[]
 }
 
 // Teklif satırı. Metraj = en × boy × adet (m²); tutar = metraj × birim fiyat (birim m² ise) ya da adet × birim fiyat.
@@ -500,6 +511,61 @@ model OfferLine {
   unitPrice   Decimal @default(0) @db.Decimal(12, 2)
   kind        String  @default("CAM") // CAM | CNC | DELIK — CNC ve delik satırları üstlerindeki cam satırına aittir
   free        Boolean @default(false) // bedelsiz: fiyat 0 kabul edilir
+  // Katalogdaki cam (açıklama katalogla eşleştiyse) ve teklif anındaki kopyası
+  glassProductId String?
+  descriptionRo  String?  // camın Romence adı — Romence ekranda açıklama yerine gösterilir
+  weightKgM2     Decimal? @db.Decimal(6, 2) // yüklemelerde ağırlık; teklifte görünmez
+  // Fiyat tablosundaki liste fiyatı (satışçı bundan farklı fiyat girerse yöneticiye uyarı düşer)
+  listPrice      Decimal? @db.Decimal(12, 2)
+}
+
+// Fiyat tabloları (Aşama 3b, karar 26): satışçıların teklife yazacağı liste fiyatları.
+// Cam başına m² fiyatı; delik ve CNC için adet başına sabit fiyat.
+model PriceTable {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  currency  String   @default("EUR")
+  holePrice Decimal? @db.Decimal(12, 2) // delik başına
+  cncPrice  Decimal? @db.Decimal(12, 2) // CNC işlemi başına
+  isActive  Boolean  @default(true)
+  isDefault Boolean  @default(false) // ataması olmayan satışçılar bunu kullanır (en fazla bir tablo)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  items     PriceTableItem[]
+  users     User[]
+  offers    Offer[]
+}
+
+model PriceTableItem {
+  id             String       @id @default(cuid())
+  tableId        String
+  table          PriceTable   @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  glassProductId String
+  glassProduct   GlassProduct @relation(fields: [glassProductId], references: [id], onDelete: Cascade)
+  unitPrice      Decimal      @db.Decimal(12, 2) // m² fiyatı
+  updatedAt      DateTime     @default(now()) @updatedAt
+
+  @@unique([tableId, glassProductId])
+}
+
+// Yöneticinin "Önemli kararlar" listesi: bir insan kararı bekleyen durumlar
+// (ör. satışçı liste fiyatını değiştirdi). Yönetici "Gördüm" deyince kapanır; silinmez.
+model AdminAlert {
+  id           String    @id @default(cuid())
+  type         String    // PRICE_OVERRIDE
+  orderId      String?
+  order        Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  offerId      String?
+  offer        Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  details      Json
+  createdById  String?
+  createdBy    User?     @relation("AlertCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?     @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([resolvedAt, createdAt])
 }
 
 model Price {

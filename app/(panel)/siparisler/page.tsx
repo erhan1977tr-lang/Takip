@@ -271,6 +271,8 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const role = user.appRole;
   const queues = queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK') });
   // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
+  // Yöneticiye: bekleyen önemli kararlar (ör. satışçı liste fiyatını değiştirdi) — girişte ilk bu görünür
+  const alerts = userCan(user, 'ALERT_VIEW') ? await db.adminAlert.count({ where: { resolvedAt: null } }) : 0;
   const infected = userCan(user, 'SETTINGS_MANAGE')
     ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } }))
     : 0;
@@ -280,6 +282,11 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       <div className="page-head">
         <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
+      {alerts > 0 && (
+        <div className="alert alert-warn">
+          {t('orders.internal.alertsBanner', { n: alerts })} <Link href="/admin/kararlar">{t('orders.internal.alertsLink')}</Link>
+        </div>
+      )}
       {infected > 0 && (
         <div className="alert alert-error">
           {t('orders.internal.infectedBanner', { n: infected })} <Link href="/admin/entegrasyonlar#antivirus">{t('orders.internal.infectedLink')}</Link>

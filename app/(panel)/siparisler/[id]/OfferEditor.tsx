@@ -7,11 +7,20 @@ import { interpolate } from '@/server/i18n/interpolate.js';
 import { offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
 import { saveOfferAction } from './actions';
 
-type Line = { key: number; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean };
+/** listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir. */
+type Line = { key: number; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string };
+
+/** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
+export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
 
 let seq = 1000;
-const blankGlass = (): Line => ({ key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false });
-const blankSub = (kind: 'CNC' | 'DELIK'): Line => ({ key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'adet', unitPrice: '', kind, free: false });
+const blankGlass = (): Line => ({ key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false, listPrice: '' });
+const blankSub = (kind: 'CNC' | 'DELIK', price: number | null): Line => {
+  const p = price != null ? price.toFixed(2) : '';
+  return { key: seq++, description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'adet', unitPrice: p, kind, free: false, listPrice: p };
+};
+const upper = (s: string) => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('tr-TR');
+const samePrice = (a: string, b: string) => Math.abs(Number(a.replace(',', '.') || 0) - Number(b.replace(',', '.') || 0)) < 0.005;
 
 const fmt = (n: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -24,6 +33,7 @@ export function OfferEditor(props: {
   cancelHref?: string;
   currency: string;
   catalog: string[];
+  pricing: EditorPricing | null;
   initial: Omit<Line, 'key'>[];
   camEtiket: string;
   sandikEtiket: string;
@@ -47,11 +57,20 @@ export function OfferEditor(props: {
   /** Satır türünün adı: "CNC" / "Delik" (dile göre) */
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const glassPrices = useMemo(() => new Map(Object.entries(props.pricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.pricing]);
+  /** Cam adı değişince liste fiyatı da değişir; fiyat boşsa ya da liste fiyatıysa yeni liste fiyatı yazılır. */
+  const setDescription = (l: Line, description: string) => {
+    if (l.kind !== 'CAM') return set(l.key, { description });
+    const p = glassPrices.get(upper(description));
+    const listPrice = p != null ? p.toFixed(2) : '';
+    const follow = !l.unitPrice || (l.listPrice !== '' && samePrice(l.unitPrice, l.listPrice));
+    set(l.key, { description, listPrice, ...(follow ? { unitPrice: listPrice } : {}) });
+  };
   /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
   const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
     let i = ls.findIndex((l) => l.key === key) + 1;
     while (i < ls.length && ls[i].kind !== 'CAM') i++;
-    return [...ls.slice(0, i), blankSub(kind), ...ls.slice(i)];
+    return [...ls.slice(0, i), blankSub(kind, kind === 'CNC' ? props.pricing?.cncPrice ?? null : props.pricing?.holePrice ?? null), ...ls.slice(i)];
   });
   /** Cam satırı silinince altındaki CNC / delik satırları da silinir. */
   const remove = (key: number) => setLines((ls) => {
@@ -81,6 +100,9 @@ export function OfferEditor(props: {
         <span className="muted small">{m.editor.formula}</span>
       </div>
 
+      {props.pricing && !isUpdate && (
+        <p className="muted small" style={{ marginTop: 0 }}>{interpolate(m.editor.tableInfo, { name: props.pricing.name })} {!isAdmin && m.editor.overrideNote}</p>
+      )}
       {isUpdate && (
         <div className="alert alert-info" style={{ marginBottom: 14 }}>
           {m.editor.updateInfo}
@@ -116,7 +138,7 @@ export function OfferEditor(props: {
                     {sub && <span className="badge badge-info">{kind}</span>}{' '}
                     {l.free && <span className="badge badge-ok">{m.free}</span>}
                     <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
-                      onChange={(e) => set(l.key, { description: e.target.value })} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
+                      onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
                   </td>
                   <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label={m.cols.poz} /></td>
                   {sub ? (
@@ -144,6 +166,11 @@ export function OfferEditor(props: {
                       onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
                       aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
                     {l.free && <input type="hidden" name="l_price" value="0" />}
+                    {l.listPrice !== '' && (
+                      l.free || !samePrice(l.unitPrice, l.listPrice)
+                        ? <div className="small list-changed">{interpolate(isAdmin ? m.editor.listChangedAdmin : m.editor.listChanged, { p: fmt(Number(l.listPrice)) })}</div>
+                        : <div className="small muted">{interpolate(m.editor.listPrice, { p: fmt(Number(l.listPrice)) })}</div>
+                    )}
                   </td>
                   <td className="num">{fmt(tot.amount)}</td>
                   <td>

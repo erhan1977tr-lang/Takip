@@ -58,6 +58,12 @@ export default {
     submit: 'Teklifi yöneticiye gönder',
     footUpdate: 'Teklif müşteriye gönderildikten sonra yalnızca sistem yöneticisi değiştirebilir.',
     footAdmin: 'Onayladığınızda teklif müşterinin panelinde görünür.',
+    listPrice: 'Liste: {p}',
+    listChanged: 'Liste fiyatı {p}; değiştirdiniz — yöneticiye bildirilecek.',
+    listChangedAdmin: 'Liste fiyatı {p}; satışçı değiştirdi.',
+    noListPrice: 'Fiyat tablosunda yok',
+    tableInfo: 'Fiyatlar “{name}” tablosundan geldi.',
+    overrideNote: 'Liste fiyatından farklı fiyatlar yöneticinin “Önemli kararlar” listesine düşer.',
     footSales: 'Teklif doğrudan müşteriye gitmez; önce sistem yöneticisinin onayına düşer. Gönderdikten sonra değişikliği yalnızca yönetici yapabilir.',
   },
 };

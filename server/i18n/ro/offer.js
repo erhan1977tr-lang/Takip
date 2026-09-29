@@ -58,6 +58,12 @@ export default {
     submit: 'Trimite oferta administratorului',
     footUpdate: 'După trimiterea către client, oferta poate fi modificată doar de administrator.',
     footAdmin: 'După aprobare, oferta apare în panoul clientului.',
+    listPrice: 'Listă: {p}',
+    listChanged: 'Preț de listă {p}; l-ați modificat — administratorul va fi anunțat.',
+    listChangedAdmin: 'Preț de listă {p}; modificat de vânzător.',
+    noListPrice: 'Nu există în lista de prețuri',
+    tableInfo: 'Prețurile provin din lista „{name}”.',
+    overrideNote: 'Prețurile diferite de cele din listă apar în lista „Decizii importante” a administratorului.',
     footSales: 'Oferta nu ajunge direct la client; mai întâi merge la aprobarea administratorului. După trimitere, doar administratorul o mai poate modifica.',
   },
 };

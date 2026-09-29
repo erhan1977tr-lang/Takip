@@ -83,12 +83,16 @@ const ZERO = new Prisma.Decimal(0);
  * Rolün göremeyeceği her şeyi sunucuda çıkarır (ekranda gizlemek yetmez):
  *  - firma adı / iletişim (satış, çizim)       - iç notlar ve iç dosyalar (müşteri)
  *  - gönderilmemiş teklifler (müşteri, denetimci) - teklif tutarları ve satırları (çizim; durum kalır)
- *  - yönetici fiyatı (satış, çizim)
+ *  - yönetici fiyatı (satış, çizim)            - liste fiyatları (teklif hazırlamayan herkes)
  */
 export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetail {
   let offers = order.offers;
   if (!userCan(user, 'OFFER_VIEW')) offers = offers.map((o) => ({ ...o, lines: [], amount: ZERO }));
   else if (!userCan(user, 'OFFER_DRAFT_VIEW')) offers = offers.filter((o) => o.status === 'GONDERILDI');
+  // Liste fiyatı (fiyat tablosu) ve fiyat tablosu bağlantısı yalnızca teklif hazırlayan iç ekibe gider
+  if (!userCan(user, 'OFFER_PREPARE')) {
+    offers = offers.map((o) => ({ ...o, priceTableId: null, lines: o.lines.map((l) => ({ ...l, listPrice: null })) }));
+  }
   return {
     ...order,
     customer: sanitizeCustomer(user, order.customer),

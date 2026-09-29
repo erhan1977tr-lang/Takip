@@ -17,5 +17,6 @@ import offers from './offers.js';
 import loading from './loading.js';
 import demo from './demo.js';
 import admin from './admin.js';
+import pricing from './pricing.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing };
