@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dict, Locale } from '@/lib/i18n';
+import Link from 'next/link';
 import { rich } from '@/lib/rich';
 import { interpolate } from '@/server/i18n/interpolate.js';
 import { createUserAction, type UserFormState } from './actions';
@@ -88,7 +89,7 @@ export function CreateUserForm({ firms, m, langs, locale }: {
         </div>
         {noCustomerFirms && (
           <div className="alert alert-warn" style={{ marginTop: 10 }}>
-            {rich(m.noCustomerFirms, { firms: <a href="/admin/firms">{m.firmsTab}</a> })}
+            {rich(m.noCustomerFirms, { firms: <Link href="/admin/firms">{m.firmsTab}</Link> })}
           </div>
         )}
       </div>

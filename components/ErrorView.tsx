@@ -42,6 +42,8 @@ export function ErrorView({ error, reset }: { error: Error & { digest?: string }
       <div className="row" style={{ marginTop: 12 }}>
         <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>{m.reload}</button>
         {reset && !stale && <button type="button" className="btn" onClick={() => reset()}>{m.retry}</button>}
+        {/* Hata ekranından tam sayfa yeniden yükleme isteniyor; istemci yönlendirmesi bozuk durumu taşıyabilir. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className="btn" href="/siparisler">{m.home}</a>
       </div>
       <p className="hint" style={{ marginTop: 12 }}>{error.digest ? interpolate(m.code, { code: error.digest }) : `${error.name}: ${error.message}`}</p>

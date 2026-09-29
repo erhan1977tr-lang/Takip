@@ -36,6 +36,7 @@ export const NAV: Record<AppRole, NavDef[]> = {
   ],
 };
 
-export function homeFor(role: AppRole): string {
+// Tüm roller ortak adresle başlar (karar 6); sayfa role göre içerik gösterir.
+export function homeFor(_role: AppRole): string {
   return '/siparisler';
 }
