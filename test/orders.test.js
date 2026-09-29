@@ -1,17 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import tr from '../server/i18n/tr/index.js';
+import ro from '../server/i18n/ro/index.js';
+import { translate } from '../server/i18n/index.js';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, availableActions, customerSummary, customerDrawingLabel, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
 } from '../server/orders/rules.js';
 
 const has = (p, a) => availableActions(p).includes(a);
 
 test('her durumun etiketi var', () => {
-  for (const s of ['YENI', 'HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.ok(ORDER_STATUS[s]?.label, s);
-  for (const s of ['YOK', 'GEREKLI', 'YAPILIYOR', 'ONAY_BEKLIYOR', 'REVIZYON_ISTENDI', 'ONAYLANDI']) assert.ok(DRAWING[s]?.label, s);
-  for (const s of ['NONE', 'HAZIRLANIYOR', 'YONETIMDE', 'GONDERILDI']) assert.ok(OFFER[s]?.label, s);
-  for (const [k, v] of Object.entries(EVENTS)) assert.ok(v.label, k);
+  // Metinler sözlükte: her durum, olay ve aşama için iki dilde de metin olmalı
+  for (const d of [tr, ro]) {
+    for (const s of Object.keys(ORDER_STATUS)) assert.ok(d.status.order[s], s);
+    for (const s of Object.keys(DRAWING)) assert.ok(d.status.drawing[s] && d.status.customerDrawing[s], s);
+    for (const s of Object.keys(OFFER)) assert.ok(d.status.offer[s], s);
+    for (const s of STAGES) assert.ok(d.status.stages[s], s);
+    for (const [k, v] of Object.entries(EVENTS)) {
+      assert.ok(d.events[k]?.label, k);
+      assert.equal(Boolean(d.events[k].customer), v.customer, `${k}: müşteri metni`);
+    }
+    for (const k of ['reviewing', 'awaitingApproval', 'revision', 'drawing', 'offerReady', 'preparing', 'production', 'shipped', 'archived', 'cancelled']) {
+      assert.ok(d.status.customer[k]?.label && d.status.customer[k]?.next, k);
+    }
+    for (const b of ['not_preparing', 'drawing_at_customer', 'drawing_not_done', 'offer_at_admin', 'offer_not_sent']) assert.ok(d.status.blockers[b], b);
+  }
 });
 
 test('müşteri teklifi hiçbir durumda onaylayamaz, yalnızca çizimi onaylar', () => {
@@ -105,7 +119,7 @@ test('otomatik üretim: çizim onaylı ya da gereksiz + teklif müşteride; bekl
   assert.equal(auto('ONAYLANDI', null), false);
   assert.equal(shouldAutoProduce({ status: 'YENI', drawing: 'YOK', offer: 'GONDERILDI' }), false);
   assert.equal(shouldAutoProduce({ status: 'URETIMDE', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }), false);
-  assert.deepEqual(productionBlockers({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'YONETIMDE' }), ['Çizim müşteri onayında', 'Teklif yönetici onayında']);
+  assert.deepEqual(productionBlockers({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'YONETIMDE' }), ['drawing_at_customer', 'offer_at_admin']);
 });
 
 test('elle üretime alma ve satışın reddetmesi yok; iptal yalnızca yönetici', () => {
@@ -136,13 +150,13 @@ test('beklemede yalnızca beklemeden çıkarılabilir; kapanmış siparişte iş
 });
 
 test('müşterinin gördüğü durum', () => {
-  assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }).label, 'Onayınız bekleniyor');
-  assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }).label, 'Teklifiniz hazır');
-  assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }).label, 'Hazırlanıyor');
-  assert.equal(customerSummary({ status: 'URETIMDE' }).label, 'Onaylandı, üretimde');
-  assert.equal(customerDrawingLabel('ONAYLANDI'), 'Onaylandı');
-  assert.equal(customerDrawingLabel('YAPILIYOR'), 'Hazırlanıyor');
-  assert.equal(customerDrawingLabel('ONAY_BEKLIYOR'), 'Onayınız bekleniyor');
+  const label = (p) => tr.status.customer[customerSummary(p).key].label;
+  assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }), 'Onayınız bekleniyor');
+  assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }), 'Teklifiniz hazır');
+  assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }), 'Hazırlanıyor');
+  assert.equal(label({ status: 'URETIMDE' }), 'Onaylandı, üretimde');
+  assert.equal(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }).tone, 'warn');
+  assert.equal(ro.status.customer[customerSummary({ status: 'URETIMDE' }).key].label, 'Aprobată, în producție');
 });
 
 test('SLA: en yakın son tarih; beklemede ve müşteri onayında işlemez', () => {
@@ -157,9 +171,13 @@ test('SLA: en yakın son tarih; beklemede ve müşteri onayında işlemez', () =
 
 test('SLA metni', () => {
   const now = new Date('2026-09-28T10:00:00Z');
-  assert.equal(slaInfo(new Date('2026-09-29T01:00:00Z'), now).text, '15.0 sa kaldı');
+  const soon = slaInfo(new Date('2026-09-29T01:00:00Z'), now);
+  assert.equal(soon.h, '15.0');
+  assert.equal(translate('tr', soon.over ? 'status.sla.late' : 'status.sla.left', { h: soon.h }), '15.0 sa kaldı');
   const late = slaInfo(new Date('2026-09-26T19:54:00Z'), now);
-  assert.equal(late.text, '38.1 sa gecikme');
+  assert.equal(late.h, '38.1');
+  assert.equal(translate('tr', 'status.sla.late', { h: late.h }), '38.1 sa gecikme');
+  assert.equal(translate('ro', 'status.sla.late', { h: late.h }), '38.1 h întârziere');
   assert.equal(late.over, true);
   assert.equal(slaInfo(new Date('2026-09-28T13:00:00Z'), now).risk, true);
   assert.equal(slaInfo(null), null);
@@ -196,16 +214,17 @@ test('CNC / delik satırları ve bedelsiz', () => {
   assert.deepEqual(offerProblems(lines), []);
   const p = offerProblems([lines[0], { ...lines[1], unitPrice: '' }, { ...lines[2], free: false, unitPrice: '0' }]);
   assert.equal(p.length, 1);
-  assert.match(p[0], /2 satırın fiyatı boş: 1\. CNC, 1\. Delik/);
-  assert.match(offerProblems([lines[1]]).join(' '), /cam satırının altında/);
-  assert.match(offerProblems([{ ...lines[0], enMm: null }]).join(' '), /en ve boy/);
-  assert.deepEqual(offerProblems([]), ['Teklifte en az bir satır olmalı.']);
+  assert.deepEqual(p, [{ code: 'missing_prices', rows: [{ n: 1, kind: 'CNC' }, { n: 1, kind: 'DELIK' }] }]);
+  assert.deepEqual(offerProblems([lines[1]]).map((x) => x.code), ['sub_without_glass']);
+  assert.deepEqual(offerProblems([{ ...lines[0], enMm: null }]), [{ code: 'missing_dims', row: { n: 1, kind: 'CAM' } }]);
+  assert.deepEqual(offerProblems([]), [{ code: 'no_lines' }]);
 });
 
 test('dosya kontrolü', () => {
   assert.equal(fileProblem('Darius.dwg', 38000), null);
-  assert.match(fileProblem('virus.exe', 10), /desteklenmeyen/);
-  assert.match(fileProblem('buyuk.zip', 101 * 1024 * 1024), /100 MB/);
+  assert.deepEqual(fileProblem('virus.exe', 10), { code: 'type', name: 'virus.exe' });
+  assert.deepEqual(fileProblem('bos.pdf', 0), { code: 'empty', name: 'bos.pdf' });
+  assert.deepEqual(fileProblem('buyuk.zip', 101 * 1024 * 1024), { code: 'size', name: 'buyuk.zip' });
 });
 
 test('adım çubuğu', () => {

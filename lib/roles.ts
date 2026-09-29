@@ -1,34 +1,38 @@
 import type { AppRole } from '@prisma/client';
+import type { MsgKey } from './i18n';
 
-export const ROLE_LABEL: Record<AppRole, string> = {
-  ADMIN: 'Sistem Yöneticisi',
-  SATIS: 'Satış',
-  CIZIM: 'Çizim Ekibi',
-  MUSTERI: 'Müşteri',
-};
+// Rol adları sözlükte: roles.<ROL> (lib/labels.ts → roleText)
 
+/** Menü tanımı (metinler sözlük anahtarı; panel düzeni çevirir). */
+export type NavDef = { href: string; key: MsgKey } | { section: MsgKey };
+/** Çevrilmiş menü öğesi (NavLinks bileşenine giden) */
 export type NavItem = { href: string; label: string } | { section: string };
 
-export const NAV: Record<AppRole, NavItem[]> = {
+export const NAV: Record<AppRole, NavDef[]> = {
   ADMIN: [
-    { section: 'Operasyon' },
-    { href: '/siparisler', label: 'Siparişler' },
-    { href: '/teklifler', label: 'Teklifler' },
-    { href: '/yuklemeler', label: 'Yüklemeler' },
-    { section: 'Kişiler' },
-    { href: '/admin/users', label: 'Kullanıcılar' },
-    { href: '/admin/firms', label: 'Müşteriler' },
-    { section: 'Tanımlar' },
-    { href: '/admin/katalog', label: 'Cam Kataloğu' },
+    { section: 'nav.operations' },
+    { href: '/siparisler', key: 'nav.orders' },
+    { href: '/teklifler', key: 'nav.offers' },
+    { href: '/yuklemeler', key: 'nav.loadings' },
+    { section: 'nav.people' },
+    { href: '/admin/users', key: 'nav.users' },
+    { href: '/admin/firms', key: 'nav.firms' },
+    { section: 'nav.definitions' },
+    { href: '/admin/katalog', key: 'nav.catalog' },
   ],
-  SATIS: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }, { href: '/teklifler', label: 'Teklifler' }, { href: '/yuklemeler', label: 'Yüklemeler' }],
-  CIZIM: [{ section: 'Operasyon' }, { href: '/siparisler', label: 'Siparişler' }],
+  SATIS: [
+    { section: 'nav.operations' },
+    { href: '/siparisler', key: 'nav.orders' },
+    { href: '/teklifler', key: 'nav.offers' },
+    { href: '/yuklemeler', key: 'nav.loadings' },
+  ],
+  CIZIM: [{ section: 'nav.operations' }, { href: '/siparisler', key: 'nav.orders' }],
   MUSTERI: [
-    { section: 'Müşteri portalı' },
-    { href: '/siparisler', label: 'Siparişlerim' },
-    { href: '/siparisler/yeni', label: 'Yeni Sipariş' },
-    { href: '/teklifler', label: 'Tekliflerim' },
-    { href: '/yuklemeler', label: 'Yükleme takvimim' },
+    { section: 'nav.customerPortal' },
+    { href: '/siparisler', key: 'nav.myOrders' },
+    { href: '/siparisler/yeni', key: 'nav.newOrder' },
+    { href: '/teklifler', key: 'nav.myOffers' },
+    { href: '/yuklemeler', key: 'nav.myLoadings' },
   ],
 };
 

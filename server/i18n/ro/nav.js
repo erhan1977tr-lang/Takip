@@ -1,0 +1,18 @@
+export default {
+  operations: 'Operațiuni',
+  people: 'Persoane',
+  definitions: 'Definiții',
+  customerPortal: 'Portal client',
+  demo: 'Demo',
+  orders: 'Comenzi',
+  offers: 'Oferte',
+  loadings: 'Încărcări',
+  users: 'Utilizatori',
+  firms: 'Clienți',
+  catalog: 'Catalog sticlă',
+  myOrders: 'Comenzile mele',
+  newOrder: 'Comandă nouă',
+  myOffers: 'Ofertele mele',
+  myLoadings: 'Calendarul meu de încărcări',
+  demoMail: 'Cutie poștală demo',
+};

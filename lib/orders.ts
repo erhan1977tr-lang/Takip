@@ -87,7 +87,8 @@ export async function maybeAutoProduction(tx: Tx, orderId: string, userId: strin
   });
   if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null })) return false;
   await tx.order.update({ where: { id: orderId }, data: { status: 'URETIMDE', slaDeadline: null } });
-  await logEvent(tx, orderId, 'PRODUCTION', userId, o.drawingTrack === 'YOK' ? 'Teklif müşteriye gönderildi' : 'Çizim onaylandı ve teklif müşteride');
+  // Not bir koddur; ekranda events.PRODUCTION.<kod> olarak çevrilir (lib/labels.ts → eventNoteText)
+  await logEvent(tx, orderId, 'PRODUCTION', userId, o.drawingTrack === 'YOK' ? 'no_drawing' : 'drawing_approved');
   return true;
 }
 

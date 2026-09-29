@@ -1,18 +1,13 @@
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import { homeFor } from '@/lib/roles';
+import { getT } from '@/lib/i18n';
+import { roleText } from '@/lib/labels';
 import { AuthCard } from '../AuthCard';
 import { loginAction } from './actions';
 import { DEMO_ACCOUNTS, isDemo } from '@/server/demo/accounts.js';
 
 export const dynamic = 'force-dynamic';
-
-const ERRORS: Record<string, string> = {
-  invalid: 'E-posta veya şifre hatalı.',
-};
-const INFOS: Record<string, string> = {
-  logout: 'Çıkış yaptınız.',
-};
 
 export default async function LoginPage({
   searchParams,
@@ -22,36 +17,41 @@ export default async function LoginPage({
   const user = await getCurrentUser();
   if (user) redirect(homeFor(user.appRole));
   const sp = await searchParams;
-  const error = sp.error ? ERRORS[sp.error] : undefined;
-  const info = sp.info ? INFOS[sp.info] : undefined;
+  const { t, locale } = await getT();
+  const error = sp.error === 'invalid' ? t('auth.login.errorInvalid') : undefined;
+  const info = sp.info === 'logout' ? t('auth.login.infoLogout') : undefined;
+  // Dil değiştirilince aynı sayfaya (yazılan e-postayla) dönülür
+  const here = `/login${sp.email ? `?email=${encodeURIComponent(sp.email)}` : ''}`;
 
   return (
-    <AuthCard>
-      <p className="muted" style={{ margin: '6px 0 20px' }}>Sipariş, çizim onayı ve üretim takibi</p>
+    <AuthCard next={here}>
+      <p className="muted" style={{ margin: '6px 0 20px' }}>{t('auth.login.tagline')}</p>
       {info && <div className="alert alert-info">{info}</div>}
       <form action={loginAction}>
+        {/* Girişte bu dil çereze yazılır; panel aynı dille açılır */}
+        <input type="hidden" name="lang" value={locale} />
         <div className="field">
-          <label htmlFor="email">E-posta</label>
+          <label htmlFor="email">{t('auth.login.email')}</label>
           <input id="email" name="email" type="email" autoComplete="username" required defaultValue={sp.email ?? ''} />
         </div>
         <div className="field">
-          <label htmlFor="password">Şifre</label>
+          <label htmlFor="password">{t('auth.login.password')}</label>
           <input id="password" name="password" type="password" autoComplete="current-password" />
-          <div className="hint">İlk girişinizde şifre alanını boş bırakın; doğrulama kodu ekranına yönlendirilirsiniz.</div>
+          <div className="hint">{t('auth.login.passwordHint')}</div>
         </div>
         {error && <div className="alert alert-error">{error}</div>}
-        <button type="submit" className="btn btn-primary btn-block">Giriş yap</button>
+        <button type="submit" className="btn btn-primary btn-block">{t('auth.login.submit')}</button>
       </form>
-      <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>Hesabınız yoksa firma yöneticinize başvurun.</p>
+      <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>{t('auth.login.noAccount')}</p>
       {isDemo() && (
         <div className="alert alert-warn demo-accounts" style={{ marginTop: 16, marginBottom: 0 }}>
-          <b>Demo ortamı</b> — örnek verilerle çalışır. Bir hesap seçin:
+          <b>{t('auth.login.demoTitle')}</b> {t('auth.login.demoIntro')}
           <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
             {DEMO_ACCOUNTS.map((a) => (
-              <li key={a.email}><a href={`/login?email=${encodeURIComponent(a.email)}`}>{a.email}</a> — {a.label}</li>
+              <li key={a.email}><a href={`/login?email=${encodeURIComponent(a.email)}`}>{a.email}</a> — {roleText(t, a.role)}</li>
             ))}
           </ul>
-          <span className="small">Şifre, demo ortamındaki <code>DEMO-GIRIS.txt</code> dosyasındadır.</span>
+          <span className="small">{t('auth.login.demoPassword')}</span>
         </div>
       )}
     </AuthCard>

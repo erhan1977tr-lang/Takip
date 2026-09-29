@@ -1,26 +1,32 @@
 import { requireUser } from '@/lib/auth/session';
-import { NAV, ROLE_LABEL, type NavItem } from '@/lib/roles';
-import { isDemo } from '@/server/demo/accounts.js';
+import { NAV, type NavDef, type NavItem } from '@/lib/roles';
+import { getT } from '@/lib/i18n';
+import { roleText } from '@/lib/labels';
 import { NavLinks } from './NavLinks';
 import { BrandLogo } from '@/components/BrandLogo';
+import { LanguageSelect } from '@/components/LanguageSelect';
+import { isDemo } from '@/server/demo/accounts.js';
 import { logoutAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  const { t, locale, m } = await getT();
   const demo = isDemo();
-  const nav: NavItem[] = demo && user.appRole === 'ADMIN'
-    ? [...NAV.ADMIN, { section: 'Demo' }, { href: '/demo/posta', label: 'Demo posta kutusu' }]
+  const defs: NavDef[] = demo && user.appRole === 'ADMIN'
+    ? [...NAV.ADMIN, { section: 'nav.demo' }, { href: '/demo/posta', key: 'nav.demoMail' }]
     : NAV[user.appRole];
+  const nav: NavItem[] = defs.map((d) => ('section' in d ? { section: t(d.section) } : { href: d.href, label: t(d.key) }));
   const firm = user.customer?.name;
-  const sub = user.appRole === 'MUSTERI' && firm ? `${ROLE_LABEL[user.appRole]} · ${firm}` : ROLE_LABEL[user.appRole];
+  const role = roleText(t, user.appRole);
+  const sub = user.appRole === 'MUSTERI' && firm ? `${role} · ${firm}` : role;
 
   return (
     <div className="shell">
       <aside className="sidebar">
         <BrandLogo />
-        <div className="tag">TAKİP · SİPARİŞ VE ÜRETİM PORTALI</div>
+        <div className="tag">{t('common.productUpper')}</div>
         <NavLinks items={nav} variant="side" />
       </aside>
       <div className="main">
@@ -33,10 +39,11 @@ export default async function PanelLayout({ children }: { children: React.ReactN
               <div className="sub">{sub}</div>
             </div>
           </div>
-          <div className="row" style={{ gap: 8 }}>
-            {demo && <span className="badge badge-warn" title="Örnek verilerle çalışan demo ortamı">DEMO</span>}
+          <div className="row topbar-right" style={{ gap: 8 }}>
+            {demo && <span className="badge badge-warn" title={t('common.demoTitle')}>{t('common.demoBadge')}</span>}
+            <LanguageSelect locale={locale} names={m.lang} title={t('lang.label')} />
             <form action={logoutAction}>
-              <button type="submit" className="btn btn-link">Çıkış</button>
+              <button type="submit" className="btn btn-link">{t('common.logout')}</button>
             </form>
           </div>
         </header>

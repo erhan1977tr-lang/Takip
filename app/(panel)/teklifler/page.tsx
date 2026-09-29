@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { OfferStatus, OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { getT, type MsgKey } from '@/lib/i18n';
 import { customerLabel, orderScope } from '@/lib/orders';
 import { fmtDate, fmtMoney } from '@/lib/format';
 import { CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
@@ -20,6 +21,7 @@ export default async function OffersPage() {
 }
 
 async function CustomerOffers({ user }: { user: CurrentUser }) {
+  const { t } = await getT();
   const orders = await db.order.findMany({
     where: { ...orderScope(user), offers: { some: { status: 'GONDERILDI' } } },
     include,
@@ -28,16 +30,16 @@ async function CustomerOffers({ user }: { user: CurrentUser }) {
   return (
     <>
       <div className="page-head">
-        <h1>Tekliflerim</h1>
-        <p className="muted">Siparişleriniz için hazırlanan teklifler. Ayrıntıları görmek için siparişi açın.</p>
+        <h1>{t('offers.customer.title')}</h1>
+        <p className="muted">{t('offers.customer.intro')}</p>
       </div>
       <div className="card card-flush">
         {orders.length === 0 ? (
-          <div className="empty">Henüz size gönderilmiş bir teklif yok.</div>
+          <div className="empty">{t('offers.customer.empty')}</div>
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Sipariş</th><th>Sipariş durumu</th><th>Teklif tarihi</th><th className="num">Tutar</th><th /></tr></thead>
+              <thead><tr><th>{t('offers.customer.cols.order')}</th><th>{t('offers.customer.cols.status')}</th><th>{t('offers.customer.cols.date')}</th><th className="num">{t('offers.customer.cols.amount')}</th><th /></tr></thead>
               <tbody>
                 {orders.map((o) => {
                   const sent = o.offers.find((x) => x.status === 'GONDERILDI')!;
@@ -47,7 +49,7 @@ async function CustomerOffers({ user }: { user: CurrentUser }) {
                       <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer="GONDERILDI" /></td>
                       <td>{fmtDate(sent.sentAt)}</td>
                       <td className="num"><b>{fmtMoney((o.price?.amount ?? sent.amount).toString(), sent.currency)}</b></td>
-                      <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">Teklifi gör</Link></td>
+                      <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('offers.customer.view')}</Link></td>
                     </tr>
                   );
                 })}
@@ -56,18 +58,19 @@ async function CustomerOffers({ user }: { user: CurrentUser }) {
           </div>
         )}
       </div>
-      <p className="muted small">Fiyatlar KDV hariçtir.</p>
+      <p className="muted small">{t('common.pricesExclVat')}</p>
     </>
   );
 }
 
-const GROUPS: { status: OfferStatus; title: string; empty: string }[] = [
-  { status: 'HAZIRLANIYOR', title: 'Satışta hazırlananlar', empty: 'Hazırlanan teklif yok.' },
-  { status: 'YONETIMDE', title: 'Yönetici onayında', empty: 'Onay bekleyen teklif yok.' },
-  { status: 'GONDERILDI', title: 'Müşteride', empty: 'Müşteriye gönderilmiş aktif teklif yok.' },
+const GROUPS: { status: OfferStatus; title: MsgKey; empty: MsgKey }[] = [
+  { status: 'HAZIRLANIYOR', title: 'offers.groups.sales.title', empty: 'offers.groups.sales.empty' },
+  { status: 'YONETIMDE', title: 'offers.groups.admin.title', empty: 'offers.groups.admin.empty' },
+  { status: 'GONDERILDI', title: 'offers.groups.customer.title', empty: 'offers.groups.customer.empty' },
 ];
 
 async function InternalOffers({ user }: { user: CurrentUser }) {
+  const { t } = await getT();
   const orders = await db.order.findMany({
     // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
     where: { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } },
@@ -79,18 +82,23 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
   return (
     <>
       <div className="page-head">
-        <h1>Teklifler</h1>
-        <p className="muted">Hazırlanan, yönetimde bekleyen ve müşteriye gönderilmiş teklifler.</p>
+        <h1>{t('offers.internal.title')}</h1>
+        <p className="muted">{t('offers.internal.intro')}</p>
       </div>
       {GROUPS.map((g) => {
         const rows = orders.filter((o) => latest(o)?.status === g.status);
         return (
           <div key={g.status} className="card card-flush">
-            <div className="card-head"><h2 style={{ margin: 0 }}>{g.title} <span className="badge">{rows.length}</span></h2></div>
-            {rows.length === 0 ? <div className="empty">{g.empty}</div> : (
+            <div className="card-head"><h2 style={{ margin: 0 }}>{t(g.title)} <span className="badge">{rows.length}</span></h2></div>
+            {rows.length === 0 ? <div className="empty">{t(g.empty)}</div> : (
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Teklif</th><th>Müşteri</th><th>Sipariş</th><th>Teklif</th><th className="num">Satır</th><th>Teslim</th><th className="num">Tutar</th><th /></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>{t('offers.internal.cols.offer')}</th><th>{t('offers.internal.cols.customer')}</th><th>{t('offers.internal.cols.orderStatus')}</th><th>{t('offers.internal.cols.offerStatus')}</th>
+                      <th className="num">{t('offers.internal.cols.lines')}</th><th>{t('offers.internal.cols.ship')}</th><th className="num">{t('offers.internal.cols.amount')}</th><th />
+                    </tr>
+                  </thead>
                   <tbody>
                     {rows.map((o) => {
                       const of = latest(o)!;
@@ -103,7 +111,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
                           <td className="num">{of._count.lines}</td>
                           <td>{fmtDate(o.estimatedShipDate)}</td>
                           <td className="num">{fmtMoney(of.amount.toString(), of.currency)}</td>
-                          <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">Aç</Link></td>
+                          <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('common.open')}</Link></td>
                         </tr>
                       );
                     })}

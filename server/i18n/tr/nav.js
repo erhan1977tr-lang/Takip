@@ -1,0 +1,18 @@
+export default {
+  operations: 'Operasyon',
+  people: 'Kişiler',
+  definitions: 'Tanımlar',
+  customerPortal: 'Müşteri portalı',
+  demo: 'Demo',
+  orders: 'Siparişler',
+  offers: 'Teklifler',
+  loadings: 'Yüklemeler',
+  users: 'Kullanıcılar',
+  firms: 'Müşteriler',
+  catalog: 'Cam Kataloğu',
+  myOrders: 'Siparişlerim',
+  newOrder: 'Yeni Sipariş',
+  myOffers: 'Tekliflerim',
+  myLoadings: 'Yükleme takvimim',
+  demoMail: 'Demo posta kutusu',
+};

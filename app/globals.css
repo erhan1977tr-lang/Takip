@@ -271,3 +271,14 @@ input.input-missing { background: #fef2f2; border-color: #f87171; }
 /* hata ekranı */
 .error-view h1 { font-size: 20px; margin: 0 0 6px; }
 .error-view .hint { word-break: break-word; }
+
+/* dil seçimi */
+.lang-switch { display: flex; gap: 6px; justify-content: flex-end; margin: -6px -6px 6px 0; }
+.lang-switch a { padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 13px; letter-spacing: .04em; color: var(--primary); text-decoration: none; }
+.lang-switch a:hover { background: var(--primary-soft); }
+.lang-switch a.active { background: var(--primary); color: #fff; }
+.lang-select { width: auto; padding: 6px 28px 6px 10px; font-size: 13px; }
+.topbar-right { flex-wrap: nowrap; }
+@media (max-width: 800px) {
+  .lang-select { padding: 4px 22px 4px 6px; font-size: 12px; max-width: 92px; }
+}

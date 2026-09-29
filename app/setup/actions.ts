@@ -8,6 +8,8 @@ import { createSession, destroyAllSessions } from '@/lib/auth/session';
 import { clearSetupToken, readSetupToken, setSetupToken } from '@/lib/auth/setupToken';
 import { audit } from '@/lib/audit';
 import { homeFor } from '@/lib/roles';
+import { setLocaleCookie } from '@/lib/i18n';
+import { isLocale } from '@/server/i18n/index.js';
 import { checkInvite } from '@/server/auth/inviteCode.js';
 
 function back(email: string, error?: string) {
@@ -69,6 +71,12 @@ export async function setPasswordAction(formData: FormData) {
   await destroyAllSessions(invite.userId);
   await clearSetupToken();
   await createSession(invite.userId);
+  // İlk giriş hangi dilde yapıldıysa panel o dille açılır; kullanıcının dili e-postalar için de saklanır
+  const lang = formData.get('lang');
+  if (isLocale(lang)) {
+    await setLocaleCookie(lang);
+    if (invite.user.language !== lang) await db.user.update({ where: { id: invite.userId }, data: { language: lang } });
+  }
   await audit('PASSWORD_SET', 'User', invite.userId, invite.userId);
   redirect(homeFor(invite.user.appRole));
 }

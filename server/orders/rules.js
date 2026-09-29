@@ -10,78 +10,69 @@
 //   değişikliği yalnızca yönetici yapar. Müşterideki teklifi yönetici her an günceller (yeni sürüm olarak).
 //   Otomatik üretim: çizim YOK ya da ONAYLANDI  +  teklif GONDERILDI olunca sipariş kendiliğinden URETIMDE olur
 //   (beklemedeki sipariş geçmez; beklemeden çıkarılınca yeniden kontrol edilir). İptal yalnızca yöneticidedir.
+//
+// Ekranda görünen metinler burada DEĞİL, server/i18n/{tr,ro}/ sözlüklerindedir; buradaki işlevler kod döndürür.
 
+// Rozet renkleri (metinleri: status.order / status.drawing / status.offer)
 export const ORDER_STATUS = {
-  YENI: { label: 'İnceleniyor', tone: 'muted' },
-  HAZIRLANIYOR: { label: 'Hazırlanıyor', tone: 'info' },
-  URETIMDE: { label: 'Üretimde', tone: 'info' },
-  YUKLENDI: { label: 'Yüklendi', tone: 'ok' },
-  ARSIVLENDI: { label: 'Arşivlendi', tone: 'muted' },
-  IPTAL: { label: 'İptal', tone: 'muted' },
+  YENI: { tone: 'muted' },
+  HAZIRLANIYOR: { tone: 'info' },
+  URETIMDE: { tone: 'info' },
+  YUKLENDI: { tone: 'ok' },
+  ARSIVLENDI: { tone: 'muted' },
+  IPTAL: { tone: 'muted' },
 };
 
 export const DRAWING = {
-  YOK: { label: 'Çizimsiz', tone: 'muted' },
-  GEREKLI: { label: 'Çizim bekliyor', tone: 'purple' },
-  YAPILIYOR: { label: 'Çizim yapılıyor', tone: 'purple' },
-  ONAY_BEKLIYOR: { label: 'Müşteri onayında', tone: 'warn' },
-  REVIZYON_ISTENDI: { label: 'Revizyon istendi', tone: 'danger' },
-  ONAYLANDI: { label: 'Çizim onaylandı', tone: 'ok' },
+  YOK: { tone: 'muted' },
+  GEREKLI: { tone: 'purple' },
+  YAPILIYOR: { tone: 'purple' },
+  ONAY_BEKLIYOR: { tone: 'warn' },
+  REVIZYON_ISTENDI: { tone: 'danger' },
+  ONAYLANDI: { tone: 'ok' },
 };
 
 export const OFFER = {
-  NONE: { label: 'Teklif yok', tone: 'muted' },
-  HAZIRLANIYOR: { label: 'Teklif satışta', tone: 'info' },
-  YONETIMDE: { label: 'Fiyat onayında', tone: 'warn' },
-  GONDERILDI: { label: 'Teklif müşteride', tone: 'ok' },
+  NONE: { tone: 'muted' },
+  HAZIRLANIYOR: { tone: 'info' },
+  YONETIMDE: { tone: 'warn' },
+  GONDERILDI: { tone: 'ok' },
 };
 
 export const CLOSED = ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'];
 export const ACTIVE_DRAWING = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
 /**
- * Müşterinin gördüğü tek satırlık durum ve sıradaki adım.
+ * Müşterinin gördüğü tek satırlık durum (metni: status.customer.<key>.label / .next).
  * @param {{status: string, drawing?: string, offer?: string|null}} p
- * @returns {{label: string, tone: string, next: string}}
+ * @returns {{key: string, tone: string}}
  */
 export function customerSummary({ status, drawing = 'YOK', offer = null }) {
-  if (status === 'YENI') return { label: 'İnceleniyor', tone: 'muted', next: 'Satış ekibi inceliyor' };
+  if (status === 'YENI') return { key: 'reviewing', tone: 'muted' };
   if (status === 'HAZIRLANIYOR') {
-    if (drawing === 'ONAY_BEKLIYOR') return { label: 'Onayınız bekleniyor', tone: 'warn', next: 'Çizimi onaylayın' };
-    if (drawing === 'REVIZYON_ISTENDI') return { label: 'Revizyon hazırlanıyor', tone: 'danger', next: 'Revize çizim hazırlanıyor' };
-    if (drawing === 'GEREKLI' || drawing === 'YAPILIYOR') return { label: 'Çizim hazırlanıyor', tone: 'purple', next: 'Çizim hazırlanıyor' };
-    if (offer === 'GONDERILDI') return { label: 'Teklifiniz hazır', tone: 'ok', next: 'Üretim planlanıyor' };
-    return { label: 'Hazırlanıyor', tone: 'info', next: 'Teklif hazırlanıyor' };
+    if (drawing === 'ONAY_BEKLIYOR') return { key: 'awaitingApproval', tone: 'warn' };
+    if (drawing === 'REVIZYON_ISTENDI') return { key: 'revision', tone: 'danger' };
+    if (drawing === 'GEREKLI' || drawing === 'YAPILIYOR') return { key: 'drawing', tone: 'purple' };
+    if (offer === 'GONDERILDI') return { key: 'offerReady', tone: 'ok' };
+    return { key: 'preparing', tone: 'info' };
   }
-  if (status === 'URETIMDE') return { label: 'Onaylandı, üretimde', tone: 'info', next: 'Üretimde' };
-  if (status === 'YUKLENDI') return { label: 'Yüklendi', tone: 'ok', next: 'Tamamlandı' };
-  if (status === 'ARSIVLENDI') return { label: 'Arşivlendi', tone: 'muted', next: '—' };
-  return { label: 'İptal', tone: 'muted', next: '—' };
+  if (status === 'URETIMDE') return { key: 'production', tone: 'info' };
+  if (status === 'YUKLENDI') return { key: 'shipped', tone: 'ok' };
+  if (status === 'ARSIVLENDI') return { key: 'archived', tone: 'muted' };
+  return { key: 'cancelled', tone: 'muted' };
 }
 
 /**
- * Müşteriye gösterilen çizim hattı durumu.
- * @param {string} drawing
- * @returns {string}
- */
-export function customerDrawingLabel(drawing) {
-  return {
-    YOK: 'Gerekmiyor', GEREKLI: 'Hazırlanıyor', YAPILIYOR: 'Hazırlanıyor',
-    ONAY_BEKLIYOR: 'Onayınız bekleniyor', REVIZYON_ISTENDI: 'Revizyon hazırlanıyor', ONAYLANDI: 'Onaylandı',
-  }[drawing] ?? drawing;
-}
-
-/**
- * Otomatik üretime geçmek için eksik kalanlar (boş dizi = koşullar tamam).
+ * Otomatik üretime geçmek için eksik kalanlar (boş dizi = koşullar tamam). Metni: status.blockers.<kod>.
  * @param {{status: string, drawing?: string, offer?: string|null}} p
  * @returns {string[]}
  */
 export function productionBlockers({ status, drawing = 'YOK', offer = null }) {
-  if (status !== 'HAZIRLANIYOR') return ['Sipariş hazırlık aşamasında değil'];
+  if (status !== 'HAZIRLANIYOR') return ['not_preparing'];
   const b = [];
-  if (drawing === 'ONAY_BEKLIYOR') b.push('Çizim müşteri onayında');
-  else if (drawing !== 'YOK' && drawing !== 'ONAYLANDI') b.push('Çizim henüz tamamlanmadı');
-  if (offer !== 'GONDERILDI') b.push(offer === 'YONETIMDE' ? 'Teklif yönetici onayında' : 'Teklif henüz müşteriye gönderilmedi');
+  if (drawing === 'ONAY_BEKLIYOR') b.push('drawing_at_customer');
+  else if (drawing !== 'YOK' && drawing !== 'ONAYLANDI') b.push('drawing_not_done');
+  if (offer !== 'GONDERILDI') b.push(offer === 'YONETIMDE' ? 'offer_at_admin' : 'offer_not_sent');
   return b;
 }
 
@@ -107,7 +98,8 @@ export function offerNeedsCheck({ offer = null, sentAt = null, lastDrawing = nul
   return new Date(lastDrawing.createdAt).getTime() > seen;
 }
 
-export const STAGES =['Alındı', 'Satış incelemesi', 'Çizim ve teklif', 'Üretim', 'Yükleme'];
+/** Adım çubuğu (metni: status.stages.<anahtar>). */
+export const STAGES = ['received', 'review', 'drawingOffer', 'production', 'loading'];
 
 /** Adım çubuğunda o anki adımın sırası (0 tabanlı). Arşivde tümü tamamlanmış sayılır. */
 export function stageIndex(status) {
@@ -140,12 +132,12 @@ export function slaDeadline({ status, onHold = false, createdAt, drawing = 'YOK'
   return c.length ? new Date(Math.min(...c.map((d) => d.getTime()))) : null;
 }
 
-/** "15.0 sa kaldı" / "38.1 sa gecikme" */
+/** Son tarihe kalan (ya da geçen) süre. Metni: status.sla.left / status.sla.late ({h} = saat, 1 ondalık). */
 export function slaInfo(deadline, now = new Date()) {
   if (!deadline) return null;
   const hours = (new Date(deadline).getTime() - now.getTime()) / 3_600_000;
   const over = hours < 0;
-  return { over, risk: !over && hours < 6, hours, text: `${Math.abs(hours).toFixed(1)} sa ${over ? 'gecikme' : 'kaldı'}` };
+  return { over, risk: !over && hours < 6, hours, h: Math.abs(hours).toFixed(1) };
 }
 
 /**
@@ -176,31 +168,32 @@ export function canSeeCustomerName(role) {
 }
 
 // ---------- olay geçmişi ----------
-// customer: müşterinin gördüğü metin (null → müşteri görmez); note: notu müşteriye de göster
+// Metinler: events.<OLAY>.label (iç ekip) ve events.<OLAY>.customer (müşteri).
+// customer: müşteri bu olayı görür mü; note: olayın notu müşteriye de gösterilir mi.
 export const EVENTS = {
-  CREATED: { label: 'Sipariş gönderildi', customer: 'Sipariş gönderildi' },
-  SENT_TO_DRAWING: { label: 'Çizim ekibine yönlendirildi', customer: 'Çizim hazırlanıyor' },
-  NO_DRAWING: { label: 'Çizim gerekmedi, teklife geçildi', customer: null },
-  DRAWING_STARTED: { label: 'Çizim üstlenildi', customer: null },
-  DRAWING_UPLOADED: { label: 'Çizim müşteri onayına gönderildi', customer: 'Çizim onayınıza sunuldu', note: true },
-  REVISION_REQUESTED: { label: 'Müşteri revizyon istedi', customer: 'Revizyon istendi', note: true },
-  DRAWING_APPROVED: { label: 'Çizim müşteri tarafından onaylandı', customer: 'Çizim onaylandı', note: true },
-  OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi', customer: null },
-  OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi', customer: null },
-  OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
-  OFFER_REVISED: { label: 'Teklif revize ediliyor', customer: null },
-  OFFER_UPDATED: { label: 'Teklif yönetici tarafından güncellendi', customer: 'Teklifiniz güncellendi' },
-  OFFER_CHECKED: { label: 'Yönetici teklifi yeni çizime göre kontrol etti, değişiklik yok', customer: null },
-  UNDO_DRAWING: { label: 'Çizime gönderme geri alındı', customer: 'Sipariş yeniden inceleniyor' },
-  UNDO_NO_DRAWING: { label: 'Teklife gönderme geri alındı', customer: null },
-  PRODUCTION: { label: 'Otomatik olarak üretime alındı', customer: 'Üretime alındı' },
-  SHIPPED: { label: 'Yüklendi', customer: 'Yüklendi' },
-  ARCHIVED: { label: 'Arşivlendi', customer: 'Arşivlendi' },
-  CANCELLED: { label: 'İptal edildi', customer: 'İptal edildi', note: true },
-  HOLD: { label: 'Beklemeye alındı', customer: null },
-  UNHOLD: { label: 'Beklemeden çıkarıldı', customer: null },
-  CRATES: { label: 'Sandık ölçü ve ağırlıkları güncellendi', customer: null },
-  SHIP_DATE: { label: 'Tahmini yükleme tarihi değişti', customer: 'Tahmini yükleme tarihi güncellendi', note: true },
+  CREATED: { customer: true },
+  SENT_TO_DRAWING: { customer: true },
+  NO_DRAWING: { customer: false },
+  DRAWING_STARTED: { customer: false },
+  DRAWING_UPLOADED: { customer: true, note: true },
+  REVISION_REQUESTED: { customer: true, note: true },
+  DRAWING_APPROVED: { customer: true, note: true },
+  OFFER_SUBMITTED: { customer: false },
+  OFFER_RETURNED: { customer: false },
+  OFFER_SENT: { customer: true },
+  OFFER_REVISED: { customer: false },
+  OFFER_UPDATED: { customer: true },
+  OFFER_CHECKED: { customer: false },
+  UNDO_DRAWING: { customer: true },
+  UNDO_NO_DRAWING: { customer: false },
+  PRODUCTION: { customer: true },
+  SHIPPED: { customer: true },
+  ARCHIVED: { customer: true },
+  CANCELLED: { customer: true, note: true },
+  HOLD: { customer: false },
+  UNHOLD: { customer: false },
+  CRATES: { customer: false },
+  SHIP_DATE: { customer: true, note: true },
 };
 
 // ---------- teklif hesabı ----------
@@ -210,7 +203,8 @@ function num(v) {
 }
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-export const LINE_KIND = { CAM: 'Cam', CNC: 'CNC', DELIK: 'Delik' };
+/** Teklif satırı türleri (metni: status.lineKind.<tür>). */
+export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];
 const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
 
 /**
@@ -245,23 +239,26 @@ export function offerTotals(lines) {
 /**
  * Müşteriye gidecek teklifte eksikler (boş dizi = tamam): fiyatsız satır (bedelsiz değilse),
  * m² satırında ölçü eksikliği, üstünde cam satırı olmayan CNC / delik satırı.
+ * Metne çevirmek için: server/i18n/format.js → formatOfferProblems.
+ * Satır: {n: cam satırı sırası, kind: 'CAM' | 'CNC' | 'DELIK'}.
  * @param {{kind?: string, description?: string, enMm?: any, boyMm?: any, unit?: string, unitPrice?: any, free?: boolean}[]} lines
- * @returns {string[]}
+ * @returns {({code: 'no_lines'} | {code: 'sub_without_glass', kind: string} | {code: 'missing_dims', row: {n: number, kind: string}} | {code: 'missing_prices', rows: {n: number, kind: string}[]})[]}
  */
 export function offerProblems(lines) {
-  if (lines.length === 0) return ['Teklifte en az bir satır olmalı.'];
+  if (lines.length === 0) return [{ code: 'no_lines' }];
+  /** @type {any[]} */
   const p = [];
   const noPrice = [];
   let glassNo = 0, seenGlass = false;
   for (const l of lines) {
     const sub = isSub(l);
     if (!sub) { glassNo += 1; seenGlass = true; }
-    const label = sub ? `${glassNo}. ${LINE_KIND[l.kind]}` : `${glassNo}. satır`;
-    if (sub && !seenGlass) p.push(`${LINE_KIND[l.kind]} satırı bir cam satırının altında olmalı.`);
-    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push(`${label}: m² ile fiyatlanan satırda en ve boy girilmeli.`);
-    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(label);
+    const row = { n: glassNo, kind: sub ? String(l.kind) : 'CAM' };
+    if (sub && !seenGlass) p.push({ code: 'sub_without_glass', kind: String(l.kind) });
+    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row });
+    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(row);
   }
-  if (noPrice.length) p.push(`${noPrice.length} satırın fiyatı boş: ${noPrice.join(', ')}. Fiyat girin ya da satırı bedelsiz işaretleyin.`);
+  if (noPrice.length) p.push({ code: 'missing_prices', rows: noPrice });
   return p;
 }
 
@@ -269,12 +266,17 @@ export function offerProblems(lines) {
 export const ALLOWED_EXT = ['pdf', 'dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'xls', 'xlsx', 'doc', 'docx', 'zip', 'jpg', 'jpeg', 'png'];
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
-/** Hata metni ya da null. */
+/**
+ * Dosya sorunu ya da null. Metni: files.problem.<code> ({name}).
+ * @param {string} name
+ * @param {number} size
+ * @returns {{code: 'type' | 'empty' | 'size', name: string} | null}
+ */
 export function fileProblem(name, size) {
   const ext = String(name || '').toLowerCase().split('.').pop();
-  if (!name || !ALLOWED_EXT.includes(ext)) return `“${name}” desteklenmeyen dosya türü.`;
-  if (!size) return `“${name}” boş.`;
-  if (size > MAX_FILE_BYTES) return `“${name}” 100 MB sınırını aşıyor.`;
+  if (!name || !ALLOWED_EXT.includes(ext ?? '')) return { code: 'type', name: String(name || '') };
+  if (!size) return { code: 'empty', name };
+  if (size > MAX_FILE_BYTES) return { code: 'size', name };
   return null;
 }
 

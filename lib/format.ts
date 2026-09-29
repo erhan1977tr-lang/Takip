@@ -13,8 +13,15 @@ export function fmtDateTime(d: Date | string | null | undefined): string {
   }).format(new Date(d));
 }
 
-export function fmtMonth(d: Date | string): string {
-  return new Intl.DateTimeFormat('tr-TR', { timeZone: TZ, month: 'long', year: 'numeric' }).format(new Date(d));
+/** "Eylül 2026" / "septembrie 2026" (dile göre) */
+export function fmtMonth(d: Date | string, locale: 'ro' | 'tr'): string {
+  return new Intl.DateTimeFormat(locale === 'ro' ? 'ro-RO' : 'tr-TR', { timeZone: TZ, month: 'long', year: 'numeric' }).format(new Date(d));
+}
+
+/** Kısa gün adları, pazartesiden başlayarak: Pzt…Paz / lun.…dum. */
+export function weekdayNames(locale: 'ro' | 'tr'): string[] {
+  const f = new Intl.DateTimeFormat(locale === 'ro' ? 'ro-RO' : 'tr-TR', { weekday: 'short', timeZone: 'UTC' });
+  return Array.from({ length: 7 }, (_, i) => f.format(new Date(Date.UTC(2024, 0, 1 + i)))); // 1 Ocak 2024 pazartesi
 }
 
 /** <input type="date"> için YYYY-MM-DD */

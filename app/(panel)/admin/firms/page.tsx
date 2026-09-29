@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth/session';
+import { getT } from '@/lib/i18n';
+import { rich } from '@/lib/rich';
 import { CreateFirmForm } from './FirmForm';
 
 export default async function FirmsPage({
@@ -9,6 +11,7 @@ export default async function FirmsPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   await requireUser(['ADMIN']);
+  const { t, m } = await getT();
   const sp = await searchParams;
   const firms = await db.customer.findMany({
     orderBy: [{ type: 'desc' }, { name: 'asc' }],
@@ -19,21 +22,21 @@ export default async function FirmsPage({
   return (
     <>
       <div className="page-head">
-        <h1>Müşteriler</h1>
-        <p className="muted">Önce firmayı burada oluşturun; ardından <Link href="/admin/users">Kullanıcılar</Link> sekmesinden bu firmaya kullanıcı atayın.</p>
+        <h1>{t('admin.firms.title')}</h1>
+        <p className="muted">{rich(t('admin.firms.intro'), { users: <Link href="/admin/users">{t('admin.firms.usersTab')}</Link> })}</p>
       </div>
-      {sp.saved && <div className="alert alert-ok">“{sp.saved}” kaydedildi.</div>}
-      <CreateFirmForm groups={groups} />
+      {sp.saved && <div className="alert alert-ok">{t('admin.firms.saved', { name: sp.saved })}</div>}
+      <CreateFirmForm groups={groups} m={m.admin.firmForm} />
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>Firmalar ({firms.length})</h2></div>
+        <div className="card-head"><h2 style={{ margin: 0 }}>{t('admin.firms.listTitle', { n: firms.length })}</h2></div>
         {firms.length === 0 ? (
-          <div className="empty">Henüz firma yok.</div>
+          <div className="empty">{t('admin.firms.empty')}</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Firma</th><th>Ön ek</th><th>Cam / sandık etiketi</th><th>Tip</th><th>Grup</th><th>Kullanıcı</th><th>Sipariş</th><th /></tr>
+                <tr><th>{t('admin.firms.col.firm')}</th><th>{t('admin.firms.col.prefix')}</th><th>{t('admin.firms.col.labels')}</th><th>{t('admin.firms.col.type')}</th><th>{t('admin.firms.col.group')}</th><th>{t('admin.firms.col.users')}</th><th>{t('admin.firms.col.orders')}</th><th /></tr>
               </thead>
               <tbody>
                 {firms.map((f) => (
@@ -41,11 +44,11 @@ export default async function FirmsPage({
                     <td><b>{f.name}</b></td>
                     <td className="mono">{f.prefix ?? '—'}</td>
                     <td>{f.camEtiket || f.sandikEtiket ? <>{f.camEtiket ?? '—'} / {f.sandikEtiket ?? '—'}</> : '—'}</td>
-                    <td><span className={`badge ${f.type === 'FACTORY' ? 'badge-info' : ''}`}>{f.type === 'FACTORY' ? 'Fabrika' : 'Müşteri'}</span></td>
-                    <td>{f.groupName ?? <span className="muted">Grupsuz</span>}</td>
+                    <td><span className={`badge ${f.type === 'FACTORY' ? 'badge-info' : ''}`}>{f.type === 'FACTORY' ? t('admin.firms.typeFactory') : t('admin.firms.typeCustomer')}</span></td>
+                    <td>{f.groupName ?? <span className="muted">{t('admin.firms.noGroup')}</span>}</td>
                     <td>{f._count.users}</td>
                     <td>{f._count.orders}</td>
-                    <td className="actions"><Link href={`/admin/firms/${f.id}`} className="btn btn-link">Düzenle</Link></td>
+                    <td className="actions"><Link href={`/admin/firms/${f.id}`} className="btn btn-link">{t('admin.firms.edit')}</Link></td>
                   </tr>
                 ))}
               </tbody>

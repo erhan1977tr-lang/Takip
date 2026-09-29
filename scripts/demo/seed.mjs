@@ -280,7 +280,7 @@ async function main(db) {
     events: [
       ['CREATED', 192, cust], ['SENT_TO_DRAWING', 190, sales], ['DRAWING_STARTED', 185, drawer], ['DRAWING_UPLOADED', 168, drawer, 'v1'],
       ['OFFER_SUBMITTED', 160, sales, '198.00 EUR'], ['OFFER_SENT', 144, admin, '198.00 EUR'],
-      ['DRAWING_APPROVED', 120, cust, 'v1'], ['PRODUCTION', 120, cust, 'Çizim onaylandı ve teklif müşteride'],
+      ['DRAWING_APPROVED', 120, cust, 'v1'], ['PRODUCTION', 120, cust, 'drawing_approved'],
     ],
   });
   // 8) Yüklendi
@@ -291,7 +291,7 @@ async function main(db) {
     offer: { status: 'GONDERILDI', since: 19 * 24, sentAgo: 19 * 24, lines: [{ description: '4mm Float Cam (ayna)', enMm: 1000, boyMm: 800, adet: 1, unitPrice: 30 }] },
     events: [
       ['CREATED', 480, cust], ['NO_DRAWING', 478, sales], ['OFFER_SUBMITTED', 470, sales, '24.00 EUR'],
-      ['OFFER_SENT', 456, admin, '24.00 EUR'], ['PRODUCTION', 456, admin, 'Teklif müşteriye gönderildi'], ['SHIPPED', 48, sales],
+      ['OFFER_SENT', 456, admin, '24.00 EUR'], ['PRODUCTION', 456, admin, 'no_drawing'], ['SHIPPED', 48, sales],
     ],
   });
 

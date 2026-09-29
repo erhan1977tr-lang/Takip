@@ -4,13 +4,15 @@ import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { orderScope } from '@/lib/orders';
 import { resolveKey } from '@/lib/storage';
+import { getT } from '@/lib/i18n';
 
 export const dynamic = 'force-dynamic';
 
 // /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<Drawing id>
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
-  if (!user) return new Response('Giriş gerekli', { status: 401 });
+  const { t } = await getT();
+  if (!user) return new Response(t('common.fileLoginRequired'), { status: 401 });
   const { kind, id } = await ctx.params;
   const scope = orderScope(user);
 
@@ -24,10 +26,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     const d = await db.drawing.findFirst({ where: { id, order: scope } });
     if (d) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: null };
   }
-  if (!file) return new Response('Dosya bulunamadı', { status: 404 });
+  if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
 
   const full = resolveKey(file.storageKey);
-  if (!full || !fs.existsSync(full)) return new Response('Dosya diskte bulunamadı', { status: 404 });
+  if (!full || !fs.existsSync(full)) return new Response(t('common.fileMissing'), { status: 404 });
   const stat = fs.statSync(full);
   const ascii = file.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
   // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir.

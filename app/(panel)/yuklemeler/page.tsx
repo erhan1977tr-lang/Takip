@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { getT, type Dict } from '@/lib/i18n';
+import { rich } from '@/lib/rich';
 import { customerLabel } from '@/lib/orders';
 import { loadOf, ordersShippingBetween, shipDay, type Load, type LoadRow } from '@/lib/loading';
-import { fmtDate, fmtMoney, fmtMonth, fmtNum } from '@/lib/format';
+import { fmtDate, fmtMoney, fmtMonth, fmtNum, weekdayNames } from '@/lib/format';
 import { CustomerBadge, OrderBadge } from '@/components/StatusBadge';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { CRATE_MAX_KG, CRATE_TARE_KG, dayKey, gridRange, monthGrid, parseMonth, shiftMonth, sumLoads } from '@/server/orders/loading.js';
@@ -13,9 +15,19 @@ type SP = Record<string, string | undefined>;
 type Entry = { o: LoadRow; load: Load };
 type Group = { key: string; label: string; entries: Entry[]; total: ReturnType<typeof sumLoads>; amount: number };
 
-const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const kg = (n: number) => fmtNum(n, 0);
 const dash = (n: number) => (n ? String(n) : '–');
+
+type Noun = keyof Dict['orders']['units'];
+/** Sayı + birim: "3 sipariş". Romencede birim sayıya göre çekimlenir (1 comandă, 2 comenzi, 20 de comenzi). */
+function counter(m: Dict, intl: string) {
+  const rules = new Intl.PluralRules(intl);
+  const unit = (noun: Noun, n: number) => {
+    const c = rules.select(n);
+    return m.orders.units[noun][c === 'one' || c === 'few' ? c : 'other'];
+  };
+  return { unit, count: (noun: Noun, n: number) => `${n} ${unit(noun, n)}` };
+}
 
 /** Bir günün siparişlerini müşteriye göre gruplar; sandıklar müşteriler arasında karışmaz. */
 function groupDay(entries: Entry[], user: CurrentUser): { groups: Group[]; total: ReturnType<typeof sumLoads> & { amount: number } } {
@@ -40,6 +52,8 @@ function groupDay(entries: Entry[], user: CurrentUser): { groups: Group[]; total
 
 export default async function LoadingPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser(['ADMIN', 'SATIS', 'MUSTERI']);
+  const { t, locale, m, intl } = await getT();
+  const { unit, count } = counter(m, intl);
   const sp = await searchParams;
   const isCustomer = user.appRole === 'MUSTERI';
   const today = dayKey(new Date());
@@ -75,59 +89,61 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <div className="page-head">
-        <h1>{isCustomer ? 'Yükleme takvimim' : 'Yüklemeler'}</h1>
+        <h1>{isCustomer ? t('loading.titleCustomer') : t('loading.title')}</h1>
         <p className="muted">
-          {isCustomer
-            ? 'Siparişlerinizin hangi gün yükleneceği. Bir güne tıklayınca o günün siparişleri açılır.'
-            : 'Yükleme gününe göre gruplanmış işler. Beklemeye alınanlar bu listede görünmez.'}
+          {isCustomer ? t('loading.introCustomer') : t('loading.intro')}
         </p>
       </div>
 
       <div className="tabs">
-        <Link href={q({ view: undefined, ay: ym, gun: selected })} className={view === 'takvim' ? 'active' : ''}>Takvim</Link>
-        <Link href={q({ view: 'liste', ay: ym, gun: selected })} className={view === 'liste' ? 'active' : ''}>Liste</Link>
+        <Link href={q({ view: undefined, ay: ym, gun: selected })} className={view === 'takvim' ? 'active' : ''}>{t('loading.tabs.calendar')}</Link>
+        <Link href={q({ view: 'liste', ay: ym, gun: selected })} className={view === 'liste' ? 'active' : ''}>{t('loading.tabs.list')}</Link>
       </div>
 
       <div className="card">
         <div className="cal-head">
           <div className="row">
-            <Link className="btn" href={q({ ay: shiftMonth(ym, -1) })}>‹ Önceki ay</Link>
-            <h2 className="cal-title">{fmtMonth(`${ym}-15T12:00:00Z`)}</h2>
-            <Link className="btn" href={q({ ay: shiftMonth(ym, 1) })}>Sonraki ay ›</Link>
-            <Link className="btn" href={q({ ay: today.slice(0, 7), gun: today })}>Bu ay</Link>
+            <Link className="btn" href={q({ ay: shiftMonth(ym, -1) })}>{t('loading.nav.prev')}</Link>
+            <h2 className="cal-title">{fmtMonth(`${ym}-15T12:00:00Z`, locale)}</h2>
+            <Link className="btn" href={q({ ay: shiftMonth(ym, 1) })}>{t('loading.nav.next')}</Link>
+            <Link className="btn" href={q({ ay: today.slice(0, 7), gun: today })}>{t('loading.nav.thisMonth')}</Link>
           </div>
           <form className="row" action="/yuklemeler">
             {view === 'liste' && <input type="hidden" name="view" value="liste" />}
-            <label htmlFor="gun" style={{ margin: 0 }}>Güne git</label>
+            <label htmlFor="gun" style={{ margin: 0 }}>{t('loading.nav.goToDay')}</label>
             <input id="gun" name="gun" type="date" defaultValue={gun ?? ''} style={{ width: 'auto' }} required />
-            <button className="btn">Git</button>
+            <button className="btn">{t('loading.nav.go')}</button>
           </form>
         </div>
         <p className="muted small" style={{ margin: '0 0 10px' }}>
-          Ay toplamı: <b>{monthTotal.orders}</b> sipariş · <b>{fmtNum(monthTotal.metraj)}</b> m² · <b>{kg(monthTotal.netKg)}</b> kg cam
+          {rich(t('loading.monthTotal'), {
+            orders: <><b>{monthTotal.orders}</b> {unit('order', monthTotal.orders)}</>,
+            m2: <b>{fmtNum(monthTotal.metraj)}</b>,
+            kg: <b>{kg(monthTotal.netKg)}</b>,
+          })}
         </p>
 
         {view === 'takvim' ? (
           <div className="cal">
-            {WEEKDAYS.map((w) => <div key={w} className="cal-wd">{w}</div>)}
+            {weekdayNames(locale).map((w) => <div key={w} className="cal-wd">{w}</div>)}
             {grid.flat().map((d) => {
               const list = byDay.get(d.key) ?? [];
               const names = isCustomer
                 ? list.map((e) => e.o.orderNo)
                 : [...new Map(list.map((e) => [e.o.customer.id, customerLabel(user, e.o.customer.name)])).values()];
               const isSel = d.key === selected;
-              const t = isSel && list.length ? sumLoads(list.map((e) => e.load)) : null;
+              const sum = isSel && list.length ? sumLoads(list.map((e) => e.load)) : null;
               return (
                 <Link key={d.key} href={q({ ay: ym, gun: d.key })} className={`cal-day${d.inMonth ? '' : ' other'}${isSel ? ' sel' : ''}${list.length ? ' has' : ''}`}>
                   <div className="cal-top">
                     <b>{d.day}</b>
-                    {d.key === today && <span className="badge badge-info">bugün</span>}
-                    {list.length > 0 && <span className="cal-count" title={`${list.length} sipariş`}>{list.length}</span>}
+                    {d.key === today && <span className="badge badge-info">{t('loading.today')}</span>}
+                    {list.length > 0 && <span className="cal-count" title={count('order', list.length)}>{list.length}</span>}
                   </div>
                   <div className="cal-names">
                     {names.slice(0, 3).map((n) => <div key={n}>{n}</div>)}
-                    {names.length > 3 && <div className="muted">+{names.length - 3} {isCustomer ? 'sipariş' : 'müşteri'}</div>}
-                    {t && <div className="muted small">{fmtNum(t.metraj)} m² · {kg(t.grossKg)} kg</div>}
+                    {names.length > 3 && <div className="muted">+{count(isCustomer ? 'order' : 'customer', names.length - 3)}</div>}
+                    {sum && <div className="muted small">{fmtNum(sum.metraj)} m² · {kg(sum.grossKg)} kg</div>}
                   </div>
                 </Link>
               );
@@ -143,12 +159,18 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function DayList({ user, days, href, selected, isCustomer }: { user: CurrentUser; days: { key: string; entries: Entry[] }[]; href: (k: string) => string; selected?: string; isCustomer: boolean }) {
-  if (days.length === 0) return <div className="empty">Bu ay yükleme yok.</div>;
+async function DayList({ user, days, href, selected, isCustomer }: { user: CurrentUser; days: { key: string; entries: Entry[] }[]; href: (k: string) => string; selected?: string; isCustomer: boolean }) {
+  const { t } = await getT();
+  if (days.length === 0) return <div className="empty">{t('loading.list.empty')}</div>;
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Yükleme günü</th><th className="num">Sipariş</th><th>{isCustomer ? 'Siparişler' : 'Müşteriler'}</th><th className="num">Metraj</th><th className="num">Cam</th><th className="num">Sandık</th><th className="num">Brüt</th></tr></thead>
+        <thead>
+          <tr>
+            <th>{t('loading.list.cols.day')}</th><th className="num">{t('loading.list.cols.orders')}</th><th>{isCustomer ? t('loading.list.cols.orderList') : t('loading.list.cols.customers')}</th>
+            <th className="num">{t('loading.list.cols.metraj')}</th><th className="num">{t('loading.list.cols.glass')}</th><th className="num">{t('loading.list.cols.crates')}</th><th className="num">{t('loading.list.cols.gross')}</th>
+          </tr>
+        </thead>
         <tbody>
           {days.map(({ key, entries }) => {
             const { total } = groupDay(entries, user);
@@ -171,38 +193,45 @@ function DayList({ user, days, href, selected, isCustomer }: { user: CurrentUser
   );
 }
 
-function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day: string; entries: Entry[]; isCustomer: boolean }) {
+async function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day: string; entries: Entry[]; isCustomer: boolean }) {
+  const { t, m, intl } = await getT();
+  const { count } = counter(m, intl);
   const { groups, total } = groupDay(entries, user);
   return (
     <div className="card" id="gun">
       <div className="row" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Yükleme: {fmtDate(`${day}T12:00:00Z`)}</h2>
-        <span className="badge">{total.orders} sipariş</span>
+        <h2 style={{ margin: 0 }}>{t('loading.day.title', { date: fmtDate(`${day}T12:00:00Z`) })}</h2>
+        <span className="badge">{count('order', total.orders)}</span>
       </div>
       {entries.length === 0 ? (
-        <p className="muted">Bu gün için yükleme yok.</p>
+        <p className="muted">{t('loading.day.empty')}</p>
       ) : (
         <>
           <div className="stats stats-5">
-            <div className="stat"><div className="k">Sipariş</div><div className="v">{total.orders}</div></div>
-            <div className="stat"><div className="k">Toplam metraj</div><div className="v">{fmtNum(total.metraj)}<small>m²</small></div></div>
-            <div className="stat"><div className="k">Cam adedi</div><div className="v">{total.camAdet}<small>adet</small></div></div>
-            <div className="stat"><div className="k">Brüt ağırlık</div><div className="v">{kg(total.grossKg)}<small>kg</small></div></div>
-            <div className="stat"><div className="k">Sandık</div><div className="v">{total.crates}<small>adet</small></div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.orders')}</div><div className="v">{total.orders}</div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.metraj')}</div><div className="v">{fmtNum(total.metraj)}<small>{t('common.unitM2')}</small></div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.glass')}</div><div className="v">{total.camAdet}<small>{t('common.unitPiece')}</small></div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.gross')}</div><div className="v">{kg(total.grossKg)}<small>{t('common.unitKg')}</small></div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.crates')}</div><div className="v">{total.crates}<small>{t('common.unitPiece')}</small></div></div>
           </div>
           <p className="muted small">
-            {total.estimatedCrates > 0 && <>Planlama tahmini: brüt = cam {kg(total.estimatedNetKg)} kg + {total.estimatedCrates} sandık × {CRATE_TARE_KG} kg dara (cam ağırlığı müşteri başına azami {fmtNum(CRATE_MAX_KG, 0)} kg'a bölünüp yukarı yuvarlanıyor). </>}
-            Satış siparişe sandık ölçü ve ağırlıklarını girdiyse o siparişte GERÇEK kayıtlar kullanılır ve tahminin önüne geçer.
-            Cam ağırlığı teklifteki cam kalınlığından hesaplanır (mm başına 2,5 kg/m²).
+            {total.estimatedCrates > 0 && (
+              <>
+                {t('loading.day.estimate', {
+                  netKg: kg(total.estimatedNetKg), crates: count('crate', total.estimatedCrates), tare: CRATE_TARE_KG, max: fmtNum(CRATE_MAX_KG, 0),
+                })}{' '}
+              </>
+            )}
+            {t('loading.day.note')}
           </p>
 
           <div className="table-wrap">
             <table className="load-table">
               <thead>
                 <tr>
-                  <th>{isCustomer ? 'Sipariş' : 'Müşteri / sipariş'}</th>{!isCustomer && <th className="num">Sipariş</th>}
-                  <th className="num">Cam</th><th className="num">CNC</th><th className="num">Delik</th><th className="num">Metraj</th><th className="num">Net ağırlık</th>
-                  <th className="num">Sandık</th><th className="num">Brüt ağırlık</th><th className="num">Teklif tutarı</th>
+                  <th>{isCustomer ? t('loading.day.cols.order') : t('loading.day.cols.customerOrder')}</th>{!isCustomer && <th className="num">{t('loading.day.cols.orders')}</th>}
+                  <th className="num">{t('loading.day.cols.glass')}</th><th className="num">{t('loading.day.cols.cnc')}</th><th className="num">{t('loading.day.cols.holes')}</th><th className="num">{t('loading.day.cols.metraj')}</th><th className="num">{t('loading.day.cols.net')}</th>
+                  <th className="num">{t('loading.day.cols.crates')}</th><th className="num">{t('loading.day.cols.gross')}</th><th className="num">{t('loading.day.cols.amount')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -212,7 +241,7 @@ function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day:
               </tbody>
               <tfoot>
                 <tr>
-                  <td>Toplam</td>{!isCustomer && <td className="num">{total.orders}</td>}
+                  <td>{t('common.total')}</td>{!isCustomer && <td className="num">{total.orders}</td>}
                   <td className="num">{total.camAdet}</td><td className="num">{dash(total.cnc)}</td><td className="num">{dash(total.delik)}</td><td className="num">{fmtNum(total.metraj)}</td><td className="num">{kg(total.netKg)}</td>
                   <td className="num">{total.crates}</td><td className="num">{kg(total.grossKg)}</td>
                   <td className="num">{total.amount ? fmtMoney(total.amount) : '—'}</td>
@@ -226,7 +255,8 @@ function DayDetail({ user, day, entries, isCustomer }: { user: CurrentUser; day:
   );
 }
 
-function GroupRows({ g, isCustomer }: { g: Group; isCustomer: boolean }) {
+async function GroupRows({ g, isCustomer }: { g: Group; isCustomer: boolean }) {
+  const { t } = await getT();
   const orderRows = g.entries.map(({ o, load }) => (
     <tr key={o.id} className={isCustomer ? undefined : 'sub'}>
       <td>
@@ -240,7 +270,7 @@ function GroupRows({ g, isCustomer }: { g: Group; isCustomer: boolean }) {
       <td className="num">{dash(load.delik)}</td>
       <td className="num">{fmtNum(load.metraj)}</td>
       <td className="num">{kg(load.netKg)}</td>
-      <td className="num">{load.realCrates ? <>{load.crates} <span className="badge badge-ok">gerçek</span></> : <span className="muted">tahmini</span>}</td>
+      <td className="num">{load.realCrates ? <>{load.crates} <span className="badge badge-ok">{t('loading.day.real')}</span></> : <span className="muted">{t('loading.day.estimated')}</span>}</td>
       <td className="num">{load.realCrates ? kg(load.grossKg) : <span className="muted">—</span>}</td>
       <td className="num">{load.amount != null ? fmtMoney(load.amount, load.currency) : <span className="muted">—</span>}</td>
     </tr>

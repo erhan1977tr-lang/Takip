@@ -1,7 +1,10 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { LINE_KIND, offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
+import type { Dict } from '@/lib/i18n';
+import { formatOfferProblems } from '@/server/i18n/format.js';
+import { interpolate } from '@/server/i18n/interpolate.js';
+import { offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
 import { saveOfferAction } from './actions';
 
 type Line = { key: number; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean };
@@ -23,12 +26,24 @@ export function OfferEditor(props: {
   camEtiket: string;
   sandikEtiket: string;
   statusLabel: string;
+  /** Sözlük parçaları (istemciye sözlüğün yalnızca gereken kısmı gider) */
+  m: Dict['offer'];
+  common: Dict['common'];
+  problemsMsg: Dict['offerProblems'];
+  lineKind: Dict['status']['lineKind'];
 }) {
+  const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
     props.initial.length ? props.initial.map((l, i) => ({ key: i, ...l })) : [blankGlass()]
   );
   const totals = useMemo(() => offerTotals(lines), [lines]);
   const problems = useMemo(() => offerProblems(lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice)), [lines]);
+  const problemTexts = useMemo(
+    () => formatOfferProblems(problems, { offerProblems: props.problemsMsg, lineKind }),
+    [problems, props.problemsMsg, lineKind]
+  );
+  /** Satır türünün adı: "CNC" / "Delik" (dile göre) */
+  const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
   const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
@@ -58,19 +73,19 @@ export function OfferEditor(props: {
       <input type="hidden" name="id" value={props.orderId} />
       <input type="hidden" name="intent" defaultValue={isUpdate ? 'update' : 'save'} ref={intentRef} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>Teklif tablosu <span className="badge">{props.statusLabel}</span></h2>
-        <span className="muted small">Metraj = en × boy × adet (m²). Tutar m² satırlarında metraj × fiyat, adet satırlarında adet × fiyat.</span>
+        <h2 style={{ margin: 0 }}>{m.editor.title} <span className="badge">{props.statusLabel}</span></h2>
+        <span className="muted small">{m.editor.formula}</span>
       </div>
 
       {isUpdate && (
         <div className="alert alert-info" style={{ marginBottom: 14 }}>
-          Müşterideki teklifi güncelliyorsunuz. Kaydettiğinizde yeni sürüm hemen müşterinin panelinde görünür; önceki sürüm kayıtlarda kalır.
+          {m.editor.updateInfo}
         </div>
       )}
       {(isAdmin || isUpdate) && (
         <div className="grid-2" style={{ marginBottom: 14 }}>
-          <div><label htmlFor="camEtiket">Cam etiketi</label><input id="camEtiket" name="camEtiket" type="text" defaultValue={props.camEtiket} /></div>
-          <div><label htmlFor="sandikEtiket">Sandık etiketi</label><input id="sandikEtiket" name="sandikEtiket" type="text" defaultValue={props.sandikEtiket} /></div>
+          <div><label htmlFor="camEtiket">{m.editor.glassLabel}</label><input id="camEtiket" name="camEtiket" type="text" defaultValue={props.camEtiket} /></div>
+          <div><label htmlFor="sandikEtiket">{m.editor.crateLabel}</label><input id="sandikEtiket" name="sandikEtiket" type="text" defaultValue={props.sandikEtiket} /></div>
         </div>
       )}
 
@@ -78,13 +93,14 @@ export function OfferEditor(props: {
       <div className="table-wrap">
         <table className="offer-table">
           <thead>
-            <tr><th>#</th><th>Açıklama</th><th>Poz</th><th>En (mm)</th><th>Boy (mm)</th><th>Adet</th><th>Birim</th><th className="num">Metraj</th><th>Birim fiyat</th><th className="num">Tutar</th><th /></tr>
+            <tr><th>#</th><th>{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th>{m.cols.unitPrice}</th><th className="num">{m.cols.amount}</th><th /></tr>
           </thead>
           <tbody>
             {lines.map((l) => {
-              const t = offerLineTotals(l);
+              const tot = offerLineTotals(l);
               const sub = l.kind !== 'CAM';
               if (!sub) glassNo += 1;
+              const kind = kindName(l.kind);
               const missing = !l.free && !(Number(l.unitPrice.replace(',', '.')) > 0) && (sub || !!(l.description || l.enMm || l.boyMm));
               return (
                 <tr key={l.key} className={sub ? 'sub-line' : undefined}>
@@ -93,45 +109,45 @@ export function OfferEditor(props: {
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
                   </td>
                   <td className="desc">
-                    {sub && <span className="badge badge-info">{LINE_KIND[l.kind as keyof typeof LINE_KIND]}</span>}{' '}
-                    {l.free && <span className="badge badge-ok">bedelsiz</span>}
-                    <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? `${LINE_KIND[l.kind as keyof typeof LINE_KIND]} açıklaması (isteğe bağlı)` : undefined}
-                      onChange={(e) => set(l.key, { description: e.target.value })} aria-label={sub ? `${LINE_KIND[l.kind as keyof typeof LINE_KIND]} açıklaması` : 'Açıklama'} />
+                    {sub && <span className="badge badge-info">{kind}</span>}{' '}
+                    {l.free && <span className="badge badge-ok">{m.free}</span>}
+                    <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
+                      onChange={(e) => set(l.key, { description: e.target.value })} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
                   </td>
-                  <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label="Poz" /></td>
+                  <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label={m.cols.poz} /></td>
                   {sub ? (
                     <><td><input type="hidden" name="l_en" value="" /></td><td><input type="hidden" name="l_boy" value="" /></td></>
                   ) : (
                     <>
-                      <td><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label="En" /></td>
-                      <td><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label="Boy" /></td>
+                      <td><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label={m.cols.width} /></td>
+                      <td><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label={m.cols.height} /></td>
                     </>
                   )}
-                  <td><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} style={{ width: 58 }} aria-label={sub ? `${LINE_KIND[l.kind as keyof typeof LINE_KIND]} adedi` : 'Adet'} /></td>
+                  <td><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} style={{ width: 58 }} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
                   <td>
                     {sub ? (
-                      <><input type="hidden" name="l_unit" value="adet" /><span className="muted">adet</span></>
+                      <><input type="hidden" name="l_unit" value="adet" /><span className="muted">{common.unitPiece}</span></>
                     ) : (
-                      <select name="l_unit" style={{ width: 78 }} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label="Birim">
+                      <select name="l_unit" style={{ width: 78 }} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label={m.cols.unit}>
                         <option value="m2">m²</option>
-                        <option value="adet">adet</option>
+                        <option value="adet">{common.unitPiece}</option>
                       </select>
                     )}
                   </td>
-                  <td className="num">{sub ? '' : fmt(t.metraj)}</td>
+                  <td className="num">{sub ? '' : fmt(tot.metraj)}</td>
                   <td>
                     <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
                       onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
-                      aria-label={sub ? `${LINE_KIND[l.kind as keyof typeof LINE_KIND]} fiyatı` : 'Birim fiyat'} />
+                      aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
                     {l.free && <input type="hidden" name="l_price" value="0" />}
                   </td>
-                  <td className="num">{fmt(t.amount)}</td>
+                  <td className="num">{fmt(tot.amount)}</td>
                   <td>
                     <div className="line-actions">
-                      <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? 'ücretli yap' : 'bedelsiz'}</button>
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+CNC</button>}
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+Delik</button>}
-                      <button type="button" className="btn btn-link danger" aria-label="Satırı sil" onClick={() => remove(l.key)}>✕</button>
+                      <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
+                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
+                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      <button type="button" className="btn btn-link danger" aria-label={m.editor.deleteRow} onClick={() => remove(l.key)}>✕</button>
                     </div>
                   </td>
                 </tr>
@@ -140,8 +156,12 @@ export function OfferEditor(props: {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={5}>Toplam</td>
-              <td>{totals.adet} cam{totals.cnc ? ` · ${totals.cnc} CNC` : ''}{totals.delik ? ` · ${totals.delik} delik` : ''}</td>
+              <td colSpan={5}>{common.total}</td>
+              <td>
+                {interpolate(m.editor.countGlass, { n: totals.adet })}
+                {totals.cnc ? ` · ${interpolate(m.editor.countCnc, { n: totals.cnc })}` : ''}
+                {totals.delik ? ` · ${interpolate(m.editor.countHoles, { n: totals.delik })}` : ''}
+              </td>
               <td />
               <td className="num">{fmt(totals.metraj)} m²</td>
               <td />
@@ -151,52 +171,52 @@ export function OfferEditor(props: {
           </tfoot>
         </table>
       </div>
-      <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setLines([...lines, blankGlass()])}>+ Cam ekle</button>
+      <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
 
       {problems.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
-          <b>Teklif bu haliyle gönderilemez.</b>
-          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{problems.map((p) => <li key={p}>{p}</li>)}</ul>
-          <span className="small">Taslak olarak kaydedebilirsiniz.</span>
+          <b>{m.editor.cannotSend}</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{problemTexts.map((p) => <li key={p}>{p}</li>)}</ul>
+          <span className="small">{m.editor.canSaveDraft}</span>
         </div>
       )}
 
       {isAdmin && (
         <div className="field" style={{ marginTop: 14 }}>
-          <label htmlFor="returnNote">Satışa geri gönderirken not (yalnızca geri gönderirken gerekli)</label>
-          <input id="returnNote" name="returnNote" type="text" placeholder="örn. 3. satırın fiyatını kontrol edin" />
+          <label htmlFor="returnNote">{m.editor.returnNote}</label>
+          <input id="returnNote" name="returnNote" type="text" placeholder={m.editor.returnNotePlaceholder} />
         </div>
       )}
       {isUpdate && (
         <div className="field" style={{ marginTop: 14 }}>
-          <label htmlFor="updateNote">Güncelleme notu (müşteri görmez)</label>
-          <input id="updateNote" name="updateNote" type="text" placeholder="örn. v2 çizime göre ölçüler güncellendi" />
+          <label htmlFor="updateNote">{m.editor.updateNote}</label>
+          <input id="updateNote" name="updateNote" type="text" placeholder={m.editor.updateNotePlaceholder} />
         </div>
       )}
       <div className="row end" style={{ marginTop: 14 }}>
         {isUpdate ? (
           <>
-            <a href={props.cancelHref ?? '#'} className="btn">Vazgeç</a>
-            <button type="submit" onClick={intent('update')} className="btn btn-primary" disabled={problems.length > 0}>Teklifi güncelle ve müşteriye gönder</button>
+            <a href={props.cancelHref ?? '#'} className="btn">{common.cancel}</a>
+            <button type="submit" onClick={intent('update')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.updateAndSend}</button>
           </>
         ) : (
-          <button type="submit" onClick={intent('save')} className="btn">Taslak olarak kaydet</button>
+          <button type="submit" onClick={intent('save')} className="btn">{m.editor.saveDraft}</button>
         )}
         {isUpdate ? null : isAdmin ? (
           <>
-            <button type="submit" onClick={intent('return')} className="btn btn-danger">Satışa geri gönder</button>
-            <button type="submit" onClick={intent('approve')} className="btn btn-primary" disabled={problems.length > 0}>Fiyatı onayla ve müşteriye gönder</button>
+            <button type="submit" onClick={intent('return')} className="btn btn-danger">{m.editor.returnToSales}</button>
+            <button type="submit" onClick={intent('approve')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.approveAndSend}</button>
           </>
         ) : (
-          <button type="submit" onClick={intent('submit')} className="btn btn-primary" disabled={problems.length > 0}>Teklifi yöneticiye gönder</button>
+          <button type="submit" onClick={intent('submit')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.submit}</button>
         )}
       </div>
       <p className="muted small" style={{ marginTop: 8 }}>
         {isUpdate
-          ? 'Teklif müşteriye gönderildikten sonra yalnızca sistem yöneticisi değiştirebilir.'
+          ? m.editor.footUpdate
           : isAdmin
-            ? 'Onayladığınızda teklif müşterinin panelinde görünür.'
-            : 'Teklif doğrudan müşteriye gitmez; önce sistem yöneticisinin onayına düşer. Gönderdikten sonra değişikliği yalnızca yönetici yapabilir.'}
+            ? m.editor.footAdmin
+            : m.editor.footSales}
       </p>
     </form>
   );

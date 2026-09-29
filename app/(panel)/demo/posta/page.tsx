@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth/session';
+import { getT } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { isDemo } from '@/server/demo/accounts.js';
 
@@ -38,18 +39,16 @@ export default async function DemoMailPage() {
   const dir = process.env.MAIL_OUTBOX_DIR;
   if (!isDemo() || !dir) notFound();
   await requireUser(['ADMIN']);
+  const { t } = await getT();
   const mails = await readOutbox(dir);
 
   return (
     <>
       <div className="page-head">
-        <h1>Demo posta kutusu</h1>
-        <p className="muted">
-          Demo ortamında e-posta gönderilmez; kullanıcılara gidecek davet e-postaları burada görünür.
-          Yeni bir kullanıcı oluşturduğunuzda doğrulama kodunu buradan alıp o kullanıcıyla ilk girişi deneyebilirsiniz.
-        </p>
+        <h1>{t('demo.mail.title')}</h1>
+        <p className="muted">{t('demo.mail.intro')}</p>
       </div>
-      {mails.length === 0 && <div className="card"><p className="muted">Henüz e-posta yok. Kullanıcılar sayfasından yeni bir kullanıcı oluşturun.</p></div>}
+      {mails.length === 0 && <div className="card"><p className="muted">{t('demo.mail.empty')}</p></div>}
       {mails.map((m) => (
         <div key={m.file} className="card mail">
           <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -57,10 +56,10 @@ export default async function DemoMailPage() {
               <b>{m.to}</b>
               <div className="muted small">{m.subject} · {fmtDateTime(m.at)}</div>
             </div>
-            {m.code && <span className="badge badge-warn">Kod: <span className="code mono">{m.code}</span></span>}
+            {m.code && <span className="badge badge-warn">{t('demo.mail.code')} <span className="code mono">{m.code}</span></span>}
           </div>
           <details style={{ marginTop: 8 }}>
-            <summary className="small muted" style={{ cursor: 'pointer' }}>E-postanın metni</summary>
+            <summary className="small muted" style={{ cursor: 'pointer' }}>{t('demo.mail.body')}</summary>
             <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13, marginTop: 8 }}>{m.text}</pre>
           </details>
         </div>

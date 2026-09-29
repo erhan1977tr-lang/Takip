@@ -7,32 +7,35 @@ import { db } from '@/lib/db';
 import { requireUser, destroyAllSessions } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 import { issueInvite } from '@/lib/invite';
+import { getT } from '@/lib/i18n';
 
 export type UserFormState = { error?: string; ok?: string; warn?: string; values?: Record<string, string> };
 
 const ASSIGNABLE: AppRole[] = ['MUSTERI', 'SATIS', 'CIZIM'];
-const LANGS = ['tr', 'ro', 'en'];
+// Davet e-postası dilleri: formda yalnızca Romence ve Türkçe sunulur (eski 'en' kayıtları olduğu gibi kalır)
+const LANGS = ['ro', 'tr'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function createUserAction(_prev: UserFormState, formData: FormData): Promise<UserFormState> {
   const admin = await requireUser(['ADMIN']);
+  const { t, locale } = await getT();
   const v = (k: string) => String(formData.get(k) ?? '').trim();
   const values = {
     email: v('email').toLowerCase(), name: v('name'), unit: v('unit'), phone: v('phone'),
-    customerId: v('customerId'), appRole: v('appRole'), language: v('language') || 'tr',
+    customerId: v('customerId'), appRole: v('appRole'), language: v('language') || locale,
     canApprove: formData.get('canApprove') ? 'on' : '', sendInvite: formData.get('sendInvite') ? 'on' : '',
   };
   const fail = (error: string) => ({ error, values });
 
-  if (!EMAIL_RE.test(values.email) || values.email.length > 200) return fail('Geçerli bir e-posta adresi girin.');
-  if (!ASSIGNABLE.includes(values.appRole as AppRole)) return fail('Bir rol seçin.');
+  if (!EMAIL_RE.test(values.email) || values.email.length > 200) return fail(t('admin.userActions.invalidEmail'));
+  if (!ASSIGNABLE.includes(values.appRole as AppRole)) return fail(t('admin.userActions.selectRole'));
   const role = values.appRole as AppRole;
-  if (!values.customerId) return fail('Bir firma seçin.');
+  if (!values.customerId) return fail(t('admin.userActions.selectFirm'));
   const firm = await db.customer.findUnique({ where: { id: values.customerId } });
-  if (!firm) return fail('Seçilen firma bulunamadı.');
-  if (role === 'MUSTERI' && firm.type !== 'CUSTOMER') return fail('Müşteri rolü yalnızca bir müşteri firmasına atanabilir.');
-  if (role !== 'MUSTERI' && firm.type !== 'FACTORY') return fail('Satış ve çizim rolleri yalnızca fabrikaya atanabilir.');
-  if (await db.user.findUnique({ where: { email: values.email } })) return fail('Bu e-posta ile zaten bir hesap var.');
+  if (!firm) return fail(t('admin.userActions.firmNotFound'));
+  if (role === 'MUSTERI' && firm.type !== 'CUSTOMER') return fail(t('admin.userActions.customerNeedsCustomerFirm'));
+  if (role !== 'MUSTERI' && firm.type !== 'FACTORY') return fail(t('admin.userActions.teamNeedsFactory'));
+  if (await db.user.findUnique({ where: { email: values.email } })) return fail(t('admin.userActions.emailTaken'));
 
   let userId: string;
   try {
@@ -46,12 +49,12 @@ export async function createUserAction(_prev: UserFormState, formData: FormData)
         type: role === 'MUSTERI' ? 'CUSTOMER' : 'INTERNAL',
         customerId: firm.id,
         canApprove: role === 'MUSTERI' && values.canApprove === 'on',
-        language: LANGS.includes(values.language) ? values.language : 'tr',
+        language: LANGS.includes(values.language) ? values.language : locale,
       },
     });
     userId = user.id;
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return fail('Bu e-posta ile zaten bir hesap var.');
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return fail(t('admin.userActions.emailTaken'));
     throw err;
   }
   await audit('USER_CREATE', 'User', userId, admin.id, { email: values.email, role, firm: firm.name });
@@ -62,12 +65,12 @@ export async function createUserAction(_prev: UserFormState, formData: FormData)
   revalidatePath('/admin/firms');
 
   if (!send) {
-    return { ok: `${values.email} → ${firm.name} firmasına atandı. Davet henüz gönderilmedi; hazır olduğunuzda listeden “Davet gönder”e basın.` };
+    return { ok: t('admin.userActions.assignedNotInvited', { email: values.email, firm: firm.name }) };
   }
   if (!res.sent) {
-    return { warn: `${values.email} oluşturuldu ama davet e-postası gönderilemedi (${res.error ?? 'bilinmeyen hata'}). SMTP ayarlarını kontrol edip listeden “Davet gönder”e basın.` };
+    return { warn: t('admin.userActions.mailFailed', { email: values.email, error: res.error ?? t('admin.userActions.unknownError') }) };
   }
-  return { ok: `${values.email} → ${firm.name} firmasına atandı ve davet e-postası gönderildi.` };
+  return { ok: t('admin.userActions.assignedInvited', { email: values.email, firm: firm.name }) };
 }
 
 async function targetUser(formData: FormData, adminId: string) {

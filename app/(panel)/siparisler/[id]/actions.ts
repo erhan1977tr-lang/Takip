@@ -5,10 +5,12 @@ import { redirect } from 'next/navigation';
 import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { getT, type Dict, type T } from '@/lib/i18n';
+import { fileProblemText, offerProblemTexts } from '@/lib/labels';
 import { currentOffer, loadOrder, logEvent, maybeAutoProduction, refreshSla, type OrderDetail } from '@/lib/orders';
 import { audit } from '@/lib/audit';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
-import { LINE_KIND, availableActions, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { availableActions, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -24,7 +26,8 @@ async function guard(formData: FormData, action: string): Promise<{ user: Curren
   const user = await requireUser();
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   if (!actionsFor(user, order).includes(action)) {
-    redirect(err(order.id, 'Bu işlem şu anda yapılamaz (sipariş durumu değişmiş olabilir). Sayfayı yenileyin.'));
+    const { t } = await getT();
+    redirect(err(order.id, t('order.errors.notAllowed')));
   }
   return { user, order };
 }
@@ -117,8 +120,9 @@ export async function holdAction(formData: FormData) {
 
 export async function setShipDateAction(formData: FormData) {
   const { user, order } = await guard(formData, 'set_ship_date');
+  const { t } = await getT();
   const d = parseDateOnly(String(formData.get('date') ?? ''));
-  if (!d) redirect(err(order.id, 'Geçerli bir tarih seçin.'));
+  if (!d) redirect(err(order.id, t('order.errors.invalidDate')));
   await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id: order.id }, data: { estimatedShipDate: d } });
     await logEvent(tx, order.id, 'SHIP_DATE', user.id, d.toISOString().slice(0, 10).split('-').reverse().join('.'));
@@ -146,8 +150,9 @@ export async function archiveAction(formData: FormData) {
 
 export async function cancelAction(formData: FormData) {
   const { user, order } = await guard(formData, 'cancel');
+  const { t } = await getT();
   const note = String(formData.get('note') ?? '').trim().slice(0, 500);
-  if (!note) redirect(err(order.id, 'İptal nedeni yazın.'));
+  if (!note) redirect(err(order.id, t('order.errors.cancelReason')));
   await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id: order.id }, data: { status: 'IPTAL' } });
     await logEvent(tx, order.id, 'CANCELLED', user.id, note);
@@ -172,9 +177,10 @@ export async function startDrawingAction(formData: FormData) {
 
 export async function uploadDrawingAction(formData: FormData) {
   const { user, order } = await guard(formData, 'upload_drawing');
+  const { t } = await getT();
   const file = filesFrom(formData, 'file')[0];
-  if (!file) redirect(err(order.id, 'Çizim dosyası seçin.'));
-  const problem = fileProblem(file.name, file.size);
+  if (!file) redirect(err(order.id, t('order.errors.drawingFile')));
+  const problem = fileProblemText(t, fileProblem(file.name, file.size));
   if (problem) redirect(err(order.id, problem));
   const stored = await saveUpload(file);
   const version = order.drawings.length + 1;
@@ -213,8 +219,9 @@ export async function approveDrawingAction(formData: FormData) {
 
 export async function requestRevisionAction(formData: FormData) {
   const { user, order } = await guard(formData, 'request_revision');
+  const { t } = await getT();
   const comment = String(formData.get('comment') ?? '').trim().slice(0, 2000);
-  if (!comment) redirect(err(order.id, 'Revizyon için ne değişmesi gerektiğini yazın.'));
+  if (!comment) redirect(err(order.id, t('order.errors.revisionComment')));
   const latest = order.drawings[order.drawings.length - 1];
   await db.$transaction(async (tx) => {
     if (latest) {
@@ -235,6 +242,7 @@ export async function requestRevisionAction(formData: FormData) {
 /** Sandık ölçü ve ağırlıkları (gerçek kayıt). Boş bırakılan satırlar silinir. */
 export async function saveCratesAction(formData: FormData) {
   const { user, order } = await guard(formData, 'edit_crates');
+  const { t } = await getT();
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const dim = col('c_dim'), net = col('c_net'), brut = col('c_brut');
   const toKg = (s: string) => (s ? Number(s.replace(',', '.')) : null);
@@ -242,14 +250,15 @@ export async function saveCratesAction(formData: FormData) {
   for (let i = 0; i < dim.length; i++) {
     if (!dim[i] && !net[i] && !brut[i]) continue;
     const n = toKg(net[i]), b = toKg(brut[i]);
-    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(order.id, `${i + 1}. sandıkta ağırlık geçersiz.`));
-    if (n !== null && b !== null && b < n) redirect(err(order.id, `${i + 1}. sandıkta brüt ağırlık netten küçük olamaz.`));
+    for (const v of [n, b]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 20000)) redirect(err(order.id, t('order.errors.crateWeight', { n: i + 1 })));
+    if (n !== null && b !== null && b < n) redirect(err(order.id, t('order.errors.crateGross', { n: i + 1 })));
     rows.push({ dimensions: dim[i] ? dim[i].slice(0, 80) : null, netAgirlik: n, brutAgirlik: b });
   }
   await db.$transaction(async (tx) => {
     await tx.crate.deleteMany({ where: { orderId: order.id } });
     if (rows.length) await tx.crate.createMany({ data: rows.map((r, i) => ({ ...r, orderId: order.id, crateNo: i + 1 })) });
-    await logEvent(tx, order.id, 'CRATES', user.id, `${rows.length} sandık`);
+    // Not yalnızca sandık sayısıdır; ekranda events.CRATES.count olarak çevrilir (lib/labels.ts → eventNoteText)
+    await logEvent(tx, order.id, 'CRATES', user.id, String(rows.length));
   });
   revalidatePath('/yuklemeler');
   done(order.id, 'crates_saved');
@@ -258,10 +267,11 @@ export async function saveCratesAction(formData: FormData) {
 // ---------------- Ortak ----------------
 export async function addFilesAction(formData: FormData) {
   const { user, order } = await guard(formData, 'add_file');
+  const { t } = await getT();
   const files = filesFrom(formData, 'files');
-  if (!files.length) redirect(err(order.id, 'Dosya seçin.'));
+  if (!files.length) redirect(err(order.id, t('order.errors.noFiles')));
   for (const f of files) {
-    const p = fileProblem(f.name, f.size);
+    const p = fileProblemText(t, fileProblem(f.name, f.size));
     if (p) redirect(err(order.id, p));
   }
   const stored: StoredFile[] = [];
@@ -281,8 +291,9 @@ export async function addFilesAction(formData: FormData) {
 export async function addNoteAction(formData: FormData) {
   const user = await requireUser();
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
+  const { t } = await getT();
   const text = String(formData.get('text') ?? '').trim().slice(0, 4000);
-  if (!text) redirect(err(order.id, 'Not boş olamaz.'));
+  if (!text) redirect(err(order.id, t('order.errors.emptyNote')));
   const internal = user.appRole !== 'MUSTERI' && formData.get('internal') === 'on';
   await db.orderNote.create({ data: { orderId: order.id, userId: user.id, text, internal } });
   done(order.id, 'note_added');
@@ -291,7 +302,7 @@ export async function addNoteAction(formData: FormData) {
 // ---------------- Teklif hattı ----------------
 type LineInput = { description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean };
 
-function readLines(formData: FormData): LineInput[] | string {
+function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
   const kinds = col('l_kind'), free = col('l_free');
@@ -300,14 +311,14 @@ function readLines(formData: FormData): LineInput[] | string {
     const kind = kinds[i] === 'CNC' || kinds[i] === 'DELIK' ? kinds[i] : 'CAM';
     const sub = kind !== 'CAM';
     if (!sub && !desc[i] && !en[i] && !boy[i] && !price[i]) continue; // boş cam satırı
-    if (sub && !desc[i]) desc[i] = LINE_KIND[kind as keyof typeof LINE_KIND];
     const toInt = (s: string) => (s ? Math.trunc(Number(s.replace(',', '.'))) : null);
     const e = toInt(en[i]), b = toInt(boy[i]), a = toInt(adet[i]) ?? 1;
     const p = Number((price[i] || '0').replace(',', '.'));
-    if (!desc[i]) return `${i + 1}. satırda açıklama eksik.`;
-    if ((e !== null && (e <= 0 || e > 10000)) || (b !== null && (b <= 0 || b > 10000))) return `${i + 1}. satırda ölçü 1–10000 mm arasında olmalı.`;
-    if (!Number.isFinite(a) || a <= 0 || a > 100000) return `${i + 1}. satırda adet geçersiz.`;
-    if (!Number.isFinite(p) || p < 0 || p > 1_000_000) return `${i + 1}. satırda fiyat geçersiz.`;
+    // Açıklama yalnızca cam satırında zorunlu; CNC / delik satırının açıklaması boş kalabilir (ekranda tür rozeti görünür)
+    if (!sub && !desc[i]) return t('order.errors.lineDescription', { n: i + 1 });
+    if ((e !== null && (e <= 0 || e > 10000)) || (b !== null && (b <= 0 || b > 10000))) return t('order.errors.lineDims', { n: i + 1 });
+    if (!Number.isFinite(a) || a <= 0 || a > 100000) return t('order.errors.lineQty', { n: i + 1 });
+    if (!Number.isFinite(p) || p < 0 || p > 1_000_000) return t('order.errors.linePrice', { n: i + 1 });
     const isFree = free[i] === '1';
     lines.push({
       description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a,
@@ -318,9 +329,9 @@ function readLines(formData: FormData): LineInput[] | string {
 }
 
 /** Müşteriye gidecek teklif için eksik ya da null. */
-function finalProblem(lines: LineInput[]): string | null {
+function finalProblem(lines: LineInput[], m: Dict): string | null {
   const p = offerProblems(lines);
-  return p.length ? p.join(' ') : null;
+  return p.length ? offerProblemTexts(m, p).join(' ') : null;
 }
 
 const labels = (formData: FormData) => ({
@@ -338,21 +349,22 @@ export async function saveOfferAction(formData: FormData) {
   const intent = String(formData.get('intent') ?? 'save');
   const acts = actionsFor(user, order);
   if (intent === 'update') return updateSentOffer(user, order, acts, formData);
-  if (!acts.includes('edit_offer') && !acts.includes('approve_price')) redirect(err(order.id, 'Teklif şu anda düzenlenemez.'));
+  const { t, m } = await getT();
+  if (!acts.includes('edit_offer') && !acts.includes('approve_price')) redirect(err(order.id, t('order.errors.offerNotEditable')));
   const offer = currentOffer(order);
-  if (!offer) redirect(err(order.id, 'Teklif bulunamadı.'));
+  if (!offer) redirect(err(order.id, t('order.errors.offerNotFound')));
 
-  const lines = readLines(formData);
+  const lines = readLines(formData, t);
   if (typeof lines === 'string') redirect(err(order.id, lines));
   const finalize = intent === 'submit' || intent === 'approve';
-  const problem = finalize ? finalProblem(lines) : null;
+  const problem = finalize ? finalProblem(lines, m) : null;
   if (problem) redirect(err(order.id, problem));
   const totals = offerTotals(lines);
   const amount = totals.amount.toFixed(2);
   const isAdmin = user.appRole === 'ADMIN';
   const { camEtiket, sandikEtiket } = labels(formData);
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
-  if (intent === 'return' && !returnNote) redirect(err(order.id, 'Satışa geri gönderme nedenini yazın.'));
+  if (intent === 'return' && !returnNote) redirect(err(order.id, t('order.errors.returnReason')));
   const now = new Date();
 
   const produced = await db.$transaction(async (tx) => {
@@ -388,12 +400,13 @@ export async function saveOfferAction(formData: FormData) {
  * yeni sürüm doğrudan müşteriye gönderilmiş olarak kaydedilir ve fiyat güncellenir. Satış bu işlemi yapamaz.
  */
 async function updateSentOffer(user: CurrentUser, order: OrderDetail, acts: string[], formData: FormData): Promise<never> {
-  if (!acts.includes('update_offer')) redirect(err(order.id, 'Teklif şu anda güncellenemez.'));
+  const { t, m } = await getT();
+  if (!acts.includes('update_offer')) redirect(err(order.id, t('order.errors.offerNotUpdatable')));
   const prev = currentOffer(order);
-  if (!prev) redirect(err(order.id, 'Teklif bulunamadı.'));
-  const lines = readLines(formData);
+  if (!prev) redirect(err(order.id, t('order.errors.offerNotFound')));
+  const lines = readLines(formData, t);
   if (typeof lines === 'string') redirect(err(order.id, lines));
-  const problem = finalProblem(lines);
+  const problem = finalProblem(lines, m);
   if (problem) redirect(err(order.id, problem));
   const amount = offerTotals(lines).amount.toFixed(2);
   const note = String(formData.get('updateNote') ?? '').trim().slice(0, 1000);

@@ -92,14 +92,17 @@ jobs:
             scripts/ci-step.sh "prisma migrate deploy (yeni)" npx prisma migrate deploy
           fi
 
+      - name: IP aralıkları (giriş sayfası dili; 30 günden eskiyse yenile)
+        run: node scripts/geo/update-ranges.mjs --if-older-than=30 || echo "::warning title=IP aralıkları::RIPE verisi indirilemedi; mevcut veriyle devam ediliyor"
+
       - name: Üretilen dosyaları depoya geri yaz
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898279+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json prisma/migrations
+          git add package-lock.json prisma/migrations server/geo/ranges.js
           if ! git diff --cached --quiet; then
-            git commit -m "CI: package-lock.json ve migration dosyaları"
+            git commit -m "CI: package-lock.json, migration ve IP aralığı dosyaları"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 

@@ -28,8 +28,17 @@ Cam sipariş akışı için web uygulaması:
 | Notlar (iç not), hareket geçmişi, SLA, müşteri adı maskeleme, yetkili dosya indirme | ✅ |
 | Cam Kataloğu (yönetici) | ✅ |
 | Yükleme takvimi (satış/yönetici ve müşteri), sandık ölçü/ağırlık kaydı, yük tahmini | ✅ |
+| Romence / Türkçe arayüz, IP'ye göre giriş dili, dil seçimi | ✅ |
 | Excel/PDF çıktıları (döküm, nakliye listesi, sandık etiketi, teklif), bildirimler | ⏳ |
 | Sunucuya otomatik kurulum | ⏳ sunucu hazır olunca |
+
+## Diller
+
+Arayüz Romence ve Türkçedir. Metinler `server/i18n/ro/` ve `server/i18n/tr/` altındaki sözlüklerdedir (iki dilin anahtarları
+birebir aynı olmalı; `npm test` kontrol eder). Kod içinde `const { t } = await getT()` ve `t('status.order.YENI')` kullanılır.
+
+Dil seçimi: çerez (kullanıcının seçimi / giriş dili) → Cloudflare ülke başlığı → IP adresinin ülkesi (Türkiye → tr, Romanya ve
+Moldova → ro; `server/geo/ranges.js`, RIPE NCC verisi, CI tarafından aylık yenilenir) → tarayıcı dili → Romence.
 
 ## Klasörler
 

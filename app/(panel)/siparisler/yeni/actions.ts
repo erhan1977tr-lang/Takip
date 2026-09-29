@@ -5,6 +5,8 @@ import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
+import { getT } from '@/lib/i18n';
+import { fileProblemText } from '@/lib/labels';
 import { filesFrom, removeUpload, saveUpload, type StoredFile } from '@/lib/storage';
 import { fileProblem, nextShipDate, slaDeadline } from '@/server/orders/rules.js';
 
@@ -12,6 +14,7 @@ export type NewOrderState = { error?: string; values?: { title: string; no: stri
 
 export async function createOrderAction(_prev: NewOrderState, formData: FormData): Promise<NewOrderState> {
   const user = await requireUser(['MUSTERI']);
+  const { t } = await getT();
   const firm = user.customer;
   const title = String(formData.get('title') ?? '').trim().slice(0, 160);
   const noRaw = String(formData.get('customerOrderNo') ?? '').trim();
@@ -21,34 +24,34 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   const values = { title, no: noRaw, glasses };
   const fail = (error: string) => ({ error, values });
 
-  if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail('Hesabınız bir müşteri firmasına bağlı değil. Yöneticinize başvurun.');
-  if (!title) return fail('Sipariş adı gerekli.');
+  if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail(t('newOrder.errors.noFirm'));
+  if (!title) return fail(t('newOrder.errors.titleRequired'));
   const no = Number(noRaw);
-  if (!Number.isInteger(no) || no <= 0 || no > 9_999_999) return fail('Sipariş numarası pozitif bir tam sayı olmalı.');
+  if (!Number.isInteger(no) || no <= 0 || no > 9_999_999) return fail(t('newOrder.errors.badNumber'));
 
   const files = filesFrom(formData, 'files');
-  if (files.length === 0) return fail('En az bir sipariş dosyası yükleyin.');
-  if (files.length > 20) return fail('Tek seferde en fazla 20 dosya yükleyebilirsiniz.');
+  if (files.length === 0) return fail(t('newOrder.errors.noFiles'));
+  if (files.length > 20) return fail(t('newOrder.errors.tooManyFiles'));
   for (const f of files) {
-    const p = fileProblem(f.name, f.size);
+    const p = fileProblemText(t, fileProblem(f.name, f.size));
     if (p) return fail(p);
   }
 
-  if (glasses.length === 0) return fail('En az bir cam kombinasyonu seçin.');
+  if (glasses.length === 0) return fail(t('newOrder.errors.noGlass'));
   const catalog = await db.glassProduct.findMany({ where: { id: { in: glasses.map((g) => g.id) }, isActive: true } });
   const byId = new Map(catalog.map((c) => [c.id, c]));
   const items: { glassName: string; camAdedi: number }[] = [];
   for (const g of glasses) {
     const product = byId.get(g.id);
     const qty = Number(g.qty);
-    if (!product) return fail('Seçilen camlardan biri artık katalogda yok; sayfayı yenileyip tekrar seçin.');
-    if (!Number.isInteger(qty) || qty <= 0 || qty > 100_000) return fail('Cam adedi pozitif bir tam sayı olmalı.');
+    if (!product) return fail(t('newOrder.errors.glassGone'));
+    if (!Number.isInteger(qty) || qty <= 0 || qty > 100_000) return fail(t('newOrder.errors.badQty'));
     items.push({ glassName: product.name, camAdedi: qty });
   }
 
   const orderNo = `${firm.prefix}${no}`;
   if (await db.order.findFirst({ where: { OR: [{ orderNo }, { customerId: firm.id, customerOrderNo: no }] } })) {
-    return fail(`${orderNo} numaralı bir sipariş zaten var; farklı bir numara girin.`);
+    return fail(t('newOrder.errors.duplicate', { orderNo }));
   }
 
   // Önce dosyalar diske yazılır; veritabanı kaydı başarısız olursa geri silinir.
@@ -73,10 +76,10 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   } catch (err) {
     await Promise.all(stored.map((s) => removeUpload(s.storageKey)));
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return fail(`${orderNo} numaralı bir sipariş zaten var; farklı bir numara girin.`);
+      return fail(t('newOrder.errors.duplicate', { orderNo }));
     }
     console.error('Sipariş oluşturulamadı', err);
-    return fail('Sipariş kaydedilemedi, lütfen tekrar deneyin.');
+    return fail(t('newOrder.errors.saveFailed'));
   }
   await audit('ORDER_CREATE', 'Order', orderId, user.id, { orderNo, files: stored.length });
   redirect(`/siparisler/${orderId}?ok=created`);
