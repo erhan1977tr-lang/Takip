@@ -75,7 +75,7 @@ test('satış: liste fiyatı dolu gelir; değiştirip gönderince yönetici uyar
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await expect(admin.getByText('1 önemli karar bekliyor (ör. satışçı liste fiyatını değiştirdi).')).toBeVisible();
   await admin.getByRole('link', { name: 'Önemli kararlar →' }).click();
-  await expect(admin.getByRole('heading', { name: 'Bekleyen önemli kararlar' })).toBeVisible();
+  await expect(admin.getByRole('heading', { name: 'Bekleyen önemli kararlar', level: 1 })).toBeVisible();
   await expect(admin.getByText('Satışçı liste fiyatını değiştirdi').first()).toBeVisible();
   await expect(admin.getByText(/liste 30,00 → 28,00 EUR/)).toBeVisible();
   await admin.getByRole('button', { name: 'Gördüm' }).click();
