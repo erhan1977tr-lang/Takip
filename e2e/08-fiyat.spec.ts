@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as, login, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, createUser, firstLogin, login, outboxCodeFor, sampleFile } from './helpers';
+
+// 05'te satis@e2e.test bilerek kilitlendi; bu testin kendi satışçısı var
+const SALES = 'fiyat-satis@e2e.test';
 
 // Aşama 3b: fiyat tablosu Excel'den yüklenir; satışçının teklifine liste fiyatı gelir; satışçı fiyatı değiştirirse
 // yöneticinin "Önemli kararlar" listesine ve giriş ekranına uyarı düşer. (Katalog 07'de yüklendi.)
@@ -29,6 +32,13 @@ test('yönetici: fiyat tablosu oluşturur, fiyat Excel\'ini yükler, satışçı
   const res = await page.request.get(`/admin/fiyatlar/excel?tablo=${url.searchParams.get('tablo')}`);
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('spreadsheetml');
+
+  await createUser(page, { email: SALES, name: 'Fiyat Satışçı', role: 'Satış', firm: 'GKH Trading' });
+  const ctx = await page.context().browser()!.newContext();
+  const p = await ctx.newPage();
+  await firstLogin(p, SALES, outboxCodeFor(SALES), TEAM_PW);
+  await ctx.close();
+  await page.goto(url.pathname + url.search.replace(/&?ok=[^&]*/, ''));
 
   const row = page.locator('tr', { hasText: SALES });
   await row.getByRole('button', { name: 'Bu tabloya ata' }).click();
