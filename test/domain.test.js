@@ -129,7 +129,7 @@ test('audit/outbox: biçim kontrolü', () => {
 
 test('transitionOrder: işlem birden çok geçmiş kaydı üretebilir (ör. onay + otomatik üretim)', async () => {
   const { db, deps, store, outbox } = fakeDb({ ...base, status: 'B' });
-  deps.apply = async (_tx, o) => {
+  deps.apply = async () => {
     store.order = { ...store.order, status: 'C', version: store.order.version + 1 };
     return {
       order: { ...store.order },
