@@ -14,12 +14,12 @@ test('yükleme: temiz dosya kabul edilir; virüslü ve kılık değiştirmiş do
 
   // ZIP içinde standart (zararsız) EICAR test dosyası → virüs
   await cust.setInputFiles('input[name=files]', { name: 'ekler.zip', mimeType: 'application/zip', buffer: zipOf([{ name: 'eicar.com', data: eicar() }]) });
-  await cust.getByRole('button', { name: 'Dosya ekle' }).click();
+  await cust.locator('button', { hasText: 'Dosya ekle' }).click();
   await expect(cust.getByText('“ekler.zip” dosyasında virüs bulundu; dosya kabul edilmedi.')).toBeVisible();
 
   // Adı .pdf ama içi PDF değil
   await cust.setInputFiles('input[name=files]', { name: 'fatura.pdf', mimeType: 'application/pdf', buffer: Buffer.from('MZ bu bir PDF değil') });
-  await cust.getByRole('button', { name: 'Dosya ekle' }).click();
+  await cust.locator('button', { hasText: 'Dosya ekle' }).click();
   await expect(cust.getByText(/“fatura\.pdf” dosyasının içeriği uzantısıyla uyuşmuyor/)).toBeVisible();
 
   await cust.goto(`/siparisler/${id}`);
