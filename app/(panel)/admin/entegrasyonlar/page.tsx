@@ -24,7 +24,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const { t } = await getT();
   const sp = await searchParams;
   const s = await getAvSettings(db);
-  const [health, pendingFiles, pendingDrawings, infectedFiles, infectedDrawings, statusRow, blocked] = await Promise.all([
+  const [health, pendingFiles, pendingDrawings, infectedFiles, infectedDrawings, statusRow, blocked, pendingDrawingFiles, infectedDrawingFiles] = await Promise.all([
     s.enabled ? avHealth(s) : Promise.resolve(null),
     db.orderFile.count({ where: { scanStatus: 'PENDING' } }),
     db.drawing.count({ where: { scanStatus: 'PENDING' } }),
@@ -35,10 +35,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       where: { action: 'FILE_INFECTED', entityType: 'Upload' }, orderBy: { createdAt: 'desc' }, take: 10,
       include: { user: { select: { name: true, email: true } } },
     }),
+    db.drawingFile.count({ where: { scanStatus: 'PENDING' } }),
+    db.drawingFile.findMany({ where: { scanStatus: 'INFECTED' }, orderBy: { scannedAt: 'desc' }, take: 20, include: { drawing: { select: { version: true, order: { select: { id: true, orderNo: true } } } } } }),
   ]);
   const quarantine = [
     ...infectedFiles.map((f) => ({ id: f.id, name: f.name, order: f.order, signature: f.scanSignature, at: f.scannedAt })),
     ...infectedDrawings.map((d) => ({ id: d.id, name: d.fileName ?? `v${d.version}`, order: d.order, signature: d.scanSignature, at: d.scannedAt })),
+    ...infectedDrawingFiles.map((f) => ({ id: f.id, name: `v${f.drawing.version} · ${f.name}`, order: f.drawing.order, signature: f.scanSignature, at: f.scannedAt })),
   ].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const worker = (statusRow?.value ?? null) as { lastRun?: string } | null;
 
@@ -64,7 +67,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <p className="muted small">{t('admin.integrations.av.intro')}</p>
         <div className={`alert ${status.cls}`} style={{ marginTop: 8 }}>{status.text}</div>
         <p className="small">
-          {t('admin.integrations.av.pending', { n: pendingFiles + pendingDrawings })} ·{' '}
+          {t('admin.integrations.av.pending', { n: pendingFiles + pendingDrawings + pendingDrawingFiles })} ·{' '}
           {t('admin.integrations.av.infected', { n: quarantine.length })} ·{' '}
           {worker?.lastRun ? t('admin.integrations.av.lastRun', { when: fmtDateTime(worker.lastRun) }) : t('admin.integrations.av.lastRunNever')}
         </p>

@@ -47,6 +47,10 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 24 | Taslak sipariş | Müşteri "Taslak kaydet" ile formu yarım bırakabilir. Taslak sipariş değildir: numarası, SLA'sı yoktur, satışa ve kuyruklara düşmez; yalnızca firmanın müşteri kullanıcıları görür. Numara ve SLA "Gönder"de kesinleşir. |
 | 25 | Müşteriden bilgi isteme | Yapılmayacak: satış beklemeye alır, iletişim telefonla ya da notla yürür. |
 | 27 | Sandıklar | Sandık ölçü (uzunluk/genişlik/yükseklik) ve son ağırlıkları **Yüklemeler sekmesinde**, yükleme günü + müşteri bazında girilir; satış ya da yönetici girer. Sandık no o gün içinde tektir; sandığın hangi siparişleri taşıdığı seçilir. Sipariş sayfasında giriş yok. Siparişin yükleme günü değişirse sandıkları da yeni güne taşınır (başka siparişle ortak sandık eski günde kalır; numara doluysa kayar). |
+| 28 | Çizimci atama | Şimdilik tek çizimci: "Çizim Ekibine Gönder"de iş kendiliğinden ona atanır. Birden çok çizimci olursa çizimci işi üstlenir. |
+| 29 | Çizim gönderimi | Dosyalar önce taslağa yüklenir (sürüm başına birden çok dosya); "Müşteriye gönder" + "Emin misiniz?" onayıyla müşteriye gider. Her dosya virüs taramasından geçer; temiz olmayan dosyası olan çizim gönderilemez. |
+| 30 | Geri çekme | Çizimci gönderdiği sürümü müşteri karar vermeden gerekçeyle geri çekebilir; sürüm geçmişte kalır. |
+| 31 | SLA gecikmesi | Yalnızca kırmızı rozet ve kuyruklarda en üste çıkma (bildirim/uyarı yok). |
 | 26 | Fiyat tabloları (Aşama 3b) | Yönetici fiyat tabloları tutar (cam başına birim fiyat; delik ve CNC için sabit fiyat), Excel'le yükler; her satışçı bir tabloya atanır, atanmayan varsayılanı kullanır. Satışın teklifine fiyatlar dolu gelir; satışçı değiştirebilir, değiştirirse yöneticinin **Önemli kararlar** listesine ve giriş ekranına uyarı düşer. "Açık tekliflere uygula" yok. |
 
 ## Sunucu (29.09.2026)
@@ -76,7 +80,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.2'de tamamlandı** |
 | 2 | Sipariş tipleri, numaralandırma, dosya, not, geçmiş, denetim servisi | **3.5.0'da tamamlandı** |
 | 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.x): katalog, taslak, kuyruklar · 3b (3.7.x): fiyat tabloları, Önemli kararlar** |
-| 4 | Çizim: atama, sürüm, onay, revizyon, SLA | Büyük ölçüde var |
+| 4 | Çizim: atama, sürüm, onay, revizyon, SLA | **3.9.0'da tamamlandı** |
 | 5 | Satış teklifi, yönetici fiyatı, müşteriye gönderim | Var; iki kademeli fiyat (yönetim kopyası) eksik |
 | 6 | Profil siparişi ve profil kataloğu | Yok (katalog verisi `prisma/seed/data` içinde hazır) |
 | 7 | Yükleme, sandık, ağırlık, dışa aktarma | Takvim ve sandık var; Excel/PDF ve özel durum notu eksik |

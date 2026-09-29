@@ -115,6 +115,9 @@ model User {
   offersCreated      Offer[]        @relation("OfferCreatedBy")
   pricesSet          Price[]        @relation("PriceSetBy")
   drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
+  drawingsSent       Drawing[]      @relation("DrawingSentBy")
+  drawingsDecided    Drawing[]      @relation("DrawingDecidedBy")
+  drawingFiles       DrawingFile[]  @relation("DrawingFileUploadedBy")
   notifications      Notification[]
   auditLogs          AuditLog[]
   settingsUpdated    IntegrationSetting[]
@@ -596,18 +599,35 @@ enum DrawingSource {
 enum DrawingStatus {
   BEKLIYOR
   YAPILIYOR
-  ONAY_BEKLIYOR
+  TASLAK           // çizimci dosyaları yükledi, henüz müşteriye göndermedi (müşteri görmez)
+  ONAY_BEKLIYOR    // müşteriye gönderildi
   ONAYLANDI
   REVIZYON_ISTENDI
+  GERI_CEKILDI     // çizimci, müşteri karar vermeden geri çekti (gerekçeyle)
 }
 
+// Çizim sürümü. Sürümler silinmez ve üzerine yazılmaz; müşteriye gönderilen sürümün dosyaları değişmez.
+// Akış: TASLAK (dosyalar yüklenir) → "Müşteriye gönder" (tüm dosyalar virüs taramasından temiz geçmiş olmalı)
+// → ONAY_BEKLIYOR → ONAYLANDI | REVIZYON_ISTENDI | GERI_CEKILDI.
 model Drawing {
   id           String        @id @default(cuid())
   orderId      String
   order        Order         @relation(fields: [orderId], references: [id])
   source       DrawingSource @default(FABRIKA)
   version      Int           @default(1)
-  fileUrl      String        // UPLOAD_DIR altındaki depolama anahtarı
+  files        DrawingFile[]
+  noteCustomer String?       // müşteriye görünen sürüm notu
+  noteInternal String?       // yalnızca iç ekip
+  sentAt       DateTime?
+  sentById     String?
+  sentBy       User?         @relation("DrawingSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?     // müşterinin onay / revizyon kararı
+  decidedById  String?
+  decidedBy    User?         @relation("DrawingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  withdrawnAt  DateTime?
+  withdrawReason String?
+  // Eski düzen (sürüm başına tek dosya); prisma/seed/steps/drawing-files.mjs DrawingFile'a taşır
+  fileUrl      String?
   fileName     String?
   fileSize     Int?
   mime         String?
@@ -620,6 +640,29 @@ model Drawing {
   uploadedBy   User          @relation("DrawingUploadedBy", fields: [uploadedById], references: [id])
   revisions    DrawingRevision[]
   createdAt    DateTime      @default(now())
+
+  @@unique([orderId, version])
+}
+
+// Çizim sürümünün dosyaları (PDF, DWG, DXF…). Her dosya yüklenirken virüs taramasından geçer.
+model DrawingFile {
+  id            String         @id @default(cuid())
+  drawingId     String
+  drawing       Drawing        @relation(fields: [drawingId], references: [id], onDelete: Restrict)
+  name          String
+  storageKey    String
+  size          Int
+  mime          String?
+  checksum      String?
+  scanStatus    FileScanStatus @default(PENDING)
+  scanSignature String?
+  scannedAt     DateTime?
+  uploadedById  String
+  uploadedBy    User           @relation("DrawingFileUploadedBy", fields: [uploadedById], references: [id])
+  createdAt     DateTime       @default(now())
+
+  @@index([drawingId])
+  @@index([scanStatus])
 }
 
 model DrawingRevision {

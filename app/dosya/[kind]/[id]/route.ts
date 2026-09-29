@@ -10,7 +10,7 @@ import { getT } from '@/lib/i18n';
 
 export const dynamic = 'force-dynamic';
 
-// /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<Drawing id>
+// /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<DrawingFile id> (eski: <Drawing id>)
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
   const { t } = await getT();
@@ -27,14 +27,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     });
     if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.orderId };
   } else if (kind === 'cizim') {
-    const d = await db.drawing.findFirst({ where: { id, order: scope } });
-    if (d) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
+    // Çizim sürümünün dosyası. Müşteri, henüz gönderilmemiş (taslak) sürümün dosyasını göremez → 404.
+    const draftHidden = userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { status: { not: 'TASLAK' as const } };
+    const f = await db.drawingFile.findFirst({ where: { id, drawing: { order: scope, ...draftHidden } }, include: { drawing: { select: { orderId: true } } } });
+    if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.drawing.orderId };
+    else {
+      // Eski bağlantılar: /dosya/cizim/<sürüm id> → sürümün ilk dosyası
+      const d = await db.drawing.findFirst({ where: { id, order: scope, ...draftHidden }, include: { files: { orderBy: { createdAt: 'asc' }, take: 1 } } });
+      const first = d?.files[0];
+      if (d && first) file = { storageKey: first.storageKey, name: first.name, mime: first.mime, scanStatus: first.scanStatus, orderId: d.orderId };
+      else if (d?.fileUrl) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
+    }
   }
   if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
   // Virüslü dosya karantinadadır; kimseye verilmez
   if (file.scanStatus === 'INFECTED') return new Response(t('common.fileInfected'), { status: 403 });
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
-  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'Drawing' : 'OrderFile', id, user.id, { orderId: file.orderId, name: file.name });
+  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : 'OrderFile', id, user.id, { orderId: file.orderId, name: file.name });
 
   const full = resolveKey(file.storageKey);
   if (!full || !fs.existsSync(full)) return new Response(t('common.fileMissing'), { status: 404 });

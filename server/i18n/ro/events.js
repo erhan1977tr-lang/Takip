@@ -4,6 +4,8 @@ export default {
   SENT_TO_DRAWING: { label: 'Trimisă echipei de desen', customer: 'Desenul este în pregătire' },
   NO_DRAWING: { label: 'Fără desen, s-a trecut la ofertă' },
   DRAWING_STARTED: { label: 'Desen preluat' },
+  DRAWING_DRAFT: { label: 'Ciorna desenului actualizată' },
+  DRAWING_WITHDRAWN: { label: 'Versiunea desenului retrasă', customer: 'Versiunea desenului a fost retrasă' },
   DRAWING_UPLOADED: { label: 'Desen trimis la aprobarea clientului', customer: 'Desenul v-a fost trimis spre aprobare' },
   REVISION_REQUESTED: { label: 'Clientul a cerut revizie', customer: 'Revizie cerută' },
   DRAWING_APPROVED: { label: 'Desen aprobat de client', customer: 'Desen aprobat' },

@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.9.0 — 29.09.2026 · Aşama 4 (çizim akışı)
+
+- **İki adımlı gönderim:** çizimci dosyaları önce **taslağa** yükler (müşteri görmez), sonra "Müşteriye gönder"e basar;
+  "Emin misiniz?" sorusu onaylanınca çizim müşterinin onayına gider.
+- **Sürüm başına birden çok dosya** (PDF + DWG + DXF…). Taslaktan dosya çıkarılabilir; gönderilen sürümün dosyaları
+  değişmez, eski sürümler silinmez.
+- **Virüs taraması zorunlu:** çizimcinin her dosyası yüklenirken taranır; taranmamış (antivirüse o an ulaşılamamış ya da
+  antivirüs kapalıyken yüklenmiş) dosya bulunan çizim müşteriye gönderilemez.
+- **Geri çekme:** müşteri karar vermeden, çizimci gönderdiği sürümü gerekçe yazarak geri çekebilir; sürüm geçmişte
+  "geri çekildi" olarak kalır, müşteri gerekçeyi görür.
+- **Sürüm notu:** müşteriye görünen not ve yalnızca ekibin gördüğü iç not. Her sürümde kim gönderdi, müşteri ne zaman
+  karar verdi görünür.
+- **Otomatik atama:** tek etkin çizimci varsa "Çizim Ekibine Gönder"le iş kendiliğinden ona atanır ("üstlen" gerekmez).
+- Çizim paneli: **Çizilecekler**, **Müşteri onayında**, **Benim çizimlerim**; müşteri DWG/DXF gönderdiyse rozet.
+  Kuyruklarda süresi geçenler en üstte (kırmızı SLA rozeti).
+- Eski düzende yüklenmiş çizimler güncellemede kendiliğinden yeni düzene taşınır.
+
 ## 3.8.1 — 29.09.2026
 
 - Siparişin yükleme tarihi değişince (ya da "yüklendi" başka bir günde işaretlenince) sandıkları da yeni güne taşınır;

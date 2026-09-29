@@ -45,7 +45,7 @@ test('kuyruk: yönetici — fiyat onayı bekleyenler', () => {
 
 test('kuyruk: çizim ekibi — çizim işleri ve müşteri onayındakiler; teklif kuyrukları yok', () => {
   const q = queuesFor(all, { review: false, send: false, drawing: true }, NOW);
-  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'sla', 'held']);
+  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'sla', 'held'], 'kullanıcı kimliği verilmezse "Benim çizimlerim" yok');
   assert.deepEqual(ids(q, 'drawingJobs'), [rows.cizim.id]);
 });
 
@@ -54,4 +54,25 @@ test('kuyruk: profil siparişi hiçbir satış/çizim kuyruğuna düşmez', () =
     const q = queuesFor([rows.profil, { ...rows.profil, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI' }, { ...rows.profil, onHold: true }], can, NOW);
     assert.ok(q.every((x) => x.rows.length === 0), JSON.stringify(can));
   }
+});
+
+test('kuyruk: çizimci — başkasına atanmış iş "Çizilecekler"de görünmez; bana atanmışlar "Benim çizimlerim"de', () => {
+  const mine = row({ drawingTrack: 'GEREKLI', assignedDrawerId: 'ben' });
+  const other = row({ drawingTrack: 'YAPILIYOR', assignedDrawerId: 'baska' });
+  const open = row({ drawingTrack: 'GEREKLI', assignedDrawerId: null });
+  const waiting = row({ drawingTrack: 'ONAY_BEKLIYOR', assignedDrawerId: 'ben' });
+  const q = queuesFor([mine, other, open, waiting], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
+  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'myDrawings', 'sla']);
+  assert.deepEqual(ids(q, 'drawingJobs').sort(), [mine.id, open.id].sort());
+  assert.deepEqual(ids(q, 'myDrawings').sort(), [mine.id, waiting.id].sort());
+});
+
+test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\'sızlar sonda', () => {
+  const later = row({ drawingTrack: 'GEREKLI', slaDeadline: h(30) });
+  const late = row({ drawingTrack: 'GEREKLI', slaDeadline: h(-2) });
+  const none = row({ drawingTrack: 'GEREKLI', slaDeadline: null });
+  const soon = row({ drawingTrack: 'GEREKLI', slaDeadline: h(1) });
+  const lateMore = row({ drawingTrack: 'GEREKLI', slaDeadline: h(-20) });
+  const q = queuesFor([later, late, none, soon, lateMore], { review: false, send: false, drawing: true, userId: 'x' }, NOW);
+  assert.deepEqual(ids(q, 'drawingJobs'), [lateMore.id, late.id, soon.id, later.id, none.id]);
 });

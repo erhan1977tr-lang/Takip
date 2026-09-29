@@ -53,7 +53,7 @@ test('dosyalar: müşteri başka firmanın ya da iç ekibin dosyasını adresini
   const other = { order: { customerId: { not: me.customerId! } } };
   const mine = { order: { customerId: me.customerId! } };
   const foreignFile = await db.orderFile.findFirst({ where: other });
-  const foreignDrawing = await db.drawing.findFirst({ where: other });
+  const foreignDrawing = await db.drawingFile.findFirst({ where: { drawing: other } });
   const ownFile = await db.orderFile.findFirst({ where: { kind: 'CUSTOMER', ...mine } });
   const ownInternal = await db.orderFile.findFirst({ where: { kind: 'INTERNAL', ...mine } });
   await db.$disconnect();

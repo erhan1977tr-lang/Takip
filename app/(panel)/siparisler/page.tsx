@@ -15,8 +15,11 @@ import { deleteDraftAction } from './yeni/actions';
 
 const listInclude = {
   customer: { select: { name: true } },
-  drawings: { orderBy: { version: 'asc' }, select: { id: true, version: true, createdAt: true } },
+  // Taslak (müşteriye gönderilmemiş) çizim sürümleri sayılmaz
+  drawings: { where: { status: { not: 'TASLAK' } }, orderBy: { version: 'asc' }, select: { id: true, version: true, createdAt: true, sentAt: true } },
   offers: { orderBy: { createdAt: 'desc' }, select: { status: true, sentAt: true } },
+  // Müşterinin gönderdiği hazır çizim (DWG/DXF) çizim ekibine işaretlenir
+  files: { where: { kind: 'CUSTOMER' }, select: { name: true } },
   events: { where: { event: 'OFFER_CHECKED' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof listInclude }>;
@@ -225,7 +228,8 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
                   <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
                   <td className="mono">{customerLabel(user, o.customer.name)}</td>
                   <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
-                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{count('drawing', o.drawings.length)}</div>}</>}</td>
+                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{count('drawing', o.drawings.length)}</div>}</>}
+                    {o.files.some((f) => /\.(dwg|dxf)$/i.test(f.name)) && <div><span className="badge badge-info" title={t('order.drawings.customerFiles')}>DWG/DXF</span></div>}</td>
                   <td>{o.status === 'YENI' ? <span className="muted">—</span> : <OfferBadge status={offerOf(o)} />}</td>
                   <td className="hide-sm">{o.revisionCount > 0 ? <span className="badge badge-danger">{t('orders.internal.revisions', { v: o.drawings.length, rounds: count('round', o.revisionCount) })}</span> : '—'}</td>
                   <td>{o.onHold ? <span className="muted">—</span> : <Sla deadline={o.slaDeadline} />}</td>
@@ -269,12 +273,12 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   }));
 
   const role = user.appRole;
-  const queues = queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK') });
+  const queues = queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK'), userId: user.id });
   // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
   // Yöneticiye: bekleyen önemli kararlar (ör. satışçı liste fiyatını değiştirdi) — girişte ilk bu görünür
   const alerts = userCan(user, 'ALERT_VIEW') ? await db.adminAlert.count({ where: { resolvedAt: null } }) : 0;
   const infected = userCan(user, 'SETTINGS_MANAGE')
-    ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } }))
+    ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawingFile.count({ where: { scanStatus: 'INFECTED' } }))
     : 0;
 
   return (
@@ -316,7 +320,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
             const k = q.key as Exclude<keyof Dict['orders']['internal']['sections'], 'active' | 'archive' | 'none'>;
             return (
               <Section key={q.key} title={t(`orders.internal.sections.${k}.title`)} count={q.rows.length} tone={q.key === 'sla' && q.rows.length ? 'badge-danger' : undefined}>
-                <InternalTable user={user} rows={q.rows} empty={t(`orders.internal.sections.${k}.empty`)} />
+                <InternalTable user={user} rows={q.rows} empty={t(`orders.internal.sections.${k}.empty`)} group={false} />
               </Section>
             );
           })}

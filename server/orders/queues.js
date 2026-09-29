@@ -6,8 +6,8 @@ import { offerNeedsCheck } from './rules.js';
 export const SLA_RISK_HOURS = 6;
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
-/** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null,
- *   offers: { status: string, sentAt?: Date | null }[], drawings: { createdAt: Date }[], events: { createdAt: Date }[] }} QueueRow */
+/** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null,
+ *   offers: { status: string, sentAt?: Date | null }[], drawings: { version: number, createdAt: Date, sentAt?: Date | null }[], events: { createdAt: Date }[] }} QueueRow */
 
 /** En son teklifin durumu (teklifler en yeniden eskiye sıralı) */
 export const latestOfferStatus = (o) => o.offers[0]?.status ?? null;
@@ -24,12 +24,28 @@ export const needsOfferCheck = (o) =>
  * Kullanıcının yetkilerine göre kuyruklar.
  * @template {QueueRow} R
  * @param {R[]} rows  kullanıcının görebildiği aktif siparişler
- * @param {{ review: boolean, send: boolean, drawing: boolean }} can
+ * @param {{ review: boolean, send: boolean, drawing: boolean, userId?: string }} can
  *   review: ORDER_REVIEW (satış kararı) · send: OFFER_SEND (yönetici fiyatı) · drawing: DRAWING_WORK (çizim ekibi)
  * @param {number} [now]
  * @returns {{ key: string, rows: R[] }[]}
  */
 export function queuesFor(rows, can, now = Date.now()) {
+  const out = buildQueues(rows, can, now);
+  // Her kuyrukta süresi geçenler en üstte, sonra son tarihi en yakın olanlar (SLA'sız olanlar sonda)
+  return out.map((q) => ({ ...q, rows: bySla(q.rows, now) }));
+}
+
+/** Süresi geçenler önce; sonra son tarihe göre; SLA'sızlar sonda (sıralama kararlı). */
+export function bySla(rows, now = Date.now()) {
+  const key = (o) => (o.slaDeadline ? new Date(o.slaDeadline).getTime() : Infinity);
+  return [...rows].sort((a, b) => {
+    const oa = key(a) < now ? 0 : 1;
+    const ob = key(b) < now ? 0 : 1;
+    return oa - ob || key(a) - key(b);
+  });
+}
+
+function buildQueues(rows, can, now) {
   const glass = rows.filter((o) => o.orderTypeCode === 'GLASS_ORDER');
   const active = glass.filter((o) => !o.onHold);
   const prep = active.filter((o) => o.status === 'HAZIRLANIYOR');
@@ -43,10 +59,15 @@ export function queuesFor(rows, can, now = Date.now()) {
     out.push({ key: 'offerCheck', rows: active.filter(needsOfferCheck) });
   }
   if (can.drawing && !can.review) {
-    out.push({ key: 'drawingJobs', rows: prep.filter((o) => DRAWING_WORK.includes(o.drawingTrack)) });
+    // Çizilecekler: bana atanmış ya da henüz kimseye atanmamış işler
+    const mineOrOpen = (o) => !o.assignedDrawerId || o.assignedDrawerId === can.userId;
+    out.push({ key: 'drawingJobs', rows: prep.filter((o) => DRAWING_WORK.includes(o.drawingTrack) && mineOrOpen(o)) });
   }
   if (can.review || can.drawing) {
     out.push({ key: 'atCustomer', rows: prep.filter((o) => o.drawingTrack === 'ONAY_BEKLIYOR') });
+  }
+  if (can.drawing && !can.review && can.userId) {
+    out.push({ key: 'myDrawings', rows: prep.filter((o) => o.drawingTrack !== 'YOK' && o.assignedDrawerId === can.userId) });
   }
   if (can.review) {
     out.push({ key: 'production', rows: active.filter((o) => o.status === 'URETIMDE') });

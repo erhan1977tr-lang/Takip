@@ -6,7 +6,7 @@
 import { transitionOrder } from '../domain/transition.js';
 import { WorkflowError } from '../domain/workflow.js';
 import { can } from '../auth/permissions.js';
-import { availableActions, shouldAutoProduce, slaDeadline } from './rules.js';
+import { availableActions, drawingFlags, shouldAutoProduce, slaDeadline } from './rules.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { enrichLines, loadPricing, prefillLines, pricingForUser } from '../pricing/tables.js';
@@ -18,7 +18,7 @@ export { WorkflowError };
 
 const INCLUDE = {
   items: true,
-  drawings: { orderBy: { version: 'asc' } },
+  drawings: { orderBy: { version: 'asc' }, include: { files: true } },
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
 };
 
@@ -38,6 +38,9 @@ export const REQUIRES = {
   cancel: ['cancel'],
   start_drawing: ['start_drawing'],
   upload_drawing: ['upload_drawing'],
+  send_drawing: ['send_drawing'],
+  remove_drawing_file: ['remove_drawing_file'],
+  withdraw_drawing: ['withdraw_drawing'],
   approve_drawing: ['approve_drawing'],
   request_revision: ['request_revision'],
   save_offer: ['edit_offer', 'approve_price'],
@@ -58,7 +61,7 @@ export const glassWorkflow = {
     const o = ctx.order;
     const acts = availableActions({
       role: actor.role, status: o.status, onHold: o.onHold, canApprove: !!actor.canApprove,
-      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null,
+      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o),
     });
     return need.some((a) => acts.includes(a)) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
   },
@@ -192,7 +195,10 @@ async function offerEdit(h, intent) {
 
 const ACTIONS = {
   async send_to_drawing(h) {
-    await h.set({ status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', drawingSince: h.now });
+    // Tek etkin çizimci varsa iş kendiliğinden ona atanır (ürün sahibinin kararı); birden çoksa çizimci üstlenir.
+    const drawers = await h.tx.user.findMany({ where: { appRole: 'CIZIM', isActive: true }, select: { id: true }, take: 2 });
+    const assignedDrawerId = h.order.assignedDrawerId ?? (drawers.length === 1 ? drawers[0].id : null);
+    await h.set({ status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', drawingSince: h.now, assignedDrawerId });
     await ensureOfferDraft(h.tx, h.order, h.actor.id);
     h.event('SENT_TO_DRAWING');
     h.sla = true;
@@ -251,26 +257,86 @@ const ACTIONS = {
     h.event('DRAWING_STARTED');
     h.sla = true;
   },
+  /**
+   * Çizimci dosya yükler: açık taslak sürüm varsa ona eklenir, yoksa yeni sürüm (TASLAK) açılır. Taslak müşteriye
+   * görünmez; "Müşteriye gönder" (send_drawing) ayrı ve onaylı ikinci adımdır. Dosyalar kaydedilmeden önce virüs
+   * taramasından geçmiştir (server/files/store.js).
+   */
   async upload_drawing(h) {
-    const f = h.payload.file;
-    if (!f?.storageKey) throw new WorkflowError('DRAWING_FILE');
-    const version = h.order.drawings.length + 1;
-    const drawing = await h.tx.drawing.create({
-      data: {
-        orderId: h.order.id, version, fileUrl: f.storageKey, fileName: f.name, fileSize: f.size, mime: f.mime ?? null,
-        checksum: f.checksum ?? null, scanStatus: f.scanStatus ?? 'SKIPPED', scanSignature: f.scanSignature ?? null,
-        scannedAt: f.scannedAt ?? null, status: 'ONAY_BEKLIYOR', uploadedById: h.actor.id,
-      },
+    const files = h.payload.files ?? [];
+    if (!files.length || files.some((f) => !f?.storageKey)) throw new WorkflowError('DRAWING_FILE');
+    const last = h.order.drawings[h.order.drawings.length - 1];
+    const notes = {
+      ...(h.payload.noteCustomer !== undefined ? { noteCustomer: h.payload.noteCustomer || null } : {}),
+      ...(h.payload.noteInternal !== undefined ? { noteInternal: h.payload.noteInternal || null } : {}),
+    };
+    let drawing = last?.status === 'TASLAK' ? last : null;
+    if (drawing) {
+      if (Object.keys(notes).length) await h.tx.drawing.update({ where: { id: drawing.id }, data: notes });
+    } else {
+      drawing = await h.tx.drawing.create({
+        data: { orderId: h.order.id, version: (last?.version ?? 0) + 1, status: 'TASLAK', uploadedById: h.actor.id, scanStatus: 'SKIPPED', ...notes },
+      });
+    }
+    await h.tx.drawingFile.createMany({
+      data: files.map((f) => ({
+        drawingId: drawing.id, name: f.name, storageKey: f.storageKey, size: f.size, mime: f.mime ?? null, checksum: f.checksum ?? null,
+        scanStatus: f.scanStatus ?? 'SKIPPED', scanSignature: f.scanSignature ?? null, scannedAt: f.scannedAt ?? null, uploadedById: h.actor.id,
+      })),
     });
+    // İlk yükleme çizimi başlatır ve (atanmamışsa) çizimciye atar
+    if (h.order.drawingTrack === 'GEREKLI') {
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+      h.sla = true;
+    }
+    h.event('DRAWING_DRAFT', `v${drawing.version} · ${files.map((f) => f.name).join(', ')}`);
+    h.result = { drawingId: drawing.id, version: drawing.version };
+    h.audit = { drawingId: drawing.id, version: drawing.version, files: files.map((f) => ({ name: f.name, checksum: f.checksum ?? null, scan: f.scanStatus ?? null })) };
+  },
+  /** Taslaktan dosya çıkarılır (müşteriye gönderilmiş sürümün dosyasına dokunulamaz). */
+  async remove_drawing_file(h) {
+    const last = h.order.drawings[h.order.drawings.length - 1];
+    const file = last?.status === 'TASLAK' ? last.files.find((f) => f.id === h.payload.fileId) : null;
+    if (!file) throw new WorkflowError('FILE_NOT_FOUND');
+    await h.tx.drawingFile.delete({ where: { id: file.id } });
+    h.event('DRAWING_DRAFT', `v${last.version} − ${file.name}`);
+    h.result = { storageKey: file.storageKey };
+    h.audit = { drawingId: last.id, version: last.version, removed: file.name };
+  },
+  /**
+   * Taslak sürüm müşteriye gönderilir. Tüm dosyalar virüs taramasından temiz geçmiş olmalı (taranmamış ya da
+   * tarama kapalıyken yüklenmiş dosya gönderilemez). Ekrandaki taslak (drawingId) hâlâ son sürüm olmalı.
+   */
+  async send_drawing(h) {
+    const last = h.order.drawings[h.order.drawings.length - 1];
+    if (last?.status !== 'TASLAK') throw new WorkflowError('DRAWING_NO_DRAFT');
+    if (h.payload.drawingId && h.payload.drawingId !== last.id) throw new WorkflowError('STALE_DRAWING');
+    if (!last.files.length) throw new WorkflowError('DRAWING_EMPTY');
+    if (last.files.some((f) => f.scanStatus === 'INFECTED')) throw new WorkflowError('DRAWING_INFECTED');
+    if (last.files.some((f) => f.scanStatus === 'PENDING')) throw new WorkflowError('DRAWING_SCAN_PENDING');
+    if (last.files.some((f) => f.scanStatus !== 'CLEAN')) throw new WorkflowError('DRAWING_NOT_SCANNED');
+    await h.tx.drawing.update({ where: { id: last.id }, data: { status: 'ONAY_BEKLIYOR', sentAt: h.now, sentById: h.actor.id } });
     await h.set({ drawingTrack: 'ONAY_BEKLIYOR', drawingSince: h.now });
-    h.event('DRAWING_UPLOADED', `v${version}`);
+    h.event('DRAWING_UPLOADED', `v${last.version}`);
     h.sla = true;
-    h.result = { drawingId: drawing.id, version };
-    h.audit = { drawingId: drawing.id, version };
+    h.result = { drawingId: last.id, version: last.version };
+    h.audit = { drawingId: last.id, version: last.version, files: last.files.map((f) => f.name) };
+  },
+  /** Müşteriye gönderilmiş sürüm, müşteri karar vermeden gerekçeyle geri çekilir; sürüm geçmişte kalır. */
+  async withdraw_drawing(h) {
+    const reason = h.payload.reason;
+    if (!reason) throw new WorkflowError('WITHDRAW_REASON');
+    const latest = latestDrawing(h);
+    if (latest?.status !== 'ONAY_BEKLIYOR') throw new WorkflowError('DRAWING_NO_DRAFT');
+    await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'GERI_CEKILDI', withdrawnAt: h.now, withdrawReason: reason } });
+    await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now });
+    h.event('DRAWING_WITHDRAWN', `v${latest.version}: ${reason}`);
+    h.sla = true;
+    h.audit = { drawingId: latest.id, version: latest.version, reason };
   },
   async approve_drawing(h) {
     const latest = latestDrawing(h);
-    if (latest) await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI' } });
+    if (latest) await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI', decidedAt: h.now, decidedById: h.actor.id } });
     await h.set({ drawingTrack: 'ONAYLANDI', drawingSince: h.now });
     h.event('DRAWING_APPROVED', latest ? `v${latest.version}` : null);
     h.sla = true;
@@ -282,7 +348,7 @@ const ACTIONS = {
     if (!comment) throw new WorkflowError('REVISION_COMMENT');
     const latest = latestDrawing(h);
     if (latest) {
-      await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI' } });
+      await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI', decidedAt: h.now, decidedById: h.actor.id } });
       await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment } });
     }
     await h.set({ drawingTrack: 'REVIZYON_ISTENDI', drawingSince: h.now, revisionCount: { increment: 1 } });

@@ -6,7 +6,7 @@ import { ping, scanFile, version } from './clamav.js';
 import { quarantine, resolveKey } from './store.js';
 
 export const AV_KEY = 'antivirus';
-const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', orderDraftFile: 'OrderDraftFile' };
+const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', drawingFile: 'DrawingFile', orderDraftFile: 'OrderDraftFile' };
 export const AV_STATUS_KEY = 'antivirus.status';
 
 /**
@@ -77,11 +77,14 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
   const out = { scanned: 0, clean: 0, infected: 0, missing: 0, stopped: null };
   if (!settings.enabled) return { ...out, stopped: 'disabled' };
   const files = await db.orderFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
-  const drawings = await db.drawing.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
+  // Çizim sürümlerinin dosyaları; eski düzende sürümün kendi dosyası (taşıma adımından önce kalmış olabilir)
+  const drawingFiles = await db.drawingFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit, include: { drawing: { select: { orderId: true, version: true } } } });
+  const drawings = await db.drawing.findMany({ where: { scanStatus: 'PENDING', fileUrl: { not: null } }, orderBy: { createdAt: 'asc' }, take: limit });
   // Taslak siparişin dosyaları da taranır (gönderilince tarama sonucuyla siparişe geçer)
   const draftFiles = await db.orderDraftFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
   const items = [
     ...files.map((f) => ({ model: 'orderFile', id: f.id, orderId: f.orderId, key: f.storageKey, name: f.name })),
+    ...drawingFiles.map((f) => ({ model: 'drawingFile', id: f.id, orderId: f.drawing.orderId, key: f.storageKey, name: `v${f.drawing.version} · ${f.name}` })),
     ...drawings.map((d) => ({ model: 'drawing', id: d.id, orderId: d.orderId, key: d.fileUrl, name: d.fileName || `v${d.version}` })),
     ...draftFiles.map((f) => ({ model: 'orderDraftFile', id: f.id, orderId: null, key: f.storageKey, name: f.name })),
   ];

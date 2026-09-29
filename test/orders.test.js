@@ -4,7 +4,7 @@ import tr from '../server/i18n/tr/index.js';
 import ro from '../server/i18n/ro/index.js';
 import { translate } from '../server/i18n/index.js';
 import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
+  ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, drawingFlags, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
   nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName,
 } from '../server/orders/rules.js';
 
@@ -133,9 +133,21 @@ test('elle üretime alma ve satışın reddetmesi yok; iptal yalnızca yönetici
 });
 
 test('çizim ekibi', () => {
-  assert.deepEqual(availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'GEREKLI' }), ['start_drawing', 'add_file']);
+  assert.deepEqual(availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'GEREKLI' }), ['start_drawing', 'upload_drawing', 'add_file']);
+  // Atanmışsa (tek çizimci → otomatik) üstlenmeye gerek yok
+  assert.deepEqual(availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'GEREKLI', assigned: true }), ['upload_drawing', 'add_file']);
   assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'REVIZYON_ISTENDI' }, 'upload_drawing'));
+  // Taslak varsa: gönder / dosya çıkar; yoksa gönderilecek bir şey yok
+  assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'YAPILIYOR', draft: true }, 'send_drawing'));
+  assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'YAPILIYOR', draft: true }, 'remove_drawing_file'));
+  assert.ok(!has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'YAPILIYOR' }, 'send_drawing'));
+  // Müşteri onayındayken yeni yükleme yok; gönderilen sürüm geri çekilebilir
   assert.ok(!has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'upload_drawing'));
+  assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
+  assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
+  assert.ok(!has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
+  assert.deepEqual(drawingFlags({ assignedDrawerId: 'u', drawings: [{ status: 'REVIZYON_ISTENDI' }, { status: 'TASLAK' }] }), { draft: true, assigned: true });
+  assert.deepEqual(drawingFlags({ assignedDrawerId: null, drawings: [] }), { draft: false, assigned: false });
   assert.ok(!has({ role: 'CIZIM', status: 'YENI' }, 'send_to_drawing'));
 });
 

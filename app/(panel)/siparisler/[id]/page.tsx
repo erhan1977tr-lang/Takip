@@ -15,12 +15,13 @@ import { loadPricing, pricingForUser } from '@/server/pricing/tables.js';
 import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
-  ALLOWED_EXT, STAGES, availableActions, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  ALLOWED_EXT, STAGES, availableActions, drawingFlags, offerLineTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
   markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
-  startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
+  removeDrawingFileAction, sendDrawingAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
+  withdrawDrawingAction,
 } from './actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
@@ -31,7 +32,7 @@ function okText(m: Dict, code: string | undefined): string | null {
 
 // "Sıradaki adım" satırında gösterilen işlemler (metinleri: order.steps.<işlem>)
 const STEP_ACTIONS = [
-  'send_to_drawing', 'no_drawing', 'edit_offer', 'approve_price', 'start_drawing', 'upload_drawing', 'approve_drawing',
+  'send_to_drawing', 'no_drawing', 'edit_offer', 'approve_price', 'start_drawing', 'upload_drawing', 'send_drawing', 'approve_drawing',
   'request_revision', 'mark_shipped', 'archive', 'unhold',
 ] as const;
 type StepAction = (typeof STEP_ACTIONS)[number];
@@ -71,7 +72,7 @@ export default async function OrderPage({
   const sent = sentOffer(order);
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: offer?.status ?? null,
+    drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order),
   });
   const can = (a: string) => acts.includes(a);
   const sla = isCustomer ? null : slaInfo(order.slaDeadline);
@@ -103,7 +104,8 @@ export default async function OrderPage({
   const shownOffer = !userCan(user, 'OFFER_VIEW') ? undefined : isCustomer ? sent : editable || updating ? undefined : offer;
   const finalPrice = !userCan(user, 'OFFER_DRAFT_VIEW');
   const sentVersions = order.offers.filter((o) => o.status === 'GONDERILDI').length;
-  const lastDrawing = order.drawings[order.drawings.length - 1];
+  // Müşteriye gönderilmiş son sürüm (taslak sayılmaz)
+  const lastDrawing = [...order.drawings].reverse().find((d) => d.status !== 'TASLAK');
   // Teklif müşteriye gittikten sonra yeni çizim geldiyse ölçüler değişmiş olabilir (events en yeniden eskiye sıralı)
   const needsCheck = !isCustomer && userCan(user, 'OFFER_VIEW') && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
     offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null, lastDrawing: lastDrawing ?? null,
@@ -163,7 +165,7 @@ export default async function OrderPage({
 
       {needsCheck && lastDrawing && (
         <div className="alert alert-warn">
-          <b>{t('order.check.title', { v: lastDrawing.version, date: fmtDateTime(lastDrawing.createdAt) })}</b>{' '}
+          <b>{t('order.check.title', { v: lastDrawing.version, date: fmtDateTime(lastDrawing.sentAt ?? lastDrawing.createdAt) })}</b>{' '}
           {can('update_offer') ? t('order.check.admin') : t('order.check.other')}
           {can('update_offer') && !updating && (
             <div className="row" style={{ marginTop: 10 }}>
@@ -210,7 +212,7 @@ export default async function OrderPage({
             <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} />
           )}
           {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
-          <Drawings order={order} user={user} t={t} />
+          <Drawings order={order} user={user} can={can} t={t} />
           <Files order={order} user={user} canAdd={can('add_file')} t={t} />
           <Notes order={order} user={user} t={t} />
         </div>
@@ -346,16 +348,31 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
             </div>
           )}
 
-          {can('upload_drawing') && (
-            <form action={uploadDrawingAction} style={{ marginTop: 14 }}>
-              {hidden}
-              <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v: order.drawings.length + 1 })}</label>
-              <div className="row">
-                <input id="drawing-file" name="file" type="file" required accept={ACCEPT} style={{ flex: 1 }} />
-                <button className="btn btn-primary">{t('order.upload.submit')}</button>
-              </div>
-            </form>
-          )}
+          {can('upload_drawing') && (() => {
+            const last = order.drawings[order.drawings.length - 1];
+            const v = last?.status === 'TASLAK' ? last.version : (last?.version ?? 0) + 1;
+            return (
+              <form action={uploadDrawingAction} style={{ marginTop: 14 }}>
+                {hidden}
+                <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v })}</label>
+                <input id="drawing-file" name="files" type="file" multiple required accept={ACCEPT} />
+                <div className="grid-2" style={{ marginTop: 8 }}>
+                  <div>
+                    <label htmlFor="d-note-c" className="small">{t('order.upload.noteCustomer')}</label>
+                    <input id="d-note-c" name="noteCustomer" maxLength={2000} placeholder={t('order.upload.noteCustomerPlaceholder')} />
+                  </div>
+                  <div>
+                    <label htmlFor="d-note-i" className="small">{t('order.upload.noteInternal')}</label>
+                    <input id="d-note-i" name="noteInternal" maxLength={2000} />
+                  </div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+                  <span className="hint">{t('order.upload.scanInfo')}</span>
+                  <button className="btn btn-primary">{t('order.upload.submit')}</button>
+                </div>
+              </form>
+            );
+          })()}
 
           {can('set_ship_date') && (
             <form action={setShipDateAction} className="row" style={{ marginTop: 14 }}>
@@ -469,39 +486,83 @@ function Crates({ order, t }: { order: OrderDetail; t: T }) {
 }
 
 // ---------------- çizim, dosya, not ----------------
-function Drawings({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T }) {
+function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; t: T }) {
   if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
   const isCustomer = user.appRole === 'MUSTERI';
+  const versions = [...order.drawings].reverse(); // taslaklar müşteriye hiç yüklenmez (sanitizeOrder)
+  const statusBadge = (st: string) => ({
+    TASLAK: <span className="badge badge-muted">{t('order.drawings.draft')}</span>,
+    ONAY_BEKLIYOR: <span className="badge badge-warn">{t('order.drawings.pending')}</span>,
+    ONAYLANDI: <span className="badge badge-ok">{t('order.drawings.approved')}</span>,
+    REVIZYON_ISTENDI: <span className="badge badge-danger">{t('order.drawings.revisionRequested')}</span>,
+    GERI_CEKILDI: <span className="badge badge-muted">{t('order.drawings.withdrawn')}</span>,
+  } as Record<string, React.ReactNode>)[st] ?? null;
   return (
-    <div className="card">
+    <div className="card" id="cizim">
       <h2>{t('order.drawings.title')}</h2>
-      {order.drawings.length === 0 ? (
-        <p className="muted">{t('order.drawings.none')}</p>
-      ) : (
-        [...order.drawings].reverse().map((d, i) => (
-          <div key={d.id} style={{ marginBottom: 10 }}>
-            <div className="file-row">
-              <div className="file-ext">{(d.fileName ?? '').split('.').pop()?.slice(0, 4) || t('order.drawings.fileFallback')}</div>
-              <div className="grow">
-                <div className="fname">{d.fileName ?? t('order.drawings.fallbackName', { v: d.version })}</div>
-                <div className="small muted">
-                  <span className={`badge ${i === 0 ? 'badge-info' : 'badge-muted'}`}>v{d.version}{i === 0 ? ` · ${t('order.drawings.current')}` : ''}</span>{' '}
-                  {d.status === 'ONAYLANDI' ? <span className="badge badge-ok">{t('order.drawings.approved')}</span> : d.status === 'REVIZYON_ISTENDI' ? <span className="badge badge-danger">{t('order.drawings.revisionRequested')}</span> : d.status === 'ONAY_BEKLIYOR' ? <span className="badge badge-warn">{t('order.drawings.pending')}</span> : null}
-                  {' '}<ScanBadge status={d.scanStatus} t={t} />
-                  {' '}{d.fileSize ? fmtBytes(d.fileSize) : ''} · {fmtDateTime(d.createdAt)}{!isCustomer ? ` · ${d.uploadedBy.name || d.uploadedBy.email}` : ''}
-                </div>
-              </div>
-              <FileButtons href={`/dosya/cizim/${d.id}`} name={d.fileName ?? ''} scanStatus={d.scanStatus} t={t} />
+      {versions.length === 0 && <p className="muted">{t('order.drawings.none')}</p>}
+      {versions.map((d, i) => {
+        const draft = d.status === 'TASLAK';
+        const blocked = d.files.length === 0 || d.files.some((f) => f.scanStatus !== 'CLEAN');
+        return (
+          <div key={d.id} className={`drawing-version${draft ? ' draft' : ''}`}>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <span className={`badge ${i === 0 ? 'badge-info' : 'badge-muted'}`}>v{d.version}{i === 0 && !draft ? ` · ${t('order.drawings.current')}` : ''}</span>
+              {statusBadge(d.status)}
+              {draft && <b className="small">{t('order.upload.draftTitle', { v: d.version })}</b>}
+              {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
+              {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
+              {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy?.name ?? '—', when: fmtDateTime(d.decidedAt) })}</span>}
             </div>
+            {d.noteCustomer && <div className="note"><b className="small">{t('order.drawings.noteCustomer')}</b> {d.noteCustomer}</div>}
+            {!isCustomer && d.noteInternal && <div className="note internal"><b className="small">{t('order.drawings.noteInternal')}</b> {d.noteInternal}</div>}
+            {d.files.length === 0 && draft && <p className="muted small">{t('order.upload.draftEmpty')}</p>}
+            {d.files.map((f) => (
+              <div key={f.id} className="file-row">
+                <div className="file-ext">{f.name.split('.').pop()?.slice(0, 4) || t('order.drawings.fileFallback')}</div>
+                <div className="grow">
+                  <div className="fname">{f.name}</div>
+                  <div className="small muted"><ScanBadge status={f.scanStatus} t={t} /> {fmtBytes(f.size)} · {fmtDateTime(f.createdAt)}</div>
+                </div>
+                <FileButtons href={`/dosya/cizim/${f.id}`} name={f.name} scanStatus={f.scanStatus} t={t} />
+                {draft && can('remove_drawing_file') && (
+                  <form action={removeDrawingFileAction}>
+                    <input type="hidden" name="id" value={order.id} />
+                    <input type="hidden" name="fileId" value={f.id} />
+                    <ConfirmButton danger message={t('order.upload.removeConfirm', { name: f.name })}>{t('order.upload.remove')}</ConfirmButton>
+                  </form>
+                )}
+              </div>
+            ))}
             {d.revisions.map((r) => (
-              <div key={r.id} className="note" style={{ marginLeft: 50 }}>
+              <div key={r.id} className="note">
                 <b className="small">{t('order.drawings.revisionRequest')}</b> {r.comment}
                 <div className="meta">{fmtDateTime(r.createdAt)}</div>
               </div>
             ))}
+            {d.withdrawReason && <div className="note"><b className="small">{t('order.drawings.withdrawReason')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>}
+            {draft && can('send_drawing') && (
+              <form action={sendDrawingAction} className="row" style={{ marginTop: 8, gap: 10 }}>
+                <input type="hidden" name="id" value={order.id} />
+                <input type="hidden" name="drawingId" value={d.id} />
+                {blocked
+                  ? <><button type="button" className="btn btn-primary" disabled>{t('order.upload.send')}</button><span className="muted small">{t('order.upload.sendBlocked')}</span></>
+                  : <ConfirmButton primary message={t('order.upload.sendConfirm', { v: d.version, n: d.files.length })}>{t('order.upload.send')}</ConfirmButton>}
+              </form>
+            )}
+            {d.status === 'ONAY_BEKLIYOR' && can('withdraw_drawing') && (
+              <form action={withdrawDrawingAction} style={{ marginTop: 8 }}>
+                <input type="hidden" name="id" value={order.id} />
+                <label htmlFor={`wd-${d.id}`} className="small">{t('order.upload.withdrawLabel', { v: d.version })}</label>
+                <div className="row">
+                  <input id={`wd-${d.id}`} name="reason" required maxLength={1000} placeholder={t('order.upload.withdrawPlaceholder')} style={{ flex: 1 }} />
+                  <ConfirmButton danger message={t('order.upload.withdrawConfirm', { v: d.version })}>{t('order.upload.withdraw')}</ConfirmButton>
+                </div>
+              </form>
+            )}
           </div>
-        ))
-      )}
+        );
+      })}
     </div>
   );
 }

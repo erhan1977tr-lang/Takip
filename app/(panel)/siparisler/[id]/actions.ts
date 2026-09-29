@@ -14,7 +14,7 @@ import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
-import { availableActions, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
@@ -40,7 +40,7 @@ function done(id: string, ok: string): never {
  */
 async function act(
   user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {},
-): Promise<{ produced?: boolean; drawingId?: string; version?: number } | null> {
+): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string } | null> {
   try {
     const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
     return res.result;
@@ -59,7 +59,7 @@ async function ensureAllowed(user: CurrentUser, orderId: string, action: string)
   const order = await loadOrder(orderId, user);
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null,
+    drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order),
   });
   if (!acts.includes(action)) {
     const { t } = await getT();
@@ -136,25 +136,57 @@ export async function startDrawingAction(formData: FormData) {
   await simple(formData, 'start_drawing', 'drawing_started');
 }
 
+/**
+ * Çizim dosyaları taslağa yüklenir (birden çok dosya). Her dosya kaydedilmeden önce içerik kontrolü ve virüs
+ * taramasından geçer. Müşteriye gönderim ayrı adımdır (sendDrawingAction).
+ */
 export async function uploadDrawingAction(formData: FormData) {
   const user = await requirePermission('ORDER_VIEW');
   const id = orderIdOf(formData);
   const { t } = await getT();
-  const file = filesFrom(formData, 'file')[0];
-  if (!file) redirect(err(id, t('order.errors.drawingFile')));
-  const problem = fileProblemText(t, fileProblem(file.name, file.size));
-  if (problem) redirect(err(id, problem));
+  const files = filesFrom(formData, 'files');
+  if (!files.length) redirect(err(id, t('order.errors.drawingFile')));
+  for (const f of files) {
+    const problem = fileProblemText(t, fileProblem(f.name, f.size));
+    if (problem) redirect(err(id, problem));
+  }
+  const noteCustomer = String(formData.get('noteCustomer') ?? '').trim().slice(0, 2000);
+  const noteInternal = String(formData.get('noteInternal') ?? '').trim().slice(0, 2000);
   // Yetki ve durum kontrolü dosya kaydedilmeden önce de yapılır (boşuna tarama/yazma olmasın)
   await ensureAllowed(user, id, 'upload_drawing');
-  const stored = await storeFiles([file], { userId: user.id, orderId: id });
+  const stored = await storeFiles(files, { userId: user.id, orderId: id });
   if (!stored.ok) redirect(err(id, fileProblemText(t, stored.problem)!));
   try {
-    await act(user, id, 'upload_drawing', { file: stored.stored[0] });
+    await act(user, id, 'upload_drawing', {
+      files: stored.stored,
+      ...(noteCustomer ? { noteCustomer } : {}),
+      ...(noteInternal ? { noteInternal } : {}),
+    });
   } catch (e) {
     await discardFiles(stored.stored);
     throw e;
   }
   done(id, 'drawing_uploaded');
+}
+
+/** Taslaktaki dosyayı çıkarır (müşteriye gönderilmemiş sürüm). */
+export async function removeDrawingFileAction(formData: FormData) {
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
+  const res = await act(user, id, 'remove_drawing_file', { fileId: String(formData.get('fileId') ?? '') });
+  if (res?.storageKey) await discardFiles([{ storageKey: res.storageKey }]);
+  done(id, 'drawing_file_removed');
+}
+
+/** İkinci adım: taslak müşteriye gönderilir (ekranda "emin misiniz?" onayı istenir). */
+export async function sendDrawingAction(formData: FormData) {
+  const drawingId = String(formData.get('drawingId') ?? '') || undefined;
+  await simple(formData, 'send_drawing', 'drawing_sent', { drawingId });
+}
+
+export async function withdrawDrawingAction(formData: FormData) {
+  const reason = String(formData.get('reason') ?? '').trim().slice(0, 1000);
+  await simple(formData, 'withdraw_drawing', 'drawing_withdrawn', { reason });
 }
 
 /** Müşterinin tek onayı: çizim onayı. Ekranda gördüğü sürüm (drawingId) hâlâ son sürüm olmalı. */

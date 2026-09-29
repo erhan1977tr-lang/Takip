@@ -4,6 +4,8 @@ export default {
   SENT_TO_DRAWING: { label: 'Çizim ekibine yönlendirildi', customer: 'Çizim hazırlanıyor' },
   NO_DRAWING: { label: 'Çizim gerekmedi, teklife geçildi' },
   DRAWING_STARTED: { label: 'Çizim üstlenildi' },
+  DRAWING_DRAFT: { label: 'Çizim taslağı güncellendi' },
+  DRAWING_WITHDRAWN: { label: 'Çizim sürümü geri çekildi', customer: 'Çizim sürümü geri çekildi' },
   DRAWING_UPLOADED: { label: 'Çizim müşteri onayına gönderildi', customer: 'Çizim onayınıza sunuldu' },
   REVISION_REQUESTED: { label: 'Müşteri revizyon istedi', customer: 'Revizyon istendi' },
   DRAWING_APPROVED: { label: 'Çizim müşteri tarafından onaylandı', customer: 'Çizim onaylandı' },

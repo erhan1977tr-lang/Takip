@@ -76,7 +76,7 @@ test('satış, çizimci ve müşteri örnek siparişleri görür', async ({ brow
   await expect(sales.getByRole('button', { name: 'Çizime Göndermeyi Geri Al' })).toBeVisible();
 
   const drawer = await as(browser, 'cizim@ornek.test');
-  const jobs = drawer.locator('.card', { hasText: 'Çizim işleri' });
+  const jobs = drawer.locator('.card', { hasText: 'Çizilecekler' });
   await expect(jobs.getByRole('link', { name: 'ORN105' })).toBeVisible();
   await expect(jobs.getByRole('link', { name: 'ORN106' })).toBeVisible();
 

@@ -227,10 +227,12 @@ async function main(db) {
         [`${rec.orderNo} - teknik cizim v${d.v}`, `Musteri: Ornek Cam SRL`, `Ornek cizim (demo)`],
         { w: d.w, h: d.h, label: d.label },
       ));
+      // Demo dosyaları üretilen örnek PDF'lerdir; antivirüsten geçmiş (CLEAN) sayılır
       const dr = await db.drawing.create({
         data: {
-          orderId: rec.id, version: d.v, fileUrl: f.storageKey, fileName: f.name, fileSize: f.size, mime: f.mime,
-          checksum: f.checksum, scanStatus: 'SKIPPED', status: d.status, uploadedById: drawer.id, createdAt: ago(d.hoursAgo),
+          orderId: rec.id, version: d.v, scanStatus: 'SKIPPED', status: d.status, uploadedById: drawer.id, createdAt: ago(d.hoursAgo),
+          sentAt: d.status === 'TASLAK' ? null : ago(d.hoursAgo), sentById: d.status === 'TASLAK' ? null : drawer.id,
+          files: { create: [{ name: f.name, storageKey: f.storageKey, size: f.size, mime: f.mime, checksum: f.checksum, scanStatus: 'CLEAN', uploadedById: drawer.id, createdAt: ago(d.hoursAgo) }] },
         },
       });
       if (d.revision) await db.drawingRevision.create({ data: { drawingId: dr.id, requestedById: cust.id, comment: d.revision, createdAt: ago(d.hoursAgo - 4) } });

@@ -395,6 +395,8 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 19. **Price tables (Phase 3b):** admin price tables per glass (+ fixed hole/CNC prices), Excel import, one table per salesperson (else default). Sales quote lines are pre-filled; sales may override, which raises an admin "Important decisions" warning. decisions.md #26.
 20. **Crates are entered on the Loadings tab** per loading day + customer (Sales or Admin, `CRATE_EDIT`): crate no (unique per day across customers), L/W/H mm, net/gross kg, note, which orders it carries (`Crate` + `CrateOrder`, `server/loading/crates.js`). Entered crates override that customer's estimate for the day. No crate entry on the order page. When an order's loading day changes, its crates move with it (`moveOrderCrates`; shared crates stay, numbers shift if taken). decisions.md #27.
 
+21. **Drawing workflow (Phase 4):** drawer uploads files to a draft version (`TASLAK`, invisible to customer; several files per version in `DrawingFile`), then "Send to customer" with a confirm dialog (`send_drawing`); every file must be antivirus-CLEAN to send. Sent versions are immutable; drawer may withdraw a sent version with a reason before the customer decides (`GERI_CEKILDI`). Single active drawer → auto-assigned on "send to drawing". SLA overdue = red badge + top of queues only. decisions.md #28–31.
+
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
 - UI strings only via `server/i18n/{tr,ro}/*.js` — never hard-code visible text. Both locales must have the same keys (enforced by `test/i18n.test.js`).

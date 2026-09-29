@@ -307,3 +307,9 @@ input.input-changed { background: #eff6ff; border-color: #60a5fa; }
 .crate-table input { padding: 4px 6px; }
 .crate-orders { display: flex; flex-wrap: wrap; gap: 4px; }
 .crate-orders .crate-pick { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; }
+
+/* Çizim sürümleri: her sürüm bir blok; taslak (müşteri görmez) kesik çerçeveli */
+.drawing-version { border-top: 1px solid var(--border, #e5e7eb); padding: 10px 0; }
+.drawing-version:first-of-type { border-top: 0; }
+.drawing-version.draft { border: 1px dashed #93c5fd; border-radius: 10px; padding: 10px 12px; background: #f8fbff; margin-bottom: 8px; }
+.drawing-version .note { margin: 6px 0; }

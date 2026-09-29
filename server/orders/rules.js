@@ -97,7 +97,7 @@ export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', off
 export function offerNeedsCheck({ offer = null, sentAt = null, lastDrawing = null, checkedAt = null }) {
   if (offer !== 'GONDERILDI' || !sentAt || !lastDrawing || lastDrawing.version < 2) return false;
   const seen = Math.max(new Date(sentAt).getTime(), checkedAt ? new Date(checkedAt).getTime() : 0);
-  return new Date(lastDrawing.createdAt).getTime() > seen;
+  return new Date(lastDrawing.sentAt ?? lastDrawing.createdAt).getTime() > seen;
 }
 
 /** Adım çubuğu (metni: status.stages.<anahtar>). */
@@ -177,7 +177,9 @@ export const EVENTS = {
   SENT_TO_DRAWING: { customer: true },
   NO_DRAWING: { customer: false },
   DRAWING_STARTED: { customer: false },
+  DRAWING_DRAFT: { customer: false, note: true },
   DRAWING_UPLOADED: { customer: true, note: true },
+  DRAWING_WITHDRAWN: { customer: true, note: true },
   REVISION_REQUESTED: { customer: true, note: true },
   DRAWING_APPROVED: { customer: true, note: true },
   OFFER_SUBMITTED: { customer: false },
@@ -284,11 +286,21 @@ export function fileProblem(name, size) {
 
 // ---------- yetki: kim hangi durumda ne yapabilir ----------
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null}} p
+ * Siparişin çizim bayrakları (availableActions için): son sürüm taslak mı, çizim birine atanmış mı.
+ * @param {{ assignedDrawerId?: string | null, drawings?: { status: string }[] }} o  sürümler eskiden yeniye sıralı
+ */
+export function drawingFlags(o) {
+  const last = o.drawings?.[o.drawings.length - 1];
+  return { draft: last?.status === 'TASLAK', assigned: !!o.assignedDrawerId };
+}
+
+/**
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean}} p
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
+ *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -326,8 +338,14 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (sales && preparing && offerAtSales && (drawing === 'GEREKLI' || drawing === 'YAPILIYOR')) a.push('undo_drawing');
   if (sales && preparing && offerAtSales && drawing === 'YOK') a.push('undo_no_drawing');
 
-  if (drawer && preparing && drawing === 'GEREKLI') a.push('start_drawing');
-  if (drawer && preparing && (drawing === 'YAPILIYOR' || drawing === 'REVIZYON_ISTENDI')) a.push('upload_drawing');
+  // Çizim: dosyalar önce taslak sürüme yüklenir, "Müşteriye gönder" ile müşteriye gider (onaylı ikinci adım).
+  // Gönderilen sürüm, müşteri karar vermeden gerekçeyle geri çekilebilir.
+  if (drawer && preparing && drawing === 'GEREKLI' && !assigned) a.push('start_drawing');
+  if (drawer && preparing && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(drawing)) {
+    a.push('upload_drawing');
+    if (draft) a.push('send_drawing', 'remove_drawing_file');
+  }
+  if (drawer && preparing && drawing === 'ONAY_BEKLIYOR') a.push('withdraw_drawing');
 
   if (sales && status === 'URETIMDE') a.push('mark_shipped');
   if (sales && status === 'YUKLENDI') a.push('archive');

@@ -56,6 +56,9 @@ export const orderDetailInclude = {
     include: {
       uploadedBy: { select: { name: true, email: true } },
       revisions: { orderBy: { createdAt: 'asc' } },
+      files: { orderBy: { createdAt: 'asc' } },
+      sentBy: { select: { name: true } },
+      decidedBy: { select: { name: true } },
     },
   },
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
@@ -84,6 +87,7 @@ const ZERO = new Prisma.Decimal(0);
  *  - firma adı / iletişim (satış, çizim)       - iç notlar ve iç dosyalar (müşteri)
  *  - gönderilmemiş teklifler (müşteri, denetimci) - teklif tutarları ve satırları (çizim; durum kalır)
  *  - yönetici fiyatı (satış, çizim)            - liste fiyatları (teklif hazırlamayan herkes)
+ *  - taslak çizim sürümleri ve çizim iç notları (müşteri)
  */
 export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetail {
   let offers = order.offers;
@@ -93,8 +97,13 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   if (!userCan(user, 'OFFER_PREPARE')) {
     offers = offers.map((o) => ({ ...o, priceTableId: null, lines: o.lines.map((l) => ({ ...l, listPrice: null })) }));
   }
+  // Çizim: müşteri taslak sürümü (henüz gönderilmemiş) hiç görmez; iç not yalnızca iç ekibe gider
+  let drawings = order.drawings;
+  if (!userCan(user, 'FILE_INTERNAL_VIEW')) drawings = drawings.filter((d) => d.status !== 'TASLAK');
+  if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
   return {
     ...order,
+    drawings,
     customer: sanitizeCustomer(user, order.customer),
     notes: userCan(user, 'NOTE_INTERNAL_VIEW') ? order.notes : order.notes.filter((n) => !n.internal),
     files: userCan(user, 'FILE_INTERNAL_VIEW') ? order.files : order.files.filter((f) => f.kind === 'CUSTOMER'),
