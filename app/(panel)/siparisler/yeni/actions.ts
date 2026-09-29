@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 import { getT } from '@/lib/i18n';
 import { fileProblemText } from '@/lib/labels';
@@ -13,7 +13,7 @@ import { fileProblem, nextShipDate, slaDeadline } from '@/server/orders/rules.js
 export type NewOrderState = { error?: string; values?: { title: string; no: string; glasses: { id: string; qty: string }[] } };
 
 export async function createOrderAction(_prev: NewOrderState, formData: FormData): Promise<NewOrderState> {
-  const user = await requireUser(['MUSTERI']);
+  const user = await requirePermission('ORDER_CREATE');
   const { t } = await getT();
   const firm = user.customer;
   const title = String(formData.get('title') ?? '').trim().slice(0, 160);

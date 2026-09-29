@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { suggestCustomerOrderNo } from '@/lib/orders';
 import { fmtDate } from '@/lib/format';
@@ -8,7 +8,7 @@ import { nextShipDate } from '@/server/orders/rules.js';
 import { NewOrderForm } from './NewOrderForm';
 
 export default async function NewOrderPage() {
-  const user = await requireUser(['MUSTERI']);
+  const user = await requirePermission('ORDER_CREATE');
   const { t, m } = await getT();
   const firm = user.customer;
   if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) {

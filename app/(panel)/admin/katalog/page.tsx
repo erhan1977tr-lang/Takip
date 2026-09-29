@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { addGlassAction, updateGlassAction } from './actions';
 
@@ -12,7 +12,7 @@ const MSG: Record<string, [string, MsgKey]> = {
 };
 
 export default async function CatalogPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireUser(['ADMIN']);
+  await requirePermission('CATALOG_MANAGE');
   const { t } = await getT();
   const sp = await searchParams;
   const items = await db.glassProduct.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });

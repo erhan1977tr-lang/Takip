@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { type CurrentUser, requirePermission } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { getT, type Dict, type T } from '@/lib/i18n';
 import { fileProblemText, offerProblemTexts } from '@/lib/labels';
 import { currentOffer, loadOrder, logEvent, maybeAutoProduction, refreshSla, type OrderDetail } from '@/lib/orders';
@@ -23,7 +24,8 @@ function actionsFor(user: CurrentUser, order: OrderDetail) {
 }
 
 async function guard(formData: FormData, action: string): Promise<{ user: CurrentUser; order: OrderDetail }> {
-  const user = await requireUser();
+  // Eylemin geçerliliği availableActions'ta (yetki matrisine göre); denetimci için liste boştur.
+  const user = await requirePermission('ORDER_VIEW');
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   if (!actionsFor(user, order).includes(action)) {
     const { t } = await getT();
@@ -289,12 +291,12 @@ export async function addFilesAction(formData: FormData) {
 }
 
 export async function addNoteAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requirePermission('NOTE_ADD');
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   const { t } = await getT();
   const text = String(formData.get('text') ?? '').trim().slice(0, 4000);
   if (!text) redirect(err(order.id, t('order.errors.emptyNote')));
-  const internal = user.appRole !== 'MUSTERI' && formData.get('internal') === 'on';
+  const internal = userCan(user, 'NOTE_INTERNAL_VIEW') && formData.get('internal') === 'on';
   await db.orderNote.create({ data: { orderId: order.id, userId: user.id, text, internal } });
   done(order.id, 'note_added');
 }
@@ -344,7 +346,7 @@ const labels = (formData: FormData) => ({
  *         update (yönetici, teklif müşterideyken: yeni sürüm hemen müşteriye gider)
  */
 export async function saveOfferAction(formData: FormData) {
-  const user = await requireUser(['SATIS', 'ADMIN']);
+  const user = await requirePermission('OFFER_PREPARE');
   const order = await loadOrder(String(formData.get('id') ?? ''), user);
   const intent = String(formData.get('intent') ?? 'save');
   const acts = actionsFor(user, order);
@@ -361,7 +363,7 @@ export async function saveOfferAction(formData: FormData) {
   if (problem) redirect(err(order.id, problem));
   const totals = offerTotals(lines);
   const amount = totals.amount.toFixed(2);
-  const isAdmin = user.appRole === 'ADMIN';
+  const isAdmin = userCan(user, 'OFFER_SEND');
   const { camEtiket, sandikEtiket } = labels(formData);
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
   if (intent === 'return' && !returnNote) redirect(err(order.id, t('order.errors.returnReason')));

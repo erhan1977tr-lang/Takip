@@ -33,11 +33,13 @@ enum UserType {
 }
 
 // Uygulamadaki panel/rol. Ayrıntılı yetkiler ileride Role/RolePermission ile genişletilir.
+// Yetkiler rol adına değil server/auth/permissions.js matrisine göre verilir.
 enum AppRole {
-  ADMIN   // Sistem Yöneticisi
+  ADMIN     // Sistem Yöneticisi
   SATIS
   CIZIM
   MUSTERI
+  DENETIMCI // yalnızca görüntüler (karar 8)
 }
 
 model Role {
@@ -49,17 +51,28 @@ model Role {
   createdAt   DateTime     @default(now())
 }
 
+// server/auth/permissions.js → PERMISSIONS ile aynı liste (seed bu tabloyu eşitler)
 enum PermissionKey {
   ORDER_VIEW
-  ORDER_EDIT
-  ORDER_APPROVE
-  OFFER_CREATE
-  PRICE_SET
-  DRAWING_UPLOAD
+  ORDER_CREATE
+  ORDER_REVIEW
+  ORDER_CANCEL
+  DRAWING_WORK
   DRAWING_APPROVE
-  SHIPMENT_MANAGE
+  OFFER_VIEW
+  OFFER_DRAFT_VIEW
+  OFFER_PREPARE
+  OFFER_SEND
+  PRICE_FINAL_VIEW
+  SHIPMENT_VIEW
+  FILE_UPLOAD
+  FILE_INTERNAL_VIEW
+  NOTE_ADD
+  NOTE_INTERNAL_VIEW
+  CUSTOMER_NAME_VIEW
   USER_MANAGE
   CUSTOMER_MANAGE
+  CATALOG_MANAGE
   SETTINGS_MANAGE
   AUDIT_VIEW
 }
@@ -110,6 +123,19 @@ model User {
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+}
+
+// Hatalı giriş / kod denemeleri: aynı e-posta + IP'den kısa sürede çok deneme olursa giriş geçici kilitlenir
+// (server/auth/throttle.js). Başarılı girişte o e-posta + IP'nin kayıtları silinir; eski kayıtlar bir gün sonra temizlenir.
+model AuthFailure {
+  id        String   @id @default(cuid())
+  kind      String   // LOGIN | CODE
+  email     String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
 }
 
 // İlk giriş / şifre sıfırlama için e-postayla gönderilen 6 haneli kod.
@@ -172,7 +198,7 @@ model Customer {
   id            String   @id @default(cuid())
   name          String   @unique // "Miru Glass", "FOL Expert", "Pelet Construct"...
   type          CustomerType @default(CUSTOMER)
-  prefix        String?  @unique // sipariş no ön eki: "MIR" → MIR5; müşteri firmalarında zorunlu
+  prefix        String?  @unique // firma kodu, tam 3 büyük harf (veritabanında CHECK): "MIR" → MIR5; müşteri firmalarında zorunlu, siparişi olan firmada değişmez
   groupName     String?
   camEtiket     String?  // varsayılan cam etiketi
   sandikEtiket  String?  // varsayılan sandık etiketi (fiziksel etiket ve nakliye listesi)

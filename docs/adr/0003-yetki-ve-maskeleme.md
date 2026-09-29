@@ -14,6 +14,20 @@
   ya da istemci bileşen özelliklerine hiç girmez.
 - Yönetici fiyatı (ADR 0009) aynı kuralla korunur: yönetici dışındaki iç kullanıcılara hiç gönderilmez.
 
+## Uygulama (Aşama 1, 3.3.0)
+- **Yetki matrisi** `server/auth/permissions.js` (tek kaynak; `test/permissions.test.js` tam matrisi sabitler).
+  Sayfa ve server action'lar `requirePermission('...')` çağırır; iş akışı eylemleri `availableActions` içinde yine
+  yetkilere göre hesaplanır. Rol adıyla erişim kontrolü yapılmaz (rol adı yalnızca görünüm farkları için).
+- **Veri temizleme** `lib/orders.ts`: `loadOrder` → `sanitizeOrder`, listeler → `sanitizeRows`. Rolün göremediği
+  veri veritabanından geldiği anda çıkarılır: maskeli firma adı ve boş iletişim alanları (satış, çizim), iç notlar ve
+  iç dosyalar (müşteri), gönderilmemiş teklifler (müşteri, denetimci), teklif satırları ve tutarları (çizim; durum kalır),
+  yönetici fiyatı (satış, çizim).
+- **Dosyalar** `/dosya/...`: sipariş kapsamı + iç dosya yetkisi; kapsam dışı dosya 404.
+- Denetimci: `ORDER_VIEW, OFFER_VIEW, PRICE_FINAL_VIEW, SHIPMENT_VIEW, FILE_INTERNAL_VIEW, NOTE_INTERNAL_VIEW,
+  CUSTOMER_NAME_VIEW` — hepsi okuma yetkisi (birim test bunu denetler).
+
 ## Doğrulama
 `e2e/demo.spec.ts` içindeki sızıntı testi: satış ve çizim hesaplarıyla erişebildikleri her sayfanın ham yanıtında
-(HTML + RSC verisi) hiçbir müşteri firmasının tam adı geçmemeli.
+(HTML + RSC verisi) hiçbir müşteri firmasının tam adı ya da iletişim bilgisi geçmemeli (`e2e/demo.spec.ts`, `e2e/05-yetki.spec.ts`).
+Ayrıca: denetimcinin sayfalarında işlem formu olmaması, müşterinin iç notu hiçbir yanıtta görmemesi, müşterinin başka
+firmanın ya da iç ekibin dosyasını adresini bilse de indirememesi.

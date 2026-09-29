@@ -12,6 +12,13 @@ export default {
     },
     view: 'Teklifi gör',
   },
+  // Denetimci: yalnızca müşteriye gönderilmiş teklifler
+  inspector: {
+    title: 'Müşteriye gönderilmiş teklifler',
+    intro: 'Müşterilere gönderilmiş teklifler, müşterinin gördüğü tutarla. Hazırlanan teklifler burada görünmez.',
+    empty: 'Müşteriye gönderilmiş teklif yok.',
+    customer: 'Müşteri',
+  },
   internal: {
     title: 'Teklifler',
     intro: 'Hazırlanan, yönetimde bekleyen ve müşteriye gönderilmiş teklifler.',

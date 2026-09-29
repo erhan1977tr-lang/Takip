@@ -19,6 +19,15 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 9 | Dil | Romence ve Türkçe kalır. İngilizce arayüz yok. | Tanım İngilizce örnekler kullanıyor. |
 | 10 | Antivirüs | Müşterinin ya da başkasının yüklediği her dosya taranır; ayarlar yönetici **Entegrasyonlar** sayfasından. Ayrıntı: ADR 0010. | Tanım "scan/validate uploads as appropriate". |
 
+## Aşama 1 kararları (29.09.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 11 | Denetimci ne görür | Tüm cam siparişleri, tam firma adı, iç notlar ve iç dosyalar; teklif olarak **yalnızca müşteriye gönderilmiş** olanı (müşterinin gördüğü tutarla). Hazırlanan teklifler ve yönetim kopyası fiyatları görünmez. Hiçbir işlem yapamaz. |
+| 12 | Şifre | En az **6 karakter** (en az bir harf ve bir rakam). Hatalı deneme sınırı: aynı e-posta + IP 15 dakikada 5, aynı e-posta 20, aynı IP 30 → geçici kilit. |
+| 13 | Firma kodu | Tüm sistemde **tam 3 harf** (A–Z). Eski kodlar 3 harfe çevrildi, siparişlerin numaraları da yeni koda göre güncellendi. Siparişi olan firmanın kodu değişmez. |
+| 14 | Müşteri adına işlem | Aşama 9'a kaldı. |
+
 ## Hâlâ açık olan konular (uygulamadan önce sorulacak)
 
 - `GLA64-1` gibi eklerin anlamı → şimdilik üretilmez; müşteri numarası alanında serbest metin olarak durur.
@@ -35,8 +44,8 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 
 | Aşama | Kapsam | Mevcut durum |
 |-------|--------|--------------|
-| 0 | Depo, ortam, migration, test, lint, seed, mimari kararlar | **Bu sürümde (3.2.0)** |
-| 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | Giriş/davet/roller var; Denetimci rolü ve yetki tablosu eksik |
+| 0 | Depo, ortam, migration, test, lint, seed, mimari kararlar | 3.2.x'te tamamlandı |
+| 1 | Giriş, kullanıcı, firma, rol/yetki, sunucuda maskeleme | **3.3.0'da tamamlandı** |
 | 2 | Sipariş tipleri, numaralandırma, dosya, not, geçmiş, denetim servisi | Tek tip (cam); dosya/not/geçmiş var; antivirüs ve dosya özeti (checksum) eksik |
 | 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | Var |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | Büyük ölçüde var |

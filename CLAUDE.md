@@ -384,6 +384,10 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 8. **Inspector is read-only** in the first release (no write actions).
 9. **UI languages: Romanian and Turkish** (no English UI). Login language follows the IP country (TR → tr, RO/MD → ro, otherwise Accept-Language, fallback ro); the user can always switch.
 10. **Antivirus for uploads.** Every uploaded file (customer or staff) is scanned; the scanner (ClamAV) is configured on the Admin → Integrations page. See `docs/adr/0010-antivirus.md`.
+11. **Inspector** sees all glass orders with full company names, internal notes and internal files, and only offers already sent to the customer (at the customer-visible price). No drafts, no admin-copy prices, no write actions.
+12. **Passwords:** minimum 6 characters (at least one letter and one digit). Login and code entry are throttled: 5 failures per e-mail+IP, 20 per e-mail, 30 per IP within 15 minutes.
+13. **Company code is exactly 3 letters A–Z** everywhere (DB CHECK constraint). Existing longer/shorter codes were migrated and their order numbers renamed. A company's code cannot change once it has orders.
+14. **"Act on behalf of customer"** is postponed to Phase 9.
 
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
@@ -391,4 +395,5 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 - Every change to app code bumps `package.json` version and adds a `CHANGELOG.md` entry (enforced in CI).
 - Environment variables are declared and validated in `server/env.js`; add new ones there and to `.env.example`. Secrets never go into code, chat or git.
 - Schema changes: edit `prisma/schema.prisma`; CI generates the migration on working branches. Hand-written SQL (triggers, constraints Prisma can't express) goes into its own dated migration folder.
+- Authorization: pages/actions call `requirePermission('<PERMISSION>')`; the matrix is `server/auth/permissions.js` (never check role names for access). Data for a page is loaded through `lib/orders.ts` (`loadOrder` / `sanitizeRows`), which strips what the role may not see (masked company, internal notes/files, drafts, admin price).
 - Checks: `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:db` (needs `TEST_DATABASE_URL`), `npm run e2e`.

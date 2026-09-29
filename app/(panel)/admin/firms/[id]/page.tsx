@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { updateFirmAction } from '../actions';
 
@@ -12,7 +12,7 @@ export default async function EditFirmPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireUser(['ADMIN']);
+  await requirePermission('CUSTOMER_MANAGE');
   const { t } = await getT();
   const { id } = await params;
   const sp = await searchParams;
@@ -36,7 +36,7 @@ export default async function EditFirmPage({
               <option value="FACTORY">{t('admin.firmForm.typeFactory')}</option>
             </select>
           </div>
-          <div><label htmlFor="prefix">{t('admin.firmForm.prefix')}</label><input id="prefix" name="prefix" type="text" maxLength={5} defaultValue={f.prefix ?? ''} style={{ textTransform: 'uppercase' }} /></div>
+          <div><label htmlFor="prefix">{t('admin.firmForm.prefix')}</label><input id="prefix" name="prefix" type="text" maxLength={3} pattern="[A-Za-z]{3}" defaultValue={f.prefix ?? ''} style={{ textTransform: 'uppercase' }} /></div>
           <div><label htmlFor="groupName">{t('admin.firmForm.group')}</label><input id="groupName" name="groupName" type="text" defaultValue={f.groupName ?? ''} /></div>
           <div><label htmlFor="camEtiket">{t('admin.firmForm.camEtiket')}</label><input id="camEtiket" name="camEtiket" type="text" defaultValue={f.camEtiket ?? ''} /></div>
           <div><label htmlFor="sandikEtiket">{t('admin.firmForm.sandikEtiket')}</label><input id="sandikEtiket" name="sandikEtiket" type="text" defaultValue={f.sandikEtiket ?? ''} /></div>

@@ -36,9 +36,9 @@ export async function burnPasswordCheck(password: string): Promise<void> {
   await verifyPassword(password, await dummyHash);
 }
 
-/** Kural: en az 8 karakter, en az bir harf ve bir rakam. Hata metni ya da null döner. */
+/** Kural: en az 6 karakter, en az bir harf ve bir rakam. Hata metni ya da null döner. */
 export function passwordProblem(password: string): string | null {
-  if (password.length < 8) return 'Şifre en az 8 karakter olmalı.';
+  if (password.length < 6) return 'Şifre en az 6 karakter olmalı.';
   if (!/\p{L}/u.test(password) || !/\d/.test(password)) return 'Şifre en az bir harf ve bir rakam içermeli.';
   if (password.length > 200) return 'Şifre çok uzun.';
   return null;

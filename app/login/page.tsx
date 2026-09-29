@@ -18,7 +18,9 @@ export default async function LoginPage({
   if (user) redirect(homeFor(user.appRole));
   const sp = await searchParams;
   const { t, locale } = await getT();
-  const error = sp.error === 'invalid' ? t('auth.login.errorInvalid') : undefined;
+  const error = sp.error === 'invalid' ? t('auth.login.errorInvalid')
+    : sp.error === 'locked' ? t('auth.login.errorLocked', { minutes: String(Math.max(1, Number(sp.m) || 15)) })
+    : undefined;
   const info = sp.info === 'logout' ? t('auth.login.infoLogout') : undefined;
   // Dil değiştirilince aynı sayfaya (yazılan e-postayla) dönülür
   const here = `/login${sp.email ? `?email=${encodeURIComponent(sp.email)}` : ''}`;

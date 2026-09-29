@@ -45,6 +45,7 @@ export default {
       drawing: 'Çizim Paneli',
       admin: 'Siparişler',
       sales: 'Satış Paneli',
+      inspector: 'Tüm siparişler (denetim)',
     },
     searchPlaceholder: 'Sipariş no / başlık ara',
     shipGroup: 'Yükleme: {date}',

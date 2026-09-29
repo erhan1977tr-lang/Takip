@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { CreateFirmForm } from './FirmForm';
@@ -10,7 +10,7 @@ export default async function FirmsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireUser(['ADMIN']);
+  await requirePermission('CUSTOMER_MANAGE');
   const { t, m } = await getT();
   const sp = await searchParams;
   const firms = await db.customer.findMany({

@@ -11,6 +11,7 @@ import { homeFor } from '@/lib/roles';
 import { setLocaleCookie } from '@/lib/i18n';
 import { isLocale } from '@/server/i18n/index.js';
 import { checkInvite } from '@/server/auth/inviteCode.js';
+import { recordFailure, requestIp, throttleCheck } from '@/lib/auth/throttle';
 
 function back(email: string, error?: string) {
   return `/setup?email=${encodeURIComponent(email)}${error ? `&error=${error}` : ''}`;
@@ -21,6 +22,10 @@ export async function verifyCodeAction(formData: FormData) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const code = String(formData.get('code') ?? '').replace(/\s+/g, '');
 
+  const ip = await requestIp();
+  const lock = await throttleCheck(email, ip);
+  if (lock.locked) redirect(`${back(email, 'throttled')}&m=${lock.minutes}`);
+
   const user = email ? await db.user.findUnique({ where: { email } }) : null;
   const invite =
     user && user.isActive && !user.passwordHash
@@ -30,11 +35,15 @@ export async function verifyCodeAction(formData: FormData) {
         })
       : null;
 
-  if (!user || !invite) redirect(back(email, 'wrong_code'));
+  if (!user || !invite) {
+    await recordFailure('CODE', email, ip);
+    redirect(back(email, 'wrong_code'));
+  }
 
   const result = checkInvite({ code, email, record: invite, secret: authSecret() });
   if (!result.ok) {
     if (result.reason === 'wrong_code') {
+      await recordFailure('CODE', email, ip);
       await db.userInvite.update({ where: { id: invite.id }, data: { attempts: { increment: 1 } } });
     }
     redirect(back(email, result.reason));

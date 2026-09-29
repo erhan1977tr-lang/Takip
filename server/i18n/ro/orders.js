@@ -44,6 +44,7 @@ export default {
       drawing: 'Panou desen',
       admin: 'Comenzi',
       sales: 'Panou vânzări',
+      inspector: 'Toate comenzile (inspecție)',
     },
     searchPlaceholder: 'Caută nr. comandă / titlu',
     shipGroup: 'Încărcare: {date}',

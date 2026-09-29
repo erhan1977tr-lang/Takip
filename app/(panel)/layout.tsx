@@ -1,4 +1,5 @@
 import { requireUser } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { NAV, type NavDef, type NavItem } from '@/lib/roles';
 import { getT } from '@/lib/i18n';
 import { roleText } from '@/lib/labels';
@@ -14,7 +15,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const user = await requireUser();
   const { t, locale, m } = await getT();
   const demo = isDemo();
-  const defs: NavDef[] = demo && user.appRole === 'ADMIN'
+  const defs: NavDef[] = demo && userCan(user, 'SETTINGS_MANAGE')
     ? [...NAV.ADMIN, { section: 'nav.demo' }, { href: '/demo/posta', key: 'nav.demoMail' }]
     : NAV[user.appRole];
   const nav: NavItem[] = defs.map((d) => ('section' in d ? { section: t(d.section) } : { href: d.href, label: t(d.key) }));

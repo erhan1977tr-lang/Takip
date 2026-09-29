@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import type { OfferStatus, OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { type CurrentUser, requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { customerLabel, orderScope } from '@/lib/orders';
+import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
+import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtMoney } from '@/lib/format';
 import { CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { CLOSED } from '@/server/orders/rules.js';
@@ -16,36 +17,39 @@ const include = {
 type Row = Prisma.OrderGetPayload<{ include: typeof include }>;
 
 export default async function OffersPage() {
-  const user = await requireUser(['MUSTERI', 'SATIS', 'ADMIN']);
-  return user.appRole === 'MUSTERI' ? <CustomerOffers user={user} /> : <InternalOffers user={user} />;
+  const user = await requirePermission('OFFER_VIEW');
+  // Hazırlanan teklifleri yalnızca satış ve yönetici görür; müşteri ve denetimci gönderilmiş teklifleri görür.
+  return userCan(user, 'OFFER_DRAFT_VIEW') ? <InternalOffers user={user} /> : <CustomerOffers user={user} />;
 }
 
 async function CustomerOffers({ user }: { user: CurrentUser }) {
   const { t } = await getT();
-  const orders = await db.order.findMany({
+  const inspector = user.appRole !== 'MUSTERI';
+  const orders = sanitizeRows(user, await db.order.findMany({
     where: { ...orderScope(user), offers: { some: { status: 'GONDERILDI' } } },
     include,
     orderBy: { updatedAt: 'desc' },
-  });
+  }));
   return (
     <>
       <div className="page-head">
-        <h1>{t('offers.customer.title')}</h1>
-        <p className="muted">{t('offers.customer.intro')}</p>
+        <h1>{inspector ? t('offers.inspector.title') : t('offers.customer.title')}</h1>
+        <p className="muted">{inspector ? t('offers.inspector.intro') : t('offers.customer.intro')}</p>
       </div>
       <div className="card card-flush">
         {orders.length === 0 ? (
-          <div className="empty">{t('offers.customer.empty')}</div>
+          <div className="empty">{inspector ? t('offers.inspector.empty') : t('offers.customer.empty')}</div>
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>{t('offers.customer.cols.order')}</th><th>{t('offers.customer.cols.status')}</th><th>{t('offers.customer.cols.date')}</th><th className="num">{t('offers.customer.cols.amount')}</th><th /></tr></thead>
+              <thead><tr><th>{t('offers.customer.cols.order')}</th>{inspector && <th>{t('offers.inspector.customer')}</th>}<th>{t('offers.customer.cols.status')}</th><th>{t('offers.customer.cols.date')}</th><th className="num">{t('offers.customer.cols.amount')}</th><th /></tr></thead>
               <tbody>
                 {orders.map((o) => {
                   const sent = o.offers.find((x) => x.status === 'GONDERILDI')!;
                   return (
                     <tr key={o.id}>
                       <td><Link className="order-no" href={`/siparisler/${o.id}#teklif`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
+                      {inspector && <td>{customerLabel(user, o.customer.name)}</td>}
                       <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer="GONDERILDI" /></td>
                       <td>{fmtDate(sent.sentAt)}</td>
                       <td className="num"><b>{fmtMoney((o.price?.amount ?? sent.amount).toString(), sent.currency)}</b></td>
@@ -71,13 +75,13 @@ const GROUPS: { status: OfferStatus; title: MsgKey; empty: MsgKey }[] = [
 
 async function InternalOffers({ user }: { user: CurrentUser }) {
   const { t } = await getT();
-  const orders = await db.order.findMany({
+  const orders = sanitizeRows(user, await db.order.findMany({
     // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
     where: { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } },
     include,
     orderBy: [{ estimatedShipDate: 'asc' }, { createdAt: 'asc' }],
     take: 500,
-  });
+  }));
   const latest = (o: Row) => o.offers[0];
   return (
     <>

@@ -27,6 +27,13 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/yuklemeler', key: 'nav.loadings' },
   ],
   CIZIM: [{ section: 'nav.operations' }, { href: '/siparisler', key: 'nav.orders' }],
+  // Denetimci yalnızca görüntüler (karar 8)
+  DENETIMCI: [
+    { section: 'nav.operations' },
+    { href: '/siparisler', key: 'nav.orders' },
+    { href: '/teklifler', key: 'nav.offers' },
+    { href: '/yuklemeler', key: 'nav.loadings' },
+  ],
   MUSTERI: [
     { section: 'nav.customerPortal' },
     { href: '/siparisler', key: 'nav.myOrders' },

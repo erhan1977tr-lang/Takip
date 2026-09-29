@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } from '@/lib/orders';
+import { userCan } from '@/lib/permissions';
 import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getT, type Dict, type T } from '@/lib/i18n';
 import {
@@ -59,7 +60,7 @@ export default async function OrderPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission('ORDER_VIEW');
   const { t, m } = await getT();
   const { id } = await params;
   const sp = await searchParams;
@@ -79,11 +80,14 @@ export default async function OrderPage({
   const catalog = editable || updating
     ? (await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })).map((g) => g.name)
     : [];
-  const shownOffer = isCustomer ? sent : editable || updating ? undefined : offer;
+  // Veri zaten sunucuda temizlendi (lib/orders.ts → sanitizeOrder); çizim ekibi teklif görmez,
+  // müşteri ve denetimci yalnızca müşteriye gönderilmiş teklifi görür.
+  const shownOffer = !userCan(user, 'OFFER_VIEW') ? undefined : isCustomer ? sent : editable || updating ? undefined : offer;
+  const finalPrice = !userCan(user, 'OFFER_DRAFT_VIEW');
   const sentVersions = order.offers.filter((o) => o.status === 'GONDERILDI').length;
   const lastDrawing = order.drawings[order.drawings.length - 1];
   // Teklif müşteriye gittikten sonra yeni çizim geldiyse ölçüler değişmiş olabilir (events en yeniden eskiye sıralı)
-  const needsCheck = !isCustomer && user.appRole !== 'CIZIM' && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
+  const needsCheck = !isCustomer && userCan(user, 'OFFER_VIEW') && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
     offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null, lastDrawing: lastDrawing ?? null,
     checkedAt: order.events.find((e) => e.event === 'OFFER_CHECKED')?.createdAt ?? null,
   });
@@ -182,7 +186,7 @@ export default async function OrderPage({
       <div className="detail-grid">
         <div>
           {shownOffer && (
-            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} />
+            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} />
           )}
           {!isCustomer && order.status !== 'YENI' && <Crates order={order} canEdit={can('edit_crates')} t={t} />}
           <Drawings order={order} user={user} t={t} />
@@ -271,7 +275,7 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
   const hidden = <input type="hidden" name="id" value={order.id} />;
   const offerStatus = currentOffer(order)?.status ?? null;
   const steps = acts.filter(isStep).map((a) => t(`order.steps.${a}`));
-  const blockers = order.status === 'HAZIRLANIYOR' && !order.onHold && (user.appRole === 'SATIS' || user.appRole === 'ADMIN')
+  const blockers = order.status === 'HAZIRLANIYOR' && !order.onHold && userCan(user, 'ORDER_REVIEW')
     ? productionBlockers({ status: order.status, drawing: order.drawingTrack, offer: offerStatus })
     : [];
   const buttons: React.ReactNode[] = [];
@@ -361,8 +365,9 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, versions, updateHref, t }: { order: OrderDetail; offer: Offer; isCustomer: boolean; versions: number; updateHref?: string; t: T }) {
-  const total = offer.status === 'GONDERILDI' && order.price && isCustomer ? order.price.amount : offer.amount;
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T }) {
+  // Müşteri ve denetimci müşteriye giden (yönetici) tutarı görür
+  const total = offer.status === 'GONDERILDI' && order.price && finalPrice ? order.price.amount : offer.amount;
   const updated = offer.status === 'GONDERILDI' && versions > 1;
   return (
     <div className="card" id="teklif">
@@ -548,7 +553,7 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
 
 function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T }) {
   const isCustomer = user.appRole === 'MUSTERI';
-  const notes = order.notes.filter((n) => !isCustomer || !n.internal);
+  const notes = order.notes; // iç notlar müşteriye hiç yüklenmez (sanitizeOrder)
   return (
     <div className="card" id="notlar">
       <h2>{t('order.notes.title')}</h2>
@@ -563,14 +568,14 @@ function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T
           </div>
         </div>
       ))}
-      <form action={addNoteAction} style={{ marginTop: 10 }}>
+      {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
         <textarea name="text" rows={2} required placeholder={t('order.notes.placeholder')} aria-label={t('order.notes.aria')} />
         <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
-          {!isCustomer ? <label className="check small"><input type="checkbox" name="internal" /> {t('order.notes.internalCheck')}</label> : <span />}
+          {userCan(user, 'NOTE_INTERNAL_VIEW') ? <label className="check small"><input type="checkbox" name="internal" /> {t('order.notes.internalCheck')}</label> : <span />}
           <span className="row"><span className="muted small">{t('order.notes.noEdit')}</span><button className="btn btn-primary">{t('order.notes.send')}</button></span>
         </div>
-      </form>
+      </form>}
     </div>
   );
 }

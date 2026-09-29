@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { firstLogin } from './helpers';
+import { crawlForLeaks, customerSecrets, firstLogin } from './helpers';
 
 // Demo ortamı (DEMO_MODE=1 + scripts/demo/seed.mjs) kontrolü. Yalnızca DEMO_URL ayarlıysa çalışır.
 const DEMO_URL = process.env.DEMO_URL;
@@ -90,39 +90,62 @@ test('satış, çizimci ve müşteri örnek siparişleri görür', async ({ brow
 
 // ADR 0003 — satış ve çizim ekibine giden HİÇBİR yanıtta (HTML + RSC verisi) müşteri firmasının tam adı olmamalı.
 // Kullanıcının erişebildiği tüm sayfalar bağlantılar izlenerek taranır; ham yanıt gövdesi kontrol edilir.
-test('maskeleme: satış ve çizim yanıtlarında müşteri firmasının tam adı yok', async ({ browser }) => {
-  const { PrismaClient } = await import('@prisma/client');
-  const db = new PrismaClient();
-  const firms = (await db.customer.findMany({ where: { type: 'CUSTOMER' }, select: { name: true } })).map((f) => f.name);
-  await db.$disconnect();
-  expect(firms.length).toBeGreaterThan(0);
-  // Tam ad ve (ekranda görünen ilk 3 karakterden sonraki) kuyruk; JSON kaçışlı biçimleriyle birlikte
-  const needles = firms.flatMap((n) => [n, n.slice(3)].filter((s) => s.trim().length >= 5)
-    .flatMap((s) => [s, JSON.stringify(s).slice(1, -1), s.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)]));
-
+test('maskeleme: satış ve çizim yanıtlarında müşteri firmasının tam adı ve iletişim bilgisi yok', async ({ browser }) => {
+  const secrets = await customerSecrets();
+  expect(secrets.length).toBeGreaterThan(0);
   for (const email of ['satis@ornek.test', 'cizim@ornek.test']) {
     const page = await as(browser, email);
-    const seen = new Set<string>();
-    const queue = ['/siparisler'];
-    const leaks: string[] = [];
-    while (queue.length && seen.size < 80) {
-      const url = queue.shift()!;
-      if (seen.has(url)) continue;
-      seen.add(url);
-      for (const variant of [url, `${url}${url.includes('?') ? '&' : '?'}_rsc=1`]) {
-        const res = await page.request.get(variant, { headers: variant.includes('_rsc') ? { RSC: '1' } : {} });
-        const body = await res.text();
-        for (const n of needles) if (body.includes(n)) leaks.push(`${email} ${variant}: "${n}"`);
-      }
-      await page.goto(url);
-      for (const href of await page.locator('a[href^="/"]').evaluateAll((els) => els.map((a) => a.getAttribute('href') || ''))) {
-        const clean = href.split('#')[0];
-        if (!clean || /^\/(dosya|dil|login|setup|_next)\b/.test(clean) || seen.has(clean)) continue;
-        queue.push(clean);
-      }
-    }
-    expect(seen.size, `${email} için taranan sayfa`).toBeGreaterThan(5);
-    expect(leaks).toEqual([]);
+    const { pages, leaks } = await crawlForLeaks(page, secrets);
+    expect(pages, `${email} için taranan sayfa`).toBeGreaterThan(5);
+    expect(leaks, email).toEqual([]);
     await page.context().close();
   }
+});
+
+// Karar 8: Denetimci yalnızca görüntüler; müşteriye gönderilmiş teklifi ve iç notları görür, tam firma adını görür.
+test('denetimci: salt okunur; gönderilmiş teklif ve iç notlar görünür, hazırlanan teklif görünmez', async ({ browser }) => {
+  const insp = await as(browser, 'denetim@ornek.test');
+  await expect(insp.getByRole('heading', { name: 'Tüm siparişler (denetim)' })).toBeVisible();
+  await expect(insp.getByText('Örnek Cam SRL').first()).toBeVisible();
+  await shot(insp, '05-denetimci-siparisler');
+
+  // Müşteriye gönderilmiş teklif (ORN104): tutar müşterinin gördüğüyle aynı; iç not görünür; işlem formu yok
+  await insp.getByRole('link', { name: 'ORN104' }).first().click();
+  await expect(insp.locator('#teklif tfoot')).toContainText('660,00 EUR');
+  await expect(insp.getByText('v2 ile yükseklik 1100 mm oldu')).toBeVisible();
+  const actionForms = insp.locator('form').filter({ hasNot: insp.getByRole('button', { name: 'Çıkış' }) });
+  await expect(actionForms).toHaveCount(0);
+  await expect(insp.locator('textarea, input[type=file]')).toHaveCount(0);
+  await shot(insp, '06-denetimci-siparis');
+
+  // Yönetimde bekleyen teklif (ORN105): denetimciye hiç gönderilmez
+  await insp.goto('/siparisler');
+  const href105 = (await insp.getByRole('link', { name: 'ORN105' }).first().getAttribute('href'))!;
+  for (const variant of [href105, `${href105}?_rsc=1`]) {
+    const body = await (await insp.request.get(variant, { headers: variant.includes('_rsc') ? { RSC: '1' } : {} })).text();
+    expect(body).not.toContain('"teklif"'); // HTML: id="teklif", RSC: "id":"teklif"
+  }
+
+  // Teklifler: yalnızca müşteriye gönderilmişler
+  await insp.goto('/teklifler');
+  await expect(insp.getByRole('heading', { name: 'Müşteriye gönderilmiş teklifler' })).toBeVisible();
+  await expect(insp.getByRole('link', { name: 'ORN104' })).toBeVisible();
+  await expect(insp.getByRole('link', { name: 'ORN105' })).toHaveCount(0);
+
+  // Yönetim sayfaları kapalı
+  await insp.goto('/admin/users');
+  await expect(insp).toHaveURL(/\/siparisler$/);
+  await insp.context().close();
+});
+
+// CLAUDE.md kabul kuralı: iç notlar müşteriye hiçbir biçimde gitmez (HTML + RSC verisi).
+test('müşteri: iç notlar ve iç dosyalar yanıtta yok', async ({ browser }) => {
+  const cust = await as(browser, 'musteri@ornek.test');
+  await cust.getByRole('link', { name: 'ORN104' }).first().click();
+  const url = new URL(cust.url()).pathname;
+  for (const variant of [url, `${url}?_rsc=1`]) {
+    const body = await (await cust.request.get(variant, { headers: variant.includes('_rsc') ? { RSC: '1' } : {} })).text();
+    expect(body).not.toContain('1100 mm oldu');
+  }
+  await cust.context().close();
 });

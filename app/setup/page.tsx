@@ -7,7 +7,7 @@ import { setPasswordAction, verifyCodeAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
-const ERROR_CODES = ['wrong_code', 'no_invite', 'used', 'expired', 'locked', 'session', 'weak', 'mismatch'] as const;
+const ERROR_CODES = ['wrong_code', 'no_invite', 'used', 'expired', 'locked', 'session', 'weak', 'mismatch', 'throttled'] as const;
 type ErrorCode = (typeof ERROR_CODES)[number];
 const isErrorCode = (x: string | undefined): x is ErrorCode => !!x && (ERROR_CODES as readonly string[]).includes(x);
 
@@ -19,7 +19,7 @@ export default async function SetupPage({
   const sp = await searchParams;
   const email = (sp.email ?? '').trim().toLowerCase();
   const { t, locale } = await getT();
-  const error = isErrorCode(sp.error) ? t(`auth.setup.errors.${sp.error}`) : undefined;
+  const error = isErrorCode(sp.error) ? t(`auth.setup.errors.${sp.error}`, { minutes: String(Math.max(1, Number(sp.m) || 15)) }) : undefined;
   const token = await readSetupToken();
   const step = token ? 2 : 1;
 
@@ -58,11 +58,11 @@ export default async function SetupPage({
             <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
             <div className="field">
               <label htmlFor="password">{t('auth.setup.newPassword')}</label>
-              <input id="password" name="password" type="password" autoComplete="new-password" required minLength={8} />
+              <input id="password" name="password" type="password" autoComplete="new-password" required minLength={6} />
             </div>
             <div className="field">
               <label htmlFor="password2">{t('auth.setup.newPassword2')}</label>
-              <input id="password2" name="password2" type="password" autoComplete="new-password" required minLength={8} />
+              <input id="password2" name="password2" type="password" autoComplete="new-password" required minLength={6} />
               <div className="hint">{t('auth.setup.passwordRule')}</div>
             </div>
             {error && <div className="alert alert-error">{error}</div>}

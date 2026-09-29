@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { orderScope } from '@/lib/orders';
+import { userCan } from '@/lib/permissions';
 import { resolveKey } from '@/lib/storage';
 import { getT } from '@/lib/i18n';
 
@@ -13,13 +14,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   const user = await getCurrentUser();
   const { t } = await getT();
   if (!user) return new Response(t('common.fileLoginRequired'), { status: 401 });
+  if (!userCan(user, 'ORDER_VIEW')) return new Response(t('common.fileNotFound'), { status: 404 });
   const { kind, id } = await ctx.params;
   const scope = orderScope(user);
 
   let file: { storageKey: string; name: string; mime: string | null } | null = null;
   if (kind === 'siparis') {
     const f = await db.orderFile.findFirst({
-      where: { id, order: scope, ...(user.appRole === 'MUSTERI' ? { kind: 'CUSTOMER' } : {}) },
+      // İç ekip dosyalarını yalnızca iç ekip görür; başka firmanın dosyası kapsam dışıdır → 404
+      where: { id, order: scope, ...(userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { kind: 'CUSTOMER' }) },
     });
     if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime };
   } else if (kind === 'cizim') {

@@ -3,4 +3,5 @@ export default {
   SATIS: 'Vânzări',
   CIZIM: 'Echipa de desen',
   MUSTERI: 'Client',
+  DENETIMCI: 'Inspector',
 };

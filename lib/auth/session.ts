@@ -6,6 +6,7 @@ import type { AppRole } from '@prisma/client';
 import { db } from '../db';
 import { secureCookies } from '../env';
 import { homeFor } from '../roles';
+import { userCan, type Permission } from '../permissions';
 
 const COOKIE = 'takip_session';
 const TTL_DAYS = 30;
@@ -54,7 +55,17 @@ export const getCurrentUser = cache(async () => {
 
 export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 
-/** Oturum yoksa girişe, rol uymuyorsa kendi ana sayfasına yönlendirir. */
+/**
+ * Oturum yoksa girişe, yetki yoksa kendi ana sayfasına yönlendirir. Sayfalar ve server action'lar
+ * rol adına değil yetkiye bakar (server/auth/permissions.js).
+ */
+export async function requirePermission(permission: Permission): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!userCan(user, permission)) redirect(homeFor(user.appRole));
+  return user;
+}
+
+/** Oturum yoksa girişe, rol uymuyorsa kendi ana sayfasına yönlendirir. Yeni kodda requirePermission kullanın. */
 export async function requireUser(roles?: AppRole[]): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect('/login');

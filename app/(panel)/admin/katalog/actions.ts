@@ -3,13 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 
 const back = (q: string) => `/admin/katalog?${q}`;
 
 export async function addGlassAction(formData: FormData) {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('CATALOG_MANAGE');
   const name = String(formData.get('name') ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
   if (!name) redirect(back('error=empty'));
   const exists = await db.glassProduct.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
@@ -22,7 +22,7 @@ export async function addGlassAction(formData: FormData) {
 }
 
 export async function updateGlassAction(formData: FormData) {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('CATALOG_MANAGE');
   const id = String(formData.get('id') ?? '');
   const g = await db.glassProduct.findUnique({ where: { id } });
   if (!g) redirect(back('error=notfound'));

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { type CurrentUser, requirePermission } from '@/lib/auth/session';
 import { getT, type Dict } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { customerLabel } from '@/lib/orders';
@@ -51,7 +51,7 @@ function groupDay(entries: Entry[], user: CurrentUser): { groups: Group[]; total
 }
 
 export default async function LoadingPage({ searchParams }: { searchParams: Promise<SP> }) {
-  const user = await requireUser(['ADMIN', 'SATIS', 'MUSTERI']);
+  const user = await requirePermission('SHIPMENT_VIEW');
   const { t, locale, m, intl } = await getT();
   const { unit, count } = counter(m, intl);
   const sp = await searchParams;

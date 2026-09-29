@@ -9,7 +9,7 @@ import { createUserAction, type UserFormState } from './actions';
 
 type Firm = { id: string; name: string; type: 'CUSTOMER' | 'FACTORY' };
 // Rol adları sözlükte: admin.userForm.roles.<ROL>
-const ROLES = ['MUSTERI', 'SATIS', 'CIZIM'] as const;
+const ROLES = ['MUSTERI', 'SATIS', 'CIZIM', 'DENETIMCI'] as const;
 // Davet e-postasının dili: arayüz dilleri (adları sözlükte lang.<dil>)
 const LANGS = ['ro', 'tr'] as const;
 

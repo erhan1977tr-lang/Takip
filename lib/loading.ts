@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
-import { orderScope } from './orders';
+import { orderScope, sanitizeRows } from './orders';
 import { dayKey, orderLoad } from '../server/orders/loading.js';
 
 export const loadInclude = {
@@ -15,7 +15,7 @@ export type LoadRow = Prisma.OrderGetPayload<{ include: typeof loadInclude }>;
 
 /** Yükleme günü [from, to) aralığındaki siparişler. Beklemedekiler ve iptaller görünmez. */
 export async function ordersShippingBetween(user: CurrentUser, from: Date, to: Date): Promise<LoadRow[]> {
-  return db.order.findMany({
+  return sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       onHold: false,
@@ -27,7 +27,7 @@ export async function ordersShippingBetween(user: CurrentUser, from: Date, to: D
     },
     include: loadInclude,
     orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
-  });
+  }));
 }
 
 export function shipDay(o: { actualShipDate: Date | null; estimatedShipDate: Date | null }): string | null {

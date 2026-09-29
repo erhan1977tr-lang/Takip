@@ -31,7 +31,7 @@ export function CreateFirmForm({ groups, m }: { groups: string[]; m: Dict['admin
         </div>
         <div>
           <label htmlFor="f-prefix">{m.prefix}</label>
-          <input id="f-prefix" name="prefix" type="text" maxLength={5} placeholder={m.prefixPlaceholder} defaultValue={v.prefix} style={{ textTransform: 'uppercase' }} />
+          <input id="f-prefix" name="prefix" type="text" maxLength={3} pattern="[A-Za-z]{3}" placeholder={m.prefixPlaceholder} defaultValue={v.prefix} style={{ textTransform: 'uppercase' }} />
           <div className="hint">{m.prefixHint}</div>
         </div>
         <div>

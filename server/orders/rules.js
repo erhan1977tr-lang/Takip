@@ -12,6 +12,8 @@
 //   (beklemedeki sipariş geçmez; beklemeden çıkarılınca yeniden kontrol edilir). İptal yalnızca yöneticidedir.
 //
 // Ekranda görünen metinler burada DEĞİL, server/i18n/{tr,ro}/ sözlüklerindedir; buradaki işlevler kod döndürür.
+import { can } from '../auth/permissions.js';
+
 
 // Rozet renkleri (metinleri: status.order / status.drawing / status.offer)
 export const ORDER_STATUS = {
@@ -164,7 +166,7 @@ export function maskName(name) {
   return String(name || '').slice(0, 3) + '*'.repeat(10);
 }
 export function canSeeCustomerName(role) {
-  return role === 'ADMIN' || role === 'MUSTERI';
+  return can(role, 'CUSTOMER_NAME_VIEW');
 }
 
 // ---------- olay geçmişi ----------
@@ -288,18 +290,21 @@ export function fileProblem(name, size) {
  */
 export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null }) {
   const a = [];
-  const sales = role === 'SATIS' || role === 'ADMIN';
-  const drawer = role === 'CIZIM' || role === 'ADMIN';
+  // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
+  const sales = can(role, 'ORDER_REVIEW');
+  const drawer = can(role, 'DRAWING_WORK');
+  const offerWriter = can(role, 'OFFER_PREPARE');
+  const admin = can(role, 'OFFER_SEND');
   const closed = CLOSED.includes(status);
   const preparing = status === 'HAZIRLANIYOR';
 
-  if (role === 'MUSTERI') {
+  if (can(role, 'DRAWING_APPROVE')) {
     // Müşterinin tek onayı çizim onayıdır; teklifi yalnızca görür.
     if (preparing && drawing === 'ONAY_BEKLIYOR') {
       if (canApprove) a.push('approve_drawing');
       a.push('request_revision');
     }
-    if (!closed) a.push('add_file');
+    if (!closed && can(role, 'FILE_UPLOAD')) a.push('add_file');
     return a;
   }
 
@@ -308,13 +313,12 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     return a;
   }
 
-  const admin = role === 'ADMIN';
   // Teklif henüz satışta (yöneticiye gönderilmedi). Gönderildikten sonra satış hiçbir değişiklik yapamaz.
   const offerAtSales = offer === null || offer === 'HAZIRLANIYOR';
 
   if (sales && status === 'YENI') a.push('send_to_drawing', 'no_drawing');
   if (preparing && drawing === 'YOK' && (admin || (sales && offerAtSales))) a.push('send_to_drawing');
-  if (sales && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
+  if (offerWriter && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
   if (admin && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
   // Müşterideki teklifi yalnızca yönetici günceller (çizim revizyonu ölçüleri değiştirdiyse; üretimdeyken de).
   if (admin && (preparing || status === 'URETIMDE') && offer === 'GONDERILDI') a.push('update_offer');
@@ -329,7 +333,7 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (sales && status === 'URETIMDE') a.push('mark_shipped');
   if (sales && status === 'YUKLENDI') a.push('archive');
   if (sales && !closed) a.push('hold', 'set_ship_date');
-  if (role === 'ADMIN' && !closed) a.push('cancel');
-  if (!closed) a.push('add_file');
+  if (can(role, 'ORDER_CANCEL') && !closed) a.push('cancel');
+  if (!closed && can(role, 'FILE_UPLOAD')) a.push('add_file');
   return a;
 }

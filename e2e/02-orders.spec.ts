@@ -23,7 +23,7 @@ test('hazırlık: katalog, satış, çizim ve ikinci müşteri', async ({ page }
   await page.fill('#f-name', 'Beta Cam');
   await page.fill('#f-prefix', 'BET');
   await page.click('form.card button[type=submit]');
-  await expect(page.getByText('“Beta Cam” firması oluşturuldu (ön ek: BET)')).toBeVisible();
+  await expect(page.getByText('“Beta Cam” firması oluşturuldu (kod: BET)')).toBeVisible();
 
   await createUser(page, { email: SALES, name: 'Satış Kişi', role: 'Satış', firm: 'GKH Trading' });
   await createUser(page, { email: DRAWER, name: 'Çizim Kişi', role: 'Çizimci', firm: 'GKH Trading' });

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { notFound } from 'next/navigation';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { isDemo } from '@/server/demo/accounts.js';
@@ -39,7 +39,7 @@ async function readOutbox(dir: string): Promise<Mail[]> {
 export default async function DemoMailPage() {
   const dir: string | undefined = getEnv().MAIL_OUTBOX_DIR;
   if (!isDemo() || !dir) notFound();
-  await requireUser(['ADMIN']);
+  await requirePermission('SETTINGS_MANAGE');
   const { t } = await getT();
   const mails = await readOutbox(dir);
 

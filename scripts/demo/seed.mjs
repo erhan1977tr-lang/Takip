@@ -1,4 +1,4 @@
-// Demo ortamına örnek veriler yükler: firmalar, dört rolün hesapları, cam kataloğu ve
+// Demo ortamına örnek veriler yükler: firmalar, beş rolün hesapları, cam kataloğu ve
 // akışın her aşamasından siparişler (dosyaları ve çizimleriyle). Yalnızca DEMO_MODE=1 iken çalışır.
 // Tekrar çalıştırılırsa veri eklemez; DEMO-GIRIS.txt silinmişse şifreleri yenileyip dosyayı yeniden yazar.
 import crypto from 'node:crypto';
@@ -92,7 +92,10 @@ async function main(db) {
   const admin0 = await db.user.findUnique({ where: { email: DEMO_ACCOUNTS[0].email } });
   if (admin0) {
     const hasFile = await fs.access(CRED_FILE).then(() => true, () => false);
-    if (hasFile) {
+    // Yeni sürümde eklenen demo hesabı (ör. Denetimci) varsa o da açılır; şifre herkes için yenilenir.
+    const missing = [];
+    for (const a of DEMO_ACCOUNTS) if (!(await db.user.findUnique({ where: { email: a.email } }))) missing.push(a);
+    if (hasFile && !missing.length) {
       console.log('Örnek veriler zaten yüklü.');
       return;
     }
@@ -104,8 +107,20 @@ async function main(db) {
       await db.user.update({ where: { id: u.id }, data: { passwordHash, isActive: true } });
       await db.session.deleteMany({ where: { userId: u.id } });
     }
+    for (const a of missing) {
+      const internal = a.role !== 'MUSTERI';
+      const firm = internal
+        ? await db.customer.findFirst({ where: { type: 'FACTORY' }, orderBy: { createdAt: 'asc' } })
+        : await db.customer.findFirst({ where: { prefix: DEMO_FIRM.prefix } });
+      await db.user.create({
+        data: {
+          email: a.email, name: a.name, passwordHash, appRole: a.role, type: internal ? 'INTERNAL' : 'CUSTOMER',
+          unit: a.unit ?? null, canApprove: !!a.canApprove, customerId: firm?.id ?? null,
+        },
+      });
+    }
     await writeCredentials(pw);
-    console.log('DEMO-GIRIS.txt bulunamadı; demo şifresi yenilendi.');
+    console.log(missing.length ? `Yeni demo hesapları eklendi: ${missing.map((a) => a.email).join(', ')}; şifre yenilendi.` : 'DEMO-GIRIS.txt bulunamadı; demo şifresi yenilendi.');
     return;
   }
 
@@ -115,7 +130,7 @@ async function main(db) {
   const factory = (await db.customer.findFirst({ where: { type: 'FACTORY' } }))
     ?? (await db.customer.create({ data: { name: 'GKH Trading', type: 'FACTORY' } }));
   const firm = await db.customer.create({
-    data: { ...DEMO_FIRM, type: 'CUSTOMER', groupName: 'Demo', contactPerson: 'Mert Bey', email: 'musteri@ornek.test' },
+    data: { ...DEMO_FIRM, type: 'CUSTOMER', groupName: 'Demo', contactPerson: 'Mert Bey', email: 'musteri@ornek.test', phone: '+40 721 000 111', address: 'Str. Exemplu 12, Cluj', taxId: 'RO12345678' },
   });
 
   const users = {};
@@ -298,7 +313,7 @@ async function main(db) {
 
   await db.auditLog.create({ data: { action: 'DEMO_SEED', entityType: 'System', details: { orders: 8 } } });
   await writeCredentials(pw);
-  console.log('Örnek veriler yüklendi (8 sipariş, 4 hesap). Giriş bilgileri: DEMO-GIRIS.txt');
+  console.log(`Örnek veriler yüklendi (8 sipariş, ${DEMO_ACCOUNTS.length} hesap). Giriş bilgileri: DEMO-GIRIS.txt`);
 }
 
 try {

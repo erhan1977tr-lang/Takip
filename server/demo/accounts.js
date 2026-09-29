@@ -7,6 +7,7 @@ export const DEMO_ACCOUNTS = [
   { email: 'satis@ornek.test', name: 'Selin Satış', role: 'SATIS', label: 'Satış', unit: 'fabrika satış' },
   { email: 'cizim@ornek.test', name: 'Can Çizim', role: 'CIZIM', label: 'Çizimci', unit: 'fabrika çizim' },
   { email: 'musteri@ornek.test', name: 'Mert Müşteri', role: 'MUSTERI', label: 'Müşteri', canApprove: true },
+  { email: 'denetim@ornek.test', name: 'Dilek Denetim', role: 'DENETIMCI', label: 'Denetimci', unit: 'kalite' },
 ];
 
 export function isDemo() {

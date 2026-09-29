@@ -12,6 +12,13 @@ export default {
     },
     view: 'Vezi oferta',
   },
+  // Inspector: doar ofertele trimise clienților
+  inspector: {
+    title: 'Oferte trimise clienților',
+    intro: 'Ofertele trimise clienților, cu valoarea văzută de client. Ofertele în pregătire nu apar aici.',
+    empty: 'Nu există oferte trimise clienților.',
+    customer: 'Client',
+  },
   internal: {
     title: 'Oferte',
     intro: 'Oferte în pregătire, în așteptarea aprobării administratorului și trimise clienților.',

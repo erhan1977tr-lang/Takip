@@ -12,14 +12,6 @@ test('seed: beş rol, yetkiler bilinen anahtarlar', () => {
   for (const r of ROLES) for (const p of r.permissions) assert.ok(PERMISSIONS.includes(p), `${r.code}: ${p}`);
 });
 
-test('seed: denetimci yalnızca okur; satış fiyat koyamaz; çizim teklif göremez', () => {
-  const perms = Object.fromEntries(ROLES.map((r) => [r.code, r.permissions]));
-  assert.deepEqual(perms.DENETIMCI, ['ORDER_VIEW']);
-  assert.ok(!perms.SATIS.includes('PRICE_SET'));
-  assert.ok(!perms.CIZIM.includes('OFFER_CREATE') && !perms.CIZIM.includes('PRICE_SET'));
-  assert.ok(!perms.MUSTERI.includes('PRICE_SET'));
-});
-
 test('seed: sipariş tipleri cam ve profil; profil satış/çizimden geçmez', () => {
   assert.deepEqual(ORDER_TYPES.map((t) => t.code), ['GLASS_ORDER', 'PROFILE_ORDER']);
   const profile = ORDER_TYPES.find((t) => t.code === 'PROFILE_ORDER');

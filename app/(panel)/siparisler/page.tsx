@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import type { OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { requireUser, type CurrentUser } from '@/lib/auth/session';
+import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict } from '@/lib/i18n';
 import { customerSummaryText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
-import { customerLabel, orderScope } from '@/lib/orders';
+import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
+import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtMonth } from '@/lib/format';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { CLOSED, offerNeedsCheck, slaInfo } from '@/server/orders/rules.js';
@@ -42,7 +43,7 @@ const needsOfferCheck = (o: Row) =>
   });
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
-  const user = await requireUser();
+  const user = await requirePermission('ORDER_VIEW');
   const sp = await searchParams;
   return user.appRole === 'MUSTERI' ? <CustomerOrders user={user} sp={sp} /> : <InternalOrders user={user} sp={sp} />;
 }
@@ -80,7 +81,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t, locale, m, intl } = await getT();
   const { unit } = counter(m, intl);
   const archive = sp.view === 'archive';
-  const orders = await db.order.findMany({
+  const orders = sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       ...searchWhere(sp.q),
@@ -88,7 +89,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     },
     include: listInclude,
     orderBy: [{ estimatedShipDate: archive ? 'desc' : 'asc' }, { createdAt: 'desc' }],
-  });
+  }));
   const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
   const groups = new Map<string, Row[]>();
   for (const o of orders) {
@@ -224,7 +225,7 @@ function Section({ title, count, tone, children }: { title: string; count: numbe
 async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t } = await getT();
   const view = sp.view ?? 'work';
-  const rows = await db.order.findMany({
+  const rows = sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       ...searchWhere(sp.q),
@@ -233,22 +234,22 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     include: listInclude,
     orderBy: [{ estimatedShipDate: view === 'archive' ? 'desc' : 'asc' }, { createdAt: 'asc' }],
     take: 300,
-  });
+  }));
 
   const now = Date.now();
   const active = rows.filter((o) => !o.onHold);
   const prep = active.filter((o) => o.status === 'HAZIRLANIYOR');
   const role = user.appRole;
   const myTurn: { title: string; rows: Row[]; empty: string }[] = [];
-  if (role === 'SATIS' || role === 'ADMIN') {
+  if (userCan(user, 'ORDER_REVIEW')) {
     myTurn.push({ title: t('orders.internal.sections.newOrders.title'), rows: active.filter((o) => o.status === 'YENI'), empty: t('orders.internal.sections.newOrders.empty') });
     myTurn.push({ title: t('orders.internal.sections.offersToPrepare.title'), rows: prep.filter((o) => offerOf(o) === null || offerOf(o) === 'HAZIRLANIYOR'), empty: t('orders.internal.sections.offersToPrepare.empty') });
   }
-  if (role === 'ADMIN') {
+  if (userCan(user, 'OFFER_SEND')) {
     myTurn.push({ title: t('orders.internal.sections.priceApproval.title'), rows: prep.filter((o) => offerOf(o) === 'YONETIMDE'), empty: t('orders.internal.sections.priceApproval.empty') });
     myTurn.push({ title: t('orders.internal.sections.offerCheck.title'), rows: active.filter(needsOfferCheck), empty: t('orders.internal.sections.offerCheck.empty') });
   }
-  if (role === 'CIZIM') {
+  if (userCan(user, 'DRAWING_WORK') && !userCan(user, 'ORDER_REVIEW')) {
     myTurn.push({ title: t('orders.internal.sections.drawingJobs.title'), rows: prep.filter((o) => ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(o.drawingTrack)), empty: t('orders.internal.sections.drawingJobs.empty') });
     myTurn.push({ title: t('orders.internal.sections.atCustomer.title'), rows: prep.filter((o) => o.drawingTrack === 'ONAY_BEKLIYOR'), empty: t('orders.internal.sections.atCustomer.empty') });
   }
@@ -258,7 +259,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   return (
     <>
       <div className="page-head">
-        <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : t('orders.internal.titles.sales')}</h1>
+        <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
       <div className="tabs">
         <Link href="/siparisler" className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>

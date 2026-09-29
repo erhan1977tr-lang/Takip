@@ -1,7 +1,7 @@
 # Takip — canlı demo (GitHub Codespaces)
 
 Sunucu hazır olana kadar uygulamanın gerçek, çalışan halini GitHub üzerinde açabilirsiniz. Veritabanı, örnek siparişler
-ve dört rolün hesabı kendiliğinden kurulur. **Bu ortam yalnızca deneme içindir; gerçek müşteri verisi girmeyin.**
+ve beş rolün (Denetimci dahil) hesabı kendiliğinden kurulur. **Bu ortam yalnızca deneme içindir; gerçek müşteri verisi girmeyin.**
 
 ## Açmak (ilk sefer 5–10 dakika sürer)
 

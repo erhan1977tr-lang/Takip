@@ -3,4 +3,5 @@ export default {
   SATIS: 'Satış',
   CIZIM: 'Çizim Ekibi',
   MUSTERI: 'Müşteri',
+  DENETIMCI: 'Denetimci',
 };

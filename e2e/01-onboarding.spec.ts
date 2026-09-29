@@ -37,13 +37,15 @@ test('yönetici firma oluşturur ve müşteri kullanıcısını davet eder', asy
   await page.goto('/admin/firms');
   await page.fill('#f-name', 'Ünsal Cam');
   await page.click('form.card button[type=submit]');
-  await expect(page.getByText('“Ünsal Cam” firması oluşturuldu (ön ek: UNS)')).toBeVisible();
+  await expect(page.getByText('“Ünsal Cam” firması oluşturuldu (kod: UNS)')).toBeVisible();
 
-  // Aynı ön ek ikinci kez kullanılamaz
+  // Aynı firma kodu ikinci kez kullanılamaz (kod tam 3 harf)
   await page.fill('#f-name', 'Unsal Başka');
+  await page.fill('#f-prefix', 'UNS');
   await page.click('form.card button[type=submit]');
-  await expect(page.getByText(/ön eki Ünsal Cam firmasında kullanılıyor/)).toBeVisible();
+  await expect(page.getByText(/“UNS” kodu Ünsal Cam firmasında kullanılıyor/)).toBeVisible();
   await expect(page.locator('#f-name')).toHaveValue('Unsal Başka');
+  await expect(page.locator('#f-prefix')).toHaveAttribute('maxlength', '3');
 
   await page.goto('/admin/users');
   await page.fill('#u-email', CUSTOMER);

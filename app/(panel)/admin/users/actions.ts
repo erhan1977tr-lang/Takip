@@ -4,20 +4,20 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Prisma, type AppRole } from '@prisma/client';
 import { db } from '@/lib/db';
-import { requireUser, destroyAllSessions } from '@/lib/auth/session';
+import { requirePermission, destroyAllSessions } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 import { issueInvite } from '@/lib/invite';
 import { getT } from '@/lib/i18n';
 
 export type UserFormState = { error?: string; ok?: string; warn?: string; values?: Record<string, string> };
 
-const ASSIGNABLE: AppRole[] = ['MUSTERI', 'SATIS', 'CIZIM'];
+const ASSIGNABLE: AppRole[] = ['MUSTERI', 'SATIS', 'CIZIM', 'DENETIMCI'];
 // Davet e-postası dilleri: formda yalnızca Romence ve Türkçe sunulur (eski 'en' kayıtları olduğu gibi kalır)
 const LANGS = ['ro', 'tr'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function createUserAction(_prev: UserFormState, formData: FormData): Promise<UserFormState> {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('USER_MANAGE');
   const { t, locale } = await getT();
   const v = (k: string) => String(formData.get(k) ?? '').trim();
   const values = {
@@ -83,7 +83,7 @@ async function targetUser(formData: FormData, adminId: string) {
 
 /** Şifresi olmayan kullanıcıya yeni kod gönderir. */
 export async function sendInviteAction(formData: FormData) {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('USER_MANAGE');
   const user = await targetUser(formData, admin.id);
   if (user.passwordHash) redirect('/admin/users?error=active');
   const res = await issueInvite(user.id, { send: true });
@@ -94,7 +94,7 @@ export async function sendInviteAction(formData: FormData) {
 
 /** Şifreyi sıfırlar, tüm oturumları kapatır ve yeni kod gönderir. */
 export async function resetPasswordAction(formData: FormData) {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('USER_MANAGE');
   const user = await targetUser(formData, admin.id);
   await db.user.update({ where: { id: user.id }, data: { passwordHash: null } });
   await destroyAllSessions(user.id);
@@ -106,7 +106,7 @@ export async function resetPasswordAction(formData: FormData) {
 
 /** Hesabı pasifleştirir ya da yeniden etkinleştirir (kayıtlar silinmez). */
 export async function toggleActiveAction(formData: FormData) {
-  const admin = await requireUser(['ADMIN']);
+  const admin = await requirePermission('USER_MANAGE');
   const user = await targetUser(formData, admin.id);
   const isActive = !user.isActive;
   await db.user.update({ where: { id: user.id }, data: { isActive } });

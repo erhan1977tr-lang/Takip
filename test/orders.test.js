@@ -5,7 +5,7 @@ import ro from '../server/i18n/ro/index.js';
 import { translate } from '../server/i18n/index.js';
 import {
   ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
-  nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex,
+  nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName,
 } from '../server/orders/rules.js';
 
 const has = (p, a) => availableActions(p).includes(a);
@@ -231,4 +231,24 @@ test('adım çubuğu', () => {
   assert.equal(stageIndex('YENI'), 1);
   assert.equal(stageIndex('HAZIRLANIYOR'), 2);
   assert.equal(stageIndex('ARSIVLENDI'), 5);
+});
+
+test('denetimci: hiçbir durumda işlem yapamaz (karar 8)', () => {
+  for (const status of ['YENI', 'HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) {
+    for (const drawing of ['YOK', 'GEREKLI', 'YAPILIYOR', 'ONAY_BEKLIYOR', 'REVIZYON_ISTENDI', 'ONAYLANDI']) {
+      for (const offer of [null, 'HAZIRLANIYOR', 'YONETIMDE', 'GONDERILDI']) {
+        for (const onHold of [false, true]) {
+          assert.deepEqual(availableActions({ role: 'DENETIMCI', status, drawing, offer, onHold, canApprove: true }), [], `${status}/${drawing}/${offer}/${onHold}`);
+        }
+      }
+    }
+  }
+});
+
+test('maskeleme: denetimci tam adı görür, satış ve çizim görmez', () => {
+  assert.equal(canSeeCustomerName('DENETIMCI'), true);
+  assert.equal(canSeeCustomerName('SATIS'), false);
+  assert.equal(canSeeCustomerName('CIZIM'), false);
+  assert.equal(maskName('GLASSANDMORE'), 'GLA**********');
+  assert.equal(maskName('ALEGRAD'), 'ALE**********');
 });

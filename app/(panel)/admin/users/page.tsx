@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth/session';
+import { requirePermission } from '@/lib/auth/session';
 import { inviteStatus } from '@/lib/invite';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { roleText } from '@/lib/labels';
@@ -26,7 +26,7 @@ export default async function UsersPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const me = await requireUser(['ADMIN']);
+  const me = await requirePermission('USER_MANAGE');
   const { t, locale, m } = await getT();
   const sp = await searchParams;
   const okKey = sp.ok && Object.hasOwn(OK, sp.ok) ? OK[sp.ok] : null;
