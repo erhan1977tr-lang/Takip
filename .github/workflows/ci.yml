@@ -49,7 +49,7 @@ jobs:
         run: |
           before='${{ github.event.before }}'
           git fetch -q --depth=1 origin "$before" 2>/dev/null || { echo "önceki commit alınamadı, atlanıyor"; exit 0; }
-          if git diff --quiet "$before" HEAD -- app lib server components assets prisma/schema.prisma scripts/demo next.config.mjs; then
+          if git diff --quiet "$before" HEAD -- app lib server components assets prisma/schema.prisma prisma/seed prisma/migrations scripts/demo next.config.mjs instrumentation.ts; then
             echo "uygulama kodu değişmedi"; exit 0
           fi
           old=$(git show "$before:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
@@ -63,7 +63,13 @@ jobs:
 
       - name: Paketleri kur
         run: |
-          if [ -f package-lock.json ]; then scripts/ci-step.sh "npm ci" npm ci; else scripts/ci-step.sh "npm install" npm install --no-audit --no-fund; fi
+          # package.json'a yeni paket eklendiyse npm ci kilit dosyası uyuşmazlığıyla durur; o zaman npm install
+          # kilit dosyasını günceller ve aşağıdaki adım onu depoya geri yazar.
+          if [ -f package-lock.json ] && npm ci --no-audit --no-fund; then echo "npm ci tamam"
+          else scripts/ci-step.sh "npm install" npm install --no-audit --no-fund; fi
+
+      - name: Ortam değişkenleri geçerli mi
+        run: scripts/ci-step.sh "env:check" npm run env:check
 
       - name: Prisma şemasını doğrula ve istemciyi üret
         run: |
@@ -109,11 +115,27 @@ jobs:
       - name: Migration ile şema uyumlu mu
         run: scripts/ci-step.sh "migration drift" npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
 
-      - name: Birim testleri
-        run: scripts/ci-step.sh "npm test" npm test
+      - name: Temel veriler (seed, iki kez — tekrar çalıştırılabilir olmalı)
+        run: |
+          scripts/ci-step.sh "db:seed" npm run db:seed
+          scripts/ci-step.sh "db:seed (ikinci kez)" npm run db:seed
+
+      - name: Lint
+        run: scripts/ci-step.sh "eslint" npm run lint
 
       - name: Tip kontrolü
         run: scripts/ci-step.sh "tsc" npx tsc --noEmit
+
+      - name: Birim testleri
+        run: scripts/ci-step.sh "npm test" npm test
+
+      - name: Veritabanı testleri (ayrı veritabanı)
+        env:
+          TEST_DATABASE_URL: postgresql://takip:takip@localhost:5432/takip_test?schema=public
+        run: |
+          PGPASSWORD=takip psql -h localhost -U takip -d takip -qc 'CREATE DATABASE takip_test'
+          DATABASE_URL="$TEST_DATABASE_URL" scripts/ci-step.sh "test db migrate" npx prisma migrate deploy
+          scripts/ci-step.sh "test:db" bash -c 'npm run test:db 2>&1 | tee test-db.log; s=${PIPESTATUS[0]}; grep -q "^# skipped 0" test-db.log || { echo "::error title=Veritabanı testleri atlandı::"; exit 1; }; exit $s'
 
       - name: Derle
         run: scripts/ci-step.sh "next build" npm run build

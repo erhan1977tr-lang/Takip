@@ -5,12 +5,13 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+import { getEnv } from '../server/env.js';
 
 // Yüklenen dosyalar diskte UPLOAD_DIR altında YYYY/MM/<rastgele>.<uzantı> olarak durur.
 // Özgün dosya adı yalnızca veritabanında tutulur; diskteki ad tahmin edilemez.
 
 export function uploadRoot(): string {
-  return path.resolve(process.env.UPLOAD_DIR || './uploads');
+  return path.resolve(getEnv().UPLOAD_DIR);
 }
 
 function safeExt(name: string): string {

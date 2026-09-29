@@ -20,7 +20,8 @@ RUN npx prisma generate && npx next build
 
 FROM builder AS tools
 ENV NODE_ENV=production
-CMD ["npx", "prisma", "migrate", "deploy"]
+# migration + temel veri (tekrar çalıştırılabilir)
+CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed/base.mjs"]
 
 FROM base AS runner
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 UPLOAD_DIR=/data/uploads

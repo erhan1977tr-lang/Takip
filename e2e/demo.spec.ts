@@ -87,3 +87,42 @@ test('satış, çizimci ve müşteri örnek siparişleri görür', async ({ brow
   await expect(cust.locator('#teklif tfoot')).toContainText('660,00 EUR');
   await shot(cust, '04-musteri-cizim-onayi');
 });
+
+// ADR 0003 — satış ve çizim ekibine giden HİÇBİR yanıtta (HTML + RSC verisi) müşteri firmasının tam adı olmamalı.
+// Kullanıcının erişebildiği tüm sayfalar bağlantılar izlenerek taranır; ham yanıt gövdesi kontrol edilir.
+test('maskeleme: satış ve çizim yanıtlarında müşteri firmasının tam adı yok', async ({ browser }) => {
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const firms = (await db.customer.findMany({ where: { type: 'CUSTOMER' }, select: { name: true } })).map((f) => f.name);
+  await db.$disconnect();
+  expect(firms.length).toBeGreaterThan(0);
+  // Tam ad ve (ekranda görünen ilk 3 karakterden sonraki) kuyruk; JSON kaçışlı biçimleriyle birlikte
+  const needles = firms.flatMap((n) => [n, n.slice(3)].filter((s) => s.trim().length >= 5)
+    .flatMap((s) => [s, JSON.stringify(s).slice(1, -1), s.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)]));
+
+  for (const email of ['satis@ornek.test', 'cizim@ornek.test']) {
+    const page = await as(browser, email);
+    const seen = new Set<string>();
+    const queue = ['/siparisler'];
+    const leaks: string[] = [];
+    while (queue.length && seen.size < 80) {
+      const url = queue.shift()!;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      for (const variant of [url, `${url}${url.includes('?') ? '&' : '?'}_rsc=1`]) {
+        const res = await page.request.get(variant, { headers: variant.includes('_rsc') ? { RSC: '1' } : {} });
+        const body = await res.text();
+        for (const n of needles) if (body.includes(n)) leaks.push(`${email} ${variant}: "${n}"`);
+      }
+      await page.goto(url);
+      for (const href of await page.locator('a[href^="/"]').evaluateAll((els) => els.map((a) => a.getAttribute('href') || ''))) {
+        const clean = href.split('#')[0];
+        if (!clean || /^\/(dosya|dil|login|setup|_next)\b/.test(clean) || seen.has(clean)) continue;
+        queue.push(clean);
+      }
+    }
+    expect(seen.size, `${email} için taranan sayfa`).toBeGreaterThan(5);
+    expect(leaks).toEqual([]);
+    await page.context().close();
+  }
+});

@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { isDemo } from '@/server/demo/accounts.js';
+import { getEnv } from '@/server/env.js';
 
 // Demo ortamında e-postalar gönderilmez, MAIL_OUTBOX_DIR klasörüne yazılır. Bu sayfa onları gösterir
 // (yeni kullanıcıya giden doğrulama kodu dahil). Yalnızca DEMO_MODE=1 iken ve yöneticiye açıktır.
@@ -36,7 +37,7 @@ async function readOutbox(dir: string): Promise<Mail[]> {
 }
 
 export default async function DemoMailPage() {
-  const dir = process.env.MAIL_OUTBOX_DIR;
+  const dir: string | undefined = getEnv().MAIL_OUTBOX_DIR;
   if (!isDemo() || !dir) notFound();
   await requireUser(['ADMIN']);
   const { t } = await getT();

@@ -1,5 +1,7 @@
 // Tarihler Romanya saatine göre gösterilir (sunucu UTC'de çalışsa da).
-const TZ = process.env.APP_TIMEZONE || 'Europe/Bucharest';
+import { getEnv } from '../server/env.js';
+
+const TZ: string = getEnv().APP_TIMEZONE;
 
 export function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return '—';

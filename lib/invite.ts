@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { db } from './db';
-import { authSecret, inviteTtlHours } from './env';
+import { authSecret, getEnv, inviteTtlHours } from './env';
 import { createInvite } from '../server/auth/inviteCode.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { sendInviteEmail } from '../server/mail/sendInvite.js';
@@ -14,12 +14,13 @@ type MailCfg = ReturnType<typeof readMailConfig>;
  * (yalnızca geliştirme ve otomatik testler için; üretimde ayarlanmaz).
  */
 async function getMailer(): Promise<{ mailer: Mailer; cfg: MailCfg }> {
-  const outbox = process.env.MAIL_OUTBOX_DIR;
+  const env = getEnv();
+  const outbox: string | undefined = env.MAIL_OUTBOX_DIR;
   if (outbox) {
     const cfg = {
       host: 'outbox', port: 0, secure: false, user: '', pass: '',
-      from: process.env.MAIL_FROM || 'Takip <noreply@localhost>',
-      appUrl: (process.env.APP_URL || '').replace(/\/+$/, ''),
+      from: env.MAIL_FROM || 'Takip <noreply@localhost>',
+      appUrl: env.APP_URL || '',
       inviteTtlHours: inviteTtlHours(),
     };
     const mailer: Mailer = {

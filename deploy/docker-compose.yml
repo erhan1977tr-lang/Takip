@@ -1,5 +1,5 @@
 # Sunucudaki çalışma düzeni. Bu klasör sunucuda /opt/takip altına kopyalanır; .env yalnızca sunucuda durur.
-#   docker compose run --rm tools            → migration uygular
+#   docker compose run --rm tools            → migration uygular + temel verileri yükler
 #   docker compose run --rm tools npm run create-admin -- e-posta "Ad Soyad"
 #   docker compose up -d                     → uygulamayı başlatır / günceller
 name: takip

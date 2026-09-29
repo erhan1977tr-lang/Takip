@@ -1,7 +1,10 @@
-// Ortam değişkenlerine tek yerden erişim.
+// Ortam değişkenlerine tek yerden erişim; tanım ve doğrulama server/env.js içinde (ADR 0011).
+import { getEnv } from '../server/env.js';
+
+export { getEnv };
 
 export function authSecret(): string {
-  const s = process.env.AUTH_SECRET || '';
+  const s: string = getEnv().AUTH_SECRET || '';
   if (s.length < 32) {
     throw new Error('AUTH_SECRET en az 32 karakter olmalı (.env.example dosyasına bakın).');
   }
@@ -10,11 +13,9 @@ export function authSecret(): string {
 
 /** Çerezler yalnızca HTTPS üzerinden gönderilsin mi? Üretimde varsayılan: evet. */
 export function secureCookies(): boolean {
-  if (process.env.COOKIE_SECURE === 'false') return false;
-  return process.env.NODE_ENV === 'production';
+  return getEnv().COOKIE_SECURE;
 }
 
 export function inviteTtlHours(): number {
-  const n = Number(process.env.INVITE_CODE_TTL_HOURS || 24);
-  return Number.isFinite(n) && n > 0 ? n : 24;
+  return getEnv().INVITE_CODE_TTL_HOURS;
 }

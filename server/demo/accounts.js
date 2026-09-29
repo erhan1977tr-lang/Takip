@@ -1,4 +1,5 @@
 // Demo ortamının (DEMO_MODE=1) örnek hesapları. Şifre her ortamda rastgele üretilir ve DEMO-GIRIS.txt'ye yazılır.
+import { getEnv } from '../env.js';
 export const DEMO_FIRM = { name: 'Örnek Cam SRL', prefix: 'ORN', camEtiket: 'ORN-CAM', sandikEtiket: 'ORN-SANDIK' };
 
 export const DEMO_ACCOUNTS = [
@@ -9,5 +10,5 @@ export const DEMO_ACCOUNTS = [
 ];
 
 export function isDemo() {
-  return process.env.DEMO_MODE === '1';
+  return getEnv().DEMO_MODE === true;
 }

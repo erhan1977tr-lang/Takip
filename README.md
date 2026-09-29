@@ -62,7 +62,9 @@ prototype/           tanıtım prototipi
 npm install
 cp .env.example .env          # DATABASE_URL, AUTH_SECRET ve (isterseniz) SMTP değerlerini girin
                               # SMTP yoksa: MAIL_OUTBOX_DIR=./.outbox ve COOKIE_SECURE=false
+npm run env:check             # eksik/hatalı ortam değişkenlerini listeler (değerleri yazdırmaz)
 npx prisma migrate deploy
+npm run db:seed               # temel veriler (roller, yetkiler); tekrar çalıştırılabilir
 npm run create-admin -- siz@firma.com "Ad Soyad" --factory "GKH Trading"
 npm run dev                   # http://localhost:3000
 ```
@@ -72,11 +74,18 @@ npm run dev                   # http://localhost:3000
 ## Testler
 
 ```bash
-npm test          # birim testleri (e-posta şablonu, davet kodu)
-npm run e2e       # uçtan uca testler (çalışan uygulama ve MAIL_OUTBOX_DIR gerekir)
+npm run lint       # ESLint
+npm run typecheck  # TypeScript
+npm test           # birim testleri (saf iş kuralları, i18n, ortam, seed verisi)
+npm run test:db    # veritabanı testleri — AYRI bir veritabanı gerekir: TEST_DATABASE_URL
+npm run e2e        # uçtan uca testler (çalışan uygulama ve MAIL_OUTBOX_DIR gerekir)
 ```
 
-Her `git push`'ta GitHub Actions şema doğrulama, migration, birim testleri, tip kontrolü, derleme, uçtan uca testler ve Docker imajı derlemesini çalıştırır. Ana ekranların masaüstü ve mobil ekran görüntüleri `ci-screenshots` dalına yazılır.
+Her `git push`'ta GitHub Actions sırasıyla sürüm kontrolü, ortam kontrolü, şema/migration, lint, tip kontrolü, birim testleri, veritabanı testleri, derleme, uçtan uca testler (maskeleme sızıntı testi dahil) ve Docker imajı derlemesini çalıştırır.
+
+Proje kuralları `CLAUDE.md`, ana tanım `docs/spec/`, ürün kararları `docs/decisions.md`, mimari kararlar `docs/adr/` içindedir.
+
+Ana ekranların masaüstü ve mobil ekran görüntüleri `ci-screenshots` dalına yazılır.
 
 Sipariş durumları ve kim ne yapabilir: `server/orders/rules.js` (birim testleri `test/orders.test.js`).
 

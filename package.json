@@ -1,6 +1,6 @@
 {
   "name": "takip",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
   "description": "Takip — sipariş ve üretim portalı",
@@ -9,10 +9,14 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.js\"",
+    "lint": "eslint .",
+    "test": "node --test \"test/*.test.js\"",
+    "test:db": "node --test --test-concurrency=1 \"test/db/**/*.test.js\"",
     "e2e": "playwright test",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
+    "db:seed": "node prisma/seed/base.mjs",
+    "env:check": "node scripts/check-env.mjs",
     "create-admin": "node scripts/create-admin.mjs",
     "mail:test": "node --env-file=.env scripts/test-mail.mjs",
     "demo": "bash scripts/demo/start.sh"
@@ -25,15 +29,21 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.0",
     "@playwright/test": "^1.55.0",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^6.4.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "eslint": "^9.20.0",
+    "eslint-config-next": "15.5.26",
     "prisma": "6.19.3",
     "typescript": "~5.9.0"
   },
   "engines": {
     "node": ">=20.9"
+  },
+  "prisma": {
+    "seed": "node prisma/seed/base.mjs"
   }
 }

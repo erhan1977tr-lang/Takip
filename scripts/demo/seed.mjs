@@ -7,6 +7,7 @@ import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { nextShipDate, offerTotals, slaDeadline } from '../../server/orders/rules.js';
 import { DEMO_ACCOUNTS, DEMO_FIRM } from '../../server/demo/accounts.js';
+import { runBaseSeed } from '../../prisma/seed/base.mjs';
 
 if (process.env.DEMO_MODE !== '1') {
   console.error('Bu betik yalnızca demo ortamında çalışır (DEMO_MODE=1).');
@@ -301,6 +302,7 @@ async function main(db) {
 }
 
 try {
+  await runBaseSeed(prisma, { log: () => {} }); // önce her ortamda gereken temel veri (roller...)
   await prisma.$transaction((tx) => main(tx), { timeout: 180_000, maxWait: 20_000 });
 } finally {
   await prisma.$disconnect();
