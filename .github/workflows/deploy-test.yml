@@ -131,3 +131,6 @@ jobs:
           sudo tail -n 60 /opt/takip/logs/*.log || true
           sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml ps || true
           sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml logs --tail 80 || true
+          # Özet sayfasında da görünsün (günlük dosyası indirilemeyen ortamlar için)
+          { sudo tail -n 40 /opt/takip/logs/*.log; sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml logs --tail 25 app worker clamav; } 2>&1 \
+            | tail -c 6000 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=Sunucu günlükleri::/' || true
