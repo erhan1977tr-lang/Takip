@@ -19,7 +19,10 @@ export function lockState(failures, now, max, windowMs = WINDOW_MS) {
   return { locked: true, retryAt, minutes: Math.max(1, Math.ceil((retryAt - now) / 60_000)) };
 }
 
-/** Üç sınırı birlikte değerlendirir; biri kilitliyse kilitli (en uzun süre geçerli). */
+/** Üç sınırı birlikte değerlendirir; biri kilitliyse kilitli (en uzun süre geçerli).
+ * @param {{ account: number[], email?: number[], ip: number[] }} failures  hata anları (ms)
+ * @param {number} now
+ */
 export function throttleState({ account, email = [], ip }, now) {
   const states = [lockState(account, now, LIMITS.account), lockState(email, now, LIMITS.email), lockState(ip, now, LIMITS.ip)];
   const locked = states.filter((s) => s.locked);
