@@ -21,4 +21,9 @@ export default [
       'no-console': 'off',
     },
   },
+  {
+    // Dil sözlükleri: dosya başına tek nesne, adsız default export bilerek kullanılıyor.
+    files: ['server/i18n/**'],
+    rules: { 'import/no-anonymous-default-export': 'off' },
+  },
 ];

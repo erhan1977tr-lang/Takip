@@ -121,7 +121,10 @@ jobs:
           scripts/ci-step.sh "db:seed (ikinci kez)" npm run db:seed
 
       - name: Lint
-        run: scripts/ci-step.sh "eslint" npm run lint
+        # Önce yalnızca hatalar (kırmızı yapar), sonra uyarıların özeti (kırmızı yapmaz)
+        run: |
+          scripts/ci-step.sh "eslint" npx eslint . --quiet
+          npx eslint . | tail -3 || true
 
       - name: Tip kontrolü
         run: scripts/ci-step.sh "tsc" npx tsc --noEmit
