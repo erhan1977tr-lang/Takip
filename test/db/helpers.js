@@ -36,8 +36,14 @@ export async function closeDb() {
   client = undefined;
 }
 
-/** Tüm uygulama tablolarını boşaltır (migration kaydı hariç). */
+/** Tüm uygulama tablolarını boşaltır (migration kaydı hariç) ve temel veriyi (roller, sipariş tipleri) yeniden yükler. */
 export async function resetDb(db) {
+  await truncateAll(db);
+  const { runBaseSeed } = await import('../../prisma/seed/base.mjs');
+  await runBaseSeed(db, { log: () => {} });
+}
+
+async function truncateAll(db) {
   const rows = await db.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   if (!rows.length) return;
   const list = rows.map((r) => `"public"."${r.tablename.replace(/"/g, '""')}"`).join(', ');
