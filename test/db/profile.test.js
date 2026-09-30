@@ -154,7 +154,8 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(await codeOf(run(id, 'update_pickup', 'cust', { plate: 'X 1 Y' })), 'NOT_ALLOWED', 'depoya gidince değişmez');
   const events = (await db.orderEvent.findMany({ where: { orderId: id } })).map((e) => e.event);
   assert.ok(events.includes('WAREHOUSE_SENT') && events.includes('PICKUP_MOVED') && events.includes('PAID'));
-  assert.ok((await db.auditLog.count({ where: { entityId: id, action: 'ORDER_TRANSITION' } })) >= 6);
+  const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
+  for (const a of ['send_profile_offer', 'approve_profile_offer', 'update_pickup', 'mark_proforma', 'mark_paid']) assert.ok(audited.includes(a), `denetim kaydı: ${a}`);
 
   // E-posta: sahte taşıyıcı; PDF üretilir ve iç dosya olur, bağlantı oluşur
   const sent = [];
@@ -215,8 +216,9 @@ dbTest('profil: depoya gitmiş sipariş iptal edilince stok geri eklenir; bağla
   assert.equal(o.status, 'IPTAL');
   assert.equal(o.profile.depotTokenHash, null);
   // Kuyruktaki e-posta gönderilmez
-  const r = await dispatchWarehouseEmails(db, { transport: { sendMail: async () => ({}) }, from: 'x', appUrl: 'y' });
-  assert.equal(r.sent, 0);
+  const mails = [];
+  await dispatchWarehouseEmails(db, { transport: { sendMail: async (m) => { mails.push(m); return {}; } }, from: 'x', appUrl: 'y' });
+  assert.ok(!mails.some((m) => String(m.subject).includes(o.orderNo)), 'iptal edilen siparişin e-postası gitmez');
   assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'WAREHOUSE_EMAIL' } })).status, 'SKIPPED');
 });
 
