@@ -1,6 +1,7 @@
 // İş kurallarının döndürdüğü kodları (server/orders/rules.js) ekranda gösterilecek metne çevirir.
 import type { Dict, MsgKey, T, TParams } from './i18n';
 import { EVENTS, customerSummary } from '@/server/orders/rules.js';
+import { profileCustomerSummary } from '@/server/profile/rules.js';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 
 const k = (s: string) => s as MsgKey;
@@ -13,6 +14,13 @@ export const blockerText = (t: T, code: string) => t(k(`status.blockers.${code}`
 export const stageText = (t: T, key: string) => t(k(`status.stages.${key}`));
 export const lineKindText = (t: T, kind: string) => t(k(`status.lineKind.${kind}`));
 export const roleText = (t: T, role: string) => t(k(`roles.${role}`));
+export const profileStageText = (t: T, stage: string) => t(k(`profile.stage.${stage}`));
+
+/** Profil siparişinde müşterinin gördüğü durum (server/profile/rules.js → profileCustomerSummary). */
+export function profileCustomerText(t: T, p: { status: string; stage: string | null | undefined }) {
+  const s = profileCustomerSummary(p);
+  return { tone: s.tone, label: t(k(`profile.customer.${s.key}.label`)), next: t(k(`profile.customer.${s.key}.next`)) };
+}
 
 /** Müşterinin gördüğü tek satırlık durum: rozet metni, sıradaki adım ve renk. */
 export function customerSummaryText(t: T, p: { status: string; drawing?: string; offer?: string | null }) {
@@ -39,6 +47,8 @@ export function eventNoteText(t: T, event: string, note: string | null | undefin
   if (customerView && !def?.note) return null;
   if (event === 'PRODUCTION' && (note === 'no_drawing' || note === 'drawing_approved')) return t(k(`events.PRODUCTION.${note}`));
   if (event === 'CRATES' && /^\d+$/.test(note)) return t('events.CRATES.count', { n: note });
+  if (event === 'WAREHOUSE_SENT' && note === 'auto') return t('events.WAREHOUSE_SENT.auto');
+  if (event === 'DELIVERED' && note === 'depot') return t('events.DELIVERED.depot');
   return note;
 }
 
@@ -67,6 +77,22 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
+  // Profil siparişi (Aşama 6)
+  BAD_PRICE: 'profile.errors.badPrice',
+  PROFILE_PRICE_MISSING: 'profile.errors.priceMissing',
+  STALE_OFFER: 'profile.errors.staleOffer',
+  PICKUP_WEEKEND: 'profile.errors.pickupWeekend',
+  PICKUP_TOO_EARLY: 'profile.errors.pickupTooEarly',
+  PICKUP_TOO_LATE: 'profile.errors.pickupTooLate',
+  PICKUP_INVALID: 'profile.errors.pickupInvalid',
+  BAD_PHONE: 'profile.errors.badPhone',
+  BAD_PLATE: 'profile.errors.badPlate',
+  PICKUP_LOCKED: 'profile.errors.pickupLocked',
+  PAID_IN_FUTURE: 'profile.errors.paidInFuture',
+  DELIVERY_FILE: 'profile.errors.deliveryFile',
+  NO_ITEMS: 'profile.errors.noItems',
+  PRODUCT_GONE: 'profile.errors.productGone',
+  TYPE_INACTIVE: 'profile.errors.typeInactive',
 };
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);

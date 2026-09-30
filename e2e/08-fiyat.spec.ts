@@ -48,7 +48,7 @@ test('yönetici: fiyat tablosu oluşturur, fiyat Excel\'ini yükler, satışçı
 
 test('satış: liste fiyatı dolu gelir; değiştirip gönderince yönetici uyarı görür ve kapatır', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  await cust.goto('/siparisler/yeni');
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await cust.fill('#title', 'Fiyat deneme');
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: '10 MM TEMPER CAM — BRONZ' });
   await cust.setInputFiles('#files', sampleFile('fiyat.pdf', 'fiyat'));

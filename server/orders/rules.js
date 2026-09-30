@@ -198,6 +198,19 @@ export const EVENTS = {
   UNHOLD: { customer: false },
   CRATES: { customer: false },
   SHIP_DATE: { customer: true, note: true },
+  // Profil siparişi (Aşama 6)
+  PROFILE_OFFER_SENT: { customer: true },
+  PROFILE_APPROVED: { customer: true, note: true },
+  PICKUP_UPDATED: { customer: true, note: true },
+  PICKUP_MOVED: { customer: true, note: true },
+  PROFORMA: { customer: true, note: true },
+  PAID: { customer: true, note: true },
+  WAREHOUSE_SENT: { customer: true },
+  WAREHOUSE_RESENT: { customer: false },
+  WAREHOUSE_EMAILED: { customer: false, note: false },
+  WAREHOUSE_EMAIL_FAILED: { customer: false },
+  DELIVERED: { customer: true },
+  INVOICED: { customer: true, note: true },
 };
 
 // ---------- teklif hesabı ----------

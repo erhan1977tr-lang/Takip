@@ -11,6 +11,7 @@ import {
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
+import { ProfileOrderView } from './ProfileOrderView';
 import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
 import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
@@ -68,6 +69,18 @@ export default async function OrderPage({
   const sp = await searchParams;
   const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
+  if (order.orderTypeCode === 'PROFILE_ORDER') {
+    // Profil siparişi (Aşama 6): kendi akışı ve ekranı; dosya, not ve geçmiş ortak
+    const acts = availableActions({ role: user.appRole, status: order.status, onHold: false, canApprove: user.canApprove, drawing: 'YOK', offer: null });
+    return (
+      <ProfileOrderView
+        order={order} user={user} sp={sp} t={t} m={m} locale={locale}
+        files={<Files order={order} user={user} canAdd={acts.includes('add_file')} t={t} />}
+        notes={<Notes order={order} user={user} t={t} />}
+        history={<History order={order} isCustomer={isCustomer} t={t} />}
+      />
+    );
+  }
   const offer = currentOffer(order);
   const sent = sentOffer(order);
   const acts = availableActions({
@@ -258,25 +271,31 @@ export default async function OrderPage({
               </>
             )}
           </div>
-          <div className="card">
-            <h2>{t('order.history')}</h2>
-            <ul className="timeline">
-              {order.events.map((e) => {
-                const label = eventText(t, e.event, isCustomer);
-                if (label === null) return null;
-                const note = eventNoteText(t, e.event, e.note, isCustomer);
-                return (
-                  <li key={e.id}>
-                    <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
-                    <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${e.user.name || e.user.email}` : ''}</div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          <History order={order} isCustomer={isCustomer} t={t} />
         </aside>
       </div>
     </>
+  );
+}
+
+function History({ order, isCustomer, t }: { order: OrderDetail; isCustomer: boolean; t: T }) {
+  return (
+    <div className="card">
+      <h2>{t('order.history')}</h2>
+      <ul className="timeline">
+        {order.events.map((e) => {
+          const label = eventText(t, e.event, isCustomer);
+          if (label === null) return null;
+          const note = eventNoteText(t, e.event, e.note, isCustomer);
+          return (
+            <li key={e.id}>
+              <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
+              <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${e.user.name || e.user.email}` : ''}</div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -487,7 +506,10 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
         </table>
       </div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
-        <p className="muted small" style={{ margin: 0 }}>{t('common.pricesExclVat')}</p>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t('common.pricesExclVat')}
+          {offer.currency === 'EUR' && <><br />{t('profile.notes.eur')}</>}
+        </p>
         {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
       </div>
     </div>

@@ -3,12 +3,13 @@ import type { OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict } from '@/lib/i18n';
-import { customerSummaryText, slaText } from '@/lib/labels';
+import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
 import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtMonth } from '@/lib/format';
-import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
+import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
+import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
 import { latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
 import { deleteDraftAction } from './yeni/actions';
@@ -21,6 +22,8 @@ const listInclude = {
   // Müşterinin gönderdiği hazır çizim (DWG/DXF) çizim ekibine işaretlenir
   files: { where: { kind: 'CUSTOMER' }, select: { name: true } },
   events: { where: { event: 'OFFER_CHECKED' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+  // Profil siparişi (Aşama 6): adım ve alış günü
+  profile: { select: { stage: true, pickupDate: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof listInclude }>;
 
@@ -90,7 +93,8 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
   const groups = new Map<string, Row[]>();
   for (const o of orders) {
-    const k = o.estimatedShipDate ? fmtMonth(o.estimatedShipDate, locale) : t('orders.customer.noDate');
+    const day = o.profile?.pickupDate ?? o.estimatedShipDate;
+    const k = day ? fmtMonth(day, locale) : t('orders.customer.noDate');
     groups.set(k, [...(groups.get(k) ?? []), o]);
   }
   // Taslaklar yalnızca bu firmanın müşteri kullanıcılarına görünür (sipariş değildir)
@@ -183,10 +187,17 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                   <GroupRows key={month} label={`${month} (${list.length})`} cols={5}>
                     {list.map((o) => (
                       <tr key={o.id}>
-                        <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
-                        <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer={sentOf(o)} /></td>
-                        <td className="hide-sm">{customerSummaryText(t, { status: o.status, drawing: o.drawingTrack, offer: sentOf(o) }).next}</td>
-                        <td>{fmtDate(o.actualShipDate ?? o.estimatedShipDate)}</td>
+                        <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div></td>
+                        {o.profile ? (() => {
+                          const s = profileCustomerText(t, { status: o.status, stage: o.profile.stage });
+                          return <><td><Badge tone={s.tone}>{s.label}</Badge></td><td className="hide-sm">{s.next}</td></>;
+                        })() : (
+                          <>
+                            <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer={sentOf(o)} /></td>
+                            <td className="hide-sm">{customerSummaryText(t, { status: o.status, drawing: o.drawingTrack, offer: sentOf(o) }).next}</td>
+                          </>
+                        )}
+                        <td>{fmtDate(o.profile ? o.profile.pickupDate : o.actualShipDate ?? o.estimatedShipDate)}</td>
                         <td className="actions"><Link href={`/siparisler/${o.id}`} className="btn">{t('common.details')}</Link></td>
                       </tr>
                     ))}
@@ -225,15 +236,25 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
             <GroupRows key={label || 'all'} label={label ? `${label} (${list.length})` : ''} cols={9}>
               {list.map((o) => (
                 <tr key={o.id}>
-                  <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
+                  <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div></td>
                   <td className="mono">{customerLabel(user, o.customer.name)}</td>
-                  <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
-                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{count('drawing', o.drawings.length)}</div>}</>}
-                    {o.files.some((f) => /\.(dwg|dxf)$/i.test(f.name)) && <div><span className="badge badge-info" title={t('order.drawings.customerFiles')}>DWG/DXF</span></div>}</td>
-                  <td>{o.status === 'YENI' ? <span className="muted">—</span> : <OfferBadge status={offerOf(o)} />}</td>
+                  {o.profile ? (
+                    <>
+                      <td>{o.status === 'IPTAL' ? <OrderBadge status={o.status} /> : <Badge tone={PROFILE_STAGE_TONE[o.profile.stage as keyof typeof PROFILE_STAGE_TONE]}>{profileStageText(t, o.profile.stage)}</Badge>}</td>
+                      <td><span className="muted">—</span></td>
+                      <td><span className="muted">—</span></td>
+                    </>
+                  ) : (
+                    <>
+                      <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
+                      <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{count('drawing', o.drawings.length)}</div>}</>}
+                        {o.files.some((f) => /\.(dwg|dxf)$/i.test(f.name)) && <div><span className="badge badge-info" title={t('order.drawings.customerFiles')}>DWG/DXF</span></div>}</td>
+                      <td>{o.status === 'YENI' ? <span className="muted">—</span> : <OfferBadge status={offerOf(o)} />}</td>
+                    </>
+                  )}
                   <td className="hide-sm">{o.revisionCount > 0 ? <span className="badge badge-danger">{t('orders.internal.revisions', { v: o.drawings.length, rounds: count('round', o.revisionCount) })}</span> : '—'}</td>
                   <td>{o.onHold ? <span className="muted">—</span> : <Sla deadline={o.slaDeadline} />}</td>
-                  <td>{fmtDate(o.estimatedShipDate)}</td>
+                  <td>{fmtDate(o.profile ? o.profile.pickupDate : o.estimatedShipDate)}</td>
                   <td className="actions"><Link href={`/siparisler/${o.id}`} className="btn">{t('common.open')}</Link></td>
                 </tr>
               ))}

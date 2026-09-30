@@ -56,19 +56,33 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 34 | KDV | Teklifler KDV hariç gösterilir ("Fiyatlar KDV hariçtir" notu). |
 | 26 | Fiyat tabloları (Aşama 3b) | Yönetici fiyat tabloları tutar (cam başına birim fiyat; delik ve CNC için sabit fiyat), Excel'le yükler; her satışçı bir tabloya atanır, atanmayan varsayılanı kullanır. Satışın teklifine fiyatlar dolu gelir; satışçı değiştirebilir, değiştirirse yöneticinin **Önemli kararlar** listesine ve giriş ekranına uyarı düşer. "Açık tekliflere uygula" yok. |
 
+## Aşama 6 kararları — profil siparişi (30.09.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 35 | Numara | `GLAP12` biçimi (firma kodu + P + sayı); cam numaralarından **ayrı sıra**. Formda bir sonraki numara dolu gelir, müşteri değiştirebilir. |
+| 36 | Akış | Fiyat bekliyor → yönetici fiyatlar, **Müşteriye gönder** → müşteri **Onayla** → Proforma → Ödeme alındı → Depoda → Teslim edildi → Faturalandı (arşiv). Satış ve çizim hiçbir adımda yok; iptal yalnızca yönetici. Onaylanmayan teklif müşteride teklif olarak kalır, yönetici panelinde "Onaylanmamış teklifler" kuyruğunda görünür. |
+| 37 | Fiyat kaynağı | Profil kataloğunda her ürünün **liste fiyatı** (EUR). Firmaya bir **müşteri profil fiyat tablosu** bağlanabilir; bağlıysa fiyatlar oradan gelir. Yönetici her durumda değiştirebilir. Gönderilen teklif değişmez kopyadır. |
+| 38 | Para birimi / TVA | EUR, TVA hariç. **Cam ve profil tekliflerinde** EUR ise: *"Plata pentru prețurile exprimate în EURO se va efectua în RON la cursul de vânzare al Băncii Transilvania din data Facturii Proforme."* |
+| 39 | Teslim bilgileri | Müşteri onayda **alış tarihi, telefon, araç plakası** girer (zorunlu). Onayda depoya hiçbir şey gitmez. Müşteri bu bilgileri depo e-postası gidene kadar değiştirebilir; sonra değiştiremez ve uyarı görür. |
+| 40 | Alış tarihi | Depo **hafta sonu çalışmaz**. Mal en erken **ödeme gününden sonraki ilk iş günü** alınabilir (teklifte yazar). Ödeme geç gelir ve seçilen gün bundan önce kalırsa gün kendiliğinden o güne kayar. |
+| 41 | Depo e-postası | **Ödeme alındı** işaretlenince hemen kuyruğa girer; yönetici ödemeden önce de **Siparişi depoya gönder** diyebilir. Gönderen info@gkh.ro (SMTP), alıcılar varsayılan adrian@partnertrans.ro ve enis@gkh.ro (Yönetici → Entegrasyonlar'dan değişir). Ek: **yalnızca PDF** Comanda Depozit formu (ürün sahibinin Excel düzeni). Gönderim sipariş işleminden ayrı kuyrukla, yeniden denemeli. |
+| 42 | Depo teslim onayı | E-postada tek kullanımlık **depo bağlantısı** (60 gün). Depo bağlantıdan müşterinin **imzalı teslim belgesini** yükler ve "teslim edildi" der; belge siparişin iç dosyası olur (virüs taramalı). Yönetici de elle işaretleyebilir. |
+| 43 | Stok | Ürün başına stok, hareketler silinemez (giriş, depoya çıkış, sayım, iade). Depoya giden sipariş stoktan kendiliğinden düşer; iptalde iade edilir. Stok yetmezse yöneticiye uyarı, **engel yok**. Müşteri stok görmez. |
+| 44 | Denetimci | Profil siparişlerini salt okunur görür; yalnızca müşteriye gönderilmiş fiyatları. |
+| 45 | FGO (Aşama 6b) | Fatura sistemi **FGO** (Premium paket). 6b'de: müşteri onayında proforma otomatik, ödeme durumu FGO'dan, teslimde fatura otomatik. 6a'da bu adımlar yöneticinin düğmeleriyle yürür. Anahtarlar yalnızca Entegrasyonlar ekranından sunucuya girilir. |
+
 ## Sunucu (29.09.2026)
 
 | # | Konu | Karar |
 |---|------|-------|
-| 15 | Sunucu | Contabo VPS, **gerçek kullanım** (örnek veri yok). Adres şimdilik IP'den ücretsiz `*.sslip.io` (HTTPS). |
+| 15 | Sunucu | Contabo VPS, **gerçek kullanım** (örnek veri yok). Adres **https://takip.sistembalustrada.ro** (30.09.2026; önceki ücretsiz `*.sslip.io` adresi Romanya'da bazı mobil operatörlerde engelli). |
 | 16 | Güncelleme | `backend` dalına gelen ve testlerden geçen her sürüm sunucuda kendiliğinden yayınlanır (ADR 0012). |
 
 ## Hâlâ açık olan konular (uygulamadan önce sorulacak)
 
 - `GLA64-1` gibi eklerin anlamı → şimdilik üretilmez; müşteri numarası alanında serbest metin olarak durur.
-- Profil siparişi numara biçimi → varsayılan `GLAP12` (tanımın önerisi), ayardan değiştirilebilir olacak.
-- Profil siparişinde müşteri teklifi gördükten sonraki durumlar.
-- KDV varsayılanları (dahil / hariç).
+- FGO bağlantısının ayrıntıları (proforma/fatura serileri, ödeme durumunun okunması) → Aşama 6b başında.
 - Bildirim olay listesi ve metinleri.
 - Sandık / brüt ağırlık formüllerinin tamamı.
 
@@ -85,7 +99,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.x): katalog, taslak, kuyruklar · 3b (3.7.x): fiyat tabloları, Önemli kararlar** |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | **3.9.0'da tamamlandı** |
 | 5 | Satış teklifi, yönetici fiyatı, müşteriye gönderim | **3.10.0'da tamamlandı** |
-| 6 | Profil siparişi ve profil kataloğu | Yok (katalog verisi `prisma/seed/data` içinde hazır) |
+| 6 | Profil siparişi ve profil kataloğu | **6a (3.11.0): katalog, sipariş, fiyat, onay, depo e-postası, stok** · 6b: FGO bağlantısı |
 | 7 | Yükleme, sandık, ağırlık, dışa aktarma | Takvim ve sandık var; Excel/PDF ve özel durum notu eksik |
 | 8 | SMTP, bildirim tercihleri, outbox, WhatsApp, çeviri, görüntüleyici, ERP | SMTP var; outbox, tercih ve diğerleri eksik |
 | 9 | Raporlar, politikalar, SLA ayarı, denetim ekranı | Kısmen |

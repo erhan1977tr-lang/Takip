@@ -134,7 +134,7 @@ export function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
 
 /** Müşteri olarak yeni sipariş oluşturur, sipariş kimliğini döndürür. */
 export async function newOrder(page: Page, title: string, fileName: string): Promise<string> {
-  await page.goto('/siparisler/yeni');
+  await page.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await page.fill('#title', title);
   await page.setInputFiles('#files', sampleFile(fileName, `test dosyası ${title}`));
   await page.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });

@@ -9,9 +9,12 @@ import { glassLabel } from '@/server/catalog/glass.js';
 import { readDraftItems } from '@/server/orders/drafts.js';
 import { NewOrderForm, type DraftData, type GlassOption } from './NewOrderForm';
 import { deleteDraftAction } from './actions';
+import { ProfileOrderForm, type ProfileDraft } from './ProfileOrderForm';
+import { localName, unitLabel } from '@/server/profile/catalog.js';
+import { readProfileDraftItems } from '@/server/profile/drafts.js';
 
 // Yeni sipariş: önce sipariş tipi seçilir (tipler veritabanından; yalnızca etkin olanlar).
-// Tek tip etkinken seçim ekranı atlanır. Profil siparişi Aşama 6'da etkinleşir.
+// Tek tip etkinken seçim ekranı atlanır. Profil siparişi (Aşama 6) kendi formunu kullanır.
 // ?taslak=<id>: kaydedilmiş taslaktan devam.
 export default async function NewOrderPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePermission('ORDER_CREATE');
@@ -56,6 +59,44 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
             </Link>
           ))}
         </div>
+      </>
+    );
+  }
+
+  if (chosen.code === 'PROFILE_ORDER') {
+    // Profil siparişi (Aşama 6): etkin kategori ve ürünler, kullanıcının dilinde; taslaktaki adetler
+    const [cats, items, nextNo] = await Promise.all([
+      db.profileCategory.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+      db.profileProduct.findMany({ where: { isActive: true, category: { isActive: true } }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { category: { select: { code: true } } } }),
+      suggestNextNo(db, firm.id, 'PROFILE_ORDER'),
+    ]);
+    const pdraft: ProfileDraft | undefined = draftRow ? {
+      id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',
+      no: draftRow.customerOrderNo != null ? String(draftRow.customerOrderNo) : null,
+      qty: Object.fromEntries(readProfileDraftItems(draftRow.items).map((l) => [l.productId, String(l.qty)])),
+    } : undefined;
+    return (
+      <>
+        <div className="page-head">
+          <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
+          <h1>{pdraft ? t('newOrder.draftTitle') : t('profile.form.title')}</h1>
+          <p className="muted">{t('profile.form.intro')}</p>
+          {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
+        </div>
+        {sp.ok === 'draft' && <div className="alert alert-ok">{t('newOrder.draftSaved')}</div>}
+        <ProfileOrderForm
+          key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
+          categories={cats.map((c) => ({ code: c.code, name: localName(c, locale) }))}
+          products={items.map((p) => ({ id: p.id, code: p.code, name: localName(p, locale), unit: unitLabel(p.unitCode, locale), imageId: p.imageId, categoryCode: p.category.code }))}
+          suggestedNo={nextNo} prefix={firm.prefix} draft={pdraft} m={m.profile.form}
+          notes={[t('profile.notes.pickup'), t('profile.notes.eur')]}
+        />
+        {draftRow && (
+          <form action={deleteDraftAction} className="row" style={{ justifyContent: 'flex-end' }}>
+            <input type="hidden" name="draftId" value={draftRow.id} />
+            <button type="submit" className="btn btn-link danger">{t('newOrder.deleteDraft')}</button>
+          </form>
+        )}
       </>
     );
   }

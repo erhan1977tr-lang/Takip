@@ -12,14 +12,35 @@ import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 
 export const MAX_ORDER_NO = 9_999_999;
 
-/** Firmanın bir sonraki sipariş numarası (en büyük + 1). */
-export async function suggestNextNo(db, customerId) {
-  const last = await db.order.aggregate({ where: { customerId }, _max: { customerOrderNo: true } });
+/**
+ * Firmanın bu tipteki bir sonraki sipariş numarası (en büyük + 1). Cam ve profil siparişleri ayrı sıralardır
+ * (GLA12 ve GLAP12 ayrı siparişlerdir).
+ */
+export async function suggestNextNo(db, customerId, orderTypeCode = 'GLASS_ORDER') {
+  const last = await db.order.aggregate({ where: { customerId, orderTypeCode }, _max: { customerOrderNo: true } });
   return (last._max.customerOrderNo ?? 0) + 1;
 }
 
 /** Sipariş numarası metni: firma kodu + numara */
 export const formatOrderNo = (code, no) => `${code}${no}`;
+
+/** Sipariş tipinin numara biçimiyle: "{CODE}P{SEQ}" + GLA + 12 → GLAP12 */
+export const formatTypedNo = (format, code, no) => String(format || '{CODE}{SEQ}').replace('{CODE}', code).replace('{SEQ}', String(no));
+
+/**
+ * Numara seçimi (firma + tip kilidinin içinde çağrılır): numara boşsa istenen, doluysa (öneri değiştirilmediyse)
+ * bir sonraki boş numara; müşteri kendisi yazdıysa DUPLICATE_NUMBER.
+ */
+export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, suggestedNo, format, code }) {
+  const auto = suggestedNo != null && requestedNo === suggestedNo;
+  let no = requestedNo;
+  const taken = await tx.order.findFirst({ where: { customerId, orderTypeCode, customerOrderNo: no }, select: { id: true } });
+  if (taken) {
+    if (!auto) throw new WorkflowError('DUPLICATE_NUMBER', { orderNo: formatTypedNo(format, code, no) });
+    no = await suggestNextNo(tx, customerId, orderTypeCode);
+  }
+  return no;
+}
 
 /**
  * @param {import('@prisma/client').PrismaClient} db
@@ -40,18 +61,11 @@ export const formatOrderNo = (code, no) => `${code}${no}`;
 export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [] }) {
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
   if (!Number.isInteger(requestedNo) || requestedNo <= 0 || requestedNo > MAX_ORDER_NO) throw new WorkflowError('BAD_NUMBER');
-  const auto = suggestedNo != null && requestedNo === suggestedNo;
-
   return db.$transaction(async (tx) => {
     // Aynı firmanın sipariş oluşturmaları sıraya girer (işlem bitince kilit kendiliğinden kalkar)
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-no:${firm.id}`}, 0))`;
 
-    let no = requestedNo;
-    const taken = await tx.order.findFirst({ where: { customerId: firm.id, customerOrderNo: no }, select: { id: true } });
-    if (taken) {
-      if (!auto) throw new WorkflowError('DUPLICATE_NUMBER', { orderNo: formatOrderNo(firm.prefix, no) });
-      no = await suggestNextNo(tx, firm.id);
-    }
+    const no = await pickNumber(tx, { customerId: firm.id, orderTypeCode: 'GLASS_ORDER', requestedNo, suggestedNo, format: '{CODE}{SEQ}', code: firm.prefix });
     const orderNo = formatOrderNo(firm.prefix, no);
     const now = new Date();
     // Taslağın dosyaları siparişe geçer (aynı dosya, aynı tarama sonucu); taslak silinir

@@ -17,6 +17,7 @@ export async function ordersShippingBetween(user: CurrentUser, from: Date, to: D
   return sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
+      orderTypeCode: 'GLASS_ORDER', // profil siparişleri depodan alınır; yükleme takvimine girmez
       onHold: false,
       status: { not: 'IPTAL' },
       OR: [

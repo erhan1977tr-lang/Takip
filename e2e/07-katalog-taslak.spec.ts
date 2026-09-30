@@ -43,7 +43,7 @@ test('yönetici: katalog Excel\'i önizlenir, onaylanınca yüklenir ve geri ind
 
 test('müşteri: taslak kaydeder, listeden devam eder, ek bilgiyle gönderir', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  await cust.goto('/siparisler/yeni');
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await expect(cust.getByLabel('Cam', { exact: true }).locator('option', { hasText: '10 MM TEMPER CAM — ULTRA CLEAR' })).toHaveCount(0);
   await cust.fill('#title', 'Taslak deneme');
   await cust.getByRole('button', { name: 'Taslak kaydet' }).click();

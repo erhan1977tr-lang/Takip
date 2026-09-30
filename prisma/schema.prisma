@@ -76,6 +76,8 @@ enum PermissionKey {
   PRICE_TABLE_MANAGE
   ALERT_VIEW
   CRATE_EDIT
+  OFFER_APPROVE
+  STOCK_MANAGE
   SETTINGS_MANAGE
   AUDIT_VIEW
 }
@@ -229,6 +231,9 @@ model Customer {
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
   priceTable    PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
+  // Müşteriye özel profil fiyatları (Aşama 6): yoksa katalogdaki liste fiyatı
+  profilePriceTableId String?
+  profilePriceTable   ProfilePriceTable? @relation(fields: [profilePriceTableId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -318,11 +323,15 @@ model Order {
   alerts            AdminAlert[]
   notes             OrderNote[]
   outbox            NotificationOutbox[]
+  profile           ProfileOrder?        // yalnızca profil siparişinde
+  profileItems      ProfileOrderItem[]
+  stockMoves        StockMovement[]
 
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
-  @@unique([customerId, customerOrderNo])
+  // Numara firma ve sipariş tipi içinde tektir: GLA12 (cam) ile GLAP12 (profil) ayrı sıralardır
+  @@unique([customerId, orderTypeCode, customerOrderNo])
   @@index([orderTypeCode])
   @@index([status])
   @@index([drawingTrack])
@@ -415,8 +424,10 @@ model OrderFile {
   scanStatus   FileScanStatus @default(PENDING)
   scanSignature String?      // virüs adı (INFECTED)
   scannedAt    DateTime?
-  uploadedById String
-  uploadedBy   User          @relation(fields: [uploadedById], references: [id])
+  // Boş: sistemin ürettiği dosya (Comanda Depozit PDF'i) ya da depo bağlantısından yüklenen teslim belgesi
+  uploadedById String?
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
+  source       String?       // null: kullanıcı · WAREHOUSE_FORM: depo formu (sistem) · DEPOT_LINK: depodan yüklenen teslim belgesi
   createdAt    DateTime      @default(now())
 
   @@index([orderId])
@@ -533,6 +544,9 @@ model OfferLine {
   listPrice      Decimal? @db.Decimal(12, 2)
   // Müşteri fiyatı (yönetici girer; müşteri fiyat tablosundan gelebilir). unitPrice = satış fiyatı.
   offerPrice     Decimal? @db.Decimal(12, 2)
+  // Profil teklifi satırı (kind = PROFIL): ürün ve birimi (CUTII, PUNGI, BARA, BUCATI); tutar = adet × fiyat
+  profileProductId String?
+  unitCode         String?
 }
 
 // Fiyat tabloları (Aşama 3b, karar 26): satışçıların teklife yazacağı liste fiyatları.
@@ -831,4 +845,172 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------
+// PROFİL SİPARİŞİ (Aşama 6)
+// ---------------------------------------------------------
+// Satış ve çizim hiç devreye girmez. Akış (ProfileOrder.stage):
+//   FIYAT_BEKLIYOR → (yönetici fiyatlar, gönderir) TEKLIF_GONDERILDI → (müşteri onaylar: alış tarihi, telefon, plaka) ONAYLANDI
+//   → PROFORMA → ("Ödeme alındı": hemen depoya gider; ya da ödemeden önce "Siparişi depoya gönder") DEPODA
+//   → TESLIM_EDILDI → FATURALANDI. Ödeme ayrı bir bilgidir (paidAt): depoya elle gönderilmiş siparişte sonradan girilebilir.
+// Order.status genel listeler içindir: YENI (fiyat bekliyor) · HAZIRLANIYOR (teklif…depo) · ARSIVLENDI (faturalandı) · IPTAL.
+
+enum ProfileStage {
+  FIYAT_BEKLIYOR
+  TEKLIF_GONDERILDI
+  ONAYLANDI
+  PROFORMA
+  DEPODA
+  TESLIM_EDILDI
+  FATURALANDI
+}
+
+// Katalog kategorisi (GARNITURI, PLASTICE, PROFILE ALUMINIU, ACCESORII…). Silinmez, pasif yapılır.
+model ProfileCategory {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameRo    String
+  nameTr    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  products  ProfileProduct[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Profil ürünü. code kalıcıdır (değişmez). Liste fiyatı EUR, KDV (TVA) hariç. Pasif ürün müşteri formunda görünmez.
+model ProfileProduct {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  categoryId String
+  category   ProfileCategory @relation(fields: [categoryId], references: [id])
+  nameRo     String
+  nameTr     String
+  unitCode   String   // CUTII | PUNGI | BARA | BUCATI (prisma/seed/data/units.js)
+  imageId    String?  // güncel görsel (yalnızca giriş yapmış kullanıcıya verilir)
+  image      ProfileImage? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  listPrice  Decimal? @db.Decimal(12, 2)
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  metadata   Json?    // ileride ek bilgiler için
+  prices     ProfilePriceItem[]
+  stockMoves StockMovement[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([categoryId, sortOrder])
+}
+
+// Ürün görseli: değişmez kayıt (yeni görsel yeni satırdır; eski siparişler eski görseli göstermeye devam eder).
+// Küçük görseller (en fazla 2 MB, JPG/PNG) veritabanında durur: yedekle birlikte taşınır, PDF üretimi dosya sistemine bağlı değildir.
+model ProfileImage {
+  id        String   @id @default(cuid())
+  data      Bytes
+  mime      String   // image/jpeg | image/png
+  size      Int
+  checksum  String
+  name      String?
+  createdById String?
+  createdAt DateTime @default(now())
+  products  ProfileProduct[]
+}
+
+// Müşteriye özel profil fiyat tablosu: birden çok firma aynı tabloyu kullanabilir.
+model ProfilePriceTable {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  items     ProfilePriceItem[]
+  customers Customer[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model ProfilePriceItem {
+  id        String            @id @default(cuid())
+  tableId   String
+  table     ProfilePriceTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  productId String
+  product   ProfileProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unitPrice Decimal           @db.Decimal(12, 2)
+  updatedAt DateTime          @default(now()) @updatedAt
+
+  @@unique([tableId, productId])
+}
+
+// Profil siparişinin iş akışı ve teslim bilgileri (Order ile bire bir).
+model ProfileOrder {
+  id               String       @id @default(cuid())
+  orderId          String       @unique
+  order            Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stage            ProfileStage @default(FIYAT_BEKLIYOR)
+  stageSince       DateTime     @default(now())
+  // Müşteri onayı (müşteriye gönderilmiş son teklif)
+  approvedAt       DateTime?
+  approvedById     String?
+  approvedOfferId  String?
+  // Teslim bilgileri: depo e-postası gidene kadar müşteri değiştirebilir
+  pickupDate       DateTime?    @db.Date
+  contactPhone     String?
+  vehiclePlate     String?
+  // Proforma / ödeme / depo / teslim / fatura
+  proformaNo       String?
+  proformaAt       DateTime?
+  paidAt           DateTime?    @db.Date
+  warehouseSentAt  DateTime?
+  stockDeducted    Boolean      @default(false)
+  // Depo bağlantısı (e-postadaki tek kullanımlık adres): yalnızca özeti saklanır
+  depotTokenHash   String?      @unique
+  depotTokenExpiresAt DateTime?
+  deliveredAt      DateTime?
+  deliveredVia     String?      // DEPOT_LINK | ADMIN
+  invoiceNo        String?
+  invoicedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @default(now()) @updatedAt
+
+  @@index([stage])
+}
+
+// Müşterinin istediği ürünler: sipariş anındaki kopya (katalog sonradan değişse de sipariş değişmez).
+model ProfileOrderItem {
+  id           String          @id @default(cuid())
+  orderId      String
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String?
+  code         String
+  nameRo       String
+  nameTr       String
+  unitCode     String
+  categoryCode String
+  imageId      String?  // sipariş anındaki görsel (görsel değiştirilse de eskisi silinmez)
+  qty          Int
+  sortOrder    Int             @default(0)
+
+  @@index([orderId])
+}
+
+enum StockMoveKind {
+  GIRIS    // mal girişi (+)
+  CIKIS    // depoya giden sipariş (−)
+  SAYIM    // sayım düzeltmesi (±)
+  IADE     // iptal edilen siparişin geri alınan çıkışı (+)
+}
+
+// Stok hareketleri: yalnızca eklenir (silinmez, düzeltilmez). Ürünün stoğu = hareketlerin toplamı.
+model StockMovement {
+  id          String         @id @default(cuid())
+  productId   String
+  product     ProfileProduct @relation(fields: [productId], references: [id])
+  qty         Int            // + giriş, − çıkış
+  kind        StockMoveKind
+  orderId     String?
+  order       Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  note        String?
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  @@index([productId])
+  @@index([orderId])
 }

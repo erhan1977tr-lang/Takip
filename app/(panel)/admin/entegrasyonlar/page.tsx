@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAntivirusAction, scanNowAction, testAntivirusAction } from './actions';
+import { saveAntivirusAction, saveWarehouseAction, scanNowAction, testAntivirusAction } from './actions';
+import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,11 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     ...infectedDrawingFiles.map((f) => ({ id: f.id, name: `v${f.drawing.version} · ${f.name}`, order: f.drawing.order, signature: f.scanSignature, at: f.scannedAt })),
   ].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const worker = (statusRow?.value ?? null) as { lastRun?: string } | null;
+  const [wh, whPending, whFailed] = await Promise.all([
+    getWarehouseSettings(db),
+    db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }),
+    db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'FAILED' } }),
+  ]);
 
   const okMsg = sp.ok && OK[sp.ok] ? t(OK[sp.ok], { signature: sp.signature ?? '', scanned: sp.scanned ?? '0', clean: sp.clean ?? '0', infected: sp.infected ?? '0' }) : null;
   const errMsg = sp.error && ERR[sp.error] ? t(ERR[sp.error], { error: sp.detail ?? '' }) : null;
@@ -61,6 +67,20 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       </div>
       {okMsg && <div className="alert alert-ok">{okMsg}</div>}
       {errMsg && <div className="alert alert-error">{errMsg}</div>}
+      {sp.ok === 'warehouse' && <div className="alert alert-ok">{t('profile.settings.saved')}</div>}
+      {sp.error === 'warehouse' && <div className="alert alert-error">{t('profile.settings.bad', { list: sp.detail ?? '' })}</div>}
+
+      <form action={saveWarehouseAction} className="card" id="depo">
+        <h2>{t('profile.settings.title')}</h2>
+        <p className="muted small">{t('profile.settings.intro')}</p>
+        <label htmlFor="wh-rcpt">{t('profile.settings.recipients')}</label>
+        <input id="wh-rcpt" name="recipients" required defaultValue={wh.recipients.join(', ')} />
+        <div className="hint">{t('profile.settings.recipientsHint')}</div>
+        <div className="row" style={{ justifyContent: 'space-between', marginTop: 10 }}>
+          <span className={`small ${whFailed ? 'danger' : 'muted'}`}>{t('profile.settings.queue', { pending: whPending, failed: whFailed })}</span>
+          <button className="btn btn-primary">{t('profile.settings.save')}</button>
+        </div>
+      </form>
 
       <div className="card" id="antivirus">
         <h2>{t('admin.integrations.av.title')}</h2>

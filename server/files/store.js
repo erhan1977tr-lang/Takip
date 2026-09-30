@@ -52,6 +52,24 @@ export async function quarantine(storageKey) {
 }
 
 /**
+ * Sistemin ürettiği bir dosyayı (ör. Comanda Depozit PDF'i) kalıcı yere yazar. Kullanıcı yüklemesi değildir: taranmaz (SKIPPED).
+ * @param {Buffer} buf
+ * @param {{ name: string, mime: string }} meta
+ */
+export async function storeGenerated(buf, meta) {
+  const name = cleanFileName(meta.name);
+  const now = new Date();
+  const storageKey = `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${crypto.randomBytes(16).toString('hex')}${safeExt(name)}`;
+  const full = path.join(uploadRoot(), storageKey);
+  await fsp.mkdir(path.dirname(full), { recursive: true });
+  await fsp.writeFile(full, buf, { flag: 'wx' });
+  return {
+    storageKey, name, size: buf.length, mime: meta.mime, checksum: crypto.createHash('sha256').update(buf).digest('hex'),
+    scanStatus: /** @type {const} */ ('SKIPPED'), scanSignature: null, scannedAt: null,
+  };
+}
+
+/**
  * @typedef {{ storageKey: string, name: string, size: number, mime: string, checksum: string,
  *   scanStatus: 'CLEAN' | 'PENDING' | 'SKIPPED', scanSignature: null, scannedAt: Date | null }} StoredFile
  * @typedef {{ enabled: boolean, host: string, port: number, onUnavailable: 'accept' | 'reject', timeoutMs?: number }} AvSettings

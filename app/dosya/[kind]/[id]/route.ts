@@ -10,7 +10,7 @@ import { getT } from '@/lib/i18n';
 
 export const dynamic = 'force-dynamic';
 
-// /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<DrawingFile id> (eski: <Drawing id>)
+// /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<DrawingFile id> (eski: <Drawing id>)  ·  /dosya/urun/<ProfileImage id>
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
   const { t } = await getT();
@@ -18,6 +18,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   if (!userCan(user, 'ORDER_VIEW')) return new Response(t('common.fileNotFound'), { status: 404 });
   const { kind, id } = await ctx.params;
   const scope = orderScope(user);
+
+  // Profil ürün görseli (katalog görseli; giriş yapmış herkese). Görsel kayıtları değişmez → önbelleğe alınabilir.
+  if (kind === 'urun') {
+    const img = await db.profileImage.findUnique({ where: { id }, select: { data: true, mime: true } });
+    if (!img || !['image/jpeg', 'image/png'].includes(img.mime)) return new Response(t('common.fileNotFound'), { status: 404 });
+    return new Response(new Uint8Array(img.data), {
+      headers: { 'Content-Type': img.mime, 'Cache-Control': 'private, max-age=604800, immutable', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
 
   let file: { storageKey: string; name: string; mime: string | null; scanStatus: string; orderId: string } | null = null;
   if (kind === 'siparis') {

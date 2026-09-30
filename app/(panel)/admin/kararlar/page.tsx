@@ -6,7 +6,7 @@ import { fmtDateTime, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
 
 type Diff = { line: number; kind: string; description: string; listPrice: number; unitPrice: number; free: boolean };
-type Details = { orderNo?: string; currency?: string; lines?: Diff[] };
+type Details = { orderNo?: string; currency?: string; lines?: Diff[]; error?: string };
 
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -37,6 +37,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               })}
             </li>
           ))}
+          {d.error && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
         </ul>
       </>
     );

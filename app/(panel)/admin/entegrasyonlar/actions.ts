@@ -8,6 +8,7 @@ import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { getAvSettings, saveAvSettings, scanPending } from '@/server/files/antivirus.js';
 import { eicar, scanBuffer } from '@/server/files/clamav.js';
+import { parseRecipients, saveWarehouseSettings } from '@/server/profile/warehouse.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -43,4 +44,14 @@ export async function scanNowAction() {
   revalidatePath('/admin/entegrasyonlar');
   if (r.stopped && r.stopped !== 'disabled') redirect(back({ error: 'scanStopped', detail: r.stopped.slice(0, 200) }));
   redirect(back({ ok: 'scanned', scanned: r.scanned, clean: r.clean, infected: r.infected }));
+}
+
+/** Profil siparişi: depo e-postası alıcıları (Aşama 6) */
+export async function saveWarehouseAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const r = parseRecipients(String(formData.get('recipients') ?? ''));
+  if (!r.ok) redirect(back({ error: 'warehouse', detail: r.bad.join(', ') }) + '#depo');
+  await saveWarehouseSettings(db, { recipients: r.recipients }, await actorOf(user));
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'warehouse' }) + '#depo');
 }

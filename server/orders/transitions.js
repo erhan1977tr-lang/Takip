@@ -5,6 +5,7 @@
 // Form okuma ve dil metinleri uygulama katmanında (app/.../actions.ts); burada yalnızca kurallar ve kayıt.
 import { transitionOrder } from '../domain/transition.js';
 import { WorkflowError } from '../domain/workflow.js';
+import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { atOfferPrice, availableActions, drawingFlags, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
 import { orderScope } from './scope.js';
@@ -463,28 +464,37 @@ const ACTIONS = {
 
 export const ORDER_ACTIONS = Object.keys(ACTIONS);
 
+/** Cam siparişinde işlemden sonra: SLA yeniden hesaplanır, koşullar tamamsa otomatik üretime geçilir. */
+async function glassFinish(h, entries) {
+  if (h.sla) await refreshSla(h.tx, h.order.id);
+  if (h.auto) {
+    const produced = await autoProduction(h.tx, h.order.id);
+    if (produced) entries.push(produced);
+    h.result = { ...(h.result ?? {}), produced: !!produced };
+  }
+}
+
 /**
- * Bir iş akışı işlemini uygular.
- * @param {import('@prisma/client').PrismaClient} db
- * @param {{ orderId: string, action: string, actor: { id: string, role: string, canApprove?: boolean, customerId?: string | null, ip?: string | null }, payload?: object }} p
- *   payload.expectedVersion: kullanıcının ekranda gördüğü sipariş sürümü (verilirse değişmişse CONFLICT)
- * @returns {Promise<{ order: object, result: any, entries: object[] }>}
- * @throws {WorkflowError} NOT_FOUND | NOT_ALLOWED | CONFLICT | STALE_DRAWING | OFFER_NOT_FOUND | ...
+ * Sipariş tiplerinin ortak işlem çalıştırıcısı (cam: runOrderAction · profil: server/profile/transitions.js).
+ * Siparişi kullanıcının kapsamında yükler, iyimser kilidi uygular, işlemi h üzerinden çalıştırır; geçmiş, denetim
+ * ve bildirim kuyruğu transitionOrder'da aynı veritabanı işleminde yazılır.
+ * h.outbox'a eklenen olaylar (ör. depo e-postası) varsayılan olaylara eklenir.
+ * actor.system: işçi (kapsam yok, kimlik yok).
  */
-export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
-  const def = ACTIONS[action];
+export function executeAction(db, { workflow, actions, include, finish = null, orderId, action, actor, payload = {} }) {
+  const def = actions[action];
   if (!def) throw new WorkflowError('UNKNOWN_ACTION');
-  const scope = orderScope({ appRole: actor.role, customerId: actor.customerId ?? null });
+  const scope = actor.system ? {} : orderScope({ appRole: actor.role, customerId: actor.customerId ?? null });
   return transitionOrder({
     db,
-    workflow: glassWorkflow,
+    workflow,
     orderId,
     action,
     actor,
     payload,
     deps: {
       async loadOrder(tx, id) {
-        const o = await tx.order.findFirst({ where: { id, ...scope }, include: INCLUDE });
+        const o = await tx.order.findFirst({ where: { id, ...scope }, include });
         return o && { ...o, orderType: o.orderTypeCode };
       },
       async apply(tx, order) {
@@ -496,7 +506,7 @@ export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
         const entries = [];
         const h = {
           tx, order, actor, payload, now: new Date(), status: order.status,
-          sla: false, auto: false, audit: undefined, result: undefined, overrides: 0,
+          sla: false, auto: false, audit: undefined, result: undefined, overrides: 0, outbox: [],
           async set(data) {
             await tx.order.update({ where: { id: order.id }, data });
             if (data.status) h.status = data.status;
@@ -506,19 +516,30 @@ export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
           },
         };
         await def(h);
-        if (h.sla) await refreshSla(tx, order.id);
-        if (h.auto) {
-          const produced = await autoProduction(tx, order.id);
-          if (produced) entries.push(produced);
-          h.result = { ...(h.result ?? {}), produced: !!produced };
-        }
+        if (finish) await finish(h, entries);
         const updated = await tx.order.findUniqueOrThrow({ where: { id: order.id } });
-        return { order: updated, entries, audit: h.audit, result: h.result ?? null };
+        return { order: updated, entries, audit: h.audit, result: h.result ?? null, outbox: h.outbox };
       },
       history: (tx, e) => writeHistory(tx, e),
       audit: (tx, entry) => writeAudit(tx, entry, actor),
       outbox: { enqueue: (tx, ev) => enqueueOutbox(tx, ev) },
+      events: (applied) => [
+        ...applied.entries.map((e) => outboxEvent(`ORDER_${e.event}`, { orderId: applied.order.id, payload: { from: e.from ?? null, to: e.to ?? null } })),
+        ...(applied.outbox ?? []),
+      ],
       sanitize: (o) => o,
     },
   });
+}
+
+/**
+ * Bir cam siparişi iş akışı işlemini uygular.
+ * @param {import('@prisma/client').PrismaClient} db
+ * @param {{ orderId: string, action: string, actor: { id: string, role: string, canApprove?: boolean, customerId?: string | null, ip?: string | null }, payload?: object }} p
+ *   payload.expectedVersion: kullanıcının ekranda gördüğü sipariş sürümü (verilirse değişmişse CONFLICT)
+ * @returns {Promise<{ order: object, result: any, entries: object[] }>}
+ * @throws {WorkflowError} NOT_FOUND | NOT_ALLOWED | CONFLICT | STALE_DRAWING | OFFER_NOT_FOUND | ...
+ */
+export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
+  return executeAction(db, { workflow: glassWorkflow, actions: ACTIONS, include: INCLUDE, finish: glassFinish, orderId, action, actor, payload });
 }

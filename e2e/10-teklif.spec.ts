@@ -26,7 +26,7 @@ test('yönetici: müşteriye özel fiyat tablosu, firmaya bağlanır', async ({ 
 
 test('teklif: satış fiyatı ↔ müşteri fiyatı; kim neyi görür', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  await cust.goto('/siparisler/yeni');
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await cust.fill('#title', 'İki fiyat');
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
   await cust.setInputFiles('#files', sampleFile('iki.pdf', 'iki'));

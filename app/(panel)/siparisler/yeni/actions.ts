@@ -16,6 +16,9 @@ import { createGlassOrder } from '@/server/orders/create.js';
 import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, saveDraft } from '@/server/orders/drafts.js';
 import { glassOrderItems } from '@/server/catalog/glass.js';
 import { WorkflowError } from '@/server/domain/workflow.js';
+import { MAX_PROFILE_QTY, profileOrderItems, readQuantities } from '@/server/profile/rules.js';
+import { createProfileOrder } from '@/server/profile/create.js';
+import { saveProfileDraft } from '@/server/profile/drafts.js';
 
 export type NewOrderState = {
   error?: string;
@@ -134,4 +137,76 @@ export async function deleteDraftAction(formData: FormData) {
   if (files) await discardFiles(files);
   revalidatePath('/siparisler');
   redirect(`/siparisler?ok=${files ? 'draftDeleted' : 'draftGone'}`);
+}
+
+// ---------------- Profil siparişi (Aşama 6) ----------------
+export type ProfileOrderState = {
+  error?: string;
+  values?: { title: string; no: string; note: string; qty: Record<string, string> };
+};
+
+/** Profil siparişi: yalnızca adedi > 0 olan ürünler siparişe girer. Taslak da buradan kaydedilir. */
+export async function createProfileOrderAction(_prev: ProfileOrderState, formData: FormData): Promise<ProfileOrderState> {
+  const user = await requirePermission('ORDER_CREATE');
+  const { t } = await getT();
+  const firm = user.customer;
+  const intent = String(formData.get('intent') ?? 'submit') === 'draft' ? 'draft' : 'submit';
+  const draftId = String(formData.get('draftId') ?? '') || null;
+  const title = String(formData.get('title') ?? '').trim().slice(0, 160);
+  const note = String(formData.get('note') ?? '').trim();
+  const noRaw = String(formData.get('customerOrderNo') ?? '').trim();
+  const suggestedRaw = String(formData.get('suggestedNo') ?? '').trim();
+  const ids = formData.getAll('p_id').map(String);
+  const qtys = formData.getAll('p_qty').map(String);
+  const rows = ids.map((id, i) => ({ id, qty: qtys[i] ?? '' }));
+  const qty = Object.fromEntries(rows.filter((r) => r.qty !== '').map((r) => [r.id, r.qty]));
+  const values = { title, no: noRaw, note, qty };
+  const fail = (error: string) => ({ error, values });
+
+  if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail(t('newOrder.errors.noFirm'));
+  if (note.length > MAX_NOTE) return fail(t('newOrder.errors.noteTooLong', { n: MAX_NOTE }));
+  const suggestedNo = /^\d+$/.test(suggestedRaw) ? Number(suggestedRaw) : null;
+  const no = noRaw === '' ? null : Number(noRaw);
+  if (no !== null && (!Number.isInteger(no) || no <= 0 || no > 9_999_999)) return fail(t('newOrder.errors.badNumber'));
+  const read = readQuantities(rows);
+  if (!read.ok) return fail(read.code === 'BAD_QTY' ? t('profile.errors.badQty', { max: MAX_PROFILE_QTY }) : t('profile.errors.tooMany'));
+  const actor = await actorOf(user);
+
+  if (intent === 'draft') {
+    let saved: { id: string };
+    try {
+      saved = await saveProfileDraft(db, {
+        actor, firm: { id: firm.id }, draftId,
+        values: { title, note, lines: read.lines, customerOrderNo: no !== null && no !== suggestedNo ? no : null },
+      });
+    } catch (err) {
+      if (err instanceof WorkflowError) return fail(draftErrorText(t, err.code));
+      console.error('Profil taslağı kaydedilemedi', err);
+      return fail(t('newOrder.errors.saveFailed'));
+    }
+    revalidatePath('/siparisler');
+    redirect(`/siparisler/yeni?taslak=${saved.id}&ok=draft`);
+  }
+
+  if (no === null) return fail(t('newOrder.errors.badNumber'));
+  if (read.lines.length === 0) return fail(t('profile.errors.noItems'));
+  const products = await db.profileProduct.findMany({ where: { id: { in: read.lines.map((l) => l.productId) } }, include: { category: true } });
+  const items = profileOrderItems(read.lines, products);
+  if (!items.ok) return fail(t(items.code === 'NO_ITEMS' ? 'profile.errors.noItems' : 'profile.errors.productGone'));
+
+  let orderId: string;
+  try {
+    const created = await createProfileOrder(db, {
+      actor, firm: { id: firm.id, prefix: firm.prefix }, title: title || null, requestedNo: no, suggestedNo, items: items.items, note: note || null, draftId,
+    });
+    orderId = created.id;
+  } catch (err) {
+    if (err instanceof WorkflowError) {
+      return fail(err.code === 'DRAFT_GONE' ? draftErrorText(t, err.code) : workflowErrorText(t, err.code, err.details as Record<string, unknown>));
+    }
+    console.error('Profil siparişi oluşturulamadı', err);
+    return fail(t('newOrder.errors.saveFailed'));
+  }
+  revalidatePath('/siparisler');
+  redirect(`/siparisler/${orderId}?ok=profile_created`);
 }

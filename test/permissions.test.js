@@ -26,6 +26,7 @@ test('yetki: kararlar (CLAUDE.md) matriste', () => {
   assert.deepEqual(who('FILE_INTERNAL_VIEW'), ['ADMIN', 'CIZIM', 'DENETIMCI', 'SATIS']);
   assert.deepEqual(who('ORDER_CREATE'), ['MUSTERI'], 'müşteri adına işlem Aşama 9');
   assert.deepEqual(who('DRAWING_APPROVE'), ['MUSTERI']);
+  assert.deepEqual(who('OFFER_APPROVE'), ['MUSTERI'], 'profil teklifini yalnızca müşteri onaylar');
 });
 
 test('yetki: denetimci yalnızca okur (karar 8)', () => {
@@ -34,7 +35,7 @@ test('yetki: denetimci yalnızca okur (karar 8)', () => {
 });
 
 test('yetki: yönetim yetkileri yalnızca yönetici', () => {
-  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'SETTINGS_MANAGE', 'AUDIT_VIEW']) {
+  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW']) {
     assert.deepEqual(who(p), ['ADMIN'], p);
   }
 });
@@ -43,10 +44,10 @@ test('yetki: yönetim yetkileri yalnızca yönetici', () => {
 test('yetki: tam matris', () => {
   const snapshot = Object.fromEntries(ROLES.map((r) => [r, Object.keys(PERMISSIONS).filter((p) => can(r, p)).join(' ')]));
   assert.deepEqual(snapshot, {
-    ADMIN: Object.keys(PERMISSIONS).filter((p) => !['ORDER_CREATE', 'DRAWING_APPROVE'].includes(p)).join(' '),
+    ADMIN: Object.keys(PERMISSIONS).filter((p) => !['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE'].includes(p)).join(' '),
     SATIS: 'ORDER_VIEW ORDER_REVIEW OFFER_VIEW OFFER_DRAFT_VIEW OFFER_PREPARE SHIPMENT_VIEW CRATE_EDIT FILE_UPLOAD FILE_INTERNAL_VIEW NOTE_ADD NOTE_INTERNAL_VIEW',
     CIZIM: 'ORDER_VIEW DRAWING_WORK FILE_UPLOAD FILE_INTERNAL_VIEW NOTE_ADD NOTE_INTERNAL_VIEW',
-    MUSTERI: 'ORDER_VIEW ORDER_CREATE DRAWING_APPROVE OFFER_VIEW PRICE_FINAL_VIEW SHIPMENT_VIEW FILE_UPLOAD NOTE_ADD CUSTOMER_NAME_VIEW',
+    MUSTERI: 'ORDER_VIEW ORDER_CREATE DRAWING_APPROVE OFFER_VIEW PRICE_FINAL_VIEW SHIPMENT_VIEW OFFER_APPROVE FILE_UPLOAD NOTE_ADD CUSTOMER_NAME_VIEW',
     DENETIMCI: 'ORDER_VIEW OFFER_VIEW PRICE_FINAL_VIEW SHIPMENT_VIEW FILE_INTERNAL_VIEW NOTE_INTERNAL_VIEW CUSTOMER_NAME_VIEW',
   });
 });

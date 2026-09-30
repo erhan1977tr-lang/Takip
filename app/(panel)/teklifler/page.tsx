@@ -6,13 +6,15 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtMoney } from '@/lib/format';
-import { CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
+import { Badge, CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
+import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { CLOSED } from '@/server/orders/rules.js';
 
 const include = {
   customer: { select: { name: true } },
   price: true,
   offers: { orderBy: { createdAt: 'desc' }, include: { _count: { select: { lines: true } } } },
+  profile: { select: { stage: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof include }>;
 
@@ -50,7 +52,7 @@ async function CustomerOffers({ user }: { user: CurrentUser }) {
                     <tr key={o.id}>
                       <td><Link className="order-no" href={`/siparisler/${o.id}#teklif`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
                       {inspector && <td>{customerLabel(user, o.customer.name)}</td>}
-                      <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer="GONDERILDI" /></td>
+                      <td>{o.profile ? (() => { const x = profileCustomerText(t, { status: o.status, stage: o.profile.stage }); return <Badge tone={x.tone}>{x.label}</Badge>; })() : <CustomerBadge status={o.status} drawing={o.drawingTrack} offer="GONDERILDI" />}</td>
                       <td>{fmtDate(sent.sentAt)}</td>
                       <td className="num"><b>{fmtMoney((o.price?.amount ?? sent.amount).toString(), sent.currency)}</b></td>
                       <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('offers.customer.view')}</Link></td>
@@ -112,7 +114,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
                         <tr key={o.id}>
                           <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
                           <td className="mono">{customerLabel(user, o.customer.name)}</td>
-                          <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
+                          <td>{o.profile && o.status !== 'IPTAL' ? <><Badge tone="purple">{t('profile.type')}</Badge> {profileStageText(t, o.profile.stage)}</> : <OrderBadge status={o.status} onHold={o.onHold} />}</td>
                           <td><OfferBadge status={of.status} /></td>
                           <td className="num">{of._count.lines}</td>
                           <td>{fmtDate(o.estimatedShipDate)}</td>

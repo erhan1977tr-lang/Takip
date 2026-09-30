@@ -96,6 +96,10 @@ export const orderDetailInclude = {
   events: { orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true, email: true } } } },
   assignedDrawer: { select: { name: true, email: true } },
   createdBy: { select: { name: true, email: true } },
+  // Profil siparişi (Aşama 6)
+  profile: true,
+  profileItems: { orderBy: { sortOrder: 'asc' } },
+  outbox: { where: { type: 'WAREHOUSE_EMAIL' }, orderBy: { createdAt: 'desc' }, take: 1 },
 } satisfies Prisma.OrderInclude;
 
 export type OrderDetail = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
@@ -132,8 +136,12 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   let drawings = order.drawings;
   if (!userCan(user, 'FILE_INTERNAL_VIEW')) drawings = drawings.filter((d) => d.status !== 'TASLAK');
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
+  // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür
+  const profile = order.profile ? { ...order.profile, depotTokenHash: null } : null;
   return {
     ...order,
+    profile,
+    outbox: userCan(user, 'OFFER_SEND') ? order.outbox : [],
     drawings,
     customer: sanitizeCustomer(user, order.customer),
     notes: userCan(user, 'NOTE_INTERNAL_VIEW') ? order.notes : order.notes.filter((n) => !n.internal),

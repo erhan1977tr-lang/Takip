@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.11.0 — 30.09.2026 · Aşama 6a (profil siparişi)
+
+- **Yeni sipariş:** müşteri önce **Cam siparişi / Profil siparişi** seçer. Profil formunda ürün görseli, ad/kod, birim ve
+  adet; yalnızca adedi 0'dan büyük satırlar siparişe girer. Taslak kaydedilebilir. Numara `GLAP12` (camdan ayrı sıra).
+- **Profil Kataloğu** (Yönetim): kategoriler ve ürünler (Romence/Türkçe ad, birim, görsel, liste fiyatı EUR, sıra,
+  aktif/pasif), Excel ile içe/dışa aktarma. Başlangıç verisi Comanda Depozit formundan (27 ürün, görselleriyle).
+- **Profil Fiyatları** (Yönetim): müşteriye özel profil fiyat tabloları; firmaya bağlanır. Bağlı değilse liste fiyatı gelir.
+- **Akış:** fiyat bekliyor → yönetici fiyatlar ve müşteriye gönderir → müşteri **Onayla** (alış tarihi, telefon, plaka) →
+  Proforma kesildi → Ödeme alındı → Depoda → Teslim edildi → Faturalandı. Satış ve çizim hiç devreye girmez; iptal
+  yalnızca yönetici. Yönetici kuyrukları: fiyat bekleyen, onaylanmamış teklifler, ödeme bekleyen, depoda, fatura bekleyen.
+- **Alış tarihi:** hafta sonu seçilemez; en erken ödemeden sonraki ilk iş günü (ödeme geç gelirse tarih kendiliğinden
+  kayar). Müşteri teslim bilgilerini depo e-postası gidene kadar değiştirebilir.
+- **Depo e-postası:** ödeme alınınca (ya da yönetici "Siparişi depoya gönder" deyince) doldurulmuş **Comanda Depozit PDF'i**
+  depoya gider (alıcılar Entegrasyonlar'dan değiştirilebilir). E-postadaki bağlantıdan depo **imzalı teslim belgesini**
+  yükleyip teslimi onaylar; belge siparişin altında saklanır.
+- **Stok:** ürün başına stok, giriş/sayım hareketleri ve Excel; depoya giden sipariş stoktan kendiliğinden düşer. Stok
+  yetmezse yöneticiye uyarı gösterilir, işlem engellenmez.
+- **Kur notu:** EUR tekliflerde (cam ve profil) Banca Transilvania satış kuru notu; fiyatlar TVA hariç.
+
 ## 3.10.1 — 29.09.2026 · Aşama 5 (teklif: iki kademeli fiyat)
 
 - **Satış fiyatı ↔ müşteri fiyatı:** satış kendi fiyatını girer; yönetici fiyat onayında her satıra **müşteri fiyatı**

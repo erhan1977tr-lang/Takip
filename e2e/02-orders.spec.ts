@@ -336,7 +336,7 @@ test('izolasyon: başka firmanın müşterisi siparişi ve dosyayı göremez', a
   expect(res?.status()).toBe(404);
   const dl = await beta.request.get(`/dosya/cizim/${ids.drawing}`);
   expect(dl.status()).toBe(404);
-  await beta.goto('/siparisler/yeni');
+  await beta.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await expect(beta.getByText('BET1')).toBeVisible();
 
   // Giriş yapmamış biri dosya indiremez

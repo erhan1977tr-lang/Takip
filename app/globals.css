@@ -313,3 +313,26 @@ input.input-changed { background: #eff6ff; border-color: #60a5fa; }
 .drawing-version:first-of-type { border-top: 0; }
 .drawing-version.draft { border: 1px dashed #93c5fd; border-radius: 10px; padding: 10px 12px; background: #f8fbff; margin-bottom: 8px; }
 .drawing-version .note { margin: 6px 0; }
+
+/* Profil siparişi (Aşama 6): ürün görselli tablolar, adet ve fiyat kutuları, teklif notları */
+.grid-3 { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stack { display: grid; gap: 12px; margin-top: 10px; }
+.profile-table td { vertical-align: middle; }
+.profile-table td.thumb { width: 64px; padding: 4px 6px; }
+.profile-table td.thumb img { display: block; width: 56px; height: 44px; object-fit: contain; background: #fff; border: 1px solid var(--border, #e5e7eb); border-radius: 6px; }
+.profile-table tr.picked td { background: #eff6ff; }
+.qty-input { width: 96px; text-align: right; font-weight: 700; }
+.price-input { width: 110px; text-align: right; }
+.offer-notes { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.offer-notes p { margin: 2px 0; }
+.sticky-submit { position: sticky; bottom: 8px; z-index: 5; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08); }
+.profile-stepper .lbl { white-space: normal; }
+.product-thumb { width: 72px; height: 56px; object-fit: contain; background: #fff; border: 1px solid var(--border, #e5e7eb); border-radius: 6px; display: block; }
+.stock-neg { color: #b91c1c; font-weight: 700; }
+@media (max-width: 800px) {
+  .grid-3 { grid-template-columns: 1fr; }
+  .profile-table td.thumb img { width: 44px; height: 36px; }
+  .qty-input { width: 76px; }
+}
+/* Depo bağlantısı (giriş gerektirmeyen tek sayfa) */
+.depot-page { max-width: 720px; margin: 24px auto; padding: 0 16px; }

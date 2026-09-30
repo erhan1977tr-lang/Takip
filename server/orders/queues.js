@@ -1,5 +1,6 @@
 // "Sıra bende" kuyrukları (iç ekip): hangi sipariş hangi rolün önüne düşer.
-// Yalnızca cam siparişleri girer — profil siparişleri satış ve çizim kuyruklarına hiç düşmez (CLAUDE.md "Profile Order").
+// Satış ve çizim kuyruklarına yalnızca cam siparişleri girer — profil siparişleri satış ve çizim kuyruklarına hiç düşmez
+// (CLAUDE.md "Profile Order"); onların kuyrukları yalnızca yöneticidedir (profileQueues).
 // Beklemedeki siparişler iş kuyruklarında değil, ayrı "Beklemede" bölümünde görünür.
 import { offerNeedsCheck } from './rules.js';
 
@@ -75,5 +76,23 @@ function buildQueues(rows, can, now) {
   out.push({ key: 'sla', rows: active.filter((o) => o.slaDeadline && o.slaDeadline.getTime() - now < SLA_RISK_HOURS * 3_600_000) });
   const held = glass.filter((o) => o.onHold);
   if (held.length) out.push({ key: 'held', rows: held });
+  if (can.send) out.push(...profileQueues(rows));
   return out;
+}
+
+/**
+ * Profil siparişi kuyrukları (yalnızca yönetici): adım adım. İptal/arşiv zaten listede yoktur.
+ * @template {{ orderTypeCode: string, status: string, profile?: { stage: string } | null }} R
+ * @param {R[]} rows
+ */
+export function profileQueues(rows) {
+  const prof = rows.filter((o) => o.orderTypeCode === 'PROFILE_ORDER' && o.status !== 'IPTAL' && o.profile);
+  const at = (...stages) => prof.filter((o) => stages.includes(o.profile.stage));
+  return [
+    { key: 'profilePricing', rows: at('FIYAT_BEKLIYOR') },
+    { key: 'profileUnapproved', rows: at('TEKLIF_GONDERILDI') },
+    { key: 'profilePayment', rows: at('ONAYLANDI', 'PROFORMA') },
+    { key: 'profilePickup', rows: at('DEPODA') },
+    { key: 'profileInvoice', rows: at('TESLIM_EDILDI') },
+  ];
 }

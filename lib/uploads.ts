@@ -16,7 +16,7 @@ export type UploadProblem = { code: 'empty' | 'mismatch' | 'infected' | 'av_unav
  */
 export async function storeFiles(
   files: File[],
-  ctx: { userId: string; orderId?: string | null },
+  ctx: { userId: string | null; orderId?: string | null },
 ): Promise<{ ok: true; stored: StoredUpload[] } | { ok: false; problem: UploadProblem }> {
   const av = await getAvSettings(db);
   const stored: StoredUpload[] = [];

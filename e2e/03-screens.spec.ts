@@ -41,6 +41,8 @@ test('ekran görüntüleri', async ({ browser }) => {
   await shoot(browser, [CUSTOMER, CUST_PW], [
     ['02-musteri-siparislerim', '/siparisler'],
     ['03-musteri-yeni-siparis', '/siparisler/yeni'],
+    ['03b-musteri-cam-siparisi', '/siparisler/yeni?tip=GLASS_ORDER'],
+    ['03c-musteri-profil-siparisi', '/siparisler/yeni?tip=PROFILE_ORDER'],
     ['04-musteri-siparis-detay', uns2],
     ['05-musteri-tekliflerim', '/teklifler'],
   ]);

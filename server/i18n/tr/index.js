@@ -18,5 +18,6 @@ import loading from './loading.js';
 import demo from './demo.js';
 import admin from './admin.js';
 import pricing from './pricing.js';
+import profile from './profile.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile };
