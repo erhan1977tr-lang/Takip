@@ -54,7 +54,7 @@ const lines = (fd: FormData) => {
 export async function profilePricesAction(fd: FormData) {
   const user = await requirePermission('OFFER_SEND');
   const id = idOf(fd);
-  const intent = String(fd.get('intent') ?? 'save');
+  const intent = fd.getAll('intent').map(String).find(Boolean) ?? 'save';
   const action = { save: 'save_profile_prices', send: 'send_profile_offer', update: 'update_profile_offer' }[intent] ?? 'save_profile_prices';
   await act(user, id, action, { lines: lines(fd), note: String(fd.get('note') ?? '').trim().slice(0, 500), expectedVersion: expectedVersion(fd) });
   done(id, `ok=${{ save: 'prices_saved', send: 'offer_sent', update: 'offer_updated' }[intent] ?? 'prices_saved'}`);
