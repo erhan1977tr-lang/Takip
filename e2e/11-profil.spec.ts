@@ -21,6 +21,8 @@ test('yönetici: liste fiyatı ve stok girişi', async ({ browser }) => {
   await admin.goto('/admin/profil-katalogu');
   await expect(admin.getByRole('heading', { name: 'Profil Kataloğu', level: 1 })).toBeVisible();
   await admin.locator('tr', { hasText: 'GK15' }).getByRole('link', { name: 'Düzenle' }).click();
+  await expect(admin).toHaveURL(/urun=/);
+  await expect(admin.locator('#pc-code')).toHaveValue('GK15');
   await admin.fill('#pc-price', '12,50');
   await admin.locator('#urun').getByRole('button', { name: 'Kaydet' }).click();
   await expect(admin.getByText('Kaydedildi.')).toBeVisible();
