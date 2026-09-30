@@ -165,7 +165,7 @@ export class PdfDoc {
 
   /** Yeni A4 sayfa; çizim komutları sayfa nesnesindedir. */
   addPage() {
-    const doc = this;
+    const usedGlyphs = this.used;
     const ops = [];
     const Y = (y) => A4.h - y;
     const page = {
@@ -181,7 +181,7 @@ export class PdfDoc {
         }
         const color = o.color ? `${o.color.map((c) => n(c)).join(' ')} rg ` : '';
         const gs = glyphs(s, bold);
-        const used = doc.used[bold ? 'bold' : 'regular'];
+        const used = usedGlyphs[bold ? 'bold' : 'regular'];
         for (const g of gs) used.set(g.gid, g.cp);
         // y: metnin taban çizgisi
         ops.push(`BT ${color}/${bold ? 'F2' : 'F1'} ${n(size)} Tf ${n(tx)} ${n(Y(y))} Td ${hexGlyphs(gs)} Tj ET${o.color ? ' 0 0 0 rg' : ''}`);
