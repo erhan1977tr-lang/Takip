@@ -11,7 +11,12 @@ const BROWSER_HEADERS = {
   'cache-control': 'no-cache',
 };
 
-export const DEFAULT_FX_URL = 'https://www.bancatransilvania.ro/curs-valutar';
+// BT'nin geliştiriciler için yayımladığı resmî kur dosyası (bancatransilvania.ro → Developer Support). Web sayfası
+// sunucudan gelen istekleri reddediyor (HTTP 403); bu dosya sunucular için. BT, verinin uygulamada saklanmasını ve
+// gereksiz trafik yapılmamasını istiyor: kur yalnızca proforma kesilirken ve "Kuru dene"de istenir.
+export const DEFAULT_FX_URL = 'https://dev.bancatransilvania.ro/exchange.xml';
+/** Eski varsayılan (web sayfası; sunucudan okunamıyor) → kayıtlı ayarda görülürse yenisi kullanılır */
+export const LEGACY_FX_URLS = ['https://www.bancatransilvania.ro/curs-valutar', 'https://www.bancatransilvania.ro/en/curs-valutar'];
 // Makul aralık: bunun dışındaki sayı kur sayılmaz (yanlış alanı okumaya karşı)
 export const FX_MIN = 3.5;
 export const FX_MAX = 8;
@@ -89,8 +94,21 @@ function fromHtml(html) {
  * Yanıt gövdesinden EUR satış kuru.
  * @returns {number | null}
  */
+/** BT XML: <currency name="EUR"><sell><value>5.325</value></sell>… */
+function fromXml(xml) {
+  const m = /<currency\s+name="EUR"\s*>([\s\S]*?)<\/currency>/i.exec(xml);
+  if (!m) return null;
+  const sell = /<sell>\s*<value>\s*([\d.,]+)\s*<\/value>/i.exec(m[1]);
+  const n = sell ? Number(sell[1].replace(',', '.')) : NaN;
+  return plausible(n) ? n : null;
+}
+
 export function parseBtRate(body, contentType = '') {
   const s = typeof body === 'string' ? body : String(body ?? '');
+  if (/xml/i.test(contentType) || /<exchangeRates|<currency\s+name=/i.test(s)) {
+    const r = fromXml(s);
+    if (r) return Math.round(r * 10_000) / 10_000;
+  }
   if (/json/i.test(contentType) || /^\s*[[{]/.test(s)) {
     try {
       const r = fromJson(JSON.parse(s));

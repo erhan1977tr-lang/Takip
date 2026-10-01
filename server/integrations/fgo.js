@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import { writeAudit } from '../orders/journal.js';
 import { openSecret, sealSecret } from '../crypto/secret.js';
-import { DEFAULT_FX_URL } from '../fx/bt.js';
+import { DEFAULT_FX_URL, LEGACY_FX_URLS } from '../fx/bt.js';
 
 export const FGO_KEY = 'fgo';
 export const FGO_URLS = { prod: 'https://api.fgo.ro/v1', test: 'https://api-testuat.fgo.ro/v1' };
@@ -27,6 +27,7 @@ export async function getFgoSettings(db) {
   const v = row?.value && typeof row.value === 'object' ? row.value : {};
   const out = { ...FGO_DEFAULTS };
   for (const k of Object.keys(FGO_DEFAULTS)) if (v[k] !== undefined && v[k] !== null) out[k] = v[k];
+  if (LEGACY_FX_URLS.includes(out.fxUrl)) out.fxUrl = DEFAULT_FX_URL;
   return { ...out, hasKey: !!v.keySealed, keySealed: v.keySealed ?? null };
 }
 

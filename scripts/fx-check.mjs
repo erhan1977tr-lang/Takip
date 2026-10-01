@@ -2,7 +2,7 @@
 // Durum kodunu, sunucu başlıklarını ve bulunan EUR satış kurunu yazar; gizli bilgi göstermez.
 import { DEFAULT_FX_URL, fetchBtEurSell, parseBtRate } from '../server/fx/bt.js';
 
-const urls = process.argv.slice(2).length ? process.argv.slice(2) : [DEFAULT_FX_URL, 'https://www.bancatransilvania.ro/en/curs-valutar'];
+const urls = process.argv.slice(2).length ? process.argv.slice(2) : [DEFAULT_FX_URL];
 for (const url of urls) {
   console.log(`\n== ${url}`);
   const r = await fetchBtEurSell({ url });

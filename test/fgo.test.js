@@ -25,6 +25,10 @@ test('BT kuru: JSON ve HTML içinden EUR satış kuru; makul olmayan sayı alın
   assert.equal(parseBtRate(JSON.stringify([{ code: 'EUR', a: 4.88, b: 5.02, cumparare: 4.88 }])), 5.02, 'satış alanı adı bilinmiyorsa alış dışındaki en büyük');
   const html = '<table><tr><td>USD</td><td>4,3100</td><td>4,6200</td></tr><tr><td>EUR</td><td>4,8750</td><td>5,0410</td></tr></table>';
   assert.equal(parseBtRate(html, 'text/html'), 5.041);
+  // BT'nin resmî XML dosyası (dev.bancatransilvania.ro/exchange.xml)
+  const xml = '<?xml version="1.0"?><xml><updateDate name="2026-10-01 09:20:02"/><exchangeRates><currency name="USD"><sell><value>4.7527</value></sell><buy><value>4.5663</value></buy></currency><currency name="EUR"><sell><value>5.325</value></sell><buy><value>5.225</value></buy></currency></exchangeRates></xml>';
+  assert.equal(parseBtRate(xml, 'text/xml'), 5.325);
+  assert.equal(parseBtRate(xml, ''), 5.325);
   // Birden çok tablo: "În unități BT" başlığından sonraki EUR satırı (karar 46); çevirici satırı karıştırılmaz
   const page = '<div>1 EUR = 5.1800 RON</div><h3>În cont</h3><table><tr><td>EUR</td><td>5.2601</td><td>5.1500</td><td>5.3700</td></tr></table>'
     + '<h3>În unități BT</h3><table><tr><th>Moneda</th><th>BNR</th><th>Cumpărare</th><th>Vânzare</th></tr><tr><td>EUR</td><td>5.2601</td><td>5.1800</td><td>5.3450</td></tr></table>';

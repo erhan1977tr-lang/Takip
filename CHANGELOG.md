@@ -4,7 +4,9 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.13.4 — 01.10.2026
+## 3.13.5 — 01.10.2026
+
+- BT kuru artık BT'nin sunucular için yayımladığı resmî kur dosyasından (`dev.bancatransilvania.ro/exchange.xml`) alınır; web sayfası sunucuya HTTP 403 veriyordu. Kayıtlı eski adres kendiliğinden yenisine çevrilir.
 
 - BT kuru sayfadaki **"În unități BT"** tablosunun EUR satış (vânzare) sütunundan okunur; diğer tablolar ve çevirici karıştırılmaz.
 
