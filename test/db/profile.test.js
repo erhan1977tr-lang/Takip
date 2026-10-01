@@ -368,7 +368,7 @@ dbTest('FGO: BT okunamazsa yöneticinin bugün girdiği kur kullanılır; girilm
   assert.equal(job.status, 'PENDING', 'geçici hata: yeniden denenir');
   assert.match(job.lastError, /günün kurunu/);
   await saveDailyRate(db, { day: localDay(now, 'Europe/Bucharest'), rate: 5.345 }, actor(people.admin), writeAudit);
-  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 2 * 60_000) }));
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 10 * 60_000) }));
   o = await load(id);
   assert.equal(o.profile.proformaNo, 'PRF560');
   assert.equal(Number(o.profile.fxRate), 5.345);
