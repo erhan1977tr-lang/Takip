@@ -127,7 +127,7 @@ dbTest('geçiş: teklif yolu → yönetici gönderir → otomatik üretim (iki g
   assert.equal(missing.code, 'SALES_PRICE_MISSING');
   assert.deepEqual(missing.details.problems, [{ code: 'missing_prices', rows: [{ n: 1, kind: 'CNC' }] }]);
   assert.equal((await db.offer.findFirstOrThrow({ where: { orderId: o.id } })).status, 'HAZIRLANIYOR', 'gönderilmedi');
-  assert.equal(await codeOf(run(o.id, 'submit_offer', 'sales', { lines: [{ ...lines[0], unitPrice: '' }] })), 'SALES_PRICE_MISSING');
+  assert.equal(await codeOf(run(o.id, 'submit_offer', 'sales', { lines: [{ ...lines[0], unitPrice: '0.00' }] })), 'SALES_PRICE_MISSING', 'cam satırı fiyatsız');
   await run(o.id, 'save_offer', 'sales', { lines, amount: '40.00' });
   await run(o.id, 'submit_offer', 'sales', { lines, amount: '40.00' });
   assert.equal(await codeOf(run(o.id, 'approve_offer', 'sales', { lines, amount: '40.00' })), 'NOT_ALLOWED', 'satış teklifi müşteriye gönderemez');
