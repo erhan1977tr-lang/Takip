@@ -47,14 +47,38 @@ function fromJson(data) {
   return null;
 }
 
-/** HTML'de "EUR"dan sonraki ilk makul iki-üç sayı: alış / satış → büyük olan satış */
+// Ürün sahibinin kararı (karar 46): "În unități BT" tablosundaki EUR vânzare kuru. Sayfada başka tablolar da olabilir
+// ("În cont", "Pentru carduri", çevirici); bu yüzden önce bu başlıktan sonraki tablo satırı aranır.
+const UNITS_MARK = /unit(?:ă|a|&#259;|&abreve;)(?:ț|t|ţ|&#539;|&#355;)i\s*BT|BT\s*units/i;
+const cellText = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** Tablo satırları içinde EUR satırı: EUR | BNR | alış | satış → satış en büyüğüdür */
+function fromTable(html) {
+  const clean = String(html).replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  const mark = clean.search(UNITS_MARK);
+  const rows = [];
+  for (const m of clean.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
+    const cells = [...m[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => cellText(c[1]));
+    if (!cells.some((c) => /^EUR\b/i.test(c))) continue;
+    const nums = cells.map(num).filter(plausible);
+    if (nums.length >= 2) rows.push({ at: m.index ?? 0, rate: Math.max(...nums) });
+  }
+  if (rows.length === 0) return null;
+  const pick = mark >= 0 ? rows.find((r) => r.at > mark) ?? rows[0] : rows[0];
+  return pick.rate;
+}
+
+/** Tablo bulunamazsa: düz metinde "EUR"dan sonraki ilk makul sayılar (en fazla üç) → en büyüğü */
 function fromHtml(html) {
+  const t = fromTable(html);
+  if (t) return t;
   const text = String(html).replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
+  const mark = text.search(UNITS_MARK);
   const re = /\bEUR\b/g;
+  re.lastIndex = mark >= 0 ? mark : 0;
   let m;
   while ((m = re.exec(text))) {
     const after = text.slice(m.index, m.index + 300);
-    // BT tablosu: EUR | BNR | alış (cumpărare) | satış (vânzare) → satış en büyüğüdür
     const nums = (after.match(/\d{1,2}[.,]\d{2,6}/g) ?? []).map(num).filter(plausible).slice(0, 3);
     if (nums.length >= 2) return Math.max(...nums);
   }
