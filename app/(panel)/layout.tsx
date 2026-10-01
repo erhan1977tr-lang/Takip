@@ -6,6 +6,7 @@ import { roleText } from '@/lib/labels';
 import { NavLinks } from './NavLinks';
 import { BrandLogo } from '@/components/BrandLogo';
 import { LanguageSelect } from '@/components/LanguageSelect';
+import { SIDEBAR_INIT, SIDEBAR_SLOT, SidebarToggle } from '@/components/Sidebar';
 import { isDemo } from '@/server/demo/accounts.js';
 import { logoutAction } from './actions';
 
@@ -25,11 +26,15 @@ export default async function PanelLayout({ children }: { children: React.ReactN
 
   return (
     <div className="shell">
+      <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT }} />
       <aside className="sidebar">
         <BrandLogo />
         <div className="tag">{t('common.productUpper')}</div>
         <NavLinks items={nav} variant="side" />
+        {/* Sipariş sayfasında Hareketler buraya gelir (components/Sidebar.tsx → SidebarPortal) */}
+        <div id={SIDEBAR_SLOT} className="sidebar-activity" />
       </aside>
+      <SidebarToggle hide={t('common.sidebarHide')} show={t('common.sidebarShow')} />
       <div className="main">
         <header className="topbar">
           <div className="topbar-brand"><BrandLogo compact /></div>

@@ -17,7 +17,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Sayfa dili: tarayıcının otomatik çeviri önermemesi ve ekran okuyucular için doğru dil
   const locale = await getLocale();
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

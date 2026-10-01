@@ -10,6 +10,8 @@ import {
 } from '@/lib/labels';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
+import { SidebarPortal } from '@/components/Sidebar';
+import { OrderInfo } from './OrderInfo';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { ProfileOrderView } from './ProfileOrderView';
 import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
@@ -209,6 +211,31 @@ export default async function OrderPage({
 
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
 
+      <OrderInfo
+        title={t('order.info.title')}
+        rows={[
+          { label: t('order.info.orderNo'), value: order.orderNo, mono: true },
+          { label: t('order.info.customerOrderNo'), value: order.customerOrderNo },
+          !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
+          { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
+          { label: t('order.info.estimatedShip'), value: fmtDate(order.estimatedShipDate) },
+          !!order.actualShipDate && { label: t('order.info.shipped'), value: fmtDate(order.actualShipDate) },
+          { label: t('order.info.drawing'), value: order.status === 'YENI' ? (isCustomer ? '—' : t('order.info.drawingPending')) : order.drawingTrack === 'YOK' ? t('order.info.drawingNotNeeded') : t('order.info.drawingNeeded') },
+          order.drawingTrack !== 'YOK' && { label: t('order.info.revisions'), value: t('order.info.revisionRounds', { n: order.revisionCount }) },
+          !!order.assignedDrawer && !isCustomer && { label: t('order.info.drawer'), value: order.assignedDrawer.name || order.assignedDrawer.email },
+          !isCustomer && { label: t('order.info.labels'), value: `${order.camEtiket ?? '—'} / ${order.sandikEtiket ?? '—'}` },
+        ]}
+      >
+        {order.items.length > 0 && (
+          <>
+            <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
+            </ul>
+          </>
+        )}
+      </OrderInfo>
+
       {(editable || updating) && offer && (
         <OfferEditor
           orderId={order.id}
@@ -236,66 +263,37 @@ export default async function OrderPage({
         />
       )}
 
-      <div className="detail-grid">
-        <div>
-          {shownOffer && (
-            <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} />
-          )}
-          {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
-          <Drawings order={order} user={user} can={can} t={t} />
-          <Files order={order} user={user} canAdd={can('add_file')} t={t} />
-          <Notes order={order} user={user} t={t} />
-        </div>
-
-        <aside>
-          <div className="card">
-            <h2>{t('order.info.title')}</h2>
-            <table className="kv"><tbody>
-              <tr><td>{t('order.info.orderNo')}</td><td className="mono">{order.orderNo}</td></tr>
-              <tr><td>{t('order.info.customerOrderNo')}</td><td>{order.customerOrderNo}</td></tr>
-              {!isCustomer && <tr><td>{t('order.info.customer')}</td><td>{customerLabel(user, order.customer.name)}</td></tr>}
-              <tr><td>{t('order.info.orderDate')}</td><td>{fmtDate(order.createdAt)}</td></tr>
-              <tr><td>{t('order.info.estimatedShip')}</td><td>{fmtDate(order.estimatedShipDate)}</td></tr>
-              {order.actualShipDate && <tr><td>{t('order.info.shipped')}</td><td>{fmtDate(order.actualShipDate)}</td></tr>}
-              <tr><td>{t('order.info.drawing')}</td><td>{order.status === 'YENI' ? (isCustomer ? '—' : t('order.info.drawingPending')) : order.drawingTrack === 'YOK' ? t('order.info.drawingNotNeeded') : t('order.info.drawingNeeded')}</td></tr>
-              {order.drawingTrack !== 'YOK' && <tr><td>{t('order.info.revisions')}</td><td>{t('order.info.revisionRounds', { n: order.revisionCount })}</td></tr>}
-              {order.assignedDrawer && !isCustomer && <tr><td>{t('order.info.drawer')}</td><td>{order.assignedDrawer.name || order.assignedDrawer.email}</td></tr>}
-              {!isCustomer && <tr><td>{t('order.info.labels')}</td><td>{order.camEtiket ?? '—'} / {order.sandikEtiket ?? '—'}</td></tr>}
-            </tbody></table>
-            {order.items.length > 0 && (
-              <>
-                <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
-                </ul>
-              </>
-            )}
-          </div>
-          <History order={order} isCustomer={isCustomer} t={t} />
-        </aside>
-      </div>
+      {shownOffer && (
+        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} />
+      )}
+      {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      <Drawings order={order} user={user} can={can} t={t} />
+      <Files order={order} user={user} canAdd={can('add_file')} t={t} />
+      <Notes order={order} user={user} t={t} />
+      <History order={order} isCustomer={isCustomer} t={t} />
     </>
   );
 }
 
 function History({ order, isCustomer, t }: { order: OrderDetail; isCustomer: boolean; t: T }) {
+  // Sol menünün altında (eski düzen); veri bu sayfanın yüklediği siparişten gelir, ayrı istek yok
   return (
-    <div className="card">
-      <h2>{t('order.history')}</h2>
-      <ul className="timeline">
+    <SidebarPortal>
+      <div className="nav-section">{t('order.history')}</div>
+      <ul className="timeline side-timeline">
         {order.events.map((e) => {
           const label = eventText(t, e.event, isCustomer);
           if (label === null) return null;
           const note = eventNoteText(t, e.event, e.note, isCustomer);
           return (
             <li key={e.id}>
-              <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
               <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${e.user.name || e.user.email}` : ''}</div>
+              <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
             </li>
           );
         })}
       </ul>
-    </div>
+    </SidebarPortal>
   );
 }
 

@@ -15,6 +15,8 @@ export default {
   no: 'Nu',
   total: 'Total',
   logout: 'Ieșire',
+  sidebarHide: 'Ascunde meniul',
+  sidebarShow: 'Arată meniul',
   demoBadge: 'DEMO',
   demoTitle: 'Mediu demo cu date de exemplu',
   pricesExclVat: 'Prețurile nu includ TVA.',

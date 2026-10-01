@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.12.0 — 01.10.2026 · Ekran düzeni (eski GKH TAKIP düzenine yakın)
+
+- **Hareketler sol menüde:** sipariş sayfasında hareket listesi sol menünün altında, kendi içinde kayar; sağdaki kart kalktı.
+  Sipariş dışındaki sayfalarda görünmez.
+- **Sipariş bilgileri teklifin üstünde:** yatay, sıkışık bilgi bloğu (cam ve profil siparişinde ortak). Sağ sütun kalktı,
+  içerik tüm genişliği kullanır. Kim neyi görür değişmedi (firma adı maskesi aynı).
+- **Katlanabilir sol menü:** "‹" menüyü tamamen gizler, içerik genişler; soldaki küçük "›" sekmesi geri açar. Tercih
+  tarayıcıda saklanır, sayfa değişince korunur. Dar ekranda menü içeriğin üstüne açılan çekmece olur.
+
 ## 3.11.4 — 30.09.2026
 
 - Kod düzeni (lint) ve profil testlerinde düzeltmeler; onaylı düğmelerde (ör. "Müşteriye gönder") hangi düğmeye basıldığı artık her zaman iletilir.

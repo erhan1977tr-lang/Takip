@@ -8,6 +8,7 @@ import type { Dict, MsgKey, T } from '@/lib/i18n';
 import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
+import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { unitLabel } from '@/server/profile/catalog.js';
@@ -228,8 +229,22 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
         </div>
       )}
 
-      <div className="detail-grid">
-        <div>
+      <OrderInfo
+        title={t('order.info.title')}
+        rows={[
+          { label: t('order.info.orderNo'), value: order.orderNo, mono: true },
+          { label: t('order.info.customerOrderNo'), value: order.customerOrderNo },
+          !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
+          { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
+          !!p?.approvedAt && { label: t('profile.page.info.approvedAt'), value: fmtDateTime(p.approvedAt) },
+          !!p?.proformaAt && { label: t('profile.page.info.proformaNo'), value: `${p.proformaNo ?? '—'} · ${fmtDate(p.proformaAt)}` },
+          !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
+          !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
+          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
+          !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: `${p.invoiceNo ?? '—'} · ${fmtDate(p.invoicedAt)}` },
+        ]}
+      />
+
           {/* ---------- teklif / fiyatlandırma ---------- */}
           {editing && editOffer ? (
             <form action={profilePricesAction} className="card" id="teklif">
@@ -289,27 +304,6 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               </div>
             );
           })()}
-          {files}
-          {notes}
-        </div>
-
-        <aside>
-          <div className="card">
-            <h2>{t('order.info.title')}</h2>
-            <table className="kv"><tbody>
-              <tr><td>{t('order.info.orderNo')}</td><td className="mono">{order.orderNo}</td></tr>
-              <tr><td>{t('order.info.customerOrderNo')}</td><td>{order.customerOrderNo}</td></tr>
-              {!isCustomer && <tr><td>{t('order.info.customer')}</td><td>{customerLabel(user, order.customer.name)}</td></tr>}
-              <tr><td>{t('order.info.orderDate')}</td><td>{fmtDate(order.createdAt)}</td></tr>
-              {p?.approvedAt && <tr><td>{t('profile.page.info.approvedAt')}</td><td>{fmtDateTime(p.approvedAt)}</td></tr>}
-              {p?.proformaAt && <tr><td>{t('profile.page.info.proformaNo')}</td><td>{p.proformaNo ?? '—'} · {fmtDate(p.proformaAt)}</td></tr>}
-              {p?.paidAt && <tr><td>{t('profile.page.info.paidAt')}</td><td>{fmtDate(p.paidAt)}</td></tr>}
-              {p?.warehouseSentAt && <tr><td>{t('profile.page.info.warehouseSentAt')}</td><td>{fmtDateTime(p.warehouseSentAt)}</td></tr>}
-              {p?.deliveredAt && <tr><td>{t('profile.page.info.deliveredAt')}</td><td>{fmtDateTime(p.deliveredAt)}{!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}</td></tr>}
-              {p?.invoicedAt && <tr><td>{t('profile.page.info.invoiceNo')}</td><td>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}</td></tr>}
-            </tbody></table>
-          </div>
-
           {p?.pickupDate && (
             <div className="card" id="teslim">
               <h2>{t('profile.page.pickup.title')}</h2>
@@ -339,9 +333,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               ) : null}
             </div>
           )}
+          {files}
+          {notes}
           {history}
-        </aside>
-      </div>
     </>
   );
 }

@@ -15,6 +15,8 @@ export default {
   no: 'Hayır',
   total: 'Toplam',
   logout: 'Çıkış',
+  sidebarHide: 'Menüyü gizle',
+  sidebarShow: 'Menüyü göster',
   demoBadge: 'DEMO',
   demoTitle: 'Örnek verilerle çalışan demo ortamı',
   pricesExclVat: 'Fiyatlar KDV hariçtir.',
