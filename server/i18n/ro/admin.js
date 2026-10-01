@@ -233,6 +233,10 @@ export default {
     fgo: {
       dailyLimit: "Limită zilnică de documente",
       dailyLimitHint: "Siguranță pentru teste: cel mult atâtea documente FGO pe zi (0 = nelimitat).",
+      invoiceNext: "Următorul număr de factură (minim)",
+      invoiceNextHint: "Facturile se emit cu ultimul număr de factură din sistem + 1. Dacă ați emis facturi manual în FGO sau în sistem nu există încă facturi, scrieți aici următorul număr (gol = doar ultimul număr din sistem). Proformele sunt numerotate de FGO.",
+      invoiceNextWill: "Următoarea factură: {no}.",
+      invoiceNextAuto: "Încă nu există facturi în sistem: numărul îl dă FGO.",
       fxMode: "Sursa cursului",
       fxManual: "Manual — cursul BT al zilei (caseta de mai jos)",
       fxAuto: "Automat — de la adresa cursului BT",

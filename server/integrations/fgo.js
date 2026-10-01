@@ -20,6 +20,9 @@ export const FGO_DEFAULTS = {
   fxMode: 'manual',
   // Günde en fazla kaç FGO belgesi kesilir (deneme güvenliği; 0 = sınırsız)
   dailyLimit: 3,
+  // Fatura numarası: sistemdeki son fatura numarası + 1 (karar 62). Sistemde henüz fatura yoksa ya da FGO'da elle
+  // daha büyük numara kesildiyse yönetici buraya "en az" sonraki numarayı girer; boş = FGO numaralandırır.
+  invoiceNext: /** @type {number | null} */ (null),
 };
 const SECRET_PURPOSE = 'fgo-key';
 
@@ -60,6 +63,7 @@ export function validateFgoSettings(raw) {
     fxUrl: String(raw.fxUrl ?? '').trim() || DEFAULT_FX_URL,
     fxMode: raw.fxMode === 'auto' ? 'auto' : 'manual',
     dailyLimit: raw.dailyLimit == null || String(raw.dailyLimit).trim() === '' ? 3 : Number(raw.dailyLimit),
+    invoiceNext: raw.invoiceNext == null || String(raw.invoiceNext).trim() === '' ? null : Number(String(raw.invoiceNext).trim()),
   };
   if (cui && !/^\d{2,10}$/.test(cui)) errors.push('CUI');
   if (!SERIES_RE.test(value.proformaSeries)) errors.push('PROFORMA_SERIES');
@@ -67,6 +71,7 @@ export function validateFgoSettings(raw) {
   if (!TYPE_RE.test(value.proformaType)) errors.push('PROFORMA_TYPE');
   if (!TYPE_RE.test(value.invoiceType)) errors.push('INVOICE_TYPE');
   if (!(value.vatRate >= 0 && value.vatRate <= 50)) errors.push('VAT');
+  if (value.invoiceNext !== null && !(Number.isInteger(value.invoiceNext) && value.invoiceNext >= 1 && value.invoiceNext <= 99_999_999)) errors.push('INVOICE_NEXT');
   if (!Number.isInteger(value.dailyLimit) || value.dailyLimit < 0 || value.dailyLimit > 1000) errors.push('DAILY_LIMIT');
   try {
     if (new URL(value.fxUrl).protocol !== 'https:') errors.push('FX_URL');
@@ -128,7 +133,7 @@ export function missingBilling(c) {
  *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, text?: string }} p
  * @returns {Record<string, string>}
  */
-export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null, rateNote = true }) {
+export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null, rateNote = true, number = null }) {
   const proforma = kind === 'proforma';
   const name = String(customer.name).trim();
   const cui = String(customer.taxId ?? '').replace(/\s/g, '');
@@ -137,6 +142,8 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     Hash: fgoHash(settings.cui, key, name),
     PlatformaUrl: appUrl,
     Serie: proforma ? settings.proformaSeries : settings.invoiceSeries,
+    // Numar: faturada sistemdeki son numara + 1 (nextInvoiceNumber); verilmezse FGO numaralandırır
+    ...(number ? { Numar: String(number) } : {}),
     Valuta: 'RON',
     TipFactura: proforma ? settings.proformaType : settings.invoiceType,
     // Aynı belge iki kez kesilmesin: sipariş + tür
@@ -164,13 +171,32 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     f[`Continut[${i}][NrProduse]`] = String(l.qty);
     f[`Continut[${i}][UM]`] = l.unit;
     f[`Continut[${i}][CotaTVA]`] = String(settings.vatRate);
-    f[`Continut[${i}][PretUnitar]`] = unit.toFixed(2);
+    // l.gross: satırın TVA dahil toplamı verilir, FGO geriye hesaplar (PretTotal). Cam faturasında birleştirilen satırın
+    // toplamı proformadaki satırların toplamına kuruşu kuruşuna eşit olsun diye (karar 63).
+    if (l.gross != null) f[`Continut[${i}][PretTotal]`] = l.gross.toFixed(2);
+    else f[`Continut[${i}][PretUnitar]`] = unit.toFixed(2);
   });
   return f;
 }
 
 /** RON tutar (TVA hariç): Σ adet × RON birim fiyat */
-export const ronTotal = (lines, rate) => round2(lines.reduce((s, l) => s + round2(l.qty * (l.ron != null ? l.ron : ronPrice(l.eur, rate))), 0));
+export const ronTotal = (lines, rate) => round2(lines.reduce((s, l) => s + (l.net != null ? l.net : round2(l.qty * (l.ron != null ? l.ron : ronPrice(l.eur, rate)))), 0));
+
+/** TVA hariç satır tutarı → TVA dahil (FGO gibi: satır başına TVA, 2 hane) */
+export const grossOf = (net, vatRate) => round2(net + round2((net * Number(vatRate)) / 100));
+
+/**
+ * Faturanın numarası (ürün sahibinin kuralı, karar 62): sistemdeki (FgoDocument) bu serinin en büyük numarası + 1;
+ * yönetici "sonraki fatura numarası"nı girdiyse en az o. Hiçbiri yoksa null (FGO numaralandırır).
+ * @returns {Promise<string | null>}
+ */
+export async function nextInvoiceNumber(db, settings) {
+  const rows = await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { number: true } });
+  const max = rows.reduce((m, r) => (/^\d+$/.test(r.number) ? Math.max(m, Number(r.number)) : m), 0);
+  const floor = Number.isInteger(settings.invoiceNext) ? settings.invoiceNext : 0;
+  if (!max && !floor) return null;
+  return String(Math.max(max + 1, floor));
+}
 
 /** FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır. */
 export class FgoError extends Error {

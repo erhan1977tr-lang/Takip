@@ -15,7 +15,7 @@ import { offerLineTotals } from '../orders/rules.js';
 import { getEnv } from '../env.js';
 import { fetchBtEurSell, rateForDay } from '../fx/bt.js';
 import {
-  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal,
+  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, nextInvoiceNumber,
 } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
@@ -43,12 +43,13 @@ export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GOND
  * FATURA satırları — yalnızca CAM (ürün sahibinin kuralı; proforma için proformaLines): satır adı yalnızca camın Romence niteliği (ölçü / adet yazılmaz);
  * CNC ve delik (ve m² dışındaki her satır) tutarı ait olduğu camın tutarına eklenir — üstündeki cam satırına, yoksa
  * sonraki cama. Aynı nitelikteki camlar tek satırda toplanır (m² toplamı). Bedelsiz ve fiyatsız satırlar yazılmaz.
- * @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]}
+ * Her grubun parts'ı: o satırda toplanan teklif satırları ({ qty, price } — cam m², işlem adet), proformadaki satırların aynısı.
+ * @returns {{ name: string, qty: number, parts: { qty: number, price: number }[] }[]}
  */
-export function glassLines(offer) {
+function glassGroups(offer) {
   const groups = new Map();
   let last = null;
-  let carry = 0; // camdan önce gelen ek işlem tutarı (sonraki cama eklenir)
+  let carry = []; // camdan önce gelen ek işlemler (sonraki cama eklenir)
   for (const l of offer.lines) {
     if (l.free || l.offerPrice == null) continue;
     const price = Number(l.offerPrice);
@@ -57,21 +58,46 @@ export function glassLines(offer) {
       const qty = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
       if (!(qty > 0)) continue;
       const name = String(l.descriptionRo || l.description).trim();
-      const g = groups.get(name) ?? { code: '', name, unit: 'mp', qty: 0, eurTotal: 0 };
+      const g = groups.get(name) ?? { name, qty: 0, parts: [] };
       g.qty = Math.round((g.qty + qty) * 1000) / 1000;
-      g.eurTotal = round2(g.eurTotal + qty * price + carry);
-      carry = 0;
+      g.parts.push({ qty, price }, ...carry);
+      carry = [];
       groups.set(name, g);
       last = g;
     } else {
-      const extra = round2(Math.max(0, Math.trunc(Number(l.adet) || 0)) * price);
-      if (last) last.eurTotal = round2(last.eurTotal + extra);
-      else carry = round2(carry + extra);
+      const qty = Math.max(0, Math.trunc(Number(l.adet) || 0));
+      if (!(qty > 0)) continue;
+      if (last) last.parts.push({ qty, price });
+      else carry.push({ qty, price });
     }
   }
   const out = [...groups.values()];
-  if (carry && out.length) out[out.length - 1].eurTotal = round2(out[out.length - 1].eurTotal + carry);
+  if (carry.length && out.length) out[out.length - 1].parts.push(...carry);
   return out;
+}
+
+/** Fatura cam satırları, EUR toplamıyla @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]} */
+export const glassLines = (offer) => glassGroups(offer).map((g) => ({
+  code: '', name: g.name, unit: 'mp', qty: g.qty, eurTotal: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
+}));
+
+/**
+ * Fatura cam satırları RON olarak (karar 63): eklenen her kalem proformadaki gibi TVA HARİÇ hesaplanır
+ * (adet × round2(EUR × kur)); satırın TVA hariç tutarı bunların toplamı, TVA dahil tutarı proformadaki satırların
+ * TVA dahil tutarlarının toplamı. FGO'ya TVA dahil toplam (PretTotal) gider; böylece fatura genel toplamı proformayla
+ * kuruşu kuruşuna aynı olur (birim fiyatı yuvarlayıp m² ile çarpınca birkaç bani fark çıkıyordu).
+ * @returns {{ code: string, name: string, unit: 'mp', qty: number, net: number, gross: number }[]}
+ */
+export function invoiceLines(offer, rate, vatRate) {
+  return glassGroups(offer).map((g) => {
+    let net = 0, gross = 0;
+    for (const p of g.parts) {
+      const n = round2(p.qty * ronPrice(p.price, rate));
+      net = round2(net + n);
+      gross = round2(gross + grossOf(n, vatRate));
+    }
+    return { code: '', name: g.name, unit: 'mp', qty: g.qty, net, gross };
+  });
 }
 
 /**
@@ -93,9 +119,6 @@ export function proformaLines(offer) {
   }
   return out;
 }
-
-/** Cam satırını RON birim fiyata çevirir: (cam + işlemler) toplamı × kur / m² */
-export const toRonLines = (lines, rate) => lines.map((g) => ({ code: g.code, name: g.name, unit: g.unit, qty: g.qty, ron: round2((g.eurTotal * rate) / g.qty) }));
 
 /** TVA dahil tutar → TVA hariç birim fiyat (avans satırı) */
 export const netOf = (gross, vatRate) => round2(Number(gross) / (1 + Number(vatRate) / 100));
@@ -245,7 +268,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           for (const l of offer.lines) if (!l.descriptionRo && glasses.has(l.glassProductId)) l.descriptionRo = glasses.get(l.glassProductId);
         }
         // Proforma ayrıntılı (CNC ve delik ayrı satır); fatura yalnızca cam (işlemler cama eklenir)
-        lines = kind === 'PROFORMA' ? proformaLines(offer) : toRonLines(glassLines(offer), rate);
+        lines = kind === 'PROFORMA' ? proformaLines(offer) : invoiceLines(offer, rate, settings.vatRate);
         if (lines.length === 0) throw new Permanent('Teklifte fiyatlı cam satırı yok');
         if (kind === 'INVOICE' && advance) {
           // Avans düşümü: avans faturasının TVA hariç tutarı eksi satır olarak
@@ -258,6 +281,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         rate, rateDate: ddmmyyyy(rateDay), extern: `${order.orderNo}-${SUFFIX[kind]}`,
         // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
         text: order.title ?? '', rateNote: false,
+        // Avans ve kapanış faturası: sistemdeki son fatura numarası + 1 (karar 62); proformayı FGO numaralandırır
+        number: kind === 'PROFORMA' ? null : await nextInvoiceNumber(db, settings),
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);

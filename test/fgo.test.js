@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { openSecret, sealSecret } from '../server/crypto/secret.js';
 import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js';
-import { FgoError, emitereForm, fgoEmit, fgoHash, missingBilling, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
+import { FgoError, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
 
 const SECRET = 'x'.repeat(40);
@@ -52,6 +52,21 @@ test('FGO ayarları: seri, tür, TVA, adres doğrulanır; açıkken CUI zorunlu'
   const bad = validateFgoSettings({ enabled: true, cui: '', proformaSeries: 'P R', invoiceSeries: '', proformaType: '1', vatRate: '99', fxUrl: 'http://x' });
   assert.ok(!bad.ok);
   for (const e of ['CUI', 'PROFORMA_SERIES', 'INVOICE_SERIES', 'PROFORMA_TYPE', 'VAT', 'FX_URL']) assert.ok(bad.errors.includes(e), e);
+  assert.equal(ok.value.invoiceNext, null, 'boş = sistemdeki son numara + 1');
+  const base = { cui: '12', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21', fxUrl: 'https://x' };
+  assert.equal(validateFgoSettings({ ...base, invoiceNext: '684' }).value?.invoiceNext, 684);
+  assert.ok(validateFgoSettings({ ...base, invoiceNext: '0' }).errors?.includes('INVOICE_NEXT'));
+  assert.ok(validateFgoSettings({ ...base, invoiceNext: 'GKH684' }).errors?.includes('INVOICE_NEXT'));
+});
+
+test('fatura numarası: sistemdeki son fatura numarası + 1; yöneticinin girdiği en az numara; hiçbiri yoksa FGO', async () => {
+  const db = (numbers) => ({ fgoDocument: { findMany: async ({ where }) => (where.series === 'GKH' ? numbers.map((number) => ({ number })) : []) } });
+  const s = { invoiceSeries: 'GKH', invoiceNext: null };
+  assert.equal(await nextInvoiceNumber(db([]), s), null);
+  assert.equal(await nextInvoiceNumber(db(['684', '699', '9', 'X1']), s), '700', 'sayısal en büyük + 1 (metin karşılaştırma değil)');
+  assert.equal(await nextInvoiceNumber(db([]), { ...s, invoiceNext: 684 }), '684');
+  assert.equal(await nextInvoiceNumber(db(['684']), { ...s, invoiceNext: 684 }), '685');
+  assert.equal(await nextInvoiceNumber(db(['684']), { ...s, invoiceNext: 800 }), '800', 'FGO\'da elle kesilen faturaların ardı');
 });
 
 test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tekrar kesimi önleyen IdExtern', () => {
@@ -78,6 +93,17 @@ test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tek
   const inv = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'GLAP3', appUrl: '', customer, lines, rate: 4.9765, rateDate: '01.10.2026' });
   assert.equal(inv.Serie, 'GKH');
   assert.equal(inv.IdExtern, 'GLAP3-F');
+  assert.ok(!('Numar' in inv), 'numara verilmezse FGO numaralandırır');
+  // Fatura numarası verilir (karar 62); TVA dahil satır toplamı PretTotal ile (karar 63)
+  const num = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'GLA5', appUrl: '', customer, rate: 5, rateDate: '01.10.2026', number: '685',
+    lines: [{ code: '', name: 'Securizat', unit: 'mp', qty: 2.13, net: 512.29, gross: 619.87 }] });
+  assert.equal(num.Numar, '685');
+  assert.equal(num.Hash, fgoHash('123456', 'K', 'Glass and More SRL'), 'emitere hash numaradan bağımsız');
+  assert.equal(num['Continut[0][PretTotal]'], '619.87');
+  assert.ok(!('Continut[0][PretUnitar]' in num));
+  assert.equal(ronTotal([{ qty: 2.13, net: 512.29 }, { qty: 1, ron: 10 }], 5), 522.29);
+  assert.equal(grossOf(100, 21), 121);
+  assert.equal(grossOf(10.05, 21), 12.16);
   assert.deepEqual(missingBilling({ name: 'X', taxId: '1', county: null, city: 'B', address: '' }), ['county', 'address']);
 });
 

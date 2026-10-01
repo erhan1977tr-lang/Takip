@@ -8,7 +8,7 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
-import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
+import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, nextInvoiceNumber, ronTotal } from '../integrations/fgo.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
@@ -103,6 +103,8 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       const form = emitereForm({
         settings, key, kind, orderNo: order.orderNo, appUrl, customer: order.customer, lines, rate,
         rateDate: dayKeyOf(rateDay).split('-').reverse().join('.'),
+        // Fatura: sistemdeki son fatura numarası + 1 (karar 62; cam faturalarıyla aynı seri); proformayı FGO numaralandırır
+        number: kind === 'invoice' ? await nextInvoiceNumber(db, settings) : null,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);

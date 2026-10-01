@@ -24,7 +24,8 @@ function fakeFgo(start) {
     const form = Object.fromEntries(new URLSearchParams(init.body));
     if (String(url).endsWith('/factura/getstatus')) return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '1210.00', ValoareAchitata: '0' } }));
     calls.push(form);
-    n++;
+    // Numar gönderildiyse FGO o numarayla keser
+    n = form.Numar ? Number(form.Numar) : n + 1;
     return new Response(JSON.stringify({ Success: true, Factura: { Numar: String(n), Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
   };
   return { calls, fetchImpl };
@@ -92,6 +93,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   const av = fgo.calls[1];
   assert.equal(av.Serie, 'GKH');
   assert.equal(av.IdExtern, 'GLA68-A');
+  assert.ok(!('Numar' in av), 'sistemde henüz fatura yok, ayarda başlangıç yok → FGO numaralandırır');
   assert.equal(av['Continut[0][Denumire]'], 'Avans marfă conform proformă PRF552');
   assert.equal(av['Continut[0][PretUnitar]'], '500.00', '605 / 1,21');
   assert.equal(av['Continut[0][NrProduse]'], '1');
@@ -104,7 +106,11 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   const inv = fgo.calls[2];
   assert.equal(inv.IdExtern, 'GLA68-F');
   assert.equal(inv['Continut[0][Denumire]'], 'Securizat');
-  assert.equal(inv['Continut[0][PretUnitar]'], '300.00', 'faturada CNC cama eklenir: (2×50 + 2×10) € × 5 / 2 m²');
+  assert.equal(inv.Numar, '554', 'sistemdeki son fatura (avans GKH553) + 1');
+  assert.ok(!('Numar' in pf), 'proformayı FGO numaralandırır');
+  // Faturada CNC cama TVA hariç eklenir; satırın TVA dahil toplamı proformadaki satırların toplamı: 500 + 105 + 100 + 21
+  assert.equal(inv['Continut[0][PretTotal]'], '726.00', 'faturada CNC cama eklenir: cam 605 + CNC 121 (TVA dahil)');
+  assert.ok(!('Continut[0][PretUnitar]' in inv));
   assert.equal(inv['Continut[1][NrProduse]'], '-1');
   assert.match(inv['Continut[1][Denumire]'], /^Stornare avans conform factură GKH553/);
   assert.equal(inv['Continut[1][PretUnitar]'], '1000.00', 'avans faturasının TVA hariç tutarı (FGO toplamı 1210)');

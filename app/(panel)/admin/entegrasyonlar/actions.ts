@@ -69,6 +69,7 @@ export async function saveFgoAction(formData: FormData) {
     proformaSeries: formData.get('proformaSeries'), invoiceSeries: formData.get('invoiceSeries'),
     proformaType: formData.get('proformaType'), invoiceType: formData.get('invoiceType'),
     vatRate: formData.get('vatRate'), fxUrl: formData.get('fxUrl'), fxMode: formData.get('fxMode'), dailyLimit: formData.get('dailyLimit'),
+    invoiceNext: formData.get('invoiceNext'),
   });
   if (!res.ok) redirect(back({ error: 'fgo', detail: res.errors.join(', ') }) + '#fgo');
   const key = String(formData.get('privateKey') ?? '');

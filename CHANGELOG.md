@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.16.5 — 01.10.2026
+
+- FGO **fatura numarası** = sistemdeki son fatura numarası + 1 (cam avans/kapanış ve profil faturası). Entegrasyonlar → FGO'da
+  "Sonraki fatura numarası (en az)" girilebilir (FGO'da elle kesilen faturalar için); sıradaki numara orada görünür.
+- Faturada CNC, delik ve diğer kalemler cama **TVA hariç** eklenir ve satırın TVA dahil toplamı proformadaki satırların
+  toplamı olarak gönderilir: fatura genel toplamı proformayla aynı (kuruş farkı kalmaz).
+
 ## 3.16.4 — 01.10.2026
 
 - Cam **proformaları ayrıntılı**: her cam satırı ayrı (Romence nitelik, m²), CNC ve delik ayrı satırlarda. "Yalnızca cam,
