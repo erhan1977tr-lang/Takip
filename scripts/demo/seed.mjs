@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { nextShipDate, offerTotals, slaDeadline } from '../../server/orders/rules.js';
+import { glassLoadingDate, offerTotals, slaDeadline } from '../../server/orders/rules.js';
 import { DEMO_ACCOUNTS, DEMO_FIRM } from '../../server/demo/accounts.js';
 import { runBaseSeed } from '../../prisma/seed/base.mjs';
 
@@ -196,7 +196,7 @@ async function main(db) {
           status, createdAt, drawing, drawingSince,
           offer: o.offer?.status ?? null, offerSince: o.offer ? ago(o.offer.since) : null,
         }),
-        estimatedShipDate: nextShipDate(createdAt), actualShipDate: o.shippedHoursAgo != null ? ago(o.shippedHoursAgo) : null,
+        estimatedShipDate: glassLoadingDate(createdAt), actualShipDate: o.shippedHoursAgo != null ? ago(o.shippedHoursAgo) : null,
         createdAt,
         items: { create: o.items.map(itemOf) },
         files: { create: files.map((s) => ({ ...s, kind: 'CUSTOMER', uploadedById: cust.id, createdAt })) },
