@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "PermissionKey" ADD VALUE 'TRANSPORT_LIST_VIEW';
+
