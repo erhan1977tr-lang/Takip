@@ -43,7 +43,9 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip smtp` | E-posta ayarları (kullanıcılara davet kodu gidebilmesi için gerekli) + deneme e-postası |
 | `takip yonetici E-POSTA "Ad Soyad"` | Yeni yönetici açar; `--reset` ile şifresini sıfırlar. Tek kullanımlık kod ekrana yazılır |
 | `takip guncelle` | Yeni sürüm varsa beklemeden yayınla |
-| `takip yedek` | Hemen yedek al |
+| `takip yedek` | Hemen yedek al (veritabanı + dosyalar, Google Drive'a kopya) |
+| `takip restore yesterday` / `takip restore 2026-09-30` | O günün en son tam yedeğine geri dön (önce güvenlik yedeği; tarihi yazarak onay) |
+| `takip restore-test [TARİH]` | Yedeği canlıya dokunmadan geçici veritabanında dener |
 | `takip log` | Uygulamanın son günlük satırları |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
@@ -66,7 +68,8 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 /opt/takip/.env        ayarlar ve gizli anahtarlar (yalnızca bu sunucuda; kurulumda üretilir, chmod 600)
 /opt/takip/github-token  GitHub okuma anahtarı (chmod 600; uygulamanın ortamına girmez)
 /opt/takip/src         uygulamanın kaynağı (git)
-/opt/takip/backups     veritabanı (14 gün) ve dosya (7 gün) yedekleri — her gece ~03:30 ve her yayından önce
+/opt/takip/backups     her gün 03:00 (Romanya): db-YYYY-MM-DD_HHMMSS.dump + dosyalar-YYYY-MM-DD_HHMMSS.tgz, son 14 çift;
+                       yayın öncesi yedekler db-YYYYMMDD-HHMMSS-once-<commit>.dump (14 gün)
 /opt/takip/logs        yayın ve derleme kayıtları
 /opt/takip/state       yayındaki commit, izlenen dal
 ```
@@ -76,4 +79,5 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 - Güvenlik duvarı (ufw): yalnızca SSH, 80 ve 443 açık. Veritabanı dışarıya kapalı.
 - fail2ban: SSH'ye art arda hatalı girişleri engeller. Sistem güvenlik güncellemeleri otomatik.
 - Önerilen: SSH anahtarıyla girişe geçip root şifre girişini kapatmak.
-- Yedekler şimdilik aynı sunucuda; sunucu dışına kopyalama Aşama 10'da.
+- Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da da son 14 çift. Kayıt: `/opt/takip/logs/backup.log`.
+- Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token ve rclone ayarı yedeğe girmez.

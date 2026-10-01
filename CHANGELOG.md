@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.21.1 — 01.10.2026
+
+- Sunucu yedeği: her gün 03:00 (Romanya saati); veritabanı + dosyalar ortak zaman damgalı çift, geçici veritabanına geri
+  yüklenerek doğrulanır, Google Drive'a kopyalanıp md5 ile doğrulanır; yerelde ve Drive'da son 14 çift. Yeni komutlar:
+  `takip restore yesterday | TARİH`, `takip restore-test [TARİH]`.
+
 ## 3.21.0 — 01.10.2026
 
 - **Bildirim e-postaları** (mevcut SMTP ve bildirim kuyruğu): müşteriye teklif / proforma / fatura (profil), yükleme

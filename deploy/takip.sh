@@ -5,7 +5,9 @@
 #   takip guncelle                   GitHub'da testlerden geçmiş yeni sürüm varsa hemen yayınla
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
 #   takip yonetici E-POSTA "AD" [--reset]   yönetici hesabı aç (ya da şifresini sıfırla) → tek kullanımlık kod
-#   takip yedek                      veritabanı ve dosyaların yedeğini al (her gece kendiliğinden de alınır)
+#   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
+#   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
+#   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
 #   takip log [SATIR]                uygulamanın son günlük satırları
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
 #   takip github                     GitHub erişim anahtarını (token) yenile
@@ -136,25 +138,119 @@ gate() {
 }
 
 # ---------- yedek ----------
-backup_db() { # backup_db ETİKET
+# Gece yedeği (takip-backup.timer, 03:00 Romanya saati → takip yedek): ortak zaman damgalı çift
+#   db-YYYY-MM-DD_HHMMSS.dump (pg_dump -Fc)  ·  dosyalar-YYYY-MM-DD_HHMMSS.tgz (yüklenen dosyalar)
+# Her ikisi yerelde doğrulanır (dump geçici bir veritabanına gerçekten geri yüklenir, arşiv okunur), sonra Google
+# Drive'a (rclone, BACKUP_REMOTE; varsayılan gkhdrive:GKH_TAKIP_BACKUPS) kopyalanır ve md5 ile doğrulanır.
+# Son 14 çift tutulur (yerel ve Drive; yalnızca bu adlandırmaya uyan dosyalar silinir). Yayından önce alınan
+# güvenlik yedekleri eski adla kalır (db-YYYYMMDD-HHMMSS-etiket). .env, github-token ve rclone ayarı yedeğe girmez.
+BACKUP_KEEP=14
+BACKUP_TZ=Europe/Bucharest
+remote_root() { local r; r=$(env_get BACKUP_REMOTE); echo "${r:-gkhdrive:GKH_TAKIP_BACKUPS}"; }
+blog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOGS/backup.log" >&2; }
+
+backup_db() { # backup_db ETİKET [DOSYA]  → yedeğin yolu (veritabanı çalışmıyorsa boş)
   if ! compose ps --status running -q db 2>/dev/null | grep -q .; then return 0; fi
-  local f; f="$BACKUPS/db-$(date +%Y%m%d-%H%M%S)-$1.dump"
-  if compose exec -T db pg_dump -U takip -d takip -Fc >"$f.tmp"; then
+  local f; f=${2:-"$BACKUPS/db-$(date +%Y%m%d-%H%M%S)-$1.dump"}
+  if compose exec -T db pg_dump -U takip -d takip -Fc >"$f.tmp" && [ -s "$f.tmp" ]; then
     mv "$f.tmp" "$f"
-    find "$BACKUPS" -name 'db-*.dump' -mtime +14 -delete
+    # Eski adlı (yayın öncesi / elle) yedekler 14 günden eskiyse silinir. Günlük çiftler: backup_retention
+    find "$BACKUPS" -name 'db-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.dump' -mtime +14 -delete
     echo "$f"
   else
-    rm -f "$f.tmp"
+    rm -f "${f:?}.tmp"
     return 1
   fi
 }
-backup_files() {
+backup_files() { # backup_files [DOSYA] → arşivin yolu (uygulama imajı yoksa boş)
   local tag; tag=$(env_get APP_TAG)
   [ -n "$tag" ] && docker image inspect "takip:$tag" >/dev/null 2>&1 || return 0
-  local f; f="$BACKUPS/dosyalar-$(date +%Y%m%d-%H%M%S).tgz"
-  docker run --rm --user 0 -v takip_uploads:/u:ro -v "$BACKUPS":/b "takip:$tag" tar czf "/b/$(basename "$f")" -C /u .
-  find "$BACKUPS" -name 'dosyalar-*.tgz' -mtime +7 -delete
+  local f; f=${1:-"$BACKUPS/dosyalar-$(date +%Y%m%d-%H%M%S).tgz"}
+  if ! docker run --rm --user 0 -v takip_uploads:/u:ro -v "$BACKUPS":/b "takip:$tag" tar czf "/b/$(basename "$f").tmp" -C /u .; then
+    rm -f "${f:?}.tmp"
+    return 1
+  fi
+  mv "$f.tmp" "$f"
+  find "$BACKUPS" -name 'dosyalar-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.tgz' -mtime +7 -delete
   echo "$f"
+}
+
+db_sql() { compose exec -T -e PGOPTIONS='-c client_min_messages=warning' db psql -U takip -d "${2:-postgres}" -v ON_ERROR_STOP=1 -qtAc "$1"; }
+# Dump'ı verilen (yeni, boş) veritabanına yükler ve uygulamanın tablolarıyla dolu olduğunu kontrol eder.
+# Başarısızsa o veritabanı silinir. Canlı "takip" veritabanına dokunmaz.
+restore_into() { # restore_into VERİTABANI DOSYA
+  db_sql "DROP DATABASE IF EXISTS \"$1\"" >/dev/null && db_sql "CREATE DATABASE \"$1\"" >/dev/null || return 1
+  if ! compose exec -T db pg_restore -U takip -d "$1" --no-owner --exit-on-error <"$2" >/dev/null 2>>"$LOGS/backup.log"; then
+    db_sql "DROP DATABASE IF EXISTS \"$1\"" >/dev/null 2>&1 || true
+    return 1
+  fi
+  local n; n=$(db_sql 'SELECT count(*) FROM "_prisma_migrations"' "$1" 2>/dev/null || echo 0)
+  if ! [ "${n:-0}" -gt 0 ] 2>/dev/null; then
+    db_sql "DROP DATABASE IF EXISTS \"$1\"" >/dev/null 2>&1 || true
+    return 1
+  fi
+}
+# Yedeğin gerçekten geri yüklenebildiği geçici veritabanında denenir
+verify_dump() { # verify_dump DOSYA
+  restore_into takip_yedek_dene "$1" || return 1
+  db_sql 'DROP DATABASE IF EXISTS "takip_yedek_dene"' >/dev/null
+}
+verify_archive() { [ -s "$1" ] && gzip -t "$1" 2>/dev/null && tar -tzf "$1" >/dev/null 2>&1; }
+
+# Drive'a kopyalar ve md5 ile doğrular
+upload_one() { # upload_one DOSYA ALT_KLASÖR
+  local dst l r
+  dst="$(remote_root)/$2/$(basename "$1")"
+  rclone copyto "$1" "$dst" --retries 3 --low-level-retries 10 >>"$LOGS/backup.log" 2>&1 || return 1
+  l=$(md5sum "$1" | cut -d' ' -f1)
+  r=$(rclone md5sum "$dst" 2>>"$LOGS/backup.log" | cut -d' ' -f1)
+  [ -n "$r" ] && [ "$l" = "$r" ]
+}
+
+DAILY_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)$'
+# En yeni BACKUP_KEEP TAM çift (db + dosyalar) kalır; onlardan eski, bu adlandırmaya uyan dosyalar silinir.
+# Bugünkü dosyalar ve adlandırmaya uymayan dosyalar asla silinmez. Tam çift sayısı BACKUP_KEEP'ten azsa hiçbir şey silinmez.
+backup_retention() { # backup_retention yerel | backup_retention uzak
+  local today dbs ups cutoff f ts dir
+  today=$(TZ=$BACKUP_TZ date +%F)
+  if [ "$1" = yerel ]; then
+    dbs=$(ls -1 "$BACKUPS" 2>/dev/null | grep -E "$DAILY_RE" | grep '^db-' || true)
+    ups=$(ls -1 "$BACKUPS" 2>/dev/null | grep -E "$DAILY_RE" | grep '^dosyalar-' || true)
+  else
+    dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>>"$LOGS/backup.log" | grep -E "$DAILY_RE" | grep '^db-' || true)
+    ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>>"$LOGS/backup.log" | grep -E "$DAILY_RE" | grep '^dosyalar-' || true)
+  fi
+  cutoff=$(comm -12 <(echo "$dbs" | sed -nE "s/$DAILY_RE/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$DAILY_RE/\2/p" | sort -u) |
+    sort -r | sed -n "${BACKUP_KEEP}p")
+  [ -n "$cutoff" ] || return 0
+  for f in $dbs $ups; do
+    ts=$(echo "$f" | sed -nE "s/$DAILY_RE/\2/p")
+    [ -n "$ts" ] || continue
+    case $ts in "$today"_*) continue ;; esac
+    [[ "$ts" < "$cutoff" ]] || continue
+    if [ "$1" = yerel ]; then
+      rm -f -- "${BACKUPS:?}/${f:?}" && blog "  eski yerel yedek silindi: $f"
+    else
+      case $f in db-*) dir=database ;; *) dir=uploads ;; esac
+      rclone deletefile "$(remote_root)/$dir/$f" >>"$LOGS/backup.log" 2>&1 && blog "  eski Drive yedeği silindi: $dir/$f"
+    fi
+  done
+  return 0
+}
+
+# Sunucudaki yedek zamanlayıcısı depodakinden farklıysa güncellenir (her gün 03:00 Europe/Bucharest)
+sync_backup_timer() {
+  local u synced=0
+  for u in takip-backup.service takip-backup.timer; do
+    [ -f "$SRC/deploy/systemd/$u" ] && [ -d /etc/systemd/system ] || continue
+    if ! cmp -s "$SRC/deploy/systemd/$u" "/etc/systemd/system/$u"; then
+      cp "$SRC/deploy/systemd/$u" "/etc/systemd/system/$u" 2>/dev/null && synced=1
+    fi
+  done
+  if [ $synced = 1 ]; then
+    systemctl daemon-reload && systemctl restart takip-backup.timer && blog "  yedek zamanlayıcısı güncellendi: her gün 03:00 (Europe/Bucharest)"
+  fi
+  return 0
 }
 
 wait_healthy() { # wait_healthy SANİYE
@@ -364,15 +460,196 @@ cmd_github() {
 }
 
 cmd_backup() {
-  local f g
-  f=$(backup_db elle) || { say "✘ Veritabanı yedeği alınamadı."; return 1; }
-  g=$(backup_files) || { say "✘ Dosya yedeği alınamadı."; return 1; }
+  exec 8>"$STATE/backup.lock"
+  if ! flock -n 8; then say "✘ Başka bir yedek ya da geri yükleme sürüyor."; return 1; fi
+  sync_backup_timer
+  local ts f g ok_local=1 ok_remote=1
+  ts=$(TZ=$BACKUP_TZ date +%Y-%m-%d_%H%M%S)
+  blog "▶ yedek $ts"
+
+  f=$(backup_db gunluk "$BACKUPS/db-$ts.dump" || true)
+  if [ -n "$f" ] && verify_dump "$f"; then
+    blog "✔ veritabanı yedeği: $(basename "$f") ($(du -h "$f" | cut -f1)) — geçici veritabanına geri yüklenerek doğrulandı"
+  else
+    blog "✘ veritabanı yedeği BAŞARISIZ (alınamadı ya da geri yüklenemedi)"
+    ok_local=0
+    if [ -n "$f" ]; then mv -f "$f" "$f.bozuk"; fi
+    f=
+  fi
+
+  g=$(backup_files "$BACKUPS/dosyalar-$ts.tgz" || true)
+  if [ -n "$g" ] && verify_archive "$g"; then
+    blog "✔ dosya yedeği: $(basename "$g") ($(du -h "$g" | cut -f1))"
+  else
+    blog "✘ dosya yedeği BAŞARISIZ"
+    ok_local=0
+    if [ -n "$g" ]; then mv -f "$g" "$g.bozuk"; fi
+    g=
+  fi
+
+  # Drive: yalnızca doğrulanmış yerel dosyalar gider
+  if ! command -v rclone >/dev/null 2>&1; then
+    blog "✘ Google Drive: rclone kurulu değil; yedek yalnızca yerelde"
+    ok_remote=0
+  else
+    if [ -n "$f" ] && upload_one "$f" database; then blog "✔ Google Drive: database/$(basename "$f") yüklendi, md5 doğrulandı"
+    else blog "✘ Google Drive: veritabanı yedeği yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
+    if [ -n "$g" ] && upload_one "$g" uploads; then blog "✔ Google Drive: uploads/$(basename "$g") yüklendi, md5 doğrulandı"
+    else blog "✘ Google Drive: dosya yedeği yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
+  fi
+
+  # Eskiler yalnızca bu gece her şey tamamsa silinir (Drive'a gidemeyen günlerde yerel kopyalar korunur)
+  if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then
+    backup_retention yerel
+    backup_retention uzak
+    echo "$ts" >"$STATE/backup-last-ok"
+  fi
   docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
   # Pazar günleri antivirüs motorunun yeni sürümü alınır (virüs tanımları zaten sürekli güncellenir)
   if [ "$(date +%u)" = 7 ]; then compose build --pull clamav >/dev/null 2>&1 && compose up -d clamav >/dev/null 2>&1 || true; fi
-  say "✔ Yedek: ${f:-—}"
-  say "✔ Dosyalar: ${g:-—}"
-  say "Not: yedekler bu sunucuda duruyor ($BACKUPS). Sunucu dışına kopyalanması ayrıca ayarlanacak."
+  if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then blog "✔ yedek $ts tamam (yerel + Google Drive)"; return 0; fi
+  blog "✘ yedek $ts EKSİK (yerel: $([ $ok_local = 1 ] && echo tamam || echo HATA), Google Drive: $([ $ok_remote = 1 ] && echo tamam || echo HATA))"
+  return 1
+}
+
+# ---------- geri yükleme ----------
+# O günün en son TAM yedek çifti (veritabanı + dosyalar): önce yerel, yoksa Google Drive.
+PAIR_TS='' PAIR_SRC=''
+pair_time() { echo "$PAIR_TS" | sed -E 's/_([0-9]{2})([0-9]{2})([0-9]{2})$/ \1:\2:\3/'; }
+find_pair() { # find_pair YYYY-MM-DD
+  local day=$1 ts dbs ups
+  for ts in $(ls -1 "$BACKUPS" 2>/dev/null | grep -E "^db-${day}_[0-9]{6}\.dump$" | sed -nE "s/$DAILY_RE/\2/p" | sort -r); do
+    if [ -s "$BACKUPS/dosyalar-$ts.tgz" ]; then PAIR_TS=$ts PAIR_SRC=LOCAL; return 0; fi
+  done
+  command -v rclone >/dev/null 2>&1 || return 1
+  dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>/dev/null | grep -E "^db-${day}_[0-9]{6}\.dump$" | sed -nE "s/$DAILY_RE/\2/p" || true)
+  ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>/dev/null | grep -E "^dosyalar-${day}_[0-9]{6}\.tgz$" | sed -nE "s/$DAILY_RE/\2/p" || true)
+  ts=$(comm -12 <(echo "$dbs" | sort -u) <(echo "$ups" | sort -u) | grep . | sort -r | head -1 || true)
+  [ -n "$ts" ] || return 1
+  PAIR_TS=$ts PAIR_SRC="GOOGLE DRIVE"
+}
+resolve_day() { # resolve_day yesterday|YYYY-MM-DD → YYYY-MM-DD
+  case ${1:-} in
+    yesterday | dun | dün) TZ=$BACKUP_TZ date -d yesterday +%F ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) echo "$1" ;;
+    *) return 1 ;;
+  esac
+}
+# Çifti bulur, gerekiyorsa Drive'dan indirir, ikisini de doğrular. Hata → 1 (canlı veriye hiç dokunulmaz)
+fetch_pair() { # fetch_pair YYYY-MM-DD
+  find_pair "$1" || { say "✘ $1 için tam yedek çifti (veritabanı + dosyalar) bulunamadı (yerel ya da Google Drive)."; return 1; }
+  PAIR_DB="$BACKUPS/db-$PAIR_TS.dump"; PAIR_UP="$BACKUPS/dosyalar-$PAIR_TS.tgz"
+  say "Yedek tarihi/saati : $(pair_time) (Europe/Bucharest)"
+  say "Veritabanı yedeği  : $(basename "$PAIR_DB")"
+  say "Dosya yedeği       : $(basename "$PAIR_UP")"
+  say "Kaynak             : $PAIR_SRC"
+  if [ "$PAIR_SRC" != LOCAL ]; then
+    say "Google Drive'dan indiriliyor…"
+    if ! { rclone copyto "$(remote_root)/database/$(basename "$PAIR_DB")" "$PAIR_DB" >>"$LOGS/backup.log" 2>&1 &&
+      rclone copyto "$(remote_root)/uploads/$(basename "$PAIR_UP")" "$PAIR_UP" >>"$LOGS/backup.log" 2>&1; }; then
+      say "✘ Google Drive'dan indirilemedi."; return 1
+    fi
+  fi
+  [ -s "$PAIR_DB" ] && [ -s "$PAIR_UP" ] || { say "✘ Yedek dosyalarından biri eksik."; return 1; }
+  verify_archive "$PAIR_UP" || { say "✘ Dosya arşivi bozuk."; return 1; }
+}
+
+cmd_restore() {
+  local day tag safe_db safe_up answer stamp
+  day=$(resolve_day "${1:-}") || { say "Kullanım: takip restore YYYY-MM-DD | takip restore yesterday   (canlıya dokunmadan deneme: takip restore-test TARİH)"; return 1; }
+  exec 8>"$STATE/backup.lock"
+  if ! flock -n 8; then say "✘ Bir yedek ya da geri yükleme sürüyor; sonra tekrar deneyin."; return 1; fi
+
+  # A–D: çift bulunur, indirilir, doğrulanır; veritabanı yedeği ayrı bir veritabanına (takip_restore) yüklenir
+  fetch_pair "$day" || { say "Hiçbir şey değişmedi."; return 1; }
+  say "Doğrulanıyor (veritabanı yedeği ayrı bir veritabanına yükleniyor)…"
+  restore_into takip_restore "$PAIR_DB" || { say "✘ Veritabanı yedeği geri yüklenemiyor; hiçbir şey değişmedi."; return 1; }
+  tag=$(env_get APP_TAG)
+  if ! docker image inspect "takip:$tag" >/dev/null 2>&1; then
+    db_sql 'DROP DATABASE IF EXISTS "takip_restore"' >/dev/null
+    say "✘ Uygulama imajı bulunamadı; hiçbir şey değişmedi."; return 1
+  fi
+
+  # F: açık onay
+  say ""
+  say "⚠ DİKKAT: canlı veritabanı ve yüklenen dosyalar bu yedekle DEĞİŞTİRİLECEK. Yedekten sonraki tüm kayıtlar kaybolur."
+  say "  Önce şu anki durumun güvenlik yedeği alınır."
+  tty_read answer "Onaylamak için yedeğin tarihini yazın ($day): "
+  if [ "$answer" != "$day" ]; then
+    db_sql 'DROP DATABASE IF EXISTS "takip_restore"' >/dev/null
+    say "Vazgeçildi; hiçbir şey değişmedi."; return 1
+  fi
+
+  # Bu sırada otomatik güncelleme çalışmasın
+  exec 9>"$STATE/deploy.lock"
+  flock 9
+
+  # E: şu anki durumun güvenlik yedeği (veritabanı + dosyalar)
+  stamp=$(date +%Y%m%d-%H%M%S)
+  safe_db=$(backup_db geri-yukleme-oncesi "$BACKUPS/db-$stamp-geri-yukleme-oncesi.dump" || true)
+  safe_up=$(backup_files "$BACKUPS/dosyalar-$stamp-geri-yukleme-oncesi.tgz" || true)
+  if [ -z "$safe_db" ] || [ -z "$safe_up" ] || ! verify_archive "$safe_up"; then
+    db_sql 'DROP DATABASE IF EXISTS "takip_restore"' >/dev/null
+    say "✘ Güvenlik yedeği alınamadı; hiçbir şey değişmedi."; return 1
+  fi
+  blog "▶ geri yükleme $PAIR_TS ($PAIR_SRC) — güvenlik yedeği: $(basename "$safe_db"), $(basename "$safe_up")"
+
+  # Yalnızca veritabanını ve dosyaları kullanan servisler durur (db, caddy, clamav çalışmaya devam eder)
+  compose stop app worker >/dev/null 2>&1 || true
+
+  # G: doğrulanmış takip_restore canlı veritabanının yerine geçer; eskisi takip_onceki olarak kalır
+  if ! { db_sql 'DROP DATABASE IF EXISTS "takip_onceki"' >/dev/null &&
+    db_sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'takip' AND pid <> pg_backend_pid()" >/dev/null &&
+    db_sql 'ALTER DATABASE "takip" RENAME TO "takip_onceki"' >/dev/null &&
+    db_sql 'ALTER DATABASE "takip_restore" RENAME TO "takip"' >/dev/null; }; then
+    if ! db_sql "SELECT datname FROM pg_database WHERE datname = 'takip'" | grep -q takip; then
+      db_sql 'ALTER DATABASE "takip_onceki" RENAME TO "takip"' >/dev/null || true
+    fi
+    compose up -d app worker >/dev/null 2>&1 || true
+    blog "✘ geri yükleme: veritabanı değiştirilemedi; eski durum korundu"
+    say "✘ Veritabanı değiştirilemedi; eski durum korundu."; return 1
+  fi
+
+  # H, I: dosyalar (sahiplik: uygulamanın kullanıcısı 1001)
+  if ! docker run --rm --user 0 -v takip_uploads:/u -v "$BACKUPS":/b "takip:$tag" sh -c \
+    "find /u -mindepth 1 -delete && tar -xzpf '/b/$(basename "$PAIR_UP")' -C /u && chown -R 1001:1001 /u" >>"$LOGS/backup.log" 2>&1; then
+    blog "✘ geri yükleme: dosyalar açılamadı; her şey eski hâline döndürülüyor"
+    docker run --rm --user 0 -v takip_uploads:/u -v "$BACKUPS":/b "takip:$tag" sh -c \
+      "find /u -mindepth 1 -delete && tar -xzpf '/b/$(basename "$safe_up")' -C /u && chown -R 1001:1001 /u" >>"$LOGS/backup.log" 2>&1 || true
+    db_sql 'ALTER DATABASE "takip" RENAME TO "takip_hatali"' >/dev/null &&
+      db_sql 'ALTER DATABASE "takip_onceki" RENAME TO "takip"' >/dev/null &&
+      db_sql 'DROP DATABASE IF EXISTS "takip_hatali"' >/dev/null || true
+    compose up -d app worker >/dev/null 2>&1 || true
+    say "✘ Dosyalar geri yüklenemedi; eski duruma dönüldü. Ayrıntı: $LOGS/backup.log"; return 1
+  fi
+
+  # Yedek eski bir sürümdense şema bu sürüme taşınır (migration); sonra yalnızca durdurulan servisler başlar
+  compose run --rm tools >>"$LOGS/backup.log" 2>&1 || blog "⚠ geri yükleme: migration uyarısı (ayrıntı: $LOGS/backup.log)"
+  compose up -d app worker >/dev/null 2>&1
+  # K: sağlık kontrolü
+  if wait_healthy 240; then
+    blog "✔ geri yükleme $PAIR_TS tamam — sipariş: $(db_sql 'SELECT count(*) FROM "Order"' takip), kullanıcı: $(db_sql 'SELECT count(*) FROM "User"' takip)"
+    say "✔ Geri yüklendi: $(pair_time). Uygulama açık: $(env_get APP_URL)"
+    say "  Önceki veritabanı 'takip_onceki' olarak, güvenlik yedekleri $BACKUPS içinde duruyor."
+  else
+    blog "✘ geri yükleme sonrası uygulama açılmadı (takip log). Güvenlik yedeği: $(basename "$safe_db")"
+    say "✘ Uygulama açılmadı: takip log. Önceki veritabanı 'takip_onceki', güvenlik yedekleri $BACKUPS içinde."
+    return 1
+  fi
+}
+
+# Canlı veriye dokunmadan: çifti bulur (gerekirse Drive'dan indirir) ve geçici veritabanına yükleyerek dener
+cmd_restore_test() {
+  local day
+  day=$(resolve_day "${1:-yesterday}") || { say "Kullanım: takip restore-test YYYY-MM-DD | yesterday"; return 1; }
+  fetch_pair "$day" || return 1
+  say "✔ Dosya arşivi okunuyor ($(tar -tzf "$PAIR_UP" | grep -vc '/$' || true) dosya)"
+  if restore_into takip_yedek_dene "$PAIR_DB"; then
+    say "✔ Veritabanı geçici veritabanına yüklendi — sipariş: $(db_sql 'SELECT count(*) FROM "Order"' takip_yedek_dene), kullanıcı: $(db_sql 'SELECT count(*) FROM "User"' takip_yedek_dene)"
+    db_sql 'DROP DATABASE IF EXISTS "takip_yedek_dene"' >/dev/null
+  else
+    say "✘ Veritabanı yedeği geri yüklenemedi."; return 1
+  fi
 }
 
 main() {
@@ -390,12 +667,14 @@ main() {
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
     yedek | backup) cmd_backup ;;
+    restore | geri-yukle) cmd_restore "$@" ;;
+    restore-test | yedek-dene) cmd_restore_test "$@" ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,13p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,15p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac
