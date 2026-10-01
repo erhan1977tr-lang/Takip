@@ -40,24 +40,42 @@ export function isLoaded(order, today) {
 export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GONDERILDI') ?? null;
 
 /**
- * Belge satırları (EUR müşteri fiyatıyla): cam m² ile, CNC / delik / adet satırları adetle. Bedelsiz satırlar yazılmaz.
- * @returns {{ code: string, name: string, unit: string, qty: number, eur: number }[]}
+ * Belge satırları — yalnızca CAM (ürün sahibinin kuralı): satır adı yalnızca camın Romence niteliği (ölçü / adet yazılmaz);
+ * CNC ve delik (ve m² dışındaki her satır) tutarı ait olduğu camın tutarına eklenir — üstündeki cam satırına, yoksa
+ * sonraki cama. Aynı nitelikteki camlar tek satırda toplanır (m² toplamı). Bedelsiz ve fiyatsız satırlar yazılmaz.
+ * @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]}
  */
 export function glassLines(offer) {
-  const out = [];
+  const groups = new Map();
+  let last = null;
+  let carry = 0; // camdan önce gelen ek işlem tutarı (sonraki cama eklenir)
   for (const l of offer.lines) {
     if (l.free || l.offerPrice == null) continue;
     const price = Number(l.offerPrice);
-    const byPiece = l.unit === 'adet' || l.kind === 'CNC' || l.kind === 'DELIK';
-    const qty = byPiece ? l.adet : offerLineTotals({ ...l, unitPrice: 0 }).metraj;
-    if (!(qty > 0)) continue;
-    const dims = l.enMm && l.boyMm ? ` ${l.enMm}×${l.boyMm} mm × ${l.adet}` : '';
-    // Belge metinleri Romence: camda Romence ad; CNC ve delik sabit Romence adla
-    const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : (l.descriptionRo || l.description);
-    out.push({ code: l.poz ?? '', name: `${name}${byPiece ? '' : dims}`, unit: byPiece ? 'buc' : 'mp', qty, eur: price });
+    const isGlass = (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2';
+    if (isGlass) {
+      const qty = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
+      if (!(qty > 0)) continue;
+      const name = String(l.descriptionRo || l.description).trim();
+      const g = groups.get(name) ?? { code: '', name, unit: 'mp', qty: 0, eurTotal: 0 };
+      g.qty = Math.round((g.qty + qty) * 1000) / 1000;
+      g.eurTotal = round2(g.eurTotal + qty * price + carry);
+      carry = 0;
+      groups.set(name, g);
+      last = g;
+    } else {
+      const extra = round2(Math.max(0, Math.trunc(Number(l.adet) || 0)) * price);
+      if (last) last.eurTotal = round2(last.eurTotal + extra);
+      else carry = round2(carry + extra);
+    }
   }
+  const out = [...groups.values()];
+  if (carry && out.length) out[out.length - 1].eurTotal = round2(out[out.length - 1].eurTotal + carry);
   return out;
 }
+
+/** Cam satırını RON birim fiyata çevirir: (cam + işlemler) toplamı × kur / m² */
+export const toRonLines = (lines, rate) => lines.map((g) => ({ code: g.code, name: g.name, unit: g.unit, qty: g.qty, ron: round2((g.eurTotal * rate) / g.qty) }));
 
 /** TVA dahil tutar → TVA hariç birim fiyat (avans satırı) */
 export const netOf = (gross, vatRate) => round2(Number(gross) / (1 + Number(vatRate) / 100));
@@ -206,8 +224,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           const glasses = new Map((await db.glassProduct.findMany({ where: { id: { in: ids } } })).map((x) => [x.id, glassLabel(x, 'ro')]));
           for (const l of offer.lines) if (!l.descriptionRo && glasses.has(l.glassProductId)) l.descriptionRo = glasses.get(l.glassProductId);
         }
-        lines = glassLines(offer);
-        if (lines.length === 0) throw new Permanent('Teklifte fiyatlı satır yok');
+        lines = toRonLines(glassLines(offer), rate);
+        if (lines.length === 0) throw new Permanent('Teklifte fiyatlı cam satırı yok');
         if (kind === 'INVOICE' && advance) {
           // Avans düşümü: avans faturasının TVA hariç tutarı eksi satır olarak
           const gross = advance.total != null ? Number(advance.total) : Number(b?.paidAmount ?? 0);

@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.16.3 — 01.10.2026
+
+- Cam proforma ve faturalarında **yalnızca cam** yazılır: satır adı camın Romence niteliği (ölçü ve adet yok); CNC ve delik
+  tutarları ilgili camın tutarına eklenir; aynı nitelikteki camlar tek satırda (m² toplamı).
+
 ## 3.16.2 — 01.10.2026
 
 - Cam proforma ve faturalarında açıklama yalnızca siparişin açıklaması; satırlar Romence (cam adı, "Prelucrare CNC", "Gaură").

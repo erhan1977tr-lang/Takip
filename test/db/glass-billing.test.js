@@ -68,7 +68,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(pf['Continut[0][UM]'], 'mp');
   assert.equal(pf['Continut[0][NrProduse]'], '2');
   assert.equal(pf['Continut[0][PretUnitar]'], '250.00', '50 EUR × 5');
-  assert.equal(pf['Continut[0][Denumire]'], 'Securizat 1000×1000 mm × 2', 'Romence');
+  assert.equal(pf['Continut[0][Denumire]'], 'Securizat', 'yalnızca cam niteliği, Romence');
   assert.equal(pf.Text, 'Ușă duș', 'açıklamada yalnızca sipariş açıklaması');
   let docs = await db.fgoDocument.findMany({ where: { orderId: o.id } });
   assert.deepEqual(docs.map((d) => `${d.kind}:${d.series}${d.number}`), ['PROFORMA:PRF552']);

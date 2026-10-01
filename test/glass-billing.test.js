@@ -1,7 +1,7 @@
 // Cam siparişi FGO belge akışı — saf kurallar.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { billingState, glassLines, isLoaded, netOf, renderDocEmail } from '../server/glass/billing.js';
+import { billingState, glassLines, isLoaded, netOf, renderDocEmail, toRonLines } from '../server/glass/billing.js';
 
 test('cam yüklendi: yükleme gününden 2 gün sonra (gerçek, yoksa tahmini gün)', () => {
   const o = (a, e) => ({ actualShipDate: a ? new Date(a) : null, estimatedShipDate: e ? new Date(e) : null });
@@ -11,17 +11,26 @@ test('cam yüklendi: yükleme gününden 2 gün sonra (gerçek, yoksa tahmini g�
   assert.equal(isLoaded(o(null, null), '2030-01-01'), false);
 });
 
-test('belge satırları: cam m² ile, CNC/delik adetle; bedelsiz ve fiyatsız satır yok', () => {
+test('belge satırları: yalnızca cam (Romence nitelik, ölçü/adet yok); CNC ve delik tutarı ilgili cama eklenir', () => {
   const lines = glassLines({ lines: [
-    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 2000, adet: 2, offerPrice: '50', poz: 'K1' },
+    { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 1, offerPrice: '7' }, // camdan önce: sonraki cama
+    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 2000, adet: 2, offerPrice: '50', poz: 'K1' },
     { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 3, offerPrice: '10' },
     { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 4, offerPrice: '2', free: true },
+    { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 2, offerPrice: '2.5' },
+    { kind: 'CAM', unit: 'm2', description: 'Lamine', descriptionRo: 'Laminat 44.2', enMm: 500, boyMm: 1000, adet: 1, offerPrice: '80' },
+    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 1000, adet: 1, offerPrice: '50' },
     { kind: 'CAM', unit: 'm2', description: 'X', enMm: 100, boyMm: 100, adet: 1, offerPrice: null },
   ] });
   assert.deepEqual(lines, [
-    { code: 'K1', name: 'Securizat 1000×2000 mm × 2', unit: 'mp', qty: 4, eur: 50 },
-    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10 },
+    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 5, eurTotal: 200 + 7 + 30 + 5 + 50 },
+    { code: '', name: 'Laminat 44.2', unit: 'mp', qty: 0.5, eurTotal: 40 },
   ]);
+  const total = lines.reduce((s, l) => s + l.eurTotal, 0);
+  assert.equal(total, 7 + 200 + 30 + 5 + 40 + 50, 'teklif toplamı korunur (bedelsiz hariç)');
+  const ron = toRonLines(lines, 5);
+  assert.deepEqual(ron[0], { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 5, ron: 292 }, '(292 € × 5) / 5 m²');
+  assert.ok(!ron.some((l) => /CNC|Gaură|mm ×/.test(l.name)));
   assert.equal(netOf(1210, 21), 1000);
 });
 
