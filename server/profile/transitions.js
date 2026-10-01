@@ -245,6 +245,8 @@ const ACTIONS = {
       proformaNo, proformaAt: h.now, proformaLink: p.link ?? null, proformaAmount: Number(p.amount).toFixed(2),
       fxRate: Number(p.rate).toFixed(4), fxDate: p.rateDate, fxSource: p.source,
     });
+    // Muhasebe → Profil Tahsilat için belge kaydı (ödeme durumu FGO'dan okunur)
+    await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'PROFORMA', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
     h.event('PROFORMA', proformaNo);
     h.audit = { proformaNo, fxRate: p.rate, fxSource: p.source, amountRon: p.amount, fgo: true };
   },
@@ -336,6 +338,7 @@ const ACTIONS = {
     const p = h.payload;
     const invoiceNo = `${p.series}${p.number}`;
     await setStage(h, 'FATURALANDI', { invoiceNo, invoicedAt: h.now, invoiceLink: p.link ?? null });
+    await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'INVOICE', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
     h.event('INVOICED', invoiceNo);
     h.audit = { invoiceNo, fxRate: p.rate, amountRon: p.amount, fgo: true };
   },

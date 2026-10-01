@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.15.0 — 01.10.2026 · Muhasebe
+
+- Yönetici menüsünde **Muhasebe**: Profil Tahsilat, Cam Tahsilat, Tedarikçi Hesap Durumu (yalnızca yönetici).
+- **Profil / Cam Tahsilat:** FGO'da kesilen proforma ve faturalar; toplam, tahsil edilen, kalan ve durum (Ödenmedi /
+  Kısmi Ödendi / Ödendi) FGO'dan okunur ("FGO ile Güncelle"). Cam belgeleri sonraki aşamada; şimdilik boş.
+- **Tedarikçi Hesap Durumu:** yükleme günü başına cam m², satış, maliyet, transport ve kâr; transport elle girilir.
+  Fabrika cari hesabı: ödemeler (tarih, tutar, para birimi, açıklama) yüklemelerden bağımsız; bakiye = maliyet − ödeme.
+  Para birimleri ayrı gösterilir.
+
 ## 3.14.1 — 01.10.2026
 
 - FGO: "The value … is not valid for IdExtern" hatası düzeltildi (müşteri kimliği FGO'ya gönderilmiyor; FGO orada tam sayı bekliyor).

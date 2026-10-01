@@ -256,6 +256,8 @@ function fakeFgo(numbers) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     const form = Object.fromEntries(new URLSearchParams(init.body));
+    // Belge durumu (muhasebe): tutar ve ödenen
+    if (String(url).endsWith('/factura/getstatus')) return new Response(JSON.stringify({ Success: true, Factura: { Numar: form.Numar, Serie: form.Serie, Valoare: '100.00', ValoareAchitata: '40.00' } }));
     calls.push({ url, form });
     const n = numbers.shift();
     return new Response(JSON.stringify({ Success: true, Factura: { Numar: String(n), Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
@@ -285,6 +287,10 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   assert.equal(o.profile.stage, 'PROFORMA');
   assert.equal(o.profile.proformaNo, 'PRF552');
   assert.equal(o.profile.proformaLink, 'https://fgo.example/PRF552.pdf');
+  const pdoc = await db.fgoDocument.findUnique({ where: { series_number: { series: 'PRF', number: '552' } } });
+  assert.equal(pdoc.kind, 'PROFORMA');
+  assert.equal(pdoc.total.toString(), '100', 'tutar FGO\'dan hemen okunur');
+  assert.equal(pdoc.paid.toString(), '40');
   assert.equal(Number(o.profile.fxRate), 4.9765);
   assert.equal(o.profile.fxSource, 'https://bt.example/curs');
   assert.equal(o.profile.proformaAmount.toString(), '1493.04'); // 24 × 62,21 RON
@@ -377,4 +383,51 @@ dbTest('FGO: elle modda günün kuru kullanılır; girilmemişse beklenir, giril
   assert.equal(asked, 0, 'elle modda BT\'ye gidilmez');
   assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '53.45');
   await fgoOn(false);
+});
+
+dbTest('Muhasebe: FGO belgeleri sipariş tipine göre listelenir, "FGO ile güncelle" ödeneni yeniler (ödenmişler atlanır)', async () => {
+  const { listDocuments, refreshDocuments, paymentStatus } = await import('../../server/accounting/receivables.js');
+  await fgoOn();
+  const docs = await listDocuments(db, 'PROFILE_ORDER');
+  assert.ok(docs.length >= 2, 'proforma + fatura');
+  assert.equal((await listDocuments(db, 'GLASS_ORDER')).length, 0);
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    const form = Object.fromEntries(new URLSearchParams(init.body));
+    seen.push(`${form.Serie}${form.Numar}`);
+    const paid = form.Numar === '552' ? '100.00' : '0';
+    return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '100.00', ValoareAchitata: paid } }));
+  };
+  const r = await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl, sleep: async () => {} });
+  assert.equal(r.ok, true);
+  const prf = await db.fgoDocument.findUnique({ where: { series_number: { series: 'PRF', number: '552' } } });
+  assert.equal(paymentStatus(prf.total, prf.paid), 'PAID');
+  seen.length = 0;
+  await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl, sleep: async () => {} });
+  assert.ok(!seen.includes('PRF552'), 'ödenmiş belge yeniden sorulmaz');
+  await fgoOn(false);
+  assert.deepEqual(await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl }), { ok: false, code: 'FGO_DISABLED' });
+});
+
+dbTest('Muhasebe: yükleme kârı ve fabrika bakiyesi; ödemeler yüklemeye bağlı değil, para birimleri ayrı', async () => {
+  const { supplierData } = await import('../../server/accounting/supplier.js');
+  const glass = await db.order.create({
+    data: {
+      orderNo: 'GLA900', customerOrderNo: 900, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'YUKLENDI',
+      estimatedShipDate: new Date('2026-09-15T00:00:00Z'), actualShipDate: new Date('2026-09-15T00:00:00Z'),
+      offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '600.00', offerAmount: '1000.00', createdById: people.admin.id, lines: { create: [{ sortOrder: 0, description: 'Cam', enMm: 1000, boyMm: 2000, adet: 5, unit: 'm2', unitPrice: '60.00', offerPrice: '100.00', kind: 'CAM' }] } } },
+    },
+  });
+  await db.loadingCost.create({ data: { shipDay: new Date('2026-09-15'), amount: '150.00', currency: 'EUR', note: 'TIR' } });
+  await db.loadingCost.create({ data: { shipDay: new Date('2026-09-15'), amount: '200.00', currency: 'RON', note: 'vama' } });
+  await db.factoryPayment.create({ data: { paidOn: new Date('2026-09-20'), amount: '450.00', currency: 'EUR' } });
+  const d = await supplierData(db, new Date('2026-10-02T00:00:00Z'));
+  const day = d.days.find((x) => x.day === '2026-09-15');
+  assert.equal(day.m2, 10);
+  assert.deepEqual(day.byCur.EUR, { sale: 1000, cost: 600, transport: 150, profit: 250 });
+  assert.deepEqual(day.byCur.RON, { sale: 0, cost: 0, transport: 200, profit: -200 }, 'RON nakliye EUR\'ya eklenmez');
+  assert.equal(d.summary.EUR.paid, 450);
+  assert.equal(d.summary.EUR.balance, 150, '600 maliyet − 450 ödeme');
+  await db.offer.deleteMany({ where: { orderId: glass.id } });
+  await db.order.delete({ where: { id: glass.id } });
 });

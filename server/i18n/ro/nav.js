@@ -1,5 +1,9 @@
 export default {
   operations: 'Operațiuni',
+  accounting: 'Contabilitate',
+  profileReceivables: 'Încasări profile',
+  glassReceivables: 'Încasări sticlă',
+  supplier: 'Situație furnizor',
   people: 'Persoane',
   definitions: 'Definiții',
   customerPortal: 'Portal client',

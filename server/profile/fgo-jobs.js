@@ -8,7 +8,7 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
-import { FgoError, emitereForm, fgoEmit, fgoKey, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
+import { FgoError, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, dayKeyOf, localDay } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
@@ -110,6 +110,16 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       });
       await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
       done++;
+      // Muhasebe: belgenin TVA dahil tutarı hemen okunur (olmazsa "FGO ile güncelle" sonra okur)
+      try {
+        const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
+        await db.fgoDocument.update({
+          where: { series_number: { series: doc.series, number: doc.number } },
+          data: { total: st.total == null ? null : st.total.toFixed(2), paid: st.paid == null ? null : st.paid.toFixed(2), checkedAt: new Date() },
+        });
+      } catch {
+        // tahsilat ekranından yeniden denenir
+      }
     } catch (e) {
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);

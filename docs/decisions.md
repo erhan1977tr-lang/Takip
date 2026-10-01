@@ -77,6 +77,15 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 49 | Proforma türü | FGO belgelerinde proforma türü yok; tür adı ayardan (varsayılan "Proforma"), "Bağlantıyı dene" FGO'nun kabul ettiği türleri listeler. API proforma kesemezse sonra bakılacak. |
 | 50 | Anahtar ve müşteri bilgisi | FGO özel anahtarı yalnızca Entegrasyonlar ekranından girilir, AUTH_SECRET'tan türetilen anahtarla şifreli saklanır, bir daha gösterilmez. Müşteri kartına fatura bilgileri eklendi (CUI, Nr. Reg. Com., ülke, județ, localitate, adres); eksikse proforma kesilmez. |
 
+## Muhasebe (01.10.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 51 | Erişim | Muhasebe yalnızca yönetici (`ACCOUNTING_MANAGE`): Profil Tahsilat, Cam Tahsilat, Tedarikçi Hesap Durumu. |
+| 52 | Tahsilat | FGO'da kesilen her belge `FgoDocument` olarak kaydedilir; tutar (TVA dahil) ve tahsil edilen FGO getstatus'tan okunur ("FGO ile Güncelle"; mevcut FGO bağlantısı, ayrı entegrasyon yok). Durum: ödenen 0 → Ödenmedi, 0 < ödenen < toplam → Kısmi, ödenen ≥ toplam → Ödendi. Cam belgeleri için akış sonraki aşamada; ekran şimdilik boş. |
+| 53 | Yükleme kârlılığı | Yükleme = yükleme günü (Yüklemeler sekmesiyle aynı). Yükleme günü bugün ya da önce olan, müşteriye teklif gönderilmiş cam siparişleri. Cam satış = müşteriye giden yönetici fiyatı; **cam alış/maliyet = satış fiyatı (satışçının fabrika fiyat tablosundan gelen fiyatı, Offer.amount)** — sistemdeki tek alış verisi bu. Transport yükleme gününe elle girilir (tutar, para birimi, açıklama). Kâr = satış − maliyet − transport. |
+| 54 | Fabrika cari | Fabrika ödemeleri yüklemelere/siparişlere bağlı değildir ve dağıtılmaz. Bakiye = toplam cam maliyeti − toplam ödeme. Para birimleri hiçbir toplamda birbirine eklenmez. |
+
 ## Sunucu (29.09.2026)
 
 | # | Konu | Karar |

@@ -80,6 +80,7 @@ enum PermissionKey {
   STOCK_MANAGE
   SETTINGS_MANAGE
   AUDIT_VIEW
+  ACCOUNTING_MANAGE
 }
 
 model RolePermission {
@@ -328,6 +329,7 @@ model Order {
   alerts            AdminAlert[]
   notes             OrderNote[]
   outbox            NotificationOutbox[]
+  fgoDocuments      FgoDocument[]
   profile           ProfileOrder?        // yalnızca profil siparişinde
   profileItems      ProfileOrderItem[]
   stockMoves        StockMovement[]
@@ -1025,4 +1027,56 @@ model StockMovement {
 
   @@index([productId])
   @@index([orderId])
+}
+
+// ---------------------------------------------------------
+// MUHASEBE (yalnızca yönetici)
+// ---------------------------------------------------------
+
+// FGO'da kesilen belgeler (proforma / fatura) ve FGO'dan okunan ödeme durumu. Belge kesilince kaydedilir
+// (server/profile/transitions.js → fgo_proforma / fgo_invoice); "FGO ile güncelle" getstatus ile tutarı ve ödeneni yeniler.
+model FgoDocument {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind       String    // PROFORMA | INVOICE
+  series     String
+  number     String
+  issuedAt   DateTime
+  link       String?
+  currency   String    @default("RON")
+  total      Decimal?  @db.Decimal(14, 2) // FGO "Valoare" (TVA dahil); ilk kontrolden önce boş
+  paid       Decimal?  @db.Decimal(14, 2) // FGO "ValoareAchitata"
+  checkedAt  DateTime?
+  checkError String?
+  createdAt  DateTime  @default(now())
+
+  @@unique([series, number])
+  @@index([orderId])
+}
+
+// Yükleme (yükleme günü) başına nakliye maliyeti; yönetici elle girer. Bir güne birden çok kalem girilebilir.
+model LoadingCost {
+  id          String   @id @default(cuid())
+  shipDay     DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([shipDay])
+}
+
+// Fabrikaya yapılan ödemeler: yüklemelere ve siparişlere BAĞLI DEĞİL (fabrika cari hesabı).
+model FactoryPayment {
+  id          String   @id @default(cuid())
+  paidOn      DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([paidOn])
 }

@@ -1,5 +1,9 @@
 export default {
   operations: 'Operasyon',
+  accounting: 'Muhasebe',
+  profileReceivables: 'Profil Tahsilat',
+  glassReceivables: 'Cam Tahsilat',
+  supplier: 'Tedarikçi Hesap Durumu',
   people: 'Kişiler',
   definitions: 'Tanımlar',
   customerPortal: 'Müşteri portalı',

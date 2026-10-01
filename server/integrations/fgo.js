@@ -236,3 +236,16 @@ export async function fgoTest(settings, key, fetchImpl = fetch) {
     return { ok: !authFailed && !(e instanceof FgoError && e.retry), message: msg.slice(0, 300), types };
   }
 }
+
+/**
+ * Belgenin FGO'daki tutarı ve ödenen kısmı (factura/getstatus). Hash = SHA1(CUI + anahtar + belge no).
+ * @returns {Promise<{ total: number | null, paid: number | null }>}
+ */
+export async function fgoStatus(settings, key, { series, number, appUrl = '' }, fetchImpl = fetch) {
+  const json = await post(settings, '/factura/getstatus', {
+    CodUnic: settings.cui, Hash: fgoHash(settings.cui, key, number), Serie: series, Numar: number, PlatformaUrl: appUrl,
+  }, fetchImpl);
+  const f = json.Factura ?? {};
+  const n = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  return { total: n(f.Valoare), paid: n(f.ValoareAchitata) };
+}

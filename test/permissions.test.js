@@ -35,7 +35,7 @@ test('yetki: denetimci yalnızca okur (karar 8)', () => {
 });
 
 test('yetki: yönetim yetkileri yalnızca yönetici', () => {
-  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW']) {
+  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ACCOUNTING_MANAGE']) {
     assert.deepEqual(who(p), ['ADMIN'], p);
   }
 });

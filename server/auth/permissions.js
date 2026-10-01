@@ -36,6 +36,7 @@ export const PERMISSIONS = {
   ALERT_VIEW: 'Önemli kararlar listesini görür ve kapatır',
   SETTINGS_MANAGE: 'Ayarlar ve entegrasyonlar',
   AUDIT_VIEW: 'Denetim kaydını görür',
+  ACCOUNTING_MANAGE: 'Muhasebe: tahsilat, yükleme kârlılığı, fabrika cari hesabı',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
