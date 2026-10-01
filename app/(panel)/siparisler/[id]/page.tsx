@@ -223,7 +223,9 @@ export default async function OrderPage({
           { label: t('order.info.drawing'), value: order.status === 'YENI' ? (isCustomer ? '—' : t('order.info.drawingPending')) : order.drawingTrack === 'YOK' ? t('order.info.drawingNotNeeded') : t('order.info.drawingNeeded') },
           order.drawingTrack !== 'YOK' && { label: t('order.info.revisions'), value: t('order.info.revisionRounds', { n: order.revisionCount }) },
           !!order.assignedDrawer && !isCustomer && { label: t('order.info.drawer'), value: order.assignedDrawer.name || order.assignedDrawer.email },
-          !isCustomer && { label: t('order.info.labels'), value: `${order.camEtiket ?? '—'} / ${order.sandikEtiket ?? '—'}` },
+          // Etiketler müşteri kaydından (Yönetim → Müşteriler: Customer.camEtiket / Customer.sandikEtiket)
+          !isCustomer && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
+          !isCustomer && { label: t('order.info.sandikEtiket'), value: order.customer.sandikEtiket ?? '—' },
         ]}
       >
         {order.items.length > 0 && (

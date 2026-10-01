@@ -36,13 +36,20 @@ function toggle(open: boolean) {
 /** Menüdeki "‹" düğmesi ve menü kapalıyken soldaki "›" sekmesi */
 export function SidebarToggle({ hide, show }: { hide: string; show: string }) {
   const path = usePathname();
+  const [y, setY] = useState<number | null>(null);
   useEffect(() => {
     document.documentElement.removeAttribute('data-sidebar-mobile');
   }, [path]);
   return (
     <>
       <button type="button" className="sidebar-hide" onClick={() => toggle(false)} aria-label={hide} title={hide}>‹</button>
-      <button type="button" className="sidebar-edge" onClick={() => toggle(true)} aria-label={show} title={show}>›</button>
+      {/* Menü kapalıyken sol kenar boyunca görünmez alan: ok, farenin bulunduğu yükseklikte belirir */}
+      <div className="sidebar-zone" onMouseMove={(e) => setY(e.clientY)}>
+        <button
+          type="button" className="sidebar-edge" onClick={() => toggle(true)} aria-label={show} title={show}
+          style={y == null ? undefined : { top: Math.min(Math.max(y - 22, 8), window.innerHeight - 52) }}
+        >›</button>
+      </div>
     </>
   );
 }

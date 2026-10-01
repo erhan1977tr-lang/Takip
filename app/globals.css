@@ -141,16 +141,18 @@ html[data-sidebar=collapsed] .sidebar { width: 0; padding-left: 0; padding-right
 }
 .sidebar-hide:hover, .sidebar-edge:hover { color: var(--primary); border-color: #93c5fd; }
 html[data-sidebar=collapsed] .sidebar-hide { display: none; }
+.sidebar-zone { display: none; position: fixed; left: 0; top: 0; width: 24px; height: 100vh; z-index: 31; }
+html[data-sidebar=collapsed] .sidebar-zone { display: block; }
 .sidebar-edge {
-  display: none; position: fixed; left: 0; top: 64px; z-index: 31; width: 16px; height: 44px; padding: 0;
+  position: absolute; left: 0; top: 64px; width: 22px; height: 44px; padding: 0; display: flex;
   align-items: center; justify-content: center; background: #fff; border: 1px solid var(--border); border-left: 0;
   border-radius: 0 8px 8px 0; box-shadow: 0 2px 6px rgba(15, 23, 42, .12); color: var(--muted); font-size: 16px;
-  cursor: pointer; opacity: .45; transition: opacity .18s ease, width .18s ease;
+  cursor: pointer; opacity: 0; transition: opacity .15s ease;
 }
-/* Fare sol kenara yaklaşınca sekme belirginleşir (görünmez geniş tutma alanı) */
-.sidebar-edge::before { content: ''; position: absolute; left: 0; top: -40px; bottom: -40px; width: 28px; }
-.sidebar-edge:hover, .sidebar-edge:focus-visible { opacity: 1; width: 22px; }
-html[data-sidebar=collapsed] .sidebar-edge { display: flex; }
+/* Fare sol kenara gelince ok, farenin yüksekliğinde belirir; uzaklaşınca kaybolur */
+.sidebar-zone:hover .sidebar-edge, .sidebar-edge:focus-visible { opacity: 1; }
+/* Menü kapalıyken içerik tüm genişliği kullanır */
+html[data-sidebar=collapsed] .content { max-width: none; }
 /* Sipariş sayfasında Hareketler: menünün altında, kendi içinde kayar */
 .sidebar-activity { margin-top: auto; min-height: 0; }
 .sidebar-activity:not(:empty) { flex: 0 1 auto; display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: auto; padding-top: 2px; max-height: 50vh; }
@@ -191,8 +193,10 @@ html[data-sidebar=collapsed] .sidebar-edge { display: flex; }
   html[data-sidebar-mobile=open] .sidebar { transform: none; visibility: visible; }
   .sidebar-hide { display: none; left: 226px; z-index: 41; }
   html[data-sidebar-mobile=open] .sidebar-hide { display: block; }
-  .sidebar-edge, html[data-sidebar=collapsed] .sidebar-edge { display: flex; top: 120px; }
-  html[data-sidebar-mobile=open] .sidebar-edge { display: none; }
+  /* Dar ekranda fare yok: ok sabit yerde, hep görünür */
+  .sidebar-zone, html[data-sidebar=collapsed] .sidebar-zone { display: block; height: 0; }
+  .sidebar-edge { top: 120px !important; opacity: 1; }
+  html[data-sidebar-mobile=open] .sidebar-zone { display: none; }
   .mobile-nav { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--border); }
   .mobile-nav a { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; background: #f1f5f9; color: #475569; text-decoration: none; font-size: 12px; font-weight: 600; }
   .mobile-nav a.active { background: var(--primary); color: #fff; }

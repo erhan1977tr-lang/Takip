@@ -148,6 +148,8 @@ export default {
     revisionRounds: '{n} tur',
     drawer: 'Çizimci',
     labels: 'Cam / sandık etiketi',
+    camEtiket: 'Cam etiketi',
+    sandikEtiket: 'Sandık etiketi',
     requestedGlass: 'İstenen camlar',
     glassFallback: 'Cam',
   },

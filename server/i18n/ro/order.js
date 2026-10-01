@@ -148,6 +148,8 @@ export default {
     revisionRounds: '{n}',
     drawer: 'Desenator',
     labels: 'Etichetă sticlă / ladă',
+    camEtiket: 'Etichetă sticlă',
+    sandikEtiket: 'Etichetă ladă',
     requestedGlass: 'Sticlă solicitată',
     glassFallback: 'Sticlă',
   },
