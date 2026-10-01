@@ -4,9 +4,9 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.12.1 — 01.10.2026
+## 3.12.2 — 01.10.2026
 
-- Dar ekranda kapalı menü tamamen gizlenir (klavyeyle de odaklanılmaz).
+- Dar ekranda kapalı menü tamamen gizlenir (klavyeyle de odaklanılmaz); Hareketler menünün en altına yerleşir.
 
 ## 3.12.0 — 01.10.2026 · Ekran düzeni (eski GKH TAKIP düzenine yakın)
 
