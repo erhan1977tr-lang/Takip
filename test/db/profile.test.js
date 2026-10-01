@@ -405,6 +405,27 @@ dbTest('Muhasebe: FGO belgeleri sipariş tipine göre listelenir, "FGO ile günc
   seen.length = 0;
   await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl, sleep: async () => {} });
   assert.ok(!seen.includes('PRF552'), 'ödenmiş belge yeniden sorulmaz');
+
+  // Fatura FGO'da silinmiş (karar 65): kayıt kalkar, sipariş teslim adımına döner, "FGO'da yeniden dene" çıkar
+  const inv = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '684' } } });
+  let o = await load(inv.orderId);
+  assert.equal(o.profile.stage, 'FATURALANDI');
+  const gone = async (url, init) => {
+    const form = Object.fromEntries(new URLSearchParams(init.body));
+    if (form.Numar === '684') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+    return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '100.00', ValoareAchitata: '0' } }));
+  };
+  await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl: gone, sleep: async () => {} });
+  assert.equal(await db.fgoDocument.count({ where: { id: inv.id } }), 0, 'silinmiş faturanın kaydı kalktı');
+  o = await load(inv.orderId);
+  assert.equal(o.profile.stage, 'TESLIM_EDILDI');
+  assert.equal(o.status, 'HAZIRLANIYOR', 'arşivden çıktı');
+  assert.equal(o.profile.invoiceNo, null);
+  assert.equal(o.profile.proformaNo, 'PRF552', 'proforma yerinde');
+  assert.ok(await db.orderEvent.findFirst({ where: { orderId: inv.orderId, event: 'FGO_DOC_DELETED', note: 'GKH684' } }));
+  assert.ok(await db.auditLog.findFirst({ where: { entityId: inv.orderId, action: 'ORDER_TRANSITION' } }));
+  assert.equal(await codeOf(run(inv.orderId, 'retry_fgo', 'admin')), 'OK', 'yeni fatura FGO\'da yeniden dene ile kesilir');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: inv.orderId, type: 'FGO_INVOICE', status: 'PENDING' } }), 1);
   await fgoOn(false);
   assert.deepEqual(await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl }), { ok: false, code: 'FGO_DISABLED' });
 });

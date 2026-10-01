@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.16.7 — 01.10.2026
+
+- Muhasebe → **Profil Tahsilat**'ta da "FGO ile Güncelle" FGO'da silinmiş belgelerin kaydını kaldırır ve siparişi geri alır:
+  fatura silindiyse sipariş "Teslim edildi" adımına döner (arşivden çıkar), proforma silindiyse "Onaylandı" adımına; yeni
+  belge "FGO'da yeniden dene" ile kesilir. Siparişin geçmişine "Belge FGO'da silinmiş" satırı yazılır.
+- Cam siparişinde proforma silindiyse kur ve elle girilen ödeme de sıfırlanır.
+
 ## 3.16.6 — 01.10.2026
 
 - **Fatura numarası düzeltildi:** Entegrasyonlar → FGO → "Sonraki fatura numarası" doluysa fatura tam bu numarayla kesilir

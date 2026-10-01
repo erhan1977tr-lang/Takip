@@ -54,6 +54,7 @@ export default {
   FGO_FAILED: {
     label: "FGO'da belge kesilemedi",
   },
+  FGO_DOC_DELETED: { label: "Belge FGO'da silinmiş; kaydı kaldırıldı" },
   FGO_RETRY: {
     label: "FGO'da yeniden deneniyor",
   },

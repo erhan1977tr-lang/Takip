@@ -54,6 +54,7 @@ export default {
   FGO_FAILED: {
     label: "Documentul nu a putut fi emis în FGO",
   },
+  FGO_DOC_DELETED: { label: "Documentul a fost șters în FGO; înregistrarea a fost eliminată" },
   FGO_RETRY: {
     label: "Se reîncearcă în FGO",
   },

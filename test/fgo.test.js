@@ -79,8 +79,12 @@ test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve n
       findMany: async () => docs.map((d) => ({ number: d.number })),
       findUnique: async ({ where }) => docs.find((d) => d.series === where.series_number.series && d.number === where.series_number.number) ?? null,
     },
+    order: { findUnique: async () => ({ id: 'o1', status: 'URETIMDE', orderTypeCode: 'GLASS_ORDER' }) },
     $transaction: async (fn) => fn({
-      fgoDocument: { delete: async ({ where }) => docs.splice(docs.findIndex((d) => d.id === where.id), 1) },
+      fgoDocument: { delete: async ({ where }) => docs.splice(docs.findIndex((d) => d.id === where.id), 1), count: async () => 0 },
+      notificationOutbox: { updateMany: async () => ({ count: 0 }) },
+      glassBilling: { updateMany: async () => ({ count: 0 }) },
+      orderEvent: { create: async ({ data }) => audits.push({ action: `EVENT:${data.event}` }) },
       auditLog: { create: async ({ data }) => audits.push(data) },
     }),
   };
@@ -96,7 +100,7 @@ test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve n
   assert.equal(await reserveInvoiceNumber(db, s, opts), '684');
   assert.deepEqual(asked, ['684']);
   assert.ok(!docs.some((d) => d.number === '684'), 'silinmiş belgenin kaydı kaldırıldı');
-  assert.equal(audits[0].action, 'FGO_DOC_REMOVED');
+  assert.deepEqual(audits.map((a) => a.action), ['EVENT:FGO_DOC_DELETED', 'FGO_DOC_REMOVED'], 'siparişin geçmişinde ve denetimde');
   assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, opts), '701', '700 FGO\'da var → 701');
   assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 685 }, opts), '685', 'kayıt yoksa FGO\'ya sorulmaz');
   // FGO'ya ulaşılamazsa numara uydurulmaz (iş sonra yeniden denenir)

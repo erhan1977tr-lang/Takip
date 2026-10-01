@@ -217,6 +217,8 @@ export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fet
       await fgoStatus(settings, key, { series: row.series, number: row.number, appUrl }, fetchImpl);
     } catch (e) {
       if (e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
+        // Döngüsel içe aktarmayı önlemek için istek anında yüklenir (profil akışını kullanır)
+        const { removeDeletedDocument } = await import('./fgo-deleted.js');
         await removeDeletedDocument(db, row, e.message);
         await sleep(1100); // FGO saniyede bir istek kabul eder
         return String(n);
@@ -226,17 +228,6 @@ export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fet
     await sleep(1100);
   }
   throw new FgoError('Boş fatura numarası bulunamadı (50 numara dolu); Entegrasyonlar → Sonraki fatura numarası', { retry: false });
-}
-
-/** FGO'da silinmiş belgenin kaydını kaldırır (denetim kaydıyla; geçmiş satırı siparişte kalır) */
-export async function removeDeletedDocument(db, row, reason = '') {
-  await db.$transaction(async (tx) => {
-    await tx.fgoDocument.delete({ where: { id: row.id } });
-    await writeAudit(tx, {
-      action: 'FGO_DOC_REMOVED', entityType: 'Order', entityId: row.orderId, userId: null,
-      details: { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) },
-    }, { role: 'SYSTEM' });
-  });
 }
 
 /**

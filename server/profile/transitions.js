@@ -36,6 +36,8 @@ export const profileWorkflow = {
     // Depo bağlantısı: yalnızca "teslim edildi", sipariş depodayken
     if (actor.depot) return action === 'mark_delivered' && stage === 'DEPODA' && o.status !== 'IPTAL' ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
     // FGO işçisi: yalnızca belge kesildiğini kaydeder, sipariş o adımdayken
+    // FGO'da silinmiş belgenin kaydı her adımda kaldırılabilir (karar 65)
+    if (actor.fgo && action === 'fgo_doc_deleted') return { ok: true, to: null };
     if (actor.fgo) return FGO_SYSTEM_ACTIONS[action] === stage && o.status !== 'IPTAL' ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
     const acts = profileActions({ role: actor.role, stage, status: o.status, canApprove: !!actor.canApprove, paid: !!o.profile.paidAt });
     return acts.includes(action) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
@@ -341,6 +343,29 @@ const ACTIONS = {
     await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'INVOICE', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
     h.event('INVOICED', invoiceNo);
     h.audit = { invoiceNo, fxRate: p.rate, amountRon: p.amount, fgo: true };
+  },
+  /**
+   * FGO'da silinmiş belge (karar 65): kayıt kaldırılır, sipariş belgeden önceki adıma döner — fatura silindiyse
+   * FATURALANDI → TESLIM_EDILDI, proforma silindiyse PROFORMA → ONAYLANDI (kur sıfırlanır). Yeni belge
+   * "FGO'da yeniden dene" ile kesilir. Daha ileri adımdaki siparişte yalnızca belge bilgisi silinir, adım değişmez.
+   */
+  async fgo_doc_deleted(h) {
+    const p = h.payload;
+    const no = `${p.series}${p.number}`;
+    await h.tx.fgoDocument.delete({ where: { id: p.docId } });
+    const pr = h.order.profile;
+    const open = h.order.status !== 'IPTAL';
+    if (p.kind === 'INVOICE' && pr.invoiceNo === no) {
+      const clear = { invoiceNo: null, invoicedAt: null, invoiceLink: null };
+      if (open && pr.stage === 'FATURALANDI') await setStage(h, 'TESLIM_EDILDI', clear);
+      else await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: clear });
+    } else if (p.kind === 'PROFORMA' && pr.proformaNo === no) {
+      const clear = { proformaNo: null, proformaAt: null, proformaLink: null, proformaAmount: null };
+      if (open && pr.stage === 'PROFORMA') await setStage(h, 'ONAYLANDI', { ...clear, fxRate: null, fxDate: null, fxSource: null });
+      else await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: clear });
+    }
+    h.event('FGO_DOC_DELETED', no);
+    h.audit = { kind: p.kind, series: p.series, number: p.number, reason: p.reason ?? null, fgo: true };
   },
   /** Yalnızca yönetici; depoya gitmiş siparişin stok çıkışı geri alınır. Depo bağlantısı geçersiz olur. */
   async cancel(h) {

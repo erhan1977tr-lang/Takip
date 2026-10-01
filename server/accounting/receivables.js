@@ -1,7 +1,8 @@
 // Muhasebe → Profil / Cam Tahsilat: FGO'da kesilen belgeler ve FGO'dan okunan ödeme durumu.
 // Belgeler sipariş akışında kaydedilir (fgo_proforma / fgo_invoice → FgoDocument); burada yalnızca listelenir ve
 // "FGO ile güncelle" ile mevcut FGO bağlantısı (server/integrations/fgo.js) üzerinden yenilenir. Ayrı FGO bağlantısı yok.
-import { FGO_NOT_FOUND, FgoError, fgoKey, fgoReady, fgoStatus, getFgoSettings, removeDeletedDocument } from '../integrations/fgo.js';
+import { FGO_NOT_FOUND, FgoError, fgoKey, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
+import { removeDeletedDocument } from '../integrations/fgo-deleted.js';
 
 /**
  * Ödeme durumu: 0 → Ödenmedi · 0 < ödenen < toplam → Kısmi · ödenen ≥ toplam → Ödendi. Toplam henüz okunmadıysa UNKNOWN.
