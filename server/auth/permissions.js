@@ -23,6 +23,7 @@ export const PERMISSIONS = {
   SHIPMENT_VIEW: 'Yükleme takvimini görür',
   CRATE_EDIT: 'Yükleme sekmesinde sandık ölçü ve ağırlıklarını girer',
   TRANSPORT_LIST_VIEW: 'Yüklemeler sekmesinden nakliye listesini (PDF) indirir',
+  OFFER_EXPORT: 'Teklifi PDF olarak indirir (Excel: yönetici her zaman, müşteri yöneticinin izin verdiği siparişte)',
   OFFER_APPROVE: 'Profil teklifini onaylar ve teslim bilgilerini (alış günü, telefon, plaka) girer',
   STOCK_MANAGE: 'Profil stoğunu görür; giriş ve sayım düzeltmesi yapar',
   FILE_UPLOAD: 'Siparişe dosya ekler',
@@ -52,7 +53,7 @@ export const ROLE_PERMISSIONS = {
   CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
   MUSTERI: [
     'ORDER_VIEW', 'ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW',
-    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW',
+    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT',
   ],
   DENETIMCI: [
     'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',
@@ -63,7 +64,7 @@ export const ROLE_PERMISSIONS = {
 /** Salt görüntüleme yetkileri; bunların dışındaki her yetki bir "işlem"dir. */
 export const READ_ONLY = new Set([
   'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
-  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW',
+  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT',
 ]);
 
 /**

@@ -285,7 +285,8 @@ export function offerProblems(lines) {
     const row = { n: glassNo, kind: sub ? String(l.kind) : 'CAM' };
     if (sub && !seenGlass) p.push({ code: 'sub_without_glass', kind: String(l.kind) });
     if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row });
-    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(row);
+    // Fiyatı eksik satır: camda/üründe açıklaması da yazılır (hangi ürün olduğu görünsün)
+    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && l.description ? { ...row, desc: String(l.description).slice(0, 60) } : row);
   }
   if (noPrice.length) p.push({ code: 'missing_prices', rows: noPrice });
   return p;

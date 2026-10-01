@@ -47,7 +47,10 @@ async function act(
   } catch (e) {
     if (e instanceof WorkflowError) {
       if (e.code === 'NOT_FOUND') notFound();
-      const { t } = await getT();
+      const { t, m } = await getT();
+      // Fiyatı eksik satırlar: hangi ürün / işlem olduğu yazılır
+      const problems = (e.details as { problems?: unknown[] } | undefined)?.problems;
+      if (e.code === 'SALES_PRICE_MISSING' && problems?.length) redirect(err(orderId, `${t('order.errors.salesPriceMissing')} ${offerProblemTexts(m, problems).join(' ')}`));
       redirect(err(orderId, workflowErrorText(t, e.code, e.details as Record<string, unknown>)));
     }
     throw e;
@@ -326,4 +329,22 @@ export async function saveOfferAction(formData: FormData) {
 /** Yönetici, teklif gönderildikten sonra gelen çizimi kontrol etti ve teklifte değişiklik gerekmiyor. */
 export async function checkOfferAction(formData: FormData) {
   await simple(formData, 'check_offer', 'offer_checked');
+}
+
+/**
+ * Yönetici: müşteri bu siparişin teklifini Excel olarak indirebilir mi (Order.customerExcel). İş akışı durumu değil,
+ * sipariş ayarıdır; denetim kaydına yazılır. İndirme izni ayrıca sunucuda (teklif/route.ts) denetlenir.
+ */
+export async function setCustomerExcelAction(formData: FormData) {
+  const user = await requirePermission('OFFER_SEND');
+  const id = orderIdOf(formData);
+  const allow = String(formData.get('allow')) === '1';
+  const order = await db.order.findFirst({ where: { id, orderTypeCode: 'GLASS_ORDER' }, select: { id: true, customerExcel: true } });
+  if (!order) notFound();
+  if (order.customerExcel !== allow) {
+    await db.order.update({ where: { id }, data: { customerExcel: allow } });
+    await audit('OFFER_EXCEL_PERMISSION', 'Order', id, user.id, { before: order.customerExcel, after: allow });
+  }
+  revalidatePath(`/siparisler/${id}`);
+  redirect(back(id, 'ok=customer_excel') + '#teklif');
 }

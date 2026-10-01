@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.19.0 — 01.10.2026
+
+- Teklif: **PDF İndir / Excel İndir** (cam siparişi, teklif bölümü). Yönetici her zaman indirir; müşteri PDF'i her zaman,
+  Excel'i yalnızca yöneticinin o siparişte verdiği izinle ("Müşteri Excel indirebilir") indirir — izin sunucuda denetlenir.
+  PDF ve Excel aynı satırları ve müşteri fiyatlarını içerir.
+- Satış, fiyatı eksik teklifi yöneticiye gönderemez (sunucuda da denetlenir; cam, CNC, delik ve diğer satırlar; 0 kabul
+  edilmez, "bedelsiz" satır hariç). Hata mesajı eksik satırı (ürün adıyla) gösterir. Taslak kaydı engellenmez.
+
 ## 3.18.0 — 01.10.2026
 
 - Yüklemeler: **Nakliye Listesi** (PDF) — seçilen yükleme gününün sandıkları müşteri koduna göre (sandık no, ölçü, ağırlık,

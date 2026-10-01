@@ -82,6 +82,7 @@ enum PermissionKey {
   AUDIT_VIEW
   ACCOUNTING_MANAGE
   TRANSPORT_LIST_VIEW
+  OFFER_EXPORT
 }
 
 model RolePermission {
@@ -297,6 +298,7 @@ model Order {
 
   customerOrderNo   Int         // müşterinin sipariş numarası: formda bir sonraki numarayla gelir, müşteri değiştirebilir
   title             String?     // "Gabi panou dus" gibi kısa açıklama
+  customerExcel     Boolean     @default(false) // yönetici izni: müşteri teklifi Excel olarak indirebilir (PDF her zaman)
   status            OrderStatus @default(YENI)
   drawingTrack      DrawingTrack @default(YOK)
   drawingSince      DateTime?   // çizim hattının son değiştiği an (SLA için)

@@ -213,6 +213,17 @@ function requireOfferPrices(lines) {
   if (p.length) throw new WorkflowError('OFFER_PRICE_MISSING', { problems: p });
 }
 
+/**
+ * Satış teklifi yöneticiye gönderirken (submit) her fiyatlandırılabilir satırın (cam/ürün, CNC, delik ve diğer
+ * satırlar) satış fiyatı olmalı: boş ya da 0 kabul edilmez; yalnızca "bedelsiz" işaretli satır fiyatsız olabilir
+ * (mevcut kural, offerProblems → missing_prices). Taslak kaydı (save) engellenmez.
+ */
+function requireSalesPrices(lines) {
+  const p = offerProblems(lines.map((l) => ({ ...l, unitPrice: l.unitPrice == null ? '' : String(l.unitPrice) })))
+    .filter((x) => x.code === 'missing_prices');
+  if (p.length) throw new WorkflowError('SALES_PRICE_MISSING', { problems: p });
+}
+
 async function offerEdit(h, intent) {
   const { tx, order, actor, payload, now } = h;
   const offer = latestOffer(order);
@@ -222,6 +233,7 @@ async function offerEdit(h, intent) {
   let saved = await writeLines(tx, offer.id, merged, offer.lines);
   // Satış yöneticiye gönderirken müşteri fiyatı boş satırlar müşterinin fiyat tablosundan dolar (karar 32)
   if (intent === 'submit') {
+    requireSalesPrices(saved);
     const pricing = await pricingForCustomer(tx, order.customerId);
     if (pricing && pricing.currency === offer.currency) {
       const filled = prefillOfferPrices(saved, pricing);

@@ -19,6 +19,17 @@ export default {
     offerAmount: 'Müşteri tutarı',
     amount: 'Tutar',
   },
+  export: {
+    title: 'TEKLİF',
+    pdf: 'PDF İndir',
+    xlsx: 'Excel İndir',
+    customerExcel: 'Müşteri Excel indirebilir',
+    on: 'açık',
+    off: 'kapalı',
+    turnOn: 'İzin ver',
+    turnOff: 'İzni kaldır',
+    denied: 'Bu teklifi bu biçimde indirme izniniz yok.',
+  },
   view: {
     title: 'Teklif',
     titleCustomer: 'Teklifiniz',

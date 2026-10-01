@@ -120,6 +120,14 @@ dbTest('geçiş: teklif yolu → yönetici gönderir → otomatik üretim (iki g
   const o = await newOrder();
   await run(o.id, 'no_drawing', 'sales');
   const lines = [{ description: 'Cam', poz: null, enMm: 1000, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false }];
+  // Fiyatı eksik teklif: taslak kaydedilir, gönderilemez (sunucu kuralı); CNC / delik de fiyatlı olmalı, 0 kabul edilmez
+  const noPrice = [...lines, { description: 'CNC', poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '0', kind: 'CNC', free: false }];
+  assert.equal(await codeOf(run(o.id, 'save_offer', 'sales', { lines: noPrice })), 'OK', 'taslak engellenmez');
+  const missing = await run(o.id, 'submit_offer', 'sales', { lines: noPrice }).catch((e) => e);
+  assert.equal(missing.code, 'SALES_PRICE_MISSING');
+  assert.deepEqual(missing.details.problems, [{ code: 'missing_prices', rows: [{ n: 1, kind: 'CNC' }] }]);
+  assert.equal((await db.offer.findFirstOrThrow({ where: { orderId: o.id } })).status, 'HAZIRLANIYOR', 'gönderilmedi');
+  assert.equal(await codeOf(run(o.id, 'submit_offer', 'sales', { lines: [{ ...lines[0], unitPrice: '' }] })), 'SALES_PRICE_MISSING');
   await run(o.id, 'save_offer', 'sales', { lines, amount: '40.00' });
   await run(o.id, 'submit_offer', 'sales', { lines, amount: '40.00' });
   assert.equal(await codeOf(run(o.id, 'approve_offer', 'sales', { lines, amount: '40.00' })), 'NOT_ALLOWED', 'satış teklifi müşteriye gönderemez');

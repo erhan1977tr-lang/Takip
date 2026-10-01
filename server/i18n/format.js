@@ -9,7 +9,9 @@ import { interpolate } from './interpolate.js';
  */
 export function formatOfferProblems(problems, m) {
   const kind = (k) => m.lineKind[k] ?? k;
-  const row = (r) => (r.kind === 'CAM' ? interpolate(m.offerProblems.rowGlass, { n: r.n }) : interpolate(m.offerProblems.rowSub, { n: r.n, kind: kind(r.kind) }));
+  const row = (r) => (r.kind === 'CAM'
+    ? `${interpolate(m.offerProblems.rowGlass, { n: r.n })}${r.desc ? ` (${r.desc})` : ''}`
+    : interpolate(m.offerProblems.rowSub, { n: r.n, kind: kind(r.kind) }));
   return problems.map((p) => {
     if (p.code === 'sub_without_glass') return interpolate(m.offerProblems.subWithoutGlass, { kind: kind(p.kind) });
     if (p.code === 'missing_dims') return interpolate(m.offerProblems.missingDims, { row: row(p.row) });

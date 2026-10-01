@@ -22,7 +22,7 @@ import {
   ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction,
+  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, sendDrawingAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction,
@@ -276,7 +276,7 @@ export default async function OrderPage({
       )}
 
       {shownOffer && (
-        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} />
+        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} />
       )}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
@@ -453,7 +453,11 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean }) {
+  // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
+  // Asıl kontrol indirme adresinde (teklif/route.ts) yapılır.
+  const exportHref = (f: 'pdf' | 'xlsx') => `/siparisler/${order.id}/teklif?format=${f}`;
+  const showExport = canExport && (admin || offer.status === 'GONDERILDI') && order.orderTypeCode === 'GLASS_ORDER';
   // Veriler role göre temizlendi (lib/orders.ts → offerPrices): müşteri/denetimcide unitPrice ve amount müşteri fiyatıdır,
   // satışta satış fiyatı. Yönetici iki fiyatı yan yana görür (karar 4).
   const total = offer.status === 'GONDERILDI' && order.price && finalPrice && !admin ? order.price.amount : offer.amount;
@@ -522,8 +526,22 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           {t('common.pricesExclVat')}
           {offer.currency === 'EUR' && <><br />{t('profile.notes.eur')}</>}
         </p>
-        {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
+        <span className="row" style={{ gap: 8 }}>
+          {showExport && <a className="btn" href={exportHref('pdf')}>{t('offer.export.pdf')}</a>}
+          {showExport && (admin || order.customerExcel) && <a className="btn" href={exportHref('xlsx')}>{t('offer.export.xlsx')}</a>}
+          {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
+        </span>
       </div>
+      {admin && order.orderTypeCode === 'GLASS_ORDER' && (
+        <form action={setCustomerExcelAction} className="row" style={{ gap: 8, marginTop: 8 }}>
+          <input type="hidden" name="id" value={order.id} />
+          <input type="hidden" name="allow" value={order.customerExcel ? '0' : '1'} />
+          <span className="small">
+            {t('offer.export.customerExcel')}: <b>{order.customerExcel ? t('offer.export.on') : t('offer.export.off')}</b>
+          </span>
+          <button className="btn">{order.customerExcel ? t('offer.export.turnOff') : t('offer.export.turnOn')}</button>
+        </form>
+      )}
     </div>
   );
 }

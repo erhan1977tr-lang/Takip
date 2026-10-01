@@ -19,6 +19,17 @@ export default {
     offerAmount: 'Valoare client',
     amount: 'Valoare',
   },
+  export: {
+    title: 'OFERTĂ',
+    pdf: 'Descarcă PDF',
+    xlsx: 'Descarcă Excel',
+    customerExcel: 'Clientul poate descărca Excel',
+    on: 'activat',
+    off: 'dezactivat',
+    turnOn: 'Permite',
+    turnOff: 'Retrage permisiunea',
+    denied: 'Nu aveți permisiunea de a descărca această ofertă în acest format.',
+  },
   view: {
     title: 'Ofertă',
     titleCustomer: 'Oferta dvs.',
