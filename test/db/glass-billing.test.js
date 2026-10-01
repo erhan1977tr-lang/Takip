@@ -36,7 +36,10 @@ async function glassOrder(no, shipDate) {
     data: {
       orderNo: `GLA${no}`, customerOrderNo: no, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
-        lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
+        lines: { create: [
+          { sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' },
+          { sortOrder: 1, description: 'CNC', adet: 2, unit: 'adet', unitPrice: '5', offerPrice: '10', kind: 'CNC' },
+        ] } } },
     },
   });
 }
@@ -70,6 +73,8 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(pf['Continut[0][PretUnitar]'], '250.00', '50 EUR × 5');
   assert.equal(pf['Continut[0][Denumire]'], 'Securizat', 'yalnızca cam niteliği, Romence');
   assert.equal(pf.Text, 'Ușă duș', 'açıklamada yalnızca sipariş açıklaması');
+  assert.equal(pf['Continut[1][Denumire]'], 'Prelucrare CNC', 'proformada CNC ayrı satır');
+  assert.equal(pf['Continut[1][PretUnitar]'], '50.00');
   let docs = await db.fgoDocument.findMany({ where: { orderId: o.id } });
   assert.deepEqual(docs.map((d) => `${d.kind}:${d.series}${d.number}`), ['PROFORMA:PRF552']);
   assert.equal(docs[0].total.toString(), '1210');
@@ -98,7 +103,8 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   await g.dispatchGlassJobs(db, ctx(fgo));
   const inv = fgo.calls[2];
   assert.equal(inv.IdExtern, 'GLA68-F');
-  assert.equal(inv['Continut[0][PretUnitar]'], '250.00');
+  assert.equal(inv['Continut[0][Denumire]'], 'Securizat');
+  assert.equal(inv['Continut[0][PretUnitar]'], '300.00', 'faturada CNC cama eklenir: (2×50 + 2×10) € × 5 / 2 m²');
   assert.equal(inv['Continut[1][NrProduse]'], '-1');
   assert.match(inv['Continut[1][Denumire]'], /^Stornare avans conform factură GKH553/);
   assert.equal(inv['Continut[1][PretUnitar]'], '1000.00', 'avans faturasının TVA hariç tutarı (FGO toplamı 1210)');

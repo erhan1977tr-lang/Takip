@@ -40,7 +40,7 @@ export function isLoaded(order, today) {
 export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GONDERILDI') ?? null;
 
 /**
- * Belge satırları — yalnızca CAM (ürün sahibinin kuralı): satır adı yalnızca camın Romence niteliği (ölçü / adet yazılmaz);
+ * FATURA satırları — yalnızca CAM (ürün sahibinin kuralı; proforma için proformaLines): satır adı yalnızca camın Romence niteliği (ölçü / adet yazılmaz);
  * CNC ve delik (ve m² dışındaki her satır) tutarı ait olduğu camın tutarına eklenir — üstündeki cam satırına, yoksa
  * sonraki cama. Aynı nitelikteki camlar tek satırda toplanır (m² toplamı). Bedelsiz ve fiyatsız satırlar yazılmaz.
  * @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]}
@@ -71,6 +71,26 @@ export function glassLines(offer) {
   }
   const out = [...groups.values()];
   if (carry && out.length) out[out.length - 1].eurTotal = round2(out[out.length - 1].eurTotal + carry);
+  return out;
+}
+
+/**
+ * Proforma satırları — ayrıntılı (ürün sahibinin kuralı): her cam satırı ayrı (yalnızca Romence niteliği, ölçü/adet
+ * yazılmaz; miktar m²), CNC ve delik ayrı satırlar ("Prelucrare CNC", "Gaură"; adetle), m² dışındaki diğer kalemler adetle.
+ * Bedelsiz ve fiyatsız satırlar yazılmaz.
+ * @returns {{ code: string, name: string, unit: string, qty: number, eur: number }[]}
+ */
+export function proformaLines(offer) {
+  const out = [];
+  for (const l of offer.lines) {
+    if (l.free || l.offerPrice == null) continue;
+    const eur = Number(l.offerPrice);
+    const isGlass = (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2';
+    const qty = isGlass ? offerLineTotals({ ...l, unitPrice: 0 }).metraj : Math.max(0, Math.trunc(Number(l.adet) || 0));
+    if (!(qty > 0)) continue;
+    const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : String(l.descriptionRo || l.description).trim();
+    out.push({ code: '', name, unit: isGlass ? 'mp' : 'buc', qty, eur });
+  }
   return out;
 }
 
@@ -224,7 +244,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           const glasses = new Map((await db.glassProduct.findMany({ where: { id: { in: ids } } })).map((x) => [x.id, glassLabel(x, 'ro')]));
           for (const l of offer.lines) if (!l.descriptionRo && glasses.has(l.glassProductId)) l.descriptionRo = glasses.get(l.glassProductId);
         }
-        lines = toRonLines(glassLines(offer), rate);
+        // Proforma ayrıntılı (CNC ve delik ayrı satır); fatura yalnızca cam (işlemler cama eklenir)
+        lines = kind === 'PROFORMA' ? proformaLines(offer) : toRonLines(glassLines(offer), rate);
         if (lines.length === 0) throw new Permanent('Teklifte fiyatlı cam satırı yok');
         if (kind === 'INVOICE' && advance) {
           // Avans düşümü: avans faturasının TVA hariç tutarı eksi satır olarak

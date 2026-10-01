@@ -1,7 +1,7 @@
 // Cam siparişi FGO belge akışı — saf kurallar.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { billingState, glassLines, isLoaded, netOf, renderDocEmail, toRonLines } from '../server/glass/billing.js';
+import { billingState, glassLines, isLoaded, netOf, proformaLines, renderDocEmail, toRonLines } from '../server/glass/billing.js';
 
 test('cam yüklendi: yükleme gününden 2 gün sonra (gerçek, yoksa tahmini gün)', () => {
   const o = (a, e) => ({ actualShipDate: a ? new Date(a) : null, estimatedShipDate: e ? new Date(e) : null });
@@ -32,6 +32,22 @@ test('belge satırları: yalnızca cam (Romence nitelik, ölçü/adet yok); CNC 
   assert.deepEqual(ron[0], { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 5, ron: 292 }, '(292 € × 5) / 5 m²');
   assert.ok(!ron.some((l) => /CNC|Gaură|mm ×/.test(l.name)));
   assert.equal(netOf(1210, 21), 1000);
+});
+
+test('proforma satırları ayrıntılı: cam (nitelik, m²), CNC ve delik ayrı satırlarda; ölçü/adet adda yok', () => {
+  const lines = proformaLines({ lines: [
+    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 2000, adet: 2, offerPrice: '50' },
+    { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 3, offerPrice: '10' },
+    { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 4, offerPrice: '2', free: true },
+    { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 2, offerPrice: '2.5' },
+    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 1000, adet: 1, offerPrice: '50' },
+  ] });
+  assert.deepEqual(lines, [
+    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 4, eur: 50 },
+    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10 },
+    { code: '', name: 'Gaură', unit: 'buc', qty: 2, eur: 2.5 },
+    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 1, eur: 50 },
+  ]);
 });
 
 test('düğmeler: proforma → ödeme → avans → (yüklenince) fatura; müşteri onayı yok; tekrar kesim yok', () => {
