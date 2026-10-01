@@ -157,7 +157,16 @@ dbTest('geçiş: çizim döngüsü; taslak → gönder; müşteri eski sürümü
   const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('v1')] });
   assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', { drawingId: v1.result.drawingId })), 'NOT_ALLOWED', 'taslak müşteriye gitmedi');
   await run(o.id, 'send_drawing', 'drawer', { drawingId: v1.result.drawingId });
-  await run(o.id, 'request_revision', 'cust', { comment: 'Yükseklik 1100 olsun', drawingId: v1.result.drawingId });
+  // Revizyon: not zorunlu; çizim üstü işaretler yalnızca bu sürümün dosyalarına, doğrulanarak saklanır
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'cust', { comment: '', drawingId: v1.result.drawingId })), 'REVISION_COMMENT');
+  const v1File = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } })).id;
+  await run(o.id, 'request_revision', 'cust', {
+    comment: 'Yükseklik 1100 olsun', drawingId: v1.result.drawingId,
+    annotations: JSON.stringify([{ fileId: v1File, page: 1, type: 'pin', x: 0.5, y: 0.25, text: 'burası' }, { fileId: 'baska-dosya', page: 1, type: 'pin', x: 0.1, y: 0.1, text: 'x' }]),
+  });
+  const rev = await db.drawingRevision.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } });
+  assert.deepEqual(rev.annotations, [{ fileId: v1File, page: 1, type: 'pin', x: 0.5, y: 0.25, text: 'burası' }], 'başka dosyaya işaret atılır');
+  assert.equal(rev.comment, 'Yükseklik 1100 olsun');
   const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('v2')] });
   assert.equal(v2.result.version, 2);
   await run(o.id, 'send_drawing', 'drawer');

@@ -713,6 +713,7 @@ model DrawingRevision {
   drawing       Drawing  @relation(fields: [drawingId], references: [id], onDelete: Cascade)
   requestedById String
   comment       String
+  annotations   Json?    // çizim üstü işaretler (server/orders/annotations.js): iğne, dikdörtgen, serbest, metin
   createdAt     DateTime @default(now())
 }
 

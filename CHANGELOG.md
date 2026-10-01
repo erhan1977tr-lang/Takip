@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.25.0 — 02.10.2026
+
+- **Çizim görüntüleyici**: PDF ve görseller uygulama içinde açılır ("Aç ve incele"; çizimci için gönderimden önce
+  "Kontrol Et"). Müşteri **"Revizyon iste"** ile çizim üzerine işaret koyar (İğne, Dikdörtgen, Serbest, Metin) ve
+  zorunlu revizyon notunu yazar; işaretler talebe kaydedilir, çizimci ve iç ekip çizim üzerinde görür.
+- Çizim paneli: "Yapılacak çizimler", "Onay bekleyen çizimler" ve yeni **"Müşteri tarafından onaylanmış çizimler"**
+  (yükleme gününe göre gruplu, en yeni / en eski).
+- Çizimcinin sipariş sayfası: müşteri sipariş dosyaları → teknik çizimler → notlar → sipariş bilgileri; teklif, sandık
+  ve cam (ticari) bölümleri gösterilmez. Müşteri listesinde durum: "Çizim onay bekliyor".
+
 ## 3.24.0 — 02.10.2026
 
 - Yüklemeler: **Yükleme Dökümü Excel** — seçilen yükleme gününün tüm müşteri / siparişleri tek dosyada; müşteriye göre

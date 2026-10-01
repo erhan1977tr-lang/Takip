@@ -24,7 +24,7 @@ export default {
   },
   customer: {
     reviewing: { label: 'İnceleniyor', next: 'Satış ekibi inceliyor' },
-    awaitingApproval: { label: 'Onayınız bekleniyor', next: 'Çizimi onaylayın' },
+    awaitingApproval: { label: 'Çizim onay bekliyor', next: 'Çizimi onaylayın' },
     revision: { label: 'Revizyon hazırlanıyor', next: 'Revize çizim hazırlanıyor' },
     drawing: { label: 'Çizim hazırlanıyor', next: 'Çizim hazırlanıyor' },
     offerReady: { label: 'Teklifiniz hazır', next: 'Üretim planlanıyor' },

@@ -24,7 +24,7 @@ export default {
   },
   customer: {
     reviewing: { label: 'În analiză', next: 'Echipa de vânzări o analizează' },
-    awaitingApproval: { label: 'Așteaptă aprobarea dvs.', next: 'Aprobați desenul' },
+    awaitingApproval: { label: 'Desenul așteaptă aprobarea', next: 'Aprobați desenul' },
     revision: { label: 'Revizie în lucru', next: 'Se pregătește desenul revizuit' },
     drawing: { label: 'Desen în pregătire', next: 'Se pregătește desenul' },
     offerReady: { label: 'Oferta dvs. este gata', next: 'Se planifică producția' },

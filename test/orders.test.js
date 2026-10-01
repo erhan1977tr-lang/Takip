@@ -162,7 +162,7 @@ test('beklemede yalnızca beklemeden çıkarılabilir; kapanmış siparişte iş
 
 test('müşterinin gördüğü durum', () => {
   const label = (p) => tr.status.customer[customerSummary(p).key].label;
-  assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }), 'Onayınız bekleniyor');
+  assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }), 'Çizim onay bekliyor');
   assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }), 'Teklifiniz hazır');
   assert.equal(label({ status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'YONETIMDE' }), 'Hazırlanıyor');
   assert.equal(label({ status: 'URETIMDE' }), 'Onaylandı, üretimde');

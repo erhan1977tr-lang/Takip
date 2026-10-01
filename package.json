@@ -1,6 +1,6 @@
 {
   "name": "takip",
-  "version": "3.24.0",
+  "version": "3.25.0",
   "private": true,
   "type": "module",
   "description": "Takip — sipariş ve üretim portalı",
@@ -25,6 +25,7 @@
     "@prisma/client": "6.19.3",
     "next": "15.5.26",
     "nodemailer": "^6.10.0",
+    "pdfjs-dist": "4.10.38",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

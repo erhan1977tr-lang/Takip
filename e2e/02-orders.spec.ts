@@ -130,7 +130,7 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   const drawer = await as(browser, DRAWER, PW);
   await expect(drawer.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
   // Tek çizimci olduğu için iş kendiliğinden ona atandı: "Çizilecekler" ve "Benim çizimlerim"de görünür, üstlenmeye gerek yok
-  await expect(drawer.locator('.card', { hasText: 'Çizilecekler' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
+  await expect(drawer.locator('.card', { hasText: 'Yapılacak çizimler' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
   await expect(drawer.locator('.card', { hasText: 'Benim çizimlerim' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
   const hidden = await drawer.goto(`/siparisler/${ids.a}`); // çizimsiz sipariş çizim ekibine görünmez
   expect(hidden?.status()).toBe(404);
@@ -147,6 +147,7 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await cust.goto(`/siparisler/${ids.b}`);
   await expect(cust.locator('a[href^="/dosya/cizim/"]')).toHaveCount(0);
   await expect(cust.getByText('Onayınız bekleniyor')).toHaveCount(0);
+  await expect(drawer.getByRole('link', { name: 'Kontrol Et' })).toBeVisible(); // göndermeden önce müşterinin göreceği hâliyle kontrol
   // 2. adım: "Müşteriye gönder" → "emin misiniz?" onayı (as() onay pencerelerini kabul eder)
   await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
   await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
@@ -160,6 +161,10 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   const dl = await cust.request.get(href!);
   expect(dl.status()).toBe(200);
   expect(await dl.text()).toContain('dxf v1');
+  // "Revizyon iste" → çizim görüntüleyici: not zorunlu (boşken gönderilemez)
+  await cust.getByRole('link', { name: 'Revizyon iste' }).click();
+  await expect(cust).toHaveURL(/\/cizim\/[a-z0-9]+\?revizyon=1$/);
+  await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled();
   await cust.fill('#rev-comment', 'Korkuluk yüksekliği 1100 mm olmalı');
   await cust.getByRole('button', { name: 'Revizyon iste' }).click();
   await expect(cust.getByText('Revizyon talebiniz çizim ekibine iletildi.')).toBeVisible();

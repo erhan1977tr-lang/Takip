@@ -23,7 +23,7 @@ import {
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
-  markShippedAction, noDrawingAction, requestRevisionAction, sendToDrawingAction, setShipDateAction,
+  markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, sendDrawingAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction,
 } from './actions';
@@ -98,6 +98,8 @@ export default async function OrderPage({
   const stage = stageIndex(order.status);
   // Satış görünümü: teklif hazırlar ama müşteriye gönderemez (rol adına değil yetkiye bakılır)
   const salesView = userCan(user, 'OFFER_PREPARE') && !userCan(user, 'OFFER_SEND');
+  // Çizim ekibi görünümü: çizim yapar, teklif görmez (fiyat / sandık / cam ticari bölümleri gösterilmez)
+  const drawerView = userCan(user, 'DRAWING_WORK') && !userCan(user, 'OFFER_VIEW');
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
   const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
   const glasses = editable || updating
@@ -218,8 +220,12 @@ export default async function OrderPage({
       {/* Satış görünümü: müşterinin dosyaları ve notlar en üstte (aşağıda yeniden gösterilmez) */}
       {salesView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
       {salesView && <Notes order={order} user={user} t={t} />}
+      {/* Çizim ekibi görünümü: 1) müşteri dosyaları 2) çizimler (işlemler + sürümler) 3) notlar 4) sipariş bilgileri */}
+      {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
+      {drawerView && <Drawings order={order} user={user} can={can} t={t} />}
+      {drawerView && <Notes order={order} user={user} t={t} />}
 
       <OrderInfo
         title={t('order.info.title')}
@@ -235,8 +241,8 @@ export default async function OrderPage({
           { label: t('order.info.estimatedShip'), value: fmtDate(order.estimatedShipDate) },
           !!order.actualShipDate && { label: t('order.info.shipped'), value: fmtDate(order.actualShipDate) },
           // Etiketler müşteri kaydından (Yönetim → Müşteriler: Customer.camEtiket / Customer.sandikEtiket)
-          !isCustomer && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
-          !isCustomer && { label: t('order.info.sandikEtiket'), value: order.customer.sandikEtiket ?? '—' },
+          !isCustomer && !drawerView && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
+          !isCustomer && !drawerView && { label: t('order.info.sandikEtiket'), value: order.customer.sandikEtiket ?? '—' },
           // FGO belgeleri (proforma / avans / fatura): müşteri, yönetici ve denetimci görür (satış ve çizim fiyat görmez)
           ...fgoDocs.map((d) => ({
             label: t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey),
@@ -245,7 +251,7 @@ export default async function OrderPage({
         ]}
       >
         {/* "İstenen camlar" satış görünümünde gösterilmez (veri durur; teklif tablosu zaten bu camlarla açılır) */}
-        {!salesView && order.items.length > 0 && (
+        {!salesView && !drawerView && order.items.length > 0 && (
           <>
             <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -291,10 +297,10 @@ export default async function OrderPage({
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
       {/* "Sandıklar" satış görünümünde gösterilmez (sandıklar Yüklemeler sekmesinde girilir) */}
-      {!isCustomer && !salesView && order.status !== 'YENI' && <Crates order={order} t={t} />}
-      <Drawings order={order} user={user} can={can} t={t} />
-      {!salesView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
-      {!salesView && <Notes order={order} user={user} t={t} />}
+      {!isCustomer && !salesView && !drawerView && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
+      {!salesView && !drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
+      {!salesView && !drawerView && <Notes order={order} user={user} t={t} />}
       <History order={order} isCustomer={isCustomer} t={t} />
     </>
   );
@@ -342,13 +348,12 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
           <ConfirmButton primary message={t('order.customer.approveConfirm')}>{t('order.steps.approve_drawing')}</ConfirmButton>
         </form>
       )}
-      {can('request_revision') && (
-        <form action={requestRevisionAction} style={{ marginTop: 14 }}>
-          {hidden}
-          <label htmlFor="rev-comment">{t('order.customer.revisionLabel')}</label>
-          <textarea id="rev-comment" name="comment" rows={2} required placeholder={t('order.customer.revisionPlaceholder')} />
-          <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-danger">{t('order.steps.request_revision')}</button></div>
-        </form>
+      {waiting && latest && (
+        // "Aç ve incele": çizim görüntüleyici · "Revizyon iste": çizim üzerine işaret + zorunlu not (cizim/[drawingId])
+        <div className="row" style={{ marginTop: 12, gap: 8 }}>
+          <Link className="btn" href={`/siparisler/${order.id}/cizim/${latest.id}`}>{t('order.drawings.review')}</Link>
+          {can('request_revision') && <Link className="btn btn-danger" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
+        </div>
       )}
       {!waiting && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
     </div>
@@ -603,6 +608,9 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
               {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
               {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy?.name ?? '—', when: fmtDateTime(d.decidedAt) })}</span>}
+              {!draft && d.files.some((f) => VIEWABLE.includes(f.name.toLowerCase().split('.').pop() ?? '') && f.scanStatus !== 'INFECTED') && (
+                <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
+              )}
             </div>
             {d.noteCustomer && <div className="note"><b className="small">{t('order.drawings.noteCustomer')}</b> {d.noteCustomer}</div>}
             {!isCustomer && d.noteInternal && <div className="note internal"><b className="small">{t('order.drawings.noteInternal')}</b> {d.noteInternal}</div>}
@@ -624,17 +632,25 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
                 )}
               </div>
             ))}
-            {d.revisions.map((r) => (
-              <div key={r.id} className="note">
-                <b className="small">{t('order.drawings.revisionRequest')}</b> {r.comment}
-                <div className="meta">{fmtDateTime(r.createdAt)}</div>
-              </div>
-            ))}
+            {d.revisions.map((r) => {
+              const marks = Array.isArray(r.annotations) ? r.annotations.length : 0;
+              return (
+                <div key={r.id} className="note">
+                  <b className="small">{t('order.drawings.revisionRequest')}</b> {r.comment}
+                  <div className="meta">
+                    {fmtDateTime(r.createdAt)}
+                    {marks > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.drawings.marks', { n: marks })}</Link></>}
+                  </div>
+                </div>
+              );
+            })}
             {d.withdrawReason && <div className="note"><b className="small">{t('order.drawings.withdrawReason')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>}
             {draft && can('send_drawing') && (
               <form action={sendDrawingAction} className="row" style={{ marginTop: 8, gap: 10 }}>
                 <input type="hidden" name="id" value={order.id} />
                 <input type="hidden" name="drawingId" value={d.id} />
+                {/* Göndermeden önce: dosyayı müşterinin göreceği hâliyle açıp kontrol et */}
+                {d.files.length > 0 && <Link className="btn" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.upload.check')}</Link>}
                 {blocked
                   ? <><button type="button" className="btn btn-primary" disabled>{t('order.upload.send')}</button><span className="muted small">{t('order.upload.sendBlocked')}</span></>
                   : <ConfirmButton primary message={t('order.upload.sendConfirm', { v: d.version, n: d.files.length })}>{t('order.upload.send')}</ConfirmButton>}

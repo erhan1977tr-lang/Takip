@@ -338,6 +338,21 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                 </Section>
               );
             }
+            if (q.key === 'approvedDrawings') {
+              // Onaylanmış çizimler: yükleme gününe göre gruplu; grup içinde onay zamanına göre en yeni / en eski
+              const oldest = sp.onay === 'eski';
+              const at = (o: Row) => o.drawingSince?.getTime() ?? 0;
+              const list = [...q.rows].sort((a, b) => (a.estimatedShipDate?.getTime() ?? 0) - (b.estimatedShipDate?.getTime() ?? 0) || (oldest ? at(a) - at(b) : at(b) - at(a)));
+              return (
+                <Section key={q.key} title={t('orders.internal.sections.approvedDrawings.title')} count={list.length}>
+                  <div className="row small" style={{ padding: '8px 14px', gap: 10 }}>
+                    <Link href="/siparisler" className={oldest ? '' : 'active'} aria-current={oldest ? undefined : 'true'}>{t('orders.internal.sortNewest')}</Link>
+                    <Link href="/siparisler?onay=eski" className={oldest ? 'active' : ''} aria-current={oldest ? 'true' : undefined}>{t('orders.internal.sortOldest')}</Link>
+                  </div>
+                  <InternalTable user={user} rows={list} empty={t('orders.internal.sections.approvedDrawings.empty')} />
+                </Section>
+              );
+            }
             const k = q.key as Exclude<keyof Dict['orders']['internal']['sections'], 'active' | 'archive' | 'none'>;
             return (
               <Section key={q.key} title={t(`orders.internal.sections.${k}.title`)} count={q.rows.length} tone={q.key === 'sla' && q.rows.length ? 'badge-danger' : undefined}>

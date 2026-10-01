@@ -396,3 +396,24 @@ dialog.modal::backdrop { background: rgba(15, 23, 42, .35); }
 .offer-table .desc-row { display: flex; align-items: center; gap: 4px; }
 .offer-table .desc-row input { flex: 1; min-width: 0; }
 .offer-table .btn-dup { padding: 2px 8px; line-height: 1.2; font-weight: 700; }
+
+/* Çizim görüntüleyici (components/DrawingViewer.tsx) */
+.viewer { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .viewer { grid-template-columns: 1fr; } }
+.viewer-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.viewer-bar select { width: auto; max-width: 260px; }
+.viewer-scroll { overflow: auto; max-height: 78vh; border: 1px solid #e5e7eb; background: #f3f4f6; }
+.viewer-page { position: relative; background: #fff; margin: 0 0 10px; line-height: 0; }
+.viewer-page canvas, .viewer-page img { display: block; width: 100%; height: auto; }
+.viewer-layer { position: absolute; inset: 0; line-height: 1.2; }
+.viewer-layer.editable { cursor: crosshair; }
+.viewer-layer.drawing { touch-action: none; }
+.ann { position: absolute; pointer-events: none; }
+.ann-pin, .ann-no { transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #dc2626; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #fff; }
+.ann-text { transform: translateY(-50%); background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ann-rect { border: 2px solid #dc2626; background: rgba(220, 38, 38, .08); }
+.ann-rect b { position: absolute; top: -11px; left: -11px; min-width: 22px; height: 22px; border-radius: 11px; background: #dc2626; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.ann-free { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.ann-free polyline { fill: none; stroke: #dc2626; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.viewer-note { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid #eef0f3; }
+.viewer-note input { flex: 1 1 100%; }

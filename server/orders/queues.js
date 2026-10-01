@@ -70,6 +70,10 @@ function buildQueues(rows, can, now) {
   if (can.drawing && !can.review && can.userId) {
     out.push({ key: 'myDrawings', rows: prep.filter((o) => o.drawingTrack !== 'YOK' && o.assignedDrawerId === can.userId) });
   }
+  if (can.drawing && !can.review) {
+    // Müşterinin onayladığı çizimler (sipariş hazırlanırken ya da üretimdeyken); en yeni onay üstte (sayfa sıralar)
+    out.push({ key: 'approvedDrawings', rows: active.filter((o) => o.drawingTrack === 'ONAYLANDI' && (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE')) });
+  }
   if (can.review) {
     out.push({ key: 'production', rows: active.filter((o) => o.status === 'URETIMDE') });
   }

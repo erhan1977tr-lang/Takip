@@ -45,7 +45,7 @@ test('kuyruk: yönetici — fiyat onayı bekleyenler', () => {
 
 test('kuyruk: çizim ekibi — çizim işleri ve müşteri onayındakiler; teklif kuyrukları yok', () => {
   const q = queuesFor(all, { review: false, send: false, drawing: true }, NOW);
-  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'sla', 'held'], 'kullanıcı kimliği verilmezse "Benim çizimlerim" yok');
+  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'approvedDrawings', 'sla', 'held'], 'kullanıcı kimliği verilmezse "Benim çizimlerim" yok');
   assert.deepEqual(ids(q, 'drawingJobs'), [rows.cizim.id]);
 });
 
@@ -62,7 +62,7 @@ test('kuyruk: çizimci — başkasına atanmış iş "Çizilecekler"de görünme
   const open = row({ drawingTrack: 'GEREKLI', assignedDrawerId: null });
   const waiting = row({ drawingTrack: 'ONAY_BEKLIYOR', assignedDrawerId: 'ben' });
   const q = queuesFor([mine, other, open, waiting], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
-  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'myDrawings', 'sla']);
+  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'myDrawings', 'approvedDrawings', 'sla']);
   assert.deepEqual(ids(q, 'drawingJobs').sort(), [mine.id, open.id].sort());
   assert.deepEqual(ids(q, 'myDrawings').sort(), [mine.id, waiting.id].sort());
 });
@@ -75,4 +75,15 @@ test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\
   const lateMore = row({ drawingTrack: 'GEREKLI', slaDeadline: h(-20) });
   const q = queuesFor([later, late, none, soon, lateMore], { review: false, send: false, drawing: true, userId: 'x' }, NOW);
   assert.deepEqual(ids(q, 'drawingJobs'), [lateMore.id, late.id, soon.id, later.id, none.id]);
+});
+
+test('kuyruk: çizimci — müşterinin onayladığı çizimler ayrı bölümde (hazırlanırken ve üretimde); satış bu bölümü görmez', () => {
+  const approved = row({ drawingTrack: 'ONAYLANDI' });
+  const inProduction = row({ drawingTrack: 'ONAYLANDI', status: 'URETIMDE' });
+  const held = row({ drawingTrack: 'ONAYLANDI', onHold: true });
+  const pending = row({ drawingTrack: 'ONAY_BEKLIYOR' });
+  const q = queuesFor([approved, inProduction, held, pending], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
+  assert.deepEqual(ids(q, 'approvedDrawings').sort(), [approved.id, inProduction.id].sort());
+  assert.deepEqual(ids(q, 'atCustomer'), [pending.id]);
+  assert.equal(ids(queuesFor([approved], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
 });

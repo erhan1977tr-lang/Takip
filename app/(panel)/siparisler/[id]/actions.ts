@@ -208,7 +208,9 @@ export async function approveDrawingAction(formData: FormData) {
 export async function requestRevisionAction(formData: FormData) {
   const comment = String(formData.get('comment') ?? '').trim().slice(0, 2000);
   const drawingId = String(formData.get('drawingId') ?? '') || undefined;
-  await simple(formData, 'request_revision', 'revision_requested', { comment, drawingId });
+  // Çizim üstü işaretler (cizim/[drawingId] sayfasındaki görüntüleyici): JSON; sunucuda doğrulanır (server/orders/annotations.js)
+  const annotations = String(formData.get('annotations') ?? '').slice(0, 400_000);
+  await simple(formData, 'request_revision', 'revision_requested', { comment, drawingId, annotations });
 }
 
 // ---------------- Sandıklar ----------------

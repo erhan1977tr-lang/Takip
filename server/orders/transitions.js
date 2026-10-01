@@ -7,6 +7,7 @@ import { transitionOrder } from '../domain/transition.js';
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
+import { cleanAnnotations } from './annotations.js';
 import { atOfferPrice, availableActions, drawingFlags, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
@@ -428,7 +429,10 @@ const ACTIONS = {
     const latest = latestDrawing(h);
     if (latest) {
       await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI', decidedAt: h.now, decidedById: h.actor.id } });
-      await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment } });
+      // Çizim üstü işaretler yalnızca bu sürümün dosyalarına konabilir; doğrulanıp sadeleştirilerek saklanır
+      const annotations = cleanAnnotations(h.payload.annotations, latest.files.map((f) => f.id));
+      await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
+      h.result = { annotations: annotations.length };
     }
     await h.set({ drawingTrack: 'REVIZYON_ISTENDI', drawingSince: h.now, revisionCount: { increment: 1 } });
     h.event('REVISION_REQUESTED', comment);
