@@ -69,6 +69,8 @@ test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tek
   assert.equal(f.IdExtern, 'GLAP3-P');
   assert.equal(f['Client[Tara]'], 'RO');
   assert.equal(f['Client[CodUnic]'], '998877');
+  assert.ok(!('Client[IdExtern]' in f), 'FGO müşteri IdExtern için tam sayı ister');
+  assert.ok(f.IdExtern.length <= 36);
   assert.equal(f['Continut[0][PretUnitar]'], '62.21');
   assert.equal(f['Continut[1][NrProduse]'], '20');
   assert.equal(f['Continut[1][CotaTVA]'], '21');

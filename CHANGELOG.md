@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.14.1 — 01.10.2026
+
+- FGO: "The value … is not valid for IdExtern" hatası düzeltildi (müşteri kimliği FGO'ya gönderilmiyor; FGO orada tam sayı bekliyor).
+
 ## 3.14.0 — 01.10.2026 · Okunabilirlik
 
 - **Sipariş bilgileri** eski TAKIP düzeninde: alt alta satırlar, solda gri zeminde kalın etiket, sağda büyük değer, satır

@@ -149,7 +149,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     'Client[Email]': customer.email ?? '',
     'Client[Telefon]': customer.phone ?? '',
     'Client[Tip]': 'PJ',
-    'Client[IdExtern]': customer.id ?? '',
+    // Client[IdExtern] gönderilmez: FGO burada pozitif tam sayı ister, bizim kimliklerimiz metin (cuid)
   };
   lines.forEach((l, i) => {
     const unit = ronPrice(l.eur, rate);
