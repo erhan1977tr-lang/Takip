@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.17.0 — 01.10.2026
+
+- Panel sayfalarındaki veriler 60 saniyede bir kendiliğinden yenilenir (sayfa yeniden yüklenmez; forma yazılan veri kaybolmaz).
+- CAM siparişi tahmini yükleme tarihi: Çarşamba–Salı dönemindeki siparişler dönemin Çarşambasından 23 gün sonraki Cuma
+  (30.09–06.10.2026 → 23.10.2026). Yeni sipariş formunda gösterilir ve yeni siparişin tahmini yükleme tarihi olur;
+  mevcut siparişlerin tarihleri değişmez.
+- Profil siparişi (müşteri): "Predare" yalnızca tarih (saat yok).
+
 ## 3.16.7 — 01.10.2026
 
 - Muhasebe → **Profil Tahsilat**'ta da "FGO ile Güncelle" FGO'da silinmiş belgelerin kaydını kaldırır ve siparişi geri alır:

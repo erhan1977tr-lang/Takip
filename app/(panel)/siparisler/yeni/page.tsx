@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { suggestNextNo } from '@/lib/orders';
 import { fmtDate } from '@/lib/format';
-import { nextShipDate } from '@/server/orders/rules.js';
+import { glassLoadingDate } from '@/server/orders/rules.js';
+import { getEnv } from '@/lib/env';
 import { glassLabel } from '@/server/catalog/glass.js';
 import { readDraftItems } from '@/server/orders/drafts.js';
 import { NewOrderForm, type DraftData, type GlassOption } from './NewOrderForm';
@@ -136,7 +137,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       {droppedGlass > 0 && <div className="alert alert-warn">{t('newOrder.draftGlassGone', { n: droppedGlass })}</div>}
       <NewOrderForm
         key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
-        catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(nextShipDate())} draft={draft} m={m.newOrder.form}
+        catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(glassLoadingDate(new Date(), getEnv().APP_TIMEZONE))} draft={draft} m={m.newOrder.form}
       />
       {draftRow && (
         <form action={deleteDraftAction} className="row" style={{ justifyContent: 'flex-end' }}>

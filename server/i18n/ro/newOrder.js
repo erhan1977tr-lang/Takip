@@ -20,7 +20,7 @@ export default {
   form: {
     info: {
       title: 'Datele comenzii',
-      shipNote: 'Comenzile se încarcă săptămânal. Data estimată de încărcare a acestei comenzi va fi {date}; echipa de vânzări o actualizează dacă este necesar.',
+      shipNote: 'Data estimată de încărcare a acestei comenzi va fi {date}; echipa de vânzări o actualizează dacă este necesar.',
       name: 'Denumirea comenzii',
       namePlaceholder: 'ex. Sticlă pentru cabină de duș',
       number: 'Numărul dvs. de comandă',

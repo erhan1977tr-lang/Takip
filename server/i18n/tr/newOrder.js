@@ -20,7 +20,7 @@ export default {
   form: {
     info: {
       title: 'Sipariş bilgileri',
-      shipNote: 'Siparişler haftalık yüklenir. Bu siparişin tahmini yükleme tarihi {date} olarak yazılacak; satış ekibi gerekirse günceller.',
+      shipNote: 'Bu siparişin tahmini yükleme tarihi {date} olacak; satış ekibi gerekirse günceller.',
       name: 'Sipariş adı',
       namePlaceholder: 'örn. Duş kabini camı',
       number: 'Sipariş numaranız',

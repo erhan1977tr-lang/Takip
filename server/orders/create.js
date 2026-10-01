@@ -7,7 +7,8 @@
 // Aynı firmanın siparişleri firma bazlı bir kilitle sırayla oluşturulur (pg_advisory_xact_lock).
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
-import { nextShipDate, slaDeadline } from './rules.js';
+import { glassLoadingDate, slaDeadline } from './rules.js';
+import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 
 export const MAX_ORDER_NO = 9_999_999;
@@ -83,7 +84,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     const order = await tx.order.create({
       data: {
         orderNo, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', title, customerId: firm.id, createdById: actor.id,
-        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: nextShipDate(now),
+        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
         camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null,
         items: { create: items },
         files: {

@@ -271,7 +271,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           !isCustomer && p?.proformaAmount != null && { label: t('profile.page.fgo.amount'), value: fmtMoney(p.proformaAmount.toString(), 'RON') },
           !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
           !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
-          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
+          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${isCustomer ? fmtDate(p.deliveredAt) : fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
           !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}{p.invoiceLink && <> · <a href={p.invoiceLink} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</> },
         ]}
       />

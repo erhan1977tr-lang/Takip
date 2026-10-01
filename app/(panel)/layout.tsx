@@ -9,6 +9,7 @@ import { LanguageSelect } from '@/components/LanguageSelect';
 import { SIDEBAR_INIT, SIDEBAR_SLOT, SidebarToggle } from '@/components/Sidebar';
 import { isDemo } from '@/server/demo/accounts.js';
 import { logoutAction } from './actions';
+import { AutoRefresh } from '@/components/AutoRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         </header>
         <NavLinks items={nav} variant="mobile" />
         <main className="content">{children}</main>
+        <AutoRefresh />
       </div>
     </div>
   );

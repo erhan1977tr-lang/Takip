@@ -143,13 +143,17 @@ export function slaInfo(deadline, now = new Date()) {
 }
 
 /**
- * Tahmini yükleme günü: bugünden en az minDays gün sonraki ilk yükleme günü.
- * weekday: 0=Pazar … 5=Cuma. Saat dilimi kaymasın diye gün ortası (12:00 UTC) döner.
+ * CAM siparişinin tahmini yükleme günü — TEK merkezi hesap (yeni siparişin varsayılan tarihi ve formdaki bilgi).
+ * Çarşamba başlayıp sonraki Salı (dahil) biten dönemdeki siparişler aynı gruptur; yükleme günü dönemin Çarşambası
+ * + 23 gün (Cuma). Ürün sahibinin kesin örnekleri: 30.09–06.10.2026 → 23.10.2026, 07.10–13.10.2026 → 30.10.2026.
+ * Gün, işletmenin saat diliminde alınır (gece yarısı sınırı). Saat kaymasın diye gün ortası (12:00 UTC) döner.
+ * Kayıtlı tarih tek kaynaktır (Order.estimatedShipDate); satış/yönetici değiştirirse her ekran onu gösterir.
  */
-export function nextShipDate(from = new Date(), weekday = 5, minDays = 14) {
-  const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), 12));
-  d.setUTCDate(d.getUTCDate() + minDays);
-  while (d.getUTCDay() !== weekday) d.setUTCDate(d.getUTCDate() + 1);
+export function glassLoadingDate(from = new Date(), timeZone = 'Europe/Bucharest') {
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(from);
+  const d = new Date(`${key}T12:00:00Z`);
+  const sinceWednesday = (d.getUTCDay() - 3 + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - sinceWednesday + 23);
   return d;
 }
 

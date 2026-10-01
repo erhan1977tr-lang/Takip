@@ -5,7 +5,7 @@ import ro from '../server/i18n/ro/index.js';
 import { translate } from '../server/i18n/index.js';
 import {
   ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, drawingFlags, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
-  nextShipDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName,
+  glassLoadingDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName,
 } from '../server/orders/rules.js';
 
 const has = (p, a) => availableActions(p).includes(a);
@@ -194,9 +194,17 @@ test('SLA metni', () => {
   assert.equal(slaInfo(null), null);
 });
 
-test('tahmini yükleme: en az 14 gün sonraki ilk cuma', () => {
-  assert.equal(nextShipDate(new Date('2026-09-28T10:00:00Z')).toISOString().slice(0, 10), '2026-10-16');
-  assert.equal(nextShipDate(new Date('2026-10-02T09:00:00Z')).toISOString().slice(0, 10), '2026-10-16');
+test('CAM tahmini yükleme: Çarşamba–Salı dönemi → kesin örnekler; Çarşamba yeni dönem, Salı dönemin son günü', () => {
+  const day = (iso, tz) => glassLoadingDate(new Date(iso), tz).toISOString().slice(0, 10);
+  for (const d of ['2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06']) {
+    assert.equal(day(`${d}T10:00:00Z`), '2026-10-23', d);
+  }
+  for (const d of ['2026-10-07', '2026-10-10', '2026-10-13']) assert.equal(day(`${d}T10:00:00Z`), '2026-10-30', d);
+  assert.equal(day('2026-09-29T10:00:00Z'), '2026-10-16', 'Salı: önceki dönemin son günü');
+  // Saat dilimi sınırı: Bükreş'te Çarşamba 00:30 (UTC Salı 21:30) yeni dönemdir
+  assert.equal(day('2026-10-06T21:30:00Z', 'Europe/Bucharest'), '2026-10-30');
+  assert.equal(day('2026-10-06T20:30:00Z', 'Europe/Bucharest'), '2026-10-23', 'Salı 23:30 hâlâ eski dönem');
+  assert.equal(glassLoadingDate(new Date('2026-10-01T10:00:00Z')).getUTCDay(), 5, 'Cuma');
 });
 
 test('tarih ayrıştırma', () => {
