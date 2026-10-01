@@ -18,6 +18,8 @@ export const FGO_DEFAULTS = {
   // Kur kaynağı: 'manual' = yöneticinin girdiği günün kuru (varsayılan; BT'nin dosyası "În unități BT" kuruyla aynı değil),
   // 'auto' = fxUrl'den otomatik
   fxMode: 'manual',
+  // Günde en fazla kaç FGO belgesi kesilir (deneme güvenliği; 0 = sınırsız)
+  dailyLimit: 3,
 };
 const SECRET_PURPOSE = 'fgo-key';
 
@@ -57,6 +59,7 @@ export function validateFgoSettings(raw) {
     vatRate: Number(String(raw.vatRate ?? '').replace(',', '.')),
     fxUrl: String(raw.fxUrl ?? '').trim() || DEFAULT_FX_URL,
     fxMode: raw.fxMode === 'auto' ? 'auto' : 'manual',
+    dailyLimit: raw.dailyLimit == null || String(raw.dailyLimit).trim() === '' ? 3 : Number(raw.dailyLimit),
   };
   if (cui && !/^\d{2,10}$/.test(cui)) errors.push('CUI');
   if (!SERIES_RE.test(value.proformaSeries)) errors.push('PROFORMA_SERIES');
@@ -64,6 +67,7 @@ export function validateFgoSettings(raw) {
   if (!TYPE_RE.test(value.proformaType)) errors.push('PROFORMA_TYPE');
   if (!TYPE_RE.test(value.invoiceType)) errors.push('INVOICE_TYPE');
   if (!(value.vatRate >= 0 && value.vatRate <= 50)) errors.push('VAT');
+  if (!Number.isInteger(value.dailyLimit) || value.dailyLimit < 0 || value.dailyLimit > 1000) errors.push('DAILY_LIMIT');
   try {
     if (new URL(value.fxUrl).protocol !== 'https:') errors.push('FX_URL');
   } catch {
@@ -124,7 +128,7 @@ export function missingBilling(c) {
  *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, text?: string }} p
  * @returns {Record<string, string>}
  */
-export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '' }) {
+export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null }) {
   const proforma = kind === 'proforma';
   const name = String(customer.name).trim();
   const cui = String(customer.taxId ?? '').replace(/\s/g, '');
@@ -136,7 +140,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     Valuta: 'RON',
     TipFactura: proforma ? settings.proformaType : settings.invoiceType,
     // Aynı belge iki kez kesilmesin: sipariş + tür
-    IdExtern: `${orderNo}-${proforma ? 'P' : 'F'}`,
+    IdExtern: extern ?? `${orderNo}-${proforma ? 'P' : 'F'}`,
     VerificareDuplicat: 'true',
     Text: [text, `Curs BT vânzare EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.`].filter(Boolean).join(' ').slice(0, 500),
     'Client[Denumire]': name,
@@ -152,8 +156,9 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     // Client[IdExtern] gönderilmez: FGO burada pozitif tam sayı ister, bizim kimliklerimiz metin (cuid)
   };
   lines.forEach((l, i) => {
-    const unit = ronPrice(l.eur, rate);
-    f[`Continut[${i}][Denumire]`] = `${l.name} (${l.code})`.slice(0, 250);
+    // l.ron: RON birim fiyat doğrudan (ör. avans satırı); yoksa EUR × kur
+    const unit = l.ron != null ? l.ron : ronPrice(l.eur, rate);
+    f[`Continut[${i}][Denumire]`] = (l.code ? `${l.name} (${l.code})` : l.name).slice(0, 250);
     f[`Continut[${i}][CodArticol]`] = l.code;
     f[`Continut[${i}][NrProduse]`] = String(l.qty);
     f[`Continut[${i}][UM]`] = l.unit;
@@ -164,7 +169,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
 }
 
 /** RON tutar (TVA hariç): Σ adet × RON birim fiyat */
-export const ronTotal = (lines, rate) => round2(lines.reduce((s, l) => s + round2(l.qty * ronPrice(l.eur, rate)), 0));
+export const ronTotal = (lines, rate) => round2(lines.reduce((s, l) => s + round2(l.qty * (l.ron != null ? l.ron : ronPrice(l.eur, rate))), 0));
 
 /** FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır. */
 export class FgoError extends Error {
@@ -248,4 +253,14 @@ export async function fgoStatus(settings, key, { series, number, appUrl = '' }, 
   const f = json.Factura ?? {};
   const n = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
   return { total: n(f.Valoare), paid: n(f.ValoareAchitata) };
+}
+
+/**
+ * Bugün (yerel gün) kesilmiş FGO belgesi sayısı ve günlük sınır doldu mu (deneme güvenliği).
+ * @param {{ dailyLimit: number }} settings
+ */
+export async function dailyLimitReached(db, settings, dayStart) {
+  if (!settings.dailyLimit) return false;
+  const n = await db.fgoDocument.count({ where: { createdAt: { gte: dayStart } } });
+  return n >= settings.dailyLimit;
 }

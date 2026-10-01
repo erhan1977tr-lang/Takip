@@ -12,6 +12,7 @@ import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/component
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { SidebarPortal } from '@/components/Sidebar';
 import { OrderInfo } from './OrderInfo';
+import { GlassFinance } from './GlassFinance';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { ProfileOrderView } from './ProfileOrderView';
 import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
@@ -269,6 +270,8 @@ export default async function OrderPage({
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} />
       )}
+      {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
+      {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
       {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
       <Drawings order={order} user={user} can={can} t={t} />
       <Files order={order} user={user} canAdd={can('add_file')} t={t} />

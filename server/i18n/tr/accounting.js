@@ -7,8 +7,8 @@ export default {
   },
   glass: {
     title: "Cam Tahsilat",
-    intro: "Cam siparişlerinin FGO belgeleri. Cam siparişleri için FGO belge akışı sonraki aşamada eklenecek.",
-    empty: "Henüz cam siparişi için FGO belgesi yok. Cam FGO belge akışı sonraki aşamada eklenecek.",
+    intro: "Cam siparişlerinin FGO belgeleri (proforma, avans faturası, fatura). Belgeler sipariş sayfasındaki Finans / FGO bölümünden kesilir.",
+    empty: "Henüz cam siparişi için FGO belgesi yok.",
   },
   receivables: {
     refresh: "FGO ile Güncelle",
@@ -32,6 +32,7 @@ export default {
       checked: "Son FGO kontrol",
     },
     kind: {
+      ADVANCE: "Avans faturası",
       PROFORMA: "Proforma",
       INVOICE: "Fatura",
     },

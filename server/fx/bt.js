@@ -174,3 +174,17 @@ export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
     await tx.notificationOutbox.updateMany({ where: { type: 'FGO_PROFORMA', status: 'PENDING' }, data: { availableAt: new Date() } });
   });
 }
+
+/**
+ * Belge kesilecek günün kuru: otomatik modda BT adresinden, olmazsa (ya da elle modda) yöneticinin bugün girdiği kur.
+ * @returns {Promise<{ rate: number, source: string }>}  kur yoksa hata (yeniden denenir)
+ */
+export async function rateForDay(db, { settings, day, rateImpl = fetchBtEurSell }) {
+  if (settings.fxMode === 'auto') {
+    const r = await rateImpl({ url: settings.fxUrl });
+    if (r.ok) return { rate: r.rate, source: r.source };
+  }
+  const rate = await dailyRateFor(db, day);
+  if (rate == null) throw new Error('Günün BT kuru girilmedi (Entegrasyonlar → Günün BT kuru); kur girilince belge kesilir');
+  return { rate, source: 'MANUAL_DAY' };
+}

@@ -330,6 +330,7 @@ model Order {
   notes             OrderNote[]
   outbox            NotificationOutbox[]
   fgoDocuments      FgoDocument[]
+  glassBilling      GlassBilling?
   profile           ProfileOrder?        // yalnızca profil siparişinde
   profileItems      ProfileOrderItem[]
   stockMoves        StockMovement[]
@@ -1039,7 +1040,7 @@ model FgoDocument {
   id         String    @id @default(cuid())
   orderId    String
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  kind       String    // PROFORMA | INVOICE
+  kind       String    // PROFORMA | ADVANCE (avans faturası, cam) | INVOICE
   series     String
   number     String
   issuedAt   DateTime
@@ -1052,7 +1053,24 @@ model FgoDocument {
   createdAt  DateTime  @default(now())
 
   @@unique([series, number])
+  @@unique([orderId, kind]) // sipariş başına her türden tek belge (çift kesim veritabanında da engellenir)
   @@index([orderId])
+}
+
+// Cam siparişi FGO belgeleri (Aşama: cam FGO): kur ve elle girilen ödeme. Belgelerin kendisi FgoDocument'te
+// (PROFORMA → ADVANCE (avans faturası) → INVOICE). Müşteri onayı yok; sipariş durumu değişmez.
+model GlassBilling {
+  id         String    @id @default(cuid())
+  orderId    String    @unique
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fxRate     Decimal?  @db.Decimal(10, 4) // proforma kuru (avans ve kapanış faturası da bunu kullanır)
+  fxDate     DateTime? @db.Date
+  fxSource   String?
+  paidAt     DateTime? // yönetici "Ödeme alındı" dediyse
+  paidAmount Decimal?  @db.Decimal(14, 2) // RON, TVA dahil (avans faturasının tutarı)
+  paidById   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
 
 // Yükleme (yükleme günü) başına nakliye maliyeti; yönetici elle girer. Bir güne birden çok kalem girilebilir.

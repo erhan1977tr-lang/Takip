@@ -3,6 +3,7 @@
 //   - Durumunu yönetici → Entegrasyonlar sayfası için kaydeder.
 //   - Profil siparişi (Aşama 6): kuyruktaki depo e-postalarını (Comanda Depozit PDF'i + depo bağlantısı) gönderir; olmazsa yeniden dener.
 //   - FGO (Aşama 6b): kuyruktaki proforma ve faturaları keser (BT kuruyla, RON).
+//   - Cam FGO belgeleri (proforma / avans / fatura) ve müşteriye belge e-postaları.
 // Diğer bildirimlerin gönderimi Aşama 8'de.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
@@ -10,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antivirus.js';
 import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
 import { dispatchFgoJobs } from '../server/profile/fgo-jobs.js';
+import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
@@ -50,7 +52,11 @@ async function profileTick() {
   const now = new Date();
   const f = await dispatchFgoJobs(db, { now, log });
   if (f.done || f.failed) log('FGO:', JSON.stringify(f));
+  const g = await dispatchGlassJobs(db, { now, log });
+  if (g.done || g.failed) log('FGO cam:', JSON.stringify(g));
   if (!mail) return;
+  const e = await dispatchDocEmails(db, { ...mail, now, log });
+  if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));
   const r = await dispatchWarehouseEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
   if (r.sent || r.failed) log('depo e-postası:', JSON.stringify(r));
 }

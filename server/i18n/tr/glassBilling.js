@@ -1,0 +1,43 @@
+// Cam siparişi Finans / FGO bölümü (yönetici)
+export default {
+  title: "Finans / FGO",
+  none: "Henüz FGO belgesi yok.",
+  rate: "Belge kuru: {rate} RON / EUR ({date})",
+  paidManual: "Ödeme alındı (elle): {amount} · {date}",
+  wait: {
+    cancelled: "Sipariş iptal.",
+    done: "Fatura kesildi; belge akışı tamam.",
+    pending: "Belge kesiliyor (bir dakika içinde).",
+    no_offer: "Müşteriye gönderilmiş teklif yok; belge kesilemez.",
+    wait_loading: "Avans faturası kesildi. Cam yüklenince (yükleme gününden 2 gün sonra) fatura kesilir.",
+    wait_payment: "Proforma ödemesi bekleniyor. FGO'da tahsilat görünürse (Muhasebe → FGO ile Güncelle) ya da aşağıdan ödemeyi girerseniz avans faturası kesilebilir.",
+  },
+  failed: "FGO'da kesilemedi: {error}",
+  retry: "Son deneme olmadı ({error}); yeniden denenecek.",
+  mail: "Müşteriye e-posta",
+  mailSent: "gönderildi {date}",
+  mailFailed: "gönderilemedi: {error}",
+  mailPending: "gönderilmeyi bekliyor",
+  paidLabel: "Tahsil edilen (RON, TVA dahil)",
+  button: {
+    proforma: "Proforma Gönder",
+    advance: "Avans Faturası Gönder",
+    invoice: "Fatura Gönder",
+    mark_paid: "Ödeme alındı",
+  },
+  confirm: {
+    proforma: "FGO'da proforma kesilip müşteriye e-postayla gönderilsin mi?",
+    advance: "Tahsil edilen tutar için FGO'da avans faturası kesilip müşteriye gönderilsin mi?",
+    invoice: "FGO'da fatura kesilip müşteriye gönderilsin mi? (Avans faturası varsa tutarı düşülür.)",
+  },
+  ok: {
+    requested: "Belge isteği alındı; FGO'da kesilip müşteriye gönderiliyor.",
+    paid: "Ödeme kaydedildi.",
+  },
+  errors: {
+    FGO_DISABLED: "FGO bağlantısı kapalı ya da eksik (Yönetici → Entegrasyonlar).",
+    FGO_DAILY_LIMIT: "Bugünkü FGO belge sınırı doldu (Entegrasyonlar → günlük sınır).",
+    BAD_AMOUNT: "Tutar geçersiz.",
+    NOT_ALLOWED: "Bu belge şu an kesilemez (zaten kesilmiş ya da sırası değil).",
+  },
+};

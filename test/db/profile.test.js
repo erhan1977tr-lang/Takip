@@ -249,8 +249,8 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { dispatchFgoJobs } = await import('../../server/profile/fgo-jobs.js');
 const FGO_SECRET = 'f'.repeat(40);
-const fgoOn = (enabled = true, fxMode = 'auto') => saveFgoSettings(db, {
-  enabled, fxMode, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
+const fgoOn = (enabled = true, fxMode = 'auto', dailyLimit = 0) => saveFgoSettings(db, {
+  enabled, fxMode, dailyLimit, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
 }, { key: 'GIZLI', secret: FGO_SECRET }, actor(people.admin));
 function fakeFgo(numbers) {
   const calls = [];

@@ -8,9 +8,9 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
-import { FgoError, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
+import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
 import { unitLabel } from './catalog.js';
-import { dayDate, dayKeyOf, localDay } from './dates.js';
+import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
 
 export const FGO_MAX_ATTEMPTS = 8;
@@ -75,6 +75,8 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       if (missing.length) throw new Permanent(`Müşterinin fatura bilgisi eksik: ${missing.join(', ')}`);
       const key = fgoKey(settings, secret);
       if (!key) throw new Permanent('FGO anahtarı açılamadı; Entegrasyonlar ekranında yeniden girin');
+      // Deneme güvenliği: günlük belge sınırı dolduysa ertesi gün yeniden denenir
+      if (await dailyLimitReached(db, settings, localDayStart(now, timeZone))) throw new Error(`Günlük FGO belge sınırı (${settings.dailyLimit}) doldu`);
 
       // Kur: proformada siparişte elle girilmiş kur ya da BT'den o an; faturada yalnızca proformanın kuru
       let rate = p.fxRate != null ? Number(p.fxRate) : null;

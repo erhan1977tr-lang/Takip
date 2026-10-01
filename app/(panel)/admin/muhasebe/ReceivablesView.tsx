@@ -78,7 +78,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                       <td><Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link></td>
                       <td>{d.order.customer.name}</td>
                       <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
-                      <td>{t(`accounting.receivables.kind.${d.kind === 'INVOICE' ? 'INVOICE' : 'PROFORMA'}` as MsgKey)}</td>
+                      <td>{t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey)}</td>
                       <td>{fmtDate(d.issuedAt)}</td>
                       <td className="num">{d.total != null ? fmtMoney(d.total.toString(), d.currency) : '—'}</td>
                       <td className="num">{d.paid != null ? fmtMoney(d.paid.toString(), d.currency) : '—'}</td>

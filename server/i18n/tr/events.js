@@ -39,6 +39,18 @@ export default {
   WAREHOUSE_SENT: { label: 'Sipariş depoya gönderildi, stoktan düşüldü', customer: 'Siparişiniz depoya iletildi', auto: 'otomatik (ödemeden sonraki ilk iş günü)' },
   WAREHOUSE_RESENT: { label: 'Depo e-postası yeniden gönderilecek' },
   WAREHOUSE_EMAILED: { label: 'Depo e-postası gönderildi' },
+  FGO_DOC_REQUESTED: {
+    label: "FGO belgesi istendi",
+  },
+  FGO_DOC_ISSUED: {
+    label: "FGO belgesi kesildi",
+  },
+  FGO_DOC_EMAILED: {
+    label: "Belge müşteriye e-postayla gönderildi",
+  },
+  GLASS_PAID: {
+    label: "Proforma ödemesi girildi",
+  },
   FGO_FAILED: {
     label: "FGO'da belge kesilemedi",
   },

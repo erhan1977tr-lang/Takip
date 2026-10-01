@@ -232,6 +232,8 @@ export default {
     title: 'Entegrasyonlar',
     intro: 'Dış servislerle bağlantılar. Şifre ve anahtarlar burada değil, yalnızca sunucudaki ayar dosyasında durur.',
     fgo: {
+      dailyLimit: "Günlük belge sınırı",
+      dailyLimitHint: "Deneme güvenliği: günde en fazla bu kadar FGO belgesi kesilir (0 = sınırsız).",
       fxMode: "Kur kaynağı",
       fxManual: "Elle — günün BT kuru (aşağıdaki kutu)",
       fxAuto: "Otomatik — BT kur adresinden",

@@ -39,6 +39,18 @@ export default {
   WAREHOUSE_SENT: { label: 'Comanda a fost trimisă la depozit și scăzută din stoc', customer: 'Comanda dvs. a fost transmisă depozitului', auto: 'automat (prima zi lucrătoare după plată)' },
   WAREHOUSE_RESENT: { label: 'E-mailul pentru depozit va fi retrimis' },
   WAREHOUSE_EMAILED: { label: 'E-mailul pentru depozit a fost trimis' },
+  FGO_DOC_REQUESTED: {
+    label: "Document FGO solicitat",
+  },
+  FGO_DOC_ISSUED: {
+    label: "Document FGO emis",
+  },
+  FGO_DOC_EMAILED: {
+    label: "Documentul a fost trimis clientului pe e-mail",
+  },
+  GLASS_PAID: {
+    label: "Plata proformei a fost înregistrată",
+  },
   FGO_FAILED: {
     label: "Documentul nu a putut fi emis în FGO",
   },

@@ -86,6 +86,17 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 53 | Yükleme kârlılığı | Yükleme = yükleme günü (Yüklemeler sekmesiyle aynı). Yükleme günü bugün ya da önce olan, müşteriye teklif gönderilmiş cam siparişleri. Cam satış = müşteriye giden yönetici fiyatı; **cam alış/maliyet = satış fiyatı (satışçının fabrika fiyat tablosundan gelen fiyatı, Offer.amount)** — sistemdeki tek alış verisi bu. Transport yükleme gününe elle girilir (tutar, para birimi, açıklama). Kâr = satış − maliyet − transport. |
 | 54 | Fabrika cari | Fabrika ödemeleri yüklemelere/siparişlere bağlı değildir ve dağıtılmaz. Bakiye = toplam cam maliyeti − toplam ödeme. Para birimleri hiçbir toplamda birbirine eklenmez. |
 
+## Cam siparişi FGO belgeleri (01.10.2026)
+
+| # | Konu | Karar |
+|---|------|-------|
+| 55 | Akış | Müşteri onayı **yok**; sipariş durumu değişmez. Yönetici sipariş sayfasındaki **Finans / FGO** bölümünden: yüklenmemiş → **Proforma Gönder**; proforma ödendi → **Avans Faturası Gönder**; yüklenmiş → **Fatura Gönder**. Her türden sipariş başına tek belge (kilit + durum kontrolü + `FgoDocument @@unique([orderId, kind])` + FGO IdExtern `GLA68-P/A/F`). |
+| 56 | Ödendi | FGO'da proformaya tahsilat görünür (Muhasebe → FGO ile Güncelle) **veya** yönetici "Ödeme alındı" der (tutar, RON, TVA dahil). |
+| 57 | Avans faturası | FGO API'sinde avans için ayrı belge türü yok: normal fatura (GKH serisi), tek satır "Avans marfă conform proformă PRF…", tutar = tahsil edilen (TVA dahil; satır TVA hariç gönderilir). |
+| 58 | Kapanış faturası | Yüklenince: cam satırları (m², CNC/delik adet) + avans varsa eksi satır "Stornare avans conform factură …" (avans faturasının TVA hariç tutarı). |
+| 59 | Yüklendi | Yükleme günü (gerçek, yoksa tahmini) + **2 gün**. Yeni yükleme durumu yok. |
+| 60 | Kur ve gönderim | Proforma günün BT kuru (elle girilen günün kuru); avans ve fatura proformanın kuru; proforma yoksa fatura gününün kuru. Belge Müşteriler kartındaki **firma e-postasına** Romence e-postayla (belge no, tutar, FGO PDF bağlantısı) gider (FGO API e-posta göndermiyor). Deneme güvenliği: FGO ayarlarında **günlük belge sınırı** (varsayılan 3; 0 = sınırsız), profil ve cam belgelerinin toplamı. |
+
 ## Sunucu (29.09.2026)
 
 | # | Konu | Karar |

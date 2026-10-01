@@ -7,8 +7,8 @@ export default {
   },
   glass: {
     title: "Încasări sticlă",
-    intro: "Documentele FGO ale comenzilor de sticlă. Fluxul de documente FGO pentru sticlă va fi adăugat într-o etapă ulterioară.",
-    empty: "Nu există încă documente FGO pentru comenzile de sticlă. Fluxul FGO pentru sticlă va fi adăugat ulterior.",
+    intro: "Documentele FGO ale comenzilor de sticlă (proformă, factură de avans, factură). Documentele se emit din secțiunea Financiar / FGO a comenzii.",
+    empty: "Nu există încă documente FGO pentru comenzile de sticlă.",
   },
   receivables: {
     refresh: "Actualizează din FGO",
@@ -32,6 +32,7 @@ export default {
       checked: "Ultima verificare FGO",
     },
     kind: {
+      ADVANCE: "Factură de avans",
       PROFORMA: "Proformă",
       INVOICE: "Factură",
     },

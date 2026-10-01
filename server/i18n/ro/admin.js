@@ -231,6 +231,8 @@ export default {
     title: 'Integrări',
     intro: 'Conexiuni cu servicii externe. Parolele și cheile nu stau aici, ci doar în fișierul de configurare de pe server.',
     fgo: {
+      dailyLimit: "Limită zilnică de documente",
+      dailyLimitHint: "Siguranță pentru teste: cel mult atâtea documente FGO pe zi (0 = nelimitat).",
       fxMode: "Sursa cursului",
       fxManual: "Manual — cursul BT al zilei (caseta de mai jos)",
       fxAuto: "Automat — de la adresa cursului BT",

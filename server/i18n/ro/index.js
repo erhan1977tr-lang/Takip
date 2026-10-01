@@ -20,5 +20,6 @@ import admin from './admin.js';
 import pricing from './pricing.js';
 import profile from './profile.js';
 import accounting from './accounting.js';
+import glassBilling from './glassBilling.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling };

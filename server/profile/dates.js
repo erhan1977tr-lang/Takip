@@ -77,3 +77,10 @@ export function pickupAfterPayment({ paidAt, pickupDate, today }) {
   const moved = !pickupDate || dayKeyOf(pickupDate) < dayKeyOf(earliest);
   return { pickupDate: moved ? earliest : dayDate(dayKeyOf(pickupDate)), moved };
 }
+
+/** Yerel günün başlangıç anı (saat diliminde gece yarısı) */
+export function localDayStart(now, timeZone) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const get = (t) => Number(p.find((x) => x.type === t)?.value ?? 0);
+  return new Date(now.getTime() - ((get('hour') * 60 + get('minute')) * 60 + get('second')) * 1000 - now.getMilliseconds());
+}
