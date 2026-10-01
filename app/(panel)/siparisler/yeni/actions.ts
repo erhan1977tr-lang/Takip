@@ -56,6 +56,8 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   }
 
   let items: object[] = [];
+  // Siparişte tek cam tipi: müşteri ikinci cam ekleyemez (formda düğme yok; sunucu da kabul etmez)
+  if (glasses.filter((g) => g.id).length > 1) return fail(t('newOrder.errors.oneGlass'));
   if (intent === 'submit') {
     if (!title) return fail(t('newOrder.errors.titleRequired'));
     if (no === null) return fail(t('newOrder.errors.badNumber'));

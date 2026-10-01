@@ -65,6 +65,7 @@ export default {
     badNumber: 'Numărul comenzii trebuie să fie un număr întreg pozitiv.',
     noFiles: 'Încărcați cel puțin un fișier al comenzii.',
     tooManyFiles: 'Puteți încărca cel mult 20 de fișiere odată.',
+    oneGlass: 'Într-o comandă se poate alege un singur tip de sticlă.',
     noGlass: 'Selectați cel puțin o combinație de sticlă.',
     glassGone: 'Una dintre sticlele selectate nu mai există în catalog; reîncărcați pagina și selectați din nou.',
     badQty: 'Numărul de bucăți trebuie să fie un număr întreg între 1 și {max}.',

@@ -5,7 +5,9 @@ import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
 import { atOfferPrice, offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
+import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
+import { ExcelImport } from './ExcelImport';
 
 /**
  * listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir.
@@ -49,6 +51,9 @@ export function OfferEditor(props: {
   common: Dict['common'];
   problemsMsg: Dict['offerProblems'];
   lineKind: Dict['status']['lineKind'];
+  /** Satış: müşterinin yüklediği Excel dosyaları (.xlsx) ve siparişteki cam (aktarılan tüm satırlara uygulanır) */
+  excelFiles?: { id: string; name: string }[];
+  importGlass?: string;
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
@@ -75,14 +80,30 @@ export function OfferEditor(props: {
    * Cam adı değişince liste fiyatı da değişir; fiyat boşsa ya da liste fiyatıysa yeni liste fiyatı yazılır.
    * Yöneticide: müşteri fiyatı boşsa müşterinin fiyat tablosundaki fiyat yazılır.
    */
-  const setDescription = (l: Line, description: string) => {
-    if (l.kind !== 'CAM') return set(l.key, { description });
+  const describe = (l: Line, description: string): Partial<Line> => {
     const p = glassPrices.get(upper(description));
     const listPrice = p != null ? p.toFixed(2) : '';
     const follow = !l.unitPrice || (l.listPrice !== '' && samePrice(l.unitPrice, l.listPrice));
     const cp = adminMode && !l.offerPrice ? customerGlass.get(upper(description)) : undefined;
-    set(l.key, { description, listPrice, ...(follow && !adminMode ? { unitPrice: listPrice } : {}), ...(cp != null ? { offerPrice: cp.toFixed(2) } : {}) });
+    return { description, listPrice, ...(follow && !adminMode ? { unitPrice: listPrice } : {}), ...(cp != null ? { offerPrice: cp.toFixed(2) } : {}) };
   };
+  const setDescription = (l: Line, description: string) => {
+    if (l.kind !== 'CAM') return set(l.key, { description });
+    set(l.key, describe(l, description));
+  };
+  /**
+   * Excel'den aktarılan satırlar: elle eklenen cam satırıyla aynı model ve aynı fiyat kuralı (describe → liste fiyatı).
+   * Cam tipi siparişteki cam. Ölçüsü girilmemiş ve altında CNC / delik olmayan boş cam satırları yerini aktarılanlara bırakır.
+   */
+  const importRows = (rows: { en: number; boy: number; adet: number }[]) => setLines((ls) => {
+    const glass = props.importGlass ?? '';
+    const added = rows.map((r) => {
+      const base = { ...blankGlass(), enMm: String(r.en), boyMm: String(r.boy), adet: String(r.adet) };
+      return { ...base, ...describe(base, glass) };
+    });
+    const keep = ls.filter((l, i) => !(l.kind === 'CAM' && !l.id && !l.enMm && !l.boyMm && ls[i + 1]?.kind !== 'CNC' && ls[i + 1]?.kind !== 'DELIK'));
+    return [...keep, ...added];
+  });
   /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
   const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
     let i = ls.findIndex((l) => l.key === key) + 1;
@@ -136,7 +157,7 @@ export function OfferEditor(props: {
       )}
 
       <datalist id="catalog">{props.catalog.map((c) => <option key={c} value={c} />)}</datalist>
-      <div className="table-wrap">
+      <div className="table-wrap" id="offer-table">
         <table className="offer-table">
           <thead>
             <tr><th>#</th><th>{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th>{adminMode ? m.cols.salesPrice : m.cols.unitPrice}</th>{adminMode && <th>{m.cols.offerPrice}</th>}<th className="num">{adminMode ? m.cols.offerAmount : m.cols.amount}</th><th /></tr>
@@ -241,7 +262,13 @@ export function OfferEditor(props: {
         </table>
       </div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
-        <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
+        <span className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
+          {props.mode === 'sales' && (props.excelFiles?.length ?? 0) > 0 && (
+            <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
+          )}
+        </span>
+        <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
         {adminMode && (
           <span className="small">
             {interpolate(m.editor.twoTotals, { sales: fmt(totals.amount), offer: fmt(offerTot.amount), diff: fmt(offerTot.amount - totals.amount), cur: props.currency })}

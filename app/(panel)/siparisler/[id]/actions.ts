@@ -2,6 +2,7 @@
 
 // Sipariş sayfasının işlemleri. Kurallar ve kayıt server/orders/transitions.js'te (runOrderAction):
 // burada yalnızca oturum, form okuma, dosya kaydı ve kullanıcıya gösterilecek mesaj var.
+import fs from 'node:fs/promises';
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -12,7 +13,9 @@ import { fileProblemText, offerProblemTexts, workflowErrorText } from '@/lib/lab
 import { loadOrder } from '@/lib/orders';
 import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
-import { filesFrom } from '@/lib/storage';
+import { filesFrom, resolveKey } from '@/lib/storage';
+import { readXlsx } from '@/server/files/xlsx.js';
+import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '@/server/orders/excel-import.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
@@ -347,4 +350,24 @@ export async function setCustomerExcelAction(formData: FormData) {
   }
   revalidatePath(`/siparisler/${id}`);
   redirect(back(id, 'ok=customer_excel') + '#teklif');
+}
+
+/**
+ * Satış: siparişe yüklenmiş Excel'in (.xlsx) satırları — teklif tablosuna aktarma ön izlemesi için (OfferEditor →
+ * ExcelImport). Yalnızca okur; hiçbir şey kaydetmez. Dosya bu siparişin olmalı ve antivirüste temiz/beklemede olmalı.
+ */
+export async function readOfferExcelAction(orderId: string, fileId: string): Promise<{ ok: true; rows: string[][] } | { ok: false; error: string }> {
+  const user = await requirePermission('OFFER_PREPARE');
+  const { t } = await getT();
+  const order = await loadOrder(orderId, user);
+  const file = order.files.find((f) => f.id === fileId && /\.xlsx$/i.test(f.name) && f.scanStatus !== 'INFECTED');
+  if (!file) return { ok: false, error: t('offer.import.noFile') };
+  try {
+    const buf = await fs.readFile(resolveKey(file.storageKey));
+    const { rows } = readXlsx(buf);
+    const text = (v: unknown) => (v == null ? '' : String(v));
+    return { ok: true, rows: rows.slice(0, IMPORT_MAX_ROWS).map((r) => r.slice(0, IMPORT_MAX_COLS).map(text)) };
+  } catch {
+    return { ok: false, error: t('offer.import.unreadable') };
+  }
 }

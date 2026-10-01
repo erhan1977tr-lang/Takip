@@ -65,6 +65,7 @@ export default {
     badNumber: 'Sipariş numarası pozitif bir tam sayı olmalı.',
     noFiles: 'En az bir sipariş dosyası yükleyin.',
     tooManyFiles: 'Tek seferde en fazla 20 dosya yükleyebilirsiniz.',
+    oneGlass: 'Bir siparişte yalnızca bir cam tipi seçilebilir.',
     noGlass: 'En az bir cam kombinasyonu seçin.',
     glassGone: 'Seçilen camlardan biri artık katalogda yok; sayfayı yenileyip tekrar seçin.',
     badQty: 'Cam adedi 1 ile {max} arasında bir tam sayı olmalı.',

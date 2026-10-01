@@ -272,6 +272,8 @@ export default async function OrderPage({
           common={m.common}
           problemsMsg={m.offerProblems}
           lineKind={m.status.lineKind}
+          excelFiles={order.files.filter((f) => f.kind === 'CUSTOMER' && /\.xlsx$/i.test(f.name) && f.scanStatus !== 'INFECTED').map((f) => ({ id: f.id, name: f.name }))}
+          importGlass={order.items[0] ? itemGlassName(order.items[0], locale) ?? '' : ''}
         />
       )}
 

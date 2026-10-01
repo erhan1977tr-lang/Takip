@@ -22,8 +22,9 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
   const [state, action, pending] = useActionState<NewOrderState, FormData>(createOrderAction, {});
   const v = state.values;
   const [rows, setRows] = useState<{ key: number; id: string; qty: string }[]>(() => {
+    // Siparişte tek cam tipi (müşteri ikinci cam ekleyemez); eski taslakta birden çok cam varsa ilki gelir
     const src = v?.glasses.length ? v.glasses : draft?.lines.length ? draft.lines : [{ id: '', qty: '1' }];
-    return src.map((g, i) => ({ key: i, ...g }));
+    return src.slice(0, 1).map((g, i) => ({ key: i, ...g }));
   });
   const [fileNames, setFileNames] = useState<string[]>([]);
   const [removed, setRemoved] = useState<string[]>(v?.removed ?? []);
@@ -100,10 +101,8 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
               ))}
             </select>
             <input name="glassQty" aria-label={m.glass.qty} type="number" min={1} max={9999} step={1} value={r.qty} onChange={(e) => setRows(rows.map((x) => (x.key === r.key ? { ...x, qty: e.target.value } : x)))} />
-            {rows.length > 1 && <button type="button" className="btn btn-link danger" aria-label={m.glass.remove} onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>✕</button>}
           </div>
         ))}
-        <button type="button" className="btn" onClick={() => setRows([...rows, { key: Date.now(), id: '', qty: '1' }])}>{m.glass.add}</button>
       </div>
 
       <div className="card">
