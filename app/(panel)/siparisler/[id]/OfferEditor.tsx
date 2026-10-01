@@ -54,6 +54,8 @@ export function OfferEditor(props: {
   /** Satış: müşterinin yüklediği Excel dosyaları (.xlsx) ve siparişteki cam (aktarılan tüm satırlara uygulanır) */
   excelFiles?: { id: string; name: string }[];
   importGlass?: string;
+  /** Müşterinin siparişindeki camlar (cam adı + adet): "Tabloyu temizle" tabloyu bu ilk hâline döndürür */
+  original?: { description: string; adet: string }[];
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
@@ -104,6 +106,30 @@ export function OfferEditor(props: {
     const keep = ls.filter((l, i) => !(l.kind === 'CAM' && !l.id && !l.enMm && !l.boyMm && ls[i + 1]?.kind !== 'CNC' && ls[i + 1]?.kind !== 'DELIK'));
     return [...keep, ...added];
   });
+  /**
+   * "+" (cam adının yanında): aynı camdan yeni satır, bu satırın (ve alt satırlarının) hemen altına. Ölçü, adet ve fiyat
+   * kopyalanmaz; yeni satır elle eklenen cam satırıyla aynı kuralla oluşur (blankGlass + describe → liste fiyatı).
+   */
+  const duplicateGlass = (l: Line) => setLines((ls) => {
+    let i = ls.findIndex((x) => x.key === l.key) + 1;
+    while (i < ls.length && ls[i].kind !== 'CAM') i++;
+    const base = blankGlass();
+    return [...ls.slice(0, i), { ...base, ...describe(base, l.description) }, ...ls.slice(i)];
+  });
+  /** "+ Sandık parası": adetle fiyatlanan normal bir teklif satırı (fiyatı satış girer; sistemde sandık fiyat tablosu yok) */
+  const addCrate = () => setLines((ls) => [...ls, { ...blankGlass(), description: m.editor.crateLine, unit: 'adet', adet: '1' }]);
+  /**
+   * "Tabloyu temizle": tablo, müşterinin siparişindeki ilk hâline döner (sipariş camları, adetleri ve liste fiyatları).
+   * Yalnızca ekrandaki tablo değişir; kaydedilene kadar hiçbir şey yazılmaz. Sipariş ve dosyalar değişmez.
+   */
+  const resetTable = () => {
+    if (!window.confirm(m.editor.resetConfirm)) return;
+    const rows = (props.original ?? []).map((o) => {
+      const base = { ...blankGlass(), adet: o.adet };
+      return { ...base, ...describe(base, o.description) };
+    });
+    setLines(rows.length ? rows : [blankGlass()]);
+  };
   /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
   const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
     let i = ls.findIndex((l) => l.key === key) + 1;
@@ -180,8 +206,13 @@ export function OfferEditor(props: {
                   <td className="desc">
                     {sub && <span className="badge badge-info">{kind}</span>}{' '}
                     {l.free && <span className="badge badge-ok">{m.free}</span>}
-                    <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
-                      onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
+                    <span className="desc-row">
+                      <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
+                        onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
+                      {!sub && l.unit === 'm2' && (
+                        <button type="button" className="btn btn-dup" title={m.editor.duplicateGlass} aria-label={m.editor.duplicateGlass} onClick={() => duplicateGlass(l)}>+</button>
+                      )}
+                    </span>
                   </td>
                   <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label={m.cols.poz} /></td>
                   {sub ? (
@@ -264,9 +295,11 @@ export function OfferEditor(props: {
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
         <span className="row" style={{ gap: 8 }}>
           <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
+          <button type="button" className="btn" onClick={addCrate}>+ {m.editor.addCrate}</button>
           {props.mode === 'sales' && (props.excelFiles?.length ?? 0) > 0 && (
             <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
           )}
+          {props.mode === 'sales' && <button type="button" className="btn btn-link" onClick={resetTable}>{m.editor.reset}</button>}
         </span>
         <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
         {adminMode && (

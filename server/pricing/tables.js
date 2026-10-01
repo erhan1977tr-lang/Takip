@@ -8,6 +8,7 @@
 // Excel düzeni ürün sahibinin dosyasıyla aynı: üstte "Para birimi" (ve isteğe bağlı "Delik fiyatı", "CNC fiyatı"),
 // sonra "Cam adı | Renk | Birim fiyat" başlığı ve satırlar. Boş bırakılan fiyat değişmez.
 import { writeAudit } from '../orders/journal.js';
+import { CRATE_LINE } from '../orders/rules.js';
 import { clean, glassKey, glassLabel, parseNumber } from '../catalog/glass.js';
 
 export const CURRENCIES = ['EUR', 'RON', 'TRY', 'USD'];
@@ -248,7 +249,11 @@ export function enrichLines(lines, { glasses, items = [], previous = [], pricing
       return { ...l, glassProductId: null, descriptionRo: null, weightKgM2: null, listPrice: listPrice ?? null };
     }
     const hit = byLabel.get(up(l.description));
-    if (!hit) return { ...l, glassProductId: null, descriptionRo: null, weightKgM2: null, listPrice: null };
+    if (!hit) {
+      // Sandık parası satırı iki dilde tanınır; kayıtta Türkçe ve Romence adı birlikte durur (müşteri kendi dilinde görür)
+      const crate = [CRATE_LINE.tr, CRATE_LINE.ro].some((n) => up(n) === up(l.description));
+      return { ...l, ...(crate ? { description: CRATE_LINE.tr } : {}), glassProductId: null, descriptionRo: crate ? CRATE_LINE.ro : null, weightKgM2: null, listPrice: null };
+    }
     const id = hit.id;
     const it = itemById.get(id);
     const g = glassById.get(id);

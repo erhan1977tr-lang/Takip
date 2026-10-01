@@ -224,6 +224,13 @@ function num(v) {
 }
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/**
+ * "Sandık parası" teklif satırı: adetle fiyatlanan normal bir satır (tür CAM, birim adet). Satış "+ Sandık parası" ile ekler;
+ * açıklaması iki dilde tanınır ve kaydedilirken iki dildeki adı yazılır (server/pricing/tables.js → enrichLines).
+ * Metin sözlükte de aynıdır (offer.editor.crateLine).
+ */
+export const CRATE_LINE = { tr: 'Sandık parası', ro: 'Ambalaj (ladă)' };
+
 /** Teklif satırı türleri (metni: status.lineKind.<tür>). */
 export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];
 const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';

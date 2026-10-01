@@ -15,6 +15,7 @@ import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { filesFrom, resolveKey } from '@/lib/storage';
 import { readXlsx } from '@/server/files/xlsx.js';
+import { isXls, readXls } from '@/server/files/xls.js';
 import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '@/server/orders/excel-import.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
@@ -353,20 +354,21 @@ export async function setCustomerExcelAction(formData: FormData) {
 }
 
 /**
- * Satış: siparişe yüklenmiş Excel'in (.xlsx) satırları — teklif tablosuna aktarma ön izlemesi için (OfferEditor →
+ * Satış: siparişe yüklenmiş Excel'in (.xls / .xlsx) satırları — teklif tablosuna aktarma ön izlemesi için (OfferEditor →
  * ExcelImport). Yalnızca okur; hiçbir şey kaydetmez. Dosya bu siparişin olmalı ve antivirüste temiz/beklemede olmalı.
  */
 export async function readOfferExcelAction(orderId: string, fileId: string): Promise<{ ok: true; rows: string[][] } | { ok: false; error: string }> {
   const user = await requirePermission('OFFER_PREPARE');
   const { t } = await getT();
   const order = await loadOrder(orderId, user);
-  const file = order.files.find((f) => f.id === fileId && /\.xlsx$/i.test(f.name) && f.scanStatus !== 'INFECTED');
+  const file = order.files.find((f) => f.id === fileId && /\.xlsx?$/i.test(f.name) && f.scanStatus !== 'INFECTED');
   if (!file) return { ok: false, error: t('offer.import.noFile') };
   try {
     const full = resolveKey(file.storageKey);
     if (!full) return { ok: false, error: t('offer.import.noFile') };
     const buf = await fs.readFile(full);
-    const { rows } = readXlsx(buf);
+    // İçeriğe göre: eski .xls (OLE2) ya da .xlsx (zip; .xls adıyla kaydedilmiş .xlsx de olur)
+    const { rows } = isXls(buf) ? readXls(buf) : readXlsx(buf);
     const text = (v: unknown) => (v == null ? '' : String(v));
     return { ok: true, rows: rows.slice(0, IMPORT_MAX_ROWS).map((r) => r.slice(0, IMPORT_MAX_COLS).map(text)) };
   } catch {

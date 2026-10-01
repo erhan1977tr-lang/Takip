@@ -391,3 +391,8 @@ input.input-changed { background: #eff6ff; border-color: #60a5fa; }
 .table-jump .btn { width: 34px; height: 34px; padding: 0; border-radius: 50%; box-shadow: 0 1px 4px rgba(0, 0, 0, .15); font-size: 16px; line-height: 1; }
 dialog.modal { border: 1px solid #d7dbe0; border-radius: 10px; padding: 18px; max-height: calc(100vh - 40px); }
 dialog.modal::backdrop { background: rgba(15, 23, 42, .35); }
+
+/* Teklif tablosu: cam adının yanındaki küçük "+" (aynı camdan yeni satır) */
+.offer-table .desc-row { display: flex; align-items: center; gap: 4px; }
+.offer-table .desc-row input { flex: 1; min-width: 0; }
+.offer-table .btn-dup { padding: 2px 8px; line-height: 1.2; font-weight: 700; }

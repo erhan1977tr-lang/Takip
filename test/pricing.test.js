@@ -132,3 +132,19 @@ test('teklif: liste fiyatından farklı satırlar (bedelsiz de sayılır)', () =
     { line: 3, kind: 'DELIK', description: '', listPrice: 3, unitPrice: 0, free: true },
   ]);
 });
+
+test('sandık parası satırı: iki dilde tanınır, iki dildeki adıyla kaydedilir; sözlükle aynı metin', async () => {
+  const { CRATE_LINE, offerLineTotals } = await import('../server/orders/rules.js');
+  const { DICTS } = await import('../server/i18n/index.js');
+  assert.equal(DICTS.tr.offer.editor.crateLine, CRATE_LINE.tr);
+  assert.equal(DICTS.ro.offer.editor.crateLine, CRATE_LINE.ro);
+  for (const description of [CRATE_LINE.tr, CRATE_LINE.ro, 'sandık parası']) {
+    const [l] = enrichLines([{ kind: 'CAM', unit: 'adet', adet: 2, unitPrice: '35', description }], { glasses: [], pricing: null });
+    assert.equal(l.description, CRATE_LINE.tr);
+    assert.equal(l.descriptionRo, CRATE_LINE.ro);
+    assert.equal(l.glassProductId, null);
+    assert.equal(offerLineTotals(l).amount, 70, 'adet × fiyat (normal satır kuralı)');
+  }
+  const [other] = enrichLines([{ kind: 'CAM', unit: 'adet', adet: 1, unitPrice: '5', description: 'Nakliye' }], { glasses: [], pricing: null });
+  assert.equal(other.descriptionRo, null);
+});

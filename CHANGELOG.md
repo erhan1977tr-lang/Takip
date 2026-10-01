@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.22.0 — 02.10.2026
+
+- Satış teklif tablosu: **+ Sandık parası** (adetle fiyatlanan teklif satırı), **Tabloyu temizle** (onayla; tablo
+  müşterinin siparişindeki ilk hâline döner), cam adının yanında **+** (aynı camdan yeni satır, hemen altına).
+- **Excel'den Aktar** artık eski **.xls** dosyalarını da okur (.xlsx ile aynı ön izleme, sütun eşleştirme ve doğrulama).
+
 ## 3.21.4 — 02.10.2026
 
 - Sunucu: gece yedeğindeki eski derleme önbelleği temizliği kaldırıldı; tek otomatik temizlik başarılı yayından sonraki

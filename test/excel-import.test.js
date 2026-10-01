@@ -1,7 +1,10 @@
 // Excel'den teklif tablosuna aktarma: sütun eşleştirme sonrası satır doğrulama.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { cellNumber, looksLikeHeader, validateImportRows } from '../server/orders/excel-import.js';
+import { isXls, readXls } from '../server/files/xls.js';
+import { XlsxError, readXlsx, writeXlsx } from '../server/files/xlsx.js';
 
 test('Excel aktarma: genişlik/yükseklik > 0, adet tam sayı > 0; boş satır atlanır; başlık atlanabilir', () => {
   const rows = [
@@ -27,4 +30,26 @@ test('Excel aktarma: genişlik/yükseklik > 0, adet tam sayı > 0; boş satır a
   assert.equal(cellNumber(''), null);
   assert.ok(Number.isNaN(cellNumber('12x')));
   assert.equal(looksLikeHeader([[1, 2, 3]], { width: 0, height: 1, qty: 2 }), false);
+});
+
+test('eski Excel (.xls, BIFF8) okunur: metin (Türkçe / Romence), tam sayı, ondalık, boş satır; .xlsx ile aynı satırlar', () => {
+  const buf = fs.readFileSync(new URL('./fixtures/olculer.xls', import.meta.url));
+  assert.equal(isXls(buf), true);
+  const { rows } = readXls(buf);
+  assert.deepEqual(rows[0], ['Poz', 'Lățime', 'Înălțime', 'Adet', 'Not']);
+  assert.deepEqual(rows[1], ['K1', 1000, 2000, 2, 'Şeffaf']);
+  assert.deepEqual(rows[2].slice(0, 4), ['K2', '850,5', 1950, 1], 'metin olarak yazılmış ondalık da kabul edilir (doğrulamada sayıya çevrilir)');
+  assert.deepEqual(rows[3], [], 'boş satır');
+  assert.deepEqual(rows[5].slice(0, 4), ['K4', 700, 800, 1.5]);
+  // Aynı doğrulama: 2 geçerli, 2 geçersiz (genişlik 0; adet 1,5), boş satır yok sayılır
+  const map = { width: 1, height: 2, qty: 3 };
+  const r = validateImportRows(rows, map, { skipHeader: looksLikeHeader(rows, map) });
+  assert.deepEqual([r.valid, r.invalid], [2, 2]);
+  assert.deepEqual(r.rows.filter((x) => !x.errors.length).map((x) => [x.en, x.boy, x.adet]), [[1000, 2000, 2], [851, 1950, 1]]);
+  // .xlsx aynı sonucu verir; .xls olmayan içerik reddedilir
+  const x = readXlsx(writeXlsx({ sheetName: 'a', rows: rows.map((row) => row.map((v) => v ?? '')) })).rows;
+  assert.deepEqual(validateImportRows(x, map, { skipHeader: true }).valid, 2);
+  assert.equal(isXls(Buffer.from('PK\u0003\u0004')), false);
+  assert.throws(() => readXls(Buffer.from('bu bir excel değil')), XlsxError);
+  assert.throws(() => readXls(Buffer.concat([buf.subarray(0, 600), Buffer.alloc(100)])), XlsxError, 'bozuk dosya');
 });
