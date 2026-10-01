@@ -61,6 +61,7 @@ export const netOf = (gross, vatRate) => round2(Number(gross) / (1 + Number(vatR
 
 /**
  * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; billing: GlassBilling; pending: kuyruktaki belge türleri.
+ * @param {{ status: string, loaded: boolean, docs: { kind: string, paid?: unknown }[], billing: { paidAmount?: unknown } | null, pending?: string[], hasOffer: boolean }} p
  * @returns {{ actions: ('proforma' | 'mark_paid' | 'advance' | 'invoice')[], paidAmount: number | null, wait: string | null }}
  */
 export function billingState({ status, loaded, docs, billing, pending = [], hasOffer }) {
@@ -134,6 +135,7 @@ const ddmmyyyy = (d) => dayKeyOf(d).split('-').reverse().join('.');
 /**
  * Kuyruktaki cam belgelerini keser. onlyOrderId: düğmeye basılınca o siparişin işi hemen denenir.
  * @param {import('@prisma/client').PrismaClient} db
+ * @param {{ now?: Date, fetchImpl?: typeof fetch, rateImpl?: Function, secret?: string, appUrl?: string, timeZone?: string, onlyOrderId?: string | null, log?: Function }} [ctx]
  */
 export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetch, rateImpl = fetchBtEurSell, secret, appUrl, timeZone, onlyOrderId = null, log = () => {} } = {}) {
   const env = getEnv();
