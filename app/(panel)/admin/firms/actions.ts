@@ -14,15 +14,21 @@ export type FirmFormState = { error?: string; ok?: string; values?: Record<strin
 type FirmInput = {
   name: string; type: CustomerType; prefix: string | null;
   groupName: string | null; camEtiket: string | null; sandikEtiket: string | null;
-};
+} & Partial<Record<(typeof BILLING)[number], string | null>>;
+
+// Fatura bilgileri (Aşama 6b, FGO). Yalnızca düzenleme formunda; formda yoksa dokunulmaz.
+const BILLING = ['taxId', 'regCom', 'country', 'county', 'city', 'address'] as const;
 
 function read(formData: FormData) {
   const v = (k: string) => String(formData.get(k) ?? '').trim();
   return {
     name: v('name'), type: v('type'), prefix: v('prefix'),
     groupName: v('groupName'), camEtiket: v('camEtiket'), sandikEtiket: v('sandikEtiket'),
+    billing: Object.fromEntries(BILLING.filter((k) => formData.has(k)).map((k) => [k, v(k)])) as Partial<Record<(typeof BILLING)[number], string>>,
   };
 }
+
+const formValues = ({ billing, ...rest }: ReturnType<typeof read>): Record<string, string> => ({ ...rest, ...billing });
 
 async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): Promise<{ data?: FirmInput; error?: string }> {
   if (!raw.name) return { error: t('admin.firmActions.nameRequired') };
@@ -50,6 +56,7 @@ async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): 
     data: {
       name: raw.name, type, prefix: prefix || null,
       groupName: nz(raw.groupName), camEtiket: nz(raw.camEtiket), sandikEtiket: nz(raw.sandikEtiket),
+      ...Object.fromEntries(Object.entries(raw.billing).map(([k, y]) => [k, String(y ?? '')]).map(([k, x]) => [k, k === 'taxId' ? nz(x.replace(/^RO/i, '').replace(/\s/g, '')) : k === 'address' ? (x ? x.slice(0, 250) : null) : k === 'country' ? nz(x.toUpperCase().slice(0, 2)) : nz(x)])),
     },
   };
 }
@@ -63,12 +70,12 @@ export async function createFirmAction(_prev: FirmFormState, formData: FormData)
   const { t } = await getT();
   const raw = read(formData);
   const { data, error } = await validate(t, raw);
-  if (!data) return { error, values: raw };
+  if (!data) return { error, values: formValues(raw) };
   try {
     const firm = await db.customer.create({ data });
     await audit('CUSTOMER_CREATE', 'Customer', firm.id, admin.id, { name: firm.name, prefix: firm.prefix });
   } catch (err) {
-    if (isUniqueError(err)) return { error: t('admin.firmActions.duplicate'), values: raw };
+    if (isUniqueError(err)) return { error: t('admin.firmActions.duplicate'), values: formValues(raw) };
     throw err;
   }
   revalidatePath('/admin/firms');

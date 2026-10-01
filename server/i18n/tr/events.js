@@ -39,6 +39,12 @@ export default {
   WAREHOUSE_SENT: { label: 'Sipariş depoya gönderildi, stoktan düşüldü', customer: 'Siparişiniz depoya iletildi', auto: 'otomatik (ödemeden sonraki ilk iş günü)' },
   WAREHOUSE_RESENT: { label: 'Depo e-postası yeniden gönderilecek' },
   WAREHOUSE_EMAILED: { label: 'Depo e-postası gönderildi' },
+  FGO_FAILED: {
+    label: "FGO'da belge kesilemedi",
+  },
+  FGO_RETRY: {
+    label: "FGO'da yeniden deneniyor",
+  },
   WAREHOUSE_EMAIL_FAILED: { label: 'Depo e-postası gönderilemedi' },
   DELIVERED: { label: 'Mal müşteriye teslim edildi', customer: 'Malı teslim aldınız', depot: 'depo bağlantısından, imzalı belgeyle' },
   INVOICED: { label: 'Faturalandı', customer: 'Faturanız kesildi' },

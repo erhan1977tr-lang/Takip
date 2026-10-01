@@ -17,7 +17,7 @@ import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, invoicedAction, paidAction, profilePricesAction, proformaAction,
-  resendWarehouseAction, updatePickupAction, warehouseAction,
+  resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
 } from './profile-actions';
 
 type Offer = OrderDetail['offers'][number];
@@ -64,7 +64,12 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const levels = admin ? await stockLevels(db, order.profileItems.map((i) => i.productId).filter((x): x is string => !!x)) : new Map<string, number>();
   const short = admin && !p?.stockDeducted ? order.profileItems.filter((i) => i.productId && (levels.get(i.productId) ?? 0) < i.qty) : [];
   const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId) : null;
-  const email = order.outbox[0];
+  const email = order.outbox.find((x) => x.type === 'WAREHOUSE_EMAIL');
+  // FGO (Aşama 6b): bu siparişin son proforma/fatura işi
+  const fgoJob = order.outbox.find((x) => x.type === 'FGO_PROFORMA' || x.type === 'FGO_INVOICE');
+  const fxText = p?.fxRate != null
+    ? `${t('profile.page.fgo.fxValue', { rate: Number(p.fxRate).toFixed(4).replace('.', ','), date: fmtDate(p.fxDate) })}${p.fxSource === 'MANUAL' ? ` (${t('profile.page.fgo.fxManual')})` : ''}`
+    : null;
   const warehouseFile = order.files.find((f) => f.source === 'WAREHOUSE_FORM');
   const hidden = <input type="hidden" name="id" value={order.id} />;
   const itemOf = (l: Line) => order.profileItems.find((i) => i.code === l.poz) ?? null;
@@ -152,11 +157,34 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
             {can('update_profile_offer') && sp.teklif !== 'guncelle' && (
               <div><Link href={`/siparisler/${order.id}?teklif=guncelle#teklif`} className="btn">{t('profile.page.pricing.update')}</Link></div>
             )}
+            {fgoJob && (
+              <div className="small">
+                <b>{t('profile.page.fgo.title')}:</b>{' '}
+                {fgoJob.status === 'SENT' ? t('profile.page.fgo.sent', { date: fmtDateTime(fgoJob.sentAt) })
+                  : fgoJob.status === 'FAILED' ? <span className="danger">{t('profile.page.fgo.failed', { error: fgoJob.lastError ?? '—' })}</span>
+                    : fgoJob.status === 'SKIPPED' ? t('profile.page.fgo.skipped')
+                      : fgoJob.attempts > 0 ? <span className="danger">{t('profile.page.fgo.retry', { n: fgoJob.attempts, error: fgoJob.lastError ?? '—', date: fmtDateTime(fgoJob.availableAt) })}</span>
+                        : t('profile.page.fgo.pending')}
+              </div>
+            )}
+            {can('retry_fgo') && (!fgoJob || fgoJob.status === 'FAILED' || fgoJob.status === 'SKIPPED') && (
+              <form action={retryFgoAction}>
+                {hidden}
+                <div className="row">
+                  <label htmlFor="fgo-rate" style={{ margin: 0 }}>{t('profile.page.fgo.rate')}</label>
+                  <input id="fgo-rate" name="fxRate" inputMode="decimal" maxLength={10} style={{ width: 110 }} />
+                  <button className="btn">{t('profile.page.fgo.retryButton')}</button>
+                </div>
+                <div className="hint">{t('profile.page.fgo.rateHint')}</div>
+              </form>
+            )}
             {can('mark_proforma') && (
               <form action={proformaAction} className="row">
                 {hidden}
                 <label htmlFor="pf-no" style={{ margin: 0 }}>{t('profile.page.actions.proformaNo')}</label>
                 <input id="pf-no" name="proformaNo" maxLength={60} style={{ width: 180 }} />
+                <label htmlFor="pf-rate" style={{ margin: 0 }}>{t('profile.page.fgo.rateRequired')}</label>
+                <input id="pf-rate" name="fxRate" inputMode="decimal" maxLength={10} style={{ width: 110 }} defaultValue={p?.fxRate != null ? Number(p.fxRate).toFixed(4) : ''} />
                 <button className="btn btn-primary">{t('profile.page.actions.proforma')}</button>
               </form>
             )}
@@ -237,11 +265,13 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
           { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
           !!p?.approvedAt && { label: t('profile.page.info.approvedAt'), value: fmtDateTime(p.approvedAt) },
-          !!p?.proformaAt && { label: t('profile.page.info.proformaNo'), value: `${p.proformaNo ?? '—'} · ${fmtDate(p.proformaAt)}` },
+          !!p?.proformaAt && { label: t('profile.page.info.proformaNo'), value: <>{p.proformaNo ?? '—'} · {fmtDate(p.proformaAt)}{p.proformaLink && <> · <a href={p.proformaLink} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</> },
+          !!fxText && { label: t('profile.page.fgo.fx'), value: fxText },
+          !isCustomer && p?.proformaAmount != null && { label: t('profile.page.fgo.amount'), value: fmtMoney(p.proformaAmount.toString(), 'RON') },
           !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
           !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
           !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
-          !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: `${p.invoiceNo ?? '—'} · ${fmtDate(p.invoicedAt)}` },
+          !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}{p.invoiceLink && <> · <a href={p.invoiceLink} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</> },
         ]}
       />
 

@@ -85,7 +85,7 @@ export async function updatePickupAction(fd: FormData) {
 export async function proformaAction(fd: FormData) {
   const user = await requirePermission('OFFER_SEND');
   const id = idOf(fd);
-  await act(user, id, 'mark_proforma', { proformaNo: String(fd.get('proformaNo') ?? '') });
+  await act(user, id, 'mark_proforma', { proformaNo: String(fd.get('proformaNo') ?? ''), fxRate: String(fd.get('fxRate') ?? '') });
   done(id, 'ok=proforma');
 }
 
@@ -140,6 +140,14 @@ export async function invoicedAction(fd: FormData) {
   const id = idOf(fd);
   await act(user, id, 'mark_invoiced', { invoiceNo: String(fd.get('invoiceNo') ?? '') });
   done(id, 'ok=invoiced');
+}
+
+/** FGO'da yeniden dene (proforma ya da fatura); kur alınamadıysa elle girilebilir. */
+export async function retryFgoAction(fd: FormData) {
+  const user = await requirePermission('OFFER_SEND');
+  const id = idOf(fd);
+  await act(user, id, 'retry_fgo', { fxRate: String(fd.get('fxRate') ?? '') });
+  done(id, 'ok=fgo_retry');
 }
 
 export async function cancelProfileAction(fd: FormData) {

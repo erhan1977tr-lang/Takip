@@ -7,6 +7,8 @@ import { executeAction } from '../orders/transitions.js';
 import { dayDate, dayKeyOf, localDay, pickupAfterPayment, pickupProblem } from './dates.js';
 import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
 import { deductOrderStock, returnOrderStock, shortages, stockLevels } from './stock.js';
+import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
+import { parseManualRate } from '../fx/bt.js';
 
 export { WorkflowError };
 
@@ -18,6 +20,11 @@ const INCLUDE = {
 
 /** Depo e-postası kuyruk olayı (server/profile/warehouse.js gönderir) */
 export const WAREHOUSE_EMAIL = 'WAREHOUSE_EMAIL';
+/** FGO kuyruk olayları (server/profile/fgo-jobs.js keser): proforma (onayda) ve fatura (teslimde) */
+export const FGO_PROFORMA = 'FGO_PROFORMA';
+export const FGO_INVOICE = 'FGO_INVOICE';
+/** FGO işçisinin yapabildiği işlemler (kişi değil) */
+const FGO_SYSTEM_ACTIONS = { fgo_proforma: 'ONAYLANDI', fgo_invoice: 'TESLIM_EDILDI' };
 
 export const profileWorkflow = {
   orderType: PROFILE_TYPE,
@@ -28,6 +35,8 @@ export const profileWorkflow = {
     if (!stage) return { ok: false, code: 'NOT_ALLOWED' };
     // Depo bağlantısı: yalnızca "teslim edildi", sipariş depodayken
     if (actor.depot) return action === 'mark_delivered' && stage === 'DEPODA' && o.status !== 'IPTAL' ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
+    // FGO işçisi: yalnızca belge kesildiğini kaydeder, sipariş o adımdayken
+    if (actor.fgo) return FGO_SYSTEM_ACTIONS[action] === stage && o.status !== 'IPTAL' ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
     const acts = profileActions({ role: actor.role, stage, status: o.status, canApprove: !!actor.canApprove, paid: !!o.profile.paidAt });
     return acts.includes(action) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
   },
@@ -109,6 +118,22 @@ function pickupInput(h, { requireAll }) {
   return out;
 }
 
+/** FGO açıksa kuyruğa iş ekler (gönderim işçide; işlem içinde dış istek yapılmaz) */
+async function queueFgo(h, type) {
+  const s = await getFgoSettings(h.tx);
+  if (!fgoReady(s)) return false;
+  h.outbox.push(outboxEvent(type, { orderId: h.order.id, payload: { orderNo: h.order.orderNo } }));
+  return true;
+}
+
+/** Elle girilen kur (yönetici): boş → null; geçersiz → hata */
+function manualRate(v) {
+  if (v == null || String(v).trim() === '') return null;
+  const r = parseManualRate(v);
+  if (r == null) throw new WorkflowError('BAD_FX_RATE');
+  return r;
+}
+
 const shortText = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null;
 
 /**
@@ -184,7 +209,9 @@ const ACTIONS = {
     const info = pickupInput(h, { requireAll: true });
     await setStage(h, 'ONAYLANDI', { ...info, approvedAt: h.now, approvedById: h.actor.id, approvedOfferId: sent.id });
     h.event('PROFILE_APPROVED', dayText(info.pickupDate));
-    h.audit = { offerId: sent.id, pickupDate: dayKeyOf(info.pickupDate) };
+    // FGO açıksa proforma kendiliğinden kesilir (işçi; BT kuru o an alınır)
+    const fgo = await queueFgo(h, FGO_PROFORMA);
+    h.audit = { offerId: sent.id, pickupDate: dayKeyOf(info.pickupDate), fgo };
   },
   /** Teslim bilgileri depo e-postası gidene kadar değiştirilebilir. */
   async update_pickup(h) {
@@ -196,11 +223,48 @@ const ACTIONS = {
     h.event('PICKUP_UPDATED', date ? dayText(date) : null);
     h.audit = { before, after: { ...before, ...info, pickupDate: date ? dayKeyOf(date) : null } };
   },
+  /**
+   * Proforma elle kesildi. FGO açıksa kur zorunludur (fatura aynı kurla kesilir); kuyruktaki otomatik proforma
+   * artık kesilmez (işçi adım değiştiği için atlar).
+   */
   async mark_proforma(h) {
     const proformaNo = shortText(h.payload.proformaNo, 60);
-    await setStage(h, 'PROFORMA', { proformaNo, proformaAt: h.now });
+    const given = manualRate(h.payload.fxRate);
+    const rate = given ?? (h.order.profile.fxRate != null ? Number(h.order.profile.fxRate) : null);
+    if (rate == null && fgoReady(await getFgoSettings(h.tx))) throw new WorkflowError('FX_RATE_REQUIRED');
+    const fx = given != null ? { fxRate: given.toFixed(4), fxDate: today(h.now), fxSource: 'MANUAL' } : {};
+    await setStage(h, 'PROFORMA', { proformaNo, proformaAt: h.now, ...fx });
     h.event('PROFORMA', proformaNo);
-    h.audit = { proformaNo };
+    h.audit = { proformaNo, fxRate: rate };
+  },
+  /** FGO işçisi: proforma kesildi (RON, BT kuruyla) */
+  async fgo_proforma(h) {
+    const p = h.payload;
+    const proformaNo = `${p.series}${p.number}`;
+    await setStage(h, 'PROFORMA', {
+      proformaNo, proformaAt: h.now, proformaLink: p.link ?? null, proformaAmount: Number(p.amount).toFixed(2),
+      fxRate: Number(p.rate).toFixed(4), fxDate: p.rateDate, fxSource: p.source,
+    });
+    h.event('PROFORMA', proformaNo);
+    h.audit = { proformaNo, fxRate: p.rate, fxSource: p.source, amountRon: p.amount, fgo: true };
+  },
+  /**
+   * Yönetici: FGO'da yeniden dene (proforma ya da fatura, adıma göre). Kur alınamadıysa burada elle girilir.
+   */
+  async retry_fgo(h) {
+    const stage = h.order.profile.stage;
+    const type = stage === 'ONAYLANDI' ? FGO_PROFORMA : stage === 'TESLIM_EDILDI' ? FGO_INVOICE : null;
+    if (!type) throw new WorkflowError('NOT_ALLOWED');
+    const rate = manualRate(h.payload.fxRate);
+    if (rate != null) {
+      // Fatura, proformanın kuruyla kesilir: proforma FGO'dan kesildiyse kur değiştirilemez
+      if (stage === 'TESLIM_EDILDI' && h.order.profile.fxSource && h.order.profile.fxSource !== 'MANUAL') throw new WorkflowError('FX_RATE_LOCKED');
+      await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: { fxRate: rate.toFixed(4), fxDate: today(h.now), fxSource: 'MANUAL' } });
+    }
+    if (stage === 'TESLIM_EDILDI' && rate == null && h.order.profile.fxRate == null) throw new WorkflowError('FX_RATE_REQUIRED');
+    if (!(await queueFgo(h, type))) throw new WorkflowError('FGO_DISABLED');
+    h.event('FGO_RETRY', type === FGO_PROFORMA ? 'proforma' : 'factura');
+    h.audit = { type, fxRate: rate };
   },
   /**
    * Ödeme teyit edildi. Sipariş henüz depoda değilse hemen depoya gider (stoktan düşülür, depo e-postası kuyruğa girer);
@@ -257,13 +321,23 @@ const ACTIONS = {
     }
     await setStage(h, 'TESLIM_EDILDI', { deliveredAt: h.now, deliveredVia: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN' });
     h.event('DELIVERED', h.actor.depot ? 'depot' : null);
-    h.audit = { via: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN', files: files.map((f) => ({ name: f.name, checksum: f.checksum ?? null })) };
+    // FGO açıksa fatura kendiliğinden kesilir (proformanın kuruyla)
+    const fgo = await queueFgo(h, FGO_INVOICE);
+    h.audit = { via: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN', files: files.map((f) => ({ name: f.name, checksum: f.checksum ?? null })), fgo };
   },
   async mark_invoiced(h) {
     const invoiceNo = shortText(h.payload.invoiceNo, 60);
     await setStage(h, 'FATURALANDI', { invoiceNo, invoicedAt: h.now });
     h.event('INVOICED', invoiceNo);
     h.audit = { invoiceNo };
+  },
+  /** FGO işçisi: fatura kesildi (proformanın kuruyla) → arşiv */
+  async fgo_invoice(h) {
+    const p = h.payload;
+    const invoiceNo = `${p.series}${p.number}`;
+    await setStage(h, 'FATURALANDI', { invoiceNo, invoicedAt: h.now, invoiceLink: p.link ?? null });
+    h.event('INVOICED', invoiceNo);
+    h.audit = { invoiceNo, fxRate: p.rate, amountRon: p.amount, fgo: true };
   },
   /** Yalnızca yönetici; depoya gitmiş siparişin stok çıkışı geri alınır. Depo bağlantısı geçersiz olur. */
   async cancel(h) {
@@ -296,3 +370,6 @@ export function runProfileAction(db, { orderId, action, actor, payload = {} }) {
 /** Depo bağlantısından işlemi yapan (kişi değil) */
 /** @param {string | null} [ip] */
 export const depotActor = (ip = null) => ({ id: null, role: 'DEPOT', system: true, depot: true, ip });
+
+/** FGO işçisi (kişi değil) */
+export const fgoActor = () => ({ id: null, role: 'SYSTEM', system: true, fgo: true, ip: null });

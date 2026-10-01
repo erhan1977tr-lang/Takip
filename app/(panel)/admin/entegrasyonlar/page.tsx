@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAntivirusAction, saveWarehouseAction, scanNowAction, testAntivirusAction } from './actions';
+import { saveAntivirusAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction, testFxAction } from './actions';
+import { getFgoSettings } from '@/server/integrations/fgo.js';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,11 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     ...infectedDrawingFiles.map((f) => ({ id: f.id, name: `v${f.drawing.version} · ${f.name}`, order: f.drawing.order, signature: f.scanSignature, at: f.scannedAt })),
   ].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const worker = (statusRow?.value ?? null) as { lastRun?: string } | null;
+  const [fgo, fgoPending, fgoFailed] = await Promise.all([
+    getFgoSettings(db),
+    db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'PENDING' } }),
+    db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'FAILED' } }),
+  ]);
   const [wh, whPending, whFailed] = await Promise.all([
     getWarehouseSettings(db),
     db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }),
@@ -69,6 +75,49 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {errMsg && <div className="alert alert-error">{errMsg}</div>}
       {sp.ok === 'warehouse' && <div className="alert alert-ok">{t('profile.settings.saved')}</div>}
       {sp.error === 'warehouse' && <div className="alert alert-error">{t('profile.settings.bad', { list: sp.detail ?? '' })}</div>}
+
+      {/* FGO (fatura sistemi; Aşama 6b) */}
+      {sp.ok === 'fgo' && <div className="alert alert-ok">{t('admin.integrations.fgo.saved')}</div>}
+      {sp.error === 'fgo' && <div className="alert alert-error">{t('admin.integrations.fgo.bad', { what: sp.detail ?? '' })}</div>}
+      {sp.ok === 'fgoTest' && <div className="alert alert-ok">{t('admin.integrations.fgo.testOk', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
+      {sp.error === 'fgoTest' && <div className="alert alert-error">{t('admin.integrations.fgo.testFailed', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
+      {sp.ok === 'fx' && <div className="alert alert-ok">{t('admin.integrations.fgo.fxOk', { rate: sp.rate ?? '' })}</div>}
+      {sp.error === 'fx' && <div className="alert alert-error">{t('admin.integrations.fgo.fxFailed', { error: sp.detail ?? '' })}</div>}
+      <form action={saveFgoAction} className="card" id="fgo">
+        <h2>{t('admin.integrations.fgo.title')}</h2>
+        <p className="muted small">{t('admin.integrations.fgo.intro')}</p>
+        <label className="check"><input type="checkbox" name="enabled" defaultChecked={fgo.enabled} /> {t('admin.integrations.fgo.enabled')}</label>
+        <div className="grid" style={{ marginTop: 10 }}>
+          <div>
+            <label htmlFor="fgo-env">{t('admin.integrations.fgo.env')}</label>
+            <select id="fgo-env" name="env" defaultValue={fgo.env}>
+              <option value="test">{t('admin.integrations.fgo.envTest')}</option>
+              <option value="prod">{t('admin.integrations.fgo.envProd')}</option>
+            </select>
+          </div>
+          <div><label htmlFor="fgo-cui">{t('admin.integrations.fgo.cui')}</label><input id="fgo-cui" name="cui" defaultValue={fgo.cui} maxLength={12} /></div>
+          <div>
+            <label htmlFor="fgo-key">{t('admin.integrations.fgo.key')}</label>
+            <input id="fgo-key" name="privateKey" type="password" autoComplete="new-password" placeholder={fgo.hasKey ? t('admin.integrations.fgo.keySaved') : ''} />
+            <div className="hint">{fgo.hasKey ? t('admin.integrations.fgo.keyHintSaved') : t('admin.integrations.fgo.keyHint')}</div>
+            {fgo.hasKey && <label className="check small"><input type="checkbox" name="clearKey" /> {t('admin.integrations.fgo.clearKey')}</label>}
+          </div>
+          <div><label htmlFor="fgo-ps">{t('admin.integrations.fgo.proformaSeries')}</label><input id="fgo-ps" name="proformaSeries" defaultValue={fgo.proformaSeries} maxLength={10} style={{ textTransform: 'uppercase' }} /></div>
+          <div><label htmlFor="fgo-is">{t('admin.integrations.fgo.invoiceSeries')}</label><input id="fgo-is" name="invoiceSeries" defaultValue={fgo.invoiceSeries} maxLength={10} style={{ textTransform: 'uppercase' }} /></div>
+          <div><label htmlFor="fgo-vat">{t('admin.integrations.fgo.vat')}</label><input id="fgo-vat" name="vatRate" inputMode="decimal" defaultValue={String(fgo.vatRate)} maxLength={5} /></div>
+          <div><label htmlFor="fgo-pt">{t('admin.integrations.fgo.proformaType')}</label><input id="fgo-pt" name="proformaType" defaultValue={fgo.proformaType} maxLength={50} /><div className="hint">{t('admin.integrations.fgo.typeHint')}</div></div>
+          <div><label htmlFor="fgo-it">{t('admin.integrations.fgo.invoiceType')}</label><input id="fgo-it" name="invoiceType" defaultValue={fgo.invoiceType} maxLength={50} /></div>
+          <div><label htmlFor="fgo-fx">{t('admin.integrations.fgo.fxUrl')}</label><input id="fgo-fx" name="fxUrl" type="url" defaultValue={fgo.fxUrl} maxLength={300} /><div className="hint">{t('admin.integrations.fgo.fxHint')}</div></div>
+        </div>
+        <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+          <span className={`small ${fgoFailed ? 'danger' : 'muted'}`}>{t('admin.integrations.fgo.queue', { pending: fgoPending, failed: fgoFailed })}</span>
+          <button className="btn btn-primary">{t('admin.integrations.fgo.save')}</button>
+        </div>
+      </form>
+      <div className="row" style={{ marginTop: -8, marginBottom: 16 }}>
+        <form action={testFgoAction}><button className="btn">{t('admin.integrations.fgo.test')}</button></form>
+        <form action={testFxAction}><button className="btn">{t('admin.integrations.fgo.testFx')}</button></form>
+      </div>
 
       <form action={saveWarehouseAction} className="card" id="depo">
         <h2>{t('profile.settings.title')}</h2>

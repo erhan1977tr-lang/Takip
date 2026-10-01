@@ -2,12 +2,14 @@
 //   - Taranmamış (PENDING) dosyaları antivirüsten geçirir: tarayıcıya yüklemede ulaşılamadıysa ya da eski dosyalar.
 //   - Durumunu yönetici → Entegrasyonlar sayfası için kaydeder.
 //   - Profil siparişi (Aşama 6): kuyruktaki depo e-postalarını (Comanda Depozit PDF'i + depo bağlantısı) gönderir; olmazsa yeniden dener.
+//   - FGO (Aşama 6b): kuyruktaki proforma ve faturaları keser (BT kuruyla, RON).
 // Diğer bildirimlerin gönderimi Aşama 8'de.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
 import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antivirus.js';
 import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
+import { dispatchFgoJobs } from '../server/profile/fgo-jobs.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
@@ -46,6 +48,8 @@ if (process.env.MAIL_OUTBOX_DIR) {
 
 async function profileTick() {
   const now = new Date();
+  const f = await dispatchFgoJobs(db, { now, log });
+  if (f.done || f.failed) log('FGO:', JSON.stringify(f));
   if (!mail) return;
   const r = await dispatchWarehouseEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
   if (r.sent || r.failed) log('depo e-postası:', JSON.stringify(r));

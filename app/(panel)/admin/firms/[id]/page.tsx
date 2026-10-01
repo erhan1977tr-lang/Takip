@@ -41,6 +41,17 @@ export default async function EditFirmPage({
           <div><label htmlFor="camEtiket">{t('admin.firmForm.camEtiket')}</label><input id="camEtiket" name="camEtiket" type="text" defaultValue={f.camEtiket ?? ''} /></div>
           <div><label htmlFor="sandikEtiket">{t('admin.firmForm.sandikEtiket')}</label><input id="sandikEtiket" name="sandikEtiket" type="text" defaultValue={f.sandikEtiket ?? ''} /></div>
         </div>
+        {/* Fatura bilgileri (FGO proforma / fatura; Aşama 6b) */}
+        <h2 style={{ marginTop: 18 }}>{t('admin.firmForm.billingTitle')}</h2>
+        <p className="muted small">{t('admin.firmForm.billingHint')}</p>
+        <div className="grid">
+          <div><label htmlFor="taxId">{t('admin.firmForm.taxId')}</label><input id="taxId" name="taxId" type="text" maxLength={20} defaultValue={f.taxId ?? ''} /></div>
+          <div><label htmlFor="regCom">{t('admin.firmForm.regCom')}</label><input id="regCom" name="regCom" type="text" maxLength={40} defaultValue={f.regCom ?? ''} placeholder="J40/1234/2020" /></div>
+          <div><label htmlFor="country">{t('admin.firmForm.country')}</label><input id="country" name="country" type="text" maxLength={2} defaultValue={f.country ?? 'RO'} style={{ textTransform: 'uppercase' }} /></div>
+          <div><label htmlFor="county">{t('admin.firmForm.county')}</label><input id="county" name="county" type="text" maxLength={60} defaultValue={f.county ?? ''} /></div>
+          <div><label htmlFor="city">{t('admin.firmForm.city')}</label><input id="city" name="city" type="text" maxLength={80} defaultValue={f.city ?? ''} /></div>
+          <div><label htmlFor="address">{t('admin.firmForm.address')}</label><input id="address" name="address" type="text" maxLength={250} defaultValue={f.address ?? ''} /></div>
+        </div>
         {sp.error && <div className="alert alert-error" style={{ marginTop: 14 }}>{sp.error}</div>}
         <div className="row end" style={{ marginTop: 14 }}>
           <Link href="/admin/firms" className="btn">{t('common.cancel')}</Link>

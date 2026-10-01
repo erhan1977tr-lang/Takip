@@ -9,6 +9,9 @@ import { audit } from '@/lib/audit';
 import { getAvSettings, saveAvSettings, scanPending } from '@/server/files/antivirus.js';
 import { eicar, scanBuffer } from '@/server/files/clamav.js';
 import { parseRecipients, saveWarehouseSettings } from '@/server/profile/warehouse.js';
+import { fgoKey, fgoTest, getFgoSettings, saveFgoSettings, validateFgoSettings } from '@/server/integrations/fgo.js';
+import { fetchBtEurSell } from '@/server/fx/bt.js';
+import { getEnv } from '@/lib/env';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -54,4 +57,43 @@ export async function saveWarehouseAction(formData: FormData) {
   await saveWarehouseSettings(db, { recipients: r.recipients }, await actorOf(user));
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'warehouse' }) + '#depo');
+}
+
+/** FGO (fatura sistemi; Aşama 6b). Özel anahtar boş bırakılırsa kayıtlı olan kalır; sohbete/koda yazılmaz. */
+export async function saveFgoAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const res = validateFgoSettings({
+    enabled: formData.get('enabled') === 'on', env: formData.get('env'), cui: formData.get('cui'),
+    proformaSeries: formData.get('proformaSeries'), invoiceSeries: formData.get('invoiceSeries'),
+    proformaType: formData.get('proformaType'), invoiceType: formData.get('invoiceType'),
+    vatRate: formData.get('vatRate'), fxUrl: formData.get('fxUrl'),
+  });
+  if (!res.ok) redirect(back({ error: 'fgo', detail: res.errors.join(', ') }) + '#fgo');
+  const key = String(formData.get('privateKey') ?? '');
+  const clearKey = formData.get('clearKey') === 'on';
+  const current = await getFgoSettings(db);
+  if (res.value.enabled && !key && !current.hasKey) redirect(back({ error: 'fgo', detail: 'KEY' }) + '#fgo');
+  await saveFgoSettings(db, res.value, { key, clearKey, secret: getEnv().AUTH_SECRET }, await actorOf(user));
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'fgo' }) + '#fgo');
+}
+
+/** FGO bağlantısını dener (kimlik + belge türleri). Hiçbir belge kesilmez. */
+export async function testFgoAction() {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const s = await getFgoSettings(db);
+  const key = fgoKey(s, getEnv().AUTH_SECRET);
+  if (!s.cui || !key) redirect(back({ error: 'fgoTest', detail: 'CUI / KEY' }) + '#fgo');
+  const r = await fgoTest(s, key);
+  await audit('FGO_TEST', 'IntegrationSetting', 'fgo', user.id, { ok: r.ok, env: s.env, types: r.types });
+  redirect(back({ [r.ok ? 'ok' : 'error']: 'fgoTest', detail: r.message.slice(0, 200), types: r.types.join(', ').slice(0, 300) }) + '#fgo');
+}
+
+/** BT EUR satış kurunu dener (kayıtlı adresten). */
+export async function testFxAction() {
+  await requirePermission('SETTINGS_MANAGE');
+  const s = await getFgoSettings(db);
+  const r = await fetchBtEurSell({ url: s.fxUrl });
+  if (r.ok) redirect(back({ ok: 'fx', rate: r.rate.toFixed(4) }) + '#fgo');
+  redirect(back({ error: 'fx', detail: r.error }) + '#fgo');
 }

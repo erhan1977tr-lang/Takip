@@ -39,6 +39,12 @@ export default {
   WAREHOUSE_SENT: { label: 'Comanda a fost trimisă la depozit și scăzută din stoc', customer: 'Comanda dvs. a fost transmisă depozitului', auto: 'automat (prima zi lucrătoare după plată)' },
   WAREHOUSE_RESENT: { label: 'E-mailul pentru depozit va fi retrimis' },
   WAREHOUSE_EMAILED: { label: 'E-mailul pentru depozit a fost trimis' },
+  FGO_FAILED: {
+    label: "Documentul nu a putut fi emis în FGO",
+  },
+  FGO_RETRY: {
+    label: "Se reîncearcă în FGO",
+  },
   WAREHOUSE_EMAIL_FAILED: { label: 'E-mailul pentru depozit nu a putut fi trimis' },
   DELIVERED: { label: 'Marfa a fost predată clientului', customer: 'Ați ridicat marfa', depot: 'din linkul depozitului, cu document semnat' },
   INVOICED: { label: 'Facturată', customer: 'Factura dvs. a fost emisă' },

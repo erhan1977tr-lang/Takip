@@ -16,7 +16,7 @@ export function customerLabel(user: CurrentUser, name: string): string {
 }
 
 // Satış ve çizim ekibine firmanın iletişim ve grup bilgisi de gitmez (ADR 0003).
-const PRIVATE_CUSTOMER_FIELDS = ['contactPerson', 'email', 'phone', 'address', 'taxId', 'groupName'] as const;
+const PRIVATE_CUSTOMER_FIELDS = ['contactPerson', 'email', 'phone', 'address', 'taxId', 'groupName', 'regCom', 'country', 'county', 'city'] as const;
 
 /**
  * Firma kaydını kullanıcının görebileceği hale getirir: tam adı göremeyen rollerde ad maskelenir
@@ -99,7 +99,8 @@ export const orderDetailInclude = {
   // Profil siparişi (Aşama 6)
   profile: true,
   profileItems: { orderBy: { sortOrder: 'asc' } },
-  outbox: { where: { type: 'WAREHOUSE_EMAIL' }, orderBy: { createdAt: 'desc' }, take: 1 },
+  // Yönetici: depo e-postası ve FGO işleri (son kayıtlar)
+  outbox: { where: { type: { in: ['WAREHOUSE_EMAIL', 'FGO_PROFORMA', 'FGO_INVOICE'] } }, orderBy: { createdAt: 'desc' }, take: 10 },
 } satisfies Prisma.OrderInclude;
 
 export type OrderDetail = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;

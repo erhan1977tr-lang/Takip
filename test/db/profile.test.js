@@ -244,3 +244,108 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
   await run(id, 'resend_warehouse', 'admin');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }), 1);
 });
+
+// ---------- FGO (Aşama 6b) ----------
+const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
+const { dispatchFgoJobs } = await import('../../server/profile/fgo-jobs.js');
+const FGO_SECRET = 'f'.repeat(40);
+const fgoOn = (enabled = true) => saveFgoSettings(db, {
+  enabled, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
+}, { key: 'GIZLI', secret: FGO_SECRET }, actor(people.admin));
+function fakeFgo(numbers) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const form = Object.fromEntries(new URLSearchParams(init.body));
+    calls.push({ url, form });
+    const n = numbers.shift();
+    return new Response(JSON.stringify({ Success: true, Factura: { Numar: String(n), Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
+  };
+  return { calls, fetchImpl };
+}
+const fgoCtx = (extra) => ({ secret: FGO_SECRET, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', ...extra });
+
+dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahtar düz metin saklanmaz', async () => {
+  await fgoOn();
+  const row = await db.integrationSetting.findUnique({ where: { key: 'fgo' } });
+  assert.ok(!JSON.stringify(row.value).includes('GIZLI'), 'anahtar şifreli');
+  await db.customer.update({ where: { id: firm.id }, data: { taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1' } });
+  const { id, orderNo } = await newProfileOrder([['GK15', 4], ['SPIGOTI', 20]]);
+  let o = await load(id);
+  await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '12.5') });
+  o = await load(id);
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 9 FGO' });
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA', status: 'PENDING' } }), 1);
+
+  const fgo = fakeFgo([552, 684]);
+  let rates = 0;
+  const rateImpl = async () => { rates++; return { ok: true, rate: 4.9765, source: 'https://bt.example/curs' }; };
+  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl }));
+  assert.deepEqual(r1, { done: 1, failed: 0 });
+  o = await load(id);
+  assert.equal(o.profile.stage, 'PROFORMA');
+  assert.equal(o.profile.proformaNo, 'PRF552');
+  assert.equal(o.profile.proformaLink, 'https://fgo.example/PRF552.pdf');
+  assert.equal(Number(o.profile.fxRate), 4.9765);
+  assert.equal(o.profile.fxSource, 'https://bt.example/curs');
+  assert.equal(o.profile.proformaAmount.toString(), '1493.04'); // 24 × 62,21 RON
+  const pf = fgo.calls[0].form;
+  assert.match(fgo.calls[0].url, /api-testuat\.fgo\.ro\/v1\/factura\/emitere$/);
+  assert.equal(pf.Serie, 'PRF');
+  assert.equal(pf.Valuta, 'RON');
+  assert.equal(pf.IdExtern, `${orderNo}-P`);
+  assert.equal(pf['Client[CodUnic]'], '998877');
+  assert.equal(pf['Continut[0][PretUnitar]'], '62.21');
+
+  await run(id, 'mark_paid', 'admin', { paidDate: today() });
+  await run(id, 'mark_delivered', 'admin');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_INVOICE', status: 'PENDING' } }), 1);
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl }));
+  o = await load(id);
+  assert.equal(o.profile.stage, 'FATURALANDI');
+  assert.equal(o.status, 'ARSIVLENDI');
+  assert.equal(o.profile.invoiceNo, 'GKH684');
+  assert.equal(rates, 1, 'fatura için kur yeniden alınmaz');
+  const inv = fgo.calls[1].form;
+  assert.equal(inv.Serie, 'GKH');
+  assert.equal(inv.IdExtern, `${orderNo}-F`);
+  assert.equal(inv['Continut[0][PretUnitar]'], pf['Continut[0][PretUnitar]'], 'aynı kur');
+  const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
+  assert.ok(audited.includes('fgo_proforma') && audited.includes('fgo_invoice'));
+});
+
+dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur ile yeniden dene; elle proformada kur zorunlu', async () => {
+  await fgoOn();
+  const { id } = await newProfileOrder([['AD45', 2]], otherFirm);
+  let o = await load(id);
+  await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
+  o = await load(id);
+  await run(id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 8 FGO' });
+  const fgo = fakeFgo([553]);
+  const r = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: async () => ({ ok: true, rate: 5, source: 'x' }) }));
+  assert.deepEqual(r, { done: 0, failed: 1 });
+  assert.equal(fgo.calls.length, 0, "FGO'ya gidilmedi");
+  assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } })).status, 'FAILED');
+  assert.equal(await db.adminAlert.count({ where: { orderId: id, type: 'FGO_FAILED' } }), 1);
+  assert.equal(await codeOf(run(id, 'retry_fgo', 'admin', { fxRate: '99' })), 'BAD_FX_RATE');
+  await run(id, 'retry_fgo', 'admin', { fxRate: '4,9800' });
+  o = await load(id);
+  assert.equal(Number(o.profile.fxRate), 4.98);
+  assert.equal(o.profile.fxSource, 'MANUAL');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA', status: 'PENDING' } }), 1);
+  // Elle proforma: kuyruktaki iş atlanır
+  await run(id, 'mark_proforma', 'admin', { proformaNo: 'PRF999' });
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl }));
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA', status: 'SKIPPED' } }), 1);
+  assert.equal(fgo.calls.length, 0);
+
+  // Yeni sipariş: kur yokken elle proforma reddedilir
+  const second = await newProfileOrder([['AD45', 1]], otherFirm);
+  o = await load(second.id);
+  await run(second.id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
+  o = await load(second.id);
+  await run(second.id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 8 FGO' });
+  assert.equal(await codeOf(run(second.id, 'mark_proforma', 'admin', { proformaNo: 'X' })), 'FX_RATE_REQUIRED');
+  await run(second.id, 'mark_proforma', 'admin', { proformaNo: 'X', fxRate: '5,01' });
+  await fgoOn(false);
+  assert.equal(await codeOf(run(second.id, 'retry_fgo', 'admin')), 'NOT_ALLOWED', 'proforma adımında yeniden deneme yok');
+});

@@ -4,6 +4,8 @@
 //   ──müşteri "Onayla" (alış tarihi, telefon, plaka)──▶ ONAYLANDI ──"Proforma kesildi"──▶ PROFORMA
 //   ──"Ödeme alındı" (hemen depoya gider) ya da ödemeden önce "Siparişi depoya gönder"──▶ DEPODA
 //   ──depo bağlantısı / yönetici "Teslim edildi"──▶ TESLIM_EDILDI ──"Faturalandı"──▶ FATURALANDI (arşiv)
+// FGO açıksa (Aşama 6b) proforma onayda, fatura teslimde kendiliğinden kesilir (server/profile/fgo-jobs.js); elle
+// düğmeler yedek olarak kalır, "FGO'da yeniden dene" (retry_fgo) kuyruğa yeniden ekler.
 // Satış ve çizim hiçbir adımda yoktur. İptal yalnızca yöneticide. Müşteri onaylamazsa teklif olarak kalır.
 // Teklif onaydan önce yönetici tarafından güncellenebilir (yeni sürüm; müşteri son sürümü onaylar).
 import { can } from '../auth/permissions.js';
@@ -49,10 +51,10 @@ export function profileActions({ role, stage, status, canApprove = false, paid =
     const byStage = {
       FIYAT_BEKLIYOR: ['save_profile_prices', 'send_profile_offer'],
       TEKLIF_GONDERILDI: ['update_profile_offer'],
-      ONAYLANDI: ['mark_proforma', 'mark_paid', 'send_to_warehouse'],
+      ONAYLANDI: ['mark_proforma', 'retry_fgo', 'mark_paid', 'send_to_warehouse'],
       PROFORMA: ['mark_paid', 'send_to_warehouse'],
       DEPODA: ['mark_delivered', 'resend_warehouse'],
-      TESLIM_EDILDI: ['mark_invoiced'],
+      TESLIM_EDILDI: ['mark_invoiced', 'retry_fgo'],
     };
     a.push(...(byStage[stage] ?? []));
     if (!paid && ['DEPODA', 'TESLIM_EDILDI'].includes(stage)) a.push('mark_paid');

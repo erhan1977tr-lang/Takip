@@ -71,6 +71,11 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 43 | Stok | Ürün başına stok, hareketler silinemez (giriş, depoya çıkış, sayım, iade). Depoya giden sipariş stoktan kendiliğinden düşer; iptalde iade edilir. Stok yetmezse yöneticiye uyarı, **engel yok**. Müşteri stok görmez. |
 | 44 | Denetimci | Profil siparişlerini salt okunur görür; yalnızca müşteriye gönderilmiş fiyatları. |
 | 45 | FGO (Aşama 6b) | Fatura sistemi **FGO** (Premium paket). 6b'de: müşteri onayında proforma otomatik, ödeme durumu FGO'dan, teslimde fatura otomatik. 6a'da bu adımlar yöneticinin düğmeleriyle yürür. Anahtarlar yalnızca Entegrasyonlar ekranından sunucuya girilir. |
+| 46 | FGO belgeleri (Aşama 6b, 01.10.2026) | Proforma (PRF) ve fatura (GKH) **RON** kesilir: birim fiyat = EUR müşteri fiyatı × **proforma günündeki BT EUR satış kuru** (2 hane); fatura **proformanın kuruyla** aynen. Kur BT sitesinden alınır (adres Entegrasyonlar'dan değiştirilebilir); alınamazsa yönetici siparişte elle girer. Kur, günü ve kaynağı siparişe kalıcı yazılır. TVA %21 (ayardan). Numaraları FGO verir. |
+| 47 | Ödeme | FGO'nun API'si banka tahsilatlarını vermiyor ve tahsilat proformaya işlenmiyor → **"Ödeme alındı" elle** (şimdilik; sonra yeniden bakılacak). |
+| 48 | Otomatik kesim | Müşteri onayında proforma, teslimde fatura kuyruktan kesilir (işçi; sipariş işleminin içinde dış istek yok). FGO'nun reddettiği belge yeniden denenmez → "Önemli kararlar"da uyarı + siparişte "FGO'da yeniden dene"; ağ hatası artan aralıklarla denenir. Aynı belge iki kez kesilmesin diye IdExtern (sipariş no + P/F) ve VerificareDuplicat. Elle düğmeler yedek kalır; FGO açıkken elle proformada kur zorunlu. |
+| 49 | Proforma türü | FGO belgelerinde proforma türü yok; tür adı ayardan (varsayılan "Proforma"), "Bağlantıyı dene" FGO'nun kabul ettiği türleri listeler. API proforma kesemezse sonra bakılacak. |
+| 50 | Anahtar ve müşteri bilgisi | FGO özel anahtarı yalnızca Entegrasyonlar ekranından girilir, AUTH_SECRET'tan türetilen anahtarla şifreli saklanır, bir daha gösterilmez. Müşteri kartına fatura bilgileri eklendi (CUI, Nr. Reg. Com., ülke, județ, localitate, adres); eksikse proforma kesilmez. |
 
 ## Sunucu (29.09.2026)
 
@@ -82,7 +87,7 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 ## Hâlâ açık olan konular (uygulamadan önce sorulacak)
 
 - `GLA64-1` gibi eklerin anlamı → şimdilik üretilmez; müşteri numarası alanında serbest metin olarak durur.
-- FGO bağlantısının ayrıntıları (proforma/fatura serileri, ödeme durumunun okunması) → Aşama 6b başında.
+- FGO: proformanın API ile kesilebildiği ve BT kur adresinin doğruluğu gerçek hesapta doğrulanacak; ödemenin otomatik algılanması sonraya kaldı.
 - Bildirim olay listesi ve metinleri.
 - Sandık / brüt ağırlık formüllerinin tamamı.
 
@@ -99,7 +104,7 @@ Mevcut uygulama (3.1.x) cam siparişi akışının büyük bölümünü zaten ç
 | 3 | Cam sipariş formu, katalog, yükleme, satış incelemesi | **3a (3.6.x): katalog, taslak, kuyruklar · 3b (3.7.x): fiyat tabloları, Önemli kararlar** |
 | 4 | Çizim: atama, sürüm, onay, revizyon, SLA | **3.9.0'da tamamlandı** |
 | 5 | Satış teklifi, yönetici fiyatı, müşteriye gönderim | **3.10.0'da tamamlandı** |
-| 6 | Profil siparişi ve profil kataloğu | **6a (3.11.0): katalog, sipariş, fiyat, onay, depo e-postası, stok** · 6b: FGO bağlantısı |
+| 6 | Profil siparişi ve profil kataloğu | **6a (3.11.0): katalog, sipariş, fiyat, onay, depo e-postası, stok** · **6b (3.13.0): FGO proforma/fatura, BT kuru** |
 | 7 | Yükleme, sandık, ağırlık, dışa aktarma | Takvim ve sandık var; Excel/PDF ve özel durum notu eksik |
 | 8 | SMTP, bildirim tercihleri, outbox, WhatsApp, çeviri, görüntüleyici, ERP | SMTP var; outbox, tercih ve diğerleri eksik |
 | 9 | Raporlar, politikalar, SLA ayarı, denetim ekranı | Kısmen |

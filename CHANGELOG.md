@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.13.0 — 01.10.2026 · Aşama 6b (FGO bağlantısı)
+
+- **FGO:** Yönetici → Entegrasyonlar'da FGO bölümü (açık/kapalı, test/gerçek ortam, CUI, şifreli saklanan API anahtarı,
+  PRF / GKH serileri, TVA %21, BT kur adresi; "Bağlantıyı dene" ve "Kuru dene").
+- **Proforma kendiliğinden:** müşteri profil teklifini onaylayınca PRF serisinde RON proforma kesilir. Birim fiyat = EUR
+  fiyat × o günün Banca Transilvania EUR satış kuru. Kur, günü ve proforma bağlantısı siparişte görünür.
+- **Fatura kendiliğinden:** mal teslim edilince (depo bağlantısı ya da yönetici) GKH serisinde, **proformanın kuruyla**
+  fatura kesilir ve sipariş arşive geçer.
+- Kur alınamazsa ya da FGO belgeyi reddederse "Önemli kararlar"a uyarı düşer; siparişte "FGO'da yeniden dene" (kuru elle
+  girerek). Elle düğmeler yedek olarak kalır; FGO açıkken elle proformada kur girilmesi gerekir.
+- **Müşteri fatura bilgileri** (Yönetim → Müşteriler → firma): CUI, Nr. Reg. Com., ülke, județ, localitate, adres.
+- Ödeme FGO'dan okunamadığı için "Ödeme alındı" elle işaretlenmeye devam eder.
+
 ## 3.12.3 — 01.10.2026
 
 - Sipariş bilgilerinde **Cam etiketi** ve **Sandık etiketi** ayrı satırlarda; değerler müşteri kaydından (Yönetim → Müşteriler).

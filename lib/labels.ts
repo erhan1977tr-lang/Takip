@@ -93,6 +93,11 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   NO_ITEMS: 'profile.errors.noItems',
   PRODUCT_GONE: 'profile.errors.productGone',
   TYPE_INACTIVE: 'profile.errors.typeInactive',
+  // FGO (Aşama 6b)
+  BAD_FX_RATE: 'profile.errors.badFxRate',
+  FX_RATE_REQUIRED: 'profile.errors.fxRequired',
+  FX_RATE_LOCKED: 'profile.errors.fxLocked',
+  FGO_DISABLED: 'profile.errors.fgoDisabled',
 };
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);
