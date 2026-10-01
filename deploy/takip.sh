@@ -549,7 +549,6 @@ cmd_backup() {
     backup_retention uzak
     echo "$ts" >"$STATE/backup-last-ok"
   fi
-  docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
   # Pazar günleri antivirüs motorunun yeni sürümü alınır (virüs tanımları zaten sürekli güncellenir)
   if [ "$(date +%u)" = 7 ]; then compose build --pull clamav >/dev/null 2>&1 && compose up -d clamav >/dev/null 2>&1 || true; fi
   if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then blog "✔ yedek $ts tamam (yerel + Google Drive)"; return 0; fi

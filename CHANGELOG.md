@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.21.4 — 02.10.2026
+
+- Sunucu: gece yedeğindeki eski derleme önbelleği temizliği kaldırıldı; tek otomatik temizlik başarılı yayından sonraki
+  10 GB / 7 gün denetimi.
+
 ## 3.21.3 — 02.10.2026
 
 - Sunucu: başarılı yayından sonra Docker derleme önbelleği denetlenir; 10 GB'ı aşmışsa 7 günden eski önbellek silinir
