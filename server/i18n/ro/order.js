@@ -134,6 +134,7 @@ export default {
   },
   info: {
     title: 'Detalii comandă',
+    heading: 'Titlu',
     orderNo: 'Nr. comandă',
     customerOrderNo: 'Nr. comandă client',
     customer: 'Client',

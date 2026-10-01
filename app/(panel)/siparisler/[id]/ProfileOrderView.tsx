@@ -260,6 +260,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
       <OrderInfo
         title={t('order.info.title')}
         rows={[
+          !!order.title && { label: t('order.info.heading'), value: order.title },
           { label: t('order.info.orderNo'), value: order.orderNo, mono: true },
           { label: t('order.info.customerOrderNo'), value: order.customerOrderNo },
           !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },

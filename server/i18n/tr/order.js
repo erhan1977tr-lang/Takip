@@ -134,6 +134,7 @@ export default {
   },
   info: {
     title: 'Sipariş bilgileri',
+    heading: 'Başlık',
     orderNo: 'Sipariş no',
     customerOrderNo: 'Müşteri sipariş no',
     customer: 'Müşteri',

@@ -214,15 +214,16 @@ export default async function OrderPage({
       <OrderInfo
         title={t('order.info.title')}
         rows={[
+          !!order.title && { label: t('order.info.heading'), value: order.title },
           { label: t('order.info.orderNo'), value: order.orderNo, mono: true },
           { label: t('order.info.customerOrderNo'), value: order.customerOrderNo },
           !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
-          { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
-          { label: t('order.info.estimatedShip'), value: fmtDate(order.estimatedShipDate) },
-          !!order.actualShipDate && { label: t('order.info.shipped'), value: fmtDate(order.actualShipDate) },
           { label: t('order.info.drawing'), value: order.status === 'YENI' ? (isCustomer ? '—' : t('order.info.drawingPending')) : order.drawingTrack === 'YOK' ? t('order.info.drawingNotNeeded') : t('order.info.drawingNeeded') },
           order.drawingTrack !== 'YOK' && { label: t('order.info.revisions'), value: t('order.info.revisionRounds', { n: order.revisionCount }) },
           !!order.assignedDrawer && !isCustomer && { label: t('order.info.drawer'), value: order.assignedDrawer.name || order.assignedDrawer.email },
+          { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
+          { label: t('order.info.estimatedShip'), value: fmtDate(order.estimatedShipDate) },
+          !!order.actualShipDate && { label: t('order.info.shipped'), value: fmtDate(order.actualShipDate) },
           // Etiketler müşteri kaydından (Yönetim → Müşteriler: Customer.camEtiket / Customer.sandikEtiket)
           !isCustomer && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
           !isCustomer && { label: t('order.info.sandikEtiket'), value: order.customer.sandikEtiket ?? '—' },
