@@ -184,9 +184,10 @@ html[data-sidebar=collapsed] .sidebar-edge { display: flex; }
   /* Dar ekran: menü içeriğin üstüne açılan çekmece */
   .sidebar, html[data-sidebar=collapsed] .sidebar {
     position: fixed; left: 0; top: 0; z-index: 40; width: 260px; padding: 18px 14px; border-right: 1px solid var(--border);
-    transform: translateX(-100%); transition: transform .18s ease; box-shadow: 0 0 24px rgba(15, 23, 42, .18);
+    transform: translateX(-100%); visibility: hidden; transition: transform .18s ease, visibility .18s;
+    box-shadow: 0 0 24px rgba(15, 23, 42, .18);
   }
-  html[data-sidebar-mobile=open] .sidebar { transform: none; }
+  html[data-sidebar-mobile=open] .sidebar { transform: none; visibility: visible; }
   .sidebar-hide { display: none; left: 226px; z-index: 41; }
   html[data-sidebar-mobile=open] .sidebar-hide { display: block; }
   .sidebar-edge, html[data-sidebar=collapsed] .sidebar-edge { display: flex; top: 120px; }
