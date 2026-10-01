@@ -9,6 +9,7 @@
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
 #   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
 #   takip log [SATIR]                uygulamanın son günlük satırları
+#   takip cache                      Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
 #   takip github                     GitHub erişim anahtarını (token) yenile
 #   takip antivirus                  antivirüs (ClamAV) çalışıyor ve test virüsünü yakalıyor mu
@@ -264,6 +265,48 @@ wait_healthy() { # wait_healthy SANİYE
   return 1
 }
 
+# ---------- Docker derleme önbelleği ----------
+# Her yayın derleme önbelleğini (BuildKit) büyütür. Başarılı yayından sonra boyuta bakılır: sınırı aşmışsa yalnızca
+# 7 günden eski önbellek silinir (imajlara, kapsayıcılara, birimlere — veritabanı ve dosyalara — dokunulmaz).
+# Hata yayını bozmaz; yalnızca kayda uyarı düşer. Elle bakmak için: takip cache
+CACHE_LIMIT_GB=10
+cache_row() { docker system df --format '{{.Type}}|{{.Size}}|{{.Reclaimable}}' 2>/dev/null | grep '^Build Cache|' | head -1 || true; }
+# "73.35GB" → bayt; okunamazsa boş
+to_bytes() {
+  echo "$1" | awk '{
+    if (match($1, /^[0-9]+(\.[0-9]+)?/) == 0) exit
+    n = substr($1, 1, RLENGTH); u = toupper(substr($1, RLENGTH + 1))
+    m = (u == "B") ? 1 : (u == "KB") ? 1e3 : (u == "MB") ? 1e6 : (u == "GB") ? 1e9 : (u == "TB") ? 1e12 : 0
+    if (m) printf "%.0f\n", n * m
+  }'
+}
+cache_housekeeping() {
+  local size bytes out
+  size=$(cache_row | cut -d'|' -f2)
+  bytes=$(to_bytes "$size")
+  if [ -z "$bytes" ]; then log "⚠ derleme önbelleği: boyut okunamadı, temizlik atlandı"; return 0; fi
+  if [ "$bytes" -le $((CACHE_LIMIT_GB * 1000000000)) ]; then
+    log "  derleme önbelleği: $size (sınır $CACHE_LIMIT_GB GB aşılmadı, temizlik yok)"
+    return 0
+  fi
+  log "  derleme önbelleği: $size — sınır $CACHE_LIMIT_GB GB aşıldı; 7 günden eski önbellek siliniyor"
+  if out=$(docker builder prune -af --filter "until=168h" 2>&1); then
+    log "  önbellek temizliği tamam: $(echo "$out" | grep -i 'reclaimed' | tail -1 || true)"
+  else
+    log "⚠ önbellek temizliği başarısız (yayın etkilenmedi): $(echo "$out" | tail -1 | cut -c1-200)"
+  fi
+  log "  derleme önbelleği (temizlikten sonra): $(cache_row | cut -d'|' -f2)"
+}
+cmd_cache() {
+  local row; row=$(cache_row)
+  if [ -z "$row" ]; then say "Docker derleme önbelleği okunamadı."; else
+    say "Derleme önbelleği   : $(echo "$row" | cut -d'|' -f2)"
+    say "Geri kazanılabilir  : $(echo "$row" | cut -d'|' -f3)"
+  fi
+  df -h / | awk 'NR==2 { print "Disk (/)            : " $3 " / " $2 " dolu (" $5 ")" }'
+  say "Sınır: $CACHE_LIMIT_GB GB — aşılırsa bir sonraki başarılı yayından sonra 7 günden eski önbellek silinir."
+}
+
 # ---------- yayınlama ----------
 do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
   local sha=$1 prev=${2:-} s ver f prev_tag
@@ -336,6 +379,8 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
     case $t in "$keep1" | "$keep1-tools" | "$keep2" | "$keep2-tools") ;; *) docker rmi "takip:$t" >/dev/null 2>&1 || true ;; esac
   done
   docker image prune -f >/dev/null 2>&1 || true
+  # Derleme önbelleği sınırı aşmışsa eski önbellek silinir; hata yayını bozmaz
+  cache_housekeeping || log "⚠ derleme önbelleği denetimi tamamlanamadı (yayın etkilenmedi)"
 }
 
 auto_deploy() {
@@ -669,12 +714,13 @@ main() {
     yedek | backup) cmd_backup ;;
     restore | geri-yukle) cmd_restore "$@" ;;
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
+    cache | onbellek) cmd_cache ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,15p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,16p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

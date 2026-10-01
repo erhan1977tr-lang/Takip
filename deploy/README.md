@@ -47,6 +47,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip restore yesterday` / `takip restore 2026-09-30` | O günün en son tam yedeğine geri dön (önce güvenlik yedeği; tarihi yazarak onay) |
 | `takip restore-test [TARİH]` | Yedeği canlıya dokunmadan geçici veritabanında dener |
 | `takip log` | Uygulamanın son günlük satırları |
+| `takip cache` | Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı (10 GB aşılırsa başarılı yayından sonra 7 günden eski önbellek silinir) |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
 | `takip antivirus` | Antivirüs çalışıyor mu, test virüsünü (EICAR) yakalıyor mu; bekleyen ve karantinadaki dosya sayısı |
