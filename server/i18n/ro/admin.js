@@ -231,6 +231,9 @@ export default {
     title: 'Integrări',
     intro: 'Conexiuni cu servicii externe. Parolele și cheile nu stau aici, ci doar în fișierul de configurare de pe server.',
     fgo: {
+      fxMode: "Sursa cursului",
+      fxManual: "Manual — cursul BT al zilei (caseta de mai jos)",
+      fxAuto: "Automat — de la adresa cursului BT",
       dailyTitle: "Cursul BT al zilei (manual)",
       dailyIntro: "Dacă site-ul BT nu poate fi citit de pe server (ex. HTTP 403), proformele emise astăzi folosesc cursul introdus aici. Cursul este valabil doar în ziua introducerii; în fiecare zi lucrătoare dimineața introduceți cursul de vânzare EUR de pe site-ul BT.",
       dailyRate: "Curs vânzare EUR",

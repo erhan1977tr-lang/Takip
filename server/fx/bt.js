@@ -170,5 +170,7 @@ export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
     const value = { day, rate };
     await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
     await writeAudit(tx, { action: 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: actor.id, details: value }, actor);
+    // Kur bekleyen proformalar hemen denensin (işçi bir dakika içinde keser)
+    await tx.notificationOutbox.updateMany({ where: { type: 'FGO_PROFORMA', status: 'PENDING' }, data: { availableAt: new Date() } });
   });
 }

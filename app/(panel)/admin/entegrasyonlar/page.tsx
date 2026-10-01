@@ -112,6 +112,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <div><label htmlFor="fgo-vat">{t('admin.integrations.fgo.vat')}</label><input id="fgo-vat" name="vatRate" inputMode="decimal" defaultValue={String(fgo.vatRate)} maxLength={5} /></div>
           <div><label htmlFor="fgo-pt">{t('admin.integrations.fgo.proformaType')}</label><input id="fgo-pt" name="proformaType" defaultValue={fgo.proformaType} maxLength={50} /><div className="hint">{t('admin.integrations.fgo.typeHint')}</div></div>
           <div><label htmlFor="fgo-it">{t('admin.integrations.fgo.invoiceType')}</label><input id="fgo-it" name="invoiceType" defaultValue={fgo.invoiceType} maxLength={50} /></div>
+          <div>
+            <label htmlFor="fgo-fxm">{t('admin.integrations.fgo.fxMode')}</label>
+            <select id="fgo-fxm" name="fxMode" defaultValue={fgo.fxMode}>
+              <option value="manual">{t('admin.integrations.fgo.fxManual')}</option>
+              <option value="auto">{t('admin.integrations.fgo.fxAuto')}</option>
+            </select>
+          </div>
           <div><label htmlFor="fgo-fx">{t('admin.integrations.fgo.fxUrl')}</label><input id="fgo-fx" name="fxUrl" type="url" defaultValue={fgo.fxUrl} maxLength={300} /><div className="hint">{t('admin.integrations.fgo.fxHint')}</div></div>
         </div>
         <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>

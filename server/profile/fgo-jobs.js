@@ -83,14 +83,15 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       if (rate == null) {
         if (row.type === FGO_INVOICE) throw new Permanent('Proformanın kuru yok; kuru girip yeniden deneyin');
         const day = localDay(now, timeZone);
-        const r = await rateImpl({ url: settings.fxUrl });
+        // Elle modda (varsayılan) BT'ye hiç gidilmez: yöneticinin bugün girdiği kur
+        const r = settings.fxMode === 'auto' ? await rateImpl({ url: settings.fxUrl }) : { ok: false, error: 'elle' };
         if (r.ok) {
           rate = r.rate;
           source = r.source;
         } else {
           // BT okunamadıysa yöneticinin bugün girdiği kur (Entegrasyonlar → günün kuru)
           rate = await dailyRateFor(db, day);
-          if (rate == null) throw new Error(`BT kuru alınamadı (${r.error}); Entegrasyonlar'da günün kurunu girin`);
+          if (rate == null) throw new Error(settings.fxMode === 'auto' ? `BT kuru alınamadı (${r.error}); Entegrasyonlar'da günün kurunu girin` : 'Günün BT kuru girilmedi (Entegrasyonlar → Günün BT kuru); kur girilince proforma kesilir');
           source = 'MANUAL_DAY';
         }
         rateDay = dayDate(day);

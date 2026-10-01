@@ -249,8 +249,8 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { dispatchFgoJobs } = await import('../../server/profile/fgo-jobs.js');
 const FGO_SECRET = 'f'.repeat(40);
-const fgoOn = (enabled = true) => saveFgoSettings(db, {
-  enabled, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
+const fgoOn = (enabled = true, fxMode = 'auto') => saveFgoSettings(db, {
+  enabled, fxMode, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
 }, { key: 'GIZLI', secret: FGO_SECRET }, actor(people.admin));
 function fakeFgo(numbers) {
   const calls = [];
@@ -350,17 +350,18 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   assert.equal(await codeOf(run(second.id, 'retry_fgo', 'admin')), 'NOT_ALLOWED', 'proforma adımında yeniden deneme yok');
 });
 
-dbTest('FGO: BT okunamazsa yöneticinin bugün girdiği kur kullanılır; girilmemişse yeniden denenir', async () => {
+dbTest('FGO: elle modda günün kuru kullanılır; girilmemişse beklenir, girilince hemen kesilir', async () => {
   const { saveDailyRate } = await import('../../server/fx/bt.js');
   const { writeAudit } = await import('../../server/orders/journal.js');
-  await fgoOn();
+  await fgoOn(true, 'manual');
   const { id } = await newProfileOrder([['GK15', 1]]);
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
   o = await load(id);
   await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 7 FGO' });
   const fgo = fakeFgo([560]);
-  const blocked = async () => ({ ok: false, error: 'HTTP 403' });
+  let asked = 0;
+  const blocked = async () => { asked++; return { ok: false, error: 'HTTP 403' }; };
   const now = new Date();
   const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now }));
   assert.deepEqual(r1, { done: 0, failed: 1 });
@@ -368,11 +369,12 @@ dbTest('FGO: BT okunamazsa yöneticinin bugün girdiği kur kullanılır; girilm
   assert.equal(job.status, 'PENDING', 'geçici hata: yeniden denenir');
   assert.match(job.lastError, /günün kurunu/);
   await saveDailyRate(db, { day: localDay(now, 'Europe/Bucharest'), rate: 5.345 }, actor(people.admin), writeAudit);
-  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 10 * 60_000) }));
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 60_000) })); // kur girilince bekleyen iş hemen denenir
   o = await load(id);
   assert.equal(o.profile.proformaNo, 'PRF560');
   assert.equal(Number(o.profile.fxRate), 5.345);
   assert.equal(o.profile.fxSource, 'MANUAL_DAY');
+  assert.equal(asked, 0, 'elle modda BT\'ye gidilmez');
   assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '53.45');
   await fgoOn(false);
 });

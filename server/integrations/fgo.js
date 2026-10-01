@@ -15,6 +15,9 @@ export const FGO_URLS = { prod: 'https://api.fgo.ro/v1', test: 'https://api-test
 export const FGO_DEFAULTS = {
   enabled: false, env: 'test', cui: '', proformaSeries: 'PRF', invoiceSeries: 'GKH',
   proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: DEFAULT_FX_URL,
+  // Kur kaynağı: 'manual' = yöneticinin girdiği günün kuru (varsayılan; BT'nin dosyası "În unități BT" kuruyla aynı değil),
+  // 'auto' = fxUrl'den otomatik
+  fxMode: 'manual',
 };
 const SECRET_PURPOSE = 'fgo-key';
 
@@ -53,6 +56,7 @@ export function validateFgoSettings(raw) {
     invoiceType: String(raw.invoiceType ?? '').trim() || 'Factura',
     vatRate: Number(String(raw.vatRate ?? '').replace(',', '.')),
     fxUrl: String(raw.fxUrl ?? '').trim() || DEFAULT_FX_URL,
+    fxMode: raw.fxMode === 'auto' ? 'auto' : 'manual',
   };
   if (cui && !/^\d{2,10}$/.test(cui)) errors.push('CUI');
   if (!SERIES_RE.test(value.proformaSeries)) errors.push('PROFORMA_SERIES');

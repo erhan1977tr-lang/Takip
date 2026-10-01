@@ -232,6 +232,9 @@ export default {
     title: 'Entegrasyonlar',
     intro: 'Dış servislerle bağlantılar. Şifre ve anahtarlar burada değil, yalnızca sunucudaki ayar dosyasında durur.',
     fgo: {
+      fxMode: "Kur kaynağı",
+      fxManual: "Elle — günün BT kuru (aşağıdaki kutu)",
+      fxAuto: "Otomatik — BT kur adresinden",
       dailyTitle: "Günün BT kuru (elle)",
       dailyIntro: "BT sitesi sunucudan okunamazsa (ör. HTTP 403) bugün kesilecek proformalar burada girilen kurla kesilir. Kur yalnızca girildiği gün geçerlidir; her iş günü sabahı BT sitesindeki EUR satış (vânzare) kurunu girin.",
       dailyRate: "EUR satış kuru",
