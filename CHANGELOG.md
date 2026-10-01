@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.21.0 — 01.10.2026
+
+- **Bildirim e-postaları** (mevcut SMTP ve bildirim kuyruğu): müşteriye teklif / proforma / fatura (profil), yükleme
+  tarihi değişikliği ve çizim onayı; iç ekibe yeni sipariş (cam → satış, profil → yönetici), çizim işleri ve müşteri
+  onayları. İşlem tamamlandıktan sonra işçi gönderir; hata işlemi etkilemez, yeniden denenir, sonunda kuyrukta FAILED
+  olarak kalır. Cam FGO belgeleri zaten ayrı e-postayla gittiği için tekrar gönderilmez. `NOTIFY_EMAILS=false` ile kapatılır.
+
 ## 3.20.1 — 01.10.2026
 
 - Tip düzeltmesi (Excel dosya yolu).

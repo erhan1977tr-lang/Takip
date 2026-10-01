@@ -4,7 +4,7 @@
 //   - Profil siparişi (Aşama 6): kuyruktaki depo e-postalarını (Comanda Depozit PDF'i + depo bağlantısı) gönderir; olmazsa yeniden dener.
 //   - FGO (Aşama 6b): kuyruktaki proforma ve faturaları keser (BT kuruyla, RON).
 //   - Cam FGO belgeleri (proforma / avans / fatura) ve müşteriye belge e-postaları.
-// Diğer bildirimlerin gönderimi Aşama 8'de.
+//   - Sipariş olaylarının bildirim e-postaları (server/notifications/email.js; NOTIFY_EMAILS).
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -16,6 +16,7 @@ import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
 import { getEnv } from '../server/env.js';
+import { dispatchNotifications } from '../server/notifications/email.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -59,6 +60,11 @@ async function profileTick() {
   if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));
   const r = await dispatchWarehouseEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
   if (r.sent || r.failed) log('depo e-postası:', JSON.stringify(r));
+  // Sipariş olaylarının bildirim e-postaları (işlem tamamlandıktan sonra, kuyruktan)
+  if (getEnv().NOTIFY_EMAILS) {
+    const n = await dispatchNotifications(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
+    if (n.sent || n.failed) log('bildirim e-postası:', JSON.stringify(n));
+  }
 }
 
 async function tick() {
