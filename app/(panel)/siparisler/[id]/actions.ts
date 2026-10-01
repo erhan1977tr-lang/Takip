@@ -363,7 +363,9 @@ export async function readOfferExcelAction(orderId: string, fileId: string): Pro
   const file = order.files.find((f) => f.id === fileId && /\.xlsx$/i.test(f.name) && f.scanStatus !== 'INFECTED');
   if (!file) return { ok: false, error: t('offer.import.noFile') };
   try {
-    const buf = await fs.readFile(resolveKey(file.storageKey));
+    const full = resolveKey(file.storageKey);
+    if (!full) return { ok: false, error: t('offer.import.noFile') };
+    const buf = await fs.readFile(full);
     const { rows } = readXlsx(buf);
     const text = (v: unknown) => (v == null ? '' : String(v));
     return { ok: true, rows: rows.slice(0, IMPORT_MAX_ROWS).map((r) => r.slice(0, IMPORT_MAX_COLS).map(text)) };
