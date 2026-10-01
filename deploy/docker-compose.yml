@@ -64,6 +64,11 @@ services:
     image: takip-clamav:latest
     restart: unless-stopped
     logging: *logging
+    # İmajın kendi denetimi (clamdcheck.sh) "localhost"a bağlanıyor; kapsayıcıda localhost IPv6'ya çözülünce yanıt
+    # alamayıp sağlıklı servisi "unhealthy" gösteriyor. Yalnızca test değişir: IPv4 ile PING → PONG.
+    # Aralık / zaman aşımı / deneme / başlangıç süresi imajdaki değerlerde kalır.
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 3 127.0.0.1 3310 | grep -q '^PONG'"]
     volumes:
       - clamav-db:/var/lib/clamav
 

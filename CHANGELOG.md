@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.21.2 — 01.10.2026
+
+- Sunucu: ClamAV kapsayıcısının sağlık denetimi IPv4 (127.0.0.1) ile yapılır; çalışan servis artık "unhealthy" görünmez.
+
 ## 3.21.1 — 01.10.2026
 
 - Sunucu yedeği: her gün 03:00 (Romanya saati); veritabanı + dosyalar ortak zaman damgalı çift, geçici veritabanına geri
