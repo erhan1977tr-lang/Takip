@@ -48,6 +48,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
 | `takip antivirus` | Antivirüs çalışıyor mu, test virüsünü (EICAR) yakalıyor mu; bekleyen ve karantinadaki dosya sayısı |
+| `takip kur [ADRES]` | Banca Transilvania EUR satış kuru sunucudan okunabiliyor mu (FGO proforması için) |
 
 ## Otomatik güncelleme nasıl çalışır
 

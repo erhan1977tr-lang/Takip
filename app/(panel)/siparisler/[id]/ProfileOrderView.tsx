@@ -68,7 +68,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   // FGO (Aşama 6b): bu siparişin son proforma/fatura işi
   const fgoJob = order.outbox.find((x) => x.type === 'FGO_PROFORMA' || x.type === 'FGO_INVOICE');
   const fxText = p?.fxRate != null
-    ? `${t('profile.page.fgo.fxValue', { rate: Number(p.fxRate).toFixed(4).replace('.', ','), date: fmtDate(p.fxDate) })}${p.fxSource === 'MANUAL' ? ` (${t('profile.page.fgo.fxManual')})` : ''}`
+    ? `${t('profile.page.fgo.fxValue', { rate: Number(p.fxRate).toFixed(4).replace('.', ','), date: fmtDate(p.fxDate) })}${p.fxSource?.startsWith('MANUAL') ? ` (${t('profile.page.fgo.fxManual')})` : ''}`
     : null;
   const warehouseFile = order.files.find((f) => f.source === 'WAREHOUSE_FORM');
   const hidden = <input type="hidden" name="id" value={order.id} />;

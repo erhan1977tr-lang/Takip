@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.13.2 — 01.10.2026
+
+- BT kur sayfası sunucuya "HTTP 403" verdiğinde: istek artık normal bir tarayıcı gibi yapılır; yine okunamazsa
+  **günün kuru** (Yönetici → Entegrasyonlar, elle, yalnızca o gün geçerli) kullanılır. O da yoksa proforma işi bekler
+  ve yeniden denenir.
+- BT tablosunda (BNR · alış · satış) satış kuru doğru sütundan okunur.
+- Sunucuda `takip kur`: BT kur sayfasının sunucudan okunup okunamadığını gösterir.
+
 ## 3.13.1 — 01.10.2026 · Aşama 6b (FGO bağlantısı)
 
 - **FGO:** Yönetici → Entegrasyonlar'da FGO bölümü (açık/kapalı, test/gerçek ortam, CUI, şifreli saklanan API anahtarı,

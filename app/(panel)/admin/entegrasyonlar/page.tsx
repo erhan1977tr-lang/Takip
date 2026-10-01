@@ -4,8 +4,11 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAntivirusAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction, testFxAction } from './actions';
+import { saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction, testFxAction } from './actions';
 import { getFgoSettings } from '@/server/integrations/fgo.js';
+import { getDailyRate } from '@/server/fx/bt.js';
+import { localDay } from '@/server/profile/dates.js';
+import { getEnv } from '@/lib/env';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 
 export const dynamic = 'force-dynamic';
@@ -46,10 +49,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     ...infectedDrawingFiles.map((f) => ({ id: f.id, name: `v${f.drawing.version} · ${f.name}`, order: f.drawing.order, signature: f.scanSignature, at: f.scannedAt })),
   ].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const worker = (statusRow?.value ?? null) as { lastRun?: string } | null;
-  const [fgo, fgoPending, fgoFailed] = await Promise.all([
+  const fxToday = localDay(new Date(), getEnv().APP_TIMEZONE);
+  const [fgo, fgoPending, fgoFailed, daily] = await Promise.all([
     getFgoSettings(db),
     db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'PENDING' } }),
     db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'FAILED' } }),
+    getDailyRate(db),
   ]);
   const [wh, whPending, whFailed] = await Promise.all([
     getWarehouseSettings(db),
@@ -118,6 +123,21 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <form action={testFgoAction}><button className="btn">{t('admin.integrations.fgo.test')}</button></form>
         <form action={testFxAction}><button className="btn">{t('admin.integrations.fgo.testFx')}</button></form>
       </div>
+      {sp.ok === 'fxDaily' && <div className="alert alert-ok">{t('admin.integrations.fgo.dailySaved', { rate: sp.rate ?? '' })}</div>}
+      {sp.error === 'fxDaily' && <div className="alert alert-error">{t('admin.integrations.fgo.dailyBad')}</div>}
+      <form action={saveDailyRateAction} className="card">
+        <h2>{t('admin.integrations.fgo.dailyTitle')}</h2>
+        <p className="muted small">{t('admin.integrations.fgo.dailyIntro')}</p>
+        <div className="row">
+          <label htmlFor="fx-daily" style={{ margin: 0 }}>{t('admin.integrations.fgo.dailyRate')}</label>
+          <input id="fx-daily" name="rate" inputMode="decimal" maxLength={10} style={{ width: 120 }} defaultValue={daily?.day === fxToday ? daily.rate.toFixed(4) : ''} />
+          <button className="btn btn-primary">{t('admin.integrations.fgo.dailySave')}</button>
+          <span className="muted small">
+            {daily?.day === fxToday ? t('admin.integrations.fgo.dailyToday', { rate: daily.rate.toFixed(4) })
+              : daily ? t('admin.integrations.fgo.dailyOld', { rate: daily.rate.toFixed(4), day: daily.day.split('-').reverse().join('.') }) : t('admin.integrations.fgo.dailyNone')}
+          </span>
+        </div>
+      </form>
 
       <form action={saveWarehouseAction} className="card" id="depo">
         <h2>{t('profile.settings.title')}</h2>

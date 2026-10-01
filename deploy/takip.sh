@@ -10,6 +10,7 @@
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
 #   takip github                     GitHub erişim anahtarını (token) yenile
 #   takip antivirus                  antivirüs (ClamAV) çalışıyor ve test virüsünü yakalıyor mu
+#   takip kur [ADRES]                Banca Transilvania EUR satış kuru sunucudan okunabiliyor mu (FGO)
 #
 # Otomatik güncelleme (systemd: takip-deploy.timer, 2 dakikada bir → takip _otomatik):
 #   izlenen daldaki son commit GitHub'daki CI testlerinden geçtiyse sunucuda derlenir,
@@ -385,6 +386,7 @@ main() {
     _ci) gate "$(git -C "$SRC" rev-parse "$1")" ;;
     github) cmd_github ;;
     antivirus | av) compose run --rm tools node scripts/av-check.mjs ;;
+    kur | fx) compose run --rm tools node scripts/fx-check.mjs "$@" ;;
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
     yedek | backup) cmd_backup ;;
@@ -393,7 +395,7 @@ main() {
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,12p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

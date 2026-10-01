@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { openSecret, sealSecret } from '../server/crypto/secret.js';
-import { parseBtRate, parseManualRate } from '../server/fx/bt.js';
+import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js';
 import { FgoError, emitereForm, fgoEmit, fgoHash, missingBilling, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
 
@@ -25,6 +25,8 @@ test('BT kuru: JSON ve HTML içinden EUR satış kuru; makul olmayan sayı alın
   assert.equal(parseBtRate(JSON.stringify([{ code: 'EUR', a: 4.88, b: 5.02, cumparare: 4.88 }])), 5.02, 'satış alanı adı bilinmiyorsa alış dışındaki en büyük');
   const html = '<table><tr><td>USD</td><td>4,3100</td><td>4,6200</td></tr><tr><td>EUR</td><td>4,8750</td><td>5,0410</td></tr></table>';
   assert.equal(parseBtRate(html, 'text/html'), 5.041);
+  // BT tablosu: EUR | BNR | alış | satış → satış
+  assert.equal(parseBtRate('<tr><td>EUR</td><td>5.2601</td><td>5.1800</td><td>5.3450</td></tr>'), 5.345);
   assert.equal(parseBtRate('<p>EUR 1 2026</p>'), null);
   assert.equal(parseBtRate('<div>Cont business</div>'), null);
   assert.equal(parseManualRate('4,9765'), 4.9765);
@@ -86,4 +88,13 @@ test('profil: "FGO\'da yeniden dene" yalnızca yöneticide, onay ve teslim adım
   assert.ok(!a('ADMIN', 'PROFORMA').includes('retry_fgo'));
   assert.ok(!a('MUSTERI', 'ONAYLANDI').includes('retry_fgo'));
   assert.ok(!a('SATIS', 'ONAYLANDI').includes('retry_fgo'));
+});
+
+test('BT kuru: site reddederse (403) sebep yazılır; tarayıcı gibi istenir', async () => {
+  let headers;
+  const r = await fetchBtEurSell({ url: 'https://bt.example', fetchImpl: async (_u, init) => { headers = init.headers; return new Response('no', { status: 403, headers: { server: 'cloudflare', 'cf-ray': 'x' } }); } });
+  assert.deepEqual(r, { ok: false, error: 'HTTP 403 (cloudflare)' });
+  assert.match(headers['user-agent'], /Chrome/);
+  const ok = await fetchBtEurSell({ url: 'https://bt.example', fetchImpl: async () => new Response('<td>EUR</td><td>5,2601</td><td>5,1800</td><td>5,3450</td>', { headers: { 'content-type': 'text/html' } }) });
+  assert.deepEqual(ok, { ok: true, rate: 5.345, source: 'https://bt.example' });
 });

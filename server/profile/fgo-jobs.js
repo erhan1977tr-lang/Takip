@@ -7,7 +7,7 @@
 // Aynı belge iki kez kesilmesin: FGO'ya IdExtern (sipariş no + tür) ve VerificareDuplicat gönderilir.
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
-import { fetchBtEurSell } from '../fx/bt.js';
+import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
 import { FgoError, emitereForm, fgoEmit, fgoKey, fgoReady, getFgoSettings, missingBilling, ronTotal } from '../integrations/fgo.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, dayKeyOf, localDay } from './dates.js';
@@ -82,11 +82,18 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       let source = p.fxSource ?? null;
       if (rate == null) {
         if (row.type === FGO_INVOICE) throw new Permanent('Proformanın kuru yok; kuru girip yeniden deneyin');
+        const day = localDay(now, timeZone);
         const r = await rateImpl({ url: settings.fxUrl });
-        if (!r.ok) throw new Error(`BT kuru alınamadı: ${r.error}`);
-        rate = r.rate;
-        rateDay = dayDate(localDay(now, timeZone));
-        source = r.source;
+        if (r.ok) {
+          rate = r.rate;
+          source = r.source;
+        } else {
+          // BT okunamadıysa yöneticinin bugün girdiği kur (Entegrasyonlar → günün kuru)
+          rate = await dailyRateFor(db, day);
+          if (rate == null) throw new Error(`BT kuru alınamadı (${r.error}); Entegrasyonlar'da günün kurunu girin`);
+          source = 'MANUAL_DAY';
+        }
+        rateDay = dayDate(day);
       }
       const lines = documentLines(offer);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';

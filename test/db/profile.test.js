@@ -349,3 +349,30 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   await fgoOn(false);
   assert.equal(await codeOf(run(second.id, 'retry_fgo', 'admin')), 'NOT_ALLOWED', 'proforma adımında yeniden deneme yok');
 });
+
+dbTest('FGO: BT okunamazsa yöneticinin bugün girdiği kur kullanılır; girilmemişse yeniden denenir', async () => {
+  const { saveDailyRate } = await import('../../server/fx/bt.js');
+  const { writeAudit } = await import('../../server/orders/journal.js');
+  await fgoOn();
+  const { id } = await newProfileOrder([['GK15', 1]]);
+  let o = await load(id);
+  await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
+  o = await load(id);
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 7 FGO' });
+  const fgo = fakeFgo([560]);
+  const blocked = async () => ({ ok: false, error: 'HTTP 403' });
+  const now = new Date();
+  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now }));
+  assert.deepEqual(r1, { done: 0, failed: 1 });
+  const job = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } });
+  assert.equal(job.status, 'PENDING', 'geçici hata: yeniden denenir');
+  assert.match(job.lastError, /günün kurunu/);
+  await saveDailyRate(db, { day: localDay(now, 'Europe/Bucharest'), rate: 5.345 }, actor(people.admin), writeAudit);
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 2 * 60_000) }));
+  o = await load(id);
+  assert.equal(o.profile.proformaNo, 'PRF560');
+  assert.equal(Number(o.profile.fxRate), 5.345);
+  assert.equal(o.profile.fxSource, 'MANUAL_DAY');
+  assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '53.45');
+  await fgoOn(false);
+});

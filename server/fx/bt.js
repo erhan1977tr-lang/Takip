@@ -4,6 +4,13 @@
 // Kur alınamazsa proforma beklemeye alınır; yönetici sipariş sayfasında kuru elle girer.
 // Kullanılan kur, günü ve kaynağı siparişe kalıcı yazılır (fatura aynı kurla kesilir).
 
+const BROWSER_HEADERS = {
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7',
+  'accept-language': 'ro-RO,ro;q=0.9,en;q=0.8',
+  'cache-control': 'no-cache',
+};
+
 export const DEFAULT_FX_URL = 'https://www.bancatransilvania.ro/curs-valutar';
 // Makul aralık: bunun dışındaki sayı kur sayılmaz (yanlış alanı okumaya karşı)
 export const FX_MIN = 3.5;
@@ -47,8 +54,9 @@ function fromHtml(html) {
   let m;
   while ((m = re.exec(text))) {
     const after = text.slice(m.index, m.index + 300);
+    // BT tablosu: EUR | BNR | alış (cumpărare) | satış (vânzare) → satış en büyüğüdür
     const nums = (after.match(/\d{1,2}[.,]\d{2,6}/g) ?? []).map(num).filter(plausible).slice(0, 3);
-    if (nums.length >= 2) return Math.max(...nums.slice(0, 2));
+    if (nums.length >= 2) return Math.max(...nums);
   }
   return null;
 }
@@ -77,8 +85,12 @@ export function parseBtRate(body, contentType = '') {
  */
 export async function fetchBtEurSell({ url = DEFAULT_FX_URL, fetchImpl = fetch, timeoutMs = 15_000 } = {}) {
   try {
-    const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'Mozilla/5.0 (Takip)', accept: 'application/json,text/html' } });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    // Bankanın sitesi robot isteklerini reddedebiliyor (HTTP 403): normal bir tarayıcı gibi istenir
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), headers: BROWSER_HEADERS });
+    if (!res.ok) {
+      const via = [...new Set([res.headers.get('server'), res.headers.get('cf-ray') ? 'cloudflare' : null].filter(Boolean))].join(', ');
+      return { ok: false, error: `HTTP ${res.status}${via ? ` (${via})` : ''}` };
+    }
     const body = await res.text();
     const rate = parseBtRate(body, res.headers.get('content-type') ?? '');
     return rate ? { ok: true, rate, source: url } : { ok: false, error: 'EUR satış kuru sayfada bulunamadı' };
@@ -91,4 +103,30 @@ export async function fetchBtEurSell({ url = DEFAULT_FX_URL, fetchImpl = fetch, 
 export function parseManualRate(v) {
   const n = num(v);
   return plausible(n) ? Math.round(n * 10_000) / 10_000 : null;
+}
+
+// ---------- günün kuru (elle) ----------
+// BT'nin sitesi sunucudan okunamazsa yönetici günün BT EUR satış kurunu Entegrasyonlar ekranına bir kez girer;
+// o gün kesilen proformalar bu kurla kesilir (kaynak: MANUAL_DAY). Ertesi gün yeniden girilmesi gerekir.
+export const FX_DAILY_KEY = 'fx.daily';
+
+/** @returns {Promise<{ day: string, rate: number } | null>} */
+export async function getDailyRate(db) {
+  const row = await db.integrationSetting.findUnique({ where: { key: FX_DAILY_KEY } });
+  const v = row?.value && typeof row.value === 'object' ? row.value : null;
+  return v && typeof v.day === 'string' && plausible(Number(v.rate)) ? { day: v.day, rate: Number(v.rate) } : null;
+}
+
+/** Günün kuru: yalnızca bugünün kaydı geçerli */
+export async function dailyRateFor(db, day) {
+  const r = await getDailyRate(db);
+  return r && r.day === day ? r.rate : null;
+}
+
+export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
+  await db.$transaction(async (tx) => {
+    const value = { day, rate };
+    await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
+    await writeAudit(tx, { action: 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: actor.id, details: value }, actor);
+  });
 }

@@ -10,7 +10,9 @@ import { getAvSettings, saveAvSettings, scanPending } from '@/server/files/antiv
 import { eicar, scanBuffer } from '@/server/files/clamav.js';
 import { parseRecipients, saveWarehouseSettings } from '@/server/profile/warehouse.js';
 import { fgoKey, fgoTest, getFgoSettings, saveFgoSettings, validateFgoSettings } from '@/server/integrations/fgo.js';
-import { fetchBtEurSell } from '@/server/fx/bt.js';
+import { fetchBtEurSell, parseManualRate, saveDailyRate } from '@/server/fx/bt.js';
+import { localDay } from '@/server/profile/dates.js';
+import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
 
 const back = (q: Record<string, string | number>) =>
@@ -96,4 +98,14 @@ export async function testFxAction() {
   const r = await fetchBtEurSell({ url: s.fxUrl });
   if (r.ok) redirect(back({ ok: 'fx', rate: r.rate.toFixed(4) }) + '#fgo');
   redirect(back({ error: 'fx', detail: r.error }) + '#fgo');
+}
+
+/** Günün BT EUR satış kuru (elle): BT sitesi sunucudan okunamazsa bugünkü proformalar bu kurla kesilir. */
+export async function saveDailyRateAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const rate = parseManualRate(String(formData.get('rate') ?? ''));
+  if (rate == null) redirect(back({ error: 'fxDaily' }) + '#fgo');
+  await saveDailyRate(db, { day: localDay(new Date(), getEnv().APP_TIMEZONE), rate }, await actorOf(user), writeAudit);
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'fxDaily', rate: rate.toFixed(4) }) + '#fgo');
 }
