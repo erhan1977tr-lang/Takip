@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.17.1 — 01.10.2026
+
+- Demo verisi de yeni tahmini yükleme hesabını kullanır.
+
 ## 3.17.0 — 01.10.2026
 
 - Panel sayfalarındaki veriler 60 saniyede bir kendiliğinden yenilenir (sayfa yeniden yüklenmez; forma yazılan veri kaybolmaz).
