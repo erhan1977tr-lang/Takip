@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.18.0 — 01.10.2026
+
+- Yüklemeler: **Nakliye Listesi** (PDF) — seçilen yükleme gününün sandıkları müşteri koduna göre (sandık no, ölçü, ağırlık,
+  not, ara toplam), sandık adedi ve toplam ağırlık, sandığı girilmemiş siparişler. Yönetici, satış ve denetimci indirir
+  (yeni yetki `TRANSPORT_LIST_VIEW`); müşteri göremez.
+
 ## 3.17.1 — 01.10.2026
 
 - Demo verisi de yeni tahmini yükleme hesabını kullanır.

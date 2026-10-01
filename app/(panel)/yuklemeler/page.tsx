@@ -123,6 +123,14 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
         <p className="muted">
           {isCustomer ? t('loading.introCustomer') : t('loading.intro')}
         </p>
+        {userCan(user, 'TRANSPORT_LIST_VIEW') && (
+          // Nakliye listesi (PDF): seçilen yükleme günü — /yuklemeler/nakliye (server/loading/transport.js)
+          <form className="row" action="/yuklemeler/nakliye" method="get" style={{ gap: 8, marginTop: 8 }}>
+            <label htmlFor="nakliye-gun" style={{ margin: 0 }}>{t('loading.transport.dayLabel')}</label>
+            <input id="nakliye-gun" name="gun" type="date" defaultValue={selected ?? today} style={{ width: 'auto' }} required />
+            <button className="btn btn-primary">{t('loading.transport.button')}</button>
+          </form>
+        )}
       </div>
 
       <div className="tabs">

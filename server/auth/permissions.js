@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   PRICE_FINAL_VIEW: 'Müşteriye giden (yönetici) fiyatı görür',
   SHIPMENT_VIEW: 'Yükleme takvimini görür',
   CRATE_EDIT: 'Yükleme sekmesinde sandık ölçü ve ağırlıklarını girer',
+  TRANSPORT_LIST_VIEW: 'Yüklemeler sekmesinden nakliye listesini (PDF) indirir',
   OFFER_APPROVE: 'Profil teklifini onaylar ve teslim bilgilerini (alış günü, telefon, plaka) girer',
   STOCK_MANAGE: 'Profil stoğunu görür; giriş ve sayım düzeltmesi yapar',
   FILE_UPLOAD: 'Siparişe dosya ekler',
@@ -45,7 +46,7 @@ const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE'];
 export const ROLE_PERMISSIONS = {
   ADMIN: Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p)),
   SATIS: [
-    'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW', 'CRATE_EDIT',
+    'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW', 'CRATE_EDIT', 'TRANSPORT_LIST_VIEW',
     'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW',
   ],
   CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
@@ -54,14 +55,14 @@ export const ROLE_PERMISSIONS = {
     'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW',
   ],
   DENETIMCI: [
-    'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',
+    'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',
     'CUSTOMER_NAME_VIEW',
   ],
 };
 
 /** Salt görüntüleme yetkileri; bunların dışındaki her yetki bir "işlem"dir. */
 export const READ_ONLY = new Set([
-  'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'FILE_INTERNAL_VIEW',
+  'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
   'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW',
 ]);
 

@@ -81,6 +81,7 @@ enum PermissionKey {
   SETTINGS_MANAGE
   AUDIT_VIEW
   ACCOUNTING_MANAGE
+  TRANSPORT_LIST_VIEW
 }
 
 model RolePermission {
