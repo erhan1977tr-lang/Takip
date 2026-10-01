@@ -37,7 +37,7 @@ const SERIES_RE = /^[A-Z0-9]{1,10}$/;
 const TYPE_RE = /^[A-Za-z]{2,50}$/;
 /**
  * Formdan gelen ayarları doğrular.
- * @returns {{ ok: true, value: object } | { ok: false, errors: string[] }}
+ * @returns {{ ok: true, value: typeof FGO_DEFAULTS } | { ok: false, errors: string[] }}
  */
 export function validateFgoSettings(raw) {
   const errors = [];

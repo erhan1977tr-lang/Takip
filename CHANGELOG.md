@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.13.0 — 01.10.2026 · Aşama 6b (FGO bağlantısı)
+## 3.13.1 — 01.10.2026 · Aşama 6b (FGO bağlantısı)
 
 - **FGO:** Yönetici → Entegrasyonlar'da FGO bölümü (açık/kapalı, test/gerçek ortam, CUI, şifreli saklanan API anahtarı,
   PRF / GKH serileri, TVA %21, BT kur adresi; "Bağlantıyı dene" ve "Kuru dene").
