@@ -1,3 +1,4 @@
+import type { FactoryPayment, LoadingCost } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
@@ -10,6 +11,10 @@ import { addPaymentAction, addTransportAction, deletePaymentAction, deleteTransp
 
 export const dynamic = 'force-dynamic';
 
+type Amounts = { sale: number; cost: number; transport: number; profit: number };
+type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts> };
+type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }> };
+
 const OK: Record<string, MsgKey> = { transport: 'accounting.supplier.ok.transport', payment: 'accounting.supplier.ok.payment', deleted: 'accounting.supplier.ok.deleted' };
 const ERR: Record<string, MsgKey> = { transport: 'accounting.supplier.errors.transport', payment: 'accounting.supplier.errors.payment' };
 
@@ -21,7 +26,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const end = new Date(`${today}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 1);
-  const { days, costs, payments, summary } = await supplierData(db, end);
+  const { days, costs, payments, summary } = (await supplierData(db, end)) as Data;
   const curs = Object.keys(summary).sort();
   const money = (v: number, cur: string) => <span className={v < 0 ? 'danger' : undefined}>{fmtMoney(v, cur)}</span>;
   const costsOf = (day: string) => costs.filter((c) => c.shipDay.toISOString().slice(0, 10) === day);

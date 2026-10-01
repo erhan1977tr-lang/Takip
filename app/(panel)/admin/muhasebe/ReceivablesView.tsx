@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtMoney } from '@/lib/format';
@@ -6,13 +7,15 @@ import { Badge } from '@/components/StatusBadge';
 import { backfillDocuments, listDocuments, paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { refreshFgoAction } from './actions';
 
+type Doc = Prisma.FgoDocumentGetPayload<{ include: { order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } } } }>;
+
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
 
 /** Profil ve Cam Tahsilat ortak ekranı: FGO belgeleri ve FGO'dan okunan ödeme durumu (yalnızca yönetici). */
 export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'GLASS_ORDER'; sp: Record<string, string | undefined> }) {
   const { t } = await getT();
   if (type === 'PROFILE_ORDER') await backfillDocuments(db);
-  const docs = await listDocuments(db, type);
+  const docs: Doc[] = await listDocuments(db, type);
   const key = type === 'PROFILE_ORDER' ? 'profile' : 'glass';
   // Para birimi başına özet (para birimleri toplanmaz)
   const sums: Record<string, { total: number; paid: number; rest: number }> = {};
