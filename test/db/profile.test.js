@@ -367,7 +367,7 @@ dbTest('FGO: elle modda günün kuru kullanılır; girilmemişse beklenir, giril
   assert.deepEqual(r1, { done: 0, failed: 1 });
   const job = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } });
   assert.equal(job.status, 'PENDING', 'geçici hata: yeniden denenir');
-  assert.match(job.lastError, /günün kurunu/);
+  assert.match(job.lastError, /Günün BT kuru girilmedi/);
   await saveDailyRate(db, { day: localDay(now, 'Europe/Bucharest'), rate: 5.345 }, actor(people.admin), writeAudit);
   await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 60_000) })); // kur girilince bekleyen iş hemen denenir
   o = await load(id);
