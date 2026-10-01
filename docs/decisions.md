@@ -95,6 +95,7 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 | 57 | Avans faturası | FGO API'sinde avans için ayrı belge türü yok: normal fatura (GKH serisi), tek satır "Avans marfă conform proformă PRF…", tutar = tahsil edilen (TVA dahil; satır TVA hariç gönderilir). |
 | 58 | Kapanış faturası | Yüklenince: cam satırları (m², CNC/delik adet) + avans varsa eksi satır "Stornare avans conform factură …" (avans faturasının TVA hariç tutarı). |
 | 59 | Yüklendi | Yükleme günü (gerçek, yoksa tahmini) + **2 gün**. Yeni yükleme durumu yok. |
+| 61 | Belge metinleri (01.10.2026) | Cam proforma ve faturalarında açıklama (FGO Text) **yalnızca siparişin açıklaması** (başlık); satırlar **Romence** (camın Romence adı, yoksa katalogdaki Romence ad ve renk; CNC → "Prelucrare CNC", delik → "Gaură"). Sipariş bilgilerinde proforma / avans faturası / fatura ayrı satır ve bağlantıyla (müşteri, yönetici, denetimci; satış ve çizim görmez). Camda depo / teslim satırları yok. |
 | 60 | Kur ve gönderim | Proforma günün BT kuru (elle girilen günün kuru); avans ve fatura proformanın kuru; proforma yoksa fatura gününün kuru. Belge Müşteriler kartındaki **firma e-postasına** Romence e-postayla (belge no, tutar, FGO PDF bağlantısı) gider (FGO API e-posta göndermiyor). Deneme güvenliği: FGO ayarlarında **günlük belge sınırı** (varsayılan 3; 0 = sınırsız), profil ve cam belgelerinin toplamı. |
 
 ## Sunucu (29.09.2026)

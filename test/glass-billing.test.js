@@ -20,7 +20,7 @@ test('belge satırları: cam m² ile, CNC/delik adetle; bedelsiz ve fiyatsız sa
   ] });
   assert.deepEqual(lines, [
     { code: 'K1', name: 'Securizat 1000×2000 mm × 2', unit: 'mp', qty: 4, eur: 50 },
-    { code: '', name: 'CNC', unit: 'buc', qty: 3, eur: 10 },
+    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10 },
   ]);
   assert.equal(netOf(1210, 21), 1000);
 });

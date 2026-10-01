@@ -18,6 +18,7 @@ import {
   FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal,
 } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from '../profile/dates.js';
+import { glassLabel } from '../catalog/glass.js';
 
 export const GLASS_FGO = 'FGO_GLASS';
 export const DOC_EMAIL = 'FGO_DOC_EMAIL';
@@ -51,7 +52,9 @@ export function glassLines(offer) {
     const qty = byPiece ? l.adet : offerLineTotals({ ...l, unitPrice: 0 }).metraj;
     if (!(qty > 0)) continue;
     const dims = l.enMm && l.boyMm ? ` ${l.enMm}×${l.boyMm} mm × ${l.adet}` : '';
-    out.push({ code: l.poz ?? '', name: `${l.descriptionRo || l.description}${byPiece ? '' : dims}`, unit: byPiece ? 'buc' : 'mp', qty, eur: price });
+    // Belge metinleri Romence: camda Romence ad; CNC ve delik sabit Romence adla
+    const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : (l.descriptionRo || l.description);
+    out.push({ code: l.poz ?? '', name: `${name}${byPiece ? '' : dims}`, unit: byPiece ? 'buc' : 'mp', qty, eur: price });
   }
   return out;
 }
@@ -197,6 +200,12 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         if (!(paid > 0)) throw new Permanent('Tahsil edilen tutar yok');
         lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: 'buc', qty: 1, ron: netOf(paid, settings.vatRate) }];
       } else {
+        // Romence ad: satırda yoksa katalogdaki camın Romence adı ve rengi
+        const ids = offer.lines.filter((l) => !l.descriptionRo && l.glassProductId).map((l) => l.glassProductId);
+        if (ids.length) {
+          const glasses = new Map((await db.glassProduct.findMany({ where: { id: { in: ids } } })).map((x) => [x.id, glassLabel(x, 'ro')]));
+          for (const l of offer.lines) if (!l.descriptionRo && glasses.has(l.glassProductId)) l.descriptionRo = glasses.get(l.glassProductId);
+        }
         lines = glassLines(offer);
         if (lines.length === 0) throw new Permanent('Teklifte fiyatlı satır yok');
         if (kind === 'INVOICE' && advance) {
@@ -208,6 +217,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       const form = emitereForm({
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,
         rate, rateDate: ddmmyyyy(rateDay), extern: `${order.orderNo}-${SUFFIX[kind]}`,
+        // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
+        text: order.title ?? '', rateNote: false,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);

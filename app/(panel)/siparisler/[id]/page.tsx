@@ -4,7 +4,7 @@ import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
-import { getT, type Dict, type T } from '@/lib/i18n';
+import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, roleText, slaText, stageText,
 } from '@/lib/labels';
@@ -84,6 +84,9 @@ export default async function OrderPage({
       />
     );
   }
+  const fgoDocs = userCan(user, 'PRICE_FINAL_VIEW')
+    ? await db.fgoDocument.findMany({ where: { orderId: order.id }, orderBy: { issuedAt: 'asc' }, select: { id: true, kind: true, series: true, number: true, issuedAt: true, link: true } })
+    : [];
   const offer = currentOffer(order);
   const sent = sentOffer(order);
   const acts = availableActions({
@@ -228,6 +231,11 @@ export default async function OrderPage({
           // Etiketler müşteri kaydından (Yönetim → Müşteriler: Customer.camEtiket / Customer.sandikEtiket)
           !isCustomer && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
           !isCustomer && { label: t('order.info.sandikEtiket'), value: order.customer.sandikEtiket ?? '—' },
+          // FGO belgeleri (proforma / avans / fatura): müşteri, yönetici ve denetimci görür (satış ve çizim fiyat görmez)
+          ...fgoDocs.map((d) => ({
+            label: t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey),
+            value: <>{d.series}{d.number} · {fmtDate(d.issuedAt)}{d.link && <> · <a href={d.link} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</>,
+          })),
         ]}
       >
         {order.items.length > 0 && (

@@ -34,7 +34,7 @@ const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZon
 async function glassOrder(no, shipDate) {
   return db.order.create({
     data: {
-      orderNo: `GLA${no}`, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
+      orderNo: `GLA${no}`, customerOrderNo: no, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
     },
@@ -68,6 +68,8 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(pf['Continut[0][UM]'], 'mp');
   assert.equal(pf['Continut[0][NrProduse]'], '2');
   assert.equal(pf['Continut[0][PretUnitar]'], '250.00', '50 EUR × 5');
+  assert.equal(pf['Continut[0][Denumire]'], 'Securizat 1000×1000 mm × 2', 'Romence');
+  assert.equal(pf.Text, 'Ușă duș', 'açıklamada yalnızca sipariş açıklaması');
   let docs = await db.fgoDocument.findMany({ where: { orderId: o.id } });
   assert.deepEqual(docs.map((d) => `${d.kind}:${d.series}${d.number}`), ['PROFORMA:PRF552']);
   assert.equal(docs[0].total.toString(), '1210');

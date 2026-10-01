@@ -128,7 +128,7 @@ export function missingBilling(c) {
  *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, text?: string }} p
  * @returns {Record<string, string>}
  */
-export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null }) {
+export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null, rateNote = true }) {
   const proforma = kind === 'proforma';
   const name = String(customer.name).trim();
   const cui = String(customer.taxId ?? '').replace(/\s/g, '');
@@ -142,7 +142,8 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     // Aynı belge iki kez kesilmesin: sipariş + tür
     IdExtern: extern ?? `${orderNo}-${proforma ? 'P' : 'F'}`,
     VerificareDuplicat: 'true',
-    Text: [text, `Curs BT vânzare EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.`].filter(Boolean).join(' ').slice(0, 500),
+    // rateNote: false → açıklamada yalnızca verilen metin (cam siparişi: siparişin açıklaması)
+    Text: [text, rateNote ? `Curs BT vânzare EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.` : ''].filter(Boolean).join(' ').slice(0, 500),
     'Client[Denumire]': name,
     'Client[CodUnic]': cui,
     'Client[NrRegCom]': customer.regCom ?? '',
