@@ -129,6 +129,8 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
             <label htmlFor="nakliye-gun" style={{ margin: 0 }}>{t('loading.transport.dayLabel')}</label>
             <input id="nakliye-gun" name="gun" type="date" defaultValue={selected ?? today} style={{ width: 'auto' }} required />
             <button className="btn btn-primary">{t('loading.transport.button')}</button>
+            {/* Yükleme dökümü (Excel): aynı gün — /yuklemeler/dokum (server/loading/summary.js) */}
+            <button className="btn" formAction="/yuklemeler/dokum">{t('loading.summary.button')}</button>
           </form>
         )}
       </div>

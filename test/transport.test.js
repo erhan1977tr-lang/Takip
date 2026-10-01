@@ -46,3 +46,39 @@ test('nakliye listesi PDF: geçerli PDF, birçok sandıkta birden çok sayfa', (
   const empty = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text, list: buildTransportList([], [{ orderNo: 'X1', customerId: 'x' }]) });
   assert.equal(empty.subarray(0, 5).toString(), '%PDF-');
 });
+
+test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m²), CNC / delik camın tutarına dahil; Excel', async () => {
+  const { buildLoadingSummary, loadingSummaryXlsx } = await import('../server/loading/summary.js');
+  const { readXlsx } = await import('../server/files/xlsx.js');
+  const { glassLines } = await import('../server/glass/billing.js');
+  const glass = (description, en, boy, adet, offerPrice, unitPrice) => ({ kind: 'CAM', unit: 'm2', description, descriptionRo: `RO ${description}`, enMm: en, boyMm: boy, adet, offerPrice, unitPrice });
+  const orders = [
+    { orderNo: 'ALE46', title: 'Adrian', customer: { id: 'a', name: 'ALEGRAD' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [
+      glass('88.3 TEMPER LAMİNE', 1000, 2000, 2, '50', '30'),
+      { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 2, offerPrice: '10', unitPrice: '5' },
+      glass('10 MM TEMPER', 1000, 1000, 1, '24', '20'),
+    ] }] },
+    { orderNo: 'ALE47', title: 'Sura Mica', customer: { id: 'a', name: 'ALEGRAD' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [
+      glass('88.3 TEMPER LAMİNE', 1000, 1000, 3, '50', '30'),
+      { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 4, offerPrice: '2', unitPrice: '1', free: true },
+    ] }] },
+    { orderNo: 'GLA61', title: null, customer: { id: 'g', name: 'GLASSANDMORE' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass('88.3 TEMPER LAMİNE', 1000, 1000, 1, '40', '25')] }] },
+  ];
+  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
+  assert.deepEqual(s.rows.map((r) => [r.customer, r.orders.join(','), r.name, r.adet, r.m2, r.total, r.unit]), [
+    ['ALEGRAD', 'ALE46', '10 MM TEMPER', 1, 1, 24, 24],
+    ['ALEGRAD', 'ALE46,ALE47', '88.3 TEMPER LAMİNE', 5, 7, 370, 52.86], // (4 m² × 50 + 2 CNC × 10) + 3 m² × 50; birim = 370 / 7
+    ['GLASSANDMORE', 'GLA61', '88.3 TEMPER LAMİNE', 1, 1, 40, 40],
+  ]);
+  assert.ok(!s.rows.some((r) => /CNC|Delik/.test(r.name)), 'işlemler ayrıca listelenmez');
+  assert.deepEqual(s.totals, { EUR: { adet: 7, m2: 9, total: 434 } });
+  // Fatura hesabıyla aynı tutar (aynı fonksiyon)
+  assert.equal(glassLines(orders[0].offers[0]).reduce((a, l) => a + l.eurTotal, 0), 244);
+  // Satış: yalnızca satış fiyatı (müşteri fiyatı verisi hiç gelmez)
+  const sales = buildLoadingSummary(orders.map((o) => ({ ...o, offers: o.offers.map((f) => ({ ...f, lines: f.lines.map((l) => ({ ...l, offerPrice: null })) })) })), { priceOf: (l) => l.unitPrice });
+  assert.equal(sales.totals.EUR.total, 4 * 30 + 2 * 5 + 20 + 3 * 30 + 25);
+  const x = readXlsx(loadingSummaryXlsx(s, { day: '2026-10-02', stats: [['Sipariş', 3]], text: { title: 'YÜKLEME DÖKÜMÜ', unit: 'm²', total: 'TOPLAM', cols: ['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR'] } })).rows;
+  assert.equal(x[0][0], 'YÜKLEME DÖKÜMÜ · 2026-10-02');
+  assert.deepEqual(x.find((r) => r[0] === 'ALE46, ALE47'), ['ALE46, ALE47', 'ALEGRAD', 'Adrian, Sura Mica', '88.3 TEMPER LAMİNE', 5, 'm²', 7, 52.86, 370]);
+  assert.deepEqual(x[x.length - 1].slice(3), ['TOPLAM', 7, null, 9, null, 434, 'EUR']);
+});

@@ -46,20 +46,21 @@ export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GOND
  * Her grubun parts'ı: o satırda toplanan teklif satırları ({ qty, price } — cam m², işlem adet), proformadaki satırların aynısı.
  * @returns {{ name: string, qty: number, parts: { qty: number, price: number }[] }[]}
  */
-function glassGroups(offer) {
+function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice } = {}) {
   const groups = new Map();
   let last = null;
   let carry = []; // camdan önce gelen ek işlemler (sonraki cama eklenir)
   for (const l of offer.lines) {
-    if (l.free || l.offerPrice == null) continue;
-    const price = Number(l.offerPrice);
+    if (l.free || priceOf(l) == null) continue;
+    const price = Number(priceOf(l));
     const isGlass = (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2';
     if (isGlass) {
       const qty = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
       if (!(qty > 0)) continue;
-      const name = String(l.descriptionRo || l.description).trim();
-      const g = groups.get(name) ?? { name, qty: 0, parts: [] };
+      const name = String(nameOf(l)).trim();
+      const g = groups.get(name) ?? { name, qty: 0, adet: 0, parts: [] };
       g.qty = Math.round((g.qty + qty) * 1000) / 1000;
+      g.adet += Math.max(0, Math.trunc(Number(l.adet) || 0));
       g.parts.push({ qty, price }, ...carry);
       carry = [];
       groups.set(name, g);
@@ -75,6 +76,15 @@ function glassGroups(offer) {
   if (carry.length && out.length) out[out.length - 1].parts.push(...carry);
   return out;
 }
+
+/**
+ * Aynı fatura kuralıyla (cam + ona eklenen CNC / delik / diğer kalemler) cam başına toplam — yükleme dökümü (Excel) de
+ * bunu kullanır (server/loading/summary.js). nameOf: satırın adı (varsayılan Romence), priceOf: hangi fiyat (varsayılan
+ * müşteri fiyatı). @returns {{ name: string, adet: number, qty: number, total: number }[]}
+ */
+export const glassTotals = (offer, opts) => glassGroups(offer, opts).map((g) => ({
+  name: g.name, adet: g.adet, qty: g.qty, total: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
+}));
 
 /** Fatura cam satırları, EUR toplamıyla @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]} */
 export const glassLines = (offer) => glassGroups(offer).map((g) => ({
