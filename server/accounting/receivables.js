@@ -1,7 +1,7 @@
 // Muhasebe → Profil / Cam Tahsilat: FGO'da kesilen belgeler ve FGO'dan okunan ödeme durumu.
 // Belgeler sipariş akışında kaydedilir (fgo_proforma / fgo_invoice → FgoDocument); burada yalnızca listelenir ve
 // "FGO ile güncelle" ile mevcut FGO bağlantısı (server/integrations/fgo.js) üzerinden yenilenir. Ayrı FGO bağlantısı yok.
-import { fgoKey, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
+import { FGO_NOT_FOUND, FgoError, fgoKey, fgoReady, fgoStatus, getFgoSettings, removeDeletedDocument } from '../integrations/fgo.js';
 
 /**
  * Ödeme durumu: 0 → Ödenmedi · 0 < ödenen < toplam → Kısmi · ödenen ≥ toplam → Ödendi. Toplam henüz okunmadıysa UNKNOWN.
@@ -88,6 +88,12 @@ export async function refreshDocuments(db, { orderType, secret, appUrl = '', fet
       });
       checked++;
     } catch (e) {
+      // FGO'da silinmiş belge (ör. deneme faturası): kaydı kaldırılır, numarası yeniden kullanılabilir (karar 64)
+      if (e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
+        await removeDeletedDocument(db, d, e.message);
+        checked++;
+        continue;
+      }
       await db.fgoDocument.update({ where: { id: d.id }, data: { checkedAt: new Date(), checkError: String(e?.message ?? e).slice(0, 300) } });
       failed++;
     }

@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.16.6 — 01.10.2026
+
+- **Fatura numarası düzeltildi:** Entegrasyonlar → FGO → "Sonraki fatura numarası" doluysa fatura tam bu numarayla kesilir
+  ve her faturadan sonra kendiliğinden bir artar (önceden sistemde kalan silinmiş deneme faturaları numarayı yukarı itiyordu).
+- FGO'da silinmiş belgelerin kaydı (numara gerektiğinde ya da Muhasebe → "FGO ile Güncelle"de) sistemden kaldırılır; numarası
+  yeniden kullanılır. FGO istenenden farklı numara keserse "Önemli kararlar"da uyarı çıkar.
+
 ## 3.16.5 — 01.10.2026
 
 - FGO **fatura numarası** = sistemdeki son fatura numarası + 1 (cam avans/kapanış ve profil faturası). Entegrasyonlar → FGO'da

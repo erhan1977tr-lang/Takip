@@ -128,7 +128,7 @@ export default {
     title: 'Decizii importante în așteptare',
     intro: 'Fiecare rând din această listă așteaptă o decizie umană. Luați decizia și apăsați „Am văzut”.',
     empty: 'Momentan nu există nicio decizie în așteptare. Când un vânzător modifică prețul de listă, apare aici.',
-    type: { FGO_FAILED: "Comandă de profile: proforma/factura nu a putut fi emisă în FGO", WAREHOUSE_EMAIL_FAILED: 'Comandă de profile: e-mailul pentru depozit nu a putut fi trimis', PRICE_OVERRIDE: 'Vânzătorul a modificat prețul de listă' },
+    type: { FGO_NUMBER: "FGO nu a emis factura cu numărul cerut (Integrări → Următorul număr de factură)", FGO_FAILED: "Comandă de profile: proforma/factura nu a putut fi emisă în FGO", WAREHOUSE_EMAIL_FAILED: 'Comandă de profile: e-mailul pentru depozit nu a putut fi trimis', PRICE_OVERRIDE: 'Vânzătorul a modificat prețul de listă' },
     error: 'Eroare: {error}',
     colOrder: 'Comandă',
     colWhat: 'Ce s-a întâmplat',

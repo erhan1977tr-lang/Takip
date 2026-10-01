@@ -20,8 +20,8 @@ export const FGO_DEFAULTS = {
   fxMode: 'manual',
   // Günde en fazla kaç FGO belgesi kesilir (deneme güvenliği; 0 = sınırsız)
   dailyLimit: 3,
-  // Fatura numarası: sistemdeki son fatura numarası + 1 (karar 62). Sistemde henüz fatura yoksa ya da FGO'da elle
-  // daha büyük numara kesildiyse yönetici buraya "en az" sonraki numarayı girer; boş = FGO numaralandırır.
+  // Sıradaki fatura numarası (karar 64): doluysa TAM bu numara kullanılır ve her faturadan sonra +1 olur;
+  // boşsa sistemdeki son fatura numarası + 1 (o da yoksa FGO numaralandırır).
   invoiceNext: /** @type {number | null} */ (null),
 };
 const SECRET_PURPOSE = 'fgo-key';
@@ -185,17 +185,74 @@ export const ronTotal = (lines, rate) => round2(lines.reduce((s, l) => s + (l.ne
 /** TVA hariç satır tutarı → TVA dahil (FGO gibi: satır başına TVA, 2 hane) */
 export const grossOf = (net, vatRate) => round2(net + round2((net * Number(vatRate)) / 100));
 
+/** FGO'nun "belge yok" yanıtı (getstatus): belge FGO'da silinmiş */
+export const FGO_NOT_FOUND = /nu exist|nu a fost g[aă]sit|negăsit|not found|inexist/i;
+const maxNumber = (rows) => rows.reduce((m, r) => (/^\d+$/.test(r.number) ? Math.max(m, Number(r.number)) : m), 0);
+
 /**
- * Faturanın numarası (ürün sahibinin kuralı, karar 62): sistemdeki (FgoDocument) bu serinin en büyük numarası + 1;
- * yönetici "sonraki fatura numarası"nı girdiyse en az o. Hiçbiri yoksa null (FGO numaralandırır).
+ * Sıradaki fatura numarası (ürün sahibinin kuralı, karar 62 / 64): yönetici Entegrasyonlar'da "Sonraki fatura numarası"nı
+ * girdiyse TAM o numara (her faturadan sonra kendiliğinden +1 olur); boşsa sistemdeki (FgoDocument) bu serinin en büyük
+ * numarası + 1. Hiçbiri yoksa null (FGO numaralandırır). Ön izleme içindir; keserken reserveInvoiceNumber kullanılır.
  * @returns {Promise<string | null>}
  */
 export async function nextInvoiceNumber(db, settings) {
-  const rows = await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { number: true } });
-  const max = rows.reduce((m, r) => (/^\d+$/.test(r.number) ? Math.max(m, Number(r.number)) : m), 0);
-  const floor = Number.isInteger(settings.invoiceNext) ? settings.invoiceNext : 0;
-  if (!max && !floor) return null;
-  return String(Math.max(max + 1, floor));
+  if (Number.isInteger(settings.invoiceNext) && settings.invoiceNext > 0) return String(settings.invoiceNext);
+  const max = maxNumber(await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { number: true } }));
+  return max ? String(max + 1) : null;
+}
+
+/**
+ * Keserken numara: nextInvoiceNumber; bu numara sistemde kayıtlıysa FGO'ya sorulur — FGO'da silinmişse (deneme
+ * faturaları) eski kayıt sistemden kaldırılır ve numara yeniden kullanılır; FGO'da varsa sonraki numaraya geçilir.
+ * @returns {Promise<string | null>}
+ */
+export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const first = await nextInvoiceNumber(db, settings);
+  if (!first) return null;
+  let n = Number(first);
+  for (let i = 0; i < 50; i++, n++) {
+    const row = await db.fgoDocument.findUnique({ where: { series_number: { series: settings.invoiceSeries, number: String(n) } } });
+    if (!row) return String(n);
+    try {
+      await fgoStatus(settings, key, { series: row.series, number: row.number, appUrl }, fetchImpl);
+    } catch (e) {
+      if (e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
+        await removeDeletedDocument(db, row, e.message);
+        await sleep(1100); // FGO saniyede bir istek kabul eder
+        return String(n);
+      }
+      throw e; // ağ hatası: iş sonra yeniden denenir
+    }
+    await sleep(1100);
+  }
+  throw new FgoError('Boş fatura numarası bulunamadı (50 numara dolu); Entegrasyonlar → Sonraki fatura numarası', { retry: false });
+}
+
+/** FGO'da silinmiş belgenin kaydını kaldırır (denetim kaydıyla; geçmiş satırı siparişte kalır) */
+export async function removeDeletedDocument(db, row, reason = '') {
+  await db.$transaction(async (tx) => {
+    await tx.fgoDocument.delete({ where: { id: row.id } });
+    await writeAudit(tx, {
+      action: 'FGO_DOC_REMOVED', entityType: 'Order', entityId: row.orderId, userId: null,
+      details: { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) },
+    }, { role: 'SYSTEM' });
+  });
+}
+
+/**
+ * Fatura kesildikten sonra: "Sonraki fatura numarası" kesilen numara + 1 olur (yalnızca yönetici bu alanı kullanıyorsa;
+ * boşsa sistemdeki son numara zaten bir sonrakini verir). Gönderilen numara ile FGO'nun kestiği farklıysa yöneticiye uyarı.
+ */
+export async function afterInvoiceIssued(db, { sent, issued, orderId }) {
+  if (sent && String(sent) !== String(issued)) {
+    await db.adminAlert.create({ data: { type: 'FGO_NUMBER', orderId, details: { code: 'NUMBER', error: `${sent} → ${issued}` } } });
+  }
+  if (!/^\d+$/.test(String(issued))) return;
+  const row = await db.integrationSetting.findUnique({ where: { key: FGO_KEY } });
+  const v = row?.value && typeof row.value === 'object' ? row.value : null;
+  if (!v || !Number.isInteger(v.invoiceNext)) return;
+  const next = Math.max(v.invoiceNext, Number(issued) + 1);
+  if (next !== v.invoiceNext) await db.integrationSetting.update({ where: { key: FGO_KEY }, data: { value: { ...v, invoiceNext: next } } });
 }
 
 /** FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır. */
@@ -264,7 +321,7 @@ export async function fgoTest(settings, key, fetchImpl = fetch) {
   } catch (e) {
     const msg = String(e?.message ?? e);
     // "factura nu exista" gibi yanıtlar kimliğin kabul edildiğini gösterir
-    const authFailed = /hash|cheie|autentific|unauthor|invalid/i.test(msg) && !/nu exist|not found|inexistent/i.test(msg);
+    const authFailed = /hash|cheie|autentific|unauthor|invalid/i.test(msg) && !FGO_NOT_FOUND.test(msg);
     return { ok: !authFailed && !(e instanceof FgoError && e.retry), message: msg.slice(0, 300), types };
   }
 }

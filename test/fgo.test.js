@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { openSecret, sealSecret } from '../server/crypto/secret.js';
 import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js';
-import { FgoError, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
+import { FgoError, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
 
 const SECRET = 'x'.repeat(40);
@@ -59,14 +59,49 @@ test('FGO ayarları: seri, tür, TVA, adres doğrulanır; açıkken CUI zorunlu'
   assert.ok(validateFgoSettings({ ...base, invoiceNext: 'GKH684' }).errors?.includes('INVOICE_NEXT'));
 });
 
-test('fatura numarası: sistemdeki son fatura numarası + 1; yöneticinin girdiği en az numara; hiçbiri yoksa FGO', async () => {
+test('fatura numarası: girilen "sonraki numara" tam kullanılır; boşsa sistemdeki son numara + 1; hiçbiri yoksa FGO', async () => {
   const db = (numbers) => ({ fgoDocument: { findMany: async ({ where }) => (where.series === 'GKH' ? numbers.map((number) => ({ number })) : []) } });
   const s = { invoiceSeries: 'GKH', invoiceNext: null };
   assert.equal(await nextInvoiceNumber(db([]), s), null);
   assert.equal(await nextInvoiceNumber(db(['684', '699', '9', 'X1']), s), '700', 'sayısal en büyük + 1 (metin karşılaştırma değil)');
   assert.equal(await nextInvoiceNumber(db([]), { ...s, invoiceNext: 684 }), '684');
-  assert.equal(await nextInvoiceNumber(db(['684']), { ...s, invoiceNext: 684 }), '685');
-  assert.equal(await nextInvoiceNumber(db(['684']), { ...s, invoiceNext: 800 }), '800', 'FGO\'da elle kesilen faturaların ardı');
+  assert.equal(await nextInvoiceNumber(db(['684', '690']), { ...s, invoiceNext: 684 }), '684', 'yöneticinin girdiği numara esas (sistemdeki eski deneme kayıtları onu ezmez)');
+});
+
+test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve numara yeniden kullanılır; FGO\'da varsa sonraki numara', async () => {
+  const docs = [
+    { id: 'd684', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '684' }, // FGO'da silinmiş deneme faturası
+    { id: 'd700', orderId: 'o2', kind: 'INVOICE', series: 'GKH', number: '700' }, // FGO'da var
+  ];
+  const audits = [];
+  const db = {
+    fgoDocument: {
+      findMany: async () => docs.map((d) => ({ number: d.number })),
+      findUnique: async ({ where }) => docs.find((d) => d.series === where.series_number.series && d.number === where.series_number.number) ?? null,
+    },
+    $transaction: async (fn) => fn({
+      fgoDocument: { delete: async ({ where }) => docs.splice(docs.findIndex((d) => d.id === where.id), 1) },
+      auditLog: { create: async ({ data }) => audits.push(data) },
+    }),
+  };
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    const form = Object.fromEntries(new URLSearchParams(init.body));
+    asked.push(form.Numar);
+    if (form.Numar === '684') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+    return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '10' } }));
+  };
+  const s = { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: 684 };
+  const opts = { key: 'K', fetchImpl, sleep: async () => {} };
+  assert.equal(await reserveInvoiceNumber(db, s, opts), '684');
+  assert.deepEqual(asked, ['684']);
+  assert.ok(!docs.some((d) => d.number === '684'), 'silinmiş belgenin kaydı kaldırıldı');
+  assert.equal(audits[0].action, 'FGO_DOC_REMOVED');
+  assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, opts), '701', '700 FGO\'da var → 701');
+  assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 685 }, opts), '685', 'kayıt yoksa FGO\'ya sorulmaz');
+  // FGO'ya ulaşılamazsa numara uydurulmaz (iş sonra yeniden denenir)
+  const down = async () => { throw new Error('ECONNRESET'); };
+  await assert.rejects(reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, { ...opts, fetchImpl: down }), (e) => e instanceof FgoError && e.retry);
 });
 
 test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tekrar kesimi önleyen IdExtern', () => {

@@ -128,7 +128,7 @@ export default {
     title: 'Bekleyen önemli kararlar',
     intro: 'Bu listedeki her satırda bir insan kararı bekleniyor. Kararınızı verip “Gördüm” deyin.',
     empty: 'Şu an bekleyen bir karar yok. Satışçı liste fiyatını değiştirdiğinde burada listelenir.',
-    type: { FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi' },
+    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi' },
     error: 'Hata: {error}',
     colOrder: 'Sipariş',
     colWhat: 'Ne oldu',

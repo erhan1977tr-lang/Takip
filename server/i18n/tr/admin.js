@@ -234,8 +234,8 @@ export default {
     fgo: {
       dailyLimit: "Günlük belge sınırı",
       dailyLimitHint: "Deneme güvenliği: günde en fazla bu kadar FGO belgesi kesilir (0 = sınırsız).",
-      invoiceNext: "Sonraki fatura numarası (en az)",
-      invoiceNextHint: "Faturalar sistemdeki son fatura numarası + 1 ile kesilir. FGO'da elle fatura kestiyseniz ya da sistemde henüz fatura yoksa sıradaki numarayı buraya yazın (boş = yalnızca sistemdeki son numara). Proformaları FGO numaralandırır.",
+      invoiceNext: "Sonraki fatura numarası",
+      invoiceNextHint: "Doluysa sıradaki fatura tam bu numarayla kesilir ve her faturadan sonra kendiliğinden bir artar. Boşsa sistemdeki son fatura numarası + 1. FGO'da silinmiş deneme faturalarının numaraları yeniden kullanılır. Proformaları FGO numaralandırır.",
       invoiceNextWill: "Sıradaki fatura: {no}.",
       invoiceNextAuto: "Sistemde henüz fatura yok: numarayı FGO verir.",
       fxMode: "Kur kaynağı",

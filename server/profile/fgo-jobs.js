@@ -8,7 +8,7 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
-import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, nextInvoiceNumber, ronTotal } from '../integrations/fgo.js';
+import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal } from '../integrations/fgo.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
@@ -100,11 +100,12 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       }
       const lines = documentLines(offer);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
+      // Fatura: sıradaki fatura numarası (karar 62/64; cam faturalarıyla aynı seri); proformayı FGO numaralandırır
+      const sentNo = kind === 'invoice' ? await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl }) : null;
       const form = emitereForm({
         settings, key, kind, orderNo: order.orderNo, appUrl, customer: order.customer, lines, rate,
         rateDate: dayKeyOf(rateDay).split('-').reverse().join('.'),
-        // Fatura: sistemdeki son fatura numarası + 1 (karar 62; cam faturalarıyla aynı seri); proformayı FGO numaralandırır
-        number: kind === 'invoice' ? await nextInvoiceNumber(db, settings) : null,
+        number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);
@@ -114,6 +115,7 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       });
       await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
       done++;
+      if (kind === 'invoice') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       // Muhasebe: belgenin TVA dahil tutarı hemen okunur (olmazsa "FGO ile güncelle" sonra okur)
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);

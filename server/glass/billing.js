@@ -15,7 +15,7 @@ import { offerLineTotals } from '../orders/rules.js';
 import { getEnv } from '../env.js';
 import { fetchBtEurSell, rateForDay } from '../fx/bt.js';
 import {
-  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, nextInvoiceNumber,
+  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
 } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
@@ -276,13 +276,14 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: 'buc', qty: -1, ron: netOf(gross, settings.vatRate) });
         }
       }
+      // Avans ve kapanış faturası: sıradaki fatura numarası (karar 62/64); proformayı FGO numaralandırır
+      const sentNo = kind === 'PROFORMA' ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       const form = emitereForm({
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,
         rate, rateDate: ddmmyyyy(rateDay), extern: `${order.orderNo}-${SUFFIX[kind]}`,
         // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
         text: order.title ?? '', rateNote: false,
-        // Avans ve kapanış faturası: sistemdeki son fatura numarası + 1 (karar 62); proformayı FGO numaralandırır
-        number: kind === 'PROFORMA' ? null : await nextInvoiceNumber(db, settings),
+        number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);
@@ -301,6 +302,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, series: doc.series, number: doc.number, fxRate: rate, fxSource: source, amountRonNet: amount } }, { role: 'SYSTEM' });
       });
       done++;
+      if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
         await db.fgoDocument.update({
