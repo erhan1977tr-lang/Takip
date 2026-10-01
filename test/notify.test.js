@@ -14,11 +14,15 @@ const users = [
   { email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS' },
   { email: 'cizim@gkh.test', language: 'tr', appRole: 'CIZIM' },
 ];
+const optedOut = [];
 const fakeDb = (rows = []) => {
   const settings = new Map();
   return {
     rows,
-    user: { findMany: async ({ where }) => users.filter((u) => where.appRole.in.includes(u.appRole)) },
+    user: {
+      findMany: async ({ where }) => users.filter((u) => where.appRole.in.includes(u.appRole)),
+      findFirst: async ({ where }) => optedOut.find((e) => e === where.email.equals.toLowerCase()) ?? null,
+    },
     order: { findUnique: async () => order },
     integrationSetting: {
       findUnique: async ({ where }) => (settings.has(where.key) ? { value: settings.get(where.key) } : null),
@@ -89,4 +93,16 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
   assert.equal(r2.sent, 1);
   assert.deepEqual(sent, ['ana@glass.test', 'office@glass.test'], 'ilk alıcıya ikinci kez gitmez');
   assert.equal(rows[1].status, 'SENT');
+});
+
+test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip bildirimleri etkilenmez; sabit dil kullanılır', async () => {
+  const db = fakeDb();
+  const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
+  assert.deepEqual(await recipientsFor(db, 'ORDER_OFFER_SENT', off), [], 'siparişi açan kapattı: ne kendisine ne firma adresine');
+  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test'], 'iç ekip bildirimi sürer');
+  optedOut.push('office@glass.test');
+  assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
+  optedOut.length = 0;
+  const fixed = { ...order, createdBy: { ...order.createdBy, language: 'ro', fixedLanguage: 'tr' } };
+  assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', fixed)).map((r) => r.locale), ['tr', 'tr']);
 });

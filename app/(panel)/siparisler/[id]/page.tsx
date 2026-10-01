@@ -96,6 +96,8 @@ export default async function OrderPage({
   const can = (a: string) => acts.includes(a);
   const sla = isCustomer ? null : slaInfo(order.slaDeadline);
   const stage = stageIndex(order.status);
+  // Satış görünümü: teklif hazırlar ama müşteriye gönderemez (rol adına değil yetkiye bakılır)
+  const salesView = userCan(user, 'OFFER_PREPARE') && !userCan(user, 'OFFER_SEND');
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
   const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
   const glasses = editable || updating
@@ -213,6 +215,10 @@ export default async function OrderPage({
         </div>
       )}
 
+      {/* Satış görünümü: müşterinin dosyaları ve notlar en üstte (aşağıda yeniden gösterilmez) */}
+      {salesView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
+      {salesView && <Notes order={order} user={user} t={t} />}
+
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
 
       <OrderInfo
@@ -238,7 +244,8 @@ export default async function OrderPage({
           })),
         ]}
       >
-        {order.items.length > 0 && (
+        {/* "İstenen camlar" satış görünümünde gösterilmez (veri durur; teklif tablosu zaten bu camlarla açılır) */}
+        {!salesView && order.items.length > 0 && (
           <>
             <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -283,10 +290,11 @@ export default async function OrderPage({
       )}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
-      {!isCustomer && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      {/* "Sandıklar" satış görünümünde gösterilmez (sandıklar Yüklemeler sekmesinde girilir) */}
+      {!isCustomer && !salesView && order.status !== 'YENI' && <Crates order={order} t={t} />}
       <Drawings order={order} user={user} can={can} t={t} />
-      <Files order={order} user={user} canAdd={can('add_file')} t={t} />
-      <Notes order={order} user={user} t={t} />
+      {!salesView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
+      {!salesView && <Notes order={order} user={user} t={t} />}
       <History order={order} isCustomer={isCustomer} t={t} />
     </>
   );

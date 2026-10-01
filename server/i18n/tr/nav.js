@@ -24,6 +24,7 @@ export default {
   myOrders: 'Siparişlerim',
   newOrder: 'Yeni Sipariş',
   myOffers: 'Tekliflerim',
+  settings: 'Ayarlar',
   myLoadings: 'Yükleme takvimim',
   demoMail: 'Demo posta kutusu',
 };

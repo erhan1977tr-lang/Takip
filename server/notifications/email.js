@@ -55,9 +55,15 @@ export async function recipientsFor(db, type, order) {
   };
   for (const a of audiences) {
     if (a === 'customer') {
+      // Müşterinin ayarı (Ayarlar → E-posta bildirimleri): siparişi açan kullanıcı kapattıysa bu siparişin müşteri
+      // bildirimleri gönderilmez; bildirimi kapatmış başka bir kullanıcının adresine de gönderilmez.
       const creator = order.createdBy;
-      if (creator && creator.customerId === order.customerId) add(creator.email, creator.language, null);
-      add(order.customer?.email, creator?.language ?? 'ro', null);
+      const mine = creator && creator.customerId === order.customerId;
+      if (mine && creator.emailNotifications === false) continue;
+      const lang = creator?.fixedLanguage || creator?.language || 'ro';
+      if (mine) add(creator.email, lang, null);
+      const firm = order.customer?.email;
+      if (isEmail(firm) && !(await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, emailNotifications: false }, select: { id: true } }))) add(firm, lang, null);
     } else if (a === 'drawer' && order.assignedDrawer) {
       add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
     } else {
@@ -134,7 +140,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
         where: { id: row.orderId },
         include: {
           customer: { select: { name: true, email: true } },
-          createdBy: { select: { email: true, language: true, customerId: true } },
+          createdBy: { select: { email: true, language: true, fixedLanguage: true, emailNotifications: true, customerId: true } },
           assignedDrawer: { select: { email: true, language: true, appRole: true } },
         },
       }) : null;

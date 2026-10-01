@@ -14,9 +14,8 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
   await expect(sales.locator('.alert-ok')).toContainText('Tahmini yükleme tarihi güncellendi');
   // 6 m² × 30 kg/m² (katalogdaki ağırlık, karar 22) = 180 kg → 1 sandık, brüt 230 kg (yükleme sekmesinde)
-  await expect(sales.locator('#sandik')).toContainText('6,00 m²');
-  await expect(sales.locator('#sandik')).toContainText('net 180 kg');
-  await expect(sales.locator('#sandik')).toContainText('Henüz sandık girilmedi.');
+  // Satışın sipariş sayfasında "Sandıklar" bölümü yok (sandıklar Yüklemeler sekmesinde)
+  await expect(sales.locator('#sandik')).toHaveCount(0);
   await expect(sales.getByRole('button', { name: 'Sandıkları kaydet' })).toHaveCount(0); // sipariş sayfasında giriş yok
 
   await sales.getByRole('link', { name: 'Yüklemeler' }).first().click();
@@ -52,7 +51,7 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await expect(sales.getByLabel('Uzunluk (mm) (1)')).toHaveValue('2400');
   await expect(sales.locator('.crate-editor .badge')).toContainText('güncellendi');
   await sales.goto(orderUrl);
-  await expect(sales.locator('#sandik')).toContainText('Bu siparişin camları şu sandıklarda: 1.');
+  await expect(sales.locator('#sandik')).toHaveCount(0);
 
   // Müşteri kendi takviminde görür; teklif tutarı müşteriye gönderilmiş tekliften
   const cust = await as(browser, CUSTOMER, CUST_PW);

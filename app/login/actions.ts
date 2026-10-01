@@ -50,9 +50,11 @@ export async function loginAction(formData: FormData) {
 
   await createSession(user.id);
   // Giriş ekranı hangi dildeyse panel de o dille devam eder; kullanıcının dili e-postalar için de saklanır
-  if (isLocale(lang)) {
-    await setLocaleCookie(lang);
-    if (user.language !== lang) await db.user.update({ where: { id: user.id }, data: { language: lang } });
+  // Müşteri "sabit dil" seçtiyse (Ayarlar) panel her girişte o dille açılır
+  const loginLang = isLocale(user.fixedLanguage) ? user.fixedLanguage : lang;
+  if (isLocale(loginLang)) {
+    await setLocaleCookie(loginLang);
+    if (user.language !== loginLang) await db.user.update({ where: { id: user.id }, data: { language: loginLang } });
   }
   await audit('USER_LOGIN', 'User', user.id, user.id, { ip });
   redirect(homeFor(user.appRole));

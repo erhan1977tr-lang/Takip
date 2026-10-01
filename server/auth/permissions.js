@@ -24,6 +24,7 @@ export const PERMISSIONS = {
   CRATE_EDIT: 'Yükleme sekmesinde sandık ölçü ve ağırlıklarını girer',
   TRANSPORT_LIST_VIEW: 'Yüklemeler sekmesinden nakliye listesini (PDF) indirir',
   OFFER_EXPORT: 'Teklifi PDF olarak indirir (Excel: yönetici her zaman, müşteri yöneticinin izin verdiği siparişte)',
+  ACCOUNT_SETTINGS: 'Kendi ayarlarını değiştirir: sabit dil, e-posta bildirimleri (müşteri)',
   OFFER_APPROVE: 'Profil teklifini onaylar ve teslim bilgilerini (alış günü, telefon, plaka) girer',
   STOCK_MANAGE: 'Profil stoğunu görür; giriş ve sayım düzeltmesi yapar',
   FILE_UPLOAD: 'Siparişe dosya ekler',
@@ -42,7 +43,7 @@ export const PERMISSIONS = {
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
-const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE'];
+const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
 
 export const ROLE_PERMISSIONS = {
   ADMIN: Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p)),
@@ -53,7 +54,7 @@ export const ROLE_PERMISSIONS = {
   CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
   MUSTERI: [
     'ORDER_VIEW', 'ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW',
-    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT',
+    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT', 'ACCOUNT_SETTINGS',
   ],
   DENETIMCI: [
     'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',

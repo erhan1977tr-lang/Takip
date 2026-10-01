@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.23.0 — 02.10.2026
+
+- Müşteri menüsünde **Ayarlar**: sabit dil (her girişte bu dil açılır) ve e-posta bildirimlerini açma / kapama
+  (şifre / davet e-postaları ve fatura belgeleri etkilenmez).
+- Satışın sipariş sayfası: "Müşteri sipariş dosyaları" en üstte, hemen altında "Notlar"; "İstenen camlar" ve
+  "Sandıklar" bölümleri bu ekranda gösterilmez (veriler durur).
+
 ## 3.22.0 — 02.10.2026
 
 - Satış teklif tablosu: **+ Sandık parası** (adetle fiyatlanan teklif satırı), **Tabloyu temizle** (onayla; tablo

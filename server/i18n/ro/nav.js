@@ -24,6 +24,7 @@ export default {
   myOrders: 'Comenzile mele',
   newOrder: 'Comandă nouă',
   myOffers: 'Ofertele mele',
+  settings: 'Setări',
   myLoadings: 'Calendarul meu de încărcări',
   demoMail: 'Cutie poștală demo',
 };

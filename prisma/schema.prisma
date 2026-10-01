@@ -83,6 +83,7 @@ enum PermissionKey {
   ACCOUNTING_MANAGE
   TRANSPORT_LIST_VIEW
   OFFER_EXPORT
+  ACCOUNT_SETTINGS
 }
 
 model RolePermission {
@@ -103,6 +104,8 @@ model User {
   passwordHash String?
   phone        String?
   language     String     @default("tr")
+  fixedLanguage String?   // müşterinin "sabit dil" ayarı: girişte bu dil açılır (boş = giriş ekranındaki dil)
+  emailNotifications Boolean @default(true) // bildirim e-postaları (davet / şifre ve fatura belgeleri hariç)
   appRole      AppRole
   unit         String?    // birim etiketi: "fabrika satış", "fabrika çizim"...
   canApprove   Boolean    @default(false) // müşteri tarafında çizim onaylayabilir
