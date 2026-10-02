@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { openSecret, sealSecret } from '../server/crypto/secret.js';
 import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js';
-import { FgoError, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
+import { FGO_UM, FGO_UM_MAX, FgoError, fgoUnit, validUm, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
+import { documentLines } from '../server/profile/fgo-jobs.js';
+import { proformaLines, invoiceLines } from '../server/glass/billing.js';
+import { UNITS } from '../prisma/seed/data/units.js';
 
 const SECRET = 'x'.repeat(40);
 
@@ -110,7 +113,7 @@ test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve n
 
 test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tekrar kesimi önleyen IdExtern', () => {
   assert.equal(ronPrice(12.5, 4.9765), 62.21);
-  const lines = [{ code: 'GK15', name: 'GARNITURA EPDM - GK15', unit: 'cutii', qty: 4, eur: 12.5 }, { code: 'SPIGOTI', name: 'SPIGOTI', unit: 'bucăți', qty: 20, eur: 3 }];
+  const lines = [{ code: 'GK15', name: 'GARNITURA EPDM - GK15', unit: 'cutii', qty: 4, eur: 12.5 }, { code: 'SPIGOTI', name: 'SPIGOTI', unit: 'buc', qty: 20, eur: 3 }];
   assert.equal(ronTotal(lines, 4.9765), 4 * 62.21 + 20 * 14.93);
   const settings = { cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
   const customer = { id: 'c1', name: 'Glass and More SRL', taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1', country: null };
@@ -127,6 +130,8 @@ test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tek
   assert.ok(f.IdExtern.length <= 36);
   assert.equal(f['Continut[0][PretUnitar]'], '62.21');
   assert.equal(f['Continut[1][NrProduse]'], '20');
+  assert.equal(f['Continut[0][UM]'], 'cutii');
+  assert.equal(f['Continut[1][UM]'], 'buc');
   assert.equal(f['Continut[1][CotaTVA]'], '21');
   assert.match(f.Text, /Curs BT vânzare EUR 4\.9765 RON din 01\.10\.2026/);
   const inv = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'GLAP3', appUrl: '', customer, lines, rate: 4.9765, rateDate: '01.10.2026' });
@@ -173,4 +178,43 @@ test('BT kuru: site reddederse (403) sebep yazılır; tarayıcı gibi istenir', 
   assert.match(headers['user-agent'], /Chrome/);
   const ok = await fetchBtEurSell({ url: 'https://bt.example', fetchImpl: async () => new Response('<td>EUR</td><td>5,2601</td><td>5,1800</td><td>5,3450</td>', { headers: { 'content-type': 'text/html' } }) });
   assert.deepEqual(ok, { ok: true, rate: 5.345, source: 'https://bt.example' });
+});
+
+test('FGO ölçü birimi (UM): tek eşleme, en çok 5 karakter; geçersiz birim FGO\'ya gönderilmeden reddedilir', () => {
+  // Tek kaynak: cam m² → mp, adet → buc; profil birimleri; "bucăți" (6 karakter, FGO reddeder) → buc
+  assert.equal(fgoUnit('m2'), 'mp');
+  assert.equal(fgoUnit('adet'), 'buc');
+  assert.deepEqual(UNITS.map((u) => fgoUnit(u.code)), ['cutii', 'pungi', 'bară', 'buc']);
+  assert.equal(fgoUnit('bucati'), 'buc', 'büyük/küçük harf');
+  assert.equal(fgoUnit('PALET'), null, 'tanımsız kod uydurulmaz');
+  for (const um of Object.values(FGO_UM)) assert.ok(validUm(um), um);
+  assert.equal(FGO_UM_MAX, 5);
+  assert.ok(!validUm('bucăți') && !validUm('') && !validUm(' ') && !validUm(null) && !validUm('buc '));
+
+  // Profil belgesi satırları: katalog birimi → FGO birimi; birimsiz satır adetle fiyatlanır
+  const profile = documentLines({ lines: [
+    { poz: 'GK15', description: 'G', descriptionRo: 'Garnitura', unitCode: 'CUTII', unit: 'adet', adet: 4, offerPrice: '12.5' },
+    { poz: 'SPIGOTI', description: 'S', descriptionRo: 'Spigoti', unitCode: 'BUCATI', unit: 'adet', adet: 20, offerPrice: '3' },
+    { poz: 'B1', description: 'B', descriptionRo: 'Bara', unitCode: 'BARA', unit: 'adet', adet: 2, offerPrice: '9' },
+    { poz: 'P1', description: 'P', descriptionRo: 'Pungi', unitCode: 'PUNGI', unit: 'adet', adet: 1, offerPrice: '1' },
+    { poz: '', description: 'X', descriptionRo: '', unitCode: null, unit: 'adet', adet: 1, offerPrice: '1' },
+  ] });
+  assert.deepEqual(profile.map((l) => l.unit), ['cutii', 'buc', 'bară', 'pungi', 'buc']);
+  // Cam belgeleri: mp / buc (değişmedi)
+  const offer = { lines: [
+    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 2000, adet: 1, offerPrice: '50' },
+    { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 2, offerPrice: '10' },
+    { kind: 'DIGER', unit: 'adet', description: 'Sandık parası', descriptionRo: 'Ambalaj (ladă)', adet: 1, offerPrice: '30' },
+  ] };
+  assert.deepEqual(proformaLines(offer).map((l) => l.unit), ['mp', 'buc', 'buc']);
+  assert.deepEqual(invoiceLines(offer, 5, 21).map((l) => l.unit), ['mp']);
+
+  // Gönderimden önce doğrulama: boş ya da 5 karakterden uzun birim → kalıcı hata (yeniden denenmez), kırpılmaz
+  const settings = { cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
+  const base = { settings, key: 'K', kind: 'proforma', orderNo: 'GLAP3', appUrl: '', customer: { name: 'X SRL', taxId: '12' }, rate: 5, rateDate: '01.10.2026' };
+  for (const unit of ['bucăți', '', undefined, 'PALETI']) {
+    assert.throws(() => emitereForm({ ...base, lines: [{ code: 'A', name: 'Ürün', unit, qty: 1, eur: 1 }] }), (e) => e instanceof FgoError && e.retry === false && /ölçü birimi/.test(e.message));
+  }
+  const ok = emitereForm({ ...base, lines: profile });
+  assert.deepEqual([0, 1, 2, 3, 4].map((i) => ok[`Continut[${i}][UM]`]), ['cutii', 'buc', 'bară', 'pungi', 'buc']);
 });

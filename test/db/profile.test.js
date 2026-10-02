@@ -301,6 +301,8 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   assert.equal(pf.IdExtern, `${orderNo}-P`);
   assert.equal(pf['Client[CodUnic]'], '998877');
   assert.equal(pf['Continut[0][PretUnitar]'], '62.21');
+  // Ölçü birimi FGO eşlemesinden (en çok 5 karakter): CUTII → cutii, BUCATI ("bucăți") → buc
+  assert.deepEqual([pf['Continut[0][UM]'], pf['Continut[1][UM]']].sort(), ['buc', 'cutii']);
 
   await run(id, 'mark_paid', 'admin', { paidDate: today() });
   await run(id, 'mark_delivered', 'admin');

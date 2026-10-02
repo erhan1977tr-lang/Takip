@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.25.2 — 02.10.2026
+
+- **FGO ölçü birimi düzeltmesi**: "bucăți" birimli (ACCESORII) profil ürünü olan siparişlerde proforma
+  "Continut[UM] … 5 caractere" hatasıyla reddediliyordu. Birimler artık tek eşlemeden gelir (cam `mp`, adet `buc`,
+  `cutii`, `pungi`, `bară`; "bucăți" → `buc`) ve belge FGO'ya gitmeden önce doğrulanır (boş değil, en çok 5 karakter).
+  Reddedilen sipariş için sipariş sayfasında "FGO'da yeniden dene".
+
 ## 3.25.1 — 02.10.2026
 
 - Çizim görüntüleyici için uçtan uca test (gerçek PDF ve görselle): "Kontrol Et", çizim üzerine işaretli revizyon

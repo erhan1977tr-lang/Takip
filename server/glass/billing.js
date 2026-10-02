@@ -15,7 +15,7 @@ import { offerLineTotals } from '../orders/rules.js';
 import { getEnv } from '../env.js';
 import { fetchBtEurSell, rateForDay } from '../fx/bt.js';
 import {
-  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
+  FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
 } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
@@ -88,7 +88,7 @@ export const glassTotals = (offer, opts) => glassGroups(offer, opts).map((g) => 
 
 /** Fatura cam satırları, EUR toplamıyla @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]} */
 export const glassLines = (offer) => glassGroups(offer).map((g) => ({
-  code: '', name: g.name, unit: 'mp', qty: g.qty, eurTotal: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
+  code: '', name: g.name, unit: FGO_UM.m2, qty: g.qty, eurTotal: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
 }));
 
 /**
@@ -106,7 +106,7 @@ export function invoiceLines(offer, rate, vatRate) {
       net = round2(net + n);
       gross = round2(gross + grossOf(n, vatRate));
     }
-    return { code: '', name: g.name, unit: 'mp', qty: g.qty, net, gross };
+    return { code: '', name: g.name, unit: FGO_UM.m2, qty: g.qty, net, gross };
   });
 }
 
@@ -125,7 +125,7 @@ export function proformaLines(offer) {
     const qty = isGlass ? offerLineTotals({ ...l, unitPrice: 0 }).metraj : Math.max(0, Math.trunc(Number(l.adet) || 0));
     if (!(qty > 0)) continue;
     const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : String(l.descriptionRo || l.description).trim();
-    out.push({ code: '', name, unit: isGlass ? 'mp' : 'buc', qty, eur });
+    out.push({ code: '', name, unit: isGlass ? FGO_UM.m2 : FGO_UM.adet, qty, eur });
   }
   return out;
 }
@@ -269,7 +269,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       if (kind === 'ADVANCE') {
         const paid = b?.paidAmount != null ? Number(b.paidAmount) : proforma?.paid != null ? Number(proforma.paid) : 0;
         if (!(paid > 0)) throw new Permanent('Tahsil edilen tutar yok');
-        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: 'buc', qty: 1, ron: netOf(paid, settings.vatRate) }];
+        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, ron: netOf(paid, settings.vatRate) }];
       } else {
         // Romence ad: satırda yoksa katalogdaki camın Romence adı ve rengi
         const ids = offer.lines.filter((l) => !l.descriptionRo && l.glassProductId).map((l) => l.glassProductId);
@@ -283,7 +283,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         if (kind === 'INVOICE' && advance) {
           // Avans düşümü: avans faturasının TVA hariç tutarı eksi satır olarak
           const gross = advance.total != null ? Number(advance.total) : Number(b?.paidAmount ?? 0);
-          lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: 'buc', qty: -1, ron: netOf(gross, settings.vatRate) });
+          lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: FGO_UM.adet, qty: -1, ron: netOf(gross, settings.vatRate) });
         }
       }
       // Avans ve kapanış faturası: sıradaki fatura numarası (karar 62/64); proformayı FGO numaralandırır

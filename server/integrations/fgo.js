@@ -127,6 +127,28 @@ export function missingBilling(c) {
   return miss;
 }
 
+// ---------- Ölçü birimi (Continut[UM]) ----------
+// FGO en çok 5 karakter kabul eder ("Dimensiunea valorii transmise pentru 'Continut[UM]' nu trebuie sa depaseasca 5
+// caractere"). TEK kaynak: proforma, avans faturası ve fatura (cam ve profil) birimi buradan alır; metin kırpılmaz.
+export const FGO_UM_MAX = 5;
+export const FGO_UM = Object.freeze({
+  // teklif satırı birimi (OfferLine.unit): cam m², adetle fiyatlanan satır (CNC, delik, sandık, avans, storno)
+  m2: 'mp',
+  adet: 'buc',
+  // profil kataloğu birimi (ProfileProduct.unitCode — prisma/seed/data/units.js)
+  CUTII: 'cutii',
+  PUNGI: 'pungi',
+  BARA: 'bară',
+  BUCATI: 'buc', // "bucăți" 6 karakter: FGO reddeder
+});
+/** Birim kodu → FGO'ya yazılacak kısaltma; tanımsız kod → null */
+export const fgoUnit = (code) => {
+  const k = String(code ?? '').trim();
+  return FGO_UM[k] ?? FGO_UM[k.toUpperCase()] ?? null;
+};
+/** UM geçerli mi: boş değil, en çok 5 karakter */
+export const validUm = (um) => typeof um === 'string' && um.trim() === um && um.length > 0 && [...um].length <= FGO_UM_MAX;
+
 /**
  * FGO "factura/emitere" gövdesi (form alanları). Satırlar: onaylanan teklifin kopyası.
  * @param {{ settings: object, key: string, kind: 'proforma' | 'invoice', orderNo: string, appUrl: string,
@@ -166,6 +188,8 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
   lines.forEach((l, i) => {
     // l.ron: RON birim fiyat doğrudan (ör. avans satırı); yoksa EUR × kur
     const unit = l.ron != null ? l.ron : ronPrice(l.eur, rate);
+    // FGO'ya gitmeden önce: birim boş olamaz, en çok 5 karakter (yeniden denenmez; yöneticiye uyarı düşer)
+    if (!validUm(l.unit)) throw new FgoError(`Satır ${i + 1} (${String(l.name).slice(0, 60)}): ölçü birimi geçersiz ("${l.unit ?? ''}") — FGO boş olmayan, en çok ${FGO_UM_MAX} karakterlik birim ister`, { retry: false });
     f[`Continut[${i}][Denumire]`] = (l.code ? `${l.name} (${l.code})` : l.name).slice(0, 250);
     f[`Continut[${i}][CodArticol]`] = l.code;
     f[`Continut[${i}][NrProduse]`] = String(l.qty);

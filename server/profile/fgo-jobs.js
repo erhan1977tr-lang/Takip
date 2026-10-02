@@ -8,8 +8,7 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
-import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal } from '../integrations/fgo.js';
-import { unitLabel } from './catalog.js';
+import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
 
@@ -17,10 +16,14 @@ export const FGO_MAX_ATTEMPTS = 8;
 const backoffMinutes = (attempt) => [1, 5, 15, 30, 60, 120, 240, 480][Math.min(attempt, 7)];
 const STAGE_OF = { [FGO_PROFORMA]: 'ONAYLANDI', [FGO_INVOICE]: 'TESLIM_EDILDI' };
 
-/** Belge satırları: müşterinin onayladığı teklifin kopyası (EUR) */
+/**
+ * Belge satırları: müşterinin onayladığı teklifin kopyası (EUR). Birim: FGO eşlemesi (fgoUnit — en çok 5 karakter;
+ * "bucăți" → "buc"). Katalog birimi olmayan satır adetle fiyatlanır (OfferLine.unit = 'adet'). Eşlemede olmayan kod
+ * olduğu gibi gider; geçersizse emitereForm belgeyi FGO'ya göndermeden reddeder.
+ */
 export function documentLines(offer) {
   return offer.lines.map((l) => ({
-    code: l.poz ?? '', name: l.descriptionRo || l.description, unit: unitLabel(l.unitCode ?? '', 'ro'), qty: l.adet, eur: Number(l.offerPrice ?? 0),
+    code: l.poz ?? '', name: l.descriptionRo || l.description, unit: fgoUnit(l.unitCode || l.unit || 'adet') ?? String(l.unitCode ?? '').trim(), qty: l.adet, eur: Number(l.offerPrice ?? 0),
   }));
 }
 
