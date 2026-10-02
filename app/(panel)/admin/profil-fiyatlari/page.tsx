@@ -41,7 +41,7 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
       {msg && <div className={`alert ${msg[0] === 'ok' ? 'alert-ok' : 'alert-error'}`}>{t(msg[1], { n: Number(sp.n) || 0 })}</div>}
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('profile.prices.tables')} <span className="badge">{tables.length}</span></h2></div>
+        <div className="card-head"><h2>{t('profile.prices.tables')} <span className="badge">{tables.length}</span></h2></div>
         {tables.length === 0 ? <div className="empty">{t('profile.prices.none')}</div> : (
           <div className="table-wrap">
             <table>
@@ -85,7 +85,7 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
           <form action={saveProfileTablePricesAction} className="card card-flush">
             <input type="hidden" name="tableId" value={table.id} />
             <div className="card-head">
-              <h2 style={{ margin: 0 }}>{t('profile.prices.pricesTitle', { name: table.name })}</h2>
+              <h2>{t('profile.prices.pricesTitle', { name: table.name })}</h2>
               <span className="muted small">{t('profile.prices.pricesIntro')}</span>
             </div>
             <div className="table-wrap">
@@ -110,7 +110,7 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
 
           <div className="card card-flush" id="firmalar">
             <div className="card-head">
-              <h2 style={{ margin: 0 }}>{t('profile.prices.firmsTitle', { name: table.name })}</h2>
+              <h2>{t('profile.prices.firmsTitle', { name: table.name })}</h2>
               <span className="muted small">{t('profile.prices.firmsIntro')}</span>
             </div>
             {firms.length === 0 ? <div className="empty">{t('profile.prices.noFirms')}</div> : (

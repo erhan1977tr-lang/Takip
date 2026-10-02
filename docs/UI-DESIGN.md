@@ -73,16 +73,16 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 
 | Need | Use |
 |---|---|
-| Page header | `<div class="page-head"><h1>…</h1><p class="muted">…</p></div>` |
-| Section | `.card`; table-only section `.card.card-flush` + `.card-head` (title + count `.badge`) |
+| Page header | `<div class="page-head"><h1>…</h1><p class="muted">…</p></div>`; with actions on the right: `.page-head.row` (title block + `.row` of buttons) |
+| Section | `.card`; list section `.card.card-flush` + `.card-head` (`<h2>` title + round count `.badge`; filters on the right with `.card-head.row`) + optional `.card-tools` (sort links) |
 | "Your turn" section | `.card.turn` |
-| Buttons | `.btn` secondary · `.btn-primary` main action (one per group) · `.btn-danger` critical but reversible · `.btn-danger-solid` irreversible (delete/cancel) · `.btn-link` inline · `.btn-block` full width |
+| Buttons | `.btn` secondary (outline) · `.btn-primary` main action (one per group) · `.btn-success` positive outcome (approve) · `.btn-danger` critical but reversible · `.btn-danger-solid` irreversible (delete/cancel) · `.btn-link` inline (`.danger` red) · `.btn-block` full width |
 | Form | `<label>` + input/select/textarea (styled globally) · `.field` · `.hint` · `.grid` / `.grid-2` / `.grid-3` · `.check` · `.chips` |
-| Table | `.table-wrap > table`; uppercase `th`; group rows `.group-row`; right column `td.actions`; key/value `.kv` or `dl.order-info` |
+| Table | `.table-wrap > table` (always wrap: narrow screens scroll sideways instead of crushing columns); uppercase `th`; group rows `.group-row`; right column `td.actions` (compact buttons); row hover is automatic; key/value `.kv` or `dl.order-info` |
 | Status | `Badge` from `components/StatusBadge.tsx` (`.badge` + `-ok/-warn/-info/-muted/-purple/-danger`) |
 | Messages | `.alert` + `-ok/-error/-warn/-info` (flash messages at the top of the page; there is no toast component) |
 | Dialog | `<dialog class="modal">` |
-| Empty / waiting | `.empty` · `.loading` |
+| Empty / waiting | `.empty` (left-aligned sentence under the section title) · `.loading` |
 | Navigation in a page | `.tabs` · `.toolbar` |
 | Counters | `.stats > .stat` (`.k` label, `.v` value) |
 | Progress | `.stepper > .step` (`done` / `current` / `skipped`) |
@@ -92,21 +92,28 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 ## Shell behaviour (do not break)
 
 - Same shell for Admin, Sales, Drawing, Customer, Inspector; only the menu items differ.
-- Desktop: `‹` hides the sidebar completely and the content widens; a `›` tab on the left edge reopens it
-  (state in `localStorage`, applied before first paint). Narrow screens: the sidebar is a drawer, plus a chip row.
-- The topbar always shows the user name with the role (and the company for customers) under it.
+- Sidebar (old TAKİP layout): header row "TAKİP" + version (`VersionTag` — the only place the version comes
+  from is `package.json`; never hard-code it) with the `‹` hide control, large GKH logo, tagline, sections,
+  links, "Developed by" footer; on the order page the "Hareketler" slot sits at the bottom. No menu icons.
+- Desktop: `‹` hides the sidebar completely and the content widens; a small `›` tab stays visible on the left
+  edge to reopen it (state in `localStorage`, applied before first paint). Narrow screens: the sidebar is a
+  drawer, plus a chip row.
+- Topbar: user name (company under it for customers); the role is a pill on the right on desktop and sits
+  under the name on narrow screens — exactly one of the two is visible. Right side: role pill, language,
+  log out. There is no notification bell or account button; do not add look-alikes without a real feature.
 - Desktop-first, but every screen must work at 390px: grids collapse to one column, tables scroll inside
   `.table-wrap`.
 - Keyboard focus is always visible (`:focus-visible`); respect `prefers-reduced-motion`.
 
 ## Left for the page-level phase
 
-The foundation restyled the shared classes only. Still to do, page by page:
+Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0).
+Still to do, page by page:
 
-- Order detail, offer editor, drawing section and viewer, loadings/crates, profile order, accounting, admin pages:
-  layout and hierarchy (the old TAKİP arrangement) — not redesigned yet.
-- ~280 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
-- Topbar extras of the old system (role pill on the right, notifications bell, "Hesabım") and the old sidebar
-  header row ("TAKİP vX ‹") — markup changes, decide per page phase.
-- Use `.btn-danger-solid` for irreversible actions and `.loading` for waits where pages currently use plain text.
-- Table row hover and denser/looser table variants.
+- Order detail, offer editor/table, drawing section and viewer, loading/crate detail, profile order, accounting:
+  layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
+- ~270 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
+- Apply `.btn-danger-solid` / `.btn-success` on those pages (cancel, delete, reject, approve) and `.loading`
+  where pages show plain "loading" text.
+- Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,
+  per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9).

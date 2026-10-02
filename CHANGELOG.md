@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.27.0 — 02.10.2026
+
+- **Görünüm, 2. aşama** (yalnızca arayüz; iş akışı, yetki, veri ve adresler aynı) — eski TAKİP'e yakın, daha sade:
+  - Sol menü: üstte "TAKİP" + sürüm ve menüyü gizleme oku, büyük GKH logosu, bölüm başlıkları, rahat satır
+    yüksekliği, altta "Developed by" satırı. Menü kapalıyken sol kenarda küçük sekme hep görünür.
+  - Üst çubuk: rol sağda rozet olarak (dar ekranda adın altında), müşteride adın altında firma adı.
+  - Paneller ve listeler (yönetici, satış, müşteri, çizim): bölüm başlığında yuvarlak sayaç, başlıkla aynı hizada
+    tablolar, satırın üzerine gelince hafif zemin, ortalanmış hücreler, küçük satır düğmeleri, sola yaslı boş
+    durum metni, daha belirgin sayaç kutuları. Dar ekranda liste tabloları sütunları ezmeden yatay kayar.
+  - Düğmeler: ana (mavi), ikincil (çerçeveli), olumlu (yeşil), kritik / silme (kırmızı) sınıfları.
+
 ## 3.26.0 — 02.10.2026
 
 - **Ortak görsel temel** (yalnızca görünüm; iş akışı, yetki, veri ve adresler aynı): tek stil dosyasında merkezi

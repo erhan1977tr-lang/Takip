@@ -97,7 +97,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
         const rows = orders.filter((o) => latest(o)?.status === g.status);
         return (
           <div key={g.status} className="card card-flush">
-            <div className="card-head"><h2 style={{ margin: 0 }}>{t(g.title)} <span className="badge">{rows.length}</span></h2></div>
+            <div className="card-head"><h2>{t(g.title)} <span className="badge">{rows.length}</span></h2></div>
             {rows.length === 0 ? <div className="empty">{t(g.empty)}</div> : (
               <div className="table-wrap">
                 <table>

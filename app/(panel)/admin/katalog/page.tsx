@@ -43,7 +43,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="page-head row">
         <div>
           <h1>{t('admin.catalog.title')}</h1>
           <p className="muted">{t('admin.catalog.intro')}</p>
@@ -102,8 +102,8 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       <ImportCatalog m={m.admin.catalog.import} />
 
       <div className="card card-flush">
-        <div className="card-head row" style={{ justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0 }}>{t('admin.catalog.listTitle', { n: filtered ? `${items.length} / ${total}` : total })}</h2>
+        <div className="card-head row">
+          <h2>{t('admin.catalog.listTitle', { n: filtered ? `${items.length} / ${total}` : total })}</h2>
           <form className="row">
             <input type="search" name="q" defaultValue={q} placeholder={t('admin.catalog.search')} aria-label={t('admin.catalog.search')} />
             <label className="row small"><input type="checkbox" name="durum" value="pasif" defaultChecked={onlyInactive} /> {t('admin.catalog.onlyInactive')}</label>

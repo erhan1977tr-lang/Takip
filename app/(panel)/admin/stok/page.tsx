@@ -47,7 +47,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="page-head row">
         <div>
           <h1>{t('profile.stock.title')}</h1>
           <p className="muted">{t('profile.stock.intro')}</p>
@@ -125,7 +125,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('profile.stock.history')}</h2></div>
+        <div className="card-head"><h2>{t('profile.stock.history')}</h2></div>
         {moves.length === 0 ? <div className="empty">{t('profile.stock.empty')}</div> : (
           <div className="table-wrap">
             <table>

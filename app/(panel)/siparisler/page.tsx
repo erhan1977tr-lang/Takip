@@ -107,7 +107,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
 
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between' }}>
+      <div className="page-head row">
         <div>
           <h1>{t('orders.customer.title', { name: user.customer?.name ?? '' })}</h1>
           <p className="muted">{t('orders.customer.intro')}</p>
@@ -132,7 +132,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       {drafts.length > 0 && (
         <div className="card card-flush">
           <div className="card-head">
-            <h2 style={{ margin: 0 }}>{t('orders.customer.drafts.title')} <span className="badge">{drafts.length}</span></h2>
+            <h2>{t('orders.customer.drafts.title')} <span className="badge">{drafts.length}</span></h2>
             <span className="muted small">{t('orders.customer.drafts.intro')}</span>
           </div>
           <div className="table-wrap">
@@ -270,7 +270,7 @@ function Section({ title, count, tone, children }: { title: string; count: numbe
   return (
     <div className="card card-flush">
       <div className="card-head">
-        <h2 style={{ margin: 0 }}>{title} <span className={`badge ${tone ?? ''}`}>{count}</span></h2>
+        <h2>{title} <span className={`badge ${tone ?? ''}`}>{count}</span></h2>
       </div>
       {children}
     </div>
@@ -345,7 +345,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
               const list = [...q.rows].sort((a, b) => (a.estimatedShipDate?.getTime() ?? 0) - (b.estimatedShipDate?.getTime() ?? 0) || (oldest ? at(a) - at(b) : at(b) - at(a)));
               return (
                 <Section key={q.key} title={t('orders.internal.sections.approvedDrawings.title')} count={list.length}>
-                  <div className="row small" style={{ padding: '8px 14px', gap: 10 }}>
+                  <div className="card-tools">
                     <Link href="/siparisler" className={oldest ? '' : 'active'} aria-current={oldest ? undefined : 'true'}>{t('orders.internal.sortNewest')}</Link>
                     <Link href="/siparisler?onay=eski" className={oldest ? 'active' : ''} aria-current={oldest ? 'true' : undefined}>{t('orders.internal.sortOldest')}</Link>
                   </div>

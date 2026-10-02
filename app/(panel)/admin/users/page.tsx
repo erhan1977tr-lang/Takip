@@ -49,7 +49,7 @@ export default async function UsersPage({
       <CreateUserForm firms={firms} m={m.admin.userForm} langs={m.lang} locale={locale} />
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('admin.users.listTitle', { n: users.length })}</h2></div>
+        <div className="card-head"><h2>{t('admin.users.listTitle', { n: users.length })}</h2></div>
         <div className="table-wrap">
           <table>
             <thead>

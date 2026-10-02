@@ -29,7 +29,7 @@ export default async function FirmsPage({
       <CreateFirmForm groups={groups} m={m.admin.firmForm} />
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('admin.firms.listTitle', { n: firms.length })}</h2></div>
+        <div className="card-head"><h2>{t('admin.firms.listTitle', { n: firms.length })}</h2></div>
         {firms.length === 0 ? (
           <div className="empty">{t('admin.firms.empty')}</div>
         ) : (

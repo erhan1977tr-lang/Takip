@@ -51,7 +51,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
       </div>
       {sp.ok === 'resolved' && <div className="alert alert-ok">{t('pricing.alerts.resolved')}</div>}
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('pricing.alerts.title')} <span className={`badge ${open.length ? 'badge-danger' : ''}`}>{open.length}</span></h2></div>
+        <div className="card-head"><h2>{t('pricing.alerts.title')} <span className={`badge ${open.length ? 'badge-danger' : ''}`}>{open.length}</span></h2></div>
         {open.length === 0 ? <div className="empty">{t('pricing.alerts.empty')}</div> : (
           <div className="table-wrap">
             <table>
@@ -77,7 +77,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
         )}
       </div>
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('pricing.alerts.historyTitle')}</h2></div>
+        <div className="card-head"><h2>{t('pricing.alerts.historyTitle')}</h2></div>
         {closed.length === 0 ? <div className="empty">{t('pricing.alerts.historyEmpty')}</div> : (
           <div className="table-wrap">
             <table>

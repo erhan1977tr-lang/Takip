@@ -81,7 +81,7 @@ export async function PriceTablesView({ kind, sp }: { kind: 'SALES' | 'CUSTOMER'
       </form>
 
       <div className="card card-flush">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('pricing.tables.title')}</h2></div>
+        <div className="card-head"><h2>{t('pricing.tables.title')}</h2></div>
         {tables.length === 0 ? <div className="empty">{t('pricing.tables.empty')}</div> : (
           <div className="table-wrap">
             <table>
@@ -179,7 +179,7 @@ export async function PriceTablesView({ kind, sp }: { kind: 'SALES' | 'CUSTOMER'
           {forCustomers ? (
           <div className="card card-flush">
               <div className="card-head">
-                <h2 style={{ margin: 0 }}>{t('pricing.customer.assignTitle', { name: sel.name })}</h2>
+                <h2>{t('pricing.customer.assignTitle', { name: sel.name })}</h2>
                 <p className="muted small" style={{ margin: '4px 0 0' }}>{t('pricing.customer.assignIntro')}</p>
               </div>
               {firms.length === 0 ? <div className="empty">{t('pricing.customer.noFirms')}</div> : (
@@ -216,7 +216,7 @@ export async function PriceTablesView({ kind, sp }: { kind: 'SALES' | 'CUSTOMER'
             ) : (
           <div className="card card-flush">
             <div className="card-head">
-              <h2 style={{ margin: 0 }}>{t('pricing.assign.title', { name: sel.name })}</h2>
+              <h2>{t('pricing.assign.title', { name: sel.name })}</h2>
               <p className="muted small" style={{ margin: '4px 0 0' }}>{t('pricing.assign.intro')}</p>
             </div>
             {users.length === 0 ? <div className="empty">{t('pricing.assign.empty')}</div> : (

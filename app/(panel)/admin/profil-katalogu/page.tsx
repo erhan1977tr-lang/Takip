@@ -45,7 +45,7 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
 
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="page-head row">
         <div>
           <h1>{t('profile.catalog.title')}</h1>
           <p className="muted">{t('profile.catalog.intro')}</p>
@@ -139,7 +139,7 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
         const list = products.filter((p) => p.categoryId === c.id);
         return (
           <div className="card card-flush" key={c.id} id={`k-${c.id}`}>
-            <div className="card-head row" style={{ justifyContent: 'space-between' }}>
+            <div className="card-head row">
               <h2 style={{ margin: 0, opacity: c.isActive ? 1 : 0.55 }}>
                 {locale === 'tr' ? c.nameTr : c.nameRo} <span className="muted small mono">{c.code}</span> <span className="badge">{list.length}</span>
                 {!c.isActive && <> <span className="badge badge-muted">{t('profile.catalog.inactive')}</span></>}
