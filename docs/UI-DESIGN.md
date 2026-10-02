@@ -105,15 +105,32 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   `.table-wrap`.
 - Keyboard focus is always visible (`:focus-visible`); respect `prefers-reduced-motion`.
 
+## Order detail and offer editor (3.28.0)
+
+- Section order on the order page (all roles except Drawing): status + actions → customer files → notes →
+  order information → drawings/approval → offer (editor or view) → finance / crates; history lives in the
+  sidebar. Drawing team: files → actions → drawings → notes → order information (no offer).
+- Order information is `dl.order-info` (grey label column, value column, full width). Sub-headings inside a
+  card use `<h3 class="sub-title">`; a card title with something on the right uses `.section-head`.
+- Offer editor (`OfferEditor.tsx`): `.card.offer-card` → `.offer-wrap > table.offer-table` (bordered cells;
+  the description column `th.c-desc` takes all spare width; column widths come from `.c-poz / .c-dim /
+  .c-qty / .c-unit / .c-price`, never inline). Row actions sit under the description (`.line-actions`),
+  the same-glass `+` is `.btn-dup`, delete is `.btn-del` in its own column, totals are the `tfoot` row.
+  Tools live in one `.offer-tools` bar. The read-only offer uses `table.offer-view`.
+- Never put `#teklif td…` rules in CSS: an ID selector silently overrides the editor's column rules
+  (this caused the old description truncation).
+- Buttons on this page: approve = `.btn-success`, cancel order = solid red, send back / request revision /
+  clear table = `.btn-danger` (outline), everything else primary or secondary.
+
 ## Left for the page-level phase
 
-Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0).
-Still to do, page by page:
+Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
+order detail and offer editor (3.28.0). Still to do, page by page:
 
-- Order detail, offer editor/table, drawing section and viewer, loading/crate detail, profile order, accounting:
+- Drawing section and viewer, loading/crate detail, profile order, accounting, new-order form:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
-- ~270 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
-- Apply `.btn-danger-solid` / `.btn-success` on those pages (cancel, delete, reject, approve) and `.loading`
-  where pages show plain "loading" text.
+- ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,
-  per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9).
+  per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9),
+  offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle"),
+  "Özel durum" and "Siparişi sil".

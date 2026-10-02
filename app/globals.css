@@ -149,6 +149,7 @@ input[type='file']::file-selector-button:hover { background: var(--surface-2); }
 .btn:hover { background: var(--surface-2); border-color: #b4b9c2; color: var(--text); }
 .btn:disabled, .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .btn-primary:disabled:hover { background: var(--primary); }
+.btn-success:disabled:hover { background: var(--ok); border-color: var(--ok); }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: #fff; }
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
@@ -202,6 +203,10 @@ input[type='file']::file-selector-button:hover { background: var(--surface-2); }
 h2 > .badge { font-weight: 600; }
 :not(.card-head) > h2 > .badge { margin-left: 6px; }
 .card-head input[type='search'] { width: auto; min-width: 220px; }
+/* Dolgulu kartta başlık satırı: solda başlık (+ rozet), sağda durum / kısa açıklama */
+.section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+.section-head h2 { margin: 0; }
+.section-head h2 .badge { margin-left: 8px; vertical-align: middle; position: relative; top: -1px; }
 /* Bölüm başlığının altındaki küçük araç satırı (sıralama bağlantıları vb.) */
 .card-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 20px 12px; font-size: var(--fs-sm); }
 .card-tools a { padding: 4px 10px; border-radius: var(--radius-pill); text-decoration: none; color: var(--muted); font-weight: 600; }
@@ -299,11 +304,14 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .side-timeline li b { font-weight: 600; }
 .side-timeline li .when { font-size: var(--fs-meta); }
 /* Sipariş bilgileri (eski GKH TAKIP düzeni): alt alta satırlar, solda gri etiket, sağda değer */
-#bilgiler { max-width: 980px; }
 .order-info { margin: 0; border-top: 1px solid var(--border); }
-.order-info > div { display: grid; grid-template-columns: minmax(150px, 42%) 1fr; border-bottom: 1px solid var(--border); }
+.order-info > div { display: grid; grid-template-columns: minmax(170px, 38%) 1fr; border-bottom: 1px solid var(--border); }
 .order-info dt { background: var(--surface-2); color: var(--text-2); font-size: var(--fs-meta); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 13px 14px; }
-.order-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-value); color: var(--text); padding: 11px 14px; }
+.order-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-value); color: var(--text); padding: 11px 16px; }
+/* Kart içi alt başlık (ör. Sipariş bilgileri → İstenen camlar) ve madde listesi */
+.sub-title { margin: 18px 0 8px; font-size: 16px; }
+.plain-list { margin: 0; padding-left: 18px; }
+.plain-list li { margin-bottom: 2px; }
 @media (max-width: 600px) { .order-info > div { grid-template-columns: minmax(110px, 40%) 1fr; } .order-info dt { padding: 10px; } .order-info dd { font-size: var(--fs-body); padding: 9px 10px; } }
 /* Başlık alanı (eski TAKİP): "TAKİP" + sürüm, altında büyük GKH logosu ve ürün satırı */
 .side-head { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 44px 0 10px; margin-bottom: 18px; }
@@ -424,11 +432,49 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .note { padding: 11px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--divider); margin-bottom: 8px; }
 .note.internal { background: var(--warn-soft); border: 1px dashed var(--warn-border); }
 .note .meta { font-size: var(--fs-meta); color: var(--faint); margin-top: 4px; }
-.offer-table { min-width: 980px; }
-.offer-table input, .offer-table select { padding: 6px 8px; font-size: var(--fs-sm); }
-.offer-table td.desc { min-width: 240px; }
-.offer-table td { padding: 6px 6px; }
-.offer-table tfoot td { font-weight: 700; background: var(--surface-2); }
+/* ----- Teklif tablosu (OfferEditor.tsx) — eski TAKİP: çerçeveli hücreler, geniş açıklama, ayrı toplam satırı ----- */
+.offer-card { border-left: 3px solid var(--primary); }
+.offer-wrap { border: 1px solid var(--border); border-radius: 10px; container-type: inline-size; }
+.offer-table { min-width: 980px; font-size: var(--fs-table); }
+.offer-table th { border-top: 0; border-right: 1px solid var(--border); padding: 9px 8px; vertical-align: bottom; letter-spacing: .02em; }
+.offer-table td { padding: 7px 8px; border-right: 1px solid var(--divider); border-bottom: 0; vertical-align: top; }
+.offer-table th:last-child, .offer-table td:last-child { border-right: 0; }
+.offer-table input, .offer-table select { padding: 7px 9px; font-size: var(--fs-table); }
+/* Açıklama sütunu kalan genişliğin tamamını alır (diğer sütunlar içeriği kadar) */
+.offer-table th.c-desc { width: 100%; }
+.offer-table td.desc { min-width: 250px; }
+.offer-table .c-poz input { width: 68px; }
+.offer-table .c-dim input { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.offer-table .c-qty input { width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
+.offer-table .c-unit select { width: 78px; padding-right: 4px; }
+.offer-table .c-price input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.offer-table td.num, .offer-table td.c-text { padding-top: 15px; }
+.offer-table td.c-amount { font-weight: 600; }
+.offer-table td.c-no { padding-top: 15px; text-align: center; font-weight: 600; }
+.offer-table td.c-del { padding: 9px 4px 0; text-align: center; }
+.offer-table .btn-del { width: 30px; height: 30px; padding: 0; border-radius: var(--radius-sm); color: var(--danger); font-size: 15px; text-decoration: none; }
+.offer-table .btn-del:hover { background: var(--danger-soft); text-decoration: none; }
+/* Tam cam adı: tablo darken (açıklama kutusu kısa kalınca) kutunun altında okunur */
+.offer-table .desc-full { display: none; margin-top: 4px; font-size: var(--fs-meta); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+@container (max-width: 1240px) { .offer-table .desc-full { display: block; } }
+/* Her cam satırı bir blok: üstünde belirgin çizgi; altındaki CNC / delik satırları ona bağlı görünür */
+.offer-table tbody tr.glass-line > td { border-top: 1px solid var(--border); }
+.offer-table tbody tr.glass-line:first-child > td { border-top: 0; }
+.offer-table tfoot td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border-strong); border-right: 0; padding: 12px 8px; vertical-align: middle; }
+.offer-table tfoot td.grand { font-size: var(--fs-value); }
+/* Tablonun altındaki araç çubuğu: satır ekleme · Excel · tek fiyat | tabloyu temizle */
+.offer-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+.offer-tools .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.offer-tools .sep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 2px 4px; }
+/* Yönetici: satış / müşteri tutarı özeti */
+.offer-summary { margin: 10px 0 0; text-align: right; font-size: var(--fs-table); font-weight: 600; }
+/* Teklif görünümü (salt okunur) */
+.offer-view th, .offer-view td { border-right: 1px solid var(--divider); }
+.offer-view th:last-child, .offer-view td:last-child { border-right: 0; }
+.offer-view tfoot td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border-strong); border-right: 0; border-bottom: 0; padding: 12px; }
+.pre { white-space: pre-wrap; }
+.text-danger { color: var(--danger); }
+summary { cursor: pointer; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .glass-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .glass-row select { flex: 1; }
@@ -480,8 +526,9 @@ tr.row-sel td { background: var(--primary-soft); }
 /* teklif: CNC / delik alt satırları */
 tr.sub-line td { background: #f4f7fb; }
 tr.sub-line td.desc, tr.sub-line td:nth-child(2) { padding-left: 26px; }
-.line-actions { display: flex; flex-wrap: wrap; gap: 0 6px; }
-.line-actions .btn-link { padding: 2px 0; font-size: var(--fs-meta); }
+/* Satır işlemleri açıklamanın altında: + CNC · + Delik · bedelsiz */
+.line-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin-top: 5px; }
+.line-actions .btn-link { padding: 1px 0; font-size: var(--fs-meta); }
 input.input-missing { background: var(--danger-soft); border-color: #e5837a; }
 input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .list-changed { color: var(--warn); }
@@ -507,7 +554,7 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 
 /* teklif görünümü: uzun (Romence) sütun başlıkları iki satıra inebilir, açıklama sütunu fazla daralmaz */
 #teklif th { white-space: normal; }
-#teklif td:nth-child(2) { min-width: 150px; }
+.offer-view td:nth-child(2) { min-width: 220px; }
 
 /* Yeni sipariş: tip seçimi */
 .type-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
@@ -562,9 +609,20 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .table-jump .btn { width: 36px; height: 36px; padding: 0; border-radius: 50%; box-shadow: var(--shadow-md); font-size: 16px; line-height: 1; }
 
 /* Teklif tablosu: cam adının yanındaki küçük "+" (aynı camdan yeni satır) */
-.offer-table .desc-row { display: flex; align-items: center; gap: 4px; }
+.offer-table .desc-row { display: flex; align-items: center; gap: 6px; }
 .offer-table .desc-row input { flex: 1; min-width: 0; }
-.offer-table .btn-dup { padding: 2px 8px; line-height: 1.2; font-weight: 700; }
+/* Aynı camdan yeni satır: açıklamanın yanında belirgin "+" */
+.offer-table .btn-dup { width: 34px; height: 34px; flex-shrink: 0; padding: 0 0 2px; font-size: 18px; line-height: 1; font-weight: 700; color: var(--primary); border-color: var(--primary-border); background: var(--primary-soft); box-shadow: none; }
+.offer-table .btn-dup:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
+/* Excel'den aktar (ExcelImport.tsx): ön izleme */
+.modal-wide { width: calc(100% - 32px); max-width: 940px; }
+.import-preview { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.import-preview th { position: sticky; top: 0; border-top: 0; }
+.import-preview tr.row-invalid > td { background: var(--danger-soft); }
+.import-preview td.col-picked { font-weight: 600; background: var(--primary-soft); }
+.import-preview tr.row-invalid > td.col-picked { background: var(--danger-soft); }
+.import-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 8px; }
+.import-invalid { margin: 0 0 8px; font-size: var(--fs-meta); color: var(--danger); }
 
 /* Çizim görüntüleyici (components/DrawingViewer.tsx) */
 .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }

@@ -88,6 +88,8 @@ export default {
     reset: 'Resetează tabelul',
     resetConfirm: 'Tabelul ofertei revine la starea inițială (sticla din comanda clientului); rândurile și prețurile introduse se șterg. Continuați?',
     duplicateGlass: 'Adaugă un rând nou cu aceeași sticlă',
+    onePrice: 'Aplică același preț la toate rândurile',
+    onePriceHint: 'Când este bifat, prețul pe m² scris într-un rând de sticlă se scrie în toate rândurile de sticlă pe m². CNC, găuri, ambalaj și rândurile gratuite nu se schimbă.',
     addGlass: 'Adaugă sticlă',
     cannotSend: 'Oferta nu poate fi trimisă în această formă.',
     canSaveDraft: 'O puteți salva ca ciornă.',

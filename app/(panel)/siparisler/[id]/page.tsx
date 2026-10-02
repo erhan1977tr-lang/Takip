@@ -154,7 +154,7 @@ export default async function OrderPage({
 
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="page-head row">
         <div>
           <p className="small"><Link href="/siparisler">← {isCustomer ? t('order.back.myOrders') : t('order.back.orders')}</Link></p>
           <h1>{order.title || order.orderNo}</h1>
@@ -217,15 +217,18 @@ export default async function OrderPage({
         </div>
       )}
 
-      {/* Satış görünümü: müşterinin dosyaları ve notlar en üstte (aşağıda yeniden gösterilmez) */}
-      {salesView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
-      {salesView && <Notes order={order} user={user} t={t} />}
-      {/* Çizim ekibi görünümü: 1) müşteri dosyaları 2) çizimler (işlemler + sürümler) 3) notlar 4) sipariş bilgileri */}
+      {/*
+        Bölüm sırası (eski TAKİP düzeni; her bölüm bir kez gösterilir):
+          sıra kimde + yapılabilecek işlemler → 1) müşteri sipariş dosyaları → 2) notlar → 3) sipariş bilgileri →
+          4) teknik çizimler ve onay → 5) teklif (düzenleme ya da görünüm) → 6) finans / sandık; hareketler sol menüde.
+        Çizim ekibi (karar 77): dosyalar → işlemler (çizim yükleme) → çizimler → notlar → sipariş bilgileri; teklif yok.
+      */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
       {drawerView && <Drawings order={order} user={user} can={can} t={t} />}
-      {drawerView && <Notes order={order} user={user} t={t} />}
+      {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
+      <Notes order={order} user={user} t={t} />
 
       <OrderInfo
         title={t('order.info.title')}
@@ -253,13 +256,14 @@ export default async function OrderPage({
         {/* "İstenen camlar" satış görünümünde gösterilmez (veri durur; teklif tablosu zaten bu camlarla açılır) */}
         {!salesView && !drawerView && order.items.length > 0 && (
           <>
-            <h2 style={{ marginTop: 16 }}>{t('order.info.requestedGlass')}</h2>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
+            <h3 className="sub-title">{t('order.info.requestedGlass')}</h3>
+            <ul className="plain-list">
               {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
             </ul>
           </>
         )}
       </OrderInfo>
+      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
 
       {(editable || updating) && offer && (
         <OfferEditor
@@ -298,9 +302,6 @@ export default async function OrderPage({
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
       {/* "Sandıklar" satış görünümünde gösterilmez (sandıklar Yüklemeler sekmesinde girilir) */}
       {!isCustomer && !salesView && !drawerView && order.status !== 'YENI' && <Crates order={order} t={t} />}
-      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
-      {!salesView && !drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
-      {!salesView && !drawerView && <Notes order={order} user={user} t={t} />}
       <History order={order} isCustomer={isCustomer} t={t} />
     </>
   );
@@ -345,7 +346,7 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
       {can('approve_drawing') && (
         <form action={approveDrawingAction} style={{ marginTop: 10 }}>
           {hidden}
-          <ConfirmButton primary message={t('order.customer.approveConfirm')}>{t('order.steps.approve_drawing')}</ConfirmButton>
+          <ConfirmButton success message={t('order.customer.approveConfirm')}>{t('order.steps.approve_drawing')}</ConfirmButton>
         </form>
       )}
       {waiting && latest && (
@@ -449,11 +450,11 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
 
           {can('cancel') && (
             <details style={{ marginTop: 14 }}>
-              <summary className="small muted" style={{ cursor: 'pointer' }}>{t('order.cancel.summary')}</summary>
+              <summary className="small muted">{t('order.cancel.summary')}</summary>
               <form action={cancelAction} className="row" style={{ marginTop: 8 }}>
                 {hidden}
                 <input name="note" type="text" required placeholder={t('order.cancel.reason')} style={{ flex: 1 }} />
-                <ConfirmButton danger message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
+                <ConfirmButton danger solid message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
               </form>
             </details>
           )}
@@ -481,8 +482,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
   const updated = offer.status === 'GONDERILDI' && versions > 1;
   return (
     <div className="card" id="teklif">
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>{isCustomer ? t('offer.view.titleCustomer') : t('offer.view.title')}</h2>
+      <div className="section-head">
+        <h2>{isCustomer ? t('offer.view.titleCustomer') : t('offer.view.title')}</h2>
         <span className="row">
           {!isCustomer && <OfferBadge status={offer.status} />}
           {!isCustomer && updated && <span className="badge badge-info">{t('offer.view.version', { n: versions })}</span>}
@@ -495,8 +496,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           )}
         </span>
       </div>
-      <div className="table-wrap">
-        <table>
+      <div className="table-wrap offer-wrap">
+        <table className="offer-view">
           <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th></tr></thead>
           <tbody>
             {(() => {
@@ -738,7 +739,7 @@ function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T
       {notes.length === 0 && <p className="muted">{t('order.notes.none')}</p>}
       {notes.map((n) => (
         <div key={n.id} className={`note ${n.internal ? 'internal' : ''}`}>
-          <div style={{ whiteSpace: 'pre-wrap' }}>{n.text}</div>
+          <div className="pre">{n.text}</div>
           <div className="meta">
             {n.user.name || n.user.email}{!isCustomer || n.user.appRole === 'MUSTERI' ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
             {n.internal && <> · <b>{t('order.notes.internal')}</b></>}

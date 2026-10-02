@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.28.0 — 02.10.2026
+
+- **Görünüm, 3. aşama: sipariş sayfası ve teklif tablosu** (iş akışı, fiyat hesabı, yetki ve veri aynı):
+  - Bölüm sırası (yönetici, satış, denetimci, müşteri): yapılabilecek işlemler → müşteri sipariş dosyaları → notlar →
+    sipariş bilgileri → teknik çizimler ve onay → teklif → finans / sandık. Çizim ekibinin sırası değişmedi.
+  - Sipariş bilgileri tam genişlikte (solda gri etiket, sağda değer).
+  - Teklif tablosu: çerçeveli hücreler, kalan genişliğin tamamını alan açıklama sütunu (cam adı artık kırpılmıyor;
+    dar ekranda tam ad kutunun altında), satır işlemleri (+CNC, +Delik, bedelsiz) açıklamanın altında, belirgin
+    "aynı camdan +" düğmesi, ayrı sil sütunu, belirgin toplam satırı; araç çubuğu: + Cam ekle · + Sandık parası ·
+    Excel'den Aktar · Tek fiyatı tüm satırlara uygula · Tabloyu temizle.
+  - Yeni (satış, yalnızca düzenleme kolaylığı): **"Tek fiyatı tüm satırlara uygula"** — işaretliyken bir m² cam
+    satırına yazılan fiyat tüm m² cam satırlarına yazılır; CNC, delik, sandık parası ve bedelsiz satırlar değişmez.
+  - Excel'den Aktar penceresi: geçersiz satırların listesi (satır no + neden), seçilen sütunlar vurgulu.
+  - Düğmeler: onay işlemleri yeşil (fiyatı onayla ve gönder, çizimi onayla), sipariş iptali dolu kırmızı.
+
 ## 3.27.0 — 02.10.2026
 
 - **Görünüm, 2. aşama** (yalnızca arayüz; iş akışı, yetki, veri ve adresler aynı) — eski TAKİP'e yakın, daha sade:

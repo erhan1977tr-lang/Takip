@@ -76,6 +76,18 @@ export function OfferEditor(props: {
   /** Satır türünün adı: "CNC" / "Delik" (dile göre) */
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  /**
+   * "Tek fiyatı tüm satırlara uygula" (satış; yalnızca ekrandaki düzenleme kolaylığı): işaretliyken bir m² cam satırına
+   * yazılan satış fiyatı bedelsiz olmayan tüm m² cam satırlarına yazılır. CNC, delik ve adetli satırlar (sandık parası)
+   * değişmez. Fiyat kuralı, doğrulama ve kayıt aynıdır (sunucu her satırı yine tek tek değerlendirir).
+   */
+  const [onePrice, setOnePrice] = useState(false);
+  const setUnitPrice = (l: Line, raw: string) => {
+    const unitPrice = raw.replace(/[^\d.,]/g, '');
+    const glass = (x: Line) => x.kind === 'CAM' && x.unit === 'm2';
+    if (onePrice && glass(l)) setLines((ls) => ls.map((x) => (x.key === l.key || (glass(x) && !x.free) ? { ...x, unitPrice } : x)));
+    else set(l.key, { unitPrice });
+  };
   const glassPrices = useMemo(() => new Map(Object.entries(props.pricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.pricing]);
   const customerGlass = useMemo(() => new Map(Object.entries(props.customerPricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.customerPricing]);
   /**
@@ -157,13 +169,13 @@ export function OfferEditor(props: {
   };
 
   return (
-    <form action={saveOfferAction} className="card" id="teklif">
+    <form action={saveOfferAction} className="card offer-card" id="teklif">
       <input type="hidden" name="id" value={props.orderId} />
       {/* Sayfanın gösterdiği sipariş sürümü: bu arada biri siparişi değiştirdiyse kayıt reddedilir */}
       <input type="hidden" name="v" value={props.version} />
       <input type="hidden" name="intent" defaultValue={isUpdate ? 'update' : 'save'} ref={intentRef} />
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>{m.editor.title} <span className="badge">{props.statusLabel}</span></h2>
+      <div className="section-head">
+        <h2>{m.editor.title} <span className="badge">{props.statusLabel}</span></h2>
         <span className="muted small">{m.editor.formula}</span>
       </div>
 
@@ -171,7 +183,7 @@ export function OfferEditor(props: {
         <p className="muted small" style={{ marginTop: 0 }}>{interpolate(m.editor.tableInfo, { name: props.pricing.name })} {!isAdmin && m.editor.overrideNote}</p>
       )}
       {isUpdate && (
-        <div className="alert alert-info" style={{ marginBottom: 14 }}>
+        <div className="alert alert-info">
           {m.editor.updateInfo}
         </div>
       )}
@@ -183,10 +195,10 @@ export function OfferEditor(props: {
       )}
 
       <datalist id="catalog">{props.catalog.map((c) => <option key={c} value={c} />)}</datalist>
-      <div className="table-wrap" id="offer-table">
+      <div className="table-wrap offer-wrap" id="offer-table">
         <table className="offer-table">
           <thead>
-            <tr><th>#</th><th>{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th>{adminMode ? m.cols.salesPrice : m.cols.unitPrice}</th>{adminMode && <th>{m.cols.offerPrice}</th>}<th className="num">{adminMode ? m.cols.offerAmount : m.cols.amount}</th><th /></tr>
+            <tr><th>#</th><th className="c-desc">{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th className={adminMode ? 'num' : undefined}>{adminMode ? m.cols.salesPrice : m.cols.unitPrice}</th>{adminMode && <th>{m.cols.offerPrice}</th>}<th className="num">{adminMode ? m.cols.offerAmount : m.cols.amount}</th><th /></tr>
           </thead>
           <tbody>
             {lines.map((l) => {
@@ -197,52 +209,60 @@ export function OfferEditor(props: {
               const shownPrice = adminMode ? l.offerPrice : l.unitPrice;
               const missing = !l.free && !(Number(shownPrice.replace(',', '.')) > 0) && (sub || !!(l.description || l.enMm || l.boyMm));
               return (
-                <tr key={l.key} className={sub ? 'sub-line' : undefined}>
-                  <td className="muted">{sub ? '' : glassNo}
+                <tr key={l.key} className={sub ? 'sub-line' : 'glass-line'}>
+                  <td className="c-no muted">{sub ? '' : glassNo}
                     <input type="hidden" name="l_id" value={l.id} />
                     <input type="hidden" name="l_kind" value={l.kind} />
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
                   </td>
                   <td className="desc">
-                    {sub && <span className="badge badge-info">{kind}</span>}{' '}
-                    {l.free && <span className="badge badge-ok">{m.free}</span>}
                     <span className="desc-row">
-                      <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
+                      {sub && <span className="badge badge-info">{kind}</span>}
+                      <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} title={l.description || undefined} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
                         onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
                       {!sub && l.unit === 'm2' && (
                         <button type="button" className="btn btn-dup" title={m.editor.duplicateGlass} aria-label={m.editor.duplicateGlass} onClick={() => duplicateGlass(l)}>+</button>
                       )}
                     </span>
+                    {/* Uzun cam adı dar tabloda kutuya sığmayabilir: tam ad altında okunur (geniş tabloda gizli — CSS) */}
+                    {!sub && l.description.length > 28 && <div className="desc-full">{l.description}</div>}
+                    {/* Satırın işlemleri: açıklamanın hemen altında (ek işlem satırı ekle, bedelsiz yap) */}
+                    <div className="line-actions">
+                      {l.free && <span className="badge badge-ok">{m.free}</span>}
+                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
+                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
+                    </div>
                   </td>
-                  <td><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} style={{ width: 64 }} aria-label={m.cols.poz} /></td>
+                  <td className="c-poz"><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} aria-label={m.cols.poz} /></td>
                   {sub ? (
                     <><td><input type="hidden" name="l_en" value="" /></td><td><input type="hidden" name="l_boy" value="" /></td></>
                   ) : (
                     <>
-                      <td><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label={m.cols.width} /></td>
-                      <td><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} style={{ width: 72 }} aria-label={m.cols.height} /></td>
+                      <td className="c-dim"><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} aria-label={m.cols.width} /></td>
+                      <td className="c-dim"><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} aria-label={m.cols.height} /></td>
                     </>
                   )}
-                  <td><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} style={{ width: 58 }} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
-                  <td>
+                  <td className="c-qty"><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
+                  <td className={sub ? 'c-text' : 'c-unit'}>
                     {sub ? (
                       <><input type="hidden" name="l_unit" value="adet" /><span className="muted">{common.unitPiece}</span></>
                     ) : (
-                      <select name="l_unit" style={{ width: 78 }} value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label={m.cols.unit}>
+                      <select name="l_unit" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label={m.cols.unit}>
                         <option value="m2">m²</option>
                         <option value="adet">{common.unitPiece}</option>
                       </select>
                     )}
                   </td>
                   <td className="num">{sub ? '' : fmt(tot.metraj)}</td>
-                  <td>
+                  <td className={adminMode ? 'num' : 'c-price'}>
                     {adminMode ? (
                       // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz
                       <><input type="hidden" name="l_price" value={l.free ? '0' : l.unitPrice} /><span className="muted">{l.unitPrice ? fmt(Number(l.unitPrice.replace(',', '.'))) : '—'}</span></>
                     ) : (
                       <>
                         <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
-                          onChange={(e) => set(l.key, { unitPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
+                          onChange={(e) => setUnitPrice(l, e.target.value)}
                           aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
                         {l.free && <input type="hidden" name="l_price" value="0" />}
                       </>
@@ -254,21 +274,16 @@ export function OfferEditor(props: {
                     )}
                   </td>
                   {adminMode && (
-                    <td>
+                    <td className="c-price">
                       <input name="l_oprice" inputMode="decimal" value={l.free ? '' : l.offerPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
-                        onChange={(e) => set(l.key, { offerPrice: e.target.value.replace(/[^\d.,]/g, '') })} style={{ width: 92 }}
+                        onChange={(e) => set(l.key, { offerPrice: e.target.value.replace(/[^\d.,]/g, '') })}
                         aria-label={sub ? interpolate(m.editor.subOfferPriceAria, { kind }) : m.cols.offerPrice} />
                       {l.free && <input type="hidden" name="l_oprice" value="0" />}
                     </td>
                   )}
-                  <td className="num">{fmt(tot.amount)}</td>
-                  <td>
-                    <div className="line-actions">
-                      <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
-                      <button type="button" className="btn btn-link danger" aria-label={m.editor.deleteRow} onClick={() => remove(l.key)}>✕</button>
-                    </div>
+                  <td className="num c-amount">{fmt(tot.amount)}</td>
+                  <td className="c-del">
+                    <button type="button" className="btn btn-link btn-del" aria-label={m.editor.deleteRow} title={m.editor.deleteRow} onClick={() => remove(l.key)}>✕</button>
                   </td>
                 </tr>
               );
@@ -276,39 +291,50 @@ export function OfferEditor(props: {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={5}>{common.total}</td>
-              <td>
+              <td colSpan={2}>{common.total}</td>
+              <td colSpan={5} className="num">
                 {interpolate(m.editor.countGlass, { n: totals.adet })}
                 {totals.cnc ? ` · ${interpolate(m.editor.countCnc, { n: totals.cnc })}` : ''}
                 {totals.delik ? ` · ${interpolate(m.editor.countHoles, { n: totals.delik })}` : ''}
               </td>
-              <td />
               <td className="num">{fmt(totals.metraj)} m²</td>
               {adminMode ? <td className="num muted">{fmt(totals.amount)}</td> : <td />}
               {adminMode && <td />}
-              <td className="num">{fmt(adminMode ? offerTot.amount : totals.amount)} {props.currency}</td>
+              <td className="num grand">{fmt(adminMode ? offerTot.amount : totals.amount)} {props.currency}</td>
               <td />
             </tr>
           </tfoot>
         </table>
       </div>
-      <div className="row" style={{ justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
-        <span className="row" style={{ gap: 8 }}>
+      {adminMode && (
+        <p className="offer-summary">
+          {interpolate(m.editor.twoTotals, { sales: fmt(totals.amount), offer: fmt(offerTot.amount), diff: fmt(offerTot.amount - totals.amount), cur: props.currency })}
+        </p>
+      )}
+      {/* Araç çubuğu: satır ekleme · Excel'den aktar · tek fiyat (satış) | tabloyu temizle (satış) */}
+      <div className="offer-tools">
+        <div className="group">
           <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
           <button type="button" className="btn" onClick={addCrate}>+ {m.editor.addCrate}</button>
           {props.mode === 'sales' && (props.excelFiles?.length ?? 0) > 0 && (
-            <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
+            <>
+              <span className="sep" aria-hidden="true" />
+              <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
+            </>
           )}
-          {props.mode === 'sales' && <button type="button" className="btn btn-link" onClick={resetTable}>{m.editor.reset}</button>}
-        </span>
-        <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
-        {adminMode && (
-          <span className="small">
-            {interpolate(m.editor.twoTotals, { sales: fmt(totals.amount), offer: fmt(offerTot.amount), diff: fmt(offerTot.amount - totals.amount), cur: props.currency })}
-          </span>
-        )}
+          {props.mode === 'sales' && (
+            <>
+              <span className="sep" aria-hidden="true" />
+              <label className="check" title={m.editor.onePriceHint}>
+                <input type="checkbox" checked={onePrice} onChange={(e) => setOnePrice(e.target.checked)} /> {m.editor.onePrice}
+              </label>
+            </>
+          )}
+        </div>
+        {props.mode === 'sales' && <button type="button" className="btn btn-danger" onClick={resetTable}>{m.editor.reset}</button>}
       </div>
-      <p className="muted small" style={{ margin: '6px 0 0' }}>{common.pricesExclVat}{adminMode && props.customerPricing ? ` · ${interpolate(m.editor.customerTableInfo, { name: props.customerPricing.name })}` : ''}</p>
+      <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
+      <p className="muted small" style={{ margin: '8px 0 0' }}>{common.pricesExclVat}{adminMode && props.customerPricing ? ` · ${interpolate(m.editor.customerTableInfo, { name: props.customerPricing.name })}` : ''}</p>
 
       {problems.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
@@ -342,7 +368,7 @@ export function OfferEditor(props: {
         {isUpdate ? null : isAdmin ? (
           <>
             <button type="submit" onClick={intent('return')} className="btn btn-danger">{m.editor.returnToSales}</button>
-            <button type="submit" onClick={intent('approve')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.approveAndSend}</button>
+            <button type="submit" onClick={intent('approve')} className="btn btn-success" disabled={problems.length > 0}>{m.editor.approveAndSend}</button>
           </>
         ) : (
           <button type="submit" onClick={intent('submit')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.submit}</button>

@@ -88,6 +88,8 @@ export default {
     reset: 'Tabloyu temizle',
     resetConfirm: 'Teklif tablosu ilk hâline (müşterinin siparişindeki camlar) dönecek; girdiğiniz satırlar ve fiyatlar silinecek. Devam edilsin mi?',
     duplicateGlass: 'Aynı camdan yeni satır ekle',
+    onePrice: 'Tek fiyatı tüm satırlara uygula',
+    onePriceHint: 'İşaretliyken bir cam satırına yazdığınız m² fiyatı tüm m² cam satırlarına yazılır. CNC, delik, sandık parası ve bedelsiz satırlar değişmez.',
     addGlass: 'Cam ekle',
     cannotSend: 'Teklif bu haliyle gönderilemez.',
     canSaveDraft: 'Taslak olarak kaydedebilirsiniz.',
