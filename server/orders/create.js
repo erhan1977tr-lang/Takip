@@ -9,6 +9,7 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { glassLoadingDate, slaDeadline } from './rules.js';
 import { CUSTOMER_GLASS_TYPES } from '../catalog/glass.js';
+import { isLegacyMultiGlass } from './drafts.js';
 import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 
@@ -80,6 +81,8 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     if (draftId) {
       const draft = await tx.orderDraft.findFirst({ where: { id: draftId, customerId: firm.id }, include: { files: { orderBy: { createdAt: 'asc' } } } });
       if (!draft) throw new WorkflowError('DRAFT_GONE');
+      // Eski çok camlı taslak çözülmeden gönderilemez (müşteri tutulacak camı seçmeli; diğerleri sessizce atılmaz)
+      if (isLegacyMultiGlass(draft.items)) throw new WorkflowError('DRAFT_LEGACY_GLASS');
       draftFiles = draft.files.filter((f) => !dropDraftFileIds.includes(f.id));
       dropped = draft.files.filter((f) => dropDraftFileIds.includes(f.id));
       await tx.orderDraft.delete({ where: { id: draft.id } });

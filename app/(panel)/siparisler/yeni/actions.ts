@@ -13,7 +13,7 @@ import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles } from '@/lib/uploads';
 import { fileProblem } from '@/server/orders/rules.js';
 import { createGlassOrder } from '@/server/orders/create.js';
-import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, saveDraft } from '@/server/orders/drafts.js';
+import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, keepDraftGlass, saveDraft } from '@/server/orders/drafts.js';
 import { CUSTOMER_GLASS_TYPES, glassOrderItems } from '@/server/catalog/glass.js';
 import { WorkflowError } from '@/server/domain/workflow.js';
 import { MAX_PROFILE_QTY, profileOrderItems, readQuantities } from '@/server/profile/rules.js';
@@ -121,6 +121,7 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
 function draftErrorText(t: Awaited<ReturnType<typeof getT>>['t'], code: string) {
   switch (code) {
     case 'DRAFT_GONE': return t('newOrder.errors.draftGone');
+    case 'DRAFT_LEGACY_GLASS': return t('newOrder.errors.legacyDraft');
     case 'BAD_QTY': return t('newOrder.errors.badQty', { max: 9999 });
     case 'BAD_NUMBER': return t('newOrder.errors.badNumber');
     case 'TOO_MANY_LINES': return t('newOrder.errors.tooManyLines');
@@ -140,6 +141,30 @@ export async function deleteDraftAction(formData: FormData) {
   if (files) await discardFiles(files);
   revalidatePath('/siparisler');
   redirect(`/siparisler?ok=${files ? 'draftDeleted' : 'draftGone'}`);
+}
+
+/**
+ * Eski çok camlı taslak (karar 86): müşterinin açıkça seçip onayladığı cam tutulur, diğer cam satırları taslaktan
+ * çıkar; dosyalar, not, ad ve numara değişmez. Seçim "sıra:camKimliği" olarak gelir ve sunucuda doğrulanır.
+ */
+export async function keepDraftGlassAction(formData: FormData) {
+  const user = await requirePermission('ORDER_CREATE');
+  const firm = user.customer;
+  const draftId = String(formData.get('draftId') ?? '');
+  if (!firm || firm.type !== 'CUSTOMER' || !draftId) redirect('/siparisler');
+  const back = `/siparisler/yeni?taslak=${encodeURIComponent(draftId)}`;
+  const pick = /^(\d{1,2}):(.{1,64})$/.exec(String(formData.get('keep') ?? ''));
+  if (!pick) redirect(`${back}&hata=sec`);
+  let dropped: { glassProductId: string }[];
+  try {
+    ({ dropped } = await keepDraftGlass(db, { actor: await actorOf(user), firm: { id: firm.id }, draftId, index: Number(pick[1]), glassProductId: pick[2] }));
+  } catch (err) {
+    // Taslak yok / artık çok camlı değil → taslak sayfası güncel durumu gösterir; liste değiştiyse yeniden seçilir
+    if (err instanceof WorkflowError) redirect(err.code === 'GLASS_NOT_IN_DRAFT' ? `${back}&hata=degisti` : back);
+    throw err;
+  }
+  revalidatePath('/siparisler');
+  redirect(`${back}&ok=glassKept&cikan=${[...new Set(dropped.map((d) => d.glassProductId))].map(encodeURIComponent).join(',')}`);
 }
 
 // ---------------- Profil siparişi (Aşama 6) ----------------

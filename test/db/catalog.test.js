@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
 import { applyCatalogImport, changeGlass, glassOrderItems, saveGlass, validateGlass } from '../../server/catalog/glass.js';
 import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
-import { deleteDraft, saveDraft } from '../../server/orders/drafts.js';
+import { deleteDraft, isLegacyMultiGlass, keepDraftGlass, readDraftItems, saveDraft } from '../../server/orders/drafts.js';
 
 let db;
 let admin;
@@ -121,5 +121,85 @@ dbTest('taslak: dosyasız sipariş gönderilemez; taslak silinince dosyaları d�
   const f = file();
   await saveDraft(db, { actor: actor(cust), firm, draftId: d.id, values: { title: 'Boş', note: '', customerOrderNo: null, lines: [] }, files: [f] });
   assert.deepEqual((await deleteDraft(db, { firm, draftId: d.id })).map((x) => x.storageKey), [f.storageKey]);
+  assert.equal(await db.orderDraft.count({ where: { id: d.id } }), 0);
+});
+
+dbTest('eski çok camlı taslak: bakmak değiştirmez; çözülmeden gönderilemez ve formla ezilemez; açık seçimle tek cama iner (karar 86)', async () => {
+  const [a, b] = await db.glassProduct.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' }, take: 2 });
+  const gone = await db.glassProduct.findFirstOrThrow({ where: { isActive: false } });
+  assert.ok(a && b, 'iki etkin cam var');
+  // Tek cam kuralından önce kaydedilmiş taslak gibi: üç cam satırı, dosya, not, müşterinin numarası
+  const f = file();
+  const legacy = await saveDraft(db, {
+    actor: actor(cust), firm, draftId: null, files: [f],
+    values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: 777, lines: [{ id: a.id, qty: '2' }, { id: b.id, qty: '5' }, { id: gone.id, qty: '1' }] },
+  });
+  const all = [{ glassProductId: a.id, qty: 2 }, { glassProductId: b.id, qty: 5 }, { glassProductId: gone.id, qty: 1 }];
+  const snap = async () => {
+    const d = await db.orderDraft.findUniqueOrThrow({ where: { id: legacy.id }, include: { files: { orderBy: { createdAt: 'asc' } } } });
+    return JSON.stringify([d.title, d.note, d.customerOrderNo, d.items, d.updatedAt, d.customerId, d.createdById, d.files.map((x) => [x.id, x.storageKey, x.name])]);
+  };
+  const before = await snap();
+  // Eski, gönderilmiş çok camlı sipariş: bu işlemlerden hiç etkilenmemeli
+  const old = await createGlassOrder(db, { actor: actor(cust), firm, title: 'Eski sipariş', requestedNo: 960, items: [{ glassName: 'A', camAdedi: 1 }], files: [file()] });
+  await db.orderItem.create({ data: { orderId: old.id, glassName: 'B', camAdedi: 3 } });
+  const oldItems = async () => JSON.stringify(await db.orderItem.findMany({ where: { orderId: old.id }, orderBy: { camAdedi: 'asc' } }));
+  const oldBefore = await oldItems();
+  const orders = await db.order.count();
+
+  // 1) Sayfanın yaptığı okuma: tanınır, bütün camlar okunur, hiçbir şey yazılmaz
+  const row = await db.orderDraft.findFirst({ where: { id: legacy.id, customerId: firm.id }, include: { files: true } });
+  assert.equal(isLegacyMultiGlass(row.items), true);
+  assert.deepEqual(readDraftItems(row.items), all, 'hiçbir cam gizlenmez');
+  assert.equal(await snap(), before, 'bakmak taslağı değiştirmez');
+
+  // 2) Çözülmeden gönderilemez; normal formun kaydı da camları ezemez
+  const oneItem = glassOrderItems([{ id: a.id, qty: '2' }], [a]).items;
+  assert.equal(await codeOf(createGlassOrder(db, { actor: actor(cust), firm, title: 'Eski taslak', requestedNo: 777, items: oneItem, draftId: legacy.id })), 'DRAFT_LEGACY_GLASS');
+  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: legacy.id, values: { title: 'x', note: '', customerOrderNo: null, lines: [{ id: a.id, qty: '1' }] } })), 'DRAFT_LEGACY_GLASS');
+  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: legacy.id, values: { title: 'x', note: '', customerOrderNo: null, lines: [] } })), 'DRAFT_LEGACY_GLASS');
+  // 3) Geçersiz seçim: başka firma, listede olmayan cam, sıra ile cam uyuşmuyor
+  const keep = (who, f2, index, glassProductId) => keepDraftGlass(db, { actor: actor(who), firm: f2, draftId: legacy.id, index, glassProductId });
+  assert.equal(await codeOf(keep(other, otherFirm, 1, b.id)), 'DRAFT_GONE');
+  assert.equal(await codeOf(keep(cust, firm, 1, a.id)), 'GLASS_NOT_IN_DRAFT');
+  assert.equal(await codeOf(keep(cust, firm, 9, b.id)), 'GLASS_NOT_IN_DRAFT');
+  assert.equal(await codeOf(keep(cust, firm, NaN, b.id)), 'GLASS_NOT_IN_DRAFT');
+  assert.equal(await snap(), before, 'reddedilen işlemler taslağı değiştirmez');
+  assert.equal(await db.order.count(), orders);
+  assert.equal(await db.auditLog.count({ where: { action: 'DRAFT_GLASS_KEPT' } }), 0);
+
+  // 4) Açık seçim: yalnızca seçilen cam kalır; dosya, not, ad, numara ve taslak kimliği aynı
+  const res = await keep(cust, firm, 1, b.id);
+  assert.deepEqual([res.id, res.kept, res.dropped], [legacy.id, all[1], [all[0], all[2]]]);
+  const d = await db.orderDraft.findUniqueOrThrow({ where: { id: legacy.id }, include: { files: true } });
+  assert.deepEqual([d.items, d.title, d.note, d.customerOrderNo, d.files.map((x) => x.storageKey)], [[all[1]], 'Eski taslak', 'Eski not', 777, [f.storageKey]]);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'DRAFT_GLASS_KEPT', entityId: legacy.id } });
+  assert.deepEqual([audit.userId, audit.actorRole, audit.details.kept, audit.details.dropped], [cust.id, 'MUSTERI', all[1], [all[0], all[2]]], 'çıkan camlar denetim kaydında');
+  assert.equal(await codeOf(keep(cust, firm, 0, b.id)), 'DRAFT_NOT_LEGACY', 'artık normal taslak');
+  assert.equal(await oldItems(), oldBefore, 'gönderilmiş eski çok camlı sipariş değişmedi');
+
+  // 5) Sonrası normal tek cam akışı: taslak kaydedilir ve gönderilir
+  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: legacy.id, values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: 777, lines: [{ id: b.id, qty: '5' }] } })), 'OK');
+  const items = glassOrderItems([{ id: b.id, qty: '5' }], [b]).items;
+  const o = await createGlassOrder(db, { actor: actor(cust), firm, title: 'Eski taslak', requestedNo: 777, items, note: 'Eski not', draftId: legacy.id });
+  assert.equal(o.orderNo, 'GLA777');
+  const order = await db.order.findUniqueOrThrow({ where: { id: o.id }, include: { items: true, files: true } });
+  assert.deepEqual([order.items.map((i) => [i.glassProductId, i.camAdedi]), order.files.map((x) => x.storageKey)], [[[b.id, 5]], [f.storageKey]]);
+  assert.equal(await oldItems(), oldBefore);
+});
+
+dbTest('normal tek camlı taslak değişmedi: eski taslak sayılmaz, kaydedilir, güncellenir ve gönderilir', async () => {
+  const g = await db.glassProduct.findFirstOrThrow({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } });
+  const f = file();
+  const d = await saveDraft(db, { actor: actor(cust), firm, draftId: null, files: [f], values: { title: 'Yeni', note: '', customerOrderNo: null, lines: [{ id: g.id, qty: '3' }] } });
+  const row = await db.orderDraft.findUniqueOrThrow({ where: { id: d.id } });
+  assert.equal(isLegacyMultiGlass(row.items), false);
+  assert.deepEqual(row.items, [{ glassProductId: g.id, qty: 3 }]);
+  assert.equal(await codeOf(keepDraftGlass(db, { actor: actor(cust), firm, draftId: d.id, index: 0, glassProductId: g.id })), 'DRAFT_NOT_LEGACY');
+  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: d.id, values: { title: 'Yeni 2', note: 'n', customerOrderNo: null, lines: [{ id: g.id, qty: '4' }] } })), 'OK');
+  assert.deepEqual((await db.orderDraft.findUniqueOrThrow({ where: { id: d.id } })).items, [{ glassProductId: g.id, qty: 4 }]);
+  const next = await suggestNextNo(db, firm.id);
+  const o = await createGlassOrder(db, { actor: actor(cust), firm, title: 'Yeni 2', requestedNo: next, suggestedNo: next, items: glassOrderItems([{ id: g.id, qty: '4' }], [g]).items, draftId: d.id });
+  assert.deepEqual((await db.orderItem.findMany({ where: { orderId: o.id } })).map((i) => [i.glassProductId, i.camAdedi]), [[g.id, 4]]);
   assert.equal(await db.orderDraft.count({ where: { id: d.id } }), 0);
 });

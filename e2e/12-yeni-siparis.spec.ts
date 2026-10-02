@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, login, sampleFile } from './helpers';
 
 // Müşteri "Yeni Sipariş" (karar 85): sipariş tipi seçimi durur; cam siparişinde TEK cam tipi (formda "+ Cam ekle" yok,
 // sunucu ikinci camı reddeder); tahmini yükleme tarihi mevcut hesaptan gelir ve siparişe aynı tarih yazılır; dosya
@@ -156,6 +156,107 @@ test('yükleme tarihi: satış değiştirince müşteri her yerde yeni tarihi g�
   await cust.getByRole('button', { name: 'Taslağı sil' }).click();
   await expect(cust.getByText('Yalıtım taslağı')).toHaveCount(0);
   await cust.context().close();
+});
+
+test('eski çok camlı taslak: bütün camlar görünür, bakmak değiştirmez; müşteri açıkça seçince tek cama iner ve normal formla gönderilir', async ({ browser }) => {
+  const SECOND = '4mm Float Cam';
+  // Normal yoldan bir taslak (dosya, not, cam) kaydedilir; sonra kayıt eski düzendeki gibi iki camlı yapılır
+  const setup = await as(browser, CUSTOMER, CUST_PW);
+  await setup.goto('/siparisler/yeni?tip=GLASS_ORDER');
+  await setup.fill('#title', 'Eski çok camlı taslak');
+  await setup.setInputFiles('#files', sampleFile('eski-plan.pdf', 'eski plan'));
+  await setup.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
+  await setup.getByLabel('Adet', { exact: true }).fill('2');
+  await setup.fill('#note', 'Eski taslak notu');
+  await setup.getByRole('button', { name: 'Taslak kaydet' }).click();
+  await expect(setup).toHaveURL(/taslak=[a-z0-9]+&ok=draft/);
+  const draftId = new URL(setup.url()).searchParams.get('taslak')!;
+  const draftPath = `/siparisler/yeni?taslak=${draftId}`;
+  await setup.context().close();
+
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const state = async () => {
+    const d = await db.orderDraft.findUniqueOrThrow({ where: { id: draftId }, include: { files: true } });
+    return { items: d.items as { glassProductId: string; qty: number }[], updatedAt: d.updatedAt.getTime(), title: d.title, note: d.note, files: d.files.map((f) => f.name) };
+  };
+  try {
+    const first = (await state()).items[0];
+    const second = await db.glassProduct.findFirstOrThrow({ where: { nameTr: SECOND } });
+    await db.orderDraft.update({ where: { id: draftId }, data: { items: [first, { glassProductId: second.id, qty: 7 }] } });
+    const before = await state();
+    expect(before.items).toHaveLength(2);
+
+    // Onay penceresini kendimiz yöneteceğimiz oturum
+    const cust = await (await browser.newContext()).newPage();
+    await login(cust, CUSTOMER, CUST_PW);
+    await cust.goto(draftPath);
+    // Uyarı + bütün camlar salt okunur; normal form (gönder / taslak kaydet / cam ekle) yok
+    await expect(cust.locator('#eski-taslak')).toContainText('birden çok cam tipiyle kaydedilmiş ve bu hâliyle gönderilemez');
+    await expect(cust.locator('#eski-taslak')).toContainText('Siz seçiminizi onaylayana kadar taslakta hiçbir şey değişmez.');
+    const rows = cust.locator('table.legacy-glass tbody tr');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText(GLASS);
+    await expect(rows.nth(0).locator('td.num')).toHaveText('2');
+    await expect(rows.nth(1)).toContainText(SECOND);
+    await expect(rows.nth(1).locator('td.num')).toHaveText('7');
+    await expect(cust.locator('input[name=keep]:checked')).toHaveCount(0); // hiçbiri önceden seçili değil
+    await expect(cust.getByRole('button', { name: 'Siparişi gönder' })).toHaveCount(0);
+    await expect(cust.getByRole('button', { name: 'Taslak kaydet' })).toHaveCount(0);
+    await expect(cust.getByRole('button', { name: /Cam ekle/ })).toHaveCount(0);
+    await expect(cust.locator('#title')).toHaveCount(0);
+    // Taslağın diğer bilgileri de görünür
+    await expect(cust.locator('dl.order-info')).toContainText('Eski çok camlı taslak');
+    await expect(cust.locator('dl.order-info')).toContainText('eski-plan.pdf');
+    await expect(cust.locator('dl.order-info')).toContainText('Eski taslak notu');
+    await shot(cust, '27-musteri-eski-cok-camli-taslak');
+    expect(await state()).toEqual(before); // açmak hiçbir şeyi değiştirmedi
+
+    // Seçmek ve onay penceresinde vazgeçmek de değiştirmez
+    await cust.getByLabel(`Bu camı tut: ${SECOND}`).check();
+    let asked = '';
+    cust.once('dialog', (d) => { asked = d.message(); void d.dismiss(); });
+    await cust.getByRole('button', { name: 'Seçilen camla devam et' }).click();
+    await expect.poll(() => asked).toContain('yalnızca seçtiğiniz cam kalacak');
+    await cust.reload();
+    await expect(rows).toHaveCount(2);
+    expect(await state()).toEqual(before);
+    // Taslak listesinde de durur
+    await cust.goto('/siparisler');
+    await expect(cust.locator('.card', { hasText: 'Taslaklarım' }).getByText('Eski çok camlı taslak')).toBeVisible();
+    expect(await state()).toEqual(before);
+
+    // Açık seçim + onay → taslak tek cama iner; diğer cam için ayrı sipariş gerektiği yazılır; normal form açılır
+    await cust.goto(draftPath);
+    await cust.getByLabel(`Bu camı tut: ${SECOND}`).check();
+    cust.once('dialog', (d) => d.accept());
+    await cust.getByRole('button', { name: 'Seçilen camla devam et' }).click();
+    await expect(cust).toHaveURL(/ok=glassKept/);
+    await expect(cust.locator('#cam-secildi')).toContainText('onlar için ayrı sipariş açmanız gerekir');
+    await expect(cust.locator('#cam-secildi')).toContainText(`Ayrı sipariş açılacak camlar: ${GLASS}`);
+    await expect(cust.locator('#eski-taslak')).toHaveCount(0);
+    const after = await state();
+    expect(after.items).toEqual([{ glassProductId: second.id, qty: 7 }]);
+    expect([after.title, after.note, after.files]).toEqual([before.title, before.note, before.files]); // ad, not, dosya aynı
+    await expect(cust.locator('select[name=glassId]')).toHaveCount(1);
+    await expect(cust.locator('select[name=glassId]')).toHaveValue(second.id);
+    await expect(cust.getByLabel('Adet', { exact: true })).toHaveValue('7');
+    await expect(cust.locator('#title')).toHaveValue('Eski çok camlı taslak');
+    await expect(cust.locator('#note')).toHaveValue('Eski taslak notu');
+    await expect(cust.locator('.upload-list')).toContainText('eski-plan.pdf');
+
+    // Normal tek cam akışıyla gönderilir
+    await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
+    await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
+    await expect(cust.getByText(`${SECOND} × 7`)).toBeVisible();
+    await expect(cust.getByText(`${GLASS} × 2`)).toHaveCount(0);
+    await expect(cust.getByText('eski-plan.pdf')).toBeVisible();
+    await expect(cust.getByText('Eski taslak notu')).toBeVisible();
+    expect(await db.orderDraft.count({ where: { id: draftId } })).toBe(0);
+    await cust.context().close();
+  } finally {
+    await db.$disconnect();
+  }
 });
 
 test('eski çok camlı sipariş normal açılır; satış teklif tablosunda "+ Cam ekle" durur', async ({ browser }) => {

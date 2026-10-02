@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.32.3 — 02.10.2026
+
+- **Eski çok camlı taslaklar**: tek cam kuralından önce kaydedilmiş, birden çok cam içeren taslak artık yalnızca ilk
+  camla açılmaz. Taslak açılınca bütün camlar (ad ve adet) listelenir ve taslağın bu hâliyle gönderilemeyeceği
+  yazılır; müşteri bu sipariş için tutulacak camı seçip onaylar. Onaylayana kadar taslakta hiçbir şey değişmez.
+  Onaydan sonra taslakta yalnızca seçilen cam kalır (dosyalar, not, ad ve numara aynı), diğer camlar için ayrı
+  sipariş açılması gerektiği bildirilir ve normal sipariş formu açılır. Gönderilmiş eski siparişler değişmedi.
+
 ## 3.32.2 — 02.10.2026
 
 - Yeni Sipariş: hata sonrasında cam seçiminin geri yazılması sağlamlaştırıldı.

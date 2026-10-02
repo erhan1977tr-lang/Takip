@@ -8,7 +8,7 @@ import {
   CATALOG_HEADERS, CUSTOMER_GLASS_TYPES, catalogSheetRows, glassLabel, glassOrderItems, itemGlassName, parseActive, parseCatalogSheet, parseNumber,
   planCatalogImport, validateGlass,
 } from '../server/catalog/glass.js';
-import { draftLines, readDraftItems } from '../server/orders/drafts.js';
+import { draftLines, isLegacyMultiGlass, readDraftItems } from '../server/orders/drafts.js';
 
 const fixture = (name) => fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -145,4 +145,13 @@ test('taslak: cam satırları gevşek kurallarla saklanır, bozuk veri okunurken
   assert.throws(() => draftLines([{ id: 'a', qty: '0' }]), (e) => e.code === 'BAD_QTY');
   assert.deepEqual(readDraftItems([{ glassProductId: 'a', qty: 1 }, { glassProductId: 3 }, null, 'x']), [{ glassProductId: 'a', qty: 1 }]);
   assert.deepEqual(readDraftItems('bozuk'), []);
+});
+
+test('eski çok camlı taslak: birden çok geçerli cam satırı varsa tanınır; tek camlı ve boş taslak normaldir', () => {
+  assert.equal(isLegacyMultiGlass([{ glassProductId: 'a', qty: 1 }, { glassProductId: 'b', qty: 2 }]), true);
+  assert.equal(isLegacyMultiGlass([{ glassProductId: 'a', qty: 1 }, { glassProductId: 'a', qty: 3 }]), true, 'aynı cam iki satır da eski düzendir');
+  assert.equal(isLegacyMultiGlass([{ glassProductId: 'a', qty: 1 }]), false);
+  assert.equal(isLegacyMultiGlass([{ glassProductId: 'a', qty: 1 }, null, { bozuk: true }]), false, 'bozuk satırlar cam sayılmaz');
+  assert.equal(isLegacyMultiGlass([]), false);
+  assert.equal(isLegacyMultiGlass(null), false);
 });

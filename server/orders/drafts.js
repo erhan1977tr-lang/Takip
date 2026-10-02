@@ -3,7 +3,8 @@
 // Yalnızca aynı firmanın müşteri kullanıcıları görür. Gönderilince createGlassOrder taslağın dosyalarını siparişe aktarır
 // ve taslağı siler (tek işlem). Taslak kaydederken kurallar gevşektir; tam kontrol gönderirken yapılır.
 import { WorkflowError } from '../domain/workflow.js';
-import { MAX_GLASS_QTY, clean } from '../catalog/glass.js';
+import { CUSTOMER_GLASS_TYPES, MAX_GLASS_QTY, clean } from '../catalog/glass.js';
+import { writeAudit } from './journal.js';
 
 export const MAX_DRAFT_FILES = 20;
 export const MAX_NOTE = 2000;
@@ -36,6 +37,36 @@ export function readDraftItems(items) {
 }
 
 /**
+ * Eski düzenden kalan taslak mı: tek cam kuralından (karar 85) önce kaydedilmiş, birden çok cam satırı var.
+ * Böyle bir taslak bu hâliyle gönderilemez ve formla üzerine yazılamaz; müşteri önce tutulacak camı açıkça seçer
+ * (keepDraftGlass). Yalnızca bakmak / açmak taslağı değiştirmez.
+ */
+export const isLegacyMultiGlass = (items) => readDraftItems(items).length > CUSTOMER_GLASS_TYPES;
+
+/**
+ * Eski çok camlı taslakta müşterinin AÇIKÇA seçtiği cam tutulur; diğer cam satırları taslaktan çıkar (dosyalar, not,
+ * ad ve numara aynen kalır). Çıkan camlar denetim kaydına yazılır. Satır hem sırasıyla hem cam kimliğiyle verilir:
+ * ekrandaki liste bu arada değiştiyse (başka sekme) işlem reddedilir.
+ * @param {import('@prisma/client').PrismaClient} db
+ * @param {{ actor: { id: string, role?: string, ip?: string | null }, firm: { id: string }, draftId: string, index: number, glassProductId: string }} p
+ * @returns {Promise<{ id: string, kept: { glassProductId: string, qty: number }, dropped: { glassProductId: string, qty: number }[] }>}
+ */
+export async function keepDraftGlass(db, { actor, firm, draftId, index, glassProductId }) {
+  return db.$transaction(async (tx) => {
+    const draft = await tx.orderDraft.findFirst({ where: { id: draftId, customerId: firm.id } });
+    if (!draft) throw new WorkflowError('DRAFT_GONE');
+    const lines = readDraftItems(draft.items);
+    if (lines.length <= CUSTOMER_GLASS_TYPES) throw new WorkflowError('DRAFT_NOT_LEGACY');
+    const kept = Number.isInteger(index) ? lines[index] : undefined;
+    if (!kept || kept.glassProductId !== glassProductId) throw new WorkflowError('GLASS_NOT_IN_DRAFT');
+    const dropped = lines.filter((_, i) => i !== index);
+    await tx.orderDraft.update({ where: { id: draft.id }, data: { items: [kept] } });
+    await writeAudit(tx, { action: 'DRAFT_GLASS_KEPT', entityType: 'OrderDraft', entityId: draft.id, userId: actor.id, details: { kept, dropped } }, actor);
+    return { id: draft.id, kept, dropped };
+  });
+}
+
+/**
  * Taslağı oluşturur ya da günceller.
  * @param {import('@prisma/client').PrismaClient} db
  * @param {object} p
@@ -59,6 +90,8 @@ export async function saveDraft(db, { actor, firm, draftId, values, files = [], 
     if (draftId) {
       draft = await tx.orderDraft.findFirst({ where: { id: draftId, customerId: firm.id }, include: { files: true } });
       if (!draft) throw new WorkflowError('DRAFT_GONE');
+      // Eski çok camlı taslağın camları formla sessizce ezilmez: önce müşteri tutulacak camı seçer (keepDraftGlass)
+      if (isLegacyMultiGlass(draft.items)) throw new WorkflowError('DRAFT_LEGACY_GLASS');
     }
     const removed = draft ? draft.files.filter((f) => removeFileIds.includes(f.id)) : [];
     const keep = (draft?.files.length ?? 0) - removed.length;

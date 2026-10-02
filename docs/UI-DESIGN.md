@@ -161,6 +161,9 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   on the customer form (the Sales/Admin offer editor keeps its own "+ Cam ekle").
 - Bottom bar on both forms: `.card.submit-bar.sticky-submit` with `ul.submit-check` (what is still missing;
   `li.done` when ready) on the left and the two buttons on the right.
+- Legacy multi-glass draft (same route, `page.tsx`): `.alert-warn` + a card with `table.legacy-glass`
+  (radio "keep" column, glass, quantity; `.legacy-actions` with the confirm button) + `OrderInfo` with the
+  draft's other data. No form fields until the customer confirms one glass.
 - Profile order (`ProfileOrderForm.tsx`): one `.card.card-flush` per category; `table.profile-table.profile-pick`
   with fixed column classes (`.c-thumb / .c-unit / .c-qty`) so unit and quantity line up across categories.
 

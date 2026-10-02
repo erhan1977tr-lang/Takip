@@ -7,9 +7,11 @@ import { fmtDate } from '@/lib/format';
 import { glassLoadingDate } from '@/server/orders/rules.js';
 import { getEnv } from '@/lib/env';
 import { glassLabel } from '@/server/catalog/glass.js';
-import { readDraftItems } from '@/server/orders/drafts.js';
+import { isLegacyMultiGlass, readDraftItems } from '@/server/orders/drafts.js';
+import { ConfirmButton } from '@/components/ConfirmButton';
+import { OrderInfo } from '../[id]/OrderInfo';
 import { NewOrderForm, type DraftData, type GlassOption } from './NewOrderForm';
-import { deleteDraftAction } from './actions';
+import { deleteDraftAction, keepDraftGlassAction } from './actions';
 import { ProfileOrderForm, type ProfileDraft } from './ProfileOrderForm';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { readProfileDraftItems } from '@/server/profile/drafts.js';
@@ -111,6 +113,68 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     );
   }
 
+  // Eski düzenden kalan çok camlı taslak (karar 86): hiçbir cam gizlenmez ve hiçbir şey kendiliğinden silinmez.
+  // Bütün camlar salt okunur gösterilir; müşteri tutulacak camı seçip onaylayınca (keepDraftGlassAction) taslak tek
+  // cama iner ve normal form açılır. Bu sayfayı açmak taslağı değiştirmez; sunucu çözülmemiş taslağı göndermez.
+  if (draftRow && isLegacyMultiGlass(draftRow.items)) {
+    const lines = readDraftItems(draftRow.items);
+    const known = await db.glassProduct.findMany({ where: { id: { in: lines.map((l) => l.glassProductId) } } });
+    const byId = new Map(known.map((g) => [g.id, g]));
+    return (
+      <>
+        <div className="page-head">
+          <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
+          <h1>{t('newOrder.draftTitle')}</h1>
+          {typeRow}
+          <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>
+        </div>
+        {sp.hata === 'sec' && <div className="alert alert-error" role="alert">{t('newOrder.legacy.needChoice')}</div>}
+        {sp.hata === 'degisti' && <div className="alert alert-error" role="alert">{t('newOrder.legacy.changed')}</div>}
+        <div className="alert alert-warn" id="eski-taslak">
+          {t('newOrder.legacy.warning')} <b>{t('newOrder.legacy.untouched')}</b>
+        </div>
+        <form action={keepDraftGlassAction} className="card">
+          <input type="hidden" name="draftId" value={draftRow.id} />
+          <h2>{t('newOrder.legacy.listTitle')} <span className="badge">{lines.length}</span></h2>
+          <div className="table-wrap">
+            <table className="legacy-glass">
+              <thead><tr><th className="c-keep">{t('newOrder.legacy.colKeep')}</th><th>{t('newOrder.legacy.colGlass')}</th><th className="num">{t('newOrder.legacy.colQty')}</th></tr></thead>
+              <tbody>
+                {lines.map((l, i) => {
+                  const g = byId.get(l.glassProductId);
+                  const label = g ? glassLabel(g, locale) : t('newOrder.legacy.unknown');
+                  return (
+                    <tr key={`${i}-${l.glassProductId}`}>
+                      <td><input type="radio" id={`keep-${i}`} name="keep" value={`${i}:${l.glassProductId}`} required aria-label={t('newOrder.legacy.keepLabel', { glass: label })} /></td>
+                      <td><label htmlFor={`keep-${i}`}>{label}</label>{(!g || !g.isActive) && <> <span className="badge badge-muted">{t('newOrder.legacy.gone')}</span></>}</td>
+                      <td className="num">{l.qty}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="row end legacy-actions">
+            <ConfirmButton primary message={t('newOrder.legacy.confirm')}>{t('newOrder.legacy.submit')}</ConfirmButton>
+          </div>
+        </form>
+        <OrderInfo
+          title={t('newOrder.legacy.summaryTitle')}
+          rows={[
+            { label: t('newOrder.form.info.name'), value: draftRow.title || '—' },
+            { label: t('newOrder.form.info.number'), value: draftRow.customerOrderNo != null ? `${firm.prefix}${draftRow.customerOrderNo}` : '—', mono: true },
+            { label: t('newOrder.legacy.files'), value: draftRow.files.length ? draftRow.files.map((f) => f.name).join(', ') : t('newOrder.legacy.noFiles') },
+            { label: t('newOrder.legacy.note'), value: draftRow.note || '—' },
+          ]}
+        />
+        <form action={deleteDraftAction} className="row end">
+          <input type="hidden" name="draftId" value={draftRow.id} />
+          <button type="submit" className="btn btn-link danger">{t('newOrder.deleteDraft')}</button>
+        </form>
+      </>
+    );
+  }
+
   const [products, suggestedNo] = await Promise.all([
     // Pasif cam hiçbir listede görünmez
     db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] }),
@@ -119,6 +183,12 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   const catalog: GlassOption[] = products.map((p) => ({
     id: p.id, group: locale === 'tr' ? p.nameTr : p.nameRo, label: glassLabel(p, locale),
   }));
+
+  // Eski taslak tek cama indirildikten sonraki bildirim: taslaktan çıkan camların adları (ayrı sipariş açılacak)
+  const otherIds = sp.ok === 'glassKept' ? (sp.cikan ?? '').split(',').filter((x) => /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, 50) : [];
+  const others = otherIds.length
+    ? (await db.glassProduct.findMany({ where: { id: { in: otherIds } }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }] })).map((g) => glassLabel(g, locale))
+    : [];
 
   let draft: DraftData | undefined;
   let droppedGlass = 0;
@@ -145,6 +215,12 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
       </div>
       {sp.ok === 'draft' && <div className="alert alert-ok">{t('newOrder.draftSaved')}</div>}
+      {sp.ok === 'glassKept' && (
+        <div className="alert alert-ok" id="cam-secildi">
+          {t('newOrder.legacy.kept')}
+          {others.length > 0 && <> <b>{t('newOrder.legacy.keptOthers', { list: others.join(' · ') })}</b></>}
+        </div>
+      )}
       {droppedGlass > 0 && <div className="alert alert-warn">{t('newOrder.draftGlassGone', { n: droppedGlass })}</div>}
       <NewOrderForm
         key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
