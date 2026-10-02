@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 type SP = Record<string, string | undefined>;
 type Entry = { o: LoadRow; load: Load };
 type Total = ReturnType<typeof groupLoad>;
-type Group = { key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number; salesAmount: number };
+type Group = { key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number; salesAmount: number; crateLabels: string[] };
 /** Hangi tutar sütunları görünür (karar 4): yönetici ikisini yan yana, satış yalnız satış tutarını, müşteri/denetimci yalnız teklif tutarını */
 type Money = { sales: boolean; offer: boolean };
 
@@ -52,6 +52,8 @@ function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = []):
     key, label: customerLabel(user, g.name), entries: g.entries, crates: g.crates,
     total: groupLoad(g.entries.map((e) => e.load), g.crates), amount: g.entries.reduce((s, e) => s + (e.load.amount ?? 0), 0),
     salesAmount: g.entries.reduce((s, e) => s + (e.load.salesAmount ?? 0), 0),
+    // Sandık etiketi: siparişte girilmişse o, yoksa müşterinin varsayılanı (sipariş sayfasındaki kuralla aynı)
+    crateLabels: [...new Set(g.entries.map((e) => e.o.sandikEtiket ?? e.o.customer.sandikEtiket ?? '').filter(Boolean))],
   })).sort((a, b) => b.total.metraj - a.total.metraj);
   const t = groups.reduce(
     (acc, g) => ({
@@ -118,19 +120,19 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <div className="page-head">
-        <h1>{isCustomer ? t('loading.titleCustomer') : t('loading.title')}</h1>
-        <p className="muted">
-          {isCustomer ? t('loading.introCustomer') : t('loading.intro')}
-        </p>
+      <div className="page-head row">
+        <div>
+          <h1>{isCustomer ? t('loading.titleCustomer') : t('loading.title')}</h1>
+          <p className="muted">{isCustomer ? t('loading.introCustomer') : t('loading.intro')}</p>
+        </div>
         {userCan(user, 'TRANSPORT_LIST_VIEW') && (
-          // Nakliye listesi (PDF): seçilen yükleme günü — /yuklemeler/nakliye (server/loading/transport.js)
-          <form className="row" action="/yuklemeler/nakliye" method="get" style={{ gap: 8, marginTop: 8 }}>
-            <label htmlFor="nakliye-gun" style={{ margin: 0 }}>{t('loading.transport.dayLabel')}</label>
-            <input id="nakliye-gun" name="gun" type="date" defaultValue={selected ?? today} style={{ width: 'auto' }} required />
-            <button className="btn btn-primary">{t('loading.transport.button')}</button>
-            {/* Yükleme dökümü (Excel): aynı gün — /yuklemeler/dokum (server/loading/summary.js) */}
-            <button className="btn" formAction="/yuklemeler/dokum">{t('loading.summary.button')}</button>
+          // Seçilen yükleme gününün belgeleri (iç ekip): nakliye listesi (PDF, /yuklemeler/nakliye — server/loading/transport.js)
+          // ve yükleme dökümü (Excel, /yuklemeler/dokum — server/loading/summary.js). Gün, aşağıda seçili günle başlar.
+          <form className="page-tools" action="/yuklemeler/nakliye" method="get">
+            <label htmlFor="nakliye-gun">{t('loading.transport.dayLabel')}</label>
+            <input id="nakliye-gun" name="gun" type="date" defaultValue={selected ?? today} required />
+            <button className="btn">{t('loading.transport.button')}</button>
+            <button className="btn btn-primary" formAction="/yuklemeler/dokum">{t('loading.summary.button')}</button>
           </form>
         )}
       </div>
@@ -150,12 +152,12 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
           </div>
           <form className="row" action="/yuklemeler">
             {view === 'liste' && <input type="hidden" name="view" value="liste" />}
-            <label htmlFor="gun" style={{ margin: 0 }}>{t('loading.nav.goToDay')}</label>
-            <input id="gun" name="gun" type="date" defaultValue={gun ?? ''} style={{ width: 'auto' }} required />
+            <label htmlFor="gun">{t('loading.nav.goToDay')}</label>
+            <input id="gun" name="gun" type="date" defaultValue={gun ?? ''} required />
             <button className="btn">{t('loading.nav.go')}</button>
           </form>
         </div>
-        <p className="muted small" style={{ margin: '0 0 10px' }}>
+        <p className="cal-sum">
           {rich(t('loading.monthTotal'), {
             orders: <><b>{monthTotal.orders}</b> {unit('order', monthTotal.orders)}</>,
             m2: <b>{fmtNum(monthTotal.metraj)}</b>,
@@ -203,8 +205,8 @@ async function DayList({ user, days, href, selected, isCustomer }: { user: Curre
   const { t } = await getT();
   if (days.length === 0) return <div className="empty">{t('loading.list.empty')}</div>;
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="table-wrap load-wrap">
+      <table className="day-table">
         <thead>
           <tr>
             <th>{t('loading.list.cols.day')}</th><th className="num">{t('loading.list.cols.orders')}</th><th>{isCustomer ? t('loading.list.cols.orderList') : t('loading.list.cols.customers')}</th>
@@ -241,9 +243,8 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
   const money: Money = { sales: userCan(user, 'OFFER_PREPARE'), offer: userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW') };
   return (
     <div className="card" id="gun">
-      <div className="row" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>{t('loading.day.title', { date: fmtDate(`${day}T12:00:00Z`) })}</h2>
-        <span className="badge">{count('order', total.orders)}</span>
+      <div className="section-head">
+        <h2>{t('loading.day.title', { date: fmtDate(`${day}T12:00:00Z`) })} <span className="badge">{count('order', total.orders)}</span></h2>
       </div>
       {entries.length === 0 && groups.length === 0 ? (
         <p className="muted">{t('loading.day.empty')}</p>
@@ -256,7 +257,7 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
             <div className="stat"><div className="k">{t('loading.day.stats.gross')}</div><div className="v">{kg(total.grossKg)}<small>{t('common.unitKg')}</small></div></div>
             <div className="stat"><div className="k">{t('loading.day.stats.crates')}</div><div className="v">{total.crates}<small>{t('common.unitPiece')}</small></div></div>
           </div>
-          <p className="muted small">
+          <p className="muted small load-note">
             {total.estimatedCrates > 0 && (
               <>
                 {t('loading.day.estimate', {
@@ -267,7 +268,7 @@ async function DayDetail({ user, day, entries, crates, isCustomer }: { user: Cur
             {t('loading.day.note')}
           </p>
 
-          <div className="table-wrap">
+          <div className="table-wrap load-wrap">
             <table className="load-table">
               <thead>
                 <tr>
@@ -317,7 +318,11 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
         <td className="num">{dash(load.delik)}</td>
         <td className="num">{fmtNum(load.metraj)}</td>
         <td className="num">{kg(load.netKg)}</td>
-        <td className="num">{nos.length ? <span title={t('loading.day.real')}>#{nos.join(', #')}</span> : g.total.realCrates ? '' : <span className="muted">{t('loading.day.estimated')}</span>}</td>
+        <td className="num">
+          {nos.length
+            ? <span className="crate-nos" title={t('loading.day.real')}>{nos.map((n) => <span key={n} className="badge badge-ok">#{n}</span>)}</span>
+            : g.total.realCrates ? '' : <span className="muted">{t('loading.day.estimated')}</span>}
+        </td>
         <td className="num"><span className="muted">—</span></td>
         {money.sales && <td className="num">{load.salesAmount != null ? fmtMoney(load.salesAmount, load.currency) : <span className="muted">—</span>}</td>}
         {money.offer && <td className="num">{load.amount != null ? fmtMoney(load.amount, load.currency) : <span className="muted">—</span>}</td>}
@@ -326,7 +331,11 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
   });
   const groupTotal = (
     <tr className="group-total">
-      <td><b>{g.label}</b></td>{!isCustomer && <td className="num">{g.total.orders}</td>}
+      <td>
+        <b className="group-name">{g.label}</b>
+        {/* Sandık etiketi (iç ekip): siparişteki / müşteri kaydındaki mevcut değer */}
+        {!isCustomer && g.crateLabels.length > 0 && <span className="muted small"> · {t('loading.day.crates.label')}: <span className="mono">{g.crateLabels.join(', ')}</span></span>}
+      </td>{!isCustomer && <td className="num">{g.total.orders}</td>}
       <td className="num">{g.total.camAdet}</td><td className="num">{dash(g.total.cnc)}</td><td className="num">{dash(g.total.delik)}</td><td className="num">{fmtNum(g.total.metraj)}</td><td className="num">{kg(g.total.netKg)}</td>
       <td className="num">{g.total.crates}{' '}{g.total.realCrates ? <span className="badge badge-ok">{t('loading.day.real')}</span> : <span className="muted small">{t('loading.day.estimated')}</span>}</td>
       <td className="num">{kg(g.total.grossKg)}</td>
@@ -363,7 +372,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
                 m={m.loading.day.crates}
               />
             ) : g.crates.length > 0 ? (
-              <table className="crate-table">
+              <table className="crate-table readonly">
                 <thead><tr><th>{t('loading.day.crates.cols.no')}</th><th>{t('loading.day.crates.cols.length')}</th><th>{t('loading.day.crates.cols.width')}</th><th>{t('loading.day.crates.cols.height')}</th><th>{t('loading.day.crates.cols.net')}</th><th>{t('loading.day.crates.cols.gross')}</th><th>{t('loading.day.crates.cols.note')}</th></tr></thead>
                 <tbody>
                   {g.crates.map((c) => (

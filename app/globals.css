@@ -340,6 +340,10 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .content { padding: 24px 24px 48px; max-width: var(--content-max); width: 100%; }
 .page-head { margin-bottom: 20px; }
 .page-head p { margin: 2px 0 0; font-size: var(--fs-value); }
+/* Sayfa başlığının sağındaki araçlar (gün seçimi + dışa aktarma düğmeleri) */
+.page-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.page-tools label { margin: 0; }
+.page-tools input[type='date'], .page-tools select { width: auto; }
 /* Başlık solda, sayfanın işlemleri sağda */
 .page-head.row { justify-content: space-between; align-items: flex-start; gap: 12px 16px; }
 .mobile-nav { display: none; }
@@ -452,8 +456,9 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .offer-table td.c-amount { font-weight: 600; }
 .offer-table td.c-no { padding-top: 15px; text-align: center; font-weight: 600; }
 .offer-table td.c-del { padding: 9px 4px 0; text-align: center; }
-.offer-table .btn-del { width: 30px; height: 30px; padding: 0; border-radius: var(--radius-sm); color: var(--danger); font-size: 15px; text-decoration: none; }
-.offer-table .btn-del:hover { background: var(--danger-soft); text-decoration: none; }
+/* Satır silme düğmesi (teklif tablosu, sandık tablosu) */
+.btn-del { width: 30px; height: 30px; padding: 0; border-radius: var(--radius-sm); color: var(--danger); font-size: 15px; text-decoration: none; }
+.btn-del:hover { background: var(--danger-soft); color: var(--danger); text-decoration: none; }
 /* Tam cam adı: tablo darken (açıklama kutusu kısa kalınca) kutunun altında okunur */
 .offer-table .desc-full { display: none; margin-top: 4px; font-size: var(--fs-meta); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
 @container (max-width: 1240px) { .offer-table .desc-full { display: block; } }
@@ -462,9 +467,9 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .offer-table tbody tr.glass-line:first-child > td { border-top: 0; }
 .offer-table tfoot td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border-strong); border-right: 0; padding: 12px 8px; vertical-align: middle; }
 .offer-table tfoot td.grand { font-size: var(--fs-value); }
-/* Tablonun altındaki araç çubuğu: satır ekleme · Excel · tek fiyat | tabloyu temizle */
-.offer-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
-.offer-tools .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Tablonun altındaki araç çubuğu (.offer-tools: teklif; .tool-bar: genel — ör. sandık girişi): solda ekleme, sağda özet / kaydet */
+.offer-tools, .tool-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+.offer-tools .group, .tool-bar .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .offer-tools .sep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 2px 4px; }
 /* Yönetici: satış / müşteri tutarı özeti */
 .offer-summary { margin: 10px 0 0; text-align: right; font-size: var(--fs-table); font-weight: 600; }
@@ -500,18 +505,38 @@ summary { cursor: pointer; }
 /* yükleme takvimi */
 .stats-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .cal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.cal-head label { margin: 0; }
+.cal-head input[type='date'] { width: auto; }
+.cal-head h2 { font-size: 20px; }
+.cal-sum { margin: 0 0 12px; font-size: var(--fs-sm); color: var(--muted); }
+.cal-sum b { color: var(--text); }
 .cal-title { margin: 0 8px; min-width: 150px; text-align: center; text-transform: capitalize; }
 .cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-.cal-wd { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 4px 0; }
-.cal-day { display: block; min-height: 96px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); color: inherit; text-decoration: none; font-size: var(--fs-meta); line-height: 1.35; overflow: hidden; }
-.cal-day:hover { border-color: var(--border-strong); color: inherit; }
+.cal-wd { text-align: center; font-size: var(--fs-meta); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 0 4px; }
+.cal-day { display: block; min-height: 104px; border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--surface); color: inherit; text-decoration: none; font-size: var(--fs-meta); line-height: 1.4; overflow: hidden; transition: border-color .12s ease, box-shadow .12s ease; }
+.cal-day:hover { border-color: var(--primary-border); color: inherit; }
+.cal-day b { font-size: var(--fs-body); }
+/* Yüklemesi olan gün belirgin; boş gün sade; ay dışı gün soluk */
+.cal-day.has { box-shadow: var(--shadow-sm); }
 .cal-day.other { background: var(--surface-2); color: var(--faint); }
-.cal-day.sel { border: 2px solid var(--primary); padding: 7px 9px; }
-.cal-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.cal-count { margin-left: auto; min-width: 26px; height: 26px; border-radius: 13px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-border); font-weight: 700; font-size: var(--fs-meta); line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+.cal-day.sel { border: 2px solid var(--primary); padding: 8px 9px; box-shadow: 0 0 0 3px var(--focus); }
+.cal-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.cal-count { margin-left: auto; min-width: 28px; height: 28px; border-radius: 14px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-border); font-weight: 700; font-size: var(--fs-meta); line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0 7px; }
+.cal-names { color: var(--text-2); }
 .cal-names div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.load-table .group-total td { background: var(--surface-2); }
-.load-table tr.sub td:first-child { padding-left: 28px; }
+/* ----- Yükleme günü (yuklemeler/page.tsx): müşteri başlığı → siparişleri → sandıkları ----- */
+.load-wrap { border: 1px solid var(--border); border-radius: 10px; }
+.load-wrap > table > thead th { border-top: 0; }
+.load-note { margin: 0 0 14px; }
+.load-table td { vertical-align: middle; }
+/* Müşteri satırı: grubun başlığı ve toplamı (müşteri panelinde: kendi toplamı) */
+.load-table tbody tr.group-total > td { background: var(--surface-2); border-top: 1px solid var(--border); font-weight: 600; padding-top: 13px; padding-bottom: 13px; }
+.load-table tbody tr.group-total:first-child > td { border-top: 0; }
+.load-table .group-name { font-size: var(--fs-value); }
+.load-table tr.sub td:first-child { padding-left: 30px; }
+.load-table tfoot td, .day-table tfoot td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border-strong); border-bottom: 0; padding: 13px 12px; }
+.crate-nos { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.day-table td { vertical-align: middle; }
 tr.row-sel td { background: var(--primary-soft); }
 @media (max-width: 760px) {
   .stats-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -567,13 +592,32 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .file-list li { gap: 10px; flex-wrap: wrap; }
 
 /* Yükleme sekmesi: sandık girişi (müşteri satırının altında açılır) */
-.load-table tr.crate-row > td { background: var(--surface-2); padding: 6px 12px 12px; }
-.load-table tr.crate-row summary { cursor: pointer; font-size: var(--fs-meta); font-weight: 600; color: var(--primary); padding: 4px 0; }
-.crate-editor { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 6px; }
-.crate-table td, .crate-table th { padding: 4px 6px; white-space: nowrap; }
-.crate-table input { padding: 4px 6px; }
-.crate-orders { display: flex; flex-wrap: wrap; gap: 4px; }
-.crate-orders .crate-pick { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; }
+/* Sandıklar: müşterinin siparişlerinin hemen altında açılır bölüm */
+.load-table tr.crate-row > td { background: var(--surface); padding: 2px 12px 14px 30px; border-bottom: 1px solid var(--border); }
+.load-table tr.crate-row summary { display: inline-flex; align-items: center; gap: 7px; list-style: none; font-size: var(--fs-meta); font-weight: 600; color: var(--primary); padding: 5px 12px; border: 1px solid var(--primary-border); border-radius: var(--radius-pill); background: var(--primary-soft); }
+.load-table tr.crate-row summary::-webkit-details-marker { display: none; }
+.load-table tr.crate-row summary::before { content: '▸'; font-size: 11px; }
+.load-table tr.crate-row details[open] > summary::before { content: '▾'; }
+.load-table tr.crate-row summary:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
+.crate-editor { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-top: 10px; box-shadow: var(--shadow-sm); }
+.crate-editor .section-head { margin-bottom: 4px; }
+.crate-editor .section-head h3 { margin: 0; font-size: 17px; }
+.crate-intro { margin: 0 0 12px; }
+.crate-table { font-size: var(--fs-table); }
+.crate-table th { white-space: normal; vertical-align: bottom; padding: 9px 8px; border-top: 0; }
+.crate-table td { padding: 7px 8px; white-space: nowrap; vertical-align: middle; border-bottom: 1px solid var(--divider); }
+.crate-table input { padding: 8px 10px; font-size: var(--fs-body); }
+.crate-table .c-no input { width: 68px; font-weight: 600; }
+.crate-table .c-dim input { width: 98px; text-align: right; font-variant-numeric: tabular-nums; }
+.crate-table .c-kg input { width: 104px; text-align: right; font-variant-numeric: tabular-nums; }
+.crate-table th.c-note { width: 100%; }
+.crate-table td.c-note input { min-width: 160px; }
+.crate-table td.c-del { text-align: center; padding-left: 2px; padding-right: 2px; }
+.crate-table.readonly { margin-top: 10px; width: auto; min-width: 60%; }
+.crate-table.readonly td { padding: 9px 12px; }
+.crate-editor .tool-bar { margin-top: 12px; }
+.crate-table td.crate-orders { display: flex; flex-wrap: wrap; gap: 4px 10px; white-space: normal; }
+.crate-orders .crate-pick { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-weight: 500; }
 
 /* Çizim sürümleri: her sürüm bir blok; taslak (müşteri görmez) kesik çerçeveli */
 .drawing-version { border-top: 1px solid var(--border); padding: 12px 0; }

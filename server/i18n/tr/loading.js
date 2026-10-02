@@ -90,6 +90,7 @@ export default {
     crates: {
       title: 'Sandık ölçüleri ve ağırlıkları',
       toggle: 'Sandıklar',
+      label: 'Sandık etiketi',
       count: '{n} sandık',
       updated: 'güncellendi · {when} · {who}',
       intro: 'Nakliyeciye gönderilen listenin kaynağı. Girilen sandıklar bu müşterinin tahmini sandık sayısının önüne geçer. Sandık numarası o gün içinde tektir.',

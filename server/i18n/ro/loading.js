@@ -90,6 +90,7 @@ export default {
     crates: {
       title: 'Dimensiunile și greutățile lăzilor',
       toggle: 'Lăzi',
+      label: 'Etichetă ladă',
       count: 'lăzi: {n}',
       updated: 'actualizat · {when} · {who}',
       intro: 'Sursa listei trimise transportatorului. Lăzile introduse înlocuiesc numărul estimat de lăzi al acestui client. Numărul lăzii este unic în ziua respectivă.',

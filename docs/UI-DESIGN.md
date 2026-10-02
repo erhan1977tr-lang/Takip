@@ -122,12 +122,24 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Buttons on this page: approve = `.btn-success`, cancel order = solid red, send back / request revision /
   clear table = `.btn-danger` (outline), everything else primary or secondary.
 
+## Loadings and crates (3.29.0)
+
+- Page header: title left, `.page-tools` right (day picker + "Nakliye Listesi" PDF + "Yükleme Dökümü Excel").
+- Calendar: `.cal` / `.cal-day` (`.has` = day with loads, `.sel` = selected, `.other` = outside the month).
+- Day detail: `.table-wrap.load-wrap > table.load-table`. Per customer: `tr.group-total` (header + totals,
+  crate label for internal roles) → `tr.sub` order rows → `tr.crate-row` with a `<details>` holding the
+  crate editor. Customers get the same table without the crate row and without other customers.
+- Crate editor (`CrateEditor.tsx`): `.crate-editor` card → `.section-head` → `table.crate-table`
+  (`.c-no / .c-dim / .c-kg / .c-note / .c-del` — no inline widths) → `.tool-bar`. Read-only roles get
+  `table.crate-table.readonly`.
+- `.tool-bar` (generic) and `.offer-tools` share one style; `.btn-del` is the row-delete button everywhere.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
-order detail and offer editor (3.28.0). Still to do, page by page:
+order detail and offer editor (3.28.0); loadings and crates (3.29.0). Still to do, page by page:
 
-- Drawing section and viewer, loading/crate detail, profile order, accounting, new-order form:
+- Drawing section and viewer, profile order, accounting, new-order form:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,

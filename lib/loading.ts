@@ -5,7 +5,8 @@ import { orderScope, sanitizeRows } from './orders';
 import { dayKey, orderLoad } from '../server/orders/loading.js';
 
 export const loadInclude = {
-  customer: { select: { id: true, name: true } },
+  // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir
+  customer: { select: { id: true, name: true, sandikEtiket: true } },
   items: { select: { camAdedi: true } },
   price: true,
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },

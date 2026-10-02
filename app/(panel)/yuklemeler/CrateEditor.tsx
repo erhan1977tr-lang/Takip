@@ -60,11 +60,11 @@ export function CrateEditor(props: {
     .map((id) => props.orders.find((o) => o.id === id)?.orderNo).filter(Boolean);
   const payload = JSON.stringify(rows.map(({ key: _k, ...r }) => r));
   const many = props.orders.length > 1;
-  const cell = (r: Row, k: 'crateNo' | 'lengthMm' | 'widthMm' | 'heightMm' | 'netKg' | 'grossKg', label: string, w = 84) => (
-    <td>
+  // Sütun genişlikleri sınıftan gelir (app/globals.css → .crate-table .c-no / .c-dim / .c-kg)
+  const cell = (r: Row, k: 'crateNo' | 'lengthMm' | 'widthMm' | 'heightMm' | 'netKg' | 'grossKg', label: string) => (
+    <td className={k === 'crateNo' ? 'c-no' : k === 'netKg' || k === 'grossKg' ? 'c-kg' : 'c-dim'}>
       <input value={r[k]} inputMode={k === 'netKg' || k === 'grossKg' ? 'decimal' : 'numeric'} aria-label={`${label} (${r.crateNo || '—'})`}
-        onChange={(e) => set(r.key, { [k]: e.target.value.replace(k === 'netKg' || k === 'grossKg' ? /[^\d.,]/g : /\D/g, '') } as Partial<Row>)}
-        style={{ width: w }} />
+        onChange={(e) => set(r.key, { [k]: e.target.value.replace(k === 'netKg' || k === 'grossKg' ? /[^\d.,]/g : /\D/g, '') } as Partial<Row>)} />
     </td>
   );
 
@@ -73,11 +73,11 @@ export function CrateEditor(props: {
       <input type="hidden" name="day" value={props.day} />
       <input type="hidden" name="customerId" value={props.customerId} />
       <input type="hidden" name="rows" value={payload} />
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h3 style={{ margin: 0 }}>{m.title}</h3>
+      <div className="section-head">
+        <h3>{m.title}</h3>
         {props.updated && <span className="badge badge-info">{props.updated}</span>}
       </div>
-      <p className="muted small" style={{ margin: '4px 0 8px' }}>
+      <p className="muted small crate-intro">
         {m.intro}{covered.length > 0 && <> {interpolate(m.covers, { list: covered.join(', ') })}</>}
       </p>
       {state.error && <div className="alert alert-error">{state.error}</div>}
@@ -87,19 +87,19 @@ export function CrateEditor(props: {
           <thead>
             <tr>
               <th>{m.cols.no}</th><th>{m.cols.length}</th><th>{m.cols.width}</th><th>{m.cols.height}</th>
-              <th>{m.cols.net}</th><th>{m.cols.gross}</th><th>{m.cols.note}</th>{many && <th>{m.cols.orders}</th>}<th />
+              <th>{m.cols.net}</th><th>{m.cols.gross}</th><th className="c-note">{m.cols.note}</th>{many && <th>{m.cols.orders}</th>}<th />
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
-                {cell(r, 'crateNo', m.cols.no, 56)}
+                {cell(r, 'crateNo', m.cols.no)}
                 {cell(r, 'lengthMm', m.cols.length)}
                 {cell(r, 'widthMm', m.cols.width)}
                 {cell(r, 'heightMm', m.cols.height)}
-                {cell(r, 'netKg', m.cols.net, 90)}
-                {cell(r, 'grossKg', m.cols.gross, 90)}
-                <td><input value={r.note} maxLength={200} aria-label={`${m.cols.note} (${r.crateNo || '—'})`} onChange={(e) => set(r.key, { note: e.target.value })} /></td>
+                {cell(r, 'netKg', m.cols.net)}
+                {cell(r, 'grossKg', m.cols.gross)}
+                <td className="c-note"><input value={r.note} maxLength={200} aria-label={`${m.cols.note} (${r.crateNo || '—'})`} onChange={(e) => set(r.key, { note: e.target.value })} /></td>
                 {many && (
                   <td className="crate-orders">
                     {props.orders.map((o) => (
@@ -111,25 +111,25 @@ export function CrateEditor(props: {
                     ))}
                   </td>
                 )}
-                <td><button type="button" className="btn btn-link danger" aria-label={m.remove} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>✕</button></td>
+                <td className="c-del"><button type="button" className="btn btn-link btn-del" aria-label={m.remove} title={m.remove} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>✕</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="row" style={{ justifyContent: 'space-between', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
-        <div className="row" style={{ gap: 10 }}>
+      <div className="tool-bar">
+        <div className="group">
           <button type="button" className="btn" onClick={add}>{m.add}</button>
           {props.dayUsed.length > 0 && (
             <span className="muted small">{interpolate(m.dayUsed, { list: props.dayUsed.map((u) => `${u.no} (${u.label})`).join(', ') })}</span>
           )}
         </div>
-        <div className="row" style={{ gap: 10 }}>
-          {rows.length > 0 && <span className="small">{interpolate(m.totals, { net: fmt0(totals.net), gross: fmt0(totals.gross) })}</span>}
+        <div className="group">
+          {rows.length > 0 && <b className="small">{interpolate(m.totals, { net: fmt0(totals.net), gross: fmt0(totals.gross) })}</b>}
           <button type="submit" className="btn btn-primary" disabled={pending}>{pending ? m.saving : m.save}</button>
         </div>
       </div>
-      <p className="muted small" style={{ margin: '6px 0 0' }}>{interpolate(m.grossHint, { tare: props.tare })}</p>
+      <p className="hint">{interpolate(m.grossHint, { tare: props.tare })}</p>
     </form>
   );
 }

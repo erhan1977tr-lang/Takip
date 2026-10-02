@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.29.0 — 02.10.2026
+
+- **Görünüm, 4. aşama: Yüklemeler ve sandıklar** (yükleme günü, hesaplar, yetkiler ve sandık kayıtları aynı):
+  - Sayfa başlığının sağında gün seçimi + "Nakliye Listesi" + "Yükleme Dökümü Excel"; takvimde yüklemesi olan günler
+    belirgin, seçili gün çerçeveli.
+  - Gün ayrıntısı: çerçeveli tablo; her müşteri bir başlık satırı (ad, sandık etiketi, toplamlar), altında siparişleri,
+    onların altında "Sandıklar" bölümü; belirgin toplam satırı; siparişin sandık numaraları rozet olarak.
+  - Sandık girişi: daha büyük giriş alanları, hizalı sütunlar, ayrı sil sütunu, altta araç çubuğu (+ Sandık ekle,
+    net / brüt toplam, kaydet).
+  - Müşterinin "Yükleme takvimim" sayfası aynı görünümle; gördüğü veri değişmedi (yalnızca kendi siparişleri,
+    sandık numaraları ve ağırlıkları).
+- Yükleme Dökümü Excel: kural değişmedi; sandık parasının faturadaki gibi camın tutarına eklendiği testle sabitlendi.
+
 ## 3.28.1 — 02.10.2026
 
 - Sipariş sayfası düzeni ve teklif tablosu araçları için uçtan uca test (kilitli olmayan satış hesabıyla).
