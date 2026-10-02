@@ -17,7 +17,7 @@ export default {
     archived: 'Sipariş arşivlendi.',
     cancelled: 'Sipariş iptal edildi.',
     drawing_started: 'Çizim işini üstlendiniz.',
-    drawing_uploaded: 'Dosyalar taslağa eklendi. Hazır olunca “Müşteriye gönder”e basın.',
+    drawing_uploaded: 'Dosyalar taslağa eklendi. Hazır olunca “Kontrol Et” ile açıp müşteriye gönderin.',
     drawing_sent: 'Çizim müşterinin onayına gönderildi.',
     drawing_file_removed: 'Dosya taslaktan çıkarıldı.',
     drawing_withdrawn: 'Çizim sürümü geri çekildi; yeni sürüm yükleyebilirsiniz.',

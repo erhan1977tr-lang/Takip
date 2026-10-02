@@ -17,7 +17,7 @@ export default {
     archived: 'Comanda a fost arhivată.',
     cancelled: 'Comanda a fost anulată.',
     drawing_started: 'Ați preluat desenul.',
-    drawing_uploaded: 'Fișierele au fost adăugate în ciornă. Când este gata, apăsați „Trimite clientului”.',
+    drawing_uploaded: 'Fișierele au fost adăugate în ciornă. Când este gata, deschideți cu „Verifică” și trimiteți clientului.',
     drawing_sent: 'Desenul a fost trimis clientului spre aprobare.',
     drawing_file_removed: 'Fișierul a fost scos din ciornă.',
     drawing_withdrawn: 'Versiunea desenului a fost retrasă; puteți încărca o versiune nouă.',
