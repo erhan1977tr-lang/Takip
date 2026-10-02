@@ -343,7 +343,41 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
       {money.offer && <td className="num">{g.amount ? fmtMoney(g.amount) : '—'}</td>}
     </tr>
   );
-  if (isCustomer) return <>{orderRows}{g.crates.length > 0 && groupTotal}</>;
+  const span = (isCustomer ? 8 : 9) + (money.sales ? 1 : 0) + (money.offer ? 1 : 0);
+  // Salt okunur sandık listesi: no, uzunluk × genişlik × yükseklik, net, brüt (not: yalnızca iç ekip)
+  const crateList = (note: boolean) => (
+    <table className="crate-table readonly">
+      <thead><tr><th>{t('loading.day.crates.cols.no')}</th><th>{t('loading.day.crates.cols.length')}</th><th>{t('loading.day.crates.cols.width')}</th><th>{t('loading.day.crates.cols.height')}</th><th>{t('loading.day.crates.cols.net')}</th><th>{t('loading.day.crates.cols.gross')}</th>{note && <th>{t('loading.day.crates.cols.note')}</th>}</tr></thead>
+      <tbody>
+        {g.crates.map((c) => (
+          <tr key={c.id}>
+            <td>{c.crateNo}</td><td>{c.lengthMm ?? '—'}</td><td>{c.widthMm ?? '—'}</td><td>{c.heightMm ?? '—'}</td>
+            <td>{c.netAgirlik != null ? kg(Number(c.netAgirlik)) : '—'}</td><td>{c.brutAgirlik != null ? kg(Number(c.brutAgirlik)) : '—'}</td>{note && <td>{c.note ?? ''}</td>}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  // Müşteri: kendi siparişleri, (sandık girildiyse) kendi toplamı ve kendi sandıklarının ölçü / ağırlıkları.
+  // g.crates yalnızca bu firmanın sandıklarıdır (lib/loading.ts → cratesBetween müşteriyi kendi firmasıyla sınırlar).
+  if (isCustomer) {
+    return (
+      <>
+        {orderRows}
+        {g.crates.length > 0 && groupTotal}
+        {g.crates.length > 0 && (
+          <tr className="crate-row">
+            <td colSpan={span}>
+              <details open>
+                <summary>{t('loading.day.crates.toggle')} · {t('loading.day.crates.count', { n: g.crates.length })}</summary>
+                {crateList(false)}
+              </details>
+            </td>
+          </tr>
+        )}
+      </>
+    );
+  }
   const last = [...g.crates].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
   const init = g.crates.map((c) => ({
     crateNo: String(c.crateNo), lengthMm: c.lengthMm?.toString() ?? '', widthMm: c.widthMm?.toString() ?? '', heightMm: c.heightMm?.toString() ?? '',
@@ -356,7 +390,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
       {groupTotal}
       {orderRows}
       <tr className="crate-row">
-        <td colSpan={9 + (money.sales ? 1 : 0) + (money.offer ? 1 : 0)}>
+        <td colSpan={span}>
           <details open={g.crates.length > 0 || undefined}>
             <summary>{t('loading.day.crates.toggle')} · {t('loading.day.crates.count', { n: g.crates.length })}</summary>
             {canEdit ? (
@@ -371,19 +405,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, day, dayCrates, user, 
                 updated={last ? t('loading.day.crates.updated', { when: fmtDateTime(last.updatedAt), who: last.updatedBy?.name ?? '—' }) : null}
                 m={m.loading.day.crates}
               />
-            ) : g.crates.length > 0 ? (
-              <table className="crate-table readonly">
-                <thead><tr><th>{t('loading.day.crates.cols.no')}</th><th>{t('loading.day.crates.cols.length')}</th><th>{t('loading.day.crates.cols.width')}</th><th>{t('loading.day.crates.cols.height')}</th><th>{t('loading.day.crates.cols.net')}</th><th>{t('loading.day.crates.cols.gross')}</th><th>{t('loading.day.crates.cols.note')}</th></tr></thead>
-                <tbody>
-                  {g.crates.map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.crateNo}</td><td>{c.lengthMm ?? '—'}</td><td>{c.widthMm ?? '—'}</td><td>{c.heightMm ?? '—'}</td>
-                      <td>{c.netAgirlik != null ? kg(Number(c.netAgirlik)) : '—'}</td><td>{c.brutAgirlik != null ? kg(Number(c.brutAgirlik)) : '—'}</td><td>{c.note ?? ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <p className="muted small">{t('loading.day.crates.readOnly')}</p>}
+            ) : g.crates.length > 0 ? crateList(true) : <p className="muted small">{t('loading.day.crates.readOnly')}</p>}
           </details>
         </td>
       </tr>

@@ -83,6 +83,33 @@ test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m
   assert.deepEqual(x[x.length - 1].slice(3), ['TOPLAM', 7, null, 9, null, 434, 'EUR']);
 });
 
+test('yükleme dökümü: aynı cam farklı birim fiyatla ayrı satır (ortalama yok); aynı fiyat siparişler arasında tek satır', async () => {
+  const { buildLoadingSummary } = await import('../server/loading/summary.js');
+  const { glassLines } = await import('../server/glass/billing.js');
+  const G = '66.3 TEMPER LAMİNE CAM (REFLEKTE FÜME + ŞEFFAF)';
+  const glass = (en, boy, adet, price) => ({ kind: 'CAM', unit: 'm2', description: G, descriptionRo: 'RO', enMm: en, boyMm: boy, adet, offerPrice: String(price), unitPrice: '1' });
+  const hole = { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 2, offerPrice: '3', unitPrice: '1' };
+  const ale40 = { status: 'GONDERILDI', currency: 'EUR', lines: [glass(1000, 2000, 3, 75), glass(1000, 1000, 4, 90), hole, glass(70, 1000, 1, 75)] };
+  const orders = [
+    { orderNo: 'ALE40', title: 'Adina', customer: { id: 'a', name: 'ALEGRAD' }, offers: [ale40] },
+    { orderNo: 'ALE41', title: 'Sibiu', customer: { id: 'a', name: 'ALEGRAD' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass(1000, 1000, 2, 75)] }] },
+    { orderNo: 'GLA1', title: null, customer: { id: 'g', name: 'GLASSANDMORE' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass(1000, 1000, 1, 75)] }] },
+  ];
+  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
+  assert.deepEqual(s.rows.map((r) => [r.customer, r.orders.join(','), r.titles.join(','), r.adet, r.m2, r.unit, r.total]), [
+    // 75'lik cam: ALE40 (6 m² + 0,07 m²) + ALE41 (2 m²) tek satırda; birim fiyat tam 75 (işlem yok, yuvarlama farkı sayılmaz)
+    ['ALEGRAD', 'ALE40,ALE41', 'Adina,Sibiu', 6, 8.07, 75, 605.25],
+    // 90'lık cam ayrı satır; deliği (2 × 3) kendi tutarında → 366 / 4 m² = 91,5
+    ['ALEGRAD', 'ALE40', 'Adina', 4, 4, 91.5, 366],
+    // başka müşteri aynı cam ve fiyatla da olsa ayrı
+    ['GLASSANDMORE', 'GLA1', '', 1, 1, 75, 75],
+  ]);
+  assert.ok(s.rows.every((r) => r.name === G));
+  // Tutarın kaynağı fatura hesabı: dökümdeki ALE40 payı = faturadaki cam satırının tutarı (455,25 + 366)
+  assert.equal(glassLines(ale40).reduce((a, l) => a + l.eurTotal, 0), 821.25);
+  assert.equal(s.totals.EUR.total, 605.25 + 366 + 75);
+});
+
 test('yükleme dökümü: sandık parası faturadaki gibi camın tutarına eklenir (ayrı satır olmaz); aynı müşteri + aynı cam tek satır', async () => {
   const { buildLoadingSummary } = await import('../server/loading/summary.js');
   const { invoiceLines } = await import('../server/glass/billing.js');

@@ -44,9 +44,11 @@ export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GOND
  * CNC ve delik (ve m² dışındaki her satır) tutarı ait olduğu camın tutarına eklenir — üstündeki cam satırına, yoksa
  * sonraki cama. Aynı nitelikteki camlar tek satırda toplanır (m² toplamı). Bedelsiz ve fiyatsız satırlar yazılmaz.
  * Her grubun parts'ı: o satırda toplanan teklif satırları ({ qty, price } — cam m², işlem adet), proformadaki satırların aynısı.
- * @returns {{ name: string, qty: number, parts: { qty: number, price: number }[] }[]}
+ * byPrice (yalnızca yükleme dökümü): aynı cam farklı birim fiyatla yazılmışsa ayrı grup olur (fiyatlar birleştirilip
+ * ortalanmaz); eklenen işlemler yine ait olduğu cam satırının grubuna gider. Fatura bu seçeneği kullanmaz.
+ * @returns {{ name: string, price: number, qty: number, parts: { qty: number, price: number }[] }[]}
  */
-function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice } = {}) {
+function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice, byPrice = false } = {}) {
   const groups = new Map();
   let last = null;
   let carry = []; // camdan önce gelen ek işlemler (sonraki cama eklenir)
@@ -58,12 +60,13 @@ function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, 
       const qty = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
       if (!(qty > 0)) continue;
       const name = String(nameOf(l)).trim();
-      const g = groups.get(name) ?? { name, qty: 0, adet: 0, parts: [] };
+      const key = byPrice ? `${name}|${price}` : name;
+      const g = groups.get(key) ?? { name, price, qty: 0, adet: 0, parts: [] };
       g.qty = Math.round((g.qty + qty) * 1000) / 1000;
       g.adet += Math.max(0, Math.trunc(Number(l.adet) || 0));
       g.parts.push({ qty, price }, ...carry);
       carry = [];
-      groups.set(name, g);
+      groups.set(key, g);
       last = g;
     } else {
       const qty = Math.max(0, Math.trunc(Number(l.adet) || 0));
@@ -80,10 +83,11 @@ function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, 
 /**
  * Aynı fatura kuralıyla (cam + ona eklenen CNC / delik / diğer kalemler) cam başına toplam — yükleme dökümü (Excel) de
  * bunu kullanır (server/loading/summary.js). nameOf: satırın adı (varsayılan Romence), priceOf: hangi fiyat (varsayılan
- * müşteri fiyatı). @returns {{ name: string, adet: number, qty: number, total: number }[]}
+ * müşteri fiyatı), byPrice: aynı cam farklı birim fiyatla ayrı satır (price = camın birim fiyatı; byPrice yoksa grubun
+ * ilk cam satırının fiyatı). @returns {{ name: string, price: number, adet: number, qty: number, total: number }[]}
  */
 export const glassTotals = (offer, opts) => glassGroups(offer, opts).map((g) => ({
-  name: g.name, adet: g.adet, qty: g.qty, total: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
+  name: g.name, price: g.price, adet: g.adet, qty: g.qty, total: round2(g.parts.reduce((s, p) => s + p.qty * p.price, 0)),
 }));
 
 /** Fatura cam satırları, EUR toplamıyla @returns {{ code: string, name: string, unit: 'mp', qty: number, eurTotal: number }[]} */

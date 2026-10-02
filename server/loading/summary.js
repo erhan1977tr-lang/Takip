@@ -1,8 +1,11 @@
 // Yükleme dökümü (Yüklemeler → "Yükleme Dökümü Excel"): seçilen yükleme gününün tüm müşteri / siparişleri tek Excel'de.
 // Veri yalnızca mevcut kayıtlardan: o gün yüklenecek cam siparişleri (gün = gerçek ya da tahmini yükleme günü; elle
-// değiştirilen tarih esas) ve teklif satırları. Satırlar müşteriye göre gruplanır; müşteri içinde aynı cam tek satırda
-// (adet ve m² toplanır), farklı camlar ayrı. Tutar faturadaki kuralla hesaplanır (server/glass/billing.js → glassTotals):
-// cam fiyatı + o cama ait CNC / delik / diğer kalemler; bu işlemler ayrıca listelenmez. Birim fiyat = tutar / m².
+// değiştirilen tarih esas) ve teklif satırları. Satırlar müşteriye göre gruplanır. Tek satır = müşteri + para birimi +
+// cam + camın BİRİM FİYATI (karar 83): aynı müşteri, aynı cam, aynı fiyat → siparişler arasında da tek satır (adet ve m²
+// toplanır, sipariş / proje adları birlikte yazılır); aynı cam farklı fiyatla → ayrı satırlar (fiyatlar birleştirilip
+// ortalanmaz). Tutar faturadaki kuralla hesaplanır (server/glass/billing.js → glassTotals): cam fiyatı + o cam satırına
+// ait CNC / delik / m² dışındaki diğer kalemler (sandık parası dahil); bunlar ayrıca listelenmez. Birim fiyat = tutar / m²
+// (eklenen işlem yoksa camın birim fiyatının kendisi).
 // Hangi fiyat: rolün görebildiği fiyat (yönetici / denetimci: müşteri fiyatı; satış: satış fiyatı) — veriler sunucuda
 // role göre temizlenmiş gelir (lib/orders.ts → sanitizeRows; satışa müşteri fiyatı ve firma tam adı hiç gelmez).
 import { glassTotals } from '../glass/billing.js';
@@ -22,9 +25,10 @@ export function buildLoadingSummary(orders, { priceOf }) {
     const offer = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
     if (!offer) continue;
     offerLines += offer.lines.length;
-    for (const g of glassTotals(offer, { nameOf: (l) => l.description, priceOf })) {
-      const key = `${o.customer.id}|${offer.currency}|${g.name}`;
-      const r = rows.get(key) ?? { customer: o.customer.name, currency: offer.currency, name: g.name, orders: [], titles: [], adet: 0, m2: 0, total: 0 };
+    for (const g of glassTotals(offer, { nameOf: (l) => l.description, priceOf, byPrice: true })) {
+      const key = `${o.customer.id}|${offer.currency}|${g.name}|${g.price}`;
+      const r = rows.get(key) ?? { customer: o.customer.name, currency: offer.currency, name: g.name, price: g.price, parts: 0, orders: [], titles: [], adet: 0, m2: 0, total: 0 };
+      r.parts += 1;
       if (!r.orders.includes(o.orderNo)) r.orders.push(o.orderNo);
       if (o.title && !r.titles.includes(o.title)) r.titles.push(o.title);
       r.adet += g.adet;
@@ -34,8 +38,9 @@ export function buildLoadingSummary(orders, { priceOf }) {
     }
   }
   const list = [...rows.values()]
-    .map((r) => ({ ...r, unit: r.m2 > 0 ? round2(r.total / r.m2) : 0 }))
-    .sort((a, b) => a.customer.localeCompare(b.customer, 'tr') || a.name.localeCompare(b.name, 'tr'));
+    // Birim fiyat: eklenen işlem yoksa camın birim fiyatının kendisi (yuvarlama farkı sayılmaz); varsa tutar / m²
+    .map(({ parts, ...r }) => ({ ...r, unit: Math.abs(r.total - r.m2 * r.price) <= 0.02 * parts ? r.price : r.m2 > 0 ? round2(r.total / r.m2) : 0 }))
+    .sort((a, b) => a.customer.localeCompare(b.customer, 'tr') || a.name.localeCompare(b.name, 'tr') || a.price - b.price);
   const totals = {};
   for (const r of list) {
     const t = (totals[r.currency] ??= { adet: 0, m2: 0, total: 0 });

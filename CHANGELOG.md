@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.30.0 — 02.10.2026
+
+- **Yükleme Dökümü Excel**: tek satır = müşteri + para birimi + cam + camın birim fiyatı. Aynı cam farklı fiyatla ayrı
+  satırlarda kalır (fiyatlar ortalanmaz); aynı müşteri, cam ve fiyat siparişler arasında tek satırda toplanır (sipariş
+  ve proje adları birlikte). CNC, delik ve sandık parası eskisi gibi ait olduğu camın tutarına dahildir.
+- **Müşteri "Yükleme takvimim"**: müşteri kendi sandıklarının numarasını, uzunluk × genişlik × yüksekliğini, net ve
+  brüt ağırlığını görür (salt okunur; aynı sandık kayıtları). Başka firmanın sandığı görünmez; iç not gösterilmez.
+
 ## 3.29.0 — 02.10.2026
 
 - **Görünüm, 4. aşama: Yüklemeler ve sandıklar** (yükleme günü, hesaplar, yetkiler ve sandık kayıtları aynı):

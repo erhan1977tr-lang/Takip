@@ -60,9 +60,15 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await cust.goto(`/yuklemeler?gun=${LOAD_DAY}`);
   await expect(cust.locator('.load-table').getByRole('link', { name: 'UNS2' })).toBeVisible();
   await expect(cust.locator('.load-table')).toContainText('300,00 EUR');
+  // Müşteri kendi sandığının ölçü ve ağırlıklarını görür (salt okunur; aynı sandık kaydından), giriş alanı yok
+  const custCrates = cust.locator('.load-table .crate-table');
+  for (const v of ['2400', '1600', '900', '190', '260']) await expect(custCrates).toContainText(v);
+  await expect(cust.locator('.crate-editor')).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'Sandıkları kaydet' })).toHaveCount(0);
 
   // Başka firmanın müşterisi göremez
   const beta = await as(browser, 'beta@betacam.test', PW);
   await beta.goto(`/yuklemeler?gun=${LOAD_DAY}`);
   await expect(beta.getByText('Bu gün için yükleme yok.')).toBeVisible();
+  await expect(beta.locator('.crate-table')).toHaveCount(0); // başka firmanın sandığı görünmez
 });
