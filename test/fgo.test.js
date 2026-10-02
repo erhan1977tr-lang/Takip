@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { openSecret, sealSecret } from '../server/crypto/secret.js';
 import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js';
-import { FGO_UM, FGO_UM_MAX, FgoError, fgoUnit, validUm, emitereForm, fgoEmit, fgoHash, grossOf, missingBilling, nextInvoiceNumber, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
+import { FGO_UM, FGO_UM_MAX, FgoError, fgoUnit, validUm, afterInvoiceIssued, emitereForm, fgoEmit, fgoHash, grossOf, manualInvoiceNumber, missingBilling, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
 import { documentLines } from '../server/profile/fgo-jobs.js';
 import { proformaLines, invoiceLines } from '../server/glass/billing.js';
@@ -55,32 +55,28 @@ test('FGO ayarları: seri, tür, TVA, adres doğrulanır; açıkken CUI zorunlu'
   const bad = validateFgoSettings({ enabled: true, cui: '', proformaSeries: 'P R', invoiceSeries: '', proformaType: '1', vatRate: '99', fxUrl: 'http://x' });
   assert.ok(!bad.ok);
   for (const e of ['CUI', 'PROFORMA_SERIES', 'INVOICE_SERIES', 'PROFORMA_TYPE', 'VAT', 'FX_URL']) assert.ok(bad.errors.includes(e), e);
-  assert.equal(ok.value.invoiceNext, null, 'boş = sistemdeki son numara + 1');
+  assert.equal(ok.value.invoiceNext, null, 'boş = numarayı FGO verir');
   const base = { cui: '12', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21', fxUrl: 'https://x' };
   assert.equal(validateFgoSettings({ ...base, invoiceNext: '684' }).value?.invoiceNext, 684);
   assert.ok(validateFgoSettings({ ...base, invoiceNext: '0' }).errors?.includes('INVOICE_NEXT'));
   assert.ok(validateFgoSettings({ ...base, invoiceNext: 'GKH684' }).errors?.includes('INVOICE_NEXT'));
 });
 
-test('fatura numarası: girilen "sonraki numara" tam kullanılır; boşsa sistemdeki son numara + 1; hiçbiri yoksa FGO', async () => {
-  const db = (numbers) => ({ fgoDocument: { findMany: async ({ where }) => (where.series === 'GKH' ? numbers.map((number) => ({ number })) : []) } });
-  const s = { invoiceSeries: 'GKH', invoiceNext: null };
-  assert.equal(await nextInvoiceNumber(db([]), s), null);
-  assert.equal(await nextInvoiceNumber(db(['684', '699', '9', 'X1']), s), '700', 'sayısal en büyük + 1 (metin karşılaştırma değil)');
-  assert.equal(await nextInvoiceNumber(db([]), { ...s, invoiceNext: 684 }), '684');
-  assert.equal(await nextInvoiceNumber(db(['684', '690']), { ...s, invoiceNext: 684 }), '684', 'yöneticinin girdiği numara esas (sistemdeki eski deneme kayıtları onu ezmez)');
-});
-
-test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve numara yeniden kullanılır; FGO\'da varsa sonraki numara', async () => {
-  const docs = [
-    { id: 'd684', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '684' }, // FGO'da silinmiş deneme faturası
-    { id: 'd700', orderId: 'o2', kind: 'INVOICE', series: 'GKH', number: '700' }, // FGO'da var
-  ];
+// Karar 87: fatura numarasını FGO verir. Sistem numara üretmez (son numara + 1 yok, kendiliğinden artan sayaç yok).
+function numberingDb(docs, settingValue = {}) {
   const audits = [];
+  const alerts = [];
+  const setting = { value: settingValue };
   const db = {
+    audits, alerts, setting,
     fgoDocument: {
-      findMany: async () => docs.map((d) => ({ number: d.number })),
+      findMany: async ({ where }) => docs.filter((d) => d.series === where.series),
       findUnique: async ({ where }) => docs.find((d) => d.series === where.series_number.series && d.number === where.series_number.number) ?? null,
+    },
+    adminAlert: { create: async ({ data }) => alerts.push(data) },
+    integrationSetting: {
+      findUnique: async () => setting,
+      update: async ({ data }) => { setting.value = data.value; },
     },
     order: { findUnique: async () => ({ id: 'o1', status: 'URETIMDE', orderTypeCode: 'GLASS_ORDER' }) },
     $transaction: async (fn) => fn({
@@ -91,24 +87,111 @@ test('fatura numarası ayırma: FGO\'da silinmiş eski kayıt kaldırılır ve n
       auditLog: { create: async ({ data }) => audits.push(data) },
     }),
   };
+  return db;
+}
+/** Sahte FGO getstatus: `gone` numaraları "belge yok" der */
+function statusFetch(gone = []) {
   const asked = [];
   const fetchImpl = async (url, init) => {
     const form = Object.fromEntries(new URLSearchParams(init.body));
     asked.push(form.Numar);
-    if (form.Numar === '684') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+    if (gone.includes(form.Numar)) return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
     return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '10' } }));
   };
+  return { asked, fetchImpl };
+}
+
+test('fatura numarası: sistem numara üretmez — elle numara yoksa Numar gönderilmez (FGO numaralandırır)', async () => {
+  assert.equal(manualInvoiceNumber({ invoiceNext: null }), null);
+  assert.equal(manualInvoiceNumber({ invoiceNext: 0 }), null);
+  assert.equal(manualInvoiceNumber({ invoiceNext: 684 }), '684');
+  const s = { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: null };
+  // Sistemde 684, 699 kayıtlı: eskiden 700 gönderilirdi; artık numara gönderilmez
+  const docs = [
+    { id: 'd684', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '684' },
+    { id: 'd699', orderId: 'o2', kind: 'INVOICE', series: 'GKH', number: '699' },
+    { id: 'p9', orderId: 'o3', kind: 'PROFORMA', series: 'PRF', number: '900' },
+  ];
+  const db = numberingDb(docs);
+  const f = statusFetch();
+  assert.equal(await reserveInvoiceNumber(db, s, { key: 'K', fetchImpl: f.fetchImpl, sleep: async () => {} }), null);
+  assert.deepEqual(f.asked, ['699'], 'yalnızca en son fatura kaydı FGO\'da duruyor mu diye sorulur');
+  assert.equal(docs.length, 3, 'FGO\'da duran kayda dokunulmaz');
+  // Hiç fatura kaydı yoksa FGO'ya hiç sorulmaz
+  const none = statusFetch();
+  assert.equal(await reserveInvoiceNumber(numberingDb([]), s, { key: 'K', fetchImpl: none.fetchImpl, sleep: async () => {} }), null);
+  assert.deepEqual(none.asked, []);
+  // emitereForm: number yoksa Numar alanı hiç yok
+  const form = emitereForm({ settings: { ...s, proformaSeries: 'PRF', invoiceType: 'Factura', vatRate: 21 }, key: 'K', kind: 'invoice', orderNo: 'GLA1', appUrl: '', customer: { name: 'X' }, lines: [], rate: 5, rateDate: '01.10.2026', number: null });
+  assert.ok(!('Numar' in form));
+});
+
+test('fatura numarası: FGO\'da silinmiş son faturaların eski kaydı kaldırılır (FGO o numarayı yeniden verir); bu kontrol olmazsa da fatura kesimi durmaz', async () => {
+  const docs = [
+    { id: 'd684', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '684' }, // FGO'da var
+    { id: 'd685', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '685' }, // FGO'da silinmiş
+    { id: 'd686', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '686' }, // FGO'da silinmiş
+  ];
+  const db = numberingDb(docs);
+  const f = statusFetch(['685', '686']);
+  const s = { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: null };
+  assert.equal(await reserveInvoiceNumber(db, s, { key: 'K', fetchImpl: f.fetchImpl, sleep: async () => {} }), null);
+  assert.deepEqual(f.asked, ['686', '685', '684']);
+  assert.deepEqual(docs.map((d) => d.number), ['684'], 'silinmiş belgelerin kaydı kaldırıldı; FGO\'da duran kaldı');
+  assert.deepEqual(db.audits.map((a) => a.action), ['EVENT:FGO_DOC_DELETED', 'FGO_DOC_REMOVED', 'EVENT:FGO_DOC_DELETED', 'FGO_DOC_REMOVED']);
+  // Kontrol yalnızca temizliktir: FGO'ya ulaşılamazsa ya da beklenmeyen bir yanıt gelirse kayıtlara dokunulmaz, kesim sürer
+  const down = async () => { throw new Error('ECONNRESET'); };
+  assert.equal(await reserveInvoiceNumber(db, s, { key: 'K', fetchImpl: down, sleep: async () => {} }), null);
+  const odd = async () => new Response(JSON.stringify({ Success: false, Message: 'Eroare interna' }));
+  assert.equal(await reserveInvoiceNumber(db, s, { key: 'K', fetchImpl: odd, sleep: async () => {} }), null);
+  assert.deepEqual(docs.map((d) => d.number), ['684']);
+});
+
+test('fatura numarası — elle numara: tam o numara; sistemde kayıtlıysa FGO\'ya sorulur; FGO\'da varsa BAŞKA NUMARA DENENMEZ', async () => {
+  const docs = [
+    { id: 'd684', orderId: 'o1', kind: 'INVOICE', series: 'GKH', number: '684' }, // FGO'da silinmiş deneme faturası
+    { id: 'd700', orderId: 'o2', kind: 'INVOICE', series: 'GKH', number: '700' }, // FGO'da var
+  ];
+  const db = numberingDb(docs);
+  const f = statusFetch(['684']);
   const s = { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: 684 };
-  const opts = { key: 'K', fetchImpl, sleep: async () => {} };
+  const opts = { key: 'K', fetchImpl: f.fetchImpl, sleep: async () => {} };
   assert.equal(await reserveInvoiceNumber(db, s, opts), '684');
-  assert.deepEqual(asked, ['684']);
+  assert.deepEqual(f.asked, ['684']);
   assert.ok(!docs.some((d) => d.number === '684'), 'silinmiş belgenin kaydı kaldırıldı');
-  assert.deepEqual(audits.map((a) => a.action), ['EVENT:FGO_DOC_DELETED', 'FGO_DOC_REMOVED'], 'siparişin geçmişinde ve denetimde');
-  assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, opts), '701', '700 FGO\'da var → 701');
-  assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 685 }, opts), '685', 'kayıt yoksa FGO\'ya sorulmaz');
+  assert.deepEqual(db.audits.map((a) => a.action), ['EVENT:FGO_DOC_DELETED', 'FGO_DOC_REMOVED'], 'siparişin geçmişinde ve denetimde');
+  // 700 hem sistemde hem FGO'da var: kalıcı hata, 701'e GEÇİLMEZ
+  await assert.rejects(reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, opts), (e) => e instanceof FgoError && !e.retry && /GKH700/.test(e.message) && /başka numara denenmedi/.test(e.message));
+  f.asked.length = 0;
+  assert.equal(await reserveInvoiceNumber(db, { ...s, invoiceNext: 685 }, opts), '685', 'tam girilen numara');
+  assert.deepEqual(f.asked, [], 'kayıt yoksa FGO\'ya sorulmaz');
   // FGO'ya ulaşılamazsa numara uydurulmaz (iş sonra yeniden denenir)
   const down = async () => { throw new Error('ECONNRESET'); };
   await assert.rejects(reserveInvoiceNumber(db, { ...s, invoiceNext: 700 }, { ...opts, fetchImpl: down }), (e) => e instanceof FgoError && e.retry);
+});
+
+test('fatura kesildikten sonra: elle numara tek seferliktir (alan boşalır, +1 yapılmaz); FGO başka numara kestiyse uyarı', async () => {
+  // Elle numara gönderilmedi: ayara dokunulmaz, uyarı yok
+  let db = numberingDb([], { enabled: true, invoiceNext: null });
+  await afterInvoiceIssued(db, { sent: null, issued: '701', orderId: 'o1' });
+  assert.equal(db.setting.value.invoiceNext, null);
+  assert.equal(db.alerts.length, 0);
+  // Elle 684 gönderildi ve FGO 684 kesti: alan boşalır (685 olmaz)
+  db = numberingDb([], { enabled: true, invoiceNext: 684 });
+  await afterInvoiceIssued(db, { sent: '684', issued: '684', orderId: 'o1' });
+  assert.equal(db.setting.value.invoiceNext, null);
+  assert.equal(db.setting.value.enabled, true, 'diğer ayarlar aynen kalır');
+  assert.equal(db.alerts.length, 0);
+  // FGO başka numara kesti: uyarı + kaydedilen numara FGO'nunki; alan yine boşalır
+  db = numberingDb([], { invoiceNext: 800 });
+  await afterInvoiceIssued(db, { sent: '800', issued: '999', orderId: 'o2' });
+  assert.equal(db.alerts[0].type, 'FGO_NUMBER');
+  assert.equal(db.alerts[0].details.error, '800 → 999');
+  assert.equal(db.setting.value.invoiceNext, null);
+  // Yönetici bu arada başka numara girdiyse ona dokunulmaz
+  db = numberingDb([], { invoiceNext: 900 });
+  await afterInvoiceIssued(db, { sent: '800', issued: '800', orderId: 'o2' });
+  assert.equal(db.setting.value.invoiceNext, 900);
 });
 
 test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tekrar kesimi önleyen IdExtern', () => {

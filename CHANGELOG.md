@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.33.0 — 02.10.2026
+
+- **Fatura numarası**: numarayı artık FGO verir. Sistem "son numara + 1" üretmez ve kendiliğinden sayaç tutmaz.
+  Entegrasyonlar → "Sonraki fatura numarası" yalnızca isteğe bağlı, tek seferlik elle numaradır: doluysa sıradaki
+  fatura tam o numarayla istenir, fatura kesilince alan boşalır. FGO numarayı reddederse FGO'nun kendi hata mesajı
+  gösterilir, başka numara denenmez. Kaydedilen numara her zaman FGO'nun döndürdüğü numaradır.
+- **Tahsilat toplamları**: aynı borç iki kez sayılmaz. Fatura kesildiyse proforma toplamdan çıkar ("faturaya döndü");
+  cam avans faturası proformanın o kadarının yerine geçer. Belgelerin hepsi listede durur. Liste sipariş başına
+  gruplanır; süzgeç: Tümü / Açık / Ödendi.
+- **Yükleme kârlılığı**: satış (yöneticinin müşteri fiyatı) ve maliyet (satış fiyatı — teklif hazırlanırken fabrika
+  fiyat tablosundan) artık teklif satırlarından, fatura ve yükleme dökümüyle aynı kuralla hesaplanır. Müşteri fiyatı
+  değişince maliyet değişmez. Müşteriye bedelsiz verilen camın fabrika maliyeti sayılır. Yöneticinin teklife eklediği
+  satır eklendiği andaki fabrika fiyatını alır; fabrika fiyatı bulunamayan satır sessizce 0 sayılmaz, sipariş
+  "maliyet eksik" olarak gösterilir.
+- **FGO ödeme durumu**: işçi açık belgeleri (ödenmemiş / kısmi) saatte bir FGO'dan yeniler. "FGO ile Güncelle" durur;
+  ikisi aynı anda çalışmaz. Otomatik güncelleme kayıt silmez, sipariş adımını değiştirmez.
+- **Muhasebe ekranları** (Profil Tahsilat, Cam Tahsilat, Tedarikçi Hesap Durumu) ortak görünüme alındı: para birimi
+  başına özet kartları, hizalı tutar sütunları, durum rozetleri, fabrika bakiye kartları.
+- Güvenlik testleri: müşteri, satış, çizim ve denetimci muhasebe sayfalarına adresle giremez; müşteri ve satış form
+  gönderimini taklit ederek muhasebe / FGO işlemi çalıştıramaz.
+- **Yapılmadı (şema onayı bekliyor)**: yükleme onayı ("Eksiksiz Yüklendi"), müşteri + yükleme başına tek FGO belgesi
+  ve kârlılığın onaylı yüklemeden hesaplanması. Önerilen şema: `docs/decisions.md` → "Beklemede".
+
 ## 3.32.3 — 02.10.2026
 
 - **Eski çok camlı taslaklar**: tek cam kuralından önce kaydedilmiş, birden çok cam içeren taslak artık yalnızca ilk

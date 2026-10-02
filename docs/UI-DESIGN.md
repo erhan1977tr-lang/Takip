@@ -167,13 +167,29 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Profile order (`ProfileOrderForm.tsx`): one `.card.card-flush` per category; `table.profile-table.profile-pick`
   with fixed column classes (`.c-thumb / .c-unit / .c-qty`) so unit and quantity line up across categories.
 
+## Accounting (3.33.0)
+
+- Receivables (`ReceivablesView.tsx`, Profil / Cam Tahsilat): `.page-head.row` (title + "FGO ile Güncelle" in
+  `.page-tools`) → per currency one `.stats.stats-money` row (total / paid / remaining + open-document count;
+  `.stat-ok / .stat-warn / .stat-danger / .stat-muted` colour the left bar) → `.card.card-flush` with `.card-head`
+  (title + count), `.card-tools` status filter links, `table.acc-table`, and a `.card-note` footnote.
+  Rows are grouped per order (`tr.grp-first` starts a group; order no and customer only on the first row).
+  A proforma replaced by an invoice shows "—" and a muted badge instead of a red "unpaid" one.
+- Supplier (`tedarikci/page.tsx`): summary table (one row per currency) → loading profitability (`tr.grp-first`
+  per day; transport entries in `td.acc-entries` with a `<details>` add form) → factory account
+  (`.stats.stats-money` balances, add-payment card with `form.acc-form`, payments table).
+- Money columns are always `.num`; amounts in a currency column omit the currency suffix when the column or
+  card already names it. Negative amounts use `.text-danger`. Secondary text inside a cell is `.cell-note`.
+- `form.acc-form` is the one-line entry form (inputs at natural width, `.c-amount` right-aligned, `.c-note`
+  takes the rest). `.card-sub` is the explanatory line under a `.card-head`.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
 order detail and offer editor (3.28.0); loadings and crates (3.29.0); drawing section and viewer (3.31.0);
-customer new-order forms (3.32.0). Still to do, page by page:
+customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by page:
 
-- Profile order detail page, accounting:
+- Profile order detail page:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,

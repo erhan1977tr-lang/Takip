@@ -96,6 +96,7 @@ h3 { font-size: 16px; line-height: 1.35; font-weight: 700; margin: 0 0 8px; }
 p { margin: 0 0 8px; }
 .muted { color: var(--muted); }
 .small { font-size: var(--fs-meta); }
+.nowrap { white-space: nowrap; }
 .mono { font-family: var(--font-mono); }
 /* Klavye odağı: her etkileşimli öğede görünür */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -401,6 +402,12 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .stat .k { font-size: var(--fs-meta); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
 .stat .v { font-size: 30px; line-height: 1.2; font-weight: 650; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .stat .v small { font-size: var(--fs-body); font-weight: 500; color: var(--muted); margin-left: 8px; }
+/* Sayacın anlamı (sol şerit): tamam / bekleyen / dikkat / nötr. Para tutarı gösteren sayaçlar .stats-money ile daha küçük yazılır */
+.stat-ok { border-left-color: var(--ok); }
+.stat-warn { border-left-color: var(--warn-accent); }
+.stat-danger { border-left-color: var(--danger); }
+.stat-muted { border-left-color: var(--border-strong); }
+.stats-money .stat .v { font-size: 24px; overflow-wrap: anywhere; }
 .group-row td { background: var(--surface-2); font-size: var(--fs-meta); font-weight: 700; letter-spacing: .05em; color: var(--muted); text-transform: uppercase; padding: 9px 12px; }
 .order-no { font-weight: 700; color: var(--primary); text-decoration: none; }
 .order-no:hover { text-decoration: underline; }
@@ -748,3 +755,29 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .viewer-note > .small { flex: 1 1 calc(100% - 60px); }
 .viewer-note input { flex: 1 1 0; min-width: 0; }
 .viewer-note > span:last-child:not(.small) { flex: 1 1 100%; }
+
+/* muhasebe (tahsilat, yükleme kârlılığı, fabrika cari hesabı) */
+/* Liste kartının başlığı altındaki açıklama ve altındaki dipnot */
+.card-sub { margin: -6px 0 0; padding: 0 20px 14px; font-size: var(--fs-sm); color: var(--muted); }
+.card-note { margin: 0; padding: 12px 20px 16px; font-size: var(--fs-meta); color: var(--muted); border-top: 1px solid var(--divider); }
+.section-sub { margin: -6px 0 14px; font-size: var(--fs-sm); }
+/* Aynı siparişin / aynı günün satırları bir arada: grubun ilk satırının üstünde belirgin çizgi */
+.acc-table tbody tr.grp-first > td { border-top: 1px solid var(--border); }
+.acc-table tbody tr.grp-first:first-child > td { border-top: 0; }
+.acc-table td .badge { white-space: nowrap; }
+.cell-note { display: block; margin-top: 2px; font-size: var(--fs-meta); font-weight: 400; color: var(--faint); white-space: normal; }
+.cell-note.text-danger { color: var(--danger); }
+/* Tek satırlık giriş formu (transport, fabrika ödemesi): alanlar içerik genişliğinde, açıklama kalan yeri alır */
+.acc-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.acc-form label { margin: 0; }
+.acc-form input, .acc-form select { width: auto; }
+.acc-form .c-amount { width: 130px; text-align: right; }
+.acc-form .c-note { flex: 1 1 180px; min-width: 0; }
+.acc-form-title { margin-top: 0; }
+/* Yükleme satırındaki transport kalemleri */
+td.acc-entries { min-width: 240px; font-size: var(--fs-meta); }
+.acc-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.acc-entries details { margin-top: 4px; }
+.acc-entries summary { color: var(--primary); font-weight: 600; }
+.acc-entries details[open] > summary { margin-bottom: 8px; }
+.acc-entries .acc-form .c-amount { width: 96px; }

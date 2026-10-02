@@ -167,7 +167,10 @@ dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; sa
   assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]), [['CAM', 30, 50], ['DELIK', 3, 5]]);
   assert.deepEqual([Number(offer.amount), Number(offer.offerAmount)], [72, 120]);
 
-  // Yönetici ölçüyü değiştirir, müşteri fiyatını düzeltir, satır ekler → satış fiyatı değişmez, satır satışta da değişir
+  // Yönetici ölçüyü değiştirir, müşteri fiyatını düzeltir, satır ekler → mevcut satırların satış fiyatı değişmez, satır
+  // satışta da değişir. Eklenen satır eklendiği andaki fabrika fiyatını alır (teklifin tablosu: CNC 12; karar 89) —
+  // tarayıcıdan gelen satış fiyatı (0) kullanılmaz, maliyet sessizce 0 kalmaz.
+  assert.ok((await saveTable(db, tables.special, { name: 'Özel', currency: 'EUR', holePrice: null, cncPrice: 12 }, admin())).ok);
   const adminLines = [
     { ...lineOf(offer.lines[0]), id: offer.lines[0].id, boyMm: 2000, offerPrice: '55.00', unitPrice: '1.00' },
     { ...lineOf(offer.lines[1]), id: offer.lines[1].id, offerPrice: '5.00' },
@@ -176,8 +179,10 @@ dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; sa
   await run(o.id, 'save_offer', 'admin', { lines: adminLines });
   offer = await offerOf(o.id);
   assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]),
-    [['CAM', 30, 55], ['DELIK', 3, 5], ['CNC', 0, 20]]);
+    [['CAM', 30, 55], ['DELIK', 3, 5], ['CNC', 12, 20]]);
   assert.equal(offer.lines[0].boyMm, 2000);
+  // cam 2 m² × 2 adet = 4 m²: satış tutarı 120 + 12 + 12 (yöneticinin eklediği CNC'nin fabrika fiyatı)
+  assert.equal(Number(offer.amount), 144);
   // Yönetici satışa geri gönderir; satış yeniden kaydeder → müşteri fiyatları korunur
   await run(o.id, 'return_offer', 'admin', { lines: adminLines, returnNote: 'bak' });
   offer = await offerOf(o.id);

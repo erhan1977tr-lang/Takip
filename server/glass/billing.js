@@ -46,14 +46,16 @@ export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GOND
  * Her grubun parts'ı: o satırda toplanan teklif satırları ({ qty, price } — cam m², işlem adet), proformadaki satırların aynısı.
  * byPrice (yalnızca yükleme dökümü): aynı cam farklı birim fiyatla yazılmışsa ayrı grup olur (fiyatlar birleştirilip
  * ortalanmaz); eklenen işlemler yine ait olduğu cam satırının grubuna gider. Fatura bu seçeneği kullanmaz.
+ * includeFree (yalnızca muhasebede maliyet, karar 89): "bedelsiz" satır da kendi fiyatıyla sayılır — müşteriye bedelsiz
+ * verilen camın fabrika maliyeti sıfır değildir. Fatura, proforma ve döküm bu seçeneği kullanmaz (bedelsiz satır yazılmaz).
  * @returns {{ name: string, price: number, qty: number, parts: { qty: number, price: number }[] }[]}
  */
-function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice, byPrice = false } = {}) {
+function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice, byPrice = false, includeFree = false } = {}) {
   const groups = new Map();
   let last = null;
   let carry = []; // camdan önce gelen ek işlemler (sonraki cama eklenir)
   for (const l of offer.lines) {
-    if (l.free || priceOf(l) == null) continue;
+    if ((l.free && !includeFree) || priceOf(l) == null) continue;
     const price = Number(priceOf(l));
     const isGlass = (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2';
     if (isGlass) {
@@ -290,7 +292,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: FGO_UM.adet, qty: -1, ron: netOf(gross, settings.vatRate) });
         }
       }
-      // Avans ve kapanış faturası: sıradaki fatura numarası (karar 62/64); proformayı FGO numaralandırır
+      // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'PROFORMA' ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       const form = emitereForm({
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,

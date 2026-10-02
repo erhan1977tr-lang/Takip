@@ -171,7 +171,11 @@ const priceNum = (v) => (v == null || v === '' ? null : Number(v));
  * Satırların iki fiyatı (karar 4): unitPrice = satış fiyatı (satış girer), offerPrice = müşteri fiyatı (yönetici girer).
  * Satırlar (ölçü, adet, satır ekleme/silme) ortaktır: yönetici değiştirince satışın gördüğü teklif de değişir.
  *  - satış kaydederken müşteri fiyatına dokunulmaz (formunda yoktur);
- *  - yönetici kaydederken satış fiyatına dokunulmaz (yeni satırın satış fiyatı 0).
+ *  - yönetici kaydederken mevcut satırların satış fiyatına dokunulmaz. Yöneticinin EKLEDİĞİ satır, eklendiği andaki
+ *    fabrika fiyatını alır (karar 89): teklifin fiyat tablosundaki liste fiyatı (completeLines → listPrice; satışçının
+ *    satırlarının dolduğu kaynakla aynı). Satış fiyatı muhasebede camın maliyetidir; eklenen satırın maliyeti sessizce
+ *    0 kalmamalı. Tabloda fiyatı olmayan satır (ör. sandık parası, serbest metin) 0 kalır ve Muhasebe'de
+ *    "maliyeti eksik" olarak gösterilir. Tarayıcıdan gelen satış fiyatı yönetici için hiç kullanılmaz.
  * @param {object[]} lines  completeLines() sonucu; satırın `id`'si varsa mevcut satırdır
  * @param {object[]} existing  mevcut satırlar (id → satır)
  */
@@ -181,7 +185,7 @@ function mergePrices(lines, existing, admin) {
     const old = l.id ? byId.get(l.id) : undefined;
     return {
       ...l,
-      unitPrice: admin ? (old ? old.unitPrice : 0) : l.unitPrice,
+      unitPrice: admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : l.unitPrice,
       offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
     };
   });

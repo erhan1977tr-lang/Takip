@@ -1,9 +1,11 @@
+import Link from 'next/link';
 import type { FactoryPayment, LoadingCost } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getEnv } from '@/lib/env';
+import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { CURRENCIES, supplierData } from '@/server/accounting/supplier.js';
 import { localDay } from '@/server/profile/dates.js';
@@ -12,7 +14,8 @@ import { addPaymentAction, addTransportAction, deletePaymentAction, deleteTransp
 export const dynamic = 'force-dynamic';
 
 type Amounts = { sale: number; cost: number; transport: number; profit: number };
-type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts> };
+type OrderRef = { orderId: string; orderNo: string };
+type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[] };
 type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }> };
 
 const OK: Record<string, MsgKey> = { transport: 'accounting.supplier.ok.transport', payment: 'accounting.supplier.ok.payment', deleted: 'accounting.supplier.ok.deleted' };
@@ -28,10 +31,11 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   end.setUTCDate(end.getUTCDate() + 1);
   const { days, costs, payments, summary } = (await supplierData(db, end)) as Data;
   const curs = Object.keys(summary).sort();
-  const money = (v: number, cur: string) => <span className={v < 0 ? 'danger' : undefined}>{fmtMoney(v, cur)}</span>;
+  const money = (v: number, cur: string) => <span className={v < 0 ? 'text-danger' : undefined}>{fmtMoney(v, cur)}</span>;
   const costsOf = (day: string) => costs.filter((c) => c.shipDay.toISOString().slice(0, 10) === day);
+  const noCost = days.flatMap((d) => d.noCost);
   const CurSelect = ({ id }: { id: string }) => (
-    <select id={id} name="currency" defaultValue="EUR" style={{ width: 'auto' }}>{CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+    <select id={id} name="currency" defaultValue="EUR" aria-label={t('accounting.supplier.currency')}>{CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
   );
 
   return (
@@ -42,57 +46,69 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
       </div>
       {sp.ok && OK[sp.ok] && <div className="alert alert-ok">{t(OK[sp.ok])}</div>}
       {sp.error && ERR[sp.error] && <div className="alert alert-error">{t(ERR[sp.error])}</div>}
-
-      {/* Üst özet: her para birimi ayrı */}
-      <div className="card card-flush">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('accounting.supplier.sum.currency')}</th>
-                <th className="num">{t('accounting.supplier.sum.sale')}</th>
-                <th className="num">{t('accounting.supplier.sum.cost')}</th>
-                <th className="num">{t('accounting.supplier.sum.paid')}</th>
-                <th className="num">{t('accounting.supplier.sum.balance')}</th>
-                <th className="num">{t('accounting.supplier.sum.transport')}</th>
-                <th className="num">{t('accounting.supplier.sum.profit')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {curs.length === 0 ? <tr><td colSpan={7} className="muted">{t('accounting.supplier.emptySummary')}</td></tr> : curs.map((c) => {
-                const s = summary[c];
-                return (
-                  <tr key={c}>
-                    <td><b>{c}</b></td>
-                    <td className="num">{fmtMoney(s.sale, c)}</td>
-                    <td className="num">{fmtMoney(s.cost, c)}</td>
-                    <td className="num">{fmtMoney(s.paid, c)}</td>
-                    <td className="num"><b>{money(s.balance, c)}</b></td>
-                    <td className="num">{fmtMoney(s.transport, c)}</td>
-                    <td className="num"><b>{money(s.profit, c)}</b></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Maliyeti kayıtlı olmayan satır sessizce 0 sayılmaz: sipariş burada gösterilir */}
+      {noCost.length > 0 && (
+        <div className="alert alert-warn" id="maliyet-eksik">
+          <b>{t('accounting.supplier.noCost')}</b>{' '}
+          {noCost.map((o, i) => <span key={o.orderId}>{i > 0 && ', '}<Link href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link></span>)}
+          <div className="small">{t('accounting.supplier.noCostHelp')}</div>
         </div>
+      )}
+
+      {/* Üst özet: her para birimi ayrı satır */}
+      <div className="card card-flush">
+        <div className="card-head"><h2>{t('accounting.supplier.summaryTitle')}</h2></div>
+        {curs.length === 0 ? <div className="empty">{t('accounting.supplier.emptySummary')}</div> : (
+          <div className="table-wrap">
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>{t('accounting.supplier.sum.currency')}</th>
+                  <th className="num">{t('accounting.supplier.sum.sale')}</th>
+                  <th className="num">{t('accounting.supplier.sum.cost')}</th>
+                  <th className="num">{t('accounting.supplier.sum.transport')}</th>
+                  <th className="num">{t('accounting.supplier.sum.profit')}</th>
+                  <th className="num">{t('accounting.supplier.sum.paid')}</th>
+                  <th className="num">{t('accounting.supplier.sum.balance')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {curs.map((c) => {
+                  const s = summary[c];
+                  return (
+                    <tr key={c}>
+                      <td><b>{c}</b></td>
+                      <td className="num">{fmtNum(s.sale)}</td>
+                      <td className="num">{fmtNum(s.cost)}</td>
+                      <td className="num">{fmtNum(s.transport)}</td>
+                      <td className="num"><b>{money(s.profit, c)}</b></td>
+                      <td className="num">{fmtNum(s.paid)}</td>
+                      <td className="num"><b>{money(s.balance, c)}</b></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="card-note">{t('accounting.supplier.sourceNote')}</p>
       </div>
 
       {/* A) Yükleme kârlılıkları */}
       <div className="card card-flush" id="yuklemeler">
-        <div className="card-head"><h2 style={{ margin: 0 }}>{t('accounting.supplier.loadings.title')}</h2></div>
-        <p className="muted small" style={{ padding: '0 16px' }}>{t('accounting.supplier.loadings.intro')}</p>
+        <div className="card-head"><h2>{t('accounting.supplier.loadings.title')} <span className="badge">{days.length}</span></h2></div>
+        <p className="card-sub">{t('accounting.supplier.loadings.intro')}</p>
         {days.length === 0 ? <div className="empty">{t('accounting.supplier.loadings.empty')}</div> : (
           <div className="table-wrap">
-            <table>
+            <table className="acc-table">
               <thead>
                 <tr>
                   <th>{t('accounting.supplier.loadings.col.day')}</th>
                   <th className="num">{t('accounting.supplier.loadings.col.m2')}</th>
                   <th>{t('accounting.supplier.sum.currency')}</th>
-                  <th className="num">{t('accounting.supplier.sum.sale')}</th>
-                  <th className="num">{t('accounting.supplier.sum.cost')}</th>
-                  <th className="num">{t('accounting.supplier.sum.transport')}</th>
+                  <th className="num">{t('accounting.supplier.loadings.col.sale')}</th>
+                  <th className="num">{t('accounting.supplier.loadings.col.cost')}</th>
+                  <th className="num">{t('accounting.supplier.loadings.col.transport')}</th>
                   <th className="num">{t('accounting.supplier.loadings.col.profit')}</th>
                   <th>{t('accounting.supplier.loadings.col.transportEntries')}</th>
                 </tr>
@@ -102,35 +118,36 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                   const entries = Object.entries(d.byCur);
                   const list = costsOf(d.day);
                   return entries.map(([c, v], i) => (
-                    <tr key={`${d.day}-${c}`}>
+                    <tr key={`${d.day}-${c}`} className={i === 0 ? 'grp-first' : undefined}>
                       {i === 0 && (
                         <td rowSpan={entries.length}>
-                          <b>{fmtDate(d.day)}</b>
-                          <div className="muted small">{t('accounting.supplier.loadings.orders', { n: d.orders })}</div>
+                          <Link className="order-no" href={`/yuklemeler?gun=${d.day}`}>{fmtDate(d.day)}</Link>
+                          <span className="cell-note">{t('accounting.supplier.loadings.orders', { n: d.orders })}</span>
+                          {d.noCost.length > 0 && <Badge tone="warn">{t('accounting.supplier.noCostBadge')}</Badge>}
                         </td>
                       )}
                       {i === 0 && <td className="num" rowSpan={entries.length}>{fmtNum(d.m2)} m²</td>}
                       <td>{c}</td>
-                      <td className="num">{fmtMoney(v.sale, c)}</td>
-                      <td className="num">{fmtMoney(v.cost, c)}</td>
-                      <td className="num">{fmtMoney(v.transport, c)}</td>
+                      <td className="num">{fmtNum(v.sale)}</td>
+                      <td className="num">{fmtNum(v.cost)}</td>
+                      <td className="num">{fmtNum(v.transport)}</td>
                       <td className="num"><b>{money(v.profit, c)}</b></td>
                       {i === 0 && (
-                        <td rowSpan={entries.length} className="small">
+                        <td rowSpan={entries.length} className="acc-entries">
                           {list.map((x) => (
-                            <form key={x.id} action={deleteTransportAction} className="row" style={{ gap: 6 }}>
+                            <form key={x.id} action={deleteTransportAction} className="acc-entry">
                               <input type="hidden" name="id" value={x.id} />
                               <span>{fmtMoney(x.amount.toString(), x.currency)}{x.note ? ` · ${x.note}` : ''}</span>
                               <ConfirmButton danger message={t('accounting.supplier.deleteConfirm')}>×</ConfirmButton>
                             </form>
                           ))}
                           <details>
-                            <summary style={{ cursor: 'pointer' }}>{t('accounting.supplier.loadings.addTransport')}</summary>
-                            <form action={addTransportAction} className="row" style={{ marginTop: 6 }}>
+                            <summary>{t('accounting.supplier.loadings.addTransport')}</summary>
+                            <form action={addTransportAction} className="acc-form">
                               <input type="hidden" name="shipDay" value={d.day} />
-                              <input name="amount" inputMode="decimal" required placeholder={t('accounting.supplier.amount')} aria-label={t('accounting.supplier.amount')} style={{ width: 110 }} />
+                              <input className="c-amount" name="amount" inputMode="decimal" required placeholder={t('accounting.supplier.amount')} aria-label={t('accounting.supplier.amount')} />
                               <CurSelect id={`tc-${d.day}`} />
-                              <input name="note" maxLength={300} placeholder={t('accounting.supplier.note')} aria-label={t('accounting.supplier.note')} style={{ width: 160 }} />
+                              <input className="c-note" name="note" maxLength={300} placeholder={t('accounting.supplier.note')} aria-label={t('accounting.supplier.note')} />
                               <button className="btn">{t('accounting.supplier.add')}</button>
                             </form>
                           </details>
@@ -146,26 +163,55 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
       </div>
 
       {/* B) Fabrika cari hesabı: ödemeler yüklemelere bağlı değil */}
-      <div className="card" id="cari">
+      <div className="section-head" id="cari">
         <h2>{t('accounting.supplier.factory.title')}</h2>
-        <p className="muted small">{t('accounting.supplier.factory.intro')}</p>
-        <form action={addPaymentAction} className="row" style={{ marginBottom: 14 }}>
-          <label htmlFor="fp-day" style={{ margin: 0 }}>{t('accounting.supplier.date')}</label>
-          <input id="fp-day" name="paidOn" type="date" required defaultValue={isoDay(new Date(`${today}T12:00:00Z`))} style={{ width: 'auto' }} />
-          <input name="amount" inputMode="decimal" required placeholder={t('accounting.supplier.amount')} aria-label={t('accounting.supplier.amount')} style={{ width: 130 }} />
+      </div>
+      <p className="muted section-sub">{t('accounting.supplier.factory.intro')}</p>
+      {curs.length > 0 && (
+        <div className="stats stats-money">
+          {curs.map((c) => {
+            const s = summary[c];
+            return (
+              <div className={`stat ${s.balance > 0 ? 'stat-warn' : 'stat-ok'}`} key={c}>
+                <div className="k">{t('accounting.supplier.factory.balance', { cur: c })}</div>
+                <div className={`v${s.balance < 0 ? ' text-danger' : ''}`}>{fmtNum(s.balance)}</div>
+                <div className="muted small">{t('accounting.supplier.factory.balanceLine', { cost: fmtNum(s.cost), paid: fmtNum(s.paid) })}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="card">
+        <h3 className="sub-title acc-form-title">{t('accounting.supplier.factory.addTitle')}</h3>
+        <form action={addPaymentAction} className="acc-form">
+          <label htmlFor="fp-day">{t('accounting.supplier.date')}</label>
+          <input id="fp-day" name="paidOn" type="date" required defaultValue={isoDay(new Date(`${today}T12:00:00Z`))} />
+          <input className="c-amount" name="amount" inputMode="decimal" required placeholder={t('accounting.supplier.amount')} aria-label={t('accounting.supplier.amount')} />
           <CurSelect id="fp-cur" />
-          <input name="note" maxLength={300} placeholder={t('accounting.supplier.note')} aria-label={t('accounting.supplier.note')} style={{ flex: 1, minWidth: 160 }} />
+          <input className="c-note" name="note" maxLength={300} placeholder={t('accounting.supplier.note')} aria-label={t('accounting.supplier.note')} />
           <button className="btn btn-primary">{t('accounting.supplier.factory.add')}</button>
         </form>
+      </div>
+      <div className="card card-flush">
+        <div className="card-head"><h2>{t('accounting.supplier.factory.payments')} <span className="badge">{payments.length}</span></h2></div>
         {payments.length === 0 ? <div className="empty">{t('accounting.supplier.factory.empty')}</div> : (
           <div className="table-wrap">
-            <table>
-              <thead><tr><th>{t('accounting.supplier.date')}</th><th className="num">{t('accounting.supplier.amount')}</th><th>{t('accounting.supplier.note')}</th><th /></tr></thead>
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>{t('accounting.supplier.date')}</th>
+                  <th className="num">{t('accounting.supplier.amount')}</th>
+                  <th>{t('accounting.supplier.sum.currency')}</th>
+                  <th>{t('accounting.supplier.note')}</th>
+                  <th />
+                </tr>
+              </thead>
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id}>
-                    <td>{fmtDate(p.paidOn)}</td>
-                    <td className="num">{fmtMoney(p.amount.toString(), p.currency)}</td>
+                    <td className="nowrap">{fmtDate(p.paidOn)}</td>
+                    <td className="num"><b>{fmtNum(p.amount.toString())}</b></td>
+                    <td>{p.currency}</td>
                     <td>{p.note ?? ''}</td>
                     <td className="actions">
                       <form action={deletePaymentAction}>

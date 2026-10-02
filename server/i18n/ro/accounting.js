@@ -2,7 +2,7 @@
 export default {
   profile: {
     title: "Încasări profile",
-    intro: "Proformele și facturile emise în FGO pentru comenzile de profile. Totalul și suma încasată se citesc din FGO („Actualizează din FGO”).",
+    intro: "Proformele și facturile emise în FGO pentru comenzile de profile. Totalul și suma încasată se citesc din FGO.",
     empty: "Nu există încă documente FGO pentru profile.",
   },
   glass: {
@@ -16,9 +16,27 @@ export default {
     errors: {
       FGO_DISABLED: "Conexiunea FGO este inactivă sau incompletă (Administrator → Integrări).",
       NO_KEY: "Cheia FGO nu poate fi citită; introduceți-o din nou la Integrări.",
+      BUSY: "Actualizarea din FGO este în curs; încercați din nou peste câteva minute.",
     },
-    restTotal: "Rest de încasat ({cur})",
-    sumLine: "Total {total} · încasat {paid}",
+    auto: "Actualizarea automată rulează o dată pe oră (doar documentele neplătite sau plătite parțial). Ultima actualizare: {at} — {n} documente, {f} erori.",
+    autoNever: "Actualizarea automată rulează o dată pe oră (doar documentele neplătite sau plătite parțial). Nu a rulat încă.",
+    stat: {
+      total: "Total de încasat ({cur})",
+      paid: "Încasat ({cur})",
+      rest: "Rest ({cur})",
+      open: "Documente deschise",
+      openHint: "neplătite sau plătite parțial",
+    },
+    sumNote: "În totaluri fiecare comandă este numărată o singură dată: dacă s-a emis factura, proforma nu se mai adaugă; factura de avans la sticlă înlocuiește partea respectivă din proformă. Toate documentele rămân în listă.",
+    listTitle: "Documente",
+    filter: {
+      all: "Toate",
+      open: "Deschise",
+      paid: "Plătite",
+    },
+    noMatch: "Niciun document nu corespunde filtrului.",
+    replaced: "înlocuită de factură",
+    partlyInvoiced: "minus factura de avans",
     col: {
       order: "Nr. comandă",
       customer: "Client",
@@ -46,8 +64,13 @@ export default {
   },
   supplier: {
     title: "Situație furnizor",
-    intro: "Profitabilitatea încărcărilor și contul curent cu fabrica. Plățile către fabrică nu sunt legate de încărcări. Monedele sunt afișate separat. Vânzare sticlă = prețul către client; cost sticlă = prețul de vânzare (tabelul de prețuri al fabricii).",
+    intro: "Profitabilitatea încărcărilor și contul curent cu fabrica. Monedele sunt afișate separat și nu se adună între ele.",
     emptySummary: "Nu există încă comenzi de sticlă încărcate sau plăți.",
+    summaryTitle: "Sumar",
+    sourceNote: "Vânzare sticlă = prețul administratorului din oferta trimisă clientului. Cost sticlă = prețul de vânzare din aceeași ofertă (din tabelul de prețuri al fabricii la pregătirea ofertei; nu se schimbă dacă prețul clientului sau tabelul se modifică ulterior). Ambele se totalizează cu aceeași regulă ca factura și lista de încărcare.",
+    noCost: "Există comenzi cu cost incomplet:",
+    noCostHelp: "În aceste comenzi există rânduri cu preț pentru client, dar fără preț de vânzare (costul fabricii) — de ex. un rând adăugat de administrator, fără preț în tabelul de prețuri al fabricii. Costul fiind incomplet, profitul apare mai mare decât este.",
+    noCostBadge: "cost incomplet",
     sum: {
       currency: "Moneda",
       sale: "Total vânzări sticlă",
@@ -59,11 +82,14 @@ export default {
     },
     loadings: {
       title: "Profitabilitatea încărcărilor",
-      intro: "Comenzile de sticlă cu ziua de încărcare azi sau mai devreme (cu oferta trimisă clientului). Profit = vânzare − cost − transport.",
+      intro: "Comenzile de sticlă cu ziua de încărcare (reală sau, în lipsă, planificată) azi sau mai devreme și cu oferta trimisă clientului. Profit = vânzare − cost − transport. Plățile către fabrică nu se scad din profit.",
       empty: "Nu există încă comenzi de sticlă încărcate.",
       col: {
         day: "Încărcare",
         m2: "Sticlă m²",
+        sale: "Vânzare sticlă",
+        cost: "Cost sticlă",
+        transport: "Transport",
         profit: "Profit încărcare",
         transportEntries: "Costuri transport",
       },
@@ -72,12 +98,17 @@ export default {
     },
     factory: {
       title: "Cont curent fabrică",
-      intro: "Sold fabrică = total cost sticlă − plățile către fabrică. Plățile nu se repartizează pe încărcări.",
+      intro: "Sold fabrică = total cost sticlă − plățile către fabrică. Plățile nu sunt legate de încărcări sau comenzi și nu se repartizează.",
+      balance: "Sold fabrică ({cur})",
+      balanceLine: "Cost {cost} · plătit {paid}",
+      addTitle: "Plată nouă",
       add: "Adaugă plată",
+      payments: "Plăți",
       empty: "Nu există încă plăți.",
     },
     date: "Data",
     amount: "Suma",
+    currency: "Moneda",
     note: "Descriere",
     add: "Adaugă",
     delete: "Șterge",

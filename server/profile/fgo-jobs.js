@@ -103,7 +103,7 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       }
       const lines = documentLines(offer);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
-      // Fatura: sıradaki fatura numarası (karar 62/64; cam faturalarıyla aynı seri); proformayı FGO numaralandırır
+      // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'invoice' ? await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl }) : null;
       const form = emitereForm({
         settings, key, kind, orderNo: order.orderNo, appUrl, customer: order.customer, lines, rate,

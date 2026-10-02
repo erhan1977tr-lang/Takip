@@ -316,6 +316,7 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   const inv = fgo.calls[1].form;
   assert.equal(inv.Serie, 'GKH');
   assert.equal(inv.IdExtern, `${orderNo}-F`);
+  assert.ok(!('Numar' in inv), 'fatura numarasını FGO verir (karar 87); kaydedilen numara FGO\'nun döndürdüğü (GKH684)');
   assert.equal(inv['Continut[0][PretUnitar]'], pf['Continut[0][PretUnitar]'], 'aynı kur');
   const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
   assert.ok(audited.includes('fgo_proforma') && audited.includes('fgo_invoice'));
@@ -408,10 +409,30 @@ dbTest('Muhasebe: FGO belgeleri sipariş tipine göre listelenir, "FGO ile günc
   await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl, sleep: async () => {} });
   assert.ok(!seen.includes('PRF552'), 'ödenmiş belge yeniden sorulmaz');
 
-  // Fatura FGO'da silinmiş (karar 65): kayıt kalkar, sipariş teslim adımına döner, "FGO'da yeniden dene" çıkar
   const inv = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '684' } } });
   let o = await load(inv.orderId);
   assert.equal(o.profile.stage, 'FATURALANDI');
+
+  // Otomatik eşitleme (işçi, saatte bir — karar 90): yalnızca açık belgeleri sorar; FGO "belge yok" dese bile kaydı
+  // silmez, siparişi geri almaz (bunu yalnızca yöneticinin "FGO ile Güncelle"si yapar); saat dolmadan yeniden çalışmaz
+  const { syncFgoDocuments, syncStatus } = await import('../../server/accounting/receivables.js');
+  const allGone = [];
+  const goneAll = async (url, init) => {
+    allGone.push(Object.fromEntries(new URLSearchParams(init.body)).Numar);
+    return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+  };
+  const docCount = await db.fgoDocument.count();
+  const auto = await syncFgoDocuments(db, { secret: FGO_SECRET, fetchImpl: goneAll, sleep: async () => {} });
+  assert.equal(auto.ran, true);
+  assert.ok(allGone.includes('684') && !allGone.includes('552'), 'açık fatura soruldu; ödenmiş proforma sorulmadı');
+  assert.equal(await db.fgoDocument.count(), docCount, 'otomatik tur kayıt silmez');
+  assert.match((await db.fgoDocument.findUnique({ where: { id: inv.id } })).checkError, /nu exista/);
+  assert.equal((await load(inv.orderId)).profile.stage, 'FATURALANDI', 'otomatik tur sipariş adımını değiştirmez');
+  assert.equal(await db.adminAlert.count({ where: { orderId: inv.orderId, type: 'FGO_FAILED' } }), 0, 'otomatik tur yönetici uyarısı üretmez');
+  assert.deepEqual(await syncFgoDocuments(db, { secret: FGO_SECRET, fetchImpl: goneAll, sleep: async () => {} }), { ran: false });
+  assert.equal((await syncStatus(db)).leaseUntil, null, 'tur bitince kilit bırakılır');
+
+  // Fatura FGO'da silinmiş (karar 65): elle güncellemede kayıt kalkar, sipariş teslim adımına döner, "FGO'da yeniden dene" çıkar
   const gone = async (url, init) => {
     const form = Object.fromEntries(new URLSearchParams(init.body));
     if (form.Numar === '684') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));

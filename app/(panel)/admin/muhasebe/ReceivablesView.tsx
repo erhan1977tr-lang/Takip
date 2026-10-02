@@ -2,99 +2,165 @@ import Link from 'next/link';
 import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { fmtDate, fmtDateTime, fmtMoney } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
-import { backfillDocuments, listDocuments, paymentStatus, remaining } from '@/server/accounting/receivables.js';
+import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus } from '@/server/accounting/receivables.js';
 import { refreshFgoAction } from './actions';
 
 type Doc = Prisma.FgoDocumentGetPayload<{ include: { order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } } } }>;
+type Share = { debt: number | null; rest: number | null; replaced: boolean };
+type Sums = Record<string, { total: number; paid: number; rest: number }>;
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
+const FILTERS = ['hepsi', 'acik', 'odendi'] as const;
+const FILTER_KEY = { hepsi: 'all', acik: 'open', odendi: 'paid' } as const;
+const ERRORS = ['FGO_DISABLED', 'NO_KEY', 'BUSY'];
 
-/** Profil ve Cam Tahsilat ortak ekranı: FGO belgeleri ve FGO'dan okunan ödeme durumu (yalnızca yönetici). */
+/**
+ * Profil ve Cam Tahsilat ortak ekranı: FGO belgeleri ve FGO'dan okunan ödeme durumu (yalnızca yönetici).
+ * Belgelerin hepsi listelenir; toplamlar sipariş başına tek borç üzerinden (server/accounting/receivables.js → receivables).
+ */
 export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'GLASS_ORDER'; sp: Record<string, string | undefined> }) {
   const { t } = await getT();
   if (type === 'PROFILE_ORDER') await backfillDocuments(db);
-  const docs: Doc[] = await listDocuments(db, type);
+  const [docs, sync] = await Promise.all([listDocuments(db, type) as Promise<Doc[]>, syncStatus(db)]);
   const key = type === 'PROFILE_ORDER' ? 'profile' : 'glass';
-  // Para birimi başına özet (para birimleri toplanmaz)
-  const sums: Record<string, { total: number; paid: number; rest: number }> = {};
+  const path = type === 'PROFILE_ORDER' ? '/admin/muhasebe/profil' : '/admin/muhasebe/cam';
+  const r = receivables(docs) as { shares: Map<string, Share>; sums: Sums };
+  const shareOf = (d: Doc) => r.shares.get(d.id) as Share;
+  // Sipariş başına grup: en yeni belgesi olan sipariş önce; sipariş içinde belgeler kesim sırasıyla (proforma → fatura)
+  const groups: { order: Doc['order']; docs: Doc[] }[] = [];
+  const byOrder = new Map<string, { order: Doc['order']; docs: Doc[] }>();
   for (const d of docs) {
-    if (d.total == null) continue;
-    const s = (sums[d.currency] ??= { total: 0, paid: 0, rest: 0 });
-    s.total += Number(d.total);
-    s.paid += Number(d.paid ?? 0);
-    s.rest += remaining(d.total, d.paid) ?? 0;
+    let g = byOrder.get(d.orderId);
+    if (!g) {
+      g = { order: d.order, docs: [] };
+      byOrder.set(d.orderId, g);
+      groups.push(g);
+    }
+    g.docs.unshift(d);
   }
+  const open = (g: { docs: Doc[] }) => g.docs.some((d) => { const s = shareOf(d); return s.rest == null || s.rest > 0; });
+  const filter = FILTERS.find((f) => f === sp.durum) ?? 'hepsi';
+  const shown = filter === 'hepsi' ? groups : groups.filter((g) => open(g) === (filter === 'acik'));
+  const openDocs = docs.filter((d) => !shareOf(d).replaced && paymentStatus(d.total, d.paid) !== 'PAID').length;
+  const curs = Object.keys(r.sums).sort();
+  const hasAdvance = (g: { docs: Doc[] }) => g.docs.some((d) => d.kind === 'ADVANCE');
+
   return (
     <>
-      <div className="page-head row" style={{ justifyContent: 'space-between' }}>
+      <div className="page-head row">
         <div>
           <h1>{t(`accounting.${key}.title` as MsgKey)}</h1>
           <p className="muted">{t(`accounting.${key}.intro` as MsgKey)}</p>
         </div>
-        <form action={refreshFgoAction}>
+        <form action={refreshFgoAction} className="page-tools">
           <input type="hidden" name="type" value={type} />
           <button className="btn btn-primary" disabled={docs.length === 0}>{t('accounting.receivables.refresh')}</button>
         </form>
       </div>
       {sp.ok === 'refreshed' && <div className="alert alert-ok">{t('accounting.receivables.refreshed', { n: sp.n ?? '0', f: sp.f ?? '0' })}</div>}
-      {sp.error && <div className="alert alert-error">{t(`accounting.receivables.errors.${sp.error === 'NO_KEY' ? 'NO_KEY' : 'FGO_DISABLED'}` as MsgKey)}</div>}
-      {Object.keys(sums).length > 0 && (
-        <div className="stats">
-          {Object.entries(sums).map(([cur, s]) => (
-            <div className="stat" key={cur}>
-              <div className="k">{t('accounting.receivables.restTotal', { cur })}</div>
-              <div className="v">{fmtMoney(s.rest, cur)}</div>
-              <div className="muted small">{t('accounting.receivables.sumLine', { total: fmtMoney(s.total, cur), paid: fmtMoney(s.paid, cur) })}</div>
+      {sp.error && <div className="alert alert-error">{t(`accounting.receivables.errors.${ERRORS.includes(sp.error) ? sp.error : 'FGO_DISABLED'}` as MsgKey)}</div>}
+
+      {/* Özet: para birimi başına (para birimleri toplanmaz) */}
+      {curs.map((cur, i) => {
+        const s = r.sums[cur];
+        return (
+          <div className="stats stats-money" key={cur}>
+            <div className="stat">
+              <div className="k">{t('accounting.receivables.stat.total', { cur })}</div>
+              <div className="v">{fmtNum(s.total)}</div>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="stat stat-ok">
+              <div className="k">{t('accounting.receivables.stat.paid', { cur })}</div>
+              <div className="v">{fmtNum(s.paid)}</div>
+            </div>
+            <div className={`stat ${s.rest > 0 ? 'stat-danger' : 'stat-ok'}`}>
+              <div className="k">{t('accounting.receivables.stat.rest', { cur })}</div>
+              <div className="v">{fmtNum(s.rest)}</div>
+            </div>
+            {i === 0 && (
+              <div className="stat stat-muted">
+                <div className="k">{t('accounting.receivables.stat.open')}</div>
+                <div className="v">{openDocs}</div>
+                <div className="muted small">{t('accounting.receivables.stat.openHint')}</div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       <div className="card card-flush">
-        {docs.length === 0 ? <div className="empty">{t(`accounting.${key}.empty` as MsgKey)}</div> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('accounting.receivables.col.order')}</th>
-                  <th>{t('accounting.receivables.col.customer')}</th>
-                  <th>{t('accounting.receivables.col.doc')}</th>
-                  <th>{t('accounting.receivables.col.kind')}</th>
-                  <th>{t('accounting.receivables.col.date')}</th>
-                  <th className="num">{t('accounting.receivables.col.total')}</th>
-                  <th className="num">{t('accounting.receivables.col.paid')}</th>
-                  <th className="num">{t('accounting.receivables.col.rest')}</th>
-                  <th>{t('accounting.receivables.col.status')}</th>
-                  <th>{t('accounting.receivables.col.checked')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {docs.map((d) => {
-                  const st = paymentStatus(d.total, d.paid);
-                  const rest = remaining(d.total, d.paid);
-                  return (
-                    <tr key={d.id}>
-                      <td><Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link></td>
-                      <td>{d.order.customer.name}</td>
-                      <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
-                      <td>{t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey)}</td>
-                      <td>{fmtDate(d.issuedAt)}</td>
-                      <td className="num">{d.total != null ? fmtMoney(d.total.toString(), d.currency) : '—'}</td>
-                      <td className="num">{d.paid != null ? fmtMoney(d.paid.toString(), d.currency) : '—'}</td>
-                      <td className="num"><b>{rest != null ? fmtMoney(rest, d.currency) : '—'}</b></td>
-                      <td><Badge tone={TONE[st]}>{t(`accounting.receivables.status.${st}` as MsgKey)}</Badge></td>
-                      <td className="small">
-                        {d.checkedAt ? fmtDateTime(d.checkedAt) : '—'}
-                        {d.checkError && <div className="danger" title={d.checkError}>{t('accounting.receivables.checkError')}</div>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div className="card-head">
+          <h2>{t('accounting.receivables.listTitle')} <span className="badge">{docs.length}</span></h2>
+        </div>
+        {docs.length > 0 && (
+          <div className="card-tools">
+            {FILTERS.map((f) => (
+              <Link key={f} className={filter === f ? 'active' : undefined} href={f === 'hepsi' ? path : `${path}?durum=${f}`}>
+                {t(`accounting.receivables.filter.${FILTER_KEY[f]}` as MsgKey)}
+              </Link>
+            ))}
           </div>
         )}
+        {docs.length === 0 ? <div className="empty">{t(`accounting.${key}.empty` as MsgKey)}</div>
+          : shown.length === 0 ? <div className="empty">{t('accounting.receivables.noMatch')}</div> : (
+            <div className="table-wrap">
+              <table className="acc-table">
+                <thead>
+                  <tr>
+                    <th>{t('accounting.receivables.col.order')}</th>
+                    <th>{t('accounting.receivables.col.customer')}</th>
+                    <th>{t('accounting.receivables.col.doc')}</th>
+                    <th>{t('accounting.receivables.col.kind')}</th>
+                    <th>{t('accounting.receivables.col.date')}</th>
+                    <th className="num">{t('accounting.receivables.col.total')}</th>
+                    <th className="num">{t('accounting.receivables.col.paid')}</th>
+                    <th className="num">{t('accounting.receivables.col.rest')}</th>
+                    <th>{t('accounting.receivables.col.status')}</th>
+                    <th>{t('accounting.receivables.col.checked')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((g) => g.docs.map((d, i) => {
+                    const st = paymentStatus(d.total, d.paid);
+                    const s = shareOf(d);
+                    const partly = d.kind === 'PROFORMA' && !s.replaced && hasAdvance(g);
+                    return (
+                      <tr key={d.id} className={i === 0 ? 'grp-first' : undefined}>
+                        <td>{i === 0 && <Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link>}</td>
+                        <td>{i === 0 && d.order.customer.name}</td>
+                        <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
+                        <td>{t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey)}</td>
+                        <td className="nowrap">{fmtDate(d.issuedAt)}</td>
+                        <td className="num">{d.total != null ? fmtMoney(d.total.toString(), d.currency) : '—'}</td>
+                        <td className="num">{d.paid != null ? fmtMoney(d.paid.toString(), d.currency) : '—'}</td>
+                        <td className="num">
+                          {s.replaced || s.rest == null ? <span className="muted">—</span> : <b>{fmtMoney(s.rest, d.currency)}</b>}
+                          {partly && <span className="cell-note">{t('accounting.receivables.partlyInvoiced')}</span>}
+                        </td>
+                        <td>
+                          {s.replaced
+                            ? <Badge tone="muted">{t('accounting.receivables.replaced')}</Badge>
+                            : <Badge tone={TONE[st]}>{t(`accounting.receivables.status.${st}` as MsgKey)}</Badge>}
+                        </td>
+                        <td className="small nowrap">
+                          {d.checkedAt ? fmtDateTime(d.checkedAt) : '—'}
+                          {d.checkError && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
+                        </td>
+                      </tr>
+                    );
+                  }))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        <p className="card-note">
+          {t('accounting.receivables.sumNote')}{' '}
+          {sync.lastRun
+            ? t('accounting.receivables.auto', { at: fmtDateTime(sync.lastRun), n: sync.checked ?? 0, f: sync.failed ?? 0 })
+            : t('accounting.receivables.autoNever')}
+        </p>
       </div>
     </>
   );

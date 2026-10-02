@@ -106,7 +106,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   const inv = fgo.calls[2];
   assert.equal(inv.IdExtern, 'GLA68-F');
   assert.equal(inv['Continut[0][Denumire]'], 'Securizat');
-  assert.equal(inv.Numar, '554', 'sistemdeki son fatura (avans GKH553) + 1');
+  assert.ok(!('Numar' in inv), 'fatura numarası gönderilmez (sistemde GKH553 olsa da 554 üretilmez): FGO numaralandırır');
   assert.ok(!('Numar' in pf), 'proformayı FGO numaralandırır');
   // Faturada CNC cama TVA hariç eklenir; satırın TVA dahil toplamı proformadaki satırların toplamı: 500 + 105 + 100 + 21
   assert.equal(inv['Continut[0][PretTotal]'], '726.00', 'faturada CNC cama eklenir: cam 605 + CNC 121 (TVA dahil)');
@@ -116,6 +116,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(inv['Continut[1][PretUnitar]'], '1000.00', 'avans faturasının TVA hariç tutarı (FGO toplamı 1210)');
   docs = await db.fgoDocument.findMany({ where: { orderId: o.id }, orderBy: { issuedAt: 'asc' } });
   assert.deepEqual(docs.map((d) => d.kind), ['PROFORMA', 'ADVANCE', 'INVOICE']);
+  assert.equal(docs[2].number, '554', 'kaydedilen numara FGO\'nun döndürdüğü numara');
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
   await assert.rejects(db.fgoDocument.create({ data: { orderId: o.id, kind: 'INVOICE', series: 'GKH', number: '999', issuedAt: new Date() } }), /Unique constraint/, 'veritabanı da engeller');
 
@@ -147,40 +148,88 @@ dbTest('cam FGO: yüklenmiş ve avanssız sipariş doğrudan fatura; günlük s�
   assert.equal(await db.adminAlert.count({ where: { orderId: o.id, type: 'FGO_FAILED' } }), 1);
 });
 
-dbTest('fatura numarası: girilen sonraki numara tam kullanılır, sonra +1 olur; FGO\'da silinmiş eski kayıt kaldırılır; FGO başka numara keserse uyarı', async () => {
+// Karar 87: fatura numarasını FGO verir; sistem numara üretmez. "Sonraki fatura numarası" yalnızca tek seferlik elle numaradır.
+dbTest('fatura numarası: numarayı FGO verir ve dönen numara kaydedilir; elle numara tek seferlik; FGO reddederse gerçek hata saklanır, başka numara denenmez', async () => {
   await db.customer.update({ where: { id: firm.id }, data: { county: 'Ilfov' } });
+  await fgoOn(0);
+  const calls = [];
+  let fgoNext = 812; // FGO'nun kendi sırası (sistemdeki son fatura GKH554; sistem 555 üretmez)
+  // gone: FGO'da silinmiş numaralar · reject: FGO belgeyi bu mesajla reddeder · ignoreNumar: FGO gönderilen numarayı dinlemez
+  const fake = ({ gone = [], reject = null, ignoreNumar = false } = {}) => ({
+    fetchImpl: async (url, init) => {
+      const form = Object.fromEntries(new URLSearchParams(init.body));
+      if (String(url).endsWith('/factura/getstatus')) {
+        if (gone.includes(form.Numar)) return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+        return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '726.00', ValoareAchitata: '0' } }));
+      }
+      calls.push(form);
+      if (reject) return new Response(JSON.stringify({ Success: false, Message: reject }));
+      const n = form.Numar && !ignoreNumar ? form.Numar : String(fgoNext++);
+      return new Response(JSON.stringify({ Success: true, Factura: { Numar: n, Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
+    },
+  });
+  const issue = async (no, fgo) => {
+    const o = await glassOrder(no, new Date(Date.now() - 5 * 86_400_000));
+    assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor() }), { ok: true });
+    const r = await g.dispatchGlassJobs(db, { ...ctx(fgo), onlyOrderId: o.id });
+    return { o, r, doc: await db.fgoDocument.findFirst({ where: { orderId: o.id, kind: 'INVOICE' } }) };
+  };
+  const setting = async () => (await db.integrationSetting.findUnique({ where: { key: 'fgo' } })).value.invoiceNext ?? null;
+
+  // 1) Olağan kesim: Numar gönderilmez; FGO'nun döndürdüğü numara kaydedilir
+  const a = await issue(71, fake());
+  assert.deepEqual(a.r, { done: 1, failed: 0 });
+  assert.ok(!('Numar' in calls[0]), 'sistemdeki son numara + 1 gönderilmez');
+  assert.equal(`${a.doc.series}${a.doc.number}`, 'GKH812');
+  assert.equal(await setting(), null);
+
+  // 2) Elle numara 553: sistemde kayıtlı (ilk testteki avans faturası) ama FGO'da silinmiş → eski kayıt kaldırılır,
+  //    tam 553 istenir, fatura kesilince alan boşalır (554 olmaz)
   await fgoOn(0, { invoiceNext: 553 });
   const stale = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '553' } } });
   assert.ok(stale, 'ilk testteki avans faturası GKH553 sistemde kayıtlı');
-  const calls = [];
-  const fake = (ignoreNumar) => async (url, init) => {
-    const form = Object.fromEntries(new URLSearchParams(init.body));
-    if (String(url).endsWith('/factura/getstatus')) {
-      // GKH553 FGO'da silinmiş (deneme)
-      if (form.Numar === '553') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
-      return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '726.00', ValoareAchitata: '0' } }));
-    }
-    calls.push(form);
-    const n = ignoreNumar ? '999' : form.Numar;
-    return new Response(JSON.stringify({ Success: true, Factura: { Numar: n, Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
-  };
-  const o1 = await glassOrder(71, new Date(Date.now() - 5 * 86_400_000));
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o1.id, kind: 'INVOICE', actor: actor() }), { ok: true });
-  assert.deepEqual(await g.dispatchGlassJobs(db, { ...ctx({ fetchImpl: fake(false) }), onlyOrderId: o1.id }), { done: 1, failed: 0 });
-  assert.equal(calls[0].Numar, '553', 'girilen numara (sistemdeki daha büyük numaralar onu ezmez)');
-  const doc = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '553' } } });
-  assert.equal(doc.orderId, o1.id, 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
+  const b = await issue(72, fake({ gone: ['553'] }));
+  assert.deepEqual(b.r, { done: 1, failed: 0 });
+  assert.equal(calls[1].Numar, '553', 'tam girilen numara');
+  assert.equal(b.doc.number, '553', 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
   assert.ok(await db.auditLog.findFirst({ where: { action: 'FGO_DOC_REMOVED', entityId: stale.orderId } }));
-  const setting = async () => (await db.integrationSetting.findUnique({ where: { key: 'fgo' } })).value.invoiceNext;
-  assert.equal(await setting(), 554, 'sonraki numara kendiliğinden +1');
+  assert.equal(await setting(), null, 'elle numara tek seferlik: kendiliğinden +1 yapılmaz');
 
-  // FGO numarayı dinlemezse yöneticiye uyarı; ayar FGO'nun kestiği numaradan devam eder
+  // 3) Sonraki fatura yine FGO'dan numara alır
+  const c = await issue(73, fake());
+  assert.ok(!('Numar' in calls[2]));
+  assert.equal(c.doc.number, '813');
+
+  // 4) FGO elle numarayı reddeder: FGO'nun kendi mesajı saklanır ve yöneticiye düşer; ikinci bir numara denenmez
+  await fgoOn(0, { invoiceNext: 600 });
+  const d = await issue(74, fake({ reject: 'Numarul facturii exista deja' }));
+  assert.deepEqual(d.r, { done: 0, failed: 1 });
+  assert.equal(calls.length, 4, 'FGO\'ya tek istek');
+  assert.equal(calls[3].Numar, '600');
+  assert.equal(d.doc, null, 'belge kaydedilmedi');
+  const job = await db.notificationOutbox.findFirst({ where: { orderId: d.o.id, type: 'FGO_GLASS' } });
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.lastError, 'Numarul facturii exista deja');
+  const failed = await db.adminAlert.findFirst({ where: { orderId: d.o.id, type: 'FGO_FAILED' } });
+  assert.equal(failed?.details?.error, 'Numarul facturii exista deja');
+  assert.equal(await setting(), 600, 'reddedilen numara alanda kalır; yönetici düzeltir ya da boşaltır');
+
+  // 5) Elle numara hem sistemde hem FGO'da var: FGO'ya belge isteği gitmez, sonraki numaraya geçilmez
+  await fgoOn(0, { invoiceNext: 812 });
+  const e = await issue(75, fake());
+  assert.deepEqual(e.r, { done: 0, failed: 1 });
+  assert.equal(calls.length, 4, 'belge isteği gönderilmedi');
+  const job5 = await db.notificationOutbox.findFirst({ where: { orderId: e.o.id, type: 'FGO_GLASS' } });
+  assert.equal(job5.status, 'FAILED');
+  assert.match(job5.lastError, /GKH812.*başka numara denenmedi/);
+
+  // 6) FGO gönderilen numarayı dinlemezse: kaydedilen numara FGO'nun kestiği, yöneticiye uyarı, alan boşalır
   await fgoOn(0, { invoiceNext: 800 });
-  const o2 = await glassOrder(72, new Date(Date.now() - 5 * 86_400_000));
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o2.id, kind: 'INVOICE', actor: actor() }), { ok: true });
-  await g.dispatchGlassJobs(db, { ...ctx({ fetchImpl: fake(true) }), onlyOrderId: o2.id });
-  assert.equal(calls[1].Numar, '800');
-  const alert = await db.adminAlert.findFirst({ where: { orderId: o2.id, type: 'FGO_NUMBER' } });
-  assert.equal(alert?.details?.error, '800 → 999');
-  assert.equal(await setting(), 1000);
+  const f = await issue(76, fake({ ignoreNumar: true }));
+  assert.deepEqual(f.r, { done: 1, failed: 0 });
+  assert.equal(calls[4].Numar, '800');
+  assert.equal(f.doc.number, '814');
+  const alert = await db.adminAlert.findFirst({ where: { orderId: f.o.id, type: 'FGO_NUMBER' } });
+  assert.equal(alert?.details?.error, '800 → 814');
+  assert.equal(await setting(), null);
 });

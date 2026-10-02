@@ -20,8 +20,8 @@ export const FGO_DEFAULTS = {
   fxMode: 'manual',
   // Günde en fazla kaç FGO belgesi kesilir (deneme güvenliği; 0 = sınırsız)
   dailyLimit: 3,
-  // Sıradaki fatura numarası (karar 64): doluysa TAM bu numara kullanılır ve her faturadan sonra +1 olur;
-  // boşsa sistemdeki son fatura numarası + 1 (o da yoksa FGO numaralandırır).
+  // Fatura numarası (karar 87): numarayı FGO verir (Numar gönderilmez). Bu alan yalnızca yöneticinin isteğe bağlı,
+  // TEK SEFERLİK elle numarasıdır: doluysa sıradaki fatura TAM bu numarayla istenir, fatura kesilince alan boşalır.
   invoiceNext: /** @type {number | null} */ (null),
 };
 const SECRET_PURPOSE = 'fgo-key';
@@ -164,7 +164,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     Hash: fgoHash(settings.cui, key, name),
     PlatformaUrl: appUrl,
     Serie: proforma ? settings.proformaSeries : settings.invoiceSeries,
-    // Numar: faturada sistemdeki son numara + 1 (nextInvoiceNumber); verilmezse FGO numaralandırır
+    // Numar: yalnızca yönetici elle numara girdiyse (manualInvoiceNumber); verilmezse FGO numaralandırır
     ...(number ? { Numar: String(number) } : {}),
     Valuta: 'RON',
     TipFactura: proforma ? settings.proformaType : settings.invoiceType,
@@ -211,63 +211,79 @@ export const grossOf = (net, vatRate) => round2(net + round2((net * Number(vatRa
 
 /** FGO'nun "belge yok" yanıtı (getstatus): belge FGO'da silinmiş */
 export const FGO_NOT_FOUND = /nu exist|nu a fost g[aă]sit|negăsit|not found|inexist/i;
-const maxNumber = (rows) => rows.reduce((m, r) => (/^\d+$/.test(r.number) ? Math.max(m, Number(r.number)) : m), 0);
+const notFound = (e) => e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message);
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Sıradaki fatura numarası (ürün sahibinin kuralı, karar 62 / 64): yönetici Entegrasyonlar'da "Sonraki fatura numarası"nı
- * girdiyse TAM o numara (her faturadan sonra kendiliğinden +1 olur); boşsa sistemdeki (FgoDocument) bu serinin en büyük
- * numarası + 1. Hiçbiri yoksa null (FGO numaralandırır). Ön izleme içindir; keserken reserveInvoiceNumber kullanılır.
- * @returns {Promise<string | null>}
+ * Yöneticinin elle girdiği fatura numarası (Entegrasyonlar → "Sonraki fatura numarası"), yoksa null.
+ * Karar 87: fatura numarasını FGO verir. Sistem kendi başına numara ÜRETMEZ (son numara + 1 yok, kendiliğinden artan
+ * sayaç yok); bu alan yalnızca isteğe bağlı, tek seferlik bir elle numaradır.
+ * @returns {string | null}
  */
-export async function nextInvoiceNumber(db, settings) {
-  if (Number.isInteger(settings.invoiceNext) && settings.invoiceNext > 0) return String(settings.invoiceNext);
-  const max = maxNumber(await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { number: true } }));
-  return max ? String(max + 1) : null;
-}
+export const manualInvoiceNumber = (settings) => (Number.isInteger(settings.invoiceNext) && settings.invoiceNext > 0 ? String(settings.invoiceNext) : null);
 
 /**
- * Keserken numara: nextInvoiceNumber; bu numara sistemde kayıtlıysa FGO'ya sorulur — FGO'da silinmişse (deneme
- * faturaları) eski kayıt sistemden kaldırılır ve numara yeniden kullanılır; FGO'da varsa sonraki numaraya geçilir.
+ * Fatura kesilmeden hemen önce: FGO'ya gönderilecek numara — çoğunlukla null (numarayı FGO verir).
+ *   - Yönetici elle numara girdiyse TAM o numara döner. Numara sistemde kayıtlıysa FGO'ya sorulur: FGO'da silinmişse
+ *     (deneme faturası) eski kayıt kaldırılır ve numara kullanılır; FGO'da varsa iş kalıcı hatayla durur — başka numara
+ *     DENENMEZ (yönetici alanı düzeltir ya da boşaltır).
+ *   - Elle numara yoksa null. FGO, son faturası silinmişse o numarayı yeniden verir; sistemde o numaranın eski kaydı
+ *     kalmışsa yeni belge kaydedilemezdi. Bu yüzden sistemdeki en büyük numaralı fatura kaydı FGO'ya sorulur ve
+ *     silinmişse kaldırılır (mevcut "FGO'da silinen belge" kuralı, karar 65). FGO'da duran hiçbir kayda dokunulmaz;
+ *     bu kontrol yalnızca temizliktir — FGO'ya ulaşılamazsa fatura kesimi yine sürer.
  * @returns {Promise<string | null>}
  */
-export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
-  const first = await nextInvoiceNumber(db, settings);
-  if (!first) return null;
-  let n = Number(first);
-  for (let i = 0; i < 50; i++, n++) {
-    const row = await db.fgoDocument.findUnique({ where: { series_number: { series: settings.invoiceSeries, number: String(n) } } });
-    if (!row) return String(n);
+export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fetchImpl = fetch, sleep = pause }) {
+  // Döngüsel içe aktarmayı önlemek için istek anında yüklenir (profil akışını kullanır)
+  const { removeDeletedDocument } = await import('./fgo-deleted.js');
+  const manual = manualInvoiceNumber(settings);
+  if (manual) {
+    const row = await db.fgoDocument.findUnique({ where: { series_number: { series: settings.invoiceSeries, number: manual } } });
+    if (!row) return manual;
     try {
       await fgoStatus(settings, key, { series: row.series, number: row.number, appUrl }, fetchImpl);
     } catch (e) {
-      if (e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
-        // Döngüsel içe aktarmayı önlemek için istek anında yüklenir (profil akışını kullanır)
-        const { removeDeletedDocument } = await import('./fgo-deleted.js');
-        await removeDeletedDocument(db, row, e.message);
-        await sleep(1100); // FGO saniyede bir istek kabul eder
-        return String(n);
-      }
-      throw e; // ağ hatası: iş sonra yeniden denenir
+      if (!notFound(e)) throw e; // ağ hatası: iş sonra yeniden denenir, numara uydurulmaz
+      await removeDeletedDocument(db, row, e.message);
+      await sleep(1100); // FGO saniyede bir istek kabul eder
+      return manual;
     }
     await sleep(1100);
+    throw new FgoError(`Fatura numarası ${row.series}${row.number} zaten kullanılmış (FGO'da ve sistemde kayıtlı); başka numara denenmedi. Entegrasyonlar → "Sonraki fatura numarası" alanını düzeltin ya da boşaltın.`, { retry: false });
   }
-  throw new FgoError('Boş fatura numarası bulunamadı (50 numara dolu); Entegrasyonlar → Sonraki fatura numarası', { retry: false });
+  for (let i = 0; i < 10; i++) {
+    const rows = await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { id: true, orderId: true, kind: true, series: true, number: true } });
+    const last = rows.filter((r) => /^\d+$/.test(r.number)).sort((a, b) => Number(b.number) - Number(a.number))[0];
+    if (!last) break;
+    try {
+      await fgoStatus(settings, key, { series: last.series, number: last.number, appUrl }, fetchImpl);
+      await sleep(1100);
+      break;
+    } catch (e) {
+      // Yalnızca temizlik: FGO'ya ulaşılamadıysa ya da başka bir yanıt verdiyse fatura kesimi bu yüzden durmaz
+      if (!notFound(e)) break;
+      await removeDeletedDocument(db, last, e.message);
+      await sleep(1100);
+    }
+  }
+  return null;
 }
 
 /**
- * Fatura kesildikten sonra: "Sonraki fatura numarası" kesilen numara + 1 olur (yalnızca yönetici bu alanı kullanıyorsa;
- * boşsa sistemdeki son numara zaten bir sonrakini verir). Gönderilen numara ile FGO'nun kestiği farklıysa yöneticiye uyarı.
+ * Fatura kesildikten sonra. Elle numara gönderildiyse alan boşaltılır (tek seferlik; sonraki faturaları yine FGO
+ * numaralandırır) ve FGO başka numara kestiyse yöneticiye uyarı düşer. Numara gönderilmediyse yapılacak iş yok:
+ * kaydedilen numara her zaman FGO'nun döndürdüğü numaradır.
  */
 export async function afterInvoiceIssued(db, { sent, issued, orderId }) {
-  if (sent && String(sent) !== String(issued)) {
+  if (!sent) return;
+  if (String(sent) !== String(issued)) {
     await db.adminAlert.create({ data: { type: 'FGO_NUMBER', orderId, details: { code: 'NUMBER', error: `${sent} → ${issued}` } } });
   }
-  if (!/^\d+$/.test(String(issued))) return;
   const row = await db.integrationSetting.findUnique({ where: { key: FGO_KEY } });
   const v = row?.value && typeof row.value === 'object' ? row.value : null;
-  if (!v || !Number.isInteger(v.invoiceNext)) return;
-  const next = Math.max(v.invoiceNext, Number(issued) + 1);
-  if (next !== v.invoiceNext) await db.integrationSetting.update({ where: { key: FGO_KEY }, data: { value: { ...v, invoiceNext: next } } });
+  // Yönetici bu arada başka bir numara girdiyse ona dokunulmaz
+  if (!v || String(v.invoiceNext ?? '') !== String(sent)) return;
+  await db.integrationSetting.update({ where: { key: FGO_KEY }, data: { value: { ...v, invoiceNext: null } } });
 }
 
 /** FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır. */

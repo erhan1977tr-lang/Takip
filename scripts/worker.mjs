@@ -5,6 +5,7 @@
 //   - FGO (Aşama 6b): kuyruktaki proforma ve faturaları keser (BT kuruyla, RON).
 //   - Cam FGO belgeleri (proforma / avans / fatura) ve müşteriye belge e-postaları.
 //   - Sipariş olaylarının bildirim e-postaları (server/notifications/email.js; NOTIFY_EMAILS).
+//   - Muhasebe: açık FGO belgelerinin tutar / ödeme durumu saatte bir FGO'dan yenilenir (server/accounting/receivables.js).
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -12,6 +13,7 @@ import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antiv
 import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
 import { dispatchFgoJobs } from '../server/profile/fgo-jobs.js';
 import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
+import { syncFgoDocuments } from '../server/accounting/receivables.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
@@ -67,6 +69,15 @@ async function profileTick() {
   }
 }
 
+// Saatte bir: açık (ödenmemiş / kısmi) FGO belgelerinin durumu. Kendi hata yakalaması var: FGO'ya ulaşılamaması
+// belge kesimini, e-postaları ya da taramayı etkilemez; sipariş verisine dokunmaz, yönetici uyarısı üretmez.
+async function fgoSyncTick() {
+  if (once) return; // --once (testler): dış istek yok
+  const env = getEnv();
+  const r = await syncFgoDocuments(db, { now: new Date(), secret: env.AUTH_SECRET, appUrl: env.APP_URL ?? '', log });
+  if (r.ran) log('FGO durum eşitleme:', JSON.stringify({ checked: r.checked, failed: r.failed }));
+}
+
 async function tick() {
   const settings = await getAvSettings(db);
   const r = await scanPending(db, settings, { log });
@@ -86,6 +97,11 @@ while (!stopping) {
     await profileTick();
   } catch (e) {
     log('profil hatası:', e?.message ?? e);
+  }
+  try {
+    await fgoSyncTick();
+  } catch (e) {
+    log('FGO durum eşitleme hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

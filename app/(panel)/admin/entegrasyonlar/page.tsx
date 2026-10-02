@@ -5,7 +5,7 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
 import { saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction, testFxAction } from './actions';
-import { getFgoSettings, nextInvoiceNumber } from '@/server/integrations/fgo.js';
+import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
 import { getDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/lib/env';
@@ -56,7 +56,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'FAILED' } }),
     getDailyRate(db),
   ]);
-  const nextInvoice = await nextInvoiceNumber(db, fgo);
+  // Fatura numarasını FGO verir; burada yalnızca yöneticinin (varsa) tek seferlik elle numarası gösterilir
+  const nextInvoice = manualInvoiceNumber(fgo);
   const [wh, whPending, whFailed] = await Promise.all([
     getWarehouseSettings(db),
     db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }),

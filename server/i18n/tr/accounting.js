@@ -2,7 +2,7 @@
 export default {
   profile: {
     title: "Profil Tahsilat",
-    intro: "Profil siparişlerinin FGO'da kesilen proforma ve faturaları. Tutar ve tahsil edilen kısım FGO'dan okunur (\"FGO ile Güncelle\").",
+    intro: "Profil siparişlerinin FGO'da kesilen proforma ve faturaları. Tutar ve tahsil edilen kısım FGO'dan okunur.",
     empty: "Henüz FGO'da kesilmiş profil belgesi yok.",
   },
   glass: {
@@ -16,9 +16,27 @@ export default {
     errors: {
       FGO_DISABLED: "FGO bağlantısı kapalı ya da eksik (Yönetici → Entegrasyonlar).",
       NO_KEY: "FGO anahtarı açılamadı; Entegrasyonlar'da yeniden girin.",
+      BUSY: "FGO güncellemesi şu anda sürüyor; birkaç dakika sonra yeniden deneyin.",
     },
-    restTotal: "Kalan ({cur})",
-    sumLine: "Toplam {total} · tahsil edilen {paid}",
+    auto: "Otomatik güncelleme saatte bir çalışır (yalnızca ödenmemiş ve kısmi ödenmiş belgeler). Son güncelleme: {at} — {n} belge, {f} hata.",
+    autoNever: "Otomatik güncelleme saatte bir çalışır (yalnızca ödenmemiş ve kısmi ödenmiş belgeler). Henüz çalışmadı.",
+    stat: {
+      total: "Toplam alacak ({cur})",
+      paid: "Tahsil edilen ({cur})",
+      rest: "Kalan ({cur})",
+      open: "Açık belge",
+      openHint: "ödenmemiş ya da kısmi",
+    },
+    sumNote: "Toplamlarda her sipariş bir kez sayılır: fatura kesildiyse proforma eklenmez; cam avans faturası proformanın o kadarının yerine geçer. Belgelerin hepsi listede durur.",
+    listTitle: "Belgeler",
+    filter: {
+      all: "Tümü",
+      open: "Açık",
+      paid: "Ödendi",
+    },
+    noMatch: "Bu süzgece uyan belge yok.",
+    replaced: "faturaya döndü",
+    partlyInvoiced: "avans faturası düşüldü",
     col: {
       order: "Sipariş No",
       customer: "Müşteri",
@@ -46,8 +64,13 @@ export default {
   },
   supplier: {
     title: "Tedarikçi Hesap Durumu",
-    intro: "Yükleme kârlılığı ve fabrika cari hesabı. Fabrikaya yapılan ödemeler yüklemelere bağlı değildir. Para birimleri ayrı gösterilir. Cam satışı = müşteriye giden fiyat; cam alış/maliyet = satış fiyatı (fabrika fiyat tablosu).",
+    intro: "Yükleme kârlılığı ve fabrika cari hesabı. Para birimleri ayrı gösterilir, birbirine eklenmez.",
     emptySummary: "Henüz yüklenmiş cam siparişi ya da ödeme yok.",
+    summaryTitle: "Özet",
+    sourceNote: "Cam satışı = müşteriye gönderilen teklifteki yönetici fiyatı. Cam maliyeti = aynı teklifteki satış fiyatı (teklif hazırlanırken fabrika fiyat tablosundan; müşteri fiyatı ya da tablo sonradan değişse de değişmez). İkisi de fatura ve yükleme dökümüyle aynı kuralla toplanır.",
+    noCost: "Maliyeti eksik sipariş var:",
+    noCostHelp: "Bu siparişlerde müşteri fiyatı girilmiş ama satış fiyatı (fabrika maliyeti) kayıtlı olmayan satır bulunuyor — ör. teklife yöneticinin eklediği ve fabrika fiyat tablosunda fiyatı olmayan satır. Maliyet eksik olduğundan kâr olduğundan yüksek görünür.",
+    noCostBadge: "maliyet eksik",
     sum: {
       currency: "Para birimi",
       sale: "Toplam Cam Satışı",
@@ -59,11 +82,14 @@ export default {
     },
     loadings: {
       title: "Yükleme kârlılıkları",
-      intro: "Yükleme günü bugün ya da önce olan cam siparişleri (müşteriye gönderilmiş teklifle). Kâr = cam satış − cam maliyet − transport.",
+      intro: "Yükleme günü (gerçek, yoksa planlanan) bugün ya da önce olan, müşteriye teklifi gönderilmiş cam siparişleri. Kâr = cam satış − cam maliyet − transport. Fabrika ödemeleri kârdan düşülmez.",
       empty: "Henüz yüklenmiş cam siparişi yok.",
       col: {
         day: "Yükleme",
         m2: "Cam m²",
+        sale: "Cam satış",
+        cost: "Cam maliyet",
+        transport: "Transport",
         profit: "Yükleme kârı",
         transportEntries: "Transport kalemleri",
       },
@@ -72,12 +98,17 @@ export default {
     },
     factory: {
       title: "Fabrika cari hesabı",
-      intro: "Fabrika bakiye = toplam cam alış/maliyet − fabrikaya yapılan ödemeler. Ödemeler yüklemelere dağıtılmaz.",
+      intro: "Fabrika bakiye = toplam cam maliyeti − fabrikaya yapılan ödemeler. Ödemeler yüklemelere ya da siparişlere bağlı değildir ve dağıtılmaz.",
+      balance: "Fabrika bakiye ({cur})",
+      balanceLine: "Maliyet {cost} · ödenen {paid}",
+      addTitle: "Yeni ödeme",
       add: "Ödeme ekle",
+      payments: "Ödemeler",
       empty: "Henüz ödeme girilmedi.",
     },
     date: "Tarih",
     amount: "Tutar",
+    currency: "Para birimi",
     note: "Açıklama",
     add: "Ekle",
     delete: "Sil",
