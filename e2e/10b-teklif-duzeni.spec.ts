@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, SALES, TEAM_PW, as, newOrder } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, newOrder } from './helpers';
+
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açıldı (05'te satis@e2e.test bilerek kilitlendi)
 
 // Görünüm 3. aşama: sipariş sayfasının bölüm sırası (dosyalar → notlar → sipariş bilgileri → teklif) ve teklif
 // tablosunun araçları (aynı camdan "+", sandık parası, tek fiyat, tabloyu temizle). İş kuralları değişmedi.
