@@ -1,6 +1,6 @@
 {
   "name": "takip",
-  "version": "3.25.2",
+  "version": "3.26.0",
   "private": true,
   "type": "module",
   "description": "Takip — sipariş ve üretim portalı",
@@ -22,6 +22,7 @@
     "demo": "bash scripts/demo/start.sh"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.1.0",
     "@prisma/client": "6.19.3",
     "next": "15.5.26",
     "nodemailer": "^6.10.0",

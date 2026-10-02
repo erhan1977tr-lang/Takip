@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { getLocale, getT } from '@/lib/i18n';
+// Inter (eski TAKİP'in yazı tipi): paketten, kendi sunucumuzdan sunulur — dış adrese istek yok. Yoksa sistem yazı tipi.
+import '@fontsource-variable/inter';
 import './globals.css';
 
 export async function generateMetadata(): Promise<Metadata> {

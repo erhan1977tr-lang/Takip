@@ -100,7 +100,7 @@ export function ExcelImport({ orderId, files, glass, onImport, m }: {
                   {rows.slice(0, 200).map((r, i) => {
                     const errs = bad.get(i + 1);
                     return (
-                      <tr key={i} className={errs ? 'row-invalid' : undefined} style={errs ? { background: '#fdecec' } : undefined}>
+                      <tr key={i} className={errs ? 'row-invalid' : undefined} style={errs ? { background: 'var(--danger-soft)' } : undefined}>
                         <td className="muted">{i + 1}</td>
                         {Array.from({ length: cols }, (_, c) => (
                           <td key={c} style={c === map.width || c === map.height || c === map.qty ? { fontWeight: 600 } : undefined}>{r[c] ?? ''}</td>

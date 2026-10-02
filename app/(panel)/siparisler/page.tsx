@@ -120,9 +120,9 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
 
       {!archive && (
         <div className="stats">
-          <div className="stat" style={{ borderLeftColor: '#f59e0b' }}><div className="k">{t('status.customer.awaitingApproval.label')}</div><div className="v">{awaiting}<small>{unit('drawing', awaiting)}</small></div></div>
-          <div className="stat" style={{ borderLeftColor: '#7c3aed' }}><div className="k">{t('status.customer.drawing.label')}</div><div className="v">{drawing}<small>{unit('order', drawing)}</small></div></div>
-          <div className="stat" style={{ borderLeftColor: '#047857' }}><div className="k">{t('status.customer.production.label')}</div><div className="v">{production}<small>{unit('order', production)}</small></div></div>
+          <div className="stat" style={{ borderLeftColor: 'var(--warn-accent)' }}><div className="k">{t('status.customer.awaitingApproval.label')}</div><div className="v">{awaiting}<small>{unit('drawing', awaiting)}</small></div></div>
+          <div className="stat" style={{ borderLeftColor: 'var(--purple)' }}><div className="k">{t('status.customer.drawing.label')}</div><div className="v">{drawing}<small>{unit('order', drawing)}</small></div></div>
+          <div className="stat" style={{ borderLeftColor: 'var(--ok)' }}><div className="k">{t('status.customer.production.label')}</div><div className="v">{production}<small>{unit('order', production)}</small></div></div>
           <div className="stat"><div className="k">{t('orders.customer.totalActive')}</div><div className="v">{orders.length}<small>{unit('order', orders.length)}</small></div></div>
         </div>
       )}

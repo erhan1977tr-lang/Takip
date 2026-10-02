@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.26.0 — 02.10.2026
+
+- **Ortak görsel temel** (yalnızca görünüm; iş akışı, yetki, veri ve adresler aynı): tek stil dosyasında merkezi
+  belirteçler (renk, yazı, boşluk, köşe, gölge), GKH mavisi, açık gri zemin ve menü, beyaz kartlar, yumuşak durum
+  rozetleri, daha okunur yazı boyutları (gövde 15 px, tablo 14,5 px, en küçük 13 px), büyük giriş alanları, görünür
+  klavye odağı. Menü, üst çubuk, kart, düğme, form, tablo, uyarı, pencere ve boş / bekleme durumları tüm rollerde
+  aynı. Yazı tipi Inter (uygulamayla birlikte sunulur). Kurallar: `docs/UI-DESIGN.md`.
+
 ## 3.25.2 — 02.10.2026
 
 - **FGO ölçü birimi düzeltmesi**: "bucăți" birimli (ACCESORII) profil ürünü olan siparişlerde proforma
