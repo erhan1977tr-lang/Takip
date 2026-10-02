@@ -168,6 +168,9 @@ async function releaseLease(db, patch) {
  *   - Elle turda FGO "belge yok" derse kayıt kaldırılır ve sipariş belgeden önceki hâline döner (karar 65). Otomatik
  *     turda bu YAPILMAZ: hata belgeye yazılır, sipariş ve kayıt olduğu gibi kalır (yönetici "FGO ile Güncelle" ile
  *     doğrular). Otomatik tur hiçbir sipariş adımını değiştirmez, yönetici uyarısı da üretmez.
+ * @param {any} db
+ * @param {{ orderType?: 'PROFILE_ORDER' | 'GLASS_ORDER' | null, auto?: boolean, secret: string, appUrl?: string, fetchImpl?: typeof fetch,
+ *   sleep?: (ms: number) => Promise<unknown>, limit?: number, now?: Date }} opts
  * @returns {Promise<{ ok: true, checked: number, failed: number } | { ok: false, code: 'FGO_DISABLED' | 'NO_KEY' | 'BUSY' }>}
  */
 export async function refreshDocuments(db, {
