@@ -31,7 +31,8 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   end.setUTCDate(end.getUTCDate() + 1);
   const { days, costs, payments, summary } = (await supplierData(db, end)) as Data;
   const curs = Object.keys(summary).sort();
-  const money = (v: number, cur: string) => <span className={v < 0 ? 'text-danger' : undefined}>{fmtMoney(v, cur)}</span>;
+  // Tablolarda para birimi kendi sütununda: tutar yalın yazılır; eksi tutar kırmızı
+  const signed = (v: number) => <span className={v < 0 ? 'text-danger' : undefined}>{fmtNum(v)}</span>;
   const costsOf = (day: string) => costs.filter((c) => c.shipDay.toISOString().slice(0, 10) === day);
   const noCost = days.flatMap((d) => d.noCost);
   const CurSelect = ({ id }: { id: string }) => (
@@ -81,9 +82,9 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                       <td className="num">{fmtNum(s.sale)}</td>
                       <td className="num">{fmtNum(s.cost)}</td>
                       <td className="num">{fmtNum(s.transport)}</td>
-                      <td className="num"><b>{money(s.profit, c)}</b></td>
+                      <td className="num"><b>{signed(s.profit)}</b></td>
                       <td className="num">{fmtNum(s.paid)}</td>
-                      <td className="num"><b>{money(s.balance, c)}</b></td>
+                      <td className="num"><b>{signed(s.balance)}</b></td>
                     </tr>
                   );
                 })}
@@ -118,7 +119,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                   const entries = Object.entries(d.byCur);
                   const list = costsOf(d.day);
                   return entries.map(([c, v], i) => (
-                    <tr key={`${d.day}-${c}`} className={i === 0 ? 'grp-first' : undefined}>
+                    <tr key={`${d.day}-${c}`} className={i === 0 ? 'grp-first' : 'grp-next'}>
                       {i === 0 && (
                         <td rowSpan={entries.length}>
                           <Link className="order-no" href={`/yuklemeler?gun=${d.day}`}>{fmtDate(d.day)}</Link>
@@ -131,7 +132,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                       <td className="num">{fmtNum(v.sale)}</td>
                       <td className="num">{fmtNum(v.cost)}</td>
                       <td className="num">{fmtNum(v.transport)}</td>
-                      <td className="num"><b>{money(v.profit, c)}</b></td>
+                      <td className="num"><b>{signed(v.profit)}</b></td>
                       {i === 0 && (
                         <td rowSpan={entries.length} className="acc-entries">
                           {list.map((x) => (

@@ -47,7 +47,7 @@ export default {
       paid: "Tahsil Edilen",
       rest: "Kalan",
       status: "Durum",
-      checked: "Son FGO kontrol",
+      checked: "FGO kontrol",
     },
     kind: {
       ADVANCE: "Avans faturası",
@@ -73,12 +73,12 @@ export default {
     noCostBadge: "maliyet eksik",
     sum: {
       currency: "Para birimi",
-      sale: "Toplam Cam Satışı",
-      cost: "Toplam Cam Maliyeti",
-      paid: "Fabrikaya Toplam Ödeme",
-      balance: "Fabrika Bakiye",
-      transport: "Toplam Transport",
-      profit: "Toplam Kâr",
+      sale: "Cam satış",
+      cost: "Cam maliyet",
+      paid: "Fabrikaya ödeme",
+      balance: "Fabrika bakiye",
+      transport: "Transport",
+      profit: "Kâr",
     },
     loadings: {
       title: "Yükleme kârlılıkları",

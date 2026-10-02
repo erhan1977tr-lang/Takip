@@ -47,7 +47,7 @@ export default {
       paid: "Încasat",
       rest: "Rest",
       status: "Stare",
-      checked: "Ultima verificare FGO",
+      checked: "Verificat FGO",
     },
     kind: {
       ADVANCE: "Factură de avans",
@@ -73,12 +73,12 @@ export default {
     noCostBadge: "cost incomplet",
     sum: {
       currency: "Moneda",
-      sale: "Total vânzări sticlă",
-      cost: "Total cost sticlă",
-      paid: "Total plătit fabricii",
+      sale: "Vânzare sticlă",
+      cost: "Cost sticlă",
+      paid: "Plătit fabricii",
       balance: "Sold fabrică",
-      transport: "Total transport",
-      profit: "Profit total",
+      transport: "Transport",
+      profit: "Profit",
     },
     loadings: {
       title: "Profitabilitatea încărcărilor",

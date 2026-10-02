@@ -764,6 +764,8 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 /* Aynı siparişin / aynı günün satırları bir arada: grubun ilk satırının üstünde belirgin çizgi */
 .acc-table tbody tr.grp-first > td { border-top: 1px solid var(--border); }
 .acc-table tbody tr.grp-first:first-child > td { border-top: 0; }
+/* Grubun devam satırı (ilk hücreleri üst satırdan rowSpan ile gelir): ilk hücre artık sol kenarda değil */
+.card-flush .acc-table tbody tr.grp-next > td:first-child { padding-left: 12px; }
 .acc-table td .badge { white-space: nowrap; }
 .cell-note { display: block; margin-top: 2px; font-size: var(--fs-meta); font-weight: 400; color: var(--faint); white-space: normal; }
 .cell-note.text-danger { color: var(--danger); }

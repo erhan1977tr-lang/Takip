@@ -50,7 +50,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   return (
     <>
       <div className="page-head row">
-        <div>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <h1>{t(`accounting.${key}.title` as MsgKey)}</h1>
           <p className="muted">{t(`accounting.${key}.intro` as MsgKey)}</p>
         </div>
@@ -145,7 +145,8 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                             : <Badge tone={TONE[st]}>{t(`accounting.receivables.status.${st}` as MsgKey)}</Badge>}
                         </td>
                         <td className="small nowrap">
-                          {d.checkedAt ? fmtDateTime(d.checkedAt) : '—'}
+                          {d.checkedAt ? fmtDate(d.checkedAt) : '—'}
+                          {d.checkedAt && <span className="cell-note">{fmtDateTime(d.checkedAt).split(' ').pop()}</span>}
                           {d.checkError && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
                         </td>
                       </tr>
