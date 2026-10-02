@@ -14,7 +14,7 @@ export const PERMISSIONS = {
   ORDER_REVIEW: 'Satış kararları: çizime gönderme, bekletme, yükleme tarihi, sandık, yüklendi, arşiv',
   ORDER_CANCEL: 'Siparişi iptal eder',
   DRAWING_WORK: 'Çizim başlatır ve çizim sürümü yükler',
-  DRAWING_APPROVE: 'Çizimi onaylar ya da revizyon ister (müşteri; onay için ayrıca onay yetkisi gerekir)',
+  DRAWING_APPROVE: 'Çizimi onaylar ya da revizyon ister (müşteri; ikisi için de ayrıca onay yetkisi gerekir)',
   OFFER_VIEW: 'Teklifleri görür',
   OFFER_DRAFT_VIEW: 'Müşteriye gönderilmemiş (hazırlanan) teklifleri görür',
   OFFER_PREPARE: 'Teklif hazırlar ve yöneticiye gönderir',

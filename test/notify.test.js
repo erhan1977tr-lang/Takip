@@ -55,7 +55,15 @@ test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-post
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', { ...order, orderTypeCode: 'PROFILE_ORDER' })).map((r) => r.email), ['admin@gkh.test'], 'profil satışa gitmez');
   assert.deepEqual((await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', order)).map((r) => r.email), ['cizim@gkh.test']);
   const assigned = { ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } };
-  assert.deepEqual((await recipientsFor(db, 'ORDER_REVISION_REQUESTED', assigned)).map((r) => r.email), ['ali@gkh.test'], 'atanmış çizimci');
+  // Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84)
+  const withSales = { ...assigned, salesUsers: [{ email: 'selin@gkh.test', language: 'ro', appRole: 'SATIS' }] };
+  for (const type of ['ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED']) {
+    assert.deepEqual((await recipientsFor(db, type, withSales)).map((r) => r.email), ['ali@gkh.test', 'selin@gkh.test'], type);
+    assert.deepEqual((await recipientsFor(db, type, assigned)).map((r) => r.email), ['ali@gkh.test', 'satis@gkh.test'], `${type}: satışçı bilinmiyorsa satış ekibi`);
+    const adminAsSales = { ...assigned, salesUsers: [{ email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN' }] };
+    assert.ok(!(await recipientsFor(db, type, adminAsSales)).some((r) => r.email === 'admin@gkh.test'), `${type}: yöneticiye gitmez`);
+  }
+  assert.deepEqual((await recipientsFor(db, 'ORDER_REVISION_REQUESTED', withSales)).map((r) => r.role), ['CIZIM', 'SATIS']);
   assert.deepEqual(await recipientsFor(db, 'ORDER_HOLD', order), [], 'kuralı olmayan olay');
 });
 
@@ -70,6 +78,47 @@ test('bildirim metni: sipariş no, firma (satış ve çizimde maskeli), işlem, 
   assert.match(s.text, /Firma: Gla\*{10}/);
   assert.ok(!s.text.includes('Glass and More'), 'satış tam adı görmez');
   assert.match(s.subject, /Yeni sipariş/);
+});
+
+test('revizyon e-postası: müşterinin notu ve sürüm metin olarak yazılır (HTML kaçışlı, konuya girmez); firma adı maskeli', () => {
+  const at = new Date('2026-10-01T10:00:00Z');
+  const note = 'Kenar <b>5 mm</b> & "delik" <script>alert(1)</script>\nikinci satır';
+  const base = { type: 'ORDER_REVISION_REQUESTED', order, createdAt: at, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', revision: { note, version: 2 } };
+  const d = renderNotification({ ...base, recipient: { locale: 'tr', role: 'CIZIM' } });
+  assert.match(d.subject, /^GLA68 — Müşteri revizyon istedi$/, 'not konu satırında yok');
+  assert.ok(d.text.includes(`Revizyon notu: ${note}`));
+  assert.match(d.text, /Çizim sürümü: v2/);
+  assert.match(d.text, /https:\/\/takip\.test\/siparisler\/o1/);
+  assert.ok(!d.html.includes('<script>') && !d.html.includes('<b>5 mm</b>'), 'not HTML olarak yorumlanmaz');
+  assert.ok(d.html.includes('Kenar &lt;b&gt;5 mm&lt;/b&gt; &amp; &quot;delik&quot; &lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.match(d.text, /Firma: Gla\*{10}/);
+  assert.ok(!d.text.includes('Glass and More') && !d.html.includes('Glass and More'), 'çizim ve satış tam adı görmez');
+  const s = renderNotification({ ...base, recipient: { locale: 'ro', role: 'SATIS' } });
+  assert.match(s.text, /Nota de revizie: Kenar/);
+  assert.ok(!s.text.includes('Glass and More'));
+  // Onay e-postasında not satırı yok; başka olaya not sızmaz
+  const a = renderNotification({ ...base, type: 'ORDER_DRAWING_APPROVED', recipient: { locale: 'tr', role: 'CIZIM' } });
+  assert.ok(!a.text.includes('Revizyon notu') && !a.text.includes('Kenar'));
+});
+
+test('revizyon e-postası gönderimi: ilgili satışçı sipariş kayıtlarından bulunur; not olayın anındaki talepten gelir', async () => {
+  const t0 = new Date('2026-10-01T10:00:00Z');
+  const db = fakeDb([]);
+  await dispatchNotifications(db, { transport: { sendMail: async () => {} }, from: 'x', appUrl: 'https://takip.test', now: t0 });
+  db.rows.push({ id: 'r1', type: 'ORDER_REVISION_REQUESTED', orderId: 'o1', status: 'PENDING', attempts: 0, availableAt: t0, createdAt: new Date(t0.getTime() + 1000), payload: {} });
+  const asked = [];
+  db.order.findUnique = async () => ({ ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } });
+  db.orderEvent = { findFirst: async (q) => { asked.push(q.where); return { user: { email: 'selin@gkh.test', language: 'tr', appRole: 'SATIS' } }; } };
+  db.offer = { findFirst: async () => null };
+  db.drawingRevision = { findFirst: async (q) => { asked.push(q.where); return { comment: 'Delik yeri yanlış', drawing: { version: 1 } }; } };
+  const mails = [];
+  const r = await dispatchNotifications(db, { transport: { sendMail: async (m) => mails.push(m) }, from: 'x', appUrl: 'https://takip.test', now: new Date(t0.getTime() + 2000) });
+  assert.equal(r.sent, 1);
+  assert.deepEqual(mails.map((m) => m.to), ['ali@gkh.test', 'selin@gkh.test'], 'atanmış çizimci + ilgili satışçı; yönetici yok');
+  assert.ok(mails.every((m) => m.text.includes('Revizyon notu: Delik yeri yanlış') && m.text.includes('GLA68')));
+  assert.equal(asked[0].event, 'SENT_TO_DRAWING');
+  assert.deepEqual(asked[0].user.appRole.in, ['SATIS'], 'yalnızca satış rolü aranır');
+  assert.ok(asked[1].createdAt.lte instanceof Date && asked[1].drawing.orderId === 'o1');
 });
 
 test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata yeniden denenir, gönderilen alıcıya tekrar gitmez', async () => {

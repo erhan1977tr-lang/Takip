@@ -23,7 +23,13 @@ const kindOf = (name: string) => {
 };
 const pct = (v: number) => `${v * 100}%`;
 
-/** pdf.js (yalnızca tarayıcıda, ilk PDF açılınca yüklenir). Çalışan iş parçacığı ayrı dosya istemesin diye ana iş parçacığında çalışır. */
+/**
+ * pdf.js (yalnızca tarayıcıda, ilk PDF açılınca yüklenir). Çalışan iş parçacığı ayrı dosya istemesin diye ana iş
+ * parçacığında çalışır. Yazı tipi gömülmemiş PDF'ler ve CJK metinler için pdf.js'in kendi varlıkları (standart yazı
+ * tipleri, cMap'ler) uygulamanın kendi adresinden gelir: app/pdfjs/[kind]/[file] — dış sunucuya (CDN) istek atılmaz.
+ * PDF içindeki görsellerin çözücüleri (JPEG, JPEG 2000, JBIG2) pdf.js paketinin içindedir.
+ */
+const PDF_ASSETS = { standardFontDataUrl: '/pdfjs/standard_fonts/', cMapUrl: '/pdfjs/cmaps/', cMapPacked: true };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pdfjsPromise: Promise<any> | null = null;
 function loadPdfjs() {
@@ -60,8 +66,10 @@ function PdfPage({ doc, n, children }: { doc: any; n: number; children: React.Re
   return <div className="viewer-page"><canvas ref={canvas} />{children}</div>;
 }
 
-export function DrawingViewer({ files, annotations, editable = false, onChange, text }: {
+export function DrawingViewer({ files, annotations, editable = false, onChange, text, side }: {
   files: ViewerFile[]; annotations: Annotation[]; editable?: boolean; onChange?: (a: Annotation[]) => void; text: ViewerText;
+  /** Sağ sütunun üstünde gösterilen bölüm (karar / gönderim / revizyon notu) */
+  side?: React.ReactNode;
 }) {
   const [fileId, setFileId] = useState(files.find((f) => kindOf(f.name) !== 'other')?.id ?? files[0]?.id ?? '');
   const [tool, setTool] = useState<Tool>('pin');
@@ -70,6 +78,10 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [doc, setDoc] = useState<any>(null);
   const [draft, setDraft] = useState<Annotation | null>(null);
+  // Sürüklenen işaretin güncel hâli: art arda gelen işaretçi olayları (hızlı çizim) bir önceki çizimi beklemeden
+  // buradan okur — serbest çizimde nokta kaybolmaz. setDraft yalnızca ekrana çizmek içindir.
+  const live = useRef<Annotation | null>(null);
+  const show = (d: Annotation | null) => { live.current = d; setDraft(d); };
   const [focus, setFocus] = useState(-1);
   const file = files.find((f) => f.id === fileId);
   const kind = file ? kindOf(file.name) : 'other';
@@ -83,7 +95,7 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let loaded: any = null;
     loadPdfjs()
-      .then((lib) => lib.getDocument({ url, isEvalSupported: false }).promise)
+      .then((lib) => lib.getDocument({ url, isEvalSupported: false, ...PDF_ASSETS }).promise)
       .then((d) => { loaded = d; if (cancelled) d.destroy?.(); else setDoc(d); })
       .catch(() => { if (!cancelled) setFailed(url); });
     return () => { cancelled = true; loaded?.destroy?.(); };
@@ -104,27 +116,30 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
       onPointerDown: (e: React.PointerEvent) => {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         const p = at(e);
-        setDraft({ fileId, page, type: tool, x: p.x, y: p.y, w: 0, h: 0, points: [[p.x, p.y]], text: '' });
+        show({ fileId, page, type: tool, x: p.x, y: p.y, w: 0, h: 0, points: [[p.x, p.y]], text: '' });
       },
       onPointerMove: (e: React.PointerEvent) => {
-        if (!draft || draft.page !== page) return;
+        const d = live.current;
+        if (!d || d.page !== page) return;
         const p = at(e);
-        if (draft.type === 'rect') setDraft({ ...draft, w: p.x - (draft.points?.[0]?.[0] ?? p.x), h: p.y - (draft.points?.[0]?.[1] ?? p.y) });
+        if (d.type === 'rect') show({ ...d, w: p.x - (d.points?.[0]?.[0] ?? p.x), h: p.y - (d.points?.[0]?.[1] ?? p.y) });
         else {
-          const last = draft.points![draft.points!.length - 1];
-          if (Math.hypot(p.x - last[0], p.y - last[1]) > 0.004 && draft.points!.length < 400) setDraft({ ...draft, points: [...draft.points!, [p.x, p.y]] });
+          const last = d.points![d.points!.length - 1];
+          if (Math.hypot(p.x - last[0], p.y - last[1]) > 0.004 && d.points!.length < 400) show({ ...d, points: [...d.points!, [p.x, p.y]] });
         }
       },
       onPointerUp: () => {
-        if (!draft) return;
-        const d = draft;
-        setDraft(null);
+        const d = live.current;
+        if (!d) return;
+        show(null);
         if (d.type === 'rect') {
           const [sx, sy] = d.points![0];
           const w = Math.abs(d.w ?? 0), h = Math.abs(d.h ?? 0);
           if (w > 0.01 && h > 0.01) add({ fileId, page, type: 'rect', x: Math.min(sx, sx + (d.w ?? 0)), y: Math.min(sy, sy + (d.h ?? 0)), w, h, text: '' });
         } else if ((d.points?.length ?? 0) > 1) add({ fileId, page, type: 'free', x: d.points![0][0], y: d.points![0][1], points: d.points, text: '' });
       },
+      // Sürükleme yarıda kesilirse (dokunma iptali, pencere değişimi) yarım işaret bırakılmaz
+      onPointerCancel: () => show(null),
     } : {
       onClick: (e: React.MouseEvent) => { const p = at(e); add({ fileId, page, type: tool, x: p.x, y: p.y, text: '' }); },
     };
@@ -162,20 +177,20 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
             </select>
           )}
           {editable && kind !== 'other' && !error && (
-            <span className="row" style={{ gap: 6 }}>
+            <span className="viewer-tools">
               {(['pin', 'rect', 'free', 'text'] as Tool[]).map((k) => (
                 <button key={k} type="button" className={`btn${tool === k ? ' btn-primary' : ''}`} aria-pressed={tool === k} onClick={() => setTool(k)}>{text.tools[k]}</button>
               ))}
             </span>
           )}
-          <span className="row" style={{ gap: 4, marginLeft: 'auto' }}>
+          <span className="viewer-zoom">
             <button type="button" className="btn btn-link" aria-label={text.zoomOut} onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}>−</button>
             <span className="small muted">%{Math.round(zoom * 100)}</span>
             <button type="button" className="btn btn-link" aria-label={text.zoomIn} onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))}>+</button>
             <button type="button" className="btn btn-link" onClick={() => setZoom(1)}>{text.fit}</button>
           </span>
         </div>
-        {editable && kind !== 'other' && <p className="muted small" style={{ margin: '0 0 8px' }}>{text.hint}</p>}
+        {editable && kind !== 'other' && <p className="hint viewer-hint">{text.hint}</p>}
         <div className="viewer-scroll">
           <div style={{ width: pct(zoom) }}>
             {kind === 'other' && <p className="muted">{text.noPreview} <a href={`/dosya/cizim/${fileId}`}>{text.download}</a></p>}
@@ -192,23 +207,26 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
           </div>
         </div>
       </div>
-      <div className="viewer-side card">
-        <h2>{text.notes} ({annotations.length})</h2>
-        {annotations.length === 0 && <p className="muted">{text.noNotes}</p>}
-        {annotations.map((a, i) => (
-          <div key={i} className="viewer-note">
-            <span className="badge badge-info">{i + 1}</span>
-            <span className="small muted">{text.tools[a.type]}{files.length > 1 ? ` · ${files.find((f) => f.id === a.fileId)?.name ?? ''}` : ''}{a.page > 1 ? ` · ${text.page} ${a.page}` : ''}</span>
-            {editable ? (
-              <>
-                <input value={a.text} maxLength={500} placeholder={text.notePlaceholder} aria-label={`${text.notes} ${i + 1}`} autoFocus={focus === i}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
-                  onChange={(e) => set(annotations.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
-                <button type="button" className="btn btn-link danger" aria-label={`${text.remove} ${i + 1}`} onClick={() => set(annotations.filter((_, j) => j !== i))}>✕</button>
-              </>
-            ) : <span>{a.text || '—'}</span>}
-          </div>
-        ))}
+      <div className="viewer-aside">
+        {side}
+        <div className="viewer-side card">
+          <h2>{text.notes} <span className="badge">{annotations.length}</span></h2>
+          {annotations.length === 0 && <p className="muted">{text.noNotes}</p>}
+          {annotations.map((a, i) => (
+            <div key={i} className="viewer-note">
+              <span className="badge badge-info">{i + 1}</span>
+              <span className="small muted">{text.tools[a.type]}{files.length > 1 ? ` · ${files.find((f) => f.id === a.fileId)?.name ?? ''}` : ''}{a.page > 1 ? ` · ${text.page} ${a.page}` : ''}</span>
+              {editable ? (
+                <>
+                  <input value={a.text} maxLength={500} placeholder={text.notePlaceholder} aria-label={`${text.notes} ${i + 1}`} autoFocus={focus === i}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                    onChange={(e) => set(annotations.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+                  <button type="button" className="btn btn-link danger" aria-label={`${text.remove} ${i + 1}`} onClick={() => set(annotations.filter((_, j) => j !== i))}>✕</button>
+                </>
+              ) : <span>{a.text || '—'}</span>}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

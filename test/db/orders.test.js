@@ -4,6 +4,8 @@ import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
 import { runBaseSeed } from '../../prisma/seed/base.mjs';
 import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
+import { reviewToken } from '../../server/orders/review.js';
+import { getEnv } from '../../server/env.js';
 
 let db;
 const people = {};
@@ -21,6 +23,13 @@ const newOrder = async (title = 'Test') => {
   });
 };
 const run = (orderId, action, who, payload = {}) => runOrderAction(db, { orderId, action, actor: actor(people[who]), payload });
+/** "Kontrol Et" ekranının verdiği kanıt: son sürüm (taslak) + bu kullanıcı + o andaki dosyalar için */
+const reviewOf = async (orderId, who, now) => {
+  const d = await db.drawing.findFirstOrThrow({ where: { orderId }, orderBy: { version: 'desc' }, include: { files: true } });
+  return reviewToken({ secret: getEnv().AUTH_SECRET, drawingId: d.id, userId: people[who].id, files: d.files, ...(now ? { now } : {}) });
+};
+/** Çizimi kontrol edip müşteriye gönderir (ekrandaki akış: Kontrol Et → Müşteriye gönder) */
+const send = async (orderId, who = 'drawer', payload = {}) => run(orderId, 'send_drawing', who, { review: await reviewOf(orderId, who), ...payload });
 
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) return;
@@ -156,7 +165,7 @@ dbTest('geçiş: çizim döngüsü; taslak → gönder; müşteri eski sürümü
   assert.equal(await codeOf(run(o.id, 'start_drawing', 'drawer')), 'NOT_ALLOWED');
   const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('v1')] });
   assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', { drawingId: v1.result.drawingId })), 'NOT_ALLOWED', 'taslak müşteriye gitmedi');
-  await run(o.id, 'send_drawing', 'drawer', { drawingId: v1.result.drawingId });
+  await send(o.id, 'drawer', { drawingId: v1.result.drawingId });
   // Revizyon: not zorunlu; çizim üstü işaretler yalnızca bu sürümün dosyalarına, doğrulanarak saklanır
   assert.equal(await codeOf(run(o.id, 'request_revision', 'cust', { comment: '', drawingId: v1.result.drawingId })), 'REVISION_COMMENT');
   const v1File = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } })).id;
@@ -169,7 +178,7 @@ dbTest('geçiş: çizim döngüsü; taslak → gönder; müşteri eski sürümü
   assert.equal(rev.comment, 'Yükseklik 1100 olsun');
   const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('v2')] });
   assert.equal(v2.result.version, 2);
-  await run(o.id, 'send_drawing', 'drawer');
+  await send(o.id);
   assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', { drawingId: v1.result.drawingId })), 'STALE_DRAWING');
   await run(o.id, 'approve_drawing', 'cust', { drawingId: v2.result.drawingId });
   const drawings = await db.drawing.findMany({ where: { orderId: o.id }, orderBy: { version: 'asc' }, include: { files: true } });
@@ -187,27 +196,135 @@ dbTest('çizim: çoklu dosya taslağa eklenir; taranmamış dosyayla gönderilem
   assert.deepEqual([d.status, d.files.length, d.noteCustomer, d.noteInternal], ['TASLAK', 3, 'Müşteri notu', 'İç not']);
   assert.equal((await db.order.findUniqueOrThrow({ where: { id: o.id } })).drawingTrack, 'YAPILIYOR');
 
-  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer')), 'DRAWING_SCAN_PENDING');
+  assert.equal(await codeOf(send(o.id)), 'DRAWING_SCAN_PENDING');
   await db.drawingFile.updateMany({ where: { drawingId: d.id, scanStatus: 'PENDING' }, data: { scanStatus: 'CLEAN' } });
-  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer')), 'DRAWING_NOT_SCANNED', 'antivirüs kapalıyken yüklenen dosya da gönderilemez');
+  assert.equal(await codeOf(send(o.id)), 'DRAWING_NOT_SCANNED', 'antivirüs kapalıyken yüklenen dosya da gönderilemez');
   const skipped = d.files.find((f) => f.scanStatus === 'SKIPPED');
   const rm = await run(o.id, 'remove_drawing_file', 'drawer', { fileId: skipped.id });
   assert.equal(rm.result.storageKey, skipped.storageKey);
-  assert.equal(await codeOf(run(o.id, 'send_drawing', 'sales')), 'NOT_ALLOWED', 'satış çizim gönderemez');
-  await run(o.id, 'send_drawing', 'drawer');
+  assert.equal(await codeOf(send(o.id, 'sales')), 'NOT_ALLOWED', 'satış çizim gönderemez');
+  await send(o.id);
   d = await db.drawing.findUniqueOrThrow({ where: { id: d.id }, include: { files: true } });
   assert.deepEqual([d.status, d.files.length, d.sentById], ['ONAY_BEKLIYOR', 2, people.drawer.id]);
   assert.equal(await codeOf(run(o.id, 'remove_drawing_file', 'drawer', { fileId: d.files[0].id })), 'NOT_ALLOWED', 'gönderilen sürümün dosyası değişmez');
   const audit = await db.auditLog.findFirstOrThrow({ where: { entityId: o.id, action: 'ORDER_TRANSITION', details: { path: ['action'], equals: 'send_drawing' } } });
   assert.equal(audit.actorRole, 'CIZIM');
+  assert.equal(audit.details.checked, true, 'kontrol edilerek gönderildiği denetim kaydında');
   assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'DRAWING_UPLOADED' } }), 1);
+});
+
+dbTest('çizim gönderimi: "Kontrol Et" kanıtı olmadan gönderilemez (sunucu denetimi); kanıt kişiye, sürüme ve dosyalara bağlıdır', async () => {
+  const o = await newOrder();
+  await run(o.id, 'send_to_drawing', 'sales');
+  await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('k1')] });
+  const state = async () => { const x = await db.order.findUniqueOrThrow({ where: { id: o.id }, include: { drawings: true } }); return [x.drawingTrack, x.drawings[0].status]; };
+  // Doğrudan istek (düğme gizli olsa da): kanıt yok / uydurma / başkasının kanıtı → reddedilir, hiçbir şey değişmez
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer')), 'DRAWING_NOT_CHECKED');
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer', { review: `${Date.now()}.uydurma` })), 'DRAWING_NOT_CHECKED');
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer', { review: await reviewOf(o.id, 'admin') })), 'DRAWING_NOT_CHECKED', 'kontrol eden kişi göndermeli');
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer', { review: await reviewOf(o.id, 'drawer', Date.now() - 3 * 3_600_000) })), 'DRAWING_NOT_CHECKED', 'eski kontrol (2 saatten fazla)');
+  // Kontrolden sonra taslağa dosya eklendi → eski kanıt geçmez, yeniden kontrol gerekir
+  const before = await reviewOf(o.id, 'drawer');
+  await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('k2')] });
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'drawer', { review: before })), 'DRAWING_NOT_CHECKED');
+  assert.deepEqual(await state(), ['YAPILIYOR', 'TASLAK']);
+  assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'DRAWING_UPLOADED' } }), 0, 'müşteriye bildirim olayı yazılmadı');
+  // Müşteri taslağı hiçbir şekilde gönderemez / onaylayamaz
+  assert.equal(await codeOf(run(o.id, 'send_drawing', 'cust', { review: await reviewOf(o.id, 'cust') })), 'NOT_ALLOWED');
+  await send(o.id);
+  assert.deepEqual(await state(), ['ONAY_BEKLIYOR', 'ONAY_BEKLIYOR']);
+});
+
+dbTest('çizim gönderimi: müşterinin açabileceği (PDF / JPG / PNG) temiz dosya şart; teknik dosyalar ek olarak kalır', async () => {
+  const o = await newOrder();
+  await run(o.id, 'send_to_drawing', 'sales');
+  const tech = (n, ext) => ({ ...fileMeta(n), name: `cizim-${n}.${ext}`, storageKey: `2026/09/test${n}.${ext}`, mime: 'application/octet-stream' });
+  const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [tech('t1', 'dwg'), tech('t2', 'dxf'), tech('t3', 'step')] });
+  assert.equal(await codeOf(send(o.id)), 'DRAWING_NO_VIEWABLE', 'yalnızca DWG / DXF / STEP ile gönderilemez');
+  assert.equal((await db.drawing.findUniqueOrThrow({ where: { id: v1.result.drawingId } })).status, 'TASLAK');
+  // Taranmamış PDF "açılabilir dosya" sayılmaz: önce tarama kuralı devreye girer
+  await run(o.id, 'upload_drawing', 'drawer', { files: [{ ...fileMeta('t4'), scanStatus: 'PENDING' }] });
+  assert.equal(await codeOf(send(o.id)), 'DRAWING_SCAN_PENDING');
+  await db.drawingFile.updateMany({ where: { drawingId: v1.result.drawingId, scanStatus: 'PENDING' }, data: { scanStatus: 'CLEAN' } });
+  await send(o.id);
+  const d = await db.drawing.findUniqueOrThrow({ where: { id: v1.result.drawingId }, include: { files: true } });
+  assert.deepEqual([d.status, d.files.length], ['ONAY_BEKLIYOR', 4], 'teknik ekler sürümde kalır');
+  // Görsel de yeterlidir
+  await run(o.id, 'request_revision', 'cust', { comment: 'Düzeltin', drawingId: d.id });
+  await run(o.id, 'upload_drawing', 'drawer', { files: [tech('t5', 'dwg'), tech('t6', 'PNG')] });
+  await send(o.id);
+});
+
+dbTest('çizim kararı: onay yetkisi olmayan müşteri kullanıcısı ne onaylayabilir ne revizyon isteyebilir; onay kesindir', async () => {
+  const o = await newOrder();
+  await run(o.id, 'send_to_drawing', 'sales');
+  const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('p1')] });
+  await send(o.id);
+  const viewer = await db.user.create({ data: { email: `izleyici-${o.customerOrderNo}@test.test`, name: 'İzleyici', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: firm.id, canApprove: false } });
+  people.viewer = viewer;
+  const payload = { drawingId: v1.result.drawingId, comment: 'Değiştirin', annotations: '[]' };
+  assert.equal(await codeOf(run(o.id, 'approve_drawing', 'viewer', payload)), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'viewer', payload)), 'NOT_ALLOWED', 'revizyon da onay yetkisi ister');
+  // Başka firmanın (onay yetkili) müşterisi siparişi hiç bulamaz
+  assert.equal(await codeOf(run(o.id, 'approve_drawing', 'other', payload)), 'NOT_FOUND');
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'other', payload)), 'NOT_FOUND');
+  // İç ekip müşteri adına karar veremez
+  for (const who of ['admin', 'sales', 'drawer', 'inspector']) {
+    assert.equal(await codeOf(run(o.id, 'approve_drawing', who, payload)), 'NOT_ALLOWED', who);
+    assert.equal(await codeOf(run(o.id, 'request_revision', who, payload)), 'NOT_ALLOWED', who);
+  }
+  assert.equal(await db.drawingRevision.count({ where: { drawingId: v1.result.drawingId } }), 0);
+  assert.equal((await db.drawing.findUniqueOrThrow({ where: { id: v1.result.drawingId } })).status, 'ONAY_BEKLIYOR');
+  // Yetkili kullanıcı onaylar; onay kesindir: yeniden onay, revizyon, geri çekme ve yeni yükleme yok
+  await run(o.id, 'approve_drawing', 'cust', payload);
+  assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', payload)), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'cust', payload)), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'withdraw_drawing', 'drawer', { reason: 'x' })), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('p2')] })), 'NOT_ALLOWED');
+  const d = await db.drawing.findUniqueOrThrow({ where: { id: v1.result.drawingId } });
+  assert.deepEqual([d.status, d.decidedById], ['ONAYLANDI', people.cust.id]);
+});
+
+dbTest('çizim sürümleri değişmez: v1 ve revizyon talebi (not + işaretler) v2 / v3 sonrasında aynen durur', async () => {
+  const o = await newOrder();
+  await run(o.id, 'send_to_drawing', 'sales');
+  const snap = async (id) => {
+    const d = await db.drawing.findUniqueOrThrow({ where: { id }, include: { files: { orderBy: { createdAt: 'asc' } }, revisions: true } });
+    return JSON.stringify([d.version, d.status, d.sentAt, d.decidedAt, d.decidedById, d.noteCustomer, d.files.map((f) => [f.id, f.name, f.storageKey, f.checksum]), d.revisions.map((r) => [r.comment, r.annotations])]);
+  };
+  const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('i1')], noteCustomer: 'ilk sürüm' });
+  await send(o.id);
+  const f1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } })).id;
+  const marks = [
+    { fileId: f1, page: 1, type: 'free', x: 0.2, y: 0.2, points: [[0.2, 0.2], [0.3, 0.25], [0.4, 0.2]], text: 'kenar' },
+    { fileId: f1, page: 1, type: 'text', x: 0.6, y: 0.5, text: '1100 mm' },
+  ];
+  await run(o.id, 'request_revision', 'cust', { comment: 'Ölçü yanlış', drawingId: v1.result.drawingId, annotations: JSON.stringify(marks) });
+  const frozen = await snap(v1.result.drawingId);
+  assert.deepEqual((await db.drawingRevision.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } })).annotations.map((a) => a.type), ['free', 'text'], 'serbest ve metin işaretleri saklanır');
+  // v1'e artık hiçbir işlem dokunamaz
+  assert.equal(await codeOf(run(o.id, 'remove_drawing_file', 'drawer', { fileId: f1 })), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', { drawingId: v1.result.drawingId })), 'NOT_ALLOWED');
+  const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('i2')] });
+  assert.equal(await codeOf(run(o.id, 'remove_drawing_file', 'drawer', { fileId: f1 })), 'FILE_NOT_FOUND', 'taslak varken de eski sürümün dosyası çıkarılamaz');
+  await send(o.id);
+  await run(o.id, 'request_revision', 'cust', { comment: 'Bir daha', drawingId: v2.result.drawingId });
+  const frozen2 = await snap(v2.result.drawingId);
+  const v3 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('i3')] });
+  await send(o.id);
+  await run(o.id, 'approve_drawing', 'cust', { drawingId: v3.result.drawingId });
+  assert.equal(await snap(v1.result.drawingId), frozen, 'v1 değişmedi');
+  assert.equal(await snap(v2.result.drawingId), frozen2, 'v2 değişmedi');
+  const all = await db.drawing.findMany({ where: { orderId: o.id }, orderBy: { version: 'asc' } });
+  assert.deepEqual(all.map((d) => [d.version, d.status]), [[1, 'REVIZYON_ISTENDI'], [2, 'REVIZYON_ISTENDI'], [3, 'ONAYLANDI']]);
+  assert.equal((await db.order.findUniqueOrThrow({ where: { id: o.id } })).revisionCount, 2);
 });
 
 dbTest('çizim: gönderilen sürüm gerekçeyle geri çekilir; müşteri artık onaylayamaz; yeni sürüm açılır', async () => {
   const o = await newOrder();
   await run(o.id, 'send_to_drawing', 'sales');
   const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('w1')] });
-  await run(o.id, 'send_drawing', 'drawer');
+  await send(o.id);
   assert.equal(await codeOf(run(o.id, 'withdraw_drawing', 'drawer', { reason: '' })), 'WITHDRAW_REASON');
   assert.equal(await codeOf(run(o.id, 'withdraw_drawing', 'cust', { reason: 'x' })), 'NOT_ALLOWED');
   await run(o.id, 'withdraw_drawing', 'drawer', { reason: 'Yanlış dosya' });

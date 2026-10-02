@@ -64,6 +64,10 @@ export default {
     searchPlaceholder: 'Caută nr. comandă / titlu',
     sortNewest: 'Cele mai noi',
     sortOldest: 'Cele mai vechi',
+    shipFilter: 'Ziua încărcării',
+    shipAll: 'Toate zilele de încărcare',
+    shipApply: 'Filtrează',
+    sortBy: 'Ordinea aprobării:',
     shipGroup: 'Încărcare: {date}',
     // „v2 · 1 rundă”: versiunea desenului · numărul de runde de revizie
     revisions: 'v{v} · {rounds}',

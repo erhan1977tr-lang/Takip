@@ -65,6 +65,10 @@ export default {
     searchPlaceholder: 'Sipariş no / başlık ara',
     sortNewest: 'En yeni',
     sortOldest: 'En eski',
+    shipFilter: 'Yükleme günü',
+    shipAll: 'Tüm yükleme günleri',
+    shipApply: 'Süz',
+    sortBy: 'Onay sırası:',
     shipGroup: 'Yükleme: {date}',
     // "v2 · 1 tur": çizim sürümü · revizyon turu sayısı
     revisions: 'v{v} · {rounds}',

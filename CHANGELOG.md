@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.31.0 — 02.10.2026
+
+- **Çizim akışı (mevcut akış genişletildi; yeni tablo ya da durum yok)**:
+  - **Zorunlu kontrol**: Yükle → "Kontrol Et" → görüntüleyici → "Müşteriye gönder" → onay penceresi. Sipariş
+    sayfasında gönderme düğmesi yok; sunucu da kontrol ekranı açılmadan gelen gönderimi reddeder (kontrolden sonra
+    taslağa dosya eklenir / çıkarılırsa ya da 2 saat geçerse yeniden kontrol gerekir).
+  - **Müşterinin açabileceği dosya şart**: sürümde virüs taramasından temiz en az bir PDF, JPG ya da PNG yoksa
+    gönderilemez. DWG, DXF, STEP gibi teknik dosyalar ek olarak kalır.
+  - **Müşteri**: "Bu çizimi onayla" artık görüntüleyicide de var; onay sürüm başınadır ve kesindir. Onay yetkisi
+    olmayan müşteri kullanıcısı ne onaylayabilir ne revizyon isteyebilir (yalnızca inceler).
+  - **Çizimci sipariş sayfası**: müşteri sipariş dosyaları → teknik çizimler ve onay (yükleme bu bölümde) → notlar →
+    sipariş bilgileri; büyük durum kartları yerine başlıkta küçük rozetler.
+  - **Görüntüleyici**: karar / gönderim / revizyon notu çizimin yanında; serbest çizimde nokta kaybı giderildi;
+    pdf.js yazı tipleri ve cMap'ler uygulamanın kendi adresinden gelir (dış sunucu yok).
+- **E-posta**: müşteri revizyon istediğinde ya da çizimi onayladığında atanmış çizimci ve ilgili satışçı bilgilendirilir
+  (yönetici değil); revizyon e-postasında müşterinin notu da yazar. Müşteriye giden çizim e-postası değişmedi.
+- **"Müşteri tarafından onaylanmış çizimler"** listesi çizim ekibinin yanında satış ve yöneticide de görünür;
+  yükleme gününe göre süzülür, en yeni / en eski sıralanır.
+
 ## 3.30.0 — 02.10.2026
 
 - **Yükleme Dökümü Excel**: tek satır = müşteri + para birimi + cam + camın birim fiyatı. Aynı cam farklı fiyatla ayrı

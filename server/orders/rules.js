@@ -300,6 +300,14 @@ export function offerProblems(lines) {
 }
 
 // ---------- dosyalar ----------
+/** Uygulama içinde açılabilen (müşterinin görüntüleyicide inceleyebildiği) çizim dosyaları */
+export const VIEWABLE_EXT = ['pdf', 'png', 'jpg', 'jpeg'];
+export const isViewable = (name) => {
+  const n = String(name ?? '').toLowerCase();
+  const dot = n.lastIndexOf('.');
+  return dot > 0 && VIEWABLE_EXT.includes(n.slice(dot + 1));
+};
+
 export const ALLOWED_EXT = ['pdf', 'dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'xls', 'xlsx', 'doc', 'docx', 'zip', 'jpg', 'jpeg', 'png'];
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
@@ -345,10 +353,8 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
 
   if (can(role, 'DRAWING_APPROVE')) {
     // Müşterinin tek onayı çizim onayıdır; teklifi yalnızca görür.
-    if (preparing && drawing === 'ONAY_BEKLIYOR') {
-      if (canApprove) a.push('approve_drawing');
-      a.push('request_revision');
-    }
+    // Onay ve revizyon aynı yetkiye bağlıdır (karar 84): onay yetkisi olmayan müşteri kullanıcısı ikisini de yapamaz.
+    if (preparing && drawing === 'ONAY_BEKLIYOR' && canApprove) a.push('approve_drawing', 'request_revision');
     if (!closed && can(role, 'FILE_UPLOAD')) a.push('add_file');
     return a;
   }

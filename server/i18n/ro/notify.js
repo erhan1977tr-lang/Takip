@@ -4,6 +4,8 @@ export default {
   customer: 'Firmă',
   action: 'Operație',
   date: 'Data',
+  revisionNote: 'Nota de revizie',
+  drawingVersion: 'Versiunea desenului',
   shipDate: 'Data estimată de încărcare',
   newOrder: 'Comandă nouă',
   open: 'Deschide comanda',

@@ -73,6 +73,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DRAWING_INFECTED: 'order.errors.drawingInfected',
   DRAWING_SCAN_PENDING: 'order.errors.drawingScanPending',
   DRAWING_NOT_SCANNED: 'order.errors.drawingNotScanned',
+  DRAWING_NO_VIEWABLE: 'order.errors.drawingNoViewable',
+  DRAWING_NOT_CHECKED: 'order.errors.drawingNotChecked',
   WITHDRAW_REASON: 'order.errors.withdrawReason',
   FILE_NOT_FOUND: 'order.errors.fileNotFound',
   NO_FIRM: 'newOrder.errors.noFirm',

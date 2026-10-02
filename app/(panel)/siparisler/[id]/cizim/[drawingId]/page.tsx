@@ -5,15 +5,23 @@ import { getT } from '@/lib/i18n';
 import { loadOrder } from '@/lib/orders';
 import { fmtDateTime } from '@/lib/format';
 import { DrawingViewer, type Annotation, type ViewerText } from '@/components/DrawingViewer';
-import { availableActions, drawingFlags } from '@/server/orders/rules.js';
+import { ConfirmButton } from '@/components/ConfirmButton';
+import { authSecret } from '@/lib/env';
+import { userCan } from '@/lib/permissions';
+import { availableActions, drawingFlags, isViewable } from '@/server/orders/rules.js';
 import { cleanAnnotations } from '@/server/orders/annotations.js';
+import { reviewToken } from '@/server/orders/review.js';
+import { approveDrawingAction, sendDrawingAction } from '../../actions';
 import { RevisionForm } from './RevisionForm';
 
 export const dynamic = 'force-dynamic';
 
-// Çizim sürümünü inceleme ekranı (PDF / görsel görüntüleyici):
-//   - çizimci: müşteriye göndermeden önce "Kontrol Et" (taslak sürüm; müşteri taslağı hiç göremez)
-//   - müşteri: "Aç ve incele"; ?revizyon=1 → çizim üzerine işaret koyup zorunlu notla revizyon ister
+// Çizim sürümünü inceleme ekranı (PDF / görsel görüntüleyici) — karar 84:
+//   - çizimci: "Kontrol Et" (taslak sürüm; müşteri taslağı hiç göremez). "Müşteriye gönder" YALNIZCA bu ekrandadır:
+//     sayfa, bu taslak + bu kullanıcı + bu dosyalar için imzalı bir kontrol kanıtı üretir (server/orders/review.js);
+//     send_drawing kanıt olmadan çalışmaz (düğmeyi gizlemek değil, sunucu denetimi).
+//   - müşteri: "Aç ve incele" → "Bu çizimi onayla" ya da "Revizyon iste" (?revizyon=1: çizim üzerine işaret + zorunlu
+//     not). İkisi de onay yetkisi ister (availableActions); yetkisiz kullanıcı yalnızca inceler.
 //   - çizimci / iç ekip / müşteri: revizyon talebini çizim üzerindeki işaretleriyle görür (?rev=<talep>)
 // Sipariş loadOrder ile yüklenir: firma kapsamı ve role göre temizlik sunucuda (başka firmanın siparişi → 404,
 // müşteriye taslak sürüm gelmez). Dosyalar /dosya/cizim/<id> adresinden, aynı denetimle gelir.
@@ -30,7 +38,17 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order),
   });
-  const revising = sp.revizyon === '1' && acts.includes('request_revision') && latest?.id === d.id && d.status === 'ONAY_BEKLIYOR';
+  const isLatest = latest?.id === d.id;
+  const pending = isLatest && d.status === 'ONAY_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
+  const revising = sp.revizyon === '1' && acts.includes('request_revision') && pending;
+  const deciding = !revising && pending && acts.includes('approve_drawing');
+  // Müşteri kullanıcısının onay yetkisi yok: inceler, karar veremez (onay da revizyon da sunucuda reddedilir)
+  const noRight = pending && userCan(user, 'DRAWING_APPROVE') && !user.canApprove;
+  // Taslak: gönderim koşulları (asıl denetim send_drawing'de) ve kontrol kanıtı
+  const sending = isLatest && d.status === 'TASLAK' && acts.includes('send_drawing');
+  const clean = d.files.length > 0 && d.files.every((f) => f.scanStatus === 'CLEAN');
+  const viewable = d.files.some((f) => isViewable(f.name));
+  const review = sending && clean && viewable ? reviewToken({ secret: authSecret(), drawingId: d.id, userId: user.id, files: d.files }) : null;
   const files = d.files.filter((f) => f.scanStatus !== 'INFECTED').map((f) => ({ id: f.id, name: f.name }));
   const revision = d.revisions.find((r) => r.id === sp.rev) ?? d.revisions[d.revisions.length - 1];
   const annotations = revision ? (cleanAnnotations(revision.annotations, files.map((f) => f.id)) as Annotation[]) : [];
@@ -59,19 +77,58 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
           {d.status === 'TASLAK' && <span className="muted small">{t('order.viewer.draftInfo')}</span>}
         </div>
       </div>
-      {files.length === 0 && <div className="card"><p className="muted">{t('order.upload.draftEmpty')}</p></div>}
+      {files.length === 0 && <div className="card"><p className="empty">{t('order.upload.draftEmpty')}</p></div>}
       {files.length > 0 && revising && (
         <RevisionForm
           orderId={order.id} drawingId={d.id} files={files} viewer={viewer}
-          m={{ label: t('order.customer.revisionLabel'), placeholder: t('order.customer.revisionPlaceholder'), submit: t('order.steps.request_revision'),
-            required: t('order.viewer.noteRequired'), cancel: t('common.cancel'), backHref: back }}
+          m={{ title: t('order.viewer.revisionTitle'), label: t('order.viewer.revisionNote'), placeholder: t('order.customer.revisionPlaceholder'), submit: t('order.steps.request_revision'),
+            required: t('order.viewer.noteRequired'), cancel: t('common.cancel'), backHref: `/siparisler/${order.id}/cizim/${d.id}` }}
         />
       )}
       {files.length > 0 && !revising && (
         <>
-          <DrawingViewer files={files} annotations={annotations} text={viewer} />
+          {noRight && <div className="alert alert-warn">{t('order.customer.noApproveRight')}</div>}
+          <DrawingViewer
+            files={files} annotations={annotations} text={viewer}
+            side={sending ? (
+              <div className="card turn viewer-decide" id="gonder">
+                <h2>{t('order.viewer.sendTitle')}</h2>
+                <p className="hint">{t('order.viewer.sendHint')}</p>
+                {review ? (
+                  <form action={sendDrawingAction} className="viewer-actions">
+                    <input type="hidden" name="id" value={order.id} />
+                    <input type="hidden" name="drawingId" value={d.id} />
+                    <input type="hidden" name="review" value={review} />
+                    <ConfirmButton primary message={t('order.upload.sendConfirm', { v: d.version, n: d.files.length })}>{t('order.upload.send')}</ConfirmButton>
+                    <Link className="btn" href={back}>{t('common.cancel')}</Link>
+                  </form>
+                ) : (
+                  <>
+                    <div className="alert alert-warn">{!clean ? t('order.upload.sendBlocked') : t('order.upload.sendNeedsViewable')}</div>
+                    <div className="viewer-actions">
+                      <button type="button" className="btn btn-primary" disabled>{t('order.upload.send')}</button>
+                      <Link className="btn" href={back}>{t('common.cancel')}</Link>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : deciding ? (
+              <div className="card turn viewer-decide" id="karar">
+                <h2>{t('order.viewer.decideTitle')}</h2>
+                <p className="hint">{t('order.viewer.decideHint')}</p>
+                <div className="viewer-actions">
+                  <form action={approveDrawingAction}>
+                    <input type="hidden" name="id" value={order.id} />
+                    <input type="hidden" name="drawingId" value={d.id} />
+                    <ConfirmButton success message={t('order.customer.approveConfirm', { v: d.version })}>{t('order.steps.approve_drawing')}</ConfirmButton>
+                  </form>
+                  <Link className="btn btn-danger" href={`/siparisler/${order.id}/cizim/${d.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>
+                </div>
+              </div>
+            ) : undefined}
+          />
           {d.revisions.length > 0 && (
-            <div className="card" style={{ marginTop: 16 }}>
+            <div className="card viewer-requests">
               <h2>{t('order.viewer.requests')}</h2>
               {d.revisions.map((r) => (
                 <div key={r.id} className="note">

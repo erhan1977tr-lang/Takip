@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, GLASS_RO, SALES, TEAM_PW as PW, sampleFile,
-  addGlass, as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor,
+  addGlass, as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor, sendDrawing,
 } from './helpers';
 
 // Sipariş akışı: çizim ve teklif hatları bağımsız; müşteri yalnızca çizimi onaylar, teklifi görür.
@@ -148,9 +148,8 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(cust.locator('a[href^="/dosya/cizim/"]')).toHaveCount(0);
   await expect(cust.getByText('Onayınız bekleniyor')).toHaveCount(0);
   await expect(drawer.getByRole('link', { name: 'Kontrol Et' })).toBeVisible(); // göndermeden önce müşterinin göreceği hâliyle kontrol
-  // 2. adım: "Müşteriye gönder" → "emin misiniz?" onayı (as() onay pencerelerini kabul eder)
-  await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
-  await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
+  // 2. adım: "Kontrol Et" ekranındaki "Müşteriye gönder" → "emin misiniz?" onayı (as() onay pencerelerini kabul eder)
+  await sendDrawing(drawer, ids.b);
 
   await cust.goto(`/siparisler/${ids.b}`);
   await expect(cust.getByText('Ölçüler sahadan alındı')).toBeVisible();
@@ -171,10 +170,19 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
 
   await drawer.goto(`/siparisler/${ids.b}`);
   await expect(drawer.getByText('Korkuluk yüksekliği 1100 mm olmalı').first()).toBeVisible();
+  // Yalnızca DXF ile gönderilemez: müşterinin açabileceği PDF / JPG / PNG şart (teknik dosya ek olarak kalır)
   await drawer.setInputFiles('#drawing-file', sampleFile('korkuluk-v2.dxf', 'dxf v2'));
   await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
-  await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
+  await expect(drawer.locator('.drawing-next')).toContainText('en az bir PDF, JPG ya da PNG');
+  await drawer.getByRole('link', { name: 'Kontrol Et' }).click();
+  await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toBeDisabled();
+  await expect(drawer.locator('.viewer-decide')).toContainText('en az bir PDF, JPG ya da PNG');
+  await drawer.goto(`/siparisler/${ids.b}`);
+  await drawer.setInputFiles('#drawing-file', sampleFile('korkuluk-v2.pdf', 'pdf v2'));
+  await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await sendDrawing(drawer, ids.b);
   await expect(drawer.getByText('v2 · güncel')).toBeVisible();
+  await expect(drawer.locator('.drawing-version', { hasText: 'korkuluk-v2.pdf' })).toContainText('korkuluk-v2.dxf');
 
   await sales.goto(`/siparisler/${ids.b}`);
   await expect(sales.getByText('Çizim müşteri onayında')).toBeVisible();
@@ -213,7 +221,7 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await cust.goto(`/siparisler/${ids.b}`);
 
   // Müşteri çizimi onaylar → teklif de müşteride olduğu için otomatik üretim
-  await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
+  await cust.getByRole('button', { name: 'Bu çizimi onayla' }).click();
   await expect(cust.getByText('Teklifiniz de hazır olduğu için siparişiniz üretime alındı.')).toBeVisible();
   await expect(cust.getByText('Onaylandı, üretimde').first()).toBeVisible();
 
@@ -240,17 +248,16 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
   await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
   const drawer = await as(browser, DRAWER, PW);
   await drawer.goto(`/siparisler/${id}`);
-  await drawer.setInputFiles('#drawing-file', sampleFile('vitrin.dxf', 'dxf'));
+  await drawer.setInputFiles('#drawing-file', [sampleFile('vitrin.dxf', 'dxf'), sampleFile('vitrin.pdf', 'pdf')]);
   await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
-  await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
-  await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
+  await sendDrawing(drawer, id);
 
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Beklemeye Al' }).click();
   await expect(sales.getByText('Sipariş beklemeye alındı.')).toBeVisible();
 
   await cust.goto(`/siparisler/${id}`);
-  await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
+  await cust.getByRole('button', { name: 'Bu çizimi onayla' }).click();
   await expect(cust.getByText('Çizimi onayladınız. Teşekkürler.')).toBeVisible();
   await expect(cust.getByText('Onaylandı, üretimde')).toHaveCount(0);
 

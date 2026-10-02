@@ -70,8 +70,9 @@ function buildQueues(rows, can, now) {
   if (can.drawing && !can.review && can.userId) {
     out.push({ key: 'myDrawings', rows: prep.filter((o) => o.drawingTrack !== 'YOK' && o.assignedDrawerId === can.userId) });
   }
-  if (can.drawing && !can.review) {
-    // Müşterinin onayladığı çizimler (sipariş hazırlanırken ya da üretimdeyken); en yeni onay üstte (sayfa sıralar)
+  if (can.drawing || can.review) {
+    // Müşterinin onayladığı çizimler (sipariş hazırlanırken ya da üretimdeyken): çizim ekibi, satış ve yönetici görür
+    // (karar 84). Yükleme gününe göre süzme ve en yeni / en eski sıralaması sayfada (approvedDrawingList).
     out.push({ key: 'approvedDrawings', rows: active.filter((o) => o.drawingTrack === 'ONAYLANDI' && (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE')) });
   }
   if (can.review) {
@@ -82,6 +83,25 @@ function buildQueues(rows, can, now) {
   if (held.length) out.push({ key: 'held', rows: held });
   if (can.send) out.push(...profileQueues(rows));
   return out;
+}
+
+/**
+ * "Müşteri tarafından onaylanmış çizimler" listesi: yükleme gününe göre süzülür (day: YYYY-AA-GG; boş = hepsi),
+ * yükleme gününe göre gruplanır, grup içinde onay zamanına göre en yeni (varsayılan) ya da en eski üstte.
+ * @template {{ estimatedShipDate: Date | null, drawingSince?: Date | null }} R
+ * @param {R[]} rows
+ * @param {{ day?: string | null, oldest?: boolean, dayOf: (d: Date | null) => string }} opts  dayOf: tarihin günü (uygulama saat diliminde)
+ * @returns {{ rows: R[], days: string[], day: string | null }}  days: listedeki yükleme günleri (süzgeç seçenekleri), eskiden yeniye
+ */
+export function approvedDrawingList(rows, { day = null, oldest = false, dayOf }) {
+  const days = [...new Set(rows.map((o) => dayOf(o.estimatedShipDate)).filter(Boolean))].sort();
+  const picked = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+  const at = (o) => o.drawingSince?.getTime() ?? 0;
+  const ship = (o) => o.estimatedShipDate?.getTime() ?? Infinity;
+  const list = rows
+    .filter((o) => !picked || dayOf(o.estimatedShipDate) === picked)
+    .sort((a, b) => ship(a) - ship(b) || (oldest ? at(a) - at(b) : at(b) - at(a)));
+  return { rows: list, days, day: picked };
 }
 
 /**

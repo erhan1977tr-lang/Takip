@@ -37,7 +37,12 @@ test('müşteri teklifi hiçbir durumda onaylayamaz, yalnızca çizimi onaylar',
   }
   assert.ok(has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: true, drawing: 'ONAY_BEKLIYOR' }, 'approve_drawing'));
   assert.ok(!has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: false, drawing: 'ONAY_BEKLIYOR' }, 'approve_drawing'));
-  assert.ok(has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: false, drawing: 'ONAY_BEKLIYOR' }, 'request_revision'));
+  assert.ok(has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: true, drawing: 'ONAY_BEKLIYOR' }, 'request_revision'));
+  // Onay ve revizyon aynı yetkiye bağlı (karar 84): onay yetkisi olmayan müşteri kullanıcısı ikisini de yapamaz
+  assert.ok(!has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: false, drawing: 'ONAY_BEKLIYOR' }, 'request_revision'));
+  assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: false, drawing: 'ONAY_BEKLIYOR' }), ['add_file']);
+  // Onay kesindir: onaylanmış çizimde müşteriye onay / revizyon işlemi kalmaz
+  assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: true, drawing: 'ONAYLANDI' }), ['add_file']);
   assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'YENI' }), ['add_file']);
 });
 

@@ -7,11 +7,11 @@ import { customerSummaryText, profileCustomerText, profileStageText, slaText } f
 import { rich } from '@/lib/rich';
 import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { fmtDate, fmtMonth } from '@/lib/format';
+import { fmtDate, fmtMonth, isoDay } from '@/lib/format';
 import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
-import { latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
+import { approvedDrawingList, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
 import { deleteDraftAction } from './yeni/actions';
 
 const listInclude = {
@@ -266,9 +266,9 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
   );
 }
 
-function Section({ title, count, tone, children }: { title: string; count: number; tone?: string; children: React.ReactNode }) {
+function Section({ title, count, tone, id, children }: { title: string; count: number; tone?: string; id?: string; children: React.ReactNode }) {
   return (
-    <div className="card card-flush">
+    <div className="card card-flush" id={id}>
       <div className="card-head">
         <h2>{title} <span className={`badge ${tone ?? ''}`}>{count}</span></h2>
       </div>
@@ -339,17 +339,34 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
               );
             }
             if (q.key === 'approvedDrawings') {
-              // Onaylanmış çizimler: yükleme gününe göre gruplu; grup içinde onay zamanına göre en yeni / en eski
+              // Onaylanmış çizimler (çizim ekibi, satış, yönetici): yükleme gününe göre süzülür ve gruplanır; grup içinde
+              // onay zamanına göre en yeni / en eski. Satırlar bu kullanıcı için zaten temizlenmiş (maskeli firma adı).
               const oldest = sp.onay === 'eski';
-              const at = (o: Row) => o.drawingSince?.getTime() ?? 0;
-              const list = [...q.rows].sort((a, b) => (a.estimatedShipDate?.getTime() ?? 0) - (b.estimatedShipDate?.getTime() ?? 0) || (oldest ? at(a) - at(b) : at(b) - at(a)));
+              const list = approvedDrawingList(q.rows, { day: sp.yukleme, oldest, dayOf: isoDay });
+              const href = (old: boolean) => {
+                const p = new URLSearchParams();
+                if (old) p.set('onay', 'eski');
+                if (list.day) p.set('yukleme', list.day);
+                const qs = p.toString();
+                return `/siparisler${qs ? `?${qs}` : ''}#onayli-cizimler`;
+              };
               return (
-                <Section key={q.key} title={t('orders.internal.sections.approvedDrawings.title')} count={list.length}>
+                <Section key={q.key} id="onayli-cizimler" title={t('orders.internal.sections.approvedDrawings.title')} count={list.rows.length}>
                   <div className="card-tools">
-                    <Link href="/siparisler" className={oldest ? '' : 'active'} aria-current={oldest ? undefined : 'true'}>{t('orders.internal.sortNewest')}</Link>
-                    <Link href="/siparisler?onay=eski" className={oldest ? 'active' : ''} aria-current={oldest ? 'true' : undefined}>{t('orders.internal.sortOldest')}</Link>
+                    <span className="muted">{t('orders.internal.sortBy')}</span>
+                    <Link href={href(false)} className={oldest ? '' : 'active'} aria-current={oldest ? undefined : 'true'}>{t('orders.internal.sortNewest')}</Link>
+                    <Link href={href(true)} className={oldest ? 'active' : ''} aria-current={oldest ? 'true' : undefined}>{t('orders.internal.sortOldest')}</Link>
+                    <form action="/siparisler#onayli-cizimler" className="card-filter">
+                      {oldest && <input type="hidden" name="onay" value="eski" />}
+                      <label htmlFor="onayli-yukleme">{t('orders.internal.shipFilter')}</label>
+                      <select id="onayli-yukleme" name="yukleme" defaultValue={list.day ?? ''}>
+                        <option value="">{t('orders.internal.shipAll')}</option>
+                        {list.days.map((d) => <option key={d} value={d}>{fmtDate(new Date(`${d}T12:00:00Z`))}</option>)}
+                      </select>
+                      <button className="btn" type="submit">{t('orders.internal.shipApply')}</button>
+                    </form>
                   </div>
-                  <InternalTable user={user} rows={list} empty={t('orders.internal.sections.approvedDrawings.empty')} />
+                  <InternalTable user={user} rows={list.rows} empty={t('orders.internal.sections.approvedDrawings.empty')} />
                 </Section>
               );
             }

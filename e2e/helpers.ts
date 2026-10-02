@@ -69,6 +69,19 @@ export const SALES = 'satis@e2e.test';
 export const DRAWER = 'cizim@e2e.test';
 export const TEAM_PW = 'Ekip2026abc';
 
+/**
+ * Çizimci: taslağı "Kontrol Et" ile açar ve o ekrandaki "Müşteriye gönder" ile gönderir (karar 84: gönderim yalnızca
+ * kontrol ekranından). Onay penceresini sayfa kabul eder (as() ile açılmış oturum).
+ */
+export async function sendDrawing(page: Page, orderId: string) {
+  await page.goto(`/siparisler/${orderId}`);
+  await expect(page.getByRole('button', { name: 'Müşteriye gönder' })).toHaveCount(0); // sipariş sayfasından gönderilemez
+  await page.getByRole('link', { name: 'Kontrol Et' }).click();
+  await expect(page).toHaveURL(/\/cizim\/[a-z0-9]+$/);
+  await page.getByRole('button', { name: 'Müşteriye gönder' }).click();
+  await expect(page.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
+}
+
 /** Ayrı bir tarayıcı oturumunda giriş yapar; onay pencerelerini otomatik kabul eder. */
 export async function as(browser: import('@playwright/test').Browser, email: string, pw: string): Promise<Page> {
   const ctx = await browser.newContext();

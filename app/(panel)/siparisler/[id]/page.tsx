@@ -19,12 +19,12 @@ import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricin
 import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
-  ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, isViewable, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
-  removeDrawingFileAction, sendDrawingAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
+  removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction,
 } from './actions';
 
@@ -163,6 +163,9 @@ export default async function OrderPage({
             {isCustomer
               ? <CustomerBadge status={order.status} drawing={order.drawingTrack} offer={sent ? 'GONDERILDI' : null} />
               : <OrderBadge status={order.status} onHold={order.onHold} />}
+            {/* Çizim ekibi: adım çubuğu ve "sıra kimde" kartları yerine küçük durum rozetleri (karar 84) */}
+            {drawerView && order.drawingTrack !== 'YOK' && <DrawingBadge track={order.drawingTrack} />}
+            {drawerView && order.revisionCount > 0 && <span className="badge badge-danger">{t('order.info.revisionRounds', { n: order.revisionCount })}</span>}
             {!isCustomer && <span className="muted small">· {customerLabel(user, order.customer.name)}</span>}
           </div>
         </div>
@@ -172,7 +175,7 @@ export default async function OrderPage({
       {ok && <div className="alert alert-ok">{ok}</div>}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
 
-      <div className="card">
+      {!drawerView && <div className="card">
         <div className="stepper">
           {STAGES.map((key, i) => {
             const cls = i < stage ? 'done' : i === stage ? 'current' : '';
@@ -199,7 +202,7 @@ export default async function OrderPage({
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {needsCheck && lastDrawing && (
         <div className="alert alert-warn">
@@ -221,11 +224,12 @@ export default async function OrderPage({
         Bölüm sırası (eski TAKİP düzeni; her bölüm bir kez gösterilir):
           sıra kimde + yapılabilecek işlemler → 1) müşteri sipariş dosyaları → 2) notlar → 3) sipariş bilgileri →
           4) teknik çizimler ve onay → 5) teklif (düzenleme ya da görünüm) → 6) finans / sandık; hareketler sol menüde.
-        Çizim ekibi (karar 77): dosyalar → işlemler (çizim yükleme) → çizimler → notlar → sipariş bilgileri; teklif yok.
+        Çizim ekibi (karar 77, 84): 1) müşteri sipariş dosyaları → 2) teknik çizimler ve onay (çizim yükleme bu bölümde) →
+          3) notlar → 4) sipariş bilgileri. Adım çubuğu ve işlem kartları yok (durum başlıkta rozetle); teklif / ticari bölüm yok.
       */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
-      {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
+      {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
       {drawerView && <Drawings order={order} user={user} can={can} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
       <Notes order={order} user={user} t={t} />
@@ -343,16 +347,17 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
         <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.customer.noApproveRight')}</div>
       )}
       {waiting && <p className="muted small">{t('order.customer.reviewHint')}</p>}
-      {can('approve_drawing') && (
-        <form action={approveDrawingAction} style={{ marginTop: 10 }}>
-          {hidden}
-          <ConfirmButton success message={t('order.customer.approveConfirm')}>{t('order.steps.approve_drawing')}</ConfirmButton>
-        </form>
-      )}
       {waiting && latest && (
-        // "Aç ve incele": çizim görüntüleyici · "Revizyon iste": çizim üzerine işaret + zorunlu not (cizim/[drawingId])
+        // "Aç ve incele": çizim görüntüleyici (onay ve revizyon orada da var) · "Bu çizimi onayla" · "Revizyon iste":
+        // çizim üzerine işaret + zorunlu not. Onay ve revizyon yalnızca onay yetkili kullanıcıda (sunucuda denetlenir).
         <div className="row" style={{ marginTop: 12, gap: 8 }}>
-          <Link className="btn" href={`/siparisler/${order.id}/cizim/${latest.id}`}>{t('order.drawings.review')}</Link>
+          <Link className={`btn${can('approve_drawing') ? '' : ' btn-primary'}`} href={`/siparisler/${order.id}/cizim/${latest.id}`}>{t('order.drawings.review')}</Link>
+          {can('approve_drawing') && (
+            <form action={approveDrawingAction}>
+              {hidden}
+              <ConfirmButton success message={t('order.customer.approveConfirm', { v: latest.version })}>{t('order.steps.approve_drawing')}</ConfirmButton>
+            </form>
+          )}
           {can('request_revision') && <Link className="btn btn-danger" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
         </div>
       )}
@@ -379,7 +384,6 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
 
   if (can('send_to_drawing')) btn('d', sendToDrawingAction, t('order.steps.send_to_drawing'));
   if (can('no_drawing')) btn('o', noDrawingAction, t('order.steps.no_drawing'));
-  if (can('start_drawing')) btn('sd', startDrawingAction, t('order.steps.start_drawing'));
   if (can('mark_shipped')) btn('ms', markShippedAction, t('order.steps.mark_shipped'));
   if (can('archive')) btn('ar', archiveAction, t('order.steps.archive'));
   const undo = (key: string, action: (fd: FormData) => Promise<void>, label: string, message: string) =>
@@ -389,7 +393,8 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
   if (can('hold')) btn('h', holdAction, t('order.actions.hold'), <input type="hidden" name="hold" value="1" />);
   if (can('unhold')) btn('uh', holdAction, t('order.steps.unhold'), <input type="hidden" name="hold" value="0" />);
 
-  const hasForms = can('upload_drawing') || can('set_ship_date') || can('cancel');
+  // Çizim başlatma ve çizim yükleme "Teknik çizimler ve onay" bölümündedir (Drawings)
+  const hasForms = can('set_ship_date') || can('cancel');
 
   return (
     <>
@@ -412,32 +417,6 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
               <b>{t('order.actions.waitingFor')}</b> {blockers.map((b) => blockerText(t, b)).join(' · ')}
             </div>
           )}
-
-          {can('upload_drawing') && (() => {
-            const last = order.drawings[order.drawings.length - 1];
-            const v = last?.status === 'TASLAK' ? last.version : (last?.version ?? 0) + 1;
-            return (
-              <form action={uploadDrawingAction} style={{ marginTop: 14 }}>
-                {hidden}
-                <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v })}</label>
-                <input id="drawing-file" name="files" type="file" multiple required accept={ACCEPT} />
-                <div className="grid-2" style={{ marginTop: 8 }}>
-                  <div>
-                    <label htmlFor="d-note-c" className="small">{t('order.upload.noteCustomer')}</label>
-                    <input id="d-note-c" name="noteCustomer" maxLength={2000} placeholder={t('order.upload.noteCustomerPlaceholder')} />
-                  </div>
-                  <div>
-                    <label htmlFor="d-note-i" className="small">{t('order.upload.noteInternal')}</label>
-                    <input id="d-note-i" name="noteInternal" maxLength={2000} />
-                  </div>
-                </div>
-                <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
-                  <span className="hint">{t('order.upload.scanInfo')}</span>
-                  <button className="btn btn-primary">{t('order.upload.submit')}</button>
-                </div>
-              </form>
-            );
-          })()}
 
           {can('set_ship_date') && (
             <form action={setShipDateAction} className="row" style={{ marginTop: 14 }}>
@@ -596,10 +575,44 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
   return (
     <div className="card" id="cizim">
       <h2>{t('order.drawings.title')}</h2>
+      {can('start_drawing') && (
+        <form action={startDrawingAction} className="row drawing-start">
+          <input type="hidden" name="id" value={order.id} />
+          <button className="btn btn-primary">{t('order.steps.start_drawing')}</button>
+          <span className="muted small">{t('order.upload.start')}</span>
+        </form>
+      )}
+      {can('upload_drawing') && (() => {
+        // Akış (karar 84): Yükle → Kontrol Et → (görüntüleyici) → Müşteriye gönder → onay penceresi
+        const last = order.drawings[order.drawings.length - 1];
+        const v = last?.status === 'TASLAK' ? last.version : (last?.version ?? 0) + 1;
+        return (
+          <form action={uploadDrawingAction} className="drawing-upload">
+            <input type="hidden" name="id" value={order.id} />
+            <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v })}</label>
+            <input id="drawing-file" name="files" type="file" multiple required accept={ACCEPT} />
+            <div className="grid-2" style={{ marginTop: 8 }}>
+              <div>
+                <label htmlFor="d-note-c" className="small">{t('order.upload.noteCustomer')}</label>
+                <input id="d-note-c" name="noteCustomer" maxLength={2000} placeholder={t('order.upload.noteCustomerPlaceholder')} />
+              </div>
+              <div>
+                <label htmlFor="d-note-i" className="small">{t('order.upload.noteInternal')}</label>
+                <input id="d-note-i" name="noteInternal" maxLength={2000} />
+              </div>
+            </div>
+            <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+              <span className="hint">{t('order.upload.scanInfo')} {t('order.upload.sendNeedsViewable')}</span>
+              <button className="btn btn-primary">{t('order.upload.submit')}</button>
+            </div>
+          </form>
+        );
+      })()}
       {versions.length === 0 && <p className="muted">{t('order.drawings.none')}</p>}
       {versions.map((d, i) => {
         const draft = d.status === 'TASLAK';
         const blocked = d.files.length === 0 || d.files.some((f) => f.scanStatus !== 'CLEAN');
+        const viewable = d.files.some((f) => isViewable(f.name));
         return (
           <div key={d.id} className={`drawing-version${draft ? ' draft' : ''}`}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -609,7 +622,7 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
               {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
               {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy?.name ?? '—', when: fmtDateTime(d.decidedAt) })}</span>}
-              {!draft && d.files.some((f) => VIEWABLE.includes(f.name.toLowerCase().split('.').pop() ?? '') && f.scanStatus !== 'INFECTED') && (
+              {!draft && d.files.some((f) => isViewable(f.name) && f.scanStatus !== 'INFECTED') && (
                 <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
               )}
             </div>
@@ -646,16 +659,12 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               );
             })}
             {d.withdrawReason && <div className="note"><b className="small">{t('order.drawings.withdrawReason')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>}
-            {draft && can('send_drawing') && (
-              <form action={sendDrawingAction} className="row" style={{ marginTop: 8, gap: 10 }}>
-                <input type="hidden" name="id" value={order.id} />
-                <input type="hidden" name="drawingId" value={d.id} />
-                {/* Göndermeden önce: dosyayı müşterinin göreceği hâliyle açıp kontrol et */}
-                {d.files.length > 0 && <Link className="btn" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.upload.check')}</Link>}
-                {blocked
-                  ? <><button type="button" className="btn btn-primary" disabled>{t('order.upload.send')}</button><span className="muted small">{t('order.upload.sendBlocked')}</span></>
-                  : <ConfirmButton primary message={t('order.upload.sendConfirm', { v: d.version, n: d.files.length })}>{t('order.upload.send')}</ConfirmButton>}
-              </form>
+            {draft && can('send_drawing') && d.files.length > 0 && (
+              // Gönderim bu sayfada yok: önce "Kontrol Et" (görüntüleyici), "Müşteriye gönder" o ekrandadır (sunucu da kanıt ister)
+              <div className="row drawing-next">
+                <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.upload.check')}</Link>
+                <span className="muted small">{blocked ? t('order.upload.sendBlocked') : !viewable ? t('order.upload.sendNeedsViewable') : t('order.upload.checkFirst')}</span>
+              </div>
             )}
             {d.status === 'ONAY_BEKLIYOR' && can('withdraw_drawing') && (
               <form action={withdrawDrawingAction} style={{ marginTop: 8 }}>
@@ -676,7 +685,6 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
 
 // Müşterinin ve çizimcinin yükleyebileceği türler (server/orders/rules.js → ALLOWED_EXT)
 const ACCEPT = ALLOWED_EXT.map((e: string) => `.${e}`).join(',');
-const VIEWABLE = ['pdf', 'png', 'jpg', 'jpeg'];
 
 /** Antivirüs durumu: taranmadı (uyarı) ya da virüslü (karantina, indirilemez). Temiz/tarama kapalı → rozet yok. */
 function ScanBadge({ status, t }: { status: string; t: T }) {
@@ -687,10 +695,9 @@ function ScanBadge({ status, t }: { status: string; t: T }) {
 
 function FileButtons({ href, name, scanStatus, t }: { href: string; name: string; scanStatus: string; t: T }) {
   if (scanStatus === 'INFECTED') return null;
-  const ext = name.toLowerCase().split('.').pop() ?? '';
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-      {VIEWABLE.includes(ext) && <a className="btn" href={`${href}?ac=1`} target="_blank" rel="noopener">{t('common.open')}</a>}
+      {isViewable(name) && <a className="btn" href={`${href}?ac=1`} target="_blank" rel="noopener">{t('common.open')}</a>}
       <a className="btn" href={href}>{t('common.download')}</a>
     </span>
   );

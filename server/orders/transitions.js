@@ -8,7 +8,9 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
-import { atOfferPrice, availableActions, drawingFlags, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
+import { atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
+import { verifyReviewToken } from './review.js';
+import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForCustomer, pricingForUser } from '../pricing/tables.js';
@@ -395,12 +397,18 @@ const ACTIONS = {
     if (last.files.some((f) => f.scanStatus === 'INFECTED')) throw new WorkflowError('DRAWING_INFECTED');
     if (last.files.some((f) => f.scanStatus === 'PENDING')) throw new WorkflowError('DRAWING_SCAN_PENDING');
     if (last.files.some((f) => f.scanStatus !== 'CLEAN')) throw new WorkflowError('DRAWING_NOT_SCANNED');
+    // Müşterinin uygulamada açabileceği en az bir dosya (PDF / JPG / PNG) şart; DWG, DXF, STEP vb. yanında ek olarak gider
+    if (!last.files.some((f) => isViewable(f.name))) throw new WorkflowError('DRAWING_NO_VIEWABLE');
+    // Gönderim yalnızca "Kontrol Et" ekranından: o ekranın bu taslak, bu kullanıcı ve bu dosyalar için verdiği kanıt şart
+    if (!verifyReviewToken(h.payload.review, { secret: getEnv().AUTH_SECRET, drawingId: last.id, userId: h.actor.id, files: last.files, now: h.now.getTime() })) {
+      throw new WorkflowError('DRAWING_NOT_CHECKED');
+    }
     await h.tx.drawing.update({ where: { id: last.id }, data: { status: 'ONAY_BEKLIYOR', sentAt: h.now, sentById: h.actor.id } });
     await h.set({ drawingTrack: 'ONAY_BEKLIYOR', drawingSince: h.now });
     h.event('DRAWING_UPLOADED', `v${last.version}`);
     h.sla = true;
     h.result = { drawingId: last.id, version: last.version };
-    h.audit = { drawingId: last.id, version: last.version, files: last.files.map((f) => f.name) };
+    h.audit = { drawingId: last.id, version: last.version, files: last.files.map((f) => f.name), checked: true };
   },
   /** Müşteriye gönderilmiş sürüm, müşteri karar vermeden gerekçeyle geri çekilir; sürüm geçmişte kalır. */
   async withdraw_drawing(h) {

@@ -185,10 +185,14 @@ export async function removeDrawingFileAction(formData: FormData) {
   done(id, 'drawing_file_removed');
 }
 
-/** İkinci adım: taslak müşteriye gönderilir (ekranda "emin misiniz?" onayı istenir). */
+/**
+ * İkinci adım: taslak müşteriye gönderilir (ekranda "emin misiniz?" onayı istenir). Yalnızca "Kontrol Et" ekranından:
+ * o ekranın verdiği kontrol kanıtı (review) işlemde doğrulanır (server/orders/review.js); kanıtsız istek reddedilir.
+ */
 export async function sendDrawingAction(formData: FormData) {
   const drawingId = String(formData.get('drawingId') ?? '') || undefined;
-  await simple(formData, 'send_drawing', 'drawing_sent', { drawingId });
+  const review = String(formData.get('review') ?? '').slice(0, 200);
+  await simple(formData, 'send_drawing', 'drawing_sent', { drawingId, review });
 }
 
 export async function withdrawDrawingAction(formData: FormData) {

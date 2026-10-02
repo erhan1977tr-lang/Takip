@@ -1,7 +1,7 @@
 // "Sıra bende" kuyrukları: rol yetkisine göre bölümler; profil siparişleri satış/çizim kuyruklarına düşmez (Aşama 3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { queuesFor } from '../server/orders/queues.js';
+import { approvedDrawingList, queuesFor } from '../server/orders/queues.js';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
 const h = (n) => new Date(NOW + n * 3_600_000);
@@ -28,7 +28,7 @@ const all = Object.values(rows);
 
 test('kuyruk: satış — yeni, teklif hazırlanacak, müşteri onayında, üretimde, SLA, beklemede', () => {
   const q = queuesFor(all, { review: true, send: false, drawing: false }, NOW);
-  assert.deepEqual(keys(q), ['newOrders', 'offersToPrepare', 'atCustomer', 'production', 'sla', 'held']);
+  assert.deepEqual(keys(q), ['newOrders', 'offersToPrepare', 'atCustomer', 'approvedDrawings', 'production', 'sla', 'held']);
   assert.deepEqual(ids(q, 'newOrders'), [rows.yeni.id]);
   assert.deepEqual(ids(q, 'offersToPrepare'), [rows.teklifYok.id, rows.teklifSatista.id]);
   assert.deepEqual(ids(q, 'atCustomer'), [rows.musteride.id]);
@@ -77,7 +77,7 @@ test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\
   assert.deepEqual(ids(q, 'drawingJobs'), [lateMore.id, late.id, soon.id, later.id, none.id]);
 });
 
-test('kuyruk: çizimci — müşterinin onayladığı çizimler ayrı bölümde (hazırlanırken ve üretimde); satış bu bölümü görmez', () => {
+test('kuyruk: müşterinin onayladığı çizimler ayrı bölümde (hazırlanırken ve üretimde) — çizim ekibi, satış ve yönetici görür', () => {
   const approved = row({ drawingTrack: 'ONAYLANDI' });
   const inProduction = row({ drawingTrack: 'ONAYLANDI', status: 'URETIMDE' });
   const held = row({ drawingTrack: 'ONAYLANDI', onHold: true });
@@ -85,5 +85,27 @@ test('kuyruk: çizimci — müşterinin onayladığı çizimler ayrı bölümde 
   const q = queuesFor([approved, inProduction, held, pending], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
   assert.deepEqual(ids(q, 'approvedDrawings').sort(), [approved.id, inProduction.id].sort());
   assert.deepEqual(ids(q, 'atCustomer'), [pending.id]);
-  assert.equal(ids(queuesFor([approved], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
+  // Satış ve yönetici de görür (karar 84); profil siparişi bu listeye de girmez; yetkisiz (denetimci) görmez
+  assert.deepEqual(ids(queuesFor([approved, held], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), [approved.id]);
+  assert.deepEqual(ids(queuesFor([approved], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), [approved.id]);
+  assert.deepEqual(ids(queuesFor([{ ...approved, orderTypeCode: 'PROFILE_ORDER' }], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), []);
+  assert.equal(ids(queuesFor([approved], { review: false, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
+});
+
+test('onaylanmış çizimler listesi: yükleme gününe göre süzme; gün içinde en yeni / en eski onay; geçersiz gün yok sayılır', () => {
+  const dayOf = (d) => (d ? d.toISOString().slice(0, 10) : '');
+  const at = (day, hour) => new Date(`${day}T${String(hour).padStart(2, '0')}:00:00Z`);
+  const a = { id: 'a', estimatedShipDate: at('2026-10-09', 12), drawingSince: at('2026-10-01', 9) };
+  const b = { id: 'b', estimatedShipDate: at('2026-10-09', 12), drawingSince: at('2026-10-02', 9) };
+  const c = { id: 'c', estimatedShipDate: at('2026-10-16', 12), drawingSince: at('2026-09-30', 9) };
+  const d = { id: 'd', estimatedShipDate: null, drawingSince: at('2026-10-03', 9) };
+  const list = (o) => approvedDrawingList([a, b, c, d], { dayOf, ...o });
+  assert.deepEqual(list({}).rows.map((x) => x.id), ['b', 'a', 'c', 'd'], 'yükleme günü sırası; gün içinde en yeni onay üstte; günü olmayan sonda');
+  assert.deepEqual(list({ oldest: true }).rows.map((x) => x.id), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(list({}).days, ['2026-10-09', '2026-10-16']);
+  assert.deepEqual(list({ day: '2026-10-09', oldest: true }).rows.map((x) => x.id), ['a', 'b']);
+  assert.deepEqual(list({ day: '2026-10-16' }).rows.map((x) => x.id), ['c']);
+  assert.deepEqual(list({ day: '2026-11-01' }).rows, []);
+  assert.equal(list({ day: "x' OR 1=1" }).day, null);
+  assert.equal(list({ day: 'x' }).rows.length, 4, 'geçersiz gün: süzgeç uygulanmaz');
 });

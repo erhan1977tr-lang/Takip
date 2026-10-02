@@ -12,12 +12,16 @@ import { can, ROLE_PERMISSIONS } from '../auth/permissions.js';
 import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 
-/** customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip */
+/**
+ * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
+ * orderSales: siparişle ilgilenen satışçı (order.salesUsers — bkz. orderSalesUsers).
+ * Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84).
+ */
 export const NOTIFY_RULES = {
   ORDER_CREATED: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales']),
   ORDER_SENT_TO_DRAWING: () => ['drawer'],
-  ORDER_REVISION_REQUESTED: () => ['drawer'],
-  ORDER_DRAWING_APPROVED: () => ['drawer'],
+  ORDER_REVISION_REQUESTED: () => ['drawer', 'orderSales'],
+  ORDER_DRAWING_APPROVED: () => ['drawer', 'orderSales'],
   ORDER_PROFILE_APPROVED: () => ['admin'],
   ORDER_DRAWING_UPLOADED: () => ['customer'],
   ORDER_OFFER_SENT: () => ['customer'],
@@ -66,6 +70,11 @@ export async function recipientsFor(db, type, order) {
       if (isEmail(firm) && !(await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, emailNotifications: false }, select: { id: true } }))) add(firm, lang, null);
     } else if (a === 'drawer' && order.assignedDrawer) {
       add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
+    } else if (a === 'orderSales') {
+      // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa (siparişi yönetici yönlendirdiyse) satış ekibi. Yönetici değil.
+      const known = (order.salesUsers ?? []).filter((u) => ROLE_SETS.sales.includes(u.appRole));
+      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales } }, select: { email: true, language: true, appRole: true } });
+      for (const u of users) add(u.email, u.language, u.appRole);
     } else {
       const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS[a] ?? [] } }, select: { email: true, language: true, appRole: true } });
       for (const u of users) add(u.email, u.language, u.appRole);
@@ -74,15 +83,42 @@ export async function recipientsFor(db, type, order) {
   return [...out.values()];
 }
 
+const STAFF = { email: true, language: true, appRole: true };
+
+/**
+ * Siparişle ilgilenen satışçı (ayrı bir "satışçı" alanı yok; mevcut kayıtlardan bulunur): siparişi çizim ekibine
+ * gönderen satış kullanıcısı (OrderEvent SENT_TO_DRAWING), yoksa teklifi hazırlayan satış kullanıcısı (Offer.createdBy).
+ * Yönetici bu işleri yaptıysa satışçı bilinmez → boş liste (recipientsFor satış ekibine gönderir).
+ */
+export async function orderSalesUsers(db, orderId) {
+  const sales = { appRole: { in: ROLE_SETS.sales } };
+  const sent = await db.orderEvent.findFirst({ where: { orderId, event: 'SENT_TO_DRAWING', user: sales }, orderBy: { createdAt: 'desc' }, select: { user: { select: STAFF } } });
+  if (sent?.user) return [sent.user];
+  const offer = await db.offer.findFirst({ where: { orderId, createdBy: sales }, orderBy: { createdAt: 'desc' }, select: { createdBy: { select: STAFF } } });
+  return offer?.createdBy ? [offer.createdBy] : [];
+}
+
+/** Olayın anındaki revizyon talebi (not + sürüm): aynı veritabanı işleminde yazılmıştır; sonraki talepler karışmaz. */
+export async function revisionOf(db, orderId, at) {
+  const r = await db.drawingRevision.findFirst({
+    where: { drawing: { orderId }, createdAt: { lte: new Date(new Date(at).getTime() + 5000) } },
+    orderBy: { createdAt: 'desc' },
+    select: { comment: true, drawing: { select: { version: true } } },
+  });
+  return r ? { note: r.comment, version: r.drawing?.version ?? null } : null;
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmtDay = (d, timeZone) => (d ? new Intl.DateTimeFormat('ro-RO', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(d)) : '—');
 const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
 
 /**
  * E-posta metni (alıcının dilinde): sipariş no, firma, işlem, tarih, (yükleme tarihinde yeni tarih), sipariş bağlantısı.
- * @param {{ type: string, order: any, createdAt: Date, recipient: { locale: 'ro' | 'tr', role: string | null }, appUrl: string, timeZone: string }} p
+ * Revizyon talebinde müşterinin notu da yazılır (yalnızca metin: HTML'de kaçışlanır, konu satırına girmez).
+ * @param {{ type: string, order: any, createdAt: Date, recipient: { locale: 'ro' | 'tr', role: string | null }, appUrl: string, timeZone: string,
+ *   revision?: { note: string, version: number | null } | null }} p
  */
-export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone }) {
+export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null }) {
   const t = (k, params) => translate(recipient.locale, k, params);
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
   const what = recipient.role
@@ -96,12 +132,14 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
     [t('notify.action'), what],
     [t('notify.date'), fmtTime(createdAt, timeZone)],
     ...(type === 'ORDER_SHIP_DATE' ? [[t('notify.shipDate'), fmtDay(order.actualShipDate ?? order.estimatedShipDate, timeZone)]] : []),
+    ...(type === 'ORDER_REVISION_REQUESTED' && revision?.version ? [[t('notify.drawingVersion'), `v${revision.version}`]] : []),
+    ...(type === 'ORDER_REVISION_REQUESTED' && revision?.note ? [[t('notify.revisionNote'), String(revision.note).slice(0, 2000)]] : []),
   ];
   const subject = `${order.orderNo} — ${what}`;
   const text = [...rows.map(([k, v]) => `${k}: ${v}`), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
   const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111827;line-height:1.5">
 <p><b>${esc(what)}</b></p>
-<table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table>
+<table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280;vertical-align:top">${esc(k)}</td><td style="white-space:pre-wrap"><b>${esc(v)}</b></td></tr>`).join('')}</table>
 <p style="margin-top:16px"><a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">${esc(t('notify.open'))}</a></p>
 <p style="color:#6b7280;font-size:12px">${esc(t('notify.footer'))}</p></body></html>`;
   return { subject, text, html };
@@ -144,6 +182,9 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
           assignedDrawer: { select: { email: true, language: true, appRole: true } },
         },
       }) : null;
+      const audiences = order ? NOTIFY_RULES[row.type]?.(order) ?? [] : [];
+      if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
+      const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
       const recipients = order ? await recipientsFor(db, row.type, order) : [];
       if (!order || recipients.length === 0) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: order ? 'alıcı yok' : 'sipariş yok' } });
@@ -154,7 +195,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;
         try {
-          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone });
+          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision });
           await transport.sendMail({ from, to: r.email, subject: mail.subject, text: mail.text, html: mail.html });
           done.add(r.email.toLowerCase());
         } catch (e) {

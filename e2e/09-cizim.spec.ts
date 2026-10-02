@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
 
-// Aşama 4: çizim taslağa yüklenir (çoklu dosya, virüs taraması), "Müşteriye gönder" onaylı ikinci adımdır;
+// Aşama 4: çizim taslağa yüklenir (çoklu dosya, virüs taraması); "Kontrol Et" ekranındaki "Müşteriye gönder" onaylı
+// ikinci adımdır (karar 84: sipariş sayfasından gönderilemez; sunucu kontrol kanıtı ister);
 // gönderilen sürüm müşteri karar vermeden gerekçeyle geri çekilebilir, sürüm geçmişte kalır.
 test.describe.configure({ mode: 'serial' });
 
@@ -32,26 +33,49 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(drawer.getByText('Dosya taslaktan çıkarıldı.')).toBeVisible();
   await expect(drawer.locator('.file-row', { hasText: 'yanlis.png' })).toHaveCount(0);
 
+  // Zorunlu kontrol: sipariş sayfasında "Müşteriye gönder" yok; önce "Kontrol Et" (görüntüleyici)
+  await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toHaveCount(0);
+  await expect(drawer.locator('.drawing-next')).toContainText('gönderme düğmesi o ekrandadır');
+  await drawer.getByRole('link', { name: 'Kontrol Et' }).click();
+  await expect(drawer).toHaveURL(/\/cizim\/[a-z0-9]+$/);
+  const checkUrl = drawer.url();
   // "Emin misiniz?" sorusuna hayır → gönderilmez
   let asked = '';
   drawer.once('dialog', (d) => { asked = d.message(); void d.dismiss(); });
   await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
   await expect.poll(() => asked).toContain('Emin misiniz?');
   expect(asked).toContain('v1 (2 dosya)');
+  await drawer.goto(`/siparisler/${id}`);
   await expect(drawer.getByText('Taslak v1 — müşteri henüz görmüyor')).toBeVisible();
   await cust.goto(`/siparisler/${id}`);
-  await expect(cust.getByRole('button', { name: 'Çizimi onayla' })).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toHaveCount(0);
   // Taslak dosyası müşteriye kapalı (sunucuda): bağlantıyı bilse de indiremez
   const draftHref = await drawer.locator('.file-row', { hasText: 'dus-v1.dxf' }).locator('a[href^="/dosya/cizim/"]').first().getAttribute('href');
   expect((await cust.request.get(draftHref!)).status()).toBe(404);
   expect((await drawer.request.get(draftHref!)).status()).toBe(200);
 
-  // Evet → müşteriye gider
+  // Sunucu denetimi: kontrol ekranı açıldıktan SONRA taslak değişirse (yeni dosya) o ekrandaki gönderim reddedilir
+  const stale = await drawer.context().newPage();
+  await stale.goto(checkUrl);
+  await drawer.setInputFiles('#drawing-file', sampleFile('dus-ek.dxf', 'ek'));
+  await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await expect(drawer.getByText('Dosyalar taslağa eklendi.')).toBeVisible();
+  stale.once('dialog', (d) => d.accept());
+  await stale.getByRole('button', { name: 'Müşteriye gönder' }).click();
+  await expect(stale.locator('.alert-error')).toContainText('gönderilmeden önce kontrol edilmelidir');
+  await expect(stale.getByText('Taslak v1 — müşteri henüz görmüyor')).toBeVisible();
+  await stale.close();
+  await cust.goto(`/siparisler/${id}`);
+  await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toHaveCount(0);
+
+  // Yeniden "Kontrol Et" → Evet → müşteriye gider
+  await drawer.goto(`/siparisler/${id}`);
+  await drawer.getByRole('link', { name: 'Kontrol Et' }).click();
   drawer.once('dialog', (d) => d.accept());
   await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
   await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
   await cust.goto(`/siparisler/${id}`);
-  await expect(cust.getByRole('button', { name: 'Çizimi onayla' })).toBeVisible();
+  await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
   await expect(cust.locator('.file-row', { hasText: 'dus-v1.dxf' })).toBeVisible();
 
   // Müşteri karar vermeden geri çekme (gerekçe zorunlu, onaylı)
@@ -62,13 +86,14 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(drawer.getByText('Çizim sürümü geri çekildi; yeni sürüm yükleyebilirsiniz.')).toBeVisible();
 
   await cust.goto(`/siparisler/${id}`);
-  await expect(cust.getByRole('button', { name: 'Çizimi onayla' })).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toHaveCount(0);
   await expect(cust.getByText('geri çekildi').first()).toBeVisible();
   await expect(cust.getByText('Yanlış ölçü gönderildi').first()).toBeVisible();
 
   // Yeni sürüm (v2) — v1 geçmişte kalır
   await drawer.setInputFiles('#drawing-file', sampleFile('dus-v2.pdf', 'pdf v2'));
   await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await drawer.getByRole('link', { name: 'Kontrol Et' }).click();
   drawer.once('dialog', (d) => d.accept());
   await drawer.getByRole('button', { name: 'Müşteriye gönder' }).click();
   await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
@@ -76,6 +101,6 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(drawer.locator('.drawing-version', { hasText: 'dus-v1.dxf' })).toContainText('geri çekildi');
 
   await cust.goto(`/siparisler/${id}`);
-  await cust.getByRole('button', { name: 'Çizimi onayla' }).click();
+  await cust.getByRole('button', { name: 'Bu çizimi onayla' }).click();
   await expect(cust.getByText(/Çizimi onayladınız|üretime alındı/)).toBeVisible();
 });

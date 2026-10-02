@@ -83,7 +83,7 @@ test('satış, çizimci ve müşteri örnek siparişleri görür', async ({ brow
   const cust = await as(browser, 'musteri@ornek.test');
   await shot(cust, '03-musteri-siparislerim');
   await cust.getByRole('link', { name: 'ORN104' }).first().click();
-  await expect(cust.getByRole('button', { name: 'Çizimi onayla' })).toBeVisible();
+  await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
   await expect(cust.locator('#teklif tfoot')).toContainText('660,00 EUR');
   await shot(cust, '04-musteri-cizim-onayi');
 });

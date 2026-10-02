@@ -212,6 +212,11 @@ h2 > .badge { font-weight: 600; }
 .card-tools a { padding: 4px 10px; border-radius: var(--radius-pill); text-decoration: none; color: var(--muted); font-weight: 600; }
 .card-tools a:hover { background: var(--surface-3); color: var(--text); }
 .card-tools a.active { background: var(--primary-soft); color: var(--primary); }
+/* Bölüm içi süzgeç (ör. onaylanmış çizimlerde yükleme günü): sıralama bağlantılarının sağında */
+.card-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.card-filter label { margin: 0; color: var(--muted); }
+.card-filter select { width: auto; min-width: 190px; padding-top: 6px; padding-bottom: 6px; }
+.card-filter .btn { padding: 6px 12px; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-table); }
 th {
@@ -624,6 +629,11 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .drawing-version:first-of-type { border-top: 0; }
 .drawing-version.draft { border: 1px dashed var(--primary-border); border-radius: 10px; padding: 12px 14px; background: #f8fbff; margin-bottom: 8px; }
 .drawing-version .note { margin: 6px 0; }
+/* Çizim bölümünün başı: çizime başla + taslağa yükleme formu; taslakta "Kontrol Et" satırı */
+.drawing-start { gap: 10px; margin-bottom: 12px; }
+.drawing-upload { padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.drawing-upload .hint { margin-top: 0; flex: 1 1 260px; }
+.drawing-next { gap: 10px; margin-top: 10px; }
 
 /* Profil siparişi (Aşama 6): ürün görselli tablolar, adet ve fiyat kutuları, teklif notları */
 .grid-3 { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -673,6 +683,19 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 @media (max-width: 900px) { .viewer { grid-template-columns: 1fr; } }
 .viewer-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .viewer-bar select { width: auto; max-width: 260px; }
+.viewer-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.viewer-zoom { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.viewer-hint { margin: 0 0 8px; }
+/* Sağ sütun: karar / gönderim / revizyon notu kartı + işaret listesi (dar ekranda çizimin altına iner) */
+.viewer-aside { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.viewer-aside > .card { margin: 0; }
+.viewer-decide h2 { margin-bottom: 6px; }
+.viewer-decide .hint { margin: 0 0 12px; color: var(--muted); }
+.viewer-decide .alert { margin: 0 0 12px; }
+.viewer-decide textarea { resize: vertical; }
+.viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.viewer-side h2 .badge { margin-left: 6px; vertical-align: middle; }
+.viewer-requests { margin-top: 16px; }
 .viewer-scroll { overflow: auto; max-height: 78vh; border: 1px solid var(--border); background: var(--surface-3); }
 .viewer-page { position: relative; background: #fff; margin: 0 0 10px; line-height: 0; }
 .viewer-page canvas, .viewer-page img { display: block; width: 100%; height: auto; }
@@ -688,4 +711,6 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .ann-free { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .ann-free polyline { fill: none; stroke: #dc2626; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 .viewer-note { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider); }
-.viewer-note input { flex: 1 1 100%; }
+.viewer-note > .small { flex: 1 1 calc(100% - 60px); }
+.viewer-note input { flex: 1 1 0; min-width: 0; }
+.viewer-note > span:last-child:not(.small) { flex: 1 1 100%; }

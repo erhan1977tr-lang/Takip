@@ -109,7 +109,8 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 
 - Section order on the order page (all roles except Drawing): status + actions → customer files → notes →
   order information → drawings/approval → offer (editor or view) → finance / crates; history lives in the
-  sidebar. Drawing team: files → actions → drawings → notes → order information (no offer).
+  sidebar. Drawing team (3.31.0): customer files → drawings and approval (start + upload live here) → notes →
+  order information; no stepper or action cards — status is shown as badges in the page head; no offer.
 - Order information is `dl.order-info` (grey label column, value column, full width). Sub-headings inside a
   card use `<h3 class="sub-title">`; a card title with something on the right uses `.section-head`.
 - Offer editor (`OfferEditor.tsx`): `.card.offer-card` → `.offer-wrap > table.offer-table` (bordered cells;
@@ -134,12 +135,27 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   `table.crate-table.readonly`.
 - `.tool-bar` (generic) and `.offer-tools` share one style; `.btn-del` is the row-delete button everywhere.
 
+## Drawing section and viewer (3.31.0)
+
+- Drawings card (`#cizim`): `.drawing-start` (take the job) → `.drawing-upload` (upload to draft) → versions
+  (`.drawing-version`, draft = dashed). A draft shows only "Kontrol Et" (`.drawing-next`); there is no send
+  button on the order page — sending lives on the viewer and the server requires the review proof.
+- Viewer page (`siparisler/[id]/cizim/[drawingId]`): `.viewer` grid = `.viewer-main` (file select, tools,
+  zoom, pages) + `.viewer-aside` (the decision card `.card.turn.viewer-decide` on top, then the marks list).
+  The decision card is passed through the `side` prop of `DrawingViewer`: drafter → "Müşteriye gönder";
+  customer → "Bu çizimi onayla" (`.btn-success`) + "Revizyon iste" (`.btn-danger`); revision screen → note +
+  submit. Buttons sit in `.viewer-actions`. On narrow screens the aside drops below the drawing.
+- Section filters inside a list card: `.card-tools` + `.card-filter` (e.g. loading day on approved drawings).
+- Annotation colours are fixed (red / amber) so they stay readable on any drawing — the only place where
+  colours are not tokens.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
-order detail and offer editor (3.28.0); loadings and crates (3.29.0). Still to do, page by page:
+order detail and offer editor (3.28.0); loadings and crates (3.29.0); drawing section and viewer (3.31.0).
+Still to do, page by page:
 
-- Drawing section and viewer, profile order, accounting, new-order form:
+- Profile order, accounting, new-order form:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,
