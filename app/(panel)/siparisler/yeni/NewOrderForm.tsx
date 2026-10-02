@@ -58,10 +58,16 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
 
   const setFiles = (list: File[]) => { applyFiles(input.current, list); setPicked(list); };
   const addFiles = (incoming: File[]) => setFiles([...picked, ...incoming.filter((f) => !picked.some((p) => sameFile(p, f)))]);
-  // Sunucu hata döndürünce form sıfırlanır; seçilen dosyalar alana geri yazılır (yeniden seçmek gerekmez)
+  // Sunucu hata döndürünce tarayıcı formu sıfırlar: cam seçimi, "çıkar" işaretleri ve seçilen dosyalar ekrandaki
+  // duruma göre alanlara geri yazılır (müşteri yeniden seçmek zorunda kalmaz; gönderilen form ekranla aynı olur)
   useEffect(() => {
+    const f = input.current?.form;
+    if (!f) return;
+    const sel = f.elements.namedItem('glassId');
+    if (sel instanceof HTMLSelectElement && sel.value !== glass.id) sel.value = glass.id;
+    f.querySelectorAll<HTMLInputElement>('input[name=removeFile]').forEach((c) => { c.checked = removed.includes(c.value); });
     if (picked.length && input.current && input.current.files?.length !== picked.length) applyFiles(input.current, picked);
-  }, [state, picked]);
+  }, [state, glass.id, removed, picked]);
 
   return (
     <form action={action}>
