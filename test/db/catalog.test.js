@@ -89,7 +89,12 @@ dbTest('taslak: kaydedilir, dosya çıkarılır/eklenir; gönderilince dosyalar 
   // Başka firma taslağı göremez / gönderemez / silemez
   assert.equal(await codeOf(saveDraft(db, { actor: actor(other), firm: otherFirm, draftId: d.id, values: { title: 'x', note: '', customerOrderNo: null, lines: [] } })), 'DRAFT_GONE');
   assert.equal(await deleteDraft(db, { firm: otherFirm, draftId: d.id }), null);
-  const res = glassOrderItems([{ id: g.id, qty: '2' }], [g]);
+  // Taslaktaki cam bu arada pasifleşti (önceki test): gönderimde reddedilir; müşteri etkin bir cam seçer.
+  // (Eskiden bu sonuç denetlenmiyordu ve kalemsiz sipariş açılabiliyordu; artık sipariş tam bir cam ister — karar 85.)
+  assert.deepEqual(glassOrderItems([{ id: g.id, qty: '2' }], [g]), { ok: false, code: 'GLASS_GONE' });
+  const active = await db.glassProduct.findFirstOrThrow({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } });
+  const res = glassOrderItems([{ id: active.id, qty: '2' }], [active]);
+  assert.ok(res.ok);
   const keep = saved.files.find((f) => f.storageKey === f2.storageKey);
   const other2 = saved.files.find((f) => f.id !== keep.id);
   assert.equal(await codeOf(createGlassOrder(db, { actor: actor(other), firm: otherFirm, title: 'x', requestedNo: 1, items: res.items, draftId: d.id })), 'DRAFT_GONE');
@@ -98,6 +103,7 @@ dbTest('taslak: kaydedilir, dosya çıkarılır/eklenir; gönderilince dosyalar 
   });
   assert.equal(o.orderNo, 'GLA900');
   assert.deepEqual(o.dropped.map((f) => f.id), [other2.id]);
+  assert.deepEqual((await db.orderItem.findMany({ where: { orderId: o.id } })).map((i) => [i.glassProductId, i.camAdedi]), [[active.id, 2]], 'siparişte tam bir cam');
   assert.equal(await db.order.count(), before + 1);
   assert.equal(await db.orderDraft.count({ where: { id: d.id } }), 0);
   const order = await db.order.findUniqueOrThrow({ where: { id: o.id }, include: { files: true, notes: true } });
