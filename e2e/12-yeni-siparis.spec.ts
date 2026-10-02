@@ -79,8 +79,8 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
 
   // SUNUCU kuralı: form elle değiştirilip ikinci cam eklense de sipariş açılmaz (seçimler ve dosyalar ekranda kalır)
   await cust.evaluate(() => {
-    const form = document.querySelector('form')!;
-    const sel = form.querySelector<HTMLSelectElement>('select[name=glassId]')!;
+    const sel = document.querySelector<HTMLSelectElement>('select[name=glassId]')!;
+    const form = sel.form!;
     const second = Array.from(sel.options).find((o) => o.value && o.value !== sel.value)!;
     for (const [name, value] of [['glassId', second.value], ['glassQty', '2']]) {
       const hidden = document.createElement('input');
