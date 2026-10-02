@@ -63,8 +63,8 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
   useEffect(() => {
     const f = input.current?.form;
     if (!f) return;
-    const sel = f.elements.namedItem('glassId');
-    if (sel instanceof HTMLSelectElement && sel.value !== glass.id) sel.value = glass.id;
+    const sel = f.querySelector<HTMLSelectElement>('select[name=glassId]');
+    if (sel && sel.value !== glass.id) sel.value = glass.id;
     f.querySelectorAll<HTMLInputElement>('input[name=removeFile]').forEach((c) => { c.checked = removed.includes(c.value); });
     if (picked.length && input.current && input.current.files?.length !== picked.length) applyFiles(input.current, picked);
   }, [state, glass.id, removed, picked]);
