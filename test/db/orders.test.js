@@ -6,6 +6,7 @@ import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { reviewToken } from '../../server/orders/review.js';
 import { getEnv } from '../../server/env.js';
+import { glassLoadingDate } from '../../server/orders/rules.js';
 
 let db;
 const people = {};
@@ -15,6 +16,7 @@ let otherFirm;
 const actor = (u) => ({ id: u.id, role: u.appRole, canApprove: u.canApprove, customerId: u.customerId, ip: '127.0.0.1' });
 const fileMeta = (n) => ({ storageKey: `2026/09/test${n}.pdf`, name: `cizim-${n}.pdf`, size: 10, mime: 'application/pdf', checksum: 'x', scanStatus: 'CLEAN' });
 const codeOf = async (p) => p.then(() => 'OK', (e) => e.code ?? e.message);
+const ITEM = { glassName: '8mm Temperli', camAdedi: 2 };
 const newOrder = async (title = 'Test') => {
   const next = await suggestNextNo(db, firm.id);
   return createGlassOrder(db, {
@@ -67,14 +69,67 @@ dbTest('numara: aynı anda 10 sipariş → 10 farklı ardışık numara (öneril
 dbTest('numara: müşterinin yazdığı numara doluysa kaydedilmez; boşsa yazdığı numara kullanılır', async () => {
   const taken = (await db.order.findFirst({ where: { customerId: firm.id } })).customerOrderNo;
   const next = await suggestNextNo(db, firm.id);
-  const dup = createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: taken, suggestedNo: next, items: [], files: [fileMeta('d1')] });
+  const dup = createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: taken, suggestedNo: next, items: [ITEM], files: [fileMeta('d1')] });
   assert.equal(await codeOf(dup), 'DUPLICATE_NUMBER');
-  const custom = await createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: 500, suggestedNo: next, items: [], files: [fileMeta('d2')] });
+  const custom = await createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: 500, suggestedNo: next, items: [ITEM], files: [fileMeta('d2')] });
   assert.deepEqual([custom.orderNo, custom.bumped], ['GLA500', false]);
   assert.equal(await suggestNextNo(db, firm.id), 501);
   // Başka firma aynı numarayı kullanabilir (kodlar farklı)
-  const ale = await createGlassOrder(db, { actor: actor(people.other), firm: otherFirm, title: 'x', requestedNo: 500, suggestedNo: 1, items: [], files: [fileMeta('d3')] });
+  const ale = await createGlassOrder(db, { actor: actor(people.other), firm: otherFirm, title: 'x', requestedNo: 500, suggestedNo: 1, items: [ITEM], files: [fileMeta('d3')] });
   assert.equal(ale.orderNo, 'ALE500');
+});
+
+dbTest('yeni cam siparişi: tam olarak bir cam tipi — sıfır ve iki cam sunucuda reddedilir, hiçbir şey yazılmaz (karar 85)', async () => {
+  const next = await suggestNextNo(db, firm.id);
+  const base = { actor: actor(people.cust), firm, title: 'Tek cam', requestedNo: next, suggestedNo: next };
+  const before = [await db.order.count(), await db.orderItem.count(), await db.auditLog.count({ where: { action: 'ORDER_CREATE' } })];
+  assert.equal(await codeOf(createGlassOrder(db, { ...base, items: [], files: [fileMeta('g0')] })), 'NO_GLASS', 'sıfır cam');
+  assert.equal(await codeOf(createGlassOrder(db, { ...base, files: [fileMeta('g0')] })), 'NO_GLASS', 'cam listesi hiç yok');
+  const two = [{ glassName: '8mm Temperli', camAdedi: 1 }, { glassName: '10mm Temperli', camAdedi: 1 }];
+  assert.equal(await codeOf(createGlassOrder(db, { ...base, items: two, files: [fileMeta('g2')] })), 'ONE_GLASS', 'iki cam');
+  assert.deepEqual([await db.order.count(), await db.orderItem.count(), await db.auditLog.count({ where: { action: 'ORDER_CREATE' } })], before, 'reddedilen sipariş iz bırakmaz');
+  assert.equal(await suggestNextNo(db, firm.id), next, 'numara harcanmadı');
+  const ok = await createGlassOrder(db, { ...base, items: [{ glassName: '8mm Temperli', camAdedi: 7 }], files: [fileMeta('g1')] });
+  const saved = await db.order.findUniqueOrThrow({ where: { id: ok.id }, include: { items: true } });
+  assert.deepEqual(saved.items.map((i) => [i.glassName, i.camAdedi]), [['8mm Temperli', 7]], 'tam bir cam');
+  assert.equal(saved.customerId, firm.id, 'sipariş işlemi yapanın firmasına açılır');
+});
+
+dbTest('yeni cam siparişi: tahmini yükleme günü mevcut tek hesaptan (glassLoadingDate) gelir; satış değiştirince kayıt güncellenir', async () => {
+  const o = await newOrder('Yükleme günü');
+  const saved = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+  // Aynı işlev, siparişin oluşturulduğu an ile: formda gösterilen tarih de bu hesaptan gelir
+  assert.equal(saved.estimatedShipDate.toISOString(), glassLoadingDate(saved.createdAt, getEnv().APP_TIMEZONE).toISOString());
+  assert.equal(saved.estimatedShipDate.getUTCDay(), 5, 'Cuma');
+  // Satış / yönetici sonradan değiştirir: tek kayıt (Order.estimatedShipDate) güncellenir, geçmişe yazılır
+  await run(o.id, 'send_to_drawing', 'sales');
+  const moved = new Date('2026-12-04T12:00:00Z');
+  await run(o.id, 'set_ship_date', 'sales', { date: moved });
+  assert.equal((await db.order.findUniqueOrThrow({ where: { id: o.id } })).estimatedShipDate.toISOString(), moved.toISOString());
+  assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'SHIP_DATE' } }), 1);
+  assert.equal(await codeOf(run(o.id, 'set_ship_date', 'cust', { date: moved })), 'NOT_ALLOWED', 'müşteri tarihi değiştiremez');
+});
+
+dbTest('eski çok camlı sipariş: olduğu gibi durur ve iş akışı normal işler; teklif tablosunda birden çok cam satırı olabilir', async () => {
+  const o = await newOrder('Eski çok camlı');
+  // Kuraldan önce açılmış sipariş gibi: ikinci ve üçüncü cam doğrudan kayıtta
+  await db.orderItem.createMany({ data: [{ orderId: o.id, glassName: '10mm Temperli', camAdedi: 4 }, { orderId: o.id, glassName: '6mm Float', camAdedi: 1 }] });
+  const glasses = async () => (await db.orderItem.findMany({ where: { orderId: o.id }, orderBy: { camAdedi: 'asc' } })).map((i) => [i.glassName, i.camAdedi]);
+  const all = [['6mm Float', 1], ['8mm Temperli', 2], ['10mm Temperli', 4]];
+  assert.deepEqual(await glasses(), all);
+  await run(o.id, 'no_drawing', 'sales');
+  // Satış / yönetici teklif tablosu sınırlanmaz: farklı camlardan birden çok satır
+  const lines = [
+    { description: '8mm Temperli', poz: 'P1', enMm: 1000, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false },
+    { description: '10mm Temperli', poz: 'P2', enMm: 800, boyMm: 600, adet: 4, unit: 'm2', unitPrice: '55.00', kind: 'CAM', free: false },
+    { description: '6mm Float', poz: 'P3', enMm: 500, boyMm: 500, adet: 1, unit: 'm2', unitPrice: '20.00', kind: 'CAM', free: false },
+  ];
+  await run(o.id, 'save_offer', 'sales', { lines });
+  await run(o.id, 'submit_offer', 'sales', { lines });
+  const offer = await db.offer.findFirstOrThrow({ where: { orderId: o.id }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+  assert.deepEqual(offer.lines.map((l) => [l.description, l.kind]), [['8mm Temperli', 'CAM'], ['10mm Temperli', 'CAM'], ['6mm Float', 'CAM']]);
+  assert.equal(offer.status, 'YONETIMDE');
+  assert.deepEqual(await glasses(), all, 'sipariş kalemleri değişmedi');
 });
 
 dbTest('oluşturma: tip, geçmiş, denetim (rol + IP) ve bildirim kuyruğu', async () => {

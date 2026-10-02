@@ -80,6 +80,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
+  NO_GLASS: 'newOrder.errors.noGlass',
+  ONE_GLASS: 'newOrder.errors.oneGlass',
   // Profil siparişi (Aşama 6)
   BAD_PRICE: 'profile.errors.badPrice',
   PROFILE_PRICE_MISSING: 'profile.errors.priceMissing',

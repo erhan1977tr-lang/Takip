@@ -149,13 +149,28 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Annotation colours are fixed (red / amber) so they stay readable on any drawing — the only place where
   colours are not tokens.
 
+## Customer New Order forms (3.32.0)
+
+- Page head: back link, title, one-line intro, then `.type-row` (order-type badge + "change type" link).
+- Glass order (`NewOrderForm.tsx`), old TAKİP order: order info (`.alert.alert-info.ship-note` with the
+  estimated loading date, then name + number in `.grid-2`) → files → glass → note → `.submit-bar`.
+- Files: `label.dropzone` (the real `<input type="file" class="dropzone-input">` is visually hidden but is
+  still the field the form submits) with `.dropzone-icon`; chosen files in `.upload-list` as `.file-row`s
+  (ext chip, name, size, remove). Never build a second upload path — only the selection UI is custom.
+- Glass: exactly one glass — `.glass-pick` (select + quantity with visible labels). No "add glass" control
+  on the customer form (the Sales/Admin offer editor keeps its own "+ Cam ekle").
+- Bottom bar on both forms: `.card.submit-bar.sticky-submit` with `ul.submit-check` (what is still missing;
+  `li.done` when ready) on the left and the two buttons on the right.
+- Profile order (`ProfileOrderForm.tsx`): one `.card.card-flush` per category; `table.profile-table.profile-pick`
+  with fixed column classes (`.c-thumb / .c-unit / .c-qty`) so unit and quantity line up across categories.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
-order detail and offer editor (3.28.0); loadings and crates (3.29.0); drawing section and viewer (3.31.0).
-Still to do, page by page:
+order detail and offer editor (3.28.0); loadings and crates (3.29.0); drawing section and viewer (3.31.0);
+customer new-order forms (3.32.0). Still to do, page by page:
 
-- Profile order, accounting, new-order form:
+- Profile order detail page, accounting:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,

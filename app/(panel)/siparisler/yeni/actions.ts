@@ -14,7 +14,7 @@ import { discardFiles, storeFiles } from '@/lib/uploads';
 import { fileProblem } from '@/server/orders/rules.js';
 import { createGlassOrder } from '@/server/orders/create.js';
 import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, saveDraft } from '@/server/orders/drafts.js';
-import { glassOrderItems } from '@/server/catalog/glass.js';
+import { CUSTOMER_GLASS_TYPES, glassOrderItems } from '@/server/catalog/glass.js';
 import { WorkflowError } from '@/server/domain/workflow.js';
 import { MAX_PROFILE_QTY, profileOrderItems, readQuantities } from '@/server/profile/rules.js';
 import { createProfileOrder } from '@/server/profile/create.js';
@@ -56,15 +56,16 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   }
 
   let items: object[] = [];
-  // Siparişte tek cam tipi: müşteri ikinci cam ekleyemez (formda düğme yok; sunucu da kabul etmez)
-  if (glasses.filter((g) => g.id).length > 1) return fail(t('newOrder.errors.oneGlass'));
+  // Siparişte tek cam tipi (karar 85): müşteri ikinci cam ekleyemez. Formda düğme yok; burada taslak için de reddedilir,
+  // gönderimde ayrıca glassOrderItems (ONE_GLASS) ve createGlassOrder (tam olarak bir cam) denetler.
+  if (glasses.filter((g) => g.id).length > CUSTOMER_GLASS_TYPES) return fail(t('newOrder.errors.oneGlass'));
   if (intent === 'submit') {
     if (!title) return fail(t('newOrder.errors.titleRequired'));
     if (no === null) return fail(t('newOrder.errors.badNumber'));
     const ids = glasses.map((g) => g.id).filter(Boolean);
     const products = ids.length ? await db.glassProduct.findMany({ where: { id: { in: ids } } }) : [];
     const res = glassOrderItems(glasses, products);
-    if (!res.ok) return fail(t(({ NO_GLASS: 'newOrder.errors.noGlass', GLASS_GONE: 'newOrder.errors.glassGone', BAD_QTY: 'newOrder.errors.badQty', TOO_MANY_LINES: 'newOrder.errors.tooManyLines' } as const)[res.code], { max: 9999 }));
+    if (!res.ok) return fail(t(({ NO_GLASS: 'newOrder.errors.noGlass', ONE_GLASS: 'newOrder.errors.oneGlass', GLASS_GONE: 'newOrder.errors.glassGone', BAD_QTY: 'newOrder.errors.badQty' } as const)[res.code], { max: 9999 }));
     items = res.items;
     // Dosya: yeni yüklenenler + taslakta kalanlar
     const kept = draftId ? await db.orderDraftFile.count({ where: { draftId, draft: { customerId: firm.id }, id: { notIn: removed } } }) : 0;

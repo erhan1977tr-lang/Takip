@@ -109,7 +109,8 @@ dbTest('taslak: kaydedilir, dosya çıkarılır/eklenir; gönderilince dosyalar 
 
 dbTest('taslak: dosyasız sipariş gönderilemez; taslak silinince dosyaları döner', async () => {
   const d = await saveDraft(db, { actor: actor(cust), firm, draftId: null, values: { title: 'Boş', note: '', customerOrderNo: null, lines: [] } });
-  assert.equal(await codeOf(createGlassOrder(db, { actor: actor(cust), firm, title: 'Boş', requestedNo: 950, items: [], draftId: d.id })), 'NO_FILES');
+  const one = [{ glassName: 'Cam', camAdedi: 1 }];
+  assert.equal(await codeOf(createGlassOrder(db, { actor: actor(cust), firm, title: 'Boş', requestedNo: 950, items: one, draftId: d.id })), 'NO_FILES');
   assert.equal(await db.orderDraft.count({ where: { id: d.id } }), 1, 'başarısız gönderimde taslak kalır');
   const f = file();
   await saveDraft(db, { actor: actor(cust), firm, draftId: d.id, values: { title: 'Boş', note: '', customerOrderNo: null, lines: [] }, files: [f] });

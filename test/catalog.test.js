@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { readXlsx, writeXlsx } from '../server/files/xlsx.js';
 import { readZip, writeZip } from '../server/files/zip.js';
 import {
-  CATALOG_HEADERS, catalogSheetRows, glassLabel, glassOrderItems, itemGlassName, parseActive, parseCatalogSheet, parseNumber,
+  CATALOG_HEADERS, CUSTOMER_GLASS_TYPES, catalogSheetRows, glassLabel, glassOrderItems, itemGlassName, parseActive, parseCatalogSheet, parseNumber,
   planCatalogImport, validateGlass,
 } from '../server/catalog/glass.js';
 import { draftLines, readDraftItems } from '../server/orders/drafts.js';
@@ -123,6 +123,21 @@ test('sipariş satırı: pasif cam, geçersiz adet, boş seçim reddedilir', () 
   assert.deepEqual(glassOrderItems([{ id: 'yok', qty: '1' }], [g]), { ok: false, code: 'GLASS_GONE' });
   for (const qty of ['0', '-1', '1.5', '10000', 'abc']) assert.deepEqual(glassOrderItems([{ id: 'p', qty }], [g]), { ok: false, code: 'BAD_QTY' }, qty);
   assert.ok(glassOrderItems([{ id: 'p', qty: '9999' }], [g]).ok);
+});
+
+test('müşterinin yeni cam siparişi: tam olarak bir cam tipi — sıfır ve iki reddedilir (karar 85)', () => {
+  const a = { id: 'a', isActive: true, nameTr: 'A', nameRo: 'A-ro', weightKgM2: 10 };
+  const b = { id: 'b', isActive: true, nameTr: 'B', nameRo: 'B-ro', weightKgM2: 20 };
+  assert.equal(CUSTOMER_GLASS_TYPES, 1);
+  assert.deepEqual(glassOrderItems([], [a, b]), { ok: false, code: 'NO_GLASS' }, 'sıfır cam');
+  assert.deepEqual(glassOrderItems([{ id: '', qty: '1' }, { id: '  ', qty: '2' }], [a, b]), { ok: false, code: 'NO_GLASS' }, 'boş seçimler cam sayılmaz');
+  const one = glassOrderItems([{ id: 'a', qty: '5' }], [a, b]);
+  assert.ok(one.ok, 'tek cam');
+  assert.deepEqual(one.items.map((i) => [i.glassProductId, i.camAdedi]), [['a', 5]]);
+  assert.deepEqual(glassOrderItems([{ id: 'a', qty: '1' }, { id: 'b', qty: '1' }], [a, b]), { ok: false, code: 'ONE_GLASS' }, 'iki farklı cam');
+  assert.deepEqual(glassOrderItems([{ id: 'a', qty: '1' }, { id: 'a', qty: '3' }], [a, b]), { ok: false, code: 'ONE_GLASS' }, 'aynı cam iki satır da olmaz');
+  // Kural adetten bağımsız: tek cam tipinden çok sayıda adet istenebilir
+  assert.ok(glassOrderItems([{ id: 'b', qty: '9999' }], [a, b]).ok);
 });
 
 test('taslak: cam satırları gevşek kurallarla saklanır, bozuk veri okunurken atlanır', () => {

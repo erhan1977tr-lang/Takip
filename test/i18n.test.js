@@ -49,6 +49,14 @@ test('çeviri ve yer tutucu', () => {
   assert.ok(isLocale('ro') && isLocale('tr') && !isLocale('en'));
 });
 
+test('yeni cam siparişi: tahmini yükleme tarihi notu (GG.AA.YYYY) iki dilde', () => {
+  assert.equal(
+    translate('ro', 'newOrder.form.info.shipNote', { date: '23.10.2026' }),
+    'Data estimată de încărcare a acestei comenzi va fi 23.10.2026; echipa de vânzări o actualizează dacă este necesar.',
+  );
+  assert.equal(translate('tr', 'newOrder.form.info.shipNote', { date: '23.10.2026' }), 'Bu siparişin tahmini yükleme tarihi 23.10.2026 olacak; satış ekibi gerekirse günceller.');
+});
+
 test('teklif eksikleri iki dilde', () => {
   const p = offerProblems([
     { kind: 'CAM', enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '24' },

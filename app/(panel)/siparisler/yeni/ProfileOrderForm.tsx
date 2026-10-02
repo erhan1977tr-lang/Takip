@@ -31,7 +31,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
       {draft && <input type="hidden" name="draftId" value={draft.id} />}
       <div className="card">
         <h2>{m.info.title}</h2>
-        <div className="grid-2" style={{ marginTop: 8 }}>
+        <div className="grid-2">
           <div>
             <label htmlFor="title">{m.info.name}</label>
             <input id="title" name="title" type="text" maxLength={160} placeholder={m.info.namePlaceholder} defaultValue={v?.title ?? draft?.title ?? ''} />
@@ -49,12 +49,17 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
       {categories.map((c) => {
         const list = products.filter((p) => p.categoryCode === c.code);
         if (!list.length) return null;
+        const picked = list.filter((p) => /^\d+$/.test(qty[p.id] ?? '') && Number(qty[p.id]) > 0).length;
         return (
           <div className="card card-flush" key={c.code}>
-            <div className="card-head"><h2 style={{ margin: 0 }}>{c.name}</h2></div>
+            <div className="card-head">
+              <h2>{c.name} <span className="badge">{list.length}</span></h2>
+              {picked > 0 && <span className="badge badge-info">{interpolate(m.selected, { n: picked })}</span>}
+            </div>
             <div className="table-wrap">
-              <table className="profile-table">
-                <thead><tr><th style={{ width: 72 }} /><th>{m.colProduct}</th><th>{m.colUnit}</th><th className="num" style={{ width: 120 }}>{m.colQty}</th></tr></thead>
+              {/* Sütun genişlikleri sabit: birim ve adet sütunları her kategoride aynı hizada */}
+              <table className="profile-table profile-pick">
+                <thead><tr><th className="c-thumb" /><th>{m.colProduct}</th><th className="c-unit">{m.colUnit}</th><th className="c-qty num">{m.colQty}</th></tr></thead>
                 <tbody>
                   {list.map((p) => {
                     const q = qty[p.id] ?? '';
@@ -81,15 +86,17 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
       })}
 
       <div className="card">
-        <h2><label htmlFor="note">{m.note.title}</label></h2>
-        <p className="muted small">{m.note.intro}</p>
-        <textarea id="note" name="note" rows={3} maxLength={2000} defaultValue={v?.note ?? draft?.note ?? ''} placeholder={m.note.placeholder} />
-        {notes.map((n) => <p key={n} className="muted small" style={{ margin: '8px 0 0' }}>{n}</p>)}
+        <h2 id="note-title">{m.note.title}</h2>
+        <p className="muted small" id="note-intro">{m.note.intro}</p>
+        <textarea id="note" name="note" rows={4} maxLength={2000} defaultValue={v?.note ?? draft?.note ?? ''} placeholder={m.note.placeholder} aria-labelledby="note-title" aria-describedby="note-intro" />
+        <div className="offer-notes">{notes.map((n) => <p key={n}>{n}</p>)}</div>
       </div>
 
       {state.error && <div className="alert alert-error" role="alert">{state.error}</div>}
-      <div className="card row sticky-submit" style={{ justifyContent: 'space-between' }}>
-        <span className="muted small">{selected ? interpolate(m.selected, { n: selected }) : m.submit.needItem}</span>
+      <div className="card submit-bar sticky-submit">
+        <ul className="submit-check">
+          <li className={selected ? 'done' : undefined}>{selected ? interpolate(m.selected, { n: selected }) : m.submit.needItem}</li>
+        </ul>
         <div className="row">
           <button type="submit" name="intent" value="draft" className="btn" formNoValidate disabled={pending}>{m.submit.draft}</button>
           <button type="submit" name="intent" value="submit" className="btn btn-primary" disabled={pending || selected === 0}>{pending ? m.submit.sending : m.submit.send}</button>

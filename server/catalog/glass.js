@@ -198,17 +198,22 @@ export function catalogSheetRows(glasses) {
   ];
 }
 
+/** Müşterinin yeni cam siparişinde seçebileceği cam tipi sayısı (karar 85): tam olarak bir. */
+export const CUSTOMER_GLASS_TYPES = 1;
+
 /**
- * Siparişteki cam satırlarını katalogdan doğrular ve siparişe yazılacak anlık kopyayı üretir
- * (cam sonradan yeniden adlandırılsa ya da ağırlığı değişse de sipariş değişmez).
+ * Müşterinin YENİ cam siparişindeki cam satırını katalogdan doğrular ve siparişe yazılacak anlık kopyayı üretir
+ * (cam sonradan yeniden adlandırılsa ya da ağırlığı değişse de sipariş değişmez). Yeni siparişte tam olarak bir cam
+ * tipi olur: hiç seçilmediyse NO_GLASS, birden çoksa ONE_GLASS. Eski (çok camlı) siparişler ve satış / yönetici
+ * teklif tablosu bu kuraldan etkilenmez — onlar bu işlevi kullanmaz.
  * @param {{ id: string, qty: string | number }[]} lines
  * @param {object[]} products  seçilen id'lere ait katalog kayıtları
- * @returns {{ ok: true, items: object[] } | { ok: false, code: 'NO_GLASS' | 'GLASS_GONE' | 'BAD_QTY' | 'TOO_MANY_LINES' }}
+ * @returns {{ ok: true, items: object[] } | { ok: false, code: 'NO_GLASS' | 'ONE_GLASS' | 'GLASS_GONE' | 'BAD_QTY' }}
  */
 export function glassOrderItems(lines, products) {
   const used = lines.filter((l) => clean(l.id) !== '');
   if (used.length === 0) return { ok: false, code: 'NO_GLASS' };
-  if (used.length > 50) return { ok: false, code: 'TOO_MANY_LINES' };
+  if (used.length > CUSTOMER_GLASS_TYPES) return { ok: false, code: 'ONE_GLASS' };
   const byId = new Map(products.map((p) => [p.id, p]));
   const items = [];
   for (const l of used) {

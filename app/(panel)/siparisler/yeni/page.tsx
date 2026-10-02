@@ -64,6 +64,14 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     );
   }
 
+  // Seçilen sipariş tipi (birden çok tip etkinken): rozet + tipi değiştirme bağlantısı. Taslakta tip değişmez.
+  const typeRow = types.length > 1 && (
+    <div className="row type-row">
+      <span className="badge badge-info">{locale === 'tr' ? chosen.nameTr : chosen.nameRo}</span>
+      {!draftRow && <Link className="small" href="/siparisler/yeni">{t('newOrder.changeType')}</Link>}
+    </div>
+  );
+
   if (chosen.code === 'PROFILE_ORDER') {
     // Profil siparişi (Aşama 6): etkin kategori ve ürünler, kullanıcının dilinde; taslaktaki adetler
     const [cats, items, nextNo] = await Promise.all([
@@ -82,6 +90,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
           <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
           <h1>{pdraft ? t('newOrder.draftTitle') : t('profile.form.title')}</h1>
           <p className="muted">{t('profile.form.intro')}</p>
+          {typeRow}
           {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
         </div>
         {sp.ok === 'draft' && <div className="alert alert-ok">{t('newOrder.draftSaved')}</div>}
@@ -93,7 +102,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
           notes={[t('profile.notes.pickup'), t('profile.notes.eur')]}
         />
         {draftRow && (
-          <form action={deleteDraftAction} className="row" style={{ justifyContent: 'flex-end' }}>
+          <form action={deleteDraftAction} className="row end">
             <input type="hidden" name="draftId" value={draftRow.id} />
             <button type="submit" className="btn btn-link danger">{t('newOrder.deleteDraft')}</button>
           </form>
@@ -131,6 +140,8 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       <div className="page-head">
         <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
         <h1>{draft ? t('newOrder.draftTitle') : t('newOrder.title')}</h1>
+        <p className="muted">{t('newOrder.intro')}</p>
+        {typeRow}
         {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
       </div>
       {sp.ok === 'draft' && <div className="alert alert-ok">{t('newOrder.draftSaved')}</div>}
@@ -140,7 +151,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(glassLoadingDate(new Date(), getEnv().APP_TIMEZONE))} draft={draft} m={m.newOrder.form}
       />
       {draftRow && (
-        <form action={deleteDraftAction} className="row" style={{ justifyContent: 'flex-end' }}>
+        <form action={deleteDraftAction} className="row end">
           <input type="hidden" name="draftId" value={draftRow.id} />
           <button type="submit" className="btn btn-link danger">{t('newOrder.deleteDraft')}</button>
         </form>

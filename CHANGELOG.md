@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.32.0 — 02.10.2026
+
+- **Müşteri "Yeni Sipariş" ekranı** (eski TAKİP düzeni, yeni görünüm): sayfa başlığı ve açıklama, seçili sipariş tipi
+  ("Sipariş tipini değiştir"), belirgin bölümler, altta sabit gönderim çubuğu (eksikler listesi + Taslak kaydet /
+  Siparişi gönder).
+  - **Tek cam**: müşteri bir siparişte yalnızca bir cam tipi seçer (etiketli cam + adet alanı). Sunucu da yeni
+    siparişte sıfır ya da birden çok camı kabul etmez. Eski çok camlı siparişler ve satış / yönetici teklif
+    tablosu ("+ Cam ekle") aynen durur.
+  - **Tahmini yükleme tarihi** notu belirgin bir kutuda; tarih siparişe yazılan tarihle aynı hesaptan gelir.
+  - **Dosyalar**: "Dosyaları buraya sürükleyin" alanı; seçilen dosyalar ad ve boyutla listelenir, birkaç seferde
+    eklenebilir, listeden çıkarılabilir; hata olursa yeniden seçmek gerekmez. Yükleme kuralları ve virüs taraması aynı.
+  - **Ek bilgi** alanı belirgin başlıkla.
+- **Profil sipariş formu**: aynı görünüm; birim ve adet sütunları tüm kategorilerde hizalı, kategori başlığında
+  ürün ve seçili ürün sayısı. Profil akışı (yönetici fiyatı, müşteri onayı, teslim alma tarihi) değişmedi.
+
 ## 3.31.2 — 02.10.2026
 
 - Çizim yüklendikten sonraki bildirim yeni akışı anlatır: “Kontrol Et” ile açıp müşteriye gönderin.

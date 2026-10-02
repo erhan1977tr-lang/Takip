@@ -8,6 +8,7 @@
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { glassLoadingDate, slaDeadline } from './rules.js';
+import { CUSTOMER_GLASS_TYPES } from '../catalog/glass.js';
 import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 
@@ -51,7 +52,7 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
  * @param {string} p.title
  * @param {number} p.requestedNo      formdaki numara
  * @param {number | null} p.suggestedNo  formun açıldığında önerdiği numara (değiştirilmediyse otomatik mod)
- * @param {object[]} p.items          glassOrderItems() sonucu (katalogdan anlık kopya)
+ * @param {object[]} p.items          glassOrderItems() sonucu (katalogdan anlık kopya): tam olarak bir cam tipi (karar 85)
  * @param {object[]} p.files          yeni kaydedilmiş dosyalar (server/files/store.js → storeUpload)
  * @param {string | null} [p.note]    "Ek bilgi": müşterinin görebildiği ilk not
  * @param {string | null} [p.draftId] taslaktan gönderiliyorsa: taslağın dosyaları siparişe geçer, taslak silinir
@@ -62,6 +63,10 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
 export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [] }) {
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
   if (!Number.isInteger(requestedNo) || requestedNo <= 0 || requestedNo > MAX_ORDER_NO) throw new WorkflowError('BAD_NUMBER');
+  // Müşterinin yeni cam siparişi tam olarak bir cam tipi içerir (formdan bağımsız, sunucu kuralı). Yalnızca yeni
+  // sipariş oluşturmayı bağlar: eski çok camlı siparişlere ve teklif tablosuna dokunmaz.
+  if (!Array.isArray(items) || items.length === 0) throw new WorkflowError('NO_GLASS');
+  if (items.length > CUSTOMER_GLASS_TYPES) throw new WorkflowError('ONE_GLASS');
   return db.$transaction(async (tx) => {
     // Aynı firmanın sipariş oluşturmaları sıraya girer (işlem bitince kilit kendiliğinden kalkar)
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-no:${firm.id}`}, 0))`;
