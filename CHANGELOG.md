@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.31.1 — 02.10.2026
+
+- Çizim görüntüleyici: yazı tipi gömülmemiş PDF'ler artık cihazdaki yazı tipiyle değil, uygulamayla gelen standart
+  yazı tipleriyle çizilir — çizim her cihazda aynı görünür.
+
 ## 3.31.0 — 02.10.2026
 
 - **Çizim akışı (mevcut akış genişletildi; yeni tablo ya da durum yok)**:

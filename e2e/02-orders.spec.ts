@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, GLASS, GLASS_RO, SALES, TEAM_PW as PW, sampleFile,
-  addGlass, as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor, sendDrawing,
+  addGlass, as, createUser, fillOffer, firstLogin, login, newOrder, outboxCodeFor, sendDrawing, uploadDrawing,
 } from './helpers';
 
 // Sipariş akışı: çizim ve teklif hatları bağımsız; müşteri yalnızca çizimi onaylar, teklifi görür.
@@ -178,8 +178,7 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toBeDisabled();
   await expect(drawer.locator('.viewer-decide')).toContainText('en az bir PDF, JPG ya da PNG');
   await drawer.goto(`/siparisler/${ids.b}`);
-  await drawer.setInputFiles('#drawing-file', sampleFile('korkuluk-v2.pdf', 'pdf v2'));
-  await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await uploadDrawing(drawer, [sampleFile('korkuluk-v2.pdf', 'pdf v2')]);
   await sendDrawing(drawer, ids.b);
   await expect(drawer.getByText('v2 · güncel')).toBeVisible();
   await expect(drawer.locator('.drawing-version', { hasText: 'korkuluk-v2.pdf' })).toContainText('korkuluk-v2.dxf');
@@ -248,8 +247,7 @@ test('beklemedeki sipariş otomatik üretime geçmez; beklemeden çıkınca geç
   await expect(admin.getByText('Fiyat onaylandı; teklif müşterinin panelinde.')).toBeVisible();
   const drawer = await as(browser, DRAWER, PW);
   await drawer.goto(`/siparisler/${id}`);
-  await drawer.setInputFiles('#drawing-file', [sampleFile('vitrin.dxf', 'dxf'), sampleFile('vitrin.pdf', 'pdf')]);
-  await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await uploadDrawing(drawer, [sampleFile('vitrin.dxf', 'dxf'), sampleFile('vitrin.pdf', 'pdf')]);
   await sendDrawing(drawer, id);
 
   await sales.goto(`/siparisler/${id}`);

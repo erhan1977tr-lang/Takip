@@ -69,6 +69,13 @@ export const SALES = 'satis@e2e.test';
 export const DRAWER = 'cizim@e2e.test';
 export const TEAM_PW = 'Ekip2026abc';
 
+/** Çizimci (sipariş sayfasında): dosyaları taslağa yükler ve yüklemenin bittiğini (dosya satırları) bekler. */
+export async function uploadDrawing(page: Page, files: { name: string; mimeType: string; buffer: Buffer }[]) {
+  await page.setInputFiles('#drawing-file', files);
+  await page.getByRole('button', { name: 'Taslağa yükle' }).click();
+  for (const f of files) await expect(page.locator('.drawing-version.draft .file-row', { hasText: f.name })).toBeVisible();
+}
+
 /**
  * Çizimci: taslağı "Kontrol Et" ile açar ve o ekrandaki "Müşteriye gönder" ile gönderir (karar 84: gönderim yalnızca
  * kontrol ekranından). Onay penceresini sayfa kabul eder (as() ile açılmış oturum).

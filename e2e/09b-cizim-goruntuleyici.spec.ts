@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, createUser, firstLogin, newOrder, outboxCodeFor, sampleFile, sendDrawing } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, createUser, firstLogin, newOrder, outboxCodeFor, sampleFile, sendDrawing, uploadDrawing } from './helpers';
 
 // Çizim görüntüleyici (gerçek PDF, PNG ve JPG ile; karar 84): çizimci "Kontrol Et" → o ekrandan "Müşteriye gönder" →
 // müşteri görüntüleyicide "Bu çizimi onayla" / "Revizyon iste": çizim üzerine işaret (iğne, dikdörtgen, serbest, metin)
@@ -297,8 +297,7 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
 
   // v2 → müşteri GÖRÜNTÜLEYİCİDEN onaylar → "Müşteri tarafından onaylanmış çizimler"; v1, dosyaları ve talebi geçmişte kalır
   await drawer.goto(`/siparisler/${id}`);
-  await drawer.setInputFiles('#drawing-file', file('plan-v2.pdf', realPdf()));
-  await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
+  await uploadDrawing(drawer, [file('plan-v2.pdf', realPdf())]);
   await sendDrawing(drawer, id);
   await cust.goto(`/siparisler/${id}`);
   await cust.getByRole('link', { name: 'Aç ve incele' }).first().click();
