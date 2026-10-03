@@ -132,7 +132,7 @@ dbTest('BNR: resmî kur olduğu gibi; BNR alınamazsa belge bekler ve günün BT
   const down = async () => ({ ok: false, error: 'HTTP 503' });
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id, bnrImpl: down })), { done: 0, failed: 1 });
   assert.equal(fgo.calls.length, 0, 'kur yokken FGO\'ya hiçbir şey gönderilmez');
-  let job = await lastJob(o);
+  const job = await lastJob(o);
   assert.equal(job.status, 'PENDING');
   assert.match(job.lastError, /BNR kuru alınamadı \(HTTP 503\)/);
   assert.equal(await billing(o), null);
