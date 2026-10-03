@@ -303,7 +303,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
     [o.profile.fxSource, o.profile.fxPolicy, o.profile.fxCurrency, o.profile.fxBaseRate.toString(), o.profile.fxMarkupPercent, o.profile.fxManual, o.profile.fxSourceDate.toISOString().slice(0, 10)],
     ['BNR', 'BNR', 'EUR', '4.9765', null, false, '2026-10-02'],
   );
-  assert.equal(o.profile.fxDate.toISOString().slice(0, 10), today(), 'belge günü');
+  assert.equal(o.profile.fxDate.toISOString().slice(0, 10), localDay(new Date(), 'Europe/Bucharest'), 'belge günü');
   assert.equal(o.profile.proformaAmount.toString(), '1493.04'); // 24 × 62,21 RON
   const pf = fgo.calls[0].form;
   assert.match(fgo.calls[0].url, /api-testuat\.fgo\.ro\/v1\/factura\/emitere$/);
