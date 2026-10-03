@@ -7,7 +7,11 @@ import { Badge } from '@/components/StatusBadge';
 import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus } from '@/server/accounting/receivables.js';
 import { refreshFgoAction } from './actions';
 
-type Doc = Prisma.FgoDocumentGetPayload<{ include: { order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } } } }>;
+type Doc = Prisma.FgoDocumentGetPayload<{ include: {
+  order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } };
+  batch: { select: { id: true; loadingDays: true; customer: { select: { name: true } }; orders: { select: { orderId: true; orderNo: true } } } };
+} }>;
+const dayText = (d: Date) => new Date(d).toISOString().slice(0, 10).split('-').reverse().join('.');
 type Share = { debt: number | null; rest: number | null; replaced: boolean };
 type Sums = Record<string, { total: number; paid: number; rest: number }>;
 
@@ -29,13 +33,15 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   const r = receivables(docs) as { shares: Map<string, Share>; sums: Sums };
   const shareOf = (d: Doc) => r.shares.get(d.id) as Share;
   // Sipariş başına grup: en yeni belgesi olan sipariş önce; sipariş içinde belgeler kesim sırasıyla (proforma → fatura)
-  const groups: { order: Doc['order']; docs: Doc[] }[] = [];
-  const byOrder = new Map<string, { order: Doc['order']; docs: Doc[] }>();
+  // Borç birimi: sipariş ya da müşteri partisi (müşteri proforması — tek belge, birden çok sipariş)
+  const groups: { docs: Doc[] }[] = [];
+  const byOrder = new Map<string, { docs: Doc[] }>();
   for (const d of docs) {
-    let g = byOrder.get(d.orderId);
+    const unit = d.orderId ?? `batch:${d.batchId}`;
+    let g = byOrder.get(unit);
     if (!g) {
-      g = { order: d.order, docs: [] };
-      byOrder.set(d.orderId, g);
+      g = { docs: [] };
+      byOrder.set(unit, g);
       groups.push(g);
     }
     g.docs.unshift(d);
@@ -56,6 +62,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
         </div>
         <form action={refreshFgoAction} className="page-tools">
           <input type="hidden" name="type" value={type} />
+          {type === 'GLASS_ORDER' && <Link className="btn" href="/admin/muhasebe/cam/proforma">{t('accounting.batch.open')}</Link>}
           <button className="btn btn-primary" disabled={docs.length === 0}>{t('accounting.receivables.refresh')}</button>
         </form>
       </div>
@@ -128,8 +135,17 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                     const partly = d.kind === 'PROFORMA' && !s.replaced && hasAdvance(g);
                     return (
                       <tr key={d.id} className={i === 0 ? 'grp-first' : undefined}>
-                        <td>{i === 0 && <Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link>}</td>
-                        <td>{i === 0 && d.order.customer.name}</td>
+                        <td>
+                          {i === 0 && d.order && <Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link>}
+                          {/* Müşteri proforması: kaynak siparişler ve seçilen yükleme günleri */}
+                          {i === 0 && d.batch && (
+                            <>
+                              {d.batch.orders.map((o, n) => <span key={o.orderId}>{n > 0 && ', '}<Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link></span>)}
+                              <span className="cell-note">{t('accounting.batch.docNote')} · {t('accounting.batch.docDays', { days: d.batch.loadingDays.map(dayText).join(', ') })}</span>
+                            </>
+                          )}
+                        </td>
+                        <td>{i === 0 && (d.order?.customer.name ?? d.batch?.customer.name)}</td>
                         <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
                         <td>{t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey)}</td>
                         <td className="nowrap">{fmtDate(d.issuedAt)}</td>

@@ -207,6 +207,15 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Glass order → Finans / FGO: `.fx-block` with the same component (today's rate before the document, stored snapshot
   after it); the optional manual-rate input sits in the document form (`.fx-manual`).
 
+## Customer proforma (3.37.0)
+
+- `/admin/muhasebe/cam/proforma` (opened from Cam Tahsilat): four stacked cards — customer select, future loading days
+  (`.chips` with checkboxes), preview (`.load-table.confirm-table`: `tr.group-total` = loading day, `tr.sub` = order,
+  `tr.sub.glass-row` = line; excluded orders with reasons; `.stats.stats-money` totals; `FxInfo` + manual-rate form),
+  and the batch list (`.acc-table`, status badge, retry / void for failed batches).
+- Cam Tahsilat lists a customer proforma once: order links + `.cell-note` with the loading days. An order covered by a
+  customer proforma shows an `.alert-info` note in Finans / FGO instead of document buttons.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

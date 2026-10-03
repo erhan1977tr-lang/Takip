@@ -8,6 +8,7 @@
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { DOC_EMAIL } from '../glass/billing.js';
 import { FX_SNAPSHOT_CLEAR } from '../fx/resolve.js';
+import { voidBatchRows } from '../glass/batch.js';
 import { fgoActor, runProfileAction } from '../profile/transitions.js';
 
 /**
@@ -15,6 +16,7 @@ import { fgoActor, runProfileAction } from '../profile/transitions.js';
  * @param {string} [reason]  FGO'nun yanıtı
  */
 export async function removeDeletedDocument(db, row, reason = '') {
+  if (row.batchId) return removeDeletedBatchDocument(db, row, reason);
   const order = await db.order.findUnique({ where: { id: row.orderId }, select: { id: true, status: true, orderTypeCode: true } });
   const details = { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) };
   const skipEmails = (tx) => tx.notificationOutbox.updateMany({
@@ -35,5 +37,30 @@ export async function removeDeletedDocument(db, row, reason = '') {
     }
     if (order) await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_DELETED', from: order.status, to: order.status, actorId: null, note: `${row.series}${row.number}` });
     await writeAudit(tx, { action: 'FGO_DOC_REMOVED', entityType: 'Order', entityId: row.orderId, userId: null, details }, { role: 'SYSTEM' });
+  });
+}
+
+/**
+ * Müşteri partisinin belgesi (müşteri proforması) FGO'da silinmiş: yalnızca belge kaydı kaldırılır ve parti geçersiz
+ * olur; siparişler, teklifler, yükleme planı ve yükleme onayları değişmez. Partinin siparişleri yeni bir proforma için
+ * yeniden uygun olur (parti kaydı denetim için durur).
+ */
+async function removeDeletedBatchDocument(db, row, reason) {
+  const details = { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) };
+  await db.$transaction(async (tx) => {
+    const batch = await tx.billingBatch.findUnique({ where: { id: row.batchId }, include: { orders: { select: { orderId: true, orderNo: true } } } });
+    await tx.fgoDocument.delete({ where: { id: row.id } });
+    await tx.notificationOutbox.updateMany({
+      where: { type: DOC_EMAIL, status: 'PENDING', payload: { path: ['docId'], equals: row.id } },
+      data: { status: 'SKIPPED', lastError: "belge FGO'da silindi" },
+    });
+    if (batch) {
+      await voidBatchRows(tx, batch.id, 'FGO_DELETED');
+      const statuses = new Map((await tx.order.findMany({ where: { id: { in: batch.orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
+      for (const o of batch.orders) {
+        await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_DELETED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: null, note: `${row.series}${row.number}` });
+      }
+    }
+    await writeAudit(tx, { action: 'FGO_DOC_REMOVED', entityType: 'BillingBatch', entityId: row.batchId, userId: null, details: { ...details, orders: batch?.orders.map((o) => o.orderNo) ?? [] } }, { role: 'SYSTEM' });
   });
 }

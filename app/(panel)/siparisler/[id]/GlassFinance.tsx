@@ -26,17 +26,21 @@ export async function GlassFinance({ order, t, sp }: {
   order: { id: string; status: string; actualShipDate: Date | null; estimatedShipDate: Date | null; offers: { status: string }[] };
   t: T; sp: Record<string, string | undefined>;
 }) {
-  const [docs, billing, jobs] = await Promise.all([
+  const [docs, billing, jobs, batchOrder] = await Promise.all([
     db.fgoDocument.findMany({ where: { orderId: order.id }, orderBy: { issuedAt: 'asc' } }) as Promise<Doc[]>,
     db.glassBilling.findUnique({ where: { orderId: order.id } }),
     db.notificationOutbox.findMany({ where: { orderId: order.id, type: { in: [GLASS_FGO, DOC_EMAIL] } }, orderBy: { createdAt: 'desc' }, take: 10 }) as Promise<Job[]>,
+    // Sipariş etkin bir müşteri partisinde mi (müşteri proforması, karar 100): sipariş başına belge istenemez
+    db.billingBatchOrder.findFirst({ where: { orderId: order.id, activeKey: { not: null } }, select: { batch: { select: { status: true, customerId: true, document: { select: { series: true, number: true, link: true } } } } } }),
   ]);
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const pending = jobs.filter((j) => j.type === GLASS_FGO && j.status === 'PENDING');
   const st = billingState({
     status: order.status, loaded: isLoaded(order, today), docs, billing,
     pending: pending.map((j) => (j.payload as { kind?: string } | null)?.kind ?? ''), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
+    inBatch: !!batchOrder,
   });
+  const batchDoc = batchOrder?.batch.document ?? null;
   // Kur henüz belirlenmediyse (proforma ya da doğrudan fatura bu belgeyle belirleyecek) ve teklif EUR ise:
   // müşterinin kur politikasıyla bugünün kuru gösterilir, yönetici isterse elle kur girer (karar 95–96).
   const setsRate = billing?.fxRate == null && (st.actions.includes('proforma') || st.actions.includes('invoice'));
@@ -119,7 +123,13 @@ export async function GlassFinance({ order, t, sp }: {
       {/* Ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası engellenir, nedeni belirgin gösterilir (karar 94) */}
       {st.wait === 'paid_no_advance'
         ? <div className="alert alert-warn" id="fatura-engeli">{t('glassBilling.wait.paid_no_advance')}</div>
-        : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
+        : st.wait === 'batch' && batchOrder ? (
+          <div className="alert alert-info" id="musteri-proformasi">
+            {t('glassBilling.wait.batch', { ref: batchDoc ? `${batchDoc.series}${batchDoc.number}` : t(`accounting.batch.status.${batchOrder.batch.status}` as MsgKey) })}{' '}
+            {batchDoc?.link && <a href={batchDoc.link} target="_blank" rel="noopener noreferrer">{batchDoc.series}{batchDoc.number}</a>}{' '}
+            <a href={`/admin/muhasebe/cam/proforma?musteri=${batchOrder.batch.customerId}#partiler`}>{t('accounting.batch.open')}</a>
+          </div>
+        ) : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
       {lastJob?.status === 'FAILED' && <div className="alert alert-error">{t('glassBilling.failed', { error: lastJob.lastError ?? '—' })}</div>}
       {lastJob?.status === 'PENDING' && lastJob.lastError && <div className="alert alert-warn">{t('glassBilling.retry', { error: lastJob.lastError })}</div>}
       {lastMail && (

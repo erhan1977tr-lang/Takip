@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.37.0 — 03.10.2026
+
+- **Müşteri proforması (yükleme öncesi)**: Muhasebe → Cam Tahsilat → "Müşteri proforması". Yönetici bir müşteriyi ve
+  gelecekteki bir ya da birkaç yükleme gününü seçer; o günlere planlı, teklifi müşteriye gönderilmiş cam siparişleri
+  **tek FGO proformasında** toplanır (sipariş ya da gün başına ayrı proforma değil). Seçilmeyen günlerin ve başka
+  müşterilerin siparişleri girmez.
+- **Önizleme**: gün → sipariş → satır, tutarlar, toplam ve uygulanacak kur proforma kesilmeden önce görülür; kesilen
+  belge önizlemeyle aynıdır. Proformaya giremeyen siparişler nedeniyle listelenir (iptal, beklemede, teklif
+  gönderilmemiş, fiyat eksik, başka bir belgede, yüklemesi onaylanmış).
+- **Sipariş numaraları belgede**: her satırın açıklaması kaynak sipariş numarasıyla başlar ("Comanda ABC001 — …");
+  belgenin açıklamasında siparişler ve seçilen yükleme günleri yazar.
+- **Kur**: müşterinin kur politikasından; yönetici kuru elle de girebilir. Kur ve içerik proforma oluşturulurken
+  kaydedilir; sonradan yükleme günü, teklif ya da kur değişse de belge değişmez.
+- **Çift faturalama engeli**: müşteri proformasındaki sipariş için sipariş başına ayrı belge kesilemez; kendi belgesi
+  olan sipariş müşteri proformasına giremez. Çift tıklama ya da yeniden deneme ikinci bir proforma üretmez.
+- **Cam Tahsilat**: müşteri proforması bir kez görünür (müşteri, kaynak siparişler, yükleme günleri, tutar, ödenen,
+  kalan); ödeme durumu mevcut FGO eşitlemesiyle yenilenir. Belge FGO'da silinirse yalnızca belge kaydı kalkar,
+  siparişler yeni bir proforma için yeniden uygun olur.
+- Farklı para birimli siparişler tek proformada birleştirilmez. Kesilemeyen proforma yeniden denenebilir ya da
+  vazgeçilebilir. Yalnızca yönetici.
+- Yapılmadı (Aşama 7D-3): yükleme sonrası müşteri faturası. Müşteri proformasındaki siparişlerin yükleme sonrası
+  faturası o aşamada müşteri düzeyinde kesilecek.
+
 ## 3.36.1 — 03.10.2026
 
 - **Tekliflerdeki kur notu müşterinin kur politikasına göre**: "Banca Transilvania satış kuru" sabit metni kaldırıldı.

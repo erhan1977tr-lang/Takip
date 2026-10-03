@@ -13,6 +13,7 @@ import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antiv
 import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
 import { dispatchFgoJobs } from '../server/profile/fgo-jobs.js';
 import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
+import { dispatchBatchJobs } from '../server/glass/batch.js';
 import { syncFgoDocuments } from '../server/accounting/receivables.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
@@ -57,6 +58,8 @@ async function profileTick() {
   if (f.done || f.failed) log('FGO:', JSON.stringify(f));
   const g = await dispatchGlassJobs(db, { now, log });
   if (g.done || g.failed) log('FGO cam:', JSON.stringify(g));
+  const b = await dispatchBatchJobs(db, { now, log });
+  if (b.done || b.failed) log('FGO müşteri proforması:', JSON.stringify(b));
   if (!mail) return;
   const e = await dispatchDocEmails(db, { ...mail, now, log });
   if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));

@@ -36,15 +36,18 @@ export function remaining(total, paid) {
  *     proformadan yalnızca avans faturasının (ya da FGO'nun proformada gösterdiği tahsilatın — hangisi büyükse)
  *     karşılamadığı kısım sayılır; avans faturasının kendi kalanı ayrıca sayılır.
  * Tutarı FGO'dan henüz okunmamış belge (total yok) toplamlara girmez. Para birimleri birbirine eklenmez.
- * @param {{ id: string, orderId: string, kind: string, currency: string, total: unknown, paid: unknown }[]} docs
+ * @param {{ id: string, orderId: string | null, batchId?: string | null, kind: string, currency: string, total: unknown, paid: unknown }[]} docs
  * @returns {{ shares: Map<string, { debt: number | null, rest: number | null, replaced: boolean }>,
  *   sums: Record<string, { total: number, paid: number, rest: number }> }}
  */
 export function receivables(docs) {
+  // Borcun birimi: sipariş ya da müşteri partisi (müşteri proforması — birden çok sipariş, tek belge; karar 100).
+  // Partideki siparişlerin sipariş başına belgesi olamaz (çift faturalama engeli), bu yüzden aynı borç iki birimde yer almaz.
   const byOrder = new Map();
   for (const d of docs) {
-    if (!byOrder.has(d.orderId)) byOrder.set(d.orderId, []);
-    byOrder.get(d.orderId).push(d);
+    const unit = d.orderId ?? `batch:${d.batchId}`;
+    if (!byOrder.has(unit)) byOrder.set(unit, []);
+    byOrder.get(unit).push(d);
   }
   const shares = new Map();
   const own = (d) => ({ debt: numOrNull(d.total), rest: remaining(d.total, d.paid), replaced: false });
@@ -107,15 +110,24 @@ export async function backfillDocuments(db) {
   return added;
 }
 
+/** Sipariş tipinin belgeleri: sipariş belgeleri + (cam) müşteri partisi belgeleri */
+const docsOfType = (orderType) => (orderType === 'GLASS_ORDER'
+  ? { OR: [{ order: { orderTypeCode: orderType } }, { batchId: { not: null } }] }
+  : { order: { orderTypeCode: orderType } });
+
 /**
- * Belgeler (sipariş tipine göre), en yeniler önce.
+ * Belgeler (sipariş tipine göre), en yeniler önce. Müşteri proforması (parti belgesi) Cam Tahsilat'ta bir kez görünür:
+ * müşterisi, kaynak siparişleri ve seçilen yükleme günleriyle.
  * @param {'PROFILE_ORDER' | 'GLASS_ORDER'} orderType
  */
 export function listDocuments(db, orderType) {
   return db.fgoDocument.findMany({
-    where: { order: { orderTypeCode: orderType } },
+    where: docsOfType(orderType),
     orderBy: [{ issuedAt: 'desc' }],
-    include: { order: { select: { id: true, orderNo: true, status: true, customer: { select: { name: true } } } } },
+    include: {
+      order: { select: { id: true, orderNo: true, status: true, customer: { select: { name: true } } } },
+      batch: { select: { id: true, loadingDays: true, customer: { select: { name: true } }, orders: { select: { orderId: true, orderNo: true }, orderBy: { orderNo: 'asc' } } } },
+    },
     take: 500,
   });
 }
@@ -184,7 +196,7 @@ export async function refreshDocuments(db, {
   let checked = 0, failed = 0;
   try {
     const all = await db.fgoDocument.findMany({
-      where: orderType ? { order: { orderTypeCode: orderType } } : {},
+      where: orderType ? docsOfType(orderType) : {},
       orderBy: [{ checkedAt: { sort: 'asc', nulls: 'first' } }],
     });
     const { shares } = receivables(all);

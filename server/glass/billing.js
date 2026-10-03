@@ -123,6 +123,7 @@ export function invoiceLines(offer, rate, vatRate) {
  * Proforma satırları — ayrıntılı (ürün sahibinin kuralı): her cam satırı ayrı (yalnızca Romence niteliği, ölçü/adet
  * yazılmaz; miktar m²), CNC ve delik ayrı satırlar ("Prelucrare CNC", "Gaură"; adetle), m² dışındaki diğer kalemler adetle.
  * Bedelsiz ve fiyatsız satırlar yazılmaz.
+ * Müşteri proforması (server/glass/batch.js) da aynı satırları kullanır.
  * @returns {{ code: string, name: string, unit: string, qty: number, eur: number }[]}
  */
 export function proformaLines(offer) {
@@ -147,16 +148,19 @@ export const paidWithoutAdvance = (proforma, advance, paidAmount) => !!proforma 
 
 /**
  * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; billing: GlassBilling; pending: kuyruktaki belge türleri.
- * @param {{ status: string, loaded: boolean, docs: { kind: string, paid?: unknown }[], billing: { paidAmount?: unknown } | null, pending?: string[], hasOffer: boolean }} p
+ * inBatch: sipariş etkin bir müşteri partisinde (müşteri proforması, karar 100) — aynı ticari tutar iki belgeyle
+ * faturalanmasın diye sipariş başına hiçbir belge istenemez; yükleme sonrası fatura müşteri düzeyinde kesilecek (7D-3).
+ * @param {{ status: string, loaded: boolean, docs: { kind: string, paid?: unknown }[], billing: { paidAmount?: unknown } | null, pending?: string[], hasOffer: boolean, inBatch?: boolean }} p
  * @returns {{ actions: ('proforma' | 'mark_paid' | 'advance' | 'invoice')[], paidAmount: number | null, wait: string | null }}
  */
-export function billingState({ status, loaded, docs, billing, pending = [], hasOffer }) {
+export function billingState({ status, loaded, docs, billing, pending = [], hasOffer, inBatch = false }) {
   const by = Object.fromEntries(docs.map((d) => [d.kind, d]));
   const proforma = by.PROFORMA;
   const docPaid = proforma?.paid != null && Number(proforma.paid) > 0 ? Number(proforma.paid) : null;
   const paidAmount = billing?.paidAmount != null ? Number(billing.paidAmount) : docPaid;
   const res = (actions, wait = null) => ({ actions, paidAmount, wait });
   if (status === 'IPTAL') return res([], 'cancelled');
+  if (inBatch) return res([], 'batch');
   if (by.INVOICE) return res([], 'done');
   if (pending.length) return res([], 'pending');
   if (!hasOffer) return res([], 'no_offer');
@@ -188,13 +192,17 @@ export async function requestGlassDocument(db, { orderId, kind, actor, now = new
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${orderId}`}, 0))`;
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      include: { offers: { orderBy: { createdAt: 'desc' }, select: { id: true, status: true } }, fgoDocuments: true, glassBilling: true },
+      include: {
+        offers: { orderBy: { createdAt: 'desc' }, select: { id: true, status: true } }, fgoDocuments: true, glassBilling: true,
+        billingBatchOrders: { where: { activeKey: { not: null } }, select: { id: true } },
+      },
     });
     if (!order || order.orderTypeCode !== 'GLASS_ORDER') return { ok: false, code: 'NOT_FOUND' };
     const pending = await tx.notificationOutbox.findMany({ where: { orderId, type: GLASS_FGO, status: 'PENDING' } });
     const st = billingState({
       status: order.status, loaded: isLoaded(order, localDay(now, tz)), docs: order.fgoDocuments, billing: order.glassBilling,
       pending: pending.map((p) => p.payload?.kind), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
+      inBatch: order.billingBatchOrders.length > 0,
     });
     const action = { PROFORMA: 'proforma', ADVANCE: 'advance', INVOICE: 'invoice' }[kind];
     if (!st.actions.includes(action)) return { ok: false, code: 'NOT_ALLOWED' };
@@ -262,6 +270,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         include: { customer: true, price: true, glassBilling: true, fgoDocuments: true, offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } },
       });
       if (!order || order.status === 'IPTAL') throw new Permanent('sipariş yok ya da iptal');
+      // İş kuyruktayken sipariş bir müşteri partisine girmiş olamaz (parti bekleyen isteği dışlar); yine de kesimden önce bakılır
+      if (await db.billingBatchOrder.count({ where: { orderId: order.id, activeKey: { not: null } } })) throw new Permanent('Sipariş bir müşteri proformasında; sipariş başına belge kesilmez');
       if (order.fgoDocuments.some((d) => d.kind === kind)) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'belge zaten var' } });
         continue;
@@ -382,14 +392,16 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
 // ---------- müşteriye e-posta ----------
 const KIND_RO = { PROFORMA: 'Factură proformă', ADVANCE: 'Factură de avans', INVOICE: 'Factură' };
 
-/** Romence e-posta: belge no, tutar ve FGO PDF bağlantısı */
+/** Romence e-posta: belge no, tutar ve FGO PDF bağlantısı. orderNo: tek sipariş ya da (müşteri proforması) virgüllü liste */
 export function renderDocEmail({ kind, series, number, orderNo, total, link, firmName }) {
+  const many = String(orderNo).includes(',');
+  const forOrder = many ? `comenzile ${orderNo}` : `comanda ${orderNo}`;
   const title = `${KIND_RO[kind] ?? 'Document'} ${series}${number}`;
   const amount = total != null ? `${Number(total).toFixed(2).replace('.', ',')} RON (cu TVA)` : '—';
   const text = [
     `Stimate client ${firmName},`,
     '',
-    `Vă transmitem documentul ${title} pentru comanda ${orderNo}.`,
+    `Vă transmitem documentul ${title} pentru ${forOrder}.`,
     `Număr document: ${series}${number}`,
     `Valoare: ${amount}`,
     link ? `Document (PDF): ${link}` : '',
@@ -398,10 +410,10 @@ export function renderDocEmail({ kind, series, number, orderNo, total, link, fir
     'GKH',
   ].filter((x) => x !== '').join('\n');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const html = `<p>Stimate client ${esc(firmName)},</p><p>Vă transmitem documentul <b>${esc(title)}</b> pentru comanda <b>${esc(orderNo)}</b>.</p>`
+  const html = `<p>Stimate client ${esc(firmName)},</p><p>Vă transmitem documentul <b>${esc(title)}</b> pentru ${many ? 'comenzile' : 'comanda'} <b>${esc(orderNo)}</b>.</p>`
     + `<p>Număr document: <b>${esc(`${series}${number}`)}</b><br>Valoare: <b>${esc(amount)}</b></p>`
     + (link ? `<p><a href="${esc(link)}">Deschide documentul (PDF)</a></p>` : '') + '<p>Cu stimă,<br>GKH</p>';
-  return { subject: `${title} — comanda ${orderNo}`, text, html };
+  return { subject: `${title} — ${forOrder}`, text, html };
 }
 
 /** Kuyruktaki belge e-postalarını gönderir (alıcı: firmanın Müşteriler kartındaki e-postası). */
@@ -414,15 +426,22 @@ export async function dispatchDocEmails(db, { transport, from, now = new Date(),
     if (claimed.count === 0) continue;
     const attempt = row.attempts + 1;
     try {
-      const doc = await db.fgoDocument.findUnique({ where: { id: String(row.payload?.docId ?? '') }, include: { order: { include: { customer: true } } } });
+      const doc = await db.fgoDocument.findUnique({
+        where: { id: String(row.payload?.docId ?? '') },
+        include: { order: { include: { customer: true } }, batch: { include: { customer: true, orders: { select: { orderId: true, orderNo: true }, orderBy: { orderNo: 'asc' } } } } },
+      });
       if (!doc) throw new Permanent('belge yok');
-      const to = doc.order.customer.email;
+      // Sipariş belgesi ya da müşteri partisi belgesi (birden çok sipariş)
+      const customer = doc.order?.customer ?? doc.batch?.customer;
+      const orders = doc.order ? [{ orderId: doc.order.id, orderNo: doc.order.orderNo }] : doc.batch?.orders ?? [];
+      if (!customer) throw new Permanent('belgenin müşterisi yok');
+      const to = customer.email;
       if (!to) throw new Permanent('Firmanın e-postası yok (Yönetim → Müşteriler)');
-      const mail = renderDocEmail({ kind: doc.kind, series: doc.series, number: doc.number, orderNo: doc.order.orderNo, total: doc.total, link: doc.link, firmName: doc.order.customer.name });
+      const mail = renderDocEmail({ kind: doc.kind, series: doc.series, number: doc.number, orderNo: orders.map((o) => o.orderNo).join(', '), total: doc.total, link: doc.link, firmName: customer.name });
       await transport.sendMail({ from, to, subject: mail.subject, text: mail.text, html: mail.html });
       await db.$transaction(async (tx) => {
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
-        await writeHistory(tx, { orderId: doc.orderId, event: 'FGO_DOC_EMAILED', actorId: null, note: `${doc.series}${doc.number} → ${to}` });
+        for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_EMAILED', actorId: null, note: `${doc.series}${doc.number} → ${to}` });
       });
       sent++;
     } catch (e) {
