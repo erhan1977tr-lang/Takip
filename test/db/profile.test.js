@@ -128,7 +128,9 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   // Teslim bilgileri: hafta sonu ve erken gün reddedilir
   const sat = (() => { const d = today(); while (d.getUTCDay() !== 6) d.setUTCDate(d.getUTCDate() + 1); return d; })();
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: sat, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'PICKUP_WEEKEND');
-  assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: today(), phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'PICKUP_TOO_EARLY');
+  // "Erken gün": bugün ya da (test hafta sonu çalışıyorsa) bugünden önceki son iş günü — hafta sonu ayrı hata verir
+  const early = (() => { const d = today(); while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() - 1); return d; })();
+  assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: early, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'PICKUP_TOO_EARLY');
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: earliestPickup({ today: today() }), phone: 'x', plate: 'B 1 ABC' })), 'BAD_PHONE');
   await run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: earliestPickup({ today: today() }), phone: '+40 723 000 000', plate: 'b 1 abc' });
   o = await load(id);

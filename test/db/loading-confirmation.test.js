@@ -264,3 +264,26 @@ dbTest('model kısmi yüklemeyi taşır: aynı satır için yüklenen ve yüklen
   const s = c.summarize((await c.loadConfirmation(db, D7)).orders);
   assert.deepEqual([s.totals.adet, s.totals.m2], [8, 5.12]);
 });
+
+dbTest('onaylı yükleme veritabanında da değişmez: UPDATE, DELETE ve TRUNCATE reddedilir; yeni kayıt eklenebilir', async () => {
+  const appendOnly = /append-only/;
+  const conf = await db.loadingConfirmation.findFirstOrThrow({ where: { shipDay: new Date(`${D1}T00:00:00Z`) }, include: { items: true } });
+  const item = conf.items[0];
+  await assert.rejects(db.loadingConfirmation.update({ where: { id: conf.id }, data: { note: 'değişti' } }), appendOnly);
+  await assert.rejects(db.loadingConfirmation.update({ where: { id: conf.id }, data: { shipDay: new Date(`${dayOf(-40)}T00:00:00Z`) } }), appendOnly);
+  await assert.rejects(db.loadingConfirmationItem.update({ where: { id: item.id }, data: { costAmount: '1', saleAmount: '1', quantity: 1 } }), appendOnly);
+  await assert.rejects(db.loadingConfirmationItem.updateMany({ where: { confirmationId: conf.id }, data: { status: 'NOT_LOADED' } }), appendOnly);
+  await assert.rejects(db.$executeRawUnsafe(`UPDATE "LoadingConfirmationItem" SET "unitCost" = 0`), appendOnly);
+  await assert.rejects(db.loadingConfirmationItem.delete({ where: { id: item.id } }), appendOnly);
+  await assert.rejects(db.loadingConfirmationItem.deleteMany({ where: { confirmationId: conf.id } }), appendOnly);
+  await assert.rejects(db.loadingConfirmation.delete({ where: { id: conf.id } }));
+  await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmationItem"`), appendOnly);
+  await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmation" CASCADE`), appendOnly);
+  const again = await db.loadingConfirmation.findFirstOrThrow({ where: { id: conf.id }, include: { items: true } });
+  assert.equal(again.note, conf.note);
+  assert.equal(again.items.length, conf.items.length);
+  const same = again.items.find((i) => i.id === item.id);
+  assert.deepEqual([same.quantity, same.costAmount.toString(), same.saleAmount.toString(), same.status], [item.quantity, item.costAmount.toString(), item.saleAmount.toString(), item.status]);
+  // Onaylı yüklemesi olan sipariş ve müşteri silinemez (kayıt yetim kalmaz)
+  await assert.rejects(db.order.delete({ where: { id: item.orderId } }));
+});

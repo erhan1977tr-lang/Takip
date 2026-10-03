@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.34.1 — 03.10.2026
+
+- Onaylı yükleme kayıtları veritabanında da korunur: değiştirme ve silme veritabanı düzeyinde reddedilir (yalnızca yeni
+  kayıt eklenebilir).
+
 ## 3.34.0 — 03.10.2026
 
 - **Yükleme onayı ("Eksiksiz Yüklendi")**: planlanan yükleme günü artık camın yüklendiği anlamına gelmez. Yüklemeler →
