@@ -6,8 +6,11 @@
 
 import { dec, fmt } from './decimal.js';
 
-/** Resmî adresler (sırayla denenir); yalnızca bnr.ro alan adı kabul edilir. */
-export const BNR_URLS = ['https://curs.bnr.ro/nbrfxrates.xml', 'https://www.bnr.ro/nbrfxrates.xml'];
+/**
+ * Resmî adres (yalnızca bnr.ro alan adı kabul edilir). Eski adres www.bnr.ro/nbrfxrates.xml artık BNR ana sayfasına
+ * yönleniyor (HTML); kur dosyası curs.bnr.ro'da.
+ */
+export const BNR_URLS = ['https://curs.bnr.ro/nbrfxrates.xml'];
 export const BNR_TTL_MS = 30 * 60_000;
 /** Kaynak günü belge gününden en çok bu kadar eski olabilir (uzun tatiller); daha eskisi "kur yok" sayılır */
 export const BNR_MAX_AGE_DAYS = 10;
@@ -22,7 +25,7 @@ const isBnrHost = (url) => {
 };
 
 /**
- * BNR XML'i: <DataSet xmlns="http://www.bnr.ro/xsd"><Header><Publisher>National Bank of Romania</Publisher>…
+ * BNR XML'i: <DataSet xmlns="https://www.bnr.ro/xsd"><Header><Publisher>National Bank of Romania</Publisher>…
  * <Body><OrigCurrency>RON</OrigCurrency><Cube date="2026-10-02"><Rate currency="EUR">5.0934</Rate>
  * <Rate currency="HUF" multiplier="100">1.3204</Rate>…
  * Yapı beklenen gibi değilse kur okunmaz (yanlış alanı okumaktansa "kur yok").
@@ -31,7 +34,8 @@ const isBnrHost = (url) => {
  */
 export function parseBnr(xml) {
   const s = String(xml ?? '');
-  if (!/<DataSet\b[^>]*xmlns="http:\/\/www\.bnr\.ro\/xsd"/.test(s)) return { ok: false, error: 'BNR yapısı beklenen gibi değil (DataSet)' };
+  // Ad alanı bugün https://www.bnr.ro/xsd; eski dosyalarda http://…
+  if (!/<DataSet\b[^>]*xmlns="https?:\/\/www\.bnr\.ro\/xsd"/.test(s)) return { ok: false, error: 'BNR yapısı beklenen gibi değil (DataSet)' };
   if (!/<Publisher>\s*National Bank of Romania\s*<\/Publisher>/.test(s)) return { ok: false, error: 'BNR yapısı beklenen gibi değil (Publisher)' };
   if (!/<OrigCurrency>\s*RON\s*<\/OrigCurrency>/.test(s)) return { ok: false, error: 'BNR yapısı beklenen gibi değil (OrigCurrency)' };
   // Birden çok gün varsa (10 günlük dosya) en yenisi

@@ -6,7 +6,7 @@ import { bnrRate, fetchBnr, parseBnr } from '../server/fx/bnr.js';
 import { FX_SNAPSHOT_CLEAR, FxUnavailable, fxSnapshot, parseFxPolicy, parseMarkupPercent, previewExchangeRate, resolveExchangeRate, trimPercent } from '../server/fx/resolve.js';
 
 const BNR_XML = (date = '2026-10-02', eur = '5.1000') => `<?xml version="1.0" encoding="utf-8"?>
-<DataSet xmlns="http://www.bnr.ro/xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.bnr.ro/xsd nbrfxrates.xsd">
+<DataSet xmlns="https://www.bnr.ro/xsd" xmlns:xsi="https://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://curs.bnr.ro/xsd/nbrfxrates.xsd">
   <Header><Publisher>National Bank of Romania</Publisher><PublishingDate>${date}</PublishingDate><MessageType>DR</MessageType></Header>
   <Body><Subject>Reference rates</Subject><OrigCurrency>RON</OrigCurrency>
     <Cube date="${date}">
@@ -66,7 +66,9 @@ test('BNR XML: yapı doğrulanır, para birimi / pozitif sayı / gün okunur, ç
   assert.equal(r.rates.XXX, undefined, 'sıfır kur okunmaz');
   assert.equal(r.rates.YYY, undefined, 'beklenmeyen çarpan okunmaz');
   assert.equal(parseBnr(BNR_XML().replace('National Bank of Romania', 'Someone Else')).ok, false, 'yayımcı BNR değil');
-  assert.equal(parseBnr(BNR_XML().replace('http://www.bnr.ro/xsd"', 'http://example.com/xsd"')).ok, false, 'ad alanı BNR değil');
+  assert.equal(parseBnr(BNR_XML().replace('https://www.bnr.ro/xsd"', 'https://example.com/xsd"')).ok, false, 'ad alanı BNR değil');
+  assert.equal(parseBnr(BNR_XML().replace('https://www.bnr.ro/xsd"', 'http://www.bnr.ro/xsd"')).ok, true, 'eski (http) ad alanı da BNR');
+  assert.equal(parseBnr('<!doctype html><html lang="ro"><head><title>BNR</title></head><body><p>EUR</p></body></html>').ok, false, 'BNR ana sayfası (eski adresin yönlendiği HTML) kur sayılmaz');
   assert.equal(parseBnr(BNR_XML().replace('<OrigCurrency>RON', '<OrigCurrency>EUR')).ok, false);
   assert.equal(parseBnr('<html>403</html>').ok, false);
   assert.equal(parseBnr(BNR_XML().replace(/<Rate[\s\S]*?<\/Cube>/, '</Cube>')).ok, false, 'kur yok');
@@ -92,7 +94,7 @@ test('BNR alma: yalnızca bnr.ro, saklanır (ikinci istek ağa çıkmaz), kaynak
   // BNR dışı adres hiç istenmez; hata saklanır ve hemen yeniden denenmez
   let foreign = 0;
   const c2 = { at: 0, data: null };
-  const bad = await fetchBnr({ urls: ['https://example.com/nbrfxrates.xml', 'http://www.bnr.ro/nbrfxrates.xml'], fetchImpl: async () => { foreign += 1; return new Response(BNR_XML()); }, cache: c2, now });
+  const bad = await fetchBnr({ urls: ['https://example.com/nbrfxrates.xml', 'http://curs.bnr.ro/nbrfxrates.xml'], fetchImpl: async () => { foreign += 1; return new Response(BNR_XML()); }, cache: c2, now });
   assert.equal(bad.ok, false);
   assert.equal(foreign, 0);
   let fails = 0;

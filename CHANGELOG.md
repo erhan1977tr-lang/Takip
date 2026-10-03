@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.35.1 — 03.10.2026
+
+- BNR kuru: BNR'nin güncel dosya biçimi tanınıyor (dosya okunuyor ama "alınamadı" deniyordu). Kur yalnızca
+  `curs.bnr.ro` adresinden alınır; BNR'nin ana sayfaya yönlenen eski adresi kullanılmaz.
+
 ## 3.35.0 — 03.10.2026
 
 - **Müşteri kur politikası**: Yönetici → Müşteriler → müşteri sayfasında "Kur politikası" seçilir: *BT satış kuru – în

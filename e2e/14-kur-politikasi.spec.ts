@@ -170,7 +170,7 @@ test('tanı: BNR resmî kur dosyasına erişim', async () => {
   const dir = process.env.SCREENSHOT_DIR;
   test.skip(!dir, 'SCREENSHOT_DIR yok');
   const out: string[] = [];
-  for (const url of ['https://curs.bnr.ro/nbrfxrates.xml', 'https://www.bnr.ro/nbrfxrates.xml']) {
+  for (const url of ['https://curs.bnr.ro/nbrfxrates.xml']) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { accept: 'application/xml,text/xml;q=0.9,*/*;q=0.5' } });
       const body = await res.text();
