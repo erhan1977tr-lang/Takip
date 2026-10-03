@@ -101,7 +101,8 @@ after(closeDb);
 dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları atanmış çizimci + ilgili satışçıya; işlemi yapana bildirilmez; işçi yeniden denese de tek kayıt', async () => {
   // Bu sürümden önceki (zaten dağıtılmış sayılan) olay hiçbir zaman bildirime dönüşmez
   const o = await glassOrder(A, dayOf(20), { drawer: U.drawer });
-  await db.notificationOutbox.create({ data: { type: 'ORDER_OFFER_SENT', orderId: o.id, payload: {}, inAppAt: new Date() } });
+  const legacy = await db.notificationOutbox.create({ data: { type: 'ORDER_OFFER_SENT', orderId: o.id, payload: {}, inAppAt: new Date() } });
+  const pending = { orderId: o.id, id: { not: legacy.id } };
   assert.deepEqual(await n.dispatchInApp(db), { events: 0, created: 0 });
   // Siparişle ilgilenen satışçı: çizime gönderen satış kullanıcısı (mevcut kayıttan)
   await db.$transaction((tx) => writeHistory(tx, { orderId: o.id, event: 'SENT_TO_DRAWING', actorId: U.sales1.id }));
@@ -151,11 +152,11 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
 
   // --- Tekrar engeli: işçi olayı işaretleyemeden yarıda kalmış gibi → yeniden dağıtım hiçbir kayıt eklemez
   const total = await db.notification.count();
-  await db.notificationOutbox.updateMany({ where: { orderId: o.id }, data: { inAppAt: null } });
+  await db.notificationOutbox.updateMany({ where: pending, data: { inAppAt: null } });
   const again = await n.dispatchInApp(db);
-  assert.deepEqual([again.events, again.created, await db.notification.count()], [9, 0, total]);
+  assert.deepEqual([again.events, again.created, await db.notification.count()], [8, 0, total]);
   // İki işçi aynı anda
-  await db.notificationOutbox.updateMany({ where: { orderId: o.id }, data: { inAppAt: null } });
+  await db.notificationOutbox.updateMany({ where: pending, data: { inAppAt: null } });
   await Promise.all([n.dispatchInApp(db), n.dispatchInApp(db)]);
   assert.equal(await db.notification.count(), total);
   // Veritabanı: aynı olay aynı kullanıcıya ikinci kez yazılamaz
@@ -163,7 +164,7 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   await assert.rejects(db.notification.create({ data: copy }), /Unique constraint/);
   // Okundu işaretlenmiş bildirim yeniden dağıtımda geri gelmez / okunmamışa dönmez
   await db.notification.update({ where: { id: forSales.id }, data: { isRead: true, readAt: new Date() } });
-  await db.notificationOutbox.updateMany({ where: { orderId: o.id }, data: { inAppAt: null } });
+  await db.notificationOutbox.updateMany({ where: pending, data: { inAppAt: null } });
   await n.dispatchInApp(db);
   assert.equal((await db.notification.findUniqueOrThrow({ where: { id: forSales.id } })).isRead, true);
 
@@ -225,7 +226,7 @@ dbTest('yükleme: yüklenmeyen cam ve aktarım bildirimi; düzeltme "muhasebe i�
   const acc = (await notes({ type: 'ACCOUNTING_ACTION', userId: U.admin2.id }))[0];
   assert.deepEqual([acc.params.day, acc.params.ref, acc.link], [D, 'GKH601', `/yuklemeler?gun=${D}#faturalama`]);
   assert.equal(fgo.calls.length, 1, 'bildirim belge kesmez');
-  // Finansal fark doğurmayan düzeltme (yalnızca neden): yeni muhasebe bildirimi yok
+  // İkinci düzeltme (yalnızca neden değişir): ayrı bir düzeltme olayıdır
   const input2 = [{ key: lineKey(o), quantity: 3, reason: 'MISSING' }];
   const plan2 = await co.planCorrection(db, { day: D, input: input2 });
   // (fatura zaten uyuşmuyor: durum sürüyor → bu düzeltme de muhasebe işlemi gerektirir ve kendi olayını üretir)
