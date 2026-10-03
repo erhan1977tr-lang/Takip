@@ -14,7 +14,7 @@ test.describe.configure({ mode: 'serial' });
 const SALES2 = 'fiyat-satis@e2e.test';
 const INSPECTOR = 'denetim@e2e.test';
 const DAY = '2026-02-10'; // geçmiş bir yükleme günü (bu testin onay kaydı)
-const URL = `/yuklemeler?gun=${DAY}`;
+const DAY_URL = `/yuklemeler?gun=${DAY}`;
 let firmId = '';
 let otherId = '';
 
@@ -104,7 +104,7 @@ test('veri: iki müşteri, onaylı yükleme (biri kısmi), bir müşteri proform
 
 test('yönetici: onaylı günün Faturalama bölümü — müşteri başına önizleme, yalnızca yüklenen adetler, zincir ve avans; FGO kapalıyken belge oluşmaz', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
-  await page.goto(URL);
+  await page.goto(DAY_URL);
   const box = page.locator('#faturalama');
   await expect(box).toBeVisible();
   await expect(box.locator('section.bill-customer')).toHaveCount(2);
@@ -165,9 +165,9 @@ test('yönetici: onaylı günün Faturalama bölümü — müşteri başına ön
 
 test('yetkisiz roller: Faturalama bölümü görünmez; taklit form gönderimiyle fatura / avans oluşturulamaz', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
-  const html = await (await admin.request.get(URL)).text();
-  const invoiceField = await actionField(admin, URL, 'name="previewKey"');
-  const advanceField = await actionField(admin, URL, 'name="proformaBatchId"');
+  const html = await (await admin.request.get(DAY_URL)).text();
+  const invoiceField = await actionField(admin, DAY_URL, 'name="previewKey"');
+  const advanceField = await actionField(admin, DAY_URL, 'name="proformaBatchId"');
   const form = html.split('<form').find((chunk) => chunk.includes('name="previewKey"')) ?? '';
   const value = (name: string) => new RegExp(`name="${name}" value="([^"]+)"`).exec(form)?.[1] ?? '';
   const invoice = { day: DAY, groupKey: value('groupKey'), previewKey: value('previewKey'), fxRate: '' };
@@ -179,22 +179,22 @@ test('yetkisiz roller: Faturalama bölümü görünmez; taklit form gönderimiyl
   const count = () => db.billingBatch.count({ where: { kind: { in: ['INVOICE', 'ADVANCE'] } } });
   for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
     const p = await as(browser, email, pw);
-    const res = await p.request.get(URL);
+    const res = await p.request.get(DAY_URL);
     const body = await res.text();
     expect(body, `${who}: Faturalama bölümü yok`).not.toContain('id="faturalama"');
     expect(body, `${who}: fatura önizlemesi sızmaz`).not.toContain('Comanda FTR1');
     expect(body, `${who}: tutar sızmaz`).not.toContain('3.208,92');
-    const r1 = await forge(p, URL, invoiceField, invoice);
+    const r1 = await forge(p, DAY_URL, invoiceField, invoice);
     expect(r1.url(), `${who}: taklit fatura isteği`).toMatch(/\/siparisler$/);
-    const r2 = await forge(p, URL, advanceField, { day: DAY, proformaBatchId });
+    const r2 = await forge(p, DAY_URL, advanceField, { day: DAY, proformaBatchId });
     expect(r2.url(), `${who}: taklit avans isteği`).toMatch(/\/siparisler$/);
     expect(await count(), `${who}: parti oluşmadı`).toBe(0);
     await p.context().close();
   }
   // Karşı kontrol: aynı istekler yönetici oturumuyla işlemi çalıştırır (engel yetki kontrolüdür); FGO kapalı → parti yine oluşmaz
-  const ok1 = await forge(admin, URL, invoiceField, invoice);
+  const ok1 = await forge(admin, DAY_URL, invoiceField, invoice);
   expect(ok1.url()).toContain('faturaHata=FGO_DISABLED');
-  const ok2 = await forge(admin, URL, advanceField, { day: DAY, proformaBatchId });
+  const ok2 = await forge(admin, DAY_URL, advanceField, { day: DAY, proformaBatchId });
   expect(ok2.url()).toContain('faturaHata=FGO_DISABLED');
   expect(await count()).toBe(0);
   expect(await db.fgoDocument.count({ where: { batch: { kind: { in: ['INVOICE', 'ADVANCE'] } } } })).toBe(0);
