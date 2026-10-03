@@ -139,6 +139,9 @@ export function proformaLines(offer) {
 /** TVA dahil tutar → TVA hariç birim fiyat (avans satırı) */
 export const netOf = (gross, vatRate) => round2(Number(gross) / (1 + Number(vatRate) / 100));
 
+/** Proforma ödenmiş (FGO'da tahsilat ya da yöneticinin "Ödeme alındı"sı) ama karşılığında avans faturası kesilmemiş */
+export const paidWithoutAdvance = (proforma, advance, paidAmount) => !!proforma && !advance && paidAmount != null && Number(paidAmount) > 0;
+
 /**
  * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; billing: GlassBilling; pending: kuyruktaki belge türleri.
  * @param {{ status: string, loaded: boolean, docs: { kind: string, paid?: unknown }[], billing: { paidAmount?: unknown } | null, pending?: string[], hasOffer: boolean }} p
@@ -154,6 +157,9 @@ export function billingState({ status, loaded, docs, billing, pending = [], hasO
   if (by.INVOICE) return res([], 'done');
   if (pending.length) return res([], 'pending');
   if (!hasOffer) return res([], 'no_offer');
+  // Ödenmiş proforma + avans faturası yok + yüklenmiş (karar 94): kapanış faturası KESİLMEZ. Düşüm uydurulmaz; önce
+  // muhasebe işlemi gerekir. Ödenmemiş proformada ve avans faturası olan siparişte akış aynen sürer.
+  if (loaded && paidWithoutAdvance(proforma, by.ADVANCE, paidAmount)) return res([], 'paid_no_advance');
   if (loaded) return res(['invoice']);
   if (!proforma) return res(['proforma']);
   if (by.ADVANCE) return res([], 'wait_loading');
@@ -271,6 +277,13 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       }
       const proforma = order.fgoDocuments.find((d) => d.kind === 'PROFORMA');
       const advance = order.fgoDocuments.find((d) => d.kind === 'ADVANCE');
+      // İş kuyruğa girdikten sonra proforma ödenmiş görünebilir (FGO eşitlemesi): kesim anında yeniden bakılır (karar 94)
+      if (kind === 'INVOICE') {
+        const paidNow = b?.paidAmount != null ? Number(b.paidAmount) : proforma?.paid != null ? Number(proforma.paid) : null;
+        if (paidWithoutAdvance(proforma, advance, paidNow)) {
+          throw new Permanent(`Proforma ${proforma.series}${proforma.number} ödenmiş ama avans faturası yok: kapanış faturası kesilmedi (düşüm uydurulmaz). Önce muhasebe işlemi gerekir.`);
+        }
+      }
       let lines;
       if (kind === 'ADVANCE') {
         const paid = b?.paidAmount != null ? Number(b.paidAmount) : proforma?.paid != null ? Number(proforma.paid) : 0;

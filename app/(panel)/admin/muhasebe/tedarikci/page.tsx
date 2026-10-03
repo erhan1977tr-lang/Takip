@@ -9,17 +9,26 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { CURRENCIES, supplierData } from '@/server/accounting/supplier.js';
 import { localDay } from '@/server/profile/dates.js';
-import { addPaymentAction, addTransportAction, deletePaymentAction, deleteTransportAction } from '../actions';
+import { addPaymentAction, addTransportAction, correctCostAction, deletePaymentAction, deleteTransportAction } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
 type Amounts = { sale: number; cost: number; transport: number; profit: number };
 type OrderRef = { orderId: string; orderNo: string };
-type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[] };
-type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }> };
+// confirmed: gün "Eksiksiz Yüklendi" olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayan siparişler
+type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[]; confirmed: boolean; outside: OrderRef[] };
+type MissingLine = { lineId: string; description: string; kind: string; unit: string; adet: number; offerPrice: number };
+type Missing = { orderId: string; orderNo: string; day: string; currency: string; lines: MissingLine[] };
+type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }>; missing: Missing[] };
 
-const OK: Record<string, MsgKey> = { transport: 'accounting.supplier.ok.transport', payment: 'accounting.supplier.ok.payment', deleted: 'accounting.supplier.ok.deleted' };
-const ERR: Record<string, MsgKey> = { transport: 'accounting.supplier.errors.transport', payment: 'accounting.supplier.errors.payment' };
+const OK: Record<string, MsgKey> = {
+  transport: 'accounting.supplier.ok.transport', payment: 'accounting.supplier.ok.payment', deleted: 'accounting.supplier.ok.deleted', cost: 'accounting.supplier.cost.ok',
+};
+const ERR: Record<string, MsgKey> = {
+  transport: 'accounting.supplier.errors.transport', payment: 'accounting.supplier.errors.payment',
+  costBAD_COST: 'accounting.supplier.cost.errors.BAD_COST', costCOST_EXISTS: 'accounting.supplier.cost.errors.COST_EXISTS',
+  costCONFIRMED: 'accounting.supplier.cost.errors.CONFIRMED', cost: 'accounting.supplier.cost.errors.OTHER',
+};
 
 /** Tedarikçi hesap durumu: yükleme kârlılığı (otomatik) ve fabrika cari hesabı (ödemeler yüklemelerden bağımsız). */
 export default async function SupplierPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -29,7 +38,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const end = new Date(`${today}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 1);
-  const { days, costs, payments, summary } = (await supplierData(db, end)) as Data;
+  const { days, costs, payments, summary, missing } = (await supplierData(db, end)) as Data;
   const curs = Object.keys(summary).sort();
   // Tablolarda para birimi kendi sütununda: tutar yalın yazılır; eksi tutar kırmızı
   const signed = (v: number) => <span className={v < 0 ? 'text-danger' : undefined}>{fmtNum(v)}</span>;
@@ -53,6 +62,47 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
           <b>{t('accounting.supplier.noCost')}</b>{' '}
           {noCost.map((o, i) => <span key={o.orderId}>{i > 0 && ', '}<Link href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link></span>)}
           <div className="small">{t('accounting.supplier.noCostHelp')}</div>
+        </div>
+      )}
+      {/* Eksik maliyetin girilmesi (karar 93): yalnızca maliyeti kayıtlı olmayan satır, yalnızca maliyet — müşteri fiyatı değişmez.
+          Onaylı yüklemeye girmiş siparişler burada listelenmez (onay kopyası yeniden yazılmaz). */}
+      {missing.length > 0 && (
+        <div className="card card-flush" id="maliyet-gir">
+          <div className="card-head"><h2>{t('accounting.supplier.cost.title')} <span className="badge">{missing.reduce((n, o) => n + o.lines.length, 0)}</span></h2></div>
+          <p className="card-sub">{t('accounting.supplier.cost.intro')}</p>
+          <div className="table-wrap">
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>{t('accounting.supplier.cost.col.order')}</th>
+                  <th>{t('accounting.supplier.cost.col.line')}</th>
+                  <th className="num">{t('accounting.supplier.cost.col.qty')}</th>
+                  <th className="num">{t('accounting.supplier.cost.col.offerPrice')}</th>
+                  <th>{t('accounting.supplier.cost.col.cost')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {missing.map((o) => o.lines.map((l, i) => (
+                  <tr key={l.lineId} className={i === 0 ? 'grp-first' : undefined}>
+                    <td>
+                      {i === 0 && <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link>}
+                      {i === 0 && <span className="cell-note">{fmtDate(o.day)}</span>}
+                    </td>
+                    <td>{l.description || t(`accounting.supplier.cost.kind.${l.kind === 'CNC' ? 'CNC' : l.kind === 'DELIK' ? 'DELIK' : 'OTHER'}` as MsgKey)}</td>
+                    <td className="num">{l.adet} {l.unit === 'm2' ? t('accounting.supplier.cost.unitGlass') : t('accounting.supplier.cost.unitPiece')}</td>
+                    <td className="num">{fmtMoney(l.offerPrice, o.currency)}</td>
+                    <td>
+                      <form action={correctCostAction} className="acc-form">
+                        <input type="hidden" name="lineId" value={l.lineId} />
+                        <input className="c-amount" name="cost" inputMode="decimal" required placeholder={t('accounting.supplier.cost.placeholder', { cur: o.currency })} aria-label={t('accounting.supplier.cost.label', { order: o.orderNo, line: l.description })} />
+                        <ConfirmButton primary message={t('accounting.supplier.cost.confirm')}>{t('accounting.supplier.cost.save')}</ConfirmButton>
+                      </form>
+                    </td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -124,7 +174,11 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                         <td rowSpan={entries.length}>
                           <Link className="order-no" href={`/yuklemeler?gun=${d.day}`}>{fmtDate(d.day)}</Link>
                           <span className="cell-note">{t('accounting.supplier.loadings.orders', { n: d.orders })}</span>
-                          {d.noCost.length > 0 && <Badge tone="warn">{t('accounting.supplier.noCostBadge')}</Badge>}
+                          <span className="cell-badges">
+                            {d.confirmed ? <Badge tone="ok">{t('accounting.supplier.loadings.confirmed')}</Badge> : <Badge tone="muted">{t('accounting.supplier.loadings.planned')}</Badge>}
+                            {d.noCost.length > 0 && <Badge tone="warn">{t('accounting.supplier.noCostBadge')}</Badge>}
+                          </span>
+                          {d.outside.length > 0 && <span className="cell-note">{t('accounting.supplier.loadings.outside', { list: d.outside.map((o) => o.orderNo).join(', ') })}</span>}
                         </td>
                       )}
                       {i === 0 && <td className="num" rowSpan={entries.length}>{fmtNum(d.m2)} m²</td>}

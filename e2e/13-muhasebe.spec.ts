@@ -18,7 +18,8 @@ const SUPPLIER = '/admin/muhasebe/tedarikci';
 const SECRETS = ['GKH77003', 'PRF77001', 'E2E-ODEME', 'E2E TIR'];
 const day = (offset: number) => new Date(Date.now() + offset * 86_400_000);
 const dmy = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().join('.');
-const LOADED = day(-20);
+// Yükleme günü gün ortası (12:00 UTC) saklanır (parseDateOnly gibi): Romanya günü ile UTC günü aynı kalır
+const LOADED = new Date(`${day(-20).toISOString().slice(0, 10)}T12:00:00Z`);
 
 let paidOrderId = ''; // proforması olan, ödemesi girilmemiş sipariş ("Ödeme alındı" formu)
 let newOrderId = ''; // hiç belgesi olmayan sipariş ("Proforma Gönder" formu)
@@ -234,6 +235,141 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
   expect(await db.glassBilling.count({ where: { orderId: paidOrderId } })).toBe(1);
   const ok3 = await forge(admin, newUrl, docField, { id: newOrderId, kind: 'PROFORMA' });
   expect(ok3.url(), 'işlem çalıştı; FGO kapalı olduğu için belge istenmedi').toContain('fgoError=FGO_DISABLED');
+  await db.$disconnect();
+  await admin.context().close();
+});
+
+// ---------- Aşama 7C: eksik maliyet düzeltmesi ve yükleme onayı (karar 92–93) ----------
+const LOADED_DAY = LOADED.toISOString().slice(0, 10);
+const LOADING_URL = `/yuklemeler?gun=${LOADED_DAY}`;
+
+test('eksik maliyet düzeltmesi: yalnızca yönetici; müşteri fiyatı değişmez; müşteri ve satış taklit istekle yazamaz', async ({ browser }) => {
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const line = await db.offerLine.findFirstOrThrow({ where: { description: 'Özel işlem', offer: { order: { orderNo: { endsWith: '9101' } } } } });
+  const cost = async () => Number((await db.offerLine.findUniqueOrThrow({ where: { id: line.id } })).unitPrice);
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(SUPPLIER);
+  const card = admin.locator('#maliyet-gir');
+  const row = card.locator('tr', { hasText: 'Özel işlem' });
+  await expect(card.getByRole('heading', { name: /Eksik maliyetler/ })).toBeVisible();
+  await expect(row).toContainText('25,00 EUR'); // müşteri birim fiyatı (değişmeyecek)
+
+  // Taklit istek: müşteri ve satış maliyet yazamaz
+  const field = await actionField(admin, SUPPLIER, 'name="lineId"');
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW]] as const) {
+    const p = await as(browser, email, pw);
+    const r = await forge(p, SUPPLIER, field, { lineId: line.id, cost: '99' });
+    expect(r.url(), who).toMatch(/\/siparisler$/);
+    expect(await cost(), `${who}: maliyet yazılmadı`).toBe(0);
+    await p.context().close();
+  }
+
+  // Yönetici maliyeti girer: maliyet 610 → 625, kâr 285 → 270; satış (1045) aynı
+  await row.locator('[name=cost]').fill('15');
+  await row.getByRole('button', { name: 'Maliyeti kaydet' }).click();
+  await expect(admin.locator('.alert-ok')).toContainText('Maliyet kaydedildi. Müşteri fiyatı değişmedi.');
+  const day = admin.locator('#yuklemeler tr', { hasText: dmy(LOADED) });
+  await expect(day).toContainText('1.045,00');
+  await expect(day).toContainText('625,00');
+  await expect(day).toContainText('270,00');
+  await expect(day).not.toContainText('maliyet eksik');
+  await expect(admin.locator('#maliyet-gir tr', { hasText: 'Özel işlem' })).toHaveCount(0);
+  expect(await cost()).toBe(15);
+  const after = await db.offerLine.findUniqueOrThrow({ where: { id: line.id } });
+  expect(Number(after.offerPrice)).toBe(25);
+  // Kayıtlı maliyetin üzerine taklit istekle de yazılamaz (yönetici oturumunda bile)
+  const again = await forge(admin, SUPPLIER, field, { lineId: line.id, cost: '77' });
+  expect(again.url()).toContain('error=costCOST_EXISTS');
+  expect(await cost()).toBe(15);
+  expect(await db.auditLog.count({ where: { action: 'OFFER_COST_CORRECTION', entityId: line.id } })).toBe(1);
+  await db.$disconnect();
+  await admin.context().close();
+});
+
+test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit istekle onaylayamaz), tek ve değişmez kayıt; kârlılık onaydan', async ({ browser }) => {
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const confirmations = () => db.loadingConfirmation.count({ where: { shipDay: new Date(`${LOADED_DAY}T00:00:00Z`) } });
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(LOADING_URL);
+  const box = admin.locator('#onay');
+  // Önizleme: müşteri → sipariş → cam; adet, m², satış ve maliyet
+  await expect(box.getByRole('heading', { name: /Yükleme onayı/ })).toBeVisible();
+  await expect(box).toContainText('Onaylanmadı');
+  await expect(box.locator('tr.group-total')).toContainText('Ünsal Cam');
+  await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('1.045,00 EUR');
+  await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('625,00 EUR');
+  await expect(box.locator('tr.glass-row', { hasText: 'Temper' })).toContainText('10,00');
+  await expect(box.locator('tfoot')).toContainText('1 sipariş · 5 cam · 10,00 m²');
+  await shot(admin, '53-yukleme-onay-onizleme');
+
+  // Onaylanmamış günde diğer roller onay bölümünü görmez; taklit istekle de onaylayamaz
+  const html = await (await admin.request.get(LOADING_URL)).text();
+  const key = /name="key" value="([0-9a-f]{32})"/.exec(html)?.[1] ?? '';
+  expect(key, 'önizleme parmak izi').toHaveLength(32);
+  const field = await actionField(admin, LOADING_URL, 'name="key"');
+  const users: [string, string, string][] = [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetimci', INSPECTOR, 'Denet1']];
+  for (const [who, email, pw] of users) {
+    const p = await as(browser, email, pw);
+    if (who !== 'cizim') {
+      await p.goto(LOADING_URL);
+      await expect(p.locator('#onay'), who).toHaveCount(0);
+      await expect(p.getByRole('button', { name: 'Eksiksiz Yüklendi' }), who).toHaveCount(0);
+    }
+    const r = await forge(p, LOADING_URL, field, { day: LOADED_DAY, key, note: `TAKLIT-${who}` });
+    expect(r.url(), who).not.toContain('onay=ok');
+    expect(await confirmations(), `${who}: onay kaydı oluşmadı`).toBe(0);
+    await p.context().close();
+  }
+
+  // Yönetici onaylar (onay penceresi kabul edilir)
+  await admin.reload();
+  await box.locator('[name=note]').fill('E2E PLAKA 34');
+  await box.getByRole('button', { name: 'Eksiksiz Yüklendi' }).click();
+  await expect(admin).toHaveURL(/onay=ok/);
+  await expect(box.locator('.alert-ok')).toContainText('Yükleme onaylandı: 1 sipariş kaydedildi.');
+  await expect(box).toContainText('Yükleme onaylandı');
+  await expect(box).toContainText(/Onaylayan: .+ · \d{2}\.\d{2}\.\d{4}/);
+  await expect(box).toContainText('E2E PLAKA 34');
+  await expect(box.getByRole('button', { name: 'Eksiksiz Yüklendi' })).toHaveCount(0);
+  await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('1.045,00 EUR');
+  expect(await confirmations()).toBe(1);
+  const items = await db.loadingConfirmationItem.findMany({ where: { order: { orderNo: { endsWith: '9101' } } }, orderBy: { sortOrder: 'asc' } });
+  expect(items.map((i) => [i.description, i.quantity, Number(i.m2), Number(i.unitCost), Number(i.unitSale), i.status])).toEqual([
+    ['Temper', 5, 10, 60, 100, 'LOADED'], ['CNC', 2, 0, 5, 10, 'LOADED'], ['Özel işlem', 1, 0, 15, 25, 'LOADED'],
+  ]);
+  await shot(admin, '54-yukleme-onayli');
+  await shot(admin, '54-yukleme-onayli', true);
+
+  // İkinci onay (aynı istek yeniden gönderilse de) reddedilir: tek kayıt
+  const twice = await forge(admin, LOADING_URL, field, { day: LOADED_DAY, key });
+  expect(twice.url()).toContain('onayHata=ALREADY_CONFIRMED');
+  expect(await confirmations()).toBe(1);
+  expect(await db.loadingConfirmationItem.count({ where: { order: { orderNo: { endsWith: '9101' } } } })).toBe(3);
+
+  // Satış onaylı kaydı görür: müşteri adı maskeli, tutar yok. Müşteri görünümü değişmedi.
+  const sales = await as(browser, SALES2, TEAM_PW);
+  await sales.goto(LOADING_URL);
+  await expect(sales.locator('#onay')).toContainText('Yükleme onaylandı');
+  await expect(sales.locator('#onay tr.group-total')).toContainText('Üns**********');
+  await expect(sales.locator('#onay')).not.toContainText('Ünsal');
+  await expect(sales.locator('#onay')).not.toContainText('1.045,00');
+  await sales.context().close();
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.goto(LOADING_URL);
+  await expect(cust.locator('#onay')).toHaveCount(0);
+  await cust.context().close();
+
+  // Kârlılık artık onay kaydından: teklif sonradan değişse de onaylı yüklemenin tutarı değişmez
+  await db.offerLine.updateMany({ where: { description: 'Temper', offer: { order: { orderNo: { endsWith: '9101' } } } }, data: { offerPrice: '999', unitPrice: '1' } });
+  await admin.goto(SUPPLIER);
+  const day = admin.locator('#yuklemeler tr', { hasText: dmy(LOADED) });
+  await expect(day).toContainText('onaylı');
+  await expect(day).toContainText('1.045,00');
+  await expect(day).toContainText('625,00');
+  await expect(day).toContainText('270,00');
+  await shot(admin, '55-tedarikci-onayli');
   await db.$disconnect();
   await admin.context().close();
 });

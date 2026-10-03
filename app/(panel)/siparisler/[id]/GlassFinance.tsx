@@ -73,7 +73,10 @@ export async function GlassFinance({ order, t, sp }: {
       ) : <p className="muted">{t('glassBilling.none')}</p>}
       {billing?.fxRate != null && <p className="small muted">{t('glassBilling.rate', { rate: Number(billing.fxRate).toFixed(4).replace('.', ','), date: fmtDate(billing.fxDate) })}</p>}
       {billing?.paidAmount != null && <p className="small">{t('glassBilling.paidManual', { amount: fmtMoney(billing.paidAmount.toString(), 'RON'), date: fmtDateTime(billing.paidAt) })}</p>}
-      {st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
+      {/* Ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası engellenir, nedeni belirgin gösterilir (karar 94) */}
+      {st.wait === 'paid_no_advance'
+        ? <div className="alert alert-warn" id="fatura-engeli">{t('glassBilling.wait.paid_no_advance')}</div>
+        : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
       {lastJob?.status === 'FAILED' && <div className="alert alert-error">{t('glassBilling.failed', { error: lastJob.lastError ?? '—' })}</div>}
       {lastJob?.status === 'PENDING' && lastJob.lastError && <div className="alert alert-warn">{t('glassBilling.retry', { error: lastJob.lastError })}</div>}
       {lastMail && (

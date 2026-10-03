@@ -10,6 +10,7 @@ export default {
     pending: "Belge kesiliyor (bir dakika içinde).",
     no_offer: "Müşteriye gönderilmiş teklif yok; belge kesilemez.",
     wait_loading: "Avans faturası kesildi. Cam yüklenince (yükleme gününden 2 gün sonra) fatura kesilir.",
+    paid_no_advance: "Fatura kesilemez: proforma ödenmiş ama karşılığında avans faturası yok. Kapanış faturasında düşüm otomatik yapılmaz; önce muhasebe işlemi gerekir (muhasebecinizle netleştirin).",
     wait_payment: "Proforma ödemesi bekleniyor. FGO'da tahsilat görünürse (Muhasebe → FGO ile Güncelle) ya da aşağıdan ödemeyi girerseniz avans faturası kesilebilir.",
   },
   failed: "FGO'da kesilemedi: {error}",

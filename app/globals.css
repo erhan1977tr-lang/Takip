@@ -756,6 +756,16 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .viewer-note input { flex: 1 1 0; min-width: 0; }
 .viewer-note > span:last-child:not(.small) { flex: 1 1 100%; }
 
+/* yükleme onayı (Yüklemeler → gün ayrıntısının altında): müşteri → sipariş → cam */
+.confirm-by { margin: 0 0 6px; }
+.confirm-table tr.glass-row td { padding-top: 7px; padding-bottom: 7px; font-size: var(--fs-meta); color: var(--text-2); border-bottom-color: transparent; }
+.confirm-table tr.glass-row td:first-child { padding-left: 52px; }
+.confirm-table tr.glass-row + tr:not(.glass-row) > td { border-top: 1px solid var(--divider); }
+.confirm-bar { justify-content: flex-end; }
+.confirm-bar .confirm-note { flex: 1 1 260px; }
+.confirm-bar .confirm-note input { width: 100%; }
+.confirm-outside { margin-top: 12px; margin-bottom: 0; }
+
 /* muhasebe (tahsilat, yükleme kârlılığı, fabrika cari hesabı) */
 /* Liste kartının başlığı altındaki açıklama ve altındaki dipnot */
 .card-sub { margin: -6px 0 0; padding: 0 20px 14px; font-size: var(--fs-sm); color: var(--muted); }
@@ -769,6 +779,7 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .acc-table td .badge { white-space: nowrap; }
 .cell-note { display: block; margin-top: 2px; font-size: var(--fs-meta); font-weight: 400; color: var(--faint); white-space: normal; }
 .cell-note.text-danger { color: var(--danger); }
+.cell-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 /* Tek satırlık giriş formu (transport, fabrika ödemesi): alanlar içerik genişliğinde, açıklama kalan yeri alır */
 .acc-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .acc-form label { margin: 0; }

@@ -55,6 +55,8 @@ export default {
     label: "FGO'da belge kesilemedi",
   },
   FGO_DOC_DELETED: { label: "Belge FGO'da silinmiş; kaydı kaldırıldı" },
+  LOADING_CONFIRMED: { label: 'Yükleme onaylandı: eksiksiz yüklendi (yükleme günü)' },
+  COST_CORRECTED: { label: 'Eksik fabrika maliyeti girildi (satır)' },
   FGO_RETRY: {
     label: "FGO'da yeniden deneniyor",
   },

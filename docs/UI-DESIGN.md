@@ -183,6 +183,18 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - `form.acc-form` is the one-line entry form (inputs at natural width, `.c-amount` right-aligned, `.c-note`
   takes the rest). `.card-sub` is the explanatory line under a `.card-head`.
 
+## Loading confirmation (3.34.0)
+
+- Lives on the loading page under the day detail: `.card#onay` (`LoadingConfirm.tsx`), never a separate page.
+  `.section-head` = title + state badge (amber "Onaylanmadı" / green "Yükleme onaylandı").
+- Preview and confirmed view share one table: `table.load-table.confirm-table` — `tr.group-total` (customer) →
+  `tr.sub` (order) → `tr.sub.glass-row` (glass, indented, smaller) → `tfoot` totals. Money columns only for Admin.
+- The confirm action sits in a `.tool-bar.confirm-bar` (note input left, `ConfirmButton success` right). It is
+  irreversible, so it always goes through the confirm dialog; warnings (skipped orders, missing cost) are
+  `.alert-warn` above the table.
+- Supplier page: each loading row carries a state badge (`.cell-badges`: green "onaylı" / grey "planlanan",
+  amber "maliyet eksik"); the missing-cost entry card is `#maliyet-gir` with one `form.acc-form` per line.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

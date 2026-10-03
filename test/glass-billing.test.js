@@ -84,6 +84,16 @@ test('düğmeler: proforma → ödeme → avans → (yüklenince) fatura; müşt
   assert.deepEqual(billingState({ ...base, loaded: true, docs: [P] }).actions, ['invoice']);
   assert.deepEqual(billingState({ ...base, loaded: true, docs: [P, A] }).actions, ['invoice']);
   assert.deepEqual(billingState({ ...base, loaded: true, docs: [P, A, F] }).actions, []);
+  // Karar 94: ödenmiş proforma + avans faturası yok + yüklenmiş → kapanış faturası düğmesi yok (düşüm uydurulmaz)
+  const paidFgo = billingState({ ...base, loaded: true, docs: [{ ...P, paid: '500' }] });
+  assert.deepEqual([paidFgo.actions, paidFgo.wait], [[], 'paid_no_advance'], 'FGO\'da tahsilat görünen proforma');
+  const paidManual = billingState({ ...base, loaded: true, docs: [P], billing: { paidAmount: '300' } });
+  assert.deepEqual([paidManual.actions, paidManual.wait], [[], 'paid_no_advance'], 'yöneticinin elle girdiği ödeme');
+  // Ödenmemiş proforma (FGO 0 gösteriyor) ve avans faturası olan sipariş: akış değişmedi
+  assert.deepEqual(billingState({ ...base, loaded: true, docs: [{ ...P, paid: '0' }] }).actions, ['invoice']);
+  assert.deepEqual(billingState({ ...base, loaded: true, docs: [{ ...P, paid: '500' }, A], billing: { paidAmount: '500' } }).actions, ['invoice'], 'avans faturası varsa kapanış faturası (avans düşülür)');
+  // Yüklenmeden önce ödenmiş proforma: avans faturası düğmesi aynen
+  assert.deepEqual(billingState({ ...base, docs: [{ ...P, paid: '500' }] }).actions, ['advance']);
   assert.deepEqual(billingState({ ...base, pending: ['PROFORMA'] }).actions, [], 'kesilirken ikinci istek yok');
   assert.deepEqual(billingState({ ...base, hasOffer: false }).actions, []);
   assert.deepEqual(billingState({ ...base, status: 'IPTAL' }).actions, []);

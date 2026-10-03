@@ -11,6 +11,7 @@ import { parseDateOnly } from '@/server/orders/rules.js';
 import { CRATE_MAX_KG, CRATE_TARE_KG, dayKey, gridRange, monthGrid, parseMonth, shiftMonth } from '@/server/orders/loading.js';
 import { groupLoad } from '@/server/loading/crates.js';
 import { CrateEditor } from './CrateEditor';
+import { LoadingConfirm } from './LoadingConfirm';
 
 export const dynamic = 'force-dynamic';
 
@@ -197,6 +198,10 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
       </div>
 
       {selected && <DayDetail user={user} day={selected} entries={dayEntries} crates={dayCrates} isCustomer={isCustomer} />}
+      {/* Yükleme onayı (karar 92): iç ekip onaylı kaydı görür; önizleme ve "Eksiksiz Yüklendi" yalnızca yöneticide */}
+      {selected && !isCustomer && (
+        <LoadingConfirm user={user} day={selected} planned={dayEntries.map((e) => ({ id: e.o.id, orderNo: e.o.orderNo }))} sp={sp} />
+      )}
     </>
   );
 }

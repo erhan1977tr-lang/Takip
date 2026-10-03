@@ -84,6 +84,7 @@ enum PermissionKey {
   TRANSPORT_LIST_VIEW
   OFFER_EXPORT
   ACCOUNT_SETTINGS
+  LOADING_CONFIRM
 }
 
 model RolePermission {
@@ -142,6 +143,7 @@ model User {
   orderEvents        OrderEvent[] @relation("OrderEventBy")
   orderDrafts        OrderDraft[]
   orderDraftFiles    OrderDraftFile[]
+  loadingsConfirmed  LoadingConfirmation[] @relation("LoadingConfirmedBy")
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -239,6 +241,7 @@ model Customer {
   orders        Order[]
   orderDrafts   OrderDraft[]
   crates        Crate[]
+  loadedItems   LoadingConfirmationItem[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
   priceTable    PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
@@ -340,6 +343,7 @@ model Order {
   profile           ProfileOrder?        // yalnızca profil siparişinde
   profileItems      ProfileOrderItem[]
   stockMoves        StockMovement[]
+  loadedItems       LoadingConfirmationItem[] // onaylı yüklemelerde bu siparişin fiilen yüklenen kalemleri
 
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
@@ -561,6 +565,7 @@ model OfferLine {
   // Profil teklifi satırı (kind = PROFIL): ürün ve birimi (CUTII, PUNGI, BARA, BUCATI); tutar = adet × fiyat
   profileProductId String?
   unitCode         String?
+  loadedItems      LoadingConfirmationItem[] // bu satırdan onaylı yüklemelere alınan kopyalar
 }
 
 // Fiyat tabloları (Aşama 3b, karar 26): satışçıların teklife yazacağı liste fiyatları.
@@ -1091,6 +1096,72 @@ model LoadingCost {
   createdAt   DateTime @default(now())
 
   @@index([shipDay])
+}
+
+// ---------------------------------------------------------
+// YÜKLEME ONAYI (karar 92) — camın FİİLEN yüklendiğinin kaydı. Planlanan yükleme günü kanıt değildir.
+// Yükleme günü başına tek onay. Kayıtlar yalnızca eklenir: onaylanan yükleme değiştirilmez / silinmez
+// (veritabanı tetikleyicisiyle de korunur). Düzeltme gerekirse ayrı, denetimli bir iş akışı olarak eklenecek.
+// ---------------------------------------------------------
+enum LoadedStatus {
+  LOADED     // fiilen yüklendi
+  NOT_LOADED // planlanmıştı ama yüklenmedi (neden: notLoadedReason); sonraki yüklemeye aktarılabilir
+}
+
+model LoadingConfirmation {
+  id            String   @id @default(cuid())
+  shipDay       DateTime @unique @db.Date // yükleme günü: aynı gün iki kez onaylanamaz
+  confirmedById String
+  confirmedBy   User     @relation("LoadingConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt   DateTime @default(now())
+  note          String?
+  createdAt     DateTime @default(now())
+  items         LoadingConfirmationItem[]
+}
+
+// Onay anında müşteriye gönderilmiş teklifin bir satırının kopyası (cam, CNC, delik, sandık parası…), FİİLEN onaylanan
+// miktarla. Sonradan fiyat tablosu, teklif, müşteri fiyatı ya da cam kataloğu değişse de bu kayıt değişmez.
+// Aynı kopya üzerinde mevcut hesap kuralı (glassTotals) çalışır: kârlılık ve (Aşama 7D) fatura buradan türetilir.
+model LoadingConfirmationItem {
+  id             String   @id @default(cuid())
+  confirmationId String
+  confirmation   LoadingConfirmation @relation(fields: [confirmationId], references: [id])
+  // Ticari sahip: camın GERÇEK müşterisi ve siparişi. Fiziksel sandık yerleşimi (bir müşterinin camı başka müşterinin
+  // sandığında gidebilir) buna bağlı değildir; ileride ayrı bir ilişki olarak eklenir.
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id])
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id])
+  // Kaynak teklif satırı (müşteriye gönderilmiş sürüm). Onaylı yüklemeye girmiş satır silinemez (Restrict).
+  offerLineId    String?
+  offerLine      OfferLine? @relation(fields: [offerLineId], references: [id], onDelete: Restrict)
+  sortOrder      Int      // teklif içindeki sıra (CNC / delik üstündeki cama aittir)
+  // Satırın anlık kopyası
+  kind           String   // CAM | CNC | DELIK
+  unit           String   // m2 | adet
+  description    String   // cam adı (TR)
+  descriptionRo  String?  // cam adı (RO)
+  glassProductId String?
+  enMm           Int?
+  boyMm          Int?
+  weightKgM2     Decimal? @db.Decimal(6, 2)
+  free           Boolean  @default(false) // müşteriye bedelsiz (maliyeti yine sayılır)
+  // FİİLEN onaylanan miktar: kısmi yüklemede teklif satırının adedinden az olabilir (kalan kısım NOT_LOADED kaydıdır)
+  quantity       Int
+  m2             Decimal  @db.Decimal(10, 2) // cam satırında onaylanan m²; diğer satırlarda 0
+  currency       String
+  unitCost       Decimal  @db.Decimal(12, 2) // fabrika maliyeti: OfferLine.unitPrice (satış fiyatı)
+  unitSale       Decimal? @db.Decimal(12, 2) // müşteri fiyatı: OfferLine.offerPrice (yönetici)
+  costAmount     Decimal  @db.Decimal(14, 4) // miktar × birim maliyet (yuvarlanmamış; toplamlar grup düzeyinde yuvarlanır)
+  saleAmount     Decimal  @db.Decimal(14, 4) // miktar × müşteri fiyatı (bedelsiz satırda 0)
+  status         LoadedStatus @default(LOADED)
+  notLoadedReason String? // yalnızca NOT_LOADED: ileride BROKEN | MISSING | POSTPONED | OTHER
+  createdAt      DateTime @default(now())
+
+  // Bir onayda aynı teklif satırı için durum başına tek kayıt (yüklenen kısım + yüklenmeyen kısım)
+  @@unique([confirmationId, offerLineId, status])
+  @@index([orderId])
+  @@index([customerId])
 }
 
 // Fabrikaya yapılan ödemeler: yüklemelere ve siparişlere BAĞLI DEĞİL (fabrika cari hesabı).

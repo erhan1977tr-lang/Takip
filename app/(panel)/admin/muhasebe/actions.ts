@@ -11,6 +11,7 @@ import { parseDateOnly } from '@/server/orders/rules.js';
 import { writeAudit } from '@/server/orders/journal.js';
 import { refreshDocuments } from '@/server/accounting/receivables.js';
 import { CURRENCIES, parseAmount } from '@/server/accounting/supplier.js';
+import { correctMissingCost } from '@/server/accounting/cost-correction.js';
 
 const RECEIVABLE_PATH = { PROFILE_ORDER: '/admin/muhasebe/profil', GLASS_ORDER: '/admin/muhasebe/cam' } as const;
 const SUPPLIER = '/admin/muhasebe/tedarikci';
@@ -88,4 +89,18 @@ export async function deletePaymentAction(fd: FormData) {
   });
   revalidatePath(SUPPLIER);
   redirect(`${SUPPLIER}?ok=deleted#cari`);
+}
+
+/**
+ * Eksik fabrika maliyetinin girilmesi (karar 93): yalnızca maliyeti kayıtlı olmayan satıra, yalnızca maliyet.
+ * Müşteri fiyatı bu işlemle değişmez. Kurallar ve denetim kaydı server/accounting/cost-correction.js'te.
+ */
+export async function correctCostAction(fd: FormData) {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const cost = parseAmount(fd.get('cost'));
+  if (cost == null) redirect(`${SUPPLIER}?error=costBAD_COST#maliyet-eksik`);
+  const r = await correctMissingCost(db, { lineId: String(fd.get('lineId') ?? ''), cost, actor: await actorOf(user) });
+  revalidatePath(SUPPLIER);
+  if (r.ok) revalidatePath(`/siparisler/${r.orderId}`);
+  redirect(`${SUPPLIER}?${r.ok ? 'ok=cost' : `error=${['BAD_COST', 'COST_EXISTS', 'CONFIRMED'].includes(r.code) ? `cost${r.code}` : 'cost'}`}#maliyet-eksik`);
 }

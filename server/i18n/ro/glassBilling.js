@@ -10,6 +10,7 @@ export default {
     pending: "Documentul se emite (în cel mult un minut).",
     no_offer: "Nu există ofertă trimisă clientului; documentul nu poate fi emis.",
     wait_loading: "Factura de avans a fost emisă. După încărcare (la 2 zile după ziua de încărcare) se emite factura.",
+    paid_no_advance: "Factura nu poate fi emisă: proforma este plătită, dar nu există factura de avans corespunzătoare. Stornarea nu se face automat în factura finală; mai întâi este necesară o operațiune contabilă (clarificați cu contabilul).",
     wait_payment: "Se așteaptă plata proformei. Dacă încasarea apare în FGO (Contabilitate → Actualizează din FGO) sau introduceți plata mai jos, se poate emite factura de avans.",
   },
   failed: "Nu s-a putut emite în FGO: {error}",

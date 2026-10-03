@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.34.0 — 03.10.2026
+
+- **Yükleme onayı ("Eksiksiz Yüklendi")**: planlanan yükleme günü artık camın yüklendiği anlamına gelmez. Yüklemeler →
+  gün ayrıntısının altında yönetici, o günün müşteri → sipariş → cam listesini (adet, m², satış, maliyet) kontrol edip
+  yüklemeyi onaylar. Onay; müşteriyi, siparişi, camı, adedi, m²'yi, maliyeti ve müşteriye giden fiyatı o anki hâliyle
+  kaydeder. Kayıt sonradan değişmez: teklif, fiyat tablosu, katalog ya da yükleme tarihi değişse de aynı kalır. Aynı gün
+  iki kez onaylanamaz; gelecekteki gün onaylanamaz; onaylayan ve zamanı denetim kaydına ve sipariş geçmişine yazılır.
+  Yalnızca yönetici onaylayabilir. Eski yüklemeler onaylanmış sayılmaz.
+- **Kârlılık**: onaylı yüklemelerde tutarlar onay kaydından gelir; onaylanmamış günlerde eski hesap sürer. Tedarikçi
+  Hesap Durumu'nda her yükleme "onaylı" ya da "planlanan" olarak işaretlenir.
+- **Eksik maliyetler**: Tedarikçi Hesap Durumu'nda yönetici, maliyeti kayıtlı olmayan satırın yalnızca fabrika birim
+  maliyetini girebilir. Müşteri fiyatı değişmez; kayıtlı maliyetin üzerine yazılamaz; her giriş denetim kaydına yazılır.
+  Onaylı yüklemeye girmiş siparişte maliyet bu ekrandan değiştirilemez.
+- **Cam faturası koruması**: proforma ödenmiş ama avans faturası kesilmemişse, yüklenmiş siparişin kapanış faturası
+  kesilmez ve nedeni sipariş sayfasında yazılır (düşüm otomatik yapılmaz). Ödenmemiş proformalı ve avans faturalı
+  siparişlerde akış aynı.
+- Yapılmadı (Aşama 7D): müşteri + onaylı yükleme başına tek FGO belgesi. Yükleme sonrası fatura hâlâ sipariş başına.
+
 ## 3.33.2 — 02.10.2026
 
 - Muhasebe ekranları, görünüm: "FGO ile Güncelle" başlığın sağında; tahsilat tablosu ve tedarikçi özeti geniş ekranda

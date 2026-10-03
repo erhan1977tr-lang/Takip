@@ -55,6 +55,8 @@ export default {
     label: "Documentul nu a putut fi emis în FGO",
   },
   FGO_DOC_DELETED: { label: "Documentul a fost șters în FGO; înregistrarea a fost eliminată" },
+  LOADING_CONFIRMED: { label: 'Încărcare confirmată: încărcat complet (ziua încărcării)' },
+  COST_CORRECTED: { label: 'Costul de fabrică lipsă a fost introdus (rând)' },
   FGO_RETRY: {
     label: "Se reîncearcă în FGO",
   },

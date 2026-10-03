@@ -233,3 +233,49 @@ dbTest('fatura numarası: numarayı FGO verir ve dönen numara kaydedilir; elle 
   assert.equal(alert?.details?.error, '800 → 814');
   assert.equal(await setting(), null);
 });
+
+// Karar 94: düşüm uydurulmaz. Proforma ödenmiş ama avans faturası kesilmemişse yüklenmiş siparişin kapanış faturası kesilmez.
+dbTest('ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası kesilmez; ödenmemiş proformada akış aynen', async () => {
+  await fgoOn(0);
+  const past = new Date(Date.now() - 5 * 86_400_000);
+  const proforma = (orderId, number, paid) => db.fgoDocument.create({ data: { orderId, kind: 'PROFORMA', series: 'PRF', number, issuedAt: new Date(), total: '1210.00', paid } });
+  const queued = (orderId) => db.notificationOutbox.count({ where: { orderId, type: 'FGO_GLASS' } });
+
+  // A) FGO'da tahsilat görünen proforma: fatura isteği reddedilir, kuyruğa hiçbir şey girmez
+  const a = await glassOrder(81, past);
+  await proforma(a.id, '9001', '1210.00');
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: a.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  assert.equal(await queued(a.id), 0);
+
+  // B) Yöneticinin elle girdiği ödeme
+  const b = await glassOrder(82, past);
+  await proforma(b.id, '9002', '0');
+  assert.deepEqual(await g.markGlassPaid(db, { orderId: b.id, amount: 500, actor: actor() }), { ok: true });
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: b.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  assert.equal(await queued(b.id), 0);
+
+  // C) İstek kuyruğa girdikten sonra proforma ödenmiş görünürse (FGO eşitlemesi): kesim anında durur, FGO'ya gidilmez
+  const c = await glassOrder(83, past);
+  const pc = await proforma(c.id, '9003', '0');
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: c.id, kind: 'INVOICE', actor: actor() }), { ok: true }, 'ödenmemiş proforma: istek kabul edilir');
+  await db.fgoDocument.update({ where: { id: pc.id }, data: { paid: '300.00' } });
+  const blocked = fakeFgo(900);
+  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(blocked, { onlyOrderId: c.id })), { done: 0, failed: 1 });
+  assert.equal(blocked.calls.length, 0, 'belge kesilmedi');
+  const job = await db.notificationOutbox.findFirst({ where: { orderId: c.id, type: 'FGO_GLASS' } });
+  assert.equal(job.status, 'FAILED');
+  assert.match(job.lastError, /PRF9003 ödenmiş ama avans faturası yok/);
+  assert.equal(await db.adminAlert.count({ where: { orderId: c.id, type: 'FGO_FAILED' } }), 1, 'yöneticiye açıkça bildirilir');
+  assert.equal(await db.fgoDocument.count({ where: { orderId: c.id, kind: 'INVOICE' } }), 0);
+
+  // D) Ödenmemiş proforma, avans yok: mevcut akış değişmedi — fatura kesilir, düşüm satırı yok
+  const d = await glassOrder(84, past);
+  await proforma(d.id, '9004', '0');
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: d.id, kind: 'INVOICE', actor: actor() }), { ok: true });
+  const fgo = fakeFgo(950);
+  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: d.id })), { done: 1, failed: 0 });
+  assert.equal(fgo.calls[0]['Continut[0][Denumire]'], 'Securizat');
+  assert.ok(!('Continut[1][Denumire]' in fgo.calls[0]), 'avans yoksa düşüm satırı yok');
+  assert.equal(await db.fgoDocument.count({ where: { orderId: d.id, kind: 'INVOICE' } }), 1);
+  // (Avans faturası olan siparişte kapanış faturası + "Stornare avans" ilk testte doğrulanıyor: değişmedi.)
+});
