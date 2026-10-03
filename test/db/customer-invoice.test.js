@@ -352,7 +352,7 @@ dbTest('kesilemeyen fatura kapsamı tutar ve yeniden denenir; vazgeçilirse ya d
   const r = await createInvoice(day, grp);
   const reject = fakeFgo(500, { emit: () => new Response(JSON.stringify({ Success: false, Message: 'Client invalid' })) });
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(reject, { onlyBatchId: r.batchId })), { done: 0, failed: 1 });
-  let view = (await billing(day)).customers.find((x) => x.customerId === c.id);
+  const view = (await billing(day)).customers.find((x) => x.customerId === c.id);
   assert.deepEqual([view.groups.length, view.issued.map((i) => [i.status, /Client invalid/.test(i.lastError)])], [0, [['FAILED', true]]], 'kapsam ayrılmış durumda; gerçek FGO hatası görünür');
   assert.deepEqual(await createInvoice(day, grp), { ok: false, code: 'NOTHING_TO_INVOICE' });
   assert.deepEqual(await b.reviewFailedBatch(db, { batchId: r.batchId, action: 'retry', actor: actor() }), { ok: true });
