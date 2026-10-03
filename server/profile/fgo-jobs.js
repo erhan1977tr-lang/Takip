@@ -30,11 +30,14 @@ export function documentLines(offer) {
 
 class Permanent extends Error {}
 
-async function alert(db, orderId, code, message, attempts) {
+async function alert(db, orderId, code, message, attempts, jobId = null) {
   await db.$transaction(async (tx) => {
     await writeHistory(tx, { orderId, event: 'FGO_FAILED', actorId: null, note: `${code}: ${message}`.slice(0, 200) });
     await tx.adminAlert.create({ data: { type: 'FGO_FAILED', orderId, details: { code, error: message.slice(0, 300), attempts } } });
   });
+  // Aynı olay uygulama içi bildirim olarak muhasebe yetkisine (işin kimliğiyle: yeniden denemede ikinci kez yazılmaz)
+  const { notifyFgoFailed } = await import('../notifications/inapp.js');
+  await notifyFgoFailed(db, { key: `fgo-failed:${jobId ?? `${orderId}:${code}`}`, orderId, error: message });
 }
 
 /**
@@ -143,7 +146,7 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
         where: { id: row.id },
         data: { lastError: msg, ...(final ? { status: 'FAILED' } : { availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000) }) },
       });
-      if (final && row.orderId) await alert(db, row.orderId, row.type, msg, attempt);
+      if (final && row.orderId) await alert(db, row.orderId, row.type, msg, attempt, row.id);
       log('FGO işi olmadı', row.type, row.orderId, msg);
     }
   }

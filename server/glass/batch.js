@@ -464,6 +464,12 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       // Parti kesilemedi: siparişleri tutmaya devam eder; yönetici yeniden dener ya da vazgeçer (Muhasebe → müşteri proforması)
       await db.billingBatch.updateMany({ where: { id: batchId, status: 'PENDING' }, data: { lastError: msg, ...(final ? { status: 'FAILED' } : {}) } });
       if (final && batchId) await db.adminAlert.create({ data: { type: 'FGO_FAILED', details: { code: 'BATCH', batchId, error: msg.slice(0, 300), attempts: attempt } } }).catch(() => {});
+      if (final && batchId) {
+        // Aynı olay uygulama içi bildirim olarak muhasebe yetkisine (işin kimliğiyle: yeniden denemede ikinci kez yazılmaz)
+        const b = await db.billingBatch.findUnique({ where: { id: batchId }, select: { customerId: true, customer: { select: { name: true } } } }).catch(() => null);
+        const { notifyFgoFailed } = await import('../notifications/inapp.js');
+        await notifyFgoFailed(db, { key: `fgo-failed:${row.id}`, firmName: b?.customer?.name ?? null, customerId: b?.customerId ?? null, error: msg });
+      }
       log('müşteri belgesi kesilemedi', batchId, msg);
     }
   }

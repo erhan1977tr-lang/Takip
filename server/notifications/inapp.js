@@ -1,0 +1,242 @@
+// Uygulama içi bildirimler (zil) — Aşama 8, karar 107. İKİNCİ bir bildirim sistemi değildir: olayların kaynağı yine
+// NotificationOutbox'tır (iş akışı işlemleri aynı veritabanı işleminde yazar); e-posta (email.js) ve uygulama içi bildirim
+// aynı olayların iki AYRI kanalıdır. İşçi (scripts/worker.mjs) her turda henüz dağıtılmamış olayları (inAppAt boş)
+// alıcılarına Notification satırı olarak yazar.
+//
+//   Alıcılar e-posta kurallarıyla aynı mantıktadır (rol adına değil yetkiye göre; atanmış çizimci; siparişle ilgilenen
+//   satışçı); müşteri için siparişin firmasının etkin kullanıcıları. İşlemi yapan kullanıcıya kendi işlemi bildirilmez
+//   (muhasebe işlemi gerektiren olaylar hariç — onlar yapılacak iştir).
+//   Gizlilik: metnin değerleri alıcı başına saklanır — firma adını göremeyen role (satış, çizim) MASKELİ yazılır;
+//   müşteriye yalnızca kendi siparişinin numarası gider; tutar hiçbir bildirimde yoktur (FGO avans tutarı yalnızca
+//   muhasebe yetkisine). Bağlantı yetki değildir: açılan sayfa kendi yetki denetimini yapar.
+//   Tekrar engeli: Notification [userId, dedupeKey] benzersizdir; anahtar olayın kimliğidir ("outbox:<id>",
+//   "alert:<id>", "advance:<belge>:<tahsilat>"). İşçi yeniden denese / iki işçi birlikte çalışsa da aynı olay aynı
+//   kullanıcıya bir kez yazılır. Ses, açılır bildirim ve sekme başlığı istemcidedir (server/notifications/feed.js).
+import { can, ROLE_PERMISSIONS } from '../auth/permissions.js';
+import { maskName } from '../orders/rules.js';
+import { translate } from '../i18n/index.js';
+import { orderSalesUsers } from './email.js';
+
+const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
+/** Alıcı kümeleri → roller (yetkiden türetilir) */
+export const AUDIENCE_ROLES = {
+  admin: rolesWith((r) => can(r, 'OFFER_SEND')),
+  sales: rolesWith((r) => can(r, 'OFFER_PREPARE') && !can(r, 'OFFER_SEND')),
+  accounting: rolesWith((r) => can(r, 'ACCOUNTING_MANAGE')),
+  loading: rolesWith((r) => can(r, 'LOADING_CONFIRM')),
+};
+
+const orderLink = (o) => `/siparisler/${o.id}`;
+const dayLink = (hash = '') => (_o, p) => `/yuklemeler?gun=${p.day}${hash}`;
+
+/**
+ * Olay → alıcı kümeleri ve bağlantı. customer: siparişin firmasının kullanıcıları · drawer: atanmış çizimci ·
+ * orderSales: siparişle ilgilenen satışçı (bilinmiyorsa satış ekibi) · admin / sales / accounting / loading: yetkiye göre.
+ * Yalnızca dikkat / işlem gerektiren olaylar; her alan değişikliği bildirim üretmez.
+ */
+export const INAPP_RULES = {
+  // Yeni sipariş: cam → satış + yönetici; profil → yalnızca yönetici (profil satışa uğramaz)
+  ORDER_CREATED: { to: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales', 'admin']) },
+  // Çizim: atama ve müşteri kararı yalnızca atanmış çizimciye + ilgili satışçıya (yöneticiye değil — karar 84)
+  ORDER_SENT_TO_DRAWING: { to: () => ['drawer'] },
+  ORDER_DRAWING_UPLOADED: { to: () => ['customer'] },
+  ORDER_REVISION_REQUESTED: { to: () => ['drawer', 'orderSales'] },
+  ORDER_DRAWING_APPROVED: { to: () => ['drawer', 'orderSales'] },
+  // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride
+  ORDER_OFFER_SUBMITTED: { to: () => ['admin'] },
+  ORDER_OFFER_RETURNED: { to: () => ['orderSales'] },
+  ORDER_OFFER_SENT: { to: () => ['customer', 'orderSales'] },
+  ORDER_OFFER_UPDATED: { to: () => ['customer'] },
+  ORDER_PROFILE_OFFER_SENT: { to: () => ['customer'] },
+  ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
+  ORDER_PROFORMA: { to: () => ['customer'] },
+  ORDER_INVOICED: { to: () => ['customer'] },
+  // Yükleme
+  ORDER_SHIP_DATE: { to: () => ['customer'] },
+  ORDER_SHIPPED: { to: () => ['customer'] },
+  LOADING_NOT_LOADED: { to: () => ['loading', 'orderSales'], link: dayLink('#yuklenmeyen') },
+  LOADING_REPLANNED: { to: () => ['customer', 'orderSales'], link: dayLink() },
+  // Yükleme düzeltmesi kesilmiş faturayla uyuşmuyor: muhasebe yetkisi olan herkese (düzeltmeyi yapan dahil — yapılacak iş)
+  ACCOUNTING_ACTION: { to: () => ['accounting'], includeActor: true, link: dayLink('#faturalama') },
+};
+export const INAPP_TYPES = Object.keys(INAPP_RULES);
+
+const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+const dmy = (day) => (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}/.test(day) ? day.slice(0, 10).split('-').reverse().join('.') : '');
+const USER = { id: true, appRole: true };
+
+/**
+ * Alıcılar: [{ id, appRole, aud }] (kullanıcıya göre tekil; yalnızca etkin kullanıcılar). aud: 'customer' | 'staff'.
+ * @param {any} db  @param {string[]} audiences
+ * @param {{ id: string, customerId: string, assignedDrawerId?: string | null }} order
+ * @param {{ actorId?: string | null }} [o]  actorId: işlemi yapan — kendisine bildirilmez
+ */
+export async function recipientsOf(db, audiences, order, { actorId = null } = {}) {
+  const out = new Map();
+  const add = (u, aud) => {
+    if (u && u.id !== actorId && !out.has(u.id)) out.set(u.id, { id: u.id, appRole: u.appRole, aud });
+  };
+  for (const a of audiences) {
+    if (a === 'customer') {
+      if (!order?.customerId) continue;
+      // Yalnızca siparişin firmasının müşteri kullanıcıları: başka firmanın kullanıcısına hiçbir zaman gitmez
+      const users = await db.user.findMany({ where: { customerId: order.customerId, appRole: 'MUSTERI', isActive: true }, select: USER });
+      for (const u of users) add(u, 'customer');
+    } else if (a === 'drawer') {
+      if (!order?.assignedDrawerId) continue;
+      add(await db.user.findFirst({ where: { id: order.assignedDrawerId, isActive: true }, select: USER }), 'staff');
+    } else if (a === 'orderSales') {
+      // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa satış ekibi (e-posta kuralıyla aynı). Yönetici değil.
+      const known = order?.id ? (await orderSalesUsers(db, order.id)).filter((u) => u.isActive && AUDIENCE_ROLES.sales.includes(u.appRole)) : [];
+      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: AUDIENCE_ROLES.sales }, isActive: true }, select: USER });
+      for (const u of users) add(u, 'staff');
+    } else {
+      const users = await db.user.findMany({ where: { appRole: { in: AUDIENCE_ROLES[a] ?? [] }, isActive: true }, select: USER });
+      for (const u of users) add(u, 'staff');
+    }
+  }
+  return [...out.values()];
+}
+
+/**
+ * Bildirimin başlığı ve gövdesi, okuyanın diliyle (type + params'tan; alıcıya özel değerler params'ta zaten süzülmüş).
+ *   Sipariş olayları (ORDER_<OLAY>): mevcut olay metinleri (events.<OLAY>.label / .customer) — ayrı metin yazılmaz.
+ *   Diğerleri: notifications.types.<TİP>.title (müşteri için .customer). Ayrıntı: notifications.detail.<TİP>.
+ * @param {'ro' | 'tr'} locale
+ * @param {{ type?: string | null, params?: any, message?: string | null }} n
+ * @returns {{ title: string, body: string }}
+ */
+export function renderInApp(locale, n) {
+  const t = (k, p) => translate(locale, k, p);
+  const has = (k) => t(k) !== k;
+  const p = obj(n.params);
+  const customer = p.aud === 'customer';
+  const type = n.type ?? '';
+  let title = n.message || type;
+  const own = `notifications.types.${type}.${customer ? 'customer' : 'title'}`;
+  if (type && has(own)) title = t(own);
+  else if (type && has(`notifications.types.${type}.title`)) title = t(`notifications.types.${type}.title`);
+  else if (type.startsWith('ORDER_')) {
+    const ev = type.slice(6);
+    const k = customer ? `events.${ev}.customer` : `events.${ev}.label`;
+    if (ev === 'CREATED' && !customer) title = t('notify.newOrder');
+    else if (has(k)) title = t(k);
+    else if (has(`events.${ev}.label`)) title = t(`events.${ev}.label`);
+  }
+  const detailKey = `notifications.detail.${type}`;
+  const detail = type && has(detailKey)
+    ? t(detailKey, { date: dmy(p.day), from: dmy(p.from), qty: p.qty ?? '', ref: p.ref ?? '—', amount: p.amount ?? '', error: String(p.error ?? '').slice(0, 160) })
+    : '';
+  const order = p.orderNo ? (customer ? t('notifications.order', { orderNo: p.orderNo }) : String(p.orderNo)) : '';
+  return { title, body: [order, customer ? '' : p.firm, detail].filter(Boolean).join(' · ') };
+}
+
+/**
+ * Bildirim satırlarını yazar (alıcı başına bir satır; aynı anahtar aynı kullanıcıya ikinci kez yazılmaz).
+ * firmName: iç ekibe gösterilecek firma adı — görme yetkisi olmayan role maskeli saklanır; müşteriye hiç yazılmaz.
+ * @param {any} db
+ * @param {{ key: string, type: string, users: { id: string, appRole: string, aud: string }[], orderId?: string | null, orderNo?: string | null,
+ *   firmName?: string | null, params?: object, link?: string | null }} n
+ * @returns {Promise<number>}  yeni yazılan satır sayısı
+ */
+export async function createNotifications(db, { key, type, users, orderId = null, orderNo = null, firmName = null, params = {}, link = null }) {
+  if (!users.length) return 0;
+  const data = users.map((u) => {
+    const staff = u.aud !== 'customer';
+    const p = {
+      ...params, aud: staff ? 'staff' : 'customer', ...(orderNo ? { orderNo } : {}),
+      ...(staff && firmName ? { firm: can(u.appRole, 'CUSTOMER_NAME_VIEW') ? firmName : maskName(firmName) } : {}),
+    };
+    const text = renderInApp('ro', { type, params: p });
+    return { userId: u.id, type, params: p, link, orderId, dedupeKey: key, message: [text.title, text.body].filter(Boolean).join(' — ').slice(0, 500) };
+  });
+  const r = await db.notification.createMany({ data, skipDuplicates: true });
+  return r.count;
+}
+
+const ORDER = { id: true, orderNo: true, orderTypeCode: true, customerId: true, assignedDrawerId: true, actualShipDate: true, estimatedShipDate: true, customer: { select: { name: true } } };
+const shipDay = (o) => {
+  const d = o.actualShipDate ?? o.estimatedShipDate;
+  return d ? new Date(d).toISOString().slice(0, 10) : null;
+};
+
+/** Bir kuyruk olayını alıcılarına yazar. @returns {Promise<number>} */
+async function fanOut(db, row) {
+  const rule = INAPP_RULES[row.type];
+  const order = row.orderId ? await db.order.findUnique({ where: { id: row.orderId }, select: ORDER }) : null;
+  if (!rule || !order) return 0;
+  const payload = obj(row.payload);
+  const users = await recipientsOf(db, rule.to(order, payload), order, { actorId: rule.includeActor ? null : payload.actorId ?? null });
+  // Metne yalnızca gereken, herkesin görebileceği değerler girer (gün, adet, belge no) — tutar ve not girmez
+  const params = {
+    ...(payload.day ? { day: String(payload.day) } : row.type === 'ORDER_SHIP_DATE' && shipDay(order) ? { day: shipDay(order) } : {}),
+    ...(payload.from && /^\d{4}-/.test(String(payload.from)) ? { from: String(payload.from) } : {}),
+    ...(payload.qty != null ? { qty: Number(payload.qty) } : {}),
+    ...(payload.ref ? { ref: String(payload.ref) } : {}),
+  };
+  return createNotifications(db, {
+    key: `outbox:${row.id}`, type: row.type, users, orderId: order.id, orderNo: order.orderNo, firmName: order.customer?.name ?? null,
+    params, link: rule.link ? rule.link(order, payload) : orderLink(order),
+  });
+}
+
+/**
+ * Kuyruktaki, henüz dağıtılmamış olayları uygulama içi bildirime çevirir (işçi her turda çağırır; e-posta ayarından
+ * bağımsızdır). Dağıtılan olay inAppAt ile işaretlenir; işaretlenemeden yarıda kalırsa sonraki turda yeniden denenir —
+ * benzersiz anahtar sayesinde aynı bildirim ikinci kez yazılmaz.
+ * @param {any} db
+ * @param {{ now?: Date, limit?: number, log?: Function }} [o]
+ * @returns {Promise<{ events: number, created: number }>}
+ */
+export async function dispatchInApp(db, { now = new Date(), limit = 200, log = () => {} } = {}) {
+  const rows = await db.notificationOutbox.findMany({ where: { inAppAt: null }, orderBy: { createdAt: 'asc' }, take: limit });
+  let created = 0;
+  for (const row of rows) {
+    try {
+      if (INAPP_RULES[row.type]) created += await fanOut(db, row);
+      await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } });
+    } catch (e) {
+      log('uygulama içi bildirim dağıtılamadı', row.type, row.orderId, String(e?.message ?? e).slice(0, 200));
+      // Bir günden eski, dağıtılamayan olay kuyruğu tıkamasın
+      if (now.getTime() - new Date(row.createdAt).getTime() > 86_400_000) {
+        await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } }).catch(() => {});
+      }
+    }
+  }
+  return { events: rows.length, created };
+}
+
+/**
+ * İşçiden / eşitlemeden doğan olaylar için doğrudan bildirim (kuyruk olayı olmayan: FGO'da belge kesilemedi, proformaya
+ * tahsilat geldi → avans faturası gerekli). Alıcı yalnızca yetkiye göre iç ekip kümesi; anahtar olayın kimliğidir.
+ * @param {any} db
+ * @param {{ audience: 'accounting' | 'admin' | 'loading', key: string, type: string, orderId?: string | null, firmName?: string | null, params?: object, link: string }} n
+ * @returns {Promise<number>}
+ */
+export async function notifyStaff(db, { audience, key, type, orderId = null, firmName = null, params = {}, link }) {
+  const order = orderId ? await db.order.findUnique({ where: { id: orderId }, select: ORDER }) : null;
+  const users = await recipientsOf(db, [audience], order);
+  return createNotifications(db, { key, type, users, orderId: order?.id ?? null, orderNo: order?.orderNo ?? null, firmName: order?.customer?.name ?? firmName, params, link });
+}
+
+/** FGO'da belge kesilemedi (yönetici uyarısıyla aynı olay): muhasebe yetkisine. Hata bildirimi hiçbir işlemi düşürmez. */
+export function notifyFgoFailed(db, { key, orderId = null, firmName = null, customerId = null, error }) {
+  return notifyStaff(db, {
+    audience: 'accounting', key, type: 'FGO_FAILED', orderId, firmName, params: { error: String(error ?? '').slice(0, 200) },
+    link: orderId ? `/siparisler/${orderId}#finans` : `/admin/muhasebe/cam/proforma${customerId ? `?musteri=${customerId}` : ''}#partiler`,
+  }).catch(() => 0);
+}
+
+/**
+ * FGO eşitlemesi proformada avansı kesilmemiş tahsilat gördü: "avans faturası gerekli". Anahtar belge + tahsilat
+ * tutarıdır — saatlik eşitleme aynı tahsilatı yeniden görse de bildirim bir kez yazılır; tahsilat artarsa yeni bildirim.
+ * @param {any} db
+ * @param {{ doc: { id: string, series: string, number: string, orderId?: string | null }, paid: number, required: number, firmName?: string | null, customerId?: string | null }} p
+ */
+export function notifyAdvanceRequired(db, { doc, paid, required, firmName = null, customerId = null }) {
+  return notifyStaff(db, {
+    audience: 'accounting', key: `advance:${doc.id}:${Number(paid).toFixed(2)}`, type: 'ADVANCE_REQUIRED', orderId: doc.orderId ?? null, firmName,
+    params: { ref: `${doc.series}${doc.number}`, amount: Number(required).toFixed(2).replace('.', ',') },
+    link: doc.orderId ? `/siparisler/${doc.orderId}#finans` : `/admin/muhasebe/cam/proforma${customerId ? `?musteri=${customerId}` : ''}#partiler`,
+  }).catch(() => 0);
+}

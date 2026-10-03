@@ -4,8 +4,8 @@ import { saveSettingsAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
-// Müşterinin kendi ayarları (sol menü → Ayarlar): sabit dil ve bildirim e-postaları. Kayıt: User.fixedLanguage,
-// User.emailNotifications. Dil altyapısı (çerez, /dil) ve bildirim sistemi (server/notifications/email.js) aynıdır.
+// Müşterinin kendi ayarları (sol menü → Ayarlar): sabit dil, bildirim e-postaları ve bildirim sesi. Kayıt:
+// User.fixedLanguage, User.emailNotifications, User.notificationSound (ses tercihi zildeki anahtarla aynı kayıttır). Dil altyapısı (çerez, /dil) ve bildirim sistemi (server/notifications/email.js) aynıdır.
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ ok?: string }> }) {
   const user = await requirePermission('ACCOUNT_SETTINGS');
   const { t, m } = await getT();
@@ -32,6 +32,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <input type="checkbox" name="emailNotifications" defaultChecked={user.emailNotifications} /> {t('settings.email')}
           </label>
           <div className="hint">{t('settings.emailHint')}</div>
+        </div>
+        <div className="field">
+          <label className="check">
+            <input type="checkbox" name="notificationSound" defaultChecked={user.notificationSound} /> {t('settings.sound')}
+          </label>
+          <div className="hint">{t('settings.soundHint')}</div>
         </div>
         <div className="row end"><button className="btn btn-primary">{t('settings.save')}</button></div>
       </form>

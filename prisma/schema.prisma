@@ -107,6 +107,7 @@ model User {
   language     String     @default("tr")
   fixedLanguage String?   // müşterinin "sabit dil" ayarı: girişte bu dil açılır (boş = giriş ekranındaki dil)
   emailNotifications Boolean @default(true) // bildirim e-postaları (davet / şifre ve fatura belgeleri hariç)
+  notificationSound  Boolean @default(true) // uygulama içi bildirim sesi (yalnızca ses; zil, açılır bildirim ve e-posta etkilenmez)
   appRole      AppRole
   unit         String?    // birim etiketi: "fabrika satış", "fabrika çizim"...
   canApprove   Boolean    @default(false) // müşteri tarafında çizim onaylayabilir
@@ -819,14 +820,27 @@ model ApprovalPolicy {
 // BİLDİRİM
 // ---------------------------------------------------------
 
+// Uygulama içi bildirim (zil): alıcı başına bir satır (Aşama 8, karar 107). Olaylar NotificationOutbox'tan işçide
+// dağıtılır (server/notifications/inapp.js); metin, alıcının göreceği kadar bilgiyle saklanır (satış / çizim için firma
+// adı MASKELİ yazılır) ve ekranda kullanıcının diliyle type + params'tan üretilir.
 model Notification {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  message   String
-  link      String?
+  message   String   // yedek metin (Romence): type bilinmiyorsa gösterilir
+  link      String?  // uygulama içi adres; sayfa kendi yetki denetimini yapar (bağlantı yetki değildir)
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+  type      String?  // olay: ORDER_OFFER_SENT, LOADING_REPLANNED, FGO_FAILED … (başlık i18n'den)
+  params    Json?    // metnin değerleri: orderNo, firm (alıcıya göre maskeli), date, qty, ref, amount, aud
+  orderId   String?
+  // Olayın kimliği: "outbox:<NotificationOutbox.id>" ya da işe özgü anahtar. Aynı olay aynı kullanıcıya bir kez
+  // (işçi yeniden denese / iki işçi aynı anda çalışsa da) — veritabanında benzersiz.
+  dedupeKey String?
+  readAt    DateTime?
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, isRead, createdAt])
 }
 
 // Bildirim kuyruğu (ADR 0006): iş akışı işlemi aynı veritabanı işleminde buraya yazar; gönderim ayrı çalışır (Aşama 8).
@@ -849,8 +863,11 @@ model NotificationOutbox {
   availableAt DateTime     @default(now())
   sentAt      DateTime?
   createdAt   DateTime     @default(now())
+  // Uygulama içi bildirime dağıtıldığı an (e-posta durumundan bağımsız ayrı kanal); boş = henüz dağıtılmadı
+  inAppAt     DateTime?
 
   @@index([status, availableAt])
+  @@index([inAppAt])
 }
 
 // Entegrasyon ayarları (yönetici → Entegrasyonlar). Sır içermez; sırlar yalnızca sunucudaki .env'de.

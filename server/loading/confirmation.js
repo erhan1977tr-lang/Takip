@@ -23,7 +23,7 @@ import crypto from 'node:crypto';
 import { can } from '../auth/permissions.js';
 import { offerLineTotals, parseDateOnly } from '../orders/rules.js';
 import { dayKey } from '../orders/loading.js';
-import { writeAudit, writeHistory } from '../orders/journal.js';
+import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { glassTotals } from '../glass/billing.js';
 
 /**
@@ -484,6 +484,8 @@ export async function confirmLoading(db, { day, key, note = null, notLoaded = []
         // Tam yüklenen sipariş: "eksiksiz yüklendi"; yüklenmeyen camı olan: ayrı olay (adet)
         if (o.items.some((i) => i.status === 'LOADED')) await writeHistory(tx, { orderId: o.orderId, event: missing ? 'LOADING_PARTIAL' : 'LOADING_CONFIRMED', from: st, to: st, actorId: actor.id, note: dateText });
         if (missing) await writeHistory(tx, { orderId: o.orderId, event: 'LOADING_NOT_LOADED', from: st, to: st, actorId: actor.id, note: `${dateText} · ${missing}` });
+        // Yüklenmeyen cam takip ister (yeniden planlama): bildirim kuyruğuna olay (uygulama içi bildirim — karar 107)
+        if (missing) await enqueueOutbox(tx, { type: 'LOADING_NOT_LOADED', orderId: o.orderId, payload: { day, qty: missing, actorId: actor.id } });
       }
       const { totals } = summarize(plan.orders);
       await writeAudit(tx, {

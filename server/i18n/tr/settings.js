@@ -8,5 +8,7 @@ export default {
   languageHint: 'Her girişte panel bu dille açılır; bildirim e-postaları da bu dilde gelir. Sağ üstteki dil seçimiyle o oturum için değiştirebilirsiniz.',
   email: 'E-posta bildirimleri gönderilsin',
   emailHint: 'Açıkken: teklif, proforma / fatura, çizim onayı ve yükleme tarihi değişikliklerinde e-posta alırsınız. Kapatırsanız bu bildirimler gönderilmez. Şifre / davet e-postaları ve fatura belgeleri her zaman gönderilir.',
+  sound: 'Bildirim sesi açık',
+  soundHint: 'Açıkken: panel açıkken yeni bir bildirim geldiğinde kısa bir ses çalar. Kapatırsanız yalnızca ses kapanır; zil, açılır bildirim ve e-postalar aynen sürer.',
   save: 'Kaydet',
 };

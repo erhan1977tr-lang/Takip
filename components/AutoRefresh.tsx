@@ -7,6 +7,9 @@ import { usePathname, useRouter } from 'next/navigation';
 // sunucu bileşenlerinin verisini yeniden çeker — tam sayfa yeniden yükleme değildir, istemci durumu korunur.
 // Kullanıcı bir forma yazmaya başladıysa (input/change olayı) o sayfada form gönderilene ya da sayfa değişene kadar
 // yenileme yapılmaz; sekme arka plandayken de yapılmaz (geri gelince hemen yenilenir).
+// Bildirimler (zil) aynı zamanlayıcıya bağlıdır: sayfa yenilendiğinde akış düzenle birlikte gelir; yenileme atlandığında
+// (arka plan sekmesi, doldurulan form) yalnızca "takip:poll" olayı yayılır ve zil hafif bir JSON isteğiyle güncellenir
+// (components/NotificationCenter.tsx). Ayrı bir yoklama döngüsü yoktur.
 export const AUTO_REFRESH_MS = 60_000;
 
 export function AutoRefresh() {
@@ -26,7 +29,10 @@ export function AutoRefresh() {
     const markClean = () => { dirty.current = false; };
     let last = Date.now();
     const refresh = () => {
-      if (document.hidden || dirty.current) return;
+      if (document.hidden || dirty.current) {
+        window.dispatchEvent(new Event('takip:poll'));
+        return;
+      }
       last = Date.now();
       router.refresh();
     };

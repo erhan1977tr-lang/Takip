@@ -23,7 +23,7 @@
 import crypto from 'node:crypto';
 import { can } from '../auth/permissions.js';
 import { parseDateOnly } from '../orders/rules.js';
-import { writeAudit, writeHistory } from '../orders/journal.js';
+import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { ACTION_REQUIRED, orderImpacts } from '../glass/invoice-batch.js';
 import { NOT_LOADED_REASONS, effectiveItems, isGlassLine, itemKey, shipDayDate, snapshotOfItem } from './confirmation.js';
 
@@ -229,6 +229,10 @@ export async function correctLoading(db, { day, input, reason, key, actor, now =
           documentsCreated: 0,
         },
       }, actor);
+      // Kesilmiş fatura düzeltilmiş yüklemeyle uyuşmuyor: muhasebe yetkisine bildirim (yalnızca bildirim; belge kesilmez)
+      for (const x of plan.impacts.filter((i) => ACTION_REQUIRED.includes(i.code))) {
+        await enqueueOutbox(tx, { type: 'ACCOUNTING_ACTION', orderId: x.orderId, payload: { day, ref: x.ref, code: x.code, correctionId: c.id, actorId: actor.id } });
+      }
       return { ok: true, id: c.id, revision: plan.revision, scopes: plan.changes.length, closedReplans: plan.closing.length, actionRequired: plan.actionRequired };
     }, { timeout: 30_000 });
   } catch (e) {

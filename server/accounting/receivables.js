@@ -263,6 +263,9 @@ export async function refreshDocuments(db, {
           data: { total: r.total == null ? d.total : r.total.toFixed(2), paid: r.paid == null ? d.paid : r.paid.toFixed(2), checkedAt: new Date(), checkError: null },
         });
         checked++;
+        // Proformada tahsilat görünüyor: avansı kesilmemiş kısım varsa muhasebeye "avans faturası gerekli" bildirimi.
+        // Bildirim belge + tahsilat tutarıyla tekildir; aynı tahsilatı yeniden gören eşitleme yeni bildirim üretmez.
+        if (d.kind === 'PROFORMA' && Number(r.paid ?? 0) > 0) await advanceNotice(db, d, Number(r.paid)).catch(() => {});
       } catch (e) {
         // FGO'da silinmiş belge (ör. deneme faturası): elle turda kaydı kaldırılır, siparişinde düğme yeniden çıkar (karar 65)
         if (!auto && e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
@@ -279,6 +282,29 @@ export async function refreshDocuments(db, {
     await releaseLease(db, { lastRun: at, checked, failed, ...(auto ? { lastAuto: at } : {}) });
   }
   return { ok: true, checked, failed };
+}
+
+/**
+ * Proformaya gelen tahsilatın avansı kesilmemiş kısmı varsa bildirim (cam: sipariş başına zincir ve müşteri proforması
+ * zinciri; hesap mevcut tek kaynaklardan — orderChain / chainState). Profil siparişinde avans faturası yoktur.
+ */
+async function advanceNotice(db, d, paid) {
+  const { notifyAdvanceRequired } = await import('../notifications/inapp.js');
+  if (d.batchId) {
+    const { chainState } = await import('../glass/invoice-batch.js');
+    const st = await chainState(db, d.batchId);
+    if (st?.batch.kind === 'PROFORMA' && st.advanceRequired > 0 && !st.advancePending) {
+      const c = await db.customer.findUnique({ where: { id: st.batch.customerId }, select: { name: true } });
+      await notifyAdvanceRequired(db, { doc: d, paid, required: st.advanceRequired, firmName: c?.name ?? null, customerId: st.batch.customerId });
+    }
+    return;
+  }
+  if (!d.orderId) return;
+  const order = await db.order.findUnique({ where: { id: d.orderId }, select: { orderTypeCode: true, status: true, fgoDocuments: true } });
+  if (order?.orderTypeCode !== 'GLASS_ORDER' || order.status === 'IPTAL') return;
+  const { orderChain } = await import('../glass/billing.js');
+  const chain = orderChain(order.fgoDocuments);
+  if (!chain.invoice && chain.advanceRequired > 0) await notifyAdvanceRequired(db, { doc: d, paid, required: chain.advanceRequired });
 }
 
 /**

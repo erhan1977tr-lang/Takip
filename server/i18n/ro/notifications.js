@@ -1,0 +1,37 @@
+// Notificări în aplicație (clopoțel, notificare pop-up): server/notifications/inapp.js, components/NotificationCenter.tsx.
+// Titlurile evenimentelor de comandă vin din textele events.<EVENIMENT>; aici sunt doar tipurile fără text de eveniment.
+export default {
+  title: 'Notificări',
+  bell: 'Notificări',
+  bellUnread: 'Notificări ({n} necitite)',
+  empty: 'Nu există notificări.',
+  unread: 'Necitită',
+  markRead: 'Marchează ca citită',
+  markAll: 'Marchează toate ca citite',
+  open: 'Deschide',
+  close: 'Închide',
+  newOne: 'Notificare nouă',
+  newMany: '{n} notificări noi',
+  more: '+ încă {n} notificări',
+  showAll: 'Arată notificările',
+  sound: 'Sunet notificări',
+  soundOn: 'Activat',
+  soundOff: 'Dezactivat',
+  soundHint: 'Activează / dezactivează doar sunetul; clopoțelul, notificările pop-up și e-mailurile nu sunt afectate.',
+  order: 'Comanda {orderNo}',
+  types: {
+    LOADING_NOT_LOADED: { title: 'Sticlă neîncărcată: este necesară replanificarea' },
+    LOADING_REPLANNED: { title: 'Sticla neîncărcată a fost replanificată', customer: 'Sticla neîncărcată a fost replanificată la o nouă zi de încărcare' },
+    ACCOUNTING_ACTION: { title: 'Acțiune contabilă necesară: factura nu corespunde încărcării corectate' },
+    FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
+    ADVANCE_REQUIRED: { title: 'Încasare pe proformă: este necesară factura de avans' },
+  },
+  detail: {
+    ORDER_SHIP_DATE: 'data nouă {date}',
+    LOADING_NOT_LOADED: '{qty} buc. neîncărcate · {date}',
+    LOADING_REPLANNED: '{qty} buc. → {date}',
+    ACCOUNTING_ACTION: 'încărcarea din {date} · factura {ref}',
+    FGO_FAILED: '{error}',
+    ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
+  },
+};

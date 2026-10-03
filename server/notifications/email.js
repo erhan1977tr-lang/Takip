@@ -83,7 +83,7 @@ export async function recipientsFor(db, type, order) {
   return [...out.values()];
 }
 
-const STAFF = { email: true, language: true, appRole: true };
+const STAFF = { id: true, email: true, language: true, appRole: true, isActive: true };
 
 /**
  * Siparişle ilgilenen satışçı (ayrı bir "satışçı" alanı yok; mevcut kayıtlardan bulunur): siparişi çizim ekibine

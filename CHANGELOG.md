@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.41.0 — 03.10.2026
+
+- **Bildirimler (zil)**: üst çubukta zil ve okunmamış sayacı (1, 3, 9 … 99+). Listede okunmamış bildirimler belirgin;
+  listeyi açmak okundu yapmaz — bildirime tıklayınca, "okundu" ile ya da "tümünü okundu işaretle" ile okunur. Bildirim
+  ilgili sipariş / yükleme / faturalama sayfasını açar (sayfa kendi yetkisini denetler).
+- **Yeni bildirimde açılır bildirim ve kısa ses**: panel açıkken gelen yeni bildirim sağ altta kısa bir açılır
+  bildirimle gösterilir; aynı anda birkaç bildirim geldiyse tek özet. Girişte var olan eski okunmamış bildirimler
+  yalnızca sayaçta görünür — ses ve açılır bildirim üretmez. Bir yoklamada kaç bildirim gelirse gelsin tek ses; birden
+  çok sekme açıksa parti bir kez seslendirilir. Ses tarayıcının izin verdiği andan sonra (ilk etkileşim) çalar;
+  engellenirse sessizce geçilir.
+- **Sekme başlığı**: okunmamış bildirim varken "(3) Takip — …", kalmayınca başlık eski hâline döner.
+- **Bildirim sesi tercihi** ("Sunet notificări": Activat / Dezactivat): zildeki anahtardan ve müşteri Ayarlar
+  sayfasından, kullanıcı başına, çıkış gerekmeden. Yalnızca sesi kapatır; zil, açılır bildirim ve e-postalar sürer.
+- **Kapsanan olaylar**: yeni cam / profil siparişi (satış + yönetici / yalnızca yönetici), çizime yönlendirme, çizimin
+  müşteriye gönderilmesi, müşterinin revizyon isteği ve onayı (atanmış çizimci + ilgili satışçı), satış teklifinin
+  yöneticiye gelmesi, satışa geri gönderilmesi, teklifin müşteriye gönderilmesi / güncellenmesi, profil teklifi ve
+  onayı, proforma / fatura, yükleme tarihi, yüklendi, yüklenmeyen cam (yeniden planlama gerekir), aktarım, yükleme
+  düzeltmesinde "muhasebe işlemi gerekli", FGO'da kesilemeyen belge, proformaya gelen tahsilat için avans faturası.
+  Alıcılar e-posta kurallarıyla aynı; işlemi yapan kendi işlemini almaz. E-postalar değişmedi (ayrı kanal).
+- Satış ve çizim bildirimlerinde firma adı maskeli; müşteri yalnızca kendi siparişlerinin bildirimlerini görür;
+  bildirimlerde tutar yoktur.
+
 ## 3.40.1 — 03.10.2026
 
 - Onaylı yükleme kalemleri: bir yüklemede aynı cam satırı (ya da aynı aktarım) için "yüklenen" ve "yüklenmeyen"

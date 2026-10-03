@@ -399,6 +399,9 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           await writeHistory(tx, { orderId: row.orderId, event: 'FGO_FAILED', actorId: null, note: `${kind}: ${msg}`.slice(0, 200) });
           await tx.adminAlert.create({ data: { type: 'FGO_FAILED', orderId: row.orderId, details: { code: kind, error: msg.slice(0, 300), attempts: attempt } } });
         });
+        // Aynı olay uygulama içi bildirim olarak muhasebe yetkisine (işin kimliğiyle: yeniden denemede ikinci kez yazılmaz)
+        const { notifyFgoFailed } = await import('../notifications/inapp.js');
+        await notifyFgoFailed(db, { key: `fgo-failed:${row.id}`, orderId: row.orderId, error: msg });
       }
       log('cam FGO belgesi kesilemedi', kind, row.orderId, msg);
     }

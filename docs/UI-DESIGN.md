@@ -80,7 +80,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 | Form | `<label>` + input/select/textarea (styled globally) · `.field` · `.hint` · `.grid` / `.grid-2` / `.grid-3` · `.check` · `.chips` |
 | Table | `.table-wrap > table` (always wrap: narrow screens scroll sideways instead of crushing columns); uppercase `th`; group rows `.group-row`; right column `td.actions` (compact buttons); row hover is automatic; key/value `.kv` or `dl.order-info` |
 | Status | `Badge` from `components/StatusBadge.tsx` (`.badge` + `-ok/-warn/-info/-muted/-purple/-danger`) |
-| Messages | `.alert` + `-ok/-error/-warn/-info` (flash messages at the top of the page; there is no toast component) |
+| Messages | `.alert` + `-ok/-error/-warn/-info` (flash messages at the top of the page); new-notification toast = `.notif-toast` (bottom right, `NotificationCenter` only) |
 | Dialog | `<dialog class="modal">` |
 | Empty / waiting | `.empty` (left-aligned sentence under the section title) · `.loading` |
 | Navigation in a page | `.tabs` · `.toolbar` |
@@ -100,7 +100,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   drawer, plus a chip row.
 - Topbar: user name (company under it for customers); the role is a pill on the right on desktop and sits
   under the name on narrow screens — exactly one of the two is visible. Right side: role pill, language,
-  log out. There is no notification bell or account button; do not add look-alikes without a real feature.
+  log out, and the notification bell (`.notif-bell` + `.notif-badge`, `components/NotificationCenter.tsx`). There is no account button; do not add look-alikes without a real feature.
 - Desktop-first, but every screen must work at 390px: grids collapse to one column, tables scroll inside
   `.table-wrap`.
 - Keyboard focus is always visible (`:focus-visible`); respect `prefers-reduced-motion`.
@@ -262,6 +262,17 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   (required amount as `.badge-warn` when > 0); `#fatura-engeli` (`.alert-warn`) when loaded and an advance is
   required. There is no payment amount input (payment is read from FGO only).
 
+## Notifications (3.41.0)
+
+- Top bar: `.notif-bell` (38 px round button, bell icon) with `.notif-badge` (danger pill, 1…99 / 99+). Dropdown
+  `.notif-panel` (380 px, `--shadow-md`): `.notif-head` (title + "mark all" link button), `.notif-list` of
+  `.notif-item` (`.unread` = `--primary-soft` background, bold title, `.notif-read` dot button), `.notif-foot` with the
+  sound `.notif-switch` (role=switch; `.on` = ok tones). On phones the panel is fixed under the top bar.
+- Toast `.notif-toast`: fixed bottom right, 340 px, primary left border, head line "Notificare nouă / n notificări noi"
+  + `.notif-close`; body is the single notification (linked `.notif-main`) or a 3-title summary (`.notif-many`) that
+  opens the list. One toast per poll batch; auto-hides after 9 s. Never use it for flash messages — those stay `.alert`.
+- Tab title prefix "(n) " is added by the component; pages keep their own `<title>`.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
@@ -271,7 +282,7 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - Profile order detail page:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
-- Old-system features that do not exist here and were not faked: notification bell, "Hesabım" button,
+- Old-system features that do not exist here and were not faked: "Hesabım" button,
   per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9),
   offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle"),
   "Özel durum" and "Siparişi sil".

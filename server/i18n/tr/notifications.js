@@ -1,0 +1,37 @@
+// Uygulama içi bildirimler (zil, açılır bildirim): server/notifications/inapp.js, components/NotificationCenter.tsx.
+// Sipariş olaylarının başlıkları events.<OLAY> metinlerinden gelir; burada yalnızca olay metni olmayan türler vardır.
+export default {
+  title: 'Bildirimler',
+  bell: 'Bildirimler',
+  bellUnread: 'Bildirimler ({n} okunmamış)',
+  empty: 'Bildirim yok.',
+  unread: 'Okunmadı',
+  markRead: 'Okundu işaretle',
+  markAll: 'Tümünü okundu işaretle',
+  open: 'Aç',
+  close: 'Kapat',
+  newOne: 'Yeni bildirim',
+  newMany: '{n} yeni bildirim',
+  more: '+{n} bildirim daha',
+  showAll: 'Bildirimleri göster',
+  sound: 'Bildirim sesi',
+  soundOn: 'Açık',
+  soundOff: 'Kapalı',
+  soundHint: 'Yalnızca sesi açar / kapatır; zil, açılır bildirim ve e-postalar etkilenmez.',
+  order: 'Sipariş {orderNo}',
+  types: {
+    LOADING_NOT_LOADED: { title: 'Yüklenmeyen cam: yeniden planlama gerekli' },
+    LOADING_REPLANNED: { title: 'Yüklenmeyen cam ileri yüklemeye aktarıldı', customer: 'Yüklenmeyen camınız yeni yükleme gününe aktarıldı' },
+    ACCOUNTING_ACTION: { title: 'Muhasebe işlemi gerekli: fatura düzeltilmiş yüklemeyle uyuşmuyor' },
+    FGO_FAILED: { title: "FGO'da belge kesilemedi" },
+    ADVANCE_REQUIRED: { title: 'Proformaya tahsilat geldi: avans faturası gerekli' },
+  },
+  detail: {
+    ORDER_SHIP_DATE: 'yeni tarih {date}',
+    LOADING_NOT_LOADED: '{qty} adet yüklenmedi · {date}',
+    LOADING_REPLANNED: '{qty} adet → {date}',
+    ACCOUNTING_ACTION: '{date} yüklemesi · fatura {ref}',
+    FGO_FAILED: '{error}',
+    ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
+  },
+};

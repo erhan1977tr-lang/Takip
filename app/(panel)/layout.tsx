@@ -10,13 +10,18 @@ import { SIDEBAR_INIT, SIDEBAR_SLOT, SidebarToggle } from '@/components/Sidebar'
 import { isDemo } from '@/server/demo/accounts.js';
 import { logoutAction } from './actions';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { NotificationCenter } from '@/components/NotificationCenter';
+import { loadFeed } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const { t, locale, m } = await getT();
+  const { t, locale, m, intl } = await getT();
   const demo = isDemo();
+  // Bildirim akışı (zil): yalnızca bu kullanıcının bildirimleri; ortak otomatik yenilemeyle birlikte tazelenir
+  const feed = await loadFeed(user.id, locale);
+  const n = m.notifications;
   const defs: NavDef[] = demo && userCan(user, 'SETTINGS_MANAGE')
     ? [...NAV.ADMIN, { section: 'nav.demo' }, { href: '/demo/posta', key: 'nav.demoMail' }]
     : NAV[user.appRole];
@@ -55,6 +60,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <div className="row topbar-right">
             <span className="role-pill" title={role}>{role}</span>
             {demo && <span className="badge badge-warn" title={t('common.demoTitle')}>{t('common.demoBadge')}</span>}
+            <NotificationCenter
+              feed={feed} sound={user.notificationSound} intl={intl}
+              m={{
+                title: n.title, bell: n.bell, bellUnread: n.bellUnread, empty: n.empty, unread: n.unread, markRead: n.markRead, markAll: n.markAll, close: n.close,
+                newOne: n.newOne, newMany: n.newMany, more: n.more, showAll: n.showAll, sound: n.sound, soundOn: n.soundOn, soundOff: n.soundOff,
+              }}
+            />
             <LanguageSelect locale={locale} names={m.lang} title={t('lang.label')} />
             <form action={logoutAction}>
               <button type="submit" className="btn btn-link">{t('common.logout')}</button>

@@ -110,7 +110,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
       action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
       details: { orderNo, files: allFiles.length, ...(draftId ? { fromDraft: true } : {}), ...(no !== requestedNo ? { requestedNo, assignedNo: no } : {}) },
     }, actor);
-    await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo } }));
+    await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, actorId: actor.id } }));
     return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== requestedNo, dropped };
   });
 }

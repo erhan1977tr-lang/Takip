@@ -552,7 +552,8 @@ export function executeAction(db, { workflow, actions, include, finish = null, o
       audit: (tx, entry) => writeAudit(tx, entry, actor),
       outbox: { enqueue: (tx, ev) => enqueueOutbox(tx, ev) },
       events: (applied) => [
-        ...applied.entries.map((e) => outboxEvent(`ORDER_${e.event}`, { orderId: applied.order.id, payload: { from: e.from ?? null, to: e.to ?? null } })),
+        // actorId: uygulama içi bildirimde işlemi yapan kullanıcıya kendi işlemi bildirilmez (server/notifications/inapp.js)
+        ...applied.entries.map((e) => outboxEvent(`ORDER_${e.event}`, { orderId: applied.order.id, payload: { from: e.from ?? null, to: e.to ?? null, actorId: actor.id ?? null } })),
         ...(applied.outbox ?? []),
       ],
       sanitize: (o) => o,

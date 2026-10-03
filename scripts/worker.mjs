@@ -5,6 +5,7 @@
 //   - FGO (Aşama 6b): kuyruktaki proforma ve faturaları keser (BT kuruyla, RON).
 //   - Cam FGO belgeleri (proforma / avans / fatura) ve müşteriye belge e-postaları.
 //   - Sipariş olaylarının bildirim e-postaları (server/notifications/email.js; NOTIFY_EMAILS).
+//   - Aynı olayların uygulama içi bildirimleri (zil): server/notifications/inapp.js — e-postadan bağımsız ayrı kanal.
 //   - Muhasebe: açık FGO belgelerinin tutar / ödeme durumu saatte bir FGO'dan yenilenir (server/accounting/receivables.js).
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
@@ -20,6 +21,7 @@ import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
 import { getEnv } from '../server/env.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
+import { dispatchInApp } from '../server/notifications/inapp.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -60,6 +62,9 @@ async function profileTick() {
   if (g.done || g.failed) log('FGO cam:', JSON.stringify(g));
   const b = await dispatchBatchJobs(db, { now, log });
   if (b.done || b.failed) log('FGO müşteri proforması:', JSON.stringify(b));
+  // Uygulama içi bildirimler: e-posta ayarlı olmasa da dağıtılır (FGO işlerinden sonra: hata bildirimleri aynı turda)
+  const a = await dispatchInApp(db, { now, log });
+  if (a.created) log('uygulama içi bildirim:', JSON.stringify(a));
   if (!mail) return;
   const e = await dispatchDocEmails(db, { ...mail, now, log });
   if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));

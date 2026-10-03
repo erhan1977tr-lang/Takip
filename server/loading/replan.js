@@ -17,7 +17,7 @@
 import { can } from '../auth/permissions.js';
 import { parseDateOnly } from '../orders/rules.js';
 import { dayKey } from '../orders/loading.js';
-import { writeAudit, writeHistory } from '../orders/journal.js';
+import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { NOT_LOADED_REASONS, effectiveItems, itemKey, shipDayDate, snapshotOfItem } from './confirmation.js';
 
 export { NOT_LOADED_REASONS };
@@ -161,6 +161,8 @@ export async function replanNotLoaded(db, { itemId, day, quantity = null, replac
           fromLoading: fromDay, previousLoading: current ? dayOf(current.shipDay) : null, toLoading: day, replaced: current?.id ?? null,
         },
       }, actor);
+      // Aktarım açıldı / günü değişti: müşteriye ve ilgili satışçıya bildirim (uygulama içi — karar 107)
+      await enqueueOutbox(tx, { type: 'LOADING_REPLANNED', orderId: item.orderId, payload: { day, from: fromDay, qty: wanted, replanId: replan.id, actorId: actor.id } });
       return { ok: true, replanId: replan.id, quantity: wanted, free: free - wanted, moved: !!current };
     }, { timeout: 30_000 });
   } catch (e) {
