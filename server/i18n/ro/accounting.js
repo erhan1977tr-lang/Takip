@@ -236,7 +236,7 @@ export default {
       rest: "Rest",
       status: "Stare",
       checked: "Verificat FGO",
-      email: "E-mail client",
+      email: "E-mail",
     },
     kind: {
       ADVANCE: "Factură de avans",

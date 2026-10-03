@@ -236,7 +236,7 @@ export default {
       rest: "Kalan",
       status: "Durum",
       checked: "FGO kontrol",
-      email: "Müşteri e-postası",
+      email: "E-posta",
     },
     kind: {
       ADVANCE: "Avans faturası",
