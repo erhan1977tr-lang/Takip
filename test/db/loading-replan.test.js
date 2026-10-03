@@ -365,10 +365,15 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const list = await transportList(db, X);
   assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note])]), [['CRB', [[15, `güncel · + ${a1.orderNo} (CRA)`]]]]);
   assert.deepEqual(list.missing, []);
+  // Fiziksel ağırlık sandıkta (ev sahibinin grubunda): sandığın girilen brüt ağırlığı, içindeki misafir camla birlikte
+  assert.deepEqual([list.crateCount, list.totalKg, list.groups[0].totalKg, list.groups[0].crates[0].weight], [1, 260, 260, 260]);
 
   // --- Yükleme onayı ve fatura: gerçek müşteriye göre — A'nın siparişi A'nın faturasında, B'ninkinde değil
   assert.equal((await confirm(X)).ok, true);
   assert.deepEqual((await db.loadingConfirmationItem.findMany({ where: { orderId: a1.id } })).map((i) => i.customerId), [A.id, A.id]);
+  // Ev sahibi misafir siparişi / değerini edinmez: B'nin onay kalemlerinde A'nın siparişi yok
+  assert.equal(await db.loadingConfirmationItem.count({ where: { customerId: B.id, orderId: a1.id } }), 0);
+  const confirmed = await rawItems(X);
   const view = await billing(X);
   const [ga, gb] = [view.customers.find((x) => x.customerId === A.id).groups[0], view.customers.find((x) => x.customerId === B.id).groups[0]];
   assert.deepEqual([ga.orders.map((x) => x.orderNo), gb.orders.map((x) => x.orderNo)], [[a1.orderNo], [b1.orderNo]]);
@@ -396,6 +401,25 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   assert.equal(await db.auditLog.count({ where: { action: 'CROSS_CUSTOMER_CRATE_REMOVED', entityId: a1.id } }), 1);
   assert.equal(JSON.stringify(await db.billingBatch.findUnique({ where: { id: ia.id }, include: { orders: true, lines: true, document: true } })), batchBefore);
   assert.deepEqual((await db.crateOrder.findMany({ where: { crateId: kept.id } })).map((x) => x.orderId), [b1.id]);
+  // Yalnızca fiziksel yerleşim değişti: sandık B'nin sandığı olarak duruyor, notundan misafir sipariş çıktı; A'nın siparişi
+  // yeniden "sandığı girilmemiş". Sipariş sahibi, kesilmiş faturalar ve yükleme onayı aynen.
+  let after = await transportList(db, X);
+  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight])]), after.missing], [[['CRB', [[15, 'güncel', 260]]]], [a1.orderNo]]);
+  // Yerleşimi değiştirme: B'nin başka bir sandığına (16) — yine yalnızca fiziksel
+  assert.deepEqual(await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [{ ...row15, note: 'güncel' }, { ...row15, crateNo: 16, netKg: 80, grossKg: 130, orderIds: [] }], actor: sales }), { ok: true, count: 2 });
+  const crate16 = await db.crate.findFirstOrThrow({ where: { shipDay: date(X), customerId: B.id, crateNo: 16 } });
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate16.id, actor: actor() }), { ok: true, crateNo: 16 });
+  after = await transportList(db, X);
+  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight])]), after.missing, after.totalKg],
+    [[['CRB', [[15, 'güncel', 260], [16, `+ ${a1.orderNo} (CRA)`, 130]]]], [], 390]);
+  assert.equal((await db.order.findUnique({ where: { id: a1.id } })).customerId, A.id);
+  assert.equal(crate16.customerId, B.id);
+  assert.equal(JSON.stringify(await db.billingBatch.findUnique({ where: { id: ia.id }, include: { orders: true, lines: true, document: true } })), batchBefore, 'A\'nın faturası değişmedi');
+  assert.deepEqual((await db.billingBatch.findUnique({ where: { id: ib.id }, include: { orders: true } })).orders.map((x) => x.orderNo), [b1.orderNo], 'B\'nin faturasına misafir sipariş girmedi');
+  assert.equal(await rawItems(X), confirmed, 'yükleme onayı fiziksel yerleşim değişikliklerinden etkilenmedi');
+  await assert.rejects(db.loadingConfirmationItem.updateMany({ where: { confirmation: { shipDay: date(X) } }, data: { customerId: B.id } }), /append-only/, 'onay kalemi veritabanında da değiştirilemez');
+  const profitAfter = await dayProfit(X);
+  assert.deepEqual([profitAfter.orders, profitAfter.byCur.EUR.sale, profitAfter.byCur.EUR.cost], [2, 280, 175], 'kârlılık sipariş başına aynı');
 
   // --- Proforma (ileri gün): A'nın siparişi B'nin sandığında olsa da A'nın proformasına girer, B'ninkine girmez; kapsam denetimi etkilenmez
   const a2 = await glassOrder(A, Y, [glassLine(2)]);

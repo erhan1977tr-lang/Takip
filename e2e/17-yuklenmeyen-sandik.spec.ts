@@ -70,7 +70,8 @@ test('veri: iki müşterinin aynı güne planlı siparişleri ve ev sahibi müş
   const ou = await order(u.customer!, 7701, 10);
   const ob = await order(b.customer!, 7702, 3);
   const crate = await db.crate.create({
-    data: { shipDay: new Date(`${DAY}T00:00:00Z`), customerId: beta.id, crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, netAgirlik: 190, brutAgirlik: 260, orders: { create: [{ orderId: ob.id }] } },
+    // Ağırlık girilmemiş sandık: net = içindeki camın ağırlığı, brüt = net + 50 kg dara (fiziksel ağırlık camdan hesaplanır)
+    data: { shipDay: new Date(`${DAY}T00:00:00Z`), customerId: beta.id, crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, orders: { create: [{ orderId: ob.id }] } },
   });
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Bucharest', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   await db.integrationSetting.upsert({ where: { key: 'fx.daily' }, create: { key: 'fx.daily', value: { day: today, rate: 5.1 } }, update: { value: { day: today, rate: 5.1 } } });
@@ -141,6 +142,14 @@ test('yönetici: 10 adedin 2\'si kırık → onay 8 / 2; kalan 2 ileri güne akt
 test('yönetici: sipariş başka müşterinin sandığına konur — müşterisi ve faturası değişmez; satış maskeli görür; müşteriler birbirinin verisini görmez', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
+  // Sütunlar: 0 müşteri · 1 sipariş · 2 cam · 3 CNC · 4 delik · 5 metraj · 6 net kg · 7 sandık · 8 brüt kg
+  const groupRow = (name: string) => page.locator('.card#gun tr.group-total', { hasText: name });
+  const cells = async (row: ReturnType<typeof groupRow>) => (await row.locator('td').allInnerTexts()).slice(1, 9).map((s) => s.trim().split(/\s/)[0]);
+  const foot = page.locator('.card#gun .load-table tfoot tr');
+  // Yerleşimden önce: cam 20 kg/m² — Ünsal 10 m² = 200 kg (1 tahmini sandık, brüt 250); Beta 3 m² = 60 kg (kendi sandığı, brüt 110)
+  expect(await cells(groupRow(uns.name))).toEqual(['1', '10', '–', '–', '10,00', '200', '1', '250']);
+  expect(await cells(groupRow(beta.name))).toEqual(['1', '3', '–', '–', '3,00', '60', '1', '110']);
+  expect(await cells(foot)).toEqual(['2', '13', '–', '–', '13,00', '260', '2', '360']);
   const guestBox = page.locator(`#gun .guest-box[data-owner="${uns.id}"]`);
   await guestBox.locator('.guest-assign > summary').click();
   await guestBox.locator('select[name=orderId]').selectOption(orderU);
@@ -152,13 +161,29 @@ test('yönetici: sipariş başka müşterinin sandığına konur — müşterisi
   await expect(orderRow.locator('.guest-badge')).toContainText(`#15 · ${beta.name}`);
   await expect(page.locator(`#gun .guest-box[data-owner="${uns.id}"] .guest-out`)).toContainText(`sipariş müşterisi: ${uns.name}`);
   await expect(page.locator(`#gun .guest-box[data-owner="${beta.id}"] .guest-in`)).toContainText('Sandık 15 ← UNS7701');
+  // Fiziksel ağırlık ev sahibinin sandığında: Beta'nın sandığı artık 60 + 200 = 260 kg net, 310 kg brüt; Ünsal için ayrıca
+  // sandık / ağırlık oluşmaz. Ticari sayılar değişmedi: Ünsal 1 sipariş · 10 cam · 10 m²; Beta 1 sipariş · 3 cam · 3 m².
+  expect(await cells(groupRow(uns.name))).toEqual(['1', '10', '–', '–', '10,00', '0', '0', '0']);
+  expect(await cells(groupRow(beta.name))).toEqual(['1', '3', '–', '–', '3,00', '260', '1', '310']);
+  expect(await cells(foot), 'gün toplamı: cam ağırlığı aynı, tek sandık').toEqual(['2', '13', '–', '–', '13,00', '260', '1', '310']);
   await shot(page, 'baska-musterinin-sandigi');
   // Fatura: sipariş gerçek müşterisinin bölümünde; ev sahibinin faturasında yok
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${uns.id}"]`)).toContainText('Comanda UNS7701');
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${beta.id}"]`)).not.toContainText('UNS7701');
-  // Yükleme dökümü (Excel) üretilir
-  const xlsx = await page.request.get(`/yuklemeler/dokum?gun=${DAY}`);
-  expect(xlsx.status()).toBe(200);
+  // Yükleme dökümü (Excel): satırlar gerçek müşteride; fiziksel sandık sütununda ev sahibi; sevk ağırlığı fiziksel sandıktan
+  const { readXlsx } = await import('../server/files/xlsx.js');
+  const sheet = async (p: Page) => {
+    const res = await p.request.get(`/yuklemeler/dokum?gun=${DAY}`);
+    expect(res.status()).toBe(200);
+    return readXlsx(await res.body()).rows as (string | number | null)[][];
+  };
+  const rows = await sheet(page);
+  const stat = (k: string) => rows.find((r) => r[0] === k)?.[1];
+  expect([stat('Cam ağırlığı'), stat('Sandık'), stat('Sevk ağırlığı')]).toEqual(['260 kg', '1', '310 kg']);
+  const guestRow = rows.find((r) => r[0] === 'UNS7701')!;
+  expect([guestRow[1], guestRow[4], guestRow[6], guestRow[9]]).toEqual([uns.name, 10, 10, `#15 (${beta.name})`]);
+  const hostRow = rows.find((r) => r[0] === 'BET7702')!;
+  expect([hostRow[1], hostRow[4], hostRow[6], hostRow[9]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([beta.name, 3, 3, '#15']);
   const db = await prisma();
   expect((await db.order.findUniqueOrThrow({ where: { id: orderU } })).customerId).toBe(uns.id);
   expect((await db.crate.findUniqueOrThrow({ where: { id: crateId } })).customerId).toBe(beta.id);
@@ -173,6 +198,13 @@ test('yönetici: sipariş başka müşterinin sandığına konur — müşterisi
   await expect(sales.locator('.guest-assign')).toHaveCount(0);
   await expect(sales.locator('#yuklenmeyen')).toContainText('UNS7701');
   await expect(sales.locator('#yuklenmeyen input[name=newDay]')).toHaveCount(0);
+  const salesRows = (await (async () => {
+    const res = await sales.request.get(`/yuklemeler/dokum?gun=${DAY}`);
+    expect(res.status()).toBe(200);
+    return readXlsx(await res.body()).rows as (string | number | null)[][];
+  })());
+  const salesGuest = salesRows.find((r) => r[0] === 'UNS7701')!;
+  expect([salesGuest[1], salesGuest[9]], 'satış dökümünde adlar maskeli').toEqual([`${uns.name.slice(0, 3)}**********`, `#15 (${beta.name.slice(0, 3)}**********)`]);
   await sales.context().close();
 
   // Sipariş sahibi müşteri: kendi siparişi için yalnızca sandık numarası; ev sahibinin adı, siparişi, sandık ölçüsü yok
