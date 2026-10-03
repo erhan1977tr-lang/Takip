@@ -17,7 +17,8 @@ export async function glassDocumentAction(fd: FormData) {
   const id = String(fd.get('id') ?? '');
   const kind = String(fd.get('kind') ?? '');
   if (!['PROFORMA', 'ADVANCE', 'INVOICE'].includes(kind)) redirect(back(id, 'fgoError=NOT_ALLOWED'));
-  const r = await requestGlassDocument(db, { orderId: id, kind, actor: await actorOf(user) });
+  // Elle kur (isteğe bağlı): geçerliliği ve "kur zaten belirli" denetimi requestGlassDocument'ta
+  const r = await requestGlassDocument(db, { orderId: id, kind, actor: await actorOf(user), manualRate: String(fd.get('fxRate') ?? '').trim() || null });
   if (!r.ok) redirect(back(id, `fgoError=${r.code}`));
   await dispatchGlassJobs(db, { onlyOrderId: id });
   revalidatePath(`/siparisler/${id}`);

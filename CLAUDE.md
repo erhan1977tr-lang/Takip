@@ -426,6 +426,14 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
     - **Paid proforma without advance invoice + loaded:** the final invoice is blocked (`billingState` → `paid_no_advance`, re-checked when the job is issued). Do not invent an offset.
     - Physical crates stay decoupled from commercial ownership; partial loading is representable (LOADED + NOT_LOADED rows per line) but there is no partial/broken-glass UI yet.
 
+30. **Customer exchange-rate policy (Phase 7D-1, decisions.md #95–97):**
+    - `Customer.fxPolicy` = `BT_UNIT_SELL | BNR | BNR_PLUS_PERCENT` (+ `fxMarkupPercent`, 0–20, max 3 decimals), set on Admin → Müşteriler (`CUSTOMER_MANAGE`, validated by `parseFxPolicy`). **Null = legacy**: the pre-7D-1 behaviour (`rateForDay`: Integrations FX setting / daily BT rate) — never assign a policy to existing customers automatically.
+    - **One resolver:** `resolveExchangeRate` in `server/fx/resolve.js` returns `{ policy, currency, baseRate, markupPercent, finalRate, rate, source, sourceDate, resolvedAt, manual }`. Every FGO flow that needs a rate (glass now, customer-level documents in 7D-2) must call it — never compute a rate elsewhere.
+    - **BNR:** only BNR's own XML (`server/fx/bnr.js`), validated, multiplier-normalised, cached 30 min. **BNR + %:** exact BigInt arithmetic (`server/fx/decimal.js`), rounded once, half-up, to 4 decimals (5.1000 + 2% = 5.2020).
+    - **BT_UNIT_SELL has no automatic source** (the website value "În unitățile BT → Vânzare" is not available through a structured official endpoint and the site rejects server requests): it uses the daily BT rate Admin enters on Integrations (`MANUAL_DAY`, manual). **Never use the BT XML (`exchange.xml`, `fxUrl`) for this policy** — it is a different rate. If BNR is unavailable, never fall back silently to another rate: the document waits or Admin enters a manual rate.
+    - **Snapshot:** the rate is written once to `GlassBilling` together with its origin (`fxRate`, `fxDate`, `fxSource`, `fxPolicy`, `fxCurrency`, `fxBaseRate`, `fxMarkupPercent`, `fxSourceDate`, `fxResolvedAt`, `fxManual`, via `fxSnapshot`); advance and final invoice reuse it and never re-resolve. **Manual rate:** optional field when Admin requests the document that sets the rate; overrides any policy, stored as `MANUAL`; rejected when a rate is already stored (`RATE_LOCKED`).
+    - **Profile billing is unchanged** (BT rate as in #24) and ignores the customer policy. `FgoDocument` is unchanged; combined customer/loading documents are Phase 7D-2/7D-3 (not implemented).
+
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
 - UI strings only via `server/i18n/{tr,ro}/*.js` — never hard-code visible text. Both locales must have the same keys (enforced by `test/i18n.test.js`).

@@ -237,6 +237,10 @@ model Customer {
   country       String?
   county        String?
   city          String?
+  // Kur politikası (Aşama 7D-1, karar 95): boş = eski davranış (Entegrasyonlar'daki kur ayarı); yönetici seçince değişir.
+  // Kur yalnızca server/fx/resolve.js → resolveExchangeRate ile çözülür.
+  fxPolicy        FxPolicy?
+  fxMarkupPercent Decimal? @db.Decimal(6, 3) // yalnızca BNR_PLUS_PERCENT: BNR kuruna eklenen yüzde (2 = %2)
   users         User[]   // müşteri panelini kullanan kişiler
   orders        Order[]
   orderDrafts   OrderDraft[]
@@ -1075,9 +1079,18 @@ model GlassBilling {
   id         String    @id @default(cuid())
   orderId    String    @unique
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  fxRate     Decimal?  @db.Decimal(10, 4) // proforma kuru (avans ve kapanış faturası da bunu kullanır)
+  fxRate     Decimal?  @db.Decimal(10, 4) // proforma kuru = uygulanan (son) kur (avans ve kapanış faturası da bunu kullanır)
   fxDate     DateTime? @db.Date
-  fxSource   String?
+  fxSource   String?   // BNR | MANUAL | MANUAL_DAY | BT adresi (eski)
+  // Kur kaydının kalanı (karar 96): belge kesilirken çözücünün döndürdüğü değerler; kur ile birlikte bir kez yazılır.
+  // Boş = 7D-1'den önce kesilmiş belge.
+  fxPolicy        String?   // LEGACY | BT_UNIT_SELL | BNR | BNR_PLUS_PERCENT
+  fxCurrency      String?
+  fxBaseRate      Decimal?  @db.Decimal(12, 6)
+  fxMarkupPercent Decimal?  @db.Decimal(6, 3)
+  fxSourceDate    DateTime? @db.Date
+  fxResolvedAt    DateTime?
+  fxManual        Boolean?
   paidAt     DateTime? // yönetici "Ödeme alındı" dediyse
   paidAmount Decimal?  @db.Decimal(14, 2) // RON, TVA dahil (avans faturasının tutarı)
   paidById   String?
@@ -1103,6 +1116,13 @@ model LoadingCost {
 // Yükleme günü başına tek onay. Kayıtlar yalnızca eklenir: onaylanan yükleme değiştirilmez / silinmez
 // (veritabanı tetikleyicisiyle de korunur). Düzeltme gerekirse ayrı, denetimli bir iş akışı olarak eklenecek.
 // ---------------------------------------------------------
+// Müşterinin kur politikası (karar 95)
+enum FxPolicy {
+  BT_UNIT_SELL     // Banca Transilvania → "În unitățile BT" → "Vânzare"
+  BNR              // BNR resmî kuru
+  BNR_PLUS_PERCENT // BNR + müşteriye özel yüzde
+}
+
 enum LoadedStatus {
   LOADED     // fiilen yüklendi
   NOT_LOADED // planlanmıştı ama yüklenmedi (neden: notLoadedReason); sonraki yüklemeye aktarılabilir

@@ -3,7 +3,13 @@ import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
+import { getEnv } from '@/lib/env';
+import { FxInfo, FxUnavailableNote, fxPolicyLabel } from '@/components/FxInfo';
+import { FX_MARKUP_MAX, previewExchangeRate, trimPercent } from '@/server/fx/resolve.js';
+import { bnrRate } from '@/server/fx/bnr.js';
+import { localDay } from '@/server/profile/dates.js';
 import { updateFirmAction } from '../actions';
+import { FxPolicyFields } from '../FxPolicyFields';
 
 export default async function EditFirmPage({
   params,
@@ -13,11 +19,16 @@ export default async function EditFirmPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   await requirePermission('CUSTOMER_MANAGE');
-  const { t } = await getT();
+  const { t, m } = await getT();
   const { id } = await params;
   const sp = await searchParams;
   const f = await db.customer.findUnique({ where: { id } });
   if (!f) notFound();
+  // Bugünün kuru (seçili politikayla): BNR 30 dakika saklanır; alınamazsa "alınamadı" gösterilir, başka kur gösterilmez.
+  // Politika seçilmemişse (eski kural) burada ağa çıkılmaz.
+  const fxToday = f.type === 'CUSTOMER' && f.fxPolicy
+    ? await previewExchangeRate(db, { customer: f, currency: 'EUR', day: localDay(new Date(), getEnv().APP_TIMEZONE), bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
+    : null;
 
   return (
     <>
@@ -52,12 +63,42 @@ export default async function EditFirmPage({
           <div><label htmlFor="city">{t('admin.firmForm.city')}</label><input id="city" name="city" type="text" maxLength={80} defaultValue={f.city ?? ''} /></div>
           <div><label htmlFor="address">{t('admin.firmForm.address')}</label><input id="address" name="address" type="text" maxLength={250} defaultValue={f.address ?? ''} /></div>
         </div>
+        {/* Kur politikası (Aşama 7D-1): cam FGO belgelerinin kuru; seçilmediyse eski kural */}
+        {f.type === 'CUSTOMER' && (
+          <div id="kur">
+            <h2 style={{ marginTop: 18 }}>{t('fx.title')}</h2>
+            <p className="muted small">{t('fx.intro')}</p>
+            <FxPolicyFields policy={f.fxPolicy ?? ''} percent={f.fxMarkupPercent != null ? trimPercent(f.fxMarkupPercent.toString()).replace('.', ',') : ''} max={FX_MARKUP_MAX} m={m.fx} />
+          </div>
+        )}
         {sp.error && <div className="alert alert-error" style={{ marginTop: 14 }}>{sp.error}</div>}
         <div className="row end" style={{ marginTop: 14 }}>
           <Link href="/admin/firms" className="btn">{t('common.cancel')}</Link>
           <button type="submit" className="btn btn-primary">{t('common.save')}</button>
         </div>
       </form>
+      {f.type === 'CUSTOMER' && (
+        <div className="card" id="kur-bugun">
+          <h2>{t('fx.todayTitle')}</h2>
+          {!fxToday ? (
+            <>
+              <p><b>{t('fx.policyLabel')}:</b> {fxPolicyLabel(t, null, null)}</p>
+              <p className="muted small">{t('fx.legacyHint')}</p>
+            </>
+          ) : fxToday.ok ? (
+            <>
+              <FxInfo fx={fxToday.fx} t={t} />
+              {f.fxPolicy === 'BT_UNIT_SELL' && <p className="muted small">{t('fx.btAutoNote')}</p>}
+            </>
+          ) : (
+            <>
+              <p><b>{t('fx.policyLabel')}:</b> {fxPolicyLabel(t, f.fxPolicy, f.fxMarkupPercent?.toString())}</p>
+              <FxUnavailableNote code={fxToday.code} error={fxToday.error} t={t} />
+              {fxToday.code === 'BT_MANUAL_REQUIRED' && <p className="small"><Link href="/admin/entegrasyonlar">{t('fx.integrationsLink')}</Link></p>}
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

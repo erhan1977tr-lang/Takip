@@ -242,7 +242,7 @@ export default {
       fxManual: "Elle — günün BT kuru (aşağıdaki kutu)",
       fxAuto: "Otomatik — BT kur adresinden",
       dailyTitle: "Günün BT kuru (elle)",
-      dailyIntro: "BT sitesi sunucudan okunamazsa (ör. HTTP 403) bugün kesilecek proformalar burada girilen kurla kesilir. Kur yalnızca girildiği gün geçerlidir; her iş günü sabahı BT sitesindeki EUR satış (vânzare) kurunu girin.",
+      dailyIntro: "BT sitesi sunucudan okunamazsa (ör. HTTP 403) bugün kesilecek proformalar burada girilen kurla kesilir. Kur yalnızca girildiği gün geçerlidir; her iş günü sabahı BT sitesindeki EUR satış (vânzare) kurunu girin. Kur politikası „BT satış kuru – în unitățile BT” olan müşterilerde her zaman buraya girilen kur kullanılır (bu kur otomatik alınamıyor; BT'nin XML dosyasındaki kur onlar için kullanılmaz).",
       dailyRate: "EUR satış kuru",
       dailySave: "Kaydet",
       dailySaved: "Günün kuru kaydedildi: {rate} RON.",

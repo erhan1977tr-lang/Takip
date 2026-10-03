@@ -195,6 +195,17 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Supplier page: each loading row carries a state badge (`.cell-badges`: green "onaylı" / grey "planlanan",
   amber "maliyet eksik"); the missing-cost entry card is `#maliyet-gir` with one `form.acc-form` per line.
 
+## Exchange-rate policy (3.35.0)
+
+- Customer edit page (`/admin/firms/[id]`): section "Kur politikası / Politica curs valutar" inside the existing form
+  (`FxPolicyFields`: select + percentage field shown only for "BNR + %"), then a separate card `#kur-bugun` with today's
+  rate for the saved policy.
+- Rate details are always shown with `components/FxInfo.tsx` (`.kv.fx-info`: policy → base rate → percent → applied
+  rate → source → rate date). A manual rate carries a `warn` badge (ELLE / MANUAL). When a rate cannot be resolved use
+  `FxUnavailableNote` (`.alert-warn.fx-unavailable`) — never show another rate in its place.
+- Glass order → Finans / FGO: `.fx-block` with the same component (today's rate before the document, stored snapshot
+  after it); the optional manual-rate input sits in the document form (`.fx-manual`).
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

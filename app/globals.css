@@ -436,6 +436,10 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .kv { width: 100%; }
 .kv td { border-bottom: 1px solid var(--divider); padding: 9px 0; }
 .kv td:first-child { color: var(--muted); font-size: var(--fs-meta); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; width: 42%; }
+/* Kur bilgisi (Müşteriler → kur politikası, Finans / FGO): politika → taban kur → uygulanan kur → kaynak */
+.fx-info { max-width: 560px; margin-bottom: 10px; }
+.fx-block { margin-top: 16px; }
+.fx-manual { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .file-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: var(--surface); }
 .file-ext { width: 42px; height: 42px; border-radius: var(--radius-sm); background: var(--surface-3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; font-weight: 700; color: var(--text-2); flex-shrink: 0; text-transform: uppercase; }
 .file-row .grow { flex: 1; min-width: 0; }

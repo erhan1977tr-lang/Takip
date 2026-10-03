@@ -7,13 +7,16 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
 import { isFirmCode, suggestFirmCode } from '@/lib/prefix';
-import { getT, type T } from '@/lib/i18n';
+import { getT, type T, type MsgKey } from '@/lib/i18n';
+import { parseFxPolicy } from '@/server/fx/resolve.js';
 
 export type FirmFormState = { error?: string; ok?: string; values?: Record<string, string> };
 
 type FirmInput = {
   name: string; type: CustomerType; prefix: string | null;
   groupName: string | null; camEtiket: string | null; sandikEtiket: string | null;
+  // Kur politikası (karar 95): yalnızca düzenleme formunda; formda yoksa dokunulmaz
+  fxPolicy?: 'BT_UNIT_SELL' | 'BNR' | 'BNR_PLUS_PERCENT' | null; fxMarkupPercent?: string | null;
 } & Partial<Record<(typeof BILLING)[number], string | null>>;
 
 // Fatura bilgileri (Aşama 6b, FGO). Yalnızca düzenleme formunda; formda yoksa dokunulmaz.
@@ -25,10 +28,11 @@ function read(formData: FormData) {
     name: v('name'), type: v('type'), prefix: v('prefix'),
     groupName: v('groupName'), camEtiket: v('camEtiket'), sandikEtiket: v('sandikEtiket'),
     billing: Object.fromEntries(BILLING.filter((k) => formData.has(k)).map((k) => [k, v(k)])) as Partial<Record<(typeof BILLING)[number], string>>,
+    fx: formData.has('fxPolicy') ? { policy: v('fxPolicy'), percent: v('fxMarkupPercent') } : null,
   };
 }
 
-const formValues = ({ billing, ...rest }: ReturnType<typeof read>): Record<string, string> => ({ ...rest, ...billing });
+const formValues = ({ billing, fx: _fx, ...rest }: ReturnType<typeof read>): Record<string, string> => ({ ...rest, ...billing });
 
 async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): Promise<{ data?: FirmInput; error?: string }> {
   if (!raw.name) return { error: t('admin.firmActions.nameRequired') };
@@ -52,8 +56,16 @@ async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): 
     if (prefixClash) return { error: t('admin.firmActions.prefixTaken', { prefix, firm: prefixClash.name }) };
   }
   const nz = (s: string) => (s ? s.slice(0, 120) : null);
+  // Kur politikası: yüzde sunucuda doğrulanır (sayı, 0–20, en çok 3 ondalık). Fabrika kaydında politika olmaz.
+  let fx: Pick<FirmInput, 'fxPolicy' | 'fxMarkupPercent'> = {};
+  if (raw.fx) {
+    const r = parseFxPolicy(type === 'CUSTOMER' ? raw.fx : { policy: '', percent: '' });
+    if (!r.ok) return { error: t(`fx.errors.${r.code}` as MsgKey) };
+    fx = r.data;
+  }
   return {
     data: {
+      ...fx,
       name: raw.name, type, prefix: prefix || null,
       groupName: nz(raw.groupName), camEtiket: nz(raw.camEtiket), sandikEtiket: nz(raw.sandikEtiket),
       ...Object.fromEntries(Object.entries(raw.billing).map(([k, y]) => [k, String(y ?? '')]).map(([k, x]) => [k, k === 'taxId' ? nz(x.replace(/^RO/i, '').replace(/\s/g, '')) : k === 'address' ? (x ? x.slice(0, 250) : null) : k === 'country' ? nz(x.toUpperCase().slice(0, 2)) : nz(x)])),
@@ -108,7 +120,10 @@ export async function updateFirmAction(formData: FormData) {
     if (isUniqueError(err)) redirect(`/admin/firms/${id}?error=${encodeURIComponent(t('admin.firmActions.duplicate'))}`);
     throw err;
   }
-  await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix }, after: { name: data.name, prefix: data.prefix } });
+  // Kur politikası değişikliği denetim kaydında ayrıca görünür (mali ayar)
+  const fxBefore = { fxPolicy: firm.fxPolicy, fxMarkupPercent: firm.fxMarkupPercent?.toString() ?? null };
+  const fxAfter = 'fxPolicy' in data ? { fxPolicy: data.fxPolicy ?? null, fxMarkupPercent: data.fxMarkupPercent ?? null } : fxBefore;
+  await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix, ...fxBefore }, after: { name: data.name, prefix: data.prefix, ...fxAfter } });
   revalidatePath('/admin/firms');
   redirect(`/admin/firms?saved=${encodeURIComponent(data.name)}`);
 }

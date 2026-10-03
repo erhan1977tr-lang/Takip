@@ -39,6 +39,8 @@ export default {
     FGO_DISABLED: "Conexiunea FGO este inactivă sau incompletă (Administrator → Integrări).",
     FGO_DAILY_LIMIT: "Limita zilnică de documente FGO a fost atinsă (Integrări → limită zilnică).",
     BAD_AMOUNT: "Sumă invalidă.",
+    BAD_RATE: "Cursul manual nu este valid (ex.: 5,0934).",
+    RATE_LOCKED: "Cursul acestei comenzi este deja stabilit de proformă; nu poate fi înlocuit cu un curs manual.",
     NOT_ALLOWED: "Documentul nu poate fi emis acum (există deja sau nu este rândul lui).",
   },
 };

@@ -13,7 +13,9 @@
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { offerLineTotals } from '../orders/rules.js';
 import { getEnv } from '../env.js';
-import { fetchBtEurSell, rateForDay } from '../fx/bt.js';
+import { fetchBtEurSell, parseManualRate } from '../fx/bt.js';
+import { bnrRate } from '../fx/bnr.js';
+import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
   FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
 } from '../integrations/fgo.js';
@@ -167,8 +169,16 @@ export function billingState({ status, loaded, docs, billing, pending = [], hasO
   return res(['advance']);
 }
 
-/** Belgeyi kuyruğa alır (yönetici). Aynı anda iki istek ya da tekrar kesim engellenir (kilit + durum + benzersiz kayıt). */
-export async function requestGlassDocument(db, { orderId, kind, actor, now = new Date() }) {
+/**
+ * Belgeyi kuyruğa alır (yönetici). Aynı anda iki istek ya da tekrar kesim engellenir (kilit + durum + benzersiz kayıt).
+ * @param {any} db
+ * @param {{ orderId: string, kind: string, actor: any, now?: Date, manualRate?: string | number | null }} o
+ * @returns {Promise<{ ok: true } | { ok: false, code: string }>}
+ */
+export async function requestGlassDocument(db, { orderId, kind, actor, now = new Date(), manualRate = null }) {
+  // Elle kur (isteğe bağlı): yalnızca kurun bu belgeyle belirleneceği durumda anlamlıdır; belgede MANUAL diye saklanır
+  const manual = manualRate == null || manualRate === '' ? null : parseManualRate(manualRate);
+  if (manualRate != null && manualRate !== '' && manual == null) return { ok: false, code: 'BAD_RATE' };
   const settings = await getFgoSettings(db);
   if (!fgoReady(settings)) return { ok: false, code: 'FGO_DISABLED' };
   const tz = getEnv().APP_TIMEZONE;
@@ -187,9 +197,12 @@ export async function requestGlassDocument(db, { orderId, kind, actor, now = new
     });
     const action = { PROFORMA: 'proforma', ADVANCE: 'advance', INVOICE: 'invoice' }[kind];
     if (!st.actions.includes(action)) return { ok: false, code: 'NOT_ALLOWED' };
-    await tx.notificationOutbox.create({ data: { type: GLASS_FGO, orderId, payload: { kind, orderNo: order.orderNo } } });
+    // Kur zaten belirlenmişse (proformanın kuru) elle kur yok sayılmaz, reddedilir: saklanan kur değişmez
+    const useManual = manual != null && kind !== 'ADVANCE';
+    if (useManual && order.glassBilling?.fxRate != null) return { ok: false, code: 'RATE_LOCKED' };
+    await tx.notificationOutbox.create({ data: { type: GLASS_FGO, orderId, payload: { kind, orderNo: order.orderNo, ...(useManual ? { manualRate: manual } : {}) } } });
     await writeHistory(tx, { orderId, event: 'FGO_DOC_REQUESTED', from: order.status, to: order.status, actorId: actor.id, note: kind });
-    await writeAudit(tx, { action: 'FGO_DOC_REQUEST', entityType: 'Order', entityId: orderId, userId: actor.id, details: { kind } }, actor);
+    await writeAudit(tx, { action: 'FGO_DOC_REQUEST', entityType: 'Order', entityId: orderId, userId: actor.id, details: { kind, ...(useManual ? { manualRate: manual } : {}) } }, actor);
     return { ok: true };
   });
 }
@@ -221,9 +234,9 @@ const ddmmyyyy = (d) => dayKeyOf(d).split('-').reverse().join('.');
 /**
  * Kuyruktaki cam belgelerini keser. onlyOrderId: düğmeye basılınca o siparişin işi hemen denenir.
  * @param {import('@prisma/client').PrismaClient} db
- * @param {{ now?: Date, fetchImpl?: typeof fetch, rateImpl?: Function, secret?: string, appUrl?: string, timeZone?: string, onlyOrderId?: string | null, log?: Function }} [ctx]
+ * @param {{ now?: Date, fetchImpl?: typeof fetch, rateImpl?: Function, bnrImpl?: typeof bnrRate, secret?: string, appUrl?: string, timeZone?: string, onlyOrderId?: string | null, log?: Function }} [ctx]
  */
-export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetch, rateImpl = fetchBtEurSell, secret, appUrl, timeZone, onlyOrderId = null, log = () => {} } = {}) {
+export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetch, rateImpl = fetchBtEurSell, bnrImpl = bnrRate, secret, appUrl, timeZone, onlyOrderId = null, log = () => {} } = {}) {
   const env = getEnv();
   secret ??= env.AUTH_SECRET;
   appUrl ??= env.APP_URL ?? '';
@@ -265,15 +278,22 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       // Kur: proforma günün kuru; avans ve kapanış faturası proformanın kuru; proforma yoksa bugünün kuru. RON teklifte kur 1.
       const b = order.glassBilling;
       const today = localDay(now, timeZone);
-      let rate, rateDay, source;
+      let rate, rateDay, source, fx = null;
       if (offer.currency === 'RON') {
         rate = 1; rateDay = dayDate(today); source = 'RON';
       } else if (b?.fxRate != null) {
         rate = Number(b.fxRate); rateDay = b.fxDate ?? dayDate(today); source = b.fxSource ?? 'MANUAL';
       } else {
         if (kind === 'ADVANCE') throw new Permanent('Proformanın kuru yok');
-        const r = await rateForDay(db, { settings, day: today, rateImpl });
-        rate = r.rate; rateDay = dayDate(today); source = r.source;
+        // Tek çözücü (karar 95): müşterinin kur politikası; politika seçilmemişse eski davranış. Yönetici elle kur girdiyse o.
+        // Kur alınamadıysa (BNR'ye ulaşılamadı, günün BT kuru girilmedi) iş bekler ve yeniden denenir; bozuk politika / kur beklemez
+        try {
+          fx = await resolveExchangeRate(db, { customer: order.customer, currency: offer.currency, day: today, now, settings, manualRate: row.payload?.manualRate ?? null, rateImpl, bnrImpl });
+        } catch (e) {
+          if (e instanceof FxUnavailable && ['BAD_POLICY', 'BAD_MANUAL', 'CURRENCY'].includes(e.code)) throw new Permanent(e.message);
+          throw e;
+        }
+        rate = fx.rate; rateDay = dayDate(today); source = fx.source;
       }
       const proforma = order.fgoDocuments.find((d) => d.kind === 'PROFORMA');
       const advance = order.fgoDocuments.find((d) => d.kind === 'ADVANCE');
@@ -319,16 +339,14 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       await db.$transaction(async (tx) => {
         const created = await tx.fgoDocument.create({ data: { orderId: order.id, kind, series: doc.series, number: doc.number, issuedAt: now, link: doc.link } });
         if (b?.fxRate == null && kind !== 'ADVANCE') {
-          await tx.glassBilling.upsert({
-            where: { orderId: order.id },
-            create: { orderId: order.id, fxRate: rate.toFixed(4), fxDate: rateDay, fxSource: source },
-            update: { fxRate: rate.toFixed(4), fxDate: rateDay, fxSource: source },
-          });
+          // Kur kaydı kurla birlikte bir kez yazılır (karar 96); sonraki belgeler bu kaydı kullanır, yeniden çözmez
+          const snap = fx ? fxSnapshot(fx, rateDay) : { fxRate: rate.toFixed(4), fxDate: rateDay, fxSource: source };
+          await tx.glassBilling.upsert({ where: { orderId: order.id }, create: { orderId: order.id, ...snap }, update: snap });
         }
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
         await tx.notificationOutbox.create({ data: { type: DOC_EMAIL, orderId: order.id, payload: { docId: created.id } } });
         await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_ISSUED', from: order.status, to: order.status, actorId: null, note: `${kind}:${doc.series}${doc.number}` });
-        await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, series: doc.series, number: doc.number, fxRate: rate, fxSource: source, amountRonNet: amount } }, { role: 'SYSTEM' });
+        await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, series: doc.series, number: doc.number, fxRate: rate, fxSource: source, ...(fx ? { fxPolicy: fx.policy, fxBaseRate: fx.baseRate, fxMarkupPercent: fx.markupPercent, fxSourceDate: fx.sourceDate, fxManual: fx.manual } : {}), amountRonNet: amount } }, { role: 'SYSTEM' });
       });
       done++;
       if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));

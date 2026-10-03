@@ -39,6 +39,8 @@ export default {
     FGO_DISABLED: "FGO bağlantısı kapalı ya da eksik (Yönetici → Entegrasyonlar).",
     FGO_DAILY_LIMIT: "Bugünkü FGO belge sınırı doldu (Entegrasyonlar → günlük sınır).",
     BAD_AMOUNT: "Tutar geçersiz.",
+    BAD_RATE: "Elle girilen kur geçersiz (ör.: 5,0934).",
+    RATE_LOCKED: "Bu siparişin kuru proformayla belirlenmiş; elle kurla değiştirilemez.",
     NOT_ALLOWED: "Bu belge şu an kesilemez (zaten kesilmiş ya da sırası değil).",
   },
 };

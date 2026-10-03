@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.35.0 — 03.10.2026
+
+- **Müşteri kur politikası**: Yönetici → Müşteriler → müşteri sayfasında "Kur politikası" seçilir: *BT satış kuru – în
+  unitățile BT*, *BNR kuru* ya da *BNR kuru + %* (yüzde müşteriye özel; ör. 5,1000 + %2 = 5,2020). Politika seçilmemiş
+  müşterilerde hiçbir şey değişmez: bugüne kadarki kural (Entegrasyonlar'daki günün BT kuru) geçerlidir. Kesilmiş
+  belgeler değişmez.
+- **BNR kuru** doğrudan BNR'nin resmî dosyasından alınır. **BT "În unitățile BT → Vânzare" kuru otomatik alınamıyor**:
+  bu politikada yöneticinin Entegrasyonlar'a girdiği günün BT kuru kullanılır ve "ELLE" diye işaretlenir; BT'nin XML
+  dosyasındaki (farklı) kur bu politikada hiç kullanılmaz.
+- Müşteri sayfasında ve cam siparişinin Finans / FGO bölümünde bugünün kuru gösterilir: politika, taban kur, yüzde,
+  uygulanan kur, kaynak ve günü. Yönetici proformayı isterken kuru elle de girebilir; belge "ELLE" diye saklanır.
+- Cam proforması artık kuru müşterinin politikasından alır ve kurla birlikte nereden geldiğini de saklar; avans ve
+  kapanış faturası aynı kurla kesilir, sonradan BNR / BT ya da politika değişse de değişmez.
+- Profil siparişlerinin faturalaması değişmedi (BT kuru, önceki gibi). Müşteri + yükleme başına tek FGO belgesi
+  yapılmadı (Aşama 7D-2).
+
 ## 3.34.1 — 03.10.2026
 
 - Onaylı yükleme kayıtları veritabanında da korunur: değiştirme ve silme veritabanı düzeyinde reddedilir (yalnızca yeni

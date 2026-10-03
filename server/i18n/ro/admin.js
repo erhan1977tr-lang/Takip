@@ -241,7 +241,7 @@ export default {
       fxManual: "Manual — cursul BT al zilei (caseta de mai jos)",
       fxAuto: "Automat — de la adresa cursului BT",
       dailyTitle: "Cursul BT al zilei (manual)",
-      dailyIntro: "Dacă site-ul BT nu poate fi citit de pe server (ex. HTTP 403), proformele emise astăzi folosesc cursul introdus aici. Cursul este valabil doar în ziua introducerii; în fiecare zi lucrătoare dimineața introduceți cursul de vânzare EUR de pe site-ul BT.",
+      dailyIntro: "Dacă site-ul BT nu poate fi citit de pe server (ex. HTTP 403), proformele emise astăzi folosesc cursul introdus aici. Cursul este valabil doar în ziua introducerii; în fiecare zi lucrătoare dimineața introduceți cursul de vânzare EUR de pe site-ul BT. Pentru clienții cu politica „Curs vânzare BT – în unitățile BT” se folosește întotdeauna cursul introdus aici (preluarea automată a acestui curs nu este disponibilă; cursul din fișierul XML al BT nu se folosește pentru ei).",
       dailyRate: "Curs vânzare EUR",
       dailySave: "Salvează",
       dailySaved: "Cursul zilei a fost salvat: {rate} RON.",

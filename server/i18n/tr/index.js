@@ -23,5 +23,6 @@ import accounting from './accounting.js';
 import glassBilling from './glassBilling.js';
 import notify from './notify.js';
 import settings from './settings.js';
+import fx from './fx.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, settings };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, settings, fx };

@@ -272,7 +272,8 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   await fgoOn();
   const row = await db.integrationSetting.findUnique({ where: { key: 'fgo' } });
   assert.ok(!JSON.stringify(row.value).includes('GIZLI'), 'anahtar şifreli');
-  await db.customer.update({ where: { id: firm.id }, data: { taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1' } });
+  // Müşterinin kur politikası (Aşama 7D-1) profil faturalamasını ETKİLEMEZ: profil belgeleri önceki gibi BT kuruyla kesilir
+  await db.customer.update({ where: { id: firm.id }, data: { taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1', fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' } });
   const { id, orderNo } = await newProfileOrder([['GK15', 4], ['SPIGOTI', 20]]);
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '12.5') });

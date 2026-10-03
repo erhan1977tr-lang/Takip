@@ -7,6 +7,7 @@
 // Silinmeyi bildiren e-posta işi kuyruktaysa atlanır. Geçmişe "FGO'da silindi" satırı ve denetim kaydı yazılır.
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { DOC_EMAIL } from '../glass/billing.js';
+import { FX_SNAPSHOT_CLEAR } from '../fx/resolve.js';
 import { fgoActor, runProfileAction } from '../profile/transitions.js';
 
 /**
@@ -30,7 +31,7 @@ export async function removeDeletedDocument(db, row, reason = '') {
     await skipEmails(tx);
     if (order && row.kind === 'PROFORMA' && (await tx.fgoDocument.count({ where: { orderId: order.id } })) === 0) {
       // Proforma yoksa kur ve ödeme de yok: yeni proforma günün kuruyla, ödeme yeniden girilir
-      await tx.glassBilling.updateMany({ where: { orderId: order.id }, data: { fxRate: null, fxDate: null, fxSource: null, paidAt: null, paidAmount: null, paidById: null } });
+      await tx.glassBilling.updateMany({ where: { orderId: order.id }, data: { ...FX_SNAPSHOT_CLEAR, paidAt: null, paidAmount: null, paidById: null } });
     }
     if (order) await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_DELETED', from: order.status, to: order.status, actorId: null, note: `${row.series}${row.number}` });
     await writeAudit(tx, { action: 'FGO_DOC_REMOVED', entityType: 'Order', entityId: row.orderId, userId: null, details }, { role: 'SYSTEM' });
