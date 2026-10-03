@@ -24,9 +24,8 @@ export default async function EditFirmPage({
   const sp = await searchParams;
   const f = await db.customer.findUnique({ where: { id } });
   if (!f) notFound();
-  // Bugünün kuru (seçili politikayla): BNR 30 dakika saklanır; alınamazsa "alınamadı" gösterilir, başka kur gösterilmez.
-  // Politika seçilmemişse (eski kural) burada ağa çıkılmaz.
-  const fxToday = f.type === 'CUSTOMER' && f.fxPolicy
+  // Bugünün kuru (kayıtlı politikayla): BNR 30 dakika saklanır; alınamazsa "alınamadı" gösterilir, başka kur gösterilmez.
+  const fxToday = f.type === 'CUSTOMER'
     ? await previewExchangeRate(db, { customer: f, currency: 'EUR', day: localDay(new Date(), getEnv().APP_TIMEZONE), bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
 
@@ -68,7 +67,7 @@ export default async function EditFirmPage({
           <div id="kur">
             <h2 style={{ marginTop: 18 }}>{t('fx.title')}</h2>
             <p className="muted small">{t('fx.intro')}</p>
-            <FxPolicyFields policy={f.fxPolicy ?? ''} percent={f.fxMarkupPercent != null ? trimPercent(f.fxMarkupPercent.toString()).replace('.', ',') : ''} max={FX_MARKUP_MAX} m={m.fx} />
+            <FxPolicyFields policy={f.fxPolicy} percent={f.fxMarkupPercent != null ? trimPercent(f.fxMarkupPercent.toString()).replace('.', ',') : ''} max={FX_MARKUP_MAX} m={m.fx} />
           </div>
         )}
         {sp.error && <div className="alert alert-error" style={{ marginTop: 14 }}>{sp.error}</div>}
@@ -77,15 +76,10 @@ export default async function EditFirmPage({
           <button type="submit" className="btn btn-primary">{t('common.save')}</button>
         </div>
       </form>
-      {f.type === 'CUSTOMER' && (
+      {fxToday && (
         <div className="card" id="kur-bugun">
           <h2>{t('fx.todayTitle')}</h2>
-          {!fxToday ? (
-            <>
-              <p><b>{t('fx.policyLabel')}:</b> {fxPolicyLabel(t, null, null)}</p>
-              <p className="muted small">{t('fx.legacyHint')}</p>
-            </>
-          ) : fxToday.ok ? (
+          {fxToday.ok ? (
             <>
               <FxInfo fx={fxToday.fx} t={t} />
               {f.fxPolicy === 'BT_UNIT_SELL' && <p className="muted small">{t('fx.btAutoNote')}</p>}

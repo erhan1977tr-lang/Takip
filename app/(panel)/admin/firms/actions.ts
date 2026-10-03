@@ -16,7 +16,7 @@ type FirmInput = {
   name: string; type: CustomerType; prefix: string | null;
   groupName: string | null; camEtiket: string | null; sandikEtiket: string | null;
   // Kur politikası (karar 95): yalnızca düzenleme formunda; formda yoksa dokunulmaz
-  fxPolicy?: 'BT_UNIT_SELL' | 'BNR' | 'BNR_PLUS_PERCENT' | null; fxMarkupPercent?: string | null;
+  fxPolicy?: 'BT_UNIT_SELL' | 'BNR' | 'BNR_PLUS_PERCENT'; fxMarkupPercent?: string | null;
 } & Partial<Record<(typeof BILLING)[number], string | null>>;
 
 // Fatura bilgileri (Aşama 6b, FGO). Yalnızca düzenleme formunda; formda yoksa dokunulmaz.
@@ -56,10 +56,10 @@ async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): 
     if (prefixClash) return { error: t('admin.firmActions.prefixTaken', { prefix, firm: prefixClash.name }) };
   }
   const nz = (s: string) => (s ? s.slice(0, 120) : null);
-  // Kur politikası: yüzde sunucuda doğrulanır (sayı, 0–20, en çok 3 ondalık). Fabrika kaydında politika olmaz.
+  // Kur politikası: yüzde sunucuda doğrulanır (sayı, 0–20, en çok 3 ondalık). Fabrika kaydında politika kullanılmaz.
   let fx: Pick<FirmInput, 'fxPolicy' | 'fxMarkupPercent'> = {};
-  if (raw.fx) {
-    const r = parseFxPolicy(type === 'CUSTOMER' ? raw.fx : { policy: '', percent: '' });
+  if (raw.fx && type === 'CUSTOMER') {
+    const r = parseFxPolicy(raw.fx);
     if (!r.ok) return { error: t(`fx.errors.${r.code}` as MsgKey) };
     fx = r.data;
   }
@@ -122,7 +122,7 @@ export async function updateFirmAction(formData: FormData) {
   }
   // Kur politikası değişikliği denetim kaydında ayrıca görünür (mali ayar)
   const fxBefore = { fxPolicy: firm.fxPolicy, fxMarkupPercent: firm.fxMarkupPercent?.toString() ?? null };
-  const fxAfter = 'fxPolicy' in data ? { fxPolicy: data.fxPolicy ?? null, fxMarkupPercent: data.fxMarkupPercent ?? null } : fxBefore;
+  const fxAfter = data.fxPolicy ? { fxPolicy: data.fxPolicy, fxMarkupPercent: data.fxMarkupPercent ?? null } : fxBefore;
   await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix, ...fxBefore }, after: { name: data.name, prefix: data.prefix, ...fxAfter } });
   revalidatePath('/admin/firms');
   redirect(`/admin/firms?saved=${encodeURIComponent(data.name)}`);

@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction, testFxAction } from './actions';
+import { saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
 import { getDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
@@ -88,8 +88,6 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {sp.error === 'fgo' && <div className="alert alert-error">{t('admin.integrations.fgo.bad', { what: sp.detail ?? '' })}</div>}
       {sp.ok === 'fgoTest' && <div className="alert alert-ok">{t('admin.integrations.fgo.testOk', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
       {sp.error === 'fgoTest' && <div className="alert alert-error">{t('admin.integrations.fgo.testFailed', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
-      {sp.ok === 'fx' && <div className="alert alert-ok">{t('admin.integrations.fgo.fxOk', { rate: sp.rate ?? '' })}</div>}
-      {sp.error === 'fx' && <div className="alert alert-error">{t('admin.integrations.fgo.fxFailed', { error: sp.detail ?? '' })}</div>}
       <form action={saveFgoAction} className="card" id="fgo">
         <h2>{t('admin.integrations.fgo.title')}</h2>
         <p className="muted small">{t('admin.integrations.fgo.intro')}</p>
@@ -127,14 +125,6 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
               {nextInvoice ? t('admin.integrations.fgo.invoiceNextWill', { no: `${fgo.invoiceSeries}${nextInvoice}` }) : t('admin.integrations.fgo.invoiceNextAuto')}
             </div>
           </div>
-          <div>
-            <label htmlFor="fgo-fxm">{t('admin.integrations.fgo.fxMode')}</label>
-            <select id="fgo-fxm" name="fxMode" defaultValue={fgo.fxMode}>
-              <option value="manual">{t('admin.integrations.fgo.fxManual')}</option>
-              <option value="auto">{t('admin.integrations.fgo.fxAuto')}</option>
-            </select>
-          </div>
-          <div><label htmlFor="fgo-fx">{t('admin.integrations.fgo.fxUrl')}</label><input id="fgo-fx" name="fxUrl" type="url" defaultValue={fgo.fxUrl} maxLength={300} /><div className="hint">{t('admin.integrations.fgo.fxHint')}</div></div>
         </div>
         <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
           <span className={`small ${fgoFailed ? 'danger' : 'muted'}`}>{t('admin.integrations.fgo.queue', { pending: fgoPending, failed: fgoFailed })}</span>
@@ -143,7 +133,6 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       </form>
       <div className="row" style={{ marginTop: -8, marginBottom: 16 }}>
         <form action={testFgoAction}><button className="btn">{t('admin.integrations.fgo.test')}</button></form>
-        <form action={testFxAction}><button className="btn">{t('admin.integrations.fgo.testFx')}</button></form>
       </div>
       {sp.ok === 'fxDaily' && <div className="alert alert-ok">{t('admin.integrations.fgo.dailySaved', { rate: sp.rate ?? '' })}</div>}
       {sp.error === 'fxDaily' && <div className="alert alert-error">{t('admin.integrations.fgo.dailyBad')}</div>}

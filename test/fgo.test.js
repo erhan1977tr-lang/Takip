@@ -46,17 +46,18 @@ test('BT kuru: JSON ve HTML içinden EUR satış kuru; makul olmayan sayı alın
   assert.equal(parseManualRate('12,5'), null, 'aralık dışı');
 });
 
-test('FGO ayarları: seri, tür, TVA, adres doğrulanır; açıkken CUI zorunlu', () => {
-  const ok = validateFgoSettings({ enabled: true, env: 'prod', cui: 'RO 123456', proformaSeries: 'prf', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21', fxUrl: 'https://www.bancatransilvania.ro/curs-valutar' });
+test('FGO ayarları: seri, tür, TVA doğrulanır; açıkken CUI zorunlu', () => {
+  const ok = validateFgoSettings({ enabled: true, env: 'prod', cui: 'RO 123456', proformaSeries: 'prf', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21' });
+  assert.ok(!('fxUrl' in ok.value) && !('fxMode' in ok.value), 'kur kaynağı FGO ayarı değildir: kur müşterinin kur politikasından (server/fx/resolve.js)');
   assert.ok(ok.ok);
   assert.equal(ok.value.cui, '123456');
   assert.equal(ok.value.proformaSeries, 'PRF');
   assert.equal(ok.value.env, 'prod');
-  const bad = validateFgoSettings({ enabled: true, cui: '', proformaSeries: 'P R', invoiceSeries: '', proformaType: '1', vatRate: '99', fxUrl: 'http://x' });
+  const bad = validateFgoSettings({ enabled: true, cui: '', proformaSeries: 'P R', invoiceSeries: '', proformaType: '1', vatRate: '99' });
   assert.ok(!bad.ok);
-  for (const e of ['CUI', 'PROFORMA_SERIES', 'INVOICE_SERIES', 'PROFORMA_TYPE', 'VAT', 'FX_URL']) assert.ok(bad.errors.includes(e), e);
+  for (const e of ['CUI', 'PROFORMA_SERIES', 'INVOICE_SERIES', 'PROFORMA_TYPE', 'VAT']) assert.ok(bad.errors.includes(e), e);
   assert.equal(ok.value.invoiceNext, null, 'boş = numarayı FGO verir');
-  const base = { cui: '12', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21', fxUrl: 'https://x' };
+  const base = { cui: '12', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: '21' };
   assert.equal(validateFgoSettings({ ...base, invoiceNext: '684' }).value?.invoiceNext, 684);
   assert.ok(validateFgoSettings({ ...base, invoiceNext: '0' }).errors?.includes('INVOICE_NEXT'));
   assert.ok(validateFgoSettings({ ...base, invoiceNext: 'GKH684' }).errors?.includes('INVOICE_NEXT'));

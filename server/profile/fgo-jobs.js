@@ -7,7 +7,8 @@
 // Aynı belge iki kez kesilmesin: FGO'ya IdExtern (sipariş no + tür) ve VerificareDuplicat gönderilir.
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
-import { dailyRateFor, fetchBtEurSell } from '../fx/bt.js';
+import { bnrRate } from '../fx/bnr.js';
+import { FxUnavailable, fxDocumentNote, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit } from '../integrations/fgo.js';
 import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
@@ -38,9 +39,9 @@ async function alert(db, orderId, code, message, attempts) {
 
 /**
  * @param {import('@prisma/client').PrismaClient} db
- * @param {{ now?: Date, fetchImpl?: typeof fetch, rateImpl?: typeof fetchBtEurSell, secret?: string, appUrl?: string, timeZone?: string, log?: Function }} ctx
+ * @param {{ now?: Date, fetchImpl?: typeof fetch, bnrImpl?: typeof bnrRate, secret?: string, appUrl?: string, timeZone?: string, log?: Function }} ctx
  */
-export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch, rateImpl = fetchBtEurSell, secret, appUrl, timeZone, log = () => {} } = {}) {
+export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch, bnrImpl = bnrRate, secret, appUrl, timeZone, log = () => {} } = {}) {
   const env = getEnv();
   secret ??= env.AUTH_SECRET;
   appUrl ??= env.APP_URL ?? '';
@@ -81,40 +82,45 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       // Deneme güvenliği: günlük belge sınırı dolduysa ertesi gün yeniden denenir
       if (await dailyLimitReached(db, settings, localDayStart(now, timeZone))) throw new Error(`Günlük FGO belge sınırı (${settings.dailyLimit}) doldu`);
 
-      // Kur: proformada siparişte elle girilmiş kur ya da BT'den o an; faturada yalnızca proformanın kuru
+      // Kur (karar 98, camla aynı kural): siparişte kayıtlı kur varsa (yöneticinin elle girdiği ya da proformanınki) o;
+      // yoksa proformada müşterinin kur politikasından çözülür ve proformayla birlikte saklanır. Fatura yalnızca
+      // kayıtlı kurla kesilir, yeniden çözmez.
       let rate = p.fxRate != null ? Number(p.fxRate) : null;
       let rateDay = p.fxDate ?? null;
       let source = p.fxSource ?? null;
+      /** Yeni çözülen kurun kaydı (proformayla birlikte yazılır); kayıtlı kur kullanıldıysa boş */
+      let snap = null;
       if (rate == null) {
         if (row.type === FGO_INVOICE) throw new Permanent('Proformanın kuru yok; kuru girip yeniden deneyin');
         const day = localDay(now, timeZone);
-        // Elle modda (varsayılan) BT'ye hiç gidilmez: yöneticinin bugün girdiği kur
-        const r = settings.fxMode === 'auto' ? await rateImpl({ url: settings.fxUrl }) : { ok: false, error: 'elle' };
-        if (r.ok) {
-          rate = r.rate;
-          source = r.source;
-        } else {
-          // BT okunamadıysa yöneticinin bugün girdiği kur (Entegrasyonlar → günün kuru)
-          rate = await dailyRateFor(db, day);
-          if (rate == null) throw new Error(settings.fxMode === 'auto' ? `BT kuru alınamadı (${r.error}); Entegrasyonlar'da günün kurunu girin` : 'Günün BT kuru girilmedi (Entegrasyonlar → Günün BT kuru); kur girilince proforma kesilir');
-          source = 'MANUAL_DAY';
+        let fx;
+        try {
+          fx = await resolveExchangeRate(db, { customer: order.customer, currency: 'EUR', day, now, bnrImpl });
+        } catch (e) {
+          // Kur alınamadıysa iş bekler ve yeniden denenir (ya da yönetici "FGO'da yeniden dene"de kuru elle girer); bozuk politika beklemez
+          if (e instanceof FxUnavailable && ['BAD_POLICY', 'BAD_MANUAL', 'CURRENCY'].includes(e.code)) throw new Permanent(e.message);
+          throw e;
         }
+        rate = fx.rate;
+        source = fx.source;
         rateDay = dayDate(day);
+        snap = fxSnapshot(fx, rateDay);
       }
+      const note = fxDocumentNote(snap ?? p);
       const lines = documentLines(offer);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
       // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'invoice' ? await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl }) : null;
       const form = emitereForm({
         settings, key, kind, orderNo: order.orderNo, appUrl, customer: order.customer, lines, rate,
-        rateDate: dayKeyOf(rateDay).split('-').reverse().join('.'),
+        rateDate: dayKeyOf(note.date ?? rateDay).split('-').reverse().join('.'), rateLabel: note.label,
         number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);
       await runProfileAction(db, {
         orderId: order.id, action: kind === 'proforma' ? 'fgo_proforma' : 'fgo_invoice', actor: fgoActor(),
-        payload: { ...doc, rate, rateDate: rateDay, source, amount },
+        payload: { ...doc, rate, rateDate: rateDay, source, amount, fx: snap },
       });
       await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
       done++;

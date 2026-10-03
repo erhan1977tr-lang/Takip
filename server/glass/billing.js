@@ -8,12 +8,13 @@
 //   - Avans faturası = tahsil edilen tutar (TVA dahil), tek satır "Avans marfă conform proformă …".
 //   - Cam yüklendi = yükleme gününden (gerçek, yoksa tahmini) 2 gün sonra.
 //   - Yüklenince kapanış faturası: cam satırları + varsa avansı düşen eksi satır ("Stornare avans").
-//   - Kur: proforma günün BT kuru; avans ve kapanış faturası proformanın kuru; proforma yoksa fatura gününün kuru.
+//   - Kur: müşterinin kur politikası (server/fx/resolve.js); proformada çözülür ve saklanır, avans ve kapanış faturası
+//     proformanın kuruyla; proforma yoksa fatura kesilirken çözülür.
 //   - Günlük belge sınırı (deneme güvenliği) FGO ayarlarında.
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { offerLineTotals } from '../orders/rules.js';
 import { getEnv } from '../env.js';
-import { fetchBtEurSell, parseManualRate } from '../fx/bt.js';
+import { parseManualRate } from '../fx/bt.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
@@ -234,9 +235,9 @@ const ddmmyyyy = (d) => dayKeyOf(d).split('-').reverse().join('.');
 /**
  * Kuyruktaki cam belgelerini keser. onlyOrderId: düğmeye basılınca o siparişin işi hemen denenir.
  * @param {import('@prisma/client').PrismaClient} db
- * @param {{ now?: Date, fetchImpl?: typeof fetch, rateImpl?: Function, bnrImpl?: typeof bnrRate, secret?: string, appUrl?: string, timeZone?: string, onlyOrderId?: string | null, log?: Function }} [ctx]
+ * @param {{ now?: Date, fetchImpl?: typeof fetch, bnrImpl?: typeof bnrRate, secret?: string, appUrl?: string, timeZone?: string, onlyOrderId?: string | null, log?: Function }} [ctx]
  */
-export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetch, rateImpl = fetchBtEurSell, bnrImpl = bnrRate, secret, appUrl, timeZone, onlyOrderId = null, log = () => {} } = {}) {
+export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetch, bnrImpl = bnrRate, secret, appUrl, timeZone, onlyOrderId = null, log = () => {} } = {}) {
   const env = getEnv();
   secret ??= env.AUTH_SECRET;
   appUrl ??= env.APP_URL ?? '';
@@ -285,10 +286,10 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         rate = Number(b.fxRate); rateDay = b.fxDate ?? dayDate(today); source = b.fxSource ?? 'MANUAL';
       } else {
         if (kind === 'ADVANCE') throw new Permanent('Proformanın kuru yok');
-        // Tek çözücü (karar 95): müşterinin kur politikası; politika seçilmemişse eski davranış. Yönetici elle kur girdiyse o.
+        // Tek çözücü (karar 95): müşterinin kur politikası; yönetici elle kur girdiyse o.
         // Kur alınamadıysa (BNR'ye ulaşılamadı, günün BT kuru girilmedi) iş bekler ve yeniden denenir; bozuk politika / kur beklemez
         try {
-          fx = await resolveExchangeRate(db, { customer: order.customer, currency: offer.currency, day: today, now, settings, manualRate: row.payload?.manualRate ?? null, rateImpl, bnrImpl });
+          fx = await resolveExchangeRate(db, { customer: order.customer, currency: offer.currency, day: today, now, manualRate: row.payload?.manualRate ?? null, bnrImpl });
         } catch (e) {
           if (e instanceof FxUnavailable && ['BAD_POLICY', 'BAD_MANUAL', 'CURRENCY'].includes(e.code)) throw new Permanent(e.message);
           throw e;

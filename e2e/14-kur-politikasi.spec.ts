@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
 
-// Müşteri kur politikası (Aşama 7D-1, karar 95–96): Yönetici → Müşteriler'de politika seçimi (BT / BNR / BNR + %),
+// Müşteri kur politikası (Aşama 7D-1, karar 95–98): Yönetici → Müşteriler'de politika seçimi (BT / BNR / BNR + %; zorunlu, varsayılan BT),
 // yüzde doğrulaması sunucuda, bugünün kuru önizlemesi, cam siparişinin Finans / FGO bölümünde kur önizlemesi + elle kur alanı.
 // Yetkisiz roller politikayı adresle ya da taklit form gönderimiyle değiştiremez.
 // FGO bu veritabanında kapalıdır: hiçbir belge kesilmez.
@@ -53,7 +53,7 @@ test('veri: kur politikası için ayrı müşteri ve belgesi olmayan EUR cam sip
   const db = await prisma();
   const admin = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
   const firm = await db.customer.create({ data: { name: 'Kur E2E SRL', prefix: 'KUR', taxId: '445566', county: 'Cluj', city: 'Cluj-Napoca', address: 'Str. Curs 1' } });
-  expect([firm.fxPolicy, firm.fxMarkupPercent], 'yeni müşteri: politika seçilmemiş (eski kural)').toEqual([null, null]);
+  expect([firm.fxPolicy, firm.fxMarkupPercent], 'yeni müşteri: varsayılan politika BT').toEqual(['BT_UNIT_SELL', null]);
   const order = await db.order.create({
     data: {
       orderNo: 'KUR1', customerOrderNo: 1, title: 'Kur e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
@@ -67,12 +67,13 @@ test('veri: kur politikası için ayrı müşteri ve belgesi olmayan EUR cam sip
   orderId = order.id;
 });
 
-test('yönetici: politika seçilmemiş müşteri eski kuralda; BNR + % kaydedilir, geçersiz yüzde reddedilir; önizleme', async ({ browser }) => {
+test('yönetici: varsayılan politika BT; BNR + % kaydedilir, geçersiz yüzde reddedilir; önizleme', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(firmUrl());
-  await expect(page.locator('#fxPolicy')).toHaveValue('');
+  await expect(page.locator('#fxPolicy')).toHaveValue('BT_UNIT_SELL');
+  await expect(page.locator('#fxPolicy option'), 'yalnızca üç politika; "seçilmedi" yok').toHaveCount(3);
   await expect(page.locator('#fxMarkupPercent')).toHaveCount(0);
-  await expect(page.locator('#kur-bugun .fx-info, #kur-bugun .fx-unavailable'), 'eski kuralda kur çözülmez, yalnızca kural yazılır').toHaveCount(0);
+  await expect(page.locator('#kur-bugun .fx-info, #kur-bugun .fx-unavailable')).toHaveCount(1);
 
   // Yüzde alanı yalnızca "BNR + %" seçilince görünür; sunucu 0–20 dışını reddeder
   await page.selectOption('#fxPolicy', 'BNR');
@@ -82,7 +83,7 @@ test('yönetici: politika seçilmemiş müşteri eski kuralda; BNR + % kaydedili
   await page.locator('form:has(#fxPolicy) button[type=submit]').click();
   await expect(page).toHaveURL(new RegExp(`/admin/firms/${firmId}\\?error=`));
   await expect(page.locator('.alert-error')).toBeVisible();
-  expect(await policyOf(), 'geçersiz yüzde kaydedilmedi').toEqual([null, null]);
+  expect(await policyOf(), 'geçersiz yüzde kaydedilmedi').toEqual(['BT_UNIT_SELL', null]);
 
   await page.selectOption('#fxPolicy', 'BNR_PLUS_PERCENT');
   await page.fill('#fxMarkupPercent', '2,5');
@@ -137,7 +138,7 @@ test('BT politikası: otomatik kur yok — günün BT kuru girilmediyse "alınam
   await page.context().close();
 });
 
-test('yetkisiz roller kur politikasını değiştiremez: sayfa açılmaz, taklit form gönderimi çalışmaz; yönetici eski kurala dönebilir', async ({ browser }) => {
+test('yetkisiz roller kur politikasını değiştiremez: sayfa açılmaz, taklit form gönderimi çalışmaz; politikasız kayıt olmaz', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   const field = await actionField(admin, firmUrl(), 'name="fxPolicy"');
   const data = { id: firmId, name: 'Kur E2E SRL', type: 'CUSTOMER', prefix: 'KUR', groupName: '', camEtiket: '', sandikEtiket: '', fxPolicy: 'BNR', fxMarkupPercent: '' };
@@ -155,12 +156,16 @@ test('yetkisiz roller kur politikasını değiştiremez: sayfa açılmaz, taklit
   expect(ok.url()).toContain('/admin/firms?saved=');
   expect(await policyOf()).toEqual(['BNR', null]);
 
-  // Yönetici eski kurala döner
+  // Politika zorunlu: boş politika yönetici oturumuyla bile kaydedilmez
+  const empty = await forge(admin, firmUrl(), field, { ...data, fxPolicy: '' });
+  expect(empty.url()).toContain(`/admin/firms/${firmId}?error=`);
+  expect(await policyOf()).toEqual(['BNR', null]);
+  // Yönetici varsayılana (BT) döner
   await admin.goto(firmUrl());
-  await admin.selectOption('#fxPolicy', '');
+  await admin.selectOption('#fxPolicy', 'BT_UNIT_SELL');
   await admin.locator('form:has(#fxPolicy) button[type=submit]').click();
   await expect(admin).toHaveURL(/\/admin\/firms\?saved=/);
-  expect(await policyOf()).toEqual([null, null]);
+  expect(await policyOf()).toEqual(['BT_UNIT_SELL', null]);
   await admin.context().close();
 });
 

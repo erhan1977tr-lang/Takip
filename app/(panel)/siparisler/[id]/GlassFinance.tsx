@@ -46,8 +46,7 @@ export async function GlassFinance({ order, t, sp }: {
   }) : null;
   const fxCurrency = fxOrder?.offers[0]?.currency ?? null;
   const askRate = setsRate && fxCurrency === 'EUR';
-  // Politika seçilmemişse (eski kural) burada kur çözülmez: ağa çıkılmaz, yalnızca kural yazılır
-  const fxNow = askRate && fxOrder?.customer.fxPolicy
+  const fxNow = askRate && fxOrder
     ? await previewExchangeRate(db, { customer: fxOrder.customer, currency: 'EUR', day: today, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
   const lastJob = jobs.find((j) => j.type === GLASS_FGO);
@@ -89,7 +88,7 @@ export async function GlassFinance({ order, t, sp }: {
         </div>
       ) : <p className="muted">{t('glassBilling.none')}</p>}
       {billing?.fxRate != null && <p className="small muted">{t('glassBilling.rate', { rate: Number(billing.fxRate).toFixed(4).replace('.', ','), date: fmtDate(billing.fxDate) })}</p>}
-      {/* Belgeyle saklanan kur kaydı (7D-1'den sonra kesilen belgeler): sonradan BNR / BT ya da politika değişse de değişmez */}
+      {/* Belgeyle saklanan kur kaydı: sonradan BNR / BT ya da politika değişse de değişmez */}
       {billing?.fxRate != null && billing.fxPolicy && billing.fxSource !== 'RON' && (
         <div className="fx-block" id="belge-kuru">
           <h3>{t('fx.docTitle')}</h3>
@@ -103,14 +102,12 @@ export async function GlassFinance({ order, t, sp }: {
       {askRate && (
         <div className="fx-block" id="kur-onizleme">
           <h3>{t('fx.todayTitle')}</h3>
-          {!fxNow ? (
-            <p className="small"><b>{t('fx.policyLabel')}:</b> {fxPolicyLabel(t, null, null)}<br /><span className="muted">{t('fx.legacyHint')}</span></p>
-          ) : fxNow.ok ? (
+          {fxNow?.ok ? (
             <>
               <FxInfo fx={fxNow.fx} t={t} />
               {fxOrder?.customer.fxPolicy === 'BT_UNIT_SELL' && <p className="muted small">{t('fx.btAutoNote')}</p>}
             </>
-          ) : (
+          ) : fxNow && (
             <>
               <p className="small"><b>{t('fx.policyLabel')}:</b> {fxPolicyLabel(t, fxOrder?.customer.fxPolicy, fxOrder?.customer.fxMarkupPercent?.toString())}</p>
               <FxUnavailableNote code={fxNow.code} error={fxNow.error} t={t} />

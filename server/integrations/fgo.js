@@ -8,16 +8,12 @@
 import crypto from 'node:crypto';
 import { writeAudit } from '../orders/journal.js';
 import { openSecret, sealSecret } from '../crypto/secret.js';
-import { DEFAULT_FX_URL, LEGACY_FX_URLS } from '../fx/bt.js';
 
 export const FGO_KEY = 'fgo';
 export const FGO_URLS = { prod: 'https://api.fgo.ro/v1', test: 'https://api-testuat.fgo.ro/v1' };
 export const FGO_DEFAULTS = {
   enabled: false, env: 'test', cui: '', proformaSeries: 'PRF', invoiceSeries: 'GKH',
-  proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: DEFAULT_FX_URL,
-  // Kur kaynağı: 'manual' = yöneticinin girdiği günün kuru (varsayılan; BT'nin dosyası "În unități BT" kuruyla aynı değil),
-  // 'auto' = fxUrl'den otomatik
-  fxMode: 'manual',
+  proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21,
   // Günde en fazla kaç FGO belgesi kesilir (deneme güvenliği; 0 = sınırsız)
   dailyLimit: 3,
   // Fatura numarası (karar 87): numarayı FGO verir (Numar gönderilmez). Bu alan yalnızca yöneticinin isteğe bağlı,
@@ -35,7 +31,6 @@ export async function getFgoSettings(db) {
   const v = row?.value && typeof row.value === 'object' ? row.value : {};
   const out = { ...FGO_DEFAULTS };
   for (const k of Object.keys(FGO_DEFAULTS)) if (v[k] !== undefined && v[k] !== null) out[k] = v[k];
-  if (LEGACY_FX_URLS.includes(out.fxUrl)) out.fxUrl = DEFAULT_FX_URL;
   return { ...out, hasKey: !!v.keySealed, keySealed: v.keySealed ?? null };
 }
 
@@ -60,8 +55,6 @@ export function validateFgoSettings(raw) {
     proformaType: String(raw.proformaType ?? '').trim(),
     invoiceType: String(raw.invoiceType ?? '').trim() || 'Factura',
     vatRate: Number(String(raw.vatRate ?? '').replace(',', '.')),
-    fxUrl: String(raw.fxUrl ?? '').trim() || DEFAULT_FX_URL,
-    fxMode: raw.fxMode === 'auto' ? 'auto' : 'manual',
     dailyLimit: raw.dailyLimit == null || String(raw.dailyLimit).trim() === '' ? 3 : Number(raw.dailyLimit),
     invoiceNext: raw.invoiceNext == null || String(raw.invoiceNext).trim() === '' ? null : Number(String(raw.invoiceNext).trim()),
   };
@@ -73,11 +66,6 @@ export function validateFgoSettings(raw) {
   if (!(value.vatRate >= 0 && value.vatRate <= 50)) errors.push('VAT');
   if (value.invoiceNext !== null && !(Number.isInteger(value.invoiceNext) && value.invoiceNext >= 1 && value.invoiceNext <= 99_999_999)) errors.push('INVOICE_NEXT');
   if (!Number.isInteger(value.dailyLimit) || value.dailyLimit < 0 || value.dailyLimit > 1000) errors.push('DAILY_LIMIT');
-  try {
-    if (new URL(value.fxUrl).protocol !== 'https:') errors.push('FX_URL');
-  } catch {
-    errors.push('FX_URL');
-  }
   if (value.enabled && !value.cui) errors.push('CUI');
   return errors.length ? { ok: false, errors } : { ok: true, value };
 }
@@ -152,10 +140,11 @@ export const validUm = (um) => typeof um === 'string' && um.trim() === um && um.
 /**
  * FGO "factura/emitere" gövdesi (form alanları). Satırlar: onaylanan teklifin kopyası.
  * @param {{ settings: object, key: string, kind: 'proforma' | 'invoice', orderNo: string, appUrl: string,
- *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, text?: string }} p
+ *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, rateLabel?: string, text?: string }} p
+ *   rateLabel: kur cümlesinin başı (server/fx/resolve.js → fxDocumentNote): kur hangi kaynaktan geldiyse o adla
  * @returns {Record<string, string>}
  */
-export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, text = '', extern = null, rateNote = true, number = null }) {
+export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, rateLabel = 'Curs BT vânzare', text = '', extern = null, rateNote = true, number = null }) {
   const proforma = kind === 'proforma';
   const name = String(customer.name).trim();
   const cui = String(customer.taxId ?? '').replace(/\s/g, '');
@@ -172,7 +161,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     IdExtern: extern ?? `${orderNo}-${proforma ? 'P' : 'F'}`,
     VerificareDuplicat: 'true',
     // rateNote: false → açıklamada yalnızca verilen metin (cam siparişi: siparişin açıklaması)
-    Text: [text, rateNote ? `Curs BT vânzare EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.` : ''].filter(Boolean).join(' ').slice(0, 500),
+    Text: [text, rateNote ? `${rateLabel} EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.` : ''].filter(Boolean).join(' ').slice(0, 500),
     'Client[Denumire]': name,
     'Client[CodUnic]': cui,
     'Client[NrRegCom]': customer.regCom ?? '',

@@ -8,6 +8,8 @@ import type { Dict, MsgKey, T } from '@/lib/i18n';
 import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
+import { FxInfo } from '@/components/FxInfo';
+import { padRate } from '@/server/fx/decimal.js';
 import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
@@ -165,6 +167,17 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                     : fgoJob.status === 'SKIPPED' ? t('profile.page.fgo.skipped')
                       : fgoJob.attempts > 0 ? <span className="danger">{t('profile.page.fgo.retry', { n: fgoJob.attempts, error: fgoJob.lastError ?? '—', date: fmtDateTime(fgoJob.availableAt) })}</span>
                         : t('profile.page.fgo.pending')}
+              </div>
+            )}
+            {/* Belgeyle saklanan kur kaydı (karar 96, 98) — yalnızca yönetici: politika, taban kur, yüzde, uygulanan kur, kaynak */}
+            {admin && p?.fxRate != null && p.fxPolicy && (
+              <div className="fx-block" id="belge-kuru">
+                <h3>{t('fx.docTitle')}</h3>
+                <FxInfo t={t} fx={{
+                  policy: p.fxPolicy, currency: p.fxCurrency ?? 'EUR', baseRate: padRate((p.fxBaseRate ?? p.fxRate).toString()) ?? '',
+                  markupPercent: p.fxMarkupPercent?.toString() ?? null, finalRate: Number(p.fxRate).toFixed(4), source: p.fxSource ?? '',
+                  sourceDate: p.fxSourceDate ?? p.fxDate, manual: p.fxManual === true,
+                }} />
               </div>
             )}
             {can('retry_fgo') && (!fgoJob || fgoJob.status === 'FAILED' || fgoJob.status === 'SKIPPED') && (

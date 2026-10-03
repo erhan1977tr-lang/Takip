@@ -1,8 +1,9 @@
-// Banca Transilvania EUR satış kuru (vânzare) — profil siparişinde RON proforma ve fatura için (karar 38/46).
-// BT'nin kur sayfası rakamları sonradan, ayrı bir adresten yükleyebilir; bu yüzden adres ayardan değiştirilebilir
-// (Yönetici → Entegrasyonlar → FGO → "Kur adresi") ve okuyucu hem JSON hem HTML'den kuru bulmaya çalışır.
-// Kur alınamazsa proforma beklemeye alınır; yönetici sipariş sayfasında kuru elle girer.
-// Kullanılan kur, günü ve kaynağı siparişe kalıcı yazılır (fatura aynı kurla kesilir).
+// Banca Transilvania kuru.
+// 1) "Günün BT kuru" (elle): yönetici Entegrasyonlar ekranına BT sitesindeki "În unitățile BT → Vânzare" EUR kurunu girer;
+//    kur politikası BT_UNIT_SELL olan müşterilerin belgeleri o gün bu kurla kesilir (server/fx/resolve.js). Bu değer
+//    otomatik alınamıyor: site sunucu isteklerini reddediyor ve yapısal bir resmî kaynak bulunamadı.
+// 2) BT'nin geliştirici dosyası (exchange.xml) okuyucusu yalnızca TANI içindir (scripts/fx-check.mjs → "takip kur"):
+//    bu dosyadaki kur "În unitățile BT" kurundan FARKLIDIR ve hiçbir belgenin kuru olarak kullanılmaz.
 
 const BROWSER_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
@@ -171,20 +172,6 @@ export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
     await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
     await writeAudit(tx, { action: 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: actor.id, details: value }, actor);
     // Kur bekleyen proformalar hemen denensin (işçi bir dakika içinde keser)
-    await tx.notificationOutbox.updateMany({ where: { type: 'FGO_PROFORMA', status: 'PENDING' }, data: { availableAt: new Date() } });
+    await tx.notificationOutbox.updateMany({ where: { type: { in: ['FGO_PROFORMA', 'FGO_GLASS'] }, status: 'PENDING' }, data: { availableAt: new Date() } });
   });
-}
-
-/**
- * Belge kesilecek günün kuru: otomatik modda BT adresinden, olmazsa (ya da elle modda) yöneticinin bugün girdiği kur.
- * @returns {Promise<{ rate: number, source: string }>}  kur yoksa hata (yeniden denenir)
- */
-export async function rateForDay(db, { settings, day, rateImpl = fetchBtEurSell }) {
-  if (settings.fxMode === 'auto') {
-    const r = await rateImpl({ url: settings.fxUrl });
-    if (r.ok) return { rate: r.rate, source: r.source };
-  }
-  const rate = await dailyRateFor(db, day);
-  if (rate == null) throw new Error('Günün BT kuru girilmedi (Entegrasyonlar → Günün BT kuru); kur girilince belge kesilir');
-  return { rate, source: 'MANUAL_DAY' };
 }

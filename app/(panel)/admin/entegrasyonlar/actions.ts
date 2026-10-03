@@ -10,7 +10,7 @@ import { getAvSettings, saveAvSettings, scanPending } from '@/server/files/antiv
 import { eicar, scanBuffer } from '@/server/files/clamav.js';
 import { parseRecipients, saveWarehouseSettings } from '@/server/profile/warehouse.js';
 import { fgoKey, fgoTest, getFgoSettings, saveFgoSettings, validateFgoSettings } from '@/server/integrations/fgo.js';
-import { fetchBtEurSell, parseManualRate, saveDailyRate } from '@/server/fx/bt.js';
+import { parseManualRate, saveDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
@@ -68,7 +68,7 @@ export async function saveFgoAction(formData: FormData) {
     enabled: formData.get('enabled') === 'on', env: formData.get('env'), cui: formData.get('cui'),
     proformaSeries: formData.get('proformaSeries'), invoiceSeries: formData.get('invoiceSeries'),
     proformaType: formData.get('proformaType'), invoiceType: formData.get('invoiceType'),
-    vatRate: formData.get('vatRate'), fxUrl: formData.get('fxUrl'), fxMode: formData.get('fxMode'), dailyLimit: formData.get('dailyLimit'),
+    vatRate: formData.get('vatRate'), dailyLimit: formData.get('dailyLimit'),
     invoiceNext: formData.get('invoiceNext'),
   });
   if (!res.ok) redirect(back({ error: 'fgo', detail: res.errors.join(', ') }) + '#fgo');
@@ -92,16 +92,7 @@ export async function testFgoAction() {
   redirect(back({ [r.ok ? 'ok' : 'error']: 'fgoTest', detail: r.message.slice(0, 200), types: r.types.join(', ').slice(0, 300) }) + '#fgo');
 }
 
-/** BT EUR satış kurunu dener (kayıtlı adresten). */
-export async function testFxAction() {
-  await requirePermission('SETTINGS_MANAGE');
-  const s = await getFgoSettings(db);
-  const r = await fetchBtEurSell({ url: s.fxUrl });
-  if (r.ok) redirect(back({ ok: 'fx', rate: r.rate.toFixed(4) }) + '#fgo');
-  redirect(back({ error: 'fx', detail: r.error }) + '#fgo');
-}
-
-/** Günün BT EUR satış kuru (elle): BT sitesi sunucudan okunamazsa bugünkü proformalar bu kurla kesilir. */
+/** Günün BT EUR satış kuru (elle): kur politikası BT olan müşterilerin bugünkü belgeleri bu kurla kesilir (karar 95, 98). */
 export async function saveDailyRateAction(formData: FormData) {
   const user = await requirePermission('SETTINGS_MANAGE');
   const rate = parseManualRate(String(formData.get('rate') ?? ''));

@@ -15,7 +15,7 @@ const rateText = (v: string) => v.replace('.', ',');
 export function fxPolicyLabel(t: T, policy: string | null | undefined, percent: string | null | undefined) {
   if (policy === 'BNR_PLUS_PERCENT' && percent != null) return t('fx.policyWithPercent', { percent: trimPercent(percent).replace('.', ',') });
   const known = ['BT_UNIT_SELL', 'BNR', 'BNR_PLUS_PERCENT'].includes(policy ?? '');
-  return t(`fx.policy.${known ? policy : 'LEGACY'}` as MsgKey);
+  return known ? t(`fx.policy.${policy}` as MsgKey) : t('fx.unknownPolicy');
 }
 
 /**
@@ -25,7 +25,7 @@ export function fxPolicyLabel(t: T, policy: string | null | undefined, percent: 
 export function FxInfo({ fx, t }: { fx: FxView; t: T }) {
   const bnr = !fx.manual && (fx.policy === 'BNR' || fx.policy === 'BNR_PLUS_PERCENT');
   const baseKey = fx.source === 'MANUAL' ? 'MANUAL' : bnr ? 'BNR' : 'BT';
-  const sourceKey = ['BNR', 'MANUAL', 'MANUAL_DAY'].includes(fx.source) ? fx.source : 'BT_FILE';
+  const knownSource = ['BNR', 'MANUAL', 'MANUAL_DAY'].includes(fx.source);
   const money = (v: string) => t('fx.rate', { rate: rateText(v), currency: fx.currency });
   return (
     <table className="kv fx-info">
@@ -37,7 +37,7 @@ export function FxInfo({ fx, t }: { fx: FxView; t: T }) {
         <tr><td>{t(`fx.row.base.${baseKey}` as MsgKey)}</td><td className="mono">{rateText(fx.baseRate)}</td></tr>
         {bnr && fx.markupPercent != null && <tr><td>{t('fx.row.percent')}</td><td className="mono">{trimPercent(fx.markupPercent).replace('.', ',')}%</td></tr>}
         <tr><td>{t('fx.row.final')}</td><td className="mono"><b>{money(fx.finalRate)}</b></td></tr>
-        <tr><td>{t('fx.row.source')}</td><td>{t(`fx.source.${sourceKey}` as MsgKey)}</td></tr>
+        <tr><td>{t('fx.row.source')}</td><td>{knownSource ? t(`fx.source.${fx.source}` as MsgKey) : fx.source}</td></tr>
         <tr><td>{t('fx.row.sourceDate')}</td><td>{fmtDate(fx.sourceDate)}</td></tr>
       </tbody>
     </table>

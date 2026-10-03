@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.36.0 — 03.10.2026
+
+- **Kur politikası cam ve profil siparişlerinde aynı**: profil proforması ve faturası da müşterinin kur politikasıyla
+  (BT / BNR / BNR + %) kesilir. Kur proformada belirlenir ve kaydedilir; fatura aynı kurla kesilir.
+- **Her müşterinin bir kur politikası var**: "seçilmedi" seçeneği kaldırıldı; politikası seçilmemiş müşteriler ve yeni
+  müşteriler *BT satış kuru – în unitățile BT* ile başlar (günün BT kuru, Entegrasyonlar'dan elle).
+- **BNR kuru**: belge kesilirken BNR'nin yayımlamış olduğu son kur kullanılır (cumartesi kesilen belgede cuma kuru);
+  BNR'nin kur günü belgeyle birlikte saklanır.
+- **BT'nin XML dosyası artık hiçbir belgede kullanılmıyor**: Entegrasyonlar'daki "Kur kaynağı", "BT kur adresi" ve
+  "Kuru dene" kaldırıldı. Gereken kur alınamazsa belge bekler; başka bir kura geçilmez. Yönetici kuru elle girebilir.
+- FGO belgesinin açıklamasında kur gerçek kaynağıyla yazılır: "Curs BT vânzare", "Curs BNR" ya da (yüzde eklenmiş / elle
+  girilmiş kurda) "Curs de schimb".
+- Günün BT kuru girilince kur bekleyen cam belgeleri de hemen yeniden denenir.
+
 ## 3.35.1 — 03.10.2026
 
 - BNR kuru: BNR'nin güncel dosya biçimi tanınıyor (dosya okunuyor ama "alınamadı" deniyordu). Kur yalnızca

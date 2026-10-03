@@ -11,12 +11,10 @@ export function FxPolicyFields({ policy, percent, max, m }: { policy: string; pe
       <div>
         <label htmlFor="fxPolicy">{m.title}</label>
         <select id="fxPolicy" name="fxPolicy" value={p} onChange={(e) => setP(e.target.value)}>
-          <option value="">{m.policy.LEGACY}</option>
           <option value="BT_UNIT_SELL">{m.policy.BT_UNIT_SELL}</option>
           <option value="BNR">{m.policy.BNR}</option>
           <option value="BNR_PLUS_PERCENT">{m.policy.BNR_PLUS_PERCENT}</option>
         </select>
-        {p === '' && <div className="hint">{m.legacyHint}</div>}
         {p === 'BT_UNIT_SELL' && <div className="hint">{m.btAutoNote}</div>}
       </div>
       {p === 'BNR_PLUS_PERCENT' && (

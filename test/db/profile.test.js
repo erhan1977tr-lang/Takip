@@ -251,9 +251,12 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { dispatchFgoJobs } = await import('../../server/profile/fgo-jobs.js');
 const FGO_SECRET = 'f'.repeat(40);
-const fgoOn = (enabled = true, fxMode = 'auto', dailyLimit = 0) => saveFgoSettings(db, {
-  enabled, fxMode, dailyLimit, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/curs',
+const fgoOn = (enabled = true, dailyLimit = 0) => saveFgoSettings(db, {
+  enabled, dailyLimit, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21,
 }, { key: 'GIZLI', secret: FGO_SECRET }, actor(people.admin));
+/** Sahte BNR (ağa çıkılmaz): yayımlanan son kur ve günü */
+const bnrOf = (rate, date) => async () => ({ ok: true, rate, date, url: 'https://curs.bnr.ro/nbrfxrates.xml' });
+const noBnr = async () => { throw new Error('BNR çağrılmamalıydı'); };
 function fakeFgo(numbers) {
   const calls = [];
   const fetchImpl = async (url, init) => {
@@ -266,14 +269,14 @@ function fakeFgo(numbers) {
   };
   return { calls, fetchImpl };
 }
-const fgoCtx = (extra) => ({ secret: FGO_SECRET, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', ...extra });
+const fgoCtx = (extra) => ({ secret: FGO_SECRET, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', bnrImpl: noBnr, ...extra });
 
-dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahtar düz metin saklanmaz', async () => {
+dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimde aynı kurla fatura; anahtar düz metin saklanmaz', async () => {
   await fgoOn();
   const row = await db.integrationSetting.findUnique({ where: { key: 'fgo' } });
   assert.ok(!JSON.stringify(row.value).includes('GIZLI'), 'anahtar şifreli');
-  // Müşterinin kur politikası (Aşama 7D-1) profil faturalamasını ETKİLEMEZ: profil belgeleri önceki gibi BT kuruyla kesilir
-  await db.customer.update({ where: { id: firm.id }, data: { taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1', fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' } });
+  // Profil belgeleri de müşterinin kur politikasını kullanır (karar 98): burada BNR — BNR'nin son yayımladığı kur (cuma)
+  await db.customer.update({ where: { id: firm.id }, data: { taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1', fxPolicy: 'BNR', fxMarkupPercent: null } });
   const { id, orderNo } = await newProfileOrder([['GK15', 4], ['SPIGOTI', 20]]);
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '12.5') });
@@ -283,8 +286,8 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
 
   const fgo = fakeFgo([552, 684]);
   let rates = 0;
-  const rateImpl = async () => { rates++; return { ok: true, rate: 4.9765, source: 'https://bt.example/curs' }; };
-  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl }));
+  const bnrImpl = async () => { rates++; return { ok: true, rate: '4.9765', date: '2026-10-02', url: 'https://curs.bnr.ro/nbrfxrates.xml' }; };
+  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, bnrImpl }));
   assert.deepEqual(r1, { done: 1, failed: 0 });
   o = await load(id);
   assert.equal(o.profile.stage, 'PROFORMA');
@@ -295,7 +298,12 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   assert.equal(pdoc.total.toString(), '100', 'tutar FGO\'dan hemen okunur');
   assert.equal(pdoc.paid.toString(), '40');
   assert.equal(Number(o.profile.fxRate), 4.9765);
-  assert.equal(o.profile.fxSource, 'https://bt.example/curs');
+  // Kur kaydı: politika, taban kur, kaynak ve BNR'nin kaynak günü (belge günü ayrı)
+  assert.deepEqual(
+    [o.profile.fxSource, o.profile.fxPolicy, o.profile.fxCurrency, o.profile.fxBaseRate.toString(), o.profile.fxMarkupPercent, o.profile.fxManual, o.profile.fxSourceDate.toISOString().slice(0, 10)],
+    ['BNR', 'BNR', 'EUR', '4.9765', null, false, '2026-10-02'],
+  );
+  assert.equal(o.profile.fxDate.toISOString().slice(0, 10), today(), 'belge günü');
   assert.equal(o.profile.proformaAmount.toString(), '1493.04'); // 24 × 62,21 RON
   const pf = fgo.calls[0].form;
   assert.match(fgo.calls[0].url, /api-testuat\.fgo\.ro\/v1\/factura\/emitere$/);
@@ -304,15 +312,19 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   assert.equal(pf.IdExtern, `${orderNo}-P`);
   assert.equal(pf['Client[CodUnic]'], '998877');
   assert.equal(pf['Continut[0][PretUnitar]'], '62.21');
+  assert.match(pf.Text, /^Curs BNR EUR 4\.9765 RON din 02\.10\.2026\. Comanda /, 'belgede kurun gerçek kaynağı ve günü yazar');
   // Ölçü birimi FGO eşlemesinden (en çok 5 karakter): CUTII → cutii, BUCATI ("bucăți") → buc
   assert.deepEqual([pf['Continut[0][UM]'], pf['Continut[1][UM]']].sort(), ['buc', 'cutii']);
 
   await run(id, 'mark_paid', 'admin', { paidDate: today() });
   await run(id, 'mark_delivered', 'admin');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_INVOICE', status: 'PENDING' } }), 1);
-  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl }));
+  // Sonradan politika ve BNR değişse de fatura proformanın kuruyla kesilir; kur yeniden çözülmez
+  await db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '5' } });
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, bnrImpl }));
   o = await load(id);
   assert.equal(o.profile.stage, 'FATURALANDI');
+  assert.deepEqual([Number(o.profile.fxRate), o.profile.fxPolicy, o.profile.fxSource], [4.9765, 'BNR', 'BNR'], 'kur kaydı değişmedi');
   assert.equal(o.status, 'ARSIVLENDI');
   assert.equal(o.profile.invoiceNo, 'GKH684');
   assert.equal(rates, 1, 'fatura için kur yeniden alınmaz');
@@ -321,6 +333,7 @@ dbTest('FGO: onayda proforma (BT kuru, RON), teslimde aynı kurla fatura; anahta
   assert.equal(inv.IdExtern, `${orderNo}-F`);
   assert.ok(!('Numar' in inv), 'fatura numarasını FGO verir (karar 87); kaydedilen numara FGO\'nun döndürdüğü (GKH684)');
   assert.equal(inv['Continut[0][PretUnitar]'], pf['Continut[0][PretUnitar]'], 'aynı kur');
+  assert.match(inv.Text, /^Curs BNR EUR 4\.9765 RON din 02\.10\.2026\./);
   const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
   assert.ok(audited.includes('fgo_proforma') && audited.includes('fgo_invoice'));
 });
@@ -333,7 +346,7 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   o = await load(id);
   await run(id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 8 FGO' });
   const fgo = fakeFgo([553]);
-  const r = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: async () => ({ ok: true, rate: 5, source: 'x' }) }));
+  const r = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl }));
   assert.deepEqual(r, { done: 0, failed: 1 });
   assert.equal(fgo.calls.length, 0, "FGO'ya gidilmedi");
   assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } })).status, 'FAILED');
@@ -343,6 +356,7 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   o = await load(id);
   assert.equal(Number(o.profile.fxRate), 4.98);
   assert.equal(o.profile.fxSource, 'MANUAL');
+  assert.deepEqual([o.profile.fxPolicy, o.profile.fxManual, o.profile.fxBaseRate.toString(), o.profile.fxMarkupPercent], ['BT_UNIT_SELL', true, '4.98', null], 'elle kur: müşterinin politikası kayıtta, ELLE işaretli');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA', status: 'PENDING' } }), 1);
   // Elle proforma: kuyruktaki iş atlanır
   await run(id, 'mark_proforma', 'admin', { proformaNo: 'PRF999' });
@@ -362,32 +376,64 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   assert.equal(await codeOf(run(second.id, 'retry_fgo', 'admin')), 'NOT_ALLOWED', 'proforma adımında yeniden deneme yok');
 });
 
-dbTest('FGO: elle modda günün kuru kullanılır; girilmemişse beklenir, girilince hemen kesilir', async () => {
+dbTest('FGO: BT politikasında günün BT kuru (elle) kullanılır; girilmemişse beklenir, girilince hemen kesilir', async () => {
   const { saveDailyRate } = await import('../../server/fx/bt.js');
   const { writeAudit } = await import('../../server/orders/journal.js');
-  await fgoOn(true, 'manual');
+  await fgoOn(true);
+  await db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'BT_UNIT_SELL', fxMarkupPercent: null } });
   const { id } = await newProfileOrder([['GK15', 1]]);
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
   o = await load(id);
   await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 7 FGO' });
   const fgo = fakeFgo([560]);
-  let asked = 0;
-  const blocked = async () => { asked++; return { ok: false, error: 'HTTP 403' }; };
   const now = new Date();
-  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now }));
+  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now }));
   assert.deepEqual(r1, { done: 0, failed: 1 });
   const job = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } });
   assert.equal(job.status, 'PENDING', 'geçici hata: yeniden denenir');
-  assert.match(job.lastError, /Günün BT kuru girilmedi/);
+  assert.match(job.lastError, /otomatik alınamıyor/);
+  assert.equal(fgo.calls.length, 0, 'kur yokken FGO\'ya gidilmez');
   await saveDailyRate(db, { day: localDay(now, 'Europe/Bucharest'), rate: 5.345 }, actor(people.admin), writeAudit);
-  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, rateImpl: blocked, now: new Date(now.getTime() + 60_000) })); // kur girilince bekleyen iş hemen denenir
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now: new Date(now.getTime() + 60_000) })); // kur girilince bekleyen iş hemen denenir
   o = await load(id);
   assert.equal(o.profile.proformaNo, 'PRF560');
   assert.equal(Number(o.profile.fxRate), 5.345);
   assert.equal(o.profile.fxSource, 'MANUAL_DAY');
-  assert.equal(asked, 0, 'elle modda BT\'ye gidilmez');
+  assert.deepEqual([o.profile.fxPolicy, o.profile.fxManual], ['BT_UNIT_SELL', true]);
   assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '53.45');
+  assert.match(fgo.calls[0].form.Text, /^Curs BT vânzare EUR 5\.3450 RON din /);
+  await fgoOn(false);
+});
+
+dbTest('FGO: BNR + % politikasında profil proforması BNR × (1 + %) ile; BNR alınamazsa günün BT kuruna düşülmez, belge bekler', async () => {
+  await fgoOn(true);
+  // Günün BT kuru girili (önceki test): BNR politikasında kullanılmamalı
+  await db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' } });
+  const { id } = await newProfileOrder([['GK15', 1]]);
+  let o = await load(id);
+  await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
+  o = await load(id);
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 6 FGO' });
+  const fgo = fakeFgo([570]);
+  const now = new Date();
+  const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now, bnrImpl: async () => ({ ok: false, error: 'HTTP 503' }) }));
+  assert.deepEqual(r1, { done: 0, failed: 1 });
+  assert.equal(fgo.calls.length, 0);
+  const job = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'FGO_PROFORMA' } });
+  assert.equal(job.status, 'PENDING');
+  assert.match(job.lastError, /BNR kuru alınamadı \(HTTP 503\)/);
+  await db.notificationOutbox.update({ where: { id: job.id }, data: { availableAt: new Date(0) } });
+  await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now, bnrImpl: bnrOf('5.1000', '2026-10-02') }));
+  o = await load(id);
+  assert.equal(o.profile.proformaNo, 'PRF570');
+  assert.deepEqual(
+    [o.profile.fxRate.toString(), o.profile.fxBaseRate.toString(), o.profile.fxMarkupPercent.toString(), o.profile.fxSource, o.profile.fxPolicy, o.profile.fxManual],
+    ['5.202', '5.1', '2', 'BNR', 'BNR_PLUS_PERCENT', false],
+  );
+  assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '52.02', '10 EUR × 5,2020');
+  assert.match(fgo.calls[0].form.Text, /^Curs de schimb EUR 5\.2020 RON din /, 'yüzde eklenmiş kur "Curs BNR" diye anılmaz');
+  await db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'BT_UNIT_SELL', fxMarkupPercent: null } });
   await fgoOn(false);
 });
 

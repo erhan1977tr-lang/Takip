@@ -3,7 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyMarkup, padRate } from '../server/fx/decimal.js';
 import { bnrRate, fetchBnr, parseBnr } from '../server/fx/bnr.js';
-import { FX_SNAPSHOT_CLEAR, FxUnavailable, fxSnapshot, parseFxPolicy, parseMarkupPercent, previewExchangeRate, resolveExchangeRate, trimPercent } from '../server/fx/resolve.js';
+import { FX_SNAPSHOT_CLEAR, FxUnavailable, fxDocumentNote, fxSnapshot, manualExchangeRate, parseFxPolicy, parseMarkupPercent, previewExchangeRate, resolveExchangeRate, trimPercent } from '../server/fx/resolve.js';
+import * as bt from '../server/fx/bt.js';
+import { FGO_DEFAULTS } from '../server/integrations/fgo.js';
 
 const BNR_XML = (date = '2026-10-02', eur = '5.1000') => `<?xml version="1.0" encoding="utf-8"?>
 <DataSet xmlns="https://www.bnr.ro/xsd" xmlns:xsi="https://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://curs.bnr.ro/xsd/nbrfxrates.xsd">
@@ -47,7 +49,7 @@ test('yüzde doğrulama: sayı, 0–20, en çok 3 ondalık; politika formu', () 
   assert.equal(trimPercent('2.000'), '2');
   assert.equal(trimPercent('2.500'), '2.5');
 
-  assert.deepEqual(parseFxPolicy({ policy: '', percent: '5' }), { ok: true, data: { fxPolicy: null, fxMarkupPercent: null } }, 'seçilmedi = eski kural');
+  assert.deepEqual(parseFxPolicy({ policy: '', percent: '5' }), { ok: false, code: 'BAD_POLICY' }, 'politika zorunlu: "seçilmedi" diye bir durum yok');
   assert.deepEqual(parseFxPolicy({ policy: 'BNR', percent: '5' }), { ok: true, data: { fxPolicy: 'BNR', fxMarkupPercent: null } }, 'yüzde yalnızca BNR + %');
   assert.deepEqual(parseFxPolicy({ policy: 'BT_UNIT_SELL', percent: '' }), { ok: true, data: { fxPolicy: 'BT_UNIT_SELL', fxMarkupPercent: null } });
   assert.deepEqual(parseFxPolicy({ policy: 'BNR_PLUS_PERCENT', percent: '2' }), { ok: true, data: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2.000' } });
@@ -107,7 +109,7 @@ test('BNR alma: yalnızca bnr.ro, saklanır (ikinci istek ağa çıkmaz), kaynak
 
 test('çözücü — BNR ve BNR + %: taban kur, yüzde, uygulanan kur, kaynak ve günü birlikte döner', async () => {
   const now = new Date('2026-10-03T09:30:00Z');
-  const bnr = await resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BNR' }, day: DAY, now, bnrImpl: bnrOk(), rateImpl: never('BT') });
+  const bnr = await resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BNR' }, day: DAY, now, bnrImpl: bnrOk() });
   assert.deepEqual(bnr, {
     policy: 'BNR', currency: 'EUR', baseRate: '5.1000', markupPercent: null, finalRate: '5.1000', rate: 5.1,
     source: 'BNR', sourceDate: '2026-10-02', resolvedAt: '2026-10-03T09:30:00.000Z', manual: false,
@@ -127,7 +129,7 @@ test('çözücü — BNR alınamazsa elle girilmiş BT kuruna SESSİZCE düşül
   const db = fakeDb({ day: DAY, rate: 5.44 });
   const down = async () => ({ ok: false, error: 'HTTP 503' });
   await assert.rejects(
-    () => resolveExchangeRate(db, { customer: { fxPolicy: 'BNR' }, day: DAY, settings: { fxMode: 'auto', fxUrl: 'https://bt.example' }, bnrImpl: down, rateImpl: never('BT XML') }),
+    () => resolveExchangeRate(db, { customer: { fxPolicy: 'BNR' }, day: DAY, bnrImpl: down }),
     (e) => e instanceof FxUnavailable && e.code === 'BNR_UNAVAILABLE',
   );
   const p = await previewExchangeRate(db, { customer: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' }, day: DAY, bnrImpl: down });
@@ -135,42 +137,59 @@ test('çözücü — BNR alınamazsa elle girilmiş BT kuruna SESSİZCE düşül
   assert.equal(p.code, 'BNR_UNAVAILABLE');
 });
 
-test('çözücü — BT_UNIT_SELL: BT XML kuru ASLA kullanılmaz; yalnızca yöneticinin bugün girdiği BT kuru (ELLE)', async () => {
-  // Ayar "otomatik" ve XML 5.3250 dönecek olsa bile okunmaz
-  let xml = 0;
-  const xmlRate = async () => { xml += 1; return { ok: true, rate: 5.325, source: 'https://dev.bancatransilvania.ro/exchange.xml' }; };
-  const settings = { fxMode: 'auto', fxUrl: 'https://dev.bancatransilvania.ro/exchange.xml' };
+test('çözücü — BT_UNIT_SELL: yalnızca yöneticinin bugün girdiği BT kuru (ELLE); BT XML belge kuru olamaz', async () => {
   await assert.rejects(
-    () => resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, settings, rateImpl: xmlRate, bnrImpl: never('BNR') }),
+    () => resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, bnrImpl: never('BNR') }),
     (e) => e instanceof FxUnavailable && e.code === 'BT_MANUAL_REQUIRED',
     'bugünün kuru girilmediyse belge bekler',
   );
   // Dünün kuru bugün geçmez
-  await assert.rejects(() => resolveExchangeRate(fakeDb({ day: '2026-10-02', rate: 5.4 }), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, settings, rateImpl: xmlRate }), (e) => e.code === 'BT_MANUAL_REQUIRED');
-  const r = await resolveExchangeRate(fakeDb({ day: DAY, rate: 5.4412 }), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, settings, rateImpl: xmlRate, bnrImpl: never('BNR') });
+  await assert.rejects(() => resolveExchangeRate(fakeDb({ day: '2026-10-02', rate: 5.4 }), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY }), (e) => e.code === 'BT_MANUAL_REQUIRED');
+  const r = await resolveExchangeRate(fakeDb({ day: DAY, rate: 5.4412 }), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, bnrImpl: never('BNR') });
   assert.deepEqual([r.policy, r.baseRate, r.finalRate, r.source, r.sourceDate, r.manual, r.markupPercent], ['BT_UNIT_SELL', '5.4412', '5.4412', 'MANUAL_DAY', DAY, true, null]);
+  // XML kuru verecek bir okuyucu çözücüye verilse bile yok sayılır: çözücünün BT XML'ine giden bir yolu yok
+  let xml = 0;
+  const xmlRate = async () => { xml += 1; return { ok: true, rate: 5.325, source: 'https://dev.bancatransilvania.ro/exchange.xml' }; };
+  await assert.rejects(() => resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BT_UNIT_SELL' }, day: DAY, rateImpl: xmlRate, settings: { fxMode: 'auto', fxUrl: 'https://dev.bancatransilvania.ro/exchange.xml' } }), (e) => e.code === 'BT_MANUAL_REQUIRED');
   assert.equal(xml, 0, 'BT XML hiç istenmedi');
+  assert.equal(typeof bt.rateForDay, 'undefined', 'XML\'e düşen eski kur seçimi kaldırıldı');
+  assert.ok(!('fxMode' in FGO_DEFAULTS) && !('fxUrl' in FGO_DEFAULTS), 'FGO ayarında kur kaynağı yok');
 });
 
 test('çözücü — elle kur her politikanın önüne geçer ve MANUAL diye işaretlenir; yüzde eklenmez', async () => {
-  const r = await resolveExchangeRate(fakeDb({ day: DAY, rate: 5.4 }), { customer: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' }, day: DAY, manualRate: '5,3000', bnrImpl: never('BNR'), rateImpl: never('BT') });
+  const r = await resolveExchangeRate(fakeDb({ day: DAY, rate: 5.4 }), { customer: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' }, day: DAY, manualRate: '5,3000', bnrImpl: never('BNR') });
   assert.deepEqual([r.policy, r.baseRate, r.markupPercent, r.finalRate, r.source, r.sourceDate, r.manual], ['BNR_PLUS_PERCENT', '5.3000', null, '5.3000', 'MANUAL', DAY, true]);
-  const n = await resolveExchangeRate(fakeDb(), { customer: null, day: DAY, manualRate: 5.25, rateImpl: never('BT') });
-  assert.deepEqual([n.policy, n.finalRate, n.source, n.manual], ['LEGACY', '5.2500', 'MANUAL', true]);
+  const n = manualExchangeRate({ customer: { fxPolicy: 'BT_UNIT_SELL' }, manualRate: 5.25, day: DAY });
+  assert.deepEqual([n.policy, n.finalRate, n.rate, n.source, n.manual], ['BT_UNIT_SELL', '5.2500', 5.25, 'MANUAL', true]);
   await assert.rejects(() => resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BNR' }, day: DAY, manualRate: '55', bnrImpl: bnrOk() }), (e) => e.code === 'BAD_MANUAL', 'geçersiz elle kur yerine BNR kullanılmaz');
 });
 
-test('çözücü — politika seçilmemiş müşteri (eski kural): 7D-1 öncesi davranış aynen', async () => {
-  // Elle mod: yöneticinin bugün girdiği BT kuru; BNR hiç istenmez
-  const man = await resolveExchangeRate(fakeDb({ day: DAY, rate: 5 }), { customer: { fxPolicy: null }, day: DAY, settings: { fxMode: 'manual' }, rateImpl: never('BT'), bnrImpl: never('BNR') });
-  assert.deepEqual([man.policy, man.finalRate, man.source, man.manual], ['LEGACY', '5.0000', 'MANUAL_DAY', true]);
-  await assert.rejects(
-    () => resolveExchangeRate(fakeDb(), { customer: {}, day: DAY, settings: { fxMode: 'manual' }, rateImpl: never('BT'), bnrImpl: never('BNR') }),
-    (e) => e.code === 'LEGACY_UNAVAILABLE' && /Günün BT kuru girilmedi/.test(e.message),
-  );
-  // Otomatik mod (yönetici Entegrasyonlar'da öyle seçtiyse): eski BT adresi, önceki gibi
-  const auto = await resolveExchangeRate(fakeDb(), { customer: null, day: DAY, settings: { fxMode: 'auto', fxUrl: 'https://bt.example' }, rateImpl: async ({ url }) => ({ ok: true, rate: 4.9765, source: url }), bnrImpl: never('BNR') });
-  assert.deepEqual([auto.policy, auto.finalRate, auto.source, auto.manual], ['LEGACY', '4.9765', 'https://bt.example', false]);
+test('çözücü — politikası olmayan müşteri için kur çözülmez (eski / varsayılan kur yolu yok)', async () => {
+  for (const customer of [null, {}, { fxPolicy: null }, { fxPolicy: 'LEGACY' }]) {
+    await assert.rejects(() => resolveExchangeRate(fakeDb({ day: DAY, rate: 5 }), { customer, day: DAY, bnrImpl: bnrOk() }), (e) => e instanceof FxUnavailable && e.code === 'BAD_POLICY');
+    assert.throws(() => manualExchangeRate({ customer, manualRate: 5.2, day: DAY }), (e) => e.code === 'BAD_POLICY');
+  }
+});
+
+test('BNR kuralı: BNR\'nin yayımladığı son kur — cumartesi çözülen kur cuma kurudur ve kaynak günü cuma saklanır', async () => {
+  // 03.10.2026 cumartesi; BNR'nin dosyasındaki son gün 02.10.2026 cuma. İş günü takvimi tutulmaz.
+  const fetchImpl = async () => new Response(BNR_XML('2026-10-02', '5.3447'));
+  const sat = new Date('2026-10-03T10:00:00Z');
+  const bnrImpl = (o) => bnrRate({ ...o, fetchImpl, cache: { at: 0, data: null } });
+  const r = await resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BNR' }, day: '2026-10-03', now: sat, bnrImpl });
+  assert.deepEqual([r.finalRate, r.source, r.sourceDate], ['5.3447', 'BNR', '2026-10-02']);
+  // Pazartesi, BNR yeni kur yayımlamadan önce: hâlâ cuma kuru
+  const mon = await resolveExchangeRate(fakeDb(), { customer: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2.5' }, day: '2026-10-05', now: new Date('2026-10-05T07:00:00Z'), bnrImpl });
+  assert.deepEqual([mon.baseRate, mon.finalRate, mon.sourceDate], ['5.3447', '5.4783', '2026-10-02']);
+  assert.equal(fxSnapshot(r, new Date('2026-10-03T00:00:00Z')).fxSourceDate.toISOString().slice(0, 10), '2026-10-02', 'kayıtta BNR\'nin gerçek kaynak günü');
+});
+
+test('belge açıklaması: kur hangi kaynaktan geldiyse o adla anılır', () => {
+  const d = (x) => new Date(`${x}T00:00:00Z`);
+  assert.deepEqual(fxDocumentNote({ fxPolicy: 'BT_UNIT_SELL', fxSource: 'MANUAL_DAY', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-03') }), { label: 'Curs BT vânzare', date: d('2026-10-03') });
+  assert.deepEqual(fxDocumentNote({ fxPolicy: 'BNR', fxSource: 'BNR', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-02') }), { label: 'Curs BNR', date: d('2026-10-02') }, 'BNR: kaynak günü');
+  assert.equal(fxDocumentNote({ fxPolicy: 'BNR_PLUS_PERCENT', fxSource: 'BNR', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-02') }).label, 'Curs de schimb', 'yüzde eklenmiş kur BNR kuru diye anılmaz');
+  assert.equal(fxDocumentNote({ fxPolicy: 'BNR', fxSource: 'MANUAL', fxDate: d('2026-10-03') }).label, 'Curs de schimb', 'elle kur bir kaynağın adıyla anılmaz');
 });
 
 test('kur kaydı: çözücünün döndürdüğü her alan saklanır; temizleme aynı alanları boşaltır', async () => {

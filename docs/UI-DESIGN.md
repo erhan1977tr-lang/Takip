@@ -203,6 +203,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Rate details are always shown with `components/FxInfo.tsx` (`.kv.fx-info`: policy → base rate → percent → applied
   rate → source → rate date). A manual rate carries a `warn` badge (ELLE / MANUAL). When a rate cannot be resolved use
   `FxUnavailableNote` (`.alert-warn.fx-unavailable`) — never show another rate in its place.
+- Profile order (Admin only): the stored snapshot is shown with the same component in the FGO block.
 - Glass order → Finans / FGO: `.fx-block` with the same component (today's rate before the document, stored snapshot
   after it); the optional manual-rate input sits in the document form (`.fx-manual`).
 

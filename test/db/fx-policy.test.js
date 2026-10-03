@@ -1,5 +1,5 @@
 // Müşteri kur politikası (Aşama 7D-1) — veritabanıyla: politika kaydı, cam proformasında tek çözücü, kur kaydı (snapshot),
-// elle kur, BT XML'in kullanılmaması, eski müşterinin değişmemesi.
+// elle kur, BT XML'in kullanılmaması, varsayılan politika.
 // FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR ve BT de sahtedir (ağa çıkılmaz).
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,8 +17,8 @@ const TZ = 'Europe/Bucharest';
 let db, admin, firm, seq = 100;
 const actor = () => ({ id: admin.id, role: 'ADMIN', ip: '127.0.0.1' });
 const today = () => localDay(new Date(), TZ);
-const fgoOn = (fxMode = 'manual') => saveFgoSettings(db, {
-  enabled: true, fxMode, dailyLimit: 0, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21, fxUrl: 'https://bt.example/exchange.xml',
+const fgoOn = () => saveFgoSettings(db, {
+  enabled: true, dailyLimit: 0, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21,
 }, { key: 'K', secret: SECRET }, actor());
 
 /** Sahte FGO: yalnızca bu nesneye gelen istekler sayılır; gerçek FGO adresine hiçbir şey gitmez */
@@ -36,7 +36,7 @@ function fakeFgo(start) {
 }
 const never = (name) => async () => { throw new Error(`${name} çağrılmamalıydı`); };
 const bnr = (rate, date = today()) => async ({ currency }) => (currency === 'EUR' ? { ok: true, rate, date, url: 'https://curs.bnr.ro/nbrfxrates.xml' } : { ok: false, error: 'yok' });
-const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZone: TZ, fetchImpl: fgo.fetchImpl, rateImpl: never('BT XML'), bnrImpl: never('BNR'), ...extra });
+const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZone: TZ, fetchImpl: fgo.fetchImpl, bnrImpl: never('BNR'), ...extra });
 
 async function customer(name, prefix, data = {}) {
   return db.customer.create({ data: { name, prefix, email: `${prefix.toLowerCase()}@fx.test`, taxId: '998877', county: 'Ilfov', city: 'Voluntari', address: 'Str. 1', ...data } });
@@ -65,8 +65,8 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('kur politikası kaydı: varsayılan boş (eski kural); kaydet / değiştir; geçersiz yüzde ve politika veritabanına ulaşmaz', async () => {
-  assert.equal(firm.fxPolicy, null, 'var olan / yeni müşteri: politika seçilmemiş');
+dbTest('kur politikası kaydı: zorunlu, varsayılan BT; kaydet / değiştir; geçersiz yüzde ve politika veritabanına ulaşmaz', async () => {
+  assert.equal(firm.fxPolicy, 'BT_UNIT_SELL', 'yeni müşteri: varsayılan politika BT (în unitățile BT)');
   assert.equal(firm.fxMarkupPercent, null);
   const save = async (raw) => {
     const r = parseFxPolicy(raw);
@@ -80,8 +80,10 @@ dbTest('kur politikası kaydı: varsayılan boş (eski kural); kaydet / değişt
   assert.equal(await save({ policy: 'BNR_PLUS_PERCENT', percent: '99' }), 'BAD_PERCENT');
   assert.equal(await save({ policy: 'XML', percent: '' }), 'BAD_POLICY');
   await assert.rejects(db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'XML' } }), 'veritabanı da bilinmeyen politikayı kabul etmez (enum)');
-  c = await save({ policy: '', percent: '' });
-  assert.deepEqual([c.fxPolicy, c.fxMarkupPercent], [null, null], 'yönetici eski kurala dönebilir');
+  assert.equal(await save({ policy: '', percent: '' }), 'BAD_POLICY', 'politikasız müşteri olmaz');
+  await assert.rejects(db.customer.update({ where: { id: firm.id }, data: { fxPolicy: null } }), 'veritabanı da boş politikayı kabul etmez');
+  c = await save({ policy: 'BT_UNIT_SELL', percent: '' });
+  assert.deepEqual([c.fxPolicy, c.fxMarkupPercent], ['BT_UNIT_SELL', null]);
 });
 
 dbTest('BNR + %2: proforma BNR × 1,02 ile kesilir; kur kaydı saklanır ve sonradan BNR / politika değişse de DEĞİŞMEZ', async () => {
@@ -155,8 +157,11 @@ dbTest('BNR: resmî kur olduğu gibi; BNR alınamazsa belge bekler ve günün BT
   assert.equal(req.details.manualRate, 5.3, 'elle kur isteği denetim kaydında');
 });
 
-dbTest('BT_UNIT_SELL: BT XML kuru kullanılmaz (ayar otomatik olsa da); günün BT kuru girilince ELLE diye kesilir', async () => {
-  await fgoOn('auto');
+dbTest('BT_UNIT_SELL: BT XML kuru kullanılmaz; günün BT kuru girilmeden belge bekler, girilince ELLE diye kesilir', async () => {
+  await fgoOn();
+  // Eskiden kalmış "otomatik BT adresi" ayarı kayıtta dursa bile hiçbir etkisi yok
+  const row = await db.integrationSetting.findUnique({ where: { key: 'fgo' } });
+  await db.integrationSetting.update({ where: { key: 'fgo' }, data: { value: { ...row.value, fxMode: 'auto', fxUrl: 'https://bt.example/exchange.xml' } } });
   await db.integrationSetting.deleteMany({ where: { key: 'fx.daily' } });
   const c = await customer('Bt Units SRL', 'BTU', { fxPolicy: 'BT_UNIT_SELL' });
   const o = await glassOrder(c);
@@ -179,23 +184,25 @@ dbTest('BT_UNIT_SELL: BT XML kuru kullanılmaz (ayar otomatik olsa da); günün 
   assert.deepEqual([b.fxRate.toString(), b.fxSource, b.fxPolicy, b.fxManual], ['5.4412', 'MANUAL_DAY', 'BT_UNIT_SELL', true]);
 });
 
-dbTest('eski müşteri (politika seçilmemiş): 7D-1 öncesi davranış aynen — elle modda günün BT kuru, otomatik modda BT adresi; BNR hiç istenmez', async () => {
-  const c = await customer('Legacy SRL', 'LEG');
+dbTest('varsayılan politika (BT): yeni müşterinin cam proforması günün BT kuruyla; BNR hiç istenmez', async () => {
+  await fgoOn();
+  const c = await customer('Default SRL', 'DEF');
+  assert.equal(c.fxPolicy, 'BT_UNIT_SELL');
   const fgo = fakeFgo(950);
-  // Elle mod
-  await fgoOn('manual');
   await saveDailyRate(db, { day: today(), rate: 5 }, actor(), writeAudit);
   const o = await glassOrder(c);
   await g.requestGlassDocument(db, { orderId: o.id, kind: 'PROFORMA', actor: actor() });
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 1, failed: 0 });
   assert.equal(fgo.calls[0]['Continut[0][PretUnitar]'], '250.00');
-  let b = await billing(o);
-  assert.deepEqual([Number(b.fxRate), b.fxSource, b.fxPolicy, b.fxManual], [5, 'MANUAL_DAY', 'LEGACY', true]);
-  // Otomatik mod: yöneticinin Entegrasyonlar'da seçtiği BT adresi (önceki gibi)
-  await fgoOn('auto');
-  const o2 = await glassOrder(c);
-  await g.requestGlassDocument(db, { orderId: o2.id, kind: 'PROFORMA', actor: actor() });
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o2.id, rateImpl: async ({ url }) => ({ ok: true, rate: 4.9765, source: url }) })), { done: 1, failed: 0 });
-  b = await billing(o2);
-  assert.deepEqual([Number(b.fxRate), b.fxSource, b.fxPolicy, b.fxManual], [4.9765, 'https://bt.example/exchange.xml', 'LEGACY', false]);
+  const b = await billing(o);
+  assert.deepEqual([Number(b.fxRate), b.fxSource, b.fxPolicy, b.fxManual], [5, 'MANUAL_DAY', 'BT_UNIT_SELL', true]);
+});
+
+dbTest('günün BT kuru girilince kur bekleyen cam ve profil belgeleri hemen yeniden denenir', async () => {
+  const later = new Date(Date.now() + 3_600_000);
+  const a = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', status: 'PENDING', availableAt: later, payload: { kind: 'PROFORMA' } } });
+  const p = await db.notificationOutbox.create({ data: { type: 'FGO_PROFORMA', status: 'PENDING', availableAt: later, payload: {} } });
+  await saveDailyRate(db, { day: today(), rate: 5.1 }, actor(), writeAudit);
+  for (const id of [a.id, p.id]) assert.ok((await db.notificationOutbox.findUnique({ where: { id } })).availableAt <= new Date());
+  await db.notificationOutbox.deleteMany({ where: { id: { in: [a.id, p.id] } } });
 });

@@ -9,6 +9,7 @@ import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate
 import { deductOrderStock, returnOrderStock, shortages, stockLevels } from './stock.js';
 import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
 import { parseManualRate } from '../fx/bt.js';
+import { FX_SNAPSHOT_CLEAR, fxSnapshot, manualExchangeRate } from '../fx/resolve.js';
 
 export { WorkflowError };
 
@@ -136,6 +137,16 @@ function manualRate(v) {
   return r;
 }
 
+/**
+ * Elle girilen kurun kaydı (karar 96, 98): müşterinin politikası kayda geçer, kur MANUAL diye işaretlenir.
+ * @param {any} h  @param {number} rate
+ */
+async function manualFx(h, rate) {
+  const customer = await h.tx.customer.findUnique({ where: { id: h.order.customerId }, select: { fxPolicy: true } });
+  const day = localDay(h.now, getEnv().APP_TIMEZONE);
+  return fxSnapshot(manualExchangeRate({ customer, manualRate: rate, day, now: h.now }), dayDate(day));
+}
+
 const shortText = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null;
 
 /**
@@ -211,7 +222,7 @@ const ACTIONS = {
     const info = pickupInput(h, { requireAll: true });
     await setStage(h, 'ONAYLANDI', { ...info, approvedAt: h.now, approvedById: h.actor.id, approvedOfferId: sent.id });
     h.event('PROFILE_APPROVED', dayText(info.pickupDate));
-    // FGO açıksa proforma kendiliğinden kesilir (işçi; BT kuru o an alınır)
+    // FGO açıksa proforma kendiliğinden kesilir (işçi; kur müşterinin kur politikasından o an çözülür)
     const fgo = await queueFgo(h, FGO_PROFORMA);
     h.audit = { offerId: sent.id, pickupDate: dayKeyOf(info.pickupDate), fgo };
   },
@@ -234,18 +245,19 @@ const ACTIONS = {
     const given = manualRate(h.payload.fxRate);
     const rate = given ?? (h.order.profile.fxRate != null ? Number(h.order.profile.fxRate) : null);
     if (rate == null && fgoReady(await getFgoSettings(h.tx))) throw new WorkflowError('FX_RATE_REQUIRED');
-    const fx = given != null ? { fxRate: given.toFixed(4), fxDate: today(h.now), fxSource: 'MANUAL' } : {};
+    const fx = given != null ? await manualFx(h, given) : {};
     await setStage(h, 'PROFORMA', { proformaNo, proformaAt: h.now, ...fx });
     h.event('PROFORMA', proformaNo);
     h.audit = { proformaNo, fxRate: rate };
   },
-  /** FGO işçisi: proforma kesildi (RON, BT kuruyla) */
+  /** FGO işçisi: proforma kesildi (RON; kur müşterinin kur politikasından ya da yöneticinin elle girdiği) */
   async fgo_proforma(h) {
     const p = h.payload;
     const proformaNo = `${p.series}${p.number}`;
     await setStage(h, 'PROFORMA', {
       proformaNo, proformaAt: h.now, proformaLink: p.link ?? null, proformaAmount: Number(p.amount).toFixed(2),
-      fxRate: Number(p.rate).toFixed(4), fxDate: p.rateDate, fxSource: p.source,
+      // Kur kaydı kurla birlikte bir kez yazılır; siparişte zaten kayıtlı kur (elle) kullanıldıysa dokunulmaz
+      ...(p.fx ?? {}),
     });
     // Muhasebe → Profil Tahsilat için belge kaydı (ödeme durumu FGO'dan okunur)
     await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'PROFORMA', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
@@ -263,7 +275,7 @@ const ACTIONS = {
     if (rate != null) {
       // Fatura, proformanın kuruyla kesilir: proforma FGO'dan kesildiyse kur değiştirilemez
       if (stage === 'TESLIM_EDILDI' && h.order.profile.fxSource && h.order.profile.fxSource !== 'MANUAL') throw new WorkflowError('FX_RATE_LOCKED');
-      await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: { fxRate: rate.toFixed(4), fxDate: today(h.now), fxSource: 'MANUAL' } });
+      await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: await manualFx(h, rate) });
     }
     if (stage === 'TESLIM_EDILDI' && rate == null && h.order.profile.fxRate == null) throw new WorkflowError('FX_RATE_REQUIRED');
     if (!(await queueFgo(h, type))) throw new WorkflowError('FGO_DISABLED');
@@ -361,7 +373,7 @@ const ACTIONS = {
       else await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: clear });
     } else if (p.kind === 'PROFORMA' && pr.proformaNo === no) {
       const clear = { proformaNo: null, proformaAt: null, proformaLink: null, proformaAmount: null };
-      if (open && pr.stage === 'PROFORMA') await setStage(h, 'ONAYLANDI', { ...clear, fxRate: null, fxDate: null, fxSource: null });
+      if (open && pr.stage === 'PROFORMA') await setStage(h, 'ONAYLANDI', { ...clear, ...FX_SNAPSHOT_CLEAR });
       else await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: clear });
     }
     h.event('FGO_DOC_DELETED', no);
