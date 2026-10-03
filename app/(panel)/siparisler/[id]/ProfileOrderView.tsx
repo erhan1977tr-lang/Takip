@@ -9,6 +9,7 @@ import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { FxInfo } from '@/components/FxInfo';
+import { fxOfferNote } from '@/lib/fx-note';
 import { padRate } from '@/server/fx/decimal.js';
 import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
@@ -308,7 +309,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                   <input id="upd-note" name="note" maxLength={500} />
                 </div>
               )}
-              <Notes t={t} />
+              <Notes t={t} policy={order.customer.fxPolicy} />
               <div className="row end" style={{ marginTop: 10 }}>
                 {can('save_profile_prices') ? (
                   <>
@@ -337,7 +338,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                 {shown ? (
                   <>
                     <LinesTable lines={shown.lines} itemOf={itemOf} t={t} locale={locale} levels={levels} admin={admin} />
-                    <Notes t={t} />
+                    <Notes t={t} policy={order.customer.fxPolicy} />
                   </>
                 ) : (
                   <>
@@ -384,11 +385,11 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   );
 }
 
-function Notes({ t }: { t: T }) {
+function Notes({ t, policy }: { t: T; policy: string }) {
   return (
     <div className="offer-notes">
       <p>{t('profile.notes.vat')}</p>
-      <p>{t('profile.notes.eur')}</p>
+      <p>{fxOfferNote(t, policy)}</p>
       <p>{t('profile.notes.pickup')}</p>
     </div>
   );

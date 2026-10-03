@@ -1,3 +1,4 @@
+import { fxOfferNote } from '@/lib/fx-note';
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
@@ -76,6 +77,8 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
 
   if (chosen.code === 'PROFILE_ORDER') {
     // Profil siparişi (Aşama 6): etkin kategori ve ürünler, kullanıcının dilinde; taslaktaki adetler
+    // Kur notu müşterinin kur politikasına göre (karar 99); yüzde gösterilmez
+    const fxPolicy = (await db.customer.findUnique({ where: { id: firm.id }, select: { fxPolicy: true } }))?.fxPolicy;
     const [cats, items, nextNo] = await Promise.all([
       db.profileCategory.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
       db.profileProduct.findMany({ where: { isActive: true, category: { isActive: true } }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { category: { select: { code: true } } } }),
@@ -101,7 +104,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
           categories={cats.map((c) => ({ code: c.code, name: localName(c, locale) }))}
           products={items.map((p) => ({ id: p.id, code: p.code, name: localName(p, locale), unit: unitLabel(p.unitCode, locale), imageId: p.imageId, categoryCode: p.category.code }))}
           suggestedNo={nextNo} prefix={firm.prefix} draft={pdraft} m={m.profile.form}
-          notes={[t('profile.notes.pickup'), t('profile.notes.eur')]}
+          notes={[t('profile.notes.pickup'), fxOfferNote(t, fxPolicy)]}
         />
         {draftRow && (
           <form action={deleteDraftAction} className="row end">

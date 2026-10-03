@@ -20,7 +20,7 @@ import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js
 import {
   FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
 } from '../integrations/fgo.js';
-import { dayDate, dayKeyOf, localDay, localDayStart } from '../profile/dates.js';
+import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
 
 export const GLASS_FGO = 'FGO_GLASS';
@@ -230,7 +230,6 @@ export async function markGlassPaid(db, { orderId, amount, actor, now = new Date
 export const MAX_ATTEMPTS = 8;
 const backoffMinutes = (attempt) => [1, 5, 15, 30, 60, 120, 240, 480][Math.min(attempt, 7)];
 class Permanent extends Error {}
-const ddmmyyyy = (d) => dayKeyOf(d).split('-').reverse().join('.');
 
 /**
  * Kuyruktaki cam belgelerini keser. onlyOrderId: düğmeye basılınca o siparişin işi hemen denenir.
@@ -330,7 +329,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       const sentNo = kind === 'PROFORMA' ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       const form = emitereForm({
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,
-        rate, rateDate: ddmmyyyy(rateDay), extern: `${order.orderNo}-${SUFFIX[kind]}`,
+        rate, extern: `${order.orderNo}-${SUFFIX[kind]}`,
         // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
         text: order.title ?? '', rateNote: false,
         number: sentNo,

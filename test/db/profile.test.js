@@ -312,7 +312,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   assert.equal(pf.IdExtern, `${orderNo}-P`);
   assert.equal(pf['Client[CodUnic]'], '998877');
   assert.equal(pf['Continut[0][PretUnitar]'], '62.21');
-  assert.match(pf.Text, /^Curs BNR EUR 4\.9765 RON din 02\.10\.2026\. Comanda /, 'belgede kurun gerçek kaynağı ve günü yazar');
+  assert.equal(pf.Text, `Curs BNR: 4.9765 RON/EUR (data 02.10.2026). Comanda ${orderNo}.`, 'belgede BNR kuru ve BNR\'nin günü');
   // Ölçü birimi FGO eşlemesinden (en çok 5 karakter): CUTII → cutii, BUCATI ("bucăți") → buc
   assert.deepEqual([pf['Continut[0][UM]'], pf['Continut[1][UM]']].sort(), ['buc', 'cutii']);
 
@@ -333,7 +333,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   assert.equal(inv.IdExtern, `${orderNo}-F`);
   assert.ok(!('Numar' in inv), 'fatura numarasını FGO verir (karar 87); kaydedilen numara FGO\'nun döndürdüğü (GKH684)');
   assert.equal(inv['Continut[0][PretUnitar]'], pf['Continut[0][PretUnitar]'], 'aynı kur');
-  assert.match(inv.Text, /^Curs BNR EUR 4\.9765 RON din 02\.10\.2026\./);
+  assert.equal(inv.Text, pf.Text, 'fatura aynı kur kaydından: aynı cümle (politika sonradan BNR + %5 olsa da)');
   const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
   assert.ok(audited.includes('fgo_proforma') && audited.includes('fgo_invoice'));
 });
@@ -402,7 +402,7 @@ dbTest('FGO: BT politikasında günün BT kuru (elle) kullanılır; girilmemişs
   assert.equal(o.profile.fxSource, 'MANUAL_DAY');
   assert.deepEqual([o.profile.fxPolicy, o.profile.fxManual], ['BT_UNIT_SELL', true]);
   assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '53.45');
-  assert.match(fgo.calls[0].form.Text, /^Curs BT vânzare EUR 5\.3450 RON din /);
+  assert.match(fgo.calls[0].form.Text, /^Curs de vânzare BT: 5\.3450 RON\/EUR\. Comanda /);
   await fgoOn(false);
 });
 
@@ -432,7 +432,8 @@ dbTest('FGO: BNR + % politikasında profil proforması BNR × (1 + %) ile; BNR a
     ['5.202', '5.1', '2', 'BNR', 'BNR_PLUS_PERCENT', false],
   );
   assert.equal(fgo.calls[0].form['Continut[0][PretUnitar]'], '52.02', '10 EUR × 5,2020');
-  assert.match(fgo.calls[0].form.Text, /^Curs de schimb EUR 5\.2020 RON din /, 'yüzde eklenmiş kur "Curs BNR" diye anılmaz');
+  assert.match(fgo.calls[0].form.Text, /^Curs de schimb aplicat: 5\.2020 RON\/EUR\. Comanda /);
+  assert.ok(!/BNR|%|5\.1000/.test(fgo.calls[0].form.Text), 'belgede BNR, yüzde ya da taban kur geçmez');
   await db.customer.update({ where: { id: firm.id }, data: { fxPolicy: 'BT_UNIT_SELL', fxMarkupPercent: null } });
   await fgoOn(false);
 });

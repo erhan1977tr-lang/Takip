@@ -106,6 +106,11 @@ test('yönetici: varsayılan politika BT; BNR + % kaydedilir, geçersiz yüzde r
   await expect(prev).toContainText(/BNR.*2,5/);
   await expect(prev.locator('.fx-info, .fx-unavailable')).toHaveCount(1);
   await expect(page.locator('#gb-rate-proforma')).toBeVisible();
+  // Teklif notu müşterinin politikasından: BNR + % → "sözleşme kuru" (yüzde ve BNR yazılmaz); eski sabit BT metni yok
+  const note = page.getByText(/cursul de schimb contractual|sözleşme kuru/);
+  await expect(note).toBeVisible();
+  await expect(note).not.toContainText(/2,5|%|BNR/);
+  await expect(page.getByText(/Banca Transilvania/)).toHaveCount(0);
   await shot(page, 'kur-finans');
 
   // Denetim kaydı: politika değişikliği
@@ -134,6 +139,8 @@ test('BT politikası: otomatik kur yok — günün BT kuru girilmediyse "alınam
   await expect(today.locator('.fx-info')).toHaveCount(0);
   await expect(today).not.toContainText('exchange.xml');
   await expect(today.locator('a[href="/admin/entegrasyonlar"]')).toBeVisible();
+  await page.goto(`/siparisler/${orderId}`);
+  await expect(page.getByText(/cursul de vânzare BT aplicabil|geçerli BT satış kuru/)).toBeVisible();
   await shot(page, 'kur-musteri-bt');
   await page.context().close();
 });

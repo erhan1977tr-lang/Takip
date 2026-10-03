@@ -32,7 +32,6 @@ export default {
   },
   // Kurallar (tekliflerin altındaki notlar)
   notes: {
-    eur: 'Euro olarak belirtilen fiyatların ödemesi, proforma fatura tarihindeki Banca Transilvania satış kuru üzerinden RON olarak yapılır.',
     pickup: 'Mal en erken ödeme gününden sonraki ilk iş günü depodan alınabilir. Depo hafta sonu çalışmaz.',
     vat: 'Fiyatlar TVA (KDV) hariçtir.',
   },

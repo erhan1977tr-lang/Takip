@@ -37,6 +37,12 @@ export default {
   manualLabel: "Curs manual (opțional)",
   manualHint: "Dacă îl completați, documentul se emite cu acest curs în locul politicii clientului și rămâne marcat MANUAL.",
   unknownPolicy: "—",
+  // Teklifte ve teklif PDF / Excel'inde müşteriye görünen not (EUR teklifler): müşterinin kur politikasına göre. Yüzde yazılmaz.
+  offerNote: {
+    BT_UNIT_SELL: "Conversia în RON se va efectua la cursul de vânzare BT aplicabil la data emiterii documentului fiscal.",
+    BNR: "Conversia în RON se va efectua la cursul BNR aplicabil la data emiterii documentului fiscal.",
+    BNR_PLUS_PERCENT: "Conversia în RON se va efectua la cursul de schimb contractual aplicabil la data emiterii documentului fiscal.",
+  },
   errors: {
     BAD_POLICY: "Politica de curs valutar nu este validă.",
     BAD_PERCENT: "Procentul pentru „Curs BNR + %” trebuie să fie un număr între 0 și 20, cu cel mult 3 zecimale (ex.: 2 sau 2,5).",

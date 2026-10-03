@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyMarkup, padRate } from '../server/fx/decimal.js';
 import { bnrRate, fetchBnr, parseBnr } from '../server/fx/bnr.js';
-import { FX_SNAPSHOT_CLEAR, FxUnavailable, fxDocumentNote, fxSnapshot, manualExchangeRate, parseFxPolicy, parseMarkupPercent, previewExchangeRate, resolveExchangeRate, trimPercent } from '../server/fx/resolve.js';
+import { FX_SNAPSHOT_CLEAR, FxUnavailable, fxDocumentText, fxSnapshot, manualExchangeRate, offerNotePolicy, parseFxPolicy, parseMarkupPercent, previewExchangeRate, resolveExchangeRate, trimPercent } from '../server/fx/resolve.js';
 import * as bt from '../server/fx/bt.js';
 import { FGO_DEFAULTS } from '../server/integrations/fgo.js';
 
@@ -184,12 +184,45 @@ test('BNR kuralı: BNR\'nin yayımladığı son kur — cumartesi çözülen kur
   assert.equal(fxSnapshot(r, new Date('2026-10-03T00:00:00Z')).fxSourceDate.toISOString().slice(0, 10), '2026-10-02', 'kayıtta BNR\'nin gerçek kaynak günü');
 });
 
-test('belge açıklaması: kur hangi kaynaktan geldiyse o adla anılır', () => {
-  const d = (x) => new Date(`${x}T00:00:00Z`);
-  assert.deepEqual(fxDocumentNote({ fxPolicy: 'BT_UNIT_SELL', fxSource: 'MANUAL_DAY', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-03') }), { label: 'Curs BT vânzare', date: d('2026-10-03') });
-  assert.deepEqual(fxDocumentNote({ fxPolicy: 'BNR', fxSource: 'BNR', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-02') }), { label: 'Curs BNR', date: d('2026-10-02') }, 'BNR: kaynak günü');
-  assert.equal(fxDocumentNote({ fxPolicy: 'BNR_PLUS_PERCENT', fxSource: 'BNR', fxDate: d('2026-10-03'), fxSourceDate: d('2026-10-02') }).label, 'Curs de schimb', 'yüzde eklenmiş kur BNR kuru diye anılmaz');
-  assert.equal(fxDocumentNote({ fxPolicy: 'BNR', fxSource: 'MANUAL', fxDate: d('2026-10-03') }).label, 'Curs de schimb', 'elle kur bir kaynağın adıyla anılmaz');
+test('FGO belge açıklaması: politika → cümle; yüzde ve taban kur müşteri belgesine yazılmaz; yazılan kur kayıttaki uygulanan kurdur', async () => {
+  const docDay = new Date('2026-10-03T00:00:00Z');
+  const snapOf = async (customer, o = {}) => fxSnapshot(await resolveExchangeRate(fakeDb({ day: DAY, rate: 5.4412 }), { customer, day: DAY, bnrImpl: bnrOk('5.3447', '2026-10-02'), ...o }), docDay);
+  assert.equal(fxDocumentText(await snapOf({ fxPolicy: 'BT_UNIT_SELL' })), 'Curs de vânzare BT: 5.4412 RON/EUR');
+  assert.equal(fxDocumentText(await snapOf({ fxPolicy: 'BNR' })), 'Curs BNR: 5.3447 RON/EUR (data 02.10.2026)', 'BNR: kaynak günü');
+  const plus = await snapOf({ fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2.5' });
+  assert.equal(fxDocumentText(plus), 'Curs de schimb aplicat: 5.4783 RON/EUR');
+  assert.equal(plus.fxRate, '5.4783', 'uygulanan kur kayıtta');
+  assert.deepEqual([plus.fxBaseRate, plus.fxMarkupPercent], ['5.3447', '2.500'], 'taban kur ve yüzde yalnızca kayıtta (yönetici ekranı)');
+  for (const text of [fxDocumentText(plus)]) assert.ok(!/BNR|2[.,]5|%|5\.3447/.test(text), 'belgede BNR, yüzde ya da taban kur geçmez');
+  // Elle kur: hangi politika olursa olsun "uygulanan kur"
+  for (const customer of [{ fxPolicy: 'BT_UNIT_SELL' }, { fxPolicy: 'BNR' }, { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '2' }]) {
+    assert.equal(fxDocumentText(await snapOf(customer, { manualRate: '5,3000' })), 'Curs de schimb aplicat: 5.3000 RON/EUR');
+  }
+  // Veritabanından okunan kayıt (Decimal / Date) ve politikası kayıtlı olmayan eski kayıt
+  assert.equal(fxDocumentText({ fxRate: { toString: () => '5.3447' }, fxPolicy: 'BNR', fxSource: 'BNR', fxCurrency: 'EUR', fxSourceDate: new Date('2026-10-02T00:00:00Z'), fxDate: docDay }), 'Curs BNR: 5.3447 RON/EUR (data 02.10.2026)');
+  assert.equal(fxDocumentText({ fxRate: '4.98', fxSource: 'MANUAL' }), 'Curs de schimb aplicat: 4.9800 RON/EUR');
+});
+
+test('teklif notu: politika → metin türü; BNR + % müşteriye yalnızca "sözleşme kuru" (yüzde yok)', async () => {
+  assert.equal(offerNotePolicy('BT_UNIT_SELL'), 'BT_UNIT_SELL');
+  assert.equal(offerNotePolicy('BNR'), 'BNR');
+  assert.equal(offerNotePolicy('BNR_PLUS_PERCENT'), 'BNR_PLUS_PERCENT');
+  assert.equal(offerNotePolicy(undefined), 'BNR_PLUS_PERCENT', 'bilinmeyen: nötr metin');
+  const ro = (await import('../server/i18n/ro/fx.js')).default.offerNote;
+  const tr = (await import('../server/i18n/tr/fx.js')).default.offerNote;
+  assert.equal(ro.BT_UNIT_SELL, 'Conversia în RON se va efectua la cursul de vânzare BT aplicabil la data emiterii documentului fiscal.');
+  assert.equal(ro.BNR, 'Conversia în RON se va efectua la cursul BNR aplicabil la data emiterii documentului fiscal.');
+  assert.equal(ro.BNR_PLUS_PERCENT, 'Conversia în RON se va efectua la cursul de schimb contractual aplicabil la data emiterii documentului fiscal.');
+  for (const d of [ro, tr]) {
+    assert.deepEqual(Object.keys(d), ['BT_UNIT_SELL', 'BNR', 'BNR_PLUS_PERCENT']);
+    assert.ok(!/BNR|%|\d/.test(d.BNR_PLUS_PERCENT), 'BNR + % notunda BNR, yüzde ya da sayı geçmez');
+    for (const v of Object.values(d)) assert.ok(!/Transilvania/.test(v));
+  }
+  // Eski sabit metin ("Banca Transilvania satış kuru") hiçbir sözlükte kalmadı
+  for (const l of ['ro', 'tr']) {
+    const all = JSON.stringify((await import(`../server/i18n/${l}/index.js`)).default);
+    assert.ok(!/Băncii Transilvania|Banca Transilvania satış/.test(all), l);
+  }
 });
 
 test('kur kaydı: çözücünün döndürdüğü her alan saklanır; temizleme aynı alanları boşaltır', async () => {

@@ -30,7 +30,6 @@ export default {
     cancelled: { label: 'Anulată', next: '—' },
   },
   notes: {
-    eur: 'Plata pentru prețurile exprimate în EURO se va efectua în RON la cursul de vânzare al Băncii Transilvania din data Facturii Proforme.',
     pickup: 'Marfa poate fi ridicată cel mai devreme în prima zi lucrătoare după data plății. Depozitul nu lucrează în weekend.',
     vat: 'Prețurile nu includ TVA.',
   },

@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.36.1 — 03.10.2026
+
+- **Tekliflerdeki kur notu müşterinin kur politikasına göre**: "Banca Transilvania satış kuru" sabit metni kaldırıldı.
+  Teklif ekranında, teklif PDF / Excel'inde ve profil sipariş formunda not artık politikaya göre yazılır: BT satış kuru,
+  BNR kuru ya da "sözleşme kuru". Müşteriye özel yüzde müşteriye hiçbir yerde gösterilmez.
+- **FGO belgesindeki kur cümlesi**: "Curs de vânzare BT: … RON/EUR", "Curs BNR: … RON/EUR (data …)" ya da (BNR + % ve
+  elle girilen kurda) "Curs de schimb aplicat: … RON/EUR". Yüzde belgeye yazılmaz; uygulanan kur kayıtta saklanır.
+
 ## 3.36.0 — 03.10.2026
 
 - **Kur politikası cam ve profil siparişlerinde aynı**: profil proforması ve faturası da müşterinin kur politikasıyla

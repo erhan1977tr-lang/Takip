@@ -1,3 +1,4 @@
+import { fxOfferNote } from '@/lib/fx-note';
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
@@ -40,7 +41,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const text = {
     title: t('offer.export.title'), orderNo: order.orderNo, firm: order.customer.name,
     date: fmtDate(offer.sentAt ?? offer.createdAt), currency: offer.currency,
-    notes: [t('common.pricesExclVat'), ...(offer.currency === 'EUR' ? [t('profile.notes.eur')] : [])],
+    notes: [t('common.pricesExclVat'), ...(offer.currency === 'EUR' ? [fxOfferNote(t, raw.customer.fxPolicy)] : [])],
     cols: {
       n: '#', desc: t('offer.cols.description'), poz: t('offer.cols.poz'), en: t('offer.cols.widthMm'), boy: t('offer.cols.heightMm'),
       adet: t('offer.cols.qty'), m2: t('offer.cols.metraj'), unitPrice: t('offer.cols.unitPrice'), amount: t('offer.cols.amount'),

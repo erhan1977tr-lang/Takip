@@ -166,15 +166,31 @@ export const FX_SNAPSHOT_CLEAR = {
   fxMarkupPercent: null, fxSourceDate: null, fxResolvedAt: null, fxManual: null,
 };
 
+const ddmmyyyy = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d ?? '').slice(0, 10)).split('-').reverse().join('.');
+
 /**
- * FGO belgesinin açıklamasındaki kur cümlesinin başı ve günü (kayıtlı kur kaydından): yalnızca gerçekten o kaynaktan
- * gelen kur o adla anılır — günün BT kuru "Curs BT vânzare", BNR kuru "Curs BNR"; yüzde eklenmiş ya da elle girilmiş
- * kur yalnızca "Curs de schimb".
- * @param {{ fxPolicy?: string | null, fxSource?: string | null, fxDate?: Date | null, fxSourceDate?: Date | null }} snap
- * @returns {{ label: string, date: Date | null }}
+ * FGO belgesinin açıklamasındaki kur cümlesi (kayıtlı kur kaydından; karar 99). Müşteriye giden belgede müşteriye özel
+ * yüzde ASLA yazılmaz: yüzde eklenmiş ya da yöneticinin bu belge için elle girdiği kur yalnızca "uygulanan kur"dur.
+ *   BT_UNIT_SELL (günün BT kuru) → "Curs de vânzare BT: 5.4412 RON/EUR"
+ *   BNR                          → "Curs BNR: 5.3447 RON/EUR (data 02.10.2026)"  (BNR'nin kaynak günü)
+ *   BNR_PLUS_PERCENT, elle kur   → "Curs de schimb aplicat: 5.4783 RON/EUR"
+ * Yazılan kur her zaman kayıttaki uygulanan (son) kurdur.
+ * @param {{ fxRate: unknown, fxPolicy?: string | null, fxSource?: string | null, fxCurrency?: string | null, fxDate?: Date | null, fxSourceDate?: Date | null }} snap
+ * @returns {string}
  */
-export function fxDocumentNote(snap) {
-  if (snap.fxSource === 'MANUAL_DAY') return { label: 'Curs BT vânzare', date: snap.fxDate ?? null };
-  if (snap.fxSource === 'BNR' && snap.fxPolicy === 'BNR') return { label: 'Curs BNR', date: snap.fxSourceDate ?? snap.fxDate ?? null };
-  return { label: 'Curs de schimb', date: snap.fxDate ?? null };
+export function fxDocumentText(snap) {
+  const rate = `${Number(snap.fxRate).toFixed(RATE_PLACES)} RON/${snap.fxCurrency ?? 'EUR'}`;
+  // Elle kur = yöneticinin bu belge için girdiği kur (MANUAL); günün BT kuru (MANUAL_DAY) BT politikasının kendi kurudur
+  const override = snap.fxSource === 'MANUAL';
+  if (!override && snap.fxPolicy === 'BT_UNIT_SELL') return `Curs de vânzare BT: ${rate}`;
+  if (!override && snap.fxPolicy === 'BNR' && snap.fxSource === 'BNR') return `Curs BNR: ${rate} (data ${ddmmyyyy(snap.fxSourceDate ?? snap.fxDate)})`;
+  return `Curs de schimb aplicat: ${rate}`;
 }
+
+/**
+ * Teklifte ve teklif PDF / Excel'inde müşteriye görünen kur notunun türü (metin: i18n fx.offerNote.*).
+ * BNR + % müşteriye yalnızca "sözleşme kuru" olarak anılır; yüzde gösterilmez. Bilinmeyen değer de nötr metne düşer.
+ * @param {string | null | undefined} policy
+ * @returns {'BT_UNIT_SELL' | 'BNR' | 'BNR_PLUS_PERCENT'}
+ */
+export const offerNotePolicy = (policy) => (policy === 'BT_UNIT_SELL' || policy === 'BNR' ? policy : 'BNR_PLUS_PERCENT');

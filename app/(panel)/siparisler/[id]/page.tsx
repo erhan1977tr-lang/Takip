@@ -13,6 +13,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { SidebarPortal } from '@/components/Sidebar';
 import { OrderInfo } from './OrderInfo';
 import { GlassFinance } from './GlassFinance';
+import { fxOfferNote } from '@/lib/fx-note';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { ProfileOrderView } from './ProfileOrderView';
 import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
@@ -520,7 +521,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {t('common.pricesExclVat')}
-          {offer.currency === 'EUR' && <><br />{t('profile.notes.eur')}</>}
+          {offer.currency === 'EUR' && <><br />{fxOfferNote(t, order.customer.fxPolicy)}</>}
         </p>
         <span className="row" style={{ gap: 8 }}>
           {showExport && <a className="btn" href={exportHref('pdf')}>{t('offer.export.pdf')}</a>}

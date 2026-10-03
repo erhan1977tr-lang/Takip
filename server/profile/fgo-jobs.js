@@ -8,9 +8,9 @@
 import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { bnrRate } from '../fx/bnr.js';
-import { FxUnavailable, fxDocumentNote, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
+import { FxUnavailable, fxDocumentText, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit } from '../integrations/fgo.js';
-import { dayDate, dayKeyOf, localDay, localDayStart } from './dates.js';
+import { dayDate, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
 
 export const FGO_MAX_ATTEMPTS = 8;
@@ -106,14 +106,13 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
         rateDay = dayDate(day);
         snap = fxSnapshot(fx, rateDay);
       }
-      const note = fxDocumentNote(snap ?? p);
       const lines = documentLines(offer);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
       // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'invoice' ? await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl }) : null;
       const form = emitereForm({
         settings, key, kind, orderNo: order.orderNo, appUrl, customer: order.customer, lines, rate,
-        rateDate: dayKeyOf(note.date ?? rateDay).split('-').reverse().join('.'), rateLabel: note.label,
+        rateText: fxDocumentText(snap ?? p),
         number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);

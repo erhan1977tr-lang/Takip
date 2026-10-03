@@ -201,7 +201,7 @@ test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tek
   assert.equal(ronTotal(lines, 4.9765), 4 * 62.21 + 20 * 14.93);
   const settings = { cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
   const customer = { id: 'c1', name: 'Glass and More SRL', taxId: '998877', regCom: 'J40/1/2020', county: 'Ilfov', city: 'Voluntari', address: 'Str. X 1', country: null };
-  const f = emitereForm({ settings, key: 'K', kind: 'proforma', orderNo: 'GLAP3', appUrl: 'https://t.ro', customer, lines, rate: 4.9765, rateDate: '01.10.2026' });
+  const f = emitereForm({ settings, key: 'K', kind: 'proforma', orderNo: 'GLAP3', appUrl: 'https://t.ro', customer, lines, rate: 4.9765, rateText: 'Curs BNR: 4.9765 RON/EUR (data 01.10.2026)' });
   assert.equal(f.Hash, crypto.createHash('sha1').update('123456KGlass and More SRL').digest('hex').toUpperCase());
   assert.equal(f.Hash, fgoHash('123456', 'K', 'Glass and More SRL'));
   assert.equal(f.Serie, 'PRF');
@@ -217,7 +217,7 @@ test('FGO belge: RON birim fiyat = EUR × kur; hash; müşteri ve satırlar; tek
   assert.equal(f['Continut[0][UM]'], 'cutii');
   assert.equal(f['Continut[1][UM]'], 'buc');
   assert.equal(f['Continut[1][CotaTVA]'], '21');
-  assert.match(f.Text, /Curs BT vânzare EUR 4\.9765 RON din 01\.10\.2026/);
+  assert.equal(f.Text, 'Curs BNR: 4.9765 RON/EUR (data 01.10.2026). Comanda GLAP3.', 'kur cümlesi (fxDocumentText) + sipariş no');
   const inv = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'GLAP3', appUrl: '', customer, lines, rate: 4.9765, rateDate: '01.10.2026' });
   assert.equal(inv.Serie, 'GKH');
   assert.equal(inv.IdExtern, 'GLAP3-F');

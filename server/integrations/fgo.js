@@ -140,11 +140,11 @@ export const validUm = (um) => typeof um === 'string' && um.trim() === um && um.
 /**
  * FGO "factura/emitere" gövdesi (form alanları). Satırlar: onaylanan teklifin kopyası.
  * @param {{ settings: object, key: string, kind: 'proforma' | 'invoice', orderNo: string, appUrl: string,
- *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateDate: string, rateLabel?: string, text?: string }} p
- *   rateLabel: kur cümlesinin başı (server/fx/resolve.js → fxDocumentNote): kur hangi kaynaktan geldiyse o adla
+ *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateText?: string, text?: string }} p
+ *   rateText: belgenin açıklamasındaki kur cümlesi (server/fx/resolve.js → fxDocumentText); rateNote: false ise yazılmaz
  * @returns {Record<string, string>}
  */
-export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateDate, rateLabel = 'Curs BT vânzare', text = '', extern = null, rateNote = true, number = null }) {
+export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, lines, rate, rateText = '', text = '', extern = null, rateNote = true, number = null }) {
   const proforma = kind === 'proforma';
   const name = String(customer.name).trim();
   const cui = String(customer.taxId ?? '').replace(/\s/g, '');
@@ -161,7 +161,7 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     IdExtern: extern ?? `${orderNo}-${proforma ? 'P' : 'F'}`,
     VerificareDuplicat: 'true',
     // rateNote: false → açıklamada yalnızca verilen metin (cam siparişi: siparişin açıklaması)
-    Text: [text, rateNote ? `${rateLabel} EUR ${rate.toFixed(4)} RON din ${rateDate}. Comanda ${orderNo}.` : ''].filter(Boolean).join(' ').slice(0, 500),
+    Text: [text, rateNote ? `${rateText ? `${rateText}. ` : ''}Comanda ${orderNo}.` : ''].filter(Boolean).join(' ').slice(0, 500),
     'Client[Denumire]': name,
     'Client[CodUnic]': cui,
     'Client[NrRegCom]': customer.regCom ?? '',

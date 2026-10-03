@@ -37,6 +37,12 @@ export default {
   manualLabel: "Elle kur (isteğe bağlı)",
   manualHint: "Doldurursanız belge müşterinin politikası yerine bu kurla kesilir ve ELLE diye işaretli kalır.",
   unknownPolicy: "—",
+  // Teklifte ve teklif PDF / Excel'inde müşteriye görünen not (EUR teklifler): müşterinin kur politikasına göre. Yüzde yazılmaz.
+  offerNote: {
+    BT_UNIT_SELL: "RON'a çevrim, mali belgenin düzenlendiği tarihte geçerli BT satış kuru üzerinden yapılır.",
+    BNR: "RON'a çevrim, mali belgenin düzenlendiği tarihte geçerli BNR kuru üzerinden yapılır.",
+    BNR_PLUS_PERCENT: "RON'a çevrim, mali belgenin düzenlendiği tarihte geçerli sözleşme kuru üzerinden yapılır.",
+  },
   errors: {
     BAD_POLICY: "Kur politikası geçersiz.",
     BAD_PERCENT: "„BNR kuru + %” için yüzde 0 ile 20 arasında, en çok 3 ondalıklı bir sayı olmalı (ör.: 2 ya da 2,5).",

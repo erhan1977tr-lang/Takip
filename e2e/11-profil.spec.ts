@@ -45,7 +45,7 @@ test('müşteri: sipariş tipi seçer, profil ürünlerinin adetlerini girer', a
   await expect(cust).toHaveURL(/tip=PROFILE_ORDER/);
   await expect(cust.getByRole('heading', { name: 'Yeni Profil Siparişi' })).toBeVisible();
   await expect(cust.getByText('UNSP1')).toBeVisible(); // ayrı sıra: GLAP12 düzeni
-  await expect(cust.getByText(/Banca Transilvania/)).toBeVisible();
+  await expect(cust.getByText(/cursul de vânzare BT|BT satış kuru/)).toBeVisible();
   await cust.fill('#title', 'Depo aksesuar');
   await cust.locator('tr', { hasText: 'GK15' }).locator('input.qty-input').fill('4');
   await cust.locator('tr', { hasText: 'SPIGOTI' }).locator('input.qty-input').fill('20');
@@ -84,7 +84,7 @@ test('yönetici fiyatlar ve gönderir; müşteri teslim bilgileriyle onaylar', a
   await cust.goto(url);
   await expect(cust.getByRole('heading', { name: 'Teklifiniz' })).toBeVisible();
   await expect(cust.locator('tfoot')).toContainText('110,00'); // 4 × 12,50 + 20 × 3
-  await expect(cust.getByText(/Banca Transilvania/).first()).toBeVisible();
+  await expect(cust.getByText(/cursul de vânzare BT|BT satış kuru/).first()).toBeVisible();
   await expect(cust.getByText('Liste fiyatı')).toHaveCount(0);
   await cust.fill('#pk-phone', '+40 723 000 000');
   await cust.fill('#pk-plate', 'b 123 abc');
