@@ -104,7 +104,7 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   await db.notificationOutbox.create({ data: { type: 'ORDER_OFFER_SENT', orderId: o.id, payload: {}, inAppAt: new Date() } });
   assert.deepEqual(await n.dispatchInApp(db), { events: 0, created: 0 });
   // Siparişle ilgilenen satışçı: çizime gönderen satış kullanıcısı (mevcut kayıttan)
-  await db.$transaction((tx) => writeHistory(tx, { orderId: o.id, event: 'SENT_TO_DRAWING', from: 'YENI', to: 'CIZIMDE', actorId: U.sales1.id }));
+  await db.$transaction((tx) => writeHistory(tx, { orderId: o.id, event: 'SENT_TO_DRAWING', actorId: U.sales1.id }));
 
   await event('ORDER_CREATED', o, { actorId: U.a1.id });
   await event('ORDER_SENT_TO_DRAWING', o, { actorId: U.sales1.id });
@@ -193,7 +193,7 @@ dbTest('ses tercihi kullanıcı başına saklanır (varsayılan açık); yalnız
 dbTest('yükleme: yüklenmeyen cam ve aktarım bildirimi; düzeltme "muhasebe işlemi gerekli" bildirimi düzeltme başına bir kez, yalnızca muhasebe yetkisine', async () => {
   const D = dayOf(-12), F = dayOf(9);
   const o = await glassOrder(A, D);
-  await db.$transaction((tx) => writeHistory(tx, { orderId: o.id, event: 'SENT_TO_DRAWING', from: 'YENI', to: 'CIZIMDE', actorId: U.sales1.id }));
+  await db.$transaction((tx) => writeHistory(tx, { orderId: o.id, event: 'SENT_TO_DRAWING', actorId: U.sales1.id }));
   // Onay: 2 adet kırık → takip gerektirir: öbür yönetici + ilgili satışçı (onaylayan yönetici kendine almaz)
   const r = await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, notLoaded: [{ key: lineKey(o), quantity: 2, reason: 'BROKEN' }], actor: actor() });
   assert.equal(r.ok, true);
