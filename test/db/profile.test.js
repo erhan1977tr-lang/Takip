@@ -385,6 +385,10 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   ]);
   assert.ok(!(await customerDocuments(db, otherFirm.id)).some((x) => ['PRF9001', 'PRF552', 'GKH684'].includes(x.ref)));
   assert.equal(await customerDocument(db, { docId: idoc.id, customerId: otherFirm.id }), null);
+  // Sonraki testler için: bu testin eklediği cam siparişi ve firma e-postası geri alınır
+  await db.fgoDocument.deleteMany({ where: { orderId: glass.id } });
+  await db.order.delete({ where: { id: glass.id } });
+  await db.customer.update({ where: { id: firm.id }, data: { email: null } });
 });
 
 dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur ile yeniden dene; elle proformada kur zorunlu', async () => {
