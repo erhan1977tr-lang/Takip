@@ -336,6 +336,55 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   assert.equal(inv.Text, pf.Text, 'fatura aynı kur kaydından: aynı cümle (politika sonradan BNR + %5 olsa da)');
   const audited = (await db.auditLog.findMany({ where: { entityId: id, action: 'ORDER_TRANSITION' } })).map((a) => a.details?.action);
   assert.ok(audited.includes('fgo_proforma') && audited.includes('fgo_invoice'));
+
+  // --- Karar 111: kalemde kaynak sipariş; belge kesilince TAKİP e-posta işi; müşteri ekranında cam + profil birlikte
+  for (const form of [pf, inv]) {
+    const details = Object.keys(form).filter((k) => /^Continut\[\d+\]\[Descriere\]$/.test(k)).map((k) => form[k]);
+    assert.deepEqual(details, [`Comanda ${orderNo}`, `Comanda ${orderNo}`], 'her profil kaleminde kaynak sipariş');
+  }
+  const { DOC_EMAIL, dispatchDocEmails } = await import('../../server/documents/delivery.js');
+  const { customerDocuments, customerDocument } = await import('../../server/documents/customer.js');
+  const { dispatchNotifications } = await import('../../server/notifications/email.js');
+  const { dispatchInApp, DOC_NOTICE } = await import('../../server/notifications/inapp.js');
+  const idoc = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '684' } } });
+  const jobs = await db.notificationOutbox.findMany({ where: { type: DOC_EMAIL, orderId: id }, orderBy: { createdAt: 'asc' } });
+  assert.deepEqual(jobs.map((j) => [j.status, j.payload.docId]), [['PENDING', pdoc.id], ['PENDING', idoc.id]], 'proforma ve fatura için birer e-posta işi (belge kaydıyla birlikte)');
+  // Belge e-postası (PDF ekli); sahte FGO: bağlantı factura/print ile alınır, PDF oradan (ağa çıkılmaz)
+  await db.customer.update({ where: { id: firm.id }, data: { email: 'conta@glass.test' } });
+  const mails = [];
+  const pdfFetch = async (url) => (String(url).endsWith('/factura/print')
+    ? new Response(JSON.stringify({ Success: true, Factura: { Link: 'https://www.fgo.ro/facturi/x.pdf' } }))
+    : new Response(Buffer.from('%PDF-1.4 sahte')));
+  const transport = { sendMail: async (m) => { mails.push(m); return {}; } };
+  assert.equal((await dispatchDocEmails(db, { transport, from: 'info@gkh.ro', appUrl: 'https://takip.test', secret: FGO_SECRET, fetchImpl: pdfFetch })).sent, 2);
+  assert.deepEqual(mails.map((m) => [m.to, m.subject, m.attachments[0].filename]), [
+    ['conta@glass.test', `Proformă PRF552 — comanda ${orderNo}`, 'PRF552.pdf'],
+    ['conta@glass.test', `Factură GKH684 — comanda ${orderNo}`, 'GKH684.pdf'],
+  ]);
+  // Aynı olay için ikinci (genel bildirim) e-postası gitmez: PROFORMA / INVOICED olayı belge e-postasıyla karşılanır
+  const before = mails.length;
+  await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: { at: new Date(0).toISOString() } }, update: { value: { at: new Date(0).toISOString() } } });
+  const own = { orderId: id, type: { in: ['ORDER_PROFORMA', 'ORDER_INVOICED'] } };
+  // (kuyrukta önceki testlerin olayları da var: bu siparişin olayları işlenene kadar)
+  for (let i = 0; i < 60 && (await db.notificationOutbox.count({ where: { ...own, status: 'PENDING' } })) > 0; i++) {
+    await dispatchNotifications(db, { transport, from: 'info@gkh.ro', appUrl: 'https://takip.test' });
+  }
+  const generic = await db.notificationOutbox.findMany({ where: own });
+  assert.deepEqual(generic.map((x) => [x.type, x.status, x.lastError]).sort(), [['ORDER_INVOICED', 'SKIPPED', 'belge e-postası gönderilir'], ['ORDER_PROFORMA', 'SKIPPED', 'belge e-postası gönderilir']]);
+  assert.ok(!mails.slice(before).some((m) => /PRF552|GKH684/.test(`${m.subject} ${m.text}`)), 'belge için ikinci e-posta yok');
+  // Uygulama içi: profilde mevcut PROFORMA / INVOICED bildirimi yeter — "belge hazır" bildirimi ikinci kez yazılmaz
+  for (let i = 0; i < 20 && (await dispatchInApp(db)).events > 0; i++) { /* kuyruk boşalana kadar */ }
+  assert.equal(await db.notification.count({ where: { orderId: id, type: { in: Object.values(DOC_NOTICE) } } }), 0);
+  assert.ok((await db.notification.count({ where: { orderId: id, type: 'ORDER_PROFORMA', userId: people.cust.id } })) === 1);
+  // Müşteri ekranı: profil belgeleri + aynı firmanın cam belgesi tek listede; başka firma göremez
+  const glass = await db.order.create({ data: { orderNo: 'GLA9001', customerOrderNo: 9001, title: 'Cam', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE' } });
+  await db.fgoDocument.create({ data: { orderId: glass.id, kind: 'PROFORMA', series: 'PRF', number: '9001', issuedAt: new Date(Date.now() + 1000), total: '605.00', paid: '605.00' } });
+  const list = await customerDocuments(db, firm.id);
+  assert.deepEqual(list.filter((x) => ['PRF9001', 'PRF552', 'GKH684'].includes(x.ref)).map((x) => [x.ref, x.kind, x.orders[0].orderNo, x.payment]), [
+    ['PRF9001', 'PROFORMA', 'GLA9001', 'PAID'], ['GKH684', 'INVOICE', orderNo, 'PARTIAL'], ['PRF552', 'PROFORMA', orderNo, 'REPLACED'],
+  ]);
+  assert.ok(!(await customerDocuments(db, otherFirm.id)).some((x) => ['PRF9001', 'PRF552', 'GKH684'].includes(x.ref)));
+  assert.equal(await customerDocument(db, { docId: idoc.id, customerId: otherFirm.id }), null);
 });
 
 dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur ile yeniden dene; elle proformada kur zorunlu', async () => {

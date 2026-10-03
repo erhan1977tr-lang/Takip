@@ -9,7 +9,7 @@ import { writeHistory } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxDocumentText, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
-import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit } from '../integrations/fgo.js';
+import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit, orderDetail } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
@@ -22,10 +22,12 @@ const STAGE_OF = { [FGO_PROFORMA]: 'ONAYLANDI', [FGO_INVOICE]: 'TESLIM_EDILDI' }
  * Belge satırları: müşterinin onayladığı teklifin kopyası (EUR). Birim: FGO eşlemesi (fgoUnit — en çok 5 karakter;
  * "bucăți" → "buc"). Katalog birimi olmayan satır adetle fiyatlanır (OfferLine.unit = 'adet'). Eşlemede olmayan kod
  * olduğu gibi gider; geçersizse emitereForm belgeyi FGO'ya göndermeden reddeder.
+ * orderNo: kalemin FGO açıklamasına (Continut[Descriere]) yazılacak kaynak sipariş — "Comanda GLAP12" (karar 111).
  */
-export function documentLines(offer) {
+export function documentLines(offer, orderNo = null) {
   return offer.lines.map((l) => ({
     code: l.poz ?? '', name: l.descriptionRo || l.description, unit: fgoUnit(l.unitCode || l.unit || 'adet') ?? String(l.unitCode ?? '').trim(), qty: l.adet, eur: Number(l.offerPrice ?? 0),
+    ...(orderNo ? { detail: orderDetail(orderNo) } : {}),
   }));
 }
 
@@ -110,7 +112,7 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
         rateDay = dayDate(day);
         snap = fxSnapshot(fx, rateDay);
       }
-      const lines = documentLines(offer);
+      const lines = documentLines(offer, order.orderNo);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
       // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'invoice' ? await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl }) : null;
@@ -120,6 +122,8 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
         number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
+      // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır (kayıt yazılamasa bile numara yinelenmez)
+      if (kind === 'invoice') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       const amount = ronTotal(lines, rate);
       await runProfileAction(db, {
         orderId: order.id, action: kind === 'proforma' ? 'fgo_proforma' : 'fgo_invoice', actor: fgoActor(),
@@ -127,7 +131,6 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       });
       await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
       done++;
-      if (kind === 'invoice') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       // Muhasebe: belgenin TVA dahil tutarı hemen okunur (olmazsa "FGO ile güncelle" sonra okur)
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);

@@ -1,7 +1,7 @@
 // Cam siparişi FGO belgeleri (proforma → avans faturası → kapanış faturası). Profil akışından ayrıdır ve müşteri onayı
 // yoktur; sipariş durumu değişmez. Yönetici sipariş sayfasındaki düğmelerle ister; belgeyi işçi keser (FGO isteği
-// veritabanı işleminin dışında), kesilen belge FgoDocument'e yazılır (Muhasebe → Cam Tahsilat ile aynı kayıt) ve
-// müşterinin firma e-postasına Romence e-postayla FGO bağlantısı gönderilir.
+// veritabanı işleminin dışında), kesilen belge FgoDocument'e yazılır (Muhasebe → Cam Tahsilat ile aynı kayıt) ve aynı
+// işlemde müşteri e-postası kuyruğa girer (server/documents/delivery.js — e-postayı yalnızca TAKİP gönderir, karar 111).
 //
 // Kararlar (ürün sahibi, 01.10.2026):
 //   - Proforma ödendi = FGO'da proformaya tahsilat görünür. Ödemenin TEK kaynağı FGO'dur (Aşama 7F-1, karar 104):
@@ -21,14 +21,16 @@ import { parseManualRate } from '../fx/bt.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
-  FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
+  FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued, orderDetail,
 } from '../integrations/fgo.js';
+import { queueDocEmail } from '../documents/delivery.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
 
 export const GLASS_FGO = 'FGO_GLASS';
-export const DOC_EMAIL = 'FGO_DOC_EMAIL';
+// Müşteriye belge e-postası (tek sahibi TAKİP): server/documents/delivery.js. Eski içe aktarmalar için buradan da verilir.
+export { DOC_EMAIL, dispatchDocEmails, renderDocEmail } from '../documents/delivery.js';
 export const LOADED_AFTER_DAYS = 2;
 export const KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE'];
 const SUFFIX = { PROFORMA: 'P', ADVANCE: 'A', INVOICE: 'F' };
@@ -350,6 +352,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           }
         }
       }
+      // Her kalemin FGO açıklaması (Continut[Descriere]): kaynak TAKİP siparişi — "Comanda UMI7" (karar 111)
+      lines = lines.map((l) => ({ ...l, detail: orderDetail(order.orderNo, l.detail) }));
       // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'PROFORMA' ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       const form = emitereForm({
@@ -361,6 +365,9 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
+      // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır — kayıt yazılamasa bile aynı numara sonraki
+      // faturaya bir daha gönderilmez (tek seferlik; karar 87)
+      if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       const amount = ronTotal(lines, rate);
       await db.$transaction(async (tx) => {
         const created = await tx.fgoDocument.create({
@@ -372,12 +379,12 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           await tx.glassBilling.upsert({ where: { orderId: order.id }, create: { orderId: order.id, ...snap }, update: snap });
         }
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
-        await tx.notificationOutbox.create({ data: { type: DOC_EMAIL, orderId: order.id, payload: { docId: created.id } } });
+        // Müşteri e-postası: belge kaydı yazıldıktan sonra, aynı işlemde, belge başına bir kez (kesilemeyen belgede yok)
+        await queueDocEmail(tx, { docId: created.id, orderId: order.id });
         await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_ISSUED', from: order.status, to: order.status, actorId: null, note: `${kind}:${doc.series}${doc.number}` });
         await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, seq, series: doc.series, number: doc.number, ...(advanceGross != null ? { fgoPaid: chain.paid, advancedBefore: chain.advanced, advanceRon: advanceGross } : {}), fxRate: rate, fxSource: source, ...(fx ? { fxPolicy: fx.policy, fxBaseRate: fx.baseRate, fxMarkupPercent: fx.markupPercent, fxSourceDate: fx.sourceDate, fxManual: fx.manual } : {}), amountRonNet: amount } }, { role: 'SYSTEM' });
       });
       done++;
-      if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
         await db.fgoDocument.update({
@@ -408,70 +415,4 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
     }
   }
   return { done, failed };
-}
-
-// ---------- müşteriye e-posta ----------
-const KIND_RO = { PROFORMA: 'Factură proformă', ADVANCE: 'Factură de avans', INVOICE: 'Factură' };
-
-/** Romence e-posta: belge no, tutar ve FGO PDF bağlantısı. orderNo: tek sipariş ya da (müşteri proforması) virgüllü liste */
-export function renderDocEmail({ kind, series, number, orderNo, total, link, firmName }) {
-  const many = String(orderNo).includes(',');
-  const forOrder = many ? `comenzile ${orderNo}` : `comanda ${orderNo}`;
-  const title = `${KIND_RO[kind] ?? 'Document'} ${series}${number}`;
-  const amount = total != null ? `${Number(total).toFixed(2).replace('.', ',')} RON (cu TVA)` : '—';
-  const text = [
-    `Stimate client ${firmName},`,
-    '',
-    `Vă transmitem documentul ${title} pentru ${forOrder}.`,
-    `Număr document: ${series}${number}`,
-    `Valoare: ${amount}`,
-    link ? `Document (PDF): ${link}` : '',
-    '',
-    'Cu stimă,',
-    'GKH',
-  ].filter((x) => x !== '').join('\n');
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const html = `<p>Stimate client ${esc(firmName)},</p><p>Vă transmitem documentul <b>${esc(title)}</b> pentru ${many ? 'comenzile' : 'comanda'} <b>${esc(orderNo)}</b>.</p>`
-    + `<p>Număr document: <b>${esc(`${series}${number}`)}</b><br>Valoare: <b>${esc(amount)}</b></p>`
-    + (link ? `<p><a href="${esc(link)}">Deschide documentul (PDF)</a></p>` : '') + '<p>Cu stimă,<br>GKH</p>';
-  return { subject: `${title} — ${forOrder}`, text, html };
-}
-
-/** Kuyruktaki belge e-postalarını gönderir (alıcı: firmanın Müşteriler kartındaki e-postası). */
-export async function dispatchDocEmails(db, { transport, from, now = new Date(), log = () => {} }) {
-  if (!transport) return { sent: 0, failed: 0 };
-  const rows = await db.notificationOutbox.findMany({ where: { type: DOC_EMAIL, status: 'PENDING', availableAt: { lte: now } }, orderBy: { createdAt: 'asc' }, take: 10 });
-  let sent = 0, failed = 0;
-  for (const row of rows) {
-    const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
-    if (claimed.count === 0) continue;
-    const attempt = row.attempts + 1;
-    try {
-      const doc = await db.fgoDocument.findUnique({
-        where: { id: String(row.payload?.docId ?? '') },
-        include: { order: { include: { customer: true } }, batch: { include: { customer: true, orders: { select: { orderId: true, orderNo: true }, orderBy: { orderNo: 'asc' } } } } },
-      });
-      if (!doc) throw new Permanent('belge yok');
-      // Sipariş belgesi ya da müşteri partisi belgesi (birden çok sipariş)
-      const customer = doc.order?.customer ?? doc.batch?.customer;
-      const orders = doc.order ? [{ orderId: doc.order.id, orderNo: doc.order.orderNo }] : doc.batch?.orders ?? [];
-      if (!customer) throw new Permanent('belgenin müşterisi yok');
-      const to = customer.email;
-      if (!to) throw new Permanent('Firmanın e-postası yok (Yönetim → Müşteriler)');
-      const mail = renderDocEmail({ kind: doc.kind, series: doc.series, number: doc.number, orderNo: orders.map((o) => o.orderNo).join(', '), total: doc.total, link: doc.link, firmName: customer.name });
-      await transport.sendMail({ from, to, subject: mail.subject, text: mail.text, html: mail.html });
-      await db.$transaction(async (tx) => {
-        await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
-        for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_EMAILED', actorId: null, note: `${doc.series}${doc.number} → ${to}` });
-      });
-      sent++;
-    } catch (e) {
-      failed++;
-      const msg = String(e?.message ?? e).slice(0, 300);
-      const final = e instanceof Permanent || attempt >= MAX_ATTEMPTS;
-      await db.notificationOutbox.update({ where: { id: row.id }, data: { lastError: msg, ...(final ? { status: 'FAILED' } : { availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000) }) } });
-      log('belge e-postası gönderilemedi', row.orderId, msg);
-    }
-  }
-  return { sent, failed };
 }

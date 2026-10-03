@@ -26,5 +26,6 @@ export default {
   myOffers: 'Ofertele mele',
   settings: 'Setări',
   myLoadings: 'Calendarul meu de încărcări',
+  financeDocs: 'Documente financiare',
   demoMail: 'Cutie poștală demo',
 };

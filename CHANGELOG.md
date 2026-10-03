@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.43.0 — 04.10.2026
+
+- **FGO belgesinde sipariş numarası**: her kalemin açıklamasında (FGO'da "detalii articol") kaynak TAKİP siparişi yazar —
+  "Comanda UMI7". Birden çok siparişi kapsayan müşteri belgesinde her kalem kendi siparişini taşır. Kalemin adı, birimi,
+  miktarı, fiyatı, TVA'sı, kur, toplamlar ve numaralandırma değişmedi.
+- **Müşteriye belge e-postasını yalnızca TAKİP gönderir** (FGO göndermez): belge FGO'da kesilip kaydedilince bir kez,
+  Romence; belge türü, numara, kesim tarihi, sipariş(ler), toplam ve **PDF ekte**. Profil siparişinin proforma ve
+  faturası da artık bu e-postayla gider (aynı belge için ikinci, genel bildirim e-postası gönderilmez). Kesilemeyen
+  belge için e-posta gitmez.
+- **Muhasebe → Tahsilat**: her belgenin satırında müşteri e-postasının durumu — Gönderildi / Bekliyor / Başarısız /
+  Email yok — ve **"E-postayı tekrar gönder"**. Bu düğme yalnızca e-postayı yeniden gönderir; FGO'da yeni belge
+  kesilmez, numara ve faturalama değişmez. Firmanın e-postası yoksa belge yine geçerlidir, durum "Email yok" olur.
+- **Müşteri ekranı "Documente financiare"** (menüde): firmanın proforma, avans faturası ve faturaları (cam + profil) —
+  numara, tarih, sipariş(ler), toplam, ödeme durumu (Neplătit / Plătit parțial / Plătit; FGO'dan) ve "Vezi PDF".
+  Müşteri yalnızca kendi firmasının belgelerini görür; başka firmanın belgesi adres değiştirilerek de açılamaz.
+- Belge kesilince müşteriye uygulama içi bildirim: "Proforma este disponibilă." / "Factura este disponibilă."
+- **Sonraki fatura numarası** (tek seferlik elle numara): FGO belgeyi kestiği anda alan boşaltılır — belge kaydı
+  yazılamasa bile aynı numara sonraki faturaya bir daha gönderilmez.
+- Veritabanı değişikliği yok.
+
 ## 3.42.1 — 04.10.2026
 
 - Teklif tablosu: "Kırık / Telafi" sütunu daraltıldı (düğme iki satıra inebilir). Yöneticinin üç fiyat sütunlu

@@ -302,3 +302,52 @@ test('FGO ölçü birimi (UM): tek eşleme, en çok 5 karakter; geçersiz birim 
   const ok = emitereForm({ ...base, lines: profile });
   assert.deepEqual([0, 1, 2, 3, 4].map((i) => ok[`Continut[${i}][UM]`]), ['cutii', 'buc', 'bară', 'pungi', 'buc']);
 });
+
+// Karar 111: FGO kaleminin açıklaması (Continut[Descriere]) = kaynak TAKİP siparişi
+test('kalem açıklaması: "Comanda UMI7" Continut[Descriere] alanına yazılır; Denumire, birim, miktar, fiyat, TVA değişmez', async () => {
+  const { orderDetail, FGO_DETAIL_MAX } = await import('../server/integrations/fgo.js');
+  const settings = { cui: '1', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
+  const customer = { name: 'Umi SRL', taxId: '55' };
+  const lines = [
+    { code: '', name: '6.2.6., Sticla, Gri-Transparent, securizata', unit: 'mp', qty: 2.5, eur: 40 },
+    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10 },
+    { code: '', name: 'Sticla', unit: 'mp', qty: 1, net: 100, gross: 121 },
+  ];
+  const base = { settings, key: 'K', kind: 'proforma', orderNo: 'UMI7', appUrl: '', customer, rate: 5, rateNote: false, text: 'Ușă duș' };
+  const plain = emitereForm({ ...base, lines });
+  const withRef = emitereForm({ ...base, lines: lines.map((l) => ({ ...l, detail: orderDetail('UMI7') })) });
+  for (const i of [0, 1, 2]) assert.equal(withRef[`Continut[${i}][Descriere]`], 'Comanda UMI7');
+  assert.ok(!Object.keys(plain).some((k) => k.endsWith('[Descriere]')), 'açıklama verilmeyen kalemde alan gönderilmez');
+  // Açıklama dışındaki HER alan aynı: Denumire, UM, miktar, fiyat, TVA, IdExtern, numara, metin
+  const rest = Object.fromEntries(Object.entries(withRef).filter(([k]) => !k.endsWith('[Descriere]')));
+  assert.deepEqual(rest, plain);
+  assert.equal(withRef['Continut[0][Denumire]'], '6.2.6., Sticla, Gri-Transparent, securizata');
+  assert.deepEqual([withRef['Continut[0][UM]'], withRef['Continut[0][NrProduse]'], withRef['Continut[0][PretUnitar]'], withRef['Continut[0][CotaTVA]'], withRef['Continut[2][PretTotal]']], ['mp', '2.5', '200.00', '21', '121.00']);
+  assert.equal(ronTotal(lines.map((l) => ({ ...l, detail: 'Comanda UMI7' })), 5), ronTotal(lines, 5), 'toplam değişmez');
+
+  // Var olan açıklama korunur, sipariş numarası sonuna eklenir; ikinci kez eklenmez; benzer numara karışmaz
+  assert.equal(orderDetail('UMI7'), 'Comanda UMI7');
+  assert.equal(orderDetail('UMI7', 'Sticlă securizată 10 mm'), 'Sticlă securizată 10 mm\nComanda UMI7');
+  assert.equal(orderDetail('UMI7', 'Lot 3 · Comanda UMI7'), 'Lot 3 · Comanda UMI7');
+  assert.equal(orderDetail('UMI7', 'Comanda UMI70'), 'Comanda UMI70\nComanda UMI7');
+  assert.equal(orderDetail('UMI7', 'Comanda UMI7-T'), 'Comanda UMI7-T\nComanda UMI7');
+  assert.equal(orderDetail(null, 'Sticlă'), 'Sticlă');
+  assert.equal(orderDetail(''), '');
+  const long = emitereForm({ ...base, lines: [{ ...lines[0], detail: 'x'.repeat(FGO_DETAIL_MAX + 50) }] });
+  assert.equal(long['Continut[0][Descriere]'].length, FGO_DETAIL_MAX);
+});
+
+test('factura/print yalnızca bağlantı okur: seri + numara + hash; https olmayan bağlantı kabul edilmez', async () => {
+  const { fgoPrint } = await import('../server/integrations/fgo.js');
+  const seen = [];
+  const settings = { env: 'test', cui: '123' };
+  const fetchImpl = async (url, init) => {
+    seen.push([String(url), Object.fromEntries(new URLSearchParams(init.body))]);
+    return new Response(JSON.stringify({ Success: true, Factura: { Link: 'https://www.fgo.ro/facturi/GKH7.pdf' } }));
+  };
+  assert.equal(await fgoPrint(settings, 'K', { series: 'GKH', number: '7' }, fetchImpl), 'https://www.fgo.ro/facturi/GKH7.pdf');
+  assert.match(seen[0][0], /\/factura\/print$/);
+  assert.deepEqual([seen[0][1].Serie, seen[0][1].Numar, seen[0][1].Hash], ['GKH', '7', fgoHash('123', 'K', '7')]);
+  const http = async () => new Response(JSON.stringify({ Success: true, Factura: { Link: 'http://fgo.ro/x.pdf' } }));
+  assert.equal(await fgoPrint(settings, 'K', { series: 'GKH', number: '7' }, http), null);
+});

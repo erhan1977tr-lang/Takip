@@ -26,6 +26,9 @@ export default {
     FGO_FAILED: { title: "FGO'da belge kesilemedi" },
     ADVANCE_REQUIRED: { title: 'Proformaya tahsilat geldi: avans faturası gerekli' },
     COMPENSATION_PENDING: { title: 'Telafi camı onayınızı bekliyor' },
+    DOC_PROFORMA: { title: 'Proforma hazır.', customer: 'Proformanız hazır.' },
+    DOC_ADVANCE: { title: 'Avans faturası hazır.', customer: 'Avans faturanız hazır.' },
+    DOC_INVOICE: { title: 'Fatura hazır.', customer: 'Faturanız hazır.' },
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',
@@ -35,5 +38,8 @@ export default {
     FGO_FAILED: '{error}',
     ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
     COMPENSATION_PENDING: '{qty} adet · kaynak {ref}',
+    DOC_PROFORMA: 'belge {ref}',
+    DOC_ADVANCE: 'belge {ref}',
+    DOC_INVOICE: 'belge {ref}',
   },
 };

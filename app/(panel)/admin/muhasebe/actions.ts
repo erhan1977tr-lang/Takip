@@ -12,6 +12,7 @@ import { writeAudit } from '@/server/orders/journal.js';
 import { refreshDocuments } from '@/server/accounting/receivables.js';
 import { CURRENCIES, parseAmount } from '@/server/accounting/supplier.js';
 import { correctMissingCost } from '@/server/accounting/cost-correction.js';
+import { resendDocEmail } from '@/server/documents/delivery.js';
 
 const RECEIVABLE_PATH = { PROFILE_ORDER: '/admin/muhasebe/profil', GLASS_ORDER: '/admin/muhasebe/cam' } as const;
 const SUPPLIER = '/admin/muhasebe/tedarikci';
@@ -29,6 +30,18 @@ export async function refreshFgoAction(fd: FormData) {
   const r = await refreshDocuments(db, { orderType: type, secret: env.AUTH_SECRET, appUrl: env.APP_URL ?? '' });
   revalidatePath(RECEIVABLE_PATH[type]);
   redirect(`${RECEIVABLE_PATH[type]}?${r.ok ? `ok=refreshed&n=${r.checked}&f=${r.failed}` : `error=${r.code}`}`);
+}
+
+/**
+ * "E-postayı tekrar gönder" (karar 111): kesilmiş bir FGO belgesinin MÜŞTERİ E-POSTASINI yeniden kuyruğa alır.
+ * Yalnızca TAKİP e-postasıdır — FGO'da belge kesmez, numaraya ve faturalamaya dokunmaz (server/documents/delivery.js).
+ */
+export async function resendDocEmailAction(fd: FormData) {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const type = fd.get('type') === 'GLASS_ORDER' ? 'GLASS_ORDER' : 'PROFILE_ORDER';
+  const r = await resendDocEmail(db, { docId: String(fd.get('docId') ?? ''), actor: await actorOf(user) });
+  revalidatePath(RECEIVABLE_PATH[type]);
+  redirect(`${RECEIVABLE_PATH[type]}?${r.ok ? 'ok=resent' : `mailError=${r.code}`}`);
 }
 
 /** Yükleme gününe nakliye maliyeti */

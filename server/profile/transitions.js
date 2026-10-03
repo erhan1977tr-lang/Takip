@@ -2,6 +2,7 @@
 // executeAction): yetki/adım kontrolü, tek veritabanı işleminde değişiklik + geçmiş + denetim + bildirim kuyruğu, iyimser kilit.
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
+import { DOC_EMAIL } from '../documents/delivery.js';
 import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
 import { dayDate, dayKeyOf, localDay, pickupAfterPayment, pickupProblem } from './dates.js';
@@ -260,7 +261,9 @@ const ACTIONS = {
       ...(p.fx ?? {}),
     });
     // Muhasebe → Profil Tahsilat için belge kaydı (ödeme durumu FGO'dan okunur)
-    await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'PROFORMA', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
+    const doc = await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'PROFORMA', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
+    // Müşteri e-postası (yalnızca TAKİP gönderir — karar 111): belge kaydıyla aynı işlemde, belge başına bir kez
+    h.outbox.push(outboxEvent(DOC_EMAIL, { orderId: h.order.id, payload: { docId: doc.id } }));
     h.event('PROFORMA', proformaNo);
     h.audit = { proformaNo, fxRate: p.rate, fxSource: p.source, amountRon: p.amount, fgo: true };
   },
@@ -352,7 +355,8 @@ const ACTIONS = {
     const p = h.payload;
     const invoiceNo = `${p.series}${p.number}`;
     await setStage(h, 'FATURALANDI', { invoiceNo, invoicedAt: h.now, invoiceLink: p.link ?? null });
-    await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'INVOICE', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
+    const doc = await h.tx.fgoDocument.create({ data: { orderId: h.order.id, kind: 'INVOICE', series: String(p.series), number: String(p.number), issuedAt: h.now, link: p.link ?? null } });
+    h.outbox.push(outboxEvent(DOC_EMAIL, { orderId: h.order.id, payload: { docId: doc.id } }));
     h.event('INVOICED', invoiceNo);
     h.audit = { invoiceNo, fxRate: p.rate, amountRon: p.amount, fgo: true };
   },

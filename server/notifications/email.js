@@ -3,9 +3,10 @@
 // tamamlandıktan SONRA, mevcut SMTP bağlantısıyla (server/mail/transport.js, .env) e-postaya çevirir. Gönderim hatası
 // işlemi etkilemez: satır kuyrukta kalır, artan aralıklarla yeniden denenir, sonunda FAILED + lastError olur.
 //
-// Kural tablosu (olay → alıcı) NOTIFY_RULES'ta. Cam FGO belgeleri (proforma / avans / fatura) müşteriye zaten ayrı
-// e-postayla (FGO bağlantısıyla) gider (server/glass/billing.js → DOC_EMAIL; FGO API'si e-posta göndermez) — burada
-// tekrarlanmaz. Profil siparişinde FGO belgesi için e-posta yoktu: PROFORMA / INVOICED olayıyla müşteriye bildirim gider.
+// Kural tablosu (olay → alıcı) NOTIFY_RULES'ta. FGO belgeleri (cam ve profil: proforma / avans / fatura) müşteriye ayrı
+// bir belge e-postasıyla (PDF ekiyle) gider (server/documents/delivery.js → DOC_EMAIL; e-postayı yalnızca TAKİP gönderir,
+// karar 111) — burada tekrarlanmaz: profilin PROFORMA / INVOICED olayı, belge FGO'da kesildiyse e-postaya çevrilmez
+// (aynı belge için iki e-posta gitmesin); belge elle girildiyse (FGO belgesi yok) bildirim e-postası yine gider.
 // Alıcı seçimi rol adına değil yetkiye göredir (server/auth/permissions.js). Satış ve çizim e-postada firma adını
 // maskeli görür (ekrandaki kural). Bağlantı: uygulamadaki sipariş sayfası (giriş ve yetki gerekir).
 import { can, ROLE_PERMISSIONS } from '../auth/permissions.js';
@@ -182,6 +183,13 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
           assignedDrawer: { select: { email: true, language: true, appRole: true } },
         },
       }) : null;
+      // Belge FGO'da kesildiyse müşteriye belge e-postası gider (PDF ekiyle); aynı olay için ikinci e-posta gönderilmez
+      const docKind = { ORDER_PROFORMA: 'PROFORMA', ORDER_INVOICED: 'INVOICE' }[row.type];
+      if (order && docKind && (await db.fgoDocument.count({ where: { orderId: order.id, kind: docKind } })) > 0) {
+        await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'belge e-postası gönderilir' } });
+        skipped++;
+        continue;
+      }
       const audiences = order ? NOTIFY_RULES[row.type]?.(order) ?? [] : [];
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;

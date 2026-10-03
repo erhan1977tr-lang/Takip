@@ -137,10 +137,30 @@ export const fgoUnit = (code) => {
 /** UM geçerli mi: boş değil, en çok 5 karakter */
 export const validUm = (um) => typeof um === 'string' && um.trim() === um && um.length > 0 && [...um].length <= FGO_UM_MAX;
 
+// ---------- Satır açıklaması (Continut[Descriere]) ----------
+// FGO belgesindeki her kalemin altında kaynak TAKİP siparişi yazılır ("Comanda UMI7"). Müşteri belgesinde (birden çok
+// sipariş, tek belge) her kalem KENDİ siparişini taşır. Denumire, miktar, birim, fiyat, TVA ve toplamlar değişmez.
+export const FGO_DETAIL_MAX = 4000;
+/**
+ * Kalemin açıklaması: var olan açıklama korunur, sipariş numarası sonuna (ayrı satırda) eklenir; zaten yazılıysa
+ * ikinci kez eklenmez. Sipariş bilinmiyorsa yalnızca var olan açıklama döner (boş olabilir).
+ * @param {string | null | undefined} orderNo  @param {string | null} [existing]
+ */
+export function orderDetail(orderNo, existing = '') {
+  const base = String(existing ?? '').trim();
+  const no = String(orderNo ?? '').trim();
+  if (!no) return base;
+  const ref = `Comanda ${no}`;
+  if (!base) return ref;
+  const has = new RegExp(`(^|[^\\p{L}\\p{N}])${ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}-])`, 'u').test(base);
+  return has ? base : `${base}\n${ref}`;
+}
+
 /**
  * FGO "factura/emitere" gövdesi (form alanları). Satırlar: onaylanan teklifin kopyası.
  * @param {{ settings: object, key: string, kind: 'proforma' | 'invoice', orderNo: string, appUrl: string,
- *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number }[], rate: number, rateText?: string, text?: string }} p
+ *   customer: object, lines: { code: string, name: string, unit: string, qty: number, eur: number, detail?: string }[], rate: number, rateText?: string, text?: string }} p
+ *   lines[].detail: satırın FGO açıklaması (Continut[Descriere] — "detalii articol"): kaynak TAKİP siparişi (orderDetail)
  *   rateText: belgenin açıklamasındaki kur cümlesi (server/fx/resolve.js → fxDocumentText); rateNote: false ise yazılmaz
  * @returns {Record<string, string>}
  */
@@ -181,6 +201,8 @@ export function emitereForm({ settings, key, kind, orderNo, appUrl, customer, li
     if (!validUm(l.unit)) throw new FgoError(`Satır ${i + 1} (${String(l.name).slice(0, 60)}): ölçü birimi geçersiz ("${l.unit ?? ''}") — FGO boş olmayan, en çok ${FGO_UM_MAX} karakterlik birim ister`, { retry: false });
     f[`Continut[${i}][Denumire]`] = (l.code ? `${l.name} (${l.code})` : l.name).slice(0, 250);
     f[`Continut[${i}][CodArticol]`] = l.code;
+    // Satır açıklaması (FGO "Descriere", en çok 4000 karakter): kaynak sipariş — "Comanda UMI7". Boşsa alan gönderilmez.
+    if (l.detail) f[`Continut[${i}][Descriere]`] = String(l.detail).slice(0, FGO_DETAIL_MAX);
     f[`Continut[${i}][NrProduse]`] = String(l.qty);
     f[`Continut[${i}][UM]`] = l.unit;
     f[`Continut[${i}][CotaTVA]`] = String(settings.vatRate);
@@ -315,6 +337,19 @@ export async function fgoEmit(settings, form, fetchImpl = fetch) {
   if (!fac.Numar) throw new FgoError('FGO belge numarası dönmedi', { retry: false });
   const link = typeof fac.Link === 'string' && /^https:\/\//i.test(fac.Link) ? fac.Link.slice(0, 500) : null;
   return { series: String(fac.Serie ?? form.Serie), number: String(fac.Numar), link };
+}
+
+/**
+ * Belgenin PDF bağlantısı (factura/print): yalnızca OKUR, belge kesmez / değiştirmez. Kayıtlı bağlantı yoksa ya da artık
+ * açılmıyorsa sunucu tarafında çağrılır (server/documents/delivery.js). Hash = SHA1(CUI + anahtar + belge no).
+ * @returns {Promise<string | null>}
+ */
+export async function fgoPrint(settings, key, { series, number, appUrl = '' }, fetchImpl = fetch) {
+  const json = await post(settings, '/factura/print', {
+    CodUnic: settings.cui, Hash: fgoHash(settings.cui, key, number), Serie: series, Numar: number, PlatformaUrl: appUrl,
+  }, fetchImpl);
+  const link = json.Factura?.Link ?? json.Link;
+  return typeof link === 'string' && /^https:\/\//i.test(link) ? link.slice(0, 500) : null;
 }
 
 /**

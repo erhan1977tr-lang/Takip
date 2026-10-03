@@ -117,11 +117,15 @@ test('sipariş zinciri (orderChain): tahsilat − avansı kesilen; sıra; eski k
   assert.equal(orderChain([{ kind: 'PROFORMA', paid: '100' }, { kind: 'ADVANCE', seq: 1, advanced: '500' }]).advanceRequired, 0);
 });
 
-test('müşteri e-postası Romence: belge no, tutar, PDF bağlantısı', () => {
-  const m = renderDocEmail({ kind: 'ADVANCE', series: 'GKH', number: '685', orderNo: 'GLA68', total: '1210', link: 'https://fgo.example/x.pdf', firmName: 'Glass & More' });
+test('müşteri e-postası Romence: belge türü, no, tarih, sipariş, toplam; PDF ekte + TAKİP bağlantısı', () => {
+  const m = renderDocEmail({ kind: 'ADVANCE', series: 'GKH', number: '685', issuedAt: '2026-10-04T09:00:00Z', orderNos: ['GLA68'], total: '1210', currency: 'RON', firmName: 'Glass & More', attached: true, portalUrl: 'https://takip.test/belgeler' });
   assert.equal(m.subject, 'Factură de avans GKH685 — comanda GLA68');
+  assert.match(m.text, /Tip document: Factură de avans/);
   assert.match(m.text, /Număr document: GKH685/);
-  assert.match(m.text, /1210,00 RON \(cu TVA\)/);
-  assert.match(m.text, /https:\/\/fgo\.example\/x\.pdf/);
+  assert.match(m.text, /Data emiterii: 04\.10\.2026/);
+  assert.match(m.text, /Comanda: GLA68/);
+  assert.match(m.text, /Total: 1\.210,00 RON \(cu TVA\)/);
+  assert.match(m.text, /atașat acestui e-mail \(PDF\)/);
+  assert.match(m.text, /https:\/\/takip\.test\/belgeler/);
   assert.match(m.html, /Glass &amp; More/);
 });

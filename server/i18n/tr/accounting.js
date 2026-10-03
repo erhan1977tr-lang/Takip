@@ -236,6 +236,7 @@ export default {
       rest: "Kalan",
       status: "Durum",
       checked: "FGO kontrol",
+      email: "Müşteri e-postası",
     },
     kind: {
       ADVANCE: "Avans faturası",
@@ -249,6 +250,23 @@ export default {
       PAID: "Ödendi",
     },
     checkError: "son kontrol olmadı",
+    email: {
+      SENT: "Gönderildi",
+      PENDING: "Bekliyor",
+      FAILED: "Başarısız",
+      NO_EMAIL: "Email yok",
+      none: "gönderilmedi",
+      resend: "E-postayı tekrar gönder",
+      resendTitle: "Yalnızca TAKİP'in müşteri e-postasını yeniden gönderir. FGO'da yeni belge KESİLMEZ; numara ve faturalama değişmez.",
+      resendConfirm: "{doc} belgesinin e-postası müşteriye yeniden gönderilsin mi? FGO'da yeni belge kesilmez.",
+      resent: "E-posta yeniden gönderilmek üzere kuyruğa alındı (FGO'da belge kesilmedi).",
+      note: "Müşteri e-postasını yalnızca TAKİP gönderir (PDF ekiyle); FGO müşteriye e-posta göndermez. Alıcı: firmanın Müşteriler kartındaki e-postası.",
+      errors: {
+        NOT_FOUND: "Belge bulunamadı.",
+        ALREADY_QUEUED: "Bu belgenin e-postası zaten kuyrukta bekliyor.",
+        FORBIDDEN: "Bu işlem için yetkiniz yok.",
+      },
+    },
   },
   supplier: {
     title: "Tedarikçi Hesap Durumu",

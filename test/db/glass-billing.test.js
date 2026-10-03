@@ -123,13 +123,19 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   // Muhasebe → Cam Tahsilat aynı kayıtları gösterir
   assert.equal((await listDocuments(db, 'GLASS_ORDER')).filter((d) => d.orderId === o.id).length, 3);
 
-  // Müşteriye e-posta: firmanın kayıtlı e-postası, Romence, belge no + bağlantı
+  // Müşteriye e-posta (yalnızca TAKİP gönderir — karar 111): firmanın kayıtlı e-postası, Romence, belge no, PDF ekte.
+  // Sahte FGO: kayıtlı bağlantı FGO adresi değil → bağlantı factura/print ile alınır, PDF oradan indirilir (ağa çıkılmaz).
   const sent = [];
-  const r = await g.dispatchDocEmails(db, { transport: { sendMail: async (m) => { sent.push(m); return {}; } }, from: 'info@gkh.ro' });
+  const pdfFetch = async (url) => (String(url).endsWith('/factura/print')
+    ? new Response(JSON.stringify({ Success: true, Factura: { Link: 'https://www.fgo.ro/facturi/x.pdf' } }))
+    : new Response(Buffer.from('%PDF-1.4 sahte')));
+  const r = await g.dispatchDocEmails(db, { transport: { sendMail: async (m) => { sent.push(m); return {}; } }, from: 'info@gkh.ro', appUrl: 'https://t', secret: SECRET, fetchImpl: pdfFetch });
   assert.equal(r.sent, 3);
   assert.ok(sent.every((m) => m.to === 'contabil@glass.test'));
-  assert.match(sent[0].subject, /^Factură proformă PRF552 — comanda GLA68$/);
-  assert.match(sent[0].text, /https:\/\/fgo\.example\/PRF552\.pdf/);
+  assert.match(sent[0].subject, /^Proformă PRF552 — comanda GLA68$/);
+  assert.deepEqual(sent.map((m) => m.attachments[0].filename), ['PRF552.pdf', 'GKH553.pdf', 'GKH554.pdf']);
+  assert.match(sent[0].text, /https:\/\/t\/belgeler/);
+  assert.equal(fgo.calls.length, 3, 'e-posta belge kesmez');
 });
 
 dbTest('cam FGO: yüklenmiş ve avanssız sipariş doğrudan fatura; günlük sınır; firma bilgisi eksikse kesilmez', async () => {

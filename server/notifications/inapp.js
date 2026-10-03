@@ -16,6 +16,7 @@ import { can, ROLE_PERMISSIONS } from '../auth/permissions.js';
 import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 import { orderSalesUsers } from './email.js';
+import { DOC_EMAIL } from '../documents/delivery.js';
 
 const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
 /** Alıcı kümeleri → roller (yetkiden türetilir) */
@@ -60,6 +61,9 @@ export const INAPP_RULES = {
   ACCOUNTING_ACTION: { to: () => ['accounting'], includeActor: true, link: dayLink('#faturalama') },
 };
 export const INAPP_TYPES = Object.keys(INAPP_RULES);
+
+/** Mali belge kesildi (karar 111): belge türü → müşteriye giden bildirim tipi ("Proforma este disponibilă." …) */
+export const DOC_NOTICE = { PROFORMA: 'DOC_PROFORMA', ADVANCE: 'DOC_ADVANCE', INVOICE: 'DOC_INVOICE' };
 
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const dmy = (day) => (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}/.test(day) ? day.slice(0, 10).split('-').reverse().join('.') : '');
@@ -182,6 +186,38 @@ async function fanOut(db, row) {
 }
 
 /**
+ * Mali belge kesildi → müşterinin kullanıcılarına "belge hazır" bildirimi (bağlantı: Documente financiare). Kaynak, belge
+ * kaydıyla birlikte yazılan e-posta işidir (FGO_DOC_EMAIL) — ayrı bir olay yazılmaz; e-posta ile bildirim iki ayrı
+ * kanaldır (e-posta adresi olmasa da bildirim gider). Anahtar belgenin kimliğidir: belge başına bir bildirim.
+ *   - Elle "e-postayı yeniden gönder" bildirim üretmez (iş inAppAt dolu yazılır; burada da atlanır).
+ *   - Profil siparişinde aynı olay zaten bildirilir (ORDER_PROFORMA / ORDER_INVOICED) — ikincisi yazılmaz.
+ *   - Kesilemeyen belgenin kaydı (ve işi) olmadığından bildirimi de olmaz.
+ */
+async function fanOutDocument(db, row) {
+  const p = obj(row.payload);
+  if (p.manual || !p.docId) return 0;
+  const doc = await db.fgoDocument.findUnique({
+    where: { id: String(p.docId) },
+    select: {
+      id: true, kind: true, series: true, number: true,
+      order: { select: { id: true, orderNo: true, orderTypeCode: true, customerId: true, removedAt: true } },
+      batch: { select: { customerId: true, orders: { select: { orderNo: true }, orderBy: { orderNo: 'asc' } } } },
+    },
+  });
+  const type = doc ? DOC_NOTICE[doc.kind] : null;
+  if (!doc || !type || doc.order?.orderTypeCode === 'PROFILE_ORDER' || doc.order?.removedAt) return 0;
+  const customerId = doc.order?.customerId ?? doc.batch?.customerId ?? null;
+  if (!customerId) return 0;
+  // Yalnızca belgenin sahibi firmanın müşteri kullanıcıları
+  const users = await recipientsOf(db, ['customer'], { customerId });
+  const nos = doc.order ? [doc.order.orderNo] : (doc.batch?.orders ?? []).map((o) => o.orderNo);
+  return createNotifications(db, {
+    key: `doc:${doc.id}`, type, users, orderId: doc.order?.id ?? null, orderNo: nos.join(', ') || null,
+    params: { ref: `${doc.series}${doc.number}` }, link: `/belgeler#doc-${doc.id}`,
+  });
+}
+
+/**
  * Kuyruktaki, henüz dağıtılmamış olayları uygulama içi bildirime çevirir (işçi her turda çağırır; e-posta ayarından
  * bağımsızdır). Dağıtılan olay inAppAt ile işaretlenir; işaretlenemeden yarıda kalırsa sonraki turda yeniden denenir —
  * benzersiz anahtar sayesinde aynı bildirim ikinci kez yazılmaz.
@@ -194,7 +230,8 @@ export async function dispatchInApp(db, { now = new Date(), limit = 200, log = (
   let created = 0;
   for (const row of rows) {
     try {
-      if (INAPP_RULES[row.type]) created += await fanOut(db, row);
+      if (row.type === DOC_EMAIL) created += await fanOutDocument(db, row);
+      else if (INAPP_RULES[row.type]) created += await fanOut(db, row);
       await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } });
     } catch (e) {
       log('uygulama içi bildirim dağıtılamadı', row.type, row.orderId, String(e?.message ?? e).slice(0, 200));

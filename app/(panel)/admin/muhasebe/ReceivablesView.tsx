@@ -5,7 +5,9 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus, unitOf } from '@/server/accounting/receivables.js';
-import { refreshFgoAction } from './actions';
+import { emailStates } from '@/server/documents/delivery.js';
+import { ConfirmButton } from '@/components/ConfirmButton';
+import { refreshFgoAction, resendDocEmailAction } from './actions';
 
 type Doc = Prisma.FgoDocumentGetPayload<{ include: {
   order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } };
@@ -19,6 +21,10 @@ type Share = { debt: number | null; rest: number | null; replaced: boolean };
 type Sums = Record<string, { total: number; paid: number; rest: number }>;
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
+// Müşteri e-postası (yalnızca TAKİP gönderir — karar 111): belgenin son e-posta işinin durumu
+type Mail = { state: 'SENT' | 'PENDING' | 'FAILED' | 'NO_EMAIL'; at: Date | null; error: string | null; to: string | null };
+const MAIL_TONE = { SENT: 'ok', PENDING: 'muted', FAILED: 'danger', NO_EMAIL: 'warn' } as const;
+const MAIL_ERRORS = ['NOT_FOUND', 'ALREADY_QUEUED', 'FORBIDDEN'];
 const FILTERS = ['hepsi', 'acik', 'odendi'] as const;
 const FILTER_KEY = { hepsi: 'all', acik: 'open', odendi: 'paid' } as const;
 const ERRORS = ['FGO_DISABLED', 'NO_KEY', 'BUSY'];
@@ -31,6 +37,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   const { t } = await getT();
   if (type === 'PROFILE_ORDER') await backfillDocuments(db);
   const [docs, sync] = await Promise.all([listDocuments(db, type) as Promise<Doc[]>, syncStatus(db)]);
+  const mails = await emailStates(db, docs) as Map<string, Mail>;
   const key = type === 'PROFILE_ORDER' ? 'profile' : 'glass';
   const path = type === 'PROFILE_ORDER' ? '/admin/muhasebe/profil' : '/admin/muhasebe/cam';
   const r = receivables(docs) as { shares: Map<string, Share>; sums: Sums };
@@ -72,6 +79,8 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
       </div>
       {sp.ok === 'refreshed' && <div className="alert alert-ok">{t('accounting.receivables.refreshed', { n: sp.n ?? '0', f: sp.f ?? '0' })}</div>}
       {sp.error && <div className="alert alert-error">{t(`accounting.receivables.errors.${ERRORS.includes(sp.error) ? sp.error : 'FGO_DISABLED'}` as MsgKey)}</div>}
+      {sp.ok === 'resent' && <div className="alert alert-ok">{t('accounting.receivables.email.resent')}</div>}
+      {sp.mailError && <div className="alert alert-error">{t(`accounting.receivables.email.errors.${MAIL_ERRORS.includes(sp.mailError) ? sp.mailError : 'NOT_FOUND'}` as MsgKey)}</div>}
 
       {/* Özet: para birimi başına (para birimleri toplanmaz) */}
       {curs.map((cur, i) => {
@@ -130,6 +139,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                     <th className="num">{t('accounting.receivables.col.rest')}</th>
                     <th>{t('accounting.receivables.col.status')}</th>
                     <th>{t('accounting.receivables.col.checked')}</th>
+                    <th>{t('accounting.receivables.col.email')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,6 +147,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                     const st = paymentStatus(d.total, d.paid);
                     const s = shareOf(d);
                     const partly = d.kind === 'PROFORMA' && !s.replaced && hasAdvance(g);
+                    const mail = mails.get(d.id) ?? null;
                     return (
                       <tr key={d.id} className={i === 0 ? 'grp-first' : undefined}>
                         <td>
@@ -173,6 +184,19 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                           {d.checkedAt && <span className="cell-note">{fmtDateTime(d.checkedAt).split(' ').pop()}</span>}
                           {d.checkError && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
                         </td>
+                        {/* Müşteri e-postası: durum + yalnızca e-postayı yeniden gönderme (FGO'da belge KESMEZ) */}
+                        <td className="doc-mail small" data-mail={mail?.state ?? 'NONE'}>
+                          {mail
+                            ? <span title={mail.error ?? mail.to ?? undefined}><Badge tone={MAIL_TONE[mail.state]}>{t(`accounting.receivables.email.${mail.state}` as MsgKey)}</Badge></span>
+                            : <span className="muted">{t('accounting.receivables.email.none')}</span>}
+                          {mail?.state !== 'PENDING' && (
+                            <form action={resendDocEmailAction} title={t('accounting.receivables.email.resendTitle')}>
+                              <input type="hidden" name="type" value={type} />
+                              <input type="hidden" name="docId" value={d.id} />
+                              <ConfirmButton message={t('accounting.receivables.email.resendConfirm', { doc: `${d.series}${d.number}` })}>{t('accounting.receivables.email.resend')}</ConfirmButton>
+                            </form>
+                          )}
+                        </td>
                       </tr>
                     );
                   }))}
@@ -181,7 +205,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
             </div>
           )}
         <p className="card-note">
-          {t('accounting.receivables.sumNote')}{' '}{type === 'GLASS_ORDER' && `${t('accounting.invoice.sumNote')} `}
+          {t('accounting.receivables.sumNote')}{' '}{type === 'GLASS_ORDER' && `${t('accounting.invoice.sumNote')} `}{t('accounting.receivables.email.note')}{' '}
           {sync.lastRun
             ? t('accounting.receivables.auto', { at: fmtDateTime(sync.lastRun), n: sync.checked ?? 0, f: sync.failed ?? 0 })
             : t('accounting.receivables.autoNever')}

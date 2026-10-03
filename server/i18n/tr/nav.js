@@ -26,5 +26,6 @@ export default {
   myOffers: 'Tekliflerim',
   settings: 'Ayarlar',
   myLoadings: 'Yükleme takvimim',
+  financeDocs: 'Mali belgeler',
   demoMail: 'Demo posta kutusu',
 };

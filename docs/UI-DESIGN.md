@@ -290,6 +290,16 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   confirmation and a `.btn-danger-solid` that is disabled until the box is ticked. Removed orders: `#silinen` card with a
   `details.removed-list` on the orders page (restore = `ConfirmButton primary`).
 
+## Financial documents (3.43.0)
+
+- Customer page "Documente financiare" (`/belgeler`): the standard `.page-head` + one `.card.card-flush` with a
+  `table.doc-table` (type, number, date, orders, total, currency, payment `Badge`, `.actions` with a `.btn` "Vezi PDF")
+  and a `.card-note`. Payment tones: unpaid = danger, partial = warn, paid = ok, replaced / unknown = muted. The row
+  reached from a notification (`#doc-<id>`) is highlighted with `tr:target` (primary-soft). No charts, no totals row.
+- Admin receivables table: one extra column `td.doc-mail` — e-mail state `Badge` (sent = ok, waiting = muted,
+  failed = danger, no e-mail = warn; error / recipient in the `title`) and, below it, a `.btn-link` "E-postayı tekrar
+  gönder" (`ConfirmButton`). No separate e-mail page.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

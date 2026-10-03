@@ -25,11 +25,12 @@ import { loadedDays } from '../loading/confirmation.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
-  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, reserveInvoiceNumber, ronPrice,
+  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, orderDetail, reserveInvoiceNumber, ronPrice,
 } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
-import { DOC_EMAIL, GLASS_FGO, proformaLines, sentOffer } from './billing.js';
+import { GLASS_FGO, proformaLines, sentOffer } from './billing.js';
+import { queueDocEmail } from '../documents/delivery.js';
 
 export const BATCH_FGO = 'FGO_BATCH';
 export const BATCH_KIND = 'PROFORMA';
@@ -360,9 +361,13 @@ export async function reviewFailedBatch(db, { batchId, action, actor, now = new 
  *   proforma satırı   — kaynak para biriminde birim fiyat (RON'a kayıtlı kurla çevrilir)
  *   fatura cam satırı — kayıtlı TVA hariç / dahil toplam (FGO'ya PretTotal; karar 63)
  *   avans, avans düşümü — kayıtlı RON birim fiyat (düşümde miktar −1)
+ * Kalemin FGO açıklaması (Continut[Descriere], karar 111): satırın KENDİ kaynak siparişi ("Comanda UMI7") — partinin
+ * kayıtlı sipariş listesinden; bütün siparişler her kaleme yazılmaz. Tek siparişe ait olmayan satırda (müşteri
+ * proformasının avansı, avans düşümü) açıklama yoktur.
  */
 export const batchFgoLines = (batch) => batch.lines.map((l) => {
-  const base = { code: '', name: l.name, unit: l.unit, qty: Number(l.quantity) };
+  const orderNo = l.orderId ? batch.orders.find((o) => o.orderId === l.orderId)?.orderNo ?? null : null;
+  const base = { code: '', name: l.name, unit: l.unit, qty: Number(l.quantity), ...(orderNo ? { detail: orderDetail(orderNo) } : {}) };
   if (l.ronUnit != null) return { ...base, ron: Number(l.ronUnit) };
   if (l.ronGross != null) return { ...base, net: Number(l.ronNet), gross: Number(l.ronGross) };
   return { ...base, eur: Number(l.unitPrice) };
@@ -431,11 +436,14 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
         extern: `LOT-${batch.id}`, text: batchText(batch), rateNote: false, number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
+      // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır (kayıt yazılamasa bile numara yinelenmez)
+      if (!proforma) await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: null }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       const created = await db.$transaction(async (tx) => {
         const d = await tx.fgoDocument.create({ data: { batchId: batch.id, kind: batch.kind, series: doc.series, number: doc.number, issuedAt: now, link: doc.link } });
         await tx.billingBatch.update({ where: { id: batch.id }, data: { status: 'ISSUED', issuedAt: now, lastError: null } });
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
-        await tx.notificationOutbox.create({ data: { type: DOC_EMAIL, payload: { docId: d.id } } });
+        // Müşteri e-postası: belge kaydıyla aynı işlemde, belge başına bir kez (server/documents/delivery.js)
+        await queueDocEmail(tx, { docId: d.id });
         const statuses = new Map((await tx.order.findMany({ where: { id: { in: batch.orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
         for (const o of batch.orders) {
           await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_ISSUED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: null, note: `${batch.kind}:${doc.series}${doc.number}` });
@@ -447,7 +455,6 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
         return d;
       });
       done++;
-      if (!proforma) await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: null }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
         await db.fgoDocument.update({ where: { id: created.id }, data: { total: st.total == null ? null : st.total.toFixed(2), paid: st.paid == null ? null : st.paid.toFixed(2), checkedAt: new Date() } });

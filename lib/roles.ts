@@ -51,6 +51,7 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/siparisler/yeni', key: 'nav.newOrder' },
     { href: '/teklifler', key: 'nav.myOffers' },
     { href: '/yuklemeler', key: 'nav.myLoadings' },
+    { href: '/belgeler', key: 'nav.financeDocs' },
     { href: '/ayarlar', key: 'nav.settings' },
   ],
 };

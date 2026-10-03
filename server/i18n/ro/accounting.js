@@ -236,6 +236,7 @@ export default {
       rest: "Rest",
       status: "Stare",
       checked: "Verificat FGO",
+      email: "E-mail client",
     },
     kind: {
       ADVANCE: "Factură de avans",
@@ -249,6 +250,23 @@ export default {
       PAID: "Plătit",
     },
     checkError: "ultima verificare a eșuat",
+    email: {
+      SENT: "Trimis",
+      PENDING: "În așteptare",
+      FAILED: "Eșuat",
+      NO_EMAIL: "Fără e-mail",
+      none: "netrimis",
+      resend: "Retrimite e-mailul",
+      resendTitle: "Retrimite doar e-mailul TAKİP către client. NU se emite un document nou în FGO; numerotarea și facturarea nu se schimbă.",
+      resendConfirm: "Retrimiteți clientului e-mailul documentului {doc}? Nu se emite un document nou în FGO.",
+      resent: "E-mailul a fost pus în coadă pentru retrimitere (nu s-a emis niciun document în FGO).",
+      note: "E-mailul către client este trimis doar de TAKİP (cu PDF atașat); FGO nu trimite e-mailuri clientului. Destinatar: e-mailul din fișa clientului.",
+      errors: {
+        NOT_FOUND: "Documentul nu a fost găsit.",
+        ALREADY_QUEUED: "E-mailul acestui document este deja în coadă.",
+        FORBIDDEN: "Nu aveți permisiunea pentru această acțiune.",
+      },
+    },
   },
   supplier: {
     title: "Situație furnizor",

@@ -395,10 +395,15 @@ dbTest('FGO durumu mevcut eşitlemeyle: ödenmedi / kısmi / ödendi; FGO\'da si
 
 dbTest('müşteriye e-posta: müşteri proforması firmanın e-postasına, kaynak sipariş numaralarıyla', async () => {
   const sent = [];
-  const res = await g.dispatchDocEmails(db, { transport: { sendMail: async (m) => { sent.push(m); return {}; } }, from: 'info@gkh.ro' });
+  // Sahte FGO (ağa çıkılmaz): bağlantı factura/print ile alınır, PDF oradan indirilir
+  const pdfFetch = async (url) => (String(url).endsWith('/factura/print')
+    ? new Response(JSON.stringify({ Success: true, Factura: { Link: 'https://www.fgo.ro/facturi/x.pdf' } }))
+    : new Response(Buffer.from('%PDF-1.4 sahte')));
+  const res = await g.dispatchDocEmails(db, { transport: { sendMail: async (m) => { sent.push(m); return {}; } }, from: 'info@gkh.ro', appUrl: 'https://t', secret: SECRET, fetchImpl: pdfFetch });
   assert.ok(res.sent >= 1);
   const mail = sent.find((m) => m.to === 'abc@lot.test');
   assert.ok(mail, 'ABC proforması gönderildi');
-  assert.match(mail.subject, /^Factură proformă PRF201 — comenzile ABC\d+, ABC\d+, ABC\d+$/);
-  assert.match(mail.text, /https:\/\/fgo\.example\/PRF201\.pdf/);
+  assert.match(mail.subject, /^Proformă PRF201 — comenzile ABC\d+, ABC\d+, ABC\d+$/);
+  assert.match(mail.text, /Comenzi: ABC\d+, ABC\d+, ABC\d+/);
+  assert.equal(mail.attachments[0].filename, 'PRF201.pdf');
 });

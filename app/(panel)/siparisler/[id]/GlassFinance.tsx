@@ -151,12 +151,14 @@ export async function GlassFinance({ order, t, sp }: {
         ) : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
       {lastJob?.status === 'FAILED' && <div className="alert alert-error">{t('glassBilling.failed', { error: lastJob.lastError ?? '—' })}</div>}
       {lastJob?.status === 'PENDING' && lastJob.lastError && <div className="alert alert-warn">{t('glassBilling.retry', { error: lastJob.lastError })}</div>}
-      {lastMail && (
+      {/* Müşteri e-postası (yalnızca TAKİP gönderir): kapatılmış iş yalnızca "e-posta yok" ise gösterilir */}
+      {lastMail && (lastMail.status !== 'SKIPPED' || lastMail.lastError === 'NO_EMAIL') && (
         <p className="small">
           <b>{t('glassBilling.mail')}:</b>{' '}
           {lastMail.status === 'SENT' ? t('glassBilling.mailSent', { date: fmtDateTime(lastMail.sentAt) })
             : lastMail.status === 'FAILED' ? <span className="danger">{t('glassBilling.mailFailed', { error: lastMail.lastError ?? '—' })}</span>
-              : t('glassBilling.mailPending')}
+              : lastMail.status === 'SKIPPED' ? <span className="danger">{t('accounting.receivables.email.NO_EMAIL')}</span>
+                : t('glassBilling.mailPending')}
         </p>
       )}
       <div className="row" style={{ marginTop: 8 }}>

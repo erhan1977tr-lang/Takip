@@ -26,6 +26,9 @@ export default {
     FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
     ADVANCE_REQUIRED: { title: 'Încasare pe proformă: este necesară factura de avans' },
     COMPENSATION_PENDING: { title: 'O sticlă de înlocuire așteaptă aprobarea dvs.' },
+    DOC_PROFORMA: { title: 'Proforma este disponibilă.', customer: 'Proforma este disponibilă.' },
+    DOC_ADVANCE: { title: 'Factura de avans este disponibilă.', customer: 'Factura de avans este disponibilă.' },
+    DOC_INVOICE: { title: 'Factura este disponibilă.', customer: 'Factura este disponibilă.' },
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',
@@ -35,5 +38,8 @@ export default {
     FGO_FAILED: '{error}',
     ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
     COMPENSATION_PENDING: '{qty} buc. · sursa {ref}',
+    DOC_PROFORMA: 'document {ref}',
+    DOC_ADVANCE: 'document {ref}',
+    DOC_INVOICE: 'document {ref}',
   },
 };
