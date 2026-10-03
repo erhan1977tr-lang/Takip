@@ -201,9 +201,13 @@ dbTest('varsayılan politika (BT): yeni müşterinin cam proforması günün BT 
 
 dbTest('günün BT kuru girilince kur bekleyen cam ve profil belgeleri hemen yeniden denenir', async () => {
   const later = new Date(Date.now() + 3_600_000);
-  const a = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', status: 'PENDING', availableAt: later, payload: { kind: 'PROFORMA' } } });
-  const p = await db.notificationOutbox.create({ data: { type: 'FGO_PROFORMA', status: 'PENDING', availableAt: later, payload: {} } });
+  // Kur bekleyen iş: önceki denemesi hatayla bitmiş (lastError dolu) ve yeniden deneme zamanı ileride
+  const a = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', status: 'PENDING', attempts: 1, lastError: 'Günün BT kuru girilmedi', availableAt: later, payload: { kind: 'PROFORMA' } } });
+  const p = await db.notificationOutbox.create({ data: { type: 'FGO_PROFORMA', status: 'PENDING', attempts: 1, lastError: 'Günün BT kuru girilmedi', availableAt: later, payload: {} } });
+  // O anda kesilmekte olan iş (işlem kirası: hata yazılmamış, availableAt ileride) öne alınmaz — 3.41.1
+  const leased = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', status: 'PENDING', attempts: 1, availableAt: later, payload: { kind: 'PROFORMA' } } });
   await saveDailyRate(db, { day: today(), rate: 5.1 }, actor(), writeAudit);
   for (const id of [a.id, p.id]) assert.ok((await db.notificationOutbox.findUnique({ where: { id } })).availableAt <= new Date());
-  await db.notificationOutbox.deleteMany({ where: { id: { in: [a.id, p.id] } } });
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: leased.id } })).availableAt.getTime(), later.getTime());
+  await db.notificationOutbox.deleteMany({ where: { id: { in: [a.id, p.id, leased.id] } } });
 });

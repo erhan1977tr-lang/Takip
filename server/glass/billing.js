@@ -23,6 +23,7 @@ import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js
 import {
   FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued,
 } from '../integrations/fgo.js';
+import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { glassLabel } from '../catalog/glass.js';
 
@@ -265,8 +266,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
   const settings = await getFgoSettings(db);
   let done = 0, failed = 0;
   for (const row of rows) {
-    const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
-    if (claimed.count === 0) continue;
+    // Atomik sahiplenme + işlem kirası: FGO'ya yalnızca sahiplenen işçi gider (server/integrations/fgo-claim.js)
+    if (!(await claimFgoJob(db, row, { now }))) continue;
     const attempt = row.attempts + 1;
     const kind = row.payload?.kind;
     try {

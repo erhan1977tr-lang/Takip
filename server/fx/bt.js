@@ -4,6 +4,7 @@
 //    otomatik alınamıyor: site sunucu isteklerini reddediyor ve yapısal bir resmî kaynak bulunamadı.
 // 2) BT'nin geliştirici dosyası (exchange.xml) okuyucusu yalnızca TANI içindir (scripts/fx-check.mjs → "takip kur"):
 //    bu dosyadaki kur "În unitățile BT" kurundan FARKLIDIR ve hiçbir belgenin kuru olarak kullanılmaz.
+import { WAITING_JOBS } from '../integrations/fgo-claim.js';
 
 const BROWSER_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
@@ -171,7 +172,8 @@ export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
     const value = { day, rate };
     await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
     await writeAudit(tx, { action: 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: actor.id, details: value }, actor);
-    // Kur bekleyen proformalar hemen denensin (işçi bir dakika içinde keser)
-    await tx.notificationOutbox.updateMany({ where: { type: { in: ['FGO_PROFORMA', 'FGO_GLASS'] }, status: 'PENDING' }, data: { availableAt: new Date() } });
+    // Kur bekleyen proformalar hemen denensin (işçi bir dakika içinde keser). Yalnızca hata nedeniyle bekleyenler:
+    // o anda kesilmekte olan (işlem kirasındaki) iş öne alınmaz — yoksa ikinci bir işçi aynı belgeyi FGO'ya gönderebilirdi.
+    await tx.notificationOutbox.updateMany({ where: { type: { in: ['FGO_PROFORMA', 'FGO_GLASS'] }, status: 'PENDING', ...WAITING_JOBS }, data: { availableAt: new Date() } });
   });
 }

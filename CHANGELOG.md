@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.41.1 — 03.10.2026
+
+- **FGO: aynı belge iki kez gönderilemez (işçiler arası yarış kapatıldı)**: bir FGO işi kesilirken (istek sürerken) kuyruğu
+  okuyan ikinci bir işçi — arka plan işçisi ile düğmeye basınca yapılan anında deneme — aynı işi alıp FGO'ya ikinci
+  isteği gönderebiliyordu. Artık iş tek bir veritabanı güncellemesiyle sahiplenilir ve aynı anda 10 dakikalık "işlem
+  kirası" alır: kira sürerken başka hiçbir işçi işi göremez. Cam (sipariş başına), müşteri partisi ve profil belgeleri
+  aynı kuralı kullanır (`server/integrations/fgo-claim.js`).
+- İşçi yarıda kalırsa iş kira dolunca yeniden denenir; hata sonrası bekleme süreleri, deneme sınırı, FGO'ya giden
+  `IdExtern` ve veritabanındaki tekrar engelleri değişmedi. Kuyruk yapısı ve veritabanı şeması değişmedi.
+- Günün BT kuru girilince yalnızca kur bekleyen (hata almış) işler öne alınır; o anda kesilmekte olan işe dokunulmaz.
+
 ## 3.41.0 — 03.10.2026
 
 - **Bildirimler (zil)**: üst çubukta zil ve okunmamış sayacı (1, 3, 9 … 99+). Listede okunmamış bildirimler belirgin;

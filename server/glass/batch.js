@@ -27,6 +27,7 @@ import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js
 import {
   FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, reserveInvoiceNumber, ronPrice,
 } from '../integrations/fgo.js';
+import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { DOC_EMAIL, GLASS_FGO, proformaLines, sentOffer } from './billing.js';
 
@@ -400,8 +401,8 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
   const settings = await getFgoSettings(db);
   let done = 0, failed = 0;
   for (const row of rows) {
-    const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
-    if (claimed.count === 0) continue;
+    // Atomik sahiplenme + işlem kirası: FGO'ya yalnızca sahiplenen işçi gider (server/integrations/fgo-claim.js)
+    if (!(await claimFgoJob(db, row, { now }))) continue;
     const attempt = row.attempts + 1;
     const batchId = String(row.payload?.batchId ?? '');
     const skip = (why) => db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: why } });

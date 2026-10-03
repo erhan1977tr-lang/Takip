@@ -10,6 +10,7 @@ import { getEnv } from '../env.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxDocumentText, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import { FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoStatus, fgoReady, getFgoSettings, missingBilling, reserveInvoiceNumber, afterInvoiceIssued, ronTotal, fgoUnit } from '../integrations/fgo.js';
+import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from './dates.js';
 import { FGO_INVOICE, FGO_PROFORMA, fgoActor, runProfileAction } from './transitions.js';
 
@@ -58,8 +59,8 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
   const settings = await getFgoSettings(db);
   let done = 0, failed = 0;
   for (const row of rows) {
-    const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
-    if (claimed.count === 0) continue;
+    // Atomik sahiplenme + işlem kirası: FGO'ya yalnızca sahiplenen işçi gider (server/integrations/fgo-claim.js)
+    if (!(await claimFgoJob(db, row, { now }))) continue;
     const attempt = row.attempts + 1;
     const skip = (why) => db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: why } });
     try {
