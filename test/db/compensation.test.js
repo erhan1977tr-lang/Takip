@@ -18,7 +18,8 @@ const { orderScope } = await import('../../server/orders/scope.js');
 const n = await import('../../server/notifications/inapp.js');
 
 const SECRET = 't'.repeat(40);
-let db, A, B, U = {}, S, S2, NL, D1, F, R, R2, BF, lineG1, lineG2;
+const U = {};
+let db, A, B, S, S2, NL, D1, F, R, R2, BF, lineG1, lineG2;
 let net = 0;
 const realFetch = globalThis.fetch;
 const act = (u) => ({ id: u.id, role: u.appRole, ip: '127.0.0.1', customerId: u.customerId });
