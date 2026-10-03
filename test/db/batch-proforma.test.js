@@ -17,8 +17,9 @@ const SECRET = 'b'.repeat(40);
 const TZ = 'Europe/Bucharest';
 let db, admin, abc, other, seq = 0;
 const actor = (role = 'ADMIN') => ({ id: admin.id, role, ip: '127.0.0.1' });
-// Yükleme günleri gün ortası (12:00 UTC): Romanya günü ile UTC günü aynı
-const noon = (offset) => new Date(`${new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10)}T12:00:00Z`);
+// Yükleme günleri gün ortası (12:00 UTC): Romanya günü ile UTC günü aynı. "Bugün" Romanya gününden alınır — UTC gününden
+// alınırsa 21:00–24:00 UTC arasında (Romanya'da gece yarısından sonra) "bugün" dünü gösterir ve test saate bağlı kalır.
+const noon = (offset) => new Date(`${dayKey(new Date(Date.now() + offset * 86_400_000))}T12:00:00Z`);
 const D1 = noon(10), D2 = noon(17), D3 = noon(24);
 const [K1, K2, K3] = [D1, D2, D3].map((d) => dayKey(d));
 const fgoOn = () => saveFgoSettings(db, {
