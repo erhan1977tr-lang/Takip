@@ -2,6 +2,8 @@
 // İstemci bileşenine bu ad alanı (m.offer) prop olarak gider.
 export default {
   free: 'bedelsiz',
+  // TELAFİ satırı rozeti (kırık / telafi camı — Aşama 9; yalnızca iç ekip)
+  telafi: 'TELAFİ',
   // Tablo sütunları (düzenleyicide alanların aria-label'ı da bunlardır)
   cols: {
     description: 'Açıklama',

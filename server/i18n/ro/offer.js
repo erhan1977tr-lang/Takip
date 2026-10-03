@@ -2,6 +2,7 @@
 // Componenta client primește acest spațiu de nume (m.offer) ca prop.
 export default {
   free: 'gratuit',
+  telafi: 'ÎNLOCUIRE',
   // Coloanele tabelului (în editor sunt și aria-label-urile câmpurilor)
   cols: {
     description: 'Descriere',

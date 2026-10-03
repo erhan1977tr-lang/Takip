@@ -832,6 +832,27 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .guest-assign > summary { cursor: pointer; font-size: var(--fs-meta); font-weight: 600; color: var(--primary); padding: 4px 0; }
 .guest-assign form { margin-top: 6px; align-items: flex-end; }
 
+/* Kırık / telafi camı (karar 108): teklif tablosunun altındaki form, "Önemli kararlar" kartı, siparişi sil */
+.comp-choice { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+.comp-choice legend { padding: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+.comp-choice .chip { margin: 0; }
+.comp-dest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--divider); }
+.comp-dest:first-of-type { border-top: 0; padding-top: 0; }
+.comp-dest label { margin: 0; }
+.comp-dest select { width: auto; min-width: 240px; max-width: 100%; }
+.comp-dest .hint { flex-basis: 100%; margin: 0; }
+.comp-summary { margin-top: 4px; padding: 12px 14px; border: 1px solid var(--primary-border); border-radius: 10px; background: var(--primary-soft); }
+.comp-summary .sub-title { margin-top: 0; }
+.comp-summary .kv td { border-bottom-color: var(--primary-border); }
+.comp-confirm { margin-top: 12px; font-weight: 600; }
+.comp-entry { margin-top: 10px; }
+.comp-entry .row { gap: 6px 8px; }
+.comp-entry form { margin-top: 8px; }
+.comp-entry input[type='text'], .comp-entry input:not([type]) { width: auto; }
+.offer-view td.actions .btn-link { white-space: nowrap; }
+.remove-order .check { align-items: flex-start; }
+.removed-list > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+
 /* muhasebe (tahsilat, yükleme kârlılığı, fabrika cari hesabı) */
 /* Liste kartının başlığı altındaki açıklama ve altındaki dipnot */
 .card-sub { margin: -6px 0 0; padding: 0 20px 14px; font-size: var(--fs-sm); color: var(--muted); }

@@ -19,6 +19,7 @@ import { parseDateOnly } from '../orders/rules.js';
 import { dayKey } from '../orders/loading.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { NOT_LOADED_REASONS, effectiveItems, itemKey, shipDayDate, snapshotOfItem } from './confirmation.js';
+import { compensatedByScope } from './compensated.js';
 
 export { NOT_LOADED_REASONS };
 const dayOf = (d) => new Date(d).toISOString().slice(0, 10);
@@ -30,7 +31,7 @@ const LOCK = 'loading-confirmation'; // yükleme onayıyla aynı kilit: onay ve 
  * @typedef {{
  *   itemId: string, key: string, orderId: string, orderNo: string, title: string | null, customerId: string, customerName: string,
  *   glass: string, glassRo: string | null, enMm: number | null, boyMm: number | null,
- *   planned: number, loaded: number, remaining: number, free: number, m2: number, reason: string | null, note: string | null,
+ *   planned: number, loaded: number, remaining: number, free: number, compensated: number, m2: number, reason: string | null, note: string | null,
  *   origin: string | null, blocked: 'ORDER_CANCELLED' | 'ORDER_ON_HOLD' | null, replans: ReplanInfo[],
  * }} NotLoadedRow
  */
@@ -56,6 +57,7 @@ async function replansByScope(db, confirmationId) {
  * Onaylı günün yüklenmeyen kapsamları — GEÇERLİ durumla (düzeltmeler uygulanmış): sipariş, gerçek müşteri, cam, o onayda
  * planlanan / yüklenen / kalan adet, neden, aktarımları (gün, adet; onaylandıysa kaçının yüklendiği) ve henüz
  * aktarılmamış serbest kalan (free). origin: kalem zaten aktarılmış bir kalansa geldiği yükleme günü.
+ * compensated: bu kapsamın yerine açılmış telafi camı adedi (karar 109) — serbest kalandan düşülür (yeniden aktarılmaz).
  * @param {any} db  @param {string} day
  * @returns {Promise<NotLoadedRow[]>}
  */
@@ -73,6 +75,7 @@ export async function notLoadedOfDay(db, day) {
   if (!conf) return [];
   const eff = effectiveItems(conf.items);
   const replans = await replansByScope(db, conf.id);
+  const comps = await compensatedByScope(db, conf.id);
   return eff.filter((i) => i.status === 'NOT_LOADED' && i.quantity > 0).map((i) => {
     const key = itemKey(i);
     // Aynı kapsamın yüklenen kısmı (satır LOADED + NOT_LOADED olarak bölünmüştür)
@@ -84,7 +87,8 @@ export async function notLoadedOfDay(db, day) {
     return {
       itemId: i.id, key, orderId: i.orderId, orderNo: i.order.orderNo, title: i.order.title ?? null, customerId: i.customerId, customerName: i.customer.name,
       glass: i.description, glassRo: i.descriptionRo ?? null, enMm: i.enMm ?? null, boyMm: i.boyMm ?? null,
-      planned: loaded + i.quantity, loaded, remaining: i.quantity, free: Math.max(0, i.quantity - list.reduce((s, r) => s + r.quantity, 0)),
+      planned: loaded + i.quantity, loaded, remaining: i.quantity, compensated: comps.get(key) ?? 0,
+      free: Math.max(0, i.quantity - list.reduce((s, r) => s + r.quantity, 0) - (comps.get(key) ?? 0)),
       m2: Number(i.m2), reason: i.notLoadedReason ?? null, note: i.notLoadedNote ?? null,
       origin: i.replan ? dayOf(i.replan.fromDay) : null,
       blocked: i.order.status === 'IPTAL' ? 'ORDER_CANCELLED' : i.order.onHold ? 'ORDER_ON_HOLD' : null,
@@ -134,8 +138,9 @@ export async function replanNotLoaded(db, { itemId, day, quantity = null, replac
       if (current?.status === 'CONFIRMED') return { ok: false, code: 'ALREADY_LOADED' };
       const others = replans.filter((r) => r.id !== current?.id);
       if (others.some((r) => dayOf(r.shipDay) === day) || (current && dayOf(current.shipDay) === day)) return { ok: false, code: 'ALREADY_PLANNED' };
-      // Kapasite: geçerli yüklenmeyen adet − vazgeçilmemiş (etkin + onaylanmış) aktarımlar
-      const free = notLoaded - others.reduce((n, r) => n + r.quantity, 0);
+      // Kapasite: geçerli yüklenmeyen adet − vazgeçilmemiş (etkin + onaylanmış) aktarımlar − yerine açılmış telafi camları
+      // (karar 109: telafisi açılan adet ayrıca aktarılmaz; aynı cam iki kez üretilmez)
+      const free = notLoaded - others.reduce((n, r) => n + r.quantity, 0) - ((await compensatedByScope(tx, item.confirmationId)).get(key) ?? 0);
       if (!(free > 0)) return { ok: false, code: 'NO_REMAINDER' };
       const wanted = quantity == null || quantity === '' ? (current ? current.quantity : free) : Number(String(quantity).trim());
       if (!Number.isInteger(wanted) || wanted <= 0 || wanted > free) return { ok: false, code: 'BAD_QUANTITY' };

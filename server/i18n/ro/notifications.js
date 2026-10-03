@@ -25,6 +25,7 @@ export default {
     ACCOUNTING_ACTION: { title: 'Acțiune contabilă necesară: factura nu corespunde încărcării corectate' },
     FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
     ADVANCE_REQUIRED: { title: 'Încasare pe proformă: este necesară factura de avans' },
+    COMPENSATION_PENDING: { title: 'O sticlă de înlocuire așteaptă aprobarea dvs.' },
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',
@@ -33,5 +34,6 @@ export default {
     ACCOUNTING_ACTION: 'încărcarea din {date} · factura {ref}',
     FGO_FAILED: '{error}',
     ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
+    COMPENSATION_PENDING: '{qty} buc. · sursa {ref}',
   },
 };

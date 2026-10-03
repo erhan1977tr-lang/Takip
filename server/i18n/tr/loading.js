@@ -285,7 +285,7 @@ export default {
   },
   // Fiziksel sandık: sipariş başka müşterinin sandığında gidebilir; ticari sahiplik değişmez (karar 103)
   guest: {
-    title: 'Fiziksel sandık — başka müşterinin sandığı',
+    title: 'Özel durum — başka müşterinin sandığına ekle',
     intro: 'Sipariş, aynı yükleme gününde başka bir müşterinin sandığında gidebilir. Bu yalnızca fiziksel yerleşimdir: siparişin müşterisi, teklifi, proforması, faturası ve sandık parası değişmez.',
     badge: '#{no} · {host}',
     badgeTitle: 'Fiziksel sandık: Sandık {no} — {host}',
@@ -294,7 +294,7 @@ export default {
     order: 'Sipariş',
     crate: 'Sandık',
     option: 'Sandık {no} — {host}',
-    assign: 'Bu sandığa koy',
+    assign: 'Başka müşterinin sandığına ekle',
     remove: 'Çıkar',
     assignDialog: 'Sipariş seçilen sandığa fiziksel olarak yerleştirilsin mi? Siparişin müşterisi ve faturası değişmez.',
     removeDialog: 'Sipariş bu sandıktan çıkarılsın mı? Ticari hiçbir şey değişmez.',

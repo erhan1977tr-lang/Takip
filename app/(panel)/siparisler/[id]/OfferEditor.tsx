@@ -13,7 +13,7 @@ import { ExcelImport } from './ExcelImport';
  * listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir.
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
-type Line = { key: number; id: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string };
+type Line = { key: number; id: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
@@ -229,6 +229,7 @@ export function OfferEditor(props: {
                     {/* Satırın işlemleri: açıklamanın hemen altında (ek işlem satırı ekle, bedelsiz yap) */}
                     <div className="line-actions">
                       {l.free && <span className="badge badge-ok">{m.free}</span>}
+                      {l.comp && <span className="badge badge-warn">{m.telafi}</span>}
                       {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
                       {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
                       <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>

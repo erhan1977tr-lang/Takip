@@ -154,7 +154,9 @@ test('yönetici: sipariş başka müşterinin sandığına konur — müşterisi
   await guestBox.locator('.guest-assign > summary').click();
   await guestBox.locator('select[name=orderId]').selectOption(orderU);
   await guestBox.locator('select[name=crateId]').selectOption(crateId);
-  await guestBox.getByRole('button', { name: 'Bu sandığa koy' }).click();
+  // "Özel durum" (yalnızca yönetici): başka müşterinin sandığına ekle
+  await expect(guestBox.locator('.guest-assign > summary')).toContainText('Özel durum');
+  await guestBox.getByRole('button', { name: 'Başka müşterinin sandığına ekle' }).click();
   await expect(page).toHaveURL(/sandik=assigned/);
   // Sipariş satırında fiziksel sandık + ev sahibi; ev sahibinin bölümünde misafir sipariş
   const orderRow = page.locator('#gun tr.sub', { hasText: 'UNS7701' }).first();

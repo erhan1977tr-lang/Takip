@@ -7,12 +7,14 @@ import { customerSummaryText, profileCustomerText, profileStageText, slaText } f
 import { rich } from '@/lib/rich';
 import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { fmtDate, fmtMonth, isoDay } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtMonth, isoDay } from '@/lib/format';
 import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
 import { approvedDrawingList, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
 import { deleteDraftAction } from './yeni/actions';
+import { ConfirmButton } from '@/components/ConfirmButton';
+import { restoreOrderAction } from './[id]/compensation-actions';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -384,6 +386,55 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           <InternalTable user={user} rows={rows} empty={t('orders.internal.sections.none')} />
         </Section>
       )}
+      {userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} />}
     </>
+  );
+}
+
+/**
+ * Silinen siparişler (yalnızca yönetici; karar 110): olağan listelerde görünmezler (sipariş kapsamı silinmişleri dışlar).
+ * Burada yalnızca geri yükleme için listelenir — ayrı bir "geri dönüşüm kutusu" ekranı yoktur.
+ */
+async function RemovedOrders({ sp }: { sp: SP }) {
+  const { t, m } = await getT();
+  const rows = await db.order.findMany({
+    where: { removedAt: { not: null } },
+    orderBy: { removedAt: 'desc' },
+    take: 50,
+    select: { id: true, orderNo: true, title: true, removedAt: true, customer: { select: { name: true } }, removedBy: { select: { name: true } }, _count: { select: { fgoDocuments: true } } },
+  });
+  const errors = m.compensation.remove.errors;
+  const error = sp.silHata ? errors[sp.silHata as keyof typeof errors] ?? errors.NOT_FOUND : null;
+  if (rows.length === 0 && !sp.silindi && !error) return null;
+  return (
+    <div className="card" id="silinen">
+      {sp.silindi && <div className="alert alert-ok">{t('compensation.remove.ok', { order: sp.silindi })}</div>}
+      {error && <div className="alert alert-error">{error}</div>}
+      <details className="removed-list" open={!!sp.silindi || !!error}>
+        <summary>{t('compensation.remove.listTitle')} <span className="badge">{rows.length}</span></summary>
+        <p className="muted small">{t('compensation.remove.listIntro')}</p>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>{t('compensation.remove.colOrder')}</th><th>{t('compensation.remove.colCustomer')}</th><th>{t('compensation.remove.colWhen')}</th><th>{t('compensation.remove.colWho')}</th><th /></tr></thead>
+            <tbody>
+              {rows.map((o) => (
+                <tr key={o.id} data-removed={o.orderNo}>
+                  <td><span className="mono">{o.orderNo}</span>{o.title && <div className="small muted">{o.title}</div>}</td>
+                  <td>{o.customer.name}</td>
+                  <td className="nowrap">{fmtDateTime(o.removedAt)}{o._count.fgoDocuments > 0 && <div className="small muted">{t('compensation.remove.docs', { n: o._count.fgoDocuments })}</div>}</td>
+                  <td>{o.removedBy?.name ?? '—'}</td>
+                  <td className="actions">
+                    <form action={restoreOrderAction}>
+                      <input type="hidden" name="id" value={o.id} />
+                      <ConfirmButton primary message={t('compensation.remove.restoreConfirm')}>{t('compensation.remove.restore')}</ConfirmButton>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
   );
 }

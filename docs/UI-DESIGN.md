@@ -273,6 +273,23 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   opens the list. One toast per poll batch; auto-hides after 9 s. Never use it for flash messages — those stay `.alert`.
 - Tab title prefix "(n) " is added by the component; pages keep their own `<title>`.
 
+## Compensation, decisions card, order removal (3.42.0)
+
+- Offer table (`.offer-view`): last column `td.actions` with a `.btn-link` "Kırık / Telafi" on physical glass rows only;
+  `badge-warn` "TELAFİ" next to the description of compensation lines (internal users; also in the offer editor's
+  `.line-actions`).
+- Compensation form: one `.card.comp-form` (`#telafi`) directly under the offer table — no modal, no wizard pages.
+  `.grid-2` (glass select + quantity), `.comp-history` (`.alert-warn`, earlier compensations of the line), price and
+  destination as `fieldset.comp-choice` (price = `.chip` radios, destination = two `.comp-dest` rows), then
+  `.comp-summary` (primary-soft box with a `.kv` table) and the `.comp-confirm` checkbox; the primary button stays
+  disabled until the checkbox is ticked.
+- "Önemli kararlar" card (`#kararlar`): `.section-head` with the create button; each decision is a `.note.comp-entry`
+  (order no, TELAFİ badge, quantity, status badge; source, prices, destination, creator / date in `.small` / `.meta`).
+  A pending decision shows the Admin approve / reject forms inline.
+- "Siparişi sil" (`#sil`, `.remove-order`, Admin only): a `.btn-danger` opens the section; consequences, a `.check`
+  confirmation and a `.btn-danger-solid` that is disabled until the box is ticked. Removed orders: `#silinen` card with a
+  `details.removed-list` on the orders page (restore = `ConfirmButton primary`).
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
@@ -284,5 +301,4 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
 - Old-system features that do not exist here and were not faked: "Hesabım" button,
   per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9),
-  offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle"),
-  "Özel durum" and "Siparişi sil".
+  offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle").

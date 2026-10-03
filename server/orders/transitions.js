@@ -163,8 +163,9 @@ function latestDrawing(h) {
 // Her işlem h üzerinden çalışır: h.set(veri) siparişi günceller, h.event(kod, not) geçmişe yazar,
 // h.sla = true ise sonda SLA yeniden hesaplanır, h.auto = true ise otomatik üretim denenir.
 
-const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice'];
-const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, sortOrder: i });
+// compensationId: TELAFİ satırının işareti (Aşama 9) — satır düzenlenince / teklifin yeni sürümü açılınca satırla taşınır
+const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId'];
+export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, sortOrder: i });
 const priceNum = (v) => (v == null || v === '' ? null : Number(v));
 
 /**
@@ -183,10 +184,14 @@ function mergePrices(lines, existing, admin) {
   const byId = new Map(existing.map((l) => [l.id, l]));
   return lines.map((l) => {
     const old = l.id ? byId.get(l.id) : undefined;
+    // Bedelsiz TELAFİ satırı (karar 108): müşteriye bedelsizdir ama fabrika maliyeti durur — satış formu bedelsiz satırın
+    // fiyatını 0 gönderir; kayıtlı maliyet korunur (bedelsiz telafi kârlılıkta maliyetiyle görünmeli).
+    const keepCost = !admin && old?.compensationId && l.free;
     return {
       ...l,
-      unitPrice: admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : l.unitPrice,
+      unitPrice: admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : keepCost ? old.unitPrice : l.unitPrice,
       offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
+      compensationId: old?.compensationId ?? null,
     };
   });
 }
@@ -209,7 +214,7 @@ async function writeLines(tx, offerId, lines, existing) {
 }
 
 /** Satış tutarı ve müşteri tutarı (sunucuda hesaplanır; tarayıcıdan gelen tutara güvenilmez). */
-function amounts(lines) {
+export function amounts(lines) {
   const plain = lines.map((l) => ({ ...l, unitPrice: String(l.unitPrice ?? 0) }));
   return { amount: offerTotals(plain).amount.toFixed(2), offerAmount: offerTotals(atOfferPrice(lines)).amount.toFixed(2) };
 }

@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { fmtDateTime, fmtNum } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
 
 type Diff = { line: number; kind: string; description: string; listPrice: number; unitPrice: number; free: boolean };
-type Details = { orderNo?: string; currency?: string; lines?: Diff[]; error?: string };
+/** Telafi camı uyarıları (karar 108): glass = adet × cam, tier = kararın fiyat kademesi, normal / price = o kademedeki fiyatlar */
+type Details = { orderNo?: string; currency?: string; lines?: Diff[]; error?: string; compensationId?: string; glass?: string; tier?: 'CUSTOMER' | 'SALES'; mode?: string; normal?: number | null; price?: number | null; destOrderNo?: string; day?: string };
 
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -38,6 +39,17 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
             </li>
           ))}
           {d.error && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
+          {d.compensationId && (
+            <li>{t('pricing.alerts.comp', { glass: d.glass ?? '', dest: d.destOrderNo ?? '—', date: d.day ? fmtDate(`${d.day}T12:00:00Z`) : '—' })}</li>
+          )}
+          {d.compensationId && a.type === 'COMPENSATION_PRICE' && (
+            <li>
+              {t('pricing.alerts.compPrice', {
+                normal: d.normal == null ? '—' : `${fmtNum(d.normal)} ${d.currency ?? ''}/m²`,
+                price: d.mode === 'FREE' || d.price === 0 ? t('pricing.alerts.compFree') : d.price == null ? '—' : `${fmtNum(d.price)} ${d.currency ?? ''}/m²`,
+              })}{d.tier ? ` (${t(`pricing.alerts.compTier.${d.tier}` as MsgKey)})` : ''}
+            </li>
+          )}
         </ul>
       </>
     );
@@ -59,15 +71,20 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               <tbody>
                 {open.map((a) => (
                   <tr key={a.id}>
-                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}#teklif`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}</td>
+                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}</td>
                     <td>{what(a)}</td>
                     <td>{a.createdBy?.name ?? '—'}</td>
                     <td className="nowrap">{fmtDateTime(a.createdAt)}</td>
                     <td className="actions">
-                      <form action={resolveAlertAction}>
-                        <input type="hidden" name="alertId" value={a.id} />
-                        <button className="btn">{t('pricing.alerts.resolve')}</button>
-                      </form>
+                      {a.type === 'COMPENSATION_PENDING' && a.order ? (
+                        // Onay bekleyen telafi "Gördüm" ile kapanmaz: karar siparişin "Önemli kararlar" kartında verilir
+                        <Link className="btn btn-primary" href={`/siparisler/${a.order.id}#kararlar`}>{t('pricing.alerts.compOpen')}</Link>
+                      ) : (
+                        <form action={resolveAlertAction}>
+                          <input type="hidden" name="alertId" value={a.id} />
+                          <button className="btn">{t('pricing.alerts.resolve')}</button>
+                        </form>
+                      )}
                     </td>
                   </tr>
                 ))}

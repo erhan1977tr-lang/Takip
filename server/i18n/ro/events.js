@@ -63,6 +63,12 @@ export default {
   REPLAN_CANCELLED: { label: 'S-a renunțat la replanificarea sticlei neîncărcate (buc. · zi)' },
   GUEST_CRATE: { label: 'Amplasată în lada altui client (fizic; ladă · zi)' },
   GUEST_CRATE_REMOVED: { label: 'Scoasă din lada altui client (ladă)' },
+  COMPENSATION: { label: 'S-a deschis o sticlă spartă / de înlocuire' },
+  COMPENSATION_ADDED: { label: 'S-a adăugat sticla de înlocuire' },
+  COMPENSATION_PENDING: { label: 'Sticla de înlocuire așteaptă aprobarea administratorului' },
+  COMPENSATION_REJECTED: { label: 'Decizia de înlocuire a fost respinsă' },
+  REMOVED: { label: 'Comanda a fost ștearsă (scoasă din ecranele obișnuite; înregistrările rămân)' },
+  RESTORED: { label: 'Comanda ștearsă a fost restaurată' },
   COST_CORRECTED: { label: 'Costul de fabrică lipsă a fost introdus (rând)' },
   FGO_RETRY: {
     label: "Se reîncearcă în FGO",

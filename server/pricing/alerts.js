@@ -5,7 +5,9 @@
 import { writeAudit } from '../orders/journal.js';
 import { priceOverrides } from './tables.js';
 
-export const ALERT_TYPES = ['PRICE_OVERRIDE'];
+// COMPENSATION_PRICE: telafi camının fiyatı normalden farklı (Bedelsiz / değiştirilmiş) · COMPENSATION_PENDING: satışın
+// telafi kararı yöneticinin onayını bekliyor (server/orders/compensation.js — Aşama 9)
+export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING'];
 
 /**
  * Satışçı teklifi yöneticiye gönderirken çağrılır (iş akışı işleminin içinde, aynı tx).

@@ -25,6 +25,7 @@ export default {
     ACCOUNTING_ACTION: { title: 'Muhasebe işlemi gerekli: fatura düzeltilmiş yüklemeyle uyuşmuyor' },
     FGO_FAILED: { title: "FGO'da belge kesilemedi" },
     ADVANCE_REQUIRED: { title: 'Proformaya tahsilat geldi: avans faturası gerekli' },
+    COMPENSATION_PENDING: { title: 'Telafi camı onayınızı bekliyor' },
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',
@@ -33,5 +34,6 @@ export default {
     ACCOUNTING_ACTION: '{date} yüklemesi · fatura {ref}',
     FGO_FAILED: '{error}',
     ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
+    COMPENSATION_PENDING: '{qty} adet · kaynak {ref}',
   },
 };

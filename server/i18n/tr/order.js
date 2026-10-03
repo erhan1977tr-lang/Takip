@@ -36,6 +36,7 @@ export default {
     offer_checked: 'Teklif yeni çizime göre güncel olarak işaretlendi.',
     undo_drawing: 'Çizime gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
     undo_no_drawing: 'Teklife gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
+    restored: 'Sipariş geri yüklendi; silinmeden önceki durumuna döndü.',
   },
   // İşlem adları: "Sıradaki adım" satırı ve aynı adlı düğmeler (anahtar = işlem kodu)
   steps: {

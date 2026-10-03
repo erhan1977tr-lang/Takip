@@ -154,7 +154,7 @@ export async function createNotifications(db, { key, type, users, orderId = null
   return r.count;
 }
 
-const ORDER = { id: true, orderNo: true, orderTypeCode: true, customerId: true, assignedDrawerId: true, actualShipDate: true, estimatedShipDate: true, customer: { select: { name: true } } };
+const ORDER = { id: true, orderNo: true, orderTypeCode: true, customerId: true, assignedDrawerId: true, actualShipDate: true, estimatedShipDate: true, removedAt: true, customer: { select: { name: true } } };
 const shipDay = (o) => {
   const d = o.actualShipDate ?? o.estimatedShipDate;
   return d ? new Date(d).toISOString().slice(0, 10) : null;
@@ -164,7 +164,8 @@ const shipDay = (o) => {
 async function fanOut(db, row) {
   const rule = INAPP_RULES[row.type];
   const order = row.orderId ? await db.order.findUnique({ where: { id: row.orderId }, select: ORDER }) : null;
-  if (!rule || !order) return 0;
+  // Silinmiş siparişin (karar 110) kuyrukta kalmış olayı bildirime dönüşmez
+  if (!rule || !order || order.removedAt) return 0;
   const payload = obj(row.payload);
   const users = await recipientsOf(db, rule.to(order, payload), order, { actorId: rule.includeActor ? null : payload.actorId ?? null });
   // Metne yalnızca gereken, herkesin görebileceği değerler girer (gün, adet, belge no) — tutar ve not girmez

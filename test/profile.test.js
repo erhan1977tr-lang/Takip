@@ -205,7 +205,10 @@ test('depo e-postası: Romence konu ve bağlantı; alıcı listesi', () => {
 });
 
 test('kapsam: satış ve çizim profil siparişlerini hiç görmez', () => {
-  assert.deepEqual(orderScope({ appRole: 'SATIS' }), { orderType: { usesSales: true } });
-  assert.deepEqual(orderScope({ appRole: 'CIZIM' }), { drawingTrack: { not: 'YOK' }, orderType: { usesDrawing: true } });
-  assert.deepEqual(orderScope({ appRole: 'DENETIMCI' }), {});
+  // Silinmiş sipariş (removedAt) hiçbir role görünmez (karar 110)
+  assert.deepEqual(orderScope({ appRole: 'SATIS' }), { removedAt: null, orderType: { usesSales: true } });
+  assert.deepEqual(orderScope({ appRole: 'CIZIM' }), { removedAt: null, drawingTrack: { not: 'YOK' }, orderType: { usesDrawing: true } });
+  assert.deepEqual(orderScope({ appRole: 'DENETIMCI' }), { removedAt: null });
+  assert.deepEqual(orderScope({ appRole: 'ADMIN' }), { removedAt: null });
+  assert.deepEqual(orderScope({ appRole: 'MUSTERI', customerId: 'c1' }), { removedAt: null, customerId: 'c1' });
 });

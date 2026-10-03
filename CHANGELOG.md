@@ -4,6 +4,33 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.42.0 — 03.10.2026
+
+- **Kırık / telafi camı**: müşteriye gönderilmiş teklifin cam satırında **"Kırık / Telafi"** düğmesi (CNC, delik ve sandık
+  parası satırlarında yok). Tek kısa form: cam → adet → fiyat → hedef → özet ve açık onay ("Yukarıdaki kararı
+  onaylıyorum…"). Kaynak sipariş ve teklifi **değişmez**; telafi camı (ölçü, ağırlık, ona ait CNC / delik) kaynaktan
+  kopyalanır. Yüklenmeyen cam kaydından bağımsızdır: yüklenip teslim edilmiş camdan da açılır.
+- **Fiyat**: normal fiyat, **Bedelsiz** (müşteri fiyatı 0 — fabrika maliyeti durur, kârlılıkta görünür) ya da başka fiyat.
+  Yönetici müşteri fiyatına karar verir; satış müşteri fiyatını görmez, kendi satış fiyatına karar verir (değiştirirse
+  müşteri fiyatını yönetici girer). Normalden farklı her karar "Önemli kararlar"da ve denetim kaydında görünür.
+- **Hedef — iki seçenek her zaman var**: müşterinin ileri tarihli bir siparişine TELAFİ satırı olarak ekle (sipariş no ve
+  yükleme günüyle listelenir) ya da **yeni telafi siparişi** (ABC124-T, sonra -T2, -T3 …) için ileri bir yükleme günü seç.
+  Teklifi müşteride olan siparişe satışın eklediği telafi yöneticinin onayını bekler; yeni telafi siparişinin teklifi
+  yöneticinin fiyat onayına düşer. Sonrası olağan akıştır (yükleme, sandık, fatura, kârlılık).
+- **"Önemli kararlar" kartı** sipariş sayfasında: telafi geçmişi (kaynak cam, normal fiyat, telafi fiyatı, hedef, kim, ne
+  zaman) ve "Kırık / Telafi Camı Oluştur" düğmesi (aynı formu açar). Yöneticinin Önemli kararlar listesinde fiyat kararı
+  ve onay bekleyen telafiler de görünür.
+- **Yüklenmeyen camla ilişki**: telafi, onaylı yüklemede yüklenmeyen camın yerine açılıyorsa ilişkilendirilir; o adet
+  ayrıca ileri güne aktarılamaz (aynı cam iki kez üretilmez).
+- **Özel durum — başka müşterinin sandığına ekle**: mevcut fiziksel yerleşim bu adla, yalnızca yöneticide (davranış
+  aynı: siparişin müşterisi, faturası ve kârlılığı değişmez).
+- **Siparişi sil / geri yükle** (yalnızca yönetici): sipariş sayfasının en altında, iki adımlı (bölüm + onay kutusu).
+  Sipariş listelerden, aramadan, yükleme planından ve müşterinin ekranından kalkar; **kayıtlar silinmez** (FGO belgeleri,
+  onaylı yüklemeler, muhasebe, çizim geçmişi, denetim kaydı durur; FGO'da hiçbir işlem yapılmaz). Siparişler sayfasındaki
+  "Silinen siparişler" bölümünden geri yüklenir.
+- Veritabanı: `Compensation` tablosu; `Order` (telafi siparişi sırası, silinme bilgisi) ve `OfferLine` (TELAFİ işareti)
+  alanları. Sipariş numarası tekilliği telafi sırasını da kapsar.
+
 ## 3.41.1 — 03.10.2026
 
 - **FGO: aynı belge iki kez gönderilemez (işçiler arası yarış kapatıldı)**: bir FGO işi kesilirken (istek sürerken) kuyruğu

@@ -22,6 +22,11 @@ import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
   ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, isViewable, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
+import { loadCompensations, loadCompensationForm, type CompEntry } from '@/lib/compensation';
+import { compensableLines } from '@/server/orders/compensation.js';
+import { CompensationForm } from './CompensationForm';
+import { RemoveOrder } from './RemoveOrder';
+import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
@@ -68,11 +73,43 @@ export default async function OrderPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await requirePermission('ORDER_VIEW');
-  const { t, m, locale } = await getT();
+  const { t, m, locale, intl } = await getT();
   const { id } = await params;
   const sp = await searchParams;
+  // Silinmiş sipariş (karar 110) kimseye açılmaz; yöneticiye yalnızca "silindi" bilgisi ve geri yükleme gösterilir
+  if (userCan(user, 'ORDER_CANCEL')) {
+    const gone = await db.order.findFirst({
+      where: { id, removedAt: { not: null } },
+      select: { id: true, orderNo: true, title: true, removedAt: true, customer: { select: { name: true } }, removedBy: { select: { name: true } } },
+    });
+    if (gone) {
+      return (
+        <>
+          <div className="page-head">
+            <p className="small"><Link href="/siparisler#silinen">← {t('order.back.orders')}</Link></p>
+            <h1>{gone.title || gone.orderNo}</h1>
+            <div className="row"><span className="mono muted">{gone.orderNo}</span><span className="muted small">· {gone.customer.name}</span></div>
+          </div>
+          <div className="card" id="silinen">
+            <div className="alert alert-warn">
+              <b>{t('compensation.remove.removedTitle')}</b> {t('compensation.remove.removedInfo', { when: fmtDateTime(gone.removedAt), who: gone.removedBy?.name ?? '—' })}
+            </div>
+            <p className="muted small">{t('compensation.remove.listIntro')}</p>
+            <form action={restoreOrderAction}>
+              <input type="hidden" name="id" value={gone.id} />
+              <ConfirmButton primary message={t('compensation.remove.restoreConfirm')}>{t('compensation.remove.restore')}</ConfirmButton>
+            </form>
+          </div>
+        </>
+      );
+    }
+  }
   const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
+  // "Siparişi sil" (yalnızca yönetici — ORDER_CANCEL): sayfanın en altında, iki adımlı (karar 110)
+  const removeErrors = m.compensation.remove.errors;
+  const removeError = sp.silHata ? removeErrors[sp.silHata as keyof typeof removeErrors] ?? removeErrors.NOT_FOUND : null;
+  const removal = (docs: number) => (userCan(user, 'ORDER_CANCEL') ? <RemoveOrder orderId={order.id} docs={docs} error={removeError} m={m.compensation.remove} /> : null);
   if (order.orderTypeCode === 'PROFILE_ORDER') {
     // Profil siparişi (Aşama 6): kendi akışı ve ekranı; dosya, not ve geçmiş ortak
     const acts = availableActions({ role: user.appRole, status: order.status, onHold: false, canApprove: user.canApprove, drawing: 'YOK', offer: null });
@@ -81,7 +118,7 @@ export default async function OrderPage({
         order={order} user={user} sp={sp} t={t} m={m} locale={locale}
         files={<Files order={order} user={user} canAdd={acts.includes('add_file')} t={t} />}
         notes={<Notes order={order} user={user} t={t} />}
-        history={<History order={order} isCustomer={isCustomer} t={t} />}
+        history={<>{removal(userCan(user, 'ORDER_CANCEL') ? await db.fgoDocument.count({ where: { orderId: order.id } }) : 0)}<History order={order} isCustomer={isCustomer} t={t} /></>}
       />
     );
   }
@@ -152,6 +189,16 @@ export default async function OrderPage({
   });
   const updateHref = `/siparisler/${order.id}?teklif=guncelle#teklif`;
   const ok = okText(m, sp.ok);
+  // Kırık / telafi camı (karar 108): satış ve yönetici (OFFER_PREPARE). Giriş, müşteriye gönderilmiş teklifin cam satırı.
+  const canComp = !isCustomer && userCan(user, 'OFFER_PREPARE');
+  const comps = canComp ? await loadCompensations(order.id, user) : [];
+  const compIds = new Set<string>(canComp && sent && order.status !== 'IPTAL' ? compensableLines(sent.lines).map((g) => String(g.line.id)) : []);
+  const compHref = (lineId: string) => `/siparisler/${order.id}?telafi=${lineId}#telafi`;
+  const compForm = compIds.size > 0 && sp.telafi ? await loadCompensationForm(order, user) : null;
+  const compErrors = m.compensation.errors;
+  const compError = sp.telafiHata ? compErrors[sp.telafiHata as keyof typeof compErrors] ?? compErrors.BAD_REQUEST : null;
+  const compOks = m.compensation.ok;
+  const compOk = sp.telafiOk && Object.hasOwn(compOks, sp.telafiOk) ? t(`compensation.ok.${sp.telafiOk}` as MsgKey, { order: sp.hedef ?? '' }) : null;
 
   return (
     <>
@@ -174,6 +221,7 @@ export default async function OrderPage({
       </div>
 
       {ok && <div className="alert alert-ok">{ok}</div>}
+      {compOk && <div className="alert alert-ok">{compOk}</div>}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
 
       {!drawerView && <div className="card">
@@ -288,7 +336,7 @@ export default async function OrderPage({
             poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
-            id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '',
+            id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: !!l.compensationId,
           }))}
           m={m.offer}
           common={m.common}
@@ -301,12 +349,22 @@ export default async function OrderPage({
       )}
 
       {shownOffer && (
-        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} />
+        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
+          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} />
       )}
+      {/* Kırık / telafi camı: teklif tablosunun hemen altında tek kısa form; "Önemli kararlar" aynı formu açar */}
+      {compForm && (
+        <CompensationForm
+          data={compForm} preselect={sp.telafi && compIds.has(sp.telafi) ? sp.telafi : null} history={comps.filter((c) => c.sourceOrder.id === order.id)}
+          error={compError} cancelHref={`/siparisler/${order.id}#teklif`} locale={locale} intl={intl} m={m.compensation} kinds={m.status.lineKind}
+        />
+      )}
+      {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
       {/* "Sandıklar" satış görünümünde gösterilmez (sandıklar Yüklemeler sekmesinde girilir) */}
       {!isCustomer && !salesView && !drawerView && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      {removal(fgoDocs.length)}
       <History order={order} isCustomer={isCustomer} t={t} />
     </>
   );
@@ -450,7 +508,9 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string }) {
+  // Kırık / telafi (karar 108): yalnızca müşteriye gönderilmiş teklifin fiziksel cam satırlarında, satış ve yöneticide
+  const compCol = !!compIds && compIds.size > 0 && !!compHref;
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
   // Asıl kontrol indirme adresinde (teklif/route.ts) yapılır.
   const exportHref = (f: 'pdf' | 'xlsx') => `/siparisler/${order.id}/teklif?format=${f}`;
@@ -478,7 +538,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
       </div>
       <div className="table-wrap offer-wrap">
         <table className="offer-view">
-          <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th></tr></thead>
+          <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th>{compCol && <th />}</tr></thead>
           <tbody>
             {(() => {
               let n = 0;
@@ -497,6 +557,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                       {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
                       {desc}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
+                      {!isCustomer && l.compensationId && <> <span className="badge badge-warn">{t('compensation.badge')}</span></>}
                     </td>
                     <td>{l.poz ?? ''}</td>
                     <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
@@ -504,6 +565,11 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                     <td className={`num${admin ? ' muted' : ''}`}>{l.free ? t('offer.free') : unitTxt(l.unitPrice)}</td>
                     {admin && <td className="num">{l.free ? t('offer.free') : unitTxt(l.offerPrice)}</td>}
                     <td className="num">{fmtNum(tot.amount)}</td>
+                    {compCol && (
+                      <td className="actions">
+                        {compIds?.has(l.id) && compHref && <Link className="btn btn-link" href={compHref(l.id)} title={t('compensation.rowActionTitle')}>{t('compensation.rowAction')}</Link>}
+                      </td>
+                    )}
                   </tr>
                 );
               });
@@ -511,9 +577,9 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           </tbody>
           <tfoot>
             {admin ? (
-              <tr><td colSpan={7}>{t('common.total')}</td><td className="num muted">{fmtMoney(offer.amount.toString(), offer.currency)}</td><td /><td className="num"><b>{fmtMoney(offerTotal.toFixed(2), offer.currency)}</b></td></tr>
+              <tr><td colSpan={7}>{t('common.total')}</td><td className="num muted">{fmtMoney(offer.amount.toString(), offer.currency)}</td><td /><td className="num"><b>{fmtMoney(offerTotal.toFixed(2), offer.currency)}</b></td>{compCol && <td />}</tr>
             ) : (
-              <tr><td colSpan={8}>{t('common.total')}</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td></tr>
+              <tr><td colSpan={8}>{t('common.total')}</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td>{compCol && <td />}</tr>
             )}
           </tfoot>
         </table>
@@ -539,6 +605,92 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           <button className="btn">{order.customerExcel ? t('offer.export.turnOff') : t('offer.export.turnOn')}</button>
         </form>
       )}
+    </div>
+  );
+}
+
+// ---------------- önemli kararlar (kırık / telafi camı) ----------------
+/**
+ * Sipariş sayfasındaki "Önemli kararlar" kartı (karar 108): bu siparişin kaynağı ya da hedefi olduğu telafi kararlarının
+ * kısa geçmişi ve "Kırık / Telafi Camı Oluştur" düğmesi (teklif satırındaki düğmeyle AYNI formu açar — ikinci bir telafi
+ * mantığı yoktur). Veriler role göre temizlenmiştir (lib/compensation.ts): satış müşteri fiyatını görmez. Satışın, teklifi
+ * müşteride olan siparişe eklediği telafi yöneticinin onayını bekler; onay / ret burada verilir (yalnızca yönetici).
+ */
+function Decisions({ order, user, comps, createHref, error, t, locale }: { order: OrderDetail; user: CurrentUser; comps: CompEntry[]; createHref: string | null; error: string | null; t: T; locale: 'tr' | 'ro' }) {
+  const admin = userCan(user, 'OFFER_SEND');
+  const price = (v: number | null, cur: string) => (v == null ? '—' : v === 0 ? t('compensation.free') : t('compensation.perM2', { price: fmtNum(v), cur }));
+  return (
+    <div className="card" id="kararlar">
+      <div className="section-head">
+        <h2>{t('compensation.decisions.title')}</h2>
+        {createHref && <Link className="btn" href={createHref}>{t('compensation.decisions.create')}</Link>}
+      </div>
+      <p className="muted small">{t('compensation.decisions.intro')}</p>
+      {error && <div className="alert alert-error">{error}</div>}
+      {comps.length === 0 && <p className="muted">{createHref ? t('compensation.decisions.none') : t('compensation.decisions.noSentOffer')}</p>}
+      {comps.map((c) => {
+        const glass = `${locale === 'ro' && c.glassRo ? c.glassRo : c.glass}${c.enMm && c.boyMm ? ` · ${c.enMm}×${c.boyMm}` : ''}`;
+        const customerTier = c.tier === 'CUSTOMER';
+        const destText = c.destOrder
+          ? c.destOrder.removed ? t('compensation.decisions.destRemoved', { order: c.destOrder.orderNo }) : t('compensation.decisions.dest', { order: c.destOrder.orderNo, date: c.day ? fmtDate(`${c.day}T12:00:00Z`) : '—' })
+          : null;
+        return (
+          <div key={c.id} className="note comp-entry" data-comp={c.id} data-status={c.status}>
+            <div className="row">
+              <b className="mono">{c.sourceOrder.orderNo}</b>
+              <span className="badge badge-warn">{t('compensation.badge')}</span>
+              <b>{t('compensation.decisions.qty', { qty: c.quantity })}</b>
+              {c.status !== 'APPLIED' && <span className={`badge ${c.status === 'PENDING' ? 'badge-danger' : 'badge-muted'}`}>{t(`compensation.decisions.status.${c.status}` as MsgKey)}</span>}
+              {c.mode !== 'NORMAL' && <span className="badge badge-info">{t('compensation.decisions.changed')}</span>}
+            </div>
+            <div className="small">
+              {c.sourceOrder.id !== order.id && <><Link href={`/siparisler/${c.sourceOrder.id}#kararlar`}>{t('compensation.decisions.sourceOrder', { order: c.sourceOrder.orderNo })}</Link> · </>}
+              {t('compensation.decisions.source', { glass })}
+            </div>
+            <div className="small">
+              {c.normal != null || c.price != null ? (
+                <>
+                  {t(customerTier ? 'compensation.decisions.normalCustomer' : 'compensation.decisions.normalSales', { price: price(c.normal, c.currency) })}{' · '}
+                  <b>{t(customerTier ? 'compensation.decisions.priceCustomer' : 'compensation.decisions.priceSales', { price: price(c.price, c.currency) })}</b>
+                  {c.needsPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}
+                </>
+              ) : t('compensation.decisions.modeOnly', { mode: t(`compensation.decisions.mode.${c.mode}` as MsgKey) })}
+            </div>
+            {destText && (
+              <div className="small">
+                {c.destOrder && !c.destOrder.removed && c.destOrder.id !== order.id ? <Link href={`/siparisler/${c.destOrder.id}`}>{destText}</Link> : destText}
+                {' '}({t(`compensation.decisions.destType.${c.destType}` as MsgKey)}){c.linked && <> · {t('compensation.decisions.linked')}</>}
+              </div>
+            )}
+            <div className="meta">
+              {t('compensation.decisions.by', { who: c.createdBy })} · {t('compensation.decisions.at', { when: fmtDateTime(c.createdAt) })}
+              {c.decidedBy && <> · {t(`compensation.decisions.status.${c.status}` as MsgKey)}: {t('compensation.decisions.decided', { who: c.decidedBy, when: fmtDateTime(c.decidedAt) })}{c.decisionNote ? ` — ${c.decisionNote}` : ''}</>}
+            </div>
+            {c.status === 'PENDING' && <p className="hint">{t('compensation.decisions.pendingHint')}</p>}
+            {c.status === 'PENDING' && admin && (
+              <>
+                <form action={decideCompensationAction} className="row">
+                  <input type="hidden" name="id" value={order.id} />
+                  <input type="hidden" name="compId" value={c.id} />
+                  <input type="hidden" name="do" value="approve" />
+                  <label className="small" htmlFor={`cp-${c.id}`} style={{ margin: 0 }}>{t('compensation.decisions.customerPrice', { cur: c.currency })}</label>
+                  <input id={`cp-${c.id}`} name="price" inputMode="decimal" style={{ width: 120 }}
+                    defaultValue={c.customerPrice != null && !c.free ? c.customerPrice.toFixed(2) : ''} placeholder={c.normalCustomer != null ? c.normalCustomer.toFixed(2) : ''} />
+                  <label className="check small"><input type="checkbox" name="free" defaultChecked={c.free} /> {t('compensation.decisions.makeFree')}</label>
+                  <ConfirmButton success message={t('compensation.decisions.approveConfirm')}>{t('compensation.decisions.approve')}</ConfirmButton>
+                </form>
+                <form action={decideCompensationAction} className="row">
+                  <input type="hidden" name="id" value={order.id} />
+                  <input type="hidden" name="compId" value={c.id} />
+                  <input type="hidden" name="do" value="reject" />
+                  <input name="note" maxLength={300} placeholder={t('compensation.decisions.rejectNote')} aria-label={t('compensation.decisions.rejectNote')} style={{ flex: 1, minWidth: 160 }} />
+                  <ConfirmButton danger message={t('compensation.decisions.rejectConfirm')}>{t('compensation.decisions.reject')}</ConfirmButton>
+                </form>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

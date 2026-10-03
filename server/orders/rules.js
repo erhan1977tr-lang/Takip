@@ -215,6 +215,13 @@ export const EVENTS = {
   WAREHOUSE_EMAIL_FAILED: { customer: false },
   DELIVERED: { customer: true },
   INVOICED: { customer: true, note: true },
+  // Kırık / telafi camı ve sipariş silme (Aşama 9): yalnızca iç ekip görür
+  COMPENSATION: { customer: false },
+  COMPENSATION_ADDED: { customer: false },
+  COMPENSATION_PENDING: { customer: false },
+  COMPENSATION_REJECTED: { customer: false },
+  REMOVED: { customer: false },
+  RESTORED: { customer: false },
 };
 
 // ---------- teklif hesabı ----------

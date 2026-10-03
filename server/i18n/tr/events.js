@@ -63,6 +63,13 @@ export default {
   REPLAN_CANCELLED: { label: 'Yüklenmeyen camın aktarımından vazgeçildi (adet · gün)' },
   GUEST_CRATE: { label: 'Başka müşterinin sandığına yerleştirildi (fiziksel; sandık · gün)' },
   GUEST_CRATE_REMOVED: { label: 'Başka müşterinin sandığından çıkarıldı (sandık)' },
+  // Kırık / telafi camı (Aşama 9): not = adet × cam → hedef sipariş / gün (kaynakta), adet × cam ← kaynak sipariş (hedefte)
+  COMPENSATION: { label: 'Kırık / telafi camı açıldı' },
+  COMPENSATION_ADDED: { label: 'Telafi camı eklendi' },
+  COMPENSATION_PENDING: { label: 'Telafi camı yönetici onayını bekliyor' },
+  COMPENSATION_REJECTED: { label: 'Telafi kararı reddedildi' },
+  REMOVED: { label: 'Sipariş silindi (olağan ekranlardan kaldırıldı; kayıtlar duruyor)' },
+  RESTORED: { label: 'Silinen sipariş geri yüklendi' },
   COST_CORRECTED: { label: 'Eksik fabrika maliyeti girildi (satır)' },
   FGO_RETRY: {
     label: "FGO'da yeniden deneniyor",

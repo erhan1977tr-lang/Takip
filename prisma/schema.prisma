@@ -148,6 +148,9 @@ model User {
   replansCreated     LoadingReplan[] @relation("ReplanCreatedBy")
   loadingCorrections LoadingCorrection[] @relation("LoadingCorrectedBy")
   billingBatches     BillingBatch[] @relation("BillingBatchCreatedBy")
+  ordersRemoved      Order[]        @relation("OrderRemovedBy")
+  compensationsCreated Compensation[] @relation("CompensationCreatedBy")
+  compensationsDecided Compensation[] @relation("CompensationDecidedBy")
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -252,6 +255,7 @@ model Customer {
   loadedItems   LoadingConfirmationItem[]
   replans       LoadingReplan[]
   billingBatches BillingBatch[]
+  compensations Compensation[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
   priceTable    PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
@@ -357,11 +361,31 @@ model Order {
   stockMoves        StockMovement[]
   loadedItems       LoadingConfirmationItem[] // onaylı yüklemelerde bu siparişin fiilen yüklenen kalemleri
 
+  // Telafi siparişi (Aşama 9, karar 108): kırılan / kusurlu camın yeniden üretimi için açılan ayrı sipariş. Numarası KÖK
+  // siparişin numarasından türer: ABC124-T, sonra ABC124-T2, ABC124-T3 … (compSeq = 1, 2, 3; olağan siparişte 0).
+  // customerOrderNo kök siparişinkiyle aynıdır; olağan numara sırası değişmez.
+  compOfId          String?
+  compOf            Order?      @relation("CompensationOrders", fields: [compOfId], references: [id])
+  compOrders        Order[]     @relation("CompensationOrders")
+  compSeq           Int         @default(0)
+  compensationsFrom Compensation[] @relation("CompensationSource") // bu siparişin camı için açılan telafiler
+  compensationsTo   Compensation[] @relation("CompensationDest")   // bu siparişe eklenen / bu siparişi oluşturan telafiler
+
+  // Silinmiş sipariş (Aşama 9, karar 110): kayıt durur (FGO, yükleme onayı, denetim, çizim geçmişi korunur) ama sipariş
+  // olağan ekranlardan kalkar. Silinince durum IPTAL olur (iptal edilmiş siparişi dışlayan her işlem onu da dışlar) ve
+  // önceki durum removedStatus'ta saklanır; geri yüklenince sipariş o duruma döner.
+  removedAt         DateTime?
+  removedById       String?
+  removedBy         User?       @relation("OrderRemovedBy", fields: [removedById], references: [id])
+  removedStatus     OrderStatus?
+
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
-  // Numara firma ve sipariş tipi içinde tektir: GLA12 (cam) ile GLAP12 (profil) ayrı sıralardır
-  @@unique([customerId, orderTypeCode, customerOrderNo])
+  // Numara firma ve sipariş tipi içinde tektir: GLA12 (cam) ile GLAP12 (profil) ayrı sıralardır; telafi siparişleri
+  // (compSeq > 0) kök siparişin numarasını paylaşır ve sıra numarasıyla ayrılır (aynı anda iki istek aynı numarayı alamaz)
+  @@unique([customerId, orderTypeCode, customerOrderNo, compSeq])
+  @@index([removedAt])
   @@index([orderTypeCode])
   @@index([status])
   @@index([drawingTrack])
@@ -578,6 +602,72 @@ model OfferLine {
   profileProductId String?
   unitCode         String?
   loadedItems      LoadingConfirmationItem[] // bu satırdan onaylı yüklemelere alınan kopyalar
+  // TELAFİ satırı (Aşama 9): bu satır bir telafi kararıyla eklendi (cam ve ona ait CNC / delik satırları). Teklifin yeni
+  // sürümü açılınca işaret satırla birlikte taşınır. Satırın kendisi olağan teklif satırıdır (fiyat, yükleme, fatura aynı).
+  compensationId   String?
+  compensation     Compensation? @relation("CompensationLines", fields: [compensationId], references: [id], onDelete: SetNull)
+  compensationsFrom Compensation[] @relation("CompensationSourceLine") // bu (kaynak) satır için açılan telafiler
+
+  @@index([compensationId])
+}
+
+// Telafi / kırık cam kararı (Aşama 9, karar 108): var olan bir siparişin bir camının yeniden üretilmesi. Yüklenmeyen cam
+// (NOT_LOADED) kaydından AYRI bir kavramdır: yüklemeden önce, sonra ya da teslimden haftalar sonra açılabilir. Kaynak
+// teklif satırı ve sipariş DEĞİŞMEZ; telafi camı ya müşterinin ileri tarihli başka bir siparişine TELAFİ satırı olarak
+// eklenir ya da yeni bir telafi siparişi (ABC124-T) açılır. Sonrası olağan iş akışıdır.
+model Compensation {
+  id             String   @id @default(cuid())
+  requestKey     String   @unique // formun tek kullanımlık anahtarı: çift tıklama / yinelenen istek tek kayıt üretir
+  // APPLIED: satırlar hedef siparişin teklifine yazıldı · PENDING: hedef siparişin teklifi müşteride ve kararı satış verdi —
+  // yöneticinin onayını bekler (müşteriye giden teklifi yalnızca yönetici değiştirir) · REJECTED: yönetici reddetti
+  status         String   @default("APPLIED")
+  // Kaynak (değişmez)
+  sourceOrderId  String
+  sourceOrder    Order    @relation("CompensationSource", fields: [sourceOrderId], references: [id])
+  sourceOfferId  String
+  sourceLineId   String
+  sourceLine     OfferLine @relation("CompensationSourceLine", fields: [sourceLineId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id])
+  // Kaynak camın kopyası (liste ve geçmiş için; üretim bilgisi telafi satırlarındadır)
+  description    String
+  descriptionRo  String?
+  enMm           Int?
+  boyMm          Int?
+  quantity       Int
+  currency       String
+  // Fiyat kararı. Yönetici MÜŞTERİ fiyatına karar verir (priceTier = CUSTOMER); satış müşteri fiyatını görmez, kendi
+  // SATIŞ fiyatına karar verir (priceTier = SALES). Bedelsiz: müşteri fiyatı 0, fabrika maliyeti (unitCost) durur.
+  priceMode      String   // NORMAL | FREE | CUSTOM
+  priceTier      String   // CUSTOMER | SALES
+  normalCost     Decimal  @db.Decimal(12, 2) // kaynak satırın satış fiyatı (= fabrika maliyeti)
+  normalPrice    Decimal? @db.Decimal(12, 2) // kaynak satırın müşteri fiyatı
+  unitCost       Decimal  @db.Decimal(12, 2) // telafi satırının satış fiyatı / maliyeti
+  offerPrice     Decimal? @db.Decimal(12, 2) // telafi satırının müşteri fiyatı (boş: yönetici girecek)
+  free           Boolean  @default(false)
+  // Hedef
+  destType       String   // EXISTING (müşterinin ileri tarihli siparişine eklendi) | NEW (yeni telafi siparişi)
+  destOrderId    String?
+  destOrder      Order?   @relation("CompensationDest", fields: [destOrderId], references: [id])
+  loadingDay     DateTime? @db.Date // karar anında hedefin yükleme günü
+  // Yüklenmeyen camla ilişki (isteğe bağlı): bu telafi, onaylı yüklemede yüklenmeyen şu kalemin yerine üretilir. Aynı
+  // adet ayrıca ileri güne aktarılamaz (aktarım kapasitesinden düşülür) — aynı cam iki kez üretilmez.
+  sourceItemId   String?
+  sourceItem     LoadingConfirmationItem? @relation(fields: [sourceItemId], references: [id], onDelete: Restrict)
+  notLoadedScope String?  // "<onay>|<kapsam>" (server/loading/confirmation.js → scopeOf)
+  lines          OfferLine[] @relation("CompensationLines")
+  createdById    String
+  createdBy      User     @relation("CompensationCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
+  // Bekleyen kararın sonucu (yönetici)
+  decidedById    String?
+  decidedBy      User?    @relation("CompensationDecidedBy", fields: [decidedById], references: [id])
+  decidedAt      DateTime?
+  decisionNote   String?
+
+  @@index([sourceOrderId])
+  @@index([destOrderId])
+  @@index([notLoadedScope])
 }
 
 // Fiyat tabloları (Aşama 3b, karar 26): satışçıların teklife yazacağı liste fiyatları.
@@ -1354,6 +1444,7 @@ model LoadingConfirmationItem {
   replanId       String?
   replan         LoadingReplan? @relation("ReplanItems", fields: [replanId], references: [id], onDelete: Restrict)
   replans        LoadingReplan[] @relation("ReplanSource") // bu (yüklenmeyen) kalemin ileri güne aktarımları
+  compensations  Compensation[]  // bu (yüklenmeyen) kalemin yerine açılan telafiler (Aşama 9)
   // Düzeltme (Aşama 7F-1): 0 = onay anındaki kalem; n = n. düzeltmeyle eklenen kalem (correctionId). Kapsamın geçerli
   // hâli en yüksek sıradaki kalemleridir; önceki satırlar değişmeden durur.
   revision       Int      @default(0)

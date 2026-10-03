@@ -285,7 +285,7 @@ export default {
   },
   // Lada fizică: comanda poate călători în lada altui client; proprietatea comercială nu se schimbă (decizia 103)
   guest: {
-    title: 'Ladă fizică — lada altui client',
+    title: 'Situație specială — adaugă în lada altui client',
     intro: 'Comanda poate călători, în aceeași zi de încărcare, în lada altui client. Este doar o amplasare fizică: clientul comenzii, oferta, proforma, factura și taxa de ambalaj nu se schimbă.',
     badge: '#{no} · {host}',
     badgeTitle: 'Ladă fizică: Lada {no} — {host}',
@@ -294,7 +294,7 @@ export default {
     order: 'Comandă',
     crate: 'Ladă',
     option: 'Lada {no} — {host}',
-    assign: 'Pune în această ladă',
+    assign: 'Adaugă în lada altui client',
     remove: 'Scoate',
     assignDialog: 'Amplasați fizic comanda în lada aleasă? Clientul comenzii și factura nu se schimbă.',
     removeDialog: 'Scoateți comanda din această ladă? Nimic comercial nu se schimbă.',

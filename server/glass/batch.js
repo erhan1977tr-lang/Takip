@@ -116,7 +116,7 @@ async function plannedOrders(db, { customerId, today }) {
   const from = new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000);
   const rows = await db.order.findMany({
     where: {
-      customerId, orderTypeCode: 'GLASS_ORDER',
+      customerId, orderTypeCode: 'GLASS_ORDER', removedAt: null, // silinmiş sipariş önizlemede "hariç" olarak da görünmez (karar 110)
       OR: [{ actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } }],
     },
     include: ORDER_INCLUDE,

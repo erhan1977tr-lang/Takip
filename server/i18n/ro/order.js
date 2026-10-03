@@ -36,6 +36,7 @@ export default {
     offer_checked: 'Oferta a fost marcată ca fiind la zi față de noul desen.',
     undo_drawing: 'Trimiterea la desen a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
     undo_no_drawing: 'Trimiterea la ofertă a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
+    restored: 'Comanda a fost restaurată; a revenit la starea dinaintea ștergerii.',
   },
   // Numele acțiunilor: rândul „Pasul următor” și butoanele cu același nume (cheie = codul acțiunii)
   steps: {
