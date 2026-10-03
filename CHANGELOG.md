@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.38.2 — 03.10.2026
+
+- Müşteri faturası: siparişin kendi belge zinciri denetimi ortak kapsam denetimini kullanır (iç düzenleme; davranış
+  değişmedi). Belgesi FGO'da silinmiş ya da isteği kesilemeyip bırakılmış sipariş müşteri faturasına girebilir.
+
 ## 3.38.1 — 03.10.2026
 
 - Müşteri faturası: iç düzeltme (tip tanımı); davranış değişmedi.

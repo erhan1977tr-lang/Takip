@@ -97,6 +97,19 @@ const billing = (day, extra = {}) => inv.loadingBilling(db, { day, bnrImpl: bnr(
 const groupsOf = (r, c) => r.customers.find((x) => x.customerId === c.id)?.groups ?? [];
 const createInvoice = (day, grp, extra = {}) => inv.createInvoiceBatch(db, { day, groupKey: grp.key, previewKey: grp.previewKey, actor: actor(), bnrImpl: bnr('5.0000'), ...extra });
 const batchOf = (id) => db.billingBatch.findUnique({ where: { id }, include: { orders: { orderBy: { orderNo: 'asc' } }, lines: { orderBy: { sortOrder: 'asc' } }, document: true } });
+/** Bir müşterinin Cam Tahsilat belgeleri (müşteri belge zinciri) */
+const docsOf = (name) => listDocuments(db, 'GLASS_ORDER').then((all) => all.filter((d) => d.batch?.customer.name === name));
+/** Müşteri proforması (7D-2): verilen günlere planlı siparişler için tek proforma, kur 5,0000; kesilmiş parti döner */
+async function proformaFor(c, shipDates, fgo, rate = '5.0000') {
+  const days = shipDates.map((d) => dayKey(d));
+  const pv = await b.previewBatch(db, { customerId: c.id, days, bnrImpl: bnr(rate) });
+  const pr = await b.createBatch(db, { customerId: c.id, days, key: pv.key, actor: actor(), bnrImpl: bnr(rate) });
+  assert.equal(pr.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: pr.batchId }));
+  return batchOf(pr.batchId);
+}
+const rejecting = () => fakeFgo(9000, { emit: () => new Response(JSON.stringify({ Success: false, Message: 'Client invalid' })) });
+const refresh = (fgo) => refreshDocuments(db, { orderType: 'GLASS_ORDER', secret: SECRET, fetchImpl: fgo.fetchImpl, sleep: async () => {}, limit: 500 });
 const setPaid = (fgo, doc, paid) => {
   const key = `${doc.series}${doc.number}`;
   fgo.state.set(key, { ...fgo.state.get(key), paid });
@@ -380,4 +393,212 @@ dbTest('kesilemeyen fatura kapsamı tutar ve yeniden denenir; vazgeçilirse ya d
   assert.equal(JSON.stringify(await items()), before);
   // Onaylanmamış gün: faturalama yok
   assert.deepEqual(await inv.loadingBilling(db, { day: dayKey(noon(40)) }), { ok: false, code: 'NOT_CONFIRMED' });
+});
+
+dbTest('avansı ve faturası kesilmiş müşteri proforması FGO\'da silinirse zincirin kökü kalır: borç iki kez doğmaz, avans / fatura izlenir, kalan avans düşülmeye devam eder', async () => {
+  const c = await customer('Root SRL', 'ROT');
+  const ship = [noon(11), noon(18)];
+  const [o1, o2] = [await order(c, { shipDate: ship[0] }), await order(c, { shipDate: ship[1] })];
+  const fgo = fakeFgo(600);
+  const P = await proformaFor(c, ship, fgo);
+  assert.deepEqual([`${P.document.series}${P.document.number}`, P.document.total.toString()], ['PRF601', '1210']);
+  // Tahsilat 800 → avans 800; ilk yükleme (o1, 605) faturalanır: avansın 605'i düşülür, 195'i zincirde kalır
+  await setPaid(fgo, P.document, 800);
+  const av = await inv.createAdvanceBatch(db, { proformaBatchId: P.id, actor: actor() });
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: av.batchId }));
+  const A = await batchOf(av.batchId);
+  await setPaid(fgo, A.document, 800);
+  const d1 = pastDay();
+  const conf1 = await confirm(d1, [{ order: o1 }]);
+  const g1 = groupsOf(await billing(d1), c)[0];
+  assert.deepEqual([g1.storno.map((x) => [x.ref, x.gross]), g1.payable], [[['GKH602', 605]], 0]);
+  const i1 = await createInvoice(d1, g1);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i1.batchId }));
+  const items = async () => JSON.stringify(await db.loadingConfirmationItem.findMany({ where: { confirmationId: conf1.id }, orderBy: { sortOrder: 'asc' } }));
+  const before = await items();
+
+  // Proforma FGO'da silinmiş (elle "FGO ile Güncelle")
+  fgo.state.set('PRF601', { gone: true });
+  assert.equal((await refresh(fgo)).ok, true);
+  const root = await batchOf(P.id);
+  assert.deepEqual([root.status, root.document, root.voidReason, root.orders.map((x) => x.activeKey != null)], ['ISSUED', null, null, [true, true]], 'yalnızca belge kaydı kalktı; parti zincirin kökü olarak duruyor');
+  assert.deepEqual([root.fxRate.toString(), root.fxResolvedAt.toISOString()], [P.fxRate.toString(), P.fxResolvedAt.toISOString()], 'kur kaydı korunur');
+  // Avans ve fatura izlenebilir: belgeleri duruyor, proformaya bağlı
+  for (const id of [av.batchId, i1.batchId]) {
+    const x = await batchOf(id);
+    assert.deepEqual([x.status, x.parentId, x.document != null], ['ISSUED', P.id, true]);
+  }
+  assert.deepEqual((await docsOf('Root SRL')).map((d) => d.kind).sort(), ['ADVANCE', 'INVOICE']);
+  assert.equal(await db.auditLog.count({ where: { action: 'FGO_DOC_REMOVED', entityId: P.id } }), 1);
+  // Borç iki kez doğmaz: Cam Tahsilat'ta yalnızca avans (800, ödenmiş) + fatura (0); kalan sipariş başka belgeye giremez
+  assert.deepEqual(receivables(await docsOf('Root SRL')).sums, { RON: { total: 800, paid: 800, rest: 0 } });
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o2.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  const pv = await b.previewBatch(db, { customerId: c.id, days: [dayKey(ship[1])], bnrImpl: bnr('5.0000') });
+  assert.deepEqual(await b.createBatch(db, { customerId: c.id, days: [dayKey(ship[1])], key: pv.key, actor: actor(), bnrImpl: bnr('5.0000') }).then((r) => r.ok), false, 'kalan sipariş için ikinci proforma kesilemez');
+  assert.deepEqual(await inv.createAdvanceBatch(db, { proformaBatchId: P.id, actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, 'belgesi olmayan proformaya avans kesilmez');
+
+  // Kalan sipariş yüklenir: fatura zincirin kuruyla (yeniden çözülmez) kesilir ve kalan 195 avansı düşer
+  const d2 = pastDay();
+  await confirm(d2, [{ order: o2 }]);
+  const g2 = groupsOf(await billing(d2, { bnrImpl: never('BNR') }), c)[0];
+  assert.deepEqual([g2.chainId, g2.chain.ref, g2.fx.finalRate, g2.problems, g2.storno.map((x) => [x.ref, x.gross]), g2.payable], [P.id, null, '5.0000', [], [['GKH602', 195]], 410]);
+  const i2 = await createInvoice(d2, g2, { bnrImpl: never('BNR') });
+  assert.equal(i2.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i2.batchId }));
+  const f2 = fgo.calls.at(-1);
+  assert.deepEqual(names(f2), [`Comanda ${o2.orderNo} — Sticlă securizată 10 mm`, 'Stornare avans conform factură GKH602']);
+  const I2 = await batchOf(i2.batchId);
+  assert.deepEqual([I2.parentId, I2.fxRate.toString(), I2.document.total.toString()], [P.id, '5', '410']);
+  // Toplam ticari borç değişmedi: 1210 = avans 800 + faturalar 0 + 410
+  assert.deepEqual(receivables(await docsOf('Root SRL')).sums, { RON: { total: 1210, paid: 800, rest: 410 } });
+  assert.equal(fgo.calls.length, 4, 'proforma + avans + 2 fatura; fazladan belge yok');
+  assert.equal(await items(), before, 'yükleme onayı değişmedi');
+});
+
+dbTest('kesilemeyen avans faturası: tahsilatı tutar, yeniden deneme tek belge keser; vazgeçilince yalnızca avans isteği bırakılır — fatura avans kesilmeden yine açılmaz', async () => {
+  const c = await customer('Advance SRL', 'ADV');
+  const ship = [noon(13), noon(20)];
+  const [o1, o2] = [await order(c, { shipDate: ship[0] }), await order(c, { shipDate: ship[1] })];
+  const fgo = fakeFgo(700);
+  const advancesOf = (p) => db.billingBatch.findMany({ where: { parentId: p.id, kind: 'ADVANCE' }, orderBy: { createdAt: 'asc' }, include: { document: true } });
+
+  // --- Yeniden deneme ---
+  const P1 = await proformaFor(c, [ship[0]], fgo); // PRF701, 605
+  await setPaid(fgo, P1.document, 400);
+  const d1 = pastDay();
+  await confirm(d1, [{ order: o1 }]);
+  const a1 = await inv.createAdvanceBatch(db, { proformaBatchId: P1.id, actor: actor() });
+  const reject = rejecting();
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(reject, { onlyBatchId: a1.batchId })), { done: 0, failed: 1 });
+  let st = await inv.chainState(db, P1.id);
+  assert.deepEqual([st.advancePending, st.advanceRequired, st.advances.map((x) => [x.status, /Client invalid/.test(x.lastError), x.left])], [true, 0, [['FAILED', true, 0]]], 'kesilemeyen avans tahsilatı tutar; gerçek FGO hatası görünür');
+  // Tahsilat ayrılmış: ikinci avans istenemez, fatura da kesilemez
+  assert.deepEqual(await inv.createAdvanceBatch(db, { proformaBatchId: P1.id, actor: actor() }), { ok: false, code: 'ADVANCE_PENDING' });
+  let g1 = groupsOf(await billing(d1), c)[0];
+  assert.deepEqual([g1.problems, g1.storno], [['ADVANCE_PENDING'], []]);
+  assert.deepEqual(await createInvoice(d1, g1), { ok: false, code: 'ADVANCE_PENDING' });
+  assert.equal(await db.fgoDocument.count({ where: { batchId: a1.batchId } }), 0);
+  // Yeniden dene: iki kez basılsa da tek istek; işçi iki tur aynı anda çalışsa da tek belge
+  for (const role of ['SALES', 'CUSTOMER']) assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a1.batchId, action: 'retry', actor: actor(role) }), { ok: false, code: 'FORBIDDEN' });
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a1.batchId, action: 'retry', actor: actor() }), { ok: true });
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a1.batchId, action: 'retry', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  const turns = await Promise.all([b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: a1.batchId })), b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: a1.batchId }))]);
+  assert.equal(turns.reduce((s, x) => s + x.done, 0), 1);
+  assert.equal(fgo.calls.filter((f) => f.Serie === 'GKH').length, 1, 'tek avans faturası');
+  assert.deepEqual((await advancesOf(P1)).map((x) => [x.id, x.status, `${x.document.series}${x.document.number}`]), [[a1.batchId, 'ISSUED', 'GKH702']], 'yeniden deneme yeni parti üretmedi');
+  for (const action of ['retry', 'void']) assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a1.batchId, action, actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, 'kesilmiş avanstan vazgeçilemez');
+  // Avans kesildi → fatura açılır ve avansı düşer
+  g1 = groupsOf(await billing(d1), c)[0];
+  assert.deepEqual([g1.problems, g1.storno.map((x) => [x.ref, x.gross]), g1.payable], [[], [['GKH702', 400]], 205]);
+
+  // --- Vazgeçme ---
+  const P2 = await proformaFor(c, [ship[1]], fgo); // PRF703, 605
+  await setPaid(fgo, P2.document, 250);
+  const d2 = pastDay();
+  const conf2 = await confirm(d2, [{ order: o2 }]);
+  const a2 = await inv.createAdvanceBatch(db, { proformaBatchId: P2.id, actor: actor() });
+  await b.dispatchBatchJobs(db, ctx(reject, { onlyBatchId: a2.batchId }));
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a2.batchId, action: 'void', actor: actor() }), { ok: true });
+  const dead = await batchOf(a2.batchId);
+  assert.deepEqual([dead.status, dead.uniqueKey, dead.document, dead.voidReason], ['VOID', null, null, 'ADMIN']);
+  // Yalnızca avans isteği bırakıldı: proforma, belgesi, tahsilatı ve sipariş kapsamı yerinde
+  const root = await batchOf(P2.id);
+  assert.deepEqual([root.status, `${root.document.series}${root.document.number}`, root.document.paid.toString(), root.orders.map((x) => x.activeKey != null)], ['ISSUED', 'PRF703', '250', [true]]);
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o2.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  st = await inv.chainState(db, P2.id);
+  assert.deepEqual([st.advancePending, st.advanced, st.advanceRequired, st.advances], [false, 0, 250, []], 'tahsilat yeniden avanslanabilir');
+  // Fatura hâlâ kesilemez (avansı kesilmemiş tahsilat var): vazgeçmek faturayı avanssız açmaz
+  let g2 = groupsOf(await billing(d2), c)[0];
+  assert.deepEqual(g2.problems, ['ADVANCE_REQUIRED']);
+  assert.deepEqual(await createInvoice(d2, g2), { ok: false, code: 'ADVANCE_REQUIRED' });
+  // Bırakılan istek sonradan da belge kesmez
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: a2.batchId })), { done: 0, failed: 0 });
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: a2.batchId, action: 'retry', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  assert.equal(await db.fgoDocument.count({ where: { batchId: a2.batchId } }), 0);
+  // Yeni avans: aynı tutar, yeni parti, tek belge; sonra fatura avansı düşer
+  const a3 = await inv.createAdvanceBatch(db, { proformaBatchId: P2.id, actor: actor() });
+  assert.deepEqual([a3.ok, a3.amount, a3.batchId !== a2.batchId], [true, 250, true]);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: a3.batchId }));
+  assert.deepEqual((await advancesOf(P2)).map((x) => [x.status, x.document ? `${x.document.series}${x.document.number}` : null]), [['VOID', null], ['ISSUED', 'GKH704']]);
+  g2 = groupsOf(await billing(d2), c)[0];
+  assert.deepEqual([g2.problems, g2.storno.map((x) => [x.ref, x.gross]), g2.payable], [[], [['GKH704', 250]], 355]);
+  assert.equal(fgo.calls.filter((f) => f.Serie === 'GKH').length, 2, 'iki avans faturası; bırakılan istek için belge yok');
+  assert.equal(reject.calls.length, 0);
+  assert.equal(await db.loadingConfirmationItem.count({ where: { confirmationId: conf2.id } }), 1);
+});
+
+dbTest('doğrudan faturada elle kur: partiye MANUAL olarak kaydedilir, fatura tam o kurla kesilir; sonradan kur politikası / BNR değişse de değişmez', async () => {
+  const c = await customer('Manual SRL', 'MAN'); // kur politikası BNR
+  const o = await order(c);
+  const day = pastDay();
+  await confirm(day, [{ order: o }]);
+  const auto = groupsOf(await billing(day), c)[0];
+  assert.deepEqual([auto.fx.finalRate, auto.fx.source, auto.fx.manual, auto.ronGross], ['5.0000', 'BNR', false, 605]);
+  // Önizleme elle kurla: BNR'ye gidilmez, tutarlar elle kurla
+  const manual = { key: auto.key, rate: '5.25' };
+  const man = groupsOf(await billing(day, { manual, bnrImpl: never('BNR') }), c)[0];
+  assert.deepEqual([man.fx.finalRate, man.fx.baseRate, man.fx.source, man.fx.manual, man.fx.markupPercent, man.fx.policy], ['5.2500', '5.2500', 'MANUAL', true, null, 'BNR']);
+  assert.deepEqual([man.ronNet, man.ronGross, man.payable, man.problems], [525, 635.25, 635.25, []]);
+  assert.notEqual(man.previewKey, auto.previewKey);
+  // Elle kur gönderilmezse önizlenen (elle kurlu) içerik kesilmez; geçersiz kurla da kesilmez
+  assert.deepEqual(await createInvoice(day, man), { ok: false, code: 'STALE_PREVIEW' });
+  assert.deepEqual(await createInvoice(day, man, { manualRate: 'abc' }), { ok: false, code: 'FX_UNAVAILABLE' });
+  assert.deepEqual(await createInvoice(day, auto, { manualRate: '5.25' }), { ok: false, code: 'STALE_PREVIEW' }, 'kur önizlemeden sonra değiştiyse yeni önizleme gerekir');
+  assert.equal(await db.billingBatch.count({ where: { customerId: c.id } }), 0);
+  const r = await createInvoice(day, man, { manualRate: '5.25', bnrImpl: never('BNR') });
+  assert.equal(r.ok, true);
+  const snap = (x) => [x.fxRate.toString(), x.fxBaseRate.toString(), x.fxSource, x.fxManual, x.fxPolicy, x.fxCurrency, x.fxMarkupPercent, x.fxResolvedAt.toISOString(), x.ronNet.toString(), x.lines.map((l) => [l.ronNet.toString(), l.ronGross.toString()])];
+  const saved = await batchOf(r.batchId);
+  assert.deepEqual(snap(saved).slice(0, 7), ['5.25', '5.25', 'MANUAL', true, 'BNR', 'EUR', null]);
+  assert.deepEqual(snap(saved).slice(8), ['525', [['525', '635.25']]]);
+  const audit = await db.auditLog.findFirst({ where: { action: 'BILLING_BATCH_CREATED', entityId: r.batchId } });
+  assert.deepEqual([audit.details.fxRate, audit.details.fxSource, audit.details.fxManual], ['5.2500', 'MANUAL', true]);
+
+  // Sonradan müşterinin kur politikası ve BNR kuru değişir: kayıt ve kesilen fatura değişmez
+  await db.customer.update({ where: { id: c.id }, data: { fxPolicy: 'BNR_PLUS_PERCENT', fxMarkupPercent: '5' } });
+  const fgo = fakeFgo(800);
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId, bnrImpl: never('BNR') })), { done: 1, failed: 0 });
+  const f = fgo.calls[0];
+  assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][PretTotal]'], f.Valuta], ['2', '635.25', 'RON']);
+  assert.doesNotMatch(f.Text, /curs|%/i, 'cam belgesinde kur cümlesi yok; yüzde hiçbir yerde yazmaz');
+  const issued = await batchOf(r.batchId);
+  assert.deepEqual(snap(issued), snap(saved), 'kur kaydı değişmedi');
+  assert.equal(issued.document.total.toString(), '635.25');
+  assert.deepEqual(await createInvoice(day, man, { manualRate: '5.25' }), { ok: false, code: 'NOTHING_TO_INVOICE' });
+  assert.deepEqual((await billing(day, { bnrImpl: bnr('6.0000') })).customers[0].issued.map((i) => [i.ref, i.total]), [['GKH801', 635.25]]);
+});
+
+dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse engeldir: FGO\'da silinen belge ve bırakılan istek siparişi müşteri faturasına açar', async () => {
+  const c = await customer('Cover SRL', 'COV');
+  const [deleted, failed, pending, active] = [await order(c), await order(c), await order(c), await order(c)];
+  // Sipariş başına belgeler / istekler (yalnızca veritabanı kaydı; FGO'ya gidilmez)
+  const gone = await db.fgoDocument.create({ data: { orderId: deleted.id, kind: 'PROFORMA', series: 'PRF', number: '9201', issuedAt: new Date(), total: '605.00', paid: '0' } });
+  await db.fgoDocument.create({ data: { orderId: active.id, kind: 'PROFORMA', series: 'PRF', number: '9202', issuedAt: new Date(), total: '605.00', paid: '0' } });
+  await db.notificationOutbox.create({ data: { type: g.GLASS_FGO, orderId: failed.id, payload: { kind: 'PROFORMA', orderNo: failed.orderNo }, status: 'FAILED', lastError: 'Client invalid' } });
+  const job = await db.notificationOutbox.create({ data: { type: g.GLASS_FGO, orderId: pending.id, payload: { kind: 'PROFORMA', orderNo: pending.orderNo } } });
+  const day = pastDay();
+  await confirm(day, [{ order: deleted }, { order: failed }, { order: pending }, { order: active }]);
+  const view = async () => (await billing(day)).customers.find((x) => x.customerId === c.id);
+  let v = await view();
+  // Kesilemeyip kalan istek kapsam değildir; duran belge ve kuyruktaki istek kapsamdır
+  assert.deepEqual(v.groups.map((x) => x.orders.map((o) => o.orderNo)), [[failed.orderNo]]);
+  assert.deepEqual(v.excluded.map((x) => [x.orderNo, x.reason, x.ref]), [[deleted.orderNo, 'ORDER_CHAIN', 'PRF9201'], [pending.orderNo, 'ORDER_CHAIN', null], [active.orderNo, 'ORDER_CHAIN', 'PRF9202']]);
+
+  // Belge FGO'da silindi (kaydı kalkar) ve kuyruktaki istek kesilemeyip bırakıldı → kapsam serbest; duran belge hâlâ engel
+  const fgo = fakeFgo(900);
+  fgo.state.set('PRF9201', { gone: true });
+  fgo.state.set('PRF9202', { total: 605, paid: 0 });
+  assert.equal((await refresh(fgo)).ok, true);
+  assert.equal(await db.fgoDocument.count({ where: { id: gone.id } }), 0);
+  await db.notificationOutbox.update({ where: { id: job.id }, data: { status: 'FAILED', lastError: 'Client invalid' } });
+  v = await view();
+  assert.deepEqual(v.groups.map((x) => x.orders.map((o) => o.orderNo)), [[deleted.orderNo, failed.orderNo, pending.orderNo]], 'geçmişte belgesi / isteği olmuş olmak engel değil');
+  assert.deepEqual(v.excluded.map((x) => [x.orderNo, x.ref]), [[active.orderNo, 'PRF9202']]);
+  const r = await createInvoice(day, v.groups[0]);
+  assert.deepEqual([r.ok, r.orders], [true, 3]);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
+  assert.deepEqual(names(fgo.calls[0]).map((n) => n.split(' — ')[0]), [deleted, failed, pending].map((o) => `Comanda ${o.orderNo}`));
+  // Karşılıklı dışlama iki yönde: müşteri faturasına giren sipariş sipariş başına belge alamaz; kendi belgesi olan faturaya girmedi
+  for (const o of [deleted, failed, pending]) assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, o.orderNo);
+  assert.equal(await db.billingBatchOrder.count({ where: { orderId: active.id } }), 0);
 });

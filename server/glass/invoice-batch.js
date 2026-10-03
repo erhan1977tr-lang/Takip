@@ -35,7 +35,7 @@ import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js
 import { dailyLimitReached, fgoReady, getFgoSettings, missingBilling } from '../integrations/fgo.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { GLASS_FGO, glassLines, glassTotals, invoiceLines, netOf } from './billing.js';
-import { BATCH_FGO } from './batch.js';
+import { BATCH_FGO, coverageOf } from './batch.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v) => (v == null ? 0 : Number(v));
@@ -205,7 +205,7 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
       where: { id: { in: orderIds } },
       select: {
         id: true, orderNo: true, title: true, customerId: true, customerOrderNo: true, customer: true,
-        fgoDocuments: { select: { series: true, number: true }, orderBy: { issuedAt: 'asc' } },
+        fgoDocuments: { select: { kind: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } },
         billingBatchOrders: { where: { activeKey: { not: null } }, select: { activeKey: true, offerId: true, batch: { select: { id: true, kind: true, status: true, document: { select: { series: true, number: true } } } } } },
       },
       orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
@@ -240,8 +240,12 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
     // Bu onaydaki kapsamı zaten bir fatura partisinde: yeniden faturalanmaz
     if (o.billingBatchOrders.some((b) => b.activeKey === invoiceOrderKey(conf.id, o.id))) continue;
     const no = (reason, ref = null) => c.excluded.push({ orderId: o.id, orderNo: o.orderNo, reason, ref });
-    // Sipariş başına belge zinciri (proforma / avans / fatura ya da kuyruktaki istek): fatura sipariş sayfasından kesilir
-    if (o.fgoDocuments.length || pending.has(o.id)) { no('ORDER_CHAIN', refOf(o.fgoDocuments[0])); continue; }
+    // Sipariş başına belge zinciri: fatura sipariş sayfasından kesilir. Karar, çift faturalama denetiminin tek yeri olan
+    // coverageOf'tan gelir (karar 100): yalnızca ŞU AN geçerli bir kapsam — siparişin duran FGO belgesi ya da kuyruktaki
+    // isteği. Geçmişte belgesi olmuş olması engel değildir: FGO'da silinen belge (kaydı kalkar) ve kesilemeyip bırakılan
+    // istek kapsamı serbest bırakır, sipariş müşteri faturasına girer. (Müşteri partisi kapsamı aşağıda zincir olarak ele alınır.)
+    const own = coverageOf({ fgoDocuments: o.fgoDocuments }, pending.has(o.id));
+    if (own) { no('ORDER_CHAIN', own.ref); continue; }
     const currency = items[0]?.currency ?? null;
     if (currency !== 'EUR' && currency !== 'RON') { no('CURRENCY'); continue; }
     if (glassLines({ lines: items.map(itemAsLine) }).length === 0) { no('NO_LINES'); continue; }
