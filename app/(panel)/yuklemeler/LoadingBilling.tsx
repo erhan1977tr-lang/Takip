@@ -11,6 +11,7 @@ import { bnrRate } from '@/server/fx/bnr.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { loadingBilling } from '@/server/glass/invoice-batch.js';
 import { createAdvanceAction, createInvoiceAction, reviewInvoiceBatchAction } from './billing-actions';
+import { ImpactNote, type Impact } from './ImpactNote';
 
 const STATUS_TONE: Record<string, string> = { PENDING: 'info', ISSUED: 'ok', FAILED: 'danger', VOID: 'muted' };
 const PAY_TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
@@ -25,6 +26,8 @@ const ron = (n: number | null | undefined) => (n == null ? '—' : fmtMoney(n, '
  * Onaylı yükleme gününün Faturalama bölümü (Aşama 7D-3; yalnızca yönetici — ACCOUNTING_MANAGE). Müşteri başına:
  * yüklenen kalemlerin fatura önizlemesi (kesilecek belgeyle aynı sunucu hesabı: loadingBilling), belge zinciri (müşteri
  * proforması, tahsilat, avans), "Avans faturası kes" / "Fatura oluştur" ve kesilen faturaların durumu.
+ * Önizleme onayın GEÇERLİ (düzeltilmiş) yüklenen kalemlerindendir. Kesilmiş fatura bir yükleme düzeltmesinden sonra fiili
+ * yüklemeyle uyuşmuyorsa "MUHASEBE İŞLEMİ GEREKLİ" gösterilir; hiçbir belge otomatik kesilmez (karar 105).
  * Onaylanmamış günde ve yetkisiz kullanıcıda hiçbir şey çizilmez.
  */
 export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day: string; sp: Record<string, string | undefined> }) {
@@ -63,6 +66,8 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
                   <span className="muted small"> · {t('accounting.invoice.orders', { list: b.orders.join(', ') })}</span>
                 </p>
                 {b.total != null && <p className="small muted">{t('accounting.invoice.amounts', { total: ron(b.total), paid: ron(b.paid ?? 0), rest: ron(remaining(b.total, b.paid)) })}</p>}
+                {/* Yükleme düzeltmesi kesilmiş faturanın kapsamını değiştirdi: yalnızca bildirilir, belge kesilmez / değişmez */}
+                {(b.impacts as Impact[]).map((x) => <ImpactNote key={x.orderId} x={x} t={t} money />)}
                 {b.lastError && b.status !== 'ISSUED' && <div className="alert alert-error">{t('accounting.batch.lastError', { error: b.lastError.slice(0, 300) })}</div>}
                 {b.status === 'FAILED' && (
                   <form action={reviewInvoiceBatchAction} className="row">

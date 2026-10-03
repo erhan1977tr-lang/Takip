@@ -3,6 +3,7 @@ import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { orderScope, sanitizeRows } from './orders';
 import { dayKey, orderLoad } from '../server/orders/loading.js';
+import { effectiveItems } from '../server/loading/confirmation.js';
 
 export const loadInclude = {
   // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir
@@ -103,18 +104,25 @@ export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date)
 export async function notLoadedByOrder(rows: LoadRow[]): Promise<Map<string, { quantity: number; replanDays: string[] }>> {
   const dated = rows.filter((o) => !o.replan);
   if (dated.length === 0) return new Map();
-  const items = await db.loadingConfirmationItem.findMany({
-    where: { orderId: { in: dated.map((o) => o.id) }, status: 'NOT_LOADED', replanId: null },
-    select: { orderId: true, quantity: true, confirmation: { select: { shipDay: true } }, replans: { where: { status: { not: 'CANCELLED' } }, select: { shipDay: true } } },
+  // Geçerli durum (karar 105): düzeltmeler uygulanmış kalemler; aktarımlar kapsamın bütün satırlarından (düzeltmeyle
+  // yerini yenisi alan satıra bağlı aktarım da kapsamındır)
+  const all = await db.loadingConfirmationItem.findMany({
+    where: { orderId: { in: dated.map((o) => o.id) }, replanId: null },
+    select: {
+      id: true, orderId: true, confirmationId: true, offerLineId: true, replanId: true, revision: true, status: true, quantity: true,
+      confirmation: { select: { shipDay: true } }, replans: { where: { status: { not: 'CANCELLED' } }, select: { shipDay: true }, orderBy: { shipDay: 'asc' } },
+    },
   });
   const dayOfOrder = new Map(dated.map((o) => [o.id, shipDay(o)]));
   const out = new Map<string, { quantity: number; replanDays: string[] }>();
-  for (const it of items) {
+  for (const it of effectiveItems(all)) {
+    if (it.status !== 'NOT_LOADED' || it.quantity <= 0) continue;
     // Yalnızca siparişin göründüğü günün onayı (sipariş tarihi sonradan değiştiyse eski onayın notu o güne yazılmaz)
     if (isoDay(it.confirmation.shipDay) !== dayOfOrder.get(it.orderId)) continue;
     const cur = out.get(it.orderId) ?? { quantity: 0, replanDays: [] };
     cur.quantity += it.quantity;
-    for (const r of it.replans) if (!cur.replanDays.includes(isoDay(r.shipDay))) cur.replanDays.push(isoDay(r.shipDay));
+    const scope = all.filter((x) => x.confirmationId === it.confirmationId && x.offerLineId === it.offerLineId);
+    for (const r of scope.flatMap((x) => x.replans)) if (!cur.replanDays.includes(isoDay(r.shipDay))) cur.replanDays.push(isoDay(r.shipDay));
     out.set(it.orderId, cur);
   }
   return out;

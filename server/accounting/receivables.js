@@ -32,9 +32,9 @@ export function remaining(total, paid) {
  * her belgenin toplama giren payı hesaplanır. Sipariş başına:
  *   - Kapanış faturası (INVOICE) varsa alacağın kaynağı faturalardır: fatura + (camda) avans faturası. Kapanış faturası
  *     avansı zaten eksi satırla düşer, bu yüzden ikisi aynı tutarı iki kez içermez. Proforma sayılmaz (replaced).
- *   - Fatura yoksa proforma alacağı temsil eder. Avans faturası kesildiyse proformanın o kadarı faturaya dönmüştür:
- *     proformadan yalnızca avans faturasının (ya da FGO'nun proformada gösterdiği tahsilatın — hangisi büyükse)
- *     karşılamadığı kısım sayılır; avans faturasının kendi kalanı ayrıca sayılır.
+ *   - Fatura yoksa proforma alacağı temsil eder. Avans faturası kesildiyse (bir ya da birkaç) proformanın o kadarı
+ *     faturaya dönmüştür: proformadan yalnızca avans faturalarının (ya da FGO'nun proformada gösterdiği tahsilatın —
+ *     hangisi büyükse) karşılamadığı kısım sayılır; her avans faturasının kendi kalanı ayrıca sayılır.
  * Tutarı FGO'dan henüz okunmamış belge (total yok) toplamlara girmez. Para birimleri birbirine eklenmez.
  * @param {{ id: string, orderId: string | null, batchId?: string | null, kind: string, currency: string, total: unknown, paid: unknown,
  *   batch?: { parentId?: string | null, lines?: { ronGross: unknown, refBatchId: string | null }[] } | null }[]} docs
@@ -59,7 +59,8 @@ export function receivables(docs) {
       continue;
     }
     const invoice = list.find((d) => d.kind === 'INVOICE');
-    const advance = list.find((d) => d.kind === 'ADVANCE');
+    // Sipariş başına birden çok avans faturası olabilir (karar 104): proformanın faturaya dönen kısmı hepsinin toplamıdır
+    const advanced = round2(list.filter((d) => d.kind === 'ADVANCE').reduce((s, d) => s + Number(d.total ?? 0), 0));
     for (const d of list) {
       if (d.kind !== 'PROFORMA') {
         shares.set(d.id, own(d));
@@ -69,7 +70,7 @@ export function receivables(docs) {
         shares.set(d.id, { debt: null, rest: null, replaced: false });
       } else {
         const total = Number(d.total);
-        const invoiced = Math.min(total, Number(advance?.total ?? 0)); // avans faturasına dönen kısım
+        const invoiced = Math.min(total, advanced); // avans faturalarına dönen kısım
         const covered = Math.max(invoiced, Number(d.paid ?? 0));
         shares.set(d.id, { debt: round2(total - invoiced), rest: round2(Math.max(0, total - covered)), replaced: false });
       }

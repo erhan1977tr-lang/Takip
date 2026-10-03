@@ -6,12 +6,14 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
-import { dispatchGlassJobs, markGlassPaid, requestGlassDocument } from '@/server/glass/billing.js';
-import { parseAmount } from '@/server/accounting/supplier.js';
+import { dispatchGlassJobs, requestGlassDocument } from '@/server/glass/billing.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}#finans`;
 
-/** Proforma / avans faturası / fatura iste: kuyruğa alınır ve hemen denenir (işçi de dakikada bir dener). */
+/**
+ * Proforma / avans faturası / fatura iste: kuyruğa alınır ve hemen denenir (işçi de dakikada bir dener).
+ * Avans faturasının tutarı formdan GELMEZ: FGO'nun proformada gösterdiği tahsilat − avansı kesilen (karar 104).
+ */
 export async function glassDocumentAction(fd: FormData) {
   const user = await requirePermission('OFFER_SEND');
   const id = String(fd.get('id') ?? '');
@@ -24,15 +26,4 @@ export async function glassDocumentAction(fd: FormData) {
   revalidatePath(`/siparisler/${id}`);
   revalidatePath('/admin/muhasebe/cam');
   redirect(back(id, 'fgoOk=requested'));
-}
-
-/** Proforma ödendi (FGO'da tahsilat görünmüyorsa): tahsil edilen tutar, RON, TVA dahil */
-export async function glassPaidAction(fd: FormData) {
-  const user = await requirePermission('OFFER_SEND');
-  const id = String(fd.get('id') ?? '');
-  const amount = parseAmount(fd.get('amount'));
-  if (amount == null) redirect(back(id, 'fgoError=BAD_AMOUNT'));
-  const r = await markGlassPaid(db, { orderId: id, amount, actor: await actorOf(user) });
-  revalidatePath(`/siparisler/${id}`);
-  redirect(back(id, r.ok ? 'fgoOk=paid' : `fgoError=${r.code}`));
 }

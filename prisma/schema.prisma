@@ -145,6 +145,7 @@ model User {
   orderDraftFiles    OrderDraftFile[]
   loadingsConfirmed  LoadingConfirmation[] @relation("LoadingConfirmedBy")
   replansCreated     LoadingReplan[] @relation("ReplanCreatedBy")
+  loadingCorrections LoadingCorrection[] @relation("LoadingCorrectedBy")
   billingBatches     BillingBatch[] @relation("BillingBatchCreatedBy")
 
   isActive     Boolean    @default(true)
@@ -1087,10 +1088,16 @@ model FgoDocument {
   paid       Decimal?  @db.Decimal(14, 2) // FGO "ValoareAchitata"
   checkedAt  DateTime?
   checkError String?
+  // Sipariş başına aynı türden kaçıncı belge (Aşama 7F-1): proforma ve kapanış faturası tektir (1); avans faturası
+  // birden çok olabilir (proformaya sonradan gelen her tahsilat için bir tane: 1, 2, …).
+  seq        Int       @default(1)
+  // Yalnızca sipariş başına ADVANCE: bu avansın karşıladığı tahsilat (TVA dahil, istenen tutar). "Avansı kesilen" toplam
+  // bundan hesaplanır; FGO'nun gösterdiği toplam (total) kuruş yuvarlamasıyla farklı olabilir.
+  advanced   Decimal?  @db.Decimal(14, 2)
   createdAt  DateTime  @default(now())
 
   @@unique([series, number])
-  @@unique([orderId, kind]) // sipariş başına her türden tek belge (çift kesim veritabanında da engellenir)
+  @@unique([orderId, kind, seq]) // sipariş başına her türden sıra başına tek belge (çift kesim veritabanında da engellenir)
   @@index([orderId])
 }
 
@@ -1170,6 +1177,9 @@ model BillingBatchOrder {
   // Çift faturalama engeli (veritabanında): parti etkinken "<kind>:<orderId>", parti geçersiz olunca boş.
   // Aynı sipariş aynı türden iki etkin partide olamaz.
   activeKey    String?  @unique
+  // Müşteri faturası (INVOICE): fatura, onayın hangi düzeltme sırasındaki yüklenen kapsamından kesildi (0 = düzeltmesiz).
+  // Sonraki bir düzeltme faturalanan kapsamı değiştirdiyse fark buradan bulunur (server/glass/invoice-batch.js → orderImpacts).
+  loadingRevision Int   @default(0)
 
   @@unique([batchId, orderId])
   @@index([orderId])
@@ -1260,7 +1270,28 @@ model LoadingConfirmation {
   note          String?
   createdAt     DateTime @default(now())
   items         LoadingConfirmationItem[]
+  corrections   LoadingCorrection[] // düzeltmeler (yalnızca eklenir; onayın kendisi ve ilk kalemleri değişmez)
   billingBatches BillingBatch[] // bu onaydan kesilen müşteri faturası partileri (karar 101)
+}
+
+// Onaylı yüklemenin düzeltmesi (Aşama 7F-1, karar 104): onay ve kalemleri DEĞİŞMEZ; düzeltme yeni bir kayıttır ve
+// düzeltilen kapsamların (sipariş + teklif satırı / aktarım) yüklenen / yüklenmeyen kalemleri YENİ satırlar olarak
+// eklenir (LoadingConfirmationItem.revision = bu düzeltmenin sırası, correctionId). Bir kapsamın geçerli hâli en yüksek
+// sıradaki kalemleridir (server/loading/confirmation.js → effectiveItems); eski satırlar tarihçe olarak durur.
+// Yalnızca eklenir: veritabanı tetikleyicisi UPDATE / DELETE / TRUNCATE'i reddeder.
+model LoadingCorrection {
+  id             String   @id @default(cuid())
+  confirmationId String
+  confirmation   LoadingConfirmation @relation(fields: [confirmationId], references: [id], onDelete: Restrict)
+  revision       Int      // 1 = ilk düzeltme, 2 = ikinci … (0 = onayın kendisi)
+  reason         String   // zorunlu açıklama
+  createdById    String
+  createdBy      User     @relation("LoadingCorrectedBy", fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
+  items          LoadingConfirmationItem[]
+  closedReplans  LoadingReplan[] // bu düzeltmeyle kapanan (artık sığmayan) aktarımlar
+
+  @@unique([confirmationId, revision])
 }
 
 // Onay anında müşteriye gönderilmiş teklifin bir satırının kopyası (cam, CNC, delik, sandık parası…), FİİLEN onaylanan
@@ -1306,12 +1337,20 @@ model LoadingConfirmationItem {
   replanId       String?
   replan         LoadingReplan? @relation("ReplanItems", fields: [replanId], references: [id], onDelete: Restrict)
   replans        LoadingReplan[] @relation("ReplanSource") // bu (yüklenmeyen) kalemin ileri güne aktarımları
+  // Düzeltme (Aşama 7F-1): 0 = onay anındaki kalem; n = n. düzeltmeyle eklenen kalem (correctionId). Kapsamın geçerli
+  // hâli en yüksek sıradaki kalemleridir; önceki satırlar değişmeden durur.
+  revision       Int      @default(0)
+  correctionId   String?
+  correction     LoadingCorrection? @relation(fields: [correctionId], references: [id], onDelete: Restrict)
+  // Kapsam anahtarı (itemKey): "l:<teklif satırı>" ya da "r:<aktarım>". Yalnızca bu sürümden sonra eklenen kalemlerde
+  // doludur (eski satırlar değişmez); benzersizlik denetimi içindir — kapsam kodda hep itemKey ile hesaplanır.
+  scopeKey       String?
   createdAt      DateTime @default(now())
 
-  // Bir onayda aynı teklif satırı için durum başına tek kayıt (yüklenen kısım + yüklenmeyen kısım)
-  @@unique([confirmationId, offerLineId, status])
-  // Bir aktarım en çok bir kez onaylanır: tek LOADED + tek NOT_LOADED kalem (aynı kalan iki kez yüklenemez)
-  @@unique([replanId, status])
+  // Bir onayda bir kapsam için sıra ve durum başına tek kayıt (yüklenen kısım + yüklenmeyen kısım)
+  @@unique([confirmationId, scopeKey, status, revision], map: "LoadingConfirmationItem_scope_key")
+  // Bir aktarım en çok bir kez onaylanır: sıra başına tek LOADED + tek NOT_LOADED kalem (aynı kalan iki kez yüklenemez)
+  @@unique([replanId, status, revision], map: "LoadingConfirmationItem_replan_key")
   @@index([orderId])
   @@index([customerId])
 }
@@ -1335,18 +1374,25 @@ model LoadingReplan {
   order        Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   customerId   String
   customer     Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  quantity     Int      // aktarılan (kalan) adet
+  quantity     Int      // aktarılan adet (> 0; kalanın tamamı ya da bir kısmı)
   m2           Decimal  @db.Decimal(10, 2)
   reason       String   // kaynağın nedeni (BROKEN | MISSING | NOT_READY | OTHER)
   fromDay      DateTime @db.Date // kaynağın yükleme günü (yüklenmediği onay)
   shipDay      DateTime @db.Date // yeni yükleme günü
   status       ReplanStatus @default(ACTIVE)
-  // Etkin ya da onaylanmışken kaynak kalemin kimliği, vazgeçilince boş: aynı kalan için ikinci aktarım veritabanında da olamaz
+  // Vazgeçilmemişken "<onay>|<kapsam>|<hedef gün>" (eski kayıtlarda kaynak kalemin kimliği), vazgeçilince boş: aynı
+  // kapsamdan aynı güne ikinci aktarım (çift tıklama) veritabanında da olamaz. Bir kapsamın birden çok güne aktarımı
+  // olabilir (kısmi aktarım, Aşama 7F-1); toplamı kapsamın geçerli yüklenmeyen adedini aşamaz (kilit altında denetlenir).
   activeKey    String?  @unique
   createdById  String
   createdBy    User     @relation("ReplanCreatedBy", fields: [createdById], references: [id])
   createdAt    DateTime @default(now())
   closedAt     DateTime? // onaylandığı ya da vazgeçildiği an
+  // Vazgeçilmiş (CANCELLED) kaydın nedeni: ADMIN (yönetici vazgeçti) | MOVED (başka güne alındı) | CORRECTION (yükleme
+  // düzeltmesiyle yüklenmeyen adet azaldı, aktarım sığmadı — correctionId)
+  closedReason String?
+  correctionId String?
+  correction   LoadingCorrection? @relation(fields: [correctionId], references: [id], onDelete: Restrict)
   items        LoadingConfirmationItem[] @relation("ReplanItems")
 
   @@index([shipDay, status])

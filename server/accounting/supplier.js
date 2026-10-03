@@ -17,8 +17,13 @@
 // anında alınan kopyadan (LoadingConfirmationItem) gelir — teklif ya da fiyat sonradan değişse de değişmez. Onaylanmamış
 // günlerde eski hesap sürer (planlanan yükleme günü; ekranda "planlanan" olarak ayrılır). Bir sipariş iki kez sayılmaz:
 // onaylı bir yüklemede yüklenmiş sipariş, tarihi sonradan değişse de başka günde yeniden sayılmaz.
+//
+// Yükleme düzeltmesi (karar 105): kârlılık onayın GEÇERLİ kalemlerinden (effectiveItems — düzeltmeler uygulanmış) gelir,
+// yani fiilen yüklenen camı izler. Kesilmiş bir fatura düzeltilmiş yüklemeyle uyuşmuyorsa muhasebe düzeltilmiş SAYILMAZ:
+// gün "muhasebe işlemi gerekli" olarak işaretlenir (accounting) — fark otomatik belgeyle kapatılmaz (Aşama 7F-2).
 import { dayKey, orderLoad } from '../orders/loading.js';
-import { itemAsLine, lineTotals } from '../loading/confirmation.js';
+import { effectiveItems, itemAsLine, lineTotals } from '../loading/confirmation.js';
+import { ACTION_REQUIRED, orderImpacts } from '../glass/invoice-batch.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const add = (map, cur, key, v) => {
@@ -107,6 +112,7 @@ export function mergeConfirmed(planned, confirmations) {
 /**
  * Yükleme günleri: m², para birimi başına satış / maliyet / nakliye / kâr; noCost = maliyeti eksik siparişlerin numaraları.
  * confirmed: gün "Eksiksiz Yüklendi" olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayanlar.
+ * accounting: kesilmiş faturası düzeltilmiş yüklemeyle uyuşmayan siparişler (supplierData doldurur; muhasebe işlemi gerekli).
  * @param {(ReturnType<typeof orderLine> | ReturnType<typeof confirmedLine>)[]} lines
  * @param {{ shipDay: Date, amount: unknown, currency: string }[]} costs
  * @param {{ confirmedDays?: Set<string>, outside?: Map<string, { orderId: string, orderNo: string }[]> }} [conf]
@@ -114,7 +120,7 @@ export function mergeConfirmed(planned, confirmations) {
 export function loadingProfits(lines, costs, { confirmedDays = new Set(), outside = new Map() } = {}) {
   const days = new Map();
   const dayOf = (key) => {
-    if (!days.has(key)) days.set(key, { day: key, orders: 0, m2: 0, byCur: {}, noCost: [], confirmed: confirmedDays.has(key), outside: outside.get(key) ?? [] });
+    if (!days.has(key)) days.set(key, { day: key, orders: 0, m2: 0, byCur: {}, noCost: [], confirmed: confirmedDays.has(key), outside: outside.get(key) ?? [], accounting: [] });
     return days.get(key);
   };
   for (const l of lines) {
@@ -194,7 +200,8 @@ export async function supplierData(db, endOfToday) {
   ]);
   const confirmations = confirmed.map((c) => {
     const byOrder = new Map();
-    for (const it of c.items) {
+    // Geçerli durum: düzeltilmiş kapsamda son düzeltmenin kalemleri (eski satırlar sayılmaz — çift sayım olmaz)
+    for (const it of effectiveItems(c.items)) {
       const g = byOrder.get(it.orderId) ?? { orderId: it.orderId, orderNo: it.order.orderNo, items: [] };
       g.items.push(it);
       byOrder.set(it.orderId, g);
@@ -204,6 +211,12 @@ export async function supplierData(db, endOfToday) {
   const planned = orders.map(orderLine);
   const merged = mergeConfirmed(planned, confirmations);
   const days = loadingProfits(merged.lines, costs, merged);
+  // Düzeltilmiş onaylarda kesilmiş faturası fiili yüklemeyle uyuşmayan siparişler: gün işaretlenir (yalnızca saptama)
+  for (const c of confirmed.filter((x) => x.items.some((i) => i.revision > 0))) {
+    const list = [...(await orderImpacts(db, { confirmationId: c.id, items: effectiveItems(c.items) })).values()].filter((x) => ACTION_REQUIRED.includes(x.code));
+    const d = days.find((x) => x.day === c.shipDay.toISOString().slice(0, 10));
+    if (d && list.length) d.accounting = list.map((x) => ({ orderId: x.orderId, orderNo: x.orderNo, code: x.code, ref: x.ref }));
+  }
   // Maliyeti girilebilecek satırlar: yalnızca henüz onaylı yüklemeye girmemiş siparişlerin eksik maliyetleri
   const missing = merged.lines.filter((l) => !l.confirmed && l.noCostLines.length > 0)
     .map((l) => ({ orderId: l.orderId, orderNo: l.orderNo, day: l.day, currency: l.currency, lines: l.noCostLines }));

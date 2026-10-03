@@ -58,6 +58,7 @@ export default {
   LOADING_CONFIRMED: { label: 'Yükleme onaylandı: eksiksiz yüklendi (yükleme günü)' },
   LOADING_PARTIAL: { label: 'Yükleme onaylandı: bir kısmı yüklendi (yükleme günü)' },
   LOADING_NOT_LOADED: { label: 'Yüklenmeyen cam kaydedildi (yükleme günü · adet)' },
+  LOADING_CORRECTED: { label: 'Onaylı yükleme düzeltildi (yükleme günü · düzeltme no)' },
   REPLAN_NOT_LOADED: { label: 'Yüklenmeyen cam ileri yüklemeye aktarıldı (adet · eski → yeni gün)' },
   REPLAN_CANCELLED: { label: 'Yüklenmeyen camın aktarımından vazgeçildi (adet · gün)' },
   GUEST_CRATE: { label: 'Başka müşterinin sandığına yerleştirildi (fiziksel; sandık · gün)' },

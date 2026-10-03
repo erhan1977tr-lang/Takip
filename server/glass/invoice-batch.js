@@ -20,6 +20,13 @@
 //     KESİLMEZ (ADVANCE_REQUIRED); avans yüklemeden sonra da kesilebilir. Bir fatura, avansın en çok kendi tutarı
 //     kadarını düşer; kalanı zincirin sonraki faturalarına kalır (proforma birden çok yüklemeyi kapsayabilir).
 //
+//   Yükleme düzeltmesi (Aşama 7F-1, karar 105): kaynak, onayın GEÇERLİ kalemleridir (effectiveItems — düzeltmeler
+//   uygulanmış). Düzeltme kesilmiş bir faturanın kapsamını değiştirdiyse hiçbir belge OTOMATİK kesilmez / değiştirilmez:
+//   fark yalnızca saptanır (orderImpacts → UNDER_INVOICED / OVER_INVOICED = "muhasebe işlemi gerekli") ve o kapsamın
+//   yeniden faturalanması engellenir — onayın siparişi zaten fatura partisindedir (activeKey); fazla faturalanan kapsamdan
+//   ileri güne aktarılan cam, yüklendiği onayda müşteri faturasına ALINMAZ (heldReplans → ACCOUNTING_ACTION).
+//   Storno / düzeltme faturası / ek fatura Aşama 7F-2'dedir.
+//
 //   Parti (BillingBatch, kind INVOICE / ADVANCE) değişmez kopyadır; belgeyi işçi yalnızca kayıttan keser
 //   (server/glass/batch.js → dispatchBatchJobs). Tekrar engeli: müşteri + sipariş kilitleri, önizleme parmak izi,
 //   BillingBatch.uniqueKey ve BillingBatchOrder.activeKey (veritabanında benzersiz), FGO IdExtern.
@@ -28,7 +35,7 @@ import { can } from '../auth/permissions.js';
 import { getEnv } from '../env.js';
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { parseDateOnly } from '../orders/rules.js';
-import { itemAsLine, shipDayDate } from '../loading/confirmation.js';
+import { effectiveItems, itemAsLine, itemKey, scopeOf, shipDayDate } from '../loading/confirmation.js';
 import { glassLabel } from '../catalog/glass.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
@@ -147,7 +154,7 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
  * @typedef {{ name: string, pieces: number, m2: number, amount: number, net: number, gross: number }} InvoiceLine
  * @typedef {{ orderId: string, orderNo: string, title: string | null, offerId: string | null, lines: InvoiceLine[], sourceTotal: number, ronNet: number, ronGross: number }} InvoiceOrder
  * @typedef {{ advanceBatchId: string, ref: string | null, gross: number, net: number }} StornoLine
- * @typedef {{ batchId: string, status: string, ref: string | null, link: string | null, total: number | null, paid: number | null, lastError: string | null, orders: string[] }} IssuedInvoice
+ * @typedef {{ batchId: string, status: string, ref: string | null, link: string | null, total: number | null, paid: number | null, lastError: string | null, orders: string[], impacts: OrderImpact[] }} IssuedInvoice
  * @typedef {{
  *   key: string, currency: string, chainId: string | null,
  *   chain: null | { ref: string | null, total: number | null, paid: number, advanced: number, advanceRequired: number, advancePending: boolean, proformaBatchId: string },
@@ -155,9 +162,9 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
  *   sourceTotal: number, ronNet: number | null, ronGross: number | null, storno: StornoLine[], payable: number | null,
  *   problems: string[], previewKey: string,
  * }} InvoiceGroup
- * @typedef {{ orderId: string, orderNo: string, reason: 'ORDER_CHAIN' | 'PROFORMA_NOT_ISSUED' | 'CURRENCY' | 'NO_LINES', ref: string | null }} ExcludedOrder
+ * @typedef {{ orderId: string, orderNo: string, reason: 'ORDER_CHAIN' | 'PROFORMA_NOT_ISSUED' | 'CURRENCY' | 'NO_LINES' | 'ACCOUNTING_ACTION', ref: string | null }} ExcludedOrder
  * @typedef {{ customerId: string, name: string, missingBilling: string[], groups: InvoiceGroup[], issued: IssuedInvoice[], excluded: ExcludedOrder[] }} CustomerBilling
- * @typedef {{ ok: true, day: string, confirmationId: string, customers: CustomerBilling[] }} LoadingBilling
+ * @typedef {{ ok: true, day: string, confirmationId: string, revision: number, customers: CustomerBilling[] }} LoadingBilling
  */
 
 /** Bir siparişin yüklenen kalemleri → fatura satırları (sipariş faturasıyla aynı kural: invoiceLines) */
@@ -168,6 +175,123 @@ function orderInvoiceLines(orderNo, items, rate, vatRate) {
   return invoiceLines(offer, rate, vatRate).map((l, i) => ({
     name: `Comanda ${orderNo} — ${l.name}`.slice(0, 250), pieces: pieces[i]?.adet ?? 0, m2: l.qty, amount: src[i]?.eurTotal ?? 0, net: l.net, gross: l.gross,
   }));
+}
+
+/** Romence ad: kalemde yoksa katalogdaki camın Romence adı (sipariş faturasıyla aynı) */
+async function withRoLabels(db, items) {
+  const missingRo = items.filter((i) => !i.descriptionRo && i.glassProductId).map((i) => i.glassProductId);
+  if (missingRo.length === 0) return items;
+  const labels = new Map((await db.glassProduct.findMany({ where: { id: { in: missingRo } } })).map((x) => [x.id, glassLabel(x, 'ro')]));
+  return items.map((it) => (!it.descriptionRo && labels.has(it.glassProductId) ? { ...it, descriptionRo: labels.get(it.glassProductId) } : it));
+}
+
+/** Yüklenen kalemlerin ticari kapsamı, fatura kuralıyla (glassLines): adet ve kaynak para birimi tutarı */
+function commercialScope(items) {
+  const offer = { lines: items.filter((i) => i.status === 'LOADED').map(itemAsLine) };
+  return { pieces: glassTotals(offer).reduce((n, g) => n + g.adet, 0), amount: round2(glassLines(offer).reduce((n, g) => n + g.eurTotal, 0)) };
+}
+
+/**
+ * Yükleme düzeltmesinin FİNANSAL ETKİSİ (karar 105) — yalnızca saptama; hiçbir belge kesilmez / değişmez.
+ * Bir onayın verilen (geçerli ya da düzeltme sonrası olacak) kalemlerindeki yüklenen ticari kapsam, o onaydan kesilmiş
+ * etkin fatura partisinin saklı kapsamıyla (BillingBatchLine) sipariş başına karşılaştırılır:
+ *   NO_BILLING              : bu onaydan fatura yok (kapsam serbest; fatura geçerli durumdan kesilir)
+ *   ORDER_CHAIN             : sipariş başına belge zincirinde (fatura siparişin tamamı için sipariş sayfasından kesilir)
+ *   QUEUED_BILLING          : fatura kuyrukta (kesilmek üzere) — düzeltme yapılamaz
+ *   FAILED_BILLING          : fatura kesilemedi — önce yönetici yeniden dener ya da vazgeçer
+ *   NO_FINANCIAL_DIFFERENCE : fatura kesilmiş, yüklenen ticari kapsam aynı
+ *   UNDER_INVOICED          : fatura kesilmiş, fiilen yüklenen faturadakinden FAZLA → muhasebe işlemi gerekli
+ *   OVER_INVOICED           : fatura kesilmiş, fiilen yüklenen faturadakinden AZ → muhasebe işlemi gerekli
+ * @typedef {'NO_BILLING' | 'ORDER_CHAIN' | 'QUEUED_BILLING' | 'FAILED_BILLING' | 'NO_FINANCIAL_DIFFERENCE' | 'UNDER_INVOICED' | 'OVER_INVOICED'} ImpactCode
+ * @typedef {{ code: ImpactCode, orderId: string, orderNo: string, batchId: string | null, ref: string | null, currency: string | null,
+ *   invoiced: { pieces: number, amount: number } | null, effective: { pieces: number, amount: number }, diff: number, invoicePaid: boolean, advanceDeducted: boolean }} OrderImpact
+ * @param {any} db
+ * @param {{ confirmationId: string, items: any[], orderIds?: string[] }} o  items: onayın kalemleri (geçerli hâl), orderIds: yalnızca bu siparişler
+ * @returns {Promise<Map<string, OrderImpact>>}
+ */
+export async function orderImpacts(db, { confirmationId, items, orderIds = undefined }) {
+  const ids = orderIds ?? [...new Set(items.map((i) => i.orderId))];
+  if (ids.length === 0) return new Map();
+  const [orders, jobs, covered, rows] = await Promise.all([
+    db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderNo: true, fgoDocuments: { select: { kind: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } } } }),
+    db.notificationOutbox.findMany({ where: { orderId: { in: ids }, type: GLASS_FGO, status: 'PENDING' }, select: { orderId: true } }),
+    db.billingBatchOrder.findMany({
+      where: { activeKey: { in: ids.map((id) => invoiceOrderKey(confirmationId, id)) } },
+      select: { orderId: true, batch: { select: { id: true, status: true, currency: true, document: true, lines: { select: { orderId: true, pieces: true, amount: true, refBatchId: true } } } } },
+    }),
+    withRoLabels(db, items.filter((i) => ids.includes(i.orderId))),
+  ]);
+  const pending = new Set(jobs.map((j) => j.orderId));
+  const out = new Map();
+  for (const o of orders) {
+    // Teklif sırasıyla: işlem satırları (CNC, delik) faturadaki gibi üstündeki cama eklenir
+    const effective = commercialScope(rows.filter((i) => i.orderId === o.id).sort((x, y) => x.sortOrder - y.sortOrder));
+    const base = { orderId: o.id, orderNo: o.orderNo, batchId: null, ref: null, currency: rows.find((i) => i.orderId === o.id)?.currency ?? null, invoiced: null, effective, diff: 0, invoicePaid: false, advanceDeducted: false };
+    const b = covered.find((x) => x.orderId === o.id)?.batch ?? null;
+    if (!b) {
+      const own = coverageOf({ fgoDocuments: o.fgoDocuments }, pending.has(o.id));
+      out.set(o.id, { ...base, code: own ? 'ORDER_CHAIN' : 'NO_BILLING', ref: own?.ref ?? null });
+      continue;
+    }
+    const mine = b.lines.filter((l) => l.orderId === o.id);
+    const invoiced = { pieces: mine.reduce((n, l) => n + (l.pieces ?? 0), 0), amount: round2(mine.reduce((n, l) => n + num(l.amount), 0)) };
+    const diff = round2(effective.amount - invoiced.amount);
+    const more = Math.abs(diff) > EPS ? diff > 0 : effective.pieces > invoiced.pieces;
+    const same = Math.abs(diff) <= EPS && effective.pieces === invoiced.pieces;
+    out.set(o.id, {
+      ...base, batchId: b.id, ref: refOf(b.document), currency: b.currency, invoiced, diff,
+      invoicePaid: num(b.document?.paid) > 0, advanceDeducted: b.lines.some((l) => l.refBatchId),
+      code: b.status === 'PENDING' ? 'QUEUED_BILLING' : b.status === 'FAILED' ? 'FAILED_BILLING' : same ? 'NO_FINANCIAL_DIFFERENCE' : more ? 'UNDER_INVOICED' : 'OVER_INVOICED',
+    });
+  }
+  return out;
+}
+
+/** "Muhasebe işlemi gerekli": kesilmiş fatura, düzeltilmiş fiili yüklemeyle uyuşmuyor (otomatik belge kesilmez) */
+export const ACTION_REQUIRED = ['UNDER_INVOICED', 'OVER_INVOICED'];
+
+/**
+ * Faturası DONDURULAN aktarımlar (çift faturalama engeli, karar 105): kaynağı — ya da zincirde daha gerideki bir kaynak —
+ * kesilmiş bir faturada yüklenmiş diye faturalanmış, sonra düzeltmeyle "yüklenmedi" olmuş kapsam olan aktarım. O cam
+ * faturada zaten vardır; yüklendiği onayda yeniden faturalanırsa aynı mal iki kez faturalanır. Fatura FGO'da silinir /
+ * parti geçersiz olursa dondurma kendiliğinden kalkar (kapsam yeniden geçerli durumdan faturalanır).
+ * @param {any} db  @param {string[]} replanIds
+ * @returns {Promise<Map<string, string>>}  aktarım → çelişen faturanın numarası
+ */
+export async function heldReplans(db, replanIds) {
+  const out = new Map();
+  const memo = new Map();
+  const loaded = (rows) => rows.filter((x) => x.status === 'LOADED').reduce((n, x) => n + x.quantity, 0);
+  const overInvoiced = async (src) => {
+    const k = scopeOf(src);
+    if (memo.has(k)) return memo.get(k);
+    const bo = await db.billingBatchOrder.findUnique({
+      where: { activeKey: invoiceOrderKey(src.confirmationId, src.orderId) },
+      select: { loadingRevision: true, batch: { select: { status: true, document: { select: { series: true, number: true } } } } },
+    });
+    let ref = null;
+    if (bo?.batch.status === 'ISSUED') {
+      const rows = (await db.loadingConfirmationItem.findMany({
+        where: { confirmationId: src.confirmationId, orderId: src.orderId },
+        select: { confirmationId: true, offerLineId: true, replanId: true, revision: true, status: true, quantity: true },
+      })).filter((x) => itemKey(x) === itemKey(src));
+      // Faturanın kesildiği andaki yüklenen adet > bugünkü geçerli yüklenen adet: aradaki cam faturalanmıştır
+      if (loaded(effectiveItems(rows)) < loaded(effectiveItems(rows, bo.loadingRevision))) ref = refOf(bo.batch.document) ?? '—';
+    }
+    memo.set(k, ref);
+    return ref;
+  };
+  for (const id of new Set(replanIds)) {
+    let cur = id;
+    for (let depth = 0; cur && depth < 50; depth++) {
+      const r = await db.loadingReplan.findUnique({ where: { id: cur }, select: { sourceItem: { select: { confirmationId: true, orderId: true, offerLineId: true, replanId: true } } } });
+      if (!r) break;
+      const ref = await overInvoiced(r.sourceItem);
+      if (ref) { out.set(id, ref); break; }
+      cur = r.sourceItem.replanId;
+    }
+  }
+  return out;
 }
 
 /** Parmak izi: önizlenen = kesilen (kalemler, kur, avans düşümü) */
@@ -182,9 +306,12 @@ function previewKeyOf(g) {
 
 /**
  * Onaylı yükleme gününün faturalama görünümü = kesilecek faturaların hesabı. Hiçbir şey yazmaz.
- *   groups  : henüz faturası olmayan kapsam (müşteri + para birimi + zincir başına bir grup)
- *   issued  : bu onaydan kesilmiş / kuyruktaki / kesilemeyen fatura partileri
- *   excluded: müşteri faturasına girmeyen siparişler ve nedeni
+ *   groups  : henüz faturası olmayan kapsam (müşteri + para birimi + zincir başına bir grup) — onayın GEÇERLİ yüklenen
+ *             kalemlerinden (effectiveItems; düzeltmeler uygulanmış)
+ *   issued  : bu onaydan kesilmiş / kuyruktaki / kesilemeyen fatura partileri; impacts: kesilmiş faturası geçerli
+ *             yüklemeyle uyuşmayan siparişler (muhasebe işlemi gerekli — otomatik belge kesilmez)
+ *   excluded: müşteri faturasına girmeyen siparişler ve nedeni (ACCOUNTING_ACTION: cam başka bir faturada zaten var)
+ *   revision: onayın son düzeltme sırası (fatura partisi hangi durumdan kesildiğini saklar)
  * manual: { key, rate } — yöneticinin o grup için elle girdiği kur (yalnızca zincirsiz EUR grubunda geçerli).
  * fx: { [groupKey]: FxResult } — parti oluşturulurken, işlem içinde kur yeniden çözülmesin diye.
  * @param {any} db
@@ -195,11 +322,15 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
   if (!parseDateOnly(day)) return { ok: false, code: 'BAD_DAY' };
   const conf = await db.loadingConfirmation.findUnique({
     where: { shipDay: shipDayDate(day) },
-    include: { items: { where: { status: 'LOADED' }, orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }] } },
+    include: { items: { orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }] } },
   });
   if (!conf) return { ok: false, code: 'NOT_CONFIRMED' };
   vatRate ??= (await getFgoSettings(db)).vatRate;
-  const orderIds = [...new Set(conf.items.map((i) => i.orderId))];
+  // Geçerli durum (karar 105): düzeltilmiş kapsamda son düzeltmenin kalemleri; yalnızca LOADED olanlar faturalanır
+  const effective = effectiveItems(conf.items);
+  const revision = conf.items.reduce((m, i) => Math.max(m, i.revision ?? 0), 0);
+  const loadedItems = await withRoLabels(db, effective.filter((i) => i.status === 'LOADED'));
+  const orderIds = [...new Set(loadedItems.map((i) => i.orderId))];
   const [orders, jobs, batches] = await Promise.all([
     db.order.findMany({
       where: { id: { in: orderIds } },
@@ -214,28 +345,34 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
     db.billingBatch.findMany({
       where: { confirmationId: conf.id, kind: 'INVOICE', status: { not: 'VOID' } },
       orderBy: { createdAt: 'asc' },
-      include: { document: true, orders: { select: { orderNo: true }, orderBy: { orderNo: 'asc' } } },
+      include: { document: true, customer: true, orders: { select: { orderId: true, orderNo: true }, orderBy: { orderNo: 'asc' } } },
     }),
   ]);
   const pending = new Set(jobs.map((j) => j.orderId));
-  // Romence ad: kalemde yoksa katalogdaki camın Romence adı (sipariş faturasıyla aynı)
-  const missingRo = conf.items.filter((i) => !i.descriptionRo && i.glassProductId).map((i) => i.glassProductId);
-  const labels = missingRo.length ? new Map((await db.glassProduct.findMany({ where: { id: { in: missingRo } } })).map((x) => [x.id, glassLabel(x, 'ro')])) : new Map();
   const itemsOf = new Map();
-  for (const it of conf.items) {
-    const row = !it.descriptionRo && labels.has(it.glassProductId) ? { ...it, descriptionRo: labels.get(it.glassProductId) } : it;
+  for (const it of loadedItems) {
     if (!itemsOf.has(it.orderId)) itemsOf.set(it.orderId, []);
-    itemsOf.get(it.orderId).push(row);
+    itemsOf.get(it.orderId).push(it);
   }
+  // Kesilmiş faturası geçerli yüklemeyle uyuşmayan siparişler ve faturası dondurulan aktarımlar (yalnızca saptama)
+  const invoicedIds = [...new Set(batches.flatMap((b) => b.orders.map((x) => x.orderId)))];
+  const [impacts, held] = await Promise.all([
+    orderImpacts(db, { confirmationId: conf.id, items: effective, orderIds: invoicedIds }),
+    heldReplans(db, loadedItems.map((i) => i.replanId).filter(Boolean)),
+  ]);
 
   /** @type {Map<string, CustomerBilling & { open: Map<string, any>, customer: any }>} */
   const byCustomer = new Map();
-  for (const o of orders) {
-    let c = byCustomer.get(o.customerId);
+  const entryOf = (customer) => {
+    let c = byCustomer.get(customer.id);
     if (!c) {
-      c = { customerId: o.customerId, name: o.customer.name, customer: o.customer, missingBilling: missingBilling(o.customer), groups: [], issued: [], excluded: [], open: new Map() };
-      byCustomer.set(o.customerId, c);
+      c = { customerId: customer.id, name: customer.name, customer, missingBilling: missingBilling(customer), groups: [], issued: [], excluded: [], open: new Map() };
+      byCustomer.set(customer.id, c);
     }
+    return c;
+  };
+  for (const o of orders) {
+    const c = entryOf(o.customer);
     const items = itemsOf.get(o.id) ?? [];
     // Bu onaydaki kapsamı zaten bir fatura partisinde: yeniden faturalanmaz
     if (o.billingBatchOrders.some((b) => b.activeKey === invoiceOrderKey(conf.id, o.id))) continue;
@@ -246,6 +383,10 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
     // istek kapsamı serbest bırakır, sipariş müşteri faturasına girer. (Müşteri partisi kapsamı aşağıda zincir olarak ele alınır.)
     const own = coverageOf({ fgoDocuments: o.fgoDocuments }, pending.has(o.id));
     if (own) { no('ORDER_CHAIN', own.ref); continue; }
+    // Bu güne aktarılıp yüklenen cam, kaynağındaki kesilmiş faturada zaten faturalanmışsa (düzeltmeyle "yüklenmedi"
+    // olmuş kapsam): sipariş bu onayın faturasına alınmaz — muhasebe işlemi gerekli, otomatik belge kesilmez
+    const hold = items.map((i) => (i.replanId ? held.get(i.replanId) : null)).find(Boolean);
+    if (hold) { no('ACCOUNTING_ACTION', hold); continue; }
     const currency = items[0]?.currency ?? null;
     if (currency !== 'EUR' && currency !== 'RON') { no('CURRENCY'); continue; }
     if (glassLines({ lines: items.map(itemAsLine) }).length === 0) { no('NO_LINES'); continue; }
@@ -316,15 +457,16 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
     }
   }
   for (const b of batches) {
-    const c = byCustomer.get(b.customerId);
-    if (!c) continue;
+    // Düzeltmeyle hiç yüklenen kalemi kalmamış siparişin faturası da görünür (fark burada bildirilir)
+    const c = entryOf(b.customer);
     c.issued.push({
       batchId: b.id, status: b.status, ref: refOf(b.document), link: b.document?.link ?? null, total: b.document?.total == null ? null : Number(b.document.total),
       paid: b.document?.paid == null ? null : Number(b.document.paid), lastError: b.lastError ?? null, orders: b.orders.map((o) => o.orderNo),
+      impacts: b.orders.map((o) => impacts.get(o.orderId)).filter((x) => x && ACTION_REQUIRED.includes(x.code)),
     });
   }
   const customers = [...byCustomer.values()].map(({ open: _open, customer: _customer, ...c }) => c).sort((a, b) => a.name.localeCompare(b.name));
-  return { ok: true, day, confirmationId: conf.id, customers };
+  return { ok: true, day, confirmationId: conf.id, revision, customers };
 }
 
 /**
@@ -381,7 +523,7 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, manual
           customerId: x.c.customerId, kind: 'INVOICE', status: 'PENDING', parentId: g.chainId, confirmationId: again.confirmationId, uniqueKey: g.key, currency: g.currency,
           loadingDays: [shipDay], selectionKey: g.previewKey, sourceTotal: g.sourceTotal.toFixed(2), ronNet: round2(g.ronNet - stornoNet).toFixed(2), createdById: actor.id, createdAt: now,
           ...fxData,
-          orders: { create: g.orders.map((o) => ({ orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: shipDay, sourceAmount: o.sourceTotal.toFixed(2), activeKey: invoiceOrderKey(again.confirmationId, o.orderId) })) },
+          orders: { create: g.orders.map((o) => ({ orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: shipDay, sourceAmount: o.sourceTotal.toFixed(2), activeKey: invoiceOrderKey(again.confirmationId, o.orderId), loadingRevision: again.revision })) },
           lines: { create: [...goods, ...storno].map((l, i) => ({ ...l, sortOrder: i })) },
         },
       });
@@ -393,7 +535,7 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, manual
       await writeAudit(tx, {
         action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id,
         details: {
-          customerId: x.c.customerId, kind: 'INVOICE', confirmationId: again.confirmationId, day, orders: g.orders.map((o) => o.orderNo), currency: g.currency, sourceTotal: g.sourceTotal,
+          customerId: x.c.customerId, kind: 'INVOICE', confirmationId: again.confirmationId, loadingRevision: again.revision, day, orders: g.orders.map((o) => o.orderNo), currency: g.currency, sourceTotal: g.sourceTotal,
           ronNet: g.ronNet, ronGross: g.ronGross, storno: g.storno.map((y) => ({ advance: y.ref, gross: y.gross })), proformaBatchId: g.chainId,
           fxRate: g.fx.finalRate, fxSource: g.fx.source, fxSourceDate: g.fx.sourceDate, fxManual: g.fx.manual,
         },

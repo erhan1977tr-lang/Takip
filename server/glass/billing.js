@@ -4,10 +4,13 @@
 // müşterinin firma e-postasına Romence e-postayla FGO bağlantısı gönderilir.
 //
 // Kararlar (ürün sahibi, 01.10.2026):
-//   - Proforma ödendi = FGO'da proformaya tahsilat görünür VEYA yönetici "Ödeme alındı" der (tutarıyla).
-//   - Avans faturası = tahsil edilen tutar (TVA dahil), tek satır "Avans marfă conform proformă …".
+//   - Proforma ödendi = FGO'da proformaya tahsilat görünür. Ödemenin TEK kaynağı FGO'dur (Aşama 7F-1, karar 104):
+//     yönetici tutar giremez; eski "Ödeme alındı" (GlassBilling.paidAmount) artık okunmaz.
+//   - Avans faturası = FGO'nun proformada gösterdiği tahsilat − daha önce avansı kesilen tutar (TVA dahil), tek satır
+//     "Avans marfă conform proformă …". Yüklemeden önce de sonra da kesilebilir; sonradan gelen her tahsilat için yeni
+//     bir avans faturası (seq 1, 2, …). Avansı kesilmemiş tahsilat varken kapanış faturası KESİLMEZ.
 //   - Cam yüklendi = yükleme gününden (gerçek, yoksa tahmini) 2 gün sonra.
-//   - Yüklenince kapanış faturası: cam satırları + varsa avansı düşen eksi satır ("Stornare avans").
+//   - Yüklenince kapanış faturası: cam satırları + her avans için onu düşen eksi satır ("Stornare avans").
 //   - Kur: müşterinin kur politikası (server/fx/resolve.js); proformada çözülür ve saklanır, avans ve kapanış faturası
 //     proformanın kuruyla; proforma yoksa fatura kesilirken çözülür.
 //   - Günlük belge sınırı (deneme güvenliği) FGO ayarlarında.
@@ -143,35 +146,50 @@ export function proformaLines(offer) {
 /** TVA dahil tutar → TVA hariç birim fiyat (avans satırı) */
 export const netOf = (gross, vatRate) => round2(Number(gross) / (1 + Number(vatRate) / 100));
 
-/** Proforma ödenmiş (FGO'da tahsilat ya da yöneticinin "Ödeme alındı"sı) ama karşılığında avans faturası kesilmemiş */
-export const paidWithoutAdvance = (proforma, advance, paidAmount) => !!proforma && !advance && paidAmount != null && Number(paidAmount) > 0;
+const EPS = 0.005;
 
 /**
- * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; billing: GlassBilling; pending: kuyruktaki belge türleri.
+ * Sipariş başına belge zincirinin avans durumu — tek yerde hesaplanır (müşteri partisindeki chainState'in karşılığı;
+ * düğmeler, istek, işçi ve ekran aynı sonucu kullanır).
+ *   paid            : FGO'nun proformada gösterdiği tahsilat (TVA dahil) — ödemenin tek kaynağı
+ *   advanced        : kesilmiş avans faturalarının karşıladığı tahsilat toplamı (FgoDocument.advanced; eski kayıtta total)
+ *   advanceRequired : avansı henüz kesilmemiş tahsilat (> 0 ise kapanış faturası kesilmez, avans faturası istenir)
+ *   nextSeq         : sıradaki avans faturasının sırası
+ * @param {{ kind: string, seq?: number | null, paid?: unknown, total?: unknown, advanced?: unknown }[]} docs
+ */
+export function orderChain(docs) {
+  const proforma = docs.find((d) => d.kind === 'PROFORMA') ?? null;
+  const invoice = docs.find((d) => d.kind === 'INVOICE') ?? null;
+  const advances = docs.filter((d) => d.kind === 'ADVANCE').sort((a, b) => (a.seq ?? 1) - (b.seq ?? 1));
+  const paid = proforma?.paid != null && Number(proforma.paid) > 0 ? Number(proforma.paid) : 0;
+  const advanced = round2(advances.reduce((s, a) => s + Number(a.advanced ?? a.total ?? 0), 0));
+  const advanceRequired = paid - advanced > EPS ? round2(paid - advanced) : 0;
+  return { proforma, invoice, advances, paid, advanced, advanceRequired, nextSeq: advances.reduce((m, a) => Math.max(m, a.seq ?? 1), 0) + 1 };
+}
+
+/**
+ * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; pending: kuyruktaki belge türleri.
  * inBatch: sipariş etkin bir müşteri partisinde (müşteri proforması, karar 100) — aynı ticari tutar iki belgeyle
  * faturalanmasın diye sipariş başına hiçbir belge istenemez; yükleme sonrası fatura müşteri düzeyinde kesilecek (7D-3).
- * @param {{ status: string, loaded: boolean, docs: { kind: string, paid?: unknown }[], billing: { paidAmount?: unknown } | null, pending?: string[], hasOffer: boolean, inBatch?: boolean }} p
- * @returns {{ actions: ('proforma' | 'mark_paid' | 'advance' | 'invoice')[], paidAmount: number | null, wait: string | null }}
+ * Avans (karar 104): proformada avansı kesilmemiş FGO tahsilatı varsa — yüklemeden önce de sonra da — tek düğme "avans
+ * faturası"dır; o tahsilatın avansı kesilmeden kapanış faturası istenemez (wait: advance_required).
+ * @param {{ status: string, loaded: boolean, docs: { kind: string, seq?: number | null, paid?: unknown, total?: unknown, advanced?: unknown }[], pending?: string[], hasOffer: boolean, inBatch?: boolean }} p
+ * @returns {{ actions: ('proforma' | 'advance' | 'invoice')[], wait: string | null, paid: number, advanced: number, advanceRequired: number }}
  */
-export function billingState({ status, loaded, docs, billing, pending = [], hasOffer, inBatch = false }) {
-  const by = Object.fromEntries(docs.map((d) => [d.kind, d]));
-  const proforma = by.PROFORMA;
-  const docPaid = proforma?.paid != null && Number(proforma.paid) > 0 ? Number(proforma.paid) : null;
-  const paidAmount = billing?.paidAmount != null ? Number(billing.paidAmount) : docPaid;
-  const res = (actions, wait = null) => ({ actions, paidAmount, wait });
+export function billingState({ status, loaded, docs, pending = [], hasOffer, inBatch = false }) {
+  const c = orderChain(docs);
+  const res = (actions, wait = null) => ({ actions, wait, paid: c.paid, advanced: c.advanced, advanceRequired: c.advanceRequired });
   if (status === 'IPTAL') return res([], 'cancelled');
   if (inBatch) return res([], 'batch');
-  if (by.INVOICE) return res([], 'done');
+  if (c.invoice) return res([], 'done');
   if (pending.length) return res([], 'pending');
   if (!hasOffer) return res([], 'no_offer');
-  // Ödenmiş proforma + avans faturası yok + yüklenmiş (karar 94): kapanış faturası KESİLMEZ. Düşüm uydurulmaz; önce
-  // muhasebe işlemi gerekir. Ödenmemiş proformada ve avans faturası olan siparişte akış aynen sürer.
-  if (loaded && paidWithoutAdvance(proforma, by.ADVANCE, paidAmount)) return res([], 'paid_no_advance');
+  // FGO'da avansı kesilmemiş tahsilat: önce avans faturası (tutar = tahsilat − avansı kesilen; uydurma tutar yok)
+  if (c.advanceRequired > 0) return res(['advance'], loaded ? 'advance_required' : null);
   if (loaded) return res(['invoice']);
-  if (!proforma) return res(['proforma']);
-  if (by.ADVANCE) return res([], 'wait_loading');
-  if (paidAmount == null) return res(['mark_paid'], 'wait_payment');
-  return res(['advance']);
+  if (!c.proforma) return res(['proforma']);
+  if (c.advances.length) return res([], 'wait_loading');
+  return res([], 'wait_payment');
 }
 
 /**
@@ -200,7 +218,7 @@ export async function requestGlassDocument(db, { orderId, kind, actor, now = new
     if (!order || order.orderTypeCode !== 'GLASS_ORDER') return { ok: false, code: 'NOT_FOUND' };
     const pending = await tx.notificationOutbox.findMany({ where: { orderId, type: GLASS_FGO, status: 'PENDING' } });
     const st = billingState({
-      status: order.status, loaded: isLoaded(order, localDay(now, tz)), docs: order.fgoDocuments, billing: order.glassBilling,
+      status: order.status, loaded: isLoaded(order, localDay(now, tz)), docs: order.fgoDocuments,
       pending: pending.map((p) => p.payload?.kind), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
       inBatch: order.billingBatchOrders.length > 0,
     });
@@ -209,27 +227,16 @@ export async function requestGlassDocument(db, { orderId, kind, actor, now = new
     // Kur zaten belirlenmişse (proformanın kuru) elle kur yok sayılmaz, reddedilir: saklanan kur değişmez
     const useManual = manual != null && kind !== 'ADVANCE';
     if (useManual && order.glassBilling?.fxRate != null) return { ok: false, code: 'RATE_LOCKED' };
-    await tx.notificationOutbox.create({ data: { type: GLASS_FGO, orderId, payload: { kind, orderNo: order.orderNo, ...(useManual ? { manualRate: manual } : {}) } } });
+    // Avans: sıra ve tutar istek anında, kilit altında belirlenir ve işte saklanır (tutar = FGO tahsilatı − avansı
+    // kesilen; yönetici tutar girmez). İşçi yalnızca bu kaydı keser; çift tıklama / ikinci istek kuyruk denetimine takılır.
+    const chain = orderChain(order.fgoDocuments);
+    const advance = kind === 'ADVANCE' ? { seq: chain.nextSeq, amount: st.advanceRequired } : {};
+    await tx.notificationOutbox.create({ data: { type: GLASS_FGO, orderId, payload: { kind, orderNo: order.orderNo, ...advance, ...(useManual ? { manualRate: manual } : {}) } } });
     await writeHistory(tx, { orderId, event: 'FGO_DOC_REQUESTED', from: order.status, to: order.status, actorId: actor.id, note: kind });
-    await writeAudit(tx, { action: 'FGO_DOC_REQUEST', entityType: 'Order', entityId: orderId, userId: actor.id, details: { kind, ...(useManual ? { manualRate: manual } : {}) } }, actor);
-    return { ok: true };
-  });
-}
-
-/** Yönetici: proforma ödendi (tutar RON, TVA dahil) */
-export async function markGlassPaid(db, { orderId, amount, actor, now = new Date() }) {
-  return db.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId }, include: { fgoDocuments: true } });
-    if (!order || order.orderTypeCode !== 'GLASS_ORDER') return { ok: false, code: 'NOT_FOUND' };
-    const docs = order.fgoDocuments;
-    if (!docs.some((d) => d.kind === 'PROFORMA') || docs.some((d) => d.kind !== 'PROFORMA')) return { ok: false, code: 'NOT_ALLOWED' };
-    await tx.glassBilling.upsert({
-      where: { orderId },
-      create: { orderId, paidAt: now, paidAmount: amount.toFixed(2), paidById: actor.id },
-      update: { paidAt: now, paidAmount: amount.toFixed(2), paidById: actor.id },
-    });
-    await writeHistory(tx, { orderId, event: 'GLASS_PAID', from: order.status, to: order.status, actorId: actor.id, note: null });
-    await writeAudit(tx, { action: 'GLASS_PAID', entityType: 'Order', entityId: orderId, userId: actor.id, details: { amountRon: amount } }, actor);
+    await writeAudit(tx, {
+      action: 'FGO_DOC_REQUEST', entityType: 'Order', entityId: orderId, userId: actor.id,
+      details: { kind, ...(kind === 'ADVANCE' ? { seq: advance.seq, fgoPaid: chain.paid, advancedBefore: chain.advanced, amountRon: advance.amount } : {}), ...(useManual ? { manualRate: manual } : {}) },
+    }, actor);
     return { ok: true };
   });
 }
@@ -272,7 +279,10 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       if (!order || order.status === 'IPTAL') throw new Permanent('sipariş yok ya da iptal');
       // İş kuyruktayken sipariş bir müşteri partisine girmiş olamaz (parti bekleyen isteği dışlar); yine de kesimden önce bakılır
       if (await db.billingBatchOrder.count({ where: { orderId: order.id, activeKey: { not: null } } })) throw new Permanent('Sipariş bir müşteri proformasında; sipariş başına belge kesilmez');
-      if (order.fgoDocuments.some((d) => d.kind === kind)) {
+      // Sipariş başına zincir: proforma ve kapanış faturası tektir; avans faturası sırayla (seq) birden çok olabilir
+      const chain = orderChain(order.fgoDocuments);
+      const seq = kind === 'ADVANCE' ? Math.trunc(Number(row.payload?.seq)) || chain.nextSeq : 1;
+      if (order.fgoDocuments.some((d) => d.kind === kind && (d.seq ?? 1) === seq)) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'belge zaten var' } });
         continue;
       }
@@ -305,20 +315,22 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         }
         rate = fx.rate; rateDay = dayDate(today); source = fx.source;
       }
-      const proforma = order.fgoDocuments.find((d) => d.kind === 'PROFORMA');
-      const advance = order.fgoDocuments.find((d) => d.kind === 'ADVANCE');
-      // İş kuyruğa girdikten sonra proforma ödenmiş görünebilir (FGO eşitlemesi): kesim anında yeniden bakılır (karar 94)
-      if (kind === 'INVOICE') {
-        const paidNow = b?.paidAmount != null ? Number(b.paidAmount) : proforma?.paid != null ? Number(proforma.paid) : null;
-        if (paidWithoutAdvance(proforma, advance, paidNow)) {
-          throw new Permanent(`Proforma ${proforma.series}${proforma.number} ödenmiş ama avans faturası yok: kapanış faturası kesilmedi (düşüm uydurulmaz). Önce muhasebe işlemi gerekir.`);
-        }
+      const proforma = chain.proforma;
+      // İş kuyruğa girdikten sonra proformaya tahsilat gelmiş olabilir (FGO eşitlemesi): kesim anında yeniden bakılır.
+      // Avansı kesilmemiş tahsilat varken kapanış faturası kesilmez (karar 104) — önce avans faturası.
+      if (kind === 'INVOICE' && chain.advanceRequired > 0) {
+        throw new Permanent(`Proforma ${proforma.series}${proforma.number}: FGO'da avansı kesilmemiş ${chain.advanceRequired.toFixed(2)} RON tahsilat var; kapanış faturası kesilmedi. Önce avans faturası kesin.`);
       }
       let lines;
+      /** @type {number | null} */
+      let advanceGross = null;
       if (kind === 'ADVANCE') {
-        const paid = b?.paidAmount != null ? Number(b.paidAmount) : proforma?.paid != null ? Number(proforma.paid) : 0;
-        if (!(paid > 0)) throw new Permanent('Tahsil edilen tutar yok');
-        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, ron: netOf(paid, settings.vatRate) }];
+        if (!proforma) throw new Permanent('Proforma yok');
+        // Tutar: istek anında saklanan (FGO tahsilatı − avansı kesilen). FGO'daki tahsilat bu arada azaldıysa kesilmez.
+        advanceGross = row.payload?.amount != null ? round2(Number(row.payload.amount)) : chain.advanceRequired;
+        if (!(advanceGross > 0)) throw new Permanent('Avansı kesilecek tahsilat yok');
+        if (advanceGross - chain.advanceRequired > EPS) throw new Permanent(`FGO'daki tahsilat değişti: avansı kesilecek tutar ${chain.advanceRequired.toFixed(2)} RON, istenen ${advanceGross.toFixed(2)} RON`);
+        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, ron: netOf(advanceGross, settings.vatRate) }];
       } else {
         // Romence ad: satırda yoksa katalogdaki camın Romence adı ve rengi
         const ids = offer.lines.filter((l) => !l.descriptionRo && l.glassProductId).map((l) => l.glassProductId);
@@ -329,17 +341,20 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         // Proforma ayrıntılı (CNC ve delik ayrı satır); fatura yalnızca cam (işlemler cama eklenir)
         lines = kind === 'PROFORMA' ? proformaLines(offer) : invoiceLines(offer, rate, settings.vatRate);
         if (lines.length === 0) throw new Permanent('Teklifte fiyatlı cam satırı yok');
-        if (kind === 'INVOICE' && advance) {
-          // Avans düşümü: avans faturasının TVA hariç tutarı eksi satır olarak
-          const gross = advance.total != null ? Number(advance.total) : Number(b?.paidAmount ?? 0);
-          lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: FGO_UM.adet, qty: -1, ron: netOf(gross, settings.vatRate) });
+        if (kind === 'INVOICE') {
+          // Avans düşümü: kesilmiş her avans faturasının TVA hariç tutarı eksi satır olarak (sırasıyla)
+          for (const advance of chain.advances) {
+            const gross = Number(advance.total ?? advance.advanced ?? 0);
+            lines.push({ code: '', name: `Stornare avans conform factură ${advance.series}${advance.number}`, unit: FGO_UM.adet, qty: -1, ron: netOf(gross, settings.vatRate) });
+          }
         }
       }
       // Numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir. Proforma hep FGO'dan.
       const sentNo = kind === 'PROFORMA' ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       const form = emitereForm({
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,
-        rate, extern: `${order.orderNo}-${SUFFIX[kind]}`,
+        // IdExtern: sipariş + tür (+ ikinci ve sonraki avans faturasında sıra) — aynı iş yeniden denense de aynı kalır
+        rate, extern: `${order.orderNo}-${SUFFIX[kind]}${seq > 1 ? seq : ''}`,
         // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
         text: order.title ?? '', rateNote: false,
         number: sentNo,
@@ -347,7 +362,9 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       const doc = await fgoEmit(settings, form, fetchImpl);
       const amount = ronTotal(lines, rate);
       await db.$transaction(async (tx) => {
-        const created = await tx.fgoDocument.create({ data: { orderId: order.id, kind, series: doc.series, number: doc.number, issuedAt: now, link: doc.link } });
+        const created = await tx.fgoDocument.create({
+          data: { orderId: order.id, kind, seq, series: doc.series, number: doc.number, issuedAt: now, link: doc.link, ...(advanceGross != null ? { advanced: advanceGross.toFixed(2) } : {}) },
+        });
         if (b?.fxRate == null && kind !== 'ADVANCE') {
           // Kur kaydı kurla birlikte bir kez yazılır (karar 96); sonraki belgeler bu kaydı kullanır, yeniden çözmez
           const snap = fx ? fxSnapshot(fx, rateDay) : { fxRate: rate.toFixed(4), fxDate: rateDay, fxSource: source };
@@ -356,7 +373,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
         await tx.notificationOutbox.create({ data: { type: DOC_EMAIL, orderId: order.id, payload: { docId: created.id } } });
         await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_ISSUED', from: order.status, to: order.status, actorId: null, note: `${kind}:${doc.series}${doc.number}` });
-        await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, series: doc.series, number: doc.number, fxRate: rate, fxSource: source, ...(fx ? { fxPolicy: fx.policy, fxBaseRate: fx.baseRate, fxMarkupPercent: fx.markupPercent, fxSourceDate: fx.sourceDate, fxManual: fx.manual } : {}), amountRonNet: amount } }, { role: 'SYSTEM' });
+        await writeAudit(tx, { action: 'FGO_DOC_ISSUED', entityType: 'Order', entityId: order.id, userId: null, details: { kind, seq, series: doc.series, number: doc.number, ...(advanceGross != null ? { fgoPaid: chain.paid, advancedBefore: chain.advanced, advanceRon: advanceGross } : {}), fxRate: rate, fxSource: source, ...(fx ? { fxPolicy: fx.policy, fxBaseRate: fx.baseRate, fxMarkupPercent: fx.markupPercent, fxSourceDate: fx.sourceDate, fxManual: fx.manual } : {}), amountRonNet: amount } }, { role: 'SYSTEM' });
       });
       done++;
       if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));

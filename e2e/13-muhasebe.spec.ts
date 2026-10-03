@@ -21,7 +21,7 @@ const dmy = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().join(
 // Yükleme günü gün ortası (12:00 UTC) saklanır (parseDateOnly gibi): Romanya günü ile UTC günü aynı kalır
 const LOADED = new Date(`${day(-20).toISOString().slice(0, 10)}T12:00:00Z`);
 
-let paidOrderId = ''; // proforması olan, ödemesi girilmemiş sipariş ("Ödeme alındı" formu)
+let paidOrderId = ''; // proforması olan, FGO'da tahsilatı görünmeyen sipariş (ödeme elle girilemez — karar 104)
 let newOrderId = ''; // hiç belgesi olmayan sipariş ("Proforma Gönder" formu)
 
 async function shot(page: Page, name: string, mobile = false) {
@@ -202,7 +202,6 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
   const newUrl = `/siparisler/${newOrderId}`;
   // Sunucu işlemlerinin alanları yöneticinin sayfasından (yetkisiz kullanıcı bunları bir yerden öğrenmiş sayılır)
   const payField = await actionField(admin, SUPPLIER, 'id="fp-day"');
-  const paidField = await actionField(admin, paidUrl, 'id="gb-paid"');
   const docField = await actionField(admin, newUrl, 'value="PROFORMA"');
   const payment = (who: string) => ({ paidOn: '2026-09-21', amount: '777.77', currency: 'EUR', note: `TAKLIT-${who}` });
   const payments = (who: string) => db.factoryPayment.count({ where: { note: `TAKLIT-${who}` } });
@@ -214,10 +213,10 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
     const r1 = await forge(p, SUPPLIER, payField, payment(who));
     expect(r1.url(), `${who}: ödeme`).toMatch(/\/siparisler$/);
     expect(await payments(who), `${who}: ödeme kaydı oluşmadı`).toBe(0);
-    // Cam proforması "ödendi" işaretleme
-    const r2 = await forge(p, paidUrl, paidField, { id: paidOrderId, amount: '300' });
-    expect(r2.url(), `${who}: ödendi`).not.toContain('fgoOk');
-    expect(await db.glassBilling.count({ where: { orderId: paidOrderId } }), `${who}: ödeme işaretlenmedi`).toBe(0);
+    // Avans faturası isteme (taklit tutarla)
+    const r2 = await forge(p, paidUrl, docField, { id: paidOrderId, kind: 'ADVANCE', amount: '300' });
+    expect(r2.url(), `${who}: avans`).not.toContain('fgo');
+    expect(await db.glassBilling.count({ where: { orderId: paidOrderId } }), `${who}: ödeme kaydı oluşmadı`).toBe(0);
     // FGO belgesi isteme
     const r3 = await forge(p, newUrl, docField, { id: newOrderId, kind: 'PROFORMA' });
     expect(r3.url(), `${who}: FGO belgesi`).not.toContain('fgo');
@@ -230,9 +229,16 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
   const ok1 = await forge(admin, SUPPLIER, payField, payment('yonetici'));
   expect(ok1.url()).toContain('ok=payment');
   expect(await payments('yonetici')).toBe(1);
-  const ok2 = await forge(admin, paidUrl, paidField, { id: paidOrderId, amount: '300' });
-  expect(ok2.url()).toContain('fgoOk=paid');
-  expect(await db.glassBilling.count({ where: { orderId: paidOrderId } })).toBe(1);
+  // Ödeme elle girilemez (karar 104): "Ödeme alındı" formu yok; ödeme yalnızca FGO'dan okunur. Yönetici oturumuyla bile
+  // taklit bir tutar ödeme kaydı ya da avans isteği oluşturmaz.
+  await admin.goto(paidUrl);
+  await expect(admin.locator('#gb-paid')).toHaveCount(0);
+  await expect(admin.locator('#finans')).toContainText("Ödeme yalnızca FGO'dan okunur");
+  await expect(admin.locator('#avans-durumu')).toContainText('FGO tahsilatı');
+  const ok2 = await forge(admin, paidUrl, docField, { id: paidOrderId, kind: 'ADVANCE', amount: '300' });
+  expect(ok2.url()).toContain('fgoError=');
+  expect(await db.glassBilling.count({ where: { orderId: paidOrderId } })).toBe(0);
+  expect(await db.notificationOutbox.count({ where: { orderId: paidOrderId, type: 'FGO_GLASS' } })).toBe(0);
   const ok3 = await forge(admin, newUrl, docField, { id: newOrderId, kind: 'PROFORMA' });
   expect(ok3.url(), 'işlem çalıştı; FGO kapalı olduğu için belge istenmedi').toContain('fgoError=FGO_DISABLED');
   await db.$disconnect();

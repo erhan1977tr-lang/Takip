@@ -58,6 +58,7 @@ export default {
   LOADING_CONFIRMED: { label: 'Încărcare confirmată: încărcat complet (ziua încărcării)' },
   LOADING_PARTIAL: { label: 'Încărcare confirmată: încărcat parțial (ziua încărcării)' },
   LOADING_NOT_LOADED: { label: 'Sticlă neîncărcată înregistrată (ziua încărcării · buc.)' },
+  LOADING_CORRECTED: { label: 'Încărcare confirmată corectată (ziua încărcării · nr. corecției)' },
   REPLAN_NOT_LOADED: { label: 'Sticla neîncărcată a fost replanificată (buc. · zi veche → zi nouă)' },
   REPLAN_CANCELLED: { label: 'S-a renunțat la replanificarea sticlei neîncărcate (buc. · zi)' },
   GUEST_CRATE: { label: 'Amplasată în lada altui client (fizic; ladă · zi)' },

@@ -4,6 +4,31 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.40.0 — 03.10.2026
+
+- **Onaylı yüklemeyi düzeltme ("Düzelt")**: yönetici, yanlış onaylanan yüklenen / yüklenmeyen adedi düzeltebilir
+  (10 yüklendi → 8 + 2 yüklenmedi; 8 + 2 → 10; tamamı yüklenmedi). İlk onay kaydı **değişmez ve silinmez**: düzeltme
+  ayrı bir kayıt olarak eklenir (düzeltme no, zorunlu neden, kim, ne zaman). Kaydetmeden önce önizleme gösterilir
+  (önce → sonra, etkilenen aktarımlar, finansal etki). Düzeltilen gün "Düzeltildi" rozetiyle görünür; tablo geçerli
+  durumu, "Düzeltme tarihçesi" ilk onay kaydını ve her düzeltmeyi gösterir. Yalnızca var olan cam satırları düzeltilir;
+  onayda hiç olmayan sipariş / satır eklenemez.
+- **Düzeltme ve aktarım**: yüklenmeyen adet artarsa aktarılabilecek adet artar; azalırsa artık sığmayan etkin aktarım
+  kendiliğinden kapanır. Kalanı ileri bir yüklemede zaten onaylanmış aktarımın altına düşüren düzeltme yapılamaz
+  (önce o yükleme düzeltilir).
+- **Düzeltme ve fatura — "Muhasebe işlemi gerekli"**: faturası kuyruktayken ya da kesilemeyip beklerken düzeltme
+  yapılamaz. Kesilmiş faturanın kapsamı düzeltmeyle değişirse (eksik / fazla faturalandı) **hiçbir belge otomatik
+  kesilmez ve kesilmiş belge değiştirilmez**; Faturalama bölümünde ve Tedarikçi Hesap Durumu'nda "Muhasebe işlemi
+  gerekli" uyarısı çıkar ve o kapsam yeniden faturalanmaz (fazla faturalanan cam ileri güne aktarılıp yüklense de).
+  Storno / düzeltme faturası sonraki aşamadadır.
+- Kârlılık ve fatura önizlemesi geçerli (düzeltilmiş) fiili yüklemeyi izler; hiçbir adet iki kez sayılmaz.
+- **Kısmi aktarım**: yüklenmeyen camın tamamı yerine bir kısmı da ileri güne aktarılabilir (2 adet → 1 adet 23.10, 1 adet
+  30.10). Aktarılan adetlerin toplamı kalanı aşamaz; her aktarım yeni gününde yalnızca kendi adediyle görünür.
+- **Sipariş sayfası — Finans / FGO**: proforma ödemesi artık **yalnızca FGO'dan** okunur; "Ödeme alındı" ile elle tutar
+  girişi kaldırıldı. FGO'da proformaya gelen tahsilatın avansı kesilmemiş kısmı için "Avans Faturası Gönder" düğmesi
+  cam yüklendikten sonra da çıkar (FGO tahsilatı / avansı kesilen / avansı kesilecek tutar gösterilir). Sonradan gelen
+  her ek tahsilat için yeni bir avans faturası kesilebilir; avansı kesilmemiş tahsilat varken kapanış faturası
+  kesilmez, kapanış faturası kesilmiş bütün avansları düşer.
+
 ## 3.39.0 — 03.10.2026
 
 - **Yüklenmeyen cam (kırık / eksik / hazır değil)**: yükleme onayında cam satırı başına yüklenmeyen adet ve nedeni

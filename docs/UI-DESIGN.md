@@ -240,6 +240,28 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   `.badge-ok`); `.guest-box` under the customer's crate section holds the relation lines (`.guest-in` / `.guest-out`)
   and, for Admin, the `details.guest-assign` form (order select, crate select, `ConfirmButton`).
 
+## Loading correction, partial replan, order advance (3.40.0)
+
+- Confirmed day card (`#onay`): a `.badge-warn` "Düzeltildi #n" next to the title once corrected; `#gecerli-durum`
+  (`.alert-info`) says the table is the CURRENT EFFECTIVE state. History is a `<details class="nl-box"
+  id="duzeltme-gecmisi">`: the original confirmation table (same `.confirm-table`) followed by one `.correction-rev`
+  block per revision (who / when / reason / `before → after` list). Never mix the two: the top table is effective,
+  the history holds the original.
+- "Düzelt" (Admin): `#duzelt.nl-box` — entry form in `<details class="nl-entry" id="duzelt-giris">` (`.nl-table`, one
+  row per glass scope: confirmed / loaded / not loaded, `input.nl-qty`, reason `<select>`, note) + mandatory reason
+  input; then the server-rendered preview `#duzelt-onizleme` (before / after table, affected replans, financial
+  impact via `ImpactNote`) with the save `ConfirmButton`. A blocked correction shows `#duzelt-engel` (`.alert-error`).
+- Financial impact (`ImpactNote`, `app/(panel)/yuklemeler/ImpactNote.tsx`): plain `.impact-line` for informational
+  states; `.alert.alert-error.impact-line` with "MUHASEBE İŞLEMİ GEREKLİ" for `UNDER_INVOICED` / `OVER_INVOICED`.
+  Reused in the billing card (`#faturalama`) under the issued invoice; supplier page marks the day with a
+  `.badge-danger` + `.cell-note`.
+- Partial replan (`#yuklenmeyen`): each replan is its own `.nl-replan` block (badge "N adet → day", move form, cancel);
+  remaining free quantity as `.nl-free`; the new-replan form is `form.nl-new` (quantity `input.nl-qty`, default =
+  free remainder, + date).
+- Order finance card (`#finans`): `#avans-durumu.fx-block` shows "FGO tahsilatı / Avansı kesilen / Avansı kesilecek"
+  (required amount as `.badge-warn` when > 0); `#fatura-engeli` (`.alert-warn`) when loaded and an advance is
+  required. There is no payment amount input (payment is read from FGO only).
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

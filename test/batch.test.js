@@ -58,9 +58,9 @@ test('çift faturalama denetimi tek yerde: sipariş belgesi, kuyruktaki istek, e
   assert.equal(activeKeyOf('o1'), 'PROFORMA:o1');
   // Etkin partideki sipariş: sipariş başına hiçbir belge istenemez (yüklenmiş olsa da)
   for (const loaded of [false, true]) {
-    assert.deepEqual(billingState({ status: 'URETIMDE', loaded, docs: [], billing: null, pending: [], hasOffer: true, inBatch: true }), { actions: [], paidAmount: null, wait: 'batch' });
+    assert.deepEqual(billingState({ status: 'URETIMDE', loaded, docs: [], pending: [], hasOffer: true, inBatch: true }), { actions: [], wait: 'batch', paid: 0, advanced: 0, advanceRequired: 0 });
   }
-  assert.deepEqual(billingState({ status: 'URETIMDE', loaded: false, docs: [], billing: null, pending: [], hasOffer: true }).actions, ['proforma'], 'parti dışındaki sipariş: eski akış');
+  assert.deepEqual(billingState({ status: 'URETIMDE', loaded: false, docs: [], pending: [], hasOffer: true }).actions, ['proforma'], 'parti dışındaki sipariş: eski akış');
 });
 
 test('seçilen günler ve belge metni', () => {

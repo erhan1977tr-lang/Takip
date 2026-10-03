@@ -108,7 +108,8 @@ dbTest('BNR + %2: proforma BNR × 1,02 ile kesilir; kur kaydı saklanır ve sonr
   // Sonradan: BNR değişti, müşterinin politikası değişti, günün BT kuru girildi → avans ve fatura proformanın kuruyla
   await db.customer.update({ where: { id: c.id }, data: { fxPolicy: 'BT_UNIT_SELL', fxMarkupPercent: null } });
   await saveDailyRate(db, { day: today(), rate: 5.9 }, actor(), writeAudit);
-  assert.deepEqual(await g.markGlassPaid(db, { orderId: o.id, amount: 314.72, actor: actor() }), { ok: true });
+  // Ödeme yalnızca FGO'dan okunur (karar 104): proformada tahsilat görünür
+  await db.fgoDocument.updateMany({ where: { orderId: o.id, kind: 'PROFORMA' }, data: { paid: '314.72' } });
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'ADVANCE', actor: actor(), manualRate: '5,5000' }), { ok: true }, 'avans kuru belirlemez: elle kur yok sayılır');
   await g.dispatchGlassJobs(db, ctx(fgo, { bnrImpl: bnr('6.0000') }));
   await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(Date.now() - 3 * 86_400_000) } });

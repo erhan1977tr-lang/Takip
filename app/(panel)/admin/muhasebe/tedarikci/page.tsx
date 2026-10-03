@@ -16,7 +16,8 @@ export const dynamic = 'force-dynamic';
 type Amounts = { sale: number; cost: number; transport: number; profit: number };
 type OrderRef = { orderId: string; orderNo: string };
 // confirmed: gün "Eksiksiz Yüklendi" olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayan siparişler
-type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[]; confirmed: boolean; outside: OrderRef[] };
+// accounting: kesilmiş faturası düzeltilmiş yüklemeyle uyuşmayan siparişler (karar 105; kârlılık fiili yüklemeyi izler)
+type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[]; confirmed: boolean; outside: OrderRef[]; accounting: (OrderRef & { code: string; ref: string | null })[] };
 type MissingLine = { lineId: string; description: string; kind: string; unit: string; adet: number; offerPrice: number };
 type Missing = { orderId: string; orderNo: string; day: string; currency: string; lines: MissingLine[] };
 type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }>; missing: Missing[] };
@@ -177,7 +178,9 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                           <span className="cell-badges">
                             {d.confirmed ? <Badge tone="ok">{t('accounting.supplier.loadings.confirmed')}</Badge> : <Badge tone="muted">{t('accounting.supplier.loadings.planned')}</Badge>}
                             {d.noCost.length > 0 && <Badge tone="warn">{t('accounting.supplier.noCostBadge')}</Badge>}
+                            {d.accounting.length > 0 && <Badge tone="danger">{t('accounting.impact.badge')}</Badge>}
                           </span>
+                          {d.accounting.length > 0 && <span className="cell-note">{t('accounting.impact.dayNote', { list: d.accounting.map((o) => `${o.orderNo}${o.ref ? ` (${o.ref})` : ''}`).join(', ') })}</span>}
                           {d.outside.length > 0 && <span className="cell-note">{t('accounting.supplier.loadings.outside', { list: d.outside.map((o) => o.orderNo).join(', ') })}</span>}
                         </td>
                       )}

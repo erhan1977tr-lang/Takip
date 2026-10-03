@@ -14,6 +14,11 @@
 //     kopyasıyla ve replanId ile yeni kalem(ler) olur. Zincir böylece her denemede izlenir; eski onay hiç değişmez.
 //   - Yalnızca yönetici (LOADING_CONFIRM); kontrol burada, sunucuda yapılır.
 //   - Onaylı yükleme düzenlenmez / silinmez; sipariş tarihi ya da teklif sonradan değişse de yeniden üretilmez.
+//   - Düzeltme (Aşama 7F-1, karar 105 — server/loading/correction.js): yanlış onaylanan yüklenen / yüklenmeyen dağılımı
+//     kayıt EKLENEREK düzeltilir. Kalemin "kapsamı" = onay + sipariş + teklif satırı (ya da aktarım); düzeltilen kapsamın
+//     yeni kalemleri revision = n ile eklenir, eskileri durur. GEÇERLİ durum her kapsamın en yüksek sıradaki kalemleridir:
+//     tek yerde hesaplanır → effectiveItems(). Onayı okuyan her hesap (kart, yüklenmeyenler, aktarım kapasitesi,
+//     kârlılık, fatura) bu işlevi kullanır; ayrı bir "düzeltilmiş" hesap yoktur.
 import crypto from 'node:crypto';
 import { can } from '../auth/permissions.js';
 import { offerLineTotals, parseDateOnly } from '../orders/rules.js';
@@ -30,6 +35,9 @@ import { glassTotals } from '../glass/billing.js';
  * @typedef {{ orderId: string, orderNo: string, title: string | null, currency: string, glass: GlassRow[], adet: number, m2: number, sale: number, cost: number, noCost: number, replanFrom: string[] }} OrderSummary
  * @typedef {{ customerId: string, name: string, orders: OrderSummary[], adet: number, m2: number, byCur: MoneyByCur }} CustomerSummary
  * @typedef {{ customers: CustomerSummary[], totals: { orders: number, adet: number, m2: number, items: number, byCur: MoneyByCur, noCost: number } }} LoadingSummary
+ * @typedef {{ loaded: number, notLoaded: number, reason: string | null }} ScopeSplit
+ * @typedef {{ key: string, orderId: string, orderNo: string, customerName: string, description: string, descriptionRo: string | null, enMm: number | null, boyMm: number | null, before: ScopeSplit, after: ScopeSplit }} CorrectionChange
+ * @typedef {{ revision: number, reason: string, by: string, at: Date, changes: CorrectionChange[] }} CorrectionView
  */
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -90,8 +98,48 @@ export function snapshotOfItem(it, { quantity, status = 'LOADED', reason = null,
   return it.replanId ? { ...row, replanId: it.replanId } : row;
 }
 
-/** Plan kaleminin anahtarı (yüklenmeyen adet girişi bu anahtarla eşleşir): aktarılan kalan → r:…, teklif satırı → l:… */
+/**
+ * Kalemin kapsam anahtarı (yüklenmeyen adet girişi ve düzeltme bu anahtarla eşleşir): aktarılan kalan → r:…, teklif
+ * satırı → l:… Bir onayda bir kapsam: aynı teklif satırının (ya da aynı aktarımın) yüklenen + yüklenmeyen kalemleri.
+ */
 export const itemKey = (i) => (i.replanId ? `r:${i.replanId}` : `l:${i.offerLineId}`);
+
+/** Onaylar arasında benzersiz kapsam: onay + kapsam anahtarı */
+export const scopeOf = (i) => `${i.confirmationId}|${itemKey(i)}`;
+
+/**
+ * Onay kalemlerinin GEÇERLİ hâli (karar 105) — tek yetkili işlev: her kapsamın en yüksek sıradaki (revision) kalemleri.
+ * Düzeltilmemiş kapsamda onay anındaki kalemler (revision 0), düzeltilmiş kapsamda son düzeltmenin kalemleri döner;
+ * eski satırlar tarihçedir ve hiçbir hesaba girmez. Birden çok onayın kalemleri birlikte verilebilir.
+ * upTo: yalnızca bu sıraya kadar olan düzeltmeler (bir faturanın kesildiği andaki durum, düzeltme tarihçesi).
+ * @template {{ confirmationId?: string, offerLineId?: string | null, replanId?: string | null, revision?: number | null }} T
+ * @param {T[]} items  @param {number} [upTo]
+ * @returns {T[]}
+ */
+export function effectiveItems(items, upTo = Infinity) {
+  const top = new Map();
+  for (const i of items) {
+    const r = i.revision ?? 0;
+    if (r > upTo) continue;
+    const k = scopeOf(i);
+    if (!top.has(k) || top.get(k) < r) top.set(k, r);
+  }
+  return items.filter((i) => (i.revision ?? 0) === top.get(scopeOf(i)));
+}
+
+/** Kalemlerin sipariş başına gruplanmış hâli (önizleme / onaylı görünüm biçimi); kalemler order ve customer ile yüklenmiş olmalı */
+function groupByOrder(items) {
+  const byOrder = new Map();
+  for (const it of items) {
+    const o = byOrder.get(it.orderId) ?? { orderId: it.orderId, orderNo: it.order.orderNo, title: it.order.title ?? null, customerId: it.customerId, customerName: it.customer.name, currency: it.currency, items: [], replanFrom: [] };
+    o.items.push(it);
+    // Aktarılmış kalan: hangi yüklemeden geldiği (ekranda "… yüklemesinden aktarıldı")
+    const from = it.replan ? dayOfDate(it.replan.fromDay) : null;
+    if (from && !o.replanFrom.includes(from)) o.replanFrom.push(from);
+    byOrder.set(it.orderId, o);
+  }
+  return [...byOrder.values()];
+}
 
 /** Onay kalemi → hesap kurallarının beklediği teklif satırı biçimi (glassTotals, orderLoad) */
 export const itemAsLine = (it) => ({
@@ -292,11 +340,14 @@ async function ordersOfDay(db, day) {
 export async function loadedDays(db, orderIds) {
   if (orderIds.length === 0) return new Map();
   const rows = await db.loadingConfirmationItem.findMany({
-    where: { orderId: { in: orderIds }, status: 'LOADED' },
-    select: { orderId: true, confirmation: { select: { shipDay: true } } },
-    distinct: ['orderId'],
+    where: { orderId: { in: orderIds } },
+    select: { orderId: true, confirmationId: true, offerLineId: true, replanId: true, revision: true, status: true, quantity: true, confirmation: { select: { shipDay: true } } },
+    orderBy: { confirmation: { shipDay: 'asc' } },
   });
-  return new Map(rows.map((r) => [r.orderId, r.confirmation.shipDay.toISOString().slice(0, 10)]));
+  // Geçerli durum: düzeltmeyle "yüklenmedi"ye çevrilen kalem yüklenmiş sayılmaz
+  const out = new Map();
+  for (const r of effectiveItems(rows)) if (r.status === 'LOADED' && r.quantity > 0 && !out.has(r.orderId)) out.set(r.orderId, dayOfDate(r.confirmation.shipDay));
+  return out;
 }
 
 /**
@@ -340,30 +391,49 @@ export async function previewLoading(db, day) {
 }
 
 /**
- * Onaylı yükleme (yoksa null): kalemler sipariş başına gruplanmış, önizlemeyle aynı biçimde
+ * Onaylı yükleme (yoksa null): kalemler sipariş başına gruplanmış, önizlemeyle aynı biçimde.
+ *   orders      : GEÇERLİ durum (effectiveItems — düzeltmeler uygulanmış)
+ *   revision    : son düzeltmenin sırası (0 = hiç düzeltilmedi)
+ *   original    : onay anındaki kayıt (revision 0 kalemleri) — yalnızca düzeltme varsa; tarihçe için
+ *   corrections : düzeltmeler (sıra, kim, ne zaman, neden, kapsam başına önce → sonra)
  * @param {any} db
  * @param {string} day
- * @returns {Promise<null | { id: string, day: string, confirmedAt: Date, confirmedBy: string, note: string | null, orders: ConfirmOrder[] }>}
+ * @returns {Promise<null | { id: string, day: string, confirmedAt: Date, confirmedBy: string, note: string | null, orders: ConfirmOrder[], revision: number, original: ConfirmOrder[] | null, corrections: CorrectionView[] }>}
  */
 export async function loadConfirmation(db, day) {
   const c = await db.loadingConfirmation.findUnique({
     where: { shipDay: shipDayDate(day) },
     include: {
       confirmedBy: { select: { name: true } },
-      items: { orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }], include: { order: { select: { orderNo: true, title: true } }, customer: { select: { name: true } }, replan: { select: { fromDay: true } } } },
+      items: { orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }, { revision: 'asc' }, { status: 'asc' }], include: { order: { select: { orderNo: true, title: true } }, customer: { select: { name: true } }, replan: { select: { fromDay: true } } } },
+      corrections: { orderBy: { revision: 'asc' }, include: { createdBy: { select: { name: true } } } },
     },
   });
   if (!c) return null;
-  const byOrder = new Map();
-  for (const it of c.items) {
-    const o = byOrder.get(it.orderId) ?? { orderId: it.orderId, orderNo: it.order.orderNo, title: it.order.title ?? null, customerId: it.customerId, customerName: it.customer.name, currency: it.currency, items: [], replanFrom: [] };
-    o.items.push(it);
-    // Aktarılmış kalan: hangi yüklemeden geldiği (ekranda "… yüklemesinden aktarıldı")
-    const from = it.replan ? dayOfDate(it.replan.fromDay) : null;
-    if (from && !o.replanFrom.includes(from)) o.replanFrom.push(from);
-    byOrder.set(it.orderId, o);
-  }
-  return { id: c.id, day, confirmedAt: c.confirmedAt, confirmedBy: c.confirmedBy?.name ?? '—', note: c.note, orders: [...byOrder.values()] };
+  const split = (rows) => ({
+    loaded: rows.filter((i) => i.status === 'LOADED').reduce((n, i) => n + i.quantity, 0),
+    notLoaded: rows.filter((i) => i.status === 'NOT_LOADED').reduce((n, i) => n + i.quantity, 0),
+    reason: rows.find((i) => i.status === 'NOT_LOADED')?.notLoadedReason ?? null,
+  });
+  // Tarihçe: her düzeltmenin eklediği kapsamlar, bir önceki geçerli durumla (önce → sonra)
+  const corrections = c.corrections.map((x) => {
+    const before = effectiveItems(c.items, x.revision - 1);
+    const scopes = new Map();
+    for (const it of c.items.filter((i) => i.revision === x.revision)) scopes.set(itemKey(it), [...(scopes.get(itemKey(it)) ?? []), it]);
+    return {
+      revision: x.revision, reason: x.reason, by: x.createdBy?.name ?? '—', at: x.createdAt,
+      changes: [...scopes.entries()].map(([key, rows]) => ({
+        key, orderId: rows[0].orderId, orderNo: rows[0].order.orderNo, customerName: rows[0].customer.name,
+        description: rows[0].description, descriptionRo: rows[0].descriptionRo ?? null, enMm: rows[0].enMm ?? null, boyMm: rows[0].boyMm ?? null,
+        before: split(before.filter((i) => itemKey(i) === key)), after: split(rows),
+      })),
+    };
+  });
+  return {
+    id: c.id, day, confirmedAt: c.confirmedAt, confirmedBy: c.confirmedBy?.name ?? '—', note: c.note,
+    orders: groupByOrder(effectiveItems(c.items)), revision: c.corrections.at(-1)?.revision ?? 0,
+    original: c.corrections.length ? groupByOrder(c.items.filter((i) => i.revision === 0)) : null, corrections,
+  };
 }
 
 /**
@@ -395,7 +465,7 @@ export async function confirmLoading(db, { day, key, note = null, notLoaded = []
       const c = await tx.loadingConfirmation.create({ data: { shipDay, confirmedById: actor.id, confirmedAt: now, note: text } });
       await tx.loadingConfirmationItem.createMany({
         data: plan.items.map((i) => ({
-          ...i, confirmationId: c.id, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
+          ...i, confirmationId: c.id, scopeKey: itemKey(i), m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
           costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4),
         })),
       });

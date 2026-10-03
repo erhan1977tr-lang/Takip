@@ -251,7 +251,7 @@ test('yetkisiz roller: taklit form gönderimiyle aktarım yapılamaz, sandık ye
   const again = await forge(admin, DAY_URL, replanField, { day: DAY, itemId: item.id, quantity: '2', newDay: NEW_DAY });
   expect(again.url()).toContain('aktarHata=ALREADY_PLANNED');
   const more = await forge(admin, DAY_URL, replanField, { day: DAY, itemId: item.id, quantity: '5', newDay: OTHER_DAY });
-  expect(more.url(), 'kalandan fazlası aktarılamaz').toContain('aktarHata=BAD_QUANTITY');
+  expect(more.url(), 'kalandan fazlası aktarılamaz (kalanın tamamı zaten aktarılmış)').toContain('aktarHata=NO_REMAINDER');
   const dup = await forge(admin, DAY_URL, guestField, { day: DAY, orderId: orderU, crateId });
   expect(dup.url()).toContain('sandikHata=ALREADY_ASSIGNED');
   expect(await replanDays()).toEqual([`ACTIVE:${NEW_DAY}`]);

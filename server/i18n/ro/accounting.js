@@ -151,6 +151,7 @@ export default {
       PROFORMA_NOT_ISSUED: "proforma client nu a fost încă emisă (în coadă sau neemisă)",
       CURRENCY: "monedă neacceptată",
       NO_LINES: "nu există rânduri de sticlă cu preț de facturat",
+      ACCOUNTING_ACTION: "acțiune contabilă necesară: sticla replanificată la această zi este deja inclusă în factura emisă înainte de corecția încărcării — nu se facturează din nou",
     },
     ok: {
       created: "Cererea a fost primită; factura se emite în FGO și se trimite clientului.",
@@ -178,6 +179,24 @@ export default {
     },
     chainInfo: "încasat {paid} · avans facturat {advanced}",
     sumNote: "Lanțul de documente al clientului este o singură datorie: avansul și factura se iau cu valoarea lor, proforma doar cu partea încă nefacturată și neacoperită de avans.",
+  },
+  impact: {
+    badge: "Acțiune contabilă necesară",
+    dayNote: "acțiune contabilă necesară (factura emisă nu corespunde încărcării efective): {list}",
+    required: "ACȚIUNE CONTABILĂ NECESARĂ",
+    requiredNote: "NU se emite automat nicio factură, factură suplimentară, stornare sau document de corecție, iar documentul emis nu se modifică; acest conținut nu se facturează din nou. Clarificați cu contabilul.",
+    code: {
+      NO_BILLING: "din această încărcare nu s-a emis factură — factura se emite din starea curentă (corectată)",
+      ORDER_CHAIN: "în lanțul de documente al comenzii ({ref}); factura se emite pentru întreaga comandă din pagina comenzii",
+      QUEUED_BILLING: "factura este în coadă",
+      FAILED_BILLING: "factura nu a putut fi emisă (așteaptă reîncercare sau renunțare)",
+      NO_FINANCIAL_DIFFERENCE: "factura {ref}: fără diferență financiară",
+      UNDER_INVOICED: "factura {ref}: facturat PREA PUȚIN (s-a încărcat efectiv mai mult decât pe factură)",
+      OVER_INVOICED: "factura {ref}: facturat PREA MULT (s-a încărcat efectiv mai puțin decât pe factură)",
+    },
+    detail: "pe factură {invPieces} buc. / {invAmount} {cur} · încărcat efectiv {effPieces} buc. / {effAmount} {cur} · diferență {diff} {cur}",
+    paid: "factura este plătită / parțial plătită",
+    advance: "factura conține stornare de avans",
   },
   receivables: {
     refresh: "Actualizează din FGO",

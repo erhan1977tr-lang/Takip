@@ -11,16 +11,17 @@ import { previewExchangeRate } from '@/server/fx/resolve.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { DOC_EMAIL, GLASS_FGO, billingState, isLoaded } from '@/server/glass/billing.js';
 import { localDay } from '@/server/profile/dates.js';
-import { glassDocumentAction, glassPaidAction } from './glass-billing-actions';
+import { glassDocumentAction } from './glass-billing-actions';
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
 const KIND_ACTION = { proforma: 'PROFORMA', advance: 'ADVANCE', invoice: 'INVOICE' } as const;
-type Doc = { id: string; kind: string; series: string; number: string; link: string | null; issuedAt: Date; total: { toString(): string } | null; paid: { toString(): string } | null };
+type Doc = { id: string; kind: string; seq: number; advanced: { toString(): string } | null; series: string; number: string; link: string | null; issuedAt: Date; total: { toString(): string } | null; paid: { toString(): string } | null };
 type Job = { type: string; status: string; lastError: string | null; payload: unknown; createdAt: Date; sentAt: Date | null };
 
 /**
  * Cam siparişinin Finans / FGO bölümü (yönetici). Muhasebe → Cam Tahsilat ile aynı kayıtlar (FgoDocument).
- * Düğmeler belge durumuna göre: proforma → (ödeme) → avans faturası → (yüklenince) fatura.
+ * Düğmeler belge durumuna göre: proforma → (FGO'da tahsilat) → avans faturası → (yüklenince) fatura. Ödeme yalnızca
+ * FGO'dan okunur (karar 104): tahsilat − avansı kesilen > 0 ise avans faturası düğmesi yüklemeden sonra da çıkar.
  */
 export async function GlassFinance({ order, t, sp }: {
   order: { id: string; status: string; actualShipDate: Date | null; estimatedShipDate: Date | null; offers: { status: string }[] };
@@ -39,7 +40,7 @@ export async function GlassFinance({ order, t, sp }: {
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const pending = jobs.filter((j) => j.type === GLASS_FGO && j.status === 'PENDING');
   const st = billingState({
-    status: order.status, loaded: isLoaded(order, today), docs, billing,
+    status: order.status, loaded: isLoaded(order, today), docs,
     pending: pending.map((j) => (j.payload as { kind?: string } | null)?.kind ?? ''), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
     inBatch: batchOrders.length > 0,
   });
@@ -57,14 +58,15 @@ export async function GlassFinance({ order, t, sp }: {
   const fxNow = askRate && fxOrder
     ? await previewExchangeRate(db, { customer: fxOrder.customer, currency: 'EUR', day: today, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
+  const hasProforma = docs.some((d) => d.kind === 'PROFORMA');
   const lastJob = jobs.find((j) => j.type === GLASS_FGO);
   const lastMail = jobs.find((j) => j.type === DOC_EMAIL);
   const hidden = <input type="hidden" name="id" value={order.id} />;
   return (
     <div className="card" id="finans">
       <h2>{t('glassBilling.title')}</h2>
-      {sp.fgoOk && <div className="alert alert-ok">{t(`glassBilling.ok.${sp.fgoOk === 'paid' ? 'paid' : 'requested'}` as MsgKey)}</div>}
-      {sp.fgoError && <div className="alert alert-error">{t(`glassBilling.errors.${['FGO_DISABLED', 'FGO_DAILY_LIMIT', 'BAD_AMOUNT', 'BAD_RATE', 'RATE_LOCKED'].includes(sp.fgoError) ? sp.fgoError : 'NOT_ALLOWED'}` as MsgKey)}</div>}
+      {sp.fgoOk && <div className="alert alert-ok">{t('glassBilling.ok.requested')}</div>}
+      {sp.fgoError && <div className="alert alert-error">{t(`glassBilling.errors.${['FGO_DISABLED', 'FGO_DAILY_LIMIT', 'BAD_RATE', 'RATE_LOCKED'].includes(sp.fgoError) ? sp.fgoError : 'NOT_ALLOWED'}` as MsgKey)}</div>}
       {docs.length > 0 ? (
         <div className="table-wrap">
           <table>
@@ -123,10 +125,21 @@ export async function GlassFinance({ order, t, sp }: {
           )}
         </div>
       )}
-      {billing?.paidAmount != null && <p className="small">{t('glassBilling.paidManual', { amount: fmtMoney(billing.paidAmount.toString(), 'RON'), date: fmtDateTime(billing.paidAt) })}</p>}
-      {/* Ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası engellenir, nedeni belirgin gösterilir (karar 94) */}
-      {st.wait === 'paid_no_advance'
-        ? <div className="alert alert-warn" id="fatura-engeli">{t('glassBilling.wait.paid_no_advance')}</div>
+      {/* Proformanın tahsilatı ve avans durumu — tek kaynak FGO (karar 104): tahsilat − avansı kesilen = avansı kesilecek */}
+      {hasProforma && !docs.some((d) => d.kind === 'INVOICE') && (
+        <div className="fx-block" id="avans-durumu">
+          <h3>{t('glassBilling.chain.title')}</h3>
+          <p className="small">
+            {t('glassBilling.chain.paid')}: <b>{fmtMoney(st.paid, 'RON')}</b> · {t('glassBilling.chain.advanced')}: <b>{fmtMoney(st.advanced, 'RON')}</b> ·{' '}
+            {t('glassBilling.chain.required')}: {st.advanceRequired > 0 ? <Badge tone="warn">{fmtMoney(st.advanceRequired, 'RON')}</Badge> : <b>{fmtMoney(st.advanceRequired, 'RON')}</b>}
+          </p>
+          <p className="muted small">{t('glassBilling.chain.note')}</p>
+        </div>
+      )}
+      {billing?.paidAmount != null && <p className="small muted">{t('glassBilling.paidManual', { amount: fmtMoney(billing.paidAmount.toString(), 'RON'), date: fmtDateTime(billing.paidAt) })}</p>}
+      {/* Yüklenmiş + FGO'da avansı kesilmemiş tahsilat: kapanış faturası engellenir, önce avans faturası (karar 104) */}
+      {st.wait === 'advance_required'
+        ? <div className="alert alert-warn" id="fatura-engeli">{t('glassBilling.wait.advance_required', { amount: fmtMoney(st.advanceRequired, 'RON') })}</div>
         : st.wait === 'batch' && batchOrders.length > 0 ? (
           <div className="alert alert-info" id="musteri-proformasi">
             {t('glassBilling.wait.batch', { ref: batchRefs.join(', ') })}{' '}
@@ -158,17 +171,9 @@ export async function GlassFinance({ order, t, sp }: {
                 <input id={`gb-rate-${a}`} name="fxRate" inputMode="decimal" maxLength={10} style={{ width: 110 }} title={t('fx.manualHint')} />
               </span>
             )}
-            <ConfirmButton primary message={t(`glassBilling.confirm.${a}` as MsgKey)}>{t(`glassBilling.button.${a}` as MsgKey)}</ConfirmButton>
+            <ConfirmButton primary message={t(`glassBilling.confirm.${a}` as MsgKey, { amount: fmtMoney(st.advanceRequired, 'RON') })}>{t(`glassBilling.button.${a}` as MsgKey)}</ConfirmButton>
           </form>
         ))}
-        {st.actions.includes('mark_paid') && (
-          <form action={glassPaidAction} className="row">
-            {hidden}
-            <label htmlFor="gb-paid" style={{ margin: 0 }}>{t('glassBilling.paidLabel')}</label>
-            <input id="gb-paid" name="amount" inputMode="decimal" required style={{ width: 140 }} defaultValue={docs.find((d) => d.kind === 'PROFORMA')?.total?.toString() ?? ''} />
-            <button className="btn">{t('glassBilling.button.mark_paid')}</button>
-          </form>
-        )}
       </div>
     </div>
   );

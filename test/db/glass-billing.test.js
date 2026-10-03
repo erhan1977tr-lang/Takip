@@ -86,8 +86,8 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   const ord = await db.order.findUnique({ where: { id: o.id } });
   assert.equal(ord.status, 'URETIMDE', 'sipariş durumu değişmez (müşteri onayı yok)');
 
-  // Ödeme (elle) → avans faturası: tek satır, tahsil edilen tutar
-  assert.deepEqual(await g.markGlassPaid(db, { orderId: o.id, amount: 605, actor: actor() }), { ok: true });
+  // Ödeme FGO'da görünür (karar 104: tek kaynak FGO) → avans faturası: tek satır, tahsil edilen tutar
+  await db.fgoDocument.updateMany({ where: { orderId: o.id, kind: 'PROFORMA' }, data: { paid: '605.00' } });
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'ADVANCE', actor: actor() }), { ok: true });
   await g.dispatchGlassJobs(db, ctx(fgo));
   const av = fgo.calls[1];
@@ -234,25 +234,28 @@ dbTest('fatura numarası: numarayı FGO verir ve dönen numara kaydedilir; elle 
   assert.equal(await setting(), null);
 });
 
-// Karar 94: düşüm uydurulmaz. Proforma ödenmiş ama avans faturası kesilmemişse yüklenmiş siparişin kapanış faturası kesilmez.
-dbTest('ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası kesilmez; ödenmemiş proformada akış aynen', async () => {
+// Karar 94 → 104: proforma ödenmiş, avans faturası yok, yüklenmiş. Düşüm uydurulmaz; kapanış faturası kesilmez — ama çıkmaz
+// da değildir: FGO'daki tahsilat için avans faturası yüklemeden sonra da kesilir (ayrıntılı senaryolar: order-advance.test.js).
+dbTest('ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış faturası kesilmez, avans istenir; ödenmemiş proformada akış aynen', async () => {
   await fgoOn(0);
   const past = new Date(Date.now() - 5 * 86_400_000);
   const proforma = (orderId, number, paid) => db.fgoDocument.create({ data: { orderId, kind: 'PROFORMA', series: 'PRF', number, issuedAt: new Date(), total: '1210.00', paid } });
   const queued = (orderId) => db.notificationOutbox.count({ where: { orderId, type: 'FGO_GLASS' } });
 
-  // A) FGO'da tahsilat görünen proforma: fatura isteği reddedilir, kuyruğa hiçbir şey girmez
+  // A) FGO'da tahsilat görünen proforma: fatura isteği reddedilir, kuyruğa hiçbir şey girmez; avans istenebilir
   const a = await glassOrder(81, past);
   await proforma(a.id, '9001', '1210.00');
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: a.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
   assert.equal(await queued(a.id), 0);
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: a.id, kind: 'ADVANCE', actor: actor() }), { ok: true }, 'yüklemeden sonra da avans');
+  assert.equal(await queued(a.id), 1);
 
-  // B) Yöneticinin elle girdiği ödeme
+  // B) Eski sürümden kalma elle ödeme kaydı ödeme sayılmaz: FGO'da tahsilat yoksa proforma ödenmemiştir (fatura kesilir)
   const b = await glassOrder(82, past);
   await proforma(b.id, '9002', '0');
-  assert.deepEqual(await g.markGlassPaid(db, { orderId: b.id, amount: 500, actor: actor() }), { ok: true });
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: b.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
-  assert.equal(await queued(b.id), 0);
+  await db.glassBilling.create({ data: { orderId: b.id, paidAt: new Date(), paidAmount: '500.00', paidById: admin.id } });
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: b.id, kind: 'ADVANCE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
+  assert.deepEqual(await g.requestGlassDocument(db, { orderId: b.id, kind: 'INVOICE', actor: actor() }), { ok: true });
 
   // C) İstek kuyruğa girdikten sonra proforma ödenmiş görünürse (FGO eşitlemesi): kesim anında durur, FGO'ya gidilmez
   const c = await glassOrder(83, past);
@@ -264,7 +267,7 @@ dbTest('ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış fatura
   assert.equal(blocked.calls.length, 0, 'belge kesilmedi');
   const job = await db.notificationOutbox.findFirst({ where: { orderId: c.id, type: 'FGO_GLASS' } });
   assert.equal(job.status, 'FAILED');
-  assert.match(job.lastError, /PRF9003 ödenmiş ama avans faturası yok/);
+  assert.match(job.lastError, /PRF9003: FGO'da avansı kesilmemiş 300\.00 RON tahsilat var/);
   assert.equal(await db.adminAlert.count({ where: { orderId: c.id, type: 'FGO_FAILED' } }), 1, 'yöneticiye açıkça bildirilir');
   assert.equal(await db.fgoDocument.count({ where: { orderId: c.id, kind: 'INVOICE' } }), 0);
 

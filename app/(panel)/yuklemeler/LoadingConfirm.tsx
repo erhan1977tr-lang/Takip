@@ -10,7 +10,9 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { dayKey } from '@/server/orders/loading.js';
 import { isGlassLine, itemKey, loadConfirmation, loadedDays, previewLoading, summarize } from '@/server/loading/confirmation.js';
 import { NOT_LOADED_REASONS, notLoadedOfDay } from '@/server/loading/replan.js';
-import { cancelReplanAction, confirmLoadingAction, replanAction } from './actions';
+import { planCorrection, unpackCorrection } from '@/server/loading/correction.js';
+import { cancelReplanAction, confirmLoadingAction, correctLoadingAction, previewCorrectionAction, replanAction } from './actions';
+import { ImpactNote, type Impact } from './ImpactNote';
 
 type Money = Record<string, { sale: number; cost: number }>;
 type GlassRow = { name: string; adet: number; m2: number; sale: number; cost: number };
@@ -23,13 +25,18 @@ type PlanItem = { orderId: string; offerLineId: string | null; replanId?: string
 type PlanOrder = { orderId: string; orderNo: string; customerName: string; items: PlanItem[]; replanFrom?: string[] };
 
 const ERRORS = ['FORBIDDEN', 'BAD_DAY', 'FUTURE_DAY', 'ALREADY_CONFIRMED', 'NOTHING_TO_CONFIRM', 'STALE_PREVIEW', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED'];
-const REPLAN_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'NOT_FUTURE', 'NOT_FOUND', 'NOT_ALLOWED', 'BAD_QUANTITY', 'ORDER_CANCELLED', 'ORDER_ON_HOLD', 'DAY_CONFIRMED', 'ALREADY_LOADED', 'ALREADY_PLANNED'];
+const REPLAN_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'NOT_FUTURE', 'NOT_FOUND', 'NOT_ALLOWED', 'BAD_QUANTITY', 'NO_REMAINDER', 'ORDER_CANCELLED', 'ORDER_ON_HOLD', 'DAY_CONFIRMED', 'ALREADY_LOADED', 'ALREADY_PLANNED'];
+const CORRECT_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'REASON_REQUIRED', 'NOT_CONFIRMED', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED', 'NO_CHANGE', 'DOWNSTREAM_CONFLICT', 'QUEUED_BILLING', 'FAILED_BILLING', 'STALE_PREVIEW'];
+/** Onay kalemi (geçerli durum) — düzeltme formu için */
+type ConfItem = { orderId: string; offerLineId: string | null; replanId: string | null; kind: string; unit: string; description: string; descriptionRo: string | null; enMm: number | null; boyMm: number | null; quantity: number; status: string; notLoadedReason: string | null; notLoadedNote: string | null };
+type ConfOrder = { orderId: string; orderNo: string; customerName: string; items: ConfItem[] };
 const dmy = (day: string) => fmtDate(`${day}T12:00:00Z`);
 
 /**
  * Yükleme onayı bölümü (Yüklemeler → gün ayrıntısı; iç ekip). Kurallar server/loading/confirmation.js'te.
- *   - Onaylanmış gün: onay anındaki kayıt (müşteri → sipariş → cam). Tutarlar yalnızca yöneticiye; satış / çizim müşteri
- *     adını maskeli görür.
+ *   - Onaylanmış gün: GEÇERLİ durum (müşteri → sipariş → cam; düzeltmeler uygulanmış — karar 105) + "Düzeltildi" rozeti ve
+ *     tarihçe (ilk onay kaydı ve her düzeltme: kim, ne zaman, neden, önce → sonra). İlk onay kaydı değişmez. Tutarlar
+ *     yalnızca yöneticiye; satış / çizim müşteri adını maskeli görür. "Düzelt" ve aktarım yalnızca yöneticide.
  *   - Onaylanmamış gün: yalnızca yönetici önizlemeyi ve "Eksiksiz Yüklendi" düğmesini görür. Yetki sunucuda kontrol edilir.
  */
 export async function LoadingConfirm({ user, day, planned, sp }: {
@@ -91,13 +98,32 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
     const outside = rest.filter((p) => !elsewhere.has(p.id));
     const missing = await notLoadedOfDay(db, day);
     const tomorrow = dayKey(new Date(Date.now() + 86_400_000));
+    const split = (x: { loaded: number; notLoaded: number }) => t('loading.correct.split', { loaded: x.loaded, notLoaded: x.notLoaded });
+    const glassOf = (x: { description: string; descriptionRo: string | null; enMm: number | null; boyMm: number | null }) => `${nameOf(x)}${x.enMm && x.boyMm ? ` · ${x.enMm} × ${x.boyMm}` : ''}`;
+    // Düzeltme önizlemesi (yalnızca yönetici): adres çubuğundaki girdi sunucuda yeniden hesaplanır; hiçbir şey yazılmaz
+    const draft = canConfirm && sp.dz ? await planCorrection(db, { day, input: unpackCorrection(sp.dz) }) : null;
+    // Düzeltme formu: geçerli durumdaki cam kapsamları (yüklenen + yüklenmeyen)
+    const scopes = canConfirm ? (confirmation.orders as ConfOrder[]).flatMap((o) => {
+      const byKey = new Map<string, ConfItem[]>();
+      for (const i of o.items.filter((x) => isGlassLine(x))) byKey.set(itemKey(i), [...(byKey.get(itemKey(i)) ?? []), i]);
+      return [...byKey.entries()].map(([key, rows]) => {
+        const nl = rows.find((r) => r.status === 'NOT_LOADED') ?? null;
+        return { key, order: o, base: rows[0], total: rows.reduce((n, r) => n + r.quantity, 0), notLoaded: nl?.quantity ?? 0, reason: nl?.notLoadedReason ?? '', note: nl?.notLoadedNote ?? '' };
+      });
+    }) : [];
     return (
       <div className="card" id="onay">
         <div className="section-head">
-          <h2>{t('loading.confirm.title')} <Badge tone="ok">{t('loading.confirm.badgeDone')}</Badge></h2>
+          <h2>
+            {t('loading.confirm.title')} <Badge tone="ok">{t('loading.confirm.badgeDone')}</Badge>
+            {confirmation.revision > 0 && <> <Badge tone="warn">{t('loading.correct.badge')} #{confirmation.revision}</Badge></>}
+          </h2>
         </div>
         {flash}
+        {sp.duzeltme === 'ok' && <div className="alert alert-ok">{t('loading.correct.ok', { n: sp.rev ?? '' })}</div>}
+        {sp.duzeltme === 'ok' && sp.muh && <div className="alert alert-error">{t('loading.correct.okAccounting')}</div>}
         <p className="muted">{t('loading.confirm.doneIntro')}</p>
+        {confirmation.revision > 0 && <div className="alert alert-info" id="gecerli-durum">{t('loading.correct.effective', { n: confirmation.revision })}</div>}
         <p className="confirm-by">
           <b>{t('loading.confirm.by', { who: confirmation.confirmedBy, when: fmtDateTime(confirmation.confirmedAt) })}</b>
           {confirmation.note && <span className="muted"> · {t('loading.confirm.note')}: {confirmation.note}</span>}
@@ -109,6 +135,141 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
           <div className="alert alert-warn confirm-outside">
             {t('loading.confirm.outside')}{' '}
             {outside.map((o, i) => <span key={o.id}>{i > 0 && ', '}<Link href={`/siparisler/${o.id}`}>{o.orderNo}</Link></span>)}
+          </div>
+        )}
+        {/* Düzeltme tarihçesi (karar 105): ilk onay kaydı ve her düzeltme — kim, ne zaman, neden, önce → sonra */}
+        {confirmation.revision > 0 && confirmation.original && (
+          <details className="nl-box" id="duzeltme-gecmisi">
+            <summary>{t('loading.correct.history.title')}</summary>
+            <h3>{t('loading.correct.history.original', { who: confirmation.confirmedBy, when: fmtDateTime(confirmation.confirmedAt) })}</h3>
+            {table(summarize(confirmation.original, nameOf) as Summary)}
+            {confirmation.corrections.map((c) => (
+              <div key={c.revision} className="correction-rev" data-revision={c.revision}>
+                <h3>{t('loading.correct.history.revision', { n: c.revision, who: c.by, when: fmtDateTime(c.at) })}</h3>
+                <p className="small">{t('loading.correct.history.reason', { reason: c.reason })}</p>
+                <ul className="small">
+                  {c.changes.map((x) => (
+                    <li key={x.key}>
+                      <Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link> <span className="muted">({customerLabel(user, x.customerName)})</span> · {glassOf(x)}:{' '}
+                      {split(x.before)} → <b>{split(x.after)}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </details>
+        )}
+        {/* Düzelt (yalnızca yönetici): giriş → önizleme (önce / sonra, aktarımlar, finansal etki) → kayıt. Onay değişmez. */}
+        {canConfirm && (
+          <div id="duzelt" className="nl-box">
+            {sp.duzeltHata && <div className="alert alert-error">{t(`loading.correct.errors.${CORRECT_ERRORS.includes(sp.duzeltHata) ? sp.duzeltHata : 'STALE_PREVIEW'}` as MsgKey)}</div>}
+            {draft?.ok ? (
+              <div id="duzelt-onizleme">
+                <h3>{t('loading.correct.previewTitle', { n: draft.revision })}</h3>
+                <p className="muted small">{t('loading.correct.previewIntro')}</p>
+                <div className="table-wrap load-wrap">
+                  <table className="load-table nl-table">
+                    <thead>
+                      <tr>
+                        <th>{t('loading.correct.cols.order')}</th><th>{t('loading.correct.cols.glass')}</th><th className="num">{t('loading.correct.cols.total')}</th>
+                        <th>{t('loading.correct.before')}</th><th>{t('loading.correct.after')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draft.changes.map((x) => (
+                        <tr key={x.key} data-key={x.key}>
+                          <td>
+                            <Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link>
+                            <div className="muted small">{customerLabel(user, x.customerName)}</div>
+                          </td>
+                          <td>{glassOf(x)}</td>
+                          <td className="num">{x.total}</td>
+                          <td>{split(x.before)}</td>
+                          <td>
+                            <b>{split(x.after)}</b>
+                            {x.after.reason && <div className="muted small">{t(`loading.replan.reasons.${NOT_LOADED_REASONS.includes(x.after.reason) ? x.after.reason : 'OTHER'}` as MsgKey)}{x.after.note ? ` · ${x.after.note}` : ''}</div>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <h3>{t('loading.correct.replansTitle')}</h3>
+                {draft.closing.length === 0 && draft.conflicts.length === 0 && <p className="muted small">{t('loading.correct.replansNone')}</p>}
+                <ul className="small">
+                  {draft.closing.map((r) => <li key={r.id}>{t('loading.correct.replanLine', { order: r.orderNo, qty: r.quantity, date: dmy(r.day) })}</li>)}
+                  {draft.conflicts.map((r) => <li key={r.key}><b>{t('loading.correct.conflictLine', { order: r.orderNo, qty: r.confirmed, dates: r.days.map(dmy).join(', ') })}</b></li>)}
+                </ul>
+                <h3>{t('loading.correct.impactTitle')}</h3>
+                {(draft.impacts as Impact[]).map((x) => <ImpactNote key={x.orderId} x={x} t={t} money={money} />)}
+                {draft.blocked ? (
+                  <>
+                    <div className="alert alert-error" id="duzelt-engel">{t(`loading.correct.blocked.${draft.blocked}` as MsgKey)}</div>
+                    <Link className="btn" href={`/yuklemeler?gun=${day}#duzelt`}>{t('loading.correct.back')}</Link>
+                  </>
+                ) : (
+                  <form action={correctLoadingAction} className="tool-bar confirm-bar">
+                    <input type="hidden" name="day" value={day} />
+                    <input type="hidden" name="dz" value={sp.dz ?? ''} />
+                    <input type="hidden" name="key" value={draft.key} />
+                    <div className="group confirm-note">
+                      <input name="reason" required minLength={3} maxLength={500} defaultValue={sp.dzn ?? ''} placeholder={t('loading.correct.reasonLabel')} aria-label={t('loading.correct.reasonLabel')} />
+                    </div>
+                    <div className="group">
+                      <Link className="btn" href={`/yuklemeler?gun=${day}#duzelt`}>{t('loading.correct.back')}</Link>
+                      <ConfirmButton primary message={t('loading.correct.dialog', { date: dmy(day), n: draft.revision })}>{t('loading.correct.save')}</ConfirmButton>
+                    </div>
+                  </form>
+                )}
+              </div>
+            ) : scopes.length > 0 && (
+              <details className="nl-entry" id="duzelt-giris">
+                <summary>{t('loading.correct.button')}</summary>
+                <p className="muted small">{t('loading.correct.intro')}</p>
+                <form action={previewCorrectionAction}>
+                  <input type="hidden" name="day" value={day} />
+                  <div className="table-wrap load-wrap">
+                    <table className="load-table nl-table">
+                      <thead>
+                        <tr>
+                          <th>{t('loading.correct.cols.order')}</th><th>{t('loading.correct.cols.glass')}</th><th className="num">{t('loading.correct.cols.total')}</th>
+                          <th className="num">{t('loading.correct.cols.loaded')}</th><th className="num">{t('loading.correct.cols.notLoaded')}</th>
+                          <th>{t('loading.correct.cols.newQty')}</th><th>{t('loading.correct.cols.reason')}</th><th>{t('loading.correct.cols.note')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scopes.map((x) => (
+                          <tr key={x.key} data-key={x.key}>
+                            <td>
+                              <Link className="order-no" href={`/siparisler/${x.order.orderId}`}>{x.order.orderNo}</Link>
+                              <div className="muted small">{customerLabel(user, x.order.customerName)}</div>
+                            </td>
+                            <td>{glassOf(x.base)}</td>
+                            <td className="num">{x.total}</td>
+                            <td className="num">{x.total - x.notLoaded}</td>
+                            <td className="num">{x.notLoaded}</td>
+                            <td><input type="number" name={`cq:${x.key}`} min={0} max={x.total} step={1} inputMode="numeric" className="nl-qty" defaultValue={x.notLoaded} aria-label={`${t('loading.correct.cols.newQty')} (${x.order.orderNo})`} /></td>
+                            <td>
+                              <select name={`cr:${x.key}`} defaultValue={x.reason} aria-label={`${t('loading.correct.cols.reason')} (${x.order.orderNo})`}>
+                                <option value="">{t('loading.replan.entry.pick')}</option>
+                                {NOT_LOADED_REASONS.map((r) => <option key={r} value={r}>{t(`loading.replan.reasons.${r}` as MsgKey)}</option>)}
+                              </select>
+                            </td>
+                            <td><input name={`cn:${x.key}`} maxLength={200} defaultValue={x.note} aria-label={`${t('loading.correct.cols.note')} (${x.order.orderNo})`} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="tool-bar confirm-bar">
+                    <div className="group confirm-note">
+                      <input name="reason" required minLength={3} maxLength={500} placeholder={t('loading.correct.reasonLabel')} aria-label={t('loading.correct.reasonLabel')} />
+                    </div>
+                    <div className="group"><button className="btn btn-primary">{t('loading.correct.preview')}</button></div>
+                  </div>
+                </form>
+              </details>
+            )}
           </div>
         )}
         {/* Yüklenmeyen camlar (karar 102): onay kaydı değişmez; kalan ileri bir güne aktarılır. Aktarım yalnızca yöneticide. */}
@@ -131,7 +292,6 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
                   {missing.map((r) => {
                     const glass = nameOf({ description: r.glass, descriptionRo: r.glassRo });
                     const reason = t(`loading.replan.reasons.${r.reason && NOT_LOADED_REASONS.includes(r.reason) ? r.reason : 'OTHER'}` as MsgKey);
-                    const done = r.replan?.status === 'CONFIRMED';
                     return (
                       <tr key={r.itemId} data-item={r.itemId}>
                         <td>
@@ -145,31 +305,47 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
                         <td className="num"><b>{r.remaining}</b></td>
                         <td>{reason}{r.note && <div className="muted small">{r.note}</div>}</td>
                         <td className="nl-next">
-                          {r.replan && (
-                            <Link href={`/yuklemeler?gun=${r.replan.day}`} className={`badge ${done ? 'badge-ok' : 'badge-info'}`}>
-                              {done
-                                ? r.replan.notLoaded > 0 ? t('loading.replan.doneRest', { date: dmy(r.replan.day), loaded: r.replan.loaded, rest: r.replan.notLoaded }) : t('loading.replan.done', { date: dmy(r.replan.day), loaded: r.replan.loaded })
-                                : t('loading.replan.planned', { date: dmy(r.replan.day) })}
-                            </Link>
-                          )}
-                          {!r.replan && <span className="muted">{t('loading.replan.none')}</span>}
+                          {/* Kısmi aktarım (karar 106): kalanın her aktarımı ayrı satır (adet → gün); aktarılmamış adet ayrıca */}
+                          {r.replans.map((p) => {
+                            const done = p.status === 'CONFIRMED';
+                            return (
+                              <div key={p.id} className="nl-replan" data-replan={p.id}>
+                                <Link href={`/yuklemeler?gun=${p.day}`} className={`badge ${done ? 'badge-ok' : 'badge-info'}`}>
+                                  {done
+                                    ? p.notLoaded > 0 ? t('loading.replan.doneRest', { date: dmy(p.day), loaded: p.loaded, rest: p.notLoaded }) : t('loading.replan.done', { date: dmy(p.day), loaded: p.loaded })
+                                    : t('loading.replan.planned', { qty: p.quantity, date: dmy(p.day) })}
+                                </Link>
+                                {canConfirm && !done && !r.blocked && (
+                                  <form action={replanAction} className="row nl-form">
+                                    <input type="hidden" name="day" value={day} />
+                                    <input type="hidden" name="itemId" value={r.itemId} />
+                                    <input type="hidden" name="replanId" value={p.id} />
+                                    <input type="date" name="newDay" required min={tomorrow} aria-label={`${t('loading.replan.newDay')} (${r.orderNo} · ${p.quantity})`} />
+                                    <ConfirmButton message={t('loading.replan.moveDialog', { order: r.orderNo, glass, qty: p.quantity })}>{t('loading.replan.move')}</ConfirmButton>
+                                  </form>
+                                )}
+                                {canConfirm && !done && (
+                                  <form action={cancelReplanAction}>
+                                    <input type="hidden" name="day" value={day} />
+                                    <input type="hidden" name="replanId" value={p.id} />
+                                    <ConfirmButton danger message={t('loading.replan.cancelDialog')}>{t('loading.replan.cancel')}</ConfirmButton>
+                                  </form>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {r.replans.length === 0 && <span className="muted">{t('loading.replan.none')}</span>}
+                          {r.replans.length > 0 && r.free > 0 && <div className="muted small nl-free">{t('loading.replan.free', { n: r.free })}</div>}
                           {r.blocked && <span className="muted small"> · {t(`loading.replan.blocked.${r.blocked}` as MsgKey)}</span>}
-                          {canConfirm && !done && !r.blocked && (
-                            <form action={replanAction} className="row nl-form">
+                          {canConfirm && r.free > 0 && !r.blocked && (
+                            <form action={replanAction} className="row nl-form nl-new">
                               <input type="hidden" name="day" value={day} />
                               <input type="hidden" name="itemId" value={r.itemId} />
-                              <input type="hidden" name="quantity" value={r.remaining} />
+                              <input type="number" name="quantity" required min={1} max={r.free} step={1} defaultValue={r.free} inputMode="numeric" className="nl-qty" aria-label={`${t('loading.replan.qty')} (${r.orderNo})`} />
                               <input type="date" name="newDay" required min={tomorrow} aria-label={`${t('loading.replan.newDay')} (${r.orderNo})`} />
-                              <ConfirmButton primary message={t('loading.replan.dialog', { order: r.orderNo, glass, planned: r.planned, loaded: r.loaded, remaining: r.remaining, reason, date: dmy(day) })}>
-                                {r.replan ? t('loading.replan.move') : t('loading.replan.button')}
+                              <ConfirmButton primary message={t('loading.replan.dialog', { order: r.orderNo, glass, planned: r.planned, loaded: r.loaded, remaining: r.remaining, free: r.free, reason, date: dmy(day) })}>
+                                {t('loading.replan.button')}
                               </ConfirmButton>
-                            </form>
-                          )}
-                          {canConfirm && r.replan && !done && (
-                            <form action={cancelReplanAction}>
-                              <input type="hidden" name="day" value={day} />
-                              <input type="hidden" name="replanId" value={r.replan.id} />
-                              <ConfirmButton danger message={t('loading.replan.cancelDialog')}>{t('loading.replan.cancel')}</ConfirmButton>
                             </form>
                           )}
                         </td>

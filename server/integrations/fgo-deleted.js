@@ -1,6 +1,7 @@
 // FGO'da silinmiş belge (ör. deneme faturası): FGO "belge yok" dediğinde sistemdeki kaydı kaldırılır ve sipariş belgeden
 // önceki hâline döner (karar 64/65). Böylece silinen belgenin siparişinde düğme yeniden çıkar ve numarası yeniden kullanılır.
-//   Cam: kayıt silinir; proforma silindiyse kur ve elle girilen ödeme de sıfırlanır (yeni proforma günün kuruyla kesilir).
+//   Cam: kayıt silinir; proforma silindiyse kur (ve eski sürümlerden kalan elle ödeme kaydı) da sıfırlanır (yeni proforma
+//   günün kuruyla kesilir). Avans faturası silindiyse karşıladığı tahsilat yeniden "avansı kesilmemiş" olur (karar 104).
 //   Profil: fatura silindiyse FATURALANDI → TESLIM_EDILDI ("FGO'da yeniden dene" ile yeni fatura); proforma silindiyse
 //   PROFORMA → ONAYLANDI (kur sıfırlanır; "FGO'da yeniden dene" ile yeni proforma). Profil işlemi runProfileAction'dan
 //   geçer (geçmiş + denetim + iyimser kilit).

@@ -124,7 +124,7 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
 
   // --- Yüklenmeyenler listesi: planlanan 10, yüklenen 8, kalan 2
   let [row] = await rp.notLoadedOfDay(db, D1);
-  assert.deepEqual([row.orderNo, row.customerName, row.planned, row.loaded, row.remaining, row.m2, row.reason, row.origin, row.replan], [o.orderNo, 'Replan A SRL', 10, 8, 2, 2, 'BROKEN', null, null]);
+  assert.deepEqual([row.orderNo, row.customerName, row.planned, row.loaded, row.remaining, row.free, row.m2, row.reason, row.origin, row.replans], [o.orderNo, 'Replan A SRL', 10, 8, 2, 2, 2, 'BROKEN', null, []]);
   const loadedItem = await db.loadingConfirmationItem.findFirst({ where: { orderId: o.id, status: 'LOADED', kind: 'CAM' } });
 
   // --- Aktarım: yalnızca yönetici, yalnızca kalan adet, yalnızca gelecek ve onaylanmamış bir gün
@@ -133,7 +133,9 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
   for (const [args, code] of [
     [{ itemId: loadedItem.id, day: F1 }, 'NOT_ALLOWED'], // yüklenen adet aktarılamaz
     [{ itemId: row.itemId, day: F1, quantity: 3 }, 'BAD_QUANTITY'], // kalandan fazlası
-    [{ itemId: row.itemId, day: F1, quantity: 1 }, 'BAD_QUANTITY'],
+    [{ itemId: row.itemId, day: F1, quantity: 0 }, 'BAD_QUANTITY'], // kısmi aktarım: 0 < adet ≤ kalan (karar 106)
+    [{ itemId: row.itemId, day: F1, quantity: '1.5' }, 'BAD_QUANTITY'],
+    [{ itemId: row.itemId, day: F1, quantity: -1 }, 'BAD_QUANTITY'],
     [{ itemId: row.itemId, day: dayOf(0) }, 'NOT_FUTURE'],
     [{ itemId: row.itemId, day: dayOf(-3) }, 'NOT_FUTURE'],
     [{ itemId: row.itemId, day: '2026-13-45' }, 'BAD_DAY'],
@@ -145,11 +147,14 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
   const tries = await Promise.all([1, 2, 3].map(() => rp.replanNotLoaded(db, { itemId: row.itemId, day: F1, quantity: 2, actor: actor() })));
   assert.deepEqual(tries.map((x) => x.ok).sort(), [false, false, true]);
   assert.ok(tries.filter((x) => !x.ok).every((x) => x.code === 'ALREADY_PLANNED'));
-  const first = await db.loadingReplan.findFirstOrThrow({ where: { sourceItemId: row.itemId } });
+  const { sourceItem: _src, ...firstRow } = await db.loadingReplan.findFirstOrThrow({ where: { sourceItemId: row.itemId }, include: { sourceItem: { select: { confirmationId: true } } } });
+  const first = { ...firstRow, sourceItem: _src };
   assert.deepEqual([first.status, first.quantity, Number(first.m2), first.reason, first.orderId, first.customerId, first.activeKey, first.fromDay.toISOString().slice(0, 10), first.shipDay.toISOString().slice(0, 10)],
-    ['ACTIVE', 2, 2, 'BROKEN', o.id, A.id, row.itemId, D1, F1]);
-  const { id: _id, createdAt: _c, ...copy } = first;
-  await assert.rejects(db.loadingReplan.create({ data: copy }), /Unique constraint/, 'aynı kalan için ikinci etkin aktarım veritabanında da olamaz');
+    ['ACTIVE', 2, 2, 'BROKEN', o.id, A.id, `${first.sourceItem.confirmationId}|${lineKey(o)}|${F1}`, D1, F1]);
+  const { id: _id, createdAt: _c, ...copy } = firstRow;
+  await assert.rejects(db.loadingReplan.create({ data: copy }), /Unique constraint/, 'aynı kapsamdan aynı güne ikinci aktarım veritabanında da olamaz');
+  // Kalanın tamamı aktarıldı: başka güne yeni aktarım için serbest adet yok
+  assert.deepEqual(await rp.replanNotLoaded(db, { itemId: row.itemId, day: F3, actor: actor() }), { ok: false, code: 'NO_REMAINDER' });
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'REPLAN_NOT_LOADED', entityId: o.id } });
   assert.deepEqual([audit.userId, audit.details.quantity, audit.details.m2, audit.details.reason, audit.details.fromLoading, audit.details.previousLoading, audit.details.toLoading, audit.details.sourceItemId, audit.details.replanId],
     [admin.id, 2, 2, 'BROKEN', D1, null, F1, row.itemId, first.id]);
@@ -167,14 +172,15 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
 
   // --- Başka güne alma ve vazgeçme: kayıt silinmez; kalan tek bir etkin aktarımda
   for (const role of OTHERS) assert.deepEqual(await rp.cancelReplan(db, { replanId: first.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
-  const moved = await rp.replanNotLoaded(db, { itemId: row.itemId, day: F3, actor: actor() });
-  assert.deepEqual([moved.ok, moved.moved], [true, true]);
-  assert.deepEqual((await db.loadingReplan.findMany({ where: { sourceItemId: row.itemId }, orderBy: { createdAt: 'asc' } })).map((x) => [x.status, x.activeKey != null, x.shipDay.toISOString().slice(0, 10)]), [['CANCELLED', false, F1], ['ACTIVE', true, F3]]);
+  const moved = await rp.replanNotLoaded(db, { itemId: row.itemId, day: F3, replaceId: first.id, actor: actor() });
+  assert.deepEqual([moved.ok, moved.moved, moved.quantity], [true, true, 2]);
+  assert.deepEqual((await db.loadingReplan.findMany({ where: { sourceItemId: row.itemId }, orderBy: { createdAt: 'asc' } })).map((x) => [x.status, x.activeKey != null, x.closedReason, x.shipDay.toISOString().slice(0, 10)]), [['CANCELLED', false, 'MOVED', F1], ['ACTIVE', true, null, F3]]);
   assert.deepEqual([(await c.previewLoading(db, F1)).items.length, (await c.previewLoading(db, F3)).items.length], [0, 1]);
   assert.deepEqual(await rp.cancelReplan(db, { replanId: moved.replanId, actor: actor() }), { ok: true });
   assert.deepEqual(await rp.cancelReplan(db, { replanId: moved.replanId, actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
   assert.equal((await c.previewLoading(db, F3)).items.length, 0);
-  assert.equal((await rp.notLoadedOfDay(db, D1))[0].replan, null);
+  assert.deepEqual((await rp.notLoadedOfDay(db, D1))[0].replans, []);
+  assert.equal((await db.loadingReplan.findUniqueOrThrow({ where: { id: moved.replanId } })).closedReason, 'ADMIN');
   const second = await rp.replanNotLoaded(db, { itemId: row.itemId, day: F1, actor: actor() });
   assert.deepEqual([second.ok, second.moved, second.quantity], [true, false, 2]);
   assert.equal(await db.auditLog.count({ where: { action: { in: ['REPLAN_NOT_LOADED', 'REPLAN_CANCELLED'] }, entityId: o.id } }), 4);
@@ -197,7 +203,8 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
   assert.equal((await db.loadingReplan.findUniqueOrThrow({ where: { id: second.replanId } })).status, 'CONFIRMED');
   // Aynı kalan ikinci kez onaylanamaz / aktarılamaz
   assert.deepEqual(await confirm(F1, [], evening(F1)), { ok: false, code: 'ALREADY_CONFIRMED' });
-  assert.deepEqual(await rp.replanNotLoaded(db, { itemId: row.itemId, day: F2, actor: actor() }), { ok: false, code: 'ALREADY_LOADED' });
+  assert.deepEqual(await rp.replanNotLoaded(db, { itemId: row.itemId, day: F2, actor: actor() }), { ok: false, code: 'NO_REMAINDER' });
+  assert.deepEqual(await rp.replanNotLoaded(db, { itemId: row.itemId, day: F2, replaceId: second.replanId, actor: actor() }), { ok: false, code: 'ALREADY_LOADED' });
   assert.deepEqual(await rp.cancelReplan(db, { replanId: second.replanId, actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
   const spare = await db.loadingConfirmation.create({ data: { shipDay: date(dayOf(-90)), confirmedById: admin.id } });
   const carried = await db.loadingConfirmationItem.findFirstOrThrow({ where: { replanId: second.replanId, status: 'LOADED' } });
@@ -206,19 +213,19 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
 
   // --- Son 1 adet yeniden aktarılır ve yüklenir
   const [row2] = await rp.notLoadedOfDay(db, F1);
-  assert.deepEqual([row2.planned, row2.loaded, row2.remaining, row2.reason, row2.origin, row2.replan], [2, 1, 1, 'MISSING', D1, null]);
+  assert.deepEqual([row2.planned, row2.loaded, row2.remaining, row2.reason, row2.origin, row2.replans], [2, 1, 1, 'MISSING', D1, []]);
   const third = await rp.replanNotLoaded(db, { itemId: row2.itemId, day: F2, quantity: 1, actor: actor() });
   assert.equal(third.ok, true);
   [row] = await rp.notLoadedOfDay(db, D1);
-  assert.deepEqual(row.replan, { id: second.replanId, day: F1, status: 'CONFIRMED', loaded: 1, notLoaded: 1 });
+  assert.deepEqual([row.replans, row.free], [[{ id: second.replanId, day: F1, status: 'CONFIRMED', quantity: 2, loaded: 1, notLoaded: 1 }], 0]);
   const r2 = await confirm(F2, [], evening(F2));
   assert.deepEqual([r2.ok, r2.items, r2.notLoaded], [true, 1, 0]);
   assert.deepEqual(await itemsOf(o.id, F2), [['CAM', 'LOADED', 1, 1, null, true]]);
   // Zincir: 16.10 → F1 → F2
   assert.deepEqual(await rp.replanChain(db, row2.itemId), [
-    { day: D1, loaded: 8, notLoaded: 2, reason: 'BROKEN', replannedTo: F1 },
-    { day: F1, loaded: 1, notLoaded: 1, reason: 'MISSING', replannedTo: F2 },
-    { day: F2, loaded: 1, notLoaded: 0, reason: null, replannedTo: null },
+    { day: D1, loaded: 8, notLoaded: 2, reason: 'BROKEN', replannedTo: [F1] },
+    { day: F1, loaded: 1, notLoaded: 1, reason: 'MISSING', replannedTo: [F2] },
+    { day: F2, loaded: 1, notLoaded: 0, reason: null, replannedTo: [] },
   ]);
   // İlk onay sonsuza dek 8 / 2: kaydı değişmedi; değiştirilemez
   assert.equal(await rawItems(D1), original);

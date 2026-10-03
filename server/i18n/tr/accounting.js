@@ -151,6 +151,7 @@ export default {
       PROFORMA_NOT_ISSUED: "müşteri proforması henüz kesilmedi (kuyrukta ya da kesilemedi)",
       CURRENCY: "para birimi desteklenmiyor",
       NO_LINES: "faturalanacak fiyatlı cam satırı yok",
+      ACCOUNTING_ACTION: "muhasebe işlemi gerekli: bu güne aktarılan cam, yükleme düzeltmesinden önce kesilmiş faturada zaten var — yeniden faturalanmaz",
     },
     ok: {
       created: "Fatura isteği alındı; FGO'da kesilip müşteriye gönderilecek.",
@@ -178,6 +179,24 @@ export default {
     },
     chainInfo: "tahsil edilen {paid} · avansı kesilen {advanced}",
     sumNote: "Müşteri belge zinciri tek borçtur: avans ve fatura kendi tutarıyla, proforma yalnızca henüz faturalanmamış ve avansla karşılanmamış kısmıyla sayılır.",
+  },
+  impact: {
+    badge: "Muhasebe işlemi gerekli",
+    dayNote: "muhasebe işlemi gerekli (kesilmiş fatura fiili yüklemeyle uyuşmuyor): {list}",
+    required: "MUHASEBE İŞLEMİ GEREKLİ",
+    requiredNote: "Otomatik fatura, ek fatura, storno ya da düzeltme belgesi KESİLMEZ ve kesilmiş belge değiştirilmez; bu kapsam yeniden faturalanmaz. Muhasebecinizle netleştirin.",
+    code: {
+      NO_BILLING: "bu yüklemeden fatura kesilmemiş — fatura geçerli (düzeltilmiş) durumdan kesilir",
+      ORDER_CHAIN: "sipariş başına belge zincirinde ({ref}); fatura siparişin tamamı için sipariş sayfasından kesilir",
+      QUEUED_BILLING: "fatura kuyrukta",
+      FAILED_BILLING: "fatura kesilemedi (yeniden deneme ya da vazgeçme bekliyor)",
+      NO_FINANCIAL_DIFFERENCE: "fatura {ref}: finansal fark yok",
+      UNDER_INVOICED: "fatura {ref}: EKSİK faturalandı (fiilen yüklenen faturadakinden fazla)",
+      OVER_INVOICED: "fatura {ref}: FAZLA faturalandı (fiilen yüklenen faturadakinden az)",
+    },
+    detail: "faturada {invPieces} adet / {invAmount} {cur} · fiilen yüklenen {effPieces} adet / {effAmount} {cur} · fark {diff} {cur}",
+    paid: "fatura ödenmiş / kısmen ödenmiş",
+    advance: "faturada avans düşümü var",
   },
   receivables: {
     refresh: "FGO ile Güncelle",

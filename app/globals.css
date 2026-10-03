@@ -783,6 +783,13 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .nl-next form { margin-top: 6px; }
 .nl-next .nl-form input[type=date] { width: 150px; }
 .replan-badge { margin-left: 4px; }
+/* Kısmi aktarım (karar 106): bir kalanın her aktarımı ayrı blok; yükleme düzeltmesi (karar 105): tarihçe ve önizleme */
+.nl-replan { margin-bottom: 8px; }
+.nl-replan form { display: inline-flex; margin-right: 6px; }
+.nl-box > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.nl-box h3 + p, .correction-rev { margin-top: 8px; }
+.correction-rev ul, #duzelt-onizleme ul { margin: 4px 0 8px 18px; }
+.impact-line { margin: 6px 0; }
 /* Fiziksel sandık (karar 103): başka müşterinin sandığına yerleşim — sandık bölümünün altında */
 .guest-box { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .guest-line { margin: 4px 0; align-items: center; }

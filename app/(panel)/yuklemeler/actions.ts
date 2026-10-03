@@ -12,6 +12,7 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { assignGuestCrate, removeGuestCrate, saveDayCrates, validateCrates } from '@/server/loading/crates.js';
 import { cancelReplan, replanNotLoaded } from '@/server/loading/replan.js';
+import { correctLoading, packCorrection, planCorrection, unpackCorrection } from '@/server/loading/correction.js';
 
 export type CratesState = { error?: string; ok?: string; savedAt?: number };
 
@@ -60,9 +61,54 @@ export async function confirmLoadingAction(formData: FormData) {
   redirect(r.ok ? back(`onay=ok&n=${r.orders}${r.notLoaded ? `&yok=${r.notLoaded}` : ''}`) : back(`onayHata=${r.code}`));
 }
 
+type CorrectionEntry = { key: string; quantity: string; reason: string; note: string };
+
 /**
- * "Yeniden planla": onaylı yüklemede yüklenmeyen kalanı ileri bir yükleme gününe aktarır (karar 102). Yalnızca yönetici
- * (LOADING_CONFIRM); yetki burada ve replanNotLoaded içinde sunucuda kontrol edilir. Eski onay kaydı değişmez.
+ * "Düzelt" → önizleme (karar 105): yöneticinin girdiği yeni yüklenmeyen adetler doğrulanır ve yalnızca DEĞİŞEN kapsamlar
+ * önizleme adresine taşınır; henüz hiçbir şey kaydedilmez. Yalnızca yönetici (LOADING_CONFIRM).
+ * Alanlar: "cq:<kapsam>" = yeni yüklenmeyen adet, "cr:<kapsam>" = neden, "cn:<kapsam>" = açıklama, "reason" = düzeltme nedeni.
+ */
+export async function previewCorrectionAction(formData: FormData) {
+  await requirePermission('LOADING_CONFIRM');
+  const day = String(formData.get('day') ?? '');
+  const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}&` : ''}${q}#duzelt`;
+  const input: CorrectionEntry[] = [...formData.keys()].filter((k) => k.startsWith('cq:')).map((k) => {
+    const key = k.slice(3);
+    return { key, quantity: String(formData.get(k) ?? ''), reason: String(formData.get(`cr:${key}`) ?? ''), note: String(formData.get(`cn:${key}`) ?? '') };
+  });
+  const plan = await planCorrection(db, { day, input });
+  if (!plan.ok) redirect(back(`duzeltHata=${plan.code}`));
+  const changed = new Set(plan.changes.map((c) => c.key));
+  const reason = String(formData.get('reason') ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  redirect(back(`dz=${packCorrection(input.filter((x) => changed.has(x.key)))}&dzn=${encodeURIComponent(reason)}`));
+}
+
+/**
+ * Düzeltmeyi kaydeder (karar 105): onay ve kalemleri değişmez; düzeltme kaydı ve yeni kalemler eklenir. Yalnızca yönetici
+ * (LOADING_CONFIRM); yetki burada ve correctLoading içinde sunucuda kontrol edilir. `key`: yöneticinin gördüğü önizlemenin
+ * parmak izi. Hiçbir FGO belgesi kesilmez / değiştirilmez.
+ */
+export async function correctLoadingAction(formData: FormData) {
+  const user = await requirePermission('LOADING_CONFIRM');
+  const day = String(formData.get('day') ?? '');
+  const dz = String(formData.get('dz') ?? '');
+  const reason = String(formData.get('reason') ?? '');
+  const back = (q: string, hash = 'onay') => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}&` : ''}${q}#${hash}`;
+  // Önizleme sayfasının taşıdığı girdi (yalnızca değişen kapsamlar); her alan correctLoading içinde yeniden doğrulanır
+  const r = await correctLoading(db, { day, input: unpackCorrection(dz), reason, key: String(formData.get('key') ?? ''), actor: await actorOf(user) });
+  revalidatePath('/yuklemeler');
+  revalidatePath('/admin/muhasebe/tedarikci');
+  if (r.ok) redirect(back(`duzeltme=ok&rev=${r.revision}${r.actionRequired ? '&muh=1' : ''}`));
+  // Önizleme hâlâ geçerliyse (neden eksik, durum değişti) önizlemede kalınır; değilse düzeltme formuna dönülür
+  redirect(['REASON_REQUIRED', 'STALE_PREVIEW', 'DOWNSTREAM_CONFLICT', 'QUEUED_BILLING', 'FAILED_BILLING'].includes(r.code)
+    ? back(`dz=${encodeURIComponent(dz)}&dzn=${encodeURIComponent(reason.slice(0, 500))}&duzeltHata=${r.code}`, 'duzelt')
+    : back(`duzeltHata=${r.code}`, 'duzelt'));
+}
+
+/**
+ * "Yeniden planla": onaylı yüklemede yüklenmeyen camı — tamamını ya da bir kısmını (karar 106) — ileri bir yükleme gününe
+ * aktarır (karar 102). `replanId` verilirse o aktarım başka güne alınır. Yalnızca yönetici (LOADING_CONFIRM); yetki burada
+ * ve replanNotLoaded içinde sunucuda kontrol edilir; adet ve kapasite sunucuda doğrulanır. Eski onay kaydı değişmez.
  */
 export async function replanAction(formData: FormData) {
   const user = await requirePermission('LOADING_CONFIRM');
@@ -70,7 +116,8 @@ export async function replanAction(formData: FormData) {
   const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}&` : ''}${q}#yuklenmeyen`;
   const r = await replanNotLoaded(db, {
     itemId: String(formData.get('itemId') ?? ''), day: String(formData.get('newDay') ?? ''),
-    quantity: formData.has('quantity') ? String(formData.get('quantity')) : null, actor: await actorOf(user),
+    quantity: formData.has('quantity') ? String(formData.get('quantity')) : null,
+    replaceId: String(formData.get('replanId') ?? '') || null, actor: await actorOf(user),
   });
   revalidatePath('/yuklemeler');
   redirect(r.ok ? back(`aktar=${r.moved ? 'moved' : 'planned'}`) : back(`aktarHata=${r.code}`));
