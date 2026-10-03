@@ -15,10 +15,12 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
 /**
+ * crateOf (isteğe bağlı): siparişin FİZİKSEL sandık etiketleri ("#3"; başka müşterinin sandığındaysa "#15 (ev sahibi)").
+ * Satır ticari olarak siparişin kendi müşterisinde kalır; sandık sütunu yalnızca nerede gittiğini gösterir (karar 103).
  * @param {{ orderNo: string, title: string | null, customer: { id: string, name: string }, offers: { status: string, currency: string, lines: object[] }[] }[]} orders
- * @param {{ priceOf: (l: any) => unknown }} o
+ * @param {{ priceOf: (l: any) => unknown, crateOf?: (o: any) => string[] }} o
  */
-export function buildLoadingSummary(orders, { priceOf }) {
+export function buildLoadingSummary(orders, { priceOf, crateOf = () => [] }) {
   const rows = new Map();
   let offerLines = 0;
   for (const o of orders) {
@@ -27,10 +29,11 @@ export function buildLoadingSummary(orders, { priceOf }) {
     offerLines += offer.lines.length;
     for (const g of glassTotals(offer, { nameOf: (l) => l.description, priceOf, byPrice: true })) {
       const key = `${o.customer.id}|${offer.currency}|${g.name}|${g.price}`;
-      const r = rows.get(key) ?? { customer: o.customer.name, currency: offer.currency, name: g.name, price: g.price, parts: 0, orders: [], titles: [], adet: 0, m2: 0, total: 0 };
+      const r = rows.get(key) ?? { customer: o.customer.name, currency: offer.currency, name: g.name, price: g.price, parts: 0, orders: [], titles: [], crates: [], adet: 0, m2: 0, total: 0 };
       r.parts += 1;
       if (!r.orders.includes(o.orderNo)) r.orders.push(o.orderNo);
       if (o.title && !r.titles.includes(o.title)) r.titles.push(o.title);
+      for (const c of crateOf(o)) if (!r.crates.includes(c)) r.crates.push(c);
       r.adet += g.adet;
       r.m2 = round3(r.m2 + g.qty);
       r.total = round2(r.total + g.total);
@@ -57,18 +60,20 @@ export function buildLoadingSummary(orders, { priceOf }) {
  * @returns {Buffer}
  */
 export function loadingSummaryXlsx(s, { day, stats, text }) {
+  // 10. sütun (başlık verildiyse): fiziksel sandık — siparişin hangi sandıkta gittiği; başka müşterinin sandığı açıkça yazılır
+  const withCrates = text.cols.length > 9;
   const rows = [
     [`${text.title} · ${day}`],
     ...stats.map(([k, v]) => [k, String(v)]),
     [],
     text.cols,
-    ...s.rows.map((r) => [r.orders.join(', '), r.customer, r.titles.join(', '), r.name, r.adet, text.unit, r.m2, r.unit, r.total]),
+    ...s.rows.map((r) => [r.orders.join(', '), r.customer, r.titles.join(', '), r.name, r.adet, text.unit, r.m2, r.unit, r.total, ...(withCrates ? [r.crates.join(', ')] : [])]),
   ];
   const head = stats.length + 2;
   const bold = [0, head];
   for (const [cur, t] of Object.entries(s.totals)) {
     bold.push(rows.length);
-    rows.push(['', '', '', text.total, t.adet, '', t.m2, '', t.total, cur]);
+    rows.push(['', '', '', text.total, t.adet, '', t.m2, '', t.total, ...(withCrates ? [''] : []), cur]);
   }
-  return writeXlsx({ sheetName: `${day}`, rows, bold, widths: [18, 26, 26, 46, 8, 8, 12, 14, 13] });
+  return writeXlsx({ sheetName: `${day}`, rows, bold, widths: [18, 26, 26, 46, 8, 8, 12, 14, 13, ...(withCrates ? [30] : [])] });
 }

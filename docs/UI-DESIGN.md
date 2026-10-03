@@ -228,6 +228,18 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Cam Tahsilat: every document of a customer chain shows its order links and a `.cell-note` (loading days / confirmed
   loading day / source proforma); the chain is one group.
 
+## Not-loaded glass and guest crates (3.39.0)
+
+- Confirmation preview: `<details class="nl-box nl-entry" id="yuklenmeyen-giris">` inside the confirm form — a
+  `.load-table.nl-table` with one row per glass line (planned qty, `input.nl-qty`, reason `<select>`, note).
+- Confirmed day: `#yuklenmeyen.nl-box` under the confirmation table — planned / loaded / remaining / reason / next
+  loading; replan status is a `.badge` link to the new day; Admin gets a date input + `ConfirmButton` ("Yeniden
+  planla" / "Günü değiştir") and a "Vazgeç" link button in the `.nl-next` cell.
+- Carried-forward rows and partially loaded orders carry a `.badge.badge-warn.replan-badge` on the order row.
+- Guest crate: `.badge.badge-info.guest-badge` ("#15 · host") in the crate cell (customers get a plain `#15`
+  `.badge-ok`); `.guest-box` under the customer's crate section holds the relation lines (`.guest-in` / `.guest-out`)
+  and, for Admin, the `details.guest-assign` form (order select, crate select, `ConfirmButton`).
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

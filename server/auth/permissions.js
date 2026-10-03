@@ -40,7 +40,7 @@ export const PERMISSIONS = {
   SETTINGS_MANAGE: 'Ayarlar ve entegrasyonlar',
   AUDIT_VIEW: 'Denetim kaydını görür',
   ACCOUNTING_MANAGE: 'Muhasebe: tahsilat, yükleme kârlılığı, fabrika cari hesabı',
-  LOADING_CONFIRM: 'Yükleme onayı: yükleme gününü "Eksiksiz Yüklendi" olarak kesinleştirir (geri alınamaz)',
+  LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).

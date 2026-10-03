@@ -85,13 +85,14 @@ export function confirmedLine(g) {
 export function mergeConfirmed(planned, confirmations) {
   const confirmedDays = new Set(confirmations.map((c) => c.day));
   const lines = [];
+  // Bir onayda kalemi olan sipariş (yüklenmiş ya da yüklenmemiş) planlanan hesaba girmez: yüklenen kısmı o onayın
+  // gününde sayılır; yüklenmeyen kısmı ancak ileride fiilen yüklendiği onayın gününde sayılır (karar 102).
   const loaded = new Set();
   for (const c of confirmations) {
     for (const o of c.orders) {
-      const l = confirmedLine({ ...o, day: c.day });
-      if (!l) continue;
-      lines.push(l);
       loaded.add(o.orderId);
+      const l = confirmedLine({ ...o, day: c.day });
+      if (l) lines.push(l);
     }
   }
   const outside = new Map();

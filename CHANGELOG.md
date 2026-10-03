@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.39.0 — 03.10.2026
+
+- **Yüklenmeyen cam (kırık / eksik / hazır değil)**: yükleme onayında cam satırı başına yüklenmeyen adet ve nedeni
+  girilir ("Yüklenmeyen cam var"). Satır "yüklenen" ve "yüklenmeyen" olarak kaydedilir; yüklenmeyen cam faturalanmaz
+  ve kârlılığa girmez. Boş bırakılan satırlar eskisi gibi eksiksiz yüklenmiş sayılır.
+- **Yeniden planlama**: onaylı günün "Yüklenmeyen camlar" bölümünde yönetici kalan adedi ileri bir yükleme gününe
+  aktarır. Yeni günde sipariş **yalnızca kalan adetle** ve "… yüklemesinden aktarıldı" notuyla görünür; o gün
+  onaylanırken yine kısmen yüklenmezse kalan yeniden aktarılır. Eski yükleme onayı hiç değişmez; kopya sipariş açılmaz.
+  Aktarım başka güne alınabilir ya da vazgeçilebilir (onaylanana kadar).
+- Aktarılan kalan, fiilen yüklendiği yüklemede ve bir kez faturalanır; müşteri proformasındaki sipariş aynı proforma
+  zincirinde kalır (ikinci proforma kesilmez).
+- **Başka müşterinin sandığı (fiziksel yerleşim)**: yönetici bir siparişi aynı yükleme gününde başka bir müşterinin
+  sandığına koyabilir. Siparişin müşterisi, teklifi, proforması, faturası, kuru ve sandık parası değişmez. Yükleme
+  ekranında, yükleme dökümünde (Excel, yeni "SANDIK (FİZİKSEL)" sütunu) ve nakliye listesinde sandık ve ev sahibi
+  yazar. Müşteri yalnızca kendi siparişinin sandık numarasını görür; müşteriler birbirinin siparişini, fiyatını ya
+  da sandık ölçülerini görmez.
+- İçinde başka müşterinin siparişi olan sandık, sandık formundan silinemez (önce yerleşim kaldırılır).
+- Aktarım ve başka müşterinin sandığına yerleşim yalnızca yöneticidedir; denetim kaydına yazılır.
+
 ## 3.38.2 — 03.10.2026
 
 - Müşteri faturası: siparişin kendi belge zinciri denetimi ortak kapsam denetimini kullanır (iç düzenleme; davranış

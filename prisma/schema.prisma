@@ -144,6 +144,7 @@ model User {
   orderDrafts        OrderDraft[]
   orderDraftFiles    OrderDraftFile[]
   loadingsConfirmed  LoadingConfirmation[] @relation("LoadingConfirmedBy")
+  replansCreated     LoadingReplan[] @relation("ReplanCreatedBy")
   billingBatches     BillingBatch[] @relation("BillingBatchCreatedBy")
 
   isActive     Boolean    @default(true)
@@ -247,6 +248,7 @@ model Customer {
   orderDrafts   OrderDraft[]
   crates        Crate[]
   loadedItems   LoadingConfirmationItem[]
+  replans       LoadingReplan[]
   billingBatches BillingBatch[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
@@ -336,7 +338,8 @@ model Order {
   price             Price?
   drawings          Drawing[]
   crates            Crate[]      // eski düzen (sipariş başına sandık); taşıma adımı yeni düzene çevirir
-  crateLinks        CrateOrder[] // sipariş hangi sandıklarda (yükleme sekmesinde seçilir)
+  crateLinks        CrateOrder[] // sipariş hangi sandıklarda (yükleme sekmesinde seçilir; başka müşterinin sandığı da olabilir — yalnızca fiziksel yerleşim)
+  replans           LoadingReplan[] // yüklenmeyen camın ileri güne aktarımları (Aşama 7E)
   shipmentId        String?
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
   events            OrderEvent[]
@@ -759,6 +762,9 @@ model Crate {
   @@index([shipDay, customerId])
 }
 
+// Sandıktaki sipariş = FİZİKSEL yerleşim. Sipariş, sandığın sahibi (Crate.customerId — fiziksel ev sahibi) olmayan bir
+// müşterinin olabilir (Aşama 7E): ticari sahiplik, fatura ve muhasebe her zaman siparişin kendi müşterisindedir;
+// bu ilişki hiçbirini değiştirmez. Yalnızca aynı yükleme gününün sandığına atanabilir (server/loading/crates.js).
 model CrateOrder {
   crateId String
   crate   Crate  @relation(fields: [crateId], references: [id], onDelete: Cascade)
@@ -1293,13 +1299,58 @@ model LoadingConfirmationItem {
   costAmount     Decimal  @db.Decimal(14, 4) // miktar × birim maliyet (yuvarlanmamış; toplamlar grup düzeyinde yuvarlanır)
   saleAmount     Decimal  @db.Decimal(14, 4) // miktar × müşteri fiyatı (bedelsiz satırda 0)
   status         LoadedStatus @default(LOADED)
-  notLoadedReason String? // yalnızca NOT_LOADED: ileride BROKEN | MISSING | POSTPONED | OTHER
+  notLoadedReason String? // yalnızca NOT_LOADED: BROKEN | MISSING | NOT_READY | OTHER (server/loading/replan.js → NOT_LOADED_REASONS)
+  notLoadedNote   String? // yalnızca NOT_LOADED: açıklama (OTHER için zorunlu)
+  // Bu kalem, daha önceki bir onayda yüklenmeyen camın ileri bir güne aktarılmış kalanıdır (Aşama 7E): hangi aktarımdan
+  // geldiği. Zincir: yüklenmeyen kalem → aktarım (LoadingReplan) → bu kalem (→ yine yüklenmediyse yeni aktarım …).
+  replanId       String?
+  replan         LoadingReplan? @relation("ReplanItems", fields: [replanId], references: [id], onDelete: Restrict)
+  replans        LoadingReplan[] @relation("ReplanSource") // bu (yüklenmeyen) kalemin ileri güne aktarımları
   createdAt      DateTime @default(now())
 
   // Bir onayda aynı teklif satırı için durum başına tek kayıt (yüklenen kısım + yüklenmeyen kısım)
   @@unique([confirmationId, offerLineId, status])
+  // Bir aktarım en çok bir kez onaylanır: tek LOADED + tek NOT_LOADED kalem (aynı kalan iki kez yüklenemez)
+  @@unique([replanId, status])
   @@index([orderId])
   @@index([customerId])
+}
+
+enum ReplanStatus {
+  ACTIVE    // ileri güne planlı; o gün onaylanınca kalemlere dönüşür
+  CONFIRMED // planlandığı günün yükleme onayına girdi (yüklenen / yine yüklenmeyen kalemler replanId ile bağlı)
+  CANCELLED // yönetici vazgeçti ya da başka güne aldı (yerine yeni kayıt açılır)
+}
+
+// Yüklenmeyen (kırık / eksik / hazır olmayan) camın ileri bir yükleme gününe aktarılması (Aşama 7E, karar 102).
+// Yalnızca LOJİSTİK bir plandır: sipariş, müşteri, teklif satırı ve ticari değerler kaynağın (yüklenmeyen onay kaleminin)
+// kopyasından gelir; yeni sipariş açılmaz, eski yükleme onayı değişmez. Aktarılan miktar kaynağın kalan miktarının
+// tamamıdır. Kaynak başına tek etkin aktarım (activeKey benzersiz).
+model LoadingReplan {
+  id           String   @id @default(cuid())
+  sourceItemId String
+  sourceItem   LoadingConfirmationItem @relation("ReplanSource", fields: [sourceItemId], references: [id], onDelete: Restrict)
+  // Ticari sahip (kaynağın kopyası): sipariş ve gerçek müşterisi
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quantity     Int      // aktarılan (kalan) adet
+  m2           Decimal  @db.Decimal(10, 2)
+  reason       String   // kaynağın nedeni (BROKEN | MISSING | NOT_READY | OTHER)
+  fromDay      DateTime @db.Date // kaynağın yükleme günü (yüklenmediği onay)
+  shipDay      DateTime @db.Date // yeni yükleme günü
+  status       ReplanStatus @default(ACTIVE)
+  // Etkin ya da onaylanmışken kaynak kalemin kimliği, vazgeçilince boş: aynı kalan için ikinci aktarım veritabanında da olamaz
+  activeKey    String?  @unique
+  createdById  String
+  createdBy    User     @relation("ReplanCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime @default(now())
+  closedAt     DateTime? // onaylandığı ya da vazgeçildiği an
+  items        LoadingConfirmationItem[] @relation("ReplanItems")
+
+  @@index([shipDay, status])
+  @@index([orderId])
 }
 
 // Fabrikaya yapılan ödemeler: yüklemelere ve siparişlere BAĞLI DEĞİL (fabrika cari hesabı).

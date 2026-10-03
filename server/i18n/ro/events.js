@@ -56,6 +56,12 @@ export default {
   },
   FGO_DOC_DELETED: { label: "Documentul a fost șters în FGO; înregistrarea a fost eliminată" },
   LOADING_CONFIRMED: { label: 'Încărcare confirmată: încărcat complet (ziua încărcării)' },
+  LOADING_PARTIAL: { label: 'Încărcare confirmată: încărcat parțial (ziua încărcării)' },
+  LOADING_NOT_LOADED: { label: 'Sticlă neîncărcată înregistrată (ziua încărcării · buc.)' },
+  REPLAN_NOT_LOADED: { label: 'Sticla neîncărcată a fost replanificată (buc. · zi veche → zi nouă)' },
+  REPLAN_CANCELLED: { label: 'S-a renunțat la replanificarea sticlei neîncărcate (buc. · zi)' },
+  GUEST_CRATE: { label: 'Amplasată în lada altui client (fizic; ladă · zi)' },
+  GUEST_CRATE_REMOVED: { label: 'Scoasă din lada altui client (ladă)' },
   COST_CORRECTED: { label: 'Costul de fabrică lipsă a fost introdus (rând)' },
   FGO_RETRY: {
     label: "Se reîncearcă în FGO",

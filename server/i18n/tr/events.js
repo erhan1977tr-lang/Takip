@@ -56,6 +56,12 @@ export default {
   },
   FGO_DOC_DELETED: { label: "Belge FGO'da silinmiş; kaydı kaldırıldı" },
   LOADING_CONFIRMED: { label: 'Yükleme onaylandı: eksiksiz yüklendi (yükleme günü)' },
+  LOADING_PARTIAL: { label: 'Yükleme onaylandı: bir kısmı yüklendi (yükleme günü)' },
+  LOADING_NOT_LOADED: { label: 'Yüklenmeyen cam kaydedildi (yükleme günü · adet)' },
+  REPLAN_NOT_LOADED: { label: 'Yüklenmeyen cam ileri yüklemeye aktarıldı (adet · eski → yeni gün)' },
+  REPLAN_CANCELLED: { label: 'Yüklenmeyen camın aktarımından vazgeçildi (adet · gün)' },
+  GUEST_CRATE: { label: 'Başka müşterinin sandığına yerleştirildi (fiziksel; sandık · gün)' },
+  GUEST_CRATE_REMOVED: { label: 'Başka müşterinin sandığından çıkarıldı (sandık)' },
   COST_CORRECTED: { label: 'Eksik fabrika maliyeti girildi (satır)' },
   FGO_RETRY: {
     label: "FGO'da yeniden deneniyor",

@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { orderScope, sanitizeRows } from './orders';
@@ -11,7 +11,17 @@ export const loadInclude = {
   price: true,
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
 } satisfies Prisma.OrderInclude;
-export type LoadRow = Prisma.OrderGetPayload<{ include: typeof loadInclude }>;
+type OrderRow = Prisma.OrderGetPayload<{ include: typeof loadInclude }>;
+/**
+ * Yükleme sayfasının sipariş satırı.
+ *   replan   : satır siparişin tamamı değil, daha önce yüklenmeyen camın bu güne AKTARILMIŞ KALANIDIR (karar 102) —
+ *              teklif satırları yalnızca aktarılan adedi taşır (lines), gün `replan.day`.
+ *   notLoaded: sipariş kendi gününde onaylandı ama bir kısmı yüklenmedi (adet; aktarıldıysa yeni gün).
+ */
+export type LoadRow = OrderRow & {
+  replan?: { day: string; fromDay: string; status: 'ACTIVE' | 'CONFIRMED' };
+  notLoaded?: { quantity: number; replanDays: string[] };
+};
 
 /** Yükleme günü [from, to) aralığındaki siparişler. Beklemedekiler ve iptaller görünmez. */
 export async function ordersShippingBetween(user: CurrentUser, from: Date, to: Date): Promise<LoadRow[]> {
@@ -31,9 +41,83 @@ export async function ordersShippingBetween(user: CurrentUser, from: Date, to: D
   }));
 }
 
-export function shipDay(o: { actualShipDate: Date | null; estimatedShipDate: Date | null }): string | null {
+export function shipDay(o: { actualShipDate: Date | null; estimatedShipDate: Date | null; replan?: { day: string } }): string | null {
+  // Aktarılmış kalan: siparişin kendi günü değil, aktarıldığı gün
+  if (o.replan) return o.replan.day;
   const d = o.actualShipDate ?? o.estimatedShipDate;
   return d ? dayKey(d) : null;
+}
+
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Yüklenmeyen camın [from, to) aralığındaki günlere aktarılmış kalanları (karar 102), yükleme satırı biçiminde: sipariş
+ * aynı sipariştir (kopya sipariş yok), teklif satırları yalnızca aktarılan adedi ve kaynağın (onay kaleminin) ticari
+ * kopyasını taşır. Kapsam ve fiyat temizliği sipariş satırlarıyla aynıdır (orderScope + sanitizeRows): müşteri yalnızca
+ * kendi siparişinin kalanını görür; satışa müşteri fiyatı, müşteriye satış fiyatı gitmez.
+ */
+export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date): Promise<LoadRow[]> {
+  const replans = await db.loadingReplan.findMany({
+    where: {
+      status: { not: 'CANCELLED' }, shipDay: { gte: from, lt: to },
+      order: { ...orderScope(user), orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' } },
+    },
+    include: { sourceItem: true, order: { include: loadInclude } },
+    orderBy: [{ customerId: 'asc' }, { createdAt: 'asc' }],
+  });
+  const groups = new Map<string, typeof replans>();
+  for (const r of replans) {
+    const key = `${r.orderId}|${isoDay(r.shipDay)}`;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const rows: LoadRow[] = [...groups.values()].map((list) => {
+    const o = list[0].order;
+    const base = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
+    let cost = 0, sale = 0;
+    const lines = list.map((r) => {
+      const s = r.sourceItem;
+      const unit = s.unit === 'm2' ? Number(r.m2) : r.quantity;
+      cost += unit * Number(s.unitCost);
+      sale += s.free || s.unitSale == null ? 0 : unit * Number(s.unitSale);
+      return {
+        ...(base?.lines.find((l) => l.id === s.offerLineId) ?? {}),
+        id: s.offerLineId ?? s.id, offerId: base?.id ?? '', sortOrder: s.sortOrder, description: s.description, descriptionRo: s.descriptionRo,
+        enMm: s.enMm, boyMm: s.boyMm, adet: r.quantity, unit: s.unit, kind: s.kind, free: s.free, glassProductId: s.glassProductId,
+        weightKgM2: s.weightKgM2, unitPrice: s.unitCost, offerPrice: s.unitSale, listPrice: null,
+      } as unknown as OrderRow['offers'][number]['lines'][number];
+    });
+    const offer = {
+      ...(base ?? {}), id: base?.id ?? `replan-${list[0].id}`, status: 'GONDERILDI', currency: list[0].sourceItem.currency,
+      amount: new Prisma.Decimal(cost.toFixed(2)), offerAmount: new Prisma.Decimal(sale.toFixed(2)), lines,
+    } as unknown as OrderRow['offers'][number];
+    // price: siparişin tamamının tutarıdır; kalan için kullanılmaz (tutar aktarılan satırlardan)
+    return { ...o, offers: [offer], price: null, items: [], replan: { day: isoDay(list[0].shipDay), fromDay: isoDay(list[0].fromDay), status: list[0].status === 'CONFIRMED' ? 'CONFIRMED' : 'ACTIVE' } };
+  });
+  return sanitizeRows(user, rows);
+}
+
+/**
+ * Kendi gününde onaylanmış ama bir kısmı yüklenmemiş siparişler: sipariş → yüklenmeyen adet ve (aktarıldıysa) yeni günler.
+ * Yalnızca verilen siparişler için (çağıran zaten kullanıcının görebildiği siparişleri verir).
+ */
+export async function notLoadedByOrder(rows: LoadRow[]): Promise<Map<string, { quantity: number; replanDays: string[] }>> {
+  const dated = rows.filter((o) => !o.replan);
+  if (dated.length === 0) return new Map();
+  const items = await db.loadingConfirmationItem.findMany({
+    where: { orderId: { in: dated.map((o) => o.id) }, status: 'NOT_LOADED', replanId: null },
+    select: { orderId: true, quantity: true, confirmation: { select: { shipDay: true } }, replans: { where: { status: { not: 'CANCELLED' } }, select: { shipDay: true } } },
+  });
+  const dayOfOrder = new Map(dated.map((o) => [o.id, shipDay(o)]));
+  const out = new Map<string, { quantity: number; replanDays: string[] }>();
+  for (const it of items) {
+    // Yalnızca siparişin göründüğü günün onayı (sipariş tarihi sonradan değiştiyse eski onayın notu o güne yazılmaz)
+    if (isoDay(it.confirmation.shipDay) !== dayOfOrder.get(it.orderId)) continue;
+    const cur = out.get(it.orderId) ?? { quantity: 0, replanDays: [] };
+    cur.quantity += it.quantity;
+    for (const r of it.replans) if (!cur.replanDays.includes(isoDay(r.shipDay))) cur.replanDays.push(isoDay(r.shipDay));
+    out.set(it.orderId, cur);
+  }
+  return out;
 }
 
 /**
@@ -74,6 +158,33 @@ export async function cratesBetween(user: CurrentUser, from: Date, to: Date): Pr
     include: crateInclude,
     orderBy: [{ crateNo: 'asc' }],
   });
+}
+
+/**
+ * Fiziksel yerleşim (karar 103): [from, to) aralığındaki günlerde BAŞKA müşterinin sandığına konmuş siparişler.
+ *   - İç ekip: sipariş, gerçek müşterisi, sandık ve sandığın müşterisi (ev sahibi). Adlar ham döner; ekranda rolün
+ *     göremeyeceği ad maskelenir (customerLabel) — sandıklarla aynı kural.
+ *   - Müşteri: yalnızca KENDİ siparişinin hangi sandık numarasında gittiği. Ev sahibi müşterinin kimliği, sandığın ölçü /
+ *     ağırlığı ve o sandıktaki başka siparişler hiç dönmez. Kendi sandığında başka müşterinin camı olduğu bilgisi de dönmez.
+ */
+export type GuestLink = { day: string; orderId: string; orderNo: string; ownerId: string; ownerName: string; crateId: string; crateNo: number; hostId: string; hostName: string };
+export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date): Promise<GuestLink[]> {
+  const customer = user.appRole === 'MUSTERI';
+  const links = await db.crateOrder.findMany({
+    where: {
+      crate: { shipDay: { gte: from, lt: to }, customerId: { not: null } },
+      ...(customer ? { order: { customerId: user.customerId ?? '__none__' } } : {}),
+    },
+    select: {
+      orderId: true, order: { select: { orderNo: true, customerId: true, customer: { select: { name: true } } } },
+      crate: { select: { id: true, crateNo: true, shipDay: true, customerId: true, customer: { select: { name: true } } } },
+    },
+  });
+  return links.filter((l) => l.crate.customerId !== l.order.customerId && l.crate.shipDay).map((l) => ({
+    day: isoDay(l.crate.shipDay!), orderId: l.orderId, orderNo: l.order.orderNo, crateNo: l.crate.crateNo,
+    ownerId: l.order.customerId, ownerName: customer ? '' : l.order.customer.name,
+    crateId: customer ? '' : l.crate.id, hostId: customer ? '' : l.crate.customerId!, hostName: customer ? '' : l.crate.customer?.name ?? '',
+  }));
 }
 
 /** Sandığın günü: "YYYY-MM-DD" (@db.Date UTC gece yarısı) */
