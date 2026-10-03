@@ -196,7 +196,8 @@ test('yönetici: bildirim bağlantısı yetkisiz sayfaya girişi açmaz (bağlan
   // Müşteri, satış bildirimindeki admin adresini elinde bulundursa da sayfa kendi yetkisini denetler
   const page = await as(browser, CUSTOMER, CUST_PW);
   await page.goto('/admin/muhasebe/cam/proforma?musteri=x#partiler');
-  await expect(page).toHaveURL(/\/siparisler$/);
+  await expect(page).toHaveURL(/\/siparisler(#.*)?$/); // tarayıcı adres parçasını (#…) yönlendirmede korur
+  await expect(page.locator('h1')).not.toContainText(/proforma/i);
   await page.context().close();
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto('/siparisler');
