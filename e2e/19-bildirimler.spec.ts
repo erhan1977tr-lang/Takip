@@ -126,9 +126,14 @@ test('müşteri: 7 eski okunmamış → rozet 7, sekme "(7) …", ses / açılı
   // Ses tercihi (zildeki anahtar): kapatınca yeni bildirim ses çalmaz ama açılır bildirim gelir; tercih kalıcı
   const sw = page.locator('.notif-panel .notif-switch');
   await expect(sw).toHaveText('Activat');
+  // Sunucu işleminin yanıtı (yeniden çizilen panel akışı) gelmeden yeni bildirim eklenirse, eski akış yoklamanın
+  // sonucunu ezer (yarış) — bu yüzden işlemin yanıtı beklenir.
+  const saved = page.waitForRequest((r) => r.method() === 'POST');
   await sw.click();
   await expect(sw).toHaveText('Dezactivat');
+  await (await saved).response();
   await expect.poll(async () => (await db.user.findUniqueOrThrow({ where: { id: custId } })).notificationSound).toBe(false);
+  await page.waitForTimeout(500);
   await page.keyboard.press('Escape');
   await db.notification.create({ data: { userId: custId, type: 'ORDER_OFFER_SENT', message: 'yeni', params: { aud: 'customer', orderNo }, link: `/siparisler/${orderId}`, orderId, dedupeKey: 'e2e:new:5' } });
   await poll(page);

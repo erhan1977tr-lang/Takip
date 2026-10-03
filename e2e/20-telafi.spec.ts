@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, SALES, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
 
 // Aşama 9 — kırık / telafi camı (karar 108–109) ve siparişi silme / geri yükleme (karar 110).
 //  - teklif tablosunda yalnızca fiziksel cam satırında "Kırık / Telafi"; form: cam → adet → fiyat → hedef → özet + açık onay
@@ -13,6 +13,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, SALES, TEAM_PW, as } from '
 test.describe.configure({ mode: 'serial' });
 
 const INSPECTOR = 'denetim@e2e.test';
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const iso = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const dmy = (k: string) => k.split('-').reverse().join('.');
 const NEW_DAY = iso(48);
