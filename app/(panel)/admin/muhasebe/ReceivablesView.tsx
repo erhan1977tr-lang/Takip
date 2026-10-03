@@ -4,12 +4,15 @@ import { db } from '@/lib/db';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
-import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus } from '@/server/accounting/receivables.js';
+import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus, unitOf } from '@/server/accounting/receivables.js';
 import { refreshFgoAction } from './actions';
 
 type Doc = Prisma.FgoDocumentGetPayload<{ include: {
   order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } };
-  batch: { select: { id: true; loadingDays: true; customer: { select: { name: true } }; orders: { select: { orderId: true; orderNo: true } } } };
+  batch: { select: {
+    id: true; kind: true; parentId: true; loadingDays: true; customer: { select: { name: true } }; orders: { select: { orderId: true; orderNo: true } };
+    confirmation: { select: { shipDay: true } }; parent: { select: { document: { select: { series: true; number: true } } } };
+  } };
 } }>;
 const dayText = (d: Date) => new Date(d).toISOString().slice(0, 10).split('-').reverse().join('.');
 type Share = { debt: number | null; rest: number | null; replaced: boolean };
@@ -33,11 +36,11 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   const r = receivables(docs) as { shares: Map<string, Share>; sums: Sums };
   const shareOf = (d: Doc) => r.shares.get(d.id) as Share;
   // Sipariş başına grup: en yeni belgesi olan sipariş önce; sipariş içinde belgeler kesim sırasıyla (proforma → fatura)
-  // Borç birimi: sipariş ya da müşteri partisi (müşteri proforması — tek belge, birden çok sipariş)
+  // Borç birimi: sipariş ya da müşteri belge zinciri (müşteri proforması + avans + o proformadan düşen müşteri faturaları)
   const groups: { docs: Doc[] }[] = [];
   const byOrder = new Map<string, { docs: Doc[] }>();
   for (const d of docs) {
-    const unit = d.orderId ?? `batch:${d.batchId}`;
+    const unit = unitOf(d) as string;
     let g = byOrder.get(unit);
     if (!g) {
       g = { docs: [] };
@@ -51,7 +54,8 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   const shown = filter === 'hepsi' ? groups : groups.filter((g) => open(g) === (filter === 'acik'));
   const openDocs = docs.filter((d) => !shareOf(d).replaced && paymentStatus(d.total, d.paid) !== 'PAID').length;
   const curs = Object.keys(r.sums).sort();
-  const hasAdvance = (g: { docs: Doc[] }) => g.docs.some((d) => d.kind === 'ADVANCE');
+  // Proformanın bir kısmı başka belgeye dönmüş: avans faturası ya da (müşteri zincirinde) yüklenen kısmın faturası
+  const hasAdvance = (g: { docs: Doc[] }) => g.docs.some((d) => d.kind === 'ADVANCE' || (d.batchId != null && d.kind === 'INVOICE'));
 
   return (
     <>
@@ -137,11 +141,15 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                       <tr key={d.id} className={i === 0 ? 'grp-first' : undefined}>
                         <td>
                           {i === 0 && d.order && <Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link>}
-                          {/* Müşteri proforması: kaynak siparişler ve seçilen yükleme günleri */}
-                          {i === 0 && d.batch && (
+                          {/* Müşteri belgesi (her satırda): kaynak siparişler; proformada seçilen yükleme günleri, faturada onaylı yükleme günü, avansta kaynak proforma */}
+                          {d.batch && (
                             <>
                               {d.batch.orders.map((o, n) => <span key={o.orderId}>{n > 0 && ', '}<Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link></span>)}
-                              <span className="cell-note">{t('accounting.batch.docNote')} · {t('accounting.batch.docDays', { days: d.batch.loadingDays.map(dayText).join(', ') })}</span>
+                              <span className="cell-note">
+                                {d.batch.kind === 'INVOICE' ? t('accounting.invoice.docNote.INVOICE', { day: d.batch.confirmation ? dayText(d.batch.confirmation.shipDay) : '—' })
+                                  : d.batch.kind === 'ADVANCE' ? t('accounting.invoice.docNote.ADVANCE', { ref: d.batch.parent?.document ? `${d.batch.parent.document.series}${d.batch.parent.document.number}` : '—' })
+                                    : `${t('accounting.batch.docNote')} · ${t('accounting.batch.docDays', { days: d.batch.loadingDays.map(dayText).join(', ') })}`}
+                              </span>
                             </>
                           )}
                         </td>
@@ -173,7 +181,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
             </div>
           )}
         <p className="card-note">
-          {t('accounting.receivables.sumNote')}{' '}
+          {t('accounting.receivables.sumNote')}{' '}{type === 'GLASS_ORDER' && `${t('accounting.invoice.sumNote')} `}
           {sync.lastRun
             ? t('accounting.receivables.auto', { at: fmtDateTime(sync.lastRun), n: sync.checked ?? 0, f: sync.failed ?? 0 })
             : t('accounting.receivables.autoNever')}

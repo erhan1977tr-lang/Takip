@@ -41,9 +41,10 @@ export async function removeDeletedDocument(db, row, reason = '') {
 }
 
 /**
- * Müşteri partisinin belgesi (müşteri proforması) FGO'da silinmiş: yalnızca belge kaydı kaldırılır ve parti geçersiz
- * olur; siparişler, teklifler, yükleme planı ve yükleme onayları değişmez. Partinin siparişleri yeni bir proforma için
- * yeniden uygun olur (parti kaydı denetim için durur).
+ * Müşteri partisinin belgesi (müşteri proforması, avans faturası, müşteri faturası) FGO'da silinmiş: yalnızca belge
+ * kaydı kaldırılır ve parti geçersiz olur; siparişler, teklifler, yükleme planı ve yükleme onayları (LoadingConfirmation
+ * ve kalemleri) değişmez. Partinin kapsamı yeniden uygun olur: proformada siparişler, faturada o onayın yüklenen kapsamı,
+ * avansta proformanın avansı kesilmemiş tahsilatı (parti kaydı denetim için durur).
  */
 async function removeDeletedBatchDocument(db, row, reason) {
   const details = { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) };
@@ -55,7 +56,11 @@ async function removeDeletedBatchDocument(db, row, reason) {
       data: { status: 'SKIPPED', lastError: "belge FGO'da silindi" },
     });
     if (batch) {
-      await voidBatchRows(tx, batch.id, 'FGO_DELETED');
+      // Zincirin kökü (müşteri proforması) silinmiş ama avans faturası / müşteri faturası kesilmişse parti geçersiz
+      // KILINMAZ: kur kaydı ve kesilmiş avanslar zincirde kalır, kalan kapsamın faturası avansı düşmeye devam eder
+      // (karar 101). Yalnızca belge kaydı kalkar.
+      const children = await tx.billingBatch.count({ where: { parentId: batch.id, status: { not: 'VOID' } } });
+      if (children === 0) await voidBatchRows(tx, batch.id, 'FGO_DELETED');
       const statuses = new Map((await tx.order.findMany({ where: { id: { in: batch.orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
       for (const o of batch.orders) {
         await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_DELETED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: null, note: `${row.series}${row.number}` });

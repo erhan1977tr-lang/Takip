@@ -10,6 +10,8 @@ import { FxInfo, FxUnavailableNote } from '@/components/FxInfo';
 import { bnrRate } from '@/server/fx/bnr.js';
 import { getFgoSettings } from '@/server/integrations/fgo.js';
 import { batchCustomers, cleanDays, customerLoadingDays, listBatches, previewBatch } from '@/server/glass/batch.js';
+import { chainState } from '@/server/glass/invoice-batch.js';
+import { createAdvanceAction, reviewInvoiceBatchAction } from '@/app/(panel)/yuklemeler/billing-actions';
 import { createBatchAction, reviewBatchAction } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -22,6 +24,7 @@ type Batch = Prisma.BillingBatchGetPayload<{ include: {
   customer: { select: { name: true } }; document: true; createdBy: { select: { name: true } };
   orders: { select: { orderId: true; orderNo: true; loadingDay: true } };
 } }>;
+const INVOICE_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING'];
 const dmy = (day: string) => day.split('-').reverse().join('.');
 const dayText = (d: Date) => dmy(new Date(d).toISOString().slice(0, 10));
 
@@ -52,6 +55,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     ? await previewBatch(db, { customerId: chosen.id, days, manualRate: rate || null, vatRate: settings.vatRate, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
   const p = preview?.ok ? preview : null;
+  // Kesilmiş proformaların avans durumu (FGO'da görünen tahsilat, avansı kesilen, avansı kesilmemiş tahsilat)
+  const chains = new Map<string, { paid: number; advanced: number; advanceRequired: number; advancePending: boolean; ref: string | null; failed: { batchId: string; lastError: string | null }[] }>();
+  for (const b of batches) {
+    if (b.status !== 'ISSUED') continue;
+    const st = await chainState(db, b.id);
+    if (st) {
+      chains.set(b.id, {
+        paid: st.paid, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, ref: st.ref,
+        failed: st.advances.filter((a) => a.status === 'FAILED').map((a) => ({ batchId: a.batchId, lastError: a.lastError })),
+      });
+    }
+  }
+  const errorKind = one(sp.faturaHata);
+  const okKind = one(sp.fatura);
   const problemText = (code: string) => t(`accounting.batch.problems.${code}` as MsgKey, {
     list: code === 'MIXED_CURRENCY' ? (p?.currencies ?? []).join(', ') : (p?.missingBilling ?? []).join(', '),
   });
@@ -66,6 +83,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       </div>
       {ok && <div className="alert alert-ok">{t(`accounting.batch.ok.${['created', 'retry', 'void'].includes(ok) ? ok : 'created'}` as MsgKey, { n: one(sp.n) || '0' })}</div>}
       {error && <div className="alert alert-error">{errorText}</div>}
+      {okKind && <div className="alert alert-ok">{t(`accounting.invoice.ok.${['created', 'advance', 'retry', 'void'].includes(okKind) ? okKind : 'advance'}` as MsgKey)}</div>}
+      {errorKind && <div className="alert alert-error">{t(`accounting.invoice.errors.${INVOICE_ERRORS.includes(errorKind) ? errorKind : 'NOT_ALLOWED'}` as MsgKey)}</div>}
 
       {/* 1. Müşteri */}
       <form method="get" action={PAGE} className="card" id="musteri">
@@ -259,8 +278,31 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                         ? (b.document.link ? <a href={b.document.link} target="_blank" rel="noopener noreferrer">{b.document.series}{b.document.number}</a> : `${b.document.series}${b.document.number}`)
                         : '—'}
                       {b.issuedAt && <span className="cell-note">{fmtDate(b.issuedAt)}</span>}
+                      {chains.has(b.id) && chains.get(b.id)!.paid > 0 && (
+                        <span className="cell-note">{t('accounting.invoice.chainInfo', { paid: fmtMoney(chains.get(b.id)!.paid, 'RON'), advanced: fmtMoney(chains.get(b.id)!.advanced, 'RON') })}</span>
+                      )}
                     </td>
                     <td className="actions">
+                      {/* Proformaya tahsilat gelmiş ve avansı kesilmemiş: avans faturası (yükleme öncesi ya da sonrası) */}
+                      {chains.has(b.id) && chains.get(b.id)!.advanceRequired > 0 && !chains.get(b.id)!.advancePending && (
+                        <form action={createAdvanceAction}>
+                          <input type="hidden" name="proformaBatchId" value={b.id} />
+                          <input type="hidden" name="customerId" value={chosen?.id ?? ''} />
+                          <ConfirmButton primary message={t('accounting.invoice.advanceConfirm', { ref: chains.get(b.id)!.ref ?? '', amount: fmtMoney(chains.get(b.id)!.advanceRequired, 'RON') })}>
+                            {t('accounting.invoice.advanceCreate', { amount: fmtMoney(chains.get(b.id)!.advanceRequired, 'RON') })}
+                          </ConfirmButton>
+                        </form>
+                      )}
+                      {/* Kesilemeyen avans faturası: gerçek FGO hatası; yeniden dene ya da vazgeç (tahsilat yeniden avanslanabilir) */}
+                      {chains.get(b.id)?.failed.map((a) => (
+                        <form key={a.batchId} action={reviewInvoiceBatchAction} className="row">
+                          <input type="hidden" name="batchId" value={a.batchId} />
+                          <input type="hidden" name="customerId" value={chosen?.id ?? ''} />
+                          <span className="cell-note text-danger">{t('accounting.invoice.advanceFailed', { error: (a.lastError ?? '—').slice(0, 160) })}</span>
+                          <button className="btn" name="do" value="retry">{t('accounting.batch.retry')}</button>
+                          <ConfirmButton danger name="do" value="void" message={t('accounting.invoice.advanceVoidConfirm')}>{t('accounting.batch.void')}</ConfirmButton>
+                        </form>
+                      ))}
                       {b.status === 'FAILED' && (
                         <form action={reviewBatchAction} className="row">
                           <input type="hidden" name="batchId" value={b.id} />

@@ -5,7 +5,7 @@ export default {
   rate: "Belge kuru: {rate} RON / EUR ({date})",
   paidManual: "Ödeme alındı (elle): {amount} · {date}",
   wait: {
-    batch: "Bu sipariş bir müşteri proformasında ({ref}); sipariş başına ayrı belge kesilmez. Yükleme sonrası fatura müşteri düzeyinde kesilecek.",
+    batch: "Bu sipariş müşteri düzeyindeki belgelerde ({ref}); sipariş başına ayrı belge kesilmez. Fatura onaylı yüklemeden kesilir (Yüklemeler → gün → Faturalama).",
     cancelled: "Sipariş iptal.",
     done: "Fatura kesildi; belge akışı tamam.",
     pending: "Belge kesiliyor (bir dakika içinde).",

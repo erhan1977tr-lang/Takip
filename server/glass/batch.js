@@ -25,7 +25,7 @@ import { loadedDays } from '../loading/confirmation.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
-  FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, ronPrice,
+  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, reserveInvoiceNumber, ronPrice,
 } from '../integrations/fgo.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { DOC_EMAIL, GLASS_FGO, proformaLines, sentOffer } from './billing.js';
@@ -323,9 +323,9 @@ export async function createBatch(db, { customerId, days, key, manualRate = null
   }
 }
 
-/** Partiyi geçersiz kılar: siparişler yeniden uygun olur. İşlem (tx) içinde çağrılır. */
+/** Partiyi geçersiz kılar: siparişler / fatura kapsamı yeniden uygun olur (tekrar anahtarları boşalır). İşlem (tx) içinde çağrılır. */
 export async function voidBatchRows(tx, batchId, reason, now = new Date()) {
-  await tx.billingBatch.update({ where: { id: batchId }, data: { status: 'VOID', voidedAt: now, voidReason: String(reason).slice(0, 200) } });
+  await tx.billingBatch.update({ where: { id: batchId }, data: { status: 'VOID', uniqueKey: null, voidedAt: now, voidReason: String(reason).slice(0, 200) } });
   await tx.billingBatchOrder.updateMany({ where: { batchId }, data: { activeKey: null } });
 }
 
@@ -354,23 +354,39 @@ export async function reviewFailedBatch(db, { batchId, action, actor, now = new 
   });
 }
 
-/** Partinin kayıtlı satırları → FGO satırları (kaynak para biriminde birim fiyat; RON'a kayıtlı kurla çevrilir) */
-export const batchFgoLines = (batch) => batch.lines.map((l) => ({ code: '', name: l.name, unit: l.unit, qty: Number(l.quantity), eur: Number(l.unitPrice) }));
+/**
+ * Partinin kayıtlı satırları → FGO satırları. Hiçbir şey yeniden hesaplanmaz:
+ *   proforma satırı   — kaynak para biriminde birim fiyat (RON'a kayıtlı kurla çevrilir)
+ *   fatura cam satırı — kayıtlı TVA hariç / dahil toplam (FGO'ya PretTotal; karar 63)
+ *   avans, avans düşümü — kayıtlı RON birim fiyat (düşümde miktar −1)
+ */
+export const batchFgoLines = (batch) => batch.lines.map((l) => {
+  const base = { code: '', name: l.name, unit: l.unit, qty: Number(l.quantity) };
+  if (l.ronUnit != null) return { ...base, ron: Number(l.ronUnit) };
+  if (l.ronGross != null) return { ...base, net: Number(l.ronNet), gross: Number(l.ronGross) };
+  return { ...base, eur: Number(l.unitPrice) };
+});
 
-/** Belgenin açıklaması: kaynak siparişler ve seçilen yükleme günleri */
+/**
+ * Belgenin açıklaması: kaynak siparişler ve — proformada seçilen yükleme günleri, faturada onaylı yükleme günü,
+ * avansta kaynak proforma. Cam belgelerinde kur cümlesi yoktur (karar 99).
+ */
 export function batchText(batch) {
   const nos = batch.orders.map((o) => o.orderNo);
+  const orders = `${nos.length === 1 ? 'Comanda' : 'Comenzi'}: ${nos.join(', ')}.`;
+  if (batch.kind === 'INVOICE') return `${orders} Încărcare confirmată: ${batch.confirmation ? ddmmyyyy(dayOf(batch.confirmation.shipDay)) : '—'}.`;
+  if (batch.kind === 'ADVANCE') return orders;
   const days = batch.loadingDays.map((d) => ddmmyyyy(dayOf(d)));
-  return `${nos.length === 1 ? 'Comanda' : 'Comenzi'}: ${nos.join(', ')}. ${days.length === 1 ? 'Încărcare planificată' : 'Încărcări planificate'}: ${days.join(', ')}.`;
+  return `${orders} ${days.length === 1 ? 'Încărcare planificată' : 'Încărcări planificate'}: ${days.join(', ')}.`;
 }
 
 /**
  * Kuyruktaki parti belgelerini keser (işçi; düğmeye basılınca o parti hemen denenir). Kur ve satırlar partiden okunur;
  * hiçbir şey yeniden hesaplanmaz / çözülmez.
  * @param {any} db
- * @param {{ now?: Date, fetchImpl?: typeof fetch, secret?: string, appUrl?: string, timeZone?: string, onlyBatchId?: string | null, log?: Function }} [ctx]
+ * @param {{ now?: Date, fetchImpl?: typeof fetch, secret?: string, appUrl?: string, timeZone?: string, onlyBatchId?: string | null, sleep?: (ms: number) => Promise<unknown>, log?: Function }} [ctx]
  */
-export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetch, secret, appUrl, timeZone, onlyBatchId = null, log = () => {} } = {}) {
+export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetch, secret, appUrl, timeZone, onlyBatchId = null, sleep = undefined, log = () => {} } = {}) {
   const env = getEnv();
   secret ??= env.AUTH_SECRET;
   appUrl ??= env.APP_URL ?? '';
@@ -392,7 +408,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
     try {
       const batch = await db.billingBatch.findUnique({
         where: { id: batchId },
-        include: { customer: true, document: true, orders: { orderBy: { orderNo: 'asc' } }, lines: { orderBy: { sortOrder: 'asc' } } },
+        include: { customer: true, document: true, confirmation: { select: { shipDay: true } }, orders: { orderBy: { orderNo: 'asc' } }, lines: { orderBy: { sortOrder: 'asc' } } },
       });
       if (!batch || batch.status === 'VOID') { await skip('parti yok ya da geçersiz'); continue; }
       if (batch.document) { await skip('belge zaten var'); continue; }
@@ -405,10 +421,13 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       const lines = batchFgoLines(batch);
       if (lines.length === 0) throw new Permanent('Partide satır yok');
       const rate = Number(batch.fxRate);
+      const proforma = batch.kind === 'PROFORMA';
+      // Avans ve fatura: numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir
+      const sentNo = proforma ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl, sleep });
       const form = emitereForm({
-        settings, key, kind: 'proforma', orderNo: batch.orders.map((o) => o.orderNo).join(', '), appUrl, customer: batch.customer, lines, rate,
+        settings, key, kind: proforma ? 'proforma' : 'invoice', orderNo: batch.orders.map((o) => o.orderNo).join(', '), appUrl, customer: batch.customer, lines, rate,
         // Aynı parti iki kez kesilmesin: FGO da aynı IdExtern'i reddeder (VerificareDuplicat)
-        extern: `LOT-${batch.id}`, text: batchText(batch), rateNote: false,
+        extern: `LOT-${batch.id}`, text: batchText(batch), rateNote: false, number: sentNo,
       });
       const doc = await fgoEmit(settings, form, fetchImpl);
       const created = await db.$transaction(async (tx) => {
@@ -427,6 +446,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
         return d;
       });
       done++;
+      if (!proforma) await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: null }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
         await db.fgoDocument.update({ where: { id: created.id }, data: { total: st.total == null ? null : st.total.toFixed(2), paid: st.paid == null ? null : st.paid.toFixed(2), checkedAt: new Date() } });
@@ -443,8 +463,8 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       });
       // Parti kesilemedi: siparişleri tutmaya devam eder; yönetici yeniden dener ya da vazgeçer (Muhasebe → müşteri proforması)
       await db.billingBatch.updateMany({ where: { id: batchId, status: 'PENDING' }, data: { lastError: msg, ...(final ? { status: 'FAILED' } : {}) } });
-      if (final && batchId) await db.adminAlert.create({ data: { type: 'FGO_FAILED', details: { code: 'BATCH_PROFORMA', batchId, error: msg.slice(0, 300), attempts: attempt } } }).catch(() => {});
-      log('müşteri proforması kesilemedi', batchId, msg);
+      if (final && batchId) await db.adminAlert.create({ data: { type: 'FGO_FAILED', details: { code: 'BATCH', batchId, error: msg.slice(0, 300), attempts: attempt } } }).catch(() => {});
+      log('müşteri belgesi kesilemedi', batchId, msg);
     }
   }
   return { done, failed };
@@ -457,7 +477,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
  */
 export function listBatches(db, { customerId = null, take = 30 } = {}) {
   return db.billingBatch.findMany({
-    where: customerId ? { customerId } : {},
+    where: { kind: BATCH_KIND, ...(customerId ? { customerId } : {}) },
     orderBy: { createdAt: 'desc' },
     take,
     include: { customer: { select: { name: true } }, document: true, orders: { select: { orderId: true, orderNo: true, loadingDay: true }, orderBy: { orderNo: 'asc' } }, createdBy: { select: { name: true } } },

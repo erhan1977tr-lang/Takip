@@ -241,7 +241,7 @@ export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fet
     throw new FgoError(`Fatura numarası ${row.series}${row.number} zaten kullanılmış (FGO'da ve sistemde kayıtlı); başka numara denenmedi. Entegrasyonlar → "Sonraki fatura numarası" alanını düzeltin ya da boşaltın.`, { retry: false });
   }
   for (let i = 0; i < 10; i++) {
-    const rows = await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { id: true, orderId: true, kind: true, series: true, number: true } });
+    const rows = await db.fgoDocument.findMany({ where: { series: settings.invoiceSeries }, select: { id: true, orderId: true, batchId: true, kind: true, series: true, number: true } });
     const last = rows.filter((r) => /^\d+$/.test(r.number)).sort((a, b) => Number(b.number) - Number(a.number))[0];
     if (!last) break;
     try {

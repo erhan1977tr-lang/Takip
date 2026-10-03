@@ -1091,8 +1091,11 @@ model FgoDocument {
 // Müşteri düzeyinde belge partisi (Aşama 7D-2, karar 100): bir müşteri + seçilen yükleme günleri + birden çok sipariş
 // → TEK FGO belgesi. Parti, yöneticinin onayladığı ticari içeriğin (siparişler, satırlar, tutarlar, kur) değişmez
 // kopyasıdır: sonradan yükleme günü, teklif, fiyat tablosu, kur kaynağı ya da müşterinin kur politikası değişse de
-// belge bu kayıttan okunur / kesilir. kind: PROFORMA (yükleme öncesi, 7D-2); 7D-3'te INVOICE (onaylı yüklemeden,
-// confirmationId ile). Satırlar ve siparişler yalnızca eklenir; partinin kendisinde yalnızca durum değişir.
+// belge bu kayıttan okunur / kesilir. Türler (karar 100–101):
+//   PROFORMA — yükleme öncesi müşteri proforması (seçilen yükleme günleri)
+//   ADVANCE  — müşteri proformasına gelen tahsilatın avans faturası (parentId = proforma partisi)
+//   INVOICE  — onaylı yüklemeden müşteri faturası (confirmationId; proforma zincirindeyse parentId = proforma partisi)
+// Satırlar ve siparişler yalnızca eklenir; partinin kendisinde yalnızca durum değişir.
 enum BillingBatchStatus {
   PENDING // kuyrukta: FGO belgesi kesilecek
   ISSUED  // FGO belgesi kesildi (FgoDocument.batchId)
@@ -1104,8 +1107,15 @@ model BillingBatch {
   id           String   @id @default(cuid())
   customerId   String
   customer     Customer @relation(fields: [customerId], references: [id])
-  kind         String   // PROFORMA
+  kind         String   // PROFORMA | ADVANCE | INVOICE
   status       BillingBatchStatus @default(PENDING)
+  // Belge zinciri: avans ve fatura partilerinde kaynak proforma partisi (kur ve avans düşümü bu zincirden)
+  parentId     String?
+  parent       BillingBatch?  @relation("BillingBatchChain", fields: [parentId], references: [id], onDelete: Restrict)
+  children     BillingBatch[] @relation("BillingBatchChain")
+  // Tekrar engeli (veritabanında): parti etkinken dolu, geçersiz olunca boş.
+  //   INVOICE: "INVOICE:<onay>:<müşteri>:<para birimi>:<zincir>" · ADVANCE: "ADVANCE:<proforma partisi>:<önceki avans toplamı>"
+  uniqueKey    String?  @unique
   currency     String   // siparişlerin (tekliflerin) para birimi; parti tek para birimlidir. FGO belgesi RON.
   loadingDays  DateTime[] @db.Date // yöneticinin seçtiği yükleme günleri (değişmez)
   selectionKey String   // içeriğin parmak izi: önizlenen = kesilen
@@ -1122,7 +1132,7 @@ model BillingBatch {
   fxSourceDate    DateTime  @db.Date
   fxResolvedAt    DateTime
   fxManual        Boolean
-  // 7D-3 (uygulanmadı): onaylı yüklemeden kesilecek müşteri faturası partisi bu alanla onaya bağlanacak
+  // INVOICE: faturanın kaynağı olan onaylı yükleme (yalnızca LOADED kalemler)
   confirmationId String?
   confirmation   LoadingConfirmation? @relation(fields: [confirmationId], references: [id], onDelete: Restrict)
   createdById  String
@@ -1148,7 +1158,7 @@ model BillingBatchOrder {
   orderId      String
   order        Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderNo      String
-  offerId      String   // müşteriye gönderilmiş teklif sürümü (kopyanın kaynağı)
+  offerId      String?  // proforma: müşteriye gönderilmiş teklif sürümü (kopyanın kaynağı); fatura: kaynak onay kalemleridir
   loadingDay   DateTime @db.Date // parti oluşturulurkenki planlanan yükleme günü
   sourceAmount Decimal  @db.Decimal(14, 2)
   // Çift faturalama engeli (veritabanında): parti etkinken "<kind>:<orderId>", parti geçersiz olunca boş.
@@ -1164,13 +1174,19 @@ model BillingBatchLine {
   id          String   @id @default(cuid())
   batchId     String
   batch       BillingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  orderId     String
+  orderId     String?  // kaynak sipariş; avans ve avans düşümü satırında boş
   sortOrder   Int
   name        String   // "Comanda ABC001 — Sticlă securizată 10 mm"
   unit        String   // FGO birimi (mp | buc)
   quantity    Decimal  @db.Decimal(12, 3)
-  unitPrice   Decimal  @db.Decimal(12, 2) // kaynak para biriminde, TVA hariç
-  amount      Decimal  @db.Decimal(14, 2) // quantity × unitPrice
+  pieces      Int?     // fatura: yüklenen adet (bilgi; FGO'ya miktar olarak m² gider)
+  unitPrice   Decimal? @db.Decimal(12, 2) // kaynak para biriminde, TVA hariç (proforma satırı: RON = birim × kur)
+  amount      Decimal? @db.Decimal(14, 2) // kaynak para biriminde satır tutarı
+  // RON satırlar: fatura cam satırı (TVA hariç / dahil toplam; FGO'ya PretTotal), avans ve avans düşümü (birim fiyat)
+  ronUnit     Decimal? @db.Decimal(14, 2)
+  ronNet      Decimal? @db.Decimal(14, 2)
+  ronGross    Decimal? @db.Decimal(14, 2)
+  refBatchId  String?  // avans düşümü satırı: düşülen avans partisi (avansın ne kadarının kullanıldığı buradan)
 
   @@index([batchId])
 }
@@ -1238,7 +1254,7 @@ model LoadingConfirmation {
   note          String?
   createdAt     DateTime @default(now())
   items         LoadingConfirmationItem[]
-  billingBatches BillingBatch[] // 7D-3: bu onaydan kesilen müşteri faturası partileri (henüz kullanılmıyor)
+  billingBatches BillingBatch[] // bu onaydan kesilen müşteri faturası partileri (karar 101)
 }
 
 // Onay anında müşteriye gönderilmiş teklifin bir satırının kopyası (cam, CNC, delik, sandık parası…), FİİLEN onaylanan

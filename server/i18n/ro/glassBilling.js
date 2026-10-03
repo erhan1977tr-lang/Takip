@@ -5,7 +5,7 @@ export default {
   rate: "Curs document: {rate} RON / EUR ({date})",
   paidManual: "Plată primită (manual): {amount} · {date}",
   wait: {
-    batch: "Această comandă este inclusă într-o proformă client ({ref}); pe comandă nu se emit documente separate. Factura de după încărcare se va emite la nivel de client.",
+    batch: "Această comandă este inclusă în documente la nivel de client ({ref}); pe comandă nu se emit documente separate. Factura se emite din încărcarea confirmată (Încărcări → ziua → Facturare).",
     cancelled: "Comandă anulată.",
     done: "Factura a fost emisă; fluxul de documente este complet.",
     pending: "Documentul se emite (în cel mult un minut).",

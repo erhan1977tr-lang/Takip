@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.38.0 — 03.10.2026
+
+- **Onaylı yüklemeden müşteri faturası**: Yüklemeler → onaylı gün → "Faturalama" (yalnızca yönetici). Yükleme onayındaki
+  **yüklenen** kalemler müşteriye göre ayrılır; müşteri başına **tek FGO faturası** kesilir (iki müşteri → iki fatura).
+  Kaynak yalnızca yükleme onayıdır: planlanan gün, güncel teklif ya da fiyat tablosu faturayı etkilemez.
+- **Kısmi yükleme**: 10 adedin 8'i yüklendiyse yalnızca 8 adet faturalanır; kalan 2 adet ileride yüklendiği onayın
+  faturasına girer (iki kez faturalanmaz).
+- **Önizleme**: sipariş, cam, yüklenen adet / m², tutar, kur ve RON toplamı fatura kesilmeden önce görülür; kesilen belge
+  önizlemeyle aynıdır. Her satırın açıklaması kaynak sipariş numarasıyla başlar ("Comanda ABC001 — …"); belge
+  açıklamasında siparişler ve onaylı yükleme günü yazar.
+- **Müşteri proforması → avans → fatura**: müşteri proformasındaki siparişlerde fatura proformanın kuruyla kesilir ve
+  yalnızca o yüklemede yüklenen kapsamı içerir; proformanın kalan kapsamı sonraki yüklemelerin faturasını bekler.
+  Proformaya FGO'da tahsilat göründüyse önce **avans faturası** kesilir (tutar = FGO'da görünen tahsilat; yüklemeden
+  önce ya da sonra, "Müşteri proforması" sayfasından ya da Faturalama bölümünden); fatura avansı "Stornare avans"
+  satırıyla düşer. Avansı kesilmemiş tahsilat varken fatura kesilmez.
+- **Proformasız** yüklemede fatura doğrudan kesilir; kur o anda müşterinin kur politikasından belirlenip faturayla
+  kaydedilir (yönetici elle kur girebilir).
+- Farklı para birimleri ve farklı kur kayıtları tek faturada birleştirilmez (ayrı fatura grubu olur; kur ortalaması yok).
+  Siparişin kendi belge zinciri varsa (sipariş başına proforma / avans) faturası yine sipariş sayfasından kesilir.
+- **Cam Tahsilat**: müşteri proforması + avans faturası + müşteri faturası **tek borç** olarak toplanır; faturalanan kısım
+  faturada, henüz faturalanmamış kısım proformada sayılır. Her belge kaynak siparişleri ve yükleme günüyle görünür.
+- Çift tıklama / yeniden deneme ikinci bir fatura üretmez. Kesilemeyen fatura kapsamı tutar; yeniden denenebilir ya da
+  vazgeçilebilir. Belge FGO'da silinirse yalnızca belge kaydı geri alınır; yükleme onayı hiçbir durumda değişmez.
+
 ## 3.37.2 — 03.10.2026
 
 - Müşteri proforması: iç düzeltme (tip tanımları); davranış değişmedi.

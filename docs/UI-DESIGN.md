@@ -216,6 +216,18 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Cam Tahsilat lists a customer proforma once: order links + `.cell-note` with the loading days. An order covered by a
   customer proforma shows an `.alert-info` note in Finans / FGO instead of document buttons.
 
+## Loading invoice (3.38.0)
+
+- Loadings → confirmed day → `.card#faturalama` (Admin only, below the confirmation card): one
+  `section.fx-block.bill-customer` per customer; each open invoice group is a `.bill-group` (chain / direct note, the
+  same `.load-table.confirm-table` as the confirmation: `tr.sub` = order, `tr.sub.glass-row` = FGO line,
+  `tr.bill-storno` = advance offset, `.stats.stats-money` totals, `FxInfo`, problem `.alert-warn`s, then the action
+  row: "Avans faturası kes" (`btn-primary`) and "Fatura oluştur" (`btn-success`), both through `ConfirmButton`).
+  Issued / queued / failed invoices are `.bill-issued` lines with status + payment badges.
+- Customer proforma batch list: paid / advanced note (`.cell-note`) and the advance button in the actions cell.
+- Cam Tahsilat: every document of a customer chain shows its order links and a `.cell-note` (loading days / confirmed
+  loading day / source proforma); the chain is one group.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
