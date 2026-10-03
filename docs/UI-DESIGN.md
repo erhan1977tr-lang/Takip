@@ -296,9 +296,10 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   `table.doc-table` (type, number, date, orders, total, currency, payment `Badge`, `.actions` with a `.btn` "Vezi PDF")
   and a `.card-note`. Payment tones: unpaid = danger, partial = warn, paid = ok, replaced / unknown = muted. The row
   reached from a notification (`#doc-<id>`) is highlighted with `tr:target` (primary-soft). No charts, no totals row.
-- Admin receivables table: one extra column `td.doc-mail` — e-mail state `Badge` (sent = ok, waiting = muted,
-  failed = danger, no e-mail = warn; error / recipient in the `title`) and, below it, a `.btn-link` "E-postayı tekrar
-  gönder" (`ConfirmButton`). No separate e-mail page.
+- Admin receivables table: the last column is `td.doc-mail` — e-mail state `Badge` (sent = ok, waiting = muted,
+  failed = danger, no e-mail = warn; error / recipient in the `title`) and, below it, a small `.btn-link` "Tekrar
+  gönder" (`ConfirmButton`; the confirm text says no FGO document is issued). The FGO check time moved under the
+  payment badge as a `.cell-note` so the table still fits a 1440 px screen. No separate e-mail page.
 
 ## Left for the page-level phase
 

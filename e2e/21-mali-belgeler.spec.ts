@@ -170,7 +170,7 @@ test('yönetici: e-posta durumu; "E-postayı tekrar gönder" yalnızca TAKİP e-
   const docsBefore = await db.fgoDocument.count();
   const jobs = { type: { in: ['FGO_GLASS', 'FGO_BATCH', 'FGO_PROFORMA', 'FGO_INVOICE'] } };
   const jobsBefore = await db.notificationOutbox.count({ where: jobs });
-  await cell('GKH81002').getByRole('button', { name: 'E-postayı tekrar gönder' }).click();
+  await cell('GKH81002').getByRole('button', { name: 'Tekrar gönder' }).click();
   await expect(admin.locator('.alert-ok', { hasText: 'E-posta yeniden gönderilmek üzere kuyruğa alındı' })).toBeVisible();
   await expect(cell('GKH81002')).toContainText('Bekliyor');
   const manual = await db.notificationOutbox.findFirstOrThrow({ where: { type: 'FGO_DOC_EMAIL', status: 'PENDING', payload: { path: ['docId'], equals: ids.GKH81002 } } });

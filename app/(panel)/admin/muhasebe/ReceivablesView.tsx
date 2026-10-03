@@ -138,7 +138,6 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                     <th className="num">{t('accounting.receivables.col.paid')}</th>
                     <th className="num">{t('accounting.receivables.col.rest')}</th>
                     <th>{t('accounting.receivables.col.status')}</th>
-                    <th>{t('accounting.receivables.col.checked')}</th>
                     <th>{t('accounting.receivables.col.email')}</th>
                   </tr>
                 </thead>
@@ -174,14 +173,12 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                           {s.replaced || s.rest == null ? <span className="muted">—</span> : <b>{fmtMoney(s.rest, d.currency)}</b>}
                           {partly && <span className="cell-note">{t('accounting.receivables.partlyInvoiced')}</span>}
                         </td>
+                        {/* Ödeme durumu + altında FGO'dan son okunduğu an (ayrı sütun yerine: tablo ekrana sığsın) */}
                         <td>
                           {s.replaced
                             ? <Badge tone="muted">{t('accounting.receivables.replaced')}</Badge>
                             : <Badge tone={TONE[st]}>{t(`accounting.receivables.status.${st}` as MsgKey)}</Badge>}
-                        </td>
-                        <td className="small nowrap">
-                          {d.checkedAt ? fmtDate(d.checkedAt) : '—'}
-                          {d.checkedAt && <span className="cell-note">{fmtDateTime(d.checkedAt).split(' ').pop()}</span>}
+                          <span className="cell-note nowrap" title={t('accounting.receivables.col.checked')}>FGO · {d.checkedAt ? fmtDateTime(d.checkedAt) : '—'}</span>
                           {d.checkError && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
                         </td>
                         {/* Müşteri e-postası: durum + yalnızca e-postayı yeniden gönderme (FGO'da belge KESMEZ) */}
