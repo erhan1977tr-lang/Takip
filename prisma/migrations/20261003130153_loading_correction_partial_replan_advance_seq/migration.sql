@@ -1,6 +1,6 @@
 -- Aşama 7F-1 (karar 104–106). Bu dosya elle yazılmıştır: tablo / sütun değişiklikleri Prisma'nın üreteceği SQL ile aynıdır
 -- (CI ayrıca migration üretmez); yanında Prisma şema farkının göremediği parçalar vardır — avans tutarının doldurulması,
--- aktarım adedi denetimi ve düzeltme kaydının "yalnızca eklenir" tetikleyicisi (tablo ile aynı dosyada olmalı).
+-- aktarım adedi denetimi, kalemlerin kapsam anahtarı denetimi ve düzeltme kaydının "yalnızca eklenir" tetikleyicisi (tablo ile aynı dosyada olmalı).
 -- "LoadingConfirmation" / "LoadingConfirmationItem" satırları DEĞİŞMEZ: yeni sütunlar sabit varsayılanla eklenir
 -- (satır güncellemesi yoktur, tetikleyici çalışmaz); var olan kalemler revision = 0 (onay anı) olarak okunur.
 
@@ -77,6 +77,12 @@ WHERE d."kind" = 'ADVANCE' AND d."orderId" IS NOT NULL AND d."advanced" IS NULL;
 
 -- Aktarılan adet her zaman pozitiftir (kısmi aktarım: 0 < adet ≤ kalan; üst sınır kilit altında sunucuda denetlenir)
 ALTER TABLE "LoadingReplan" ADD CONSTRAINT "LoadingReplan_quantity_positive" CHECK ("quantity" > 0);
+
+-- Kapsam anahtarı: bundan sonra eklenen her onay kalemi kapsamını taşımak zorundadır ("l:<teklif satırı>" ya da
+-- "r:<aktarım>") — böylece "bir onayda bir kapsam için sıra ve durum başına tek kalem" benzersizliği her yeni satırda
+-- geçerlidir. NOT VALID: var olan (değişmez) satırlar denetlenmez ve güncellenmez; yalnızca yeni satırlar denetlenir.
+ALTER TABLE "LoadingConfirmationItem" ADD CONSTRAINT "LoadingConfirmationItem_scopeKey_required"
+  CHECK ("scopeKey" IS NOT NULL AND "scopeKey" = CASE WHEN "replanId" IS NOT NULL THEN 'r:' || "replanId" ELSE 'l:' || COALESCE("offerLineId", 'null') END) NOT VALID;
 
 -- Yükleme düzeltmesi yalnızca eklenir (onay ve kalemleriyle aynı işlev: UPDATE / DELETE / TRUNCATE reddedilir)
 DROP TRIGGER IF EXISTS "LoadingCorrection_append_only_row" ON "LoadingCorrection";

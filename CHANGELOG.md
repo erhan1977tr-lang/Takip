@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.40.1 — 03.10.2026
+
+- Onaylı yükleme kalemleri: bir yüklemede aynı cam satırı (ya da aynı aktarım) için "yüklenen" ve "yüklenmeyen"
+  kayıtlarının tekilliği veritabanında yeni eklenen her kalem için zorunlu (iç sağlamlaştırma; ekranlarda değişiklik yok).
+
 ## 3.40.0 — 03.10.2026
 
 - **Onaylı yüklemeyi düzeltme ("Düzelt")**: yönetici, yanlış onaylanan yüklenen / yüklenmeyen adedi düzeltebilir

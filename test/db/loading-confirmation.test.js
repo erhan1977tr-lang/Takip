@@ -248,7 +248,7 @@ dbTest('model kısmi yüklemeyi taşır: aynı satır için yüklenen ve yüklen
   const line = o.offers[0].lines[0];
   const fromLine = (qty, status, reason = null) => {
     const { costAmount, saleAmount, m2, unitCost, unitSale, ...rest } = c.snapshotLine(o, o.offers[0], line, { quantity: qty, status, reason });
-    return { ...rest, m2: m2.toFixed(2), unitCost: unitCost.toFixed(2), unitSale: unitSale.toFixed(2), costAmount: costAmount.toFixed(4), saleAmount: saleAmount.toFixed(4) };
+    return { ...rest, scopeKey: c.itemKey(rest), m2: m2.toFixed(2), unitCost: unitCost.toFixed(2), unitSale: unitSale.toFixed(2), costAmount: costAmount.toFixed(4), saleAmount: saleAmount.toFixed(4) };
   };
   const conf = await db.loadingConfirmation.create({
     data: { shipDay: new Date(`${D7}T00:00:00Z`), confirmedById: admin.id, items: { create: [fromLine(8, 'LOADED'), fromLine(2, 'NOT_LOADED', 'BROKEN')].map(({ orderId, customerId, offerLineId, ...i }) => ({ ...i, order: { connect: { id: orderId } }, customer: { connect: { id: customerId } }, offerLine: { connect: { id: offerLineId } } })) } },
@@ -257,8 +257,10 @@ dbTest('model kısmi yüklemeyi taşır: aynı satır için yüklenen ve yüklen
   assert.deepEqual(conf.items.map((i) => [i.status, i.quantity, Number(i.m2), i.notLoadedReason, i.offerLineId, i.orderId]), [
     ['LOADED', 8, 5.12, null, line.id, o.id], ['NOT_LOADED', 2, 1.28, 'BROKEN', line.id, o.id],
   ]);
-  // Bir onayda aynı satır için durum başına tek kayıt
+  // Bir onayda aynı kapsam (teklif satırı) için sıra ve durum başına tek kayıt
   await assert.rejects(db.loadingConfirmationItem.create({ data: { ...fromLine(1, 'LOADED'), confirmationId: conf.id } }), { code: 'P2002' });
+  // Kapsam anahtarı olmayan ya da kapsamla tutmayan yeni kalem eklenemez (benzersizlik denetiminden kaçılamaz)
+  for (const scopeKey of [null, 'l:baska-satir']) await assert.rejects(db.loadingConfirmationItem.create({ data: { ...fromLine(1, 'LOADED'), scopeKey, confirmationId: conf.id } }));
   const d = await dayData(D7);
   assert.deepEqual([d.confirmed, d.m2, d.byCur.EUR.sale, d.byCur.EUR.cost], [true, 5.12, 512, 307.2], 'kârlılıkta yalnızca yüklenen 8 cam');
   const s = c.summarize((await c.loadConfirmation(db, D7)).orders);

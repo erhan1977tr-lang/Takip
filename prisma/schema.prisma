@@ -1343,7 +1343,8 @@ model LoadingConfirmationItem {
   correctionId   String?
   correction     LoadingCorrection? @relation(fields: [correctionId], references: [id], onDelete: Restrict)
   // Kapsam anahtarı (itemKey): "l:<teklif satırı>" ya da "r:<aktarım>". Yalnızca bu sürümden sonra eklenen kalemlerde
-  // doludur (eski satırlar değişmez); benzersizlik denetimi içindir — kapsam kodda hep itemKey ile hesaplanır.
+  // doludur (eski satırlar değişmez); benzersizlik denetimi içindir — kapsam kodda hep itemKey ile hesaplanır. Yeni
+  // satırlarda zorunludur ve kapsamla tutarlı olmalıdır (veritabanı denetimi, NOT VALID — elle yazılmış migration).
   scopeKey       String?
   createdAt      DateTime @default(now())
 

@@ -73,7 +73,7 @@ test('veri: iki müşteri, onaylı yükleme (biri kısmi), bir müşteri proform
     const l = o.offers[0].lines[i];
     const glass = l.kind === 'CAM';
     return {
-      confirmationId: conf.id, orderId: o.id, customerId: o.customerId, offerLineId: l.id, sortOrder: l.sortOrder, kind: l.kind, unit: l.unit,
+      confirmationId: conf.id, orderId: o.id, customerId: o.customerId, offerLineId: l.id, scopeKey: `l:${l.id}`, sortOrder: l.sortOrder, kind: l.kind, unit: l.unit,
       description: l.description, descriptionRo: l.descriptionRo, enMm: l.enMm, boyMm: l.boyMm, quantity: qty, m2: glass ? qty : 0, currency: 'EUR',
       unitCost: l.unitPrice, unitSale: l.offerPrice, costAmount: qty * Number(l.unitPrice), saleAmount: qty * Number(l.offerPrice), status,
       notLoadedReason: status === 'NOT_LOADED' ? 'e2e' : null,
