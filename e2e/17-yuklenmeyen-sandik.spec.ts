@@ -169,7 +169,7 @@ test('yönetici: sipariş başka müşterinin sandığına konur — müşterisi
   const sales = await as(browser, SALES2, TEAM_PW);
   await sales.goto(DAY_URL);
   await expect(sales.locator('#gun tr.sub', { hasText: 'UNS7701' }).first().locator('.guest-badge')).toContainText(`#15 · ${beta.name.slice(0, 3)}**********`);
-  await expect(sales.locator('#gun')).not.toContainText(beta.name);
+  await expect(sales.locator('.card#gun')).not.toContainText(beta.name);
   await expect(sales.locator('.guest-assign')).toHaveCount(0);
   await expect(sales.locator('#yuklenmeyen')).toContainText('UNS7701');
   await expect(sales.locator('#yuklenmeyen input[name=newDay]')).toHaveCount(0);
