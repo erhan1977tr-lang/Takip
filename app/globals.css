@@ -849,7 +849,11 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .comp-entry .row { gap: 6px 8px; }
 .comp-entry form { margin-top: 8px; }
 .comp-entry input[type='text'], .comp-entry input:not([type]) { width: auto; }
-.offer-view td.actions .btn-link { white-space: nowrap; }
+/* İşlem sütunu dar kalır: düğme iki satıra inebilir, açıklama sütunu biraz daralır — yöneticinin üç fiyat sütunlu
+   tablosunda da yatay kaydırma gerekmez */
+.offer-view td.actions { width: 1%; text-align: right; }
+.offer-view td.actions .btn-link { white-space: normal; padding: 0; line-height: 1.25; text-align: right; }
+.offer-view.has-actions td:nth-child(2) { min-width: 160px; }
 .remove-order .check { align-items: flex-start; }
 .removed-list > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 

@@ -537,7 +537,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
         </span>
       </div>
       <div className="table-wrap offer-wrap">
-        <table className="offer-view">
+        <table className={compCol ? 'offer-view has-actions' : 'offer-view'}>
           <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th>{compCol && <th />}</tr></thead>
           <tbody>
             {(() => {
