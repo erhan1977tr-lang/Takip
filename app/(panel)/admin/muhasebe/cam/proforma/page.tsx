@@ -63,7 +63,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     if (st) {
       chains.set(b.id, {
         paid: st.paid, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, ref: st.ref,
-        failed: st.advances.filter((a) => a.status === 'FAILED').map((a) => ({ batchId: a.batchId, lastError: a.lastError })),
+        failed: (st.advances as { batchId: string; status: string; lastError: string | null }[]).filter((a) => a.status === 'FAILED').map((a) => ({ batchId: a.batchId, lastError: a.lastError })),
       });
     }
   }
