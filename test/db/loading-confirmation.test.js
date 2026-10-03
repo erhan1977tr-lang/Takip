@@ -277,7 +277,9 @@ dbTest('onaylı yükleme veritabanında da değişmez: UPDATE, DELETE ve TRUNCAT
   await assert.rejects(db.loadingConfirmationItem.delete({ where: { id: item.id } }), appendOnly);
   await assert.rejects(db.loadingConfirmationItem.deleteMany({ where: { confirmationId: conf.id } }), appendOnly);
   await assert.rejects(db.loadingConfirmation.delete({ where: { id: conf.id } }));
-  await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmationItem"`), appendOnly);
+  // Kalemlere aktarım kayıtları (LoadingReplan, karar 102) bağlıdır: yalın TRUNCATE'i veritabanı zaten reddeder; CASCADE ile de tetikleyici reddeder
+  await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmationItem"`));
+  await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmationItem" CASCADE`), appendOnly);
   await assert.rejects(db.$executeRawUnsafe(`TRUNCATE "LoadingConfirmation" CASCADE`), appendOnly);
   const again = await db.loadingConfirmation.findFirstOrThrow({ where: { id: conf.id }, include: { items: true } });
   assert.equal(again.note, conf.note);
