@@ -37,6 +37,8 @@ async function countPlays(page: Page) {
 }
 const plays = (page: Page) => page.evaluate(() => (window as unknown as { __plays: number }).__plays);
 /** Ortak yenilemeyi beklemek yerine zilin yoklamasını tetikler (aynı zamanlayıcının olayı) */
+/** Arayüz dili Romence (müşteriye dönük dil): giriş kullanıcının dilini yazar; test metinleri Romence denetlenir */
+const romanian = (page: Page) => page.context().addCookies([{ name: 'takip_lang', value: 'ro', url: new URL(page.url()).origin }]);
 const poll = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('takip:poll')));
 
 test('veri: müşteri kullanıcısına eski okunmamış bildirimler', async () => {
@@ -64,6 +66,7 @@ test('müşteri: 7 eski okunmamış → rozet 7, sekme "(7) …", ses / açılı
   await countPlays(page);
   const { login } = await import('./helpers');
   await login(page, CUSTOMER, CUST_PW);
+  await romanian(page);
   await page.goto('/siparisler');
   const bell = page.locator('.notif-bell');
   await expect(bell.locator('.notif-badge')).toHaveText('7');
@@ -168,6 +171,7 @@ test('yalıtım ve maske: başka firmanın müşterisi ve satış, A müşterisi
   await beta.context().close();
 
   const sales = await as(browser, SALES2, TEAM_PW);
+  await romanian(sales);
   await sales.goto('/siparisler');
   await expect(sales.locator('.notif-bell .notif-badge')).toHaveText('1');
   await sales.locator('.notif-bell').click();
