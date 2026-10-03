@@ -163,3 +163,25 @@ test('yetkisiz roller kur politikasını değiştiremez: sayfa açılmaz, taklit
   expect(await policyOf()).toEqual([null, null]);
   await admin.context().close();
 });
+
+// Tanı (başarısız olmaz): BNR'nin resmî kur dosyası bu ortamdan okunabiliyor mu? Sonuç ekran görüntüleri klasörüne
+// yazılır (bnr-erisim.txt). Yalnızca okuma; kur değeri sınanmaz (her gün değişir).
+test('tanı: BNR resmî kur dosyasına erişim', async () => {
+  const dir = process.env.SCREENSHOT_DIR;
+  test.skip(!dir, 'SCREENSHOT_DIR yok');
+  const out: string[] = [];
+  for (const url of ['https://curs.bnr.ro/nbrfxrates.xml', 'https://www.bnr.ro/nbrfxrates.xml']) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { accept: 'application/xml,text/xml;q=0.9,*/*;q=0.5' } });
+      const body = await res.text();
+      out.push(`== ${url}\nHTTP ${res.status} · son adres ${res.url} · content-type ${res.headers.get('content-type') ?? '-'} · server ${res.headers.get('server') ?? '-'} · uzunluk ${body.length}`);
+      out.push(body.slice(0, 700).replace(/\s+/g, ' '));
+      const i = body.indexOf('EUR');
+      out.push(`EUR çevresi: ${i < 0 ? 'yok' : body.slice(Math.max(0, i - 120), i + 80).replace(/\s+/g, ' ')}`);
+    } catch (e) {
+      out.push(`== ${url}\nistek olmadı: ${String((e as Error)?.message ?? e)}`);
+    }
+  }
+  fs.mkdirSync(dir!, { recursive: true });
+  fs.writeFileSync(path.join(dir!, 'bnr-erisim.txt'), `${out.join('\n')}\n`);
+});
