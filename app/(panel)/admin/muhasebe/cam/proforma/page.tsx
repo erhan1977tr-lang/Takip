@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
@@ -17,6 +18,10 @@ const PAGE = '/admin/muhasebe/cam/proforma';
 const STATUS_TONE = { PENDING: 'info', ISSUED: 'ok', FAILED: 'danger', VOID: 'muted' } as const;
 const PROBLEMS = ['NO_DAYS', 'PAST_DAY', 'NOTHING_ELIGIBLE', 'MIXED_CURRENCY', 'BILLING_MISSING', 'FX_UNAVAILABLE'];
 const ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'STALE_PREVIEW', 'ALREADY_COVERED'];
+type Batch = Prisma.BillingBatchGetPayload<{ include: {
+  customer: { select: { name: true } }; document: true; createdBy: { select: { name: true } };
+  orders: { select: { orderId: true; orderNo: true; loadingDay: true } };
+} }>;
 const dmy = (day: string) => day.split('-').reverse().join('.');
 const dayText = (d: Date) => dmy(new Date(d).toISOString().slice(0, 10));
 
@@ -39,7 +44,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const chosen = customerId ? await db.customer.findFirst({ where: { id: customerId, type: 'CUSTOMER' }, select: { id: true, name: true } }) : null;
   const [loadingDays, batches, settings] = await Promise.all([
     chosen ? customerLoadingDays(db, { customerId: chosen.id }) : [],
-    listBatches(db, { customerId: chosen?.id ?? null }),
+    listBatches(db, { customerId: chosen?.id ?? null }) as Promise<Batch[]>,
     getFgoSettings(db),
   ]);
   // Önizleme: BNR 30 dakika saklanır; kur alınamazsa "alınamadı" gösterilir ve parti oluşturulamaz
