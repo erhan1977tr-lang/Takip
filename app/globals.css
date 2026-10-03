@@ -869,7 +869,10 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .card-flush .acc-table tbody tr.grp-next > td:first-child { padding-left: 12px; }
 .acc-table td .badge { white-space: nowrap; }
 /* Tahsilat: müşteri e-postası durumu + "yeniden gönder" (satır içi, tek satır) */
+/* On sütunlu tablo 1440 px ekrana sığsın: iç sütunların yatay boşluğu biraz dar */
+.acc-table th, .acc-table td { padding-left: 9px; padding-right: 9px; }
 .acc-table td.doc-mail { width: 1%; }
+.card-flush .acc-table th:last-child, .card-flush .acc-table td:last-child { padding-right: 14px; }
 .acc-table td.doc-mail form { display: block; margin-top: 2px; }
 .acc-table td.doc-mail .btn-link { padding: 0; white-space: nowrap; font-size: var(--fs-meta); }
 .acc-table .cell-note.nowrap { white-space: nowrap; }

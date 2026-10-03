@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.43.4 — 04.10.2026
+
+- Muhasebe → Tahsilat: sütun aralıkları biraz daraltıldı; e-posta sütunu 1440 px ekranda tam görünür.
+
 ## 3.43.3 — 04.10.2026
 
 - Muhasebe → Tahsilat: e-posta sütununun başlığı kısaltıldı ("E-posta"); sütun 1440 px ekranda sağdan kesilmiyor.
