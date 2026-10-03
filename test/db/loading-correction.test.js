@@ -192,7 +192,7 @@ dbTest('düzeltme: 10 yüklendi → 8 + 2 → 9 + 1 → 7 + 3; onay kaydı aynen
   const tries = await Promise.all([F1, F2, F3].map((day) => rp.replanNotLoaded(db, { itemId: row.itemId, day, quantity: 1, actor: actor() })));
   assert.deepEqual(tries.map((y) => y.ok).sort(), [false, true, true]);
   assert.equal(tries.find((y) => !y.ok).code, 'NO_REMAINDER');
-  let active = await db.loadingReplan.findMany({ where: { orderId: o.id, status: 'ACTIVE' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  const active = await db.loadingReplan.findMany({ where: { orderId: o.id, status: 'ACTIVE' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
   assert.deepEqual(active.map((y) => [y.quantity, Number(y.m2), y.customerId]), [[1, 1, A.id], [1, 1, A.id]]);
   assert.equal(new Set(active.map((y) => y.shipDay.toISOString())).size, 2, 'iki ayrı güne');
   assert.deepEqual(await rp.replanNotLoaded(db, { itemId: row.itemId, day: dayOf(28), quantity: 1, actor: actor() }), { ok: false, code: 'NO_REMAINDER' }, 'toplam 2\'yi aşamaz');
