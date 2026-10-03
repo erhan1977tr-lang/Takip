@@ -24,7 +24,6 @@ let db, U, A, B, seq = 900;
 const actor = (u = U.admin) => ({ id: u.id, role: u.appRole, ip: '127.0.0.1' });
 const dayOf = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const at = (key) => new Date(`${key}T12:00:00Z`);
-const date = (key) => new Date(`${key}T00:00:00Z`);
 const bnr = (rate) => async () => ({ ok: true, rate, date: dayOf(0), url: 'https://curs.bnr.ro/nbrfxrates.xml' });
 
 /** Sahte FGO: emitere belge keser (ya da emit ile reddeder); getstatus testin yazdığı tahsilatı döner */
