@@ -54,6 +54,10 @@ export const loadingDayOf = (order) => {
  * @typedef {{ name: string, unit: string, qty: number, price: number, amount: number }} BatchLine
  * @typedef {{ orderId: string, orderNo: string, title: string | null, day: string, offerId: string | null, currency: string | null, reason: ExcludeReason | null,
  *   ref: string | null, lines: BatchLine[], subtotal: number }} BatchOrder
+ * @typedef {import('../fx/resolve.js').FxResult} FxResult
+ * @typedef {{ ok: true, customer: any, today: string, days: string[], byDay: { day: string, orders: BatchOrder[] }[], included: BatchOrder[], excluded: BatchOrder[],
+ *   currency: string | null, currencies: (string | null)[], sourceTotal: number, fx: FxResult | null, fxError: { code: string, error: string } | null,
+ *   ronNet: number | null, ronGross: number | null, missingBilling: string[], problems: string[], key: string }} BatchPreview
  */
 
 /**
@@ -169,7 +173,10 @@ export async function customerLoadingDays(db, { customerId, now = new Date() }) 
   return [...by.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/** Seçilen günler: geçerli, yinelenmeyen, sıralı "YYYY-AA-GG" listesi */
+/**
+ * Seçilen günler: geçerli, yinelenmeyen, sıralı "YYYY-AA-GG" listesi
+ * @param {unknown} days  @returns {string[]}
+ */
 export const cleanDays = (days) => [...new Set((Array.isArray(days) ? days : [days]).map((d) => String(d ?? '')).filter((d) => parseDateOnly(d)))].sort();
 
 /** İçeriğin parmak izi: müşteri, günler, siparişler (teklif sürümü + satırlar), para birimi ve uygulanan kur */
@@ -186,7 +193,8 @@ function batchKey({ customerId, days, orders, currency, fx }) {
  *   problems: partinin oluşturulmasını engelleyen nedenler (NO_DAYS, PAST_DAY, NOTHING_ELIGIBLE, MIXED_CURRENCY,
  *   BILLING_MISSING, FX_UNAVAILABLE). fx verilirse (parti oluşturulurken, işlem içinde) kur yeniden çözülmez.
  * @param {any} db
- * @param {{ customerId: string, days: string[], now?: Date, manualRate?: string | number | null, bnrImpl?: typeof bnrRate, fx?: import('../fx/resolve.js').FxResult | null, vatRate?: number }} o
+ * @param {{ customerId: string, days: string[], now?: Date, manualRate?: string | number | null, bnrImpl?: typeof bnrRate, fx?: FxResult | null, vatRate?: number }} o
+ * @returns {Promise<BatchPreview | { ok: false, code: string }>}
  */
 export async function previewBatch(db, { customerId, days, now = new Date(), manualRate = null, bnrImpl = bnrRate, fx = undefined, vatRate = undefined }) {
   const today = dayKey(now);
@@ -445,6 +453,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
 /**
  * Müşterinin partileri (en yeniler önce), ekran için.
  * @param {any} db  @param {{ customerId?: string | null, take?: number }} [o]
+ * @returns {Promise<any[]>}
  */
 export function listBatches(db, { customerId = null, take = 30 } = {}) {
   return db.billingBatch.findMany({
