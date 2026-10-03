@@ -9,7 +9,7 @@ import { fetchDocPdf } from '@/server/documents/delivery.js';
 export const dynamic = 'force-dynamic';
 
 // GET /belgeler/<belge>/pdf — mali belgenin PDF'i (karar 111).
-//   Müşteri (FINANCE_DOCS_VIEW): yalnızca KENDİ firmasının belgesi — sahiplik burada, sunucuda yeniden denetlenir;
+//   Müşteri (ACCOUNT_SETTINGS — müşteri hesabı): yalnızca KENDİ firmasının belgesi — sahiplik burada, sunucuda yeniden denetlenir;
 //   başka firmanın belge kimliği "bulunamadı" döner (listede gizlemek yetmez). Muhasebe yetkisi: her belge.
 //   PDF sunucu tarafında alınır (kayıtlı bağlantıdan; gerekirse FGO'dan yenilenir) ve buradan verilir: tarayıcıya FGO
 //   anahtarı, hash ya da API parametresi gitmez. FGO sunucudan indirmeye izin vermezse, sahipliği doğrulanmış okuyan
@@ -20,7 +20,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!user) return new Response(t('common.fileLoginRequired'), { status: 401 });
   const { id } = await ctx.params;
   const select = { id: true, series: true, number: true, link: true, kind: true } as const;
-  const doc = userCan(user, 'FINANCE_DOCS_VIEW')
+  const doc = userCan(user, 'ACCOUNT_SETTINGS')
     ? await customerDocument(db, { docId: id, customerId: user.customerId })
     : userCan(user, 'ACCOUNTING_MANAGE') ? await db.fgoDocument.findUnique({ where: { id }, select }) : null;
   if (!doc) return new Response(t('documents.pdf.notFound'), { status: 404 });

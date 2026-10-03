@@ -17,7 +17,8 @@ const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok', 
  * (belgeler/[id]/pdf — sahiplik orada yeniden denetlenir).
  */
 export default async function FinanceDocumentsPage() {
-  const user = await requirePermission('FINANCE_DOCS_VIEW');
+  // Müşteri hesabı yetkisi (yalnızca müşteri rolünde): iç roller bu sayfayı açamaz; belgeler ayrıca firmaya göre süzülür
+  const user = await requirePermission('ACCOUNT_SETTINGS');
   const { t } = await getT();
   const docs = await customerDocuments(db, user.customerId);
   return (
