@@ -195,7 +195,12 @@ export async function crawlForLeaks(page: Page, secrets: string[], max = 80): Pr
       const body = await res.text();
       for (const n of needles) if (body.includes(n)) leaks.push(`${variant}: "${n}"`);
     }
-    await page.goto(url);
+    // İndirme bağlantıları (teklif PDF / Excel, döküm…) sayfa olarak açılamaz: içerikleri yukarıda tarandı, bağlantı toplanmaz
+    const opened = await page.goto(url).then(() => true, (e: Error) => {
+      if (/Download is starting/.test(e.message)) return false;
+      throw e;
+    });
+    if (!opened) continue;
     for (const href of await page.locator('a[href^="/"]').evaluateAll((els) => els.map((a) => a.getAttribute('href') || ''))) {
       const clean = href.split('#')[0];
       if (!clean || /^\/(dosya|dil|login|setup|_next)\b/.test(clean) || seen.has(clean)) continue;
