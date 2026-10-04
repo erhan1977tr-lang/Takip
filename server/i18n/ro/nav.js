@@ -1,5 +1,7 @@
 export default {
   operations: 'Operațiuni',
+  drawingTeam: 'Echipa de desen',
+  drawingPanel: 'Panou desen',
   accounting: 'Contabilitate',
   profileReceivables: 'Încasări profile',
   glassReceivables: 'Încasări sticlă',

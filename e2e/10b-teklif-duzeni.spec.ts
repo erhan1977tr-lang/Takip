@@ -65,3 +65,70 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   expect(pos('Notlar')).toBeLessThan(pos('Sipariş bilgileri'));
   await expect(admin.getByText('İstenen camlar')).toBeVisible();
 });
+
+// Yönetici fiyat tablosunda aynı araç: müşteri fiyatı (satış fiyatı / maliyet değişmez); kural satıştakiyle aynı.
+test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yalnızca m² cam satırlarına yazar; CNC ve sandık parası değişmez', async ({ browser }) => {
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  const id = await newOrder(cust, 'Tek fiyat yönetici', 'tekfiyat.pdf'); // siparişte 3 adet cam
+  const sales = await as(browser, SALES, TEAM_PW);
+  await sales.goto(`/siparisler/${id}`);
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.locator('.offer-table')).toBeVisible();
+  // Satış: iki cam satırı (ikincisinde CNC) + sandık parası; satış fiyatları 30 / 30 / 15 / 20
+  await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).click();
+  const en = sales.getByLabel('En', { exact: true });
+  const boy = sales.getByLabel('Boy', { exact: true });
+  await en.nth(0).fill('1000');
+  await boy.nth(0).fill('2000');
+  await en.nth(1).fill('500');
+  await boy.nth(1).fill('1000');
+  await sales.getByRole('button', { name: '+CNC' }).nth(1).click();
+  await sales.getByLabel('CNC fiyatı').fill('15');
+  await sales.getByRole('button', { name: /Sandık parası/ }).click();
+  const unit = sales.getByLabel('Birim fiyat', { exact: true });
+  await expect(unit).toHaveCount(3);
+  await unit.nth(0).fill('30');
+  await unit.nth(1).fill('30');
+  await unit.nth(2).fill('20');
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
+
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(`/siparisler/${id}`);
+  const offer = admin.getByLabel('Müşteri fiyatı', { exact: true }); // cam, cam, sandık parası
+  const cnc = admin.getByLabel('CNC müşteri fiyatı');
+  await expect(offer).toHaveCount(3);
+  await cnc.fill('18');
+  await offer.nth(2).fill('25');
+  // Araç tablonun altında, satıştakiyle aynı yerde ve aynı adla; işaretli gelmez
+  const one = admin.locator('.offer-tools').getByLabel('Tek fiyatı tüm satırlara uygula');
+  await expect(one).not.toBeChecked();
+  await one.check();
+  await offer.nth(0).fill('52,5');
+  await expect(offer.nth(1)).toHaveValue('52,5'); // öbür m² cam satırı
+  await expect(cnc).toHaveValue('18'); // CNC değişmez
+  await expect(offer.nth(2)).toHaveValue('25'); // sandık parası (adetli satır) değişmez
+  // İşaretliyken CNC satırına yazılan fiyat yalnızca o satıra yazılır
+  await cnc.fill('19');
+  await expect(offer.nth(0)).toHaveValue('52,5');
+  await expect(offer.nth(2)).toHaveValue('25');
+  // İşaret kaldırılınca yalnızca yazılan satır değişir
+  await one.uncheck();
+  await offer.nth(1).fill('50');
+  await expect(offer.nth(0)).toHaveValue('52,5');
+  await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
+  await expect(admin.getByText(/Fiyat onaylandı|üretime alındı/).first()).toBeVisible();
+
+  // Kayıt (sunucu): müşteri fiyatları yazıldığı gibi; satış fiyatları (maliyet) hiç değişmedi
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const sent = await db.offer.findFirstOrThrow({ where: { orderId: id, status: 'GONDERILDI' }, orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+  await db.$disconnect();
+  expect(sent.lines.map((l) => [l.kind, l.unit, Number(l.unitPrice), Number(l.offerPrice)])).toEqual([
+    ['CAM', 'm2', 30, 52.5], ['CAM', 'm2', 30, 50], ['CNC', 'adet', 15, 19], ['CAM', 'adet', 20, 25],
+  ]);
+  // Satış müşteri fiyatını yine görmez
+  const html = await (await sales.request.get(`/siparisler/${id}`)).text();
+  expect(html).not.toMatch(/"offerPrice":"?5[02]/);
+  expect(html).not.toContain('52,50');
+});

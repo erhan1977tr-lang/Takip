@@ -9,7 +9,7 @@ propagate to every role's screens. The look is the old TAKİP (v2.25) cleaned up
 |---|---|
 | Tokens and every shared style | `app/globals.css` (single stylesheet; sections 1–9 listed in its header) |
 | App shell for all roles (sidebar, topbar, content) | `app/(panel)/layout.tsx` — menu items come from `lib/roles` + permissions |
-| Sidebar links / collapse / "Hareketler" slot | `app/(panel)/NavLinks.tsx`, `components/Sidebar.tsx` |
+| Sidebar links / collapse / "Hareketler" slot | `app/(panel)/NavLinks.tsx`, `components/Sidebar.tsx` — a link with a query (`/siparisler?panel=cizim`) is active only on exactly that page with those parameters |
 | Logo + version | `components/BrandLogo.tsx` |
 | Status badges | `components/StatusBadge.tsx` (`Badge`, `OrderBadge`, `DrawingBadge`, `OfferBadge`, `CustomerBadge`) |
 | Confirmed actions | `components/ConfirmButton.tsx` |

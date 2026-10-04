@@ -15,6 +15,9 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/teklifler', key: 'nav.offers' },
     { href: '/admin/kararlar', key: 'nav.alerts' },
     { href: '/yuklemeler', key: 'nav.loadings' },
+    // Çizim ekibinin paneli (aynı sayfa, aynı kuyruklar; yönetici tam firma adlarını görür) — siparisler/page.tsx
+    { section: 'nav.drawingTeam' },
+    { href: '/siparisler?panel=cizim', key: 'nav.drawingPanel' },
     { section: 'nav.accounting' },
     { href: '/admin/muhasebe/profil', key: 'nav.profileReceivables' },
     { href: '/admin/muhasebe/cam', key: 'nav.glassReceivables' },

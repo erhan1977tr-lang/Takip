@@ -97,6 +97,7 @@ export default {
     copyPieceTitle: 'Bu camdan (işlemleriyle birlikte) bir tane daha ekle',
     onePrice: 'Tek fiyatı tüm satırlara uygula',
     onePriceHint: 'İşaretliyken bir cam satırına yazdığınız m² fiyatı tüm m² cam satırlarına yazılır. CNC, delik, sandık parası ve bedelsiz satırlar değişmez.',
+    onePriceHintAdmin: 'İşaretliyken bir cam satırına yazdığınız m² müşteri fiyatı tüm m² cam satırlarına yazılır. Satış fiyatları, CNC, delik, sandık parası ve bedelsiz satırlar değişmez.',
     addGlass: 'Cam ekle',
     cannotSend: 'Teklif bu haliyle gönderilemez.',
     canSaveDraft: 'Taslak olarak kaydedebilirsiniz.',

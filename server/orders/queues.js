@@ -25,8 +25,10 @@ export const needsOfferCheck = (o) =>
  * Kullanıcının yetkilerine göre kuyruklar.
  * @template {QueueRow} R
  * @param {R[]} rows  kullanıcının görebildiği aktif siparişler
- * @param {{ review: boolean, send: boolean, drawing: boolean, userId?: string }} can
+ * @param {{ review: boolean, send: boolean, drawing: boolean, userId?: string, allDrawers?: boolean }} can
  *   review: ORDER_REVIEW (satış kararı) · send: OFFER_SEND (yönetici fiyatı) · drawing: DRAWING_WORK (çizim ekibi)
+ *   allDrawers: çizim ekibinin panelini ekibin tamamı için gören (yönetici — "Çizim Paneli"): yapılacak çizimler kime
+ *   atanmış olursa olsun listelenir; kişiye özel "Benim çizimlerim" bölümü olmaz
  * @param {number} [now]
  * @returns {{ key: string, rows: R[] }[]}
  */
@@ -61,13 +63,13 @@ function buildQueues(rows, can, now) {
   }
   if (can.drawing && !can.review) {
     // Çizilecekler: bana atanmış ya da henüz kimseye atanmamış işler
-    const mineOrOpen = (o) => !o.assignedDrawerId || o.assignedDrawerId === can.userId;
+    const mineOrOpen = (o) => can.allDrawers || !o.assignedDrawerId || o.assignedDrawerId === can.userId;
     out.push({ key: 'drawingJobs', rows: prep.filter((o) => DRAWING_WORK.includes(o.drawingTrack) && mineOrOpen(o)) });
   }
   if (can.review || can.drawing) {
     out.push({ key: 'atCustomer', rows: prep.filter((o) => o.drawingTrack === 'ONAY_BEKLIYOR') });
   }
-  if (can.drawing && !can.review && can.userId) {
+  if (can.drawing && !can.review && can.userId && !can.allDrawers) {
     out.push({ key: 'myDrawings', rows: prep.filter((o) => o.drawingTrack !== 'YOK' && o.assignedDrawerId === can.userId) });
   }
   if (can.drawing || can.review) {

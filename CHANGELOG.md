@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.47.0 — 04.10.2026
+
+- **Yönetici teklif tablosunda "Tek fiyatı tüm satırlara uygula"**: satıştaki araç artık yönetici fiyat tablosunun altında da
+  var. İşaretliyken bir cam satırına yazdığınız m² müşteri fiyatı tüm m² cam satırlarına yazılır; CNC, delik, sandık parası
+  ve bedelsiz satırlar değişmez; satış fiyatlarına dokunulmaz. Satıştaki davranış aynı.
+- **Çizim Ekibi (yönetici menüsü)**: soldaki menüde yeni "Çizim Ekibi → Çizim Paneli". Çizim ekibinin gördüğü panelin
+  aynısıdır (yapılacak çizimler, onay bekleyenler, onaylanmış çizimler, SLA) — ekibin tamamı için ve firma adları tam
+  görünür. Çizim ekibinin kendi ekranı değişmedi (firma adları maskeli).
+
 ## 3.46.0 — 04.10.2026
 
 Güvenlik sertleştirmesi (3.45.0 güvenlik denetiminin onaylanan maddeleri). İş akışları, fiyatlar, FGO belgeleri değişmedi.

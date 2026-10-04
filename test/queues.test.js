@@ -67,6 +67,30 @@ test('kuyruk: çizimci — başkasına atanmış iş "Çizilecekler"de görünme
   assert.deepEqual(ids(q, 'myDrawings').sort(), [mine.id, waiting.id].sort());
 });
 
+test('kuyruk: yöneticinin Çizim Paneli — çizim ekibinin kuyrukları, ekibin tamamı için; kişiye özel bölüm ve teklif / fiyat kuyrukları yok', () => {
+  const mine = row({ drawingTrack: 'GEREKLI', assignedDrawerId: 'cizimci-1' });
+  const other = row({ drawingTrack: 'YAPILIYOR', assignedDrawerId: 'cizimci-2' });
+  const open = row({ drawingTrack: 'REVIZYON_ISTENDI', assignedDrawerId: null });
+  const waiting = row({ drawingTrack: 'ONAY_BEKLIYOR', assignedDrawerId: 'cizimci-1' });
+  const approved = row({ status: 'URETIMDE', drawingTrack: 'ONAYLANDI', assignedDrawerId: 'cizimci-2' });
+  const pricing = row({ drawingTrack: 'GEREKLI', assignedDrawerId: 'cizimci-1', offers: [{ status: 'YONETIMDE' }] });
+  const list = [mine, other, open, waiting, approved, pricing, rows.profil];
+  const q = queuesFor(list, { review: false, send: false, drawing: true, allDrawers: true }, NOW);
+  // Çizim ekibinin gördüğü bölümlerle aynı; "Benim çizimlerim" (kişiye özel), fiyat onayı, profil ve satış kuyrukları yok
+  assert.deepEqual(keys(q), ['drawingJobs', 'atCustomer', 'approvedDrawings', 'sla']);
+  assert.deepEqual(ids(q, 'drawingJobs').sort(), [mine.id, other.id, open.id, pricing.id].sort(), 'kime atanmış olursa olsun');
+  assert.deepEqual(ids(q, 'atCustomer'), [waiting.id]);
+  assert.deepEqual(ids(q, 'approvedDrawings'), [approved.id]);
+  // Aynı veride bir çizimci yalnızca kendisine atanmış ya da açıktaki işleri görür (davranışı değişmedi)
+  const d = queuesFor(list, { review: false, send: false, drawing: true, userId: 'cizimci-1' }, NOW);
+  assert.deepEqual(keys(d), ['drawingJobs', 'atCustomer', 'myDrawings', 'approvedDrawings', 'sla']);
+  assert.deepEqual(ids(d, 'drawingJobs').sort(), [mine.id, open.id, pricing.id].sort());
+  // Yöneticinin kendi "Sıra bende" sayfası değişmedi: çizim işleri kuyruğu yok, fiyat onayı var
+  const a = queuesFor(list, { review: true, send: true, drawing: true, userId: 'yonetici' }, NOW);
+  assert.equal(ids(a, 'drawingJobs'), null);
+  assert.deepEqual(ids(a, 'priceApproval'), [pricing.id]);
+});
+
 test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\'sızlar sonda', () => {
   const later = row({ drawingTrack: 'GEREKLI', slaDeadline: h(30) });
   const late = row({ drawingTrack: 'GEREKLI', slaDeadline: h(-2) });

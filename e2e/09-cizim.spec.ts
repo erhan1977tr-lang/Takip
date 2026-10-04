@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
 
 // Aşama 4: çizim taslağa yüklenir (çoklu dosya, virüs taraması); "Kontrol Et" ekranındaki "Müşteriye gönder" onaylı
 // ikinci adımdır (karar 84: sipariş sayfasından gönderilemez; sunucu kontrol kanıtı ister);
@@ -103,4 +103,66 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await cust.goto(`/siparisler/${id}`);
   await cust.getByRole('button', { name: 'Bu çizimi onayla' }).click();
   await expect(cust.getByText(/Çizimi onayladınız|üretime alındı/)).toBeVisible();
+});
+
+test('yönetici: soldaki "Çizim Ekibi → Çizim Paneli" çizim ekibinin panelini açar (tam firma adlarıyla); çizim ekibi maskeli görür; öbür roller açamaz', async ({ browser }) => {
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  // Menü: "Çizim Ekibi" bölümü ve altında "Çizim Paneli"; yöneticinin kendi sayfası "Siparişler" olarak kalır
+  await expect(admin.locator('.sidebar .nav-section', { hasText: 'Çizim Ekibi' })).toBeVisible();
+  const link = admin.locator('.sidebar').getByRole('link', { name: 'Çizim Paneli' });
+  await expect(link).toHaveAttribute('href', '/siparisler?panel=cizim');
+  await expect(admin.getByRole('heading', { name: 'Siparişler', exact: true })).toBeVisible();
+  await expect(admin.locator('.sidebar a.active')).toHaveText('Siparişler');
+  await link.click();
+  await expect(admin).toHaveURL(/\/siparisler\?panel=cizim$/);
+  await expect(admin.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
+  await expect(admin.locator('.sidebar a.active')).toHaveText('Çizim Paneli');
+
+  // Çizim ekibinin bölümleri (ekibin tamamı için); yöneticinin fiyat / profil kuyrukları, uyarıları ve silinenler listesi burada yok
+  const titles = await admin.locator('main .card-head h2').allTextContents();
+  for (const t of ['Yapılacak çizimler', 'Onay bekleyen çizimler', 'Müşteri tarafından onaylanmış çizimler']) expect(titles.some((x) => x.includes(t)), t).toBe(true);
+  for (const t of ['Fiyat onayı bekleyen teklifler', 'Yeni siparişler', 'Teklif hazırlanacaklar', 'Profil', 'Benim çizimlerim', 'Üretimdeki siparişler']) expect(titles.some((x) => x.includes(t)), t).toBe(false);
+  await expect(admin.locator('main .alert')).toHaveCount(0);
+
+  // Aynı veri: yöneticinin panelindeki siparişler çizim ekibinin gördükleriyle aynı; sekmeler panelde kalır
+  const nos = async (p: typeof admin) => (await p.locator('main a.order-no').allTextContents()).sort();
+  await admin.locator('.tabs').getByRole('link', { name: 'Tüm aktif siparişler' }).click();
+  await expect(admin).toHaveURL(/\/siparisler\?panel=cizim&view=all$/);
+  await expect(admin.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
+  const drawer = await as(browser, DRAWER, TEAM_PW);
+  await drawer.goto('/siparisler?view=all');
+  const seen = await nos(admin);
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen).toEqual(await nos(drawer));
+  // Yöneticinin kendi "tüm aktif" listesi daha geniştir (çizimsiz siparişler de) — yetkisi daralmadı
+  await admin.goto('/siparisler?view=all');
+  expect((await nos(admin)).length).toBeGreaterThan(seen.length);
+
+  // Firma adı: yönetici tam ad, çizim ekibi maskeli (sayfanın ham yanıtında da)
+  await admin.goto('/siparisler?panel=cizim&view=all');
+  await expect(admin.locator('main td.mono', { hasText: 'Ünsal Cam' }).first()).toBeVisible();
+  for (const url of ['/siparisler?view=all', '/siparisler?panel=cizim&view=all', '/siparisler?panel=cizim']) {
+    const html = await (await drawer.request.get(url)).text();
+    expect(html, url).not.toContain('Ünsal Cam');
+    if (url.includes('view=all')) expect(html, url).toContain('Üns**********');
+  }
+  // Çizim ekibinin kendi paneli ve menüsü değişmedi
+  await drawer.goto('/siparisler');
+  await expect(drawer.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
+  await expect(drawer.locator('.card-head h2', { hasText: 'Benim çizimlerim' })).toBeVisible();
+  await expect(drawer.locator('.sidebar .nav-section', { hasText: 'Çizim Ekibi' })).toHaveCount(0);
+  await expect(drawer.locator('.sidebar').getByRole('link', { name: 'Çizim Paneli' })).toHaveCount(0);
+  await drawer.context().close();
+  await admin.context().close();
+
+  // Satış, denetimci ve müşteri: çizim yetkisi yok — parametre yok sayılır, kendi sayfaları açılır; menülerinde bağlantı yok
+  for (const [email, pw, title] of [['fiyat-satis@e2e.test', TEAM_PW, 'Satış Paneli'], ['denetim@e2e.test', INSPECTOR_PW, 'Tüm siparişler (denetim)'], [CUSTOMER, CUST_PW, 'Ünsal Cam — Siparişlerim']] as const) {
+    const p = await as(browser, email, pw);
+    await p.goto('/siparisler?panel=cizim');
+    await expect(p.getByRole('heading', { name: title, exact: true }), email).toBeVisible();
+    await expect(p.getByRole('heading', { name: 'Çizim Paneli' }), email).toHaveCount(0);
+    await expect(p.locator('.card-head h2', { hasText: 'Yapılacak çizimler' }), email).toHaveCount(0);
+    await expect(p.locator('.sidebar').getByRole('link', { name: 'Çizim Paneli' }), email).toHaveCount(0);
+    await p.context().close();
+  }
 });

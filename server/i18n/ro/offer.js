@@ -96,6 +96,7 @@ export default {
     copyPieceTitle: 'Adaugă încă o bucată identică (cu prelucrările ei)',
     onePrice: 'Aplică același preț la toate rândurile',
     onePriceHint: 'Când este bifat, prețul pe m² scris într-un rând de sticlă se scrie în toate rândurile de sticlă pe m². CNC, găuri, ambalaj și rândurile gratuite nu se schimbă.',
+    onePriceHintAdmin: 'Când este bifat, prețul client pe m² scris într-un rând de sticlă se scrie în toate rândurile de sticlă pe m². Prețurile de vânzare, CNC, găurile, ambalajul și rândurile gratuite nu se schimbă.',
     addGlass: 'Adaugă sticlă',
     cannotSend: 'Oferta nu poate fi trimisă în această formă.',
     canSaveDraft: 'O puteți salva ca ciornă.',

@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { requireUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { NAV, type NavDef, type NavItem } from '@/lib/roles';
@@ -38,7 +39,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         <div className="side-head"><span className="side-product">{t('common.brand')}</span><VersionTag /></div>
         <BrandLogo version={false} />
         <div className="tag">{t('common.taglineUpper')}</div>
-        <NavLinks items={nav} variant="side" />
+        {/* Suspense: NavLinks adres sorgusunu okur (useSearchParams) */}
+        <Suspense fallback={null}><NavLinks items={nav} variant="side" /></Suspense>
         <div className="side-foot">
           Developed by <a href="https://gkhdigital.ro" target="_blank" rel="noopener noreferrer">gkhdigital.ro</a> and <a href="https://gkhdigital.com" target="_blank" rel="noopener noreferrer">gkhdigital.com</a>
         </div>
@@ -73,7 +75,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             </form>
           </div>
         </header>
-        <NavLinks items={nav} variant="mobile" />
+        <Suspense fallback={null}><NavLinks items={nav} variant="mobile" /></Suspense>
         <main className="content">{children}</main>
         <AutoRefresh />
       </div>

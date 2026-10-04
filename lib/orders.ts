@@ -4,13 +4,15 @@ import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
-import { orderScope as scopeFor } from '../server/orders/scope.js';
+import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
   return scopeFor(user) as Prisma.OrderWhereInput;
 }
+/** Çizim ekibinin gördüğü siparişler — yöneticinin "Çizim Paneli" de aynı kapsamı kullanır (orderScope'a EK koşul). */
+export const drawingScope = DRAWING_SCOPE as Prisma.OrderWhereInput;
 
 export function customerLabel(user: CurrentUser, name: string): string {
   return canSeeCustomerName(user.appRole) ? name : maskName(name);

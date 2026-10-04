@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { assignPieceBases, atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
+import { applyLinePrice, assignPieceBases, atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
 import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
 import { ExcelImport } from './ExcelImport';
@@ -80,17 +80,14 @@ export function OfferEditor(props: {
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   /**
-   * "Tek fiyatı tüm satırlara uygula" (satış; yalnızca ekrandaki düzenleme kolaylığı): işaretliyken bir m² cam satırına
-   * yazılan satış fiyatı bedelsiz olmayan tüm m² cam satırlarına yazılır. CNC, delik ve adetli satırlar (sandık parası)
-   * değişmez. Fiyat kuralı, doğrulama ve kayıt aynıdır (sunucu her satırı yine tek tek değerlendirir).
+   * "Tek fiyatı tüm satırlara uygula" (yalnızca ekrandaki düzenleme kolaylığı): işaretliyken bir m² cam satırına yazılan
+   * fiyat bedelsiz olmayan tüm m² cam satırlarına yazılır. CNC, delik ve adetli satırlar (sandık parası) değişmez.
+   * Satışta satış fiyatı, yöneticide MÜŞTERİ fiyatı (satış fiyatına dokunulmaz) — kural tek: applyLinePrice.
+   * Fiyat kuralı, doğrulama ve kayıt aynıdır (sunucu her satırı yine tek tek değerlendirir).
    */
   const [onePrice, setOnePrice] = useState(false);
-  const setUnitPrice = (l: Line, raw: string) => {
-    const unitPrice = raw.replace(/[^\d.,]/g, '');
-    const glass = (x: Line) => x.kind === 'CAM' && x.unit === 'm2';
-    if (onePrice && glass(l)) setLines((ls) => ls.map((x) => (x.key === l.key || (glass(x) && !x.free) ? { ...x, unitPrice } : x)));
-    else set(l.key, { unitPrice });
-  };
+  const setPrice = (l: Line, field: 'unitPrice' | 'offerPrice', raw: string) =>
+    setLines((ls) => applyLinePrice(ls, l.key, field, raw.replace(/[^\d.,]/g, ''), onePrice));
   const glassPrices = useMemo(() => new Map(Object.entries(props.pricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.pricing]);
   const customerGlass = useMemo(() => new Map(Object.entries(props.customerPricing?.glass ?? {}).map(([k, v]) => [upper(k), v])), [props.customerPricing]);
   /**
@@ -294,7 +291,7 @@ export function OfferEditor(props: {
                     ) : (
                       <>
                         <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
-                          onChange={(e) => setUnitPrice(l, e.target.value)}
+                          onChange={(e) => setPrice(l, 'unitPrice', e.target.value)}
                           aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
                         {l.free && <input type="hidden" name="l_price" value="0" />}
                       </>
@@ -308,7 +305,7 @@ export function OfferEditor(props: {
                   {adminMode && (
                     <td className="c-price">
                       <input name="l_oprice" inputMode="decimal" value={l.free ? '' : l.offerPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
-                        onChange={(e) => set(l.key, { offerPrice: e.target.value.replace(/[^\d.,]/g, '') })}
+                        onChange={(e) => setPrice(l, 'offerPrice', e.target.value)}
                         aria-label={sub ? interpolate(m.editor.subOfferPriceAria, { kind }) : m.cols.offerPrice} />
                       {l.free && <input type="hidden" name="l_oprice" value="0" />}
                     </td>
@@ -343,7 +340,7 @@ export function OfferEditor(props: {
           {interpolate(m.editor.twoTotals, { sales: fmt(totals.amount), offer: fmt(offerTot.amount), diff: fmt(offerTot.amount - totals.amount), cur: props.currency })}
         </p>
       )}
-      {/* Araç çubuğu: satır ekleme · Excel'den aktar · tek fiyat (satış) | tabloyu temizle (satış) */}
+      {/* Araç çubuğu: satır ekleme · Excel'den aktar (satış) · tek fiyat (satış: satış fiyatı; yönetici: müşteri fiyatı) | tabloyu temizle (satış) */}
       <div className="offer-tools">
         <div className="group">
           <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
@@ -354,14 +351,10 @@ export function OfferEditor(props: {
               <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
             </>
           )}
-          {props.mode === 'sales' && (
-            <>
-              <span className="sep" aria-hidden="true" />
-              <label className="check" title={m.editor.onePriceHint}>
-                <input type="checkbox" checked={onePrice} onChange={(e) => setOnePrice(e.target.checked)} /> {m.editor.onePrice}
-              </label>
-            </>
-          )}
+          <span className="sep" aria-hidden="true" />
+          <label className="check" title={adminMode ? m.editor.onePriceHintAdmin : m.editor.onePriceHint}>
+            <input type="checkbox" checked={onePrice} onChange={(e) => setOnePrice(e.target.checked)} /> {m.editor.onePrice}
+          </label>
         </div>
         {props.mode === 'sales' && <button type="button" className="btn btn-danger" onClick={resetTable}>{m.editor.reset}</button>}
       </div>

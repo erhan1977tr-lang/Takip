@@ -510,3 +510,26 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (!closed && can(role, 'FILE_UPLOAD')) a.push('add_file');
   return a;
 }
+
+// ---------- teklif tablosu: "Tek fiyatı tüm satırlara uygula" ----------
+/** Tek fiyatın uygulandığı satır türü: m² ile fiyatlanan cam. CNC, delik ve adetle fiyatlanan satırlar (sandık parası vb.) değildir. */
+export const isM2Glass = (l) => l.kind === 'CAM' && l.unit === 'm2';
+
+/**
+ * Teklif tablosunda bir satırın fiyat alanını yazar (yalnızca ekrandaki düzenleme; kayıtta sunucu her satırı yine tek tek
+ * doğrular). all = "Tek fiyatı tüm satırlara uygula" işaretli: fiyat bir m² cam satırına yazıldıysa bedelsiz OLMAYAN bütün
+ * m² cam satırlarına da yazılır. CNC, delik, adetli satırlar ve bedelsiz satırlar değişmez; öbür fiyat alanına dokunulmaz.
+ * Satış kendi fiyatını (unitPrice), yönetici müşteri fiyatını (offerPrice) yazar — aynı kural, tek işlev.
+ * @template {{ key: number, kind: string, unit: string, free: boolean }} L
+ * @param {L[]} lines
+ * @param {number} key                         fiyatın yazıldığı satır
+ * @param {'unitPrice' | 'offerPrice'} field
+ * @param {string} value
+ * @param {boolean} [all]
+ * @returns {L[]}
+ */
+export function applyLinePrice(lines, key, field, value, all = false) {
+  const target = lines.find((l) => l.key === key);
+  const spread = all && !!target && isM2Glass(target);
+  return lines.map((l) => (l.key === key || (spread && isM2Glass(l) && !l.free) ? { ...l, [field]: value } : l));
+}

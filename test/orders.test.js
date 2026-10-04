@@ -317,3 +317,41 @@ test('maskeleme: denetimci tam adı görür, satış ve çizim görmez', () => {
   assert.equal(maskName('GLASSANDMORE'), 'GLA**********');
   assert.equal(maskName('ALEGRAD'), 'ALE**********');
 });
+
+// ---------- "Tek fiyatı tüm satırlara uygula" (satış: satış fiyatı · yönetici: müşteri fiyatı) ----------
+test('tek fiyat: yalnızca bedelsiz olmayan m² cam satırlarına; CNC, delik, sandık parası ve bedelsiz satırlar değişmez', async () => {
+  const { applyLinePrice, isM2Glass } = await import('../server/orders/rules.js');
+  const L = (key, kind, unit, o = {}) => ({ key, kind, unit, free: false, unitPrice: '30', offerPrice: '50', ...o });
+  const lines = [
+    L(1, 'CAM', 'm2'),
+    L(2, 'CNC', 'adet', { unitPrice: '5', offerPrice: '8' }),
+    L(3, 'DELIK', 'adet', { unitPrice: '2', offerPrice: '3' }),
+    L(4, 'CAM', 'm2', { offerPrice: '55' }),
+    L(5, 'CAM', 'm2', { free: true, offerPrice: '0' }), // bedelsiz cam
+    L(6, 'CAM', 'adet', { unitPrice: '100', offerPrice: '120' }), // sandık parası (adetle fiyatlanan satır)
+    L(7, 'CAM', 'm2', { comp: true, offerPrice: '66,96' }), // ücretli TELAFİ camı: sıradan cam satırıdır
+  ];
+  assert.deepEqual(lines.filter(isM2Glass).map((l) => l.key), [1, 4, 5, 7]);
+  const prices = (ls, f) => ls.map((l) => l[f]);
+
+  // Yönetici: müşteri fiyatı — uygun cam satırlarının hepsine; satış fiyatına (maliyet) hiç dokunulmaz
+  const admin = applyLinePrice(lines, 4, 'offerPrice', '61,5', true);
+  assert.deepEqual(prices(admin, 'offerPrice'), ['61,5', '8', '3', '61,5', '0', '120', '61,5']);
+  assert.deepEqual(prices(admin, 'unitPrice'), prices(lines, 'unitPrice'));
+  assert.deepEqual(admin.map((l) => l.free), lines.map((l) => l.free));
+  assert.equal(admin[6].comp, true);
+  // Satış: aynı kural, satış fiyatı alanında; müşteri fiyatı değişmez
+  const sales = applyLinePrice(lines, 1, 'unitPrice', '44', true);
+  assert.deepEqual(prices(sales, 'unitPrice'), ['44', '5', '2', '44', '30', '100', '44']);
+  assert.deepEqual(prices(sales, 'offerPrice'), prices(lines, 'offerPrice'));
+
+  // İşaretli değilken yalnızca yazılan satır
+  assert.deepEqual(prices(applyLinePrice(lines, 4, 'offerPrice', '70', false), 'offerPrice'), ['50', '8', '3', '70', '0', '120', '66,96']);
+  // İşaretliyken CNC / delik / sandık parası satırına yazılan fiyat yalnızca o satıra yazılır
+  for (const key of [2, 3, 6]) {
+    const r = applyLinePrice(lines, key, 'offerPrice', '9', true);
+    assert.deepEqual(r.filter((l, i) => l.offerPrice !== lines[i].offerPrice).map((l) => l.key), [key]);
+  }
+  // Girdi değişmez
+  assert.equal(lines[0].offerPrice, '50');
+});

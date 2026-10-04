@@ -1,5 +1,7 @@
 export default {
   operations: 'Operasyon',
+  drawingTeam: 'Çizim Ekibi',
+  drawingPanel: 'Çizim Paneli',
   accounting: 'Muhasebe',
   profileReceivables: 'Profil Tahsilat',
   glassReceivables: 'Cam Tahsilat',

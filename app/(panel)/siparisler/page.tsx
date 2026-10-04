@@ -5,7 +5,7 @@ import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict } from '@/lib/i18n';
 import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
-import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
+import { customerLabel, drawingScope, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtDateTime, fmtMonth, isoDay } from '@/lib/format';
 import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
@@ -30,6 +30,8 @@ const listInclude = {
 type Row = Prisma.OrderGetPayload<{ include: typeof listInclude }>;
 
 type SP = Record<string, string | undefined>;
+/** /siparisler?panel=cizim — çizim ekibinin paneli (yönetici menüsü: Çizim Ekibi → Çizim Paneli; lib/roles.ts) */
+const DRAWING_PANEL = 'cizim';
 
 type Noun = keyof Dict['orders']['units'];
 /** Sayı + birim: "3 çizim". Romencede birim sayıya göre çekimlenir (1 desen, 2 desene, 20 de desene). */
@@ -284,9 +286,23 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   // "Sıra bende" yalnızca işlem yapan rollerde; denetimci doğrudan tüm aktif siparişleri görür
   const hasTurn = userCan(user, 'ORDER_REVIEW') || userCan(user, 'DRAWING_WORK');
   const view = sp.view ?? (hasTurn ? 'work' : 'all');
+  // Çizim Paneli, çizim ekibinin bu sayfasıdır. Çizim yetkisi (DRAWING_WORK) olan ama kendi paneli başka olan kullanıcı
+  // (yönetici) soldaki "Çizim Ekibi → Çizim Paneli" ile aynı paneli açar (?panel=cizim): aynı kapsam, aynı kuyruklar,
+  // ekibin tamamı için. Yetkisi olmayan rollerde (satış, denetimci, müşteri) parametre yok sayılır. Satırlar yine
+  // bakan kullanıcıya göre temizlenir: yönetici tam firma adını, çizim ekibi maskeli adı görür.
+  const teamPanel = sp.panel === DRAWING_PANEL && userCan(user, 'DRAWING_WORK') && userCan(user, 'ORDER_REVIEW');
+  /** Bu sayfanın bağlantıları: yöneticinin Çizim Paneli'nde panel parametresi korunur */
+  const here = (params: Record<string, string | undefined> = {}, hash = '') => {
+    const p = new URLSearchParams();
+    if (teamPanel) p.set('panel', DRAWING_PANEL);
+    for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
+    const qs = p.toString();
+    return `/siparisler${qs ? `?${qs}` : ''}${hash}`;
+  };
   const rows = sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
+      ...(teamPanel ? drawingScope : {}),
       ...searchWhere(sp.q),
       status: view === 'archive' ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },
     },
@@ -296,18 +312,21 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   }));
 
   const role = user.appRole;
-  const queues = queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK'), userId: user.id });
+  const queues = teamPanel
+    ? queuesFor(rows, { review: false, send: false, drawing: true, allDrawers: true })
+    : queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK'), userId: user.id });
   // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
   // Yöneticiye: bekleyen önemli kararlar (ör. satışçı liste fiyatını değiştirdi) — girişte ilk bu görünür
-  const alerts = userCan(user, 'ALERT_VIEW') ? await db.adminAlert.count({ where: { resolvedAt: null } }) : 0;
-  const infected = userCan(user, 'SETTINGS_MANAGE')
+  // (Çizim Paneli'nde gösterilmez: o panel çizim ekibinin gördüğüyle aynıdır)
+  const alerts = !teamPanel && userCan(user, 'ALERT_VIEW') ? await db.adminAlert.count({ where: { resolvedAt: null } }) : 0;
+  const infected = !teamPanel && userCan(user, 'SETTINGS_MANAGE')
     ? (await db.orderFile.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawing.count({ where: { scanStatus: 'INFECTED' } })) + (await db.drawingFile.count({ where: { scanStatus: 'INFECTED' } }))
     : 0;
 
   return (
     <>
       <div className="page-head">
-        <h1>{role === 'CIZIM' ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
+        <h1>{role === 'CIZIM' || teamPanel ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
       {alerts > 0 && (
         <div className="alert alert-warn">
@@ -320,11 +339,12 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
         </div>
       )}
       <div className="tabs">
-        {hasTurn && <Link href="/siparisler" className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
-        <Link href={hasTurn ? '/siparisler?view=all' : '/siparisler'} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
-        <Link href="/siparisler?view=archive" className={view === 'archive' ? 'active' : ''}>{t('orders.tabs.archive')}</Link>
+        {hasTurn && <Link href={here()} className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
+        <Link href={here({ view: hasTurn ? 'all' : undefined })} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
+        <Link href={here({ view: 'archive' })} className={view === 'archive' ? 'active' : ''}>{t('orders.tabs.archive')}</Link>
       </div>
       <form className="toolbar">
+        {teamPanel && <input type="hidden" name="panel" value={DRAWING_PANEL} />}
         <input type="hidden" name="view" value={view} />
         <input type="search" name="q" placeholder={t('orders.internal.searchPlaceholder')} defaultValue={sp.q ?? ''} />
         <button className="btn" type="submit">{t('common.search')}</button>
@@ -345,13 +365,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
               // onay zamanına göre en yeni / en eski. Satırlar bu kullanıcı için zaten temizlenmiş (maskeli firma adı).
               const oldest = sp.onay === 'eski';
               const list = approvedDrawingList(q.rows, { day: sp.yukleme, oldest, dayOf: isoDay });
-              const href = (old: boolean) => {
-                const p = new URLSearchParams();
-                if (old) p.set('onay', 'eski');
-                if (list.day) p.set('yukleme', list.day);
-                const qs = p.toString();
-                return `/siparisler${qs ? `?${qs}` : ''}#onayli-cizimler`;
-              };
+              const href = (old: boolean) => here({ onay: old ? 'eski' : undefined, yukleme: list.day ?? undefined }, '#onayli-cizimler');
               return (
                 <Section key={q.key} id="onayli-cizimler" title={t('orders.internal.sections.approvedDrawings.title')} count={list.rows.length}>
                   <div className="card-tools">
@@ -359,6 +373,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                     <Link href={href(false)} className={oldest ? '' : 'active'} aria-current={oldest ? undefined : 'true'}>{t('orders.internal.sortNewest')}</Link>
                     <Link href={href(true)} className={oldest ? 'active' : ''} aria-current={oldest ? 'true' : undefined}>{t('orders.internal.sortOldest')}</Link>
                     <form action="/siparisler#onayli-cizimler" className="card-filter">
+                      {teamPanel && <input type="hidden" name="panel" value={DRAWING_PANEL} />}
                       {oldest && <input type="hidden" name="onay" value="eski" />}
                       <label htmlFor="onayli-yukleme">{t('orders.internal.shipFilter')}</label>
                       <select id="onayli-yukleme" name="yukleme" defaultValue={list.day ?? ''}>
@@ -386,7 +401,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           <InternalTable user={user} rows={rows} empty={t('orders.internal.sections.none')} />
         </Section>
       )}
-      {userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} />}
+      {!teamPanel && userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} />}
     </>
   );
 }
