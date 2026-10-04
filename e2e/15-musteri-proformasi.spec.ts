@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Müşteri düzeyinde yükleme öncesi proforma (Aşama 7D-2, karar 100): Muhasebe → Cam Tahsilat → "Müşteri proforması".
 //  - müşteri → gelecekteki yükleme günleri → önizleme (gün → sipariş → satır, toplamlar, kur) → "Proforma oluştur"
@@ -169,7 +169,7 @@ test('yetkisiz roller: sayfa açılmaz, taklit form gönderimiyle parti oluştur
   const data = { customerId: firmId, day: key(D1), fxRate: '', key: keyValue };
   const db = await prisma();
   const count = () => db.billingBatch.count({ where: { customerId: firmId } });
-  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     await p.goto(previewUrl());
     await expect(p, `${who}: sayfa`).toHaveURL(/\/siparisler$/);

@@ -32,7 +32,8 @@ export default async function DepotPage({ params, searchParams }: { params: Prom
   const err = sp.e === 'file' ? t('profile.errors.deliveryFile')
     : sp.e === 'type' ? t('profile.errors.deliveryFileType', { name: sp.n ?? '' })
       : sp.e === 'many' ? t('profile.depot.tooMany')
-        : sp.e ? t('order.errors.notAllowed') : null;
+        : sp.e === 'limit' ? t('profile.depot.limit')
+          : sp.e ? t('order.errors.notAllowed') : null;
   return (
     <AuthCard next={here}>
       <h1 style={{ fontSize: 20, margin: '8px 0 4px' }}>{t('profile.depot.title')}</h1>

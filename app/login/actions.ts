@@ -27,14 +27,9 @@ export async function loginAction(formData: FormData) {
 
   const user = email ? await db.user.findUnique({ where: { email } }) : null;
 
-  // Şifresi henüz belirlenmemiş, daveti gönderilmiş kullanıcı → ilk kurulum ekranı
-  if (user && user.isActive && !user.passwordHash) {
-    const invite = await db.userInvite.findFirst({
-      where: { userId: user.id, usedAt: null, sentAt: { not: null } },
-    });
-    if (invite) redirect(`/setup?email=${encodeURIComponent(email)}`);
-  }
-
+  // Dışarıya tek bir sonuç döner (SEC-10): hesap yok, pasif, şifresi henüz belirlenmemiş (davet bekliyor) ya da şifre
+  // yanlış — hepsi aynı "e-posta veya şifre hatalı" yanıtıdır; davet bekleyen hesap girişten ayırt edilemez.
+  // İlk giriş (davet kodu) giriş ekranındaki bağlantıdan ve davet e-postasındaki adresten /setup ekranında yapılır.
   if (!user || !user.isActive || !user.passwordHash) {
     await burnPasswordCheck(password);
     await recordFailure('LOGIN', email, ip);

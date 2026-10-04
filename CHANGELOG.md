@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.46.0 — 04.10.2026
+
+Güvenlik sertleştirmesi (3.45.0 güvenlik denetiminin onaylanan maddeleri). İş akışları, fiyatlar, FGO belgeleri değişmedi.
+
+- **Giriş sınırı atlatılamaz**: istemcinin gönderdiği "gerçek IP" başlıklarına (CF-Connecting-IP, X-Real-IP…) artık
+  güvenilmiyor; adres yalnızca sunucudaki Caddy'den alınır. Hatalı giriş sınırı ve denetim kaydı aynı adresi kullanır.
+- **Şifre**: yeni şifreler en az **10 karakter** (uzun bir parola / birkaç kelime kullanılabilir; harf + rakam zorunluluğu
+  kalktı). Mevcut şifreler çalışmaya devam eder; kimse zorla sıfırlanmaz.
+- **İlk giriş**: giriş ekranı artık davet bekleyen hesabı ayırt etmez (hesap var mı yok mu anlaşılmasın). İlk giriş,
+  davet e-postasındaki bağlantıdan ya da giriş ekranındaki "E-postanızdaki doğrulama koduyla şifrenizi belirleyin"
+  bağlantısından yapılır.
+- **Oturum**: 7 gün hiç kullanılmayan oturum kapanır (en uzun süre yine 30 gün). Eski oturum kayıtları kendiliğinden temizlenir.
+- **Dosya yükleme sınırları**: bir seferde en çok 20 dosya; sipariş başına toplam 2 GB; müşteri firması saatte 1 GB / 120
+  dosya, günde 3 GB; sunucuda boş alan 1 GB'ın altına inecekse yeni dosya kabul edilmez (hiçbir dosya silinmez).
+- **Gizlilik**: satış ve çizim ekibine firmanın fatura e-postası ve kur politikası gitmez (EUR teklifteki kur notu bu
+  rollerde görünmez); müşteriye özel kur yüzdesi ve fiyat tablosu bağlantısı yönetici dışında kimseye gitmez. Müşterinin
+  sandık satırında başka müşterinin siparişinden iz bulunmaz.
+- **Mali belge PDF'i**: kullanıcı başına 5 dakikada 30 istek; aynı belge 5 dakika içinde yeniden açılınca FGO'ya gidilmez.
+- **Dil**: paneldeki dil seçimi aynı şekilde çalışır; kullanıcının dili artık yalnızca bu seçimle (ve girişte) kaydedilir.
+- **Yedek şifreleme (sunucu)**: Google Drive'a giden yedekler şifrelenebilir — `takip yedek-sifreleme kur`. Varsayılan
+  kapalıdır; anahtarı sunucu dışına kaydettiğinizi onaylamadan ve şifreli yedek Drive'dan çözülerek geri yüklenmeden
+  açılmaz. Şifresiz eski yedekler silinmez. Ayrıntı: `deploy/README.md`.
+
 ## 3.45.0 — 04.10.2026
 
 - **Cam ayrılınca toplam değişmez**: işlem (CNC / delik) eklemek için adetli cam satırı ayrıldığında (5 → 4 + 1) toplam m²,

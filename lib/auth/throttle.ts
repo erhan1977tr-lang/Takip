@@ -2,13 +2,18 @@
 import { headers } from 'next/headers';
 import { db } from '../db';
 import { throttleState, WINDOW_MS } from '../../server/auth/throttle.js';
-import { clientIp } from '../../server/i18n/detect.js';
+import { clientIp } from '../../server/security/client-ip.js';
+import { getEnv } from '../env';
 
 export type ThrottleKind = 'LOGIN' | 'CODE';
 
+/**
+ * İsteğin IP adresi — giriş / kod sınırı, depo bağlantısı sınırı ve denetim kaydının ORTAK kaynağı. Yalnızca güvenilen
+ * vekilin (Caddy) yazdığı adres kullanılır; istemcinin gönderdiği CF-Connecting-IP / X-Real-IP başlıkları sayılmaz.
+ */
 export async function requestIp(): Promise<string> {
   const h = await headers();
-  return clientIp((k: string) => h.get(k)) ?? 'unknown';
+  return clientIp((k: string) => h.get(k), { source: getEnv().CLIENT_IP_SOURCE }) ?? 'unknown';
 }
 
 export async function throttleCheck(email: string, ip: string): Promise<{ locked: boolean; minutes?: number }> {

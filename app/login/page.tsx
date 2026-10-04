@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import { homeFor } from '@/lib/roles';
@@ -38,8 +39,9 @@ export default async function LoginPage({
         </div>
         <div className="field">
           <label htmlFor="password">{t('auth.login.password')}</label>
-          <input id="password" name="password" type="password" autoComplete="current-password" />
-          <div className="hint">{t('auth.login.passwordHint')}</div>
+          <input id="password" name="password" type="password" autoComplete="current-password" required />
+          {/* İlk giriş / şifre sıfırlama: herkese aynı görünen sabit bağlantı (hesabın durumunu açığa vurmaz — SEC-10) */}
+          <div className="hint">{t('auth.login.passwordHint')} <Link href="/setup">{t('auth.login.setupLink')}</Link></div>
         </div>
         {error && <div className="alert alert-error">{error}</div>}
         <button type="submit" className="btn btn-primary btn-block">{t('auth.login.submit')}</button>

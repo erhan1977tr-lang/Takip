@@ -427,5 +427,6 @@ export default {
     invalid: 'Bağlantı geçersiz ya da süresi dolmuş.',
     invalidHint: 'Bu bağlantı yenilenmiş, sipariş iptal edilmiş ya da süresi dolmuş olabilir. Lütfen GKH ile iletişime geçin.',
     tooMany: 'Çok fazla deneme. Lütfen biraz sonra tekrar deneyin.',
+    limit: 'Dosya şu anda yüklenemedi: bu sipariş için yükleme sınırı doldu ya da sunucuda alan yetersiz. Lütfen GKH ile iletişime geçin.',
   },
 };

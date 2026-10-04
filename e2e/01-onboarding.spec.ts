@@ -13,13 +13,32 @@ test('yönetici komut satırından oluşturulur ve ilk girişte şifresini belir
   const code = /CODE=(\d{6})/.exec(out)?.[1];
   expect(code, out).toBeTruthy();
 
-  // Yanlış kod reddedilir
-  await page.goto('/login');
-  await page.fill('#email', ADMIN);
-  await page.click('button[type=submit]');
+  // SEC-10: giriş ekranı davet bekleyen hesabı ayırt etmez — var olmayan e-postayla AYNI yanıt, /setup'a geçiş yok
+  const GENERIC = 'E-posta veya şifre hatalı.';
+  for (const email of [ADMIN, 'boyle-biri-yok@e2e.test']) {
+    await page.goto('/login');
+    await page.fill('#email', email);
+    await page.fill('#password', 'herhangi-bir-sifre');
+    await page.click('button[type=submit]');
+    await expect(page.getByText(GENERIC), email).toBeVisible();
+    expect(new URL(page.url()).pathname, email).toBe('/login');
+    expect(new URL(page.url()).searchParams.get('error'), email).toBe('invalid');
+  }
+  // İlk giriş bağlantısı giriş ekranında herkese aynı görünür
+  await expect(page.getByRole('link', { name: 'E-postanızdaki doğrulama koduyla şifrenizi belirleyin' })).toHaveAttribute('href', '/setup');
+
+  // Yanlış kod reddedilir; var olmayan e-posta için de AYNI yanıt (davet var mı yok mu anlaşılmaz)
+  const WRONG = 'Doğrulama kodu hatalı, süresi dolmuş ya da geçersiz.';
+  await page.goto(`/setup?email=${encodeURIComponent(ADMIN)}`);
   await page.fill('#code', code === '000000' ? '111111' : '000000');
   await page.click('button[type=submit]');
-  await expect(page.getByText('Doğrulama kodu hatalı ya da geçersiz.')).toBeVisible();
+  await expect(page.getByText(WRONG)).toBeVisible();
+  await page.goto('/setup');
+  await page.fill('#email', 'boyle-biri-yok@e2e.test');
+  await page.fill('#code', '123456');
+  await page.click('button[type=submit]');
+  await expect(page.getByText(WRONG)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Şifrenizi belirleyin', exact: true })).toHaveCount(0);
 
   await firstLogin(page, ADMIN, code!, ADMIN_PW);
   await expect(page).toHaveURL(/\/siparisler$/);

@@ -45,7 +45,8 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip guncelle` | Yeni sürüm varsa beklemeden yayınla |
 | `takip yedek` | Hemen yedek al (veritabanı + dosyalar, Google Drive'a kopya) |
 | `takip restore yesterday` / `takip restore 2026-09-30` | O günün en son tam yedeğine geri dön (önce güvenlik yedeği; tarihi yazarak onay) |
-| `takip restore-test [TARİH]` | Yedeği canlıya dokunmadan geçici veritabanında dener |
+| `takip restore-test [TARİH]` | Yedeği canlıya dokunmadan geçici veritabanında dener (şifreleme açıksa Drive'daki şifreli kopyayı indirip çözerek) |
+| `takip yedek-sifreleme` | Google Drive kopyasının şifrelenmesi: durum · `kur` (anahtar + deneme + açma) · `yenile` (anahtar yenileme) · `kapat` |
 | `takip log` | Uygulamanın son günlük satırları |
 | `takip cache` | Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı (10 GB aşılırsa başarılı yayından sonra 7 günden eski önbellek silinir) |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
@@ -68,6 +69,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 ```
 /opt/takip/.env        ayarlar ve gizli anahtarlar (yalnızca bu sunucuda; kurulumda üretilir, chmod 600)
 /opt/takip/github-token  GitHub okuma anahtarı (chmod 600; uygulamanın ortamına girmez)
+/opt/takip/backup-key.txt  yedek şifreleme anahtarı (chmod 600; yalnızca şifreleme açıldıysa; kopyası SUNUCU DIŞINDA saklanır)
 /opt/takip/src         uygulamanın kaynağı (git)
 /opt/takip/backups     her gün 03:00 (Romanya): db-YYYY-MM-DD_HHMMSS.dump + dosyalar-YYYY-MM-DD_HHMMSS.tgz, son 14 çift;
                        yayın öncesi yedekler db-YYYYMMDD-HHMMSS-once-<commit>.dump (14 gün)
@@ -81,4 +83,26 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 - fail2ban: SSH'ye art arda hatalı girişleri engeller. Sistem güvenlik güncellemeleri otomatik.
 - Önerilen: SSH anahtarıyla girişe geçip root şifre girişini kapatmak.
 - Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da da son 14 çift. Kayıt: `/opt/takip/logs/backup.log`.
-- Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token ve rclone ayarı yedeğe girmez.
+- Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token, rclone ayarı ve yedek anahtarı yedeğe girmez.
+
+## Yedek şifreleme (Google Drive kopyası)
+
+Ayrıntı ve gerekçe: `docs/adr/0013-yedek-sifreleme.md`. Varsayılan **kapalıdır**; sunucu sahibi açar:
+
+```
+apt-get update && apt-get install -y age     # bir kez (yeni kurulumlarda install.sh kurar)
+takip yedek-sifreleme                        # durum: açık mı, Drive'da kaç şifreli / şifresiz yedek var
+takip yedek-sifreleme kur                    # anahtar üretir, ekrana yazar → SUNUCU DIŞINA kaydedin → dener → açar
+```
+
+- `kur` anahtarı ekrana **bir kez** yazar. Şifre yöneticinize kaydedin **ve** kâğıda yazdırıp saklayın; Google Drive'a,
+  e-postaya, sohbete, git'e koymayın. Kaydettiğinizi gizli anahtarın son 6 karakterini yazarak onaylarsınız.
+- Sonra tam bir şifreli yedek alınır, Drive'a yüklenir, Drive'dan indirilip çözülerek geçici veritabanına geri yüklenir.
+  Hepsi başarılıysa şifreleme açılır; değilse hiçbir şey değişmez.
+- Açıkken Drive'a yalnızca `….dump.age` / `….tgz.age` gider. Yerel yedekler (`/opt/takip/backups`, yalnızca root) açık kalır.
+- Anahtar sunucuda: `/opt/takip/backup-key.txt` (chmod 600). **Sunucu dışındaki kopyası kaybolursa ve sunucu da
+  kaybolursa şifreli yedekler açılamaz.**
+- Şifresiz eski Drive yedekleri silinmez; `takip yedek-sifreleme` kaç tane kaldığını gösterir.
+- Anahtar yenileme: `takip yedek-sifreleme yenile` (yeni anahtarı da sunucu dışına kaydedin; eskisini 14 gün daha saklayın).
+- Sunucu kaybolduysa: yeni sunucuya kurulum + rclone → anahtarı `/opt/takip/backup-key.txt` dosyasına yazın (`chmod 600`)
+  → `takip restore-test TARİH` → `takip restore TARİH` → `takip yedek-sifreleme kur`.

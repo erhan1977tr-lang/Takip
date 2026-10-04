@@ -8,7 +8,7 @@ import { cookies, headers } from 'next/headers';
 import type trDict from '@/server/i18n/tr/index.js';
 import { DICTS, INTL, LOCALE_COOKIE, isLocale, translate } from '@/server/i18n/index.js';
 import { clientIp, detectLocale } from '@/server/i18n/detect.js';
-import { secureCookies } from './env';
+import { getEnv, secureCookies } from './env';
 
 export type Locale = 'ro' | 'tr';
 export type Dict = typeof trDict;
@@ -28,9 +28,11 @@ export const getLocale = cache(async (): Promise<Locale> => {
   const c = (await cookies()).get(LOCALE_COOKIE)?.value;
   if (isLocale(c)) return c;
   const h = await headers();
+  // Cloudflare başlıkları yalnızca site bilinçli olarak Cloudflare arkasındaysa okunur (server/security/client-ip.js)
+  const source = getEnv().CLIENT_IP_SOURCE;
   return detectLocale({
-    country: h.get('cf-ipcountry'),
-    ip: clientIp((n) => h.get(n)),
+    country: source === 'cloudflare' ? h.get('cf-ipcountry') : null,
+    ip: clientIp((n) => h.get(n), { source }),
     acceptLanguage: h.get('accept-language'),
   });
 });

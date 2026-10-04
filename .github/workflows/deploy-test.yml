@@ -2,7 +2,7 @@ name: Sunucu kurulumu
 
 # deploy/install.sh ve deploy/takip.sh temiz bir Ubuntu makinede baştan sona denenir:
 # kurulum, HTTPS, ilk yönetici, yeniden kurulum (anahtarlar korunur), güncelleme, yalnızca belge değişikliği,
-# derlemesi bozuk sürümün yayınlanmaması ve yedek.
+# derlemesi bozuk sürümün yayınlanmaması, sahte IP başlıkları (Caddy), yedek ve şifreli yedek (age) + geri yükleme denemesi.
 on:
   push:
     branches: ['**']
@@ -118,12 +118,141 @@ jobs:
           # Aynı commit bir daha denenmez
           sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle | grep -q 'daha önce yayınlanamadı'
 
-      - name: Yedek
+      - name: Sahte IP başlıkları Caddy'de etkisiz (SEC-01)
         run: |
+          # İstemcinin yazdığı X-Forwarded-For / CF-Connecting-IP / CF-IPCountry / X-Real-IP uygulamaya ulaşmaz:
+          # giriş ekranının dili sahte "Türkiye" adresine göre değişmez (gerçek bağlantı yerel → tarayıcı dili: Romence)
+          curl -fsSk -H 'Accept-Language: ro' -H 'X-Forwarded-For: 78.180.10.10' -H 'CF-Connecting-IP: 78.180.10.10' \
+            -H 'CF-IPCountry: TR' -H 'X-Real-IP: 78.180.10.10' -H 'True-Client-IP: 78.180.10.10' "$SITE/login" -o login.html
+          grep -q '<html lang="ro"' login.html
+          # Karşı kontrol: aynı istek Türkçe tarayıcıyla Türkçe açılır (dil yalnızca güvenilir bilgilerden belirlenir)
+          curl -fsSk -H 'Accept-Language: tr' "$SITE/login" | grep -q '<html lang="tr"'
+
+      - name: Yedek (şifresiz — mevcut akış), Drive kopyası ve restore-test
+        run: |
+          # Google Drive yerine yerel bir klasör (rclone ":local:" uzak adresi); akış aynı: kopyala + md5 doğrula
+          sudo apt-get install -y -qq rclone age >/dev/null
+          echo 'BACKUP_REMOTE=:local:/tmp/takip-drive' | sudo tee -a /opt/takip/.env >/dev/null
+          day=$(TZ=Europe/Bucharest date +%F)
           sudo takip yedek
           sudo ls -la /opt/takip/backups
           sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
+          sudo ls /tmp/takip-drive/database | grep -qE '^db-.*\.dump$'
+          sudo ls /tmp/takip-drive/uploads | grep -qE '^dosyalar-.*\.tgz$'
+          sudo takip restore-test "$day" > rt.log 2>&1 || { cat rt.log; exit 1; }
+          cat rt.log
+          grep -q 'Kaynak             : LOCAL' rt.log
+          grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt.log
+          sudo takip yedek-sifreleme > enc.log 2>&1 || { cat enc.log; exit 1; }
+          cat enc.log
+          grep -q 'KAPALI' enc.log
           sudo systemctl list-timers --all | grep -E 'takip-(deploy|backup)'
+
+      - name: Şifreli yedek (age) — kurulum denemesi, gece yedeği, Drive'dan çözerek geri yükleme, anahtar kaybı, anahtar yenileme
+        run: |
+          day=$(TZ=Europe/Bucharest date +%F)
+          drive=/tmp/takip-drive
+          key=/opt/takip/backup-key.txt
+          plain_before=$(sudo find "$drive" -type f ! -name '*.age' | wc -l)
+          [ "$plain_before" = 2 ]
+
+          # 1. Onay verilmeden (etkileşimsiz) şifreleme AÇILMAZ; yedek akışı değişmez
+          if sudo takip yedek-sifreleme kur </dev/null >onaysiz.log 2>&1; then cat onaysiz.log; echo "onaysız açılmamalıydı"; exit 1; fi
+          sudo test ! -e /opt/takip/state/backup-encryption
+
+          # 2. Kurulum: anahtar üretilir, şifreli yedek alınır, Drive'dan indirilip ÇÖZÜLEREK geri yüklenir; ancak sonra açılır
+          sudo env TAKIP_ASSUME_KEY_SAVED=1 takip yedek-sifreleme kur > kur.log 2>&1 || { cat kur.log; exit 1; }
+          cat kur.log
+          grep -q 'Kaynak             : GOOGLE DRIVE (şifreli)' kur.log
+          grep -q '✔ Şifre çözüldü' kur.log
+          grep -q '✔ Veritabanı geçici veritabanına yüklendi' kur.log
+          grep -q '✔ Yedek şifreleme AÇIK' kur.log
+          [ "$(sudo stat -c '%a %U' "$key")" = "600 root" ]
+          sudo test -s /opt/takip/state/backup-encryption
+
+          # 3. Gece yedeği: Drive'a yalnızca şifreli kopya gider; şifresiz eski yedekler YERİNDE (silinmez)
+          sleep 1
+          sudo takip yedek
+          [ "$(sudo find "$drive" -type f ! -name '*.age' | wc -l)" = "$plain_before" ]
+          [ "$(sudo find "$drive" -type f -name '*.age' | wc -l)" = 4 ]
+          f=$(sudo sh -c "ls $drive/database/*.age" | tail -1)
+          u=$(sudo sh -c "ls $drive/uploads/*.age" | tail -1)
+          sudo head -c 21 "$f" | grep -q 'age-encryption.org/v1'
+          if sudo head -c 5 "$f" | grep -q PGDMP; then echo "Drive kopyası şifresiz"; exit 1; fi
+          # Yerel kopya açık (şifresiz) ve yalnızca root'un okuyabildiği klasörde durur
+          [ "$(sudo stat -c '%a' /opt/takip/backups)" = 700 ]
+          sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
+          if sudo sh -c 'ls /opt/takip/backups/*.age' 2>/dev/null | grep -q age; then echo "yerelde şifreli artık kalmamalı"; exit 1; fi
+
+          # 4. Anahtar hiçbir yere sızmamış: Drive, günlükler, durum dosyaları, yedek klasörü, komut çıktısı, yedeğin içi
+          if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
+          if grep -q 'AGE-SECRET-KEY' kur.log; then echo "anahtar çıktıda"; exit 1; fi
+          if sudo age -d -i "$key" "$u" | tar -tz | grep -q 'backup-key'; then echo "anahtar arşivde"; exit 1; fi
+
+          # 5. restore-test: Drive'daki ŞİFRELİ kopya indirilir, çözülür, arşiv okunur, geçici veritabanına yüklenir; geçici klasör kalmaz
+          sudo takip restore-test "$day" > rt2.log 2>&1 || { cat rt2.log; exit 1; }
+          cat rt2.log
+          grep -q 'GOOGLE DRIVE (şifreli)' rt2.log
+          grep -q '✔ Şifre çözüldü' rt2.log
+          grep -Eq 'Dosya arşivi okunuyor \([0-9]+ dosya\)' rt2.log
+          grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt2.log
+          [ -z "$(sudo find /opt/takip/backups -maxdepth 1 -name '.gecici.*')" ]
+          # Canlı veritabanı yerinde, geçici veritabanı silinmiş
+          curl -fsSk "$SITE/login" >/dev/null
+          # Bağımsız doğrulama (takip aracı olmadan, yalnızca age + anahtar): gerçek bir pg_dump ve okunabilir bir arşiv
+          sudo age -d -i "$key" "$f" | head -c 5 | grep -q PGDMP
+          sudo age -d -i "$key" "$u" | tar -tz >/dev/null
+
+          # 6. Sunucu tamamen kaybolmuş gibi: yerel yedek yok, şifreleme işareti yok — yalnızca sunucu DIŞINDA saklanan anahtar geri konmuş
+          sudo mkdir -p /root/kenar
+          sudo sh -c 'mv /opt/takip/backups/db-* /opt/takip/backups/dosyalar-* /root/kenar/'
+          sudo mv /opt/takip/state/backup-encryption /root/kenar/isaret
+          sudo cp -p "$key" /root/kenar/anahtar
+          sudo takip restore-test "$day" > rt3.log 2>&1 || { cat rt3.log; exit 1; }
+          grep -q 'GOOGLE DRIVE (şifreli)' rt3.log
+          grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt3.log
+
+          # 7. Anahtar yoksa: açık hata; hiçbir şey değişmez
+          sudo sh -c 'rm -f /opt/takip/backups/db-* /opt/takip/backups/dosyalar-*'
+          sudo rm -f "$key"
+          if sudo takip restore-test "$day" > rt4.log 2>&1; then cat rt4.log; echo "anahtarsız geri yüklenmemeliydi"; exit 1; fi
+          grep -q 'anahtar dosyası yok' rt4.log
+
+          # 8. Yanlış anahtar: gece yedeği "tamam" demez, Drive'a ŞİFRESİZ hiçbir şey gitmez, yerel yedek yine alınır
+          sudo sh -c "umask 077; age-keygen -o $key" 2>/dev/null
+          sudo mv /root/kenar/isaret /opt/takip/state/backup-encryption
+          n=$(sudo find "$drive" -type f | wc -l)
+          sleep 1
+          if sudo takip yedek > yk.log 2>&1; then cat yk.log; echo "yanlış anahtarla yedek tamam dememeliydi"; exit 1; fi
+          grep -q "Drive'a hiçbir şey gönderilmedi" yk.log
+          [ "$(sudo find "$drive" -type f | wc -l)" = "$n" ]
+          sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
+          if sudo takip restore-test "$day" > rt5.log 2>&1; then cat rt5.log; echo "yanlış anahtarla çözülmemeliydi"; exit 1; fi
+          grep -q 'şifresi çözülemedi' rt5.log
+          sudo cp -p /root/kenar/anahtar "$key"
+
+          # 9. Anahtar yenileme: yeni anahtar etkin; eski anahtar dosyada kalır, eski yedekler açılmaya devam eder
+          old=$(sudo cat /opt/takip/state/backup-encryption)
+          sleep 1
+          sudo env TAKIP_ASSUME_KEY_SAVED=1 takip yedek-sifreleme yenile > yenile.log 2>&1 || { cat yenile.log; exit 1; }
+          [ "$old" != "$(sudo cat /opt/takip/state/backup-encryption)" ]
+          [ "$(sudo grep -c AGE-SECRET-KEY "$key")" = 2 ]
+          [ "$(sudo stat -c '%a %U' "$key")" = "600 root" ]
+          sudo age -d -i "$key" "$f" | head -c 5 | grep -q PGDMP
+          newest=$(sudo sh -c "ls $drive/database/*.age" | tail -1)
+          if sudo age -d -i /root/kenar/anahtar "$newest" >/dev/null 2>&1; then echo "yeni yedek eski anahtarla açılmamalı"; exit 1; fi
+          sudo takip restore-test "$day" > rt6.log 2>&1 || { cat rt6.log; exit 1; }
+          grep -q 'GOOGLE DRIVE (şifreli)' rt6.log
+
+          # 10. Durum: açık; şifresiz eski yedekler sayılır ve yerinde durur
+          sudo takip yedek-sifreleme > enc2.log 2>&1 || { cat enc2.log; exit 1; }
+          cat enc2.log
+          grep -q 'AÇIK' enc2.log
+          grep -Eq "[0-9]+ şifreli, $plain_before ŞİFRESİZ" enc2.log
+          [ "$(sudo find "$drive" -type f ! -name '*.age' | wc -l)" = "$plain_before" ]
+          sudo takip durum > durum.log 2>&1 || true
+          grep -q 'Google Drive kopyası şifreli' durum.log
+          if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
 
       - name: Günlükler (hata varsa)
         if: failure()

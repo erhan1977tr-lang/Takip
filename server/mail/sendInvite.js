@@ -16,6 +16,7 @@ export async function sendInviteEmail(transport, cfg, { to, code, name, firmName
     language,
     ttlHours: cfg.inviteTtlHours,
     appUrl: cfg.appUrl,
+    email: to,
   });
   const info = await transport.sendMail({ from: cfg.from, to, subject, text, html });
   return { messageId: info && info.messageId };

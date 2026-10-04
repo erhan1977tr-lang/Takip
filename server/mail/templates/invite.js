@@ -10,10 +10,10 @@ const STRINGS = {
         ? `${f} için Takip sipariş portalında sizin adınıza bir hesap açıldı.`
         : 'Takip sipariş portalında sizin adınıza bir hesap açıldı.',
     steps:
-      'Hesabınızı etkinleştirmek için giriş ekranında e-posta adresinizi yazın, ardından aşağıdaki kodu girin ve şifrenizi belirleyin.',
+      'Hesabınızı etkinleştirmek için aşağıdaki bağlantıyı açın (ya da giriş ekranındaki “ilk giriş” bağlantısını), kodu girin ve şifrenizi belirleyin.',
     codeLabel: 'Doğrulama kodunuz',
     validity: (h) => `Bu kod ${h} saat geçerlidir ve yalnızca bir kez kullanılabilir.`,
-    button: 'Giriş ekranına git',
+    button: 'Hesabı etkinleştir',
     ignore: 'Bu hesabı siz talep etmediyseniz bu e-postayı dikkate almayın; hesap etkinleşmez.',
     footer: 'Bu e-posta otomatik olarak gönderilmiştir, lütfen yanıtlamayın.',
   },
@@ -25,10 +25,10 @@ const STRINGS = {
         ? `A fost creat un cont pe numele dumneavoastră în portalul de comenzi Takip, pentru ${f}.`
         : 'A fost creat un cont pe numele dumneavoastră în portalul de comenzi Takip.',
     steps:
-      'Pentru a vă activa contul, introduceți adresa de e-mail pe ecranul de autentificare, apoi codul de mai jos, și setați-vă parola.',
+      'Pentru a vă activa contul, deschideți linkul de mai jos (sau linkul „prima autentificare” de pe ecranul de autentificare), introduceți codul și setați-vă parola.',
     codeLabel: 'Codul de verificare',
     validity: (h) => `Codul este valabil ${h} ore și poate fi folosit o singură dată.`,
-    button: 'Mergi la autentificare',
+    button: 'Activează contul',
     ignore: 'Dacă nu ați solicitat acest cont, ignorați acest e-mail; contul nu va fi activat.',
     footer: 'Acest e-mail a fost trimis automat, vă rugăm să nu răspundeți.',
   },
@@ -40,10 +40,10 @@ const STRINGS = {
         ? `An account has been created for you on the Takip order portal for ${f}.`
         : 'An account has been created for you on the Takip order portal.',
     steps:
-      'To activate your account, enter your email address on the sign-in screen, then enter the code below and set your password.',
+      'To activate your account, open the link below (or the “first sign-in” link on the sign-in screen), enter the code and set your password.',
     codeLabel: 'Your verification code',
     validity: (h) => `This code is valid for ${h} hours and can be used only once.`,
-    button: 'Go to sign-in',
+    button: 'Activate account',
     ignore: "If you didn't request this account, you can ignore this email; the account will not be activated.",
     footer: 'This email was sent automatically, please do not reply.',
   },
@@ -64,13 +64,15 @@ function esc(s) {
  * @param {string} [p.firmName]  atandığı firma
  * @param {string} [p.language]  'tr' | 'ro' | 'en' (varsayılan tr)
  * @param {number} [p.ttlHours]  geçerlilik süresi
- * @param {string} [p.appUrl]    giriş ekranının adresi
+ * @param {string} [p.appUrl]    uygulamanın adresi
+ * @param {string} [p.email]     alıcının e-postası: ilk giriş ekranı bu adresle açılır (kodun gönderildiği kişi zaten odur)
  */
-export function renderInviteEmail({ code, name, firmName, language = 'tr', ttlHours = 24, appUrl = '' }) {
+export function renderInviteEmail({ code, name, firmName, language = 'tr', ttlHours = 24, appUrl = '', email = '' }) {
   if (!/^\d{6}$/.test(String(code))) throw new Error('Kod 6 haneli olmalı');
   const t = STRINGS[language] || STRINGS.tr;
   const lang = STRINGS[language] ? language : 'tr';
-  const loginUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/login` : '';
+  // İlk giriş ekranı (kod + şifre). Giriş ekranı davet bekleyen hesabı ayırt etmez (SEC-10); bağlantı doğrudan buraya gelir.
+  const loginUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/setup${email ? `?email=${encodeURIComponent(email)}` : ''}` : '';
   const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
 
   const text = [

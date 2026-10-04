@@ -8,6 +8,7 @@
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
 #   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
+#   takip yedek-sifreleme [kur|yenile]   Google Drive'a giden yedeklerin şifrelenmesi: durum / kurulum / anahtar yenileme
 #   takip log [SATIR]                uygulamanın son günlük satırları
 #   takip cache                      Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
@@ -28,7 +29,13 @@ if [ -z "${TAKIP_REEXEC:-}" ]; then
   cp "$(readlink -f "$0")" "$tmp"
   TAKIP_REEXEC="$tmp" exec bash "$tmp" "$@"
 fi
-trap 'rm -f "$TAKIP_REEXEC"' EXIT
+WORK_DIR=''
+cleanup() {
+  rm -f "$TAKIP_REEXEC"
+  # Şifreli yedeğin indirildiği / çözüldüğü geçici klasör (yalnızca kendi oluşturduğumuz klasör silinir)
+  case $WORK_DIR in */backups/.gecici.*) rm -rf -- "$WORK_DIR" ;; esac
+}
+trap cleanup EXIT
 
 BASE=${TAKIP_BASE:-/opt/takip}
 SRC=$BASE/src
@@ -145,8 +152,18 @@ gate() {
 # Drive'a (rclone, BACKUP_REMOTE; varsayılan gkhdrive:GKH_TAKIP_BACKUPS) kopyalanır ve md5 ile doğrulanır.
 # Son 14 çift tutulur (yerel ve Drive; yalnızca bu adlandırmaya uyan dosyalar silinir). Yayından önce alınan
 # güvenlik yedekleri eski adla kalır (db-YYYYMMDD-HHMMSS-etiket). .env, github-token ve rclone ayarı yedeğe girmez.
+#
+# Şifreleme (güvenlik denetimi SEC-02; ayrıntı: docs/adr/0013-yedek-sifreleme.md, deploy/README.md):
+#   Varsayılan KAPALI — sunucu sahibi "takip yedek-sifreleme kur" ile açana kadar akış yukarıdaki gibidir.
+#   Açıkken Google Drive'a YALNIZCA şifreli kopya gider (age, X25519: db-….dump.age, dosyalar-….tgz.age). Yerel kopyalar
+#   (yalnızca root okur, /opt/takip/backups 0700) açık kalır: canlı veritabanıyla aynı diskte, anahtarsız kullanılabilen
+#   güvenlik ağıdır. Anahtar: $BACKUP_KEY (0600) — yedeğe, Drive'a, git'e, günlüklere GİRMEZ; sahibi sunucu DIŞINDA saklar.
+#   Şifresiz eski Drive yedekleri bu aşamada silinmez (şifreleme açıkken Drive temizliği yalnızca .age dosyalarına bakar).
 BACKUP_KEEP=14
 BACKUP_TZ=Europe/Bucharest
+BACKUP_KEY=$BASE/backup-key.txt
+ENC_STATE=$STATE/backup-encryption # etkin alıcı (age açık anahtarı); dosya varsa Drive'a yalnızca şifreli kopya gider
+local_names() { find "$BACKUPS" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null || true; }
 remote_root() { local r; r=$(env_get BACKUP_REMOTE); echo "${r:-gkhdrive:GKH_TAKIP_BACKUPS}"; }
 blog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOGS/backup.log" >&2; }
 
@@ -198,6 +215,30 @@ verify_dump() { # verify_dump DOSYA
 }
 verify_archive() { [ -s "$1" ] && gzip -t "$1" 2>/dev/null && tar -tzf "$1" >/dev/null 2>&1; }
 
+# ---------- yedek şifreleme (age) ----------
+enc_recipient() { if [ -s "$ENC_STATE" ]; then head -1 "$ENC_STATE"; fi; }
+enc_tools() { command -v age >/dev/null 2>&1 && command -v age-keygen >/dev/null 2>&1; }
+key_recipients() { age-keygen -y "$BACKUP_KEY" 2>/dev/null || true; }
+# Şifrelemeye hazır mı: age kurulu, anahtar dosyası var ve verilen alıcının gizli anahtarı o dosyada
+# (çözemeyeceğimiz bir anahtara asla şifrelenmez)
+enc_ready() { # enc_ready ALICI
+  enc_tools && [ -s "$BACKUP_KEY" ] && [ -n "$1" ] && key_recipients | grep -qxF "$1"
+}
+# Dosyayı şifreler (DOSYA.age) ve hemen çözerek doğrular: çözülen içeriğin özeti aslıyla aynı olmalı. Açık dosya yerinde kalır.
+encrypt_one() { # encrypt_one DOSYA ALICI
+  local a b
+  rm -f "${1:?}.age" "${1:?}.age.tmp"
+  if ! age -r "$2" -o "$1.age.tmp" "$1" 2>>"$LOGS/backup.log"; then rm -f "${1:?}.age.tmp"; return 1; fi
+  a=$(sha256sum <"$1" | cut -d' ' -f1 || true)
+  b=$(age -d -i "$BACKUP_KEY" "$1.age.tmp" 2>>"$LOGS/backup.log" | sha256sum | cut -d' ' -f1 || true)
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then mv -f "$1.age.tmp" "$1.age"; else rm -f "${1:?}.age.tmp"; return 1; fi
+}
+# Şifreli dosyayı çözer (yalnızca root'un okuyabildiği dosya olarak). Anahtar ekrana / günlüğe yazılmaz.
+decrypt_one() { # decrypt_one DOSYA.age HEDEF
+  enc_tools && [ -s "$BACKUP_KEY" ] || return 1
+  if (umask 077 && age -d -i "$BACKUP_KEY" -o "$2.tmp" "$1" 2>>"$LOGS/backup.log"); then mv -f "$2.tmp" "$2"; else rm -f "${2:?}.tmp"; return 1; fi
+}
+
 # Drive'a kopyalar ve md5 ile doğrular
 upload_one() { # upload_one DOSYA ALT_KLASÖR
   local dst l r
@@ -209,23 +250,25 @@ upload_one() { # upload_one DOSYA ALT_KLASÖR
 }
 
 DAILY_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)$'
+DAILY_AGE_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)\.age$'
 # En yeni BACKUP_KEEP TAM çift (db + dosyalar) kalır; onlardan eski, bu adlandırmaya uyan dosyalar silinir.
 # Bugünkü dosyalar ve adlandırmaya uymayan dosyalar asla silinmez. Tam çift sayısı BACKUP_KEEP'ten azsa hiçbir şey silinmez.
-backup_retention() { # backup_retention yerel | backup_retention uzak
-  local today dbs ups cutoff f ts dir
+# Şifreleme açıkken Drive'da yalnızca şifreli (.age) çiftler döndürülür: şifresiz eski Drive yedeklerine dokunulmaz.
+backup_retention() { # backup_retention yerel | backup_retention uzak [DESEN]
+  local today dbs ups cutoff f ts dir re=${2:-$DAILY_RE}
   today=$(TZ=$BACKUP_TZ date +%F)
   if [ "$1" = yerel ]; then
-    dbs=$(ls -1 "$BACKUPS" 2>/dev/null | grep -E "$DAILY_RE" | grep '^db-' || true)
-    ups=$(ls -1 "$BACKUPS" 2>/dev/null | grep -E "$DAILY_RE" | grep '^dosyalar-' || true)
+    dbs=$(local_names | grep -E "$re" | grep '^db-' || true)
+    ups=$(local_names | grep -E "$re" | grep '^dosyalar-' || true)
   else
-    dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>>"$LOGS/backup.log" | grep -E "$DAILY_RE" | grep '^db-' || true)
-    ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>>"$LOGS/backup.log" | grep -E "$DAILY_RE" | grep '^dosyalar-' || true)
+    dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>>"$LOGS/backup.log" | grep -E "$re" | grep '^db-' || true)
+    ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>>"$LOGS/backup.log" | grep -E "$re" | grep '^dosyalar-' || true)
   fi
-  cutoff=$(comm -12 <(echo "$dbs" | sed -nE "s/$DAILY_RE/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$DAILY_RE/\2/p" | sort -u) |
+  cutoff=$(comm -12 <(echo "$dbs" | sed -nE "s/$re/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$re/\2/p" | sort -u) |
     sort -r | sed -n "${BACKUP_KEEP}p")
   [ -n "$cutoff" ] || return 0
   for f in $dbs $ups; do
-    ts=$(echo "$f" | sed -nE "s/$DAILY_RE/\2/p")
+    ts=$(echo "$f" | sed -nE "s/$re/\2/p")
     [ -n "$ts" ] || continue
     case $ts in "$today"_*) continue ;; esac
     [[ "$ts" < "$cutoff" ]] || continue
@@ -456,6 +499,7 @@ cmd_status() {
   say ""
   df -h / | awk 'NR==2 { print "Disk     : " $3 " / " $2 " dolu (" $5 ")" }'
   say "Yedekler : $(find "$BACKUPS" -name 'db-*.dump' | wc -l) veritabanı yedeği, son: $(ls -1t "$BACKUPS"/db-*.dump 2>/dev/null | head -1 | xargs -r basename)"
+  if [ -n "$(enc_recipient)" ]; then say "           Google Drive kopyası şifreli (takip yedek-sifreleme)"; else say "           Google Drive kopyası ŞİFRESİZ → takip yedek-sifreleme kur"; fi
 }
 
 cmd_smtp() {
@@ -507,10 +551,17 @@ cmd_github() {
 cmd_backup() {
   exec 8>"$STATE/backup.lock"
   if ! flock -n 8; then say "✘ Başka bir yedek ya da geri yükleme sürüyor."; return 1; fi
+  run_backup "$(enc_recipient)"
+}
+
+LAST_TS=''
+# run_backup [ALICI] — ALICI doluysa Drive'a yalnızca şifreli kopya gider (kilit çağıranda alınmıştır)
+run_backup() {
   sync_backup_timer
-  local ts f g ok_local=1 ok_remote=1
+  local ts f g ok_local=1 ok_remote=1 enc=${1:-}
   ts=$(TZ=$BACKUP_TZ date +%Y-%m-%d_%H%M%S)
-  blog "▶ yedek $ts"
+  LAST_TS=$ts
+  blog "▶ yedek $ts$([ -n "$enc" ] && echo ' (Google Drive kopyası şifreli)' || true)"
 
   f=$(backup_db gunluk "$BACKUPS/db-$ts.dump" || true)
   if [ -n "$f" ] && verify_dump "$f"; then
@@ -536,6 +587,20 @@ cmd_backup() {
   if ! command -v rclone >/dev/null 2>&1; then
     blog "✘ Google Drive: rclone kurulu değil; yedek yalnızca yerelde"
     ok_remote=0
+  elif [ -n "$enc" ]; then
+    # Şifreleme açık: Drive'a açık (şifresiz) dosya ASLA gönderilmez. Şifrelenemiyorsa yerel yedek durur, Drive adımı hata verir.
+    if ! enc_ready "$enc"; then
+      blog "✘ Google Drive: yedek şifreleme açık ama age ya da anahtar ($BACKUP_KEY) kullanılamıyor — Drive'a hiçbir şey gönderilmedi (yerel yedek duruyor)"
+      ok_remote=0
+    else
+      if [ -n "$f" ] && encrypt_one "$f" "$enc" && upload_one "$f.age" database; then blog "✔ Google Drive: database/$(basename "$f").age yüklendi (şifreli; çözülerek ve md5 ile doğrulandı)"
+      else blog "✘ Google Drive: veritabanı yedeği şifrelenemedi/yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
+      if [ -n "$g" ] && encrypt_one "$g" "$enc" && upload_one "$g.age" uploads; then blog "✔ Google Drive: uploads/$(basename "$g").age yüklendi (şifreli; çözülerek ve md5 ile doğrulandı)"
+      else blog "✘ Google Drive: dosya yedeği şifrelenemedi/yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
+      # Şifreli kopya yalnızca Drive içindir; yerelde açık kopya tutulur
+      if [ -n "$f" ]; then rm -f "${f:?}.age" "${f:?}.age.tmp"; fi
+      if [ -n "$g" ]; then rm -f "${g:?}.age" "${g:?}.age.tmp"; fi
+    fi
   else
     if [ -n "$f" ] && upload_one "$f" database; then blog "✔ Google Drive: database/$(basename "$f") yüklendi, md5 doğrulandı"
     else blog "✘ Google Drive: veritabanı yedeği yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
@@ -546,7 +611,7 @@ cmd_backup() {
   # Eskiler yalnızca bu gece her şey tamamsa silinir (Drive'a gidemeyen günlerde yerel kopyalar korunur)
   if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then
     backup_retention yerel
-    backup_retention uzak
+    if [ -n "$enc" ]; then backup_retention uzak "$DAILY_AGE_RE"; else backup_retention uzak; fi
     echo "$ts" >"$STATE/backup-last-ok"
   fi
   # Pazar günleri antivirüs motorunun yeni sürümü alınır (virüs tanımları zaten sürekli güncellenir)
@@ -558,19 +623,34 @@ cmd_backup() {
 
 # ---------- geri yükleme ----------
 # O günün en son TAM yedek çifti (veritabanı + dosyalar): önce yerel, yoksa Google Drive.
-PAIR_TS='' PAIR_SRC=''
+PAIR_TS='' PAIR_SRC='' PAIR_ENC=0
+# PAIR_PREFER=sifreli → yerel kopya olsa da Drive'daki ŞİFRELİ çift seçilir (restore-test: asıl sınanması gereken odur)
+PAIR_PREFER=''
 pair_time() { echo "$PAIR_TS" | sed -E 's/_([0-9]{2})([0-9]{2})([0-9]{2})$/ \1:\2:\3/'; }
+# Drive'da o günün en yeni tam çifti: remote_pair GÜN UZANTI_EKİ ('' ya da '\.age')
+remote_pair() {
+  local dbs ups
+  dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>/dev/null | sed -nE "s/^db-(${1}_[0-9]{6})\.dump${2}$/\1/p" || true)
+  ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>/dev/null | sed -nE "s/^dosyalar-(${1}_[0-9]{6})\.tgz${2}$/\1/p" || true)
+  comm -12 <(echo "$dbs" | sort -u) <(echo "$ups" | sort -u) | grep . | sort -r | head -1 || true
+}
 find_pair() { # find_pair YYYY-MM-DD
-  local day=$1 ts dbs ups
-  for ts in $(ls -1 "$BACKUPS" 2>/dev/null | grep -E "^db-${day}_[0-9]{6}\.dump$" | sed -nE "s/$DAILY_RE/\2/p" | sort -r); do
+  local day=$1 ts plain enc
+  PAIR_ENC=0
+  if [ "$PAIR_PREFER" = sifreli ] && command -v rclone >/dev/null 2>&1; then
+    enc=$(remote_pair "$day" '\.age')
+    if [ -n "$enc" ]; then PAIR_TS=$enc PAIR_SRC="GOOGLE DRIVE (şifreli)" PAIR_ENC=1; return 0; fi
+  fi
+  for ts in $(local_names | grep -E "^db-${day}_[0-9]{6}\.dump$" | sed -nE "s/$DAILY_RE/\2/p" | sort -r); do
     if [ -s "$BACKUPS/dosyalar-$ts.tgz" ]; then PAIR_TS=$ts PAIR_SRC=LOCAL; return 0; fi
   done
   command -v rclone >/dev/null 2>&1 || return 1
-  dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>/dev/null | grep -E "^db-${day}_[0-9]{6}\.dump$" | sed -nE "s/$DAILY_RE/\2/p" || true)
-  ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>/dev/null | grep -E "^dosyalar-${day}_[0-9]{6}\.tgz$" | sed -nE "s/$DAILY_RE/\2/p" || true)
-  ts=$(comm -12 <(echo "$dbs" | sort -u) <(echo "$ups" | sort -u) | grep . | sort -r | head -1 || true)
-  [ -n "$ts" ] || return 1
-  PAIR_TS=$ts PAIR_SRC="GOOGLE DRIVE"
+  # Drive: o günün en yeni tam çifti — şifresiz (eski düzen) ya da şifreli; aynı saatliyse şifresiz olan
+  plain=$(remote_pair "$day" '')
+  enc=$(remote_pair "$day" '\.age')
+  [ -n "$plain" ] || [ -n "$enc" ] || return 1
+  if [ -n "$enc" ] && [[ "$enc" > "$plain" ]]; then PAIR_TS=$enc PAIR_SRC="GOOGLE DRIVE (şifreli)" PAIR_ENC=1
+  else PAIR_TS=$plain PAIR_SRC="GOOGLE DRIVE"; fi
 }
 resolve_day() { # resolve_day yesterday|YYYY-MM-DD → YYYY-MM-DD
   case ${1:-} in
@@ -581,13 +661,33 @@ resolve_day() { # resolve_day yesterday|YYYY-MM-DD → YYYY-MM-DD
 }
 # Çifti bulur, gerekiyorsa Drive'dan indirir, ikisini de doğrular. Hata → 1 (canlı veriye hiç dokunulmaz)
 fetch_pair() { # fetch_pair YYYY-MM-DD
+  local dir
   find_pair "$1" || { say "✘ $1 için tam yedek çifti (veritabanı + dosyalar) bulunamadı (yerel ya da Google Drive)."; return 1; }
   PAIR_DB="$BACKUPS/db-$PAIR_TS.dump"; PAIR_UP="$BACKUPS/dosyalar-$PAIR_TS.tgz"
   say "Yedek tarihi/saati : $(pair_time) (Europe/Bucharest)"
   say "Veritabanı yedeği  : $(basename "$PAIR_DB")"
   say "Dosya yedeği       : $(basename "$PAIR_UP")"
   say "Kaynak             : $PAIR_SRC"
-  if [ "$PAIR_SRC" != LOCAL ]; then
+  if [ "$PAIR_ENC" = 1 ]; then
+    # Şifreli çift: yalnızca root'un okuyabildiği geçici klasöre iner; çıkışta silinir (cleanup). Çözülen dosyalar
+    # denemede (PAIR_PREFER=sifreli) o geçici klasörde kalır; gerçek geri yüklemede yerel yedek klasörüne yazılır.
+    enc_tools || { say "✘ Bu yedek şifreli; çözmek için 'age' kurulu olmalı: apt-get install -y age"; return 1; }
+    [ -s "$BACKUP_KEY" ] || { say "✘ Bu yedek şifreli; anahtar dosyası yok: $BACKUP_KEY (sunucu dışında sakladığınız anahtarı bu dosyaya koyun, chmod 600)."; return 1; }
+    WORK_DIR=$(mktemp -d "$BACKUPS/.gecici.XXXXXX")
+    dir=$BACKUPS
+    if [ "$PAIR_PREFER" = sifreli ]; then dir=$WORK_DIR; fi
+    PAIR_DB="$dir/db-$PAIR_TS.dump"; PAIR_UP="$dir/dosyalar-$PAIR_TS.tgz"
+    say "Google Drive'dan indiriliyor ve şifresi çözülüyor…"
+    if ! { rclone copyto "$(remote_root)/database/db-$PAIR_TS.dump.age" "$WORK_DIR/db.age" >>"$LOGS/backup.log" 2>&1 &&
+      rclone copyto "$(remote_root)/uploads/dosyalar-$PAIR_TS.tgz.age" "$WORK_DIR/dosyalar.age" >>"$LOGS/backup.log" 2>&1; }; then
+      say "✘ Google Drive'dan indirilemedi."; return 1
+    fi
+    if ! { decrypt_one "$WORK_DIR/db.age" "$PAIR_DB" && decrypt_one "$WORK_DIR/dosyalar.age" "$PAIR_UP"; }; then
+      say "✘ Yedeğin şifresi çözülemedi (anahtar bu yedeğe ait değil ya da dosya bozuk). Ayrıntı: $LOGS/backup.log"; return 1
+    fi
+    rm -f "${WORK_DIR:?}/db.age" "${WORK_DIR:?}/dosyalar.age"
+    say "✔ Şifre çözüldü"
+  elif [ "$PAIR_SRC" != LOCAL ]; then
     say "Google Drive'dan indiriliyor…"
     if ! { rclone copyto "$(remote_root)/database/$(basename "$PAIR_DB")" "$PAIR_DB" >>"$LOGS/backup.log" 2>&1 &&
       rclone copyto "$(remote_root)/uploads/$(basename "$PAIR_UP")" "$PAIR_UP" >>"$LOGS/backup.log" 2>&1; }; then
@@ -683,9 +783,15 @@ cmd_restore() {
 }
 
 # Canlı veriye dokunmadan: çifti bulur (gerekirse Drive'dan indirir) ve geçici veritabanına yükleyerek dener
+# Şifreleme açıksa Google Drive'daki ŞİFRELİ kopya sınanır: geçici klasöre indirilir, anahtarla çözülür, sınanır, silinir.
 cmd_restore_test() {
   local day
   day=$(resolve_day "${1:-yesterday}") || { say "Kullanım: takip restore-test YYYY-MM-DD | yesterday"; return 1; }
+  if [ -n "$(enc_recipient)" ]; then PAIR_PREFER=sifreli; fi
+  restore_test_day "$day"
+}
+restore_test_day() { # restore_test_day YYYY-MM-DD
+  local day=$1
   fetch_pair "$day" || return 1
   say "✔ Dosya arşivi okunuyor ($(tar -tzf "$PAIR_UP" | grep -vc '/$' || true) dosya)"
   if restore_into takip_yedek_dene "$PAIR_DB"; then
@@ -694,6 +800,127 @@ cmd_restore_test() {
   else
     say "✘ Veritabanı yedeği geri yüklenemedi."; return 1
   fi
+}
+
+# ---------- yedek şifreleme: durum / kurulum / anahtar yenileme ----------
+# Şifreleme ancak sunucu sahibi bu komutu çalıştırıp anahtarı SUNUCU DIŞINA kaydettiğini onaylayınca ve şifreli bir
+# yedek baştan sona denenince açılır (yedek → şifrele → çözerek doğrula → Drive'a yükle → md5 → Drive'dan indir → çöz →
+# arşivi oku → geçici veritabanına geri yükle). Deneme başarısızsa hiçbir şey değişmez: yedekler eskisi gibi çalışır.
+drive_count() { # drive_count DESEN → Drive'daki günlük yedek dosyası sayısı
+  { rclone lsf --files-only "$(remote_root)/database" 2>/dev/null || true; rclone lsf --files-only "$(remote_root)/uploads" 2>/dev/null || true; } | grep -cE "$1" || true
+}
+enc_status() {
+  local r; r=$(enc_recipient)
+  if [ -n "$r" ]; then
+    say "Yedek şifreleme  : AÇIK — Google Drive'a yalnızca şifreli kopya gider"
+    say "Etkin açık anahtar: $r"
+  else
+    say "Yedek şifreleme  : KAPALI — Google Drive'a şifresiz kopya gidiyor (açmak için: takip yedek-sifreleme kur)"
+  fi
+  if enc_tools; then say "age              : $(age --version 2>/dev/null | head -1)"; else say "age              : kurulu değil → apt-get update && apt-get install -y age"; fi
+  if [ -s "$BACKUP_KEY" ]; then
+    say "Anahtar dosyası  : $BACKUP_KEY (izin $(stat -c '%a' "$BACKUP_KEY"), $(key_recipients | grep -c . || true) anahtar)"
+  else
+    say "Anahtar dosyası  : yok ($BACKUP_KEY)"
+  fi
+  if [ -n "$r" ] && ! enc_ready "$r"; then
+    say "✘ DİKKAT: etkin anahtarın gizli kısmı anahtar dosyasında yok ya da age kurulu değil — gece yedeği Drive'a GİDEMEZ (yerel yedek alınır)."
+  fi
+  if command -v rclone >/dev/null 2>&1; then
+    say "Google Drive     : $(drive_count "$DAILY_AGE_RE") şifreli, $(drive_count "$DAILY_RE") ŞİFRESİZ günlük yedek dosyası ($(remote_root))"
+    say "                   Şifresiz eski yedekler kendiliğinden silinmez; ne yapılacağına siz karar verirsiniz."
+  fi
+  say "Yerel yedekler   : $BACKUPS (yalnızca root okur; şifresiz — sunucudaki canlı veriyle aynı korumada)"
+}
+
+enc_setup() { # enc_setup kur | yenile
+  local mode=$1 pub secret answer tmp
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı."; return 1; }
+  enc_tools || { say "✘ 'age' kurulu değil. Önce: apt-get update && apt-get install -y age"; return 1; }
+  command -v rclone >/dev/null 2>&1 || { say "✘ rclone kurulu değil; Google Drive yedeği çalışmadan şifreleme açılamaz."; return 1; }
+  if [ "$mode" = yenile ] && { [ -z "$(enc_recipient)" ] || [ ! -s "$BACKUP_KEY" ]; }; then
+    say "✘ Şifreleme açık değil; önce: takip yedek-sifreleme kur"; return 1
+  fi
+  if [ "${TAKIP_ASSUME_KEY_SAVED:-0}" != 1 ] && ! { : >/dev/tty; } 2>/dev/null; then
+    say "✘ Bu komut etkileşimli (terminalde) çalıştırılmalı: anahtarı sunucu dışına kaydettiğinizi onaylamanız gerekir."; return 1
+  fi
+  exec 8>"$STATE/backup.lock"
+  if ! flock -n 8; then say "✘ Bir yedek ya da geri yükleme sürüyor; sonra tekrar deneyin."; return 1; fi
+
+  # Anahtar: yoksa üretilir; "yenile"de yeni anahtar dosyanın BAŞINA eklenir, eskiler kalır (eski yedekler açılabilsin)
+  if [ "$mode" = yenile ] || [ ! -s "$BACKUP_KEY" ]; then
+    tmp=$(mktemp -u "$BASE/.backup-key.XXXXXX")
+    (umask 077 && age-keygen -o "$tmp" >/dev/null 2>&1) || { say "✘ Anahtar üretilemedi."; rm -f "${tmp:?}"; return 1; }
+    if [ -s "$BACKUP_KEY" ]; then
+      if ! (umask 077 && cat "$tmp" "$BACKUP_KEY" >"$tmp.yeni") || ! mv -f "$tmp.yeni" "$BACKUP_KEY"; then
+        rm -f "${tmp:?}" "${tmp:?}.yeni"
+        say "✘ Anahtar dosyası güncellenemedi; hiçbir şey değişmedi."; return 1
+      fi
+      rm -f "${tmp:?}"
+    else
+      mv -f "$tmp" "$BACKUP_KEY"
+    fi
+  fi
+  chmod 600 "$BACKUP_KEY"
+  pub=$(key_recipients | head -1)
+  secret=$(grep -m1 '^AGE-SECRET-KEY-' "$BACKUP_KEY" || true)
+  if [ -z "$pub" ] || [ -z "$secret" ]; then say "✘ Anahtar dosyası okunamadı: $BACKUP_KEY"; return 1; fi
+
+  # Anahtar yalnızca ekrana (terminale) yazılır; günlüğe, yedeğe, Drive'a gitmez
+  if [ "${TAKIP_ASSUME_KEY_SAVED:-0}" != 1 ]; then
+    {
+      echo
+      echo "════ YEDEK ŞİFRELEME ANAHTARI — şimdi SUNUCU DIŞINA kaydedin ════"
+      echo "Bu anahtar olmadan Google Drive'daki şifreli yedekler AÇILAMAZ. Sunucu tamamen kaybolursa tek kurtarma yolu budur."
+      echo "  • Şifre yöneticinize kaydedin VE kâğıda yazdırıp güvenli bir yerde saklayın (iki ayrı yer)."
+      echo "  • Google Drive'a (yedeklerin yanına), e-postaya, sohbete ya da git'e KOYMAYIN."
+      echo
+      echo "  Açık anahtar : $pub"
+      echo "  Gizli anahtar: $secret"
+      echo
+    } >/dev/tty
+    tty_read answer "Kaydettiğinizi doğrulamak için gizli anahtarın SON 6 karakterini yazın: "
+    if [ "${answer^^}" != "${secret: -6}" ]; then
+      say "✘ Eşleşmedi; şifreleme açılmadı (değişmedi). Yedekler eskisi gibi çalışmaya devam ediyor. Anahtar dosyası: $BACKUP_KEY"
+      return 1
+    fi
+  fi
+
+  say "Deneme: yedek alınıyor, şifreleniyor, Google Drive'a yükleniyor; sonra Drive'dan indirilip çözülerek geri yükleme deneniyor…"
+  if ! run_backup "$pub"; then
+    say "✘ Şifreli yedek tamamlanamadı; şifreleme durumu DEĞİŞMEDİ (ayrıntı: $LOGS/backup.log). Yedekler eskisi gibi çalışmaya devam ediyor."
+    return 1
+  fi
+  PAIR_PREFER=sifreli
+  if ! restore_test_day "${LAST_TS%%_*}" || [ "$PAIR_ENC" != 1 ] || [ "$PAIR_TS" != "$LAST_TS" ]; then
+    say "✘ Şifreli yedek Google Drive'dan geri yüklenemedi; şifreleme durumu DEĞİŞMEDİ (ayrıntı: $LOGS/backup.log)."
+    return 1
+  fi
+  echo "$pub" >"$ENC_STATE"
+  blog "✔ yedek şifreleme AÇIK (açık anahtar: $pub) — şifreli yedek Drive'dan indirilip çözülerek geri yüklendi"
+  say ""
+  say "✔ Yedek şifreleme AÇIK. Bundan sonra Google Drive'a yalnızca şifreli kopya gider."
+  say "  Anahtar (sunucuda)      : $BACKUP_KEY — sunucu dışındaki kopyasını KAYBETMEYİN."
+  say "  Şifresiz eski Drive yedeği: $(drive_count "$DAILY_RE") dosya — silinmedi; ne yapılacağına siz karar verirsiniz."
+}
+
+enc_disable() {
+  local answer
+  [ -n "$(enc_recipient)" ] || { say "Yedek şifreleme zaten kapalı."; return 0; }
+  tty_read answer "Google Drive'a yeniden ŞİFRESİZ yedek gidecek. Onaylamak için KAPAT yazın: "
+  if [ "$answer" != KAPAT ]; then say "Vazgeçildi."; return 1; fi
+  rm -f "${ENC_STATE:?}"
+  blog "⚠ yedek şifreleme KAPATILDI (anahtar dosyası duruyor: eski şifreli yedekler için gerekli)"
+}
+
+cmd_backup_encryption() {
+  case ${1:-durum} in
+    durum | status) enc_status ;;
+    kur | setup) enc_setup kur ;;
+    yenile | rotate) enc_setup yenile ;;
+    kapat | disable) enc_disable ;;
+    *) say "Kullanım: takip yedek-sifreleme [durum | kur | yenile | kapat]"; return 1 ;;
+  esac
 }
 
 main() {
@@ -713,13 +940,14 @@ main() {
     yedek | backup) cmd_backup ;;
     restore | geri-yukle) cmd_restore "$@" ;;
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
+    yedek-sifreleme | backup-encryption) cmd_backup_encryption "$@" ;;
     cache | onbellek) cmd_cache ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,16p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,17p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

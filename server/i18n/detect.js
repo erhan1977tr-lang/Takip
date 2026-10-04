@@ -34,20 +34,8 @@ export function localeFromAcceptLanguage(header) {
   return null;
 }
 
-/**
- * İstemcinin IP adresi: Cloudflare varsa CF-Connecting-IP, yoksa X-Forwarded-For'un ilk değeri, yoksa X-Real-IP.
- * (Sunucuda uygulamaya yalnızca Caddy üzerinden erişilir; Caddy bu başlığı kendisi yazar.)
- * @param {(name: string) => string | null} get
- * @returns {string | null}
- */
-export function clientIp(get) {
-  const cf = get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  const xff = get('x-forwarded-for');
-  if (xff) return xff.split(',')[0].trim() || null;
-  const real = get('x-real-ip');
-  return real ? real.trim() : null;
-}
+// İstemcinin IP adresi: tek kaynak server/security/client-ip.js (güvenilen vekil — Caddy — başlığı; SEC-01)
+export { clientIp } from '../security/client-ip.js';
 
 /**
  * @param {{ country?: string | null, ip?: string | null, acceptLanguage?: string | null }} p

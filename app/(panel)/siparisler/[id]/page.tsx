@@ -587,7 +587,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {t('common.pricesExclVat')}
-          {offer.currency === 'EUR' && <><br />{fxOfferNote(t, order.customer.fxPolicy)}</>}
+          {/* Kur notu müşterinin kur politikasından gelir; politika satış / çizim ekibine gitmez (SEC-07) → onlarda not yok */}
+          {offer.currency === 'EUR' && order.customer.fxPolicy && <><br />{fxOfferNote(t, order.customer.fxPolicy)}</>}
         </p>
         <span className="row" style={{ gap: 8 }}>
           {showExport && <a className="btn" href={exportHref('pdf')}>{t('offer.export.pdf')}</a>}

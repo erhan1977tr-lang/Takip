@@ -299,3 +299,15 @@ export async function removeGuestCrate(db, { orderId, crateId, actor }) {
     return { ok: true };
   });
 }
+
+/**
+ * Sandığın taşıdığı siparişlerin, GÖRENE göre süzgeci (güvenlik denetimi SEC-17, karar 120). Sandık fiziksel olarak başka
+ * müşterinin siparişini de taşıyabilir (karar 103); müşteri kendi sandığının satırında yalnızca KENDİ siparişlerini
+ * görür — misafir siparişin kimliği müşteriye giden veride hiç bulunmaz. İç ekip bütün siparişleri görür (boş süzgeç).
+ * Kullanım: `include: { orders: { where: crateOrdersWhere(user), select: { orderId: true } } }`.
+ * @param {{ appRole: string, customerId?: string | null }} viewer
+ * @returns {{ order?: { customerId: string } }}
+ */
+export function crateOrdersWhere(viewer) {
+  return viewer.appRole === 'MUSTERI' ? { order: { customerId: viewer.customerId ?? '__none__' } } : {};
+}

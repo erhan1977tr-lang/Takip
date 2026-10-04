@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { passwordIssue } from '../../server/auth/password-policy.js';
 
 // scrypt ile şifre özeti. Biçim: scrypt$N$r$p$salt$hash (salt ve hash base64url)
 const N = 16384;
@@ -36,10 +37,10 @@ export async function burnPasswordCheck(password: string): Promise<void> {
   await verifyPassword(password, await dummyHash);
 }
 
-/** Kural: en az 6 karakter, en az bir harf ve bir rakam. Hata metni ya da null döner. */
+/**
+ * YENİ şifre kuralı (server/auth/password-policy.js): en az 10 karakter, uzun parola serbest. Sorun kodu ya da null.
+ * Yalnızca şifre belirlenirken uygulanır; girişte uygulanmaz (kayıtlı eski şifreler geçerli kalır).
+ */
 export function passwordProblem(password: string): string | null {
-  if (password.length < 6) return 'Şifre en az 6 karakter olmalı.';
-  if (!/\p{L}/u.test(password) || !/\d/.test(password)) return 'Şifre en az bir harf ve bir rakam içermeli.';
-  if (password.length > 200) return 'Şifre çok uzun.';
-  return null;
+  return passwordIssue(password);
 }

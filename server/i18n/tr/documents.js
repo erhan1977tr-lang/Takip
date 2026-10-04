@@ -30,5 +30,6 @@ export default {
   pdf: {
     notFound: 'Belge bulunamadı.',
     unavailable: 'Belge şu anda açılamıyor. Lütfen daha sonra yeniden deneyin.',
+    tooMany: 'Kısa sürede çok fazla belge isteği yapıldı. Lütfen birkaç dakika sonra yeniden deneyin.',
   },
 };

@@ -57,6 +57,15 @@ export const ENV_VARS = {
   INVITE_CODE_TTL_HOURS: { group: 'app', parse: parseInt10(1, 24 * 30), default: 24, desc: 'Davet / şifre kodunun geçerlilik süresi (saat)' },
   APP_TIMEZONE: { group: 'app', parse: parseTimeZone, default: 'Europe/Bucharest', desc: 'Tarihlerin gösterildiği saat dilimi' },
   UPLOAD_DIR: { group: 'app', default: './uploads', desc: 'Yüklenen dosyaların klasörü (herkese açık olmamalı)' },
+  UPLOAD_MIN_FREE_MB: { group: 'app', parse: parseInt10(0, 1_000_000), default: 1024, desc: 'Yükleme klasöründe bu kadar MB boş alan kalmayacaksa yeni dosya kabul edilmez (0: denetim kapalı)' },
+  CLIENT_IP_SOURCE: {
+    group: 'app', default: 'proxy',
+    parse: (v) => {
+      if (v !== 'proxy' && v !== 'cloudflare') throw new Error('proxy ya da cloudflare olmalı');
+      return v;
+    },
+    desc: 'İstemci IP adresinin kaynağı: proxy = Caddy (X-Forwarded-For); cloudflare yalnızca site Cloudflare arkasındaysa (server/security/client-ip.js)',
+  },
   CLAMAV_HOST: { group: 'app', desc: 'Antivirüs (clamd) adresi; tanımlıysa yüklenen dosyalar taranır (sunucuda: clamav)' },
   CLAMAV_PORT: { group: 'app', parse: parseInt10(1, 65535), default: 3310, desc: 'Antivirüs (clamd) portu' },
 

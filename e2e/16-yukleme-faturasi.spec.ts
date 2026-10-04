@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Onaylı yüklemeden müşteri faturası (Aşama 7D-3, karar 101): Yüklemeler → onaylı gün → "Faturalama".
 //  - müşteri başına fatura önizlemesi yalnızca YÜKLENEN (LOADED) adetlerden; kısmi yüklemede 10 adedin 8'i
@@ -177,7 +177,7 @@ test('yetkisiz roller: Faturalama bölümü görünmez; taklit form gönderimiyl
   expect(proformaBatchId).not.toBe('');
   const db = await prisma();
   const count = () => db.billingBatch.count({ where: { kind: { in: ['INVOICE', 'ADVANCE'] } } });
-  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     const res = await p.request.get(DAY_URL);
     const body = await res.text();

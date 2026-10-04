@@ -12,5 +12,13 @@
 		X-Robots-Tag "noindex, nofollow"
 		-Server
 	}
-	reverse_proxy app:3000
+	# İstemci IP'sinin TEK güvenilir kaynağı Caddy'dir (güvenlik denetimi SEC-01): Caddy, istemcinin gönderdiği
+	# X-Forwarded-For'u yok sayar ve gerçek bağlantı adresini yazar (trusted_proxies tanımlı değil). İstemcinin
+	# gönderebileceği diğer "gerçek IP" başlıkları uygulamaya hiç ulaşmaz. Cloudflare eklenecekse: server/security/client-ip.js
+	reverse_proxy app:3000 {
+		header_up -CF-Connecting-IP
+		header_up -CF-IPCountry
+		header_up -True-Client-IP
+		header_up -X-Real-IP
+	}
 }

@@ -26,7 +26,7 @@ test('şablon: üç dil, kod, süre ve bağlantı', () => {
     assert.match(m.subject, new RegExp(word, 'i'));
     assert.match(m.text, /482913/);
     assert.match(m.html, /482 913/);
-    assert.match(m.html, /https:\/\/takip\.ro\/login/);
+    assert.match(m.html, /https:\/\/takip\.ro\/setup/);
     assert.match(m.text, /24/);
     assert.match(m.html, new RegExp(`lang="${lang}"`));
   }
@@ -37,7 +37,7 @@ test('şablon: bilinmeyen dil Türkçeye düşer, HTML kaçışı yapılır', ()
   assert.match(m.subject, /Takip hesabınız/);
   assert.doesNotMatch(m.html, /<script>/);
   assert.match(m.html, /A &amp; B/);
-  assert.doesNotMatch(m.html, /\/login/); // appUrl yoksa düğme yok
+  assert.doesNotMatch(m.html, /\/setup/); // appUrl yoksa düğme yok
 });
 
 test('şablon: geçersiz kod reddedilir', () => {

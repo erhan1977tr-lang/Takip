@@ -81,6 +81,8 @@ main() {
     apt-get upgrade -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold >/dev/null
   fi
   apt-get install -y -qq ca-certificates curl git jq ufw fail2ban unattended-upgrades openssl gzip >/dev/null
+  # Yedek şifreleme aracı (takip yedek-sifreleme); paket bulunamazsa kurulum durmaz
+  apt-get install -y -qq age >/dev/null 2>&1 || true
   printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' >/etc/apt/apt.conf.d/20auto-upgrades
   systemctl enable --now fail2ban >/dev/null 2>&1 || true
   ok "Otomatik güvenlik güncellemeleri ve fail2ban (SSH saldırılarına karşı) açık"

@@ -4,6 +4,7 @@ import type { CurrentUser } from './auth/session';
 import { orderScope, sanitizeRows } from './orders';
 import { dayKey, orderLoad } from '../server/orders/loading.js';
 import { effectiveItems } from '../server/loading/confirmation.js';
+import { crateOrdersWhere } from '../server/loading/crates.js';
 
 export const loadInclude = {
   // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir
@@ -163,7 +164,8 @@ export async function cratesBetween(user: CurrentUser, from: Date, to: Date): Pr
   const scope = user.appRole === 'MUSTERI' ? { customerId: user.customerId ?? '__none__' } : { customerId: { not: null } };
   return db.crate.findMany({
     where: { ...scope, shipDay: { gte: from, lt: to } },
-    include: crateInclude,
+    // Müşteri, sandığındaki başka müşteriye ait (misafir) siparişin kimliğini almaz (SEC-17)
+    include: { ...crateInclude, orders: { where: crateOrdersWhere(user), select: { orderId: true } } },
     orderBy: [{ crateNo: 'asc' }],
   });
 }

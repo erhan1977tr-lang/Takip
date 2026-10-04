@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Aşama 7F-1 — onaylı yüklemenin düzeltilmesi (karar 105), kısmi aktarım (karar 106) ve sipariş başına avans (karar 104).
 //  - "Düzelt": giriş → önizleme (önce / sonra, aktarımlar, finansal etki) → kayıt; "Düzeltildi" rozeti ve tarihçe;
@@ -192,7 +192,7 @@ test('yetkisiz roller: taklit form gönderimiyle yükleme düzeltmesi kaydedilem
   const field = await actionField(admin, `${DAY_URL}&dz=${dz}`, 'name="dz"');
   const db = await prisma();
   const corrections = () => db.loadingCorrection.count({ where: { items: { some: { orderId } } } });
-  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     const r = await forge(p, DAY_URL, field, { day: DAY, dz, key: 'x', reason: `Taklit ${who}` });
     expect(r.url(), `${who}: taklit düzeltme`).toMatch(/\/siparisler$/);

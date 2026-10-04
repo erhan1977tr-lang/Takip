@@ -1,16 +1,31 @@
 'use client';
 
-/** Panelin sağ üstündeki dil seçimi. Değişince /dil çerezi yazar ve aynı sayfayı yeni dilde açar. */
+import { useState } from 'react';
+import { setLanguageAction } from '@/app/(panel)/actions';
+
+/**
+ * Panelin sağ üstündeki dil seçimi. Değişince sunucu işlemi dil çerezini yazar ve kullanıcının dilini kaydeder
+ * (kayıt değiştiren istek GET ile yapılmaz — SEC-15), ardından aynı sayfa yeni dilde açılır.
+ */
 export function LanguageSelect({ locale, names, title }: { locale: 'ro' | 'tr'; names: { ro: string; tr: string }; title: string }) {
+  // Seçimden sonra sayfa yeniden yüklenene kadar kapalı kalır (yarım kalan ikinci seçim olmasın)
+  const [busy, setBusy] = useState(false);
   return (
     <select
       className="lang-select"
       aria-label={title}
       title={title}
       value={locale}
-      onChange={(e) => {
-        const next = window.location.pathname + window.location.search;
-        window.location.assign(`/dil?l=${e.target.value}&next=${encodeURIComponent(next)}`);
+      disabled={busy}
+      onChange={async (e) => {
+        const next = e.target.value;
+        setBusy(true);
+        try {
+          await setLanguageAction(next);
+          window.location.reload();
+        } catch {
+          setBusy(false);
+        }
       }}
     >
       <option value="ro" lang="ro">{names.ro}</option>

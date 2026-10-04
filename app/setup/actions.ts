@@ -43,10 +43,12 @@ export async function verifyCodeAction(formData: FormData) {
   const result = checkInvite({ code, email, record: invite, secret: authSecret() });
   if (!result.ok) {
     if (result.reason === 'wrong_code') {
-      await recordFailure('CODE', email, ip);
       await db.userInvite.update({ where: { id: invite.id }, data: { attempts: { increment: 1 } } });
     }
-    redirect(back(email, result.reason));
+    // Dışarıya tek bir sonuç (SEC-10): kod yanlış, süresi dolmuş, kilitli ya da böyle bir davet yok — hepsi aynı yanıt;
+    // bir e-postanın davet bekleyip beklemediği bu ekrandan anlaşılamaz. Her başarısız deneme sınıra sayılır.
+    await recordFailure('CODE', email, ip);
+    redirect(back(email, 'wrong_code'));
   }
 
   await setSetupToken(invite.id, user.id);

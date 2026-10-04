@@ -58,6 +58,25 @@ test('IP adresine göre: Türkiye → Türkçe, Romanya → Romence (tarayıcı 
   await expect(ro.getByRole('button', { name: 'Intră în cont' })).toBeVisible();
 });
 
+test('sahte Cloudflare / IP başlıkları giriş ekranının dilini belirleyemez (SEC-01)', async ({ browser }) => {
+  // İstemcinin yazdığı CF-Connecting-IP / CF-IPCountry / X-Real-IP / True-Client-IP okunmaz: tarayıcı dili geçerli
+  const forged = await browser.newContext({
+    locale: 'ro-RO',
+    extraHTTPHeaders: { 'cf-connecting-ip': '78.180.10.10', 'cf-ipcountry': 'TR', 'x-real-ip': '78.180.10.10', 'true-client-ip': '78.180.10.10' },
+  });
+  const page = await forged.newPage();
+  await page.goto('/login');
+  await expect(page.getByRole('button', { name: 'Intră în cont' })).toBeVisible();
+  await forged.close();
+  test.skip(!HAS_GEO, 'IP aralık verisi yok');
+  // X-Forwarded-For: istemcinin başa yazdığı (Türkiye) değil, en yakın vekilin eklediği son adres (Romanya) geçerli
+  const chain = await browser.newContext({ locale: 'tr-TR', extraHTTPHeaders: { 'x-forwarded-for': '78.180.10.10, 86.121.10.10' } });
+  const p2 = await chain.newPage();
+  await p2.goto('/login');
+  await expect(p2.getByRole('button', { name: 'Intră în cont' })).toBeVisible();
+  await chain.close();
+});
+
 test('Romence girilince panel Romence açılır; sağ üstten dil değişir', async ({ browser }) => {
   const page = await ctx(browser, { locale: 'ro-RO' });
   await page.goto('/login');

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import type { Prisma } from '@prisma/client';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, login } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, login, INSPECTOR_PW } from './helpers';
 
 // Muhasebe (karar 51, 87–90): Profil Tahsilat, Cam Tahsilat, Tedarikçi Hesap Durumu yalnızca yönetici.
 //  - Kalan toplamında aynı borç iki kez sayılmaz (proforma + avans + fatura).
@@ -171,7 +171,7 @@ test('yönetici: Tedarikçi Hesap Durumu — yükleme kârı, eksik maliyet uyar
 });
 
 test('yetkisiz roller muhasebe sayfalarına adresle de giremez; menüde de yok', async ({ browser }) => {
-  const users: [string, string][] = [[CUSTOMER, CUST_PW], [SALES2, TEAM_PW], [DRAWER, TEAM_PW], [INSPECTOR, 'Denet1']];
+  const users: [string, string][] = [[CUSTOMER, CUST_PW], [SALES2, TEAM_PW], [DRAWER, TEAM_PW], [INSPECTOR, INSPECTOR_PW]];
   for (const [email, pw] of users) {
     const p = await as(browser, email, pw);
     for (const name of ['Profil Tahsilat', 'Cam Tahsilat', 'Tedarikçi Hesap Durumu']) await expect(p.locator('.sidebar').getByRole('link', { name }), email).toHaveCount(0);
@@ -315,7 +315,7 @@ test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit 
   const key = /name="key" value="([0-9a-f]{32})"/.exec(html)?.[1] ?? '';
   expect(key, 'önizleme parmak izi').toHaveLength(32);
   const field = await actionField(admin, LOADING_URL, 'name="key"');
-  const users: [string, string, string][] = [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetimci', INSPECTOR, 'Denet1']];
+  const users: [string, string, string][] = [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetimci', INSPECTOR, INSPECTOR_PW]];
   for (const [who, email, pw] of users) {
     const p = await as(browser, email, pw);
     if (who !== 'cizim') {

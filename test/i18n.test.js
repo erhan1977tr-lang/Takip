@@ -102,8 +102,9 @@ test('dil seçimi: ülke, tarayıcı dili, varsayılan', () => {
 
 test('istemci IP adresi başlıklardan', () => {
   const h = (o) => (n) => o[n] ?? null;
-  assert.equal(clientIp(h({ 'x-forwarded-for': '86.121.5.5, 10.0.0.1' })), '86.121.5.5');
-  assert.equal(clientIp(h({ 'cf-connecting-ip': '78.180.1.1', 'x-forwarded-for': '1.1.1.1' })), '78.180.1.1');
-  assert.equal(clientIp(h({ 'x-real-ip': '5.5.5.5' })), '5.5.5.5');
+  // Güvenilen kaynak Caddy'nin yazdığı X-Forwarded-For'dur (ayrıntılı testler: test/security.test.js)
+  assert.equal(clientIp(h({ 'x-forwarded-for': '86.121.5.5' })), '86.121.5.5');
+  assert.equal(clientIp(h({ 'cf-connecting-ip': '78.180.1.1', 'x-forwarded-for': '1.1.1.1' })), '1.1.1.1');
+  assert.equal(clientIp(h({ 'x-real-ip': '5.5.5.5' })), null);
   assert.equal(clientIp(h({})), null);
 });

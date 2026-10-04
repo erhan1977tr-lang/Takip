@@ -6,6 +6,8 @@ export const ADMIN = 'admin@e2e.test';
 export const ADMIN_PW = 'Yonetici2026';
 export const CUSTOMER = 'ali@unsal.test';
 export const CUST_PW = 'Musteri2026x';
+/** Denetimci (05'te açılır). Yeni şifre kuralı: en az 10 karakter (karar 117). */
+export const INSPECTOR_PW = 'Denetim2026x';
 
 export function outboxCodeFor(email: string): string {
   const dir = process.env.MAIL_OUTBOX_DIR;
@@ -19,11 +21,12 @@ export function outboxCodeFor(email: string): string {
   return m[1];
 }
 
+/**
+ * İlk giriş: davet e-postasındaki bağlantı (/setup?email=…) → kod → şifre. Giriş ekranı davet bekleyen hesabı
+ * ayırt etmez (SEC-10): oradan /setup'a kendiliğinden geçilmez.
+ */
 export async function firstLogin(page: Page, email: string, code: string, password: string) {
-  await page.goto('/login');
-  await page.fill('#email', email);
-  await page.click('button[type=submit]');
-  await expect(page).toHaveURL(/\/setup\?email=/);
+  await page.goto(`/setup?email=${encodeURIComponent(email)}`);
   await page.fill('#code', code);
   await page.click('button[type=submit]');
   await expect(page.getByRole('heading', { name: 'Şifrenizi belirleyin', exact: true })).toBeVisible();
@@ -208,9 +211,13 @@ export async function customerSecrets(): Promise<string[]> {
   const db = new PrismaClient();
   try {
     const rows = await db.customer.findMany({
-      where: { type: 'CUSTOMER' }, select: { name: true, contactPerson: true, phone: true, address: true, taxId: true },
+      where: { type: 'CUSTOMER' },
+      select: { name: true, contactPerson: true, phone: true, address: true, taxId: true, email: true, billingEmail: true, regCom: true, county: true, city: true, fxMarkupPercent: true },
     });
-    return rows.flatMap((r) => [r.name, r.name.slice(3), r.contactPerson, r.phone, r.address, r.taxId]).filter((x): x is string => !!x);
+    // Firma adı, iletişim ve fatura bilgileri, mali belge e-postası, müşteriye özel kur yüzdesi (SEC-07)
+    return rows
+      .flatMap((r) => [r.name, r.name.slice(3), r.contactPerson, r.phone, r.address, r.taxId, r.email, r.billingEmail, r.regCom, r.county, r.city, r.fxMarkupPercent?.toString()])
+      .filter((x): x is string => !!x);
   } finally {
     await db.$disconnect();
   }

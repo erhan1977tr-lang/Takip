@@ -352,6 +352,13 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   assert.deepEqual(tries.map((x) => x.ok).sort(), [false, true]);
   assert.deepEqual(tries.find((x) => !x.ok), { ok: false, code: 'ALREADY_ASSIGNED' });
   assert.deepEqual((await db.crateOrder.findMany({ where: { crateId: crate.id }, orderBy: { orderId: 'asc' } })).map((x) => x.orderId).sort(), [a1.id, b1.id].sort());
+  // SEC-17: müşteriye giden sandık satırı — ev sahibi B kendi sandığında yalnızca KENDİ siparişini alır (misafir A'nın
+  // sipariş kimliği veride hiç bulunmaz); iç ekip sandıktaki bütün siparişleri görür. Fiziksel yerleşim değişmez.
+  const crateOrders = async (viewer) => (await db.crate.findUniqueOrThrow({ where: { id: crate.id }, include: { orders: { where: cr.crateOrdersWhere(viewer), select: { orderId: true } } } })).orders.map((x) => x.orderId).sort();
+  assert.deepEqual(await crateOrders({ appRole: 'MUSTERI', customerId: B.id }), [b1.id]);
+  assert.ok(!JSON.stringify(await db.crate.findMany({ where: { customerId: B.id }, include: { orders: { where: cr.crateOrdersWhere({ appRole: 'MUSTERI', customerId: B.id }), select: { orderId: true } } } })).includes(a1.id));
+  assert.deepEqual(await crateOrders({ appRole: 'MUSTERI', customerId: null }), []);
+  for (const appRole of ['ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI']) assert.deepEqual(await crateOrders({ appRole, customerId: null }), [a1.id, b1.id].sort(), appRole);
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'CROSS_CUSTOMER_CRATE_ASSIGNED', entityId: a1.id } });
   assert.deepEqual([audit.userId, audit.details.ownerCustomerId, audit.details.hostCustomerId, audit.details.crateNo, audit.details.day, audit.details.orderNo], [admin.id, A.id, B.id, 15, X, a1.orderNo]);
   assert.ok(await db.orderEvent.findFirst({ where: { orderId: a1.id, event: 'GUEST_CRATE' } }));

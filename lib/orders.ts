@@ -5,6 +5,7 @@ import type { CurrentUser } from './auth/session';
 import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
 import { orderScope as scopeFor } from '../server/orders/scope.js';
+import { customerView } from '../server/orders/customer-view.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -15,19 +16,14 @@ export function customerLabel(user: CurrentUser, name: string): string {
   return canSeeCustomerName(user.appRole) ? name : maskName(name);
 }
 
-// Satış ve çizim ekibine firmanın iletişim ve grup bilgisi de gitmez (ADR 0003).
-const PRIVATE_CUSTOMER_FIELDS = ['contactPerson', 'email', 'phone', 'address', 'taxId', 'groupName', 'regCom', 'country', 'county', 'city'] as const;
-
 /**
- * Firma kaydını kullanıcının görebileceği hale getirir: tam adı göremeyen rollerde ad maskelenir
- * (GLA**********) ve iletişim alanları boşaltılır. Veri veritabanından gelir gelmez uygulanır;
- * sayfa ve istemci bileşenleri tam adı hiç görmez.
+ * Firma kaydını kullanıcının görebileceği hale getirir (kural: server/orders/customer-view.js): tam adı göremeyen
+ * rollerde ad maskelenir (GLA**********) ve iletişim / fatura / kur politikası alanları boşaltılır; ticari iç alanlar
+ * (kur yüzdesi, fiyat tablosu bağlantıları, grup) firmaları yöneten rol dışında kimseye gitmez. Veri veritabanından
+ * gelir gelmez uygulanır; sayfa ve istemci bileşenleri bu alanları hiç görmez.
  */
 export function sanitizeCustomer<C extends { name: string }>(user: CurrentUser, c: C): C {
-  if (userCan(user, 'CUSTOMER_NAME_VIEW')) return c;
-  const out: Record<string, unknown> = { ...c, name: maskName(c.name) };
-  for (const f of PRIVATE_CUSTOMER_FIELDS) if (f in out) out[f] = null;
-  return out as C;
+  return customerView(user.appRole, c);
 }
 
 type PriceView = 'admin' | 'customer' | 'sales';

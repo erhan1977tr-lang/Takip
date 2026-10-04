@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Müşteri kur politikası (Aşama 7D-1, karar 95–98): Yönetici → Müşteriler'de politika seçimi (BT / BNR / BNR + %; zorunlu, varsayılan BT),
 // yüzde doğrulaması sunucuda, bugünün kuru önizlemesi, cam siparişinin Finans / FGO bölümünde kur önizlemesi + elle kur alanı.
@@ -149,7 +149,7 @@ test('yetkisiz roller kur politikasını değiştiremez: sayfa açılmaz, taklit
   const admin = await as(browser, ADMIN, ADMIN_PW);
   const field = await actionField(admin, firmUrl(), 'name="fxPolicy"');
   const data = { id: firmId, name: 'Kur E2E SRL', type: 'CUSTOMER', prefix: 'KUR', groupName: '', camEtiket: '', sandikEtiket: '', fxPolicy: 'BNR', fxMarkupPercent: '' };
-  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     await p.goto(firmUrl());
     await expect(p, `${who}: sayfa`).toHaveURL(/\/siparisler$/);

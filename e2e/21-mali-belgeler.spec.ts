@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Mali belgeler (karar 111):
 //  - müşteri: "Documente financiare" — kendi firmasının FGO'da kesilmiş proforma / avans faturası / faturaları, ödeme
@@ -141,7 +141,7 @@ test('gizlilik ve yetki: öbür müşteri yalnızca kendi belgesini görür; iç
   expect((await beta.request.get(`/belgeler/${betaDoc}/pdf`)).status()).toBe(503);
   await beta.context().close();
 
-  for (const [email, pw] of [[SALES, TEAM_PW], [DRAWER, TEAM_PW], [INSPECTOR, 'Denet1']] as const) {
+  for (const [email, pw] of [[SALES, TEAM_PW], [DRAWER, TEAM_PW], [INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     await expect(p.getByRole('link', { name: /Mali belgeler|Documente financiare/ })).toHaveCount(0);
     await p.goto('/belgeler');
@@ -264,4 +264,31 @@ test('müşteri: "Proforma este disponibilă." bildirimi belgeye götürür', as
   await expect(page.locator(`#doc-${ids.PRF81005}`)).toBeVisible();
   await expect(page.locator(`#doc-${ids.PRF81005}`)).toContainText('PRF81005');
   await page.context().close();
+});
+
+test('SEC-09: PDF adresi kullanıcı başına sınırlıdır (5 dakikada 30 istek); sahiplik denetimi sınırdan önce gelir; başka kullanıcı etkilenmez', async ({ browser }) => {
+  // Bu dosyanın SON testi: sınır süreç belleğinde tutulur ve 5 dakika sürer (sonraki testleri etkilemesin).
+  // FGO bu veritabanında kapalıdır: belge indirilemez → 503; FGO'ya hiçbir istek gitmez.
+  const beta = await as(browser, BETA, TEAM_PW);
+  const statuses: number[] = [];
+  let limited: Awaited<ReturnType<typeof beta.request.get>> | null = null;
+  for (let i = 0; i < 40 && !limited; i++) {
+    const res = await beta.request.get(`/belgeler/${betaDoc}/pdf`);
+    if (res.status() === 429) limited = res;
+    else statuses.push(res.status());
+  }
+  expect(limited, '30 istekten sonra sınır').toBeTruthy();
+  expect(statuses.length).toBeGreaterThan(0);
+  expect(statuses.length).toBeLessThanOrEqual(30);
+  expect([...new Set(statuses)]).toEqual([503]);
+  expect(Number(limited!.headers()['retry-after'])).toBeGreaterThan(0);
+  expect(limited!.headers()['cache-control']).toContain('no-store');
+  // Sınırdayken de: başkasının belgesi "bulunamadı" (sahiplik önce denetlenir; sınır bilgi sızdırmaz)
+  expect((await beta.request.get(`/belgeler/${ids.PRF81001}/pdf`)).status()).toBe(404);
+  expect((await beta.request.get(`/belgeler/${betaDoc}/pdf`)).status()).toBe(429);
+  await beta.context().close();
+  // Sınır kullanıcı başınadır: yönetici aynı belgeyi isteyebilir
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  expect((await admin.request.get(`/belgeler/${betaDoc}/pdf`)).status()).toBe(503);
+  await admin.context().close();
 });

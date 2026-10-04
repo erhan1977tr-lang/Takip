@@ -30,5 +30,6 @@ export default {
   pdf: {
     notFound: 'Documentul nu a fost găsit.',
     unavailable: 'Documentul nu este disponibil momentan. Vă rugăm să încercați din nou mai târziu.',
+    tooMany: 'Prea multe solicitări de documente într-un timp scurt. Vă rugăm să încercați din nou peste câteva minute.',
   },
 };

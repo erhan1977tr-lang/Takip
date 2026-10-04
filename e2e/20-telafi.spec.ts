@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Aşama 9 — kırık / telafi camı (karar 108–109) ve siparişi silme / geri yükleme (karar 110).
 //  - teklif tablosunda yalnızca fiziksel cam satırında "Kırık / Telafi"; form: cam → adet → fiyat → hedef → özet + açık onay
@@ -259,7 +259,7 @@ test('müşteri, çizim ve denetimci: telafi düğmesi, "Önemli kararlar" ve TE
   await expect(cust.locator('#teklif')).toContainText('Lamine'); // teklifin yeni sürümü müşteride
   expect(await cust.content()).not.toContain('TELAFİ');
   await cust.context().close();
-  for (const [email, pw] of [[INSPECTOR, 'Denet1'], [DRAWER, TEAM_PW]] as const) {
+  for (const [email, pw] of [[INSPECTOR, INSPECTOR_PW], [DRAWER, TEAM_PW]] as const) {
     const p = await as(browser, email, pw);
     await p.goto(`/siparisler/${srcId}?telafi=${line1}`);
     await expect(p.getByRole('link', { name: 'Kırık / Telafi' })).toHaveCount(0);

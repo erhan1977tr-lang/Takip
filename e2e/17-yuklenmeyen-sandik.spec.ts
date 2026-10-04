@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
 
 // Aşama 7E — yüklenmeyen camın ileri güne aktarılması (karar 102) ve başka müşterinin sandığına fiziksel yerleşim (karar 103).
 //  - onayda cam satırı başına yüklenmeyen adet + neden; onaylı günde "Yüklenmeyen camlar" ve "Yeniden planla"
@@ -239,7 +239,7 @@ test('yetkisiz roller: taklit form gönderimiyle aktarım yapılamaz, sandık ye
   const item = await db.loadingConfirmationItem.findFirstOrThrow({ where: { orderId: orderU, status: 'NOT_LOADED' } });
   const replanDays = async () => (await db.loadingReplan.findMany({ where: { orderId: orderU }, orderBy: { createdAt: 'asc' } })).map((r) => `${r.status}:${r.shipDay.toISOString().slice(0, 10)}`);
   const links = () => db.crateOrder.count({ where: { orderId: orderU, crateId } });
-  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['ev-sahibi', BETA, TEAM_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, 'Denet1']] as const) {
+  for (const [who, email, pw] of [['musteri', CUSTOMER, CUST_PW], ['ev-sahibi', BETA, TEAM_PW], ['satis', SALES2, TEAM_PW], ['cizim', DRAWER, TEAM_PW], ['denetim', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
     const r1 = await forge(p, DAY_URL, replanField, { day: DAY, itemId: item.id, quantity: '2', newDay: OTHER_DAY });
     expect(r1.url(), `${who}: taklit aktarım`).toMatch(/\/siparisler$/);

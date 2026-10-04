@@ -420,5 +420,6 @@ export default {
     invalid: 'Link invalid sau expirat.',
     invalidHint: 'Linkul poate fi reînnoit, comanda anulată sau linkul expirat. Vă rugăm să contactați GKH.',
     tooMany: 'Prea multe încercări. Vă rugăm să reîncercați mai târziu.',
+    limit: 'Fișierul nu a putut fi încărcat acum: limita de încărcare pentru această comandă a fost atinsă sau spațiul de pe server este insuficient. Vă rugăm să contactați GKH.',
   },
 };

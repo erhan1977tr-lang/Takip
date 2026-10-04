@@ -17,6 +17,8 @@ import { WINDOW_MS } from '@/server/auth/throttle.js';
 const EXT = ['pdf', 'jpg', 'jpeg', 'png'];
 const MAX = 20 * 1024 * 1024;
 const DEPOT_FAIL_LIMIT = 30;
+// Yükleme sınırları (server/files/limits.js): depo bağlantısından sipariş başına toplam 200 MB / 40 dosya + disk koruması
+const LIMIT_CODES = ['too_many', 'size', 'rate', 'order_quota', 'disk'];
 
 async function blocked(ip: string) {
   const n = await db.authFailure.count({ where: { kind: 'DEPOT', ip, createdAt: { gte: new Date(Date.now() - WINDOW_MS) } } });
@@ -41,8 +43,8 @@ export async function depotAction(fd: FormData) {
     if (!EXT.includes(ext) || f.size > MAX) redirect(`${base}?e=type&n=${encodeURIComponent(f.name)}`);
   }
   // Dosyalar içerik kontrolü ve antivirüsten geçer; yükleyen kişi yok (depo bağlantısı)
-  const stored = await storeFiles(files, { userId: null, orderId: p.orderId });
-  if (!stored.ok) redirect(`${base}?e=type&n=${encodeURIComponent(stored.problem.name)}`);
+  const stored = await storeFiles(files, { userId: null, orderId: p.orderId, depot: true });
+  if (!stored.ok) redirect(LIMIT_CODES.includes(stored.problem.code) ? `${base}?e=limit` : `${base}?e=type&n=${encodeURIComponent(stored.problem.name)}`);
 
   if (intent === 'confirm' && p.stage === 'DEPODA') {
     try {

@@ -4,6 +4,7 @@ import { AuthCard } from '../AuthCard';
 import { getT } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { setPasswordAction, verifyCodeAction } from './actions';
+import { PASSWORD_MAX, PASSWORD_MIN } from '@/server/auth/password-policy.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,10 +34,15 @@ export default async function SetupPage({
         <>
           <h2 style={{ marginTop: 14 }}>{t('auth.setup.step1Title')}</h2>
           <p className="muted">
-            {rich(t('auth.setup.step1Text'), { email: <b>{email || t('auth.setup.yourEmail')}</b> })}
+            {email ? rich(t('auth.setup.step1Text'), { email: <b>{email}</b> }) : t('auth.setup.step1TextNoEmail')}
           </p>
           <form action={verifyCodeAction} style={{ marginTop: 16 }}>
-            <input type="hidden" name="email" value={email} />
+            {email ? <input type="hidden" name="email" value={email} /> : (
+              <div className="field">
+                <label htmlFor="email">{t('auth.login.email')}</label>
+                <input id="email" name="email" type="email" autoComplete="username" required />
+              </div>
+            )}
             <div className="field">
               <label htmlFor="code">{t('auth.setup.code')}</label>
               <input
@@ -58,11 +64,11 @@ export default async function SetupPage({
             <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
             <div className="field">
               <label htmlFor="password">{t('auth.setup.newPassword')}</label>
-              <input id="password" name="password" type="password" autoComplete="new-password" required minLength={6} />
+              <input id="password" name="password" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN} maxLength={PASSWORD_MAX} />
             </div>
             <div className="field">
               <label htmlFor="password2">{t('auth.setup.newPassword2')}</label>
-              <input id="password2" name="password2" type="password" autoComplete="new-password" required minLength={6} />
+              <input id="password2" name="password2" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN} maxLength={PASSWORD_MAX} />
               <div className="hint">{t('auth.setup.passwordRule')}</div>
             </div>
             {error && <div className="alert alert-error">{error}</div>}
