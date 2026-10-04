@@ -33,7 +33,8 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).click();
   await expect(desc).toHaveCount(2);
   await expect(desc.nth(1)).toHaveValue(GLASS);
-  await sales.getByRole('button', { name: '+CNC' }).first().click();
+  // CNC tek adetlik (yeni eklenen) cam satırına: 3 adetlik satırdan cam ayrılmaz (ayırma 02'de sınanır)
+  await sales.getByRole('button', { name: '+CNC' }).nth(1).click();
   await sales.getByLabel('CNC fiyatı').fill('15');
 
   // "Tek fiyatı tüm satırlara uygula": işaretliyken m² cam satırlarının hepsine; CNC satırı değişmez

@@ -303,9 +303,19 @@ test('teklifte CNC ve delik alt satırları; fiyatsız satırla teklif gönderil
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await expect(sales.getByText('Çizim gerekmiyor olarak işaretlendi.')).toBeVisible();
   await fillOffer(sales);
+  // CNC / delik TEK bir cama aittir (karar 113): 3 adetlik satırdan bir cam ayrılır (2 + 1) ve işlem ayrılan cama eklenir
   await sales.getByRole('button', { name: '+CNC' }).click();
-  await sales.getByRole('button', { name: '+Delik' }).click();
-  await expect(sales.getByText('2 satırın fiyatı boş: 1. CNC, 1. Delik')).toBeVisible();
+  await expect(sales.getByText('Cam ayrıldı')).toBeVisible();
+  const qty = sales.getByLabel('Adet', { exact: true });
+  await expect(qty).toHaveCount(2);
+  await expect(qty.nth(0)).toHaveValue('2');
+  await expect(qty.nth(1)).toHaveValue('1');
+  await expect(qty.nth(1)).toHaveAttribute('readonly', ''); // işlemli cam tek adettir
+  await expect(sales.getByLabel('Birim fiyat', { exact: true }).nth(1)).toHaveValue('41,5'); // birim fiyat ayrılan camda aynı
+  // Tek adetlik cama +Delik: yeniden ayrılmaz, delik aynı cama eklenir
+  await sales.getByRole('button', { name: '+Delik' }).nth(1).click();
+  await expect(qty).toHaveCount(2);
+  await expect(sales.getByText('2 satırın fiyatı boş: 2. CNC, 2. Delik')).toBeVisible();
   await expect(sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' })).toBeDisabled();
 
   await sales.getByLabel('CNC açıklaması').fill('Kulp yuvası');
@@ -314,7 +324,12 @@ test('teklifte CNC ve delik alt satırları; fiyatsız satırla teklif gönderil
   await sales.getByLabel('Delik adedi').fill('4');
   await sales.locator('tr.sub-line', { hasText: 'Delik' }).getByRole('button', { name: 'bedelsiz' }).click();
   await expect(sales.locator('.offer-table tfoot')).toContainText('3 cam · 2 CNC · 4 delik');
-  await expect(sales.locator('.offer-table tfoot')).toContainText('279,00 EUR'); // 249 + 2 × 15, delik bedelsiz
+  await expect(sales.locator('.offer-table tfoot')).toContainText('279,00 EUR'); // 249 + 2 × 15, delik bedelsiz (ayırma tutarı değiştirmez)
+  if (process.env.SCREENSHOT_DIR) {
+    await sales.setViewportSize({ width: 1440, height: 900 });
+    await sales.locator('.offer-table').scrollIntoViewIfNeeded();
+    await sales.screenshot({ path: `${process.env.SCREENSHOT_DIR}/masaustu-teklif-islem-tek-cam.png`, fullPage: true });
+  }
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
   const view = sales.locator('#teklif');

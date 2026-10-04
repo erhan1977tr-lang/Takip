@@ -53,3 +53,25 @@ test('eski Excel (.xls, BIFF8) okunur: metin (Türkçe / Romence), tam sayı, on
   assert.throws(() => readXls(Buffer.from('bu bir excel değil')), XlsxError);
   assert.throws(() => readXls(Buffer.concat([buf.subarray(0, 600), Buffer.alloc(100)])), XlsxError, 'bozuk dosya');
 });
+
+// Karar 113: Excel'den aktarılan cam satırı olağan cam satırıdır (adet > 1 olabilir); sonradan işlem eklenirse aynı kural
+test('Excel\'den aktarılan adet > 1 satır geçerlidir; işlem eklenince tek cam ayrılır (toplam adet ve tutar aynı)', async () => {
+  const { offerProblems, offerTotals, sharedOpsGlasses, splitOnePiece } = await import('../server/orders/rules.js');
+  const r = validateImportRows([['K1', 1000, 2000, 6], ['K2', 800, 600, 1]], { width: 1, height: 2, qty: 3 });
+  assert.equal(r.valid, 2);
+  // Teklif tablosuna aktarıldığı biçim: siparişteki cam, ölçü ve adet Excel'den, fiyat liste fiyatı
+  const lines = r.rows.map((x) => ({ id: '', kind: 'CAM', description: 'Temper', enMm: String(x.en), boyMm: String(x.boy), adet: String(x.adet), unit: 'm2', unitPrice: '24' }));
+  assert.deepEqual([offerProblems(lines), sharedOpsGlasses(lines)], [[], []], 'aktarılan satırlar adetle durur');
+  const before = offerTotals(lines);
+  assert.deepEqual([before.adet, before.metraj], [7, 12.48]);
+  // +Delik (6 adetlik satıra): bir cam ayrılır, delik ona eklenir
+  const s = splitOnePiece(lines, 0);
+  const hole = { id: '', kind: 'DELIK', description: '', adet: '2', unit: 'adet', unitPrice: '2' };
+  const after = [...s.lines.slice(0, s.index + 1), hole, ...s.lines.slice(s.index + 1)];
+  assert.deepEqual(after.map((l) => [l.kind, l.enMm ?? '', l.adet]), [['CAM', '1000', '5'], ['CAM', '1000', '1'], ['DELIK', '', '2'], ['CAM', '800', '1']]);
+  assert.deepEqual([offerProblems(after), sharedOpsGlasses(after)], [[], []]);
+  const t = offerTotals(after);
+  assert.deepEqual([t.adet, t.metraj, t.delik, t.amount], [7, 12.48, 2, before.amount + 4]);
+  // Ayırmadan eklenseydi (taklit istek): belirsiz
+  assert.deepEqual(sharedOpsGlasses([lines[0], hole, lines[1]]), [0]);
+});

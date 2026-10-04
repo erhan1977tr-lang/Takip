@@ -8,7 +8,7 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
-import { atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, shouldAutoProduce, slaDeadline } from './rules.js';
+import { atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
 import { verifyReviewToken } from './review.js';
 import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
@@ -182,8 +182,15 @@ const priceNum = (v) => (v == null || v === '' ? null : Number(v));
  */
 function mergePrices(lines, existing, admin) {
   const byId = new Map(existing.map((l) => [l.id, l]));
+  const sameGlass = (a, b) => (a.kind ?? 'CAM') === 'CAM' && (b.kind ?? 'CAM') === 'CAM' && String(a.description) === String(b.description)
+    && (a.unit ?? 'm2') === (b.unit ?? 'm2') && Number(a.enMm ?? 0) === Number(b.enMm ?? 0) && Number(a.boyMm ?? 0) === Number(b.boyMm ?? 0);
   return lines.map((l) => {
-    const old = l.id ? byId.get(l.id) : undefined;
+    const own = l.id ? byId.get(l.id) : undefined;
+    // Ayrılan cam (karar 113): adedi 1'den büyük bir satırdan, işlem eklemek için ayrılmış TEK cam. Yeni bir satırdır
+    // ama aynı camdır: kaynağının kayıtlı fiyatlarını (maliyet ve müşteri fiyatı) ve TELAFİ işaretini taşır — ayırma
+    // fiyat değişikliği değildir. Kaynak, bu teklifin aynı camı (açıklama, ölçü, birim) olan bir satırı olmalıdır.
+    const from = !own && l.from ? byId.get(l.from) : undefined;
+    const old = own ?? (from && sameGlass(from, l) ? from : undefined);
     // Bedelsiz TELAFİ satırı (karar 108): müşteriye bedelsizdir ama fabrika maliyeti durur — satış formu bedelsiz satırın
     // fiyatını 0 gönderir; kayıtlı maliyet korunur (bedelsiz telafi kârlılıkta maliyetiyle görünmeli).
     const keepCost = !admin && old?.compensationId && l.free;
@@ -194,6 +201,15 @@ function mergePrices(lines, existing, admin) {
       compensationId: old?.compensationId ?? null,
     };
   });
+}
+
+/**
+ * İşlem sahipliği (karar 113) — her teklif kaydında (taslak dahil) sunucuda denetlenir: CNC / delik satırı adedi 1'den
+ * büyük bir cam satırına bağlanamaz. Ekran, işlem eklenirken camı kendiliğinden tek adetlik satıra ayırır; bu denetim
+ * taklit / eski istekler içindir.
+ */
+function requireOwnedOps(lines) {
+  if (sharedOpsGlasses(lines ?? []).length) throw new WorkflowError('OPS_MULTI_GLASS');
 }
 
 /** Satırları mevcut teklife yazar: eşleşen satır güncellenir, yeni satır eklenir, gelmeyen satır silinir. */
@@ -241,6 +257,7 @@ async function offerEdit(h, intent) {
   const offer = latestOffer(order);
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
   const admin = can(actor.role, 'OFFER_SEND');
+  requireOwnedOps(payload.lines);
   const merged = mergePrices(await completeLines(h, offer, payload.lines), offer.lines, admin);
   let saved = await writeLines(tx, offer.id, merged, offer.lines);
   // Satış yöneticiye gönderirken müşteri fiyatı boş satırlar müşterinin fiyat tablosundan dolar (karar 32)
@@ -468,6 +485,7 @@ const ACTIONS = {
     const { tx, order, actor, payload, now } = h;
     const prev = latestOffer(order);
     if (!prev) throw new WorkflowError('OFFER_NOT_FOUND');
+    requireOwnedOps(payload.lines);
     const lines = mergePrices(await completeLines(h, prev, payload.lines), prev.lines, true);
     requireOfferPrices(lines);
     const { amount, offerAmount } = amounts(lines);

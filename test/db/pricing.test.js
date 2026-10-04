@@ -95,8 +95,9 @@ dbTest('teklif: satışçının taslağına liste fiyatı gelir; farklı fiyatla
   // Yönetici geri gönderir; satışçı fiyatı düşürür, delik ekler (tablonun sabit fiyatından farklı) ve yeniden gönderir
   await run(o.id, 'return_offer', 'admin', { lines: same, amount: '60.00', returnNote: 'kontrol' });
   offer = await offerOf(o.id);
+  // (delik TEK bir cama aittir — karar 113: işlemli cam satırı tek adettir)
   const changed = [
-    { ...lineOf(offer.lines[0]), unitPrice: '27.50' },
+    { ...lineOf(offer.lines[0]), unitPrice: '27.50', adet: 1 },
     { description: '', poz: null, enMm: null, boyMm: null, adet: 4, unit: 'adet', unitPrice: '2.00', kind: 'DELIK', free: false },
   ];
   await run(o.id, 'submit_offer', 'sales', { lines: changed, amount: '63.00' });
@@ -158,12 +159,13 @@ dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; sa
   await run(o.id, 'no_drawing', 'sales');
   let offer = await offerOf(o.id);
   const salesLines = [
-    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, unitPrice: '30.00' },
+    // İşlemli cam tek adettir (karar 113): 1000 × 2000, 1 adet = 2 m²
+    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, unitPrice: '30.00', adet: 1, boyMm: 2000 },
     { id: null, description: '', poz: null, enMm: null, boyMm: null, adet: 4, unit: 'adet', unitPrice: '3.00', kind: 'DELIK', free: false },
   ];
   await run(o.id, 'submit_offer', 'sales', { lines: salesLines });
   offer = await offerOf(o.id);
-  // cam 1 m² × 2 adet: satış 30 → 60 + delik 4 × 3 = 72 · müşteri 50 → 100 + delik 4 × 5 = 120
+  // cam 2 m² × 1 adet: satış 30 → 60 + delik 4 × 3 = 72 · müşteri 50 → 100 + delik 4 × 5 = 120
   assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]), [['CAM', 30, 50], ['DELIK', 3, 5]]);
   assert.deepEqual([Number(offer.amount), Number(offer.offerAmount)], [72, 120]);
 
@@ -172,7 +174,7 @@ dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; sa
   // tarayıcıdan gelen satış fiyatı (0) kullanılmaz, maliyet sessizce 0 kalmaz.
   assert.ok((await saveTable(db, tables.special, { name: 'Özel', currency: 'EUR', holePrice: null, cncPrice: 12 }, admin())).ok);
   const adminLines = [
-    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, boyMm: 2000, offerPrice: '55.00', unitPrice: '1.00' },
+    { ...lineOf(offer.lines[0]), id: offer.lines[0].id, boyMm: 4000, offerPrice: '55.00', unitPrice: '1.00' },
     { ...lineOf(offer.lines[1]), id: offer.lines[1].id, offerPrice: '5.00' },
     { id: null, description: '', poz: null, enMm: null, boyMm: null, adet: 1, unit: 'adet', unitPrice: '0', kind: 'CNC', free: false, offerPrice: '20.00' },
   ];
@@ -180,8 +182,8 @@ dbTest('iki kademeli fiyat: müşteri fiyatı müşterinin tablosundan gelir; sa
   offer = await offerOf(o.id);
   assert.deepEqual(offer.lines.map((l) => [l.kind, Number(l.unitPrice), Number(l.offerPrice)]),
     [['CAM', 30, 55], ['DELIK', 3, 5], ['CNC', 12, 20]]);
-  assert.equal(offer.lines[0].boyMm, 2000);
-  // cam 2 m² × 2 adet = 4 m²: satış tutarı 120 + 12 + 12 (yöneticinin eklediği CNC'nin fabrika fiyatı)
+  assert.equal(offer.lines[0].boyMm, 4000);
+  // cam 4 m² × 1 adet = 4 m²: satış tutarı 120 + 12 + 12 (yöneticinin eklediği CNC'nin fabrika fiyatı)
   assert.equal(Number(offer.amount), 144);
   // Yönetici satışa geri gönderir; satış yeniden kaydeder → müşteri fiyatları korunur
   await run(o.id, 'return_offer', 'admin', { lines: adminLines, returnNote: 'bak' });

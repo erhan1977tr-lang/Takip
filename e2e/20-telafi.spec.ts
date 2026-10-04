@@ -5,7 +5,9 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as } from './helpe
 
 // Aşama 9 — kırık / telafi camı (karar 108–109) ve siparişi silme / geri yükleme (karar 110).
 //  - teklif tablosunda yalnızca fiziksel cam satırında "Kırık / Telafi"; form: cam → adet → fiyat → hedef → özet + açık onay
-//  - satış müşteri fiyatını görmez: "normal fiyat" satış fiyatıdır; bedelsiz telafi yeni telafi siparişi (UNS7901-T) açar
+//  - fiyat (karar 112): satış yalnızca "Aynı fiyat" (yöneticinin müşteri fiyatı — sunucu taşır, satış tutarı GÖRMEZ) ya da
+//    "Bedelsiz" seçer; bedelsiz telafi yeni telafi siparişi (UNS7901-T) açar
+//  - işlemler (karar 113): CNC tek bir cama aittir — işlemsiz cam işlem miras almaz; işlemli tek cam işlemiyle AYNEN kopyalanır
 //  - "Önemli kararlar" aynı formu açar; müşterinin ileri tarihli siparişi (teklifi müşteride) + satış → yönetici onayı bekler
 //  - yönetici onaylar → TELAFİ satırı teklifin yeni sürümünde
 //  - siparişi sil: yalnızca yönetici, iki adım (bölüm + onay kutusu); sipariş olağan ekranlardan kalkar; geri yüklenir
@@ -18,7 +20,7 @@ const iso = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISO
 const dmy = (k: string) => k.split('-').reverse().join('.');
 const NEW_DAY = iso(48);
 const FUTURE_DAY = iso(55);
-let srcId = '', futureId = '', removeId = '', line1 = '', line2 = '';
+let srcId = '', futureId = '', removeId = '', line1 = '', lineOp = '', line2 = '';
 
 async function shot(page: Page, name: string) {
   const dir = process.env.SCREENSHOT_DIR;
@@ -60,10 +62,12 @@ test('veri: yüklenmiş kaynak sipariş, müşterinin ileri tarihli siparişi ve
   });
   const one = [glass(0, { description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 5, unitPrice: '37', offerPrice: '66.96' })];
   const src = await order(7901, new Date('2026-03-10T12:00:00Z'), [
-    glass(0, { description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 10, unitPrice: '37', offerPrice: '66.96' }),
-    { sortOrder: 1, description: 'CNC', adet: 10, unit: 'adet', kind: 'CNC', unitPrice: '5', offerPrice: '8' },
-    glass(2, { description: 'Lamine', descriptionRo: 'Sticlă laminată', enMm: 800, boyMm: 600, adet: 4, unitPrice: '41', offerPrice: '77.77' }),
-    { sortOrder: 3, description: 'Sandık parası', descriptionRo: 'Ambalaj (ladă)', adet: 1, unit: 'adet', kind: 'CAM', unitPrice: '25', offerPrice: '30' },
+    // 9 işlemsiz cam + AYNI camdan CNC'li TEK cam (işlem tek bir cama aittir)
+    glass(0, { description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 9, unitPrice: '37', offerPrice: '66.96' }),
+    glass(1, { description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '37', offerPrice: '66.96' }),
+    { sortOrder: 2, description: 'CNC', adet: 1, unit: 'adet', kind: 'CNC', unitPrice: '5', offerPrice: '8' },
+    glass(3, { description: 'Lamine', descriptionRo: 'Sticlă laminată', enMm: 800, boyMm: 600, adet: 4, unitPrice: '41', offerPrice: '77.77' }),
+    { sortOrder: 4, description: 'Sandık parası', descriptionRo: 'Ambalaj (ladă)', adet: 1, unit: 'adet', kind: 'CAM', unitPrice: '25', offerPrice: '30' },
   ]);
   const future = await order(7902, new Date(`${FUTURE_DAY}T12:00:00Z`), one);
   const gone = await order(7903, new Date(`${iso(62)}T12:00:00Z`), one);
@@ -72,15 +76,16 @@ test('veri: yüklenmiş kaynak sipariş, müşterinin ileri tarihli siparişi ve
   futureId = future.id;
   removeId = gone.id;
   line1 = src.offers[0].lines[0].id;
-  line2 = src.offers[0].lines[2].id;
+  lineOp = src.offers[0].lines[1].id;
+  line2 = src.offers[0].lines[3].id;
 });
 
-test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS7901-T; "Önemli kararlar"dan müşterinin ileri tarihli siparişine → yönetici onayı bekler', async ({ browser }) => {
+test('satış: bedelsiz telafi → UNS7901-T (işlemsiz cam işlem almaz); "Önemli kararlar"dan aynı fiyatla ileri tarihli siparişe → yönetici onayı; işlemli tek cam aynı fiyatla → UNS7901-T2 (CNC aynen)', async ({ browser }) => {
   const page = await as(browser, SALES, TEAM_PW);
   await page.goto(`/siparisler/${srcId}`);
   const table = page.locator('#teklif');
   // Yalnızca fiziksel cam satırlarında: CNC ve sandık parası satırında düğme yok
-  await expect(table.getByRole('link', { name: 'Kırık / Telafi' })).toHaveCount(2);
+  await expect(table.getByRole('link', { name: 'Kırık / Telafi' })).toHaveCount(3);
   await expect(table.locator('tr.sub-line').getByRole('link', { name: 'Kırık / Telafi' })).toHaveCount(0);
   await expect(table.locator('tr', { hasText: 'Sandık parası' }).getByRole('link', { name: 'Kırık / Telafi' })).toHaveCount(0);
   await table.locator('tr', { hasText: 'Temper' }).first().getByRole('link', { name: 'Kırık / Telafi' }).click();
@@ -88,9 +93,15 @@ test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS
   const form = page.locator('#telafi');
   await expect(form).toBeVisible();
   await expect(form.locator('#comp-line')).toHaveValue(line1);
-  // Satış müşteri fiyatını görmez: "normal fiyat" satış fiyatıdır; müşteri fiyatları sayfada hiç yok
-  await expect(form).toContainText('Normal satış fiyatı: 37,00 EUR/m²');
-  await expect(form).toContainText('Bu cama ait işlemler de kopyalanır: CNC × 10');
+  // Satışın iki seçeneği var: "Aynı fiyat" (yöneticinin müşteri fiyatı) ve "Bedelsiz" — yeni fiyat giremez.
+  // Satış müşteri fiyatının tutarını görmez: müşteri fiyatları sayfada hiç yok
+  await expect(form).toContainText('Mevcut müşteri fiyatı: yöneticinin kaynak teklifte belirlediği fiyat');
+  await expect(form.locator('label.chip')).toHaveText(['Aynı fiyat', 'Bedelsiz']);
+  await expect(form.locator('input[name=price]')).toHaveCount(0);
+  // Cam seçimi fiziksel yapılandırmayı gösterir: işlemsiz camlar ve CNC'li tek cam ayrı seçeneklerdir
+  await expect(form.locator('#comp-line option', { hasText: 'işlemsiz' })).toHaveCount(2);
+  await expect(form.locator('#comp-line option', { hasText: 'CNC × 1' })).toHaveCount(1);
+  await expect(form).not.toContainText('AYNEN kopyalanır'); // seçili cam işlemsiz
   const html = await page.content();
   expect(html).not.toContain('66,96');
   expect(html).not.toContain('66.96');
@@ -118,17 +129,17 @@ test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS
   await expect(page.locator('.alert-ok', { hasText: 'Telafi camı eklendi: UNS7901-T.' })).toBeVisible();
   const card = page.locator('#kararlar');
   const entry = card.locator('.comp-entry').first();
-  for (const text of ['UNS7901', 'TELAFİ', '3 adet telafi', 'Kaynak cam: Temper · 1000×1000', 'Normal fiyat (satış): 37,00 EUR/m²', 'Telafi fiyatı (satış): Bedelsiz', `Hedef: UNS7901-T / ${dmy(NEW_DAY)}`, 'Oluşturan:', 'Tarih:']) {
+  for (const text of ['UNS7901', 'TELAFİ', '3 adet telafi', 'Bedelsiz telafi', 'Kaynak cam: Temper · 1000×1000', 'Fiyat kararı: Bedelsiz', `Hedef: UNS7901-T / ${dmy(NEW_DAY)}`, 'Oluşturan:', 'Tarih:']) {
     await expect(entry).toContainText(text);
   }
 
   const db = await prisma();
   const t = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T' }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
   expect([t.status, t.compSeq, t.compOfId, t.offers[0].status]).toEqual(['HAZIRLANIYOR', 1, srcId, 'YONETIMDE']);
-  // Bedelsiz: müşteri fiyatı 0, fabrika maliyeti durur
-  expect(t.offers[0].lines.map((l) => [l.kind, l.adet, Number(l.unitPrice), Number(l.offerPrice), l.free, !!l.compensationId])).toEqual([['CAM', 3, 37, 0, true, true], ['CNC', 3, 5, 0, true, true]]);
+  // Bedelsiz: müşteri fiyatı 0, fabrika maliyeti durur; işlemsiz cam CNC miras almaz (aynı camın CNC'li kardeşi olsa da)
+  expect(t.offers[0].lines.map((l) => [l.kind, l.adet, Number(l.unitPrice), Number(l.offerPrice), l.free, !!l.compensationId])).toEqual([['CAM', 3, 37, 0, true, true]]);
   const src = await db.order.findUniqueOrThrow({ where: { id: srcId }, include: { offers: { include: { lines: true } } } });
-  expect([src.offers.length, src.offers[0].lines.length]).toEqual([1, 4]); // kaynak değişmedi
+  expect([src.offers.length, src.offers[0].lines.length]).toEqual([1, 5]); // kaynak değişmedi
 
   // --- "Önemli kararlar" → aynı form; cam burada seçilir; önceki telafi gösterilir
   await card.getByRole('link', { name: 'Kırık / Telafi Camı Oluştur' }).click();
@@ -138,7 +149,8 @@ test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS
   await expect(form.locator('.comp-history')).toContainText('3 adet → UNS7901-T');
   await form.locator('#comp-line').selectOption(line2);
   await expect(form.locator('.comp-history')).toHaveCount(0);
-  await expect(form).toContainText('Normal satış fiyatı: 41,00 EUR/m²');
+  // "Aynı fiyat" seçili gelir: müşteri fiyatını (77,77) sunucu taşır, satış görmez
+  await expect(form.locator('input[name=modeChoice][value=NORMAL]')).toBeChecked();
   await form.locator('input[name=destChoice][value=EXISTING]').check();
   await expect(form.locator('select[name=destOrderId] option', { hasText: 'UNS7902' })).toContainText(`UNS7902 — ${dmy(FUTURE_DAY)} · yönetici onayı gerekir`);
   await form.locator('select[name=destOrderId]').selectOption(futureId);
@@ -154,6 +166,27 @@ test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS
   expect(f.offers.length).toBe(1);
   await expect(card.getByRole('button', { name: 'Onayla ve teklife ekle' })).toHaveCount(0);
   expect(await page.content()).not.toContain('77.77');
+
+  // --- İşlemli TEK cam, aynı fiyat, yeni telafi siparişi: CNC AYNEN kopyalanır; müşteri fiyatı yöneticinin fiyatıdır
+  await card.getByRole('link', { name: 'Kırık / Telafi Camı Oluştur' }).click();
+  await form.locator('#comp-line').selectOption(lineOp);
+  await expect(form).toContainText('Bu camın işlemleri telafiye AYNEN kopyalanır: CNC × 1');
+  await expect(form).toContainText('En çok 1'); // işlemli cam tek adettir
+  await form.locator('input[name=destChoice][value=NEW]').check();
+  await form.locator('#comp-day').fill(NEW_DAY);
+  await expect(form.locator('.comp-summary')).toContainText('Aynı fiyat (yöneticinin belirlediği müşteri fiyatı)');
+  await expect(form.locator('.comp-summary')).toContainText('Yeni telafi siparişi (UNS7901-T2)');
+  await shot(page, 'telafi-islemli-cam');
+  await form.locator('.comp-confirm input').check();
+  await form.getByRole('button', { name: 'Telafi camını ekle' }).click();
+  await expect(page.locator('.alert-ok', { hasText: 'Telafi camı eklendi: UNS7901-T2.' })).toBeVisible();
+  const t2 = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T2' }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
+  expect(t2.offers[0].lines.map((l) => [l.kind, l.adet, Number(l.unitPrice), Number(l.offerPrice), l.free, !!l.compensationId])).toEqual([['CAM', 1, 37, 66.96, false, true], ['CNC', 1, 5, 8, false, true]]);
+  // Aynı fiyat "fiyat değişti" kararı açmaz: tek fiyat kararı bedelsiz telafidir
+  expect(await db.adminAlert.count({ where: { type: 'COMPENSATION_PRICE', orderId: srcId } })).toBe(1);
+  // Satış müşteri fiyatını hâlâ hiçbir yerde görmedi
+  const after = await page.content();
+  for (const secret of ['66,96', '66.96', '77,77', '77.77']) expect(after, secret).not.toContain(secret);
   await db.$disconnect();
   await page.context().close();
 });
@@ -161,16 +194,21 @@ test('satış: teklif satırından bedelsiz telafi → yeni telafi siparişi UNS
 test('yönetici: fiyat kararı ve bekleyen telafi "Önemli kararlar"da; onaylayınca TELAFİ satırı teklifin yeni sürümünde; telafi siparişinde TELAFİ rozeti', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto('/admin/kararlar');
-  const priceRow = admin.locator('tr', { hasText: 'Telafi camı satış fiyatı değiştirildi' }).first();
+  // Bedelsiz telafi önemli karardır: kaynak sipariş, cam ve adet, ÖNCEKİ MÜŞTERİ FİYATI → Bedelsiz, hedef. "Aynı fiyat" kararları burada yok.
+  const priceRows = admin.locator('.card').first().locator('tr', { hasText: 'Telafi camı: bedelsiz / müşteri fiyatı kararı' });
+  await expect(priceRows).toHaveCount(1);
+  const priceRow = priceRows.first();
   await expect(priceRow).toContainText('UNS7901');
-  await expect(priceRow).toContainText('Normal: 37,00 EUR/m² → Telafi: Bedelsiz (satış fiyatı)');
+  await expect(priceRow).toContainText('3 × Temper 1000×1000 → UNS7901-T');
+  await expect(priceRow).toContainText('Önceki müşteri fiyatı: 66,96 EUR/m² → Telafi: Bedelsiz (müşteri fiyatı)');
   const pend = admin.locator('tr', { hasText: 'Telafi camı yönetici onayını bekliyor' }).first();
   await expect(pend).toContainText('UNS7902');
   await pend.getByRole('link', { name: 'Siparişte karar ver' }).click();
   await expect(admin).toHaveURL(new RegExp(`/siparisler/${futureId}`));
   const entry = admin.locator('#kararlar .comp-entry[data-status=PENDING]');
   await expect(entry).toContainText('Kaynak sipariş: UNS7901');
-  await expect(entry).toContainText('Normal fiyat (satış): 41,00 EUR/m²');
+  await expect(entry).toContainText('Önceki müşteri fiyatı: 77,77 EUR/m²');
+  await expect(entry).toContainText('Telafi fiyatı: 77,77 EUR/m²');
   // Müşteri fiyatı kaynağın kayıtlı müşteri fiyatıyla hazır gelir (yönetici değiştirebilir)
   await expect(entry.locator('input[name=price]')).toHaveValue('77.77');
   await entry.getByRole('button', { name: 'Onayla ve teklife ekle' }).click();
@@ -184,15 +222,25 @@ test('yönetici: fiyat kararı ve bekleyen telafi "Önemli kararlar"da; onaylay�
   expect(f.offers.map((o) => o.status)).toEqual(['GONDERILDI', 'GONDERILDI']);
   expect(f.offers[0].lines.map((l) => [l.description, l.adet, Number(l.unitPrice), Number(l.offerPrice), !!l.compensationId])).toEqual([['Temper', 5, 37, 66.96, false], ['Lamine', 1, 41, 77.77, true]]);
   expect(f.offers[1].lines.length).toBe(1); // eski sürüm değişmedi
-  const t = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T' } });
+  const t = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T2' } });
   await db.$disconnect();
   // Bekleyen karar kapandı
   await admin.goto('/admin/kararlar');
   await expect(admin.locator('.card').first().locator('tr', { hasText: 'Telafi camı yönetici onayını bekliyor' })).toHaveCount(0);
-  // Telafi siparişi yöneticinin fiyat onayında: teklif düzenleyicide satırlar TELAFİ rozetli
+  // Telafi siparişi (CNC'li tek cam) yöneticinin fiyat onayında: müşteri fiyatı hazır (66,96 / 8) — yeniden girilmez;
+  // satırlar TELAFİ rozetli; işlemli cam tek adettir (adet kutusu kilitli)
   await admin.goto(`/siparisler/${t.id}`);
   await expect(admin.locator('h1')).toContainText('Telafi e2e 7901');
   await expect(admin.locator('.line-actions .badge', { hasText: 'TELAFİ' })).toHaveCount(2);
+  await expect(admin.getByLabel('Adet', { exact: true })).toHaveAttribute('readonly', '');
+  await expect(admin.locator('input[name=l_oprice]').first()).toHaveValue(/^66[.,]96$/);
+  // Yöneticinin formu mevcut müşteri fiyatını tutarıyla gösterir; yeni müşteri fiyatı yalnızca yöneticide
+  await admin.goto(`/siparisler/${srcId}?telafi=${line1}#telafi`);
+  const aform = admin.locator('#telafi');
+  await expect(aform).toContainText('Mevcut müşteri fiyatı: 66,96 EUR/m²');
+  await expect(aform.locator('label.chip')).toHaveText(['Aynı fiyat — 66,96 EUR/m²', 'Bedelsiz — 0 EUR/m²', 'Başka fiyat (yönetici)']);
+  await shot(admin, 'telafi-formu-yonetici');
+  await admin.goto(`/siparisler/${t.id}`);
   await shot(admin, 'telafi-siparisi');
   await admin.context().close();
 });

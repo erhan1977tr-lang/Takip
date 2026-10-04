@@ -7,7 +7,7 @@ import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { sentOffer, type OrderDetail } from './orders';
 import { userCan } from './permissions';
-import { compensableLines, compensationDestinations, notLoadedLinks } from '../server/orders/compensation.js';
+import { ambiguousOps, compensableLines, compensationDestinations, notLoadedLinks } from '../server/orders/compensation.js';
 
 export type CompEntry = {
   id: string; status: 'APPLIED' | 'PENDING' | 'REJECTED';
@@ -40,7 +40,8 @@ export async function loadCompensations(orderId: string, user: CurrentUser): Pro
   });
   return rows.map((c): CompEntry => {
     const customerTier = c.priceTier === 'CUSTOMER';
-    // Satış yalnızca kendi kademesindeki (satış fiyatı) kararın tutarlarını görür
+    // Karar müşteri fiyatı üzerinedir (karar 112): tutarı yalnızca yönetici görür; satışa kararın türü gider (aynı fiyat /
+    // bedelsiz). Eski kayıtlardaki satış kademesi kararları (SALES) satışa kendi tutarıyla görünmeye devam eder.
     const visible = admin || !customerTier;
     return {
       id: c.id, status: c.status as CompEntry['status'], quantity: c.quantity, glass: c.description, glassRo: c.descriptionRo, enMm: c.enMm, boyMm: c.boyMm, currency: c.currency,
@@ -60,9 +61,15 @@ export async function loadCompensations(orderId: string, user: CurrentUser): Pro
 
 export type CompFormLine = {
   id: string; n: number; glass: string; glassRo: string | null; enMm: number; boyMm: number; adet: number;
-  /** Kullanıcının kademesindeki normal fiyat: yönetici → müşteri fiyatı, satış → satış fiyatı. Kaynak bedelsizse 0. */
+  /**
+   * Mevcut müşteri fiyatı (yöneticinin kaynak teklifte belirlediği) — YALNIZCA yöneticiye gider; satışta null: satış
+   * "aynı fiyat"ı seçer, tutarı sunucu taşır (iki kademeli fiyat, karar 4). Kaynak bedelsizse 0.
+   */
   normal: number | null; free: boolean;
-  ops: { kind: string; adet: number }[];
+  /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen kopyalanır */
+  ops: { kind: string; adet: number; description: string }[];
+  /** İşlemler adedi 1'den büyük satıra bağlı (eski kayıt): hangi camda olduğu belli değil — telafi açılamaz (karar 113) */
+  ambiguous: boolean;
   links: { itemId: string; day: string; free: number }[];
 };
 export type CompFormData = {
@@ -73,7 +80,7 @@ export type CompFormData = {
 
 /**
  * Telafi formunun seçenekleri. `order` sayfanın yüklediği, ROLE GÖRE TEMİZLENMİŞ sipariştir: satışta satırların müşteri
- * fiyatı zaten yoktur — "normal fiyat" kullanıcının görebildiği fiyattan hesaplanır, başka fiyat okunmaz.
+ * fiyatı zaten yoktur — mevcut müşteri fiyatı yalnızca yöneticinin formuna yazılır; satışın formuna hiçbir tutar gitmez.
  */
 export async function loadCompensationForm(order: OrderDetail, user: CurrentUser): Promise<CompFormData | null> {
   if (!userCan(user, 'OFFER_PREPARE') || order.orderTypeCode !== 'GLASS_ORDER' || order.status === 'IPTAL') return null;
@@ -102,8 +109,9 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
     requestKey: crypto.randomUUID(),
     lines: groups.map((g) => ({
       id: g.line.id, n: glassNo.get(g.line.id) ?? 0, glass: g.line.description, glassRo: g.line.descriptionRo, enMm: g.line.enMm ?? 0, boyMm: g.line.boyMm ?? 0, adet: g.line.adet,
-      normal: g.line.free ? 0 : admin ? num(g.line.offerPrice) : num(g.line.unitPrice), free: g.line.free,
-      ops: g.subs.map((s) => ({ kind: s.kind, adet: s.adet })),
+      normal: !admin ? null : g.line.free ? 0 : num(g.line.offerPrice), free: g.line.free,
+      ops: g.subs.map((s) => ({ kind: s.kind, adet: s.adet, description: s.description ?? '' })),
+      ambiguous: ambiguousOps(g),
       links: links.filter((x) => x.lineId === g.line.id).map((x) => ({ itemId: x.itemId, day: x.day, free: x.free })),
     })),
     destinations,

@@ -290,6 +290,20 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   confirmation and a `.btn-danger-solid` that is disabled until the box is ticked. Removed orders: `#silinen` card with a
   `details.removed-list` on the orders page (restore = `ConfirmButton primary`).
 
+### Compensation price + one-piece operations (3.44.0)
+
+- Compensation form price row: `.chip` radios only — Sales sees two ("Aynı fiyat", "Bedelsiz") and a `.small` line saying
+  the price is the Admin's (no amount is rendered for Sales); Admin sees three, with amounts on the chips
+  ("Aynı fiyat — 66,96 EUR/m²", "Bedelsiz — 0 EUR/m²", "Başka fiyat (yönetici)") and the existing price input.
+- Glass `<select>` options end with the physical configuration ("işlemsiz" / "CNC × 1, Delik × 2"); a legacy row with
+  unassigned operations is a disabled option. No new component.
+- Decisions card: `badge-info` "Bedelsiz telafi" / "Müşteri fiyatı değiştirildi" only when the decision differs from
+  "same price".
+- Offer editor: no new control type. "+CNC / +Delik" split the row in place (state only) and show one `.alert-info`
+  (`role="status"`); the quantity input of a one-piece row with operations is `readOnly` (with a `title`); "+ aynısı" is
+  another `.btn-link` in `.line-actions`; the rule is explained by one `.muted.small` line under the table. A legacy
+  violation is listed by the existing problems block and disables "save draft".
+
 ## Financial documents (3.43.0)
 
 - Customer page "Documente financiare" (`/belgeler`): the standard `.page-head` + one `.card.card-flush` with a

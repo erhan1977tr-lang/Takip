@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.44.0 — 04.10.2026
+
+- **Telafi camında fiyat**: satış artık yalnızca iki seçenek görür — **"Aynı fiyat"** (yöneticinin kaynak teklifte
+  belirlediği müşteri fiyatı aynen kullanılır; yöneticinin yeniden fiyat girmesi gerekmez) ya da **"Bedelsiz"**. Satış
+  telafi için yeni bir fiyat giremez; farklı müşteri fiyatını yalnızca yönetici belirler. Bedelsizde fabrika maliyeti
+  durur (kârlılıkta görünür). Bedelsiz telafi "Önemli kararlar"da önceki müşteri fiyatıyla birlikte görünür; "aynı fiyat"
+  seçildiğinde fiyat uyarısı açılmaz. Satış ekranında müşteri fiyatının tutarı gösterilmez; yönetici formda
+  "Mevcut müşteri fiyatı"nı tutarıyla görür.
+- **CNC / delik tek bir cama aittir**: adedi 1'den büyük cam satırında "+CNC / +Delik" denince camlardan biri
+  kendiliğinden ayrı satıra ayrılır (5 → 4 + 1) ve işlem o cama eklenir; birim fiyatlar, toplam adet ve tutar değişmez.
+  İşlemli camın adedi kilitlidir; aynı işlemli camdan bir tane daha için "+ aynısı". İşlemsiz camlar satırında adetle
+  durur. Adedi 1'den büyük cama bağlı işlemle teklif kaydedilemez (sunucu da reddeder).
+- **Telafide işlemler aynen kopyalanır**: oran / yuvarlama yok. İşlemsiz camın telafisi işlemsizdir; işlemli camın
+  telafisi aynı CNC / delikleri taşır. Telafi formunda her cam seçeneği "işlemsiz" ya da işlemleriyle yazar.
+
 ## 3.43.4 — 04.10.2026
 
 - Muhasebe → Tahsilat: sütun aralıkları biraz daraltıldı; e-posta sütunu 1440 px ekranda tam görünür.

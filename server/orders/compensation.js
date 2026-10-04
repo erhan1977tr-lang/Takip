@@ -5,14 +5,18 @@
 //   birbirine bağlanır (aşağıda "yüklenmeyen camla ilişki").
 //
 //   Kaynak: müşteriye GÖNDERİLMİŞ teklifin bir fiziksel cam satırı (m², ölçülü). Kaynak satır ve sipariş DEĞİŞMEZ.
-//   Telafi camı kaynağın kayıtlı bilgisinden kopyalanır (cam, ölçü, ağırlık, liste fiyatı, ona ait CNC / delik
-//   satırları adetle orantılı) — güncel fiyat tablosu okunmaz.
+//   Telafi camı kaynağın kayıtlı bilgisinden kopyalanır (cam, ölçü, ağırlık, liste fiyatı) — güncel fiyat tablosu
+//   okunmaz. İşlemler (CNC / delik) TEK bir cama aittir (karar 113): kaynak, işlemli tek bir cam satırıysa işlemleri
+//   AYNEN kopyalanır; işlemsiz cam satırıysa telafi işlemsizdir. Orantı, yuvarlama ya da tahmin YOKTUR.
 //
-//   Fiyat kararı (iki kademeli fiyat, karar 4 — satış müşteri fiyatını GÖRMEZ):
-//     NORMAL — kaynağın kayıtlı fiyatları aynen (satış fiyatı ve müşteri fiyatı)
-//     FREE   — Bedelsiz: müşteri fiyatı 0; fabrika maliyeti (satış fiyatı) DURUR → kârlılıkta maliyetiyle görünür
-//     CUSTOM — yönetici MÜŞTERİ fiyatını değiştirir (maliyet durur); satış kendi SATIŞ fiyatını değiştirir (müşteri
-//              fiyatını yönetici girer). Normalden farklı her karar "Önemli kararlar"a ve denetim kaydına yazılır.
+//   Fiyat kararı (karar 112) — kararın konusu her zaman MÜŞTERİ fiyatıdır; fabrika maliyeti hiçbir kararda değişmez:
+//     NORMAL — "aynı fiyat": yöneticinin kaynak teklifte belirlediği müşteri fiyatı AYNEN (sunucuda kopyalanır;
+//              yeniden fiyat girilmesi gerekmez). Fiyat değişmediği için "Önemli kararlar"a uyarı düşmez.
+//     FREE   — Bedelsiz: müşteri fiyatı 0; fabrika maliyeti (satış fiyatı) DURUR → kârlılıkta maliyetiyle görünür.
+//              Önemli karardır: "Önemli kararlar"a ve denetim kaydına yazılır.
+//     CUSTOM — başka bir müşteri fiyatı: YALNIZCA yönetici. Satış yeni bir müşteri fiyatı belirleyemez; farklı fiyat
+//              gerekiyorsa yönetici mevcut fiyat akışında (fiyat onayı / teklifi güncelle / bekleyen kararı onaylarken) girer.
+//   İki kademeli fiyat (karar 4) korunur: satış müşteri fiyatının TUTARINI görmez — "aynı fiyat"ı seçer, tutarı sunucu taşır.
 //
 //   Hedef — iki seçenek her zaman vardır:
 //     EXISTING — aynı müşterinin ileri tarihli bir siparişine TELAFİ satırı olarak eklenir
@@ -75,15 +79,12 @@ export function compensableLines(lines) {
 }
 
 /**
- * İşlem satırının (CNC / delik) telafi adedi: cam adediyle orantılı. Tam bölünmüyorsa yukarı yuvarlanır (üretim eksik
- * işlem görmesin); adet teklifte olağan yolla düzeltilebilir.
+ * Kaynak cam satırının işlemleri belirsiz mi (karar 113)? İşlem satırı taşıyan cam satırı TEK bir cam olmalıdır (adet 1).
+ * Adedi 1'den büyük bir satıra bağlı işlem (eski kayıt) hangi camda olduğunu söylemez — böyle bir satırdan telafi açılmaz
+ * (önce teklifte cam tek adetlik satırlara ayrılır); işlemler oranlanmaz, tahmin edilmez.
+ * @param {{ line: { adet: unknown }, subs: unknown[] }} group
  */
-export function scaleOps(adet, sourceQty, quantity) {
-  const total = int(adet) * int(quantity);
-  const base = int(sourceQty);
-  if (!(total > 0) || !(base > 0)) return 0;
-  return total % base === 0 ? total / base : Math.ceil(total / base);
-}
+export const ambiguousOps = (group) => group.subs.length > 0 && int(group.line.adet) !== 1;
 
 function parsePrice(v) {
   if (v == null || String(v).trim() === '') return null;
@@ -92,19 +93,23 @@ function parsePrice(v) {
 }
 
 /**
- * Fiyat kararı. admin: müşteri fiyatına karar verir (tier CUSTOMER); satış: satış fiyatına (tier SALES).
- *   unitCost   — telafi satırının satış fiyatı (= fabrika maliyeti). Bedelsizde ve yöneticinin kararında kaynağınkiyle aynı.
- *   offerPrice — telafi satırının müşteri fiyatı; satış fiyatı değiştirdiyse null (yönetici girer).
- *   changed    — normal fiyattan farklı (Bedelsiz ya da değiştirilmiş): "Önemli kararlar"a düşer.
+ * Fiyat kararı (karar 112) — konusu MÜŞTERİ fiyatıdır (tier her zaman CUSTOMER; eski kayıtlarda SALES görülebilir).
+ *   NORMAL: kaynağın kayıtlı müşteri fiyatı aynen · FREE: 0 (bedelsiz) · CUSTOM: yöneticinin girdiği yeni müşteri fiyatı.
+ *   Satış yalnızca NORMAL ya da FREE seçebilir: CUSTOM → PRICE_FORBIDDEN (satış yeni müşteri fiyatı belirleyemez).
+ *   unitCost   — telafi satırının satış fiyatı (= fabrika maliyeti): HER kararda kaynağınkiyle aynı (bedelsizde de).
+ *   offerPrice — telafi satırının müşteri fiyatı.
+ *   changed    — önceki müşteri fiyatından farklı (Bedelsiz ya da yöneticinin yeni fiyatı): "Önemli kararlar"a düşer;
+ *                aynı fiyatta false (fiyat değişmedi — uyarı yok).
  * @param {{ admin: boolean, mode: string, price?: unknown, line: { unitPrice: unknown, offerPrice?: unknown, free?: boolean } }} p
- * @returns {{ ok: true, mode: 'NORMAL' | 'FREE' | 'CUSTOM', tier: 'CUSTOMER' | 'SALES', free: boolean, unitCost: number, offerPrice: number | null, normalCost: number, normalPrice: number | null, changed: boolean } | { ok: false, code: 'BAD_MODE' | 'BAD_PRICE' }}
+ * @returns {{ ok: true, mode: 'NORMAL' | 'FREE' | 'CUSTOM', tier: 'CUSTOMER', free: boolean, unitCost: number, offerPrice: number | null, normalCost: number, normalPrice: number | null, changed: boolean } | { ok: false, code: 'BAD_MODE' | 'BAD_PRICE' | 'PRICE_FORBIDDEN' }}
  */
 export function priceDecision({ admin, mode, price = null, line }) {
   if (!COMP_MODES.includes(mode)) return fail('BAD_MODE');
+  if (mode === 'CUSTOM' && !admin) return fail('PRICE_FORBIDDEN');
   const srcFree = !!line.free;
   const normalCost = round2(Number(line.unitPrice ?? 0));
   const normalPrice = srcFree ? 0 : line.offerPrice == null ? null : round2(Number(line.offerPrice));
-  const tier = admin ? 'CUSTOMER' : 'SALES';
+  const tier = 'CUSTOMER';
   const base = { ok: true, tier, normalCost, normalPrice };
   const normal = { ...base, mode: 'NORMAL', free: srcFree, unitCost: normalCost, offerPrice: normalPrice, changed: false };
   if (mode === 'NORMAL') return normal;
@@ -113,24 +118,25 @@ export function priceDecision({ admin, mode, price = null, line }) {
   // 0 fiyat "Bedelsiz" seçeneğiyle verilir; burada pozitif fiyat beklenir
   if (p == null || Number.isNaN(p) || !(p > 0) || p > MAX_PRICE) return fail('BAD_PRICE');
   const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.005;
-  if (admin) return !srcFree && same(p, normalPrice) ? normal : { ...base, mode: 'CUSTOM', free: false, unitCost: normalCost, offerPrice: p, changed: true };
-  return !srcFree && same(p, normalCost) ? normal : { ...base, mode: 'CUSTOM', free: false, unitCost: p, offerPrice: null, changed: true };
+  // Yönetici önceki fiyatın aynısını yazdıysa bu "aynı fiyat"tır (değişiklik sayılmaz)
+  return !srcFree && same(p, normalPrice) ? normal : { ...base, mode: 'CUSTOM', free: false, unitCost: normalCost, offerPrice: p, changed: true };
 }
 
 const COPY = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'unit', 'kind', 'glassProductId', 'listPrice'];
 const copyOf = (l) => ({ ...Object.fromEntries(COPY.map((k) => [k, l[k] ?? null])), weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), listPrice: numOrNull(l.listPrice) });
 
 /**
- * Telafi satırları: cam satırı (adet = telafi adedi, kararın fiyatlarıyla) + ona ait işlem satırları (adet orantılı;
- * kendi kayıtlı fiyatlarıyla, bedelsiz telafide bedelsiz). Üretim bilgisi kaynaktan kopyalanır; hiçbir şey yeniden
- * hesaplanmaz / fiyat tablosundan okunmaz.
+ * Telafi satırları: cam satırı (adet = telafi adedi, kararın fiyatlarıyla) + o cama ait işlem satırları — AYNEN (aynı
+ * tür, açıklama ve adet; kendi kayıtlı fiyatlarıyla, bedelsiz telafide bedelsiz). İşlemli kaynak tek bir camdır
+ * (ambiguousOps değilse), bu yüzden işlemli telafi de tek camdır; oran / yuvarlama yoktur. Üretim bilgisi kaynaktan
+ * kopyalanır; hiçbir şey yeniden hesaplanmaz / fiyat tablosundan okunmaz.
  * @returns {object[]}  teklif satırı verisi (sıra numarası ve teklif kimliği yazılırken eklenir)
  */
 export function compensationLines({ line, subs = [], quantity, decision }) {
   const glass = { ...copyOf(line), adet: quantity, unitPrice: decision.unitCost, offerPrice: decision.free ? 0 : decision.offerPrice, free: decision.free };
   const freeAll = decision.mode === 'FREE';
   const ops = subs.map((s) => ({
-    ...copyOf(s), adet: scaleOps(s.adet, line.adet, quantity), unitPrice: round2(Number(s.unitPrice ?? 0)),
+    ...copyOf(s), adet: int(s.adet), unitPrice: round2(Number(s.unitPrice ?? 0)),
     offerPrice: freeAll ? 0 : numOrNull(s.offerPrice), free: freeAll || !!s.free,
   })).filter((s) => s.adet > 0);
   return [glass, ...ops];
@@ -352,6 +358,8 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
       if (!sent || sent.offerAmount == null) return fail('NO_SENT_OFFER');
       const group = compensableLines(sent.lines).find((g) => g.line.id === String(lineId ?? ''));
       if (!group) return fail('BAD_LINE');
+      // İşlemler tek bir cama aittir: adedi 1'den büyük satıra bağlı işlem (eski kayıt) kopyalanamaz — tahmin edilmez
+      if (ambiguousOps(group)) return fail('AMBIGUOUS_OPS');
       if (qty > group.line.adet) return fail('BAD_QUANTITY');
       const decision = priceDecision({ admin, mode, price, line: group.line });
       if (!decision.ok) return decision;
@@ -463,7 +471,8 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
         await tx.adminAlert.create({
           data: {
             type: 'COMPENSATION_PRICE', orderId: src.id, createdById: actor.id, createdAt: now,
-            details: { ...alert, normal: decision.tier === 'CUSTOMER' ? decision.normalPrice : decision.normalCost, price: decision.free ? 0 : decision.tier === 'CUSTOMER' ? decision.offerPrice : decision.unitCost },
+            // Önceki müşteri fiyatı → seçilen müşteri fiyatı (Bedelsiz = 0); kaynak sipariş, cam, adet, hedef ve gün `alert`te
+            details: { ...alert, quantity: qty, normal: decision.normalPrice, price: decision.free ? 0 : decision.offerPrice },
           },
         });
       }
@@ -532,6 +541,7 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       const offer = await tx.offer.findUnique({ where: { id: comp.sourceOfferId }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
       const group = offer ? compensableLines(offer.lines).find((g) => g.line.id === comp.sourceLineId) : null;
       if (!group) return fail('BAD_LINE');
+      if (ambiguousOps(group)) return fail('AMBIGUOUS_OPS');
       const d = await loadDestination(tx, comp.destOrderId, { id: comp.sourceOrderId, customerId: comp.customerId, currency: comp.currency }, today);
       if (!d.ok) return d;
       if (d.via !== 'SENT') return fail('DEST_NO_OFFER');

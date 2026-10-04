@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { atOfferPrice, offerLineTotals, offerProblems, offerTotals } from '@/server/orders/rules.js';
+import { atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
 import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
 import { ExcelImport } from './ExcelImport';
@@ -13,7 +13,8 @@ import { ExcelImport } from './ExcelImport';
  * listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir.
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
-type Line = { key: number; id: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
+/** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
+type Line = { key: number; id: string; from?: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
@@ -142,14 +143,32 @@ export function OfferEditor(props: {
     });
     setLines(rows.length ? rows : [blankGlass()]);
   };
-  /** Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. */
-  const addSub = (key: number, kind: 'CNC' | 'DELIK') => setLines((ls) => {
-    let i = ls.findIndex((l) => l.key === key) + 1;
+  /** Ayrılan / kopyalanan cam: yeni satırdır; fiyatlarını sunucu kaynağından taşır (kaynak kayıtlı satırsa) */
+  const pieceOf = (l: Line): Line => ({ ...l, key: seq++, id: '', from: l.id || l.from || '' });
+  const [splitNote, setSplitNote] = useState(false);
+  /**
+   * Cam satırının (ve varsa alt satırlarının) hemen altına CNC / delik satırı ekler. İşlem TEK bir cama aittir (karar
+   * 113): camın adedi 1'den büyükse önce bir cam ayrı satıra (adet 1) ayrılır ve işlem ona eklenir — kalan camlar
+   * satırında durur; toplam adet, m² ve birim fiyatlar değişmez.
+   */
+  const addSub = (key: number, kind: 'CNC' | 'DELIK') => {
+    const r = splitOnePiece(lines, lines.findIndex((l) => l.key === key), pieceOf);
+    const ls = r.lines;
+    let i = r.index + 1;
     while (i < ls.length && ls[i].kind !== 'CAM') i++;
     const cust = adminMode ? (kind === 'CNC' ? props.customerPricing?.cncPrice : props.customerPricing?.holePrice) ?? null : null;
     const sub = blankSub(kind, kind === 'CNC' ? props.pricing?.cncPrice ?? null : props.pricing?.holePrice ?? null, cust);
     // Yöneticinin eklediği satırın satış fiyatı yoktur (satış fiyatını satış girer)
-    return [...ls.slice(0, i), adminMode ? { ...sub, unitPrice: '', listPrice: '' } : sub, ...ls.slice(i)];
+    setLines([...ls.slice(0, i), adminMode ? { ...sub, unitPrice: '', listPrice: '' } : sub, ...ls.slice(i)]);
+    if (r.split) setSplitNote(true);
+  };
+  /** "aynısından bir tane daha": işlemli tek camı, işlem satırlarıyla birlikte hemen altına kopyalar (her cam kendi satırında). */
+  const copyPiece = (key: number) => setLines((ls) => {
+    const i = ls.findIndex((l) => l.key === key);
+    let j = i + 1;
+    while (j < ls.length && ls[j].kind !== 'CAM') j++;
+    const copy = [pieceOf(ls[i]), ...ls.slice(i + 1, j).map((s) => ({ ...s, key: seq++, id: '' }))];
+    return [...ls.slice(0, j), ...copy, ...ls.slice(j)];
   });
   /** Cam satırı silinince altındaki CNC / delik satırları da silinir. */
   const remove = (key: number) => setLines((ls) => {
@@ -160,6 +179,8 @@ export function OfferEditor(props: {
     return next.length ? next : [blankGlass()];
   });
   let glassNo = 0;
+  // İşlemi adedi 1'den büyük cama bağlı satır (eski kayıt): düzeltilmeden taslak da kaydedilemez (sunucu reddeder)
+  const opsBad = problems.some((p: { code: string }) => p.code === 'ops_multi_glass');
   const isAdmin = props.mode === 'admin';
   const isUpdate = props.mode === 'update';
   // Hangi düğmeye basıldığı gizli alana yazılır (tarayıcıdan bağımsız, güvenilir yol).
@@ -201,9 +222,11 @@ export function OfferEditor(props: {
             <tr><th>#</th><th className="c-desc">{m.cols.description}</th><th>{m.cols.poz}</th><th>{m.cols.widthMm}</th><th>{m.cols.heightMm}</th><th>{m.cols.qty}</th><th>{m.cols.unit}</th><th className="num">{m.cols.metraj}</th><th className={adminMode ? 'num' : undefined}>{adminMode ? m.cols.salesPrice : m.cols.unitPrice}</th>{adminMode && <th>{m.cols.offerPrice}</th>}<th className="num">{adminMode ? m.cols.offerAmount : m.cols.amount}</th><th /></tr>
           </thead>
           <tbody>
-            {lines.map((l) => {
+            {lines.map((l, idx) => {
               const tot = offerLineTotals(adminMode ? { ...l, unitPrice: l.offerPrice } : l);
               const sub = l.kind !== 'CAM';
+              // İşlem (CNC / delik) taşıyan cam satırı: tek bir fiziksel camdır
+              const owns = !sub && (lines[idx + 1]?.kind === 'CNC' || lines[idx + 1]?.kind === 'DELIK');
               if (!sub) glassNo += 1;
               const kind = kindName(l.kind);
               const shownPrice = adminMode ? l.offerPrice : l.unitPrice;
@@ -212,6 +235,7 @@ export function OfferEditor(props: {
                 <tr key={l.key} className={sub ? 'sub-line' : 'glass-line'}>
                   <td className="c-no muted">{sub ? '' : glassNo}
                     <input type="hidden" name="l_id" value={l.id} />
+                    <input type="hidden" name="l_from" value={l.id ? '' : l.from ?? ''} />
                     <input type="hidden" name="l_kind" value={l.kind} />
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
                   </td>
@@ -232,6 +256,7 @@ export function OfferEditor(props: {
                       {l.comp && <span className="badge badge-warn">{m.telafi}</span>}
                       {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
                       {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      {owns && <button type="button" className="btn btn-link" title={m.editor.copyPieceTitle} onClick={() => copyPiece(l.key)}>{m.editor.copyPiece}</button>}
                       <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
                     </div>
                   </td>
@@ -244,7 +269,9 @@ export function OfferEditor(props: {
                       <td className="c-dim"><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} aria-label={m.cols.height} /></td>
                     </>
                   )}
-                  <td className="c-qty"><input name="l_adet" inputMode="numeric" value={l.adet} onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
+                  {/* İşlemli cam tek adettir: adet kutusu kilitlidir (çoğaltmak için "aynısından bir tane daha") */}
+                  <td className="c-qty"><input name="l_adet" inputMode="numeric" value={l.adet} readOnly={owns && l.adet === '1'} title={owns ? m.editor.onePieceQty : undefined}
+                    onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
                   <td className={sub ? 'c-text' : 'c-unit'}>
                     {sub ? (
                       <><input type="hidden" name="l_unit" value="adet" /><span className="muted">{common.unitPiece}</span></>
@@ -336,6 +363,8 @@ export function OfferEditor(props: {
       </div>
       <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
       <p className="muted small" style={{ margin: '8px 0 0' }}>{common.pricesExclVat}{adminMode && props.customerPricing ? ` · ${interpolate(m.editor.customerTableInfo, { name: props.customerPricing.name })}` : ''}</p>
+      <p className="muted small" style={{ margin: '4px 0 0' }}>{m.editor.opsHint}</p>
+      {splitNote && <div className="alert alert-info" role="status" style={{ marginTop: 8 }}>{m.editor.splitNote}</div>}
 
       {problems.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
@@ -364,11 +393,11 @@ export function OfferEditor(props: {
             <button type="submit" onClick={intent('update')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.updateAndSend}</button>
           </>
         ) : (
-          <button type="submit" onClick={intent('save')} className="btn">{m.editor.saveDraft}</button>
+          <button type="submit" onClick={intent('save')} className="btn" disabled={opsBad}>{m.editor.saveDraft}</button>
         )}
         {isUpdate ? null : isAdmin ? (
           <>
-            <button type="submit" onClick={intent('return')} className="btn btn-danger">{m.editor.returnToSales}</button>
+            <button type="submit" onClick={intent('return')} className="btn btn-danger" disabled={opsBad}>{m.editor.returnToSales}</button>
             <button type="submit" onClick={intent('approve')} className="btn btn-success" disabled={problems.length > 0}>{m.editor.approveAndSend}</button>
           </>
         ) : (

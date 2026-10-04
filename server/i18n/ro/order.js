@@ -255,6 +255,7 @@ export default {
     drawingFile: 'Selectați fișierul desenului.',
     salesPriceMissing: 'Există rânduri fără preț; oferta nu a fost trimisă.',
     offerPriceMissing: 'Există rânduri fără preț pentru client; introduceți prețul clientului pe toate rândurile.',
+    opsMultiGlass: 'CNC / găurile aparțin unei singure bucăți de sticlă: nu pot fi atașate unui rând cu mai mult de 1 bucată. Separați bucata prelucrată pe un rând propriu (1 buc.); oferta nu a fost salvată.',
     drawingNoDraft: 'Nu există o ciornă de desen de trimis.',
     drawingEmpty: 'Ciorna nu are fișiere; încărcați mai întâi fișiere.',
     drawingInfected: 'Ciorna conține un fișier infectat; scoateți acel fișier.',

@@ -255,6 +255,7 @@ export default {
     drawingFile: 'Çizim dosyası seçin.',
     salesPriceMissing: 'Fiyatı girilmemiş satır var; teklif gönderilmedi.',
     offerPriceMissing: 'Müşteri fiyatı girilmemiş satır var; tüm satırlara müşteri fiyatı girin.',
+    opsMultiGlass: "CNC / delik tek bir cama aittir: adedi 1'den büyük cam satırına işlem bağlanamaz. İşlemli camı ayrı satıra (adet 1) ayırın; teklif kaydedilmedi.",
     drawingNoDraft: 'Gönderilecek taslak çizim yok.',
     drawingEmpty: 'Taslakta dosya yok; önce dosya yükleyin.',
     drawingInfected: 'Taslakta virüslü dosya var; o dosyayı çıkarın.',

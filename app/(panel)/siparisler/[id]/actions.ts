@@ -258,13 +258,16 @@ export async function addNoteAction(formData: FormData) {
 }
 
 // ---------------- Teklif hattı ----------------
-/** id: mevcut satır (boş → yeni) · offerPrice: müşteri fiyatı (yalnızca yönetici formunda; satış formunda undefined) */
-type LineInput = { id: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
+/**
+ * id: mevcut satır (boş → yeni) · offerPrice: müşteri fiyatı (yalnızca yönetici formunda; satış formunda undefined)
+ * from: işlem eklemek için ayrılan tek camın kaynağı (aynı teklifin mevcut satırı — fiyatları ondan taşınır, karar 113)
+ */
+type LineInput = { id: string | null; from?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
 
 function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
-  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice');
+  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from');
   const withOffer = oprice.length > 0;
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
@@ -286,6 +289,7 @@ function readLines(formData: FormData, t: T): LineInput[] | string {
       description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a,
       unit: sub || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree,
       id: ids[i] || null,
+      ...(!ids[i] && from[i] && !sub ? { from: from[i].slice(0, 40) } : {}),
       ...(withOffer ? { offerPrice: isFree ? '0.00' : op === null ? null : op.toFixed(2) } : {}),
     });
   }

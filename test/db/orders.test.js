@@ -185,7 +185,9 @@ dbTest('geçiş: teklif yolu → yönetici gönderir → otomatik üretim (iki g
   await run(o.id, 'no_drawing', 'sales');
   const lines = [{ description: 'Cam', poz: null, enMm: 1000, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false }];
   // Fiyatı eksik teklif: taslak kaydedilir, gönderilemez (sunucu kuralı); CNC / delik de fiyatlı olmalı, 0 kabul edilmez
-  const noPrice = [...lines, { description: 'CNC', poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '0', kind: 'CNC', free: false }];
+  const cncLine = { description: 'CNC', poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '0', kind: 'CNC', free: false };
+  // (işlem TEK bir cama aittir — karar 113: işlemli cam satırı tek adettir)
+  const noPrice = [{ ...lines[0], adet: 1 }, cncLine];
   assert.equal(await codeOf(run(o.id, 'save_offer', 'sales', { lines: noPrice })), 'OK', 'taslak engellenmez');
   const missing = await run(o.id, 'submit_offer', 'sales', { lines: noPrice }).catch((e) => e);
   assert.equal(missing.code, 'SALES_PRICE_MISSING');
@@ -393,3 +395,66 @@ dbTest('çizim: gönderilen sürüm gerekçeyle geri çekilir; müşteri artık 
   assert.equal(v2.result.version, 2);
 });
 
+// Karar 113: CNC / delik TEK bir fiziksel cama aittir — sunucu her teklif kaydında (taslak dahil) denetler
+dbTest('işlem sahipliği: adedi 1\'den büyük cama işlem bağlanamaz (satış, yönetici, taslak, güncelleme); ayrılan cam kaynağının fiyatlarını taşır, toplamlar değişmez', async () => {
+  const o = await newOrder('İşlem sahipliği');
+  await run(o.id, 'no_drawing', 'sales');
+  const glass = (extra = {}) => ({ description: 'Cam', poz: null, enMm: 1000, boyMm: 2000, adet: 5, unit: 'm2', unitPrice: '24.00', kind: 'CAM', free: false, ...extra });
+  const hole = (extra = {}) => ({ description: '', poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '3.00', kind: 'DELIK', free: false, ...extra });
+  const stored = () => db.offer.findFirstOrThrow({ where: { orderId: o.id }, orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+  const shape = (offer) => offer.lines.map((l) => [l.kind, l.adet, Number(l.unitPrice), l.offerPrice == null ? null : Number(l.offerPrice)]);
+
+  // "5 cam + delik": satış taslak olarak da, gönderirken de kaydedemez; hiçbir şey yazılmaz
+  const before = shape(await stored());
+  for (const action of ['save_offer', 'submit_offer']) assert.equal(await codeOf(run(o.id, action, 'sales', { lines: [glass(), hole()] })), 'OPS_MULTI_GLASS', action);
+  assert.deepEqual(shape(await stored()), before);
+  // İşlemsiz camlar adetle durur
+  await run(o.id, 'submit_offer', 'sales', { lines: [glass()] });
+  let offer = await stored();
+  assert.deepEqual(shape(offer), [['CAM', 5, 24, null]]);
+  const L = offer.lines[0].id;
+
+  // Yönetici: müşteri fiyatı 40; sonra bir cama delik ekler → cam 4 + 1 olarak ayrılır (ayrılan satır kaynağını gösterir).
+  // Yöneticinin EKLEDİĞİ olağan satırın maliyeti fiyat tablosundan gelir (burada tablo yok → 0); AYRILAN cam ise aynı
+  // camdır: kaynağının kayıtlı maliyetini (24) taşır — tarayıcıdan gelen satış fiyatı (999) kullanılmaz.
+  await run(o.id, 'save_offer', 'admin', { lines: [{ ...glass(), id: L, offerPrice: '40.00' }] });
+  assert.deepEqual([Number((await stored()).amount), Number((await stored()).offerAmount)], [240, 400]);
+  assert.equal(await codeOf(run(o.id, 'save_offer', 'admin', { lines: [{ ...glass(), id: L, offerPrice: '40.00' }, hole({ offerPrice: '5.00' })] })), 'OPS_MULTI_GLASS', 'yönetici de bağlayamaz');
+  const split = [
+    { ...glass({ adet: 4 }), id: L, offerPrice: '40.00' },
+    { ...glass({ adet: 1, unitPrice: '999.00' }), id: null, from: L, offerPrice: '40.00' },
+    hole({ id: null, offerPrice: '5.00' }),
+  ];
+  await run(o.id, 'save_offer', 'admin', { lines: split });
+  offer = await stored();
+  assert.deepEqual(shape(offer), [['CAM', 4, 24, 40], ['CAM', 1, 24, 40], ['DELIK', 2, 0, 5]], 'ayrılan cam: aynı maliyet ve müşteri fiyatı');
+  assert.equal(offer.lines.reduce((s, l) => s + (l.kind === 'CAM' ? l.adet : 0), 0), 5, 'fiziksel cam adedi aynı');
+  // Cam tutarları değişmedi: satış 10 m² × 24 = 240, müşteri 10 m² × 40 = 400 (+ delik: müşteri 2 × 5)
+  assert.deepEqual([Number(offer.amount), Number(offer.offerAmount)], [240, 410]);
+  // Kaynak gösterilmeyen yeni cam satırı olağan yeni satırdır (maliyet tablodan; tablo yok → 0). Başka bir camı kaynak
+  // gösteren satır da kaynağın fiyatını ALAMAZ (aynı cam değil).
+  const [g4, g1, h] = offer.lines;
+  const keep = [{ ...glass({ adet: 4 }), id: g4.id, offerPrice: '40.00' }, { ...glass({ adet: 1 }), id: g1.id, offerPrice: '40.00' }, hole({ id: h.id, offerPrice: '5.00' })];
+  await run(o.id, 'save_offer', 'admin', { lines: [...keep, { ...glass({ adet: 1 }), id: null, offerPrice: '40.00' }, { ...glass({ adet: 1, description: 'Başka cam', enMm: 500 }), id: null, from: g4.id, offerPrice: '40.00' }] });
+  assert.deepEqual(shape(await stored()).slice(3), [['CAM', 1, 0, 40], ['CAM', 1, 0, 40]]);
+  await run(o.id, 'save_offer', 'admin', { lines: keep });
+
+  // Satış da ayırabilir: müşteri fiyatı satış formunda yoktur — ayrılan cam kaynağının müşteri fiyatını taşır
+  await run(o.id, 'return_offer', 'admin', { lines: keep, returnNote: 'bir cama daha delik' });
+  const sales = [
+    { ...glass({ adet: 3 }), id: g4.id }, { ...glass({ adet: 1 }), id: null, from: g4.id }, hole({ id: null, adet: 1 }),
+    { ...glass({ adet: 1 }), id: g1.id }, hole({ id: h.id }),
+  ];
+  await run(o.id, 'submit_offer', 'sales', { lines: sales });
+  offer = await stored();
+  assert.deepEqual(shape(offer), [['CAM', 3, 24, 40], ['CAM', 1, 24, 40], ['DELIK', 1, 3, null], ['CAM', 1, 24, 40], ['DELIK', 2, 3, 5]]);
+  assert.equal(await codeOf(run(o.id, 'approve_offer', 'admin', { lines: offer.lines.map((l) => ({ ...glass(), ...hole(), description: l.description, kind: l.kind, unit: l.unit, enMm: l.enMm, boyMm: l.boyMm, adet: l.kind === 'CAM' ? 5 : l.adet, id: l.id, offerPrice: '40.00' })) })), 'OPS_MULTI_GLASS', 'fiyat onayında da');
+  const ok = offer.lines.map((l) => ({ description: l.description, poz: null, kind: l.kind, unit: l.unit, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unitPrice: '0', free: false, id: l.id, offerPrice: l.kind === 'CAM' ? '40.00' : '5.00' }));
+  await run(o.id, 'approve_offer', 'admin', { lines: ok });
+  // Müşterideki teklifin güncellenmesi (yeni sürüm) de aynı kurala tabidir
+  const sent = await stored();
+  assert.equal(sent.status, 'GONDERILDI');
+  const upd = sent.lines.map((l) => ({ description: l.description, poz: null, kind: l.kind, unit: l.unit, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unitPrice: '0', free: false, id: l.id, offerPrice: String(l.offerPrice) }));
+  assert.equal(await codeOf(run(o.id, 'update_offer', 'admin', { lines: upd.map((l, i) => (i === 1 ? { ...l, adet: 2 } : l)) })), 'OPS_MULTI_GLASS');
+  assert.equal(await db.offer.count({ where: { orderId: o.id } }), 1, 'yeni sürüm açılmadı');
+});

@@ -15,6 +15,7 @@ export function formatOfferProblems(problems, m) {
   return problems.map((p) => {
     if (p.code === 'sub_without_glass') return interpolate(m.offerProblems.subWithoutGlass, { kind: kind(p.kind) });
     if (p.code === 'missing_dims') return interpolate(m.offerProblems.missingDims, { row: row(p.row) });
+    if (p.code === 'ops_multi_glass') return interpolate(m.offerProblems.opsMultiGlass, { rows: p.rows.map(row).join(', ') });
     if (p.code === 'missing_prices') return interpolate(m.offerProblems.missingPrices, { count: p.rows.length, rows: p.rows.map(row).join(', ') });
     return m.offerProblems.noLines;
   });

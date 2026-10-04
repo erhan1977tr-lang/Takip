@@ -37,9 +37,12 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const f = m.form;
   const money = useMemo(() => new Intl.NumberFormat(intl, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), [intl]);
   const perM2 = (v: number) => interpolate(m.perM2, { price: money.format(v), cur: data.currency });
-  const [lineId, setLineId] = useState(() => (preselect && data.lines.some((l) => l.id === preselect) ? preselect : data.lines.length === 1 ? data.lines[0].id : ''));
+  const pickable = (id: string) => data.lines.some((l) => l.id === id && !l.ambiguous);
+  const [lineId, setLineId] = useState(() => (preselect && pickable(preselect) ? preselect : data.lines.length === 1 && pickable(data.lines[0].id) ? data.lines[0].id : ''));
   const [qty, setQty] = useState('1');
   const [item, setItem] = useState('');
+  // Fiyat (karar 112): satış → aynı fiyat ya da bedelsiz; başka müşteri fiyatını yalnızca yönetici belirler
+  const modes = data.admin ? (['NORMAL', 'FREE', 'CUSTOM'] as const) : (['NORMAL', 'FREE'] as const);
   const [mode, setMode] = useState<'NORMAL' | 'FREE' | 'CUSTOM'>('NORMAL');
   const [price, setPrice] = useState('');
   const [destType, setDestType] = useState<'' | 'EXISTING' | 'NEW'>('');
@@ -64,8 +67,11 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const eligible = data.destinations.filter((d) => !d.reason);
   const change = () => setSure(false);
 
-  const normalText = line?.normal == null ? '—' : line.free ? m.free : perM2(line.normal);
-  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (priceOk ? perM2(p) : '—') : normalText;
+  // Satışa müşteri fiyatının tutarı gelmez (normal = null): "yöneticinin belirlediği fiyat" yazılır
+  const normalText = !line ? '—' : line.free ? m.free : line.normal == null ? f.adminPrice : perM2(line.normal);
+  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (priceOk ? perM2(p) : '—') : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
+  const opsText = (l: { ops: { kind: string; adet: number; description: string }[] }) =>
+    l.ops.map((o) => `${interpolate(f.opsItem, { kind: kinds[o.kind as keyof typeof kinds] ?? o.kind, n: o.adet })}${o.description ? ` (${o.description})` : ''}`).join(', ');
 
   return (
     <div className="card comp-form" id="telafi">
@@ -86,13 +92,14 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
             <label htmlFor="comp-line">{f.glass}</label>
             <select id="comp-line" name="lineId" value={lineId} required onChange={(e) => { setLineId(e.target.value); setItem(''); change(); }}>
               {data.lines.length > 1 && <option value="">{f.glassPick}</option>}
+              {/* Her seçenek fiziksel cam yapılandırmasını gösterir: işlemsiz camlar (adetle) ve işlemli TEK cam ayrı satırlardır */}
               {data.lines.map((l) => (
-                <option key={l.id} value={l.id}>{interpolate(f.glassOption, { n: l.n, glass: glassOf(l), dims: `${l.enMm}×${l.boyMm}`, qty: l.adet })}</option>
+                <option key={l.id} value={l.id} disabled={l.ambiguous}>
+                  {interpolate(f.glassOption, { n: l.n, glass: glassOf(l), dims: `${l.enMm}×${l.boyMm}`, qty: l.adet })} · {l.ambiguous ? f.glassAmbiguous : l.ops.length ? opsText(l) : f.noOps}
+                </option>
               ))}
             </select>
-            {line && line.ops.length > 0 && (
-              <p className="hint">{interpolate(f.ops, { list: line.ops.map((o) => interpolate(f.opsItem, { kind: kinds[o.kind as keyof typeof kinds] ?? o.kind, n: o.adet })).join(', ') })}</p>
-            )}
+            {line && line.ops.length > 0 && <p className="hint">{interpolate(f.ops, { list: opsText(line) })}</p>}
           </div>
           <div className="field">
             <label htmlFor="comp-qty">{f.quantity}</label>
@@ -121,12 +128,15 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
 
         <fieldset className="field comp-choice">
           <legend>{f.price}</legend>
-          {line && <p className="small">{interpolate(data.admin ? f.normalCustomer : f.normalSales, { price: normalText })}</p>}
+          {line && <p className="small">{data.admin ? interpolate(f.normalCustomer, { price: normalText }) : f.normalSales}</p>}
           <div className="row">
-            {(['NORMAL', 'FREE', 'CUSTOM'] as const).map((k) => (
+            {modes.map((k) => (
               <label key={k} className="chip">
                 <input type="radio" name="modeChoice" value={k} checked={mode === k} onChange={() => { setMode(k); change(); }} />
-                <span>{k === 'NORMAL' ? f.keep : k === 'FREE' ? f.free : f.custom}</span>
+                <span>
+                  {k === 'NORMAL' ? (line && line.normal != null && !line.free ? interpolate(f.keepWith, { price: perM2(line.normal) }) : f.keep)
+                    : k === 'FREE' ? (data.admin ? interpolate(f.freeWith, { cur: data.currency }) : f.free) : f.custom}
+                </span>
               </label>
             ))}
             {mode === 'CUSTOM' && (
@@ -135,7 +145,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
             )}
           </div>
           {mode === 'FREE' && <p className="hint">{f.freeHint}</p>}
-          {mode === 'CUSTOM' && !data.admin && <p className="hint">{f.salesCustomHint}</p>}
+          {!data.admin && <p className="hint">{f.salesCustomHint}</p>}
         </fieldset>
 
         <fieldset className="field comp-choice">

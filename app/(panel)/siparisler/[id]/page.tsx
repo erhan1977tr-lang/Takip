@@ -641,7 +641,8 @@ function Decisions({ order, user, comps, createHref, error, t, locale }: { order
               <span className="badge badge-warn">{t('compensation.badge')}</span>
               <b>{t('compensation.decisions.qty', { qty: c.quantity })}</b>
               {c.status !== 'APPLIED' && <span className={`badge ${c.status === 'PENDING' ? 'badge-danger' : 'badge-muted'}`}>{t(`compensation.decisions.status.${c.status}` as MsgKey)}</span>}
-              {c.mode !== 'NORMAL' && <span className="badge badge-info">{t('compensation.decisions.changed')}</span>}
+              {/* Önemli karar: bedelsiz telafi ya da yöneticinin yeni müşteri fiyatı; aynı fiyatta işaret yok (fiyat değişmedi) */}
+              {c.mode !== 'NORMAL' && <span className="badge badge-info">{t(`compensation.decisions.flag.${c.mode === 'FREE' ? 'FREE' : 'CUSTOM'}` as MsgKey)}</span>}
             </div>
             <div className="small">
               {c.sourceOrder.id !== order.id && <><Link href={`/siparisler/${c.sourceOrder.id}#kararlar`}>{t('compensation.decisions.sourceOrder', { order: c.sourceOrder.orderNo })}</Link> · </>}

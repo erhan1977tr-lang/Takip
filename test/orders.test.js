@@ -3,10 +3,7 @@ import assert from 'node:assert/strict';
 import tr from '../server/i18n/tr/index.js';
 import ro from '../server/i18n/ro/index.js';
 import { translate } from '../server/i18n/index.js';
-import {
-  ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, drawingFlags, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems,
-  glassLoadingDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName,
-} from '../server/orders/rules.js';
+import { ORDER_STATUS, DRAWING, OFFER, EVENTS, STAGES, availableActions, drawingFlags, customerSummary, productionBlockers, shouldAutoProduce, offerNeedsCheck, offerProblems, glassLoadingDate, parseDateOnly, slaInfo, slaDeadline, maskName, offerLineTotals, offerTotals, fileProblem, stageIndex, canSeeCustomerName, sharedOpsGlasses, splitOnePiece, atOfferPrice } from '../server/orders/rules.js';
 
 const has = (p, a) => availableActions(p).includes(a);
 
@@ -230,11 +227,11 @@ test('teklif satırı: m² ve adet', () => {
 
 test('CNC / delik satırları ve bedelsiz', () => {
   const lines = [
-    { kind: 'CAM', description: '8mm', enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '24' }, // 6 m² × 24 = 144
+    { kind: 'CAM', description: '8mm', enMm: 1000, boyMm: 2000, adet: 1, unit: 'm2', unitPrice: '24' }, // 2 m² × 24 = 48 (işlemli cam tek adettir)
     { kind: 'CNC', description: '', enMm: 1000, boyMm: 2000, adet: 2, unit: 'adet', unitPrice: '15' }, // 30, metraja girmez
     { kind: 'DELIK', description: '', adet: 12, unit: 'adet', unitPrice: '2', free: true }, // bedelsiz
   ];
-  assert.deepEqual(offerTotals(lines), { metraj: 6, amount: 174, adet: 3, cnc: 2, delik: 12 });
+  assert.deepEqual(offerTotals(lines), { metraj: 2, amount: 78, adet: 1, cnc: 2, delik: 12 });
   assert.deepEqual(offerProblems(lines), []);
   const p = offerProblems([lines[0], { ...lines[1], unitPrice: '' }, { ...lines[2], free: false, unitPrice: '0' }]);
   assert.equal(p.length, 1);
@@ -242,6 +239,50 @@ test('CNC / delik satırları ve bedelsiz', () => {
   assert.deepEqual(offerProblems([lines[1]]).map((x) => x.code), ['sub_without_glass']);
   assert.deepEqual(offerProblems([{ ...lines[0], enMm: null }]), [{ code: 'missing_dims', row: { n: 1, kind: 'CAM' } }]);
   assert.deepEqual(offerProblems([]), [{ code: 'no_lines' }]);
+});
+
+// Karar 113: CNC / delik TEK bir fiziksel cama aittir
+test('işlem sahipliği: adedi 1\'den büyük cam satırına bağlı CNC / delik belirsizdir; işlemsiz camlar adetle durabilir', () => {
+  const glass = (adet, extra = {}) => ({ kind: 'CAM', description: 'Temper', enMm: 1000, boyMm: 2000, adet, unit: 'm2', unitPrice: '24', offerPrice: '40', ...extra });
+  const hole = (adet = 2) => ({ kind: 'DELIK', description: '', adet, unit: 'adet', unitPrice: '2', offerPrice: '3' });
+  const cnc = (adet = 1) => ({ kind: 'CNC', description: 'Kulp', adet, unit: 'adet', unitPrice: '15', offerPrice: '20' });
+  // "5 cam + 3 delik": hangi camda hangi delik olduğu bilinmez
+  const bad = [glass(5), hole(3)];
+  assert.deepEqual(sharedOpsGlasses(bad), [0]);
+  assert.deepEqual(offerProblems(bad), [{ code: 'ops_multi_glass', rows: [{ n: 1, kind: 'CAM', desc: 'Temper' }] }]);
+  // İşlemsiz camlar adetle; işlemli cam tek adet: sorun yok. Excel'den aktarılan satır da olağan cam satırıdır.
+  const imported = { ...glass(12), description: 'Lamine', enMm: 800, boyMm: 600 };
+  const good = [glass(4), glass(1), cnc(), hole(), imported];
+  assert.deepEqual([sharedOpsGlasses(good), offerProblems(good)], [[], []]);
+  // Birden çok belirsiz satır: her biri bir kez; metin biçiminde gelen adet de sayılır; adetli (m² olmayan) satır da cam satırıdır
+  assert.deepEqual(sharedOpsGlasses([glass('3'), cnc(), hole(), glass(1), hole(), { ...glass(2), unit: 'adet' }, cnc()]), [0, 5]);
+  assert.deepEqual(sharedOpsGlasses([hole(), glass(1)]), [], 'üstünde cam olmayan işlem ayrı bir sorundur (sub_without_glass)');
+});
+
+test('işlem eklenirken cam ayrılır: adet 5 → 4 + 1; toplam adet, m², birim fiyatlar ve tutarlar aynı kalır', () => {
+  const g = { key: 1, id: 'L1', kind: 'CAM', description: 'Temper', enMm: 1000, boyMm: 2000, adet: 5, unit: 'm2', unitPrice: '24', offerPrice: '40' };
+  const other = { key: 2, id: 'L2', kind: 'CAM', description: 'Lamine', enMm: 500, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50' };
+  const before = [g, other];
+  const r = splitOnePiece(before, 0, (l) => ({ ...l, key: 9, id: '', from: l.id }));
+  assert.equal(r.split, true);
+  assert.deepEqual(r.lines.map((l) => [l.id, l.adet, l.unitPrice, l.offerPrice, l.from ?? null]), [['L1', 4, '24', '40', null], ['', 1, '24', '40', 'L1'], ['L2', 2, '30', '50', null]]);
+  assert.equal(r.index, 1, 'işlem ayrılan tek camın altına eklenir');
+  assert.equal(before[0].adet, 5, 'girdi değişmez');
+  // Toplamlar: satış fiyatıyla ve müşteri fiyatıyla aynı
+  assert.deepEqual(offerTotals(r.lines), offerTotals(before));
+  assert.deepEqual(offerTotals(atOfferPrice(r.lines)), offerTotals(atOfferPrice(before)));
+  assert.deepEqual(offerTotals(r.lines), { metraj: 10.5, amount: 255, adet: 7, cnc: 0, delik: 0 });
+  // İşlem eklendikten sonra kural sağlanır
+  const withOp = [...r.lines.slice(0, 2), { kind: 'DELIK', adet: 2, unit: 'adet', unitPrice: '2', offerPrice: '3' }, ...r.lines.slice(2)];
+  assert.deepEqual([sharedOpsGlasses(withOp), offerProblems(withOp)], [[], []]);
+  assert.equal(offerTotals(withOp).adet, 7, 'fiziksel cam adedi değişmedi');
+  // Adedi 1 olan cam ayrılmaz; metin adet (form) metin kalır; ayrılan cam, satırın kendi alt satırlarının ALTINA gelir
+  assert.deepEqual(splitOnePiece([{ ...g, adet: 1 }], 0), { lines: [{ ...g, adet: 1 }], index: 0, split: false });
+  const text = splitOnePiece([{ ...g, adet: '3' }, { kind: 'CNC', adet: '1' }, other], 0);
+  assert.deepEqual(text.lines.map((l) => [l.kind, l.adet]), [['CAM', '2'], ['CNC', '1'], ['CAM', '1'], ['CAM', 2]]);
+  assert.equal(text.index, 2);
+  // İşlem satırı ayrılmaz
+  assert.equal(splitOnePiece([g, { kind: 'CNC', adet: 4 }], 1).split, false);
 });
 
 test('dosya kontrolü', () => {

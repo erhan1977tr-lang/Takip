@@ -271,6 +271,48 @@ export function offerTotals(lines) {
   );
 }
 
+// ---------- İşlem sahipliği (karar 113) ----------
+// CNC ve delik TEK bir fiziksel cama aittir: işlem satırı üstündeki cam satırına bağlıdır ve o cam satırının adedi 1
+// olmalıdır. "5 cam + 3 delik" gibi bir kayıt hangi camda hangi işlemin olduğunu söylemez; üretim talimatı tahmin edilmez.
+// İşlemi olmayan aynı camlar tek satırda, adetle durmaya devam eder (tablo gereksiz yere satırlara bölünmez).
+
+/**
+ * İşlem satırı (CNC / delik) taşıdığı hâlde adedi 1'den büyük olan cam satırlarının yerleri (lines içindeki sıra).
+ * Boş dizi = her işlem tek bir cama ait.
+ * @param {{ kind?: string, adet?: unknown }[]} lines
+ * @returns {number[]}
+ */
+export function sharedOpsGlasses(lines) {
+  const bad = [];
+  let glass = -1;
+  for (const [i, l] of lines.entries()) {
+    if (!isSub(l)) { glass = i; continue; }
+    if (glass >= 0 && Math.trunc(num(lines[glass].adet)) > 1 && bad[bad.length - 1] !== glass) bad.push(glass);
+  }
+  return bad;
+}
+
+/**
+ * Cam satırından TEK bir camı ayırır (işlem eklenmeden önce): adedi N > 1 ise satır N − 1 olur, hemen altına (varsa
+ * kendi alt satırlarının altına) adedi 1 olan aynı cam satırı eklenir. Ayırma yalnızca fiziksel camların gösterimidir:
+ * toplam cam adedi ve birim fiyatlar değişmez. Adedi 1 olan satır olduğu gibi kalır.
+ * @template {{ kind?: string, adet?: unknown }} L
+ * @param {L[]} lines
+ * @param {number} index  cam satırının yeri
+ * @param {(line: L) => L} [piece]  ayrılan camın satırı (varsayılan: satırın kopyası); adedi burada 1 yapılır
+ * @returns {{ lines: L[], index: number, split: boolean }}  index: tek camın satırının yeri (işlem bunun altına eklenir)
+ */
+export function splitOnePiece(lines, index, piece = (l) => ({ ...l })) {
+  const l = lines[index];
+  const n = l && !isSub(l) ? Math.trunc(num(l.adet)) : 0;
+  if (!(n > 1)) return { lines, index, split: false };
+  const typed = (v) => (typeof l.adet === 'string' ? String(v) : v);
+  let j = index + 1;
+  while (j < lines.length && isSub(lines[j])) j++;
+  const one = { ...piece(l), adet: typed(1) };
+  return { lines: [...lines.slice(0, index), { ...l, adet: typed(n - 1) }, ...lines.slice(index + 1, j), one, ...lines.slice(j)], index: j, split: true };
+}
+
 /**
  * Satırları müşteri fiyatıyla (offerPrice) değerlendirmek için: tutar ve eksik kontrolü müşteri fiyatı üzerinden yapılır
  * (karar 4: yönetici müşteri fiyatını girer; unitPrice satış fiyatıdır).
@@ -281,7 +323,8 @@ export const atOfferPrice = (lines) => lines.map((l) => ({ ...l, unitPrice: l.of
 
 /**
  * Müşteriye gidecek teklifte eksikler (boş dizi = tamam): fiyatsız satır (bedelsiz değilse),
- * m² satırında ölçü eksikliği, üstünde cam satırı olmayan CNC / delik satırı.
+ * m² satırında ölçü eksikliği, üstünde cam satırı olmayan CNC / delik satırı, adedi 1'den büyük cama bağlı işlem
+ * (ops_multi_glass — karar 113: CNC / delik tek bir cama aittir).
  * Metne çevirmek için: server/i18n/format.js → formatOfferProblems.
  * Satır: {n: cam satırı sırası, kind: 'CAM' | 'CNC' | 'DELIK'}.
  * @param {{kind?: string, description?: string, enMm?: any, boyMm?: any, unit?: string, unitPrice?: any, free?: boolean}[]} lines
@@ -292,10 +335,13 @@ export function offerProblems(lines) {
   /** @type {any[]} */
   const p = [];
   const noPrice = [];
-  let glassNo = 0, seenGlass = false;
+  const shared = [];
+  let glassNo = 0, seenGlass = false, glass = null;
   for (const l of lines) {
     const sub = isSub(l);
-    if (!sub) { glassNo += 1; seenGlass = true; }
+    if (!sub) { glassNo += 1; seenGlass = true; glass = { row: { n: glassNo, kind: 'CAM', ...(l.description ? { desc: String(l.description).slice(0, 60) } : {}) }, many: Math.trunc(num(l.adet)) > 1, done: false }; }
+    // İşlem satırı adedi 1'den büyük cama bağlı: hangi camda olduğu belli değil
+    if (sub && glass?.many && !glass.done) { glass.done = true; shared.push(glass.row); }
     const row = { n: glassNo, kind: sub ? String(l.kind) : 'CAM' };
     if (sub && !seenGlass) p.push({ code: 'sub_without_glass', kind: String(l.kind) });
     if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row });
@@ -303,6 +349,7 @@ export function offerProblems(lines) {
     if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && l.description ? { ...row, desc: String(l.description).slice(0, 60) } : row);
   }
   if (noPrice.length) p.push({ code: 'missing_prices', rows: noPrice });
+  if (shared.length) p.push({ code: 'ops_multi_glass', rows: shared });
   return p;
 }
 

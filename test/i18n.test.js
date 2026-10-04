@@ -59,7 +59,7 @@ test('yeni cam siparişi: tahmini yükleme tarihi notu (GG.AA.YYYY) iki dilde', 
 
 test('teklif eksikleri iki dilde', () => {
   const p = offerProblems([
-    { kind: 'CAM', enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '24' },
+    { kind: 'CAM', enMm: 1000, boyMm: 2000, adet: 1, unit: 'm2', unitPrice: '24' },
     { kind: 'CNC', adet: 2, unit: 'adet', unitPrice: '' },
     { kind: 'DELIK', adet: 4, unit: 'adet', unitPrice: '0' },
   ]);
@@ -68,6 +68,15 @@ test('teklif eksikleri iki dilde', () => {
   assert.deepEqual(fmt(ro), ['2 rânduri fără preț: 1. CNC, 1. Găuri. Introduceți prețul sau marcați rândul ca gratuit.']);
   assert.deepEqual(formatOfferProblems(offerProblems([{ kind: 'CAM', unit: 'm2', unitPrice: '5' }]), { offerProblems: tr.offerProblems, lineKind: tr.status.lineKind }),
     ['1. satır: m² ile fiyatlanan satırda en ve boy girilmeli.']);
+  // Karar 113: işlem adedi 1'den büyük cam satırına bağlanamaz (hangi satır olduğu yazılır)
+  const shared = offerProblems([
+    { kind: 'CAM', description: 'Temper', enMm: 1000, boyMm: 2000, adet: 4, unit: 'm2', unitPrice: '24' },
+    { kind: 'CAM', description: 'Lamine', enMm: 1000, boyMm: 2000, adet: 5, unit: 'm2', unitPrice: '24' },
+    { kind: 'DELIK', adet: 3, unit: 'adet', unitPrice: '2' },
+  ]);
+  assert.deepEqual(formatOfferProblems(shared, { offerProblems: tr.offerProblems, lineKind: tr.status.lineKind }),
+    ["2. satır (Lamine): CNC / delik tek bir cama aittir; adedi 1'den büyük cam satırına işlem bağlanamaz. İşlemli camı ayrı satıra (adet 1) ayırın."]);
+  assert.match(formatOfferProblems(shared, { offerProblems: ro.offerProblems, lineKind: ro.status.lineKind })[0], /^rândul 2 \(Lamine\): CNC \/ găurile aparțin unei singure bucăți/);
 });
 
 test('dil seçimi: ülke, tarayıcı dili, varsayılan', () => {
