@@ -24,6 +24,8 @@ Yalnızca test / sağlamlaştırma sürümü: ekranlarda ve kurallarda **hiçbir
   kapalı kalır; kesilmiş belge gereken adımlar, uygulamanın gerçek servisleri üzerinden **sahte FGO** ile ve ağ
   istekleri engellenerek yürür (`e2e/fake-fgo.ts`). FGO numaralandırması, IdExtern, birim eşlemesi, tahsilat
   eşitlemesi, kur politikası ve FGO ayarlarına dokunulmadı; şema değişmedi.
+- **CI**: her test adımının kesin toplamları (kaç test, kaç başarılı / başarısız / atlanan) artık yeşil çalışmada da
+  not olarak yayınlanıyor (`scripts/ci-step.sh`); sonuç günlük indirilmeden okunabilir.
 
 ## 3.48.0 — 04.10.2026
 
