@@ -93,6 +93,15 @@ export const ENV_VARS = {
     default: false,
     desc: 'Demo ortamı (örnek veriler, demo posta kutusu)',
   },
+  TRANSLATE_FAKE: {
+    group: 'dev',
+    parse: (v) => {
+      if (v !== '0' && v !== '1') throw new Error('0 ya da 1 olmalı');
+      return v === '1';
+    },
+    default: false,
+    desc: 'Not çevirisinde sahte sağlayıcı (Google\'a istek gitmez; yalnızca geliştirme / test)',
+  },
   TEST_DATABASE_URL: { group: 'dev', secret: true, parse: parseUrl(['postgresql:', 'postgres:']), desc: 'Veritabanı testleri için AYRI veritabanı' },
   E2E_BASE_URL: { group: 'dev', parse: parseUrl(['http:', 'https:']), desc: 'Uçtan uca testlerin adresi' },
   SCREENSHOT_DIR: { group: 'dev', desc: 'Uçtan uca testlerin ekran görüntüsü klasörü' },
@@ -144,6 +153,7 @@ export function validateEnv(env = process.env) {
     if (!values.APP_URL) warnings.push({ name: 'APP_URL', message: 'tanımlı değil; e-postadaki bağlantılar eksik olur' });
     if (values.MAIL_OUTBOX_DIR && !values.DEMO_MODE) warnings.push({ name: 'MAIL_OUTBOX_DIR', message: 'üretimde ayarlı; e-postalar gönderilmiyor, klasöre yazılıyor' });
     if (!values.COOKIE_SECURE && !isBlank(env.COOKIE_SECURE)) warnings.push({ name: 'COOKIE_SECURE', message: 'üretimde false; çerezler HTTPS olmadan da gönderilir' });
+    if (values.TRANSLATE_FAKE && !values.DEMO_MODE) warnings.push({ name: 'TRANSLATE_FAKE', message: 'üretimde ayarlı; notlar gerçekten çevrilmiyor (sahte çeviri)' });
   }
   if (values.TEST_DATABASE_URL && values.DATABASE_URL && sameDatabase(values.TEST_DATABASE_URL, values.DATABASE_URL)) {
     errors.push({ name: 'TEST_DATABASE_URL', message: 'DATABASE_URL ile aynı veritabanını gösteriyor; testler tabloları temizler' });

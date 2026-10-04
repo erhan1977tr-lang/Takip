@@ -26,6 +26,7 @@ export default {
     revision_requested: 'Cererea dvs. de revizie a fost transmisă echipei de desen.',
     files_added: 'Fișierele au fost adăugate.',
     note_added: 'Nota a fost adăugată.',
+    note_translated: 'Nota a fost tradusă.',
     customer_excel: 'Permisiunea clientului de a descărca Excel a fost actualizată.',
     offer_saved: 'Oferta a fost salvată ca ciornă.',
     offer_submit: 'Oferta a fost trimisă la aprobarea administratorului.',
@@ -246,6 +247,30 @@ export default {
     internalCheck: 'Notă internă — clientul nu o vede',
     noEdit: 'Nota trimisă nu mai poate fi modificată',
     send: 'Trimite',
+    // Traducere automată (decizia 127). translatedLabel se citește după LIMBA traducerii, nu după limba interfeței:
+    // eticheta traducerii în română vine din acest dicționar, cea a traducerii în turcă din dicționarul turcesc.
+    original: 'Mesaj original',
+    translatedLabel: 'Română · tradus automat',
+    translation: {
+      pending: 'Traducerea se pregătește…',
+      failed: 'Traducerea automată nu a reușit: {reason}. Nota a fost salvată și este vizibilă în forma originală.',
+      retry: 'Reîncearcă traducerea',
+      retryFailed: 'Traducerea nu a reușit nici de această dată. Nota rămâne neschimbată; verificați conexiunea la Integrări → Traducerea notelor.',
+      disabled: 'Traducerea notelor este dezactivată (Administrator → Integrări → Traducerea notelor).',
+      reason: {
+        TIMEOUT: 'Google nu a răspuns la timp',
+        NETWORK: 'Google nu a putut fi contactat',
+        QUOTA: 'cota de traducere a fost depășită',
+        AUTH: 'cheia Google este invalidă sau neautorizată',
+        BAD_REQUEST: 'Google nu a acceptat cererea',
+        SERVER: 'eroare la Google',
+        HTTP: 'Google a dat un răspuns neașteptat',
+        BAD_RESPONSE: 'răspunsul Google nu a putut fi citit',
+        NO_KEY: 'cheia Google nu este salvată',
+        INTERRUPTED: 'traducerea a fost întreruptă',
+        ERROR: 'eroare neașteptată',
+      },
+    },
   },
   // Mesajele de eroare ale acțiunilor de pe server (?error=...)
   errors: {

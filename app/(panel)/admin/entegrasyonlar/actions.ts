@@ -15,6 +15,7 @@ import { localDay } from '@/server/profile/dates.js';
 import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
 import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting/uninvoiced.js';
+import { saveTranslateSettings, testTranslation } from '@/server/notes/translation.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -91,6 +92,31 @@ export async function saveAccountingAction(formData: FormData) {
   revalidatePath('/admin/entegrasyonlar');
   revalidatePath('/admin/muhasebe/cam');
   redirect(back({ ok: 'accounting' }) + '#muhasebe');
+}
+
+/**
+ * Not çevirisi (karar 127): aç / kapat + Google Cloud API anahtarı. Anahtar boş bırakılırsa kayıtlı olan kalır;
+ * şifreli saklanır, hiçbir yanıta / günlüğe / denetim kaydına yazılmaz (server/notes/translation.js).
+ */
+export async function saveTranslateAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const r = await saveTranslateSettings(
+    db,
+    { enabled: formData.get('enabled') === 'on' },
+    { key: String(formData.get('apiKey') ?? ''), clearKey: formData.get('clearKey') === 'on', secret: getEnv().AUTH_SECRET },
+    await actorOf(user),
+  );
+  if (!r.ok) redirect(back({ error: 'translate', detail: r.code }) + '#ceviri');
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'translate' }) + '#ceviri');
+}
+
+/** Çeviri bağlantısını dener: kayıtlı anahtarla zararsız bir ifade çevrilir. Hiçbir not okunmaz / değişmez. */
+export async function testTranslateAction() {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const r = await testTranslation(db, { actor: await actorOf(user) });
+  if (r.ok) redirect(back({ ok: 'translateTest', detail: r.sample }) + '#ceviri');
+  redirect(back({ error: 'translateTest', code: r.code, detail: r.detail ?? '' }) + '#ceviri');
 }
 
 /** FGO bağlantısını dener (kimlik + belge türleri). Hiçbir belge kesilmez. */

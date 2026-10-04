@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.49.0 — 04.10.2026
+
+- **Notlarda otomatik çeviri**: müşteri ile ekip, sipariş sayfasındaki Notlar bölümünde çeviri yapmadan yazışır.
+  - Müşterinin (Romence) notu Türkçeye çevrilir: yönetici, satış ve çizim ekibi özgün notu ve hemen altında
+    "Türkçe · otomatik çevrilmiştir" etiketiyle Türkçesini görür.
+  - Yönetici, satış ya da çizimcinin (Türkçe) notu Romenceye çevrilir: müşteri özgün notu ve altında
+    "Română · tradus automat" etiketiyle Romencesini görür.
+  - Özgün not her zaman olduğu gibi durur. Çeviri not yazılırken **bir kez** yapılır ve saklanır; sayfa açılınca /
+    yenilenince yeniden çeviri yapılmaz.
+  - **İç notlar** çevrilmez, Google'a gönderilmez ve eskisi gibi müşteriye hiç görünmez.
+  - Çeviri yapılamazsa (Google yanıt vermedi, kota doldu, anahtar geçersiz) not **yine kaydedilir**; ekip notun altında
+    "Otomatik çeviri yapılamadı" bilgisini ve "Çeviriyi yeniden dene" düğmesini görür. Müşteriye hata bilgisi gösterilmez.
+  - Eski notlar olduğu gibi kalır (geriye dönük çeviri yapılmaz).
+- **Yönetici → Entegrasyonlar → "Not çevirisi"**: çeviriyi aç / kapat, Google Cloud API anahtarını gir, "Bağlantıyı
+  dene". Anahtar yalnızca buradan girilir, şifreli saklanır ve bir daha gösterilmez (yalnızca "kayıtlı" yazar).
+  Çeviri kapalıyken notlar eskisi gibi çalışır.
+- Kapsam yalnızca sipariş sayfasındaki Notlar bölümüdür; çizim işaretleri, teklif satırı notları, e-postalar ve
+  bildirimler çevrilmez.
+- Testlerde gerçek Google'a istek gitmez (sahte çeviri sağlayıcısı); FGO davranışı değişmedi.
+
 ## 3.48.1 — 04.10.2026
 
 Yalnızca test / sağlamlaştırma sürümü: ekranlarda ve kurallarda **hiçbir değişiklik yoktur** (3.48.0 davranışı aynen).

@@ -235,6 +235,33 @@ export default {
   integrations: {
     title: 'Entegrasyonlar',
     intro: 'Dış servislerle bağlantılar. Şifre ve anahtarlar burada değil, yalnızca sunucudaki ayar dosyasında durur.',
+    // Not çevirisi (karar 127): sipariş notları yazılırken bir kez çevrilir (Google Cloud Translation)
+    translate: {
+      title: "Not çevirisi",
+      intro: "Sipariş notları yazılırken bir kez otomatik çevrilir ve saklanır: müşterinin notu Türkçeye, yönetici / satış / çizim notu Romenceye. Özgün not olduğu gibi kalır. İç notlar çevrilmez ve Google'a gönderilmez. Çeviri yapılamasa da not kaydedilir.",
+      enabled: "Notları otomatik çevir (Google Cloud Translation)",
+      key: "Google Cloud API anahtarı",
+      keySaved: "•••••••• (kayıtlı)",
+      keyHint: "Cloud Translation API'si açık bir Google Cloud projesinde oluşturulan API anahtarı. Yalnızca buradan girilir, şifreli saklanır ve bir daha gösterilmez.",
+      keyHintSaved: "Anahtar kayıtlı ve gizli. Değiştirmek için yenisini yazın; boş bırakırsanız kayıtlı anahtar kalır.",
+      clearKey: "Kayıtlı anahtarı sil",
+      save: "Kaydet",
+      saved: "Not çevirisi ayarı kaydedildi.",
+      bad: {
+        KEY: "Çeviriyi açmak için önce Google anahtarını girin.",
+        KEY_FORMAT: "Anahtar geçersiz görünüyor: boşluk içermeyen 20–200 karakter olmalı.",
+        FORBIDDEN: "Bu işlem için yetkiniz yok.",
+      },
+      test: "Bağlantıyı dene",
+      testHint: "Kayıtlı anahtarla zararsız bir ifade çevrilir; hiçbir not okunmaz ya da değişmez.",
+      testOk: "Google çeviri bağlantısı çalışıyor: „Bună ziua” → „{sample}”.",
+      testFailed: "Google çeviri bağlantısı çalışmıyor: {reason}.",
+      testDetail: "Google'ın yanıtı: {detail}",
+      statusOn: "Açık: müşteriye açık her yeni not yazılırken çevrilir.",
+      statusOff: "Kapalı: notlar çevrilmez (yazılan notlar çevirisiz kaydedilir).",
+      failed: "Son 7 günde çevrilemeyen not: {n}. Bu notlar özgün hâliyle duruyor; iç ekip notun altından çeviriyi yeniden isteyebilir.",
+      fake: "TEST MODU: sahte çeviri sağlayıcısı açık (TRANSLATE_FAKE=1). Notlar gerçekten çevrilmiyor ve Google'a istek gitmiyor. Gerçek sunucuda bu ayar bulunmamalı.",
+    },
     // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
     accounting: {
       title: "Fatura edilmemiş sipariş uyarısı",

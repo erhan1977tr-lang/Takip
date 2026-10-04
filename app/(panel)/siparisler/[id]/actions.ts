@@ -20,6 +20,7 @@ import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '@/server/orders/excel-import.j
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
+import { addNote, retryNoteTranslation } from '@/server/notes/translation.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -250,11 +251,23 @@ export async function addNoteAction(formData: FormData) {
   const user = await requirePermission('NOTE_ADD');
   const order = await loadOrder(orderIdOf(formData), user);
   const { t } = await getT();
-  const text = String(formData.get('text') ?? '').trim().slice(0, 4000);
-  if (!text) redirect(err(order.id, t('order.errors.emptyNote')));
-  const internal = userCan(user, 'NOTE_INTERNAL_VIEW') && formData.get('internal') === 'on';
-  await db.orderNote.create({ data: { orderId: order.id, userId: user.id, text, internal } });
+  // Not her durumda kaydedilir; müşteriye açık not (çeviri açıksa) bir kez çevrilir ve sonucu saklanır (karar 127).
+  // Çeviri başarısız olsa da not durur — kural ve görünürlük server/notes/translation.js'te.
+  const r = await addNote(db, { orderId: order.id, actor: await actorOf(user), text: formData.get('text'), internal: formData.get('internal') === 'on' });
+  if (!r.ok) redirect(err(order.id, t(r.code === 'EMPTY' ? 'order.errors.emptyNote' : 'order.errors.notAllowed')));
   done(order.id, 'note_added');
+}
+
+/** Çevrilemeyen notun çevirisini bir kez daha ister (yalnızca iç ekip; kural server/notes/translation.js) */
+export async function retryNoteTranslationAction(formData: FormData) {
+  const user = await requirePermission('NOTE_ADD');
+  const order = await loadOrder(orderIdOf(formData), user);
+  const { t } = await getT();
+  const r = await retryNoteTranslation(db, { noteId: String(formData.get('noteId') ?? ''), orderId: order.id, actor: await actorOf(user) });
+  if (!r.ok) redirect(err(order.id, t(r.code === 'DISABLED' ? 'order.notes.translation.disabled' : 'order.errors.notAllowed')) + '#notlar');
+  revalidatePath(`/siparisler/${order.id}`);
+  if (r.translation === 'FAILED') redirect(err(order.id, t('order.notes.translation.retryFailed')) + '#notlar');
+  redirect(back(order.id, 'ok=note_translated') + '#notlar');
 }
 
 // ---------------- Teklif hattı ----------------

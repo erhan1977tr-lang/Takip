@@ -4,13 +4,18 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAccountingAction, saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction } from './actions';
+import {
+  saveAccountingAction, saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
+  testAntivirusAction, testFgoAction, testTranslateAction,
+} from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
 import { getDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/lib/env';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
+import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
+import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +65,10 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   // Fatura numarasını FGO verir; burada yalnızca yöneticinin (varsa) tek seferlik elle numarası gösterilir
   const nextInvoice = manualInvoiceNumber(fgo);
   const accounting = await getAccountingSettings(db);
+  // Not çevirisi (karar 127): anahtarın kendisi buraya hiç gelmez — yalnızca kayıtlı olup olmadığı
+  const [noteTr, trFailed] = await Promise.all([getTranslateSettings(db), failedTranslations(db)]);
+  const trBad = ['KEY', 'KEY_FORMAT', 'FORBIDDEN'].includes(sp.detail ?? '') ? sp.detail : 'KEY_FORMAT';
+  const trReason = TRANSLATE_ERRORS.includes(sp.code ?? '') ? sp.code : 'ERROR';
   const [wh, whPending, whFailed] = await Promise.all([
     getWarehouseSettings(db),
     db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }),
@@ -164,6 +173,42 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </div>
         <div className="hint">{t('admin.integrations.accounting.hint', { max: UNINVOICED_MAX_DAYS })}</div>
       </form>
+
+      {/* Not çevirisi (karar 127): sipariş notları yazılırken bir kez çevrilir; anahtar yalnızca burada girilir, gösterilmez */}
+      {sp.ok === 'translate' && <div className="alert alert-ok">{t('admin.integrations.translate.saved')}</div>}
+      {sp.error === 'translate' && <div className="alert alert-error">{t(`admin.integrations.translate.bad.${trBad}` as MsgKey)}</div>}
+      {sp.ok === 'translateTest' && <div className="alert alert-ok">{t('admin.integrations.translate.testOk', { sample: sp.detail ?? '' })}</div>}
+      {sp.error === 'translateTest' && (
+        <div className="alert alert-error">
+          {t('admin.integrations.translate.testFailed', { reason: t(`order.notes.translation.reason.${trReason}` as MsgKey) })}
+          {sp.detail ? <> {t('admin.integrations.translate.testDetail', { detail: sp.detail.slice(0, 200) })}</> : null}
+        </div>
+      )}
+      <form action={saveTranslateAction} className="card" id="ceviri">
+        <h2>{t('admin.integrations.translate.title')}</h2>
+        <p className="muted small">{t('admin.integrations.translate.intro')}</p>
+        {fakeTranslateOn() && <div className="alert alert-warn">{t('admin.integrations.translate.fake')}</div>}
+        <label className="check"><input type="checkbox" name="enabled" defaultChecked={noteTr.enabled} /> {t('admin.integrations.translate.enabled')}</label>
+        <div className="grid" style={{ marginTop: 10 }}>
+          <div>
+            <label htmlFor="tr-key">{t('admin.integrations.translate.key')}</label>
+            <input id="tr-key" name="apiKey" type="password" autoComplete="new-password" maxLength={200} placeholder={noteTr.hasKey ? t('admin.integrations.translate.keySaved') : ''} />
+            <div className="hint">{noteTr.hasKey ? t('admin.integrations.translate.keyHintSaved') : t('admin.integrations.translate.keyHint')}</div>
+            {noteTr.hasKey && <label className="check small"><input type="checkbox" name="clearKey" /> {t('admin.integrations.translate.clearKey')}</label>}
+          </div>
+        </div>
+        <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+          <span className="small">
+            <span className="muted">{noteTr.enabled && noteTr.hasKey ? t('admin.integrations.translate.statusOn') : t('admin.integrations.translate.statusOff')}</span>
+            {trFailed > 0 && <> <span className="text-danger" id="ceviri-hatali">{t('admin.integrations.translate.failed', { n: trFailed })}</span></>}
+          </span>
+          <button className="btn btn-primary">{t('admin.integrations.translate.save')}</button>
+        </div>
+      </form>
+      <div className="row" style={{ marginTop: -8, marginBottom: 16 }}>
+        <form action={testTranslateAction} id="ceviri-dene"><button className="btn" disabled={!noteTr.hasKey}>{t('admin.integrations.translate.test')}</button></form>
+        <span className="muted small">{t('admin.integrations.translate.testHint')}</span>
+      </div>
 
       <form action={saveWarehouseAction} className="card" id="depo">
         <h2>{t('profile.settings.title')}</h2>

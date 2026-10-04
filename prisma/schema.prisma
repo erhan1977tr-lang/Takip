@@ -498,6 +498,9 @@ model OrderFile {
 }
 
 // Siparişteki notlar. internal=true ise müşteri görmez. Gönderilen not düzeltilemez.
+// Otomatik çeviri (karar 127): müşteriye açık not yazılırken BİR KEZ çevrilir ve sonucu burada saklanır; sayfa açılışı
+// çeviri yapmaz. Hedef dil yazanın rolünden gelir (müşteri → tr, iç ekip → ro). Çeviri notun görünürlüğünü aynen taşır;
+// iç not çevrilmez. Özgün metin (text) hiçbir zaman değişmez. Çeviri kapalıyken / eski notlarda alanların hepsi boştur.
 model OrderNote {
   id        String   @id @default(cuid())
   orderId   String
@@ -507,8 +510,21 @@ model OrderNote {
   text      String
   internal  Boolean  @default(false)
   createdAt DateTime @default(now())
+  translation       String?                // çevrilmiş metin (yalnızca DONE)
+  translationLang   String?                // hedef dil: tr | ro
+  translationStatus NoteTranslationStatus? // boş: çeviri uygulanmadı
+  translationError  String?                // güvenli hata kodu (TIMEOUT, QUOTA, AUTH …); Google'ın metni / anahtar saklanmaz
+  translationAt     DateTime?              // son durum değişikliği (çeviri / deneme zamanı)
 
   @@index([orderId])
+}
+
+// PENDING: çeviri isteği sürüyor · DONE: çevrildi · SAME: çeviri özgün metinle aynı (gösterilmez) · FAILED: çevrilemedi
+enum NoteTranslationStatus {
+  PENDING
+  DONE
+  SAME
+  FAILED
 }
 
 // Cam kataloğu: müşteri yeni siparişte buradan seçer (yönetici → Katalog; Excel ile de yüklenir).

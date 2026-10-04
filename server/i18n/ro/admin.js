@@ -234,6 +234,33 @@ export default {
   integrations: {
     title: 'Integrări',
     intro: 'Conexiuni cu servicii externe. Parolele și cheile nu stau aici, ci doar în fișierul de configurare de pe server.',
+    // Traducerea notelor (decizia 127): notele comenzii sunt traduse o singură dată la scriere (Google Cloud Translation)
+    translate: {
+      title: "Traducerea notelor",
+      intro: "Notele comenzii sunt traduse automat o singură dată, la scriere, și salvate: nota clientului în turcă, nota administratorului / vânzărilor / desenatorului în română. Nota originală rămâne neschimbată. Notele interne nu se traduc și nu sunt trimise la Google. Nota se salvează chiar dacă traducerea nu reușește.",
+      enabled: "Tradu automat notele (Google Cloud Translation)",
+      key: "Cheie API Google Cloud",
+      keySaved: "•••••••• (salvată)",
+      keyHint: "Cheie API creată într-un proiect Google Cloud cu Cloud Translation API activat. Se introduce numai aici, se păstrează criptată și nu mai este afișată.",
+      keyHintSaved: "Cheia este salvată și ascunsă. Pentru a o schimba, scrieți una nouă; dacă lăsați gol, cheia salvată rămâne.",
+      clearKey: "Șterge cheia salvată",
+      save: "Salvează",
+      saved: "Setarea de traducere a notelor a fost salvată.",
+      bad: {
+        KEY: "Pentru a activa traducerea, introduceți mai întâi cheia Google.",
+        KEY_FORMAT: "Cheia pare invalidă: trebuie să aibă 20–200 de caractere, fără spații.",
+        FORBIDDEN: "Nu aveți permisiunea pentru această acțiune.",
+      },
+      test: "Testează conexiunea",
+      testHint: "Cu cheia salvată se traduce o expresie inofensivă; nicio notă nu este citită sau modificată.",
+      testOk: "Conexiunea de traducere Google funcționează: „Bună ziua” → „{sample}”.",
+      testFailed: "Conexiunea de traducere Google nu funcționează: {reason}.",
+      testDetail: "Răspunsul Google: {detail}",
+      statusOn: "Activ: fiecare notă nouă vizibilă clientului este tradusă la scriere.",
+      statusOff: "Dezactivat: notele nu sunt traduse (se salvează fără traducere).",
+      failed: "Note netraduse în ultimele 7 zile: {n}. Aceste note rămân în forma originală; echipa internă poate cere din nou traducerea de sub notă.",
+      fake: "MOD DE TEST: furnizorul fals de traducere este activ (TRANSLATE_FAKE=1). Notele nu sunt traduse cu adevărat și nu se trimit cereri la Google. Această setare nu trebuie să existe pe serverul real.",
+    },
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
     accounting: {
       title: "Avertizare comenzi nefacturate după încărcare",

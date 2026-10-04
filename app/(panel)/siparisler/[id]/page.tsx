@@ -5,6 +5,9 @@ import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } f
 import { userCan } from '@/lib/permissions';
 import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
+import { translate } from '@/server/i18n/index.js';
+import { canRetryTranslation, translationState } from '@/server/notes/translation.js';
+import { TRANSLATE_ERRORS } from '@/server/notes/provider.js';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, roleText, slaText, stageText,
 } from '@/lib/labels';
@@ -31,7 +34,7 @@ import { setGuestHostAction } from './guest-host-actions';
 import { guestHostOptions } from '@/server/loading/crates.js';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
-  addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
+  addFilesAction, addNoteAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction,
@@ -924,21 +927,54 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
 
 function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T }) {
   const isCustomer = user.appRole === 'MUSTERI';
-  const notes = order.notes; // iç notlar müşteriye hiç yüklenmez (sanitizeOrder)
+  // İç notlar müşteriye hiç yüklenmez; çeviri alanları da role göre sunucuda temizlenmiştir (sanitizeOrder → notesFor)
+  const notes = order.notes;
+  // Çeviri durumu (bekliyor / yapılamadı) ve "yeniden dene" yalnızca iç ekibe; müşteri yalnızca tamamlanmış çeviriyi görür
+  const staff = userCan(user, 'NOTE_INTERNAL_VIEW');
+  const canRetry = canRetryTranslation(user.appRole);
+  const now = new Date();
   return (
     <div className="card" id="notlar">
       <h2>{t('order.notes.title')}</h2>
       <p className="muted small">{t('order.notes.intro')}{!isCustomer && ` ${t('order.notes.introInternal')}`}</p>
       {notes.length === 0 && <p className="muted">{t('order.notes.none')}</p>}
-      {notes.map((n) => (
-        <div key={n.id} className={`note ${n.internal ? 'internal' : ''}`}>
-          <div className="pre">{n.text}</div>
-          <div className="meta">
-            {n.user.name || n.user.email}{!isCustomer || n.user.appRole === 'MUSTERI' ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
-            {n.internal && <> · <b>{t('order.notes.internal')}</b></>}
+      {notes.map((n) => {
+        const st = translationState(n, now);
+        const lang = n.translationLang === 'tr' || n.translationLang === 'ro' ? n.translationLang : null;
+        // Çeviri sayfa açılırken YAPILMAZ: yalnızca not yazılırken saklanan sonuç gösterilir (karar 127)
+        const translated = st?.state === 'done' && lang && n.translation ? n.translation : null;
+        const reason = st?.state === 'failed' ? (TRANSLATE_ERRORS.includes(st.code ?? '') ? st.code : 'ERROR') : null;
+        return (
+          <div key={n.id} className={`note ${n.internal ? 'internal' : ''}`} data-note={n.id}>
+            {translated && <div className="note-label">{t('order.notes.original')}</div>}
+            <div className="pre note-text">{n.text}</div>
+            {translated && lang && (
+              <div className="note-translation" lang={lang} data-translation={lang}>
+                {/* Etiket çevirinin dilindedir (arayüz dilinden bağımsız): "Türkçe · otomatik çevrilmiştir" / "Română · tradus automat" */}
+                <div className="note-label">{translate(lang, 'order.notes.translatedLabel')}</div>
+                <div className="pre">{translated}</div>
+              </div>
+            )}
+            {staff && st?.state === 'pending' && <div className="note-translation note-state">{t('order.notes.translation.pending')}</div>}
+            {staff && reason && (
+              <div className="note-translation note-state failed" data-translation-failed={reason}>
+                <span>{t('order.notes.translation.failed', { reason: t(`order.notes.translation.reason.${reason}` as MsgKey) })}</span>
+                {canRetry && (
+                  <form action={retryNoteTranslationAction}>
+                    <input type="hidden" name="id" value={order.id} />
+                    <input type="hidden" name="noteId" value={n.id} />
+                    <button className="btn btn-link">{t('order.notes.translation.retry')}</button>
+                  </form>
+                )}
+              </div>
+            )}
+            <div className="meta">
+              {n.user.name || n.user.email}{!isCustomer || n.user.appRole === 'MUSTERI' ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
+              {n.internal && <> · <b>{t('order.notes.internal')}</b></>}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
         <textarea name="text" rows={2} required placeholder={t('order.notes.placeholder')} aria-label={t('order.notes.aria')} />

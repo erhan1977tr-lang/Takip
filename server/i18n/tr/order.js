@@ -26,6 +26,7 @@ export default {
     revision_requested: 'Revizyon talebiniz çizim ekibine iletildi.',
     files_added: 'Dosyalar eklendi.',
     note_added: 'Not eklendi.',
+    note_translated: 'Not çevrildi.',
     customer_excel: 'Müşterinin Excel indirme izni güncellendi.',
     offer_saved: 'Teklif taslak olarak kaydedildi.',
     offer_submit: 'Teklif sistem yöneticisinin onayına gönderildi.',
@@ -246,6 +247,30 @@ export default {
     internalCheck: 'İç not — müşteri görmez',
     noEdit: 'Gönderilen not düzeltilemez',
     send: 'Gönder',
+    // Otomatik çeviri (karar 127). translatedLabel arayüz diline göre DEĞİL, çevirinin diline göre okunur:
+    // Türkçe çevirinin etiketi bu sözlükten, Romence çevirinin etiketi Romence sözlükten gelir.
+    original: 'Özgün mesaj',
+    translatedLabel: 'Türkçe · otomatik çevrilmiştir',
+    translation: {
+      pending: 'Çeviri hazırlanıyor…',
+      failed: 'Otomatik çeviri yapılamadı: {reason}. Not kaydedildi ve karşı tarafa özgün hâliyle görünüyor.',
+      retry: 'Çeviriyi yeniden dene',
+      retryFailed: 'Çeviri yine yapılamadı. Not olduğu gibi duruyor; Entegrasyonlar → Not çevirisi bölümünden bağlantıyı deneyin.',
+      disabled: 'Not çevirisi kapalı (Yönetici → Entegrasyonlar → Not çevirisi).',
+      reason: {
+        TIMEOUT: 'Google zamanında yanıt vermedi',
+        NETWORK: 'Google\'a ulaşılamadı',
+        QUOTA: 'çeviri kotası doldu',
+        AUTH: 'Google anahtarı geçersiz ya da yetkisiz',
+        BAD_REQUEST: 'Google isteği kabul etmedi',
+        SERVER: 'Google tarafında hata',
+        HTTP: 'Google beklenmeyen bir yanıt verdi',
+        BAD_RESPONSE: 'Google\'ın yanıtı okunamadı',
+        NO_KEY: 'Google anahtarı kayıtlı değil',
+        INTERRUPTED: 'çeviri yarıda kaldı',
+        ERROR: 'beklenmeyen hata',
+      },
+    },
   },
   // Sunucu işlemlerinin hata mesajları (?error=...)
   errors: {

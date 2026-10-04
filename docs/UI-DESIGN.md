@@ -246,6 +246,19 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   ("ÖZEL DURUM / MİSAFİR YÜK") followed by one `form.guest-in` per guest order: order · firm, a crate `<select>`
   (first option = waiting) and a plain `.btn` "Kaydet" for `CRATE_EDIT`; without crates a `.badge-danger` note.
 
+## Note translation (3.49.0)
+
+- Notes keep the existing `.note` box. When a stored translation is shown: `.note-label` ("Özgün mesaj" / "Mesaj original")
+  above the original (`.pre.note-text`), then `.note-translation` — secondary (muted text, thin left border) but body
+  size — with its own `.note-label` in the translation's language ("Türkçe · otomatik çevrilmiştir" / "Română · tradus
+  automat"; never localized to the UI language) and the translated text in `.pre`. No translation → the note looks
+  exactly as before (no labels).
+- Staff only: `.note-translation.note-state` (meta size) for "pending" and `.note-state.failed` (danger border / text)
+  for a failed translation, with a `.btn.btn-link` "Çeviriyi yeniden dene". Customers never see state or error.
+- Admin → Entegrasyonlar: `form.card#ceviri` — enable checkbox, one password input for the key (placeholder shows
+  "kayıtlı", value never rendered), "Kaydet"; below the card a plain `.btn` "Bağlantıyı dene" with a `.muted.small`
+  hint. `.alert-warn` inside the card when the fake provider (test mode) is active.
+
 ## Order selection, uninvoiced reminder (3.48.0)
 
 - Proforma preview and the loading "Faturalama" card: one checkbox per eligible order in the order row

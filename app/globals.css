@@ -493,6 +493,12 @@ a.notif-main:hover .notif-title, button.notif-main:hover .notif-link { text-deco
 .note { padding: 11px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--divider); margin-bottom: 8px; }
 .note.internal { background: var(--warn-soft); border: 1px dashed var(--warn-border); }
 .note .meta { font-size: var(--fs-meta); color: var(--faint); margin-top: 4px; }
+/* Not çevirisi (karar 127): çeviri özgün metnin altında — ikincil (soluk, sol çizgili) ama gövde boyutunda okunur */
+.note-label { font-size: var(--fs-meta); font-weight: 600; color: var(--faint); margin-bottom: 2px; }
+.note-translation { margin-top: 8px; padding-left: 10px; border-left: 2px solid var(--border); color: var(--muted); }
+.note-translation.note-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: var(--fs-meta); }
+.note-translation.note-state.failed { border-left-color: var(--danger); color: var(--danger); }
+.note-translation form { margin: 0; }
 /* ----- Teklif tablosu (OfferEditor.tsx) — eski TAKİP: çerçeveli hücreler, geniş açıklama, ayrı toplam satırı ----- */
 .offer-card { border-left: 3px solid var(--primary); }
 .offer-wrap { border: 1px solid var(--border); border-radius: 10px; container-type: inline-size; }

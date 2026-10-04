@@ -36,6 +36,8 @@ jobs:
       SCREENSHOT_DIR: ${{ github.workspace }}/.screens
       UPLOAD_DIR: ${{ github.workspace }}/.uploads
       NEXT_TELEMETRY_DISABLED: '1'
+      # Not çevirisi: testlerde sahte sağlayıcı — Google'a hiçbir istek gitmez (server/notes/provider.js)
+      TRANSLATE_FAKE: '1'
       # Antivirüs: sunucudakiyle aynı ClamAV imajı (deploy/clamav); uçtan uca testler gerçek taramayla çalışır
       CLAMAV_HOST: 127.0.0.1
     steps:
