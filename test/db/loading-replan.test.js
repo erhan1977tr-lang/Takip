@@ -335,7 +335,11 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   await cr.saveDayCrates(db, { day: dayOf(-11), customerId: B.id, rows: [{ ...row15, crateNo: 9, orderIds: [b9.id] }], actor: sales });
   const crate = await db.crate.findFirstOrThrow({ where: { shipDay: date(X), customerId: B.id } });
   const otherDay = await db.crate.findFirstOrThrow({ where: { shipDay: date(dayOf(-11)), customerId: B.id } });
-  const commercial = async () => JSON.stringify(await db.order.findUnique({ where: { id: a1.id }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } }, billingBatchOrders: true, fgoDocuments: true } }));
+  // Ticari kayıt: fiziksel yerleşim alanı (guestHostId — ev sahibi firma) ve satırın güncellenme anı dışında siparişin her şeyi
+  const commercial = async () => {
+    const { guestHostId: _host, updatedAt: _at, ...rest } = await db.order.findUnique({ where: { id: a1.id }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } }, billingBatchOrders: true, fgoDocuments: true } });
+    return JSON.stringify(rest);
+  };
   const before = await commercial();
 
   // --- Özel durum (karar 124): ev sahibi FİRMAYI yalnızca yönetici seçer; firma seçilmeden kimse sandık seçemez
