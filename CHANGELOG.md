@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.49.2 — 04.10.2026
+
+- **Yeni resmî logo (saydam zeminli PNG)**: PDF'lerde ve e-postalarda kullanılan GKH Trading Invest logosu, ürün
+  sahibinin gönderdiği saydam zeminli yeni logo ile değiştirildi (bina işareti + "GKH Trading Invest" yazısı).
+  Gönderilen dosyada yazı beyazdı ve beyaz kâğıtta / e-postada görünmüyordu; ürün sahibinin seçimiyle yazı **koyu**
+  renge çevrildi — bina işareti, ölçü ve saydamlık gönderilen dosyayla birebir aynıdır (kırpılmadı, gerilmedi).
+  Teklif PDF'i, Comanda Depozit, nakliye listesi ve bütün e-postalar (bildirimler, proforma / fatura, depo, davet /
+  doğrulama kodu) yeni logoyu kendiliğinden kullanır. PDF'lerde logo saydamlığıyla gömülür; e-postada PNG olarak
+  eklenir. Giriş ekranındaki ve sol menüdeki "GKH Digital" logosu değişmedi.
+- **Notlar — iç ekip kendi notunu yalnızca özgün dilinde görür**: yönetici, satış ve çizim ekibinin Türkçe notunun
+  Romence çevirisi müşteri içindir; artık iç ekibe gösterilmez. Müşteri: özgün Türkçe + Romence çeviri. İç ekip ve
+  denetimci: yalnızca özgün Türkçe. Müşterinin Romence notunda değişiklik yok (iç ekip: özgün + Türkçe; müşteri ve
+  denetimci: yalnızca özgün). Çevirinin ne zaman yapıldığı ve nasıl saklandığı değişmedi; sayfa yenileme, otomatik
+  yenileme ve işçi yine hiçbir koşulda çeviri istemez. Çevrilemeyen notta "Çeviriyi yeniden dene" iç ekipte durur.
+- **Nakliye listesi**: logonun yanındaki firma adı "GKH Trading" yerine resmî ad **"GKH Trading Invest SRL"**.
+
 ## 3.49.1 — 04.10.2026
 
 - **Not çevirisi — denetimci**: denetimci notları yalnızca **özgün dilinde** görür. Saklanan otomatik çeviri, "çeviri

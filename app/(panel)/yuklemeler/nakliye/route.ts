@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   // Misafir yükün firma adı görene göre (satışa maskeli — karar 7); ağırlık ve gruplar değişmez
   const list = await transportList(db, day, { label: (name: string) => customerLabel(user, name) });
   const pdf = transportListPdf({
-    day, list, company: 'GKH Trading',
+    day, list,
     text: {
       title: t('loading.transport.title'), day: t('loading.transport.day'), colNo: t('loading.transport.colNo'),
       colDims: t('loading.transport.colDims'), colKg: t('loading.transport.colKg'), colNote: t('loading.transport.colNote'),

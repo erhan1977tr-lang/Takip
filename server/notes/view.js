@@ -21,8 +21,9 @@ export function translationTarget(role) {
 }
 
 /**
- * Çeviriyle çalışan iç ekip: not yazan VE iç notları gören rol (yönetici, satış, çizim). Çeviriyi, durumunu ve hata
- * kodunu yalnızca bu roller görür; çevrilemeyen notun çevirisini yalnızca bu roller yeniden isteyebilir.
+ * Çeviriyle çalışan iç ekip: not yazan VE iç notları gören rol (yönetici, satış, çizim). Müşteri notunun Türkçe
+ * çevirisini, çeviri durumunu ve hata kodunu yalnızca bu roller görür; çevrilemeyen notun çevirisini yalnızca bu roller
+ * yeniden isteyebilir.
  * Denetimci (yalnızca görüntüler, not yazmaz) bu kümede DEĞİLDİR.
  * @param {string | null | undefined} role
  */
@@ -48,7 +49,9 @@ const NO_TRANSLATION = { translation: null, translationLang: null, translationSt
  * Notu görenin rolüne göre çeviri alanları — çeviri notun görünürlüğünü aşamaz; notun kendisine (özgün metin) erişim
  * bu işlevle DEĞİŞMEZ:
  *   iç not                      : çeviri alanı hiç dönmez (iç not çevrilmez; yanlışlıkla yazılmış olsa da gitmez)
- *   yönetici / satış / çizim    : çeviri + durum + güvenli hata kodu
+ *   yönetici / satış / çizim    : müşteri notunun Türkçe çevirisi + durum + güvenli hata kodu; KENDİ (iç ekip) notunun
+ *                                 tamamlanmış Romence çevirisi dönmez — o çeviri müşteri içindir (karar 130); yalnızca
+ *                                 süren / başarısız çevirinin durumu ve hata kodu döner (yeniden isteyebilmek için)
  *   müşteri (not yazar, iç notu görmez) : yalnızca Romence'ye TAMAMLANMIŞ çeviri; hata kodu, bekleme durumu ve
  *                                 kendi notunun Türkçesi gitmez
  *   denetimci ve diğer salt okur roller : çeviri alanı HİÇ dönmez — notu yalnızca özgün dilinde görür (karar 128):
@@ -60,7 +63,13 @@ const NO_TRANSLATION = { translation: null, translationLang: null, translationSt
  */
 export function noteView(role, n) {
   if (n.internal) return { ...n, ...NO_TRANSLATION };
-  if (canRetryTranslation(role)) return n.translationStatus === 'DONE' ? n : { ...n, translation: null };
+  // İç ekip çevrilmiş METNİ yalnızca Türkçe'ye çevrilen notta (müşterinin notu) alır. İç ekibin kendi notunun Romence
+  // çevirisi müşteri içindir: tamamlanmış çeviri iç ekibe HİÇ dönmez (karar 130) — iç ekip kendi notunu yalnızca özgün
+  // dilinde görür. Süren / başarısız çevirinin durumu ve hata kodu kalır: çevrilemeyen not "yeniden dene" ile istenebilsin.
+  if (canRetryTranslation(role)) {
+    if (n.translationLang === 'tr') return n.translationStatus === 'DONE' ? n : { ...n, translation: null };
+    return n.translationStatus === 'DONE' || n.translationStatus === 'SAME' ? { ...n, ...NO_TRANSLATION } : { ...n, translation: null };
+  }
   if (can(role, 'NOTE_ADD') && n.translationStatus === 'DONE' && n.translationLang === 'ro' && n.translation) return { ...n, translationError: null };
   return { ...n, ...NO_TRANSLATION };
 }

@@ -7,12 +7,14 @@
 // Düz metin (text) sürümüne dokunulmaz: HTML göstermeyen programlar e-postayı eskisi gibi okur.
 // E-posta programlarıyla uyum: tablo düzeni, satır içi stiller, sabit genişlik niteliği (width) + height:auto
 // (oran korunur; Outlook dahil), en fazla 600 px ve küçük ekranda tam genişlik.
+// Logo saydam zeminli PNG'dir (koyu yazılı): başlık hücresi açıkça BEYAZDIR ve belge "yalnızca açık tema" olarak
+// işaretlenir (color-scheme) — karanlık temayı uygulayan programlarda yazının zemine karışmaması için.
 import { BRAND, brandLogoBytes } from '../branding/index.js';
 
 /** Logonun e-posta içindeki kimliği (Content-ID) */
 export const MAIL_LOGO_CID = 'gkh-logo@takip';
 /** Logonun e-postadaki genişliği (px). Yükseklik verilmez (height:auto): posta programı oranı korur. */
-export const MAIL_LOGO_WIDTH = 72;
+export const MAIL_LOGO_WIDTH = 200;
 const MARK = `cid:${MAIL_LOGO_CID}`;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -32,12 +34,12 @@ export function brandHeader() {
  */
 export function brandedHtml({ lang = 'ro', title = '', body }) {
   return `<!doctype html>
-<html lang="${esc(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head>
+<html lang="${esc(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(title)}</title></head>
 <body style="margin:0;padding:0;background:#f4f5f7;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f5f7;">
 <tr><td align="center" style="padding:20px 12px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;">
-<tr><td style="padding:20px 24px 14px;border-bottom:1px solid #e2e8f0;">${brandHeader()}</td></tr>
+<tr><td bgcolor="#ffffff" style="padding:18px 24px 14px;border-bottom:1px solid #e2e8f0;background:#ffffff;border-radius:10px 10px 0 0;">${brandHeader()}</td></tr>
 <tr><td style="padding:20px 24px 24px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111827;">
 ${body}
 </td></tr>

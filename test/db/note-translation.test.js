@@ -103,7 +103,7 @@ dbTest('müşterinin Romence notu → Türkçe çeviri bir kez yapılır ve sakl
   assert.equal(p.calls[2].text.length, 4000, 'çevrilen metin = saklanan metin');
 }));
 
-dbTest('yönetici / satış / çizim Türkçe notu → Romence çeviri saklanır; müşteri özgün + Romence görür', offline(async () => {
+dbTest('yönetici / satış / çizim Türkçe notu → Romence çeviri saklanır; müşteri özgün + Romence görür; iç ekip ve denetimci yalnızca özgün Türkçe notu görür', offline(async () => {
   await enable();
   for (const u of [U.admin, U.sales, U.drawer]) {
     const text = `Ölçüyü güncelledik, yeni teklif yarın hazır — ${u.name}`;
@@ -116,8 +116,14 @@ dbTest('yönetici / satış / çizim Türkçe notu → Romence çeviri saklanır
     // Müşteri: özgün Türkçe + Romence çeviri; hata kodu alanı boş
     const c = await seenNote(U.custA, OA, r.noteId);
     assert.deepEqual([c.text, c.translation, c.translationLang, c.translationStatus, c.translationError], [text, row.translation, 'ro', 'DONE', null], u.name);
-    // İç ekip de müşteriye ne gittiğini görür
-    assert.equal((await seenNote(U.sales, OA, r.noteId)).translation, row.translation);
+    // İç ekip (karar 130): notu yalnızca özgün Türkçe hâliyle görür — Romence çeviri müşteri içindir, iç ekibe dönmez
+    // (yazan da, öbür iki rol de). Çeviri veritabanında durur; nota erişim değişmedi.
+    for (const staff of [U.admin, U.sales, U.drawer]) {
+      const own = await seenNote(staff, OA, r.noteId);
+      assert.deepEqual([own.text, ...fields(own), own.translationAt], [text, null, null, null, null, null], `${u.name} → ${staff.name}`);
+      assert.equal(tr.translationState(own), null);
+      assert.ok(!JSON.stringify(await seen(staff, OA)).includes('Am actualizat'), `${staff.name}: Romence çeviri verisinde yok`);
+    }
     // Denetimci: yalnızca özgün Türkçe not (Romence çeviri gitmez)
     const insp = await seenNote(U.inspector, OA, r.noteId);
     assert.deepEqual([insp.text, ...fields(insp), insp.translationAt], [text, null, null, null, null, null], u.name);
@@ -462,6 +468,15 @@ dbTest('sayfa açılışı / yenileme / otomatik yenileme hiçbir durumda çevir
   // Yönetici: çeviriler + çevrilemeyen iki not + yarıda kalan (yeniden denenebilir olarak işaretli)
   const adm = await seen(U.admin, O);
   assert.deepEqual(adm.filter((n) => tr.translationState(n)?.state === 'failed').map((n) => n.text).sort(), ['HATA not', 'HATA notă', 'Yarıda kalmış'].sort());
+  // İç ekip (karar 130): yalnızca müşteri notunun Türkçesini alır; kendi notunun Romence çevirisi ona dönmez — ama
+  // çevrilemeyen KENDİ notunun durumu döner (yukarıdaki 'HATA not'), yoksa müşteriye çeviri hiç gidemezdi
+  for (const u of [U.admin, U.sales, U.drawer]) {
+    const mine = await seen(u, O);
+    assert.deepEqual(mine.filter((n) => n.translation).map((n) => [n.text, n.translation]), [['Notă tradusă', '[tr] Notă tradusă']], u.name);
+    assert.ok(!JSON.stringify(mine).includes('[ro] '), `${u.name}: Romence çeviri iç ekibe gitmez`);
+    assert.deepEqual(fields(mine.find((n) => n.text === 'Çevrilmiş not')), [null, null, null, null], u.name);
+    assert.deepEqual(fields(mine.find((n) => n.text === 'HATA not')), [null, 'ro', 'FAILED', 'QUOTA'], u.name);
+  }
 
   // DONE ve SAME açık istekle de yeniden çevrilemez; denetimci ve müşteri hiçbir notta yeniden deneyemez
   for (const id of [done.noteId, doneRo.noteId, same.noteId, historical.id, internal.noteId]) assert.deepEqual(await retry(U.admin, id, O, p), { ok: false, code: 'NOT_ALLOWED' });

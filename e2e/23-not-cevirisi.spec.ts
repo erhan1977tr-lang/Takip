@@ -211,12 +211,20 @@ test('müşteri Romence yazar → yönetici ve satış özgün notu + Türkçe �
   await cust.context().close();
 });
 
-test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi görür; iç not müşteriye görünmez ve çevrilmez; başka firma hiçbir şey görmez', async ({ browser }) => {
+test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi görür; iç ekip ve denetimci yalnızca özgün Türkçe notu görür; iç not müşteriye görünmez ve çevrilmez; başka firma hiçbir şey görmez', async ({ browser }) => {
   const sales = await as(browser, SALES, TEAM_PW);
   await writeNote(sales, TR_NOTE);
   await writeNote(sales, INTERNAL_NOTE, true);
-  // Satış kendi notunu ve müşteriye giden Romencesini görür; iç notta çeviri yoktur
-  await expect(noteOf(sales, TR_NOTE).first().locator('.note-translation .note-label')).toHaveText('Română · tradus automat');
+  // Satış kendi notunu yalnızca ÖZGÜN Türkçe hâliyle görür (karar 130): Romence çeviri müşteri içindir — ekranda da
+  // sunucunun yanıtında da yoktur ("Özgün mesaj" etiketi de çizilmez: gösterilecek çeviri yok). İç notta çeviri yoktur.
+  const mine = noteOf(sales, TR_NOTE).first();
+  await expect(mine.locator('.note-text')).toHaveText(TR_NOTE);
+  await expect(mine.locator('.note-translation')).toHaveCount(0);
+  await expect(mine.locator('.note-label')).toHaveCount(0);
+  await expect(mine.locator('[data-translation-failed]')).toHaveCount(0);
+  const salesBody = await (await sales.request.get(orderUrl)).text();
+  for (const s of [`[ro] ${TR_NOTE}`, 'tradus automat']) expect(salesBody, `satış yanıtında yok: ${s}`).not.toContain(s);
+  await shot(sales, 'not-cevirisi-ic-ekip-kendi-notu');
   await expect(noteOf(sales, INTERNAL_NOTE)).toHaveClass(/internal/);
   await expect(noteOf(sales, INTERNAL_NOTE).locator('.note-translation')).toHaveCount(0);
   await sales.context().close();
@@ -255,6 +263,15 @@ test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi gö
   await expect(noteOf(admin, INTERNAL_NOTE)).toContainText('iç not');
   await expect(noteOf(admin, INTERNAL_NOTE).locator('.note-translation')).toHaveCount(0);
   await expect(admin.locator('#notlar .note')).toHaveCount(3);
+  // Yönetici de ekibin notunu yalnızca özgün Türkçe hâliyle görür (çizimci için aynı kural: veritabanı testi);
+  // müşterinin Romence notunun Türkçe çevirisi yerinde durur
+  const own = noteOf(admin, TR_NOTE).first();
+  await expect(own.locator('.note-text')).toHaveText(TR_NOTE);
+  await expect(own.locator('.note-translation')).toHaveCount(0);
+  await expect(own.locator('.note-label')).toHaveCount(0);
+  const adminBody = await (await admin.request.get(orderUrl)).text();
+  for (const s of [`[ro] ${TR_NOTE}`, 'tradus automat']) expect(adminBody, `yönetici yanıtında yok: ${s}`).not.toContain(s);
+  await expect(noteOf(admin, RO_NOTE).first().locator('.note-translation .pre'), 'müşteri notunun Türkçesi').toHaveText(`[tr] ${RO_NOTE}`);
   await admin.context().close();
   // Denetimci: ekibin notunu yalnızca özgün Türkçe hâliyle görür (Romence çeviri yok); iç notu eskisi gibi görür
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
@@ -403,8 +420,8 @@ test('e-postalar: yazılan bütün HTML e-postalar ortak GKH başlığını taş
     expect((m.html!.match(/<img\b/g) ?? []).length, where).toBe(1);
     expect(m.html!, `${where}: dış adresli görsel yok`).not.toMatch(/<img[^>]+src="https?:/);
     const logo = (m.attachments ?? []).filter((a) => a.cid === 'gkh-logo@takip');
-    expect(logo.map((a) => [a.filename, a.contentType]), where).toEqual([['gkh-trading-invest-logo.jpg', 'image/jpeg']]);
-    expect(logo[0].size, where).toBeGreaterThan(5000);
+    expect(logo.map((a) => [a.filename, a.contentType]), where).toEqual([['gkh-trading-invest-logo.png', 'image/png']]);
+    expect(logo[0].size, where).toBeGreaterThan(50_000);
     expect(m.text.trim().length, `${where}: düz metin sürümü`).toBeGreaterThan(20);
     expect(m.text, where).not.toContain('cid:');
   }
@@ -419,7 +436,7 @@ test('e-postalar: yazılan bütün HTML e-postalar ortak GKH başlığını taş
   console.log(`e-posta sayıları: ${JSON.stringify({ ...kinds, toplam: html.length, bildirim: html.filter((m) => /^[A-Z]{3}P?\d+(-T\d*)? — /.test(m.subject)).length })}`);
   // Ekli PDF'ler yerinde ve logodan önce (depo formu, mali belge)
   const depot = html.find((m) => /Comanda depozit/.test(m.subject))!;
-  expect(depot.attachments!.map((a) => a.contentType)).toEqual(['application/pdf', 'image/jpeg']);
+  expect(depot.attachments!.map((a) => a.contentType)).toEqual(['application/pdf', 'image/png']);
 });
 
 test('çeviri kapatılınca notlar eskisi gibi çevirisiz kaydedilir; önceki çeviriler yerinde durur', async ({ browser }) => {

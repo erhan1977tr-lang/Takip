@@ -1,5 +1,5 @@
 // Küçük PDF yazıcı (bağımlılık yok): A4 sayfalar, gömülü yazı tipiyle metin (TakipSans = Liberation Sans alt kümesi;
-// Romence ve Türkçe harfler her görüntüleyicide aynı görünür), çizgi, dikdörtgen ve JPEG / PNG görsel.
+// Romence ve Türkçe harfler her görüntüleyicide aynı görünür), çizgi, dikdörtgen ve JPEG / PNG görsel (saydam PNG saydamlığıyla).
 // Comanda Depozit formu (server/pdf/depot-form.js) için yazıldı. Metin Type0 / Identity-H (glif numaraları) ile yazılır;
 // ToUnicode sayesinde PDF'ten metin kopyalanabilir ve aranabilir.
 // Koordinatlar punto (1/72 inç), sol üst köşeden: x sağa, y aşağı.
@@ -79,7 +79,12 @@ function jpegInfo(buf) {
   return null;
 }
 
-/** PNG → 8 bit RGB (saydam alanlar beyaz zemine basılır). Desteklenmeyen biçimde null. */
+/**
+ * PNG → 8 bit RGB. Saydamlığı olmayan görselde yalnızca rgb döner. Saydam pikseli olan görselde:
+ *   rgb   : beyaz zemine basılmış renk (saydamlığı işlemeyen kullanım için — eski davranış)
+ *   color : görselin kendi rengi (zemine basılmamış) + alpha: piksel başına saydamlık (PDF'te /SMask ile kullanılır)
+ * Desteklenmeyen biçimde null.
+ */
 export function decodePng(buf) {
   if (buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47) return null;
   let i = 8, w = 0, h = 0, depth = 0, type = 0, interlace = 0, palette = null, trns = null;
@@ -121,6 +126,9 @@ export function decodePng(buf) {
     }
   }
   const out = Buffer.alloc(w * h * 3);
+  const color = Buffer.alloc(w * h * 3);
+  const mask = Buffer.alloc(w * h, 255);
+  let transparent = false;
   const sample = (row, idx) => {
     // idx: pikseldeki örnek sırası (bit derinliğine göre)
     if (depth === 8) return px[row * stride + idx];
@@ -145,12 +153,24 @@ export function decodePng(buf) {
         if (type === 6) alpha = sample(y, x * channels + 3);
       }
       const o = (y * w + x) * 3;
+      if (alpha < 255) { transparent = true; mask[y * w + x] = alpha; }
+      color[o] = r; color[o + 1] = g; color[o + 2] = b;
       out[o] = Math.round((r * alpha + 255 * (255 - alpha)) / 255);
       out[o + 1] = Math.round((g * alpha + 255 * (255 - alpha)) / 255);
       out[o + 2] = Math.round((b * alpha + 255 * (255 - alpha)) / 255);
     }
   }
-  return { w, h, rgb: out };
+  return transparent ? { w, h, rgb: out, color, alpha: mask } : { w, h, rgb: out };
+}
+
+// Belgeye gömülmeye hazır görseller (içerik özetiyle): en son kullanılan birkaç görsel bellekte tutulur
+const encoded = new Map();
+const ENCODED_MAX = 12;
+/** Hazır görseli belgeye ekler (belgeye özgü ad: Im1, Im2 …) */
+function addImage(doc, img, key) {
+  const entry = { ...img, key, name: `Im${doc.images.length + 1}` };
+  doc.images.push(entry);
+  return entry;
 }
 
 // ---------- belge ----------
@@ -222,19 +242,25 @@ export class PdfDoc {
     const key = crypto.createHash('sha1').update(buf).digest('hex');
     const found = this.images.find((i) => i.key === key);
     if (found) return found;
-    let img = null;
+    let img = encoded.get(key) ?? null;
+    if (img) return addImage(this, img, key);
     const jpg = jpegInfo(buf);
     if (jpg && [1, 3, 4].includes(jpg.comps)) {
       const cs = jpg.comps === 1 ? '/DeviceGray' : jpg.comps === 4 ? '/DeviceCMYK /Decode [1 0 1 0 1 0 1 0]' : '/DeviceRGB';
       img = { w: jpg.w, h: jpg.h, dict: `/ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode`, data: buf };
     } else {
       const png = decodePng(buf);
-      if (png) img = { w: png.w, h: png.h, dict: '/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode', data: zlib.deflateSync(png.rgb) };
+      // Saydam PNG: renk + ayrı saydamlık maskesi (/SMask) — saydamlık belgede KORUNUR (beyaz kutuya basılmaz)
+      if (png) {
+        img = { w: png.w, h: png.h, dict: '/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode', data: zlib.deflateSync(png.alpha ? png.color : png.rgb) };
+        if (png.alpha) img.mask = zlib.deflateSync(png.alpha);
+      }
     }
     if (!img) return null;
-    const entry = { ...img, key, name: `Im${this.images.length + 1}` };
-    this.images.push(entry);
-    return entry;
+    // Aynı görsel (ör. her belgede kullanılan logo) her belge için yeniden çözülüp sıkıştırılmaz
+    if (encoded.size >= ENCODED_MAX) encoded.delete(encoded.keys().next().value);
+    encoded.set(key, img);
+    return addImage(this, img, key);
   }
 
   /** @returns {Buffer} */
@@ -269,10 +295,16 @@ export class PdfDoc {
     };
     const f1 = font(FACES.regular, this.used.regular);
     const f2 = font(FACES.bold, this.used.bold);
-    const imgIds = this.images.map((im) => add(Buffer.concat([
-      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} ${im.dict} /Length ${im.data.length} >>\nstream\n`, 'latin1'),
-      im.data, Buffer.from('\nendstream', 'latin1'),
-    ])));
+    const imgIds = this.images.map((im) => {
+      const smask = im.mask ? add(Buffer.concat([
+        Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${im.mask.length} >>\nstream\n`, 'latin1'),
+        im.mask, Buffer.from('\nendstream', 'latin1'),
+      ])) : null;
+      return add(Buffer.concat([
+        Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} ${im.dict}${smask ? ` /SMask ${smask} 0 R` : ''} /Length ${im.data.length} >>\nstream\n`, 'latin1'),
+        im.data, Buffer.from('\nendstream', 'latin1'),
+      ]));
+    });
     const xobj = this.images.length ? `/XObject << ${this.images.map((im, i) => `/${im.name} ${imgIds[i]} 0 R`).join(' ')} >>` : '';
     const pageIds = this.pages.map((p) => {
       const content = zlib.deflateSync(Buffer.from(p.ops.join('\n'), 'latin1'));

@@ -1,7 +1,9 @@
-// Resmî GKH Trading Invest logosunu (assets/brand/gkh-trading-invest-logo.jpg) sunucu modülüne gömer:
+// Resmî GKH Trading Invest logosunu (assets/brand/gkh-trading-invest-logo.png ya da .jpg) sunucu modülüne gömer:
 //   node scripts/brand-logo.mjs          → server/branding/logo.js yeniden üretilir
 // PDF'ler ve e-postalar logoyu bu modülden okur (derlenmiş çıktıda dosya yolu aranmaz, dış adres kullanılmaz).
-// Logo değişecekse: yalnızca assets/brand/ içindeki dosyayı değiştirin (JPEG ya da PNG) ve bu betiği çalıştırın.
+// Logo değişecekse: assets/brand/ içine yeni dosyayı "gkh-trading-invest-logo.png" (saydam zeminli PNG; ya da .jpg)
+// adıyla koyun, eskisini silin (klasörde bu adla TEK dosya olmalı) ve bu betiği çalıştırın — başka hiçbir dosya değişmez.
+// Saydam PNG saydamlığıyla kullanılır: PDF'te /SMask (server/pdf/pdf.js), e-postada PNG eki.
 // test/branding.test.js modülün dosyayla aynı olduğunu denetler.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -9,8 +11,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FILE = 'gkh-trading-invest-logo.jpg';
-const src = path.join(root, 'assets', 'brand', FILE);
+const DIR = path.join(root, 'assets', 'brand');
+export const LOGO_NAME = /^gkh-trading-invest-logo\.(png|jpe?g)$/;
+
+/** Kalıcı kaynak dosyanın adı: assets/brand içinde bu adla tam bir dosya olmalı (iki sürüm yan yana duramaz) */
+export function logoFile(dir = DIR) {
+  const found = fs.readdirSync(dir).filter((f) => LOGO_NAME.test(f)).sort();
+  if (found.length !== 1) throw new Error(`assets/brand içinde tam bir resmî logo dosyası olmalı (bulunan: ${found.join(', ') || 'yok'})`);
+  return found[0];
+}
 
 /** JPEG (SOF) ya da PNG (IHDR) boyutu */
 export function imageSize(buf) {
@@ -26,7 +35,7 @@ export function imageSize(buf) {
   throw new Error('JPEG boyutu okunamadı');
 }
 
-export function logoModule(buf, file = FILE) {
+export function logoModule(buf, file) {
   const { mime, width, height } = imageSize(buf);
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
   return `// ÜRETİLMİŞ DOSYA — elle düzenlemeyin. Kaynak: assets/brand/${file}  (node scripts/brand-logo.mjs)
@@ -45,6 +54,7 @@ export const LOGO = {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const out = path.join(root, 'server', 'branding', 'logo.js');
-  fs.writeFileSync(out, logoModule(fs.readFileSync(src)));
-  console.log(`yazıldı: ${path.relative(root, out)}`);
+  const file = logoFile();
+  fs.writeFileSync(out, logoModule(fs.readFileSync(path.join(DIR, file)), file));
+  console.log(`yazıldı: ${path.relative(root, out)} ← assets/brand/${file}`);
 }

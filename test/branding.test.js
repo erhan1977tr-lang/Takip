@@ -9,9 +9,9 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { BRAND, brandLogoBytes, brandLogoSize } from '../server/branding/index.js';
 import { LOGO } from '../server/branding/logo.js';
-import { imageSize, logoModule } from '../scripts/brand-logo.mjs';
+import { LOGO_NAME, imageSize, logoFile, logoModule } from '../scripts/brand-logo.mjs';
 import { brandImage, drawBrandLogo } from '../server/pdf/brand.js';
-import { PdfDoc } from '../server/pdf/pdf.js';
+import { PdfDoc, decodePng } from '../server/pdf/pdf.js';
 import { offerPdf } from '../server/pdf/offer.js';
 import { depotFormPdf } from '../server/pdf/depot-form.js';
 import { transportListPdf } from '../server/pdf/transport-list.js';
@@ -24,7 +24,7 @@ import { renderNotification } from '../server/notifications/email.js';
 import { renderDocEmail } from '../server/documents/delivery.js';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const ASSET = path.join(ROOT, 'assets', 'brand', 'gkh-trading-invest-logo.jpg');
+const ASSET = path.join(ROOT, 'assets', 'brand', LOGO.file);
 const realFetch = globalThis.fetch;
 let leaked = 0;
 before(() => {
@@ -65,7 +65,18 @@ const count = (buf, needle) => {
   for (let i = buf.indexOf(needle); i >= 0; i = buf.indexOf(needle, i + 1)) n += 1;
   return n;
 };
-const RATIO = 220 / 254;
+/**
+ * Belgeye gömülü resmî logo sayısı. JPEG olduğu gibi gömülür (baytları belgede aranır); PNG çözülerek gömülür: logonun
+ * ölçüsünde RGB görsel — saydam PNG'de saydamlık maskesiyle (/SMask), yani saydamlık belgede korunur.
+ */
+function embedded(pdf) {
+  if (!IS_PNG) return count(pdf, brandLogoBytes());
+  const text = pdf.toString('latin1');
+  const re = new RegExp(`/Subtype /Image /Width ${LOGO.width} /Height ${LOGO.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${decodePng(brandLogoBytes()).alpha ? ' /SMask \\d+ 0 R' : ''} /Length`, 'g');
+  return (text.match(re) ?? []).length;
+}
+const RATIO = LOGO.width / LOGO.height;
+const IS_PNG = LOGO.mime === 'image/png';
 
 const OFFER_TEXT = {
   title: 'OFERTĂ', orderNo: 'GLA68', firm: 'Glass and More', date: '01.10.2026', currency: 'EUR', notes: ['Prețuri fără TVA.'],
@@ -95,25 +106,105 @@ test('resmî logo: kalıcı kaynak dosya (assets/brand) ile gömülü modül bir
   const file = fs.readFileSync(ASSET);
   assert.equal(crypto.createHash('sha256').update(file).digest('hex'), LOGO.sha256);
   assert.equal(Buffer.compare(file, brandLogoBytes()), 0, 'PDF ve e-postaya giren baytlar = kaynak dosya');
-  assert.deepEqual(imageSize(file), { mime: 'image/jpeg', width: LOGO.width, height: LOGO.height });
-  assert.deepEqual(BRAND, { company: 'GKH Trading Invest SRL', logo: { file: 'gkh-trading-invest-logo.jpg', mime: 'image/jpeg', width: 220, height: 254, sha256: LOGO.sha256 } });
+  assert.deepEqual(imageSize(file), { mime: LOGO.mime, width: LOGO.width, height: LOGO.height });
+  assert.deepEqual(BRAND, { company: 'GKH Trading Invest SRL', logo: { file: LOGO.file, mime: LOGO.mime, width: LOGO.width, height: LOGO.height, sha256: LOGO.sha256 } });
+  // Tek kalıcı kaynak: assets/brand içinde resmî logo adıyla TAM BİR dosya (PNG ya da JPEG); uzantı = içerik
+  assert.equal(logoFile(), LOGO.file);
+  assert.deepEqual(fs.readdirSync(path.dirname(ASSET)).filter((f) => LOGO_NAME.test(f)), [LOGO.file], 'iki logo sürümü yan yana durmaz');
+  assert.equal(LOGO.mime, /\.png$/.test(LOGO.file) ? 'image/png' : 'image/jpeg');
+  assert.ok(LOGO.width >= 100 && LOGO.height >= 100, 'logo okunabilir çözünürlükte');
   // Gömülü modül, betiğin kaynak dosyadan üreteceği çıktıyla aynı (dosya değişip betik çalıştırılmadıysa test düşer)
-  assert.equal(fs.readFileSync(path.join(ROOT, 'server', 'branding', 'logo.js'), 'utf8'), logoModule(file));
+  assert.equal(fs.readFileSync(path.join(ROOT, 'server', 'branding', 'logo.js'), 'utf8'), logoModule(file, LOGO.file));
   // Marka altyapısı hiçbir geçici / yerel / dış adrese başvurmaz
   for (const f of ['server/branding/index.js', 'server/pdf/brand.js', 'server/mail/layout.js', 'server/mail/send.js']) {
     const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
     assert.ok(!/https?:\/\/|\/root\/|\/tmp\/|uploads|\/home\//.test(text), f);
   }
   // Oran: verilen yükseklik / genişlikten öbür kenar logonun kendi oranıyla hesaplanır
-  assert.ok(Math.abs(brandLogoSize({ height: 254 }).width - 220) < 1e-9);
-  assert.ok(Math.abs(brandLogoSize({ width: 110 }).height - 127) < 1e-9);
-  assert.deepEqual(brandLogoSize({}), { width: 220, height: 254 });
+  assert.ok(Math.abs(brandLogoSize({ height: LOGO.height }).width - LOGO.width) < 1e-9);
+  assert.ok(Math.abs(brandLogoSize({ width: LOGO.width / 2 }).height - LOGO.height / 2) < 1e-9);
+  assert.deepEqual(brandLogoSize({}), { width: LOGO.width, height: LOGO.height });
+});
+
+test('resmî logo saydam zeminli PNG: ürün sahibinin gönderdiği dosyadan (logo-seffaf.png) türetildi — ölçü, saydamlık ve bina birebir; yalnızca beyaz yazı koyu', () => {
+  assert.deepEqual([LOGO.file, LOGO.mime], ['gkh-trading-invest-logo.png', 'image/png']);
+  const source = decodePng(fs.readFileSync(path.join(ROOT, 'assets', 'brand', 'source', 'logo-seffaf.png')));
+  const logo = decodePng(brandLogoBytes());
+  assert.deepEqual([logo.w, logo.h], [source.w, source.h], 'kırpılmadı, yeniden boyutlandırılmadı');
+  assert.deepEqual([logo.w, logo.h], [LOGO.width, LOGO.height]);
+  assert.ok(logo.alpha && Buffer.compare(logo.alpha, source.alpha) === 0, 'saydamlık (her pikselde) gönderilen dosyayla aynı');
+  let transparent = 0, building = 0, lettering = 0;
+  for (let i = 0; i < logo.w * logo.h; i++) {
+    if (!logo.alpha[i]) { transparent += 1; continue; }
+    const [r, g, b] = [source.color[i * 3], source.color[i * 3 + 1], source.color[i * 3 + 2]];
+    const mine = [logo.color[i * 3], logo.color[i * 3 + 1], logo.color[i * 3 + 2]];
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 40) {
+      // Gönderilen dosyada beyaz olan yazı: beyaz kâğıtta / e-postada okunabilsin diye koyu (ürün sahibinin seçimi, karar 131)
+      assert.ok(r > 200, 'kaynakta renksiz pikseller yalnızca beyaz yazıdır');
+      assert.deepEqual(mine, [17, 24, 39]);
+      lettering += 1;
+    } else {
+      if (mine[0] !== r || mine[1] !== g || mine[2] !== b) assert.fail(`bina pikseli değişmiş (${i})`);
+      building += 1;
+    }
+  }
+  assert.ok(transparent > logo.w * logo.h * 0.5 && building > 50_000 && lettering > 10_000, 'zemin saydam; bina ve yazı yerinde');
+  // Giriş ekranındaki / kenar çubuğundaki "GKH Digital" logosu ayrı bir işarettir: dosyaları yerinde ve marka altyapısına girmez
+  for (const f of ['gkh-digital-logo.png', 'gkh-mark.png']) assert.ok(fs.existsSync(path.join(ROOT, 'assets', 'brand', f)) && !LOGO_NAME.test(f), f);
+  assert.ok(!fs.existsSync(path.join(ROOT, 'assets', 'brand', 'gkh-trading-invest-logo.jpg')), 'eski JPEG logo kaldırıldı');
+});
+
+test('PDF yazıcı: saydam PNG saydamlığıyla gömülür (/SMask) — beyaz kutuya basılmaz; saydam olmayan PNG ve JPEG eskisi gibi', () => {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+  };
+  const png = (w, h, rgba) => {
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+    const raw = Buffer.concat(Array.from({ length: h }, (_, y) => Buffer.concat([Buffer.from([0]), Buffer.from(rgba.slice(y * w * 4, (y + 1) * w * 4))])));
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  };
+  // 2 × 1: kırmızı (opak) + mavi (yarı saydam)
+  const clear = decodePng(png(2, 1, [255, 0, 0, 255, 0, 0, 255, 128]));
+  assert.deepEqual([...clear.color], [255, 0, 0, 0, 0, 255], 'renk zemine basılmadan');
+  assert.deepEqual([...clear.alpha], [255, 128]);
+  assert.deepEqual([...clear.rgb], [255, 0, 0, 127, 127, 255], 'rgb: beyaz zemine basılmış (eski alan, değişmedi)');
+  const opaque = decodePng(png(2, 1, [255, 0, 0, 255, 0, 0, 255, 255]));
+  assert.deepEqual([Object.keys(opaque).sort(), [...opaque.rgb]], [['h', 'rgb', 'w'], [255, 0, 0, 0, 0, 255]], 'saydam pikseli olmayan PNG: maske yok');
+
+  const objects = (pdf) => pdf.toString('latin1').split('endobj').filter((o) => o.includes('/Subtype /Image'));
+  const streamOf = (pdf, obj) => {
+    const len = Number(/\/Length (\d+) >>/.exec(obj)[1]);
+    const at = pdf.indexOf(Buffer.from(obj.slice(obj.indexOf('<< /Type /XObject'), obj.indexOf('stream\n') + 7), 'latin1'));
+    const start = at + obj.slice(obj.indexOf('<< /Type /XObject')).indexOf('stream\n') + 7;
+    return zlib.inflateSync(pdf.subarray(start, start + len));
+  };
+  const withAlpha = new PdfDoc({ title: 't' });
+  withAlpha.addPage().image(withAlpha.image(png(2, 1, [255, 0, 0, 255, 0, 0, 255, 128])), 10, 10, 20, 10);
+  const pdf = withAlpha.toBuffer();
+  const [mask, image] = objects(pdf);
+  assert.match(mask, /\/Width 2 \/Height 1 \/ColorSpace \/DeviceGray \/BitsPerComponent 8 \/Filter \/FlateDecode/);
+  const maskId = Number(/(\d+) 0 obj\n<< \/Type \/XObject \/Subtype \/Image [^>]*DeviceGray/.exec(pdf.toString('latin1'))[1]);
+  assert.match(image, new RegExp(`/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask ${maskId} 0 R /Length`));
+  assert.deepEqual([...streamOf(pdf, mask)], [255, 128], 'maske = PNG saydamlığı');
+  assert.deepEqual([...streamOf(pdf, image)], [255, 0, 0, 0, 0, 255], 'renk = PNG rengi (beyaza basılmadı)');
+  const noAlpha = new PdfDoc({ title: 't' });
+  noAlpha.addPage().image(noAlpha.image(png(2, 1, [255, 0, 0, 255, 0, 0, 255, 255])), 10, 10, 20, 10);
+  assert.ok(!noAlpha.toBuffer().toString('latin1').includes('/SMask'));
+  // Aynı görsel ikinci belgede yeniden çözülmez (aynı hazır veri); belge içinde yine tek kez gömülür
+  const a = new PdfDoc({ title: 'a' });
+  const b = new PdfDoc({ title: 'b' });
+  const [ia, ib] = [brandImage(a), brandImage(b)];
+  assert.equal(ia.data, ib.data);
+  assert.equal(ia.mask, ib.mask);
+  assert.ok(ia.mask?.length > 0, 'resmî logo saydamlığıyla gömülür');
+  assert.equal(brandImage(a), ia);
 });
 
 test('PDF ortak başlığı: logo belgeye gömülür (bir kez), oranı korunarak çizilir', () => {
   const doc = new PdfDoc({ title: 't', author: BRAND.company });
   const img = brandImage(doc);
-  assert.deepEqual([img.w, img.h], [220, 254]);
+  assert.deepEqual([img.w, img.h], [LOGO.width, LOGO.height]);
   assert.equal(brandImage(doc), img, 'aynı belgeye ikinci kez eklenmez');
   const calls = [];
   const page = { image: (...a) => calls.push(a) };
@@ -126,17 +217,15 @@ test('PDF ortak başlığı: logo belgeye gömülür (bir kez), oranı korunarak
 });
 
 test('TAKİP\'in ürettiği üç PDF de resmî logoyu taşır: teklif, Comanda Depozit, nakliye listesi', () => {
-  const logo = brandLogoBytes();
   const docs = {
     'teklif (müşteriye)': offerPdf(offerData(), OFFER_TEXT),
     'Comanda Depozit (depoya)': depotFormPdf(depotInput()),
-    'nakliye listesi': transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text: TRANSPORT_TEXT, list: transportList(3) }),
+    'nakliye listesi': transportListPdf({ day: '2026-10-02', text: TRANSPORT_TEXT, list: transportList(3) }),
   };
   for (const [name, pdf] of Object.entries(docs)) {
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-', name);
-    // Logo belgenin İÇİNDE (JPEG olarak gömülü): dış adrese / dosya yoluna bağlı değil
-    assert.equal(count(pdf, logo), 1, `${name}: logo gömülü (bir kez)`);
-    assert.match(pdf.toString('latin1'), /\/Subtype \/Image \/Width 220 \/Height 254 [^>]*\/Filter \/DCTDecode/, name);
+    // Logo belgenin İÇİNDE (gömülü): dış adrese / dosya yoluna bağlı değil
+    assert.equal(embedded(pdf), 1, `${name}: logo gömülü (bir kez)`);
     assert.ok(!/\/URI|https?:\/\//.test(pdf.toString('latin1')), `${name}: belgede dış adres yok`);
     // İlk sayfanın başlığında, sayfanın üst bölümünde ve oranı bozulmadan çizilir
     const first = logoDraws(pageOps(pdf).find((ops) => ops.includes('/Im1 Do')));
@@ -145,14 +234,25 @@ test('TAKİP\'in ürettiği üç PDF de resmî logoyu taşır: teklif, Comanda D
     assert.ok(Math.abs(w / h - RATIO) < 0.002, `${name}: en-boy oranı korunur (${w} × ${h})`);
     assert.ok(h >= 40 && h <= 110 && x >= 30 && x + w <= 565 && y + h <= 842 - 20 && y >= 842 - 140, `${name}: üst başlıkta, kenar boşluklarının içinde (${[w, h, x, y]})`);
   }
+  // Nakliye listesinde logonun yanındaki firma adı resmî addır: "GKH Trading Invest SRL" (ad verilmezse de; sayfa bunu kullanır)
+  const author = (pdf) => /\/Author <FEFF([0-9A-F]+)>/.exec(pdf.toString('latin1'))[1];
+  const utf16 = (t) => Buffer.from(t, 'utf16le').swap16().toString('hex').toUpperCase();
+  const named = transportListPdf({ day: '2026-10-02', company: 'GKH Trading Invest SRL', text: TRANSPORT_TEXT, list: transportList(3) });
+  assert.equal(BRAND.company, 'GKH Trading Invest SRL');
+  assert.equal(Buffer.compare(docs['nakliye listesi'], named), 0, 'varsayılan firma adı = resmî ad');
+  assert.equal(author(named), utf16('GKH Trading Invest SRL'));
+  const old = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text: TRANSPORT_TEXT, list: transportList(3) });
+  assert.notDeepEqual(pageOps(old), pageOps(named), 'firma adı sayfaya yazılır');
+  const route = fs.readFileSync(path.join(ROOT, 'app', '(panel)', 'yuklemeler', 'nakliye', 'route.ts'), 'utf8');
+  assert.ok(!/company\s*:/.test(route) && !route.includes("'GKH Trading'"), 'sayfa firma adını elle yazmaz (resmî ad ortak markadan gelir)');
   // Çok sayfalı belgede logo yine tek kez gömülür (boyut büyümez); nakliye listesinde her sayfanın başlığında çizilir
-  const long = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text: TRANSPORT_TEXT, list: transportList(70) });
+  const long = transportListPdf({ day: '2026-10-02', text: TRANSPORT_TEXT, list: transportList(70) });
   const pages = pageOps(long).filter((ops) => ops.includes('/Im1 Do'));
   assert.ok(pages.length >= 2);
   assert.ok(pages.every((ops) => logoDraws(ops).length === 1));
-  assert.equal(count(long, logo), 1);
+  assert.equal(embedded(long), 1);
   const longOffer = offerPdf(offerData(80), OFFER_TEXT);
-  assert.equal(count(longOffer, logo), 1);
+  assert.equal(embedded(longOffer), 1);
   assert.equal(pageOps(longOffer).filter((ops) => ops.includes('/Im1 Do')).length, 1, 'teklifte logo ilk sayfanın başlığında');
 });
 
@@ -231,7 +331,7 @@ test('tek gönderim noktası: logo eki her HTML e-postaya eklenir, öbür ekler 
   const [m] = t.sent;
   assert.deepEqual([m.from, m.to, m.subject, m.text, m.html], ['TAKİP <info@gkh.test>', 'musteri@firma.test', mail.subject, mail.text, mail.html], 'alıcı, konu, metin ve HTML aynen');
   assert.ok(!('lang' in m), 'düzen bilgisi taşıyıcıya gitmez');
-  assert.deepEqual(m.attachments.map((a) => [a.filename, a.contentType, a.cid ?? null]), [['PRF101.pdf', 'application/pdf', null], ['gkh-trading-invest-logo.jpg', 'image/jpeg', MAIL_LOGO_CID]], 'PDF önde, logo satır içi ek');
+  assert.deepEqual(m.attachments.map((a) => [a.filename, a.contentType, a.cid ?? null]), [['PRF101.pdf', 'application/pdf', null], [LOGO.file, LOGO.mime, MAIL_LOGO_CID]], 'PDF önde, logo satır içi ek');
   assert.equal(Buffer.compare(m.attachments[0].content, pdf), 0);
   assert.equal(Buffer.compare(m.attachments[1].content, brandLogoBytes()), 0, 'gömülen logo = resmî logo');
   assert.equal(m.attachments[1].contentDisposition, 'inline');

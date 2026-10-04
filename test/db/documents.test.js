@@ -144,7 +144,7 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   assert.ok(!/fgo\.ro/.test(mail.text) && !/fgo\.ro/.test(mail.html), 'e-postada FGO adresi yok');
   assert.deepEqual([mail.attachments.length, mail.attachments[0].filename, mail.attachments[0].contentType, Buffer.compare(mail.attachments[0].content, PDF)], [2, 'PRF101.pdf', 'application/pdf', 0]);
   // Ortak GKH başlığı (karar 129): HTML'in başında gömülü logo; logo satır içi ek olarak PDF'in ARDINDAN gelir; düz metin aynen
-  assert.deepEqual([mail.attachments[1].cid, mail.attachments[1].contentType, mail.attachments[1].contentDisposition], ['gkh-logo@takip', 'image/jpeg', 'inline']);
+  assert.deepEqual([mail.attachments[1].cid, mail.attachments[1].contentType, mail.attachments[1].contentDisposition], ['gkh-logo@takip', 'image/png', 'inline']);
   assert.ok(mail.html.includes('<img src="cid:gkh-logo@takip"') && mail.html.indexOf('<img') < mail.html.indexOf('Stimate client'), 'logo e-postanın başında');
   assert.ok(!/cid:|<img/.test(mail.text));
   assert.deepEqual(fgo.downloads, ['https://www.fgo.ro/facturi/PRF101.pdf']);

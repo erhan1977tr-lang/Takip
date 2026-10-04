@@ -157,19 +157,30 @@ const note = (o = {}) => ({ id: 'n', text: 'özgün', internal: false, translati
 const AT = new Date('2026-10-04T10:00:00Z');
 const fields = (n) => [n.translation, n.translationLang, n.translationStatus, n.translationError, n.translationAt];
 
-test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çevirisi kimseye gitmez; müşteriye yalnızca tamamlanmış Romence çeviri; denetimci yalnızca özgün notu görür', () => {
+test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çevirisi kimseye gitmez; müşteriye yalnızca tamamlanmış Romence çeviri; iç ekibe yalnızca müşteri notunun Türkçesi; denetimci yalnızca özgün notu görür', () => {
   const done = (lang, o = {}) => note({ translation: `[${lang}] çeviri`, translationLang: lang, translationStatus: 'DONE', translationAt: AT, ...o });
   const failed = note({ translationLang: 'ro', translationStatus: 'FAILED', translationError: 'QUOTA', translationAt: AT });
   const pending = note({ translationLang: 'ro', translationStatus: 'PENDING', translationAt: AT });
   const same = note({ translationLang: 'ro', translationStatus: 'SAME', translationAt: AT });
   const STAFF = ['ADMIN', 'SATIS', 'CIZIM'];
 
-  // Yönetici, satış, çizim: çeviri + durum + güvenli hata kodu
+  // Yönetici, satış, çizim (karar 130): müşteri notunun Türkçe çevirisi + durum + güvenli hata kodu. İç ekibin KENDİ
+  // notunun Romence çevirisi müşteri içindir: tamamlanmış çeviri iç ekibe hiç dönmez (not yalnızca özgün dilinde);
+  // süren / başarısız çevirinin durumu döner — çevrilemeyen not "yeniden dene" ile istenebilsin diye.
   for (const role of STAFF) {
     assert.deepEqual(fields(noteView(role, done('tr'))), ['[tr] çeviri', 'tr', 'DONE', null, AT], role);
-    assert.deepEqual(fields(noteView(role, done('ro'))), ['[ro] çeviri', 'ro', 'DONE', null, AT], role);
+    for (const own of [done('ro'), same]) {
+      const v = noteView(role, own);
+      assert.deepEqual(fields(v), [null, null, null, null, null], role);
+      assert.deepEqual([v.id, v.text, v.internal], ['n', 'özgün', false], 'özgün not aynen');
+      assert.equal(translationState(v, AT), null, 'ekranda çeviri / durum çizilecek bir şey yok');
+    }
     assert.deepEqual(fields(noteView(role, failed)), [null, 'ro', 'FAILED', 'QUOTA', AT], role);
+    assert.deepEqual(translationState(noteView(role, failed), AT), { state: 'failed', code: 'QUOTA' }, 'başarısız çeviri yeniden istenebilir');
     assert.deepEqual(fields(noteView(role, pending)), [null, 'ro', 'PENDING', null, AT], role);
+    // Müşteri notunun süren / başarısız / "aynı" çevirisi: metin yok, durum var (değişmedi)
+    assert.deepEqual(fields(noteView(role, note({ translationLang: 'tr', translationStatus: 'FAILED', translationError: 'TIMEOUT', translationAt: AT }))), [null, 'tr', 'FAILED', 'TIMEOUT', AT], role);
+    assert.deepEqual(fields(noteView(role, note({ translationLang: 'tr', translationStatus: 'SAME', translationAt: AT }))), [null, 'tr', 'SAME', null, AT], role);
   }
   // Müşteri: iç ekibin notunun Romencesi gider; kendi notunun Türkçesi, hata kodu, bekleme / "aynı" durumu gitmez
   assert.deepEqual(fields(noteView('MUSTERI', done('ro'))), ['[ro] çeviri', 'ro', 'DONE', null, AT]);
@@ -195,7 +206,12 @@ test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çe
   assert.deepEqual(notesFor('MUSTERI', all).map((n) => [n.id, n.translation]), [['m', null], ['s', '[ro] çeviri'], ['n', null]]);
   assert.ok(!JSON.stringify(notesFor('MUSTERI', all)).includes('fiyat gizli'));
   assert.ok(!JSON.stringify(notesFor('MUSTERI', all)).includes('QUOTA'));
-  assert.deepEqual(notesFor('SATIS', all).map((n) => [n.id, n.internal, n.translation]), [['m', false, '[tr] çeviri'], ['s', false, '[ro] çeviri'], ['ic', true, null], ['n', false, null]]);
+  assert.deepEqual(notesFor('SATIS', all).map((n) => [n.id, n.internal, n.translation]), [['m', false, '[tr] çeviri'], ['s', false, null], ['ic', true, null], ['n', false, null]]);
+  for (const role of STAFF) assert.ok(!JSON.stringify(notesFor(role, all)).includes('[ro] çeviri'), `${role}: Romence çeviri iç ekibe gitmez`);
+  // Aynı not, üç bakış: müşteri özgün + Romence · iç ekip yalnızca özgün · denetimci yalnızca özgün
+  assert.deepEqual(['MUSTERI', 'ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI'].map((role) => noteView(role, done('ro')).translation), ['[ro] çeviri', null, null, null, null]);
+  // Müşterinin notu, üç bakış: iç ekip özgün + Türkçe · müşteri yalnızca özgün · denetimci yalnızca özgün
+  assert.deepEqual(['ADMIN', 'SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI'].map((role) => noteView(role, done('tr')).translation), ['[tr] çeviri', '[tr] çeviri', '[tr] çeviri', null, null]);
   // Denetimcinin nota erişimi DEĞİŞMEDİ (iç notlar dahil hepsini görür); yalnızca çeviri alanları gelmez
   const forInspector = notesFor('DENETIMCI', all);
   assert.deepEqual(forInspector.map((n) => [n.id, n.internal, n.text]), [['m', false, 'özgün'], ['s', false, 'özgün'], ['ic', true, 'iç: fiyat gizli'], ['n', false, 'özgün']]);

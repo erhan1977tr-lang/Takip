@@ -36,7 +36,7 @@ export function depotFormPdf(p) {
   const header = (first) => {
     page = doc.addPage();
     if (first) {
-      drawBrandLogo(page, logo, { x: M, y: 24, height: 100 });
+      drawBrandLogo(page, logo, { x: M, y: 30, height: 84 }); // solda; sağdaki tarih / sipariş alanlarına taşmaz
       const lx = page.width - M - 230;
       const field = (label, value, yy) => {
         page.text(lx, yy, label, { size: 10, bold: true });

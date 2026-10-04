@@ -4,7 +4,7 @@
 // Her sayfanın başlığında, sağ üstte resmî GKH logosu (ortak başlık — server/pdf/brand.js; karar 129).
 // Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
 import { PdfDoc, fitText } from './pdf.js';
-import { brandImage, drawBrandLogo } from './brand.js';
+import { BRAND, brandImage, drawBrandLogo } from './brand.js';
 
 const M = 40;
 const ROW = 22;
@@ -17,11 +17,11 @@ const fmtKg = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, 
 /**
  * @param {{ day: string, list: ReturnType<typeof import('../loading/transport.js').buildTransportList>,
  *   text: { title: string, day: string, colNo: string, colDims: string, colKg: string, colNote: string, subtotal: string,
- *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string, guest: string, waiting: string }, company: string }} p
- *   text.subtotal: "{n} sandık · ara toplam"
+ *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string, guest: string, waiting: string }, company?: string }} p
+ *   text.subtotal: "{n} sandık · ara toplam"; company: logonun yanında yazan firma adı — verilmezse resmî ad (BRAND.company)
  * @returns {Buffer}
  */
-export function transportListPdf({ day, list, text, company }) {
+export function transportListPdf({ day, list, text, company = BRAND.company }) {
   const dayText = day.split('-').reverse().join('.');
   const doc = new PdfDoc({ title: `${text.title} ${day}`, author: company });
   const logo = brandImage(doc);

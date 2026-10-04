@@ -246,20 +246,26 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   ("ÖZEL DURUM / MİSAFİR YÜK") followed by one `form.guest-in` per guest order: order · firm, a crate `<select>`
   (first option = waiting) and a plain `.btn` "Kaydet" for `CRATE_EDIT`; without crates a `.badge-danger` note.
 
-## GKH branding in PDFs and e-mails (3.49.1)
+## GKH branding in PDFs and e-mails (3.49.1, logo replaced in 3.49.2)
 
 Rule: all TAKİP-generated HTML e-mails and TAKİP-generated company PDF documents use the official GKH Trading Invest
-logo through the shared branding infrastructure (`server/branding`, decisions.md #129). The app screens keep the
+logo through the shared branding infrastructure (`server/branding`, decisions.md #129, #131). The app screens keep the
 "GKH Digital" product logo (`components/BrandLogo.tsx`) — that is a different mark and is not affected.
 
-- Asset: `assets/brand/gkh-trading-invest-logo.jpg` (portrait, 220 × 254). Always scaled from its own ratio — give ONE
-  dimension and derive the other (`brandLogoSize`); never set both by hand.
-- PDF header (`server/pdf/brand.js`): logo at the top of the first page, inside the page margins, 48–100 pt high
-  depending on the document (offer 66, Comanda Depozit 100, transport list 48 at top-right on every page), with the
-  document title / fields beside it and clear space around it. No other mark in the header.
-- E-mail (`server/mail/layout.js`): light grey page, one white 600 px card (full width on phones), header row with the
-  logo at 72 px width (`height:auto`), a thin divider, then the template body (Arial 14 px). Templates supply body
-  HTML only and keep their own plain-text version. No remote images; the logo is an inline attachment.
+- Asset: `assets/brand/gkh-trading-invest-logo.png` (landscape, 1596 × 643, transparent background, building mark +
+  dark "GKH Trading Invest" lettering). It is the owner's `assets/brand/source/logo-seffaf.png` with only the white
+  lettering recoloured dark so it reads on white; use it on WHITE / light backgrounds only (the white-lettering source
+  is for dark backgrounds and is not used by any output). Always scaled from its own ratio — give ONE dimension and
+  derive the other (`brandLogoSize`); never set both by hand, never crop.
+- PDF header (`server/pdf/brand.js`): logo at the top of the first page, inside the page margins, 48–84 pt high
+  depending on the document (offer 56, Comanda Depozit 84, transport list 48 at top-right on every page). Text beside
+  the logo is positioned from the DRAWN width returned by `drawBrandLogo` (never a fixed offset), with clear space
+  around it. Transparency is kept in the PDF (`/SMask`). The transport list prints the official company name
+  "GKH Trading Invest SRL" (`BRAND.company`) left of the logo. No other mark in the header.
+- E-mail (`server/mail/layout.js`): light grey page, one white 600 px card (full width on phones), header row
+  (explicit white background) with the logo at 200 px width (`height:auto`), a thin divider, then the template body
+  (Arial 14 px). Templates supply body HTML only and keep their own plain-text version. No remote images; the logo is
+  an inline PNG attachment. The document is marked light-only (`color-scheme`) because the lettering is dark.
 
 ## Note translation (3.49.0)
 

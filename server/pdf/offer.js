@@ -41,10 +41,11 @@ export function offerPdf(data, text) {
   const newPage = (first) => {
     page = doc.addPage();
     if (first) {
-      drawBrandLogo(page, logo, { x: M, y: 26, height: 66 });
-      page.text(M + 80, 46, `${text.title} ${text.orderNo}`, { size: 17, bold: true, color: BLUE });
-      page.text(M + 80, 64, fitText(text.firm, 11, 430, true), { size: 11, bold: true });
-      page.text(M + 80, 80, text.date, { size: 9, color: GREY });
+      // Logo solda (oranı korunur); başlık metni logonun çizilen genişliğinin sağında başlar (logo değişse de üst üste binmez)
+      const tx = M + drawBrandLogo(page, logo, { x: M, y: 30, height: 56 }) + 16;
+      page.text(tx, 46, `${text.title} ${text.orderNo}`, { size: 17, bold: true, color: BLUE });
+      page.text(tx, 64, fitText(text.firm, 11, M + 515 - tx, true), { size: 11, bold: true });
+      page.text(tx, 80, text.date, { size: 9, color: GREY });
       y = 104;
     } else {
       page.text(M, 36, `${text.title} ${text.orderNo} — ${text.firm}`, { size: 9, color: GREY });

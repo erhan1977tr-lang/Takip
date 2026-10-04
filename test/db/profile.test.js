@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
 import { resetEnvCache } from '../../server/env.js';
+import { BRAND } from '../../server/branding/index.js';
 
 const UPLOAD = fs.mkdtempSync(path.join(os.tmpdir(), 'takip-profil-'));
 process.env.UPLOAD_DIR = UPLOAD;
@@ -170,7 +171,8 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   // Ortak GKH başlığı (karar 129): depo e-postası da logoyla gider (PDF önde, logo satır içi ek); Comanda Depozit PDF'i logoyu taşır
   assert.deepEqual(sent[0].attachments.map((a) => a.cid ?? 'pdf'), ['pdf', 'gkh-logo@takip']);
   assert.ok(sent[0].html.includes('<img src="cid:gkh-logo@takip"') && sent[0].html.indexOf('<img') < sent[0].html.indexOf('Bună ziua'));
-  assert.ok(sent[0].attachments[0].content.includes(sent[0].attachments[1].content), 'PDF içinde aynı resmî logo gömülü');
+  assert.deepEqual([sent[0].attachments[1].filename, sent[0].attachments[1].contentType], [BRAND.logo.file, 'image/png']);
+  assert.match(sent[0].attachments[0].content.toString('latin1'), new RegExp(`/Subtype /Image /Width ${BRAND.logo.width} /Height ${BRAND.logo.height} [^>]*/SMask \\d+ 0 R`), 'PDF içinde aynı resmî logo gömülü (saydamlığıyla)');
   const token = /\/depo\/([A-Za-z0-9_-]+)/.exec(sent[0].text)[1];
   const pdf = await db.orderFile.findFirst({ where: { orderId: id, source: 'WAREHOUSE_FORM' } });
   assert.equal(pdf.kind, 'INTERNAL');
