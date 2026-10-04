@@ -61,6 +61,12 @@ export default async function EditFirmPage({
           <div><label htmlFor="county">{t('admin.firmForm.county')}</label><input id="county" name="county" type="text" maxLength={60} defaultValue={f.county ?? ''} /></div>
           <div><label htmlFor="city">{t('admin.firmForm.city')}</label><input id="city" name="city" type="text" maxLength={80} defaultValue={f.city ?? ''} /></div>
           <div><label htmlFor="address">{t('admin.firmForm.address')}</label><input id="address" name="address" type="text" maxLength={250} defaultValue={f.address ?? ''} /></div>
+          {/* Mali belge e-postası (karar 115): proforma / fatura e-postaları önce buraya; boşsa firmanın e-postasına */}
+          <div>
+            <label htmlFor="billingEmail">{t('admin.firmForm.billingEmail')}</label>
+            <input id="billingEmail" name="billingEmail" type="email" maxLength={200} defaultValue={f.billingEmail ?? ''} autoComplete="off" />
+            <p className="hint">{t('admin.firmForm.billingEmailHint')}{f.email ? ` ${t('admin.firmForm.billingEmailFallback', { email: f.email })}` : ''}</p>
+          </div>
         </div>
         {/* Kur politikası (Aşama 7D-1): cam FGO belgelerinin kuru; seçilmediyse eski kural */}
         {f.type === 'CUSTOMER' && (

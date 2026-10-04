@@ -458,3 +458,71 @@ dbTest('işlem sahipliği: adedi 1\'den büyük cama işlem bağlanamaz (satış
   assert.equal(await codeOf(run(o.id, 'update_offer', 'admin', { lines: upd.map((l, i) => (i === 1 ? { ...l, adet: 2 } : l)) })), 'OPS_MULTI_GLASS');
   assert.equal(await db.offer.count({ where: { orderId: o.id } }), 1, 'yeni sürüm açılmadı');
 });
+
+// Karar 114: ayırma (5 → 4 + 1) yalnızca gösterimdir — m² satır başına yuvarlandığında oluşan fark (333 × 1000: 1,67 → 1,66 m²)
+// kalemin toplam adedinden hesaplanarak giderildi; sıra (pieceBase) her kayıtta sunucuda hesaplanır
+dbTest('ayrılmış cam: toplam m², satış (maliyet) tutarı ve müşteri tutarı ayırmayla değişmez; grup sunucuda doğrulanır, yeni sürüme taşınır', async () => {
+  const { offerTotals, atOfferPrice } = await import('../../server/orders/rules.js');
+  const o = await newOrder('Ayırma yuvarlaması');
+  await run(o.id, 'no_drawing', 'sales');
+  const glass = (extra = {}) => ({ description: 'Cam', poz: null, enMm: 333, boyMm: 1000, adet: 5, unit: 'm2', unitPrice: '41.50', kind: 'CAM', free: false, ...extra });
+  const hole = (extra = {}) => ({ description: '', poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '3.00', kind: 'DELIK', free: true, ...extra });
+  const stored = () => db.offer.findFirstOrThrow({ where: { orderId: o.id }, orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+  const money = (offer) => [Number(offer.amount), Number(offer.offerAmount)];
+  const m2 = (offer) => offerTotals(offer.lines).metraj;
+  const groups = (offer) => offer.lines.map((l) => [l.kind, l.adet, l.splitGroup, l.pieceBase]);
+
+  await run(o.id, 'submit_offer', 'sales', { lines: [glass()] });
+  const L = (await stored()).lines[0].id;
+  await run(o.id, 'save_offer', 'admin', { lines: [{ ...glass(), id: L, offerPrice: '66.96' }] });
+  const before = await stored();
+  // 5 × 0,333 m² = 1,665 → 1,67 m² · satış 1,67 × 41,50 = 69,30 · müşteri 1,67 × 66,96 = 111,82
+  assert.deepEqual([m2(before), ...money(before), groups(before)], [1.67, 69.3, 111.82, [['CAM', 5, null, 0]]]);
+
+  // Yönetici bir cama (bedelsiz) delik ekler: ekran camı 4 + 1 olarak ayırır ve iki satıra aynı grup anahtarını verir
+  const split = [
+    { ...glass({ adet: 4 }), id: L, offerPrice: '66.96', splitGroup: 'grp1' },
+    { ...glass({ adet: 1 }), id: null, from: L, offerPrice: '66.96', splitGroup: 'grp1' },
+    hole({ id: null, offerPrice: '0.00' }),
+  ];
+  await run(o.id, 'save_offer', 'admin', { lines: split });
+  let offer = await stored();
+  assert.deepEqual(groups(offer), [['CAM', 4, 'grp1', 0], ['CAM', 1, 'grp1', 4], ['DELIK', 2, null, 0]]);
+  assert.deepEqual([m2(offer), ...money(offer)], [1.67, 69.3, 111.82], 'toplam m², maliyet ve müşteri tutarı ayırmadan önceki gibi');
+  assert.equal(offer.lines.reduce((s, l) => s + (l.kind === 'CAM' ? l.adet : 0), 0), 5);
+  // Grup bilgisi olmasaydı (eski hesap): 1,33 + 0,33 = 1,66 m² ve tutarlar farklı
+  const naive = offer.lines.map((l) => ({ ...l, pieceBase: 0, unitPrice: String(l.unitPrice) }));
+  assert.deepEqual([offerTotals(naive).metraj, offerTotals(naive).amount, offerTotals(atOfferPrice(naive)).amount], [1.66, 68.9, 111.16]);
+
+  // Sıra tarayıcıdan ALINMAZ (taklit pieceBase yok sayılır); camı / ölçüsü farklı satır gruba giremez
+  const [g4, g1, h] = offer.lines;
+  const same = (extra = []) => [
+    { ...glass({ adet: 4 }), id: g4.id, offerPrice: '66.96', splitGroup: 'grp1', pieceBase: 77 },
+    { ...glass({ adet: 1 }), id: g1.id, offerPrice: '66.96', splitGroup: 'grp1', pieceBase: 99 },
+    hole({ id: h.id, offerPrice: '0.00' }), ...extra,
+  ];
+  await run(o.id, 'save_offer', 'admin', { lines: same([{ ...glass({ adet: 2, enMm: 400 }), id: null, offerPrice: '66.96', splitGroup: 'grp1' }]) });
+  offer = await stored();
+  assert.deepEqual(groups(offer), [['CAM', 4, 'grp1', 0], ['CAM', 1, 'grp1', 4], ['DELIK', 2, null, 0], ['CAM', 2, null, 0]]);
+  await run(o.id, 'save_offer', 'admin', { lines: same() });
+  assert.deepEqual([m2(await stored()), ...money(await stored())], [1.67, 69.3, 111.82]);
+
+  // Satış bir cama daha işlem ekler (4 → 3 + 1): toplamlar yine aynı; müşteriye gönderilince ve teklif güncellenince de
+  await run(o.id, 'return_offer', 'admin', { lines: same(), returnNote: 'bir cama daha' });
+  await run(o.id, 'submit_offer', 'sales', { lines: [
+    { ...glass({ adet: 3 }), id: g4.id, splitGroup: 'grp1' }, { ...glass({ adet: 1 }), id: null, from: g4.id, splitGroup: 'grp1' }, hole({ id: null, adet: 1 }),
+    { ...glass({ adet: 1 }), id: g1.id, splitGroup: 'grp1' }, hole({ id: h.id }),
+  ] });
+  offer = await stored();
+  assert.deepEqual(groups(offer), [['CAM', 3, 'grp1', 0], ['CAM', 1, 'grp1', 3], ['DELIK', 1, null, 0], ['CAM', 1, 'grp1', 4], ['DELIK', 2, null, 0]]);
+  assert.deepEqual([m2(offer), ...money(offer)], [1.67, 69.3, 111.82]);
+  const form = (lines) => lines.map((l) => ({ description: l.description, poz: null, kind: l.kind, unit: l.unit, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unitPrice: '0', free: l.free, id: l.id, splitGroup: l.splitGroup, offerPrice: l.free ? '0.00' : String(l.offerPrice) }));
+  await run(o.id, 'approve_offer', 'admin', { lines: form(offer.lines) });
+  let sent = await stored();
+  assert.deepEqual([sent.status, m2(sent), ...money(sent)], ['GONDERILDI', 1.67, 69.3, 111.82]);
+  await run(o.id, 'update_offer', 'admin', { lines: form(sent.lines), note: 'aynı' });
+  sent = await stored();
+  assert.equal(await db.offer.count({ where: { orderId: o.id } }), 2);
+  assert.deepEqual(groups(sent), [['CAM', 3, 'grp1', 0], ['CAM', 1, 'grp1', 3], ['DELIK', 1, null, 0], ['CAM', 1, 'grp1', 4], ['DELIK', 2, null, 0]], 'grup yeni sürüme taşınır');
+  assert.deepEqual([m2(sent), ...money(sent)], [1.67, 69.3, 111.82]);
+});

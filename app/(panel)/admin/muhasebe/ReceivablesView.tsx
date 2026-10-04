@@ -184,7 +184,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                         {/* Müşteri e-postası: durum + yalnızca e-postayı yeniden gönderme (FGO'da belge KESMEZ) */}
                         <td className="doc-mail small" data-mail={mail?.state ?? 'NONE'}>
                           {mail
-                            ? <span title={mail.error ?? mail.to ?? undefined}><Badge tone={MAIL_TONE[mail.state]}>{t(`accounting.receivables.email.${mail.state}` as MsgKey)}</Badge></span>
+                            ? <span title={mail.state === 'NO_EMAIL' ? t('accounting.receivables.email.noEmailHint') : mail.error ?? mail.to ?? undefined}><Badge tone={MAIL_TONE[mail.state]}>{t(`accounting.receivables.email.${mail.state}` as MsgKey)}</Badge></span>
                             : <span className="muted">{t('accounting.receivables.email.none')}</span>}
                           {mail?.state !== 'PENDING' && (
                             <form action={resendDocEmailAction} title={t('accounting.receivables.email.resendTitle')}>

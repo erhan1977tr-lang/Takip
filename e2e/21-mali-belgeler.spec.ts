@@ -17,6 +17,7 @@ const BETA = 'beta@betacam.test';
 const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const INSPECTOR = 'denetim@e2e.test';
 const FIRM_MAIL = 'contabil@unsal-belge.test';
+const BILL_MAIL = 'facturi@unsal-facturare.test'; // firmanın "E-mail facturare" adresi (karar 115)
 const ids: Record<string, string> = {};
 let betaDoc = '', orderId = '';
 
@@ -203,10 +204,44 @@ test('yönetici: e-posta durumu; "E-postayı tekrar gönder" yalnızca TAKİP e-
   // İşçi yeniden çalışınca aynı e-postalar bir daha gitmez
   worker();
   expect(docMails().length).toBe(2);
-  await db.$disconnect();
   await admin.reload();
   await expect(cell('GKH81002')).toContainText('Gönderildi');
   await expect(cell('PRF81005')).toContainText('Gönderildi');
+
+  // --- "Email yok" belgesi (karar 115): yönetici firmanın fatura e-postasını girer → "Tekrar gönder" → Bekliyor → Gönderildi.
+  // Var olan belge gider; FGO'da belge kesilmez. Alıcı: fatura e-postası (firmanın genel e-postasının yerine).
+  const firm = (await db.user.findUniqueOrThrow({ where: { email: CUSTOMER }, include: { customer: true } })).customer!;
+  await admin.goto(`/admin/firms/${firm.id}`);
+  const billing = admin.getByLabel('Fatura e-postası (E-mail facturare)');
+  await expect(admin.getByText('TAKİP üzerinden kesilen proformalar ve faturalar bu adrese gönderilir.')).toBeVisible();
+  // Geçersiz adres sunucuda reddedilir (tarayıcının kabul ettiği "a@b" biçimi de)
+  await billing.fill('facturi@unsal');
+  await admin.locator('form.card').getByRole('button', { name: 'Kaydet' }).click();
+  await expect(admin.locator('.alert-error')).toContainText('Fatura e-postası geçerli bir e-posta adresi olmalı');
+  expect((await db.customer.findUniqueOrThrow({ where: { id: firm.id } })).billingEmail).toBeNull();
+  await billing.fill(BILL_MAIL);
+  await shot(admin, 'firma-fatura-eposta');
+  await admin.locator('form.card').getByRole('button', { name: 'Kaydet' }).click();
+  await expect(admin).toHaveURL(/\/admin\/firms\?saved=/);
+  const saved = await db.customer.findUniqueOrThrow({ where: { id: firm.id } });
+  expect([saved.billingEmail, saved.email]).toEqual([BILL_MAIL, FIRM_MAIL]);
+
+  await admin.goto('/admin/muhasebe/cam');
+  await expect(cell('GKH81004')).toContainText('Email yok'); // adres girmek kendiliğinden göndermez
+  await cell('GKH81004').getByRole('button', { name: 'Tekrar gönder' }).click();
+  await expect(cell('GKH81004')).toContainText('Bekliyor');
+  const again = await db.notificationOutbox.findFirstOrThrow({ where: { type: 'FGO_DOC_EMAIL', status: 'PENDING', payload: { path: ['docId'], equals: ids.GKH81004 } } });
+  await db.notificationOutbox.update({ where: { id: again.id }, data: { attempts: 2 } });
+  worker();
+  expect(mailsTo(BILL_MAIL).map((m) => m.subject)).toEqual(['Factură GKH81004 — comanda UNS8103']);
+  expect(docMails().length).toBe(2); // firmanın genel e-postasına ayrıca gitmedi
+  expect(await db.fgoDocument.count()).toBe(docsBefore);
+  expect(await db.notificationOutbox.count({ where: jobs })).toBe(jobsBefore);
+  const inv = await db.fgoDocument.findUniqueOrThrow({ where: { id: ids.GKH81004 } });
+  expect([inv.series, inv.number, inv.kind, Number(inv.total)]).toEqual(['GKH', '81004', 'INVOICE', 121]);
+  await admin.reload();
+  await expect(cell('GKH81004')).toContainText('Gönderildi');
+  await db.$disconnect();
   await admin.context().close();
 });
 

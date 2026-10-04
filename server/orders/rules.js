@@ -242,16 +242,37 @@ export const CRATE_LINE = { tr: 'Sandık parası', ro: 'Ambalaj (ladă)' };
 export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];
 const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
 
+const qtyOf = (line) => Math.max(0, Math.trunc(num(line.adet)));
+/** Ayrılmış camın kalemdeki sırası (karar 114): satırın ilk camından önceki cam sayısı; olağan satırda 0. */
+const pieceBaseOf = (line) => (isSub(line) || line.unit === 'adet' ? 0 : Math.max(0, Math.trunc(num(line.pieceBase))));
+/** q adet camın m²'si — yuvarlama TEK yerde: kalemin (toplam adedin) m²'si iki haneye yuvarlanır */
+const areaOf = (line, q) => {
+  const en = num(line.enMm), boy = num(line.boyMm);
+  return !isSub(line) && en > 0 && boy > 0 ? round2(((en * boy) / 1_000_000) * q) : 0;
+};
+/** Satırın kalemde başladığı m² (ayrılmış camda kendinden önceki camların m²'si; olağan satırda 0). */
+export const pieceStartArea = (line) => areaOf(line, pieceBaseOf(line));
+
 /**
  * Satırın metrajı (m²) ve tutarı. unit: 'm2' → metraj × fiyat; 'adet' → adet × fiyat.
  * CNC / delik satırları her zaman adet × fiyattır ve metraja girmez. Bedelsiz satırın tutarı 0'dır.
+ *
+ * Ayrılmış cam (karar 114): işlem eklemek için adetli satırdan ayrılan camlar aynı ticari kalemin satırlarıdır
+ * (pieceBase: satırdan önceki cam sayısı). Kalemin m²'si ve tutarı TOPLAM adetten hesaplanır ve yuvarlanır; satırın payı
+ * iki yuvarlanmış ara toplamın farkıdır: m² = m²(önceki + adet) − m²(önceki), tutar = tutar(m² sonu) − tutar(m² başı).
+ * Satırların toplamı böylece her zaman kalemin (ayrılmamış satırın) değerine eşittir — satır başına yuvarlama farkı
+ * oluşmaz. pieceBase 0 olan (olağan) satırda sonuç eskisiyle aynıdır.
  */
 export function offerLineTotals(line) {
   const sub = isSub(line);
-  const en = num(line.enMm), boy = num(line.boyMm), adet = Math.max(0, Math.trunc(num(line.adet)));
+  const adet = qtyOf(line);
   const price = line.free ? 0 : num(line.unitPrice);
-  const metraj = !sub && en > 0 && boy > 0 ? round2(((en * boy) / 1_000_000) * adet) : 0;
-  const amount = sub || line.unit === 'adet' ? round2(adet * price) : round2(metraj * price);
+  const base = pieceBaseOf(line);
+  const start = base ? areaOf(line, base) : 0;
+  const end = areaOf(line, base + adet);
+  const metraj = base ? round2(end - start) : end;
+  const amount = sub || line.unit === 'adet' ? round2(adet * price)
+    : base ? round2(round2(end * price) - round2(start * price)) : round2(metraj * price);
   return { metraj, amount };
 }
 /** Toplamlar. adet = cam adedi (CNC / delik adetleri ayrı sayılır). */
@@ -259,7 +280,7 @@ export function offerTotals(lines) {
   return lines.reduce(
     (acc, l) => {
       const t = offerLineTotals(l);
-      const n = Math.max(0, Math.trunc(num(l.adet)));
+      const n = qtyOf(l);
       acc.metraj = round2(acc.metraj + t.metraj);
       acc.amount = round2(acc.amount + t.amount);
       if (l.kind === 'CNC') acc.cnc += n;
@@ -292,25 +313,67 @@ export function sharedOpsGlasses(lines) {
   return bad;
 }
 
+/** Ayrılmış cam grubunun anahtarı geçerli mi (formdan gelir; yalnızca harf, rakam, - ve _) */
+export const isSplitKey = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v);
+const newSplitKey = () => `g${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`;
+
 /**
  * Cam satırından TEK bir camı ayırır (işlem eklenmeden önce): adedi N > 1 ise satır N − 1 olur, hemen altına (varsa
  * kendi alt satırlarının altına) adedi 1 olan aynı cam satırı eklenir. Ayırma yalnızca fiziksel camların gösterimidir:
  * toplam cam adedi ve birim fiyatlar değişmez. Adedi 1 olan satır olduğu gibi kalır.
- * @template {{ kind?: string, adet?: unknown }} L
+ * İki satır aynı ticari kalemdir: aynı splitGroup anahtarını taşırlar (karar 114) — m² ve tutar kalemin toplam
+ * adedinden hesaplanır (assignPieceBases → offerLineTotals), ayırma toplamı değiştirmez.
+ * @template {{ kind?: string, adet?: unknown, splitGroup?: string | null }} L
  * @param {L[]} lines
  * @param {number} index  cam satırının yeri
  * @param {(line: L) => L} [piece]  ayrılan camın satırı (varsayılan: satırın kopyası); adedi burada 1 yapılır
+ * @param {() => string} [newKey]  yeni grup anahtarı (test için)
  * @returns {{ lines: L[], index: number, split: boolean }}  index: tek camın satırının yeri (işlem bunun altına eklenir)
  */
-export function splitOnePiece(lines, index, piece = (l) => ({ ...l })) {
+export function splitOnePiece(lines, index, piece = (l) => ({ ...l }), newKey = newSplitKey) {
   const l = lines[index];
   const n = l && !isSub(l) ? Math.trunc(num(l.adet)) : 0;
   if (!(n > 1)) return { lines, index, split: false };
   const typed = (v) => (typeof l.adet === 'string' ? String(v) : v);
   let j = index + 1;
   while (j < lines.length && isSub(lines[j])) j++;
-  const one = { ...piece(l), adet: typed(1) };
-  return { lines: [...lines.slice(0, index), { ...l, adet: typed(n - 1) }, ...lines.slice(index + 1, j), one, ...lines.slice(j)], index: j, split: true };
+  const splitGroup = isSplitKey(l.splitGroup) ? l.splitGroup : newKey();
+  const one = { ...piece(l), adet: typed(1), splitGroup };
+  return { lines: [...lines.slice(0, index), { ...l, adet: typed(n - 1), splitGroup }, ...lines.slice(index + 1, j), one, ...lines.slice(j)], index: j, split: true };
+}
+
+/**
+ * Ayrılmış cam gruplarının sırasını (pieceBase) hesaplar — her teklif kaydında sunucuda ve ekranda aynı işlev (karar 114).
+ * Grup: aynı splitGroup anahtarını taşıyan, AYNI cam (açıklama), aynı ölçü, m² birimli cam satırları; sırayla
+ * pieceBase = gruptaki önceki satırların adet toplamı. Gruba uymayan (camı / ölçüsü farklılaşmış) ya da tek kalan satır
+ * olağan satırdır: anahtarı ve sırası sıfırlanır. Fiyat gruba üyelik koşulu değildir (m² geometridir); tutar her satırın
+ * kendi fiyatıyla hesaplanır.
+ * @template {{ kind?: string, unit?: string, description?: unknown, enMm?: unknown, boyMm?: unknown, adet?: unknown, splitGroup?: string | null }} L
+ * @param {L[]} lines
+ * @returns {(L & { splitGroup: string | null, pieceBase: number })[]}
+ */
+export function assignPieceBases(lines) {
+  const out = lines.map((l) => ({ ...l, splitGroup: null, pieceBase: 0 }));
+  const groups = new Map();
+  for (const [i, l] of lines.entries()) {
+    if (isSub(l) || (l.unit ?? 'm2') !== 'm2' || !isSplitKey(l.splitGroup) || !(num(l.enMm) > 0 && num(l.boyMm) > 0)) continue;
+    const g = groups.get(l.splitGroup);
+    if (!g) groups.set(l.splitGroup, [i]);
+    else {
+      const ref = lines[g[0]];
+      if (String(ref.description ?? '') === String(l.description ?? '') && num(ref.enMm) === num(l.enMm) && num(ref.boyMm) === num(l.boyMm)) g.push(i);
+    }
+  }
+  for (const [key, idx] of groups) {
+    if (idx.length < 2) continue;
+    let base = 0;
+    for (const i of idx) {
+      out[i].splitGroup = key;
+      out[i].pieceBase = base;
+      base += qtyOf(lines[i]);
+    }
+  }
+  return out;
 }
 
 /**

@@ -15,7 +15,7 @@
 //     proformanın kuruyla; proforma yoksa fatura kesilirken çözülür.
 //   - Günlük belge sınırı (deneme güvenliği) FGO ayarlarında.
 import { writeAudit, writeHistory } from '../orders/journal.js';
-import { offerLineTotals } from '../orders/rules.js';
+import { offerLineTotals, pieceStartArea } from '../orders/rules.js';
 import { getEnv } from '../env.js';
 import { parseManualRate } from '../fx/bt.js';
 import { bnrRate } from '../fx/bnr.js';
@@ -57,6 +57,9 @@ export const sentOffer = (order) => order.offers?.find((o) => o.status === 'GOND
  * ortalanmaz); eklenen işlemler yine ait olduğu cam satırının grubuna gider. Fatura bu seçeneği kullanmaz.
  * includeFree (yalnızca muhasebede maliyet, karar 89): "bedelsiz" satır da kendi fiyatıyla sayılır — müşteriye bedelsiz
  * verilen camın fabrika maliyeti sıfır değildir. Fatura, proforma ve döküm bu seçeneği kullanmaz (bedelsiz satır yazılmaz).
+ * Ayrılmış cam (karar 114): işlem eklemek için adetli satırdan ayrılan cam (pieceBase > 0), aynı fiyatlı önceki satırının
+ * devamıysa o satırın parçasına EKLENİR (ayrı parça olmaz) — parçalar ayrılmamış satırınkiyle aynı kalır; RON yuvarlaması
+ * dahil hiçbir toplam ayırma yüzünden değişmez. Olağan satırlarda (pieceBase 0) hesap eskisiyle aynıdır.
  * @returns {{ name: string, price: number, qty: number, parts: { qty: number, price: number }[] }[]}
  */
 function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, priceOf = (l) => l.offerPrice, byPrice = false, includeFree = false } = {}) {
@@ -75,7 +78,16 @@ function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, 
       const g = groups.get(key) ?? { name, price, qty: 0, adet: 0, parts: [] };
       g.qty = Math.round((g.qty + qty) * 1000) / 1000;
       g.adet += Math.max(0, Math.trunc(Number(l.adet) || 0));
-      g.parts.push({ qty, price }, ...carry);
+      // Ayrılmış camın devamı: aynı fiyatlı, kalemde tam bu m²'de biten önceki parçaya eklenir
+      const start = pieceStartArea(l);
+      const prev = start > 0 ? g.parts.find((p) => p.end != null && p.price === price && Math.abs(p.end - start) < 0.005) : null;
+      if (prev) {
+        prev.qty = round2(prev.qty + qty);
+        prev.end = round2(prev.end + qty);
+        g.parts.push(...carry);
+      } else {
+        g.parts.push({ qty, price, end: round2(start + qty) }, ...carry);
+      }
       carry = [];
       groups.set(key, g);
       last = g;
@@ -134,6 +146,9 @@ export function invoiceLines(offer, rate, vatRate) {
  */
 export function proformaLines(offer) {
   const out = [];
+  // Ayrılmış cam (karar 114): aynı kalemin devamı olan satır önceki satırına eklenir — proforma, cam ayrılmadan önceki
+  // satırlarla aynıdır (ends: cam satırının kalemde bittiği m²)
+  const ends = new Map();
   for (const l of offer.lines) {
     if (l.free || l.offerPrice == null) continue;
     const eur = Number(l.offerPrice);
@@ -141,7 +156,16 @@ export function proformaLines(offer) {
     const qty = isGlass ? offerLineTotals({ ...l, unitPrice: 0 }).metraj : Math.max(0, Math.trunc(Number(l.adet) || 0));
     if (!(qty > 0)) continue;
     const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : String(l.descriptionRo || l.description).trim();
-    out.push({ code: '', name, unit: isGlass ? FGO_UM.m2 : FGO_UM.adet, qty, eur });
+    const start = isGlass ? pieceStartArea(l) : 0;
+    const prev = start > 0 ? out.find((r) => ends.has(r) && r.name === name && r.eur === eur && Math.abs(ends.get(r) - start) < 0.005) : null;
+    if (prev) {
+      prev.qty = round2(prev.qty + qty);
+      ends.set(prev, round2(ends.get(prev) + qty));
+      continue;
+    }
+    const row = { code: '', name, unit: isGlass ? FGO_UM.m2 : FGO_UM.adet, qty, eur };
+    if (isGlass) ends.set(row, round2(start + qty));
+    out.push(row);
   }
   return out;
 }

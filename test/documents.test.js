@@ -2,7 +2,7 @@
 // müşteri partisinde her kalemin kendi siparişi. Veritabanı ve FGO gerektirmez.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DOC_KIND_RO, NO_EMAIL, emailState, isEmail, pdfUrl, renderDocEmail } from '../server/documents/delivery.js';
+import { DOC_KIND_RO, NO_EMAIL, emailState, financialRecipient, isEmail, pdfUrl, renderDocEmail } from '../server/documents/delivery.js';
 import { batchFgoLines } from '../server/glass/batch.js';
 import { emitereForm } from '../server/integrations/fgo.js';
 import { DOC_NOTICE, renderInApp } from '../server/notifications/inapp.js';
@@ -77,4 +77,19 @@ test('uygulama içi bildirim: "Proforma este disponibilă." / "Factura este disp
   assert.equal(renderInApp('ro', { type: 'DOC_INVOICE', params: { aud: 'customer', ref: 'GKH90' } }).title, 'Factura este disponibilă.');
   assert.equal(renderInApp('ro', { type: 'DOC_ADVANCE', params: { aud: 'customer', ref: 'GKH91' } }).title, 'Factura de avans este disponibilă.');
   assert.equal(renderInApp('tr', { type: 'DOC_INVOICE', params: { aud: 'customer', ref: 'GKH90' } }).title, 'Faturanız hazır.');
+});
+
+// Karar 115: mali belge e-postasının alıcısı — fatura e-postası, yoksa firmanın e-postası, yoksa "Email yok"
+test('mali belge alıcısı: billingEmail → Customer.email → yok; geçersiz adres atlanır, kullanıcı e-postasına düşülmez', () => {
+  assert.equal(financialRecipient({ email: 'office@client.ro', billingEmail: null }), 'office@client.ro');
+  assert.equal(financialRecipient({ email: 'office@client.ro', billingEmail: 'facturi@client.ro' }), 'facturi@client.ro');
+  assert.equal(financialRecipient({ email: null, billingEmail: ' facturi@client.ro ' }), 'facturi@client.ro');
+  assert.equal(financialRecipient({ email: null, billingEmail: null }), null);
+  assert.equal(financialRecipient({ email: '', billingEmail: '' }), null);
+  // Geçersiz fatura e-postası güvenle atlanır: firmanın geçerli e-postasına düşer; o da geçersizse alıcı yok
+  assert.equal(financialRecipient({ email: 'office@client.ro', billingEmail: 'adres-degil' }), 'office@client.ro');
+  assert.equal(financialRecipient({ email: 'bozuk@', billingEmail: 'a b@c.ro' }), null);
+  // Yalnızca bu iki alan okunur: firmaya bağlı kullanıcıların e-postaları alıcı olamaz
+  assert.equal(financialRecipient({ email: null, billingEmail: null, users: [{ email: 'user@client.ro' }], contactPerson: 'x@y.ro' }), null);
+  assert.equal(financialRecipient(null), null);
 });

@@ -47,7 +47,7 @@ export function orderLine(o) {
   const d = o.actualShipDate ?? o.estimatedShipDate;
   if (!sent || !d) return null;
   const load = orderLoad({
-    lines: sent.lines.map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null })),
+    lines: sent.lines.map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
     items: o.items ?? [],
   });
   // 3.10 öncesi teklif (müşteri fiyatı sütunu yok): müşteriye giden fiyat satırdaki tek fiyattı (lib/orders.ts → offerPrices)

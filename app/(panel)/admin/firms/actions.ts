@@ -9,6 +9,7 @@ import { audit } from '@/lib/audit';
 import { isFirmCode, suggestFirmCode } from '@/lib/prefix';
 import { getT, type T, type MsgKey } from '@/lib/i18n';
 import { parseFxPolicy } from '@/server/fx/resolve.js';
+import { isEmail } from '@/server/documents/delivery.js';
 
 export type FirmFormState = { error?: string; ok?: string; values?: Record<string, string> };
 
@@ -17,6 +18,8 @@ type FirmInput = {
   groupName: string | null; camEtiket: string | null; sandikEtiket: string | null;
   // Kur politikası (karar 95): yalnızca düzenleme formunda; formda yoksa dokunulmaz
   fxPolicy?: 'BT_UNIT_SELL' | 'BNR' | 'BNR_PLUS_PERCENT'; fxMarkupPercent?: string | null;
+  // Mali belge e-postası (karar 115): yalnızca düzenleme formunda; formda yoksa dokunulmaz
+  billingEmail?: string | null;
 } & Partial<Record<(typeof BILLING)[number], string | null>>;
 
 // Fatura bilgileri (Aşama 6b, FGO). Yalnızca düzenleme formunda; formda yoksa dokunulmaz.
@@ -29,10 +32,11 @@ function read(formData: FormData) {
     groupName: v('groupName'), camEtiket: v('camEtiket'), sandikEtiket: v('sandikEtiket'),
     billing: Object.fromEntries(BILLING.filter((k) => formData.has(k)).map((k) => [k, v(k)])) as Partial<Record<(typeof BILLING)[number], string>>,
     fx: formData.has('fxPolicy') ? { policy: v('fxPolicy'), percent: v('fxMarkupPercent') } : null,
+    billingEmail: formData.has('billingEmail') ? v('billingEmail') : null,
   };
 }
 
-const formValues = ({ billing, fx: _fx, ...rest }: ReturnType<typeof read>): Record<string, string> => ({ ...rest, ...billing });
+const formValues = ({ billing, fx: _fx, billingEmail: _mail, ...rest }: ReturnType<typeof read>): Record<string, string> => ({ ...rest, ...billing });
 
 async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): Promise<{ data?: FirmInput; error?: string }> {
   if (!raw.name) return { error: t('admin.firmActions.nameRequired') };
@@ -63,9 +67,12 @@ async function validate(t: T, raw: ReturnType<typeof read>, exceptId?: string): 
     if (!r.ok) return { error: t(`fx.errors.${r.code}` as MsgKey) };
     fx = r.data;
   }
+  // Fatura e-postası: boş bırakılabilir; doluysa geçerli bir adres olmalı (sunucuda doğrulanır)
+  if (raw.billingEmail && (raw.billingEmail.length > 200 || !isEmail(raw.billingEmail))) return { error: t('admin.firmActions.billingEmailInvalid') };
   return {
     data: {
       ...fx,
+      ...(raw.billingEmail != null ? { billingEmail: raw.billingEmail || null } : {}),
       name: raw.name, type, prefix: prefix || null,
       groupName: nz(raw.groupName), camEtiket: nz(raw.camEtiket), sandikEtiket: nz(raw.sandikEtiket),
       ...Object.fromEntries(Object.entries(raw.billing).map(([k, y]) => [k, String(y ?? '')]).map(([k, x]) => [k, k === 'taxId' ? nz(x.replace(/^RO/i, '').replace(/\s/g, '')) : k === 'address' ? (x ? x.slice(0, 250) : null) : k === 'country' ? nz(x.toUpperCase().slice(0, 2)) : nz(x)])),
@@ -123,7 +130,8 @@ export async function updateFirmAction(formData: FormData) {
   // Kur politikası değişikliği denetim kaydında ayrıca görünür (mali ayar)
   const fxBefore = { fxPolicy: firm.fxPolicy, fxMarkupPercent: firm.fxMarkupPercent?.toString() ?? null };
   const fxAfter = data.fxPolicy ? { fxPolicy: data.fxPolicy, fxMarkupPercent: data.fxMarkupPercent ?? null } : fxBefore;
-  await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix, ...fxBefore }, after: { name: data.name, prefix: data.prefix, ...fxAfter } });
+  const mailAfter = data.billingEmail !== undefined ? data.billingEmail : firm.billingEmail;
+  await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix, billingEmail: firm.billingEmail, ...fxBefore }, after: { name: data.name, prefix: data.prefix, billingEmail: mailAfter, ...fxAfter } });
   revalidatePath('/admin/firms');
   redirect(`/admin/firms?saved=${encodeURIComponent(data.name)}`);
 }

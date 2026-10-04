@@ -39,7 +39,7 @@ const num = (v) => {
 /**
  * Bir siparişin yükü.
  * @param {{
- *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null}[],
+ *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null, pieceBase?: number|null}[],
  *   items?: {camAdedi: number}[],
  *   crates?: {netAgirlik?: any, brutAgirlik?: any, daraKg?: any}[],
  * }} p

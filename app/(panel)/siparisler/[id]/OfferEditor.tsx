@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
+import { assignPieceBases, atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
 import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
 import { ExcelImport } from './ExcelImport';
@@ -14,7 +14,7 @@ import { ExcelImport } from './ExcelImport';
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
 /** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
-type Line = { key: number; id: string; from?: string; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
+type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
@@ -64,8 +64,10 @@ export function OfferEditor(props: {
   );
   // Yönetici (fiyat onayı ve güncelleme) müşteri fiyatıyla çalışır; satış fiyatı yalnızca yanında görünür
   const adminMode = props.mode !== 'sales';
-  const totals = useMemo(() => offerTotals(lines), [lines]);
-  const offerTot = useMemo(() => offerTotals(atOfferPrice(lines)), [lines]);
+  // Ayrılmış camların kalemdeki sırası (pieceBase): hesap sunucudakiyle aynı işlevle yapılır — ayırma toplamı değiştirmez
+  const calc = useMemo(() => assignPieceBases(lines), [lines]);
+  const totals = useMemo(() => offerTotals(calc), [calc]);
+  const offerTot = useMemo(() => offerTotals(atOfferPrice(calc)), [calc]);
   const problems = useMemo(() => {
     const used = lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice || l.offerPrice);
     return offerProblems(adminMode ? atOfferPrice(used) : used);
@@ -223,7 +225,8 @@ export function OfferEditor(props: {
           </thead>
           <tbody>
             {lines.map((l, idx) => {
-              const tot = offerLineTotals(adminMode ? { ...l, unitPrice: l.offerPrice } : l);
+              const cl = calc[idx] ?? l;
+              const tot = offerLineTotals(adminMode ? { ...cl, unitPrice: l.offerPrice } : cl);
               const sub = l.kind !== 'CAM';
               // İşlem (CNC / delik) taşıyan cam satırı: tek bir fiziksel camdır
               const owns = !sub && (lines[idx + 1]?.kind === 'CNC' || lines[idx + 1]?.kind === 'DELIK');
@@ -236,6 +239,7 @@ export function OfferEditor(props: {
                   <td className="c-no muted">{sub ? '' : glassNo}
                     <input type="hidden" name="l_id" value={l.id} />
                     <input type="hidden" name="l_from" value={l.id ? '' : l.from ?? ''} />
+                    <input type="hidden" name="l_group" value={l.splitGroup ?? ''} />
                     <input type="hidden" name="l_kind" value={l.kind} />
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
                   </td>

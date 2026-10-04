@@ -304,6 +304,14 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   another `.btn-link` in `.line-actions`; the rule is explained by one `.muted.small` line under the table. A legacy
   violation is listed by the existing problems block and disables "save draft".
 
+### Split rows + billing e-mail (3.45.0)
+
+- Offer editor / offer view: no new element. Rows of a split line show their SHARE of the line's m² and amount (e.g.
+  1,33 + 0,34 = 1,67); the footer total is the line's real total. The group key travels in a hidden `l_group` input.
+- Admin customer form: one more field in the existing "Fatura bilgileri" `.grid` — `type="email"` input "E-mail
+  facturare" with a `.hint` (help text + the fallback address when the firm has one). No new section or page.
+- Receivables e-mail cell: the "Email yok" badge carries a `title` telling Admin where to enter the address.
+
 ## Financial documents (3.43.0)
 
 - Customer page "Documente financiare" (`/belgeler`): the standard `.page-head` + one `.card.card-flush` with a

@@ -70,7 +70,8 @@ export function snapshotLine(order, offer, l, { quantity = l.adet, status = 'LOA
     kind: l.kind ?? 'CAM', unit: l.unit ?? 'm2', description: l.description ?? '', descriptionRo: l.descriptionRo ?? null,
     glassProductId: l.glassProductId ?? null, enMm: l.enMm ?? null, boyMm: l.boyMm ?? null,
     weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), free: !!l.free,
-    quantity: qty, m2, currency: offer.currency,
+    // Ayrılmış cam (karar 114): satırın kalemdeki sırası kopyalanır — m² teklifteki kuralla (kalemin toplamından) hesaplanır
+    quantity: qty, pieceBase: glass ? int(l.pieceBase) : 0, m2, currency: offer.currency,
     unitCost, unitSale,
     costAmount: round4(base * unitCost),
     saleAmount: l.free || unitSale == null ? 0 : round4(base * unitSale),
@@ -92,6 +93,7 @@ export function snapshotOfItem(it, { quantity, status = 'LOADED', reason = null,
     id: it.offerLineId ?? null, sortOrder: it.sortOrder, kind: it.kind, unit: it.unit, description: it.description, descriptionRo: it.descriptionRo ?? null,
     glassProductId: it.glassProductId ?? null, enMm: it.enMm ?? null, boyMm: it.boyMm ?? null, weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2),
     free: !!it.free, adet: quantity, unitPrice: Number(it.unitCost), offerPrice: it.unitSale == null ? null : Number(it.unitSale),
+    pieceBase: it.pieceBase ?? 0,
   };
   // offerAmount dolu: müşteri fiyatı kalemdeki unitSale'dir (eski teklif kuralı kalemde zaten uygulanmıştır)
   const row = snapshotLine({ id: it.orderId, customerId: it.customerId }, { currency: it.currency, offerAmount: 0 }, line, { quantity, status, reason, note });
@@ -146,7 +148,7 @@ export const itemAsLine = (it) => ({
   id: it.offerLineId ?? it.id, description: it.description, descriptionRo: it.descriptionRo, enMm: it.enMm, boyMm: it.boyMm,
   adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, sortOrder: it.sortOrder,
   unitPrice: Number(it.unitCost), offerPrice: it.unitSale == null ? null : Number(it.unitSale),
-  weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2),
+  weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2), pieceBase: it.pieceBase ?? 0,
 });
 
 const sumTotals = (rows) => round2(rows.reduce((s, r) => s + r.total, 0));

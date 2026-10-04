@@ -236,6 +236,9 @@ model Customer {
   sandikEtiket  String?  // varsayılan sandık etiketi (fiziksel etiket ve nakliye listesi)
   contactPerson String?  // "Darius", "Mitariu", "Gabi panou dus" gibi
   email         String?
+  // Mali belge e-postası (karar 115): proforma / avans faturası / fatura e-postaları önce bu adrese gider; boşsa `email`.
+  // Yalnızca teslim bilgisidir — kimlik doğrulama ya da belgeye erişim hakkı vermez.
+  billingEmail  String?
   phone         String?
   address       String?
   taxId         String?  // CUI (fatura: FGO Client[CodUnic])
@@ -607,6 +610,13 @@ model OfferLine {
   compensationId   String?
   compensation     Compensation? @relation("CompensationLines", fields: [compensationId], references: [id], onDelete: SetNull)
   compensationsFrom Compensation[] @relation("CompensationSourceLine") // bu (kaynak) satır için açılan telafiler
+  // Ayrılmış cam (karar 114): işlem (CNC / delik) eklemek için adetli satırdan ayrılan camlar AYNI ticari kalemdir.
+  //   splitGroup — aynı kalemin satırlarını bağlayan anahtar (ayırmada verilir; boş = olağan satır)
+  //   pieceBase  — satırın kalemdeki ilk camından önceki cam sayısı (5 → 4 + 1: 0 ve 4). m² ve tutar kalemin TOPLAM
+  //                adedinden hesaplanıp satırlara bu sıraya göre paylaştırılır (server/orders/rules.js → offerLineTotals);
+  //                böylece ayırma toplam m²'yi ve tutarı değiştirmez. Sunucu her kayıtta yeniden hesaplar (assignPieceBases).
+  splitGroup       String?
+  pieceBase        Int     @default(0)
 
   @@index([compensationId])
 }
@@ -1430,6 +1440,7 @@ model LoadingConfirmationItem {
   free           Boolean  @default(false) // müşteriye bedelsiz (maliyeti yine sayılır)
   // FİİLEN onaylanan miktar: kısmi yüklemede teklif satırının adedinden az olabilir (kalan kısım NOT_LOADED kaydıdır)
   quantity       Int
+  pieceBase      Int      @default(0) // OfferLine.pieceBase kopyası (karar 114): ayrılmış camın kalemdeki sırası — m² aynı kuralla hesaplanır
   m2             Decimal  @db.Decimal(10, 2) // cam satırında onaylanan m²; diğer satırlarda 0
   currency       String
   unitCost       Decimal  @db.Decimal(12, 2) // fabrika maliyeti: OfferLine.unitPrice (satış fiyatı)

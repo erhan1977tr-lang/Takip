@@ -18,7 +18,7 @@ import { readXlsx } from '@/server/files/xlsx.js';
 import { isXls, readXls } from '@/server/files/xls.js';
 import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '@/server/orders/excel-import.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
-import { atOfferPrice, availableActions, drawingFlags, fileProblem, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
@@ -261,13 +261,14 @@ export async function addNoteAction(formData: FormData) {
 /**
  * id: mevcut satır (boş → yeni) · offerPrice: müşteri fiyatı (yalnızca yönetici formunda; satış formunda undefined)
  * from: işlem eklemek için ayrılan tek camın kaynağı (aynı teklifin mevcut satırı — fiyatları ondan taşınır, karar 113)
+ * splitGroup: ayrılmış cam grubunun anahtarı (karar 114) — sunucu grubu doğrular ve sırayı (pieceBase) kendisi hesaplar
  */
-type LineInput = { id: string | null; from?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
+type LineInput = { id: string | null; from?: string | null; splitGroup?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
 
 function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
-  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from');
+  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from'), group = col('l_group');
   const withOffer = oprice.length > 0;
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
@@ -290,6 +291,7 @@ function readLines(formData: FormData, t: T): LineInput[] | string {
       unit: sub || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree,
       id: ids[i] || null,
       ...(!ids[i] && from[i] && !sub ? { from: from[i].slice(0, 40) } : {}),
+      splitGroup: !sub && isSplitKey(group[i]) ? group[i] : null,
       ...(withOffer ? { offerPrice: isFree ? '0.00' : op === null ? null : op.toFixed(2) } : {}),
     });
   }

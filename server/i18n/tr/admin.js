@@ -128,6 +128,9 @@ export default {
     county: 'Județ',
     city: 'Localitate',
     address: 'Adres',
+    billingEmail: 'Fatura e-postası (E-mail facturare)',
+    billingEmailHint: 'TAKİP üzerinden kesilen proformalar ve faturalar bu adrese gönderilir.',
+    billingEmailFallback: 'Boş bırakılırsa firmanın kayıtlı e-postasına ({email}) gider.',
     sandikHint: 'Fiziksel etikete ve nakliye listesine basılır; sipariş bazında değiştirilebilir.',
     saving: 'Kaydediliyor…',
     create: 'Oluştur',
@@ -145,6 +148,7 @@ export default {
     createdWithPrefix: '“{name}” firması oluşturuldu (kod: {prefix}). Şimdi bu firmaya kullanıcı atayabilirsiniz.',
     invalid: 'Geçersiz bilgi.',
     typeLocked: 'Bu firmaya bağlı kullanıcılar var; firma tipi değiştirilemez.',
+    billingEmailInvalid: 'Fatura e-postası geçerli bir e-posta adresi olmalı (ya da boş bırakın).',
   },
   catalog: {
     title: 'Cam Kataloğu',

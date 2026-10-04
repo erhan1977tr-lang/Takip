@@ -255,6 +255,7 @@ export default {
       PENDING: "În așteptare",
       FAILED: "Eșuat",
       NO_EMAIL: "Fără e-mail",
+      noEmailHint: "Clientul nu are e-mail de facturare. Completați „E-mail facturare” la Clienți → firmă, apoi apăsați „Retrimite” (nu se emite niciun document în FGO).",
       none: "netrimis",
       resend: "Retrimite",
       resendTitle: "Retrimite e-mailul: retrimite doar e-mailul TAKİP către client. NU se emite un document nou în FGO; numerotarea și facturarea nu se schimbă.",

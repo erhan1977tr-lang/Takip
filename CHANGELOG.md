@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.45.0 — 04.10.2026
+
+- **Cam ayrılınca toplam değişmez**: işlem (CNC / delik) eklemek için adetli cam satırı ayrıldığında (5 → 4 + 1) toplam m²,
+  müşteri tutarı ve maliyet artık kuruşu kuruşuna aynı kalır. Önceden m² satır başına yuvarlandığı için bazı ölçülerde
+  0,01 m² (ve fiyatla çarpımı kadar tutar) fark oluşuyordu. Ayrılan satırlar aynı kalemdir: m² kalemin toplam adedinden
+  hesaplanır, satırlar bu toplamı paylaşır. Proforma ve faturada ayrılmış cam ayrı satır olmaz; belge, cam ayrılmadan
+  önceki belgeyle aynıdır. Ayrılmamış satırların hesabı değişmedi.
+- **Fatura e-postası (E-mail facturare)**: Müşteriler → firma → "Fatura bilgileri" bölümüne isteğe bağlı yeni alan.
+  Proforma, avans faturası ve fatura e-postaları önce bu adrese gider; boşsa firmanın kayıtlı e-postasına; ikisi de yoksa
+  durum "Email yok" olur. "Email yok" görünen kesilmiş belge için adresi girip Muhasebe → Tahsilat'ta "Tekrar gönder"e
+  basmak yeterlidir (FGO'da yeni belge kesilmez). Kullanıcıların e-posta bildirimlerini kapatması mali belge e-postasını
+  engellemez.
+
 ## 3.44.0 — 04.10.2026
 
 - **Telafi camında fiyat**: satış artık yalnızca iki seçenek görür — **"Aynı fiyat"** (yöneticinin kaynak teklifte

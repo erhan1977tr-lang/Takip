@@ -255,6 +255,7 @@ export default {
       PENDING: "Bekliyor",
       FAILED: "Başarısız",
       NO_EMAIL: "Email yok",
+      noEmailHint: "Müşterinin fatura e-postası yok. Müşteriler → firma → “Fatura e-postası” alanını doldurun, sonra “Tekrar gönder”e basın (FGO'da belge kesilmez).",
       none: "gönderilmedi",
       resend: "Tekrar gönder",
       resendTitle: "E-postayı tekrar gönder: yalnızca TAKİP'in müşteri e-postasını yeniden gönderir. FGO'da yeni belge KESİLMEZ; numara ve faturalama değişmez.",

@@ -415,6 +415,101 @@ dbTest('yönetici "e-postayı tekrar gönder": yalnızca TAKİP e-postası — F
   assert.equal((await notices(uA.id)).filter((x) => x.orderId === o.id).length, 1, 'yeniden gönderme bildirimi yinelemez');
 });
 
+// Karar 115: mali belge e-postası firmanın "E-mail facturare" adresine gider; yoksa firmanın e-postasına; ikisi de yoksa "Email yok"
+dbTest('fatura e-postası (billingEmail): öncelik, geri düşüş, geçersiz adres, bildirim tercihi; "Email yok" belgesi adres girilince yeniden gönderilir — FGO\'da belge kesilmez', async () => {
+  const fgo = fakeFgo(800);
+  const box = mailbox();
+  const send = async (c, shipOffset) => {
+    const o = await order(c, noon(shipOffset));
+    assert.deepEqual(await issue(o, 'PROFORMA', fgo), { done: 1, failed: 0 });
+    const [doc] = await docsOf(o.id);
+    const r = await d.dispatchDocEmails(db, mailCtx(fgo, box));
+    return { o, doc, r };
+  };
+  const stateOf = async (doc) => (await d.emailStates(db, [doc])).get(doc.id).state;
+  /** Bu testin firmalarına giden e-postalar (önceki testlerden kalan iş olsa da karışmaz) */
+  const to = () => box.sent.map((m) => m.to).filter((a) => /@(client|doar|eronat|faramail)\.test$/.test(a));
+  /** Belgenin değişmemesi gereken alanları (FGO'dan okunan toplam / ödenen önbelleği dışında her şey) */
+  const core = async (id) => {
+    const { total: _total, paid: _paid, checkedAt: _checkedAt, checkError: _checkError, ...rest } = await db.fgoDocument.findUniqueOrThrow({ where: { id } });
+    return JSON.stringify(rest);
+  };
+
+  // Fatura e-postası yok → firmanın e-postasına (geri düşüş)
+  const C = await customer('Factura SRL', 'FCT', { email: 'office@client.test' });
+  let x = await send(C, 20);
+  assert.deepEqual(to(), ['office@client.test']);
+  // Fatura e-postası var → firmanın e-postasının yerine oraya; firmanın e-postasına AYRICA gitmez
+  await db.customer.update({ where: { id: C.id }, data: { billingEmail: 'facturi@client.test' } });
+  x = await send(C, 21);
+  assert.deepEqual(to(), ['office@client.test', 'facturi@client.test']);
+  assert.equal((await emails(x.doc.id))[0].payload.to, 'facturi@client.test');
+  // Yalnızca fatura e-postası var (firmanın e-postası yok)
+  const D = await customer('Doar Facturi SRL', 'DFA', { email: null, billingEmail: 'facturi@doar.test' });
+  await send(D, 20);
+  assert.equal(to().at(-1), 'facturi@doar.test');
+  // Geçersiz fatura e-postası güvenle atlanır: firmanın geçerli e-postasına gider
+  const E = await customer('Eronat SRL', 'ERO', { email: 'office@eronat.test', billingEmail: 'adres-degil' });
+  await send(E, 20);
+  assert.equal(to().at(-1), 'office@eronat.test');
+
+  // Bildirim tercihi mali belgeyi ETKİLEMEZ: firmanın bütün kullanıcıları e-posta bildirimlerini kapatmış olsa da belge gider;
+  // alıcı yine firmanın adresidir — kullanıcıların giriş e-postasına gönderilmez
+  const uC = await user(C, 'kullanici@client.test');
+  await db.user.updateMany({ where: { customerId: C.id }, data: { emailNotifications: false } });
+  const sentBefore = to().length;
+  x = await send(C, 22);
+  assert.equal(await stateOf(x.doc), 'SENT');
+  assert.deepEqual(to().slice(sentBefore), ['facturi@client.test']);
+  assert.ok(!box.sent.some((m) => m.to === uC.email));
+
+  // --- İkisi de yok → "Email yok" (kullanıcısı olsa bile kullanıcı e-postasına düşülmez); belge geçerli
+  const N = await customer('Fara Mail SRL', 'FMA', { email: null });
+  const uN = await user(N, 'giris@faramail.test');
+  x = await send(N, 20);
+  assert.equal(await stateOf(x.doc), 'NO_EMAIL');
+  assert.equal((await emails(x.doc.id))[0].lastError, d.NO_EMAIL);
+  assert.ok(!box.sent.some((m) => m.to === uN.email));
+  // Geçersiz fatura e-postası + firmanın e-postası yok → yine "Email yok"
+  await db.customer.update({ where: { id: N.id }, data: { billingEmail: 'bozuk@' } });
+  assert.deepEqual(await d.resendDocEmail(db, { docId: x.doc.id, actor: actor() }), { ok: true });
+  await d.dispatchDocEmails(db, mailCtx(fgo, box));
+  assert.equal(await stateOf(x.doc), 'NO_EMAIL');
+
+  // --- Yönetici fatura e-postasını girer → "Tekrar gönder": Email yok → Bekliyor → Gönderildi; VAR OLAN belge gider
+  const docBefore = await core(x.doc.id);
+  const billingBefore = JSON.stringify(await db.glassBilling.findMany({ where: { orderId: x.o.id } }));
+  const docCount = await db.fgoDocument.count();
+  const settings = JSON.stringify(await getFgoSettings(db));
+  const emits = fgo.calls.length;
+  await db.customer.update({ where: { id: N.id }, data: { billingEmail: 'facturi@faramail.test' } });
+  assert.equal(await stateOf(x.doc), 'NO_EMAIL', 'adres girmek kendiliğinden göndermez');
+  assert.deepEqual(await d.resendDocEmail(db, { docId: x.doc.id, actor: actor() }), { ok: true });
+  assert.equal(await stateOf(x.doc), 'PENDING');
+  await d.dispatchDocEmails(db, mailCtx(fgo, box));
+  assert.equal(await stateOf(x.doc), 'SENT');
+  const mail = box.sent.findLast((m) => m.to === 'facturi@faramail.test');
+  assert.equal(box.sent.filter((m) => m.to === 'facturi@faramail.test').length, 1, 'tek e-posta');
+  assert.deepEqual([mail.to, mail.subject, mail.attachments?.[0]?.filename], ['facturi@faramail.test', `Proformă ${x.doc.series}${x.doc.number} — comanda ${x.o.orderNo}`, `${x.doc.series}${x.doc.number}.pdf`]);
+  // FGO: belge kesme (emitere) çağrısı SIFIR — var olan belgenin PDF'i indirilir (toplam hiç okunmadıysa salt okunur durum
+  // sorgusuyla okunur). Belge kaydı (tür, seri, numara, sıra, tarih, para birimi), kur / faturalama kaydı ve ayarlar aynı;
+  // yeni belge ya da FGO işi yok
+  assert.equal(fgo.calls.length, emits, 'emitere çağrılmadı');
+  assert.equal(await core(x.doc.id), docBefore);
+  assert.equal(JSON.stringify(await db.glassBilling.findMany({ where: { orderId: x.o.id } })), billingBefore);
+  assert.equal(await db.fgoDocument.count(), docCount);
+  assert.equal(JSON.stringify(await getFgoSettings(db)), settings);
+  assert.equal(await db.notificationOutbox.count({ where: { type: g.GLASS_FGO, orderId: x.o.id, status: 'PENDING' } }), 0);
+
+  // --- Fatura e-postası yalnızca teslim bilgisidir: erişim hakkı vermez. Başka firmanın kullanıcısının giriş e-postası
+  // bu firmanın fatura e-postasıyla aynı olsa da belgeyi göremez / açamaz; belgenin sahibi gerçek firmadır.
+  const stranger = await user(B, 'facturi@faramail.test');
+  assert.ok(!(await cd.customerDocuments(db, stranger.customerId)).some((r) => r.id === x.doc.id));
+  assert.equal(await cd.customerDocument(db, { docId: x.doc.id, customerId: stranger.customerId }), null);
+  assert.ok(await cd.customerDocument(db, { docId: x.doc.id, customerId: N.id }));
+  assert.deepEqual((await cd.customerDocuments(db, N.id)).map((r) => r.id), [x.doc.id]);
+});
+
 dbTest('tek seferlik fatura numarası: FGO\'da kullanılınca boşalır — belge kaydı yazılamasa bile (eski numara sonraki faturaya gitmez)', async () => {
   const E = await customer('Numar SRL', 'NUM');
   const o1 = await order(E, noon(-5)), o2 = await order(E, noon(-5));

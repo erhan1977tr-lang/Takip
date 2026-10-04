@@ -31,6 +31,24 @@ export const NO_EMAIL = 'NO_EMAIL';
 
 const backoffMinutes = (attempt) => [1, 5, 15, 30, 60, 120, 240, 480][Math.min(attempt, 7)];
 export const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+
+/**
+ * Mali belge e-postasının alıcısı (karar 115) — yalnızca proforma / avans faturası / fatura e-postaları için:
+ *   1. firmanın "E-mail facturare" adresi (Customer.billingEmail) — dolu ve geçerliyse
+ *   2. yoksa firmanın genel e-postası (Customer.email) — dolu ve geçerliyse
+ *   3. yoksa null → "Email yok" (iş NO_EMAIL ile kapanır; belge geçerlidir)
+ * Kullanıcıların giriş e-postalarına ASLA düşülmez. Alıcı gönderim anında çözülür: "Email yok" belgesi, adres
+ * girildikten sonra "Tekrar gönder" ile güncel adrese gider. Adres yalnızca teslim bilgisidir (erişim hakkı vermez).
+ * @param {{ billingEmail?: string | null, email?: string | null } | null | undefined} customer
+ * @returns {string | null}
+ */
+export function financialRecipient(customer) {
+  for (const v of [customer?.billingEmail, customer?.email]) {
+    const s = String(v ?? '').trim();
+    if (isEmail(s)) return s;
+  }
+  return null;
+}
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 
 /**
@@ -167,7 +185,8 @@ ${portalUrl ? `<p>Îl găsiți oricând și în portalul TAKİP, la „Documente
 class Permanent extends Error {}
 
 /**
- * Kuyruktaki belge e-postalarını gönderir. Alıcı: firmanın Müşteriler kartındaki e-postası (Customer.email — tek kaynak).
+ * Kuyruktaki belge e-postalarını gönderir. Alıcı: financialRecipient — firmanın fatura e-postası (Customer.billingEmail),
+ * yoksa firmanın e-postası (Customer.email).
  *   - E-posta yoksa: iş "e-posta yok" diye kapanır (yeniden denenmez); belge geçerlidir ve müşteri ekranında durur.
  *   - PDF: eklenir; alınamazsa iş birkaç dakika bekletilir, yine olmazsa e-posta eksiz, belge bağlantısıyla gider.
  *   - Tutar FGO'dan henüz okunmamışsa burada bir kez okunur (yalnızca okuma).
@@ -200,8 +219,9 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
       const customer = doc.order?.customer ?? doc.batch?.customer;
       const orders = doc.order ? [{ orderId: doc.order.id, orderNo: doc.order.orderNo }] : doc.batch?.orders ?? [];
       if (!customer) throw new Permanent('belgenin müşterisi yok');
-      const to = String(customer.email ?? '').trim();
-      if (!isEmail(to)) { await close(NO_EMAIL); skipped++; continue; }
+      // Alıcı ŞİMDİ çözülür (fatura e-postası → yoksa firmanın e-postası); kullanıcıların bildirim tercihi mali belgeyi etkilemez
+      const to = financialRecipient(customer);
+      if (!to) { await close(NO_EMAIL); skipped++; continue; }
       if (doc.total == null) {
         // Tutar henüz okunmamış (kesimden hemen sonraki okuma olmadıysa): e-postada toplam yazsın diye bir kez okunur
         try {

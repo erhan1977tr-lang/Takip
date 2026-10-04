@@ -128,6 +128,9 @@ export default {
     county: 'Județ',
     city: 'Localitate',
     address: 'Adresă',
+    billingEmail: 'E-mail facturare',
+    billingEmailHint: 'Proformele și facturile emise prin TAKİP vor fi trimise la această adresă.',
+    billingEmailFallback: 'Dacă rămâne necompletat, se folosește e-mailul firmei ({email}).',
     sandikHint: 'Se tipărește pe eticheta fizică și pe lista de transport; poate fi modificată pentru fiecare comandă.',
     saving: 'Se salvează…',
     create: 'Creează',
@@ -145,6 +148,7 @@ export default {
     createdWithPrefix: 'Firma „{name}” a fost creată (cod: {prefix}). Acum îi puteți atribui utilizatori.',
     invalid: 'Date invalide.',
     typeLocked: 'Există utilizatori asociați acestei firme; tipul firmei nu poate fi modificat.',
+    billingEmailInvalid: 'E-mailul de facturare trebuie să fie o adresă validă (sau lăsați câmpul gol).',
   },
   catalog: {
     title: 'Catalog sticlă',

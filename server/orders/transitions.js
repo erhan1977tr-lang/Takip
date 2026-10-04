@@ -8,7 +8,7 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
-import { atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
+import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
 import { verifyReviewToken } from './review.js';
 import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
@@ -164,8 +164,9 @@ function latestDrawing(h) {
 // h.sla = true ise sonda SLA yeniden hesaplanır, h.auto = true ise otomatik üretim denenir.
 
 // compensationId: TELAFİ satırının işareti (Aşama 9) — satır düzenlenince / teklifin yeni sürümü açılınca satırla taşınır
-const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId'];
-export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, sortOrder: i });
+// splitGroup / pieceBase: ayrılmış cam grubu (karar 114) — teklifin yeni sürümüne ve kopyalarına satırla birlikte taşınır
+const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId', 'splitGroup'];
+export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, sortOrder: i });
 const priceNum = (v) => (v == null || v === '' ? null : Number(v));
 
 /**
@@ -258,7 +259,8 @@ async function offerEdit(h, intent) {
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
   const admin = can(actor.role, 'OFFER_SEND');
   requireOwnedOps(payload.lines);
-  const merged = mergePrices(await completeLines(h, offer, payload.lines), offer.lines, admin);
+  // Ayrılmış camların sırası (pieceBase) her kayıtta sunucuda yeniden hesaplanır: m² ve tutar kalemin toplam adedinden (karar 114)
+  const merged = assignPieceBases(mergePrices(await completeLines(h, offer, payload.lines), offer.lines, admin));
   let saved = await writeLines(tx, offer.id, merged, offer.lines);
   // Satış yöneticiye gönderirken müşteri fiyatı boş satırlar müşterinin fiyat tablosundan dolar (karar 32)
   if (intent === 'submit') {
@@ -486,7 +488,7 @@ const ACTIONS = {
     const prev = latestOffer(order);
     if (!prev) throw new WorkflowError('OFFER_NOT_FOUND');
     requireOwnedOps(payload.lines);
-    const lines = mergePrices(await completeLines(h, prev, payload.lines), prev.lines, true);
+    const lines = assignPieceBases(mergePrices(await completeLines(h, prev, payload.lines), prev.lines, true));
     requireOfferPrices(lines);
     const { amount, offerAmount } = amounts(lines);
     // Müşteriye gitmiş teklif değişmez: yeni sürüm açılır ve hemen müşteriye gönderilmiş sayılır

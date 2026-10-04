@@ -84,7 +84,7 @@ export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date)
         ...(base?.lines.find((l) => l.id === s.offerLineId) ?? {}),
         id: s.offerLineId ?? s.id, offerId: base?.id ?? '', sortOrder: s.sortOrder, description: s.description, descriptionRo: s.descriptionRo,
         enMm: s.enMm, boyMm: s.boyMm, adet: r.quantity, unit: s.unit, kind: s.kind, free: s.free, glassProductId: s.glassProductId,
-        weightKgM2: s.weightKgM2, unitPrice: s.unitCost, offerPrice: s.unitSale, listPrice: null,
+        weightKgM2: s.weightKgM2, unitPrice: s.unitCost, offerPrice: s.unitSale, listPrice: null, pieceBase: s.pieceBase, splitGroup: null,
       } as unknown as OrderRow['offers'][number]['lines'][number];
     });
     const offer = {
@@ -136,7 +136,7 @@ export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'price'>, customerV
   const sent = o.offers.find((x) => x.status === 'GONDERILDI');
   const offer = customerView ? sent : sent ?? o.offers[0];
   const load = orderLoad({
-    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null })),
+    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
     items: o.items,
   });
   // amount: müşteriye giden (yönetici) tutar · salesAmount: satış tutarı (karar 4; hangisi görünür: sayfa yetkiye göre seçer,
