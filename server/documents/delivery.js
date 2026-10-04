@@ -15,6 +15,7 @@
 //   (app/(panel)/belgeler/[id]/pdf); tarayıcıya FGO anahtarı, hash ya da API parametresi gitmez.
 import { can } from '../auth/permissions.js';
 import { getEnv } from '../env.js';
+import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { fgoKey, fgoPrint, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
@@ -171,14 +172,15 @@ export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos
     'Cu stimă,',
     'GKH',
   ].join('\n');
-  const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111827;line-height:1.5">
-<p>Stimate client ${esc(firmName)},</p>
+  const subject = `${type} ${ref}${nos.length ? ` — ${many ? 'comenzile' : 'comanda'} ${nos.join(', ')}` : ''}`;
+  // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
+  const html = brandedHtml({ lang: 'ro', title: subject, body: `<p style="margin:0 0 12px">Stimate client ${esc(firmName)},</p>
 <p>Vă transmitem documentul <b>${esc(type)} ${esc(ref)}</b>.</p>
 <table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table>
 ${attached ? '<p>Documentul este atașat acestui e-mail (PDF).</p>' : ''}${!attached && link ? `<p><a href="${esc(link)}">Deschide documentul (PDF)</a></p>` : ''}
 ${portalUrl ? `<p>Îl găsiți oricând și în portalul TAKİP, la „Documente financiare”:<br><a href="${esc(portalUrl)}">${esc(portalUrl)}</a></p>` : ''}
-<p>Cu stimă,<br>GKH</p></body></html>`;
-  return { subject: `${type} ${ref}${nos.length ? ` — ${many ? 'comenzile' : 'comanda'} ${nos.join(', ')}` : ''}`, text, html };
+<p style="margin-bottom:0">Cu stimă,<br>GKH</p>` });
+  return { subject, text, html };
 }
 
 // ---------- işçi ----------
@@ -249,8 +251,8 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
         kind: doc.kind, series: doc.series, number: doc.number, issuedAt: doc.issuedAt, orderNos: orders.map((o) => o.orderNo), total: doc.total, currency: doc.currency,
         firmName: customer.name, attached: pdf.ok, portalUrl: appUrl ? `${appUrl}/belgeler` : null, link: pdf.ok ? null : pdf.link, timeZone,
       });
-      await transport.sendMail({
-        from, to, subject: mail.subject, text: mail.text, html: mail.html,
+      await sendBrandedMail(transport, {
+        from, to, subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro',
         ...(pdf.ok ? { attachments: [{ filename: `${doc.series}${doc.number}.pdf`, content: pdf.bytes, contentType: 'application/pdf' }] } : {}),
       });
       await db.$transaction(async (tx) => {

@@ -10,6 +10,7 @@ import { writeAudit, writeHistory } from '../orders/journal.js';
 import { resolveKey, storeGenerated } from '../files/store.js';
 import { depotFormPdf } from '../pdf/depot-form.js';
 import { renderWarehouseEmail } from '../mail/templates/warehouse.js';
+import { sendBrandedMail } from '../mail/send.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, localDay } from './dates.js';
 import { WAREHOUSE_EMAIL } from './transitions.js';
@@ -172,8 +173,8 @@ export async function dispatchWarehouseEmails(db, { transport, from, appUrl, now
         items: order.profileItems.map((i) => ({ code: i.code, name: i.nameRo, unit: unitLabel(i.unitCode, 'ro'), qty: i.qty })),
         link: `${appUrl}/depo/${token}`, validDays: DEPOT_LINK_DAYS, resend: !!row.payload?.resend,
       });
-      const info = await transport.sendMail({
-        from, to: settings.recipients.join(', '), subject: mail.subject, text: mail.text, html: mail.html,
+      const info = await sendBrandedMail(transport, {
+        from, to: settings.recipients.join(', '), subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro',
         attachments: [{ filename: file.name, content: pdf, contentType: 'application/pdf' }],
       });
       await db.$transaction(async (tx) => {

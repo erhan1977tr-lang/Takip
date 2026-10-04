@@ -167,6 +167,10 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(sent[0].to, 'adrian@partnertrans.ro, enis@gkh.ro');
   assert.match(sent[0].subject, new RegExp(`Comanda depozit ${orderNo}`));
   assert.equal(sent[0].attachments[0].content.subarray(0, 5).toString(), '%PDF-');
+  // Ortak GKH başlığı (karar 129): depo e-postası da logoyla gider (PDF önde, logo satır içi ek); Comanda Depozit PDF'i logoyu taşır
+  assert.deepEqual(sent[0].attachments.map((a) => a.cid ?? 'pdf'), ['pdf', 'gkh-logo@takip']);
+  assert.ok(sent[0].html.includes('<img src="cid:gkh-logo@takip"') && sent[0].html.indexOf('<img') < sent[0].html.indexOf('Bună ziua'));
+  assert.ok(sent[0].attachments[0].content.includes(sent[0].attachments[1].content), 'PDF içinde aynı resmî logo gömülü');
   const token = /\/depo\/([A-Za-z0-9_-]+)/.exec(sent[0].text)[1];
   const pdf = await db.orderFile.findFirst({ where: { orderId: id, source: 'WAREHOUSE_FORM' } });
   assert.equal(pdf.kind, 'INTERNAL');
@@ -361,6 +365,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
     ['conta@glass.test', `Proformă PRF552 — comanda ${orderNo}`, 'PRF552.pdf'],
     ['conta@glass.test', `Factură GKH684 — comanda ${orderNo}`, 'GKH684.pdf'],
   ]);
+  assert.ok(mails.every((m) => m.html.includes('cid:gkh-logo@takip') && m.attachments.at(-1).cid === 'gkh-logo@takip'), 'belge e-postaları ortak GKH başlığıyla');
   // Aynı olay için ikinci (genel bildirim) e-postası gitmez: PROFORMA / INVOICED olayı belge e-postasıyla karşılanır
   const before = mails.length;
   await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: { at: new Date(0).toISOString() } }, update: { value: { at: new Date(0).toISOString() } } });
@@ -372,6 +377,8 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   const generic = await db.notificationOutbox.findMany({ where: own });
   assert.deepEqual(generic.map((x) => [x.type, x.status, x.lastError]).sort(), [['ORDER_INVOICED', 'SKIPPED', 'belge e-postası gönderilir'], ['ORDER_PROFORMA', 'SKIPPED', 'belge e-postası gönderilir']]);
   assert.ok(!mails.slice(before).some((m) => /PRF552|GKH684/.test(`${m.subject} ${m.text}`)), 'belge için ikinci e-posta yok');
+  // Bu arada gönderilen sipariş bildirim e-postaları da (hangi olay olursa olsun) aynı ortak başlıkla gider
+  assert.ok(mails.slice(before).every((m) => m.html.includes('<img src="cid:gkh-logo@takip"') && m.attachments.length === 1 && m.attachments[0].cid === 'gkh-logo@takip' && m.text && !m.text.includes('cid:')));
   // Uygulama içi: profilde mevcut PROFORMA / INVOICED bildirimi yeter — "belge hazır" bildirimi ikinci kez yazılmaz
   for (let i = 0; i < 20 && (await dispatchInApp(db)).events > 0; i++) { /* kuyruk boşalana kadar */ }
   assert.equal(await db.notification.count({ where: { orderId: id, type: { in: Object.values(DOC_NOTICE) } } }), 0);

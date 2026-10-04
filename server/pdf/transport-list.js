@@ -1,8 +1,10 @@
 // "Nakliye listesi" PDF'i (ürün sahibinin örneğinin düzeni): başlık + yükleme günü; müşteri kodu başına ara toplam
 // satırı ve sandıklar (no, U × G × Y mm, ağırlık kg, not); sonda sandık adedi ve toplam ağırlık; sandığı girilmemiş
 // siparişler. Sandıkta başka firmanın camı varsa (misafir yük, karar 124) sandığın hemen altında ayrı satırda yazılır.
+// Her sayfanın başlığında, sağ üstte resmî GKH logosu (ortak başlık — server/pdf/brand.js; karar 129).
 // Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
 import { PdfDoc, fitText } from './pdf.js';
+import { brandImage, drawBrandLogo } from './brand.js';
 
 const M = 40;
 const ROW = 22;
@@ -22,6 +24,7 @@ const fmtKg = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, 
 export function transportListPdf({ day, list, text, company }) {
   const dayText = day.split('-').reverse().join('.');
   const doc = new PdfDoc({ title: `${text.title} ${day}`, author: company });
+  const logo = brandImage(doc);
   let page;
   let y = 0;
   const W = () => page.width - 2 * M;
@@ -40,7 +43,9 @@ export function transportListPdf({ day, list, text, company }) {
   const newPage = (first) => {
     page = doc.addPage();
     page.text(M, 46, text.title, { size: 17, bold: true, color: BLUE });
-    page.text(page.width - M - 200, 36, company, { size: 9, color: GREY, align: 'right', width: 200 });
+    // Logo sağ üstte (çizginin üstünde, oranı korunarak); firma adı logonun solunda
+    const lw = drawBrandLogo(page, logo, { x: page.width - M, y: 22, height: 48, align: 'right' });
+    page.text(page.width - M - lw - 10 - 200, 36, company, { size: 9, color: GREY, align: 'right', width: 200 });
     page.text(M, 64, `${text.day}: ${dayText}`, { size: 9.5, color: GREY });
     page.line(M, 76, page.width - M, 76, 1.2, 0.2);
     y = 80;

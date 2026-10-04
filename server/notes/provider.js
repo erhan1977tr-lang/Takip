@@ -7,13 +7,14 @@
 // Testler: TRANSLATE_FAKE=1 iken sahte sağlayıcı kullanılır (ağa hiç çıkmaz); birim / veritabanı testleri sağlayıcıyı
 // ya da fetchImpl'i kendisi verir. Testlerde gerçek Google'a istek gitmez.
 import { getEnv } from '../env.js';
+import { TRANSLATE_ERRORS } from './view.js';
+
+export { TRANSLATE_ERRORS };
 
 export const GOOGLE_TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2';
 export const TRANSLATE_TIMEOUT_MS = 6000;
 /** Çevirinin saklanan en büyük uzunluğu (not en çok 4000 karakter; çeviri uzayabilir) */
 export const TRANSLATION_MAX = 12000;
-/** Güvenli hata kodları (nota yazılan / ekranda metne çevrilen) */
-export const TRANSLATE_ERRORS = ['TIMEOUT', 'NETWORK', 'QUOTA', 'AUTH', 'BAD_REQUEST', 'SERVER', 'HTTP', 'BAD_RESPONSE', 'NO_KEY', 'INTERRUPTED', 'ERROR'];
 
 export class TranslateError extends Error {
   /** @param {string} code  @param {string} [detail]  yalnızca yönetici bağlantı denemesi için (anahtar ayıklanmış) */

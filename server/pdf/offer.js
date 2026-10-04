@@ -1,7 +1,7 @@
 // Teklif PDF'i (sipariş sayfası → "PDF İndir"): logo, başlık, sipariş no, firma, tarih; satırlar (sıra, açıklama, poz,
 // en, boy, adet, m², birim fiyat, tutar); toplam ve notlar (KDV hariç, EUR kur notu). Veri: offerExportData — Excel ile aynı.
 import { PdfDoc, fitText, wrapText } from './pdf.js';
-import { LOGO_JPEG_BASE64 } from './logo.js';
+import { BRAND, brandImage, drawBrandLogo } from './brand.js';
 
 const M = 40;
 const ROW = 18;
@@ -19,8 +19,8 @@ const num = (v) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).
  * @returns {Buffer}
  */
 export function offerPdf(data, text) {
-  const doc = new PdfDoc({ title: `${text.title} ${text.orderNo}`, author: 'GKH Trading Invest SRL' });
-  const logo = doc.image(Buffer.from(LOGO_JPEG_BASE64, 'base64'));
+  const doc = new PdfDoc({ title: `${text.title} ${text.orderNo}`, author: BRAND.company });
+  const logo = brandImage(doc); // resmî GKH logosu (ortak başlık — server/pdf/brand.js)
   let page;
   let y = 0;
   const cols = () => {
@@ -41,7 +41,7 @@ export function offerPdf(data, text) {
   const newPage = (first) => {
     page = doc.addPage();
     if (first) {
-      page.image(logo, M, 26, 60, 66);
+      drawBrandLogo(page, logo, { x: M, y: 26, height: 66 });
       page.text(M + 80, 46, `${text.title} ${text.orderNo}`, { size: 17, bold: true, color: BLUE });
       page.text(M + 80, 64, fitText(text.firm, 11, 430, true), { size: 11, bold: true });
       page.text(M + 80, 80, text.date, { size: 9, color: GREY });

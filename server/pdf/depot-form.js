@@ -2,7 +2,7 @@
 // DATA DE LIVRARE, FIRMA, TELEFON, NR MASINI; altında kategori kategori tüm ürünler (görsel, ad, adet). Siparişteki
 // ürünlerin adedi yazılır ve satır vurgulanır. Metin Romence (depo Romanya'da).
 import { PdfDoc, fitText, wrapText } from './pdf.js';
-import { LOGO_JPEG_BASE64 } from './logo.js';
+import { BRAND, brandImage, drawBrandLogo } from './brand.js';
 
 const M = 40; // kenar boşluğu
 const COL = { img: 64, qty: 90 };
@@ -26,8 +26,8 @@ const day = (d) => (d ? new Date(d).toISOString().slice(0, 10).split('-').revers
  * @returns {Buffer}
  */
 export function depotFormPdf(p) {
-  const doc = new PdfDoc({ title: `Comanda depozit ${p.orderNo}`, author: 'GKH Trading Invest SRL' });
-  const logo = doc.image(Buffer.from(LOGO_JPEG_BASE64, 'base64'));
+  const doc = new PdfDoc({ title: `Comanda depozit ${p.orderNo}`, author: BRAND.company });
+  const logo = brandImage(doc); // resmî GKH logosu (ortak başlık — server/pdf/brand.js)
   let page;
   let y = 0;
   const width = () => page.width - 2 * M;
@@ -36,7 +36,7 @@ export function depotFormPdf(p) {
   const header = (first) => {
     page = doc.addPage();
     if (first) {
-      page.image(logo, M, 24, 90, 100);
+      drawBrandLogo(page, logo, { x: M, y: 24, height: 100 });
       const lx = page.width - M - 230;
       const field = (label, value, yy) => {
         page.text(lx, yy, label, { size: 10, bold: true });

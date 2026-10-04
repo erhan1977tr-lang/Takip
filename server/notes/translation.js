@@ -5,35 +5,28 @@
 //   anahtar) not kaybolmaz; başarısızlık nota güvenli bir kodla yazılır (FAILED) ve kendiliğinden yeniden denenmez —
 //   yalnızca iç ekip "Yeniden dene" ile bir kez daha ister.
 //   Görünürlük: çeviri, notun görünürlüğünü AŞAMAZ. İç not hiç çevrilmez (Google'a da gitmez). Müşteriye yalnızca
-//   kendi tarafının (Romence) tamamlanmış çevirisi gider; hata kodu / bekleme durumu müşteriye gitmez (noteView).
+//   kendi tarafının (Romence) tamamlanmış çevirisi gider; hata kodu / bekleme durumu müşteriye gitmez. Denetimci notları
+//   yalnızca özgün dilinde görür: çeviri, durum ve "yeniden dene" ona gitmez (karar 128; kural: server/notes/view.js).
 //   Anahtar: yalnızca Entegrasyonlar ekranından girilir, şifreli saklanır (server/crypto/secret.js), hiçbir yanıta,
 //   günlüğe ya da denetim kaydına yazılmaz; ekranda yalnızca "kayıtlı" olduğu görünür.
 import { can } from '../auth/permissions.js';
+import { STALE_PENDING_MS, canRetryTranslation, translationTarget } from './view.js';
 import { orderScope } from '../orders/scope.js';
 import { writeAudit } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { openSecret, sealSecret } from '../crypto/secret.js';
 import { TranslateError, translatorFor } from './provider.js';
 
+// Saf kurallar (yön, görünürlük, durum) server/notes/view.js'tedir: sipariş sayfası yalnızca onu yükler — sağlayıcıya
+// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki üç işlevden çağrılır: addNote (yeni not), retryNoteTranslation
+// (iç ekibin açık isteği), testTranslation (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
+export { STALE_PENDING_MS, canRetryTranslation, noteView, notesFor, translationState, translationTarget } from './view.js';
+
 export const TRANSLATE_KEY = 'translate';
 const SECRET_PURPOSE = 'translate-key';
 export const NOTE_MAX = 4000;
-/** Bu süreden eski "sürüyor" kaydı yarıda kalmış sayılır (sunucu çeviri sırasında kapandı): iç ekip yeniden deneyebilir */
-export const STALE_PENDING_MS = 2 * 60_000;
 /** Bağlantı denemesinde çevrilen zararsız metin */
 export const TEST_PHRASE = 'Bună ziua';
-
-// ---------- yön ----------
-/**
- * Notun çevrileceği dil — yazanın rolünden. Not yazamayan / tanımsız rol: null (çeviri yok).
- * @param {string | null | undefined} role
- * @returns {'tr' | 'ro' | null}
- */
-export function translationTarget(role) {
-  if (role === 'MUSTERI') return 'tr';
-  if (role === 'ADMIN' || role === 'SATIS' || role === 'CIZIM') return 'ro';
-  return null;
-}
 
 // ---------- ayar ----------
 async function readSettings(db) {
@@ -160,23 +153,6 @@ export async function addNote(db, { orderId, actor, text, internal = false, now 
   return { ok: true, noteId: note.id, translation: status };
 }
 
-/** İç ekip (not yazan ve iç notları gören rol) çevrilemeyen notun çevirisini yeniden isteyebilir */
-export const canRetryTranslation = (role) => can(role, 'NOTE_ADD') && can(role, 'NOTE_INTERNAL_VIEW');
-
-/**
- * Notun çeviri durumu (iç ekip ekranı): done · same · pending · failed (yarıda kalan "sürüyor" da failed sayılır) · null
- * @param {{ internal?: boolean, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | string | null }} n
- * @returns {{ state: 'done' | 'same' | 'pending' | 'failed', code: string | null } | null}
- */
-export function translationState(n, now = new Date()) {
-  if (!n || n.internal || !n.translationStatus) return null;
-  if (n.translationStatus === 'DONE') return { state: 'done', code: null };
-  if (n.translationStatus === 'SAME') return { state: 'same', code: null };
-  if (n.translationStatus === 'FAILED') return { state: 'failed', code: n.translationError ?? 'ERROR' };
-  const at = n.translationAt ? new Date(n.translationAt).getTime() : 0;
-  return now.getTime() - at > STALE_PENDING_MS ? { state: 'failed', code: 'INTERRUPTED' } : { state: 'pending', code: null };
-}
-
 /**
  * Çevrilemeyen (ya da yarıda kalan) notun çevirisini BİR KEZ daha ister — yalnızca iç ekip, açıkça istediğinde.
  * Aynı anda iki istek gelirse yalnızca biri çeviri yapar (atomik sahiplenme). Tamamlanmış çeviri yeniden yapılmaz.
@@ -241,35 +217,4 @@ export async function testTranslation(db, { actor, translator = undefined, secre
  */
 export function failedTranslations(db, { now = new Date(), days = 7 } = {}) {
   return db.orderNote.count({ where: { translationStatus: 'FAILED', translationAt: { gte: new Date(now.getTime() - days * 86_400_000) } } });
-}
-
-// ---------- görünürlük ----------
-const NO_TRANSLATION = { translation: null, translationLang: null, translationStatus: null, translationError: null, translationAt: null };
-
-/**
- * Notu görenin rolüne göre çeviri alanları — çeviri notun görünürlüğünü aşamaz:
- *   iç not            : çeviri alanı hiç dönmez (iç not çevrilmez; yanlışlıkla yazılmış olsa da gitmez)
- *   iç ekip           : çeviri + durum + güvenli hata kodu
- *   müşteri           : yalnızca Romence'ye tamamlanmış çeviri; hata kodu, bekleme durumu ve kendi notunun Türkçesi gitmez
- * @template {{ internal: boolean, translation?: string | null, translationLang?: string | null, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | null }} N
- * @param {string | null | undefined} role
- * @param {N} n
- * @returns {N}
- */
-export function noteView(role, n) {
-  if (n.internal) return { ...n, ...NO_TRANSLATION };
-  if (can(role, 'NOTE_INTERNAL_VIEW')) return n.translationStatus === 'DONE' ? n : { ...n, translation: null };
-  return n.translationStatus === 'DONE' && n.translationLang === 'ro' && n.translation ? { ...n, translationError: null } : { ...n, ...NO_TRANSLATION };
-}
-
-/**
- * Siparişin notları, görenin rolüne göre: iç notlar yalnızca iç notları görebilen role; çeviri alanları noteView ile.
- * @template {{ internal: boolean }} N
- * @param {string | null | undefined} role
- * @param {N[]} notes
- * @returns {N[]}
- */
-export function notesFor(role, notes) {
-  const all = can(role, 'NOTE_INTERNAL_VIEW');
-  return notes.filter((n) => all || !n.internal).map((n) => noteView(role, n));
 }

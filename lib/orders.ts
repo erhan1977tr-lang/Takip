@@ -6,7 +6,7 @@ import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
 import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
-import { notesFor } from '../server/notes/translation.js';
+import { notesFor } from '../server/notes/view.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -121,6 +121,7 @@ const ZERO = new Prisma.Decimal(0);
  *  - yönetici fiyatı (satış, çizim)            - liste fiyatları (teklif hazırlamayan herkes)
  *  - taslak çizim sürümleri ve çizim iç notları (müşteri)
  *  - not çevirisinin hata kodu / bekleme durumu ve müşterinin kendi notunun Türkçesi (müşteri)
+ *  - not çevirisinin tamamı: çeviri, durum, hata kodu (denetimci — notu yalnızca özgün dilinde görür)
  */
 export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetail {
   let offers = order.offers;
@@ -145,7 +146,8 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
     outbox: userCan(user, 'OFFER_SEND') ? order.outbox : [],
     drawings,
     customer: sanitizeCustomer(user, order.customer),
-    // İç notlar ve çeviri alanları tek kuraldan (server/notes/translation.js): çeviri notun görünürlüğünü aşamaz
+    // İç notlar ve çeviri alanları tek kuraldan (server/notes/view.js — sağlayıcıyı yüklemez): çeviri notun görünürlüğünü
+    // aşamaz; denetimci çeviri alanı almaz. Bu okuma yolu hiçbir koşulda çeviri isteği yapmaz.
     notes: notesFor(user.appRole, order.notes),
     files: userCan(user, 'FILE_INTERNAL_VIEW') ? order.files : order.files.filter((f) => f.kind === 'CUSTOMER'),
     offers,

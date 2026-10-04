@@ -1,6 +1,8 @@
 // Davet / doğrulama kodu e-postası — TR, RO, EN.
 // Hem HTML hem düz metin sürüm üretir (düz metin, spam filtreleri ve eski istemciler için önemli).
 
+import { brandedHtml } from '../layout.js';
+
 const STRINGS = {
   tr: {
     subject: 'Takip hesabınız oluşturuldu — doğrulama kodunuz',
@@ -91,39 +93,26 @@ export function renderInviteEmail({ code, name, firmName, language = 'tr', ttlHo
     t.footer,
   ].join('\n');
 
-  const html = `<!DOCTYPE html>
-<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:24px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
-        <tr><td style="padding:28px 28px 8px;">
-          <div style="font-size:22px;font-weight:bold;letter-spacing:0.5px;">TAKİP</div>
-          <div style="font-size:12px;color:#64748b;margin-top:2px;">Sipariş, çizim onayı ve üretim takibi</div>
-        </td></tr>
-        <tr><td style="padding:16px 28px 0;font-size:15px;line-height:1.55;">
-          <p style="margin:0 0 12px;">${esc(t.hello(name))}</p>
-          <p style="margin:0 0 12px;">${esc(t.intro(firmName))}</p>
-          <p style="margin:0 0 20px;">${esc(t.steps)}</p>
-        </td></tr>
-        <tr><td style="padding:0 28px;">
-          <div style="background:#f1f5f9;border-radius:10px;padding:18px;text-align:center;">
-            <div style="font-size:12px;color:#64748b;margin-bottom:6px;">${esc(t.codeLabel)}</div>
-            <div style="font-size:32px;font-weight:bold;letter-spacing:6px;font-family:'Courier New',monospace;color:#1e3a8a;">${esc(spaced)}</div>
-          </div>
-          <p style="margin:12px 0 0;font-size:13px;color:#64748b;text-align:center;">${esc(t.validity(ttlHours))}</p>
-        </td></tr>
-        ${loginUrl ? `<tr><td align="center" style="padding:22px 28px 4px;">
-          <a href="${esc(loginUrl)}" style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:8px;">${esc(t.button)}</a>
-        </td></tr>` : ''}
-        <tr><td style="padding:22px 28px 26px;font-size:12px;line-height:1.5;color:#94a3b8;">
-          <p style="margin:0 0 8px;">${esc(t.ignore)}</p>
-          <p style="margin:0;">${esc(t.footer)}</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
+  // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
+  const html = brandedHtml({ lang, title: t.subject, body: `<div style="font-size:20px;font-weight:bold;letter-spacing:0.5px;color:#1e293b;">TAKİP</div>
+<div style="font-size:12px;color:#64748b;margin:2px 0 16px;">Sipariş, çizim onayı ve üretim takibi</div>
+<div style="font-size:15px;line-height:1.55;color:#1e293b;">
+  <p style="margin:0 0 12px;">${esc(t.hello(name))}</p>
+  <p style="margin:0 0 12px;">${esc(t.intro(firmName))}</p>
+  <p style="margin:0 0 20px;">${esc(t.steps)}</p>
+</div>
+<div style="background:#f1f5f9;border-radius:10px;padding:18px;text-align:center;">
+  <div style="font-size:12px;color:#64748b;margin-bottom:6px;">${esc(t.codeLabel)}</div>
+  <div style="font-size:32px;font-weight:bold;letter-spacing:6px;font-family:'Courier New',monospace;color:#1e3a8a;">${esc(spaced)}</div>
+</div>
+<p style="margin:12px 0 0;font-size:13px;color:#64748b;text-align:center;">${esc(t.validity(ttlHours))}</p>
+${loginUrl ? `<p style="margin:22px 0 4px;text-align:center;">
+  <a href="${esc(loginUrl)}" style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:8px;">${esc(t.button)}</a>
+</p>` : ''}
+<div style="margin-top:22px;font-size:12px;line-height:1.5;color:#94a3b8;">
+  <p style="margin:0 0 8px;">${esc(t.ignore)}</p>
+  <p style="margin:0;">${esc(t.footer)}</p>
+</div>` });
 
   return { subject: t.subject, text, html };
 }

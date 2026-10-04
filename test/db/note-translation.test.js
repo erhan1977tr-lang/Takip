@@ -69,7 +69,7 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('müşterinin Romence notu → Türkçe çeviri bir kez yapılır ve saklanır; özgün metin değişmez; iç ekip özgün + Türkçe görür', offline(async () => {
+dbTest('müşterinin Romence notu → Türkçe çeviri bir kez yapılır ve saklanır; özgün metin değişmez; yönetici / satış / çizim özgün + Türkçe, denetimci yalnızca özgün notu görür', offline(async () => {
   await enable();
   const text = 'Vă rog să modificați dimensiunea la 1200 mm.\n  A doua linie — „ghilimele” & <b>semn</b> 100%';
   const p = provider(async () => ({ text: 'Lütfen ölçüyü 1200 mm olarak değiştirin.' }));
@@ -82,11 +82,16 @@ dbTest('müşterinin Romence notu → Türkçe çeviri bir kez yapılır ve sakl
   assert.deepEqual([row.text, row.internal, row.userId, row.orderId], [text, false, U.custA.id, OA.id], 'özgün metin aynen saklandı');
   assert.deepEqual(fields(row), ['Lütfen ölçüyü 1200 mm olarak değiştirin.', 'tr', 'DONE', null]);
   assert.ok(row.translationAt instanceof Date);
-  // Yönetici, satış, çizim (ve denetimci): özgün + Türkçe çeviri
-  for (const u of [U.admin, U.sales, U.drawer, U.inspector]) {
+  // Yönetici, satış, çizim: özgün + Türkçe çeviri
+  for (const u of [U.admin, U.sales, U.drawer]) {
     const n = await seenNote(u, OA, r.noteId);
     assert.deepEqual([n.text, n.translation, n.translationLang, n.translationStatus], [text, 'Lütfen ölçüyü 1200 mm olarak değiştirin.', 'tr', 'DONE'], u.name);
   }
+  // Denetimci (karar 128): notu görür (erişimi değişmedi) ama yalnızca ÖZGÜN Romence metni — saklanan çeviri ona gitmez
+  const insp = await seenNote(U.inspector, OA, r.noteId);
+  assert.deepEqual([insp.text, ...fields(insp), insp.translationAt], [text, null, null, null, null, null]);
+  assert.ok(!JSON.stringify(await seen(U.inspector, OA)).includes('Lütfen ölçüyü'), 'Türkçe çeviri denetimcinin verisinde yok');
+  assert.equal(tr.translationState(insp), null);
   // Müşteri kendi notunu özgün hâliyle görür (kendi notunun Türkçesi ona gönderilmez)
   const own = await seenNote(U.custA, OA, r.noteId);
   assert.deepEqual([own.text, ...fields(own)], [text, null, null, null, null]);
@@ -113,6 +118,9 @@ dbTest('yönetici / satış / çizim Türkçe notu → Romence çeviri saklanır
     assert.deepEqual([c.text, c.translation, c.translationLang, c.translationStatus, c.translationError], [text, row.translation, 'ro', 'DONE', null], u.name);
     // İç ekip de müşteriye ne gittiğini görür
     assert.equal((await seenNote(U.sales, OA, r.noteId)).translation, row.translation);
+    // Denetimci: yalnızca özgün Türkçe not (Romence çeviri gitmez)
+    const insp = await seenNote(U.inspector, OA, r.noteId);
+    assert.deepEqual([insp.text, ...fields(insp), insp.translationAt], [text, null, null, null, null, null], u.name);
     // Başka firmanın müşterisi: sipariş kapsamında değil → not da çeviri de yok
     assert.equal(await seen(U.custB, OA), null);
   }
@@ -164,6 +172,9 @@ dbTest('çeviri başarısız olursa not YİNE kaydedilir: güvenli kod saklanır
     assert.deepEqual([s.text, s.translationStatus, s.translationError, tr.translationState(s).state], [text, 'FAILED', code, 'failed'], code);
     const c = await seenNote(U.custA, OA, r.noteId);
     assert.deepEqual([c.text, ...fields(c), c.translationAt], [text, null, null, null, null, null], code);
+    // Denetimci: özgün notu görür; çeviri hatası / durumu ona gitmez (ekranda "yeniden dene" çizilecek veri yok)
+    const insp = await seenNote(U.inspector, OA, r.noteId);
+    assert.deepEqual([insp.text, ...fields(insp), insp.translationAt, tr.translationState(insp)], [text, null, null, null, null, null, null], code);
     // Okuma yeniden denemez
     for (let i = 0; i < 3; i++) await seen(U.custA, OA);
     assert.equal(p.calls.length, 1, code);
@@ -387,4 +398,79 @@ dbTest('çeviri özgün metinle aynıysa (not zaten hedef dilde): "aynı" olarak
   const failed = await db.orderNote.count({ where: { translationStatus: 'FAILED' } });
   assert.equal(await tr.failedTranslations(db), failed);
   assert.equal(await tr.failedTranslations(db, { now: new Date(Date.now() + 8 * 86_400_000) }), 0);
+}));
+
+dbTest('sayfa açılışı / yenileme / otomatik yenileme hiçbir durumda çeviri isteği yapmaz: DONE, SAME, FAILED, yarıda kalmış ve çevirisiz (eski) notlar okunurken aynen kalır', offline(async () => {
+  await enable();
+  // Ayrı bir siparişte her durumdan bir not
+  const O = await db.order.create({ data: { orderNo: 'ALF9', customerOrderNo: 9, title: 'Yenileme', orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI' } });
+  const p = provider(async ({ text, target }) => {
+    if (text.includes('HATA')) throw new TranslateError('QUOTA');
+    if (text.includes('AYNI')) return { text };
+    return { text: `[${target}] ${text}` };
+  });
+  const done = await add(U.custA, O, 'Notă tradusă', { p });
+  const doneRo = await add(U.sales, O, 'Çevrilmiş not', { p });
+  const same = await add(U.custA, O, 'AYNI tamam', { p });
+  const failed = await add(U.custA, O, 'HATA notă', { p });
+  const failedRo = await add(U.admin, O, 'HATA not', { p });
+  assert.deepEqual([done, doneRo, same, failed, failedRo].map((r) => r.translation), ['DONE', 'DONE', 'SAME', 'FAILED', 'FAILED']);
+  const stale = await db.orderNote.create({ data: { orderId: O.id, userId: U.custA.id, text: 'Yarıda kalmış', translationLang: 'tr', translationStatus: 'PENDING', translationAt: new Date(Date.now() - 10 * 60_000) } });
+  const historical = await db.orderNote.create({ data: { orderId: O.id, userId: U.custA.id, text: 'Notă veche, fără traducere', createdAt: new Date('2026-09-01T08:00:00Z') } });
+  const historicalStaff = await db.orderNote.create({ data: { orderId: O.id, userId: U.sales.id, text: 'Eski, çevirisiz ekip notu', createdAt: new Date('2026-09-01T09:00:00Z') } });
+  const internal = await add(U.sales, O, 'İç not: çevrilmez', { internal: true, p });
+  const calls = p.calls.length;
+  assert.equal(calls, 5, 'yalnızca not yazılırken, çevrilebilir not başına bir kez');
+  const snapshot = async () => JSON.stringify(await db.orderNote.findMany({ where: { orderId: O.id }, orderBy: { id: 'asc' } }));
+  const before = await snapshot();
+
+  // Sipariş sayfasının okuma yolu (kapsam + notesFor + ekran durumu), her rol için 10 kez — tarayıcı yenilemesi,
+  // 60 saniyelik otomatik yenileme ve sunucu bileşeninin yeniden çizimi tam olarak bunu çalıştırır
+  for (let i = 0; i < 10; i++) {
+    for (const u of [U.admin, U.sales, U.drawer, U.inspector, U.custA]) {
+      for (const n of await seen(u, O)) tr.translationState(n, new Date(Date.now() + i * 60_000));
+    }
+    // Entegrasyonlar ekranının okudukları da çeviri yapmaz
+    await tr.getTranslateSettings(db);
+    await tr.failedTranslations(db);
+  }
+  assert.equal(p.calls.length, calls, 'okuma sağlayıcıyı çağırmadı');
+  assert.equal(await snapshot(), before, 'hiçbir not değişmedi: FAILED yeniden denenmedi, SAME / DONE yeniden çevrilmedi, eski notlar çevrilmedi');
+
+  // Durum durum: eski notlar çevirisiz; FAILED / yarıda kalan olduğu gibi; DONE / SAME sabit
+  const row = async (id) => fields(await rowOf(id));
+  assert.deepEqual(await row(historical.id), [null, null, null, null]);
+  assert.deepEqual(await row(historicalStaff.id), [null, null, null, null]);
+  assert.deepEqual(await row(failed.noteId), [null, 'tr', 'FAILED', 'QUOTA']);
+  assert.deepEqual(await row(failedRo.noteId), [null, 'ro', 'FAILED', 'QUOTA']);
+  assert.deepEqual(await row(stale.id), [null, 'tr', 'PENDING', null]);
+  assert.deepEqual(await row(same.noteId), [null, 'tr', 'SAME', null]);
+  assert.deepEqual(await row(done.noteId), ['[tr] Notă tradusă', 'tr', 'DONE', null]);
+  assert.deepEqual(await row(internal.noteId), [null, null, null, null]);
+
+  // Görünürlük, aynı notlar üzerinde: denetimci hepsini (iç not dahil) yalnızca özgün metinle görür
+  const insp = await seen(U.inspector, O);
+  assert.equal(insp.length, 9);
+  assert.ok(insp.every((n) => fields(n).every((x) => x === null) && n.translationAt === null && tr.translationState(n) === null));
+  assert.deepEqual(insp.map((n) => n.text).sort(), ['AYNI tamam', 'Eski, çevirisiz ekip notu', 'HATA not', 'HATA notă', 'Notă tradusă', 'Notă veche, fără traducere', 'Yarıda kalmış', 'Çevrilmiş not', 'İç not: çevrilmez'].sort());
+  for (const leak of ['[tr] ', '[ro] ', 'QUOTA', 'FAILED', 'PENDING']) assert.ok(!JSON.stringify(insp).includes(leak), `denetimci: ${leak}`);
+  // Müşteri: iç not yok; yalnızca ekibin çevrilmiş notunun Romencesi; hata / bekleme bilgisi yok
+  const cust = await seen(U.custA, O);
+  assert.equal(cust.length, 8);
+  assert.deepEqual(cust.filter((n) => n.translation).map((n) => [n.text, n.translation]), [['Çevrilmiş not', '[ro] Çevrilmiş not']]);
+  for (const leak of ['İç not', 'QUOTA', 'FAILED', 'PENDING', '[tr] ']) assert.ok(!JSON.stringify(cust).includes(leak), `müşteri: ${leak}`);
+  // Yönetici: çeviriler + çevrilemeyen iki not + yarıda kalan (yeniden denenebilir olarak işaretli)
+  const adm = await seen(U.admin, O);
+  assert.deepEqual(adm.filter((n) => tr.translationState(n)?.state === 'failed').map((n) => n.text).sort(), ['HATA not', 'HATA notă', 'Yarıda kalmış'].sort());
+
+  // DONE ve SAME açık istekle de yeniden çevrilemez; denetimci ve müşteri hiçbir notta yeniden deneyemez
+  for (const id of [done.noteId, doneRo.noteId, same.noteId, historical.id, internal.noteId]) assert.deepEqual(await retry(U.admin, id, O, p), { ok: false, code: 'NOT_ALLOWED' });
+  for (const u of [U.inspector, U.custA]) for (const id of [failed.noteId, failedRo.noteId, stale.id]) assert.deepEqual(await retry(u, id, O, p), { ok: false, code: 'FORBIDDEN' });
+  assert.equal(p.calls.length, calls);
+  assert.equal(await snapshot(), before);
+  // FAILED yalnızca yetkili iç ekibin AÇIK isteğiyle yeniden denenir (bir kez)
+  const ok = provider();
+  assert.deepEqual(await retry(U.drawer, failed.noteId, O, ok), { ok: true, translation: 'DONE' });
+  assert.deepEqual([ok.calls.length, await row(failed.noteId)], [1, ['[tr] HATA notă', 'tr', 'DONE', null]]);
+  assert.deepEqual(await row(failedRo.noteId), [null, 'ro', 'FAILED', 'QUOTA'], 'öbür çevrilemeyen not kendiliğinden denenmedi');
 }));

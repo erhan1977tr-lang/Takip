@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.49.1 — 04.10.2026
+
+- **Not çevirisi — denetimci**: denetimci notları yalnızca **özgün dilinde** görür. Saklanan otomatik çeviri, "çeviri
+  yapılamadı" bilgisi ve "Çeviriyi yeniden dene" düğmesi denetimciye gösterilmez. Notları (iç notlar dahil) görme
+  yetkisi değişmedi. Yönetici, satış ve çizim ekibi ile müşteri için görünüm aynı.
+- **Not çevirisi — yenileme çeviri yapmaz**: sayfa açılışı, tarayıcı yenilemesi, 60 saniyelik otomatik yenileme ve
+  arka plan işçisi hiçbir koşulda Google'a çeviri isteği göndermez. Çeviri yalnızca yeni not yazılırken bir kez ve
+  çevrilemeyen bir notta "Çeviriyi yeniden dene"ye basıldığında istenir. Tamamlanmış çeviriler yeniden çevrilmez;
+  çevrilemeyen notlar kendiliğinden yeniden denenmez; eski (çevirisiz) notlar görüntülenince çevrilmez.
+- **Resmî GKH logosu — PDF'ler**: TAKİP'in ürettiği belgelerin başlığında resmî GKH Trading Invest logosu yer alır:
+  müşteri teklifi (PDF), Comanda Depozit formu ve nakliye listesi. Logo belgeye gömülüdür ve oranı korunur.
+  (FGO'nun ürettiği proforma / fatura PDF'leri değişmedi.)
+- **Resmî GKH logosu — e-postalar**: TAKİP'in gönderdiği bütün e-postalar (sipariş bildirimleri, çizim / onay / revizyon,
+  teklif ve yükleme bildirimleri, proforma / fatura e-postaları, depo e-postası, davet ve doğrulama kodu) aynı ortak
+  düzenle, en üstte GKH logosuyla gider. Logo e-postanın içine gömülüdür (dış adresten yüklenmez). Alıcılar, konu,
+  içerik, ekler ve düz metin sürümü değişmedi.
+- Hesaplar, fiyatlar, FGO ve bildirim kuralları değişmedi; şema değişmedi.
+
 ## 3.49.0 — 04.10.2026
 
 - **Notlarda otomatik çeviri**: müşteri ile ekip, sipariş sayfasındaki Notlar bölümünde çeviri yapmadan yazışır.

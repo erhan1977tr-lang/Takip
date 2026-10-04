@@ -1,6 +1,8 @@
 // Depoya giden profil siparişi e-postası (Romence; depo Romanya'da). Ekinde doldurulmuş Comanda Depozit formu (PDF).
 // Bağlantı: depo, müşteri malı alınca buradan imzalı teslim belgesini yükler ve teslimi onaylar.
 
+import { brandedHtml } from '../layout.js';
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
@@ -33,8 +35,8 @@ export function renderWarehouseEmail(p) {
     p.resend ? 'Acesta este un e-mail retrimis; linkul din e-mailul anterior nu mai este valabil.' : '',
     'Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).',
   ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
-  const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111827;line-height:1.5">
-<p>Bună ziua,</p>
+  // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
+  const html = brandedHtml({ lang: 'ro', title: subject, body: `<p style="margin:0 0 12px">Bună ziua,</p>
 <p>Vă transmitem comanda <b>${esc(p.orderNo)}</b> pentru <b>${esc(p.firmName)}</b>. Formularul completat (Comanda Depozit) este atașat în PDF.</p>
 <table cellpadding="4" style="border-collapse:collapse">
 <tr><td style="color:#6b7280">Data ridicării</td><td><b>${esc(day(p.pickupDate))}</b></td></tr>
@@ -47,7 +49,6 @@ ${p.items.map((i) => `<tr><td style="border:1px solid #e5e7eb;text-align:right">
 </table>
 <p style="margin-top:18px">După ce clientul ridică marfa, vă rugăm să confirmați predarea și să încărcați documentul semnat (PDF sau fotografie):</p>
 <p><a href="${esc(p.link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">Confirmă predarea mărfii</a></p>
-<p style="color:#6b7280;font-size:12px">Linkul este valabil ${p.validDays} zile.${p.resend ? ' Acesta este un e-mail retrimis; linkul din e-mailul anterior nu mai este valabil.' : ''}<br>Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).</p>
-</body></html>`;
+<p style="color:#6b7280;font-size:12px">Linkul este valabil ${p.validDays} zile.${p.resend ? ' Acesta este un e-mail retrimis; linkul din e-mailul anterior nu mai este valabil.' : ''}<br>Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).</p>` });
   return { subject, text, html };
 }

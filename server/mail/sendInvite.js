@@ -1,5 +1,6 @@
 // Davet e-postası gönderimi. Taşıyıcı (transport) dışarıdan verilir; testte sahte taşıyıcı kullanılabilir.
 import { renderInviteEmail } from './templates/invite.js';
+import { sendBrandedMail } from './send.js';
 
 /**
  * @param {object} transport  nodemailer taşıyıcısı ya da sendMail(msg) metodu olan herhangi bir nesne
@@ -18,6 +19,6 @@ export async function sendInviteEmail(transport, cfg, { to, code, name, firmName
     appUrl: cfg.appUrl,
     email: to,
   });
-  const info = await transport.sendMail({ from: cfg.from, to, subject, text, html });
+  const info = await sendBrandedMail(transport, { from: cfg.from, to, subject, text, html, lang: language });
   return { messageId: info && info.messageId };
 }

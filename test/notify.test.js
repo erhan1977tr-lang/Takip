@@ -115,6 +115,8 @@ test('revizyon e-postası gönderimi: ilgili satışçı sipariş kayıtlarında
   const r = await dispatchNotifications(db, { transport: { sendMail: async (m) => mails.push(m) }, from: 'x', appUrl: 'https://takip.test', now: new Date(t0.getTime() + 2000) });
   assert.equal(r.sent, 1);
   assert.deepEqual(mails.map((m) => m.to), ['ali@gkh.test', 'selin@gkh.test'], 'atanmış çizimci + ilgili satışçı; yönetici yok');
+  // Ortak GKH başlığı (karar 129): bildirim e-postası logoyla gider — alıcılar ve metin aynen
+  assert.ok(mails.every((m) => m.html.includes('<img src="cid:gkh-logo@takip"') && m.attachments.length === 1 && m.attachments[0].cid === 'gkh-logo@takip' && !('lang' in m)));
   assert.ok(mails.every((m) => m.text.includes('Revizyon notu: Delik yeri yanlış') && m.text.includes('GLA68')));
   assert.equal(asked[0].event, 'SENT_TO_DRAWING');
   assert.deepEqual(asked[0].user.appRole.in, ['SATIS'], 'yalnızca satış rolü aranır');

@@ -1,10 +1,9 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { db } from './db';
 import { authSecret, getEnv, inviteTtlHours } from './env';
 import { createInvite } from '../server/auth/inviteCode.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { sendInviteEmail } from '../server/mail/sendInvite.js';
+import { outboxTransport } from '../server/mail/outbox-transport.js';
 
 type Mailer = { sendMail: (m: Record<string, unknown>) => Promise<{ messageId?: string }> };
 type MailCfg = ReturnType<typeof readMailConfig>;
@@ -23,15 +22,7 @@ async function getMailer(): Promise<{ mailer: Mailer; cfg: MailCfg }> {
       appUrl: env.APP_URL || '',
       inviteTtlHours: inviteTtlHours(),
     };
-    const mailer: Mailer = {
-      async sendMail(m) {
-        await fs.mkdir(outbox, { recursive: true });
-        const file = path.join(outbox, `${Date.now()}-${String(m.to).replace(/[^a-z0-9@._-]/gi, '_')}.json`);
-        await fs.writeFile(file, JSON.stringify(m, null, 2));
-        return { messageId: `outbox:${path.basename(file)}` };
-      },
-    };
-    return { mailer, cfg };
+    return { mailer: outboxTransport(outbox) as Mailer, cfg };
   }
   const cfg = readMailConfig();
   const { createTransport } = await import('../server/mail/transport.js');

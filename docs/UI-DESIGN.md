@@ -246,6 +246,21 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   ("ÖZEL DURUM / MİSAFİR YÜK") followed by one `form.guest-in` per guest order: order · firm, a crate `<select>`
   (first option = waiting) and a plain `.btn` "Kaydet" for `CRATE_EDIT`; without crates a `.badge-danger` note.
 
+## GKH branding in PDFs and e-mails (3.49.1)
+
+Rule: all TAKİP-generated HTML e-mails and TAKİP-generated company PDF documents use the official GKH Trading Invest
+logo through the shared branding infrastructure (`server/branding`, decisions.md #129). The app screens keep the
+"GKH Digital" product logo (`components/BrandLogo.tsx`) — that is a different mark and is not affected.
+
+- Asset: `assets/brand/gkh-trading-invest-logo.jpg` (portrait, 220 × 254). Always scaled from its own ratio — give ONE
+  dimension and derive the other (`brandLogoSize`); never set both by hand.
+- PDF header (`server/pdf/brand.js`): logo at the top of the first page, inside the page margins, 48–100 pt high
+  depending on the document (offer 66, Comanda Depozit 100, transport list 48 at top-right on every page), with the
+  document title / fields beside it and clear space around it. No other mark in the header.
+- E-mail (`server/mail/layout.js`): light grey page, one white 600 px card (full width on phones), header row with the
+  logo at 72 px width (`height:auto`), a thin divider, then the template body (Arial 14 px). Templates supply body
+  HTML only and keep their own plain-text version. No remote images; the logo is an inline attachment.
+
 ## Note translation (3.49.0)
 
 - Notes keep the existing `.note` box. When a stored translation is shown: `.note-label` ("Özgün mesaj" / "Mesaj original")
@@ -255,6 +270,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   exactly as before (no labels).
 - Staff only: `.note-translation.note-state` (meta size) for "pending" and `.note-state.failed` (danger border / text)
   for a failed translation, with a `.btn.btn-link` "Çeviriyi yeniden dene". Customers never see state or error.
+  Inspector (3.49.1) sees notes in their original language only: no labels, no translation block, no state, no retry.
 - Admin → Entegrasyonlar: `form.card#ceviri` — enable checkbox, one password input for the key (placeholder shows
   "kayıtlı", value never rendered), "Kaydet"; below the card a plain `.btn` "Bağlantıyı dene" with a `.muted.small`
   hint. `.alert-warn` inside the card when the fake provider (test mode) is active.

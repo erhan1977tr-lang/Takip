@@ -157,14 +157,14 @@ const note = (o = {}) => ({ id: 'n', text: 'özgün', internal: false, translati
 const AT = new Date('2026-10-04T10:00:00Z');
 const fields = (n) => [n.translation, n.translationLang, n.translationStatus, n.translationError, n.translationAt];
 
-test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çevirisi kimseye gitmez; müşteriye yalnızca tamamlanmış Romence çeviri', () => {
+test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çevirisi kimseye gitmez; müşteriye yalnızca tamamlanmış Romence çeviri; denetimci yalnızca özgün notu görür', () => {
   const done = (lang, o = {}) => note({ translation: `[${lang}] çeviri`, translationLang: lang, translationStatus: 'DONE', translationAt: AT, ...o });
   const failed = note({ translationLang: 'ro', translationStatus: 'FAILED', translationError: 'QUOTA', translationAt: AT });
   const pending = note({ translationLang: 'ro', translationStatus: 'PENDING', translationAt: AT });
   const same = note({ translationLang: 'ro', translationStatus: 'SAME', translationAt: AT });
-  const STAFF = ['ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI'];
+  const STAFF = ['ADMIN', 'SATIS', 'CIZIM'];
 
-  // İç ekip: çeviri + durum + güvenli hata kodu
+  // Yönetici, satış, çizim: çeviri + durum + güvenli hata kodu
   for (const role of STAFF) {
     assert.deepEqual(fields(noteView(role, done('tr'))), ['[tr] çeviri', 'tr', 'DONE', null, AT], role);
     assert.deepEqual(fields(noteView(role, done('ro'))), ['[ro] çeviri', 'ro', 'DONE', null, AT], role);
@@ -176,19 +176,31 @@ test('görünürlük: çeviri notun görünürlüğünü aşamaz — iç not çe
   for (const n of [done('tr'), failed, pending, same, done('ro', { translation: null }), done('ro', { translation: '' })]) {
     assert.deepEqual(fields(noteView('MUSTERI', n)), [null, null, null, null, null]);
   }
-  // Rolü olmayan / tanımsız rol müşteri gibi (en dar görünüm)
-  assert.deepEqual(fields(noteView(null, failed)), [null, null, null, null, null]);
+  // Denetimci (karar 128): notu görür ama YALNIZCA özgün dilinde — saklanan çeviri, çeviri durumu / hatası hiç gitmez
+  for (const n of [done('tr'), done('ro'), failed, pending, same]) {
+    const v = noteView('DENETIMCI', n);
+    assert.deepEqual(fields(v), [null, null, null, null, null]);
+    assert.deepEqual([v.id, v.text, v.internal], ['n', 'özgün', false], 'özgün not aynen');
+    assert.equal(translationState(v, AT), null, 'ekranda çeviri durumu / "yeniden dene" çizilecek bir şey yok');
+  }
+  // Rolü olmayan / tanımsız rol: en dar görünüm (çeviri alanı yok)
+  for (const role of [null, undefined, '', 'BILINMEYEN']) for (const n of [done('ro'), done('tr'), failed]) assert.deepEqual(fields(noteView(role, n)), [null, null, null, null, null]);
   // Özgün metin ve öbür alanlar hiçbir görünümde değişmez
-  for (const role of [...STAFF, 'MUSTERI']) assert.deepEqual([noteView(role, done('ro')).text, noteView(role, done('ro')).id], ['özgün', 'n']);
+  for (const role of [...STAFF, 'MUSTERI', 'DENETIMCI']) assert.deepEqual([noteView(role, done('ro')).text, noteView(role, done('ro')).id], ['özgün', 'n']);
 
   // İç not: yanlışlıkla çeviri alanı yazılmış olsa bile hiçbir role çeviri dönmez; müşteriye not da dönmez
   const leaky = done('ro', { id: 'ic', internal: true, text: 'iç: fiyat gizli' });
-  for (const role of [...STAFF, 'MUSTERI']) assert.deepEqual(fields(noteView(role, leaky)), [null, null, null, null, null], role);
+  for (const role of [...STAFF, 'MUSTERI', 'DENETIMCI']) assert.deepEqual(fields(noteView(role, leaky)), [null, null, null, null, null], role);
   const all = [done('tr', { id: 'm' }), done('ro', { id: 's' }), leaky, failed];
   assert.deepEqual(notesFor('MUSTERI', all).map((n) => [n.id, n.translation]), [['m', null], ['s', '[ro] çeviri'], ['n', null]]);
   assert.ok(!JSON.stringify(notesFor('MUSTERI', all)).includes('fiyat gizli'));
   assert.ok(!JSON.stringify(notesFor('MUSTERI', all)).includes('QUOTA'));
   assert.deepEqual(notesFor('SATIS', all).map((n) => [n.id, n.internal, n.translation]), [['m', false, '[tr] çeviri'], ['s', false, '[ro] çeviri'], ['ic', true, null], ['n', false, null]]);
+  // Denetimcinin nota erişimi DEĞİŞMEDİ (iç notlar dahil hepsini görür); yalnızca çeviri alanları gelmez
+  const forInspector = notesFor('DENETIMCI', all);
+  assert.deepEqual(forInspector.map((n) => [n.id, n.internal, n.text]), [['m', false, 'özgün'], ['s', false, 'özgün'], ['ic', true, 'iç: fiyat gizli'], ['n', false, 'özgün']]);
+  assert.ok(forInspector.every((n) => fields(n).every((x) => x === null)));
+  for (const leak of ['çeviri', 'QUOTA', 'FAILED', 'DONE']) assert.ok(!JSON.stringify(forInspector.map(fields)).includes(leak), leak);
   // Girdi nesneleri değiştirilmez
   assert.equal(leaky.translation, '[ro] çeviri');
 });
@@ -219,4 +231,70 @@ test('etiketler: çevirinin dilinde ve sabit; her hata kodunun iki dilde metni v
     }
   }
   assert.equal(translate('tr', 'admin.integrations.translate.title'), 'Not çevirisi');
+});
+
+// ---------- Sayfa açılışı / yenileme / otomatik yenileme / işçi çeviri isteği YAPAMAZ (karar 128) ----------
+// Davranış testleri (veritabanı + tarayıcı) sağlayıcının çağrılmadığını sayar; buradaki testler bunun YAPISAL nedenini
+// sabitler: sağlayıcıyı çağıran kod yalnızca üç işlevdedir ve bunları yalnızca iki sunucu işlemi (form gönderimi) çağırır.
+const { default: fsSync } = await import('node:fs');
+const { default: pathMod } = await import('node:path');
+const ROOT = pathMod.resolve(pathMod.dirname(new URL(import.meta.url).pathname), '..');
+function sources(dirs, exts = ['.js', '.mjs', '.ts', '.tsx']) {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of fsSync.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const full = pathMod.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (exts.some((x) => e.name.endsWith(x))) out.push(full);
+    }
+  };
+  for (const d of dirs) walk(pathMod.join(ROOT, d));
+  return out.map((f) => ({ file: pathMod.relative(ROOT, f).split(pathMod.sep).join('/'), text: fsSync.readFileSync(f, 'utf8') }));
+}
+const APP = sources(['app', 'lib', 'server', 'scripts', 'components']);
+const filesWith = (re) => APP.filter((s) => re.test(s.text)).map((s) => s.file).sort();
+
+test('sağlayıcıyı (Google) yükleyen tek kod çeviri servisidir; sipariş sayfası yalnızca saf kuralları yükler', () => {
+  // server/notes/provider.js'i içe aktaranlar: çeviri servisi ve Entegrasyonlar sayfası (yalnızca "test modu" uyarısı için)
+  assert.deepEqual(filesWith(/from\s+['"][^'"]*notes\/provider(\.js)?['"]|from\s+['"]\.\/provider\.js['"]/), ['app/(panel)/admin/entegrasyonlar/page.tsx', 'server/notes/translation.js']);
+  // Sağlayıcı işlevlerinin adı başka hiçbir dosyada geçmez
+  assert.deepEqual(filesWith(/\b(googleTranslate|fakeTranslate|translatorFor)\s*\(/), ['server/notes/provider.js', 'server/notes/translation.js']);
+  // Saf kurallar dosyası yalnızca yetki matrisini yükler: ağ, ortam, veritabanı, sağlayıcı yok
+  const view = APP.find((s) => s.file === 'server/notes/view.js').text;
+  assert.deepEqual([...view.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]), ['../auth/permissions.js']);
+  assert.ok(!/\bfetch\s*\(|provider|translation\.js|getEnv|process\.env/.test(view.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')));
+  // Sipariş sayfası ve sipariş yükleyici (her sayfa açılışında / otomatik yenilemede çalışan yol) yalnızca view.js'i yükler
+  for (const file of ['app/(panel)/siparisler/[id]/page.tsx', 'lib/orders.ts']) {
+    const text = APP.find((s) => s.file === file).text;
+    assert.match(text, /notes\/view\.js'/, file);
+    assert.ok(!/notes\/(translation|provider)(\.js)?'/.test(text), `${file}: çeviri servisi / sağlayıcı yüklenmez`);
+  }
+});
+
+test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: yeni not ve açık "yeniden dene" (+ yöneticinin bağlantı denemesi); işçi ve öbür sunucu kodu çağırmaz', () => {
+  // Sağlayıcı çeviri servisinde yalnızca üç yerde seçilir (addNote, retryNoteTranslation, testTranslation) ve yalnızca
+  // runTranslation / testTranslation içinde çağrılır
+  const svc = APP.find((s) => s.file === 'server/notes/translation.js').text;
+  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 3);
+  assert.equal((svc.match(/await translator\(|await \(translator \?\? translatorFor\(\)\)\(/g) ?? []).length, 2);
+  assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'runTranslation yalnızca addNote ve retryNoteTranslation içinden');
+  // Bu işlevleri çağıran dosyalar: yalnızca iki "use server" işlem dosyası (form gönderimiyle çalışır; GET / çizimle değil)
+  assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
+  assert.deepEqual(filesWith(/\btestTranslation\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/admin/entegrasyonlar/actions.ts']);
+  for (const file of ['app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/admin/entegrasyonlar/actions.ts']) {
+    assert.ok(APP.find((s) => s.file === file).text.startsWith("'use server'"), `${file}: sunucu işlemi`);
+  }
+  // Çeviri servisini içe aktaranlar: iki işlem dosyası + Entegrasyonlar sayfası (yalnızca ayar okur: getTranslateSettings, failedTranslations)
+  assert.deepEqual(filesWith(/notes\/translation(\.js)?['"]/), ['app/(panel)/admin/entegrasyonlar/actions.ts', 'app/(panel)/admin/entegrasyonlar/page.tsx', 'app/(panel)/siparisler/[id]/actions.ts']);
+  const settingsPage = APP.find((s) => s.file === 'app/(panel)/admin/entegrasyonlar/page.tsx').text;
+  assert.match(settingsPage, /import \{ failedTranslations, getTranslateSettings \} from '@\/server\/notes\/translation\.js';/);
+  // İşçi (scripts/worker.mjs) ve onun kullandığı sunucu kodu not çevirisini hiç yüklemez: işçi çeviri yapamaz, yeniden deneyemez
+  const worker = APP.find((s) => s.file === 'scripts/worker.mjs').text;
+  assert.ok(!/notes\//.test(worker));
+  assert.deepEqual(APP.filter((s) => s.file.startsWith('server/') && !s.file.startsWith('server/notes/') && /notes\/(translation|provider|view)/.test(s.text)).map((s) => s.file), []);
+  // Tek seferlik çeviri: sonucu yazan güncelleme yalnızca "sürüyor" (PENDING) kaydına uygulanır; yeniden deneme yalnızca
+  // FAILED ya da yarıda kalmış PENDING kaydını sahiplenir — DONE / SAME hiçbir yoldan yeniden çevrilemez
+  assert.match(svc, /updateMany\(\{ where: \{ id: note\.id, translationStatus: 'PENDING' \}/);
+  assert.match(svc, /OR: \[\{ translationStatus: 'FAILED' \}, \{ translationStatus: 'PENDING', translationAt: \{ lt: stale \} \}\]/);
 });

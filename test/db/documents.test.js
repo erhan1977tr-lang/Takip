@@ -142,7 +142,11 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   assert.deepEqual([mail.to, mail.subject, mail.from], ['umi@belge.test', 'Proformă PRF101 — comanda UMI7', 'info@gkh.ro']);
   for (const re of [/Tip document: Proformă/, /Număr document: PRF101/, /Data emiterii: \d{2}\.\d{2}\.\d{4}/, /Comanda: UMI7/, /Total: 605,00 RON \(cu TVA\)/, /https:\/\/takip\.test\/belgeler/]) assert.match(mail.text, re);
   assert.ok(!/fgo\.ro/.test(mail.text) && !/fgo\.ro/.test(mail.html), 'e-postada FGO adresi yok');
-  assert.deepEqual([mail.attachments.length, mail.attachments[0].filename, mail.attachments[0].contentType, Buffer.compare(mail.attachments[0].content, PDF)], [1, 'PRF101.pdf', 'application/pdf', 0]);
+  assert.deepEqual([mail.attachments.length, mail.attachments[0].filename, mail.attachments[0].contentType, Buffer.compare(mail.attachments[0].content, PDF)], [2, 'PRF101.pdf', 'application/pdf', 0]);
+  // Ortak GKH başlığı (karar 129): HTML'in başında gömülü logo; logo satır içi ek olarak PDF'in ARDINDAN gelir; düz metin aynen
+  assert.deepEqual([mail.attachments[1].cid, mail.attachments[1].contentType, mail.attachments[1].contentDisposition], ['gkh-logo@takip', 'image/jpeg', 'inline']);
+  assert.ok(mail.html.includes('<img src="cid:gkh-logo@takip"') && mail.html.indexOf('<img') < mail.html.indexOf('Stimate client'), 'logo e-postanın başında');
+  assert.ok(!/cid:|<img/.test(mail.text));
   assert.deepEqual(fgo.downloads, ['https://www.fgo.ro/facturi/PRF101.pdf']);
   for (const word of ['cost', 'profit', 'Bravo']) assert.ok(!mail.text.includes(word), `iç bilgi yok: ${word}`);
   rows = await emails(doc.id);
@@ -273,7 +277,7 @@ dbTest('PDF: alınamazsa e-posta bekletilir, sonra belge bağlantısıyla eksiz 
   await d.dispatchDocEmails(db, mailCtx(down, box, { now: new Date(t0.getTime() + 3 * 60_000) }));
   assert.equal(box.sent.length, 0, 'ikinci denemede de bekler');
   assert.deepEqual(await d.dispatchDocEmails(db, mailCtx(down, box, { now: new Date(t0.getTime() + 6 * 60_000) })), { sent: 1, failed: 0, skipped: 0 });
-  assert.equal(box.sent[0].attachments, undefined);
+  assert.deepEqual(box.sent[0].attachments.map((a) => a.cid ?? a.filename), ['gkh-logo@takip'], 'PDF eki yok; yalnızca ortak başlığın gömülü logosu');
   assert.match(box.sent[0].text, /Document \(PDF\): https:\/\/www\.fgo\.ro\/facturi\/PRF401\.pdf/);
   assert.match(box.sent[0].text, /https:\/\/takip\.test\/belgeler/);
   [row] = await emails(doc.id);

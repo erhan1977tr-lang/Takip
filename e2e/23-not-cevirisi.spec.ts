@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as } from './helpers';
 
 // Sipariş notlarının otomatik çevirisi (karar 127) — tarayıcıda.
 //  - Yönetici → Entegrasyonlar → "Not çevirisi": aç / kapat, anahtar (yalnızca "kayıtlı" görünür), bağlantı denemesi
@@ -9,12 +10,16 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as } from './helpers';
 //  - iç ekip Türkçe yazar → müşteri özgün notu + "Română · tradus automat" çevirisini görür
 //  - iç not müşteriye görünmez ve çevrilmez; başka firmanın müşterisi hiçbir şey görmez
 //  - çeviri yapılamazsa not yine kaydedilir; sayfa yenilenince çeviri yeniden yapılmaz
+//  - denetimci (karar 128) notları yalnızca ÖZGÜN dilinde görür: çeviri, çeviri hatası ve "yeniden dene" ona gitmez
+//  - sayfa açılışı, yenileme, 60 saniyelik otomatik yenileme, bildirim yoklaması ve işçi çeviri isteği YAPMAZ
+//  - bütün e-postalar ortak GKH başlığıyla (gömülü logo) yazılır (karar 129) — e-posta gönderilmez, klasöre yazılır
 // Google'a GERÇEK istek gitmez: sunucu TRANSLATE_FAKE=1 ile sahte sağlayıcıyı kullanır (ağa çıkmaz; çeviri "[tr] metin").
 // İlk test bunu ekrandaki "TEST MODU" uyarısıyla doğrular — uyarı yoksa hiçbir not yazılmadan dosya durur.
 test.describe.configure({ mode: 'serial' });
 
 const SALES = 'fiyat-satis@e2e.test';
 const BETA = 'beta@betacam.test';
+const INSPECTOR = 'denetim@e2e.test';
 const SETTINGS = '/admin/entegrasyonlar';
 // Gerçek bir anahtar DEĞİL: yalnızca biçimi geçerli sahte değer (sahte sağlayıcı anahtarı kullanmaz)
 const FAKE_KEY = 'e2e-sahte-anahtar-0123456789abcdef';
@@ -185,6 +190,19 @@ test('müşteri Romence yazar → yönetici ve satış özgün notu + Türkçe �
     }
     await p.context().close();
   }
+  // Denetimci: notu görür (mevcut yetkisi) ama yalnızca özgün Romence metni; Türkçe çeviri ekranda da yanıtta da yok
+  const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+  await insp.goto(orderUrl);
+  const own = noteOf(insp, RO_NOTE).first();
+  await expect(own.locator('.note-text')).toHaveText(RO_NOTE);
+  await expect(own.locator('.note-translation')).toHaveCount(0);
+  await expect(own.locator('.note-label')).toHaveCount(0);
+  await expect(insp.locator('#notlar form')).toHaveCount(0); // denetimci not yazamaz, "yeniden dene" de yok
+  const inspBody = await (await insp.request.get(orderUrl)).text();
+  expect(inspBody).toContain(RO_NOTE);
+  for (const s of [`[tr] ${RO_NOTE}`, 'otomatik çevrilmiştir', 'Özgün mesaj']) expect(inspBody, `denetimci yanıtında yok: ${s}`).not.toContain(s);
+  await shot(insp, 'not-cevirisi-denetimci');
+  await insp.context().close();
   for (let i = 0; i < 2; i++) await cust.reload();
   const again = await db.orderNote.findUniqueOrThrow({ where: { id: row.id } });
   expect(JSON.stringify(again), 'sayfa açılışı / yenileme kaydı değiştirmez (yeniden çeviri yok)').toBe(JSON.stringify(row));
@@ -238,6 +256,17 @@ test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi gö
   await expect(noteOf(admin, INTERNAL_NOTE).locator('.note-translation')).toHaveCount(0);
   await expect(admin.locator('#notlar .note')).toHaveCount(3);
   await admin.context().close();
+  // Denetimci: ekibin notunu yalnızca özgün Türkçe hâliyle görür (Romence çeviri yok); iç notu eskisi gibi görür
+  const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+  await insp.goto(orderUrl);
+  await expect(insp.locator('#notlar .note')).toHaveCount(3);
+  await expect(noteOf(insp, TR_NOTE).first().locator('.note-text')).toHaveText(TR_NOTE);
+  await expect(noteOf(insp, INTERNAL_NOTE)).toContainText('iç not');
+  await expect(insp.locator('#notlar .note-translation')).toHaveCount(0);
+  await expect(insp.locator('#notlar .note-label')).toHaveCount(0);
+  const inspBody = await (await insp.request.get(orderUrl)).text();
+  for (const s of [`[ro] ${TR_NOTE}`, `[tr] ${RO_NOTE}`, 'tradus automat', 'otomatik çevrilmiştir']) expect(inspBody, `denetimci yanıtında yok: ${s}`).not.toContain(s);
+  await insp.context().close();
   const beta = await as(browser, BETA, TEAM_PW);
   const res = await beta.request.get(orderUrl);
   const other = await res.text();
@@ -279,6 +308,19 @@ test('çeviri yapılamazsa not yine kaydedilir: müşteri notunu görür, iç ek
   expect(JSON.stringify(await db.orderNote.findUniqueOrThrow({ where: { id: row.id } }))).toBe(JSON.stringify(row));
   expect(await db.auditLog.count({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: row.id } })).toBe(0);
 
+  // Denetimci: çevrilemeyen notu özgün hâliyle görür; hata bilgisi, durum ve "yeniden dene" ona gitmez; taklit istek reddedilir
+  const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+  await insp.goto(orderUrl);
+  await expect(noteOf(insp, FAIL_NOTE).first().locator('.note-text')).toHaveText(FAIL_NOTE);
+  await expect(insp.locator('[data-translation-failed]')).toHaveCount(0);
+  await expect(insp.getByRole('button', { name: 'Çeviriyi yeniden dene' })).toHaveCount(0);
+  const inspBody = await (await insp.request.get(orderUrl)).text();
+  for (const s of ['Otomatik çeviri yapılamadı', 'Çeviriyi yeniden dene', 'data-translation-failed', 'name="noteId"']) expect(inspBody, `denetimci yanıtında yok: ${s}`).not.toContain(s);
+  const inspForged = await forge(insp, orderUrl, retryField, { id: orderId, noteId: row.id });
+  expect(inspForged.url(), 'denetimci: işlem yetkisi yok').toMatch(/\/siparisler$/);
+  expect(JSON.stringify(await db.orderNote.findUniqueOrThrow({ where: { id: row.id } }))).toBe(JSON.stringify(row));
+  await insp.context().close();
+
   // İç ekip açıkça yeniden ister: (sahte sağlayıcı yine başarısız) not durur, durum "çevrilemedi" kalır
   await failed.getByRole('button', { name: 'Çeviriyi yeniden dene' }).click();
   await expect(admin.locator('.alert-error', { hasText: 'Çeviri yine yapılamadı' })).toBeVisible();
@@ -292,6 +334,92 @@ test('çeviri yapılamazsa not yine kaydedilir: müşteri notunu görür, iç ek
   await admin.context().close();
   await cust.context().close();
   await db.$disconnect();
+});
+
+test('sayfa açılışı, yenileme, 60 saniyelik otomatik yenileme, bildirim yoklaması ve işçi çeviri isteği YAPMAZ: DONE, FAILED ve çevirisiz eski notlar aynen kalır', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const db = await prisma();
+  // Çevirisi hiç istenmemiş "eski" notlar (çeviri özelliğinden önce yazılmış gibi): görüntülenince çevrilmemeli
+  const sales = await db.user.findUniqueOrThrow({ where: { email: SALES } });
+  const custUser = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER } });
+  const OLD_RO = 'Notă veche de la client (fără traducere)';
+  const OLD_TR = 'Ekibin eski notu (çevirisiz)';
+  await db.orderNote.create({ data: { orderId, userId: custUser.id, text: OLD_RO, createdAt: new Date('2026-09-01T08:00:00Z') } });
+  await db.orderNote.create({ data: { orderId, userId: sales.id, text: OLD_TR, createdAt: new Date('2026-09-01T09:00:00Z') } });
+  const snapshot = async () => JSON.stringify(await db.orderNote.findMany({ where: { orderId }, orderBy: { id: 'asc' } }));
+  const before = await snapshot();
+  const states = async () => (await db.orderNote.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } })).map((n) => n.translationStatus);
+  expect(await states()).toEqual([null, null, 'DONE', 'DONE', null, 'FAILED']); // iki eski not, müşteri notu, satış notu, iç not, çevrilemeyen not
+
+  // Her rol: açılış + üç yenileme + bildirim yoklaması (zilin JSON akışı)
+  for (const [who, email, pw] of [['yönetici', ADMIN, ADMIN_PW], ['satış', SALES, TEAM_PW], ['müşteri', CUSTOMER, CUST_PW], ['denetimci', INSPECTOR, INSPECTOR_PW]] as const) {
+    const p = await as(browser, email, pw);
+    await p.goto(orderUrl);
+    for (let i = 0; i < 3; i++) await p.reload();
+    await expect(noteOf(p, OLD_RO).locator('.note-text'), who).toHaveText(OLD_RO);
+    await expect(noteOf(p, OLD_RO).locator('.note-translation'), `${who}: eski not çevrilmez`).toHaveCount(0);
+    await expect(noteOf(p, OLD_TR).locator('.note-translation'), `${who}: eski not çevrilmez`).toHaveCount(0);
+    expect((await p.request.get('/bildirimler/akis')).ok(), who).toBeTruthy();
+    await p.evaluate(() => window.dispatchEvent(new Event('takip:poll')));
+    await p.context().close();
+  }
+  expect(await snapshot(), 'açılış / yenileme / yoklama hiçbir notu değiştirmedi').toBe(before);
+
+  // Gerçek otomatik yenileme: ortak 60 saniyelik zamanlayıcı (AutoRefresh → router.refresh) üç kez çalışır;
+  // her seferinde sunucu bileşeni yeniden çizilir (RSC isteği) — çeviri yapılmaz
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.clock.install();
+  await admin.goto(orderUrl);
+  await expect(noteOf(admin, FAIL_NOTE).first().locator('[data-translation-failed="TIMEOUT"]')).toBeVisible();
+  for (let i = 0; i < 3; i++) {
+    const refreshed = admin.waitForResponse((r) => r.url().includes(`/siparisler/${orderId}`) && (r.url().includes('_rsc=') || r.request().headers().rsc === '1'), { timeout: 30_000 });
+    await admin.clock.runFor(61_000);
+    expect((await refreshed).ok(), `otomatik yenileme ${i + 1}`).toBeTruthy();
+  }
+  // Yenilemeden sonra da aynı görünüm: saklanan çeviri yerinde, çevrilemeyen not hâlâ "çevrilemedi" (kendiliğinden denenmedi)
+  await expect(noteOf(admin, RO_NOTE).first().locator('.note-translation .pre')).toHaveText(`[tr] ${RO_NOTE}`);
+  await expect(noteOf(admin, FAIL_NOTE).first().locator('[data-translation-failed="TIMEOUT"]')).toBeVisible();
+  await admin.context().close();
+  expect(await snapshot(), 'otomatik yenileme hiçbir notu değiştirmedi').toBe(before);
+
+  // İşçi bir tur çalışır (kuyruklar, taramalar, bildirimler): çeviri yapmaz, çevrilemeyen notu yeniden denemez
+  execFileSync('node', ['scripts/worker.mjs', '--once'], { env: process.env, stdio: 'inherit' });
+  expect(await snapshot(), 'işçi hiçbir notu değiştirmedi').toBe(before);
+  const noteIds = (await db.orderNote.findMany({ where: { orderId }, select: { id: true } })).map((n) => n.id);
+  expect(await db.auditLog.count({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: { in: noteIds } } }), 'yeniden deneme yalnızca önceki testteki açık istek').toBe(1);
+  await db.$disconnect();
+});
+
+test('e-postalar: yazılan bütün HTML e-postalar ortak GKH başlığını taşır (gömülü logo); düz metin sürümü yerinde; gerçek e-posta gönderilmez', async () => {
+  const dir = process.env.MAIL_OUTBOX_DIR;
+  expect(dir, 'testlerde e-posta gönderilmez: klasöre yazılır').toBeTruthy();
+  type Mail = { to: string; subject: string; text: string; html?: string; attachments?: { filename: string; contentType: string; size: number; cid?: string }[] };
+  const mails: Mail[] = fs.readdirSync(dir!).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir!, f), 'utf8')));
+  const html = mails.filter((m) => m.html);
+  expect(html.length, 'bu çalışmada yazılmış HTML e-postalar').toBeGreaterThan(5);
+  for (const m of html) {
+    const where = `${m.subject} → ${m.to}`;
+    expect(m.html, where).toContain('<img src="cid:gkh-logo@takip"');
+    expect((m.html!.match(/<img\b/g) ?? []).length, where).toBe(1);
+    expect(m.html!, `${where}: dış adresli görsel yok`).not.toMatch(/<img[^>]+src="https?:/);
+    const logo = (m.attachments ?? []).filter((a) => a.cid === 'gkh-logo@takip');
+    expect(logo.map((a) => [a.filename, a.contentType]), where).toEqual([['gkh-trading-invest-logo.jpg', 'image/jpeg']]);
+    expect(logo[0].size, where).toBeGreaterThan(5000);
+    expect(m.text.trim().length, `${where}: düz metin sürümü`).toBeGreaterThan(20);
+    expect(m.text, where).not.toContain('cid:');
+  }
+  // Birden çok e-posta yolu aynı ortak başlığı taşır: davet / doğrulama kodu, mali belge ve depo e-postaları (ve bu çalışmada
+  // işçinin yazdığı sipariş bildirimleri — hepsi yukarıdaki döngüde denetlendi)
+  const kinds = {
+    davet: html.filter((m) => /Takip/.test(m.subject) && /\b\d{6}\b/.test(m.text)).length,
+    belge: html.filter((m) => /^(Proformă|Factură)/.test(m.subject)).length,
+    depo: html.filter((m) => /Comanda depozit/.test(m.subject)).length,
+  };
+  for (const [kind, n] of Object.entries(kinds)) expect(n, `${kind} e-postası`).toBeGreaterThan(0);
+  console.log(`e-posta sayıları: ${JSON.stringify({ ...kinds, toplam: html.length, bildirim: html.filter((m) => /^[A-Z]{3}P?\d+(-T\d*)? — /.test(m.subject)).length })}`);
+  // Ekli PDF'ler yerinde ve logodan önce (depo formu, mali belge)
+  const depot = html.find((m) => /Comanda depozit/.test(m.subject))!;
+  expect(depot.attachments!.map((a) => a.contentType)).toEqual(['application/pdf', 'image/jpeg']);
 });
 
 test('çeviri kapatılınca notlar eskisi gibi çevirisiz kaydedilir; önceki çeviriler yerinde durur', async ({ browser }) => {

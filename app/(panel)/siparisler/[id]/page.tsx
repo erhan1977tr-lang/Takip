@@ -6,8 +6,7 @@ import { userCan } from '@/lib/permissions';
 import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
-import { canRetryTranslation, translationState } from '@/server/notes/translation.js';
-import { TRANSLATE_ERRORS } from '@/server/notes/provider.js';
+import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, roleText, slaText, stageText,
 } from '@/lib/labels';
@@ -927,11 +926,12 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
 
 function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T }) {
   const isCustomer = user.appRole === 'MUSTERI';
-  // İç notlar müşteriye hiç yüklenmez; çeviri alanları da role göre sunucuda temizlenmiştir (sanitizeOrder → notesFor)
+  // İç notlar müşteriye hiç yüklenmez; çeviri alanları da role göre sunucuda temizlenmiştir (sanitizeOrder → notesFor):
+  // denetimciye çeviri alanı hiç gelmez (notu yalnızca özgün dilinde görür), müşteriye yalnızca tamamlanmış Romence çeviri.
   const notes = order.notes;
-  // Çeviri durumu (bekliyor / yapılamadı) ve "yeniden dene" yalnızca iç ekibe; müşteri yalnızca tamamlanmış çeviriyi görür
-  const staff = userCan(user, 'NOTE_INTERNAL_VIEW');
-  const canRetry = canRetryTranslation(user.appRole);
+  // Çeviri durumu (bekliyor / yapılamadı) ve "yeniden dene" yalnızca çeviriyle çalışan iç ekibe (yönetici, satış, çizim)
+  const staff = canRetryTranslation(user.appRole);
+  const canRetry = staff;
   const now = new Date();
   return (
     <div className="card" id="notlar">
