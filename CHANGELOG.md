@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.48.1 — 04.10.2026
+
+Yalnızca test / sağlamlaştırma sürümü: ekranlarda ve kurallarda **hiçbir değişiklik yoktur** (3.48.0 davranışı aynen).
+
+- **Tarayıcı testleri (uçtan uca)** — 3.48.0'da eklenen üç ekran artık tarayıcıda da sınanıyor
+  (`e2e/22-siparis-secimi-fatura-uyarisi.spec.ts`):
+  - müşteri proformasında sipariş seçimi: uygun siparişler tek tek seçilir; önizleme ve tutarlar yalnızca seçilenlerden
+    hesaplanır; belge yalnızca seçilenlerden kesilir; seçilmeyen sipariş sonradan da uygundur;
+  - onaylı yüklemenin faturasında sipariş seçimi: seçim fatura grubu başınadır; yalnızca seçilen siparişlerin fiilen
+    yüklenen adedi faturalanır (kısmi yüklemede 10 adedin 8'i); kalan sipariş aynı yüklemeden sonra faturalanabilir;
+  - Yönetici → Entegrasyonlar → "Fatura edilmemiş sipariş uyarısı" ayarı (0–60; sınır dışı değer sunucuda reddedilir;
+    yalnızca yönetici) ve Cam Tahsilat'taki kalıcı "FATURA BEKLİYOR" listesi: proforma, avans faturası ve kuyruktaki
+    fatura isteği uyarıyı kapatmaz; satır yalnızca kapanış faturası kesilince kalkar.
+- **Veritabanı testi**: "muhasebe işlemi gerekli" diye dondurulan kapsam (fazla faturalanmış camın sonraki yüklemesi)
+  "fatura bekliyor" uyarısı üretmez — faturalama ekranının dışladığı kapsamla aynı karar; dondurmanın nedeni kalkınca
+  iki ekran birlikte değişir.
+- **Güvenlik**: testlerde gerçek FGO / ANAF / BNR'ye hiçbir istek gitmez. Uçtan uca test veritabanında FGO kapalıdır ve
+  kapalı kalır; kesilmiş belge gereken adımlar, uygulamanın gerçek servisleri üzerinden **sahte FGO** ile ve ağ
+  istekleri engellenerek yürür (`e2e/fake-fgo.ts`). FGO numaralandırması, IdExtern, birim eşlemesi, tahsilat
+  eşitlemesi, kur politikası ve FGO ayarlarına dokunulmadı; şema değişmedi.
+
 ## 3.48.0 — 04.10.2026
 
 - **Özel durum — başka firmanın yüklemesiyle gidecek** (yeniden düzenlendi): yönetici artık sipariş ya da sandık seçmez.

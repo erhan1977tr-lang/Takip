@@ -166,12 +166,18 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 ## Sıradaki
 
 Karar 124–126 (3.48.0): özel durumda yönetici firmayı, satış sandığı seçer; proforma / faturada sipariş seçimi; "fatura bekliyor"
-uyarısı. **Ürün sahibinin bilgisine / onayına:** (1) iki firmaya giden "misafir yük" bildirimi yalnızca UYGULAMA İÇİ bildirimdir
-(zil); e-posta gönderilmiyor — istenirse ayrıca eklenir; (2) ev sahibi firmanın müşterisi misafir yükü yalnızca bildirimde görür,
+uyarısı. 3.48.0 ürün sahibince işlev olarak kabul edildi (04.10.2026). **Kesinleşen:** (1) iki firmaya giden "misafir yük"
+bildirimi yalnızca UYGULAMA İÇİ bildirimdir (zil); **e-posta gönderilmez ve eklenmeyecek** (ürün sahibi kararı). **Bilgi:** (2) ev sahibi firmanın müşterisi misafir yükü yalnızca bildirimde görür,
 Yüklemeler ekranındaki kendi sandık satırında misafir siparişten iz yoktur (karar 103'teki gizlilik kuralı aynen); (3) sipariş
 başına belge zincirindeki (sipariş sayfasından kesilen) siparişlerde sipariş seçimi yoktur — orada belge zaten tek siparişindir;
 (4) "fatura bekliyor" bildirimi kapsam başına bir kez yazılır, gün geçtikçe yinelenmez (kalıcı liste Cam Tahsilat'ta durur);
 (5) firması seçilmeden yapılmış eski "başka müşterinin sandığı" yerleşimleri olduğu gibi durur, yalnızca yönetici kaldırabilir.
+
+3.48.1 (yalnızca test / sağlamlaştırma; davranış değişmedi): sipariş seçimi (proforma, fatura), "fatura edilmemiş sipariş uyarısı"
+ayarı ve "FATURA BEKLİYOR" listesi tarayıcıda da sınanıyor (`e2e/22-siparis-secimi-fatura-uyarisi.spec.ts`); "muhasebe işlemi
+gerekli" kapsamının uyarı üretmediği veritabanı testiyle kanıtlı. **Test kuralı:** uçtan uca veritabanında FGO kapalıdır ve kapalı
+kalır; kesilmiş belge gereken test adımları yalnızca `e2e/fake-fgo.ts` ile (gerçek servisler + sahte FGO + ağ engeli) yürür —
+testlerde FGO ayarı veritabanına açık yazılmaz, gerçek FGO / ANAF / BNR'ye istek gitmez.
 
 Güvenlik sertleştirmesi (3.46.0, karar 116–121; denetim raporu: proje belgesi `guvenlik-denetimi-3.45.0`). **Ürün sahibinin
 yapması gerekenler:** (1) yedek şifrelemeyi açmak — sunucuda `apt-get install -y age` → `takip yedek-sifreleme kur`; anahtarı

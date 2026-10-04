@@ -443,3 +443,61 @@ dbTest('fatura bekliyor (karar 126): yükleme düzeltmesi ve aktarım yanlış u
   assert.deepEqual(await mine(at(plus(F, 6))), [[o.orderNo, F, 0]]);
   assert.equal(fgo.calls.length, 1, 'uyarı hesabı belge kesmez');
 }));
+
+dbTest('fatura bekliyor (karar 126): "muhasebe işlemi gerekli" diye dondurulan kapsam uyarı üretmez — faturalama ekranının dışladığı kapsamla aynı karar', offline(async () => {
+  const { removeDeletedDocument } = await import('../../server/integrations/fgo-deleted.js');
+  const D = dayOf(-50), F = dayOf(11);
+  const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+  const A = await firm('Fix Hold SRL', 'FXH');
+  const o = await glassOrder(A, D, [glassLine(10)]);
+  const ctl = await glassOrder(A, F, [glassLine(3)]); // karşılaştırma: aynı müşterinin F gününde olağan yüklenen siparişi
+  /** Bu müşterinin uyarı satırları: [sipariş, yükleme günü, not] — gün, sonra sipariş sırasıyla */
+  const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.customerId === A.id).map((r) => [r.orderNo, r.day, r.note]);
+  /** Faturalama ekranının aynı gün için kararı: faturalanabilir siparişler ve dışarıda kalanlar */
+  const screen = async (day) => {
+    const v = await customerOf(day, A);
+    return { open: v.groups.flatMap((g) => [...g.orders, ...g.unselected].map((x) => x.orderNo)).sort(), excluded: v.excluded.map((x) => [x.orderNo, x.reason, x.ref]) };
+  };
+
+  // D günü: 10 adet "eksiksiz yüklendi" diye onaylanır ve faturalanır → kapsam kapalı, uyarı yok
+  assert.equal((await confirm(D)).ok, true);
+  const fgo = fakeFgo(950);
+  const bill = await invoice(D, A, fgo);
+  const ref = `${bill.document.series}${bill.document.number}`;
+  assert.deepEqual([bill.status, bill.lines.map((l) => l.pieces)], ['ISSUED', [10]]);
+  assert.deepEqual(await mine(at(plus(D, 6))), []);
+  // Düzeltme: aslında 8 adet yüklenmiş → kesilmiş fatura fazla (2 adet): MUHASEBE İŞLEMİ GEREKLİ; belge kesilmez / değişmez
+  const fix = await correct(D, [{ key: lineKey(o), quantity: 2, reason: 'BROKEN' }], '2 cam kırık çıktı');
+  assert.deepEqual([fix.ok, fix.actionRequired], [true, true]);
+  assert.deepEqual((await customerOf(D, A)).issued.map((i) => [i.ref, i.impacts.map((y) => [y.orderNo, y.code])]), [[ref, [[o.orderNo, 'OVER_INVOICED']]]]);
+  // Faturalanmış 2 adet ileri güne aktarılır ve orada fiilen yüklenir (aynı gün müşterinin olağan siparişi de yüklenir)
+  const row = (await rp.notLoadedOfDay(db, D)).find((x) => x.orderId === o.id);
+  assert.equal((await rp.replanNotLoaded(db, { itemId: row.itemId, day: F, actor: actor() })).ok, true);
+  assert.deepEqual(await mine(at(plus(F, 30))), [], 'aktarılan cam yüklenmedikçe uyarı doğmaz');
+  assert.equal((await confirm(F, [], evening(F))).ok, true);
+  const confF = await db.loadingConfirmation.findUniqueOrThrow({ where: { shipDay: date(F) } });
+  assert.deepEqual(await effective(o.id, F), [['LOADED', 2, 0]], 'cam F gününde fiilen yüklendi');
+
+  // --- Faturalama ekranı: o camı müşteri faturasına ALMAZ (zaten GKH… faturasında) — yalnızca olağan sipariş faturalanabilir
+  assert.deepEqual(await screen(F), { open: [ctl.orderNo], excluded: [[o.orderNo, 'ACCOUNTING_ACTION', ref]] });
+  // --- Uyarı: aynı karar. Dondurulan kapsam uyarı günü geçse de listede yok; olağan sipariş uyarı gününde listede
+  assert.deepEqual(await mine(at(plus(F, 5))), []);
+  assert.deepEqual(await mine(at(plus(F, 6))), [[ctl.orderNo, F, null]]);
+  assert.deepEqual(await mine(at(plus(F, 400))), [[ctl.orderNo, F, null]], 'dondurma süreyle çözülmez: ne kadar beklerse beklesin uyarı üretmez');
+  assert.deepEqual((await mine(at(plus(F, 6)))).map((r) => r[0]), (await screen(F)).open, 'uyarı listesi = faturalama ekranının faturalanabilir dediği kapsam');
+  // İşçinin bildirimi de yalnızca olağan sipariş için yazılır (dondurulan kapsam için bildirim yok); tekrar çalışınca yenisi yazılmaz
+  const keys = async () => [...new Set((await db.notification.findMany({ where: { type: 'INVOICE_OVERDUE', dedupeKey: { startsWith: `uninvoiced:${confF.id}:` } }, select: { dedupeKey: true } })).map((n) => n.dedupeKey))];
+  await un.remindUninvoiced(db, { now: at(plus(F, 6)) });
+  assert.deepEqual(await keys(), [`uninvoiced:${confF.id}:${ctl.id}:r0`]);
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 0);
+  assert.equal((await un.remindUninvoiced(db, { now: at(plus(F, 7)) })).created, 0);
+  assert.deepEqual([fgo.calls.length, await db.fgoDocument.count({ where: { batch: { customerId: A.id } } }), await db.billingBatch.count({ where: { customerId: A.id } })], [1, 1, 1], 'uyarı hesabı belge / parti üretmez');
+
+  // --- Karşı sınama: dondurmanın nedeni kalkınca (fazla kesilen fatura FGO'da silindi → parti geçersiz) iki ekran da
+  // birlikte değişir: kapsam faturalama ekranında açılır VE uyarı listesine girer (D'nin geçerli 8 adedi de yeniden açık)
+  await removeDeletedDocument(db, bill.document, 'test: belge FGO\'da silindi');
+  assert.deepEqual(await screen(F), { open: [ctl.orderNo, o.orderNo].sort(), excluded: [] });
+  assert.deepEqual((await mine(at(plus(F, 6)))).map((r) => `${r[0]}@${r[1]}`).sort(), [`${o.orderNo}@${D}`, `${o.orderNo}@${F}`, `${ctl.orderNo}@${F}`].sort());
+  assert.deepEqual((await screen(D)).open, [o.orderNo]);
+  assert.equal(fgo.calls.length, 1, 'FGO\'ya başka istek gitmedi');
+}));
