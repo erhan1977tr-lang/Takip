@@ -13,6 +13,10 @@
 //   - Çift faturalama engeli tek yerde (coverageOf): sipariş başına belgesi / bekleyen belge isteği olan ya da etkin bir
 //     partide yer alan sipariş yeni partiye girmez; etkin partideki sipariş için sipariş başına belge de istenemez
 //     (billingState → 'batch'). Veritabanında BillingBatchOrder.activeKey benzersizdir; FGO'da IdExtern + VerificareDuplicat.
+//   - Sipariş seçimi (karar 125): yönetici, uygun siparişlerden yalnızca seçtiklerini partiye alabilir (orderIds).
+//     Seçim yalnızca UYGUN siparişleri daraltır — uygunluğu (planOrder / coverageOf) sunucu belirler; uygun olmayan ya da
+//     başka belgeyle karşılanan sipariş seçilirse parti oluşturulmaz (NOT_ELIGIBLE). Seçilmeyen sipariş olduğu gibi kalır
+//     ve sonraki belgeye girebilir. Hesap, kur ve parmak izi seçilen siparişler üzerinden aynı kuraldır.
 //   - Belgeyi işçi keser (FGO isteği veritabanı işleminin dışında): kuyruk olayı FGO_BATCH.
 //   - Yalnızca yönetici (ACCOUNTING_MANAGE); kontrol burada, sunucuda da yapılır.
 import crypto from 'node:crypto';
@@ -57,7 +61,7 @@ export const loadingDayOf = (order) => {
  * @typedef {{ orderId: string, orderNo: string, title: string | null, day: string, offerId: string | null, currency: string | null, reason: ExcludeReason | null,
  *   ref: string | null, lines: BatchLine[], subtotal: number }} BatchOrder
  * @typedef {import('../fx/resolve.js').FxResult} FxResult
- * @typedef {{ ok: true, customer: any, today: string, days: string[], byDay: { day: string, orders: BatchOrder[] }[], included: BatchOrder[], excluded: BatchOrder[],
+ * @typedef {{ ok: true, customer: any, today: string, days: string[], byDay: { day: string, orders: BatchOrder[] }[], included: BatchOrder[], excluded: BatchOrder[], unselected: BatchOrder[],
  *   currency: string | null, currencies: (string | null)[], sourceTotal: number, fx: FxResult | null, fxError: { code: string, error: string } | null,
  *   ronNet: number | null, ronGross: number | null, missingBilling: string[], problems: string[], key: string }} BatchPreview
  */
@@ -192,28 +196,38 @@ function batchKey({ customerId, days, orders, currency, fx }) {
 
 /**
  * Önizleme = kesilecek belgenin hesabı. Hiçbir şey yazmaz.
- *   problems: partinin oluşturulmasını engelleyen nedenler (NO_DAYS, PAST_DAY, NOTHING_ELIGIBLE, MIXED_CURRENCY,
- *   BILLING_MISSING, FX_UNAVAILABLE). fx verilirse (parti oluşturulurken, işlem içinde) kur yeniden çözülmez.
+ *   problems: partinin oluşturulmasını engelleyen nedenler (NO_DAYS, PAST_DAY, NOTHING_ELIGIBLE, NOT_ELIGIBLE,
+ *   NOTHING_SELECTED, MIXED_CURRENCY, BILLING_MISSING, FX_UNAVAILABLE). fx verilirse (parti oluşturulurken, işlem içinde)
+ *   kur yeniden çözülmez.
+ *   orderIds: yöneticinin seçtiği siparişler (null = uygun siparişlerin hepsi). included = seçilen uygun siparişler,
+ *   unselected = uygun ama seçilmeyenler (belgeye girmez, olduğu gibi kalır). Seçimde uygun olmayan sipariş varsa NOT_ELIGIBLE.
  * @param {any} db
- * @param {{ customerId: string, days: string[], now?: Date, manualRate?: string | number | null, bnrImpl?: typeof bnrRate, fx?: FxResult | null, vatRate?: number }} o
+ * @param {{ customerId: string, days: string[], orderIds?: string[] | null, now?: Date, manualRate?: string | number | null, bnrImpl?: typeof bnrRate, fx?: FxResult | null, vatRate?: number }} o
  * @returns {Promise<BatchPreview | { ok: false, code: string }>}
  */
-export async function previewBatch(db, { customerId, days, now = new Date(), manualRate = null, bnrImpl = bnrRate, fx = undefined, vatRate = undefined }) {
+export async function previewBatch(db, { customerId, days, orderIds = null, now = new Date(), manualRate = null, bnrImpl = bnrRate, fx = undefined, vatRate = undefined }) {
   const today = dayKey(now);
   const selected = cleanDays(days);
   const customer = await db.customer.findUnique({ where: { id: customerId } });
   if (!customer || customer.type !== 'CUSTOMER') return { ok: false, code: 'NOT_FOUND' };
   const all = await plannedOrders(db, { customerId, today });
   const orders = all.filter((o) => selected.includes(o.day));
-  const included = orders.filter((o) => !o.reason);
+  const eligible = orders.filter((o) => !o.reason);
   const excluded = orders.filter((o) => o.reason);
+  // Sipariş seçimi: yalnızca uygun siparişler daraltılır; uygunluk kararı yukarıdaki sunucu hesabındadır
+  const picked = orderIds == null ? null : new Set((Array.isArray(orderIds) ? orderIds : [orderIds]).map(String));
+  const included = picked ? eligible.filter((o) => picked.has(o.orderId)) : eligible;
+  const unselected = picked ? eligible.filter((o) => !picked.has(o.orderId)) : [];
   const currencies = [...new Set(included.map((o) => o.currency))];
   const currency = currencies.length === 1 ? currencies[0] : null;
   /** @type {string[]} */
   const problems = [];
   if (selected.length === 0) problems.push('NO_DAYS');
   else if (selected.some((d) => d < today)) problems.push('PAST_DAY');
-  if (selected.length > 0 && included.length === 0) problems.push('NOTHING_ELIGIBLE');
+  // Seçilen sipariş uygun değil (başka belgeyle karşılanıyor, yüklenmiş, fiyatsız, seçilen günlerde değil …): parti oluşturulmaz
+  if (picked && [...picked].some((id) => !eligible.some((o) => o.orderId === id))) problems.push('NOT_ELIGIBLE');
+  if (selected.length > 0 && eligible.length === 0) problems.push('NOTHING_ELIGIBLE');
+  else if (selected.length > 0 && included.length === 0) problems.push('NOTHING_SELECTED');
   // Para birimleri birbirine eklenmez: karışık seçimde parti oluşturulmaz (yönetici günleri ayırır)
   if (currencies.length > 1) problems.push('MIXED_CURRENCY');
   const missing = missingBilling(customer);
@@ -250,7 +264,7 @@ export async function previewBatch(db, { customerId, days, now = new Date(), man
   }
   const byDay = selected.map((day) => ({ day, orders: orders.filter((o) => o.day === day) }));
   return {
-    ok: true, customer, today, days: selected, byDay, included, excluded, currency, currencies, sourceTotal, fx, fxError, ronNet, ronGross,
+    ok: true, customer, today, days: selected, byDay, included, excluded, unselected, currency, currencies, sourceTotal, fx, fxError, ronNet, ronGross,
     missingBilling: missing, problems, key: batchKey({ customerId, days: selected, orders: included, currency, fx }),
   };
 }
@@ -260,17 +274,18 @@ const isUnique = (e) => e?.code === 'P2002';
 /**
  * Partiyi oluşturur ve FGO proformasını kuyruğa alır (yönetici).
  * @param {any} db
- * @param {{ customerId: string, days: string[], key: string, manualRate?: string | number | null, actor: any, now?: Date, bnrImpl?: typeof bnrRate }} o
+ * orderIds: yöneticinin seçtiği siparişler (null = uygun siparişlerin hepsi); seçim sunucuda yeniden doğrulanır.
+ * @param {{ customerId: string, days: string[], orderIds?: string[] | null, key: string, manualRate?: string | number | null, actor: any, now?: Date, bnrImpl?: typeof bnrRate }} o
  * @returns {Promise<{ ok: true, batchId: string, orders: number } | { ok: false, code: string }>}
  */
-export async function createBatch(db, { customerId, days, key, manualRate = null, actor, now = new Date(), bnrImpl = bnrRate }) {
+export async function createBatch(db, { customerId, days, orderIds = null, key, manualRate = null, actor, now = new Date(), bnrImpl = bnrRate }) {
   if (!can(actor?.role, 'ACCOUNTING_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   const settings = await getFgoSettings(db);
   if (!fgoReady(settings)) return { ok: false, code: 'FGO_DISABLED' };
   const tz = getEnv().APP_TIMEZONE;
   if (await dailyLimitReached(db, settings, localDayStart(now, tz))) return { ok: false, code: 'FGO_DAILY_LIMIT' };
   // Kur işlemin dışında çözülür (BNR ağ isteği veritabanı işlemini bekletmesin); işlem içinde aynı kurla yeniden hesaplanır
-  const first = await previewBatch(db, { customerId, days, now, manualRate, bnrImpl, vatRate: settings.vatRate });
+  const first = await previewBatch(db, { customerId, days, orderIds, now, manualRate, bnrImpl, vatRate: settings.vatRate });
   if (!first.ok) return first;
   if (first.problems.length) return { ok: false, code: first.problems[0] };
   if (first.key !== key) return { ok: false, code: 'STALE_PREVIEW' };
@@ -281,14 +296,16 @@ export async function createBatch(db, { customerId, days, key, manualRate = null
       for (const id of first.included.map((o) => o.orderId).sort()) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
       }
-      const p = await previewBatch(tx, { customerId, days, now, fx: first.fx, vatRate: settings.vatRate });
+      const p = await previewBatch(tx, { customerId, days, orderIds, now, fx: first.fx, vatRate: settings.vatRate });
       if (!p.ok) return p;
       if (p.problems.length) return { ok: false, code: p.problems[0] };
       if (p.key !== key) return { ok: false, code: 'STALE_PREVIEW' };
       const docDay = dayDate(localDay(now, tz));
+      // Belgenin günleri: sipariş seçildiyse yalnızca seçilen siparişlerin yükleme günleri (belge metni de bunları yazar)
+      const batchDays = p.unselected.length ? [...new Set(p.included.map((o) => o.day))].sort() : p.days;
       const batch = await tx.billingBatch.create({
         data: {
-          customerId, kind: BATCH_KIND, status: 'PENDING', currency: p.currency, loadingDays: p.days.map((d) => new Date(`${d}T00:00:00Z`)),
+          customerId, kind: BATCH_KIND, status: 'PENDING', currency: p.currency, loadingDays: batchDays.map((d) => new Date(`${d}T00:00:00Z`)),
           selectionKey: p.key, sourceTotal: p.sourceTotal.toFixed(2), ronNet: p.ronNet.toFixed(2), createdById: actor.id, createdAt: now,
           ...fxSnapshot(p.fx, docDay),
           orders: {
@@ -305,14 +322,15 @@ export async function createBatch(db, { customerId, days, key, manualRate = null
       });
       await tx.notificationOutbox.create({ data: { type: BATCH_FGO, payload: { batchId: batch.id } } });
       const statuses = new Map((await tx.order.findMany({ where: { id: { in: p.included.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
-      const dayText = p.days.map(ddmmyyyy).join(', ');
+      const dayText = batchDays.map(ddmmyyyy).join(', ');
       for (const o of p.included) {
         await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_REQUESTED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: actor.id, note: `PROFORMA · ${dayText}` });
       }
       await writeAudit(tx, {
         action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id,
         details: {
-          customerId, kind: BATCH_KIND, days: p.days, orders: p.included.map((o) => o.orderNo), currency: p.currency, sourceTotal: p.sourceTotal, ronNet: p.ronNet,
+          customerId, kind: BATCH_KIND, days: batchDays, orders: p.included.map((o) => o.orderNo), currency: p.currency, sourceTotal: p.sourceTotal, ronNet: p.ronNet,
+          ...(p.unselected.length ? { notSelected: p.unselected.map((o) => o.orderNo) } : {}),
           fxPolicy: p.fx.policy, fxRate: p.fx.finalRate, fxBaseRate: p.fx.baseRate, fxMarkupPercent: p.fx.markupPercent, fxSource: p.fx.source, fxSourceDate: p.fx.sourceDate, fxManual: p.fx.manual,
         },
       }, actor);

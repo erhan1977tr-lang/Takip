@@ -19,6 +19,8 @@ export const dynamic = 'force-dynamic';
 const PAGE = '/admin/muhasebe/cam/proforma';
 const STATUS_TONE = { PENDING: 'info', ISSUED: 'ok', FAILED: 'danger', VOID: 'muted' } as const;
 const PROBLEMS = ['NO_DAYS', 'PAST_DAY', 'NOTHING_ELIGIBLE', 'MIXED_CURRENCY', 'BILLING_MISSING', 'FX_UNAVAILABLE'];
+// Sipariş seçimiyle ilgili engeller (karar 125): metinleri fatura ekranıyla ortak
+const SELECT_PROBLEMS = ['NOT_ELIGIBLE', 'NOTHING_SELECTED'];
 const ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'STALE_PREVIEW', 'ALREADY_COVERED'];
 type Batch = Prisma.BillingBatchGetPayload<{ include: {
   customer: { select: { name: true } }; document: true; createdBy: { select: { name: true } };
@@ -40,6 +42,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const customerId = one(sp.musteri);
   const days = cleanDays(sp.gun ?? []);
   const rate = one(sp.kur).trim();
+  // Sipariş seçimi (karar 125): "sec=1" ile gelen "sip" listesi; yoksa uygun siparişlerin hepsi
+  const picked = one(sp.sec) === '1' ? [...new Set(([] as string[]).concat(sp.sip ?? []).filter(Boolean))].slice(0, 500) : null;
   const error = one(sp.error);
   const ok = one(sp.ok);
 
@@ -52,7 +56,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   ]);
   // Önizleme: BNR 30 dakika saklanır; kur alınamazsa "alınamadı" gösterilir ve parti oluşturulamaz
   const preview = chosen && days.length > 0
-    ? await previewBatch(db, { customerId: chosen.id, days, manualRate: rate || null, vatRate: settings.vatRate, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
+    ? await previewBatch(db, { customerId: chosen.id, days, orderIds: picked, manualRate: rate || null, vatRate: settings.vatRate, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
   const p = preview?.ok ? preview : null;
   // Kesilmiş proformaların avans durumu (FGO'da görünen tahsilat, avansı kesilen, avansı kesilmemiş tahsilat)
@@ -69,10 +73,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   }
   const errorKind = one(sp.faturaHata);
   const okKind = one(sp.fatura);
-  const problemText = (code: string) => t(`accounting.batch.problems.${code}` as MsgKey, {
+  const problemText = (code: string) => (SELECT_PROBLEMS.includes(code) ? t(`accounting.batch.select.${code}` as MsgKey) : t(`accounting.batch.problems.${code}` as MsgKey, {
     list: code === 'MIXED_CURRENCY' ? (p?.currencies ?? []).join(', ') : (p?.missingBilling ?? []).join(', '),
-  });
-  const errorText = PROBLEMS.includes(error) ? problemText(error) : t(`accounting.batch.errors.${ERRORS.includes(error) ? error : 'NOT_ALLOWED'}` as MsgKey);
+  }));
+  const errorText = PROBLEMS.includes(error) || SELECT_PROBLEMS.includes(error) ? problemText(error) : t(`accounting.batch.errors.${ERRORS.includes(error) ? error : 'NOT_ALLOWED'}` as MsgKey);
+  // Uygun siparişler (seçilen + seçilmeyen): seçim kutuları bunlar için çizilir
+  const selectedIds = new Set((p?.included ?? []).map((o) => o.orderId));
+  const eligibleCount = (p?.included.length ?? 0) + (p?.unselected.length ?? 0);
 
   return (
     <>
@@ -133,7 +140,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div className="card" id="onizleme">
           <h2>{t('accounting.batch.previewTitle')}</h2>
           {p.problems.map((code) => <div key={code} className="alert alert-warn">{problemText(code)}</div>)}
-          {p.included.length > 0 && (
+          {eligibleCount > 0 && (
             <div className="table-wrap load-wrap">
               <table className="load-table confirm-table">
                 <thead>
@@ -152,17 +159,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                     return [
                       <tr className="group-total" key={d.day}>
                         <td colSpan={4}><b className="group-name">{t('accounting.batch.dayHead', { day: dmy(d.day) })}</b></td>
-                        <td className="num">{fmtMoney(list.reduce((s, o) => s + o.subtotal, 0), list[0].currency ?? '')}</td>
+                        <td className="num">{fmtMoney(list.filter((o) => selectedIds.has(o.orderId)).reduce((s, o) => s + o.subtotal, 0), list[0].currency ?? '')}</td>
                       </tr>,
                       ...list.flatMap((o) => [
-                        <tr className="sub" key={o.orderId}>
+                        <tr className="sub" key={o.orderId} data-order={o.orderId}>
                           <td colSpan={4}>
+                            {/* Sipariş seçimi: işaret "Seçimi uygula" formuna aittir; belge yalnızca işaretli siparişlerden kesilir */}
+                            <input type="checkbox" form="siparis-secimi" name="sip" value={o.orderId} defaultChecked={selectedIds.has(o.orderId)} aria-label={t('accounting.batch.select.label', { order: o.orderNo })} />{' '}
                             <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link>
                             {o.title && <span className="muted small"> · {o.title}</span>}
+                            {!selectedIds.has(o.orderId) && <span className="muted small"> — {t('accounting.batch.select.unselected')}</span>}
                           </td>
-                          <td className="num">{fmtMoney(o.subtotal, o.currency ?? '')}</td>
+                          <td className="num">{selectedIds.has(o.orderId) ? fmtMoney(o.subtotal, o.currency ?? '') : '—'}</td>
                         </tr>,
-                        ...o.lines.map((l, i) => (
+                        ...(selectedIds.has(o.orderId) ? o.lines : []).map((l, i) => (
                           <tr className="sub glass-row" key={`${o.orderId}-${i}`}>
                             <td>{l.name}</td>
                             <td className="num">{fmtNum(l.qty)}</td>
@@ -177,6 +187,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 </tbody>
               </table>
             </div>
+          )}
+
+          {eligibleCount > 0 && (
+            <form method="get" action={PAGE} id="siparis-secimi" className="row" style={{ marginTop: 8 }}>
+              <input type="hidden" name="musteri" value={chosen.id} />
+              {p.days.map((d) => <input key={d} type="hidden" name="gun" value={d} />)}
+              {rate && <input type="hidden" name="kur" value={rate} />}
+              <input type="hidden" name="sec" value="1" />
+              <button className="btn">{t('accounting.batch.select.apply')}</button>
+              <span className="muted small">{t('accounting.batch.select.hint')}</span>
+            </form>
           )}
 
           {p.excluded.length > 0 && (
@@ -210,6 +231,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                     <form method="get" action={PAGE} className="row">
                       <input type="hidden" name="musteri" value={chosen.id} />
                       {p.days.map((d) => <input key={d} type="hidden" name="gun" value={d} />)}
+                      {picked && <input type="hidden" name="sec" value="1" />}
+                      {picked && p.included.map((o) => <input key={o.orderId} type="hidden" name="sip" value={o.orderId} />)}
                       <label htmlFor="lot-kur" style={{ margin: 0 }}>{t('fx.manualLabel')}</label>
                       <input id="lot-kur" name="kur" inputMode="decimal" maxLength={10} style={{ width: 110 }} defaultValue={rate} title={t('fx.manualHint')} />
                       <button className="btn">{t('accounting.batch.manualApply')}</button>
@@ -224,6 +247,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                   {p.days.map((d) => <input key={d} type="hidden" name="day" value={d} />)}
                   <input type="hidden" name="fxRate" value={rate} />
                   <input type="hidden" name="key" value={p.key} />
+                  {/* Kesilecek belge = önizlenen siparişler (sunucu uygunluğu ve parmak izini yeniden doğrular) */}
+                  <input type="hidden" name="selected" value="1" />
+                  {p.included.map((o) => <input key={o.orderId} type="hidden" name="orderId" value={o.orderId} />)}
                   <ConfirmButton primary message={t('accounting.batch.confirm', { n: p.included.length })}>{t('accounting.batch.create')}</ConfirmButton>
                 </form>
               )}

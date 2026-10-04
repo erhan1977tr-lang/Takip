@@ -4,7 +4,7 @@ import { getT, type Dict, type MsgKey } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { customerLabel } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { crateDay, cratesBetween, guestCratesBetween, loadOf, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay, type CrateRow, type GuestLink, type Load, type LoadRow } from '@/lib/loading';
+import { crateDay, cratesBetween, guestCratesBetween, guestHostNames, loadOf, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay, type CrateRow, type GuestLink, type Load, type LoadRow } from '@/lib/loading';
 import { fmtDate, fmtDateTime, fmtMoney, fmtMonth, fmtNum, weekdayNames } from '@/lib/format';
 import { CustomerBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
@@ -25,7 +25,13 @@ type Total = ReturnType<typeof groupLoad>;
  * guestsOut: bu müşterinin, BAŞKA müşterinin sandığında giden siparişleri · guestsIn: bu müşterinin sandıklarında giden
  * başka müşteri siparişleri (karar 103 — yalnızca fiziksel yerleşim; müşteri görünümünde guestsIn hiç gelmez).
  */
-type Group = { key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number; salesAmount: number; crateLabels: string[]; guestsOut: GuestLink[]; guestsIn: GuestLink[] };
+type Group = {
+  key: string; label: string; entries: Entry[]; crates: CrateRow[]; total: Total; amount: number; salesAmount: number; crateLabels: string[]; guestsOut: GuestLink[]; guestsIn: GuestLink[];
+  /** Özel durum (karar 124) — sandık seçimi bekleyenler: bu müşterinin başka firmayla gidecek siparişleri / bu firmayla gidecek başka müşteri siparişleri */
+  waitingOut: Waiting[]; waitingIn: Waiting[];
+};
+/** Yönetici ev sahibi firmayı seçti, sandık henüz seçilmedi. hostHere: ev sahibi firmanın o gün satırı (sipariş / sandık) var mı */
+type Waiting = { orderId: string; orderNo: string; ownerName: string; hostId: string; hostName: string; hostHere: boolean };
 /** Hangi tutar sütunları görünür (karar 4): yönetici ikisini yan yana, satış yalnız satış tutarını, müşteri/denetimci yalnız teklif tutarını */
 type Money = { sales: boolean; offer: boolean };
 
@@ -47,7 +53,7 @@ function counter(m: Dict, intl: string) {
  * Bir günün siparişlerini müşteriye göre gruplar; sandıklar müşteriler arasında karışmaz. Müşterinin o gün için
  * girilmiş sandıkları varsa o müşterinin ağırlık ve sandık sayısı onlardan gelir (server/loading/crates.js → groupLoad).
  */
-function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = [], guests: GuestLink[] = []): { groups: Group[]; total: Total & { amount: number; salesAmount: number } } {
+function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = [], guests: GuestLink[] = [], hostNames: Map<string, string> = new Map()): { groups: Group[]; total: Total & { amount: number; salesAmount: number } } {
   // Başka müşterinin sandığına konmuş sipariş: metrajı / adedi kendi müşterisinde sayılır; ağırlığı taşındığı sandığın
   // müşterisine yazılır (kendi müşterisinde ayrıca tahmini sandık üretmez).
   const hosted = new Map(guests.map((l) => [l.orderId, l.hostId]));
@@ -62,6 +68,11 @@ function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = [], 
   for (const e of entries) at(e.o.customer.id, e.o.customer.name).entries.push(e);
   // Siparişi başka güne alınmış olsa da o güne girilmiş sandıklar görünür (silinebilsin)
   for (const c of crates) if (c.customer) at(c.customer.id, c.customer.name).crates.push(c);
+  // Özel durum: ev sahibi firması seçilmiş ama o gün henüz hiçbir misafir sandığa konmamış siparişler (sipariş başına bir kez).
+  // Aktarılan kalan (replan satırı) yalnızca ev sahibi firmanın o gün de yüklemesi varsa bekler; yoksa kendi firmasıyla gider.
+  const waiting = [...new Map(entries.filter((e) => e.o.guestHostId && !hosted.has(e.o.id) && (!e.o.replan || map.has(e.o.guestHostId))).map((e): [string, Waiting] => [e.o.id, {
+    orderId: e.o.id, orderNo: e.o.orderNo, ownerName: e.o.customer.name, hostId: e.o.guestHostId!, hostName: hostNames.get(e.o.guestHostId!) ?? '', hostHere: map.has(e.o.guestHostId!),
+  }])).values()];
   const groups = [...map.entries()].map(([key, g]) => ({
     key, label: customerLabel(user, g.name), entries: g.entries, crates: g.crates,
     total: groupLoad(g.entries.map((e) => (hosted.has(e.o.id) ? { ...e.load, netKg: 0 } : e.load)), g.crates, { guestKg: guestKg(key) }),
@@ -70,6 +81,7 @@ function groupDay(entries: Entry[], user: CurrentUser, crates: CrateRow[] = [], 
     // Sandık etiketi: siparişte girilmişse o, yoksa müşterinin varsayılanı (sipariş sayfasındaki kuralla aynı)
     crateLabels: [...new Set(g.entries.map((e) => e.o.sandikEtiket ?? e.o.customer.sandikEtiket ?? '').filter(Boolean))],
     guestsOut: guests.filter((l) => g.entries.some((e) => e.o.id === l.orderId)), guestsIn: guests.filter((l) => l.hostId === key),
+    waitingOut: waiting.filter((w) => g.entries.some((e) => e.o.id === w.orderId)), waitingIn: waiting.filter((w) => w.hostId === key),
   })).sort((a, b) => b.total.metraj - a.total.metraj);
   const t = groups.reduce(
     (acc, g) => ({
@@ -111,6 +123,7 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
     return list.map((o) => (missing.has(o.id) && !o.replan ? { ...o, notLoaded: missing.get(o.id) } : o));
   };
   const rows = [...(await withNotes(dated)), ...carried];
+  let hostNames = await guestHostNames(user, rows);
   const guestsOf = (k: string, list: GuestLink[] = guests) => list.filter((l) => l.day === k);
   const byDay = new Map<string, Entry[]>();
   for (const o of rows) {
@@ -137,7 +150,9 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
       ordersShippingBetween(user, new Date(d.getTime() - 86_400_000), new Date(d.getTime() + 2 * 86_400_000)),
       replanRowsBetween(user, d, next), cratesBetween(user, d, next), guestCratesBetween(user, d, next),
     ]);
-    dayEntries = [...(await withNotes(extra)), ...extraCarried].filter((o) => shipDay(o) === selected).map((o) => ({ o, load: loadOf(o, isCustomer) }));
+    const extraRows = [...(await withNotes(extra)), ...extraCarried].filter((o) => shipDay(o) === selected);
+    dayEntries = extraRows.map((o) => ({ o, load: loadOf(o, isCustomer) }));
+    hostNames = await guestHostNames(user, extraRows);
     dayCrates = extraCrates;
     dayGuests = guestsOf(selected, extraGuests);
   }
@@ -224,7 +239,7 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
         )}
       </div>
 
-      {selected && <DayDetail user={user} day={selected} entries={dayEntries} crates={dayCrates} guests={dayGuests} isCustomer={isCustomer} sp={sp} />}
+      {selected && <DayDetail user={user} day={selected} entries={dayEntries} crates={dayCrates} guests={dayGuests} hostNames={hostNames} isCustomer={isCustomer} sp={sp} />}
       {/* Yükleme onayı (karar 92): iç ekip onaylı kaydı görür; önizleme ve "Eksiksiz Yüklendi" yalnızca yöneticide */}
       {selected && !isCustomer && (
         <>
@@ -271,12 +286,14 @@ async function DayList({ user, days, href, selected, isCustomer }: { user: Curre
   );
 }
 
-const GUEST_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'ORDER_CANCELLED', 'NOT_SAME_LOADING', 'OWN_CRATE', 'ALREADY_ASSIGNED'];
+const GUEST_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'ORDER_CANCELLED', 'NOT_SAME_LOADING', 'OWN_CRATE', 'NO_HOST', 'NOT_HOST_CRATE', 'ALREADY_ASSIGNED'];
 
-async function DayDetail({ user, day, entries, crates, guests, isCustomer, sp }: { user: CurrentUser; day: string; entries: Entry[]; crates: CrateRow[]; guests: GuestLink[]; isCustomer: boolean; sp: SP }) {
+async function DayDetail({ user, day, entries, crates, guests, hostNames, isCustomer, sp }: { user: CurrentUser; day: string; entries: Entry[]; crates: CrateRow[]; guests: GuestLink[]; hostNames: Map<string, string>; isCustomer: boolean; sp: SP }) {
   const { t, m, intl } = await getT();
   const { count } = counter(m, intl);
-  const { groups, total } = groupDay(entries, user, crates, guests);
+  const { groups, total } = groupDay(entries, user, crates, guests, hostNames);
+  // Özel durum — sandık seçimi bekleyenler (yalnızca iç ekip; müşteri satırlarında ev sahibi bilgisi hiç yoktur)
+  const waiting = isCustomer ? [] : groups.flatMap((g) => g.waitingOut);
   const canEdit = userCan(user, 'CRATE_EDIT');
   const money: Money = { sales: userCan(user, 'OFFER_PREPARE'), offer: userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW') };
   return (
@@ -286,6 +303,15 @@ async function DayDetail({ user, day, entries, crates, guests, isCustomer, sp }:
       </div>
       {!isCustomer && sp.sandik && <div className="alert alert-ok">{t(`loading.guest.ok.${sp.sandik === 'removed' ? 'removed' : 'assigned'}` as MsgKey)}</div>}
       {!isCustomer && sp.sandikHata && <div className="alert alert-error">{t(`loading.guest.errors.${GUEST_ERRORS.includes(sp.sandikHata) ? sp.sandikHata : 'NOT_FOUND'}` as MsgKey)}</div>}
+      {/* Kırmızı uyarı (karar 124): yönetici ev sahibi firmayı seçti, sandık henüz seçilmedi. Adlar role göre maskeli. */}
+      {waiting.map((w) => (
+        <div key={w.orderId} className="alert alert-error guest-waiting" data-order={w.orderId}>
+          <b>{t('loading.guest.waitingTitle')}</b>
+          <div><Link className="order-no" href={`/siparisler/${w.orderId}`}>{w.orderNo}</Link> · {customerLabel(user, w.ownerName)}</div>
+          <div>{t('loading.guest.waitingHost', { host: customerLabel(user, w.hostName) })}</div>
+          {!w.hostHere && <div className="small">{t('loading.guest.waitingNoLoad')}</div>}
+        </div>
+      ))}
       {entries.length === 0 && groups.length === 0 ? (
         <p className="muted">{t('loading.day.empty')}</p>
       ) : (
@@ -349,6 +375,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
   const orderRows = g.entries.map(({ o, load }) => {
     const nos = cratesOf(o.id);
     const away = guestOf(o.id);
+    const wait = g.waitingOut.find((w) => w.orderId === o.id);
     return (
       <tr key={`${o.id}${o.replan ? ':r' : ''}`} className={isCustomer ? undefined : 'sub'}>
         <td>
@@ -370,6 +397,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
         <td className="num">{fmtNum(load.metraj)}</td>
         <td className="num">{kg(load.netKg)}</td>
         <td className="num">
+          {wait && <span className="badge badge-danger guest-badge" title={t('loading.guest.waitingTitle')}>{t('loading.guest.waitingBadge', { host: customerLabel(user, wait.hostName) })}</span>}
           {nos.length || away.length
             ? (
               <span className="crate-nos" title={t('loading.day.real')}>
@@ -379,7 +407,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
                   : <span key={`g${l.crateId}`} className="badge badge-info guest-badge" title={t('loading.guest.badgeTitle', { no: l.crateNo, host: customerLabel(user, l.hostName) })}>{t('loading.guest.badge', { no: l.crateNo, host: customerLabel(user, l.hostName) })}</span>))}
               </span>
             )
-            : g.total.realCrates ? '' : <span className="muted">{t('loading.day.estimated')}</span>}
+            : wait || g.total.realCrates ? '' : <span className="muted">{t('loading.day.estimated')}</span>}
         </td>
         <td className="num"><span className="muted">—</span></td>
         {money.sales && <td className="num">{load.salesAmount != null ? fmtMoney(load.salesAmount, load.currency) : <span className="muted">—</span>}</td>}
@@ -444,8 +472,7 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
     crateNo: String(c.crateNo), lengthMm: c.lengthMm?.toString() ?? '', widthMm: c.widthMm?.toString() ?? '', heightMm: c.heightMm?.toString() ?? '',
     netKg: c.netAgirlik?.toString() ?? '', grossKg: c.brutAgirlik?.toString() ?? '', note: c.note ?? '', orderIds: c.orders.map((x) => x.orderId).filter((id) => ownIds.has(id)),
   }));
-  const otherCrates = dayCrates.filter((c) => c.customer && c.customer.id !== g.key);
-  const others = otherCrates.map((c) => ({ no: c.crateNo, label: customerLabel(user, c.customer!.name) }));
+  const others = dayCrates.filter((c) => c.customer && c.customer.id !== g.key).map((c) => ({ no: c.crateNo, label: customerLabel(user, c.customer!.name) }));
   return (
     <>
       {groupTotal}
@@ -468,18 +495,42 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
               />
             ) : g.crates.length > 0 ? crateList(true) : <p className="muted small">{t('loading.day.crates.readOnly')}</p>}
           </details>
-          {/* Fiziksel yerleşim (karar 103): ticari sahip ≠ sandığın müşterisi. İç ekip görür (ad, role göre maskeli); atama yalnızca yöneticide. */}
-          {(g.guestsOut.length > 0 || g.guestsIn.length > 0 || (canPlace && otherCrates.length > 0 && ownOrders.length > 0)) && (
+          {/* Fiziksel yerleşim (karar 103, 124): ticari sahip ≠ sandığın müşterisi. İç ekip görür (ad, role göre maskeli).
+              Ev sahibi firmayı yönetici sipariş sayfasında seçer; SANDIĞI burada, o firmanın sandıkları girilirken satış seçer. */}
+          {(g.guestsOut.length > 0 || g.guestsIn.length > 0 || g.waitingIn.length > 0) && (
             <div className="guest-box" data-owner={g.key}>
-              {g.guestsIn.map((l) => (
-                <p key={`in-${l.crateId}-${l.orderId}`} className="small guest-line guest-in">
-                  {t('loading.guest.in', { no: l.crateNo, order: l.orderNo, owner: customerLabel(user, l.ownerName) })}
-                </p>
+              {(g.guestsIn.length > 0 || g.waitingIn.length > 0) && <p className="small guest-head"><b>{t('loading.guest.blockTitle')}</b></p>}
+              {[
+                ...g.guestsIn.map((l) => ({ orderId: l.orderId, orderNo: l.orderNo, ownerName: l.ownerName, crateId: l.crateId, crateNo: l.crateNo as number | null, byHost: l.byHost })),
+                ...g.waitingIn.map((w) => ({ orderId: w.orderId, orderNo: w.orderNo, ownerName: w.ownerName, crateId: '', crateNo: null as number | null, byHost: true })),
+              ].map((x) => (
+                <form key={`in-${x.orderId}-${x.crateId}`} action={guestCrateAction} className="row small guest-line guest-in" data-order={x.orderId}>
+                  <span><Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link> · {customerLabel(user, x.ownerName)}</span>
+                  {canEdit && x.byHost ? (
+                    g.crates.length > 0 ? (
+                      <>
+                        <input type="hidden" name="day" value={day} />
+                        <input type="hidden" name="orderId" value={x.orderId} />
+                        <input type="hidden" name="current" value={x.crateId} />
+                        <label className="small">{t('loading.guest.crate')}{' '}
+                          <select name="crateId" defaultValue={x.crateId} aria-label={`${t('loading.guest.crate')} — ${x.orderNo}`}>
+                            <option value="">{t('loading.guest.waitingOption')}</option>
+                            {g.crates.map((c) => <option key={c.id} value={c.id}>{c.crateNo}</option>)}
+                          </select>
+                        </label>
+                        <button className="btn">{t('common.save')}</button>
+                      </>
+                    ) : <span className="badge badge-danger">{t('loading.guest.noCrates')}</span>
+                  ) : x.crateNo != null
+                    ? <span className="badge badge-info">{t('loading.guest.crateNo', { no: x.crateNo })}</span>
+                    : <span className="badge badge-danger">{t('loading.guest.waitingShort')}</span>}
+                </form>
               ))}
               {g.guestsOut.map((l) => (
                 <form key={`out-${l.crateId}-${l.orderId}`} action={guestCrateAction} className="row small guest-line guest-out">
                   <span>{t('loading.guest.out', { order: l.orderNo, owner: g.label, no: l.crateNo, host: customerLabel(user, l.hostName) })}</span>
-                  {canPlace && (
+                  {/* Eski kayıt (ev sahibi firma seçilmeden yapılmış yerleşim): yalnızca yönetici kaldırır */}
+                  {canPlace && !l.byHost && (
                     <>
                       <input type="hidden" name="day" value={day} />
                       <input type="hidden" name="orderId" value={l.orderId} />
@@ -489,28 +540,6 @@ async function GroupRows({ g, isCustomer, money, canEdit, canPlace, day, dayCrat
                   )}
                 </form>
               ))}
-              {canPlace && otherCrates.length > 0 && ownOrders.length > 0 && (
-                <details className="guest-assign">
-                  <summary>{t('loading.guest.title')}</summary>
-                  <p className="muted small">{t('loading.guest.intro')}</p>
-                  <form action={guestCrateAction} className="row">
-                    <input type="hidden" name="day" value={day} />
-                    <label className="small">{t('loading.guest.order')}{' '}
-                      <select name="orderId" required defaultValue={ownOrders.length === 1 ? ownOrders[0].id : ''}>
-                        {ownOrders.length > 1 && <option value="">—</option>}
-                        {ownOrders.map((o) => <option key={o.id} value={o.id}>{o.orderNo}</option>)}
-                      </select>
-                    </label>
-                    <label className="small">{t('loading.guest.crate')}{' '}
-                      <select name="crateId" required defaultValue="">
-                        <option value="">—</option>
-                        {otherCrates.map((c) => <option key={c.id} value={c.id}>{t('loading.guest.option', { no: c.crateNo, host: customerLabel(user, c.customer!.name) })}</option>)}
-                      </select>
-                    </label>
-                    <ConfirmButton primary message={t('loading.guest.assignDialog')}>{t('loading.guest.assign')}</ConfirmButton>
-                  </form>
-                </details>
-              )}
             </div>
           )}
         </td>

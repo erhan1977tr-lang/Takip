@@ -25,9 +25,16 @@ export type LoadRow = OrderRow & {
   notLoaded?: { quantity: number; replanDays: string[] };
 };
 
+/**
+ * "Özel durum" (karar 124): ev sahibi firma kararı iç ekibe aittir — müşteriye giden satırda hiç bulunmaz (kendi siparişinin
+ * hangi firmanın yüklemesiyle gittiğini müşteri yalnızca sandık numarası olarak görür).
+ */
+const hideHost = <R extends { guestHostId: string | null }>(user: CurrentUser, rows: R[]): R[] =>
+  (user.appRole === 'MUSTERI' ? rows.map((r) => ({ ...r, guestHostId: null })) : rows);
+
 /** Yükleme günü [from, to) aralığındaki siparişler. Beklemedekiler ve iptaller görünmez. */
 export async function ordersShippingBetween(user: CurrentUser, from: Date, to: Date): Promise<LoadRow[]> {
-  return sanitizeRows(user, await db.order.findMany({
+  return hideHost(user, sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       orderTypeCode: 'GLASS_ORDER', // profil siparişleri depodan alınır; yükleme takvimine girmez
@@ -40,7 +47,7 @@ export async function ordersShippingBetween(user: CurrentUser, from: Date, to: D
     },
     include: loadInclude,
     orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
-  }));
+  })));
 }
 
 export function shipDay(o: { actualShipDate: Date | null; estimatedShipDate: Date | null; replan?: { day: string } }): string | null {
@@ -95,7 +102,7 @@ export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date)
     // price: siparişin tamamının tutarıdır; kalan için kullanılmaz (tutar aktarılan satırlardan)
     return { ...o, offers: [offer], price: null, items: [], replan: { day: isoDay(list[0].shipDay), fromDay: isoDay(list[0].fromDay), status: list[0].status === 'CONFIRMED' ? 'CONFIRMED' : 'ACTIVE' } };
   });
-  return sanitizeRows(user, rows);
+  return hideHost(user, sanitizeRows(user, rows));
 }
 
 /**
@@ -177,7 +184,11 @@ export async function cratesBetween(user: CurrentUser, from: Date, to: Date): Pr
  *   - Müşteri: yalnızca KENDİ siparişinin hangi sandık numarasında gittiği. Ev sahibi müşterinin kimliği, sandığın ölçü /
  *     ağırlığı ve o sandıktaki başka siparişler hiç dönmez. Kendi sandığında başka müşterinin camı olduğu bilgisi de dönmez.
  */
-export type GuestLink = { day: string; orderId: string; orderNo: string; ownerId: string; ownerName: string; crateId: string; crateNo: number; hostId: string; hostName: string };
+export type GuestLink = {
+  day: string; orderId: string; orderNo: string; ownerId: string; ownerName: string; crateId: string; crateNo: number; hostId: string; hostName: string;
+  /** Sandık, yöneticinin seçtiği ev sahibi firmanın (karar 124): satış sandığı değiştirebilir. false: eski kayıt (yalnızca yönetici kaldırır). */
+  byHost: boolean;
+};
 export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date): Promise<GuestLink[]> {
   const customer = user.appRole === 'MUSTERI';
   const links = await db.crateOrder.findMany({
@@ -186,7 +197,7 @@ export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date
       ...(customer ? { order: { customerId: user.customerId ?? '__none__' } } : {}),
     },
     select: {
-      orderId: true, order: { select: { orderNo: true, customerId: true, customer: { select: { name: true } } } },
+      orderId: true, order: { select: { orderNo: true, customerId: true, guestHostId: true, customer: { select: { name: true } } } },
       crate: { select: { id: true, crateNo: true, shipDay: true, customerId: true, customer: { select: { name: true } } } },
     },
   });
@@ -194,7 +205,18 @@ export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date
     day: isoDay(l.crate.shipDay!), orderId: l.orderId, orderNo: l.order.orderNo, crateNo: l.crate.crateNo,
     ownerId: l.order.customerId, ownerName: customer ? '' : l.order.customer.name,
     crateId: customer ? '' : l.crate.id, hostId: customer ? '' : l.crate.customerId!, hostName: customer ? '' : l.crate.customer?.name ?? '',
+    byHost: !customer && l.order.guestHostId === l.crate.customerId,
   }));
+}
+
+/**
+ * "Özel durum"daki siparişlerin ev sahibi firma adları (iç ekip; ekranda rolün göremeyeceği ad maskelenir — customerLabel).
+ * Müşteri görünümünde boştur: satırlarda guestHostId zaten yoktur.
+ */
+export async function guestHostNames(user: CurrentUser, rows: { guestHostId: string | null }[]): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map((r) => r.guestHostId).filter((x): x is string => !!x))];
+  if (user.appRole === 'MUSTERI' || ids.length === 0) return new Map();
+  return new Map((await db.customer.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]));
 }
 
 /** Sandığın günü: "YYYY-MM-DD" (@db.Date UTC gece yarısı) */

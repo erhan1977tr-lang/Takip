@@ -442,17 +442,23 @@ dbTest('olağan akış: bedelsiz telafi siparişi yüklenir; kârlılıkta satı
   assert.deepEqual([cust.groups.length, cust.excluded.map((x) => [x.orderNo, x.reason])], [0, [['ABC124-T', 'NO_LINES']]]);
 });
 
-dbTest('özel durum sandığı: yalnızca yönetici; telafi siparişi başka müşterinin sandığında gider, ticari sahiplik değişmez', async () => {
+dbTest('özel durum sandığı: firmayı yalnızca yönetici seçer, sandığı satış; telafi siparişi başka müşterinin sandığında gider, ticari sahiplik değişmez', async () => {
   const T2 = await db.order.findUniqueOrThrow({ where: { orderNo: 'ABC124-T2' } });
   await cr.saveDayCrates(db, { day: N1, customerId: B.id, rows: [{ crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, netKg: 190, grossKg: 260, note: null, orderIds: [BF.id] }], actor: act(U.sales) });
   const crate = await db.crate.findFirstOrThrow({ where: { shipDay: date(N1), customerId: B.id } });
-  // Satış (ve diğer roller) başka müşterinin sandığına yerleştiremez / çıkaramaz
-  for (const u of [U.sales, U.drawer, U.inspector, U.custA, U.custB]) {
+  // Karar 124: ev sahibi FİRMAYI yalnızca yönetici seçer; firma seçilmeden kimse sandık seçemez
+  for (const u of [U.drawer, U.inspector, U.custA, U.custB]) {
     assert.deepEqual(await cr.assignGuestCrate(db, { day: N1, orderId: T2.id, crateId: crate.id, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
   }
+  for (const u of [U.sales, U.admin]) assert.deepEqual(await cr.assignGuestCrate(db, { day: N1, orderId: T2.id, crateId: crate.id, actor: act(u) }), { ok: false, code: 'NO_HOST' }, u.appRole);
+  for (const u of [U.sales, U.drawer, U.inspector, U.custA, U.custB]) {
+    assert.deepEqual(await cr.setGuestHost(db, { orderId: T2.id, hostId: B.id, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
+  }
   assert.equal(await db.crateOrder.count({ where: { orderId: T2.id } }), 0);
-  assert.deepEqual(await cr.assignGuestCrate(db, { day: N1, orderId: T2.id, crateId: crate.id, actor: act(U.admin) }), { ok: true, crateNo: 15 });
-  assert.deepEqual(await cr.removeGuestCrate(db, { orderId: T2.id, crateId: crate.id, actor: act(U.sales) }), { ok: false, code: 'FORBIDDEN' });
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: T2.id, hostId: B.id, actor: act(U.admin) }), { ok: true, changed: true, hostId: B.id });
+  // Sandığı satış seçer (yöneticinin seçtiği firmanın, aynı günün sandığı); sandık seçimini çizim / denetimci / müşteri kaldıramaz
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: N1, orderId: T2.id, crateId: crate.id, actor: act(U.sales) }), { ok: true, crateNo: 15 });
+  for (const u of [U.drawer, U.inspector, U.custA, U.custB]) assert.deepEqual(await cr.removeGuestCrate(db, { orderId: T2.id, crateId: crate.id, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
   // Yalnızca fiziksel yerleşim: sipariş, telafi kaydı ve teklif gerçek müşteride (ABC); sandık ev sahibinde (OTH)
   const o = await load(T2.id);
   assert.deepEqual([o.customerId, o.compOfId, o.offers[0].currency, (await db.crate.findUniqueOrThrow({ where: { id: crate.id } })).customerId], [A.id, S.id, 'EUR', B.id]);
@@ -463,7 +469,9 @@ dbTest('özel durum sandığı: yalnızca yönetici; telafi siparişi başka mü
   const pb = await b.previewBatch(db, { customerId: B.id, days: [N1], bnrImpl: bnr });
   assert.ok(!pb.included.some((x) => x.orderNo.startsWith('ABC')) && !pb.excluded.some((x) => x.orderNo.startsWith('ABC')), 'ev sahibi müşterinin belgesine misafir sipariş girmez');
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'CROSS_CUSTOMER_CRATE_ASSIGNED', entityId: T2.id } });
-  assert.deepEqual([audit.details.ownerCustomerId, audit.details.hostCustomerId, audit.userId], [A.id, B.id, U.admin.id]);
+  assert.deepEqual([audit.details.ownerCustomerId, audit.details.hostCustomerId, audit.userId], [A.id, B.id, U.sales.id]);
+  const hostAudit = await db.auditLog.findFirstOrThrow({ where: { action: 'CROSS_CUSTOMER_HOST_SET', entityId: T2.id } });
+  assert.deepEqual([hostAudit.details.ownerCustomerId, hostAudit.details.hostCustomerId, hostAudit.userId], [A.id, B.id, U.admin.id]);
   // Ev sahibi müşteri misafir siparişi göremez (müşteri yalıtımı)
   assert.deepEqual([await visibleTo(U.custB, T2.id), await visibleTo(U.custA, T2.id)], [0, 1]);
 });

@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
+import { customerLabel } from '@/lib/orders';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { transportList } from '@/server/loading/transport.js';
 import { transportListPdf } from '@/server/pdf/transport-list.js';
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
   if (!userCan(user, 'TRANSPORT_LIST_VIEW')) return new Response(t('common.fileNotFound'), { status: 403 });
   const day = new URL(req.url).searchParams.get('gun') ?? '';
   if (!parseDateOnly(day)) return new Response(t('loading.transport.badDay'), { status: 400 });
-  const list = await transportList(db, day);
+  // Misafir yükün firma adı görene göre (satışa maskeli — karar 7); ağırlık ve gruplar değişmez
+  const list = await transportList(db, day, { label: (name: string) => customerLabel(user, name) });
   const pdf = transportListPdf({
     day, list, company: 'GKH Trading',
     text: {
@@ -25,6 +27,7 @@ export async function GET(req: Request) {
       colDims: t('loading.transport.colDims'), colKg: t('loading.transport.colKg'), colNote: t('loading.transport.colNote'),
       subtotal: t('loading.transport.subtotal', { n: '{n}' }), crateCount: t('loading.transport.crateCount'), totalKg: t('loading.transport.totalKg'),
       missing: t('loading.transport.missing'), noPrice: t('loading.transport.noPrice'), empty: t('loading.transport.empty'),
+      guest: t('loading.transport.guest'), waiting: t('loading.transport.waiting'),
     },
   });
   return new Response(new Uint8Array(pdf), {

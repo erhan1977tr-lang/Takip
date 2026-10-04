@@ -4,12 +4,13 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
-import { saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction } from './actions';
+import { saveAccountingAction, saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveWarehouseAction, scanNowAction, testAntivirusAction, testFgoAction } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
 import { getDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/lib/env';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
+import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   ]);
   // Fatura numarasını FGO verir; burada yalnızca yöneticinin (varsa) tek seferlik elle numarası gösterilir
   const nextInvoice = manualInvoiceNumber(fgo);
+  const accounting = await getAccountingSettings(db);
   const [wh, whPending, whFailed] = await Promise.all([
     getWarehouseSettings(db),
     db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }),
@@ -148,6 +150,19 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
               : daily ? t('admin.integrations.fgo.dailyOld', { rate: daily.rate.toFixed(4), day: daily.day.split('-').reverse().join('.') }) : t('admin.integrations.fgo.dailyNone')}
           </span>
         </div>
+      </form>
+
+      {/* Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam kaç gün sonra uyarılır */}
+      {sp.ok === 'accounting' && <div className="alert alert-ok">{t('admin.integrations.accounting.saved')}</div>}
+      {sp.error === 'accounting' && <div className="alert alert-error">{t('admin.integrations.accounting.bad', { max: UNINVOICED_MAX_DAYS })}</div>}
+      <form action={saveAccountingAction} className="card" id="muhasebe">
+        <h2>{t('admin.integrations.accounting.title')}</h2>
+        <div className="row">
+          <label htmlFor="acc-uninvoiced" style={{ margin: 0 }}>{t('admin.integrations.accounting.days')}</label>
+          <input id="acc-uninvoiced" name="uninvoicedDays" type="number" min={0} max={UNINVOICED_MAX_DAYS} step={1} required style={{ width: 90 }} defaultValue={accounting.uninvoicedDays} />
+          <button className="btn btn-primary">{t('common.save')}</button>
+        </div>
+        <div className="hint">{t('admin.integrations.accounting.hint', { max: UNINVOICED_MAX_DAYS })}</div>
       </form>
 
       <form action={saveWarehouseAction} className="card" id="depo">

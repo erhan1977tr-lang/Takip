@@ -63,6 +63,8 @@ export default {
   REPLAN_CANCELLED: { label: 'Yüklenmeyen camın aktarımından vazgeçildi (adet · gün)' },
   GUEST_CRATE: { label: 'Başka müşterinin sandığına yerleştirildi (fiziksel; sandık · gün)' },
   GUEST_CRATE_REMOVED: { label: 'Başka müşterinin sandığından çıkarıldı (sandık)' },
+  GUEST_HOST: { label: 'Özel durum: başka firmanın yüklemesiyle gidecek (yükleme günü)' },
+  GUEST_HOST_REMOVED: { label: 'Özel durum kaldırıldı (yükleme günü)' },
   // Kırık / telafi camı (Aşama 9): not = adet × cam → hedef sipariş / gün (kaynakta), adet × cam ← kaynak sipariş (hedefte)
   COMPENSATION: { label: 'Kırık / telafi camı açıldı' },
   COMPENSATION_ADDED: { label: 'Telafi camı eklendi' },

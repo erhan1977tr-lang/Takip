@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.48.0 — 04.10.2026
+
+- **Özel durum — başka firmanın yüklemesiyle gidecek** (yeniden düzenlendi): yönetici artık sipariş ya da sandık seçmez.
+  Sipariş sayfasında, teklif tablosunun hemen altındaki kutuyu işaretler ve yalnızca **hedef firmayı** seçer (o yükleme
+  gününde yüklemesi olan firmalar; her firma bir kez). Sandık o an girilmemiş olabilir.
+  Sandığı **satış**, Yüklemeler ekranında o firmanın sandıklarını girerken seçer: misafir yük, firmanın sandık bölümünde
+  kendiliğinden "ÖZEL DURUM / MİSAFİR YÜK" olarak görünür. Satış yalnızca yöneticinin seçtiği firmanın o günkü
+  sandıklarından birini seçebilir; firmayı değiştiremez.
+- **Kırmızı uyarı**: sandık seçilene kadar Yüklemeler'de "Özel durum — sandık seçimi bekliyor" (sipariş, firma, hedef
+  firma). Hiçbir sandık kendiliğinden atanmaz.
+- **İki firmaya da bildirim**: sandık seçilince sipariş sahibi firmaya "camınız başka bir firmanın sandığına yerleştirildi"
+  (sandık no, gün), sandığın firmasına "Încărcătură suplimentară: sticla firmei … a fost încărcată în lada dvs. nr. …"
+  bildirimi gider. Sandığın firması yalnızca misafir firmanın adını, sipariş numarasını, sandık numarasını ve günü
+  görür — fiyat, teklif, belge, dosya görmez. Sandık değişirse / kaldırılırsa bir kez daha bildirilir.
+- **Nakliye listesi**: misafir yük, taşındığı sandığın altında "MİSAFİR YÜK: firma · sipariş" olarak yazar; sandığı
+  bekleyen özel durumlar ayrıca listelenir. Ağırlık kuralı aynı.
+  Ticari hiçbir şey değişmez: sipariş, teklif, proforma, fatura ve muhasebe gerçek müşteride kalır.
+- **Proforma ve faturada sipariş seçimi**: müşteri proformasında ve onaylı yüklemenin Faturalama bölümünde, uygun
+  siparişlerin yanındaki kutularla belgeye girecek siparişleri seçebilirsiniz ("Seçimi uygula"). Belge yalnızca seçilen
+  siparişlerden kesilir; seçilmeyen sipariş olduğu gibi kalır ve sonraki belgeye girer. Uygun olmayan siparişler
+  nedenleriyle listelenir; çift faturalama, avans ve kur kuralları aynen geçerlidir.
+- **Fatura bekliyor uyarısı**: yüklemesi onaylanmış ama kapanış faturası kesilmemiş siparişler, ayardaki gün dolunca
+  Muhasebe → Cam Tahsilat'ın başında "FATURA BEKLİYOR" listesinde görünür ve yöneticiye bildirim gider. Proforma ve
+  avans faturası uyarıyı kapatmaz; fatura kesilince kendiliğinden kalkar. Kısmi yüklemede yalnızca yüklenen cam sayılır.
+  Gün sayısı: Yönetici → Entegrasyonlar → "Fatura edilmemiş sipariş uyarısı" (varsayılan 6 gün, 0–60).
+
 ## 3.47.0 — 04.10.2026
 
 - **Yönetici teklif tablosunda "Tek fiyatı tüm satırlara uygula"**: satıştaki araç artık yönetici fiyat tablosunun altında da

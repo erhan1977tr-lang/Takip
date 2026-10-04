@@ -235,6 +235,14 @@ export default {
   integrations: {
     title: 'Entegrasyonlar',
     intro: 'Dış servislerle bağlantılar. Şifre ve anahtarlar burada değil, yalnızca sunucudaki ayar dosyasında durur.',
+    // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
+    accounting: {
+      title: "Fatura edilmemiş sipariş uyarısı",
+      days: "Yüklemeden sonra gün sayısı",
+      hint: "Yüklenen camın gereken kapanış faturası bu kadar takvim günü sonra hâlâ kesilmemişse muhasebe / yönetici uyarılır (Muhasebe → Cam Tahsilat'ta \"Fatura bekliyor\" listesi ve bildirim). Proforma ve avans faturası uyarıyı kapatmaz; yalnızca kapanış faturası kapatır. 0–{max} arası tam sayı; varsayılan 6.",
+      saved: "Fatura uyarısı ayarı kaydedildi.",
+      bad: "Gün sayısı geçersiz: 0 ile {max} arasında tam sayı yazın.",
+    },
     fgo: {
       dailyLimit: "Günlük belge sınırı",
       dailyLimitHint: "Deneme güvenliği: günde en fazla bu kadar FGO belgesi kesilir (0 = sınırsız).",

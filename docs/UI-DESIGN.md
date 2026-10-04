@@ -237,8 +237,25 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   planla" / "Günü değiştir") and a "Vazgeç" link button in the `.nl-next` cell.
 - Carried-forward rows and partially loaded orders carry a `.badge.badge-warn.replan-badge` on the order row.
 - Guest crate: `.badge.badge-info.guest-badge` ("#15 · host") in the crate cell (customers get a plain `#15`
-  `.badge-ok`); `.guest-box` under the customer's crate section holds the relation lines (`.guest-in` / `.guest-out`)
-  and, for Admin, the `details.guest-assign` form (order select, crate select, `ConfirmButton`).
+  `.badge-ok`); `.guest-box` under the customer's crate section holds the relation lines (`.guest-in` / `.guest-out`).
+- "Özel durum" (3.48.0): Admin picks the host FIRM on the order page — `form.card.guest-host#ozel-durum` right below
+  `#teklif`: a `label.check` checkbox; when ticked, `select#guest-host` (firms only) + primary "Kaydet" + a status
+  badge (`.badge-danger` "Sandık seçimi bekliyor" / `.badge-ok` "Sandık 15"). On the loading day, every waiting
+  placement is a `.alert.alert-error.guest-waiting` at the top of `#gun`, the order row gets a
+  `.badge.badge-danger.guest-badge`, and the host firm's `.guest-box` starts with `.guest-head`
+  ("ÖZEL DURUM / MİSAFİR YÜK") followed by one `form.guest-in` per guest order: order · firm, a crate `<select>`
+  (first option = waiting) and a plain `.btn` "Kaydet" for `CRATE_EDIT`; without crates a `.badge-danger` note.
+
+## Order selection, uninvoiced reminder (3.48.0)
+
+- Proforma preview and the loading "Faturalama" card: one checkbox per eligible order in the order row
+  (`tr.sub[data-order]`), bound with `form="…"` to a GET form holding the "Seçimi uygula" `.btn` and a `.muted.small`
+  hint under the table. Unselected orders stay as a muted row ("seçilmedi — bu belgeye girmez"); totals, FX and the
+  create button always describe the selected orders only. No client state: the selection lives in the URL.
+- Muhasebe → Cam Tahsilat: `.card.card-flush#fatura-bekliyor` above the stats — title in `.text-danger` with a
+  `.badge-danger` count, intro in `.card-tools`, an `.acc-table` (order · customer, loading date, `.badge-danger`
+  "n gündür fatura edilmedi" + `.cell-note` reason, action `.btn`). It disappears when nothing is waiting.
+- Admin → Entegrasyonlar: `form.card#muhasebe` — one number input (`min 0`, `max 60`) + primary "Kaydet" + `.hint`.
 
 ## Loading correction, partial replan, order advance (3.40.0)
 

@@ -2,7 +2,7 @@
 // FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR de sahtedir (ağa çıkılmaz).
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
+import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { dayKey } = await import('../../server/orders/loading.js');
@@ -11,6 +11,7 @@ const { snapshotLine } = await import('../../server/loading/confirmation.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
 const inv = await import('../../server/glass/invoice-batch.js');
+const un = await import('../../server/accounting/uninvoiced.js');
 
 const SECRET = 'i'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -602,3 +603,258 @@ dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse engeldir: FGO\'da 
   for (const o of [deleted, failed, pending]) assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, o.orderNo);
   assert.equal(await db.billingBatchOrder.count({ where: { orderId: active.id } }), 0);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Sipariş seçimi (karar 125) ve "fatura bekliyor" uyarısı (karar 126)
+// ---------------------------------------------------------------------------------------------------------------------
+const no = (o) => o.orderNo;
+const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+/** Yükleme gününden k gün sonraki an (yerel gün = o gün) */
+const on = (day, k) => new Date(`${plus(day, k)}T10:00:00Z`);
+
+dbTest('sipariş seçimi — proforma: uygun siparişlerden seçilenlerle TEK belge; seçilmeyen sipariş olduğu gibi kalır; uygun olmayan / kapsanan / uyumsuz seçim sunucuda reddedilir', offline(async () => {
+  const c = await customer('Select SRL', 'SEL');
+  const stranger = await customer('Stranger SRL', 'STR');
+  const [d1, d2] = [noon(30), noon(31)];
+  const [s1, s2, s3] = [await order(c, { shipDate: d1 }), await order(c, { shipDate: d1, cnc: true }), await order(c, { shipDate: d2 })];
+  const ron = await order(c, { shipDate: d1, currency: 'RON' }); // başka para birimi
+  const held = await order(c, { shipDate: d1 });
+  await db.order.update({ where: { id: held.id }, data: { onHold: true } }); // uygun değil
+  const foreign = await order(stranger, { shipDate: d1 });
+  const days = [dayKey(d1), dayKey(d2)];
+  const pv = (orderIds) => b.previewBatch(db, { customerId: c.id, days, orderIds, bnrImpl: bnr('5.0000') });
+  const make = (orderIds, key) => b.createBatch(db, { customerId: c.id, days, orderIds, key, actor: actor(), bnrImpl: bnr('5.0000') });
+
+  // Seçim yok = uygun siparişlerin hepsi (eski davranış): karışık para birimi engeller
+  const all = await pv(null);
+  assert.deepEqual([all.included.map(no), all.unselected, all.excluded.map((o) => [o.orderNo, o.reason]), all.problems], [[s1, s2, s3, ron].map(no), [], [[held.orderNo, 'ON_HOLD']], ['MIXED_CURRENCY']]);
+
+  // Seçim: s1 + s3 → yalnızca onlar hesaplanır; seçilmeyenler ayrı listede (hariç tutulmuş değil)
+  const p = await pv([s3.id, s1.id]);
+  assert.deepEqual([p.included.map(no), p.unselected.map(no), p.problems, p.currency, p.sourceTotal, p.ronNet, p.ronGross], [[s1, s3].map(no), [s2, ron].map(no), [], 'EUR', 200, 1000, 1210]);
+  assert.notEqual(p.key, (await pv([s1.id])).key, 'parmak izi seçimi içerir');
+
+  // Sunucu yetkili: uygun olmayan (beklemede), başka müşterinin, olmayan sipariş; boş seçim; uyumsuz para birimi
+  for (const [ids, code] of [[[s1.id, held.id], 'NOT_ELIGIBLE'], [[s1.id, foreign.id], 'NOT_ELIGIBLE'], [[s1.id, 'yok'], 'NOT_ELIGIBLE'], [[], 'NOTHING_SELECTED'], [[s1.id, ron.id], 'MIXED_CURRENCY']]) {
+    const bad = await pv(ids);
+    assert.deepEqual(bad.problems, [code], code);
+    assert.deepEqual(await make(ids, bad.key), { ok: false, code }, code);
+  }
+  // Önizlenen seçim ≠ gönderilen seçim: parti oluşturulmaz
+  assert.deepEqual(await make([s1.id, s2.id, s3.id], p.key), { ok: false, code: 'STALE_PREVIEW' });
+  for (const role of ['SATIS', 'MUSTERI', 'DENETIMCI']) assert.deepEqual(await b.createBatch(db, { customerId: c.id, days, orderIds: [s1.id, s3.id], key: p.key, actor: actor(role), bnrImpl: bnr('5.0000') }), { ok: false, code: 'FORBIDDEN' });
+  assert.equal(await db.billingBatch.count({ where: { customerId: c.id } }), 0);
+
+  // Parti ve FGO proforması yalnızca seçilen siparişlerden
+  const r = await make([s1.id, s3.id], p.key);
+  assert.equal(r.ok, true);
+  const fgo = fakeFgo(1100);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
+  assert.equal(fgo.calls.length, 1);
+  assert.deepEqual(names(fgo.calls[0]), [`Comanda ${s1.orderNo} — Sticlă securizată 10 mm`, `Comanda ${s3.orderNo} — Sticlă securizată 10 mm`]);
+  assert.ok(![s2, ron, held, foreign].some((o) => JSON.stringify(fgo.calls[0]).includes(o.orderNo)), 'seçilmeyen siparişler belgede yok');
+  const bt = await batchOf(r.batchId);
+  assert.deepEqual([bt.orders.map(no), bt.sourceTotal.toString(), bt.ronNet.toString(), bt.lines.length, bt.status], [[s1, s3].map(no), '200', '1000', 2, 'ISSUED']);
+  assert.deepEqual((await db.auditLog.findFirstOrThrow({ where: { action: 'BILLING_BATCH_CREATED', entityId: r.batchId } })).details.notSelected, [s2, ron].map(no));
+
+  // Seçilmeyen sipariş değişmedi ve hâlâ uygun; partideki sipariş yeniden seçilemez (çift faturalama yok)
+  assert.equal(b.coverageOf(await db.order.findUnique({ where: { id: s2.id }, include: { fgoDocuments: true, billingBatchOrders: true } })), null);
+  const next = await pv(null);
+  assert.deepEqual([next.included.map(no), next.excluded.filter((o) => o.reason === 'IN_BATCH').map(no)], [[s2, ron].map(no), [s1, s3].map(no)]);
+  const dup = await pv([s1.id, s2.id]);
+  assert.deepEqual(dup.problems, ['NOT_ELIGIBLE']);
+  assert.deepEqual(await make([s1.id, s2.id], dup.key), { ok: false, code: 'NOT_ELIGIBLE' });
+  // Kalan sipariş ayrı bir proformaya girer; belgenin günü yalnızca o siparişin günü
+  const p2 = await pv([s2.id]);
+  const r2 = await make([s2.id], p2.key);
+  assert.equal(r2.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r2.batchId }));
+  assert.equal(fgo.calls.length, 2);
+  assert.deepEqual(names(fgo.calls[1]), [`Comanda ${s2.orderNo} — Sticlă securizată 10 mm`, `Comanda ${s2.orderNo} — Prelucrare CNC`]);
+  assert.deepEqual((await batchOf(r2.batchId)).loadingDays.map((x) => x.toISOString().slice(0, 10)), [dayKey(d1)]);
+  assert.equal(await db.billingBatchOrder.count({ where: { orderId: { in: [s1.id, s2.id, s3.id] }, activeKey: { not: null } } }), 3, 'her sipariş tek bir etkin partide');
+}));
+
+dbTest('sipariş seçimi — fatura: onaylı yüklemenin uygun siparişlerinden seçilenlerle fatura (yalnızca geçerli yüklenen adet); kalan sipariş aynı onaydan ayrı faturaya girer; grup dışı / faturalanmış seçim reddedilir', offline(async () => {
+  const c = await customer('Pick SRL', 'PCK');
+  const [o1, o2, o3] = [await order(c), await order(c, { cnc: true }), await order(c, { pieces: 10 })];
+  const ron = await order(c, { currency: 'RON' }); // başka para birimi: ayrı fatura grubu
+  const day = pastDay();
+  const conf = await confirm(day, [{ order: o1 }, { order: o2 }, { order: o3, loaded: 8 }, { order: ron }]);
+  const itemsBefore = JSON.stringify(await db.loadingConfirmationItem.findMany({ where: { confirmationId: conf.id }, orderBy: { id: 'asc' } }));
+  const eur = (r) => groupsOf(r, c).find((x) => x.currency === 'EUR');
+  const ge = eur(await billing(day));
+  assert.deepEqual([ge.orders.map(no), ge.unselected, ge.uniqueKey === ge.key], [[o1, o2, o3].map(no), [], true], 'seçim yok = grubun tamamı (eski davranış)');
+  const sel = (ids) => billing(day, { select: { key: ge.key, orderIds: ids } }).then(eur);
+
+  // Seçim: o1 + o3 — tutarlar yalnızca seçilenlerden; o3'te yalnızca yüklenen 8 adet
+  const g13 = await sel([o3.id, o1.id]);
+  assert.deepEqual([g13.orders.map(no), g13.unselected.map(no), g13.problems, g13.sourceTotal, g13.ronNet, g13.ronGross, g13.payable], [[o1, o3].map(no), [o2.orderNo], [], 500, 2500, 3025, 3025]);
+  assert.deepEqual(g13.orders[1].lines.map((l) => [l.pieces, l.m2, l.amount]), [[8, 8, 400]]);
+  assert.ok(g13.uniqueKey !== ge.key && g13.previewKey !== ge.previewKey && g13.key === ge.key);
+
+  // Sunucu yetkili: grupta olmayan sipariş (başka para birimi / olmayan), boş seçim
+  for (const [ids, code] of [[[o1.id, ron.id], 'NOT_ELIGIBLE'], [[o1.id, 'yok'], 'NOT_ELIGIBLE'], [[], 'NOTHING_SELECTED']]) {
+    const bad = await sel(ids);
+    assert.ok(bad.problems.includes(code), code);
+    assert.deepEqual(await createInvoice(day, bad, { orderIds: ids }), { ok: false, code }, code);
+  }
+  // Önizlenen seçim ≠ gönderilen seçim: fatura oluşturulmaz
+  assert.deepEqual(await createInvoice(day, g13, { orderIds: [o1.id, o2.id, o3.id] }), { ok: false, code: 'STALE_PREVIEW' });
+  assert.deepEqual(await createInvoice(day, g13), { ok: false, code: 'STALE_PREVIEW' });
+  for (const role of ['SATIS', 'MUSTERI', 'DENETIMCI']) assert.deepEqual(await createInvoice(day, g13, { orderIds: [o1.id, o3.id], actor: actor(role) }), { ok: false, code: 'FORBIDDEN' });
+  assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id } }), 0);
+
+  // Fatura yalnızca seçilenlerden
+  const r1 = await createInvoice(day, g13, { orderIds: [o1.id, o3.id] });
+  assert.equal(r1.ok, true);
+  const fgo = fakeFgo(1200);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r1.batchId }));
+  assert.deepEqual(names(fgo.calls[0]), [`Comanda ${o1.orderNo} — Sticlă securizată 10 mm`, `Comanda ${o3.orderNo} — Sticlă securizată 10 mm`]);
+  assert.deepEqual([fgo.calls[0]['Continut[1][NrProduse]'], fgo.calls[0]['Continut[1][PretTotal]'], fgo.calls[0].IdExtern], ['8', '2420.00', `LOT-${r1.batchId}`]);
+  assert.ok(![o2, ron].some((o) => JSON.stringify(fgo.calls[0]).includes(o.orderNo)));
+  const b1 = await batchOf(r1.batchId);
+  assert.deepEqual([b1.orders.map(no), b1.orders.map((o) => o.activeKey), b1.uniqueKey, b1.confirmationId, b1.status],
+    [[o1, o3].map(no), [inv.invoiceOrderKey(conf.id, o1.id), inv.invoiceOrderKey(conf.id, o3.id)], g13.uniqueKey, conf.id, 'ISSUED']);
+
+  // Seçilmeyen o2 olduğu gibi: aynı onaydan faturalanabilir. Faturalanmış sipariş yeniden seçilemez (kapsam iki kez faturalanmaz)
+  const rest = eur(await billing(day));
+  assert.deepEqual([rest.orders.map(no), rest.key === ge.key, rest.sourceTotal], [[o2.orderNo], true, 120]);
+  const again = await sel([o1.id, o2.id]);
+  assert.deepEqual(again.problems, ['NOT_ELIGIBLE']);
+  assert.deepEqual(await createInvoice(day, again, { orderIds: [o1.id, o2.id] }), { ok: false, code: 'NOT_ELIGIBLE' });
+  const r2 = await createInvoice(day, rest, { orderIds: [o2.id] });
+  assert.equal(r2.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r2.batchId }));
+  assert.equal(fgo.calls.length, 2);
+  assert.deepEqual(names(fgo.calls[1]), [`Comanda ${o2.orderNo} — Sticlă securizată 10 mm`]);
+  assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, customerId: c.id, kind: 'INVOICE', status: 'ISSUED' } }), 2);
+  assert.equal(await db.billingBatchOrder.count({ where: { orderId: { in: [o1.id, o2.id, o3.id] }, activeKey: { not: null } } }), 3, 'her siparişin bu onaydaki kapsamı tek faturada');
+  // Öbür grup (RON) ve yükleme onayı etkilenmedi; kesilmiş belgeler değişmedi
+  assert.deepEqual(groupsOf(await billing(day), c).map((x) => [x.currency, x.orders.map(no)]), [['RON', [ron.orderNo]]]);
+  assert.equal(JSON.stringify(await db.loadingConfirmationItem.findMany({ where: { confirmationId: conf.id }, orderBy: { id: 'asc' } })), itemsBefore);
+  assert.deepEqual((await batchOf(r1.batchId)).lines.map((l) => l.ronGross.toString()), ['605', '2420']);
+}));
+
+dbTest('sipariş seçimi avans ve kur kurallarını aşmaz: zincirde avansı kesilmemiş tahsilat varken seçimle de fatura kesilmez; kur proformanın kuru; avans seçilen faturanın tutarı kadar düşülür, kalanı sonraki faturaya', offline(async () => {
+  const c = await customer('Pick Chain SRL', 'PCH');
+  const ship = noon(33);
+  const [k1, k2] = [await order(c, { shipDate: ship }), await order(c, { shipDate: ship })];
+  const fgo = fakeFgo(1300);
+  const P = await proformaFor(c, [ship], fgo, '5.0000');
+  const day = pastDay();
+  await confirm(day, [{ order: k1 }, { order: k2 }]);
+  const base = groupsOf(await billing(day, { bnrImpl: never('BNR') }), c)[0];
+  assert.deepEqual([base.chainId, base.orders.map(no)], [P.id, [k1, k2].map(no)]);
+  const pick = (ids) => billing(day, { select: { key: base.key, orderIds: ids }, bnrImpl: never('BNR') }).then((r) => groupsOf(r, c)[0]);
+
+  // Proformaya 800 tahsilat, avans faturası yok: seçimle de fatura kesilemez
+  await setPaid(fgo, P.document, 800);
+  let g1 = await pick([k1.id]);
+  assert.deepEqual([g1.orders.map(no), g1.problems, g1.fx.finalRate, g1.chain.advanceRequired], [[k1.orderNo], ['ADVANCE_REQUIRED'], '5.0000', 800]);
+  assert.deepEqual(await createInvoice(day, g1, { orderIds: [k1.id] }), { ok: false, code: 'ADVANCE_REQUIRED' });
+  const av = await inv.createAdvanceBatch(db, { proformaBatchId: P.id, actor: actor() });
+  assert.equal(av.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: av.batchId }));
+
+  // Avans kesildi: seçilen k1'in faturası — avans faturanın tutarını (605) aşmadan düşülür
+  g1 = await pick([k1.id]);
+  assert.deepEqual([g1.problems, g1.unselected.map(no), g1.ronGross, g1.storno.map((x) => x.gross), g1.payable], [[], [k2.orderNo], 605, [605], 0]);
+  const i1 = await createInvoice(day, g1, { orderIds: [k1.id], bnrImpl: never('BNR') });
+  assert.equal(i1.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i1.batchId }));
+  const I1 = await batchOf(i1.batchId);
+  assert.deepEqual([I1.parentId, I1.fxRate.toString(), I1.orders.map(no)], [P.id, P.fxRate.toString(), [k1.orderNo]], 'zincirin kur kaydı yeniden kullanılır');
+  // Kalan k2: aynı zincirde, avansın kalanı (800 − 605 = 195) düşülür
+  const g2 = groupsOf(await billing(day, { bnrImpl: never('BNR') }), c)[0];
+  assert.deepEqual([g2.orders.map(no), g2.chainId, g2.storno.map((x) => x.gross), g2.payable], [[k2.orderNo], P.id, [195], 410]);
+  const i2 = await createInvoice(day, g2, { orderIds: [k2.id], bnrImpl: never('BNR') });
+  assert.equal(i2.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i2.batchId }));
+  assert.deepEqual(groupsOf(await billing(day), c), []);
+}));
+
+dbTest('fatura bekliyor: ayar (varsayılan 6, 0–60); uyarı günü = onaylı yükleme günü + gün; proforma ve avans kapatmaz, kuyruktaki fatura kapatmaz, yalnızca kesilmiş kapanış faturası kapatır', offline(async () => {
+  // Ayar: varsayılan 6; kaydedilir (denetim kaydıyla); bozuk kayıt varsayılana düşer
+  assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 6 });
+  await un.saveAccountingSettings(db, { uninvoicedDays: 3 }, actor());
+  assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 3 });
+  assert.ok(await db.auditLog.findFirst({ where: { action: 'SETTINGS_UPDATE', entityId: un.ACCOUNTING_KEY } }));
+  await db.integrationSetting.update({ where: { key: un.ACCOUNTING_KEY }, data: { value: { uninvoicedDays: 999 } } });
+  assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 6 });
+  await un.saveAccountingSettings(db, { uninvoicedDays: 6 }, actor());
+
+  const c = await customer('Remind SRL', 'RMD');
+  const ship = noon(35); // planlanan gün ileride: uyarı PLANLANAN güne değil, onaylı yükleme gününe bakar
+  const o1 = await order(c, { shipDate: ship });
+  const fgo = fakeFgo(1400);
+  const P = await proformaFor(c, [ship], fgo, '5.0000');
+  const mine = async (now, days = undefined) => (await un.uninvoicedLoadings(db, { now, days })).filter((x) => x.customerId === c.id);
+  assert.deepEqual(await mine(on(dayKey(ship), 30)), [], 'yükleme onaylanmadıysa uyarı yok (planlanan gün geçse de)');
+  const d1 = pastDay();
+  await confirm(d1, [{ order: o1 }]);
+
+  // Uyarı gününden önce yok; uyarı gününde ve sonrasında var. Müşteri proforması (kesilmiş) uyarıyı kapatmaz
+  assert.deepEqual(await mine(on(d1, 5)), []);
+  assert.deepEqual((await mine(on(d1, 6))).map((r) => [r.orderNo, r.customerName, r.day, r.dueDay, r.daysSince, r.note, r.removed]), [[o1.orderNo, 'Remind SRL', d1, plus(d1, 6), 6, null, false]]);
+  assert.deepEqual((await mine(on(d1, 9))).map((r) => r.daysSince), [9]);
+  // Ayardaki gün sayısı: 0 = yükleme günü; 2 = iki gün sonra
+  assert.deepEqual([(await mine(on(d1, 0), 0)).length, (await mine(on(d1, 1), 2)).length, (await mine(on(d1, 2), 2)).length], [1, 0, 1]);
+
+  // Avans faturası (kesilmiş) uyarıyı kapatmaz
+  await setPaid(fgo, P.document, 300);
+  const av = await inv.createAdvanceBatch(db, { proformaBatchId: P.id, actor: actor() });
+  assert.equal(av.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: av.batchId }));
+  assert.equal((await batchOf(av.batchId)).document.kind, 'ADVANCE');
+  assert.deepEqual((await mine(on(d1, 6))).map((r) => r.note), [null]);
+
+  // Kuyruktaki fatura isteği kapatmaz; kesilen kapanış faturası kapatır
+  const g1 = groupsOf(await billing(d1), c)[0];
+  const i1 = await createInvoice(d1, g1);
+  assert.equal(i1.ok, true);
+  assert.deepEqual((await mine(on(d1, 6))).map((r) => r.note), ['INVOICE_QUEUED']);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i1.batchId }));
+  assert.equal((await batchOf(i1.batchId)).document.kind, 'INVOICE');
+  assert.deepEqual(await mine(on(d1, 40)), [], 'kapanış faturası kesildi: uyarı kendiliğinden kalkar');
+  const callsBefore = fgo.calls.length;
+  await un.remindUninvoiced(db, { now: on(d1, 40) });
+  assert.equal(fgo.calls.length, callsBefore, 'uyarı / bildirim FGO\'ya istek atmaz, belge kesmez');
+}));
+
+dbTest('fatura bekliyor: kısmi yüklemede yalnızca yüklenen kapsam; hiç yüklenmeyen, faturalanamayan (bedelsiz) kapsam uyarı üretmez; sipariş başına zincirde proforma / avans kapatmaz, fatura kapatır; silinmiş siparişin yüklenmiş camı da izlenir', offline(async () => {
+  const c = await customer('Remind Part SRL', 'RMP');
+  const partial = await order(c, { pieces: 10 }); // 8 yüklendi, 2 yüklenmedi
+  const none = await order(c); // hiç yüklenmedi
+  const free = await order(c); // bedelsiz: faturalanacak kalem yok
+  await db.offerLine.updateMany({ where: { offer: { orderId: free.id } }, data: { free: true } });
+  const own = await order(c); // sipariş başına belge zinciri
+  const gone = await order(c); // yüklendikten sonra silinen sipariş
+  const d = pastDay();
+  await confirm(d, [{ order: partial, loaded: 8 }, { order: none, loaded: 0 }, { order: free }, { order: own }, { order: gone }]);
+  const mine = async (k = 6) => (await un.uninvoicedLoadings(db, { now: on(d, k) })).filter((x) => x.customerId === c.id).map((r) => [r.orderNo, r.note, r.removed]);
+  assert.deepEqual(await mine(5), []);
+  assert.deepEqual(await mine(), [[partial.orderNo, null, false], [own.orderNo, null, false], [gone.orderNo, null, false]], 'yüklenmeyen ve bedelsiz kapsam için uyarı yok');
+
+  // Sipariş başına zincir: proforma ve avans faturası kapatmaz (fatura sipariş sayfasından kesilecek); fatura kapatır
+  await db.fgoDocument.create({ data: { orderId: own.id, kind: 'PROFORMA', series: 'PRF', number: '9801', issuedAt: new Date() } });
+  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, 'ORDER_CHAIN', false]);
+  await db.fgoDocument.create({ data: { orderId: own.id, kind: 'ADVANCE', series: 'GKH', number: '9802', issuedAt: new Date() } });
+  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, 'ORDER_CHAIN', false]);
+  await db.fgoDocument.create({ data: { orderId: own.id, kind: 'INVOICE', series: 'GKH', number: '9803', issuedAt: new Date() } });
+  assert.equal((await mine()).find((r) => r[0] === own.orderNo), undefined);
+
+  // Silinmiş sipariş (karar 110): yüklenmiş camı faturalanana kadar izlenir
+  await db.order.update({ where: { id: gone.id }, data: { removedAt: new Date(), removedStatus: 'URETIMDE', status: 'IPTAL' } });
+  assert.deepEqual((await mine()).find((r) => r[0] === gone.orderNo), [gone.orderNo, null, true]);
+
+  // Kısmi yükleme: yüklenen 8 adet faturalanınca uyarı kapanır — yüklenmeyen 2 adet için uyarı doğmaz
+  const fgo = fakeFgo(1500);
+  const grp = groupsOf(await billing(d, { select: null }), c)[0];
+  const picked = groupsOf(await billing(d, { select: { key: grp.key, orderIds: [partial.id] } }), c)[0];
+  assert.deepEqual(picked.orders[0].lines.map((l) => l.pieces), [8]);
+  const r = await createInvoice(d, picked, { orderIds: [partial.id] });
+  assert.equal(r.ok, true);
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
+  assert.deepEqual(await mine(30), [[gone.orderNo, null, true]], 'faturalanan kapsam kalktı; yüklenmeyen 2 adet uyarı üretmedi; seçilmeyen sipariş bekliyor');
+}));

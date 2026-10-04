@@ -81,6 +81,15 @@ export default {
       STALE_PREVIEW: "Önizlemeden sonra içerik ya da kur değişti; yeni önizlemeyi kontrol edip yeniden deneyin.",
       ALREADY_COVERED: "Seçilen siparişlerden biri bu arada başka bir belgeye girdi; önizlemeyi yenileyin.",
     },
+    // Sipariş seçimi (karar 125): uygun siparişlerden yalnızca işaretlenenler belgeye girer
+    select: {
+      label: "Belgeye al: {order}",
+      apply: "Seçimi uygula",
+      hint: "Belgeye girecek siparişleri işaretleyin ve \"Seçimi uygula\"ya basın: önizleme ve tutarlar yalnızca seçilen siparişlerle yeniden hesaplanır. Seçilmeyen sipariş olduğu gibi kalır ve sonraki belgeye girebilir.",
+      unselected: "seçilmedi — bu belgeye girmez",
+      NOT_ELIGIBLE: "Seçilen siparişlerden biri bu belgeye girmeye uygun değil (başka belgeyle karşılanıyor, uygunluğu değişti ya da bu kapsamda değil); seçimi yenileyin.",
+      NOTHING_SELECTED: "Hiç sipariş seçilmedi; en az bir sipariş işaretleyin.",
+    },
     listTitle: "Müşteri proformaları",
     listEmpty: "Henüz müşteri proforması yok.",
     listCol: {
@@ -197,6 +206,23 @@ export default {
     detail: "faturada {invPieces} adet / {invAmount} {cur} · fiilen yüklenen {effPieces} adet / {effAmount} {cur} · fark {diff} {cur}",
     paid: "fatura ödenmiş / kısmen ödenmiş",
     advance: "faturada avans düşümü var",
+  },
+  // "Fatura bekliyor" (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam — Cam Tahsilat'ta kalıcı liste
+  overdue: {
+    title: "FATURA BEKLİYOR",
+    intro: "Yüklemesi onaylanmış, {days} günü dolmuş ve kapanış faturası hâlâ kesilmemiş siparişler. Proforma ve avans faturası bu uyarıyı kapatmaz; fatura kesilince satır kendiliğinden kalkar.",
+    col: { order: "Sipariş · müşteri", loaded: "Yükleme", waiting: "Durum" },
+    loaded: "Yükleme: {date}",
+    days: "{n} gündür fatura edilmedi",
+    removed: "silinmiş sipariş",
+    open: "Faturalamayı aç",
+    openOrder: "Sipariş (Finans / FGO)",
+    note: {
+      ORDER_CHAIN: "siparişin kendi belge zinciri var — fatura sipariş sayfasından kesilir",
+      PROFORMA_NOT_ISSUED: "müşteri proforması kuyrukta ya da kesilemedi",
+      INVOICE_QUEUED: "fatura isteği kuyrukta",
+      INVOICE_FAILED: "fatura FGO'da kesilemedi — yeniden deneyin ya da vazgeçin",
+    },
   },
   receivables: {
     refresh: "FGO ile Güncelle",

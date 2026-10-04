@@ -63,6 +63,8 @@ export default {
   REPLAN_CANCELLED: { label: 'S-a renunțat la replanificarea sticlei neîncărcate (buc. · zi)' },
   GUEST_CRATE: { label: 'Amplasată în lada altui client (fizic; ladă · zi)' },
   GUEST_CRATE_REMOVED: { label: 'Scoasă din lada altui client (ladă)' },
+  GUEST_HOST: { label: 'Situație specială: pleacă împreună cu încărcarea altei firme (zi de încărcare)' },
+  GUEST_HOST_REMOVED: { label: 'Situația specială a fost eliminată (zi de încărcare)' },
   COMPENSATION: { label: 'S-a deschis o sticlă spartă / de înlocuire' },
   COMPENSATION_ADDED: { label: 'S-a adăugat sticla de înlocuire' },
   COMPENSATION_PENDING: { label: 'Sticla de înlocuire așteaptă aprobarea administratorului' },

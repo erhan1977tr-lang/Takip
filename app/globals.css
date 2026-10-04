@@ -826,11 +826,12 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .nl-box h3 + p, .correction-rev { margin-top: 8px; }
 .correction-rev ul, #duzelt-onizleme ul { margin: 4px 0 8px 18px; }
 .impact-line { margin: 6px 0; }
-/* Fiziksel sandık (karar 103): başka müşterinin sandığına yerleşim — sandık bölümünün altında */
+/* Fiziksel sandık (karar 103, 124): başka müşterinin sandığına yerleşim — sandık bölümünün altında.
+   "Özel durum / misafir yük": ev sahibi firmanın bölümünde sandık seçimi; sandık seçilene kadar gün başlığında kırmızı uyarı */
 .guest-box { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .guest-line { margin: 4px 0; align-items: center; }
-.guest-assign > summary { cursor: pointer; font-size: var(--fs-meta); font-weight: 600; color: var(--primary); padding: 4px 0; }
-.guest-assign form { margin-top: 6px; align-items: flex-end; }
+.guest-head { margin: 0 0 4px; color: var(--danger); }
+.guest-waiting > div { margin-top: 2px; }
 
 /* Kırık / telafi camı (karar 108): teklif tablosunun altındaki form, "Önemli kararlar" kartı, siparişi sil */
 .comp-choice { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }

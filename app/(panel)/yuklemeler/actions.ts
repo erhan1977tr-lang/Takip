@@ -134,19 +134,26 @@ export async function cancelReplanAction(formData: FormData) {
 }
 
 /**
- * Fiziksel yerleşim (karar 103): siparişi aynı yükleme gününde başka bir müşterinin sandığına koyar / çıkarır. Yalnızca
- * yönetici (LOADING_CONFIRM); yetki burada ve crates.js içinde sunucuda kontrol edilir. Ticari hiçbir şey değişmez.
+ * "Özel durum" — misafir yükün SANDIĞI (karar 124): satış ya da yönetici (CRATE_EDIT), yöneticinin seçtiği ev sahibi firmanın
+ * o günkü sandıklarından birini seçer; sandık boş bırakılırsa seçim kaldırılır (yeniden "sandık seçimi bekliyor").
+ * Firma burada seçilmez: sandığın o firmanın ve o günün sandığı olduğunu sunucu doğrular (server/loading/crates.js).
+ * Alanlar: day, orderId, crateId (seçilen; boş = bekliyor), current (şu anki sandık), do=remove (eski kaydı kaldır).
  */
 export async function guestCrateAction(formData: FormData) {
-  const user = await requirePermission('LOADING_CONFIRM');
+  const user = await requirePermission('CRATE_EDIT');
   const day = String(formData.get('day') ?? '');
-  const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}&` : ''}${q}#gun`;
+  const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}${q ? '&' : ''}` : ''}${q}#gun`;
   const orderId = String(formData.get('orderId') ?? '');
   const crateId = String(formData.get('crateId') ?? '');
-  const remove = formData.get('do') === 'remove';
+  const current = String(formData.get('current') ?? '');
+  const actor = await actorOf(user);
+  const remove = formData.get('do') === 'remove' || (!crateId && !!current);
+  // Seçim değişmedi (boş → boş ya da aynı sandık): hiçbir şey yazılmaz, bildirim de gitmez
+  if (!remove && (!crateId || crateId === current)) redirect(back(''));
   const r = remove
-    ? await removeGuestCrate(db, { orderId, crateId, actor: await actorOf(user) })
-    : parseDateOnly(day) ? await assignGuestCrate(db, { day, orderId, crateId, actor: await actorOf(user) }) : { ok: false as const, code: 'NOT_SAME_LOADING' };
+    ? await removeGuestCrate(db, { orderId, crateId: crateId || current, actor })
+    : parseDateOnly(day) ? await assignGuestCrate(db, { day, orderId, crateId, actor }) : { ok: false as const, code: 'NOT_SAME_LOADING' };
   revalidatePath('/yuklemeler');
+  if (!r.ok && r.code === 'ALREADY_ASSIGNED') redirect(back(''));
   redirect(r.ok ? back(`sandik=${remove ? 'removed' : 'assigned'}`) : back(`sandikHata=${r.code}`));
 }

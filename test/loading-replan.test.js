@@ -8,6 +8,7 @@ import { mergeConfirmed } from '../server/accounting/supplier.js';
 import { groupLoad } from '../server/loading/crates.js';
 import { buildLoadingSummary, loadingSummaryXlsx } from '../server/loading/summary.js';
 import { buildTransportList } from '../server/loading/transport.js';
+import { transportListPdf } from '../server/pdf/transport-list.js';
 import { readXlsx } from '../server/files/xlsx.js';
 
 const glass = (extra = {}) => ({ id: 'L1', sortOrder: 0, kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 10, unitPrice: '30', offerPrice: '50', ...extra });
@@ -135,14 +136,31 @@ test('yükleme dökümü: fiziksel sandık sütunu; başka müşterinin sandığ
   assert.equal(x[x.length - 1][10], 'EUR');
 });
 
-test('nakliye listesi: sandık ev sahibinin grubunda kalır, içindeki başka müşteri siparişi notta yazar; o sipariş "sandığı girilmemiş" sayılmaz', () => {
+test('nakliye listesi: sandık ev sahibinin grubunda kalır, içindeki başka firma camı sandığın altında MİSAFİR YÜK olarak yazar; o sipariş "sandığı girilmemiş" sayılmaz', () => {
   const crate = {
     crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, netAgirlik: 190, brutAgirlik: 260, note: 'kırılacak', customerId: 'B', customer: { prefix: 'BBB', name: 'Customer B' },
     orders: [{ order: { orderNo: 'BBB001', customerId: 'B', customer: { prefix: 'BBB', name: 'Customer B' } } }, { order: { orderNo: 'AAA001', customerId: 'A', customer: { prefix: 'AAA', name: 'Customer A' } } }],
   };
-  const list = buildTransportList([crate], [{ orderNo: 'BBB001', customerId: 'B' }, { orderNo: 'AAA001', customerId: 'A' }, { orderNo: 'AAA002', customerId: 'A' }]);
-  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((c) => [c.crateNo, c.note])]), [['BBB', [[15, 'kırılacak · + AAA001 (AAA)']]]]);
-  assert.deepEqual(list.missing, ['AAA002']);
-  // Başka müşteri siparişi yoksa not aynen
-  assert.equal(buildTransportList([{ ...crate, orders: [crate.orders[0]] }], []).groups[0].crates[0].note, 'kırılacak');
+  const host = { prefix: 'BBB', name: 'Customer B' };
+  const orders = [{ orderNo: 'BBB001', customerId: 'B' }, { orderNo: 'AAA001', customerId: 'A', guestHost: host }, { orderNo: 'AAA002', customerId: 'A' }, { orderNo: 'AAA003', customerId: 'A', guestHost: host }];
+  const list = buildTransportList([crate], orders);
+  // Misafir yük sandığın altında (firma · sipariş no); sandığın kendi notu ve ağırlığı aynen (fiziksel ağırlık sandıkta)
+  assert.deepEqual(list.groups.map((x) => [x.code, x.totalKg, x.crates.map((c) => [c.crateNo, c.note, c.weight, c.guests])]),
+    [['BBB', 260, [[15, 'kırılacak', 260, [{ orderNo: 'AAA001', code: 'AAA', firm: 'Customer A' }]]]]]);
+  assert.deepEqual(list.missing, ['AAA002', 'AAA003']);
+  // Ev sahibi firması seçilmiş, sandığı henüz seçilmemiş sipariş ayrıca "sandık seçimi bekliyor" (kendiliğinden sandığa konmaz)
+  assert.deepEqual(list.waiting, [{ orderNo: 'AAA003', host: 'BBB' }]);
+  // Firma adı görene göre: satışa maskeli (ilk 3 harf + 10 yıldız)
+  const masked = buildTransportList([crate], orders, { label: (n) => `${n.slice(0, 3)}**********` });
+  assert.deepEqual(masked.groups[0].crates[0].guests, [{ orderNo: 'AAA001', code: 'AAA', firm: 'Cus**********' }]);
+  // Başka müşteri siparişi yoksa misafir yük yok
+  const plain = buildTransportList([{ ...crate, orders: [crate.orders[0]] }], []);
+  assert.deepEqual([plain.groups[0].crates[0].note, plain.groups[0].crates[0].guests, plain.waiting], ['kırılacak', [], []]);
+  // PDF: misafir yük satırı ve bekleyen özel durum yazılır (fiyat yok)
+  const text = {
+    title: 'NAKLİYE LİSTESİ', day: 'Yükleme günü', colNo: 'Sandık no', colDims: 'U × G × Y (mm)', colKg: 'Ağırlık (kg)', colNote: 'Not', subtotal: '{n} sandık', crateCount: 'Sandık adedi',
+    totalKg: 'TOPLAM', missing: 'Sandığı girilmemiş', noPrice: 'Fiyat yok.', empty: 'Sandık yok.', guest: 'MISAFIR YUK', waiting: 'Sandik secimi bekliyor',
+  };
+  const pdf = transportListPdf({ day: '2026-10-16', company: 'GKH Trading', text, list });
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
 });

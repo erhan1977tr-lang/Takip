@@ -1,6 +1,7 @@
 // "Nakliye listesi" PDF'i (ürün sahibinin örneğinin düzeni): başlık + yükleme günü; müşteri kodu başına ara toplam
 // satırı ve sandıklar (no, U × G × Y mm, ağırlık kg, not); sonda sandık adedi ve toplam ağırlık; sandığı girilmemiş
-// siparişler. Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
+// siparişler. Sandıkta başka firmanın camı varsa (misafir yük, karar 124) sandığın hemen altında ayrı satırda yazılır.
+// Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
 import { PdfDoc, fitText } from './pdf.js';
 
 const M = 40;
@@ -14,7 +15,7 @@ const fmtKg = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, 
 /**
  * @param {{ day: string, list: ReturnType<typeof import('../loading/transport.js').buildTransportList>,
  *   text: { title: string, day: string, colNo: string, colDims: string, colKg: string, colNote: string, subtotal: string,
- *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string }, company: string }} p
+ *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string, guest: string, waiting: string }, company: string }} p
  *   text.subtotal: "{n} sandık · ara toplam"
  * @returns {Buffer}
  */
@@ -64,6 +65,12 @@ export function transportListPdf({ day, list, text, company }) {
       page.text(x.kg, y + 15, c.weight == null ? '—' : fmtKg(c.weight), { size: 9.5, align: 'right', width: COL.kg });
       if (c.note) page.text(x.note, y + 15, fitText(c.note, 8, noteW() - 8), { size: 8, color: GREY });
       y += ROW;
+      // Misafir yük: bu sandıkta giden başka firmanın camı (yalnızca fiziksel bilgi: firma · sipariş no)
+      for (const gu of c.guests ?? []) {
+        ensure(ROW - 4);
+        page.text(x.dims, y + 12, fitText(`${text.guest}: ${[gu.firm, gu.orderNo].filter(Boolean).join(' · ')}`, 8.5, W() - COL.no - 6, true), { size: 8.5, bold: true, color: BLUE });
+        y += ROW - 4;
+      }
       page.line(M, y, page.width - M, y, 0.4, 0.85);
     }
   });
@@ -86,6 +93,11 @@ export function transportListPdf({ day, list, text, company }) {
   if (list.missing.length) {
     ensure(20);
     page.text(M, y + 6, fitText(`${text.missing}: ${list.missing.join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
+    y += 18;
+  }
+  if (list.waiting?.length) {
+    ensure(20);
+    page.text(M, y + 6, fitText(`${text.waiting}: ${list.waiting.map((w) => `${w.orderNo} → ${w.host}`).join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
   }
 
   const pages = doc.pages.length;

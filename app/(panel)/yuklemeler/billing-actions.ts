@@ -13,9 +13,14 @@ import { createAdvanceBatch, createInvoiceBatch } from '@/server/glass/invoice-b
 
 const PROFORMA_PAGE = '/admin/muhasebe/cam/proforma';
 /** Dönüş adresi: yükleme günü (Faturalama bölümü) ya da müşteri proforması sayfası */
-function back(fd: FormData, q: Record<string, string>) {
+function back(fd: FormData, q: Record<string, string>, selected: string[] | null = null) {
   const day = String(fd.get('day') ?? '');
   const p = new URLSearchParams(q);
+  // Sipariş seçimi (karar 125): hata sonrası aynı seçimle aynı önizleme açılır
+  if (selected) {
+    p.set('fsec', '1');
+    for (const id of selected) p.append('fs', id);
+  }
   if (parseDateOnly(day)) return `/yuklemeler?gun=${day}&${p.toString()}#faturalama`;
   const customerId = String(fd.get('customerId') ?? '');
   if (customerId) p.set('musteri', customerId);
@@ -32,10 +37,12 @@ export async function createInvoiceAction(fd: FormData) {
   const user = await requirePermission('ACCOUNTING_MANAGE');
   const rate = String(fd.get('fxRate') ?? '').trim();
   const groupKey = String(fd.get('groupKey') ?? '');
+  // Sipariş seçimi (karar 125): önizlemede seçili siparişler; alan yoksa grubun uygun siparişlerinin hepsi. Sunucu yeniden doğrular.
+  const orderIds = fd.get('selected') === '1' ? [...new Set(fd.getAll('orderId').map(String).filter(Boolean))].slice(0, 500) : null;
   const r = await createInvoiceBatch(db, {
-    day: String(fd.get('day') ?? ''), groupKey, previewKey: String(fd.get('previewKey') ?? ''), manualRate: rate || null, actor: await actorOf(user),
+    day: String(fd.get('day') ?? ''), groupKey, previewKey: String(fd.get('previewKey') ?? ''), orderIds, manualRate: rate || null, actor: await actorOf(user),
   });
-  if (!r.ok) redirect(back(fd, { faturaHata: r.code, ...(rate ? { fk: groupKey, fkur: rate } : {}) }));
+  if (!r.ok) redirect(back(fd, { faturaHata: r.code, ...(rate || orderIds ? { fk: groupKey } : {}), ...(rate ? { fkur: rate } : {}) }, orderIds));
   await dispatchBatchJobs(db, { onlyBatchId: r.batchId });
   refresh();
   redirect(back(fd, { fatura: 'created' }));

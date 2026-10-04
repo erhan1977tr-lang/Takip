@@ -14,6 +14,7 @@ import { parseManualRate, saveDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
+import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting/uninvoiced.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -79,6 +80,17 @@ export async function saveFgoAction(formData: FormData) {
   await saveFgoSettings(db, res.value, { key, clearKey, secret: getEnv().AUTH_SECRET }, await actorOf(user));
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'fgo' }) + '#fgo');
+}
+
+/** Muhasebe uyarısı (karar 126): "Fatura edilmemiş sipariş uyarısı" — yüklemeden sonra kaç takvim günü (0–60; boş = 6) */
+export async function saveAccountingAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const r = parseUninvoicedDays(formData.get('uninvoicedDays'));
+  if (!r.ok) redirect(back({ error: 'accounting' }) + '#muhasebe');
+  await saveAccountingSettings(db, { uninvoicedDays: r.value }, await actorOf(user));
+  revalidatePath('/admin/entegrasyonlar');
+  revalidatePath('/admin/muhasebe/cam');
+  redirect(back({ ok: 'accounting' }) + '#muhasebe');
 }
 
 /** FGO bağlantısını dener (kimlik + belge türleri). Hiçbir belge kesilmez. */

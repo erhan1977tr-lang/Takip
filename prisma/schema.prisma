@@ -253,6 +253,7 @@ model Customer {
   fxMarkupPercent Decimal? @db.Decimal(6, 3) // yalnızca BNR_PLUS_PERCENT: BNR kuruna eklenen yüzde (2 = %2)
   users         User[]   // müşteri panelini kullanan kişiler
   orders        Order[]
+  guestOrders   Order[]  @relation("OrderGuestHost") // bu firmanın yüklemesiyle gidecek başka firma siparişleri (fiziksel)
   orderDrafts   OrderDraft[]
   crates        Crate[]
   loadedItems   LoadingConfirmationItem[]
@@ -348,6 +349,11 @@ model Order {
   drawings          Drawing[]
   crates            Crate[]      // eski düzen (sipariş başına sandık); taşıma adımı yeni düzene çevirir
   crateLinks        CrateOrder[] // sipariş hangi sandıklarda (yükleme sekmesinde seçilir; başka müşterinin sandığı da olabilir — yalnızca fiziksel yerleşim)
+  // Özel durum (karar 124): sipariş, AYNI yükleme gününde başka bir firmanın yüklemesiyle (onun sandığında) gidecek.
+  // Yönetici yalnızca ev sahibi FİRMAYI seçer (sandık henüz girilmemiş olabilir); sandığı sonradan satış seçer
+  // (CrateOrder). Yalnızca fiziksel yerleşim: siparişin müşterisi, teklifi, belgeleri ve muhasebesi değişmez.
+  guestHostId       String?
+  guestHost         Customer?   @relation("OrderGuestHost", fields: [guestHostId], references: [id], onDelete: SetNull)
   replans           LoadingReplan[] // yüklenmeyen camın ileri güne aktarımları (Aşama 7E)
   shipmentId        String?
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
@@ -394,6 +400,7 @@ model Order {
   @@index([drawingTrack])
   @@index([customerId])
   @@index([estimatedShipDate])
+  @@index([guestHostId])
 }
 
 // Taslak sipariş: müşteri formu yarım bırakıp sonra devam eder. Sipariş değildir — numarası, SLA'sı, geçmişi yoktur,

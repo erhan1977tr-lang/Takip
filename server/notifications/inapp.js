@@ -17,6 +17,7 @@ import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 import { orderSalesUsers } from './email.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
+import { GUEST_ASSIGNED, GUEST_REMOVED } from '../loading/crates.js';
 
 const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
 /** Alıcı kümeleri → roller (yetkiden türetilir) */
@@ -129,7 +130,10 @@ export function renderInApp(locale, n) {
   }
   const detailKey = `notifications.detail.${type}`;
   const detail = type && has(detailKey)
-    ? t(detailKey, { date: dmy(p.day), from: dmy(p.from), qty: p.qty ?? '', ref: p.ref ?? '—', amount: p.amount ?? '', error: String(p.error ?? '').slice(0, 160) })
+    ? t(detailKey, {
+      date: dmy(p.day), from: dmy(p.from), qty: p.qty ?? '', ref: p.ref ?? '—', amount: p.amount ?? '', error: String(p.error ?? '').slice(0, 160),
+      crate: p.crate ?? '', guest: p.guest ?? '', guestOrder: p.guestOrder ?? '',
+    })
     : '';
   const order = p.orderNo ? (customer ? t('notifications.order', { orderNo: p.orderNo }) : String(p.orderNo)) : '';
   return { title, body: [order, customer ? '' : p.firm, detail].filter(Boolean).join(' · ') };
@@ -218,6 +222,34 @@ async function fanOutDocument(db, row) {
 }
 
 /**
+ * "Özel durum" (karar 124): misafir yükün sandığı seçildi / değişti / kaldırıldı → İKİ firmanın müşteri kullanıcılarına.
+ *   Sipariş sahibi firma (PLACED / CANCELLED): kendi sipariş numarası, sandık numarası, yükleme günü. Ev sahibi firmanın
+ *     adı ve hiçbir verisi yazılmaz.
+ *   Sandığın firması (HOSTED / UNHOSTED): misafir firmanın adı, sipariş numarası, sandık numarası, yükleme günü — yalnızca
+ *     bu dört işletme bilgisi. Bildirim misafir siparişe bağlanmaz (orderId yok, bağlantı kendi yükleme günü): fiyat,
+ *     teklif, belge, dosya ya da başka ticari veri ev sahibine hiçbir yoldan gitmez.
+ * İç ekibe ayrıca bildirim yazılmaz (Yüklemeler ekranındaki uyarı). Anahtar olayın kimliğidir: sayfa yenileme / işçinin
+ * yeniden denemesi ikinci bildirim üretmez; sandık her gerçek değişiklikte bir kez bildirilir.
+ */
+async function fanOutGuest(db, row) {
+  const p = obj(row.payload);
+  const order = row.orderId ? await db.order.findUnique({ where: { id: row.orderId }, select: ORDER }) : null;
+  const day = typeof p.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.day) ? p.day : null;
+  const crate = Number(p.crateNo);
+  if (!order || order.removedAt || !p.hostId || !day || !Number.isInteger(crate)) return 0;
+  const removed = row.type === GUEST_REMOVED;
+  const link = `/yuklemeler?gun=${day}`;
+  const key = `outbox:${row.id}`;
+  const owners = await recipientsOf(db, ['customer'], order);
+  const hosts = String(p.hostId) === order.customerId ? [] : await recipientsOf(db, ['customer'], { customerId: String(p.hostId) });
+  const a = await createNotifications(db, { key, type: removed ? 'GUEST_CRATE_CANCELLED' : 'GUEST_CRATE_PLACED', users: owners, orderId: order.id, orderNo: order.orderNo, params: { day, crate }, link });
+  const b = await createNotifications(db, {
+    key, type: removed ? 'GUEST_CRATE_UNHOSTED' : 'GUEST_CRATE_HOSTED', users: hosts, params: { day, crate, guest: order.customer?.name ?? '', guestOrder: order.orderNo }, link,
+  });
+  return a + b;
+}
+
+/**
  * Kuyruktaki, henüz dağıtılmamış olayları uygulama içi bildirime çevirir (işçi her turda çağırır; e-posta ayarından
  * bağımsızdır). Dağıtılan olay inAppAt ile işaretlenir; işaretlenemeden yarıda kalırsa sonraki turda yeniden denenir —
  * benzersiz anahtar sayesinde aynı bildirim ikinci kez yazılmaz.
@@ -231,6 +263,7 @@ export async function dispatchInApp(db, { now = new Date(), limit = 200, log = (
   for (const row of rows) {
     try {
       if (row.type === DOC_EMAIL) created += await fanOutDocument(db, row);
+      else if (row.type === GUEST_ASSIGNED || row.type === GUEST_REMOVED) created += await fanOutGuest(db, row);
       else if (INAPP_RULES[row.type]) created += await fanOut(db, row);
       await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } });
     } catch (e) {

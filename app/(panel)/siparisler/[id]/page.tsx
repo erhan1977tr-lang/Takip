@@ -26,6 +26,9 @@ import { loadCompensations, loadCompensationForm, type CompEntry } from '@/lib/c
 import { compensableLines } from '@/server/orders/compensation.js';
 import { CompensationForm } from './CompensationForm';
 import { RemoveOrder } from './RemoveOrder';
+import { GuestHostFields } from './GuestHost';
+import { setGuestHostAction } from './guest-host-actions';
+import { guestHostOptions } from '@/server/loading/crates.js';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
   addFilesAction, addNoteAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
@@ -195,6 +198,32 @@ export default async function OrderPage({
   const compIds = new Set<string>(canComp && sent && order.status !== 'IPTAL' ? compensableLines(sent.lines).map((g) => String(g.line.id)) : []);
   const compHref = (lineId: string) => `/siparisler/${order.id}?telafi=${lineId}#telafi`;
   const compForm = compIds.size > 0 && sp.telafi ? await loadCompensationForm(order, user) : null;
+  // Özel durum (karar 124): yalnızca yönetici (LOADING_CONFIRM) görür; yalnızca FİRMA seçer. Sandık Yüklemeler ekranında seçilir.
+  let guestHost: React.ReactNode = null;
+  if (userCan(user, 'LOADING_CONFIRM') && order.status !== 'IPTAL') {
+    const gm = m.loading.guest.host;
+    const [options, hostRow, placed] = await Promise.all([
+      guestHostOptions(db, order),
+      order.guestHostId ? db.customer.findUnique({ where: { id: order.guestHostId }, select: { name: true } }) : null,
+      order.guestHostId ? db.crateOrder.findFirst({ where: { orderId: order.id, crate: { customerId: order.guestHostId } }, select: { crate: { select: { crateNo: true } } } }) : null,
+    ]);
+    const day = shipDay(order);
+    const okText = sp.ozel === 'set' ? gm.ok.set : sp.ozel === 'removed' ? gm.ok.removed : null;
+    const errorText = sp.ozelHata ? gm.errors[sp.ozelHata as keyof typeof gm.errors] ?? gm.errors.NOT_FOUND : null;
+    guestHost = (
+      // Form sunucu bileşenindedir (işlem kimliği sayfada); alanların aç / kapa davranışı istemci bileşeninde
+      <form action={setGuestHostAction} className="card guest-host" id="ozel-durum">
+        {okText && <div className="alert alert-ok">{okText}</div>}
+        {errorText && <div className="alert alert-error">{errorText}</div>}
+        <input type="hidden" name="orderId" value={order.id} />
+        <GuestHostFields
+          hostId={order.guestHostId} hostName={hostRow?.name ?? null} hosts={options.hosts}
+          days={options.days.map((d) => d.split('-').reverse().join('.'))} dayHref={day ? `/yuklemeler?ay=${day.slice(0, 7)}&gun=${day}#gun` : null}
+          crateNo={placed?.crate.crateNo ?? null} m={gm}
+        />
+      </form>
+    );
+  }
   const compErrors = m.compensation.errors;
   const compError = sp.telafiHata ? compErrors[sp.telafiHata as keyof typeof compErrors] ?? compErrors.BAD_REQUEST : null;
   const compOks = m.compensation.ok;
@@ -352,6 +381,8 @@ export default async function OrderPage({
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
           compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} />
       )}
+      {/* Özel durum (karar 124): yalnızca yönetici, teklif tablosunun hemen altında — başka firmanın yüklemesiyle gidecek */}
+      {guestHost}
       {/* Kırık / telafi camı: teklif tablosunun hemen altında tek kısa form; "Önemli kararlar" aynı formu açar */}
       {compForm && (
         <CompensationForm

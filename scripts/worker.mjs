@@ -8,6 +8,8 @@
 //   - Aynı olayların uygulama içi bildirimleri (zil): server/notifications/inapp.js — e-postadan bağımsız ayrı kanal.
 //   - Muhasebe: açık FGO belgelerinin tutar / ödeme durumu saatte bir FGO'dan yenilenir (server/accounting/receivables.js).
 //   - Oturum temizliği: süresi dolmuş / boşta kalmış oturum satırları saatte bir silinir (server/auth/session-policy.js).
+//   - "Fatura bekliyor" (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam, ayardaki gün dolunca muhasebe yetkisine
+//     saatte bir denetlenip kapsam başına bir kez bildirilir (server/accounting/uninvoiced.js). FGO'ya istek atılmaz.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -24,6 +26,7 @@ import { getEnv } from '../server/env.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
+import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -99,6 +102,17 @@ async function pruneTick() {
   if (r.sessions || r.failures) log('oturum temizliği:', JSON.stringify(r));
 }
 
+// Saatte bir: uyarı günü gelmiş, kapanış faturası kesilmemiş yüklemeler → muhasebe yetkisine uygulama içi bildirim.
+// Yalnızca veritabanı okur (FGO'ya istek yok); bildirim kapsam başına bir kez yazılır (benzersiz anahtar).
+let remindedAt = 0;
+async function uninvoicedTick() {
+  if (once) return; // --once (testler): kural test/db/uninvoiced.test.js'te doğrudan denenir
+  if (Date.now() - remindedAt < REMIND_EVERY_MS) return;
+  remindedAt = Date.now();
+  const r = await remindUninvoiced(db, { now: new Date(), log });
+  if (r.created) log('fatura bekliyor:', JSON.stringify(r));
+}
+
 async function tick() {
   const settings = await getAvSettings(db);
   const r = await scanPending(db, settings, { log });
@@ -128,6 +142,11 @@ while (!stopping) {
     await pruneTick();
   } catch (e) {
     log('oturum temizliği hatası:', e?.message ?? e);
+  }
+  try {
+    await uninvoicedTick();
+  } catch (e) {
+    log('fatura bekliyor hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

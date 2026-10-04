@@ -81,6 +81,15 @@ export default {
       STALE_PREVIEW: "După previzualizare s-a schimbat conținutul sau cursul; verificați noua previzualizare și reîncercați.",
       ALREADY_COVERED: "Una dintre comenzile alese a intrat între timp în alt document; reîmprospătați previzualizarea.",
     },
+    // Alegerea comenzilor (decizia 125): din comenzile eligibile intră în document doar cele bifate
+    select: {
+      label: "Include în document: {order}",
+      apply: "Aplică selecția",
+      hint: "Bifați comenzile care intră în document și apăsați „Aplică selecția”: previzualizarea și valorile se recalculează doar cu comenzile alese. Comanda nebifată rămâne neschimbată și poate intra în documentul următor.",
+      unselected: "nebifată — nu intră în acest document",
+      NOT_ELIGIBLE: "Una dintre comenzile alese nu este eligibilă pentru acest document (acoperită de alt document, eligibilitate schimbată sau în afara acestui domeniu); refaceți selecția.",
+      NOTHING_SELECTED: "Nu a fost aleasă nicio comandă; bifați cel puțin una.",
+    },
     listTitle: "Proforme client",
     listEmpty: "Nu există încă proforme client.",
     listCol: {
@@ -197,6 +206,23 @@ export default {
     detail: "pe factură {invPieces} buc. / {invAmount} {cur} · încărcat efectiv {effPieces} buc. / {effAmount} {cur} · diferență {diff} {cur}",
     paid: "factura este plătită / parțial plătită",
     advance: "factura conține stornare de avans",
+  },
+  // „Factură în așteptare” (decizia 126): sticlă încărcată fără factura finală — listă permanentă în Încasări sticlă
+  overdue: {
+    title: "FACTURĂ ÎN AȘTEPTARE",
+    intro: "Comenzi cu încărcarea confirmată, pentru care au trecut {days} zile și factura finală nu a fost încă emisă. Proforma și factura de avans nu închid această avertizare; rândul dispare automat după emiterea facturii.",
+    col: { order: "Comandă · client", loaded: "Încărcare", waiting: "Stare" },
+    loaded: "Încărcare: {date}",
+    days: "nefacturată de {n} zile",
+    removed: "comandă ștearsă",
+    open: "Deschide facturarea",
+    openOrder: "Comandă (Financiar / FGO)",
+    note: {
+      ORDER_CHAIN: "comanda are propriul lanț de documente — factura se emite din pagina comenzii",
+      PROFORMA_NOT_ISSUED: "proforma clientului este în coadă sau nu a putut fi emisă",
+      INVOICE_QUEUED: "cererea de factură este în coadă",
+      INVOICE_FAILED: "factura nu a putut fi emisă în FGO — reîncercați sau renunțați",
+    },
   },
   receivables: {
     refresh: "Actualizează din FGO",

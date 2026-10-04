@@ -11,12 +11,16 @@ import { cleanDays, createBatch, dispatchBatchJobs, reviewFailedBatch } from '@/
 
 const PAGE = '/admin/muhasebe/cam/proforma';
 
-/** Seçimi (müşteri + günler + elle kur) adrese geri yazar: hata sonrası aynı önizleme açılır */
-function back(customerId: string, days: string[], rate: string, extra: Record<string, string>, hash = '') {
+/** Seçimi (müşteri + günler + elle kur + seçilen siparişler) adrese geri yazar: hata sonrası aynı önizleme açılır */
+function back(customerId: string, days: string[], rate: string, extra: Record<string, string>, hash = '', orderIds: string[] | null = null) {
   const q = new URLSearchParams();
   if (customerId) q.set('musteri', customerId);
   for (const d of days) q.append('gun', d);
   if (rate) q.set('kur', rate);
+  if (orderIds) {
+    q.set('sec', '1');
+    for (const id of orderIds) q.append('sip', id);
+  }
   for (const [k, v] of Object.entries(extra)) q.set(k, v);
   return `${PAGE}?${q.toString()}${hash}`;
 }
@@ -27,8 +31,10 @@ export async function createBatchAction(fd: FormData) {
   const customerId = String(fd.get('customerId') ?? '');
   const days = cleanDays(fd.getAll('day').map(String));
   const rate = String(fd.get('fxRate') ?? '').trim();
-  const r = await createBatch(db, { customerId, days, key: String(fd.get('key') ?? ''), manualRate: rate || null, actor: await actorOf(user) });
-  if (!r.ok) redirect(back(customerId, days, rate, { error: r.code }, '#onizleme'));
+  // Sipariş seçimi (karar 125): önizlemede seçili siparişler; alan hiç yoksa uygun siparişlerin hepsi. Uygunluk sunucuda yeniden doğrulanır.
+  const orderIds = fd.get('selected') === '1' ? [...new Set(fd.getAll('orderId').map(String).filter(Boolean))].slice(0, 500) : null;
+  const r = await createBatch(db, { customerId, days, orderIds, key: String(fd.get('key') ?? ''), manualRate: rate || null, actor: await actorOf(user) });
+  if (!r.ok) redirect(back(customerId, days, rate, { error: r.code }, '#onizleme', orderIds));
   await dispatchBatchJobs(db, { onlyBatchId: r.batchId });
   revalidatePath(PAGE);
   revalidatePath('/admin/muhasebe/cam');

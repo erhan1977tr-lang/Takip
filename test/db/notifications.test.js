@@ -3,7 +3,7 @@
 // olayları. FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR de sahtedir.
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
+import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { saveDailyRate } = await import('../../server/fx/bt.js');
@@ -17,6 +17,8 @@ const co = await import('../../server/loading/correction.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
 const inv = await import('../../server/glass/invoice-batch.js');
+const cr = await import('../../server/loading/crates.js');
+const un = await import('../../server/accounting/uninvoiced.js');
 
 const SECRET = 'n'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -274,3 +276,108 @@ dbTest('FGO: kesilemeyen belge muhasebeye bir kez bildirilir; proformaya gelen t
   assert.equal(fgo.calls.length, 1);
   assert.equal(await db.notification.count({ where: { userId: { in: [U.sales1.id, U.sales2.id, U.drawer.id, U.a1.id, U.a2.id, U.b1.id, U.inspector.id] }, type: { in: ['FGO_FAILED', 'ADVANCE_REQUIRED', 'ACCOUNTING_ACTION'] } } }), 0);
 });
+
+dbTest('özel durum (misafir yük, karar 124): sandık seçilince İKİ firmanın müşterilerine bildirim — ev sahibine yalnızca firma adı, sipariş no, sandık no ve gün; firma seçimi / aynı seçim / yeniden dağıtım bildirim üretmez', offline(async () => {
+  const X = dayOf(23);
+  const dmy = X.split('-').reverse().join('.');
+  const guest = await glassOrder(A, X); // misafir yük: GLASSANDMORE'un siparişi
+  const hostOrder = await glassOrder(B, X); // ev sahibi: ALEGRAD
+  const sales = actor(U.sales1);
+  const row = (crateNo, orderIds = []) => ({ crateNo, lengthMm: 2400, widthMm: 1600, heightMm: 900, netKg: 190, grossKg: 260, note: null, orderIds });
+  const guestTypes = { type: { startsWith: 'GUEST_CRATE' } };
+
+  // Yönetici firmayı seçer (sandık yok): müşterilere bildirim YOK
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: guest.id, hostId: B.id, actor: actor() }), { ok: true, changed: true, hostId: B.id });
+  await n.dispatchInApp(db);
+  assert.equal(await db.notification.count({ where: guestTypes }), 0);
+
+  // Satış sandıkları girer ve misafir yükün sandığını seçer → iki firmaya bildirim
+  assert.equal((await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [row(12, [hostOrder.id]), row(13, [hostOrder.id])], actor: sales })).ok, true);
+  const crates = await db.crate.findMany({ where: { shipDay: new Date(`${X}T00:00:00Z`), customerId: B.id }, orderBy: { crateNo: 'asc' } });
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: guest.id, crateId: crates[0].id, actor: sales }), { ok: true, crateNo: 12 });
+  await n.dispatchInApp(db);
+  await n.dispatchInApp(db); // işçi yeniden dener: ikinci bildirim yok
+  const who = async (type) => (await notes({ type })).map((x) => names.get(x.userId)).sort();
+  assert.deepEqual([await who('GUEST_CRATE_PLACED'), await who('GUEST_CRATE_HOSTED')], [['a1', 'a2'], ['b1']], 'yalnızca iki firmanın etkin müşteri kullanıcıları');
+  assert.equal(await db.notification.count({ where: { ...guestTypes, userId: { in: [U.admin.id, U.admin2.id, U.sales1.id, U.sales2.id, U.drawer.id, U.drawer2.id, U.inspector.id, U.aOff.id] } } }), 0);
+
+  // Sipariş sahibi (misafir) firma: kendi sipariş numarası + sandık no + gün; ev sahibi firmanın adı / kimliği YOK
+  const placed = (await notes({ type: 'GUEST_CRATE_PLACED', userId: U.a1.id }))[0];
+  assert.deepEqual([placed.params, placed.orderId, placed.link], [{ day: X, crate: 12, aud: 'customer', orderNo: guest.orderNo }, guest.id, `/yuklemeler?gun=${X}`]);
+  assert.ok(![B.id, B.name, 'ALE', hostOrder.orderNo, hostOrder.id].some((x) => JSON.stringify(placed).includes(x)), 'ev sahibi firmanın hiçbir verisi misafir firmaya gitmez');
+  assert.deepEqual(n.renderInApp('ro', placed), { title: 'Sticla comenzii dvs. a fost încărcată în lada altei firme', body: `Comanda ${guest.orderNo} · lada nr. 12 · încărcare ${dmy}` });
+
+  // Ev sahibi firma: YALNIZCA misafir firmanın adı, sipariş numarası, sandık numarası, yükleme günü
+  const hosted = (await notes({ type: 'GUEST_CRATE_HOSTED', userId: U.b1.id }))[0];
+  assert.deepEqual(hosted.params, { day: X, crate: 12, guest: A.name, guestOrder: guest.orderNo, aud: 'customer' });
+  assert.deepEqual([hosted.orderId, hosted.link], [null, `/yuklemeler?gun=${X}`], 'misafir siparişe bağlantı / kimlik yok');
+  assert.ok(![guest.id, A.id, 'EUR', 'offer', 'price', 'Temper'].some((x) => JSON.stringify(hosted).includes(x)), 'misafir siparişin kimliği, fiyatı, teklifi, camı yok');
+  assert.deepEqual(n.renderInApp('ro', hosted), {
+    title: 'Încărcătură suplimentară în lada dvs.', body: `sticla firmei ${A.name} (comanda ${guest.orderNo}) a fost încărcată în lada dvs. nr. 12 · încărcare ${dmy}`,
+  });
+  assert.match(n.renderInApp('tr', hosted).body, new RegExp(`^${A.name} firmasının camı \\(${guest.orderNo}\\) 12 numaralı sandığınıza yüklendi`));
+
+  // Aynı sandık yeniden seçilirse: değişiklik yok → yeni bildirim yok
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: guest.id, crateId: crates[0].id, actor: sales }), { ok: false, code: 'ALREADY_ASSIGNED' });
+  await n.dispatchInApp(db);
+  assert.deepEqual([await db.notification.count({ where: { type: 'GUEST_CRATE_PLACED' } }), await db.notification.count({ where: { type: 'GUEST_CRATE_HOSTED' } })], [2, 1]);
+
+  // Sandık değişir (12 → 13): gerçek değişiklik başına TEK bildirim (yeni sandık); ayrıca "iptal" bildirimi yazılmaz
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: guest.id, crateId: crates[1].id, actor: sales }), { ok: true, crateNo: 13 });
+  await n.dispatchInApp(db);
+  await n.dispatchInApp(db);
+  assert.deepEqual((await notes({ type: 'GUEST_CRATE_PLACED', userId: U.a1.id })).map((x) => x.params.crate), [12, 13]);
+  assert.deepEqual((await notes({ type: 'GUEST_CRATE_HOSTED', userId: U.b1.id })).map((x) => x.params.crate), [12, 13]);
+  assert.equal(await db.notification.count({ where: { type: { in: ['GUEST_CRATE_CANCELLED', 'GUEST_CRATE_UNHOSTED'] } } }), 0);
+
+  // Sandık seçimi kaldırılır: iki firmaya iptal bildirimi (bir kez)
+  assert.deepEqual(await cr.removeGuestCrate(db, { orderId: guest.id, crateId: crates[1].id, actor: sales }), { ok: true });
+  await n.dispatchInApp(db);
+  await n.dispatchInApp(db);
+  assert.deepEqual([await who('GUEST_CRATE_CANCELLED'), await who('GUEST_CRATE_UNHOSTED')], [['a1', 'a2'], ['b1']]);
+  const gone = (await notes({ type: 'GUEST_CRATE_UNHOSTED', userId: U.b1.id }))[0];
+  assert.deepEqual(gone.params, { day: X, crate: 13, guest: A.name, guestOrder: guest.orderNo, aud: 'customer' });
+  assert.equal(await db.notification.count({ where: { ...guestTypes, userId: { notIn: [U.a1.id, U.a2.id, U.b1.id] } } }), 0, 'iç ekibe ve pasif kullanıcıya misafir yük bildirimi yazılmaz');
+}));
+
+dbTest('fatura bekliyor (karar 126): uyarı günü dolunca yalnızca muhasebe yetkisine, kapsam başına BİR kez; bildirim okunsa da liste fatura kesilene kadar durur', offline(async () => {
+  const D = dayOf(-40);
+  const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+  const o = await glassOrder(B, D, { adet: 4 });
+  assert.equal((await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, actor: actor() })).ok, true);
+  const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.orderId === o.id);
+  assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 6 }, 'varsayılan 6 gün');
+
+  // Uyarı gününden önce: liste boş, bildirim yok
+  assert.deepEqual(await mine(at(plus(D, 5))), []);
+  await un.remindUninvoiced(db, { now: at(plus(D, 5)) });
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 0);
+
+  // Uyarı günü (yükleme + 6): listede; bildirim yalnızca muhasebe yetkisine (yönetici) — satış, çizim, denetimci, müşteri almaz
+  assert.deepEqual((await mine(at(plus(D, 6)))).map((x) => [x.orderNo, x.customerName, x.day, x.dueDay, x.daysSince, x.note, x.removed]), [[o.orderNo, B.name, D, plus(D, 6), 6, null, false]]);
+  await un.remindUninvoiced(db, { now: at(plus(D, 6)) });
+  assert.deepEqual(await receivers('INVOICE_OVERDUE', o.id), ['admin', 'admin2']);
+  const note = (await notes({ type: 'INVOICE_OVERDUE', orderId: o.id, userId: U.admin.id }))[0];
+  assert.deepEqual([note.params.day, note.params.qty, note.params.firm, note.link], [D, 6, B.name, '/admin/muhasebe/cam#fatura-bekliyor']);
+  assert.equal(n.renderInApp('tr', note).body, `${o.orderNo} · ${B.name} · yükleme ${D.split('-').reverse().join('.')} · 6 gündür fatura edilmedi`);
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', userId: { in: [U.sales1.id, U.sales2.id, U.drawer.id, U.drawer2.id, U.inspector.id, U.a1.id, U.a2.id, U.b1.id] } } }), 0);
+
+  // Saatlik tekrar ve sonraki günler: aynı kapsam için yeni bildirim yok (sel yok)
+  await un.remindUninvoiced(db, { now: at(plus(D, 6)) });
+  await Promise.all([un.remindUninvoiced(db, { now: at(plus(D, 7)) }), un.remindUninvoiced(db, { now: at(plus(D, 9)) })]);
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 2);
+
+  // Bildirim okunsa da kalıcı uyarı durur; proforma ve avans olmadan da tek kapatan kapanış faturasıdır
+  await db.notification.updateMany({ where: { type: 'INVOICE_OVERDUE', orderId: o.id }, data: { isRead: true, readAt: new Date() } });
+  assert.deepEqual((await mine(at(plus(D, 9)))).map((x) => x.daysSince), [9]);
+  const fgo = fakeFgo(800);
+  const grp = (await inv.loadingBilling(db, { day: D, bnrImpl: bnr('5.0000') })).customers.find((x) => x.customerId === B.id).groups[0];
+  const made = await inv.createInvoiceBatch(db, { day: D, groupKey: grp.key, previewKey: grp.previewKey, actor: actor(), bnrImpl: bnr('5.0000') });
+  assert.equal(made.ok, true);
+  assert.deepEqual((await mine(at(plus(D, 9)))).map((x) => x.note), ['INVOICE_QUEUED'], 'kuyruktaki fatura isteği kapatmaz');
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: made.batchId }));
+  assert.equal(fgo.calls.length, 1);
+  assert.deepEqual(await mine(at(plus(D, 9))), [], 'fatura kesildi: uyarı kendiliğinden kalkar');
+  await un.remindUninvoiced(db, { now: at(plus(D, 20)) });
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 2);
+}));

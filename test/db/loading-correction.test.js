@@ -7,7 +7,7 @@
 // FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR de sahtedir.
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
+import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { supplierData } = await import('../../server/accounting/supplier.js');
@@ -16,6 +16,7 @@ const rp = await import('../../server/loading/replan.js');
 const co = await import('../../server/loading/correction.js');
 const b = await import('../../server/glass/batch.js');
 const inv = await import('../../server/glass/invoice-batch.js');
+const un = await import('../../server/accounting/uninvoiced.js');
 
 const SECRET = 'c'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -409,3 +410,36 @@ dbTest('avans düşülmüş müşteri faturası: düzeltme farkı saptar, avans 
   // Zincir olduğu gibi: avans ve fatura partileri ISSUED, proforma kök
   assert.deepEqual((await db.billingBatch.findMany({ where: { customerId: C.id }, orderBy: { createdAt: 'asc' } })).map((y) => [y.kind, y.status]), [['PROFORMA', 'ISSUED'], ['ADVANCE', 'ISSUED'], ['INVOICE', 'ISSUED']]);
 });
+
+dbTest('fatura bekliyor (karar 126): yükleme düzeltmesi ve aktarım yanlış uyarı üretmez — yalnızca GEÇERLİ yüklenen kapsam, yüklendiği onayın gününe göre', offline(async () => {
+  const D = dayOf(-45), F = dayOf(9);
+  const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+  const A = await firm('Fix Remind SRL', 'FXR');
+  const o = await glassOrder(A, D, [glassLine(10)]);
+  const p = await glassOrder(A, D, [glassLine(4)]);
+  assert.equal((await confirm(D)).ok, true); // "Eksiksiz Yüklendi": 10 + 4
+  const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.customerId === A.id).map((r) => [r.orderNo, r.day, r.revision]);
+  assert.deepEqual(await mine(at(plus(D, 6))), [[o.orderNo, D, 0], [p.orderNo, D, 0]]);
+
+  // Düzeltme 1: p aslında hiç yüklenmemiş → p'nin faturalanacak kapsamı kalmadı: uyarı kalkar (onay kaydı aynen durur)
+  assert.equal((await correct(D, [{ key: lineKey(p), quantity: 4, reason: 'MISSING' }])).ok, true);
+  assert.deepEqual(await mine(at(plus(D, 6))), [[o.orderNo, D, 0]]);
+  // Düzeltme 2: o'nun 3 adedi yüklenmemiş → uyarı yalnızca geçerli yüklenen 7 adet için sürer (kapsam değişti: yeni sıra)
+  assert.equal((await correct(D, [{ key: lineKey(o), quantity: 3, reason: 'BROKEN' }])).ok, true);
+  assert.deepEqual(await mine(at(plus(D, 6))), [[o.orderNo, D, 2]]);
+  assert.deepEqual(await effective(o.id, D), [['LOADED', 7, 2], ['NOT_LOADED', 3, 2]]);
+
+  // Yüklenmeyen 3 adet ileri güne aktarılır: henüz yüklenmedi → faturalanamaz → uyarı üretmez (planlanan gün geçse de)
+  const row = (await rp.notLoadedOfDay(db, D)).find((x) => x.orderId === o.id);
+  assert.equal((await rp.replanNotLoaded(db, { itemId: row.itemId, day: F, actor: actor() })).ok, true);
+  const fgo = fakeFgo(900);
+  const bill = await invoice(D, A, fgo); // geçerli yüklenen 7 adet faturalanır
+  assert.deepEqual(bill.lines.map((l) => l.pieces), [7]);
+  assert.deepEqual(await mine(at(plus(F, 30))), [], 'D kapsamı faturalandı; aktarılan 3 adet yüklenmedikçe uyarı doğmaz');
+
+  // Aktarılan kalan F gününde fiilen yüklenir: uyarı günü F + 6 (asıl planlanan D gününe göre değil)
+  assert.equal((await confirm(F, [], evening(F))).ok, true);
+  assert.deepEqual(await mine(at(plus(F, 5))), []);
+  assert.deepEqual(await mine(at(plus(F, 6))), [[o.orderNo, F, 0]]);
+  assert.equal(fgo.calls.length, 1, 'uyarı hesabı belge kesmez');
+}));

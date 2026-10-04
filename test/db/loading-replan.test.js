@@ -2,7 +2,7 @@
 // veritabanıyla. FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR de sahtedir.
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
+import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { listDocuments, receivables } = await import('../../server/accounting/receivables.js');
@@ -327,6 +327,7 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const a1 = await glassOrder(A, X, [glassLine(2), crateFee()]);
   const a9 = await glassOrder(A, dayOf(-11), [glassLine(1)]); // başka günün siparişi
   const b1 = await glassOrder(B, X, [glassLine(3)]);
+  const idle = await firm('Crate Idle C SRL', 'CRC'); // hiç yüklemesi yok
   const sales = { id: admin.id, role: 'SATIS', ip: '127.0.0.1' };
   const row15 = { crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, netKg: 190, grossKg: 260, note: null, orderIds: [b1.id] };
   assert.deepEqual(await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [row15], actor: sales }), { ok: true, count: 1 });
@@ -337,8 +338,24 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const commercial = async () => JSON.stringify(await db.order.findUnique({ where: { id: a1.id }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } }, billingBatchOrders: true, fgoDocuments: true } }));
   const before = await commercial();
 
-  // --- Atama: yalnızca yönetici; yalnızca aynı yükleme gününün, başka müşteriye ait sandığı
-  for (const role of OTHERS) assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
+  // --- Özel durum (karar 124): ev sahibi FİRMAYI yalnızca yönetici seçer; firma seçilmeden kimse sandık seçemez
+  for (const role of OTHERS.filter((x) => x !== 'SATIS')) assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
+  for (const role of ['SATIS', 'ADMIN']) assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate.id, actor: actor(role) }), { ok: false, code: 'NO_HOST' }, role);
+  for (const role of OTHERS) assert.deepEqual(await cr.setGuestHost(db, { orderId: a1.id, hostId: B.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
+  for (const [args, code] of [
+    [{ orderId: a1.id, hostId: A.id }, 'OWN_FIRM'], // kendi firması
+    [{ orderId: a1.id, hostId: 'yok' }, 'NOT_SAME_LOADING'],
+    [{ orderId: a1.id, hostId: idle.id }, 'NOT_SAME_LOADING'], // o gün yüklemesi olmayan firma seçilemez
+    [{ orderId: a1.id, hostId: admin.customerId }, 'NOT_SAME_LOADING'], // fabrika firması müşteri firması değildir
+    [{ orderId: 'yok', hostId: B.id }, 'NOT_FOUND'],
+  ]) assert.deepEqual(await cr.setGuestHost(db, { ...args, actor: actor() }), { ok: false, code }, code);
+  assert.equal((await db.order.findUnique({ where: { id: a1.id } })).guestHostId, null);
+  // Yönetici firmayı seçer: sandık gerekmez; aynı seçim ikinci kez hiçbir şey yazmaz
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: a1.id, hostId: B.id, actor: actor() }), { ok: true, changed: true, hostId: B.id });
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: a1.id, hostId: B.id, actor: actor() }), { ok: true, changed: false, hostId: B.id });
+  assert.equal(await db.auditLog.count({ where: { action: 'CROSS_CUSTOMER_HOST_SET', entityId: a1.id } }), 1);
+  assert.equal(await db.crateOrder.count({ where: { orderId: a1.id } }), 0, 'firma seçimi sandık atamaz');
+  // --- Sandık: yalnızca aynı yükleme gününün, yöneticinin seçtiği firmaya ait sandığı
   for (const [args, code] of [
     [{ day: X, orderId: a1.id, crateId: otherDay.id }, 'NOT_SAME_LOADING'], // başka günün sandığı
     [{ day: dayOf(-11), orderId: a1.id, crateId: otherDay.id }, 'NOT_SAME_LOADING'], // siparişin o gün yüklemesi yok
@@ -377,8 +394,8 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   assert.deepEqual(await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [{ ...row15, crateNo: 16 }], actor: sales }), { ok: false, code: 'HAS_GUESTS', numbers: [15] });
   // Nakliye listesi: sandık B'nin grubunda, içinde A'nın siparişi yazıyor; A'nın siparişi "sandığı girilmemiş" değil
   const list = await transportList(db, X);
-  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note])]), [['CRB', [[15, `güncel · + ${a1.orderNo} (CRA)`]]]]);
-  assert.deepEqual(list.missing, []);
+  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.guests])]), [['CRB', [[15, 'güncel', [{ orderNo: a1.orderNo, code: 'CRA', firm: 'Crate Owner A SRL' }]]]]]);
+  assert.deepEqual([list.missing, list.waiting], [[], []]);
   // Fiziksel ağırlık sandıkta (ev sahibinin grubunda): sandığın girilen brüt ağırlığı, içindeki misafir camla birlikte
   assert.deepEqual([list.crateCount, list.totalKg, list.groups[0].totalKg, list.groups[0].crates[0].weight], [1, 260, 260, 260]);
 
@@ -408,24 +425,32 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
 
   // --- Yerleşimi kaldırmak faturayı / ticari kaydı değiştirmez
   const batchBefore = JSON.stringify(await db.billingBatch.findUnique({ where: { id: ia.id }, include: { orders: true, lines: true, document: true } }));
-  for (const role of OTHERS) assert.deepEqual(await cr.removeGuestCrate(db, { orderId: a1.id, crateId: kept.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
+  for (const role of OTHERS.filter((x) => x !== 'SATIS')) assert.deepEqual(await cr.removeGuestCrate(db, { orderId: a1.id, crateId: kept.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, role);
   assert.deepEqual(await cr.removeGuestCrate(db, { orderId: b1.id, crateId: kept.id, actor: actor() }), { ok: false, code: 'NOT_FOUND' }, 'kendi sandığındaki sipariş bu işlemin konusu değil');
-  assert.deepEqual(await cr.removeGuestCrate(db, { orderId: a1.id, crateId: kept.id, actor: actor() }), { ok: true });
+  // Satış sandık seçimini kaldırabilir (yöneticinin seçtiği firmanın sandığı): firma kararı durur, sipariş yeniden "sandık seçimi bekliyor"
+  assert.deepEqual(await cr.removeGuestCrate(db, { orderId: a1.id, crateId: kept.id, actor: actor('SATIS') }), { ok: true });
   assert.deepEqual(await cr.removeGuestCrate(db, { orderId: a1.id, crateId: kept.id, actor: actor() }), { ok: false, code: 'NOT_FOUND' });
+  assert.equal((await db.order.findUnique({ where: { id: a1.id } })).guestHostId, B.id);
   assert.equal(await db.auditLog.count({ where: { action: 'CROSS_CUSTOMER_CRATE_REMOVED', entityId: a1.id } }), 1);
   assert.equal(JSON.stringify(await db.billingBatch.findUnique({ where: { id: ia.id }, include: { orders: true, lines: true, document: true } })), batchBefore);
   assert.deepEqual((await db.crateOrder.findMany({ where: { crateId: kept.id } })).map((x) => x.orderId), [b1.id]);
   // Yalnızca fiziksel yerleşim değişti: sandık B'nin sandığı olarak duruyor, notundan misafir sipariş çıktı; A'nın siparişi
   // yeniden "sandığı girilmemiş". Sipariş sahibi, kesilmiş faturalar ve yükleme onayı aynen.
   let after = await transportList(db, X);
-  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight])]), after.missing], [[['CRB', [[15, 'güncel', 260]]]], [a1.orderNo]]);
+  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight, k.guests])]), after.missing, after.waiting],
+    [[['CRB', [[15, 'güncel', 260, []]]]], [a1.orderNo], [{ orderNo: a1.orderNo, host: 'CRB' }]], 'sandık seçimi bekliyor: listede ayrıca yazar, kendiliğinden sandığa konmaz');
   // Yerleşimi değiştirme: B'nin başka bir sandığına (16) — yine yalnızca fiziksel
   assert.deepEqual(await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [{ ...row15, note: 'güncel' }, { ...row15, crateNo: 16, netKg: 80, grossKg: 130, orderIds: [] }], actor: sales }), { ok: true, count: 2 });
   const crate16 = await db.crate.findFirstOrThrow({ where: { shipDay: date(X), customerId: B.id, crateNo: 16 } });
-  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate16.id, actor: actor() }), { ok: true, crateNo: 16 });
-  after = await transportList(db, X);
-  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight])]), after.missing, after.totalKg],
-    [[['CRB', [[15, 'güncel', 260], [16, `+ ${a1.orderNo} (CRA)`, 130]]]], [], 390]);
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate16.id, actor: actor('SATIS') }), { ok: true, crateNo: 16 });
+  // Başka sandık seçmek öncekinin yerini alır (sipariş o gün tek misafir sandıkta): 16 → 15
+  const crate15 = await db.crate.findFirstOrThrow({ where: { shipDay: date(X), customerId: B.id, crateNo: 15 } });
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate15.id, actor: actor('SATIS') }), { ok: true, crateNo: 15 });
+  assert.deepEqual((await db.crateOrder.findMany({ where: { orderId: a1.id } })).map((x) => x.crateId), [crate15.id]);
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: a1.id, crateId: crate16.id, actor: actor('SATIS') }), { ok: true, crateNo: 16 });
+  after = await transportList(db, X, { label: (name) => `${name.slice(0, 3)}**********` });
+  assert.deepEqual([after.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.weight, k.guests])]), after.missing, after.waiting, after.totalKg],
+    [[['CRB', [[15, 'güncel', 260, []], [16, '', 130, [{ orderNo: a1.orderNo, code: 'CRA', firm: 'Cra**********' }]]]]], [], [], 390], 'satışa giden listede misafir firmanın adı maskeli; ağırlık sandıkta');
   assert.equal((await db.order.findUnique({ where: { id: a1.id } })).customerId, A.id);
   assert.equal(crate16.customerId, B.id);
   assert.equal(JSON.stringify(await db.billingBatch.findUnique({ where: { id: ia.id }, include: { orders: true, lines: true, document: true } })), batchBefore, 'A\'nın faturası değişmedi');
@@ -440,7 +465,8 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const b2 = await glassOrder(B, Y, [glassLine(1)]);
   await cr.saveDayCrates(db, { day: Y, customerId: B.id, rows: [{ ...row15, crateNo: 7, orderIds: [b2.id] }], actor: sales });
   const crateY = await db.crate.findFirstOrThrow({ where: { shipDay: date(Y), customerId: B.id } });
-  assert.equal((await cr.assignGuestCrate(db, { day: Y, orderId: a2.id, crateId: crateY.id, actor: actor() })).ok, true);
+  assert.equal((await cr.setGuestHost(db, { orderId: a2.id, hostId: B.id, actor: actor() })).ok, true);
+  assert.equal((await cr.assignGuestCrate(db, { day: Y, orderId: a2.id, crateId: crateY.id, actor: actor('SATIS') })).ok, true);
   assert.equal(b.coverageOf(await db.order.findUnique({ where: { id: a2.id }, include: { fgoDocuments: true, billingBatchOrders: true } })), null);
   const pa = await b.previewBatch(db, { customerId: A.id, days: [Y], bnrImpl: bnr('5.0000') });
   const pb = await b.previewBatch(db, { customerId: B.id, days: [Y], bnrImpl: bnr('5.0000') });
@@ -451,6 +477,10 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   // Siparişin yükleme günü değişirse başka müşterinin sandığındaki yerleşim kalkar (sandık ev sahibinde kalır); proforma zinciri aynen durur
   const moved = await db.$transaction((tx) => cr.moveOrderCrates(tx, { orderId: a2.id, customerId: A.id, fromDay: Y, toDay: dayOf(41), actor: actor() }));
   assert.deepEqual(moved.guestUnlinked, [7]);
+  // Yeni günde ev sahibi firmanın yüklemesi yok: özel durum ilişkisi de kaldırılır (denetim kaydıyla); ticari hiçbir şey değişmez
+  assert.equal((await db.order.findUnique({ where: { id: a2.id } })).guestHostId, null);
+  const cleared = await db.auditLog.findFirstOrThrow({ where: { action: 'CROSS_CUSTOMER_HOST_REMOVED', entityId: a2.id } });
+  assert.deepEqual([cleared.details.reason, cleared.details.previousHostCustomerId, cleared.details.toDay], ['SHIP_DAY_CHANGED', B.id, dayOf(41)]);
   assert.deepEqual((await db.crateOrder.findMany({ where: { crateId: crateY.id } })).map((x) => x.orderId), [b2.id]);
   assert.equal((await db.crate.findUnique({ where: { id: crateY.id } })).shipDay.toISOString().slice(0, 10), Y);
   assert.equal(await db.billingBatchOrder.count({ where: { orderId: a2.id, activeKey: { not: null } } }), 1);
@@ -470,16 +500,116 @@ dbTest('aktarılan kalan da aynı günün başka müşteri sandığına konabili
   const crate = await db.crate.findFirstOrThrow({ where: { shipDay: date(F), customerId: B.id } });
   // Aktarılmadan önce siparişin F gününde yüklemesi yok
   assert.deepEqual(await cr.assignGuestCrate(db, { day: F, orderId: a.id, crateId: crate.id, actor: actor() }), { ok: false, code: 'NOT_SAME_LOADING' });
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: a.id, hostId: B.id, actor: actor() }), { ok: false, code: 'NOT_SAME_LOADING' }, 'B, siparişin yüklendiği hiçbir günde yüklemiyor');
   assert.deepEqual(await cr.saveDayCrates(db, { day: F, customerId: A.id, rows: [{ ...one, crateNo: 4 }], actor: sales }), { ok: false, code: 'NO_ORDERS' });
   assert.equal((await rp.replanNotLoaded(db, { itemId: row.itemId, day: F, actor: actor() })).ok, true);
-  assert.deepEqual(await cr.assignGuestCrate(db, { day: F, orderId: a.id, crateId: crate.id, actor: actor() }), { ok: true, crateNo: 3 });
+  // Kalan F gününe aktarıldı: o gün yüklemesi olan B artık ev sahibi seçilebilir; sandığı satış seçer
+  const options = await cr.guestHostOptions(db, a);
+  assert.deepEqual([options.days, options.hosts.filter((h) => h.id === B.id).length, options.hosts.some((h) => h.id === A.id)], [[D, F], 1, false]);
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: a.id, hostId: B.id, actor: actor() }), { ok: true, changed: true, hostId: B.id });
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: F, orderId: a.id, crateId: crate.id, actor: sales }), { ok: true, crateNo: 3 });
   // Kendi sandığı da girilebilir: aktarılan kalan o günün siparişidir
   assert.deepEqual(await cr.saveDayCrates(db, { day: F, customerId: A.id, rows: [{ ...one, crateNo: 4, orderIds: [a.id] }], actor: sales }), { ok: true, count: 1 });
   const list = await transportList(db, F);
-  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note])]), [['CYA', [[4, '']]], ['CYB', [[3, `+ ${a.orderNo} (CYA)`]]]]);
+  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.guests.map((u) => `${u.firm} · ${u.orderNo}`)])]), [['CYA', [[4, '', []]]], ['CYB', [[3, '', [`Carry A SRL · ${a.orderNo}`]]]]]);
   assert.deepEqual(list.missing, []);
   // Onay ve fatura yine gerçek müşteride: kalan 2 adet A'nın faturasında
   assert.equal((await confirm(F, [], evening(F))).ok, true);
   const view = await billing(F);
   assert.deepEqual(view.customers.map((x) => [x.name, x.groups[0].orders.map((o) => [o.orderNo, o.lines[0].pieces])]), [['Carry A SRL', [[a.orderNo, 2]]], ['Carry B SRL', [[hostOrder.orderNo, 1]]]]);
 });
+
+dbTest('özel durum (karar 124): yönetici yalnızca FİRMA seçer — aynı yükleme gününün firmaları, her firma bir kez, sandık gerekmez; satış yalnızca o firmanın o günkü sandığını seçebilir; sahte istekler reddedilir; ticari sahiplik ve müşteri yalıtımı değişmez', offline(async () => {
+  const X = dayOf(75), Z = dayOf(76);
+  const G = await firm('Guest G SRL', 'GSG');
+  const H = await firm('Host H SRL', 'HSH');
+  const K = await firm('Other K SRL', 'OTK');
+  const L = await firm('Later L SRL', 'LTL');
+  const g1 = await glassOrder(G, X, [glassLine(2)]);
+  const h1 = await glassOrder(H, X, [glassLine(1)]);
+  const h2 = await glassOrder(H, X, [glassLine(1)]); // aynı firmanın ikinci siparişi: listede firma BİR kez
+  const k1 = await glassOrder(K, X, [glassLine(1)]);
+  const l1 = await glassOrder(L, Z, [glassLine(1)]); // başka günün yüklemesi
+  await glassOrder(L, X, [glassLine(1)], { onHold: true }); // beklemedeki sipariş yükleme sayılmaz
+  await glassOrder(L, X, [glassLine(1)], { status: 'IPTAL' }); // iptal de
+  const sales = actor('SATIS');
+
+  // --- Seçim listesi: sipariş / sandık değil, FİRMA; aynı yükleme gününde yüklemesi olan başka firmalar, her biri bir kez
+  const opt = await cr.guestHostOptions(db, g1);
+  assert.deepEqual([opt.days, opt.hosts.map((x) => x.name)], [[X], ['Host H SRL', 'Other K SRL']]);
+  assert.deepEqual(Object.keys(opt.hosts[0]).sort(), ['id', 'name'], 'listede yalnızca firma (sipariş / sandık yok)');
+
+  // --- Yönetici firmayı seçer: o gün hiç sandık girilmemişken de
+  assert.equal(await db.crate.count({ where: { shipDay: date(X) } }), 0);
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: g1.id, hostId: L.id, actor: actor() }), { ok: false, code: 'NOT_SAME_LOADING' }, 'aynı günde yüklemesi olmayan firma');
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: g1.id, hostId: H.id, actor: actor() }), { ok: true, changed: true, hostId: H.id });
+  assert.equal(await db.crateOrder.count({ where: { orderId: g1.id } }), 0, 'hiçbir sandık kendiliğinden atanmaz');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: g1.id, type: { in: [cr.GUEST_ASSIGNED, cr.GUEST_REMOVED] } } }), 0, 'firma seçimi müşterilere bildirim üretmez');
+  // Nakliye listesi: sandık seçimi bekliyor (sipariş → ev sahibi firma kodu)
+  assert.deepEqual((await transportList(db, X)).waiting, [{ orderNo: g1.orderNo, host: 'HSH' }]);
+
+  // --- Sandıklar SONRADAN girilir (satış)
+  const row = (crateNo, orderIds) => ({ crateNo, lengthMm: 2000, widthMm: 1000, heightMm: 900, netKg: 100, grossKg: 150, note: null, orderIds });
+  assert.equal((await cr.saveDayCrates(db, { day: X, customerId: H.id, rows: [row(12, [h1.id]), row(13, [h2.id])], actor: sales })).ok, true);
+  assert.equal((await cr.saveDayCrates(db, { day: X, customerId: K.id, rows: [row(20, [k1.id])], actor: sales })).ok, true);
+  assert.equal((await cr.saveDayCrates(db, { day: Z, customerId: L.id, rows: [row(12, [l1.id])], actor: sales })).ok, true);
+  const crateOf = (f, day, no) => db.crate.findFirstOrThrow({ where: { shipDay: date(day), customerId: f.id, crateNo: no } });
+  const [c12, c13, c20, cz] = [await crateOf(H, X, 12), await crateOf(H, X, 13), await crateOf(K, X, 20), await crateOf(L, Z, 12)];
+
+  // --- Sahte istekler: başka firmanın sandığı, başka günün sandığı, firması seçilmemiş sipariş — satış da yönetici de
+  for (const [args, code] of [
+    [{ day: X, orderId: g1.id, crateId: c20.id }, 'NOT_HOST_CRATE'], // o günün ama BAŞKA firmanın sandığı
+    [{ day: Z, orderId: g1.id, crateId: cz.id }, 'NOT_SAME_LOADING'], // başka günün sandığı
+    [{ day: X, orderId: g1.id, crateId: cz.id }, 'NOT_SAME_LOADING'],
+    [{ day: X, orderId: k1.id, crateId: c12.id }, 'NO_HOST'], // yönetici k1 için firma seçmedi
+  ]) for (const role of ['SATIS', 'ADMIN']) assert.deepEqual(await cr.assignGuestCrate(db, { ...args, actor: actor(role) }), { ok: false, code }, `${code} ${role}`);
+  for (const role of ['CIZIM', 'MUSTERI', 'DENETIMCI', null]) assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c12.id, actor: actor(role) }), { ok: false, code: 'FORBIDDEN' }, String(role));
+  // Satış firmayı seçemez / değiştiremez / kaldıramaz
+  for (const hostId of [K.id, null]) assert.deepEqual(await cr.setGuestHost(db, { orderId: g1.id, hostId, actor: sales }), { ok: false, code: 'FORBIDDEN' });
+  assert.equal(await db.crateOrder.count({ where: { orderId: g1.id } }), 0);
+
+  // --- Satış sandığı seçer: iki firmaya bildirim olayı (tek olay)
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c12.id, actor: sales }), { ok: true, crateNo: 12 });
+  const events = async () => (await db.notificationOutbox.findMany({ where: { orderId: g1.id, type: { in: [cr.GUEST_ASSIGNED, cr.GUEST_REMOVED] } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }))
+    .map((e) => [e.type, e.payload.hostId, e.payload.crateNo, e.payload.day]);
+  assert.deepEqual(await events(), [[cr.GUEST_ASSIGNED, H.id, 12, X]]);
+  assert.deepEqual((await transportList(db, X)).waiting, []);
+  // Aynı sandık yeniden: değişiklik yok → olay da yok
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c12.id, actor: sales }), { ok: false, code: 'ALREADY_ASSIGNED' });
+  assert.equal((await events()).length, 1);
+
+  // --- Yalnızca fiziksel: sipariş, teklif ve belgeler gerçek müşteride; ev sahibi firmanın proformasına / verisine girmez
+  const o = await db.order.findUnique({ where: { id: g1.id } });
+  assert.deepEqual([o.customerId, o.guestHostId], [G.id, H.id]);
+  const pg = await b.previewBatch(db, { customerId: G.id, days: [X], bnrImpl: bnr('5.0000') });
+  const ph = await b.previewBatch(db, { customerId: H.id, days: [X], bnrImpl: bnr('5.0000') });
+  assert.deepEqual([pg.included.map((x) => x.orderNo), ph.included.map((x) => x.orderNo).sort()], [[g1.orderNo], [h1.orderNo, h2.orderNo].sort()]);
+  assert.ok(!JSON.stringify(ph).includes(g1.orderNo), 'ev sahibinin belgesinde misafir sipariş yok');
+  // Müşteri yalıtımı (IDOR yok): ev sahibi müşterinin sandık satırında misafir siparişin kimliği bulunmaz
+  const hostView = await db.crate.findMany({ where: { customerId: H.id, shipDay: date(X) }, include: { orders: { where: cr.crateOrdersWhere({ appRole: 'MUSTERI', customerId: H.id }), select: { orderId: true } } } });
+  assert.ok(!JSON.stringify(hostView).includes(g1.id));
+  assert.equal(await db.order.count({ where: { id: g1.id, customerId: H.id } }), 0, 'sandık paylaşımı siparişe erişim vermez: müşteri kapsamı firmaya göredir');
+
+  // --- Yönetici firmayı değiştirir: önceki sandık seçimi kalkar, yeni firmada yeniden bekler; eski firmanın sandığı artık seçilemez
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: g1.id, hostId: K.id, actor: actor() }), { ok: true, changed: true, hostId: K.id });
+  assert.equal(await db.crateOrder.count({ where: { orderId: g1.id } }), 0);
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c12.id, actor: sales }), { ok: false, code: 'NOT_HOST_CRATE' });
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c20.id, actor: sales }), { ok: true, crateNo: 20 });
+  // Yönetici özel durumu kaldırır: yerleşim de kalkar
+  assert.deepEqual(await cr.setGuestHost(db, { orderId: g1.id, hostId: null, actor: actor() }), { ok: true, changed: true, hostId: null });
+  assert.equal(await db.crateOrder.count({ where: { orderId: g1.id } }), 0);
+  assert.deepEqual(await events(), [[cr.GUEST_ASSIGNED, H.id, 12, X], [cr.GUEST_REMOVED, H.id, 12, X], [cr.GUEST_ASSIGNED, K.id, 20, X], [cr.GUEST_REMOVED, K.id, 20, X]]);
+  assert.deepEqual((await db.auditLog.findMany({ where: { entityId: g1.id, action: { in: ['CROSS_CUSTOMER_HOST_SET', 'CROSS_CUSTOMER_HOST_REMOVED'] } }, orderBy: { createdAt: 'asc' } })).map((a) => [a.action, a.details.hostCustomerId, a.details.previousHostCustomerId]),
+    [['CROSS_CUSTOMER_HOST_SET', H.id, null], ['CROSS_CUSTOMER_HOST_SET', K.id, H.id], ['CROSS_CUSTOMER_HOST_REMOVED', null, K.id]]);
+
+  // --- Yükleme günü değişir: ev sahibi yeni günde de yüklüyorsa ilişki durur, eski günün sandık seçimi kalkar (yeniden bekler)
+  await glassOrder(H, Z, [glassLine(1)]);
+  assert.equal((await cr.setGuestHost(db, { orderId: g1.id, hostId: H.id, actor: actor() })).ok, true);
+  assert.deepEqual(await cr.assignGuestCrate(db, { day: X, orderId: g1.id, crateId: c13.id, actor: sales }), { ok: true, crateNo: 13 });
+  const moved = await db.$transaction((tx) => cr.moveOrderCrates(tx, { orderId: g1.id, customerId: G.id, fromDay: X, toDay: Z, actor: actor() }));
+  assert.deepEqual(moved.guestUnlinked, [13]);
+  assert.deepEqual([(await db.order.findUnique({ where: { id: g1.id } })).guestHostId, await db.crateOrder.count({ where: { orderId: g1.id } })], [H.id, 0]);
+  assert.deepEqual((await events()).slice(-2), [[cr.GUEST_ASSIGNED, H.id, 13, X], [cr.GUEST_REMOVED, H.id, 13, X]]);
+  // Ticari kayıt baştan sona aynı: teklif, belge, parti yok / değişmedi
+  assert.deepEqual([await db.fgoDocument.count({ where: { orderId: g1.id } }), await db.billingBatchOrder.count({ where: { orderId: g1.id } }), (await db.order.findUnique({ where: { id: g1.id } })).customerId], [0, 0, G.id]);
+}));

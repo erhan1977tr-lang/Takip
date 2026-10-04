@@ -147,6 +147,8 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
     files: userCan(user, 'FILE_INTERNAL_VIEW') ? order.files : order.files.filter((f) => f.kind === 'CUSTOMER'),
     offers,
     price: userCan(user, 'PRICE_FINAL_VIEW') ? order.price : null,
+    // "Özel durum" (karar 124): ev sahibi firma kararı yalnızca iç ekibe gider
+    guestHostId: userCan(user, 'FILE_INTERNAL_VIEW') ? order.guestHostId : null,
   };
 }
 

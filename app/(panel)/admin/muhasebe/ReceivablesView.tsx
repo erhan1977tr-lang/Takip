@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus, unitOf } from '@/server/accounting/receivables.js';
 import { emailStates } from '@/server/documents/delivery.js';
+import { getAccountingSettings, uninvoicedLoadings } from '@/server/accounting/uninvoiced.js';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { refreshFgoAction, resendDocEmailAction } from './actions';
 
@@ -38,6 +39,10 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   if (type === 'PROFILE_ORDER') await backfillDocuments(db);
   const [docs, sync] = await Promise.all([listDocuments(db, type) as Promise<Doc[]>, syncStatus(db)]);
   const mails = await emailStates(db, docs) as Map<string, Mail>;
+  // "Fatura bekliyor" (karar 126): yalnızca cam — yüklenmiş, uyarı günü dolmuş, kapanış faturası kesilmemiş kapsamlar.
+  // Kalıcıdır: bildirim okunsa da fatura kesilene kadar burada durur; fatura kesilince kendiliğinden kalkar.
+  const accounting = type === 'GLASS_ORDER' ? await getAccountingSettings(db) : null;
+  const overdue = accounting ? await uninvoicedLoadings(db, { days: accounting.uninvoicedDays }) : [];
   const key = type === 'PROFILE_ORDER' ? 'profile' : 'glass';
   const path = type === 'PROFILE_ORDER' ? '/admin/muhasebe/profil' : '/admin/muhasebe/cam';
   const r = receivables(docs) as { shares: Map<string, Share>; sums: Sums };
@@ -81,6 +86,47 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
       {sp.error && <div className="alert alert-error">{t(`accounting.receivables.errors.${ERRORS.includes(sp.error) ? sp.error : 'FGO_DISABLED'}` as MsgKey)}</div>}
       {sp.ok === 'resent' && <div className="alert alert-ok">{t('accounting.receivables.email.resent')}</div>}
       {sp.mailError && <div className="alert alert-error">{t(`accounting.receivables.email.errors.${MAIL_ERRORS.includes(sp.mailError) ? sp.mailError : 'NOT_FOUND'}` as MsgKey)}</div>}
+
+      {overdue.length > 0 && (
+        <div className="card card-flush" id="fatura-bekliyor">
+          <div className="card-head">
+            <h2><span className="text-danger">{t('accounting.overdue.title')}</span> <span className="badge badge-danger">{overdue.length}</span></h2>
+          </div>
+          <div className="card-tools"><span className="muted small">{t('accounting.overdue.intro', { days: accounting?.uninvoicedDays ?? 0 })}</span></div>
+          <div className="table-wrap">
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>{t('accounting.overdue.col.order')}</th>
+                  <th>{t('accounting.overdue.col.loaded')}</th>
+                  <th>{t('accounting.overdue.col.waiting')}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {overdue.map((o) => (
+                  <tr key={`${o.confirmationId}-${o.orderId}`} data-overdue={o.orderNo}>
+                    <td>
+                      <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link> · {o.customerName}
+                      {o.removed && <> <Badge tone="muted">{t('accounting.overdue.removed')}</Badge></>}
+                    </td>
+                    <td className="nowrap">{t('accounting.overdue.loaded', { date: dayText(new Date(`${o.day}T00:00:00Z`)) })}</td>
+                    <td>
+                      <Badge tone="danger">{t('accounting.overdue.days', { n: o.daysSince })}</Badge>
+                      {o.note && <span className="cell-note">{t(`accounting.overdue.note.${o.note}` as MsgKey)}</span>}
+                    </td>
+                    <td className="actions">
+                      {o.note === 'ORDER_CHAIN'
+                        ? <Link className="btn" href={`/siparisler/${o.orderId}#finans`}>{t('accounting.overdue.openOrder')}</Link>
+                        : <Link className="btn" href={`/yuklemeler?gun=${o.day}#faturalama`}>{t('accounting.overdue.open')}</Link>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Özet: para birimi başına (para birimleri toplanmaz) */}
       {curs.map((cur, i) => {

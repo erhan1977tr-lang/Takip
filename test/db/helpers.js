@@ -21,6 +21,29 @@ export function dbTest(name, fn) {
   return problem ? test(name, { skip: problem }) : test(name, fn);
 }
 
+/**
+ * Gerçek ağ isteği engeli (FGO / ANAF gerçek sistemlerdir): sarılan test boyunca global fetch'e düşen HER istek hata
+ * fırlatır ve test, hata yutulsa bile başarısız olur. FGO / BNR çağrıları testlerde yalnızca sahte fetchImpl / bnrImpl
+ * ile yapılır. Kullanım: dbTest('…', offline(async () => { … })).
+ * @param {(t: any) => Promise<void>} fn
+ */
+export function offline(fn) {
+  return async (t) => {
+    const real = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      calls.push(String(url));
+      throw new Error(`test: gerçek ağ isteği yapılmamalı (${String(url).slice(0, 120)})`);
+    };
+    try {
+      await fn(t);
+    } finally {
+      globalThis.fetch = real;
+    }
+    if (calls.length) throw new Error(`test sırasında gerçek ağ isteği yapıldı: ${calls.join(', ').slice(0, 400)}`);
+  };
+}
+
 let client;
 /** @returns {Promise<import('@prisma/client').PrismaClient>} */
 export async function getDb() {
