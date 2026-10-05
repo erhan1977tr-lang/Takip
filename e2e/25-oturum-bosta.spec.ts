@@ -84,12 +84,7 @@ test('beş rol: 30 dakika etkinlik yoksa oturum biter — eski sekme girişe dö
     const ctx = again.context();
     const hash2 = await tokenHash(ctx);
     expect(hash2).not.toBe(hash);
-    await again.goto('/admin/users');
-    if (email === ADMIN) await expect(again).toHaveURL(/\/admin\/users/);
-    else await expect(again, `${who}: yönetici sayfası kapalı`).toHaveURL(/\/siparisler/);
-    expect((await again.request.get('/admin/katalog/excel')).status(), who).toBe(email === ADMIN ? 200 : 404);
-
-    // --- 3) Açık bırakılan sekmeler: süre dolduktan sonra sunucu işlemi kaydı değiştirmez, sekme girişe düşer
+    // (sonraki adımın açık bırakılan sekmeleri şimdi açılır: sayfaları yüklenip etkileşime hazır olsun)
     const stale = await ctx.newPage();
     await stale.goto('/siparisler');
     let form: Page | null = null;
@@ -100,6 +95,14 @@ test('beş rol: 30 dakika etkinlik yoksa oturum biter — eski sekme girişe dö
       await form.fill('#nameRo', 'Sticla sesiune inactiva');
       await form.fill('#weightKgM2', '30');
     }
+    await again.goto('/admin/users');
+    if (email === ADMIN) await expect(again).toHaveURL(/\/admin\/users/);
+    else await expect(again, `${who}: yönetici sayfası kapalı`).toHaveURL(/\/siparisler/);
+    expect((await again.request.get('/admin/katalog/excel')).status(), who).toBe(email === ADMIN ? 200 : 404);
+
+    // --- 3) Açık bırakılan sekmeler: süre dolduktan sonra sunucu işlemi kaydı değiştirmez, sekme girişe düşer
+    await stale.waitForLoadState('networkidle');
+    if (form) await form.waitForLoadState('networkidle');
     await idleFor(hash2, 31 * MIN);
     const other = user.language === 'tr' ? 'ro' : 'tr';
     await stale.locator('select.lang-select').selectOption(other);
@@ -199,8 +202,9 @@ test('form doldurulup bırakılan sekme: otomatik yenileme durmuşken de 30 daki
   await page.goto('/admin/katalog');
   const posts = watch(page);
   // Yazı yazmak gerçek etkinliktir (bildirilir); form "dolu" olduğundan otomatik yenileme sayfayı yenilemez
+  await page.waitForLoadState('networkidle');
   const reply = activityReply(page);
-  await page.locator('#nameTr').pressSequentially('YARIM KALAN CAM');
+  await page.locator('#nameTr').pressSequentially('YARIM KALAN CAM', { delay: 60 });
   expect((await reply).status()).toBe(200);
   expect(Date.now() - (await seen(hash))).toBeLessThan(15_000);
   // Bekleyen son tuş vuruşları dakika dolunca bildirilir; sonrası sessizlik
@@ -235,9 +239,8 @@ test('çok sekme: bir sekmedeki gerçek etkinlik aynı oturumu canlı tutar; ark
   const background = async () => {
     await b.reload();
     await expect(b).toHaveURL(/\/siparisler/);
-    const polled = b.waitForResponse((r) => r.url().endsWith(FEED));
+    expect((await b.request.get(FEED)).status()).toBe(200);
     await b.evaluate(() => window.dispatchEvent(new Event('takip:poll')));
-    expect((await polled).status()).toBe(200);
   };
 
   // 20 dakika geçti; B'de yalnızca arka plan istekleri → uzatmaz

@@ -243,7 +243,7 @@ test('arka plan kalıcı oturum üretemez: çok sekmeli yenileme / yoklama, "bo�
   assert.equal(tabs.reduce((n, t) => n + t.reads, 0), 25 * 5, 'üç sekme 25 dakikada 125 otomatik istek yaptı');
   assert.equal(db.writes.length, 0);
   // Uzatmayan bildirimler: yaş ≥ 30 dakika, sayı olmayan değerler, gelecekten etkinlik
-  for (const idleMs of [SESSION_IDLE_MS, SESSION_IDLE_MS * 10, Number.NaN, Number.POSITIVE_INFINITY, null, undefined === 0, '0', {}, []]) {
+  for (const idleMs of [SESSION_IDLE_MS, SESSION_IDLE_MS * 10, Number.NaN, Number.POSITIVE_INFINITY, null, false, '0', {}, []]) {
     const r = await recordActivity(db, 't', { idleMs, now: w.now() });
     assert.deepEqual([r.state, r.extended], ['active', false], `idleMs=${String(idleMs)}`);
   }
