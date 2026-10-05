@@ -370,14 +370,19 @@ cache_housekeeping() {
   flag=$(cache_keep_flag)
   if [ -n "$flag" ]; then
     cache_prune "$flag" "$CACHE_KEEP_BYTES" || true
-    after=$(to_bytes "$(cache_size)")
+    size=$(cache_size)
+    after=$(to_bytes "$size")
+    # Temizliğin hemen ardından boyut okunamadıysa (Docker meşgul) bir kez daha okunur; okunamayan boyut "silinmedi" sayılmaz
+    if [ -z "$after" ]; then sleep 3; size=$(cache_size); after=$(to_bytes "$size"); fi
   fi
-  # Boyuta göre tutma desteklenmiyorsa ya da önbellek hâlâ sınırın üstündeyse: kullanılmayan önbelleğin tamamı silinir
-  if [ -z "$after" ] || [ "$after" -gt "$CACHE_LIMIT_BYTES" ]; then
+  # Boyuta göre tutma desteklenmiyorsa ya da önbellek bundan sonra da sınırın üstündeyse: kullanılmayan önbelleğin tamamı
+  if [ -z "$flag" ] || { [ -n "$after" ] && [ "$after" -gt "$CACHE_LIMIT_BYTES" ]; }; then
+    [ -z "$flag" ] || log "  derleme önbelleği (ilk adımdan sonra): $size — sınırın altına inmedi; kullanılmayan önbelleğin tamamı siliniyor"
     cache_prune || true
-    after=$(to_bytes "$(cache_size)")
+    size=$(cache_size)
+    after=$(to_bytes "$size")
   fi
-  log "  derleme önbelleği (sonra): $(cache_size)"
+  log "  derleme önbelleği (sonra): ${size:-okunamadı}"
   if [ -n "$after" ] && [ "$after" -gt "$CACHE_LIMIT_BYTES" ]; then
     log "⚠ derleme önbelleği hâlâ sınırın üstünde (o anda kullanılan önbellek silinmez); bir sonraki yayında yeniden denenecek"
   fi

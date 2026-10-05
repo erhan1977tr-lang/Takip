@@ -188,6 +188,7 @@ jobs:
           [ "$after" -le 300000000 ]
           [ "$after" -lt "$before" ]
           sudo tail -n 8 /opt/takip/logs/deploy.log | grep -q 'derleme önbelleği (sonra)'
+          echo "::notice title=Önbellek temizliği (gerçek Docker)::$(sed 's/%/%25/g' c2.log | sed ':a;N;$!ba;s/\n/%0A/g')"
 
           # 3. Dokunulmaması gerekenler birebir yerinde: birimler, imajlar (yayındaki + geri dönüş + kullanılmayan etiket),
           #    kapsayıcılar (çalışanlar çalışıyor, durmuş olan duruyor), yedekler, veritabanı içeriği, yüklenen dosya
@@ -211,8 +212,8 @@ jobs:
           new=$(git rev-parse HEAD)
           sudo env TAKIP_SKIP_CI_GATE=1 TAKIP_CACHE_LIMIT_BYTES=300000000 TAKIP_CACHE_KEEP_BYTES=100000000 takip guncelle | tee c3.log
           curl -fsSk "$SITE/surum" | jq -e --arg b "${new::7}" '.build == $b'
-          grep -q 'derleme önbelleği (önce): ' c3.log
-          grep -q 'derleme önbelleği (sonra): ' c3.log
+          # Yayının sonunda önbellek denetimi kendiliğinden çalıştı (temizlikten hemen sonra biriken yok: sınırın altında)
+          grep -q 'derleme önbelleği' c3.log
           [ "$(bytes "$(cache)")" -le 300000000 ]
           [ "$(sudo cat /opt/takip/state/cache-checked)" = "$new" ]
           # Yayındaki + bir önceki imaj tutulur (mevcut geri dönüş kuralı); birimler ve veri yerinde

@@ -14,13 +14,17 @@ FAKE=$ROOT/bin
 mkdir -p "$FAKE"
 
 # Sahte docker. Durum dosyaları ($FAKE_STATE): size (docker system df'in göstereceği önbellek boyutu), help (prune
-# yardım metni), after-keep / after-all (ilgili temizlikten sonra boyut), prune-exit (temizliğin çıkış kodu).
+# yardım metni), after-keep / after-all (ilgili temizlikten sonra boyut), prune-exit (temizliğin çıkış kodu),
+# blank-after-prune (temizlikten sonra kaç boyut okuması boş dönsün).
 cat >"$FAKE/docker" <<'SH'
 #!/usr/bin/env bash
 S=$FAKE_STATE
 echo "docker $*" >>"$S/calls"
 case "$1 ${2:-}" in
-  'system df') if [ -s "$S/size" ]; then echo "Images|1.2GB|100MB"; echo "Build Cache|$(cat "$S/size")|$(cat "$S/size")"; fi ;;
+  'system df')
+    # blank: bu kadar okuma boş döner (Docker meşgul)
+    if [ -s "$S/blank" ] && [ "$(cat "$S/blank")" -gt 0 ]; then echo $(($(cat "$S/blank") - 1)) >"$S/blank"; exit 0; fi
+    if [ -s "$S/size" ]; then echo "Images|1.2GB|100MB"; echo "Build Cache|$(cat "$S/size")|$(cat "$S/size")"; fi ;;
   'builder prune')
     if [ "${3:-}" = --help ]; then cat "$S/help"; exit 0; fi
     code=$(cat "$S/prune-exit" 2>/dev/null || echo 0)
@@ -29,6 +33,7 @@ case "$1 ${2:-}" in
       *' --reserved-space '* | *' --keep-storage '*) [ -f "$S/after-keep" ] && cp "$S/after-keep" "$S/size" ;;
       *) [ -f "$S/after-all" ] && cp "$S/after-all" "$S/size" ;;
     esac
+    if [ -f "$S/blank-after-prune" ]; then cp "$S/blank-after-prune" "$S/blank"; fi
     echo "ID   RECLAIMABLE   SIZE"; echo "Total reclaimed space: 68.1GB"
     ;;
   'info --format') echo "$S" ;;
@@ -123,7 +128,17 @@ has 'derleme önbelleği (sonra): 0B'; safe
 setup 'boyuta göre temizlik etkisiz' 72.45GB "$HELP_NEW"; echo 72.45GB >"$FAKE_STATE/after-keep"; echo 1.2GB >"$FAKE_STATE/after-all"; go
 [ "$(prunes)" = 2 ] || fail "iki adım beklenirdi"
 [ "$(grep '^docker builder prune --all' "$FAKE_STATE/calls" | paste -sd'|')" = 'docker builder prune --all --force --reserved-space 4000000000|docker builder prune --all --force' ] || fail "adım sırası"
+has 'derleme önbelleği (ilk adımdan sonra): 72.45GB — sınırın altına inmedi'
 has 'derleme önbelleği (sonra): 1.2GB'; hasnt 'hâlâ sınırın üstünde'; safe
+
+# 5b. Temizlikten hemen sonra boyut bir kez okunamadı (Docker meşgul): yeniden okunur; körlemesine ikinci temizlik YOK
+setup 'temizlikten sonra boyut bir kez okunamadı' 72.45GB "$HELP_NEW"; echo 3.1GB >"$FAKE_STATE/after-keep"; echo 1 >"$FAKE_STATE/blank-after-prune"; go
+[ "$(prunes)" = 1 ] || fail "tek temizlik beklenirdi"
+has 'derleme önbelleği (sonra): 3.1GB'; hasnt 'sınırın altına inmedi'; safe
+# 5c. Boyut temizlikten sonra hiç okunamıyor: ikinci temizlik yapılmaz, kayda "okunamadı" yazılır
+setup 'temizlikten sonra boyut okunamıyor' 72.45GB "$HELP_NEW"; echo 3.1GB >"$FAKE_STATE/after-keep"; echo 9 >"$FAKE_STATE/blank-after-prune"; go
+[ "$(prunes)" = 1 ] || fail "tek temizlik beklenirdi"
+has 'derleme önbelleği (sonra): okunamadı'; safe
 
 # 6. Hiçbir temizlik yer açamıyor (önbellek kullanımda): uyarı; araç hata vermez; döngü yok (en çok iki adım)
 setup 'yer açılamıyor' 72.45GB "$HELP_NEW"; echo 72.45GB >"$FAKE_STATE/after-keep"; echo 71GB >"$FAKE_STATE/after-all"; go

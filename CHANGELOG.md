@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.5 — 05.10.2026
+
+- **Sunucu: önbellek temizliği kaydı ve ikinci adım.** İki adımlı temizlikte ilk adımdan sonraki boyut da kayda
+  yazılır; ikinci adım (kullanılmayan önbelleğin tamamı) yalnızca önbellek gerçekten sınırın üstünde kaldıysa
+  çalışır — boyut o an okunamadıysa yeniden okunur, körlemesine ikinci temizlik yapılmaz. Yine yalnızca derleme
+  önbelleği silinir.
+
 ## 3.50.4 — 05.10.2026
 
 - **Sunucu: her yayında ~1,2 GB'lık derleme katmanı yeniden üretilmiyor.** Önbelleğin bu kadar hızlı büyümesinin asıl
