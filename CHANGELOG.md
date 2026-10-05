@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.1 — 05.10.2026
+
+- **Sipariş geçmişi (iç ekip)**: "Belge FGO'da silinmiş; kaydı kaldırıldı" gibi sistem olayları artık kod
+  (`FGO_DOC_DELETED`) yerine metniyle görünür. Müşterinin gördüğü geçmiş değişmedi. (3.50.0 canlıya çıkmadan
+  bu düzeltmeyle birlikte yayımlandı.)
+
 ## 3.50.0 — 05.10.2026
 
 - **FGO'da elle silinmiş belge: "TAKİP'ten kaldır"** (Muhasebe → Cam Tahsilat / Profil Tahsilat). Yönetici bir belgeyi
@@ -23,8 +29,6 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   ("Factura nu exista") kabul edilir. "Firma nu exista", kimlik / anahtar hatası ya da istek sınırı gibi yanıtlar
   artık "belge silinmiş" sayılmaz ("FGO ile Güncelle" ve fatura numarası temizliği de aynı kuralı kullanır).
 - Canlıdaki PRF 563 / 564 / 565 kendiliğinden silinmez: yönetici yeni düğmeyle, her biri FGO'da doğrulanarak kaldırır.
-- **Sipariş geçmişi (iç ekip)**: "Belge FGO'da silinmiş; kaydı kaldırıldı" gibi sistem olayları artık kod
-  (`FGO_DOC_DELETED`) yerine metniyle görünür. Müşterinin gördüğü geçmiş değişmedi.
 
 ## 3.49.2 — 04.10.2026
 

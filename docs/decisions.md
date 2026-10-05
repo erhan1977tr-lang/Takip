@@ -171,7 +171,7 @@ Tanım ile bu dosya çelişirse bu dosya geçerlidir.
 
 ## Sıradaki
 
-Karar 132 (3.50.0): FGO'da elle silinmiş belgenin TAKİP kaydı yönetici tarafından, FGO'da doğrulanarak kaldırılır ("TAKİP'ten kaldır").
+Karar 132 (3.50.0 – 3.50.1): FGO'da elle silinmiş belgenin TAKİP kaydı yönetici tarafından, FGO'da doğrulanarak kaldırılır ("TAKİP'ten kaldır").
 **Ürün sahibinin bilgisine:** (1) Dağıtımdan sonra Muhasebe → Cam / Profil Tahsilat'ta PRF 563 / 564 / 565 üstteki uyarıda görünür; her biri
 için "TAKİP'ten kaldır"a basın. (2) FGO ayarı yanlış ortama (test) bakıyorsa FGO gerçek belgeler için de "Factura nu exista" der — bu
 işlemden önce Entegrasyonlar'da FGO ortamının "canlı" olduğundan emin olun (belge kaydı ortam bilgisini taşımaz; ayrı karar gerekir).
