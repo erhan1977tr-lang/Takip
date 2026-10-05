@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.3 — 05.10.2026
+
+- **Sunucu: Docker derleme önbelleği artık gerçekten temizleniyor.** Önbellek 10 GB'ı aşınca yalnızca **7 günden
+  eski** önbellek siliniyordu; önbellek ise 2–3 günde 70 GB'ı geçtiği için hiçbir şey silinmiyordu (kayıtta:
+  temizlikten önce 72 GB, sonra yine 72 GB). Yeni kural: önbellek **10 GB'ı aşarsa** kullanılmayan derleme önbelleği
+  yaşına bakılmadan silinir, en son kullanılan **~4 GB** tutulur (bir sonraki derleme hızlı kalsın). 10 GB'ın altında
+  hiçbir şey yapılmaz.
+  - **Yalnızca derleme önbelleği** silinir (`docker builder prune`). İmajlara (yayındaki ve geri dönüş imajı),
+    çalışan / durmuş kapsayıcılara, veritabanına, yüklenen dosyalara, antivirüs ve Caddy verisine, yedeklere
+    dokunulmaz.
+  - Kayda önceki boyut, yapılan işlem, sonuç, sonraki boyut ve disk doluluğu yazılır.
+  - Denetim başarılı yayından sonra, derlemesi başarısız olan yayından sonra ve — bu sürüme geçişte — yayından
+    hemen sonraki ilk denetimde çalışır; sunucuda elle bir şey yapmak gerekmez. İstenirse: `takip cache temizle`.
+
 ## 3.50.2 — 05.10.2026
 
 - **E-postalarda gönderen adı**: TAKİP'in gönderdiği bütün e-postalarda gönderen artık

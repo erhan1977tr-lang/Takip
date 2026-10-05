@@ -10,7 +10,7 @@
 #   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
 #   takip yedek-sifreleme [kur|yenile]   Google Drive'a giden yedeklerin şifrelenmesi: durum / kurulum / anahtar yenileme
 #   takip log [SATIR]                uygulamanın son günlük satırları
-#   takip cache                      Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı
+#   takip cache [temizle]            Docker derleme önbelleği boyutu, disk kullanımı; temizle: sınır aşıldıysa şimdi temizle
 #   takip dal [AD]                   otomatik güncellemenin izlediği GitHub dalı (varsayılan: backend)
 #   takip github                     GitHub erişim anahtarını (token) yenile
 #   takip antivirus                  antivirüs (ClamAV) çalışıyor ve test virüsünü yakalıyor mu
@@ -309,10 +309,21 @@ wait_healthy() { # wait_healthy SANİYE
 }
 
 # ---------- Docker derleme önbelleği ----------
-# Her yayın derleme önbelleğini (BuildKit) büyütür. Başarılı yayından sonra boyuta bakılır: sınırı aşmışsa yalnızca
-# 7 günden eski önbellek silinir (imajlara, kapsayıcılara, birimlere — veritabanı ve dosyalara — dokunulmaz).
-# Hata yayını bozmaz; yalnızca kayda uyarı düşer. Elle bakmak için: takip cache
-CACHE_LIMIT_GB=10
+# Her yayın derleme önbelleğini (BuildKit) birkaç GB büyütür. Kural (karar 134):
+#   önbellek <= 10 GB  → hiçbir şey yapılmaz
+#   önbellek >  10 GB  → KULLANILMAYAN derleme önbelleği silinir; en son kullanılan ~4 GB tutulur (bir sonraki derleme
+#                        hızlı kalsın). Yaşa bakılmaz: eski kural yalnızca 7 günden eski önbelleği siliyordu, önbellek ise
+#                        birkaç günde onlarca GB'a çıktığı için hiçbir şey silinmiyordu.
+# Yalnızca "docker builder prune" kullanılır: bu komut YALNIZCA derleme önbelleğini siler. Kapsayıcılara (çalışan /
+# durmuş), imajlara (yayındaki ve geri dönüş imajı dahil), birimlere (veritabanı, yüklenen dosyalar, antivirüs, Caddy) ve
+# yedeklere dokunmaz. "docker system prune" / "docker volume prune" bu dosyada KULLANILMAZ.
+# Çalıştığı yerler (tek işlev, yayın kilidi altında): başarılı yayından sonra · derlemesi başarısız olan yayından sonra
+# (disk dolduysa kendini toparlasın) · yayını aracın önceki sürümü yaptıysa bir sonraki denetimde bir kez · elle:
+# takip cache temizle. Hata yayını bozmaz; yalnızca kayda uyarı düşer.
+CACHE_LIMIT_BYTES=${TAKIP_CACHE_LIMIT_BYTES:-10000000000}
+CACHE_KEEP_BYTES=${TAKIP_CACHE_KEEP_BYTES:-4000000000}
+case $CACHE_LIMIT_BYTES in '' | *[!0-9]*) CACHE_LIMIT_BYTES=10000000000 ;; esac
+case $CACHE_KEEP_BYTES in '' | *[!0-9]*) CACHE_KEEP_BYTES=4000000000 ;; esac
 cache_row() { docker system df --format '{{.Type}}|{{.Size}}|{{.Reclaimable}}' 2>/dev/null | grep '^Build Cache|' | head -1 || true; }
 # "73.35GB" → bayt; okunamazsa boş
 to_bytes() {
@@ -323,31 +334,73 @@ to_bytes() {
     if (m) printf "%.0f\n", n * m
   }'
 }
-cache_housekeeping() {
-  local size bytes out
-  size=$(cache_row | cut -d'|' -f2)
-  bytes=$(to_bytes "$size")
-  if [ -z "$bytes" ]; then log "⚠ derleme önbelleği: boyut okunamadı, temizlik atlandı"; return 0; fi
-  if [ "$bytes" -le $((CACHE_LIMIT_GB * 1000000000)) ]; then
-    log "  derleme önbelleği: $size (sınır $CACHE_LIMIT_GB GB aşılmadı, temizlik yok)"
+# bayt → "10 GB" / "512 MB" (kayıt ve ekran için)
+gb() { echo "$1" | awk '{ if ($1 >= 1e9) printf "%.4g GB\n", $1 / 1e9; else printf "%.0f MB\n", $1 / 1e6 }'; }
+cache_size() { cache_row | cut -d'|' -f2; }
+# Kurulu Docker'ın boyuta göre önbellek tutma seçeneği: yeni sürümlerde --reserved-space, eskilerde --keep-storage
+# (ikisi de "en son kullanılan bu kadar önbelleği tut, gerisini sil"). Hiçbiri yoksa boş döner.
+cache_keep_flag() {
+  local help
+  help=$(docker builder prune --help 2>&1 || true)
+  if echo "$help" | grep -q -- '--reserved-space'; then echo '--reserved-space'
+  elif echo "$help" | grep -q -- '--keep-storage'; then echo '--keep-storage'
+  fi
+}
+# cache_prune [SEÇENEK DEĞER] — yalnızca derleme önbelleği (docker builder prune); sonucu kayda yazar
+cache_prune() {
+  local out
+  log "  önbellek temizliği: docker builder prune --all --force $*"
+  if out=$(docker builder prune --all --force "$@" 2>&1); then
+    log "  önbellek temizliği sonucu: $(echo "$out" | grep -iE 'reclaimed|^total' | tail -1 | tr '\t' ' ' | cut -c1-120)"
     return 0
   fi
-  log "  derleme önbelleği: $size — sınır $CACHE_LIMIT_GB GB aşıldı; 7 günden eski önbellek siliniyor"
-  if out=$(docker builder prune -af --filter "until=168h" 2>&1); then
-    log "  önbellek temizliği tamam: $(echo "$out" | grep -i 'reclaimed' | tail -1 || true)"
-  else
-    log "⚠ önbellek temizliği başarısız (yayın etkilenmedi): $(echo "$out" | tail -1 | cut -c1-200)"
+  log "⚠ önbellek temizliği başarısız (yayın etkilenmedi): $(echo "$out" | tail -1 | cut -c1-200)"
+  return 1
+}
+cache_housekeeping() {
+  local size bytes flag after='' root
+  size=$(cache_size)
+  bytes=$(to_bytes "$size")
+  if [ -z "$bytes" ]; then log "⚠ derleme önbelleği: boyut okunamadı, temizlik atlandı"; return 0; fi
+  if [ "$bytes" -le "$CACHE_LIMIT_BYTES" ]; then
+    log "  derleme önbelleği: $size (sınır $(gb "$CACHE_LIMIT_BYTES") aşılmadı, temizlik yok)"
+    return 0
   fi
-  log "  derleme önbelleği (temizlikten sonra): $(cache_row | cut -d'|' -f2)"
+  log "  derleme önbelleği (önce): $size — sınır $(gb "$CACHE_LIMIT_BYTES") aşıldı; kullanılmayan derleme önbelleği siliniyor (en son kullanılan $(gb "$CACHE_KEEP_BYTES") tutulur)"
+  flag=$(cache_keep_flag)
+  if [ -n "$flag" ]; then
+    cache_prune "$flag" "$CACHE_KEEP_BYTES" || true
+    after=$(to_bytes "$(cache_size)")
+  fi
+  # Boyuta göre tutma desteklenmiyorsa ya da önbellek hâlâ sınırın üstündeyse: kullanılmayan önbelleğin tamamı silinir
+  if [ -z "$after" ] || [ "$after" -gt "$CACHE_LIMIT_BYTES" ]; then
+    cache_prune || true
+    after=$(to_bytes "$(cache_size)")
+  fi
+  log "  derleme önbelleği (sonra): $(cache_size)"
+  if [ -n "$after" ] && [ "$after" -gt "$CACHE_LIMIT_BYTES" ]; then
+    log "⚠ derleme önbelleği hâlâ sınırın üstünde (o anda kullanılan önbellek silinmez); bir sonraki yayında yeniden denenecek"
+  fi
+  root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  [ -d "$root" ] || root=/
+  log "  disk ($root): $(df -h "$root" | awk 'NR==2 { print $3 " / " $2 " dolu (" $5 "), boş " $4 }')"
+}
+# Yayın kilidi altında çalıştırır (yayın sürerken başlamaz)
+cache_clean_now() {
+  exec 9>"$STATE/deploy.lock"
+  if ! flock -n 9; then say "Bir güncelleme sürüyor; bittiğinde önbellek kendiliğinden denetlenir."; return 0; fi
+  cache_housekeeping
 }
 cmd_cache() {
+  if [ "${1:-}" = temizle ] || [ "${1:-}" = clean ]; then cache_clean_now; return; fi
   local row; row=$(cache_row)
   if [ -z "$row" ]; then say "Docker derleme önbelleği okunamadı."; else
     say "Derleme önbelleği   : $(echo "$row" | cut -d'|' -f2)"
     say "Geri kazanılabilir  : $(echo "$row" | cut -d'|' -f3)"
   fi
   df -h / | awk 'NR==2 { print "Disk (/)            : " $3 " / " $2 " dolu (" $5 ")" }'
-  say "Sınır: $CACHE_LIMIT_GB GB — aşılırsa bir sonraki başarılı yayından sonra 7 günden eski önbellek silinir."
+  say "Sınır: $(gb "$CACHE_LIMIT_BYTES") — aşılırsa yayından sonra kullanılmayan derleme önbelleği silinir (en son kullanılan $(gb "$CACHE_KEEP_BYTES") tutulur)."
+  say "Yalnızca derleme önbelleği silinir; imajlara, kapsayıcılara, veritabanına, dosyalara ve yedeklere dokunulmaz. Şimdi denetlemek için: takip cache temizle"
 }
 
 # ---------- yayınlama ----------
@@ -373,6 +426,8 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
     [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
     echo "$sha" >"$STATE/failed"
     log "✘ $ver ($s): derleme başarısız, önceki sürüm çalışmaya devam ediyor. Ayrıntı: $blog"
+    # Başarısız derleme de önbellek bırakır (disk dolduysa derleme bu yüzden de başarısız olabilir): sınır denetlenir
+    cache_housekeeping || true
     return 1
   fi
 
@@ -422,8 +477,9 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
     case $t in "$keep1" | "$keep1-tools" | "$keep2" | "$keep2-tools") ;; *) docker rmi "takip:$t" >/dev/null 2>&1 || true ;; esac
   done
   docker image prune -f >/dev/null 2>&1 || true
-  # Derleme önbelleği sınırı aşmışsa eski önbellek silinir; hata yayını bozmaz
+  # Derleme önbelleği sınırı aşmışsa kullanılmayan önbellek silinir; hata yayını bozmaz
   cache_housekeeping || log "⚠ derleme önbelleği denetimi tamamlanamadı (yayın etkilenmedi)"
+  echo "$sha" >"$STATE/cache-checked"
 }
 
 auto_deploy() {
@@ -437,7 +493,16 @@ auto_deploy() {
   fi
   head=$(git -C "$SRC" rev-parse "origin/$b")
   current=$(cat "$STATE/deployed" 2>/dev/null || true)
-  if [ "$head" = "$current" ]; then info "Güncel: $(version_of "$head") ($(short "$head"))."; return 0; fi
+  if [ "$head" = "$current" ]; then
+    # Bu sürümü aracın ÖNCEKİ hâli yayınladıysa (araç yayınla birlikte güncellenir) ya da yayın derleme gerektirmediyse
+    # önbellek denetimi güncel kuralla bir kez yapılır; sonra bu sürüm için yinelenmez
+    if [ "$(cat "$STATE/cache-checked" 2>/dev/null || true)" != "$head" ]; then
+      cache_housekeeping || log "⚠ derleme önbelleği denetimi tamamlanamadı"
+      echo "$head" >"$STATE/cache-checked"
+    fi
+    info "Güncel: $(version_of "$head") ($(short "$head"))."
+    return 0
+  fi
   if [ "$head" = "$(cat "$STATE/failed" 2>/dev/null || true)" ]; then
     info "$(short "$head") daha önce yayınlanamadı; yeni bir güncelleme bekleniyor."
     return 0
@@ -941,7 +1006,7 @@ main() {
     restore | geri-yukle) cmd_restore "$@" ;;
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
     yedek-sifreleme | backup-encryption) cmd_backup_encryption "$@" ;;
-    cache | onbellek) cmd_cache ;;
+    cache | onbellek) cmd_cache "$@" ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi

@@ -48,7 +48,8 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip restore-test [TARİH]` | Yedeği canlıya dokunmadan geçici veritabanında dener (şifreleme açıksa Drive'daki şifreli kopyayı indirip çözerek) |
 | `takip yedek-sifreleme` | Google Drive kopyasının şifrelenmesi: durum · `kur` (anahtar + deneme + açma) · `yenile` (anahtar yenileme) · `kapat` |
 | `takip log` | Uygulamanın son günlük satırları |
-| `takip cache` | Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı (10 GB aşılırsa başarılı yayından sonra 7 günden eski önbellek silinir) |
+| `takip cache` | Docker derleme önbelleği boyutu, geri kazanılabilir alan, disk kullanımı. Önbellek 10 GB'ı aşarsa yayından sonra kullanılmayan derleme önbelleği kendiliğinden silinir (en son kullanılan ~4 GB tutulur). Yalnızca derleme önbelleği: imajlara, kapsayıcılara, veritabanına, yüklenen dosyalara ve yedeklere dokunulmaz |
+| `takip cache temizle` | Aynı denetimi şimdi yapar (sınır aşılmadıysa hiçbir şey silmez) |
 | `takip dal main` | Otomatik güncellemenin izlediği dalı değiştirir |
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
 | `takip antivirus` | Antivirüs çalışıyor mu, test virüsünü (EICAR) yakalıyor mu; bekleyen ve karantinadaki dosya sayısı |

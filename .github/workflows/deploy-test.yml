@@ -2,7 +2,8 @@ name: Sunucu kurulumu
 
 # deploy/install.sh ve deploy/takip.sh temiz bir Ubuntu makinede baştan sona denenir:
 # kurulum, HTTPS, ilk yönetici, yeniden kurulum (anahtarlar korunur), güncelleme, yalnızca belge değişikliği,
-# derlemesi bozuk sürümün yayınlanmaması, sahte IP başlıkları (Caddy), yedek ve şifreli yedek (age) + geri yükleme denemesi.
+# derlemesi bozuk sürümün yayınlanmaması, sahte IP başlıkları (Caddy), yedek ve şifreli yedek (age) + geri yükleme denemesi,
+# Docker derleme önbelleği temizliği (karar 134: yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde).
 on:
   push:
     branches: ['**']
@@ -34,7 +35,10 @@ jobs:
           fetch-depth: 0
 
       - name: Betik denetimi (shellcheck)
-        run: shellcheck -S warning deploy/install.sh deploy/takip.sh
+        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh
+
+      - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
+        run: bash deploy/test/cache-housekeeping.sh
 
       - name: Kurulum (temiz makine)
         run: |
@@ -98,6 +102,117 @@ jobs:
           new=$(git rev-parse --short=7 HEAD)
           curl -fsSk "$SITE/surum" | jq -e --arg b "$new" '.build == $b'
 
+      - name: Derleme önbelleği temizliği — gerçek Docker (yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde)
+        run: |
+          set -x
+          compose() { sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml "$@"; }
+          cache() { sudo docker system df --format '{{.Type}}|{{.Size}}' | grep '^Build Cache|' | cut -d'|' -f2; }
+          bytes() { echo "$1" | awk '{ match($1, /^[0-9.]+/); n = substr($1, 1, RLENGTH); u = toupper(substr($1, RLENGTH + 1)); m = (u == "B") ? 1 : (u == "KB") ? 1e3 : (u == "MB") ? 1e6 : (u == "GB") ? 1e9 : 1e12; printf "%.0f\n", n * m }'; }
+          # Temizliğin dokunmaması gereken her şeyin dökümü: birimler, imajlar (kimlikleriyle), kapsayıcılar (durumlarıyla),
+          # yedek klasörü, veritabanı içeriği, yüklenen dosya
+          snapshot() {
+            sudo docker volume ls -q | sort > "$1.volumes"
+            sudo docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' | sort > "$1.images"
+            sudo docker ps -a --no-trunc --format '{{.ID}} {{.Names}} {{.Image}} {{.State}}' | sort > "$1.containers"
+            sudo ls -la --time-style=+%s /opt/takip/backups > "$1.backups"
+            compose exec -T db psql -U takip -d takip -Atc 'select count(*) from "User"; select email from "User" order by email' > "$1.db"
+            compose exec -T app cat /data/uploads/onbellek-testi.txt > "$1.upload"
+          }
+          cur=$(sudo cat /opt/takip/state/deployed)
+          prev=$GITHUB_SHA
+          # Yayındaki ve geri dönüş (bir önceki) imajları yerinde
+          sudo docker image inspect "takip:$cur" "takip:$cur-tools" "takip:$prev" "takip:$prev-tools" >/dev/null
+          # Temizlikle ilgisi olmayan "sahipsiz" şeyler: kullanılmayan birim (içinde veri), durmuş kapsayıcı, kullanılmayan imaj
+          # etiketi — "docker system prune" / "volume prune" / "image prune -a" olsaydı silinirlerdi
+          compose exec -T app sh -c 'echo onbellek-testi > /data/uploads/onbellek-testi.txt'
+          sudo docker volume create onbellek-testi-birim >/dev/null
+          sudo docker run --rm -v onbellek-testi-birim:/v caddy:2 sh -c 'echo veri > /v/dosya'
+          sudo docker create --name onbellek-testi-durmus caddy:2 true >/dev/null
+          sudo docker tag caddy:2 onbellek-testi:kullanilmayan
+          snapshot once
+
+          # Bilgi: derleme katmanlarının boyutu (hangi adım ne kadar önbellek üretiyor) ve Docker sürümü
+          {
+            sudo docker version --format 'Docker {{.Server.Version}}'; sudo docker buildx version || true
+            sudo docker builder prune --help | grep -E 'reserved-space|keep-storage|max-used-space' || true
+            echo "--- tools imajı (builder aşaması) katmanları"; sudo docker history --format '{{.Size}}\t{{.CreatedBy}}' "takip:$cur-tools" | cut -c1-120 | head -14
+            echo "--- runner imajı katmanları"; sudo docker history --format '{{.Size}}\t{{.CreatedBy}}' "takip:$cur" | cut -c1-120 | head -14
+            echo "--- imajlar"; sudo docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -E '^takip' | sed -E 's/:([0-9a-f]{7})[0-9a-f]+/:\1/'
+            echo "--- en büyük önbellek kayıtları"; sudo docker buildx du --verbose 2>/dev/null | awk '/^Description:/ { d = substr($0, index($0, $2)) } /^Size:/ { print $2 "\t" substr(d, 1, 90) }' | sort -hr | head -14 || true
+            echo "--- docker system df"; sudo docker system df
+          } 2>&1 | tee katmanlar.txt
+          echo "::notice title=Derleme katmanları (2 derlemeden sonra)::$(sed 's/%/%25/g' katmanlar.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+
+          # 1. Varsayılan eşikle (10 GB): önbellek sınırın altında → hiçbir şey silinmez
+          b0=$(cache)
+          sudo takip cache
+          sudo takip cache temizle | tee c1.log
+          grep -q 'aşılmadı, temizlik yok' c1.log
+          [ "$(cache)" = "$b0" ]
+
+          # 2. Sınır aşıldı (deneme için küçük eşik): kullanılmayan derleme önbelleği silinir, yer GERÇEKTEN açılır
+          before=$(bytes "$b0")
+          [ "$before" -gt 300000000 ]
+          sudo env TAKIP_CACHE_LIMIT_BYTES=300000000 TAKIP_CACHE_KEEP_BYTES=100000000 takip cache temizle | tee c2.log
+          grep -q 'derleme önbelleği (önce): ' c2.log
+          grep -Eq 'önbellek temizliği: docker builder prune --all --force( --(reserved-space|keep-storage) 100000000)?$' c2.log
+          grep -q 'önbellek temizliği sonucu: ' c2.log
+          grep -q 'derleme önbelleği (sonra): ' c2.log
+          grep -Eq '  disk \(.*\): .* dolu \(' c2.log
+          if grep -q 'başarısız\|hâlâ sınırın üstünde' c2.log; then echo "temizlik yer açamadı"; exit 1; fi
+          after=$(bytes "$(cache)")
+          sudo docker system df
+          [ "$after" -le 300000000 ]
+          [ "$after" -lt "$before" ]
+          sudo tail -n 8 /opt/takip/logs/deploy.log | grep -q 'derleme önbelleği (sonra)'
+
+          # 3. Dokunulmaması gerekenler birebir yerinde: birimler, imajlar (yayındaki + geri dönüş + kullanılmayan etiket),
+          #    kapsayıcılar (çalışanlar çalışıyor, durmuş olan duruyor), yedekler, veritabanı içeriği, yüklenen dosya
+          snapshot sonra
+          for f in volumes images containers backups db upload; do diff "once.$f" "sonra.$f"; done
+          grep -q '^onbellek-testi$' sonra.upload
+          sudo docker run --rm -v onbellek-testi-birim:/v caddy:2 cat /v/dosya | grep -qx veri
+          for v in takip_db-data takip_uploads takip_clamav-db takip_caddy-data takip_caddy-config onbellek-testi-birim; do grep -qx "$v" sonra.volumes; done
+          sudo docker image inspect "takip:$cur" "takip:$cur-tools" "takip:$prev" "takip:$prev-tools" onbellek-testi:kullanilmayan >/dev/null
+          sudo docker inspect -f '{{.State.Status}}' onbellek-testi-durmus | grep -qx created
+          curl -fsSk "$SITE/login" | grep -q 'GKH Digital'
+          curl -fsSk "$SITE/surum" | jq -e --arg b "${cur::7}" '.build == $b'
+          # İmajlar yalnızca listede değil, çalıştırılabilir durumda (katmanları silinmemiş)
+          compose run --rm tools node -e "console.log('tools imajı çalışıyor')" | grep -q 'tools imajı çalışıyor'
+          sudo docker run --rm --entrypoint node "takip:$prev" -e "console.log('geri dönüş imajı çalışıyor')" | grep -q 'geri dönüş imajı çalışıyor'
+          sudo takip durum
+
+          # 4. Temizlikten sonra yayın çalışır ve yayının SONUNDAKİ otomatik denetim de sınırı uygular
+          echo "// önbellek testi $(date +%s)" >> app/surum/route.ts
+          git commit -qam "önbellek temizliği testi"
+          new=$(git rev-parse HEAD)
+          sudo env TAKIP_SKIP_CI_GATE=1 TAKIP_CACHE_LIMIT_BYTES=300000000 TAKIP_CACHE_KEEP_BYTES=100000000 takip guncelle | tee c3.log
+          curl -fsSk "$SITE/surum" | jq -e --arg b "${new::7}" '.build == $b'
+          grep -q 'derleme önbelleği (önce): ' c3.log
+          grep -q 'derleme önbelleği (sonra): ' c3.log
+          [ "$(bytes "$(cache)")" -le 300000000 ]
+          [ "$(sudo cat /opt/takip/state/cache-checked)" = "$new" ]
+          # Yayındaki + bir önceki imaj tutulur (mevcut geri dönüş kuralı); birimler ve veri yerinde
+          sudo docker image inspect "takip:$new" "takip:$new-tools" "takip:$cur" "takip:$cur-tools" >/dev/null
+          sudo docker volume ls -q | sort | diff - once.volumes
+          compose exec -T app cat /data/uploads/onbellek-testi.txt | grep -qx onbellek-testi
+          compose exec -T db psql -U takip -d takip -Atc 'select email from "User" order by email' | grep -q 'yonetici@kurulum.test'
+          sudo docker run --rm -v onbellek-testi-birim:/v caddy:2 cat /v/dosya | grep -qx veri
+
+          # 5. Yayını aracın önceki sürümü yaptıysa (işaret yok): bir sonraki denetimde bir kez çalışır, sonra yinelenmez
+          sudo rm -f /opt/takip/state/cache-checked
+          n1=$(sudo grep -c 'derleme önbelleği' /opt/takip/logs/deploy.log)
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
+          n2=$(sudo grep -c 'derleme önbelleği' /opt/takip/logs/deploy.log)
+          [ "$n2" -eq $((n1 + 1)) ]
+          [ "$(sudo cat /opt/takip/state/cache-checked)" = "$new" ]
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
+          [ "$(sudo grep -c 'derleme önbelleği' /opt/takip/logs/deploy.log)" -eq "$n2" ]
+
+          sudo docker rm onbellek-testi-durmus >/dev/null
+          sudo docker rmi onbellek-testi:kullanilmayan >/dev/null
+          sudo docker volume rm onbellek-testi-birim >/dev/null
+
       - name: Yalnızca belge değişikliği yeniden derlenmez
         run: |
           echo "test" >> docs/decisions.md
@@ -115,6 +230,8 @@ jobs:
           if sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle; then echo "bozuk sürüm yayınlanmamalıydı"; exit 1; fi
           curl -fsSk "$SITE/surum" | jq -e --arg b "$prev" '.build == $b'
           sudo grep -q 'derleme başarısız' /opt/takip/logs/deploy.log
+          # Başarısız derlemeden sonra da önbellek sınırı denetlenir (disk dolduysa kendini toparlar)
+          sudo grep -A3 'derleme başarısız' /opt/takip/logs/deploy.log | grep -q 'derleme önbelleği'
           # Aynı commit bir daha denenmez
           sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle | grep -q 'daha önce yayınlanamadı'
 
