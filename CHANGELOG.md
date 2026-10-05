@@ -23,6 +23,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   ("Factura nu exista") kabul edilir. "Firma nu exista", kimlik / anahtar hatası ya da istek sınırı gibi yanıtlar
   artık "belge silinmiş" sayılmaz ("FGO ile Güncelle" ve fatura numarası temizliği de aynı kuralı kullanır).
 - Canlıdaki PRF 563 / 564 / 565 kendiliğinden silinmez: yönetici yeni düğmeyle, her biri FGO'da doğrulanarak kaldırır.
+- **Sipariş geçmişi (iç ekip)**: "Belge FGO'da silinmiş; kaydı kaldırıldı" gibi sistem olayları artık kod
+  (`FGO_DOC_DELETED`) yerine metniyle görünür. Müşterinin gördüğü geçmiş değişmedi.
 
 ## 3.49.2 — 04.10.2026
 

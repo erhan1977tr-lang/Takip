@@ -37,7 +37,12 @@ export function slaText(t: T, info: { over: boolean; h: string }) {
 export function eventText(t: T, event: string, customerView: boolean): string | null {
   const def = EVENTS[event as keyof typeof EVENTS];
   if (customerView) return def?.customer ? t(k(`events.${event}.customer`)) : null;
-  return def ? t(k(`events.${event}.label`)) : event;
+  if (def) return t(k(`events.${event}.label`));
+  // Yalnızca iç ekibin gördüğü, olay listesinde (EVENTS) tanımlı olmayan sistem olayları (ör. FGO_DOC_DELETED,
+  // LOADING_CORRECTED): sözlükte metni varsa o gösterilir, yoksa kod. Müşteri bu olayları hiç görmez (yukarıda null).
+  const key = `events.${event}.label`;
+  const text = t(k(key));
+  return text === key ? event : text;
 }
 
 /** Olayın notu (müşteri görünümünde yalnızca notu müşteriye açık olaylarda). Sistem kodları çevrilir. */
