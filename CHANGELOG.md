@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.6 — 05.10.2026
+
+- **Güvenlik: 30 dakika işlem yapılmayan oturum kendiliğinden kapanır** (bütün roller). Kural sunucudadır: son gerçek
+  kullanıcı etkinliğinden 30 dakika sonra oturum geçersiz olur — sayfalar giriş ekranına yönlenir ("30 dakika boyunca
+  işlem yapılmadı" açıklamasıyla), dosya / veri adresleri ve formlar reddedilir, tarayıcı kapatılıp sonra dönülse de
+  eski oturum açılmaz.
+  - **Oturumu yalnızca gerçek etkinlik uzatır:** klavye, fare, tekerlek, dokunma. TAKİP'in dakikada bir yaptığı
+    otomatik yenileme, bildirim yoklaması ve arka plan istekleri oturumu **uzatmaz**; sekmeyi açık bırakmak kullanıcıyı
+    içeride tutmaz.
+  - Çalışan kullanıcı etkilenmez: etkinlik sürdükçe oturum açık kalır (en çok dakikada bir küçük bir bildirim; etkinlik
+    yoksa hiç istek yok). Birden çok sekmede: bir sekmede çalışmak aynı tarayıcıdaki oturumu canlı tutar.
+  - Açık sekme süre dolunca kendiliğinden giriş sayfasına gider. "Çıkış" eskisi gibi çalışır; yetkiler değişmedi.
+  - Eski "7 gün boşta kalma" kuralının yerini aldı; 30 günlük mutlak oturum ömrü aynen sürer. Bu sürümün yayınıyla
+    30 dakikadır işlem yapmamış açık oturumlar bir kez yeniden giriş ister.
+
 ## 3.50.5 — 05.10.2026
 
 - **Sunucu: önbellek temizliği kaydı ve ikinci adım.** İki adımlı temizlikte ilk adımdan sonraki boyut da kayda

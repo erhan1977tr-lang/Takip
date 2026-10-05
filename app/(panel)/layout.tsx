@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { requireUser } from '@/lib/auth/session';
+import { requireUser, sessionRemainingMs } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { NAV, type NavDef, type NavItem } from '@/lib/roles';
 import { getT } from '@/lib/i18n';
@@ -11,6 +11,7 @@ import { SIDEBAR_INIT, SIDEBAR_SLOT, SidebarToggle } from '@/components/Sidebar'
 import { isDemo } from '@/server/demo/accounts.js';
 import { logoutAction } from './actions';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { SessionActivity } from '@/components/SessionActivity';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { loadFeed } from '@/lib/notifications';
 
@@ -78,6 +79,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         <Suspense fallback={null}><NavLinks items={nav} variant="mobile" /></Suspense>
         <main className="content">{children}</main>
         <AutoRefresh />
+        {/* 30 dakika etkinlik olmayan oturum kapanır (karar 135): gerçek etkinliği bildirir; yenilemeler uzatmaz */}
+        <SessionActivity remainingMs={await sessionRemainingMs()} />
       </div>
     </div>
   );

@@ -22,14 +22,14 @@ export default async function LoginPage({
   const error = sp.error === 'invalid' ? t('auth.login.errorInvalid')
     : sp.error === 'locked' ? t('auth.login.errorLocked', { minutes: String(Math.max(1, Number(sp.m) || 15)) })
     : undefined;
-  const info = sp.info === 'logout' ? t('auth.login.infoLogout') : undefined;
+  const info = sp.info === 'logout' ? t('auth.login.infoLogout') : sp.info === 'idle' ? t('auth.login.infoIdle') : undefined;
   // Dil değiştirilince aynı sayfaya (yazılan e-postayla) dönülür
   const here = `/login${sp.email ? `?email=${encodeURIComponent(sp.email)}` : ''}`;
 
   return (
     <AuthCard next={here}>
       <p className="muted" style={{ margin: '6px 0 20px' }}>{t('auth.login.tagline')}</p>
-      {info && <div className="alert alert-info">{info}</div>}
+      {info && <div className="alert alert-info" data-info={sp.info}>{info}</div>}
       <form action={loginAction}>
         {/* Girişte bu dil çereze yazılır; panel aynı dille açılır */}
         <input type="hidden" name="lang" value={locale} />

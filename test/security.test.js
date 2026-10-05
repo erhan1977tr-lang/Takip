@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { clientIp } from '../server/security/client-ip.js';
 import { createRateLimiter } from '../server/security/rate-limit.js';
 import { PASSWORD_MIN, PASSWORD_MAX, passwordIssue } from '../server/auth/password-policy.js';
-import { SESSION_IDLE_MS, SESSION_TOUCH_MS, SESSION_TTL_MS, deadSessions, pruneSessions, sessionState } from '../server/auth/session-policy.js';
+import { SESSION_IDLE_MS, SESSION_TTL_MS, deadSessions, pruneSessions, sessionRemainingMs, sessionState } from '../server/auth/session-policy.js';
 import { INTERNAL_CUSTOMER_FIELDS, PRIVATE_CUSTOMER_FIELDS, customerView } from '../server/orders/customer-view.js';
 import { createPdfAccess } from '../server/documents/pdf-access.js';
 import { pdfUrl } from '../server/documents/delivery.js';
@@ -78,23 +78,28 @@ test('SEC-04: yeni şifre en az 10 karakter; uzun parola serbest, bileşim zorun
 });
 
 // ---------- SEC-11: oturum ----------
-test('SEC-11: oturum — mutlak ömür 30 gün, boşta kalma 7 gün, etkinlik kaydı en çok 15 dakikada bir', () => {
-  assert.deepEqual([SESSION_TTL_MS, SESSION_IDLE_MS, SESSION_TOUCH_MS], [30 * 86_400_000, 7 * 86_400_000, 15 * 60_000]);
+test('SEC-11: oturum — mutlak ömür 30 gün, boşta kalma 30 dakika (karar 135); istek geldi diye yenilenen bir "etkinlik kaydı" yoktur', () => {
+  assert.deepEqual([SESSION_TTL_MS, SESSION_IDLE_MS], [30 * 86_400_000, 30 * 60_000]);
   const now = Date.parse('2026-10-04T12:00:00Z');
   const s = (ageMs, idleMs) => ({ expiresAt: new Date(now - ageMs + SESSION_TTL_MS), lastSeenAt: new Date(now - idleMs) });
-  assert.equal(sessionState(s(60_000, 60_000), now), 'ok'); // az önce görüldü: veritabanına yazılmaz
-  assert.equal(sessionState(s(3_600_000, 14 * 60_000), now), 'ok');
-  assert.equal(sessionState(s(3_600_000, 15 * 60_000), now), 'touch'); // 15 dk geçti: etkinlik kaydı yenilenir
-  assert.equal(sessionState(s(6 * 86_400_000, 6 * 86_400_000), now), 'touch'); // 6 gün sonra dönen kullanıcı hâlâ içeride
-  assert.equal(sessionState(s(8 * 86_400_000, 7 * 86_400_000 + 1), now), 'idle');
+  assert.equal(sessionState(s(60_000, 60_000), now), 'ok');
+  assert.equal(sessionState(s(3_600_000, 29 * 60_000 + 59_999), now), 'ok'); // 29 dk 59,999 sn: hâlâ geçerli
+  assert.equal(sessionState(s(3_600_000, 30 * 60_000), now), 'idle'); // tam 30 dakika: geçersiz
+  assert.equal(sessionState(s(6 * 86_400_000, 6 * 86_400_000), now), 'idle'); // günler sonra dönen kullanıcı yeniden giriş yapar
   assert.equal(sessionState(s(SESSION_TTL_MS, 1000), now), 'expired'); // her gün kullanılsa da 30. günde biter
   assert.equal(sessionState(s(SESSION_TTL_MS + 1, 1000), now), 'expired');
+  // "touch" diye bir durum yok: geçerli oturum yalnızca "ok"tur (okuma oturumu uzatmaz)
+  for (const idle of [0, 1000, 15 * 60_000, 29 * 60_000]) assert.equal(sessionState(s(3_600_000, idle), now), 'ok');
+  // Kalan süre: boşta kalma sınırına ya da mutlak ömre — hangisi önceyse
+  assert.equal(sessionRemainingMs(s(3_600_000, 10 * 60_000), now), 20 * 60_000);
+  assert.equal(sessionRemainingMs(s(3_600_000, 31 * 60_000), now), 0);
+  assert.equal(sessionRemainingMs(s(SESSION_TTL_MS - 5 * 60_000, 60_000), now), 5 * 60_000); // mutlak ömrün bitmesine 5 dakika
 });
 
 test('SEC-11: temizlik yalnızca geçersiz oturumları (ve eski hatalı giriş kayıtlarını) siler', async () => {
   const now = new Date('2026-10-04T12:00:00Z');
   const where = deadSessions(now);
-  assert.deepEqual(where, { OR: [{ expiresAt: { lte: now } }, { lastSeenAt: { lt: new Date(now.getTime() - SESSION_IDLE_MS) } }] });
+  assert.deepEqual(where, { OR: [{ expiresAt: { lte: now } }, { lastSeenAt: { lte: new Date(now.getTime() - SESSION_IDLE_MS) } }] });
   const calls = [];
   const db = {
     session: { deleteMany: async (q) => (calls.push(['session', q]), { count: 3 }) },

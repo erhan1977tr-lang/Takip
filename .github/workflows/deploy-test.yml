@@ -269,6 +269,27 @@ jobs:
           # Karşı kontrol: aynı istek Türkçe tarayıcıyla Türkçe açılır (dil yalnızca güvenilir bilgilerden belirlenir)
           curl -fsSk -H 'Accept-Language: tr' "$SITE/login" | grep -q '<html lang="tr"'
 
+      - name: Etkinlik adresi Caddy arkasında — kaynak denetimi gerçek kurulumda çalışır (karar 135)
+        run: |
+          # Oturumu uzatan tek adres (POST /oturum/etkinlik). Tarayıcının aynı siteden yolladığı istek vekil arkasında da
+          # kaynak denetiminden geçmelidir (yoksa çalışan kullanıcılar 30 dakikada bir atılırdı); başka site reddedilir.
+          code() { curl -sk -o /dev/null -w '%{http_code}' -X POST "$SITE/oturum/etkinlik" -H 'Content-Type: application/json' -d '{"idle":0}' "$@"; }
+          same=$(code -H 'X-Takip-Activity: 1' -H "Origin: $SITE")
+          fetch=$(code -H 'X-Takip-Activity: 1' -H "Origin: $SITE" -H 'Sec-Fetch-Site: same-origin')
+          other=$(code -H 'X-Takip-Activity: 1' -H 'Origin: https://kotu.example')
+          cross=$(code -H 'X-Takip-Activity: 1' -H "Origin: $SITE" -H 'Sec-Fetch-Site: cross-site')
+          bare=$(code -H "Origin: $SITE")
+          get=$(curl -sk -o /dev/null -w '%{http_code}' -H 'X-Takip-Activity: 1' "$SITE/oturum/etkinlik")
+          echo "aynı site: $same / $fetch · başka site: $other / $cross · başlıksız: $bare · GET: $get"
+          # Aynı site: denetimden geçer, oturum olmadığı için 401 (403 değil)
+          [ "$same" = 401 ]
+          [ "$fetch" = 401 ]
+          [ "$other" = 403 ]
+          [ "$cross" = 403 ]
+          [ "$bare" = 403 ]
+          [ "$get" = 405 ]
+          echo "::notice title=Etkinlik adresi (Caddy arkasında)::aynı site $same / $fetch · başka site $other / $cross · başlıksız $bare · GET $get"
+
       - name: Yedek (şifresiz — mevcut akış), Drive kopyası ve restore-test
         run: |
           # Google Drive yerine yerel bir klasör (rclone ":local:" uzak adresi); akış aynı: kopyala + md5 doğrula

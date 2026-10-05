@@ -10,6 +10,7 @@ export default {
     errorInvalid: 'E-posta veya şifre hatalı.',
     errorLocked: 'Çok fazla hatalı deneme yapıldı. Güvenliğiniz için giriş {minutes} dakika kilitlendi.',
     infoLogout: 'Çıkış yaptınız.',
+    infoIdle: 'Güvenliğiniz için oturumunuz kapatıldı: 30 dakika boyunca işlem yapılmadı. Lütfen yeniden giriş yapın.',
     demoTitle: 'Demo ortamı',
     demoIntro: '— örnek verilerle çalışır. Bir hesap seçin:',
     demoPassword: 'Şifre, demo ortamındaki DEMO-GIRIS.txt dosyasındadır.',

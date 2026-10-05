@@ -32,22 +32,22 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('SEC-11: oturum temizliği — süresi dolmuş ve 7 gündür kullanılmayan oturumlar silinir; geçerli oturumlar kalır', async () => {
+dbTest('SEC-11: oturum temizliği — süresi dolmuş ve 30 dakikadır etkinlik olmayan oturumlar silinir; geçerli oturumlar kalır', async () => {
   const now = new Date();
   const mk = (label, createdAgoMs, seenAgoMs) => db.session.create({
     data: { userId: x1.id, tokenHash: `h-${label}`, createdAt: new Date(now - createdAgoMs), expiresAt: new Date(now.getTime() - createdAgoMs + SESSION_TTL_MS), lastSeenAt: new Date(now - seenAgoMs) },
   });
   const DAY = 86_400_000;
   await mk('yeni', 60_000, 60_000);
-  await mk('alti-gun', 20 * DAY, 6 * DAY); // 20 gün önce açıldı, 6 gün önce kullanıldı: geçerli
-  await mk('bosta', 10 * DAY, SESSION_IDLE_MS + 60_000); // 7 günden uzun süredir kullanılmadı
+  await mk('yirmi-gun', 20 * DAY, 29 * 60_000); // 20 gün önce açıldı, 29 dakika önce etkinlik: geçerli
+  await mk('bosta', 10 * DAY, SESSION_IDLE_MS + 60_000); // 30 dakikadan uzun süredir etkinlik yok
   await mk('doldu', SESSION_TTL_MS + 60_000, 60_000); // dün de kullanıldı ama 30 gün doldu
   await db.authFailure.createMany({ data: [
     { kind: 'LOGIN', email: 'a@x.test', ip: '1.1.1.1', createdAt: new Date(now - 2 * DAY) },
     { kind: 'LOGIN', email: 'a@x.test', ip: '1.1.1.1', createdAt: new Date(now - 60_000) },
   ] });
   assert.deepEqual(await pruneSessions(db, now), { sessions: 2, failures: 1 });
-  assert.deepEqual((await db.session.findMany({ orderBy: { tokenHash: 'asc' } })).map((s) => s.tokenHash), ['h-alti-gun', 'h-yeni']);
+  assert.deepEqual((await db.session.findMany({ orderBy: { tokenHash: 'asc' } })).map((s) => s.tokenHash), ['h-yeni', 'h-yirmi-gun']);
   assert.equal(await db.authFailure.count(), 1);
   // İkinci tur hiçbir şey silmez; kullanıcı ve başka veriler yerinde
   assert.deepEqual(await pruneSessions(db, now), { sessions: 0, failures: 0 });
