@@ -1,7 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import crypto from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, SALES, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as } from './helpers';
 
 // 30 dakika gerçek kullanıcı etkinliği olmayan oturum kapanır (karar 135) — tarayıcıda, beş rolle.
 // GERÇEKTEN BEKLENMEZ. Zaman iki yerden ilerletilir:
@@ -12,6 +12,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, SALES, TEAM_P
 test.describe.configure({ mode: 'serial' });
 
 const INSPECTOR = 'denetim@e2e.test';
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const MIN = 60_000;
 const ACTIVITY = '/oturum/etkinlik';
 const FEED = '/bildirimler/akis';
