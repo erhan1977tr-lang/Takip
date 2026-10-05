@@ -50,7 +50,8 @@ test('gönderim: doğru alanlarla sendMail çağrılır', async () => {
   const cfg = readMailConfig({ ...baseEnv, APP_URL: 'https://t.ro', INVITE_CODE_TTL_HOURS: '48' });
   const r = await sendInviteEmail(fake, cfg, { to: 'ali@unsal.ro', code: '123456', name: 'Ali', firmName: 'Ünsal', language: 'ro' });
   assert.equal(r.messageId, '<id@x>');
-  assert.equal(sent[0].from, 'Takip <noreply@ornek.ro>');
+  // Gönderen (karar 133): görünen ad resmî firma adı, adres ayardaki adres (ayardaki "Takip" adı kullanılmaz)
+  assert.equal(sent[0].from, 'GKH Trading Invest SRL <noreply@ornek.ro>');
   assert.equal(sent[0].to, 'ali@unsal.ro');
   assert.match(sent[0].text, /48 ore/);
   await assert.rejects(() => sendInviteEmail(fake, cfg, { to: 'bozuk', code: '123456' }), /Geçersiz alıcı/);

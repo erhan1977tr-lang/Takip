@@ -410,12 +410,14 @@ test('sayfa açılışı, yenileme, 60 saniyelik otomatik yenileme, bildirim yok
 test('e-postalar: yazılan bütün HTML e-postalar ortak GKH başlığını taşır (gömülü logo); düz metin sürümü yerinde; gerçek e-posta gönderilmez', async () => {
   const dir = process.env.MAIL_OUTBOX_DIR;
   expect(dir, 'testlerde e-posta gönderilmez: klasöre yazılır').toBeTruthy();
-  type Mail = { to: string; subject: string; text: string; html?: string; attachments?: { filename: string; contentType: string; size: number; cid?: string }[] };
+  type Mail = { from?: string; to: string; subject: string; text: string; html?: string; attachments?: { filename: string; contentType: string; size: number; cid?: string }[] };
   const mails: Mail[] = fs.readdirSync(dir!).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir!, f), 'utf8')));
   const html = mails.filter((m) => m.html);
   expect(html.length, 'bu çalışmada yazılmış HTML e-postalar').toBeGreaterThan(5);
   for (const m of html) {
     const where = `${m.subject} → ${m.to}`;
+    // Gönderen (karar 133): görünen ad resmî firma adı; adres ayarlanan gönderen adresi
+    expect(String(m.from), where).toMatch(/^GKH Trading Invest SRL <[^<>\s]+@[^<>\s]+>$/);
     expect(m.html, where).toContain('<img src="cid:gkh-logo@takip"');
     expect((m.html!.match(/<img\b/g) ?? []).length, where).toBe(1);
     expect(m.html!, `${where}: dış adresli görsel yok`).not.toMatch(/<img[^>]+src="https?:/);

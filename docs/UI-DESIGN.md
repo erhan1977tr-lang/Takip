@@ -273,6 +273,8 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   the logo is positioned from the DRAWN width returned by `drawBrandLogo` (never a fixed offset), with clear space
   around it. Transparency is kept in the PDF (`/SMask`). The transport list prints the official company name
   "GKH Trading Invest SRL" (`BRAND.company`) left of the logo. No other mark in the header.
+- E-mail sender (3.50.2): always "GKH Trading Invest SRL <configured address>", set once in the send point
+  (`mailSender`); templates never write a sender.
 - E-mail (`server/mail/layout.js`): light grey page, one white 600 px card (full width on phones), header row
   (explicit white background) with the logo at 200 px width (`height:auto`), a thin divider, then the template body
   (Arial 14 px). Templates supply body HTML only and keep their own plain-text version. No remote images; the logo is

@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.2 — 05.10.2026
+
+- **E-postalarda gönderen adı**: TAKİP'in gönderdiği bütün e-postalarda gönderen artık
+  **GKH Trading Invest SRL <info@gkh.ro>** olarak görünür (önceden alıcı yalnızca adresi görüyordu). Gönderen
+  **adresi değişmedi**; yalnızca görünen ad eklendi. Sipariş / teklif bildirimleri, müşteri ve ekip bildirimleri,
+  proforma / fatura e-postaları, depo e-postası, davet / doğrulama kodu ve SMTP deneme e-postası — hepsi için tek
+  yerden (ortak gönderim noktası) uygulanır; ileride eklenecek e-postalar da kendiliğinden aynı kimlikle gider.
+  Alıcılar, konular, içerik, ekler, logo, kuyruk ve yeniden deneme davranışı değişmedi. Sunucuda ayar değişikliği
+  gerekmez.
+
 ## 3.50.1 — 05.10.2026
 
 - **Sipariş geçmişi (iç ekip)**: "Belge FGO'da silinmiş; kaydı kaldırıldı" gibi sistem olayları artık kod

@@ -4,6 +4,8 @@
 //   brandedHtml({ lang, title, body })  → tam HTML belge (şablonlar gövdeyi verir)
 //   brandMessage(msg)                   → gönderilecek ileti: HTML markalı değilse sarılır, logo eki eklenir
 //   sendBrandedMail(transport, msg)     → TEK gönderim noktası (server/mail/send.js bunu dışa verir)
+//   mailSender(from)                    → gönderen kimliği: "GKH Trading Invest SRL <adres>" (karar 133) — görünen ad
+//                                         her e-postada resmî firma adıdır; ADRES ayardan (MAIL_FROM) gelir, değişmez
 // Düz metin (text) sürümüne dokunulmaz: HTML göstermeyen programlar e-postayı eskisi gibi okur.
 // E-posta programlarıyla uyum: tablo düzeni, satır içi stiller, sabit genişlik niteliği (width) + height:auto
 // (oran korunur; Outlook dahil), en fazla 600 px ve küçük ekranda tam genişlik.
@@ -54,6 +56,23 @@ export function mailLogoAttachment() {
   return { filename: BRAND.logo.file, content: brandLogoBytes(), contentType: BRAND.logo.mime, cid: MAIL_LOGO_CID, contentDisposition: 'inline' };
 }
 
+const ADDRESS = /^[^\s<>@,;:"]+@[^\s<>@,;:"]+$/;
+/**
+ * Gönderen kimliği (karar 133): görünen ad her zaman resmî firma adı (BRAND.company), adres ayarlanan gönderen adresi.
+ * Girdi "info@gkh.ro", "Takip <info@gkh.ro>" ya da { name, address } olabilir; ayardaki ad kullanılmaz, adres AYNEN kalır
+ * (SMTP zarfı / kimlik doğrulaması değişmez). Geçerli bir adres bulunamazsa girdi olduğu gibi döner (ad uydurulmaz).
+ * @param {unknown} from
+ * @returns {any}
+ */
+export function mailSender(from) {
+  const raw = from && typeof from === 'object' ? String(/** @type {any} */ (from).address ?? '') : String(from ?? '');
+  // Tek bir gönderen beklenir: birden çok adres içeren girdiye dokunulmaz
+  if ((raw.match(/</g) ?? []).length > 1) return from;
+  const m = /<([^<>]*)>\s*$/.exec(raw);
+  const address = (m ? m[1] : raw).trim();
+  return ADDRESS.test(address) ? `${BRAND.company} <${address}>` : from;
+}
+
 /** Markasız bir HTML belgenin gövdesi (<body> içi); parça ise kendisi */
 const bodyOf = (html) => {
   const m = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html);
@@ -63,10 +82,13 @@ const bodyOf = (html) => {
 /**
  * Gönderilecek iletiyi ortak düzene sokar. HTML'i olan her ileti logoyla gider: şablon ortak düzeni kullanmadıysa
  * burada sarılır (yeni yazılan şablon markayı unutamaz); logo eki bir kez eklenir (öbür ekler — PDF — aynen, önde kalır).
- * HTML'i olmayan (yalnızca düz metin) ileti olduğu gibi gider. Alıcı, konu, metin ve ekler DEĞİŞMEZ.
+ * HTML'i olmayan (yalnızca düz metin) ileti gövdesiyle olduğu gibi gider. Alıcı, konu, metin, ekler ve varsa yanıt
+ * adresi (replyTo) DEĞİŞMEZ; gönderenin yalnızca GÖRÜNEN ADI resmî firma adı olur (mailSender), adresi aynı kalır.
  * @param {{ html?: string, text?: string, subject?: string, lang?: string, attachments?: any[], [k: string]: any }} msg
  */
-export function brandMessage({ lang = undefined, ...msg }) {
+export function brandMessage({ lang = undefined, ...rest }) {
+  // Gönderen kimliği her iletide (düz metin dahil) aynı: resmî firma adı + ayarlanan adres
+  const msg = rest.from == null ? rest : { ...rest, from: mailSender(rest.from) };
   if (!msg.html) return msg;
   const html = isBranded(msg.html) ? msg.html : brandedHtml({ lang, title: msg.subject ?? '', body: bodyOf(msg.html) });
   const others = (msg.attachments ?? []).filter((a) => a?.cid !== MAIL_LOGO_CID);
@@ -74,7 +96,7 @@ export function brandMessage({ lang = undefined, ...msg }) {
 }
 
 /**
- * TAKİP'in e-posta gönderdiği TEK nokta: iletiyi ortak düzene sokar ve taşıyıcıya verir. Taşıyıcı (SMTP ya da testte
+ * TAKİP'in e-posta gönderdiği TEK nokta: iletiyi ortak düzene sokar (gönderen kimliği + logo) ve taşıyıcıya verir. Taşıyıcı (SMTP ya da testte
  * sahte / klasöre yazan taşıyıcı) dışarıdan gelir; burada ağ bağlantısı kurulmaz.
  * @param {{ sendMail: (m: object) => Promise<any> }} transport
  * @param {Parameters<typeof brandMessage>[0]} msg

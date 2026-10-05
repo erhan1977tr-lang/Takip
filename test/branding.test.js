@@ -16,7 +16,8 @@ import { offerPdf } from '../server/pdf/offer.js';
 import { depotFormPdf } from '../server/pdf/depot-form.js';
 import { transportListPdf } from '../server/pdf/transport-list.js';
 import { offerExportData } from '../server/orders/offer-export.js';
-import { MAIL_LOGO_CID, MAIL_LOGO_WIDTH, brandMessage, brandedHtml, isBranded, sendBrandedMail } from '../server/mail/send.js';
+import { MAIL_LOGO_CID, MAIL_LOGO_WIDTH, brandMessage, brandedHtml, isBranded, mailSender, sendBrandedMail } from '../server/mail/send.js';
+import { readMailConfig } from '../server/mail/config.js';
 import { renderInviteEmail } from '../server/mail/templates/invite.js';
 import { renderWarehouseEmail } from '../server/mail/templates/warehouse.js';
 import { sendInviteEmail } from '../server/mail/sendInvite.js';
@@ -329,7 +330,8 @@ test('tek gönderim noktası: logo eki her HTML e-postaya eklenir, öbür ekler 
   const mail = MAILS()['mali belge: proforma'];
   await sendBrandedMail(t, { from: 'TAKİP <info@gkh.test>', to: 'musteri@firma.test', subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro', attachments: [{ filename: 'PRF101.pdf', content: pdf, contentType: 'application/pdf' }] });
   const [m] = t.sent;
-  assert.deepEqual([m.from, m.to, m.subject, m.text, m.html], ['TAKİP <info@gkh.test>', 'musteri@firma.test', mail.subject, mail.text, mail.html], 'alıcı, konu, metin ve HTML aynen');
+  assert.deepEqual([m.to, m.subject, m.text, m.html], ['musteri@firma.test', mail.subject, mail.text, mail.html], 'alıcı, konu, metin ve HTML aynen');
+  assert.equal(m.from, 'GKH Trading Invest SRL <info@gkh.test>', 'gönderen: resmî firma adı + ayarlanan adres (karar 133)');
   assert.ok(!('lang' in m), 'düzen bilgisi taşıyıcıya gitmez');
   assert.deepEqual(m.attachments.map((a) => [a.filename, a.contentType, a.cid ?? null]), [['PRF101.pdf', 'application/pdf', null], [LOGO.file, LOGO.mime, MAIL_LOGO_CID]], 'PDF önde, logo satır içi ek');
   assert.equal(Buffer.compare(m.attachments[0].content, pdf), 0);
@@ -350,8 +352,9 @@ test('tek gönderim noktası: logo eki her HTML e-postaya eklenir, öbür ekler 
   const twice = brandMessage(brandMessage({ to: 'x', subject: 's', text: 't', html: '<p>x</p>' }));
   assert.equal((twice.html.match(/<img\b/g) ?? []).length, 1);
   assert.equal(twice.attachments.length, 1);
-  // Düz metin e-posta (HTML'siz) olduğu gibi gider: ek / HTML eklenmez
+  // Düz metin e-posta (HTML'siz) gövdesiyle olduğu gibi gider: ek / HTML eklenmez (gönderen adı yine resmî addır)
   assert.deepEqual(brandMessage({ from: 'a', to: 'b', subject: 's', text: 'yalnızca metin' }), { from: 'a', to: 'b', subject: 's', text: 'yalnızca metin' });
+  assert.deepEqual(brandMessage({ from: 'a@gkh.test', to: 'b', subject: 's', text: 'yalnızca metin' }), { from: 'GKH Trading Invest SRL <a@gkh.test>', to: 'b', subject: 's', text: 'yalnızca metin' });
   // brandedHtml: başlık ve dil kaçışlanır
   assert.ok(brandedHtml({ lang: 'ro"><script>', title: '<b>x</b>', body: '<p>g</p>' }).includes('<title>&lt;b&gt;x&lt;/b&gt;</title>'));
   assert.ok(!brandedHtml({ lang: 'ro"><script>', body: '' }).includes('<script>'));
@@ -362,6 +365,49 @@ test('tek gönderim noktası: logo eki her HTML e-postaya eklenir, öbür ekler 
   assert.equal(r.messageId, 'test-1');
   assert.deepEqual([inv.sent[0].to, isBranded(inv.sent[0].html), inv.sent[0].attachments.map((a) => a.cid)], ['yeni@firma.test', true, [MAIL_LOGO_CID]]);
   assert.match(inv.sent[0].text, /482913/);
+});
+
+test('gönderen kimliği tek yerden: her e-postada görünen ad "GKH Trading Invest SRL", adres ayarlanan gönderen adresi (info@gkh.ro) — karar 133', async () => {
+  const SENDER = 'GKH Trading Invest SRL <info@gkh.ro>';
+  // Ayar nasıl yazılmış olursa olsun (yalnızca adres, başka adla, tırnaklı adla, nesne olarak): ad resmî ad, adres AYNEN
+  for (const from of ['info@gkh.ro', ' info@gkh.ro ', 'Takip <info@gkh.ro>', 'TAKİP <info@gkh.ro>', '"Takip, Portal" <info@gkh.ro>', 'GKH Trading Invest SRL <info@gkh.ro>', { name: 'Takip', address: 'info@gkh.ro' }, { address: 'info@gkh.ro' }]) {
+    assert.equal(mailSender(from), SENDER, JSON.stringify(from));
+  }
+  assert.equal(mailSender('Takip <noreply@localhost>'), 'GKH Trading Invest SRL <noreply@localhost>');
+  assert.equal(mailSender(SENDER), SENDER, 'iki kez uygulanınca değişmez');
+  // Geçerli tek bir adres yoksa girdiye dokunulmaz: ad uydurulmaz, başlığa satır / ikinci alıcı sokulamaz
+  for (const from of ['', 'x', 'a <b', null, undefined, 'A <a@b.ro>, B <c@d.ro>', 'a@b.ro\r\nBcc: x@y.z', 'a@b.ro, c@d.ro', {}]) assert.deepEqual(mailSender(from), from, JSON.stringify(from));
+  assert.equal(BRAND.company, 'GKH Trading Invest SRL');
+
+  // Ayardan (MAIL_FROM) gelen adres değişmez; SMTP kimliği / sunucu ayarı okunuşu aynı
+  const cfg = readMailConfig({ SMTP_HOST: 'smtp.gkh.test', SMTP_USER: 'info@gkh.ro', SMTP_PASS: 'x', MAIL_FROM: 'info@gkh.ro', APP_URL: 'https://takip.example' });
+  assert.deepEqual([cfg.from, cfg.user, cfg.host, cfg.port], ['info@gkh.ro', 'info@gkh.ro', 'smtp.gkh.test', 587]);
+
+  // Ortak gönderim noktası: yanıt adresi, alıcılar (cc / bcc dahil), konu, metin, HTML ve ekler AYNEN; yalnızca gönderen adı
+  const t = box();
+  const pdf = Buffer.from('%PDF-1.4 sahte');
+  const mail = MAILS()['mali belge: fatura'];
+  await sendBrandedMail(t, { from: cfg.from, to: 'musteri@firma.test', cc: 'c@firma.test', bcc: 'arsiv@gkh.test', replyTo: 'satis@gkh.ro', subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro', attachments: [{ filename: 'GKH812.pdf', content: pdf, contentType: 'application/pdf' }] });
+  const [m] = t.sent;
+  assert.equal(m.from, SENDER);
+  assert.deepEqual([m.to, m.cc, m.bcc, m.replyTo, m.subject, m.text, m.html], ['musteri@firma.test', 'c@firma.test', 'arsiv@gkh.test', 'satis@gkh.ro', mail.subject, mail.text, mail.html]);
+  assert.deepEqual(m.attachments.map((a) => a.filename), ['GKH812.pdf', LOGO.file], 'PDF eki ve logo yerinde');
+  assert.deepEqual(Object.keys(m).sort(), ['attachments', 'bcc', 'cc', 'from', 'html', 'replyTo', 'subject', 'text', 'to'], 'iletiye başka alan eklenmedi (yanıt adresi uydurulmadı)');
+  // Yanıt adresi verilmemişse eklenmez (mevcut davranış: yanıtlar gönderen adrese gider)
+  await sendBrandedMail(t, { from: cfg.from, to: 'x@firma.test', subject: 's', text: 'düz metin' });
+  assert.deepEqual(t.sent[1], { from: SENDER, to: 'x@firma.test', subject: 's', text: 'düz metin' }, 'düz metin e-postada da aynı gönderen; gövde aynen');
+
+  // Bütün e-posta yolları aynı kimlikle gider (şablonlar tek tek değiştirilmedi: kimlik gönderim noktasında verilir).
+  // Sipariş bildirimi: test/notify.test.js · mali belge ve depo e-postası: veritabanı testleri · hepsi: tarayıcı testi.
+  const inv = box();
+  await sendInviteEmail(inv, cfg, { to: 'yeni@firma.test', code: '482913', name: 'Ali', firmName: 'Ünsal Cam', language: 'tr' });
+  assert.equal(inv.sent[0].from, SENDER, 'davet / doğrulama kodu / SMTP deneme e-postası');
+  // Kaynak: gönderen kimliği yalnızca ortak gönderim noktasında kurulur; hiçbir şablon / yol "Ad <adres>" yazmaz
+  const src = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+  assert.match(src('server/mail/layout.js'), /const msg = rest\.from == null \? rest : \{ \.\.\.rest, from: mailSender\(rest\.from\) \};/);
+  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/profile/warehouse.js', 'server/mail/sendInvite.js', 'server/mail/templates/invite.js', 'server/mail/templates/warehouse.js']) {
+    assert.ok(!/GKH Trading Invest SRL\s*</.test(src(f)) && !/mailSender\(/.test(src(f)), `${f}: gönderen adı burada kurulmaz`);
+  }
 });
 
 test('e-posta yalnızca ortak gönderim noktasından gider: başka hiçbir dosya taşıyıcıyı doğrudan çağırmaz', () => {

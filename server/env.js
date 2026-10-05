@@ -79,7 +79,7 @@ export const ENV_VARS = {
   SMTP_SECURE: { group: 'mail', parse: parseBool, desc: 'Boşsa port 465 ise true' },
   SMTP_USER: { group: 'mail', desc: 'SMTP kullanıcı adı' },
   SMTP_PASS: { group: 'mail', secret: true, desc: 'SMTP şifresi' },
-  MAIL_FROM: { group: 'mail', desc: 'Gönderen ad ve adres' },
+  MAIL_FROM: { group: 'mail', desc: 'Gönderen ADRESİ (ör. info@gkh.ro). Görünen ad her e-postada "GKH Trading Invest SRL" olur; buradaki ad kullanılmaz' },
   NOTIFY_EMAILS: { group: 'mail', parse: parseBool, default: true, desc: 'Sipariş olaylarında bildirim e-postaları gönderilsin mi (false = kapalı; olaylar kuyrukta kalır)' },
   MAIL_OUTBOX_DIR: { group: 'dev', desc: 'Ayarlıysa e-posta gönderilmez, bu klasöre yazılır (yalnızca geliştirme/test/demo)' },
 

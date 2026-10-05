@@ -129,7 +129,8 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
   const db = fakeDb(rows);
   const sent = [];
   let failOnce = true;
-  const transport = { sendMail: async (m) => { if (m.to === 'office@glass.test' && failOnce) { failOnce = false; throw new Error('SMTP 451'); } sent.push(m.to); } };
+  const senders = [];
+  const transport = { sendMail: async (m) => { senders.push(m.from); if (m.to === 'office@glass.test' && failOnce) { failOnce = false; throw new Error('SMTP 451'); } sent.push(m.to); } };
   const ctx = { transport, from: 'Takip <n@gkh.test>', appUrl: 'https://takip.test' };
   const r0 = await dispatchNotifications(db, { ...ctx, now: t0 });
   assert.equal(r0.skipped, 1);
@@ -144,6 +145,8 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
   assert.equal(r2.sent, 1);
   assert.deepEqual(sent, ['ana@glass.test', 'office@glass.test'], 'ilk alıcıya ikinci kez gitmez');
   assert.equal(rows[1].status, 'SENT');
+  // Gönderen (karar 133): her denemede (başarısız olan dahil) resmî firma adı + ayarlanan adres; yeniden deneme kuralı aynı
+  assert.deepEqual(senders, ['GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>']);
 });
 
 test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip bildirimleri etkilenmez; sabit dil kullanılır', async () => {

@@ -139,7 +139,8 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   const box = mailbox();
   assert.deepEqual(await d.dispatchDocEmails(db, mailCtx(fgo, box)), { sent: 1, failed: 0, skipped: 0 });
   const [mail] = box.sent;
-  assert.deepEqual([mail.to, mail.subject, mail.from], ['umi@belge.test', 'Proformă PRF101 — comanda UMI7', 'info@gkh.ro']);
+  assert.deepEqual([mail.to, mail.subject, mail.from], ['umi@belge.test', 'Proformă PRF101 — comanda UMI7', 'GKH Trading Invest SRL <info@gkh.ro>']);
+  assert.ok(!('replyTo' in mail), 'yanıt adresi eklenmez (yanıtlar gönderen adrese gider)');
   for (const re of [/Tip document: Proformă/, /Număr document: PRF101/, /Data emiterii: \d{2}\.\d{2}\.\d{4}/, /Comanda: UMI7/, /Total: 605,00 RON \(cu TVA\)/, /https:\/\/takip\.test\/belgeler/]) assert.match(mail.text, re);
   assert.ok(!/fgo\.ro/.test(mail.text) && !/fgo\.ro/.test(mail.html), 'e-postada FGO adresi yok');
   assert.deepEqual([mail.attachments.length, mail.attachments[0].filename, mail.attachments[0].contentType, Buffer.compare(mail.attachments[0].content, PDF)], [2, 'PRF101.pdf', 'application/pdf', 0]);

@@ -170,6 +170,7 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(sent[0].attachments[0].content.subarray(0, 5).toString(), '%PDF-');
   // Ortak GKH başlığı (karar 129): depo e-postası da logoyla gider (PDF önde, logo satır içi ek); Comanda Depozit PDF'i logoyu taşır
   assert.deepEqual(sent[0].attachments.map((a) => a.cid ?? 'pdf'), ['pdf', 'gkh-logo@takip']);
+  assert.equal(sent[0].from, 'GKH Trading Invest SRL <info@gkh.ro>', 'depo e-postasının göndereni (karar 133)');
   assert.ok(sent[0].html.includes('<img src="cid:gkh-logo@takip"') && sent[0].html.indexOf('<img') < sent[0].html.indexOf('Bună ziua'));
   assert.deepEqual([sent[0].attachments[1].filename, sent[0].attachments[1].contentType], [BRAND.logo.file, 'image/png']);
   assert.match(sent[0].attachments[0].content.toString('latin1'), new RegExp(`/Subtype /Image /Width ${BRAND.logo.width} /Height ${BRAND.logo.height} [^>]*/SMask \\d+ 0 R`), 'PDF içinde aynı resmî logo gömülü (saydamlığıyla)');
@@ -368,6 +369,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
     ['conta@glass.test', `Factură GKH684 — comanda ${orderNo}`, 'GKH684.pdf'],
   ]);
   assert.ok(mails.every((m) => m.html.includes('cid:gkh-logo@takip') && m.attachments.at(-1).cid === 'gkh-logo@takip'), 'belge e-postaları ortak GKH başlığıyla');
+  assert.ok(mails.every((m) => m.from === 'GKH Trading Invest SRL <info@gkh.ro>'), 'mali belge e-postalarının göndereni (karar 133)');
   // Aynı olay için ikinci (genel bildirim) e-postası gitmez: PROFORMA / INVOICED olayı belge e-postasıyla karşılanır
   const before = mails.length;
   await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: { at: new Date(0).toISOString() } }, update: { value: { at: new Date(0).toISOString() } } });
@@ -381,6 +383,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   assert.ok(!mails.slice(before).some((m) => /PRF552|GKH684/.test(`${m.subject} ${m.text}`)), 'belge için ikinci e-posta yok');
   // Bu arada gönderilen sipariş bildirim e-postaları da (hangi olay olursa olsun) aynı ortak başlıkla gider
   assert.ok(mails.slice(before).every((m) => m.html.includes('<img src="cid:gkh-logo@takip"') && m.attachments.length === 1 && m.attachments[0].cid === 'gkh-logo@takip' && m.text && !m.text.includes('cid:')));
+  assert.ok(mails.slice(before).every((m) => m.from === 'GKH Trading Invest SRL <info@gkh.ro>'), 'sipariş bildirimlerinin göndereni (karar 133)');
   // Uygulama içi: profilde mevcut PROFORMA / INVOICED bildirimi yeter — "belge hazır" bildirimi ikinci kez yazılmaz
   for (let i = 0; i < 20 && (await dispatchInApp(db)).events > 0; i++) { /* kuyruk boşalana kadar */ }
   assert.equal(await db.notification.count({ where: { orderId: id, type: { in: Object.values(DOC_NOTICE) } } }), 0);
