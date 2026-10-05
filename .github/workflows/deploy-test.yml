@@ -104,7 +104,9 @@ jobs:
 
       - name: Derleme önbelleği temizliği — gerçek Docker (yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde)
         run: |
-          set -x
+          set -Ex
+          # Hata olursa: hangi satır / komut, temizlik kayıtları ve önbellek durumu not olarak yayınlanır (günlük indirilemeyen ortamlar için)
+          trap 'rc=$? cmd=$BASH_COMMAND; set +x; { echo "satır $LINENO (çıkış $rc): $cmd"; for f in c1.log c1b.log c2.log c3.log npm.log; do if [ -f "$f" ]; then echo "--- $f"; tail -n 12 "$f"; fi; done; echo "--- docker system df"; sudo docker system df; echo "--- fark"; for f in volumes images containers backups db upload; do if [ -f "sonra.$f" ]; then diff "once.$f" "sonra.$f" | head -8; fi; done; } 2>&1 | tail -c 5000 | sed "s/%/%25/g" | sed ":a;N;\$!ba;s/\n/%0A/g" | sed "s/^/::error title=Önbellek testi::/"' ERR
           compose() { sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml "$@"; }
           cache() { sudo docker system df --format '{{.Type}}|{{.Size}}' | grep '^Build Cache|' | cut -d'|' -f2; }
           bytes() { echo "$1" | awk '{ match($1, /^[0-9.]+/); n = substr($1, 1, RLENGTH); u = toupper(substr($1, RLENGTH + 1)); m = (u == "B") ? 1 : (u == "KB") ? 1e3 : (u == "MB") ? 1e6 : (u == "GB") ? 1e9 : 1e12; printf "%.0f\n", n * m }'; }
