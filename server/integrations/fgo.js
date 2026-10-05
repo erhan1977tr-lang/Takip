@@ -222,7 +222,26 @@ export const grossOf = (net, vatRate) => round2(net + round2((net * Number(vatRa
 
 /** FGO'nun "belge yok" yanıtı (getstatus): belge FGO'da silinmiş */
 export const FGO_NOT_FOUND = /nu exist|nu a fost g[aă]sit|negăsit|not found|inexist/i;
-const notFound = (e) => e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message);
+// "Belge yok" KESİN sayılmadan önce (karar 132): yanıt belgeden söz etmeli ("Factura nu exista") ve kimlik / yetki /
+// sınır / biçim hatası olmamalı — "Firma nu exista", "Hash invalid", "prea multe cereri" belgenin silindiğini kanıtlamaz.
+const FGO_DOC_WORD = /factur|proform|document|invoice/i;
+const FGO_NOT_PROOF = /hash|cheie|autentific|autoriz|unauthor|token|acces|limit|prea multe|too many|invalid/i;
+/**
+ * FGO'nun kalıcı yanıt metni "bu belge FGO'da yok" mu (ör. "Factura nu exista")? Yalnızca metne bakar.
+ * @param {unknown} message
+ */
+export const fgoAbsentMessage = (message) => {
+  const m = String(message ?? '');
+  return FGO_NOT_FOUND.test(m) && FGO_DOC_WORD.test(m) && !FGO_NOT_PROOF.test(m);
+};
+/**
+ * Belgenin FGO'da OLMADIĞININ kesin kanıtı — sistemdeki kaydı kaldırmaya izin veren TEK koşul: FGO'nun kendi kalıcı
+ * yanıtı (FgoError, retry değil — ağ hatası, zaman aşımı, 5xx, 429 ve okunamayan yanıt retry'dır ya da FgoError değildir)
+ * ve metni "belge yok". Başka her hata belirsizdir: kayıt kaldırılmaz.
+ * @param {unknown} e
+ */
+export const fgoDocumentAbsent = (e) => e instanceof FgoError && !e.retry && fgoAbsentMessage(e.message);
+const notFound = fgoDocumentAbsent;
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**

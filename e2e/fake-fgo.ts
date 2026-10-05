@@ -73,6 +73,7 @@ export async function fakeFgo(db: PrismaClient, start: number) {
   const { getFgoSettings } = await import('../server/integrations/fgo.js');
   const batchSvc = await import('../server/glass/batch.js');
   const invoiceSvc = await import('../server/glass/invoice-batch.js');
+  const receivablesSvc = await import('../server/accounting/receivables.js');
   const secret = getEnv().AUTH_SECRET;
   // Gerçek ayarın seri / TVA değerleri korunur (sayfanın önizlemesiyle aynı hesap); yalnızca "açık + anahtar" sahte
   const real = await getFgoSettings(db);
@@ -113,9 +114,28 @@ export async function fakeFgo(db: PrismaClient, start: number) {
     return doc;
   }
 
+  // "TAKİP'ten kaldır" (karar 132): FGO'ya giden durum sorguları (yöntem + uç + belge no) — silme isteği olmadığı buradan sınanır
+  const statusCalls: string[] = [];
+  const statusFetch = (answer: 'gone' | 'exists' | 'down' | 'auth') => (async (url: unknown, init?: { method?: string; body?: unknown }) => {
+    const form: FgoForm = Object.fromEntries(new URLSearchParams(init?.body as string));
+    statusCalls.push(`${init?.method} ${String(url).split('/v1')[1]} ${form.Serie}${form.Numar}`);
+    if (answer === 'down') throw new Error('ETIMEDOUT');
+    if (answer === 'auth') return new Response(JSON.stringify({ Success: false, Message: 'Hash invalid' }));
+    if (answer === 'gone') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
+    return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '300.00', ValoareAchitata: '0.00' } }));
+  }) as typeof fetch;
+
   return {
     calls,
+    statusCalls,
     issue,
+    /**
+     * Yöneticinin "TAKİP'ten kaldır" işlemi, uygulamanın gerçek servisiyle (removeDocumentDeletedInFgo → mevcut temizlik
+     * yolu) ama FGO'nun durum yanıtı sahte: gone = "Factura nu exista", exists = belge duruyor, down = zaman aşımı,
+     * auth = kimlik hatası. Gerçek FGO'ya istek gitmez.
+     */
+    removeDeleted: (o: { docId: string; actor: object; answer: 'gone' | 'exists' | 'down' | 'auth' }) =>
+      guard(() => receivablesSvc.removeDocumentDeletedInFgo(client, { docId: o.docId, actor: o.actor, secret, fetchImpl: statusFetch(o.answer) })),
     /** Satır adları (Continut[n][Denumire]) */
     names: (form: FgoForm) => Object.keys(form).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => form[k]),
     /** Müşteri proforması partisi: sayfanın önizleme anahtarı ve seçilen siparişlerle (gerçek servis; FGO'ya gitmez) */

@@ -4,11 +4,11 @@ import { db } from '@/lib/db';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
-import { backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus, unitOf } from '@/server/accounting/receivables.js';
+import { absentInFgo, backfillDocuments, listDocuments, paymentStatus, receivables, syncStatus, unitOf } from '@/server/accounting/receivables.js';
 import { emailStates } from '@/server/documents/delivery.js';
 import { getAccountingSettings, uninvoicedLoadings } from '@/server/accounting/uninvoiced.js';
 import { ConfirmButton } from '@/components/ConfirmButton';
-import { refreshFgoAction, resendDocEmailAction } from './actions';
+import { refreshFgoAction, removeDeletedDocAction, resendDocEmailAction } from './actions';
 
 type Doc = Prisma.FgoDocumentGetPayload<{ include: {
   order: { select: { id: true; orderNo: true; status: true; customer: { select: { name: true } } } };
@@ -29,6 +29,14 @@ const MAIL_ERRORS = ['NOT_FOUND', 'ALREADY_QUEUED', 'FORBIDDEN'];
 const FILTERS = ['hepsi', 'acik', 'odendi'] as const;
 const FILTER_KEY = { hepsi: 'all', acik: 'open', odendi: 'paid' } as const;
 const ERRORS = ['FGO_DISABLED', 'NO_KEY', 'BUSY'];
+// "TAKİP'ten kaldır" (karar 132) sonucu: belge FGO'da duruyor / doğrulanamadı (FGO kapalı, anahtar yok, geçici ya da
+// belirsiz yanıt — hepsi aynı "hiçbir değişiklik yapılmadı" metni) / eşitleme sürüyor / kayıt yok
+const DOC_ERRORS: Record<string, string> = {
+  EXISTS: 'EXISTS', UNVERIFIED: 'UNVERIFIED', FGO_DISABLED: 'UNVERIFIED', NO_KEY: 'UNVERIFIED', CLEANUP_FAILED: 'CLEANUP_FAILED',
+  BUSY: 'BUSY', NOT_FOUND: 'NOT_FOUND', FORBIDDEN: 'FORBIDDEN', CONFIRM: 'CONFIRM',
+};
+/** Adres çubuğundan gelen belge numarası yalnızca harf / rakamsa gösterilir */
+const docLabel = (v: string | undefined) => (v && /^[A-Za-z0-9-]{1,30}$/.test(v) ? v : '');
 
 /**
  * Profil ve Cam Tahsilat ortak ekranı: FGO belgeleri ve FGO'dan okunan ödeme durumu (yalnızca yönetici).
@@ -68,6 +76,8 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
   const curs = Object.keys(r.sums).sort();
   // Proformanın bir kısmı başka belgeye dönmüş: avans faturası ya da (müşteri zincirinde) yüklenen kısmın faturası
   const hasAdvance = (g: { docs: Doc[] }) => g.docs.some((d) => d.kind === 'ADVANCE' || (d.batchId != null && d.kind === 'INVOICE'));
+  // Son kontrolde FGO'nun "belge yok" dediği belgeler (yönetici FGO'da elle silmiş olabilir): üstte uyarı + satırda işlem
+  const absent = docs.filter((d) => absentInFgo(d));
 
   return (
     <>
@@ -84,6 +94,15 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
       </div>
       {sp.ok === 'refreshed' && <div className="alert alert-ok">{t('accounting.receivables.refreshed', { n: sp.n ?? '0', f: sp.f ?? '0' })}</div>}
       {sp.error && <div className="alert alert-error">{t(`accounting.receivables.errors.${ERRORS.includes(sp.error) ? sp.error : 'FGO_DISABLED'}` as MsgKey)}</div>}
+      {sp.ok === 'docRemoved' && <div className="alert alert-ok" id="doc-removed">{t('accounting.receivables.remove.removed', { doc: docLabel(sp.doc) })}</div>}
+      {sp.docError && <div className="alert alert-error" id="doc-remove-error">{t(`accounting.receivables.remove.errors.${DOC_ERRORS[sp.docError] ?? 'UNVERIFIED'}` as MsgKey, { doc: docLabel(sp.doc) })}</div>}
+      {absent.length > 0 && (
+        <div className="alert alert-warn" id="fgo-absent">
+          {t('accounting.receivables.remove.banner', { n: absent.length })}{' '}
+          {absent.map((d, n) => <span key={d.id}>{n > 0 && ', '}<a className="mono" href={`${path}#doc-${d.id}`}>{d.series}{d.number}</a></span>)}
+          {'. '}{t('accounting.receivables.remove.bannerHint')}
+        </div>
+      )}
       {sp.ok === 'resent' && <div className="alert alert-ok">{t('accounting.receivables.email.resent')}</div>}
       {sp.mailError && <div className="alert alert-error">{t(`accounting.receivables.email.errors.${MAIL_ERRORS.includes(sp.mailError) ? sp.mailError : 'NOT_FOUND'}` as MsgKey)}</div>}
 
@@ -193,8 +212,9 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                     const s = shareOf(d);
                     const partly = d.kind === 'PROFORMA' && !s.replaced && hasAdvance(g);
                     const mail = mails.get(d.id) ?? null;
+                    const gone = absentInFgo(d);
                     return (
-                      <tr key={d.id} className={i === 0 ? 'grp-first' : undefined}>
+                      <tr key={d.id} id={`doc-${d.id}`} data-doc={`${d.series}${d.number}`} className={i === 0 ? 'grp-first' : undefined}>
                         <td>
                           {i === 0 && d.order && <Link className="order-no" href={`/siparisler/${d.order.id}`}>{d.order.orderNo}</Link>}
                           {/* Müşteri belgesi (her satırda): kaynak siparişler; proformada seçilen yükleme günleri, faturada onaylı yükleme günü, avansta kaynak proforma */}
@@ -225,7 +245,16 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                             ? <Badge tone="muted">{t('accounting.receivables.replaced')}</Badge>
                             : <Badge tone={TONE[st]}>{t(`accounting.receivables.status.${st}` as MsgKey)}</Badge>}
                           <span className="cell-note nowrap" title={t('accounting.receivables.col.checked')}>FGO · {d.checkedAt ? fmtDateTime(d.checkedAt) : '—'}</span>
-                          {d.checkError && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
+                          {d.checkError && !gone && <span className="cell-note text-danger" title={d.checkError}>{t('accounting.receivables.checkError')}</span>}
+                          {/* FGO "belge yok" dedi: yalnızca TAKİP kaydını kaldırma (önce FGO'ya yeniden sorulur; FGO'da hiçbir şey silinmez) */}
+                          {gone && (
+                            <form action={removeDeletedDocAction} className="doc-absent" title={t('accounting.receivables.remove.title')}>
+                              <input type="hidden" name="type" value={type} />
+                              <input type="hidden" name="docId" value={d.id} />
+                              <span className="cell-note text-danger">{t('accounting.receivables.remove.gone')}</span>
+                              <ConfirmButton danger name="confirmed" value="1" message={t('accounting.receivables.remove.confirm', { doc: `${d.series}${d.number}` })}>{t('accounting.receivables.remove.button')}</ConfirmButton>
+                            </form>
+                          )}
                         </td>
                         {/* Müşteri e-postası: durum + yalnızca e-postayı yeniden gönderme (FGO'da belge KESMEZ) */}
                         <td className="doc-mail small" data-mail={mail?.state ?? 'NONE'}>

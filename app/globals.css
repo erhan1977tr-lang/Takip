@@ -883,6 +883,9 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .acc-table td.doc-mail form { display: block; margin-top: 2px; }
 .acc-table td.doc-mail .btn-link { padding: 0; white-space: nowrap; font-size: var(--fs-meta); }
 .acc-table .cell-note.nowrap { white-space: nowrap; }
+/* Tahsilat: FGO'da artık olmayan belge — "TAKİP'ten kaldır" (durum hücresinde, satır içi; karar 132) */
+.acc-table form.doc-absent { display: block; margin-top: 2px; }
+.acc-table form.doc-absent .btn-link { padding: 0; white-space: nowrap; font-size: var(--fs-meta); }
 /* Müşteri mali belgeleri (belgeler): bildirimden gelinen satır vurgulanır */
 .doc-table td .badge { white-space: nowrap; }
 .doc-table tr:target > td { background: var(--primary-soft); }

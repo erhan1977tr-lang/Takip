@@ -9,7 +9,7 @@ import { actorOf } from '@/lib/actor';
 import { getEnv } from '@/lib/env';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { writeAudit } from '@/server/orders/journal.js';
-import { refreshDocuments } from '@/server/accounting/receivables.js';
+import { refreshDocuments, removeDocumentDeletedInFgo } from '@/server/accounting/receivables.js';
 import { CURRENCIES, parseAmount } from '@/server/accounting/supplier.js';
 import { correctMissingCost } from '@/server/accounting/cost-correction.js';
 import { resendDocEmail } from '@/server/documents/delivery.js';
@@ -42,6 +42,25 @@ export async function resendDocEmailAction(fd: FormData) {
   const r = await resendDocEmail(db, { docId: String(fd.get('docId') ?? ''), actor: await actorOf(user) });
   revalidatePath(RECEIVABLE_PATH[type]);
   redirect(`${RECEIVABLE_PATH[type]}?${r.ok ? 'ok=resent' : `mailError=${r.code}`}`);
+}
+
+/**
+ * "TAKİP'ten kaldır" (karar 132): FGO'da ELLE silinmiş belgenin TAKİP'teki kaydını kaldırır. FGO'da hiçbir şey silinmez;
+ * FGO'ya yalnızca belgenin durumu sorulur ve kayıt yalnızca FGO kesin olarak "belge yok" derse kaldırılır
+ * (server/accounting/receivables.js → removeDocumentDeletedInFgo). Onay penceresi onaylanmadan gelen istek işlenmez.
+ */
+export async function removeDeletedDocAction(fd: FormData) {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const type = fd.get('type') === 'GLASS_ORDER' ? 'GLASS_ORDER' : 'PROFILE_ORDER';
+  const path = RECEIVABLE_PATH[type];
+  if (fd.get('confirmed') !== '1') redirect(`${path}?docError=CONFIRM`);
+  const env = getEnv();
+  const r = await removeDocumentDeletedInFgo(db, { docId: String(fd.get('docId') ?? ''), actor: await actorOf(user), secret: env.AUTH_SECRET, appUrl: env.APP_URL ?? '' });
+  revalidatePath(RECEIVABLE_PATH.GLASS_ORDER);
+  revalidatePath(RECEIVABLE_PATH.PROFILE_ORDER);
+  if (r.ok && r.orderId) revalidatePath(`/siparisler/${r.orderId}`);
+  const doc = 'doc' in r && r.doc ? `&doc=${encodeURIComponent(r.doc)}` : '';
+  redirect(`${path}?${r.ok ? 'ok=docRemoved' : `docError=${r.code}`}${doc}`);
 }
 
 /** Yükleme gününe nakliye maliyeti */

@@ -8,7 +8,7 @@ const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { saveDailyRate } = await import('../../server/fx/bt.js');
 const { writeAudit } = await import('../../server/orders/journal.js');
 const { dayKey } = await import('../../server/orders/loading.js');
-const { listDocuments, paymentStatus, receivables, refreshDocuments } = await import('../../server/accounting/receivables.js');
+const { listDocuments, paymentStatus, receivables, refreshDocuments, removeDocumentDeletedInFgo } = await import('../../server/accounting/receivables.js');
 const { confirmLoading, previewLoading } = await import('../../server/loading/confirmation.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
@@ -391,6 +391,68 @@ dbTest('FGO durumu mevcut eşitlemeyle: ödenmedi / kısmi / ödendi; FGO\'da si
   const r2 = await b.createBatch(db, { customerId: c.id, days: [K1, K2], key: again.key, actor: actor(), bnrImpl: bnr('5.0000') });
   assert.equal(r2.ok, true);
   assert.notEqual(r2.batchId, r.batchId);
+});
+
+dbTest('"TAKİP\'ten kaldır" (karar 132): FGO\'da elle silinmiş müşteri proforması — FGO\'da duruyorsa ya da doğrulanamıyorsa parti aynen; kesin "belge yok"ta yalnızca belge kaydı kalkar, parti geçersiz olur, siparişler yeniden uygun', async () => {
+  const c = await customer('Kaldir SRL', 'KLD');
+  const o1 = await order(c, D1);
+  const o2 = await order(c, D2);
+  const r = await create(c, [K1, K2]);
+  let mode = 'ok';
+  const asked = [];
+  const answer = () => {
+    if (mode === 'gone') return { gone: true };
+    return { Valoare: '1210.00', ValoareAchitata: '0' };
+  };
+  const fgo = fakeFgo(900, { status: (form) => (form.Numar === '901' ? answer() : { Valoare: '1210.00', ValoareAchitata: '0' }) });
+  const fetchImpl = async (url, init) => {
+    asked.push(`${init.method} ${String(url).split('/v1')[1]}`);
+    if (mode === 'down') throw new Error('ETIMEDOUT');
+    if (mode === 'auth') return new Response(JSON.stringify({ Success: false, Message: 'Hash invalid' }));
+    return fgo.fetchImpl(url, init);
+  };
+  await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
+  const doc = await db.fgoDocument.findFirst({ where: { batchId: r.batchId } });
+  assert.equal(`${doc.series}${doc.number}`, 'PRF901');
+  const remove = (who = actor()) => removeDocumentDeletedInFgo(db, { docId: doc.id, actor: who, secret: SECRET, fetchImpl });
+  const snapshot = async () => JSON.stringify([await batchOf(r.batchId), await db.order.findMany({ where: { customerId: c.id }, orderBy: { orderNo: 'asc' } }), await db.orderEvent.count({ where: { orderId: { in: [o1.id, o2.id] } } })]);
+  const before = await snapshot();
+
+  // Yönetici değil → reddedilir (FGO'ya gidilmez); FGO'da duruyor → kaldırılmaz; doğrulanamıyor → kaldırılmaz
+  for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI']) assert.deepEqual(await remove(actor(role)), { ok: false, code: 'FORBIDDEN' }, role);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(await remove(), { ok: false, code: 'EXISTS', doc: 'PRF901' });
+  for (const m of ['down', 'auth']) {
+    mode = m;
+    assert.deepEqual(await remove(), { ok: false, code: 'UNVERIFIED', doc: 'PRF901' }, m);
+  }
+  assert.equal((await batchOf(r.batchId)).status, 'ISSUED');
+  assert.deepEqual((await batchOf(r.batchId)).orders.map((x) => x.activeKey != null), [true, true], 'siparişler partide kalır');
+  const kept = JSON.parse(await snapshot());
+  const was = JSON.parse(before);
+  // Yalnızca belgenin son kontrol zamanı / hatası değişmiş olabilir (FGO'da duruyor yanıtı yazıldı); parti ve siparişler aynen
+  assert.deepEqual([kept[0].status, kept[0].voidReason, kept[0].orders, kept[0].lines, kept[1], kept[2]], [was[0].status, was[0].voidReason, was[0].orders, was[0].lines, was[1], was[2]]);
+
+  // Kesin "belge yok": mevcut temizlik yolu — belge kaydı kalkar, parti geçersiz, siparişlere geçmiş satırı
+  mode = 'gone';
+  assert.deepEqual(await remove(), { ok: true, doc: 'PRF901', orderId: null });
+  assert.equal(await db.fgoDocument.findFirst({ where: { batchId: r.batchId } }), null);
+  const bt = await batchOf(r.batchId);
+  assert.deepEqual([bt.status, bt.voidReason, bt.orders.map((x) => x.activeKey), bt.lines.length], ['VOID', 'FGO_DELETED', [null, null], 2], 'parti geçersiz; kopyası denetim için durur');
+  assert.ok(await db.orderEvent.findFirst({ where: { orderId: o1.id, event: 'FGO_DOC_DELETED', note: 'PRF901' } }));
+  assert.ok(await db.auditLog.findFirst({ where: { action: 'FGO_DOC_REMOVED', entityType: 'BillingBatch', entityId: r.batchId } }));
+  const reqs = await db.auditLog.findMany({ where: { action: 'FGO_DOC_REMOVE_REQUEST', entityId: doc.id } });
+  assert.deepEqual(reqs.map((a) => a.details.result).sort(), ['EXISTS', 'REMOVED', 'UNVERIFIED', 'UNVERIFIED']);
+  assert.ok(reqs.every((a) => a.userId === admin.id && a.details.batchId === r.batchId));
+  // FGO'ya yalnızca durum soruldu (kesme / silme yok)
+  assert.ok(asked.length === 4 && asked.every((q) => q === 'POST /factura/getstatus'), asked.join(' | '));
+  // Siparişler yeniden uygun: aynı kapsamla yeni müşteri proforması oluşturulabilir (çift kapsama yok)
+  mode = 'ok';
+  const again = await preview(c, [K1, K2]);
+  assert.deepEqual(again.included.map((x) => x.orderNo), [o1.orderNo, o2.orderNo]);
+  const r2 = await b.createBatch(db, { customerId: c.id, days: [K1, K2], key: again.key, actor: actor(), bnrImpl: bnr('5.0000') });
+  assert.equal(r2.ok, true);
+  assert.equal(await db.billingBatch.count({ where: { customerId: c.id, status: { not: 'VOID' } } }), 1);
 });
 
 dbTest('müşteriye e-posta: müşteri proforması firmanın e-postasına, kaynak sipariş numaralarıyla', async () => {

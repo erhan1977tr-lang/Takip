@@ -246,6 +246,17 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   ("ÖZEL DURUM / MİSAFİR YÜK") followed by one `form.guest-in` per guest order: order · firm, a crate `<select>`
   (first option = waiting) and a plain `.btn` "Kaydet" for `CRATE_EDIT`; without crates a `.badge-danger` note.
 
+## Receivables: document missing in FGO (3.50.0)
+
+- When the last FGO check of a document said "document does not exist" (`absentInFgo`), the receivables page shows one
+  `.alert.alert-warn#fgo-absent` under the page head (count + document numbers linking to `#doc-<id>` rows) and, in that
+  row's status cell, `form.doc-absent`: a red `.cell-note` ("FGO'da artık yok" / "nu mai există în FGO") and an inline
+  danger `ConfirmButton` "TAKİP'ten kaldır" / "Șterge din TAKİP". Healthy rows and rows with any other check error get
+  no button (the generic "son kontrol olmadı" note stays). Never add this action to other pages or roles.
+- The confirm text must say the record is removed from TAKİP only and that documents existing in FGO cannot be deleted
+  by this action. Result messages are fixed texts (`accounting.receivables.remove.*`): `#doc-removed` (ok) /
+  `#doc-remove-error`; never print FGO's raw error.
+
 ## GKH branding in PDFs and e-mails (3.49.1, logo replaced in 3.49.2)
 
 Rule: all TAKİP-generated HTML e-mails and TAKİP-generated company PDF documents use the official GKH Trading Invest

@@ -2,8 +2,10 @@
 // Belgeler sipariş akışında kaydedilir (fgo_proforma / fgo_invoice → FgoDocument); burada yalnızca listelenir ve
 // mevcut FGO bağlantısı (server/integrations/fgo.js) üzerinden yenilenir: elle "FGO ile Güncelle" ya da işçinin
 // saatlik otomatik eşitlemesi (syncFgoDocuments). Ayrı FGO bağlantısı, ayrı belge / ödeme kaydı yok.
-import { FGO_NOT_FOUND, FgoError, fgoKey, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
+import { fgoAbsentMessage, fgoDocumentAbsent, fgoKey, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
 import { removeDeletedDocument } from '../integrations/fgo-deleted.js';
+import { can } from '../auth/permissions.js';
+import { writeAudit } from '../orders/journal.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const numOrNull = (v) => (v == null ? null : Number(v));
@@ -268,7 +270,7 @@ export async function refreshDocuments(db, {
         if (d.kind === 'PROFORMA' && Number(r.paid ?? 0) > 0) await advanceNotice(db, d, Number(r.paid)).catch(() => {});
       } catch (e) {
         // FGO'da silinmiş belge (ör. deneme faturası): elle turda kaydı kaldırılır, siparişinde düğme yeniden çıkar (karar 65)
-        if (!auto && e instanceof FgoError && !e.retry && FGO_NOT_FOUND.test(e.message)) {
+        if (!auto && fgoDocumentAbsent(e)) {
           await removeDeletedDocument(db, d, e.message);
           checked++;
           continue;
@@ -317,4 +319,76 @@ export async function syncFgoDocuments(db, { now = new Date(), everyMs = SYNC_EV
   if (v.lastAuto && now.getTime() - new Date(v.lastAuto).getTime() < everyMs) return { ran: false };
   const r = await refreshDocuments(db, { ...ctx, auto: true, limit, now });
   return r.ok ? { ran: true, checked: r.checked, failed: r.failed } : { ran: false, code: r.code };
+}
+
+/**
+ * Kayıtlı son FGO kontrol hatası "belge FGO'da yok" mu (Tahsilat ekranı: "TAKİP'ten kaldır" yalnızca bu satırlarda
+ * gösterilir). Yalnızca EKRAN ipucudur — kaydı kaldırma kararı her zaman FGO'ya o an yeniden sorularak verilir.
+ * @param {{ checkError?: string | null }} d
+ */
+export const absentInFgo = (d) => !!d?.checkError && !/^FGO\b/.test(d.checkError) && fgoAbsentMessage(d.checkError);
+
+/**
+ * "TAKİP'ten kaldır" (karar 132): yöneticinin FGO'da ELLE sildiği belgenin TAKİP'teki kaydını kaldırır.
+ *   - FGO'da hiçbir şey SİLMEZ; FGO'ya yalnızca o belgenin durumu sorulur (factura/getstatus, tam seri + numara).
+ *   - Kayıt yalnızca FGO'nun kesin "belge yok" yanıtıyla (fgoDocumentAbsent) kaldırılır ve kaldırma mevcut tek yoldan
+ *     yapılır: removeDeletedDocument (sipariş / parti belgeden önceki hâline döner, bekleyen e-posta işi atlanır, geçmiş +
+ *     denetim kaydı). Belge FGO'da duruyorsa (EXISTS) ya da FGO doğrulanamıyorsa — kapalı, anahtar yok, ağ hatası, zaman
+ *     aşımı, 5xx / 429, kimlik hatası, okunamayan ya da belirsiz yanıt (UNVERIFIED) — HİÇBİR ŞEY değişmez.
+ *   - Saatlik / elle eşitlemeyle aynı kilidi kullanır (BUSY): aynı belgeye iki işlem birden dokunmaz.
+ * Yetki: ACCOUNTING_MANAGE (yalnızca yönetici) — burada da denetlenir. Her istek denetim kaydına yazılır.
+ * @param {any} db
+ * @param {{ docId: string, actor: { id: string, role: string, ip?: string | null }, secret: string, appUrl?: string,
+ *   fetchImpl?: typeof fetch, now?: Date, cleanup?: typeof removeDeletedDocument }} o
+ * @returns {Promise<{ ok: true, doc: string, orderId: string | null }
+ *   | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'FGO_DISABLED' | 'NO_KEY' | 'BUSY' | 'EXISTS' | 'UNVERIFIED' | 'CLEANUP_FAILED', doc?: string }>}
+ */
+export async function removeDocumentDeletedInFgo(db, { docId, actor, secret, appUrl = '', fetchImpl = fetch, now = new Date(), cleanup = removeDeletedDocument }) {
+  if (!can(actor?.role, 'ACCOUNTING_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
+  const row = await db.fgoDocument.findUnique({ where: { id: String(docId ?? '') } });
+  if (!row) return { ok: false, code: 'NOT_FOUND' };
+  const doc = `${row.series}${row.number}`;
+  const audit = (result, reason = null) => writeAudit(db, {
+    action: 'FGO_DOC_REMOVE_REQUEST', entityType: 'FgoDocument', entityId: row.id, userId: actor.id,
+    details: { kind: row.kind, series: row.series, number: row.number, orderId: row.orderId ?? null, batchId: row.batchId ?? null, result, reason: reason == null ? null : String(reason).slice(0, 200) },
+  }, actor).catch(() => {});
+  const settings = await getFgoSettings(db);
+  if (!fgoReady(settings)) { await audit('FGO_DISABLED'); return { ok: false, code: 'FGO_DISABLED', doc }; }
+  const key = fgoKey(settings, secret);
+  if (!key) { await audit('NO_KEY'); return { ok: false, code: 'NO_KEY', doc }; }
+  if (!(await takeLease(db, now))) return { ok: false, code: 'BUSY', doc };
+  try {
+    let status;
+    try {
+      status = await fgoStatus(settings, key, { series: row.series, number: row.number, appUrl }, fetchImpl);
+    } catch (e) {
+      // Kesin "belge yok" DEĞİLSE (geçici / belirsiz / kimlik hatası): kayıt kaldırılmaz, belgeye de dokunulmaz
+      if (!fgoDocumentAbsent(e)) {
+        await audit('UNVERIFIED', e?.message ?? e);
+        return { ok: false, code: 'UNVERIFIED', doc };
+      }
+      try {
+        await cleanup(db, row, e.message);
+      } catch (err) {
+        await audit('CLEANUP_FAILED', err?.code ?? err?.message ?? err);
+        return { ok: false, code: 'CLEANUP_FAILED', doc };
+      }
+      // Temizlik yolu kaydı gerçekten kaldırdı mı (profil adımı reddedildiyse kayıt durur)
+      if (await db.fgoDocument.findUnique({ where: { id: row.id }, select: { id: true } })) {
+        await audit('CLEANUP_FAILED');
+        return { ok: false, code: 'CLEANUP_FAILED', doc };
+      }
+      await audit('REMOVED', e.message);
+      return { ok: true, doc, orderId: row.orderId ?? null };
+    }
+    // Belge FGO'da duruyor: kayıt kaldırılmaz. Okunan tutar / ödeme, eşitlemenin yazdığı gibi yazılır (eski hata silinir).
+    await db.fgoDocument.update({
+      where: { id: row.id },
+      data: { total: status.total == null ? row.total : status.total.toFixed(2), paid: status.paid == null ? row.paid : status.paid.toFixed(2), checkedAt: new Date(), checkError: null },
+    });
+    await audit('EXISTS');
+    return { ok: false, code: 'EXISTS', doc };
+  } finally {
+    await releaseLease(db, {});
+  }
 }

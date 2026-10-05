@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.0 — 05.10.2026
+
+- **FGO'da elle silinmiş belge: "TAKİP'ten kaldır"** (Muhasebe → Cam Tahsilat / Profil Tahsilat). Yönetici bir belgeyi
+  doğrudan FGO'da sildiğinde TAKİP'teki kaydı kalıyor ve saatlik eşitleme her saat "Factura nu exista" hatası
+  yazıyordu. Artık son kontrolde FGO'nun "belge yok" dediği belgeler sayfanın üstünde listelenir ve satırlarında
+  **"TAKİP'ten kaldır"** (RO: "Șterge din TAKİP") düğmesi çıkar. Sağlam belgelerde düğme görünmez.
+  - İşlem **yalnızca TAKİP'teki kaydı** kaldırır; **FGO'da hiçbir belge silinmez** (FGO'ya yalnızca o belgenin durumu
+    sorulur). Onay penceresi bunu açıkça söyler.
+  - Düğmeye basılınca belge FGO'ya **o an yeniden sorulur**. Kayıt yalnızca FGO kesin olarak "belge yok" derse
+    kaldırılır. Belge FGO'da duruyorsa kaldırılmaz; FGO'ya ulaşılamıyorsa, zaman aşımı / kimlik hatası / belirsiz bir
+    yanıt varsa **hiçbir değişiklik yapılmaz**.
+  - Kayıt kalkınca sipariş belgeden önceki hâline döner (ör. "Proforma" yeniden istenebilir), bekleyen müşteri
+    e-postası gönderilmez, saatlik eşitleme o belgeyi artık sormaz. Bu, "FGO ile Güncelle"nin zaten kullandığı
+    temizlik yoludur; ikinci bir silme yolu eklenmedi.
+  - Yalnızca yönetici (muhasebe yetkisi). Her istek — reddedilenler dahil — denetim kaydına yazılır.
+- **Daha sıkı "belge yok" kuralı**: bir belgenin FGO'da silindiği yalnızca FGO'nun belgeden söz eden kalıcı yanıtıyla
+  ("Factura nu exista") kabul edilir. "Firma nu exista", kimlik / anahtar hatası ya da istek sınırı gibi yanıtlar
+  artık "belge silinmiş" sayılmaz ("FGO ile Güncelle" ve fatura numarası temizliği de aynı kuralı kullanır).
+- Canlıdaki PRF 563 / 564 / 565 kendiliğinden silinmez: yönetici yeni düğmeyle, her biri FGO'da doğrulanarak kaldırır.
+
 ## 3.49.2 — 04.10.2026
 
 - **Yeni resmî logo (saydam zeminli PNG)**: PDF'lerde ve e-postalarda kullanılan GKH Trading Invest logosu, ürün

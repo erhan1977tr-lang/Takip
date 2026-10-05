@@ -550,7 +550,18 @@ dbTest('Muhasebe: FGO belgeleri sipariş tipine göre listelenir, "FGO ile günc
     if (form.Numar === '684') return new Response(JSON.stringify({ Success: false, Message: 'Factura nu exista' }));
     return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '100.00', ValoareAchitata: '0' } }));
   };
-  await refreshDocuments(db, { orderType: 'PROFILE_ORDER', secret: FGO_SECRET, fetchImpl: gone, sleep: async () => {} });
+  // Kaldırma, yöneticinin belge başına "TAKİP'ten kaldır" işlemiyle (karar 132) — "FGO ile Güncelle" ile aynı temizlik yolu
+  // (removeDeletedDocument). Yönetici değilse reddedilir; belge FGO'da duruyorsa ya da FGO doğrulanamıyorsa sipariş aynen kalır.
+  const { removeDocumentDeletedInFgo } = await import('../../server/accounting/receivables.js');
+  const removeInv = (answer, who = actor(people.admin)) => removeDocumentDeletedInFgo(db, { docId: inv.id, actor: who, secret: FGO_SECRET, fetchImpl: answer });
+  const present = async () => new Response(JSON.stringify({ Success: true, Factura: { Valoare: '100.00', ValoareAchitata: '0' } }));
+  const down = async () => { throw new Error('ETIMEDOUT'); };
+  for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI']) assert.deepEqual(await removeInv(gone, { id: people.admin.id, role }), { ok: false, code: 'FORBIDDEN' }, role);
+  assert.deepEqual(await removeInv(present), { ok: false, code: 'EXISTS', doc: 'GKH684' });
+  assert.deepEqual(await removeInv(down), { ok: false, code: 'UNVERIFIED', doc: 'GKH684' });
+  assert.equal((await load(inv.orderId)).profile.stage, 'FATURALANDI', 'kaldırılmayan belgenin siparişi adımında kalır');
+  assert.equal(await db.fgoDocument.count({ where: { id: inv.id } }), 1);
+  assert.deepEqual(await removeInv(gone), { ok: true, doc: 'GKH684', orderId: inv.orderId });
   assert.equal(await db.fgoDocument.count({ where: { id: inv.id } }), 0, 'silinmiş faturanın kaydı kalktı');
   o = await load(inv.orderId);
   assert.equal(o.profile.stage, 'TESLIM_EDILDI');
