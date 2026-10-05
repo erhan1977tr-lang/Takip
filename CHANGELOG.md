@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.4 — 05.10.2026
+
+- **Sunucu: her yayında ~1,2 GB'lık derleme katmanı yeniden üretilmiyor.** Önbelleğin bu kadar hızlı büyümesinin asıl
+  nedeni: her sürümde `package.json`daki sürüm numarası değiştiği için Docker bağımlılık kurulumunu (`npm ci`,
+  ~1,2 GB) her yayında baştan yapıyor, her seferinde yeni bir katman bırakıyordu. Artık bağımlılıklar sürüm numarası
+  sabitlenmiş bir kopyadan kurulur: bağımlılıklar değişmedikçe bu katman önbellekten gelir (yayın da ~1 dakika
+  kısalır). Uygulamanın gösterdiği sürüm numarası ve çalışan kod değişmedi. Yayın başına biriken önbellek yaklaşık
+  1,9 GB'tan 0,65 GB'a iner.
+
 ## 3.50.3 — 05.10.2026
 
 - **Sunucu: Docker derleme önbelleği artık gerçekten temizleniyor.** Önbellek 10 GB'ı aşınca yalnızca **7 günden

@@ -118,8 +118,29 @@ jobs:
             compose exec -T db psql -U takip -d takip -Atc 'select count(*) from "User"; select email from "User" order by email' > "$1.db"
             compose exec -T app cat /data/uploads/onbellek-testi.txt > "$1.upload"
           }
+          # 0. İki derlemeden sonra: önbelleğin tamamı yayındaki / bir önceki imajla ortak (ayrıca yer tutmaz) → sınırın altında
+          sudo takip cache
+          sudo takip cache temizle | tee c1.log
+          grep -q 'aşılmadı, temizlik yok' c1.log
+
+          # Yalnızca SÜRÜM NUMARASI değişen yayın (her gerçek yayında olan): bağımlılık katmanı (npm ci, ~1,2 GB) yeniden
+          # kurulmaz, önbellekten gelir — her yayında bir kopyası daha birikmez. Uygulama yeni sürüm numarasını gösterir.
+          jq '.version = "9.9.9"' package.json > package.json.yeni && mv package.json.yeni package.json
+          git commit -qam "önbellek testi: yalnızca sürüm numarası"
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
+          v=$(git rev-parse HEAD)
+          curl -fsSk "$SITE/surum" | tee /dev/stderr | jq -e --arg b "${v::7}" '.version == "9.9.9" and .build == $b'
+          sudo grep -m1 -A1 'RUN if \[ -f package-lock.json \]' "/opt/takip/logs/derleme-${v::7}.log" | tee npm.log
+          grep -q 'CACHED' npm.log
+          # Bir yayın daha: artık yayında olmayan sürümlerin imajları silindiği için onların derleme katmanları yalnızca
+          # önbellekte kalır (sunucuda biriken de budur)
+          echo "// önbellek testi $(date +%s)" >> app/surum/route.ts
+          git commit -qam "önbellek testi: birikim"
+          sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
+
           cur=$(sudo cat /opt/takip/state/deployed)
-          prev=$GITHUB_SHA
+          prev=$v
+          [ "$cur" = "$(git rev-parse HEAD)" ]
           # Yayındaki ve geri dönüş (bir önceki) imajları yerinde
           sudo docker image inspect "takip:$cur" "takip:$cur-tools" "takip:$prev" "takip:$prev-tools" >/dev/null
           # Temizlikle ilgisi olmayan "sahipsiz" şeyler: kullanılmayan birim (içinde veri), durmuş kapsayıcı, kullanılmayan imaj
@@ -137,17 +158,17 @@ jobs:
             sudo docker builder prune --help | grep -E 'reserved-space|keep-storage|max-used-space' || true
             echo "--- tools imajı (builder aşaması) katmanları"; sudo docker history --format '{{.Size}}\t{{.CreatedBy}}' "takip:$cur-tools" | cut -c1-120 | head -14
             echo "--- runner imajı katmanları"; sudo docker history --format '{{.Size}}\t{{.CreatedBy}}' "takip:$cur" | cut -c1-120 | head -14
+            echo "--- .next içeriği (tools imajı)"; sudo docker run --rm "takip:$cur-tools" sh -c 'du -sh .next .next/cache .next/standalone node_modules 2>/dev/null' || true
             echo "--- imajlar"; sudo docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -E '^takip' | sed -E 's/:([0-9a-f]{7})[0-9a-f]+/:\1/'
             echo "--- en büyük önbellek kayıtları"; sudo docker buildx du --verbose 2>/dev/null | awk '/^Description:/ { d = substr($0, index($0, $2)) } /^Size:/ { print $2 "\t" substr(d, 1, 90) }' | sort -hr | head -14 || true
             echo "--- docker system df"; sudo docker system df
           } 2>&1 | tee katmanlar.txt
-          echo "::notice title=Derleme katmanları (2 derlemeden sonra)::$(sed 's/%/%25/g' katmanlar.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice title=Derleme katmanları::$(grep -v '^+ ' katmanlar.txt | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
 
           # 1. Varsayılan eşikle (10 GB): önbellek sınırın altında → hiçbir şey silinmez
           b0=$(cache)
-          sudo takip cache
-          sudo takip cache temizle | tee c1.log
-          grep -q 'aşılmadı, temizlik yok' c1.log
+          sudo takip cache temizle | tee c1b.log
+          grep -q 'aşılmadı, temizlik yok' c1b.log
           [ "$(cache)" = "$b0" ]
 
           # 2. Sınır aşıldı (deneme için küçük eşik): kullanılmayan derleme önbelleği silinir, yer GERÇEKTEN açılır

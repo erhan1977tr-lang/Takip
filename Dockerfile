@@ -9,8 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-FROM base AS deps
+# Sürüm numarası her yayında değişir ama bağımlılıkları etkilemez. Bu aşama package.json / package-lock.json'ın SÜRÜMÜ
+# SABİTLENMİŞ bir kopyasını üretir; "deps" yalnızca bu kopyayı alır. Kopyanın içeriği değişmedikçe (bağımlılıklar
+# değişmedikçe) aşağıdaki npm ci katmanı önbellekten gelir — her yayında ~1,2 GB'lık yeni bir katman (ve o kadar derleme
+# önbelleği) oluşmaz (karar 134). Uygulama gerçek package.json'ı "builder" aşamasındaki COPY . . ile alır (sürüm oradan okunur).
+FROM base AS manifest
 COPY package.json package-lock.json* ./
+RUN node -e "const fs=require('fs');for(const f of ['package.json','package-lock.json']){if(!fs.existsSync(f))continue;const j=JSON.parse(fs.readFileSync(f,'utf8'));j.version='0.0.0';if(j.packages&&j.packages[''])j.packages[''].version='0.0.0';fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');}"
+
+FROM base AS deps
+COPY --from=manifest /app/package.json /app/package-lock.json* ./
 COPY prisma ./prisma
 RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
