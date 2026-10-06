@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.8 — 06.10.2026
+
+- **Sunucu güvenliği: arka plan işçisi artık root olarak çalışmıyor.** İşçi, uygulamayla aynı kullanıcıyla (1001:1001)
+  çalışır; ürettiği depo PDF'leri, ay klasörleri ve karantina klasörü bu kullanıcıya ait oluşur. Yayın sırasında, işçi
+  başlamadan önce, yüklenen dosyalar biriminde eski sürümlerden root'a ait kalmış kayıtların **yalnızca sahipliği**
+  düzeltilir: hiçbir dosya silinmez, taşınmaz, adı ya da içeriği değişmez; dosya adresleri ve veritabanı kayıtları aynıdır.
+  İşlem yinelenebilir (düzeltilecek kayıt yoksa hiçbir şey yapmaz).
+  - Antivirüs taraması ve karantina, depo PDF'i ve depo e-postası, FGO işleri ve eşitleme, belge e-postaları, bildirimler,
+    oturum temizliği, hatırlatmalar, yedek ve geri yükleme aynen çalışır. Migration ve yönetim komutları değişmedi.
+  - `takip durum` artık işçinin kullanıcısını ve dosyaların sahipliğini de gösterir.
+
 ## 3.50.7 — 06.10.2026
 
 - **Sunucu: yerel yedek dosyaları yalnızca root'a açık oluşur.** Yedek klasörü zaten yalnızca root'a açıktı (0700) ama

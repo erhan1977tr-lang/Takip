@@ -3,7 +3,8 @@ name: Sunucu kurulumu
 # deploy/install.sh ve deploy/takip.sh temiz bir Ubuntu makinede baştan sona denenir:
 # kurulum, HTTPS, ilk yönetici, yeniden kurulum (anahtarlar korunur), güncelleme, yalnızca belge değişikliği,
 # derlemesi bozuk sürümün yayınlanmaması, sahte IP başlıkları (Caddy), yedek ve şifreli yedek (age) + geri yükleme denemesi,
-# Docker derleme önbelleği temizliği (karar 134: yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde).
+# Docker derleme önbelleği temizliği (karar 134: yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde),
+# işçinin root olmadan çalışması (karar 137: sahiplik geçişi, tarama, karantina, depo PDF'i, geri dönüş, geri yükleme).
 on:
   push:
     branches: ['**']
@@ -26,7 +27,7 @@ concurrency:
 jobs:
   install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 80
     env:
       SITE: https://localhost
     steps:
@@ -35,7 +36,7 @@ jobs:
           fetch-depth: 0
 
       - name: Betik denetimi (shellcheck)
-        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh
+        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
         run: bash deploy/test/cache-housekeeping.sh
@@ -248,6 +249,9 @@ jobs:
           sudo docker rmi onbellek-testi:kullanilmayan >/dev/null
           sudo docker volume rm onbellek-testi-birim >/dev/null
 
+      - name: İşçi root değil (SEC-12) — gerçek Docker — 1001 ile tarama / karantina / depo PDF'i, root işçiden geçiş (gerçek yayın), geri dönüş
+        run: bash deploy/test/worker-nonroot.sh
+
       - name: Yalnızca belge değişikliği yeniden derlenmez
         run: |
           echo "test" >> docs/decisions.md
@@ -449,6 +453,25 @@ jobs:
           grep -q 'Google Drive kopyası şifreli' durum.log
           private
           if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
+
+      - name: Yedekten geri yükleme (gerçek — takip restore) — dosyalar 1001:1001, işçi root değil, restore-test yine geçer
+        run: |
+          set -E
+          trap 'rc=$? cmd=$BASH_COMMAND; { echo "satır $LINENO (çıkış $rc): $cmd"; for f in geri.log rt-son.log; do if [ -f "$f" ]; then echo "--- $f"; tail -n 15 "$f"; fi; done; echo "--- backup.log"; sudo tail -n 20 /opt/takip/logs/backup.log; } 2>&1 | tail -c 5000 | sed "s/%/%25/g" | sed ":a;N;\$!ba;s/\n/%0A/g" | sed "s/^/::error title=Geri yükleme testi::/"' ERR
+          compose() { sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml "$@"; }
+          day=$(TZ=Europe/Bucharest date +%F)
+          # Yedekten SONRA oluşan kayıt: geri yüklemeyle kaybolmalı (gerçekten yedeğe dönüldüğünün kanıtı)
+          compose exec -T app sh -c 'echo sonradan > /data/uploads/yedekten-sonra.txt'
+          # Onay sorusu terminalden okunur (/dev/tty): sahte terminal üzerinden yedeğin tarihi yazılır
+          echo "$day" | sudo script -qec "takip restore $day" /dev/null > geri.log 2>&1 || { cat geri.log; exit 1; }
+          cat geri.log
+          grep -q '✔ Geri yüklendi' geri.log
+          if compose exec -T app test -e /data/uploads/yedekten-sonra.txt; then echo "dosyalar yedeğe dönmedi"; exit 1; fi
+          # Geri yüklenen dosyaların tamamı 1001:1001; işçi yine root değil, çalışıyor, izin hatası yok; kayıtlı dosyalar yerinde
+          bash deploy/test/worker-nonroot.sh son
+          # Geri yüklemeden sonra yedek denemesi de geçer
+          sudo takip restore-test "$day" > rt-son.log 2>&1 || { cat rt-son.log; exit 1; }
+          grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt-son.log
 
       - name: Günlükler (hata varsa)
         if: failure()

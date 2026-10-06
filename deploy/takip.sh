@@ -556,6 +556,24 @@ first_deploy() {
 }
 
 # ---------- komutlar ----------
+# İşçi root değil (SEC-12, karar 137). Yalnızca OKUR: işçinin kullanıcısı ve yükleme biriminde sahibi uygulamanın
+# kullanıcısı (1001:1001) olmayan kayıt sayısı. Sahipliği düzelten, her "compose up"ta işçiden önce çalışan
+# uploads-init servisidir (deploy/docker-compose.yml); buradan hiçbir şey değiştirilmez.
+worker_status() {
+  local id user mp n
+  id=$(compose ps -q worker 2>/dev/null | head -n 1 || true)
+  [ -n "$id" ] || return 0
+  user=$(docker inspect -f '{{.Config.User}}' "$id" 2>/dev/null || true)
+  case $user in
+    1001:1001) say "İşçi     : kullanıcı 1001:1001 (root değil)" ;;
+    *) say "İşçi     : ⚠ kullanıcı ${user:-root} (1001:1001 olmalı)" ;;
+  esac
+  mp=$(docker volume inspect -f '{{.Mountpoint}}' takip_uploads 2>/dev/null || true)
+  [ -n "$mp" ] && [ -d "$mp" ] || return 0
+  n=$(find "$mp" -xdev ! \( -uid 1001 -gid 1001 \) 2>/dev/null | wc -l)
+  if [ "$n" = 0 ]; then say "Dosyalar : tüm kayıtların sahibi 1001:1001"; else say "Dosyalar : ⚠ $n kayıt 1001:1001 değil (bir sonraki yayında işçi başlamadan düzeltilir)"; fi
+}
+
 cmd_status() {
   local d; d=$(cat "$STATE/deployed" 2>/dev/null || true)
   if [ -s "$STATE/last_error" ]; then say "⚠ Son hata: $(cat "$STATE/last_error")"; say ""; fi
@@ -572,6 +590,7 @@ cmd_status() {
   tail -n 10 "$LOGS/deploy.log" 2>/dev/null | sed 's/^/  /' || true
   say ""
   compose ps --format 'table {{.Service}}\t{{.Status}}' 2>/dev/null || true
+  worker_status || true
   say ""
   df -h / | awk 'NR==2 { print "Disk     : " $3 " / " $2 " dolu (" $5 ")" }'
   say "Yedekler : $(find "$BACKUPS" -name 'db-*.dump' | wc -l) veritabanı yedeği, son: $(ls -1t "$BACKUPS"/db-*.dump 2>/dev/null | head -1 | xargs -r basename)"

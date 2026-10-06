@@ -12,6 +12,8 @@ playwright-report
 .outbox
 *.log
 docs
+# Sunucu kurulumu testleri (yalnızca CI): üretim imajına girmez
+deploy/test
 CLAUDE.md
 **/.env
 **/.env.*

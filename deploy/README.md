@@ -39,7 +39,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 
 | Komut | Ne yapar |
 |---|---|
-| `takip durum` | Yayındaki sürüm, son güncellemeler, servisler, disk, yedekler |
+| `takip durum` | Yayındaki sürüm, son güncellemeler, servisler (işçinin kullanıcısı, yükleme dosyalarının sahipliği), disk, yedekler |
 | `takip smtp` | E-posta ayarları (kullanıcılara davet kodu gidebilmesi için gerekli) + deneme e-postası |
 | `takip yonetici E-POSTA "Ad Soyad"` | Yeni yönetici açar; `--reset` ile şifresini sıfırlar. Tek kullanımlık kod ekrana yazılır |
 | `takip guncelle` | Yeni sürüm varsa beklemeden yayınla |
@@ -86,6 +86,10 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 - Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da da son 14 çift. Kayıt: `/opt/takip/logs/backup.log`.
 - Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token, rclone ayarı ve yedek anahtarı yedeğe girmez.
 - Yerel yedekler yalnızca root'a açıktır: klasör `0700`, içinde oluşan her yedek dosyası (geçici dosyalar dahil) `0600`.
+- Uygulama ve arka plan işçisi root olmadan çalışır (kullanıcı `1001:1001`). Yüklenen dosyaların (`takip_uploads`) sahibi de
+  1001:1001'dir; her yayında işçi başlamadan önce `uploads-init` servisi başka kullanıcıya ait kalmış kayıtların yalnızca
+  sahipliğini düzeltir (dosya silmez, taşımaz, içeriğini değiştirmez). `takip durum` bunu gösterir. Migration ve yönetim
+  komutları (`tools`) root kalır.
 
 ## Yedek şifreleme (Google Drive kopyası)
 

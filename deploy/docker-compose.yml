@@ -40,9 +40,37 @@ services:
       db:
         condition: service_healthy
 
-  # Arka plan işçisi: taranmamış dosyaları antivirüsten geçirir (ileride bildirim gönderimi)
+  # Yükleme biriminin sahipliği (SEC-12, karar 137): işçi artık root değil, uygulamayla aynı kullanıcıyla (1001:1001)
+  # çalışır. Eski sürümlerde işçi root'tu ve yazdığı dosyalar (depo PDF'i, ay klasörü, karantina) root'a aitti; bu tek
+  # seferlik servis her "compose up"ta (yayın, geri yükleme) işçiden ÖNCE çalışır ve birimde sahibi 1001:1001 olmayan
+  # kayıtların YALNIZCA sahipliğini düzeltir. Dosya silmez, taşımaz, adını ya da içeriğini değiştirmez; bağlantıların
+  # hedefine dokunmaz (chown -h), birimin dışına çıkmaz (-xdev; başka hiçbir şey bağlı değil, ağ yok). Düzeltilecek kayıt
+  # yoksa hiçbir şey yapmaz (yinelenebilir). Her durumda 0 ile biter: sahiplik sorunu yayını durdurmaz, günlüğe yazılır.
+  uploads-init:
+    image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    logging: *logging
+    healthcheck:
+      disable: true
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        n=$$(find /data/uploads -xdev ! \( -uid 1001 -gid 1001 \) -exec chown -h 1001:1001 {} + -print | wc -l)
+        echo "yükleme birimi: sahipliği 1001:1001 yapılan kayıt: $$n"
+        k=$$(find /data/uploads -xdev ! \( -uid 1001 -gid 1001 \) | wc -l)
+        [ "$$k" = 0 ] || echo "UYARI: $$k kayıt hâlâ 1001:1001 değil"
+        exit 0
+    volumes:
+      - uploads:/data/uploads
+
+  # Arka plan işçisi: taranmamış dosyaları antivirüsten geçirir, depo / belge / bildirim e-postalarını ve FGO işlerini yürütür.
+  # root DEĞİL: uygulamayla aynı kullanıcı (1001:1001) — yükleme birimine yazdıkları (depo PDF'i, ay klasörü, karantina)
+  # uygulamanın da yazabildiği sahiplikle oluşur. İmaj (tools) değişmedi: migration / yönetim komutları root kalır.
   worker:
     image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}-tools
+    user: "1001:1001"
     restart: unless-stopped
     command: ["node", "scripts/worker.mjs"]
     logging: *logging
@@ -56,6 +84,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      uploads-init:
+        condition: service_completed_successfully
 
   # Antivirüs (ClamAV). ~1–1,5 GB bellek; ilk açılışta virüs tanımları birkaç dakikada yüklenir.
   # Ulaşılamadığı sürece yüklenen dosyalar "taranmadı" işaretlenir ve işçi sonra tarar.
