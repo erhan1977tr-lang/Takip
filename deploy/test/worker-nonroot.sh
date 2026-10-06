@@ -30,7 +30,8 @@ note() { echo "::notice title=$1::$(sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g'
 
 # Hata olursa: hangi satır / komut + kapsayıcılar, işçinin durumu ve günlüğü, birimdeki yabancı kayıtlar not olarak
 # yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-diag() {
+diag() { # diag SATIR ÇIKIŞ KOMUT
+  set +ex
   {
     echo "satır $1 (çıkış $2): $3"
     echo "--- kapsayıcılar"; compose ps -a --format '{{.Service}} {{.State}} {{.Status}}' || true
@@ -39,8 +40,9 @@ diag() {
     echo "--- uploads-init"; compose logs --no-log-prefix --tail 5 uploads-init || true
     echo "--- işçi günlüğü"; compose logs --no-log-prefix --tail 25 worker || true
   } 2>&1 | tail -c 6000 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/^/::error title=İşçi root değil testi::/'
+  exit "$2"
 }
-trap 'rc=$? cmd=$BASH_COMMAND line=$LINENO; set +ex; diag "$line" "$rc" "$cmd"; exit "$rc"' ERR
+trap 'diag "$LINENO" "$?" "$BASH_COMMAND"' ERR
 
 # ---------- denetimler ----------
 # İşçi: kapsayıcı 1001:1001 ile tanımlı, içindeki HER süreç gerçekten UID/GID 1001, çalışıyor, yeniden başlatılmamış;
