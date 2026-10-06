@@ -1,44 +1,54 @@
 import { test, expect, type Page, type Request } from '@playwright/test';
-import fs from 'node:fs';
 import path from 'node:path';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, sampleFile } from './helpers';
+import { readCaddyfile } from '../test/caddyfile.js';
 
-// İstek gövdesi sınırları (AUD-4, karar 141). Vekil (deploy/Caddyfile) büyük gövdeye yalnızca dosya yükleme formu olan
-// SAYFALARIN adresinde izin verir. Bu test, tarayıcının sunucu işlemlerini (Server Actions) gerçekten hangi adrese POST
-// ettiğini kaydeder: işlem, formun bulunduğu sayfanın adresine gider (ayrı bir yükleme adresi yoktur) ve her gövde o
-// adresin Caddyfile'daki sınırına sığar. (Uçtan uca testler Caddy'siz çalışır; Caddy'nin kendisi sunucu kurulumu testinde.)
+// İstek gövdesi sınırları (AUD-4, karar 141) ve gövde kapısı (karar 143). Vekil (deploy/Caddyfile) büyük gövdeye yalnızca
+// dosya yükleme formu olan SAYFALARIN adresinde ve yalnızca kapıdan geçen isteğe izin verir. Bu test, tarayıcının sunucu
+// işlemlerini (Server Actions) gerçekten hangi adrese, hangi boyda POST ettiğini kaydeder: işlem, formun bulunduğu sayfanın
+// adresine gider (ayrı bir yükleme adresi yoktur); her gövde o isteğin Caddyfile'daki kademesine sığar; büyük gövdeli
+// yükleme kapıya sorulacak istektir ve kapı bu tarayıcının oturumuna izin verir; küçük işlemler kapıya hiç sorulmaz.
+// (Uçtan uca testler Caddy'siz çalışır; Caddy'nin kendisi sunucu kurulumu testinde: deploy/test/body-gate.sh.)
 const MiB = 1024 * 1024;
-const caddy = fs.readFileSync(path.join('deploy', 'Caddyfile'), 'utf8').split('\n').map((l) => l.replace(/^\s*#.*$/, '')).join('\n');
-const size = (v: string) => Number(/^\d+/.exec(v)![0]) * ({ KB: 1e3, MB: 1e6, GB: 1e9 } as Record<string, number>)[v.replace(/^\d+/, '')];
-const matchers = Object.fromEntries([...caddy.matchAll(/^\t@(\w+) path (.+)$/gm)].map((m) => [m[1], m[2].trim().split(/\s+/)]));
-const tiers = [...caddy.matchAll(/^\thandle(?: @(\w+))? \{\n\t\trequest_body \{\n\t\t\tmax_size (\w+)\n/gm)].map((m) => ({ paths: m[1] ? matchers[m[1]] : null, max: size(m[2]) }));
-/** Adresin (yol) vekildeki gövde sınırı — Caddy "path": tam eşleşme ya da sondaki * ile ön ek */
-const limitFor = (p: string) => (tiers.find((t) => t.paths?.some((x) => (x.endsWith('*') ? p.startsWith(x.slice(0, -1)) : x === p))) ?? tiers.find((t) => !t.paths)!).max;
+const { tiers, routeFor } = readCaddyfile(path.join('deploy', 'Caddyfile'));
+const GATE = '/oturum/govde-izni';
 
-/** Sıradaki sunucu işlemi isteği (Next-Action başlıklı POST) → { yol, gövde boyutu } */
-async function actionPost(page: Page, run: () => Promise<unknown>): Promise<{ path: string; bytes: number }> {
+type ActionPost = { path: string; uri: string; bytes: number; declared: string | null };
+/** Vekilin bu isteği koyacağı kademe: Caddyfile'daki eşleştiricilerle (adres + yöntem + bildirilen boy) */
+const tierOf = (a: ActionPost) => routeFor({ path: a.path, method: 'POST', contentLength: a.declared });
+/** Kapının yanıtı: Caddy'nin soracağı biçimde (özgün adres X-Forwarded-Uri'de; çerezler bu tarayıcının) */
+async function gate(page: Page, uri: string): Promise<{ status: number; header: string | null }> {
+  const r = await page.request.get(GATE, { headers: { 'x-forwarded-uri': uri } });
+  return { status: r.status(), header: r.headers()['x-takip-govde'] ?? null };
+}
+
+/** Sıradaki sunucu işlemi isteği (Next-Action başlıklı POST) → { yol, adres (yol + sorgu), gövde boyu, bildirilen boy } */
+async function actionPost(page: Page, run: () => Promise<unknown>): Promise<ActionPost> {
   const wait = page.waitForRequest((r: Request) => r.method() === 'POST' && !!r.headers()['next-action']);
   await run();
   const req = await wait;
   await req.response();
   // Dosyalı gövdelerde tarayıcı gövde boyutunu bildirmeyebilir: ağdaki Content-Length başlığı esas alınır
-  const declared = Number((await req.allHeaders())['content-length'] ?? 0);
-  return { path: new URL(req.url()).pathname, bytes: Math.max(declared, (await req.sizes()).requestBodySize) };
+  const declared = (await req.allHeaders())['content-length'] ?? null;
+  const url = new URL(req.url());
+  return { path: url.pathname, uri: url.pathname + url.search, bytes: Math.max(Number(declared ?? 0), (await req.sizes()).requestBodySize), declared };
 }
 
 test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her gövde o adresin vekildeki sınırına sığar', async ({ browser }) => {
-  expect(tiers.map((t) => t.max)).toEqual([260e6, 6e6, 2e6]);
+  expect(tiers.map((t) => [t.name, t.max, t.gated])).toEqual([['yukleme', 260e6, true], ['yonetim_excel', 6e6, true], [null, 2e6, false]]);
 
-  // 1. Giriş (oturum yok): /login — küçük gövde, varsayılan (2 MB) kademede
+  // 1. Giriş (oturum yok): /login — küçük gövde, varsayılan (2 MB) kademede; kapıya sorulmaz
   const cust = await (await browser.newContext()).newPage();
   cust.on('dialog', (d) => d.accept());
   await cust.goto('/login');
+  // Giriş yapmamış tarayıcı kapıdan büyük gövde izni alamaz
+  expect(await gate(cust, '/siparisler/yeni?tip=GLASS_ORDER')).toEqual({ status: 401, header: null });
   await cust.fill('#email', CUSTOMER);
   await cust.fill('#password', CUST_PW);
   const login = await actionPost(cust, () => cust.click('button[type=submit]'));
   await expect(cust).toHaveURL(/\/siparisler/);
   expect(login.path).toBe('/login');
-  expect(limitFor(login.path)).toBe(2e6);
+  expect(tierOf(login)).toEqual({ blocked: false, tier: null, gated: false, max: 2e6 });
   expect(login.bytes).toBeGreaterThan(0);
   expect(login.bytes).toBeLessThan(20_000);
 
@@ -52,10 +62,13 @@ test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her g�
   const created = await actionPost(cust, () => cust.getByRole('button', { name: 'Siparişi gönder' }).click());
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
   expect(created.path).toBe('/siparisler/yeni');
-  expect(limitFor(created.path)).toBe(260e6);
+  expect(created.uri).toBe('/siparisler/yeni?tip=GLASS_ORDER');
+  // 2 MB'ı aşan gövde: vekil bu isteği kapıya sorar (yükleme kademesi); kapı bu oturuma izin verir
+  expect(tierOf(created)).toEqual({ blocked: false, tier: 'yukleme', gated: true, max: 260e6 });
   expect(created.bytes).toBeGreaterThan(3 * MiB);
-  expect(created.bytes).toBeGreaterThan(limitFor('/login'));
-  expect(created.bytes).toBeLessThan(limitFor(created.path));
+  expect(created.bytes).toBeGreaterThan(2e6);
+  expect(created.bytes).toBeLessThan(260e6);
+  expect(await gate(cust, created.uri)).toEqual({ status: 204, header: 'izin' });
 
   // 3. Sipariş sayfasında dosya ekleme: /siparisler/<id> — aynı sayfa adresi, yükleme kademesi
   const orderPath = new URL(cust.url()).pathname;
@@ -64,7 +77,11 @@ test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her g�
   await expect(cust.getByText('ek-olcu.pdf').first()).toBeVisible();
   expect(added.path).toBe(orderPath);
   expect(orderPath).toMatch(/^\/siparisler\/[a-z0-9]+$/);
-  expect(limitFor(added.path)).toBe(260e6);
+  // Küçük dosya: gövde 2 MB'ın altında → kapıya sorulmaz, olağan kademeden geçer; büyük dosya aynı adreste kapıdan geçerdi
+  expect(tierOf(added)).toEqual({ blocked: false, tier: null, gated: false, max: 2e6 });
+  expect(added.bytes).toBeLessThan(2e6);
+  expect(routeFor({ path: added.path, method: 'POST', contentLength: String(50 * MiB) })).toEqual({ blocked: false, tier: 'yukleme', gated: true, max: 260e6 });
+  expect(await gate(cust, added.uri)).toEqual({ status: 204, header: 'izin' });
 
   // 4. Sipariş sayfasındaki küçük işlem (not): aynı adrese gider — işlem başına ayrı adres yok
   await cust.locator('#notlar textarea[name=text]').fill('Gövde sınırı notu');
@@ -72,6 +89,7 @@ test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her g�
   await expect(cust.getByText('Gövde sınırı notu').first()).toBeVisible();
   expect(note.path).toBe(orderPath);
   expect(note.bytes).toBeLessThan(20_000);
+  expect(tierOf(note).gated).toBe(false);
   await cust.context().close();
 
   // 5. Yönetim Excel yüklemesi: /admin/katalog — 6 MB kademesi
@@ -88,7 +106,10 @@ test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her g�
   await expect(admin.getByText(/Dosya okunamadı/)).toHaveCount(0);
   await expect(admin.getByText(/cam aynı|yeni cam|güncellenecek/).first()).toBeVisible();
   expect(preview.path).toBe('/admin/katalog');
-  expect(limitFor(preview.path)).toBe(6e6);
-  expect(preview.bytes).toBeLessThan(limitFor(preview.path));
+  // Küçük Excel (bu dosya ~11 KB) kapıya sorulmaz; 2 MB'ı aşan Excel yönetim kademesinde (6 MB) kapıdan geçer
+  expect(tierOf(preview).gated).toBe(false);
+  expect(preview.bytes).toBeLessThan(2e6);
+  expect(routeFor({ path: preview.path, method: 'POST', contentLength: String(4 * MiB) })).toEqual({ blocked: false, tier: 'yonetim_excel', gated: true, max: 6e6 });
+  expect(await gate(admin, preview.uri)).toEqual({ status: 204, header: 'izin' });
   await admin.context().close();
 });

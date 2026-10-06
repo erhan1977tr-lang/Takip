@@ -1,6 +1,7 @@
 // İstek gövdesi sınırları (güvenlik denetimi 3.50.9 AUD-4, karar 141): vekildeki (deploy/Caddyfile) kademeler ile uygulamanın
 // kendi yükleme sınırları birbirini tutmalı — dosya yükleyen her sayfa yeterince büyük, geri kalan her adres küçük sınırda.
-// Gerçek Caddy arkasındaki deneme: deploy/test/body-limits.sh (.github/workflows/deploy-test.yml).
+// Büyük kademeler yalnızca gövde kapısından geçen isteklere açıktır (karar 143): test/body-gate.test.js.
+// Gerçek Caddy arkasındaki deneme: deploy/test/body-limits.sh + deploy/test/body-gate.sh (.github/workflows/deploy-test.yml).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -11,33 +12,14 @@ import { UPLOAD_LIMITS } from '../server/files/limits.js';
 import { EXCEL_MAX_BYTES } from '../server/files/xlsx.js';
 import { MAX_FILE_BYTES } from '../server/orders/rules.js';
 import { MAX_IMAGE_BYTES } from '../server/profile/catalog.js';
+import { readCaddyfile } from './caddyfile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const MiB = 1024 * 1024;
 
-// ---------- Caddyfile'ı oku ----------
-/** Caddy'nin boyut yazımı (go-humanize): MB ondalık (10^6), MiB ikili (2^20) */
-function caddyBytes(v) {
-  const m = /^(\d+)(KB|MB|GB|KiB|MiB|GiB)$/.exec(v);
-  assert.ok(m, `boyut okunamadı: ${v}`);
-  return Number(m[1]) * { KB: 1e3, MB: 1e6, GB: 1e9, KiB: 1024, MiB, GiB: 1024 * MiB }[m[2]];
-}
-const caddyfile = read('deploy/Caddyfile');
-/** Yorumsuz satırlar */
-const code = caddyfile.split('\n').map((l) => l.replace(/^\s*#.*$/, '')).join('\n');
-/** @adı path … → yollar */
-const matchers = Object.fromEntries([...code.matchAll(/^\t@(\w+) path (.+)$/gm)].map((m) => [m[1], m[2].trim().split(/\s+/)]));
-/** handle [@adı] { request_body { max_size X } import uygulama } → kademeler (dosyadaki sırayla; eşleştiricisiz olan varsayılan) */
-const tiers = [...code.matchAll(/^\thandle(?: @(\w+))? \{\n\t\trequest_body \{\n\t\t\tmax_size (\w+)\n\t\t\}\n\t\timport (\w+)\n\t\}$/gm)]
-  .map((m) => ({ name: m[1] ?? null, paths: m[1] ? matchers[m[1]] : null, max: caddyBytes(m[2]), proxy: m[3] }));
-/** Caddy "path" eşleştiricisi: tam eşleşme ya da sondaki * ile ön ek; büyük/küçük harfe bakmaz */
-const pathMatches = (pattern, p) => {
-  const a = pattern.toLowerCase(), b = p.toLowerCase();
-  return a.endsWith('*') ? b.startsWith(a.slice(0, -1)) : a === b;
-};
-/** Bir adresin (yol) vekildeki gövde sınırı (bayt) */
-const limitFor = (p) => (tiers.find((t) => t.paths?.some((x) => pathMatches(x, p))) ?? tiers.find((t) => !t.name)).max;
+// ---------- Caddyfile'ı oku (ortak okuyucu: test/caddyfile.js) ----------
+const { code, matchers, tiers, blocked, routeFor, limitFor } = readCaddyfile(path.join(ROOT, 'deploy/Caddyfile'));
 const tier = (name) => tiers.find((t) => t.name === name);
 
 /** next.config.mjs → serverActions.bodySizeLimit (bytes kitaplığı: mb = 2^20) */
@@ -47,17 +29,22 @@ const nextLimit = () => {
   return Number(m[1]) * MiB;
 };
 
-test('Caddyfile: üç kademe — yükleme sayfaları 260 MB, yönetim Excel sayfaları 6 MB, geri kalan her adres 2 MB', () => {
-  assert.deepEqual(tiers.map((t) => [t.name, t.max]), [['yukleme', 260e6], ['yonetim_excel', 6e6], [null, 2e6]]);
-  assert.deepEqual(matchers, {
+test('Caddyfile: üç kademe — yükleme sayfaları 260 MB, yönetim Excel sayfaları 6 MB, geri kalan her istek 2 MB', () => {
+  assert.deepEqual(tiers.map((t) => [t.name, t.max, t.gated]), [['yukleme', 260e6, true], ['yonetim_excel', 6e6, true], [null, 2e6, false]]);
+  assert.deepEqual(Object.fromEntries(Object.entries(matchers).map(([k, v]) => [k, v.paths])), {
+    govde_izni: ['/oturum/govde-izni', '/oturum/govde-izni/*'],
     yukleme: ['/siparisler/*', '/depo/*'],
     yonetim_excel: ['/admin/fiyatlar', '/admin/musteri-fiyatlari', '/admin/katalog', '/admin/profil-katalogu', '/admin/stok'],
   });
-  // Kademeler birbirini dışlar (handle) ve her biri isteği aynı vekil tanımıyla uygulamaya iletir; başka request_body / vekil yok
-  assert.ok(tiers.every((t) => t.proxy === 'uygulama'));
+  assert.deepEqual(blocked.map((b) => b.name), ['govde_izni']);
+  // Kademeler birbirini dışlar (handle); her kademede bir request_body ve aynı vekil tanımı (snippet). Büyük kademelerde
+  // sıra sabittir (route): önce kapı, sonra gövde sınırı, sonra uygulama — okuyucu (test/caddyfile.js) tam bu biçimi arar.
   assert.equal((code.match(/\brequest_body\b/g) ?? []).length, 3, 'her kademede bir request_body');
   assert.equal((code.match(/\bmax_size\b/g) ?? []).length, 3);
-  assert.equal((code.match(/\breverse_proxy\b/g) ?? []).length, 1, 'tek vekil tanımı (snippet)');
+  assert.equal((code.match(/^\thandle\b/gm) ?? []).length, 4, 'kapının adresi + üç kademe');
+  assert.equal((code.match(/\bimport uygulama\b/g) ?? []).length, 3);
+  assert.equal((code.match(/\bimport govde_kapisi\b/g) ?? []).length, 2);
+  assert.equal((code.match(/\breverse_proxy\b/g) ?? []).length, 2, 'iki vekil tanımı: uygulama (snippet) ve kapının sorusu (snippet)');
   assert.match(code, /^\(uygulama\) \{\n\treverse_proxy app:3000 \{\n(\t\theader_up -[\w-]+\n)+\t\}\n\}$/m);
   // Sahte IP başlıkları her kademede temizlenir (SEC-01 değişmedi)
   for (const h of ['CF-Connecting-IP', 'CF-IPCountry', 'True-Client-IP', 'X-Real-IP']) assert.match(code, new RegExp(`header_up -${h}\\b`));
@@ -83,6 +70,19 @@ test('adres → sınır: giriş ve diğer olağan adresler 2 MB; büyük sınır
     '/siparisler/yeni': MB260, '/siparisler/cmabc123': MB260, '/siparisler/cmabc123/cizim/cmdef456': MB260, '/depo/AbC-123_x': MB260,
   };
   for (const [p, max] of Object.entries(expected)) assert.equal(limitFor(p), max, p);
+  // Büyük kademe yalnızca kapıdan geçen büyük gövdeli isteğe açıktır; aynı adreste küçük gövde ve GET olağan 2 MB'tadır
+  for (const p of ['/siparisler/yeni', '/siparisler/cmabc123', '/depo/AbC-123_x', '/admin/katalog', '/admin/stok']) {
+    assert.deepEqual(routeFor({ path: p, method: 'POST', contentLength: '3000000' }), { blocked: false, tier: p.startsWith('/admin') ? 'yonetim_excel' : 'yukleme', gated: true, max: limitFor(p) }, p);
+    assert.equal(routeFor({ path: p, method: 'POST', contentLength: null }).gated, true, `${p}: boyu bilinmeyen gövde kapıya sorulur`);
+    for (const r of [{ method: 'POST', contentLength: '2000000' }, { method: 'POST', contentLength: '0' }, { method: 'GET' }, { method: 'HEAD' }, { method: 'GET', contentLength: '900000000' }]) {
+      assert.deepEqual(routeFor({ path: p, ...r }), { blocked: false, tier: null, gated: false, max: MB2 }, `${p} ${JSON.stringify(r)}`);
+    }
+  }
+  // Büyük kademede olmayan hiçbir adres kapıya sorulmaz (ne boyla ne yöntemle)
+  for (const [p, max] of Object.entries(expected)) if (max === MB2) for (const m of ['POST', 'PUT', 'DELETE', 'GET']) assert.equal(routeFor({ path: p, method: m }).gated, false, p);
+  // Kapının iç adresi dışarıya kapalıdır
+  for (const p of ['/oturum/govde-izni', '/oturum/govde-izni/x', '/OTURUM/Govde-Izni']) assert.equal(routeFor({ path: p }).blocked, true, p);
+  assert.equal(routeFor({ path: '/oturum/etkinlik' }).blocked, false);
   // Uygulamadaki her sayfa bir kademeye düşer; büyük kademedekiler yalnızca aşağıdaki sayfalardır
   const pages = [];
   const walk = (dir, url) => {
@@ -199,10 +199,13 @@ test('zaman aşımları ve sürümden bağımsızlık; bellek sınırı bu deği
   // Genel seçenekler: başlık 30 sn, gövdenin tamamı 1 saat
   assert.match(code, /^\{\n\tservers \{\n\t\ttimeouts \{\n\s+read_header 30s\n\s+read_body 1h\n\t\t\}\n\t\}\n\}$/m);
   // Yalnızca Caddy 2'nin eski sürümlerinde de bulunan özellikler: sürüme bağlı olanlar kullanılmaz
+  // (forward_auth yönergesi yerine aynı işi yapan açık reverse_proxy tanımı kullanılır: izin yanıtı tam olarak denetlenebilsin)
   for (const word of ['read_timeout', 'write_timeout', 'read_body_idle', 'write_idle', 'forward_auth', 'expression']) assert.doesNotMatch(code, new RegExp(`\\b${word}\\b`), word);
   assert.equal((code.match(/\btimeouts\b/g) ?? []).length, 1, 'yalnızca genel seçenekteki timeouts; "timeouts" yönergesi (yeni sürüm) kullanılmaz');
-  // Vekilin yukarı akış zaman aşımları değişmedi (uzun süren işlemler / büyük yüklemeler kesilmesin)
-  assert.doesNotMatch(code, /\btransport\b/);
+  // Uygulamaya vekilin yukarı akış zaman aşımları değişmedi (uzun süren işlemler / büyük yüklemeler kesilmesin):
+  // zaman aşımı yalnızca kapının gövdesiz sorusundadır (karar 143)
+  assert.equal((code.match(/\btransport\b/g) ?? []).length, 1);
+  assert.doesNotMatch(/^\(uygulama\) \{\n([\s\S]*?)\n\}$/m.exec(code)[1], /transport|timeout/);
   // Uygulama kapsayıcısına bellek / işlemci / süreç sınırı EKLENMEDİ (AUD-4'ün o bölümü SEC-12 kararını bekliyor)
   const compose = read('deploy/docker-compose.yml');
   for (const key of ['mem_limit', 'mem_reservation', 'memswap_limit', 'cpus', 'pids_limit', 'deploy', 'ulimits']) assert.doesNotMatch(compose, new RegExp(`^\\s*${key}:`, 'm'), key);

@@ -84,7 +84,7 @@ export async function reportSessionActivity(idleMs: number): Promise<{ state: 'a
   return { state: 'expired' };
 }
 
-/** İstek sınırı anahtarı için: çerezdeki oturumun özeti (çerez yoksa null). */
+/** Çerezdeki oturum anahtarının özeti (çerez yoksa null): istek sınırı anahtarı ve vekilin gövde kapısı için. Salt okunur. */
 export async function sessionKey(): Promise<string | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   return token ? hashToken(token) : null;

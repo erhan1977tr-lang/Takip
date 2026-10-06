@@ -6,6 +6,7 @@
 //                  istekleri, 60 saniyelik otomatik yenileme, bildirim yoklaması, dosya indirme ve arka plan işleri
 //                  oturumu OKUR ama asla uzatmaz (liveSession hiçbir koşulda lastSeenAt yazmaz).
 //   Temizlik     : geçersiz oturum satırı ilk görüldüğünde silinir; kalanları arka plan işçisi saatte bir siler.
+//   Gövde kapısı : vekilin sorusu (peekSession) yalnızca okur — satır silmez, oturumu uzatmaz (karar 143).
 export const SESSION_TTL_MS = 30 * 86_400_000;
 export const SESSION_IDLE_MS = 30 * 60_000;
 
@@ -32,26 +33,39 @@ export const deadSessions = (now = new Date()) => ({
 });
 
 /**
- * Çerezdeki oturumun geçerli kaydı; yoksa / kullanıcı pasifse / süresi dolmuşsa / boşta kalmışsa null.
- * SALT OKUR: geçerli oturumda hiçbir şey yazmaz (istek geldi diye oturum uzamaz). Geçersiz satırı siler.
+ * Oturum kuralının SALT OKUNUR hâli — hiçbir şey yazmaz, geçersiz satırı bile silmez. Kural tek yerdedir: liveSession da
+ * bunu kullanır (aynı arama, aynı "kullanıcı etkin mi", aynı sessionState). Doğrudan çağıran tek yer vekilin gövde
+ * kapısıdır (karar 143: Caddy büyük gövdeyi kabul etmeden önce sorar; o istek veritabanında hiçbir şeyi değiştirmemelidir).
  * @param {any} db  @param {string} tokenHash
  * @param {{ now?: number, include?: object }} [o]  include: kullanıcıyla birlikte yüklenecek ilişkiler
- * @returns {Promise<{ session: any | null, remainingMs: number, reason: 'ok' | 'none' | 'inactive' | 'expired' | 'idle' }>}
- *   session null ise `reason` nedenini söyler (idle: 30 dakikadır etkinlik yok)
+ * @returns {Promise<{ session: any | null, remainingMs: number, reason: 'ok' | 'none' | 'inactive' | 'expired' | 'idle', deadId: string | null }>}
+ *   session null ise `reason` nedenini söyler; deadId: süresi dolmuş / boşta kalmış satırın kimliği (yoksa null)
  */
-export async function liveSession(db, tokenHash, { now = Date.now(), include = { user: true } } = {}) {
-  /** @param {'none' | 'inactive' | 'expired' | 'idle'} reason */
-  const dead = (reason) => ({ session: null, remainingMs: 0, reason });
+export async function peekSession(db, tokenHash, { now = Date.now(), include = { user: true } } = {}) {
+  /** @param {'none' | 'inactive' | 'expired' | 'idle'} reason @param {string | null} [deadId] */
+  const dead = (reason, deadId = null) => ({ session: null, remainingMs: 0, reason, deadId });
   if (!tokenHash) return dead('none');
   const session = await db.session.findUnique({ where: { tokenHash }, include });
   if (!session) return dead('none');
   if (!session.user?.isActive) return dead('inactive');
   const state = sessionState(session, now);
-  if (state !== 'ok') {
-    await db.session.deleteMany({ where: { id: session.id } }).catch(() => undefined);
-    return dead(state);
-  }
-  return { session, remainingMs: sessionRemainingMs(session, now), reason: /** @type {const} */ ('ok') };
+  if (state !== 'ok') return dead(state, session.id);
+  return { session, remainingMs: sessionRemainingMs(session, now), reason: /** @type {const} */ ('ok'), deadId: null };
+}
+
+/**
+ * Çerezdeki oturumun geçerli kaydı; yoksa / kullanıcı pasifse / süresi dolmuşsa / boşta kalmışsa null.
+ * SALT OKUR: geçerli oturumda hiçbir şey yazmaz (istek geldi diye oturum uzamaz). Geçersiz satırı siler.
+ * Kural peekSession'dadır; buradaki tek fark geçersiz (süresi dolmuş / boşta kalmış) satırın silinmesidir.
+ * @param {any} db  @param {string} tokenHash
+ * @param {{ now?: number, include?: object }} [o]  include: kullanıcıyla birlikte yüklenecek ilişkiler
+ * @returns {Promise<{ session: any | null, remainingMs: number, reason: 'ok' | 'none' | 'inactive' | 'expired' | 'idle' }>}
+ *   session null ise `reason` nedenini söyler (idle: 30 dakikadır etkinlik yok)
+ */
+export async function liveSession(db, tokenHash, o = {}) {
+  const { deadId, ...seen } = await peekSession(db, tokenHash, o);
+  if (deadId) await db.session.deleteMany({ where: { id: deadId } }).catch(() => undefined);
+  return seen;
 }
 
 /**

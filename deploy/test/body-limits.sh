@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # İstek gövdesi sınırları (güvenlik denetimi AUD-4, karar 141) — gerçek kurulumda, gerçek Caddy + uygulama ile denenir.
+# Büyük kademelerin gövde kapısı (karar 143: oturum / depo bağlantısı olmadan büyük gövde uygulamaya iletilmez): body-gate.sh.
 # .github/workflows/deploy-test.yml çalıştırır; kurulu ve yayında bir Takip ister (GitHub'ın tek kullanımlık test makinesi).
 # GERÇEK SUNUCUDA ÇALIŞTIRILMAZ. Caddyfile değişikliğinin yayınla etkin olması / bozuk Caddyfile'ın yayını durdurması:
 # deploy/test/caddy-deploy.sh.
@@ -45,12 +46,19 @@ rejected() {
   echo "$1 $2 bayt → $c (beklenen 413)" | tee -a "$RESULTS"
   [ "$c" = 413 ]
 }
-# Beklenen: vekilden geçer — yanıtı uygulama verir (413 değil; bağlantı hatası 000 ve vekil hatası 502 de değil)
+# Beklenen: vekilden geçer — yanıtı uygulama verir (413 / 401 değil; bağlantı hatası 000 ve vekil hatası 502 de değil)
 passes() {
   local c
   c=$(post "$1" "$2")
   echo "$1 $2 bayt → $c (vekilden geçmeli)" | tee -a "$RESULTS"
-  [ "$c" != 413 ] && [ "$c" != 000 ] && [ "$c" != 502 ]
+  [ "$c" != 413 ] && [ "$c" != 401 ] && [ "$c" != 000 ] && [ "$c" != 502 ]
+}
+# Beklenen: gövde kapısı reddeder (401) — oturumsuz istemcinin büyük gövdesi
+gated() {
+  local c
+  c=$(post "$1" "$2")
+  echo "$1 $2 bayt → $c (beklenen 401: gövde kapısı)" | tee -a "$RESULTS"
+  [ "$c" = 401 ]
 }
 {
   # 1. Yayındaki Caddyfile depodakiyle aynı ve Caddy çalışıyor
@@ -58,7 +66,7 @@ passes() {
   [ "$(compose ps --status running --services | grep -cx caddy)" = 1 ]
   curl -fsSk "$SITE/login" | grep -q 'GKH Digital'
 
-  # 2. Varsayılan kademe (2 MB = 2.000.000 bayt): giriş ve diğer olağan adresler
+  # 2. Varsayılan kademe (2 MB = 2.000.000 bayt): giriş ve diğer olağan adresler (kapıya sorulmaz)
   passes /login 100000
   passes /login 1500000
   rejected /login 2500000
@@ -69,20 +77,26 @@ passes() {
   rejected /admin/users 2500000
   rejected /login 40000000
 
-  # 3. Yönetim Excel sayfaları (6 MB): 5 MiB'lık dosya geçer, daha büyüğü geçmez
-  passes /admin/katalog 5300000
-  rejected /admin/katalog 6500000
-  passes /admin/fiyatlar 5300000
-  passes /admin/musteri-fiyatlari 5300000
-  passes /admin/profil-katalogu 5300000
-  passes /admin/stok 5300000
-  rejected /admin/stok 6500000
+  # 3. Büyük kademeler (yönetim Excel 6 MB, yükleme sayfaları 260 MB) yalnızca gövde kapısından geçen isteklere açıktır
+  # (karar 143). Bu betikteki istekler oturumsuzdur: 2 MB'ı aşan gövde bu sayfalarda kapıda 401 ile biter; sınırın altındaki
+  # gövde kapıya sorulmadan olağan kademeden geçer. Oturumla / depo bağlantısıyla geçiş, kademe sınırları (6 MB → 413) ve
+  # uygulamaya iletilen bayt ölçümü: deploy/test/body-gate.sh.
+  gated /admin/katalog 5300000
+  gated /admin/fiyatlar 5300000
+  gated /admin/musteri-fiyatlari 5300000
+  gated /admin/profil-katalogu 5300000
+  gated /admin/stok 5300000
+  gated /admin/stok 6500000
+  gated /siparisler/yeni 6500000
+  gated /siparisler/yeni 40000000
+  gated /siparisler/cmyoksiparis0000000000000 6500000
+  gated "/depo/$(head -c 43 /dev/zero | tr '\0' x)" 6500000
 
-  # 4. Dosya yükleme formu olan sayfalar (260 MB): orta boy gövdeler geçer
-  passes /siparisler/yeni 6500000
-  passes /siparisler/yeni 40000000
-  passes /siparisler/cmyoksiparis0000000000000 6500000
-  passes "/depo/$(head -c 43 /dev/zero | tr '\0' x)" 6500000
+  # 4. Aynı sayfalarda küçük gövde (≤ 2 MB) kapıya sorulmaz: olağan kademeden uygulamaya gider
+  passes /admin/katalog 1500000
+  passes /siparisler/yeni 1500000
+  passes /siparisler/cmyoksiparis0000000000000 100000
+  passes "/depo/$(head -c 43 /dev/zero | tr '\0' x)" 1500000
 
   # 5. Gerçek bir sunucu işlemi vekilden geçer: giriş formu (tarayıcının JavaScript'siz gönderdiği biçimde — sayfadaki gizli
   # alanlarla, çok parçalı POST /login). Şifre yanlış: giriş reddedilir ama işlem ÇALIŞIR — yanıtı işlemin kendisi üretir
@@ -135,7 +149,7 @@ PY
     fi
     echo "caddy:$tag → Caddyfile geçerli" | tee -a "$RESULTS"
   done
-  sudo docker rmi caddy:2.6.4 caddy:2.7.6 caddy:2.8.4 >/dev/null 2>&1 || true
+  # (eski sürüm imajları silinmez: hemen ardından deploy/test/body-gate.sh aynı imajlarla kapının davranışını dener ve siler)
 
   echo "::notice title=Gövde sınırları (gerçek Caddy)::$(sed 's/%/%25/g' "$RESULTS" | sed ':a;N;$!ba;s/\n/%0A/g')"
 }

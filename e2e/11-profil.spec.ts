@@ -131,6 +131,17 @@ test('depo e-postası (PDF) ve depo bağlantısından imzalı belgeyle teslim; f
   const ctx = await browser.newContext();
   const depot = await ctx.newPage();
   depot.on('dialog', (d) => d.accept());
+  // Gövde kapısı (karar 143): geçerli depo bağlantısı OTURUMSUZ büyük gövde izni alır (Caddy'nin sorusu: özgün adres
+  // X-Forwarded-Uri'de); bozuk / uydurma bağlantı almaz; bağlantı yalnızca kendi adresinde geçerlidir
+  const gate = async (uri: string) => {
+    const r = await depot.request.get('/oturum/govde-izni', { headers: { 'x-forwarded-uri': uri } });
+    return { status: r.status(), header: r.headers()['x-takip-govde'] ?? null };
+  };
+  expect(await gate(`/depo/${token}`)).toEqual({ status: 204, header: 'izin' });
+  expect(await gate(`/depo/${token}?e=file`)).toEqual({ status: 204, header: 'izin' });
+  for (const bad of [`/depo/${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`, `/depo/${'x'.repeat(43)}`, '/depo/kisa', `/depo/${token}/ek`, `/DEPO/${token}`, `/siparisler/${token}`, '/siparisler/yeni']) {
+    expect(await gate(bad), bad.replace(token, '<anahtar>')).toEqual({ status: 401, header: null });
+  }
   await depot.goto(`/depo/${token}`);
   await expect(depot.getByRole('heading', { name: 'Mal teslimi' })).toBeVisible();
   await expect(depot.getByText(/UNSP1/).first()).toBeVisible();

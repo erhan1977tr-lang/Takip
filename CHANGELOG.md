@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.14 — 06.10.2026
+
+- **Güvenlik: giriş yapmamış biri artık dosya yükleme sayfalarına büyük istek gönderemez** (güvenlik denetimi AUD-4'ün
+  kalan bölümü). Dosya yüklenebilen sayfalar (yeni sipariş, sipariş sayfası, depo bağlantısı, yönetim Excel yüklemeleri)
+  büyük isteği herkesten kabul ediyordu; giriş yapmamış biri bu sayfalara büyük istekler göndererek sunucunun belleğini
+  doldurabiliyordu.
+  - Ön sunucu artık büyük bir isteği uygulamaya iletmeden önce gönderenin **geçerli bir oturumu** (depo bağlantısında:
+    **geçerli bir bağlantısı**) olup olmadığına bakar. Yoksa istek, içeriği hiç okunmadan reddedilir.
+  - Giriş yapmış kullanıcılar için hiçbir şey değişmedi: dosya yükleme kuralları aynı (dosya başına 100 MB, bir seferde
+    toplam 250 MB; yönetim Excel dosyaları 5 MB), depo teslim bağlantısı giriş gerektirmeden çalışmaya devam eder.
+  - Küçük işlemler (not yazma, durum değiştirme, küçük dosya) eskisi gibi çalışır.
+  - Bu denetim bir ön korumadır; her işlem kendi oturum ve yetki denetimini eskisi gibi yapar.
+  - Bu sürüm yayınlanırken site birkaç saniyeliğine yeniden bağlanır (ön sunucu yeni ayarı okur).
+  - Not: giriş yapmış bir kullanıcının çok büyük dosyaları hâlâ sunucunun belleğini zorlayabilir; uygulama için bellek
+    sınırı bu sürümde de eklenmedi (SEC-12 kararını bekliyor).
+
 ## 3.50.13 — 06.10.2026
 
 - **Sunucu: güncelleme artık ön sunucuyu (Caddy) da doğruluyor.** Önceden güncelleme yalnızca uygulamanın açıldığına

@@ -1,10 +1,12 @@
 # HTTPS sertifikası Let's Encrypt'ten otomatik alınır ve yenilenir.
 #
-# İstek gövdesi sınırları ve zaman aşımları (güvenlik denetimi 3.50.9 AUD-4, karar 141). Bu dosyada yalnızca Caddy 2'nin
-# eski sürümlerinde de bulunan özellikler kullanılır (imaj "caddy:2" etiketiyle çekilir; sunucudaki sürüm değişebilir):
-# request_body max_size, path eşleştirici, handle, snippet, servers → timeouts. Sürüme bağlı özellikler (request_body
-# içinde read_timeout, "timeouts" yönergesi) bilerek kullanılmaz. Sınırlar test/body-limits.test.js ile, gerçek Caddy
-# arkasında da deploy/test/body-limits.sh ile denetlenir — bu dosyayı değiştirirken ikisini de güncelleyin.
+# İstek gövdesi sınırları, zaman aşımları (güvenlik denetimi 3.50.9 AUD-4, karar 141) ve gövde kapısı (karar 143). Bu dosyada
+# yalnızca Caddy 2'nin eski sürümlerinde de bulunan özellikler kullanılır (imaj "caddy:2" etiketiyle çekilir; sunucudaki
+# sürüm değişebilir): request_body max_size, path / method / header_regexp / not eşleştiricileri, handle, route, respond,
+# vars, snippet, reverse_proxy (method, rewrite, header_up, transport, handle_response), servers → timeouts. Sürüme bağlı
+# özellikler (request_body içinde read_timeout, "timeouts" yönergesi) bilerek kullanılmaz. Sınırlar ve kapı
+# test/body-limits.test.js + test/body-gate.test.js ile; gerçek Caddy arkasında deploy/test/body-limits.sh +
+# deploy/test/body-gate.sh ile (Caddy 2.6 → güncel) denetlenir — bu dosyayı değiştirirken hepsini güncelleyin.
 {
 	servers {
 		timeouts {
@@ -30,6 +32,39 @@
 	}
 }
 
+# Gövde kapısı (karar 143; kural: server/security/body-gate.js). Caddy, isteğin GÖVDESİNE DOKUNMADAN uygulamaya gövdesiz bir
+# GET /oturum/govde-izni yollar (forward_auth'un yaptığı; özgün adres X-Forwarded-Uri'de, çerezler aynen). Yanıt TAM OLARAK
+# "204 + X-Takip-Govde: izin" ise zincir sürer (sonraki satırlar: gövde sınırı + uygulamaya ilet). Başka her yanıtta — izin
+# yok (401), uygulama hatası (5xx), tanınmayan / bozuk yanıt — istek 401 ile biter; uygulama kapalıysa ya da 10 sn'de yanıt
+# vermezse vekil hatasıyla (502) biter. Hiçbirinde gövde okunmaz, uygulamaya tek bayt gövde iletilmez (kapalı tarafa düşer).
+(govde_kapisi) {
+	reverse_proxy app:3000 {
+		method GET
+		rewrite /oturum/govde-izni?
+		header_up X-Forwarded-Method {method}
+		header_up X-Forwarded-Uri {uri}
+		header_up -Expect
+		header_up -CF-Connecting-IP
+		header_up -CF-IPCountry
+		header_up -True-Client-IP
+		header_up -X-Real-IP
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 10s
+		}
+		@izin {
+			status 204
+			header X-Takip-Govde izin
+		}
+		handle_response @izin {
+			vars govde_izni evet
+		}
+		handle_response {
+			respond 401
+		}
+	}
+}
+
 {$APP_DOMAIN} {
 	encode zstd gzip
 	header {
@@ -44,30 +79,59 @@
 	# İstek gövdesi sınırı ADRESE göre üç kademedir; kademeler birbirini dışlar (handle: yalnızca ilk eşleşen çalışır) ve
 	# her biri isteği uygulamaya kendisi iletir. Boyutlar ondalıktır (go-humanize: 1 MB = 1.000.000 bayt).
 	#
-	# Sunucu işlemleri (Server Actions) formun bulunduğu SAYFANIN adresine POST edilir; ayrı bir "yükleme adresi" yoktur.
-	# Bu yüzden büyük sınır yalnızca dosya yükleme formu olan sayfalara verilir:
+	# Sunucu işlemleri (Server Actions) formun bulunduğu SAYFANIN adresine POST edilir; ayrı bir "yükleme adresi" yoktur ve
+	# Next gövdenin tamamını, işlem (ve oturum denetimi) çalışmadan önce okur. Bu yüzden büyük sınır yalnızca dosya yükleme
+	# formu olan sayfalara ve yalnızca GÖVDE KAPISINDAN geçen isteklere verilir (karar 143):
+	#   - Gövdesi küçük olduğu bilinen istek (Content-Length ≤ 2.000.000) ile GET / HEAD hiçbir yerde kapıya sorulmaz;
+	#     en altta, olağan 2 MB kademesinde işlenir (sipariş sayfasındaki not, durum değişikliği, sayfa görüntüleme …).
+	#   - Yükleme sayfalarına gelen öbür istekler (bildirilen gövde > 2 MB ya da boyu bilinmiyor) önce kapıya sorulur;
+	#     izin çıkarsa büyük kademeyle iletilir, çıkmazsa gövde OKUNMADAN 401 ile reddedilir.
+
+	# Kapının iç adresi dışarıya kapalıdır (Caddy'nin kendi sorusu doğrudan uygulamaya gider, bu kurallardan geçmez).
+	@govde_izni path /oturum/govde-izni /oturum/govde-izni/*
+	handle @govde_izni {
+		respond 404
+	}
+
+	# Dosya yükleme formu olan sayfalar:
 	#   /siparisler/*  yeni sipariş, sipariş sayfası (sipariş dosyası, çizim, teslim belgesi): dosya başına 100 MB,
 	#                  istek başına toplam 250 MB (yeni sipariş formunda yazan kural; next.config.mjs → bodySizeLimit)
+	#                  → kapı: geçerli oturum
 	#   /depo/*        depo bağlantısı (imzalı teslim belgesi): dosya 20 MB, sipariş başına toplam 200 MB
-	@yukleme path /siparisler/* /depo/*
+	#                  → kapı: geçerli depo bağlantısı (oturum gerekmez)
+	@yukleme {
+		path /siparisler/* /depo/*
+		not method GET HEAD
+		not header_regexp Content-Length ^([0-9]?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]|1[0-9][0-9][0-9][0-9][0-9][0-9]|2000000)$
+	}
 	handle @yukleme {
-		request_body {
-			max_size 260MB
+		route {
+			import govde_kapisi
+			request_body {
+				max_size 260MB
+			}
+			import uygulama
 		}
-		import uygulama
 	}
 
-	# Yönetim Excel yüklemeleri (fiyat / katalog / stok: dosya en çok 5 MiB) ve ürün görseli (2 MiB)
-	@yonetim_excel path /admin/fiyatlar /admin/musteri-fiyatlari /admin/katalog /admin/profil-katalogu /admin/stok
+	# Yönetim Excel yüklemeleri (fiyat / katalog / stok: dosya en çok 5 MiB) ve ürün görseli (2 MiB) → kapı: geçerli oturum
+	@yonetim_excel {
+		path /admin/fiyatlar /admin/musteri-fiyatlari /admin/katalog /admin/profil-katalogu /admin/stok
+		not method GET HEAD
+		not header_regexp Content-Length ^([0-9]?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]|1[0-9][0-9][0-9][0-9][0-9][0-9]|2000000)$
+	}
 	handle @yonetim_excel {
-		request_body {
-			max_size 6MB
+		route {
+			import govde_kapisi
+			request_body {
+				max_size 6MB
+			}
+			import uygulama
 		}
-		import uygulama
 	}
 
-	# Diğer her adres — giriş (/login), ilk şifre (/setup), dil, oturum etkinliği, bildirimler, listeler, yükleme
-	# sekmesi, yönetim sayfaları: dosya yüklenmez, form gövdeleri küçüktür.
+	# Diğer her istek — giriş (/login), ilk şifre (/setup), dil, oturum etkinliği, bildirimler, listeler, yükleme sekmesi,
+	# yönetim sayfaları ve yükleme sayfalarındaki küçük gövdeli istekler: kapıya sorulmaz, gövde en çok 2 MB.
 	handle {
 		request_body {
 			max_size 2MB
