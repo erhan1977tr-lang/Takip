@@ -34,20 +34,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ortam — umask ve /opt varsayılan izinleri (tanı)
-        run: |
-          {
-            echo "kullanıcı umask: $(umask) · sudo umask: $(sudo sh -c umask)"
-            echo "/opt: $(stat -c '%a %U:%G' /opt)"
-            echo "--- getfacl /opt"; getfacl -p /opt 2>&1 | grep -v '^$' || true
-            sudo mkdir -p /opt/izin-deneme; sudo chmod 700 /opt/izin-deneme
-            echo "--- getfacl /opt/izin-deneme"; sudo getfacl -p /opt/izin-deneme 2>&1 | grep -v '^$' || true
-            sudo sh -c 'umask 077; : > /opt/izin-deneme/umask077; umask 022; : > /opt/izin-deneme/umask022; install -m 600 /dev/null /opt/izin-deneme/install600; stat -c "%a %n" /opt/izin-deneme/*'
-            sudo sh -c 'umask 077; : > /root/izin-deneme-root; stat -c "%a %n" /root/izin-deneme-root; rm -f /root/izin-deneme-root'
-            sudo rm -rf /opt/izin-deneme
-          } 2>&1 | tee ortam.log
-          echo "::notice title=Ortam (umask / ACL)::$(sed 's/%/%25/g' ortam.log | sed ':a;N;$!ba;s/\n/%0A/g')"
-
       - name: Betik denetimi (shellcheck)
         run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh
 
@@ -61,6 +47,12 @@ jobs:
 
       - name: Kurulum (temiz makine)
         run: |
+          # GitHub'ın test makinesinde /opt "varsayılan ACL" taşır (default:other::rwx): altında oluşan dosyalarda umask YOK
+          # SAYILIR, her dosya 0666 olur. Gerçek sunucuda böyle bir ACL yoktur (orada dosyalar umask'a uyar). Test ortamı
+          # sunucuya benzesin diye kurulum klasörü ACL'siz açılır ve umask'ın geçerli olduğu doğrulanır.
+          sudo mkdir -p /opt/takip
+          sudo setfacl -b -k /opt/takip
+          sudo sh -c 'umask 077; : > /opt/takip/.izin-deneme; m=$(stat -c %a /opt/takip/.izin-deneme); rm -f /opt/takip/.izin-deneme; [ "$m" = 600 ] || { echo "umask /opt/takip altında geçerli değil ($m)"; exit 1; }'
           git checkout -B "$GITHUB_REF_NAME"
           sudo git config --global --add safe.directory '*'
           sudo env TAKIP_REPO_URL="file://$GITHUB_WORKSPACE" TAKIP_SKIP_CI_GATE=1 TAKIP_NO_FIREWALL=1 TAKIP_SKIP_UPGRADE=1 \
