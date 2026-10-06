@@ -349,7 +349,8 @@ publish 'Gövde kapısı — gerçek kurulum (Caddy + uygulama)' "$RESULTS"
 IMAGE=$(sudo docker inspect -f '{{.Config.Image}}' "$APP_ID")
 sudo docker network create "$NET" >/dev/null
 # Sahte uygulama: aynı ağda "app" adıyla (Caddyfile'daki app:3000); denetim portu yalnızca yerel makineye açık
-sudo docker run -d --name "$MOCK" --network "$NET" --network-alias app -p 127.0.0.1:13001:3001 \
+# (--no-healthcheck: imajın sağlık denetimi 30 saniyede bir GET /login yollar; sahte uygulamanın saydığı isteklere karışmasın)
+sudo docker run -d --name "$MOCK" --no-healthcheck --network "$NET" --network-alias app -p 127.0.0.1:13001:3001 \
   -v "$HERE/body-gate-mock.mjs:/sahte.mjs:ro" --entrypoint node "$IMAGE" /sahte.mjs 3000 3001 >/dev/null
 mock_up() {
   for _ in $(seq 1 40); do
