@@ -36,7 +36,10 @@ jobs:
           fetch-depth: 0
 
       - name: Betik denetimi (shellcheck)
-        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh
+        run: |
+          # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh > shellcheck.log \
+            || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
         run: bash deploy/test/cache-housekeeping.sh
