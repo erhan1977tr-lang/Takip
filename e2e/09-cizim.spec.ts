@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { PrismaClient } from '@prisma/client';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, SALES, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
 
 // Aşama 4: çizim taslağa yüklenir (çoklu dosya, virüs taraması); "Kontrol Et" ekranındaki "Müşteriye gönder" onaylı
 // ikinci adımdır (karar 84: sipariş sayfasından gönderilemez; sunucu kontrol kanıtı ister);
@@ -11,6 +11,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, SALES, TEAM_P
 test.describe.configure({ mode: 'serial' });
 
 const INSPECTOR = 'denetim@e2e.test';
+const SALES2 = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const NOTE = 'Müşteri notu: v1 ölçüleri 1250 x 2100';
 let db: PrismaClient;
 test.beforeAll(async () => {
@@ -149,7 +150,7 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   // Reddedilen istek indirme kaydı yazmaz (geri çekmeden önceki kayıtlar durur)
   expect(await custDownloads()).toBe(v1Urls.length);
   // İç roller (çizim, yönetici, satış, denetimci) geri çekilen sürümü eskisi gibi görür: dosya, not, görüntüleyici
-  const sales = await as(browser, SALES, TEAM_PW);
+  const sales = await as(browser, SALES2, TEAM_PW);
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
   for (const [who, page] of [['çizim', drawer], ['yönetici', admin], ['satış', sales], ['denetimci', insp]] as const) {
     expect((await page.request.get(`/dosya/cizim/${v1Pdf.id}`)).status(), who).toBe(200);
