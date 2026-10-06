@@ -102,9 +102,12 @@ if [ "${1:-}" != yayin ]; then
 
   # 6. Caddyfile, Caddy 2'nin eski sürümlerinde de geçerli (sunucudaki "caddy:2" imajı güncel olmayabilir)
   for tag in 2.6.4 2.7.6 2.8.4 2; do
-    sudo docker run --rm -e APP_DOMAIN=localhost -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "caddy:$tag" \
-      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/validate-$tag.log" 2>&1 \
-      || { tail -n 5 "$T/validate-$tag.log"; echo "caddy:$tag Caddyfile'ı kabul etmedi" | tee -a "$RESULTS"; false; }
+    if ! out=$(sudo docker run --rm -e APP_DOMAIN=localhost -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "caddy:$tag" \
+      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then
+      echo "$out" | tail -n 5
+      echo "caddy:$tag Caddyfile'ı kabul etmedi: $(echo "$out" | tail -n 1)" | tee -a "$RESULTS"
+      false
+    fi
     echo "caddy:$tag → Caddyfile geçerli" | tee -a "$RESULTS"
   done
   sudo docker rmi caddy:2.6.4 caddy:2.7.6 caddy:2.8.4 >/dev/null 2>&1 || true
