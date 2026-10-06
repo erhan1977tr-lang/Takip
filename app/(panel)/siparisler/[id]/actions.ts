@@ -2,7 +2,6 @@
 
 // Sipariş sayfasının işlemleri. Kurallar ve kayıt server/orders/transitions.js'te (runOrderAction):
 // burada yalnızca oturum, form okuma, dosya kaydı ve kullanıcıya gösterilecek mesaj var.
-import fs from 'node:fs/promises';
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -14,9 +13,7 @@ import { loadOrder } from '@/lib/orders';
 import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { filesFrom, resolveKey } from '@/lib/storage';
-import { readXlsx } from '@/server/files/xlsx.js';
-import { isXls, readXls } from '@/server/files/xls.js';
-import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '@/server/orders/excel-import.js';
+import { readOfferExcel } from '@/server/orders/excel-file.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
@@ -381,6 +378,7 @@ export async function setCustomerExcelAction(formData: FormData) {
 /**
  * Satış: siparişe yüklenmiş Excel'in (.xls / .xlsx) satırları — teklif tablosuna aktarma ön izlemesi için (OfferEditor →
  * ExcelImport). Yalnızca okur; hiçbir şey kaydetmez. Dosya bu siparişin olmalı ve antivirüste temiz/beklemede olmalı.
+ * En çok 5 MB'lık dosya okunur (sipariş dosyası 100 MB'a kadar olabilir; Excel okuyucu küçük dosyalar içindir).
  */
 export async function readOfferExcelAction(orderId: string, fileId: string): Promise<{ ok: true; rows: string[][] } | { ok: false; error: string }> {
   const user = await requirePermission('OFFER_PREPARE');
@@ -388,15 +386,8 @@ export async function readOfferExcelAction(orderId: string, fileId: string): Pro
   const order = await loadOrder(orderId, user);
   const file = order.files.find((f) => f.id === fileId && /\.xlsx?$/i.test(f.name) && f.scanStatus !== 'INFECTED');
   if (!file) return { ok: false, error: t('offer.import.noFile') };
-  try {
-    const full = resolveKey(file.storageKey);
-    if (!full) return { ok: false, error: t('offer.import.noFile') };
-    const buf = await fs.readFile(full);
-    // İçeriğe göre: eski .xls (OLE2) ya da .xlsx (zip; .xls adıyla kaydedilmiş .xlsx de olur)
-    const { rows } = isXls(buf) ? readXls(buf) : readXlsx(buf);
-    const text = (v: unknown) => (v == null ? '' : String(v));
-    return { ok: true, rows: rows.slice(0, IMPORT_MAX_ROWS).map((r) => r.slice(0, IMPORT_MAX_COLS).map(text)) };
-  } catch {
-    return { ok: false, error: t('offer.import.unreadable') };
-  }
+  // Boyut sınırı (5 MB) dosya okunmadan ÖNCE uygulanır; okuma ve ayrıştırma tek yerde: server/orders/excel-file.js (AUD-3)
+  const res = await readOfferExcel({ path: resolveKey(file.storageKey), size: file.size });
+  if (res.ok) return res;
+  return { ok: false, error: t(res.error === 'TOO_BIG' ? 'offer.import.tooBig' : res.error === 'NO_FILE' ? 'offer.import.noFile' : 'offer.import.unreadable') };
 }

@@ -51,6 +51,7 @@ export default {
     apply: 'Teklif Tablosuna Aktar',
     noFile: 'Excel dosyası bulunamadı.',
     unreadable: 'Excel dosyası okunamadı (.xls ve .xlsx desteklenir).',
+    tooBig: 'Excel dosyası çok büyük (en fazla 5 MB). Ölçü listesini daha küçük bir Excel dosyası olarak yükleyin ya da satırları elle girin.',
     jumpTop: 'Teklif tablosunun başına',
     jumpBottom: 'Teklif tablosunun sonuna',
   },

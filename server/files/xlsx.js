@@ -1,26 +1,107 @@
 // Excel (.xlsx) okuma/yazma — yalnızca bu uygulamanın ihtiyacı kadar: tek sayfa, metin ve sayı hücreleri.
 // Okuma: ilk çalışma sayfasının hücre değerleri (paylaşılan metinler, satır içi metin, sayı, mantıksal).
 // Yazma: kalın başlık satırları ve sütun genişlikleriyle tek sayfalık dosya.
-import { ZipError, readZip, writeZip } from './zip.js';
+//
+// Okuma sınırları (denetim 3.50.9 AUD-3, karar 140) — bozuk ya da kötü niyetli dosya sınırlı sürede, XlsxError ile biter:
+//   · dosya en çok EXCEL_MAX_BYTES (okuyucunun kendisi denetler; çağıran ayrıca dosyayı okumadan önce bakar);
+//   · ZIP'ten yalnızca gereken 4 parça açılır (çalışma kitabı, ilişkiler, ilk sayfa, paylaşılan metinler), her biri gerçek
+//     açılmış baytla sınırlı (server/files/zip.js → ZIP_LIMITS);
+//   · XML düzenli ifadeyle değil indexOf ile, tek geçişte taranır (elements): kapanış etiketi olmayan öğe hemen hatadır —
+//     eski "tembel" düzenli ifadeler kapanışı olmayan her etikette metnin sonuna kadar gidiyordu (karesel süre);
+//   · satır, hücre ve metin sayısı sınırlıdır (SHEET_LIMITS).
+import { ZipError, openZip, writeZip } from './zip.js';
 
 export class XlsxError extends Error {}
 
+/** Okunacak Excel dosyasının (.xlsx / .xls) en büyük boyutu: 5 MB (yönetim Excel yüklemeleriyle aynı sınır) */
+export const EXCEL_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * İlk sayfadan okunan verinin sınırları (.xlsx ve .xls için aynı):
+ *   rows : en büyük satır numarası / işlenen satır sayısı
+ *   cols : tutulan en büyük sütun indeksi (sonrası yok sayılır)
+ *   cells: işlenen hücre sayısı ve bellekte tutulan hücre yeri (satır uzunluklarının toplamı); paylaşılan metin sayısı
+ * Uygulamanın kabul ettiği en büyük içerik 2.000 satırdır (katalog / fiyat); teklif aktarımı ilk 1.000 satır × 30 sütunu kullanır.
+ */
+export const SHEET_LIMITS = Object.freeze({ rows: 100_000, cols: 200, cells: 2_000_000 });
+
+const BAD_XML = 'Excel dosyası bozuk (XML)';
+
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+/** Sayısal karakter başvurusu; geçersiz kod noktası (aralık dışı, vekil) hata değil U+FFFD olur */
+const codePoint = (n) => (n >= 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : '�');
 const unescapeXml = (s) =>
   s.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (_, e) =>
-    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENT[e]);
+    e[0] === '#' ? codePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENT[e]);
 const escapeXml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
   // XML 1.0'da geçersiz kontrol karakterleri atılır
   .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 
-/** <t> parçalarını birleştirir (zengin metin <r><t>..</t></r> dahil; okunuş <rPh> hariç) */
-function textOf(xml) {
-  return [...xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/g)]
-    .map((m) => unescapeXml(m[1] ?? '')).join('');
+/**
+ * xml içindeki <name …>…</name> / <name …/> öğeleri, sırayla — DOĞRUSAL: her adım indexOf ile ileri gider, geri dönmez.
+ * Etiket adı tam eşleşmelidir (<c, <col değildir). '>' ya da kapanış etiketi yoksa XlsxError (tek taramadan sonra durur).
+ * open: yalnızca açılış etiketi istenir (kapanış aranmaz).
+ * @param {string} xml
+ * @param {string} name
+ * @param {{ open?: boolean }} [o]
+ * @returns {Generator<{ attrs: string, inner: string, selfClosed: boolean }>}
+ */
+function* elements(xml, name, { open = false } = {}) {
+  const head = `<${name}`, tail = `</${name}>`;
+  let pos = 0;
+  for (;;) {
+    const i = xml.indexOf(head, pos);
+    if (i < 0) return;
+    const after = xml.charCodeAt(i + head.length);
+    // adın bittiği yer: boşluk, '>' ya da '/'
+    if (!(after === 62 || after === 47 || after === 32 || after === 9 || after === 10 || after === 13)) { pos = i + head.length; continue; }
+    const gt = xml.indexOf('>', i + head.length);
+    if (gt < 0) throw new XlsxError(BAD_XML);
+    const selfClosed = xml.charCodeAt(gt - 1) === 47;
+    const attrs = xml.slice(i + head.length, selfClosed ? gt - 1 : gt);
+    if (selfClosed || open) { yield { attrs, inner: '', selfClosed }; pos = gt + 1; continue; }
+    const close = xml.indexOf(tail, gt + 1);
+    if (close < 0) throw new XlsxError(BAD_XML);
+    yield { attrs, inner: xml.slice(gt + 1, close), selfClosed: false };
+    pos = close + tail.length;
+  }
 }
 
-const attr = (tag, name) => {
-  const m = tag.match(new RegExp(`\\s${name}="([^"]*)"`));
+/** İlk <name> öğesi (yoksa null) */
+function first(xml, name, o) {
+  for (const el of elements(xml, name, o)) return el;
+  return null;
+}
+
+/** <t> parçalarını birleştirir (zengin metin <r><t>..</t></r> dahil; okunuş <rPh> hariç) */
+function textOf(xml) {
+  let src = xml;
+  if (xml.includes('<rPh')) {
+    // okunuş (furigana) bölümleri atılır: öğelerin dışında kalan parçalar birleştirilir
+    src = '';
+    let rest = xml;
+    for (;;) {
+      const i = rest.indexOf('<rPh');
+      if (i < 0) break;
+      const end = rest.indexOf('</rPh>', i);
+      if (end < 0) throw new XlsxError(BAD_XML);
+      src += rest.slice(0, i);
+      rest = rest.slice(end + 6);
+    }
+    src += rest;
+  }
+  let out = '';
+  for (const t of elements(src, 't')) out += unescapeXml(t.inner);
+  return out;
+}
+
+/** @type {Map<string, RegExp>} */
+const ATTR_RE = new Map();
+/** Öznitelik değeri; attrs: etiket adından sonraki bölüm (' r="A1" t="s"') */
+const attr = (attrs, name) => {
+  let re = ATTR_RE.get(name);
+  if (!re) ATTR_RE.set(name, re = new RegExp(`(?:^|\\s)${name}="([^"]*)"`));
+  const m = re.exec(attrs);
   return m ? unescapeXml(m[1]) : null;
 };
 
@@ -38,24 +119,32 @@ function colIndex(ref) {
  * @returns {{ sheetName: string, rows: (string | number | boolean | null)[][] }}
  */
 export function readXlsx(buf) {
-  let files;
+  if (!Buffer.isBuffer(buf)) throw new XlsxError('Excel dosyası okunamadı');
+  if (buf.length > EXCEL_MAX_BYTES) throw new XlsxError('Excel dosyası çok büyük');
   try {
-    files = readZip(buf);
+    return parseXlsx(buf);
   } catch (e) {
+    // Her hata denetimli bir XlsxError olur (bozuk dosya RangeError / TypeError olarak sızmaz)
+    if (e instanceof XlsxError) throw e;
     throw new XlsxError(e instanceof ZipError ? `Excel dosyası okunamadı (${e.message})` : 'Excel dosyası okunamadı');
   }
-  const str = (name) => files.get(name)?.toString('utf8') ?? null;
+}
+
+/** @param {Buffer} buf */
+function parseXlsx(buf) {
+  const zip = openZip(buf);
+  const str = (name) => zip.read(name)?.toString('utf8') ?? null;
   const wb = str('xl/workbook.xml');
   if (!wb) throw new XlsxError('Excel (.xlsx) dosyası değil');
-  const sheetTag = wb.match(/<sheet\b[^>]*>/)?.[0];
+  const sheetTag = first(wb, 'sheet', { open: true });
   if (!sheetTag) throw new XlsxError('Çalışma sayfası yok');
-  const sheetName = attr(sheetTag, 'name') ?? '';
-  const rid = attr(sheetTag, 'r:id');
+  const sheetName = attr(sheetTag.attrs, 'name') ?? '';
+  const rid = attr(sheetTag.attrs, 'r:id');
   let target = 'worksheets/sheet1.xml';
   const rels = str('xl/_rels/workbook.xml.rels');
   if (rels && rid) {
-    for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
-      if (attr(m[0], 'Id') === rid) target = attr(m[0], 'Target') ?? target;
+    for (const rel of elements(rels, 'Relationship', { open: true })) {
+      if (attr(rel.attrs, 'Id') === rid) target = attr(rel.attrs, 'Target') ?? target;
     }
   }
   const path = target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`;
@@ -64,36 +153,45 @@ export function readXlsx(buf) {
 
   const shared = [];
   const ss = str('xl/sharedStrings.xml');
-  if (ss) for (const m of ss.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>|<si\b[^>]*\/>/g)) shared.push(textOf(m[1] ?? ''));
+  if (ss) {
+    for (const si of elements(ss, 'si')) {
+      if (shared.length >= SHEET_LIMITS.cells) throw new XlsxError('Çok fazla metin');
+      shared.push(textOf(si.inner));
+    }
+  }
 
   /** @type {(string | number | boolean | null)[][]} */
   const rows = [];
-  let nextRow = 0;
-  for (const rm of sheet.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-    const r = attr(`<row ${rm[1]}>`, 'r');
+  let nextRow = 0, rowCount = 0, cells = 0, slots = 0;
+  for (const rm of elements(sheet, 'row')) {
+    const r = attr(rm.attrs, 'r');
     const ri = r ? Number(r) - 1 : nextRow;
+    if (!Number.isInteger(ri) || ri < 0) throw new XlsxError(BAD_XML);
     nextRow = ri + 1;
-    if (ri > 100_000) throw new XlsxError('Çok fazla satır');
+    if (ri > SHEET_LIMITS.rows || ++rowCount > SHEET_LIMITS.rows) throw new XlsxError('Çok fazla satır');
     const row = [];
     let nextCol = 0;
-    for (const cm of (rm[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const tag = `<c ${cm[1]}>`;
-      const ref = attr(tag, 'r');
+    for (const cm of elements(rm.inner, 'c')) {
+      if (++cells > SHEET_LIMITS.cells) throw new XlsxError('Çok fazla hücre');
+      const ref = attr(cm.attrs, 'r');
       const ci = ref ? colIndex(ref) : nextCol;
       nextCol = ci + 1;
-      if (ci > 200) continue;
-      const t = attr(tag, 't');
-      const inner = cm[2] ?? '';
-      const v = inner.match(/<v>([\s\S]*?)<\/v>/)?.[1];
+      if (!(ci >= 0) || ci > SHEET_LIMITS.cols) continue;
+      const t = attr(cm.attrs, 't');
+      const inner = cm.inner;
+      const vEl = inner ? first(inner, 'v') : null;
+      const v = vEl && !vEl.selfClosed ? vEl.inner : undefined; // <v/> değer yok sayılır
       let val = null;
       if (t === 's') val = v != null ? (shared[Number(v)] ?? null) : null;
-      else if (t === 'inlineStr') val = textOf(inner.match(/<is>([\s\S]*?)<\/is>/)?.[1] ?? '');
+      else if (t === 'inlineStr') val = textOf(first(inner, 'is')?.inner ?? '');
       else if (t === 'str' || t === 'e') val = v != null ? unescapeXml(v) : null;
       else if (t === 'b') val = v === '1';
       else if (v != null && v !== '') val = Number(v);
       row[ci] = val;
     }
     for (let i = 0; i < row.length; i++) if (row[i] === undefined) row[i] = null;
+    slots += row.length;
+    if (slots > SHEET_LIMITS.cells) throw new XlsxError('Çok fazla hücre');
     rows[ri] = row;
   }
   for (let i = 0; i < rows.length; i++) if (!rows[i]) rows[i] = [];

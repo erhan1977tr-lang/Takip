@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.11 — 06.10.2026
+
+- **Güvenlik: Excel dosyalarını okuyan bölüm, özel hazırlanmış dosyalarla sistemi yavaşlatma / kilitleme girişimlerine
+  karşı sınırlandı** (güvenlik denetimi AUD-3).
+  - "Excel'den Aktar" (teklif tablosu) en çok **5 MB**'lık Excel dosyasını okur; daha büyük dosya okunmadan, açık bir
+    mesajla reddedilir ("Excel dosyası çok büyük (en fazla 5 MB)…"). Büyük Excel dosyası siparişe eskisi gibi yüklenebilir
+    ve indirilebilir; yalnızca teklif tablosuna aktarılamaz. Yönetim ekranlarındaki Excel yüklemeleri zaten 5 MB sınırlıydı.
+  - Bozuk ya da kasıtlı olarak hazırlanmış `.xls` / `.xlsx` dosyaları (içi beyan ettiğinden büyük çıkan, kendi içinde
+    döngüye giren ya da etiketleri kapanmayan dosyalar) artık hemen "Excel dosyası okunamadı" ile reddedilir; sunucuyu
+    meşgul etmez.
+  - Olağan `.xls` ve `.xlsx` dosyaları, ön izleme ve Genişlik / Yükseklik / Adet eşlemesi aynen çalışır. Dosya yükleme,
+    çizimler, PDF'ler ve katalog görselleri bu değişiklikten etkilenmez.
+
 ## 3.50.10 — 06.10.2026
 
 - **Güvenlik: sipariş geçmişi ve kişi bilgileri role göre sunucuda temizlenir** (güvenlik denetimi AUD-1, AUD-2).

@@ -50,6 +50,7 @@ export default {
     apply: 'Importă în tabelul ofertei',
     noFile: 'Fișierul Excel nu a fost găsit.',
     unreadable: 'Fișierul Excel nu a putut fi citit (sunt acceptate .xls și .xlsx).',
+    tooBig: 'Fișierul Excel este prea mare (maximum 5 MB). Încărcați lista de dimensiuni ca fișier Excel mai mic sau introduceți rândurile manual.',
     jumpTop: 'La începutul tabelului ofertei',
     jumpBottom: 'La sfârșitul tabelului ofertei',
   },
