@@ -344,7 +344,9 @@ publish 'Gövde kapısı — gerçek kurulum (Caddy + uygulama)' "$RESULTS"
 # ====================================================================================================================
 # B. SAHTE UYGULAMA + GERÇEK CADDY SÜRÜMLERİ
 # ====================================================================================================================
-IMAGE="takip:$(sudo cat /opt/takip/state/deployed)"
+# Sahte uygulama, çalışan uygulamanın imajındaki node ile çalışır (yeni imaj çekilmez). İmaj adı çalışan kapsayıcıdan okunur:
+# yalnızca belge değişen yayında "yayınlanan commit" ilerler ama imaj derlenmez (o commit adına imaj yoktur).
+IMAGE=$(sudo docker inspect -f '{{.Config.Image}}' "$APP_ID")
 sudo docker network create "$NET" >/dev/null
 # Sahte uygulama: aynı ağda "app" adıyla (Caddyfile'daki app:3000); denetim portu yalnızca yerel makineye açık
 sudo docker run -d --name "$MOCK" --network "$NET" --network-alias app -p 127.0.0.1:13001:3001 \
