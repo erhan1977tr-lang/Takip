@@ -7,6 +7,8 @@ import { runOrderAction } from '../../server/orders/transitions.js';
 import { reviewToken } from '../../server/orders/review.js';
 import { getEnv } from '../../server/env.js';
 import { glassLoadingDate } from '../../server/orders/rules.js';
+import { drawingsView, findDrawingFile } from '../../server/orders/drawing-access.js';
+import { orderScope } from '../../server/orders/scope.js';
 
 let db;
 const people = {};
@@ -398,6 +400,73 @@ dbTest('çizim: gönderilen sürüm gerekçeyle geri çekilir; müşteri artık 
   assert.equal(ev.note, 'v1: Yanlış dosya');
   const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('w2')] });
   assert.equal(v2.result.version, 2);
+});
+
+dbTest('çizim içeriğine erişim (karar 146, AUD-8): müşteri geri çekilen sürümün dosyasını dosya kimliğiyle de eski sürüm kimliğiyle de alamaz, satırını görür; iç roller ve öteki durumlar değişmez', async () => {
+  // Gerçek sorgu: /dosya/cizim yolunun kullandığı işlev (findDrawingFile) + rolün sipariş kapsamı (orderScope)
+  const get = (who, id) => findDrawingFile(db, { id, scope: orderScope(people[who]), role: people[who].appRole });
+  const names = async (who, ids) => Promise.all(ids.map(async (id) => (await get(who, id))?.name ?? null));
+  const tech = (n) => ({ ...fileMeta(n), name: `cizim-${n}.dxf`, storageKey: `2026/09/test${n}.dxf`, mime: 'application/octet-stream' });
+  const view = async (who, orderId) => drawingsView(people[who].appRole, await db.drawing.findMany({ where: { orderId }, orderBy: { version: 'asc' }, include: { files: { orderBy: { createdAt: 'asc' } } } }));
+  const INTERNAL = ['admin', 'sales', 'drawer', 'inspector'];
+
+  const o = await newOrder('Geri çekilen çizim');
+  await run(o.id, 'send_to_drawing', 'sales');
+  const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('q1'), tech('q2')], noteCustomer: 'v1 müşteri notu', noteInternal: 'v1 iç not' });
+  const d1 = v1.result.drawingId;
+  const [f1, f2] = (await db.drawingFile.findMany({ where: { drawingId: d1 }, orderBy: { name: 'asc' } })).map((f) => f.id);
+
+  // TASLAK (değişmedi): müşteriye sürüm de dosya da yok; iç roller alır
+  assert.deepEqual(await names('cust', [f1, f2, d1]), [null, null, null]);
+  assert.deepEqual(await view('cust', o.id), []);
+  for (const who of INTERNAL) assert.deepEqual(await names(who, [f1, f2]), ['cizim-q1.pdf', 'cizim-q2.dxf'], who);
+
+  // Gönderildi (ONAY_BEKLIYOR, değişmedi): müşteri dosyaları ve notu görür — dosya kimliği ve eski sürüm kimliğiyle
+  await send(o.id);
+  assert.deepEqual(await names('cust', [f1, f2]), ['cizim-q1.pdf', 'cizim-q2.dxf']);
+  assert.ok((await get('cust', d1)).name.startsWith('cizim-q'), 'eski bağlantı: sürümün ilk dosyası');
+  assert.deepEqual((await view('cust', o.id)).map((d) => [d.status, d.files.length, d.noteCustomer]), [['ONAY_BEKLIYOR', 2, 'v1 müşteri notu']]);
+  assert.deepEqual(await names('other', [f1, f2, d1]), [null, null, null], 'başka firmanın müşterisi hiçbir zaman');
+
+  // GERİ ÇEKİLDİ: müşteriye bütün dosya yolları kapanır; satır (durum, gerekçe, tarihler) kalır; dosya adı ve not gelmez
+  await run(o.id, 'withdraw_drawing', 'drawer', { reason: 'Yanlış firmanın çizimi' });
+  assert.deepEqual(await names('cust', [f1, f2, d1]), [null, null, null]);
+  const row = (await view('cust', o.id))[0];
+  assert.deepEqual([row.id, row.version, row.status, row.withdrawReason, !!row.withdrawnAt, !!row.sentAt], [d1, 1, 'GERI_CEKILDI', 'Yanlış firmanın çizimi', true, true]);
+  assert.deepEqual([row.files, row.noteCustomer, row.fileUrl, row.fileName], [[], null, null, null]);
+  const seen = JSON.stringify(await view('cust', o.id));
+  for (const leak of ['cizim-q1.pdf', 'cizim-q2.dxf', 'v1 müşteri notu', f1, f2, 'testq1', 'testq2']) assert.equal(seen.includes(leak), false, leak);
+  // İç roller (yönetici, satış, çizim, denetimci) geri çekilen sürümü eskisi gibi görür ve dosyalarını alır
+  for (const who of INTERNAL) {
+    assert.deepEqual(await names(who, [f1, f2]), ['cizim-q1.pdf', 'cizim-q2.dxf'], who);
+    assert.ok((await get(who, d1)).name.startsWith('cizim-q'), who);
+    const d = (await view(who, o.id))[0];
+    assert.deepEqual([d.status, d.files.length, d.noteCustomer], ['GERI_CEKILDI', 2, 'v1 müşteri notu'], who);
+  }
+  // Kayıt silinmedi / değişmedi: geri çekme yalnızca erişimi kapatır
+  assert.equal(await db.drawingFile.count({ where: { drawingId: d1 } }), 2);
+  assert.equal((await db.drawing.findUniqueOrThrow({ where: { id: d1 } })).noteCustomer, 'v1 müşteri notu');
+
+  // Yeni sürüm: taslakken kapalı, gönderilince açık; v1 kapalı kalır
+  const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('q3')], noteCustomer: 'v2 müşteri notu' });
+  const g1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v2.result.drawingId } })).id;
+  assert.deepEqual(await names('cust', [g1, v2.result.drawingId]), [null, null]);
+  await send(o.id);
+  assert.deepEqual(await names('cust', [g1, v2.result.drawingId, f1, f2, d1]), ['cizim-q3.pdf', 'cizim-q3.pdf', null, null, null]);
+  assert.deepEqual((await view('cust', o.id)).map((d) => [d.version, d.status, d.files.length, d.noteCustomer]),
+    [[1, 'GERI_CEKILDI', 0, null], [2, 'ONAY_BEKLIYOR', 1, 'v2 müşteri notu']]);
+  // Revizyon istenen sürüm (değişmedi): açık kalır; yeni taslak kapalı
+  await run(o.id, 'request_revision', 'cust', { comment: 'Düzeltin', drawingId: v2.result.drawingId });
+  assert.deepEqual(await names('cust', [g1, f1]), ['cizim-q3.pdf', null]);
+  const v3 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('q4')] });
+  const h1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v3.result.drawingId } })).id;
+  assert.deepEqual(await names('cust', [h1]), [null]);
+  // Onaylanan sürüm (değişmedi): açık
+  await send(o.id);
+  await run(o.id, 'approve_drawing', 'cust', { drawingId: v3.result.drawingId });
+  assert.deepEqual(await names('cust', [h1, g1, f1, f2, d1]), ['cizim-q4.pdf', 'cizim-q3.pdf', null, null, null]);
+  assert.deepEqual((await view('cust', o.id)).map((d) => [d.version, d.status, d.files.length]),
+    [[1, 'GERI_CEKILDI', 0], [2, 'REVIZYON_ISTENDI', 1], [3, 'ONAYLANDI', 1]]);
 });
 
 // Karar 113: CNC / delik TEK bir fiziksel cama aittir — sunucu her teklif kaydında (taslak dahil) denetler

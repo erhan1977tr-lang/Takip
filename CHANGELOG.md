@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.17 — 06.10.2026
+
+- **Güvenlik: geri çekilen çizim sürümünün dosyaları artık müşteriye kapalı** (güvenlik denetimi AUD-8).
+  - Çizimci bir sürümü geri çektiğinde müşteri o sürümün dosyalarını artık açamaz ve indiremez; sürüm için müşteriye
+    yazılmış not da görünmez. Bağlantıyı bilse de dosyaya ulaşamaz.
+  - Müşteri sürümün geri çekildiğini, tarihini ve geri çekme gerekçesini görmeye devam eder.
+  - Yönetici, satış, çizim ekibi ve denetimci için hiçbir şey değişmedi: geri çekilen sürümün dosyaları ve notu durur.
+  - Gönderilmiş, onaylanmış ve revizyon istenmiş sürümler müşteriye eskisi gibi açıktır.
+  - Not: geri çekmeden önce müşterinin indirdiği kopya geri alınamaz; dosyanın açılıp açılmadığı denetim kaydında görünür.
+
 ## 3.50.16 — 06.10.2026
 
 - **Güvenlik: dil değiştirme bağlantısı artık başka bir siteye yönlendiremez** (güvenlik denetimi AUD-6).

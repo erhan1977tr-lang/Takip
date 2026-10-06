@@ -7,6 +7,7 @@ import { userCan } from '@/lib/permissions';
 import { audit } from '@/lib/audit';
 import { resolveKey } from '@/lib/storage';
 import { getT } from '@/lib/i18n';
+import { findDrawingFile } from '@/server/orders/drawing-access.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,17 +37,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     });
     if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.orderId };
   } else if (kind === 'cizim') {
-    // Çizim sürümünün dosyası. Müşteri, henüz gönderilmemiş (taslak) sürümün dosyasını göremez → 404.
-    const draftHidden = userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { status: { not: 'TASLAK' as const } };
-    const f = await db.drawingFile.findFirst({ where: { id, drawing: { order: scope, ...draftHidden } }, include: { drawing: { select: { orderId: true } } } });
-    if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.drawing.orderId };
-    else {
-      // Eski bağlantılar: /dosya/cizim/<sürüm id> → sürümün ilk dosyası
-      const d = await db.drawing.findFirst({ where: { id, order: scope, ...draftHidden }, include: { files: { orderBy: { createdAt: 'asc' }, take: 1 } } });
-      const first = d?.files[0];
-      if (d && first) file = { storageKey: first.storageKey, name: first.name, mime: first.mime, scanStatus: first.scanStatus, orderId: d.orderId };
-      else if (d?.fileUrl) file = { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
-    }
+    // Çizim sürümünün dosyası (dosya kimliği; eski bağlantılarda sürüm kimliği). Erişim kuralı tek yerdedir
+    // (server/orders/drawing-access.js, karar 146): müşteri taslak ve GERİ ÇEKİLMİŞ sürümün dosyasını alamaz → 404.
+    // "?ac=1" (tarayıcıda aç) aynı yoldan geçer. Verilmeyen dosya için aşağıdaki FILE_DOWNLOAD kaydı da yazılmaz.
+    file = await findDrawingFile(db, { id, scope, role: user.appRole });
   }
   if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
   // Virüslü dosya karantinadadır; kimseye verilmez

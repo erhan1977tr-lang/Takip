@@ -1,10 +1,23 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
+import type { PrismaClient } from '@prisma/client';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, SALES, TEAM_PW, as, login, newOrder, sampleFile } from './helpers';
 
 // Aşama 4: çizim taslağa yüklenir (çoklu dosya, virüs taraması); "Kontrol Et" ekranındaki "Müşteriye gönder" onaylı
 // ikinci adımdır (karar 84: sipariş sayfasından gönderilemez; sunucu kontrol kanıtı ister);
 // gönderilen sürüm müşteri karar vermeden gerekçeyle geri çekilebilir, sürüm geçmişte kalır.
+// Karar 146 (güvenlik denetimi AUD-8): geri çekilen sürümün SATIRI (durum, tarih, gerekçe) müşteride kalır; dosyaları ve
+// müşteri notu müşteriye kapanır — sipariş sayfası, sayfa kaynağı, /dosya/cizim (dosya kimliği, eski sürüm kimliği, ?ac=1)
+// ve görüntüleyici. İç roller eskisi gibi görür. Reddedilen istek indirme kaydı (FILE_DOWNLOAD) yazmaz.
 test.describe.configure({ mode: 'serial' });
+
+const INSPECTOR = 'denetim@e2e.test';
+const NOTE = 'Müşteri notu: v1 ölçüleri 1250 x 2100';
+let db: PrismaClient;
+test.beforeAll(async () => {
+  const { PrismaClient: Client } = await import('@prisma/client');
+  db = new Client();
+});
+test.afterAll(async () => { await db.$disconnect(); });
 
 /** Onay pencerelerini kendimiz yöneteceğimiz çizimci oturumu (as() hepsini kabul eder). */
 async function drawerPage(browser: import('@playwright/test').Browser): Promise<Page> {
@@ -24,6 +37,7 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   const drawer = await drawerPage(browser);
   await drawer.goto(`/siparisler/${id}`);
   await drawer.setInputFiles('#drawing-file', [sampleFile('dus-v1.dxf', 'dxf'), sampleFile('dus-v1.pdf', 'pdf'), sampleFile('yanlis.png', 'png')]);
+  await drawer.fill('#d-note-c', NOTE);
   await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
   await expect(drawer.getByText('Dosyalar taslağa eklendi.')).toBeVisible();
 
@@ -78,6 +92,25 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
   await expect(cust.locator('.file-row', { hasText: 'dus-v1.dxf' })).toBeVisible();
 
+  // Gönderilmiş sürüm (değişmedi): müşteri notu görür; dosyayı dosya kimliğiyle, eski sürüm kimliğiyle ve "aç" (?ac=1)
+  // adresiyle alır; görüntüleyici açılır. Her erişim indirme kaydına yazılır.
+  const v1 = await db.drawing.findFirstOrThrow({ where: { orderId: id, version: 1 }, include: { files: { orderBy: { name: 'asc' } } } });
+  expect(v1.files.map((f) => f.name)).toEqual(['dus-ek.dxf', 'dus-v1.dxf', 'dus-v1.pdf']);
+  const v1Pdf = v1.files.find((f) => f.name === 'dus-v1.pdf')!;
+  const v1Viewer = `/siparisler/${id}/cizim/${v1.id}`;
+  const v1Urls = [...v1.files.flatMap((f) => [`/dosya/cizim/${f.id}`, `/dosya/cizim/${f.id}?ac=1`]), `/dosya/cizim/${v1.id}`, `/dosya/cizim/${v1.id}?ac=1`];
+  const custUser = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER } });
+  const custDownloads = () => db.auditLog.count({ where: { action: 'FILE_DOWNLOAD', userId: custUser.id, entityId: { in: [...v1.files.map((f) => f.id), v1.id] } } });
+  await expect(cust.locator('.drawing-version', { hasText: 'dus-v1.dxf' })).toContainText(NOTE);
+  expect(await custDownloads()).toBe(0);
+  for (const url of v1Urls) {
+    const res = await cust.request.get(url);
+    expect(res.status(), url).toBe(200);
+    if (url === `/dosya/cizim/${v1Pdf.id}?ac=1`) expect(res.headers()['content-type']).toBe('application/pdf');
+  }
+  expect(await custDownloads()).toBe(v1Urls.length);
+  expect((await cust.request.get(v1Viewer)).status()).toBe(200);
+
   // Müşteri karar vermeden geri çekme (gerekçe zorunlu, onaylı)
   await drawer.goto(`/siparisler/${id}`);
   await drawer.fill('input[name=reason]', 'Yanlış ölçü gönderildi');
@@ -90,6 +123,48 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(cust.getByText('geri çekildi').first()).toBeVisible();
   await expect(cust.getByText('Yanlış ölçü gönderildi').first()).toBeVisible();
 
+  // Karar 146: geri çekilen sürümün satırı müşteride kalır (sürüm no, durum, gerekçe); dosyaları ve müşteri notu gelmez
+  const withdrawn = cust.locator('.drawing-version', { hasText: 'geri çekildi' });
+  await expect(withdrawn).toHaveCount(1);
+  await expect(withdrawn).toContainText('v1');
+  await expect(withdrawn).toContainText('Yanlış ölçü gönderildi');
+  await expect(withdrawn.locator('.file-row')).toHaveCount(0);
+  await expect(withdrawn.getByRole('link')).toHaveCount(0);
+  await expect(cust.locator('a[href*="/dosya/cizim/"]')).toHaveCount(0);
+  await expect(cust.locator(`a[href*="/cizim/${v1.id}"]`)).toHaveCount(0);
+  // Sayfanın ham yanıtında (HTML + sunucu bileşeni verisi) ve çizilmiş sayfada dosya adı, dosya kimliği ve müşteri notu yok
+  const leaks = ['dus-v1.dxf', 'dus-v1.pdf', 'dus-ek.dxf', NOTE, 'v1 ölçüleri', ...v1.files.map((f) => f.id)];
+  const rawPage = await (await cust.request.get(`/siparisler/${id}`)).text();
+  const shown = await cust.content();
+  expect(rawPage).toContain('Yanlış ölçü gönderildi');
+  for (const leak of leaks) {
+    expect(rawPage, `ham yanıt: ${leak}`).not.toContain(leak);
+    expect(shown, `sayfa: ${leak}`).not.toContain(leak);
+  }
+  // Bütün dosya yolları kapalı: dosya kimliği, eski sürüm kimliği, "?ac=1"; görüntüleyici (revizyon ekranı dahil) "bulunamadı"
+  for (const url of v1Urls) expect((await cust.request.get(url)).status(), url).toBe(404);
+  expect((await cust.goto(v1Viewer))?.status()).toBe(404);
+  expect((await cust.goto(`${v1Viewer}?revizyon=1`))?.status()).toBe(404);
+  expect((await cust.request.get(v1Viewer)).status()).toBe(404);
+  // Reddedilen istek indirme kaydı yazmaz (geri çekmeden önceki kayıtlar durur)
+  expect(await custDownloads()).toBe(v1Urls.length);
+  // İç roller (çizim, yönetici, satış, denetimci) geri çekilen sürümü eskisi gibi görür: dosya, not, görüntüleyici
+  const sales = await as(browser, SALES, TEAM_PW);
+  const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+  for (const [who, page] of [['çizim', drawer], ['yönetici', admin], ['satış', sales], ['denetimci', insp]] as const) {
+    expect((await page.request.get(`/dosya/cizim/${v1Pdf.id}`)).status(), who).toBe(200);
+    expect((await page.request.get(`/dosya/cizim/${v1Pdf.id}?ac=1`)).status(), who).toBe(200);
+    expect((await page.request.get(`/dosya/cizim/${v1.id}`)).status(), who).toBe(200);
+    expect((await page.request.get(v1Viewer)).status(), who).toBe(200);
+    await page.goto(`/siparisler/${id}`);
+    const row = page.locator('.drawing-version', { hasText: 'geri çekildi' });
+    await expect(row.locator('.file-row'), who).toHaveCount(3);
+    await expect(row, who).toContainText('dus-v1.pdf');
+    await expect(row, who).toContainText(NOTE);
+  }
+  await sales.context().close();
+  await insp.context().close();
+
   // Yeni sürüm (v2) — v1 geçmişte kalır
   await drawer.setInputFiles('#drawing-file', sampleFile('dus-v2.pdf', 'pdf v2'));
   await drawer.getByRole('button', { name: 'Taslağa yükle' }).click();
@@ -99,6 +174,21 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
   await expect(drawer.getByText('v2 · güncel')).toBeVisible();
   await expect(drawer.locator('.drawing-version', { hasText: 'dus-v1.dxf' })).toContainText('geri çekildi');
+
+  // Yeni sürüm gönderilince: v2 müşteriye açık (değişmedi), v1 kapalı kalır
+  const v2 = await db.drawing.findFirstOrThrow({ where: { orderId: id, version: 2 }, include: { files: true } });
+  expect((await cust.request.get(`/dosya/cizim/${v2.files[0].id}`)).status()).toBe(200);
+  expect((await cust.request.get(`/dosya/cizim/${v2.id}`)).status()).toBe(200);
+  expect((await cust.request.get(`/siparisler/${id}/cizim/${v2.id}`)).status()).toBe(200);
+  for (const url of v1Urls) expect((await cust.request.get(url)).status(), url).toBe(404);
+  expect((await cust.request.get(v1Viewer)).status()).toBe(404);
+  expect(await custDownloads()).toBe(v1Urls.length);
+  await cust.goto(`/siparisler/${id}`);
+  await expect(cust.locator('.drawing-version', { hasText: 'v2' }).locator('.file-row', { hasText: 'dus-v2.pdf' })).toBeVisible();
+  await expect(cust.locator('.drawing-version', { hasText: 'geri çekildi' }).locator('.file-row')).toHaveCount(0);
+  const rawAfter = await (await cust.request.get(`/siparisler/${id}`)).text();
+  expect(rawAfter).toContain('dus-v2.pdf');
+  for (const leak of leaks) expect(rawAfter, leak).not.toContain(leak);
 
   await cust.goto(`/siparisler/${id}`);
   await cust.getByRole('button', { name: 'Bu çizimi onayla' }).click();

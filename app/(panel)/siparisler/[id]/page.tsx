@@ -753,7 +753,8 @@ function Crates({ order, t }: { order: OrderDetail; t: T }) {
 function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; t: T }) {
   if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
   const isCustomer = user.appRole === 'MUSTERI';
-  const versions = [...order.drawings].reverse(); // taslaklar müşteriye hiç yüklenmez (sanitizeOrder)
+  // Müşteriye taslak sürüm hiç gelmez; geri çekilen sürümün yalnızca satırı gelir (dosyasız, müşteri notsuz) — sanitizeOrder, karar 146
+  const versions = [...order.drawings].reverse();
   const statusBadge = (st: string) => ({
     TASLAK: <span className="badge badge-muted">{t('order.drawings.draft')}</span>,
     ONAY_BEKLIYOR: <span className="badge badge-warn">{t('order.drawings.pending')}</span>,

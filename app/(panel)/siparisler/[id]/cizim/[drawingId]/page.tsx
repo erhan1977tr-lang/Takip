@@ -11,6 +11,7 @@ import { userCan } from '@/lib/permissions';
 import { availableActions, drawingFlags, isViewable } from '@/server/orders/rules.js';
 import { cleanAnnotations } from '@/server/orders/annotations.js';
 import { reviewToken } from '@/server/orders/review.js';
+import { drawingAccess } from '@/server/orders/drawing-access.js';
 import { approveDrawingAction, sendDrawingAction } from '../../actions';
 import { RevisionForm } from './RevisionForm';
 
@@ -24,7 +25,7 @@ export const dynamic = 'force-dynamic';
 //     not). İkisi de onay yetkisi ister (availableActions); yetkisiz kullanıcı yalnızca inceler.
 //   - çizimci / iç ekip / müşteri: revizyon talebini çizim üzerindeki işaretleriyle görür (?rev=<talep>)
 // Sipariş loadOrder ile yüklenir: firma kapsamı ve role göre temizlik sunucuda (başka firmanın siparişi → 404,
-// müşteriye taslak sürüm gelmez). Dosyalar /dosya/cizim/<id> adresinden, aynı denetimle gelir.
+// müşteriye taslak sürüm gelmez; geri çekilen sürümün içeriği gelmez). Dosyalar /dosya/cizim/<id> adresinden, aynı kuralla gelir.
 export default async function DrawingPage({ params, searchParams }: { params: Promise<{ id: string; drawingId: string }>; searchParams: Promise<{ revizyon?: string; rev?: string }> }) {
   const user = await requirePermission('ORDER_VIEW');
   const { id, drawingId } = await params;
@@ -32,7 +33,9 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
   const { t } = await getT();
   const order = await loadOrder(id, user);
   const d = order.drawings.find((x) => x.id === drawingId);
-  if (!d) notFound();
+  // Sürümün içeriğini görebilen açar (tek kural: server/orders/drawing-access.js, karar 146): müşteriye taslak sürüm hiç
+  // gelmez; geri çekilen sürümün satırı gelir ama içeriği kapalıdır → bu ekran da "bulunamadı" der.
+  if (!d || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();
   const latest = order.drawings[order.drawings.length - 1];
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,

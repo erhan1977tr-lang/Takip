@@ -9,6 +9,7 @@ import { customerView } from '../server/orders/customer-view.js';
 import { notesFor } from '../server/notes/view.js';
 import { orderPeopleView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
+import { drawingsView } from '../server/orders/drawing-access.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -145,9 +146,10 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   // İki kademeli fiyat (karar 4)
   const view = priceView(user);
   offers = offers.map((o) => offerPrices(view, o));
-  // Çizim: müşteri taslak sürümü (henüz gönderilmemiş) hiç görmez; iç not yalnızca iç ekibe gider
-  let drawings = order.drawings;
-  if (!userCan(user, 'FILE_INTERNAL_VIEW')) drawings = drawings.filter((d) => d.status !== 'TASLAK');
+  // Çizim: sürümlerin role göre görünümü TEK kuraldan (server/orders/drawing-access.js, karar 146) — müşteri taslak sürümü
+  // hiç görmez; geri çekilen sürümün satırını (durum, tarih, gerekçe) görür ama dosyalarını ve müşteri notunu almaz.
+  // Dosya adresi ve çizim görüntüleyicisi de aynı kuralı kullanır. İç not yalnızca iç ekibe gider.
+  let drawings = drawingsView(user.appRole, order.drawings);
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
   // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür.
   // FGO belge bağlantıları (yalnızca FGO işçisi yazar: factura/emitere yanıtındaki bağlantı) dış veridir: FGO'nun kendi
