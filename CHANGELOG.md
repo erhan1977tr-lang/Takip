@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.12 — 06.10.2026
+
+- **Güvenlik: sunucuya gönderilebilecek istek boyutu artık adrese göre sınırlı** (güvenlik denetimi AUD-4). Önceden her
+  adres 260 MB'a kadar istek kabul ediyordu; giriş yapmamış biri giriş sayfasına büyük istekler göndererek sunucunun
+  belleğini doldurabiliyordu.
+  - Dosya yüklenmeyen her adres (giriş, ilk şifre, listeler, yükleme sekmesi, yönetim sayfaları) en çok **2 MB** kabul eder.
+  - Yönetim Excel yüklemeleri (fiyat, katalog, stok) **6 MB**; sipariş sayfaları ve depo bağlantısı eskisi gibi **260 MB**.
+    Dosya yükleme kuralları değişmedi: dosya başına 100 MB, bir seferde toplam 250 MB.
+  - Bir isteğin gövdesi en çok 1 saatte tamamlanmalıdır (önceden süre sınırı yoktu).
+  - Bu sürüm yayınlanırken site birkaç saniyeliğine yeniden bağlanır (ön sunucu yeni ayarı okur).
+  - Not: sipariş sayfalarının ve depo bağlantısının adresleri, dosya yüklenebildiği için büyük isteği giriş yapmamış
+    istemciden de kabul etmeye devam eder; bunu kapatmak ayrı bir karar gerektirir (karar 141). Uygulama için bellek
+    sınırı bu sürümde eklenmedi (SEC-12).
+
 ## 3.50.11 — 06.10.2026
 
 - **Güvenlik: Excel dosyalarını okuyan bölüm, özel hazırlanmış dosyalarla sistemi yavaşlatma / kilitleme girişimlerine

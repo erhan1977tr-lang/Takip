@@ -1,9 +1,37 @@
 # HTTPS sertifikası Let's Encrypt'ten otomatik alınır ve yenilenir.
+#
+# İstek gövdesi sınırları ve zaman aşımları (güvenlik denetimi 3.50.9 AUD-4, karar 141). Bu dosyada yalnızca Caddy 2'nin
+# eski sürümlerinde de bulunan özellikler kullanılır (imaj "caddy:2" etiketiyle çekilir; sunucudaki sürüm değişebilir):
+# request_body max_size, path eşleştirici, handle, snippet, servers → timeouts. Sürüme bağlı özellikler (request_body
+# içinde read_timeout, "timeouts" yönergesi) bilerek kullanılmaz. Sınırlar test/body-limits.test.js ile, gerçek Caddy
+# arkasında da deploy/test/body-limits.sh ile denetlenir — bu dosyayı değiştirirken ikisini de güncelleyin.
+{
+	servers {
+		timeouts {
+			# İstek başlıkları en çok 30 sn'de gelmeli (Caddy varsayılanı 1 dk).
+			read_header 30s
+			# Bir isteğin gövdesinin tamamı en çok 1 saatte okunur (önceden sınırsız): bağlantıyı açık tutup gövdeyi
+			# damla damla gönderen istemci süresiz bekletemez. Tek bir değer bütün adresler için geçerlidir; en büyük
+			# meşru yükleme (250 MB) yavaş hatta da bitsin diye geniştir (≈ 0,6 Mbit/sn yeter). HTTP/3'te uygulanmaz.
+			read_body 1h
+		}
+	}
+}
+
+# Uygulamaya vekil. İstemci IP'sinin TEK güvenilir kaynağı Caddy'dir (güvenlik denetimi SEC-01): Caddy, istemcinin
+# gönderdiği X-Forwarded-For'u yok sayar ve gerçek bağlantı adresini yazar (trusted_proxies tanımlı değil). İstemcinin
+# gönderebileceği diğer "gerçek IP" başlıkları uygulamaya hiç ulaşmaz. Cloudflare eklenecekse: server/security/client-ip.js
+(uygulama) {
+	reverse_proxy app:3000 {
+		header_up -CF-Connecting-IP
+		header_up -CF-IPCountry
+		header_up -True-Client-IP
+		header_up -X-Real-IP
+	}
+}
+
 {$APP_DOMAIN} {
 	encode zstd gzip
-	request_body {
-		max_size 260MB
-	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
@@ -12,13 +40,38 @@
 		X-Robots-Tag "noindex, nofollow"
 		-Server
 	}
-	# İstemci IP'sinin TEK güvenilir kaynağı Caddy'dir (güvenlik denetimi SEC-01): Caddy, istemcinin gönderdiği
-	# X-Forwarded-For'u yok sayar ve gerçek bağlantı adresini yazar (trusted_proxies tanımlı değil). İstemcinin
-	# gönderebileceği diğer "gerçek IP" başlıkları uygulamaya hiç ulaşmaz. Cloudflare eklenecekse: server/security/client-ip.js
-	reverse_proxy app:3000 {
-		header_up -CF-Connecting-IP
-		header_up -CF-IPCountry
-		header_up -True-Client-IP
-		header_up -X-Real-IP
+
+	# İstek gövdesi sınırı ADRESE göre üç kademedir; kademeler birbirini dışlar (handle: yalnızca ilk eşleşen çalışır) ve
+	# her biri isteği uygulamaya kendisi iletir. Boyutlar ondalıktır (go-humanize: 1 MB = 1.000.000 bayt).
+	#
+	# Sunucu işlemleri (Server Actions) formun bulunduğu SAYFANIN adresine POST edilir; ayrı bir "yükleme adresi" yoktur.
+	# Bu yüzden büyük sınır yalnızca dosya yükleme formu olan sayfalara verilir:
+	#   /siparisler/*  yeni sipariş, sipariş sayfası (sipariş dosyası, çizim, teslim belgesi): dosya başına 100 MB,
+	#                  istek başına toplam 250 MB (yeni sipariş formunda yazan kural; next.config.mjs → bodySizeLimit)
+	#   /depo/*        depo bağlantısı (imzalı teslim belgesi): dosya 20 MB, sipariş başına toplam 200 MB
+	@yukleme path /siparisler/* /depo/*
+	handle @yukleme {
+		request_body {
+			max_size 260MB
+		}
+		import uygulama
+	}
+
+	# Yönetim Excel yüklemeleri (fiyat / katalog / stok: dosya en çok 5 MiB) ve ürün görseli (2 MiB)
+	@yonetim_excel path /admin/fiyatlar /admin/musteri-fiyatlari /admin/katalog /admin/profil-katalogu /admin/stok
+	handle @yonetim_excel {
+		request_body {
+			max_size 6MB
+		}
+		import uygulama
+	}
+
+	# Diğer her adres — giriş (/login), ilk şifre (/setup), dil, oturum etkinliği, bildirimler, listeler, yükleme
+	# sekmesi, yönetim sayfaları: dosya yüklenmez, form gövdeleri küçüktür.
+	handle {
+		request_body {
+			max_size 2MB
+		}
+		import uygulama
 	}
 }
