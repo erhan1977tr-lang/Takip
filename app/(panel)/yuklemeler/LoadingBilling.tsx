@@ -10,6 +10,7 @@ import { FxInfo, FxUnavailableNote } from '@/components/FxInfo';
 import { bnrRate } from '@/server/fx/bnr.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { loadingBilling } from '@/server/glass/invoice-batch.js';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import { createAdvanceAction, createInvoiceAction, reviewInvoiceBatchAction } from './billing-actions';
 import { ImpactNote, type Impact } from './ImpactNote';
 
@@ -69,7 +70,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
               <div key={b.batchId} className="bill-issued">
                 <p>
                   <b>{t('accounting.invoice.issued')}:</b>{' '}
-                  {b.ref ? (b.link ? <a className="mono" href={b.link} target="_blank" rel="noopener noreferrer">{b.ref}</a> : <span className="mono">{b.ref}</span>) : '—'}{' '}
+                  {b.ref ? <FgoDocLink className="mono" link={b.link} fallback={<span className="mono">{b.ref}</span>}>{b.ref}</FgoDocLink> : '—'}{' '}
                   <Badge tone={STATUS_TONE[b.status]}>{t(`accounting.batch.status.${b.status}` as MsgKey)}</Badge>{' '}
                   {b.status === 'ISSUED' && <Badge tone={PAY_TONE[pay]}>{t(`accounting.receivables.status.${pay}` as MsgKey)}</Badge>}
                   <span className="muted small"> · {t('accounting.invoice.orders', { list: b.orders.join(', ') })}</span>

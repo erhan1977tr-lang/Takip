@@ -8,6 +8,7 @@ import { absentInFgo, backfillDocuments, listDocuments, paymentStatus, receivabl
 import { emailStates } from '@/server/documents/delivery.js';
 import { getAccountingSettings, uninvoicedLoadings } from '@/server/accounting/uninvoiced.js';
 import { ConfirmButton } from '@/components/ConfirmButton';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import { refreshFgoAction, removeDeletedDocAction, resendDocEmailAction } from './actions';
 
 type Doc = Prisma.FgoDocumentGetPayload<{ include: {
@@ -230,7 +231,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                           )}
                         </td>
                         <td>{i === 0 && (d.order?.customer.name ?? d.batch?.customer.name)}</td>
-                        <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
+                        <td className="mono"><FgoDocLink link={d.link}>{d.series}{d.number}</FgoDocLink></td>
                         <td>{t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey)}</td>
                         <td className="nowrap">{fmtDate(d.issuedAt)}</td>
                         <td className="num">{d.total != null ? fmtMoney(d.total.toString(), d.currency) : '—'}</td>

@@ -8,6 +8,7 @@ import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js
 import { customerView } from '../server/orders/customer-view.js';
 import { notesFor } from '../server/notes/view.js';
 import { orderPeopleView } from '../server/orders/order-view.js';
+import { pdfUrl } from '../server/documents/fgo-pdf.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -148,8 +149,12 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   let drawings = order.drawings;
   if (!userCan(user, 'FILE_INTERNAL_VIEW')) drawings = drawings.filter((d) => d.status !== 'TASLAK');
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
-  // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür
-  const profile = order.profile ? { ...order.profile, depotTokenHash: null } : null;
+  // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür.
+  // FGO belge bağlantıları (yalnızca FGO işçisi yazar: factura/emitere yanıtındaki bağlantı) dış veridir: FGO'nun kendi
+  // adresi değilse sayfaya hiç taşınmaz (karar 144 — pdfUrl); belge numarası ve tarihi yine gösterilir.
+  const profile = order.profile
+    ? { ...order.profile, depotTokenHash: null, proformaLink: pdfUrl(order.profile.proformaLink), invoiceLink: pdfUrl(order.profile.invoiceLink) }
+    : null;
   return orderPeopleView(user.appRole, {
     ...order,
     profile,

@@ -19,6 +19,10 @@ import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 import { writeAudit, writeHistory } from '../orders/journal.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { fgoKey, fgoPrint, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
+import { PDF_MAX_BYTES, downloadFgoPdf, pdfUrl } from './fgo-pdf.js';
+
+// Bağlantı kuralı ve indirme server/documents/fgo-pdf.js'tedir (bağımsız dosya); eski içe aktarmalar için buradan da verilir
+export { PDF_MAX_BYTES, pdfUrl };
 
 export const DOC_EMAIL = 'FGO_DOC_EMAIL';
 export const DOC_EMAIL_MAX_ATTEMPTS = 8;
@@ -26,7 +30,6 @@ export const DOC_EMAIL_MAX_ATTEMPTS = 8;
 export const DOC_EMAIL_LEASE_MS = 5 * 60_000;
 /** PDF alınamazsa e-posta bu kadar deneme bekletilir; sonra eksiz (belge bağlantısıyla) gönderilir */
 export const PDF_WAIT_ATTEMPTS = 2;
-export const PDF_MAX_BYTES = 15 * 1024 * 1024;
 /** "Firmanın e-postası yok" durumu: iş yeniden denenmez (belge geçerlidir, müşteri ekranında görünür) */
 export const NO_EMAIL = 'NO_EMAIL';
 
@@ -65,45 +68,26 @@ export async function queueDocEmail(tx, { docId, orderId = null }) {
 }
 
 // ---------- PDF ----------
-/** Yalnızca FGO'nun kendi adresleri indirilir (https, fgo.ro ve alt alan adları) */
-export function pdfUrl(link) {
-  try {
-    const u = new URL(String(link ?? ''));
-    return u.protocol === 'https:' && (u.hostname === 'fgo.ro' || u.hostname.endsWith('.fgo.ro')) ? u.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-/** @returns {Promise<{ ok: true, bytes: Buffer } | { ok: false, status: number, error: string }>} */
-async function download(url, fetchImpl) {
-  try {
-    const res = await fetchImpl(url, { signal: AbortSignal.timeout(20_000), headers: { accept: 'application/pdf' } });
-    if (!res.ok) return { ok: false, status: res.status, error: `HTTP ${res.status}` };
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > PDF_MAX_BYTES) return { ok: false, status: 0, error: `PDF boyutu uygun değil (${bytes.length})` };
-    if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') return { ok: false, status: 0, error: 'yanıt PDF değil' };
-    return { ok: true, bytes };
-  } catch (e) {
-    return { ok: false, status: 0, error: String(e?.message ?? e).slice(0, 200) };
-  }
-}
-
 /**
  * Belgenin PDF'i (sunucu tarafında). Önce kayıtlı bağlantı; bağlantı yoksa ya da artık yoksa (404 / 410) FGO'dan
  * bağlantı yeniden istenir (factura/print — yalnızca okuma) ve kayda yazılır. FGO her çağrıda sorulmaz.
+ *
+ * FGO'nun verdiği bağlantı dış veridir (AUD-5 / AUD-7, karar 144): yalnızca FGO'nun kendi adresiyse indirilir, kayda
+ * yazılır ve çağırana verilir (pdfUrl). İndirme yönlendirmeleri kendisi izler ve her adımı yeniden doğrular; yanıtı
+ * sınırlı okur (downloadFgoPdf).
  * @param {any} db
  * @param {{ id: string, series: string, number: string, link?: string | null }} doc
  * @param {{ fetchImpl?: typeof fetch, secret?: string, appUrl?: string }} [ctx]
  * @returns {Promise<{ ok: true, bytes: Buffer } | { ok: false, link: string | null, error: string }>}
- *   ok değilse link: belgenin FGO'daki (https) bağlantısı — yalnızca sahipliği doğrulanmış okuyana verilir
+ *   ok değilse link: belgenin FGO'daki bağlantısı — YALNIZCA pdfUrl'den geçmişse (değilse null); müşteri e-postasına ve
+ *   sahipliği doğrulanmış okuyanın yönlendirmesine yalnızca bu değer gider
  */
 export async function fetchDocPdf(db, doc, { fetchImpl = fetch, secret, appUrl } = {}) {
-  let link = doc.link ?? null;
+  // Çağırana yalnızca doğrulanmış bağlantı döner; kayıtlı bağlantı FGO adresi değilse yok sayılır
+  let link = pdfUrl(doc.link);
   let error = 'PDF bağlantısı yok';
-  const first = pdfUrl(link);
-  if (first) {
-    const r = await download(first, fetchImpl);
+  if (link) {
+    const r = await downloadFgoPdf(link, { fetchImpl });
     if (r.ok) return r;
     error = r.error;
     if (r.status !== 404 && r.status !== 410) return { ok: false, link, error };
@@ -114,17 +98,17 @@ export async function fetchDocPdf(db, doc, { fetchImpl = fetch, secret, appUrl }
     const settings = await getFgoSettings(db);
     const key = fgoReady(settings) ? fgoKey(settings, secret ?? env.AUTH_SECRET) : null;
     if (!key) return { ok: false, link, error };
-    const fresh = await fgoPrint(settings, key, { series: doc.series, number: doc.number, appUrl: appUrl ?? env.APP_URL ?? '' }, fetchImpl);
-    if (!fresh) return { ok: false, link, error };
-    if (fresh !== link) {
-      await db.fgoDocument.updateMany({ where: { id: doc.id }, data: { link: fresh } });
-      link = fresh;
-    }
-    const url = pdfUrl(fresh);
-    if (!url) return { ok: false, link, error: 'PDF adresi FGO adresi değil' };
-    const r = await download(url, fetchImpl);
+    const given = await fgoPrint(settings, key, { series: doc.series, number: doc.number, appUrl: appUrl ?? env.APP_URL ?? '' }, fetchImpl);
+    if (!given) return { ok: false, link, error };
+    // FGO'nun verdiği bağlantı FGO adresi değilse: KAYDA YAZILMAZ, indirilmez, kimseye verilmez
+    const fresh = pdfUrl(given);
+    if (!fresh) return { ok: false, link, error: 'PDF adresi FGO adresi değil' };
+    if (fresh !== doc.link) await db.fgoDocument.updateMany({ where: { id: doc.id }, data: { link: fresh } });
+    link = fresh;
+    const r = await downloadFgoPdf(fresh, { fetchImpl });
     return r.ok ? r : { ok: false, link, error: r.error };
   } catch (e) {
+    // factura/print hatası (FGO'nun kendi iletisi; adres içermez)
     return { ok: false, link, error: String(e?.message ?? e).slice(0, 200) };
   }
 }
@@ -141,11 +125,13 @@ const dayRo = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, day:
  * erişim (ekteki PDF + TAKİP'teki "Documente financiare"). Maliyet, kâr, iç not, başka müşteri bilgisi içermez.
  * @param {{ kind: string, series: string, number: string, issuedAt?: Date | string | null, orderNos: string[], total?: unknown, currency?: string,
  *   firmName: string, attached?: boolean, portalUrl?: string | null, link?: string | null, timeZone?: string }} p
- *   link: yalnızca PDF eklenemediyse (belgenin FGO'daki bağlantısı)
+ *   link: yalnızca PDF eklenemediyse (belgenin FGO'daki bağlantısı); FGO adresi değilse e-postaya yazılmaz
  */
 export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos, total = null, currency = 'RON', firmName, attached = false, portalUrl = null, link = null, timeZone = 'Europe/Bucharest' }) {
   const type = DOC_KIND_RO[kind] ?? 'Document';
   const ref = `${series}${number}`;
+  // E-postaya yalnızca FGO'nun kendi adresi yazılır (FGO'nun verdiği bağlantı dış veridir — AUD-7); değilse bağlantı satırı yok
+  link = pdfUrl(link);
   const nos = orderNos.filter(Boolean);
   const many = nos.length > 1;
   const rows = [

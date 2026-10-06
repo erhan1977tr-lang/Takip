@@ -30,9 +30,9 @@ const fgoOn = (extra = {}) => saveFgoSettings(db, {
 
 /**
  * Sahte FGO. emitere çağrıları `calls`ta, bütün adresler `urls`ta. getstatus: `paid` haritasından (belge no → ödenen).
- * print: yeni bir PDF bağlantısı verir. FGO dışındaki adres = PDF indirme (`pdf` yanıtlayıcısı).
+ * print: yeni bir PDF bağlantısı verir (`print` verilirse onun döndürdüğü bağlantı). FGO dışındaki adres = PDF indirme (`pdf` yanıtlayıcısı).
  */
-function fakeFgo(start, { emit = null, pdf = () => PDF, paid = {}, total = '605.00' } = {}) {
+function fakeFgo(start, { emit = null, pdf = () => PDF, paid = {}, total = '605.00', print = null } = {}) {
   let num = start;
   const calls = [], urls = [], prints = [], downloads = [];
   const fetchImpl = async (url, init = {}) => {
@@ -47,7 +47,7 @@ function fakeFgo(start, { emit = null, pdf = () => PDF, paid = {}, total = '605.
     if (u.endsWith('/factura/getstatus')) return new Response(JSON.stringify({ Success: true, Factura: { Valoare: total, ValoareAchitata: String(paid[`${form.Serie}${form.Numar}`] ?? '0') } }));
     if (u.endsWith('/factura/print')) {
       prints.push(`${form.Serie}${form.Numar}`);
-      return new Response(JSON.stringify({ Success: true, Factura: { Link: `https://www.fgo.ro/print/${form.Serie}${form.Numar}.pdf` } }));
+      return new Response(JSON.stringify({ Success: true, Factura: { Link: print ? print(form) : `https://www.fgo.ro/print/${form.Serie}${form.Numar}.pdf` } }));
     }
     if (emit) { const r = emit(form); if (r) return r; }
     calls.push(form);
@@ -304,6 +304,81 @@ dbTest('PDF: alınamazsa e-posta bekletilir, sonra belge bağlantısıyla eksiz 
   const evil = await d.fetchDocPdf(db, { ...fresh, id: 'yok', link: 'https://evil.test/x.pdf' }, { fetchImpl: guard.fetchImpl, secret: SECRET });
   assert.equal(evil.ok, true);
   assert.deepEqual(guard.downloads, ['https://www.fgo.ro/print/PRF401.pdf'], 'FGO dışı adres indirilmez; bağlantı FGO\'dan alınır');
+});
+
+dbTest('FGO bağlantısı dış veridir (AUD-5 / AUD-7): FGO dışı print bağlantısı kayda yazılmaz, indirilmez, e-postaya yazılmaz; yönlendirme her adımda doğrulanır; büyük yanıt alınmaz', async () => {
+  const o = await order(A, noon(15));
+  const fgo = fakeFgo(960);
+  await issue(o, 'PROFORMA', fgo);
+  const [doc] = await docsOf(o.id);
+  const STORED = 'https://www.fgo.ro/facturi/PRF961.pdf';
+  const EVIL = 'https://evil.example/fatura.pdf';
+  assert.equal(doc.link, STORED);
+  const stored = async () => (await db.fgoDocument.findUnique({ where: { id: doc.id } })).link;
+
+  // 1) Kayıtlı bağlantı artık yok (404) ve factura/print FGO'nun olmayan bir adres veriyor: KAYDA YAZILMAZ, oraya istek gitmez
+  for (const given of [EVIL, 'https://www.fgo.ro@evil.example/x.pdf', 'https://user:pw@www.fgo.ro/x.pdf', 'https://www.fgo.ro:8443/x.pdf', 'https://fgo.ro.evil.example/x.pdf', 'https://127.0.0.1/x.pdf', 'https://169.254.169.254/x']) {
+    const bad = fakeFgo(960, { pdf: () => new Response('yok', { status: 404 }), print: () => given });
+    const r = await d.fetchDocPdf(db, doc, { fetchImpl: bad.fetchImpl, secret: SECRET, appUrl: 'https://takip.test' });
+    assert.deepEqual(r, { ok: false, link: STORED, error: 'PDF adresi FGO adresi değil' }, given);
+    assert.deepEqual(bad.prints, ['PRF961']);
+    assert.deepEqual(bad.downloads, [STORED], `FGO dışı adrese istek gitmedi: ${given}`);
+    assert.equal(await stored(), STORED, 'kayıt değişmedi');
+  }
+  // http bağlantı FGO istemcisinde zaten elenir (bağlantı yok sayılır): yine yazılmaz, indirilmez
+  const plain = fakeFgo(960, { pdf: () => new Response('yok', { status: 404 }), print: () => 'http://www.fgo.ro/print/PRF961.pdf' });
+  const rp = await d.fetchDocPdf(db, doc, { fetchImpl: plain.fetchImpl, secret: SECRET });
+  assert.deepEqual([rp.ok, rp.link], [false, STORED]);
+  assert.deepEqual(plain.downloads, [STORED]);
+  assert.equal(await stored(), STORED);
+
+  // 2) Yönlendirme: FGO → FGO dışı izlenmez (hedefe istek gitmez); FGO → FGO izlenir (göreli adres dahil)
+  const out = fakeFgo(960, { pdf: () => new Response(null, { status: 302, headers: { location: 'https://evil.example/cal' } }) });
+  assert.deepEqual(await d.fetchDocPdf(db, doc, { fetchImpl: out.fetchImpl, secret: SECRET }), { ok: false, link: STORED, error: 'yönlendirme FGO dışı bir adrese' });
+  assert.deepEqual(out.downloads, [STORED]);
+  assert.equal(out.prints.length, 0, 'yönlendirme reddi bağlantıyı yeniletmez');
+  const inside = fakeFgo(960, { pdf: (u) => (u === STORED ? new Response(null, { status: 307, headers: { location: '/arsiv/PRF961.pdf' } }) : PDF) });
+  const ok = await d.fetchDocPdf(db, doc, { fetchImpl: inside.fetchImpl, secret: SECRET });
+  assert.equal(ok.ok, true);
+  assert.ok(ok.bytes.equals(PDF));
+  assert.deepEqual(inside.downloads, [STORED, 'https://www.fgo.ro/arsiv/PRF961.pdf']);
+  // 3) Büyük yanıt: bildirilen boy sınırı aşıyorsa alınmaz; bildirim yoksa okunurken kesilir
+  const declared = fakeFgo(960, { pdf: () => new Response(PDF, { headers: { 'content-length': String(d.PDF_MAX_BYTES + 1) } }) });
+  assert.deepEqual(await d.fetchDocPdf(db, doc, { fetchImpl: declared.fetchImpl, secret: SECRET }), { ok: false, link: STORED, error: 'PDF çok büyük' });
+  let produced = 0;
+  const endless = () => new Response(new ReadableStream({
+    pull(c) { produced += 1; c.enqueue(new Uint8Array(produced === 1 ? Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(1024 * 1024 - 9, 0x20)]) : Buffer.alloc(1024 * 1024, 0x20))); },
+  }, { highWaterMark: 0 }));
+  const big = fakeFgo(960, { pdf: endless });
+  assert.deepEqual(await d.fetchDocPdf(db, doc, { fetchImpl: big.fetchImpl, secret: SECRET }), { ok: false, link: STORED, error: 'PDF çok büyük' });
+  assert.ok(produced >= 16 && produced <= 18, `sonsuz gövde 15 MB'ta kesildi (${produced} MB üretildi)`);
+
+  // 4) Kayıtlı bağlantının KENDİSİ FGO dışıysa (kayıt bozulmuş olsa bile): indirilmez, çağırana / e-postaya verilmez
+  await db.fgoDocument.update({ where: { id: doc.id }, data: { link: EVIL } });
+  const tampered = await db.fgoDocument.findUnique({ where: { id: doc.id } });
+  const bad = fakeFgo(960, { print: () => EVIL });
+  assert.deepEqual(await d.fetchDocPdf(db, tampered, { fetchImpl: bad.fetchImpl, secret: SECRET }), { ok: false, link: null, error: 'PDF adresi FGO adresi değil' });
+  assert.deepEqual(bad.downloads, [], 'hiçbir indirme isteği yok');
+  // Müşteri e-postası: iki bekleme, sonra eksiz ve BAĞLANTISIZ gider (belge bilgisi ve portal bağlantısı yerinde)
+  const box = mailbox();
+  const t0 = new Date();
+  assert.deepEqual(await d.dispatchDocEmails(db, mailCtx(bad, box, { now: t0 })), { sent: 0, failed: 1, skipped: 0 });
+  await d.dispatchDocEmails(db, mailCtx(bad, box, { now: new Date(t0.getTime() + 3 * 60_000) }));
+  assert.equal(box.sent.length, 0);
+  assert.deepEqual(await d.dispatchDocEmails(db, mailCtx(bad, box, { now: new Date(t0.getTime() + 6 * 60_000) })), { sent: 1, failed: 0, skipped: 0 });
+  const [mail] = box.sent;
+  for (const part of [mail.text, mail.html]) assert.doesNotMatch(part, /evil|Document \(PDF\)|Deschide documentul/);
+  assert.match(mail.text, /Număr document: PRF961/);
+  assert.match(mail.text, /https:\/\/takip\.test\/belgeler/);
+  assert.deepEqual(mail.attachments.map((a) => a.cid ?? a.filename), ['gkh-logo@takip'], 'PDF eki yok');
+  const [row] = await emails(doc.id);
+  assert.deepEqual([row.status, row.payload.attached], ['SENT', false]);
+  assert.ok(!JSON.stringify(row).includes('evil.example'), 'kuyruk kaydında da FGO dışı adres yok');
+  assert.deepEqual(bad.downloads, [], 'e-posta gönderimi de FGO dışı adrese gitmedi');
+  // FGO geçerli bir bağlantı verince kayıt düzelir (yalnızca doğrulanmış bağlantı yazılır) ve PDF alınır
+  const healed = fakeFgo(960);
+  assert.equal((await d.fetchDocPdf(db, tampered, { fetchImpl: healed.fetchImpl, secret: SECRET })).ok, true);
+  assert.equal(await stored(), 'https://www.fgo.ro/print/PRF961.pdf');
 });
 
 dbTest('müşteri partisi: her kalem kendi siparişini taşır; e-postada ve müşteri ekranında kaynak siparişler; başka firma göremez / PDF isteyemez', async () => {

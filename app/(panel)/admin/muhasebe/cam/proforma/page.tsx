@@ -11,6 +11,7 @@ import { bnrRate } from '@/server/fx/bnr.js';
 import { getFgoSettings } from '@/server/integrations/fgo.js';
 import { batchCustomers, cleanDays, customerLoadingDays, listBatches, previewBatch } from '@/server/glass/batch.js';
 import { chainState } from '@/server/glass/invoice-batch.js';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import { createAdvanceAction, reviewInvoiceBatchAction } from '@/app/(panel)/yuklemeler/billing-actions';
 import { createBatchAction, reviewBatchAction } from './actions';
 
@@ -301,7 +302,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                     </td>
                     <td className="mono">
                       {b.document
-                        ? (b.document.link ? <a href={b.document.link} target="_blank" rel="noopener noreferrer">{b.document.series}{b.document.number}</a> : `${b.document.series}${b.document.number}`)
+                        ? <FgoDocLink link={b.document.link}>{b.document.series}{b.document.number}</FgoDocLink>
                         : '—'}
                       {b.issuedAt && <span className="cell-note">{fmtDate(b.issuedAt)}</span>}
                       {chains.has(b.id) && chains.get(b.id)!.paid > 0 && (

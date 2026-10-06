@@ -31,6 +31,7 @@ import { RemoveOrder } from './RemoveOrder';
 import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
 import { guestHostOptions } from '@/server/loading/crates.js';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
   addFilesAction, addNoteAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
@@ -333,7 +334,7 @@ export default async function OrderPage({
           // FGO belgeleri (proforma / avans / fatura): müşteri, yönetici ve denetimci görür (satış ve çizim fiyat görmez)
           ...fgoDocs.map((d) => ({
             label: t(`accounting.receivables.kind.${['INVOICE', 'ADVANCE'].includes(d.kind) ? d.kind : 'PROFORMA'}` as MsgKey),
-            value: <>{d.series}{d.number} · {fmtDate(d.issuedAt)}{d.link && <> · <a href={d.link} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</>,
+            value: <>{d.series}{d.number} · {fmtDate(d.issuedAt)}<FgoDocLink link={d.link} prefix=" · " fallback={null}>{t('profile.page.fgo.open')}</FgoDocLink></>,
           })),
         ]}
       >

@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.15 — 06.10.2026
+
+- **Güvenlik: FGO'dan gelen belge bağlantıları artık her kullanımda denetleniyor** (güvenlik denetimi AUD-5 ve AUD-7).
+  - Proforma / fatura PDF'i indirilirken yalnızca FGO'nun kendi adresine gidilir. Bağlantı başka bir adrese yönlendirirse
+    oraya gidilmez; yönlendirme en çok üç kez izlenir.
+  - İndirilen PDF en çok 15 MB olabilir; daha büyük ya da PDF olmayan yanıt alınmadan bırakılır (sunucunun belleğini
+    dolduramaz).
+  - FGO'nun verdiği bağlantı FGO adresi değilse kayda yazılmaz, müşteri e-postasına konmaz ve ekranlarda tıklanabilir
+    gösterilmez; belge numarası ve tarihi yine görünür.
+  - Olağan kullanımda görünen bir değişiklik yoktur: belge e-postaları PDF ekiyle gider, Tahsilat ve sipariş sayfalarındaki
+    belge bağlantıları eskisi gibi açılır.
+  - Not: bir belge e-postası PDF'siz giderse Muhasebe → Tahsilat'taki e-posta durumunda nedeni yazar ("PDF alınamadı: …").
+
 ## 3.50.14 — 06.10.2026
 
 - **Güvenlik: giriş yapmamış biri artık dosya yükleme sayfalarına büyük istek gönderemez** (güvenlik denetimi AUD-4'ün

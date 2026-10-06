@@ -18,6 +18,7 @@ import { unitLabel } from '@/server/profile/catalog.js';
 import { stockLevels } from '@/server/profile/stock.js';
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, invoicedAction, paidAction, profilePricesAction, proformaAction,
   resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
@@ -280,13 +281,13 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
           { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
           !!p?.approvedAt && { label: t('profile.page.info.approvedAt'), value: fmtDateTime(p.approvedAt) },
-          !!p?.proformaAt && { label: t('profile.page.info.proformaNo'), value: <>{p.proformaNo ?? '—'} · {fmtDate(p.proformaAt)}{p.proformaLink && <> · <a href={p.proformaLink} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</> },
+          !!p?.proformaAt && { label: t('profile.page.info.proformaNo'), value: <>{p.proformaNo ?? '—'} · {fmtDate(p.proformaAt)}<FgoDocLink link={p.proformaLink} prefix=" · " fallback={null}>{t('profile.page.fgo.open')}</FgoDocLink></> },
           !!fxText && { label: t('profile.page.fgo.fx'), value: fxText },
           !isCustomer && p?.proformaAmount != null && { label: t('profile.page.fgo.amount'), value: fmtMoney(p.proformaAmount.toString(), 'RON') },
           !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
           !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
           !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${isCustomer ? fmtDate(p.deliveredAt) : fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
-          !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}{p.invoiceLink && <> · <a href={p.invoiceLink} target="_blank" rel="noopener noreferrer">{t('profile.page.fgo.open')}</a></>}</> },
+          !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}<FgoDocLink link={p.invoiceLink} prefix=" · " fallback={null}>{t('profile.page.fgo.open')}</FgoDocLink></> },
         ]}
       />
 

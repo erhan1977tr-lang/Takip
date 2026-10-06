@@ -11,6 +11,7 @@ import { previewExchangeRate } from '@/server/fx/resolve.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { DOC_EMAIL, GLASS_FGO, billingState, isLoaded } from '@/server/glass/billing.js';
 import { localDay } from '@/server/profile/dates.js';
+import { FgoDocLink } from '@/components/FgoDocLink';
 import { glassDocumentAction } from './glass-billing-actions';
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
@@ -84,7 +85,7 @@ export async function GlassFinance({ order, t, sp }: {
                 return (
                   <tr key={d.id}>
                     <td>{t(`accounting.receivables.kind.${d.kind}` as MsgKey)}</td>
-                    <td className="mono">{d.link ? <a href={d.link} target="_blank" rel="noopener noreferrer">{d.series}{d.number}</a> : `${d.series}${d.number}`}</td>
+                    <td className="mono"><FgoDocLink link={d.link}>{d.series}{d.number}</FgoDocLink></td>
                     <td>{fmtDate(d.issuedAt)}</td>
                     <td className="num">{d.total != null ? fmtMoney(d.total.toString(), 'RON') : '—'}</td>
                     <td className="num">{d.paid != null ? fmtMoney(d.paid.toString(), 'RON') : '—'}</td>
@@ -143,8 +144,8 @@ export async function GlassFinance({ order, t, sp }: {
         : st.wait === 'batch' && batchOrders.length > 0 ? (
           <div className="alert alert-info" id="musteri-proformasi">
             {t('glassBilling.wait.batch', { ref: batchRefs.join(', ') })}{' '}
-            {batchOrders.map((x) => x.batch.document?.link && (
-              <a key={x.batch.document.link} href={x.batch.document.link} target="_blank" rel="noopener noreferrer">{x.batch.document.series}{x.batch.document.number} </a>
+            {batchOrders.map((x) => x.batch.document && (
+              <FgoDocLink key={`${x.batch.document.series}${x.batch.document.number}`} link={x.batch.document.link} fallback={null}>{x.batch.document.series}{x.batch.document.number} </FgoDocLink>
             ))}
             <a href={`/admin/muhasebe/cam/proforma?musteri=${batchOrders[0].batch.customerId}#partiler`}>{t('accounting.batch.open')}</a>
           </div>

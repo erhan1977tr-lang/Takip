@@ -282,7 +282,7 @@ const MAILS = () => ({
   'bildirim: yükleme tarihi (müşteri)': NOTIFY('ORDER_SHIP_DATE', { locale: 'ro', role: null }),
   'bildirim: teklif gönderildi (müşteri)': NOTIFY('ORDER_OFFER_SENT', { locale: 'ro', role: null }),
   'mali belge: proforma': renderDocEmail({ kind: 'PROFORMA', series: 'PRF', number: '101', orderNos: ['GLA68'], total: 605, currency: 'RON', firmName: 'Glass and More', attached: true, portalUrl: 'https://takip.example/belgeler' }),
-  'mali belge: fatura': renderDocEmail({ kind: 'INVOICE', series: 'GKH', number: '812', orderNos: ['GLA68', 'GLA69'], total: 1210, currency: 'RON', firmName: 'Glass and More', attached: false, link: 'https://takip.example/belgeler/x/pdf' }),
+  'mali belge: fatura': renderDocEmail({ kind: 'INVOICE', series: 'GKH', number: '812', orderNos: ['GLA68', 'GLA69'], total: 1210, currency: 'RON', firmName: 'Glass and More', attached: false, link: 'https://www.fgo.ro/facturi/GKH812.pdf' }),
   'depo (Comanda Depozit)': renderWarehouseEmail({ orderNo: 'GLAP12', firmName: 'Glass and More', pickupDate: new Date('2026-10-06T00:00:00Z'), phone: '+40 7', plate: 'B 1', items: [{ code: 'GK15', name: 'GARNITURA', unit: 'cutii', qty: 4 }], link: 'https://takip.example/depo/x', validDays: 14 }),
   'davet / doğrulama kodu (tr)': renderInviteEmail({ code: '482913', name: 'Ali', firmName: 'Ünsal Cam', language: 'tr', appUrl: 'https://takip.example', email: 'a@b.ro' }),
   'davet / doğrulama kodu (ro)': renderInviteEmail({ code: '482913', language: 'ro' }),
