@@ -14,7 +14,7 @@ belgesiz dosya kayboldu, bütün yedekler gitti" durumu kabul edilemez.
   ya da başka anahtarla şifrelenmiş dosya "çözülmüş gibi" görünmez, hata verir.
 - **Ne şifrelenir:** yalnızca **Google Drive'a giden kopya** (`db-….dump.age`, `dosyalar-….tgz.age`). Şifreleme
   açıkken Drive'a şifresiz dosya hiçbir koşulda gönderilmez (şifrelenemiyorsa Drive adımı hata verir, yerel yedek durur).
-- **Yerel kopya açık kalır** (`/opt/takip/backups`, 0700, yalnızca root): canlı veritabanı ve yükleme klasörüyle aynı
+- **Yerel kopya açık kalır** (`/opt/takip/backups`, 0700, yalnızca root; içindeki her dosya 0600 — karar 136): canlı veritabanı ve yükleme klasörüyle aynı
   diskte, aynı korumadadır — onu okuyabilen zaten canlı veriyi okur. Anahtarsız kullanılabilen güvenlik ağıdır:
   anahtar dosyası bozulsa bile son 14 günün yerel yedeği ve yayın öncesi yedekler kullanılabilir.
 - **Anahtar:** `/opt/takip/backup-key.txt` (age kimlik dosyası, 0600 root). Sunucuda üretilir. Yedeğe, Drive'a,

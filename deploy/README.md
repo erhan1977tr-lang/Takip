@@ -85,6 +85,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 - Önerilen: SSH anahtarıyla girişe geçip root şifre girişini kapatmak.
 - Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da da son 14 çift. Kayıt: `/opt/takip/logs/backup.log`.
 - Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token, rclone ayarı ve yedek anahtarı yedeğe girmez.
+- Yerel yedekler yalnızca root'a açıktır: klasör `0700`, içinde oluşan her yedek dosyası (geçici dosyalar dahil) `0600`.
 
 ## Yedek şifreleme (Google Drive kopyası)
 

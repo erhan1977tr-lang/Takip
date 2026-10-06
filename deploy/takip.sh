@@ -49,7 +49,9 @@ TOKEN_FILE=$BASE/github-token
 CI_WORKFLOW=CI
 VERBOSE=${VERBOSE:-0}
 
-mkdir -p "$STATE" "$LOGS" "$BACKUPS"
+mkdir -p "$STATE" "$LOGS"
+# Yedek klasörü yalnızca root'a açıktır (0700; kurulum da böyle açar). Yoksa bu izinle oluşturulur; var olan klasörün izni değiştirilmez.
+[ -d "$BACKUPS" ] || (umask 077 && mkdir -p "$BACKUPS")
 
 say() { echo "$*"; }
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOGS/deploy.log"; }
@@ -152,6 +154,8 @@ gate() {
 # Drive'a (rclone, BACKUP_REMOTE; varsayılan gkhdrive:GKH_TAKIP_BACKUPS) kopyalanır ve md5 ile doğrulanır.
 # Son 14 çift tutulur (yerel ve Drive; yalnızca bu adlandırmaya uyan dosyalar silinir). Yayından önce alınan
 # güvenlik yedekleri eski adla kalır (db-YYYYMMDD-HHMMSS-etiket). .env, github-token ve rclone ayarı yedeğe girmez.
+# İzinler: yedek klasörü 0700, içindeki her yedek dosyası (geçici / indirilen / şifreli ara dosya dahil) oluşturulduğu andan
+# itibaren 0600 — umask 077 yalnızca dosyayı oluşturan komutun çevresinde verilir (aracın geri kalanını etkilemez).
 #
 # Şifreleme (güvenlik denetimi SEC-02; ayrıntı: docs/adr/0013-yedek-sifreleme.md, deploy/README.md):
 #   Varsayılan KAPALI — sunucu sahibi "takip yedek-sifreleme kur" ile açana kadar akış yukarıdaki gibidir.
@@ -170,7 +174,8 @@ blog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOGS/backup.log" >&2;
 backup_db() { # backup_db ETİKET [DOSYA]  → yedeğin yolu (veritabanı çalışmıyorsa boş)
   if ! compose ps --status running -q db 2>/dev/null | grep -q .; then return 0; fi
   local f; f=${2:-"$BACKUPS/db-$(date +%Y%m%d-%H%M%S)-$1.dump"}
-  if compose exec -T db pg_dump -U takip -d takip -Fc >"$f.tmp" && [ -s "$f.tmp" ]; then
+  # Yedek dosyaları oluşturulduğu andan itibaren yalnızca root'a açıktır (0600; geçici dosya dahil): umask yalnızca bu satırda
+  if (umask 077 && compose exec -T db pg_dump -U takip -d takip -Fc >"$f.tmp") && [ -s "$f.tmp" ]; then
     mv "$f.tmp" "$f"
     # Eski adlı (yayın öncesi / elle) yedekler 14 günden eskiyse silinir. Günlük çiftler: backup_retention
     find "$BACKUPS" -name 'db-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.dump' -mtime +14 -delete
@@ -184,7 +189,8 @@ backup_files() { # backup_files [DOSYA] → arşivin yolu (uygulama imajı yoksa
   local tag; tag=$(env_get APP_TAG)
   [ -n "$tag" ] && docker image inspect "takip:$tag" >/dev/null 2>&1 || return 0
   local f; f=${1:-"$BACKUPS/dosyalar-$(date +%Y%m%d-%H%M%S).tgz"}
-  if ! docker run --rm --user 0 -v takip_uploads:/u:ro -v "$BACKUPS":/b "takip:$tag" tar czf "/b/$(basename "$f").tmp" -C /u .; then
+  # Arşivi kapsayıcıdaki tar yazar: sunucunun umask'ı oraya geçmez, bu yüzden 0600 izni kapsayıcının İÇİNDE verilir
+  if ! docker run --rm --user 0 -v takip_uploads:/u:ro -v "$BACKUPS":/b "takip:$tag" sh -c 'umask 077 && exec tar czf "$1" -C /u .' sh "/b/$(basename "$f").tmp"; then
     rm -f "${f:?}.tmp"
     return 1
   fi
@@ -228,7 +234,7 @@ enc_ready() { # enc_ready ALICI
 encrypt_one() { # encrypt_one DOSYA ALICI
   local a b
   rm -f "${1:?}.age" "${1:?}.age.tmp"
-  if ! age -r "$2" -o "$1.age.tmp" "$1" 2>>"$LOGS/backup.log"; then rm -f "${1:?}.age.tmp"; return 1; fi
+  if ! (umask 077 && age -r "$2" -o "$1.age.tmp" "$1" 2>>"$LOGS/backup.log"); then rm -f "${1:?}.age.tmp"; return 1; fi
   a=$(sha256sum <"$1" | cut -d' ' -f1 || true)
   b=$(age -d -i "$BACKUP_KEY" "$1.age.tmp" 2>>"$LOGS/backup.log" | sha256sum | cut -d' ' -f1 || true)
   if [ -n "$a" ] && [ "$a" = "$b" ]; then mv -f "$1.age.tmp" "$1.age"; else rm -f "${1:?}.age.tmp"; return 1; fi
@@ -748,8 +754,8 @@ fetch_pair() { # fetch_pair YYYY-MM-DD
     if [ "$PAIR_PREFER" = sifreli ]; then dir=$WORK_DIR; fi
     PAIR_DB="$dir/db-$PAIR_TS.dump"; PAIR_UP="$dir/dosyalar-$PAIR_TS.tgz"
     say "Google Drive'dan indiriliyor ve şifresi çözülüyor…"
-    if ! { rclone copyto "$(remote_root)/database/db-$PAIR_TS.dump.age" "$WORK_DIR/db.age" >>"$LOGS/backup.log" 2>&1 &&
-      rclone copyto "$(remote_root)/uploads/dosyalar-$PAIR_TS.tgz.age" "$WORK_DIR/dosyalar.age" >>"$LOGS/backup.log" 2>&1; }; then
+    if ! (umask 077 && rclone copyto "$(remote_root)/database/db-$PAIR_TS.dump.age" "$WORK_DIR/db.age" >>"$LOGS/backup.log" 2>&1 &&
+      rclone copyto "$(remote_root)/uploads/dosyalar-$PAIR_TS.tgz.age" "$WORK_DIR/dosyalar.age" >>"$LOGS/backup.log" 2>&1); then
       say "✘ Google Drive'dan indirilemedi."; return 1
     fi
     if ! { decrypt_one "$WORK_DIR/db.age" "$PAIR_DB" && decrypt_one "$WORK_DIR/dosyalar.age" "$PAIR_UP"; }; then
@@ -759,8 +765,9 @@ fetch_pair() { # fetch_pair YYYY-MM-DD
     say "✔ Şifre çözüldü"
   elif [ "$PAIR_SRC" != LOCAL ]; then
     say "Google Drive'dan indiriliyor…"
-    if ! { rclone copyto "$(remote_root)/database/$(basename "$PAIR_DB")" "$PAIR_DB" >>"$LOGS/backup.log" 2>&1 &&
-      rclone copyto "$(remote_root)/uploads/$(basename "$PAIR_UP")" "$PAIR_UP" >>"$LOGS/backup.log" 2>&1; }; then
+    # İndirilen yedek yerel yedek klasörüne yazılır: o da 0600
+    if ! (umask 077 && rclone copyto "$(remote_root)/database/$(basename "$PAIR_DB")" "$PAIR_DB" >>"$LOGS/backup.log" 2>&1 &&
+      rclone copyto "$(remote_root)/uploads/$(basename "$PAIR_UP")" "$PAIR_UP" >>"$LOGS/backup.log" 2>&1); then
       say "✘ Google Drive'dan indirilemedi."; return 1
     fi
   fi

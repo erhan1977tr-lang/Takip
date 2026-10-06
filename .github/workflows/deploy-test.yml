@@ -35,10 +35,15 @@ jobs:
           fetch-depth: 0
 
       - name: Betik denetimi (shellcheck)
-        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh
+        run: shellcheck -S warning deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
         run: bash deploy/test/cache-housekeeping.sh
+
+      - name: Yerel yedek dosyalarının izinleri — mantık testi (sahte docker / rclone, gerçek age; sunucudaki hiçbir şeye dokunulmaz)
+        run: |
+          sudo apt-get install -y -qq age >/dev/null
+          sudo bash deploy/test/backup-permissions.sh
 
       - name: Kurulum (temiz makine)
         run: |
@@ -305,6 +310,20 @@ jobs:
           cat rt.log
           grep -q 'Kaynak             : LOCAL' rt.log
           grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt.log
+          # İzinler (karar 136): klasör 0700; gerçek pg_dump / kapsayıcıdaki tar ile oluşan HER yedek dosyası 0600
+          # (yayın öncesi alınan güvenlik yedekleri dahil)
+          private() { [ "$(sudo stat -c '%a %U' /opt/takip/backups)" = "700 root" ] && l=$(sudo find /opt/takip/backups -type f ! -perm 600 -printf '%m %p\n') && { [ -z "$l" ] || { echo "0600 olmayan yedek dosyası: $l"; return 1; }; }; }
+          private
+          sudo sh -c 'ls /opt/takip/backups/db-*-once-*.dump' | grep -q dump
+          # Drive'dan indirilen yedek de (gerçek rclone) yerelde 0600 yazılır
+          sudo mkdir -p /root/izin-kenar
+          sudo sh -c "mv /opt/takip/backups/db-${day}_* /opt/takip/backups/dosyalar-${day}_* /root/izin-kenar/"
+          sudo takip restore-test "$day" > rt-drive.log 2>&1 || { cat rt-drive.log; exit 1; }
+          grep -q 'Kaynak             : GOOGLE DRIVE' rt-drive.log
+          sudo sh -c "ls /opt/takip/backups/db-${day}_*.dump /opt/takip/backups/dosyalar-${day}_*.tgz" | grep -c . | grep -qx 2
+          private
+          sudo rm -rf /root/izin-kenar
+          echo "::notice title=Yedek izinleri (gerçek Docker + rclone)::$(sudo find /opt/takip/backups -type f -printf '%m\n' | sort | uniq -c | tr '\n' ' ') · klasör $(sudo stat -c '%a' /opt/takip/backups)"
           sudo takip yedek-sifreleme > enc.log 2>&1 || { cat enc.log; exit 1; }
           cat enc.log
           grep -q 'KAPALI' enc.log
@@ -345,6 +364,8 @@ jobs:
           [ "$(sudo stat -c '%a' /opt/takip/backups)" = 700 ]
           sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
           if sudo sh -c 'ls /opt/takip/backups/*.age' 2>/dev/null | grep -q age; then echo "yerelde şifreli artık kalmamalı"; exit 1; fi
+          private() { [ "$(sudo stat -c '%a %U' /opt/takip/backups)" = "700 root" ] && l=$(sudo find /opt/takip/backups -type f ! -perm 600 -printf '%m %p\n') && { [ -z "$l" ] || { echo "0600 olmayan yedek dosyası: $l"; return 1; }; }; }
+          private
 
           # 4. Anahtar hiçbir yere sızmamış: Drive, günlükler, durum dosyaları, yedek klasörü, komut çıktısı, yedeğin içi
           if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
@@ -414,6 +435,7 @@ jobs:
           [ "$(sudo find "$drive" -type f ! -name '*.age' | wc -l)" = "$plain_before" ]
           sudo takip durum > durum.log 2>&1 || true
           grep -q 'Google Drive kopyası şifreli' durum.log
+          private
           if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
 
       - name: Günlükler (hata varsa)

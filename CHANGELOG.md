@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.7 — 06.10.2026
+
+- **Sunucu: yerel yedek dosyaları yalnızca root'a açık oluşur.** Yedek klasörü zaten yalnızca root'a açıktı (0700) ama
+  içindeki yedek dosyaları herkesin okuyabileceği izinle (0644) oluşuyordu. Artık veritabanı yedeği, dosya arşivi,
+  bunların geçici dosyaları, şifreleme sırasındaki ara dosyalar ve Google Drive'dan indirilen yedekler oluşturuldukları
+  andan itibaren 0600'dür. Şifreleme, Drive'a yükleme, doğrulama, geri yükleme ve saklama süresi değişmedi; var olan
+  yedek dosyalarına dokunulmaz.
+
 ## 3.50.6 — 05.10.2026
 
 - **Güvenlik: 30 dakika işlem yapılmayan oturum kendiliğinden kapanır** (bütün roller). Kural sunucudadır: son gerçek
