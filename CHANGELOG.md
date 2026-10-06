@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.13 — 06.10.2026
+
+- **Sunucu: güncelleme artık ön sunucuyu (Caddy) da doğruluyor.** Önceden güncelleme yalnızca uygulamanın açıldığına
+  bakıyordu; ön sunucunun ayarını bozan bir güncelleme siteyi kapatıp yine de "başarılı" görünebilirdi.
+  - Ön sunucu ayarı değişen güncellemede yeni ayar, hiçbir şeye dokunulmadan önce çalışan ön sunucunun kendisiyle
+    denetlenir; geçersizse güncelleme başlamaz ve site olduğu gibi çalışmaya devam eder.
+  - Güncellemeden sonra sitenin HTTPS üzerinden yeni sürümle yanıt verdiğine bakılır. Vermiyorsa güncelleme başarısız
+    sayılır ve önceki sürüme (önceki ön sunucu ayarıyla birlikte) kendiliğinden dönülür.
+  - Uygulamada görünen bir değişiklik yoktur.
+
 ## 3.50.12 — 06.10.2026
 
 - **Güvenlik: sunucuya gönderilebilecek istek boyutu artık adrese göre sınırlı** (güvenlik denetimi AUD-4). Önceden her

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # İstek gövdesi sınırları (güvenlik denetimi AUD-4, karar 141) — gerçek kurulumda, gerçek Caddy + uygulama ile denenir.
 # .github/workflows/deploy-test.yml çalıştırır; kurulu ve yayında bir Takip ister (GitHub'ın tek kullanımlık test makinesi).
-# GERÇEK SUNUCUDA ÇALIŞTIRILMAZ: deneme yayını yapar (Caddyfile'ı değiştiren bir commit).
-#
-#   bash deploy/test/body-limits.sh            sınırlar (yayındaki Caddyfile) + eski Caddy sürümleriyle sözdizimi denetimi
-#   bash deploy/test/body-limits.sh yayin      Caddyfile değişikliği "takip guncelle" ile gerçekten etkin oluyor mu
+# GERÇEK SUNUCUDA ÇALIŞTIRILMAZ. Caddyfile değişikliğinin yayınla etkin olması / bozuk Caddyfile'ın yayını durdurması:
+# deploy/test/caddy-deploy.sh.
 #
 # İstekler çok parçalı formdur (multipart): Next böyle bir POST'u olası sunucu işlemi sayıp gövdenin TAMAMINI okur, yani
 # vekilin sınırı kesin olarak devreye girer (gövdeyi okumadan yanıt veren bir adreste sonuç yarışa kalırdı). Oturum yok:
@@ -54,17 +52,7 @@ passes() {
   echo "$1 $2 bayt → $c (vekilden geçmeli)" | tee -a "$RESULTS"
   [ "$c" != 413 ] && [ "$c" != 000 ] && [ "$c" != 502 ]
 }
-wait_site() {
-  local n=0
-  while [ "$n" -lt 60 ]; do
-    if curl -fsSk -o /dev/null "$SITE/surum"; then return 0; fi
-    sleep 2
-    n=$((n + 1))
-  done
-  return 1
-}
-
-if [ "${1:-}" != yayin ]; then
+{
   # 1. Yayındaki Caddyfile depodakiyle aynı ve Caddy çalışıyor
   sudo cmp -s deploy/Caddyfile /opt/takip/src/deploy/Caddyfile
   [ "$(compose ps --status running --services | grep -cx caddy)" = 1 ]
@@ -150,29 +138,4 @@ PY
   sudo docker rmi caddy:2.6.4 caddy:2.7.6 caddy:2.8.4 >/dev/null 2>&1 || true
 
   echo "::notice title=Gövde sınırları (gerçek Caddy)::$(sed 's/%/%25/g' "$RESULTS" | sed ':a;N;$!ba;s/\n/%0A/g')"
-  exit 0
-fi
-
-# ---------- "yayin": Caddyfile değişikliği gerçek yayınla etkin olur ----------
-# Sınırlar yalnızca Caddy yeni dosyayı okursa geçerlidir: takip.sh, Caddyfile değişen yayında Caddy'yi yeniden başlatır.
-# Varsayılan sınır geçici olarak 3 MB yapılır, yayınlanır ve yeni sınırın gerçekten uygulandığına bakılır.
-rejected /login 2500000
-sed -i 's/max_size 2MB/max_size 3MB/' deploy/Caddyfile
-grep -q 'max_size 3MB' deploy/Caddyfile
-git commit -qam "gövde sınırı yayın testi"
-sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
-wait_site
-new=$(git rev-parse --short=7 HEAD)
-curl -fsSk "$SITE/surum" | jq -e --arg b "$new" '.build == $b' >/dev/null
-sudo cmp -s deploy/Caddyfile /opt/takip/src/deploy/Caddyfile
-passes /login 2500000
-rejected /login 3500000
-passes /siparisler/yeni 6500000
-# Özgün sınıra dönüş de aynı yoldan
-sed -i 's/max_size 3MB/max_size 2MB/' deploy/Caddyfile
-git commit -qam "gövde sınırı yayın testi — geri"
-sudo env TAKIP_SKIP_CI_GATE=1 takip guncelle
-wait_site
-rejected /login 2500000
-passes /login 1500000
-echo "::notice title=Gövde sınırları — yayınla etkinleşme::$(sed 's/%/%25/g' "$RESULTS" | sed ':a;N;$!ba;s/\n/%0A/g')"
+}

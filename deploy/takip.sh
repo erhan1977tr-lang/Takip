@@ -314,6 +314,64 @@ wait_healthy() { # wait_healthy SANİYE
   return 1
 }
 
+# ---------- ön sunucu (Caddy) denetimi ----------
+# Yayın yalnızca uygulama kapsayıcısının sağlığına bakıyordu; Caddy'ye bakmıyordu. Caddyfile'ı bozan bir yayın siteyi
+# kapatıp yine de "başarılı" görünebilirdi (karar 142). İki küçük denetim:
+#   1. Caddyfile değiştiyse yeni dosya, hiçbir şeye dokunulmadan ÖNCE, çalışan Caddy'nin kendi sürümüyle doğrulanır
+#      (caddy validate). Geçersizse yayın başlamadan başarısız sayılır; site olduğu gibi çalışır.
+#   2. Yayından sonra sitenin HTTPS üzerinden, Caddy içinden YENİ sürüme ulaştığına bakılır (/surum). Yayından önce
+#      yanıt veren site yayından sonra yanıt vermiyorsa yayın başarısızdır: önceki sürüme ve önceki Caddyfile'a dönülür.
+# Kayıtlara Caddy'nin günlük satırları YAZILMAZ (istek adresleri depo bağlantısı anahtarı taşıyabilir).
+caddy_id() { compose ps -q caddy 2>/dev/null | head -n 1 || true; }
+caddy_state() { docker inspect -f 'durum={{.State.Status}} yeniden-başlatma={{.RestartCount}}' "$(caddy_id)" 2>/dev/null || echo 'kapsayıcı yok'; }
+
+# Yeni Caddyfile'ı ÇALIŞAN Caddy'nin sürümüyle doğrular (dosya kapsayıcıya geçici bir yola kopyalanır; yayındaki ayara
+# ve çalışan sürece dokunulmaz). 0: geçerli · 1: geçersiz (hata çıktıda) · 2: Caddy çalışmadığı için denetlenemedi
+caddy_validate() { # caddy_validate DOSYA
+  local id out
+  id=$(caddy_id)
+  if [ -z "$id" ] || [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || true)" != true ]; then return 2; fi
+  if out=$(docker exec -i "$id" sh -c 'f=/tmp/Caddyfile.denetim; cat >"$f"; caddy validate --config "$f" --adapter caddyfile; rc=$?; rm -f "$f"; exit $rc' <"$1" 2>&1); then
+    return 0
+  fi
+  echo "$out" | tail -n 3
+  return 1
+}
+
+# Site HTTPS üzerinden, Caddy içinden uygulamaya ulaşıyor mu. İstek sunucunun kendisine gider (DNS'e bağlı değildir);
+# sertifikanın güvenilirliğine değil yönlendirmeye bakılır (-k). KISA_SHA verilirse yanıt o sürümden gelmelidir.
+edge_ok() { # edge_ok [KISA_SHA]
+  local domain out
+  domain=$(env_get APP_DOMAIN)
+  if [ -z "$domain" ] || ! command -v curl >/dev/null 2>&1; then return 1; fi
+  out=$(curl -fsSk --max-time 10 --resolve "$domain:443:127.0.0.1" "https://$domain/surum" 2>/dev/null) || return 1
+  case $out in *'"version"'*) ;; *) return 1 ;; esac
+  if [ -z "${1:-}" ]; then return 0; fi
+  case $out in *"\"build\":\"$1\""*) return 0 ;; esac
+  return 1
+}
+wait_edge() { # wait_edge SANİYE [KISA_SHA]
+  local end=$((SECONDS + $1))
+  while [ $SECONDS -lt $end ]; do
+    if edge_ok "${2:-}"; then return 0; fi
+    sleep 3
+  done
+  return 1
+}
+
+# Önceki sürüme dönüş: imaj etiketi, kaynak ve — Caddyfile bu yayında değiştiyse — Caddy'nin ayarı
+revert_release() { # revert_release SHA ÖNCEKİ_SHA ÖNCEKİ_ETİKET DERLEME_GÜNLÜĞÜ CADDY_DEĞİŞTİ
+  local sha=$1 prev=$2 prev_tag=$3 blog=$4 caddy_changed=$5
+  if [ -n "$prev_tag" ] && [ "$prev_tag" != "$sha" ]; then
+    env_set APP_TAG "$prev_tag"
+    [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+    compose up -d --remove-orphans >>"$blog" 2>&1 || true
+    # Caddy yeni dosyayla yeniden başlatılmıştı: önceki dosyaya dönmesi için bir kez daha başlatılır
+    if [ "$caddy_changed" = 1 ]; then compose restart caddy >>"$blog" 2>&1 || true; fi
+  fi
+  echo "$sha" >"$STATE/failed"
+}
+
 # ---------- Docker derleme önbelleği ----------
 # Her yayın derleme önbelleğini (BuildKit) birkaç GB büyütür. Kural (karar 134):
 #   önbellek <= 10 GB  → hiçbir şey yapılmaz
@@ -430,8 +488,28 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
     return 0
   fi
 
+  # Caddyfile bu yayında değişiyor mu; site yayından ÖNCE Caddy üzerinden yanıt veriyor mu (sonraki denetimin ölçütü)
+  local caddy_changed=0 edge_before=0 verr vrc=0
+  if [ -n "$prev" ] && ! git -C "$SRC" diff --quiet "$prev" "$sha" -- deploy/Caddyfile 2>/dev/null; then caddy_changed=1; fi
+  if edge_ok; then edge_before=1; fi
+
   git -C "$SRC" checkout --quiet --force "$sha"
   local blog="$LOGS/derleme-$s.log"
+  # Yeni Caddyfile, derleme ve veritabanı adımlarından önce çalışan Caddy'nin sürümüyle doğrulanır
+  if [ "$caddy_changed" = 1 ]; then
+    verr=$(caddy_validate "$SRC/deploy/Caddyfile") || vrc=$?
+    if [ "$vrc" = 0 ]; then
+      log "  ön sunucu (Caddy): yeni Caddyfile geçerli"
+    elif [ "$vrc" = 2 ]; then
+      log "  ön sunucu (Caddy) çalışmıyor: yeni Caddyfile önceden doğrulanamadı (yayından sonra site denetlenecek)"
+    else
+      [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+      echo "$sha" >"$STATE/failed"
+      log "✘ $ver ($s): Caddyfile geçersiz (çalışan Caddy kabul etmedi); yayınlanmadı, site önceki sürümle çalışmaya devam ediyor."
+      log "  $(echo "$verr" | tr '\n' ' ' | cut -c1-400)"
+      return 1
+    fi
+  fi
   if ! { docker build --build-arg GIT_SHA="$sha" --target runner -t "takip:$sha" "$SRC" &&
     docker build --build-arg GIT_SHA="$sha" --target tools -t "takip:$sha-tools" "$SRC"; } >"$blog" 2>&1; then
     [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
@@ -463,19 +541,30 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
   fi
 
   compose up -d --remove-orphans >>"$blog" 2>&1
-  if [ -n "$prev" ] && ! git -C "$SRC" diff --quiet "$prev" "$sha" -- deploy/Caddyfile 2>/dev/null; then
+  if [ "$caddy_changed" = 1 ]; then
     compose restart caddy >>"$blog" 2>&1 || true
   fi
 
   if ! wait_healthy 240; then
     log "✘ $ver ($s): yeni sürüm açılmadı; önceki sürüme dönülüyor. Ayrıntı: takip log"
-    if [ -n "$prev_tag" ] && [ "$prev_tag" != "$sha" ]; then
-      env_set APP_TAG "$prev_tag"
-      [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
-      compose up -d --remove-orphans >>"$blog" 2>&1 || true
-    fi
-    echo "$sha" >"$STATE/failed"
+    revert_release "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed"
     return 1
+  fi
+
+  # Site HTTPS üzerinden, Caddy içinden YENİ sürüme ulaşıyor mu (Caddy yeni ayarla açıldı ve uygulamaya yönlendiriyor)
+  if wait_edge "${TAKIP_EDGE_WAIT:-90}" "$s"; then
+    log "  ön sunucu (Caddy): site HTTPS üzerinden yeni sürümü veriyor"
+  elif [ "$edge_before" = 1 ]; then
+    log "✘ $ver ($s): uygulama açıldı ama site HTTPS üzerinden (Caddy) yeni sürümü vermiyor; önceki sürüme dönülüyor. Caddy: $(caddy_state)"
+    revert_release "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed"
+    if wait_healthy 120 && wait_edge 60; then
+      log "  önceki sürüm yeniden yayında."
+    else
+      log "⚠ önceki sürüme dönüldü ama site HTTPS üzerinden hâlâ yanıt vermiyor. Denetleyin: takip durum · takip log"
+    fi
+    return 1
+  else
+    log "⚠ site HTTPS üzerinden doğrulanamadı (yayından önce de yanıt vermiyordu); yayın sürdürüldü. Caddy: $(caddy_state)"
   fi
 
   echo "$sha" >"$STATE/deployed"

@@ -6,7 +6,8 @@ name: Sunucu kurulumu
 # Docker derleme önbelleği temizliği (karar 134: yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde),
 # işçinin root olmadan (karar 137: sahiplik geçişi, tarama, karantina, depo PDF'i, geri dönüş, geri yükleme) ve ayrıcalıksız
 # (karar 138: cap_drop ALL + no-new-privileges, yalnızca işçide) çalışması, istek gövdesi sınırları (karar 141: gerçek Caddy
-# arkasında adres kademeleri, eski Caddy sürümleriyle sözdizimi, Caddyfile değişikliğinin yayınla etkin olması).
+# arkasında adres kademeleri, eski Caddy sürümleriyle sözdizimi) ve yayının Caddy'yi doğrulaması (karar 142: Caddyfile
+# önceden doğrulanır, yayından sonra site HTTPS üzerinden denetlenir, bozuk ayar yayını başarısız kılar ve geri alınır).
 on:
   push:
     branches: ['**']
@@ -40,7 +41,7 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
@@ -268,8 +269,8 @@ jobs:
       - name: İstek gövdesi sınırları (AUD-4, karar 141) — gerçek Caddy — giriş ve olağan adresler 2 MB, yönetim Excel 6 MB, yükleme sayfaları 260 MB; eski Caddy sürümleri
         run: bash deploy/test/body-limits.sh
 
-      - name: Caddyfile değişikliği yayınla etkin olur (sınır değişir, Caddy yeni dosyayı okur)
-        run: bash deploy/test/body-limits.sh yayin
+      - name: Yayın Caddy'yi doğrular (karar 142) — gerçek yayın — geçerli Caddyfile etkin olur; geçersiz Caddyfile yayını başlamadan durdurur; yönlendirmeyi bozan Caddyfile'da yayın başarısız olur ve geri dönülür
+        run: bash deploy/test/caddy-deploy.sh
 
       - name: Derlemesi bozuk sürüm yayınlanmaz, site çalışmaya devam eder
         run: |
