@@ -96,11 +96,48 @@ if [ "${1:-}" != yayin ]; then
   passes /siparisler/cmyoksiparis0000000000000 6500000
   passes "/depo/$(head -c 43 /dev/zero | tr '\0' x)" 6500000
 
-  # 5. Küçük istekler olağan çalışır (sayfa, sürüm, oturum etkinliği)
+  # 5. Gerçek bir sunucu işlemi vekilden geçer: giriş formu (tarayıcının JavaScript'siz gönderdiği biçimde — sayfadaki gizli
+  # alanlarla, çok parçalı POST /login). Şifre yanlış: giriş reddedilir ama işlem ÇALIŞIR — yanıtı işlemin kendisi üretir
+  # (303, /login?…error=invalid adresine yönlendirme).
+  curl -fsSk "$SITE/login" -o "$T/login.html"
+  python3 - "$T/login.html" >"$T/login.args" <<'PY'
+import sys
+from html.parser import HTMLParser
+
+class Form(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.depth, self.fields, self.done = 0, [], False
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == 'form' and not self.done:
+            self.depth += 1
+        elif tag == 'input' and self.depth and a.get('type') == 'hidden' and a.get('name'):
+            self.fields.append((a['name'], a.get('value') or ''))
+    def handle_endtag(self, tag):
+        if tag == 'form' and self.depth:
+            self.depth -= 1
+            self.done = True
+
+p = Form()
+p.feed(open(sys.argv[1], encoding='utf-8').read())
+for name, value in p.fields:
+    print(f'{name}={value}')
+PY
+  [ -s "$T/login.args" ]
+  login_args=()
+  while IFS= read -r line; do login_args+=(--form-string "$line"); done <"$T/login.args"
+  c=$(curl -sk -o /dev/null -D "$T/login-basliklar.txt" -w '%{http_code}' -X POST -H "Origin: $SITE" "${login_args[@]}" \
+    --form-string 'email=yonetici@kurulum.test' --form-string 'password=yanlis-sifre-12345' "$SITE/login" || true)
+  echo "giriş işlemi (gerçek sunucu işlemi, küçük gövde) → $c $(grep -i '^location:' "$T/login-basliklar.txt" | tr -d '\r' || true) (beklenen 303, error=invalid)" | tee -a "$RESULTS"
+  [ "$c" = 303 ]
+  grep -i '^location:' "$T/login-basliklar.txt" | grep -q 'error=invalid'
+
+  # 6. Küçük istekler olağan çalışır (sayfa, sürüm, oturum etkinliği)
   curl -fsSk "$SITE/surum" | jq -e '.version != null' >/dev/null
   [ "$(curl -sk -o /dev/null -w '%{http_code}' -X POST "$SITE/oturum/etkinlik" -H 'Content-Type: application/json' -H 'X-Takip-Activity: 1' -H "Origin: $SITE" -d '{"idle":0}')" = 401 ]
 
-  # 6. Caddyfile, Caddy 2'nin eski sürümlerinde de geçerli (sunucudaki "caddy:2" imajı güncel olmayabilir)
+  # 7. Caddyfile, Caddy 2'nin eski sürümlerinde de geçerli (sunucudaki "caddy:2" imajı güncel olmayabilir)
   for tag in 2.6.4 2.7.6 2.8.4 2; do
     if ! out=$(sudo docker run --rm -e APP_DOMAIN=localhost -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "caddy:$tag" \
       caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then

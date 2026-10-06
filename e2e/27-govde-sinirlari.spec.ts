@@ -21,7 +21,9 @@ async function actionPost(page: Page, run: () => Promise<unknown>): Promise<{ pa
   await run();
   const req = await wait;
   await req.response();
-  return { path: new URL(req.url()).pathname, bytes: (await req.sizes()).requestBodySize };
+  // Dosyalı gövdelerde tarayıcı gövde boyutunu bildirmeyebilir: ağdaki Content-Length başlığı esas alınır
+  const declared = Number((await req.allHeaders())['content-length'] ?? 0);
+  return { path: new URL(req.url()).pathname, bytes: Math.max(declared, (await req.sizes()).requestBodySize) };
 }
 
 test('sunucu işlemleri formun bulunduğu sayfanın adresine POST edilir; her gövde o adresin vekildeki sınırına sığar', async ({ browser }) => {
