@@ -8,7 +8,7 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
 import {
-  blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, roleText, slaText, stageText,
+  blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, personText, roleText, slaText, stageText,
 } from '@/lib/labels';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
@@ -415,7 +415,7 @@ function History({ order, isCustomer, t }: { order: OrderDetail; isCustomer: boo
           const note = eventNoteText(t, e.event, e.note, isCustomer);
           return (
             <li key={e.id}>
-              <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${e.user.name || e.user.email}` : ''}</div>
+              <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${personText(t, e.user)}` : ''}</div>
               <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
             </li>
           );
@@ -809,7 +809,7 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               {draft && <b className="small">{t('order.upload.draftTitle', { v: d.version })}</b>}
               {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
               {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
-              {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy?.name ?? '—', when: fmtDateTime(d.decidedAt) })}</span>}
+              {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy ? personText(t, d.decidedBy) : '—', when: fmtDateTime(d.decidedAt) })}</span>}
               {!draft && d.files.some((f) => isViewable(f.name) && f.scanStatus !== 'INFECTED') && (
                 <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
               )}
@@ -969,7 +969,7 @@ function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T
               </div>
             )}
             <div className="meta">
-              {n.user.name || n.user.email}{!isCustomer || n.user.appRole === 'MUSTERI' ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
+              {personText(t, n.user)}{(!isCustomer || n.user.appRole === 'MUSTERI') && personText(t, n.user) !== roleText(t, n.user.appRole) ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
               {n.internal && <> · <b>{t('order.notes.internal')}</b></>}
             </div>
           </div>

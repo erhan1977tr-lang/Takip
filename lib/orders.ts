@@ -7,6 +7,7 @@ import { userCan } from './permissions';
 import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
 import { notesFor } from '../server/notes/view.js';
+import { orderPeopleView } from '../server/orders/order-view.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -74,27 +75,33 @@ export function sanitizeRows<R extends { customer: { name: string }; price?: unk
   });
 }
 
+/**
+ * Siparişteki kişi ilişkilerinin alanları. Rol ve tür, kimliğin görene göre maskelenmesi için gerekir
+ * (server/orders/order-view.js → personView: müşteri kişisinin adı / e-postası satış ve çizime hiç gitmez — AUD-2).
+ */
+const PERSON = { name: true, email: true, appRole: true, type: true } as const;
+
 export const orderDetailInclude = {
   customer: true,
   items: true,
-  files: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { name: true, email: true } } } },
+  files: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: PERSON } } },
   drawings: {
     orderBy: { version: 'asc' },
     include: {
-      uploadedBy: { select: { name: true, email: true } },
+      uploadedBy: { select: PERSON },
       revisions: { orderBy: { createdAt: 'asc' } },
       files: { orderBy: { createdAt: 'asc' } },
-      sentBy: { select: { name: true } },
-      decidedBy: { select: { name: true } },
+      sentBy: { select: { name: true, appRole: true, type: true } },
+      decidedBy: { select: { name: true, appRole: true, type: true } },
     },
   },
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
   price: true,
   crateLinks: { include: { crate: { select: { crateNo: true, shipDay: true } } } },
-  notes: { orderBy: { createdAt: 'asc' }, include: { user: { select: { name: true, email: true, appRole: true } } } },
-  events: { orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true, email: true } } } },
-  assignedDrawer: { select: { name: true, email: true } },
-  createdBy: { select: { name: true, email: true } },
+  notes: { orderBy: { createdAt: 'asc' }, include: { user: { select: PERSON } } },
+  events: { orderBy: { createdAt: 'desc' }, include: { user: { select: PERSON } } },
+  assignedDrawer: { select: PERSON },
+  createdBy: { select: PERSON },
   // Profil siparişi (Aşama 6)
   profile: true,
   profileItems: { orderBy: { sortOrder: 'asc' } },
@@ -122,6 +129,9 @@ const ZERO = new Prisma.Decimal(0);
  *  - taslak çizim sürümleri ve çizim iç notları (müşteri)
  *  - not çevirisinin hata kodu / bekleme durumu ve müşterinin kendi notunun Türkçesi (müşteri)
  *  - not çevirisinin tamamı: çeviri, durum, hata kodu (denetimci — notu yalnızca özgün dilinde görür)
+ *  - müşteri kişilerinin adı / e-postası (satış, çizim: yalnızca "Müşteri" rolü) ve olay geçmişi role göre: satır ve not
+ *    olay koduna göre (FGO / muhasebe olayları, alıcı e-postası, satış tutarı, dış servis hata metni) — tek kural
+ *    server/orders/order-view.js (AUD-1, AUD-2); eski kayıtlar da okunurken korunur
  */
 export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetail {
   let offers = order.offers;
@@ -140,7 +150,7 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
   // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür
   const profile = order.profile ? { ...order.profile, depotTokenHash: null } : null;
-  return {
+  return orderPeopleView(user.appRole, {
     ...order,
     profile,
     outbox: userCan(user, 'OFFER_SEND') ? order.outbox : [],
@@ -154,7 +164,7 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
     price: userCan(user, 'PRICE_FINAL_VIEW') ? order.price : null,
     // "Özel durum" (karar 124): ev sahibi firma kararı yalnızca iç ekibe gider
     guestHostId: userCan(user, 'FILE_INTERNAL_VIEW') ? order.guestHostId : null,
-  };
+  });
 }
 
 /** Üzerinde çalışılan son teklif (en yeni). */

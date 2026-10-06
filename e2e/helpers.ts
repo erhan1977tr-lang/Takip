@@ -207,7 +207,31 @@ export async function crawlForLeaks(page: Page, secrets: string[], max = 80): Pr
       queue.push(clean);
     }
   }
+  // JSON yanıtı (bildirim akışı): metin olarak değil, nesne olarak İÇ İÇE taranır — her anahtar ve her değer
+  const feed = await page.request.get('/bildirimler/akis');
+  if (feed.ok()) for (const hit of deepFind(await feed.json(), secrets)) leaks.push(`/bildirimler/akis ${hit}`);
   return { pages: seen.size, leaks: [...new Set(leaks)] };
+}
+
+/**
+ * İç içe tarama: nesnenin her derinliğindeki anahtar ve değerlerde gizli bilgilerden biri geçen yollar (büyük / küçük harf
+ * duyarsız). Ekranda görünmeyen ama yanıtta duran alanları da yakalar.
+ */
+export function deepFind(value: unknown, secrets: string[], at = '$'): string[] {
+  const needles = secrets.filter((x) => x.trim().length >= 5).map((x) => x.toLowerCase());
+  const out: string[] = [];
+  const walk = (v: unknown, where: string) => {
+    if (v == null) return;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      const text = String(v).toLowerCase();
+      for (const n of needles) if (text.includes(n)) out.push(`${where}: "${n}"`);
+      return;
+    }
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${where}[${i}]`));
+    if (typeof v === 'object') for (const [k, x] of Object.entries(v as Record<string, unknown>)) { walk(k, `${where}.<key>`); walk(x, `${where}.${k}`); }
+  };
+  walk(value, at);
+  return out;
 }
 
 /** Müşteri firmalarının gizli tutulacak bilgileri (tam ad, ilk 3 harften sonrası, iletişim). */
@@ -219,10 +243,13 @@ export async function customerSecrets(): Promise<string[]> {
       where: { type: 'CUSTOMER' },
       select: { name: true, contactPerson: true, phone: true, address: true, taxId: true, email: true, billingEmail: true, regCom: true, county: true, city: true, fxMarkupPercent: true },
     });
+    // Müşteri tarafındaki KİŞİLER de firmayı ele verir (AUD-2): müşteri kullanıcılarının adı ve e-posta adresi
+    const people = await db.user.findMany({ where: { type: 'CUSTOMER' }, select: { name: true, email: true } });
     // Firma adı, iletişim ve fatura bilgileri, mali belge e-postası, müşteriye özel kur yüzdesi (SEC-07)
-    return rows
-      .flatMap((r) => [r.name, r.name.slice(3), r.contactPerson, r.phone, r.address, r.taxId, r.email, r.billingEmail, r.regCom, r.county, r.city, r.fxMarkupPercent?.toString()])
-      .filter((x): x is string => !!x);
+    return [
+      ...rows.flatMap((r) => [r.name, r.name.slice(3), r.contactPerson, r.phone, r.address, r.taxId, r.email, r.billingEmail, r.regCom, r.county, r.city, r.fxMarkupPercent?.toString()]),
+      ...people.flatMap((u) => [u.name, u.email]),
+    ].filter((x): x is string => !!x);
   } finally {
     await db.$disconnect();
   }

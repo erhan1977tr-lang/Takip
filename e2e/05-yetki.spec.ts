@@ -83,6 +83,80 @@ test('denetimci: yönetici ekler; tüm siparişleri tam firma adıyla görür, h
   await ctx.close();
 });
 
+// AUD-1 / AUD-2 (3.50.10): olay geçmişi ve kişi kimlikleri OKUNURKEN role göre temizlenir — yayından önce yazılmış satırlar
+// (satış tutarı, mali belge alıcısının e-postası, ham FGO hata metni) dahil. Ham yanıt (HTML + RSC verisi) taranır.
+test('geçmiş ve kişiler: satış / çizim müşteri kişisini, alıcı e-postasını ve FGO metnini; çizim / denetimci satış tutarını almaz (eski satırlar dahil)', async ({ browser }) => {
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  const firm = await db.customer.findFirstOrThrow({ where: { name: 'Ünsal Cam' } });
+  const person = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER } });
+  const admin = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
+  const AMOUNT = '98765.43 EUR';
+  const FGO_RAW = 'FGO-GIZLI-HATA-7781';
+  const BILLING = 'facturi-istoric@unsal.test';
+  const no = 9905;
+  const order = await db.order.create({
+    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: no, customerId: firm.id, createdById: person.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', title: 'AUD geçmiş testi' },
+  });
+  try {
+    // Eski biçimde (3.50.10'dan önce) yazılmış satırlar + müşteri kişisinin olay, not ve dosyası
+    await db.orderEvent.createMany({
+      data: [
+        { orderId: order.id, event: 'CREATED', toStatus: 'YENI', userId: person.id },
+        { orderId: order.id, event: 'OFFER_SUBMITTED', note: AMOUNT, userId: admin.id },
+        { orderId: order.id, event: 'FGO_DOC_EMAILED', note: `PRF77 → ${BILLING}` },
+        { orderId: order.id, event: 'FGO_FAILED', note: `PROFORMA: ${FGO_RAW}` },
+      ],
+    });
+    await db.orderNote.create({ data: { orderId: order.id, userId: person.id, text: 'Müşteri notu (AUD)' } });
+    await db.orderFile.create({ data: { orderId: order.id, name: 'aud-musteri.pdf', storageKey: `aud-test/${order.id}.pdf`, size: 10, mime: 'application/pdf', scanStatus: 'CLEAN', uploadedById: person.id } });
+    const url = `/siparisler/${order.id}`;
+    /** Sayfanın ham yanıtı: HTML + RSC verisi (ekranda görünmeyen alanlar dahil) */
+    const raw = async (page: import('@playwright/test').Page) => {
+      let all = '';
+      for (const v of [url, `${url}?_rsc=1`]) {
+        const res = await page.request.get(v, { headers: v.includes('_rsc') ? { RSC: '1' } : {} });
+        expect(res.status(), v).toBe(200);
+        all += await res.text();
+      }
+      return all;
+    };
+    const identity = [person.email, ...(person.name ? [person.name] : []), firm.name, BILLING, FGO_RAW, 'PRF77'];
+
+    for (const email of [SALES, DRAWER]) {
+      const page = await as(browser, email, TEAM_PW);
+      const body = await raw(page);
+      expect(body, email).toContain(order.orderNo);
+      expect(body, email).toContain('Müşteri notu (AUD)');
+      for (const secret of identity) expect(body.includes(secret), `${email}: ${secret}`).toBe(false);
+      // Satış kendi (satış) tutarını görür; çizim görmez
+      expect(body.includes(AMOUNT), `${email}: tutar`).toBe(email === SALES);
+      await page.context().close();
+    }
+
+    const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+    const ib = await raw(insp);
+    expect(ib).toContain(firm.name); // denetimci tam firma adını görür (karar 11)
+    for (const secret of [AMOUNT, FGO_RAW, BILLING]) expect(ib.includes(secret), `denetimci: ${secret}`).toBe(false);
+    await insp.context().close();
+
+    const adm = await as(browser, ADMIN, ADMIN_PW);
+    const ab = await raw(adm);
+    for (const kept of [AMOUNT, FGO_RAW, BILLING, person.name || person.email]) expect(ab, `yönetici: ${kept}`).toContain(kept);
+    await adm.context().close();
+
+    const own = await as(browser, CUSTOMER, CUST_PW);
+    const ob = await raw(own);
+    expect(ob).toContain('Müşteri notu (AUD)');
+    if (person.name) expect(ob, 'müşteri kendi kişisini görür').toContain(person.name);
+    for (const secret of [AMOUNT, FGO_RAW, BILLING, 'PRF77']) expect(ob.includes(secret), `müşteri: ${secret}`).toBe(false);
+    await own.context().close();
+  } finally {
+    await db.order.delete({ where: { id: order.id } });
+    await db.$disconnect();
+  }
+});
+
 test('dosyalar: müşteri başka firmanın ya da iç ekibin dosyasını adresini bilse de indiremez', async ({ browser }) => {
   // Beta Cam müşterisi, Ünsal Cam'in dosya ve çizimlerini (02 testlerinden) adresini bilerek istemeye çalışır
   const BETA = 'beta@betacam.test';

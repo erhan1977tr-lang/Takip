@@ -257,7 +257,9 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
       });
       await db.$transaction(async (tx) => {
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null, payload: { ...payload, to, attached: pdf.ok } } });
-        for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_EMAILED', actorId: null, note: `${doc.series}${doc.number} → ${to}` });
+        // Geçmiş notunda yalnızca belge no: alıcı adresi (müşterinin fatura e-postası) iş kuyruğundaki kayıtta durur (payload.to);
+        // olay geçmişine yazılmaz (AUD-1 — eski satırlar okunurken server/orders/order-view.js ile korunur)
+        for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_EMAILED', actorId: null, note: `${doc.series}${doc.number}` });
       });
       sent++;
     } catch (e) {

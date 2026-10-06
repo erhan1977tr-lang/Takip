@@ -153,7 +153,9 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   rows = await emails(doc.id);
   assert.deepEqual([rows[0].status, rows[0].payload.to, rows[0].payload.attached], ['SENT', 'umi@belge.test', true]);
   assert.deepEqual([(await d.emailStates(db, [doc])).get(doc.id).state, (await d.emailStates(db, [doc])).get(doc.id).to], ['SENT', 'umi@belge.test']);
-  assert.ok(await db.orderEvent.findFirst({ where: { orderId: o.id, event: 'FGO_DOC_EMAILED' } }));
+  // AUD-1: geçmiş notunda yalnızca belge no — alıcı adresi (fatura e-postası) iş kaydında (payload.to), geçmişte değil
+  const emailed = await db.orderEvent.findFirstOrThrow({ where: { orderId: o.id, event: 'FGO_DOC_EMAILED' } });
+  assert.equal(emailed.note, 'PRF101');
 
   // --- tekrar yok: işçi yeniden çalışır, iki işçi birlikte çalışır, FGO durum eşitlemesi, müşteri / muhasebe sayfası
   assert.deepEqual(await d.dispatchDocEmails(db, mailCtx(fgo, box)), { sent: 0, failed: 0, skipped: 0 });

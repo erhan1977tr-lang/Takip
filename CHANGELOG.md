@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.10 — 06.10.2026
+
+- **Güvenlik: sipariş geçmişi ve kişi bilgileri role göre sunucuda temizlenir** (güvenlik denetimi AUD-1, AUD-2).
+  - Satış ve çizim ekibi müşteri firmasının adını zaten göremiyordu; artık müşteri tarafındaki KİŞİLERİ de tanıyamaz:
+    not yazarı, siparişi açan, dosyayı yükleyen, çizimi onaylayan / revizyon isteyen ve geçmişte işlemi yapan müşteri
+    kullanıcısının adı ve e-posta adresi hiçbir yanıtta yoktur; yerine yalnızca "Müşteri" yazar.
+  - Sipariş geçmişinde her olayın satırını ve notunu kimin göreceği olay türüne göre belirlenir: mali belge e-postasının
+    alıcı adresi ve FGO hata metni yalnızca yöneticiye; satış tutarı çizim ekibine ve denetimciye gitmez; FGO / muhasebe
+    işleri yalnızca yöneticinin geçmişinde. Kural okurken uygulandığı için **daha önce yazılmış kayıtlar da** korunur;
+    geçmiş kayıtlar değiştirilmez.
+  - Yeni kayıtlar bu bilgileri hiç taşımaz: belge e-postası olayına yalnızca belge numarası yazılır, teklif gönderim
+    olayına tutar yazılmaz (tutar denetim kaydında kalır).
+  - Yönetici, denetimci ve müşteri için görünen bilgiler, yetkiler ve iş akışları değişmedi.
+
 ## 3.50.9 — 06.10.2026
 
 - **Sunucu güvenliği: arka plan işçisinin kapsayıcısı ayrıcalıksız.** İşçi zaten root değildi (3.50.8); artık kapsayıcısında

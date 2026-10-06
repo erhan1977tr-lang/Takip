@@ -130,6 +130,11 @@ dbTest('eski çok camlı sipariş: olduğu gibi durur ve iş akışı normal iş
   assert.deepEqual(offer.lines.map((l) => [l.description, l.kind]), [['8mm Temperli', 'CAM'], ['10mm Temperli', 'CAM'], ['6mm Float', 'CAM']]);
   assert.equal(offer.status, 'YONETIMDE');
   assert.deepEqual(await glasses(), all, 'sipariş kalemleri değişmedi');
+  // AUD-1: satış tutarı geçmiş notuna yazılmaz (geçmişi çizim ve denetimci de görür); tutar denetim kaydında
+  const submitted = await db.orderEvent.findFirstOrThrow({ where: { orderId: o.id, event: 'OFFER_SUBMITTED' } });
+  assert.equal(submitted.note, null);
+  const trail = await db.auditLog.findFirstOrThrow({ where: { entityId: o.id, action: 'ORDER_TRANSITION', details: { path: ['action'], equals: 'submit_offer' } } });
+  assert.equal(Number(trail.details.amount), Number(offer.amount));
 });
 
 dbTest('oluşturma: tip, geçmiş, denetim (rol + IP) ve bildirim kuyruğu', async () => {

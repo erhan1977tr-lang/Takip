@@ -139,8 +139,6 @@ async function completeLines(h, offer, lines) {
   return enrichLines(lines, { glasses, items: order.items, previous: offer.lines ?? [], pricing });
 }
 
-const money = (amount, currency) => `${amount} ${currency}`;
-
 /** Yükleme günü değiştiyse siparişin sandıkları da yeni güne taşınır (server/loading/crates.js). */
 async function followCrates(h, newDate) {
   const old = h.order.actualShipDate ?? h.order.estimatedShipDate;
@@ -281,7 +279,8 @@ async function offerEdit(h, intent) {
 
   if (intent === 'submit') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'YONETIMDE', statusSince: now } });
-    h.event('OFFER_SUBMITTED', money(amount, offer.currency));
+    // Satış tutarı geçmiş notuna yazılmaz (AUD-1): tutar denetim kaydında (h.audit.amount); geçmişi çizim ve denetimci de görür
+    h.event('OFFER_SUBMITTED');
     // Liste fiyatından farklı fiyat → yöneticinin "Önemli kararlar" listesi
     h.overrides = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines: saved, actor, now });
   } else if (intent === 'approve') {

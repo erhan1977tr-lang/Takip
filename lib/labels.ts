@@ -14,6 +14,12 @@ export const blockerText = (t: T, code: string) => t(k(`status.blockers.${code}`
 export const stageText = (t: T, key: string) => t(k(`status.stages.${key}`));
 export const lineKindText = (t: T, kind: string) => t(k(`status.lineKind.${kind}`));
 export const roleText = (t: T, role: string) => t(k(`roles.${role}`));
+/**
+ * Kişinin ekrandaki adı. Görenin rolüne göre maskelenmiş kişide (server/orders/order-view.js → personView: ad ve e-posta
+ * boş) yalnızca rolü yazılır — e-postaya düşülmez, çünkü maskelenmiş nesnede e-posta hiç yoktur.
+ */
+export const personText = (t: T, u: { name?: string | null; email?: string | null; appRole?: string | null }) =>
+  u.name || u.email || (u.appRole ? roleText(t, u.appRole) : '—');
 export const profileStageText = (t: T, stage: string) => t(k(`profile.stage.${stage}`));
 
 /** Profil siparişinde müşterinin gördüğü durum (server/profile/rules.js → profileCustomerSummary). */
