@@ -465,8 +465,8 @@ jobs:
           day=$(TZ=Europe/Bucharest date +%F)
           # Yedekten SONRA oluşan kayıt: geri yüklemeyle kaybolmalı (gerçekten yedeğe dönüldüğünün kanıtı)
           compose exec -T app sh -c 'echo sonradan > /data/uploads/yedekten-sonra.txt'
-          # Onay sorusu terminalden okunur (/dev/tty): sahte terminal üzerinden yedeğin tarihi yazılır
-          echo "$day" | sudo script -qec "takip restore $day" /dev/null > geri.log 2>&1 || { cat geri.log; exit 1; }
+          # Onay sorusu terminalden okunur (/dev/tty): komut sahte terminalde çalışır, soru göründüğünde yedeğin tarihi yazılır
+          sudo python3 deploy/test/tty-answer.py 'Onaylamak' "$day" takip restore "$day" < /dev/null > geri.log 2>&1 || { cat geri.log; exit 1; }
           cat geri.log
           grep -q '✔ Geri yüklendi' geri.log
           if compose exec -T app test -e /data/uploads/yedekten-sonra.txt; then echo "dosyalar yedeğe dönmedi"; exit 1; fi
