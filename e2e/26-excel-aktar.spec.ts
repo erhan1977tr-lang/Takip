@@ -2,10 +2,12 @@ import { test, expect } from '@playwright/test';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CUSTOMER, CUST_PW, SALES, TEAM_PW, as } from './helpers';
+import { CUSTOMER, CUST_PW, TEAM_PW, as } from './helpers';
 import { readXls } from '../server/files/xls.js';
 import { writeXlsx } from '../server/files/xlsx.js';
 import { writeZip } from '../server/files/zip.js';
+
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 
 // Teklif tablosuna Excel'den aktarma (AUD-3, karar 140): olağan .xls / .xlsx dosyaları eskisi gibi okunur, sütun eşlemesi
 // çalışır; 5 MB'tan büyük Excel dosyası siparişe YÜKLENEBİLİR (sipariş dosyası sınırı 100 MB) ama teklife aktarılırken
