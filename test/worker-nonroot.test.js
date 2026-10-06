@@ -1,5 +1,6 @@
-// İşçi (worker) root değil (SEC-12, karar 137): sunucu düzeninin (deploy/docker-compose.yml) kuralları ve yükleme
-// biriminin sahipliğini düzelten tek seferlik servisin (uploads-init) komutu.
+// İşçi (worker) root değil (SEC-12, karar 137) ve ayrıcalıksız (karar 138: cap_drop ALL + no-new-privileges, yalnızca
+// işçide): sunucu düzeninin (deploy/docker-compose.yml) kuralları ve yükleme biriminin sahipliğini düzelten tek seferlik
+// servisin (uploads-init) komutu.
 // Gerçek Docker ile uçtan uca deneme: deploy/test/worker-nonroot.sh (.github/workflows/deploy-test.yml).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -146,10 +147,26 @@ test('sahiplik komutu çalışır: düzeltilecek kayıt yoksa hiçbir şeye doku
   assert.equal(fs.readdirSync(dir, { recursive: true }).length, all().length - 1, 'kayıt eklenmedi / silinmedi');
 });
 
-test('bu değişiklikte ayrıcalık ayarı eklenmedi (cap_drop / no-new-privileges ayrı bir kararla değerlendirilecek)', () => {
+test('işçi ayrıcalıksız: bütün yetenekler bırakılır, no-new-privileges açık, kullanıcı 1001:1001 kalır (karar 138)', () => {
+  const worker = service('worker');
+  assert.match(worker, /^ {4}user: "1001:1001"$/m);
+  assert.match(worker, /^ {4}cap_drop:\n {6}- ALL\n {4}\S/m, 'cap_drop yalnızca ALL');
+  assert.match(worker, /^ {4}security_opt:\n {6}- no-new-privileges:true\n {4}\S/m, 'security_opt yalnızca no-new-privileges');
+  assert.doesNotMatch(worker, /cap_add|privileged|seccomp|apparmor|unconfined/);
+});
+
+test('ayrıcalık ayarı YALNIZCA işçide: diğer servisler ve kaynak sınırları bu kararda değişmedi', () => {
+  for (const name of SERVICES) {
+    const def = service(name);
+    assert.equal(/^ {4}cap_drop:/m.test(def), name === 'worker', `${name}: cap_drop`);
+    assert.equal(/^ {4}security_opt:/m.test(def), name === 'worker', `${name}: security_opt`);
+    assert.doesNotMatch(def, /cap_add|privileged:|read_only:|tmpfs:/, `${name}: başka ayrıcalık ayarı yok`);
+    // Kaynak sınırı (bellek / işlemci / süreç sayısı) bu kararın kapsamında değil
+    assert.doesNotMatch(def, /mem_limit|memswap_limit|cpus:|cpu_shares|pids_limit|ulimits:|deploy:/, `${name}: kaynak sınırı yok`);
+  }
   const body = compose.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  assert.doesNotMatch(body, /cap_drop|no-new-privileges|security_opt|read_only:/);
-  assert.doesNotMatch(body, /privileged:\s*true/);
+  assert.equal(body.match(/cap_drop/g).length, 1);
+  assert.equal(body.match(/no-new-privileges/g).length, 1);
 });
 
 test('sunucu aracı: geri yükleme dosyaları yine 1001:1001 yapar; durum satırı yalnızca okur', () => {

@@ -90,6 +90,10 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
   1001:1001'dir; her yayında işçi başlamadan önce `uploads-init` servisi başka kullanıcıya ait kalmış kayıtların yalnızca
   sahipliğini düzeltir (dosya silmez, taşımaz, içeriğini değiştirmez). `takip durum` bunu gösterir. Migration ve yönetim
   komutları (`tools`) root kalır.
+- İşçi kapsayıcısı ayrıcalıksızdır: bütün Linux yetenekleri bırakılmıştır (`cap_drop: ALL`) ve süreç sonradan yetki
+  kazanamaz (`no-new-privileges`). Denetlemek için:
+  `docker inspect -f '{{.Config.User}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}}' takip-worker-1`
+  → `1001:1001 [ALL] [no-new-privileges:true]`. Diğer kapsayıcıların ayarları değişmedi.
 
 ## Yedek şifreleme (Google Drive kopyası)
 

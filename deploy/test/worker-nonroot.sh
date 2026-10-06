@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# İşçi (worker) root olmadan çalışır — gerçek Docker ile sunucu kurulumu testi (SEC-12, karar 137).
+# İşçi (worker) root olmadan ve ayrıcalıksız çalışır — gerçek Docker ile sunucu kurulumu testi (SEC-12; karar 137: kullanıcı
+# 1001:1001, karar 138: cap_drop ALL + no-new-privileges, yalnızca işçide).
 # .github/workflows/deploy-test.yml çalıştırır; kurulu ve yayında bir Takip ister (GitHub'ın tek kullanımlık test makinesi).
 # GERÇEK SUNUCUDA ÇALIŞTIRILMAZ: deneme siparişi / dosyası üretir, .env'e geçici MAIL_OUTBOX_DIR yazar, deneme yayını yapar.
 #
@@ -47,9 +48,10 @@ trap 'diag "$LINENO" "$?" "$BASH_COMMAND"' ERR
 
 # ---------- denetimler ----------
 # İşçi: kapsayıcı 1001:1001 ile tanımlı, içindeki HER süreç gerçekten UID/GID 1001, çalışıyor, yeniden başlatılmamış;
-# ayrıcalık ayarları bu değişiklikte değişmedi (cap_drop / no-new-privileges ayrıca değerlendirilecek)
+# ayrıcalıksız (karar 138): ayrıcalıklı değil, eklenen yetenek yok, TÜM yetenekler bırakılmış, no-new-privileges açık —
+# hem kapsayıcının ayarında hem çekirdeğin süreç için gösterdiğinde
 worker_is_nonroot() {
-  local id pid
+  local id pid p
   id=$(worker)
   [ "$(sudo docker inspect -f '{{.Config.User}}' "$id")" = "$OWNER" ]
   [ "$(sudo docker inspect -f '{{.State.Status}} {{.State.Restarting}} {{.RestartCount}}' "$id")" = "running false 0" ]
@@ -58,7 +60,32 @@ worker_is_nonroot() {
   sudo awk '/^(Uid|Gid):/ { n++; if ($2 != 1001 || $3 != 1001 || $4 != 1001 || $5 != 1001) bad = 1 } END { exit (bad || n != 2) }' "/proc/$pid/status"
   sudo docker top "$id" -eo pid,uid,gid,args | awk 'NR > 1 { n++; if ($2 != 1001 || $3 != 1001) bad = 1 } END { exit (bad || n < 1) }'
   [ "$(sudo docker exec "$id" id -u):$(sudo docker exec "$id" id -g)" = "$OWNER" ]
-  [ "$(sudo docker inspect -f '{{.HostConfig.Privileged}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}}' "$id")" = "false [] []" ]
+  [ "$(sudo docker inspect -f '{{.HostConfig.Privileged}}' "$id")" = false ]
+  [ "$(sudo docker inspect -f '{{len .HostConfig.CapAdd}}' "$id")" = 0 ]
+  sudo docker inspect -f '{{json .HostConfig.CapDrop}}' "$id" | jq -e 'map(ascii_upcase) | index("ALL") != null' >/dev/null
+  sudo docker inspect -f '{{json .HostConfig.SecurityOpt}}' "$id" | jq -e 'map(select(test("^no-new-privileges(:true)?$"))) | length == 1' >/dev/null
+  # Çekirdeğin gördüğü (kapsayıcıdaki her süreç): beş yetenek kümesinin hepsi boş, yeni ayrıcalık edinilemez
+  for p in $(sudo docker top "$id" -eo pid | awk 'NR > 1 { print $1 }'); do
+    sudo awk '/^Cap(Inh|Prm|Eff|Bnd|Amb):/ { n++; if ($2 !~ /^0+$/) bad = 1 } /^NoNewPrivs:/ { nnp = $2 } END { exit (bad || n != 5 || nnp != 1) }' "/proc/$p/status"
+  done
+  # Kapsayıcıda sonradan başlatılan süreç de aynı kısıtlarla başlar
+  sudo docker exec "$id" cat /proc/self/status | awk '/^Cap(Inh|Prm|Eff|Bnd|Amb):/ { n++; if ($2 !~ /^0+$/) bad = 1 } /^NoNewPrivs:/ { nnp = $2 } END { exit (bad || n != 5 || nnp != 1) }'
+}
+# Not için: işçinin ayrıcalık ayarları (Docker) ve çekirdeğin süreç için gösterdiği değerler
+hardening() {
+  local id pid
+  id=$(worker); pid=$(sudo docker inspect -f '{{.State.Pid}}' "$id")
+  sudo docker inspect -f 'User={{.Config.User}} Privileged={{.HostConfig.Privileged}} CapAdd={{json .HostConfig.CapAdd}} CapDrop={{json .HostConfig.CapDrop}} SecurityOpt={{json .HostConfig.SecurityOpt}} RestartCount={{.RestartCount}} Status={{.State.Status}}' "$id"
+  sudo awk '/^(Cap(Inh|Prm|Eff|Bnd|Amb)|NoNewPrivs):/ { printf "%s%s", $1, $2 " " } END { print "" }' "/proc/$pid/status"
+}
+# Bu karar yalnızca işçide: diğer kapsayıcıların ayrıcalık ayarları olduğu gibi (ayar yok)
+others_unchanged() {
+  local s c
+  for s in app db caddy clamav uploads-init; do
+    c=$(compose ps -a -q "$s" | head -n 1)
+    [ -n "$c" ]
+    [ "$(sudo docker inspect -f '{{.HostConfig.Privileged}} {{len .HostConfig.CapAdd}} {{len .HostConfig.CapDrop}} {{len .HostConfig.SecurityOpt}}' "$c")" = "false 0 0 0" ]
+  done
 }
 # Birim: kökü dahil hiçbir kayıt başka kullanıcıya ait değil
 all_owned() {
@@ -124,7 +151,7 @@ if [ "${1:-}" = son ]; then
   sudo takip durum | tee "$T/durum.txt"
   grep -q 'İşçi     : kullanıcı 1001:1001 (root değil)' "$T/durum.txt"
   grep -q 'Dosyalar : tüm kayıtların sahibi 1001:1001' "$T/durum.txt"
-  echo "geri yüklemeden sonra: $(sudo find "$VOL" -mindepth 1 | wc -l) kayıt, hepsi 1001:1001; işçi 1001:1001 ile çalışıyor" | note "İşçi root değil — geri yüklemeden sonra"
+  { echo "geri yüklemeden sonra: $(sudo find "$VOL" -mindepth 1 | wc -l) kayıt, hepsi 1001:1001; işçi 1001:1001 ile, ayrıcalıksız çalışıyor"; hardening; } | note "İşçi root değil — geri yüklemeden sonra"
   exit 0
 fi
 
@@ -164,6 +191,7 @@ worker_is_nonroot
 init=$(compose ps -a -q uploads-init | head -n 1)
 [ "$(sudo docker inspect -f '{{.State.Status}} {{.State.ExitCode}} {{.Config.User}} {{.HostConfig.NetworkMode}}' "$init")" = "exited 0 0:0 none" ]
 [ "$(sudo docker inspect -f '{{range .Mounts}}{{.Type}}:{{.Name}}:{{.Destination}}:{{.RW}} {{end}}' "$init")" = "volume:takip_uploads:/data/uploads:true " ]
+others_unchanged
 all_owned
 sudo takip antivirus
 
@@ -301,12 +329,15 @@ site_up
 worker_is_nonroot
 worker_ticks
 all_owned
+others_unchanged
 sudo takip durum | tee "$T/durum.txt"
 grep -q 'İşçi     : kullanıcı 1001:1001 (root değil)' "$T/durum.txt"
 grep -q 'Dosyalar : tüm kayıtların sahibi 1001:1001' "$T/durum.txt"
 set +x
 {
   echo "işçi: kullanıcı $(sudo docker inspect -f '{{.Config.User}}' "$(worker)"), yeniden başlatma $(sudo docker inspect -f '{{.RestartCount}}' "$(worker)"), süreçler:"
+  hardening
+  echo "diğer kapsayıcılar (app, db, caddy, clamav, uploads-init): Privileged=false, CapAdd / CapDrop / SecurityOpt boş (değişmedi)"
   sudo docker top "$(worker)" -eo pid,uid,gid,args | cut -c1-80
   echo "tools (migration / yönetim): uid 0 · uygulama: uid 1001 · uploads-init: 0:0, ağ yok, yalnızca yükleme birimi"
   echo "temiz dosya CLEAN, EICAR INFECTED + karantinada (içerik aynı), depo PDF'i üretildi — 3 kez (1001 işçi, root işçi, geçişten sonra 1001 işçi)"

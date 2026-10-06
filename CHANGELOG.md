@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.9 — 06.10.2026
+
+- **Sunucu güvenliği: arka plan işçisinin kapsayıcısı ayrıcalıksız.** İşçi zaten root değildi (3.50.8); artık kapsayıcısında
+  bütün Linux yetenekleri de bırakılıyor (`cap_drop: ALL`) ve süreç sonradan yetki kazanamıyor (`no-new-privileges`).
+  Yalnızca işçi kapsayıcısı değişti; uygulama, veritabanı, Caddy, antivirüs ve yönetim araçları aynıdır.
+  - İşçinin işleri aynen çalışır: antivirüs taraması ve karantina, depo PDF'i ve depo e-postası, bildirimler, FGO işleri
+    ve eşitleme, belge e-postaları, oturum temizliği, hatırlatmalar. Yedek ve geri yükleme değişmedi.
+
 ## 3.50.8 — 06.10.2026
 
 - **Sunucu güvenliği: arka plan işçisi artık root olarak çalışmıyor.** İşçi, uygulamayla aynı kullanıcıyla (1001:1001)

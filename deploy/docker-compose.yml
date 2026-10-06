@@ -68,9 +68,16 @@ services:
   # Arka plan işçisi: taranmamış dosyaları antivirüsten geçirir, depo / belge / bildirim e-postalarını ve FGO işlerini yürütür.
   # root DEĞİL: uygulamayla aynı kullanıcı (1001:1001) — yükleme birimine yazdıkları (depo PDF'i, ay klasörü, karantina)
   # uygulamanın da yazabildiği sahiplikle oluşur. İmaj (tools) değişmedi: migration / yönetim komutları root kalır.
+  # Ayrıcalıklar (karar 138, YALNIZCA bu serviste): bütün Linux yetenekleri bırakılır (cap_drop: ALL) ve süreç sonradan
+  # ayrıcalık edinemez (no-new-privileges: setuid / dosya yeteneği taşıyan programlar yetki kazandırmaz). İşçinin hiçbir
+  # yeteneğe ihtiyacı yok: kendi dosyalarını yazar, veritabanına / antivirüse / dış servislere yalnızca istemci olarak bağlanır.
   worker:
     image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}-tools
     user: "1001:1001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     command: ["node", "scripts/worker.mjs"]
     logging: *logging

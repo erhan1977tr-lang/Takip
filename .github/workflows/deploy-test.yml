@@ -4,7 +4,8 @@ name: Sunucu kurulumu
 # kurulum, HTTPS, ilk yönetici, yeniden kurulum (anahtarlar korunur), güncelleme, yalnızca belge değişikliği,
 # derlemesi bozuk sürümün yayınlanmaması, sahte IP başlıkları (Caddy), yedek ve şifreli yedek (age) + geri yükleme denemesi,
 # Docker derleme önbelleği temizliği (karar 134: yalnızca önbellek silinir; imaj, kapsayıcı, birim, veri ve yedek yerinde),
-# işçinin root olmadan çalışması (karar 137: sahiplik geçişi, tarama, karantina, depo PDF'i, geri dönüş, geri yükleme).
+# işçinin root olmadan (karar 137: sahiplik geçişi, tarama, karantina, depo PDF'i, geri dönüş, geri yükleme) ve ayrıcalıksız
+# (karar 138: cap_drop ALL + no-new-privileges, yalnızca işçide) çalışması.
 on:
   push:
     branches: ['**']
@@ -252,7 +253,7 @@ jobs:
           sudo docker rmi onbellek-testi:kullanilmayan >/dev/null
           sudo docker volume rm onbellek-testi-birim >/dev/null
 
-      - name: İşçi root değil (SEC-12) — gerçek Docker — 1001 ile tarama / karantina / depo PDF'i, root işçiden geçiş (gerçek yayın), geri dönüş
+      - name: İşçi root değil ve ayrıcalıksız (SEC-12) — gerçek Docker — 1001 + cap_drop ALL + no-new-privileges ile tarama / karantina / depo PDF'i, root işçiden geçiş (gerçek yayın), geri dönüş
         run: bash deploy/test/worker-nonroot.sh
 
       - name: Yalnızca belge değişikliği yeniden derlenmez
@@ -457,7 +458,7 @@ jobs:
           private
           if sudo grep -rqa 'AGE-SECRET-KEY' "$drive" /opt/takip/logs /opt/takip/state /opt/takip/backups; then echo "anahtar sızmış"; exit 1; fi
 
-      - name: Yedekten geri yükleme (gerçek — takip restore) — dosyalar 1001:1001, işçi root değil, restore-test yine geçer
+      - name: Yedekten geri yükleme (gerçek — takip restore) — dosyalar 1001:1001, işçi root değil ve ayrıcalıksız, restore-test yine geçer
         run: |
           set -E
           trap 'rc=$? cmd=$BASH_COMMAND; { echo "satır $LINENO (çıkış $rc): $cmd"; for f in geri.log rt-son.log; do if [ -f "$f" ]; then echo "--- $f"; tail -n 15 "$f"; fi; done; echo "--- backup.log"; sudo tail -n 20 /opt/takip/logs/backup.log; } 2>&1 | tail -c 5000 | sed "s/%/%25/g" | sed ":a;N;\$!ba;s/\n/%0A/g" | sed "s/^/::error title=Geri yükleme testi::/"' ERR
