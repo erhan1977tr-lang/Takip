@@ -300,8 +300,11 @@ jobs:
           # Google Drive yerine yerel bir klasör (rclone ":local:" uzak adresi); akış aynı: kopyala + md5 doğrula
           sudo apt-get install -y -qq rclone age >/dev/null
           echo 'BACKUP_REMOTE=:local:/tmp/takip-drive' | sudo tee -a /opt/takip/.env >/dev/null
+          set -E
+          # Hata olursa: hangi satır / komut, yedek klasörünün izinleri ve ilgili kayıtlar not olarak yayınlanır
+          trap 'rc=$? cmd=$BASH_COMMAND; { echo "satır $LINENO (çıkış $rc): $cmd"; echo "--- yedek klasörü"; sudo stat -c "%a %U %n" /opt/takip/backups; sudo find /opt/takip/backups -mindepth 1 -printf "%m %u %f\n" | sort -k3 | tail -n 30; for f in yedek.log rt.log rt-drive.log kur.log rt2.log; do if [ -f "$f" ]; then echo "--- $f"; tail -n 12 "$f"; fi; done; echo "--- backup.log"; sudo tail -n 20 /opt/takip/logs/backup.log; } 2>&1 | tail -c 5000 | sed "s/%/%25/g" | sed ":a;N;\$!ba;s/\n/%0A/g" | sed "s/^/::error title=Yedek testi::/"' ERR
           day=$(TZ=Europe/Bucharest date +%F)
-          sudo takip yedek
+          sudo takip yedek 2>&1 | tee yedek.log
           sudo ls -la /opt/takip/backups
           sudo sh -c 'ls /opt/takip/backups/db-*.dump' | grep -q dump
           sudo ls /tmp/takip-drive/database | grep -qE '^db-.*\.dump$'
@@ -331,6 +334,9 @@ jobs:
 
       - name: Şifreli yedek (age) — kurulum denemesi, gece yedeği, Drive'dan çözerek geri yükleme, anahtar kaybı, anahtar yenileme
         run: |
+          set -E
+          # Hata olursa: hangi satır / komut, yedek klasörünün izinleri ve ilgili kayıtlar not olarak yayınlanır
+          trap 'rc=$? cmd=$BASH_COMMAND; { echo "satır $LINENO (çıkış $rc): $cmd"; echo "--- yedek klasörü"; sudo stat -c "%a %U %n" /opt/takip/backups; sudo find /opt/takip/backups -mindepth 1 -printf "%m %u %f\n" | sort -k3 | tail -n 30; for f in yedek.log rt.log rt-drive.log kur.log rt2.log; do if [ -f "$f" ]; then echo "--- $f"; tail -n 12 "$f"; fi; done; echo "--- backup.log"; sudo tail -n 20 /opt/takip/logs/backup.log; } 2>&1 | tail -c 5000 | sed "s/%/%25/g" | sed ":a;N;\$!ba;s/\n/%0A/g" | sed "s/^/::error title=Yedek testi::/"' ERR
           day=$(TZ=Europe/Bucharest date +%F)
           drive=/tmp/takip-drive
           key=/opt/takip/backup-key.txt
