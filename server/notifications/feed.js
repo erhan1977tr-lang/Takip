@@ -1,9 +1,10 @@
-// Uygulama içi bildirimlerin İSTEMCİ kuralları (saf işlevler; bağımlılığı yok — components/NotificationCenter.tsx
-// kullanır, test/notification-feed.test.js sınar):
+// Uygulama içi bildirimlerin İSTEMCİ kuralları (saf işlevler; tek içe aktarması yine saf ve bağımsız olan ortak
+// "uygulama içi yol" kuralıdır — components/NotificationCenter.tsx kullanır, test/notification-feed.test.js sınar):
 //   - İlk yükleme SESSİZDİR: o anda var olan okunmamış bildirimler "yeni" değildir (yalnızca rozet).
 //   - Sonraki her yoklamada yalnızca daha önce görülmemiş ve okunmamış bildirimler yenidir.
 //   - Bir yoklama partisi için en çok BİR ses; aynı parti başka bir sekmede çalındıysa bu sekmede çalınmaz.
 //   - Ses yalnızca ses açıkken ve tarayıcı kullanıcı etkileşimi almışken; ses kapalıyken zil / açılır bildirim sürer.
+import { internalPath } from '../security/internal-path.js';
 
 /** Zil rozeti: 1 … 99, fazlası "99+"; okunmamış yoksa boş */
 export const badgeText = (n) => (n > 99 ? '99+' : n > 0 ? String(n) : '');
@@ -61,5 +62,8 @@ export function toastFor(fresh) {
   return { single: false, count: fresh.length, titles: fresh.slice(0, 3).map((i) => i.title), more: Math.max(0, fresh.length - 3) };
 }
 
-/** Bağlantı yalnızca uygulama içi yol olabilir ("/…"); başka her şey bağlantısız sayılır */
-export const safeLink = (link) => (typeof link === 'string' && /^\/(?!\/)/.test(link) ? link : null);
+/**
+ * Bağlantı yalnızca uygulama içi yol olabilir; başka her şey bağlantısız sayılır. Kural ortak doğrulayıcıdır
+ * (server/security/internal-path.js, karar 145) — /dil yönlendirmesiyle AYNI kural; burada ikinci bir denetim yazılmaz.
+ */
+export const safeLink = internalPath;

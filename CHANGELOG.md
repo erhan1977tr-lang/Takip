@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.16 — 06.10.2026
+
+- **Güvenlik: dil değiştirme bağlantısı artık başka bir siteye yönlendiremez** (güvenlik denetimi AUD-6).
+  - Giriş ekranındaki RO | TR bağlantısının "geri dön" adresi özel hazırlanmış bir bağlantıyla başka bir siteyi
+    gösterebiliyordu. Artık yalnızca TAKİP'in kendi sayfalarına dönülür; şüpheli adres giriş sayfasına çevrilir
+    (dil yine değişir).
+  - Aynı denetim bildirimlerdeki bağlantılara da uygulanır: uygulama dışını gösteren bir bağlantı tıklanabilir olmaz.
+  - Olağan kullanımda görünen bir değişiklik yoktur: dil değiştirince aynı sayfada kalınır, bildirimler eskisi gibi
+    ilgili sayfayı açar.
+
 ## 3.50.15 — 06.10.2026
 
 - **Güvenlik: FGO'dan gelen belge bağlantıları artık her kullanımda denetleniyor** (güvenlik denetimi AUD-5 ve AUD-7).

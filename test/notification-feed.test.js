@@ -103,6 +103,15 @@ test('rozet ve sekme başlığı: sayaç eklenir, güncellenir, geri alınır; s
 test('bağlantı yalnızca uygulama içi yol olabilir', () => {
   assert.equal(safeLink('/siparisler/abc#finans'), '/siparisler/abc#finans');
   for (const bad of ['https://kotu.example/x', '//kotu.example', 'javascript:alert(1)', '', null, undefined, 5]) assert.equal(safeLink(bad), null);
+  // Karar 145: tarayıcının "//kotu.example" diye çözeceği biçimler de bağlantı değildir (ters bölü, sekme, satır sonu) —
+  // kuralın tamamı test/internal-path.test.js'te; bildirimlerin gerçek bağlantı biçimleri aynen kalır
+  for (const bad of ['/\\kotu.example', '/\t/kotu.example', '/\t\\kotu.example', '/\n/kotu.example', '/\r\n\\kotu.example', '/.//kotu.example', '/siparisler/abc\t#finans', '/siparisler/a b']) {
+    assert.equal(safeLink(bad), null, JSON.stringify(bad));
+  }
+  for (const ok of ['/siparisler/abc', '/siparisler/abc#kararlar', '/yuklemeler?gun=2026-10-06', '/yuklemeler?gun=2026-10-06#yuklenmeyen', '/yuklemeler?gun=2026-10-06#faturalama',
+    '/belgeler#doc-abc', '/admin/muhasebe/cam#fatura-bekliyor', '/admin/muhasebe/cam/proforma#partiler', '/admin/muhasebe/cam/proforma?musteri=abc#partiler']) {
+    assert.equal(safeLink(ok), ok);
+  }
 });
 
 test('metin: sipariş olayı mevcut olay metninden; müşteriye firma / iç bilgi yok; iç ekibe firma (alıcıya göre saklanan değer)', () => {

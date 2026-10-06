@@ -19,6 +19,7 @@ const b = await import('../../server/glass/batch.js');
 const inv = await import('../../server/glass/invoice-batch.js');
 const cr = await import('../../server/loading/crates.js');
 const un = await import('../../server/accounting/uninvoiced.js');
+const { internalPath } = await import('../../server/security/internal-path.js');
 
 const SECRET = 'n'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -381,3 +382,14 @@ dbTest('fatura bekliyor (karar 126): uyarı günü dolunca yalnızca muhasebe ye
   await un.remindUninvoiced(db, { now: at(plus(D, 20)) });
   assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 2);
 }));
+
+dbTest('bağlantılar (karar 145): bu dosyadaki testlerde GERÇEK yazıcıların ürettiği her bildirim bağlantısı ortak "uygulama içi yol" kuralından AYNEN geçer', async () => {
+  // Bildirimler dosya boyunca birikir (tablolar yalnızca başta temizlenir): sipariş, yükleme günü (+ parça), finans,
+  // "fatura bekliyor" bağlantıları buradadır. Kural sıkılaştı; var olan hiçbir bağlantı biçimi bağlantısız kalmamalı.
+  const links = [...new Set((await db.notification.findMany({ select: { link: true } })).map((r) => r.link))];
+  const shapes = new Set(links.filter(Boolean).map((l) => l.replace(/\/siparisler\/[^#?]+/, '/siparisler/ID').replace(/gun=\d{4}-\d{2}-\d{2}/, 'gun=GUN')));
+  for (const want of ['/siparisler/ID', '/siparisler/ID#finans', '/yuklemeler?gun=GUN', '/yuklemeler?gun=GUN#yuklenmeyen', '/yuklemeler?gun=GUN#faturalama', '/admin/muhasebe/cam#fatura-bekliyor']) {
+    assert.ok(shapes.has(want), `önceki testler bu biçimi üretti: ${want} (bulunan: ${[...shapes].join(' , ')})`);
+  }
+  for (const l of links) if (l != null) assert.equal(internalPath(l), l, l);
+});
