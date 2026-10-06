@@ -31,6 +31,7 @@ note() { echo "::notice title=$1::$(sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g'
 # Hata olursa: hangi satır / komut + kapsayıcılar, işçinin durumu ve günlüğü, birimdeki yabancı kayıtlar not olarak
 # yayınlanır (günlük dosyası indirilemeyen ortamlar için)
 diag() { # diag SATIR ÇIKIŞ KOMUT
+  trap - ERR
   set +ex
   {
     echo "satır $1 (çıkış $2): $3"
