@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.19 — 07.10.2026
+
+- **Güvenlik: giriş ve davet kodu deneme sınırları, aynı anda gönderilen isteklerle aşılamaz** (güvenlik denetimi AUD-10).
+  - Hatalı giriş sınırı (15 dakikada aynı e-posta ve adresten 5, aynı e-postaya 20, aynı adresten 30 deneme) ve davet
+    kodundaki "en çok 5 deneme" kuralı, istekler sırayla geldiğinde doğru çalışıyordu; aynı anda çok sayıda istek
+    gönderen biri bu sınırların üstünde şifre ya da kod deneyebiliyordu. Artık her deneme, şifre / kod denetlenmeden
+    önce sayılır: kaç istek aynı anda gelirse gelsin sınırın üstünde deneme yapılamaz.
+  - Davet kodu: beş yanlış denemeden sonra kod kilitlenir ve doğru kod da kabul edilmez (yöneticiden yeni kod istenir —
+    eskisi gibi). Doğru girilen kod deneme hakkı harcamaz.
+  - Olağan kullanımda görünen bir değişiklik yoktur: sınırlar, kilit süresi ve ekrandaki iletiler aynıdır; başarılı giriş
+    o e-posta ve adresin önceki hatalarını eskisi gibi temizler.
+  - Not: doğrulaması süren denemeler de sınıra sayılır. Aynı kullanıcı aynı adresten aynı anda beşten çok giriş isteği
+    gönderirse fazlası "çok fazla deneme" yanıtı alır (olağan kullanımda oluşmaz).
+
 ## 3.50.18 — 07.10.2026
 
 - **Güvenlik: sipariş notlarına ve not çevirisine sınır geldi** (güvenlik denetimi AUD-9).

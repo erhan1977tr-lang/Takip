@@ -10,8 +10,8 @@ import { audit } from '@/lib/audit';
 import { homeFor } from '@/lib/roles';
 import { setLocaleCookie } from '@/lib/i18n';
 import { isLocale } from '@/server/i18n/index.js';
-import { checkInvite } from '@/server/auth/inviteCode.js';
-import { recordFailure, requestIp, throttleCheck } from '@/lib/auth/throttle';
+import { verifyInviteCode } from '@/server/auth/invite-claim.js';
+import { requestIp, runAttempt } from '@/lib/auth/throttle';
 
 function back(email: string, error?: string) {
   return `/setup?email=${encodeURIComponent(email)}${error ? `&error=${error}` : ''}`;
@@ -22,36 +22,20 @@ export async function verifyCodeAction(formData: FormData) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const code = String(formData.get('code') ?? '').replace(/\s+/g, '');
 
+  // İki sınır da doğrulamadan ÖNCE, atomik olarak alınır (karar 148) — aynı anda gelen istekler ikisini de aşamaz:
+  //   1. e-posta / IP deneme sınırı (5 / 20 / 30): runAttempt denemeyi önce ayırır (server/auth/attempts.js); kod
+  //      doğrulaması o işlemin dışında çalışır. Yanlış kod → hata kaydı · doğru kod → yalnızca ayrılan deneme silinir.
+  //   2. davet başına 5 deneme: hak, kod karşılaştırılmadan önce alınır (server/auth/invite-claim.js)
   const ip = await requestIp();
-  const lock = await throttleCheck(email, ip);
-  if (lock.locked) redirect(`${back(email, 'throttled')}&m=${lock.minutes}`);
+  const attempt = await runAttempt('CODE', email, ip, () => verifyInviteCode(db, { email, code, secret: authSecret() }));
+  if (attempt.locked) redirect(`${back(email, 'throttled')}&m=${attempt.minutes}`);
 
-  const user = email ? await db.user.findUnique({ where: { email } }) : null;
-  const invite =
-    user && user.isActive && !user.passwordHash
-      ? await db.userInvite.findFirst({
-          where: { userId: user.id, usedAt: null, sentAt: { not: null } },
-          orderBy: { createdAt: 'desc' },
-        })
-      : null;
+  const result = attempt.outcome;
+  // Dışarıya tek bir sonuç (SEC-10): kod yanlış, süresi dolmuş, kilitli ya da böyle bir davet yok — hepsi aynı yanıt;
+  // bir e-postanın davet bekleyip beklemediği bu ekrandan anlaşılamaz. Her başarısız deneme sınıra sayılır.
+  if (!result.ok) redirect(back(email, 'wrong_code'));
 
-  if (!user || !invite) {
-    await recordFailure('CODE', email, ip);
-    redirect(back(email, 'wrong_code'));
-  }
-
-  const result = checkInvite({ code, email, record: invite, secret: authSecret() });
-  if (!result.ok) {
-    if (result.reason === 'wrong_code') {
-      await db.userInvite.update({ where: { id: invite.id }, data: { attempts: { increment: 1 } } });
-    }
-    // Dışarıya tek bir sonuç (SEC-10): kod yanlış, süresi dolmuş, kilitli ya da böyle bir davet yok — hepsi aynı yanıt;
-    // bir e-postanın davet bekleyip beklemediği bu ekrandan anlaşılamaz. Her başarısız deneme sınıra sayılır.
-    await recordFailure('CODE', email, ip);
-    redirect(back(email, 'wrong_code'));
-  }
-
-  await setSetupToken(invite.id, user.id);
+  await setSetupToken(result.inviteId, result.userId);
   redirect(back(email));
 }
 

@@ -1,11 +1,12 @@
-// Hatalı giriş/kod denemelerinin kaydı ve kilit kontrolü (kural: server/auth/throttle.js).
+// Hatalı giriş / kod denemesi sınırı — Next tarafı: isteğin IP adresi ve veritabanı servisinin ince sarmalayıcısı.
+// Sınırların saf hesabı: server/auth/throttle.js · kilit denetimi + deneme kaydı (atomik): server/auth/attempts.js.
 import { headers } from 'next/headers';
 import { db } from '../db';
-import { throttleState, WINDOW_MS } from '../../server/auth/throttle.js';
+import { runAttempt as runAttemptIn } from '../../server/auth/attempts.js';
 import { clientIp } from '../../server/security/client-ip.js';
 import { getEnv } from '../env';
 
-export type ThrottleKind = 'LOGIN' | 'CODE';
+export type AttemptKind = 'LOGIN' | 'CODE';
 
 /**
  * İsteğin IP adresi — giriş / kod sınırı, depo bağlantısı sınırı ve denetim kaydının ORTAK kaynağı. Yalnızca güvenilen
@@ -16,22 +17,21 @@ export async function requestIp(): Promise<string> {
   return clientIp((k: string) => h.get(k), { source: getEnv().CLIENT_IP_SOURCE }) ?? 'unknown';
 }
 
-export async function throttleCheck(email: string, ip: string): Promise<{ locked: boolean; minutes?: number }> {
-  const since = new Date(Date.now() - WINDOW_MS);
-  const [byEmail, byIp] = await Promise.all([
-    db.authFailure.findMany({ where: { email, createdAt: { gte: since } }, select: { createdAt: true, ip: true } }),
-    db.authFailure.findMany({ where: { ip, createdAt: { gte: since } }, select: { createdAt: true } }),
-  ]);
-  const ms = (rows: { createdAt: Date }[]) => rows.map((r) => r.createdAt.getTime());
-  return throttleState({ account: ms(byEmail.filter((r) => r.ip === ip)), email: ms(byEmail), ip: ms(byIp) }, Date.now());
-}
-
-export async function recordFailure(kind: ThrottleKind, email: string, ip: string): Promise<void> {
-  await db.authFailure.create({ data: { kind, email: email.slice(0, 200), ip: ip.slice(0, 64) } });
-  // Bir günden eski kayıtlar işe yaramaz; tablo büyümesin
-  await db.authFailure.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 86_400_000) } } });
-}
-
-export async function clearFailures(email: string, ip: string): Promise<void> {
-  await db.authFailure.deleteMany({ where: { email, ip } });
+/**
+ * Bir giriş / kod denemesinin TAMAMI (karar 148; güvenlik denetimi AUD-10) — giriş ve kod ekranının tek giriş noktası:
+ *   1. deneme hakkı, doğrulamadan ÖNCE kısa bir işlemde (e-posta + IP kilidi altında) sayılır ve yazılır — aynı anda gelen
+ *      istekler 5 / 20 / 30 sınırlarını aşamaz; hak yoksa `verify` hiç çağrılmaz (`locked`);
+ *   2. `verify` (şifre / kod doğrulaması) o işlemin ve kilidin DIŞINDA çalışır;
+ *   3. sonuç yazılır: başarısız → deneme kalıcı hata olur · giriş başarılı → deneme ve bu e-posta + IP'nin tamamlanmış
+ *      hataları silinir · kod doğru → yalnızca deneme silinir · beklenmeyen hata → deneme hata sayılır.
+ * Eski "say → doğrula → kaydet" işlevleri (throttleCheck / recordFailure / clearFailures: ayrı, kilitsiz sorgular)
+ * kaldırıldı; burada başka bir yol yoktur (test/auth-attempts.test.js denetler).
+ */
+export function runAttempt<T extends { ok: boolean }>(
+  kind: AttemptKind,
+  email: string,
+  ip: string,
+  verify: () => Promise<T>,
+): Promise<{ locked: true; minutes: number } | { locked: false; outcome: T }> {
+  return runAttemptIn(db, { kind, email, ip }, verify) as Promise<{ locked: true; minutes: number } | { locked: false; outcome: T }>;
 }

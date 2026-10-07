@@ -34,7 +34,23 @@ export function createInvite(email, secret, ttlHours = 24, now = new Date()) {
 }
 
 /**
- * Girilen kodu kayıtla karşılaştırır. Her yanlış denemede attempts artırılmalıdır (çağıran kaydeder).
+ * Kod, davetin saklanan özetiyle eşleşiyor mu? YALNIZCA karşılaştırma (biçim + sabit zamanlı özet karşılaştırması):
+ * davetin süresi, kullanılmış olması ve deneme sayısı, deneme hakkı alınırken veritabanında denetlenir
+ * (server/auth/invite-claim.js → verifyInviteCode, karar 148).
+ * @param {{ code: unknown, email: string, codeHash: string, secret: string }} o
+ * @returns {boolean}
+ */
+export function codeMatches({ code, email, codeHash, secret }) {
+  if (!/^\d{6}$/.test(String(code || '').trim())) return false;
+  const expected = Buffer.from(String(codeHash || ''), 'hex');
+  const actual = Buffer.from(hashCode(String(code).trim(), email, secret), 'hex');
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+/**
+ * Davet kaydının bellekteki kopyasına göre kural (saf hesap). Kod girişinde deneme sınırı yalnızca bu denetime
+ * bırakılmaz: kayıt okunduktan sonra değişmiş olabilir. Sınır, deneme hakkı karşılaştırmadan ÖNCE veritabanında tek
+ * koşullu güncellemeyle alınarak korunur — verifyInviteCode (server/auth/invite-claim.js, karar 148).
  * @returns {{ok: true} | {ok: false, reason: 'no_invite'|'used'|'expired'|'locked'|'wrong_code'}}
  */
 export function checkInvite({ code, email, record, secret, now = new Date() }) {
@@ -42,10 +58,5 @@ export function checkInvite({ code, email, record, secret, now = new Date() }) {
   if (record.usedAt) return { ok: false, reason: 'used' };
   if (new Date(record.expiresAt).getTime() <= now.getTime()) return { ok: false, reason: 'expired' };
   if ((record.attempts || 0) >= MAX_ATTEMPTS) return { ok: false, reason: 'locked' };
-  if (!/^\d{6}$/.test(String(code || '').trim())) return { ok: false, reason: 'wrong_code' };
-
-  const expected = Buffer.from(record.codeHash, 'hex');
-  const actual = Buffer.from(hashCode(String(code).trim(), email, secret), 'hex');
-  const same = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-  return same ? { ok: true } : { ok: false, reason: 'wrong_code' };
+  return codeMatches({ code, email, codeHash: record.codeHash, secret }) ? { ok: true } : { ok: false, reason: 'wrong_code' };
 }
