@@ -69,12 +69,16 @@ test('Excel\'den aktar: .xls ve .xlsx okunur, genişlik / yükseklik / adet eşl
   await expect(dlg.getByRole('button', { name: 'Teklif Tablosuna Aktar' })).toBeDisabled();
 
   // Metni büyütülmüş dosya: ön izleme üretilmez, açık mesaj; sunucunun yanıtı küçük kalır (900 MB'lık metin yazılmaz)
+  // Yanıt, bu dosyanın kimliğini taşıyan istekle eşlenir; boyutu ağ olayından okunur — gövde ayrıca istenmez (akışla
+  // okunan sunucu işlemi yanıtının gövdesi tarayıcıda tutulmayabilir: "No data found for resource")
+  const bombId = await dlg.locator('#xl-file option', { hasText: 'metin.xlsx' }).getAttribute('value');
+  expect(bombId).toBeTruthy();
   const [answer] = await Promise.all([
-    sales.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === orderUrl),
+    sales.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === orderUrl && (r.request().postData() ?? '').includes(bombId!)),
     pick('metin.xlsx'),
   ]);
   expect(answer.status()).toBe(200);
-  expect((await answer.body()).length).toBeLessThan(64 * 1024);
+  expect((await answer.request().sizes()).responseBodySize).toBeLessThan(64 * 1024);
   await expect(dlg.locator('.alert-error')).toContainText('Excel dosyasındaki metin ön izleme için çok uzun.');
   await expect(dlg.locator('.import-preview')).toHaveCount(0);
   await expect(dlg.getByRole('button', { name: 'Teklif Tablosuna Aktar' })).toBeDisabled();
