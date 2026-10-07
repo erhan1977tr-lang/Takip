@@ -79,7 +79,7 @@ test('veri: bu dosyaya özel müşteri ve satış kullanıcısı, sipariş; not 
   const writer = await db.user.findUniqueOrThrow({ where: { email: WRITER }, include: { customer: true } });
   const o = await db.order.create({
     data: {
-      orderNo: `${writer.customer!.prefix}9801`, customerOrderNo: 9801, title: 'Not sınırları e2e', orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'URETIMDE',
+      orderNo: `${writer.customer!.prefix}9147`, customerOrderNo: 9147, title: 'Not sınırları e2e', orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + 30 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: adminUser.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' }] } } },
