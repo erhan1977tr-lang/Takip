@@ -12,7 +12,9 @@ const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.t
 // Teklif tablosuna Excel'den aktarma (AUD-3, karar 140): olağan .xls / .xlsx dosyaları eskisi gibi okunur, sütun eşlemesi
 // çalışır; 5 MB'tan büyük Excel dosyası siparişe YÜKLENEBİLİR (sipariş dosyası sınırı 100 MB) ama teklife aktarılırken
 // okunmadan, açık bir mesajla reddedilir. (07–08 testlerinin yüklediği katalog ve fiyat tablosuyla çalışır.)
-test('Excel\'den aktar: .xls ve .xlsx okunur, genişlik / yükseklik / adet eşlenir; 5 MB\'tan büyük dosya açık mesajla reddedilir', async ({ browser }) => {
+// GO-LIVE saldırı turu NEW-GL-01 (karar 152): birkaç KB'lık, aynı uzun metne 30.000 hücreden başvuran dosya da yüklenebilir;
+// ön izlemesi ise üretilmez (eski kod 900 MB'lık yanıt yazardı) — açık mesaj döner ve yanıt küçük kalır.
+test('Excel\'den aktar: .xls ve .xlsx okunur, genişlik / yükseklik / adet eşlenir; 5 MB\'tan büyük ve metni büyütülmüş dosya açık mesajla reddedilir', async ({ browser }) => {
   test.setTimeout(120_000);
   const xls = fs.readFileSync(path.join('test', 'fixtures', 'olculer.xls'));
   const rows = readXls(xls).rows.map((r) => r.map((v) => (v == null ? '' : (v as string | number))));
@@ -24,15 +26,25 @@ test('Excel\'den aktar: .xls ve .xlsx okunur, genişlik / yükseklik / adet eşl
     { name: 'xl/media/buyuk.bin', data: crypto.randomBytes(5.5 * 1024 * 1024) },
   ]);
   expect(big.length).toBeGreaterThan(5 * 1024 * 1024);
+  // Geçerli, küçük bir .xlsx: paylaşılan tek metin (30.000 karakter) + ona başvuran 1000 × 30 hücre = 900.000.000 karakter
+  const col = (i: number) => (i < 26 ? '' : String.fromCharCode(64 + Math.floor(i / 26))) + String.fromCharCode(65 + (i % 26));
+  const refs = Array.from({ length: 1000 }, (_, r) => `<row r="${r + 1}">${Array.from({ length: 30 }, (_, c) => `<c r="${col(c)}${r + 1}" t="s"><v>0</v></c>`).join('')}</row>`).join('');
+  const bomb = writeZip([
+    { name: 'xl/workbook.xml', data: '<workbook xmlns:r="x"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>' },
+    { name: 'xl/worksheets/sheet1.xml', data: `<worksheet><sheetData>${refs}</sheetData></worksheet>` },
+    { name: 'xl/sharedStrings.xml', data: `<sst><si><t>${'M'.repeat(30_000)}</t></si></sst>` },
+  ]);
+  expect(bomb.length).toBeLessThan(64 * 1024);
   const file = (name: string, buffer: Buffer) => ({ name, mimeType: 'application/octet-stream', buffer });
 
-  // Müşteri: üç Excel dosyasıyla sipariş (büyük dosya da olağan yükleme yolundan geçer)
+  // Müşteri: dört Excel dosyasıyla sipariş (büyük ve metni büyütülmüş dosya da olağan yükleme yolundan geçer)
   const cust = await as(browser, CUSTOMER, CUST_PW);
   await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await cust.fill('#title', 'Excel aktarma');
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: '10 MM TEMPER CAM — BRONZ' });
-  await cust.setInputFiles('#files', [file('olculer.xls', xls), file('olculer.xlsx', xlsx), file('buyuk.xlsx', big)]);
-  await expect(cust.locator('#secilen-dosyalar .file-row')).toHaveCount(3);
+  await cust.setInputFiles('#files', [file('olculer.xls', xls), file('olculer.xlsx', xlsx), file('buyuk.xlsx', big), file('metin.xlsx', bomb)]);
+  await expect(cust.locator('#secilen-dosyalar .file-row')).toHaveCount(4);
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/, { timeout: 45_000 });
   const orderUrl = new URL(cust.url()).pathname;
@@ -53,6 +65,17 @@ test('Excel\'den aktar: .xls ve .xlsx okunur, genişlik / yükseklik / adet eşl
   // 5 MB'tan büyük dosya: okunmaz; teknik olmayan, açık mesaj (genel "okunamadı" değil)
   await pick('buyuk.xlsx');
   await expect(dlg.locator('.alert-error')).toContainText('Excel dosyası çok büyük (en fazla 5 MB).');
+  await expect(dlg.locator('.import-preview')).toHaveCount(0);
+  await expect(dlg.getByRole('button', { name: 'Teklif Tablosuna Aktar' })).toBeDisabled();
+
+  // Metni büyütülmüş dosya: ön izleme üretilmez, açık mesaj; sunucunun yanıtı küçük kalır (900 MB'lık metin yazılmaz)
+  const [answer] = await Promise.all([
+    sales.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === orderUrl),
+    pick('metin.xlsx'),
+  ]);
+  expect(answer.status()).toBe(200);
+  expect((await answer.body()).length).toBeLessThan(64 * 1024);
+  await expect(dlg.locator('.alert-error')).toContainText('Excel dosyasındaki metin ön izleme için çok uzun.');
   await expect(dlg.locator('.import-preview')).toHaveCount(0);
   await expect(dlg.getByRole('button', { name: 'Teklif Tablosuna Aktar' })).toBeDisabled();
 

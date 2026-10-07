@@ -51,6 +51,7 @@ export default {
     noFile: 'Fișierul Excel nu a fost găsit.',
     unreadable: 'Fișierul Excel nu a putut fi citit (sunt acceptate .xls și .xlsx).',
     tooBig: 'Fișierul Excel este prea mare (maximum 5 MB). Încărcați lista de dimensiuni ca fișier Excel mai mic sau introduceți rândurile manual.',
+    tooMuchText: 'Textul din fișierul Excel este prea lung pentru previzualizare. Încărcați un fișier Excel simplu, doar cu lista de dimensiuni, sau introduceți rândurile manual.',
     jumpTop: 'La începutul tabelului ofertei',
     jumpBottom: 'La sfârșitul tabelului ofertei',
   },

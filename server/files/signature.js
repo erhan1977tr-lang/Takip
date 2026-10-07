@@ -91,7 +91,9 @@ export function detectKind(head) {
 export function checkContent(name, head) {
   const ext = String(name || '').toLowerCase().split('.').pop() ?? '';
   const kind = detectKind(head);
-  const expected = EXPECTED[ext];
-  if (!expected || !kind || !expected.includes(kind)) return { ok: false, kind };
+  // Yalnızca tablonun KENDİ anahtarları: "constructor", "__proto__", "toString" gibi adlar düz nesnede miras alınan
+  // değerlere denk gelir (dizi değildir → includes yok → hata). Böyle bir uzantı bilinmeyen uzantıdır (NEW-GL-02, karar 153).
+  const expected = Object.hasOwn(EXPECTED, ext) ? EXPECTED[ext] : null;
+  if (!Array.isArray(expected) || !kind || !expected.includes(kind)) return { ok: false, kind };
   return { ok: true, kind, mime: MIME[kind] };
 }

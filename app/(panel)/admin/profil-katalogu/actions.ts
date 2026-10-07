@@ -8,8 +8,8 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { removeUpload, resolveKey } from '@/lib/storage';
-import { storeFiles } from '@/lib/uploads';
+import { resolveKey } from '@/lib/storage';
+import { discardFiles, storeFiles } from '@/lib/uploads';
 import { XlsxError, readXlsx } from '@/server/files/xlsx.js';
 import {
   MAX_IMAGE_BYTES, MAX_PRODUCTS_IMPORT, applyProductImport, changeProduct, parseProductSheet, planProductImport, saveCategory, saveProduct,
@@ -75,12 +75,17 @@ export async function productImageAction(fd: FormData) {
   if (!stored.ok) redirect(back(`error=${stored.problem.code === 'infected' ? 'image_infected' : 'image'}${edit}`));
   const s = stored.stored[0];
   if (!['image/jpeg', 'image/png'].includes(s.mime)) {
-    await removeUpload(s.storageKey);
+    await discardFiles([s]);
     redirect(back(`error=image${edit}`));
   }
+  // Görsel veritabanında saklanır; diskteki kopya her durumda (okuma hatasında da) silinir (karar 153)
   const full = resolveKey(s.storageKey);
-  const data = full ? await fsp.readFile(full) : null;
-  await removeUpload(s.storageKey);
+  let data: Buffer | null = null;
+  try {
+    data = full ? await fsp.readFile(full) : null;
+  } finally {
+    await discardFiles([s]);
+  }
   if (!data) redirect(back(`error=image${edit}`));
   const r = await setProductImage(db, id, { data, mime: s.mime, size: s.size, checksum: s.checksum, name: s.name }, await actorOf(admin));
   if (!r.ok) redirect(back(`error=not_found${edit}`));

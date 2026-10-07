@@ -13,7 +13,7 @@ import { EXCEL_MAX_BYTES, SHEET_LIMITS, XlsxError, readXlsx, writeXlsx } from '.
 import { isXls, readXls } from '../server/files/xls.js';
 import { checkContent } from '../server/files/signature.js';
 import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS, looksLikeHeader, validateImportRows } from '../server/orders/excel-import.js';
-import { IMPORT_MAX_BYTES, readOfferExcel } from '../server/orders/excel-file.js';
+import { IMPORT_MAX_BYTES, IMPORT_MAX_CELLS, IMPORT_MAX_CELL_CHARS, IMPORT_MAX_TEXT_CHARS, previewRows, readOfferExcel } from '../server/orders/excel-file.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -478,6 +478,198 @@ test('teklif Excel\'i: olağan .xls ve .xlsx dosyaları diskten okunur; genişli
   assert.deepEqual(await readOfferExcel({ path: bad, size: 18 }), { ok: false, error: 'UNREADABLE' });
 });
 
+// ---------- Teklife aktarma: ön izleme metni sınırlı (GO-LIVE saldırı turu NEW-GL-01, karar 152) ----------
+// Okuyucular aynı metne başvuran hücrelere AYNI dizeyi verir; ön izleme tarayıcıya yazılırken her hücre ayrı yazılır.
+// Birkaç KB'lık dosya böylece GB'larca metin üretebiliyordu. Aşağıdaki testlerin hiçbiri büyük bellek kullanmaz:
+// uzunluklar toplanır (kopya üretilmez); sınırın üretim SIRASINDA uygulandığı, okunan hücre sayılarak gösterilir.
+/** Sütun adı: 0 → A, 26 → AA */
+const colLetters = (i) => (i < 26 ? '' : String.fromCharCode(64 + Math.floor(i / 26))) + String.fromCharCode(65 + (i % 26));
+/** Bütün hücreleri paylaşılan metin tablosunun 0. metnine başvuran sayfa (rows × cols) */
+const sharedRefSheet = (nRows, nCols) => sheetOf(Array.from({ length: nRows }, (_, r) => `<row r="${r + 1}">${Array.from({ length: nCols }, (_, c) => `<c r="${colLetters(c)}${r + 1}" t="s"><v>0</v></c>`).join('')}</row>`).join(''));
+const sharedOf = (text) => `<sst><si><t>${text}</t></si></sst>`;
+/** XLS: paylaşılan metin tablosunda tek metin (8 bit) + ona başvuran hücreler */
+const xlsSharedRefs = (text, nRows, nCols) => {
+  const head = Buffer.alloc(11); head.writeUInt32LE(1, 0); head.writeUInt32LE(1, 4); head.writeUInt16LE(text.length, 8); head[10] = 0;
+  const labelSst = (row, col) => { const d = Buffer.alloc(10); d.writeUInt16LE(row, 0); d.writeUInt16LE(col, 2); d.writeUInt32LE(0, 6); return rec(0x00fd, d); };
+  const cells = [];
+  for (let r = 0; r < nRows; r++) for (let c = 0; c < nCols; c++) cells.push(labelSst(r, c));
+  return ole(biff(cells, { globals: [rec(0x00fc, Buffer.concat([head, Buffer.from(text, 'latin1')]))] }));
+};
+/**
+ * Sonucun özeti: [ok, hata kodu, neden]. Dev olabilecek bir sonuç doğrudan karşılaştırılmaz — sınır bir gün bozulursa
+ * test, yüzlerce MB'lık nesneyi hata iletisine dökmeye çalışmadan hemen ve küçük bir iletiyle kalsın.
+ */
+const verdict = (res) => [res.ok, res.ok ? null : res.error, res.ok ? null : res.reason ?? null];
+const DENIED = [false, 'TOO_MUCH_TEXT', null];
+const denied = (reason) => [false, 'TOO_MUCH_TEXT', reason];
+/** Sonucun toplam metni (kopya üretmeden) */
+const totalChars = (rows) => rows.reduce((n, r) => n + r.reduce((m, v) => m + v.length, 0), 0);
+/** Hücre okumalarını sayan satır (sınırın üretim sırasında uygulandığını göstermek için) */
+const countingRows = (rows, counter) => rows.map((r) => new Proxy(r, { get(t, k, rcv) { if (typeof k === 'string' && /^\d+$/.test(k)) counter.reads++; return Reflect.get(t, k, rcv); } }));
+
+test('teklif Excel\'i ön izlemesi: hücre penceresi, tek hücre ve toplam metin sınırı — hücre eklenmeden ÖNCE', () => {
+  assert.deepEqual([IMPORT_MAX_ROWS, IMPORT_MAX_COLS, IMPORT_MAX_CELLS, IMPORT_MAX_CELL_CHARS, IMPORT_MAX_TEXT_CHARS], [1000, 30, 30_000, 32_767, 1_000_000]);
+  assert.ok(IMPORT_MAX_ROWS * IMPORT_MAX_COLS <= IMPORT_MAX_CELLS, 'pencere hücre sınırını aşamaz');
+  assert.ok(IMPORT_MAX_CELL_CHARS <= IMPORT_MAX_TEXT_CHARS);
+
+  // Olağan satırlar: metne çevrilir, hiçbir şey kesilmez
+  assert.deepEqual(previewRows([['Poz', 1000, null, true, 850.4, undefined], [], ['K2']]), { ok: true, rows: [['Poz', '1000', '', 'true', '850.4', ''], [], ['K2']], cells: 7, chars: 18 });
+  assert.deepEqual(previewRows([]), { ok: true, rows: [], cells: 0, chars: 0 });
+  // Satır dizi değilse boş satırdır; satırlar dizi değilse / beklenmeyen değer türü → denetimli sonuç (toString çağrılmaz)
+  assert.deepEqual(previewRows([null, 'metin', [1]]).rows, [[], [], ['1']]);
+  assert.deepEqual(previewRows('metin'), { ok: false, error: 'UNREADABLE', reason: 'type' });
+  let called = 0;
+  const sneaky = { toString() { called++; return 'x'.repeat(10); } };
+  assert.deepEqual(previewRows([[1, sneaky]]), { ok: false, error: 'UNREADABLE', reason: 'type' });
+  assert.deepEqual(previewRows([[1n]]).ok, false);
+  assert.equal(called, 0, 'nesnenin metne çevirme işlevi hiç çağrılmaz');
+
+  // Tek hücre: tam sınır kabul, bir fazlası ret
+  const atCell = 'h'.repeat(IMPORT_MAX_CELL_CHARS);
+  assert.deepEqual([previewRows([[atCell]]).ok, previewRows([[atCell]]).chars], [true, IMPORT_MAX_CELL_CHARS]);
+  assert.deepEqual(verdict(previewRows([['ok'], [atCell + 'h']])), denied('cell'));
+  // Toplam: tam sınır kabul, bir karakter fazlası ret (1000 hücre × 1000 karakter = 1.000.000)
+  const k = 'k'.repeat(1000);
+  const full = Array.from({ length: 100 }, () => Array(10).fill(k));
+  const okFull = previewRows(full);
+  assert.deepEqual([okFull.ok, okFull.cells, okFull.chars, totalChars(okFull.rows)], [true, 1000, IMPORT_MAX_TEXT_CHARS, IMPORT_MAX_TEXT_CHARS]);
+  assert.deepEqual(verdict(previewRows([...full, ['a']])), denied('total'));
+  // Kabul edilen en büyük ön izlemenin yazılmış hali de sınırlıdır (tarayıcıya giden yük)
+  assert.ok(JSON.stringify(okFull.rows).length <= IMPORT_MAX_TEXT_CHARS + 4 * 1000 + 100);
+
+  // Olağan iş akışı kesilmez: tam pencere (1000 × 30) ve en uzun sayı gösterimi (24 karakter) toplam sınırın altında
+  const longest = -1.2345678901234567e-300;
+  assert.equal(String(longest).length, 24);
+  const numeric = previewRows(Array.from({ length: IMPORT_MAX_ROWS + 50 }, () => Array(IMPORT_MAX_COLS + 5).fill(longest)));
+  assert.deepEqual([numeric.ok, numeric.rows.length, numeric.rows[0].length, numeric.cells, numeric.chars], [true, IMPORT_MAX_ROWS, IMPORT_MAX_COLS, 30_000, 720_000]);
+  // Ölçü listesi: 1000 satır × 6 sütun, hücre başına ~10 karakter
+  const list = previewRows(Array.from({ length: 1000 }, (_, i) => [`K${i}`, 1000 + i, 2000 + i, 1 + (i % 9), 'Şeffaf cam', 'not']));
+  assert.deepEqual([list.ok, list.cells, list.chars < 60_000], [true, 6000, true]);
+
+  // Pencerenin dışına hiç bakılmaz: 1001. satır ve 31. sütun okunursa hata fırlatan tuzaklar
+  const trapRow = new Proxy([], { get(t, key) { if (key === 'length') return 3; throw new Error('pencere dışı satır okundu'); } });
+  const withTrap = Array.from({ length: IMPORT_MAX_ROWS + 1 }, (_, i) => (i === IMPORT_MAX_ROWS ? trapRow : ['a']));
+  assert.equal(previewRows(withTrap).rows.length, IMPORT_MAX_ROWS);
+  const wideRow = Array(IMPORT_MAX_COLS + 1).fill('b');
+  Object.defineProperty(wideRow, IMPORT_MAX_COLS, { get() { throw new Error('pencere dışı sütun okundu'); } });
+  assert.equal(previewRows([wideRow]).rows[0].length, IMPORT_MAX_COLS);
+  // Hücre sayısı sınırı pencereden bağımsız da uygulanır (pencere büyütülse bile)
+  assert.deepEqual(verdict(previewRows(Array.from({ length: 4 }, () => ['a', 'b', 'c']), { maxCells: 8 })), denied('cells'));
+  assert.equal(previewRows(Array.from({ length: 4 }, () => ['a', 'b']), { maxCells: 8 }).ok, true);
+  assert.deepEqual(verdict(previewRows(Array.from({ length: 1001 }, () => Array(31).fill(1)), { maxRows: 1001, maxCols: 31 })), denied('cells'));
+
+  // Sınır ÜRETİM SIRASINDA uygulanır: 30.000 karakterlik aynı metne 30.000 hücre başvurur (toplam 900.000.000 karakter).
+  // Sınır 34. hücrede aşılır; ondan sonraki hücreler okunmaz (dev sonuç kurulup sonra ölçülmez).
+  const shared = 's'.repeat(30_000);
+  const counter = { reads: 0 };
+  const bomb = countingRows(Array.from({ length: IMPORT_MAX_ROWS }, () => Array(IMPORT_MAX_COLS).fill(shared)), counter);
+  const r = timed(() => assert.deepEqual(verdict(previewRows(bomb)), denied('total')));
+  assert.equal(r.error, null);
+  assert.equal(counter.reads, Math.floor(IMPORT_MAX_TEXT_CHARS / shared.length) + 1, 'sınır aşıldığı hücrede durulur');
+  assert.ok(r.ms < 1000, `${r.ms.toFixed(0)} ms`);
+  // Tek hücre sınırı da ilk hücrede durdurur
+  counter.reads = 0;
+  const huge = 'x'.repeat(1_000_000);
+  assert.deepEqual(verdict(previewRows(countingRows(Array.from({ length: 100 }, () => Array(30).fill(huge)), counter))), denied('cell'));
+  assert.equal(counter.reads, 1);
+});
+
+test('teklif Excel\'i: paylaşılan metinle büyütme (.xlsx ve .xls) denetimli hatayla biter; GB\'lık metin hiç üretilmez', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'takip-excel-metin-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const onDisk = async (name, buf) => {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, buf);
+    const t0 = performance.now();
+    const res = await readOfferExcel({ path: p, size: buf.length });
+    return { res, ms: performance.now() - t0 };
+  };
+  const windowCells = IMPORT_MAX_ROWS * IMPORT_MAX_COLS;
+
+  // --- .xlsx: tek metin, 30.000 başvuru ---
+  // (a) 1.000.000 karakterlik metin: eski kod 30 GB'lık ön izleme döndürürdü → tek hücre sınırı
+  const xlsxCell = xlsxOf({ shared: sharedOf('A'.repeat(1_000_000)), sheet: sharedRefSheet(IMPORT_MAX_ROWS, IMPORT_MAX_COLS) });
+  assert.ok(xlsxCell.length < 64 * KB, `${xlsxCell.length} bayt`);
+  // Okuyucunun (AUD-3) verdiği satırlar: 30.000 hücre, hepsi aynı metin — okuyucu sınırları aynen geçerli
+  const parsed = readXlsx(xlsxCell).rows;
+  assert.deepEqual([parsed.length, parsed[999].length, parsed[999][29].length], [IMPORT_MAX_ROWS, IMPORT_MAX_COLS, 1_000_000]);
+  assert.equal(windowCells * 1_000_000, 30_000_000_000, 'sınırsız ön izlemenin metni: 30 GB');
+  assert.deepEqual(verdict(previewRows(parsed)), denied('cell'));
+  const a = await onDisk('hucre.xlsx', xlsxCell);
+  assert.deepEqual(verdict(a.res), DENIED);
+  assert.ok(a.ms < 5000, `${a.ms.toFixed(0)} ms`);
+  // (b) 30.000 karakterlik metin (tek hücre sınırının altında): 900 MB'lık ön izleme → toplam sınırı
+  const xlsxTotal = xlsxOf({ shared: sharedOf('B'.repeat(30_000)), sheet: sharedRefSheet(IMPORT_MAX_ROWS, IMPORT_MAX_COLS) });
+  assert.ok(xlsxTotal.length < 64 * KB);
+  assert.deepEqual(verdict(previewRows(readXlsx(xlsxTotal).rows)), denied('total'));
+  const b = await onDisk('toplam.xlsx', xlsxTotal);
+  assert.deepEqual(verdict(b.res), DENIED);
+  assert.ok(b.ms < 5000, `${b.ms.toFixed(0)} ms`);
+  // (c) Satır içi metin (inlineStr) ile aynı sonuç: paylaşılan tablo şart değil
+  const inline = xlsxOf({ sheet: sheetOf(Array.from({ length: 40 }, (_, r) => `<row r="${r + 1}"><c r="A${r + 1}" t="inlineStr"><is><t>${'C'.repeat(30_000)}</t></is></c></row>`).join('')) });
+  assert.deepEqual(verdict((await onDisk('satir-ici.xlsx', inline)).res), DENIED);
+  // (d) Sınırın altında kalan aynı yapı okunur ve dönen metin sınırlıdır (33 hücre × 30.000 = 990.000 karakter)
+  const under = await onDisk('altinda.xlsx', xlsxOf({ shared: sharedOf('D'.repeat(30_000)), sheet: sharedRefSheet(11, 3) }));
+  assert.deepEqual([under.res.ok, under.res.ok && under.res.rows.length, under.res.ok && totalChars(under.res.rows)], [true, 11, 990_000]);
+  assert.deepEqual(verdict((await onDisk('ustunde.xlsx', xlsxOf({ shared: sharedOf('D'.repeat(30_000)), sheet: sharedRefSheet(17, 2) }))).res), DENIED, '34 hücre × 30.000 = 1.020.000');
+
+  // --- .xls: paylaşılan metin tablosu (SST) + LABELSST başvuruları ---
+  // BIFF8'de metin en çok 65.535 karakterdir: 30.000 hücre × 40.000 = 1,2 GB (tek hücre sınırı), × 30.000 = 900 MB (toplam)
+  const xlsCell = xlsSharedRefs('E'.repeat(40_000), IMPORT_MAX_ROWS, IMPORT_MAX_COLS);
+  assert.ok(isXls(xlsCell) && xlsCell.length < 512 * KB, `${xlsCell.length} bayt`);
+  const xlsRows = readXls(xlsCell).rows;
+  assert.deepEqual([xlsRows.length, xlsRows[999].length, xlsRows[999][29].length], [IMPORT_MAX_ROWS, IMPORT_MAX_COLS, 40_000]);
+  assert.deepEqual(verdict(previewRows(xlsRows)), denied('cell'));
+  const c = await onDisk('hucre.xls', xlsCell);
+  assert.deepEqual(verdict(c.res), DENIED);
+  assert.ok(c.ms < 5000, `${c.ms.toFixed(0)} ms`);
+  const xlsTotal = xlsSharedRefs('F'.repeat(30_000), IMPORT_MAX_ROWS, IMPORT_MAX_COLS);
+  assert.deepEqual(verdict(previewRows(readXls(xlsTotal).rows)), denied('total'));
+  assert.deepEqual(verdict((await onDisk('toplam.xls', xlsTotal)).res), DENIED);
+  // .xls adıyla kaydedilmiş .xlsx de aynı kurala girer
+  assert.deepEqual(verdict((await onDisk('aslinda-xlsx.xls', xlsxTotal)).res), DENIED);
+  // Sınırın altındaki .xls okunur
+  const xlsUnder = await onDisk('altinda.xls', xlsSharedRefs('G'.repeat(30_000), 11, 3));
+  assert.deepEqual([xlsUnder.res.ok, xlsUnder.res.ok && totalChars(xlsUnder.res.rows)], [true, 990_000]);
+
+  // Olağan dosyalar aynen okunur (depodaki gerçek örnek + aynı satırların .xlsx hali)
+  const fx = fixture('olculer.xls');
+  const normal = await onDisk('olculer.xls', fx);
+  assert.deepEqual(normal.res.ok && normal.res.rows[1], ['K1', '1000', '2000', '2', 'Şeffaf']);
+  const asXlsx = await onDisk('olculer.xlsx', writeXlsx({ sheetName: 'Ölçüler', rows: readXls(fx).rows.map((r) => r.map((v) => v ?? '')) }));
+  assert.deepEqual([asXlsx.res.ok, asXlsx.res.ok && asXlsx.res.rows], [true, normal.res.ok && normal.res.rows]);
+});
+
+test('teklif Excel\'i ön izlemesi: rastgele satırlarda kabul edilen sonuç hiçbir sınırı aşmaz, reddedilen gerçekten aşar', () => {
+  const next = rng(20261007);
+  const pool = [0, 1, 5, 40, 41, 300, 999].map((n) => 'm'.repeat(n));
+  for (let round = 0; round < 400; round++) {
+    const limits = { maxRows: 1 + (next() % 12), maxCols: 1 + (next() % 8), maxCells: 1 + (next() % 60), maxCellChars: [40, 300, 1000][next() % 3], maxTextChars: 1 + (next() % 3000) };
+    const rows = Array.from({ length: next() % 16 }, () => Array.from({ length: next() % 11 }, () => {
+      const pick = next() % 10;
+      return pick < 6 ? pool[next() % pool.length] : pick < 8 ? next() % 100000 : pick === 8 ? null : (next() % 2 === 0);
+    }));
+    // Bağımsız (yavaş, açık) hesap: pencere içindeki hücreler sırayla
+    const windowed = rows.slice(0, limits.maxRows).map((r) => r.slice(0, limits.maxCols).map((v) => (v == null ? '' : String(v))));
+    const flat = windowed.flat();
+    let sum = 0;
+    let expected = null;
+    for (let i = 0; i < flat.length && !expected; i++) {
+      if (i + 1 > limits.maxCells) expected = 'cells';
+      else if (flat[i].length > limits.maxCellChars) expected = 'cell';
+      else if ((sum += flat[i].length) > limits.maxTextChars) expected = 'total';
+    }
+    const res = previewRows(rows, limits);
+    if (expected) {
+      assert.deepEqual(res, { ok: false, error: 'TOO_MUCH_TEXT', reason: expected }, `tur ${round}`);
+    } else {
+      assert.deepEqual(res, { ok: true, rows: windowed, cells: flat.length, chars: sum }, `tur ${round}`);
+      assert.ok(res.cells <= limits.maxCells && res.chars <= limits.maxTextChars && res.rows.length <= limits.maxRows);
+      assert.ok(res.rows.every((r) => r.length <= limits.maxCols && r.every((v) => typeof v === 'string' && v.length <= limits.maxCellChars)));
+    }
+  }
+});
+
 test('yapı: Excel okuyan her işlem önce boyuta bakar; yükleme yolu Excel / ZIP okuyucusunu kullanmaz', () => {
   // Teklif işlemi: okuma ve ayrıştırma yalnızca readOfferExcel üzerinden (dosyayı kendisi okumaz)
   const action = read('app/(panel)/siparisler/[id]/actions.ts');
@@ -485,6 +677,14 @@ test('yapı: Excel okuyan her işlem önce boyuta bakar; yükleme yolu Excel / Z
   assert.match(body, /await readOfferExcel\(\{ path: resolveKey\(file\.storageKey\), size: file\.size \}\)/);
   assert.match(body, /requirePermission\('OFFER_PREPARE'\)/, 'yetki değişmedi');
   assert.match(body, /offer\.import\.tooBig/);
+  // Ön izleme metni sınırı (NEW-GL-01, karar 152): ayrı hata kodu → ayrı, açık mesaj; işlem yalnızca readOfferExcel'in sonucunu döndürür
+  assert.match(body, /res\.error === 'TOO_MUCH_TEXT' \? 'offer\.import\.tooMuchText'/);
+  assert.match(body, /if \(res\.ok\) return res;/);
+  const reader = read('server/orders/excel-file.js');
+  const fn = reader.slice(reader.indexOf('export async function readOfferExcel'));
+  assert.match(fn, /const preview = previewRows\(rows\);\s*return preview\.ok \? \{ ok: true, rows: preview\.rows \} : \{ ok: false, error: preview\.error \};/);
+  assert.doesNotMatch(fn, /\.map\(|\.slice\(|String\(/, 'satırlar yalnızca previewRows ile üretilir (sınırsız dönüşüm yok)');
+  for (const loc of ['tr', 'ro']) assert.match(read(`server/i18n/${loc}/offer.js`), /tooMuchText: '[^']{40,}'/);
   assert.doesNotMatch(action, /readFile\(|readXlsx\(|readXls\(|from 'node:fs/, 'işlem dosyayı doğrudan okumaz');
   // Kullanıcı metni iki dilde, teknik olmayan
   for (const loc of ['tr', 'ro']) assert.match(read(`server/i18n/${loc}/offer.js`), /tooBig: '[^']*5 MB[^']*'/);

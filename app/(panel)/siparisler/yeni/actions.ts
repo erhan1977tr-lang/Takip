@@ -72,10 +72,11 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
     if (files.length + kept === 0) return fail(t('newOrder.errors.noFiles'));
   }
 
+  // İşlemi yapan, dosyalar saklanmadan ÖNCE belirlenir: saklama ile kayıt arasında hata verebilecek adım kalmaz (karar 153)
+  const actor = await actorOf(user);
   // Dosyalar önce kaydedilir (içerik kontrolü + antivirüs); kayıt başarısız olursa geri silinir.
   const stored = await storeFiles(files, { userId: user.id });
   if (!stored.ok) return fail(fileProblemText(t, stored.problem)!);
-  const actor = await actorOf(user);
 
   if (intent === 'draft') {
     let saved: { id: string; removed: { storageKey: string }[] };

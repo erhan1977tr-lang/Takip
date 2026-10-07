@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.23 — 07.10.2026
+
+- **Güvenlik: teklif tablosuna "Excel'den Aktar" ön izlemesi artık sunucuyu zorlayacak kadar büyük metin üretemez**
+  (canlıya çıkış öncesi saldırı turu, NEW-GL-01).
+  - Özel hazırlanmış küçük bir Excel dosyası (birkaç on KB), aynı uzun metni binlerce hücrede yineleyerek ön izlemede
+    gigabaytlarca metin ürettirebiliyordu. Dosyayı müşteri siparişe yükleyebildiği ve pencere açılınca ilk Excel
+    kendiliğinden okunduğu için bu, uygulamanın belleğini tüketip siteyi durdurabilirdi.
+  - Artık ön izleme sınırlıdır: ilk 1000 satır × 30 sütun (eskisi gibi), tek hücrede en çok 32.767 karakter (Excel'in kendi
+    sınırı), toplamda en çok 1.000.000 karakter. Sınır aşılırsa dosya ön izlenmez ve açık bir mesaj görünür:
+    "Excel dosyasındaki metin ön izleme için çok uzun…". Satırlar elle girilebilir ya da sade bir ölçü listesi yüklenebilir.
+  - Olağan ölçü listeleri (.xls ve .xlsx) eskisi gibi okunur, eşlenir ve aktarılır; 5 MB dosya sınırı aynıdır.
+- **Güvenlik: çok uzun adlı dosya yüklemesi artık sunucuda kayıtsız dosya bırakamaz** (NEW-GL-02).
+  - Adı 180 karakterden uzun ve özel biçimde seçilmiş bir dosya, yükleme sırasında beklenmeyen bir hataya yol açıyor;
+    yarım kalan dosya sunucunun geçici klasöründe, aynı istekte ondan önce yüklenen dosyalar da kalıcı klasörde, hiçbir
+    kayda ve kotaya girmeden kalıyordu. Yineleyerek disk doldurulabilirdi (müşteri, ekip ve depo bağlantısı yollarından).
+  - Artık uzun dosya adı kısaltılırken **uzantısı korunur** (ör. "….pdf" yine ".pdf" ile biter) ve böyle bir dosya olağan
+    bir yükleme gibi işlenir: içeriği uzantısına uyuyorsa kabul edilir, uymuyorsa açık mesajla reddedilir.
+  - Bir yükleme hangi nedenle başarısız olursa olsun (içerik uyuşmuyor, virüs, tarayıcıya ulaşılamadı, bağlantı koptu, disk
+    hatası) geçici dosya silinir; aynı istekte birlikte gönderilen dosyalar da saklanmaz — ya hepsi ya hiçbiri.
+  - Depo bağlantısında adı ".zip.pdf" ile biten çok uzun adlı bir ZIP dosyası PDF gibi kabul edilebiliyordu; artık
+    reddedilir (yalnızca PDF, JPG, PNG).
+  - Bir dosya silinemezse (çok ender, sunucu kaynaklı) işlem bozulmaz; yalnızca teknik hata kodu günlüğe ve denetim
+    kaydına yazılır (dosya adı ya da klasör yolu yazılmaz).
+  - Değişmeyenler: izin verilen dosya türleri, 100 MB sınırı, yükleme kotaları, virüs taraması, indirme ve tüm iş
+    akışları. 180 karakterden kısa adlı dosyalarda hiçbir şey değişmez.
+
 ## 3.50.22 — 07.10.2026
 
 - **Güvenlik: sunucunun ayar dosyasına yanlışlıkla yazılan test / demo ayarları artık canlı sistemi zayıflatamaz**

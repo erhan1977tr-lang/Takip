@@ -395,7 +395,11 @@ export async function readOfferExcelAction(orderId: string, fileId: string): Pro
   const file = order.files.find((f) => f.id === fileId && /\.xlsx?$/i.test(f.name) && f.scanStatus !== 'INFECTED');
   if (!file) return { ok: false, error: t('offer.import.noFile') };
   // Boyut sınırı (5 MB) dosya okunmadan ÖNCE uygulanır; okuma ve ayrıştırma tek yerde: server/orders/excel-file.js (AUD-3)
+  // Ön izlemenin metni de sınırlıdır (tek hücre / toplam): sınır aşılırsa satır dönmez (NEW-GL-01, karar 152)
   const res = await readOfferExcel({ path: resolveKey(file.storageKey), size: file.size });
   if (res.ok) return res;
-  return { ok: false, error: t(res.error === 'TOO_BIG' ? 'offer.import.tooBig' : res.error === 'NO_FILE' ? 'offer.import.noFile' : 'offer.import.unreadable') };
+  const key = res.error === 'TOO_BIG' ? 'offer.import.tooBig'
+    : res.error === 'TOO_MUCH_TEXT' ? 'offer.import.tooMuchText'
+      : res.error === 'NO_FILE' ? 'offer.import.noFile' : 'offer.import.unreadable';
+  return { ok: false, error: t(key) };
 }
