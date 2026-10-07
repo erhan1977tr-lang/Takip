@@ -277,9 +277,10 @@ test('SEC-01: sahte IP başlıkları giriş sınırını aşamaz; sınır ve den
     expect(await attempt({ 'x-forwarded-for': '86.121.10.32' }, CF)).toBe('invalid');
     expect((await ipsOf(CF)).sort()).toEqual([REAL, '86.121.10.32']);
 
-    // 4. Denetim kaydı aynı kaynağı yazar; sahte adresler hiçbir kayda girmez
-    const locked = await db.auditLog.findFirstOrThrow({ where: { action: 'LOGIN_LOCKED', ip: REAL }, orderBy: { createdAt: 'desc' } });
-    expect((locked.details as { ip: string }).ip).toBe(REAL);
+    // 4. Denetim kaydı aynı kaynağı yazar; sahte adresler hiçbir kayda girmez. Yukarıdaki iki e-postanın hesabı yoktur:
+    //    kilit oluşur ama kullanıcıya bağlı kilit kaydı yazılmaz (karar 149). Hesabı olan kullanıcının kilit kaydı ve o
+    //    kayıttaki güvenilir adres (sahte başlıklarla birlikte) e2e/33-kilit-kaydi.spec.ts'te denetlenir.
+    expect(await db.auditLog.count({ where: { action: 'LOGIN_LOCKED', ip: { in: [REAL, REAL2] } } })).toBe(0);
     expect(await attempt({ 'x-forwarded-for': '86.121.10.33', 'cf-connecting-ip': '10.9.9.9', 'x-real-ip': '10.9.9.9' }, DRAWER)).toBe('invalid');
     const failed = await db.auditLog.findFirstOrThrow({ where: { action: 'LOGIN_FAILED', user: { email: DRAWER } }, orderBy: { createdAt: 'desc' } });
     expect([failed.ip, (failed.details as { ip: string }).ip]).toEqual(['86.121.10.33', '86.121.10.33']);

@@ -11,6 +11,7 @@ import { homeFor } from '@/lib/roles';
 import { setLocaleCookie } from '@/lib/i18n';
 import { isLocale } from '@/server/i18n/index.js';
 import { verifyInviteCode } from '@/server/auth/invite-claim.js';
+import { recordCodeFailure } from '@/server/auth/lock-events.js';
 import { requestIp, runAttempt } from '@/lib/auth/throttle';
 
 function back(email: string, error?: string) {
@@ -33,7 +34,13 @@ export async function verifyCodeAction(formData: FormData) {
   const result = attempt.outcome;
   // Dışarıya tek bir sonuç (SEC-10): kod yanlış, süresi dolmuş, kilitli ya da böyle bir davet yok — hepsi aynı yanıt;
   // bir e-postanın davet bekleyip beklemediği bu ekrandan anlaşılamaz. Her başarısız deneme sınıra sayılır.
-  if (!result.ok) redirect(back(email, 'wrong_code'));
+  if (!result.ok) {
+    // Kalıcı kayıt (karar 149): yalnızca gerçek bir davette gerçekten KARŞILAŞTIRILAN yanlış kod için (CODE_FAILED) —
+    // o sonuç ancak bir hak harcandıysa oluşur, bu yüzden davet başına en çok 5 satır. Davet yok / kullanılmış / süresi
+    // dolmuş / kilitli ise kod karşılaştırılmamıştır: kayıt yazılmaz. Kodun kendisi hiçbir kayda verilmez.
+    if (result.reason === 'wrong_code') await recordCodeFailure(db, { email, ip });
+    redirect(back(email, 'wrong_code'));
+  }
 
   await setSetupToken(result.inviteId, result.userId);
   redirect(back(email));

@@ -29,7 +29,12 @@
 //     yarıda kalmış denemeler olağan 15 dakikalık kilitten daha fazlasına yol açamaz.
 // Kilit sırası sabittir (önce e-posta, sonra IP): hiçbir işlem IP kilidini tutarken e-posta kilidi beklemez → kilitlenme
 // (deadlock) döngüsü oluşmaz. Kilitler işlem bitince kendiliğinden bırakılır (pg_advisory_xact_lock).
-import { throttleState, WINDOW_MS } from './throttle.js';
+//
+// Kilit olayı (karar 149; güvenlik denetimi AUD-11): "kilit oluştu" bilgisi, kilidi OLUŞTURAN denemeye bağlıdır.
+// reserveAttempt, ayırdığı denemenin hangi sınırı doldurduğunu (5. / 20. / 30. deneme) döndürür; o deneme BAŞARISIZ
+// biterse runAttempt sonucu bunu taşır (`filled`) ve çağıran tek bir kilit kaydı yazar (server/auth/lock-events.js).
+// Zaten kilitliyken gelen istek hak ayıramaz → olay da üretmez: reddedilen istek yolu hiçbir şey yazmaz.
+import { filledScopes, throttleState, WINDOW_MS } from './throttle.js';
 
 /** Doğrulaması süren denemenin türü (AuthFailure.kind) */
 export const ATTEMPT_PENDING = 'PENDING';
@@ -43,7 +48,8 @@ const keyOf = (email, ip) => ({ email: String(email ?? '').slice(0, 200), ip: St
  * Deneme hakkı ayırır (doğrulamadan önce çağrılır).
  * @param {any} db
  * @param {{ email: string, ip: string, now?: Date }} o
- * @returns {Promise<{ ok: true, id: string } | { ok: false, minutes: number }>}  ok=false: kilitli (kalan dakika)
+ * @returns {Promise<{ ok: true, id: string, filled: ('account' | 'email' | 'ip')[] } | { ok: false, minutes: number }>}
+ *   ok=false: kilitli (kalan dakika) · filled: bu denemenin doldurduğu sınırlar (çoğu denemede boş)
  */
 export async function reserveAttempt(db, { email, ip, now = new Date() }) {
   const k = keyOf(email, ip);
@@ -56,10 +62,13 @@ export async function reserveAttempt(db, { email, ip, now = new Date() }) {
     const byEmail = await tx.authFailure.findMany({ where: { email: k.email, createdAt: { gte: since } }, select: { createdAt: true, ip: true } });
     const byIp = await tx.authFailure.findMany({ where: { ip: k.ip, createdAt: { gte: since } }, select: { createdAt: true } });
     const ms = (rows) => rows.map((r) => r.createdAt.getTime());
-    const state = throttleState({ account: ms(byEmail.filter((r) => r.ip === k.ip)), email: ms(byEmail), ip: ms(byIp) }, now.getTime());
+    const counted = { account: ms(byEmail.filter((r) => r.ip === k.ip)), email: ms(byEmail), ip: ms(byIp) };
+    const state = throttleState(counted, now.getTime());
     if (state.locked) return { ok: false, minutes: state.minutes };
     const row = await tx.authFailure.create({ data: { kind: ATTEMPT_PENDING, email: k.email, ip: k.ip, createdAt: now }, select: { id: true } });
-    return { ok: true, id: row.id };
+    // Bu denemenin DOLDURDUĞU sınırlar (karar 149): aynı sayımdan, aynı kilitlerin altında hesaplanır — bir sınırı
+    // aynı anda gelen isteklerden yalnızca BİRİ doldurabilir. Yeni sorgu / kilit yoktur; sınır kararını etkilemez.
+    return { ok: true, id: row.id, filled: filledScopes(counted, now.getTime()) };
   }, { isolationLevel: 'ReadCommitted', maxWait: 5000, timeout: 10_000 });
 }
 
@@ -106,7 +115,8 @@ export async function clearAttempts(db, { id, email, ip }) {
  * @param {any} db
  * @param {{ kind: 'LOGIN' | 'CODE', email: string, ip: string, now?: Date }} o
  * @param {() => Promise<T>} verify
- * @returns {Promise<{ locked: true, minutes: number } | { locked: false, outcome: T }>}
+ * @returns {Promise<{ locked: true, minutes: number } | { locked: false, outcome: T, filled?: ('account' | 'email' | 'ip')[] }>}
+ *   filled: deneme başarısız bitti VE bu sınırları doldurdu (kilidi bu deneme oluşturdu) — yalnızca o durumda vardır
  */
 export async function runAttempt(db, { kind, email, ip, now = new Date() }, verify) {
   if (!ATTEMPT_KINDS.includes(kind)) throw new Error(`geçersiz deneme türü: ${kind}`);
@@ -119,7 +129,9 @@ export async function runAttempt(db, { kind, email, ip, now = new Date() }, veri
     else if (kind === 'LOGIN') await clearAttempts(db, { id: reserved.id, email, ip });
     else await releaseAttempt(db, { id: reserved.id });
     settled = true;
-    return { locked: false, outcome };
+    // Kilit olayı: yalnızca BAŞARISIZ biten ve bir sınırı dolduran deneme taşır. Başarılı deneme kilit oluşturmaz
+    // (satırı silinir); sınırı doldurmayan denemenin sonucu eskisiyle aynıdır (`filled` alanı hiç yoktur).
+    return !outcome?.ok && reserved.filled.length ? { locked: false, outcome, filled: reserved.filled } : { locked: false, outcome };
   } finally {
     // Beklenmeyen hata: deneme hata sayılır (PENDING bırakılmaz). Bu yazım da başarısız olursa satır PENDING kalır ve
     // pencere dolunca etkisizleşir — asıl hata gizlenmez.

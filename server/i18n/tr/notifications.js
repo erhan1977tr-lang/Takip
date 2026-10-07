@@ -35,6 +35,8 @@ export default {
     DOC_PROFORMA: { title: 'Proforma hazır.', customer: 'Proformanız hazır.' },
     DOC_ADVANCE: { title: 'Avans faturası hazır.', customer: 'Avans faturanız hazır.' },
     DOC_INVOICE: { title: 'Fatura hazır.', customer: 'Faturanız hazır.' },
+    // Güvenlik (karar 149) — yalnızca yöneticiye: bir hesabın e-posta geneli deneme sınırı doldu
+    AUTH_LOCKED: { title: 'Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi' },
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',
@@ -52,5 +54,6 @@ export default {
     DOC_PROFORMA: 'belge {ref}',
     DOC_ADVANCE: 'belge {ref}',
     DOC_INVOICE: 'belge {ref}',
+    AUTH_LOCKED: '{user}',
   },
 };

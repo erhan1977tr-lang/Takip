@@ -132,7 +132,7 @@ export function renderInApp(locale, n) {
   const detail = type && has(detailKey)
     ? t(detailKey, {
       date: dmy(p.day), from: dmy(p.from), qty: p.qty ?? '', ref: p.ref ?? '—', amount: p.amount ?? '', error: String(p.error ?? '').slice(0, 160),
-      crate: p.crate ?? '', guest: p.guest ?? '', guestOrder: p.guestOrder ?? '',
+      crate: p.crate ?? '', guest: p.guest ?? '', guestOrder: p.guestOrder ?? '', user: String(p.user ?? '').slice(0, 200),
     })
     : '';
   const order = p.orderNo ? (customer ? t('notifications.order', { orderNo: p.orderNo }) : String(p.orderNo)) : '';

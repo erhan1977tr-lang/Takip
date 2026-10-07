@@ -35,6 +35,8 @@ export default {
     DOC_PROFORMA: { title: 'Proforma este disponibilă.', customer: 'Proforma este disponibilă.' },
     DOC_ADVANCE: { title: 'Factura de avans este disponibilă.', customer: 'Factura de avans este disponibilă.' },
     DOC_INVOICE: { title: 'Factura este disponibilă.', customer: 'Factura este disponibilă.' },
+    // Securitate (decizia 149) — doar pentru administrator: limita de încercări pe e-mail a unui cont a fost atinsă
+    AUTH_LOCKED: { title: 'Securitate: autentificarea unui cont a fost blocată după prea multe încercări greșite' },
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',
@@ -52,5 +54,6 @@ export default {
     DOC_PROFORMA: 'document {ref}',
     DOC_ADVANCE: 'document {ref}',
     DOC_INVOICE: 'document {ref}',
+    AUTH_LOCKED: '{user}',
   },
 };

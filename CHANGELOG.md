@@ -4,6 +4,31 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.20 — 07.10.2026
+
+- **Güvenlik: giriş kilidi denetim kaydı artık sınırsız büyümez; kod denemeleri kayda geçer; yöneticiye kilit bildirimi**
+  (güvenlik denetimi AUD-11).
+  - Eskiden hesap ya da adres kilitliyken gelen **her** giriş isteği denetim kaydına bir satır ekliyordu. Kilitli istek
+    hiçbir sınıra girmediği için, giriş yapmamış biri silinemeyen bu kaydı istediği kadar büyütebiliyordu. Artık **bir
+    kilit, bir kayıttır**: kayıt, kilidi oluşturan (sınırı dolduran) hatalı denemeyle birlikte bir kez yazılır;
+    kilitliyken gelen istekler hiçbir şey yazmaz.
+  - Kilit kaydında hangi sınırın dolduğu da yazar (aynı e-posta + adres, e-posta geneli ya da adres geneli) ve kilidin
+    giriş ekranından mı kod ekranından mı oluştuğu.
+  - Davet / şifre sıfırlama kodu: gerçek bir davette gerçekten denenen her **yanlış kod** artık denetim kaydına geçer
+    (davet başına en çok 5). Davet yoksa, kullanılmışsa, süresi dolmuşsa ya da kilitliyse kod hiç denenmediği için kayıt
+    da yazılmaz.
+  - Bir hesaba her adresten yapılan hatalı denemeler **e-posta geneli** sınırı doldurduğunda yöneticilere uygulama içi
+    bildirim gider ("Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi" + kullanıcı). Aynı
+    kullanıcı için günde en çok bir bildirim; e-posta gönderilmez; satış, çizim, denetimci ve müşteri bu bildirimi almaz.
+  - Kayıtlara şifre, davet kodu ya da denenen e-posta dizgisi yazılmaz; hesabı olmayan bir e-posta için kullanıcıya
+    bağlı kayıt oluşturulmaz.
+  - Değişmeyenler: sınırlar (15 dakikada 5 / 20 / 30), kilit süresi, ekrandaki iletiler, başarılı girişin önceki
+    hataları temizlemesi.
+  - **Bilinen kalan risk (karar 149):** e-posta adresini bilen biri, farklı adreslerden hatalı denemeler yaparak bir
+    kullanıcının girişini geçici olarak kilitleyebilir (hatalı denemeler durduktan en geç 15 dakika sonra açılır; açık
+    oturumlar etkilenmez). Bu davranış bu sürümde bilerek değiştirilmedi; güvenilen cihaz / iki adımlı giriş ayrı bir
+    güvenlik maddesi olarak duruyor. Öneri: e-postası dışarıda bilinmeyen yedek bir yönetici hesabı bulundurun.
+
 ## 3.50.19 — 07.10.2026
 
 - **Güvenlik: giriş ve davet kodu deneme sınırları, aynı anda gönderilen isteklerle aşılamaz** (güvenlik denetimi AUD-10).

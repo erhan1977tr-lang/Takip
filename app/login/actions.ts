@@ -20,6 +20,7 @@ export async function loginAction(formData: FormData) {
   // Kilit denetimi ve denemenin sayılması TEK atomik adımdır (karar 148): runAttempt denemeyi şifre doğrulanmadan ÖNCE
   // ayırır — aynı anda gelen istekler 5 / 20 / 30 sınırını aşamaz. Aşağıdaki doğrulama (scrypt) o işlemin ve kilidin
   // DIŞINDA çalışır; sonucu runAttempt yazar: yanlış → hata kaydı · doğru → bu e-posta + IP'nin hataları temizlenir.
+  // Bir sınırı dolduran başarısız deneme ayrıca tek bir kilit kaydı üretir (LOGIN_LOCKED — karar 149; runAttempt yazar).
   const ip = await requestIp();
   const attempt = await runAttempt('LOGIN', email, ip, async () => {
     const found = email ? await db.user.findUnique({ where: { email } }) : null;
@@ -33,11 +34,10 @@ export async function loginAction(formData: FormData) {
     if (!(await verifyPassword(password, found.passwordHash))) return { ok: false as const, user: found };
     return { ok: true as const, user: found };
   });
-  if (attempt.locked) {
-    const locked = email ? await db.user.findUnique({ where: { email }, select: { id: true } }) : null;
-    await audit('LOGIN_LOCKED', 'User', locked?.id ?? null, locked?.id ?? null, { ip });
-    redirect(`${back}&error=locked&m=${attempt.minutes}`);
-  }
+  // Kilitliyken gelen istek hiçbir şey YAZMAZ (karar 149; güvenlik denetimi AUD-11): ne denetim kaydı ne bildirim ne de
+  // ek sorgu. Kilit olayı (LOGIN_LOCKED), kilidi oluşturan başarısız denemeyle birlikte bir kez yazılmıştır
+  // (lib/auth/throttle.ts → runAttempt). Eskiden buradaki her istek kalıcı tabloya bir satır ekliyordu (sınırsız).
+  if (attempt.locked) redirect(`${back}&error=locked&m=${attempt.minutes}`);
   if (!attempt.outcome.ok) {
     const failed = attempt.outcome.user;
     if (failed) await audit('LOGIN_FAILED', 'User', failed.id, failed.id, { ip });
