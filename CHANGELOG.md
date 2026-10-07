@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.24 — 07.10.2026
+
+- **Alan adı taşıması: eski adres yeni adrese kalıcı olarak yönlenir.** Uygulamanın adresi artık
+  **https://takip.gkh.ro**. Eski adrese (`takip.sistembalustrada.ro`) gelen her istek — eski e-postalardaki bağlantılar,
+  yer imleri — sayfanın yolu ve sorgusu aynen korunarak yeni adrese yönlendirilir (308). Eski adres uygulamayı artık
+  kendisi sunmaz; yalnızca yönlendirir. Yeni adresin davranışı (güvenlik başlıkları, gövde sınırları, gövde kapısı)
+  değişmedi.
+  - Eski adın HTTPS sertifikasını Caddy kendisi alır ve yeniler; bunun için eski alan adının DNS kaydı sunucuyu
+    göstermeye devam etmelidir.
+  - Yalnızca `deploy/Caddyfile` değişti: uygulama kodu, veritabanı ve ayarlar (`APP_DOMAIN`, `APP_URL`) aynı (karar 154).
+
 ## 3.50.23 — 07.10.2026
 
 - **Güvenlik: teklif tablosuna "Excel'den Aktar" ön izlemesi artık sunucuyu zorlayacak kadar büyük metin üretemez**

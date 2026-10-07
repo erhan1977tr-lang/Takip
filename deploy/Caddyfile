@@ -139,3 +139,22 @@
 		import uygulama
 	}
 }
+
+# ---------- Eski alan adı → asıl alan adına kalıcı yönlendirme (alan adı taşıması, karar 154) ----------
+# Uygulamanın tek adresi APP_DOMAIN'dir (üretimde takip.gkh.ro). Eski adres (takip.sistembalustrada.ro) uygulamaya
+# İLETİLMEZ: her istek, yolu ve sorgusu aynen korunarak ({uri}) 308 ile asıl adrese yönlendirilir. Eski ad da bir site
+# adresi olduğu için Caddy onun HTTPS sertifikasını kendisi alır ve yeniler; bunun için eski adın DNS kaydı bu sunucuyu
+# göstermeye devam etmeli, 80 ve 443 açık kalmalıdır.
+#
+# Yönlendirme YALNIZCA asıl alan adı takip.gkh.ro olan kurulumda vardır: aşağıdaki tanımın ADI asıl alan adını taşır,
+# en alttaki "import" satırı o adı APP_DOMAIN ile arar. APP_DOMAIN başka bir değerse (testlerdeki "localhost", ya da alan
+# adı yeniden takip.sistembalustrada.ro yapılırsa) aynı satır hiçbir dosyayla eşleşmeyen bir dosya kalıbıdır (sondaki *
+# bunun içindir; Caddy uyarı yazıp geçer) ve hiçbir şey eklenmez. Böylece test ortamları üretimin alan adları için
+# sertifika istemez ve aynı adres iki kez tanımlanmış olmaz. Gerçek Caddy ile denetim (2.6 → güncel):
+# deploy/test/body-limits.sh, 7. adım.
+(eski-alan-adi.takip.gkh.ro.*) {
+	takip.sistembalustrada.ro {
+		redir https://takip.gkh.ro{uri} 308
+	}
+}
+import eski-alan-adi.{$APP_DOMAIN}.*

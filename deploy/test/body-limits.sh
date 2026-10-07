@@ -140,6 +140,11 @@ PY
   [ "$(curl -sk -o /dev/null -w '%{http_code}' -X POST "$SITE/oturum/etkinlik" -H 'Content-Type: application/json' -H 'X-Takip-Activity: 1' -H "Origin: $SITE" -d '{"idle":0}')" = 401 ]
 
   # 7. Caddyfile, Caddy 2'nin eski sürümlerinde de geçerli (sunucudaki "caddy:2" imajı güncel olmayabilir)
+  # Üretim ayarında beklenen: siteler tam olarak asıl ad + eski ad; eski adın rotasındaki tek işleyici 308 yönlendirmesi
+  LEGACY_REDIRECT='([.apps.http.servers[].routes[] | .match[]?.host[]?] | unique) == ["takip.gkh.ro", "takip.sistembalustrada.ro"]
+    and ([.apps.http.servers[].routes[] | select(any(.match[]?; (.host // []) | index("takip.sistembalustrada.ro") != null))
+      | .. | objects | select(has("handler") and .handler != "subroute") | "\(.handler) \(.status_code) \(.headers.Location[0]?)"]
+      == ["static_response 308 https://takip.gkh.ro{http.request.uri}"])'
   for tag in 2.6.4 2.7.6 2.8.4 2; do
     if ! out=$(sudo docker run --rm -e APP_DOMAIN=localhost -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "caddy:$tag" \
       caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then
@@ -148,6 +153,14 @@ PY
       false
     fi
     echo "caddy:$tag → Caddyfile geçerli" | tee -a "$RESULTS"
+    # Üretimin ayarı (APP_DOMAIN=takip.gkh.ro; yalnızca "caddy adapt", ağ kapalı — hiçbir yere istek gitmez): iki site vardır
+    # ve eski alan adı uygulamaya iletilmez, yolu ve sorgusu korunarak 308 ile asıl ada yönlenir (karar 154)
+    if ! prod=$(sudo docker run --rm --network none -e APP_DOMAIN=takip.gkh.ro -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "caddy:$tag" \
+      caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile 2>"$T/adapt-hata.txt") || ! echo "$prod" | jq -e "$LEGACY_REDIRECT" >/dev/null; then
+      echo "caddy:$tag üretim ayarında (APP_DOMAIN=takip.gkh.ro) eski alan adı yönlendirmesi beklenen gibi değil: $(tail -n 1 "$T/adapt-hata.txt" | cut -c1-300)" | tee -a "$RESULTS"
+      false
+    fi
+    echo "caddy:$tag → APP_DOMAIN=takip.gkh.ro: takip.sistembalustrada.ro yalnızca 308 → https://takip.gkh.ro{uri} (vekil yok)" | tee -a "$RESULTS"
   done
   # (eski sürüm imajları silinmez: hemen ardından deploy/test/body-gate.sh aynı imajlarla kapının davranışını dener ve siler)
 
