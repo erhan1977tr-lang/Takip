@@ -9,7 +9,8 @@ name: Sunucu kurulumu
 # arkasında adres kademeleri, eski Caddy sürümleriyle sözdizimi), gövde kapısı (karar 143: oturumsuz büyük gövde uygulamaya
 # iletilmez — gerçek kurulumda ve sahte uygulamayla Caddy 2.6.4 → güncel sürümlerde bayt ölçümü) ve yayının Caddy'yi
 # doğrulaması (karar 142: Caddyfile önceden doğrulanır, yayından sonra site HTTPS üzerinden denetlenir, bozuk ayar yayını
-# başarısız kılar ve geri alınır).
+# başarısız kılar ve geri alınır), gerçek sunucu işareti (karar 151: Compose'daki sabit TAKIP_DEPLOYMENT'ı .env ezemez; işaret
+# varken DEMO_MODE / MAIL_OUTBOX_DIR / TRANSLATE_FAKE / COOKIE_SECURE=false yok sayılır, demo verisi betiği çalışmaz).
 on:
   push:
     branches: ['**']
@@ -43,7 +44,7 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
@@ -259,6 +260,9 @@ jobs:
 
       - name: İşçi root değil ve ayrıcalıksız (SEC-12) — gerçek Docker — 1001 + cap_drop ALL + no-new-privileges ile tarama / karantina / depo PDF'i, root işçiden geçiş (gerçek yayın), geri dönüş
         run: bash deploy/test/worker-nonroot.sh
+
+      - name: Gerçek sunucu işareti (AUD-13, karar 151) — gerçek Compose — .env işareti ezemez; sunucuya kopyalanmış demo / test ayarları yok sayılır (site açık, çerez Secure, e-posta klasörü yok, uyarı kartı); demo verisi betiği çalışmaz
+        run: bash deploy/test/env-marker.sh
 
       - name: Yalnızca belge değişikliği yeniden derlenmez
         run: |

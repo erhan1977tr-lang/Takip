@@ -235,6 +235,18 @@ export default {
   integrations: {
     title: 'Entegrasyonlar',
     intro: 'Dış servislerle bağlantılar. Şifre ve anahtarlar burada değil, yalnızca sunucudaki ayar dosyasında durur.',
+    // Ortam uyarıları (karar 151): gerçek sunucuda yok sayılan test / demo ayarları — yalnızca ayarın adı gösterilir
+    env: {
+      title: 'Ortam uyarıları',
+      intro: 'Sunucunun ayar dosyasında yalnızca test / demo ortamına ait ayarlar bulundu. Bu sunucuda YOK SAYILIYORLAR: sistem güvenli ayarlarla çalışmaya devam ediyor.',
+      ignored: {
+        DEMO_MODE: 'demo kipi kapalı tutuluyor (demo hesapları ve demo posta kutusu yok)',
+        MAIL_OUTBOX_DIR: 'e-postalar klasöre yazılmıyor; gerçek e-posta sunucusuyla gönderiliyor',
+        TRANSLATE_FAKE: 'sahte çeviri kullanılmıyor; notlar gerçek sağlayıcıyla çevriliyor',
+        COOKIE_SECURE: 'çerezler yalnızca güvenli bağlantıyla (HTTPS) gönderiliyor',
+      },
+      hint: 'Yapılacak: sunucudaki ayar dosyasından bu satırların kaldırılması (sunucu yöneticisi). Kaldırılınca bu kart kaybolur. Burada yalnızca ayarın adı gösterilir; değeri gösterilmez.',
+    },
     // Not çevirisi (karar 127): sipariş notları yazılırken bir kez çevrilir (Google Cloud Translation)
     translate: {
       title: "Not çevirisi",

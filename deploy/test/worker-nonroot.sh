@@ -158,10 +158,30 @@ fi
 # Deneme verisi: çalışan işçi kapsayıcısının içinde, uygulamanın kullanıcısıyla (dosyaları uygulama yüklemiş gibi)
 fixtures() { cat "$HERE/worker-fixtures.mjs" | sudo docker exec -i -u "$OWNER" -e TAKIP_TEST_FIXTURES=1 "$(worker)" node --input-type=module - "$1" | tail -n 1 >"$T/$1.json"; jq -e .virusKey "$T/$1.json" >/dev/null; }
 field() { jq -r ".$2" "$T/$1.json"; }
-# İşçi deneme verisini işledi: temiz dosya CLEAN, virüs INFECTED, depo e-postası SENT; depo PDF'inin anahtarı yazdırılır
-processed() { # processed ETİKET
+# Depo e-postası turu (karar 151). Gerçek sunucu işaretiyle çalışan — uzun ömürlü — işçi .env'deki MAIL_OUTBOX_DIR'ı YOK
+# SAYAR ve bu makinede SMTP yoktur: o işçi depo e-postasını göndermez, iş kuyrukta bekler. E-postayı (ve Comanda Depozit
+# PDF'ini) işaretin BİLEREK kaldırıldığı TEK SEFERLİK bir işçi kapsayıcısı üretir: "compose run -e TAKIP_DEPLOYMENT=" — komut
+# satırı seçeneği; .env ile yapılamaz (Compose'daki sabit değer .env'den önce gelir). Servis tanımı aynıdır: 1001:1001,
+# cap_drop ALL, no-new-privileges, aynı yükleme birimi. E-posta, kapsayıcıdaki /tmp/outbox'a bağlanan $T/outbox'a düşer.
+mail_tour() {
+  mkdir -p "$T/outbox"
+  chmod 777 "$T/outbox"
+  compose run --rm --no-deps -T -e TAKIP_DEPLOYMENT= -v "$T/outbox:/tmp/outbox" worker node scripts/worker.mjs --once >"$T/tur.log" 2>&1 || { cat "$T/tur.log"; return 1; }
+}
+# İşçi deneme verisini işledi: temiz dosya CLEAN, virüs INFECTED, depo e-postası SENT; depo PDF'inin anahtarı yazdırılır.
+# "tur" verilirse (gerçek sunucu işaretli düzen): uzun ömürlü işçi taramayı yapar ama depo e-postasını GÖNDERMEZ ve diske
+# yazmaz (yok sayılan MAIL_OUTBOX_DIR) — bu bir tam tur beklenerek doğrulanır; e-posta turunu tek seferlik işçi atar.
+processed() { # processed ETİKET [tur]
+  local job
+  job="select status || ' ' || attempts from \"NotificationOutbox\" where type = 'WAREHOUSE_EMAIL' and \"orderId\" = '$(field "$1" profileId)'"
   wait_sql "select \"scanStatus\" from \"OrderFile\" where id = '$(field "$1" cleanId)'" CLEAN
   wait_sql "select \"scanStatus\" from \"OrderFile\" where id = '$(field "$1" virusId)'" INFECTED
+  if [ "${2:-}" = tur ]; then
+    worker_ticks
+    [ "$(sql "$job")" = "PENDING 0" ]
+    sudo docker exec "$(worker)" sh -c 'test ! -e /tmp/outbox'
+    mail_tour
+  fi
   wait_sql "select status from \"NotificationOutbox\" where type = 'WAREHOUSE_EMAIL' and \"orderId\" = '$(field "$1" profileId)'" SENT
   sql "select \"storageKey\" from \"OrderFile\" where \"orderId\" = '$(field "$1" profileId)' and source = 'WAREHOUSE_FORM'" >"$T/$1.depo"
   [ "$(wc -l <"$T/$1.depo")" = 1 ]
@@ -195,17 +215,35 @@ others_unchanged
 all_owned
 sudo takip antivirus
 
-# ---------- 2. E-postalar gönderilmez, kapsayıcıda dosyaya yazılır (depo e-postası işçinin PDF üretmesi için gerekli) ----------
+# ---------- 2. E-postalar gönderilmez, dosyaya yazılır (depo e-postası işçinin PDF üretmesi için gerekli) ----------
+# .env'e test ayarı yazılır. Gerçek sunucu işaretli düzende (bugünkü Compose) bu satır YOK SAYILIR (karar 151): uzun ömürlü
+# uygulama ve işçi onu kullanmaz; e-posta turunu processed … tur içindeki tek seferlik işçi atar (mail_tour). Satır yalnızca
+# 4. bölümdeki ÖNCEKİ Compose dosyasında (işaret yok, işçi root) eskisi gibi geçerlidir.
 echo 'MAIL_OUTBOX_DIR=/tmp/outbox' | sudo tee -a "$ENV_FILE" >/dev/null
 compose up -d
 site_up
 worker_is_nonroot
+# İşaret kapsayıcılarda sabit; .env'deki test ayarı işçinin açılış günlüğünde "yok sayıldı" olarak görünür (değeri yazılmaz)
+[ "$(sudo docker exec "$(worker)" printenv TAKIP_DEPLOYMENT)" = server ]
+[ "$(sudo docker exec takip-app-1 printenv TAKIP_DEPLOYMENT)" = server ]
+[ "$(sudo docker exec "$(worker)" printenv MAIL_OUTBOX_DIR)" = /tmp/outbox ]
+for _ in $(seq 1 20); do
+  compose logs --no-log-prefix worker >"$T/isci-acilis.log" 2>&1
+  if grep -q 'işçi başladı' "$T/isci-acilis.log"; then break; fi
+  sleep 3
+done
+grep -q 'MAIL_OUTBOX_DIR: gerçek sunucuda yok sayıldı' "$T/isci-acilis.log"
+if grep -q '/tmp/outbox' "$T/isci-acilis.log"; then echo "işçi günlüğünde ayarın değeri var"; exit 1; fi
+# Tek seferlik işçi de aynı servis tanımıyla başlar: 1001:1001, tüm yetenekler bırakılmış, yeni ayrıcalık edinemez
+compose run --rm --no-deps -T -e TAKIP_DEPLOYMENT= worker sh -c 'id -u; id -g; cat /proc/self/status' | tr -d '\r' >"$T/tek-seferlik.txt"
+[ "$(head -n 2 "$T/tek-seferlik.txt" | paste -sd: -)" = "$OWNER" ]
+awk '/^Cap(Inh|Prm|Eff|Bnd|Amb):/ { n++; if ($2 !~ /^0+$/) bad = 1 } /^NoNewPrivs:/ { nnp = $2 } END { exit (bad || n != 5 || nnp != 1) }' "$T/tek-seferlik.txt"
 
 # ---------- 3. İşçi 1001 ile: tarama, karantina, depo PDF'i, ay klasörü ----------
 sudo find "$VOL" -mindepth 1 -type d -printf '%P\n' | sort >"$T/dirs.once"
 if grep -qx -e "$MONTH" -e '.karantina' "$T/dirs.once"; then echo "ay klasörü / karantina zaten var: işçinin oluşturduğu kanıtlanamaz"; exit 1; fi
 fixtures a
-processed a
+processed a tur
 files_intact a
 depo=$(cat "$T/a.depo")
 [ "${depo%/*}" = "$MONTH" ]
@@ -215,8 +253,10 @@ for p in "${MONTH%/*}" "$MONTH" "$depo" .karantina ".karantina/$(field a virusKe
 # Uygulama aynı ay klasörüne ve karantinaya yazabiliyor, işçinin dosyasını okuyabiliyor
 sudo docker exec takip-app-1 sh -c "echo uygulama > '/data/uploads/$MONTH/uygulama-yazdi.txt' && head -c 5 '/data/uploads/$depo' | grep -q '%PDF-' && : > /data/uploads/.karantina/uygulama-yazdi"
 [ "$(owner "$MONTH/uygulama-yazdi.txt")" = "$OWNER" ]
-# Depo e-postası gerçek adrese gitmedi: dosyaya yazıldı, alıcı deneme adresi, eki işçinin ürettiği PDF
-sudo docker exec "$(worker)" sh -c 'cat /tmp/outbox/*.json' | cat >"$T/posta.json"
+# Depo e-postası gerçek adrese gitmedi: dosyaya yazıldı (tek seferlik işçi → $T/outbox), alıcı deneme adresi, eki işçinin
+# ürettiği PDF; uzun ömürlü (gerçek sunucu işaretli) işçinin kapsayıcısında e-posta klasörü hiç oluşmadı
+sudo sh -c "cat '$T'/outbox/*.json" | cat >"$T/posta.json"
+sudo docker exec "$(worker)" sh -c 'test ! -e /tmp/outbox'
 grep -q 'depo@kurulum.test' "$T/posta.json"
 grep -q 'Comanda-Depozit-ISCP' "$T/posta.json"
 if grep -q 'partnertrans\|enis@gkh' "$T/posta.json"; then echo "gerçek depo adresi kullanıldı"; exit 1; fi
@@ -296,7 +336,7 @@ sudo docker exec takip-app-1 sh -c "head -c 5 '/data/uploads/$depo_b' | grep -q 
 # ---------- 6. Geçişten sonra çalışma root'a bağlı değil ----------
 # Eskiden root'a ait olan ay klasörüne depo PDF'i, eskiden root'a ait olan karantinaya virüs: işçi 1001 ile yazar
 fixtures c
-processed c
+processed c tur
 files_intact c
 depo_c=$(cat "$T/c.depo")
 [ "${depo_c%/*}" = "$MONTH" ]

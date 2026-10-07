@@ -200,6 +200,25 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3001/login && break; sleep 1; done
           scripts/ci-step.sh "demo e2e" bash -c 'npx playwright test e2e/demo.spec.ts 2>&1 | tee demo-e2e.log; exit ${PIPESTATUS[0]}' || { tail -50 demo-server.log; exit 1; }
 
+      # Gerçek sunucu kipi (karar 151, güvenlik denetimi AUD-13): aynı üretim derlemesi ÜÇÜNCÜ bir sunucu olarak, gerçek
+      # sunucunun işaretiyle (sunucuda deploy/docker-compose.yml verir) ve sunucuya yanlışlıkla kopyalanmış bir demo / test
+      # .env'inin dört ayarıyla başlatılır: DEMO_MODE=1, MAIL_OUTBOX_DIR (aşağıda) + işin genel ortamından COOKIE_SECURE=false
+      # ve TRANSLATE_FAKE=1. Beklenen: ayarlar yok sayılır, sunucu kapanmaz (e2e/sunucu-kipi.spec.ts; ana test sunucusuyla
+      # — işaretsiz, ayarlar geçerli — aynı testte karşılaştırılır). İşaret yalnızca BU adımın ortamındadır.
+      - name: Gerçek sunucu kipi (karar 151) — test / demo ayarları yok sayılır, sunucu kapanmaz
+        env:
+          TAKIP_DEPLOYMENT: server
+          DEMO_MODE: '1'
+          SERVER_MODE_URL: http://127.0.0.1:3002
+          APP_URL: http://127.0.0.1:3002
+          MAIL_OUTBOX_DIR: ${{ github.workspace }}/.sunucu-kipi-outbox
+          MAIN_OUTBOX_DIR: ${{ github.workspace }}/.outbox
+          SERVER_MODE_LOG: ${{ github.workspace }}/server-mode.log
+        run: |
+          PORT=3002 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > server-mode.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3002/login && break; sleep 1; done
+          scripts/ci-step.sh "sunucu kipi e2e" bash -c 'npx playwright test e2e/sunucu-kipi.spec.ts 2>&1 | tee sunucu-kipi-e2e.log; exit ${PIPESTATUS[0]}' || { tail -50 server-mode.log; exit 1; }
+
       - name: Ekran görüntülerini ci-screenshots dalına yaz
         if: always() && github.event_name == 'push'
         run: |

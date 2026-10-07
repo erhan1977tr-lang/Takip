@@ -1,16 +1,21 @@
 // Demo ortamına örnek veriler yükler: firmalar, beş rolün hesapları, cam kataloğu ve
 // akışın her aşamasından siparişler (dosyaları ve çizimleriyle). Yalnızca DEMO_MODE=1 iken çalışır.
 // Tekrar çalıştırılırsa veri eklemez; DEMO-GIRIS.txt silinmişse şifreleri yenileyip dosyayı yeniden yazar.
+// GERÇEK SUNUCUDA ÇALIŞMAZ (karar 151): tek bir ayara güvenilmez — gerçek sunucu işareti varsa DEMO_MODE=1 olsa da
+// reddedilir, ve ilk yükleme yalnızca BOŞ bir veritabanına yapılır (server/demo/guard.js; iki koşul da yazmadan önce).
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { glassLoadingDate, offerTotals, slaDeadline } from '../../server/orders/rules.js';
 import { DEMO_ACCOUNTS, DEMO_FIRM } from '../../server/demo/accounts.js';
+import { DEMO_SEED_REFUSALS, demoSeedDataGuard, demoSeedEnvGuard } from '../../server/demo/guard.js';
 import { runBaseSeed } from '../../prisma/seed/base.mjs';
 
-if (process.env.DEMO_MODE !== '1') {
-  console.error('Bu betik yalnızca demo ortamında çalışır (DEMO_MODE=1).');
+// 1. ORTAM koşulu: veritabanına bağlanmadan önce
+const envGuard = demoSeedEnvGuard(process.env);
+if (!envGuard.ok) {
+  console.error(DEMO_SEED_REFUSALS[envGuard.reason]);
   process.exit(1);
 }
 
@@ -354,8 +359,19 @@ async function main(db) {
 }
 
 try {
-  await runBaseSeed(prisma, { log: () => {} }); // önce her ortamda gereken temel veri (roller...)
-  await prisma.$transaction((tx) => main(tx), { timeout: 180_000, maxWait: 20_000 });
+  // 2. VERİ koşulu: hiçbir şey yazılmadan ÖNCE, yalnızca okuyarak. Demo hesapları yoksa (ilk yükleme) veritabanı boş olmalı.
+  const dataGuard = demoSeedDataGuard({
+    demoAdminExists: !!(await prisma.user.findUnique({ where: { email: DEMO_ACCOUNTS[0].email }, select: { id: true } })),
+    otherUsers: await prisma.user.count({ where: { email: { notIn: DEMO_ACCOUNTS.map((a) => a.email) } } }),
+    orders: await prisma.order.count(),
+  });
+  if (!dataGuard.ok) {
+    console.error(DEMO_SEED_REFUSALS[dataGuard.reason]);
+    process.exitCode = 1;
+  } else {
+    await runBaseSeed(prisma, { log: () => {} }); // önce her ortamda gereken temel veri (roller...)
+    await prisma.$transaction((tx) => main(tx), { timeout: 180_000, maxWait: 20_000 });
+  }
 } finally {
   await prisma.$disconnect();
 }

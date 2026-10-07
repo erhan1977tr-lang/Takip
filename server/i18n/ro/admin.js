@@ -234,6 +234,18 @@ export default {
   integrations: {
     title: 'Integrări',
     intro: 'Conexiuni cu servicii externe. Parolele și cheile nu stau aici, ci doar în fișierul de configurare de pe server.',
+    // Avertismente de mediu (decizia 151): setări de test / demo ignorate pe serverul real — se afișează doar numele setării
+    env: {
+      title: 'Avertismente de mediu',
+      intro: 'În fișierul de configurare al serverului s-au găsit setări care aparțin doar mediului de test / demo. Pe acest server sunt IGNORATE: sistemul continuă să funcționeze cu setările sigure.',
+      ignored: {
+        DEMO_MODE: 'modul demo este ținut oprit (fără conturi demo și fără căsuța poștală demo)',
+        MAIL_OUTBOX_DIR: 'e-mailurile nu se scriu în dosar; se trimit prin serverul real de e-mail',
+        TRANSLATE_FAKE: 'traducerea falsă nu este folosită; notele sunt traduse de furnizorul real',
+        COOKIE_SECURE: 'cookie-urile se trimit doar prin conexiune securizată (HTTPS)',
+      },
+      hint: 'De făcut: eliminarea acestor linii din fișierul de configurare de pe server (administratorul serverului). După eliminare, acest card dispare. Aici se afișează doar numele setării, nu și valoarea.',
+    },
     // Traducerea notelor (decizia 127): notele comenzii sunt traduse o singură dată la scriere (Google Cloud Translation)
     translate: {
       title: "Traducerea notelor",

@@ -3,7 +3,8 @@
 //   - bir cam siparişi + taranmayı bekleyen (PENDING) iki dosya: temiz bir PDF ve zararsız EICAR test dosyası
 //   - depoya gönderilmiş bir profil siparişi + kuyrukta bir depo e-postası (işçi Comanda Depozit PDF'ini üretir)
 // Dosyalar bu betiği çalıştıran kullanıcıyla (testte 1001: uygulamanın kullanıcısı) yükleme klasörüne yazılır.
-// Gerçek e-posta gönderilmez: test MAIL_OUTBOX_DIR ile çalışır ve depo alıcısı deneme adresidir.
+// Gerçek e-posta gönderilmez: depo alıcısı deneme adresidir ve e-posta turunu, gerçek sunucu işaretinin komut satırından
+// kaldırıldığı tek seferlik işçi kapsayıcısı atar (MAIL_OUTBOX_DIR ile dosyaya yazar — karar 151; worker-nonroot.sh).
 // Bu klasör (deploy/test) imaja girmez (.dockerignore); betik çalışan işçi kapsayıcısına standart girdiden verilir:
 //   docker exec -i -u 1001:1001 -e TAKIP_TEST_FIXTURES=1 takip-worker-1 node --input-type=module - ETİKET < worker-fixtures.mjs
 // (çalışma klasörü /app: uygulamanın kendi modülleri oradan yüklenir) → son satırda JSON

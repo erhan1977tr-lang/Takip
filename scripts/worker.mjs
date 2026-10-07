@@ -22,7 +22,7 @@ import { syncFgoDocuments } from '../server/accounting/receivables.js';
 import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
-import { getEnv } from '../server/env.js';
+import { getEnv, startupEnv } from '../server/env.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
@@ -30,6 +30,20 @@ import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoic
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
+
+// Açılış denetimi — uygulamayla AYNI (server/env.js → startupEnv; karar 151, güvenlik denetimi AUD-13): ortam hatalıysa
+// işçi BAŞLAMAZ (veritabanına bağlanmadan, hiçbir işe dokunmadan çıkar); uyarılar günlüğe yazılır. Gerçek sunucuda test /
+// geliştirme ayarları (MAIL_OUTBOX_DIR, DEMO_MODE, TRANSLATE_FAKE, COOKIE_SECURE=false) burada da yok sayılır. Aşağıdaki
+// kod bu ayarları ham ortamdan DEĞİL, yalnızca doğrulanmış değerlerden (getEnv) okur.
+const startup = startupEnv(process.env);
+if (!startup.ok) {
+  console.error(startup.report);
+  console.error('İşçi başlatılmadı: ortam değişkenleri hatalı.');
+  process.exit(1);
+}
+if (startup.report) console.warn(startup.report);
+const env = getEnv();
+
 const db = new PrismaClient();
 let stopping = false;
 let wake = () => {};
@@ -42,13 +56,14 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 // SMTP ayarlı değilse depo e-postaları kuyrukta bekler (yönetici sipariş sayfasında görür).
-// MAIL_OUTBOX_DIR (yalnızca geliştirme/test/demo): e-postalar gönderilmez, klasöre yazılır.
+// MAIL_OUTBOX_DIR (yalnızca geliştirme/test/demo): e-postalar gönderilmez, klasöre yazılır. Değer doğrulanmış ortamdan
+// gelir: gerçek sunucuda her zaman boştur (yok sayılır) → e-postalar SMTP ile gider, diske yazılmaz.
 let mail = null;
-if (process.env.MAIL_OUTBOX_DIR) {
+if (env.MAIL_OUTBOX_DIR) {
   mail = {
-    transport: outboxTransport(process.env.MAIL_OUTBOX_DIR),
-    from: process.env.MAIL_FROM || 'Takip <noreply@localhost>',
-    appUrl: (process.env.APP_URL || '').replace(/\/+$/, ''),
+    transport: outboxTransport(env.MAIL_OUTBOX_DIR),
+    from: env.MAIL_FROM || 'Takip <noreply@localhost>',
+    appUrl: env.APP_URL || '',
   };
 } else {
   try {

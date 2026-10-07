@@ -13,6 +13,7 @@ import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.j
 import { getDailyRate } from '@/server/fx/bt.js';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/lib/env';
+import { SERVER_IGNORED, ignoredOnServer } from '@/server/env.js';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
@@ -35,6 +36,9 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   await requirePermission('SETTINGS_MANAGE');
   const { t } = await getT();
   const sp = await searchParams;
+  // Gerçek sunucuda yok sayılan ayarların ADLARI — yalnızca bilinen sabit adlar (değer bu sayfaya hiç gelmez)
+  const ignoredNames: string[] = ignoredOnServer();
+  const envIgnored = SERVER_IGNORED.filter((name: string) => ignoredNames.includes(name));
   const s = await getAvSettings(db);
   const [health, pendingFiles, pendingDrawings, infectedFiles, infectedDrawings, statusRow, blocked, pendingDrawingFiles, infectedDrawingFiles] = await Promise.all([
     s.enabled ? avHealth(s) : Promise.resolve(null),
@@ -94,6 +98,20 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <h1>{t('admin.integrations.title')}</h1>
         <p className="muted">{t('admin.integrations.intro')}</p>
       </div>
+      {/* Ortam uyarıları (karar 151): gerçek sunucuda YOK SAYILAN test / demo ayarları. Yalnızca ayarın ADI ve sabit bir
+          açıklama gösterilir — değer, yol, sır gösterilmez. Uyarı yoksa kart hiç çizilmez. */}
+      {envIgnored.length > 0 && (
+        <div className="card" id="ortam-uyarilari">
+          <h2>{t('admin.integrations.env.title')}</h2>
+          <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('admin.integrations.env.intro')}</div>
+          <ul className="small" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+            {envIgnored.map((name) => (
+              <li key={name} data-env-ignored={name}><span className="mono">{name}</span> — {t(`admin.integrations.env.ignored.${name}` as MsgKey)}</li>
+            ))}
+          </ul>
+          <p className="muted small" style={{ marginTop: 8 }}>{t('admin.integrations.env.hint')}</p>
+        </div>
+      )}
       {okMsg && <div className="alert alert-ok">{okMsg}</div>}
       {errMsg && <div className="alert alert-error">{errMsg}</div>}
       {sp.ok === 'warehouse' && <div className="alert alert-ok">{t('profile.settings.saved')}</div>}

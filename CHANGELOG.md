@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.22 — 07.10.2026
+
+- **Güvenlik: sunucunun ayar dosyasına yanlışlıkla yazılan test / demo ayarları artık canlı sistemi zayıflatamaz**
+  (güvenlik denetimi AUD-13).
+  - Yalnızca test ve demo ortamı için olan dört ayar vardı (demo kipi, e-postaları göndermek yerine klasöre yazma, sahte
+    not çevirisi, çerezlerin güvenli bağlantı şartını kaldırma). Bunlardan biri sunucunun ayar dosyasında unutulursa ya da
+    bir demo dosyasından kopyalanırsa canlı sistemi sessizce zayıflatabiliyordu: e-postalar gitmez ama "gönderildi"
+    görünür, giriş sayfasında demo kutusu çıkar, notlara sahte çeviri yazılır.
+  - Artık gerçek sunucu bu dört ayarı **yok sayar** ve güvenli biçimde çalışmaya devam eder: demo kapalıdır, e-postalar
+    gerçek e-posta sunucusuyla gider, notlar gerçek sağlayıcıyla çevrilir, çerezler yalnızca güvenli bağlantıyla
+    gönderilir. Site **kapanmaz**.
+  - Böyle bir ayar bulunursa **Yönetici → Entegrasyonlar** sayfasının başında **"Ortam uyarıları"** kartı görünür: hangi
+    ayarın yok sayıldığını adıyla gösterir (değerini göstermez). Satır sunucudaki dosyadan kaldırılınca kart kaybolur.
+    Uyarı yoksa kart hiç görünmez — bugün için beklenen durum budur.
+  - Arka plan işçisi (e-postalar, FGO işleri, virüs taraması) artık uygulamayla aynı ayar denetimini yapar: aynı ayarları
+    o da yok sayar ve ayar dosyası bozuksa uygulama gibi o da başlamaz.
+  - Demo için örnek veri yükleyen betik gerçek sunucuda çalışmaz ve içinde gerçek kullanıcı ya da sipariş olan bir
+    veritabanına hiçbir koşulda yazmaz.
+  - Değişmeyenler: giriş, oturum süresi (30 dakika), e-posta, not çevirisi, virüs taraması ve tüm iş akışları — sunucunun
+    ayar dosyasında bu test ayarları yoksa hiçbir şey değişmez.
+
 ## 3.50.21 — 07.10.2026
 
 - **Güvenlik: antivirüs tarayıcısının adresi artık uygulamadan değiştirilemez; tarayıcının yanıtına güvenilmez**
