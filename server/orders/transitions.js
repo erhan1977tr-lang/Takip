@@ -60,6 +60,12 @@ export const glassWorkflow = {
   orderType: 'GLASS_ORDER',
   check({ orderType, action, actor, ctx }) {
     if (orderType !== 'GLASS_ORDER') return { ok: false, code: 'WRONG_ORDER_TYPE' };
+    // Otomatik "Yüklendi" (karar 156): yalnızca işçi (server/orders/auto-ship.js); üretimdeki, beklemede olmayan sipariş.
+    // Hiçbir rolün eylemi değildir — availableActions'ta yoktur, kullanıcıdan gelen istekle çalışmaz.
+    if (action === 'auto_shipped') {
+      const ok = actor.system === true && actor.autoShip === true && ctx.order.status === 'URETIMDE' && !ctx.order.onHold;
+      return ok ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
+    }
     const need = REQUIRES[action];
     if (!need) return { ok: false, code: 'UNKNOWN_ACTION' };
     const o = ctx.order;
@@ -251,6 +257,23 @@ function requireSalesPrices(lines) {
   if (p.length) throw new WorkflowError('SALES_PRICE_MISSING', { problems: p });
 }
 
+/**
+ * Telafi (karar 157): "farklı fiyat" kararında camın müşteri fiyatını yönetici OLAĞAN fiyat akışında belirler (fiyat onayı /
+ * teklifi güncelle). Belirlenen fiyat telafi kaydına yazılır (yalnızca fiyatı boş bekleyen kayda) ve denetim kaydına girer —
+ * uygulanan fiyat da kaynak sipariş, cam ve adetle birlikte izlenebilir olur. Ayrı bir fiyat sistemi değildir.
+ * @returns {Promise<{ compensationId: string, offerPrice: number, free: boolean }[]>}
+ */
+async function recordCompensationPrices(tx, lines) {
+  const out = [];
+  for (const l of lines) {
+    if (!l.compensationId || (l.kind ?? 'CAM') !== 'CAM' || (l.offerPrice == null && !l.free)) continue;
+    const price = l.free ? 0 : Number(l.offerPrice);
+    const r = await tx.compensation.updateMany({ where: { id: l.compensationId, offerPrice: null }, data: { offerPrice: price.toFixed(2), free: !!l.free } });
+    if (r.count) out.push({ compensationId: l.compensationId, offerPrice: price, free: !!l.free });
+  }
+  return out;
+}
+
 async function offerEdit(h, intent) {
   const { tx, order, actor, payload, now } = h;
   const offer = latestOffer(order);
@@ -294,12 +317,16 @@ async function offerEdit(h, intent) {
     // Olay notunda tutar yok: geçmişi satış da görür, müşteri fiyatını görmemeli (tutarlar denetim kaydında)
     h.event('OFFER_SENT');
     h.auto = true;
+    h.compensationPrices = await recordCompensationPrices(tx, saved);
   } else if (intent === 'return') {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
     h.event('OFFER_RETURNED', payload.returnNote);
   }
   h.sla = true;
-  h.audit = { offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}) };
+  h.audit = {
+    offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}),
+    ...(h.compensationPrices?.length ? { compensationPrices: h.compensationPrices } : {}),
+  };
 }
 
 const ACTIONS = {
@@ -350,6 +377,16 @@ const ACTIONS = {
     await h.set({ status: 'YUKLENDI', actualShipDate: h.now });
     await followCrates(h, h.now);
     h.event('SHIPPED');
+  },
+  /**
+   * Otomatik "Yüklendi" (karar 156) — yalnızca işçi. Satışın "Yüklendi" düğmesiyle AYNI durum (yeni durum yok); fark:
+   * yükleme GÜNÜ değişmez (fiili gün yazılmaz; sipariş planlanan gününde kalır), sandıklar taşınmaz ve müşteriye
+   * "yüklendi" bildirimi gitmez (olay AUTO_SHIPPED — ORDER_SHIPPED bildirim kuralına girmez).
+   */
+  async auto_shipped(h) {
+    await h.set({ status: 'YUKLENDI' });
+    h.event('AUTO_SHIPPED');
+    h.audit = { auto: true, days: h.payload.days ?? null, shipDay: h.payload.shipDay ?? null };
   },
   async archive(h) {
     await h.set({ status: 'ARSIVLENDI' });
@@ -507,7 +544,8 @@ const ACTIONS = {
     const from = prev.offerAmount != null ? Number(prev.offerAmount).toFixed(2) : Number(prev.amount).toFixed(2);
     // Olay notu yalnızca yöneticinin açıklaması (tutarlar denetim kaydında; satış müşteri fiyatını görmez)
     h.event('OFFER_UPDATED', payload.note || null);
-    h.audit = { offerId: created.id, from, offerAmount, amount, lines: lines.length };
+    const compensationPrices = await recordCompensationPrices(tx, lines);
+    h.audit = { offerId: created.id, from, offerAmount, amount, lines: lines.length, ...(compensationPrices.length ? { compensationPrices } : {}) };
   },
   async check_offer(h) {
     h.event('OFFER_CHECKED', h.order.drawings.length ? `v${h.order.drawings.length}` : null);

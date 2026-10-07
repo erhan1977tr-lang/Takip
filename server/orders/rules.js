@@ -196,6 +196,7 @@ export const EVENTS = {
   UNDO_NO_DRAWING: { customer: false },
   PRODUCTION: { customer: true },
   SHIPPED: { customer: true },
+  AUTO_SHIPPED: { customer: true },
   ARCHIVED: { customer: true },
   CANCELLED: { customer: true, note: true },
   HOLD: { customer: false },

@@ -4,6 +4,47 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.51.0 — 08.10.2026
+
+Fonksiyonel paket 1: satış paneli + telafi camı (kararlar 155–157). Veritabanı şeması değişmedi.
+
+- **Satış paneli sadeleşti** (yalnızca satışçının ekranları; yönetici ve çizim ekibi aynı).
+  - **Siparişler → "Sıra bende":** yalnızca **Yeni siparişler** ve **SLA riski / gecikenler**. "Onaylanmış çizimler" ve öteki
+    bölümler bu sekmeden kalktı; siparişler "Tüm aktif siparişler" sekmesinde durmaya devam eder.
+  - **Teklifler:** yalnızca **Fiyatımı bekleyenler** (teklif tablosu açık, teklif satışta) ve **Teklif tablosu açılmamış
+    siparişler**. Yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez.
+- **Otomatik "Yüklendi":** yükleme gününden **45 gün** geçmiş ve hâlâ "Üretimde" duran cam siparişi kendiliğinden
+  "Yüklendi" olur ve **Yüklenen ve arşiv** sekmesine geçer (saatte bir denetlenir). Yeni bir durum yoktur — satışın
+  "Yüklendi" düğmesiyle aynı durumdur; geçmişe "Yüklendi (otomatik)" yazılır. Yükleme günü ve sandıklar değişmez, müşteriye
+  ayrıca bildirim gitmez. Beklemedeki, teklifi / çizimi bitmemiş ve ileri güne aktarılmış camı bekleyen sipariş kapanmaz.
+  - **Dikkat:** yayından sonraki ilk saatte, yükleme günü 45 günden eski olup hâlâ "Üretimde" duran bütün siparişler bu
+    sekmeye geçer. Kapanan siparişte (elle "Yüklendi" denmiş gibi) yükleme tarihi ve teklif değiştirilemez.
+- **Telafi camı — kaynak adedi:** telafi açılınca ana siparişte o camın adedi telafi adedi kadar **düşer**
+  (20 cam → 3 telafi → ana siparişte 17). Adet, m² ve tutar iki siparişte iki kez sayılmaz. Ana siparişin müşterideki teklifi
+  yeni sürümle güncellenir (eski sürüm durur).
+  - Bu yalnızca **yüklenmemiş ve belgesiz** siparişte yapılır. Yüklemesi onaylanmış, FGO belgesi olan ya da kapanmış
+    siparişten açılan telafide ana sipariş değişmez (telafi eskisi gibi ek üretimdir) — ekran bunu kayıttan önce ve sonra söyler.
+  - Siparişin bütün camı için telafi açılamaz (ana siparişte en az bir cam kalmalıdır).
+- **Telafi camı — işlemler:** telafi edilen camın CNC / delik işlemleri telafi camına **taşınır**; taşınan işlemlerin
+  **müşteri fiyatı her durumda 0**'dır (fabrika maliyeti durur). Teklif tablosundaki olağan "+" değişmedi: yalnızca cam
+  cinsini çoğaltır, işlem kopyalamaz.
+- **Telafi camı — fiyat:** satışın üç seçeneği vardır ve hiçbirinde fiyat giremez (müşteri fiyatı tutarını da görmez):
+  - **Bedelsiz** — cam 0; teklif doğrudan müşterinin paneline gider, yönetici yeniden fiyatlandırmaz. Bedelsiz telafi
+    proformaya, faturaya ve FGO'ya gitmez.
+  - **Aynı fiyat** — yöneticinin kaynak siparişte verdiği müşteri fiyatı kendiliğinden kullanılır; teklif doğrudan müşteriye
+    gider, yönetici yeniden fiyatlandırmaz.
+  - **Farklı fiyat** — fiyatı yönetici belirler; telafi yöneticinin fiyatlandırmasına gider ve fiyatlandırılmadan müşteriye
+    gitmez (yeni telafi siparişi fiyat onayı sırasına düşer; teklifi müşteride olan siparişte yönetici onayı bekler).
+- **Yönetici — Önemli kararlar ve bildirim:** her telafi "Önemli kararlar"da bir kayıt olarak görünür (karar, önceki →
+  uygulanan müşteri fiyatı, hedef sipariş, ana siparişte kalan adet) ve yöneticiye bir uygulama içi bildirim düşer
+  (yinelenmez).
+- **Hareketler / denetim kaydı:** işlemi yapan, kaynak sipariş ve cam satırı, telafi, adet, karar (bedelsiz / aynı fiyat /
+  farklı fiyat), önceki ve uygulanan fiyat ve zaman kayıtlıdır; yöneticinin sonradan belirlediği fiyat da kayda geçer.
+- **Yetki:** telafi açma ve fiyat kararını seçme satış ve yöneticide; fiyat belirleme yalnızca yöneticide. Müşteri, çizim
+  ve denetimci telafi açamaz, fiyat kararını değiştiremez (sunucuda denetlenir).
+- **Değişmeyen:** satış ve çizim için firma adı maskesi (ilk 3 karakter + 10 yıldız), iki kademeli fiyat, olağan teklif
+  akışı (satış → yönetici fiyatı → müşteri), fatura / proforma kuralları. FGO'ya hiçbir istek atılmadı.
+
 ## 3.50.24 — 07.10.2026
 
 - **Alan adı taşıması: eski adres yeni adrese kalıcı olarak yönlenir.** Uygulamanın adresi artık

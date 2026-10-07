@@ -44,10 +44,25 @@ export async function createCompensationAction(formData: FormData) {
   });
   if (r.ok) {
     refresh(id, r.destOrderId);
-    const kind = r.duplicate ? 'duplicate' : r.status === 'PENDING' ? 'pending' : 'created';
-    redirect(`/siparisler/${id}?telafiOk=${kind}&hedef=${encodeURIComponent(r.destOrderNo)}#kararlar`);
+    // Sonuç metni (karar 157): bekleyen karar · yeni telafi siparişi (teklifi müşteride / yöneticinin fiyatlandırmasında) ·
+    // hedefin müşterideki teklifinin yeni sürümü · hedefin henüz gönderilmemiş teklifine eklendi
+    const kind = r.duplicate ? 'duplicate' : r.status === 'PENDING' ? 'pending'
+      : r.via === 'NEW' ? (r.direct ? 'sent' : 'pricing') : r.via === 'SENT' ? 'updated' : 'created';
+    redirect(`/siparisler/${id}?telafiOk=${kind}&hedef=${encodeURIComponent(r.destOrderNo)}${sourceQuery(r.source, r.status === 'PENDING')}#kararlar`);
   }
   redirect(back(r.code));
+}
+
+/**
+ * Kaynak adedinin sonucu, sayfadaki bilgi satırı için (karar 157): düştüyse önce / kalan; düşmediyse nedeni (kod);
+ * karar yöneticinin onayını bekliyorsa ve kaynak temizse "onayla birlikte düşer". Sayfa bu değerleri yalnızca bilinen
+ * kod / rakam olarak okur (adres çubuğundan gelen serbest metin ekrana yazılmaz).
+ */
+function sourceQuery(s: { reduced: boolean; reason: string | null; before: number | null; after: number | null } | undefined, pending = false) {
+  if (!s) return '';
+  if (s.reduced) return `&kaynak=dustu&once=${Number(s.before)}&kalan=${Number(s.after)}`;
+  if (s.reason) return `&kaynak=${encodeURIComponent(s.reason)}`;
+  return pending ? '&kaynak=PENDING' : '';
 }
 
 /** Yönetici: satışın onay bekleyen telafisini onaylar (teklifin yeni sürümü müşteriye gider) ya da reddeder. */
@@ -60,8 +75,8 @@ export async function decideCompensationAction(formData: FormData) {
     note: text(formData, 'note') || null, actor: await actorOf(user),
   });
   if (r.ok) {
-    refresh(id, r.destOrderId);
-    redirect(`/siparisler/${id}?telafiOk=${approve ? 'applied' : 'rejected'}#kararlar`);
+    refresh(id, r.destOrderId, r.sourceOrderId);
+    redirect(`/siparisler/${id}?telafiOk=${approve ? 'applied' : 'rejected'}${approve ? sourceQuery(r.source) : ''}#kararlar`);
   }
   redirect(`/siparisler/${id}?telafiHata=${r.code}#kararlar`);
 }

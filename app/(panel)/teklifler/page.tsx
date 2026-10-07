@@ -9,6 +9,7 @@ import { fmtDate, fmtMoney } from '@/lib/format';
 import { Badge, CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { CLOSED } from '@/server/orders/rules.js';
+import { salesOfferGroups } from '@/server/orders/queues.js';
 
 const include = {
   customer: { select: { name: true } },
@@ -77,26 +78,34 @@ const GROUPS: { status: OfferStatus; title: MsgKey; empty: MsgKey }[] = [
 
 async function InternalOffers({ user }: { user: CurrentUser }) {
   const { t } = await getT();
+  // Yönetici satış tutarı ile müşteri tutarını yan yana görür (karar 4); satış yalnızca kendi tutarını
+  const admin = userCan(user, 'OFFER_SEND');
   const orders = sanitizeRows(user, await db.order.findMany({
-    // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
-    where: { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } },
+    where: admin
+      // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
+      ? { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } }
+      // Satış (karar 155): teklif tablosu henüz açılmamış siparişler de listelenir (karar bekleyen ve teklifsiz siparişler)
+      : { ...orderScope(user), status: { notIn: CLOSED as OrderStatus[] } },
     include,
     orderBy: [{ estimatedShipDate: 'asc' }, { createdAt: 'asc' }],
     take: 500,
   }));
-  const latest = (o: Row) => o.offers[0];
-  // Yönetici satış tutarı ile müşteri tutarını yan yana görür (karar 4); satış yalnızca kendi tutarını
-  const admin = userCan(user, 'OFFER_SEND');
+  const latest = (o: Row) => o.offers[0] as Row['offers'][number] | undefined;
+  // Yönetici: son teklifin durumuna göre üç grup. Satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu
+  // açılmamış siparişler" — yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez.
+  const groups: { key: string; title: MsgKey; empty: MsgKey; rows: Row[] }[] = admin
+    ? GROUPS.map((g) => ({ key: g.status, title: g.title, empty: g.empty, rows: orders.filter((o) => latest(o)?.status === g.status) }))
+    : salesOfferGroups(orders).map((g) => ({ key: g.key, title: `offers.groups.${g.key}.title` as MsgKey, empty: `offers.groups.${g.key}.empty` as MsgKey, rows: g.rows }));
   return (
     <>
       <div className="page-head">
         <h1>{t('offers.internal.title')}</h1>
-        <p className="muted">{t('offers.internal.intro')}</p>
+        <p className="muted">{t(admin ? 'offers.internal.intro' : 'offers.internal.introSales')}</p>
       </div>
-      {GROUPS.map((g) => {
-        const rows = orders.filter((o) => latest(o)?.status === g.status);
+      {groups.map((g) => {
+        const rows = g.rows;
         return (
-          <div key={g.status} className="card card-flush">
+          <div key={g.key} className="card card-flush" data-group={g.key}>
             <div className="card-head"><h2>{t(g.title)} <span className="badge">{rows.length}</span></h2></div>
             {rows.length === 0 ? <div className="empty">{t(g.empty)}</div> : (
               <div className="table-wrap">
@@ -109,18 +118,18 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
                   </thead>
                   <tbody>
                     {rows.map((o) => {
-                      const of = latest(o)!;
+                      const of = latest(o);
                       return (
                         <tr key={o.id}>
                           <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
                           <td className="mono">{customerLabel(user, o.customer.name)}</td>
                           <td>{o.profile && o.status !== 'IPTAL' ? <><Badge tone="purple">{t('profile.type')}</Badge> {profileStageText(t, o.profile.stage)}</> : <OrderBadge status={o.status} onHold={o.onHold} />}</td>
-                          <td><OfferBadge status={of.status} /></td>
-                          <td className="num">{of._count.lines}</td>
+                          <td>{of ? <OfferBadge status={of.status} /> : <span className="muted">—</span>}</td>
+                          <td className="num">{of ? of._count.lines : <span className="muted">—</span>}</td>
                           <td>{fmtDate(o.estimatedShipDate)}</td>
-                          <td className="num">{fmtMoney(of.amount.toString(), of.currency)}</td>
-                          {admin && <td className="num">{of.offerAmount != null ? <b>{fmtMoney(of.offerAmount.toString(), of.currency)}</b> : <span className="muted">—</span>}</td>}
-                          <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('common.open')}</Link></td>
+                          <td className="num">{of ? fmtMoney(of.amount.toString(), of.currency) : <span className="muted">—</span>}</td>
+                          {admin && <td className="num">{of?.offerAmount != null ? <b>{fmtMoney(of.offerAmount.toString(), of.currency)}</b> : <span className="muted">—</span>}</td>}
+                          <td className="actions"><Link href={`/siparisler/${o.id}${of ? '#teklif' : ''}`} className="btn">{t('common.open')}</Link></td>
                         </tr>
                       );
                     })}

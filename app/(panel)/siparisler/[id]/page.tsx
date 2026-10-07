@@ -231,6 +231,14 @@ export default async function OrderPage({
   const compError = sp.telafiHata ? compErrors[sp.telafiHata as keyof typeof compErrors] ?? compErrors.BAD_REQUEST : null;
   const compOks = m.compensation.ok;
   const compOk = sp.telafiOk && Object.hasOwn(compOks, sp.telafiOk) ? t(`compensation.ok.${sp.telafiOk}` as MsgKey, { order: sp.hedef ?? '' }) : null;
+  // Kaynak adedinin sonucu (karar 157): adres çubuğundan yalnızca bilinen kod ve rakam okunur (serbest metin ekrana yazılmaz)
+  const srcKept = m.compensation.sourceResult.kept;
+  const digits = (v: string | undefined) => (v != null && /^\d{1,6}$/.test(v) ? Number(v) : null);
+  const srcBefore = digits(sp.once);
+  const srcAfter = digits(sp.kalan);
+  const compSource = !compOk ? null
+    : sp.kaynak === 'dustu' && srcBefore != null && srcAfter != null ? { warn: false, text: t('compensation.sourceResult.reduced', { before: srcBefore, after: srcAfter }) }
+      : sp.kaynak && Object.hasOwn(srcKept, sp.kaynak) ? { warn: sp.kaynak !== 'PENDING', text: srcKept[sp.kaynak as keyof typeof srcKept] } : null;
 
   return (
     <>
@@ -254,6 +262,7 @@ export default async function OrderPage({
 
       {ok && <div className="alert alert-ok">{ok}</div>}
       {compOk && <div className="alert alert-ok">{compOk}</div>}
+      {compSource && <div className={`alert ${compSource.warn ? 'alert-warn' : 'alert-info'}`} data-comp-source={sp.kaynak}>{compSource.text}</div>}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
 
       {!drawerView && <div className="card">
@@ -648,8 +657,9 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
 /**
  * Sipariş sayfasındaki "Önemli kararlar" kartı (karar 108): bu siparişin kaynağı ya da hedefi olduğu telafi kararlarının
  * kısa geçmişi ve "Kırık / Telafi Camı Oluştur" düğmesi (teklif satırındaki düğmeyle AYNI formu açar — ikinci bir telafi
- * mantığı yoktur). Veriler role göre temizlenmiştir (lib/compensation.ts): satış müşteri fiyatını görmez. Satışın, teklifi
- * müşteride olan siparişe eklediği telafi yöneticinin onayını bekler; onay / ret burada verilir (yalnızca yönetici).
+ * mantığı yoktur). Veriler role göre temizlenmiştir (lib/compensation.ts): satış müşteri fiyatını görmez — yalnızca kararın
+ * türünü (bedelsiz / aynı fiyat / farklı fiyat). Satışın "farklı fiyat" kararı, hedef siparişin teklifi müşterideyse
+ * yöneticinin onayını bekler; onay / ret burada verilir (yalnızca yönetici) — karar 157.
  */
 function Decisions({ order, user, comps, createHref, error, t, locale }: { order: OrderDetail; user: CurrentUser; comps: CompEntry[]; createHref: string | null; error: string | null; t: T; locale: 'tr' | 'ro' }) {
   const admin = userCan(user, 'OFFER_SEND');
@@ -676,8 +686,8 @@ function Decisions({ order, user, comps, createHref, error, t, locale }: { order
               <span className="badge badge-warn">{t('compensation.badge')}</span>
               <b>{t('compensation.decisions.qty', { qty: c.quantity })}</b>
               {c.status !== 'APPLIED' && <span className={`badge ${c.status === 'PENDING' ? 'badge-danger' : 'badge-muted'}`}>{t(`compensation.decisions.status.${c.status}` as MsgKey)}</span>}
-              {/* Önemli karar: bedelsiz telafi ya da yöneticinin yeni müşteri fiyatı; aynı fiyatta işaret yok (fiyat değişmedi) */}
-              {c.mode !== 'NORMAL' && <span className="badge badge-info">{t(`compensation.decisions.flag.${c.mode === 'FREE' ? 'FREE' : 'CUSTOM'}` as MsgKey)}</span>}
+              {/* Fiyat kararı her telafide görünür: bedelsiz / aynı fiyat / farklı fiyat (tutar taşımaz — satış da görür) */}
+              <span className="badge badge-info" data-comp-mode={c.mode}>{t(`compensation.decisions.flag.${c.free ? 'FREE' : c.mode}` as MsgKey)}</span>
             </div>
             <div className="small">
               {c.sourceOrder.id !== order.id && <><Link href={`/siparisler/${c.sourceOrder.id}#kararlar`}>{t('compensation.decisions.sourceOrder', { order: c.sourceOrder.orderNo })}</Link> · </>}
@@ -688,9 +698,9 @@ function Decisions({ order, user, comps, createHref, error, t, locale }: { order
                 <>
                   {t(customerTier ? 'compensation.decisions.normalCustomer' : 'compensation.decisions.normalSales', { price: price(c.normal, c.currency) })}{' · '}
                   <b>{t(customerTier ? 'compensation.decisions.priceCustomer' : 'compensation.decisions.priceSales', { price: price(c.price, c.currency) })}</b>
-                  {c.needsPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}
+                  {c.awaitingPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}
                 </>
-              ) : t('compensation.decisions.modeOnly', { mode: t(`compensation.decisions.mode.${c.mode}` as MsgKey) })}
+              ) : <>{t('compensation.decisions.modeOnly', { mode: t(`compensation.decisions.mode.${c.mode}` as MsgKey) })}{c.awaitingPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}</>}
             </div>
             {destText && (
               <div className="small">

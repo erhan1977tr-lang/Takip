@@ -50,6 +50,16 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await sales.getByRole('button', { name: /Sandık parası/ }).click();
   await expect(desc.nth(2)).toHaveValue('Sandık parası');
 
+  // Olağan "+" yalnızca cam cinsini çoğaltır (fonksiyonel paket 1): CNC'li camın "+"ı yeni satıra işlemi KOPYALAMAZ; ölçü
+  // de taşımaz. İşlemleriyle birlikte kopyalayan ayrı düğme "+ aynısı"dır; telafi camındaki "işlemleri taşı" kuralı da ayrıdır.
+  await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).nth(1).click();
+  await expect(desc).toHaveCount(4);
+  await expect(desc.nth(2)).toHaveValue(GLASS); // CNC'li camın (ve CNC satırının) hemen altında, sandık parasından önce
+  await expect(desc.nth(3)).toHaveValue('Sandık parası');
+  await expect(sales.getByLabel('CNC fiyatı')).toHaveCount(1);
+  await expect(sales.locator('.offer-table tr.sub-line')).toHaveCount(1);
+  await expect(sales.getByLabel('En', { exact: true }).nth(2)).toHaveValue('');
+
   // "Tabloyu temizle" (onaylı): tablo siparişteki ilk hâline döner; kaydedilmedikçe hiçbir şey yazılmaz
   await sales.getByRole('button', { name: 'Tabloyu temizle' }).click();
   await expect(desc).toHaveCount(1);

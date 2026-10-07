@@ -22,6 +22,7 @@ export default {
   internal: {
     title: 'Oferte',
     intro: 'Oferte în pregătire, în așteptarea aprobării administratorului și trimise clienților.',
+    introSales: 'Ofertele care așteaptă prețul dvs. și comenzile al căror tabel de ofertă nu a fost încă deschis.',
     cols: {
       offer: 'Ofertă',
       customer: 'Client',
@@ -38,5 +39,8 @@ export default {
     sales: { title: 'În pregătire la vânzări', empty: 'Nu există oferte în pregătire.' },
     admin: { title: 'La aprobarea administratorului', empty: 'Nicio ofertă nu așteaptă aprobarea.' },
     customer: { title: 'La client', empty: 'Nu există oferte active trimise clienților.' },
+    // Satışın sayfası (karar 155): yalnızca bu iki liste
+    awaitingPrice: { title: 'Așteaptă prețul meu', empty: 'Nicio ofertă nu așteaptă prețul dvs.' },
+    notOpened: { title: 'Comenzi fără tabel de ofertă deschis', empty: 'Nu există comenzi fără tabel de ofertă deschis.' },
   },
 };

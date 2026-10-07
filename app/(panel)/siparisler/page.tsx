@@ -361,8 +361,9 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
               );
             }
             if (q.key === 'approvedDrawings') {
-              // Onaylanmış çizimler (çizim ekibi, satış, yönetici): yükleme gününe göre süzülür ve gruplanır; grup içinde
-              // onay zamanına göre en yeni / en eski. Satırlar bu kullanıcı için zaten temizlenmiş (maskeli firma adı).
+              // Onaylanmış çizimler (çizim ekibi ve yönetici; satışın "Sıra bende"sinde yok — karar 155): yükleme gününe göre
+              // süzülür ve gruplanır; grup içinde onay zamanına göre en yeni / en eski. Satırlar bu kullanıcı için zaten
+              // temizlenmiş (çizim ekibinde maskeli firma adı).
               const oldest = sp.onay === 'eski';
               const list = approvedDrawingList(q.rows, { day: sp.yukleme, oldest, dayOf: isoDay });
               const href = (old: boolean) => here({ onay: old ? 'eski' : undefined, yukleme: list.day ?? undefined }, '#onayli-cizimler');

@@ -17,16 +17,18 @@ function Submit({ disabled, children }: { disabled: boolean; children: React.Rea
 }
 
 /**
- * Kırık / telafi camı formu (karar 108) — teklif tablosunun altında tek, kısa bir kart: cam → adet → fiyat → hedef → özet
- * ve açık onay. Teklif satırındaki "Kırık / Telafi" (cam önceden seçili gelir) ve "Önemli kararlar"daki düğme (cam burada
- * seçilir) aynı formu açar. Buradaki denetimler yalnızca kolaylıktır; her şey sunucuda yeniden doğrulanır.
+ * Kırık / telafi camı formu (karar 108, 157) — teklif tablosunun altında tek, kısa bir kart: cam → adet → fiyat → hedef →
+ * özet ve açık onay. Teklif satırındaki "Kırık / Telafi" (cam önceden seçili gelir) ve "Önemli kararlar"daki düğme (cam
+ * burada seçilir) aynı formu açar. Buradaki denetimler yalnızca kolaylıktır; her şey sunucuda yeniden doğrulanır.
+ *   Fiyat: Bedelsiz · Aynı fiyat · Farklı fiyat — üçünü satış da seçer; satışın formunda FİYAT ALANI YOKTUR (farklı fiyatı
+ *   yönetici belirler) ve hiçbir müşteri fiyatı tutarı gösterilmez (iki kademeli fiyat, karar 4).
  */
 export function CompensationForm({ data, preselect, history, error, cancelHref, locale, intl, m, kinds }: {
   data: CompFormData;
   /** Satırdan gelindiyse seçili cam satırı */
   preselect: string | null;
   /** Kaynak siparişin önceki telafileri (aynı satır için olanlar formda gösterilir) */
-  history: Pick<CompEntry, 'id' | 'sourceLineId' | 'quantity' | 'day' | 'status' | 'destOrder' | 'createdAt'>[];
+  history: Pick<CompEntry, 'id' | 'sourceLineId' | 'glass' | 'enMm' | 'boyMm' | 'quantity' | 'day' | 'status' | 'destOrder' | 'createdAt'>[];
   error: string | null;
   cancelHref: string;
   locale: 'tr' | 'ro';
@@ -41,8 +43,8 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const [lineId, setLineId] = useState(() => (preselect && pickable(preselect) ? preselect : data.lines.length === 1 && pickable(data.lines[0].id) ? data.lines[0].id : ''));
   const [qty, setQty] = useState('1');
   const [item, setItem] = useState('');
-  // Fiyat (karar 112): satış → aynı fiyat ya da bedelsiz; başka müşteri fiyatını yalnızca yönetici belirler
-  const modes = data.admin ? (['NORMAL', 'FREE', 'CUSTOM'] as const) : (['NORMAL', 'FREE'] as const);
+  // Fiyat kararı (karar 157): üç seçenek herkese açık; farklı fiyatın tutarını yalnızca yönetici girer
+  const modes = ['FREE', 'NORMAL', 'CUSTOM'] as const;
   const [mode, setMode] = useState<'NORMAL' | 'FREE' | 'CUSTOM'>('NORMAL');
   const [price, setPrice] = useState('');
   const [destType, setDestType] = useState<'' | 'EXISTING' | 'NEW'>('');
@@ -57,19 +59,30 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const n = Number(qty);
   const qtyOk = !!line && Number.isInteger(n) && n >= 1 && n <= max;
   const p = Number(price.replace(',', '.'));
-  const priceOk = mode !== 'CUSTOM' || (price.trim() !== '' && Number.isFinite(p) && p > 0);
+  // Farklı fiyat: yönetici pozitif bir fiyat girer; satış fiyat GİRMEZ (alan yoktur) — fiyatı yönetici belirler
+  const adminPrice = data.admin && mode === 'CUSTOM';
+  const priceOk = !adminPrice || (price.trim() !== '' && Number.isFinite(p) && p > 0);
   const dest = data.destinations.find((d) => d.id === destId) ?? null;
   const destOk = destType === 'NEW' ? day >= data.minDay : destType === 'EXISTING' ? !!dest && !dest.reason : false;
-  const ready = qtyOk && priceOk && destOk;
-  // Satış, teklifi müşteride olan siparişe eklerse karar yöneticinin onayını bekler
-  const pending = destType === 'EXISTING' && dest?.via === 'SENT' && !data.admin;
-  const past = line ? history.filter((h) => h.sourceLineId === line.id && h.status !== 'REJECTED') : [];
+  // Kaynak adedi (karar 157): temiz siparişte telafi adedi kadar düşer; kaynakta başka cam kalmıyorsa telafi açılmaz
+  const left = line && qtyOk ? line.adet - n : null;
+  const emptySource = data.source.reducible && left === 0 && data.lines.length === 1;
+  const ready = qtyOk && priceOk && destOk && !emptySource;
+  // Satışın "farklı fiyat" kararı, teklifi müşteride olan siparişte yöneticinin onayını bekler
+  const waitsAdmin = (via: 'DRAFT' | 'SENT' | null | undefined) => via === 'SENT' && !data.admin && mode === 'CUSTOM';
+  const pending = destType === 'EXISTING' && waitsAdmin(dest?.via);
+  // Teklifin yolu: taslağa eklenir · yöneticinin fiyatlandırmasına gider · doğrudan müşteriye gider
+  const flow = destType === 'EXISTING' && dest?.via === 'DRAFT' ? f.flow.draft
+    : mode !== 'CUSTOM' ? f.flow.direct
+      : data.admin && destType === 'EXISTING' ? f.flow.adminSent : f.flow.pricing;
+  // Önceki telafiler: aynı satır ya da — kaynak adedi düşünce teklifin yeni sürümü açıldığı için — aynı cam ve ölçü
+  const past = line ? history.filter((h) => h.status !== 'REJECTED' && (h.sourceLineId === line.id || (h.glass === line.glass && h.enMm === line.enMm && h.boyMm === line.boyMm))) : [];
   const eligible = data.destinations.filter((d) => !d.reason);
   const change = () => setSure(false);
 
   // Satışa müşteri fiyatının tutarı gelmez (normal = null): "yöneticinin belirlediği fiyat" yazılır
   const normalText = !line ? '—' : line.free ? m.free : line.normal == null ? f.adminPrice : perM2(line.normal);
-  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (priceOk ? perM2(p) : '—') : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
+  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (!data.admin ? f.sumPriceAdmin : priceOk ? perM2(p) : '—') : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
   const opsText = (l: { ops: { kind: string; adet: number; description: string }[] }) =>
     l.ops.map((o) => `${interpolate(f.opsItem, { kind: kinds[o.kind as keyof typeof kinds] ?? o.kind, n: o.adet })}${o.description ? ` (${o.description})` : ''}`).join(', ');
 
@@ -80,6 +93,8 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
         <Link href={cancelHref} className="btn">{f.cancel}</Link>
       </div>
       <p className="muted small">{f.intro}</p>
+      {/* Kaynak yüklenmiş / belgeli / kapalı: adedi düşmez, telafi ek üretimdir (karar 157) — form açılır açılmaz görünür */}
+      {!data.source.reducible && data.source.reason && <div className="alert alert-warn" data-source-kept={data.source.reason}>{f.sourceKept[data.source.reason]}</div>}
       {error && <div className="alert alert-error">{error}</div>}
       <form action={createCompensationAction}>
         <input type="hidden" name="id" value={data.orderId} />
@@ -139,13 +154,13 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                 </span>
               </label>
             ))}
-            {mode === 'CUSTOM' && (
+            {/* Fiyat alanı yalnızca yöneticide: satışın formunda müşteri fiyatı girilemez */}
+            {adminPrice && (
               <input name="price" inputMode="decimal" required aria-label={interpolate(f.customLabel, { cur: data.currency })} placeholder={interpolate(f.customLabel, { cur: data.currency })}
                 value={price} onChange={(e) => { setPrice(e.target.value); change(); }} style={{ width: 200 }} />
             )}
           </div>
-          {mode === 'FREE' && <p className="hint">{f.freeHint}</p>}
-          {!data.admin && <p className="hint">{f.salesCustomHint}</p>}
+          <p className="hint" data-mode-hint={mode}>{mode === 'FREE' ? f.freeHint : mode === 'NORMAL' ? f.keepHint : data.admin ? f.adminCustomHint : f.salesCustomHint}</p>
         </fieldset>
 
         <fieldset className="field comp-choice">
@@ -161,7 +176,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                   <option key={d.id} value={d.id} disabled={!!d.reason}>
                     {d.reason
                       ? interpolate(f.destBlocked, { order: d.orderNo, date: dmy(d.day), reason: f.destReason[d.reason as keyof typeof f.destReason] ?? d.reason })
-                      : interpolate(d.via === 'SENT' && !data.admin ? f.destPending : f.destOption, { order: d.orderNo, date: dmy(d.day) })}
+                      : interpolate(waitsAdmin(d.via) ? f.destPending : f.destOption, { order: d.orderNo, date: dmy(d.day) })}
                   </option>
                 ))}
               </select>
@@ -185,10 +200,15 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                 <tr><td>{f.sumSource}</td><td className="mono">{data.orderNo}</td></tr>
                 <tr><td>{f.sumGlass}</td><td>{glassOf(line)} · {line.enMm}×{line.boyMm}</td></tr>
                 <tr><td>{f.sumQty}</td><td>{n}</td></tr>
+                {data.source.reducible && left != null && (
+                  <tr data-sum="kaynak"><td>{f.sumSourceQty}</td><td><b>{interpolate(f.sumSourceQtyValue, { before: line.adet, after: left })}</b></td></tr>
+                )}
+                {line.ops.length > 0 && <tr data-sum="islem"><td>{f.sumOps}</td><td>{interpolate(f.sumOpsValue, { list: opsText(line) })}</td></tr>}
                 <tr><td>{f.sumNormal}</td><td>{normalText}</td></tr>
                 <tr><td>{f.sumPrice}</td><td><b>{priceText}</b></td></tr>
                 <tr><td>{f.sumDest}</td><td>{destType === 'NEW' ? `${f.sumDestNew} (${data.nextNo})` : dest?.orderNo}</td></tr>
                 <tr><td>{f.sumDay}</td><td>{dmy(destType === 'NEW' ? day : dest?.day ?? '')}</td></tr>
+                {!pending && <tr data-sum="akis"><td>{f.sumFlow}</td><td>{flow}</td></tr>}
               </tbody>
             </table>
             {pending && <div className="alert alert-info">{f.sumPending}</div>}
@@ -197,6 +217,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
             </label>
           </div>
         )}
+        {emptySource && <div className="alert alert-error">{m.errors.SOURCE_EMPTY}</div>}
         <div className="row end" style={{ marginTop: 12 }}>
           <Submit disabled={!ready || !sure}>{f.submit}</Submit>
         </div>

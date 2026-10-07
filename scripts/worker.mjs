@@ -10,6 +10,8 @@
 //   - Oturum temizliği: süresi dolmuş / boşta kalmış oturum satırları saatte bir silinir (server/auth/session-policy.js).
 //   - "Fatura bekliyor" (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam, ayardaki gün dolunca muhasebe yetkisine
 //     saatte bir denetlenip kapsam başına bir kez bildirilir (server/accounting/uninvoiced.js). FGO'ya istek atılmaz.
+//   - Otomatik "Yüklendi" (karar 156): yükleme gününden 45 gün geçmiş, hâlâ üretimde duran cam siparişi saatte bir
+//     denetlenip mevcut durum geçişiyle "Yüklendi" yapılır (server/orders/auto-ship.js). Yalnızca veritabanı.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -27,6 +29,7 @@ import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
+import { AUTO_SHIP_EVERY_MS, autoShipOrders } from '../server/orders/auto-ship.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -128,6 +131,17 @@ async function uninvoicedTick() {
   if (r.created) log('fatura bekliyor:', JSON.stringify(r));
 }
 
+// Saatte bir: yükleme gününden 45 gün geçmiş, hâlâ üretimde duran cam siparişleri "Yüklendi" olur (karar 156).
+// Yalnızca veritabanı (dış istek yok); her sipariş iş akışı servisinden geçer (geçmiş + denetim kaydı).
+let autoShippedAt = 0;
+async function autoShipTick() {
+  if (once) return; // --once (testler): kural test/db/auto-ship.test.js'te doğrudan denenir
+  if (Date.now() - autoShippedAt < AUTO_SHIP_EVERY_MS) return;
+  autoShippedAt = Date.now();
+  const r = await autoShipOrders(db, { now: new Date(), log });
+  if (r.shipped || r.skipped) log('otomatik yüklendi:', JSON.stringify(r));
+}
+
 async function tick() {
   const settings = await getAvSettings(db);
   const r = await scanPending(db, settings, { log });
@@ -162,6 +176,11 @@ while (!stopping) {
     await uninvoicedTick();
   } catch (e) {
     log('fatura bekliyor hatası:', e?.message ?? e);
+  }
+  try {
+    await autoShipTick();
+  } catch (e) {
+    log('otomatik yüklendi hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

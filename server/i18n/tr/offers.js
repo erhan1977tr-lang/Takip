@@ -22,6 +22,7 @@ export default {
   internal: {
     title: 'Teklifler',
     intro: 'Hazırlanan, yönetimde bekleyen ve müşteriye gönderilmiş teklifler.',
+    introSales: 'Fiyatınızı bekleyen teklifler ve teklif tablosu henüz açılmamış siparişler.',
     cols: {
       offer: 'Teklif',
       customer: 'Müşteri',
@@ -38,5 +39,8 @@ export default {
     sales: { title: 'Satışta hazırlananlar', empty: 'Hazırlanan teklif yok.' },
     admin: { title: 'Yönetici onayında', empty: 'Onay bekleyen teklif yok.' },
     customer: { title: 'Müşteride', empty: 'Müşteriye gönderilmiş aktif teklif yok.' },
+    // Satışın sayfası (karar 155): yalnızca bu iki liste
+    awaitingPrice: { title: 'Fiyatımı bekleyenler', empty: 'Fiyatınızı bekleyen teklif yok.' },
+    notOpened: { title: 'Teklif tablosu açılmamış siparişler', empty: 'Teklif tablosu açılmamış sipariş yok.' },
   },
 };

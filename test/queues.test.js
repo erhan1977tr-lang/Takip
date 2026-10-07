@@ -1,7 +1,7 @@
 // "Sıra bende" kuyrukları: rol yetkisine göre bölümler; profil siparişleri satış/çizim kuyruklarına düşmez (Aşama 3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { approvedDrawingList, queuesFor } from '../server/orders/queues.js';
+import { SALES_QUEUES, approvedDrawingList, queuesFor, salesOfferGroups } from '../server/orders/queues.js';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
 const h = (n) => new Date(NOW + n * 3_600_000);
@@ -26,15 +26,34 @@ const rows = {
 };
 const all = Object.values(rows);
 
-test('kuyruk: satış — yeni, teklif hazırlanacak, müşteri onayında, üretimde, SLA, beklemede', () => {
+test('kuyruk: satış (karar 155) — "Sıra bende"de yalnızca yeni siparişler ve SLA riski / gecikenler', () => {
   const q = queuesFor(all, { review: true, send: false, drawing: false }, NOW);
-  assert.deepEqual(keys(q), ['newOrders', 'offersToPrepare', 'atCustomer', 'approvedDrawings', 'production', 'sla', 'held']);
+  assert.deepEqual(keys(q), ['newOrders', 'sla']);
+  assert.deepEqual(keys(q), SALES_QUEUES);
   assert.deepEqual(ids(q, 'newOrders'), [rows.yeni.id]);
-  assert.deepEqual(ids(q, 'offersToPrepare'), [rows.teklifYok.id, rows.teklifSatista.id]);
-  assert.deepEqual(ids(q, 'atCustomer'), [rows.musteride.id]);
-  assert.deepEqual(ids(q, 'production'), [rows.uretim.id]);
   assert.deepEqual(ids(q, 'sla'), [rows.yeni.id], 'beklemedeki ve profil siparişi SLA listesinde yok');
-  assert.deepEqual(ids(q, 'held'), [rows.beklemede.id]);
+  // Onaylanmış çizimler, teklif hazırlanacaklar, müşteri onayındakiler, üretimdekiler ve beklemedekiler satışın bu
+  // bölümünde yok (siparişler "Tüm aktif siparişler" sekmesinde durur; teklif işleri Teklifler sayfasında)
+  const approved = row({ drawingTrack: 'ONAYLANDI' });
+  const s = queuesFor([...all, approved], { review: true, send: false, drawing: false, userId: 'satis' }, NOW);
+  for (const k of ['approvedDrawings', 'offersToPrepare', 'atCustomer', 'production', 'held', 'priceApproval', 'drawingJobs']) assert.equal(ids(s, k), null, k);
+  // Yönetici ve çizim ekibinin bölümleri değişmedi
+  assert.deepEqual(keys(queuesFor(all, { review: true, send: true, drawing: true }, NOW)).slice(0, 7),
+    ['newOrders', 'offersToPrepare', 'priceApproval', 'offerCheck', 'atCustomer', 'approvedDrawings', 'production']);
+});
+
+test('teklifler, satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler"', () => {
+  const undone = row({ status: 'YENI', offers: [{ status: 'HAZIRLANIYOR' }] }); // karar geri alındı: taslak duruyor, tablo açık değil
+  const closed = ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'].map((status) => row({ status, offers: [{ status: 'HAZIRLANIYOR' }] }));
+  const g = salesOfferGroups([...all, undone, ...closed]);
+  assert.deepEqual(keys(g), ['awaitingPrice', 'notOpened']);
+  assert.deepEqual(ids(g, 'awaitingPrice'), [rows.teklifSatista.id], 'yalnızca teklifi satışta olan (tablosu açık) sipariş');
+  assert.deepEqual(ids(g, 'notOpened'), [rows.yeni.id, rows.teklifYok.id, rows.beklemede.id, undone.id], 'karar bekleyen ve teklifsiz siparişler');
+  // Yönetici onayındaki ve müşterideki teklifler, profil siparişleri ve kapanmış siparişler iki listede de yok
+  const listed = new Set(g.flatMap((x) => x.rows.map((r) => r.id)));
+  for (const r of [rows.yonetimde, rows.cizim, rows.musteride, rows.uretim, rows.profil, ...closed]) assert.equal(listed.has(r.id), false, r.id);
+  // Bir sipariş iki listede birden görünmez
+  assert.equal(listed.size, g.reduce((n, x) => n + x.rows.length, 0));
 });
 
 test('kuyruk: yönetici — fiyat onayı bekleyenler', () => {
@@ -101,7 +120,7 @@ test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\
   assert.deepEqual(ids(q, 'drawingJobs'), [lateMore.id, late.id, soon.id, later.id, none.id]);
 });
 
-test('kuyruk: müşterinin onayladığı çizimler ayrı bölümde (hazırlanırken ve üretimde) — çizim ekibi, satış ve yönetici görür', () => {
+test('kuyruk: müşterinin onayladığı çizimler ayrı bölümde (hazırlanırken ve üretimde) — çizim ekibi ve yönetici görür; satışın "Sıra bende"sinde yok', () => {
   const approved = row({ drawingTrack: 'ONAYLANDI' });
   const inProduction = row({ drawingTrack: 'ONAYLANDI', status: 'URETIMDE' });
   const held = row({ drawingTrack: 'ONAYLANDI', onHold: true });
@@ -109,8 +128,9 @@ test('kuyruk: müşterinin onayladığı çizimler ayrı bölümde (hazırlanır
   const q = queuesFor([approved, inProduction, held, pending], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
   assert.deepEqual(ids(q, 'approvedDrawings').sort(), [approved.id, inProduction.id].sort());
   assert.deepEqual(ids(q, 'atCustomer'), [pending.id]);
-  // Satış ve yönetici de görür (karar 84); profil siparişi bu listeye de girmez; yetkisiz (denetimci) görmez
-  assert.deepEqual(ids(queuesFor([approved, held], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), [approved.id]);
+  // Yönetici de görür (karar 84); satışın "Sıra bende"sinde bu bölüm yok (karar 155); profil siparişi bu listeye de
+  // girmez; yetkisiz (denetimci) görmez
+  assert.equal(ids(queuesFor([approved, held], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
   assert.deepEqual(ids(queuesFor([approved], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), [approved.id]);
   assert.deepEqual(ids(queuesFor([{ ...approved, orderTypeCode: 'PROFILE_ORDER' }], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), []);
   assert.equal(ids(queuesFor([approved], { review: false, send: false, drawing: false }, NOW), 'approvedDrawings'), null);

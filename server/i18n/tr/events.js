@@ -24,6 +24,7 @@ export default {
     drawing_approved: 'Çizim onaylandı ve teklif müşteride',
   },
   SHIPPED: { label: 'Yüklendi', customer: 'Yüklendi' },
+  AUTO_SHIPPED: { label: 'Yüklendi (otomatik — yükleme gününden 45 gün sonra)', customer: 'Yüklendi' },
   ARCHIVED: { label: 'Arşivlendi', customer: 'Arşivlendi' },
   CANCELLED: { label: 'İptal edildi', customer: 'İptal edildi' },
   HOLD: { label: 'Beklemeye alındı' },

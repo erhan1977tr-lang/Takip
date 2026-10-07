@@ -281,12 +281,13 @@ export async function dispatchInApp(db, { now = new Date(), limit = 200, log = (
  * İşçiden / eşitlemeden doğan olaylar için doğrudan bildirim (kuyruk olayı olmayan: FGO'da belge kesilemedi, proformaya
  * tahsilat geldi → avans faturası gerekli). Alıcı yalnızca yetkiye göre iç ekip kümesi; anahtar olayın kimliğidir.
  * @param {any} db
- * @param {{ audience: 'accounting' | 'admin' | 'loading', key: string, type: string, orderId?: string | null, firmName?: string | null, params?: object, link: string }} n
+ * @param {{ audience: 'accounting' | 'admin' | 'loading', key: string, type: string, orderId?: string | null, firmName?: string | null, params?: object, link: string, actorId?: string | null }} n
+ *   actorId: işlemi yapan kullanıcı — verilirse kendisine bildirilmez (kuyruk olaylarındaki kuralın aynısı)
  * @returns {Promise<number>}
  */
-export async function notifyStaff(db, { audience, key, type, orderId = null, firmName = null, params = {}, link }) {
+export async function notifyStaff(db, { audience, key, type, orderId = null, firmName = null, params = {}, link, actorId = null }) {
   const order = orderId ? await db.order.findUnique({ where: { id: orderId }, select: ORDER }) : null;
-  const users = await recipientsOf(db, [audience], order);
+  const users = await recipientsOf(db, [audience], order, { actorId });
   return createNotifications(db, { key, type, users, orderId: order?.id ?? null, orderNo: order?.orderNo ?? null, firmName: order?.customer?.name ?? firmName, params, link });
 }
 

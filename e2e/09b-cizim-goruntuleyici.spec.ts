@@ -318,7 +318,8 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   await expect(cust.locator('.ann-pin')).toHaveCount(1); // v1'in işaretleri hâlâ görüntülenir (salt okunur)
   await expect(cust.locator('.viewer-layer.editable')).toHaveCount(0);
 
-  // Onaylanmış çizimler: çizim ekibi, satış ve yönetici görür; yükleme gününe göre süzme, en yeni / en eski
+  // Onaylanmış çizimler: çizim ekibi ve yönetici görür (satışın "Sıra bende"sinde yok — fonksiyonel paket 1); yükleme
+  // gününe göre süzme, en yeni / en eski
   await drawer.goto('/siparisler');
   const approved = (p: typeof drawer) => p.locator('#onayli-cizimler');
   await expect(approved(drawer).locator('h2')).toContainText('Müşteri tarafından onaylanmış çizimler');
@@ -339,11 +340,21 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   expect(filtered).toBeLessThanOrEqual(total);
   await drawer.goto('/siparisler?yukleme=2000-01-01');
   await expect(approved(drawer)).toContainText('Onaylanmış çizim yok.');
-  for (const [who, pw] of [[SALES2, TEAM_PW], [ADMIN, ADMIN_PW]]) {
-    const p = await as(browser, who, pw);
-    await p.goto('/siparisler');
-    await expect(approved(p).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
-    if (who === SALES2) expect(await approved(p).innerHTML()).not.toContain('Ünsal Cam'); // satışta firma adı maskeli
-    await p.context().close();
-  }
+  const adminPage = await as(browser, ADMIN, ADMIN_PW);
+  await adminPage.goto('/siparisler');
+  await expect(approved(adminPage).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
+  await adminPage.context().close();
+  // Satış: "Sıra bende"de yalnızca "Yeni siparişler" ve "SLA riski / gecikenler" — onaylanmış çizimler bölümü (ve teklif /
+  // üretim bölümleri) yok. Sipariş "Tüm aktif siparişler" sekmesinde durur; firma adı satışta maskelidir.
+  const sales = await as(browser, SALES2, TEAM_PW);
+  await sales.goto('/siparisler');
+  await expect(approved(sales)).toHaveCount(0);
+  const titles = await sales.locator('main .card-head h2').allTextContents();
+  expect(titles.map((x) => x.replace(/\s*\d+\s*$/, '').trim())).toEqual(['Yeni siparişler — karar bekliyor', 'SLA riski / gecikenler']);
+  await sales.goto('/siparisler?view=all');
+  await expect(sales.locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
+  const list = await sales.content();
+  expect(list).not.toContain('Ünsal Cam');
+  expect(list).toContain('Üns**********'); // ilk 3 karakter + sabit sayıda yıldız (maskeleme kuralı değişmedi)
+  await sales.context().close();
 });

@@ -5,8 +5,9 @@
 import { writeAudit } from '../orders/journal.js';
 import { priceOverrides } from './tables.js';
 
-// COMPENSATION_PRICE: telafi camının fiyatı normalden farklı (Bedelsiz / değiştirilmiş) · COMPENSATION_PENDING: satışın
-// telafi kararı yöneticinin onayını bekliyor (server/orders/compensation.js — Aşama 9)
+// COMPENSATION_PRICE: telafi camı açıldı — HER telafide bir kayıt: karar (bedelsiz / aynı fiyat / farklı fiyat), önceki →
+// uygulanan müşteri fiyatı, kaynak siparişin adedi (karar 157) · COMPENSATION_PENDING: satışın "farklı fiyat" kararı
+// yöneticinin onayını bekliyor (server/orders/compensation.js — Aşama 9). Bir telafi için ikisi birden açılmaz.
 export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING'];
 
 /**

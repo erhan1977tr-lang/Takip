@@ -1,13 +1,13 @@
 // Kırık / telafi camı (Aşama 9) — sipariş sayfasının verisi: "Önemli kararlar" kartındaki telafi geçmişi ve telafi
 // formunun seçenekleri. Kurallar server/orders/compensation.js'tedir; burada yalnızca yükleme ve ROLE GÖRE TEMİZLİK var:
-// satış müşteri fiyatını görmez (karar 4) — yöneticinin müşteri fiyatı üzerinden verdiği kararın tutarı satışa hiç gitmez,
-// yalnızca kararın türü (normal / bedelsiz / değiştirildi) gider.
+// satış müşteri fiyatını görmez (karar 4) — müşteri fiyatı üzerinden verilen kararın tutarı satışa hiç gitmez, yalnızca
+// kararın türü (bedelsiz / aynı fiyat / farklı fiyat) gider (karar 157: üç kararı satış da seçer, tutarı görmeden).
 import crypto from 'node:crypto';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { sentOffer, type OrderDetail } from './orders';
 import { userCan } from './permissions';
-import { ambiguousOps, compensableLines, compensationDestinations, notLoadedLinks } from '../server/orders/compensation.js';
+import { ambiguousOps, compensableLines, compensationDestinations, notLoadedLinks, sourceState } from '../server/orders/compensation.js';
 
 export type CompEntry = {
   id: string; status: 'APPLIED' | 'PENDING' | 'REJECTED';
@@ -17,8 +17,10 @@ export type CompEntry = {
   mode: 'NORMAL' | 'FREE' | 'CUSTOM'; tier: 'CUSTOMER' | 'SALES'; free: boolean;
   /** Kararın kademesindeki fiyatlar; görme yetkisi yoksa null (yalnızca tür gösterilir) */
   normal: number | null; price: number | null;
-  /** Bekleyen kararda yönetici için: kaynağın müşteri fiyatı ve müşteri fiyatının girilmesi gerekip gerekmediği */
-  normalCustomer: number | null; customerPrice: number | null; needsPrice: boolean;
+  /** Bekleyen kararda yönetici için: kaynağın müşteri fiyatı ve telafinin (varsa) kayıtlı müşteri fiyatı */
+  normalCustomer: number | null; customerPrice: number | null;
+  /** Camın müşteri fiyatını yönetici henüz belirlemedi ("farklı fiyat" kararı) — tutar taşımaz; satış da görür */
+  awaitingPrice: boolean;
   linked: boolean; createdBy: string; createdAt: Date; decidedBy: string | null; decidedAt: Date | null; decisionNote: string | null;
 };
 
@@ -52,7 +54,7 @@ export async function loadCompensations(orderId: string, user: CurrentUser): Pro
       normal: !visible ? null : customerTier ? num(c.normalPrice) : num(c.normalCost),
       price: !visible ? null : c.free ? 0 : customerTier ? num(c.offerPrice) : num(c.unitCost),
       normalCustomer: admin ? num(c.normalPrice) : null, customerPrice: admin ? num(c.offerPrice) : null,
-      needsPrice: admin && c.status === 'PENDING' && !c.free && c.offerPrice == null,
+      awaitingPrice: c.status !== 'REJECTED' && !c.free && c.offerPrice == null && (c.priceMode === 'CUSTOM' || c.status === 'PENDING'),
       linked: !!c.sourceItemId, createdBy: c.createdBy.name, createdAt: c.createdAt,
       decidedBy: c.decidedBy?.name ?? null, decidedAt: c.decidedAt, decisionNote: c.decisionNote,
     };
@@ -66,7 +68,7 @@ export type CompFormLine = {
    * "aynı fiyat"ı seçer, tutarı sunucu taşır (iki kademeli fiyat, karar 4). Kaynak bedelsizse 0.
    */
   normal: number | null; free: boolean;
-  /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen kopyalanır */
+  /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen taşınır; müşteri fiyatları telafide 0'dır (karar 157) */
   ops: { kind: string; adet: number; description: string }[];
   /** İşlemler adedi 1'den büyük satıra bağlı (eski kayıt): hangi camda olduğu belli değil — telafi açılamaz (karar 113) */
   ambiguous: boolean;
@@ -74,6 +76,11 @@ export type CompFormLine = {
 };
 export type CompFormData = {
   orderId: string; orderNo: string; nextNo: string; currency: string; admin: boolean; minDay: string; requestKey: string;
+  /**
+   * Kaynak adedi (karar 157): reducible → telafi açılınca ana siparişte kalan adet düşer. Değilse neden (sipariş kapalı /
+   * yüklemesi onaylanmış / belgesi var): telafi ek üretim olarak açılır, kaynak teklif değişmez. Kesin karar kayıt anında.
+   */
+  source: { reducible: boolean; reason: 'CLOSED' | 'LOADED' | 'BILLING' | null };
   lines: CompFormLine[];
   destinations: { id: string; orderNo: string; day: string; via: 'DRAFT' | 'SENT' | null; reason: string | null }[];
 };
@@ -90,7 +97,8 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   type Line = OrderDetail['offers'][number]['lines'][number];
   const groups: { line: Line; subs: Line[] }[] = compensableLines(sent.lines);
   if (groups.length === 0) return null;
-  const [links, destinations, root] = await Promise.all([
+  const [state, links, destinations, root] = await Promise.all([
+    sourceState(db, order.id),
     notLoadedLinks(db, order.id),
     compensationDestinations(db, { source: { id: order.id, customerId: order.customerId, currency: sent.currency } }),
     order.compOfId ? db.order.findUnique({ where: { id: order.compOfId }, select: { orderNo: true, customerOrderNo: true } }) : null,
@@ -107,6 +115,7 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   return {
     orderId: order.id, orderNo: order.orderNo, nextNo: `${rootNo}-T${seq > 1 ? seq : ''}`, currency: sent.currency, admin, minDay: tomorrow,
     requestKey: crypto.randomUUID(),
+    source: { reducible: state.ok, reason: state.ok ? null : state.reason },
     lines: groups.map((g) => ({
       id: g.line.id, n: glassNo.get(g.line.id) ?? 0, glass: g.line.description, glassRo: g.line.descriptionRo, enMm: g.line.enMm ?? 0, boyMm: g.line.boyMm ?? 0, adet: g.line.adet,
       normal: !admin ? null : g.line.free ? 0 : num(g.line.offerPrice), free: g.line.free,

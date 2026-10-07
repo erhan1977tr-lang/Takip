@@ -5,6 +5,11 @@
 import { offerNeedsCheck } from './rules.js';
 
 export const SLA_RISK_HOURS = 6;
+/**
+ * Satışın "Sıra bende" bölümleri (karar 155): yalnızca karar bekleyen yeni siparişler ve SLA riski / gecikenler.
+ * Teklif işleri Teklifler sayfasındadır (salesOfferGroups); öteki siparişler "Tüm aktif siparişler" sekmesinde durur.
+ */
+export const SALES_QUEUES = ['newOrders', 'sla'];
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
 /** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null,
@@ -73,8 +78,9 @@ function buildQueues(rows, can, now) {
     out.push({ key: 'myDrawings', rows: prep.filter((o) => o.drawingTrack !== 'YOK' && o.assignedDrawerId === can.userId) });
   }
   if (can.drawing || can.review) {
-    // Müşterinin onayladığı çizimler (sipariş hazırlanırken ya da üretimdeyken): çizim ekibi, satış ve yönetici görür
-    // (karar 84). Yükleme gününe göre süzme ve en yeni / en eski sıralaması sayfada (approvedDrawingList).
+    // Müşterinin onayladığı çizimler (sipariş hazırlanırken ya da üretimdeyken): çizim ekibi ve yönetici görür (karar 84);
+    // satışın "Sıra bende"sinde bu bölüm yoktur (karar 155 — aşağıdaki SALES_QUEUES süzgeci). Yükleme gününe göre süzme
+    // ve en yeni / en eski sıralaması sayfada (approvedDrawingList).
     out.push({ key: 'approvedDrawings', rows: active.filter((o) => o.drawingTrack === 'ONAYLANDI' && (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE')) });
   }
   if (can.review) {
@@ -84,7 +90,28 @@ function buildQueues(rows, can, now) {
   const held = glass.filter((o) => o.onHold);
   if (held.length) out.push({ key: 'held', rows: held });
   if (can.send) out.push(...profileQueues(rows));
+  // Satış (satış kararı yetkisi var, fiyat onayı yetkisi yok): yalnızca SALES_QUEUES. Yönetici ve çizim ekibi etkilenmez.
+  if (can.review && !can.send) return out.filter((q) => SALES_QUEUES.includes(q.key));
   return out;
+}
+
+/**
+ * Satışın Teklifler sayfası (karar 155) — yalnızca iki liste, yalnızca cam siparişleri:
+ *   awaitingPrice — "Fiyatımı bekleyenler": teklif tablosu açılmış ve teklif hâlâ satışta (HAZIRLANIYOR)
+ *   notOpened     — "Teklif tablosu açılmamış siparişler": henüz karar verilmemiş (YENI) ya da teklifi hiç olmayan sipariş
+ * Yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez. Kapanmış (yüklenmiş / arşiv / iptal)
+ * siparişler çağıranın sorgusunda elenir; burada da sayılmaz.
+ * @template {{ orderTypeCode: string, status: string, offers: { status: string }[] }} R
+ * @param {R[]} rows
+ * @returns {{ key: 'awaitingPrice' | 'notOpened', rows: R[] }[]}
+ */
+export function salesOfferGroups(rows) {
+  const open = rows.filter((o) => o.orderTypeCode === 'GLASS_ORDER' && !['YUKLENDI', 'ARSIVLENDI', 'IPTAL'].includes(o.status));
+  const notOpened = (o) => o.status === 'YENI' || latestOfferStatus(o) === null;
+  return [
+    { key: 'awaitingPrice', rows: open.filter((o) => !notOpened(o) && latestOfferStatus(o) === 'HAZIRLANIYOR') },
+    { key: 'notOpened', rows: open.filter(notOpened) },
+  ];
 }
 
 /**

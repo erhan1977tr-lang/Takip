@@ -72,7 +72,14 @@ test('satış, çizimci ve müşteri örnek siparişleri görür', async ({ brow
   const fresh = sales.locator('.card', { hasText: 'Yeni siparişler — karar bekliyor' });
   await expect(fresh.getByRole('link', { name: 'ORN101' })).toBeVisible();
   await expect(fresh.getByRole('link', { name: 'ORN102' })).toBeVisible();
-  await sales.getByRole('link', { name: 'ORN106' }).first().click();
+  // Satışın "Sıra bende"si yalnızca yeni siparişler ve SLA riskidir (karar 155). Çizime gönderilmiş, teklifi satışta bekleyen
+  // sipariş (ORN106) burada değil, Teklifler → "Fiyatımı bekleyenler" listesindedir; karar bekleyen yeni sipariş (ORN101)
+  // "Teklif tablosu açılmamış siparişler"dedir.
+  const sections = (await sales.locator('main .card-head h2').allTextContents()).map((x) => x.replace(/\s*\d+\s*$/, '').trim());
+  expect(sections).toEqual(['Yeni siparişler — karar bekliyor', 'SLA riski / gecikenler']);
+  await sales.goto('/teklifler');
+  await expect(sales.locator('[data-group=notOpened]').getByRole('link', { name: 'ORN101' })).toBeVisible();
+  await sales.locator('[data-group=awaitingPrice]').getByRole('link', { name: 'ORN106' }).first().click();
   await expect(sales.getByRole('button', { name: 'Çizime Göndermeyi Geri Al' })).toBeVisible();
 
   const drawer = await as(browser, 'cizim@ornek.test');

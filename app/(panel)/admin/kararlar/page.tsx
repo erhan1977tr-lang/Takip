@@ -6,8 +6,18 @@ import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
 
 type Diff = { line: number; kind: string; description: string; listPrice: number; unitPrice: number; free: boolean };
-/** Telafi camı uyarıları (karar 108): glass = adet × cam, tier = kararın fiyat kademesi, normal / price = o kademedeki fiyatlar */
-type Details = { orderNo?: string; currency?: string; lines?: Diff[]; error?: string; compensationId?: string; glass?: string; tier?: 'CUSTOMER' | 'SALES'; mode?: string; normal?: number | null; price?: number | null; destOrderNo?: string; day?: string };
+/**
+ * Telafi camı uyarıları (karar 108, 157): glass = adet × cam, tier = kararın fiyat kademesi, normal / price = o kademedeki
+ * fiyatlar (price boş: yönetici belirleyecek), mode = karar (bedelsiz / aynı fiyat / farklı fiyat), direct = teklif
+ * yöneticiye uğramadan müşteriye gitti, source = kaynak siparişin adedi (düştüyse önce → sonra; düşmediyse nedeni).
+ */
+type Details = {
+  orderNo?: string; currency?: string; lines?: Diff[]; error?: string; compensationId?: string; glass?: string; tier?: 'CUSTOMER' | 'SALES'; mode?: string;
+  normal?: number | null; price?: number | null; destOrderNo?: string; day?: string; direct?: boolean;
+  source?: { reduced?: boolean; reason?: string | null; before?: number | null; after?: number | null };
+};
+const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
+const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
 
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -42,14 +52,26 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
           {d.compensationId && (
             <li>{t('pricing.alerts.comp', { glass: d.glass ?? '', dest: d.destOrderNo ?? '—', date: d.day ? fmtDate(`${d.day}T12:00:00Z`) : '—' })}</li>
           )}
-          {d.compensationId && a.type === 'COMPENSATION_PRICE' && (
+          {/* Karar (bedelsiz / aynı fiyat / farklı fiyat) — eski kayıtlarda yoksa satır yazılmaz */}
+          {d.compensationId && d.mode && COMP_MODES.includes(d.mode) && (
+            <li data-comp-mode={d.mode}>
+              {t('pricing.alerts.compMode', { mode: t(`pricing.alerts.compModes.${d.mode}` as MsgKey) })}{d.direct ? ` — ${t('pricing.alerts.compDirect')}` : ''}
+            </li>
+          )}
+          {d.compensationId && (a.type === 'COMPENSATION_PRICE' || d.mode === 'CUSTOM') && (
             <li>
               {t('pricing.alerts.compPrice', {
                 normal: d.normal == null ? '—' : `${fmtNum(d.normal)} ${d.currency ?? ''}/m²`,
-                price: d.mode === 'FREE' || d.price === 0 ? t('pricing.alerts.compFree') : d.price == null ? '—' : `${fmtNum(d.price)} ${d.currency ?? ''}/m²`,
+                price: d.mode === 'FREE' || d.price === 0 ? t('pricing.alerts.compFree') : d.price == null ? (d.mode === 'CUSTOM' ? t('pricing.alerts.compToPrice') : '—') : `${fmtNum(d.price)} ${d.currency ?? ''}/m²`,
               })}{d.tier ? ` (${t(`pricing.alerts.compTier.${d.tier}` as MsgKey)})` : ''}
             </li>
           )}
+          {/* Kaynak siparişin adedi (karar 157) */}
+          {d.compensationId && d.source && (d.source.reduced
+            ? <li data-comp-source="dustu">{t('pricing.alerts.compSource', { before: d.source.before ?? '—', after: d.source.after ?? '—' })}</li>
+            : d.source.reason && SOURCE_REASONS.includes(d.source.reason)
+              ? <li data-comp-source={d.source.reason}>{t('pricing.alerts.compSourceKept', { reason: t(`pricing.alerts.compSourceReason.${d.source.reason}` as MsgKey) })}</li>
+              : a.type === 'COMPENSATION_PENDING' ? <li data-comp-source="PENDING">{t('pricing.alerts.compSourcePending')}</li> : null)}
         </ul>
       </>
     );

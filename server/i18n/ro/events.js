@@ -24,6 +24,7 @@ export default {
     drawing_approved: 'Desen aprobat și oferta la client',
   },
   SHIPPED: { label: 'Încărcată', customer: 'Încărcată' },
+  AUTO_SHIPPED: { label: 'Încărcată (automat — la 45 de zile după data încărcării)', customer: 'Încărcată' },
   ARCHIVED: { label: 'Arhivată', customer: 'Arhivată' },
   CANCELLED: { label: 'Anulată', customer: 'Anulată' },
   HOLD: { label: 'Pusă în așteptare' },
