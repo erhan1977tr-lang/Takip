@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.21 — 07.10.2026
+
+- **Güvenlik: antivirüs tarayıcısının adresi artık uygulamadan değiştirilemez; tarayıcının yanıtına güvenilmez**
+  (güvenlik denetimi AUD-12).
+  - Yönetici → Entegrasyonlar → Antivirüs bölümündeki **"Tarayıcı adresi" ve "Port" alanları kaldırıldı**; ikisi de
+    ekranda yalnızca salt-okunur gösterilir. Adres ve port artık yalnızca sunucu ayarından gelir (sunucuda zaten
+    `clamav:3310`). Eskiden bu alanlar başka bir adrese çevrilirse yüklenen dosyalar o adrese gönderilebiliyor ve
+    virüslü dosya "temiz" sayılabiliyordu. Veritabanında kalmış eski adres değerleri kullanılmaz; adres içeren elle
+    hazırlanmış bir istek de hedefi değiştiremez.
+  - **Sizin için değişen tek şey:** tarayıcıyı başka bir adrese taşımak artık sunucu tarafında yapılır. Açma / kapama ve
+    "tarayıcıya ulaşılamazsa" seçimi (kabul et, sonra tara / reddet) eskisi gibi bu ekrandan yapılır.
+  - Tarayıcıdan gelen yanıt artık sınırlıdır: en çok birkaç KB okunur, bir tarama **en çok 5 dakika** sürer (karşı taraf
+    düzenli veri göndererek bunu uzatamaz; mevcut "yanıt gelmiyor" süresi ayrıca geçerlidir).
+  - Yanıt biçimi denetlenir: dosya yalnızca tarayıcı açıkça "temiz" dediğinde temiz sayılır; bozuk ya da tanınmayan bir
+    yanıt hatadır (dosya, seçiminize göre "taranmadı" işaretlenir ya da reddedilir). Virüs kararı eskisi gibi korunur.
+  - Virüs adı ekranda ve kayıtlarda yalnızca harf / rakam ve birkaç işaretle, en çok 200 karakter olarak görünür.
+  - "Test başarısız" ve "Tarama durdu" iletileri artık teknik hata metni yerine kısa, anlaşılır bir neden gösterir
+    (ör. "tarayıcıya ulaşılamıyor", "tarayıcı zamanında yanıt vermedi").
+  - Değişmeyenler: dosya yükleme, virüslü dosyanın reddedilmesi ve karantina, taranmamış dosyaların arka planda
+    taranması, yükleme sınırları, müşteri / ekip / depo yükleme adımları.
+
 ## 3.50.20 — 07.10.2026
 
 - **Güvenlik: giriş kilidi denetim kaydı artık sınırsız büyümez; kod denemeleri kayda geçer; yöneticiye kilit bildirimi**

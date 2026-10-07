@@ -66,8 +66,9 @@ export const ENV_VARS = {
     },
     desc: 'İstemci IP adresinin kaynağı: proxy = Caddy (X-Forwarded-For); cloudflare yalnızca site Cloudflare arkasındaysa (server/security/client-ip.js)',
   },
-  CLAMAV_HOST: { group: 'app', desc: 'Antivirüs (clamd) adresi; tanımlıysa yüklenen dosyalar taranır (sunucuda: clamav)' },
-  CLAMAV_PORT: { group: 'app', parse: parseInt10(1, 65535), default: 3310, desc: 'Antivirüs (clamd) portu' },
+  // Tarayıcının adresinin TEK kaynağı bu iki değişkendir (karar 150): uygulamadan / veritabanından değiştirilemez
+  CLAMAV_HOST: { group: 'app', desc: 'Antivirüs (clamd) adresi — yalnızca buradan gelir, uygulamadan değiştirilemez; tanımlıysa yüklenen dosyalar taranır (sunucuda: clamav)' },
+  CLAMAV_PORT: { group: 'app', parse: parseInt10(1, 65535), default: 3310, desc: 'Antivirüs (clamd) portu — yalnızca buradan gelir' },
 
   // --- veritabanı ---
   DATABASE_URL: { group: 'db', required: true, secret: true, parse: parseUrl(['postgresql:', 'postgres:']), desc: 'PostgreSQL bağlantısı' },

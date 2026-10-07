@@ -12,7 +12,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { getEnv } from '../env.js';
 import { checkContent } from './signature.js';
-import { scanFile } from './clamav.js';
+import { avErrorCode, safeSignature, scanFile } from './clamav.js';
 
 const HEAD_BYTES = 8192;
 
@@ -124,12 +124,13 @@ export async function storeUpload(source, meta, { av = null, scan = scanFile } =
   let scannedAt = null;
   if (av?.enabled) {
     const r = await scan(tmp, { host: av.host, port: av.port, timeoutMs: av.timeoutMs ?? 120_000 });
-    if (r.status === 'infected') return fail('infected', { signature: r.signature });
+    // İmza adı güvenli karakterlere / 200 karaktere indirilir; hata yalnızca sabit koddur (karar 150)
+    if (r.status === 'infected') return fail('infected', { signature: safeSignature(r.signature) });
     if (r.status === 'clean') {
       scanStatus = 'CLEAN';
       scannedAt = new Date();
     } else if (av.onUnavailable === 'reject') {
-      return fail('av_unavailable', { error: r.error });
+      return fail('av_unavailable', { error: avErrorCode(r.error) });
     } else {
       scanStatus = 'PENDING'; // taranmadı; işçi sonra tarar
     }

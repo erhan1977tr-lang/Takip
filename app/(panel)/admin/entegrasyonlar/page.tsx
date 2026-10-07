@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
+import { AV_ERRORS, safeSignature } from '@/server/files/clamav.js';
 import {
   saveAccountingAction, saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
   testAntivirusAction, testFgoAction, testTranslateAction,
@@ -75,8 +76,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     db.notificationOutbox.count({ where: { type: 'WAREHOUSE_EMAIL', status: 'FAILED' } }),
   ]);
 
-  const okMsg = sp.ok && OK[sp.ok] ? t(OK[sp.ok], { signature: sp.signature ?? '', scanned: sp.scanned ?? '0', clean: sp.clean ?? '0', infected: sp.infected ?? '0' }) : null;
-  const errMsg = sp.error && ERR[sp.error] ? t(ERR[sp.error], { error: sp.detail ?? '' }) : null;
+  // Adresteki değerler serbest metin olarak gösterilmez (karar 150): imza adı güvenli karakterlere indirilir, sayılar
+  // yalnızca rakamdır, hata ayrıntısı yalnızca bilinen sabit kodlardan biridir ve sabit metne çevrilir
+  const count = (v: string | undefined) => (/^\d{1,6}$/.test(v ?? '') ? String(v) : '0');
+  const okMsg = sp.ok && OK[sp.ok] ? t(OK[sp.ok], { signature: safeSignature(sp.signature), scanned: count(sp.scanned), clean: count(sp.clean), infected: count(sp.infected) }) : null;
+  const avReason = (AV_ERRORS as readonly string[]).find((code) => code === sp.detail) ?? 'unknown';
+  const errMsg = sp.error && ERR[sp.error] ? t(ERR[sp.error], { error: t(`admin.integrations.av.reason.${avReason}` as MsgKey) }) : null;
   const status = !s.enabled
     ? { cls: 'alert-warn', text: t('admin.integrations.av.statusOff') }
     : health?.reachable
@@ -234,10 +239,14 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 
         <form action={saveAntivirusAction} style={{ marginTop: 12 }}>
           <label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} /> {t('admin.integrations.av.enabled')}</label>
-          <div className="grid-2" style={{ marginTop: 10 }}>
-            <div><label htmlFor="av-host">{t('admin.integrations.av.host')}</label><input id="av-host" name="host" type="text" defaultValue={s.host} maxLength={200} /></div>
-            <div><label htmlFor="av-port">{t('admin.integrations.av.port')}</label><input id="av-port" name="port" type="number" min={1} max={65535} defaultValue={s.port} /></div>
-          </div>
+          {/* Tarayıcının adresi salt-okunurdur (karar 150): yalnızca sunucu ayarından gelir, bu ekrandan / istekle değiştirilemez */}
+          <table className="kv" id="av-target" style={{ marginTop: 10 }}>
+            <tbody>
+              <tr><td>{t('admin.integrations.av.host')}</td><td className="mono" data-av-host>{s.host}</td></tr>
+              <tr><td>{t('admin.integrations.av.port')}</td><td className="mono" data-av-port>{s.port}</td></tr>
+            </tbody>
+          </table>
+          <div className="hint">{t('admin.integrations.av.targetNote')}</div>
           <fieldset style={{ marginTop: 10, border: 0, padding: 0 }}>
             <legend className="small"><b>{t('admin.integrations.av.onUnavailable')}</b></legend>
             <label className="check"><input type="radio" name="onUnavailable" value="accept" defaultChecked={s.onUnavailable === 'accept'} /> {t('admin.integrations.av.accept')}</label>
@@ -262,7 +271,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                   <tr key={q.id}>
                     <td>{q.name}</td>
                     <td><Link className="order-no" href={`/siparisler/${q.order.id}`}>{q.order.orderNo}</Link></td>
-                    <td className="mono small">{q.signature}</td>
+                    <td className="mono small">{q.signature ? safeSignature(q.signature) : ''}</td>
                     <td>{fmtDateTime(q.at)}</td>
                   </tr>
                 ))}
@@ -285,7 +294,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                     <tr key={b.id}>
                       <td>{d.name ?? '—'}</td>
                       <td>{b.user?.name || b.user?.email || '—'}</td>
-                      <td className="mono small">{d.signature ?? '—'}</td>
+                      <td className="mono small">{d.signature ? safeSignature(d.signature) : '—'}</td>
                       <td>{fmtDateTime(b.createdAt)}</td>
                     </tr>
                   );

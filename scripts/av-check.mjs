@@ -14,7 +14,10 @@ try {
     console.log(`✘ Tarayıcıya ulaşılamıyor (${s.host}:${s.port}). ClamAV ilk açılışta birkaç dakika virüs tanımlarını yükler.`);
     process.exitCode = 1;
   } else {
-    console.log(`✔ ${h.raw ?? h.engine}`);
+    // Sürüm bilgisi doğrulanmış parçalardan yazılır (tarayıcının ham yanıtı yazdırılmaz — karar 150)
+    console.log(h.error
+      ? `✘ Tarayıcı yanıt veriyor ama sürüm bilgisi alınamadı (${h.error}).`
+      : `✔ ${h.engine}${h.signatures != null ? ` · virüs tanımları: ${h.signatures}` : ''}${h.signaturesDate ? ` · ${h.signaturesDate}` : ''}`);
     const r = await scanBuffer(eicar(), { host: s.host, port: s.port, timeoutMs: 30_000 });
     if (r.status === 'infected') console.log(`✔ Test virüsü (EICAR) yakalandı: ${r.signature}`);
     else {

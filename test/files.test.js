@@ -108,8 +108,8 @@ test('clamd istemcisi: ulaşılamazsa hata döner (çökmez)', async () => {
   const p = closed.address().port;
   await new Promise((r) => closed.close(r));
   const r = await scanBuffer(Buffer.from('x'), { host: '127.0.0.1', port: p, timeoutMs: 2000 });
-  assert.equal(r.status, 'error');
-  assert.match(r.error, /ECONNREFUSED/);
+  // Hata sabit koddur; ağ hatasının ham metni (ECONNREFUSED, adres, port) sonuca çıkmaz (karar 150)
+  assert.deepEqual(r, { status: 'error', error: 'unreachable' });
   assert.equal(await ping({ host: '127.0.0.1', port: p }), false);
 });
 

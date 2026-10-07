@@ -2,7 +2,7 @@
 import { getEnv } from '../env.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit } from '../orders/journal.js';
-import { ping, scanFile, version } from './clamav.js';
+import { avErrorCode, ping, safeSignature, scanFile, version } from './clamav.js';
 import { quarantine, resolveKey } from './store.js';
 
 export const AV_KEY = 'antivirus';
@@ -10,7 +10,21 @@ const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', drawingFile: 'Drawi
 export const AV_STATUS_KEY = 'antivirus.status';
 
 /**
- * Geçerli ayarlar. Veritabanında kayıt yoksa ortamdan: CLAMAV_HOST tanımlıysa açık.
+ * Tarayıcının adresi — YALNIZCA sunucu ayarından (karar 150; güvenlik denetimi AUD-12): CLAMAV_HOST / CLAMAV_PORT
+ * (sunucuda Compose `clamav` verir). Uygulamadan / veritabanından değiştirilemez: yönetici ekranındaki eski "adres" ve
+ * "port" alanları kaldırıldı, veritabanında kalmış eski host / port değerleri HİÇ okunmaz. Bağlantı hedefinin tek kaynağı
+ * budur — yükleme, arka plan taraması, durum denetimi, "bağlantıyı test et", "şimdi tara" ve `takip antivirus` hepsi
+ * getAvSettings üzerinden bunu kullanır.
+ * @param {{ CLAMAV_HOST?: string, CLAMAV_PORT?: number }} env
+ * @returns {{ host: string, port: number }}
+ */
+export function avTarget(env = getEnv()) {
+  return { host: env.CLAMAV_HOST || 'clamav', port: env.CLAMAV_PORT || 3310 };
+}
+
+/**
+ * Geçerli ayarlar. Veritabanından yalnızca açık / kapalı ve "ulaşılamazsa" politikası gelir (kayıt yoksa: CLAMAV_HOST
+ * tanımlıysa açık); adres ve port her zaman sunucu ayarındandır (avTarget).
  * @returns {Promise<{ enabled: boolean, host: string, port: number, onUnavailable: 'accept' | 'reject', timeoutMs: number, fromDb: boolean }>}
  */
 export async function getAvSettings(db, env = getEnv()) {
@@ -18,8 +32,7 @@ export async function getAvSettings(db, env = getEnv()) {
   const v = (row?.value && typeof row.value === 'object' ? row.value : {});
   return {
     enabled: typeof v.enabled === 'boolean' ? v.enabled : !!env.CLAMAV_HOST,
-    host: (typeof v.host === 'string' && v.host) || env.CLAMAV_HOST || 'clamav',
-    port: Number(v.port) || env.CLAMAV_PORT || 3310,
+    ...avTarget(env),
     // Ürün sahibinin kararı: tarayıcıya ulaşılamazsa dosya kabul edilir, "taranmadı" işaretlenir, sonra taranır
     onUnavailable: v.onUnavailable === 'reject' ? 'reject' : 'accept',
     timeoutMs: 120_000,
@@ -28,15 +41,14 @@ export async function getAvSettings(db, env = getEnv()) {
 }
 
 /**
- * Ayarları kaydeder ve denetim kaydına yazar (önce/sonra).
- * @param {{ enabled: boolean, host: string, port: number, onUnavailable: 'accept' | 'reject' }} value
+ * Ayarları kaydeder ve denetim kaydına yazar (önce/sonra). Yalnızca iki alan saklanır: açık / kapalı ve "ulaşılamazsa"
+ * politikası. Adres / port SAKLANMAZ — çağıran gönderse de yok sayılır (hedef sunucu ayarındandır: avTarget).
+ * @param {{ enabled: boolean, onUnavailable: 'accept' | 'reject' }} value
  * @param {{ id: string, role: string, ip?: string | null }} actor
  */
 export async function saveAvSettings(db, value, actor) {
   const clean = {
     enabled: !!value.enabled,
-    host: String(value.host || '').trim().slice(0, 200) || 'clamav',
-    port: Math.min(65535, Math.max(1, Math.trunc(Number(value.port) || 3310))),
     onUnavailable: value.onUnavailable === 'reject' ? 'reject' : 'accept',
   };
   return db.$transaction(async (tx) => {
@@ -55,8 +67,8 @@ export async function saveAvSettings(db, value, actor) {
 }
 
 /**
- * Bağlantı durumu: ulaşılıyor mu, motor ve imza veritabanı sürümü.
- * @returns {Promise<{ reachable: boolean, raw?: string, engine?: string, signatures?: number | null, signaturesDate?: string | null, error?: string }>}
+ * Bağlantı durumu: ulaşılıyor mu, motor ve imza veritabanı sürümü. Hata yalnızca sabit koddur (AV_ERRORS).
+ * @returns {Promise<{ reachable: boolean, engine?: string, signatures?: number | null, signaturesDate?: string | null, error?: string }>}
  */
 export async function avHealth(settings) {
   const opts = { host: settings.host, port: settings.port };
@@ -64,7 +76,7 @@ export async function avHealth(settings) {
   try {
     return { reachable: true, ...(await version(opts)) };
   } catch (e) {
-    return { reachable: true, error: String(e?.message || e) };
+    return { reachable: true, error: avErrorCode(e) };
   }
 }
 
@@ -93,14 +105,16 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
     if (!full) continue;
     const r = await scan(full, { host: settings.host, port: settings.port, timeoutMs: settings.timeoutMs });
     if (r.status === 'error') {
+      // Hata yalnızca sabit koddur (ham metin durum kaydına, günlüğe, ekrana çıkmaz — karar 150)
+      const code = avErrorCode(r.error);
       // Dosya diskte yoksa bir daha denenmez; başka hata (clamd kapalı) → dur, sonra yeniden dene
-      if (/ENOENT/.test(r.error)) {
+      if (code === 'file-not-found') {
         await db[it.model].update({ where: { id: it.id }, data: { scanStatus: 'SKIPPED', scannedAt: new Date() } });
         out.missing++;
         continue;
       }
-      out.stopped = r.error;
-      log(`tarama durdu: ${r.error}`);
+      out.stopped = code;
+      log(`tarama durdu: ${code}`);
       break;
     }
     out.scanned++;
@@ -109,17 +123,19 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
       out.clean++;
       continue;
     }
+    // "Temiz" ve "hata" dışındaki her sonuç virüstür; imza adı güvenli karakterlere ve 200 karaktere indirilir
+    const signature = safeSignature(r.signature);
     out.infected++;
     await quarantine(it.key);
     await db.$transaction(async (tx) => {
-      await tx[it.model].update({ where: { id: it.id }, data: { scanStatus: 'INFECTED', scanSignature: r.signature, scannedAt: new Date() } });
+      await tx[it.model].update({ where: { id: it.id }, data: { scanStatus: 'INFECTED', scanSignature: signature, scannedAt: new Date() } });
       await writeAudit(tx, {
         action: 'FILE_INFECTED', entityType: ENTITY[it.model], entityId: it.id,
-        details: { orderId: it.orderId, name: it.name, signature: r.signature, when: 'arka plan taraması' },
+        details: { orderId: it.orderId, name: it.name, signature, when: 'arka plan taraması' },
       });
-      await enqueueOutbox(tx, outboxEvent('FILE_INFECTED', { orderId: it.orderId, payload: { name: it.name, signature: r.signature } }));
+      await enqueueOutbox(tx, outboxEvent('FILE_INFECTED', { orderId: it.orderId, payload: { name: it.name, signature } }));
     });
-    log(`virüs: ${it.name} (${r.signature}) karantinaya alındı`);
+    log(`virüs: ${it.name} (${signature}) karantinaya alındı`);
   }
   return out;
 }
