@@ -10,6 +10,7 @@ import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 
 const tr = await import('../../server/notes/translation.js');
 const { TranslateError } = await import('../../server/notes/provider.js');
+const { NOTE_LIMITS, createNoteLimits } = await import('../../server/notes/limits.js');
 const { orderScope } = await import('../../server/orders/scope.js');
 const { openSecret } = await import('../../server/crypto/secret.js');
 
@@ -24,10 +25,12 @@ function provider(impl = async ({ text, target }) => ({ text: `[${target}] ${tex
   const calls = [];
   return { calls, fn: async (o) => { calls.push({ ...o }); return impl(o); } };
 }
-const add = (u, order, text, { internal = false, p = provider(), now = undefined } = {}) =>
-  tr.addNote(db, { orderId: order.id, actor: act(u), text, internal, translator: p.fn, secret: SECRET, ...(now ? { now } : {}) });
+// Sınır sayaçları (karar 147): çeviri testleri her çağrıda TAZE sayaç kullanır (sınırlar bu testlerin konusu değil);
+// sınır testleri kendi ortak sayacını `limits` ile verir.
+const add = (u, order, text, { internal = false, p = provider(), now = undefined, limits = createNoteLimits() } = {}) =>
+  tr.addNote(db, { orderId: order.id, actor: act(u), text, internal, translator: p.fn, secret: SECRET, limits, ...(now ? { now } : {}) });
 const retry = (u, noteId, order, p = provider(), extra = {}) =>
-  tr.retryNoteTranslation(db, { noteId, orderId: order.id, actor: act(u), translator: p.fn, secret: SECRET, ...extra });
+  tr.retryNoteTranslation(db, { noteId, orderId: order.id, actor: act(u), translator: p.fn, secret: SECRET, limits: createNoteLimits(), ...extra });
 const rowOf = (id) => db.orderNote.findUniqueOrThrow({ where: { id } });
 const fields = (n) => [n.translation, n.translationLang, n.translationStatus, n.translationError];
 /** Ayar: açık + anahtar kayıtlı (yönetici) */
@@ -488,4 +491,323 @@ dbTest('sayfa açılışı / yenileme / otomatik yenileme hiçbir durumda çevir
   assert.deepEqual(await retry(U.drawer, failed.noteId, O, ok), { ok: true, translation: 'DONE' });
   assert.deepEqual([ok.calls.length, await row(failed.noteId)], [1, ['[tr] HATA notă', 'tr', 'DONE', null]]);
   assert.deepEqual(await row(failedRo.noteId), [null, 'ro', 'FAILED', 'QUOTA'], 'öbür çevrilemeyen not kendiliğinden denenmedi');
+}));
+
+// ───────── Not ve çeviri sınırları (karar 147; güvenlik denetimi 3.50.9 AUD-9) ─────────
+const MIN = 60_000;
+const T0 = Date.UTC(2026, 9, 7, 8, 0, 0);
+const at = (ms) => new Date(T0 + ms);
+let seq = 100;
+const newOrder = (f = A, extra = {}) => {
+  seq += 1;
+  return db.order.create({ data: { orderNo: `${f.prefix}${seq}`, customerOrderNo: seq, title: `Sınır ${seq}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', ...extra } });
+};
+const noteCount = (order, where = {}) => db.orderNote.count({ where: { orderId: order.id, ...where } });
+const seed = (order, n, user = U.custA, extra = {}) => db.orderNote.createMany({ data: Array.from({ length: n }, (_, i) => ({ orderId: order.id, userId: user.id, text: `eski not ${i + 1}`, ...extra })) });
+const codes = (rs) => rs.map((r) => (r.ok ? 'ok' : r.code));
+const tally = (list, v) => list.filter((x) => x === v).length;
+const quiet = async (fn) => { const w = console.warn; console.warn = () => {}; try { return await fn(); } finally { console.warn = w; } };
+
+dbTest('not hızı: müşteri 10 dakikada 20 not (21. reddedilir, yazılmaz), pencere sonrası yeniden; iç ekip 60 / 61; sınır kullanıcıya özeldir', offline(async () => {
+  await enable(false);
+  const O = await newOrder();
+  const limits = createNoteLimits();
+  const rs = [];
+  for (let i = 0; i < 21; i++) rs.push(await add(U.custA, O, `Nota ${i + 1}`, { limits, now: at(i * 1000) }));
+  assert.deepEqual([tally(codes(rs), 'ok'), rs[20]], [20, { ok: false, code: 'RATE_LIMIT' }]);
+  assert.equal(await noteCount(O), 20, '21. not yazılmadı');
+  assert.equal(await noteCount(O, { text: 'Nota 21' }), 0);
+  // Pencere dolmadan: hâlâ kapalı (başka siparişte de — hak kullanıcınındır)
+  const O2 = await newOrder();
+  assert.deepEqual(await add(U.custA, O2, 'x', { limits, now: at(9 * MIN + 59_000) }), { ok: false, code: 'RATE_LIMIT' });
+  assert.equal(await noteCount(O2), 0);
+  // Başka firmanın müşterisi kendi siparişinde, iç ekip aynı siparişte etkilenmez
+  const OB2 = await newOrder(B);
+  assert.equal((await add(U.custB, OB2, 'Altă firmă', { limits, now: at(30_000) })).ok, true);
+  assert.equal((await add(U.sales, O, 'Ekip notu', { limits, now: at(30_000) })).ok, true);
+  // İlk notlar 10 dakikayı doldurunca yeniden kabul; bütün pencere geçince 20 hak yeniden
+  assert.equal((await add(U.custA, O, 'Nota după fereastră', { limits, now: at(10 * MIN) })).ok, true);
+  const again = [];
+  for (let i = 0; i < 21; i++) again.push(await add(U.custA, O, `Runda 2 – ${i + 1}`, { limits, now: at(25 * MIN + i) }));
+  assert.deepEqual([tally(codes(again), 'ok'), tally(codes(again), 'RATE_LIMIT')], [20, 1]);
+  assert.equal(await noteCount(O, { userId: U.custA.id }), 41);
+
+  // İç ekip: 60 kabul, 61. ret (iç not da sayılır); her kullanıcı ayrı
+  for (const u of [U.admin, U.sales, U.drawer]) {
+    const S = await newOrder();
+    const l = createNoteLimits();
+    const out = [];
+    for (let i = 0; i < 61; i++) out.push(await add(u, S, `Not ${i + 1}`, { limits: l, now: at(i * 100), internal: i % 3 === 0 }));
+    assert.deepEqual([tally(codes(out), 'ok'), out[60]], [60, { ok: false, code: 'RATE_LIMIT' }], u.name);
+    assert.equal(await noteCount(S), 60, u.name);
+    assert.equal((await add(u, S, 'Pencere sonrası', { limits: l, now: at(10 * MIN + 6100) })).ok, true, u.name);
+  }
+  // Denetimci not yazamaz (yetki değişmedi)
+  assert.deepEqual(await add(U.inspector, O, 'x', { limits }), { ok: false, code: 'FORBIDDEN' });
+}));
+
+dbTest('paralel isteklerle not hızı sınırı aşılamaz: aynı kullanıcıdan aynı anda 60 istek → veritabanında tam 20 not', offline(async () => {
+  await enable(false);
+  const O = await newOrder();
+  const O2 = await newOrder();
+  const limits = createNoteLimits();
+  const rs = await Promise.all(Array.from({ length: 60 }, (_, i) => add(U.custA, i % 2 ? O : O2, `Paralel ${i}`, { limits, now: at(0) })));
+  assert.deepEqual([tally(codes(rs), 'ok'), tally(codes(rs), 'RATE_LIMIT')], [20, 40]);
+  assert.equal(await noteCount(O) + await noteCount(O2), 20);
+}));
+
+dbTest('sipariş başına 500 not: 500. yazılır, 501. reddedilir (her rol, iç not dahil); başka sipariş etkilenmez; dolu siparişte sağlayıcı çağrılmaz', offline(async () => {
+  await enable();
+  assert.equal(NOTE_LIMITS.perOrder, 500);
+  const O = await newOrder();
+  await seed(O, 300);
+  await seed(O, 198, U.sales, { internal: true });
+  const p = provider();
+  assert.deepEqual(await add(U.custA, O, 'Nota 499', { p }).then((r) => [r.ok, r.translation]), [true, 'DONE']);
+  assert.deepEqual(await add(U.sales, O, '500. not (iç)', { p, internal: true }).then((r) => [r.ok, r.translation]), [true, null]);
+  assert.equal(await noteCount(O), 500);
+  const calls = p.calls.length;
+  for (const u of [U.custA, U.admin, U.sales, U.drawer]) {
+    assert.deepEqual(await add(u, O, '501. not', { p }), { ok: false, code: 'ORDER_LIMIT' }, u.name);
+    assert.deepEqual(await add(u, O, '501. iç not', { p, internal: true }), { ok: false, code: 'ORDER_LIMIT' }, u.name);
+  }
+  assert.deepEqual([await noteCount(O), await noteCount(O, { text: { startsWith: '501.' } }), p.calls.length], [500, 0, calls], 'yazılmadı, sağlayıcı çağrılmadı');
+  // Başka sipariş ve başka firmanın siparişi etkilenmez; başka firmanın müşterisi dolu siparişi yine GÖREMEZ (NOT_FOUND)
+  assert.equal((await add(U.custA, await newOrder(), 'Altă comandă', { p })).ok, true);
+  assert.equal((await add(U.custB, await newOrder(B), 'Altă firmă', { p })).ok, true);
+  assert.deepEqual(await add(U.custB, O, 'x', { p }), { ok: false, code: 'NOT_FOUND' });
+  // Dolu siparişin notları okunur; "yeniden dene" (not yazmaz) çalışmaya devam eder
+  assert.equal((await seen(U.custA, O)).length, 301, 'müşteri: 300 eski + kendi notu (iç notlar yok)');
+  const failed = await db.orderNote.findFirstOrThrow({ where: { orderId: O.id, internal: false, userId: U.custA.id, text: 'eski not 1' } });
+  await db.orderNote.update({ where: { id: failed.id }, data: { translationLang: 'tr', translationStatus: 'FAILED', translationError: 'RATE_LIMIT', translationAt: new Date() } });
+  assert.deepEqual(await retry(U.sales, failed.id, O, p), { ok: true, translation: 'DONE' });
+  assert.equal(await noteCount(O), 500);
+}));
+
+dbTest('paralel isteklerle sipariş sınırı aşılamaz: 490 notlu siparişe farklı kullanıcılardan aynı anda 24 istek → tam 10 not, toplam 500', offline(async () => {
+  await enable();
+  const O = await newOrder();
+  await seed(O, 490);
+  const p = provider();
+  const users = [U.custA, U.admin, U.sales, U.drawer];
+  // Her istek kendi sayacıyla (kullanıcı hızı devre dışı): yalnızca sipariş sınırı sınanır
+  const rs = await Promise.all(Array.from({ length: 24 }, (_, i) => add(users[i % 4], O, `Paralel ${i}`, { p, internal: i % 4 === 2 && i % 8 === 2 })));
+  assert.deepEqual([tally(codes(rs), 'ok'), tally(codes(rs), 'ORDER_LIMIT')], [10, 14]);
+  assert.equal(await noteCount(O), 500, 'sınırın üstüne çıkılmadı');
+  // Sağlayıcı yalnızca yazılan, müşteriye açık notlar için çağrıldı
+  const written = await db.orderNote.findMany({ where: { orderId: O.id, text: { startsWith: 'Paralel ' } } });
+  assert.deepEqual([written.length, p.calls.length], [10, written.filter((n) => !n.internal).length]);
+  // Bir daha: sınırdaki siparişe 12 paralel istek → hiçbiri yazılmaz
+  const more = await Promise.all(Array.from({ length: 12 }, (_, i) => add(users[i % 4], O, `Fazla ${i}`, { p })));
+  assert.deepEqual([tally(codes(more), 'ORDER_LIMIT'), await noteCount(O)], [12, 500]);
+}));
+
+dbTest('sipariş sınırı kilitle korunur: siparişin kilidi başka işlemdeyken not yazımı BEKLER; kilit bırakılınca güncel sayıya göre karar verir (499 → 500 olduysa reddedilir)', offline(async () => {
+  await enable(false);
+  const O = await newOrder();
+  await seed(O, 499);
+  const key = `order-notes:${O.id}`;
+  /** Bu siparişin kilidini bekleyen (henüz alamamış) oturum sayısı */
+  const waiting = async () => (await db.$queryRaw`
+    SELECT count(*)::int AS n FROM pg_locks
+    WHERE locktype = 'advisory' AND NOT granted AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(${key}, 0)`)[0].n;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let locked;
+  const isLocked = new Promise((r) => { locked = r; });
+  // Başka bir işlem siparişin kilidini tutuyor ve (bırakmadan önce) 500. notu yazacak
+  const holder = db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+    locked();
+    await gate;
+    await tx.orderNote.create({ data: { orderId: O.id, userId: U.admin.id, text: '500. not (kilidi tutan işlem)' } });
+  }, { timeout: 30_000 });
+  await isLocked;
+  let done = false;
+  const pending = add(U.custA, O, 'Nota care așteaptă').then((r) => { done = true; return r; });
+  // Not yazımı kilitte bekliyor: veritabanı bekleyen oturumu gösterene kadar bakılır (en çok 10 sn)
+  let seenWaiting = 0;
+  for (let i = 0; i < 200 && !seenWaiting && !done; i++) {
+    seenWaiting = await waiting();
+    if (!seenWaiting) await new Promise((r) => setTimeout(r, 50));
+  }
+  try {
+    assert.equal(done, false, 'not yazımı kilidi beklemeden bitmemeli');
+    assert.equal(seenWaiting, 1, 'not yazımı siparişin kilidinde bekliyor');
+    assert.equal(await noteCount(O), 499, 'beklerken hiçbir şey yazılmadı');
+  } finally {
+    release();
+    await holder;
+  }
+  // Kilit bırakıldı: bekleyen istek GÜNCEL sayıyı (500) görür ve reddedilir — eski sayıyla (499) yazsaydı 501 olurdu
+  assert.deepEqual(await pending, { ok: false, code: 'ORDER_LIMIT' });
+  assert.deepEqual([await noteCount(O), await noteCount(O, { text: 'Nota care așteaptă' }), await waiting()], [500, 0, 0]);
+  // Kilit siparişe özeldir: başka siparişin kilidi tutulurken bu siparişe yazım beklemez
+  const P = await newOrder();
+  const Q = await newOrder();
+  let free;
+  const hold2 = new Promise((r) => { free = r; });
+  let got;
+  const has2 = new Promise((r) => { got = r; });
+  const other = db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-notes:${P.id}`}, 0))`;
+    got();
+    await hold2;
+  }, { timeout: 30_000 });
+  await has2;
+  try {
+    assert.equal((await add(U.custA, Q, 'Altă comandă, fără așteptare')).ok, true);
+  } finally {
+    free();
+    await other;
+  }
+}));
+
+dbTest('müşteri çevirisi: saatte 30 sağlayıcı çağrısı — sonraki notlar YİNE kaydedilir, sağlayıcı çağrılmaz; iç ekip nedeni görür, müşteri / denetimci görmez; okuma yeniden denemez; iç ekip sonra "yeniden dene" ile çevirtir', offline(async () => {
+  await enable();
+  const O = await newOrder();
+  const limits = createNoteLimits();
+  const p = provider();
+  const a = [];
+  for (let i = 0; i < 20; i++) a.push(await add(U.custA, O, `Nota ${i + 1}`, { p, limits, now: at(i * 1000) }));
+  const b = [];
+  for (let i = 0; i < 20; i++) b.push(await add(U.custA, O, `Nota ${i + 21}`, { p, limits, now: at(11 * MIN + i * 1000) }));
+  assert.equal(tally(codes([...a, ...b]), 'ok'), 40, 'çeviri sınırı notu engellemez: 40 notun hepsi kabul');
+  assert.deepEqual([...a, ...b].map((r) => r.translation), [...Array(30).fill('DONE'), ...Array(10).fill('FAILED')]);
+  assert.equal(p.calls.length, 30, 'tam 30 sağlayıcı çağrısı');
+  assert.deepEqual(p.calls.map((c) => c.text), Array.from({ length: 30 }, (_, i) => `Nota ${i + 1}`));
+  assert.equal(await noteCount(O), 40);
+  const limited = await db.orderNote.findMany({ where: { orderId: O.id, translationError: 'RATE_LIMIT' }, orderBy: { createdAt: 'asc' } });
+  assert.deepEqual(limited.map((n) => [n.text, n.internal, ...fields(n)]), Array.from({ length: 10 }, (_, i) => [`Nota ${i + 31}`, false, null, 'tr', 'FAILED', 'RATE_LIMIT']));
+  const id = limited[0].id;
+  // İç ekip: özgün not + "çevrilemedi" durumu ve güvenli kod (yeniden denenebilir)
+  for (const u of [U.admin, U.sales, U.drawer]) {
+    const n = await seenNote(u, O, id);
+    assert.deepEqual([n.text, ...fields(n), tr.translationState(n)], ['Nota 31', null, 'tr', 'FAILED', 'RATE_LIMIT', { state: 'failed', code: 'RATE_LIMIT' }], u.name);
+  }
+  // Müşteri ve denetimci: yalnızca özgün not; durum / kod / "RATE_LIMIT" verilerinde yok
+  for (const u of [U.custA, U.inspector]) {
+    const n = await seenNote(u, O, id);
+    assert.deepEqual([n.text, ...fields(n), n.translationAt, tr.translationState(n)], ['Nota 31', null, null, null, null, null, null], u.name);
+    const all = JSON.stringify(await seen(u, O));
+    for (const leak of ['RATE_LIMIT', 'FAILED']) assert.ok(!all.includes(leak), `${u.name}: ${leak}`);
+  }
+  assert.equal(await seen(U.custB, O), null, 'başka firma siparişi göremez');
+  // Okuma (sayfa açılışı / yenileme) sağlayıcıyı çağırmaz, kayıt değişmez
+  const snapshot = async () => JSON.stringify(await db.orderNote.findMany({ where: { orderId: O.id }, orderBy: { id: 'asc' } }));
+  const before = await snapshot();
+  for (let i = 0; i < 5; i++) {
+    for (const u of [U.admin, U.sales, U.drawer, U.inspector, U.custA]) for (const n of await seen(u, O)) tr.translationState(n, at(12 * MIN + i * MIN));
+    await tr.failedTranslations(db);
+  }
+  assert.deepEqual([p.calls.length, await snapshot()], [30, before]);
+  // Başka müşteri kullanıcısının hakkı ayrıdır; iç ekibin notu müşteri çeviri sınırına takılmaz
+  assert.equal((await add(U.custB, await newOrder(B), 'Altă firmă', { p, limits, now: at(11 * MIN + 30_000) })).translation, 'DONE');
+  assert.equal((await add(U.sales, O, 'Ekip notu', { p, limits, now: at(11 * MIN + 30_000) })).translation, 'DONE');
+  assert.equal(p.calls.length, 32);
+  // Müşteri ve denetimci yeniden deneyemez; iç ekip dener → çevrilir (tek çağrı); öteki notlar kendiliğinden denenmez
+  for (const u of [U.custA, U.custB, U.inspector]) assert.deepEqual(await retry(u, id, O, p, { limits }), { ok: false, code: 'FORBIDDEN' }, u.name);
+  assert.equal(p.calls.length, 32);
+  assert.deepEqual(await retry(U.sales, id, O, p, { limits, now: at(12 * MIN) }), { ok: true, translation: 'DONE' });
+  assert.deepEqual([p.calls.length, fields(await rowOf(id))], [33, ['[tr] Nota 31', 'tr', 'DONE', null]]);
+  assert.equal(await noteCount(O, { translationError: 'RATE_LIMIT', translationStatus: 'FAILED' }), 9);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: id } });
+  assert.deepEqual([audit.details.before, audit.details.beforeError, audit.details.result], ['FAILED', 'RATE_LIMIT', 'DONE']);
+  // İlk çağrıların üzerinden bir saat geçince müşterinin çeviri hakkı yeniden açılır
+  assert.equal((await add(U.custA, O, 'Nota după o oră', { p, limits, now: at(61 * MIN) })).translation, 'DONE');
+}));
+
+dbTest('paralel müşteri notları çeviri sınırını aşamaz; sağlayıcı hatası notu kaybettirmez ve hakkı harcar; iç not sağlayıcıyı çağırmaz', offline(async () => {
+  await enable();
+  const O = await newOrder();
+  // Not hızı bu testte geniş (yalnızca çeviri sınırı sınanır)
+  const wide = { ...NOTE_LIMITS, customerNotes: { limit: 1000, windowMs: 10 * MIN } };
+  const limits = createNoteLimits(wide);
+  const p = provider();
+  const rs = await Promise.all(Array.from({ length: 36 }, (_, i) => add(U.custA, O, `Paralel ${i}`, { p, limits, now: at(0) })));
+  assert.equal(tally(codes(rs), 'ok'), 36, 'hepsi kaydedildi');
+  assert.deepEqual([tally(rs.map((r) => r.translation), 'DONE'), tally(rs.map((r) => r.translation), 'FAILED'), p.calls.length], [30, 6, 30]);
+  assert.deepEqual([await noteCount(O), await noteCount(O, { translationStatus: 'DONE' }), await noteCount(O, { translationStatus: 'FAILED', translationError: 'RATE_LIMIT' })], [36, 30, 6]);
+  // Sağlayıcı hatası: not durur (güvenli kod), çağrı sayılır; sınırdan sonra sağlayıcı çağrılmaz
+  const O2 = await newOrder();
+  const l2 = createNoteLimits(wide);
+  const failing = provider(async () => { throw new TranslateError('QUOTA', `Google: quota for key ${KEY}`); });
+  const out = await quiet(async () => { const list = []; for (let i = 0; i < 33; i++) list.push(await add(U.custA, O2, `Eroare ${i + 1}`, { p: failing, limits: l2, now: at(i) })); return list; });
+  assert.deepEqual([tally(codes(out), 'ok'), failing.calls.length, await noteCount(O2)], [33, 30, 33]);
+  assert.deepEqual([await noteCount(O2, { translationError: 'QUOTA' }), await noteCount(O2, { translationError: 'RATE_LIMIT' })], [30, 3]);
+  assert.ok(!JSON.stringify(await db.orderNote.findMany({ where: { orderId: O2.id } })).includes(KEY));
+  // İç not: çeviri alanı yok, sağlayıcı çağrılmaz (sınır dolu olsa da olmasa da)
+  const q = provider();
+  const l3 = createNoteLimits();
+  for (const u of [U.admin, U.sales, U.drawer]) for (let i = 0; i < 5; i++) assert.deepEqual((await add(u, O2, `İç not ${u.name} ${i}`, { p: q, limits: l3, internal: true })).translation, null);
+  assert.equal(q.calls.length, 0);
+  assert.equal(await noteCount(O2, { internal: true, translationStatus: { not: null } }), 0);
+}));
+
+dbTest('"yeniden dene": kullanıcı başına 10 dakikada 20 sağlayıcı çağrısı — 21. reddedilir (not, denetim kaydı ve sağlayıcı dokunulmaz); paralel isteklerle aşılamaz; pencere sonrası yeniden', offline(async () => {
+  await enable();
+  const O = await newOrder();
+  await seed(O, 30, U.custA, { translationLang: 'tr', translationStatus: 'FAILED', translationError: 'RATE_LIMIT', translationAt: at(0) });
+  const notes = await db.orderNote.findMany({ where: { orderId: O.id }, orderBy: { id: 'asc' } });
+  const limits = createNoteLimits();
+  const p = provider();
+  const audits = () => db.auditLog.count({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: { in: notes.map((n) => n.id) } } });
+  // Sırayla: 20 kabul, 21. ret
+  const rs = [];
+  for (let i = 0; i < 21; i++) rs.push(await retry(U.sales, notes[i].id, O, p, { limits, now: at(MIN + i * 100) }));
+  assert.deepEqual([tally(codes(rs), 'ok'), rs[20], p.calls.length, await audits()], [20, { ok: false, code: 'RATE_LIMIT' }, 20, 20]);
+  assert.deepEqual(fields(await rowOf(notes[20].id)), [null, 'tr', 'FAILED', 'RATE_LIMIT'], 'reddedilen istek nota dokunmadı');
+  assert.equal(JSON.stringify(await rowOf(notes[20].id)), JSON.stringify(notes[20]));
+  // Sınır kullanıcı başınadır: yönetici aynı notu çevirtebilir
+  assert.deepEqual(await retry(U.admin, notes[20].id, O, p, { limits, now: at(MIN + 5000) }), { ok: true, translation: 'DONE' });
+  // Pencere dolmadan satış yine reddedilir; 10 dakika sonra yeniden
+  assert.deepEqual(await retry(U.sales, notes[21].id, O, p, { limits, now: at(10 * MIN) }), { ok: false, code: 'RATE_LIMIT' });
+  assert.deepEqual(await retry(U.sales, notes[21].id, O, p, { limits, now: at(11 * MIN + 2100) }), { ok: true, translation: 'DONE' });
+  assert.equal(p.calls.length, 22);
+  // Paralel: 30 çevrilemeyen nota aynı anda istek → tam 20 çağrı
+  const O2 = await newOrder();
+  await seed(O2, 30, U.custA, { translationLang: 'tr', translationStatus: 'FAILED', translationError: 'TIMEOUT', translationAt: at(0) });
+  const list = await db.orderNote.findMany({ where: { orderId: O2.id } });
+  const l2 = createNoteLimits();
+  const q = provider();
+  const par = await Promise.all(list.map((n) => retry(U.drawer, n.id, O2, q, { limits: l2, now: at(MIN) })));
+  assert.deepEqual([tally(codes(par), 'ok'), tally(codes(par), 'RATE_LIMIT'), q.calls.length], [20, 10, 20]);
+  assert.deepEqual([await noteCount(O2, { translationStatus: 'DONE' }), await noteCount(O2, { translationStatus: 'FAILED', translationError: 'TIMEOUT' })], [20, 10], 'kalan notlar olduğu gibi (yeniden denenebilir)');
+  // Yetkisiz roller ve başka sipariş: önceki yanıtlar (hak harcanmaz)
+  const l3 = createNoteLimits();
+  const left = await db.orderNote.findFirstOrThrow({ where: { orderId: O2.id, translationStatus: 'FAILED' } });
+  for (let i = 0; i < 25; i++) {
+    assert.deepEqual(await retry(U.custA, left.id, O2, q, { limits: l3 }), { ok: false, code: 'FORBIDDEN' });
+    assert.deepEqual(await retry(U.sales, left.id, OB, q, { limits: l3 }), { ok: false, code: 'NOT_FOUND' });
+  }
+  assert.deepEqual(await retry(U.sales, left.id, O2, q, { limits: l3 }), { ok: true, translation: 'DONE' });
+}));
+
+dbTest('sınırlar kiracı ayrımını ve yetkileri değiştirmez: başka firmanın siparişi sınır dolu olsa da NOT_FOUND / yazılamaz; ret yanıtı sipariş varlığını sızdırmaz', offline(async () => {
+  await enable();
+  const O = await newOrder();
+  const X = await newOrder(B);
+  const limits = createNoteLimits();
+  const p = provider();
+  // Müşteri A, firma B'nin siparişine yazamaz (sınırdan önce de sonra da); denemeler kendi hakkından düşer
+  for (let i = 0; i < 3; i++) assert.deepEqual(await add(U.custA, X, 'încercare', { p, limits, now: at(i) }), { ok: false, code: 'NOT_FOUND' });
+  const own = [];
+  for (let i = 0; i < 20; i++) own.push(await add(U.custA, O, `Nota ${i}`, { p, limits, now: at(10 + i) }));
+  assert.deepEqual([tally(codes(own), 'ok'), tally(codes(own), 'RATE_LIMIT')], [17, 3]);
+  // Sınır doluyken: var olan başka firma siparişi ile var olmayan sipariş aynı yanıtı verir
+  assert.deepEqual(await add(U.custA, X, 'x', { p, limits, now: at(100) }), { ok: false, code: 'RATE_LIMIT' });
+  assert.deepEqual(await tr.addNote(db, { orderId: 'yok', actor: act(U.custA), text: 'x', translator: p.fn, secret: SECRET, limits, now: at(100) }), { ok: false, code: 'RATE_LIMIT' });
+  assert.deepEqual([await noteCount(X), p.calls.length], [0, 17]);
+  // Firma B'nin müşterisi etkilenmez; kendi siparişine yazar, A'nın siparişine yazamaz / notlarını göremez
+  assert.equal((await add(U.custB, X, 'Nota firmei B', { p, limits, now: at(100) })).ok, true);
+  assert.deepEqual(await add(U.custB, O, 'x', { p, limits, now: at(100) }), { ok: false, code: 'NOT_FOUND' });
+  assert.equal(await seen(U.custB, O), null);
+  assert.equal((await seen(U.custA, X)), null);
+  // Kapsam dışı sipariş (satış: profil siparişi; çizim: çizimsiz sipariş) yine bulunamaz
+  assert.deepEqual(await add(U.sales, OP, 'x', { p, limits }), { ok: false, code: 'NOT_FOUND' });
+  assert.deepEqual(await add(U.drawer, ONODRAW, 'x', { p, limits }), { ok: false, code: 'NOT_FOUND' });
+  // Müşterinin "iç not" işareti yok sayılır (not müşteriye açıktır ve çevrilir); denetimci yazamaz
+  const forced = await add(U.custB, X, 'Notă „internă”', { p, limits, internal: true, now: at(200) });
+  assert.deepEqual([forced.translation, (await rowOf(forced.noteId)).internal], ['DONE', false]);
+  assert.deepEqual(await add(U.inspector, O, 'x', { p, limits }), { ok: false, code: 'FORBIDDEN' });
 }));

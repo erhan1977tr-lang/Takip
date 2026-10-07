@@ -16,6 +16,7 @@ import { writeAudit } from '../orders/journal.js';
 import { getEnv } from '../env.js';
 import { openSecret, sealSecret } from '../crypto/secret.js';
 import { TranslateError, translatorFor } from './provider.js';
+import { TRANSLATION_RATE_LIMITED, noteLimits } from './limits.js';
 
 // Saf kurallar (yön, görünürlük, durum) server/notes/view.js'tedir: sipariş sayfası yalnızca onu yükler — sağlayıcıya
 // (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki üç işlevden çağrılır: addNote (yeni not), retryNoteTranslation
@@ -116,17 +117,29 @@ async function runTranslation(db, note, { settings, secret, translator, now }) {
 }
 
 /**
- * Sipariş notu ekler ve (çeviri açıksa, not müşteriye açıksa) bir kez çevirir. Not HER DURUMDA önce kaydedilir;
- * çeviri başarısız olursa not durur, durum FAILED olur. Sipariş, yazanın kapsamında değilse NOT_FOUND.
+ * Sipariş notu ekler ve (çeviri açıksa, not müşteriye açıksa) bir kez çevirir. Not önce kaydedilir; çeviri başarısız
+ * olursa not durur, durum FAILED olur. Sipariş, yazanın kapsamında değilse NOT_FOUND.
+ *
+ * Sınırlar (karar 147 — değerler ve sayaçlar server/notes/limits.js): hepsi BURADA, sunucuda uygulanır; notu yazan tek
+ * yer bu işlevdir.
+ *   RATE_LIMIT  : yazanın not hızı sınırı doldu → not yazılmaz (hak tek adımda denetlenir ve sayılır; paralel istekler de)
+ *   ORDER_LIMIT : siparişteki toplam not sınırı doldu → not yazılmaz. Sayım ve kayıt AYNI veritabanı işleminde, siparişe
+ *                 özel kilit (pg_advisory_xact_lock) altında yapılır: paralel isteklerle sınırın üstüne çıkılamaz.
+ *   çeviri hızı : müşteri notunda yazanın çeviri hakkı dolduysa not YİNE yazılır, sağlayıcı ÇAĞRILMAZ; not
+ *                 FAILED + RATE_LIMIT olarak kaydedilir (iç ekip nedenini görür, "yeniden dene" ile sonra çevirtir).
+ * Sağlayıcı çağrısı her zaman veritabanı işlemi BİTTİKTEN sonra yapılır (kilit ağ isteği boyunca tutulmaz).
  * @param {any} db
  * @param {{ orderId: string, actor: { id: string, role: string, customerId?: string | null }, text: unknown, internal?: boolean,
- *   now?: Date, translator?: Function, secret?: string }} o
- * @returns {Promise<{ ok: true, noteId: string, translation: 'DONE' | 'SAME' | 'FAILED' | null } | { ok: false, code: 'FORBIDDEN' | 'EMPTY' | 'NOT_FOUND' }>}
+ *   now?: Date, translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, noteId: string, translation: 'DONE' | 'SAME' | 'FAILED' | null }
+ *   | { ok: false, code: 'FORBIDDEN' | 'EMPTY' | 'RATE_LIMIT' | 'NOT_FOUND' | 'ORDER_LIMIT' }>}
  */
-export async function addNote(db, { orderId, actor, text, internal = false, now = new Date(), translator = undefined, secret = undefined }) {
+export async function addNote(db, { orderId, actor, text, internal = false, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
   if (!can(actor?.role, 'NOTE_ADD')) return { ok: false, code: 'FORBIDDEN' };
   const body = String(text ?? '').trim().slice(0, NOTE_MAX);
   if (!body) return { ok: false, code: 'EMPTY' };
+  // Not hızı: denetim ve sayım tek adımdır, veritabanına gidilmeden yapılır
+  if (!limits.note(actor, now.getTime())) return { ok: false, code: 'RATE_LIMIT' };
   const order = await db.order.findFirst({ where: { id: String(orderId ?? ''), ...orderScope({ appRole: actor.role, customerId: actor.customerId }) }, select: { id: true } });
   if (!order) return { ok: false, code: 'NOT_FOUND' };
   // İç not yalnızca iç notları görebilen rol tarafından yazılabilir; iç not çevrilmez
@@ -141,15 +154,23 @@ export async function addNote(db, { orderId, actor, text, internal = false, now 
     }
   }
   const translate = !!(target && translateReady(settings));
-  const note = await db.orderNote.create({
-    data: {
-      orderId: order.id, userId: actor.id, text: body, internal: isInternal, createdAt: now,
-      ...(translate ? { translationLang: target, translationStatus: 'PENDING', translationAt: now } : {}),
-    },
-  });
-  const status = translate
-    ? await runTranslation(db, note, { settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now })
-    : null;
+  const created = await db.$transaction(async (tx) => {
+    // Siparişin notları tek sırada yazılır: sayım, bu kilidi alan işlemden önce bitmiş bütün kayıtları görür
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-notes:${order.id}`}, 0))`;
+    if (await tx.orderNote.count({ where: { orderId: order.id } }) >= limits.perOrder) return null;
+    // Çeviri hakkı yalnızca çeviri gerçekten yapılacaksa ve not yazılacaksa alınır (hak = bir sağlayıcı çağrısı)
+    const limited = translate && !limits.translation(actor, now.getTime());
+    const state = !translate ? {}
+      : limited ? { translationLang: target, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now }
+        : { translationLang: target, translationStatus: 'PENDING', translationAt: now };
+    const note = await tx.orderNote.create({ data: { orderId: order.id, userId: actor.id, text: body, internal: isInternal, createdAt: now, ...state } });
+    return { note, limited };
+  }, { isolationLevel: 'ReadCommitted' });
+  if (!created) return { ok: false, code: 'ORDER_LIMIT' };
+  const { note, limited } = created;
+  // Çeviri yok (kapalı / iç not) ya da çeviri hakkı dolmuş: sağlayıcı ÇAĞRILMAZ; not kayıtlıdır
+  if (!translate || limited) return { ok: true, noteId: note.id, translation: translate ? 'FAILED' : null };
+  const status = await runTranslation(db, note, { settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now });
   return { ok: true, noteId: note.id, translation: status };
 }
 
@@ -157,10 +178,13 @@ export async function addNote(db, { orderId, actor, text, internal = false, now 
  * Çevrilemeyen (ya da yarıda kalan) notun çevirisini BİR KEZ daha ister — yalnızca iç ekip, açıkça istediğinde.
  * Aynı anda iki istek gelirse yalnızca biri çeviri yapar (atomik sahiplenme). Tamamlanmış çeviri yeniden yapılmaz.
  * @param {any} db
- * @param {{ noteId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null, ip?: string | null }, now?: Date, translator?: Function, secret?: string }} o
- * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'DISABLED' | 'NOT_ALLOWED' }>}
+ * Hız sınırı (karar 147): kullanıcı başına sağlayıcı çağrısı sınırı dolduysa RATE_LIMIT — not sahiplenilmez, olduğu gibi
+ * (çevrilemedi) kalır ve sonra yeniden denenebilir; sağlayıcı çağrılmaz, denetim kaydı yazılmaz.
+ * @param {{ noteId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null, ip?: string | null }, now?: Date, translator?: Function, secret?: string,
+ *   limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'DISABLED' | 'RATE_LIMIT' | 'NOT_ALLOWED' }>}
  */
-export async function retryNoteTranslation(db, { noteId, orderId, actor, now = new Date(), translator = undefined, secret = undefined }) {
+export async function retryNoteTranslation(db, { noteId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
   if (!canRetryTranslation(actor?.role)) return { ok: false, code: 'FORBIDDEN' };
   const note = await db.orderNote.findFirst({
     where: { id: String(noteId ?? ''), orderId: String(orderId ?? ''), order: orderScope({ appRole: actor.role, customerId: actor.customerId }) },
@@ -168,6 +192,8 @@ export async function retryNoteTranslation(db, { noteId, orderId, actor, now = n
   if (!note) return { ok: false, code: 'NOT_FOUND' };
   const settings = await readSettings(db);
   if (!translateReady(settings)) return { ok: false, code: 'DISABLED' };
+  // Sağlayıcı çağrısı hakkı, not sahiplenilmeden ÖNCE tek adımda alınır: hak yoksa nota dokunulmaz
+  if (!limits.retry(actor, now.getTime())) return { ok: false, code: 'RATE_LIMIT' };
   const stale = new Date(now.getTime() - STALE_PENDING_MS);
   const claimed = await db.orderNote.updateMany({
     where: { id: note.id, internal: false, translationLang: { not: null }, OR: [{ translationStatus: 'FAILED' }, { translationStatus: 'PENDING', translationAt: { lt: stale } }] },

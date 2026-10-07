@@ -251,7 +251,12 @@ export async function addNoteAction(formData: FormData) {
   // Not her durumda kaydedilir; müşteriye açık not (çeviri açıksa) bir kez çevrilir ve sonucu saklanır (karar 127).
   // Çeviri başarısız olsa da not durur — kural ve görünürlük server/notes/translation.js'te.
   const r = await addNote(db, { orderId: order.id, actor: await actorOf(user), text: formData.get('text'), internal: formData.get('internal') === 'on' });
-  if (!r.ok) redirect(err(order.id, t(r.code === 'EMPTY' ? 'order.errors.emptyNote' : 'order.errors.notAllowed')));
+  // Sınırlar (karar 147) addNote içinde, sunucuda uygulanır: not hızı (RATE_LIMIT) ve siparişteki toplam not (ORDER_LIMIT)
+  if (!r.ok) {
+    redirect(err(order.id, t(r.code === 'EMPTY' ? 'order.errors.emptyNote'
+      : r.code === 'RATE_LIMIT' ? 'order.errors.noteRateLimit'
+        : r.code === 'ORDER_LIMIT' ? 'order.errors.noteOrderLimit' : 'order.errors.notAllowed')));
+  }
   done(order.id, 'note_added');
 }
 
@@ -261,7 +266,10 @@ export async function retryNoteTranslationAction(formData: FormData) {
   const order = await loadOrder(orderIdOf(formData), user);
   const { t } = await getT();
   const r = await retryNoteTranslation(db, { noteId: String(formData.get('noteId') ?? ''), orderId: order.id, actor: await actorOf(user) });
-  if (!r.ok) redirect(err(order.id, t(r.code === 'DISABLED' ? 'order.notes.translation.disabled' : 'order.errors.notAllowed')) + '#notlar');
+  if (!r.ok) {
+    redirect(err(order.id, t(r.code === 'DISABLED' ? 'order.notes.translation.disabled'
+      : r.code === 'RATE_LIMIT' ? 'order.notes.translation.retryLimit' : 'order.errors.notAllowed')) + '#notlar');
+  }
   revalidatePath(`/siparisler/${order.id}`);
   if (r.translation === 'FAILED') redirect(err(order.id, t('order.notes.translation.retryFailed')) + '#notlar');
   redirect(back(order.id, 'ok=note_translated') + '#notlar');

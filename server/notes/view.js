@@ -5,7 +5,9 @@
 import { can } from '../auth/permissions.js';
 
 /** Güvenli çeviri hata kodları (nota yazılan / ekranda metne çevrilen) */
-export const TRANSLATE_ERRORS = ['TIMEOUT', 'NETWORK', 'QUOTA', 'AUTH', 'BAD_REQUEST', 'SERVER', 'HTTP', 'BAD_RESPONSE', 'NO_KEY', 'INTERRUPTED', 'ERROR'];
+// RATE_LIMIT: sağlayıcı hiç ÇAĞRILMADI — yazanın çeviri hız sınırı dolmuştu (karar 147; server/notes/limits.js). Not
+// kayıtlıdır; iç ekip nedenini görür ve sonra "yeniden dene" ile çevirtir.
+export const TRANSLATE_ERRORS = ['TIMEOUT', 'NETWORK', 'QUOTA', 'AUTH', 'BAD_REQUEST', 'SERVER', 'HTTP', 'BAD_RESPONSE', 'NO_KEY', 'INTERRUPTED', 'RATE_LIMIT', 'ERROR'];
 /** Bu süreden eski "sürüyor" kaydı yarıda kalmış sayılır (sunucu çeviri sırasında kapandı): iç ekip yeniden deneyebilir */
 export const STALE_PENDING_MS = 2 * 60_000;
 

@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.50.18 — 07.10.2026
+
+- **Güvenlik: sipariş notlarına ve not çevirisine sınır geldi** (güvenlik denetimi AUD-9).
+  - Bir kullanıcı kısa sürede çok sayıda not gönderemez: müşteri kullanıcısı 10 dakikada en çok 20, iç ekip (yönetici,
+    satış, çizim) 10 dakikada en çok 60 not yazabilir. Sınır dolunca not kaydedilmez ve "Kısa sürede çok fazla not
+    gönderdiniz. Lütfen birkaç dakika sonra yeniden deneyin." iletisi görünür (müşteriye Romence).
+  - Bir siparişte toplam en çok 500 not olabilir (iç notlar dahil); dolunca yeni not eklenemez.
+  - Not çevirisi: bir müşteri kullanıcısının notları için saatte en çok 30 çeviri yapılır. Sınır dolunca not **yine
+    kaydedilir**, yalnızca çevrilmez; iç ekip notun altında nedenini görür ve sonra "Çeviriyi yeniden dene" ile çevirtir.
+    Müşteri ve denetimci bu bilgiyi görmez. Sayfayı yenilemek çeviriyi kendiliğinden başlatmaz.
+  - "Çeviriyi yeniden dene": bir kullanıcı 10 dakikada en çok 20 kez deneyebilir; sonrasında not olduğu gibi kalır.
+  - Olağan kullanımda görünen bir değişiklik yoktur: bu sayılar gündelik yazışmanın çok üstündedir. Amaç, ele geçirilmiş
+    ya da kötüye kullanılan bir hesabın sınırsız kayıt ve sınırsız ücretli çeviri üretmesini önlemektir.
+  - Not: sınır sayaçları uygulama yeniden başlayınca (her güncellemede) sıfırlanır.
+
 ## 3.50.17 — 06.10.2026
 
 - **Güvenlik: geri çekilen çizim sürümünün dosyaları artık müşteriye kapalı** (güvenlik denetimi AUD-8).
