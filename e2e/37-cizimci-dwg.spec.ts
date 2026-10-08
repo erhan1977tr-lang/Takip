@@ -244,7 +244,8 @@ test('Çizimi Güncelle: orijinal dosya korunur; çift onaylı gönderim; revizy
   const drawer = await as(browser, DRAWER, TEAM_PW);
   await drawer.goto(`/siparisler/${id}`);
   await drawer.locator('#dwg-karar').getByRole('button', { name: 'Çizimi Güncelle' }).click();
-  await expect(drawer).toHaveURL(new RegExp(`/siparisler/${id}\\?ok=dwg_update#cizim-dosyalari$`));
+  // (Next.js sunucu işleminin yönlendirmesinde adres çapası (#…) taşınmaz: yalnızca sorgu denetlenir)
+  await expect(drawer).toHaveURL(new RegExp(`/siparisler/${id}\\?ok=dwg_update`));
   await expect(drawer.locator('#cizim-dosyalari #drawing-file')).toHaveCount(1);
   // Yeni çizim: taslak → "Kontrol Et" → "Müşteriye gönder" (mevcut çift onay; sipariş sayfasında gönder düğmesi yok)
   await drawer.setInputFiles('#drawing-file', [sampleFile('guncel-v2.pdf', 'v2'), sampleFile('guncel-v2.dxf', 'v2 dxf')]);
