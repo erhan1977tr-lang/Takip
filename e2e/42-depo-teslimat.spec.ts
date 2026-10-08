@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import crypto from 'node:crypto';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, SALES, TEAM_PW, as, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
 
 // Paket 8 — Depo, teslimat, çalışma takvimleri ve teslimat belgeleri (karar 192–197).
 //  - Ayarlar → Çalışma Takvimleri: Romanya deposu ve Türkiye fabrikası ayrı; resmî tatil, elle kapalı gün; yalnızca yönetici; mobilde taşma yok
@@ -14,6 +14,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, SALES, TEAM_PW, as, s
 test.describe.configure({ mode: 'serial' });
 
 const BETA = 'beta@betacam.test';
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const INSPECTOR = 'denetim@e2e.test';
 let orderId = '';
 let orderNo = '';
