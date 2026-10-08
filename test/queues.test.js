@@ -1,7 +1,7 @@
 // "Sıra bende" kuyrukları: rol yetkisine göre bölümler; profil siparişleri satış/çizim kuyruklarına düşmez (Aşama 3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SALES_QUEUES, approvedDrawingList, queuesFor, salesOfferGroups } from '../server/orders/queues.js';
+import { SALES_QUEUES, approvedDrawingList, dwgDrawingGroups, queuesFor, salesOfferGroups } from '../server/orders/queues.js';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
 const h = (n) => new Date(NOW + n * 3_600_000);
@@ -152,4 +152,41 @@ test('onaylanmış çizimler listesi: yükleme gününe göre süzme; gün için
   assert.deepEqual(list({ day: '2026-11-01' }).rows, []);
   assert.equal(list({ day: "x' OR 1=1" }).day, null);
   assert.equal(list({ day: 'x' }).rows.length, 4, 'geçersiz gün: süzgeç uygulanmaz');
+});
+
+test('DXF/DWG olarak gelen çizimler (karar 167): karar bekleyenler ve müşterinin düzeltmesi beklenenler — yalnızca cam, SLA sırasıyla', () => {
+  const dwg = { name: 'plan.dwg', kind: 'CUSTOMER', scanStatus: 'CLEAN' };
+  const first = row({ drawingTrack: 'GEREKLI', files: [dwg], slaDeadline: h(10), _count: { drawings: 0 } });
+  const late = row({ drawingTrack: 'YAPILIYOR', files: [dwg], slaDeadline: h(-1), _count: { drawings: 0 } });
+  const resent = row({
+    drawingTrack: 'GEREKLI', files: [], slaDeadline: h(5), _count: { drawings: 2 },
+    drawings: [{ id: 'd1', version: 1, source: 'MUSTERI_DXF_DWG', status: 'REVIZYON_ISTENDI' }, { id: 'd2', version: 2, source: 'MUSTERI_DXF_DWG', status: 'BEKLIYOR', sourceFiles: [{ id: 'f2', name: 'v2.dxf' }] }],
+  });
+  const decided = row({ drawingTrack: 'ONAYLANDI', files: [dwg], _count: { drawings: 1 }, drawings: [{ id: 'd3', version: 1, source: 'MUSTERI_DXF_DWG', status: 'ONAYLANDI' }] });
+  const draft = row({ drawingTrack: 'YAPILIYOR', files: [dwg], _count: { drawings: 1 } }); // fabrika taslağı var (listede görünmez)
+  const pdfOnly = row({ drawingTrack: 'GEREKLI', files: [{ name: 'plan.pdf', kind: 'CUSTOMER' }], _count: { drawings: 0 } });
+  const held = row({ drawingTrack: 'GEREKLI', files: [dwg], onHold: true, _count: { drawings: 0 } });
+  const fix = row({ drawingTrack: 'DUZELTME_BEKLIYOR', files: [dwg], slaDeadline: null, _count: { drawings: 1 } });
+  const profile = row({ orderTypeCode: 'PROFILE_ORDER', drawingTrack: 'GEREKLI', files: [dwg], _count: { drawings: 0 } });
+  const g = dwgDrawingGroups([first, late, resent, decided, draft, pdfOnly, held, fix, profile], NOW);
+  assert.deepEqual(keys(g), ['pending', 'correction']);
+  assert.deepEqual(ids(g, 'pending'), [late.id, resent.id, first.id], 'geciken üstte; sonra son tarihi en yakın');
+  assert.deepEqual(ids(g, 'correction'), [fix.id]);
+});
+
+test('teklif kontrolü: müşterinin DWG/DXF karar kaydı ilk çizimi "ikinci" yapmaz; üretime hazır kabul edilen müşteri çizimi üretim çizimi sayılır', () => {
+  const sent = { status: 'GONDERILDI', sentAt: h(-10) };
+  const rec = (version, status, at) => ({ id: `r${version}`, version, source: 'MUSTERI_DXF_DWG', status, createdAt: h(at - 1), decidedAt: h(at) });
+  const fac = (version, status, at) => ({ id: `f${version}`, version, source: 'FABRIKA', status, createdAt: h(at - 1), sentAt: h(at) });
+  const check = (drawings) => queuesFor([row({ drawingTrack: 'ONAY_BEKLIYOR', offers: [sent], drawings })], { review: true, send: true, drawing: true }, NOW)
+    .find((q) => q.key === 'offerCheck').rows.length;
+  // "Çizimi Güncelle" sonrası ilk fabrika çizimi (v2) teklif gönderildikten sonra geldi: yine İLK çizim → kontrol yok
+  assert.equal(check([rec(1, 'YAPILIYOR', -20), fac(2, 'ONAY_BEKLIYOR', -1)]), 0);
+  // Fabrika revizyonu (ikinci fabrika çizimi): kontrol (eski davranış)
+  assert.equal(check([rec(1, 'YAPILIYOR', -20), fac(2, 'REVIZYON_ISTENDI', -15), fac(3, 'ONAY_BEKLIYOR', -1)]), 1);
+  assert.equal(check([fac(1, 'REVIZYON_ISTENDI', -15), fac(2, 'ONAY_BEKLIYOR', -1)]), 1);
+  // Üretime hazır kabul edilen müşteri çiziminden sonraki fabrika revizyonu: ikinci üretim çizimi → kontrol
+  assert.equal(check([rec(1, 'ONAYLANDI', -20), fac(2, 'ONAY_BEKLIYOR', -1)]), 1);
+  // Karar bekleyen düzeltilmiş müşteri dosyası çizim değildir
+  assert.equal(check([rec(1, 'REVIZYON_ISTENDI', -20), rec(2, 'BEKLIYOR', -1)]), 0);
 });

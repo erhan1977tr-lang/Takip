@@ -3,6 +3,7 @@
 // (CLAUDE.md "Profile Order"); onların kuyrukları yalnızca yöneticidedir (profileQueues).
 // Beklemedeki siparişler iş kuyruklarında değil, ayrı "Beklemede" bölümünde görünür.
 import { offerNeedsCheck } from './rules.js';
+import { dwgReview, lastProductionDrawing } from './dwg-review.js';
 
 export const SLA_RISK_HOURS = 6;
 /**
@@ -13,18 +14,45 @@ export const SALES_QUEUES = ['newOrders', 'sla'];
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
 /** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null,
- *   offers: { status: string, sentAt?: Date | null }[], drawings: { version: number, createdAt: Date, sentAt?: Date | null }[], events: { createdAt: Date }[] }} QueueRow */
+ *   offers: { status: string, sentAt?: Date | null }[], drawings: { version: number, status: string, source?: string | null, createdAt: Date, sentAt?: Date | null, decidedAt?: Date | null }[],
+ *   events: { createdAt: Date }[] }} QueueRow */
 
 /** En son teklifin durumu (teklifler en yeniden eskiye sıralı) */
 export const latestOfferStatus = (o) => o.offers[0]?.status ?? null;
 
-/** Teklif müşteriye gittikten sonra yeni çizim yüklenmiş ve yönetici henüz bakmamış */
-export const needsOfferCheck = (o) =>
-  (o.status === 'HAZIRLANIYOR' || o.status === 'URETIMDE') &&
-  offerNeedsCheck({
+/**
+ * Teklif müşteriye gittikten sonra yeni (ikinci ya da sonraki) üretim çizimi gelmiş ve yönetici henüz bakmamış. Üretim
+ * çizimi ve sırası tek yerden: server/orders/dwg-review.js → lastProductionDrawing (müşterinin DWG/DXF karar kaydı da
+ * sayılır mı, orada).
+ */
+export function needsOfferCheck(o) {
+  if (o.status !== 'HAZIRLANIYOR' && o.status !== 'URETIMDE') return false;
+  const last = lastProductionDrawing(o.drawings);
+  return offerNeedsCheck({
     offer: latestOfferStatus(o), sentAt: o.offers[0]?.sentAt ?? null,
-    lastDrawing: o.drawings[o.drawings.length - 1] ?? null, checkedAt: o.events[0]?.createdAt ?? null,
+    lastDrawing: last ? { version: last.ordinal, createdAt: last.at, sentAt: last.at } : null, checkedAt: o.events[0]?.createdAt ?? null,
   });
+}
+
+/**
+ * Çizim ekibinin "DXF/DWG olarak gelen çizimler" ekranı (karar 167) — yalnızca cam siparişleri:
+ *   pending    — çizimcinin kararını bekleyen müşteri çizimleri (server/orders/dwg-review.js → dwgReview: ilk karar ya da
+ *                müşterinin düzeltilmiş dosyası); her satırda üç ayrı karar (Üretime Hazır / Çizim Hatalı / Çizimi Güncelle)
+ *   correction — "çizim hatalı" bulunmuş, müşterinin düzeltilmiş dosyası ya da fabrika çizimi talebi beklenen siparişler
+ * Liste sorgusu taslak sürümleri getirmiyorsa satırın drawingCount alanı bütün sürümlerin sayısıdır (dwgReview).
+ * Sıralama SLA'ya göre (gecikenler üstte).
+ * @template {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline?: Date | null }} R
+ * @param {R[]} rows
+ * @param {number} [now]
+ * @returns {{ key: 'pending' | 'correction', rows: R[] }[]}
+ */
+export function dwgDrawingGroups(rows, now = Date.now()) {
+  const glass = rows.filter((o) => o.orderTypeCode === 'GLASS_ORDER');
+  return [
+    { key: 'pending', rows: bySla(glass.filter((o) => dwgReview(o).pending), now) },
+    { key: 'correction', rows: bySla(glass.filter((o) => o.status === 'HAZIRLANIYOR' && o.drawingTrack === 'DUZELTME_BEKLIYOR'), now) },
+  ];
+}
 
 /**
  * Kullanıcının yetkilerine göre kuyruklar.
@@ -115,7 +143,7 @@ export function salesOfferGroups(rows) {
 }
 
 /**
- * "Müşteri tarafından onaylanmış çizimler" listesi: yükleme gününe göre süzülür (day: YYYY-AA-GG; boş = hepsi),
+ * "Müşteriden onaylı çizimler" listesi (eski adı "Müşteri tarafından onaylanmış çizimler"): yükleme gününe göre süzülür (day: YYYY-AA-GG; boş = hepsi),
  * yükleme gününe göre gruplanır, grup içinde onay zamanına göre en yeni (varsayılan) ya da en eski üstte.
  * @template {{ estimatedShipDate: Date | null, drawingSince?: Date | null }} R
  * @param {R[]} rows

@@ -31,6 +31,13 @@ export const AUDIENCE_ROLES = {
 const orderLink = (o) => `/siparisler/${o.id}`;
 /** Siparişin ilgili bölümü (karar 166): bildirime tıklayan doğrudan çizim kararına / teklife / çizimlere iner */
 const orderPart = (hash) => (o) => `/siparisler/${o.id}#${hash}`;
+/** Kayıt kimliği (cuid): bağlantıya yalnızca bu biçimdeki değer girer */
+const isId = (v) => typeof v === 'string' && /^[a-z0-9]{8,40}$/i.test(v);
+/**
+ * İlgili çizim SÜRÜMÜ (Paket 3): olayın kuyruktaki drawingId'si varsa o sürümün ekranı, yoksa siparişin çizim bölümü.
+ * Bağlantı yetki değildir: çizim ekranı kendi kuralını uygular (karar 146 — müşteri geri çekilen sürümü açamaz).
+ */
+const drawingLink = (hash) => (o, p) => (isId(p?.drawingId) ? `/siparisler/${o.id}/cizim/${p.drawingId}` : `/siparisler/${o.id}#${hash}`);
 const dayLink = (hash = '') => (_o, p) => `/yuklemeler?gun=${p.day}${hash}`;
 
 /**
@@ -45,8 +52,16 @@ export const INAPP_RULES = {
   ORDER_SENT_TO_DRAWING: { to: () => ['drawer'] },
   // Müşteriye yeni çizim: bağlantı siparişteki kırmızı "yeni çizim onayınızı bekliyor" bilgilendirmesine (karar 162, 166)
   ORDER_DRAWING_UPLOADED: { to: () => ['customer'], link: orderPart('cizim-onay') },
+  // Revizyon: çizimcinin sipariş sayfasındaki "Çizim onayı ve revizyon" bölümüne (numaralı not + çevirisi)
   ORDER_REVISION_REQUESTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
-  ORDER_DRAWING_APPROVED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
+  // Onay: onaylanan sürümün ekranına (Paket 3 — "doğru çizim sürümü")
+  ORDER_DRAWING_APPROVED: { to: () => ['drawer', 'orderSales'], link: drawingLink('cizim') },
+  // Müşterinin DWG/DXF çizimi (karar 167): "hatalı" kararı müşteriye (sipariş sayfasındaki kırmızı bilgilendirmeye);
+  // "üretime hazır" ilgili satışçıya; müşterinin yanıtı (düzeltilmiş dosya / fabrika çizimi) çizimciye + ilgili satışçıya
+  ORDER_DWG_FAULTY: { to: () => ['customer'], link: orderPart('cizim-hatali') },
+  ORDER_DWG_READY: { to: () => ['orderSales'], link: orderPart('cizim') },
+  ORDER_DWG_RESUBMITTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
+  ORDER_DWG_FACTORY_REQUESTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
   // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride
   ORDER_OFFER_SUBMITTED: { to: () => ['admin'] },
   ORDER_OFFER_RETURNED: { to: () => ['orderSales'] },
@@ -252,6 +267,24 @@ async function fanOutGuest(db, row) {
   return a + b;
 }
 
+/** Bir kuyruk olayını dağıtır ve işaretler (dispatchInApp ve dispatchInAppFor ortak). @returns {Promise<number>} yeni bildirim */
+async function dispatchRow(db, row, { now, log }) {
+  let created = 0;
+  try {
+    if (row.type === DOC_EMAIL) created += await fanOutDocument(db, row);
+    else if (row.type === GUEST_ASSIGNED || row.type === GUEST_REMOVED) created += await fanOutGuest(db, row);
+    else if (INAPP_RULES[row.type]) created += await fanOut(db, row);
+    await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } });
+  } catch (e) {
+    log('uygulama içi bildirim dağıtılamadı', row.type, row.orderId, String(e?.message ?? e).slice(0, 200));
+    // Bir günden eski, dağıtılamayan olay kuyruğu tıkamasın
+    if (now.getTime() - new Date(row.createdAt).getTime() > 86_400_000) {
+      await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } }).catch(() => {});
+    }
+  }
+  return created;
+}
+
 /**
  * Kuyruktaki, henüz dağıtılmamış olayları uygulama içi bildirime çevirir (işçi her turda çağırır; e-posta ayarından
  * bağımsızdır). Dağıtılan olay inAppAt ile işaretlenir; işaretlenemeden yarıda kalırsa sonraki turda yeniden denenir —
@@ -263,20 +296,26 @@ async function fanOutGuest(db, row) {
 export async function dispatchInApp(db, { now = new Date(), limit = 200, log = () => {} } = {}) {
   const rows = await db.notificationOutbox.findMany({ where: { inAppAt: null }, orderBy: { createdAt: 'asc' }, take: limit });
   let created = 0;
-  for (const row of rows) {
-    try {
-      if (row.type === DOC_EMAIL) created += await fanOutDocument(db, row);
-      else if (row.type === GUEST_ASSIGNED || row.type === GUEST_REMOVED) created += await fanOutGuest(db, row);
-      else if (INAPP_RULES[row.type]) created += await fanOut(db, row);
-      await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } });
-    } catch (e) {
-      log('uygulama içi bildirim dağıtılamadı', row.type, row.orderId, String(e?.message ?? e).slice(0, 200));
-      // Bir günden eski, dağıtılamayan olay kuyruğu tıkamasın
-      if (now.getTime() - new Date(row.createdAt).getTime() > 86_400_000) {
-        await db.notificationOutbox.updateMany({ where: { id: row.id, inAppAt: null }, data: { inAppAt: now } }).catch(() => {});
-      }
-    }
-  }
+  for (const row of rows) created += await dispatchRow(db, row, { now, log });
+  return { events: rows.length, created };
+}
+
+/**
+ * Bir iş akışı işleminin AZ ÖNCE yazdığı kuyruk olaylarını hemen dağıtır (Paket 3 — bildirim gecikmesi): uygulama,
+ * işlem kaydedildikten sonra çağırır (lib/notifications.ts → deliverInAppNow), işçinin turunu (60 sn + tarama / FGO işleri) beklemez. Aynı
+ * dağıtıcıdır — ikinci bir bildirim sistemi değildir: yalnızca verilen, henüz dağıtılmamış (inAppAt boş) olaylar işlenir;
+ * işçi de aynı olayı alırsa benzersiz anahtar ikinci bildirimi engeller. Hata işlemi etkilemez (işçi yeniden dener).
+ * @param {any} db
+ * @param {string[]} ids  kuyruk olaylarının kimlikleri
+ * @param {{ now?: Date, log?: Function }} [o]
+ * @returns {Promise<{ events: number, created: number }>}
+ */
+export async function dispatchInAppFor(db, ids, { now = new Date(), log = () => {} } = {}) {
+  const list = [...new Set((ids ?? []).filter((x) => typeof x === 'string' && x))].slice(0, 50);
+  if (!list.length) return { events: 0, created: 0 };
+  const rows = await db.notificationOutbox.findMany({ where: { id: { in: list }, inAppAt: null }, orderBy: { createdAt: 'asc' } });
+  let created = 0;
+  for (const row of rows) created += await dispatchRow(db, row, { now, log });
   return { events: rows.length, created };
 }
 

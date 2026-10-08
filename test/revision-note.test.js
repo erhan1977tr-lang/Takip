@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { REVISION_ITEMS_MAX, REVISION_ITEM_MAX, REVISION_TEXT_MAX, cleanRevisionItem, revisionItems, revisionNote } from '../server/orders/revision-note.js';
-import { drawingRevisionsFor, revisionView } from '../server/notes/view.js';
+import { drawingNoteView, drawingRevisionsFor, drawingTranslationsFor, revisionView } from '../server/notes/view.js';
 
 test('revizyon notu: maddeler sırayla numaralanır; boş maddeler atılır; madde tek satırdır; elle yazılan numara / işaret atılır', () => {
   assert.deepEqual(revisionNote(['Kenar 5 mm daha dar', '', '  ', 'Delik Ø12 sağa\n  kaysın ']), {
@@ -67,4 +67,34 @@ test('çevirinin görünümü (karar 163 = not kuralı): iç ekip Türkçe çevi
   assert.deepEqual(out[0].revisions.map((r) => r.translation), [null, null]);
   assert.equal(drawings[0].revisions[0].translation, '1. Margine');
   assert.deepEqual(out[1], { id: 'd2' });
+});
+
+test('çizim alanının iç ekip notları (karar 168): "çizim hatalı" açıklaması ve sürümün müşteri notu → müşteri Romence çeviriyi alır, iç ekip yalnızca özgün notu (+ başarısız durum), denetimci yalnızca özgün notu', () => {
+  const at = new Date('2026-10-08T08:00:00Z');
+  // Çizimcinin "hatalı" açıklaması (DrawingRevision, tür HATALI) — iç ekip yazar → Romence
+  const faulty = { id: 'r9', kind: 'HATALI', comment: 'Ölçü katmanı eksik', translation: 'Lipsește stratul de cote', translationLang: 'ro', translationStatus: 'DONE', translationError: null, translationAt: at };
+  assert.deepEqual([revisionView('MUSTERI', faulty).translation, revisionView('MUSTERI', faulty).translationLang], ['Lipsește stratul de cote', 'ro']);
+  assert.equal(revisionView('MUSTERI', faulty).translationError, null);
+  for (const role of ['ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI']) {
+    const v = revisionView(role, faulty);
+    assert.deepEqual([v.translation, v.translationStatus, v.comment], [null, null, 'Ölçü katmanı eksik'], role);
+  }
+  const faultyFailed = { ...faulty, translation: null, translationStatus: 'FAILED', translationError: 'QUOTA' };
+  assert.deepEqual([revisionView('CIZIM', faultyFailed).translationStatus, revisionView('CIZIM', faultyFailed).translationError], ['FAILED', 'QUOTA'], 'iç ekip yeniden deneyebilsin');
+  assert.deepEqual([revisionView('MUSTERI', faultyFailed).translationStatus, revisionView('MUSTERI', faultyFailed).translationError], [null, null]);
+  assert.deepEqual([revisionView('DENETIMCI', faultyFailed).translationStatus, revisionView('DENETIMCI', faultyFailed).translationError], [null, null]);
+
+  // Sürümün müşteri notu (Drawing.noteCustomer + aynı beş alan)
+  const version = { id: 'd1', status: 'ONAY_BEKLIYOR', noteCustomer: 'Kenar 5 mm düzeltildi', translation: 'Marginea corectată cu 5 mm', translationLang: 'ro', translationStatus: 'DONE', translationError: null, translationAt: at, revisions: [faulty] };
+  assert.equal(drawingNoteView('MUSTERI', version).translation, 'Marginea corectată cu 5 mm');
+  for (const role of ['ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI']) assert.equal(drawingNoteView(role, version).translation, null, role);
+  assert.equal(drawingNoteView('MUSTERI', version).noteCustomer, 'Kenar 5 mm düzeltildi', 'notun kendisi değişmez');
+  // Çeviri alanı olmayan satır (ör. içeriği kapalı geri çekilmiş sürüm değil — alan hiç yüklenmemiş) olduğu gibi döner
+  assert.deepEqual(drawingNoteView('MUSTERI', { id: 'x' }), { id: 'x' });
+  // Toplu: sürüm notu + revizyon kayıtları; girdi değişmez
+  const out = drawingTranslationsFor('CIZIM', [version]);
+  assert.deepEqual([out[0].translation, out[0].revisions[0].translation], [null, null]);
+  assert.equal(version.translation, 'Marginea corectată cu 5 mm');
+  const cust = drawingTranslationsFor('MUSTERI', [version]);
+  assert.deepEqual([cust[0].translation, cust[0].revisions[0].translation], ['Marginea corectată cu 5 mm', 'Lipsește stratul de cote']);
 });

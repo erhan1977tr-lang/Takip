@@ -17,12 +17,15 @@ function NumberedText({ text }: { text: string }) {
 }
 
 /**
- * Müşterinin revizyon notu ve saklanan çevirisi (karar 163) — sipariş sayfası (Teknik çizimler) ve çizim ekranı (Revizyon
- * talepleri) aynı bileşeni kullanır. Veri sunucuda role göre temizlenmiştir (lib/orders.ts → server/notes/view.js →
- * revisionView): iç ekip Türkçe çeviriyi ve çeviri durumunu alır, müşteri ve denetimci yalnızca özgün notu.
- * Bu bileşen çeviri YAPMAZ: yalnızca talep yazılırken saklanan sonucu gösterir.
+ * Çizim alanındaki not ve saklanan çevirisi — müşterinin revizyon notu (karar 163), çizimcinin "çizim hatalı" açıklaması ve
+ * sürümün müşteri notu (karar 168). Sipariş sayfası ve çizim ekranı aynı bileşeni kullanır. Veri sunucuda role göre
+ * temizlenmiştir (lib/orders.ts → server/notes/view.js → revisionView / drawingNoteView): iç ekip müşterinin notunun Türkçe
+ * çevirisini ve çeviri durumunu alır (kendi tarafının notunda yalnızca süren / başarısız durumu), müşteri yalnızca kendisi
+ * için yapılmış Romence çeviriyi, denetimci yalnızca özgün notu.
+ * Bu bileşen çeviri YAPMAZ: yalnızca not yazılırken saklanan sonucu gösterir. retry: başarısız çeviride iç ekibe gösterilen
+ * "Çeviriyi yeniden dene" formu (verilmezse yalnızca durum yazılır).
  */
-export function RevisionNote({ r, role, t }: { r: Revision; role: string; t: T }) {
+export function RevisionNote({ r, role, t, retry }: { r: Revision; role: string; t: T; retry?: React.ReactNode }) {
   const st = translationState({ internal: false, ...r });
   const lang = r.translationLang === 'tr' || r.translationLang === 'ro' ? r.translationLang : null;
   const translated = st?.state === 'done' && lang && r.translation ? r.translation : null;
@@ -42,7 +45,8 @@ export function RevisionNote({ r, role, t }: { r: Revision; role: string; t: T }
       {staff && st?.state === 'pending' && <div className="note-translation note-state">{t('order.notes.translation.pending')}</div>}
       {staff && reason && (
         <div className="note-translation note-state failed" data-translation-failed={reason}>
-          {t('order.notes.translation.failed', { reason: t(`order.notes.translation.reason.${reason}` as MsgKey) })}
+          <span>{t('order.notes.translation.failed', { reason: t(`order.notes.translation.reason.${reason}` as MsgKey) })}</span>
+          {retry}
         </div>
       )}
     </div>

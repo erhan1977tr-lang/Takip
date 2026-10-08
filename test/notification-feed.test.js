@@ -143,12 +143,15 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
 test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişinin müşteri olayları gider — iç olaylar (teklifin yöneticiye gitmesi, revizyon / onayın çizimciye gitmesi, muhasebe, yükleme) müşteri alıcı kümesinde yok; bağlantı ilgili bölüme iner', () => {
   const glass = { orderTypeCode: 'GLASS_ORDER', id: 'o1' }, profile = { orderTypeCode: 'PROFILE_ORDER', id: 'o2' };
   const toCustomer = INAPP_TYPES.filter((t) => [glass, profile].some((o) => INAPP_RULES[t].to(o, {}).includes('customer'))).sort();
-  // Yeni bir olay müşteriye açılacaksa bilerek buraya eklenmelidir
+  // Yeni bir olay müşteriye açılacaksa bilerek buraya eklenmelidir. ORDER_DWG_FAULTY (karar 167): çizimci müşterinin DWG/DXF
+  // çizimini hatalı buldu — müşterinin yanıtı bekleniyor
   assert.deepEqual(toCustomer, [
-    'LOADING_REPLANNED', 'ORDER_DRAWING_UPLOADED', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED', 'ORDER_PROFILE_OFFER_SENT',
+    'LOADING_REPLANNED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED', 'ORDER_PROFILE_OFFER_SENT',
     'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
   ]);
-  for (const t of ['ORDER_OFFER_SUBMITTED', 'ORDER_OFFER_RETURNED', 'ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED', 'ORDER_SENT_TO_DRAWING', 'ACCOUNTING_ACTION', 'LOADING_NOT_LOADED', 'ORDER_CREATED', 'ORDER_PROFILE_APPROVED']) {
+  // Müşterinin yanıtı ve çizimcinin öbür kararları iç olaydır (çizimci / ilgili satışçı)
+  for (const t of ['ORDER_OFFER_SUBMITTED', 'ORDER_OFFER_RETURNED', 'ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED', 'ORDER_SENT_TO_DRAWING', 'ACCOUNTING_ACTION', 'LOADING_NOT_LOADED', 'ORDER_CREATED', 'ORDER_PROFILE_APPROVED',
+    'ORDER_DWG_READY', 'ORDER_DWG_RESUBMITTED', 'ORDER_DWG_FACTORY_REQUESTED']) {
     assert.ok(!toCustomer.includes(t), `${t}: iç olay müşteriye gitmez`);
   }
   // Bağlantılar: yeni çizim → kırmızı bilgilendirme (#cizim-onay); teklif → #teklif; çizim kararları → #cizim (iç ekip)
@@ -158,7 +161,18 @@ test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişin
   assert.equal(link('ORDER_OFFER_UPDATED'), '/siparisler/o1#teklif');
   assert.equal(link('ORDER_PROFILE_OFFER_SENT', profile), '/siparisler/o2#teklif');
   assert.equal(link('ORDER_REVISION_REQUESTED'), '/siparisler/o1#cizim');
+  // Onay (Paket 3): olayın kuyruktaki drawingId'si varsa onaylanan SÜRÜMÜN ekranı; yoksa (eski olay) çizim bölümü; kimlik
+  // biçimine uymayan değer bağlantıya girmez
   assert.equal(link('ORDER_DRAWING_APPROVED'), '/siparisler/o1#cizim');
+  assert.equal(INAPP_RULES.ORDER_DRAWING_APPROVED.link(glass, { drawingId: 'cmdraw0001abc' }), '/siparisler/o1/cizim/cmdraw0001abc');
+  for (const bad of ['../x', 'a/b', '', 'x'.repeat(41), 7, null, '//evil.example']) {
+    assert.equal(INAPP_RULES.ORDER_DRAWING_APPROVED.link(glass, { drawingId: bad }), '/siparisler/o1#cizim', String(bad));
+  }
+  assert.equal(link('ORDER_DWG_FAULTY'), '/siparisler/o1#cizim-hatali');
+  for (const t of ['ORDER_DWG_READY', 'ORDER_DWG_RESUBMITTED', 'ORDER_DWG_FACTORY_REQUESTED']) assert.equal(link(t), '/siparisler/o1#cizim', t);
+  assert.deepEqual(INAPP_RULES.ORDER_DWG_RESUBMITTED.to(glass, {}), ['drawer', 'orderSales']);
+  assert.deepEqual(INAPP_RULES.ORDER_DWG_FACTORY_REQUESTED.to(glass, {}), ['drawer', 'orderSales']);
+  assert.deepEqual(INAPP_RULES.ORDER_DRAWING_APPROVED.to(glass, {}), ['drawer', 'orderSales']);
   for (const t of INAPP_TYPES) {
     const l = INAPP_RULES[t].link?.({ id: 'o1' }, { day: '2026-10-08' });
     if (l != null) assert.equal(safeLink(l), l, `${t}: bağlantı uygulama içi yol kuralından geçer`);

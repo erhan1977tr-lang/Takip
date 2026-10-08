@@ -9,6 +9,12 @@ export default {
   DRAWING_UPLOADED: { label: 'Çizim müşteri onayına gönderildi', customer: 'Çizim onayınıza sunuldu' },
   REVISION_REQUESTED: { label: 'Müşteri revizyon istedi', customer: 'Revizyon istendi' },
   DRAWING_APPROVED: { label: 'Çizim müşteri tarafından onaylandı', customer: 'Çizim onaylandı' },
+  // Müşterinin DWG/DXF çizimi (karar 167)
+  DWG_READY: { label: 'Müşterinin DWG/DXF çizimi üretime hazır kabul edildi', customer: 'Çiziminiz üretime hazır kabul edildi' },
+  DWG_FAULTY: { label: 'Müşterinin DWG/DXF çizimi hatalı bulundu', customer: 'Çiziminizde düzeltme gerekiyor' },
+  DWG_UPDATE: { label: 'Müşterinin DWG/DXF çizimini fabrika güncelliyor', customer: 'Çiziminiz fabrikada güncelleniyor' },
+  DWG_RESUBMITTED: { label: 'Müşteri düzeltilmiş çizim dosyası gönderdi', customer: 'Düzeltilmiş çizim dosyanızı gönderdiniz' },
+  DWG_FACTORY_REQUESTED: { label: 'Müşteri fabrikadan yeni çizim istedi', customer: 'Fabrikadan yeni çizim istediniz' },
   OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi' },
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi' },
   OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },

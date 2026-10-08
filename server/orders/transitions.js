@@ -10,6 +10,7 @@ import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
 import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
 import { verifyReviewToken } from './review.js';
+import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
 import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
@@ -24,6 +25,8 @@ const INCLUDE = {
   items: true,
   drawings: { orderBy: { version: 'asc' }, include: { files: true } },
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
+  // Müşterinin sipariş dosyaları: DWG/DXF çizimi için çizimci kararı (karar 167 — drawingFlags → dwgPending)
+  files: { where: { kind: 'CUSTOMER' }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true, kind: true, checksum: true, scanStatus: true, uploadedById: true } },
 };
 
 const latestOffer = (o) => o.offers[0] ?? null;
@@ -47,6 +50,12 @@ export const REQUIRES = {
   withdraw_drawing: ['withdraw_drawing'],
   approve_drawing: ['approve_drawing'],
   request_revision: ['request_revision'],
+  // Müşterinin DWG/DXF çizimi (karar 167): çizimcinin üç ayrı kararı ve müşterinin "hatalı" kararına iki yanıtı
+  dwg_ready: ['dwg_ready'],
+  dwg_faulty: ['dwg_faulty'],
+  dwg_update: ['dwg_update'],
+  dwg_resubmit: ['dwg_resubmit'],
+  dwg_request_drawing: ['dwg_request_drawing'],
   save_offer: ['edit_offer', 'approve_price'],
   submit_offer: ['submit_offer'],
   approve_offer: ['approve_price'],
@@ -166,9 +175,23 @@ function latestDrawing(h) {
   return latest;
 }
 
+/**
+ * Müşterinin kararı (onay / revizyon) yalnızca müşteriye gönderilmiş ve henüz karara bağlanmamış FABRİKA sürümüne verilir
+ * (Paket 3): karara bağlanmış, geri çekilmiş ya da taslak sürüm ve müşterinin DWG/DXF karar kaydı yeni kararı taşımaz —
+ * önceki bir sürümün onayı / kararı yeni sürümün kararı gibi kullanılmaz. Eski kayıtlardaki gönderilmiş BEKLIYOR / YAPILIYOR
+ * sürümleri karar alabilir (eski davranış).
+ */
+const CLOSED_VERSION = Object.freeze(['TASLAK', 'ONAYLANDI', 'REVIZYON_ISTENDI', 'GERI_CEKILDI']);
+function decidableDrawing(h) {
+  const latest = latestDrawing(h);
+  if (latest && (isCustomerDrawingRecord(latest) || CLOSED_VERSION.includes(latest.status))) throw new WorkflowError('STALE_DRAWING');
+  return latest;
+}
+
 // ---------- işlemler ----------
-// Her işlem h üzerinden çalışır: h.set(veri) siparişi günceller, h.event(kod, not) geçmişe yazar,
-// h.sla = true ise sonda SLA yeniden hesaplanır, h.auto = true ise otomatik üretim denenir.
+// Her işlem h üzerinden çalışır: h.set(veri) siparişi günceller, h.event(kod, not, veri) geçmişe yazar (veri: olayın bildirim
+// kuyruğundaki ek alanları — ör. drawingId; geçmişe yazılmaz), h.sla = true ise sonda SLA yeniden hesaplanır, h.auto = true ise
+// otomatik üretim denenir.
 
 // compensationId: TELAFİ satırının işareti (Aşama 9) — satır düzenlenince / teklifin yeni sürümü açılınca satırla taşınır
 // splitGroup / pieceBase: ayrılmış cam grubu (karar 114) — teklifin yeni sürümüne ve kopyalarına satırla birlikte taşınır
@@ -330,6 +353,37 @@ async function offerEdit(h, intent) {
     offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}),
     ...(h.compensationPrices?.length ? { compensationPrices: h.compensationPrices } : {}),
   };
+}
+
+/**
+ * Müşterinin DWG/DXF çizimi için çizimci kararını kaydeder (karar 167) — üç kararın ortak gövdesi. Kural tek yerde:
+ * server/orders/dwg-review.js → dwgReview. İlk kararda müşteri çiziminin karar kaydı (sürüm satırı, kaynak
+ * MUSTERI_DXF_DWG) açılır; düzeltilmiş dosyada açık kayıt (BEKLIYOR) karara bağlanır. Kayıt silinmez, dosyaları değişmez.
+ * @returns {Promise<{ id: string, version: number, files: { id: string, name: string, checksum: string | null }[] }>}
+ */
+async function dwgDecide(h, decision) {
+  const review = dwgReview({ status: h.order.status, drawingTrack: h.order.drawingTrack, onHold: h.order.onHold, files: h.order.files, drawings: h.order.drawings });
+  if (!review.pending) throw new WorkflowError('DWG_NOT_PENDING');
+  const status = DWG_DECISION_STATUS[decision];
+  const decided = { status, decidedAt: h.now, decidedById: h.actor.id };
+  if (review.record) {
+    const files = review.files;
+    // Üretime hazır kararında incelenen dosyalardan biri sonradan virüslü çıktıysa (karantina) karar verilemez
+    if (decision === 'READY' && files.some((f) => (h.order.files ?? []).find((x) => x.id === f.id)?.scanStatus === 'INFECTED')) throw new WorkflowError('DWG_INFECTED');
+    const r = await h.tx.drawing.updateMany({ where: { id: review.record.id, source: DWG_SOURCE, status: DWG_RESUBMITTED }, data: decided });
+    if (r.count !== 1) throw new WorkflowError('STALE_DRAWING');
+    return { id: review.record.id, version: review.record.version, files };
+  }
+  const files = sourceFilesSnapshot(review.files);
+  const newest = review.files[review.files.length - 1];
+  const last = h.order.drawings[h.order.drawings.length - 1];
+  const rec = await h.tx.drawing.create({
+    data: {
+      orderId: h.order.id, source: DWG_SOURCE, version: (last?.version ?? 0) + 1, uploadedById: newest?.uploadedById ?? h.order.createdById,
+      scanStatus: 'SKIPPED', sourceFiles: files, ...decided,
+    },
+  });
+  return { id: rec.id, version: rec.version, files };
 }
 
 const ACTIONS = {
@@ -507,10 +561,12 @@ const ACTIONS = {
     h.audit = { drawingId: latest.id, version: latest.version, reason };
   },
   async approve_drawing(h) {
-    const latest = latestDrawing(h);
+    // Onay yalnızca müşterinin onayında bekleyen sürüme verilir (decidableDrawing — Paket 3)
+    const latest = decidableDrawing(h);
     if (latest) await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'ONAYLANDI', decidedAt: h.now, decidedById: h.actor.id } });
     await h.set({ drawingTrack: 'ONAYLANDI', drawingSince: h.now });
-    h.event('DRAWING_APPROVED', latest ? `v${latest.version}` : null);
+    // drawingId: çizimcinin bildirimi onaylanan sürümün ekranına götürür (server/notifications/inapp.js)
+    h.event('DRAWING_APPROVED', latest ? `v${latest.version}` : null, latest ? { drawingId: latest.id } : undefined);
     h.sla = true;
     h.auto = true;
     if (latest) h.audit = { drawingId: latest.id, version: latest.version };
@@ -518,20 +574,101 @@ const ACTIONS = {
   async request_revision(h) {
     const comment = h.payload.comment;
     if (!comment) throw new WorkflowError('REVISION_COMMENT');
-    const latest = latestDrawing(h);
+    const latest = decidableDrawing(h);
     if (latest) {
       await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI', decidedAt: h.now, decidedById: h.actor.id } });
       // Çizim üstü işaretler yalnızca bu sürümün dosyalarına konabilir; doğrulanıp sadeleştirilerek saklanır
       const annotations = cleanAnnotations(h.payload.annotations, latest.files.map((f) => f.id));
-      const revision = await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
+      const revision = await h.tx.drawingRevision.create({ data: { drawingId: latest.id, kind: 'TALEP', requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
       // revisionId: talebin notu, işlem bittikten SONRA bir kez çevrilir (sunucu işlemi → çeviri servisinin
       // translateRevision işlevi, karar 163); iş akışı çeviriyi beklemez, çeviri hatası talebi bozmaz
       h.result = { annotations: annotations.length, revisionId: revision.id };
     }
     await h.set({ drawingTrack: 'REVIZYON_ISTENDI', drawingSince: h.now, revisionCount: { increment: 1 } });
-    h.event('REVISION_REQUESTED', comment);
+    h.event('REVISION_REQUESTED', comment, latest ? { drawingId: latest.id } : undefined);
     h.sla = true;
     if (latest) h.audit = { drawingId: latest.id, version: latest.version };
+  },
+  // ---------- müşterinin DWG/DXF çizimi (karar 167) ----------
+  /** Üretime Hazır: müşteri onayı beklenmez; çizim hattı onaylı → "Müşteriden onaylı çizimler" (koşullar tamamsa üretim) */
+  async dwg_ready(h) {
+    const rec = await dwgDecide(h, 'READY');
+    await h.set({ drawingTrack: 'ONAYLANDI', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+    h.event('DWG_READY', `v${rec.version}`, { drawingId: rec.id });
+    h.sla = true;
+    h.auto = true;
+    h.result = { drawingId: rec.id };
+    h.audit = { decision: 'READY', drawingId: rec.id, version: rec.version, files: rec.files };
+  },
+  /**
+   * Çizim Hatalı: açıklama zorunlu; müşteriye bildirim. Açıklama, kaydın revizyon notu olarak (tür HATALI) saklanır ve
+   * işlemden sonra bir kez Romence'ye çevrilir (translateRevision — karar 168). Müşterinin yanıtı beklenir.
+   */
+  async dwg_faulty(h) {
+    const note = dwgNote(h.payload.note);
+    if (!note.ok) throw new WorkflowError(note.code);
+    const rec = await dwgDecide(h, 'FAULTY');
+    const revision = await h.tx.drawingRevision.create({ data: { drawingId: rec.id, kind: 'HATALI', requestedById: h.actor.id, comment: note.text } });
+    await h.set({ drawingTrack: 'DUZELTME_BEKLIYOR', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+    h.event('DWG_FAULTY', note.text, { drawingId: rec.id });
+    h.sla = true;
+    h.result = { drawingId: rec.id, revisionId: revision.id };
+    h.audit = { decision: 'FAULTY', drawingId: rec.id, version: rec.version, files: rec.files, revisionId: revision.id };
+  },
+  /**
+   * Çizimi Güncelle: orijinal dosya korunur; çizimci yeni çizimi olağan akışla (taslak → Kontrol Et → müşteriye gönder)
+   * hazırlar. Müşterinin düzeltmesi beklenirken de verilebilir (hatalı kararı ve açıklaması geçmişte kalır).
+   */
+  async dwg_update(h) {
+    const assignedDrawerId = h.order.assignedDrawerId ?? h.actor.id;
+    if (h.order.drawingTrack === 'DUZELTME_BEKLIYOR') {
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId });
+      h.event('DWG_UPDATE');
+      h.audit = { decision: 'UPDATE', after: 'FAULTY' };
+    } else {
+      const rec = await dwgDecide(h, 'UPDATE');
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId });
+      h.event('DWG_UPDATE', `v${rec.version}`, { drawingId: rec.id });
+      h.audit = { decision: 'UPDATE', drawingId: rec.id, version: rec.version, files: rec.files };
+    }
+    h.sla = true;
+  },
+  /**
+   * Müşteri, hatalı bulunan çiziminin yerine düzeltilmiş dosya gönderir (mevcut siparişe — müşterinin sipariş dosyası).
+   * Dosyalar kaydedilmeden önce içerik denetimi ve virüs taramasından geçmiştir (server/files/store.js). Yeni bir karar
+   * kaydı (BEKLIYOR) açılır ve sipariş çizimcinin "DXF/DWG" kuyruğuna döner; önceki kayıtlar değişmez.
+   */
+  async dwg_resubmit(h) {
+    const files = h.payload.files ?? [];
+    // En az bir DWG / DXF (düzeltilen müşteri çizimi); yanında PDF gibi başka izinli dosyalar olabilir
+    if (!files.length || files.some((f) => !f?.storageKey) || !hasCustomerDrawingFile(files)) throw new WorkflowError('DWG_FILE');
+    const created = [];
+    for (const f of files) {
+      created.push(await h.tx.orderFile.create({
+        data: {
+          orderId: h.order.id, kind: 'CUSTOMER', name: f.name, storageKey: f.storageKey, size: f.size, mime: f.mime ?? null, checksum: f.checksum ?? null,
+          scanStatus: f.scanStatus ?? 'PENDING', scanSignature: f.scanSignature ?? null, scannedAt: f.scannedAt ?? null, uploadedById: h.actor.id,
+        },
+      }));
+    }
+    const last = h.order.drawings[h.order.drawings.length - 1];
+    const rec = await h.tx.drawing.create({
+      data: {
+        orderId: h.order.id, source: DWG_SOURCE, version: (last?.version ?? 0) + 1, status: DWG_RESUBMITTED, uploadedById: h.actor.id,
+        scanStatus: 'SKIPPED', sourceFiles: sourceFilesSnapshot(created),
+      },
+    });
+    await h.set({ drawingTrack: 'GEREKLI', drawingSince: h.now });
+    h.event('DWG_RESUBMITTED', `v${rec.version} · ${created.map((f) => f.name).join(', ')}`, { drawingId: rec.id });
+    h.sla = true;
+    h.result = { drawingId: rec.id, version: rec.version };
+    h.audit = { drawingId: rec.id, version: rec.version, files: created.map((f) => ({ name: f.name, checksum: f.checksum ?? null, scan: f.scanStatus })) };
+  },
+  /** Müşteri, hatalı bulunan çizimi yerine fabrikanın çizmesini ister: sipariş olağan çizim kuyruğuna döner */
+  async dwg_request_drawing(h) {
+    await h.set({ drawingTrack: 'GEREKLI', drawingSince: h.now });
+    h.event('DWG_FACTORY_REQUESTED');
+    h.sla = true;
   },
   save_offer: (h) => offerEdit(h, 'save'),
   submit_offer: (h) => offerEdit(h, 'submit'),
@@ -592,12 +729,16 @@ async function glassFinish(h, entries) {
  * ve bildirim kuyruğu transitionOrder'da aynı veritabanı işleminde yazılır.
  * h.outbox'a eklenen olaylar (ör. depo e-postası) varsayılan olaylara eklenir.
  * actor.system: işçi (kapsam yok, kimlik yok).
+ * Sonuçtaki outboxIds: işlemin yazdığı kuyruk olayları — işlem kaydedildikten SONRA uygulama içi bildirimi hemen dağıtmak
+ * için (lib/notifications.ts → deliverInAppNow → server/notifications/inapp.js → dispatchInAppFor; işçi aynı olayı yeniden dener, tekrar yazılmaz).
  */
-export function executeAction(db, { workflow, actions, include, finish = null, orderId, action, actor, payload = {} }) {
+export async function executeAction(db, { workflow, actions, include, finish = null, orderId, action, actor, payload = {} }) {
   const def = actions[action];
   if (!def) throw new WorkflowError('UNKNOWN_ACTION');
   const scope = actor.system ? {} : orderScope({ appRole: actor.role, customerId: actor.customerId ?? null });
-  return transitionOrder({
+  /** @type {string[]} */
+  const outboxIds = [];
+  const res = await transitionOrder({
     db,
     workflow,
     orderId,
@@ -623,8 +764,8 @@ export function executeAction(db, { workflow, actions, include, finish = null, o
             await tx.order.update({ where: { id: order.id }, data });
             if (data.status) h.status = data.status;
           },
-          event(code, note = null) {
-            entries.push({ event: code, from: order.status, to: h.status, note: note || null });
+          event(code, note = null, data = undefined) {
+            entries.push({ event: code, from: order.status, to: h.status, note: note || null, ...(data ? { data } : {}) });
           },
         };
         await def(h);
@@ -634,15 +775,23 @@ export function executeAction(db, { workflow, actions, include, finish = null, o
       },
       history: (tx, e) => writeHistory(tx, e),
       audit: (tx, entry) => writeAudit(tx, entry, actor),
-      outbox: { enqueue: (tx, ev) => enqueueOutbox(tx, ev) },
+      outbox: {
+        async enqueue(tx, ev) {
+          const row = await enqueueOutbox(tx, ev);
+          if (row?.id) outboxIds.push(row.id);
+          return row;
+        },
+      },
       events: (applied) => [
         // actorId: uygulama içi bildirimde işlemi yapan kullanıcıya kendi işlemi bildirilmez (server/notifications/inapp.js)
-        ...applied.entries.map((e) => outboxEvent(`ORDER_${e.event}`, { orderId: applied.order.id, payload: { from: e.from ?? null, to: e.to ?? null, actorId: actor.id ?? null } })),
+        // e.data: olayın ek alanları (ör. drawingId — bildirimin bağlantısı ilgili çizim sürümüne gider)
+        ...applied.entries.map((e) => outboxEvent(`ORDER_${e.event}`, { orderId: applied.order.id, payload: { ...(e.data ?? {}), from: e.from ?? null, to: e.to ?? null, actorId: actor.id ?? null } })),
         ...(applied.outbox ?? []),
       ],
       sanitize: (o) => o,
     },
   });
+  return { ...res, outboxIds };
 }
 
 /**
@@ -650,7 +799,7 @@ export function executeAction(db, { workflow, actions, include, finish = null, o
  * @param {import('@prisma/client').PrismaClient} db
  * @param {{ orderId: string, action: string, actor: { id: string, role: string, canApprove?: boolean, customerId?: string | null, ip?: string | null }, payload?: object }} p
  *   payload.expectedVersion: kullanıcının ekranda gördüğü sipariş sürümü (verilirse değişmişse CONFLICT)
- * @returns {Promise<{ order: object, result: any, entries: object[] }>}
+ * @returns {Promise<{ order: object, result: any, entries: object[], outboxIds: string[] }>}
  * @throws {WorkflowError} NOT_FOUND | NOT_ALLOWED | CONFLICT | STALE_DRAWING | OFFER_NOT_FOUND | ...
  */
 export function runOrderAction(db, { orderId, action, actor, payload = {} }) {

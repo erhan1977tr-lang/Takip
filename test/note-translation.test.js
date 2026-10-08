@@ -288,16 +288,16 @@ test('sağlayıcıyı (Google) yükleyen tek kod çeviri servisidir; sipariş sa
   }
 });
 
-test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: yeni not, yeni revizyon talebi (karar 163) ve açık "yeniden dene" (+ yöneticinin bağlantı denemesi); işçi ve öbür sunucu kodu çağırmaz', () => {
-  // Sağlayıcı çeviri servisinde yalnızca dört yerde seçilir (addNote, retryNoteTranslation, translateRevision,
-  // testTranslation) ve yalnızca runTranslation / testTranslation içinde çağrılır
+test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: yeni not, yeni revizyon talebi (karar 163), çizim alanının yeni notu (karar 168) ve açık "yeniden dene" (+ yöneticinin bağlantı denemesi); işçi ve öbür sunucu kodu çağırmaz', () => {
+  // Sağlayıcı çeviri servisinde yalnızca altı yerde seçilir (addNote, retryNoteTranslation, translateRevision,
+  // translateDrawingNote, retryDrawingTranslation, testTranslation) ve yalnızca runTranslation / testTranslation içinde çağrılır
   const svc = APP.find((s) => s.file === 'server/notes/translation.js').text;
-  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 4);
+  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 6);
   assert.equal((svc.match(/await translator\(|await \(translator \?\? translatorFor\(\)\)\(/g) ?? []).length, 2);
   assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'not çevirisi: runTranslation yalnızca addNote ve retryNoteTranslation içinden');
-  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 3, '+ translateRevision (revizyon notu, karar 163) — başka çağıran yok');
+  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 5, '+ translateRevision (karar 163), translateDrawingNote ve retryDrawingTranslation (karar 168) — başka çağıran yok');
   // Bu işlevleri çağıran dosyalar: yalnızca iki "use server" işlem dosyası (form gönderimiyle çalışır; GET / çizimle değil)
-  assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation|translateRevision)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
+  assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation|translateRevision|translateDrawingNote|retryDrawingTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
   // Revizyon notu (karar 163): talep yazıldıktan SONRA, yalnızca talebi yazan kullanıcının sunucu işleminden; bir kez —
   // sahiplenme yalnızca çeviri durumu hiç yazılmamış talebe uygulanır (çevrilmiş / çevrilemedi / sürüyor yeniden çevrilmez)
   const rev = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function testTranslation('));
@@ -308,7 +308,16 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
   const action = APP.find((s) => s.file === 'app/(panel)/siparisler/[id]/actions.ts').text;
   const reqRev = action.slice(action.indexOf('export async function requestRevisionAction('));
   assert.ok(reqRev.indexOf("await act(user, id, 'request_revision'") < reqRev.indexOf('await translateRevision('), 'çeviri talep kaydedildikten sonra');
-  assert.equal((action.match(/translateRevision\(/g) ?? []).length, 1);
+  // Çizim alanı (karar 168): "çizim hatalı" açıklaması karar kaydedildikten, sürüm notu gönderim kaydedildikten SONRA, bir kez;
+  // "yeniden dene" yalnızca açık istekle (kendi sunucu işlemi)
+  const faulty = action.slice(action.indexOf('export async function dwgFaultyAction('), action.indexOf('export async function dwgUpdateAction('));
+  assert.ok(faulty.indexOf("await act(user, id, 'dwg_faulty'") >= 0 && faulty.indexOf("await act(user, id, 'dwg_faulty'") < faulty.indexOf('await translateRevision('), 'çeviri karar kaydedildikten sonra');
+  assert.equal((action.match(/translateRevision\(/g) ?? []).length, 2, 'revizyon talebi + çizim hatalı açıklaması');
+  const send = action.slice(action.indexOf('export async function sendDrawingAction('), action.indexOf('export async function withdrawDrawingAction('));
+  assert.ok(send.indexOf("await act(user, id, 'send_drawing'") >= 0 && send.indexOf("await act(user, id, 'send_drawing'") < send.indexOf('await translateDrawingNote('), 'sürüm notu gönderimden sonra');
+  assert.equal((action.match(/translateDrawingNote\(/g) ?? []).length, 1);
+  assert.equal((action.match(/retryDrawingTranslation\(/g) ?? []).length, 1);
+  assert.ok(action.slice(action.indexOf('export async function retryDrawingTranslationAction(')).indexOf('await retryDrawingTranslation(') > 0);
   assert.deepEqual(filesWith(/\btestTranslation\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/admin/entegrasyonlar/actions.ts']);
   for (const file of ['app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/admin/entegrasyonlar/actions.ts']) {
     assert.ok(APP.find((s) => s.file === file).text.startsWith("'use server'"), `${file}: sunucu işlemi`);

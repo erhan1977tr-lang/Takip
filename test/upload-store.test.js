@@ -442,7 +442,11 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   assert.ok(create.indexOf('const actor = await actorOf(user);') > 0 && create.indexOf('const actor = await actorOf(user);') < create.indexOf('await storeFiles('), 'saklama ile kayıt arasında hata verebilecek adım yok');
   assert.equal((create.match(/await discardFiles\(stored\.stored\);/g) ?? []).length, 2);
   const orderActions = read('app/(panel)/siparisler/[id]/actions.ts');
-  assert.equal((orderActions.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);\s*throw e;\s*\}/g) ?? []).length, 2, 'çizim yükleme + dosya ekleme');
+  assert.equal((orderActions.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);\s*throw e;\s*\}/g) ?? []).length, 3, 'çizim yükleme + dosya ekleme + müşterinin düzeltilmiş DWG/DXF dosyası (karar 167)');
+  // Müşterinin düzeltilmiş dosyası: yetki / durum dosyalar saklanmadan ÖNCE denetlenir; kayıt olmazsa dosyalar silinir
+  const resubmit = orderActions.slice(orderActions.indexOf('export async function dwgResubmitAction('), orderActions.indexOf('export async function dwgRequestDrawingAction('));
+  assert.ok(resubmit.indexOf("await ensureAllowed(user, id, 'dwg_resubmit');") > 0 && resubmit.indexOf("await ensureAllowed(user, id, 'dwg_resubmit');") < resubmit.indexOf('await storeFiles('));
+  assert.match(resubmit, /await act\(user, id, 'dwg_resubmit', \{ files: stored\.stored \}\);\s*\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/);
   assert.match(read('app/(panel)/siparisler/[id]/profile-actions.ts'), /await act\(user, id, 'mark_delivered', \{ files: stored \}, \(\) => discardFiles\(stored\)\);/);
   const depot = read('app/depo/[token]/actions.ts');
   assert.equal((depot.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/g) ?? []).length, 2, 'teslim onayı + ek belge');

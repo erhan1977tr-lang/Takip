@@ -53,8 +53,14 @@ export function drawingFileWhere(role) {
   return seesAll(role) ? {} : { status: { in: [...CUSTOMER_OPEN_STATUSES] } };
 }
 
-/** İçeriği kapalı sürümün satırında boşaltılan alanlar: dosyalar, müşteri notu, eski tek-dosya alanları */
-const NO_CONTENT = Object.freeze({ noteCustomer: null, fileUrl: null, fileName: null, fileSize: null, mime: null, checksum: null, scanSignature: null });
+/**
+ * İçeriği kapalı sürümün satırında boşaltılan alanlar: dosyalar, müşteri notu ve onun çevirisi (karar 168), eski
+ * tek-dosya alanları, müşteri çizimi kaydının dosya listesi (karar 167)
+ */
+const NO_CONTENT = Object.freeze({
+  noteCustomer: null, fileUrl: null, fileName: null, fileSize: null, mime: null, checksum: null, scanSignature: null,
+  translation: null, translationLang: null, translationStatus: null, translationError: null, translationAt: null, sourceFiles: null,
+});
 
 /**
  * Sürüm listesinin role göre görünümü: görülmeyen sürümler çıkar; yalnızca satırı görülen sürümün içeriği boşaltılır

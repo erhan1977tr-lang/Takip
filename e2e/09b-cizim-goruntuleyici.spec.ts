@@ -8,7 +8,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, createUser, fi
 // müşteri görüntüleyicide "Bu çizimi onayla" / "Revizyon iste": değişiklikleri NUMARALI maddelerle yazar (karar 162 — müşteri
 // ekranında işaretleme ve "İşaretler" bölümü yok) → çizimci numaralı notu (ve eski taleplerin işaretlerini) görür → v2 →
 // müşteri görüntüleyiciden onaylar →
-// "Müşteri tarafından onaylanmış çizimler" (çizim, satış, yönetici). Onay yetkisi olmayan müşteri kullanıcısı karar
+// "Müşteriden onaylı çizimler" (çizim, satış, yönetici). Onay yetkisi olmayan müşteri kullanıcısı karar
 // veremez; başka firma hiçbir şeyi açamaz; pdf.js varlıkları uygulamanın kendi adresinden gelir.
 test.describe.configure({ mode: 'serial' });
 
@@ -103,8 +103,9 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await admin.getByRole('button', { name: 'Çizim Ekibine Gönder' }).click();
   await expect(admin.getByText('Sipariş çizim ekibine yönlendirildi.')).toBeVisible();
 
-  // Çizimci sipariş sayfası (karar 84): 1) müşteri sipariş dosyaları 2) teknik çizimler ve onay (yükleme bu bölümde)
-  // 3) notlar 4) sipariş bilgileri. Adım çubuğu / işlem kartı yok (durum küçük rozetle); sandık / teklif / istenen camlar yok.
+  // Çizimci sipariş sayfası (karar 84; Paket 3): 1) müşteri sipariş dosyaları 2) teknik çizim dosyaları (yükleme bu bölümde)
+  // 3) çizim onayı ve revizyon 4) notlar 5) sipariş bilgileri. Adım çubuğu / işlem kartı yok (durum küçük rozetle); sandık /
+  // teklif / istenen camlar yok.
   const drawer = await as(browser, DRAWER, TEAM_PW);
   await drawer.goto(`/siparisler/${id}`);
   await expect(drawer.locator('#sandik')).toHaveCount(0);
@@ -116,11 +117,13 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   const heads = await drawer.locator('h2').allTextContents();
   const pos = (h: string) => heads.findIndex((x) => x.includes(h));
   expect(pos('Müşteri sipariş dosyaları')).toBeGreaterThanOrEqual(0);
-  expect(pos('Müşteri sipariş dosyaları')).toBeLessThan(pos('Teknik çizimler ve onay'));
-  expect(pos('Teknik çizimler ve onay')).toBeLessThan(pos('Notlar'));
+  expect(pos('Müşteri sipariş dosyaları')).toBeLessThan(pos('Teknik çizim dosyaları'));
+  expect(pos('Teknik çizim dosyaları')).toBeLessThan(pos('Çizim onayı ve revizyon'));
+  expect(pos('Çizim onayı ve revizyon')).toBeLessThan(pos('Notlar'));
   expect(heads.some((h) => h.startsWith('Sıra '))).toBe(false); // "sıra kimde" kartı yok
   expect(pos('Notlar')).toBeLessThan(pos('Sipariş bilgileri'));
-  await expect(drawer.locator('#cizim #drawing-file')).toHaveCount(1); // yükleme çizim bölümünün içinde
+  expect(heads.some((h) => h.includes('Teknik çizimler ve onay'))).toBe(false); // çizimcide iki ayrı bölüm
+  await expect(drawer.locator('#cizim-dosyalari #drawing-file')).toHaveCount(1); // yükleme "Teknik çizim dosyaları"nın içinde
 
   // Gerçek dosyalar: metinli PDF (gömülü olmayan Helvetica + gömülü JPEG), PNG ve JPG
   const jpeg = Buffer.from(await drawer.evaluate(() => {
@@ -195,7 +198,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await beta.context().close();
   expect((await cust.request.get(fileHref!.split('?')[0])).status()).toBe(200); // kendi firması açar
   await drawer.goto('/siparisler');
-  await expect(drawer.locator('.card', { hasText: 'Onay bekleyen çizimler' }).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
+  await expect(drawer.locator('.card', { hasText: 'Müşteriden onay beklenenler' }).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
 
   // Onay yetkisi olmayan müşteri kullanıcısı: inceler ama ne onaylayabilir ne revizyon isteyebilir (ekranda da sunucuda da)
   const viewer = await as(browser, VIEWER, TEAM_PW);
@@ -287,7 +290,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(drawer.locator('.viewer-layer.editable')).toHaveCount(0); // çizimci işaretleri değiştiremez
   await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toHaveCount(0); // eski sürüm yeniden gönderilemez
 
-  // v2 → müşteri GÖRÜNTÜLEYİCİDEN onaylar → "Müşteri tarafından onaylanmış çizimler"; v1, dosyaları ve talebi geçmişte kalır
+  // v2 → müşteri GÖRÜNTÜLEYİCİDEN onaylar → "Müşteriden onaylı çizimler"; v1, dosyaları ve talebi geçmişte kalır
   await drawer.goto(`/siparisler/${id}`);
   await uploadDrawing(drawer, [file('plan-v2.pdf', realPdf())]);
   await sendDrawing(drawer, id);
@@ -317,7 +320,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   // gününe göre süzme, en yeni / en eski
   await drawer.goto('/siparisler');
   const approved = (p: typeof drawer) => p.locator('#onayli-cizimler');
-  await expect(approved(drawer).locator('h2')).toContainText('Müşteri tarafından onaylanmış çizimler');
+  await expect(approved(drawer).locator('h2')).toContainText('Müşteriden onaylı çizimler');
   await expect(approved(drawer).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
   await shot(drawer, '24-cizim-paneli-onayli-cizimler');
   await approved(drawer).getByRole('link', { name: 'En eski' }).click();

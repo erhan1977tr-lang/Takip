@@ -24,6 +24,11 @@ export const NOTIFY_RULES = {
   ORDER_SENT_TO_DRAWING: () => ['drawer'],
   ORDER_REVISION_REQUESTED: () => ['drawer', 'orderSales'],
   ORDER_DRAWING_APPROVED: () => ['drawer', 'orderSales'],
+  // Müşterinin DWG/DXF çizimi (karar 167): "hatalı" kararı müşteriye (açıklama e-postaya yazılmaz — sipariş sayfasında
+  // Romence çevirisiyle); müşterinin yanıtı (düzeltilmiş dosya / fabrika çizimi) çizimciye + ilgili satışçıya
+  ORDER_DWG_FAULTY: () => ['customer'],
+  ORDER_DWG_RESUBMITTED: () => ['drawer', 'orderSales'],
+  ORDER_DWG_FACTORY_REQUESTED: () => ['drawer', 'orderSales'],
   ORDER_PROFILE_APPROVED: () => ['admin'],
   ORDER_DRAWING_UPLOADED: () => ['customer'],
   ORDER_OFFER_SENT: () => ['customer'],
@@ -100,10 +105,13 @@ export async function orderSalesUsers(db, orderId) {
   return offer?.createdBy ? [offer.createdBy] : [];
 }
 
-/** Olayın anındaki revizyon talebi (not + sürüm): aynı veritabanı işleminde yazılmıştır; sonraki talepler karışmaz. */
+/**
+ * Olayın anındaki revizyon talebi (not + sürüm): aynı veritabanı işleminde yazılmıştır; sonraki talepler karışmaz.
+ * Yalnızca müşterinin talebi (TALEP) — çizimcinin "hatalı" açıklaması (karar 167) revizyon e-postasına girmez.
+ */
 export async function revisionOf(db, orderId, at) {
   const r = await db.drawingRevision.findFirst({
-    where: { drawing: { orderId }, createdAt: { lte: new Date(new Date(at).getTime() + 5000) } },
+    where: { drawing: { orderId }, kind: 'TALEP', createdAt: { lte: new Date(new Date(at).getTime() + 5000) } },
     orderBy: { createdAt: 'desc' },
     select: { comment: true, drawing: { select: { version: true } } },
   });

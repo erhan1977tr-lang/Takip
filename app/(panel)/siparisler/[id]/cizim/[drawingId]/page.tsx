@@ -13,6 +13,7 @@ import { availableActions, drawingFlags, isViewable } from '@/server/orders/rule
 import { cleanAnnotations } from '@/server/orders/annotations.js';
 import { reviewToken } from '@/server/orders/review.js';
 import { drawingAccess } from '@/server/orders/drawing-access.js';
+import { isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
 import { approveDrawingAction, sendDrawingAction } from '../../actions';
 import { RevisionForm } from './RevisionForm';
 
@@ -37,8 +38,9 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
   const order = await loadOrder(id, user);
   const d = order.drawings.find((x) => x.id === drawingId);
   // Sürümün içeriğini görebilen açar (tek kural: server/orders/drawing-access.js, karar 146): müşteriye taslak sürüm hiç
-  // gelmez; geri çekilen sürümün satırı gelir ama içeriği kapalıdır → bu ekran da "bulunamadı" der.
-  if (!d || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();
+  // gelmez; geri çekilen sürümün satırı gelir ama içeriği kapalıdır → bu ekran da "bulunamadı" der. Müşterinin DWG/DXF
+  // çiziminin karar kaydı (karar 167) bir çizim sürümü değildir: görüntülenecek dosyası yoktur (dosyalar sipariş dosyalarıdır).
+  if (!d || isCustomerDrawingRecord(d) || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();
   const latest = order.drawings[order.drawings.length - 1];
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,

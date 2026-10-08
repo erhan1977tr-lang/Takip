@@ -719,6 +719,28 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .drawing-upload { padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
 .drawing-upload .hint { margin-top: 0; flex: 1 1 260px; }
 .drawing-next { gap: 10px; margin-top: 10px; }
+/* Çizim onayı ve revizyon (Paket 3): durum satırı, karar geçmişi; müşterinin DWG/DXF çizim kaydı (karar 167) */
+.drawing-state { margin: 0 0 12px; }
+.drawing-decision { border-top: 1px solid var(--border); padding: 12px 0; }
+.drawing-decision:first-of-type { border-top: 0; }
+.drawing-decision .note { margin: 6px 0; }
+.drawing-version.customer-record { background: var(--surface-2); border: 1px solid var(--divider); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+/* DXF/DWG kararı: üç ayrı karar tek satırda; "Çizim Hatalı" açıklaması açılır kutuda (liste ve sipariş sayfası) */
+.dwg-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.dwg-actions > form { margin: 0; }
+.dwg-faulty > summary { list-style: none; cursor: pointer; }
+.dwg-faulty > summary::-webkit-details-marker { display: none; }
+.dwg-faulty[open] { flex-basis: 100%; }
+.dwg-faulty form { display: grid; gap: 8px; margin-top: 8px; max-width: 560px; }
+.dwg-faulty textarea { resize: vertical; }
+.dwg-files { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.dwg-hints { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: var(--fs-meta); }
+/* Kararın kutusu: kararı bekleyen iş — sarı zemin ("sıra sizde"), çizim bölümünün başında */
+.dwg-panel { padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--warn-border); border-left: 3px solid var(--warn-accent); border-radius: var(--radius-sm); background: var(--warn-soft); }
+.dwg-panel .sub-title { margin-top: 0; }
+/* Listelerde revizyon istenen sipariş: satır kırmızı ve belirgin (Paket 3) — rozet metni anlamı taşır */
+tr.row-alert > td { background: var(--danger-soft); }
+tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 /* Profil siparişi (Aşama 6): ürün görselli tablolar, adet ve fiyat kutuları, teklif notları */
 .grid-3 { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }

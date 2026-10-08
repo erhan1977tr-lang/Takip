@@ -19,10 +19,12 @@ import { TranslateError, translatorFor } from './provider.js';
 import { TRANSLATION_RATE_LIMITED, noteLimits } from './limits.js';
 
 // Saf kurallar (yön, görünürlük, durum) server/notes/view.js'tedir: sipariş sayfası yalnızca onu yükler — sağlayıcıya
-// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki dört işlevden çağrılır: addNote (yeni not), retryNoteTranslation
-// (iç ekibin açık isteği), translateRevision (müşterinin yeni revizyon talebinin notu — karar 163), testTranslation
+// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki altı işlevden çağrılır: addNote (yeni not), retryNoteTranslation
+// (iç ekibin açık isteği), translateRevision (yeni revizyon notu: müşterinin talebi — karar 163 — ya da çizimcinin "hatalı"
+// açıklaması — karar 168), translateDrawingNote (müşteriye gönderilen çizim sürümünün notu — karar 168),
+// retryDrawingTranslation (revizyon / sürüm notunda iç ekibin açık "yeniden dene" isteği — karar 168), testTranslation
 // (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
-export { STALE_PENDING_MS, canRetryTranslation, noteView, notesFor, revisionView, translationState, translationTarget } from './view.js';
+export { STALE_PENDING_MS, canRetryTranslation, drawingNoteView, noteView, notesFor, revisionView, translationState, translationTarget } from './view.js';
 
 export const TRANSLATE_KEY = 'translate';
 const SECRET_PURPOSE = 'translate-key';
@@ -86,10 +88,13 @@ export async function saveTranslateSettings(db, { enabled }, { key = '', clearKe
 // ---------- çeviri ----------
 const norm = (s) => String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 
+/** Çevirinin yazıldığı tablolar: sipariş notu, revizyon notu (karar 163, 168), çizim sürümünün müşteri notu (karar 168) */
+const TABLES = Object.freeze(['orderNote', 'drawingRevision', 'drawing']);
+
 /**
  * "Sürüyor" durumundaki notu çevirir ve sonucu yazar. HİÇBİR ZAMAN hata fırlatmaz (not zaten kayıtlıdır).
- * table: sonucun yazıldığı tablo — sipariş notu (orderNote) ya da revizyon notu (drawingRevision, karar 163); iki tabloda
- * da alanlar ve kural aynıdır. note: { id, text, translationLang }.
+ * table: sonucun yazıldığı tablo — sipariş notu (orderNote), revizyon notu (drawingRevision, karar 163) ya da çizim
+ * sürümünün müşteri notu (drawing, karar 168); üç tabloda da alanlar ve kural aynıdır. note: { id, text, translationLang }.
  * @returns {Promise<'DONE' | 'SAME' | 'FAILED'>}
  */
 async function runTranslation(db, note, { settings, secret, translator, now, table = 'orderNote' }) {
@@ -111,7 +116,7 @@ async function runTranslation(db, note, { settings, secret, translator, now, tab
     console.warn('[not çevirisi] çevrilemedi', note.id, code);
   }
   try {
-    await (table === 'drawingRevision' ? db.drawingRevision : db.orderNote).updateMany({ where: { id: note.id, translationStatus: 'PENDING' }, data: { ...data, translationAt: now } });
+    await db[TABLES.includes(table) ? table : 'orderNote'].updateMany({ where: { id: note.id, translationStatus: 'PENDING' }, data: { ...data, translationAt: now } });
   } catch (e) {
     console.warn('[not çevirisi] sonuç yazılamadı', note.id, String(e?.code ?? 'ERROR'));
     return 'FAILED';
@@ -212,14 +217,16 @@ export async function retryNoteTranslation(db, { noteId, orderId, actor, now = n
 }
 
 /**
- * Müşterinin revizyon notunu (DrawingRevision.comment — numaralı maddeler, karar 162) BİR KEZ çevirir ve satırına yazar
- * (karar 163). Kural sipariş notuyla aynıdır: yön yazanın rolünden (müşteri → Türkçe), not her durumda zaten kayıtlıdır,
- * çeviri hatası talebi bozmaz (FAILED + güvenli kod), müşterinin çeviri hakkı doluysa sağlayıcı çağrılmaz (FAILED +
- * RATE_LIMIT), sayfa açılışı / yenileme çeviri yapmaz.
- *   - Yalnızca talebi YAZAN kullanıcının, talep yazıldıktan hemen sonraki sunucu işleminden çağrılır (requestRevisionAction).
- *   - Talep, yazanın sipariş kapsamında olmalıdır; başkasının talebi ya da daha önce çeviri durumu yazılmış talep
+ * Revizyon notunu (DrawingRevision.comment) BİR KEZ çevirir ve satırına yazar: müşterinin revizyon talebi (numaralı
+ * maddeler, karar 162–163 → Türkçe) ya da çizimcinin "çizim hatalı" açıklaması (karar 167–168 → Romence). Kural sipariş
+ * notuyla aynıdır: yön yazanın rolünden, not her durumda zaten kayıtlıdır, çeviri hatası talebi / kararı bozmaz (FAILED +
+ * güvenli kod), müşterinin çeviri hakkı doluysa sağlayıcı çağrılmaz (FAILED + RATE_LIMIT), sayfa açılışı / yenileme çeviri
+ * yapmaz.
+ *   - Yalnızca notu YAZAN kullanıcının, not yazıldıktan hemen sonraki sunucu işleminden çağrılır (requestRevisionAction,
+ *     dwgFaultyAction).
+ *   - Not, yazanın sipariş kapsamında olmalıdır; başkasının notu ya da daha önce çeviri durumu yazılmış not
  *     (çevrilmiş, çevrilemedi, sürüyor) yeniden çevrilmez: sahiplenme tek koşullu güncellemedir (translationStatus boş).
- *   - Yeniden deneme yoktur (bu pakette); iç ekip çevrilemeyen talebin özgün metnini görür.
+ *   - Çevrilemeyen not iç ekibin açık isteğiyle yeniden denenir (retryDrawingTranslation).
  * @param {any} db
  * @param {{ revisionId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null }, now?: Date,
  *   translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
@@ -260,6 +267,101 @@ export async function translateRevision(db, { revisionId, orderId, actor, now = 
   const status = await runTranslation(db, { id: revision.id, text: revision.comment, translationLang: target }, {
     settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'drawingRevision',
   });
+  return { ok: true, translation: status };
+}
+
+/**
+ * Müşteriye GÖNDERİLEN çizim sürümünün müşteri notunu (Drawing.noteCustomer — çizimcinin müşteriye yazdığı Türkçe not)
+ * BİR KEZ Romence'ye çevirir ve sürümün satırına yazar (karar 168). Not taslakta değişebilir; müşteriye gittiği anda kesinleşir
+ * — bu yüzden çeviri gönderimden (send_drawing) hemen sonraki sunucu işleminden, YALNIZCA gönderen kullanıcı için yapılır.
+ * Kural sipariş notuyla aynıdır: yön gönderenin rolünden (iç ekip → Romence), çeviri hatası gönderimi bozmaz (FAILED +
+ * güvenli kod), sayfa açılışı / yenileme çeviri yapmaz, çevrilmiş / denenmiş sürüm yeniden çevrilmez (sahiplenme tek
+ * koşullu güncellemedir: translationStatus boş).
+ * @param {any} db
+ * @param {{ drawingId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null }, now?: Date,
+ *   translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' | null } | { ok: false, code: 'NOT_FOUND' | 'NOT_ALLOWED' }>}
+ */
+export async function translateDrawingNote(db, { drawingId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  const target = translationTarget(actor?.role);
+  if (!target) return { ok: true, translation: null };
+  const drawing = await db.drawing.findFirst({
+    where: {
+      id: String(drawingId ?? ''), orderId: String(orderId ?? ''), sentById: String(actor.id ?? ''), source: 'FABRIKA', status: 'ONAY_BEKLIYOR',
+      noteCustomer: { not: null }, translationStatus: null, order: orderScope({ appRole: actor.role, customerId: actor.customerId }),
+    },
+    select: { id: true, noteCustomer: true },
+  });
+  if (!drawing?.noteCustomer?.trim()) return { ok: false, code: 'NOT_FOUND' };
+  let settings = null;
+  try {
+    settings = await readSettings(db);
+  } catch {
+    settings = null; // ayar okunamadıysa not çevirisiz kalır (sürüm zaten gönderildi)
+  }
+  if (!translateReady(settings)) return { ok: true, translation: null };
+  if (!limits.translation(actor, now.getTime())) {
+    await db.drawing.updateMany({
+      where: { id: drawing.id, translationStatus: null },
+      data: { translationLang: target, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now },
+    });
+    return { ok: true, translation: 'FAILED' };
+  }
+  const claimed = await db.drawing.updateMany({ where: { id: drawing.id, translationStatus: null }, data: { translationLang: target, translationStatus: 'PENDING', translationAt: now } });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: drawing.id, text: drawing.noteCustomer, translationLang: target }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'drawing',
+  });
+  return { ok: true, translation: status };
+}
+
+/**
+ * Çizim alanındaki çevrilemeyen (ya da yarıda kalan) notun çevirisini BİR KEZ daha ister (karar 168) — yalnızca iç ekip
+ * (yönetici, satış, çizim), açıkça istediğinde. Sipariş notundaki "yeniden dene" ile aynı kural:
+ *   target 'revision': revizyon notu (müşterinin talebi ya da çizimcinin "hatalı" açıklaması) · 'drawing': sürümün müşteri notu
+ *   - Yalnızca çevirisi denenmiş (translationLang dolu) ve BAŞARISIZ (ya da yarıda kalmış "sürüyor") not; tamamlanmış çeviri
+ *     yeniden yapılmaz.
+ *   - Aynı anda iki istek gelirse yalnızca biri sahiplenir (tek koşullu güncelleme) → sağlayıcıya tek istek gider.
+ *   - Hız sınırı (karar 147): kullanıcının "yeniden dene" hakkı doluysa RATE_LIMIT — not sahiplenilmez, sağlayıcı çağrılmaz.
+ *   - Denetim kaydı: DRAWING_TRANSLATION_RETRY.
+ * @param {any} db
+ * @param {{ target: 'revision' | 'drawing', id: string, orderId: string, actor: { id: string, role: string, customerId?: string | null, ip?: string | null },
+ *   now?: Date, translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'DISABLED' | 'RATE_LIMIT' | 'NOT_ALLOWED' }>}
+ */
+export async function retryDrawingTranslation(db, { target, id, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  if (!canRetryTranslation(actor?.role)) return { ok: false, code: 'FORBIDDEN' };
+  if (target !== 'revision' && target !== 'drawing') return { ok: false, code: 'NOT_FOUND' };
+  const scope = orderScope({ appRole: actor.role, customerId: actor.customerId });
+  const row = target === 'revision'
+    ? await db.drawingRevision.findFirst({
+      where: { id: String(id ?? ''), drawing: { orderId: String(orderId ?? ''), order: scope } },
+      select: { id: true, comment: true, translationLang: true, translationStatus: true, translationError: true },
+    })
+    : await db.drawing.findFirst({
+      where: { id: String(id ?? ''), orderId: String(orderId ?? ''), order: scope },
+      select: { id: true, noteCustomer: true, translationLang: true, translationStatus: true, translationError: true },
+    });
+  const text = row ? (target === 'revision' ? row.comment : row.noteCustomer) : null;
+  if (!row || !text?.trim()) return { ok: false, code: 'NOT_FOUND' };
+  const settings = await readSettings(db);
+  if (!translateReady(settings)) return { ok: false, code: 'DISABLED' };
+  // Sağlayıcı çağrısı hakkı, not sahiplenilmeden ÖNCE tek adımda alınır: hak yoksa nota dokunulmaz
+  if (!limits.retry(actor, now.getTime())) return { ok: false, code: 'RATE_LIMIT' };
+  const table = target === 'revision' ? 'drawingRevision' : 'drawing';
+  const stale = new Date(now.getTime() - STALE_PENDING_MS);
+  const claimed = await db[table].updateMany({
+    where: { id: row.id, translationLang: { not: null }, OR: [{ translationStatus: 'FAILED' }, { translationStatus: 'PENDING', translationAt: { lt: stale } }] },
+    data: { translationStatus: 'PENDING', translationError: null, translationAt: now },
+  });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: row.id, text, translationLang: row.translationLang }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table,
+  });
+  await writeAudit(db, {
+    action: 'DRAWING_TRANSLATION_RETRY', entityType: target === 'revision' ? 'DrawingRevision' : 'Drawing', entityId: row.id, userId: actor.id,
+    details: { orderId: String(orderId), target, lang: row.translationLang, before: row.translationStatus, beforeError: row.translationError, result: status },
+  }, actor).catch(() => {});
   return { ok: true, translation: status };
 }
 

@@ -12,7 +12,9 @@ import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/co
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { STOCK_SHORTAGE_ALERT } from '@/server/profile/stock.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
-import { approvedDrawingList, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
+import { approvedDrawingList, dwgDrawingGroups, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
+import { dwgReview, isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
+import { DwgDecision } from './[id]/DwgDecision';
 import { deleteDraftAction } from './yeni/actions';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { restoreOrderAction } from './[id]/compensation-actions';
@@ -20,11 +22,17 @@ import { canSeeOfferReport, loadOfferReport, offerReportRange } from '@/lib/cust
 
 const listInclude = {
   customer: { select: { name: true } },
-  // Taslak (müşteriye gönderilmemiş) çizim sürümleri sayılmaz
-  drawings: { where: { status: { not: 'TASLAK' } }, orderBy: { version: 'asc' }, select: { id: true, version: true, createdAt: true, sentAt: true } },
+  // Taslak (müşteriye gönderilmemiş) çizim sürümleri sayılmaz. source / status / sourceFiles: müşterinin DWG/DXF çizimi
+  // için çizimci kararı (karar 167 — server/orders/dwg-review.js); müşterinin karar kayıtları "N çizim" sayısına girmez.
+  drawings: {
+    where: { status: { not: 'TASLAK' } }, orderBy: { version: 'asc' },
+    select: { id: true, version: true, createdAt: true, sentAt: true, decidedAt: true, source: true, status: true, sourceFiles: true },
+  },
+  // Bütün sürümlerin sayısı (taslak dahil): taslak fabrika sürümü varsa müşteri çizimi için karar beklenmez (dwgReview)
+  _count: { select: { drawings: true } },
   offers: { orderBy: { createdAt: 'desc' }, select: { status: true, sentAt: true } },
-  // Müşterinin gönderdiği hazır çizim (DWG/DXF) çizim ekibine işaretlenir
-  files: { where: { kind: 'CUSTOMER' }, select: { name: true } },
+  // Müşterinin gönderdiği hazır çizim (DWG/DXF) çizim ekibine işaretlenir; kararın dosyaları bu listeden bağlanır
+  files: { where: { kind: 'CUSTOMER' }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true, kind: true, scanStatus: true } },
   events: { where: { event: 'OFFER_CHECKED' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
   // Profil siparişi (Aşama 6): adım ve alış günü
   profile: { select: { stage: true, pickupDate: true } },
@@ -47,6 +55,10 @@ function counter(m: Dict, intl: string) {
 }
 
 const offerOf = (o: Row) => latestOfferStatus(o);
+/** Fabrika çizim sürümleri (müşterinin DWG/DXF karar kayıtları "N çizim" sayısına girmez — karar 167) */
+const factoryDrawings = (o: Row) => o.drawings.filter((d) => !isCustomerDrawingRecord(d));
+/** Revizyon istenen sipariş: listelerde kırmızı ve belirgin (Paket 3) */
+const revisionAsked = (o: Row) => o.status === 'HAZIRLANIYOR' && o.drawingTrack === 'REVIZYON_ISTENDI' && !o.onHold;
 const sentOf = (o: Row) => (o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null);
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requirePermission('ORDER_VIEW');
@@ -333,10 +345,13 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
           {[...groups.entries()].map(([label, list]) => (
             <GroupRows key={label || 'all'} label={label ? `${label} (${list.length})` : ''} cols={9}>
               {list.map((o) => (
-                <tr key={o.id}>
+                <tr key={o.id} className={revisionAsked(o) ? 'row-alert' : undefined} data-revision-row={revisionAsked(o) ? o.orderNo : undefined}>
                   <td>
                     <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
                     {stockShort.has(o.id) && <> <Badge tone="danger">{t('profile.page.stock.mark')}</Badge></>}
+                    {/* Revizyon istendi: satır kırmızı, rozet belirgin; DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167) */}
+                    {revisionAsked(o) && <> <Badge tone="danger">{t('orders.internal.revisionRow')}</Badge></>}
+                    {dwgReview(o).pending && <> <Link className="badge badge-warn" href={`/siparisler/${o.id}#cizim`}>{t('orders.internal.dwgPending')}</Link></>}
                     <div className="muted small">{o.title}</div>
                   </td>
                   <td className="mono">{customerLabel(user, o.customer.name)}</td>
@@ -349,12 +364,12 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
                   ) : (
                     <>
                       <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
-                      <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{o.drawings.length > 0 && <div className="muted small">{count('drawing', o.drawings.length)}</div>}</>}
+                      <td>{o.status === 'YENI' ? <span className="muted">—</span> : <><DrawingBadge track={o.drawingTrack} />{factoryDrawings(o).length > 0 && <div className="muted small">{count('drawing', factoryDrawings(o).length)}</div>}</>}
                         {o.files.some((f) => /\.(dwg|dxf)$/i.test(f.name)) && <div><span className="badge badge-info" title={t('order.drawings.customerFiles')}>DWG/DXF</span></div>}</td>
                       <td>{o.status === 'YENI' ? <span className="muted">—</span> : <OfferBadge status={offerOf(o)} />}</td>
                     </>
                   )}
-                  <td className="hide-sm">{o.revisionCount > 0 ? <span className="badge badge-danger">{t('orders.internal.revisions', { v: o.drawings.length, rounds: count('round', o.revisionCount) })}</span> : '—'}</td>
+                  <td className="hide-sm">{o.revisionCount > 0 ? <span className="badge badge-danger">{t('orders.internal.revisions', { v: o.drawings[o.drawings.length - 1]?.version ?? 0, rounds: count('round', o.revisionCount) })}</span> : '—'}</td>
                   <td>{o.onHold ? <span className="muted">—</span> : <Sla deadline={o.slaDeadline} />}</td>
                   <td>{fmtDate(o.profile ? o.profile.pickupDate : o.estimatedShipDate)}</td>
                   <td className="actions"><Link href={`/siparisler/${o.id}`} className="btn">{t('common.open')}</Link></td>
@@ -383,7 +398,10 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t } = await getT();
   // "Sıra bende" yalnızca işlem yapan rollerde; denetimci doğrudan tüm aktif siparişleri görür
   const hasTurn = userCan(user, 'ORDER_REVIEW') || userCan(user, 'DRAWING_WORK');
-  const view = sp.view ?? (hasTurn ? 'work' : 'all');
+  // "DXF/DWG olarak gelen çizimler" (karar 167): yalnızca çizim yetkisinde (çizim ekibi; yönetici Çizim Paneli'nden).
+  // Yetkisiz rolde parametre yok sayılır — kararların kendisi zaten sunucu işlemlerinde denetlenir.
+  const canDwg = userCan(user, 'DRAWING_WORK');
+  const view = sp.view === 'dwg' && !canDwg ? (hasTurn ? 'work' : 'all') : sp.view ?? (hasTurn ? 'work' : 'all');
   // Çizim Paneli, çizim ekibinin bu sayfasıdır. Çizim yetkisi (DRAWING_WORK) olan ama kendi paneli başka olan kullanıcı
   // (yönetici) soldaki "Çizim Ekibi → Çizim Paneli" ile aynı paneli açar (?panel=cizim): aynı kapsam, aynı kuyruklar,
   // ekibin tamamı için. Yetkisi olmayan rollerde (satış, denetimci, müşteri) parametre yok sayılır. Satırlar yine
@@ -438,6 +456,8 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       )}
       <div className="tabs">
         {hasTurn && <Link href={here()} className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
+        {/* Çizim ekibinin panelinde (çizimci; yönetici Çizim Paneli'nde) DXF/DWG listesi de bir sekmedir */}
+        {canDwg && (teamPanel || !userCan(user, 'ORDER_REVIEW')) && <Link href={here({ view: 'dwg' })} className={view === 'dwg' ? 'active' : ''}>{t('orders.internal.dwg.title')}</Link>}
         <Link href={here({ view: hasTurn ? 'all' : undefined })} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
         <Link href={here({ view: 'archive' })} className={view === 'archive' ? 'active' : ''}>{t('orders.tabs.archive')}</Link>
       </div>
@@ -495,12 +515,63 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           })}
         </>
       )}
-      {view !== 'work' && (
+      {view === 'dwg' && <DwgDrawings user={user} rows={rows} />}
+      {view !== 'work' && view !== 'dwg' && (
         <Section title={view === 'archive' ? t('orders.internal.sections.archive') : t('orders.internal.sections.active')} count={rows.length}>
           <InternalTable user={user} rows={rows} empty={t('orders.internal.sections.none')} />
         </Section>
       )}
       {!teamPanel && userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} />}
+    </>
+  );
+}
+
+/**
+ * "DXF/DWG olarak gelen çizimler" (karar 167): müşterinin DWG / DXF olarak gönderdiği çizimler ve çizimcinin üç AYRI kararı
+ * (Üretime Hazır / Çizim Hatalı / Çizimi Güncelle — sipariş sayfasıyla aynı sunucu işlemleri ve aynı DwgDecision bileşeni).
+ * Liste kuralı tek yerde: server/orders/queues.js → dwgDrawingGroups. Satırlar bakan kullanıcıya göre temizlenmiştir
+ * (sanitizeRows): çizim ekibinde firma adı maskeli. Dosya bağlantıları /dosya/siparis — kendi yetki kuralıyla.
+ */
+async function DwgDrawings({ user, rows }: { user: CurrentUser; rows: Row[] }) {
+  const { t } = await getT();
+  const [pending, correction] = dwgDrawingGroups(rows);
+  return (
+    <>
+      <p className="muted small">{t('orders.internal.dwg.intro')}</p>
+      <Section id="dwg-bekleyen" title={t('orders.internal.dwg.pending.title')} count={pending.rows.length} tone={pending.rows.length ? 'badge-warn' : undefined}>
+        {pending.rows.length === 0 ? <div className="empty">{t('orders.internal.dwg.pending.empty')}</div> : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>{t('orders.cols.order')}</th><th>{t('orders.cols.customer')}</th><th>{t('orders.internal.dwg.files')}</th><th>{t('orders.cols.sla')}</th><th>{t('orders.internal.dwg.decisions')}</th></tr>
+              </thead>
+              <tbody>
+                {pending.rows.map((o) => {
+                  const review = dwgReview(o);
+                  const files = review.files as { id: string; name: string }[];
+                  const record = review.record as { version: number } | null;
+                  return (
+                    <tr key={o.id} data-dwg-row={o.orderNo}>
+                      <td>
+                        <Link className="order-no" href={`/siparisler/${o.id}#cizim`}>{o.orderNo}</Link>
+                        {record && <div><Badge tone="info">{t('orders.internal.dwg.resubmitted', { v: record.version })}</Badge></div>}
+                        <div className="muted small">{o.title}</div>
+                      </td>
+                      <td className="mono">{customerLabel(user, o.customer.name)}</td>
+                      <td><div className="dwg-files">{files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}</div></td>
+                      <td><Sla deadline={o.slaDeadline} /></td>
+                      <td><DwgDecision orderId={o.id} can={{ ready: true, faulty: true, update: true }} t={t} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+      <Section id="dwg-duzeltme" title={t('orders.internal.dwg.correction.title')} count={correction.rows.length}>
+        <InternalTable user={user} rows={correction.rows} empty={t('orders.internal.dwg.correction.empty')} group={false} />
+      </Section>
     </>
   );
 }

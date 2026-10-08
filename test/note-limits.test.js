@@ -441,10 +441,19 @@ test('sınırlar tek yerde, sunucuda: notu yazan tek kod addNote; sıra — hak 
   assert.ok(retry.indexOf('limits.retry(actor, now.getTime())') > retry.indexOf('translateReady(settings)'));
   assert.ok(retry.indexOf('limits.retry(actor, now.getTime())') < retry.indexOf('db.orderNote.updateMany('));
   // Varsayılan sayaçlar uygulamanın ortak örneğidir; sunucu işlemi kendi sayaç / sınırını veremez (addNote,
-  // retryNoteTranslation, translateRevision — revizyon notu müşterinin aynı çeviri hakkını kullanır, karar 163)
-  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 3);
-  const revision = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function testTranslation('));
+  // retryNoteTranslation, translateRevision — revizyon notu müşterinin aynı çeviri hakkını kullanır, karar 163 —,
+  // translateDrawingNote ve retryDrawingTranslation — çizim alanının notları, karar 168)
+  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 5);
+  const revision = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function translateDrawingNote('));
   assert.ok(revision.includes('limits.translation(actor, now.getTime())'), 'revizyon notunun çevirisi müşterinin çeviri hakkından düşer');
+  // Çizim alanı (karar 168): sürüm notunun çevirisi çeviri hakkından, "yeniden dene" yeniden deneme hakkından — ikisi de
+  // not sahiplenilmeden (PENDING yapılmadan) ÖNCE alınır; hak yoksa sağlayıcı çağrılmaz
+  const drawingNote = svc.slice(svc.indexOf('export async function translateDrawingNote('), svc.indexOf('export async function retryDrawingTranslation('));
+  assert.ok(drawingNote.indexOf('translateReady(settings)') < drawingNote.indexOf('limits.translation(actor, now.getTime())'));
+  assert.ok(drawingNote.indexOf('limits.translation(actor, now.getTime())') < drawingNote.indexOf("translationStatus: 'PENDING'"));
+  const drawingRetry = svc.slice(svc.indexOf('export async function retryDrawingTranslation('), svc.indexOf('export async function testTranslation('));
+  assert.ok(drawingRetry.indexOf('translateReady(settings)') < drawingRetry.indexOf('limits.retry(actor, now.getTime())'));
+  assert.ok(drawingRetry.indexOf('limits.retry(actor, now.getTime())') < drawingRetry.indexOf('db[table].updateMany('));
   const actions = strip(read('app/(panel)/siparisler/[id]/actions.ts'));
   assert.equal(/limits\s*:|createNoteLimits|note-?limits|notes\/limits/i.test(actions), false);
   assert.ok(actions.includes("r.code === 'RATE_LIMIT' ? 'order.errors.noteRateLimit'") && actions.includes("r.code === 'ORDER_LIMIT' ? 'order.errors.noteOrderLimit'"));

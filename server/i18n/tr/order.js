@@ -38,6 +38,13 @@ export default {
     undo_drawing: 'Çizime gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
     undo_no_drawing: 'Teklife gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
     restored: 'Sipariş geri yüklendi; silinmeden önceki durumuna döndü.',
+    // Müşterinin DWG/DXF çizimi (karar 167)
+    dwg_ready: 'Müşterinin çizimi üretime hazır kabul edildi; sipariş “Müşteriden onaylı çizimler” bölümünde.',
+    dwg_ready_production: 'Müşterinin çizimi üretime hazır kabul edildi. Teklif de müşteride olduğu için sipariş otomatik olarak üretime alındı.',
+    dwg_faulty: 'Çizim hatalı olarak işaretlendi ve müşteriye bildirildi.',
+    dwg_update: 'Çizimi siz güncelleyeceksiniz; müşterinin dosyası korunur. Yeni çizimi aşağıya yükleyin, “Kontrol Et” ile müşteriye gönderin.',
+    dwg_resubmitted: 'Düzeltilmiş dosyanız çizim ekibine iletildi.',
+    dwg_factory_requested: 'Talebiniz alındı: çizimi fabrikamız hazırlayıp onayınıza sunacak.',
   },
   // İşlem adları: "Sıradaki adım" satırı ve aynı adlı düğmeler (anahtar = işlem kodu)
   steps: {
@@ -65,6 +72,7 @@ export default {
     salesArchive: 'satış (arşiv)',
     drawingTeam: 'çizim ekibi',
     customerApproval: 'müşteri (çizim onayı)',
+    customerCorrection: 'müşteri (çizim düzeltmesi)',
     salesOffer: 'satış (teklif)',
     adminPrice: 'sistem yöneticisi (fiyat onayı)',
     nextStep: 'Sıradaki adım: {steps}',
@@ -126,6 +134,52 @@ export default {
     revisionLabel: 'Revizyon talebi',
     revisionPlaceholder: 'Çizimde neyin değişmesi gerektiğini yazın',
     nothingToDo: 'Şu an sizden beklenen bir işlem yok.',
+    // Çizimci müşterinin DWG/DXF çizimini hatalı buldu (karar 167): sipariş sayfasının üstündeki kırmızı bilgilendirme
+    correctionTitle: 'Çiziminizde düzeltme gerekiyor.',
+    correctionText: 'Çizim ekibimiz gönderdiğiniz çizimi inceledi ve düzeltme gerektiğini bildirdi:',
+    correctionResubmit: 'Düzeltilmiş dosyayı gönderin (en az bir DWG ya da DXF)',
+    correctionResubmitButton: 'Düzeltilmiş dosyayı gönder',
+    correctionFactoryHint: 'Ya da çizimi fabrikamızın hazırlamasını isteyin; hazır olunca onayınıza sunulur.',
+    correctionFactory: 'Fabrikadan yeni çizim iste',
+    correctionFactoryConfirm: 'Çizimi fabrikamız hazırlayıp onayınıza sunacak. Emin misiniz?',
+    correctionRespond: 'Seçenekleri gör',
+    correctionNoRight: 'Hesabınızın onay yetkisi yok: düzeltilmiş dosyayı ya da fabrika çizimi talebini firmanızdaki onay yetkili kullanıcı gönderir.',
+  },
+  // İç ekip: müşteri revizyon istedi (sipariş sayfasının üstündeki kırmızı bilgilendirme)
+  revisionAlert: {
+    title: 'Müşteri revizyon istedi (v{v}).',
+    text: 'Revize çizimi hazırlayıp yeniden müşterinin onayına gönderin. Önceki onay ve sürümler geçmişte kalır.',
+    open: 'Revizyon talebine git',
+  },
+  // Müşterinin DWG/DXF çizimi için çizimcinin kararı (karar 167)
+  dwg: {
+    title: 'Müşterinin DWG/DXF çizimi — kararınız bekleniyor',
+    intro: 'Müşteri çizimini DWG/DXF olarak gönderdi. Dosyayı inceleyip üç karardan birini verin. Karar kaydedilir; müşterinin dosyası silinmez ve üzerine yazılmaz.',
+    resubmitted: 'Müşteri düzeltilmiş dosya gönderdi (v{v}).',
+    files: 'İncelenecek dosyalar',
+    ready: 'Üretime Hazır',
+    readyHint: 'Dosya üretime uygun: müşteri onayı beklenmez, sipariş “Müşteriden onaylı çizimler”e geçer.',
+    readyConfirm: 'Müşterinin çizimi üretime hazır kabul edilecek; müşteri onayı beklenmeyecek. Emin misiniz?',
+    faulty: 'Çizim Hatalı',
+    faultyHint: 'Müşteriye bildirilir: müşteri düzeltilmiş dosya gönderir ya da fabrikadan çizim ister.',
+    faultyNote: 'Açıklama — müşteri görür (Romence çevirisiyle)',
+    faultyPlaceholder: 'örn. Ölçü katmanı eksik; kapı yüksekliği okunmuyor',
+    faultyConfirm: 'Çizim hatalı olarak işaretlenecek ve müşteriye bildirilecek. Emin misiniz?',
+    faultySubmit: 'Hatalı olarak bildir',
+    update: 'Çizimi Güncelle',
+    updateHint: 'Müşterinin dosyası korunur; yeni çizimi siz yükler ve olağan akışla (Kontrol Et → Müşteriye gönder) müşterinin onayına sunarsınız.',
+    updateConfirm: 'Çizimi siz güncelleyeceksiniz; müşterinin dosyası korunur. Emin misiniz?',
+    waitingTitle: 'Müşterinin düzeltmesi bekleniyor',
+    waitingText: 'Çizim hatalı olarak bildirildi. Müşteri düzeltilmiş dosya gönderince ya da fabrika çizimi isteyince sipariş yeniden kuyruğunuza düşer. Beklemeden çizimi siz de güncelleyebilirsiniz.',
+    record: 'Müşterinin çizimi (DWG/DXF)',
+    status: {
+      BEKLIYOR: 'karar bekliyor',
+      ONAYLANDI: 'üretime hazır',
+      REVIZYON_ISTENDI: 'hatalı',
+      YAPILIYOR: 'fabrika güncelliyor',
+    },
+    faultyLabel: 'Çizim hatalı — açıklama:',
+    submitted: 'gönderildi {when}',
   },
   // Adım çubuğunun altındaki çizim / teklif hatları
   tracks: {
@@ -231,6 +285,15 @@ export default {
     sentBy: 'gönderen {who} · {when}',
     decidedBy: 'karar {who} · {when}',
     customerFiles: 'Müşteri çizim dosyası gönderdi (DWG/DXF)',
+    // Çizimci sipariş ekranı (Paket 3): "Teknik çizim dosyaları" ve "Çizim onayı ve revizyon" ayrı bölümler
+    filesTitle: 'Teknik çizim dosyaları',
+    reviewTitle: 'Çizim onayı ve revizyon',
+    noVersions: 'Henüz çizim sürümü yok.',
+    noDecisions: 'Henüz onay ya da revizyon kaydı yok.',
+    awaiting: 'Çizim v{v} müşterinin onayında · gönderildi {when}',
+    approvedState: 'Çizim v{v} müşteri tarafından onaylandı · {when}',
+    readyState: 'Müşterinin çizimi üretime hazır kabul edildi (v{v}) · {when}',
+    revisionState: 'Müşteri v{v} için revizyon istedi · {when}',
   },
   files: {
     title: 'Müşteri sipariş dosyaları',
@@ -319,5 +382,11 @@ export default {
     offerNotUpdatable: 'Teklif şu anda güncellenemez.',
     conflict: 'Sipariş siz bakarken başka biri tarafından değiştirildi. Sayfayı yenileyip tekrar deneyin.',
     staleDrawing: 'Bu arada yeni bir çizim sürümü yüklendi. Lütfen önce yeni sürümü inceleyin.',
+    // Müşterinin DWG/DXF çizimi (karar 167)
+    dwgNotPending: 'Bu sipariş için karar bekleyen DWG/DXF çizimi yok (karar verilmiş olabilir). Sayfayı yenileyin.',
+    dwgNote: '“Çizim Hatalı” için açıklama yazın: müşteri neyi düzeltmesi gerektiğini görecek.',
+    dwgNoteLong: 'Açıklama çok uzun (en fazla 2000 karakter).',
+    dwgFile: 'En az bir DWG ya da DXF dosyası seçin.',
+    dwgInfected: 'İncelenen dosyalardan biri virüslü çıktı; bu çizim üretime hazır kabul edilemez.',
   },
 };

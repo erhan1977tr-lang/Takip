@@ -109,8 +109,10 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 
 - Section order on the order page (all roles except Drawing): status + actions → customer files → notes →
   order information → drawings/approval → offer (editor or view) → finance / crates; history lives in the
-  sidebar. Drawing team (3.31.0): customer files → drawings and approval (start + upload live here) → notes →
-  order information; no stepper or action cards — status is shown as badges in the page head; no offer.
+  sidebar. Drawing team (3.53.0): customer files → technical drawing files (`#cizim-dosyalari`: start + upload +
+  versions with files) → drawing approval and revision (`#cizim`: state line, DWG/DXF decision box, approval /
+  revision history, withdraw) → notes → order information; no stepper or action cards — status is shown as badges
+  in the page head; no offer / finance / crates.
 - Order information is `dl.order-info` (grey label column, value column, full width). Sub-headings inside a
   card use `<h3 class="sub-title">`; a card title with something on the right uses `.section-head`.
 - Offer editor (`OfferEditor.tsx`): `.card.offer-card` → `.offer-wrap > table.offer-table` (bordered cells;
@@ -146,6 +148,16 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   customer → "Bu çizimi onayla" (`.btn-success`) + "Revizyon iste" (`.btn-danger`); revision screen → note +
   submit. Buttons sit in `.viewer-actions`. On narrow screens the aside drops below the drawing.
 - Section filters inside a list card: `.card-tools` + `.card-filter` (e.g. loading day on approved drawings).
+- Drawer screen split (3.53.0): the same version renderer serves both cards (`FactoryVersion part="files" | "review"`);
+  the "güncel" label appears once (files part). Customer DWG/DXF decision records are `.drawing-version.customer-record`
+  (grey box: version, decision badge, the customer's files as links, the faulty note). The decision box is `.dwg-panel`
+  (amber "your turn" box, `<h3 class="sub-title">`); its buttons sit in `.dwg-actions` (`DwgDecision`): "Üretime Hazır" =
+  `ConfirmButton success`, "Çizimi Güncelle" = `ConfirmButton outline`, "Çizim Hatalı" = a `<details class="dwg-faulty">`
+  whose summary is `.btn.btn-danger` and whose form holds the required note + `ConfirmButton danger outline`.
+- Red marking: an order whose customer asked for a revision is `tr.row-alert` in every list (red row + red left edge; the
+  "Revizyon istendi" badge carries the meaning) and the drawer's order page starts with `.alert.alert-error#revizyon`;
+  the customer's faulty-drawing notice is `.alert.alert-error#cizim-hatali`, its answers live in the turn card `#duzeltme`.
+- `ConfirmButton outline` = secondary button (`.btn`), `outline danger` = `.btn.btn-danger` (critical but reversible).
 - Annotation colours are fixed (red / amber) so they stay readable on any drawing — the only place where
   colours are not tokens.
 

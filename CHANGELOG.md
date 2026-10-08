@@ -4,6 +4,31 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.53.0 — 08.10.2026
+
+Fonksiyonel paket 3 — çizimci paneli, DWG/DXF ve revizyon (kararlar 167–169). Veritabanı şeması: yeni çizim hattı durumu
+`DUZELTME_BEKLIYOR`, revizyon kaydının türü (`DrawingRevision.kind`: müşterinin talebi / "çizim hatalı" açıklaması), müşterinin
+çizim kararının dosya listesi (`Drawing.sourceFiles`) ve sürüm notunun çevirisi (`Drawing.translation*`); migration CI'da üretilir.
+
+- **DXF/DWG olarak gelen çizimler (çizim ekibinin menüsü):** müşteri çizimini DWG / DXF olarak gönderdiyse çizimci önce karar
+  verir; her siparişte üç ayrı karar: **Üretime Hazır** (müşteri onayı beklenmez, sipariş "Müşteriden onaylı çizimler"e geçer),
+  **Çizim Hatalı** (açıklama zorunlu; müşteriye bildirim; müşteri mevcut siparişten düzeltilmiş dosya gönderir ya da fabrikadan
+  çizim ister — ikisi de çizimcinin kuyruğuna düşer), **Çizimi Güncelle** (müşterinin dosyası korunur; yeni çizim olağan "Kontrol Et →
+  Müşteriye gönder" akışıyla müşterinin onayına gider). Kararlar, dosyalar ve açıklamalar geçmişte kalır; her karar denetim kaydına
+  yazılır. Yönetici aynı listeyi Çizim Ekibi menüsünden açar.
+- **Bildirimler gecikmeden:** müşteri onaylayınca / revizyon isteyince / dosya gönderince bildirim işlemden hemen sonra yazılır
+  (işçinin turu beklenmez; işçi yedek). Onay bildirimi onaylanan çizim sürümünün ekranına götürür. Aynı olay iki kez bildirilmez,
+  e-posta olay başına bir kez.
+- **Revizyon:** revizyon istenen sipariş listelerde kırmızı satır ve "Revizyon istendi" rozetiyle; çizimcinin sipariş sayfasının
+  üstünde kırmızı bilgilendirme (numaralı not + Türkçe çevirisi). Önceki sürümler ve talepler geçmişte kalır; eski bir sürümün kararı
+  yeni sürüme taşınmaz.
+- **Çizimcinin sipariş ekranı:** 1) müşteri sipariş dosyaları 2) teknik çizim dosyaları 3) çizim onayı ve revizyon 4) notlar
+  5) sipariş bilgileri. Teklif / finans bilgisi yok; firma adı maskeli.
+- **Çeviri:** "çizim hatalı" açıklaması ve sürümün müşteri notu bir kez Romence'ye çevrilip saklanır (müşteri görür, iç ekip özgün
+  notu görür, denetimci yalnızca özgün notu). Çevrilemeyen not için iç ekipte **"Çeviriyi yeniden dene"**; aynı anda iki istek
+  sağlayıcıya tek istek gönderir; tamamlanmış çeviri tekrarlanmaz; sayfa yenilemesi çeviri yapmaz.
+- **Bölüm adları:** "Müşteriden onay beklenenler", "Müşteriden onaylı çizimler".
+
 ## 3.52.1 — 08.10.2026
 
 Paket 2 doğrulama düzeltmeleri (uçtan uca testlerde bulundu; yayından önce). Veritabanı şeması değişmedi.

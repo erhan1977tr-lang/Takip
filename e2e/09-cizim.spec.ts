@@ -211,7 +211,7 @@ test('yönetici: soldaki "Çizim Ekibi → Çizim Paneli" çizim ekibinin paneli
 
   // Çizim ekibinin bölümleri (ekibin tamamı için); yöneticinin fiyat / profil kuyrukları, uyarıları ve silinenler listesi burada yok
   const titles = await admin.locator('main .card-head h2').allTextContents();
-  for (const t of ['Yapılacak çizimler', 'Onay bekleyen çizimler', 'Müşteri tarafından onaylanmış çizimler']) expect(titles.some((x) => x.includes(t)), t).toBe(true);
+  for (const t of ['Yapılacak çizimler', 'Müşteriden onay beklenenler', 'Müşteriden onaylı çizimler']) expect(titles.some((x) => x.includes(t)), t).toBe(true);
   for (const t of ['Fiyat onayı bekleyen teklifler', 'Yeni siparişler', 'Teklif hazırlanacaklar', 'Profil', 'Benim çizimlerim', 'Üretimdeki siparişler']) expect(titles.some((x) => x.includes(t)), t).toBe(false);
   await expect(admin.locator('main .alert')).toHaveCount(0);
 

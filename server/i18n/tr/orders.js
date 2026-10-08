@@ -72,6 +72,21 @@ export default {
     shipGroup: 'Yükleme: {date}',
     // "v2 · 1 tur": çizim sürümü · revizyon turu sayısı
     revisions: 'v{v} · {rounds}',
+    // Revizyon istenen sipariş satırı (çizim ekibi ve yönetici listeleri): kırmızı ve belirgin
+    revisionRow: 'Revizyon istendi',
+    // Müşterinin DWG/DXF çizimi kararı bekleniyor (karar 167)
+    dwgPending: 'DWG/DXF — kararınız bekleniyor',
+    // "DXF/DWG olarak gelen çizimler" (çizim ekibi menüsü; yöneticide Çizim Paneli altında) — karar 167
+    dwg: {
+      title: 'DXF/DWG olarak gelen çizimler',
+      intro: 'Müşterinin DWG / DXF olarak gönderdiği çizimler. Her sipariş için üç karar: Üretime Hazır (müşteri onayı beklenmez), Çizim Hatalı (müşteriye bildirilir) ya da Çizimi Güncelle (dosya korunur, yeni çizimi siz yüklersiniz).',
+      pending: { title: 'Kararınızı bekleyenler', empty: 'Karar bekleyen DWG/DXF çizimi yok.' },
+      correction: { title: 'Müşteriden düzeltme beklenenler', empty: 'Müşterinin düzeltmesini bekleyen çizim yok.' },
+      files: 'Dosyalar',
+      resubmitted: 'düzeltilmiş dosya · v{v}',
+      faultyNote: 'Açıklama (müşteri görür)',
+      decisions: 'Karar',
+    },
     sections: {
       newOrders: { title: 'Yeni siparişler — karar bekliyor', empty: 'Karar bekleyen sipariş yok.' },
       offersToPrepare: { title: 'Teklif hazırlanacaklar', empty: 'Hazırlanacak teklif yok.' },
@@ -79,8 +94,8 @@ export default {
       offerCheck: { title: 'Teklif kontrolü — gönderimden sonra revize çizim geldi', empty: 'Kontrol bekleyen teklif yok.' },
       drawingJobs: { title: 'Yapılacak çizimler', empty: 'Yapılacak çizim yok.' },
       myDrawings: { title: 'Benim çizimlerim', empty: 'Size atanmış açık çizim yok.' },
-      atCustomer: { title: 'Onay bekleyen çizimler', empty: 'Müşteri onayında çizim yok.' },
-      approvedDrawings: { title: 'Müşteri tarafından onaylanmış çizimler', empty: 'Onaylanmış çizim yok.' },
+      atCustomer: { title: 'Müşteriden onay beklenenler', empty: 'Müşteri onayında çizim yok.' },
+      approvedDrawings: { title: 'Müşteriden onaylı çizimler', empty: 'Onaylanmış çizim yok.' },
       production: { title: 'Üretimdeki siparişler', empty: 'Üretimde sipariş yok.' },
       sla: { title: 'SLA riski / gecikenler', empty: 'Geciken sipariş yok.' },
       profilePricing: { title: 'Profil — fiyat bekleyenler', empty: 'Fiyat bekleyen profil siparişi yok.' },

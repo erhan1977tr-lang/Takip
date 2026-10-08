@@ -147,6 +147,14 @@ async function autoArchiveTick() {
   if (r.archived || r.skipped) log('otomatik arşiv:', JSON.stringify(r));
 }
 
+// Uygulama içi bildirimler turun BAŞINDA da dağıtılır (Paket 3 — bildirim gecikmesi): virüs taraması ve FGO işleri uzun
+// sürse de zil beklemez. Uygulama, iş akışı işleminden hemen sonra kendi olaylarını zaten dağıtır (lib/notifications.ts →
+// deliverInAppNow); bu adım o dağıtım yapılamadığında yedektir. Aynı olay aynı kullanıcıya bir kez yazılır (benzersiz anahtar).
+async function inAppTick() {
+  const a = await dispatchInApp(db, { now: new Date(), log });
+  if (a.created) log('uygulama içi bildirim:', JSON.stringify(a));
+}
+
 async function tick() {
   const settings = await getAvSettings(db);
   const r = await scanPending(db, settings, { log });
@@ -157,6 +165,11 @@ async function tick() {
 
 log('işçi başladı');
 while (!stopping) {
+  try {
+    await inAppTick();
+  } catch (e) {
+    log('bildirim hatası:', e?.message ?? e);
+  }
   try {
     await tick();
   } catch (e) {

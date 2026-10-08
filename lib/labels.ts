@@ -89,6 +89,12 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DRAWING_NOT_CHECKED: 'order.errors.drawingNotChecked',
   WITHDRAW_REASON: 'order.errors.withdrawReason',
   FILE_NOT_FOUND: 'order.errors.fileNotFound',
+  // Müşterinin DWG/DXF çizimi (karar 167)
+  DWG_NOT_PENDING: 'order.errors.dwgNotPending',
+  DWG_NOTE: 'order.errors.dwgNote',
+  DWG_NOTE_LONG: 'order.errors.dwgNoteLong',
+  DWG_FILE: 'order.errors.dwgFile',
+  DWG_INFECTED: 'order.errors.dwgInfected',
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',

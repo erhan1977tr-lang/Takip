@@ -17,8 +17,10 @@ import { readOfferExcel } from '@/server/orders/excel-file.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
-import { addNote, retryNoteTranslation, translateRevision } from '@/server/notes/translation.js';
+import { addNote, retryDrawingTranslation, retryNoteTranslation, translateDrawingNote, translateRevision } from '@/server/notes/translation.js';
+import { deliverInAppNow } from '@/lib/notifications';
 import { revisionNote } from '@/server/orders/revision-note.js';
+import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -38,7 +40,8 @@ function done(id: string, ok: string): never {
 }
 
 /**
- * İşlemi çalıştırır; iş akışı hatasını kullanıcının dilinde mesajla sayfaya döndürür.
+ * İşlemi çalıştırır; iş akışı hatasını kullanıcının dilinde mesajla sayfaya döndürür. İşlem kaydedildikten sonra
+ * yazdığı olayların uygulama içi bildirimleri hemen dağıtılır (işçiyi beklemez — Paket 3; işçi yedektir).
  * @returns işlemin sonucu (ör. otomatik üretime geçti mi)
  */
 async function act(
@@ -46,6 +49,7 @@ async function act(
 ): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
   try {
     const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
+    await deliverInAppNow(res.outboxIds);
     return res.result;
   } catch (e) {
     if (e instanceof WorkflowError) {
@@ -187,11 +191,20 @@ export async function removeDrawingFileAction(formData: FormData) {
 /**
  * İkinci adım: taslak müşteriye gönderilir (ekranda "emin misiniz?" onayı istenir). Yalnızca "Kontrol Et" ekranından:
  * o ekranın verdiği kontrol kanıtı (review) işlemde doğrulanır (server/orders/review.js); kanıtsız istek reddedilir.
+ * Gönderim kaydedildikten SONRA sürümün müşteri notu bir kez Romence'ye çevrilir ve sürüme yazılır (translateDrawingNote,
+ * karar 168): not müşteriye gittiği anda kesinleşir; çeviri hatası gönderimi bozmaz, sayfa açılışı çeviri yapmaz.
  */
 export async function sendDrawingAction(formData: FormData) {
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const drawingId = String(formData.get('drawingId') ?? '') || undefined;
   const review = String(formData.get('review') ?? '').slice(0, 200);
-  await simple(formData, 'send_drawing', 'drawing_sent', { drawingId, review });
+  const res = await act(user, id, 'send_drawing', { drawingId, review });
+  if (res?.drawingId) {
+    await translateDrawingNote(db, { drawingId: res.drawingId, orderId: id, actor: await actorOf(user) })
+      .catch((e: unknown) => console.warn('[sürüm notu çevirisi] yapılamadı', res.drawingId, String((e as { code?: unknown })?.code ?? 'ERROR')));
+  }
+  done(id, 'drawing_sent');
 }
 
 export async function withdrawDrawingAction(formData: FormData) {
@@ -234,6 +247,99 @@ export async function requestRevisionAction(formData: FormData) {
       .catch((e: unknown) => console.warn('[revizyon çevirisi] yapılamadı', res.revisionId, String((e as { code?: unknown })?.code ?? 'ERROR')));
   }
   done(id, 'revision_requested');
+}
+
+/**
+ * Çizim alanındaki çevrilemeyen notun (müşterinin revizyon talebi, çizimcinin "hatalı" açıklaması ya da sürümün müşteri
+ * notu) çevirisini bir kez daha ister — yalnızca iç ekip, açık istekle (karar 168; kural server/notes/translation.js →
+ * retryDrawingTranslation: yalnızca başarısız / yarıda kalmış çeviri, eşzamanlı isteklerde sağlayıcıya tek istek).
+ */
+export async function retryDrawingTranslationAction(formData: FormData) {
+  const user = await requirePermission('NOTE_ADD');
+  const order = await loadOrder(orderIdOf(formData), user);
+  const { t } = await getT();
+  const target = String(formData.get('target') ?? '') === 'drawing' ? 'drawing' : 'revision';
+  const r = await retryDrawingTranslation(db, { target, id: String(formData.get('targetId') ?? '').slice(0, 64), orderId: order.id, actor: await actorOf(user) });
+  if (!r.ok) {
+    redirect(err(order.id, t(r.code === 'DISABLED' ? 'order.notes.translation.disabled'
+      : r.code === 'RATE_LIMIT' ? 'order.notes.translation.retryLimit' : 'order.errors.notAllowed')) + '#cizim');
+  }
+  revalidatePath(`/siparisler/${order.id}`);
+  if (r.translation === 'FAILED') redirect(err(order.id, t('order.notes.translation.retryFailed')) + '#cizim');
+  redirect(back(order.id, 'ok=note_translated') + '#cizim');
+}
+
+// ---------------- Müşterinin DWG/DXF çizimi (karar 167) ----------------
+// Çizimcinin üç kararı birbirinden ayrı sunucu işlemleridir (dwg_ready / dwg_faulty / dwg_update — kural ve kayıt
+// server/orders/transitions.js, "karar bekleniyor mu" server/orders/dwg-review.js). "DXF/DWG olarak gelen çizimler"
+// listesi ve sipariş sayfası aynı işlemleri çağırır. Yetki: çizim yetkisi (DRAWING_WORK) burada, durum / sıra işlemde.
+
+/** A. Üretime Hazır: müşteri onayı beklenmez; sipariş "Müşteriden onaylı çizimler"e geçer (koşullar tamamsa üretime). */
+export async function dwgReadyAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_WORK');
+  const id = orderIdOf(formData);
+  const res = await act(user, id, 'dwg_ready');
+  done(id, res?.produced ? 'dwg_ready_production' : 'dwg_ready');
+}
+
+/**
+ * B. Çizim Hatalı: açıklama zorunlu; müşteriye bildirim. Karar kaydedildikten SONRA açıklama bir kez Romence'ye çevrilir
+ * (translateRevision — çeviri hatası kararı bozmaz).
+ */
+export async function dwgFaultyAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_WORK');
+  const id = orderIdOf(formData);
+  const res = await act(user, id, 'dwg_faulty', { note: String(formData.get('note') ?? '').slice(0, 4000) });
+  if (res?.revisionId) {
+    await translateRevision(db, { revisionId: res.revisionId, orderId: id, actor: await actorOf(user) })
+      .catch((e: unknown) => console.warn('[hatalı çizim açıklaması çevirisi] yapılamadı', res.revisionId, String((e as { code?: unknown })?.code ?? 'ERROR')));
+  }
+  done(id, 'dwg_faulty');
+}
+
+/** C. Çizimi Güncelle: orijinal dosya korunur; çizimci yeni çizimi olağan akışla yükler (taslak → Kontrol Et → gönder). */
+export async function dwgUpdateAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_WORK');
+  const id = orderIdOf(formData);
+  await act(user, id, 'dwg_update');
+  revalidatePath('/siparisler');
+  revalidatePath(`/siparisler/${id}`);
+  redirect(back(id, 'ok=dwg_update') + '#cizim-dosyalari');
+}
+
+/**
+ * Müşteri: hatalı bulunan çiziminin yerine düzeltilmiş dosya gönderir (mevcut siparişe; en az bir DWG / DXF). Dosyalar
+ * kaydedilmeden önce yetki ve durum denetlenir; içerik denetimi + virüs taraması storeFiles'ta; işlem kaydedilemezse
+ * saklanan dosyalar silinir.
+ */
+export async function dwgResubmitAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_APPROVE');
+  const id = orderIdOf(formData);
+  const { t } = await getT();
+  const files = filesFrom(formData, 'files');
+  if (!files.length || !hasCustomerDrawingFile(files)) redirect(err(id, t('order.errors.dwgFile')) + '#cizim-hatali');
+  for (const f of files) {
+    const problem = fileProblemText(t, fileProblem(f.name, f.size));
+    if (problem) redirect(err(id, problem) + '#cizim-hatali');
+  }
+  await ensureAllowed(user, id, 'dwg_resubmit');
+  const stored = await storeFiles(files, { userId: user.id, orderId: id });
+  if (!stored.ok) redirect(err(id, fileProblemText(t, stored.problem)!) + '#cizim-hatali');
+  try {
+    await act(user, id, 'dwg_resubmit', { files: stored.stored });
+  } catch (e) {
+    await discardFiles(stored.stored);
+    throw e;
+  }
+  done(id, 'dwg_resubmitted');
+}
+
+/** Müşteri: hatalı bulunan çizim yerine fabrikanın çizmesini ister — sipariş olağan çizim kuyruğuna döner. */
+export async function dwgRequestDrawingAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_APPROVE');
+  const id = orderIdOf(formData);
+  await act(user, id, 'dwg_request_drawing');
+  done(id, 'dwg_factory_requested');
 }
 
 // ---------------- Sandıklar ----------------

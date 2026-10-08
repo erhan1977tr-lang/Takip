@@ -71,6 +71,21 @@ export default {
     shipGroup: 'Încărcare: {date}',
     // „v2 · 1 rundă”: versiunea desenului · numărul de runde de revizie
     revisions: 'v{v} · {rounds}',
+    // Rândul comenzii cu revizie cerută (listele echipei de desen și ale administratorului): roșu și evident
+    revisionRow: 'Revizie cerută',
+    // Se așteaptă decizia pentru desenul DWG/DXF al clientului (decizia 167)
+    dwgPending: 'DWG/DXF — se așteaptă decizia dvs.',
+    // „Desene primite ca DXF/DWG” (meniul echipei de desen; la administrator sub Panoul de desen) — decizia 167
+    dwg: {
+      title: 'Desene primite ca DXF/DWG',
+      intro: 'Desenele trimise de client ca DWG / DXF. Pentru fiecare comandă, trei decizii: Gata de producție (nu se așteaptă aprobarea clientului), Desen eronat (clientul este anunțat) sau Actualizează desenul (fișierul se păstrează, încărcați dvs. desenul nou).',
+      pending: { title: 'Așteaptă decizia dvs.', empty: 'Niciun desen DWG/DXF nu așteaptă decizie.' },
+      correction: { title: 'Se așteaptă corectura clientului', empty: 'Niciun desen nu așteaptă corectura clientului.' },
+      files: 'Fișiere',
+      resubmitted: 'fișier corectat · v{v}',
+      faultyNote: 'Explicație (o vede clientul)',
+      decisions: 'Decizie',
+    },
     sections: {
       newOrders: { title: 'Comenzi noi — așteaptă decizia', empty: 'Nicio comandă nu așteaptă decizia.' },
       offersToPrepare: { title: 'Oferte de pregătit', empty: 'Nu există oferte de pregătit.' },
@@ -78,7 +93,7 @@ export default {
       offerCheck: { title: 'Verificare ofertă — desen revizuit primit după trimitere', empty: 'Nicio ofertă nu așteaptă verificarea.' },
       drawingJobs: { title: 'Desene de făcut', empty: 'Nu există desene de făcut.' },
       myDrawings: { title: 'Desenele mele', empty: 'Nu aveți desene deschise atribuite.' },
-      atCustomer: { title: 'Desene în așteptarea aprobării', empty: 'Niciun desen nu este la aprobarea clientului.' },
+      atCustomer: { title: 'Desene în așteptarea aprobării clientului', empty: 'Niciun desen nu este la aprobarea clientului.' },
       approvedDrawings: { title: 'Desene aprobate de client', empty: 'Nu există desene aprobate.' },
       production: { title: 'Comenzi în producție', empty: 'Nicio comandă în producție.' },
       sla: { title: 'Risc SLA / întârziate', empty: 'Nu există comenzi întârziate.' },

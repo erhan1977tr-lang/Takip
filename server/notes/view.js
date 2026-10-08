@@ -90,11 +90,14 @@ export function notesFor(role, notes) {
 }
 
 /**
- * Revizyon notunun (DrawingRevision: müşterinin "Nota de revizie" talebi, karar 162–163) çeviri alanları, görenin rolüne
- * göre — sipariş notunun kuralıyla AYNI (noteView; revizyon notu hiçbir zaman iç not değildir). Talebi müşteri yazar →
- * çeviri Türkçe'dir: iç ekip (yönetici, satış, çizim) çeviriyi, durumu ve güvenli hata kodunu alır; müşteri kendi notunu
- * yalnızca özgün dilinde görür (Türkçesi gitmez); denetimci çeviri alanı almaz. Notun kendisi (comment) bu işlevle
- * değişmez. Girdi değiştirilmez.
+ * Revizyon notunun (DrawingRevision) çeviri alanları, görenin rolüne göre — sipariş notunun kuralıyla AYNI (noteView;
+ * revizyon notu hiçbir zaman iç not değildir):
+ *   müşterinin talebi (karar 162–163, çeviri Türkçe): iç ekip (yönetici, satış, çizim) çeviriyi, durumu ve güvenli hata
+ *     kodunu alır; müşteri kendi notunu yalnızca özgün dilinde görür (Türkçesi gitmez)
+ *   çizimcinin "hatalı" açıklaması (karar 167–168, çeviri Romence): müşteri tamamlanmış Romence çeviriyi alır; iç ekip
+ *     kendi tarafının notunu yalnızca özgün dilinde görür, süren / başarısız çevirinin durumu ve kodu kalır ("yeniden dene")
+ *   denetimci: çeviri alanı hiç almaz.
+ * Notun kendisi (comment) bu işlevle değişmez. Girdi değiştirilmez.
  * @template {{ translation?: string | null, translationLang?: string | null, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | null }} R
  * @param {string | null | undefined} role
  * @param {R} r
@@ -118,4 +121,31 @@ export function revisionView(role, r) {
  */
 export function drawingRevisionsFor(role, drawings) {
   return drawings.map((d) => (Array.isArray(d.revisions) ? { ...d, revisions: d.revisions.map((r) => revisionView(role, r)) } : d));
+}
+
+/**
+ * Çizim sürümünün müşteri notunun (Drawing.noteCustomer — çizimcinin müşteriye yazdığı not, karar 168) çeviri alanları,
+ * görenin rolüne göre — sipariş notunun kuralıyla AYNI (noteView): müşteri tamamlanmış Romence çeviriyi alır; iç ekip notu
+ * yalnızca özgün dilinde görür (süren / başarısız çevirinin durumu ve kodu kalır); denetimci çeviri alanı almaz.
+ * Notun kendisi bu işlevle değişmez; sürümün içeriği müşteriye kapalıysa (geri çekilen sürüm — karar 146) çeviri de
+ * kapalıdır (sürüm erişim kuralı — drawingsView — içerikle birlikte boşaltır). Girdi değiştirilmez.
+ * @template {{ translation?: string | null, translationLang?: string | null, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | null }} D
+ * @param {string | null | undefined} role
+ * @param {D} d
+ * @returns {D}
+ */
+export function drawingNoteView(role, d) {
+  if (!d || !('translationStatus' in d)) return d;
+  return revisionView(role, d);
+}
+
+/**
+ * Sipariş verisindeki çizim sürümlerine çeviri görünümü: sürüm notu (drawingNoteView) ve revizyon notları (revisionView).
+ * @template {{ revisions?: object[] }} D
+ * @param {string | null | undefined} role
+ * @param {D[]} drawings
+ * @returns {D[]}
+ */
+export function drawingTranslationsFor(role, drawings) {
+  return drawingRevisionsFor(role, drawings).map((d) => drawingNoteView(role, d));
 }

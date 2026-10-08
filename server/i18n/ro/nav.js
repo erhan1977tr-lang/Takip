@@ -2,6 +2,8 @@ export default {
   operations: 'Operațiuni',
   drawingTeam: 'Echipa de desen',
   drawingPanel: 'Panou desen',
+  // Lista echipei de desen „Desene primite ca DXF/DWG” (decizia 167)
+  dwgDrawings: 'Desene primite ca DXF/DWG',
   accounting: 'Contabilitate',
   profileReceivables: 'Încasări profile',
   glassReceivables: 'Încasări sticlă',

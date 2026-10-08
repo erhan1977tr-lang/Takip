@@ -4,6 +4,9 @@
 //   YENI ──satış karar verir──▶ HAZIRLANIYOR ──otomatik──▶ URETIMDE ─▶ YUKLENDI ─▶ ARSIVLENDI
 //   HAZIRLANIYOR içinde iki bağımsız hat vardır:
 //     Çizim hattı (drawingTrack): YOK | GEREKLI → YAPILIYOR → ONAY_BEKLIYOR ⇄ REVIZYON_ISTENDI → ONAYLANDI
+//       Müşterinin DWG/DXF çizimi (karar 167): GEREKLI → çizimcinin kararı → ONAYLANDI (üretime hazır) |
+//       DUZELTME_BEKLIYOR (hatalı: müşteri düzeltilmiş dosya gönderir → GEREKLI ya da fabrika çizimi ister → GEREKLI) |
+//       YAPILIYOR (fabrika çizecek) — server/orders/dwg-review.js
 //     Teklif hattı (offer.status): HAZIRLANIYOR (satış) → YONETIMDE (yönetici) → GONDERILDI (müşteri görür)
 //   Müşteri yalnızca çizimi onaylar; teklifi onaylamaz, sadece görür.
 //   Satış kararını (çizime / teklife gönder) teklif satıştayken geri alabilir; teklif yöneticiye gittikten sonra
@@ -13,6 +16,7 @@
 //
 // Ekranda görünen metinler burada DEĞİL, server/i18n/{tr,ro}/ sözlüklerindedir; buradaki işlevler kod döndürür.
 import { can } from '../auth/permissions.js';
+import { dwgReview } from './dwg-review.js';
 
 
 // Rozet renkleri (metinleri: status.order / status.drawing / status.offer)
@@ -32,6 +36,7 @@ export const DRAWING = {
   ONAY_BEKLIYOR: { tone: 'warn' },
   REVIZYON_ISTENDI: { tone: 'danger' },
   ONAYLANDI: { tone: 'ok' },
+  DUZELTME_BEKLIYOR: { tone: 'danger' },
 };
 
 export const OFFER = {
@@ -54,6 +59,8 @@ export function customerSummary({ status, drawing = 'YOK', offer = null }) {
   if (status === 'HAZIRLANIYOR') {
     if (drawing === 'ONAY_BEKLIYOR') return { key: 'awaitingApproval', tone: 'warn' };
     if (drawing === 'REVIZYON_ISTENDI') return { key: 'revision', tone: 'danger' };
+    // Çizimci müşterinin DWG/DXF çizimini hatalı buldu: sıra müşteride (düzeltilmiş dosya ya da fabrika çizimi — karar 167)
+    if (drawing === 'DUZELTME_BEKLIYOR') return { key: 'correction', tone: 'danger' };
     if (drawing === 'GEREKLI' || drawing === 'YAPILIYOR') return { key: 'drawing', tone: 'purple' };
     if (offer === 'GONDERILDI') return { key: 'offerReady', tone: 'ok' };
     return { key: 'preparing', tone: 'info' };
@@ -73,6 +80,7 @@ export function productionBlockers({ status, drawing = 'YOK', offer = null }) {
   if (status !== 'HAZIRLANIYOR') return ['not_preparing'];
   const b = [];
   if (drawing === 'ONAY_BEKLIYOR') b.push('drawing_at_customer');
+  else if (drawing === 'DUZELTME_BEKLIYOR') b.push('drawing_correction');
   else if (drawing !== 'YOK' && drawing !== 'ONAYLANDI') b.push('drawing_not_done');
   if (offer !== 'GONDERILDI') b.push(offer === 'YONETIMDE' ? 'offer_at_admin' : 'offer_not_sent');
   return b;
@@ -90,7 +98,9 @@ export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', off
 /**
  * Müşterideki teklif, gönderildikten (ya da yöneticinin son kontrolünden) sonra yüklenen revize çizimden eski mi?
  * Revizyon ölçüleri değiştirmiş olabilir; yönetici teklifi güncellemeli ya da güncel olduğunu işaretlemeli.
- * İlk çizim (v1) müşterinin dosyasından çizildiği için teklifle aynı kabul edilir.
+ * İlk çizim (v1) müşterinin dosyasından çizildiği için teklifle aynı kabul edilir. lastDrawing: son ÜRETİM çizimi ve
+ * version = üretim çizimleri arasındaki sırası (müşterinin karar bekleyen / hatalı DWG/DXF kaydı sayılmaz; "üretime hazır"
+ * kabul edilen müşteri çizimi sayılır — server/orders/dwg-review.js → lastProductionDrawing).
  * @param {{offer?: string|null, sentAt?: Date|string|null, lastDrawing?: {version: number, createdAt: Date|string}|null, checkedAt?: Date|string|null}} p
  * @returns {boolean}
  */
@@ -186,6 +196,13 @@ export const EVENTS = {
   DRAWING_WITHDRAWN: { customer: true, note: true },
   REVISION_REQUESTED: { customer: true, note: true },
   DRAWING_APPROVED: { customer: true, note: true },
+  // Müşterinin DWG/DXF çizimi (karar 167). "Hatalı" açıklaması müşteriye sipariş sayfasında Romence çevirisiyle gösterilir
+  // (geçmiş satırında not yok — çevirisiz Türkçe metin müşterinin geçmişine yazılmaz)
+  DWG_READY: { customer: true },
+  DWG_FAULTY: { customer: true, note: false },
+  DWG_UPDATE: { customer: true },
+  DWG_RESUBMITTED: { customer: true },
+  DWG_FACTORY_REQUESTED: { customer: true },
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
   OFFER_SENT: { customer: true },
@@ -450,22 +467,27 @@ export function fileProblem(name, size) {
 
 // ---------- yetki: kim hangi durumda ne yapabilir ----------
 /**
- * Siparişin çizim bayrakları (availableActions için): son sürüm taslak mı, çizim birine atanmış mı.
- * @param {{ assignedDrawerId?: string | null, drawings?: { status: string }[] }} o  sürümler eskiden yeniye sıralı
+ * Siparişin çizim bayrakları (availableActions için): son sürüm taslak mı, çizim birine atanmış mı, müşterinin DWG/DXF
+ * çizimi için çizimci kararı bekleniyor mu (karar 167 — server/orders/dwg-review.js; müşteri dosyaları verilmezse hayır).
+ * @param {{ status?: string, drawingTrack?: string | null, onHold?: boolean, assignedDrawerId?: string | null,
+ *   drawings?: { status: string, source?: string | null }[], files?: { name: string, kind?: string | null, scanStatus?: string | null }[] }} o
+ *   sürümler eskiden yeniye sıralı
  */
 export function drawingFlags(o) {
   const last = o.drawings?.[o.drawings.length - 1];
-  return { draft: last?.status === 'TASLAK', assigned: !!o.assignedDrawerId };
+  const dwgPending = o.status != null && Array.isArray(o.files) ? dwgReview({ status: o.status, drawingTrack: o.drawingTrack, onHold: o.onHold, files: o.files, drawings: o.drawings ?? [] }).pending : false;
+  return { draft: last?.status === 'TASLAK', assigned: !!o.assignedDrawerId, dwgPending };
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, orderType?: string|null}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, orderType?: string|null}} p
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
+ *   dwgPending: müşterinin DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167 — drawingFlags)
  *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, orderType = null }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, orderType = null }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -479,6 +501,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     // Müşterinin tek onayı çizim onayıdır; teklifi yalnızca görür.
     // Onay ve revizyon aynı yetkiye bağlıdır (karar 84): onay yetkisi olmayan müşteri kullanıcısı ikisini de yapamaz.
     if (preparing && drawing === 'ONAY_BEKLIYOR' && canApprove) a.push('approve_drawing', 'request_revision');
+    // Çizimci müşterinin DWG/DXF çizimini hatalı buldu (karar 167): düzeltilmiş dosya gönder ya da fabrikadan çizim iste.
+    // Çizim kararı olduğu için onay ve revizyonla AYNI yetkiyi ister (onay yetkisi olmayan kullanıcı yalnızca görür).
+    if (preparing && drawing === 'DUZELTME_BEKLIYOR' && canApprove) a.push('dwg_resubmit', 'dwg_request_drawing');
     // Profil siparişinde müşteri dosya yüklemez (karar 161): ürün ve adet formdadır; ekranda yükleme alanı yok, sunucu da
     // (addFilesAction → bu liste) reddeder. İç ekibin profil siparişine iç dosya eklemesi değişmedi.
     if (!closed && can(role, 'FILE_UPLOAD') && orderType !== 'PROFILE_ORDER') a.push('add_file');
@@ -506,7 +531,11 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   // Çizim: dosyalar önce taslak sürüme yüklenir, "Müşteriye gönder" ile müşteriye gider (onaylı ikinci adım).
   // Gönderilen sürüm, müşteri karar vermeden gerekçeyle geri çekilebilir.
   if (drawer && preparing && drawing === 'GEREKLI' && !assigned) a.push('start_drawing');
-  if (drawer && preparing && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(drawing)) {
+  // Müşterinin DWG/DXF çizimi (karar 167): önce üç karardan biri — karar verilmeden sürüm yüklenemez. Müşterinin
+  // düzeltmesi beklenirken de çizimci "Çizimi Güncelle" ile çizimi fabrikaya alabilir.
+  if (drawer && preparing && dwgPending) a.push('dwg_ready', 'dwg_faulty', 'dwg_update');
+  if (drawer && preparing && drawing === 'DUZELTME_BEKLIYOR') a.push('dwg_update');
+  if (drawer && preparing && !dwgPending && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(drawing)) {
     a.push('upload_drawing');
     if (draft) a.push('send_drawing', 'remove_drawing_file');
   }

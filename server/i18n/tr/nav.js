@@ -2,6 +2,8 @@ export default {
   operations: 'Operasyon',
   drawingTeam: 'Çizim Ekibi',
   drawingPanel: 'Çizim Paneli',
+  // Çizim ekibinin "DXF/DWG olarak gelen çizimler" listesi (karar 167)
+  dwgDrawings: 'DXF/DWG olarak gelen çizimler',
   accounting: 'Muhasebe',
   profileReceivables: 'Profil Tahsilat',
   glassReceivables: 'Cam Tahsilat',

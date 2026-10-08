@@ -6,7 +6,7 @@ import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
 import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
-import { drawingRevisionsFor, notesFor } from '../server/notes/view.js';
+import { drawingTranslationsFor, notesFor } from '../server/notes/view.js';
 import { orderPeopleView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
 import { drawingsView } from '../server/orders/drawing-access.js';
@@ -151,9 +151,10 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   // Dosya adresi ve çizim görüntüleyicisi de aynı kuralı kullanır. İç not yalnızca iç ekibe gider.
   let drawings = drawingsView(user.appRole, order.drawings);
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
-  // Revizyon notunun çevirisi (karar 163) sipariş notuyla aynı kuraldan (server/notes/view.js — sağlayıcıyı yüklemez):
-  // müşteri kendi talebinin Türkçesini almaz, denetimci çeviri alanı almaz. Bu okuma yolu çeviri isteği yapmaz.
-  drawings = drawingRevisionsFor(user.appRole, drawings);
+  // Revizyon notunun (karar 163) ve sürümün müşteri notunun (karar 168) çevirisi sipariş notuyla aynı kuraldan
+  // (server/notes/view.js — sağlayıcıyı yüklemez): müşteri yalnızca kendisi için yapılmış (Romence) tamamlanmış çeviriyi
+  // alır, iç ekip kendi tarafının notunu özgün dilinde görür, denetimci çeviri alanı almaz. Bu okuma yolu çeviri isteği yapmaz.
+  drawings = drawingTranslationsFor(user.appRole, drawings);
   // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür.
   // FGO belge bağlantıları (yalnızca FGO işçisi yazar: factura/emitere yanıtındaki bağlantı) dış veridir: FGO'nun kendi
   // adresi değilse sayfaya hiç taşınmaz (karar 144 — pdfUrl); belge numarası ve tarihi yine gösterilir.

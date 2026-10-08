@@ -38,6 +38,13 @@ export default {
     undo_drawing: 'Trimiterea la desen a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
     undo_no_drawing: 'Trimiterea la ofertă a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
     restored: 'Comanda a fost restaurată; a revenit la starea dinaintea ștergerii.',
+    // Desenul DWG/DXF al clientului (decizia 167)
+    dwg_ready: 'Desenul clientului a fost acceptat pentru producție; comanda este în „Desene aprobate de client”.',
+    dwg_ready_production: 'Desenul clientului a fost acceptat pentru producție. Deoarece și oferta este la client, comanda a fost trecută automat în producție.',
+    dwg_faulty: 'Desenul a fost marcat ca eronat, iar clientul a fost anunțat.',
+    dwg_update: 'Veți actualiza desenul; fișierul clientului se păstrează. Încărcați desenul nou mai jos și trimiteți-l clientului prin „Verifică”.',
+    dwg_resubmitted: 'Fișierul corectat a fost trimis echipei de desen.',
+    dwg_factory_requested: 'Cererea a fost primită: desenul va fi pregătit de fabrica noastră și supus aprobării dvs.',
   },
   // Numele acțiunilor: rândul „Pasul următor” și butoanele cu același nume (cheie = codul acțiunii)
   steps: {
@@ -65,6 +72,7 @@ export default {
     salesArchive: 'vânzări (arhivare)',
     drawingTeam: 'echipa de desen',
     customerApproval: 'client (aprobare desen)',
+    customerCorrection: 'client (corectură desen)',
     salesOffer: 'vânzări (ofertă)',
     adminPrice: 'administrator (aprobare preț)',
     nextStep: 'Pasul următor: {steps}',
@@ -126,6 +134,52 @@ export default {
     revisionLabel: 'Cerere de revizie',
     revisionPlaceholder: 'Descrieți ce trebuie modificat în desen',
     nothingToDo: 'Momentan nu se așteaptă nicio acțiune din partea dvs.',
+    // Echipa de desen a găsit erori în desenul DWG/DXF al clientului (decizia 167): informarea roșie din partea de sus
+    correctionTitle: 'Desenul dvs. necesită corecturi.',
+    correctionText: 'Echipa noastră de desen a verificat desenul trimis de dvs. și a semnalat că necesită corecturi:',
+    correctionResubmit: 'Trimiteți fișierul corectat (cel puțin un DWG sau DXF)',
+    correctionResubmitButton: 'Trimite fișierul corectat',
+    correctionFactoryHint: 'Sau cereți ca desenul să fie pregătit de fabrica noastră; când este gata, vă este supus aprobării.',
+    correctionFactory: 'Cere un desen nou de la fabrică',
+    correctionFactoryConfirm: 'Desenul va fi pregătit de fabrica noastră și supus aprobării dvs. Sunteți sigur?',
+    correctionRespond: 'Vezi opțiunile',
+    correctionNoRight: 'Contul dvs. nu are drept de aprobare: fișierul corectat sau cererea de desen de la fabrică le trimite utilizatorul cu drept de aprobare din firma dvs.',
+  },
+  // Echipa internă: clientul a cerut revizie (informarea roșie din partea de sus a paginii)
+  revisionAlert: {
+    title: 'Clientul a cerut revizie (v{v}).',
+    text: 'Pregătiți desenul revizuit și trimiteți-l din nou spre aprobarea clientului. Aprobările și versiunile anterioare rămân în istoric.',
+    open: 'Mergi la cererea de revizie',
+  },
+  // Decizia echipei de desen pentru desenul DWG/DXF al clientului (decizia 167)
+  dwg: {
+    title: 'Desenul DWG/DXF al clientului — se așteaptă decizia dvs.',
+    intro: 'Clientul a trimis desenul ca DWG/DXF. Verificați fișierul și alegeți una dintre cele trei decizii. Decizia se înregistrează; fișierul clientului nu se șterge și nu se suprascrie.',
+    resubmitted: 'Clientul a trimis fișierul corectat (v{v}).',
+    files: 'Fișiere de verificat',
+    ready: 'Gata de producție',
+    readyHint: 'Fișierul este bun pentru producție: nu se așteaptă aprobarea clientului, comanda trece în „Desene aprobate de client”.',
+    readyConfirm: 'Desenul clientului va fi acceptat pentru producție, fără aprobarea clientului. Sunteți sigur?',
+    faulty: 'Desen eronat',
+    faultyHint: 'Clientul este anunțat: trimite fișierul corectat sau cere desenul fabricii.',
+    faultyNote: 'Explicație — o vede clientul (cu traducere în română)',
+    faultyPlaceholder: 'ex. Lipsește stratul de cote; înălțimea ușii nu se citește',
+    faultyConfirm: 'Desenul va fi marcat ca eronat, iar clientul va fi anunțat. Sunteți sigur?',
+    faultySubmit: 'Semnalează ca eronat',
+    update: 'Actualizează desenul',
+    updateHint: 'Fișierul clientului se păstrează; încărcați desenul nou și îl trimiteți spre aprobarea clientului pe fluxul obișnuit (Verifică → Trimite clientului).',
+    updateConfirm: 'Veți actualiza desenul; fișierul clientului se păstrează. Sunteți sigur?',
+    waitingTitle: 'Se așteaptă corectura clientului',
+    waitingText: 'Desenul a fost semnalat ca eronat. Când clientul trimite fișierul corectat sau cere desenul fabricii, comanda revine în coada dvs. Puteți actualiza și dvs. desenul, fără să așteptați.',
+    record: 'Desenul clientului (DWG/DXF)',
+    status: {
+      BEKLIYOR: 'așteaptă decizia',
+      ONAYLANDI: 'gata de producție',
+      REVIZYON_ISTENDI: 'eronat',
+      YAPILIYOR: 'actualizat de fabrică',
+    },
+    faultyLabel: 'Desen eronat — explicație:',
+    submitted: 'trimis {when}',
   },
   // Liniile desen / ofertă de sub bara de pași
   tracks: {
@@ -231,6 +285,15 @@ export default {
     sentBy: 'trimis de {who} · {when}',
     decidedBy: 'decizie {who} · {when}',
     customerFiles: 'Clientul a trimis fișier de desen (DWG/DXF)',
+    // Ecranul echipei de desen (Pachetul 3): „Fișiere de desen tehnic” și „Aprobare și revizie” sunt secțiuni separate
+    filesTitle: 'Fișiere de desen tehnic',
+    reviewTitle: 'Aprobarea desenului și revizie',
+    noVersions: 'Nu există încă nicio versiune de desen.',
+    noDecisions: 'Nu există încă nicio aprobare sau revizie.',
+    awaiting: 'Desenul v{v} este la aprobarea clientului · trimis {when}',
+    approvedState: 'Desenul v{v} a fost aprobat de client · {when}',
+    readyState: 'Desenul clientului a fost acceptat pentru producție (v{v}) · {when}',
+    revisionState: 'Clientul a cerut revizie pentru v{v} · {when}',
   },
   files: {
     title: 'Fișierele comenzii clientului',
@@ -319,5 +382,11 @@ export default {
     offerNotUpdatable: 'Oferta nu poate fi actualizată în acest moment.',
     conflict: 'Comanda a fost modificată de altcineva între timp. Reîncărcați pagina și încercați din nou.',
     staleDrawing: 'Între timp a fost încărcată o nouă versiune a desenului. Vă rugăm să o verificați mai întâi.',
+    // Desenul DWG/DXF al clientului (decizia 167)
+    dwgNotPending: 'Pentru această comandă nu există desen DWG/DXF care să aștepte decizie (poate a fost deja decis). Reîncărcați pagina.',
+    dwgNote: 'Scrieți o explicație pentru „Desen eronat”: clientul va vedea ce trebuie să corecteze.',
+    dwgNoteLong: 'Explicația este prea lungă (cel mult 2000 de caractere).',
+    dwgFile: 'Selectați cel puțin un fișier DWG sau DXF.',
+    dwgInfected: 'Unul dintre fișierele verificate s-a dovedit infectat; acest desen nu poate fi acceptat pentru producție.',
   },
 };

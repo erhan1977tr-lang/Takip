@@ -8,6 +8,12 @@ export default {
   DRAWING_WITHDRAWN: { label: 'Versiunea desenului retrasă', customer: 'Versiunea desenului a fost retrasă' },
   DRAWING_UPLOADED: { label: 'Desen trimis la aprobarea clientului', customer: 'Desenul v-a fost trimis spre aprobare' },
   REVISION_REQUESTED: { label: 'Clientul a cerut revizie', customer: 'Revizie cerută' },
+  // Desenul DWG/DXF al clientului (decizia 167)
+  DWG_READY: { label: 'Desenul DWG/DXF al clientului a fost acceptat pentru producție', customer: 'Desenul dvs. a fost acceptat pentru producție' },
+  DWG_FAULTY: { label: 'Desenul DWG/DXF al clientului are erori', customer: 'Desenul dvs. necesită corecturi' },
+  DWG_UPDATE: { label: 'Desenul DWG/DXF al clientului este actualizat de fabrică', customer: 'Desenul dvs. este actualizat de fabrică' },
+  DWG_RESUBMITTED: { label: 'Clientul a trimis fișierul de desen corectat', customer: 'Ați trimis fișierul de desen corectat' },
+  DWG_FACTORY_REQUESTED: { label: 'Clientul a cerut un desen nou de la fabrică', customer: 'Ați cerut un desen nou de la fabrică' },
   DRAWING_APPROVED: { label: 'Desen aprobat de client', customer: 'Desen aprobat' },
   OFFER_SUBMITTED: { label: 'Ofertă trimisă la aprobarea administratorului' },
   OFFER_RETURNED: { label: 'Ofertă returnată la vânzări' },

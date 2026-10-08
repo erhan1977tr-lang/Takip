@@ -1,6 +1,6 @@
 import { db } from './db';
 import type { Locale } from './i18n';
-import { renderInApp } from '../server/notifications/inapp.js';
+import { dispatchInAppFor, renderInApp } from '../server/notifications/inapp.js';
 import { safeLink } from '../server/notifications/feed.js';
 
 /** Zilde gösterilen bildirim (metin kullanıcının diliyle, sunucuda üretilmiş) */
@@ -24,4 +24,19 @@ export async function loadFeed(userId: string, locale: Locale): Promise<Feed> {
       return { id: n.id, title: text.title, body: text.body, link: safeLink(n.link), isRead: n.isRead, createdAt: n.createdAt.toISOString() };
     }),
   };
+}
+
+/**
+ * Bir iş akışı işleminin az önce yazdığı kuyruk olaylarını uygulama içi bildirime HEMEN çevirir (Paket 3 — bildirim
+ * gecikmesi: işçinin 60 sn'lik turunu ve o turdaki tarama / FGO işlerini beklemez). Aynı dağıtıcıdır (ikinci bir
+ * bildirim sistemi değildir); işçi yedektir: bu adım başarısız olursa olay kuyrukta kalır ve işçi dağıtır. Aynı olay
+ * aynı kullanıcıya iki kez yazılmaz (Notification [userId, dedupeKey]). İşlemi hiçbir koşulda bozmaz.
+ */
+export async function deliverInAppNow(outboxIds: string[] | null | undefined): Promise<void> {
+  if (!outboxIds?.length) return;
+  try {
+    await dispatchInAppFor(db, outboxIds, { log: (...a: unknown[]) => console.warn('[bildirim]', ...a.map((x) => String(x).slice(0, 200))) });
+  } catch (e) {
+    console.warn('[bildirim] hemen dağıtılamadı; işçi dağıtacak', String((e as { code?: unknown })?.code ?? 'ERROR'));
+  }
 }

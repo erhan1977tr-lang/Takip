@@ -153,9 +153,49 @@ test('çizim ekibi', () => {
   assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
   assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
   assert.ok(!has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
-  assert.deepEqual(drawingFlags({ assignedDrawerId: 'u', drawings: [{ status: 'REVIZYON_ISTENDI' }, { status: 'TASLAK' }] }), { draft: true, assigned: true });
-  assert.deepEqual(drawingFlags({ assignedDrawerId: null, drawings: [] }), { draft: false, assigned: false });
+  assert.deepEqual(drawingFlags({ assignedDrawerId: 'u', drawings: [{ status: 'REVIZYON_ISTENDI' }, { status: 'TASLAK' }] }), { draft: true, assigned: true, dwgPending: false });
+  assert.deepEqual(drawingFlags({ assignedDrawerId: null, drawings: [] }), { draft: false, assigned: false, dwgPending: false });
   assert.ok(!has({ role: 'CIZIM', status: 'YENI' }, 'send_to_drawing'));
+});
+
+test('müşterinin DWG/DXF çizimi (karar 167): üç ayrı karar yalnızca çizim yetkisinde; karar verilmeden sürüm yüklenmez; müşterinin iki yanıtı onay yetkisinde', () => {
+  const dwgFile = { name: 'Plan.DWG', kind: 'CUSTOMER', scanStatus: 'CLEAN' };
+  const base = { status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', onHold: false, files: [dwgFile], drawings: [] };
+  // Bayrak: müşteri dosyaları verilmeden hesaplanmaz (eski çağıranlar etkilenmez)
+  assert.equal(drawingFlags(base).dwgPending, true);
+  assert.equal(drawingFlags({ ...base, files: undefined }).dwgPending, false);
+  assert.equal(drawingFlags({ ...base, files: [{ ...dwgFile, kind: 'INTERNAL' }] }).dwgPending, false, 'iç dosya müşteri çizimi değildir');
+  assert.equal(drawingFlags({ ...base, files: [{ ...dwgFile, scanStatus: 'INFECTED' }] }).dwgPending, false, 'virüslü dosya karara gelmez');
+  assert.equal(drawingFlags({ ...base, files: [{ name: 'plan.pdf', kind: 'CUSTOMER' }] }).dwgPending, false);
+  assert.equal(drawingFlags({ ...base, onHold: true }).dwgPending, false);
+  assert.equal(drawingFlags({ ...base, drawings: [{ status: 'TASLAK', source: 'FABRIKA' }] }).dwgPending, false, 'fabrika taslağı varsa çizim olağan akışta');
+
+  const drawer = (o) => availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: o.drawing ?? 'GEREKLI', assigned: true, dwgPending: o.dwgPending ?? false, draft: o.draft ?? false });
+  assert.deepEqual(drawer({ dwgPending: true }), ['dwg_ready', 'dwg_faulty', 'dwg_update', 'add_file'], 'karar bekliyor: üç karar, yükleme yok');
+  assert.deepEqual(drawer({ drawing: 'DUZELTME_BEKLIYOR' }), ['dwg_update', 'add_file'], 'müşterinin düzeltmesi beklenirken yalnızca "Çizimi Güncelle"');
+  assert.ok(drawer({ drawing: 'YAPILIYOR' }).includes('upload_drawing'), 'karardan sonra (güncelle) olağan yükleme');
+  for (const role of ['SATIS', 'DENETIMCI', 'MUSTERI']) {
+    const a = availableActions({ role, status: 'HAZIRLANIYOR', drawing: 'GEREKLI', dwgPending: true, canApprove: true });
+    for (const x of ['dwg_ready', 'dwg_faulty', 'dwg_update']) assert.ok(!a.includes(x), `${role}: ${x}`);
+  }
+  assert.ok(availableActions({ role: 'ADMIN', status: 'HAZIRLANIYOR', drawing: 'GEREKLI', dwgPending: true }).includes('dwg_ready'), 'yönetici çizim yetkisiyle karar verebilir');
+  assert.ok(!availableActions({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'GEREKLI', dwgPending: true, onHold: true }).includes('dwg_ready'), 'beklemede karar yok');
+
+  // Müşteri: "hatalı" kararına iki yanıt — ikisi de onay yetkisi ister; başka durumda yok
+  const cust = (drawing, canApprove = true) => availableActions({ role: 'MUSTERI', status: 'HAZIRLANIYOR', drawing, canApprove });
+  assert.deepEqual(cust('DUZELTME_BEKLIYOR'), ['dwg_resubmit', 'dwg_request_drawing', 'add_file']);
+  assert.deepEqual(cust('DUZELTME_BEKLIYOR', false), ['add_file']);
+  assert.ok(!cust('GEREKLI').includes('dwg_resubmit'));
+  for (const role of ['CIZIM', 'SATIS', 'ADMIN']) assert.ok(!availableActions({ role, status: 'HAZIRLANIYOR', drawing: 'DUZELTME_BEKLIYOR', canApprove: true }).includes('dwg_resubmit'), role);
+
+  // Müşteri görünümü, üretim engeli, SLA: düzeltme müşteride (fabrikanın SLA'sı işlemez)
+  assert.deepEqual(customerSummary({ status: 'HAZIRLANIYOR', drawing: 'DUZELTME_BEKLIYOR' }), { key: 'correction', tone: 'danger' });
+  assert.deepEqual(productionBlockers({ status: 'HAZIRLANIYOR', drawing: 'DUZELTME_BEKLIYOR', offer: 'GONDERILDI' }), ['drawing_correction']);
+  assert.equal(shouldAutoProduce({ status: 'HAZIRLANIYOR', drawing: 'DUZELTME_BEKLIYOR', offer: 'GONDERILDI' }), false);
+  assert.equal(slaDeadline({ status: 'HAZIRLANIYOR', createdAt: new Date(), drawing: 'DUZELTME_BEKLIYOR', drawingSince: new Date() }), null);
+  assert.equal(DRAWING.DUZELTME_BEKLIYOR.tone, 'danger');
+  for (const ev of ['DWG_READY', 'DWG_FAULTY', 'DWG_UPDATE', 'DWG_RESUBMITTED', 'DWG_FACTORY_REQUESTED']) assert.equal(EVENTS[ev].customer, true, ev);
+  assert.ok(!EVENTS.DWG_FAULTY.note, 'çevirisiz Türkçe açıklama müşterinin geçmişine yazılmaz (sayfada Romence çevirisiyle)');
 });
 
 test('beklemede yalnızca beklemeden çıkarılabilir; kapanmış siparişte işlem yok', () => {

@@ -307,7 +307,8 @@ enum DrawingTrack {
   YAPILIYOR        // çizimci üstlendi
   ONAY_BEKLIYOR    // çizim müşterinin onayında
   REVIZYON_ISTENDI // müşteri revizyon istedi
-  ONAYLANDI        // müşteri onayladı
+  ONAYLANDI        // müşteri onayladı (ya da çizimci müşterinin DWG/DXF çizimini "üretime hazır" kabul etti — karar 167)
+  DUZELTME_BEKLIYOR // çizimci müşterinin DWG/DXF çizimini "hatalı" buldu: müşterinin düzeltilmiş dosyası ya da fabrika çizimi talebi bekleniyor (karar 167)
 }
 
 model Order {
@@ -775,7 +776,17 @@ model Price {
 
 enum DrawingSource {
   FABRIKA // "Çizim işleri — fabrika çizecek"
-  MUSTERI_DXF_DWG // müşteri hazır çizim gönderdi
+  // Müşteri hazır çizim (DWG/DXF) gönderdi — karar 167: çizimcinin müşterinin dosyası hakkındaki KARAR kaydı. Dosya
+  // satırı (DrawingFile) yoktur: dosyalar müşterinin sipariş dosyalarıdır (OrderFile), incelenenler sourceFiles'ta.
+  // Durum = karar: BEKLIYOR (düzeltilmiş dosya geldi, karar bekliyor) · ONAYLANDI (üretime hazır) · REVIZYON_ISTENDI
+  // (çizim hatalı) · YAPILIYOR (fabrika çizecek: "Çizimi Güncelle" ya da müşterinin fabrika çizimi talebi).
+  MUSTERI_DXF_DWG
+}
+
+// Revizyon kaydının türü (karar 167): müşterinin revizyon talebi ya da çizimcinin "çizim hatalı" açıklaması
+enum DrawingRevisionKind {
+  TALEP  // müşterinin revizyon talebi (numaralı maddeler, karar 162)
+  HATALI // fabrika: müşterinin DWG/DXF çizimi hatalı — açıklama müşteriye (Romence çevirisiyle) gider
 }
 
 enum DrawingStatus {
@@ -822,6 +833,17 @@ model Drawing {
   uploadedBy   User          @relation("DrawingUploadedBy", fields: [uploadedById], references: [id])
   revisions    DrawingRevision[]
   createdAt    DateTime      @default(now())
+  // Müşterinin DWG/DXF çizimi (source MUSTERI_DXF_DWG, karar 167): kararın verildiği sipariş dosyaları — değişmez anlık
+  // kopya [{ id, name, checksum }]. Fabrika sürümünde boş.
+  sourceFiles  Json?
+  // Müşteriye görünen sürüm notunun (noteCustomer) otomatik çevirisi (karar 168 — not çevirisiyle aynı kural ve alanlar;
+  // server/notes/translation.js → translateDrawingNote): sürüm müşteriye GÖNDERİLİRKEN bir kez çevrilir ve burada
+  // saklanır; sayfa açılışı / yenileme çeviri yapmaz. Gönderen iç ekip → Romence.
+  translation       String?
+  translationLang   String?
+  translationStatus NoteTranslationStatus?
+  translationError  String?
+  translationAt     DateTime?
 
   @@unique([orderId, version])
 }
@@ -851,12 +873,15 @@ model DrawingRevision {
   id            String   @id @default(cuid())
   drawingId     String
   drawing       Drawing  @relation(fields: [drawingId], references: [id], onDelete: Cascade)
-  requestedById String
-  comment       String   // müşterinin revizyon notu: numaralı maddeler "1. …\n2. …" (karar 162; eski kayıtlarda serbest metin)
+  // TALEP: müşterinin revizyon talebi · HATALI: çizimcinin "müşterinin DWG/DXF çizimi hatalı" açıklaması (karar 167)
+  kind          DrawingRevisionKind @default(TALEP)
+  requestedById String   // yazan: müşteri (TALEP) ya da iç ekip (HATALI)
+  comment       String   // müşterinin revizyon notu: numaralı maddeler "1. …\n2. …" (karar 162; eski kayıtlarda serbest metin) · HATALI: çizimcinin açıklaması
   annotations   Json?    // çizim üstü işaretler (server/orders/annotations.js): iğne, dikdörtgen, serbest, metin
   createdAt     DateTime @default(now())
-  // Revizyon notunun otomatik çevirisi (karar 163 — not çevirisiyle aynı kural ve alanlar; server/notes/translation.js →
-  // translateRevision): talep yazılırken BİR KEZ çevrilir ve burada saklanır; sayfa açılışı / yenileme çeviri yapmaz.
+  // Revizyon notunun otomatik çevirisi (karar 163, 168 — not çevirisiyle aynı kural ve alanlar; server/notes/translation.js →
+  // translateRevision): not yazılırken BİR KEZ çevrilir ve burada saklanır; sayfa açılışı / yenileme çeviri yapmaz.
+  // Yön yazanın rolünden: müşteri → Türkçe (iç ekip için), iç ekip (HATALI açıklaması) → Romence (müşteri için).
   translation       String?
   translationLang   String?
   translationStatus NoteTranslationStatus?

@@ -38,8 +38,10 @@ import {
   addFilesAction, addNoteAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
-  withdrawDrawingAction,
+  withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction,
 } from './actions';
+import { DwgDecision } from './DwgDecision';
+import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -67,6 +69,7 @@ function turnText(t: T, order: OrderDetail): string {
   const d = order.drawingTrack;
   if (d === 'GEREKLI' || d === 'YAPILIYOR' || d === 'REVIZYON_ISTENDI') parts.push(t('order.turn.drawingTeam'));
   if (d === 'ONAY_BEKLIYOR') parts.push(t('order.turn.customerApproval'));
+  if (d === 'DUZELTME_BEKLIYOR') parts.push(t('order.turn.customerCorrection'));
   if (offer === null || offer === 'HAZIRLANIYOR') parts.push(t('order.turn.salesOffer'));
   if (offer === 'YONETIMDE') parts.push(t('order.turn.adminPrice'));
   return parts.length ? at(parts.join(' · ')) : t('order.turn.none');
@@ -198,11 +201,23 @@ export default async function OrderPage({
   // ONAY_BEKLIYOR değildir; içerik kuralı (karar 146) değişmez.
   const waitingDrawing = isCustomer && order.status === 'HAZIRLANIYOR' && order.drawingTrack === 'ONAY_BEKLIYOR' && lastDrawing?.status === 'ONAY_BEKLIYOR'
     ? lastDrawing : undefined;
-  // Teklif müşteriye gittikten sonra yeni çizim geldiyse ölçüler değişmiş olabilir (events en yeniden eskiye sıralı)
+  // Teklif müşteriye gittikten sonra yeni (ikinci ya da sonraki) üretim çizimi geldiyse ölçüler değişmiş olabilir. Üretim
+  // çizimi ve sırası tek yerden (server/orders/dwg-review.js → lastProductionDrawing; events en yeniden eskiye sıralı)
+  const production = lastProductionDrawing(order.drawings);
   const needsCheck = !isCustomer && userCan(user, 'OFFER_VIEW') && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
-    offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null, lastDrawing: lastDrawing ?? null,
+    offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null,
+    lastDrawing: production ? { version: production.ordinal, createdAt: production.at, sentAt: production.at } : null,
     checkedAt: order.events.find((e) => e.event === 'OFFER_CHECKED')?.createdAt ?? null,
   });
+  // Çizimci müşterinin DWG/DXF çizimini hatalı buldu (karar 167): müşteriye kırmızı bilgilendirme + çizimcinin açıklaması
+  // (saklanan Romence çevirisiyle). Yanıt (düzeltilmiş dosya / fabrika çizimi) "Sıradaki adım" kartında (#duzeltme).
+  const correction = isCustomer && order.status === 'HAZIRLANIYOR' && order.drawingTrack === 'DUZELTME_BEKLIYOR';
+  const faultyRecord = correction ? [...order.drawings].reverse().find((d) => isCustomerDrawingRecord(d) && d.status === 'REVIZYON_ISTENDI') : undefined;
+  const faultyNote = faultyRecord ? [...faultyRecord.revisions].reverse().find((r) => r.kind === 'HATALI') : undefined;
+  // İç ekip (çizim yetkisi): müşteri revizyon istedi — kırmızı ve belirgin; son talebin numaralı notu (Türkçe çevirisiyle)
+  const revisionAsked = !isCustomer && userCan(user, 'DRAWING_WORK') && order.status === 'HAZIRLANIYOR' && !order.onHold
+    && order.drawingTrack === 'REVIZYON_ISTENDI' && lastDrawing?.status === 'REVIZYON_ISTENDI' ? lastDrawing : undefined;
+  const lastRequest = revisionAsked ? [...revisionAsked.revisions].reverse().find((r) => r.kind === 'TALEP') : undefined;
   const updateHref = `/siparisler/${order.id}?teklif=guncelle#teklif`;
   const ok = okText(m, sp.ok);
   // Kırık / telafi camı (karar 108): satış ve yönetici (OFFER_PREPARE). Giriş, müşteriye gönderilmiş teklifin cam satırı.
@@ -313,9 +328,30 @@ export default async function OrderPage({
         )}
       </div>}
 
-      {needsCheck && lastDrawing && (
+      {/* Müşterinin DWG/DXF çizimi hatalı bulundu (karar 167): kırmızı bilgilendirme; yanıt "Sıradaki adım" kartında */}
+      {correction && (
+        <div className="alert alert-error" id="cizim-hatali">
+          <b>{t('order.customer.correctionTitle')}</b> {t('order.customer.correctionText')}
+          {faultyNote && <RevisionNote r={faultyNote} role={user.appRole} t={t} />}
+          <div className="row" style={{ marginTop: 10 }}>
+            <a className="btn btn-primary" href="#duzeltme">{t('order.customer.correctionRespond')}</a>
+          </div>
+        </div>
+      )}
+      {/* İç ekip: müşteri revizyon istedi — kırmızı ve belirgin (Paket 3); ayrıntı ve geçmiş "Çizim onayı ve revizyon"da */}
+      {revisionAsked && (
+        <div className="alert alert-error" id="revizyon" data-revision-alert={revisionAsked.id}>
+          <b>{t('order.revisionAlert.title', { v: revisionAsked.version })}</b> {t('order.revisionAlert.text')}
+          {lastRequest && <RevisionNote r={lastRequest} role={user.appRole} t={t} />}
+          <div className="row" style={{ marginTop: 10 }}>
+            <a className="btn" href="#cizim">{t('order.revisionAlert.open')}</a>
+          </div>
+        </div>
+      )}
+
+      {needsCheck && production && (
         <div className="alert alert-warn">
-          <b>{t('order.check.title', { v: lastDrawing.version, date: fmtDateTime(lastDrawing.sentAt ?? lastDrawing.createdAt) })}</b>{' '}
+          <b>{t('order.check.title', { v: production.drawing.version, date: fmtDateTime(production.at) })}</b>{' '}
           {can('update_offer') ? t('order.check.admin') : t('order.check.other')}
           {can('update_offer') && !updating && (
             <div className="row" style={{ marginTop: 10 }}>
@@ -333,13 +369,15 @@ export default async function OrderPage({
         Bölüm sırası (eski TAKİP düzeni; her bölüm bir kez gösterilir):
           sıra kimde + yapılabilecek işlemler → 1) müşteri sipariş dosyaları → 2) notlar → 3) sipariş bilgileri →
           4) teknik çizimler ve onay → 5) teklif (düzenleme ya da görünüm) → 6) finans / sandık; hareketler sol menüde.
-        Çizim ekibi (karar 77, 84): 1) müşteri sipariş dosyaları → 2) teknik çizimler ve onay (çizim yükleme bu bölümde) →
-          3) notlar → 4) sipariş bilgileri. Adım çubuğu ve işlem kartları yok (durum başlıkta rozetle); teklif / ticari bölüm yok.
+        Çizim ekibi (karar 77, 84; Paket 3): 1) müşterinin sipariş dosyaları → 2) teknik çizim dosyaları (çizime başla, taslağa
+          yükleme, sürümlerin dosyaları) → 3) çizim onayı ve revizyon (DWG/DXF kararı, onay / revizyon geçmişi, geri çekme) →
+          4) notlar → 5) sipariş bilgileri. Adım çubuğu ve işlem kartları yok (durum başlıkta rozetle); teklif / ticari bölüm yok.
       */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
-      {drawerView && <Drawings order={order} user={user} can={can} t={t} />}
+      {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
+      {drawerView && <DrawingReview order={order} user={user} can={can} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
       <Notes order={order} user={user} t={t} />
 
@@ -462,9 +500,31 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
   // Müşteri ekranda gördüğü sürüme karar verir; bu arada yeni sürüm yüklendiyse işlem reddedilir
   const hidden = <><input type="hidden" name="id" value={order.id} />{latest && <input type="hidden" name="drawingId" value={latest.id} />}</>;
   const waiting = order.drawingTrack === 'ONAY_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
+  // Çizim hatalı bulundu (karar 167): düzeltilmiş dosya gönder (en az bir DWG / DXF) ya da fabrikadan çizim iste. İkisi de
+  // onay yetkisi ister (çizim kararı); yetkisiz kullanıcı yalnızca görür. Asıl denetim sunucu işlemlerinde.
+  const correction = order.drawingTrack === 'DUZELTME_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
   return (
-    <div className={`card ${waiting ? 'turn' : ''}`}>
+    <div className={`card ${waiting || correction ? 'turn' : ''}`} id={correction ? 'duzeltme' : undefined}>
       <h2 style={{ marginBottom: 4 }}>{s.next}</h2>
+      {correction && !user.canApprove && <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.customer.correctionNoRight')}</div>}
+      {correction && can('dwg_resubmit') && (
+        <form action={dwgResubmitAction} className="drawing-upload" style={{ marginTop: 10 }}>
+          <input type="hidden" name="id" value={order.id} />
+          <label htmlFor="dwg-resubmit">{t('order.customer.correctionResubmit')}</label>
+          <input id="dwg-resubmit" name="files" type="file" multiple required accept={ACCEPT} />
+          <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+            <span className="hint">{t('order.upload.scanInfo')}</span>
+            <button className="btn btn-primary">{t('order.customer.correctionResubmitButton')}</button>
+          </div>
+        </form>
+      )}
+      {correction && can('dwg_request_drawing') && (
+        <form action={dwgRequestDrawingAction} className="row" style={{ gap: 8 }}>
+          <input type="hidden" name="id" value={order.id} />
+          <span className="muted small" style={{ flex: '1 1 260px' }}>{t('order.customer.correctionFactoryHint')}</span>
+          <ConfirmButton outline message={t('order.customer.correctionFactoryConfirm')}>{t('order.customer.correctionFactory')}</ConfirmButton>
+        </form>
+      )}
       {waiting && !user.canApprove && (
         <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.customer.noApproveRight')}</div>
       )}
@@ -484,7 +544,7 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
           {can('request_revision') && <Link className="btn" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
         </div>
       )}
-      {!waiting && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
+      {!waiting && !correction && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
     </div>
   );
 }
@@ -781,21 +841,195 @@ function Crates({ order, t }: { order: OrderDetail; t: T }) {
 }
 
 // ---------------- çizim, dosya, not ----------------
-function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; t: T }) {
-  if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
-  const isCustomer = user.appRole === 'MUSTERI';
-  // Müşteriye taslak sürüm hiç gelmez; geri çekilen sürümün yalnızca satırı gelir (dosyasız, müşteri notsuz) — sanitizeOrder, karar 146
-  const versions = [...order.drawings].reverse();
-  const statusBadge = (st: string) => ({
+type DrawingRow = OrderDetail['drawings'][number];
+type Can = (a: string) => boolean;
+
+/** Fabrika sürümünün durum rozeti */
+function versionBadge(t: T, st: string): React.ReactNode {
+  return ({
     TASLAK: <span className="badge badge-muted">{t('order.drawings.draft')}</span>,
     ONAY_BEKLIYOR: <span className="badge badge-warn">{t('order.drawings.pending')}</span>,
     ONAYLANDI: <span className="badge badge-ok">{t('order.drawings.approved')}</span>,
     REVIZYON_ISTENDI: <span className="badge badge-danger">{t('order.drawings.revisionRequested')}</span>,
     GERI_CEKILDI: <span className="badge badge-muted">{t('order.drawings.withdrawn')}</span>,
   } as Record<string, React.ReactNode>)[st] ?? null;
+}
+
+/** Müşterinin DWG/DXF karar kaydının durumu → rozet rengi (karar 167; metni order.dwg.status.<durum>) */
+const DWG_TONE: Record<string, string> = { BEKLIYOR: 'badge-warn', ONAYLANDI: 'badge-ok', REVIZYON_ISTENDI: 'badge-danger', YAPILIYOR: 'badge-purple' };
+
+/**
+ * Çizim alanındaki çevrilemeyen notun "Çeviriyi yeniden dene" düğmesi (karar 168). Yalnızca iç ekibe ve yalnızca
+ * başarısız / yarıda kalmış çeviride görünür (RevisionNote karar verir); asıl kural sunucuda (retryDrawingTranslation).
+ */
+function RetryTranslation({ orderId, target, id, t }: { orderId: string; target: 'revision' | 'drawing'; id: string; t: T }) {
   return (
-    <div className="card" id="cizim">
-      <h2>{t('order.drawings.title')}</h2>
+    <form action={retryDrawingTranslationAction}>
+      <input type="hidden" name="id" value={orderId} />
+      <input type="hidden" name="target" value={target} />
+      <input type="hidden" name="targetId" value={id} />
+      <button className="btn btn-link">{t('order.notes.translation.retry')}</button>
+    </form>
+  );
+}
+
+/**
+ * Sürümün müşteri notu (saklanan Romence çevirisiyle — karar 168: sürüm müşteriye gönderilirken bir kez çevrilir) ve iç
+ * notu. Çeviri alanları sunucuda role göre temizlenmiştir (sanitizeOrder → drawingTranslationsFor): müşteri tamamlanmış
+ * Romence çeviriyi, iç ekip yalnızca özgün notu (+ başarısız çevirinin durumu), denetimci yalnızca özgün notu alır.
+ */
+function VersionNotes({ order, d, user, t }: { order: OrderDetail; d: DrawingRow; user: CurrentUser; t: T }) {
+  const isCustomer = user.appRole === 'MUSTERI';
+  return (
+    <>
+      {d.noteCustomer && (
+        <div className="note" data-version-note={d.id}>
+          <b className="small">{t('order.drawings.noteCustomer')}</b>
+          <RevisionNote
+            r={{ comment: d.noteCustomer, translation: d.translation, translationLang: d.translationLang, translationStatus: d.translationStatus, translationError: d.translationError, translationAt: d.translationAt }}
+            role={user.appRole} t={t} retry={<RetryTranslation orderId={order.id} target="drawing" id={d.id} t={t} />}
+          />
+        </div>
+      )}
+      {!isCustomer && d.noteInternal && <div className="note internal"><b className="small">{t('order.drawings.noteInternal')}</b> {d.noteInternal}</div>}
+    </>
+  );
+}
+
+/**
+ * Sürümün revizyon kayıtları: müşterinin revizyon talebi (numaralı not — karar 162–163) ve çizimcinin "çizim hatalı"
+ * açıklaması (karar 167–168). Saklanan çeviri gösterilir; sayfa çeviri YAPMAZ. Kayıtlar silinmez — geçmiş korunur.
+ */
+function RevisionNotes({ order, d, user, t }: { order: OrderDetail; d: DrawingRow; user: CurrentUser; t: T }) {
+  const isCustomer = user.appRole === 'MUSTERI';
+  return (
+    <>
+      {d.revisions.map((r) => {
+        // Eski taleplerin çizim üstü işaretleri yalnızca iç ekibe (müşteri ekranında işaret yok — karar 162)
+        const marks = !isCustomer && Array.isArray(r.annotations) ? r.annotations.length : 0;
+        const faulty = r.kind === 'HATALI';
+        return (
+          <div key={r.id} className="note" data-revision={r.id} data-revision-kind={r.kind}>
+            <b className="small">{t(faulty ? 'order.dwg.faultyLabel' : 'order.drawings.revisionRequest')}</b>
+            <RevisionNote r={r} role={user.appRole} t={t} retry={<RetryTranslation orderId={order.id} target="revision" id={r.id} t={t} />} />
+            <div className="meta">
+              {fmtDateTime(r.createdAt)}
+              {marks > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.drawings.marks', { n: marks })}</Link></>}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Müşterinin DWG/DXF çiziminin karar kaydı (karar 167): kararın verildiği dosyalar (müşterinin kendi sipariş dosyaları —
+ * dosya adresi /dosya/siparis kendi kuralıyla denetler), karar, tarih ve "hatalı" açıklaması. Kayıt değişmez; hatalı bulunan
+ * dosya ve karar geçmişte kalır. Müşteri iç ekipten kişi adı görmez (yalnızca tarih).
+ */
+function CustomerRecord({ order, d, user, t }: { order: OrderDetail; d: DrawingRow; user: CurrentUser; t: T }) {
+  const isCustomer = user.appRole === 'MUSTERI';
+  const files = sourceFilesOf(d.sourceFiles);
+  const status = Object.hasOwn(DWG_TONE, d.status) ? d.status : null;
+  return (
+    <div className="drawing-version customer-record" data-dwg-record={d.id} data-dwg-status={d.status}>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <span className="badge badge-muted">v{d.version}</span>
+        <b className="small">{t('order.dwg.record')}</b>
+        {status && <span className={`badge ${DWG_TONE[status]}`}>{t(`order.dwg.status.${status}` as MsgKey)}</span>}
+        <span className="muted small">{t('order.dwg.submitted', { when: fmtDateTime(d.createdAt) })}</span>
+        {d.decidedAt && (
+          <span className="muted small">
+            {isCustomer ? fmtDateTime(d.decidedAt) : t('order.drawings.decidedBy', { who: d.decidedBy ? personText(t, d.decidedBy) : '—', when: fmtDateTime(d.decidedAt) })}
+          </span>
+        )}
+      </div>
+      {files.length > 0 && (
+        <div className="dwg-files">
+          {files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}
+        </div>
+      )}
+      <RevisionNotes order={order} d={d} user={user} t={t} />
+    </div>
+  );
+}
+
+/**
+ * Fabrika çizim sürümü. part: 'all' (iç ekip ve müşteri — tek kart) · 'files' (çizimci: "Teknik çizim dosyaları" —
+ * dosyalar, notlar, taslakta "Kontrol Et") · 'review' (çizimci: "Çizim onayı ve revizyon" — karar, revizyon notları,
+ * geri çekme). Gönderim sipariş sayfasında yoktur: önce "Kontrol Et" (görüntüleyici; sunucu kontrol kanıtı ister).
+ */
+function FactoryVersion({ order, d, current, user, can, t, part }: { order: OrderDetail; d: DrawingRow; current: boolean; user: CurrentUser; can: Can; t: T; part: 'all' | 'files' | 'review' }) {
+  const isCustomer = user.appRole === 'MUSTERI';
+  const draft = d.status === 'TASLAK';
+  const blocked = d.files.length === 0 || d.files.some((f) => f.scanStatus !== 'CLEAN');
+  const viewable = d.files.some((f) => isViewable(f.name));
+  const showFiles = part !== 'review';
+  const showReview = part !== 'files';
+  return (
+    <div className={`drawing-version${draft ? ' draft' : ''}`} data-version={d.version}>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {/* "güncel" etiketi bir kez: çizimcinin ekranında dosyalar bölümünde (onay / revizyon bölümü aynı sürümü tekrar etiketlemez) */}
+        <span className={`badge ${current && part !== 'review' ? 'badge-info' : 'badge-muted'}`}>v{d.version}{current && !draft && part !== 'review' ? ` · ${t('order.drawings.current')}` : ''}</span>
+        {versionBadge(t, d.status)}
+        {draft && <b className="small">{t('order.upload.draftTitle', { v: d.version })}</b>}
+        {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
+        {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
+        {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy ? personText(t, d.decidedBy) : '—', when: fmtDateTime(d.decidedAt) })}</span>}
+        {/* Müşterinin onayını bekleyen sürümde "Deschide și verifică" ana işlemdir (karar 162): belirgin düğme */}
+        {!draft && d.files.some((f) => isViewable(f.name) && f.scanStatus !== 'INFECTED') && (
+          isCustomer && current && d.status === 'ONAY_BEKLIYOR'
+            ? <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
+            : <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
+        )}
+      </div>
+      {showFiles && <VersionNotes order={order} d={d} user={user} t={t} />}
+      {showFiles && d.files.length === 0 && draft && <p className="muted small">{t('order.upload.draftEmpty')}</p>}
+      {showFiles && d.files.map((f) => (
+        <div key={f.id} className="file-row">
+          <div className="file-ext">{f.name.split('.').pop()?.slice(0, 4) || t('order.drawings.fileFallback')}</div>
+          <div className="grow">
+            <div className="fname">{f.name}</div>
+            <div className="small muted"><ScanBadge status={f.scanStatus} t={t} /> {fmtBytes(f.size)} · {fmtDateTime(f.createdAt)}</div>
+          </div>
+          <FileButtons href={`/dosya/cizim/${f.id}`} name={f.name} scanStatus={f.scanStatus} t={t} />
+          {draft && can('remove_drawing_file') && (
+            <form action={removeDrawingFileAction}>
+              <input type="hidden" name="id" value={order.id} />
+              <input type="hidden" name="fileId" value={f.id} />
+              <ConfirmButton danger message={t('order.upload.removeConfirm', { name: f.name })}>{t('order.upload.remove')}</ConfirmButton>
+            </form>
+          )}
+        </div>
+      ))}
+      {showReview && <RevisionNotes order={order} d={d} user={user} t={t} />}
+      {showReview && d.withdrawReason && <div className="note"><b className="small">{t('order.drawings.withdrawReason')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>}
+      {showFiles && draft && can('send_drawing') && d.files.length > 0 && (
+        // Gönderim bu sayfada yok: önce "Kontrol Et" (görüntüleyici), "Müşteriye gönder" o ekrandadır (sunucu da kanıt ister)
+        <div className="row drawing-next">
+          <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.upload.check')}</Link>
+          <span className="muted small">{blocked ? t('order.upload.sendBlocked') : !viewable ? t('order.upload.sendNeedsViewable') : t('order.upload.checkFirst')}</span>
+        </div>
+      )}
+      {showReview && d.status === 'ONAY_BEKLIYOR' && can('withdraw_drawing') && (
+        <form action={withdrawDrawingAction} style={{ marginTop: 8 }}>
+          <input type="hidden" name="id" value={order.id} />
+          <label htmlFor={`wd-${d.id}`} className="small">{t('order.upload.withdrawLabel', { v: d.version })}</label>
+          <div className="row">
+            <input id={`wd-${d.id}`} name="reason" required maxLength={1000} placeholder={t('order.upload.withdrawPlaceholder')} style={{ flex: 1 }} />
+            <ConfirmButton danger message={t('order.upload.withdrawConfirm', { v: d.version })}>{t('order.upload.withdraw')}</ConfirmButton>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** Çizime başla + taslağa yükleme formu (çizimci; yetki ve durum işlemde, sunucuda denetlenir) */
+function DrawingUpload({ order, can, t, anchor }: { order: OrderDetail; can: Can; t: T; anchor?: string }) {
+  return (
+    <>
       {can('start_drawing') && (
         <form action={startDrawingAction} className="row drawing-start">
           <input type="hidden" name="id" value={order.id} />
@@ -808,7 +1042,7 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
         const last = order.drawings[order.drawings.length - 1];
         const v = last?.status === 'TASLAK' ? last.version : (last?.version ?? 0) + 1;
         return (
-          <form action={uploadDrawingAction} className="drawing-upload">
+          <form action={uploadDrawingAction} className="drawing-upload" id={anchor}>
             <input type="hidden" name="id" value={order.id} />
             <label htmlFor="drawing-file">{t(order.drawingTrack === 'REVIZYON_ISTENDI' ? 'order.upload.labelRevised' : 'order.upload.label', { v })}</label>
             <input id="drawing-file" name="files" type="file" multiple required accept={ACCEPT} />
@@ -829,83 +1063,126 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
           </form>
         );
       })()}
-      {versions.length === 0 && <p className="muted">{t('order.drawings.none')}</p>}
-      {versions.map((d, i) => {
-        const draft = d.status === 'TASLAK';
-        const blocked = d.files.length === 0 || d.files.some((f) => f.scanStatus !== 'CLEAN');
-        const viewable = d.files.some((f) => isViewable(f.name));
-        return (
-          <div key={d.id} className={`drawing-version${draft ? ' draft' : ''}`}>
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <span className={`badge ${i === 0 ? 'badge-info' : 'badge-muted'}`}>v{d.version}{i === 0 && !draft ? ` · ${t('order.drawings.current')}` : ''}</span>
-              {statusBadge(d.status)}
-              {draft && <b className="small">{t('order.upload.draftTitle', { v: d.version })}</b>}
-              {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
-              {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
-              {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy ? personText(t, d.decidedBy) : '—', when: fmtDateTime(d.decidedAt) })}</span>}
-              {/* Müşterinin onayını bekleyen sürümde "Deschide și verifică" ana işlemdir (karar 162): belirgin düğme */}
-              {!draft && d.files.some((f) => isViewable(f.name) && f.scanStatus !== 'INFECTED') && (
-                isCustomer && i === 0 && d.status === 'ONAY_BEKLIYOR'
-                  ? <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
-                  : <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
-              )}
+    </>
+  );
+}
+
+/**
+ * Müşterinin DWG/DXF çizimi için çizimci kararı (karar 167): karar bekleniyorsa incelenecek dosyalar ve üç ayrı karar;
+ * müşterinin düzeltmesi bekleniyorsa bilgi + "Çizimi Güncelle". Düğmeleri availableActions belirler; asıl yetki ve durum
+ * denetimi sunucu işlemlerinde (dwg_ready / dwg_faulty / dwg_update).
+ */
+function DwgPanel({ order, can, t }: { order: OrderDetail; can: Can; t: T }) {
+  const decide = { ready: can('dwg_ready'), faulty: can('dwg_faulty'), update: can('dwg_update') };
+  const waiting = order.status === 'HAZIRLANIYOR' && order.drawingTrack === 'DUZELTME_BEKLIYOR';
+  if (decide.ready || decide.faulty) {
+    const review = dwgReview(order);
+    const files = review.files as { id: string; name: string }[];
+    return (
+      <div className="dwg-panel" id="dwg-karar">
+        <h3 className="sub-title">{t('order.dwg.title')}</h3>
+        <p className="small">{review.record ? t('order.dwg.resubmitted', { v: (review.record as { version: number }).version }) : t('order.dwg.intro')}</p>
+        {files.length > 0 && (
+          <>
+            <div className="small"><b>{t('order.dwg.files')}</b></div>
+            <div className="dwg-files" style={{ margin: '4px 0 10px' }}>
+              {files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}
             </div>
-            {d.noteCustomer && <div className="note"><b className="small">{t('order.drawings.noteCustomer')}</b> {d.noteCustomer}</div>}
-            {!isCustomer && d.noteInternal && <div className="note internal"><b className="small">{t('order.drawings.noteInternal')}</b> {d.noteInternal}</div>}
-            {d.files.length === 0 && draft && <p className="muted small">{t('order.upload.draftEmpty')}</p>}
-            {d.files.map((f) => (
-              <div key={f.id} className="file-row">
-                <div className="file-ext">{f.name.split('.').pop()?.slice(0, 4) || t('order.drawings.fileFallback')}</div>
-                <div className="grow">
-                  <div className="fname">{f.name}</div>
-                  <div className="small muted"><ScanBadge status={f.scanStatus} t={t} /> {fmtBytes(f.size)} · {fmtDateTime(f.createdAt)}</div>
-                </div>
-                <FileButtons href={`/dosya/cizim/${f.id}`} name={f.name} scanStatus={f.scanStatus} t={t} />
-                {draft && can('remove_drawing_file') && (
-                  <form action={removeDrawingFileAction}>
-                    <input type="hidden" name="id" value={order.id} />
-                    <input type="hidden" name="fileId" value={f.id} />
-                    <ConfirmButton danger message={t('order.upload.removeConfirm', { name: f.name })}>{t('order.upload.remove')}</ConfirmButton>
-                  </form>
-                )}
-              </div>
-            ))}
-            {d.revisions.map((r) => {
-              // Eski taleplerin çizim üstü işaretleri yalnızca iç ekibe (müşteri ekranında işaret yok — karar 162)
-              const marks = !isCustomer && Array.isArray(r.annotations) ? r.annotations.length : 0;
-              return (
-                <div key={r.id} className="note" data-revision={r.id}>
-                  <b className="small">{t('order.drawings.revisionRequest')}</b>
-                  {/* Numaralı not + saklanan çeviri (iç ekip; karar 163) — sayfa çeviri yapmaz */}
-                  <RevisionNote r={r} role={user.appRole} t={t} />
-                  <div className="meta">
-                    {fmtDateTime(r.createdAt)}
-                    {marks > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.drawings.marks', { n: marks })}</Link></>}
-                  </div>
-                </div>
-              );
-            })}
-            {d.withdrawReason && <div className="note"><b className="small">{t('order.drawings.withdrawReason')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>}
-            {draft && can('send_drawing') && d.files.length > 0 && (
-              // Gönderim bu sayfada yok: önce "Kontrol Et" (görüntüleyici), "Müşteriye gönder" o ekrandadır (sunucu da kanıt ister)
-              <div className="row drawing-next">
-                <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.upload.check')}</Link>
-                <span className="muted small">{blocked ? t('order.upload.sendBlocked') : !viewable ? t('order.upload.sendNeedsViewable') : t('order.upload.checkFirst')}</span>
-              </div>
-            )}
-            {d.status === 'ONAY_BEKLIYOR' && can('withdraw_drawing') && (
-              <form action={withdrawDrawingAction} style={{ marginTop: 8 }}>
-                <input type="hidden" name="id" value={order.id} />
-                <label htmlFor={`wd-${d.id}`} className="small">{t('order.upload.withdrawLabel', { v: d.version })}</label>
-                <div className="row">
-                  <input id={`wd-${d.id}`} name="reason" required maxLength={1000} placeholder={t('order.upload.withdrawPlaceholder')} style={{ flex: 1 }} />
-                  <ConfirmButton danger message={t('order.upload.withdrawConfirm', { v: d.version })}>{t('order.upload.withdraw')}</ConfirmButton>
-                </div>
-              </form>
-            )}
-          </div>
-        );
-      })}
+          </>
+        )}
+        <ul className="dwg-hints">
+          <li><b>{t('order.dwg.ready')}:</b> {t('order.dwg.readyHint')}</li>
+          <li><b>{t('order.dwg.faulty')}:</b> {t('order.dwg.faultyHint')}</li>
+          <li><b>{t('order.dwg.update')}:</b> {t('order.dwg.updateHint')}</li>
+        </ul>
+        <DwgDecision orderId={order.id} can={decide} t={t} />
+      </div>
+    );
+  }
+  if (waiting && decide.update) {
+    return (
+      <div className="dwg-panel" id="dwg-karar">
+        <h3 className="sub-title">{t('order.dwg.waitingTitle')}</h3>
+        <p className="small">{t('order.dwg.waitingText')}</p>
+        <DwgDecision orderId={order.id} can={decide} t={t} />
+      </div>
+    );
+  }
+  return null;
+}
+
+/** Sipariş çizim hattının bugünkü durumu (çizimcinin "Çizim onayı ve revizyon" bölümünün başı) */
+function DrawingState({ order, t }: { order: OrderDetail; t: T }) {
+  if (order.drawingTrack === 'YOK') return null;
+  const last = [...order.drawings].reverse().find((d) => d.status !== 'TASLAK');
+  let text: string | null = null;
+  if (last && order.drawingTrack === 'ONAY_BEKLIYOR' && last.status === 'ONAY_BEKLIYOR') text = t('order.drawings.awaiting', { v: last.version, when: fmtDateTime(last.sentAt ?? last.createdAt) });
+  else if (last && order.drawingTrack === 'ONAYLANDI' && last.status === 'ONAYLANDI') {
+    text = isCustomerDrawingRecord(last)
+      ? t('order.drawings.readyState', { v: last.version, when: fmtDateTime(last.decidedAt ?? last.createdAt) })
+      : t('order.drawings.approvedState', { v: last.version, when: fmtDateTime(last.decidedAt ?? last.createdAt) });
+  } else if (last && order.drawingTrack === 'REVIZYON_ISTENDI' && last.status === 'REVIZYON_ISTENDI') text = t('order.drawings.revisionState', { v: last.version, when: fmtDateTime(last.decidedAt ?? last.createdAt) });
+  return (
+    <p className="row drawing-state" style={{ gap: 8 }}>
+      <DrawingBadge track={order.drawingTrack} />
+      {text && <span className="small">{text}</span>}
+    </p>
+  );
+}
+
+/** Sürüm listesi (yeniden eskiye): fabrika sürümü ya da müşterinin DWG/DXF karar kaydı */
+function VersionList({ order, user, can, t, part }: { order: OrderDetail; user: CurrentUser; can: Can; t: T; part: 'all' | 'files' | 'review' }) {
+  // Müşteriye taslak sürüm hiç gelmez; geri çekilen sürümün yalnızca satırı gelir (dosyasız, müşteri notsuz) — sanitizeOrder, karar 146
+  const versions = [...order.drawings].reverse();
+  const latest = versions[0];
+  // "Teknik çizim dosyaları": yalnızca fabrika sürümleri (müşterinin dosyası sipariş dosyalarındadır) ·
+  // "Çizim onayı ve revizyon": müşteriye gitmiş sürümler ve müşterinin karar kayıtları (taslak burada değil)
+  const shown = versions.filter((d) => (part === 'files' ? !isCustomerDrawingRecord(d) : part === 'review' ? d.status !== 'TASLAK' : true));
+  if (shown.length === 0) return <p className="muted">{part === 'review' ? t('order.drawings.noDecisions') : part === 'files' ? t('order.drawings.noVersions') : t('order.drawings.none')}</p>;
+  return (
+    <>
+      {shown.map((d) => (isCustomerDrawingRecord(d)
+        ? <CustomerRecord key={d.id} order={order} d={d} user={user} t={t} />
+        : <FactoryVersion key={d.id} order={order} d={d} current={d.id === latest?.id} user={user} can={can} t={t} part={part} />))}
+    </>
+  );
+}
+
+/**
+ * Teknik çizimler ve onay — tek kart (yönetici, satış, denetimci, müşteri). Çizim ekibinin ekranı aynı parçalarla iki
+ * bölümdür: DrawingFiles ("Teknik çizim dosyaları") + DrawingReview ("Çizim onayı ve revizyon") — Paket 3.
+ */
+function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: Can; t: T }) {
+  if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
+  return (
+    <div className="card" id="cizim">
+      <h2>{t('order.drawings.title')}</h2>
+      <DwgPanel order={order} can={can} t={t} />
+      <DrawingUpload order={order} can={can} t={t} anchor="cizim-dosyalari" />
+      <VersionList order={order} user={user} can={can} t={t} part="all" />
+    </div>
+  );
+}
+
+/** Çizimci: 2) Teknik çizim dosyaları — çizime başla, taslağa yükle, sürümlerin dosyaları ve notları, "Kontrol Et" */
+function DrawingFiles({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: Can; t: T }) {
+  return (
+    <div className="card" id="cizim-dosyalari">
+      <h2>{t('order.drawings.filesTitle')}</h2>
+      <DrawingUpload order={order} can={can} t={t} />
+      <VersionList order={order} user={user} can={can} t={t} part="files" />
+    </div>
+  );
+}
+
+/** Çizimci: 3) Çizim onayı ve revizyon — durum, DWG/DXF kararı, onay / revizyon geçmişi (numaralı notlar), geri çekme */
+function DrawingReview({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: Can; t: T }) {
+  return (
+    <div className="card" id="cizim">
+      <h2>{t('order.drawings.reviewTitle')}</h2>
+      <DrawingState order={order} t={t} />
+      <DwgPanel order={order} can={can} t={t} />
+      <VersionList order={order} user={user} can={can} t={t} part="review" />
     </div>
   );
 }

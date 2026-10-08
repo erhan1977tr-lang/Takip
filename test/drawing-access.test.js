@@ -117,6 +117,21 @@ test('sürüm listesi (sanitizeOrder): müşteri — taslak gelmez; geri çekile
   assert.deepEqual(out[0].revisions, [{ id: 'r1', comment: 'düzeltin' }]);
 });
 
+test('geri çekilen sürüm (karar 146 + 168): müşteri notunun saklanan çevirisi de içerikle birlikte kapanır; müşteri çizimi kaydının dosya listesi yalnızca içeriği kapalı satırda boşalır', () => {
+  const tr = { translation: 'Marginea corectată', translationLang: 'ro', translationStatus: 'DONE', translationError: null, translationAt: new Date('2026-10-02T08:00:00Z') };
+  const input = [version(1, 'GERI_CEKILDI', { ...tr, withdrawReason: 'Yanlış dosya' }), version(2, 'ONAY_BEKLIYOR', tr)];
+  const out = drawingsView('MUSTERI', input);
+  assert.deepEqual([out[0].translation, out[0].translationLang, out[0].translationStatus, out[0].translationError, out[0].translationAt, out[0].sourceFiles], [null, null, null, null, null, null]);
+  assert.equal(JSON.stringify(out[0]).includes('Marginea'), false);
+  assert.equal(out[1], input[1], 'açık sürüm aynen (çevirinin görünümü notun kuralında — server/notes/view.js)');
+  // Müşterinin DWG/DXF karar kaydı (karar 167): kendi dosyalarının listesi — açık durumlarda (ONAYLANDI / REVIZYON_ISTENDI /
+  // YAPILIYOR / BEKLIYOR) aynen gelir
+  for (const status of ['ONAYLANDI', 'REVIZYON_ISTENDI', 'YAPILIYOR', 'BEKLIYOR']) {
+    const rec = { id: `c-${status}`, version: 1, status, source: 'MUSTERI_DXF_DWG', files: [], sourceFiles: [{ id: 'of1', name: 'plan.dwg', checksum: 'c' }], revisions: [] };
+    assert.equal(drawingsView('MUSTERI', [rec])[0], rec, status);
+  }
+});
+
 test('sürüm listesi: iç roller her sürümü dosyalarıyla ve notlarıyla aynen görür (taslak ve geri çekilen dahil)', () => {
   for (const role of INTERNAL) {
     const input = VERSIONS();
@@ -203,7 +218,8 @@ test('tek kural, üç kullanıcı: sipariş verisi, dosya adresi ve görüntüle
   assert.ok(route.indexOf('findDrawingFile(') < notFound);
 
   const viewer = strip(read('app/(panel)/siparisler/[id]/cizim/[drawingId]/page.tsx'));
-  assert.ok(viewer.includes("if (!d || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();"), 'görüntüleyici → drawingAccess');
+  // Müşterinin DWG/DXF çiziminin karar kaydı (karar 167) görüntülenecek dosyası olmayan bir kayıttır: görüntüleyici açmaz
+  assert.ok(viewer.includes("if (!d || isCustomerDrawingRecord(d) || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();"), 'görüntüleyici → drawingAccess');
   assert.ok(viewer.indexOf("!== 'FULL') notFound();") < viewer.indexOf('<DrawingViewer'), 'denetim, dosya listesi kurulmadan önce');
 
   // Kuralı kullanan dosyalar: yalnızca bu üçü (yeni bir okuma yolu bilerek eklenir)
