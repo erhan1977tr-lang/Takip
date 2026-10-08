@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.52.1 — 08.10.2026
+
+Paket 2 doğrulama düzeltmeleri (uçtan uca testlerde bulundu; yayından önce). Veritabanı şeması değişmedi.
+
+- **Tekliflerim:** liste yalnızca müşteri bir tarih aralığı gösterince ("Göster") yüklenir. Ana sayfanın her açılışı ve
+  60 saniyelik otomatik yenileme döküm sorgusu yapmaz; aynı siparişin bağlantısı sayfada iki kez çıkmaz. Form varsayılan
+  olarak bu ayı gösterir; "PDF indir" onunla da çalışır.
+- **Stok yetersizliği (yönetici):** siparişteki "Stok durumu" tablosu (gereken / mevcut / eksik) sipariş gelir gelmez — fiyat
+  beklerken — görünür ve stok düşene (depoya gidene) kadar kalır; 3.52.0'da yalnızca müşteri onayından sonra görünüyordu.
+
 ## 3.52.0 — 08.10.2026
 
 Fonksiyonel paket 2 — müşteri paneli ve teklif yönetimi (kararlar 160–166). Veritabanı şeması: revizyon talebine çeviri
@@ -21,12 +31,11 @@ alanları eklendi (`DrawingRevision.translation*`; migration CI'da üretilir).
   Not **bir kez** Türkçeye çevrilip saklanır: iç ekip özgün not + çeviriyi görür, müşteri ve denetimci yalnızca özgün notu;
   sayfa yenilemesi çeviri yapmaz. Eski işaretli talepler iç ekipte işaretleriyle görünür.
 - **Tekliflerim (müşteri ana sayfası):** başlangıç / bitiş tarihi; firmanın cam teklifleri (her siparişin son gönderilen
-  teklifi), "Göster" ile liste (aralık seçilmeden ana sayfa döküm sorgusu yapmaz) ve **PDF dökümü** — her teklif ayrı ve ayrıntılı (cam satırları, adet, m², müşteri fiyatı), sonda toplam m²
+  teklifi), liste ve **PDF dökümü** — her teklif ayrı ve ayrıntılı (cam satırları, adet, m², müşteri fiyatı), sonda toplam m²
   ve toplam tutar (para birimi başına); GKH logosu; Türkçe / Romence harfler; dosya adı panel dilinde. Yalnızca kendi
   firmasının teklifleri; fabrika / satış fiyatı hiçbir yerde yok.
 - **Stok yetersizliği uyarısı (profil):** sipariş engellenmez; yöneticinin "Önemli kararlar"ına tek kayıt (gereken / mevcut /
-  eksik), sipariş "Stok yetersiz" olarak işaretlenir; yönetici sipariş gelir gelmez (fiyatlandırmadan depoya gidene kadar)
-  siparişte stok durumu tablosunu görür ve "Gördüm" ile kararını kapatır. Müşteri uyarıyı ve ürünleri görür,
+  eksik), sipariş "Stok yetersiz" olarak işaretlenir; yönetici "Gördüm" ile kararını kapatır. Müşteri uyarıyı ve ürünleri görür,
   stok sayılarını görmez.
 - **Müşteri bildirimleri:** bağlantı ilgili bölüme iner (yeni çizim → kırmızı bilgilendirme, teklif → teklif bölümü); iç
   olaylar müşteriye gitmez (test listesiyle sabit); yenileme yeni bildirim / e-posta / çeviri üretmez.
