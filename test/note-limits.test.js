@@ -437,11 +437,14 @@ test('sınırlar tek yerde, sunucuda: notu yazan tek kod addNote; sıra — hak 
   assert.deepEqual(pos, [...pos].sort((a, b) => a - b), 'sıra');
   assert.equal(/db\.orderNote\.(create|count)\(/.test(body), false, 'sayım ve kayıt yalnızca kilitli işlemin içinde (tx)');
   // "Yeniden dene": hak, not sahiplenilmeden (PENDING yapılmadan) önce alınır
-  const retry = svc.slice(svc.indexOf('export async function retryNoteTranslation('), svc.indexOf('export async function testTranslation('));
+  const retry = svc.slice(svc.indexOf('export async function retryNoteTranslation('), svc.indexOf('export async function translateRevision('));
   assert.ok(retry.indexOf('limits.retry(actor, now.getTime())') > retry.indexOf('translateReady(settings)'));
   assert.ok(retry.indexOf('limits.retry(actor, now.getTime())') < retry.indexOf('db.orderNote.updateMany('));
-  // Varsayılan sayaçlar uygulamanın ortak örneğidir; sunucu işlemi kendi sayaç / sınırını veremez
-  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 2);
+  // Varsayılan sayaçlar uygulamanın ortak örneğidir; sunucu işlemi kendi sayaç / sınırını veremez (addNote,
+  // retryNoteTranslation, translateRevision — revizyon notu müşterinin aynı çeviri hakkını kullanır, karar 163)
+  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 3);
+  const revision = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function testTranslation('));
+  assert.ok(revision.includes('limits.translation(actor, now.getTime())'), 'revizyon notunun çevirisi müşterinin çeviri hakkından düşer');
   const actions = strip(read('app/(panel)/siparisler/[id]/actions.ts'));
   assert.equal(/limits\s*:|createNoteLimits|note-?limits|notes\/limits/i.test(actions), false);
   assert.ok(actions.includes("r.code === 'RATE_LIMIT' ? 'order.errors.noteRateLimit'") && actions.includes("r.code === 'ORDER_LIMIT' ? 'order.errors.noteOrderLimit'"));

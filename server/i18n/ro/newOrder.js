@@ -64,11 +64,10 @@ export default {
     },
     glass: {
       title: 'Combinația de sticlă dorită (obligatoriu)',
-      intro: 'Selectați din catalog sticla dorită. Dimensiunile și prețul vor fi completate de echipa de vânzări.',
+      intro: 'Selectați din catalog sticla dorită. Cantitățile, dimensiunile și prețul vor fi completate de echipa de vânzări pe baza fișierelor dvs.',
       catalogEmpty: 'Catalogul de sticlă este încă gol. Vă rugăm să contactați administratorul.',
       glass: 'Sticlă',
       pick: '— selectați din catalog —',
-      qty: 'Bucăți',
       oneOnly: 'O comandă conține un singur tip de sticlă. Pentru altă sticlă deschideți o comandă separată.',
     },
     note: {

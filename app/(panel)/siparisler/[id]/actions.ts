@@ -17,7 +17,8 @@ import { readOfferExcel } from '@/server/orders/excel-file.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
-import { addNote, retryNoteTranslation } from '@/server/notes/translation.js';
+import { addNote, retryNoteTranslation, translateRevision } from '@/server/notes/translation.js';
+import { revisionNote } from '@/server/orders/revision-note.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -42,7 +43,7 @@ function done(id: string, ok: string): never {
  */
 async function act(
   user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {},
-): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string } | null> {
+): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
   try {
     const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
     return res.result;
@@ -64,7 +65,7 @@ async function ensureAllowed(user: CurrentUser, orderId: string, action: string)
   const order = await loadOrder(orderId, user);
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order),
+    drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
   if (!acts.includes(action)) {
     const { t } = await getT();
@@ -207,12 +208,32 @@ export async function approveDrawingAction(formData: FormData) {
   done(id, res?.produced ? 'drawing_approved_production' : 'drawing_approved');
 }
 
+/**
+ * Müşterinin revizyon talebi (karar 162–163). Not NUMARALI maddelerdir ("item" alanları, formdaki sırasıyla — maddesiz
+ * eski istekte "comment" tek madde sayılır): server/orders/revision-note.js tek metne çevirir ("1. …\n2. …"); iş akışı
+ * (request_revision) değişmedi. Talep kaydedildikten SONRA notu bir kez çevrilir ve talebin satırına yazılır
+ * (translateRevision); çeviri hatası talebi bozmaz, sayfa açılışı / yenileme çeviri yapmaz.
+ */
 export async function requestRevisionAction(formData: FormData) {
-  const comment = String(formData.get('comment') ?? '').trim().slice(0, 2000);
+  const user = await requirePermission('ORDER_VIEW');
+  const id = orderIdOf(formData);
   const drawingId = String(formData.get('drawingId') ?? '') || undefined;
-  // Çizim üstü işaretler (cizim/[drawingId] sayfasındaki görüntüleyici): JSON; sunucuda doğrulanır (server/orders/annotations.js)
+  const items = formData.getAll('item');
+  const note = revisionNote(items.length ? items : [formData.get('comment')]);
+  if (!note.ok) {
+    const { t } = await getT();
+    redirect(err(id, t(note.code === 'TOO_MANY' ? 'order.errors.revisionTooMany' : note.code === 'TOO_LONG' ? 'order.errors.revisionTooLong' : 'order.errors.revisionEmpty')));
+  }
+  // Çizim üstü işaretler (eski istemciler): JSON; sunucuda doğrulanır (server/orders/annotations.js). Müşteri ekranında
+  // işaretleme yok (karar 162) — alan gelmezse talep işaretsizdir.
   const annotations = String(formData.get('annotations') ?? '').slice(0, 400_000);
-  await simple(formData, 'request_revision', 'revision_requested', { comment, drawingId, annotations });
+  const res = await act(user, id, 'request_revision', { comment: note.text, drawingId, annotations });
+  if (res?.revisionId) {
+    // Talep kayıtlıdır: çeviri adımındaki beklenmedik hata (veritabanı) talebi bozmaz, yalnızca günlüğe güvenli kod yazılır
+    await translateRevision(db, { revisionId: res.revisionId, orderId: id, actor: await actorOf(user) })
+      .catch((e: unknown) => console.warn('[revizyon çevirisi] yapılamadı', res.revisionId, String((e as { code?: unknown })?.code ?? 'ERROR')));
+  }
+  done(id, 'revision_requested');
 }
 
 // ---------------- Sandıklar ----------------

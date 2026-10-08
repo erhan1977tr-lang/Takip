@@ -118,7 +118,10 @@ export default {
   // Müşterinin işlem kartı
   customer: {
     noApproveRight: 'Çizim firmanızın onayını bekliyor. Hesabınızın onay yetkisi yok: çizimi açıp inceleyebilirsiniz; onayı ya da revizyon talebini firmanızdaki onay yetkili kullanıcı verir.',
-    reviewHint: 'Çizimi “Aç ve incele” ile açın; uygunsa “Bu çizimi onayla”, değilse “Revizyon iste” ile çizim üzerinde işaretleyip notunuzu yazın.',
+    reviewHint: 'Önce çizimi “Aç ve incele” ile açıp kontrol edin; uygunsa “Bu çizimi onayla”, değişiklik gerekiyorsa “Revizyon iste” ile değişiklikleri numaralı maddeler hâlinde yazın.',
+    // Yeni çizim müşterinin onayını bekliyor: sipariş sayfasının üstündeki kırmızı bilgilendirme (karar 162)
+    newDrawingTitle: 'Yeni çizim onayınızı bekliyor (v{v}).',
+    newDrawingText: 'Lütfen çizimi açıp kontrol edin: uygunsa onaylayın, değişiklik gerekiyorsa revizyon isteyin.',
     approveConfirm: 'Çizim v{v} onaylanacak. Onay kesindir, sonradan geri alınamaz. Onaylıyor musunuz?',
     revisionLabel: 'Revizyon talebi',
     revisionPlaceholder: 'Çizimde neyin değişmesi gerektiğini yazın',
@@ -172,7 +175,7 @@ export default {
   },
   viewer: {
     title: 'Teknik çizim',
-    titleRevision: 'Revizyon iste — çizim üzerinde işaretleyin',
+    titleRevision: 'Revizyon iste',
     draftInfo: 'Taslak — müşteri henüz görmüyor; müşteri dosyayı bu hâliyle görecek.',
     pin: 'İğne',
     rect: 'Dikdörtgen',
@@ -197,9 +200,14 @@ export default {
     sendTitle: 'Kontrol ettiyseniz müşteriye gönderin',
     sendHint: 'Müşteri dosyaları bu ekrandaki hâliyle görecek. Gönderilen sürüm değiştirilemez; müşteri karar vermeden yalnızca gerekçeyle geri çekilebilir.',
     decideTitle: 'Kararınız',
-    decideHint: 'Çizim uygunsa onaylayın. Değişiklik gerekiyorsa revizyon isteyin: çizim üzerinde işaretleyip notunuzu yazarsınız. Onay kesindir.',
+    decideHint: 'Çizim uygunsa onaylayın. Değişiklik gerekiyorsa revizyon isteyin ve değişiklikleri numaralı maddeler hâlinde yazın. Onay kesindir.',
     revisionTitle: 'Revizyon talebi',
     revisionNote: 'Revizyon notu',
+    // Numaralı maddeler (karar 162)
+    revisionIntro: 'Her değişikliği ayrı bir maddeye yazın; maddeler numaralanır.',
+    revisionItem: 'Madde {n}',
+    addItem: '+ Madde ekle',
+    removeItem: 'Madde {n}: çıkar',
     versions: 'Sürümler',
     attachments: 'Teknik ekler (ekranda açılmaz, indirilebilir)',
   },
@@ -297,6 +305,10 @@ export default {
     emptyNote: 'Not boş olamaz.',
     noteRateLimit: 'Kısa sürede çok fazla not gönderdiniz. Lütfen birkaç dakika sonra yeniden deneyin.',
     noteOrderLimit: 'Bu siparişte not sayısı üst sınıra ulaştı; yeni not eklenemiyor.',
+    // Revizyon notu (numaralı maddeler — karar 162)
+    revisionEmpty: 'Revizyon notu zorunludur: en az bir madde yazın.',
+    revisionTooMany: 'En fazla 20 madde yazılabilir.',
+    revisionTooLong: 'Revizyon notu çok uzun (madde başına en fazla 500 karakter).',
     lineDescription: '{n}. satırda açıklama eksik.',
     lineDims: '{n}. satırda ölçü 1–10000 mm arasında olmalı.',
     lineQty: '{n}. satırda adet geçersiz.',

@@ -88,3 +88,34 @@ export function notesFor(role, notes) {
   const all = can(role, 'NOTE_INTERNAL_VIEW');
   return notes.filter((n) => all || !n.internal).map((n) => noteView(role, n));
 }
+
+/**
+ * Revizyon notunun (DrawingRevision: müşterinin "Nota de revizie" talebi, karar 162–163) çeviri alanları, görenin rolüne
+ * göre — sipariş notunun kuralıyla AYNI (noteView; revizyon notu hiçbir zaman iç not değildir). Talebi müşteri yazar →
+ * çeviri Türkçe'dir: iç ekip (yönetici, satış, çizim) çeviriyi, durumu ve güvenli hata kodunu alır; müşteri kendi notunu
+ * yalnızca özgün dilinde görür (Türkçesi gitmez); denetimci çeviri alanı almaz. Notun kendisi (comment) bu işlevle
+ * değişmez. Girdi değiştirilmez.
+ * @template {{ translation?: string | null, translationLang?: string | null, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | null }} R
+ * @param {string | null | undefined} role
+ * @param {R} r
+ * @returns {R}
+ */
+export function revisionView(role, r) {
+  const v = noteView(role, { ...r, internal: false });
+  return {
+    ...r,
+    translation: v.translation ?? null, translationLang: v.translationLang ?? null, translationStatus: v.translationStatus ?? null,
+    translationError: v.translationError ?? null, translationAt: v.translationAt ?? null,
+  };
+}
+
+/**
+ * Çizim sürümlerinin revizyon taleplerine revisionView uygular (sipariş verisi: lib/orders.ts → sanitizeOrder).
+ * @template {{ revisions?: object[] }} D
+ * @param {string | null | undefined} role
+ * @param {D[]} drawings
+ * @returns {D[]}
+ */
+export function drawingRevisionsFor(role, drawings) {
+  return drawings.map((d) => (Array.isArray(d.revisions) ? { ...d, revisions: d.revisions.map((r) => revisionView(role, r)) } : d));
+}

@@ -42,8 +42,9 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
 }) {
   const [state, action, pending] = useActionState<NewOrderState, FormData>(createOrderAction, {});
   const v = state.values;
-  // Siparişte tek cam tipi; eski taslakta birden çok cam varsa ilki gelir
-  const [glass, setGlass] = useState<{ id: string; qty: string }>(() => v?.glasses[0] ?? draft?.lines[0] ?? { id: '', qty: '1' });
+  // Siparişte tek cam tipi; eski taslakta birden çok cam varsa ilki gelir. Cam ADEDİ formda yok (karar 160): adetleri,
+  // ölçüleri ve fiyatı satış ekibi müşterinin dosyalarına göre teklif tablosunda girer.
+  const [glassId, setGlassId] = useState<string>(() => v?.glasses[0]?.id ?? draft?.lines[0]?.id ?? '');
   const [picked, setPicked] = useState<File[]>([]);
   const [over, setOver] = useState(false);
   const [removed, setRemoved] = useState<string[]>(v?.removed ?? []);
@@ -52,7 +53,7 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
   const input = useRef<HTMLInputElement>(null);
   const kept = (draft?.files ?? []).filter((f) => !removed.includes(f.id));
   const hasFile = picked.length + kept.length > 0;
-  const hasGlass = !!glass.id;
+  const hasGlass = !!glassId;
   const ready = hasFile && hasGlass && !!title.trim();
   const groups = [...new Set(catalog.map((c) => c.group))];
 
@@ -64,10 +65,10 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
     const f = input.current?.form;
     if (!f) return;
     const sel = f.querySelector<HTMLSelectElement>('select[name=glassId]');
-    if (sel && sel.value !== glass.id) sel.value = glass.id;
+    if (sel && sel.value !== glassId) sel.value = glassId;
     f.querySelectorAll<HTMLInputElement>('input[name=removeFile]').forEach((c) => { c.checked = removed.includes(c.value); });
     if (picked.length && input.current && input.current.files?.length !== picked.length) applyFiles(input.current, picked);
-  }, [state, glass.id, removed, picked]);
+  }, [state, glassId, removed, picked]);
 
   return (
     <form action={action}>
@@ -157,7 +158,7 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
         <div className="glass-pick">
           <div>
             <label htmlFor="glass">{m.glass.glass}</label>
-            <select id="glass" name="glassId" value={glass.id} required onChange={(e) => setGlass({ ...glass, id: e.target.value })}>
+            <select id="glass" name="glassId" value={glassId} required onChange={(e) => setGlassId(e.target.value)}>
               <option value="">{m.glass.pick}</option>
               {groups.map((g) => (
                 <optgroup key={g} label={g}>
@@ -165,10 +166,6 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
                 </optgroup>
               ))}
             </select>
-          </div>
-          <div>
-            <label htmlFor="glass-qty">{m.glass.qty}</label>
-            <input id="glass-qty" name="glassQty" type="number" min={1} max={9999} step={1} value={glass.qty} onChange={(e) => setGlass({ ...glass, qty: e.target.value })} />
           </div>
         </div>
         <p className="hint">{m.glass.oneOnly}</p>

@@ -8,7 +8,9 @@ import { priceOverrides } from './tables.js';
 // COMPENSATION_PRICE: telafi camı açıldı — HER telafide bir kayıt: karar (bedelsiz / aynı fiyat / farklı fiyat), önceki →
 // uygulanan müşteri fiyatı, kaynak siparişin adedi (karar 157) · COMPENSATION_PENDING: satışın "farklı fiyat" kararı
 // yöneticinin onayını bekliyor (server/orders/compensation.js — Aşama 9). Bir telafi için ikisi birden açılmaz.
-export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING'];
+// STOCK_SHORTAGE: müşterinin profil siparişinde stok yetmedi — sipariş engellenmez, yönetici karar verir (karar 165;
+// server/profile/stock.js → recordStockShortage).
+export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE'];
 
 /**
  * Satışçı teklifi yöneticiye gönderirken çağrılır (iş akışı işleminin içinde, aynı tx).

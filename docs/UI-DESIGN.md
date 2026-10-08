@@ -157,7 +157,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Files: `label.dropzone` (the real `<input type="file" class="dropzone-input">` is visually hidden but is
   still the field the form submits) with `.dropzone-icon`; chosen files in `.upload-list` as `.file-row`s
   (ext chip, name, size, remove). Never build a second upload path — only the selection UI is custom.
-- Glass: exactly one glass — `.glass-pick` (select + quantity with visible labels). No "add glass" control
+- Glass: exactly one glass — `.glass-pick` (one select with a visible label; no quantity field — decision 160). No "add glass" control
   on the customer form (the Sales/Admin offer editor keeps its own "+ Cam ekle").
 - Bottom bar on both forms: `.card.submit-bar.sticky-submit` with `ul.submit-check` (what is still missing;
   `li.done` when ready) on the left and the two buttons on the right.
@@ -387,6 +387,25 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   failed = danger, no e-mail = warn; error / recipient in the `title`) and, below it, a small `.btn-link` "Tekrar
   gönder" (`ConfirmButton`; the confirm text says no FGO document is issued). The FGO check time moved under the
   payment badge as a `.cell-note` so the table still fits a 1440 px screen. No separate e-mail page.
+
+## Customer panel (3.52.0, decisions 160–166)
+
+- Customer home (`/siparisler`): `form.card#tekliflerim` (GET) right under the page head, before the `.stats` row —
+  title, intro, `.offer-report-range` (two `type=date` inputs + "Göster" `.btn` + "PDF indir" `.btn-primary` with
+  `formAction="/teklifler/pdf"`), errors as `.alert-error`, then `table.offer-report-table` (order link + `v2` badge,
+  date, m², amount) with per-currency totals in `tfoot`. No new control types.
+- Order page (customer): a drawing waiting for the customer shows `.alert.alert-error#cizim-onay` above the stepper
+  (bold title + text + one `.btn-primary` "Aç ve incele"); the customer card's first button is the same link
+  (`.btn-primary`), approve stays `.btn-success`, revision becomes a plain `.btn`. In the drawings card the pending
+  version's "Aç ve incele" is a `.btn-primary` (other versions keep the small link).
+- Revision note: in the viewer's revision card `ol.revision-items > li.revision-item` (`.badge-info` number +
+  `textarea[name=item]` + "✕" `.btn-link.danger`), "+ Madde ekle" `.btn-link`. Shown notes: `RevisionNote`
+  (`components/RevisionNote.tsx`) renders `ol.revision-list` (legacy free text → `.pre`) and, for internal roles, the
+  stored translation in the same `.note-translation` / `.note-label` block as order notes. The marks panel
+  (`.viewer-side`) renders only when there are marks (or in an editable viewer — currently unused).
+- Profile order: customer stock warning `.alert.alert-warn#stok` (product names only); Admin `.card#stok` with
+  `table.profile-table.stock-table` (needed / current / missing — missing in `.text-danger`); "Stok yetersiz" is a
+  danger `Badge` in the page head and in the internal order list.
 
 ## Left for the page-level phase
 

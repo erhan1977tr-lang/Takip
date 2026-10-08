@@ -61,7 +61,8 @@ test('müşteri: taslak kaydeder, listeden devam eder, ek bilgiyle gönderir', a
   await cust.fill('#note', 'Kenarlar rodajlı olsun');
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
-  await expect(cust.getByText('10 MM TEMPER CAM — BRONZ × 1')).toBeVisible();
+  // İstenen cam: adet yok (müşteri formunda cam adedi alanı yok — karar 160)
+  await expect(cust.locator('.plain-list li', { hasText: '10 MM TEMPER CAM — BRONZ' })).toHaveText('10 MM TEMPER CAM — BRONZ');
   await expect(cust.getByText('Kenarlar rodajlı olsun')).toBeVisible();
   await expect(cust.getByText('olcu.pdf')).toBeVisible();
 

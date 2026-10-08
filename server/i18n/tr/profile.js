@@ -125,6 +125,18 @@ export default {
     stockShort: '{n} eksik',
     shortageTitle: 'Stok yetmiyor',
     shortageText: 'Stok yetmeyen ürünler: {list}. Sipariş yine de depoya gönderilebilir.',
+    // Stok yetersizliği (karar 165): sipariş engellenmez; işaret = açık "Önemli kararlar" kaydı; sayılar yalnızca yöneticide
+    stock: {
+      mark: 'Stok yetersiz',
+      title: 'Stok durumu',
+      intro: 'Bu siparişte stok yetmeyen ürünler var (sipariş engellenmedi). Mevcut ve beklenen stoğu değerlendirip kararınızı verin.',
+      colNeeded: 'Gereken',
+      colStock: 'Mevcut',
+      colMissing: 'Eksik',
+      decide: 'Kararınızı verince “Önemli kararlar”da kapatın →',
+      customerTitle: 'Stok uyarısı:',
+      customerText: 'siparişinizdeki bazı ürünlerin stoğu şu an yetersiz ({list}). Siparişiniz alındı; yönetici mevcut ve beklenen stokları değerlendirip size bilgi verecek.',
+    },
     pricing: {
       title: 'Fiyatlandırma',
       source: 'Fiyatlar dolu geldi: {source}. Değiştirebilirsiniz; müşteri teklifi siz gönderince görür.',

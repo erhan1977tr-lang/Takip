@@ -123,6 +123,18 @@ export default {
     stockShort: 'lipsă {n}',
     shortageTitle: 'Stoc insuficient',
     shortageText: 'Produse cu stoc insuficient: {list}. Comanda poate fi totuși trimisă la depozit.',
+    // Stoc insuficient (decizia 165): comanda nu este blocată; marcajul = înregistrarea deschisă din „Decizii importante”
+    stock: {
+      mark: 'Stoc insuficient',
+      title: 'Situația stocului',
+      intro: 'Această comandă conține produse cu stoc insuficient (comanda nu este blocată). Evaluați stocul existent și cel așteptat și luați o decizie.',
+      colNeeded: 'Necesar',
+      colStock: 'Disponibil',
+      colMissing: 'Lipsă',
+      decide: 'După ce decideți, închideți înregistrarea în „Decizii importante” →',
+      customerTitle: 'Atenție la stoc:',
+      customerText: 'stocul unor produse din comanda dvs. este momentan insuficient ({list}). Comanda a fost primită; administratorul va evalua stocul existent și cel așteptat și vă va informa.',
+    },
     pricing: {
       title: 'Stabilire preț',
       source: 'Prețurile au fost completate: {source}. Le puteți modifica; clientul vede oferta doar după ce o trimiteți.',

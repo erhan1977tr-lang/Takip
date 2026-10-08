@@ -118,7 +118,10 @@ export default {
   // Cardul de acțiuni al clientului
   customer: {
     noApproveRight: 'Desenul așteaptă aprobarea firmei dvs. Contul dvs. nu are drept de aprobare: puteți deschide și verifica desenul; aprobarea sau cererea de revizie o face un utilizator din firma dvs. care are drept de aprobare.',
-    reviewHint: 'Deschideți desenul cu „Deschide și verifică”; dacă este în regulă alegeți „Aprobă acest desen”, altfel folosiți „Cere revizie” pentru a marca pe desen și a scrie nota.',
+    reviewHint: 'Mai întâi deschideți și verificați desenul cu „Deschide și verifică”; dacă este în regulă alegeți „Aprobă acest desen”, iar dacă trebuie modificat folosiți „Cere revizie” și scrieți modificările ca puncte numerotate.',
+    // Desen nou în așteptarea aprobării clientului: informarea roșie din partea de sus a comenzii (decizia 162)
+    newDrawingTitle: 'Un desen nou așteaptă aprobarea dvs. (v{v}).',
+    newDrawingText: 'Vă rugăm să deschideți și să verificați desenul: dacă este în regulă aprobați-l, dacă trebuie modificat cereți o revizie.',
     approveConfirm: 'Desenul v{v} va fi aprobat. Aprobarea este definitivă și nu poate fi anulată. Aprobați?',
     revisionLabel: 'Cerere de revizie',
     revisionPlaceholder: 'Descrieți ce trebuie modificat în desen',
@@ -172,7 +175,7 @@ export default {
   },
   viewer: {
     title: 'Desen tehnic',
-    titleRevision: 'Cere revizie — marcați pe desen',
+    titleRevision: 'Cere revizie',
     draftInfo: 'Ciornă — clientul nu o vede încă; clientul va vedea fișierul exact așa.',
     pin: 'Ac',
     rect: 'Dreptunghi',
@@ -197,9 +200,14 @@ export default {
     sendTitle: 'Dacă ați verificat, trimiteți clientului',
     sendHint: 'Clientul va vedea fișierele exact ca în acest ecran. Versiunea trimisă nu mai poate fi modificată; poate fi doar retrasă, cu motiv, înainte de decizia clientului.',
     decideTitle: 'Decizia dvs.',
-    decideHint: 'Dacă desenul este în regulă, aprobați-l. Dacă trebuie modificat, cereți o revizie: marcați pe desen și scrieți nota. Aprobarea este definitivă.',
+    decideHint: 'Dacă desenul este în regulă, aprobați-l. Dacă trebuie modificat, cereți o revizie și scrieți modificările ca puncte numerotate. Aprobarea este definitivă.',
     revisionTitle: 'Cerere de revizie',
     revisionNote: 'Nota de revizie',
+    // Puncte numerotate (decizia 162)
+    revisionIntro: 'Scrieți fiecare modificare într-un punct separat; punctele sunt numerotate.',
+    revisionItem: 'Punctul {n}',
+    addItem: '+ Adaugă punct',
+    removeItem: 'Punctul {n}: elimină',
     versions: 'Versiuni',
     attachments: 'Anexe tehnice (nu se afișează pe ecran, pot fi descărcate)',
   },
@@ -297,6 +305,10 @@ export default {
     emptyNote: 'Nota nu poate fi goală.',
     noteRateLimit: 'Ați trimis prea multe note într-un timp scurt. Vă rugăm să încercați din nou peste câteva minute.',
     noteOrderLimit: 'Această comandă a atins numărul maxim de note; nu se mai pot adăuga note noi.',
+    // Nota de revizie (puncte numerotate — decizia 162)
+    revisionEmpty: 'Nota de revizie este obligatorie: scrieți cel puțin un punct.',
+    revisionTooMany: 'Se pot scrie cel mult 20 de puncte.',
+    revisionTooLong: 'Nota de revizie este prea lungă (cel mult 500 de caractere pe punct).',
     lineDescription: 'Rândul {n}: lipsește descrierea.',
     lineDims: 'Rândul {n}: dimensiunile trebuie să fie între 1 și 10000 mm.',
     lineQty: 'Rândul {n}: cantitate nevalidă.',

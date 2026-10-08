@@ -260,7 +260,7 @@ test('TAKİP\'in ürettiği üç PDF de resmî logoyu taşır: teklif, Comanda D
 test('her PDF üretici ortak başlığı kullanır (yeni üretici de kullanmak zorunda); logo başka yerde kopyalanmaz', () => {
   const dir = path.join(ROOT, 'server', 'pdf');
   const generators = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).filter((f) => /new PdfDoc\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
-  assert.deepEqual(generators.sort(), ['depot-form.js', 'offer.js', 'transport-list.js']);
+  assert.deepEqual(generators.sort(), ['depot-form.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
   for (const f of generators) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.match(text, /from '\.\/brand\.js'/, f);

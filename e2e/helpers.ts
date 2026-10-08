@@ -161,15 +161,19 @@ export async function newOrder(page: Page, title: string, fileName: string): Pro
   await page.fill('#title', title);
   await page.setInputFiles('#files', sampleFile(fileName, `test dosyası ${title}`));
   await page.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await page.getByLabel('Adet', { exact: true }).fill('3');
+  // Müşteri formunda cam adedi yok (karar 160): adet teklif tablosunda girilir (fillOffer)
   await page.getByRole('button', { name: 'Siparişi gönder' }).click();
   await expect(page).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
   await expect(page.getByText('Siparişiniz alındı.')).toBeVisible();
   return /\/siparisler\/([a-z0-9]+)/.exec(page.url())![1];
 }
 
-/** Teklif tablosunun ilk satırını doldurur (1000 × 2000 mm, adet siparişten gelir). */
+/**
+ * Teklif tablosunun ilk satırını doldurur: 1000 × 2000 mm, 3 adet. Müşteri formunda cam adedi yok (karar 160): tablo
+ * siparişten 1 adetle açılır, adedi satış girer.
+ */
 export async function fillOffer(page: Page, price = '41,5') {
+  await page.getByLabel('Adet', { exact: true }).first().fill('3');
   await page.getByLabel('En', { exact: true }).first().fill('1000');
   await page.getByLabel('Boy', { exact: true }).first().fill('2000');
   await page.getByLabel('Birim fiyat').first().fill(price);

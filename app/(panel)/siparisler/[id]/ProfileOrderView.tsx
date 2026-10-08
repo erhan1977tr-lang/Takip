@@ -15,7 +15,7 @@ import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { unitLabel } from '@/server/profile/catalog.js';
-import { stockLevels } from '@/server/profile/stock.js';
+import { STOCK_SHORTAGE_ALERT, stockLevels } from '@/server/profile/stock.js';
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
@@ -64,9 +64,19 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const ok = okText(t, m, sp.ok, sp.at);
   const summary = profileCustomerText(t, { status: order.status, stage });
 
-  // Stok (yalnızca yönetici): kalemlerin stoğu ve eksikler
+  // Stok (sayılar yalnızca yönetici): kalemlerin stoğu ve eksikler
   const levels = admin ? await stockLevels(db, order.profileItems.map((i) => i.productId).filter((x): x is string => !!x)) : new Map<string, number>();
-  const short = admin && !p?.stockDeducted ? order.profileItems.filter((i) => i.productId && (levels.get(i.productId) ?? 0) < i.qty) : [];
+  // "Stok yetersiz" işareti (karar 165) = sipariş gönderilirken stok yetmediği için açılan ve henüz kapatılmamış "Önemli
+  // kararlar" kaydı. Müşteri yalnızca uyarıyı ve ürünleri görür (stok sayısı müşteriye gitmez); yönetici gereken / mevcut /
+  // eksik tablosunu görür ve kararı verince kaydı "Önemli kararlar"da kapatır.
+  const stockAlert = (admin || isCustomer) && !cancelled
+    ? await db.adminAlert.findFirst({ where: { orderId: order.id, type: STOCK_SHORTAGE_ALERT, resolvedAt: null }, orderBy: { createdAt: 'desc' }, select: { id: true, details: true, createdAt: true } })
+    : null;
+  const alertLines = (((stockAlert?.details ?? {}) as { stock?: { productId?: string; code?: string; nameTr?: string; nameRo?: string }[] }).stock ?? []);
+  const alertProducts = new Set(alertLines.map((l) => l.productId).filter(Boolean));
+  const short = admin && !p?.stockDeducted
+    ? order.profileItems.filter((i) => i.productId && ((levels.get(i.productId) ?? 0) < i.qty || alertProducts.has(i.productId)))
+    : [];
   const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId) : null;
   const email = order.outbox.find((x) => x.type === 'WAREHOUSE_EMAIL');
   // FGO (Aşama 6b): bu siparişin son proforma/fatura işi
@@ -90,12 +100,20 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
             {cancelled ? <Badge tone="muted">{t('status.order.IPTAL')}</Badge>
               : isCustomer ? <Badge tone={summary.tone}>{summary.label}</Badge>
                 : <Badge tone={PROFILE_STAGE_TONE[stage as keyof typeof PROFILE_STAGE_TONE]}>{profileStageText(t, stage)}</Badge>}
+            {stockAlert && <Badge tone="danger">{t('profile.page.stock.mark')}</Badge>}
             {!isCustomer && <span className="muted small">· {customerLabel(user, order.customer.name)}</span>}
           </div>
         </div>
       </div>
 
       {ok && <div className="alert alert-ok">{ok}</div>}
+      {/* Müşteri: stok uyarısı (karar 165) — sipariş engellenmedi; stok sayısı gösterilmez, yalnızca ürünler */}
+      {isCustomer && stockAlert && (
+        <div className="alert alert-warn" id="stok" data-stock-alert>
+          <b>{t('profile.page.stock.customerTitle')}</b>{' '}
+          {t('profile.page.stock.customerText', { list: alertLines.map((l) => `${l.code ?? ''} ${(locale === 'tr' ? l.nameTr : l.nameRo) ?? ''}`.trim()).join(', ') })}
+        </div>
+      )}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
 
       <div className="card">
@@ -151,12 +169,6 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           <h2 style={{ marginBottom: 4 }}>{t('profile.page.actions.title')}</h2>
           {stage === 'TEKLIF_GONDERILDI' && <p className="muted small">{t('profile.page.approve.notApproved')}</p>}
           {stage === 'DEPODA' && <p className="muted small">{t('profile.page.actions.waitDepot')}</p>}
-          {short.length > 0 && BEFORE_WAREHOUSE.includes(stage) && (
-            <div className="alert alert-warn">
-              <b>{t('profile.page.shortageTitle')}</b>{' '}
-              {t('profile.page.shortageText', { list: short.map((i) => `${i.code} (${levels.get(i.productId!) ?? 0}/${i.qty})`).join(', ') })}
-            </div>
-          )}
           <div className="stack">
             {can('update_profile_offer') && sp.teklif !== 'guncelle' && (
               <div><Link href={`/siparisler/${order.id}?teklif=guncelle#teklif`} className="btn">{t('profile.page.pricing.update')}</Link></div>
@@ -272,6 +284,41 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
         </div>
       )}
 
+      {/* Yönetici: stok durumu (karar 165) — gereken / mevcut (şu anki stok) / eksik; sipariş engellenmedi, karar yöneticide */}
+      {admin && !cancelled && short.length > 0 && BEFORE_WAREHOUSE.includes(stage) && (
+        <div className="card" id="stok">
+          <h2>{t('profile.page.stock.title')} {stockAlert && <Badge tone="danger">{t('profile.page.stock.mark')}</Badge>}</h2>
+          <p className="muted small">{t('profile.page.stock.intro')}</p>
+          <div className="table-wrap">
+            <table className="profile-table stock-table">
+              <thead>
+                <tr>
+                  <th>{t('profile.page.colProduct')}</th><th>{t('profile.page.colUnit')}</th>
+                  <th className="num">{t('profile.page.stock.colNeeded')}</th><th className="num">{t('profile.page.stock.colStock')}</th>
+                  <th className="num">{t('profile.page.stock.colMissing')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {short.map((i) => {
+                  const stock = levels.get(i.productId!) ?? 0;
+                  const missing = Math.max(0, i.qty - stock);
+                  return (
+                    <tr key={i.id} data-stock-row={i.code}>
+                      <td><b>{locale === 'tr' ? i.nameTr : i.nameRo}</b><div className="muted small mono">{i.code}</div></td>
+                      <td className="muted">{unitLabel(i.unitCode, locale)}</td>
+                      <td className="num">{i.qty}</td>
+                      <td className="num">{stock}</td>
+                      <td className={`num${missing > 0 ? ' text-danger' : ''}`}><b>{missing}</b></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {stockAlert && <p className="small" style={{ marginBottom: 0 }}><Link href="/admin/kararlar">{t('profile.page.stock.decide')}</Link></p>}
+        </div>
+      )}
+
       <OrderInfo
         title={t('order.info.title')}
         rows={[
@@ -285,8 +332,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           !!fxText && { label: t('profile.page.fgo.fx'), value: fxText },
           !isCustomer && p?.proformaAmount != null && { label: t('profile.page.fgo.amount'), value: fmtMoney(p.proformaAmount.toString(), 'RON') },
           !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
-          !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
-          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${isCustomer ? fmtDate(p.deliveredAt) : fmtDateTime(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
+          // "Depoya gönderildi" müşteri ekranında yok; "Teslim" (Predare) yalnızca tarih — saat yok (karar 161)
+          !isCustomer && !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
+          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${fmtDate(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
           !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}<FgoDocLink link={p.invoiceLink} prefix=" · " fallback={null}>{t('profile.page.fgo.open')}</FgoDocLink></> },
         ]}
       />

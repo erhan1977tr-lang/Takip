@@ -65,7 +65,9 @@ export function profileActions({ role, stage, status, canApprove = false, paid =
     if (PICKUP_EDITABLE.includes(stage)) a.push('update_pickup');
   }
   if (can(role, 'ORDER_CANCEL')) a.push('cancel');
-  if (can(role, 'FILE_UPLOAD')) a.push('add_file');
+  // Profil siparişine müşteri dosya yüklemez (karar 161 — ürün ve adet formdadır); iç ekibin iç dosyası değişmedi.
+  // Aynı kural cam kuralları üzerinden de uygulanır (server/orders/rules.js → availableActions, orderType).
+  if (can(role, 'FILE_UPLOAD') && !can(role, 'DRAWING_APPROVE')) a.push('add_file');
   return a;
 }
 

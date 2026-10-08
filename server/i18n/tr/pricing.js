@@ -128,7 +128,7 @@ export default {
     title: 'Bekleyen önemli kararlar',
     intro: 'Bu listedeki her satırda bir insan kararı bekleniyor. Kararınızı verip “Gördüm” deyin.',
     empty: 'Şu an bekleyen bir karar yok. Satışçı liste fiyatını değiştirdiğinde burada listelenir.',
-    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor' },
+    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor', STOCK_SHORTAGE: 'Profil siparişi: stok yetersiz (sipariş engellenmedi)' },
     error: 'Hata: {error}',
     colOrder: 'Sipariş',
     colWhat: 'Ne oldu',
@@ -152,6 +152,9 @@ export default {
     compSourcePending: 'Kaynak adedi onayla birlikte düşer',
     compTier: { CUSTOMER: 'müşteri fiyatı', SALES: 'satış fiyatı' },
     compOpen: 'Siparişte karar ver',
+    // Stok yetersizliği (karar 165): sipariş anındaki gereken / mevcut / eksik
+    stockLine: '{code} {name}: gereken {qty} {unit} · mevcut {stock} · eksik {missing}',
+    stockOpen: 'Siparişi aç',
     kindGlass: 'Cam',
     resolve: 'Gördüm',
     resolved: 'Kapatıldı.',

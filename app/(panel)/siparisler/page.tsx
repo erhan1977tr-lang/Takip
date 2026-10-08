@@ -2,19 +2,21 @@ import Link from 'next/link';
 import type { OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission, type CurrentUser } from '@/lib/auth/session';
-import { getT, type Dict } from '@/lib/i18n';
+import { getT, type Dict, type MsgKey } from '@/lib/i18n';
 import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
 import { customerLabel, drawingScope, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { fmtDate, fmtDateTime, fmtMonth, isoDay } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtMoney, fmtMonth, fmtNum, isoDay } from '@/lib/format';
 import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
+import { STOCK_SHORTAGE_ALERT } from '@/server/profile/stock.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
 import { approvedDrawingList, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
 import { deleteDraftAction } from './yeni/actions';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { restoreOrderAction } from './[id]/compensation-actions';
+import { canSeeOfferReport, loadOfferReport } from '@/lib/customer-offers';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -122,6 +124,9 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
         </div>
       </div>
 
+      {/* Tekliflerim (karar 164): ana sayfanın üstünde tarih aralığı + liste + PDF dökümü — yalnızca kendi firmasının teklifleri */}
+      {canSeeOfferReport(user) && <OfferReport user={user} sp={sp} />}
+
       {!archive && (
         <div className="stats">
           <div className="stat" style={{ borderLeftColor: 'var(--warn-accent)' }}><div className="k">{t('status.customer.awaitingApproval.label')}</div><div className="v">{awaiting}<small>{unit('drawing', awaiting)}</small></div></div>
@@ -216,11 +221,95 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   );
 }
 
+/** Ekrandaki listede gösterilen en çok teklif (PDF hepsini içerir) */
+const REPORT_LIST_MAX = 50;
+
+/**
+ * Müşteri ana sayfası → "Tekliflerim" (karar 164). Form GET'tir: "Göster" bu sayfayı tarih aralığıyla yeniler, "PDF indir"
+ * aynı alanlarla /teklifler/pdf adresinden dökümü indirir (sayfadan çıkmadan). Veri lib/customer-offers.ts'ten: firma
+ * kapsamı ve müşteri fiyatı sunucuda; liste ve PDF aynı hesaptan.
+ */
+async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
+  const { t, locale } = await getT();
+  const res = await loadOfferReport(user, { bas: sp.bas, bit: sp.bit }, t, locale);
+  const rows = res.ok && !res.tooMany ? res.report.sections : [];
+  return (
+    <form className="card offer-report" id="tekliflerim" method="get" action="/siparisler">
+      <h2>{t('offers.report.title')}</h2>
+      <p className="muted small">{t('offers.report.intro')}</p>
+      {sp.view === 'archive' && <input type="hidden" name="view" value="archive" />}
+      {sp.q && <input type="hidden" name="q" value={sp.q} />}
+      <div className="offer-report-range">
+        <div>
+          <label htmlFor="rapor-bas">{t('offers.report.from')}</label>
+          <input id="rapor-bas" name="bas" type="date" required defaultValue={res.from} />
+        </div>
+        <div>
+          <label htmlFor="rapor-bit">{t('offers.report.to')}</label>
+          <input id="rapor-bit" name="bit" type="date" required defaultValue={res.to} />
+        </div>
+        <div className="row">
+          <button type="submit" className="btn">{t('offers.report.show')}</button>
+          <button type="submit" className="btn btn-primary" formAction="/teklifler/pdf">{t('offers.report.pdf')}</button>
+        </div>
+      </div>
+      {!res.ok && <div className="alert alert-error" role="alert">{t(`offers.report.errors.${res.code}` as MsgKey)}</div>}
+      {res.ok && res.tooMany && <div className="alert alert-warn">{t('offers.report.errors.TOO_MANY')}</div>}
+      {res.ok && !res.tooMany && rows.length === 0 && <p className="muted" data-report-empty>{t('offers.report.empty')}</p>}
+      {rows.length > 0 && (
+        <div className="table-wrap">
+          <table className="offer-report-table">
+            <thead>
+              <tr>
+                <th>{t('offers.report.cols.order')}</th><th>{t('offers.report.cols.date')}</th>
+                <th className="num">{t('offers.report.cols.m2')}</th><th className="num">{t('offers.report.cols.amount')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, REPORT_LIST_MAX).map((s) => (
+                <tr key={s.orderId} data-report-order={s.orderNo}>
+                  <td>
+                    <Link className="order-no" href={`/siparisler/${s.orderId}#teklif`}>{s.orderNo}</Link>
+                    {s.version > 1 && <> <span className="badge badge-info">v{s.version}</span></>}
+                    {s.title && <div className="muted small">{s.title}</div>}
+                  </td>
+                  <td>{fmtDate(`${s.day}T12:00:00Z`)}</td>
+                  <td className="num">{fmtNum(s.data.metraj)}</td>
+                  <td className="num"><b>{fmtMoney(s.data.total, s.currency)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+            {res.ok && (
+              <tfoot>
+                {res.report.totals.map((x) => (
+                  <tr key={x.currency} data-report-total={x.currency}>
+                    <td>{t('offers.report.total')} · {t('offers.report.count', { n: x.count })}</td>
+                    <td />
+                    <td className="num">{fmtNum(x.m2)}</td>
+                    <td className="num">{fmtMoney(x.amount, x.currency)}</td>
+                  </tr>
+                ))}
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+      {rows.length > REPORT_LIST_MAX && <p className="muted small">{t('offers.report.more', { n: REPORT_LIST_MAX })}</p>}
+      {rows.length > 0 && <p className="muted small">{t('common.pricesExclVat')}</p>}
+    </form>
+  );
+}
+
 // ---------------- İç ekip ----------------
 async function InternalTable({ user, rows, empty, group = true }: { user: CurrentUser; rows: Row[]; empty: string; group?: boolean }) {
   if (rows.length === 0) return <div className="empty">{empty}</div>;
   const { t, m, intl } = await getT();
   const { count } = counter(m, intl);
+  // "Stok yetersiz" işareti (karar 165): açık STOCK_SHORTAGE kaydı olan profil siparişi — yalnızca kararları gören rol
+  const profileIds = rows.filter((o) => o.profile).map((o) => o.id);
+  const stockShort = new Set(userCan(user, 'ALERT_VIEW') && profileIds.length
+    ? (await db.adminAlert.findMany({ where: { type: STOCK_SHORTAGE_ALERT, resolvedAt: null, orderId: { in: profileIds } }, select: { orderId: true } })).map((a) => a.orderId)
+    : []);
   const groups = new Map<string, Row[]>();
   for (const o of rows) {
     const k = group ? t('orders.internal.shipGroup', { date: fmtDate(o.estimatedShipDate) }) : '';
@@ -240,7 +329,11 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
             <GroupRows key={label || 'all'} label={label ? `${label} (${list.length})` : ''} cols={9}>
               {list.map((o) => (
                 <tr key={o.id}>
-                  <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div></td>
+                  <td>
+                    <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
+                    {stockShort.has(o.id) && <> <Badge tone="danger">{t('profile.page.stock.mark')}</Badge></>}
+                    <div className="muted small">{o.title}</div>
+                  </td>
                   <td className="mono">{customerLabel(user, o.customer.name)}</td>
                   {o.profile ? (
                     <>

@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.52.0 — 08.10.2026
+
+Fonksiyonel paket 2 — müşteri paneli ve teklif yönetimi (kararlar 160–166). Veritabanı şeması: revizyon talebine çeviri
+alanları eklendi (`DrawingRevision.translation*`; migration CI'da üretilir).
+
+- **Cam siparişi: "Cam adedi" alanı kaldırıldı.** Müşteri yalnızca cam tipini seçer (tek cam kuralı aynen); adetleri,
+  ölçüleri ve fiyatı satış ekibi dosyalara göre teklif tablosunda girer (tablo 1 adetle açılır). Sunucu formdan adet almaz.
+  Eski siparişlerde girilmiş adet görünmeye devam eder. Yönetici / satış teklif tablosu değişmedi.
+- **Profil siparişi (müşteri ekranı):** dosya yükleme alanı yok (sunucu da reddeder; iç ekip iç dosya ekleyebilir);
+  "Depoya gönderildi" müşteride görünmez; "Teslim" yalnızca tarih (saat yok). Onay ve depo akışı değişmedi.
+- **Yeni çizim:** bildirim zili siparişin "yeni çizim onayınızı bekliyor" kırmızı bilgilendirmesine götürür; sipariş
+  sayfasında belirgin kırmızı uyarı; ana işlem **"Aç ve incele" / "Deschide și verifică"**. Boş "İşaretler / Marcaje"
+  bölümü kaldırıldı; müşterinin revizyon ekranında çizim üzerine işaretleme yok.
+- **Revizyon notu numaralı maddeler** ("Revizyon notu / Nota de revizie" altında madde başına bir alan, "+ Madde ekle").
+  Not **bir kez** Türkçeye çevrilip saklanır: iç ekip özgün not + çeviriyi görür, müşteri ve denetimci yalnızca özgün notu;
+  sayfa yenilemesi çeviri yapmaz. Eski işaretli talepler iç ekipte işaretleriyle görünür.
+- **Tekliflerim (müşteri ana sayfası):** başlangıç / bitiş tarihi; firmanın cam teklifleri (her siparişin son gönderilen
+  teklifi), liste ve **PDF dökümü** — her teklif ayrı ve ayrıntılı (cam satırları, adet, m², müşteri fiyatı), sonda toplam m²
+  ve toplam tutar (para birimi başına); GKH logosu; Türkçe / Romence harfler; dosya adı panel dilinde. Yalnızca kendi
+  firmasının teklifleri; fabrika / satış fiyatı hiçbir yerde yok.
+- **Stok yetersizliği uyarısı (profil):** sipariş engellenmez; yöneticinin "Önemli kararlar"ına tek kayıt (gereken / mevcut /
+  eksik), sipariş "Stok yetersiz" olarak işaretlenir; yönetici "Gördüm" ile kararını kapatır. Müşteri uyarıyı ve ürünleri görür,
+  stok sayılarını görmez.
+- **Müşteri bildirimleri:** bağlantı ilgili bölüme iner (yeni çizim → kırmızı bilgilendirme, teklif → teklif bölümü); iç
+  olaylar müşteriye gitmez (test listesiyle sabit); yenileme yeni bildirim / e-posta / çeviri üretmez.
+
 ## 3.51.1 — 08.10.2026
 
 Fonksiyonel paket 1 son düzeltme (kararlar 158–159). Veritabanı şeması değişmedi.

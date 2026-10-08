@@ -64,7 +64,6 @@ test('müşteri: "….constructor.pdf" olağan yüklemedir; içeriği uyuşmayan
   await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await cust.fill('#title', 'Yükleme adı (ret)');
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await cust.getByLabel('Adet', { exact: true }).fill('1');
   await cust.setInputFiles('#files', [pdf('iyi.pdf'), exe(padded(184, '.__proto__.pdf'))]);
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   await expect(cust.getByText(/dosyasının içeriği uzantısıyla uyuşmuyor/)).toBeVisible({ timeout: 30_000 });
@@ -76,7 +75,6 @@ test('müşteri: "….constructor.pdf" olağan yüklemedir; içeriği uyuşmayan
   await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await cust.fill('#title', 'Yükleme adı');
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await cust.getByLabel('Adet', { exact: true }).fill('1');
   await cust.setInputFiles('#files', [pdf('olagan.pdf'), pdf(attack, 'saldiri adi, gercek pdf')]);
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/, { timeout: 45_000 });

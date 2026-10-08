@@ -206,7 +206,10 @@ export const CUSTOMER_GLASS_TYPES = 1;
  * (cam sonradan yeniden adlandırılsa ya da ağırlığı değişse de sipariş değişmez). Yeni siparişte tam olarak bir cam
  * tipi olur: hiç seçilmediyse NO_GLASS, birden çoksa ONE_GLASS. Eski (çok camlı) siparişler ve satış / yönetici
  * teklif tablosu bu kuraldan etkilenmez — onlar bu işlevi kullanmaz.
- * @param {{ id: string, qty: string | number }[]} lines
+ * Adet (karar 160): müşteri formunda cam adedi YOK — adet verilmezse (boş / null) satıra 0 = "belirtilmedi" yazılır;
+ * adetleri, ölçüleri ve fiyatı satış ekibi teklif tablosunda girer (ilk teklif satırı adet 1 ile açılır — prefillLines).
+ * Adet verilirse (eski taslak / eski çağıran) eskisi gibi 1…MAX_GLASS_QTY tam sayı olmalıdır.
+ * @param {{ id: string, qty?: string | number | null }[]} lines
  * @param {object[]} products  seçilen id'lere ait katalog kayıtları
  * @returns {{ ok: true, items: object[] } | { ok: false, code: 'NO_GLASS' | 'ONE_GLASS' | 'GLASS_GONE' | 'BAD_QTY' }}
  */
@@ -219,8 +222,9 @@ export function glassOrderItems(lines, products) {
   for (const l of used) {
     const p = byId.get(l.id);
     if (!p || !p.isActive) return { ok: false, code: 'GLASS_GONE' };
-    const qty = typeof l.qty === 'number' ? l.qty : Number(clean(l.qty));
-    if (!Number.isInteger(qty) || qty < 1 || qty > MAX_GLASS_QTY) return { ok: false, code: 'BAD_QTY' };
+    const given = typeof l.qty === 'number' || clean(l.qty ?? '') !== '';
+    const qty = !given ? 0 : typeof l.qty === 'number' ? l.qty : Number(clean(l.qty));
+    if (given && (!Number.isInteger(qty) || qty < 1 || qty > MAX_GLASS_QTY)) return { ok: false, code: 'BAD_QTY' };
     items.push({
       glassProductId: p.id, glassName: glassLabel(p, 'tr'), glassNameRo: glassLabel(p, 'ro'),
       glassWeightKgM2: p.weightKgM2 == null ? null : Number(p.weightKgM2), camAdedi: qty,

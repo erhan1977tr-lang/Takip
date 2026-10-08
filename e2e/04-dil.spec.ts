@@ -127,8 +127,9 @@ test('müşteri Romence panelde siparişini ve teklifini görür', async ({ brow
   await expect(page.getByRole('heading', { name: 'Oferta dvs.' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(RAW_KEY);
   // Cam adı seçilen dilde (karar 20): Romence panelde Romence ad, Türkçesi görünmez
-  await expect(page.getByText(`${GLASS_RO} × 3`)).toBeVisible();
-  await expect(page.getByText(`${GLASS} × 3`)).toHaveCount(0);
+  // (müşteri formunda cam adedi yok — karar 160: istenen cam adetsiz listelenir)
+  await expect(page.locator('.plain-list li', { hasText: GLASS_RO })).toHaveText(GLASS_RO);
+  await expect(page.locator('.plain-list li', { hasText: GLASS })).toHaveCount(0);
   await shot(page, '05-musteri-siparis');
   await page.goto('/siparisler/yeni?tip=GLASS_ORDER');
   await expect(page.getByLabel('Sticlă', { exact: true }).locator('option', { hasText: GLASS_RO })).toHaveCount(1);

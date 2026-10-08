@@ -41,6 +41,11 @@ test('müşteri teklifi hiçbir durumda onaylayamaz, yalnızca çizimi onaylar',
   // Onay kesindir: onaylanmış çizimde müşteriye onay / revizyon işlemi kalmaz
   assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: true, drawing: 'ONAYLANDI' }), ['add_file']);
   assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'YENI' }), ['add_file']);
+  // Profil siparişinde müşteri dosya yüklemez (karar 161): sunucu işlemi (addFilesAction → ensureAllowed) de bu listeyi kullanır
+  assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'YENI', orderType: 'PROFILE_ORDER' }), []);
+  assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'HAZIRLANIYOR', canApprove: true, orderType: 'PROFILE_ORDER' }), []);
+  assert.deepEqual(availableActions({ role: 'MUSTERI', status: 'YENI', orderType: 'GLASS_ORDER' }), ['add_file'], 'cam siparişinde değişmedi');
+  for (const role of ['ADMIN', 'SATIS']) assert.ok(availableActions({ role, status: 'YENI', orderType: 'PROFILE_ORDER' }).includes('add_file'), `${role}: iç dosya`);
 });
 
 test('satış yeni siparişte karar verir: çizime gönder ya da çizimsiz teklif', () => {

@@ -74,7 +74,7 @@ export const glassWorkflow = {
     const o = ctx.order;
     const acts = availableActions({
       role: actor.role, status: o.status, onHold: o.onHold, canApprove: !!actor.canApprove,
-      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o),
+      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o), orderType,
     });
     return need.some((a) => acts.includes(a)) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
   },
@@ -523,8 +523,10 @@ const ACTIONS = {
       await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI', decidedAt: h.now, decidedById: h.actor.id } });
       // Çizim üstü işaretler yalnızca bu sürümün dosyalarına konabilir; doğrulanıp sadeleştirilerek saklanır
       const annotations = cleanAnnotations(h.payload.annotations, latest.files.map((f) => f.id));
-      await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
-      h.result = { annotations: annotations.length };
+      const revision = await h.tx.drawingRevision.create({ data: { drawingId: latest.id, requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
+      // revisionId: talebin notu, işlem bittikten SONRA bir kez çevrilir (sunucu işlemi → çeviri servisinin
+      // translateRevision işlevi, karar 163); iş akışı çeviriyi beklemez, çeviri hatası talebi bozmaz
+      h.result = { annotations: annotations.length, revisionId: revision.id };
     }
     await h.set({ drawingTrack: 'REVIZYON_ISTENDI', drawingSince: h.now, revisionCount: { increment: 1 } });
     h.event('REVISION_REQUESTED', comment);

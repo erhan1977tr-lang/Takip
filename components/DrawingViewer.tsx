@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Çizim görüntüleyici (sipariş → cizim/[drawingId]): PDF (pdf.js, tarayıcıda) ve görseller sayfa sayfa gösterilir; üstüne
-// işaret konur: İğne, Dikdörtgen, Serbest, Metin. Konumlar sayfaya oranlıdır (0–1). editable: müşteri "Revizyon iste"
-// ekranında işaret koyar (kayıt: DrawingRevision.annotations, sunucuda doğrulanır — server/orders/annotations.js);
-// değilse yalnızca gösterir (çizimci ve iç ekip revizyon talebini çizim üzerinde görür). Dosyalar /dosya/cizim/<id>
+// Çizim görüntüleyici (sipariş → cizim/[drawingId]): PDF (pdf.js, tarayıcıda) ve görseller sayfa sayfa gösterilir; üstünde
+// işaretler gösterilir: İğne, Dikdörtgen, Serbest, Metin. Konumlar sayfaya oranlıdır (0–1). İç ekip eski revizyon
+// taleplerinin işaretlerini (DrawingRevision.annotations, sunucuda doğrulanır — server/orders/annotations.js) çizim üzerinde
+// görür. editable (işaret koyma) kipi şu an hiçbir ekranda kullanılmıyor: müşterinin revizyon ekranında işaretleme ve
+// "İşaretler" bölümü yok, değişiklikler numaralı maddelerle yazılır (karar 162). Dosyalar /dosya/cizim/<id>
 // adresinden gelir: yetki ve firma kapsamı orada, sunucuda denetlenir. Çizim dosyası hiç değişmez.
 
 export type Annotation = { fileId: string; page: number; type: 'pin' | 'rect' | 'free' | 'text'; x: number; y: number; w?: number; h?: number; points?: number[][]; text: string };
@@ -211,7 +212,9 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
       </div>
       <div className="viewer-aside">
         {side}
-        <div className="viewer-side card">
+        {/* "İşaretler" bölümü yalnızca işaret varken (eski revizyon talepleri — iç ekip) ya da düzenlemede gösterilir; boş
+            bölüm gösterilmez (karar 162). Müşterinin karar ve revizyon ekranında işaret yoktur. */}
+        {(editable || annotations.length > 0) && <div className="viewer-side card">
           <h2>{text.notes} <span className="badge">{annotations.length}</span></h2>
           {annotations.length === 0 && <p className="muted">{text.noNotes}</p>}
           {annotations.map((a, i) => (
@@ -228,7 +231,7 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
               ) : <span>{a.text || '—'}</span>}
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

@@ -459,12 +459,13 @@ export function drawingFlags(o) {
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, orderType?: string|null}} p
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
+ *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, orderType = null }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -478,7 +479,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     // Müşterinin tek onayı çizim onayıdır; teklifi yalnızca görür.
     // Onay ve revizyon aynı yetkiye bağlıdır (karar 84): onay yetkisi olmayan müşteri kullanıcısı ikisini de yapamaz.
     if (preparing && drawing === 'ONAY_BEKLIYOR' && canApprove) a.push('approve_drawing', 'request_revision');
-    if (!closed && can(role, 'FILE_UPLOAD')) a.push('add_file');
+    // Profil siparişinde müşteri dosya yüklemez (karar 161): ürün ve adet formdadır; ekranda yükleme alanı yok, sunucu da
+    // (addFilesAction → bu liste) reddeder. İç ekibin profil siparişine iç dosya eklemesi değişmedi.
+    if (!closed && can(role, 'FILE_UPLOAD') && orderType !== 'PROFILE_ORDER') a.push('add_file');
     return a;
   }
 

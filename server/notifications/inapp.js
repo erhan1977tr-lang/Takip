@@ -29,6 +29,8 @@ export const AUDIENCE_ROLES = {
 };
 
 const orderLink = (o) => `/siparisler/${o.id}`;
+/** Siparişin ilgili bölümü (karar 166): bildirime tıklayan doğrudan çizim kararına / teklife / çizimlere iner */
+const orderPart = (hash) => (o) => `/siparisler/${o.id}#${hash}`;
 const dayLink = (hash = '') => (_o, p) => `/yuklemeler?gun=${p.day}${hash}`;
 
 /**
@@ -41,15 +43,16 @@ export const INAPP_RULES = {
   ORDER_CREATED: { to: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales', 'admin']) },
   // Çizim: atama ve müşteri kararı yalnızca atanmış çizimciye + ilgili satışçıya (yöneticiye değil — karar 84)
   ORDER_SENT_TO_DRAWING: { to: () => ['drawer'] },
-  ORDER_DRAWING_UPLOADED: { to: () => ['customer'] },
-  ORDER_REVISION_REQUESTED: { to: () => ['drawer', 'orderSales'] },
-  ORDER_DRAWING_APPROVED: { to: () => ['drawer', 'orderSales'] },
+  // Müşteriye yeni çizim: bağlantı siparişteki kırmızı "yeni çizim onayınızı bekliyor" bilgilendirmesine (karar 162, 166)
+  ORDER_DRAWING_UPLOADED: { to: () => ['customer'], link: orderPart('cizim-onay') },
+  ORDER_REVISION_REQUESTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
+  ORDER_DRAWING_APPROVED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
   // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride
   ORDER_OFFER_SUBMITTED: { to: () => ['admin'] },
   ORDER_OFFER_RETURNED: { to: () => ['orderSales'] },
-  ORDER_OFFER_SENT: { to: () => ['customer', 'orderSales'] },
-  ORDER_OFFER_UPDATED: { to: () => ['customer'] },
-  ORDER_PROFILE_OFFER_SENT: { to: () => ['customer'] },
+  ORDER_OFFER_SENT: { to: () => ['customer', 'orderSales'], link: orderPart('teklif') },
+  ORDER_OFFER_UPDATED: { to: () => ['customer'], link: orderPart('teklif') },
+  ORDER_PROFILE_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
   ORDER_PROFORMA: { to: () => ['customer'] },
   ORDER_INVOICED: { to: () => ['customer'] },

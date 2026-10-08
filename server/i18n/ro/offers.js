@@ -43,4 +43,31 @@ export default {
     awaitingPrice: { title: 'Așteaptă prețul meu', empty: 'Nicio ofertă nu așteaptă prețul dvs.' },
     notOpened: { title: 'Comenzi fără tabel de ofertă deschis', empty: 'Nu există comenzi fără tabel de ofertă deschis.' },
   },
+  // Pagina principală a clientului → „Ofertele mele” (decizia 164): interval de date, listă și raport PDF
+  report: {
+    title: 'Ofertele mele',
+    intro: 'Ofertele de sticlă trimise firmei dvs. în intervalul ales (ultima ofertă a fiecărei comenzi). PDF-ul arată fiecare ofertă separat și în detaliu.',
+    from: 'Data de început',
+    to: 'Data de sfârșit',
+    show: 'Afișează',
+    pdf: 'Descarcă PDF',
+    empty: 'Nu există oferte în acest interval.',
+    cols: { order: 'Comanda', date: 'Data ofertei', m2: 'm²', amount: 'Valoarea ofertei' },
+    total: 'Total',
+    count: 'Oferte: {n}',
+    more: 'Lista arată primele {n} oferte; PDF-ul le conține pe toate.',
+    pdfTitle: 'OFERTELE MELE',
+    generated: 'Generat: {date}',
+    version: 'versiunea {n}',
+    subtotal: 'Total ofertă',
+    grandTotal: 'Total general',
+    // Rădăcina numelui fișierului PDF (limba panoului): ofertele-mele-2026-10-01_2026-10-31.pdf
+    fileName: 'ofertele-mele',
+    errors: {
+      BAD_DATE: 'Alegeți o dată de început și o dată de sfârșit valide.',
+      ORDER: 'Data de început nu poate fi după data de sfârșit.',
+      TOO_LONG: 'Intervalul poate avea cel mult 400 de zile.',
+      TOO_MANY: 'Sunt prea multe oferte în acest interval; restrângeți intervalul.',
+    },
+  },
 };

@@ -64,11 +64,10 @@ export default {
     },
     glass: {
       title: 'İstediğiniz cam kombinasyonu (zorunlu)',
-      intro: 'Hangi camı istediğinizi katalogdan seçin. Ölçüleri ve fiyatı satış ekibi girecek.',
+      intro: 'Hangi camı istediğinizi katalogdan seçin. Adetleri, ölçüleri ve fiyatı satış ekibi dosyalarınıza göre girecek.',
       catalogEmpty: 'Cam kataloğu henüz boş. Lütfen yöneticinize başvurun.',
       glass: 'Cam',
       pick: '— katalogdan seçin —',
-      qty: 'Adet',
       oneOnly: 'Bir siparişte tek cam tipi seçilir. Başka bir cam için ayrı sipariş açın.',
     },
     note: {

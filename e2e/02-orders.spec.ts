@@ -160,11 +160,11 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   const dl = await cust.request.get(href!);
   expect(dl.status()).toBe(200);
   expect(await dl.text()).toContain('dxf v1');
-  // "Revizyon iste" → çizim görüntüleyici: not zorunlu (boşken gönderilemez)
+  // "Revizyon iste" → çizim görüntüleyici: numaralı not zorunlu (boşken gönderilemez — karar 162)
   await cust.getByRole('link', { name: 'Revizyon iste' }).click();
   await expect(cust).toHaveURL(/\/cizim\/[a-z0-9]+\?revizyon=1$/);
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled();
-  await cust.fill('#rev-comment', 'Korkuluk yüksekliği 1100 mm olmalı');
+  await cust.getByLabel('Madde 1', { exact: true }).fill('Korkuluk yüksekliği 1100 mm olmalı');
   await cust.getByRole('button', { name: 'Revizyon iste' }).click();
   await expect(cust.getByText('Revizyon talebiniz çizim ekibine iletildi.')).toBeVisible();
 

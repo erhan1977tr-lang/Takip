@@ -9,6 +9,7 @@ import {
   planCatalogImport, validateGlass,
 } from '../server/catalog/glass.js';
 import { draftLines, isLegacyMultiGlass, readDraftItems } from '../server/orders/drafts.js';
+import { prefillLines } from '../server/pricing/tables.js';
 
 const fixture = (name) => fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -138,6 +139,27 @@ test('müşterinin yeni cam siparişi: tam olarak bir cam tipi — sıfır ve ik
   assert.deepEqual(glassOrderItems([{ id: 'a', qty: '1' }, { id: 'a', qty: '3' }], [a, b]), { ok: false, code: 'ONE_GLASS' }, 'aynı cam iki satır da olmaz');
   // Kural adetten bağımsız: tek cam tipinden çok sayıda adet istenebilir
   assert.ok(glassOrderItems([{ id: 'b', qty: '9999' }], [a, b]).ok);
+});
+
+test('müşteri formunda cam adedi yok (karar 160): adet verilmezse satıra 0 = "belirtilmedi" yazılır; tek cam kuralı aynen', () => {
+  const a = { id: 'a', isActive: true, nameTr: 'A', nameRo: 'A-ro', weightKgM2: 10 };
+  const b = { id: 'b', isActive: true, nameTr: 'B', nameRo: 'B-ro', weightKgM2: 20 };
+  for (const qty of ['', '   ', null, undefined]) {
+    const r = glassOrderItems([{ id: 'a', qty }], [a, b]);
+    assert.ok(r.ok, String(qty));
+    assert.deepEqual(r.items.map((i) => [i.glassProductId, i.camAdedi]), [['a', 0]], String(qty));
+  }
+  assert.deepEqual(glassOrderItems([{ id: 'a' }], [a, b]).items[0].camAdedi, 0, 'adet alanı hiç yok');
+  // Tek cam kuralı adetsiz de geçerli: iki cam reddedilir, hiç cam yoksa reddedilir
+  assert.deepEqual(glassOrderItems([{ id: 'a', qty: '' }, { id: 'b', qty: '' }], [a, b]), { ok: false, code: 'ONE_GLASS' });
+  assert.deepEqual(glassOrderItems([{ id: '', qty: '' }], [a, b]), { ok: false, code: 'NO_GLASS' });
+  // Verilen adet eskisi gibi doğrulanır (eski çağıran / eski taslak)
+  assert.deepEqual(glassOrderItems([{ id: 'a', qty: '0' }], [a, b]), { ok: false, code: 'BAD_QTY' });
+  assert.deepEqual(glassOrderItems([{ id: 'a', qty: 0 }], [a, b]), { ok: false, code: 'BAD_QTY' });
+  // Satışın ilk teklif satırı adetsiz siparişte 1 adetle açılır; adetli eski siparişte o adetle (prefillLines aynı)
+  const r = glassOrderItems([{ id: 'a', qty: '' }], [a, b]);
+  assert.deepEqual(prefillLines(r.items, null).map((l) => [l.kind, l.unit, l.adet, l.description]), [['CAM', 'm2', 1, 'A']]);
+  assert.deepEqual(prefillLines([{ glassName: 'Eski', camAdedi: 6 }], null).map((l) => l.adet), [6]);
 });
 
 test('taslak: cam satırları gevşek kurallarla saklanır, bozuk veri okunurken atlanır', () => {

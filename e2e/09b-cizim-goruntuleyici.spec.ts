@@ -5,8 +5,9 @@ import path from 'node:path';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, createUser, firstLogin, newOrder, outboxCodeFor, sampleFile, sendDrawing, uploadDrawing } from './helpers';
 
 // Çizim görüntüleyici (gerçek PDF, PNG ve JPG ile; karar 84): çizimci "Kontrol Et" → o ekrandan "Müşteriye gönder" →
-// müşteri görüntüleyicide "Bu çizimi onayla" / "Revizyon iste": çizim üzerine işaret (iğne, dikdörtgen, serbest, metin)
-// koyar, zorunlu notla gönderir → çizimci işaretleri çizim üzerinde görür → v2 → müşteri görüntüleyiciden onaylar →
+// müşteri görüntüleyicide "Bu çizimi onayla" / "Revizyon iste": değişiklikleri NUMARALI maddelerle yazar (karar 162 — müşteri
+// ekranında işaretleme ve "İşaretler" bölümü yok) → çizimci numaralı notu (ve eski taleplerin işaretlerini) görür → v2 →
+// müşteri görüntüleyiciden onaylar →
 // "Müşteri tarafından onaylanmış çizimler" (çizim, satış, yönetici). Onay yetkisi olmayan müşteri kullanıcısı karar
 // veremez; başka firma hiçbir şeyi açamaz; pdf.js varlıkları uygulamanın kendi adresinden gelir.
 test.describe.configure({ mode: 'serial' });
@@ -89,7 +90,7 @@ async function shot(page: import('@playwright/test').Page, name: string, mobile 
 const VIEWER = 'izleyici@unsal.test'; // Ünsal Cam'ın onay yetkisi OLMAYAN kullanıcısı
 const SALES2 = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te kilitleniyor)
 
-test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne, dikdörtgen, serbest, metin); görüntüleyiciden onay; onaylanmış çizimler', async ({ browser }) => {
+test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyon notu (işaretleme yok); eski işaretler iç ekipte; görüntüleyiciden onay; onaylanmış çizimler', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Görüntüleyici', 'plan.pdf');
   const admin = await as(browser, ADMIN, ADMIN_PW);
@@ -209,7 +210,7 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   await expect(viewer.getByRole('button', { name: 'Bu çizimi onayla' })).toHaveCount(0);
   await expect(viewer.getByRole('link', { name: 'Revizyon iste' })).toHaveCount(0);
   await viewer.goto(`${viewerUrl}?revizyon=1`); // adresi elle yazsa da revizyon ekranı açılmaz
-  await expect(viewer.locator('#rev-comment')).toHaveCount(0);
+  await expect(viewer.locator('textarea[name=item]')).toHaveCount(0);
   await expect(viewer.locator('.viewer-layer.editable')).toHaveCount(0);
   await viewer.context().close();
 
@@ -217,8 +218,12 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   await cust.goto('/siparisler');
   await expect(cust.getByText('Çizim onay bekliyor').first()).toBeVisible();
   await cust.goto(`/siparisler/${id}`);
+  // Yeni çizim: siparişte belirgin kırmızı bilgilendirme; ana işlem "Aç ve incele" (karar 162)
+  await expect(cust.locator('#cizim-onay.alert-error')).toContainText('Yeni çizim onayınızı bekliyor (v1).');
+  await expect(cust.locator('#cizim-onay').getByRole('link', { name: 'Aç ve incele' })).toHaveClass(/btn-primary/);
   await cust.getByRole('link', { name: 'Aç ve incele' }).first().click();
   await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
+  await expect(cust.locator('.viewer-side')).toHaveCount(0); // boş "İşaretler" bölümü yok
   await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
   await expect.poll(() => cust.locator('.viewer-page canvas').evaluate(inked)).toBe(true);
   await shot(cust, '22-musteri-cizim-karar');
@@ -227,71 +232,58 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   await expect(cust).toHaveURL(/revizyon=1$/);
   await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
   await expect.poll(() => cust.locator('.viewer-page canvas').evaluate(inked)).toBe(true);
-  const layer = cust.locator('.viewer-page .viewer-layer.editable');
-  await expect(layer).toHaveCount(1);
-  let box = (await layer.boundingBox())!;
-  // İğne (varsayılan araç)
-  await layer.click({ position: { x: box.width * 0.25, y: box.height * 0.5 } });
-  await expect(cust.locator('.ann-pin')).toHaveCount(1);
-  await cust.getByLabel('İşaretler 1', { exact: true }).fill('Bu ölçü 1100 olmalı');
-  // Dikdörtgen (sürükleyerek)
-  await cust.getByRole('button', { name: 'Dikdörtgen' }).click();
-  await layer.scrollIntoViewIfNeeded();
-  box = (await layer.boundingBox())!;
-  await cust.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3);
-  await cust.mouse.down();
-  await cust.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.7, { steps: 5 });
-  await cust.mouse.up();
-  await expect(cust.locator('.ann-rect')).toHaveCount(1);
-  // Serbest çizim (sürükleyerek, birkaç nokta)
-  await cust.getByRole('button', { name: 'Serbest' }).click();
-  await layer.scrollIntoViewIfNeeded();
-  box = (await layer.boundingBox())!;
-  await cust.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.8);
-  await cust.mouse.down();
-  for (const [fx, fy] of [[0.15, 0.7], [0.2, 0.85], [0.28, 0.72], [0.34, 0.86]]) await cust.mouse.move(box.x + box.width * fx, box.y + box.height * fy, { steps: 4 });
-  await cust.mouse.up();
-  await expect(cust.locator('.ann-free polyline')).toHaveCount(1);
-  expect((await cust.locator('.ann-free polyline').getAttribute('points'))!.trim().split(' ').length).toBeGreaterThan(4);
-  await cust.getByLabel('İşaretler 3', { exact: true }).fill('Bu kenar yuvarlatılsın');
-  // Metin (tıklanan yere yazı)
-  await cust.getByRole('button', { name: 'Metin' }).click();
-  await layer.scrollIntoViewIfNeeded();
-  box = (await layer.boundingBox())!;
-  await layer.click({ position: { x: box.width * 0.6, y: box.height * 0.15 } });
-  await cust.getByLabel('İşaretler 4', { exact: true }).fill('2 delik Ø12');
-  await expect(cust.locator('.ann-text')).toHaveText('2 delik Ø12');
-  await expect(cust.locator('.viewer-side h2')).toContainText('4');
-  // Not zorunlu
+  // Müşteri ekranında çizim üzerine işaretleme ve "İşaretler" bölümü YOK (karar 162): çizim yalnızca incelenir
+  await expect(cust.locator('.viewer-layer.editable')).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'İğne' })).toHaveCount(0);
+  await expect(cust.locator('.viewer-side')).toHaveCount(0);
+  // "Revizyon notu": numaralı maddeler; en az bir dolu madde zorunlu (boş / yalnızca boşluk gönderilemez)
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled();
   await expect(cust.getByText('Revizyon notu zorunludur.')).toBeVisible();
-  await cust.fill('#rev-comment', '   ');
+  await cust.getByLabel('Madde 1', { exact: true }).fill('   ');
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled();
-  await cust.fill('#rev-comment', 'İşaretli yerleri düzeltin');
+  await cust.getByLabel('Madde 1', { exact: true }).fill('Bu ölçü 1100 olmalı');
+  await cust.getByRole('button', { name: '+ Madde ekle' }).click();
+  await cust.getByLabel('Madde 2', { exact: true }).fill('2. Bu kenar yuvarlatılsın'); // elle yazılan numara atılır
+  await cust.getByRole('button', { name: '+ Madde ekle' }).click();
+  await cust.getByLabel('Madde 3', { exact: true }).fill('silinecek madde');
+  await cust.getByRole('button', { name: 'Madde 3: çıkar' }).click();
+  await expect(cust.getByLabel('Madde 3', { exact: true })).toHaveCount(0);
+  await cust.getByRole('button', { name: '+ Madde ekle' }).click();
+  await cust.getByLabel('Madde 3', { exact: true }).fill('2 delik Ø12');
   await shot(cust, '23-musteri-revizyon');
   await cust.getByRole('button', { name: 'Revizyon iste' }).click();
   await expect(cust.getByText('Revizyon talebiniz çizim ekibine iletildi.')).toBeVisible();
 
-  // Çizimci: iş yeniden "Yapılacak çizimler"de; revizyon notu ve dört işaret çizim üzerinde, müşterinin koyduğu yerde
+  // Kayıt: tek numaralı metin; işaret yok
+  {
+    const { PrismaClient } = await import('@prisma/client');
+    const db = new PrismaClient();
+    try {
+      const rev = await db.drawingRevision.findFirstOrThrow({ where: { drawing: { orderId: id } }, orderBy: { createdAt: 'desc' }, include: { drawing: { include: { files: true } } } });
+      expect([rev.comment, rev.annotations]).toEqual(['1. Bu ölçü 1100 olmalı\n2. Bu kenar yuvarlatılsın\n3. 2 delik Ø12', null]);
+      // Eski düzende işaretli bir talep (karar 162 öncesi): iç ekip işaretleri hâlâ çizim üzerinde görür
+      const plan = rev.drawing.files.find((f) => f.name === 'plan-v1.pdf')!;
+      await db.drawingRevision.update({ where: { id: rev.id }, data: { annotations: [{ fileId: plan.id, page: 1, type: 'pin', x: 0.25, y: 0.5, text: 'Bu ölçü 1100 olmalı' }] } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+
+  // Çizimci: iş yeniden "Yapılacak çizimler"de; numaralı revizyon notu (sıralı liste) ve eski işaret çizim üzerinde
   await drawer.goto('/siparisler');
   await expect(drawer.locator('.card', { hasText: 'Yapılacak çizimler' }).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
   await drawer.goto(`/siparisler/${id}`);
-  await expect(drawer.getByText('İşaretli yerleri düzeltin').first()).toBeVisible();
   await expect(drawer.locator('.page-head .badge', { hasText: 'Revizyon istendi' })).toBeVisible();
-  await drawer.getByRole('link', { name: 'çizim üzerinde gör (4 işaret)' }).click();
+  const request = drawer.locator('#cizim .note', { hasText: 'Revizyon talebi:' }).first();
+  await expect(request.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12']);
+  await drawer.getByRole('link', { name: 'çizim üzerinde gör (1 işaret)' }).click();
   await drawer.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
   await expect(drawer.locator('.ann-pin')).toHaveCount(1);
-  await expect(drawer.locator('.ann-rect')).toHaveCount(1);
-  await expect(drawer.locator('.ann-free polyline')).toHaveCount(1);
-  await expect(drawer.locator('.ann-text')).toHaveText('2 delik Ø12');
-  await expect(drawer.getByText('Bu ölçü 1100 olmalı')).toBeVisible();
-  await expect(drawer.getByText('Bu kenar yuvarlatılsın')).toBeVisible();
+  await expect(drawer.locator('.viewer-side')).toContainText('Bu ölçü 1100 olmalı');
   const pin = await drawer.locator('.ann-pin').evaluate((e: HTMLElement) => [parseFloat(e.style.left), parseFloat(e.style.top)]);
   expect(Math.abs(pin[0] - 25)).toBeLessThan(2);
   expect(Math.abs(pin[1] - 50)).toBeLessThan(2);
-  const txt = await drawer.locator('.ann-text').evaluate((e: HTMLElement) => [parseFloat(e.style.left), parseFloat(e.style.top)]);
-  expect(Math.abs(txt[0] - 60)).toBeLessThan(2);
-  expect(Math.abs(txt[1] - 15)).toBeLessThan(2);
+  await expect(drawer.locator('.viewer-requests ol.revision-list li')).toHaveCount(3);
   await expect(drawer.locator('.viewer-layer.editable')).toHaveCount(0); // çizimci işaretleri değiştiremez
   await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toHaveCount(0); // eski sürüm yeniden gönderilemez
 
@@ -309,14 +301,17 @@ test('çizim görüntüleyici: kontrol et → gönder; işaretli revizyon (iğne
   await expect(cust.getByRole('link', { name: 'Revizyon iste' })).toHaveCount(0);
   const v1 = cust.locator('.drawing-version', { hasText: 'plan-v1.pdf' });
   await expect(v1).toContainText('revizyon istendi');
-  await expect(v1).toContainText('İşaretli yerleri düzeltin');
+  await expect(v1.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12']);
+  await expect(v1.getByRole('link', { name: /işaret\)/ })).toHaveCount(0); // işaret bağlantısı yalnızca iç ekipte
   await expect(v1.locator('.file-row')).toHaveCount(4); // v1'in dosyaları (teknik ek dahil) aynen duruyor
   await expect(cust.locator('.drawing-version', { hasText: 'plan-v2.pdf' })).toContainText('onaylandı');
   await cust.goto(`${viewerUrl}?revizyon=1`); // eski sürüm için revizyon ekranı açılmaz
-  await expect(cust.locator('#rev-comment')).toHaveCount(0);
+  await expect(cust.locator('textarea[name=item]')).toHaveCount(0);
   await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
-  await expect(cust.locator('.ann-pin')).toHaveCount(1); // v1'in işaretleri hâlâ görüntülenir (salt okunur)
+  await expect(cust.locator('.ann-pin')).toHaveCount(0); // müşteri ekranında işaret / "İşaretler" bölümü yok (karar 162)
+  await expect(cust.locator('.viewer-side')).toHaveCount(0);
   await expect(cust.locator('.viewer-layer.editable')).toHaveCount(0);
+  await expect(cust.locator('.viewer-requests ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12']);
 
   // Onaylanmış çizimler: çizim ekibi ve yönetici görür (satışın "Sıra bende"sinde yok — fonksiyonel paket 1); yükleme
   // gününe göre süzme, en yeni / en eski

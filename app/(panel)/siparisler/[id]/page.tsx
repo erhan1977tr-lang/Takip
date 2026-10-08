@@ -32,6 +32,7 @@ import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
 import { guestHostOptions } from '@/server/loading/crates.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { RevisionNote } from '@/components/RevisionNote';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
   addFilesAction, addNoteAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
@@ -118,11 +119,16 @@ export default async function OrderPage({
   const removal = (docs: number) => (userCan(user, 'ORDER_CANCEL') ? <RemoveOrder orderId={order.id} docs={docs} error={removeError} m={m.compensation.remove} /> : null);
   if (order.orderTypeCode === 'PROFILE_ORDER') {
     // Profil siparişi (Aşama 6): kendi akışı ve ekranı; dosya, not ve geçmiş ortak
-    const acts = availableActions({ role: user.appRole, status: order.status, onHold: false, canApprove: user.canApprove, drawing: 'YOK', offer: null });
+    const acts = availableActions({ role: user.appRole, status: order.status, onHold: false, canApprove: user.canApprove, drawing: 'YOK', offer: null, orderType: order.orderTypeCode });
+    // Profil siparişinde müşterinin dosya yükleme alanı yok (karar 161 — sunucu da reddeder); eski siparişte müşterinin
+    // yüklediği dosya varsa yalnızca liste olarak görünür
+    const fileCard = isCustomer && !acts.includes('add_file') && !order.files.some((f) => f.kind === 'CUSTOMER')
+      ? null
+      : <Files order={order} user={user} canAdd={acts.includes('add_file')} t={t} />;
     return (
       <ProfileOrderView
         order={order} user={user} sp={sp} t={t} m={m} locale={locale}
-        files={<Files order={order} user={user} canAdd={acts.includes('add_file')} t={t} />}
+        files={fileCard}
         notes={<Notes order={order} user={user} t={t} />}
         history={<>{removal(userCan(user, 'ORDER_CANCEL') ? await db.fgoDocument.count({ where: { orderId: order.id } }) : 0)}<History order={order} isCustomer={isCustomer} t={t} /></>}
       />
@@ -135,7 +141,7 @@ export default async function OrderPage({
   const sent = sentOffer(order);
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order),
+    drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
   const can = (a: string) => acts.includes(a);
   const sla = isCustomer ? null : slaInfo(order.slaDeadline);
@@ -188,6 +194,10 @@ export default async function OrderPage({
   const sentVersions = order.offers.filter((o) => o.status === 'GONDERILDI').length;
   // Müşteriye gönderilmiş son sürüm (taslak sayılmaz)
   const lastDrawing = [...order.drawings].reverse().find((d) => d.status !== 'TASLAK');
+  // Müşterinin onayını bekleyen sürüm (yalnızca müşteri ekranında kırmızı bilgilendirme — karar 162). Geri çekilen sürüm
+  // ONAY_BEKLIYOR değildir; içerik kuralı (karar 146) değişmez.
+  const waitingDrawing = isCustomer && order.status === 'HAZIRLANIYOR' && order.drawingTrack === 'ONAY_BEKLIYOR' && lastDrawing?.status === 'ONAY_BEKLIYOR'
+    ? lastDrawing : undefined;
   // Teklif müşteriye gittikten sonra yeni çizim geldiyse ölçüler değişmiş olabilir (events en yeniden eskiye sıralı)
   const needsCheck = !isCustomer && userCan(user, 'OFFER_VIEW') && (order.status === 'HAZIRLANIYOR' || order.status === 'URETIMDE') && offerNeedsCheck({
     offer: offer?.status ?? null, sentAt: offer?.sentAt ?? null, lastDrawing: lastDrawing ?? null,
@@ -264,6 +274,15 @@ export default async function OrderPage({
       {compOk && <div className="alert alert-ok">{compOk}</div>}
       {compSource && <div className={`alert ${compSource.warn ? 'alert-warn' : 'alert-info'}`} data-comp-source={sp.kaynak}>{compSource.text}</div>}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
+      {/* Müşteriye yeni çizim gönderildi (karar 162): belirgin kırmızı bilgilendirme; ana işlem "Aç ve incele" */}
+      {waitingDrawing && (
+        <div className="alert alert-error" id="cizim-onay" data-drawing-alert={waitingDrawing.id}>
+          <b>{t('order.customer.newDrawingTitle', { v: waitingDrawing.version })}</b> {t('order.customer.newDrawingText')}
+          <div className="row" style={{ marginTop: 10 }}>
+            <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${waitingDrawing.id}`}>{t('order.drawings.review')}</Link>
+          </div>
+        </div>
+      )}
 
       {!drawerView && <div className="card">
         <div className="stepper">
@@ -352,7 +371,8 @@ export default async function OrderPage({
           <>
             <h3 className="sub-title">{t('order.info.requestedGlass')}</h3>
             <ul className="plain-list">
-              {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')} × {it.camAdedi}</li>)}
+              {/* Adet yalnızca girilmişse (eski siparişler): müşteri formunda cam adedi yok, 0 = belirtilmedi (karar 160) */}
+              {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')}{it.camAdedi > 0 ? ` × ${it.camAdedi}` : ''}</li>)}
             </ul>
           </>
         )}
@@ -450,17 +470,18 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
       )}
       {waiting && <p className="muted small">{t('order.customer.reviewHint')}</p>}
       {waiting && latest && (
-        // "Aç ve incele": çizim görüntüleyici (onay ve revizyon orada da var) · "Bu çizimi onayla" · "Revizyon iste":
-        // çizim üzerine işaret + zorunlu not. Onay ve revizyon yalnızca onay yetkili kullanıcıda (sunucuda denetlenir).
+        // Ana işlem "Aç ve incele" (karar 162): çizim görüntüleyici (onay ve revizyon orada da var). "Bu çizimi onayla" ve
+        // "Revizyon iste" (numaralı maddelerle zorunlu not) ikincildir; ikisi de yalnızca onay yetkili kullanıcıda
+        // (sunucuda denetlenir).
         <div className="row" style={{ marginTop: 12, gap: 8 }}>
-          <Link className={`btn${can('approve_drawing') ? '' : ' btn-primary'}`} href={`/siparisler/${order.id}/cizim/${latest.id}`}>{t('order.drawings.review')}</Link>
+          <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${latest.id}`}>{t('order.drawings.review')}</Link>
           {can('approve_drawing') && (
             <form action={approveDrawingAction}>
               {hidden}
               <ConfirmButton success message={t('order.customer.approveConfirm', { v: latest.version })}>{t('order.steps.approve_drawing')}</ConfirmButton>
             </form>
           )}
-          {can('request_revision') && <Link className="btn btn-danger" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
+          {can('request_revision') && <Link className="btn" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
         </div>
       )}
       {!waiting && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
@@ -822,8 +843,11 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               {!isCustomer && d.sentAt && <span className="muted small">{t('order.drawings.sentBy', { who: d.sentBy?.name ?? '—', when: fmtDateTime(d.sentAt) })}</span>}
               {isCustomer && d.sentAt && <span className="muted small">{fmtDateTime(d.sentAt)}</span>}
               {d.decidedAt && <span className="muted small">{t('order.drawings.decidedBy', { who: d.decidedBy ? personText(t, d.decidedBy) : '—', when: fmtDateTime(d.decidedAt) })}</span>}
+              {/* Müşterinin onayını bekleyen sürümde "Deschide și verifică" ana işlemdir (karar 162): belirgin düğme */}
               {!draft && d.files.some((f) => isViewable(f.name) && f.scanStatus !== 'INFECTED') && (
-                <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
+                isCustomer && i === 0 && d.status === 'ONAY_BEKLIYOR'
+                  ? <Link className="btn btn-primary" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
+                  : <Link className="small" href={`/siparisler/${order.id}/cizim/${d.id}`}>{t('order.drawings.review')}</Link>
               )}
             </div>
             {d.noteCustomer && <div className="note"><b className="small">{t('order.drawings.noteCustomer')}</b> {d.noteCustomer}</div>}
@@ -847,10 +871,13 @@ function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUs
               </div>
             ))}
             {d.revisions.map((r) => {
-              const marks = Array.isArray(r.annotations) ? r.annotations.length : 0;
+              // Eski taleplerin çizim üstü işaretleri yalnızca iç ekibe (müşteri ekranında işaret yok — karar 162)
+              const marks = !isCustomer && Array.isArray(r.annotations) ? r.annotations.length : 0;
               return (
-                <div key={r.id} className="note">
-                  <b className="small">{t('order.drawings.revisionRequest')}</b> {r.comment}
+                <div key={r.id} className="note" data-revision={r.id}>
+                  <b className="small">{t('order.drawings.revisionRequest')}</b>
+                  {/* Numaralı not + saklanan çeviri (iç ekip; karar 163) — sayfa çeviri yapmaz */}
+                  <RevisionNote r={r} role={user.appRole} t={t} />
                   <div className="meta">
                     {fmtDateTime(r.createdAt)}
                     {marks > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.drawings.marks', { n: marks })}</Link></>}

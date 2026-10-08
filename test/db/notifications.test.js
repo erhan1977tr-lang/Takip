@@ -136,8 +136,16 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   // Kayıt: olay kimliği, bağlantı, okunmamış; metin alıcının göreceği kadar
   const forSales = (await notes({ type: 'ORDER_REVISION_REQUESTED', userId: U.sales1.id }))[0];
   const outboxRow = await db.notificationOutbox.findFirstOrThrow({ where: { type: 'ORDER_REVISION_REQUESTED', orderId: o.id } });
-  assert.deepEqual([forSales.dedupeKey, forSales.link, forSales.isRead, forSales.orderId], [`outbox:${outboxRow.id}`, `/siparisler/${o.id}`, false, o.id]);
+  assert.deepEqual([forSales.dedupeKey, forSales.link, forSales.isRead, forSales.orderId], [`outbox:${outboxRow.id}`, `/siparisler/${o.id}#cizim`, false, o.id]);
   assert.ok(outboxRow.inAppAt instanceof Date);
+  // Bağlantı siparişin ilgili bölümüne iner (karar 166): yeni çizim → kırmızı "onayınızı bekliyor" bilgilendirmesi,
+  // teklif → teklif bölümü; bağlantısı olmayan kuralda sipariş sayfası
+  const linkOf = async (type, userId) => (await notes({ type, userId, orderId: o.id }))[0]?.link;
+  assert.equal(await linkOf('ORDER_DRAWING_UPLOADED', U.a1.id), `/siparisler/${o.id}#cizim-onay`);
+  assert.equal(await linkOf('ORDER_OFFER_SENT', U.a1.id), `/siparisler/${o.id}#teklif`);
+  assert.equal(await linkOf('ORDER_OFFER_SENT', U.sales1.id), `/siparisler/${o.id}#teklif`);
+  assert.equal(await linkOf('ORDER_DRAWING_APPROVED', U.drawer.id), `/siparisler/${o.id}#cizim`);
+  assert.equal(await linkOf('ORDER_CREATED', U.admin.id), `/siparisler/${o.id}`);
 
   // --- Firma adı: satış ve çizim MASKELİ, yönetici tam, müşteride firma alanı yok
   const all = await notes({ orderId: o.id });
@@ -388,7 +396,7 @@ dbTest('bağlantılar (karar 145): bu dosyadaki testlerde GERÇEK yazıcıların
   // "fatura bekliyor" bağlantıları buradadır. Kural sıkılaştı; var olan hiçbir bağlantı biçimi bağlantısız kalmamalı.
   const links = [...new Set((await db.notification.findMany({ select: { link: true } })).map((r) => r.link))];
   const shapes = new Set(links.filter(Boolean).map((l) => l.replace(/\/siparisler\/[^#?]+/, '/siparisler/ID').replace(/gun=\d{4}-\d{2}-\d{2}/, 'gun=GUN')));
-  for (const want of ['/siparisler/ID', '/siparisler/ID#finans', '/yuklemeler?gun=GUN', '/yuklemeler?gun=GUN#yuklenmeyen', '/yuklemeler?gun=GUN#faturalama', '/admin/muhasebe/cam#fatura-bekliyor']) {
+  for (const want of ['/siparisler/ID', '/siparisler/ID#finans', '/siparisler/ID#cizim-onay', '/siparisler/ID#teklif', '/siparisler/ID#cizim', '/yuklemeler?gun=GUN', '/yuklemeler?gun=GUN#yuklenmeyen', '/yuklemeler?gun=GUN#faturalama', '/admin/muhasebe/cam#fatura-bekliyor']) {
     assert.ok(shapes.has(want), `önceki testler bu biçimi üretti: ${want} (bulunan: ${[...shapes].join(' , ')})`);
   }
   for (const l of links) if (l != null) assert.equal(internalPath(l), l, l);

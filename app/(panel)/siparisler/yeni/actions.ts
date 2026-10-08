@@ -35,9 +35,10 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
   const note = String(formData.get('note') ?? '').trim();
   const noRaw = String(formData.get('customerOrderNo') ?? '').trim();
   const suggestedRaw = String(formData.get('suggestedNo') ?? '').trim();
+  // Cam adedi müşteri formunda yok (karar 160): gönderilse de okunmaz — sipariş satırına "belirtilmedi" (0) yazılır;
+  // adetleri, ölçüleri ve fiyatı satış ekibi teklif tablosunda girer
   const glassIds = formData.getAll('glassId').map(String);
-  const glassQty = formData.getAll('glassQty').map(String);
-  const glasses = glassIds.map((id, i) => ({ id, qty: glassQty[i] ?? '1' }));
+  const glasses = glassIds.map((id) => ({ id, qty: '' }));
   const removed = formData.getAll('removeFile').map(String);
   const values = { title, no: noRaw, note, glasses: glasses.filter((g) => g.id), removed };
   const fail = (error: string) => ({ error, values });

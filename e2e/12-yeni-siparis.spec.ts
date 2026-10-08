@@ -70,8 +70,10 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
   await expect(picked).toHaveCount(2);
   expect(await cust.locator('#files').evaluate((el: HTMLInputElement) => Array.from(el.files ?? []).map((f) => f.name))).toEqual(['plan-a.pdf', 'olcu-b.dxf']);
   await expect(send).toBeDisabled(); // cam seçilmedi
+  // Cam ADEDİ alanı yok (karar 160): yalnızca cam seçilir; adetleri satış ekibi teklif tablosunda girer
+  await expect(cust.getByLabel('Adet', { exact: true })).toHaveCount(0);
+  await expect(cust.locator('[name=glassQty]')).toHaveCount(0);
   await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await cust.getByLabel('Adet', { exact: true }).fill('4');
   await expect(cust.getByText('Sipariş gönderilmeye hazır.')).toBeVisible();
   await cust.fill('#note', 'Kenarlar rodajlı');
   await shot(cust, '25-musteri-yeni-cam-siparisi');
@@ -82,7 +84,7 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
     const sel = document.querySelector<HTMLSelectElement>('select[name=glassId]')!;
     const form = sel.form!;
     const second = Array.from(sel.options).find((o) => o.value && o.value !== sel.value)!;
-    for (const [name, value] of [['glassId', second.value], ['glassQty', '2']]) {
+    for (const [name, value] of [['glassId', second.value]]) {
       const hidden = document.createElement('input');
       Object.assign(hidden, { type: 'hidden', name, value, className: 'e2e-extra' });
       form.appendChild(hidden);
@@ -94,12 +96,18 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
   await expect(picked).toHaveCount(2);
   await cust.evaluate(() => document.querySelectorAll('.e2e-extra').forEach((e) => e.remove()));
 
-  // Tek camla gönderilir
+  // Tek camla gönderilir. Elle eklenmiş bir "glassQty" alanı da okunmaz (sunucu adet almaz — karar 160)
+  await cust.evaluate(() => {
+    const form = document.querySelector<HTMLSelectElement>('select[name=glassId]')!.form!;
+    const forged = document.createElement('input');
+    Object.assign(forged, { type: 'hidden', name: 'glassQty', value: '44', className: 'e2e-qty' });
+    form.appendChild(forged);
+  });
   await send.click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
   orderUrl = new URL(cust.url()).pathname;
   await expect(cust.getByText('Siparişiniz alındı.')).toBeVisible();
-  await expect(cust.getByText(`${GLASS} × 4`)).toBeVisible();
+  await expect(cust.locator('.plain-list li')).toHaveText([GLASS]); // istenen cam, adetsiz
   await expect(cust.getByText('plan-a.pdf')).toBeVisible();
   await expect(cust.getByText('olcu-b.dxf')).toBeVisible();
   await expect(cust.getByText('yanlis-c.png')).toHaveCount(0);
@@ -108,6 +116,17 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
   await expect(cust.locator('dl.order-info')).toContainText(shipDate);
   orderNo = (await cust.locator('.page-head .mono').first().innerText()).trim();
   expect(orderNo).toMatch(/^UNS\d+$/);
+  {
+    // Kayıtta cam satırı tek ve adetsiz (0 = belirtilmedi); elle eklenen "44" yok sayıldı
+    const { PrismaClient } = await import('@prisma/client');
+    const db = new PrismaClient();
+    try {
+      const items = await db.orderItem.findMany({ where: { order: { orderNo } } });
+      expect(items.map((i) => [i.glassName, i.camAdedi])).toEqual([[GLASS, 0]]);
+    } finally {
+      await db.$disconnect();
+    }
+  }
 
   // Mevcut müşteri listesinde: numara, ad, durum, tarih, ayrıntı
   await cust.goto('/siparisler');
@@ -166,7 +185,6 @@ test('eski çok camlı taslak: bütün camlar görünür, bakmak değiştirmez; 
   await setup.fill('#title', 'Eski çok camlı taslak');
   await setup.setInputFiles('#files', sampleFile('eski-plan.pdf', 'eski plan'));
   await setup.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS });
-  await setup.getByLabel('Adet', { exact: true }).fill('2');
   await setup.fill('#note', 'Eski taslak notu');
   await setup.getByRole('button', { name: 'Taslak kaydet' }).click();
   await expect(setup).toHaveURL(/taslak=[a-z0-9]+&ok=draft/);
@@ -183,7 +201,8 @@ test('eski çok camlı taslak: bütün camlar görünür, bakmak değiştirmez; 
   try {
     const first = (await state()).items[0];
     const second = await db.glassProduct.findFirstOrThrow({ where: { nameTr: SECOND } });
-    await db.orderDraft.update({ where: { id: draftId }, data: { items: [first, { glassProductId: second.id, qty: 7 }] } });
+    // Eski düzendeki taslak: iki cam, adetleriyle (karar 160 öncesi formda adet vardı)
+    await db.orderDraft.update({ where: { id: draftId }, data: { items: [{ ...first, qty: 2 }, { glassProductId: second.id, qty: 7 }] } });
     const before = await state();
     expect(before.items).toHaveLength(2);
 
@@ -240,7 +259,7 @@ test('eski çok camlı taslak: bütün camlar görünür, bakmak değiştirmez; 
     expect([after.title, after.note, after.files]).toEqual([before.title, before.note, before.files]); // ad, not, dosya aynı
     await expect(cust.locator('select[name=glassId]')).toHaveCount(1);
     await expect(cust.locator('select[name=glassId]')).toHaveValue(second.id);
-    await expect(cust.getByLabel('Adet', { exact: true })).toHaveValue('7');
+    await expect(cust.getByLabel('Adet', { exact: true })).toHaveCount(0); // yeni formda adet yok
     await expect(cust.locator('#title')).toHaveValue('Eski çok camlı taslak');
     await expect(cust.locator('#note')).toHaveValue('Eski taslak notu');
     await expect(cust.locator('.upload-list')).toContainText('eski-plan.pdf');
@@ -248,7 +267,7 @@ test('eski çok camlı taslak: bütün camlar görünür, bakmak değiştirmez; 
     // Normal tek cam akışıyla gönderilir
     await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
     await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
-    await expect(cust.getByText(`${SECOND} × 7`)).toBeVisible();
+    await expect(cust.locator('.plain-list li')).toHaveText([SECOND]); // yalnızca tutulan cam; eski adet taşınmaz
     await expect(cust.getByText(`${GLASS} × 2`)).toHaveCount(0);
     await expect(cust.getByText('eski-plan.pdf')).toBeVisible();
     await expect(cust.getByText('Eski taslak notu')).toBeVisible();
@@ -271,8 +290,8 @@ test('eski çok camlı sipariş normal açılır; satış teklif tablosunda "+ C
   }
   const cust = await as(browser, CUSTOMER, CUST_PW);
   expect((await cust.goto(orderUrl))?.status()).toBe(200);
-  await expect(cust.getByText(`${GLASS} × 4`)).toBeVisible();
-  await expect(cust.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toBeVisible();
+  await expect(cust.locator('.plain-list li', { hasText: GLASS })).toHaveText(GLASS);
+  await expect(cust.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toBeVisible(); // eski kayıtta adet varsa gösterilir
   await cust.goto('/siparisler');
   await expect(cust.getByRole('link', { name: orderNo, exact: true })).toBeVisible();
   await cust.context().close();

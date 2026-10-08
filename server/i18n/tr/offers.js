@@ -43,4 +43,31 @@ export default {
     awaitingPrice: { title: 'Fiyatımı bekleyenler', empty: 'Fiyatınızı bekleyen teklif yok.' },
     notOpened: { title: 'Teklif tablosu açılmamış siparişler', empty: 'Teklif tablosu açılmamış sipariş yok.' },
   },
+  // Müşteri ana sayfası → "Tekliflerim" (karar 164): tarih aralığı, liste ve PDF dökümü
+  report: {
+    title: 'Tekliflerim',
+    intro: 'Seçtiğiniz tarih aralığında firmanıza gönderilen cam teklifleri (her siparişin son teklifi). PDF her teklifi ayrı ve ayrıntılı gösterir.',
+    from: 'Başlangıç tarihi',
+    to: 'Bitiş tarihi',
+    show: 'Göster',
+    pdf: 'PDF indir',
+    empty: 'Bu tarih aralığında teklif yok.',
+    cols: { order: 'Sipariş', date: 'Teklif tarihi', m2: 'm²', amount: 'Teklif tutarı' },
+    total: 'Toplam',
+    count: '{n} teklif',
+    more: 'Listede ilk {n} teklif gösteriliyor; PDF hepsini içerir.',
+    pdfTitle: 'TEKLİFLERİM',
+    generated: 'Oluşturulma: {date}',
+    version: 'sürüm {n}',
+    subtotal: 'Teklif toplamı',
+    grandTotal: 'Genel toplam',
+    // PDF dosya adının kökü (seçili panel dili): tekliflerim-2026-10-01_2026-10-31.pdf
+    fileName: 'tekliflerim',
+    errors: {
+      BAD_DATE: 'Geçerli bir başlangıç ve bitiş tarihi seçin.',
+      ORDER: 'Başlangıç tarihi bitiş tarihinden sonra olamaz.',
+      TOO_LONG: 'Tarih aralığı en fazla 400 gün olabilir.',
+      TOO_MANY: 'Bu aralıkta çok fazla teklif var; lütfen aralığı daraltın.',
+    },
+  },
 };

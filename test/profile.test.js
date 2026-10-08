@@ -5,7 +5,7 @@ import {
   cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileOrderItems, profileTotals, readQuantities,
 } from '../server/profile/rules.js';
 import { parseProductSheet, planProductImport, productSheetRows, validateProduct } from '../server/profile/catalog.js';
-import { parseStockSheet, shortages } from '../server/profile/stock.js';
+import { STOCK_SHORTAGE_ALERT, parseStockSheet, recordStockShortage, shortages, stockShortageLines } from '../server/profile/stock.js';
 import { profileOfferLines } from '../server/profile/create.js';
 import { depotFormPdf } from '../server/pdf/depot-form.js';
 import { decodePng, fitText, textWidth } from '../server/pdf/pdf.js';
@@ -75,6 +75,11 @@ test('profil akışı: kim hangi adımda ne yapar; satış ve çizim hiçbir şe
     }
   }
   assert.deepEqual(profileActions({ role: 'ADMIN', stage: 'DEPODA', status: 'IPTAL' }), []);
+  // Profil siparişinde müşteri dosya yüklemez (karar 161); iç ekip iç dosya ekleyebilir
+  for (const stage of ['FIYAT_BEKLIYOR', 'TEKLIF_GONDERILDI', 'ONAYLANDI', 'PROFORMA', 'DEPODA', 'TESLIM_EDILDI']) {
+    assert.ok(!a('MUSTERI', stage, { canApprove: true }).includes('add_file'), `müşteri ${stage}`);
+    assert.ok(a('ADMIN', stage).includes('add_file'), `yönetici ${stage}`);
+  }
   assert.equal(orderStatusFor('FIYAT_BEKLIYOR'), 'YENI');
   assert.equal(orderStatusFor('DEPODA'), 'HAZIRLANIYOR');
   assert.equal(orderStatusFor('FATURALANDI'), 'ARSIVLENDI');
@@ -211,4 +216,39 @@ test('kapsam: satış ve çizim profil siparişlerini hiç görmez', () => {
   assert.deepEqual(orderScope({ appRole: 'DENETIMCI' }), { removedAt: null });
   assert.deepEqual(orderScope({ appRole: 'ADMIN' }), { removedAt: null });
   assert.deepEqual(orderScope({ appRole: 'MUSTERI', customerId: 'c1' }), { removedAt: null, customerId: 'c1' });
+});
+
+test('stok yetersizliği (karar 165): mevcut kural (shortages) + ürünün sipariş anındaki kodu / adı / birimi; gereken, mevcut, eksik', () => {
+  const items = [
+    { productId: 'p1', code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', qty: 10 },
+    { productId: 'p2', code: 'SP1', nameTr: 'Spigot', nameRo: 'Spigot', unitCode: 'BUCATI', qty: 4 },
+    { productId: null, code: 'ESKI', nameTr: 'Eski', nameRo: 'Vechi', unitCode: 'BUCATI', qty: 99 },
+  ];
+  const levels = new Map([['p1', 4], ['p2', 4]]);
+  assert.deepEqual(stockShortageLines(items, levels), [{ productId: 'p1', code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', qty: 10, stock: 4, missing: 6 }]);
+  // Eksiye düşmüş stok (depoya stok yetmeden gönderilmiş sipariş) da aynı kuralla
+  assert.deepEqual(stockShortageLines(items, new Map([['p1', -3], ['p2', 9]])).map((l) => [l.code, l.stock, l.missing]), [['GK15', -3, 13]]);
+  assert.deepEqual(stockShortageLines(items, new Map([['p1', 10], ['p2', 4]])), [], 'stok yeterli: satır yok');
+  assert.deepEqual(shortages(items, levels).map((s) => s.productId), ['p1'], 'mevcut kural değişmedi');
+  assert.equal(STOCK_SHORTAGE_ALERT, 'STOCK_SHORTAGE');
+});
+
+test('stok yetersizliği kaydı: siparişi engellemez; yalnızca yetmeyen kalem varsa TEK "Önemli kararlar" kaydı + denetim; aynı işlemde (tx)', async () => {
+  const calls = [];
+  const tx = (levels) => ({
+    stockMovement: { groupBy: async ({ where }) => where.productId.in.map((id) => ({ productId: id, _sum: { qty: levels[id] ?? 0 } })) },
+    adminAlert: { create: async (a) => { calls.push(['alert', a.data]); return { id: 'al1' }; } },
+    auditLog: { create: async (a) => { calls.push(['audit', a.data]); return a.data; } },
+  });
+  const items = [{ productId: 'p1', code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', qty: 10 }];
+  const actor = { id: 'u1', role: 'MUSTERI', ip: '10.0.0.1' };
+  const r = await recordStockShortage(tx({ p1: 4 }), { orderId: 'o1', orderNo: 'UNSP3', items, actor, now: new Date('2026-10-08T08:00:00Z') });
+  assert.deepEqual([r.alertId, r.lines.map((l) => l.missing)], ['al1', [6]]);
+  const alert = calls.find((c) => c[0] === 'alert')[1];
+  assert.deepEqual([alert.type, alert.orderId, alert.createdById, alert.details.orderNo, alert.details.stock[0].code, alert.details.stock[0].stock], ['STOCK_SHORTAGE', 'o1', 'u1', 'UNSP3', 'GK15', 4]);
+  assert.equal(calls.filter((c) => c[0] === 'audit' && c[1].action === 'STOCK_SHORTAGE').length, 1);
+  calls.length = 0;
+  assert.deepEqual(await recordStockShortage(tx({ p1: 10 }), { orderId: 'o2', orderNo: 'UNSP4', items, actor }), { lines: [], alertId: null });
+  assert.deepEqual(calls, [], 'stok yeterli: kayıt yok');
+  assert.deepEqual(await recordStockShortage(tx({}), { orderId: 'o3', orderNo: 'UNSP5', items: [{ ...items[0], productId: null }], actor }), { lines: [], alertId: null });
 });

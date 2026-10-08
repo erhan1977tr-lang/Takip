@@ -811,3 +811,95 @@ dbTest('sınırlar kiracı ayrımını ve yetkileri değiştirmez: başka firman
   assert.deepEqual([forced.translation, (await rowOf(forced.noteId)).internal], ['DONE', false]);
   assert.deepEqual(await add(U.inspector, O, 'x', { p, limits }), { ok: false, code: 'FORBIDDEN' });
 }));
+
+// ───────── Revizyon notu (karar 162–163): numaralı not, talep yazıldıktan sonra BİR KEZ çevrilir ve saklanır ─────────
+const { runOrderAction } = await import('../../server/orders/transitions.js');
+const { revisionNote } = await import('../../server/orders/revision-note.js');
+const { drawingRevisionsFor } = await import('../../server/notes/view.js');
+const actApprove = (u) => ({ ...act(u), canApprove: true });
+/** Müşterinin onayını bekleyen çizimli sipariş (v1 gönderildi) */
+async function waitingOrder(f = A) {
+  const o = await newOrder(f, { drawingTrack: 'ONAY_BEKLIYOR' });
+  const d = await db.drawing.create({ data: { orderId: o.id, version: 1, status: 'ONAY_BEKLIYOR', uploadedById: U.drawer.id, sentAt: new Date(), sentById: U.drawer.id } });
+  return { o, d };
+}
+/** Talebi gerçek iş akışıyla yazar (requestRevisionAction'ın sırası: numaralı not → request_revision) */
+async function requestRevision(u, o, items) {
+  const note = revisionNote(items);
+  assert.ok(note.ok);
+  const r = await runOrderAction(db, { orderId: o.id, action: 'request_revision', actor: actApprove(u), payload: { comment: note.text } });
+  return r.result.revisionId;
+}
+const translateRev = (u, o, revisionId, p, extra = {}) =>
+  tr.translateRevision(db, { revisionId, orderId: o.id, actor: act(u), translator: p.fn, secret: SECRET, limits: createNoteLimits(), ...extra });
+/** Kullanıcının sipariş sayfasında gördüğü talepler — lib/orders.ts ile aynı kurallar (kapsam + drawingRevisionsFor) */
+async function seenRevisions(u, o) {
+  const row = await db.order.findFirst({ where: { id: o.id, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { include: { revisions: true } } } });
+  return row ? drawingRevisionsFor(u.appRole, row.drawings).flatMap((d) => d.revisions) : null;
+}
+
+dbTest('revizyon notu: numaralı not iş akışıyla kaydedilir; talebi YAZAN müşterinin işlemi Türkçeye BİR KEZ çevirir ve talebin satırına yazar; tekrar / sayfa okuması çeviri yapmaz; görünüm not kuralıyla aynı', offline(async () => {
+  await enable();
+  const custA2 = U.custA2 ?? (U.custA2 = await db.user.create({ data: { email: 'custA2@ceviri.test', name: 'custA2', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: A.id } }));
+  const { o } = await waitingOrder();
+  const revisionId = await requestRevision(U.custA, o, ['Margine 5 mm mai îngustă', '', '2) Gaura Ø12 la dreapta']);
+  const stored = await db.drawingRevision.findUniqueOrThrow({ where: { id: revisionId } });
+  assert.deepEqual([stored.comment, stored.translationStatus], ['1. Margine 5 mm mai îngustă\n2. Gaura Ø12 la dreapta', null], 'numaralı not; henüz çeviri durumu yok');
+  const p = provider(async ({ text }) => ({ text: text.replace('Margine 5 mm mai îngustă', 'Kenar 5 mm daha dar').replace('Gaura Ø12 la dreapta', 'Delik Ø12 sağa') }));
+  // Başka firmanın müşterisi, aynı firmanın başka kullanıcısı ve iç ekip talebi çevirtemez (sağlayıcı çağrılmaz)
+  for (const u of [U.custB, custA2, U.admin, U.sales]) assert.deepEqual(await translateRev(u, o, revisionId, p), { ok: false, code: 'NOT_FOUND' }, u.name);
+  assert.equal(p.calls.length, 0);
+  assert.deepEqual(await translateRev(U.custA, o, revisionId, p), { ok: true, translation: 'DONE' });
+  assert.deepEqual(p.calls.map((c) => [c.target, c.text]), [['tr', '1. Margine 5 mm mai îngustă\n2. Gaura Ø12 la dreapta']]);
+  const done = await db.drawingRevision.findUniqueOrThrow({ where: { id: revisionId } });
+  assert.deepEqual([done.translation, done.translationLang, done.translationStatus, done.translationError, done.comment], ['1. Kenar 5 mm daha dar\n2. Delik Ø12 sağa', 'tr', 'DONE', null, stored.comment]);
+  // İkinci çağrı (çift gönderim) ve sayfa okumaları (yenileme, otomatik yenileme) çeviri YAPMAZ
+  assert.deepEqual(await translateRev(U.custA, o, revisionId, p), { ok: false, code: 'NOT_FOUND' });
+  for (let i = 0; i < 5; i++) for (const u of [U.custA, U.admin, U.sales, U.drawer, U.inspector]) await seenRevisions(u, o);
+  assert.equal(p.calls.length, 1, 'tek sağlayıcı çağrısı');
+  assert.equal((await db.drawingRevision.findUniqueOrThrow({ where: { id: revisionId } })).translationAt.getTime(), done.translationAt.getTime(), 'saklanan çeviri değişmedi');
+  // Görünüm: iç ekip Türkçe çeviriyi görür; müşteri ve denetimci yalnızca özgün notu; başka firma siparişi hiç göremez
+  for (const u of [U.admin, U.sales, U.drawer]) assert.deepEqual((await seenRevisions(u, o)).map((r) => [r.comment, r.translation]), [[stored.comment, '1. Kenar 5 mm daha dar\n2. Delik Ø12 sağa']], u.name);
+  for (const u of [U.custA, U.inspector]) assert.deepEqual((await seenRevisions(u, o)).map((r) => [r.comment, r.translation, r.translationStatus]), [[stored.comment, null, null]], u.name);
+  assert.equal(await seenRevisions(U.custB, o), null);
+}));
+
+dbTest('revizyon notu çevirisi: hata talebi bozmaz (FAILED + güvenli kod); müşterinin çeviri hakkı doluysa sağlayıcı çağrılmaz (RATE_LIMIT); çeviri kapalıyken alan yazılmaz; paralel iki istek tek çeviri', offline(async () => {
+  await enable();
+  // Hata: zaman aşımı → FAILED + TIMEOUT; talep ve iş akışı yerinde
+  const a = await waitingOrder();
+  const ra = await requestRevision(U.custA, a.o, ['Bir']);
+  const boom = provider(async () => { throw new TranslateError('TIMEOUT'); });
+  assert.deepEqual(await quiet(() => translateRev(U.custA, a.o, ra, boom)), { ok: true, translation: 'FAILED' });
+  const fa = await db.drawingRevision.findUniqueOrThrow({ where: { id: ra } });
+  assert.deepEqual([fa.translationStatus, fa.translationError, fa.translation, fa.comment], ['FAILED', 'TIMEOUT', null, '1. Bir']);
+  assert.equal((await db.order.findUniqueOrThrow({ where: { id: a.o.id } })).drawingTrack, 'REVIZYON_ISTENDI');
+  // İç ekip başarısızlığın nedenini görür; müşteri görmez
+  assert.deepEqual((await seenRevisions(U.admin, a.o)).map((r) => [r.translationStatus, r.translationError]), [['FAILED', 'TIMEOUT']]);
+  assert.deepEqual((await seenRevisions(U.custA, a.o)).map((r) => [r.translationStatus, r.translationError]), [[null, null]]);
+  // Hız sınırı: müşterinin çeviri hakkı (notlarla ortak) doluysa sağlayıcı çağrılmaz
+  const b = await waitingOrder();
+  const rb = await requestRevision(U.custA, b.o, ['İki']);
+  const none = provider();
+  const full = createNoteLimits({ ...NOTE_LIMITS, customerTranslations: { limit: 0, windowMs: 60 * MIN } });
+  assert.deepEqual(await translateRev(U.custA, b.o, rb, none, { limits: full }), { ok: true, translation: 'FAILED' });
+  assert.deepEqual([none.calls.length, (await db.drawingRevision.findUniqueOrThrow({ where: { id: rb } })).translationError], [0, 'RATE_LIMIT']);
+  // Kapalı: talep çevirisiz kalır, çeviri alanı yazılmaz
+  await enable(false);
+  const c = await waitingOrder();
+  const rc = await requestRevision(U.custA, c.o, ['Üç']);
+  assert.deepEqual(await translateRev(U.custA, c.o, rc, none), { ok: true, translation: null });
+  assert.deepEqual(fields(await db.drawingRevision.findUniqueOrThrow({ where: { id: rc } })), [null, null, null, null]);
+  assert.equal(none.calls.length, 0);
+  // Paralel iki istek (çift tıklama): sahiplenme tek koşullu güncelleme — tek sağlayıcı çağrısı
+  await enable();
+  const d = await waitingOrder();
+  const rd = await requestRevision(U.custA, d.o, ['Dört', 'Beş']);
+  const slow = provider(async ({ text, target }) => { await new Promise((r) => setTimeout(r, 30)); return { text: `[${target}] ${text}` }; });
+  const both = await Promise.all([translateRev(U.custA, d.o, rd, slow), translateRev(U.custA, d.o, rd, slow)]);
+  assert.equal(slow.calls.length, 1);
+  const outcome = both.map((x) => (x.ok ? x.translation : x.code));
+  assert.equal(outcome.filter((x) => x === 'DONE').length, 1, outcome.join());
+  assert.ok(outcome.every((x) => ['DONE', 'NOT_ALLOWED', 'NOT_FOUND'].includes(x)), outcome.join());
+  assert.equal((await db.drawingRevision.findUniqueOrThrow({ where: { id: rd } })).translationStatus, 'DONE');
+}));

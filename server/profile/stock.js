@@ -33,6 +33,48 @@ export function shortages(items, levels) {
   });
 }
 
+/** "Önemli kararlar" türü: müşterinin profil siparişinde stok yetmedi (karar 165) */
+export const STOCK_SHORTAGE_ALERT = 'STOCK_SHORTAGE';
+
+/**
+ * Stok yetersizliği uyarısının satırları (karar 165): mevcut kural (shortages) + ürünün sipariş anındaki adı, kodu ve
+ * birimi. Gereken = siparişteki adet, mevcut = stok (hareketlerin toplamı; eksiye düşmüş olabilir), eksik = gereken − mevcut.
+ * Yeni bir stok hesabı DEĞİLDİR (Paket 5): yalnızca stockLevels'ın sonucu siparişin kalemleriyle eşleştirilir.
+ * @param {{ productId: string | null, code: string, nameTr: string, nameRo: string, unitCode: string, qty: number }[]} items
+ * @param {Map<string, number>} levels
+ * @returns {{ productId: string, code: string, nameTr: string, nameRo: string, unitCode: string, qty: number, stock: number, missing: number }[]}
+ */
+export function stockShortageLines(items, levels) {
+  return shortages(items, levels).map((s) => {
+    const it = items.find((i) => i.productId === s.productId);
+    return { productId: s.productId, code: it?.code ?? '', nameTr: it?.nameTr ?? '', nameRo: it?.nameRo ?? '', unitCode: it?.unitCode ?? '', qty: s.qty, stock: s.stock, missing: s.missing };
+  });
+}
+
+/**
+ * Müşterinin profil siparişi gönderildiğinde stok denetimi (karar 165) — sipariş ENGELLENMEZ. Stok yetmeyen kalem varsa
+ * yöneticinin "Önemli kararlar" listesine tek bir kayıt düşer (sipariş anındaki gereken / mevcut / eksik) ve siparişin
+ * "Stok yetersiz" işareti bu açık kayıttır; yönetici mevcut ve beklenen stoğu değerlendirip kararını verince "Gördüm" ile
+ * kapanır. Siparişi oluşturan veritabanı işleminin İÇİNDE çağrılır (aynı anlık görüntü; sipariş varsa kayıt da vardır).
+ * @param {any} tx
+ * @param {{ orderId: string, orderNo: string, items: object[], actor: { id: string, role?: string, ip?: string | null }, now?: Date }} p
+ * @returns {Promise<{ lines: ReturnType<typeof stockShortageLines>, alertId: string | null }>}
+ */
+export async function recordStockShortage(tx, { orderId, orderNo, items, actor, now = new Date() }) {
+  const ids = [...new Set(items.map((i) => i.productId).filter(Boolean))];
+  if (ids.length === 0) return { lines: [], alertId: null };
+  const lines = stockShortageLines(items, await stockLevels(tx, ids));
+  if (lines.length === 0) return { lines, alertId: null };
+  const alert = await tx.adminAlert.create({
+    data: { type: STOCK_SHORTAGE_ALERT, orderId, createdById: actor.id, createdAt: now, details: { orderNo, stock: lines } },
+  });
+  await writeAudit(tx, {
+    action: 'STOCK_SHORTAGE', entityType: 'Order', entityId: orderId, userId: actor.id,
+    details: { orderNo, alertId: alert.id, lines: lines.map((l) => ({ code: l.code, qty: l.qty, stock: l.stock, missing: l.missing })) },
+  }, actor);
+  return { lines, alertId: alert.id };
+}
+
 /**
  * Elle stok hareketi (yönetici): giriş ya da sayım düzeltmesi.
  * @param {{ productId: string, kind: 'GIRIS' | 'SAYIM', qty: number, note?: string | null }} m  SAYIM'da qty sayılan adettir (fark hareket olarak yazılır)

@@ -601,3 +601,37 @@ dbTest('Muhasebe: yükleme kârı ve fabrika bakiyesi; ödemeler yüklemeye bağ
   await db.offer.deleteMany({ where: { orderId: glass.id } });
   await db.order.delete({ where: { id: glass.id } });
 });
+
+dbTest('stok yetersizliği (karar 165): müşterinin siparişi ENGELLENMEZ; yetmeyen kalem varsa siparişle aynı işlemde TEK "Önemli kararlar" kaydı (gereken / mevcut / eksik) + denetim; stok yeterliyse kayıt yok; stok düşmez', async () => {
+  const [p1, p2] = await db.profileProduct.findMany({ where: { code: { notIn: ['GK15', 'AD45', 'SPIGOTI'] }, isActive: true }, orderBy: { code: 'asc' }, take: 2 });
+  assert.ok(p1 && p2);
+  // Mevcut stok: sayım ile kesin değer (p1 = 3, p2 = 10)
+  for (const [p, qty] of [[p1, 3], [p2, 10]]) {
+    const r = await addStockMovement(db, { productId: p.id, kind: 'SAYIM', qty }, actor(people.admin));
+    assert.ok(r.ok || r.code === 'NO_CHANGE');
+  }
+  const before = await stockLevels(db, [p1.id, p2.id]);
+  const short = await newProfileOrder([[p1.code, 5], [p2.code, 2]]);
+  const order = await load(short.id);
+  assert.deepEqual([short.shortage, order.profile.stage, order.status], [1, 'FIYAT_BEKLIYOR', 'YENI'], 'sipariş açıldı, yönetimde');
+  const alerts = await db.adminAlert.findMany({ where: { orderId: short.id, type: 'STOCK_SHORTAGE' } });
+  assert.equal(alerts.length, 1);
+  assert.deepEqual([alerts[0].resolvedAt, alerts[0].createdById, alerts[0].details.orderNo], [null, people.cust.id, short.orderNo]);
+  assert.deepEqual(alerts[0].details.stock.map((l) => [l.code, l.qty, l.stock, l.missing, l.unitCode]), [[p1.code, 5, 3, 2, p1.unitCode]]);
+  const audit = await db.auditLog.findMany({ where: { action: 'STOCK_SHORTAGE', entityId: short.id } });
+  assert.deepEqual(audit.map((a) => a.details.lines), [[{ code: p1.code, qty: 5, stock: 3, missing: 2 }]]);
+  // Sipariş açılırken stok düşmez (yalnızca depoya giderken)
+  assert.deepEqual([...(await stockLevels(db, [p1.id, p2.id])).entries()].sort(), [...before.entries()].sort());
+  // Stok yeterli: kayıt yok
+  const ok = await newProfileOrder([[p1.code, 3], [p2.code, 10]]);
+  assert.equal(ok.shortage, 0);
+  assert.equal(await db.adminAlert.count({ where: { orderId: ok.id, type: 'STOCK_SHORTAGE' } }), 0);
+  // Yönetici kararını verince "Gördüm" ile kapanır (genel uyarı kapatma); işaret kalkar
+  const { resolveAlert } = await import('../../server/pricing/alerts.js');
+  assert.equal(await resolveAlert(db, alerts[0].id, actor(people.admin)), true);
+  assert.equal(await db.adminAlert.count({ where: { orderId: short.id, type: 'STOCK_SHORTAGE', resolvedAt: null } }), 0);
+  // Satış ve çizim profil siparişini hiç görmez (uyarı dahil): kapsam dışı
+  for (const who of ['sales', 'drawer']) {
+    assert.equal(await db.order.count({ where: { id: short.id, ...orderScope({ appRole: people[who].appRole, customerId: people[who].customerId }) } }), 0, who);
+  }
+});

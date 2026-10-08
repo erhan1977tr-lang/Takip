@@ -140,6 +140,31 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   for (const t of Object.keys(NOTIFY_RULES)) assert.ok(INAPP_TYPES.includes(t), t);
 });
 
+test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişinin müşteri olayları gider — iç olaylar (teklifin yöneticiye gitmesi, revizyon / onayın çizimciye gitmesi, muhasebe, yükleme) müşteri alıcı kümesinde yok; bağlantı ilgili bölüme iner', () => {
+  const glass = { orderTypeCode: 'GLASS_ORDER', id: 'o1' }, profile = { orderTypeCode: 'PROFILE_ORDER', id: 'o2' };
+  const toCustomer = INAPP_TYPES.filter((t) => [glass, profile].some((o) => INAPP_RULES[t].to(o, {}).includes('customer'))).sort();
+  // Yeni bir olay müşteriye açılacaksa bilerek buraya eklenmelidir
+  assert.deepEqual(toCustomer, [
+    'LOADING_REPLANNED', 'ORDER_DRAWING_UPLOADED', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED', 'ORDER_PROFILE_OFFER_SENT',
+    'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
+  ]);
+  for (const t of ['ORDER_OFFER_SUBMITTED', 'ORDER_OFFER_RETURNED', 'ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED', 'ORDER_SENT_TO_DRAWING', 'ACCOUNTING_ACTION', 'LOADING_NOT_LOADED', 'ORDER_CREATED', 'ORDER_PROFILE_APPROVED']) {
+    assert.ok(!toCustomer.includes(t), `${t}: iç olay müşteriye gitmez`);
+  }
+  // Bağlantılar: yeni çizim → kırmızı bilgilendirme (#cizim-onay); teklif → #teklif; çizim kararları → #cizim (iç ekip)
+  const link = (t, o = glass) => (INAPP_RULES[t].link ? INAPP_RULES[t].link(o, {}) : `/siparisler/${o.id}`);
+  assert.equal(link('ORDER_DRAWING_UPLOADED'), '/siparisler/o1#cizim-onay');
+  assert.equal(link('ORDER_OFFER_SENT'), '/siparisler/o1#teklif');
+  assert.equal(link('ORDER_OFFER_UPDATED'), '/siparisler/o1#teklif');
+  assert.equal(link('ORDER_PROFILE_OFFER_SENT', profile), '/siparisler/o2#teklif');
+  assert.equal(link('ORDER_REVISION_REQUESTED'), '/siparisler/o1#cizim');
+  assert.equal(link('ORDER_DRAWING_APPROVED'), '/siparisler/o1#cizim');
+  for (const t of INAPP_TYPES) {
+    const l = INAPP_RULES[t].link?.({ id: 'o1' }, { day: '2026-10-08' });
+    if (l != null) assert.equal(safeLink(l), l, `${t}: bağlantı uygulama içi yol kuralından geçer`);
+  }
+});
+
 test('yazım: firma adı görme yetkisi olmayan role MASKELİ saklanır; müşteriye firma yazılmaz; aynı anahtar tekrar yazılmaz (skipDuplicates)', async () => {
   const calls = [];
   const db = { notification: { createMany: async (a) => { calls.push(a); return { count: a.data.length }; } } };

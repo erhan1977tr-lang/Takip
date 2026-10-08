@@ -8,6 +8,7 @@ import { MAX_ORDER_NO, formatTypedNo, pickNumber } from '../orders/create.js';
 import { slaDeadline } from '../orders/rules.js';
 import { PROFILE_TYPE, profileTotals } from './rules.js';
 import { PROFILE_CURRENCY, profilePricesFor } from './pricing.js';
+import { recordStockShortage } from './stock.js';
 
 /**
  * Teklif satırları: sipariş kalemleri + fiyatları (liste ya da müşteri tablosu). listPrice = kaynağın fiyatı,
@@ -78,6 +79,10 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
       },
     }, actor);
     await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, type: PROFILE_TYPE } }));
-    return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== requestedNo };
+    // Stok yetersizliği (karar 165): sipariş ENGELLENMEZ; yetmeyen kalem varsa yöneticinin "Önemli kararlar" listesine
+    // tek kayıt (gereken / mevcut / eksik) düşer — siparişin "Stok yetersiz" işareti bu açık kayıttır. Ayrı bildirim
+    // yazılmaz (yeni profil siparişi yöneticiye zaten bildirilir — ORDER_CREATED).
+    const stock = await recordStockShortage(tx, { orderId: order.id, orderNo, items, actor, now });
+    return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== requestedNo, shortage: stock.lines.length };
   });
 }

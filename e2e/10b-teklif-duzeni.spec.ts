@@ -7,7 +7,7 @@ const SALES = 'fiyat-satis@e2e.test'; // 08'de açıldı (05'te satis@e2e.test b
 // tablosunun araçları (aynı camdan "+", sandık parası, tek fiyat, tabloyu temizle). İş kuralları değişmedi.
 test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  const id = await newOrder(cust, 'Düzen', 'duzen.pdf'); // siparişte 3 adet cam
+  const id = await newOrder(cust, 'Düzen', 'duzen.pdf'); // müşteri formunda cam adedi yok (karar 160): tablo 1 adetle açılır
   const sales = await as(browser, SALES, TEAM_PW);
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
@@ -33,7 +33,7 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).click();
   await expect(desc).toHaveCount(2);
   await expect(desc.nth(1)).toHaveValue(GLASS);
-  // CNC tek adetlik (yeni eklenen) cam satırına: 3 adetlik satırdan cam ayrılmaz (ayırma 02'de sınanır)
+  // CNC tek adetlik (yeni eklenen) cam satırına: cam ayrılmaz (ayırma 02'de sınanır)
   await sales.getByRole('button', { name: '+CNC' }).nth(1).click();
   await sales.getByLabel('CNC fiyatı').fill('15');
 
@@ -64,7 +64,7 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await sales.getByRole('button', { name: 'Tabloyu temizle' }).click();
   await expect(desc).toHaveCount(1);
   await expect(desc.first()).toHaveValue(GLASS);
-  await expect(sales.getByLabel('Adet', { exact: true })).toHaveValue('3');
+  await expect(sales.getByLabel('Adet', { exact: true })).toHaveValue('1'); // siparişte adet yok → 1 (karar 160)
   await expect(sales.getByLabel('CNC fiyatı')).toHaveCount(0);
 
   // Yönetici: aynı sıra; "İstenen camlar" sipariş bilgilerinde durur

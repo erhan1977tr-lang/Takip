@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
+import { unitLabel } from '@/server/profile/catalog.js';
 
 type Diff = { line: number; kind: string; description: string; listPrice: number; unitPrice: number; free: boolean };
 /**
@@ -15,6 +16,8 @@ type Details = {
   orderNo?: string; currency?: string; lines?: Diff[]; error?: string; compensationId?: string; glass?: string; tier?: 'CUSTOMER' | 'SALES'; mode?: string;
   normal?: number | null; price?: number | null; destOrderNo?: string; day?: string; direct?: boolean;
   source?: { reduced?: boolean; reason?: string | null; before?: number | null; after?: number | null };
+  /** Stok yetersizliği (karar 165): sipariş anındaki gereken / mevcut / eksik */
+  stock?: { code?: string; nameTr?: string; nameRo?: string; unitCode?: string; qty?: number; stock?: number; missing?: number }[];
 };
 const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
 const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
@@ -22,7 +25,7 @@ const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePermission('ALERT_VIEW');
-  const { t } = await getT();
+  const { t, locale } = await getT();
   const sp = await searchParams;
   const include = {
     order: { select: { id: true, orderNo: true } },
@@ -49,6 +52,14 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
             </li>
           ))}
           {d.error && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
+          {(d.stock ?? []).map((l, i) => (
+            <li key={`s${i}`} data-stock-line={l.code}>
+              {t('pricing.alerts.stockLine', {
+                code: l.code ?? '', name: (locale === 'tr' ? l.nameTr : l.nameRo) ?? '', qty: l.qty ?? 0, unit: unitLabel(l.unitCode ?? '', locale),
+                stock: l.stock ?? 0, missing: l.missing ?? 0,
+              })}
+            </li>
+          ))}
           {d.compensationId && (
             <li>{t('pricing.alerts.comp', { glass: d.glass ?? '', dest: d.destOrderNo ?? '—', date: d.day ? fmtDate(`${d.day}T12:00:00Z`) : '—' })}</li>
           )}
@@ -93,7 +104,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               <tbody>
                 {open.map((a) => (
                   <tr key={a.id}>
-                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}</td>
+                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : a.type === 'STOCK_SHORTAGE' ? 'stok' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}</td>
                     <td>{what(a)}</td>
                     <td>{a.createdBy?.name ?? '—'}</td>
                     <td className="nowrap">{fmtDateTime(a.createdAt)}</td>

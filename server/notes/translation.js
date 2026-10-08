@@ -19,9 +19,10 @@ import { TranslateError, translatorFor } from './provider.js';
 import { TRANSLATION_RATE_LIMITED, noteLimits } from './limits.js';
 
 // Saf kurallar (yön, görünürlük, durum) server/notes/view.js'tedir: sipariş sayfası yalnızca onu yükler — sağlayıcıya
-// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki üç işlevden çağrılır: addNote (yeni not), retryNoteTranslation
-// (iç ekibin açık isteği), testTranslation (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
-export { STALE_PENDING_MS, canRetryTranslation, noteView, notesFor, translationState, translationTarget } from './view.js';
+// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki dört işlevden çağrılır: addNote (yeni not), retryNoteTranslation
+// (iç ekibin açık isteği), translateRevision (müşterinin yeni revizyon talebinin notu — karar 163), testTranslation
+// (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
+export { STALE_PENDING_MS, canRetryTranslation, noteView, notesFor, revisionView, translationState, translationTarget } from './view.js';
 
 export const TRANSLATE_KEY = 'translate';
 const SECRET_PURPOSE = 'translate-key';
@@ -87,9 +88,11 @@ const norm = (s) => String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim()
 
 /**
  * "Sürüyor" durumundaki notu çevirir ve sonucu yazar. HİÇBİR ZAMAN hata fırlatmaz (not zaten kayıtlıdır).
+ * table: sonucun yazıldığı tablo — sipariş notu (orderNote) ya da revizyon notu (drawingRevision, karar 163); iki tabloda
+ * da alanlar ve kural aynıdır. note: { id, text, translationLang }.
  * @returns {Promise<'DONE' | 'SAME' | 'FAILED'>}
  */
-async function runTranslation(db, note, { settings, secret, translator, now }) {
+async function runTranslation(db, note, { settings, secret, translator, now, table = 'orderNote' }) {
   let data;
   try {
     const key = settings.keySealed ? openSecret(settings.keySealed, secret, SECRET_PURPOSE) : null;
@@ -108,7 +111,7 @@ async function runTranslation(db, note, { settings, secret, translator, now }) {
     console.warn('[not çevirisi] çevrilemedi', note.id, code);
   }
   try {
-    await db.orderNote.updateMany({ where: { id: note.id, translationStatus: 'PENDING' }, data: { ...data, translationAt: now } });
+    await (table === 'drawingRevision' ? db.drawingRevision : db.orderNote).updateMany({ where: { id: note.id, translationStatus: 'PENDING' }, data: { ...data, translationAt: now } });
   } catch (e) {
     console.warn('[not çevirisi] sonuç yazılamadı', note.id, String(e?.code ?? 'ERROR'));
     return 'FAILED';
@@ -205,6 +208,58 @@ export async function retryNoteTranslation(db, { noteId, orderId, actor, now = n
     action: 'NOTE_TRANSLATION_RETRY', entityType: 'OrderNote', entityId: note.id, userId: actor.id,
     details: { orderId: note.orderId, lang: note.translationLang, before: note.translationStatus, beforeError: note.translationError, result: status },
   }, actor).catch(() => {});
+  return { ok: true, translation: status };
+}
+
+/**
+ * Müşterinin revizyon notunu (DrawingRevision.comment — numaralı maddeler, karar 162) BİR KEZ çevirir ve satırına yazar
+ * (karar 163). Kural sipariş notuyla aynıdır: yön yazanın rolünden (müşteri → Türkçe), not her durumda zaten kayıtlıdır,
+ * çeviri hatası talebi bozmaz (FAILED + güvenli kod), müşterinin çeviri hakkı doluysa sağlayıcı çağrılmaz (FAILED +
+ * RATE_LIMIT), sayfa açılışı / yenileme çeviri yapmaz.
+ *   - Yalnızca talebi YAZAN kullanıcının, talep yazıldıktan hemen sonraki sunucu işleminden çağrılır (requestRevisionAction).
+ *   - Talep, yazanın sipariş kapsamında olmalıdır; başkasının talebi ya da daha önce çeviri durumu yazılmış talep
+ *     (çevrilmiş, çevrilemedi, sürüyor) yeniden çevrilmez: sahiplenme tek koşullu güncellemedir (translationStatus boş).
+ *   - Yeniden deneme yoktur (bu pakette); iç ekip çevrilemeyen talebin özgün metnini görür.
+ * @param {any} db
+ * @param {{ revisionId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null }, now?: Date,
+ *   translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' | null } | { ok: false, code: 'NOT_FOUND' | 'NOT_ALLOWED' }>}
+ */
+export async function translateRevision(db, { revisionId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  const target = translationTarget(actor?.role);
+  if (!target) return { ok: true, translation: null };
+  const revision = await db.drawingRevision.findFirst({
+    where: {
+      id: String(revisionId ?? ''), requestedById: String(actor.id ?? ''), translationStatus: null,
+      drawing: { orderId: String(orderId ?? ''), order: orderScope({ appRole: actor.role, customerId: actor.customerId }) },
+    },
+    select: { id: true, comment: true },
+  });
+  if (!revision) return { ok: false, code: 'NOT_FOUND' };
+  let settings = null;
+  try {
+    settings = await readSettings(db);
+  } catch {
+    settings = null; // ayar okunamadıysa talep çevirisiz kalır (talep zaten kayıtlıdır)
+  }
+  // Çeviri kapalı / anahtarsız: talebe çeviri alanı yazılmaz (sipariş notundaki gibi)
+  if (!translateReady(settings)) return { ok: true, translation: null };
+  // Çeviri hakkı (sağlayıcı çağrısı) sahiplenmeden önce tek adımda alınır; hak yoksa sağlayıcı çağrılmaz
+  if (!limits.translation(actor, now.getTime())) {
+    await db.drawingRevision.updateMany({
+      where: { id: revision.id, translationStatus: null },
+      data: { translationLang: target, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now },
+    });
+    return { ok: true, translation: 'FAILED' };
+  }
+  const claimed = await db.drawingRevision.updateMany({
+    where: { id: revision.id, translationStatus: null },
+    data: { translationLang: target, translationStatus: 'PENDING', translationAt: now },
+  });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: revision.id, text: revision.comment, translationLang: target }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'drawingRevision',
+  });
   return { ok: true, translation: status };
 }
 

@@ -288,15 +288,27 @@ test('sağlayıcıyı (Google) yükleyen tek kod çeviri servisidir; sipariş sa
   }
 });
 
-test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: yeni not ve açık "yeniden dene" (+ yöneticinin bağlantı denemesi); işçi ve öbür sunucu kodu çağırmaz', () => {
-  // Sağlayıcı çeviri servisinde yalnızca üç yerde seçilir (addNote, retryNoteTranslation, testTranslation) ve yalnızca
-  // runTranslation / testTranslation içinde çağrılır
+test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: yeni not, yeni revizyon talebi (karar 163) ve açık "yeniden dene" (+ yöneticinin bağlantı denemesi); işçi ve öbür sunucu kodu çağırmaz', () => {
+  // Sağlayıcı çeviri servisinde yalnızca dört yerde seçilir (addNote, retryNoteTranslation, translateRevision,
+  // testTranslation) ve yalnızca runTranslation / testTranslation içinde çağrılır
   const svc = APP.find((s) => s.file === 'server/notes/translation.js').text;
-  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 3);
+  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 4);
   assert.equal((svc.match(/await translator\(|await \(translator \?\? translatorFor\(\)\)\(/g) ?? []).length, 2);
-  assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'runTranslation yalnızca addNote ve retryNoteTranslation içinden');
+  assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'not çevirisi: runTranslation yalnızca addNote ve retryNoteTranslation içinden');
+  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 3, '+ translateRevision (revizyon notu, karar 163) — başka çağıran yok');
   // Bu işlevleri çağıran dosyalar: yalnızca iki "use server" işlem dosyası (form gönderimiyle çalışır; GET / çizimle değil)
-  assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
+  assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation|translateRevision)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
+  // Revizyon notu (karar 163): talep yazıldıktan SONRA, yalnızca talebi yazan kullanıcının sunucu işleminden; bir kez —
+  // sahiplenme yalnızca çeviri durumu hiç yazılmamış talebe uygulanır (çevrilmiş / çevrilemedi / sürüyor yeniden çevrilmez)
+  const rev = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function testTranslation('));
+  assert.match(rev, /requestedById: String\(actor\.id \?\? ''\), translationStatus: null/);
+  assert.match(rev, /updateMany\(\{\s*where: \{ id: revision\.id, translationStatus: null \}/);
+  assert.ok(rev.indexOf('limits.translation(actor, now.getTime())') < rev.indexOf("translationStatus: 'PENDING'"), 'hak sahiplenmeden önce');
+  assert.ok(rev.indexOf('translateReady(settings)') < rev.indexOf('limits.translation('), 'kapalıyken hak harcanmaz');
+  const action = APP.find((s) => s.file === 'app/(panel)/siparisler/[id]/actions.ts').text;
+  const reqRev = action.slice(action.indexOf('export async function requestRevisionAction('));
+  assert.ok(reqRev.indexOf("await act(user, id, 'request_revision'") < reqRev.indexOf('await translateRevision('), 'çeviri talep kaydedildikten sonra');
+  assert.equal((action.match(/translateRevision\(/g) ?? []).length, 1);
   assert.deepEqual(filesWith(/\btestTranslation\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/admin/entegrasyonlar/actions.ts']);
   for (const file of ['app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/admin/entegrasyonlar/actions.ts']) {
     assert.ok(APP.find((s) => s.file === file).text.startsWith("'use server'"), `${file}: sunucu işlemi`);

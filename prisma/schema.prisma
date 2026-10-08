@@ -852,9 +852,16 @@ model DrawingRevision {
   drawingId     String
   drawing       Drawing  @relation(fields: [drawingId], references: [id], onDelete: Cascade)
   requestedById String
-  comment       String
+  comment       String   // müşterinin revizyon notu: numaralı maddeler "1. …\n2. …" (karar 162; eski kayıtlarda serbest metin)
   annotations   Json?    // çizim üstü işaretler (server/orders/annotations.js): iğne, dikdörtgen, serbest, metin
   createdAt     DateTime @default(now())
+  // Revizyon notunun otomatik çevirisi (karar 163 — not çevirisiyle aynı kural ve alanlar; server/notes/translation.js →
+  // translateRevision): talep yazılırken BİR KEZ çevrilir ve burada saklanır; sayfa açılışı / yenileme çeviri yapmaz.
+  translation       String?
+  translationLang   String?
+  translationStatus NoteTranslationStatus?
+  translationError  String?
+  translationAt     DateTime?
 }
 
 // ---------------------------------------------------------
