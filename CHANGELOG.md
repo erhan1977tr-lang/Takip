@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.55.3 — 08.10.2026
+
+Paket 5 doğrulama düzeltmesi: hesaplayıcının kalem adları büyük / küçük harf ve Türkçe noktalı / noktasız I ayrımı yapmadan
+eşleşir — "Profil", "PROFIL", "PROFİL" ve "profıl" aynı kalemdir. Önceden Latin klavyeyle büyük harfle yazılan "PROFIL" ayrı bir
+kalem sayılıyor, aynı kalemde çakışan satır reddedilmiyordu. Birim testi eklendi.
+
 ## 3.55.2 — 08.10.2026
 
 Paket 5 doğrulama düzeltmesi: hesaplayıcının okuma servisleri (`loadCalcAdmin`, `loadCalcOptions`) dönüş türlerini açıkça

@@ -125,8 +125,11 @@ export function cleanSlot(v) {
   const s = String(v ?? '').replace(/\s+/g, ' ').trim();
   return s && s.length <= MAX_SLOT ? s : null;
 }
-/** Kalemin eşleştirme anahtarı (büyük / küçük harf ayrımı yok) */
-export const slotKey = (v) => (cleanSlot(v) ?? '').toLocaleUpperCase('tr-TR');
+/**
+ * Kalemin eşleştirme anahtarı: büyük / küçük harf ayrımı yok ve Türkçe noktalı / noktasız I aynı harf sayılır — "Profil",
+ * "profil", "PROFIL", "PROFİL", "profıl" aynı kalemdir (yönetici Türkçe ya da Latin klavyeyle yazabilir).
+ */
+export const slotKey = (v) => (cleanSlot(v) ?? '').normalize('NFC').toLocaleUpperCase('tr-TR').replace(/İ/g, 'I');
 
 // ---------- seçim ----------
 

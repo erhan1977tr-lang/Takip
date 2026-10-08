@@ -107,6 +107,12 @@ test('hesaplayıcı: yöneticinin değerleri — paket içeriği (adet ölçüs�
   assert.equal(cleanSlot(''), null);
   assert.equal(cleanSlot('x'.repeat(61)), null);
   assert.equal(slotKey('profil'), slotKey('PROFİL'), 'Türkçe büyük harf eşleşir');
+  // Noktalı / noktasız I: Türkçe ya da Latin klavyeyle yazılan aynı kalem adı tek kalemdir
+  for (const v of ['Profil', 'PROFIL', 'PROFİL', 'profıl', ' profil  ', 'PROFİL'.normalize('NFD')]) assert.equal(slotKey(v), 'PROFIL', v);
+  assert.equal(slotKey('El tutamağı contası'), slotKey('EL TUTAMAĞI CONTASI'));
+  assert.equal(slotKey('El tutamağı contası'), slotKey('el tutamaği contasi'));
+  assert.notEqual(slotKey('Profil'), slotKey('Conta'));
+  assert.notEqual(slotKey('Conta 12'), slotKey('Conta 16'));
 });
 
 test('hesaplayıcı: MR23 — renk profili seçer (RAL 7016 / eloksal), cam kalınlığı MC12 ya da MC16’yı seçer; adet yukarı yuvarlanır', () => {
