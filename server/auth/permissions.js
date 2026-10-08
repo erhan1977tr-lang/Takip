@@ -42,6 +42,7 @@ export const PERMISSIONS = {
   AUDIT_VIEW: 'Denetim kaydını görür',
   ACCOUNTING_MANAGE: 'Muhasebe: tahsilat, yükleme kârlılığı, fabrika cari hesabı',
   LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
+  SUPPLIER_MANAGE: 'Tedarik ve satın alma: tedarikçiler, ürünlerin alış fiyatı, tedarikçi siparişleri (onay / gönderim), tahmini yükleme tarihi, tedarikçi ödemeleri ve hesapları (karar 179–184; yalnızca yönetici)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).

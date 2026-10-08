@@ -7,6 +7,7 @@ import { fmtDateTime } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import { reservedLevels, stockLevels, stockRowStatus } from '@/server/profile/stock.js';
+import { expectedSupplyMap } from '@/server/suppliers/service.js';
 import { stockImportAction, stockMoveAction, stockThresholdAction } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,12 @@ const ERR: Record<string, MsgKey> = {
 export default async function StockPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requirePermission('STOCK_VIEW');
   const manage = userCan(user, 'STOCK_MANAGE');
+  // Tedarik (Paket 6, karar 184): beklenen tedarik sütunu ve "Sipariş hazırla" yalnızca SUPPLIER_MANAGE (yönetici) içindir —
+  // denetimci görmez. Beklenen miktar stok ve rezerveden AYRIDIR; stoğu değiştirmez.
+  const supply = userCan(user, 'SUPPLIER_MANAGE');
   const { t, locale } = await getT();
   const sp = await searchParams;
-  const [products, levels, reserved, moves] = await Promise.all([
+  const [products, levels, reserved, moves, expected] = await Promise.all([
     db.profileProduct.findMany({ orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }], include: { category: true } }),
     stockLevels(db),
     reservedLevels(db),
@@ -38,6 +42,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       orderBy: { createdAt: 'desc' }, take: 100,
       include: { product: { select: { code: true } }, order: { select: { id: true, orderNo: true } } },
     }),
+    supply ? expectedSupplyMap(db) : Promise.resolve(null),
   ]);
   const users = await db.user.findMany({ where: { id: { in: [...new Set(moves.map((m) => m.createdById).filter((x): x is string => !!x))] } }, select: { id: true, name: true, email: true } });
   const who = new Map(users.map((u) => [u.id, u.name || u.email]));
@@ -57,7 +62,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           <h1>{t('profile.stock.title')}</h1>
           <p className="muted">{t('profile.stock.intro')}</p>
         </div>
-        {manage && <a className="btn" href="/admin/stok/excel">{t('profile.stock.download')}</a>}
+        <div className="row">
+          {supply && <Link className="btn" href="/siparisler/tedarik/yeni?kritik=1">{t('supplier.stock.prepareCritical')}</Link>}
+          {manage && <a className="btn" href="/admin/stok/excel">{t('profile.stock.download')}</a>}
+        </div>
       </div>
       {msg && <div className={`alert ${msg.ok ? 'alert-ok' : 'alert-error'}`}>{msg.text}</div>}
       {!manage && <div className="alert alert-info" data-stock-readonly>{t('profile.stock.viewOnly')}</div>}
@@ -114,6 +122,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <th className="num">{t('profile.stock.colStock')}</th>
                 <th className="num" title={t('profile.stock.colReservedHint')}>{t('profile.stock.colReserved')}</th>
                 <th className="num">{t('profile.stock.colThreshold')}</th><th>{t('profile.stock.colStatus')}</th>
+                {supply && <th className="num" title={t('supplier.stock.colExpectedHint')}>{t('supplier.stock.colExpected')}</th>}
+                {supply && <th />}
               </tr>
             </thead>
             <tbody>
@@ -121,6 +131,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 const st = levels.get(p.id) ?? 0;
                 const res = reserved.get(p.id) ?? 0;
                 const status = stockRowStatus({ stock: st, reserved: res, threshold: p.criticalStock });
+                const exp = expected?.get(p.id) ?? null;
                 return (
                   <tr key={p.id} id={`s-${p.id}`} data-stock-row={p.code} className={status.critical ? 'row-alert' : undefined} style={p.isActive ? undefined : { opacity: 0.55 }}>
                     <td className="mono">{p.code}</td>
@@ -143,6 +154,17 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                       {status.shortForOrders > 0 && <div className="small text-danger">{t('profile.stock.shortForOrders', { n: status.shortForOrders })}</div>}
                       {!status.critical && status.shortForOrders === 0 && p.criticalStock != null && <span className="muted small">{t('profile.stock.statusOk')}</span>}
                     </td>
+                    {supply && (
+                      <td className="num" data-expected>
+                        {exp?.qty ? <b>{exp.qty}</b> : exp?.other.length ? null : <span className="muted">—</span>}
+                        {exp?.other.map((o) => <div key={o.unitCode} className="small muted">+ {o.qty} {unit(o.unitCode)}</div>)}
+                      </td>
+                    )}
+                    {supply && (
+                      <td className="actions">
+                        {p.isActive && <Link className="btn btn-link" href={`/siparisler/tedarik/yeni?urun=${p.id}`} data-prepare={p.code}>{t('supplier.stock.prepare')}</Link>}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

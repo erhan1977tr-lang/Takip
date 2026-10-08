@@ -16,6 +16,7 @@ import {
   setProductImage, validateCategory, validateProduct, type ProductInput,
 } from '@/server/profile/catalog.js';
 import { parsePack } from '@/server/profile/calculator.js';
+import { parsePurchase } from '@/server/suppliers/rules.js';
 
 const PATH = '/admin/profil-katalogu';
 const back = (q: string) => `${PATH}?${q}`;
@@ -45,7 +46,13 @@ export async function saveProductAction(fd: FormData) {
   // Paket içeriği (hesaplayıcı — karar 175): ikisi de boşsa tanımsız; içerik varsa ölçü zorunlu
   const pack = parsePack({ content: fd.get('packContent'), measure: fd.get('packMeasure') });
   if (!pack.ok) redirect(back(`error=${pack.code.toLowerCase()}${edit}`));
-  const r = await saveProduct(db, id, res.value, await actorOf(admin), pack.value);
+  // Alış bilgisi (Paket 6, karar 180): yalnızca formda bölüm varsa (SUPPLIER_MANAGE); saveProduct yetkiyi ayrıca denetler.
+  // Bölüm yoksa (gönderilmediyse) alış alanları değişmez.
+  const pp = fd.get('purchase') === '1'
+    ? parsePurchase({ supplierId: fd.get('supplierId'), price: fd.get('purchasePrice'), currency: fd.get('purchaseCurrency'), unit: fd.get('purchaseUnit') })
+    : null;
+  if (pp && !pp.ok) redirect(back(`error=${pp.code.toLowerCase()}${edit}#alis`));
+  const r = await saveProduct(db, id, res.value, await actorOf(admin), pack.value, pp?.ok ? pp.value : undefined);
   if (!r.ok) redirect(back(`error=${r.code.toLowerCase()}${edit}`));
   revalidatePath(PATH);
   redirect(back(`${id ? 'ok=saved' : 'ok=added'}#p-${r.id}`));

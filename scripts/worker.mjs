@@ -13,6 +13,8 @@
 //   - Otomatik arşiv (karar 158): fiziksel yüklemesi kanıtlı (kişinin "Yüklendi"si ya da eksiksiz yükleme onayı) cam siparişi
 //     yükleme gününden 45 gün sonra mevcut arşiv durumuna geçer; 3.51.0'ın tarihe bakarak verdiği "Yüklendi"ler önce geri
 //     alınır. Saatte bir (server/orders/auto-archive.js). Yalnızca veritabanı.
+//   - Tedarikçi siparişleri (Paket 6): yöneticinin onaylayıp gönderdiği siparişin Türkçe e-postası (teknik eklerle), en çok
+//     bir kez (server/suppliers/dispatch.js); tahmini yükleme tarihinden 2 gün önce yöneticiye hatırlatma (saatte bir).
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -31,6 +33,8 @@ import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
 import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
+import { dispatchSupplierOrderEmails } from '../server/suppliers/dispatch.js';
+import { remindSupplierEta } from '../server/suppliers/service.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -94,6 +98,9 @@ async function profileTick() {
   if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));
   const r = await dispatchWarehouseEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
   if (r.sent || r.failed) log('depo e-postası:', JSON.stringify(r));
+  // Tedarikçi sipariş e-postaları (Paket 6): yalnızca yöneticinin "Siparişi onayla / gönder"i ile kuyruğa giren işler
+  const t = await dispatchSupplierOrderEmails(db, { transport: mail.transport, from: mail.from, now, log });
+  if (t.sent || t.failed || t.retried) log('tedarikçi e-postası:', JSON.stringify(t));
   // Sipariş olaylarının bildirim e-postaları (işlem tamamlandıktan sonra, kuyruktan)
   if (getEnv().NOTIFY_EMAILS) {
     const n = await dispatchNotifications(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
@@ -130,6 +137,19 @@ async function uninvoicedTick() {
   remindedAt = Date.now();
   const r = await remindUninvoiced(db, { now: new Date(), log });
   if (r.created) log('fatura bekliyor:', JSON.stringify(r));
+}
+
+// Saatte bir (ve işçi başlarken): tahmini yükleme tarihi 2 gün içinde olan açık tedarikçi siparişleri → yöneticiye uygulama
+// içi hatırlatma (sipariş + tarih başına bir kez; tarih değişirse yenisi). Yalnızca veritabanı. Tarih kaydedilirken de
+// hemen denetlenir (server/suppliers/service.js → setEta).
+const SUPPLIER_REMIND_EVERY_MS = 3_600_000;
+let supplierRemindedAt = 0;
+async function supplierEtaTick() {
+  if (once) return; // --once (testler): kural test/db/suppliers.test.js'te doğrudan denenir
+  if (Date.now() - supplierRemindedAt < SUPPLIER_REMIND_EVERY_MS) return;
+  supplierRemindedAt = Date.now();
+  const r = await remindSupplierEta(db, { now: new Date(), timeZone: getEnv().APP_TIMEZONE, log });
+  if (r.created) log('tedarikçi yükleme hatırlatması:', JSON.stringify(r));
 }
 
 // Saatte bir (ve işçi başlarken) — karar 158: önce 3.51.0'ın tarihe bakarak verdiği "Yüklendi"ler mevcut üretim durumuna geri
@@ -199,6 +219,11 @@ while (!stopping) {
     await autoArchiveTick();
   } catch (e) {
     log('otomatik arşiv hatası:', e?.message ?? e);
+  }
+  try {
+    await supplierEtaTick();
+  } catch (e) {
+    log('tedarikçi hatırlatması hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

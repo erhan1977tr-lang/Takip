@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDec, fmtNum } from '@/lib/format';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import { stockLevels } from '@/server/profile/stock.js';
+import { SUPPLIER_CURRENCIES } from '@/server/suppliers/rules.js';
 import { changeProductAction, productImageAction, saveCategoryAction, saveProductAction } from './actions';
 import { ImportProducts } from './ImportProducts';
 
@@ -28,16 +30,25 @@ const MSG: Record<string, [string, MsgKey]> = {
   pack: ['error', 'profile.catalog.problem.PACK'],
   pack_measure: ['error', 'profile.catalog.problem.PACK_MEASURE'],
   pack_int: ['error', 'profile.catalog.problem.PACK_INT'],
+  // Alış bilgisi (Paket 6, karar 180)
+  purchase_price: ['error', 'supplier.catalog.errors.purchase_price'],
+  purchase_currency: ['error', 'supplier.catalog.errors.purchase_currency'],
+  purchase_unit: ['error', 'supplier.catalog.errors.purchase_unit'],
+  supplier: ['error', 'supplier.catalog.errors.supplier'],
+  forbidden: ['error', 'supplier.catalog.errors.forbidden'],
 };
 
 // Profil kataloğu (Aşama 6): kategoriler, ürünler (kod, iki dilde ad, birim, liste fiyatı, görsel, sıra, etkin/pasif), Excel.
 export default async function ProfileCatalogPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requirePermission('CATALOG_MANAGE');
+  const user = await requirePermission('CATALOG_MANAGE');
+  // Alış bilgisi (tedarikçi, alış fiyatı, para birimi, sipariş birimi — Paket 6, karar 180) yalnızca SUPPLIER_MANAGE
+  const supply = userCan(user, 'SUPPLIER_MANAGE');
   const { t, m, locale } = await getT();
   const sp = await searchParams;
-  const [categories, products] = await Promise.all([
+  const [categories, products, suppliers] = await Promise.all([
     db.profileCategory.findMany({ orderBy: { sortOrder: 'asc' } }),
-    db.profileProduct.findMany({ orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { category: { select: { code: true } } } }),
+    db.profileProduct.findMany({ orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { category: { select: { code: true } }, supplier: { select: { name: true } } } }),
+    supply ? db.supplier.findMany({ orderBy: [{ isActive: 'desc' }, { name: 'asc' }], select: { id: true, name: true, isActive: true } }) : Promise.resolve([] as { id: string; name: string; isActive: boolean }[]),
   ]);
   const stock = await stockLevels(db);
   const editing = sp.urun ? products.find((p) => p.id === sp.urun) ?? null : null;
@@ -122,6 +133,43 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                 <div className="hint">{t('profile.catalog.field.packMeasureHint')}</div>
               </div>
             </div>
+            {/* Alış bilgisi (Paket 6, karar 180): yalnızca yönetici; müşterinin liste fiyatından ayrı. Boş fiyat = fiyat yok. */}
+            {supply && (
+              <div className="purchase-box" id="alis">
+                <h3 className="sub-title">{t('supplier.catalog.title')}</h3>
+                <p className="muted small">{t('supplier.catalog.intro')}</p>
+                <input type="hidden" name="purchase" value="1" />
+                <div className="grid-3">
+                  <div>
+                    <label htmlFor="pc-supplier">{t('supplier.catalog.supplier')}</label>
+                    <select id="pc-supplier" name="supplierId" defaultValue={editing?.supplierId ?? ''}>
+                      <option value="">{t('supplier.catalog.none')}</option>
+                      {suppliers.map((x) => <option key={x.id} value={x.id} disabled={!x.isActive && x.id !== editing?.supplierId}>{x.name}{x.isActive ? '' : ` (${t('supplier.catalog.inactive')})`}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="pc-pprice">{t('supplier.catalog.price')}</label>
+                    <input id="pc-pprice" name="purchasePrice" inputMode="decimal" maxLength={14} defaultValue={editing?.purchasePrice != null ? fmtDec(editing.purchasePrice.toString(), 4).replace(/\./g, '') : ''} />
+                    <div className="hint">{t('supplier.catalog.priceHint')}</div>
+                  </div>
+                  <div>
+                    <label htmlFor="pc-pcur">{t('supplier.catalog.currency')}</label>
+                    <select id="pc-pcur" name="purchaseCurrency" defaultValue={editing?.purchaseCurrency ?? ''}>
+                      <option value="">—</option>
+                      {SUPPLIER_CURRENCIES.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="pc-punit">{t('supplier.catalog.unit')}</label>
+                    <select id="pc-punit" name="purchaseUnit" defaultValue={editing?.purchaseUnit ?? ''}>
+                      <option value="">—</option>
+                      {UNITS.map((u) => <option key={u.code} value={u.code}>{u.code} — {u.name[locale]}</option>)}
+                    </select>
+                    <div className="hint">{t('supplier.catalog.unitHint')}</div>
+                  </div>
+                </div>
+              </div>
+            )}
             <label className="row" style={{ marginTop: 10 }}>
               <input type="checkbox" name="isActive" defaultChecked={editing ? editing.isActive : true} /> {t('profile.catalog.field.isActive')}
             </label>
@@ -175,7 +223,9 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                   <thead>
                     <tr>
                       <th>{t('profile.catalog.col.image')}</th><th>{t('profile.catalog.col.code')}</th><th>{t('profile.catalog.col.name')}</th>
-                      <th>{t('profile.catalog.col.unit')}</th><th>{t('profile.catalog.col.pack')}</th><th className="num">{t('profile.catalog.col.price')}</th><th className="num">{t('profile.catalog.col.stock')}</th>
+                      <th>{t('profile.catalog.col.unit')}</th><th>{t('profile.catalog.col.pack')}</th><th className="num">{t('profile.catalog.col.price')}</th>
+                      {supply && <th className="num">{t('supplier.catalog.col')}</th>}
+                      <th className="num">{t('profile.catalog.col.stock')}</th>
                       <th>{t('profile.catalog.col.status')}</th><th />
                     </tr>
                   </thead>
@@ -191,6 +241,12 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                           <td className="muted">{unitName(p.unitCode)}</td>
                           <td className="nowrap" data-pack={p.code}>{packText(p) ?? <span className="muted">—</span>}</td>
                           <td className="num">{p.listPrice != null ? fmtNum(p.listPrice.toString()) : <span className="badge badge-warn">{t('profile.catalog.noPrice')}</span>}</td>
+                          {supply && (
+                            <td className="num nowrap" data-purchase={p.code}>
+                              {p.purchasePrice != null ? `${fmtDec(p.purchasePrice.toString(), 4)} ${p.purchaseCurrency ?? ''}` : <span className="muted">—</span>}
+                              {p.supplier && <div className="muted small">{p.supplier.name}</div>}
+                            </td>
+                          )}
                           <td className={`num${st < 0 ? ' stock-neg' : ''}`}>{st}</td>
                           <td>{p.isActive ? <span className="badge badge-ok">{t('profile.catalog.active')}</span> : <span className="badge badge-muted">{t('profile.catalog.inactive')}</span>}</td>
                           <td className="actions">

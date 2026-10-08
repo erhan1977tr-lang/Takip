@@ -273,13 +273,14 @@ test('SEC-05: disk koruması — boş alan eşiğin altına inecekse yükleme re
 });
 
 /** Sahte veritabanı: yalnızca checkUpload'ın sorduğu sorgular */
-function fakeDb({ user = null, orderFiles = [], draftFiles = [], drawingFiles = [] } = {}) {
+function fakeDb({ user = null, orderFiles = [], draftFiles = [], drawingFiles = [], supplierFiles = [] } = {}) {
   const queries = [];
   const table = (name, rows) => ({ findMany: async (q) => (queries.push([name, q]), rows) });
   return {
     queries,
     user: { findUnique: async (q) => (queries.push(['user', q]), user) },
     orderFile: table('orderFile', orderFiles), orderDraftFile: table('orderDraftFile', draftFiles), drawingFile: table('drawingFile', drawingFiles),
+    supplierOrderFile: table('supplierOrderFile', supplierFiles),
   };
 }
 const OPTS = { root: '/uploads', minFreeMb: 1024, now: new Date('2026-10-04T12:00:00Z'), statfs: async () => ({ bavail: 10 * 1024, bsize: MB }) };

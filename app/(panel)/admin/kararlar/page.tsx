@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
@@ -27,7 +28,9 @@ const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
 
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requirePermission('ALERT_VIEW');
+  const user = await requirePermission('ALERT_VIEW');
+  // Kritik stok satırından tedarikçi siparişi hazırlama (Paket 6, karar 184) — yalnızca SUPPLIER_MANAGE
+  const supply = userCan(user, 'SUPPLIER_MANAGE');
   const { t, locale } = await getT();
   const sp = await searchParams;
   const include = {
@@ -124,6 +127,9 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                     <td>{a.createdBy?.name ?? '—'}</td>
                     <td className="nowrap">{fmtDateTime(a.createdAt)}</td>
                     <td className="actions">
+                      {a.type === 'STOCK_CRITICAL' && supply && /^[a-z0-9]{8,40}$/i.test(((a.details ?? {}) as Details).productId ?? '') && (
+                        <Link className="btn btn-link" href={`/siparisler/tedarik/yeni?urun=${((a.details ?? {}) as Details).productId}`} data-prepare-order>{t('supplier.alerts.prepare')}</Link>
+                      )}
                       {a.type === 'COMPENSATION_PENDING' && a.order ? (
                         // Onay bekleyen telafi "Gördüm" ile kapanmaz: karar siparişin "Önemli kararlar" kartında verilir
                         <Link className="btn btn-primary" href={`/siparisler/${a.order.id}#kararlar`}>{t('pricing.alerts.compOpen')}</Link>

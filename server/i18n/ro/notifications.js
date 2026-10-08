@@ -41,6 +41,9 @@ export default {
     DOC_INVOICE: { title: 'Factura este disponibilă.', customer: 'Factura este disponibilă.' },
     // Securitate (decizia 149) — doar pentru administrator: limita de încercări pe e-mail a unui cont a fost atinsă
     AUTH_LOCKED: { title: 'Securitate: autentificarea unui cont a fost blocată după prea multe încercări greșite' },
+    // Aprovizionare (Pachetul 6) — doar administratorului
+    SUPPLIER_ETA: { title: 'Comandă furnizor: încărcare estimată în 2 zile' },
+    SUPPLIER_EMAIL_FAILED: { title: 'E-mailul comenzii către furnizor nu a putut fi trimis' },
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',
@@ -62,5 +65,7 @@ export default {
     DOC_ADVANCE: 'document {ref}',
     DOC_INVOICE: 'document {ref}',
     AUTH_LOCKED: '{user}',
+    SUPPLIER_ETA: '{ref} · {supplier} · încărcare estimată {date}',
+    SUPPLIER_EMAIL_FAILED: '{ref}',
   },
 };

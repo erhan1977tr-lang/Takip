@@ -101,12 +101,14 @@ export async function checkUpload(db, files, ctx, { root, minFreeMb, now = new D
     // Müşteri: firmanın bütün kullanıcıları birlikte; iç ekip: yalnızca kendisi
     const by = firmId ? { uploadedBy: { customerId: firmId, type: 'CUSTOMER' } } : { uploadedById: user.id };
     const where = { ...by, createdAt: { gte: new Date(now.getTime() - DAY_MS) } };
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, d] = await Promise.all([
       db.orderFile.findMany({ where, select: RECENT }),
       db.orderDraftFile.findMany({ where, select: RECENT }),
       db.drawingFile.findMany({ where, select: RECENT }),
+      // Tedarikçi siparişinin teknik ekleri (Paket 6) yalnızca iç ekipten (yönetici) gelir: kullanıcının kendi kotasına sayılır
+      firmId ? Promise.resolve([]) : db.supplierOrderFile.findMany({ where: { uploadedById: user.id, createdAt: where.createdAt }, select: RECENT }),
     ]);
-    recent = [...a, ...b, ...c];
+    recent = [...a, ...b, ...c, ...d];
   }
   let order = null;
   if (ctx.orderId) {

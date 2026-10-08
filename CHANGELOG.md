@@ -4,6 +4,44 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.56.0 — 08.10.2026
+
+Fonksiyonel paket 6 — tedarikçi yönetimi, satın alma ve tedarikçi hesapları (kararlar 179–185). Veritabanı şeması: tedarikçi
+(`Supplier`), tedarikçi siparişi, revizyonu, satırı ve teknik eki (`SupplierOrder` + enum `SupplierOrderStatus`,
+`SupplierOrderRevision`, `SupplierOrderLine`, `SupplierOrderFile`), tedarikçi ödemesi (`SupplierPayment`), ürünün alış bilgisi
+(`ProfileProduct.supplierId` / `purchasePrice` / `purchaseCurrency` / `purchaseUnit`) ve yeni yetki `SUPPLIER_MANAGE` (yalnızca
+yönetici). Migration elle yazıldı: tablolar ve kesinleşmiş revizyonun değişmezliği (veritabanı tetikleyicileri) aynı adımda.
+
+- **Ayarlar → Tedarikçiler:** menüdeki "Entegrasyonlar" artık "Ayarlar" (aynı adres; Entegrasyonlar ve Tedarikçiler sekmeleri).
+  Tedarikçi: firma adı, iletişim kişisi, e-posta, telefon, adres, para birimi, etkin / pasif — sabit liste yok, silinmez (pasif
+  yapılır). Sipariş e-postası yalnızca burada kayıtlı tek adrese gider; e-posta yoksa ya da geçersizse gönderim engellenir ve
+  açık hata gösterilir. Her değişiklik denetim kaydında.
+- **Ürün–tedarikçi ilişkisi:** Profil Kataloğu'ndaki ürün formunda (yalnızca yönetici) tedarikçi, alış fiyatı, alış para birimi,
+  sipariş birimi; müşterinin fiyatından ayrı. Kayıtlı alış fiyatı siparişe yalnızca aynı tedarikçi ve aynı para biriminde gelir;
+  fiyatı olmayan ürün siparişe eklenir, "Fiyat yok" olarak görünür — fiyat uydurulmaz.
+- **Tedarikçi Siparişleri** (menüde "Satın Alma"): taslak (numara TS-yıl-sıra, değiştirilebilir), satırlar (ürün kodu, açıklama,
+  Renk/RAL, miktar, birim, birim alış fiyatı, toplam), genel toplam, not, teknik ekler. Profil Stoğu satırından ve kritik stok
+  listesinden "Sipariş hazırla". Taslağı kaydetmek, ürün / tarih değiştirmek, ek eklemek, sayfayı yenilemek e-posta göndermez;
+  tedarikçiye yalnızca "Siparişi onayla / gönder" ile gider (içerik kesinleşir, mevcut e-posta kuyruğuna tek iş yazılır). İşçi
+  e-postayı en çok bir kez gönderir: çift tıklama, eşzamanlı istek, yenileme ya da yeniden deneme ikinci e-posta üretmez; gönderim
+  sırasında yarıda kalan iş belirsiz sayılır ve kendiliğinden yeniden gönderilmez; gönderilemeyen sipariş "Gönderilemedi" olur
+  (asla "Gönderildi" değil), yöneticiye bildirilir ve "Tekrar gönder" ile açıkça yeniden yollanır. Gönderilmiş sipariş
+  değiştirilmez; değişiklik yeni revizyonla yapılır ve ayrıca onaylanıp gönderilir. Gönderim geçmişi ve işlem geçmişi siparişte.
+- **E-posta:** tek merkezi Türkçe şablon — konu "GKH Trading Invest – Sipariş [NO] – [TEDARİKÇİ]", tablo Ürün Kodu · Açıklama ·
+  Renk/RAL · Miktar · Birim · Birim Fiyat · Toplam (fiyatı olmayan satır varsa fiyat sütunları ve genel toplam kaldırılır), not,
+  ekler, kapanış ve "GKH Trading Invest SRL"; üstte ortak saydam GKH logosu.
+- **Tahmini Yükleme Tarihi:** yalnızca yönetici elle girer ve değiştirir; cam siparişlerinin yükleme tarihleriyle ilgisi yok,
+  müşteriye gösterilmez. Tarihten 2 takvim günü önce yöneticiye uygulama içi hatırlatma (sipariş + tarih başına bir kez; tarih
+  değişince yeni tarihe göre).
+- **Tedarikçi Hesapları:** para birimi başına toplam borç (onaylanmış siparişler; taslak borç oluşturmaz, iptal düşer), toplam
+  ödeme, kalan; fiyatı eksik siparişler ayrıca gösterilir. Ödemeyi yönetici elle girer (tarih, tutar, para birimi, açıklama);
+  aynı form iki kez gelse de bir kez yazılır; ödeme silinmez, gerekçeyle iptal edilir. Para birimleri toplanmaz.
+- **Stok:** sipariş oluşturmak, e-posta göndermek, tarih girmek ve "Teslim alındı" stoğu değiştirmez (giriş Profil Stoğu'ndan);
+  açık siparişlerdeki "Beklenen" miktar yöneticiye ayrı sütunda gösterilir. Denetimci, satış, çizim ve müşteri tedarik verisine
+  erişemez.
+- Testler: `test/suppliers.test.js`, `test/db/suppliers.test.js`, `e2e/40-tedarikci.spec.ts`; yükleme yolu, istek gövdesi,
+  bildirim ve marka testleri yeni yolu da kapsar.
+
 ## 3.55.3 — 08.10.2026
 
 Paket 5 doğrulama düzeltmesi: hesaplayıcının kalem adları büyük / küçük harf ve Türkçe noktalı / noktasız I ayrımı yapmadan

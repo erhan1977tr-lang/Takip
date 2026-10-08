@@ -86,6 +86,7 @@ enum PermissionKey {
   OFFER_EXPORT
   ACCOUNT_SETTINGS
   LOADING_CONFIRM
+  SUPPLIER_MANAGE
 }
 
 model RolePermission {
@@ -1111,6 +1112,15 @@ model ProfileProduct {
   packMeasure   ProfileMeasure?
   // Kritik stok eşiği (satış birimi; karar 177): stok ≤ eşik → "Kritik stok" (tek açık uyarı); boş = eşik yok
   criticalStock Int?
+  // Tedarik (Paket 6, karar 180 — yalnızca yönetici, SUPPLIER_MANAGE): ürünün tedarikçisi, ALIŞ fiyatı (müşterinin liste
+  // fiyatından tamamen ayrı), alış para birimi ve sipariş birimi (boş = satış birimi). Fiyat yoksa tedarikçi siparişinde
+  // "fiyat yok" görünür — fiyat uydurulmaz.
+  supplierId       String?
+  supplier         Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchasePrice    Decimal?  @db.Decimal(12, 4)
+  purchaseCurrency String?
+  purchaseUnit     String?
+  supplierLines    SupplierOrderLine[]
   prices     ProfilePriceItem[]
   stockMoves StockMovement[]
   calcItems  ProfileCalcItem[]
@@ -1660,4 +1670,146 @@ model FactoryPayment {
   createdAt   DateTime @default(now())
 
   @@index([paidOn])
+}
+
+// ---------------------------------------------------------
+// TEDARİKÇİLER VE SATIN ALMA (Paket 6, kararlar 179–184) — yalnızca yönetici (SUPPLIER_MANAGE)
+// ---------------------------------------------------------
+// Profil, conta, plastik ve aksesuar tedarikçileri. Cam fabrikasının hesabı (Muhasebe → Tedarikçi Hesap Durumu,
+// FactoryPayment) ayrıdır ve değişmez. Tedarikçi fiziksel olarak silinmez (geçmişi korunur), yalnızca pasif yapılır.
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  contactName String?
+  // Sipariş e-postasının TEK alıcısı; yalnızca Ayarlar → Tedarikçiler'de değişir. Boş / geçersizse gönderim engellenir.
+  email       String?
+  phone       String?
+  address     String?
+  currency    String   // EUR | RON | USD | TRY — siparişlerin ve borcun para birimi
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  products    ProfileProduct[]
+  orders      SupplierOrder[]
+  payments    SupplierPayment[]
+
+  @@index([isActive, name])
+}
+
+// Tedarikçi siparişinin durumu (karar 181). "Gönderildi" yalnızca e-posta GERÇEKTEN gönderildiğinde yazılır.
+enum SupplierOrderStatus {
+  TASLAK            // hiç kesinleşmedi: e-posta yok, borç yok
+  GONDERIM_BEKLIYOR // kesinleşti (borç kayıtta); e-posta kuyrukta / gönderiliyor
+  GONDERILDI        // son kesin revizyonun e-postası gönderildi
+  GONDERIM_HATASI   // son kesin revizyonun e-postası gönderilemedi ya da sonucu belirsiz (yönetici "Tekrar gönder")
+  TESLIM_ALINDI     // yönetici malın geldiğini işaretledi: beklenen tedarikten düşer, STOK DEĞİŞMEZ
+  IPTAL             // gerekçeli iptal: borçtan düşer; tedarikçiye e-posta gitmez
+}
+
+// Tedarikçi siparişi: başlık (numara, tedarikçi, durum, tahmini yükleme tarihi). İçerik revizyonlardadır (karar 181):
+// taslak revizyon düzenlenir; "Siparişi onayla / gönder" onu KESİNLEŞTİRİR (veritabanı tetikleyicisi kesin revizyonu,
+// satırlarını ve eklerini değiştirmeye / silmeye izin vermez). Değişiklik = yeni revizyon (açıkça onaylanıp yeniden gönderilir).
+model SupplierOrder {
+  id           String   @id @default(cuid())
+  orderNo      String   @unique
+  supplierId   String
+  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  currency     String   // tedarikçinin para birimi (sipariş açılırken kopyalanır)
+  status       SupplierOrderStatus @default(TASLAK)
+  // Tahmini yükleme tarihi (karar 183): yalnızca yönetici elle girer; cam siparişlerinin yükleme tarihiyle ilgisi yoktur
+  etaDate      DateTime? @db.Date
+  sentAt       DateTime?
+  sendError    String?  // son gönderim hatasının sabit kodu
+  receivedAt   DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+  version      Int      @default(0)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  revisions    SupplierOrderRevision[]
+
+  @@index([supplierId, status])
+  @@index([status, etaDate])
+}
+
+model SupplierOrderRevision {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  revision      Int
+  orderDate     DateTime @db.Date
+  note          String?
+  // Kesinleşince yazılır: satır tutarlarının toplamı; missingPrice = fiyatı olmayan satır var (toplam yalnızca bilinenler)
+  total         Decimal? @db.Decimal(14, 2)
+  missingPrice  Boolean  @default(false)
+  finalizedAt   DateTime?
+  finalizedById String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lines         SupplierOrderLine[]
+  files         SupplierOrderFile[]
+
+  @@unique([orderId, revision])
+}
+
+model SupplierOrderLine {
+  id          String   @id @default(cuid())
+  revisionId  String
+  revision    SupplierOrderRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  productId   String
+  product     ProfileProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  code        String   // ürün kodu (kopya)
+  description String   // açıklama (Türkçe adın kopyası; yönetici değiştirebilir)
+  color       String?  // Renk / RAL (serbest metin)
+  qty         Int
+  unitCode    String   // sipariş birimi (kopya)
+  unitPrice   Decimal? @db.Decimal(12, 4) // boş = alış fiyatı yok (uydurulmaz)
+  priceSource String?  // CATALOG: ürünün alış fiyatı · MANUAL: yönetici girdi
+  lineTotal   Decimal? @db.Decimal(14, 2)
+  sortOrder   Int      @default(0)
+
+  @@index([revisionId, sortOrder])
+  @@index([productId])
+}
+
+// Teknik ekler: revizyona aittir (yeni revizyona kopyalanır; disk dosyası ortaktır, otomatik silinmez).
+model SupplierOrderFile {
+  id            String   @id @default(cuid())
+  revisionId    String
+  revision      SupplierOrderRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  name          String
+  storageKey    String
+  size          Int
+  mime          String?
+  checksum      String?
+  scanStatus    FileScanStatus @default(PENDING)
+  scanSignature String?
+  scannedAt     DateTime?
+  uploadedById  String?
+  createdAt     DateTime @default(now())
+
+  @@index([revisionId])
+  @@index([scanStatus])
+}
+
+// Tedarikçiye yapılan ödemeler (karar 182): yönetici elle girer; siparişlere bağlı değildir. Silinmez — gerekçeyle
+// iptal edilir (voidedAt). Aynı form iki kez gönderilse de ödeme bir kez yazılır (requestKey).
+model SupplierPayment {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  paidOn      DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String
+  note        String?
+  requestKey  String   @unique
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([supplierId, paidOn])
 }

@@ -26,6 +26,12 @@ export default {
   profileCalc: 'Profil Hesaplayıcı',
   alerts: 'Önemli kararlar',
   integrations: 'Entegrasyonlar',
+  // Yöneticinin "Ayarlar" menüsü (Entegrasyonlar + Tedarikçiler sekmeleri — Paket 6, karar 179)
+  adminSettings: 'Ayarlar',
+  // Satın alma (Paket 6, kararlar 181–182)
+  purchasing: 'Satın Alma',
+  supplierOrders: 'Tedarikçi Siparişleri',
+  supplierAccounts: 'Tedarikçi Hesapları',
   myOrders: 'Siparişlerim',
   newOrder: 'Yeni Sipariş',
   myOffers: 'Tekliflerim',

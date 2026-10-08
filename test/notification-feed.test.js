@@ -142,7 +142,8 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   }
   assert.deepEqual(INAPP_RULES.ORDER_OFFER_RETURNED.to(glass), ['orderSales'], 'geri gönderilen teklif satışa bildirilir');
   assert.deepEqual([INAPP_RULES.ACCOUNTING_ACTION.to(glass), INAPP_RULES.ACCOUNTING_ACTION.includeActor], [['accounting'], true]);
-  assert.deepEqual(AUDIENCE_ROLES, { admin: ['ADMIN'], sales: ['SATIS'], accounting: ['ADMIN'], loading: ['ADMIN'] });
+  // supplier: tedarik ve satın alma (Paket 6, karar 181–183) — yalnızca SUPPLIER_MANAGE (yönetici)
+  assert.deepEqual(AUDIENCE_ROLES, { admin: ['ADMIN'], sales: ['SATIS'], accounting: ['ADMIN'], loading: ['ADMIN'], supplier: ['ADMIN'] });
   // E-posta giden her olayın uygulama içi karşılığı var (kanal ayrı; kural tablosu e-postayı değiştirmez)
   for (const t of Object.keys(NOTIFY_RULES)) assert.ok(INAPP_TYPES.includes(t), t);
 });

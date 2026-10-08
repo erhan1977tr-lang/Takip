@@ -431,11 +431,18 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   assert.deepEqual(hits.storeUpload, ['server/files/store.js']);
   assert.deepEqual(hits.storeUploads.sort(), ['lib/uploads.ts', 'server/files/store.js']);
   assert.deepEqual(hits.gelen, ['server/files/store.js'], 'geçici klasörü yalnızca saklama modülü kullanır');
-  // Müşteri (yeni sipariş / taslak), ekip (çizim, dosya ekleme, teslim belgesi, katalog görseli) ve depo bağlantısı
+  // Müşteri (yeni sipariş / taslak), ekip (çizim, dosya ekleme, teslim belgesi, katalog görseli, tedarikçi siparişinin teknik
+  // eki — Paket 6) ve depo bağlantısı
   assert.deepEqual(hits.storeFiles.sort(), [
     'app/(panel)/admin/profil-katalogu/actions.ts', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/profile-actions.ts',
-    'app/(panel)/siparisler/yeni/actions.ts', 'app/depo/[token]/actions.ts', 'lib/uploads.ts',
+    'app/(panel)/siparisler/tedarik/actions.ts', 'app/(panel)/siparisler/yeni/actions.ts', 'app/depo/[token]/actions.ts', 'lib/uploads.ts',
   ]);
+  // Tedarikçi siparişinin eki: işlem yapan bilgisi ve sınır denetimi dosyalar saklanmadan ÖNCE; kayıt olmazsa (hata ya da
+  // red) saklanan dosyalar silinir
+  const supplier = read('app/(panel)/siparisler/tedarik/actions.ts');
+  const up = supplier.slice(supplier.indexOf('export async function uploadFilesAction('), supplier.indexOf('export async function removeFileAction('));
+  assert.ok(up.indexOf('const actor = await actorOf(admin);') < up.indexOf('await fileQuota(') && up.indexOf('await fileQuota(') < up.indexOf('await storeFiles('));
+  assert.match(up, /\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);\s*throw e;\s*\}\s*if \(!r\.ok\) \{\s*await discardFiles\(stored\.stored\);/);
   // Saklandıktan sonra kayıt oluşmazsa dosyalar silinir (her yol)
   const newOrder = read('app/(panel)/siparisler/yeni/actions.ts');
   const create = newOrder.slice(0, newOrder.indexOf('function draftErrorText'));

@@ -12,6 +12,7 @@ import { UPLOAD_LIMITS } from '../server/files/limits.js';
 import { EXCEL_MAX_BYTES } from '../server/files/xlsx.js';
 import { MAX_FILE_BYTES } from '../server/orders/rules.js';
 import { MAX_IMAGE_BYTES } from '../server/profile/catalog.js';
+import { FILE_LIMITS } from '../server/suppliers/rules.js';
 import { readCaddyfile } from './caddyfile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,7 +94,12 @@ test('adres → sınır: giriş ve diğer olağan adresler 2 MB; büyük sınır
   };
   walk('app', '');
   assert.ok(pages.length >= 25, `sayfalar bulunamadı (${pages.length})`);
-  assert.deepEqual(pages.filter((p) => limitFor(p) === MB260).sort(), ['/depo/x1', '/siparisler/x1', '/siparisler/x1/cizim/x1', '/siparisler/yeni']);
+  // /siparisler/tedarik/* (Paket 6): tedarikçi siparişinin sayfasında teknik ek yükleme formu var; liste ve yeni sipariş
+  // sayfası aynı önekte kalır. Caddyfile değişmedi: /siparisler/* zaten yükleme kademesidir ve büyük gövde yalnızca geçerli
+  // oturumla kapıdan geçer — /siparisler/<herhangi bir kimlik> sayfası ([id]) zaten aynı kademededir, açıklık değişmez.
+  assert.deepEqual(pages.filter((p) => limitFor(p) === MB260).sort(), [
+    '/depo/x1', '/siparisler/tedarik', '/siparisler/tedarik/x1', '/siparisler/tedarik/yeni', '/siparisler/x1', '/siparisler/x1/cizim/x1', '/siparisler/yeni',
+  ]);
   assert.deepEqual(pages.filter((p) => limitFor(p) === MB6).sort(), ['/admin/fiyatlar', '/admin/katalog', '/admin/musteri-fiyatlari', '/admin/profil-katalogu', '/admin/stok']);
   // Gövde alan tek adres işleyicisi (route handler) oturum etkinliğidir: küçük JSON, varsayılan kademede
   const posts = [];
@@ -119,6 +125,8 @@ test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli s�
     'app/(panel)/admin/katalog/actions.ts': { pages: ['/admin/katalog'], file: EXCEL_MAX_BYTES, request: EXCEL_MAX_BYTES },
     'app/(panel)/admin/profil-katalogu/actions.ts': { pages: ['/admin/profil-katalogu'], file: Math.max(EXCEL_MAX_BYTES, MAX_IMAGE_BYTES), request: EXCEL_MAX_BYTES },
     'app/(panel)/admin/stok/actions.ts': { pages: ['/admin/stok'], file: EXCEL_MAX_BYTES, request: EXCEL_MAX_BYTES },
+    // Tedarikçi siparişinin teknik ekleri (Paket 6): sayfası /siparisler/tedarik/<id> → yükleme kademesi (gövde kapısı: oturum)
+    'app/(panel)/siparisler/tedarik/actions.ts': { pages: ['/siparisler/tedarik/cmabc123'], file: FILE_LIMITS.fileBytes, request: FILE_LIMITS.totalBytes },
   };
   // Depoda dosya okuyan başka işlem dosyası yok: yenisi eklenirse sayfası Caddyfile'da tanımlanmadan bu test geçmez
   const found = [];
@@ -153,6 +161,9 @@ test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli s�
   assert.match(read('app/(panel)/siparisler/[id]/page.tsx'), /<form action=\{uploadDrawingAction\}[\s\S]*<form action=\{addFilesAction\}/);
   assert.match(read('app/(panel)/siparisler/[id]/ProfileOrderView.tsx'), /<form action=\{deliveredAction\}/);
   assert.match(read('app/depo/[token]/page.tsx'), /<form action=\{depotAction\}/);
+  assert.match(read('app/(panel)/siparisler/tedarik/[id]/page.tsx'), /<form action=\{uploadFilesAction\}/);
+  assert.equal(FILE_LIMITS.fileBytes, 10 * MiB);
+  assert.equal(FILE_LIMITS.totalBytes, 20 * MiB);
 });
 
 test('varsayılan 2 MB, dosyasız en büyük formlara fazlasıyla yeter (form gövdesi veriyle büyüyen sayfalar)', () => {

@@ -41,6 +41,9 @@ export default {
     DOC_INVOICE: { title: 'Fatura hazır.', customer: 'Faturanız hazır.' },
     // Güvenlik (karar 149) — yalnızca yöneticiye: bir hesabın e-posta geneli deneme sınırı doldu
     AUTH_LOCKED: { title: 'Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi' },
+    // Tedarik ve satın alma (Paket 6) — yalnızca yöneticiye
+    SUPPLIER_ETA: { title: 'Tedarikçi siparişi: tahmini yükleme 2 gün içinde' },
+    SUPPLIER_EMAIL_FAILED: { title: 'Tedarikçi sipariş e-postası gönderilemedi' },
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',
@@ -62,5 +65,7 @@ export default {
     DOC_ADVANCE: 'belge {ref}',
     DOC_INVOICE: 'belge {ref}',
     AUTH_LOCKED: '{user}',
+    SUPPLIER_ETA: '{ref} · {supplier} · tahmini yükleme {date}',
+    SUPPLIER_EMAIL_FAILED: '{ref}',
   },
 };

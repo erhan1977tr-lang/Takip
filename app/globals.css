@@ -791,6 +791,16 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   .calc-bar .calc-field, .calc-bar .calc-meters { flex: 1 1 100%; }
   .calc-bar > .btn { width: 100%; }
 }
+/* Tedarikçi siparişi (Paket 6): satır düzenleyicisi, onay / gönder kutusu; geçersiz alan kırmızı çerçeveli */
+.supplier-lines td { vertical-align: top; }
+.supplier-lines select { min-width: 200px; }
+.supplier-lines .text-input { min-width: 140px; }
+.supplier-lines .color-input { width: 110px; }
+.supplier-lines tfoot td { border-top: 2px solid var(--border); }
+.approve-box { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+/* Profil kataloğu → ürün formu: alış bilgisi bölümü (yalnızca yönetici) */
+.purchase-box { margin-top: 14px; border-top: 1px solid var(--border); }
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--danger); }
 @media (max-width: 800px) {
   .grid-3 { grid-template-columns: 1fr; }
   .profile-table td.thumb img { width: 44px; height: 36px; }

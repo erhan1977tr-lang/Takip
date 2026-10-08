@@ -463,6 +463,45 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   `.small.text-danger` "rezerveye N eksik"). A critical row is `tr.row-alert`. "Önemli kararlar" shows a `STOCK_CRITICAL` row
   with the product code linking to `/admin/stok#s-<id>` and `li[data-critical]`.
 
+## Suppliers, purchasing and supplier accounts (3.56.0, decisions 179–185)
+
+- Menu: the Admin's "Entegrasyonlar" link is now **"Ayarlar"** (same URL); a new sidebar section **"Satın Alma"** with
+  "Tedarikçi Siparişleri" (`/siparisler/tedarik`) and "Tedarikçi Hesapları" (`/admin/muhasebe/tedarikciler`). Only Admin.
+- Ayarlar: one page head (`h1` "Ayarlar") + `.tabs[data-settings-tabs]` (`SettingsTabs`: Entegrasyonlar | Tedarikçiler;
+  `a.active` + `aria-current`). Tedarikçiler: `form.card#tedarikci` (`.grid-3`: name, contact, e-mail with `.hint`, phone,
+  currency, address; "Etkin" checkbox only when editing) → `.card.card-flush` table (`tr[data-supplier]`, e-mail cell
+  `[data-email]` or warn `Badge` "E-posta yok", counts, ok / muted status badge, "Düzenle" + inline "Pasif yap / Etkinleştir").
+  Missing e-mails: `.alert-warn#eposta-eksik`.
+- Supplier order list: `.page-head.row` (critical-stock button + primary "Yeni sipariş"), `.tabs` (Açık / Teslim alınan /
+  İptal / Tümü), table rows `tr[data-supplier-order]` (status via the shared `components/SupplierStatus.tsx` → `Badge`:
+  muted Taslak, info Gönderim bekliyor, ok Gönderildi, danger Gönderilemedi + `tr.row-alert`, purple Teslim alındı, muted
+  İptal), total with a warn `Badge` "Fiyat eksik", ETA cell `[data-eta]` with warn "Yaklaşıyor" / danger "Tarih geçti".
+- New order (`/siparisler/tedarik/yeni`): empty draft (`form.card#yeni`: supplier select), one product from a stock row
+  (`?urun=`), or the critical list (`?kritik=1`: one `form.card.card-flush[data-critical-group]` per defined supplier, rows
+  `tr[data-create-row]` with checkbox, stock / Rezerve / threshold / expected, purchase price or warn "Fiyat yok", qty and
+  color inputs). Quantities are never pre-filled.
+- Order page: status `.alert` (`[data-status-info]`: info / ok / error), `.card#bilgiler` (`dl.order-info` rows; e-mail or a
+  danger `Badge` + link to Ayarlar), the draft editor `SupplierOrderEditor` (`.card#taslak`: number / date in `.grid-3`,
+  `table.supplier-lines` with `tr[data-line]` — product select with "Bu tedarikçinin ürünleri / Diğer ürünler" optgroups,
+  description, color, qty, unit, price (`.price-input`; warn badge `[data-no-price]`, "Kayıtlı fiyatı kullan" link),
+  `[data-line-total]`; `tfoot` `[data-grand-total]`; `.alert-warn[data-missing-price]`; "Taslağı kaydet" + `[data-unsaved]`;
+  `.approve-box` with the primary "Siparişi onayla / gönder" — a disabled plain button while unsaved / no e-mail / no lines,
+  otherwise a `ConfirmButton`). Invalid inputs use `aria-invalid` (red border, shared rule). Attachments `.card#ekler` reuse
+  `.file-row` (extension, name, scan `Badge`, size, "İndir", "Çıkar") + a one-line upload form. Sent revision
+  `.card.card-flush#gonderilen` (read-only table, `tr[data-final-line]`). `.card#eta` (date + "Kaydet", "Tarihi sil" link),
+  `.card#islemler` (Tekrar gönder, Yeni revizyon başlat, Revizyon taslağını bırak, Teslim alındı, Taslağı sil; cancel form
+  `#iptal` with a required reason), `.card.card-flush#gonderimler` (job rows `tr[data-email-job]`), `.card.card-flush#gecmis`
+  (`.timeline`).
+- Supplier accounts: overview table (`tr[data-account]`, one `div[data-balance]` per currency — never summed); detail:
+  `.card#bakiye` (`table.acc-table`, `tr[data-balance]`, negative balance `.text-danger`, `.alert-warn[data-missing-price]`),
+  orders `.card.card-flush#siparisler` (cancelled rows dimmed, "borca girmez"), payment form `form.card#odeme` (hidden
+  one-time `requestKey`), payments `.card.card-flush#odemeler` (`tr[data-payment]`; voided amount struck through + reason;
+  inline reason input + `ConfirmButton` "Ödemeyi iptal et").
+- Profile Stock (Admin only): header button "Kritik stok için sipariş hazırla", columns "Beklenen" (`[data-expected]`, other
+  units as `.small.muted` lines) and a "Sipariş hazırla" link (`[data-prepare]`). Profile Catalogue product form: section
+  `.purchase-box#alis` (`h3.sub-title` + `.grid-3`: supplier, purchase price, currency, order unit) and an "Alış" column
+  (`[data-purchase]`). "Önemli kararlar": `STOCK_CRITICAL` rows get "Tedarikçi siparişi hazırla".
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

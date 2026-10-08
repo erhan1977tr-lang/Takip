@@ -18,6 +18,7 @@ import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
+import { SettingsTabs } from './SettingsTabs';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ const ERR: Record<string, MsgKey> = {
 };
 
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requirePermission('SETTINGS_MANAGE');
+  const user = await requirePermission('SETTINGS_MANAGE');
   const { t } = await getT();
   const sp = await searchParams;
   // Gerçek sunucuda yok sayılan ayarların ADLARI — yalnızca bilinen sabit adlar (değer bu sayfaya hiç gelmez)
@@ -94,10 +95,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 
   return (
     <>
+      {/* Menüde "Ayarlar" (eski adı "Entegrasyonlar"): bu sayfa Entegrasyonlar sekmesidir; Tedarikçiler ayrı sekme (karar 179) */}
       <div className="page-head">
-        <h1>{t('admin.integrations.title')}</h1>
+        <h1>{t('supplier.settingsTabs.title')}</h1>
         <p className="muted">{t('admin.integrations.intro')}</p>
       </div>
+      <SettingsTabs user={user} active="integrations" />
       {/* Ortam uyarıları (karar 151): gerçek sunucuda YOK SAYILAN test / demo ayarları. Yalnızca ayarın ADI ve sabit bir
           açıklama gösterilir — değer, yol, sır gösterilmez. Uyarı yoksa kart hiç çizilmez. */}
       {envIgnored.length > 0 && (

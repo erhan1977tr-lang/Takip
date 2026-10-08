@@ -405,7 +405,7 @@ test('gönderen kimliği tek yerden: her e-postada görünen ad "GKH Trading Inv
   // Kaynak: gönderen kimliği yalnızca ortak gönderim noktasında kurulur; hiçbir şablon / yol "Ad <adres>" yazmaz
   const src = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
   assert.match(src('server/mail/layout.js'), /const msg = rest\.from == null \? rest : \{ \.\.\.rest, from: mailSender\(rest\.from\) \};/);
-  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/profile/warehouse.js', 'server/mail/sendInvite.js', 'server/mail/templates/invite.js', 'server/mail/templates/warehouse.js']) {
+  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/profile/warehouse.js', 'server/mail/sendInvite.js', 'server/mail/templates/invite.js', 'server/mail/templates/warehouse.js', 'server/suppliers/dispatch.js', 'server/mail/templates/supplier-order.js']) {
     assert.ok(!/GKH Trading Invest SRL\s*</.test(src(f)) && !/mailSender\(/.test(src(f)), `${f}: gönderen adı burada kurulmaz`);
   }
 });
@@ -424,11 +424,11 @@ test('e-posta yalnızca ortak gönderim noktasından gider: başka hiçbir dosya
   const rel = (f) => path.relative(ROOT, f).split(path.sep).join('/');
   const callers = files.filter((f) => /\.sendMail\(/.test(fs.readFileSync(f, 'utf8'))).map(rel);
   assert.deepEqual(callers, ['server/mail/layout.js'], 'transport.sendMail yalnızca sendBrandedMail içinde çağrılır');
-  // Dört e-posta yolu da ortak göndericiyi ve ortak düzeni kullanır
-  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/profile/warehouse.js', 'server/mail/sendInvite.js']) {
+  // Beş e-posta yolu da ortak göndericiyi ve ortak düzeni kullanır (beşincisi: tedarikçi siparişi — Paket 6)
+  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/profile/warehouse.js', 'server/mail/sendInvite.js', 'server/suppliers/dispatch.js']) {
     assert.match(fs.readFileSync(path.join(ROOT, f), 'utf8'), /sendBrandedMail\(transport, /, f);
   }
-  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/mail/templates/warehouse.js', 'server/mail/templates/invite.js']) {
+  for (const f of ['server/notifications/email.js', 'server/documents/delivery.js', 'server/mail/templates/warehouse.js', 'server/mail/templates/invite.js', 'server/mail/templates/supplier-order.js']) {
     assert.match(fs.readFileSync(path.join(ROOT, f), 'utf8'), /brandedHtml\(\{/, f);
   }
   // Şablonlar kendi <html> / <body> iskeletini yazmaz (iskelet tek yerde: server/mail/layout.js)

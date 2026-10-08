@@ -24,6 +24,10 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/admin/muhasebe/profil', key: 'nav.profileReceivables' },
     { href: '/admin/muhasebe/cam', key: 'nav.glassReceivables' },
     { href: '/admin/muhasebe/tedarikci', key: 'nav.supplier' },
+    // Satın alma (Paket 6, kararlar 179–184): profil / aksesuar tedarikçi siparişleri ve hesapları — yalnızca SUPPLIER_MANAGE
+    { section: 'nav.purchasing' },
+    { href: '/siparisler/tedarik', key: 'nav.supplierOrders' },
+    { href: '/admin/muhasebe/tedarikciler', key: 'nav.supplierAccounts' },
     { section: 'nav.people' },
     { href: '/admin/users', key: 'nav.users' },
     { href: '/admin/firms', key: 'nav.firms' },
@@ -36,7 +40,8 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
     { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
     { href: '/admin/stok', key: 'nav.stock' },
-    { href: '/admin/entegrasyonlar', key: 'nav.integrations' },
+    // "Ayarlar" (eski adı "Entegrasyonlar"): Entegrasyonlar ve Tedarikçiler sekmeleri — karar 179
+    { href: '/admin/entegrasyonlar', key: 'nav.adminSettings' },
   ],
   SATIS: [
     { section: 'nav.operations' },

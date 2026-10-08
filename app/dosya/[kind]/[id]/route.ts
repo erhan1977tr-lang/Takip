@@ -12,6 +12,7 @@ import { findDrawingFile } from '@/server/orders/drawing-access.js';
 export const dynamic = 'force-dynamic';
 
 // /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<DrawingFile id> (eski: <Drawing id>)  ·  /dosya/urun/<ProfileImage id>
+// /dosya/tedarik/<SupplierOrderFile id> — tedarikçi siparişinin teknik eki: yalnızca SUPPLIER_MANAGE (yönetici; karar 181)
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
   const { t } = await getT();
@@ -29,6 +30,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     });
   }
 
+  // orderId: dosyanın bağlı olduğu sipariş (tedarik ekinde tedarikçi siparişi — denetim kaydında supplierOrderId)
   let file: { storageKey: string; name: string; mime: string | null; scanStatus: string; orderId: string } | null = null;
   if (kind === 'siparis') {
     const f = await db.orderFile.findFirst({
@@ -41,12 +43,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     // (server/orders/drawing-access.js, karar 146): müşteri taslak ve GERİ ÇEKİLMİŞ sürümün dosyasını alamaz → 404.
     // "?ac=1" (tarayıcıda aç) aynı yoldan geçer. Verilmeyen dosya için aşağıdaki FILE_DOWNLOAD kaydı da yazılmaz.
     file = await findDrawingFile(db, { id, scope, role: user.appRole });
+  } else if (kind === 'tedarik' && userCan(user, 'SUPPLIER_MANAGE')) {
+    // Tedarikçi siparişinin eki: yetkisi olmayan herkese 404 (varlığı da belli olmaz)
+    const f = await db.supplierOrderFile.findUnique({ where: { id }, select: { storageKey: true, name: true, mime: true, scanStatus: true, revision: { select: { orderId: true } } } });
+    if (f) file = { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.revision.orderId };
   }
   if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
   // Virüslü dosya karantinadadır; kimseye verilmez
   if (file.scanStatus === 'INFECTED') return new Response(t('common.fileInfected'), { status: 403 });
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
-  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : 'OrderFile', id, user.id, { orderId: file.orderId, name: file.name });
+  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : 'OrderFile', id, user.id,
+    { ...(kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId }), name: file.name });
 
   const full = resolveKey(file.storageKey);
   if (!full || !fs.existsSync(full)) return new Response(t('common.fileMissing'), { status: 404 });

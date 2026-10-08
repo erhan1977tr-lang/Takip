@@ -31,6 +31,9 @@ test('yetki: kararlar (CLAUDE.md) matriste', () => {
   // Stok miktarlarını yalnızca yönetici ve denetimci görür; denetimci yalnızca görüntüler (karar 177)
   assert.deepEqual(who('STOCK_VIEW'), ['ADMIN', 'DENETIMCI']);
   assert.deepEqual(who('STOCK_MANAGE'), ['ADMIN']);
+  // Tedarik ve satın alma (karar 179–184): tedarikçiler, alış fiyatları, tedarikçi siparişleri, ödemeler ve hesaplar
+  // yalnızca yöneticinin — denetimci (stoğu görse de) dahil hiçbir rol bu finansal verilere erişmez
+  assert.deepEqual(who('SUPPLIER_MANAGE'), ['ADMIN']);
   assert.ok(READ_ONLY.has('STOCK_VIEW') && !READ_ONLY.has('STOCK_MANAGE'));
 });
 
@@ -40,7 +43,7 @@ test('yetki: denetimci yalnızca okur (karar 8)', () => {
 });
 
 test('yetki: yönetim yetkileri yalnızca yönetici', () => {
-  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ACCOUNTING_MANAGE', 'LOADING_CONFIRM']) {
+  for (const p of ['USER_MANAGE', 'CUSTOMER_MANAGE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ACCOUNTING_MANAGE', 'LOADING_CONFIRM', 'SUPPLIER_MANAGE']) {
     assert.deepEqual(who(p), ['ADMIN'], p);
   }
 });

@@ -297,6 +297,7 @@ function settingsDb(initial = null) {
       update: async ({ where, data }) => Object.assign(st.files.find((f) => f.id === where.id), data),
     },
     drawingFile: { findMany: async () => [] }, drawing: { findMany: async () => [] }, orderDraftFile: { findMany: async () => [] },
+    supplierOrderFile: { findMany: async () => [] },
   };
   return { ...model, st, $transaction: (fn) => fn(model) };
 }

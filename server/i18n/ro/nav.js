@@ -18,6 +18,12 @@ export default {
   users: 'Utilizatori',
   firms: 'Clienți',
   integrations: 'Integrări',
+  // Meniul „Setări” al administratorului (filele Integrări + Furnizori — Pachetul 6, decizia 179)
+  adminSettings: 'Setări',
+  // Achiziții (Pachetul 6, deciziile 181–182)
+  purchasing: 'Achiziții',
+  supplierOrders: 'Comenzi către furnizori',
+  supplierAccounts: 'Conturi furnizori',
   catalog: 'Catalog sticlă',
   prices: 'Liste de prețuri',
   customerPrices: 'Prețuri clienți',

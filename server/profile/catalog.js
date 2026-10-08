@@ -2,6 +2,7 @@
 // Ürün kodu kalıcıdır (sonradan değişmez). Pasif ürün / kategori müşteri formunda görünmez.
 // Excel düzeni: "Kategori | Kod | Ad (RO) | Ad (TR) | Birim | Liste fiyatı (EUR) | Aktif"; ürün Koddan tanınır.
 import { writeAudit } from '../orders/journal.js';
+import { can } from '../auth/permissions.js';
 import { clean, parseActive } from '../catalog/glass.js';
 import { parsePrice } from './rules.js';
 import { UNITS } from '../../prisma/seed/data/units.js';
@@ -72,6 +73,13 @@ const PACK_FIELDS = ['packContent', 'packMeasure'];
 /** Paket içeriği karşılaştırma için düz değer ("137", "M"; boş → null) */
 const packOf = (p) => ({ packContent: p.packContent == null ? null : String(Number(p.packContent.toString())), packMeasure: p.packMeasure ?? null });
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]));
+// Alış bilgisi (Paket 6, karar 180): tedarikçi, alış fiyatı, alış para birimi, sipariş birimi — yalnızca SUPPLIER_MANAGE
+const PURCHASE_FIELDS = ['supplierId', 'purchasePrice', 'purchaseCurrency', 'purchaseUnit'];
+/** Alış bilgisi karşılaştırma için düz değer ("12.5"; boş → null) */
+const purchaseOf = (p) => ({
+  supplierId: p.supplierId ?? null, purchasePrice: p.purchasePrice == null ? null : String(Number(p.purchasePrice.toString())),
+  purchaseCurrency: p.purchaseCurrency ?? null, purchaseUnit: p.purchaseUnit ?? null,
+});
 const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('profile-catalog', 0))`;
 
 /**
@@ -81,10 +89,15 @@ const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextende
  * @param {string | null} id
  * @param {ProductInput} value
  * @param {any} actor
+ * purchase (yalnızca katalog formu ve yalnızca SUPPLIER_MANAGE — Paket 6, karar 180): tedarikçi, alış fiyatı, alış para
+ * birimi, sipariş birimi (server/suppliers/rules.js → parsePurchase). Verilmezse bu alanlar değişmez; müşterinin liste
+ * fiyatından tamamen ayrıdır. Yeni seçilen tedarikçi etkin olmalı (mevcut pasif tedarikçi korunabilir).
  * @param {{ packContent: string | null, packMeasure: 'M' | 'BUC' | null }} [pack]
- * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' }>}
+ * @param {{ supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null }} [purchase]
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' | 'FORBIDDEN' | 'SUPPLIER' }>}
  */
-export async function saveProduct(db, id, value, actor, pack = undefined) {
+export async function saveProduct(db, id, value, actor, pack = undefined, purchase = undefined) {
+  if (purchase && !can(actor?.role, 'SUPPLIER_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   return db.$transaction(async (tx) => {
     await lock(tx);
     const category = await tx.profileCategory.findUnique({ where: { code: value.categoryCode } });
@@ -93,13 +106,18 @@ export async function saveProduct(db, id, value, actor, pack = undefined) {
       categoryId: category.id, nameRo: value.nameRo, nameTr: value.nameTr, unitCode: value.unitCode,
       listPrice: value.listPrice == null ? null : value.listPrice.toFixed(2), isActive: value.isActive,
       ...(pack ? { packContent: pack.packContent, packMeasure: pack.packMeasure } : {}),
+      ...(purchase ? { supplierId: purchase.supplierId, purchasePrice: purchase.purchasePrice, purchaseCurrency: purchase.purchaseCurrency, purchaseUnit: purchase.purchaseUnit } : {}),
     };
+    const cur = id ? await tx.profileProduct.findUnique({ where: { id }, include: { category: true } }) : null;
+    if (purchase?.supplierId && purchase.supplierId !== cur?.supplierId) {
+      const sup = await tx.supplier.findUnique({ where: { id: purchase.supplierId }, select: { isActive: true } });
+      if (!sup?.isActive) return { ok: false, code: 'SUPPLIER' };
+    }
     if (id) {
-      const cur = await tx.profileProduct.findUnique({ where: { id }, include: { category: true } });
       if (!cur) return { ok: false, code: 'NOT_FOUND' };
-      const before = { ...plain(cur), ...(pack ? packOf(cur) : {}) };
-      const after = { ...value, code: cur.code, ...(pack ? packOf(pack) : {}) };
-      const changes = [...COMPARE, ...(pack ? PACK_FIELDS : [])].filter((f) => before[f] !== after[f]);
+      const before = { ...plain(cur), ...(pack ? packOf(cur) : {}), ...(purchase ? purchaseOf(cur) : {}) };
+      const after = { ...value, code: cur.code, ...(pack ? packOf(pack) : {}), ...(purchase ? purchaseOf(purchase) : {}) };
+      const changes = [...COMPARE, ...(pack ? PACK_FIELDS : []), ...(purchase ? PURCHASE_FIELDS : [])].filter((f) => before[f] !== after[f]);
       const moved = cur.categoryId !== category.id;
       const sortOrder = moved ? await nextSort(tx, category.id) : cur.sortOrder;
       await tx.profileProduct.update({ where: { id }, data: { ...data, sortOrder } });
@@ -113,7 +131,7 @@ export async function saveProduct(db, id, value, actor, pack = undefined) {
     }
     if (await tx.profileProduct.findUnique({ where: { code: value.code } })) return { ok: false, code: 'EXISTS' };
     const p = await tx.profileProduct.create({ data: { ...data, code: value.code, sortOrder: await nextSort(tx, category.id) } });
-    await writeAudit(tx, { action: 'PROFILE_PRODUCT_CREATE', entityType: 'ProfileProduct', entityId: p.id, userId: actor.id, details: { after: { ...value, ...(pack ? packOf(pack) : {}) } } }, actor);
+    await writeAudit(tx, { action: 'PROFILE_PRODUCT_CREATE', entityType: 'ProfileProduct', entityId: p.id, userId: actor.id, details: { after: { ...value, ...(pack ? packOf(pack) : {}), ...(purchase ? purchaseOf(purchase) : {}) } } }, actor);
     return { ok: true, id: p.id };
   });
 }
