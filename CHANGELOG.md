@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.53.2 — 08.10.2026
+
+Paket 3 doğrulama düzeltmesi: müşterinin "düzeltilmiş dosya" alanının etiketi gönder düğmesinin adından ayrıldı
+("Düzeltilmiş çizim dosyaları (en az bir DWG ya da DXF)" / "Fișierele corectate ale desenului …"; düğme "Düzeltilmiş dosyayı
+gönder") — ekran okuyucu dosya alanını da düğme olarak okuduğu için iki öğe aynı adı taşımıyor. Uçtan uca testler çizimcinin iki
+bölümlü sipariş ekranına (teknik çizim dosyaları / onay ve revizyon) göre güncellendi. İş akışı değişmedi.
+
 ## 3.53.1 — 08.10.2026
 
 Paket 3 doğrulama düzeltmesi: teklif kontrolü kuralının belge açıklaması (JSDoc) son üretim çiziminin tarihini de kabul edecek

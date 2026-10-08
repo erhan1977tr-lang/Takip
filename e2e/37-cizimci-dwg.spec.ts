@@ -168,13 +168,16 @@ test('Çizim Hatalı: müşteriye hemen bildirim + kırmızı bilgilendirme (Rom
   await expect(insp.locator('#cizim [data-revision-kind="HATALI"] .note-translation')).toHaveCount(0);
   await insp.context().close();
 
-  // Müşteri düzeltilmiş dosyayı gönderir: yalnızca PDF olursa kabul edilmez (en az bir DWG / DXF)
+  // Müşteri düzeltilmiş dosyayı gönderir: yalnızca PDF olursa kabul edilmez (en az bir DWG / DXF). Dosya alanının etiketi
+  // gönder düğmesinin adını içermez (Playwright dosya alanını da "button" rolünde sayar; erişilebilirlik için de ayrı adlar)
   const respond = cust.locator('#duzeltme');
+  await expect(respond.getByRole('button', { name: 'Düzeltilmiş dosyayı gönder' })).toHaveCount(1);
+  await expect(respond.getByLabel('Düzeltilmiş çizim dosyaları (en az bir DWG ya da DXF)')).toHaveAttribute('type', 'file');
   await respond.locator('#dwg-resubmit').setInputFiles(sampleFile('yalniz.pdf', 'pdf'));
-  await respond.getByRole('button', { name: 'Düzeltilmiş dosyayı gönder' }).click();
+  await respond.getByRole('button', { name: 'Düzeltilmiş dosyayı gönder', exact: true }).click();
   await expect(cust.locator('.alert-error', { hasText: 'En az bir DWG ya da DXF dosyası seçin.' })).toBeVisible();
   await cust.locator('#duzeltme #dwg-resubmit').setInputFiles([sampleFile('duzeltilmis-plan.dxf', 'duzeltilmis'), sampleFile('aciklama.pdf', 'aciklama')]);
-  await cust.locator('#duzeltme').getByRole('button', { name: 'Düzeltilmiş dosyayı gönder' }).click();
+  await cust.locator('#duzeltme').getByRole('button', { name: 'Düzeltilmiş dosyayı gönder', exact: true }).click();
   await expect(cust.getByText('Düzeltilmiş dosyanız çizim ekibine iletildi.')).toBeVisible();
   await expect(cust.locator('#cizim-hatali')).toHaveCount(0);
 

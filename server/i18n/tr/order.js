@@ -137,7 +137,7 @@ export default {
     // Çizimci müşterinin DWG/DXF çizimini hatalı buldu (karar 167): sipariş sayfasının üstündeki kırmızı bilgilendirme
     correctionTitle: 'Çiziminizde düzeltme gerekiyor.',
     correctionText: 'Çizim ekibimiz gönderdiğiniz çizimi inceledi ve düzeltme gerektiğini bildirdi:',
-    correctionResubmit: 'Düzeltilmiş dosyayı gönderin (en az bir DWG ya da DXF)',
+    correctionResubmit: 'Düzeltilmiş çizim dosyaları (en az bir DWG ya da DXF)',
     correctionResubmitButton: 'Düzeltilmiş dosyayı gönder',
     correctionFactoryHint: 'Ya da çizimi fabrikamızın hazırlamasını isteyin; hazır olunca onayınıza sunulur.',
     correctionFactory: 'Fabrikadan yeni çizim iste',

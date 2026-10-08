@@ -137,7 +137,7 @@ export default {
     // Echipa de desen a găsit erori în desenul DWG/DXF al clientului (decizia 167): informarea roșie din partea de sus
     correctionTitle: 'Desenul dvs. necesită corecturi.',
     correctionText: 'Echipa noastră de desen a verificat desenul trimis de dvs. și a semnalat că necesită corecturi:',
-    correctionResubmit: 'Trimiteți fișierul corectat (cel puțin un DWG sau DXF)',
+    correctionResubmit: 'Fișierele corectate ale desenului (cel puțin un DWG sau DXF)',
     correctionResubmitButton: 'Trimite fișierul corectat',
     correctionFactoryHint: 'Sau cereți ca desenul să fie pregătit de fabrica noastră; când este gata, vă este supus aprobării.',
     correctionFactory: 'Cere un desen nou de la fabrică',

@@ -158,10 +158,13 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
     expect((await page.request.get(`/dosya/cizim/${v1.id}`)).status(), who).toBe(200);
     expect((await page.request.get(v1Viewer)).status(), who).toBe(200);
     await page.goto(`/siparisler/${id}`);
-    const row = page.locator('.drawing-version', { hasText: 'geri çekildi' });
+    // Çizim ekibinin ekranı iki bölümdür (karar 169): dosyalar ve sürüm notu "Teknik çizim dosyaları"nda (#cizim-dosyalari),
+    // geri çekme gerekçesi "Çizim onayı ve revizyon"da (#cizim). Öbür roller ikisini tek kartta (#cizim) görür.
+    const row = page.locator(who === 'çizim' ? '#cizim-dosyalari .drawing-version' : '#cizim .drawing-version', { hasText: 'geri çekildi' });
     await expect(row.locator('.file-row'), who).toHaveCount(3);
     await expect(row, who).toContainText('dus-v1.pdf');
     await expect(row, who).toContainText(NOTE);
+    await expect(page.locator('#cizim .drawing-version', { hasText: 'geri çekildi' }), who).toContainText('Yanlış ölçü gönderildi');
   }
   await sales.context().close();
   await insp.context().close();
