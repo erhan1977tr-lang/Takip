@@ -49,6 +49,8 @@ async function xlsx(page: Page, url: string): Promise<{ name: string; rows: Rows
 /** Firma satırının sayı / tutar hücreleri (data-col) */
 const cells = (firm: Locator, cols: string[]) => Promise.all(cols.map(async (c) => (await firm.locator(`tr.firm-row td[data-col="${c}"]`).innerText()).trim()));
 const NUM = ['orders', 'glass', 'cnc', 'holes', 'm2', 'net', 'crates', 'gross'];
+/** Başlık hücrelerinin metni (ekranda CSS ile büyük harf yazılır — içerik karşılaştırılır) */
+const heads = async (l: Locator) => (await l.allTextContents()).map((s) => s.trim());
 
 test('veri: Ünsal\'ın üç siparişi (biri CNC / delikli, biri Beta\'nın sandıklarıyla gidecek) ve Beta\'nın RON siparişi — aynı yükleme günü', async () => {
   const db = await prisma();
@@ -83,7 +85,7 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
   const table = page.locator('.card#gun .firm-table');
-  expect(await table.locator(':scope > thead th').allInnerTexts()).toEqual([
+  expect(await heads(table.locator(':scope > thead th'))).toEqual([
     'Firma', 'Sipariş adedi', 'Cam adedi', 'CNC adedi', 'Delik adedi', 'Toplam m²', 'Net ağırlık (kg)', 'Sandık adedi', 'Brüt ağırlık (kg)', 'Fabrika satış tutarı', 'Teklif tutarı', 'İşlemler',
   ]);
   await expect(table.locator(':scope > tbody.firm'), 'firma başına tek satır').toHaveCount(2);
@@ -102,7 +104,7 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   // Alt siparişler: Sipariş No | Cam | CNC | Delik | Toplam m² | Fabrika Satış | Teklif Tutarı; toplam satırı = ana satır
   const uo = await openFirm(u);
   await expect(u.locator('.firm-toggle')).toHaveAttribute('aria-expanded', 'true');
-  expect(await uo.locator('thead th').allInnerTexts()).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış', 'Teklif Tutarı']);
+  expect(await heads(uo.locator('thead th'))).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış', 'Teklif Tutarı']);
   await expect(uo.locator('tbody tr[data-order]')).toHaveCount(3);
   const sub = async (no: string) => (await uo.locator(`tr[data-order="${ids[no]}"] td`).allInnerTexts()).slice(1).map((s) => s.trim());
   expect(await sub('UNS8601')).toEqual(['3', '2', '4', '3,00', '129,00 EUR', '190,00 EUR']);
@@ -232,13 +234,13 @@ test('firma işlemleri: Sandık / PDF / Excel / Özet — yalnızca o firma ve g
   expect((await page.request.get(`/yuklemeler/firma?gun=2020-01-01&firma=${uns.id}&bicim=pdf`)).status()).toBe(404);
   expect((await page.request.get(`/yuklemeler/firma?gun=abc&firma=${uns.id}&bicim=xlsx`)).status()).toBe(400);
   await page.goto(`/yuklemeler/ozet?gun=2020-01-01&firma=${uns.id}`);
-  await expect(page.locator('.card')).toContainText('Bu firmanın bu gün yüklemesi yok.');
+  await expect(page.locator('main')).toContainText('Bu firmanın bu gün yüklemesi yok.');
   await page.context().close();
 
   // Denetimci: firma tablosunda ve çıktısında yalnızca teklif tutarı (müşteri fiyatı); Özet'te tutar yok
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
   await insp.goto(DAY_URL);
-  const ih = await insp.locator('.card#gun .firm-table > thead th').allInnerTexts();
+  const ih = await heads(insp.locator('.card#gun .firm-table > thead th'));
   expect([ih.includes('Teklif tutarı'), ih.includes('Fabrika satış tutarı')]).toEqual([true, false]);
   const ix = await xlsx(insp, `/yuklemeler/firma?${q}&bicim=xlsx`);
   expect(ix.rows.flat()).toContain(190);
@@ -286,11 +288,11 @@ test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt 
   await expect(bc.locator(`.guest-box form.guest-in[data-order="${ids.UNS8603}"]`)).toContainText(`UNS8603 · ${mask(uns.name)}`);
   for (const n of [uns.name, beta.name]) await expect(sales.locator('main'), `ekran: ${n}`).not.toContainText(n);
   // Tutar: yalnızca fabrika satış (müşteri teklif tutarı satışa gelmez)
-  expect(await sales.locator('.card#gun .firm-table > thead th').allInnerTexts()).toEqual([
+  expect(await heads(sales.locator('.card#gun .firm-table > thead th'))).toEqual([
     'Firma', 'Sipariş adedi', 'Cam adedi', 'CNC adedi', 'Delik adedi', 'Toplam m²', 'Net ağırlık (kg)', 'Sandık adedi', 'Brüt ağırlık (kg)', 'Fabrika satış tutarı', 'İşlemler',
   ]);
   expect(await cells(u, ['factory'])).toEqual(['314,00 EUR']);
-  expect(await uo.locator('thead th').allInnerTexts()).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış']);
+  expect(await heads(uo.locator('thead th'))).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış']);
   await shot(sales, 'yukleme-firma-tablosu-satis');
 
   // Excel'ler ve özet: maskeli; teklif tutarı yok; firma çıktısında hiç tutar yok

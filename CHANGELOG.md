@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.57.1 — 08.10.2026
+
+Paket 7 doğrulama düzeltmesi: Yüklemeler'de ev sahibi firmanın sandık formu, satış sandığı seçtikten hemen sonra (sayfa
+yenilenmeden) misafir yükün satırını sandığın altında gösterir — misafir yük bilgisi formun iç durumundan değil, sunucudan gelen
+güncel veriden okunur (kaydedilen yeni sandıklar da hemen eşleşir; misafir yükü olan sandığın numarası değiştirilemez, sandık
+silinemez). Uçtan uca testlerde tablo başlıkları (ekranda CSS ile büyük harf) metin içeriğiyle karşılaştırılır.
+
 ## 3.57.0 — 08.10.2026
 
 Fonksiyonel paket 7 — Yüklemeler firma tablosu, misafir yük, sandıklar, takvim ve Excel / PDF standardı (kararlar 186–191).

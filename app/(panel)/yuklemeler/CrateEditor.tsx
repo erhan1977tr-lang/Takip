@@ -10,7 +10,8 @@ export type CrateInit = {
   /** Sandıkta giden başka firma siparişleri (misafir yük — yalnızca gösterim; ad role göre maskeli). Böyle bir sandık silinemez / numarası değişmez. */
   guests?: string[];
 };
-type Row = CrateInit & { key: number };
+/** origNo: kayıtlı sandığın sunucudaki numarası (yeni satırda yok) — misafir yük bilgisi her çizimde güncel props'tan bu numarayla okunur */
+type Row = CrateInit & { key: number; origNo?: string };
 
 let seq = 1;
 const kgNum = (s: string) => {
@@ -43,7 +44,16 @@ export function CrateEditor(props: {
 }) {
   const { m } = props;
   const [state, action, pending] = useActionState<CratesState, FormData>(saveDayCratesAction, {});
-  const [rows, setRows] = useState<Row[]>(() => props.initial.map((c) => ({ ...c, key: seq++ })));
+  const [rows, setRows] = useState<Row[]>(() => props.initial.map((c) => ({ ...c, key: seq++, origNo: c.crateNo })));
+  // Misafir yük satırları durumda tutulmaz: sandık seçimi (sunucu işlemi) sonrası gelen güncel veriden okunur
+  const guestsByNo = new Map(props.initial.map((c) => [c.crateNo, c.guests ?? []]));
+  const guestsOf = (r: Row) => (r.origNo != null ? guestsByNo.get(r.origNo) ?? [] : []);
+  // Başarılı kayıttan sonra bütün satırlar sunucudaki numaralarıyla kayıtlıdır (yeni satırlar dahil)
+  const [syncedAt, setSyncedAt] = useState(state.savedAt);
+  if (state.savedAt !== syncedAt) {
+    setSyncedAt(state.savedAt);
+    setRows((rs) => rs.map((r) => ({ ...r, origNo: r.crateNo })));
+  }
   const set = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const nextNo = () => {
     const used = [...props.dayUsed.map((u) => u.no), ...rows.map((r) => Number(r.crateNo) || 0)];
@@ -69,13 +79,13 @@ export function CrateEditor(props: {
   const covered = [...new Set(rows.flatMap((r) => r.orderIds))]
     .map((id) => props.orders.find((o) => o.id === id)?.orderNo).filter(Boolean);
   // Gönderilen veri: yalnızca sandık alanları (misafir yük satırı gösterim içindir; sunucu bağı kendisi korur)
-  const payload = JSON.stringify(rows.map(({ key: _k, guests: _g, ...r }) => r));
+  const payload = JSON.stringify(rows.map(({ key: _k, guests: _g, origNo: _o, ...r }) => r));
   const many = props.orders.length > 1;
   // Sütun genişlikleri sınıftan gelir (app/globals.css → .crate-table .c-no / .c-dim / .c-kg)
   const cell = (r: Row, k: 'crateNo' | 'lengthMm' | 'widthMm' | 'heightMm' | 'netKg' | 'grossKg', label: string) => (
     <td className={k === 'crateNo' ? 'c-no' : k === 'netKg' || k === 'grossKg' ? 'c-kg' : 'c-dim'}>
       <input value={r[k]} inputMode={k === 'netKg' || k === 'grossKg' ? 'decimal' : 'numeric'} aria-label={`${label} (${r.crateNo || '—'})`}
-        readOnly={k === 'crateNo' && !!r.guests?.length}
+        readOnly={k === 'crateNo' && guestsOf(r).length > 0}
         onChange={(e) => set(r.key, { [k]: e.target.value.replace(k === 'netKg' || k === 'grossKg' ? /[^\d.,]/g : /\D/g, '') } as Partial<Row>)} />
     </td>
   );
@@ -127,14 +137,14 @@ export function CrateEditor(props: {
                     </td>
                   )}
                   <td className="c-del">
-                    <button type="button" className="btn btn-link btn-del" aria-label={m.remove} title={r.guests?.length ? m.guestKept : m.remove}
-                      disabled={!!r.guests?.length} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>✕</button>
+                    <button type="button" className="btn btn-link btn-del" aria-label={m.remove} title={guestsOf(r).length ? m.guestKept : m.remove}
+                      disabled={guestsOf(r).length > 0} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>✕</button>
                   </td>
                 </tr>
                 {/* Misafir yük: bu sandıkta giden başka firmanın siparişi ve camı (fiziksel yerleşim; ticari sahiplik değişmez) */}
-                {r.guests?.length ? (
+                {guestsOf(r).length ? (
                   <tr className="crate-guests" data-crate={r.crateNo}>
-                    <td colSpan={colCount} className="small">{r.guests.map((g) => <div key={g}>{g}</div>)}</td>
+                    <td colSpan={colCount} className="small">{guestsOf(r).map((g) => <div key={g}>{g}</div>)}</td>
                   </tr>
                 ) : null}
               </tbody>
