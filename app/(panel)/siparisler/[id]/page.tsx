@@ -504,7 +504,8 @@ function History({ order, isCustomer, t, priceChanges = [] }: { order: OrderDeta
       node: (
         <li key={e.id}>
           <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${personText(t, e.user)}` : ''}</div>
-          <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
+          {/* Teslimat raporu (Paket 8, karar 196): geçmişten raporların listesine (aynı sayfa, kalıcı bağlantılar) */}
+          <div>{e.event === 'DELIVERY_REPORT' ? <a href="#teslimat"><b>{label}</b></a> : <b>{label}</b>}{note ? ` — ${note}` : ''}</div>
         </li>
       ),
     });

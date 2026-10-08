@@ -47,6 +47,8 @@ export default {
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',
+    ORDER_DELIVERY_DATE_CHANGED: 'yeni tahmini teslim günü {date}',
+    ORDER_PICKUP_MOVED: 'yeni tahmini teslim günü {date}',
     LOADING_NOT_LOADED: '{qty} adet yüklenmedi · {date}',
     LOADING_REPLANNED: '{qty} adet → {date}',
     GUEST_CRATE_PLACED: 'sandık no {crate} · yükleme {date}',

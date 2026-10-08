@@ -47,6 +47,8 @@ export default {
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',
+    ORDER_DELIVERY_DATE_CHANGED: 'noua dată estimată de livrare {date}',
+    ORDER_PICKUP_MOVED: 'noua dată estimată de livrare {date}',
     LOADING_NOT_LOADED: '{qty} buc. neîncărcate · {date}',
     LOADING_REPLANNED: '{qty} buc. → {date}',
     GUEST_CRATE_PLACED: 'lada nr. {crate} · încărcare {date}',

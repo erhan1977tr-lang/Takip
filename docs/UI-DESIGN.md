@@ -527,6 +527,34 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   repeat their header after a page break; numbers right-aligned, text left-aligned with a small gap after a number column.
 - File names: always `exportName` / `exportFileName` (panel language, safe ASCII) — never a literal `filename=` in a route.
 
+## Work calendars, delivery date, photos and report (3.58.0, decisions 192–197)
+
+- Ayarlar → **Çalışma Takvimleri** (`SettingsTabs` third tab, `/admin/entegrasyonlar/takvimler`): `.card#takvim[data-calendar]`
+  with `.cal-nav` (calendar buttons `[data-calendar-tab]` — the active one `.btn-primary` + `aria-current`; month prev / next /
+  current links), usage and time-zone line, data line `[data-holiday-data]` and `.alert-warn[data-holiday-gap]` for a year
+  without data; month grid `.cal-month` (7 columns `minmax(0, 1fr)`, Monday first; `.cal-head`, `.cal-blank`, `.cal-cell`
+  `[data-day][data-open][data-reason]` with `.cal-num` + `.cal-tag`; state classes `closed`, `holiday`, `half`, `manual-open`,
+  `manual-closed`, `today` — tokens only); `.cal-legend`. Mark a day: `form.card#isaretle` (`.cal-form`: day, mode select,
+  note). Manual decisions `.card#elle` (`tr[data-override]`, "Kaldır" via `ConfirmButton`); upcoming holidays `.card#tatiller`
+  (`li[data-holiday]`). Below 560 px the cell tags are hidden (numbers only) — no horizontal scroll.
+- Profile order page: the delivery card `.card#teslim` ("Teslimat") replaces the old pickup card — `table.kv` with the
+  estimated day `b[data-delivery-date]`, the phase `Badge` (muted Depoda hazırlanıyor / info Teslimata hazır / ok Teslim
+  edildi), phone and plate; before a date exists `p[data-delivery-estimate]`; the estimate text `p.small.muted[data-delivery-note]`;
+  customer stock note `.alert-warn[data-delivery-stock]`; Admin data gap `.alert-warn[data-calendar-gap]`; the edit form stays a
+  `details` ("Bilgileri değiştir", `#up-date` with the Admin hint). Customer in the warehouse stage: `.alert-info` (locked).
+- Delivery documents `.card#teslimat`: photo grid `.photo-grid[data-delivery-photos]` (auto-fill 132 px tiles,
+  `figure.photo-tile[data-photo]` → link + `img` 112 px `object-fit: cover`, `figcaption` time · source · "taranıyor");
+  empty `p[data-no-photos]`. Upload (Admin, depot page): the shared `DeliveryPhotoUpload` — file input + "Yükle", hint, then
+  `.photo-progress` (`aria-live`, "n / N", `progress`, `ul.photo-status` rows `li[data-upload-state]` with a state `Badge` and
+  a red error line). Report: `h3#rapor`, `ul.report-list[data-delivery-reports]` (`li[data-report]`: link "Rapor #n · date",
+  ok `Badge` "Güncel rapor" on the newest; staff see who created it), empty `p[data-no-reports]`; Admin form (note `#dr-note` +
+  primary "Teslimat raporu oluştur"). The history entry "Teslimat raporu" links to `#teslimat`.
+- Depot link page: two `section.depot-section` blocks — `#fotograflar` (upload + `ul[data-depot-photos]`) and `#rapor` (note
+  `#dep-note` + "Teslimat raporu oluştur" + `ul[data-depot-reports]`), under the existing confirm form.
+- Supplier order `#eta`: calendar warning `.alert[data-eta-calendar]` (warn for `closed`, info for `half` / `noData`).
+- Delivery report PDF: shared brand header + footer, `kv` info rows, note, items table with repeated header, photo list with
+  links, then one embedded photo per box (507 × 292, EXIF orientation applied; a photo that cannot be embedded is marked).
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

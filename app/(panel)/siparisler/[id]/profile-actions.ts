@@ -13,6 +13,12 @@ import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { runProfileAction, WorkflowError } from '@/server/profile/transitions.js';
+import { deliverInAppNow } from '@/lib/notifications';
+import { orderScope } from '@/lib/orders';
+import { photoUploadError } from '@/lib/delivery';
+import { photoProblem, takesDeliveryDocs } from '@/server/delivery/rules.js';
+import { createDeliveryReport, recordDeliveryPhoto } from '@/server/delivery/service.js';
+import type { PhotoUploadResult } from '@/components/DeliveryPhotoUpload';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const idOf = (fd: FormData) => String(fd.get('id') ?? '');
@@ -32,6 +38,8 @@ function done(id: string, q: string): never {
 async function act(user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {}, cleanup?: () => Promise<void>) {
   try {
     const res = await runProfileAction(db, { orderId, action, actor: await actorOf(user), payload });
+    // Uygulama içi bildirim hemen (ör. teslim günü değişti → müşteri); işçi yedektir, aynı bildirim iki kez yazılmaz
+    await deliverInAppNow(res.outboxIds);
     return res.result as Record<string, unknown> | null;
   } catch (e) {
     if (cleanup) await cleanup();
@@ -71,15 +79,19 @@ export async function approveProfileAction(fd: FormData) {
   done(id, 'ok=approved');
 }
 
-/** Müşteri ya da yönetici: teslim bilgilerini değiştir (depoya gidene kadar) */
+/**
+ * Müşteri ya da yönetici: teslim bilgilerini değiştir (müşteri depoya gidene kadar; yönetici depoda iken de — karar 194).
+ * Yöneticinin değiştirdiği teslim günü müşteriye bildirilir.
+ */
 export async function updatePickupAction(fd: FormData) {
   const user = await requirePermission('ORDER_VIEW');
   const id = idOf(fd);
-  await act(user, id, 'update_pickup', {
+  const r = await act(user, id, 'update_pickup', {
     pickupDate: parseDateOnly(String(fd.get('pickupDate') ?? '')) ?? new Date('x'),
     phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''),
+    expectedVersion: expectedVersion(fd),
   });
-  done(id, 'ok=pickup_updated');
+  done(id, `ok=${r?.deliveryDateChanged ? 'delivery_date' : 'pickup_updated'}#teslim`);
 }
 
 export async function proformaAction(fd: FormData) {
@@ -103,7 +115,9 @@ export async function warehouseAction(fd: FormData) {
   const user = await requirePermission('OFFER_SEND');
   const id = idOf(fd);
   const r = await act(user, id, 'send_to_warehouse', { expectedVersion: expectedVersion(fd) });
-  done(id, `ok=${Array.isArray(r?.shortages) && r.shortages.length ? 'warehouse_shortage' : 'warehouse'}`);
+  const at = r?.pickupDate instanceof Date ? r.pickupDate.toISOString().slice(0, 10) : '';
+  const code = Array.isArray(r?.shortages) && r.shortages.length ? 'warehouse_shortage' : r?.moved ? 'warehouse_moved' : 'warehouse';
+  done(id, `ok=${code}&at=${encodeURIComponent(at)}`);
 }
 
 export async function resendWarehouseAction(fd: FormData) {
@@ -155,4 +169,51 @@ export async function cancelProfileAction(fd: FormData) {
   const id = idOf(fd);
   await act(user, id, 'cancel', { note: String(fd.get('note') ?? '').trim().slice(0, 500) });
   done(id, 'ok=cancelled');
+}
+
+// ---------- Teslimat belgeleri (Paket 8, karar 195–196) ----------
+
+/**
+ * Yönetici: tek teslimat fotoğrafı (istemci seçilen fotoğrafları sırayla, her birini ayrı istekle gönderir — biri reddedilirse
+ * ötekiler kalır). İçerik denetimi, antivirüs ve kota mevcut yükleme yolundan; aynı fotoğraf ikinci kez gelirse yeni kayıt yok.
+ */
+export async function deliveryPhotoAction(fd: FormData): Promise<PhotoUploadResult> {
+  const user = await requirePermission('OFFER_SEND');
+  const { t } = await getT();
+  const id = idOf(fd);
+  const files = filesFrom(fd, 'photo');
+  if (files.length !== 1) return { ok: false, error: t('delivery.photos.errors.empty') };
+  const problem = photoProblem(files[0]);
+  if (problem) return { ok: false, error: t(`delivery.photos.errors.${problem}`) };
+  // Önce siparişin durumu: depoya iletilmemiş siparişe dosya diske hiç yazılmaz
+  const order = await db.order.findFirst({ where: { id, ...orderScope(user), orderTypeCode: 'PROFILE_ORDER' }, select: { status: true, removedAt: true, profile: { select: { stage: true } } } });
+  if (!order) return { ok: false, error: t('delivery.errors.NOT_FOUND') };
+  if (!takesDeliveryDocs({ stage: order.profile?.stage ?? '', status: order.status, removedAt: order.removedAt })) return { ok: false, error: t('delivery.photos.errors.state') };
+  const actor = await actorOf(user);
+  const stored = await storeFiles(files, { userId: user.id, orderId: id });
+  if (!stored.ok) return { ok: false, error: photoUploadError(t, stored.problem.code) };
+  let r;
+  try {
+    r = await recordDeliveryPhoto(db, { orderId: id, stored: stored.stored[0], actor });
+  } catch (e) {
+    await discardFiles(stored.stored);
+    throw e;
+  }
+  if (!r.ok || r.duplicate) await discardFiles(stored.stored);
+  if (!r.ok) return { ok: false, error: t(r.code === 'STATE' ? 'delivery.photos.errors.state' : r.code === 'FORBIDDEN' ? 'delivery.errors.FORBIDDEN' : 'delivery.photos.errors.other') };
+  revalidatePath(`/siparisler/${id}`);
+  return { ok: true, duplicate: r.duplicate };
+}
+
+/** Yönetici: teslimat raporu oluştur (açıklama isteğe bağlı; tek kullanımlık form anahtarı) */
+export async function deliveryReportAction(fd: FormData) {
+  const user = await requirePermission('OFFER_SEND');
+  const id = idOf(fd);
+  const r = await createDeliveryReport(db, { orderId: id, note: fd.get('note'), requestKey: fd.get('key'), actor: await actorOf(user) });
+  if (!r.ok) {
+    const { t } = await getT();
+    if (r.code === 'NOT_FOUND') notFound();
+    redirect(back(id, `error=${encodeURIComponent(t(`delivery.errors.${r.code}`))}`));
+  }
+  done(id, `ok=${r.duplicate ? 'report_same' : 'report'}&n=${r.revision}#teslimat`);
 }

@@ -238,6 +238,9 @@ export const EVENTS = {
   WAREHOUSE_EMAIL_FAILED: { customer: false },
   DELIVERED: { customer: true },
   INVOICED: { customer: true, note: true },
+  // Depo ve teslimat (Paket 8): yöneticinin değiştirdiği teslim günü (not = yeni gün) ve teslimat raporu (not = rapor sürümü)
+  DELIVERY_DATE_CHANGED: { customer: true, note: true },
+  DELIVERY_REPORT: { customer: true, note: true },
   // Kırık / telafi camı ve sipariş silme (Aşama 9): yalnızca iç ekip görür
   COMPENSATION: { customer: false },
   COMPENSATION_ADDED: { customer: false },

@@ -42,10 +42,10 @@ export default {
   PROFILE_OFFER_SENT: { label: 'Fiyatlar girildi, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   PROFILE_APPROVED: { label: 'Müşteri teklifi onayladı (alış günü)', customer: 'Teklifi onayladınız (alış günü)' },
   PICKUP_UPDATED: { label: 'Teslim bilgileri değişti', customer: 'Teslim bilgileri güncellendi' },
-  PICKUP_MOVED: { label: 'Alış günü ödemeden sonraki ilk iş gününe kaydı', customer: 'Alış günü ödemeden sonraki ilk iş gününe kaydı' },
+  PICKUP_MOVED: { label: 'Teslim (alış) günü depo kuralına göre ileri kaydı (depoya iletilirken)', customer: 'Tahmini teslim (alış) gününüz ileri kaydı' },
   PROFORMA: { label: 'Proforma kesildi', customer: 'Proforma kesildi' },
   PAID: { label: 'Ödeme alındı', customer: 'Ödemeniz alındı' },
-  WAREHOUSE_SENT: { label: 'Sipariş depoya gönderildi, stoktan düşüldü', customer: 'Siparişiniz depoya iletildi', auto: 'otomatik (ödemeden sonraki ilk iş günü)' },
+  WAREHOUSE_SENT: { label: 'Sipariş depoya gönderildi, stoktan düşüldü', customer: 'Siparişiniz depoya iletildi', auto: 'otomatik (ödeme teyidiyle)' },
   WAREHOUSE_RESENT: { label: 'Depo e-postası yeniden gönderilecek' },
   WAREHOUSE_EMAILED: { label: 'Depo e-postası gönderildi' },
   FGO_DOC_REQUESTED: {
@@ -88,4 +88,7 @@ export default {
   WAREHOUSE_EMAIL_FAILED: { label: 'Depo e-postası gönderilemedi' },
   DELIVERED: { label: 'Mal müşteriye teslim edildi', customer: 'Malı teslim aldınız', depot: 'depo bağlantısından, imzalı belgeyle' },
   INVOICED: { label: 'Faturalandı', customer: 'Faturanız kesildi' },
+  // Depo ve teslimat (Paket 8)
+  DELIVERY_DATE_CHANGED: { label: 'Teslim günü değiştirildi (yönetici)', customer: 'Tahmini teslim gününüz değişti' },
+  DELIVERY_REPORT: { label: 'Teslimat raporu oluşturuldu', customer: 'Teslimat raporu hazır' },
 };

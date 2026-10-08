@@ -152,11 +152,14 @@ test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişin
   const glass = { orderTypeCode: 'GLASS_ORDER', id: 'o1' }, profile = { orderTypeCode: 'PROFILE_ORDER', id: 'o2' };
   const toCustomer = INAPP_TYPES.filter((t) => [glass, profile].some((o) => INAPP_RULES[t].to(o, {}).includes('customer'))).sort();
   // Yeni bir olay müşteriye açılacaksa bilerek buraya eklenmelidir. ORDER_DWG_FAULTY (karar 167): çizimci müşterinin DWG/DXF
-  // çizimini hatalı buldu — müşterinin yanıtı bekleniyor
+  // çizimini hatalı buldu — müşterinin yanıtı bekleniyor. ORDER_DELIVERY_DATE_CHANGED / ORDER_PICKUP_MOVED (Paket 8, karar 194):
+  // profil siparişinin tahmini teslim günü yönetici tarafından değiştirildi / depoya iletilirken depo kuralıyla ileri kaydı
   assert.deepEqual(toCustomer, [
-    'LOADING_REPLANNED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED', 'ORDER_PROFILE_OFFER_SENT',
-    'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
+    'LOADING_REPLANNED', 'ORDER_DELIVERY_DATE_CHANGED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED',
+    'ORDER_PICKUP_MOVED', 'ORDER_PROFILE_OFFER_SENT', 'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
   ]);
+  assert.equal(INAPP_RULES.ORDER_DELIVERY_DATE_CHANGED.link(profile, {}), '/siparisler/o2#teslim');
+  assert.equal(INAPP_RULES.ORDER_PICKUP_MOVED.link(profile, {}), '/siparisler/o2#teslim');
   // Müşterinin yanıtı ve çizimcinin öbür kararları iç olaydır (çizimci / ilgili satışçı)
   for (const t of ['ORDER_OFFER_SUBMITTED', 'ORDER_OFFER_RETURNED', 'ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED', 'ORDER_SENT_TO_DRAWING', 'ACCOUNTING_ACTION', 'LOADING_NOT_LOADED', 'ORDER_CREATED', 'ORDER_PROFILE_APPROVED',
     'ORDER_DWG_READY', 'ORDER_DWG_RESUBMITTED', 'ORDER_DWG_FACTORY_REQUESTED']) {

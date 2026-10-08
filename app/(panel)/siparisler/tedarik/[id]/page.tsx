@@ -8,7 +8,8 @@ import { fmtBytes, fmtDate, fmtDateTime, fmtDec, fmtNum, isoDay } from '@/lib/fo
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { loadSupplierOrder, orderableProducts } from '@/server/suppliers/service.js';
-import { LIMITS, catalogPrice, etaReminderDue, orderUnitOf, showPrices, supplierEmail, supplierOrderActions } from '@/server/suppliers/rules.js';
+import { LIMITS, catalogPrice, etaCalendarWarning, etaReminderDue, orderUnitOf, showPrices, supplierEmail, supplierOrderActions } from '@/server/suppliers/rules.js';
+import { calendarOverrides } from '@/server/calendar/service.js';
 import { dayKeyOf, localDay } from '@/server/profile/dates.js';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { UNITS } from '@/prisma/seed/data/units.js';
@@ -56,6 +57,11 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   }));
   const units = UNITS.map((u) => ({ code: u.code, label: unitLabel(u.code, locale) }));
   const etaDay = order.etaDate ? dayKeyOf(order.etaDate) : null;
+  // Türkiye fabrika takvimi (karar 197): ETA kapalı güne denk geliyorsa yalnızca uyarı (tarih ve hatırlatma değişmez)
+  const etaWarn = etaDay ? etaCalendarWarning(etaDay, await calendarOverrides(db, 'TR_FACTORY')) : null;
+  const etaReason = etaWarn?.holiday
+    ? etaWarn.holiday.names.map((k) => t(`calendar.holiday.TR.${k}` as MsgKey)).join(' / ')
+    : etaWarn ? t(`calendar.reason.${etaWarn.reason}` as MsgKey) : '';
   const okText = sp.ok && OK.includes(sp.ok) ? t(`supplier.order.ok.${sp.ok}` as MsgKey) : null;
   const errText = supplierErrorText(t, m, sp.error, { row: sp.row, name: sp.name });
   const reason = SEND_ERRORS.includes(order.sendError ?? '') ? t(`supplier.order.sendError.${order.sendError}` as MsgKey) : t('supplier.order.sendError.SMTP');
@@ -200,6 +206,13 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               {etaDay && etaReminderDue({ etaDay, today }) && <Badge tone="warn">{t('supplier.orders.etaSoon')}</Badge>}
             </div>
           ) : <p data-eta-readonly>{etaDay ? fmtDate(`${etaDay}T12:00:00Z`) : t('supplier.order.eta.none')}</p>}
+          {etaWarn && etaDay && (
+            <div className={`alert ${etaWarn.level === 'closed' ? 'alert-warn' : 'alert-info'}`} data-eta-calendar={etaWarn.level} style={{ marginTop: 10, marginBottom: 0 }}>
+              {etaWarn.level === 'closed' ? t('supplier.order.eta.calClosed', { date: fmtDate(`${etaDay}T12:00:00Z`), reason: etaReason })
+                : etaWarn.level === 'half' ? t('supplier.order.eta.calHalf', { date: fmtDate(`${etaDay}T12:00:00Z`), reason: etaReason })
+                  : t('supplier.order.eta.calNoData', { year: etaDay.slice(0, 4) })}
+            </div>
+          )}
         </div>
       )}
 

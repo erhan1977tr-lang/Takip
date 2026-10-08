@@ -37,7 +37,12 @@ export const NOTIFY_RULES = {
   ORDER_PROFORMA: () => ['customer'],
   ORDER_INVOICED: () => ['customer'],
   ORDER_SHIP_DATE: () => ['customer'],
+  // Profil teslim günü (Paket 8, karar 194): yöneticinin değişikliği / depoya iletilirken kayma → müşteriye (tercihine göre)
+  ORDER_DELIVERY_DATE_CHANGED: () => ['customer'],
+  ORDER_PICKUP_MOVED: () => ['customer'],
 };
+/** Olayın verisinde gün taşıyan teslim günü olayları (e-postada "Tahmini teslim günü" satırı + açıklama) */
+const DELIVERY_DAY_TYPES = ['ORDER_DELIVERY_DATE_CHANGED', 'ORDER_PICKUP_MOVED'];
 export const NOTIFY_TYPES = Object.keys(NOTIFY_RULES);
 export const NOTIFY_SINCE_KEY = 'notify.since';
 export const NOTIFY_MAX_ATTEMPTS = 6;
@@ -120,6 +125,8 @@ export async function revisionOf(db, orderId, at) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmtDay = (d, timeZone) => (d ? new Intl.DateTimeFormat('ro-RO', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(d)) : '—');
+const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const dmyOf = (day) => day.split('-').reverse().join('.');
 const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
 
 /**
@@ -128,7 +135,7 @@ const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, da
  * @param {{ type: string, order: any, createdAt: Date, recipient: { locale: 'ro' | 'tr', role: string | null }, appUrl: string, timeZone: string,
  *   revision?: { note: string, version: number | null } | null }} p
  */
-export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null }) {
+export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null, payload = null }) {
   const t = (k, params) => translate(recipient.locale, k, params);
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
   const what = recipient.role
@@ -142,14 +149,18 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
     [t('notify.action'), what],
     [t('notify.date'), fmtTime(createdAt, timeZone)],
     ...(type === 'ORDER_SHIP_DATE' ? [[t('notify.shipDate'), fmtDay(order.actualShipDate ?? order.estimatedShipDate, timeZone)]] : []),
+    // Teslim günü olayın anındaki değerdir (kuyruk verisi); sonradan yeniden değişse de bu e-posta kendi gününü yazar
+    ...(DELIVERY_DAY_TYPES.includes(type) && isDay(payload?.day) ? [[t('notify.deliveryDay'), dmyOf(payload.day)]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.version ? [[t('notify.drawingVersion'), `v${revision.version}`]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.note ? [[t('notify.revisionNote'), String(revision.note).slice(0, 2000)]] : []),
   ];
   const subject = `${order.orderNo} — ${what}`;
-  const text = [...rows.map(([k, v]) => `${k}: ${v}`), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
+  const extra = DELIVERY_DAY_TYPES.includes(type) ? t('notify.deliveryNote') : null;
+  const text = [...rows.map(([k, v]) => `${k}: ${v}`), ...(extra ? ['', extra] : []), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
   // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
   const html = brandedHtml({ lang: recipient.locale, title: subject, body: `<p style="margin:0 0 12px"><b>${esc(what)}</b></p>
 <table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280;vertical-align:top">${esc(k)}</td><td style="white-space:pre-wrap"><b>${esc(v)}</b></td></tr>`).join('')}</table>
+${extra ? `<p style="color:#6b7280;margin:12px 0 0">${esc(extra)}</p>` : ''}
 <p style="margin-top:16px"><a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">${esc(t('notify.open'))}</a></p>
 <p style="color:#6b7280;font-size:12px;margin-bottom:0">${esc(t('notify.footer'))}</p>` });
   return { subject, text, html };
@@ -212,7 +223,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;
         try {
-          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision });
+          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload });
           await sendBrandedMail(transport, { from, to: r.email, subject: mail.subject, text: mail.text, html: mail.html, lang: r.locale });
           done.add(r.email.toLowerCase());
         } catch (e) {

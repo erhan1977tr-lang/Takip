@@ -5,6 +5,8 @@ export default {
   action: 'İşlem',
   date: 'Tarih',
   shipDate: 'Tahmini yükleme tarihi',
+  deliveryDay: 'Tahmini teslim (alış) günü',
+  deliveryNote: 'Bu tarih tahminidir: depo çalışma günlerine ve 12:00 kuralına göre hesaplanır, stok durumu hesaba katılmaz.',
   revisionNote: 'Revizyon notu',
   drawingVersion: 'Çizim sürümü',
   newOrder: 'Yeni sipariş',

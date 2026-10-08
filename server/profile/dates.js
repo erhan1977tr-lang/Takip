@@ -1,14 +1,25 @@
-// Profil siparişi tarih kuralları (ürün sahibinin kararları, Aşama 6):
-//   - Depo hafta sonu çalışmaz: alış tarihi cumartesi / pazar olamaz.
-//   - Mal en erken ödeme gününden sonraki ilk iş günü alınabilir.
-//   - Müşteri onayda bir tarih seçer; ödeme gelmeden önce en erken bugünden sonraki ilk iş günü seçilebilir
-//     (bugün ödenirse yarın alınabilir).
-//   - Ödeme teyit edilince sipariş hemen depoya gider (yönetici ödemeden önce de "Siparişi depoya gönder" diyebilir);
-//     müşterinin seçtiği gün ödemeden sonraki ilk iş gününden önceyse o güne kayar.
+// Profil siparişi tarih kuralları — Romanya deposunun çalışma takvimiyle (Paket 8, karar 192, 194; Aşama 6 kurallarının yerine).
+//   - Depo yalnızca açık günlerde çalışır: hafta sonu, Romanya resmî tatilleri ve yöneticinin kapattığı günler kapalı;
+//     yöneticinin elle açtığı gün açıktır (server/calendar/rules.js, takvim RO_DEPOT, saat dilimi Europe/Bucharest —
+//     APP_TIMEZONE'dan bağımsız).
+//   - Depo teslim (alış) günü, siparişin depoya İLETİLDİĞİ ana göre hesaplanır (depotReadyDay): açık bir günde saat 12:00'ye
+//     kadar (12:00 dahil, 12:00:59'a kadar) iletilen sipariş bir sonraki açık günde, 12:00'den sonra iletilen sipariş ondan
+//     sonraki açık günde teslim edilebilir; kapalı günde iletilen sipariş ilk açık günün başında işleme alınmış sayılır ve
+//     ondan sonraki açık güne planlanır. Hesap sunucuda yapılır; tarayıcı saatine güvenilmez.
+//   - Müşteri onayda (ve depoya gidene kadar) bir alış günü seçer: en erken = sipariş ŞİMDİ iletilse hesaplanan gün.
+//   - Sipariş depoya iletilince ("Ödeme alındı" ya da ödemeden önce "Siparişi depoya gönder") alış günü o anın kuralıyla
+//     yeniden denetlenir: daha erkense (ya da depo o gün kapalıysa) ileri kayar (pickupOnForward) ve müşteriye bildirilir.
+//   - Yönetici teslim gününü depoda iken de değiştirebilir (açık bir gün, bugünden önce olamaz); en erken kural ona uygulanmaz.
+//   - Bu tarih tahminidir: stok durumu hesaba katılmaz (stok yetersizliği siparişi engellemez — karar 165).
 // Tarihler "gün" olarak tutulur: gün ortası (12:00 UTC) Date — saat dilimi kaymasın diye (rules.js → parseDateOnly ile aynı).
-// Resmî tatiller dikkate alınmaz (yalnızca hafta sonu).
+import { CALENDARS, localClock, nextOpenDay, openOnOrAfter, dayStatus } from '../calendar/rules.js';
 
 export const MAX_PICKUP_DAYS = 180;
+/** Depo takvimi ve saat dilimi */
+export const DEPOT_CALENDAR = 'RO_DEPOT';
+export const DEPOT_TIME_ZONE = CALENDARS.RO_DEPOT.timeZone;
+/** Kesim saati (dakika): 12:00 dahil */
+export const DEPOT_CUTOFF_MINUTES = 12 * 60;
 
 /** "YYYY-MM-DD" → gün ortası UTC Date */
 export const dayDate = (key) => new Date(`${key}T12:00:00.000Z`);
@@ -22,20 +33,6 @@ export function localDay(now, timeZone) {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-/** Cumartesi ve pazar dışındaki günler */
-export function isWorkingDay(d) {
-  const w = new Date(d).getUTCDay();
-  return w !== 0 && w !== 6;
-}
-
-/** Verilen günden SONRAKİ ilk iş günü (gün ortası tarih) */
-export function nextWorkingDay(d) {
-  const x = dayDate(dayKeyOf(d));
-  do x.setUTCDate(x.getUTCDate() + 1);
-  while (!isWorkingDay(x));
-  return x;
-}
-
 /** Günü n gün ileri alır */
 export function addDays(d, n) {
   const x = dayDate(dayKeyOf(d));
@@ -43,39 +40,112 @@ export function addDays(d, n) {
   return x;
 }
 
+/** Deponun bugünü (Europe/Bucharest), gün ortası */
+export const depotToday = (now = new Date()) => dayDate(localDay(now, DEPOT_TIME_ZONE));
+
 /**
- * Seçilebilecek en erken alış günü.
- * @param {{ today: Date, paidAt?: Date | null }} p  today: yerel bugün (gün ortası)
+ * Depo bu gün açık mı (yöneticinin kararı → hafta sonu → resmî tatil).
+ * @param {Date | string} d  gün ortası tarih ya da "YYYY-MM-DD"
+ * @param {Map<string, { open: boolean }> | null} [overrides]
  */
-export function earliestPickup({ today, paidAt = null }) {
-  // Ödeme yoksa: en erken bugün ödenir → bugünden sonraki ilk iş günü
-  return nextWorkingDay(paidAt ?? today);
+export function depotOpen(d, overrides = null) {
+  return dayStatus(DEPOT_CALENDAR, typeof d === 'string' ? d : dayKeyOf(d), overrides).open;
+}
+
+/** Bir hesap için açık gün bulunamadı (yönetici sonraki 400 günü kapatmış): tarih verilemez */
+export class NoOpenDayError extends Error {
+  constructor() {
+    super('NO_OPEN_DAY');
+    this.code = 'NO_OPEN_DAY';
+  }
+}
+const must = (day) => {
+  if (!day) throw new NoOpenDayError();
+  return day;
+};
+
+/** Verilen günden SONRAKİ ilk açık depo günü (gün ortası) */
+export function nextDepotDay(d, overrides = null) {
+  return dayDate(must(nextOpenDay(DEPOT_CALENDAR, typeof d === 'string' ? d : dayKeyOf(d), overrides)));
 }
 
 /**
- * Alış tarihi sorunu ya da null. Kodlar: PICKUP_WEEKEND | PICKUP_TOO_EARLY | PICKUP_TOO_LATE
- * @param {Date} date
- * @param {{ today: Date, paidAt?: Date | null }} ctx
+ * Depo teslim günü: sipariş depoya `at` anında iletilirse en erken teslim (alış) günü (gün ortası).
+ * @param {Date} at  @param {Map<string, { open: boolean }> | null} [overrides]
  */
-export function pickupProblem(date, ctx) {
+export function depotReadyDay(at, overrides = null) {
+  const { day, minutes } = localClock(at, DEPOT_TIME_ZONE);
+  const cal = DEPOT_CALENDAR;
+  if (depotOpen(day, overrides)) {
+    const first = must(nextOpenDay(cal, day, overrides));
+    return dayDate(minutes <= DEPOT_CUTOFF_MINUTES ? first : must(nextOpenDay(cal, first, overrides)));
+  }
+  // Kapalı gün: ilk açık günün başında işleme alınmış sayılır → ondan sonraki açık gün
+  const processing = must(nextOpenDay(cal, day, overrides));
+  return dayDate(must(nextOpenDay(cal, processing, overrides)));
+}
+
+/**
+ * Müşterinin seçebileceği en erken alış günü: sipariş şimdi depoya iletilse hesaplanan gün.
+ * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null }} p
+ */
+export function earliestPickup({ now, overrides = null }) {
+  return depotReadyDay(now, overrides);
+}
+
+/**
+ * Alış günü sorunu ya da null. Kodlar: PICKUP_INVALID | PICKUP_WEEKEND | PICKUP_CLOSED | PICKUP_PAST | PICKUP_TOO_EARLY |
+ * PICKUP_TOO_LATE. staff (yönetici): en erken kural uygulanmaz; yalnızca açık gün, bugünden önce değil.
+ * @param {Date} date
+ * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null, staff?: boolean }} ctx
+ */
+export function pickupProblem(date, { now, overrides = null, staff = false }) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'PICKUP_INVALID';
-  if (!isWorkingDay(date)) return 'PICKUP_WEEKEND';
-  if (dayKeyOf(date) < dayKeyOf(earliestPickup(ctx))) return 'PICKUP_TOO_EARLY';
-  if (dayKeyOf(date) > dayKeyOf(addDays(ctx.today, MAX_PICKUP_DAYS))) return 'PICKUP_TOO_LATE';
+  const key = dayKeyOf(date);
+  const st = dayStatus(DEPOT_CALENDAR, key, overrides);
+  if (!st.open) return st.reason === 'WEEKEND' ? 'PICKUP_WEEKEND' : 'PICKUP_CLOSED';
+  const today = depotToday(now);
+  if (staff && key < dayKeyOf(today)) return 'PICKUP_PAST';
+  if (!staff) {
+    let earliest;
+    try {
+      earliest = earliestPickup({ now, overrides });
+    } catch (e) {
+      if (e instanceof NoOpenDayError) return 'PICKUP_CLOSED';
+      throw e;
+    }
+    if (key < dayKeyOf(earliest)) return 'PICKUP_TOO_EARLY';
+  }
+  if (key > dayKeyOf(addDays(today, MAX_PICKUP_DAYS))) return 'PICKUP_TOO_LATE';
   return null;
 }
 
 /**
- * Ödeme teyit edilince müşterinin alış günü: seçtiği gün ödemeden sonraki ilk iş gününden önceyse o güne kayar.
- * Ödeme günü geçmişte girildiyse alış günü bugünden (iş günü değilse sonraki iş gününden) önce olmaz.
- * @param {{ paidAt: Date, pickupDate: Date | null, today: Date }} p
- * @returns {{ pickupDate: Date, moved: boolean }}
+ * Sipariş depoya iletilirken (ödeme teyidi ya da "Siparişi depoya gönder") alış günü: seçilen gün iletim anının depo
+ * kuralından erkense ya da depo o gün kapalıysa ileri kayar (açık bir güne). Seçilmemişse depo kuralının günü.
+ * @param {{ now: Date, pickupDate: Date | null, overrides?: Map<string, { open: boolean }> | null }} p
+ * @returns {{ pickupDate: Date, moved: boolean, earliest: Date }}
  */
-export function pickupAfterPayment({ paidAt, pickupDate, today }) {
-  let earliest = nextWorkingDay(paidAt);
-  if (dayKeyOf(earliest) < dayKeyOf(today)) earliest = isWorkingDay(today) ? dayDate(dayKeyOf(today)) : nextWorkingDay(today);
-  const moved = !pickupDate || dayKeyOf(pickupDate) < dayKeyOf(earliest);
-  return { pickupDate: moved ? earliest : dayDate(dayKeyOf(pickupDate)), moved };
+export function pickupOnForward({ now, pickupDate, overrides = null }) {
+  const earliest = depotReadyDay(now, overrides);
+  if (!pickupDate) return { pickupDate: earliest, moved: true, earliest };
+  const chosen = dayKeyOf(pickupDate);
+  const target = chosen < dayKeyOf(earliest) ? dayKeyOf(earliest) : chosen;
+  const day = must(openOnOrAfter(DEPOT_CALENDAR, target, overrides));
+  return { pickupDate: dayDate(day), moved: day !== chosen, earliest };
+}
+
+/**
+ * Teslim günü müşteriye nasıl gösterilir (yalnızca görünüm — durum eklemez, karar 194): depoda değilse yok; depodaysa
+ * "hazırlanıyor" ya da teslim günü geldiyse "teslimata hazır (tahmini)"; teslim edildiyse "teslim edildi".
+ * @param {{ stage: string, status: string, pickupDate: Date | null, now: Date }} p
+ * @returns {'PREPARING' | 'READY' | 'DELIVERED' | null}
+ */
+export function depotPhase({ stage, status, pickupDate, now }) {
+  if (status === 'IPTAL') return null;
+  if (stage === 'TESLIM_EDILDI' || stage === 'FATURALANDI') return 'DELIVERED';
+  if (stage !== 'DEPODA') return null;
+  return pickupDate && dayKeyOf(pickupDate) <= dayKeyOf(depotToday(now)) ? 'READY' : 'PREPARING';
 }
 
 /** Yerel günün başlangıç anı (saat diliminde gece yarısı) */

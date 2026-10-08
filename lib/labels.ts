@@ -112,6 +112,10 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   PICKUP_TOO_EARLY: 'profile.errors.pickupTooEarly',
   PICKUP_TOO_LATE: 'profile.errors.pickupTooLate',
   PICKUP_INVALID: 'profile.errors.pickupInvalid',
+  // Depo takvimi (Paket 8, karar 194): resmî tatil / elle kapalı gün, yöneticinin geçmiş günü, açık gün yok
+  PICKUP_CLOSED: 'profile.errors.pickupClosed',
+  PICKUP_PAST: 'profile.errors.pickupPast',
+  NO_OPEN_DAY: 'profile.errors.noOpenDay',
   BAD_PHONE: 'profile.errors.badPhone',
   BAD_PLATE: 'profile.errors.badPlate',
   PICKUP_LOCKED: 'profile.errors.pickupLocked',

@@ -13,5 +13,6 @@ export default {
     glassCatalog: 'Cam Kataloğu',
     profileCatalog: 'Profil Kataloğu',
     profileStock: 'Profil Stoğu',
+    deliveryReport: 'Teslimat Raporu',
   },
 };

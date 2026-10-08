@@ -74,6 +74,10 @@ export const INAPP_RULES = {
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
   ORDER_PROFORMA: { to: () => ['customer'] },
   ORDER_INVOICED: { to: () => ['customer'] },
+  // Profil teslim günü (Paket 8, karar 194): yönetici değiştirdi ya da sipariş depoya iletilirken depo kuralıyla ileri kaydı →
+  // yalnızca müşteriye; bağlantı siparişin teslimat bölümüne. Gün olayın verisindedir (değişiklik başına bir bildirim).
+  ORDER_DELIVERY_DATE_CHANGED: { to: () => ['customer'], link: orderPart('teslim') },
+  ORDER_PICKUP_MOVED: { to: () => ['customer'], link: orderPart('teslim') },
   // Yükleme
   ORDER_SHIP_DATE: { to: () => ['customer'] },
   ORDER_SHIPPED: { to: () => ['customer'] },

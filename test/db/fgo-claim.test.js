@@ -14,7 +14,7 @@ const { suggestNextNo } = await import('../../server/orders/create.js');
 const { createProfileOrder } = await import('../../server/profile/create.js');
 const { profileOrderItems } = await import('../../server/profile/rules.js');
 const { runProfileAction } = await import('../../server/profile/transitions.js');
-const { dayDate, earliestPickup, localDay } = await import('../../server/profile/dates.js');
+const { earliestPickup, localDay } = await import('../../server/profile/dates.js');
 const { dispatchFgoJobs } = await import('../../server/profile/fgo-jobs.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
@@ -117,7 +117,7 @@ const WORKERS = {
     let o = await load();
     await runProfileAction(db, { orderId: id, action: 'send_profile_offer', actor: actor(), payload: { lines: o.offers[0].lines.map((l) => ({ id: l.id, offerPrice: '10' })) } });
     o = await load();
-    const pickupDate = earliestPickup({ today: dayDate(localDay(new Date(), TZ)) });
+    const pickupDate = earliestPickup({ now: new Date(Date.now() + 5 * 60_000) });
     await runProfileAction(db, { orderId: id, action: 'approve_profile_offer', actor: who, payload: { offerId: o.offers[0].id, pickupDate, phone: '0723000000', plate: 'B 1 KIR' } });
     return {
       extern: `${orderNo}-P`,

@@ -13,5 +13,6 @@ export default {
     glassCatalog: 'Catalog Sticlă',
     profileCatalog: 'Catalog Profile',
     profileStock: 'Stoc Profile',
+    deliveryReport: 'Raport Livrare',
   },
 };

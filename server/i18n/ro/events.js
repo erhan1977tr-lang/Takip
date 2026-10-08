@@ -42,10 +42,10 @@ export default {
   PROFILE_OFFER_SENT: { label: 'Prețurile au fost introduse, oferta a fost trimisă clientului', customer: 'Oferta dvs. este gata' },
   PROFILE_APPROVED: { label: 'Clientul a aprobat oferta (data ridicării)', customer: 'Ați aprobat oferta (data ridicării)' },
   PICKUP_UPDATED: { label: 'Datele de ridicare s-au schimbat', customer: 'Datele de ridicare au fost actualizate' },
-  PICKUP_MOVED: { label: 'Data ridicării s-a mutat în prima zi lucrătoare după plată', customer: 'Data ridicării s-a mutat în prima zi lucrătoare după plată' },
+  PICKUP_MOVED: { label: 'Data de livrare (ridicare) a fost mutată conform regulii depozitului (la transmiterea către depozit)', customer: 'Data estimată de livrare (ridicare) a fost mutată' },
   PROFORMA: { label: 'Proformă emisă', customer: 'Proformă emisă' },
   PAID: { label: 'Plată primită', customer: 'Plata dvs. a fost primită' },
-  WAREHOUSE_SENT: { label: 'Comanda a fost trimisă la depozit și scăzută din stoc', customer: 'Comanda dvs. a fost transmisă depozitului', auto: 'automat (prima zi lucrătoare după plată)' },
+  WAREHOUSE_SENT: { label: 'Comanda a fost trimisă la depozit și scăzută din stoc', customer: 'Comanda dvs. a fost transmisă depozitului', auto: 'automat (la confirmarea plății)' },
   WAREHOUSE_RESENT: { label: 'E-mailul pentru depozit va fi retrimis' },
   WAREHOUSE_EMAILED: { label: 'E-mailul pentru depozit a fost trimis' },
   FGO_DOC_REQUESTED: {
@@ -87,4 +87,7 @@ export default {
   WAREHOUSE_EMAIL_FAILED: { label: 'E-mailul pentru depozit nu a putut fi trimis' },
   DELIVERED: { label: 'Marfa a fost predată clientului', customer: 'Ați ridicat marfa', depot: 'din linkul depozitului, cu document semnat' },
   INVOICED: { label: 'Facturată', customer: 'Factura dvs. a fost emisă' },
+  // Depozit și livrare (Pachetul 8)
+  DELIVERY_DATE_CHANGED: { label: 'Data de livrare a fost modificată (administrator)', customer: 'Data estimată de livrare s-a schimbat' },
+  DELIVERY_REPORT: { label: 'Raportul de livrare a fost creat', customer: 'Raportul de livrare este disponibil' },
 };

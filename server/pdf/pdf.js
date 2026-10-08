@@ -80,6 +80,47 @@ function jpegInfo(buf) {
 }
 
 /**
+ * JPEG'in EXIF yönü (1–8; yoksa / okunamazsa 1). Telefon fotoğrafları çoğu zaman yatay saklanıp "90° döndür" işaretiyle gelir;
+ * PDF görseli kendisi döndürmez — sayfaya çizerken bu yön uygulanır (page.image). Yalnızca APP1 "Exif" bölümünün ilk IFD'si
+ * okunur; her uzunluk ve konum dosyanın sınırları içinde denetlenir.
+ * @param {Buffer} buf
+ */
+export function jpegOrientation(buf) {
+  if (!buf || buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return 1;
+  let i = 2;
+  while (i + 4 <= buf.length) {
+    if (buf[i] !== 0xff) return 1;
+    const marker = buf[i + 1];
+    if (marker === 0xda || marker === 0xd9) return 1; // görüntü verisi başladı: EXIF yok
+    const len = buf.readUInt16BE(i + 2);
+    if (len < 2 || i + 2 + len > buf.length) return 1;
+    if (marker === 0xe1 && len >= 16 && buf.toString('latin1', i + 4, i + 10) === 'Exif\0\0') {
+      const t = i + 10; // TIFF başlığı
+      const end = i + 2 + len;
+      const le = buf.toString('latin1', t, t + 2) === 'II';
+      if (!le && buf.toString('latin1', t, t + 2) !== 'MM') return 1;
+      const u16 = (o) => (o + 2 <= end ? (le ? buf.readUInt16LE(o) : buf.readUInt16BE(o)) : -1);
+      const u32 = (o) => (o + 4 <= end ? (le ? buf.readUInt32LE(o) : buf.readUInt32BE(o)) : -1);
+      const ifd = u32(t + 4);
+      if (ifd < 8) return 1;
+      const count = u16(t + ifd);
+      if (count < 0 || count > 500) return 1;
+      for (let k = 0; k < count; k++) {
+        const e = t + ifd + 2 + k * 12;
+        if (e + 12 > end) return 1;
+        if (u16(e) === 0x0112) {
+          const v = u16(e + 8);
+          return v >= 1 && v <= 8 ? v : 1;
+        }
+      }
+      return 1;
+    }
+    i += 2 + len;
+  }
+  return 1;
+}
+
+/**
  * PNG → 8 bit RGB. Saydamlığı olmayan görselde yalnızca rgb döner. Saydam pikseli olan görselde:
  *   rgb   : beyaz zemine basılmış renk (saydamlığı işlemeyen kullanım için — eski davranış)
  *   color : görselin kendi rengi (zemine basılmamış) + alpha: piksel başına saydamlık (PDF'te /SMask ile kullanılır)
@@ -163,6 +204,25 @@ export function decodePng(buf) {
   return transparent ? { w, h, rgb: out, color, alpha: mask } : { w, h, rgb: out };
 }
 
+/**
+ * EXIF yönüne göre görselin birim karesini sayfadaki kutuya yerleştiren dönüşüm (PDF "cm" işleci): [a b c d e f].
+ * (x0, y0): kutunun SOL ALT köşesi (PDF koordinatı), dw × dh: görünen boyut. Yön 1 düz; 2 / 4 ayna; 3 180°; 5 / 7 çapraz
+ * ayna; 6 saat yönünde 90°; 8 saatin tersine 90° (EXIF tanımı: 0. satır / 0. sütunun görünen konumu).
+ * @param {number} o  @param {number} x0  @param {number} y0  @param {number} dw  @param {number} dh
+ */
+export function orientationMatrix(o, x0, y0, dw, dh) {
+  switch (o) {
+    case 2: return [-dw, 0, 0, dh, x0 + dw, y0];
+    case 3: return [-dw, 0, 0, -dh, x0 + dw, y0 + dh];
+    case 4: return [dw, 0, 0, -dh, x0, y0 + dh];
+    case 5: return [0, -dh, -dw, 0, x0 + dw, y0 + dh];
+    case 6: return [0, -dh, dw, 0, x0, y0 + dh];
+    case 7: return [0, dh, dw, 0, x0, y0];
+    case 8: return [0, dh, -dw, 0, x0 + dw, y0];
+    default: return [dw, 0, 0, dh, x0, y0];
+  }
+}
+
 // Belgeye gömülmeye hazır görseller (içerik özetiyle): en son kullanılan birkaç görsel bellekte tutulur
 const encoded = new Map();
 const ENCODED_MAX = 12;
@@ -220,13 +280,21 @@ export class PdfDoc {
         if (fill != null) parts.push('0 g');
         ops.push(parts.join(' '));
       },
-      /** Görseli kutuya en-boy oranını koruyarak ortalar. img: doc.image() sonucu */
+      /**
+       * Görseli kutuya en-boy oranını koruyarak ortalar. img: doc.image() sonucu. JPEG'in EXIF yönü (orientation 2–8)
+       * uygulanır: dönük saklanan telefon fotoğrafı sayfada doğru yönde görünür. Dönen: çizilen kutu { x, y, w, h }.
+       */
       image(img, x, y, w, h) {
-        if (!img) return;
-        const s = Math.min(w / img.w, h / img.h);
-        const dw = img.w * s, dh = img.h * s;
+        if (!img) return null;
+        const o = img.orientation ?? 1;
+        const swap = o >= 5; // 5–8: görünen genişlik = saklanan yükseklik
+        const iw = swap ? img.h : img.w, ih = swap ? img.w : img.h;
+        const s = Math.min(w / iw, h / ih);
+        const dw = iw * s, dh = ih * s;
         const dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-        ops.push(`q ${n(dw)} 0 0 ${n(dh)} ${n(dx)} ${n(Y(dy + dh))} cm /${img.name} Do Q`);
+        const [a, b, c, d, e, f] = orientationMatrix(o, dx, Y(dy + dh), dw, dh);
+        ops.push(`q ${n(a)} ${n(b)} ${n(c)} ${n(d)} ${n(e)} ${n(f)} cm /${img.name} Do Q`);
+        return { x: dx, y: dy, w: dw, h: dh };
       },
     };
     this.pages.push(page);
@@ -235,19 +303,22 @@ export class PdfDoc {
 
   /**
    * Görseli belgeye ekler (aynı içerik bir kez). Desteklenmeyen biçimde null döner (görsel çizilmez).
+   * cache: false — büyük, bir kez kullanılan görsel (ör. teslimat fotoğrafı) süreç belleğindeki ortak önbelleğe girmez;
+   * belgeyle birlikte bırakılır (önbellek yalnızca her belgede kullanılan küçük görseller içindir: logo).
    * @param {Buffer} buf JPEG ya da PNG
+   * @param {{ cache?: boolean }} [o]
    */
-  image(buf) {
+  image(buf, { cache = true } = {}) {
     if (!buf?.length) return null;
     const key = crypto.createHash('sha1').update(buf).digest('hex');
     const found = this.images.find((i) => i.key === key);
     if (found) return found;
-    let img = encoded.get(key) ?? null;
+    let img = cache ? encoded.get(key) ?? null : null;
     if (img) return addImage(this, img, key);
     const jpg = jpegInfo(buf);
     if (jpg && [1, 3, 4].includes(jpg.comps)) {
       const cs = jpg.comps === 1 ? '/DeviceGray' : jpg.comps === 4 ? '/DeviceCMYK /Decode [1 0 1 0 1 0 1 0]' : '/DeviceRGB';
-      img = { w: jpg.w, h: jpg.h, dict: `/ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode`, data: buf };
+      img = { w: jpg.w, h: jpg.h, dict: `/ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode`, data: buf, orientation: jpegOrientation(buf) };
     } else {
       const png = decodePng(buf);
       // Saydam PNG: renk + ayrı saydamlık maskesi (/SMask) — saydamlık belgede KORUNUR (beyaz kutuya basılmaz)
@@ -258,8 +329,10 @@ export class PdfDoc {
     }
     if (!img) return null;
     // Aynı görsel (ör. her belgede kullanılan logo) her belge için yeniden çözülüp sıkıştırılmaz
-    if (encoded.size >= ENCODED_MAX) encoded.delete(encoded.keys().next().value);
-    encoded.set(key, img);
+    if (cache) {
+      if (encoded.size >= ENCODED_MAX) encoded.delete(encoded.keys().next().value);
+      encoded.set(key, img);
+    }
     return addImage(this, img, key);
   }
 

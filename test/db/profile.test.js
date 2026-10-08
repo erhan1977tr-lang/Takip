@@ -18,7 +18,10 @@ const { runProfileAction, depotActor } = await import('../../server/profile/tran
 const { runOrderAction } = await import('../../server/orders/transitions.js');
 const { dispatchWarehouseEmails, findDepotOrder, hashToken } = await import('../../server/profile/warehouse.js');
 const { stockLevels, addStockMovement } = await import('../../server/profile/stock.js');
-const { dayDate, earliestPickup, localDay, nextWorkingDay } = await import('../../server/profile/dates.js');
+const { dayDate, depotOpen, depotReadyDay, earliestPickup, localDay } = await import('../../server/profile/dates.js');
+// Müşterinin seçebileceği alış günü (Paket 8, karar 194: sipariş şimdi depoya iletilse; 12:00 kuralı). Birkaç dakika ileriden
+// hesaplanır: test ile işlem arasında 12:00 sınırı geçilse de gün geçerli kalır (kural zamanla geriye gitmez).
+const pickDay = () => earliestPickup({ now: new Date(Date.now() + 5 * 60_000) });
 const { orderScope } = await import('../../server/orders/scope.js');
 
 let db;
@@ -113,7 +116,7 @@ dbTest('profil: fiyat eksikken gönderilemez; gönderilince müşteri görür; g
   o = await load(id);
   assert.equal(o.offers.length, 2, 'eski sürüm kalır');
   assert.equal(o.offers[1].offerAmount.toString(), '46.5', 'gönderilmiş teklif değişmez');
-  const pickupDate = earliestPickup({ today: today() });
+  const pickupDate = pickDay();
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: firstOffer, pickupDate, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'STALE_OFFER');
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'viewer', { offerId: o.offers[0].id, pickupDate, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'NOT_ALLOWED');
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'NOT_FOUND');
@@ -129,11 +132,11 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   // Teslim bilgileri: hafta sonu ve erken gün reddedilir
   const sat = (() => { const d = today(); while (d.getUTCDay() !== 6) d.setUTCDate(d.getUTCDate() + 1); return d; })();
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: sat, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'PICKUP_WEEKEND');
-  // "Erken gün": bugün ya da (test hafta sonu çalışıyorsa) bugünden önceki son iş günü — hafta sonu ayrı hata verir
-  const early = (() => { const d = today(); while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() - 1); return d; })();
+  // "Erken gün": bugün ya da (test hafta sonu / Romanya tatilinde çalışıyorsa) bugünden önceki son açık gün — kapalı gün ayrı hata verir
+  const early = (() => { const d = today(); while (!depotOpen(d)) d.setUTCDate(d.getUTCDate() - 1); return d; })();
   assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: early, phone: '+40 723 000 000', plate: 'B 1 ABC' })), 'PICKUP_TOO_EARLY');
-  assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: earliestPickup({ today: today() }), phone: 'x', plate: 'B 1 ABC' })), 'BAD_PHONE');
-  await run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: earliestPickup({ today: today() }), phone: '+40 723 000 000', plate: 'b 1 abc' });
+  assert.equal(await codeOf(run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: pickDay(), phone: 'x', plate: 'B 1 ABC' })), 'BAD_PHONE');
+  await run(id, 'approve_profile_offer', 'cust', { offerId: sentId, pickupDate: pickDay(), phone: '+40 723 000 000', plate: 'b 1 abc' });
   o = await load(id);
   assert.equal(o.profile.stage, 'ONAYLANDI');
   assert.equal(o.profile.vehiclePlate, 'B 1 ABC');
@@ -141,7 +144,7 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   await run(id, 'update_pickup', 'cust', { plate: 'IF 22 XYZ' });
   assert.equal(await codeOf(run(id, 'mark_paid', 'admin', { paidDate: new Date(Date.now() + 3 * 86_400_000) })), 'PAID_IN_FUTURE');
   await run(id, 'mark_proforma', 'admin', { proformaNo: 'PF-123' });
-  // Ödeme teyidi → sipariş hemen depoya; alış günü ödemeden önceki bir güne ayarlanmışsa ilk iş gününe kayar
+  // Ödeme teyidi → sipariş hemen depoya; alış günü iletim anının depo kuralından (12:00, depo takvimi) erkense o güne kayar
   await db.profileOrder.update({ where: { orderId: id }, data: { pickupDate: today() } });
   const paid = await run(id, 'mark_paid', 'admin', { paidDate: today() });
   assert.equal(paid.result.moved, true);
@@ -149,7 +152,7 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(o.profile.stage, 'DEPODA');
   assert.equal(o.profile.paidAt.toISOString().slice(0, 10), today().toISOString().slice(0, 10));
   assert.ok(o.profile.warehouseSentAt);
-  assert.equal(o.profile.pickupDate.toISOString().slice(0, 10), nextWorkingDay(today()).toISOString().slice(0, 10));
+  assert.equal(o.profile.pickupDate.toISOString().slice(0, 10), depotReadyDay(o.profile.warehouseSentAt).toISOString().slice(0, 10), 'iletim anının kuralı (karar 194)');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }), 1);
   assert.equal(o.profile.stockDeducted, true);
   const gk = await db.profileProduct.findUnique({ where: { code: 'GK15' } });
@@ -203,7 +206,7 @@ dbTest('profil: depoya gitmiş sipariş iptal edilince stok geri eklenir; bağla
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 2 ABC' });
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 2 ABC' });
   await run(id, 'mark_proforma', 'admin');
   // Ödeme beklemeden "Siparişi depoya gönder"; ödeme sonradan girilir, depoya ikinci kez gitmez
   const res = await run(id, 'send_to_warehouse', 'admin');
@@ -236,7 +239,7 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 3 ABC' });
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 3 ABC' });
   await run(id, 'mark_proforma', 'admin');
   await run(id, 'mark_paid', 'admin', { paidDate: today() });
   const failing = { sendMail: async () => { throw new Error('SMTP down'); } };
@@ -288,7 +291,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '12.5') });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 9 FGO' });
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 9 FGO' });
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA', status: 'PENDING' } }), 1);
 
   const fgo = fakeFgo([552, 684]);
@@ -409,7 +412,7 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 8 FGO' });
+  await run(id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 8 FGO' });
   const fgo = fakeFgo([553]);
   const r = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl }));
   assert.deepEqual(r, { done: 0, failed: 1 });
@@ -434,7 +437,7 @@ dbTest('FGO: fatura bilgisi eksik firma → yeniden denenmez, uyarı; elle kur i
   o = await load(second.id);
   await run(second.id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
   o = await load(second.id);
-  await run(second.id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 8 FGO' });
+  await run(second.id, 'approve_profile_offer', 'other', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 8 FGO' });
   assert.equal(await codeOf(run(second.id, 'mark_proforma', 'admin', { proformaNo: 'X' })), 'FX_RATE_REQUIRED');
   await run(second.id, 'mark_proforma', 'admin', { proformaNo: 'X', fxRate: '5,01' });
   await fgoOn(false);
@@ -450,7 +453,7 @@ dbTest('FGO: BT politikasında günün BT kuru (elle) kullanılır; girilmemişs
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 7 FGO' });
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 7 FGO' });
   const fgo = fakeFgo([560]);
   const now = new Date();
   const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now }));
@@ -479,7 +482,7 @@ dbTest('FGO: BNR + % politikasında profil proforması BNR × (1 + %) ile; BNR a
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o, '10') });
   o = await load(id);
-  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: earliestPickup({ today: today() }), phone: '0723000000', plate: 'B 6 FGO' });
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 6 FGO' });
   const fgo = fakeFgo([570]);
   const now = new Date();
   const r1 = await dispatchFgoJobs(db, fgoCtx({ fetchImpl: fgo.fetchImpl, now, bnrImpl: async () => ({ ok: false, error: 'HTTP 503' }) }));

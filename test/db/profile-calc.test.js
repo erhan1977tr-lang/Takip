@@ -15,13 +15,12 @@ const { createProfileOrder } = await import('../../server/profile/create.js');
 const { profileOrderItems, readQuantities } = await import('../../server/profile/rules.js');
 const { runProfileAction } = await import('../../server/profile/transitions.js');
 const { suggestNextNo } = await import('../../server/orders/create.js');
-const { dayDate, earliestPickup, localDay } = await import('../../server/profile/dates.js');
+const { earliestPickup } = await import('../../server/profile/dates.js');
 const { resolveAlert } = await import('../../server/pricing/alerts.js');
 
 let db, factory, firm;
 const U = {};
 const act = (u) => ({ id: u.id, role: u.appRole, canApprove: u.canApprove, customerId: u.customerId, ip: '127.0.0.1' });
-const today = () => dayDate(localDay(new Date(), 'Europe/Bucharest'));
 const prod = (code) => db.profileProduct.findUniqueOrThrow({ where: { code } });
 const levelOf = async (p) => (await stock.stockLevels(db, [p.id])).get(p.id) ?? 0;
 const openCritical = (p) => db.adminAlert.findMany({ where: { type: 'STOCK_CRITICAL', resolvedAt: null, details: { path: ['productId'], equals: p.id } } });
@@ -57,7 +56,7 @@ async function approvedOrder(lines) {
   const offer = await db.offer.findFirstOrThrow({ where: { orderId: o.id }, include: { lines: true } });
   await run(o.id, 'send_profile_offer', 'admin', { lines: offer.lines.map((l) => ({ id: l.id, offerPrice: '5' })) });
   const sent = await db.offer.findFirstOrThrow({ where: { orderId: o.id, status: 'GONDERILDI' } });
-  await run(o.id, 'approve_profile_offer', 'cust', { offerId: sent.id, pickupDate: earliestPickup({ today: today() }), phone: '+40 723 000 000', plate: 'B 1 ABC' });
+  await run(o.id, 'approve_profile_offer', 'cust', { offerId: sent.id, pickupDate: earliestPickup({ now: new Date(Date.now() + 5 * 60_000) }), phone: '+40 723 000 000', plate: 'B 1 ABC' });
   return o;
 }
 

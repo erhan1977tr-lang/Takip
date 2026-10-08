@@ -33,7 +33,7 @@ export function orderStatusFor(stage) {
   return 'HAZIRLANIYOR';
 }
 
-/** Teslim bilgilerini müşteri (ve yönetici) bu adımlarda değiştirebilir; depoya gidince kilitlenir. */
+/** Teslim bilgilerini müşteri (ve yönetici) bu adımlarda değiştirebilir; depoya gidince müşteriye kilitlenir (yönetici DEPODA'da da değiştirir — karar 194). */
 export const PICKUP_EDITABLE = ['ONAYLANDI', 'PROFORMA'];
 /** Depoya gitmeden önceki adımlar: "Ödeme alındı" siparişi hemen depoya gönderir, "Siparişi depoya gönder" ödemesiz gönderir */
 export const BEFORE_WAREHOUSE = ['ONAYLANDI', 'PROFORMA'];
@@ -58,7 +58,8 @@ export function profileActions({ role, stage, status, canApprove = false, paid =
     };
     a.push(...(byStage[stage] ?? []));
     if (!paid && ['DEPODA', 'TESLIM_EDILDI'].includes(stage)) a.push('mark_paid');
-    if (PICKUP_EDITABLE.includes(stage)) a.push('update_pickup');
+    // Yönetici teslim (alış) gününü depoda iken de değiştirebilir (karar 194; müşteriye bildirilir) — müşteri değiştiremez
+    if (PICKUP_EDITABLE.includes(stage) || stage === 'DEPODA') a.push('update_pickup');
   }
   if (can(role, 'OFFER_APPROVE')) {
     if (stage === 'TEKLIF_GONDERILDI' && canApprove) a.push('approve_profile_offer');

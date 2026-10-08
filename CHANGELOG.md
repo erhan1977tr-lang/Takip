@@ -4,6 +4,42 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.58.0 — 08.10.2026
+
+Fonksiyonel paket 8 — depo, teslimat, çalışma takvimleri ve teslimat belgeleri (kararlar 192–197). Veritabanı şeması: çalışma
+takvimi istisnası (`WorkCalendarOverride` + enum `WorkCalendar`), teslimat fotoğrafı (`DeliveryPhoto`) ve teslimat raporu
+(`DeliveryReport`). Migration elle yazıldı: tablolar ve fotoğraf / raporun değişmezliği (veritabanı tetikleyicisi) aynı adımda;
+mevcut verilere dokunulmaz.
+
+- **Çalışma takvimleri (Ayarlar → Çalışma Takvimleri):** Romanya deposu (Europe/Bucharest) ve Türkiye fabrikası
+  (Europe/Istanbul) için iki ayrı takvim. Hafta sonu ve resmî tatiller otomatik kapalı; yönetici bir günü elle açık ya da kapalı
+  işaretler (otomatik kuraldan önce gelir; denetim kaydında). Tatil verisi kodla gelir ve sürümlenir
+  (`server/calendar/holidays.js`: Romanya ve Türkiye 2026–2027, dinî bayramlar dahil; her yıl iki kaynakla doğrulandı); sayfa
+  açılışında dış servise bağlanılmaz; verisi olmayan yıl tahmin edilmez — yöneticiye açık uyarı. Cam siparişlerinin yükleme
+  tarihi formülü ve tarihleri değişmedi.
+- **Profil teslim günü (12:00 kuralı):** teslim günü siparişin depoya iletildiği ana göre ("Ödeme alındı" ya da "Siparişi depoya
+  gönder"): depo çalışma gününde 12:00'ye kadar → bir sonraki çalışma günü; 12:00'den sonra → ondan sonraki çalışma günü; hafta
+  sonu / tatil / kapalı günde → ilk çalışma gününün ertesi. Saat sunucuda (Bükreş saati). Onay ekranındaki en erken gün aynı
+  kuraldan; iletim anında erken kalan gün ileri kayar ve müşteriye bildirilir. Müşteri ekranında "Teslimat" kartı: tahmini gün,
+  durum, "tahminidir, stok hesaba katılmaz" açıklaması. Yönetici günü depoda iken de değiştirir: denetimde, geçmişte ve müşteriye
+  değişiklik başına tek bildirim (uygulama içi + tercihe bağlı e-posta). Stok yetersizliği siparişi engellemez.
+- **Teslimat fotoğrafları:** depo bağlantısı ve yönetici, depoya iletilmiş siparişe birden çok fotoğraf ekler (JPG / PNG,
+  fotoğraf başına 20 MB; içerik denetimi, antivirüs, kota). Her fotoğraf ayrı yüklenir — biri reddedilirse ötekiler kalır;
+  ilerleme ve hata fotoğraf başına görünür; aynı fotoğraf ikinci kez kayıt olmaz (eşzamanlı istekte de). Siparişin müşterisi ve
+  siparişi gören iç ekip görür; başka firma, satış ve çizim göremez; müşteriye iç ekipten kişi adı gitmez.
+- **Teslimat raporu:** depo bağlantısı ya da yönetici oluşturur — oluşturulduğu anın kopyası (sipariş no, firma, teslim günü,
+  ürünler ve miktarlar, durum, açıklama, fotoğraflar); sonradan değişmez, her yeni rapor yeni sürüm. PDF ortak altyapıyla (GKH
+  logosu, sayfa numarası, Türkçe / Romence harfler; telefon fotoğrafının yönü düzeltilir), görenin dilinde. Yönetici ve müşteri
+  siparişin sayfasından açar; bağlantı kalıcıdır (teslimden ve arşivden sonra da), yetki her açılışta denetlenir; sipariş
+  geçmişindeki kayıt rapor listesine götürür.
+- **Depo akışı ve teslim onayı değişmedi:** yeni durum yok; stok yalnızca depoya iletimde düşer (çift düşüm yok), iptal bir kez geri
+  ekler; teslim onayı bir kez işlenir (ikinci onay yeni olay, stok hareketi ya da bildirim yazmaz). Teslimde FGO otomatik faturası
+  aynı.
+- **Tedarikçi tahmini yükleme tarihi:** Türkiye fabrikasının kapalı gününe (hafta sonu, resmî tatil, elle kapalı gün) denk gelirse
+  yöneticiye uyarı; tarih ve 2 takvim günü önceki hatırlatma değişmez.
+- Testler: `test/calendar.test.js`, `test/delivery.test.js`, `test/db/delivery.test.js`, `e2e/42-depo-teslimat.spec.ts`; profil,
+  bildirim ve yükleme yolu testleri yeni kurala göre güncellendi.
+
 ## 3.57.1 — 08.10.2026
 
 Paket 7 doğrulama düzeltmesi: Yüklemeler'de ev sahibi firmanın sandık formu, satış sandığı seçtikten hemen sonra (sayfa

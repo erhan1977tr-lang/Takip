@@ -456,7 +456,7 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   assert.match(resubmit, /await act\(user, id, 'dwg_resubmit', \{ files: stored\.stored \}\);\s*\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/);
   assert.match(read('app/(panel)/siparisler/[id]/profile-actions.ts'), /await act\(user, id, 'mark_delivered', \{ files: stored \}, \(\) => discardFiles\(stored\)\);/);
   const depot = read('app/depo/[token]/actions.ts');
-  assert.equal((depot.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/g) ?? []).length, 2, 'teslim onayı + ek belge');
+  assert.equal((depot.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/g) ?? []).length, 3, 'teslim onayı + ek belge + teslimat fotoğrafı (Paket 8, karar 195)');
   assert.match(depot, /storeFiles\(files, \{ userId: null, orderId: p\.orderId, depot: true \}\)/);
   const catalogue = read('app/(panel)/admin/profil-katalogu/actions.ts');
   assert.match(catalogue, /try \{\s*data = full \? await fsp\.readFile\(full\) : null;\s*\} finally \{\s*await discardFiles\(\[s\]\);\s*\}/);

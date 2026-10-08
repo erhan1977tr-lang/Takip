@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import type { CurrentUser } from '@/lib/auth/session';
@@ -13,26 +14,31 @@ import { fxOfferNote } from '@/lib/fx-note';
 import { padRate } from '@/server/fx/decimal.js';
 import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
-import { earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
+import { DEPOT_CALENDAR, depotPhase, depotToday, earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
+import { calendarOverrides } from '@/server/calendar/service.js';
+import { coverageGaps, hasYearData } from '@/server/calendar/rules.js';
+import { DELIVERY_DOC_STAGES, takesDeliveryDocs } from '@/server/delivery/rules.js';
+import { deliveryDocs } from '@/server/delivery/service.js';
+import { DeliveryPhotoUpload } from '@/components/DeliveryPhotoUpload';
 import { unitLabel } from '@/server/profile/catalog.js';
 import { STOCK_SHORTAGE_ALERT, customerShortageView, stockLevels } from '@/server/profile/stock.js';
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import {
-  approveProfileAction, cancelProfileAction, deliveredAction, invoicedAction, paidAction, profilePricesAction, proformaAction,
-  resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
+  approveProfileAction, cancelProfileAction, deliveredAction, deliveryPhotoAction, deliveryReportAction, invoicedAction, paidAction,
+  profilePricesAction, proformaAction, resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
 } from './profile-actions';
 
 type Offer = OrderDetail['offers'][number];
 type Line = Offer['lines'][number];
 
 /** ?ok=<kod> → profile.ok.<kod> metni */
-function okText(t: T, m: Dict, code: string | undefined, at: string | undefined): string | null {
+function okText(t: T, m: Dict, code: string | undefined, at: string | undefined, n?: string): string | null {
   if (code === 'profile_created') return t('profile.ok.created');
   if (!code || !Object.hasOwn(m.profile.ok, code)) return null;
-  // at: gün ("YYYY-MM-DD", taşınan alış günü) ya da an
-  return t(`profile.ok.${code}` as MsgKey, { date: !at ? '' : /^\d{4}-\d{2}-\d{2}$/.test(at) ? fmtDate(at) : fmtDateTime(at) });
+  // at: gün ("YYYY-MM-DD", taşınan alış günü) ya da an · n: teslimat raporunun sürümü
+  return t(`profile.ok.${code}` as MsgKey, { date: !at ? '' : /^\d{4}-\d{2}-\d{2}$/.test(at) ? fmtDate(at) : fmtDateTime(at), n: /^\d{1,4}$/.test(n ?? '') ? String(n) : '' });
 }
 
 const num = (v: { toString(): string } | null | undefined) => (v == null ? null : Number(v.toString()));
@@ -58,10 +64,28 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const editing = admin && ((can('save_profile_prices') && latest?.status === 'YONETIMDE') || (can('update_profile_offer') && sp.teklif === 'guncelle'));
   const editOffer = can('save_profile_prices') ? latest : sent;
   const tz = getEnv().APP_TIMEZONE;
-  const today = dayDate(localDay(new Date(), tz));
-  const minPickup = isoDay(earliestPickup({ today, paidAt: p?.paidAt ?? null }));
+  const now = new Date();
+  const today = dayDate(localDay(now, tz));
+  // Romanya deposunun takvimi (karar 192, 194): en erken teslim (alış) günü = sipariş ŞİMDİ depoya iletilse hesaplanan gün
+  // (12:00 kuralı, depo açık günleri — sunucuda; tarayıcı saati kullanılmaz). Yönetici bugünden itibaren açık bir gün seçer.
+  const overrides = await calendarOverrides(db, DEPOT_CALENDAR, { now });
+  let minPickupDate: Date | null = null;
+  try { minPickupDate = earliestPickup({ now, overrides }); } catch { minPickupDate = null; }
+  const minPickup = minPickupDate ? isoDay(minPickupDate) : '';
+  const staffMin = isoDay(depotToday(now));
+  const phase = depotPhase({ stage, status: order.status, pickupDate: p?.pickupDate ?? null, now });
+  // Tatil verisi eksikse yöneticiye açık uyarı (gizlenmez): önümüzdeki 180 gün ya da siparişin teslim günü
+  const pickupYear = p?.pickupDate ? new Date(p.pickupDate).getUTCFullYear() : null;
+  const gapYears = admin
+    ? [...new Set([...coverageGaps(DEPOT_CALENDAR, isoDay(depotToday(now))), ...(pickupYear && !hasYearData(DEPOT_CALENDAR, pickupYear) ? [pickupYear] : [])])].sort()
+    : [];
+  // Teslimat belgeleri (karar 195–196): sipariş depoya iletildikten sonra; müşteri kendi siparişinde görür (kişi adı yok)
+  const docsStage = DELIVERY_DOC_STAGES.includes(stage);
+  const docs = docsStage || cancelled ? await deliveryDocs(db, order.id, { staff: !isCustomer }) : { photos: [], reports: [] };
+  const canDocs = admin && takesDeliveryDocs({ stage, status: order.status });
+  const reportKey = crypto.randomBytes(18).toString('base64url');
   const idx = PROFILE_STAGES.indexOf(stage);
-  const ok = okText(t, m, sp.ok, sp.at);
+  const ok = okText(t, m, sp.ok, sp.at, sp.n);
   const summary = profileCustomerText(t, { status: order.status, stage });
 
   // Stok sayıları yalnızca stok görüntüleyen rollerde (yönetici, denetimci — STOCK_VIEW; karar 177): kalemlerin stoğu ve eksikler
@@ -415,33 +439,100 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               </div>
             );
           })()}
-          {p?.pickupDate && (
+          {/* Teslimat (Paket 8, karar 194): tahmini teslim (alış) günü, durum, iletişim. Tarih tahminidir ve stoktan bağımsızdır;
+              müşteri yalnızca kendi siparişinin teslim bilgisini görür. Yönetici depoda iken de değiştirebilir (müşteriye bildirilir). */}
+          {!cancelled && (
             <div className="card" id="teslim">
-              <h2>{t('profile.page.pickup.title')}</h2>
-              <table className="kv"><tbody>
-                <tr><td>{t('profile.page.pickup.date')}</td><td><b>{fmtDate(p.pickupDate)}</b></td></tr>
-                <tr><td>{t('profile.page.pickup.phone')}</td><td>{p.contactPhone ?? '—'}</td></tr>
-                <tr><td>{t('profile.page.pickup.plate')}</td><td>{p.vehiclePlate ?? '—'}</td></tr>
-              </tbody></table>
-              {can('update_pickup') && PICKUP_EDITABLE.includes(stage) ? (
+              <h2>{t('delivery.card.title')}</h2>
+              {gapYears.length > 0 && <div className="alert alert-warn" data-calendar-gap>{t('delivery.card.noData', { years: gapYears.join(', ') })}</div>}
+              {p?.pickupDate ? (
+                <table className="kv"><tbody>
+                  <tr><td>{t('delivery.card.estimate')}</td><td><b data-delivery-date={isoDay(p.pickupDate)}>{fmtDate(p.pickupDate)}</b></td></tr>
+                  {phase && (
+                    <tr><td>{t('delivery.card.status')}</td><td>
+                      <Badge tone={phase === 'DELIVERED' ? 'ok' : phase === 'READY' ? 'info' : 'muted'}>{t(`delivery.card.phase.${phase}` as MsgKey)}</Badge>
+                      {phase === 'DELIVERED' && p.deliveredAt ? <span className="muted small"> {fmtDate(p.deliveredAt)}</span> : null}
+                    </td></tr>
+                  )}
+                  <tr><td>{t('profile.page.pickup.phone')}</td><td>{p.contactPhone ?? '—'}</td></tr>
+                  <tr><td>{t('profile.page.pickup.plate')}</td><td>{p.vehiclePlate ?? '—'}</td></tr>
+                </tbody></table>
+              ) : minPickup ? (
+                <p data-delivery-estimate={minPickup} style={{ marginTop: 0 }}>
+                  {t(isCustomer ? 'delivery.card.estimateBefore' : 'delivery.card.estimateBeforeStaff', { date: fmtDate(minPickup) })}
+                </p>
+              ) : null}
+              {phase !== 'DELIVERED' && <p className="muted small" data-delivery-note>{t('delivery.card.estimateNote')} {t('delivery.card.rule')}</p>}
+              {isCustomer && stockAlert && phase !== 'DELIVERED' && <div className="alert alert-warn" data-delivery-stock>{t('delivery.card.stockNote')}</div>}
+              {p?.pickupDate && can('update_pickup') && (PICKUP_EDITABLE.includes(stage) || (admin && stage === 'DEPODA')) ? (
                 <details style={{ marginTop: 10 }}>
                   <summary className="small" style={{ cursor: 'pointer' }}>{t('profile.page.pickup.edit')}</summary>
                   <form action={updatePickupAction} style={{ marginTop: 8 }}>
                     {hidden}
+                    <input type="hidden" name="v" value={order.version} />
                     <label htmlFor="up-date" className="small">{t('profile.page.pickup.date')}</label>
-                    <input id="up-date" name="pickupDate" type="date" required min={minPickup} defaultValue={isoDay(p.pickupDate)} />
-                    <div className="hint">{t('profile.page.approve.dateHint', { date: fmtDate(minPickup) })}</div>
+                    <input id="up-date" name="pickupDate" type="date" required min={admin ? staffMin : minPickup} defaultValue={isoDay(p.pickupDate)} />
+                    <div className="hint">{admin ? t('delivery.card.adminHint') : t('profile.page.approve.dateHint', { date: fmtDate(minPickup) })}</div>
                     <label htmlFor="up-phone" className="small">{t('profile.page.pickup.phone')}</label>
                     <input id="up-phone" name="phone" type="tel" required maxLength={40} defaultValue={p.contactPhone ?? ''} />
                     <label htmlFor="up-plate" className="small">{t('profile.page.pickup.plate')}</label>
                     <input id="up-plate" name="plate" required maxLength={60} defaultValue={p.vehiclePlate ?? ''} style={{ textTransform: 'uppercase' }} />
                     <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-primary">{t('profile.page.pickup.save')}</button></div>
                   </form>
-                  <p className="hint">{t('profile.page.pickup.editHint')}</p>
+                  {/* "Depoya iletilene kadar" notu müşterinin değiştirebildiği adımlar için; depodaki siparişte yöneticiye adminHint yeter */}
+                  {PICKUP_EDITABLE.includes(stage) && <p className="hint">{t('profile.page.pickup.editHint')}</p>}
                 </details>
               ) : ['DEPODA', 'TESLIM_EDILDI', 'FATURALANDI'].includes(stage) && isCustomer ? (
                 <div className="alert alert-info" style={{ marginTop: 10, marginBottom: 0 }}>{t('profile.page.pickup.locked')}</div>
               ) : null}
+            </div>
+          )}
+
+          {/* Teslimat fotoğrafları ve raporu (Paket 8, karar 195–196): sipariş depoya iletildikten sonra. Fotoğraf ve rapor
+              bağlantıları kalıcıdır (giriş + sipariş yetkisi; süreli bağlantı yok); teslimattan ve arşivden sonra da açılır. */}
+          {(docsStage || docs.photos.length > 0 || docs.reports.length > 0) && (
+            <div className="card" id="teslimat">
+              <h2>{t('delivery.photos.title')}</h2>
+              {docs.photos.length === 0 ? <p className="muted" data-no-photos>{t('delivery.photos.none')}</p> : (
+                <div className="photo-grid" data-delivery-photos>
+                  {docs.photos.map((ph, i) => (
+                    <figure key={ph.id} className="photo-tile" data-photo={ph.id}>
+                      <a href={`/dosya/teslimat/${ph.id}?ac=1`} target="_blank" rel="noopener" aria-label={`${t('delivery.photos.open')} — ${ph.name}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/dosya/teslimat/${ph.id}?ac=1`} alt={t('delivery.photos.alt', { n: i + 1 })} loading="lazy" />
+                      </a>
+                      <figcaption className="small muted">
+                        {fmtDateTime(ph.createdAt)} · {ph.by ?? t(`delivery.photos.by.${ph.via === 'DEPOT_LINK' ? 'DEPOT_LINK' : 'ADMIN'}`)}
+                        {ph.scanStatus === 'PENDING' ? ` · ${t('delivery.photos.scanning')}` : ''}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              )}
+              {canDocs && <DeliveryPhotoUpload action={deliveryPhotoAction} hidden={{ id: order.id }} m={m.delivery.photos} inputId="dl-photos" />}
+
+              <h3 id="rapor" style={{ marginTop: 16 }}>{t('delivery.report.title')}</h3>
+              {docs.reports.length === 0 ? <p className="muted" data-no-reports>{t('delivery.report.none')}</p> : (
+                <ul className="plain-list report-list" data-delivery-reports>
+                  {docs.reports.map((r, i) => (
+                    <li key={r.id} data-report={r.revision}>
+                      <a href={`/dosya/rapor/${r.id}`} target="_blank" rel="noopener">{t('delivery.report.item', { n: r.revision, date: fmtDateTime(r.createdAt) })}</a>
+                      {i === 0 && <> <Badge tone="ok">{t('delivery.report.latest')}</Badge></>}
+                      {!isCustomer && <span className="muted small"> · {r.by ?? t(`delivery.photos.by.${r.via === 'DEPOT_LINK' ? 'DEPOT_LINK' : 'ADMIN'}`)}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {canDocs && (
+                <form action={deliveryReportAction} style={{ marginTop: 10 }}>
+                  {hidden}
+                  <input type="hidden" name="key" value={reportKey} />
+                  <label htmlFor="dr-note" className="small">{t('delivery.report.note')}</label>
+                  <textarea id="dr-note" name="note" rows={2} maxLength={1000} />
+                  <div className="hint">{t('delivery.report.noteHint')} {t('delivery.report.createHint')}</div>
+                  <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-primary">{t('delivery.report.create')}</button></div>
+                </form>
+              )}
             </div>
           )}
           {files}

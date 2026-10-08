@@ -207,6 +207,9 @@ export default {
       save: 'Salvează',
       clear: 'Șterge data',
       none: 'Neintrodusă',
+      calClosed: 'Atenție: {date} este o zi închisă a fabricii din Turcia ({reason}). Data nu a fost modificată; confirmați cu furnizorul.',
+      calHalf: '{date} este sărbătoare legală de o jumătate de zi în Turcia ({reason}).',
+      calNoData: 'Pentru {year} nu există date despre sărbătorile legale din Turcia: data a fost verificată doar față de weekend.',
     },
     receive: {
       button: 'Recepționată',

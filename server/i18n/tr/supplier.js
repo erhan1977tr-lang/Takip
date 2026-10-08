@@ -207,6 +207,10 @@ export default {
       save: 'Kaydet',
       clear: 'Tarihi sil',
       none: 'Girilmedi',
+      // Türkiye fabrika takvimi (Paket 8, karar 197): yalnızca uyarı — tarih değişmez, hatırlatma yine 2 takvim günü önce
+      calClosed: 'Dikkat: {date} Türkiye fabrikasının kapalı günü ({reason}). Tarih değiştirilmedi; tedarikçiyle teyit edin.',
+      calHalf: '{date} Türkiye’de yarım gün resmî tatil ({reason}).',
+      calNoData: '{year} için Türkiye resmî tatil verisi yok: tarih yalnızca hafta sonuna göre denetlendi.',
     },
     receive: {
       button: 'Teslim alındı',

@@ -153,6 +153,7 @@ model User {
   ordersRemoved      Order[]        @relation("OrderRemovedBy")
   compensationsCreated Compensation[] @relation("CompensationCreatedBy")
   compensationsDecided Compensation[] @relation("CompensationDecidedBy")
+  deliveryReports    DeliveryReport[] @relation("DeliveryReportCreatedBy")
 
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -370,6 +371,8 @@ model Order {
   glassBilling      GlassBilling?
   profile           ProfileOrder?        // yalnızca profil siparişinde
   profileItems      ProfileOrderItem[]
+  deliveryPhotos    DeliveryPhoto[]      // profil teslimatının fotoğrafları (Paket 8)
+  deliveryReports   DeliveryReport[]     // teslimat raporları (Paket 8)
   stockMoves        StockMovement[]
   loadedItems       LoadingConfirmationItem[] // onaylı yüklemelerde bu siparişin fiilen yüklenen kalemleri
 
@@ -494,8 +497,9 @@ model OrderFile {
   // Boş: sistemin ürettiği dosya (Comanda Depozit PDF'i) ya da depo bağlantısından yüklenen teslim belgesi
   uploadedById String?
   uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
-  source       String?       // null: kullanıcı · WAREHOUSE_FORM: depo formu (sistem) · DEPOT_LINK: depodan yüklenen teslim belgesi
+  source       String?       // null: kullanıcı · WAREHOUSE_FORM: depo formu (sistem) · DEPOT_LINK: depodan yüklenen teslim belgesi · DELIVERY_PHOTO: teslimat fotoğrafı (Paket 8)
   createdAt    DateTime      @default(now())
+  deliveryPhoto DeliveryPhoto? // teslimat fotoğrafıysa bağı (Paket 8)
 
   @@index([orderId])
 }
@@ -1277,6 +1281,70 @@ model ProfileOrder {
   updatedAt        DateTime     @default(now()) @updatedAt
 
   @@index([stage])
+}
+
+// Teslimat fotoğrafı (Paket 8, karar 195): depo bağlantısından ya da yöneticinin yüklediği fotoğraf. Dosyanın kendisi OrderFile'dadır
+// (source DELIVERY_PHOTO: mevcut depolama, içerik denetimi, antivirüs, kota, yükleyen ve yükleme anı); bu satır teslimat bağını
+// ve tekrar engelini taşır: aynı siparişe aynı içerik (SHA-256) ikinci kez kaydedilmez — yeniden yükleme ya da eşzamanlı iki
+// istek tek kayıt bırakır. Fotoğrafı siparişin müşterisi ve siparişi gören iç ekip görür (/dosya/teslimat/<id>). Değişmez,
+// silinmez (veritabanı tetikleyicisi).
+model DeliveryPhoto {
+  id        String    @id @default(cuid())
+  orderId   String
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fileId    String    @unique
+  file      OrderFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  checksum  String
+  via       String    // DEPOT_LINK | ADMIN
+  createdAt DateTime  @default(now())
+
+  @@unique([orderId, checksum])
+  @@index([orderId, createdAt])
+}
+
+// Teslimat raporu (Paket 8, karar 196): depo bağlantısı ya da yönetici oluşturur. Oluşturulduğu andaki KOPYADIR (sipariş no, firma,
+// teslim günü, teslim edilen ürünler ve adetler, durum, açıklama, fotoğraflar — data); sonradan değişmez (veritabanı tetikleyicisi
+// UPDATE / DELETE'i reddeder). PDF istenince bu kopyadan ortak PDF altyapısıyla üretilir; erişim siparişi görme yetkisine bağlıdır
+// (/dosya/rapor/<id>; müşteri yalnızca kendi siparişi) — süreli bağlantı yoktur. Her oluşturma yeni sürümdür; eskiler kalır.
+model DeliveryReport {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  revision    Int
+  stage       ProfileStage // rapor anındaki adım (DEPODA | TESLIM_EDILDI | FATURALANDI)
+  deliveryDay DateTime?    @db.Date
+  deliveredAt DateTime?
+  note        String?
+  data        Json
+  fingerprint String       // aynı içerik (adım, gün, açıklama, fotoğraflar) art arda iki kez rapor olmaz
+  requestKey  String?      @unique // tek kullanımlık form anahtarı: çift tıklama tek rapor
+  via         String       // DEPOT_LINK | ADMIN
+  createdById String?
+  createdBy   User?        @relation("DeliveryReportCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+
+  @@unique([orderId, revision])
+}
+
+// Çalışma takvimi istisnası (Paket 8, karar 192): yöneticinin bir günü elle AÇIK ya da KAPALI işaretlemesi — otomatik kuraldan
+// (hafta sonu, resmî tatil: server/calendar/holidays.js) önce gelir. Takvim + gün başına tek karar; kaldırılınca otomatik kurala
+// döner. Değişikliklerin geçmişi denetim kaydındadır (WORK_CALENDAR_OVERRIDE). İki takvim birbirinden bağımsızdır.
+model WorkCalendarOverride {
+  id          String       @id @default(cuid())
+  calendar    WorkCalendar
+  day         DateTime     @db.Date
+  open        Boolean
+  note        String?
+  updatedById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([calendar, day])
+}
+
+enum WorkCalendar {
+  RO_DEPOT   // Romanya deposu (Europe/Bucharest) — profil teslim günü
+  TR_FACTORY // Türkiye fabrikası (Europe/Istanbul) — tedarikçi tahmini yükleme uyarısı
 }
 
 // Müşterinin istediği ürünler: sipariş anındaki kopya (katalog sonradan değişse de sipariş değişmez).

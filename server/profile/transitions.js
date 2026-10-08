@@ -5,8 +5,10 @@ import { outboxEvent } from '../domain/outbox.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
-import { dayDate, dayKeyOf, localDay, pickupAfterPayment, pickupProblem } from './dates.js';
+import { DEPOT_CALENDAR, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
 import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
+import { calendarOverrides } from '../calendar/service.js';
+import { can } from '../auth/permissions.js';
 import { deductOrderStock, returnOrderStock, shortages, stockLevels, stockLockKeys } from './stock.js';
 import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
 import { parseManualRate } from '../fx/bt.js';
@@ -98,14 +100,43 @@ async function setPrice(h, amount) {
   });
 }
 
+/** Romanya deposunun takvim kararları (yöneticinin açık / kapalı günleri), işlem içinde bir kez okunur */
+async function depotOverrides(h) {
+  h.depotOverrides ??= await calendarOverrides(h.tx, DEPOT_CALENDAR, { now: h.now });
+  return h.depotOverrides;
+}
+
+/** Yönetici (fiyat ve teslim kararları): teslim gününü depo kuralından bağımsız, açık bir güne alabilir */
+const isStaff = (h) => !h.actor.depot && !h.actor.fgo && can(h.actor.role, 'OFFER_SEND');
+
+/**
+ * Sipariş depoya iletilirken alış (teslim) günü (karar 194): iletim anının depo kuralından erkense ya da depo o gün kapalıysa
+ * ileri kayar; kayma müşteriye bildirilir (PICKUP_MOVED, gün olayın verisinde).
+ * @returns {Promise<{ pickupDate: Date, moved: boolean }>}
+ */
+async function forwardPickup(h) {
+  let r;
+  try {
+    r = pickupOnForward({ now: h.now, pickupDate: h.order.profile.pickupDate ?? null, overrides: await depotOverrides(h) });
+  } catch (e) {
+    if (e instanceof NoOpenDayError) throw new WorkflowError('NO_OPEN_DAY');
+    throw e;
+  }
+  if (r.moved) {
+    // Önceki gün `prevDay` anahtarıyla (outbox yükünde `from` / `to` sipariş durumu için ayrılmıştır)
+    const prevDay = h.order.profile.pickupDate ? dayKeyOf(h.order.profile.pickupDate) : null;
+    h.event('PICKUP_MOVED', dayText(r.pickupDate), { day: dayKeyOf(r.pickupDate), ...(prevDay ? { prevDay } : {}) });
+  }
+  return r;
+}
+
 /** Alış günü, telefon, plaka — doğrulanmış olarak */
-function pickupInput(h, { requireAll }) {
+async function pickupInput(h, { requireAll }) {
   const p = h.payload;
   const out = {};
   if (p.pickupDate !== undefined || requireAll) {
     const d = p.pickupDate;
-    const paidAt = h.order.profile.paidAt ?? null;
-    const problem = pickupProblem(d, { today: today(h.now), paidAt });
+    const problem = pickupProblem(d, { now: h.now, overrides: await depotOverrides(h), staff: isStaff(h) });
     if (problem) throw new WorkflowError(problem);
     out.pickupDate = dayDate(dayKeyOf(d));
   }
@@ -220,22 +251,33 @@ const ACTIONS = {
     if (!sent) throw new WorkflowError('OFFER_NOT_FOUND');
     // Bu arada yönetici teklifi güncellediyse eski sürüm onaylanamaz
     if (h.payload.offerId && h.payload.offerId !== sent.id) throw new WorkflowError('STALE_OFFER');
-    const info = pickupInput(h, { requireAll: true });
+    const info = await pickupInput(h, { requireAll: true });
     await setStage(h, 'ONAYLANDI', { ...info, approvedAt: h.now, approvedById: h.actor.id, approvedOfferId: sent.id });
     h.event('PROFILE_APPROVED', dayText(info.pickupDate));
     // FGO açıksa proforma kendiliğinden kesilir (işçi; kur müşterinin kur politikasından o an çözülür)
     const fgo = await queueFgo(h, FGO_PROFORMA);
     h.audit = { offerId: sent.id, pickupDate: dayKeyOf(info.pickupDate), fgo };
   },
-  /** Teslim bilgileri depo e-postası gidene kadar değiştirilebilir. */
+  /**
+   * Teslim bilgileri: müşteri ve yönetici depo e-postası gidene kadar değiştirebilir; yönetici teslim gününü depoda iken de
+   * değiştirebilir (karar 194). Yöneticinin değiştirdiği teslim günü müşteriye bildirilir (DELIVERY_DATE_CHANGED — değişiklik
+   * başına bir olay; aynı gün yeniden kaydedilirse olay da bildirim de yok). Müşterinin kendi değişikliği PICKUP_UPDATED.
+   */
   async update_pickup(h) {
-    if (!PICKUP_EDITABLE.includes(h.order.profile.stage)) throw new WorkflowError('PICKUP_LOCKED');
-    const info = pickupInput(h, { requireAll: false });
-    const before = { pickupDate: h.order.profile.pickupDate ? dayKeyOf(h.order.profile.pickupDate) : null, contactPhone: h.order.profile.contactPhone, vehiclePlate: h.order.profile.vehiclePlate };
+    const stage = h.order.profile.stage;
+    const staff = isStaff(h);
+    if (!(PICKUP_EDITABLE.includes(stage) || (staff && stage === 'DEPODA'))) throw new WorkflowError('PICKUP_LOCKED');
+    const info = await pickupInput(h, { requireAll: false });
+    const prev = h.order.profile.pickupDate ? dayKeyOf(h.order.profile.pickupDate) : null;
+    const before = { pickupDate: prev, contactPhone: h.order.profile.contactPhone, vehiclePlate: h.order.profile.vehiclePlate };
     await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: info });
     const date = info.pickupDate ?? h.order.profile.pickupDate;
-    h.event('PICKUP_UPDATED', date ? dayText(date) : null);
-    h.audit = { before, after: { ...before, ...info, pickupDate: date ? dayKeyOf(date) : null } };
+    const day = date ? dayKeyOf(date) : null;
+    const changed = staff && !!day && day !== prev;
+    if (changed) h.event('DELIVERY_DATE_CHANGED', dayText(date), { day, ...(prev ? { prevDay: prev } : {}) });
+    else h.event('PICKUP_UPDATED', date ? dayText(date) : null);
+    h.audit = { before, after: { ...before, ...info, pickupDate: day }, ...(changed ? { deliveryDateChanged: true } : {}) };
+    h.result = { deliveryDateChanged: changed };
   },
   /**
    * Proforma elle kesildi. FGO açıksa kur zorunludur (fatura aynı kurla kesilir); kuyruktaki otomatik proforma
@@ -287,8 +329,8 @@ const ACTIONS = {
   },
   /**
    * Ödeme teyit edildi. Sipariş henüz depoda değilse hemen depoya gider (stoktan düşülür, depo e-postası kuyruğa girer);
-   * müşterinin alış günü ödemeden sonraki ilk iş gününden önceyse o güne kayar. Depoya elle gönderilmiş siparişte
-   * yalnızca ödeme günü kaydedilir.
+   * müşterinin alış günü iletim anının depo kuralından (12:00, depo takvimi — karar 194) erkense o güne kayar. Depoya elle
+   * gönderilmiş siparişte yalnızca ödeme günü kaydedilir.
    */
   async mark_paid(h) {
     const d = h.payload.paidDate;
@@ -303,19 +345,20 @@ const ACTIONS = {
       h.result = { sent: false, shortages: [], moved: false };
       return;
     }
-    const r = pickupAfterPayment({ paidAt, pickupDate: h.order.profile.pickupDate, today: t });
     h.event('PAID', dayText(paidAt));
-    if (r.moved) h.event('PICKUP_MOVED', dayText(r.pickupDate));
+    // Sipariş ŞİMDİ depoya iletilir: alış günü bu anın depo kuralıyla denetlenir (karar 194)
+    const r = await forwardPickup(h);
     const missing = await toWarehouse(h, { paidAt, pickupDate: r.pickupDate });
     h.audit = { paidAt: dayKeyOf(paidAt), pickupDate: dayKeyOf(r.pickupDate), moved: r.moved, shortages: missing };
     h.result = { sent: true, shortages: missing, moved: r.moved, pickupDate: r.pickupDate };
   },
-  /** "Siparişi depoya gönder": yönetici ödeme beklemeden gönderir. */
+  /** "Siparişi depoya gönder": yönetici ödeme beklemeden gönderir (alış günü bu anın depo kuralıyla denetlenir). */
   async send_to_warehouse(h) {
     if (!h.order.profile.pickupDate) throw new WorkflowError('PICKUP_MISSING');
-    const missing = await toWarehouse(h, {});
-    h.audit = { manual: true, shortages: missing };
-    h.result = { shortages: missing };
+    const r = await forwardPickup(h);
+    const missing = await toWarehouse(h, { pickupDate: r.pickupDate });
+    h.audit = { manual: true, shortages: missing, pickupDate: dayKeyOf(r.pickupDate), moved: r.moved };
+    h.result = { shortages: missing, moved: r.moved, pickupDate: r.pickupDate };
   },
   /** Depo e-postası yeniden gönderilir (yeni bağlantıyla; eski bağlantı geçersiz olur). */
   async resend_warehouse(h) {

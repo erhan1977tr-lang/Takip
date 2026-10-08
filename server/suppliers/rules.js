@@ -7,6 +7,7 @@
 import { CURRENCIES } from '../accounting/supplier.js';
 import { UNITS } from '../../prisma/seed/data/units.js';
 import { PRICE_MAX, cents, fromScaled, lineTotal, money, orderTotals, parsePrice, toScaled } from './money.js';
+import { dayStatus } from '../calendar/rules.js';
 
 export { PRICE_MAX, cents, fromScaled, lineTotal, money, orderTotals, parsePrice, toScaled };
 
@@ -213,7 +214,11 @@ export function definitelyNotSent(err) {
 
 // ---------- tahmini yükleme tarihi ----------
 
-/** Hatırlatma, tahmini yükleme tarihinden bu kadar TAKVİM günü önce (Türkiye fabrika takvimi yok — karar 183) */
+/**
+ * Hatırlatma, tahmini yükleme tarihinden bu kadar TAKVİM günü önce (karar 183). Paket 8'de Türkiye fabrika takvimi geldi
+ * (karar 197) ama hatırlatma kuralı DEĞİŞMEDİ: iş günü esaslı hatırlatma ayrı bir ürün kararıdır. Takvim yalnızca uyarı
+ * içindir (etaCalendarWarning).
+ */
 export const ETA_REMIND_DAYS = 2;
 
 /** "YYYY-MM-DD" ± gün */
@@ -234,6 +239,22 @@ export function etaReminderDue({ etaDay, today }) {
 
 /** Hatırlatmanın anahtarı: sipariş + TARİH — aynı tarih için tek hatırlatma; tarih değişirse yenisi (karar 183) */
 export const etaReminderKey = (orderId, etaDay) => `supplier-eta:${orderId}:${etaDay}`;
+
+/**
+ * Tahmini yükleme gününün Türkiye fabrikası takvimindeki durumu (Paket 8, karar 197) — yalnızca yöneticiye UYARI; tarih
+ * kendiliğinden değiştirilmez, hatırlatma tarihi değişmez. closed: hafta sonu / tam gün resmî tatil / elle kapalı;
+ * half: yarım gün resmî tatil (arife, 28 Ekim); noData: o yılın Türkiye tatil verisi yok (yalnızca hafta sonu denetlendi).
+ * @param {string | null} etaDay  @param {Map<string, { open: boolean, note?: string | null }> | null} [overrides]
+ * @returns {{ level: 'closed' | 'half' | 'noData', reason: string, holiday: { day: string, names: readonly string[], half: boolean } | null } | null}
+ */
+export function etaCalendarWarning(etaDay, overrides = null) {
+  if (!etaDay) return null;
+  const st = dayStatus('TR_FACTORY', etaDay, overrides);
+  if (!st.open) return { level: 'closed', reason: st.reason, holiday: st.holiday };
+  if (st.half) return { level: 'half', reason: st.reason, holiday: st.holiday };
+  if (st.noData) return { level: 'noData', reason: st.reason, holiday: null };
+  return null;
+}
 
 // ---------- hesap ----------
 

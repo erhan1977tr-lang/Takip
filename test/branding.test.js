@@ -261,7 +261,8 @@ test('her PDF üretici ortak başlığı kullanır (yeni üretici de kullanmak z
   const dir = path.join(ROOT, 'server', 'pdf');
   const generators = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).filter((f) => /new PdfDoc\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
   // Paket 7: firma yükleme listesi (firm-loading.js) de ortak başlığı ve ortak altbilgiyi kullanır
-  assert.deepEqual(generators.sort(), ['depot-form.js', 'firm-loading.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
+  // Paket 8 (karar 196): teslimat raporu (delivery-report.js) aynı ortak başlık ve altbilgiyle
+  assert.deepEqual(generators.sort(), ['delivery-report.js', 'depot-form.js', 'firm-loading.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
   for (const f of generators) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.match(text, /from '\.\/brand\.js'/, f);

@@ -74,6 +74,7 @@ export const STAFF_EVENT_POLICY = {
   // profil siparişi (satış ve çizim zaten göremez: yönetici, denetimci)
   PROFILE_OFFER_SENT: OPEN, PROFILE_APPROVED: OPEN, PICKUP_UPDATED: OPEN, PICKUP_MOVED: OPEN, PROFORMA: OPEN, PAID: OPEN,
   WAREHOUSE_SENT: OPEN, WAREHOUSE_RESENT: OPEN, WAREHOUSE_EMAILED: OPEN, DELIVERED: OPEN, INVOICED: OPEN,
+  DELIVERY_DATE_CHANGED: OPEN, DELIVERY_REPORT: OPEN, // Paket 8: teslim günü (yönetici), teslimat raporu
   WAREHOUSE_EMAIL_FAILED: { row: ALL, note: 'OFFER_SEND' }, // SMTP hata metni
   // teklif fiyatlandırması: çizim ve denetimci satış tutarını görmez (eski OFFER_SUBMITTED notu tutar taşır)
   OFFER_SUBMITTED: PRICING, OFFER_RETURNED: PRICING, OFFER_REVISED: PRICING, OFFER_UPDATED: PRICING,

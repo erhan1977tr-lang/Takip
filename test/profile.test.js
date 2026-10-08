@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickupAfterPayment, earliestPickup, isWorkingDay, nextWorkingDay, pickupProblem, dayDate, localDay } from '../server/profile/dates.js';
+import { depotOpen, depotReadyDay, earliestPickup, nextDepotDay, pickupOnForward, pickupProblem, dayDate, localDay } from '../server/profile/dates.js';
 import {
   cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileOrderItems, profileTotals, readQuantities,
 } from '../server/profile/rules.js';
@@ -17,38 +17,48 @@ import zlib from 'node:zlib';
 const D = (s) => dayDate(s);
 const key = (d) => d.toISOString().slice(0, 10);
 
-test('profil tarih: hafta sonu iş günü değildir; sonraki iş günü', () => {
-  assert.equal(isWorkingDay(D('2026-10-03')), false); // cumartesi
-  assert.equal(isWorkingDay(D('2026-10-05')), true);
-  assert.equal(key(nextWorkingDay(D('2026-10-02'))), '2026-10-05'); // cuma → pazartesi
-  assert.equal(key(nextWorkingDay(D('2026-10-05'))), '2026-10-06');
+// Romanya deposu takvimiyle (Paket 8, karar 194). Ekim 2026 Bükreş = UTC+3 (yaz saati, 25 Ekim'e kadar); 09:00Z = 12:00.
+const at = (iso) => new Date(iso);
+
+test('profil tarih: depo hafta sonu ve Romanya resmî tatilinde kapalı; sonraki açık gün', () => {
+  assert.equal(depotOpen(D('2026-10-03')), false); // cumartesi
+  assert.equal(depotOpen(D('2026-10-05')), true);
+  assert.equal(depotOpen(D('2026-11-30')), false, 'Sf. Andrei');
+  assert.equal(key(nextDepotDay(D('2026-10-02'))), '2026-10-05'); // cuma → pazartesi
+  assert.equal(key(nextDepotDay(D('2026-11-27'))), '2026-12-02', 'cuma → (30 Kasım, 1 Aralık tatil) → çarşamba');
 });
 
-test('profil tarih: ödeme yokken en erken bugünden sonraki iş günü; ödemeden sonra ödeme + 1 iş günü', () => {
-  assert.equal(key(earliestPickup({ today: D('2026-09-30') })), '2026-10-01'); // çarşamba → perşembe
-  assert.equal(key(earliestPickup({ today: D('2026-10-02') })), '2026-10-05'); // cuma → pazartesi
-  assert.equal(key(earliestPickup({ today: D('2026-10-03') })), '2026-10-05'); // cumartesi → pazartesi
-  assert.equal(key(earliestPickup({ today: D('2026-10-05'), paidAt: D('2026-10-01') })), '2026-10-02');
-  assert.equal(pickupProblem(D('2026-10-03'), { today: D('2026-09-30') }), 'PICKUP_WEEKEND');
-  assert.equal(pickupProblem(D('2026-09-30'), { today: D('2026-09-30') }), 'PICKUP_TOO_EARLY');
-  assert.equal(pickupProblem(D('2026-10-01'), { today: D('2026-09-30') }), null);
-  assert.equal(pickupProblem(D('2027-06-01'), { today: D('2026-09-30') }), 'PICKUP_TOO_LATE');
-  assert.equal(pickupProblem(new Date('x'), { today: D('2026-09-30') }), 'PICKUP_INVALID');
+test('profil tarih: en erken alış günü = sipariş şimdi depoya iletilse (12:00 kuralı); alış günü sorunları', () => {
+  assert.equal(key(earliestPickup({ now: at('2026-09-30T08:00:00Z') })), '2026-10-01'); // çarşamba 11:00 → perşembe
+  assert.equal(key(earliestPickup({ now: at('2026-09-30T10:00:00Z') })), '2026-10-02'); // çarşamba 13:00 → cuma
+  assert.equal(key(earliestPickup({ now: at('2026-10-02T08:00:00Z') })), '2026-10-05'); // cuma 11:00 → pazartesi
+  assert.equal(key(earliestPickup({ now: at('2026-10-03T08:00:00Z') })), '2026-10-06'); // cumartesi → pazartesi işlenir → salı
+  const now = at('2026-09-30T08:00:00Z');
+  assert.equal(pickupProblem(D('2026-10-03'), { now }), 'PICKUP_WEEKEND');
+  assert.equal(pickupProblem(D('2026-11-30'), { now }), 'PICKUP_CLOSED');
+  assert.equal(pickupProblem(D('2026-09-30'), { now }), 'PICKUP_TOO_EARLY');
+  assert.equal(pickupProblem(D('2026-10-01'), { now }), null);
+  assert.equal(pickupProblem(D('2027-06-01'), { now }), 'PICKUP_CLOSED', '1 Haziran 2027: Çocuk Bayramı (Romanya)');
+  assert.equal(pickupProblem(D('2027-06-02'), { now }), 'PICKUP_TOO_LATE');
+  assert.equal(pickupProblem(new Date('x'), { now }), 'PICKUP_INVALID');
+  // Yönetici: en erken kural yok, yalnızca açık gün ve bugünden önce değil
+  assert.equal(pickupProblem(D('2026-09-30'), { now, staff: true }), null);
+  assert.equal(pickupProblem(D('2026-09-29'), { now, staff: true }), 'PICKUP_PAST');
+  assert.equal(pickupProblem(D('2026-10-03'), { now, staff: true }), 'PICKUP_WEEKEND');
 });
 
-test('profil tarih: ödeme teyidinde erken alış günü ödemeden sonraki iş gününe kayar; geçmiş ödeme bugünden önceye taşımaz', () => {
-  const r = pickupAfterPayment({ paidAt: D('2026-10-02'), pickupDate: D('2026-10-02'), today: D('2026-10-02') });
-  assert.equal(key(r.pickupDate), '2026-10-05'); // cuma ödendi → pazartesi
+test('profil tarih: depoya iletilirken erken alış günü depo kuralına kayar; geç gün korunur; kapalı gün açık güne kayar', () => {
+  const r = pickupOnForward({ now: at('2026-10-02T10:00:00Z'), pickupDate: D('2026-10-05') }); // cuma 13:00 iletildi
+  assert.equal(key(r.pickupDate), '2026-10-06');
   assert.equal(r.moved, true);
-  const later = pickupAfterPayment({ paidAt: D('2026-10-02'), pickupDate: D('2026-10-09'), today: D('2026-10-02') });
-  assert.equal(key(later.pickupDate), '2026-10-09');
-  assert.equal(later.moved, false);
-  // Ödeme günü geçen hafta girildi, müşterinin günü geçmişte kaldı → bugün
-  const past = pickupAfterPayment({ paidAt: D('2026-09-28'), pickupDate: D('2026-09-29'), today: D('2026-10-01') });
-  assert.equal(key(past.pickupDate), '2026-10-01');
-  assert.equal(past.moved, true);
-  // … bugün hafta sonuysa sonraki iş günü
-  assert.equal(key(pickupAfterPayment({ paidAt: D('2026-09-28'), pickupDate: null, today: D('2026-10-03') }).pickupDate), '2026-10-05');
+  const later = pickupOnForward({ now: at('2026-10-02T08:00:00Z'), pickupDate: D('2026-10-09') });
+  assert.deepEqual([key(later.pickupDate), later.moved], ['2026-10-09', false]);
+  // Seçilen gün sonradan elle kapatıldı → sonraki açık gün
+  const closed = new Map([['2026-10-09', { open: false }]]);
+  const shifted = pickupOnForward({ now: at('2026-10-02T08:00:00Z'), pickupDate: D('2026-10-09'), overrides: closed });
+  assert.deepEqual([key(shifted.pickupDate), shifted.moved], ['2026-10-12', true]);
+  assert.equal(key(pickupOnForward({ now: at('2026-10-03T08:00:00Z'), pickupDate: null }).pickupDate), '2026-10-06');
+  assert.equal(key(depotReadyDay(at('2026-10-05T09:00:59Z'))), '2026-10-06', '12:00:59 hâlâ 12:00');
   assert.equal(localDay(new Date('2026-10-01T22:30:00Z'), 'Europe/Bucharest'), '2026-10-02');
 });
 
@@ -67,7 +77,9 @@ test('profil akışı: kim hangi adımda ne yapar; satış ve çizim hiçbir şe
   assert.ok(!a('ADMIN', 'DEPODA', { paid: true }).includes('mark_paid'));
   assert.ok(!a('ADMIN', 'DEPODA').includes('send_to_warehouse'));
   assert.ok(!a('MUSTERI', 'PROFORMA').includes('mark_paid'));
-  assert.ok(!a('MUSTERI', 'DEPODA').includes('update_pickup'), 'depoya gittikten sonra teslim bilgisi değişmez');
+  assert.ok(!a('MUSTERI', 'DEPODA').includes('update_pickup'), 'depoya gittikten sonra müşteri teslim bilgisini değiştiremez');
+  assert.ok(a('ADMIN', 'DEPODA').includes('update_pickup'), 'yönetici teslim gününü depoda iken de değiştirir (karar 194)');
+  assert.ok(!a('ADMIN', 'TESLIM_EDILDI').includes('update_pickup'), 'teslimden sonra değişmez');
   assert.ok(!a('MUSTERI', 'ONAYLANDI').includes('cancel'));
   for (const role of ['SATIS', 'CIZIM', 'DENETIMCI']) {
     for (const stage of ['FIYAT_BEKLIYOR', 'TEKLIF_GONDERILDI', 'PROFORMA', 'DEPODA']) {
