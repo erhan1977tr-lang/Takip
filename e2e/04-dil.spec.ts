@@ -84,7 +84,8 @@ test('Romence girilince panel Romence açılır; sağ üstten dil değişir', as
   await page.fill('#password', ADMIN_PW);
   await page.getByRole('button', { name: 'Intră în cont' }).click();
   await expect(page).toHaveURL(/\/siparisler/);
-  await expect(page.locator('.sidebar').getByRole('link', { name: 'Comenzi' })).toBeVisible();
+  // Tam ad: yöneticinin menüsünde "Comenzi către furnizori" da var (Paket 6)
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Comenzi', exact: true })).toBeVisible();
   await expect(page.locator('.lang-select')).toHaveValue('ro');
 
   // Romence ekranlarda çevrilmemiş anahtar kalmamalı
@@ -105,7 +106,7 @@ test('Romence girilince panel Romence açılır; sağ üstten dil değişir', as
   await shot(page, '04-yuklemeler');
 
   await page.locator('.lang-select').selectOption('tr');
-  await expect(page.locator('.sidebar').getByRole('link', { name: 'Siparişler' })).toBeVisible();
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Siparişler', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/yuklemeler\?gun=2027-03-19/); // aynı sayfada kalır
   await page.reload();
   await expect(page.locator('.lang-select')).toHaveValue('tr');

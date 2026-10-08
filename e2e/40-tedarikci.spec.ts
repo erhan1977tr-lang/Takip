@@ -86,10 +86,9 @@ test('yönetici: menüde "Ayarlar" ve "Satın Alma"; Ayarlar → Tedarikçiler �
   await admin.fill('#sp-name', 'e2e profil TEDARİK');
   await admin.locator('#tedarikci').getByRole('button', { name: 'Tedarikçi ekle' }).click();
   await expect(admin.getByText('Bu adla bir tedarikçi zaten var.')).toBeVisible();
-  // Geçersiz e-posta sunucuda da reddedilir (tarayıcı denetimi atlanırsa)
+  // Geçersiz e-posta sunucuda da reddedilir: tarayıcının kabul ettiği ama alan adı uzantısı olmayan adres
   await admin.fill('#sp-name', 'E2E Bozuk Adres');
-  await admin.locator('#sp-email').evaluate((el) => el.setAttribute('type', 'text'));
-  await admin.fill('#sp-email', 'a@b.test, kopya@baska.test');
+  await admin.fill('#sp-email', 'siparis@tedarikci');
   await admin.locator('#tedarikci').getByRole('button', { name: 'Tedarikçi ekle' }).click();
   await expect(admin.getByText('E-posta adresi geçersiz. Tek bir adres yazın (ör. siparis@firma.com).')).toBeVisible();
   await expect(admin.locator('tr[data-supplier="E2E Bozuk Adres"]')).toHaveCount(0);
