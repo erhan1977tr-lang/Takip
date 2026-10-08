@@ -99,9 +99,11 @@ dbTest('müşteri fiyatı: gönderilmemiş teklifte yöneticinin taslağı müş
   audits = await priceAudits(o.id);
   assert.deepEqual([audits.length, audits[1].details.intent, audits[1].details.sent, audits[1].details.version], [2, 'approve', true, 1]);
   assert.deepEqual(audits[1].details.changes.map((x) => [x.change, x.old, x.new]), [['PRICE', '50.00', '55.00']]);
-  for (const who of ['sales', 'drawer', 'inspector', 'cust']) {
+  for (const who of ['sales', 'inspector', 'cust']) {
     assert.equal(await codeOf(run(o.id, 'update_offer', who, { lines: adminForm(v1.lines, () => '1') })), 'NOT_ALLOWED', who);
   }
+  // Çizim ekibi çizimi olmayan siparişi kapsamında hiç görmez
+  assert.equal(await codeOf(run(o.id, 'update_offer', 'drawer', { lines: adminForm(v1.lines, () => '1') })), 'NOT_FOUND', 'drawer');
   assert.equal(await codeOf(run(o.id, 'update_offer', 'other', { lines: adminForm(v1.lines, () => '1') })), 'NOT_FOUND', 'başka firmanın müşterisi siparişi bulamaz');
 
   // Müşterideki teklif: yönetici yeni fiyatı yeni sürümle gönderir (eski sürüm olduğu gibi kalır)
