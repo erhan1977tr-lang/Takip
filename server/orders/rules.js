@@ -101,7 +101,7 @@ export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', off
  * İlk çizim (v1) müşterinin dosyasından çizildiği için teklifle aynı kabul edilir. lastDrawing: son ÜRETİM çizimi ve
  * version = üretim çizimleri arasındaki sırası (müşterinin karar bekleyen / hatalı DWG/DXF kaydı sayılmaz; "üretime hazır"
  * kabul edilen müşteri çizimi sayılır — server/orders/dwg-review.js → lastProductionDrawing).
- * @param {{offer?: string|null, sentAt?: Date|string|null, lastDrawing?: {version: number, createdAt: Date|string}|null, checkedAt?: Date|string|null}} p
+ * @param {{offer?: string|null, sentAt?: Date|string|null, lastDrawing?: {version: number, createdAt: Date|string, sentAt?: Date|string|null}|null, checkedAt?: Date|string|null}} p
  * @returns {boolean}
  */
 export function offerNeedsCheck({ offer = null, sentAt = null, lastDrawing = null, checkedAt = null }) {

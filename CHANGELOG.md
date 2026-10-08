@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.53.1 — 08.10.2026
+
+Paket 3 doğrulama düzeltmesi: teklif kontrolü kuralının belge açıklaması (JSDoc) son üretim çiziminin tarihini de kabul edecek
+şekilde düzeltildi (tip denetimi). Davranış değişmedi.
+
 ## 3.53.0 — 08.10.2026
 
 Fonksiyonel paket 3 — çizimci paneli, DWG/DXF ve revizyon (kararlar 167–169). Veritabanı şeması: yeni çizim hattı durumu
