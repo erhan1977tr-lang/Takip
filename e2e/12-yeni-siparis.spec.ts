@@ -296,9 +296,13 @@ test('eski çok camlı sipariş normal açılır; satış teklif tablosunda "+ C
   await expect(cust.getByRole('link', { name: orderNo, exact: true })).toBeVisible();
   await cust.context().close();
 
+  // Yönetici: sipariş açılır; "İstenen camlar" yöneticinin sipariş ekranında gösterilmez (fonksiyonel paket 4) — sipariş
+  // satırları kayıtta durur ve teklif tablosu yine onlarla açılır
   const admin = await as(browser, ADMIN, ADMIN_PW);
   expect((await admin.goto(orderUrl))?.status()).toBe(200);
-  await expect(admin.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toBeVisible();
+  await expect(admin.locator('#bilgiler')).toBeVisible();
+  await expect(admin.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(admin.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toHaveCount(0);
   await admin.context().close();
 
   // Satış: teklif tablosu sınırlanmaz — "+ Cam ekle" ile ikinci cam satırı eklenir ve kaydedilir
