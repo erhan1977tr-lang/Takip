@@ -376,7 +376,7 @@ dbTest('rezerve (karar 177): onaylı ama depoya gitmemiş siparişlerin adedi �
   const p = await prod('PANA-115-12');
   await setStock(p, 50);
   const moves = await db.stockMovement.count();
-  const approved = await approvedOrder([['PANA-115-12', 3]]);
+  await approvedOrder([['PANA-115-12', 3]]); // onaylı
   const proforma = await approvedOrder([['PANA-115-12', 2]]);
   await run(proforma.id, 'mark_proforma', 'admin', { proformaNo: 'PF-REZ' });
   await newOrder([['PANA-115-12', 9]]); // fiyat bekliyor
