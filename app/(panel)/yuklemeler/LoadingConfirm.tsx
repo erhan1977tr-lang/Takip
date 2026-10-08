@@ -20,9 +20,6 @@ type OrderRow = { orderId: string; orderNo: string; title: string | null; curren
 type CustomerRow = { customerId: string; name: string; orders: OrderRow[]; adet: number; m2: number; byCur: Money };
 type Summary = { customers: CustomerRow[]; totals: { orders: number; adet: number; m2: number; items: number; byCur: Money; noCost: number } };
 type Skipped = { orderId: string; orderNo: string; reason: 'NO_SENT_OFFER' | 'ALREADY_CONFIRMED' | 'ORDER_CANCELLED' | 'ORDER_ON_HOLD'; day?: string };
-/** Önizlemedeki cam satırı (yüklenmeyen adet girişi için) */
-type PlanItem = { orderId: string; offerLineId: string | null; replanId?: string; kind: string; unit: string; description: string; descriptionRo: string | null; enMm: number | null; boyMm: number | null; quantity: number };
-type PlanOrder = { orderId: string; orderNo: string; customerName: string; items: PlanItem[]; replanFrom?: string[] };
 
 const ERRORS = ['FORBIDDEN', 'BAD_DAY', 'FUTURE_DAY', 'ALREADY_CONFIRMED', 'NOTHING_TO_CONFIRM', 'STALE_PREVIEW', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED'];
 const REPLAN_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'NOT_FUTURE', 'NOT_FOUND', 'NOT_ALLOWED', 'BAD_QUANTITY', 'NO_REMAINDER', 'ORDER_CANCELLED', 'ORDER_ON_HOLD', 'DAY_CONFIRMED', 'ALREADY_LOADED', 'ALREADY_PLANNED'];
@@ -37,7 +34,8 @@ const dmy = (day: string) => fmtDate(`${day}T12:00:00Z`);
  *   - Onaylanmış gün: GEÇERLİ durum (müşteri → sipariş → cam; düzeltmeler uygulanmış — karar 105) + "Düzeltildi" rozeti ve
  *     tarihçe (ilk onay kaydı ve her düzeltme: kim, ne zaman, neden, önce → sonra). İlk onay kaydı değişmez. Tutarlar
  *     yalnızca yöneticiye; satış / çizim müşteri adını maskeli görür. "Düzelt" ve aktarım yalnızca yöneticide.
- *   - Onaylanmamış gün: yalnızca yönetici önizlemeyi ve "Eksiksiz Yüklendi" düğmesini görür. Yetki sunucuda kontrol edilir.
+ *   - Onaylanmamış gün: yalnızca yönetici önizlemeyi ve "Yükleme yapıldı" düğmesini görür (Paket 7, karar 189 — eski adı
+ *     "Eksiksiz Yüklendi"; yüklenmeyen cam girişi yok: onaydan sonra "Düzelt"). Yetki sunucuda kontrol edilir.
  */
 export async function LoadingConfirm({ user, day, planned, sp }: {
   user: CurrentUser; day: string; planned: { id: string; orderNo: string }[]; sp: Record<string, string | undefined>;
@@ -52,7 +50,6 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
   const flash = (
     <>
       {sp.onay === 'ok' && <div className="alert alert-ok">{t('loading.confirm.ok', { orders: sp.n ?? '' })}</div>}
-      {sp.onay === 'ok' && sp.yok && <div className="alert alert-warn">{t('loading.confirm.partial', { n: sp.yok })}</div>}
       {sp.onayHata && <div className="alert alert-error">{t(`loading.confirm.errors.${ERRORS.includes(sp.onayHata) ? sp.onayHata : 'STALE_PREVIEW'}` as MsgKey)}</div>}
     </>
   );
@@ -405,48 +402,11 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
             </div>
           )}
           {table(s)}
+          {/* "Yükleme yapıldı" (Paket 7, karar 189): önizlemedeki kalemler YÜKLENDİ olarak kaydedilir. Ayrı "yüklenmeyen cam"
+              girişi yoktur — yüklenmeyen cam onaydan sonra "Düzelt" ile kaydedilir (karar 105) ve ileri güne aktarılır. */}
           <form action={confirmLoadingAction}>
             <input type="hidden" name="day" value={day} />
             <input type="hidden" name="key" value={plan.key} />
-            {/* Yüklenmeyen cam (kırık / eksik / hazır değil — karar 102): cam satırı başına yüklenmeyen adet ve neden.
-                Boş bırakılan satır eksiksiz yüklenmiş sayılır; sunucu adedi ve nedeni yeniden doğrular. */}
-            <details className="nl-box nl-entry" id="yuklenmeyen-giris">
-              <summary>{t('loading.replan.entry.toggle')}</summary>
-              <p className="muted small">{t('loading.replan.entry.intro')}</p>
-              <div className="table-wrap load-wrap">
-                <table className="load-table nl-table">
-                  <thead>
-                    <tr>
-                      <th>{t('loading.replan.entry.cols.order')}</th><th>{t('loading.replan.entry.cols.glass')}</th><th className="num">{t('loading.replan.entry.cols.planned')}</th>
-                      <th>{t('loading.replan.entry.cols.qty')}</th><th>{t('loading.replan.entry.cols.reason')}</th><th>{t('loading.replan.entry.cols.note')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(plan.orders as PlanOrder[]).flatMap((o) => o.items.filter((i) => isGlassLine(i)).map((i) => {
-                      const k = itemKey(i);
-                      return (
-                        <tr key={k} data-key={k}>
-                          <td>
-                            <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link>
-                            <div className="muted small">{customerLabel(user, o.customerName)}</div>
-                          </td>
-                          <td>{nameOf(i)}{i.enMm && i.boyMm ? <span className="muted small"> · {i.enMm} × {i.boyMm}</span> : null}</td>
-                          <td className="num">{i.quantity}</td>
-                          <td><input type="number" name={`nl:${k}`} min={0} max={i.quantity} step={1} inputMode="numeric" className="nl-qty" aria-label={`${t('loading.replan.entry.cols.qty')} (${o.orderNo})`} /></td>
-                          <td>
-                            <select name={`nlr:${k}`} defaultValue="" aria-label={`${t('loading.replan.entry.cols.reason')} (${o.orderNo})`}>
-                              <option value="">{t('loading.replan.entry.pick')}</option>
-                              {NOT_LOADED_REASONS.map((r) => <option key={r} value={r}>{t(`loading.replan.reasons.${r}` as MsgKey)}</option>)}
-                            </select>
-                          </td>
-                          <td><input name={`nln:${k}`} maxLength={200} aria-label={`${t('loading.replan.entry.cols.note')} (${o.orderNo})`} /></td>
-                        </tr>
-                      );
-                    }))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
             <div className="tool-bar confirm-bar">
               <div className="group confirm-note">
                 <input name="note" maxLength={300} placeholder={t('loading.confirm.notePlaceholder')} aria-label={t('loading.confirm.note')} />

@@ -276,8 +276,8 @@ export default {
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
     accounting: {
       title: "Avertizare comenzi nefacturate după încărcare",
-      days: "Număr de zile după încărcare",
-      hint: "Dacă factura finală necesară pentru sticla încărcată nu a fost emisă după acest număr de zile calendaristice, contabilitatea / administratorul este avertizat (lista „Factură în așteptare” din Contabilitate → Încasări sticlă și notificare). Proforma și factura de avans nu închid avertizarea; doar factura finală o închide. Număr întreg între 0 și {max}; implicit 6.",
+      days: "Număr de zile după înregistrarea „Încărcare efectuată”",
+      hint: "Contorul pornește la înregistrarea „Încărcare efectuată” din ecranul Încărcări. Dacă factura finală necesară pentru sticla încărcată nu a fost emisă după acest număr de zile calendaristice, contabilitatea / administratorul este avertizat (lista „Factură în așteptare” din Contabilitate → Încasări sticlă și notificare). Proforma și factura de avans nu închid avertizarea; doar factura finală o închide. Număr întreg între 0 și {max}; implicit 6.",
       saved: "Setarea de avertizare a fost salvată.",
       bad: "Număr de zile nevalid: introduceți un număr întreg între 0 și {max}.",
     },

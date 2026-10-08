@@ -105,8 +105,9 @@ test('veri: müşteri; gelecekteki günlere planlı üç sipariş; onaylı yükl
       notLoadedReason: status === 'NOT_LOADED' ? 'e2e' : null,
     };
   };
-  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${DAY}T00:00:00Z`), confirmedById: admin.id, note: 'e2e seçim' } });
-  const recent = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${RECENT}T00:00:00Z`), confirmedById: admin.id, note: 'e2e uyarı günü' } });
+  // "Yükleme yapıldı" kayıtları yükleme gününde yapılmış (fatura bekliyor sayacı bu kayıttan başlar — Paket 7, karar 189)
+  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${DAY}T00:00:00Z`), confirmedById: admin.id, confirmedAt: new Date(`${DAY}T12:00:00Z`), note: 'e2e seçim' } });
+  const recent = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${RECENT}T00:00:00Z`), confirmedById: admin.id, confirmedAt: new Date(`${RECENT}T12:00:00Z`), note: 'e2e uyarı günü' } });
   await db.loadingConfirmationItem.createMany({
     data: [item(conf.id, o51, 2), item(conf.id, o52, 8), item(conf.id, o52, 2, 'NOT_LOADED'), item(conf.id, o53, 2), item(conf.id, o54, 2), item(conf.id, o55, 2), item(recent.id, o61, 2)],
   });
@@ -390,6 +391,7 @@ test('Cam Tahsilat: kalıcı "FATURA BEKLİYOR" listesi — uyarı günü ayara 
   await expect(box.locator('h2')).toContainText('FATURA BEKLİYOR');
   await expect(row('SCM53')).toContainText(`SCM53 · ${FIRM}`);
   await expect(row('SCM53')).toContainText(`Yükleme: ${dmy(DAY)}`);
+  await expect(row('SCM53')).toContainText(`yükleme yapıldı: ${dmy(DAY)}`); // sayaç "Yükleme yapıldı" kaydından (Paket 7)
   await expect(row('SCM53')).toContainText(`${SINCE} gündür fatura edilmedi`);
   await expect(row('SCM53').getByRole('link', { name: 'Faturalamayı aç' })).toHaveAttribute('href', `/yuklemeler?gun=${DAY}#faturalama`);
   await expect(row('SCM54')).toHaveCount(1);
@@ -400,7 +402,7 @@ test('Cam Tahsilat: kalıcı "FATURA BEKLİYOR" listesi — uyarı günü ayara 
   await expect(row('SCM55')).toContainText(`${SINCE} gündür fatura edilmedi`);
   await shot(page, 'fatura-bekliyor');
 
-  // Uyarı günü = onaylı yükleme günü + ayardaki gün: 3 gün önceki yükleme 3'te görünür, 4'te görünmez, 0'da görünür
+  // Uyarı günü = "Yükleme yapıldı" kaydının günü + ayardaki gün: 3 gün önce kaydedilen yükleme 3'te görünür, 4'te görünmez, 0'da görünür
   await setDays('3');
   await expect(row('SCM61')).toContainText('3 gündür fatura edilmedi');
   await expect(row('SCM61')).toContainText(`Yükleme: ${dmy(RECENT)}`);

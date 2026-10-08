@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { CUSTOMER, CUST_PW, SALES, TEAM_PW as PW, as } from './helpers';
+import { CUSTOMER, CUST_PW, SALES, TEAM_PW as PW, as, firmOf, openFirm } from './helpers';
 
 // 02-orders'tan sonra çalışır: UNS2 üretimde, teklifi 1000×2000×3 (6 m², 66.3 lamine).
 const LOAD_DAY = '2027-03-19';
@@ -22,17 +22,19 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await expect(sales.getByRole('heading', { name: 'Yüklemeler', exact: true })).toBeVisible();
   await sales.goto(`/yuklemeler?gun=${LOAD_DAY}`);
   await expect(sales.getByRole('heading', { name: 'Yükleme: 19.03.2027' })).toBeVisible();
-  const table = sales.locator('.load-table');
-  await expect(table.getByRole('link', { name: 'UNS2' })).toBeVisible();
-  await expect(table).toContainText('Üns**********'); // satış tam adı görmez
-  await expect(table.locator('tfoot')).toContainText('230');
+  // Firma bazlı tablo (Paket 7): firma başına tek satır; satır açılınca alt siparişler
+  const table = sales.locator('.firm-table');
+  const firm = firmOf(sales, 'Üns**********'); // satış tam adı görmez
+  await expect(firm.locator('tr.firm-row')).toBeVisible();
+  await expect((await openFirm(firm, 'orders')).getByRole('link', { name: 'UNS2' })).toBeVisible();
+  await expect(table.locator(':scope > tfoot')).toContainText('230');
   await expect(sales.locator('.cal-day.sel')).toContainText('Üns**********');
   await sales.goto('/yuklemeler?view=liste&ay=2027-03');
   await expect(sales.getByRole('link', { name: '19.03.2027' })).toBeVisible();
 
-  // Gerçek sandık kaydı yükleme sekmesinde (müşteri + gün): tahminin önüne geçer
+  // Gerçek sandık kaydı yükleme sekmesinde (firma satırı → "Sandık"): tahminin önüne geçer
   await sales.goto(`/yuklemeler?gun=${LOAD_DAY}`);
-  await sales.locator('.crate-row summary').first().click();
+  await openFirm(firm, 'crates');
   await sales.getByRole('button', { name: '+ Sandık ekle' }).click();
   await sales.getByLabel('Uzunluk (mm) (1)').fill('2400');
   await sales.getByLabel('Genişlik (mm) (1)').fill('1600');
@@ -46,8 +48,9 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.getByRole('button', { name: 'Sandıkları kaydet' }).click();
   await expect(sales.locator('.crate-editor .alert-ok')).toContainText('Sandıklar kaydedildi.');
   await sales.reload();
-  await expect(sales.locator('.load-table tfoot')).toContainText('260');
-  await expect(sales.locator('.load-table').getByText('gerçek').first()).toBeVisible();
+  await expect(table.locator(':scope > tfoot')).toContainText('260');
+  await expect(firm.locator('tr.firm-row').getByText('gerçek')).toBeVisible();
+  await openFirm(firm, 'crates');
   await expect(sales.getByLabel('Uzunluk (mm) (1)')).toHaveValue('2400');
   await expect(sales.locator('.crate-editor .badge')).toContainText('güncellendi');
   await sales.goto(orderUrl);

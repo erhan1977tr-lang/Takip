@@ -2,12 +2,15 @@ import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
-import { XLSX_MIME, writeXlsx } from '@/server/files/xlsx.js';
+import { downloadHeaders, exportName, exportSubtitle } from '@/lib/exports';
+import { sheetFromRows, writeReportXlsx } from '@/server/files/xlsx-report.js';
 import { priceSheetRows } from '@/server/pricing/tables.js';
 
 export const dynamic = 'force-dynamic';
 
-// Fiyat tablosu Excel olarak (ürün sahibinin fiyat listesi düzeni): doldurulup "Excel'den yükle" ile geri yüklenir.
+// Fiyat tablosu Excel olarak (ürün sahibinin fiyat listesi düzeni): doldurulup "Excel'den yükle" ile geri yüklenir (para birimi,
+// delik / CNC fiyatı satırları ve başlıklar aynı; ortak rapor düzeni — server/files/xlsx-report.js). Dosya adı panel dilinde,
+// tablonun adıyla.
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   const { t } = await getT();
@@ -18,13 +21,11 @@ export async function GET(req: Request) {
   if (!table) return new Response(t('common.fileNotFound'), { status: 404 });
   const glasses = await db.glassProduct.findMany({ orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] });
   const prices = new Map(table.items.map((i) => [i.glassProductId, Number(i.unitPrice)]));
-  const buf = writeXlsx({ sheetName: 'Fiyatlar', rows: priceSheetRows(table, glasses, prices), bold: [0, 6], widths: [44, 24, 14] });
-  const safe = table.name.normalize('NFKD').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'fiyat-listesi';
-  return new Response(new Uint8Array(buf), {
-    headers: {
-      'Content-Type': XLSX_MIME,
-      'Content-Disposition': `attachment; filename="${safe}.xlsx"`,
-      'Cache-Control': 'no-store',
-    },
+  const buf = writeReportXlsx({
+    sheets: [sheetFromRows({
+      name: 'Fiyatlar', rows: priceSheetRows(table, glasses, prices), headerIndex: 6, subtitle: exportSubtitle(t),
+      widths: [44, 24, 16], types: ['wrap', 'text', 'dec2'],
+    })],
   });
+  return new Response(new Uint8Array(buf), { headers: downloadHeaders(exportName(t, 'priceTable', [table.name], 'xlsx'), 'xlsx') });
 }

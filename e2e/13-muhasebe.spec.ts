@@ -321,7 +321,7 @@ test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit 
     if (who !== 'cizim') {
       await p.goto(LOADING_URL);
       await expect(p.locator('#onay'), who).toHaveCount(0);
-      await expect(p.getByRole('button', { name: 'Eksiksiz Yüklendi' }), who).toHaveCount(0);
+      await expect(p.getByRole('button', { name: 'Yükleme yapıldı' }), who).toHaveCount(0);
     }
     const r = await forge(p, LOADING_URL, field, { day: LOADED_DAY, key, note: `TAKLIT-${who}` });
     expect(r.url(), who).not.toContain('onay=ok');
@@ -329,16 +329,18 @@ test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit 
     await p.context().close();
   }
 
-  // Yönetici onaylar (onay penceresi kabul edilir)
+  // Yönetici "Yükleme yapıldı" ile kaydeder (Paket 7: eski adı "Eksiksiz Yüklendi"; onay penceresi kabul edilir)
   await admin.reload();
+  await expect(box.getByRole('button', { name: 'Eksiksiz Yüklendi' })).toHaveCount(0);
+  await expect(box).not.toContainText('Yüklenmeyen cam var');
   await box.locator('[name=note]').fill('E2E PLAKA 34');
-  await box.getByRole('button', { name: 'Eksiksiz Yüklendi' }).click();
+  await box.getByRole('button', { name: 'Yükleme yapıldı' }).click();
   await expect(admin).toHaveURL(/onay=ok/);
-  await expect(box.locator('.alert-ok')).toContainText('Yükleme onaylandı: 1 sipariş kaydedildi.');
-  await expect(box).toContainText('Yükleme onaylandı');
+  await expect(box.locator('.alert-ok')).toContainText('Yükleme yapıldı olarak kaydedildi: 1 sipariş.');
+  await expect(box.locator('.section-head .badge')).toHaveText('Yükleme yapıldı');
   await expect(box).toContainText(/Onaylayan: .+ · \d{2}\.\d{2}\.\d{4}/);
   await expect(box).toContainText('E2E PLAKA 34');
-  await expect(box.getByRole('button', { name: 'Eksiksiz Yüklendi' })).toHaveCount(0);
+  await expect(box.getByRole('button', { name: 'Yükleme yapıldı' })).toHaveCount(0);
   await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('1.045,00 EUR');
   expect(await confirmations()).toBe(1);
   const items = await db.loadingConfirmationItem.findMany({ where: { order: { orderNo: { endsWith: '9101' } } }, orderBy: { sortOrder: 'asc' } });
@@ -357,7 +359,7 @@ test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit 
   // Satış onaylı kaydı görür: müşteri adı maskeli, tutar yok. Müşteri görünümü değişmedi.
   const sales = await as(browser, SALES2, TEAM_PW);
   await sales.goto(LOADING_URL);
-  await expect(sales.locator('#onay')).toContainText('Yükleme onaylandı');
+  await expect(sales.locator('#onay')).toContainText('Yükleme yapıldı');
   await expect(sales.locator('#onay tr.group-total')).toContainText('Üns**********');
   await expect(sales.locator('#onay')).not.toContainText('Ünsal');
   await expect(sales.locator('#onay')).not.toContainText('1.045,00');

@@ -260,12 +260,14 @@ test('TAKİP\'in ürettiği üç PDF de resmî logoyu taşır: teklif, Comanda D
 test('her PDF üretici ortak başlığı kullanır (yeni üretici de kullanmak zorunda); logo başka yerde kopyalanmaz', () => {
   const dir = path.join(ROOT, 'server', 'pdf');
   const generators = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).filter((f) => /new PdfDoc\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
-  assert.deepEqual(generators.sort(), ['depot-form.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
+  // Paket 7: firma yükleme listesi (firm-loading.js) de ortak başlığı ve ortak altbilgiyi kullanır
+  assert.deepEqual(generators.sort(), ['depot-form.js', 'firm-loading.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
   for (const f of generators) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.match(text, /from '\.\/brand\.js'/, f);
     assert.match(text, /brandImage\(doc\)/, f);
     assert.match(text, /drawBrandLogo\(page, logo, /, f);
+    assert.match(text, /finishPages\(doc\b/, `${f}: ortak altbilgi (firma adı + sayfa / toplam)`);
   }
   assert.ok(!fs.existsSync(path.join(dir, 'logo.js')), 'eski gömülü logo dosyası kaldırıldı');
 });

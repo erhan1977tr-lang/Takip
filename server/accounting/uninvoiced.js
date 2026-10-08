@@ -3,8 +3,11 @@
 //   Ayar: Yönetici → Entegrasyonlar → "Fatura edilmemiş sipariş uyarısı" = yüklemeden sonra kaç TAKVİM günü (varsayılan 6,
 //   0–60). IntegrationSetting 'accounting' kaydında durur (FGO ayarlarına dokunmaz).
 //
-//   Kural: kaynak yalnızca ONAYLI yüklemedir (LoadingConfirmation.shipDay — fiilen yüklenen gün; planlanan tarih değil).
-//   Uyarı günü = yükleme günü + ayardaki gün sayısı. Kapsam = onay + sipariş (müşteri faturasının kapsamıyla aynı birim):
+//   Kural: kaynak yalnızca ONAYLI yüklemedir ("Yükleme yapıldı" kaydı — LoadingConfirmation; planlanan tarih değil).
+//   Sayaç "Yükleme yapıldı" işleminden sonra başlar (Paket 7, karar 189): uyarı günü = onayın kaydedildiği gün (confirmedAt,
+//   uygulama saat dilimi) + ayardaki gün sayısı. Yükleme günü (shipDay) yalnızca gösterilir. Aynı gün ikinci kez onaylanamaz
+//   (benzersiz shipDay) ve bildirim kapsam başına bir kez yazılır: işlem tekrarlansa da yeni hatırlatma / kayıt oluşmaz.
+//   Kapsam = onay + sipariş (müşteri faturasının kapsamıyla aynı birim):
 //   siparişin o onaydaki GEÇERLİ yüklenen kalemleri (effectiveItems — düzeltmeler uygulanmış; yüklenmeyen / aktarılan cam
 //   yüklendiği onayda kendi günüyle sayılır).
 //     Kapatan: yalnızca kapanış faturası — o kapsamı içeren KESİLMİŞ müşteri faturası (BillingBatch INVOICE, ISSUED) ya da
@@ -67,31 +70,34 @@ const isoDay = (d) => new Date(d).toISOString().slice(0, 10);
 const addDays = (day, n) => isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS));
 /** İki gün ("YYYY-AA-GG") arasındaki takvim günü farkı */
 export const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
-/** Uyarı günü: yükleme günü + ayardaki takvim günü */
-export const dueDayOf = (shipDay, days) => addDays(shipDay, days);
+/** Uyarı günü: sayacın başladığı gün ("Yükleme yapıldı" kaydının günü) + ayardaki takvim günü */
+export const dueDayOf = (startDay, days) => addDays(startDay, days);
 
 /**
- * Uyarı günü gelmiş ve kapanış faturası kesilmemiş kapsamlar (onay + sipariş), en eski yükleme önce.
+ * Uyarı günü gelmiş ve kapanış faturası kesilmemiş kapsamlar (onay + sipariş), en eski yükleme önce. day: yükleme günü ·
+ * confirmedDay: "Yükleme yapıldı" kaydının günü (sayacın başlangıcı) · dueDay = confirmedDay + gün · daysSince: confirmedDay'den beri.
  *   note: neden hâlâ açık (yalnızca bilgi) — null: fatura kesilebilir · ORDER_CHAIN: sipariş kendi belge zincirinde (fatura
  *   sipariş sayfasından) · PROFORMA_NOT_ISSUED: müşteri proforması kesilemedi / kuyrukta · INVOICE_QUEUED / INVOICE_FAILED:
  *   fatura isteği kuyrukta / kesilemedi.
  * @param {any} db
  * @param {{ now?: Date, days?: number }} [o]  days verilmezse ayardan okunur
- * @returns {Promise<{ confirmationId: string, orderId: string, orderNo: string, customerId: string, customerName: string, day: string, dueDay: string,
+ * @returns {Promise<{ confirmationId: string, orderId: string, orderNo: string, customerId: string, customerName: string, day: string, confirmedDay: string, dueDay: string,
  *   daysSince: number, revision: number, removed: boolean, note: string | null }[]>}
  */
 export async function uninvoicedLoadings(db, { now = new Date(), days = undefined } = {}) {
   days ??= (await getAccountingSettings(db)).uninvoicedDays;
-  const today = localDay(now, getEnv().APP_TIMEZONE);
+  const tz = getEnv().APP_TIMEZONE;
+  const today = localDay(now, tz);
   const cutoff = addDays(today, -days);
-  // Aday kapsamlar tek sorguda: uyarı günü gelmiş onaylardaki (onay, sipariş) çiftlerinden kapanış faturası OLMAYANLAR.
+  // Aday kapsamlar tek sorguda: uyarı günü gelmiş (onay kaydının yerel günü + gün ≤ bugün) onaylardaki (onay, sipariş)
+  // çiftlerinden kapanış faturası OLMAYANLAR.
   // Kesilmiş müşteri faturası (o onay + sipariş anahtarıyla) ya da siparişin kendi faturası olan çiftler burada elenir;
   // böylece geçmişin tamamı her seferinde yüklenmez.
   const pairs = await db.$queryRaw`
     SELECT DISTINCT i."confirmationId" AS "confirmationId", i."orderId" AS "orderId"
     FROM "LoadingConfirmationItem" i
     JOIN "LoadingConfirmation" c ON c."id" = i."confirmationId"
-    WHERE c."shipDay" <= ${cutoff}::date
+    WHERE ((c."confirmedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}::text)::date <= ${cutoff}::date
       AND NOT EXISTS (
         SELECT 1 FROM "BillingBatchOrder" bo JOIN "BillingBatch" b ON b."id" = bo."batchId"
         WHERE bo."activeKey" = 'INVOICE:' || i."confirmationId" || ':' || i."orderId" AND b."status"::text = 'ISSUED')
@@ -100,7 +106,7 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
   const confIds = [...new Set(pairs.map((p) => p.confirmationId))];
   const orderIds = [...new Set(pairs.map((p) => p.orderId))];
   const [confs, items, orders, jobs] = await Promise.all([
-    db.loadingConfirmation.findMany({ where: { id: { in: confIds } }, select: { id: true, shipDay: true } }),
+    db.loadingConfirmation.findMany({ where: { id: { in: confIds } }, select: { id: true, shipDay: true, confirmedAt: true } }),
     db.loadingConfirmationItem.findMany({ where: { confirmationId: { in: confIds }, orderId: { in: orderIds } }, orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }] }),
     db.order.findMany({
       where: { id: { in: orderIds } },
@@ -116,15 +122,17 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
   const loaded = effectiveItems(items).filter((i) => i.status === 'LOADED');
   const held = await heldReplans(db, loaded.map((i) => i.replanId).filter(Boolean));
   const dayOf = new Map(confs.map((c) => [c.id, isoDay(c.shipDay)]));
+  const startOf = new Map(confs.map((c) => [c.id, localDay(c.confirmedAt, tz)]));
   const orderOf = new Map(orders.map((o) => [o.id, o]));
   const pending = new Set(jobs.map((j) => j.orderId));
   const out = [];
   for (const p of pairs) {
     const order = orderOf.get(p.orderId);
     const day = dayOf.get(p.confirmationId);
+    const start = startOf.get(p.confirmationId);
     const mine = loaded.filter((i) => i.confirmationId === p.confirmationId && i.orderId === p.orderId);
     // Bu onayda fiilen yüklenen kalemi kalmamış (tamamı yüklenmedi / düzeltmeyle sıfırlandı): faturalanacak bir şey yok
-    if (!order || !day || mine.length === 0) continue;
+    if (!order || !day || !start || mine.length === 0) continue;
     const sc = invoiceScope({ confirmationId: p.confirmationId, order, items: mine, pendingJob: pending.has(order.id), held });
     let note = null;
     if (sc.state === 'IN_INVOICE') {
@@ -137,7 +145,7 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
     }
     out.push({
       confirmationId: p.confirmationId, orderId: order.id, orderNo: order.orderNo, customerId: order.customerId, customerName: order.customer?.name ?? '',
-      day, dueDay: dueDayOf(day, days), daysSince: daysBetween(day, today), revision: mine.reduce((m, i) => Math.max(m, i.revision ?? 0), 0),
+      day, confirmedDay: start, dueDay: dueDayOf(start, days), daysSince: daysBetween(start, today), revision: mine.reduce((m, i) => Math.max(m, i.revision ?? 0), 0),
       removed: !!order.removedAt, note,
     });
   }

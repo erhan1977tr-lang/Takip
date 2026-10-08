@@ -9,7 +9,7 @@ import { currentOffer, orderDetailInclude, orderScope, sanitizeOrder, sentOffer 
 import { audit } from '@/lib/audit';
 import { canExportOffer, offerExportData, offerXlsx } from '@/server/orders/offer-export.js';
 import { offerPdf } from '@/server/pdf/offer.js';
-import { XLSX_MIME } from '@/server/files/xlsx.js';
+import { downloadHeaders, exportName } from '@/lib/exports';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,12 +50,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   };
   const body = format === 'xlsx' ? offerXlsx(data, text) : offerPdf(data, text);
   await audit('OFFER_EXPORT', 'Order', order.id, user.id, { format, offerId: offer.id });
-  return new Response(new Uint8Array(body), {
-    headers: {
-      'Content-Type': format === 'xlsx' ? XLSX_MIME : 'application/pdf',
-      'Content-Disposition': `attachment; filename="teklif-${order.orderNo}.${format}"`,
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+  // Dosya adı panel dilinde (Paket 7): "Teklif-GLA68.pdf" / "Oferta-GLA68.xlsx"
+  return new Response(new Uint8Array(body), { headers: downloadHeaders(exportName(t, 'offer', [order.orderNo], format), format) });
 }

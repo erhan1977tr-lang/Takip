@@ -111,7 +111,7 @@ export const dayDate = (day) => new Date(`${day}T00:00:00Z`);
  */
 export async function dayOrders(tx, customerId, day) {
   const d = dayDate(day);
-  const select = { id: true, orderNo: true, status: true, actualShipDate: true, estimatedShipDate: true };
+  const select = { id: true, orderNo: true, status: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true };
   const [list, replanned] = await Promise.all([
     tx.order.findMany({
       where: {
@@ -130,13 +130,50 @@ export async function dayOrders(tx, customerId, day) {
 }
 
 /**
+ * Firmanın o günkü MİSAFİR siparişleri — başka firmanın sandığıyla gidenler (Paket 7, karar 188; ekrandaki kuralla aynı:
+ * server/loading/day-firms.js). Misafir sipariş bu firmanın sandığına konamaz:
+ *   - o gün başka firmanın sandığına konmuş (CrateOrder), ya da
+ *   - yönetici ev sahibi firmayı seçmiş (Order.guestHostId): kendi gününde her zaman; yalnızca yüklenmeyen kalanı o güne
+ *     aktarılmış siparişte ev sahibinin o gün yüklemesi (siparişi ya da sandığı) varsa — yoksa kalan kendi firmasıyla gider.
+ * @param {any} tx  @param {string} customerId  @param {string} day
+ * @param {{ id: string, guestHostId?: string | null, actualShipDate?: Date | null, estimatedShipDate?: Date | null }[]} orders  dayOrders sonucu
+ * @returns {Promise<Set<string>>}
+ */
+export async function guestOrdersOn(tx, customerId, day, orders) {
+  if (orders.length === 0) return new Set();
+  const linked = await tx.crateOrder.findMany({
+    where: { orderId: { in: orders.map((o) => o.id) }, crate: { shipDay: dayDate(day), customerId: { not: null }, NOT: { customerId } } },
+    select: { orderId: true },
+  });
+  const out = new Set(linked.map((l) => l.orderId));
+  const onOwnDay = (o) => {
+    const d = o.actualShipDate ?? o.estimatedShipDate;
+    return !!d && dayKey(d) === day;
+  };
+  const carried = orders.filter((o) => o.guestHostId && !out.has(o.id) && !onOwnDay(o));
+  let present = new Set();
+  if (carried.length) {
+    const [firms, crates] = await Promise.all([
+      firmsLoadingOn(tx, [day], customerId),
+      tx.crate.findMany({ where: { shipDay: dayDate(day), customerId: { not: null } }, select: { customerId: true } }),
+    ]);
+    present = new Set([...firms.map((f) => f.id), ...crates.map((c) => c.customerId)]);
+  }
+  for (const o of orders) if (o.guestHostId && !out.has(o.id) && (onOwnDay(o) || present.has(o.guestHostId))) out.add(o.id);
+  return out;
+}
+
+/**
  * Bir müşterinin bir günlük sandıklarını kaydeder (hepsi birden; eksik satır silinir).
  * Sandık numarası o gün başka müşteride kullanılıyorsa kaydedilmez. Siparişler o müşterinin o günkü siparişleri olmalı.
  * Denetim kaydına önce/sonra, ilgili siparişlerin geçmişine "sandıklar güncellendi" yazılır.
  * @param {CrateInput[]} rows  validateCrates() sonucu
  * Sandıkta başka müşterinin siparişi varsa (fiziksel yerleşim) o bağ korunur; böyle bir sandık silinemez / numarası
  * değiştirilemez (HAS_GUESTS — önce yönetici yerleşimi kaldırır).
- * @returns {Promise<{ ok: true, count: number } | { ok: false, code: 'NO_ORDERS' | 'NUMBER_TAKEN' | 'BAD_ORDER' | 'HAS_GUESTS', numbers?: number[] }>}
+ * Misafir sipariş (Paket 7 — başka firmanın sandığıyla giden; guestOrdersOn) bu firmanın sandığına konamaz (GUEST_ORDER);
+ * firmanın o gün misafir olmayan siparişi yoksa yeni sandık açılamaz (GUEST_ONLY) — var olan sandıklar düzeltilebilir / silinebilir.
+ * Kural ekranda da uygulanır ("+ Sandık ekle" kapalı) ama esas olan bu denetimdir.
+ * @returns {Promise<{ ok: true, count: number } | { ok: false, code: 'NO_ORDERS' | 'NUMBER_TAKEN' | 'BAD_ORDER' | 'HAS_GUESTS' | 'GUEST_ORDER' | 'GUEST_ONLY', numbers?: number[] }>}
  */
 export async function saveDayCrates(db, { day, customerId, rows, actor }) {
   return db.$transaction(async (tx) => {
@@ -151,6 +188,12 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
     if (orders.length === 0 && before.length === 0) return { ok: false, code: 'NO_ORDERS' };
     const valid = new Set(orders.map((o) => o.id));
     if (rows.some((r) => r.orderIds.some((id) => !valid.has(id)))) return { ok: false, code: 'BAD_ORDER' };
+    // Misafir sipariş ev sahibinin sandığıyla gider: kendi firmasının sandığına konamaz; yalnızca misafir siparişi olan firmaya
+    // yeni sandık açılamaz (önceden girilmiş sandık numaraları düzeltilebilir ya da silinebilir)
+    const guestIds = await guestOrdersOn(tx, customerId, day, orders);
+    if (rows.some((r) => r.orderIds.some((id) => guestIds.has(id)))) return { ok: false, code: 'GUEST_ORDER' };
+    const ownOrders = orders.filter((o) => !guestIds.has(o.id));
+    if (orders.length > 0 && ownOrders.length === 0 && rows.some((r) => !before.some((b) => b.crateNo === r.crateNo))) return { ok: false, code: 'GUEST_ONLY' };
     const kept = new Set(rows.map((r) => r.crateNo));
     const orphaned = [...guests.keys()].filter((no) => !kept.has(no));
     if (orphaned.length) return { ok: false, code: 'HAS_GUESTS', numbers: orphaned };
@@ -161,8 +204,8 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
 
     await tx.crate.deleteMany({ where: { shipDay: dayDate(day), customerId } });
     for (const r of rows) {
-      // Tek siparişli günde sandık o siparişindir
-      const orderIds = r.orderIds.length ? r.orderIds : orders.length === 1 ? [orders[0].id] : [];
+      // Tek siparişli günde sandık o siparişindir (sipariş misafir değilse)
+      const orderIds = r.orderIds.length ? r.orderIds : orders.length === 1 && ownOrders.length === 1 ? [ownOrders[0].id] : [];
       await tx.crate.create({
         data: {
           shipDay: dayDate(day), customerId, crateNo: r.crateNo, lengthMm: r.lengthMm, widthMm: r.widthMm, heightMm: r.heightMm,
@@ -369,11 +412,23 @@ export async function setGuestHost(db, { orderId, hostId, actor }) {
     }
     if ((order.guestHostId ?? null) === host) return { ok: true, changed: false, hostId: host };
     const removedCrates = await dropGuestLinks(tx, order, actor, host ? 'HOST_CHANGED' : 'HOST_REMOVED');
+    // Misafir sipariş kendi firmasının sandığında duramaz (Paket 7, karar 188): ev sahibi seçilince siparişin kendi firmasının o
+    // gün(ler)deki sandıklarıyla bağı kaldırılır (sandığın kendisi ve diğer siparişleri durur). Aksi hâlde cam iki firmanın
+    // sandık ağırlığında sayılabilirdi.
+    let ownCratesUnlinked = [];
+    if (host && days.length) {
+      const own = await tx.crateOrder.findMany({
+        where: { orderId: order.id, crate: { customerId: order.customerId, shipDay: { in: days.map(dayDate) } } },
+        include: { crate: { select: { crateNo: true, shipDay: true } } },
+      });
+      for (const l of own) await tx.crateOrder.delete({ where: { crateId_orderId: { crateId: l.crateId, orderId: order.id } } });
+      ownCratesUnlinked = own.map((l) => ({ crateNo: l.crate.crateNo, day: l.crate.shipDay ? isoDay(l.crate.shipDay) : null }));
+    }
     await tx.order.update({ where: { id: order.id }, data: { guestHostId: host } });
     await writeHistory(tx, { orderId: order.id, event: host ? 'GUEST_HOST' : 'GUEST_HOST_REMOVED', from: order.status, to: order.status, actorId: actor.id, note: days.map(dmy).join(', ') || null });
     await writeAudit(tx, {
       action: host ? 'CROSS_CUSTOMER_HOST_SET' : 'CROSS_CUSTOMER_HOST_REMOVED', entityType: 'Order', entityId: order.id, userId: actor.id,
-      details: { orderNo: order.orderNo, ownerCustomerId: order.customerId, hostCustomerId: host, previousHostCustomerId: order.guestHostId ?? null, days, removedCrates },
+      details: { orderNo: order.orderNo, ownerCustomerId: order.customerId, hostCustomerId: host, previousHostCustomerId: order.guestHostId ?? null, days, removedCrates, ...(ownCratesUnlinked.length ? { ownCratesUnlinked } : {}) },
     }, actor);
     return { ok: true, changed: true, hostId: host };
   });

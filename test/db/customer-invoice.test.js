@@ -76,7 +76,8 @@ async function order(c, { pieces = 2, cnc = false, currency = 'EUR', shipDate = 
  * loaded: cam satırının yüklenen adedi (verilmezse tamamı; 0 = hiç yüklenmedi). Kalan adet NOT_LOADED kaydedilir.
  */
 async function confirm(day, entries) {
-  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${day}T00:00:00Z`), confirmedById: admin.id } });
+  // "Yükleme yapıldı" kaydı yükleme gününün öğlesinde (fatura bekliyor sayacı bu kayıttan başlar — karar 189)
+  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${day}T00:00:00Z`), confirmedById: admin.id, confirmedAt: new Date(`${day}T12:00:00Z`) } });
   const rows = [];
   for (const { order: o, loaded } of entries) {
     const full = await db.order.findUnique({ where: { id: o.id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
@@ -774,7 +775,7 @@ dbTest('sipariş seçimi avans ve kur kurallarını aşmaz: zincirde avansı kes
   assert.deepEqual(groupsOf(await billing(day), c), []);
 }));
 
-dbTest('fatura bekliyor: ayar (varsayılan 6, 0–60); uyarı günü = onaylı yükleme günü + gün; proforma ve avans kapatmaz, kuyruktaki fatura kapatmaz, yalnızca kesilmiş kapanış faturası kapatır', offline(async () => {
+dbTest('fatura bekliyor: ayar (varsayılan 6, 0–60); uyarı günü = "Yükleme yapıldı" kaydının günü + gün (burada yükleme günü kaydedildi); proforma ve avans kapatmaz, kuyruktaki fatura kapatmaz, yalnızca kesilmiş kapanış faturası kapatır', offline(async () => {
   // Ayar: varsayılan 6; kaydedilir (denetim kaydıyla); bozuk kayıt varsayılana düşer
   assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 6 });
   await un.saveAccountingSettings(db, { uninvoicedDays: 3 }, actor());

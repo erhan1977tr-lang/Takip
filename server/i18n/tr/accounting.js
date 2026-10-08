@@ -210,9 +210,10 @@ export default {
   // "Fatura bekliyor" (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam — Cam Tahsilat'ta kalıcı liste
   overdue: {
     title: "FATURA BEKLİYOR",
-    intro: "Yüklemesi onaylanmış, {days} günü dolmuş ve kapanış faturası hâlâ kesilmemiş siparişler. Proforma ve avans faturası bu uyarıyı kapatmaz; fatura kesilince satır kendiliğinden kalkar.",
+    intro: "\"Yükleme yapıldı\" kaydından bu yana {days} gün geçmiş ve kapanış faturası hâlâ kesilmemiş siparişler (sayaç yükleme kaydedilince başlar). Proforma ve avans faturası bu uyarıyı kapatmaz; fatura kesilince satır kendiliğinden kalkar.",
     col: { order: "Sipariş · müşteri", loaded: "Yükleme", waiting: "Durum" },
     loaded: "Yükleme: {date}",
+    done: "yükleme yapıldı: {date}",
     days: "{n} gündür fatura edilmedi",
     removed: "silinmiş sipariş",
     open: "Faturalamayı aç",
@@ -358,7 +359,7 @@ export default {
     },
     loadings: {
       title: "Yükleme kârlılıkları",
-      intro: "Onaylı yüklemelerde tutarlar onay anındaki kayıttan gelir (Yüklemeler → \"Eksiksiz Yüklendi\") ve sonradan değişmez. Onaylanmamış günlerde eski hesap sürer: yükleme günü (gerçek, yoksa planlanan) bugün ya da önce olan, müşteriye teklifi gönderilmiş cam siparişleri. Kâr = cam satış − cam maliyet − transport. Fabrika ödemeleri kârdan düşülmez.",
+      intro: "Onaylı yüklemelerde tutarlar onay anındaki kayıttan gelir (Yüklemeler → \"Yükleme yapıldı\") ve sonradan değişmez. Onaylanmamış günlerde eski hesap sürer: yükleme günü (gerçek, yoksa planlanan) bugün ya da önce olan, müşteriye teklifi gönderilmiş cam siparişleri. Kâr = cam satış − cam maliyet − transport. Fabrika ödemeleri kârdan düşülmez.",
       empty: "Henüz yüklenmiş cam siparişi yok.",
       confirmed: "onaylı",
       planned: "planlanan",

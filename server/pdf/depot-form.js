@@ -2,7 +2,7 @@
 // DATA DE LIVRARE, FIRMA, TELEFON, NR MASINI; altında kategori kategori tüm ürünler (görsel, ad, adet). Siparişteki
 // ürünlerin adedi yazılır ve satır vurgulanır. Metin Romence (depo Romanya'da).
 import { PdfDoc, fitText, wrapText } from './pdf.js';
-import { BRAND, brandImage, drawBrandLogo } from './brand.js';
+import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
 
 const M = 40; // kenar boşluğu
 const COL = { img: 64, qty: 90 };
@@ -95,10 +95,6 @@ export function depotFormPdf(p) {
       y += ROW;
     }
   }
-  const pages = doc.pages.length;
-  doc.pages.forEach((pg, i) => {
-    pg.text(M, pg.height - 24, `Comanda ${p.orderNo} · generată automat (Takip)`, { size: 7.5, color: [0.45, 0.45, 0.45] });
-    pg.text(pg.width - M - 80, pg.height - 24, `${i + 1} / ${pages}`, { size: 7.5, color: [0.45, 0.45, 0.45], align: 'right', width: 80 });
-  });
+  finishPages(doc, { note: `${BRAND.company} · Comanda ${p.orderNo} · generată automat (Takip)`, margin: M }); // ortak altbilgi
   return doc.toBuffer();
 }

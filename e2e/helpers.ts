@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -257,4 +257,54 @@ export async function customerSecrets(): Promise<string[]> {
   } finally {
     await db.$disconnect();
   }
+}
+
+/**
+ * Yükleme günü firma tablosu (Paket 7, karar 186): firmanın ana satırı (tbody.firm). Ad, rolün gördüğü biçimde (satış /
+ * çizim: maskeli) TAM eşleşir — başka firmanın satırındaki misafir yük satırı eşleşmez.
+ */
+export function firmOf(page: Page, name: string): Locator {
+  return page.locator('.firm-table > tbody.firm').filter({ has: page.locator('tr.firm-row b.group-name').getByText(name, { exact: true }) });
+}
+
+/** Yükleme günü firma tablosunda, verilen siparişi (alt sipariş satırı) taşıyan firmanın ana satırı */
+export function firmWithOrder(page: Page, orderId: string): Locator {
+  return page.locator('.firm-table > tbody.firm').filter({ has: page.locator(`tr.firm-orders tr[data-order="${orderId}"]`) });
+}
+
+/**
+ * Firma satırının alt siparişlerini ("orders" — firma adına tıklanır) ya da sandıklarını ("crates" — "Sandık" düğmesi) açar.
+ * İstemci bileşenidir: sayfa etkileşime hazır olana kadar yinelenir; bölüm zaten açıksa dokunmaz.
+ */
+export async function openFirm(firm: Locator, part: 'orders' | 'crates' = 'orders'): Promise<Locator> {
+  const target = firm.locator(part === 'orders' ? 'tr.firm-orders' : 'tr.firm-crates');
+  const button = part === 'orders' ? firm.locator('.firm-toggle') : firm.locator('[data-action=crates]');
+  await expect(async () => {
+    if (!(await target.isVisible())) await button.click();
+    await expect(target).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  return target;
+}
+
+/**
+ * Ortak rapor Excel'inin (server/files/xlsx-report.js — metinler satır içi yazılır) n. sayfası (1'den), satır satır; boş hücre
+ * null. Yalnızca testte: üretimdeki içe aktarıcılar ilk sayfayı readXlsx ile okur.
+ */
+export async function reportSheet(buf: Buffer, n: number): Promise<(string | number | null)[][]> {
+  const { openZip } = await import('../server/files/zip.js');
+  const xml = openZip(buf).read(`xl/worksheets/sheet${n}.xml`)?.toString('utf8') ?? '';
+  const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const col = (ref: string) => [...ref].reduce((x, ch) => x * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  const rows: (string | number | null)[][] = [];
+  for (const m of xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)) {
+    const row: (string | number | null)[] = [];
+    for (const c of m[2].matchAll(/<c r="([A-Z]+)\d+"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const body = c[2] ?? '';
+      const v = /<v>([^<]*)<\/v>/.exec(body)?.[1];
+      const t = /<t[^>]*>([\s\S]*?)<\/t>/.exec(body)?.[1];
+      row[col(c[1])] = v != null ? Number(v) : t != null ? unescape(t) : null;
+    }
+    rows[Number(m[1]) - 1] = Array.from(row, (x) => x ?? null);
+  }
+  return Array.from(rows, (r) => r ?? []);
 }

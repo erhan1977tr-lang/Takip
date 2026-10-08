@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, fillOffer, newOrder } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, fillOffer, firmWithOrder, newOrder, openFirm } from './helpers';
 
 // Fonksiyonel paket 4 — yönetici paneli:
 //  - sandık bedeli yalnızca yöneticinin satırıdır: yöneticinin ve müşterinin teklifinde görünür ve toplama girer; satış
@@ -101,7 +101,7 @@ test('yöneticinin sipariş bilgileri sade: "İstenen camlar" ve "Sandıklar" yo
   expect(await info.locator('dl.order-info > div').count()).toBeGreaterThanOrEqual(5);
   // Sandık kaydı değişmedi; Yüklemeler'de siparişin satırında sandık numarası görünür (sandık işlevleri yerinde)
   await admin.goto(`/yuklemeler?ay=${day.slice(0, 7)}&gun=${day}#gun`);
-  const row = admin.locator('tr', { has: admin.locator(`a[href="/siparisler/${orderId}"]`) });
+  const row = (await openFirm(firmWithOrder(admin, orderId))).locator(`tr[data-order="${orderId}"]`);
   await expect(row.locator('.crate-nos')).toContainText('#381');
   expect(JSON.stringify(await db.crate.findUniqueOrThrow({ where: { id: crate.id }, include: { orders: true } }))).toBe(before);
   // Denetimci (yönetici değil) sipariş bilgilerini eskisi gibi görür

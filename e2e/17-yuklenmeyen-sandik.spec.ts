@@ -1,14 +1,17 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmOf, openFirm, reportSheet } from './helpers';
 
-// Aşama 7E — yüklenmeyen camın ileri güne aktarılması (karar 102) ve başka müşterinin sandığına fiziksel yerleşim (karar 103, 124).
-//  - onayda cam satırı başına yüklenmeyen adet + neden; onaylı günde "Yüklenmeyen camlar" ve "Yeniden planla"
+// Aşama 7E — yüklenmeyen camın ileri güne aktarılması (karar 102) ve başka müşterinin sandığına fiziksel yerleşim (karar 103, 124),
+// Paket 7 firma tablosu ve misafir yük kuralları (karar 186–189).
+//  - "Yükleme yapıldı" önizlemedeki her şeyi kaydeder (onayda yüklenmeyen cam girişi yok); kırık cam sonra "Düzelt" ile;
+//    onaylı günde "Yüklenmeyen camlar" ve "Yeniden planla"
 //  - aktarılan kalan yeni günde yalnızca kendi adediyle görünür; eski onay kaydı değişmez; fatura yalnızca yüklenenden
 //  - özel durum (karar 124): YÖNETİCİ sipariş sayfasında yalnızca ev sahibi FİRMAYI seçer; SANDIĞI Yüklemeler ekranında SATIŞ
-//    seçer; o zamana kadar kırmızı "sandık seçimi bekliyor" uyarısı. Müşterisi / faturası değişmez; müşteriler birbirinin
-//    verisini görmez; sandık seçilince iki firmaya bildirim
+//    seçer; o zamana kadar kırmızı "sandık seçimi bekliyor" uyarısı. Sipariş ticari sahibinin satırında kalır; sandık ve ağırlık
+//    ev sahibinde (bir kez); sahibine sandık açılmaz ("+ Sandık ekle" kapalı, sunucu da reddeder); müşteriler birbirinin
+//    verisini görmez; sandık seçilince iki firmaya bildirim; ilişki kaldırılınca normal sandık yönetimi
 //  - yetki sunucuda: firma seçimi yalnızca yönetici; satış yalnızca o firmanın sandığını seçebilir (taklit istekler reddedilir)
 // FGO bu veritabanında KAPALIDIR: hiçbir belge kesilmez.
 test.describe.configure({ mode: 'serial' });
@@ -65,7 +68,8 @@ test('veri: iki müşterinin aynı güne planlı siparişleri ve ev sahibi müş
   const order = (c: { id: string; prefix: string | null }, no: number, pieces: number) => db.order.create({
     data: {
       orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `Aktarım e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
-      offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(),
+      // Teklif tutarları satırlardan: fabrika satış 37 / m², müşteri fiyatı 50 / m² (1 m² cam)
+      offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: (pieces * 37).toFixed(2), offerAmount: (pieces * 50).toFixed(2), createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: pieces, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' }] } } },
     },
   });
@@ -83,23 +87,34 @@ test('veri: iki müşterinin aynı güne planlı siparişleri ve ev sahibi müş
   crateId = crate.id;
 });
 
-test('yönetici: 10 adedin 2\'si kırık → onay 8 / 2; kalan 2 ileri güne aktarılır ve orada yalnızca 2 adetle görünür; fatura önizlemesi 8 adet', async ({ browser }) => {
+test('yönetici: "Yükleme yapıldı" hepsini kaydeder; 10 adedin 2\'si kırık → "Düzelt" ile 8 / 2; kalan 2 ileri güne aktarılır ve orada yalnızca 2 adetle görünür; fatura önizlemesi 8 adet', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
   const box = page.locator('#onay');
   await expect(box).toContainText('Onaylanmadı');
-  // Yüklenmeyen cam girişi: sipariş satırı başına adet + neden
-  await box.locator('#yuklenmeyen-giris > summary').click();
-  const entry = box.locator('#yuklenmeyen-giris tr', { hasText: 'UNS7701' });
+  // Paket 7: onayda "Yüklenmeyen cam var" girişi yok — "Yükleme yapıldı" önizlemedeki her şeyi YÜKLENDİ olarak kaydeder
+  await expect(box.locator('#yuklenmeyen-giris')).toHaveCount(0);
+  await expect(box.locator('input.nl-qty')).toHaveCount(0);
+  await expect(box).not.toContainText('Yüklenmeyen cam var');
+  await expect(box.getByRole('button', { name: 'Eksiksiz Yüklendi' })).toHaveCount(0);
+  await box.getByRole('button', { name: 'Yükleme yapıldı' }).click();
+  await expect(page).toHaveURL(/onay=ok/);
+  await expect(box.locator('.alert-ok').first()).toContainText('Yükleme yapıldı olarak kaydedildi');
+  await expect(box.locator('tr.sub', { hasText: 'UNS7701' }).first().locator('td').nth(1)).toHaveText('10');
+  // Kırık 2 adet kayıttan sonra "Düzelt" ile girilir (onay kaydı değişmez; düzeltme ayrı kayıt)
+  await box.locator('#duzelt-giris > summary').click();
+  const entry = box.locator('#duzelt-giris tr', { hasText: 'UNS7701' });
   await expect(entry.locator('td').nth(2)).toHaveText('10');
   await entry.locator('input.nl-qty').fill('2');
   await entry.locator('select').selectOption('BROKEN');
+  await box.locator('#duzelt-giris input[name=reason]').fill('2 cam kırık çıktı');
   await shot(page, 'yuklenmeyen-giris');
-  await box.getByRole('button', { name: 'Eksiksiz Yüklendi' }).click();
-  await expect(page).toHaveURL(/onay=ok/);
-  await expect(box.locator('.alert-warn').first()).toContainText('yüklenmeyen adet kaydedildi');
-  // Onay kaydı: yalnızca yüklenen 8 adet sayılır
-  await expect(box.locator('tr.sub', { hasText: 'UNS7701' }).first().locator('td').nth(1)).toHaveText('8');
+  await box.getByRole('button', { name: 'Önizle' }).click();
+  await expect(page).toHaveURL(/dz=/);
+  await page.locator('#duzelt-onizleme').getByRole('button', { name: 'Düzeltmeyi kaydet' }).click();
+  await expect(page).toHaveURL(/duzeltme=ok&rev=1/);
+  // Geçerli durum: yalnızca yüklenen 8 adet sayılır
+  await expect(box.locator('table.confirm-table').first().locator('tr.sub', { hasText: 'UNS7701' }).first().locator('td').nth(1)).toHaveText('8');
   // Yüklenmeyenler: planlanan 10 · yüklenen 8 · kalan 2 · Kırık · aktarılmadı
   const row = page.locator('#yuklenmeyen tbody tr', { hasText: 'UNS7701' });
   await expect(row.locator('td').nth(2)).toHaveText('10');
@@ -119,20 +134,23 @@ test('yönetici: 10 adedin 2\'si kırık → onay 8 / 2; kalan 2 ileri güne akt
   await expect(page.locator('#yuklenmeyen .alert-ok')).toBeVisible();
   await expect(page.locator('#yuklenmeyen tbody tr', { hasText: 'UNS7701' })).toContainText(`${dmy(NEW_DAY)} yüklemesine aktarıldı`);
   await shot(page, 'yuklenmeyen-aktarildi');
-  // Eski gün satırında not: 2 adet yüklenmedi → yeni gün
-  await expect(page.locator('#gun tr', { hasText: 'UNS7701' }).first()).toContainText('2 adet yüklenmedi');
+  // Eski gün: firmanın alt sipariş satırında not — 2 adet yüklenmedi → yeni gün
+  const oldDay = await openFirm(firmOf(page, uns.name));
+  await expect(oldDay.locator(`tr[data-order="${orderU}"]`).first()).toContainText('2 adet yüklenmedi');
 
-  // Yeni gün: sipariş yalnızca kalan 2 adetle, "… yüklemesinden aktarıldı" notuyla
+  // Yeni gün: sipariş yalnızca kalan 2 adetle, "… yüklemesinden aktarıldı" notuyla (firma satırı ve alt sipariş aynı sayı)
   await page.goto(`/yuklemeler?gun=${NEW_DAY}`);
-  const carried = page.locator('#gun tr.sub', { hasText: 'UNS7701' });
+  const carried = (await openFirm(firmOf(page, uns.name))).locator(`tr[data-order="${orderU}"]`);
   await expect(carried).toContainText(`${dmy(DAY)} yüklemesinden aktarıldı`);
-  await expect(carried.locator('td').nth(2)).toHaveText('2');
+  await expect(carried.locator('td').nth(1)).toHaveText('2');
   await shot(page, 'aktarilan-kalan-yeni-gun');
 
   const db = await prisma();
-  // Eski onay kaydı değişmedi: 8 yüklendi, 2 yüklenmedi
-  const items = await db.loadingConfirmationItem.findMany({ where: { orderId: orderU }, orderBy: { status: 'asc' } });
-  expect(items.map((i) => [i.status, i.quantity, i.notLoadedReason])).toEqual([['LOADED', 8, null], ['NOT_LOADED', 2, 'BROKEN']]);
+  // Onay anındaki kayıt değişmedi (10 yüklendi); düzeltme yeni kayıt ekledi: geçerli durum 8 yüklendi, 2 yüklenmedi
+  const items = await db.loadingConfirmationItem.findMany({ where: { orderId: orderU }, orderBy: [{ revision: 'asc' }, { status: 'asc' }] });
+  expect(items.map((i) => [i.revision, i.status, i.quantity, i.notLoadedReason])).toEqual([[0, 'LOADED', 10, null], [1, 'LOADED', 8, null], [1, 'NOT_LOADED', 2, 'BROKEN']]);
+  // "Yükleme yapıldı" sipariş durumunu değiştirmez (otomatik "Yüklendi" yok)
+  expect((await db.order.findUniqueOrThrow({ where: { id: orderU } })).status).toBe('URETIMDE');
   const replans = await db.loadingReplan.findMany({ where: { orderId: orderU } });
   expect(replans.map((r) => [r.status, r.quantity, r.customerId, r.shipDay.toISOString().slice(0, 10)])).toEqual([['ACTIVE', 2, uns.id, NEW_DAY]]);
   expect(await db.auditLog.count({ where: { action: 'REPLAN_NOT_LOADED', entityId: orderU } })).toBe(1);
@@ -141,17 +159,24 @@ test('yönetici: 10 adedin 2\'si kırık → onay 8 / 2; kalan 2 ileri güne akt
   await page.context().close();
 });
 
-test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sipariş seçmez); satış Yüklemeler ekranında sandığı seçer — müşterisi ve faturası değişmez; satış maskeli görür; müşteriler birbirinin verisini görmez', async ({ browser }) => {
+test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sipariş seçmez); satış Yüklemeler ekranında sandığı seçer — sipariş ticari sahibinin satırında, sandık ve ağırlık ev sahibinde; sahibine sandık açılmaz; satış maskeli görür; müşteriler birbirinin verisini görmez', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
-  // Sütunlar: 0 müşteri · 1 sipariş · 2 cam · 3 CNC · 4 delik · 5 metraj · 6 net kg · 7 sandık · 8 brüt kg
-  const groupRow = (name: string) => page.locator('.card#gun tr.group-total', { hasText: name });
-  const cells = async (row: ReturnType<typeof groupRow>) => (await row.locator('td').allInnerTexts()).slice(1, 9).map((s) => s.trim().split(/\s/)[0]);
-  const foot = page.locator('.card#gun .load-table tfoot tr');
+  // Firma satırının sayı sütunları (data-col): sipariş · cam · CNC · delik · m² · net kg · sandık · brüt kg (tutarlar ayrı sütunlarda)
+  const COLS = ['orders', 'glass', 'cnc', 'holes', 'm2', 'net', 'crates', 'gross'];
+  const cells = async (row: Locator) => Promise.all(COLS.map(async (c) => (await row.locator(`td[data-col="${c}"]`).innerText()).trim().split(/\s/)[0]));
+  const firmRow = (p: Page, name: string) => firmOf(p, name).locator('tr.firm-row');
+  const foot = (p: Page) => p.locator('.card#gun .firm-table > tfoot tr');
+  const numbers = async (p: Page, a: string, b: string) => [await cells(firmRow(p, a)), await cells(firmRow(p, b)), await cells(foot(p))];
   // Yerleşimden önce: cam 20 kg/m² — Ünsal 10 m² = 200 kg (1 tahmini sandık, brüt 250); Beta 3 m² = 60 kg (kendi sandığı, brüt 110)
   const before = [['1', '10', '–', '–', '10,00', '200', '1', '250'], ['1', '3', '–', '–', '3,00', '60', '1', '110'], ['2', '13', '–', '–', '13,00', '260', '2', '360']];
-  expect([await cells(groupRow(uns.name)), await cells(groupRow(beta.name)), await cells(foot)]).toEqual(before);
+  // Ev sahibi seçildikten sonra (sandık seçilmeden de): sipariş Ünsal'ın satırında kalır (1 sipariş · 10 cam · 10 m²); camı Beta'nın
+  // sandıklarıyla gider — ağırlık Beta'da, Ünsal'a sandık açılmaz; gün toplamında tek sandık, cam ağırlığı bir kez
+  const hosted = [['1', '10', '–', '–', '10,00', '0', '0', '0'], ['1', '3', '–', '–', '3,00', '260', '1', '310'], ['2', '13', '–', '–', '13,00', '260', '1', '310']];
+  expect(await numbers(page, uns.name, beta.name)).toEqual(before);
   await expect(page.locator('#gun .guest-waiting')).toHaveCount(0);
+  await expect(page.locator('.cal-day.sel .cal-count')).toHaveText('2');
+  await expect(page.locator('.cal-day.sel .cal-guests'), 'misafir yük yok: kırmızı gösterge yok').toHaveCount(0);
 
   // --- 1. Yönetici, sipariş sayfasında (teklif tablosunun hemen altında) yalnızca FİRMAYI seçer
   await page.goto(`/siparisler/${orderU}`);
@@ -182,7 +207,8 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   expect(await db.crateOrder.count({ where: { orderId: orderU } }), 'firma seçimi sandık atamaz').toBe(0);
   await db.$disconnect();
 
-  // --- 2. Yüklemeler: kırmızı "sandık seçimi bekliyor" uyarısı; sayılar henüz değişmedi (hiçbir sandık kendiliğinden atanmaz)
+  // --- 2. Yüklemeler: kırmızı "sandık seçimi bekliyor" uyarısı; hiçbir sandık kendiliğinden atanmaz. Sipariş Ünsal'ın satırında
+  // kalır, ağırlığı ev sahibine yazılır (Ünsal için tahmini sandık açılmaz); takvimde kırmızı misafir göstergesi
   await page.goto(DAY_URL);
   const waiting = page.locator('#gun .guest-waiting');
   await expect(waiting).toHaveCount(1);
@@ -190,60 +216,134 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await expect(waiting).toContainText('Özel durum — sandık seçimi bekliyor');
   await expect(waiting).toContainText(`UNS7701 · ${uns.name}`);
   await expect(waiting).toContainText(`Hedef firma: ${beta.name}`);
-  expect([await cells(groupRow(uns.name)), await cells(groupRow(beta.name)), await cells(foot)]).toEqual(before);
+  expect(await numbers(page, uns.name, beta.name)).toEqual(hosted);
+  await expect(firmRow(page, uns.name).locator('[data-guest-out="1"]')).toContainText(`1 sipariş başka firmanın sandığıyla: ${beta.name}`);
+  await expect(firmRow(page, uns.name).locator('.guest-badge')).toContainText('1 misafir yük sandık bekliyor');
+  await expect(firmRow(page, beta.name).locator('[data-guest-in="1"]')).toContainText('+1 misafir yük bu firmanın sandıklarında');
+  await expect(page.locator('.cal-day.sel .cal-guests')).toHaveText('1');
+  await expect(page.locator('.cal-day.sel .cal-guests')).toHaveAttribute('title', 'Misafir yük: 1 sipariş');
   await shot(page, 'ozel-durum-sandik-bekliyor');
 
-  // --- 3. Satış: misafir yük ev sahibi firmanın sandık bölümünde kendiliğinden görünür; satış o firmanın sandığını seçer
+  // --- 3. Satış: uyarıdaki bağlantı ev sahibi firmanın sandık bölümünü açar; misafir yük orada; satış o firmanın sandığını seçer
   const sales = await as(browser, SALES2, TEAM_PW);
   await sales.goto(DAY_URL);
   const mask = (name: string) => `${name.slice(0, 3)}**********`;
-  await expect(sales.locator('#gun .guest-waiting')).toContainText(`Hedef firma: ${mask(beta.name)}`);
-  const pick = sales.locator(`#gun .guest-box[data-owner="${beta.id}"] form.guest-in[data-order="${orderU}"]`);
-  await expect(sales.locator(`#gun .guest-box[data-owner="${beta.id}"]`)).toContainText('ÖZEL DURUM / MİSAFİR YÜK');
+  const salesWaiting = sales.locator('#gun .guest-waiting');
+  await expect(salesWaiting).toContainText(`Hedef firma: ${mask(beta.name)}`);
+  await expect(salesWaiting).toContainText(`UNS7701 · ${mask(uns.name)}`);
+  // Misafir siparişin kendi firması: açık uyarı; bu firmaya sandık açılmaz ("+ Sandık ekle" kapalı)
+  const own = await openFirm(firmOf(sales, mask(uns.name)), 'crates');
+  const note = own.locator(`.guest-note[data-order="${orderU}"]`);
+  await expect(note).toContainText(`UNS7701 — Bu sipariş ${mask(beta.name)} firmasının sandıkları ile gelecektir.`);
+  await expect(note).toContainText('Sandık seçimi bekliyor');
+  await expect(own.getByRole('button', { name: '+ Sandık ekle' })).toBeDisabled();
+  await expect(own.locator('.crate-locked')).toContainText('"+ Sandık ekle" kapalı');
+  // Sunucu da reddeder: formun gizli alanı değiştirilip gönderilse de misafir sipariş bu firmanın sandığına konamaz ve bu firmaya
+  // yeni sandık açılamaz
+  const forgeCrates = (rows: object[]) => own.locator('form.crate-editor').evaluate((f: HTMLFormElement, json: string) => {
+    (f.querySelector('input[name=rows]') as HTMLInputElement).value = json;
+    f.requestSubmit();
+  }, JSON.stringify(rows));
+  const crateRow = (orderIds: string[]) => ({ crateNo: '31', lengthMm: '2400', widthMm: '800', heightMm: '900', netKg: '', grossKg: '', note: '', orderIds });
+  await forgeCrates([crateRow([orderU])]);
+  await expect(own.locator('.crate-editor .alert-error')).toContainText('Misafir sipariş (başka firmanın sandıklarıyla giden) bu firmanın sandığına konamaz.');
+  await forgeCrates([crateRow([])]);
+  await expect(own.locator('.crate-editor .alert-error')).toContainText('yeni sandık açılamaz');
+  db = await prisma();
+  expect(await db.crate.count({ where: { customerId: uns.id, shipDay: new Date(`${DAY}T00:00:00Z`) } }), 'misafir siparişin firmasına sandık açılmadı').toBe(0);
+  await db.$disconnect();
+  await salesWaiting.getByRole('link', { name: 'Ev sahibi firmanın sandıklarını aç →' }).click();
+  await expect(sales).toHaveURL(new RegExp(`acik=${beta.id}`));
+  const hostBox = sales.locator(`.firm-crates-box[data-owner="${beta.id}"]`);
+  await expect(hostBox).toBeVisible();
+  const pick = hostBox.locator(`.guest-box form.guest-in[data-order="${orderU}"]`);
+  await expect(hostBox.locator('.guest-box')).toContainText('ÖZEL DURUM / MİSAFİR YÜK');
   await expect(pick).toContainText(`UNS7701 · ${mask(uns.name)}`);
+  await expect(pick).toContainText('10 cam · 10,00 m²');
   expect(await pick.locator('select[name=crateId] option').allInnerTexts(), 'yalnızca ev sahibi firmanın o günkü sandıkları').toEqual(['— sandık seçimi bekliyor —', '15']);
   await expect(pick.locator('select[name=crateId]')).toHaveValue('');
   await pick.locator('select[name=crateId]').selectOption(crateId);
   await pick.getByRole('button', { name: 'Kaydet' }).click();
   await expect(sales).toHaveURL(/sandik=assigned/);
   await expect(sales.locator('#gun .guest-waiting')).toHaveCount(0);
-  await expect(sales.locator(`#gun .guest-box[data-owner="${beta.id}"] form.guest-in[data-order="${orderU}"] select[name=crateId]`)).toHaveValue(crateId);
+  await expect(sales.locator(`.firm-crates-box[data-owner="${beta.id}"] .guest-box form.guest-in[data-order="${orderU}"] select[name=crateId]`)).toHaveValue(crateId);
+  // Ev sahibinin sandık listesinde misafir camın sipariş / cam bilgisi (sandık 15'in satırında); sandık silinemez
+  await expect(sales.locator(`.firm-crates-box[data-owner="${beta.id}"] .crate-guests[data-crate="15"]`)).toContainText(`Misafir yük: UNS7701 · ${mask(uns.name)} · 10 cam · 10,00 m²`);
   // Satış sipariş sayfasında "özel durum" denetimini görmez (firma kararı yöneticinin)
   await sales.goto(`/siparisler/${orderU}`);
   await expect(sales.locator('body')).toContainText('UNS7701');
   await expect(sales.locator('#ozel-durum')).toHaveCount(0);
   await sales.context().close();
 
-  // --- 4. Yönetici: sipariş satırında fiziksel sandık + ev sahibi; ev sahibinin bölümünde misafir yük; sipariş sayfasında sandık
+  // --- 4. Yönetici: alt siparişte fiziksel sandık + ev sahibi; sahibinin sandık bölümünde açık uyarı; ev sahibinin bölümünde misafir yük
   await page.goto(DAY_URL);
   await expect(page.locator('#gun .guest-waiting')).toHaveCount(0);
-  const orderRow = page.locator('#gun tr.sub', { hasText: 'UNS7701' }).first();
-  await expect(orderRow.locator('.guest-badge')).toContainText(`#15 · ${beta.name}`);
-  await expect(page.locator(`#gun .guest-box[data-owner="${uns.id}"] .guest-out`)).toContainText(`sipariş müşterisi: ${uns.name}`);
-  await expect(page.locator(`#gun .guest-box[data-owner="${beta.id}"] form.guest-in[data-order="${orderU}"]`)).toContainText(`UNS7701 · ${uns.name}`);
-  // Fiziksel ağırlık ev sahibinin sandığında: Beta'nın sandığı artık 60 + 200 = 260 kg net, 310 kg brüt; Ünsal için ayrıca
-  // sandık / ağırlık oluşmaz. Ticari sayılar değişmedi: Ünsal 1 sipariş · 10 cam · 10 m²; Beta 1 sipariş · 3 cam · 3 m².
-  expect(await cells(groupRow(uns.name))).toEqual(['1', '10', '–', '–', '10,00', '0', '0', '0']);
-  expect(await cells(groupRow(beta.name))).toEqual(['1', '3', '–', '–', '3,00', '260', '1', '310']);
-  expect(await cells(foot), 'gün toplamı: cam ağırlığı aynı, tek sandık').toEqual(['2', '13', '–', '–', '13,00', '260', '1', '310']);
+  const uOrders = await openFirm(firmOf(page, uns.name));
+  await expect(uOrders.locator(`tr[data-order="${orderU}"] .guest-badge`)).toContainText(`#15 · ${beta.name}`);
+  const uCrates = await openFirm(firmOf(page, uns.name), 'crates');
+  await expect(uCrates.locator(`.guest-note[data-order="${orderU}"]`)).toContainText(`Bu sipariş ${beta.name} firmasının sandıkları ile gelecektir.`);
+  await expect(uCrates.locator(`.guest-note[data-order="${orderU}"]`)).toContainText('Sandık 15');
+  await expect(uCrates.getByRole('button', { name: '+ Sandık ekle' })).toBeDisabled();
+  const bCrates = await openFirm(firmOf(page, beta.name), 'crates');
+  await expect(bCrates.locator(`.guest-box form.guest-in[data-order="${orderU}"]`)).toContainText(`UNS7701 · ${uns.name}`);
+  await expect(bCrates.locator('.crate-guests[data-crate="15"]')).toContainText(`Misafir yük: UNS7701 · ${uns.name} · 10 cam · 10,00 m²`);
+  // Fiziksel ağırlık ev sahibinin sandığında (60 + 200 = 260 kg net, 310 kg brüt); Ünsal için ayrıca sandık / ağırlık oluşmaz.
+  // Ticari sayılar değişmedi. Aynı sandık bir kez sayılır, brüt iki kez hesaplanmaz.
+  expect(await numbers(page, uns.name, beta.name)).toEqual(hosted);
+  // Ana satır = alt siparişlerin toplamı
+  await expect(uOrders.locator('tfoot')).toContainText('Toplam · 1 sipariş');
+  expect((await uOrders.locator('tfoot td').allInnerTexts()).slice(1, 5).map((s) => s.trim())).toEqual(['10', '–', '–', '10,00']);
   await shot(page, 'baska-musterinin-sandigi');
   // Fatura: sipariş gerçek müşterisinin bölümünde; ev sahibinin faturasında yok
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${uns.id}"]`)).toContainText('Comanda UNS7701');
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${beta.id}"]`)).not.toContainText('UNS7701');
-  // Yükleme dökümü (Excel): satırlar gerçek müşteride; fiziksel sandık sütununda ev sahibi; sevk ağırlığı fiziksel sandıktan
+
+  // Yükleme Özeti (Excel): firma bazlı özet — misafir sipariş ticari sahibinin satırında, sandık ve ağırlık ev sahibinde; fiziksel
+  // sandık ilişkisi ayrı tabloda; "Sandık (Fiziksel)" sütunu yok; satır dökümü ikinci sayfada gerçek müşteride
   const { readXlsx } = await import('../server/files/xlsx.js');
-  const sheet = async (p: Page) => {
+  type Rows = (string | number | null)[][];
+  const summary = async (p: Page) => {
     const res = await p.request.get(`/yuklemeler/dokum?gun=${DAY}`);
     expect(res.status()).toBe(200);
-    return readXlsx(await res.body()).rows as (string | number | null)[][];
+    expect(res.headers()['content-disposition']).toContain(`filename="Yukleme-Ozeti-${DAY}.xlsx"`);
+    const buf = await res.body();
+    return { firms: readXlsx(buf).rows as Rows, lines: await reportSheet(buf, 2) };
   };
-  const rows = await sheet(page);
-  const stat = (k: string) => rows.find((r) => r[0] === k)?.[1];
-  expect([stat('Cam ağırlığı'), stat('Sandık'), stat('Sevk ağırlığı')]).toEqual(['260 kg', '1', '310 kg']);
-  const guestRow = rows.find((r) => r[0] === 'UNS7701')!;
-  expect([guestRow[1], guestRow[4], guestRow[6], guestRow[9]]).toEqual([uns.name, 10, 10, `#15 (${beta.name})`]);
-  const hostRow = rows.find((r) => r[0] === 'BET7702')!;
-  expect([hostRow[1], hostRow[4], hostRow[6], hostRow[9]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([beta.name, 3, 3, '#15']);
+  const { firms, lines } = await summary(page);
+  const stat = (k: string) => firms.find((r) => r[0] === k)?.[1];
+  expect([stat('Cam ağırlığı'), stat('Sandık'), stat('Sevk ağırlığı')]).toEqual(['260 kg', 1, '310 kg']);
+  const firmLine = (rows: Rows, name: string) => rows.find((r) => r[0] === name)?.slice(0, 9);
+  expect(firmLine(firms, uns.name)).toEqual([uns.name, 1, 10, 0, 0, 10, 0, 0, 0]);
+  expect(firmLine(firms, beta.name)).toEqual([beta.name, 1, 3, 0, 0, 3, 260, 1, 310]);
+  expect(firmLine(firms, 'TOPLAM')).toEqual(['TOPLAM', 2, 13, 0, 0, 13, 260, 1, 310]);
+  const relation = firms.find((r) => r[0] === 'UNS7701')!;
+  expect([relation[1], relation[5], relation[8]], 'ticari sahip · fiziksel sandık sahibi · sandık').toEqual([uns.name, beta.name, '#15']);
+  expect([...firms, ...lines].flat(), 'fiziksel sandık sütunu kaldırıldı').not.toContain('SANDIK (FİZİKSEL)');
+  const guestLine = lines.find((r) => r[0] === 'UNS7701')!;
+  expect([guestLine[1], guestLine[4], guestLine[6]]).toEqual([uns.name, 10, 10]);
+  const hostLine = lines.find((r) => r[0] === 'BET7702')!;
+  expect([hostLine[1], hostLine[4], hostLine[6]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([beta.name, 3, 3]);
+  // Firma çıktısı (yalnızca o firma ve gün; finansal olarak yalnızca teklif tutarı): misafir siparişte yalnızca sandık NUMARASI
+  const firmXlsx = async (p: Page, id: string) => {
+    const res = await p.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${id}&bicim=xlsx`);
+    expect(res.status()).toBe(200);
+    return { name: res.headers()['content-disposition'], rows: readXlsx(await res.body()).rows as Rows };
+  };
+  const ux = await firmXlsx(page, uns.id);
+  expect(ux.name).toContain(`filename="Yukleme-UNS-${DAY}.xlsx"`);
+  expect(ux.rows.find((r) => r[0] === 'UNS7701')?.slice(0, 7), 'sipariş · proje · cam · CNC · delik · m² · teklif (10 × 50)').toEqual(['UNS7701', 'Aktarım e2e 7701', 10, 0, 0, 10, 500]);
+  expect(ux.rows.flat()).toContain('Teklif tutarı (EUR)');
+  expect(ux.rows.flat(), 'fabrika satış tutarı (10 × 37) yok').not.toContain(370);
+  expect(ux.rows.flat().some((c) => typeof c === 'string' && /fabrika/i.test(c))).toBe(false);
+  expect(ux.rows.flat()).toContain('UNS7701: başka firmanın sandığıyla gidiyor — Sandık 15');
+  for (const s of [beta.name, 'BET7702']) expect(JSON.stringify(ux.rows), `sahibinin çıktısında ev sahibi yok: ${s}`).not.toContain(s);
+  const bx = await firmXlsx(page, beta.id);
+  expect(bx.rows.find((r) => r[0] === 15), 'ev sahibinin sandığı: yalnızca kendi siparişi').toContain('BET7702');
+  for (const s of ['UNS7701', uns.name]) expect(JSON.stringify(bx.rows), `ev sahibinin çıktısında misafir sipariş yok: ${s}`).not.toContain(s);
+  const pdf = await page.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=pdf`);
+  expect([pdf.status(), pdf.headers()['content-type']]).toEqual([200, 'application/pdf']);
+  expect(pdf.headers()['content-disposition']).toContain(`filename="Yukleme-UNS-${DAY}.pdf"`);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');
   db = await prisma();
   expect((await db.order.findUniqueOrThrow({ where: { id: orderU } })).customerId).toBe(uns.id);
   expect((await db.crate.findUniqueOrThrow({ where: { id: crateId } })).customerId).toBe(beta.id);
@@ -255,24 +355,31 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await page.goto(`/siparisler/${orderU}`);
   await expect(page.locator('#ozel-durum .badge-ok')).toContainText('Sandık 15');
   // Nakliye listesi (PDF): yönetici indirir — misafir yük sandığın altında yazılır (içerik birim testinde)
-  const pdf = await page.request.get(`/yuklemeler/nakliye?gun=${DAY}`);
-  expect([pdf.status(), pdf.headers()['content-type']]).toEqual([200, 'application/pdf']);
+  const transport = await page.request.get(`/yuklemeler/nakliye?gun=${DAY}`);
+  expect([transport.status(), transport.headers()['content-type']]).toEqual([200, 'application/pdf']);
+  expect(transport.headers()['content-disposition']).toContain(`filename="Nakliye-Listesi-${DAY}.pdf"`);
 
-  // Satış: ev sahibi adı maskeli; firma seçimi ve "Yeniden planla" yok
+  // Satış: adlar maskeli (ekran, uyarı, sandık ekranı, Excel); firma seçimi ve "Yeniden planla" yok; teklif tutarı yok
   const salesPage = await as(browser, SALES2, TEAM_PW);
   await salesPage.goto(DAY_URL);
-  await expect(salesPage.locator('#gun tr.sub', { hasText: 'UNS7701' }).first().locator('.guest-badge')).toContainText(`#15 · ${beta.name.slice(0, 3)}**********`);
-  await expect(salesPage.locator('.card#gun')).not.toContainText(beta.name);
+  const sOrders = await openFirm(firmOf(salesPage, mask(uns.name)));
+  await expect(sOrders.locator(`tr[data-order="${orderU}"] .guest-badge`)).toContainText(`#15 · ${mask(beta.name)}`);
+  for (const s of [beta.name, uns.name]) await expect(salesPage.locator('.card#gun'), `satış tam adı görmez: ${s}`).not.toContainText(s);
   await expect(salesPage.locator('#gun select#guest-host, #gun select[name=hostId]'), 'satış firma seçemez').toHaveCount(0);
+  await expect(salesPage.locator('.firm-table th', { hasText: 'Teklif tutarı' }), 'satış teklif tutarını görmez').toHaveCount(0);
   await expect(salesPage.locator('#yuklenmeyen')).toContainText('UNS7701');
   await expect(salesPage.locator('#yuklenmeyen input[name=newDay]')).toHaveCount(0);
-  const salesRows = (await (async () => {
-    const res = await salesPage.request.get(`/yuklemeler/dokum?gun=${DAY}`);
-    expect(res.status()).toBe(200);
-    return readXlsx(await res.body()).rows as (string | number | null)[][];
-  })());
-  const salesGuest = salesRows.find((r) => r[0] === 'UNS7701')!;
-  expect([salesGuest[1], salesGuest[9]], 'satış dökümünde adlar maskeli').toEqual([`${uns.name.slice(0, 3)}**********`, `#15 (${beta.name.slice(0, 3)}**********)`]);
+  const s = await summary(salesPage);
+  const sRelation = s.firms.find((r) => r[0] === 'UNS7701')!;
+  expect([sRelation[1], sRelation[5]], 'satış özetinde adlar maskeli').toEqual([mask(uns.name), mask(beta.name)]);
+  expect(s.lines.find((r) => r[0] === 'UNS7701')![1]).toBe(mask(uns.name));
+  for (const x of [uns.name, beta.name]) expect(JSON.stringify([s.firms, s.lines]), `satış Excel'inde tam ad yok: ${x}`).not.toContain(x);
+  expect(s.firms.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı')), 'satış Excel\'inde teklif tutarı yok').toBe(false);
+  const sx = await firmXlsx(salesPage, uns.id);
+  expect(sx.rows.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı')), 'satışın firma çıktısında tutar yok').toBe(false);
+  expect(sx.rows.flat(), 'ne teklif ne fabrika satış tutarı').not.toContain(500);
+  expect(sx.rows.flat()).not.toContain(370);
+  expect(JSON.stringify(sx.rows)).not.toContain(uns.name);
   await salesPage.context().close();
 
   // Sipariş sahibi müşteri: kendi siparişi için yalnızca sandık numarası; ev sahibinin adı, siparişi, sandık ölçüsü yok
@@ -283,6 +390,10 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   for (const secret of [beta.name, 'BET7702', orderB, beta.id]) expect(ownerHtml, `sipariş sahibi: ${secret}`).not.toContain(secret);
   await expect(owner.locator('.guest-box')).toHaveCount(0);
   await expect(owner.locator('.guest-waiting')).toHaveCount(0);
+  await expect(owner.locator('.cal-guests'), 'müşteri takviminde misafir göstergesi yok').toHaveCount(0);
+  // Firma çıktısı ve özet iç ekibindir: müşteri erişemez
+  expect((await owner.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=xlsx`)).status()).toBe(403);
+  expect((await owner.request.get(`/yuklemeler/ozet?gun=${DAY}&firma=${uns.id}`)).url(), 'özet: müşteri kendi ana sayfasına yönlenir').toMatch(/\/siparisler$/);
   // Sipariş sayfasında "özel durum" denetimi müşteride yok; ev sahibi firmanın adı / kimliği sayfada bulunmaz
   await owner.goto(`/siparisler/${orderU}`);
   await expect(owner.locator('body')).toContainText('UNS7701');
@@ -368,5 +479,45 @@ test('yetkisiz roller: taklit form gönderimiyle aktarım yapılamaz, ev sahibi 
   expect(await replanDays()).toEqual([`ACTIVE:${NEW_DAY}`]);
   expect(await db.billingBatch.count({ where: { customerId: { in: [uns.id, beta.id] } } }), 'hiçbir belge oluşmadı').toBe(0);
   await db.$disconnect();
+  await admin.context().close();
+});
+
+test('özel durum kaldırılınca normal sandık yönetimi: misafir yerleşim kalkar, sandık ve ağırlık siparişin kendi firmasına döner, "+ Sandık ekle" açılır', async ({ browser }) => {
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto(`/siparisler/${orderU}`);
+  const special = admin.locator('#ozel-durum');
+  // İstemci bileşeni: sayfa etkileşime hazır olana kadar yinelenir (işaret kaldırılınca "Özel durumu kaldır" düğmesi çıkar)
+  const on = special.locator('input[name=on]');
+  await expect(async () => {
+    if (!(await on.isChecked())) await on.check();
+    await on.uncheck();
+    await expect(special.getByRole('button', { name: 'Özel durumu kaldır' })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  await special.getByRole('button', { name: 'Özel durumu kaldır' }).click();
+  await expect(admin).toHaveURL(/ozel=removed/);
+  const db = await prisma();
+  expect((await db.order.findUniqueOrThrow({ where: { id: orderU } })).guestHostId).toBeNull();
+  expect(await db.crateOrder.count({ where: { orderId: orderU } }), 'misafir sandık yerleşimi kalktı').toBe(0);
+  expect(await db.auditLog.count({ where: { action: 'CROSS_CUSTOMER_HOST_REMOVED', entityId: orderU } })).toBe(1);
+  // Bu testin bildirim olayları sonraki testlerin bildirim sayılarına karışmasın
+  await db.notificationOutbox.updateMany({ where: { orderId: orderU, type: { in: ['GUEST_CRATE_ASSIGNED', 'GUEST_CRATE_REMOVED'] }, inAppAt: null }, data: { inAppAt: new Date() } });
+  await db.$disconnect();
+
+  await admin.goto(DAY_URL);
+  // Sayılar yerleşimden önceki hâline döner: Ünsal'ın camı kendi (tahmini) sandığıyla; Beta yalnızca kendi camıyla
+  const COLS = ['orders', 'glass', 'cnc', 'holes', 'm2', 'net', 'crates', 'gross'];
+  const cells = async (row: Locator) => Promise.all(COLS.map(async (c) => (await row.locator(`td[data-col="${c}"]`).innerText()).trim().split(/\s/)[0]));
+  expect([
+    await cells(firmOf(admin, uns.name).locator('tr.firm-row')), await cells(firmOf(admin, beta.name).locator('tr.firm-row')), await cells(admin.locator('.card#gun .firm-table > tfoot tr')),
+  ]).toEqual([['1', '10', '–', '–', '10,00', '200', '1', '250'], ['1', '3', '–', '–', '3,00', '60', '1', '110'], ['2', '13', '–', '–', '13,00', '260', '2', '360']]);
+  await expect(admin.locator('#gun .guest-waiting')).toHaveCount(0);
+  await expect(admin.locator('.cal-day.sel .cal-guests'), 'misafir yük kalmadı: kırmızı gösterge yok').toHaveCount(0);
+  const own = await openFirm(firmOf(admin, uns.name), 'crates');
+  await expect(own.locator('.guest-note')).toHaveCount(0);
+  await expect(own.locator('.crate-locked')).toHaveCount(0);
+  await expect(own.getByRole('button', { name: '+ Sandık ekle' })).toBeEnabled();
+  const host = await openFirm(firmOf(admin, beta.name), 'crates');
+  await expect(host.locator('.guest-box')).toHaveCount(0);
+  await expect(host.locator('.crate-guests')).toHaveCount(0);
   await admin.context().close();
 });

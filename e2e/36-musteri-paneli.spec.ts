@@ -127,7 +127,7 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
 
   // PDF: aynı aralık, aynı toplamlar; her teklif ayrı; dosya adı Türkçe
   const [download] = await Promise.all([cust.waitForEvent('download'), card.getByRole('button', { name: 'PDF indir' }).click()]);
-  expect(download.suggestedFilename()).toBe('tekliflerim-2026-01-01_2026-01-31.pdf');
+  expect(download.suggestedFilename()).toBe('Tekliflerim-2026-01-01_2026-01-31.pdf'); // dil bazlı ortak dosya adı (Paket 7, karar 191)
   const pdf = fs.readFileSync((await download.path())!);
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   const lines = pdfLines(pdf);
@@ -150,7 +150,7 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   await cust.goto('/siparisler?bas=2026-01-01&bit=2026-01-31');
   await expect(cust.locator('#tekliflerim h2')).toHaveText('Ofertele mele');
   const [ro] = await Promise.all([cust.waitForEvent('download'), cust.locator('#tekliflerim').getByRole('button', { name: 'Descarcă PDF' }).click()]);
-  expect(ro.suggestedFilename()).toBe('ofertele-mele-2026-01-01_2026-01-31.pdf');
+  expect(ro.suggestedFilename()).toBe('Ofertele-Mele-2026-01-01_2026-01-31.pdf');
   const roLines = pdfLines(fs.readFileSync((await ro.path())!));
   for (const s of ['OFERTELE MELE', 'Total general', 'Oferte: 2', 'Data ofertei: 20.01.2026', '339,00 EUR']) expect(roLines.some((l) => l.includes(s)), `RO PDF'te yok: ${s}`).toBe(true);
   await cust.context().close();

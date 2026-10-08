@@ -1,10 +1,11 @@
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
-import { getT } from '@/lib/i18n';
+import { getT, type MsgKey } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
 import { customerDocument } from '@/server/documents/customer.js';
 import { pdfAccess } from '@/server/documents/pdf-access.js';
+import { contentDisposition, exportFileName } from '@/server/files/export-name.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,8 @@ export const dynamic = 'force-dynamic';
 //   belgenin kendi FGO PDF bağlantısına yönlendirilir — yalnızca FGO'nun kendi adresine (fgo.ro; https olması yetmez).
 //   Kötüye kullanıma karşı (SEC-09): kullanıcı başına istek sınırı (5 dk'da 30) ve kısa önbellek — aynı belge 5 dk
 //   içinde yeniden açılınca FGO'ya gidilmez (server/documents/pdf-access.js). Sahiplik her istekte yeniden denetlenir.
+//   Dosya adı panel dilinde belge türü + belge numarası (Paket 7, karar 191): "Fatura-GKH101.pdf" / "Factura-GKH101.pdf" —
+//   belge numarası ve içerik değişmez.
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   const { t } = await getT();
@@ -38,10 +41,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (pdf.link) return new Response(null, { status: 302, headers: { Location: pdf.link, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
     return new Response(t('documents.pdf.unavailable'), { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
   }
+  const kind = doc.kind === 'ADVANCE' || doc.kind === 'INVOICE' ? doc.kind : 'PROFORMA';
+  const name = exportFileName(t(`documents.kind.${kind}` as MsgKey), [`${doc.series}${doc.number}`], 'pdf');
   return new Response(new Uint8Array(pdf.bytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${doc.series}${doc.number}.pdf"`,
+      'Content-Disposition': contentDisposition(name, { inline: true }),
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     },

@@ -6,6 +6,7 @@ import { customerLabel } from '@/lib/orders';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { transportList } from '@/server/loading/transport.js';
 import { transportListPdf } from '@/server/pdf/transport-list.js';
+import { downloadHeaders, exportName } from '@/lib/exports';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +31,6 @@ export async function GET(req: Request) {
       guest: t('loading.transport.guest'), waiting: t('loading.transport.waiting'),
     },
   });
-  return new Response(new Uint8Array(pdf), {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="nakliye-${day}.pdf"`,
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+  // Dosya adı panel dilinde (Paket 7): "Nakliye-Listesi-2026-10-08.pdf" / "Lista-Transport-2026-10-08.pdf"
+  return new Response(new Uint8Array(pdf), { headers: downloadHeaders(exportName(t, 'transportList', [day], 'pdf'), 'pdf') });
 }

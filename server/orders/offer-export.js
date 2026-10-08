@@ -4,7 +4,7 @@
 // Kim indirir: OFFER_EXPORT (yönetici, müşteri). Excel: OFFER_SEND (yönetici) her zaman; müşteri yalnızca yöneticinin
 // siparişte açtığı izinle (Order.customerExcel). Kontrol sunucuda (route) yapılır: canExportOffer.
 import { offerLineTotals } from './rules.js';
-import { writeXlsx } from '../files/xlsx.js';
+import { writeReportXlsx } from '../files/xlsx-report.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
@@ -57,18 +57,22 @@ export function offerExportData({ lines, price, locale, kindLabel }) {
  * @returns {Buffer}
  */
 export function offerXlsx(data, text) {
-  const rows = [
-    [`${text.title} ${text.orderNo}`],
-    [text.firm],
-    [text.date],
-    [],
-    [text.cols.n, text.cols.desc, text.cols.poz, text.cols.en, text.cols.boy, text.cols.adet, text.cols.m2, `${text.cols.unitPrice} (${text.currency})`, `${text.cols.amount} (${text.currency})`],
-    ...data.rows.map((r) => [r.n ?? '', r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount]),
-    [],
-    [text.total, '', '', '', '', '', data.metraj || '', '', data.total],
-    [],
-    ...text.notes.map((x) => [x]),
-  ];
-  const head = 4;
-  return writeXlsx({ sheetName: text.orderNo, rows, bold: [0, head, head + data.rows.length + 2], widths: [5, 44, 10, 8, 8, 7, 10, 16, 16] });
+  // Ortak rapor düzeni (Paket 7, karar 190): logo, başlık + firma / tarih satırı, biçimli tablo, filtre, dondurulmuş başlık,
+  // m² ve para biçimleri, toplam satırı, notlar. Satırlar ve tutarlar aynen (offerExportData).
+  const c = text.cols;
+  return writeReportXlsx({
+    sheets: [{
+      name: text.orderNo, title: `${text.title} ${text.orderNo}`, subtitle: [text.firm, text.date].filter(Boolean).join(' · '), landscape: true,
+      blocks: [{
+        columns: [
+          { header: c.n, width: 5, type: 'int' }, { header: c.desc, width: 44, type: 'wrap' }, { header: c.poz, width: 10, type: 'text' },
+          { header: c.en, width: 9, type: 'mm' }, { header: c.boy, width: 9, type: 'mm' }, { header: c.adet, width: 7, type: 'int' },
+          { header: c.m2, width: 11, type: 'm2' }, { header: `${c.unitPrice} (${text.currency})`, width: 16, type: 'dec2' }, { header: `${c.amount} (${text.currency})`, width: 16, type: 'dec2' },
+        ],
+        rows: data.rows.map((r) => [r.n ?? '', r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount]),
+        totals: [[text.total, '', '', '', '', '', data.metraj || '', '', data.total]],
+      }],
+      notes: text.notes,
+    }],
+  });
 }

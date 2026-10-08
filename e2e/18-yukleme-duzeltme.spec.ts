@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmWithOrder, openFirm } from './helpers';
 
 // Aşama 7F-1 — onaylı yüklemenin düzeltilmesi (karar 105), kısmi aktarım (karar 106) ve sipariş başına avans (karar 104).
 //  - "Düzelt": giriş → önizleme (önce / sonra, aktarımlar, finansal etki) → kayıt; "Düzeltildi" rozeti ve tarihçe;
@@ -74,11 +74,11 @@ test('veri: yüklenecek sipariş ve yüklenmiş, proforması kısmen ödenmiş s
   financeOrderId = f.id;
 });
 
-test('yönetici: eksiksiz onaylanan yükleme düzeltilir (10 → 8 + 2): önizleme, kayıt, rozet, tarihçe; 2 adet iki ayrı güne 1\'er aktarılır', async ({ browser }) => {
+test('yönetici: "Yükleme yapıldı" ile kaydedilen yükleme düzeltilir (10 → 8 + 2): önizleme, kayıt, rozet, tarihçe; 2 adet iki ayrı güne 1\'er aktarılır', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
   const box = page.locator('#onay');
-  await box.getByRole('button', { name: 'Eksiksiz Yüklendi' }).click();
+  await box.getByRole('button', { name: 'Yükleme yapıldı' }).click();
   await expect(page).toHaveURL(/onay=ok/);
   await expect(box.locator('tr.sub', { hasText: 'UNS7801' }).first().locator('td').nth(1)).toHaveText('10');
   await expect(box).not.toContainText('Düzeltildi');
@@ -146,10 +146,11 @@ test('yönetici: eksiksiz onaylanan yükleme düzeltilir (10 → 8 + 2): önizle
   await expect(row.locator('.nl-replan')).toHaveCount(2);
   await expect(row.locator('form.nl-new')).toHaveCount(0);
   await shot(page, 'kismi-aktarim');
-  // Her yeni günde yalnızca kendi adedi
+  // Her yeni günde yalnızca kendi adedi (firmanın alt sipariş satırında cam adedi)
   for (const d of [NEW_DAY, OTHER_DAY]) {
     await page.goto(`/yuklemeler?gun=${d}`);
-    await expect(page.locator('.card#gun tr.sub', { hasText: 'UNS7801' }).first().locator('td').nth(2)).toHaveText('1');
+    const orders = await openFirm(firmWithOrder(page, orderId));
+    await expect(orders.locator(`tr[data-order="${orderId}"]`).first().locator('td').nth(1)).toHaveText('1');
   }
 
   // Veritabanı: onay anındaki kalem aynen; düzeltme ve yeni kalemler eklendi; iki etkin aktarım; hiçbir belge oluşmadı

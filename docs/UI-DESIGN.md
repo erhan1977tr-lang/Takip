@@ -125,16 +125,27 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 - Buttons on this page: approve = `.btn-success`, cancel order = solid red, send back / request revision /
   clear table = `.btn-danger` (outline), everything else primary or secondary.
 
-## Loadings and crates (3.29.0)
+## Loadings and crates (3.29.0; firm table 3.57.0)
 
-- Page header: title left, `.page-tools` right (day picker + "Nakliye Listesi" PDF + "Yükleme Dökümü Excel").
-- Calendar: `.cal` / `.cal-day` (`.has` = day with loads, `.sel` = selected, `.other` = outside the month).
-- Day detail: `.table-wrap.load-wrap > table.load-table`. Per customer: `tr.group-total` (header + totals,
-  crate label for internal roles) → `tr.sub` order rows → `tr.crate-row` with a `<details>` holding the
-  crate editor. Customers get the same table without the crate row and without other customers.
+- Page header: title left, `.page-tools` right (day picker + "Nakliye Listesi" PDF + "Yükleme Özeti Excel").
+- Calendar: `.cal` / `.cal-day` (`.has` = day with loads, `.sel` = selected, `.other` = outside the month). Top-right
+  `.cal-badges`: two equal circles `.cal-count` (orders — tokens `--cal-total-bg / -border / -text`, pastel yellow, dark
+  number) and `.cal-guests` (guest loads — `--cal-guest-*`, pastel pink / red, dark red number; not rendered when 0 or for
+  customers); `.long` shrinks 3-digit numbers. On narrow screens the circles sit absolutely in the cell's top-right corner
+  (17 px, 15 px under 360 px). Never style these with literal colours — change the tokens.
+- Day detail (internal roles): `.table-wrap.load-wrap > table.load-table.firm-table`, ONE `tbody.firm[data-firm]` per
+  firm (`FirmRows.tsx`): `tr.firm-row` (`.firm-toggle` button with the name + `.firm-caret`, `.firm-badges`, numeric
+  cells `td[data-col]`, `td.actions.firm-actions` = Sandık / PDF / Excel / Özet) → hidden `tr.firm-orders` (nested
+  `table.sub-table.firm-orders-table`, `tr[data-order]`, `tfoot` total) → hidden `tr.firm-crates` (`.firm-crates-box`:
+  `.guest-note` warnings, crate editor, `.guest-box` for hosted guest loads). The table's own total is `> tfoot`. Customers
+  keep the order-based `table.load-table` with their own crates (`tr.crate-row` + `<details>`).
+- Firm summary page (`/yuklemeler/ozet`): `.stats.summary-stats`, `#ozet-tutarlar` (Admin only), `#ozet-siparisler`,
+  `#ozet-fiziksel` (`[data-crates]`, `[data-away]`, `[data-in]`).
 - Crate editor (`CrateEditor.tsx`): `.crate-editor` card → `.section-head` → `table.crate-table`
   (`.c-no / .c-dim / .c-kg / .c-note / .c-del` — no inline widths) → `.tool-bar`. Read-only roles get
-  `table.crate-table.readonly`.
+  `table.crate-table.readonly`. A crate carrying another firm's order shows `tr.crate-guests[data-crate]` under its row
+  (number read-only, delete disabled); a firm whose orders that day are all guests gets `p.crate-locked` and a disabled
+  "+ Sandık ekle".
 - `.tool-bar` (generic) and `.offer-tools` share one style; `.btn-del` is the row-delete button everywhere.
 
 ## Drawing section and viewer (3.31.0)
@@ -501,6 +512,20 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   units as `.small.muted` lines) and a "Sipariş hazırla" link (`[data-prepare]`). Profile Catalogue product form: section
   `.purchase-box#alis` (`h3.sub-title` + `.grid-3`: supplier, purchase price, currency, order unit) and an "Alış" column
   (`[data-purchase]`). "Önemli kararlar": `STOCK_CRITICAL` rows get "Tedarikçi siparişi hazırla".
+
+## Loadings firm table and exports (3.57.0, decisions 186–191)
+
+- Loading day: see "Loadings and crates" — one `tbody.firm` per firm; actions are buttons / links in `td.firm-actions`
+  (`[data-action=crates|pdf|xlsx|summary]`); the "Sandık" button is a toggle (`.btn.active` while open, `aria-expanded`).
+- Calendar circles: `.cal-count` / `.cal-guests` (tokens only; equal size; number centred; hidden guest circle at 0).
+- Excel: one writer, `server/files/xlsx-report.js` — logo top-right (aspect ratio kept), title + subtitle row, block
+  titles, header row (blue-grey fill, bold, wrap), totals row (grey fill, bold), AutoFilter on the first table, frozen
+  header, print area + repeated header + fit to width, footer "company · page / total". Column types decide number
+  formats (`int`, `dec2`, `dec3`, `kg`, `m2`, `mm`, `money` with `unit`); `wrap` for long text; `span` merges cells so a
+  second table lines up with the first table's column widths. Never set cell styles by hand in a route.
+- PDF: header logo (`drawBrandLogo`, text placed from the returned width) + footer `finishPages` on every page; tables
+  repeat their header after a page break; numbers right-aligned, text left-aligned with a small gap after a number column.
+- File names: always `exportName` / `exportFileName` (panel language, safe ASCII) — never a literal `filename=` in a route.
 
 ## Left for the page-level phase
 

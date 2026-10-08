@@ -5,7 +5,7 @@
 // hesaptan — offerExportData); yalnızca müşteri fiyatı. Logo ve yazı tipi ortak altyapıdan (server/pdf/brand.js, pdf.js:
 // Türkçe ve Romence harfler gömülü yazı tipiyle).
 import { PdfDoc, fitText, wrapText } from './pdf.js';
-import { BRAND, brandImage, drawBrandLogo } from './brand.js';
+import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
 
 const M = 40;
 const WIDTH = 515;
@@ -128,9 +128,6 @@ export function offerSummaryPdf(report, text) {
   for (const note of text.notes) {
     for (const l of wrapText(note, 8, WIDTH)) { ensure(12); page.text(M, y, l, { size: 8, color: GREY }); y += 11; }
   }
-  const pages = doc.pages.length;
-  doc.pages.forEach((pg, i) => {
-    pg.text(pg.width - M - 80, pg.height - 24, `${i + 1} / ${pages}`, { size: 7.5, color: GREY, align: 'right', width: 80 });
-  });
+  finishPages(doc); // ortak altbilgi: resmî firma adı + sayfa / toplam
   return doc.toBuffer();
 }

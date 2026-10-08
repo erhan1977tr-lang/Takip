@@ -48,6 +48,13 @@
   --purple: #5b2fa8;
   --purple-soft: #f1ecfb;
   --purple-border: #d9cdf3;
+  /* yükleme takvimi göstergeleri (Paket 7): çok açık pastel zemin, koyu ve okunaklı sayı */
+  --cal-total-bg: #fff8d9;      /* sarı: günün sipariş sayısı */
+  --cal-total-border: #efd98c;
+  --cal-total-text: #3b2f00;
+  --cal-guest-bg: #fdebee;      /* pembe / kırmızı: misafir yük sayısı */
+  --cal-guest-border: #f2c0c9;
+  --cal-guest-text: #8e1b1b;
   /* köşe */
   --radius: 12px;           /* kart */
   --radius-sm: 8px;         /* düğme, giriş alanı, küçük kutu */
@@ -617,7 +624,12 @@ summary { cursor: pointer; }
 .cal-day.other { background: var(--surface-2); color: var(--faint); }
 .cal-day.sel { border: 2px solid var(--primary); padding: 8px 9px; box-shadow: 0 0 0 3px var(--focus); }
 .cal-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
-.cal-count { margin-left: auto; min-width: 28px; height: 28px; border-radius: 14px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-border); font-weight: 700; font-size: var(--fs-meta); line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0 7px; }
+/* Sağ üstte iki eşit yuvarlak (Paket 7): sarı = sipariş sayısı, kırmızı = misafir yük sayısı; sayı yuvarlağın tam ortasında */
+.cal-badges { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.cal-count, .cal-guests { box-sizing: border-box; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-weight: 700; font-size: 12.5px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0; flex-shrink: 0; }
+.cal-count { background: var(--cal-total-bg); color: var(--cal-total-text); border: 1px solid var(--cal-total-border); }
+.cal-guests { background: var(--cal-guest-bg); color: var(--cal-guest-text); border: 1px solid var(--cal-guest-border); }
+.cal-badges .long { font-size: 10px; letter-spacing: -.03em; }
 .cal-names { color: var(--text-2); }
 .cal-names div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* ----- Yükleme günü (yuklemeler/page.tsx): müşteri başlığı → siparişleri → sandıkları ----- */
@@ -640,8 +652,16 @@ tr.row-sel td { background: var(--primary-soft); }
   .cal-day { min-height: 54px; padding: 5px; font-size: 12px; }
   .cal-day.sel { padding: 4px; }
   .cal-names, .cal-top .badge { display: none; }
-  .cal-count { min-width: 20px; height: 20px; font-size: 11px; margin-left: 0; }
   .cal-top { flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* Dar ekranda iki yuvarlak yine yan yana ve sağ üstte: hücrenin köşesine oturur, gün numarası altında kalır */
+  .cal-day { position: relative; padding-top: 24px; }
+  .cal-day.sel { padding-top: 23px; }
+  .cal-badges { position: absolute; top: 3px; right: 3px; margin: 0; gap: 2px; }
+  .cal-count, .cal-guests { width: 17px; height: 17px; font-size: 10px; }
+  .cal-badges .long { font-size: 7.5px; }
+}
+@media (max-width: 359px) {
+  .cal-count, .cal-guests { width: 15px; height: 15px; font-size: 9px; }
 }
 
 /* teklif: CNC / delik alt satırları */
@@ -904,6 +924,29 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .guest-line { margin: 4px 0; align-items: center; }
 .guest-head { margin: 0 0 4px; color: var(--danger); }
 .guest-waiting > div { margin-top: 2px; }
+
+/* ----- Yükleme günü firma tablosu (Paket 7, karar 186): firma başına tek satır; alt siparişler ve sandıklar açılır ----- */
+.firm-table > tbody.firm > tr.firm-row > td { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 0; vertical-align: middle; padding-top: 12px; padding-bottom: 12px; }
+.firm-table > tbody.firm:first-of-type > tr.firm-row > td { border-top: 0; }
+.firm-table > tbody.firm > tr.firm-row.open > td { background: var(--surface-2); }
+.firm-toggle { display: inline-flex; align-items: center; gap: 7px; background: none; border: 0; padding: 2px 0; margin: 0; font: inherit; color: var(--text); cursor: pointer; text-align: left; }
+.firm-toggle:hover .group-name { color: var(--primary); }
+.firm-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.firm-caret { display: inline-block; width: 12px; color: var(--primary); font-size: 12px; }
+.firm-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 5px 0 0 19px; }
+.firm-badges .badge { white-space: normal; text-align: left; }
+.firm-table td.firm-actions .btn:not(.btn-link) { padding: 5px 10px; font-size: var(--fs-meta); }
+.firm-table td.firm-actions .btn.active { background: var(--primary-soft); border-color: var(--primary-border); color: var(--primary); }
+.firm-table > tbody.firm > tr.firm-orders > td, .firm-table > tbody.firm > tr.firm-crates > td { background: var(--surface); border-top: 0; border-bottom: 0; padding: 4px 12px 16px 31px; }
+.sub-table { width: 100%; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.sub-table th { background: var(--surface-2); font-size: var(--fs-meta); padding: 8px 10px; border-top: 0; }
+.sub-table td { padding: 8px 10px; vertical-align: middle; }
+.sub-table tfoot td { font-weight: 700; background: var(--surface-2); border-top: 1px solid var(--border-strong); border-bottom: 0; }
+.firm-crates-box > .crate-editor:first-child, .firm-crates-box > .crate-table:first-child { margin-top: 0; }
+.guest-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 0 0 8px; }
+.crate-locked { color: var(--warn); font-weight: 600; margin: 0 0 10px; }
+.crate-table tr.crate-guests td { background: var(--warn-soft); color: var(--warn); white-space: normal; padding: 5px 8px 7px 14px; }
+.crate-table td.crate-contents { white-space: normal; }
 
 /* Kırık / telafi camı (karar 108): teklif tablosunun altındaki form, "Önemli kararlar" kartı, siparişi sil */
 .comp-choice { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }

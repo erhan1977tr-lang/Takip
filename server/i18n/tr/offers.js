@@ -62,7 +62,6 @@ export default {
     subtotal: 'Teklif toplamı',
     grandTotal: 'Genel toplam',
     // PDF dosya adının kökü (seçili panel dili): tekliflerim-2026-10-01_2026-10-31.pdf
-    fileName: 'tekliflerim',
     errors: {
       BAD_DATE: 'Geçerli bir başlangıç ve bitiş tarihi seçin.',
       ORDER: 'Başlangıç tarihi bitiş tarihinden sonra olamaz.',

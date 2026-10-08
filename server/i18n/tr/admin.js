@@ -277,8 +277,8 @@ export default {
     // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
     accounting: {
       title: "Fatura edilmemiş sipariş uyarısı",
-      days: "Yüklemeden sonra gün sayısı",
-      hint: "Yüklenen camın gereken kapanış faturası bu kadar takvim günü sonra hâlâ kesilmemişse muhasebe / yönetici uyarılır (Muhasebe → Cam Tahsilat'ta \"Fatura bekliyor\" listesi ve bildirim). Proforma ve avans faturası uyarıyı kapatmaz; yalnızca kapanış faturası kapatır. 0–{max} arası tam sayı; varsayılan 6.",
+      days: "\"Yükleme yapıldı\" kaydından sonra gün sayısı",
+      hint: "Sayaç Yüklemeler ekranındaki \"Yükleme yapıldı\" kaydıyla başlar. Yüklenen camın gereken kapanış faturası bu kadar takvim günü sonra hâlâ kesilmemişse muhasebe / yönetici uyarılır (Muhasebe → Cam Tahsilat'ta \"Fatura bekliyor\" listesi ve bildirim). Proforma ve avans faturası uyarıyı kapatmaz; yalnızca kapanış faturası kapatır. 0–{max} arası tam sayı; varsayılan 6.",
       saved: "Fatura uyarısı ayarı kaydedildi.",
       bad: "Gün sayısı geçersiz: 0 ile {max} arasında tam sayı yazın.",
     },

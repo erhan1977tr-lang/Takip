@@ -1,14 +1,17 @@
 import { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
-import { orderScope, sanitizeRows } from './orders';
+import { customerLabel, orderScope, sanitizeRows } from './orders';
+import { userCan } from './permissions';
 import { dayKey, orderLoad } from '../server/orders/loading.js';
 import { effectiveItems } from '../server/loading/confirmation.js';
 import { crateOrdersWhere } from '../server/loading/crates.js';
+import { dayFirms } from '../server/loading/day-firms.js';
 
 export const loadInclude = {
-  // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir
-  customer: { select: { id: true, name: true, sandikEtiket: true } },
+  // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir.
+  // prefix: firma kodu (sipariş numarasının başı) — firma çıktısının dosya adında (Paket 7)
+  customer: { select: { id: true, name: true, sandikEtiket: true, prefix: true } },
   items: { select: { camAdedi: true } },
   price: true,
   offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } },
@@ -221,3 +224,61 @@ export async function guestHostNames(user: CurrentUser, rows: { guestHostId: str
 
 /** Sandığın günü: "YYYY-MM-DD" (@db.Date UTC gece yarısı) */
 export const crateDay = (c: { shipDay: Date | null }) => (c.shipDay ? c.shipDay.toISOString().slice(0, 10) : null);
+
+/**
+ * Hangi tutarlar görünür (karar 4; Paket 7 — karar 187): fabrika satış tutarı = satış fiyatını gören rol (yönetici, satış);
+ * teklif tutarı = müşteri fiyatını gören rol (yönetici, denetimci; müşteri kendi teklifini). Veriler zaten role göre temizlenmiş
+ * gelir (sanitizeRows); bu yalnızca hangi sütunun yazılacağını seçer — görünmeyen tutar firma tablosuna hiç girmez (null).
+ */
+export type MoneyView = { sales: boolean; offer: boolean };
+export function moneyView(user: CurrentUser): MoneyView {
+  return { sales: userCan(user, 'OFFER_PREPARE'), offer: userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW') };
+}
+
+/** Yükleme gününün sipariş satırı: sayfa satırı (o), yükü (load) ve firma tablosunun (server/loading/day-firms.js) alanları */
+export type DayEntry = {
+  o: LoadRow; load: Load; orderId: string; orderNo: string; customerId: string; customerName: string; guestHostId: string | null; replan: boolean;
+  money: { currency: string; sales: number | null; offer: number | null };
+};
+export function dayEntry(o: LoadRow, { customer, money }: { customer: boolean; money: MoneyView }): DayEntry {
+  const load = loadOf(o, customer);
+  return {
+    o, load, orderId: o.id, orderNo: o.orderNo, customerId: o.customer.id, customerName: o.customer.name, guestHostId: o.guestHostId ?? null, replan: !!o.replan,
+    // Görünmeyen tutar null: satışta load.amount satış tutarına düşer (müşteri fiyatı satışa hiç gelmez) — teklif sütununa yazılmaz
+    money: { currency: load.currency, sales: money.sales ? load.salesAmount : null, offer: money.offer ? load.amount : null },
+  };
+}
+
+/**
+ * Bir yükleme gününün firma tablosu (tek atıf kuralı — server/loading/day-firms.js). Firma adları görene göre burada BİR kez
+ * yazılır (customerLabel: satışa maskeli); sonuçtaki her ad ekrana / dosyaya olduğu gibi yazılabilir.
+ */
+export function firmsOfDay(user: CurrentUser, entries: DayEntry[], crates: CrateRow[], guests: GuestLink[], hostNames: Map<string, string> = new Map()) {
+  const label = (n: string) => customerLabel(user, n);
+  return dayFirms({
+    entries: entries.map((e) => ({ ...e, customerName: label(e.customerName) })),
+    crates: crates.map((c) => ({ ...c, customerName: label(c.customer?.name ?? ''), orderIds: c.orders.map((x) => x.orderId) })),
+    links: guests.map((l) => ({ ...l, hostName: l.hostName ? label(l.hostName) : '' })),
+    hostNames: new Map([...hostNames].map(([k, v]) => [k, label(v)])),
+  });
+}
+export type DayFirms = ReturnType<typeof firmsOfDay>;
+export type DayFirm = DayFirms['firms'][number];
+
+/**
+ * Tek bir yükleme gününün verisi (sayfa dışındaki kullanıcılar: Yükleme Özeti Excel'i, firma PDF / Excel'i, firma özeti):
+ * o güne planlı siparişler (yüklenmeyen adet notuyla) + o güne aktarılmış kalanlar, günün sandıkları ve misafir yükleri.
+ * Kapsam ve temizlik sayfayla aynıdır (orderScope + sanitizeRows; müşteri yalnızca kendi firması).
+ */
+export async function loadDay(user: CurrentUser, day: string) {
+  const d = new Date(`${day}T00:00:00Z`);
+  const next = new Date(d.getTime() + 86_400_000);
+  const [around, carried, crates, guests] = await Promise.all([
+    ordersShippingBetween(user, new Date(d.getTime() - 86_400_000), new Date(d.getTime() + 2 * 86_400_000)),
+    replanRowsBetween(user, d, next), cratesBetween(user, d, next), guestCratesBetween(user, d, next),
+  ]);
+  const dated = around.filter((o) => shipDay(o) === day);
+  const missing = await notLoadedByOrder(dated);
+  const rows: LoadRow[] = [...dated.map((o) => (missing.has(o.id) ? { ...o, notLoaded: missing.get(o.id) } : o)), ...carried.filter((o) => shipDay(o) === day)];
+  return { rows, crates, guests: guests.filter((l) => l.day === day), hostNames: await guestHostNames(user, rows) };
+}

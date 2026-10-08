@@ -7,9 +7,10 @@
 //     teklif, müşteri fiyatı ya da katalog değişse de onaylı yükleme aynı kalır.
 //   - Kopya teklif satırı biçimindedir; kârlılık (ve Aşama 7D'de fatura) aynı hesap kuralıyla (glassTotals) kopyadan
 //     türetilir — ayrı bir fiyat formülü yoktur.
-//   - "Eksiksiz Yüklendi": önizlemedeki bütün kalemler tam adetle LOADED kaydedilir. Yüklenmeyen cam varsa (kırık,
-//     eksik, hazır değil — Aşama 7E, karar 102) yönetici cam satırı başına yüklenmeyen adedi ve nedenini girer: satır
-//     LOADED (yüklenen adet) + NOT_LOADED (kalan adet, neden) olarak iki kayda bölünür. Yüklenmeyen kalan sonradan ileri
+//   - "Yükleme yapıldı" (Paket 7, karar 189; eski adı "Eksiksiz Yüklendi"): önizlemedeki bütün kalemler tam adetle LOADED
+//     kaydedilir. Ekrandaki işlem yüklenmeyen adet göndermez; yüklenmeyen cam (kırık, eksik, hazır değil — karar 102)
+//     onaydan sonra "Düzelt" ile kaydedilir (karar 105). Hizmet notLoaded girdisini hâlâ kabul eder (testler): verilirse
+//     satır LOADED (yüklenen adet) + NOT_LOADED (kalan adet, neden) olarak iki kayda bölünür. Yüklenmeyen kalan sonradan ileri
 //     bir güne aktarılır (server/loading/replan.js → LoadingReplan); o gün onaylanırken kalan, kaynağının ticari
 //     kopyasıyla ve replanId ile yeni kalem(ler) olur. Zincir böylece her denemede izlenir; eski onay hiç değişmez.
 //   - Yalnızca yönetici (LOADING_CONFIRM); kontrol burada, sunucuda yapılır.
@@ -439,7 +440,7 @@ export async function loadConfirmation(db, day) {
 }
 
 /**
- * "Eksiksiz Yüklendi": o günün önizlemedeki bütün kalemlerini tam adetle LOADED olarak kaydeder.
+ * "Yükleme yapıldı" (eski adı "Eksiksiz Yüklendi"): o günün önizlemedeki bütün kalemlerini tam adetle LOADED olarak kaydeder.
  * notLoaded verilirse (yüklenmeyen cam: kalem anahtarı, adet, neden, açıklama) o cam satırları yüklenen + yüklenmeyen
  * olarak bölünür (applyNotLoaded). O güne aktarılmış kalanlar onaya girince aktarım CONFIRMED olur.
  * Aynı gün ikinci kez onaylanamaz: işlem kilidi + benzersiz yükleme günü (aynı anda gelen iki istekten biri reddedilir).

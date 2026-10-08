@@ -8,6 +8,7 @@
 //     gelir ve yalnızca müşteri fiyatıdır — fabrika / satış fiyatı hiçbir zaman dökümde yoktur.
 //   - Toplamlar para birimi başına ayrı (farklı para birimleri toplanmaz): teklif sayısı, toplam m², toplam tutar.
 import { offerExportData } from './offer-export.js';
+import { exportFileName } from '../files/export-name.js';
 import { parseDateOnly } from './rules.js';
 import { localDay } from '../profile/dates.js';
 
@@ -85,11 +86,11 @@ export function customerOfferReport(orders, { from, to, timeZone, locale, kindLa
 }
 
 /**
- * PDF dosya adı, seçili panel dilinde: "tekliflerim-2026-10-01_2026-10-31.pdf" / "ofertele-mele-…".
- * @param {string} base  dilin dosya adı kökü (offers.report.fileName)
+ * PDF dosya adı, seçili panel dilinde — ortak dosya adı kuralı (server/files/export-name.js, Paket 7):
+ * "Tekliflerim-2026-10-01_2026-10-31.pdf" / "Ofertele-Mele-2026-10-01_2026-10-31.pdf".
+ * @param {string} base  dilin dosya adı (exports.names.offerReport)
  * @param {{ from: string, to: string }} r
  */
 export function offerReportFileName(base, { from, to }) {
-  const safe = String(base ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'oferte';
-  return `${safe}-${from}_${to}.pdf`;
+  return exportFileName(base, [`${from}_${to}`], 'pdf');
 }

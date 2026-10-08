@@ -355,7 +355,8 @@ dbTest('fatura bekliyor (karar 126): uyarı günü dolunca yalnızca muhasebe ye
   const D = dayOf(-40);
   const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
   const o = await glassOrder(B, D, { adet: 4 });
-  assert.equal((await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, actor: actor() })).ok, true);
+  // "Yükleme yapıldı" yükleme gününde kaydedildi (sayaç bu kayıttan başlar — karar 189)
+  assert.equal((await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, actor: actor(), now: at(D) })).ok, true);
   const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.orderId === o.id);
   assert.deepEqual(await un.getAccountingSettings(db), { uninvoicedDays: 6 }, 'varsayılan 6 gün');
 
@@ -391,6 +392,47 @@ dbTest('fatura bekliyor (karar 126): uyarı günü dolunca yalnızca muhasebe ye
   assert.deepEqual(await mine(at(plus(D, 9))), [], 'fatura kesildi: uyarı kendiliğinden kalkar');
   await un.remindUninvoiced(db, { now: at(plus(D, 20)) });
   assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 2);
+}));
+
+dbTest('fatura bekliyor (Paket 7, karar 189): sayaç "Yükleme yapıldı" kaydından başlar (yükleme gününden değil); işlem tekrarlanınca yeni kayıt / hatırlatma yok; sipariş durumu değişmez, FGO çağrılmaz', offline(async () => {
+  const plus = (day, k) => new Date(Date.parse(`${day}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+  const D = dayOf(-63);
+  const late = plus(D, 4); // yükleme D gününde yapıldı; yönetici "Yükleme yapıldı"yı 4 gün sonra kaydetti
+  const o = await glassOrder(B, D, { adet: 2 });
+  const r = await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, actor: actor(), now: at(late) });
+  assert.deepEqual([r.ok, r.orders], [true, 1]);
+  const conf = await db.loadingConfirmation.findUniqueOrThrow({ where: { shipDay: new Date(`${D}T00:00:00Z`) } });
+  const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.orderId === o.id);
+
+  // Yükleme günü + 6 geçti ama sayaç kayıttan başladı: henüz uyarı yok; kayıt + 6'da var (gösterilen yükleme günü D)
+  assert.deepEqual(await mine(at(plus(D, 6))), [], 'yükleme günü + 6: sayaç dolmadı');
+  assert.deepEqual(await mine(at(plus(late, 5))), []);
+  await un.remindUninvoiced(db, { now: at(plus(late, 5)) });
+  assert.equal(await db.notification.count({ where: { type: 'INVOICE_OVERDUE', orderId: o.id } }), 0);
+  assert.deepEqual((await mine(at(plus(late, 6)))).map((x) => [x.day, x.confirmedDay, x.dueDay, x.daysSince, x.note]), [[D, late, plus(late, 6), 6, null]]);
+  assert.deepEqual((await mine(at(plus(late, 9)))).map((x) => x.daysSince), [9], 'gün sayısı da kayıttan');
+  // Ayardaki gün: 0 = kayıt günü
+  assert.deepEqual([(await un.uninvoicedLoadings(db, { now: at(plus(late, -1)), days: 0 })).filter((x) => x.orderId === o.id).length, (await un.uninvoicedLoadings(db, { now: at(late), days: 0 })).filter((x) => x.orderId === o.id).length], [0, 1]);
+  await un.remindUninvoiced(db, { now: at(plus(late, 6)) });
+  assert.deepEqual(await receivers('INVOICE_OVERDUE', o.id), ['admin', 'admin2']);
+  const note = (await notes({ type: 'INVOICE_OVERDUE', orderId: o.id, userId: U.admin.id }))[0];
+  assert.equal(note.dedupeKey, `uninvoiced:${conf.id}:${o.id}:r0`);
+  assert.equal(note.params.day, D, 'bildirimde yükleme günü');
+
+  // İşlem tekrarlanır (aynı gün, yeni önizleme): kabul edilmez; yeni onay, kalem, denetim, geçmiş ya da hatırlatma yok
+  const counts = async () => [
+    await db.loadingConfirmation.count(), await db.loadingConfirmationItem.count({ where: { confirmationId: conf.id } }),
+    await db.auditLog.count({ where: { action: 'LOADING_CONFIRMED' } }), await db.orderEvent.count({ where: { orderId: o.id, event: 'LOADING_CONFIRMED' } }),
+    await db.notification.count({ where: { type: 'INVOICE_OVERDUE' } }),
+  ];
+  const before = await counts();
+  assert.deepEqual(await c.confirmLoading(db, { day: D, key: (await c.previewLoading(db, D)).key, actor: actor(), now: at(plus(late, 7)) }), { ok: false, code: 'ALREADY_CONFIRMED' });
+  await un.remindUninvoiced(db, { now: at(plus(late, 7)) });
+  await un.remindUninvoiced(db, { now: at(plus(late, 30)) });
+  assert.deepEqual(await counts(), before, 'tekrar: hiçbir şey yazılmadı');
+  assert.equal((await db.loadingConfirmation.findUniqueOrThrow({ where: { id: conf.id } })).confirmedAt.toISOString(), at(late).toISOString(), 'sayaç başlangıcı değişmedi');
+  // "Yükleme yapıldı" sipariş durumunu değiştirmez (otomatik "Yüklendi" yok); ağ / FGO çağrısı yok (offline: her fetch testi düşürür)
+  assert.equal((await db.order.findUniqueOrThrow({ where: { id: o.id } })).status, 'URETIMDE');
 }));
 
 dbTest('bağlantılar (karar 145): bu dosyadaki testlerde GERÇEK yazıcıların ürettiği her bildirim bağlantısı ortak "uygulama içi yol" kuralından AYNEN geçer', async () => {

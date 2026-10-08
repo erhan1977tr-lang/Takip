@@ -48,8 +48,7 @@ test('nakliye listesi PDF: geçerli PDF, birçok sandıkta birden çok sayfa', (
 });
 
 test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m²), CNC / delik camın tutarına dahil; Excel', async () => {
-  const { buildLoadingSummary, loadingSummaryXlsx } = await import('../server/loading/summary.js');
-  const { readXlsx } = await import('../server/files/xlsx.js');
+  const { buildLoadingSummary, loadingSummarySheets } = await import('../server/loading/summary.js');
   const { glassLines } = await import('../server/glass/billing.js');
   const glass = (description, en, boy, adet, offerPrice, unitPrice) => ({ kind: 'CAM', unit: 'm2', description, descriptionRo: `RO ${description}`, enMm: en, boyMm: boy, adet, offerPrice, unitPrice });
   const orders = [
@@ -77,10 +76,19 @@ test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m
   // Satış: yalnızca satış fiyatı (müşteri fiyatı verisi hiç gelmez)
   const sales = buildLoadingSummary(orders.map((o) => ({ ...o, offers: o.offers.map((f) => ({ ...f, lines: f.lines.map((l) => ({ ...l, offerPrice: null })) })) })), { priceOf: (l) => l.unitPrice });
   assert.equal(sales.totals.EUR.total, 4 * 30 + 2 * 5 + 20 + 3 * 30 + 25);
-  const x = readXlsx(loadingSummaryXlsx(s, { day: '2026-10-02', stats: [['Sipariş', 3]], text: { title: 'YÜKLEME DÖKÜMÜ', unit: 'm²', total: 'TOPLAM', cols: ['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR'] } })).rows;
-  assert.equal(x[0][0], 'YÜKLEME DÖKÜMÜ · 2026-10-02');
-  assert.deepEqual(x.find((r) => r[0] === 'ALE46, ALE47'), ['ALE46, ALE47', 'ALEGRAD', 'Adrian, Sura Mica', '88.3 TEMPER LAMİNE', 5, 'm²', 7, 52.86, 370]);
-  assert.deepEqual(x[x.length - 1].slice(3), ['TOPLAM', 7, null, 9, null, 434, 'EUR']);
+  // "Yükleme Özeti" Excel'inin 2. sayfası (satır dökümü — Paket 7): satırlar ve toplam aynen, para birimi ayrı sütunda
+  const empty = { name: '', orders: 0, camAdet: 0, cnc: 0, delik: 0, metraj: 0, netKg: 0, crates: 0, grossKg: 0, money: {} };
+  const [, lines] = loadingSummarySheets({
+    subtitle: '', stats: [['Sipariş', 3]], firms: [], total: empty, guests: [], lines: s, money: { sales: false, offer: true },
+    text: {
+      title: 'YÜKLEME ÖZETİ', linesTitle: 'YÜKLEME ÖZETİ · SATIR DÖKÜMÜ · 02.10.2026', sheetFirms: 'Firmalar', sheetLines: 'Döküm', firmsTitle: 'F', guestTitle: 'G', guestNone: '-',
+      total: 'TOPLAM', unit: 'm²', currency: 'Para birimi', cols: ['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR'],
+      firmCols: { firm: '', orders: '', glass: '', cnc: '', holes: '', m2: '', net: '', crates: '', gross: '', factory: '', offer: '' }, guestCols: { order: '', owner: '', host: '', crate: '' },
+    },
+  });
+  assert.equal(lines.title, 'YÜKLEME ÖZETİ · SATIR DÖKÜMÜ · 02.10.2026');
+  assert.deepEqual(lines.blocks[0].rows.find((r) => r[0] === 'ALE46, ALE47'), ['ALE46, ALE47', 'ALEGRAD', 'Adrian, Sura Mica', '88.3 TEMPER LAMİNE', 5, 'm²', 7, 52.86, 370, 'EUR']);
+  assert.deepEqual(lines.blocks[0].totals, [['', '', '', 'TOPLAM', 7, '', 9, '', 434, 'EUR']]);
 });
 
 test('yükleme dökümü: aynı cam farklı birim fiyatla ayrı satır (ortalama yok); aynı fiyat siparişler arasında tek satır', async () => {

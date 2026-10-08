@@ -13,7 +13,7 @@
 // İkisi de aynı kuralla toplanır: fatura / yükleme dökümü kuralı (server/glass/billing.js → glassTotals: cam + ona
 // eklenen CNC, delik, sandık parası ve diğer kalemler). Ayrı bir fiyat formülü yoktur.
 //
-// Yükleme onayı (karar 92): bir yükleme günü "Eksiksiz Yüklendi" olarak onaylandıysa o günün satış ve maliyeti onay
+// Yükleme onayı (karar 92): bir yükleme günü "Yükleme yapıldı" (eski adı "Eksiksiz Yüklendi") olarak onaylandıysa o günün satış ve maliyeti onay
 // anında alınan kopyadan (LoadingConfirmationItem) gelir — teklif ya da fiyat sonradan değişse de değişmez. Onaylanmamış
 // günlerde eski hesap sürer (planlanan yükleme günü; ekranda "planlanan" olarak ayrılır). Bir sipariş iki kez sayılmaz:
 // onaylı bir yüklemede yüklenmiş sipariş, tarihi sonradan değişse de başka günde yeniden sayılmaz.
@@ -111,7 +111,7 @@ export function mergeConfirmed(planned, confirmations) {
 
 /**
  * Yükleme günleri: m², para birimi başına satış / maliyet / nakliye / kâr; noCost = maliyeti eksik siparişlerin numaraları.
- * confirmed: gün "Eksiksiz Yüklendi" olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayanlar.
+ * confirmed: gün "Yükleme yapıldı" (eski adı "Eksiksiz Yüklendi") olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayanlar.
  * accounting: kesilmiş faturası düzeltilmiş yüklemeyle uyuşmayan siparişler (supplierData doldurur; muhasebe işlemi gerekli).
  * @param {(ReturnType<typeof orderLine> | ReturnType<typeof confirmedLine>)[]} lines
  * @param {{ shipDay: Date, amount: unknown, currency: string }[]} costs

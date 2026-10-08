@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 type Amounts = { sale: number; cost: number; transport: number; profit: number };
 type OrderRef = { orderId: string; orderNo: string };
-// confirmed: gün "Eksiksiz Yüklendi" olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayan siparişler
+// confirmed: gün "Yükleme yapıldı" (eski adı "Eksiksiz Yüklendi") olarak onaylı (tutarlar onay kopyasından) · outside: onaylı güne planlı ama onayda olmayan siparişler
 // accounting: kesilmiş faturası düzeltilmiş yüklemeyle uyuşmayan siparişler (karar 105; kârlılık fiili yüklemeyi izler)
 type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[]; confirmed: boolean; outside: OrderRef[]; accounting: (OrderRef & { code: string; ref: string | null })[] };
 type MissingLine = { lineId: string; description: string; kind: string; unit: string; adet: number; offerPrice: number };

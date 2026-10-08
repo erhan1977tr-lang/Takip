@@ -62,7 +62,6 @@ export default {
     subtotal: 'Total ofertă',
     grandTotal: 'Total general',
     // Rădăcina numelui fișierului PDF (limba panoului): ofertele-mele-2026-10-01_2026-10-31.pdf
-    fileName: 'ofertele-mele',
     errors: {
       BAD_DATE: 'Alegeți o dată de început și o dată de sfârșit valide.',
       ORDER: 'Data de început nu poate fi după data de sfârșit.',

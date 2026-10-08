@@ -130,7 +130,11 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                       <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link> · {o.customerName}
                       {o.removed && <> <Badge tone="muted">{t('accounting.overdue.removed')}</Badge></>}
                     </td>
-                    <td className="nowrap">{t('accounting.overdue.loaded', { date: dayText(new Date(`${o.day}T00:00:00Z`)) })}</td>
+                    <td className="nowrap">
+                      {t('accounting.overdue.loaded', { date: dayText(new Date(`${o.day}T00:00:00Z`)) })}
+                      {/* Sayaç "Yükleme yapıldı" kaydından başlar (karar 189) */}
+                      <span className="cell-note">{t('accounting.overdue.done', { date: dayText(new Date(`${o.confirmedDay}T00:00:00Z`)) })}</span>
+                    </td>
                     <td>
                       <Badge tone="danger">{t('accounting.overdue.days', { n: o.daysSince })}</Badge>
                       {o.note && <span className="cell-note">{t(`accounting.overdue.note.${o.note}` as MsgKey)}</span>}

@@ -40,21 +40,19 @@ export async function saveDayCratesAction(_prev: CratesState, formData: FormData
 }
 
 /**
- * "Eksiksiz Yüklendi": seçilen yükleme gününü onaylar (karar 92). Yalnızca yönetici (LOADING_CONFIRM); yetki burada ve
- * confirmLoading içinde sunucuda kontrol edilir — düğmenin görünmemesi yetki değildir. `key`: yöneticinin ekranda gördüğü
- * önizlemenin parmak izi; liste bu arada değiştiyse onay reddedilir.
+ * "Yükleme yapıldı" (Paket 7, karar 189; eski adı "Eksiksiz Yüklendi"): seçilen yükleme gününün fiilen yüklendiğini kaydeder
+ * (karar 92). Önizlemedeki bütün kalemler YÜKLENDİ olarak kaydedilir; yüklenmeyen cam onaydan sonra "Düzelt" ile kaydedilir
+ * (karar 105) — bu işlem yüklenmeyen adet almaz. Yalnızca yönetici (LOADING_CONFIRM); yetki burada ve confirmLoading içinde
+ * sunucuda kontrol edilir — düğmenin görünmemesi yetki değildir. `key`: yöneticinin ekranda gördüğü önizlemenin parmak izi;
+ * liste bu arada değiştiyse onay reddedilir. Aynı gün ikinci kez kaydedilemez (ALREADY_CONFIRMED). Fatura hatırlatma sayacı bu
+ * kaydın anından başlar (server/accounting/uninvoiced.js). Sipariş durumu değişmez; hiçbir FGO belgesi kesilmez.
  */
 export async function confirmLoadingAction(formData: FormData) {
   const user = await requirePermission('LOADING_CONFIRM');
   const day = String(formData.get('day') ?? '');
   const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}&` : ''}${q}#onay`;
-  // Yüklenmeyen cam (karar 102): "nl:<kalem>" = adet, "nlr:<kalem>" = neden, "nln:<kalem>" = açıklama. Boş / 0 adet → o satır eksiksiz.
-  const notLoaded = [...formData.keys()].filter((k) => k.startsWith('nl:')).map((k) => {
-    const key = k.slice(3);
-    return { key, quantity: String(formData.get(k) ?? ''), reason: String(formData.get(`nlr:${key}`) ?? ''), note: String(formData.get(`nln:${key}`) ?? '') };
-  });
   const r = await confirmLoading(db, {
-    day, key: String(formData.get('key') ?? ''), note: String(formData.get('note') ?? ''), notLoaded, actor: await actorOf(user),
+    day, key: String(formData.get('key') ?? ''), note: String(formData.get('note') ?? ''), notLoaded: [], actor: await actorOf(user),
   });
   revalidatePath('/yuklemeler');
   revalidatePath('/admin/muhasebe/tedarikci');
@@ -142,7 +140,12 @@ export async function cancelReplanAction(formData: FormData) {
 export async function guestCrateAction(formData: FormData) {
   const user = await requirePermission('CRATE_EDIT');
   const day = String(formData.get('day') ?? '');
-  const back = (q: string) => `/yuklemeler?${parseDateOnly(day) ? `gun=${day}${q ? '&' : ''}` : ''}${q}#gun`;
+  // Dönüşte işlemin yapıldığı firmanın "Sandık" bölümü açık gelir (acik = firma kimliği; yalnızca sayfadaki aç / kapa durumu)
+  const open = /^[a-z0-9]{1,40}$/i.test(String(formData.get('acik') ?? '')) ? String(formData.get('acik')) : '';
+  const back = (q: string) => {
+    const parts = [parseDateOnly(day) ? `gun=${day}` : '', open ? `acik=${open}` : '', q].filter(Boolean).join('&');
+    return `/yuklemeler${parts ? `?${parts}` : ''}${open ? `#firma-${open}` : '#gun'}`;
+  };
   const orderId = String(formData.get('orderId') ?? '');
   const crateId = String(formData.get('crateId') ?? '');
   const current = String(formData.get('current') ?? '');

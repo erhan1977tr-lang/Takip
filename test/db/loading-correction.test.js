@@ -417,7 +417,7 @@ dbTest('fatura bekliyor (karar 126): yükleme düzeltmesi ve aktarım yanlış u
   const A = await firm('Fix Remind SRL', 'FXR');
   const o = await glassOrder(A, D, [glassLine(10)]);
   const p = await glassOrder(A, D, [glassLine(4)]);
-  assert.equal((await confirm(D)).ok, true); // "Eksiksiz Yüklendi": 10 + 4
+  assert.equal((await confirm(D, [], evening(D))).ok, true); // "Yükleme yapıldı" (yükleme günü kaydedildi): 10 + 4
   const mine = async (now) => (await un.uninvoicedLoadings(db, { now })).filter((x) => x.customerId === A.id).map((r) => [r.orderNo, r.day, r.revision]);
   assert.deepEqual(await mine(at(plus(D, 6))), [[o.orderNo, D, 0], [p.orderNo, D, 0]]);
 
@@ -459,8 +459,8 @@ dbTest('fatura bekliyor (karar 126): "muhasebe işlemi gerekli" diye dondurulan 
     return { open: v.groups.flatMap((g) => [...g.orders, ...g.unselected].map((x) => x.orderNo)).sort(), excluded: v.excluded.map((x) => [x.orderNo, x.reason, x.ref]) };
   };
 
-  // D günü: 10 adet "eksiksiz yüklendi" diye onaylanır ve faturalanır → kapsam kapalı, uyarı yok
-  assert.equal((await confirm(D)).ok, true);
+  // D günü: 10 adet "Yükleme yapıldı" diye onaylanır ve faturalanır → kapsam kapalı, uyarı yok
+  assert.equal((await confirm(D, [], evening(D))).ok, true);
   const fgo = fakeFgo(950);
   const bill = await invoice(D, A, fgo);
   const ref = `${bill.document.series}${bill.document.number}`;

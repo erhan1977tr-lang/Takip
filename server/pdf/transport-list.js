@@ -4,7 +4,7 @@
 // Her sayfanın başlığında, sağ üstte resmî GKH logosu (ortak başlık — server/pdf/brand.js; karar 129).
 // Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
 import { PdfDoc, fitText } from './pdf.js';
-import { BRAND, brandImage, drawBrandLogo } from './brand.js';
+import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
 
 const M = 40;
 const ROW = 22;
@@ -105,10 +105,6 @@ export function transportListPdf({ day, list, text, company = BRAND.company }) {
     page.text(M, y + 6, fitText(`${text.waiting}: ${list.waiting.map((w) => `${w.orderNo} → ${w.host}`).join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
   }
 
-  const pages = doc.pages.length;
-  doc.pages.forEach((pg, i) => {
-    pg.text(M, pg.height - 24, text.noPrice, { size: 7.5, color: GREY });
-    pg.text(pg.width - M - 80, pg.height - 24, `${i + 1} / ${pages}`, { size: 7.5, color: GREY, align: 'right', width: 80 });
-  });
+  finishPages(doc, { note: `${company} · ${text.noPrice}`, margin: M }); // ortak altbilgi
   return doc.toBuffer();
 }

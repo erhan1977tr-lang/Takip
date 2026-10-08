@@ -1,7 +1,7 @@
 // Teklif PDF'i (sipariş sayfası → "PDF İndir"): logo, başlık, sipariş no, firma, tarih; satırlar (sıra, açıklama, poz,
 // en, boy, adet, m², birim fiyat, tutar); toplam ve notlar (KDV hariç, EUR kur notu). Veri: offerExportData — Excel ile aynı.
 import { PdfDoc, fitText, wrapText } from './pdf.js';
-import { BRAND, brandImage, drawBrandLogo } from './brand.js';
+import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
 
 const M = 40;
 const ROW = 18;
@@ -81,9 +81,6 @@ export function offerPdf(data, text) {
   for (const note of text.notes) {
     for (const l of wrapText(note, 8, 515)) { ensure(12); page.text(M, y, l, { size: 8, color: GREY }); y += 11; }
   }
-  const pages = doc.pages.length;
-  doc.pages.forEach((pg, i) => {
-    pg.text(pg.width - M - 80, pg.height - 24, `${i + 1} / ${pages}`, { size: 7.5, color: GREY, align: 'right', width: 80 });
-  });
+  finishPages(doc); // ortak altbilgi: resmî firma adı + sayfa / toplam
   return doc.toBuffer();
 }

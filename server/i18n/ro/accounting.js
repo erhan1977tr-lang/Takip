@@ -210,9 +210,10 @@ export default {
   // „Factură în așteptare” (decizia 126): sticlă încărcată fără factura finală — listă permanentă în Încasări sticlă
   overdue: {
     title: "FACTURĂ ÎN AȘTEPTARE",
-    intro: "Comenzi cu încărcarea confirmată, pentru care au trecut {days} zile și factura finală nu a fost încă emisă. Proforma și factura de avans nu închid această avertizare; rândul dispare automat după emiterea facturii.",
+    intro: "Comenzi pentru care au trecut {days} zile de la înregistrarea „Încărcare efectuată” și factura finală nu a fost încă emisă (contorul pornește la înregistrarea încărcării). Proforma și factura de avans nu închid această avertizare; rândul dispare automat după emiterea facturii.",
     col: { order: "Comandă · client", loaded: "Încărcare", waiting: "Stare" },
     loaded: "Încărcare: {date}",
+    done: "încărcare efectuată: {date}",
     days: "nefacturată de {n} zile",
     removed: "comandă ștearsă",
     open: "Deschide facturarea",
@@ -358,7 +359,7 @@ export default {
     },
     loadings: {
       title: "Profitabilitatea încărcărilor",
-      intro: "La încărcările confirmate valorile vin din înregistrarea de la momentul confirmării (Încărcări → „Încărcat complet”) și nu se mai schimbă. Pentru zilele neconfirmate rămâne calculul vechi: comenzile de sticlă cu ziua de încărcare (reală sau, în lipsă, planificată) azi sau mai devreme și cu oferta trimisă clientului. Profit = vânzare − cost − transport. Plățile către fabrică nu se scad din profit.",
+      intro: "La încărcările confirmate valorile vin din înregistrarea de la momentul confirmării (Încărcări → „Încărcare efectuată”) și nu se mai schimbă. Pentru zilele neconfirmate rămâne calculul vechi: comenzile de sticlă cu ziua de încărcare (reală sau, în lipsă, planificată) azi sau mai devreme și cu oferta trimisă clientului. Profit = vânzare − cost − transport. Plățile către fabrică nu se scad din profit.",
       empty: "Nu există încă comenzi de sticlă încărcate.",
       confirmed: "confirmată",
       planned: "planificată",

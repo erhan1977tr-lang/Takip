@@ -6,6 +6,7 @@ import { audit } from '@/lib/audit';
 import { canSeeOfferReport, loadOfferReport } from '@/lib/customer-offers';
 import { offerReportFileName } from '@/server/orders/customer-offers.js';
 import { offerSummaryPdf } from '@/server/pdf/offer-summary.js';
+import { contentDisposition } from '@/server/files/export-name.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,11 +43,11 @@ export async function GET(req: Request) {
   };
   const body = offerSummaryPdf(report, text);
   await audit('OFFER_REPORT_EXPORT', 'Customer', user.customerId, user.id, { from: res.from, to: res.to, offers: report.sections.length });
-  const name = offerReportFileName(t('offers.report.fileName'), res);
+  const name = offerReportFileName(t('exports.names.offerReport'), res);
   return new Response(new Uint8Array(body), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${name}"`,
+      'Content-Disposition': contentDisposition(name),
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
     },

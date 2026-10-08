@@ -71,10 +71,11 @@ test('fiyat: yalnızca çağıranın verdiği müşteri fiyatı kullanılır; i�
 });
 
 test('dosya adı seçili panel dilinde; tarih aralığıyla', () => {
-  assert.equal(offerReportFileName('tekliflerim', { from: '2026-10-01', to: '2026-10-31' }), 'tekliflerim-2026-10-01_2026-10-31.pdf');
-  assert.equal(offerReportFileName('ofertele-mele', { from: '2026-10-01', to: '2026-10-31' }), 'ofertele-mele-2026-10-01_2026-10-31.pdf');
-  assert.equal(offerReportFileName('Ofertele mele / ș"', { from: '2026-10-01', to: '2026-10-02' }), 'ofertele-mele-s-2026-10-01_2026-10-02.pdf', 'başlıkta tırnak / bölü olmaz');
-  assert.equal(offerReportFileName('', { from: '2026-10-01', to: '2026-10-02' }), 'oferte-2026-10-01_2026-10-02.pdf');
+  // Ortak dosya adı kuralı (Paket 7, server/files/export-name.js): ad seçili panel dilinde, harfler Latin karşılığıyla
+  assert.equal(offerReportFileName('Tekliflerim', { from: '2026-10-01', to: '2026-10-31' }), 'Tekliflerim-2026-10-01_2026-10-31.pdf');
+  assert.equal(offerReportFileName('Ofertele Mele', { from: '2026-10-01', to: '2026-10-31' }), 'Ofertele-Mele-2026-10-01_2026-10-31.pdf');
+  assert.equal(offerReportFileName('Ofertele mele / ș"', { from: '2026-10-01', to: '2026-10-02' }), 'Ofertele-mele-s-2026-10-01_2026-10-02.pdf', 'başlıkta tırnak / bölü olmaz');
+  assert.equal(offerReportFileName('', { from: '2026-10-01', to: '2026-10-02' }), '2026-10-01_2026-10-02.pdf');
 });
 
 // ---------- PDF: metin çıkarma (gömülü yazı tipinin glif → Unicode eşlemesiyle) ----------

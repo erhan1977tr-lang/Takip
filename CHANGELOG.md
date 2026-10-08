@@ -4,6 +4,46 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.57.0 — 08.10.2026
+
+Fonksiyonel paket 7 — Yüklemeler firma tablosu, misafir yük, sandıklar, takvim ve Excel / PDF standardı (kararlar 186–191).
+Veritabanı şeması değişmedi (migration yok).
+
+- **Firma bazlı yükleme tablosu:** her yükleme gününde firma başına TEK satır — Firma, Sipariş adedi, Cam adedi, CNC adedi,
+  Delik adedi, Toplam m², Net ağırlık, Sandık adedi, Brüt ağırlık, Fabrika satış tutarı, Teklif tutarı, İşlemler. Firma adına
+  tıklayınca alt siparişler açılır (Sipariş No · Cam · CNC · Delik · Toplam m² · Fabrika Satış · Teklif Tutarı); ana satır ve alt
+  toplam aynı işlevden gelir, her zaman eşittir. Sipariş adedi ile cam adedi ayrıdır; fabrika satış ve teklif tutarı karışmaz;
+  farklı para birimleri toplanmaz. Tutar sütunları role göre (fabrika satış: yönetici, satış · teklif: yönetici, denetimci).
+  Tek atıf kuralı `server/loading/day-firms.js`: ticari değerler siparişin sahibinde, sandık / ağırlık camı taşıyan firmada.
+- **Firma işlemleri:** Sandık (firmanın o günkü sandıkları), PDF, Excel (yalnızca o firma ve gün; finansal olarak yalnızca
+  müşteri teklif tutarı — fabrika satış tutarı hiçbir rolde yok, satışın çıktısında tutar yok) ve Özet (firma + gün; fabrika satış
+  ve teklif tutarı yalnızca yöneticide). Yetki sunucuda: müşteri ve çizim erişemez, başka gün / firma veri döndürmez.
+- **Misafir yük:** A'nın siparişi B'nin sandığıyla gidiyorsa sipariş A'nın satırında kalır; sandık ve ağırlık B'de bir kez
+  sayılır (brüt iki kez hesaplanmaz); A için sandık açılmaz. A'nın sandık bölümünde açık uyarı "Bu sipariş [B] firmasının
+  sandıkları ile gelecektir."; misafir sipariş için "+ Sandık ekle" kapalı ve sunucu da reddeder (`GUEST_ORDER`, `GUEST_ONLY`);
+  ev sahibi seçilince siparişin kendi firmasındaki sandık bağı kalkar. B'nin sandık listesinde misafir camın sipariş / cam
+  bilgisi görünür. İlişki kalkınca normal sandık yönetimi.
+- **Takvim:** sağ üstte iki eşit yuvarlak — açık sarı (koyu sayı) günün sipariş sayısı, açık kırmızı / pembe (koyu kırmızı sayı)
+  misafir yük sayısı (gerçek ilişkilerden; 0 ise gösterilmez); sayı yuvarlağın içinde, mobilde de.
+- **"Yükleme yapıldı":** "Eksiksiz Yüklendi" düğmesinin adı "Yükleme yapıldı"; onaydaki "Yüklenmeyen cam var" girişi kaldırıldı
+  (yüklenmeyen cam kayıttan sonra "Düzelt" ile girilir). Fatura hatırlatma sayacı bu kayıttan sonra başlar (uyarı günü = kaydın
+  günü + ayardaki gün). İşlem tekrarlanamaz: yeni kayıt / hatırlatma oluşmaz. FGO, 45 gün arşiv ve "Yüklendi" kuralları değişmedi.
+- **Yükleme Özeti (Excel):** "Sandık (Fiziksel)" sütunu kaldırıldı; firma bazlı özet (firma tablosuyla aynı hesap), misafir yük
+  ayrı tabloda (ticari sahip · fiziksel sandık sahibi · sandık), satır dökümü ikinci sayfada.
+- **Excel / PDF standardı:** bütün Excel çıktıları ortak yazıcıdan (`server/files/xlsx-report.js`): saydam PNG logo (oran
+  korunur), başlık ve tarih, biçimli başlık satırı, sütun genişlikleri, AutoFilter, dondurulmuş başlık, birim / ondalık / para
+  biçimleri, metin kaydırma, gereksiz boş satır / sütun yok, baskı alanı ve sayfa düzeni, yinelenen başlık. PDF'lerde ortak
+  logo ve ortak altbilgi (firma adı + sayfa / toplam); yeni firma yükleme PDF'i. İçerik ve yetkiler değişmedi; müşteri
+  çıktılarında fabrika fiyatı yok.
+- **Dosya adları** panel dilinde ve güvenli karakterlerle (`server/files/export-name.js`, `lib/exports.ts`):
+  "Yukleme-Ozeti-2026-10-08.xlsx" / "Rezumat-Incarcare-2026-10-08.xlsx", "Tekliflerim-…pdf" / "Ofertele-Mele-…pdf",
+  mali belge PDF'i "Fatura-GKH101.pdf" / "Factura-GKH101.pdf" (belge numarası ve içerik aynı).
+- **Maskeleme:** satış (ve çizim) firma adlarını her yerde ilk 3 karakter + 10 yıldız görür — tablo, alt sipariş, takvim, misafir
+  uyarısı, sandık ekranı, ipuçları, sayfa verisi ve çıktılar; sunucuda.
+- Testler: `test/day-firms.test.js`, `test/firm-export.test.js`, `test/xlsx-report.test.js`, `test/db/guest-crates.test.js`,
+  `test/db/notifications.test.js` (sayaç kayıttan başlar), `e2e/41-yukleme-firma.spec.ts`; yükleme, muhasebe ve müşteri e2e'leri
+  yeni ekrana göre güncellendi.
+
 ## 3.56.0 — 08.10.2026
 
 Fonksiyonel paket 6 — tedarikçi yönetimi, satın alma ve tedarikçi hesapları (kararlar 179–185). Veritabanı şeması: tedarikçi
