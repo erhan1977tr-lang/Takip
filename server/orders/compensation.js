@@ -340,6 +340,17 @@ async function lockOrders(tx, ids) {
   for (const id of [...new Set(ids.filter(Boolean))].sort()) await lock(tx, `glass-billing:${id}`);
 }
 
+/**
+ * Sipariş sürümünü artırır — yalnızca bu işlemde okunan sürümse (iyimser kilit; Order.version). Sipariş okunduktan sonra
+ * başka bir işlem (ör. yöneticinin "teklifi güncelle"si, satışın taslak kaydı) onu değiştirdiyse yeni teklif sürümü / taslak
+ * ESKİ satırlardan yazılmaz: işlem geri alınır (CONFLICT), kullanıcı güncel teklifle yeniden dener. Sürüm artınca bu
+ * siparişin açık bir teklif formu da eski satırlarla kaydedemez.
+ */
+async function bumpVersion(tx, order) {
+  const r = await tx.order.updateMany({ where: { id: order.id, version: order.version }, data: { version: { increment: 1 } } });
+  if (r.count !== 1) throw Object.assign(new Error('CONFLICT'), { compCode: 'CONFLICT' });
+}
+
 /** Satırları taslak (müşteriye gitmemiş) teklife ekler; tutarlar yeniden hesaplanır. */
 async function appendToDraft(tx, { dest, lines, compensationId }) {
   const offer = dest.offers[0];
@@ -350,8 +361,12 @@ async function appendToDraft(tx, { dest, lines, compensationId }) {
   return offer.id;
 }
 
-/** Bir siparişin müşterideki teklifinin YENİ sürümü (eski sürüm değişmez); hemen müşteriye gönderilmiş sayılır (update_offer ile aynı kural). */
+/**
+ * Bir siparişin müşterideki teklifinin YENİ sürümü (eski sürüm değişmez); hemen müşteriye gönderilmiş sayılır (update_offer
+ * ile aynı kural). Önce sürüm kilidi: sipariş bu işlemde okunduğundan beri değiştiyse hiçbir şey yazılmaz (CONFLICT).
+ */
 async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
+  await bumpVersion(tx, order);
   const { amount, offerAmount } = amounts(lines);
   const created = await tx.offer.create({
     data: {
@@ -368,8 +383,6 @@ async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
   // Müşteri teklifin güncellendiğini görür (olağan olay; notta tutar yok)
   await writeHistory(tx, { orderId: order.id, event: 'OFFER_UPDATED', from: order.status, to: order.status, actorId: actor.id, note: null });
   await enqueueOutbox(tx, { type: 'ORDER_OFFER_UPDATED', orderId: order.id, payload: { from: order.status, to: order.status, actorId: actor.id } });
-  // Sürüm artar: bu siparişin açık bir teklif formu varsa eski satırlarla kaydedemez (CONFLICT)
-  await tx.order.update({ where: { id: order.id }, data: { version: { increment: 1 } } });
   return created.id;
 }
 
@@ -563,9 +576,9 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
         comp = await tx.compensation.create({ data: { ...base, status, destType: 'EXISTING', destOrderId: destOrder.id, loadingDay: shipDayDate(loadingDay(destOrder)) } });
         if (status === 'APPLIED') {
           if (via === 'DRAFT') {
+            // Önce sürüm kilidi (taslak okunduğundan beri değiştiyse CONFLICT), sonra satırlar taslağa eklenir
+            await bumpVersion(tx, destOrder);
             await appendToDraft(tx, { dest: destOrder, lines, compensationId: comp.id });
-            // Sürüm artar: bu siparişin açık bir teklif formu varsa eski satırlarla kaydedemez (CONFLICT)
-            await tx.order.update({ where: { id: destOrder.id }, data: { version: { increment: 1 } } });
           } else {
             const r = await addSentVersion(tx, { dest: destOrder, lines, compensationId: comp.id, actor, now });
             if (!r.ok) throw Object.assign(new Error(r.code), { compCode: r.code });
@@ -733,6 +746,8 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       return { ok: true, status: 'APPLIED', destOrderId: d.dest.id, sourceOrderId: comp.sourceOrderId, source: sourceInfo };
     }, { timeout: 30_000, maxWait: 15_000 });
   } catch (e) {
+    // Sipariş okunduktan sonra başka bir işlemle değişti (sürüm kilidi) ya da aynı kayıt aynı anda: hiçbir şey yazılmadı
+    if (e?.compCode) return fail(e.compCode);
     if (e?.code === 'P2002') return fail('CONFLICT');
     throw e;
   }

@@ -10,8 +10,9 @@
 //   - Oturum temizliği: süresi dolmuş / boşta kalmış oturum satırları saatte bir silinir (server/auth/session-policy.js).
 //   - "Fatura bekliyor" (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam, ayardaki gün dolunca muhasebe yetkisine
 //     saatte bir denetlenip kapsam başına bir kez bildirilir (server/accounting/uninvoiced.js). FGO'ya istek atılmaz.
-//   - Otomatik "Yüklendi" (karar 156): yükleme gününden 45 gün geçmiş, hâlâ üretimde duran cam siparişi saatte bir
-//     denetlenip mevcut durum geçişiyle "Yüklendi" yapılır (server/orders/auto-ship.js). Yalnızca veritabanı.
+//   - Otomatik arşiv (karar 158): fiziksel yüklemesi kanıtlı (kişinin "Yüklendi"si ya da eksiksiz yükleme onayı) cam siparişi
+//     yükleme gününden 45 gün sonra mevcut arşiv durumuna geçer; 3.51.0'ın tarihe bakarak verdiği "Yüklendi"ler önce geri
+//     alınır. Saatte bir (server/orders/auto-archive.js). Yalnızca veritabanı.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -29,7 +30,7 @@ import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
-import { AUTO_SHIP_EVERY_MS, autoShipOrders } from '../server/orders/auto-ship.js';
+import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -131,15 +132,19 @@ async function uninvoicedTick() {
   if (r.created) log('fatura bekliyor:', JSON.stringify(r));
 }
 
-// Saatte bir: yükleme gününden 45 gün geçmiş, hâlâ üretimde duran cam siparişleri "Yüklendi" olur (karar 156).
+// Saatte bir (ve işçi başlarken) — karar 158: önce 3.51.0'ın tarihe bakarak verdiği "Yüklendi"ler mevcut üretim durumuna geri
+// alınır; sonra fiziksel yüklemesi KANITLI (kişinin "Yüklendi"si ya da eksiksiz yükleme onayı) ve yükleme gününden 45 gün
+// geçmiş cam siparişleri mevcut arşiv durumuna geçer. Planlanan tarih kanıt değildir; "Yüklendi" otomatik yazılmaz.
 // Yalnızca veritabanı (dış istek yok); her sipariş iş akışı servisinden geçer (geçmiş + denetim kaydı).
-let autoShippedAt = 0;
-async function autoShipTick() {
-  if (once) return; // --once (testler): kural test/db/auto-ship.test.js'te doğrudan denenir
-  if (Date.now() - autoShippedAt < AUTO_SHIP_EVERY_MS) return;
-  autoShippedAt = Date.now();
-  const r = await autoShipOrders(db, { now: new Date(), log });
-  if (r.shipped || r.skipped) log('otomatik yüklendi:', JSON.stringify(r));
+let autoArchivedAt = 0;
+async function autoArchiveTick() {
+  if (once) return; // --once (testler): kural test/db/auto-archive.test.js'te doğrudan denenir
+  if (Date.now() - autoArchivedAt < AUTO_ARCHIVE_EVERY_MS) return;
+  autoArchivedAt = Date.now();
+  const repaired = await repairAutoShipped(db, { log });
+  if (repaired.reverted || repaired.skipped) log('otomatik "Yüklendi" geri alındı:', JSON.stringify(repaired));
+  const r = await autoArchiveOrders(db, { now: new Date(), log });
+  if (r.archived || r.skipped) log('otomatik arşiv:', JSON.stringify(r));
 }
 
 async function tick() {
@@ -178,9 +183,9 @@ while (!stopping) {
     log('fatura bekliyor hatası:', e?.message ?? e);
   }
   try {
-    await autoShipTick();
+    await autoArchiveTick();
   } catch (e) {
-    log('otomatik yüklendi hatası:', e?.message ?? e);
+    log('otomatik arşiv hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

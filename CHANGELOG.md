@@ -4,6 +4,37 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.51.1 — 08.10.2026
+
+Fonksiyonel paket 1 son düzeltme (kararlar 158–159). Veritabanı şeması değişmedi.
+
+- **Otomatik "Yüklendi" kaldırıldı — yerine fiziksel yüklemeye bağlı otomatik arşiv.** 3.51.0'da yükleme gününden 45 gün
+  geçmiş ve hâlâ "Üretimde" duran sipariş, yüklenip yüklenmediğine bakılmadan "Yüklendi" yapılıyordu; bu yanlıştı.
+  - Artık sipariş hiçbir durumda yalnızca tarih geçtiği için "Yüklendi" olmaz. "Yüklendi"yi yalnızca bir kişi verir
+    (satışın "Yüklendi" düğmesi).
+  - **Fiziksel yüklemesi kanıtlı** sipariş, yükleme gününden **45 gün** sonra kendiliğinden **Arşivlendi** olur (mevcut arşiv
+    durumu; "Yüklenen ve arşiv" sekmesi). Kanıt: satışın "Yüklendi" dediği sipariş ya da yükleme onayında camının tamamı
+    yüklenmiş sipariş (yüklenmeyen camı ileri güne aktarılıp o gün yüklenmiş ya da yerine telafi açılmış olabilir). Gün,
+    camın yüklendiği son gündür.
+  - Yükleme onayı olmayan, camı kırık / eksik kalmış (aktarılmamış), ileri güne aktarılmış camı bekleyen, beklemedeki ya da
+    yükleme onayından sonra teklifine cam eklenmiş sipariş "Üretimde" kalır.
+  - Otomatik arşiv fiili yükleme gününü, sandıkları, yükleme onayını, faturaları / FGO belgelerini değiştirmez; müşteriye
+    bildirim ya da e-posta gitmez; geçmişe "Arşivlendi (otomatik)" yazılır. Aynı sipariş iki kez arşivlenmez.
+  - **Onarım:** 3.51.0'ın bu yolla "Yüklendi" yaptığı siparişler yayından sonraki ilk turda kendiliğinden **"Üretimde"ye
+    geri alınır** (geçmişe ve denetim kaydına yazılır); fiziksel yüklemesi kanıtlı ve 45 günü dolmuş olanlar ardından arşive
+    geçer. 3.51.0'ın "Yüklendi" satırı müşterinin geçmişinde artık görünmez. Bir kişinin bu arada arşivlediği ya da iptal
+    ettiği siparişe dokunulmaz.
+  - **Dikkat:** ilk turda yükleme günü 45 günden eski olan kanıtlı siparişler arşive geçer (satışın "Yüklendi" dediği
+    siparişler "Yüklendi" → "Arşivlendi").
+- **Telafi "Farklı fiyat" — teklif tutarlılığı doğrulandı:** ana siparişin adedi teklifin yeni sürümüyle düşer (eski sürüm
+  durur); telafi siparişinin teklifi yönetici fiyatlandırıp gönderene kadar müşteriye görünmez — yönetici fiyatı taslak
+  olarak kaydetse de; gönderince müşteri nihai teklifi görür. Yüklenmiş ya da FGO belgeli ana sipariş değişmez (telafi ek
+  üretimdir).
+  - **Düzeltme:** telafi açılırken ana sipariş (ya da hedef sipariş) aynı anda başka biri tarafından değiştirilirse (ör.
+    yöneticinin "teklifi güncelle"si) telafi artık eski satırlardan yeni sürüm yazmaz; hiçbir şey kaydedilmez ve "Aynı anda
+    başka bir işlem yapıldı" uyarısı verilir — sayfa yenilenip yeniden denenir.
+- **Değişmeyen:** firma adı maskesi (ilk 3 karakter + 10 yıldız), satış paneli, iki kademeli fiyat, yetkiler.
+
 ## 3.51.0 — 08.10.2026
 
 Fonksiyonel paket 1: satış paneli + telafi camı (kararlar 155–157). Veritabanı şeması değişmedi.

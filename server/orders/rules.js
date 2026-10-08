@@ -196,8 +196,13 @@ export const EVENTS = {
   UNDO_NO_DRAWING: { customer: false },
   PRODUCTION: { customer: true },
   SHIPPED: { customer: true },
-  AUTO_SHIPPED: { customer: true },
+  // 3.51.0'ın tarihe bakarak verdiği "Yüklendi" (karar 156) fiziksel yükleme kanıtı değildi: 3.51.1'de geri alındı (karar
+  // 158); eski satır ve geri alma kaydı yalnızca iç ekibe görünür (müşteriye yanlış "Yüklendi" satırı gösterilmez)
+  AUTO_SHIPPED: { customer: false },
+  AUTO_SHIP_REVERTED: { customer: false },
   ARCHIVED: { customer: true },
+  // Otomatik arşiv (karar 158): fiziksel yüklemesi kanıtlı sipariş, yükleme gününden 45 gün sonra — müşteriye "Arşivlendi"
+  AUTO_ARCHIVED: { customer: true },
   CANCELLED: { customer: true, note: true },
   HOLD: { customer: false },
   UNHOLD: { customer: false },

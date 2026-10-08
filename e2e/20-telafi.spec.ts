@@ -338,9 +338,33 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   await expect(price).toHaveCount(1);
   await expect(price).toHaveValue('');
   await shot(admin, 'telafi-siparisi');
+  // Fiyatlandırma penceresi: yönetici fiyatı TASLAK olarak kaydetti, henüz göndermedi. Onaylanmamış fiyat müşteriye hiçbir
+  // yoldan gitmez (sayfa HTML'i, RSC verisi, sipariş / teklif / yükleme listeleri, bildirim akışı); telafi siparişinin teklifi
+  // müşteride görünmez. Kaynak sipariş müşteride kendi güncel (adedi düşmüş) sürümüyle durur.
+  await price.fill('81.37');
+  await admin.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
+  await expect(admin).toHaveURL(/ok=offer_saved/);
+  await expect(price).toHaveValue('81.37');
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  for (const url of [`/siparisler/${pricingId}`, `/siparisler/${srcId}`, '/teklifler', '/siparisler', '/yuklemeler', '/bildirimler/akis']) {
+    for (const rsc of [false, true]) {
+      const res = await cust.request.get(rsc ? `${url}?_rsc=1` : url, { headers: rsc ? { RSC: '1' } : {}, maxRedirects: 0 });
+      expect(res.status(), url).toBe(200);
+      const body = await res.text();
+      for (const secret of ['81,37', '81.37']) expect(body, `${url}${rsc ? ' (RSC)' : ''}: ${secret}`).not.toContain(secret);
+    }
+  }
+  await cust.goto(`/siparisler/${pricingId}`);
+  await expect(cust.locator('h1')).toContainText('Telafi e2e 7901');
+  await expect(cust.locator('#teklif')).toHaveCount(0);
   await price.fill('72');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
   await expect(admin.getByText(/Fiyat onaylandı|üretime alındı/).first()).toBeVisible();
+  // Yönetici fiyatlandırmayı tamamladı: müşteri nihai teklifi (yöneticinin onayladığı fiyatla) görür; taslaktaki fiyat hiç gitmedi
+  await cust.goto(`/siparisler/${pricingId}`);
+  await expect(cust.locator('#teklif')).toContainText('72,00');
+  expect(await cust.content()).not.toContain('81,37');
+  await cust.context().close();
   const t3 = await db.order.findUniqueOrThrow({ where: { id: pricingId }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: true } } } });
   expect([t3.status, t3.offers[0].status, t3.offers[0].lines.map(lineRow)]).toEqual(['URETIMDE', 'GONDERILDI', [['CAM', 1, 37, 72, false, true]]]);
   // Yöneticinin belirlediği fiyat telafi kaydına da yazıldı (uygulanan fiyat izlenebilir)

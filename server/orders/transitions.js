@@ -60,10 +60,13 @@ export const glassWorkflow = {
   orderType: 'GLASS_ORDER',
   check({ orderType, action, actor, ctx }) {
     if (orderType !== 'GLASS_ORDER') return { ok: false, code: 'WRONG_ORDER_TYPE' };
-    // Otomatik "Yüklendi" (karar 156): yalnızca işçi (server/orders/auto-ship.js); üretimdeki, beklemede olmayan sipariş.
-    // Hiçbir rolün eylemi değildir — availableActions'ta yoktur, kullanıcıdan gelen istekle çalışmaz.
-    if (action === 'auto_shipped') {
-      const ok = actor.system === true && actor.autoShip === true && ctx.order.status === 'URETIMDE' && !ctx.order.onHold;
+    // Otomatik arşiv ve 3.51.0 onarımı (karar 158): yalnızca işçi (server/orders/auto-archive.js). Hiçbir rolün eylemi
+    // değildir — availableActions'ta yoktur, kullanıcıdan gelen istekle çalışmaz. Kanıt / onarım koşulu işlemin kendisinde,
+    // aynı veritabanı işleminde yeniden denetlenir.
+    if (action === 'auto_archive' || action === 'auto_ship_revert') {
+      const o = ctx.order;
+      const states = action === 'auto_archive' ? ['YUKLENDI', 'URETIMDE'] : ['YUKLENDI'];
+      const ok = actor.system === true && actor.autoArchive === true && states.includes(o.status) && !o.removedAt && (action === 'auto_ship_revert' || !o.onHold);
       return ok ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
     }
     const need = REQUIRES[action];
@@ -379,14 +382,31 @@ const ACTIONS = {
     h.event('SHIPPED');
   },
   /**
-   * Otomatik "Yüklendi" (karar 156) — yalnızca işçi. Satışın "Yüklendi" düğmesiyle AYNI durum (yeni durum yok); fark:
-   * yükleme GÜNÜ değişmez (fiili gün yazılmaz; sipariş planlanan gününde kalır), sandıklar taşınmaz ve müşteriye
-   * "yüklendi" bildirimi gitmez (olay AUTO_SHIPPED — ORDER_SHIPPED bildirim kuralına girmez).
+   * Otomatik arşiv (karar 158) — yalnızca işçi (server/orders/auto-archive.js). Mevcut arşiv durumu (ARSIVLENDI; yeni durum
+   * yok). Kural kayıttan önce bu işlemde yeniden uygulanır: fiziksel yükleme kanıtı (kişinin "Yüklendi"si ya da eksiksiz
+   * yükleme onayı) yoksa ya da yükleme gününden 45 gün geçmediyse işlem reddedilir. "Yüklendi" yazılmaz; fiili yükleme günü,
+   * sandıklar, yükleme onayı ve belgeler değişmez; bildirim gitmez (ORDER_AUTO_ARCHIVED hiçbir bildirim kuralında yok).
    */
-  async auto_shipped(h) {
-    await h.set({ status: 'YUKLENDI' });
-    h.event('AUTO_SHIPPED');
-    h.audit = { auto: true, days: h.payload.days ?? null, shipDay: h.payload.shipDay ?? null };
+  async auto_archive(h) {
+    const { archiveCheck } = await import('./auto-archive.js');
+    const r = await archiveCheck(h.tx, h.order, { today: h.payload.today, now: h.now });
+    if (!r.ok) throw new WorkflowError(r.code);
+    await h.set({ status: 'ARSIVLENDI' });
+    h.event('AUTO_ARCHIVED', dayText(new Date(`${r.proof.day}T12:00:00Z`)));
+    h.audit = { auto: true, via: r.proof.via, loadingDay: r.proof.day, today: r.today };
+  },
+  /**
+   * 3.51.0 onarımı (karar 158) — yalnızca işçi. Tarihe bakılarak verilmiş "Yüklendi" (siparişi "Yüklendi" yapan son olay
+   * AUTO_SHIPPED) kanıt değildi: sipariş mevcut üretim durumuna geri alınır. Bir kişi sonradan "Yüklendi" dediyse işlem reddedilir.
+   */
+  async auto_ship_revert(h) {
+    const last = await h.tx.orderEvent.findFirst({
+      where: { orderId: h.order.id, event: { in: ['SHIPPED', 'AUTO_SHIPPED'] } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { id: true, event: true, createdAt: true },
+    });
+    if (last?.event !== 'AUTO_SHIPPED') throw new WorkflowError('NOT_ALLOWED');
+    await h.set({ status: 'URETIMDE' });
+    h.event('AUTO_SHIP_REVERTED');
+    h.audit = { auto: true, revertOf: last.id, autoShippedAt: last.createdAt.toISOString() };
   },
   async archive(h) {
     await h.set({ status: 'ARSIVLENDI' });
