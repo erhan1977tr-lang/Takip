@@ -23,6 +23,7 @@ export default {
   profileCatalog: 'Profil Kataloğu',
   profilePrices: 'Profil Fiyatları',
   stock: 'Profil Stoğu',
+  profileCalc: 'Profil Hesaplayıcı',
   alerts: 'Önemli kararlar',
   integrations: 'Entegrasyonlar',
   myOrders: 'Siparişlerim',

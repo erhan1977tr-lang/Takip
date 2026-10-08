@@ -68,16 +68,23 @@ const plain = (p) => ({
   listPrice: p.listPrice == null ? null : Number(p.listPrice), isActive: !!p.isActive,
 });
 const COMPARE = ['categoryCode', 'nameRo', 'nameTr', 'unitCode', 'listPrice', 'isActive'];
+const PACK_FIELDS = ['packContent', 'packMeasure'];
+/** Paket içeriği karşılaştırma için düz değer ("137", "M"; boş → null) */
+const packOf = (p) => ({ packContent: p.packContent == null ? null : String(Number(p.packContent.toString())), packMeasure: p.packMeasure ?? null });
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]));
 const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('profile-catalog', 0))`;
 
 /**
  * Ürün ekler ya da düzenler. Düzenlemede kod değişmez.
+ * pack (yalnızca katalog formu — Excel bu alanlara dokunmaz): paket içeriği ve ölçüsü (hesaplayıcı — karar 175;
+ * server/profile/calculator.js → parsePack). Verilmezse bu alanlar değişmez.
  * @param {string | null} id
  * @param {ProductInput} value
+ * @param {any} actor
+ * @param {{ packContent: string | null, packMeasure: 'M' | 'BUC' | null }} [pack]
  * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' }>}
  */
-export async function saveProduct(db, id, value, actor) {
+export async function saveProduct(db, id, value, actor, pack = undefined) {
   return db.$transaction(async (tx) => {
     await lock(tx);
     const category = await tx.profileCategory.findUnique({ where: { code: value.categoryCode } });
@@ -85,13 +92,14 @@ export async function saveProduct(db, id, value, actor) {
     const data = {
       categoryId: category.id, nameRo: value.nameRo, nameTr: value.nameTr, unitCode: value.unitCode,
       listPrice: value.listPrice == null ? null : value.listPrice.toFixed(2), isActive: value.isActive,
+      ...(pack ? { packContent: pack.packContent, packMeasure: pack.packMeasure } : {}),
     };
     if (id) {
       const cur = await tx.profileProduct.findUnique({ where: { id }, include: { category: true } });
       if (!cur) return { ok: false, code: 'NOT_FOUND' };
-      const before = plain(cur);
-      const after = { ...value, code: cur.code };
-      const changes = COMPARE.filter((f) => before[f] !== after[f]);
+      const before = { ...plain(cur), ...(pack ? packOf(cur) : {}) };
+      const after = { ...value, code: cur.code, ...(pack ? packOf(pack) : {}) };
+      const changes = [...COMPARE, ...(pack ? PACK_FIELDS : [])].filter((f) => before[f] !== after[f]);
       const moved = cur.categoryId !== category.id;
       const sortOrder = moved ? await nextSort(tx, category.id) : cur.sortOrder;
       await tx.profileProduct.update({ where: { id }, data: { ...data, sortOrder } });
@@ -105,7 +113,7 @@ export async function saveProduct(db, id, value, actor) {
     }
     if (await tx.profileProduct.findUnique({ where: { code: value.code } })) return { ok: false, code: 'EXISTS' };
     const p = await tx.profileProduct.create({ data: { ...data, code: value.code, sortOrder: await nextSort(tx, category.id) } });
-    await writeAudit(tx, { action: 'PROFILE_PRODUCT_CREATE', entityType: 'ProfileProduct', entityId: p.id, userId: actor.id, details: { after: value } }, actor);
+    await writeAudit(tx, { action: 'PROFILE_PRODUCT_CREATE', entityType: 'ProfileProduct', entityId: p.id, userId: actor.id, details: { after: { ...value, ...(pack ? packOf(pack) : {}) } } }, actor);
     return { ok: true, id: p.id };
   });
 }

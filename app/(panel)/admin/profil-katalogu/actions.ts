@@ -15,6 +15,7 @@ import {
   MAX_IMAGE_BYTES, MAX_PRODUCTS_IMPORT, applyProductImport, changeProduct, parseProductSheet, planProductImport, saveCategory, saveProduct,
   setProductImage, validateCategory, validateProduct, type ProductInput,
 } from '@/server/profile/catalog.js';
+import { parsePack } from '@/server/profile/calculator.js';
 
 const PATH = '/admin/profil-katalogu';
 const back = (q: string) => `${PATH}?${q}`;
@@ -41,7 +42,10 @@ export async function saveProductAction(fd: FormData) {
   });
   // Düzenlemede kod değişmez (formda salt okunur; saveProduct da kaydedilmiş kodu korur)
   if (!res.ok) redirect(back(`error=${res.errors[0].toLowerCase()}${edit}`));
-  const r = await saveProduct(db, id, res.value, await actorOf(admin));
+  // Paket içeriği (hesaplayıcı — karar 175): ikisi de boşsa tanımsız; içerik varsa ölçü zorunlu
+  const pack = parsePack({ content: fd.get('packContent'), measure: fd.get('packMeasure') });
+  if (!pack.ok) redirect(back(`error=${pack.code.toLowerCase()}${edit}`));
+  const r = await saveProduct(db, id, res.value, await actorOf(admin), pack.value);
   if (!r.ok) redirect(back(`error=${r.code.toLowerCase()}${edit}`));
   revalidatePath(PATH);
   redirect(back(`${id ? 'ok=saved' : 'ok=added'}#p-${r.id}`));

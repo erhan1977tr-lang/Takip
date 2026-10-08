@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { fmtNum } from '@/lib/format';
+import { fmtDec, fmtNum } from '@/lib/format';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import { stockLevels } from '@/server/profile/stock.js';
 import { changeProductAction, productImageAction, saveCategoryAction, saveProductAction } from './actions';
@@ -25,6 +25,9 @@ const MSG: Record<string, [string, MsgKey]> = {
   too_long: ['error', 'profile.catalog.problem.TOO_LONG'],
   unit: ['error', 'profile.catalog.problem.UNIT'],
   price: ['error', 'profile.catalog.problem.PRICE'],
+  pack: ['error', 'profile.catalog.problem.PACK'],
+  pack_measure: ['error', 'profile.catalog.problem.PACK_MEASURE'],
+  pack_int: ['error', 'profile.catalog.problem.PACK_INT'],
 };
 
 // Profil kataloğu (Aşama 6): kategoriler, ürünler (kod, iki dilde ad, birim, liste fiyatı, görsel, sıra, etkin/pasif), Excel.
@@ -42,6 +45,10 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
   const code = sp.ok ?? (sp.error === 'image' ? 'image_error' : sp.error) ?? '';
   const msg = code === 'image_error' ? (['error', 'profile.catalog.msg.image'] as [string, MsgKey]) : Object.hasOwn(MSG, code) ? MSG[code] : undefined;
   const unitName = (c: string) => UNITS.find((u) => u.code === c)?.name[locale] ?? c;
+  // Paket içeriği (hesaplayıcı — karar 175): "137 m / kutu", "100 adet / poşet"
+  const packText = (p: { packContent: { toString(): string } | null; packMeasure: string | null; unitCode: string }) =>
+    p.packContent == null || !p.packMeasure ? null
+      : t('profile.catalog.packValue', { n: fmtDec(p.packContent.toString(), 3), measure: t(`profile.calc.measure.${p.packMeasure}` as MsgKey), unit: unitName(p.unitCode) });
 
   return (
     <>
@@ -51,6 +58,7 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
           <p className="muted">{t('profile.catalog.intro')}</p>
         </div>
         <div className="row">
+          <Link className="btn" href="/admin/profil-katalogu/hesaplama">{t('profile.calcAdmin.link')}</Link>
           <a className="btn" href="/admin/profil-katalogu/excel">{t('profile.catalog.download')}</a>
           <a className="btn" href="#excel">{t('profile.catalog.import.title')}</a>
         </div>
@@ -97,6 +105,21 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                 <label htmlFor="pc-price">{t('profile.catalog.field.listPrice')}</label>
                 <input id="pc-price" name="listPrice" inputMode="decimal" defaultValue={editing?.listPrice != null ? Number(editing.listPrice).toFixed(2) : ''} />
                 <div className="hint">{t('profile.catalog.field.listPriceHint')}</div>
+              </div>
+              {/* Paket içeriği (hesaplayıcı — karar 175): bir satış birimindeki miktar; tüketim değildir */}
+              <div>
+                <label htmlFor="pc-pack">{t('profile.catalog.field.packContent')}</label>
+                <input id="pc-pack" name="packContent" inputMode="decimal" defaultValue={editing?.packContent != null ? String(Number(editing.packContent.toString())) : ''} />
+                <div className="hint">{t('profile.catalog.field.packContentHint')}</div>
+              </div>
+              <div>
+                <label htmlFor="pc-measure">{t('profile.catalog.field.packMeasure')}</label>
+                <select id="pc-measure" name="packMeasure" defaultValue={editing?.packMeasure ?? ''}>
+                  <option value="">—</option>
+                  <option value="M">{t('profile.calc.measure.M')}</option>
+                  <option value="BUC">{t('profile.calc.measure.BUC')}</option>
+                </select>
+                <div className="hint">{t('profile.catalog.field.packMeasureHint')}</div>
               </div>
             </div>
             <label className="row" style={{ marginTop: 10 }}>
@@ -152,7 +175,7 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                   <thead>
                     <tr>
                       <th>{t('profile.catalog.col.image')}</th><th>{t('profile.catalog.col.code')}</th><th>{t('profile.catalog.col.name')}</th>
-                      <th>{t('profile.catalog.col.unit')}</th><th className="num">{t('profile.catalog.col.price')}</th><th className="num">{t('profile.catalog.col.stock')}</th>
+                      <th>{t('profile.catalog.col.unit')}</th><th>{t('profile.catalog.col.pack')}</th><th className="num">{t('profile.catalog.col.price')}</th><th className="num">{t('profile.catalog.col.stock')}</th>
                       <th>{t('profile.catalog.col.status')}</th><th />
                     </tr>
                   </thead>
@@ -166,6 +189,7 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                           <td className="mono">{p.code}</td>
                           <td>{p.nameRo}{p.nameTr !== p.nameRo && <div className="muted small">{p.nameTr}</div>}</td>
                           <td className="muted">{unitName(p.unitCode)}</td>
+                          <td className="nowrap" data-pack={p.code}>{packText(p) ?? <span className="muted">—</span>}</td>
                           <td className="num">{p.listPrice != null ? fmtNum(p.listPrice.toString()) : <span className="badge badge-warn">{t('profile.catalog.noPrice')}</span>}</td>
                           <td className={`num${st < 0 ? ' stock-neg' : ''}`}>{st}</td>
                           <td>{p.isActive ? <span className="badge badge-ok">{t('profile.catalog.active')}</span> : <span className="badge badge-muted">{t('profile.catalog.inactive')}</span>}</td>

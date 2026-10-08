@@ -32,6 +32,8 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/admin/fiyatlar', key: 'nav.prices' },
     { href: '/admin/musteri-fiyatlari', key: 'nav.customerPrices' },
     { href: '/admin/profil-katalogu', key: 'nav.profileCatalog' },
+    // Profil hesaplayıcısının sistemleri, kalemleri ve cam kalınlıkları (Paket 5, karar 175)
+    { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
     { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
     { href: '/admin/stok', key: 'nav.stock' },
     { href: '/admin/entegrasyonlar', key: 'nav.integrations' },
@@ -48,12 +50,13 @@ export const NAV: Record<AppRole, NavDef[]> = {
     // Müşterinin DWG/DXF olarak gönderdiği çizimler: üç karar (Üretime Hazır / Çizim Hatalı / Çizimi Güncelle) — karar 167
     { href: '/siparisler?view=dwg', key: 'nav.dwgDrawings' },
   ],
-  // Denetimci yalnızca görüntüler (karar 8)
+  // Denetimci yalnızca görüntüler (karar 8); profil stoğunu salt okunur görür (karar 177 — STOCK_VIEW)
   DENETIMCI: [
     { section: 'nav.operations' },
     { href: '/siparisler', key: 'nav.orders' },
     { href: '/teklifler', key: 'nav.offers' },
     { href: '/yuklemeler', key: 'nav.loadings' },
+    { href: '/admin/stok', key: 'nav.stock' },
   ],
   MUSTERI: [
     { section: 'nav.customerPortal' },

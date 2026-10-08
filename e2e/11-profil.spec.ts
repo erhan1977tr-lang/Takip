@@ -51,17 +51,24 @@ test('müşteri: sipariş tipi seçer, profil ürünlerinin adetlerini girer', a
   await cust.locator('tr', { hasText: 'SPIGOTI' }).locator('input.qty-input').fill('20');
   await expect(cust.getByText('2 ürün seçildi')).toBeVisible();
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
+  // Gönderimden önce stok uyarısı (karar 177): yalnızca bu formdaki, stoğu yetmeyen ürün (gereken / mevcut / eksik);
+  // sipariş engellenmez — "Yine de gönder"
+  const check = cust.locator('#stok-uyari');
+  await expect(check).toContainText('Stok uyarısı');
+  await expect(check.locator('tr[data-stock-check-row="SPIGOTI"] td.num')).toHaveText(['20 adet', '0', '20']);
+  await expect(check.locator('tr[data-stock-check-row="GK15"]')).toHaveCount(0); // stoğu yeten ürün listede yok
+  await check.getByRole('button', { name: 'Yine de gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=profile_created/);
   url = new URL(cust.url()).pathname;
   await expect(cust.getByText('Teklifiniz hazırlanıyor.').first()).toBeVisible();
-  // Stok yetersizliği (karar 165): sipariş ENGELLENMEDİ; müşteri uyarıyı ve ürünü görür ama stok sayısını görmez
+  // Stok yetersizliği (karar 165, 177): sipariş ENGELLENMEDİ; müşteri uyarıyı ve KENDİ siparişindeki eksik ürünün sipariş
+  // anındaki gereken / mevcut / eksik değerini görür — genel stok listesi ve yöneticinin tablosu değil
   const warn = cust.locator('#stok.alert-warn');
   await expect(warn).toContainText('Stok uyarısı:');
-  await expect(warn).toContainText('SPIGOTI');
+  await expect(warn.locator('[data-stock-line="SPIGOTI"]')).toContainText('gereken 20 adet, mevcut 0, eksik 20');
   await expect(warn).not.toContainText('GK15'); // stoğu yeten ürün listede yok
   await expect(cust.locator('.page-head .badge', { hasText: 'Stok yetersiz' })).toBeVisible();
   await expect(cust.locator('table.stock-table')).toHaveCount(0);
-  await expect(cust.getByText('Mevcut', { exact: true })).toHaveCount(0);
   // Profil siparişinde müşteri dosya yüklemez (karar 161): alan yok — sunucu da reddeder (aynı firmanın cam siparişindeki
   // "Dosya ekle" işlemini profil siparişi için doğrudan göndermek de dosya eklemez)
   await expect(cust.locator('input[type=file]')).toHaveCount(0);

@@ -332,6 +332,8 @@ test('profil siparişi: form aynı akışla çalışır; listede görünür; tes
   await expect(cust.locator('tr', { hasText: 'MC12' }).locator('td.thumb img')).toHaveCount(1); // ürün görseli
   await shot(cust, '26-musteri-yeni-profil-siparisi');
   await send.click();
+  // MC12'nin stoğu yok: gönderimden önce stok uyarısı (karar 177) — sipariş engellenmez
+  await cust.locator('#stok-uyari').getByRole('button', { name: 'Yine de gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=profile_created/);
   const url = new URL(cust.url()).pathname;
   const no = (await cust.locator('.page-head .mono').first().innerText()).trim();

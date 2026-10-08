@@ -26,7 +26,8 @@ export const PERMISSIONS = {
   OFFER_EXPORT: 'Teklifi PDF olarak indirir (Excel: yönetici her zaman, müşteri yöneticinin izin verdiği siparişte)',
   ACCOUNT_SETTINGS: 'Müşteri hesabı: kendi ayarlarını değiştirir (sabit dil, e-posta bildirimleri); firmasının mali belgelerini (proforma, avans faturası, fatura) ve PDF\'lerini görür',
   OFFER_APPROVE: 'Profil teklifini onaylar ve teslim bilgilerini (alış günü, telefon, plaka) girer',
-  STOCK_MANAGE: 'Profil stoğunu görür; giriş ve sayım düzeltmesi yapar',
+  STOCK_MANAGE: 'Profil stoğunu görür; giriş ve sayım düzeltmesi yapar, kritik stok eşiğini girer',
+  STOCK_VIEW: 'Profil stoğunu yalnızca görüntüler (stok, rezerve, kritik eşik, hareketler) — değiştiremez (karar 177)',
   FILE_UPLOAD: 'Siparişe dosya ekler',
   FILE_INTERNAL_VIEW: 'İç ekip dosyalarını görür',
   NOTE_ADD: 'Not yazar',
@@ -59,14 +60,14 @@ export const ROLE_PERMISSIONS = {
   ],
   DENETIMCI: [
     'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',
-    'CUSTOMER_NAME_VIEW',
+    'CUSTOMER_NAME_VIEW', 'STOCK_VIEW',
   ],
 };
 
 /** Salt görüntüleme yetkileri; bunların dışındaki her yetki bir "işlem"dir. */
 export const READ_ONLY = new Set([
   'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
-  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT',
+  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT', 'STOCK_VIEW',
 ]);
 
 /**

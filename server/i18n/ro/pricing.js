@@ -128,7 +128,7 @@ export default {
     title: 'Decizii importante în așteptare',
     intro: 'Fiecare rând din această listă așteaptă o decizie umană. Luați decizia și apăsați „Am văzut”.',
     empty: 'Momentan nu există nicio decizie în așteptare. Când un vânzător modifică prețul de listă, apare aici.',
-    type: { FGO_NUMBER: "FGO nu a emis factura cu numărul cerut (Integrări → Următorul număr de factură)", FGO_FAILED: "Comandă de profile: proforma/factura nu a putut fi emisă în FGO", WAREHOUSE_EMAIL_FAILED: 'Comandă de profile: e-mailul pentru depozit nu a putut fi trimis', PRICE_OVERRIDE: 'Vânzătorul a modificat prețul de listă', COMPENSATION_PRICE: 'Sticlă de înlocuire: decizie de preț', COMPENSATION_PENDING: 'Sticla de înlocuire așteaptă aprobarea administratorului', STOCK_SHORTAGE: 'Comandă de profile: stoc insuficient (comanda nu este blocată)' },
+    type: { FGO_NUMBER: "FGO nu a emis factura cu numărul cerut (Integrări → Următorul număr de factură)", FGO_FAILED: "Comandă de profile: proforma/factura nu a putut fi emisă în FGO", WAREHOUSE_EMAIL_FAILED: 'Comandă de profile: e-mailul pentru depozit nu a putut fi trimis', PRICE_OVERRIDE: 'Vânzătorul a modificat prețul de listă', COMPENSATION_PRICE: 'Sticlă de înlocuire: decizie de preț', COMPENSATION_PENDING: 'Sticla de înlocuire așteaptă aprobarea administratorului', STOCK_SHORTAGE: 'Comandă de profile: stoc insuficient (comanda nu este blocată)', STOCK_CRITICAL: 'Stoc critic: produsul a ajuns la prag' },
     error: 'Eroare: {error}',
     colOrder: 'Comandă',
     colWhat: 'Ce s-a întâmplat',
@@ -151,6 +151,9 @@ export default {
     compTier: { CUSTOMER: 'preț client', SALES: 'preț de vânzare' },
     // Stoc insuficient (decizia 165): necesar / disponibil / lipsă la momentul comenzii
     stockLine: '{code} {name}: necesar {qty} {unit} · disponibil {stock} · lipsă {missing}',
+    // Stoc critic (decizia 177): o singură înregistrare deschisă pe produs
+    criticalLine: '{code} {name} — stoc {stock} {unit}, prag critic {threshold} {unit}',
+    criticalSource: { GIRIS: 'intrare stoc', SAYIM: 'inventar', CIKIS: 'ieșire la depozit ({orderNo})', THRESHOLD: 'modificarea pragului' },
     compOpen: 'Decide în comandă',
     kindGlass: 'Sticlă',
     resolve: 'Am văzut',

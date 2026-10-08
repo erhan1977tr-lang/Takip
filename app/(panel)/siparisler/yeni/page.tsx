@@ -16,6 +16,8 @@ import { deleteDraftAction, keepDraftGlassAction } from './actions';
 import { ProfileOrderForm, type ProfileDraft } from './ProfileOrderForm';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { readProfileDraftItems } from '@/server/profile/drafts.js';
+import { loadCalcOptions } from '@/server/profile/calc-service.js';
+import { fmtDec } from '@/lib/format';
 
 // Yeni sipariş: önce sipariş tipi seçilir (tipler veritabanından; yalnızca etkin olanlar).
 // Tek tip etkinken seçim ekranı atlanır. Profil siparişi (Aşama 6) kendi formunu kullanır.
@@ -79,11 +81,17 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     // Profil siparişi (Aşama 6): etkin kategori ve ürünler, kullanıcının dilinde; taslaktaki adetler
     // Kur notu müşterinin kur politikasına göre (karar 99); yüzde gösterilmez
     const fxPolicy = (await db.customer.findUnique({ where: { id: firm.id }, select: { fxPolicy: true } }))?.fxPolicy;
-    const [cats, items, nextNo] = await Promise.all([
+    const [cats, items, nextNo, calcOptions] = await Promise.all([
       db.profileCategory.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
       db.profileProduct.findMany({ where: { isActive: true, category: { isActive: true } }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { category: { select: { code: true } } } }),
       suggestNextNo(db, firm.id, 'PROFILE_ORDER'),
+      // Metraj hesaplayıcısı (Paket 5, karar 175): yönetici etkin bir sistem tanımlamadıysa gösterilmez
+      loadCalcOptions(db),
     ]);
+    const calc = calcOptions.systems.length ? {
+      systems: calcOptions.systems.map((x) => ({ id: x.id, label: `${x.code} — ${localName(x, locale)}`, needsColor: x.needs.color, needsThickness: x.needs.thickness })),
+      thicknesses: calcOptions.thicknesses.map((x) => ({ id: x.id, label: t('profile.calc.mm', { mm: fmtDec(x.mm, 2) }) })),
+    } : null;
     const pdraft: ProfileDraft | undefined = draftRow ? {
       id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',
       no: draftRow.customerOrderNo != null ? String(draftRow.customerOrderNo) : null,
@@ -103,7 +111,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
           key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
           categories={cats.map((c) => ({ code: c.code, name: localName(c, locale) }))}
           products={items.map((p) => ({ id: p.id, code: p.code, name: localName(p, locale), unit: unitLabel(p.unitCode, locale), imageId: p.imageId, categoryCode: p.category.code }))}
-          suggestedNo={nextNo} prefix={firm.prefix} draft={pdraft} m={m.profile.form}
+          suggestedNo={nextNo} prefix={firm.prefix} draft={pdraft} m={m.profile.form} mc={m.profile.calc} calc={calc}
           notes={[t('profile.notes.pickup'), fxOfferNote(t, fxPolicy)]}
         />
         {draftRow && (

@@ -37,6 +37,12 @@ export function fmtNum(n: number | string | { toString(): string } | null | unde
   return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number.isFinite(v) ? v : 0);
 }
 
+/** Ondalık sayı, gereksiz sıfırsız (137 → "137", 12.5 → "12,5"; en çok `digits` ondalık) — paket içeriği, metre, tüketim */
+export function fmtDec(n: number | string | { toString(): string } | null | undefined, digits = 4): string {
+  const v = Number(n ?? 0);
+  return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: digits }).format(Number.isFinite(v) ? v : 0);
+}
+
 export function fmtMoney(n: number | string | { toString(): string } | null | undefined, currency = 'EUR'): string {
   return `${fmtNum(n)} ${currency}`;
 }

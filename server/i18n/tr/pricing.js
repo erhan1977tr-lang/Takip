@@ -128,7 +128,7 @@ export default {
     title: 'Bekleyen önemli kararlar',
     intro: 'Bu listedeki her satırda bir insan kararı bekleniyor. Kararınızı verip “Gördüm” deyin.',
     empty: 'Şu an bekleyen bir karar yok. Satışçı liste fiyatını değiştirdiğinde burada listelenir.',
-    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor', STOCK_SHORTAGE: 'Profil siparişi: stok yetersiz (sipariş engellenmedi)' },
+    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor', STOCK_SHORTAGE: 'Profil siparişi: stok yetersiz (sipariş engellenmedi)', STOCK_CRITICAL: 'Kritik stok: ürün eşiğe indi' },
     error: 'Hata: {error}',
     colOrder: 'Sipariş',
     colWhat: 'Ne oldu',
@@ -154,6 +154,9 @@ export default {
     compOpen: 'Siparişte karar ver',
     // Stok yetersizliği (karar 165): sipariş anındaki gereken / mevcut / eksik
     stockLine: '{code} {name}: gereken {qty} {unit} · mevcut {stock} · eksik {missing}',
+    // Kritik stok (karar 177): ürün başına tek açık kayıt
+    criticalLine: '{code} {name} — stok {stock} {unit}, kritik eşik {threshold} {unit}',
+    criticalSource: { GIRIS: 'stok girişi', SAYIM: 'sayım', CIKIS: 'depo çıkışı ({orderNo})', THRESHOLD: 'eşik değişikliği' },
     kindGlass: 'Cam',
     resolve: 'Gördüm',
     resolved: 'Kapatıldı.',

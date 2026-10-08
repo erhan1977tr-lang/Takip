@@ -18,7 +18,10 @@ type Details = {
   source?: { reduced?: boolean; reason?: string | null; before?: number | null; after?: number | null };
   /** Stok yetersizliği (karar 165): sipariş anındaki gereken / mevcut / eksik */
   stock?: { code?: string; nameTr?: string; nameRo?: string; unitCode?: string; qty?: number; stock?: number; missing?: number }[];
+  /** Kritik stok (karar 177): ürün, o anki stok (level), eşik, neden (giriş / sayım / depo çıkışı / eşik değişikliği) */
+  productId?: string; code?: string; nameTr?: string; nameRo?: string; unitCode?: string; level?: number; threshold?: number; cause?: string;
 };
+const CRITICAL_SOURCES = ['GIRIS', 'SAYIM', 'CIKIS', 'THRESHOLD'];
 const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
 const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
 
@@ -52,7 +55,15 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
             </li>
           ))}
           {d.error && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
-          {(d.stock ?? []).map((l, i) => (
+          {a.type === 'STOCK_CRITICAL' && (
+            <li data-critical={d.code}>
+              {t('pricing.alerts.criticalLine', {
+                code: d.code ?? '', name: (locale === 'tr' ? d.nameTr : d.nameRo) ?? '', stock: d.level ?? 0, threshold: d.threshold ?? 0, unit: unitLabel(d.unitCode ?? '', locale),
+              })}
+              {d.cause && CRITICAL_SOURCES.includes(d.cause) && <span className="muted"> · {t(`pricing.alerts.criticalSource.${d.cause}` as MsgKey, { orderNo: d.orderNo ?? '' })}</span>}
+            </li>
+          )}
+          {(Array.isArray(d.stock) ? d.stock : []).map((l, i) => (
             <li key={`s${i}`} data-stock-line={l.code}>
               {t('pricing.alerts.stockLine', {
                 code: l.code ?? '', name: (locale === 'tr' ? l.nameTr : l.nameRo) ?? '', qty: l.qty ?? 0, unit: unitLabel(l.unitCode ?? '', locale),
@@ -104,7 +115,11 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               <tbody>
                 {open.map((a) => (
                   <tr key={a.id}>
-                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : a.type === 'STOCK_SHORTAGE' ? 'stok' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}</td>
+                    <td>
+                      {a.type === 'STOCK_CRITICAL'
+                        ? <Link href={`/admin/stok#s-${encodeURIComponent(((a.details ?? {}) as Details).productId ?? '')}`}>{((a.details ?? {}) as Details).code ?? '—'}</Link>
+                        : a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : a.type === 'STOCK_SHORTAGE' ? 'stok' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}
+                    </td>
                     <td>{what(a)}</td>
                     <td>{a.createdBy?.name ?? '—'}</td>
                     <td className="nowrap">{fmtDateTime(a.createdAt)}</td>
@@ -134,7 +149,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               <tbody>
                 {closed.map((a) => (
                   <tr key={a.id}>
-                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}`}>{a.order.orderNo}</Link> : '—'}</td>
+                    <td>{a.order ? <Link href={`/siparisler/${a.order.id}`}>{a.order.orderNo}</Link> : a.type === 'STOCK_CRITICAL' ? ((a.details ?? {}) as Details).code ?? '—' : '—'}</td>
                     <td>{what(a)}</td>
                     <td>{a.createdBy?.name ?? '—'}</td>
                     <td className="muted small">

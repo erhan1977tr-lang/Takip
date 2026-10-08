@@ -10,7 +10,9 @@ import { priceOverrides } from './tables.js';
 // yöneticinin onayını bekliyor (server/orders/compensation.js — Aşama 9). Bir telafi için ikisi birden açılmaz.
 // STOCK_SHORTAGE: müşterinin profil siparişinde stok yetmedi — sipariş engellenmez, yönetici karar verir (karar 165;
 // server/profile/stock.js → recordStockShortage).
-export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE'];
+// STOCK_CRITICAL: ürünün stoğu yöneticinin kritik eşiğine indi — ürün başına tek açık kayıt (karar 177;
+// server/profile/stock.js → recordCriticalStock, setCriticalStock).
+export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE', 'STOCK_CRITICAL'];
 
 /**
  * Satışçı teklifi yöneticiye gönderirken çağrılır (iş akışı işleminin içinde, aynı tx).

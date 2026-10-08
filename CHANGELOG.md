@@ -4,6 +4,34 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.55.0 — 08.10.2026
+
+Fonksiyonel paket 5 — profil hesaplayıcı ve stok yönetimi (kararlar 175–178). Veritabanı şeması: ürünün paket içeriği ve kritik
+stok eşiği (`ProfileProduct.packContent` / `packMeasure` / `criticalStock`), hesaplayıcının cam kalınlıkları, sistemleri ve
+satırları (`ProfileGlassThickness`, `ProfileSystem`, `ProfileCalcItem`); migration CI'da üretilir.
+
+- **Profil hesaplayıcı (yönetici yapılandırır):** Profil Kataloğu → "Profil Hesaplayıcı": cam kalınlıkları, sistemler (ör. MR23,
+  RM29) ve her sistemin kalemleri — ürün, renk (RAL 7016 / Eloxat) ya da cam kalınlığı koşulu, 1 m korkuluk için tüketim. Bir
+  kalemin satırları birbirinin seçeneğidir (MR23'ün conta kalemi: 12,76 mm → MC12, 16,76 mm → MC16; RM29'da bu kalem yoksa MC
+  hesaplanmaz); çakışan satır eklenemez. Ürünün paket içeriği (kutu = conta metresi, bar = profil boyu, poşet = parça) katalogdaki
+  ürün formunda. Adet = yukarı yuvarla(metre × tüketim ÷ paket içeriği); aynı ürün iki kalemde geçerse ihtiyaç toplanıp bir kez
+  yuvarlanır. Yalnızca kesin paket içerikleri gelir: GK15 137, AD45 24, MC12 27, MC16 43 m / kutu — katsayı, bar boyu, torba
+  içeriği, kalınlık ve sistem tahmin edilmez; RM29 kendiliğinden eklenmez. Her değişiklik denetim kaydında.
+- **Eksik değer:** seçime uyan satır, tüketim ya da paket içeriği yoksa hiçbir miktar üretilmez; ekran eksik değeri ve yerini
+  adıyla söyler (müşteriye ayrıca "yöneticinin tamamlaması gerekiyor"). Yöneticinin ekranında sistem başına "Eksikler" listesi ve
+  "Hazır" rozeti.
+- **Müşteri:** profil siparişi formunun üstünde yatay "Metraj hesaplayıcı" (sistem, renk, cam kalınlığı, toplam metre). Sonuç
+  mevcut forma aktarılır ve değiştirilebilir ("hesaplandı" / "değiştirildi" işareti); yeniden hesapta üzerine yazılacak adetler
+  önce gösterilir ("Vazgeç" / "Evet, üzerine yaz"). Köşe, kapak, flanş gibi adetli aksesuarlar elle eklenir. Sipariş akışı aynı.
+- **Stok uyarısı engellemez:** "Siparişi gönder"den önce yetmeyen ürünler gereken / mevcut / eksik ile gösterilir ("Yine de
+  gönder"); siparişte tek "Önemli kararlar" kaydı (değişmedi). Müşteri yalnızca kendi siparişindeki eksik ürünlerin değerlerini
+  görür (mevcut eksiye düşmez); genel stok listesi müşteriye, satışa ve çizime gitmez.
+- **Stok ekranı:** "Rezerve" sütunu (onaylı, depoya gitmemiş siparişlerin adedi — stok hareketi değildir), ürün başına kritik
+  eşik ve durum. Stok eşiğe inince ürün başına tek "Kritik stok" kaydı ("Önemli kararlar"). Denetimci stok ekranını salt okunur
+  görür (Excel ve değişiklik yok).
+- **Eşzamanlılık:** sayım, Excel'den stok, depo çıkışı ve iptal iadesi aynı ürün kilidini aynı sırayla alır — sayımın kaydettiği
+  önce / sonra her zaman gerçek stoktur. Eski stok hareketleri ve siparişler değişmedi.
+
 ## 3.54.0 — 08.10.2026
 
 Fonksiyonel paket 4 — yönetici paneli, sipariş ve teklif yönetimi (kararlar 170–174). Veritabanı şeması: teklif satırına sandık

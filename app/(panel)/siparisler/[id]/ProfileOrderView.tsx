@@ -15,7 +15,7 @@ import { OrderInfo } from './OrderInfo';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { unitLabel } from '@/server/profile/catalog.js';
-import { STOCK_SHORTAGE_ALERT, stockLevels } from '@/server/profile/stock.js';
+import { STOCK_SHORTAGE_ALERT, customerShortageView, stockLevels } from '@/server/profile/stock.js';
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
@@ -64,17 +64,21 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const ok = okText(t, m, sp.ok, sp.at);
   const summary = profileCustomerText(t, { status: order.status, stage });
 
-  // Stok (sayılar yalnızca yönetici): kalemlerin stoğu ve eksikler
-  const levels = admin ? await stockLevels(db, order.profileItems.map((i) => i.productId).filter((x): x is string => !!x)) : new Map<string, number>();
+  // Stok sayıları yalnızca stok görüntüleyen rollerde (yönetici, denetimci — STOCK_VIEW; karar 177): kalemlerin stoğu ve eksikler
+  const stockViewer = userCan(user, 'STOCK_VIEW');
+  const levels = stockViewer ? await stockLevels(db, order.profileItems.map((i) => i.productId).filter((x): x is string => !!x)) : new Map<string, number>();
   // "Stok yetersiz" işareti (karar 165) = sipariş gönderilirken stok yetmediği için açılan ve henüz kapatılmamış "Önemli
-  // kararlar" kaydı. Müşteri yalnızca uyarıyı ve ürünleri görür (stok sayısı müşteriye gitmez); yönetici gereken / mevcut /
-  // eksik tablosunu görür ve kararı verince kaydı "Önemli kararlar"da kapatır.
-  const stockAlert = (admin || isCustomer) && !cancelled
+  // kararlar" kaydı. Yönetici gereken / mevcut / eksik tablosunu görür ve kararı verince kaydı "Önemli kararlar"da kapatır.
+  // Müşteri uyarıyı ve KENDİ siparişindeki eksik ürünlerin sipariş anındaki gereken / mevcut / eksik değerini görür
+  // (karar 177; mevcut eksiye düşmez) — genel stok listesi değil.
+  const stockAlert = (stockViewer || isCustomer) && !cancelled
     ? await db.adminAlert.findFirst({ where: { orderId: order.id, type: STOCK_SHORTAGE_ALERT, resolvedAt: null }, orderBy: { createdAt: 'desc' }, select: { id: true, details: true, createdAt: true } })
     : null;
-  const alertLines = (((stockAlert?.details ?? {}) as { stock?: { productId?: string; code?: string; nameTr?: string; nameRo?: string }[] }).stock ?? []);
+  const rawLines = ((stockAlert?.details ?? {}) as { stock?: unknown }).stock;
+  const alertLines = (Array.isArray(rawLines) ? rawLines : []) as { productId?: string; code?: string; nameTr?: string; nameRo?: string; unitCode?: string; qty?: number; stock?: number }[];
   const alertProducts = new Set(alertLines.map((l) => l.productId).filter(Boolean));
-  const short = admin && !p?.stockDeducted
+  const customerShort = isCustomer ? customerShortageView(alertLines) : [];
+  const short = stockViewer && !p?.stockDeducted
     ? order.profileItems.filter((i) => i.productId && ((levels.get(i.productId) ?? 0) < i.qty || alertProducts.has(i.productId)))
     : [];
   const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId) : null;
@@ -107,11 +111,23 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
       </div>
 
       {ok && <div className="alert alert-ok">{ok}</div>}
-      {/* Müşteri: stok uyarısı (karar 165) — sipariş engellenmedi; stok sayısı gösterilmez, yalnızca ürünler */}
+      {/* Müşteri: stok uyarısı (karar 165, 177) — sipariş engellenmedi; yalnızca kendi siparişindeki eksik ürünler,
+          sipariş anındaki gereken / mevcut / eksik */}
       {isCustomer && stockAlert && (
         <div className="alert alert-warn" id="stok" data-stock-alert>
           <b>{t('profile.page.stock.customerTitle')}</b>{' '}
-          {t('profile.page.stock.customerText', { list: alertLines.map((l) => `${l.code ?? ''} ${(locale === 'tr' ? l.nameTr : l.nameRo) ?? ''}`.trim()).join(', ') })}
+          {t('profile.page.stock.customerText')}
+          <ul className="plain-list" style={{ marginTop: 6 }}>
+            {customerShort.map((l, i) => (
+              <li key={i} data-stock-line={l.code}>
+                {t('profile.page.stock.customerLine', {
+                  product: `${l.code} ${(locale === 'tr' ? l.nameTr : l.nameRo) ?? ''}`.trim(), needed: l.needed, unit: unitLabel(l.unitCode, locale),
+                  available: l.available, missing: l.missing,
+                })}
+              </li>
+            ))}
+          </ul>
+          <div className="small muted">{t('profile.page.stock.customerWhen')}</div>
         </div>
       )}
       {sp.error && <div className="alert alert-error">{sp.error}</div>}
@@ -286,7 +302,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
 
       {/* Yönetici: stok durumu (karar 165) — gereken / mevcut (şu anki stok) / eksik; sipariş engellenmedi, karar yöneticide.
           Sipariş gelir gelmez (fiyat beklerken) görünür ve depoya gidene (stok düşene) kadar kalır. */}
-      {admin && !cancelled && short.length > 0 && idx >= 0 && idx < PROFILE_STAGES.indexOf('DEPODA') && (
+      {stockViewer && !cancelled && short.length > 0 && idx >= 0 && idx < PROFILE_STAGES.indexOf('DEPODA') && (
         <div className="card" id="stok">
           <h2>{t('profile.page.stock.title')} {stockAlert && <Badge tone="danger">{t('profile.page.stock.mark')}</Badge>}</h2>
           <p className="muted small">{t('profile.page.stock.intro')}</p>
@@ -316,7 +332,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               </tbody>
             </table>
           </div>
-          {stockAlert && <p className="small" style={{ marginBottom: 0 }}><Link href="/admin/kararlar">{t('profile.page.stock.decide')}</Link></p>}
+          {stockAlert && userCan(user, 'ALERT_VIEW') && <p className="small" style={{ marginBottom: 0 }}><Link href="/admin/kararlar">{t('profile.page.stock.decide')}</Link></p>}
         </div>
       )}
 

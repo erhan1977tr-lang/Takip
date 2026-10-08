@@ -1104,12 +1104,82 @@ model ProfileProduct {
   sortOrder  Int      @default(0)
   isActive   Boolean  @default(true)
   metadata   Json?    // ileride ek bilgiler için
+  // Paket içeriği (Paket 5, karar 175): BİR satış biriminin içindeki miktar — kutu: 137 m conta, bar: profil boyu (m),
+  // poşet: adet. Hesaplayıcı yalnızca bunu kullanır; boşsa ürün hesaplanmaz (yönetici tamamlar, değer tahmin edilmez).
+  packContent   Decimal?        @db.Decimal(12, 3)
+  packMeasure   ProfileMeasure?
+  // Kritik stok eşiği (satış birimi; karar 177): stok ≤ eşik → "Kritik stok" (tek açık uyarı); boş = eşik yok
+  criticalStock Int?
   prices     ProfilePriceItem[]
   stockMoves StockMovement[]
+  calcItems  ProfileCalcItem[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
 
   @@index([categoryId, sortOrder])
+}
+
+// ---------- Profil hesaplayıcı (Paket 5, karar 175–176) ----------
+// Yönetici yapılandırır; değerler tahmin edilmez. Müşteri sistem + renk + cam kalınlığı + toplam metre girer; her kalemin
+// (slot) koşula uyan TEK satırı seçilir ve miktar = yukarı yuvarla(metre × tüketim / paket içeriği) (server/profile/calculator.js).
+// Sipariş bu kayıtlara bağlanmaz: hesap sonucu formdaki adetlere aktarılır, sipariş kalemleri her zamanki gibi kopyadır.
+
+// İçeriğin ölçüsü: metre (profil boyu, conta kutusu) ya da adet (poşetteki parça)
+enum ProfileMeasure {
+  M
+  BUC
+}
+
+// Profil rengi (hesaplayıcının renk seçimi)
+enum ProfileColor {
+  RAL7016
+  ELOXAT
+}
+
+// Geçerli cam kalınlıkları (yönetici tanımlar; silinmez, pasif yapılır)
+model ProfileGlassThickness {
+  id        String   @id @default(cuid())
+  mm        Decimal  @unique @db.Decimal(6, 2)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  calcItems ProfileCalcItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Hesaplama sistemi (ör. MR23 el tutamağı). Silinmez, pasif yapılır. RM29 gibi yeni sistemleri yönetici açar.
+model ProfileSystem {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameRo    String
+  nameTr    String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  items     ProfileCalcItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Sistemin bir satırı: kalem (slot) + ürün (boş = bu koşulda gerekmez) + koşul (renk / cam kalınlığı; boş = hepsi) +
+// 1 m korkuluk için tüketim (ürünün ölçüsünde). Aynı kalemin satırları birbirinin seçeneğidir; koşulları çakışmaz.
+model ProfileCalcItem {
+  id          String   @id @default(cuid())
+  systemId    String
+  system      ProfileSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  slot        String
+  productId   String?
+  product     ProfileProduct? @relation(fields: [productId], references: [id], onDelete: Restrict)
+  color       ProfileColor?
+  thicknessId String?
+  thickness   ProfileGlassThickness? @relation(fields: [thicknessId], references: [id], onDelete: Restrict)
+  perMeter    Decimal? @db.Decimal(12, 4)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([systemId, sortOrder])
+  @@index([productId])
+  @@index([thicknessId])
 }
 
 // Ürün görseli: değişmez kayıt (yeni görsel yeni satırdır; eski siparişler eski görseli göstermeye devam eder).

@@ -24,6 +24,7 @@ export default {
   profileCatalog: 'Catalog profile',
   profilePrices: 'Prețuri profile',
   stock: 'Stoc profile',
+  profileCalc: 'Calculator profile',
   alerts: 'Decizii importante',
   myOrders: 'Comenzile mele',
   newOrder: 'Comandă nouă',

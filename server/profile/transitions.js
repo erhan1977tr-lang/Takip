@@ -7,7 +7,7 @@ import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
 import { dayDate, dayKeyOf, localDay, pickupAfterPayment, pickupProblem } from './dates.js';
 import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
-import { deductOrderStock, returnOrderStock, shortages, stockLevels } from './stock.js';
+import { deductOrderStock, returnOrderStock, shortages, stockLevels, stockLockKeys } from './stock.js';
 import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
 import { parseManualRate } from '../fx/bt.js';
 import { FX_SNAPSHOT_CLEAR, fxSnapshot, manualExchangeRate } from '../fx/resolve.js';
@@ -160,7 +160,7 @@ async function toWarehouse(h, extra) {
   const items = h.order.profileItems.map((i) => ({ productId: i.productId, qty: i.qty }));
   const levels = await stockLevels(h.tx, items.map((i) => i.productId).filter(Boolean));
   const missing = shortages(items, levels);
-  if (!p.stockDeducted) await deductOrderStock(h.tx, { orderId: h.order.id, orderNo: h.order.orderNo, items, actorId: h.actor.id ?? null });
+  if (!p.stockDeducted) await deductOrderStock(h.tx, { orderId: h.order.id, orderNo: h.order.orderNo, items, actorId: h.actor.id ?? null, actor: h.actor });
   await setStage(h, 'DEPODA', { ...extra, warehouseSentAt: h.now, stockDeducted: true });
   h.event('WAREHOUSE_SENT');
   h.outbox.push(outboxEvent(WAREHOUSE_EMAIL, { orderId: h.order.id, payload: { orderNo: h.order.orderNo } }));
@@ -403,12 +403,21 @@ const ACTIONS = {
 export const PROFILE_ACTIONS = Object.keys(ACTIONS);
 
 /**
+ * Stoğa yazabilen işlemler (depo çıkışı, iptal iadesi) ürünlerin stok kilitlerini sürüm artışından ÖNCE alır — elle sayım,
+ * Excel'den stok ve öbür siparişlerin depo çıkışıyla aynı kilitler, aynı sıra (karar 177; server/profile/stock.js). Sayım
+ * bu siparişin çıkışını ya tamamen görür ya da çıkış sayımı bekler: sayımın "önce / sonra"sı gerçek stoğa eşit kalır.
+ * @param {{ profileItems: { productId: string | null }[] }} order
+ */
+const stockLocks = (order) => stockLockKeys(order.profileItems.map((i) => i.productId));
+export const PROFILE_LOCKS = { mark_paid: stockLocks, send_to_warehouse: stockLocks, cancel: stockLocks };
+
+/**
  * Profil siparişi işlemi.
  * @param {import('@prisma/client').PrismaClient} db
  * @param {{ orderId: string, action: string, actor: { id: string | null, role: string, canApprove?: boolean, customerId?: string | null, ip?: string | null, system?: boolean, depot?: boolean }, payload?: object }} p
  */
 export function runProfileAction(db, { orderId, action, actor, payload = {} }) {
-  return executeAction(db, { workflow: profileWorkflow, actions: ACTIONS, include: INCLUDE, orderId, action, actor, payload });
+  return executeAction(db, { workflow: profileWorkflow, actions: ACTIONS, include: INCLUDE, locks: PROFILE_LOCKS, orderId, action, actor, payload });
 }
 
 /** Depo bağlantısından işlemi yapan (kişi değil) */

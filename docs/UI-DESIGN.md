@@ -429,9 +429,39 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   (`components/RevisionNote.tsx`) renders `ol.revision-list` (legacy free text → `.pre`) and, for internal roles, the
   stored translation in the same `.note-translation` / `.note-label` block as order notes. The marks panel
   (`.viewer-side`) renders only when there are marks (or in an editable viewer — currently unused).
-- Profile order: customer stock warning `.alert.alert-warn#stok` (product names only); Admin `.card#stok` with
-  `table.profile-table.stock-table` (needed / current / missing — missing in `.text-danger`); "Stok yetersiz" is a
-  danger `Badge` in the page head and in the internal order list.
+- Profile order: customer stock warning `.alert.alert-warn#stok` (since 3.55.0 a `.plain-list` of the customer's OWN short
+  items, `li[data-stock-line]` "needed / available / missing" at order time + a `.small.muted` note); Admin (and Inspector —
+  `STOCK_VIEW`) `.card#stok` with `table.profile-table.stock-table` (needed / current / missing — missing in `.text-danger`);
+  "Stok yetersiz" is a danger `Badge` in the page head and in the internal order list.
+
+## Profile calculator and stock (3.55.0, decisions 175–178)
+
+- Customer profile form: `ProfileCalculator` is a `.card.calc-card#hesaplayici` right under the order-info card — title, one
+  `.muted.small` intro, then ONE horizontal `.calc-bar` (flex, wraps; `.calc-field` label-over-control: system `.calc-system`,
+  color, thickness — disabled with "not needed" when the system has no such condition —, metres `.calc-meters` right-aligned,
+  then the `.btn-primary` "Hesapla"). Errors: `.alert-error[data-calc-errors]` with a `.plain-list`. Result: `.calc-result`
+  (`h3.sub-title` + `table.profile-table.calc-table`: product, need text, quantity `[data-calc-qty]` + unit; a short item shows a
+  `.small.text-danger[data-calc-stock]` line) and a `.row` "Forma aktar" (`.btn-primary`) / "Sonucu kapat" (`.btn-link`). Overwrite
+  confirmation is inline, never `window.confirm`: `.alert-warn[data-calc-confirm]` (title, text, `.plain-list` "product: old → new",
+  `.row` "Evet, üzerine yaz" `.btn-primary` + "Vazgeç" `.btn`). Success `.alert-ok[data-calc-applied]`. On narrow screens every
+  field and the button take the full width. Form rows carry `badge-info[data-calc-mark=calc]` "hesaplandı" or
+  `badge-warn[data-calc-mark=edited]` "değiştirildi" next to the code.
+- Pre-submit stock warning: `.alert-warn#stok-uyari[data-stock-check]` above the submit bar (title, intro,
+  `table.profile-table.stock-check-table` needed / available / missing — missing `.text-danger` —, `.row` "Yine de gönder"
+  `.btn-primary` + "Vazgeç" `.btn`). The send button label switches to "Stok kontrol ediliyor…" while checking.
+- Admin calculator page `/admin/profil-katalogu/hesaplama`: `.page-head` (back link, title, intro, `.muted.small` rule) → `.grid-2`
+  (`.card#kalinlik` thickness table + one-line `form.acc-form`; `form.card#yeni-sistem`) → `.card.card-flush#sistemler` (code,
+  name, rows, state `Badge` "Hazır" ok / "N eksik" warn, "Aç") → when a system is open: `form.card#sistem` (names, active),
+  `.card.card-flush#kalemler` (`table.calc-items`, one `.group-row` per slot, per row an inline `.threshold-form` for the
+  consumption and a `ConfirmButton danger` delete), `form.card#satir-ekle` (`.grid-3`: slot with `datalist`, product incl.
+  "— not needed", consumption, color, thickness), `.card#eksikler` (`.alert-ok[data-calc-ready]` or a `.plain-list` of
+  `li[data-problem]`). Catalogue: two more fields in the product form `.grid-3` (pack content, measure) and a "Paket içeriği"
+  column (`[data-pack]`, "137 m / kutu").
+- Stock page `/admin/stok`: Inspector gets the same table without any form (`.alert-info[data-stock-readonly]`, no Excel).
+  Columns: code, product, unit, stock (`td.num` first), Rezerve (`[data-reserved]`), threshold (`[data-threshold]` — Admin: an
+  inline `form.threshold-form` with a `.qty-input` and "Eşiği kaydet"), status (`[data-status]`: danger `Badge` "Kritik",
+  `.small.text-danger` "rezerveye N eksik"). A critical row is `tr.row-alert`. "Önemli kararlar" shows a `STOCK_CRITICAL` row
+  with the product code linking to `/admin/stok#s-<id>` and `li[data-critical]`.
 
 ## Left for the page-level phase
 
