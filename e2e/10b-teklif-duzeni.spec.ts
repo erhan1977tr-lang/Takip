@@ -4,7 +4,8 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, newOrder } from
 const SALES = 'fiyat-satis@e2e.test'; // 08'de açıldı (05'te satis@e2e.test bilerek kilitlendi)
 
 // Görünüm 3. aşama: sipariş sayfasının bölüm sırası (dosyalar → notlar → sipariş bilgileri → teklif) ve teklif
-// tablosunun araçları (aynı camdan "+", sandık parası, tek fiyat, tabloyu temizle). İş kuralları değişmedi.
+// tablosunun araçları (aynı camdan "+", tek fiyat, tabloyu temizle). Sandık bedeli yalnızca yöneticinin satırıdır (fonksiyonel
+// paket 4): satışın tablosunda "+ Sandık parası" yok; yönetici fiyatlandırırken ekler.
 test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Düzen', 'duzen.pdf'); // müşteri formunda cam adedi yok (karar 160): tablo 1 adetle açılır
@@ -46,16 +47,14 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await price.nth(1).fill('40');
   await expect(price.first()).toHaveValue('44');
 
-  // "+ Sandık parası": adetle fiyatlanan normal satır
-  await sales.getByRole('button', { name: /Sandık parası/ }).click();
-  await expect(desc.nth(2)).toHaveValue('Sandık parası');
+  // "+ Sandık parası" satışta yok (fonksiyonel paket 4): sandık bedelini yalnızca yönetici girer, satış görmez
+  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(0);
 
   // Olağan "+" yalnızca cam cinsini çoğaltır (fonksiyonel paket 1): CNC'li camın "+"ı yeni satıra işlemi KOPYALAMAZ; ölçü
   // de taşımaz. İşlemleriyle birlikte kopyalayan ayrı düğme "+ aynısı"dır; telafi camındaki "işlemleri taşı" kuralı da ayrıdır.
   await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).nth(1).click();
-  await expect(desc).toHaveCount(4);
-  await expect(desc.nth(2)).toHaveValue(GLASS); // CNC'li camın (ve CNC satırının) hemen altında, sandık parasından önce
-  await expect(desc.nth(3)).toHaveValue('Sandık parası');
+  await expect(desc).toHaveCount(3);
+  await expect(desc.nth(2)).toHaveValue(GLASS); // CNC'li camın (ve CNC satırının) hemen altında
   await expect(sales.getByLabel('CNC fiyatı')).toHaveCount(1);
   await expect(sales.locator('.offer-table tr.sub-line')).toHaveCount(1);
   await expect(sales.getByLabel('En', { exact: true }).nth(2)).toHaveValue('');
@@ -67,24 +66,26 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await expect(sales.getByLabel('Adet', { exact: true })).toHaveValue('1'); // siparişte adet yok → 1 (karar 160)
   await expect(sales.getByLabel('CNC fiyatı')).toHaveCount(0);
 
-  // Yönetici: aynı sıra; "İstenen camlar" sipariş bilgilerinde durur
+  // Yönetici: aynı sıra; "İstenen camlar" ve "Sandıklar" yöneticinin sipariş ekranında da yok (fonksiyonel paket 4)
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${id}`);
   pos = await order(admin);
   expect(pos('Müşteri sipariş dosyaları')).toBeLessThan(pos('Notlar'));
   expect(pos('Notlar')).toBeLessThan(pos('Sipariş bilgileri'));
-  await expect(admin.getByText('İstenen camlar')).toBeVisible();
+  await expect(admin.locator('#bilgiler')).toBeVisible();
+  await expect(admin.getByText('İstenen camlar')).toHaveCount(0);
+  expect(pos('Sandıklar')).toBe(-1);
 });
 
 // Yönetici fiyat tablosunda aynı araç: müşteri fiyatı (satış fiyatı / maliyet değişmez); kural satıştakiyle aynı.
-test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yalnızca m² cam satırlarına yazar; CNC ve sandık parası değişmez', async ({ browser }) => {
+test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yalnızca m² cam satırlarına yazar; CNC ve yöneticinin sandık bedeli değişmez', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Tek fiyat yönetici', 'tekfiyat.pdf'); // siparişte 3 adet cam
   const sales = await as(browser, SALES, TEAM_PW);
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await expect(sales.locator('.offer-table')).toBeVisible();
-  // Satış: iki cam satırı (ikincisinde CNC) + sandık parası; satış fiyatları 30 / 30 / 15 / 20
+  // Satış: iki cam satırı (ikincisinde CNC); satış fiyatları 30 / 30 / 15. Sandık bedelini satış giremez (Paket 4).
   await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).click();
   const en = sales.getByLabel('En', { exact: true });
   const boy = sales.getByLabel('Boy', { exact: true });
@@ -94,20 +95,23 @@ test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yaln�
   await boy.nth(1).fill('1000');
   await sales.getByRole('button', { name: '+CNC' }).nth(1).click();
   await sales.getByLabel('CNC fiyatı').fill('15');
-  await sales.getByRole('button', { name: /Sandık parası/ }).click();
+  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(0);
   const unit = sales.getByLabel('Birim fiyat', { exact: true });
-  await expect(unit).toHaveCount(3);
+  await expect(unit).toHaveCount(2);
   await unit.nth(0).fill('30');
   await unit.nth(1).fill('30');
-  await unit.nth(2).fill('20');
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
 
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${id}`);
-  const offer = admin.getByLabel('Müşteri fiyatı', { exact: true }); // cam, cam, sandık parası
+  const offer = admin.getByLabel('Müşteri fiyatı', { exact: true }); // cam, cam (+ yöneticinin sandık bedeli)
   const cnc = admin.getByLabel('CNC müşteri fiyatı');
+  await expect(offer).toHaveCount(2);
+  // Sandık bedeli: yalnızca yöneticinin tablosunda; "satış görmez" rozetli, ölçüsüz, adetli satır
+  await admin.getByRole('button', { name: /Sandık parası/ }).click();
   await expect(offer).toHaveCount(3);
+  await expect(admin.locator('.offer-table [data-crate-fee]')).toHaveCount(1);
   await cnc.fill('18');
   await offer.nth(2).fill('25');
   // Araç tablonun altında, satıştakiyle aynı yerde ve aynı adla; işaretli gelmez
@@ -134,11 +138,17 @@ test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yaln�
   const db = new PrismaClient();
   const sent = await db.offer.findFirstOrThrow({ where: { orderId: id, status: 'GONDERILDI' }, orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
   await db.$disconnect();
-  expect(sent.lines.map((l) => [l.kind, l.unit, Number(l.unitPrice), Number(l.offerPrice)])).toEqual([
-    ['CAM', 'm2', 30, 52.5], ['CAM', 'm2', 30, 50], ['CNC', 'adet', 15, 19], ['CAM', 'adet', 20, 25],
+  expect(sent.lines.map((l) => [l.kind, l.unit, Number(l.unitPrice), Number(l.offerPrice), l.crateFee])).toEqual([
+    ['CAM', 'm2', 30, 52.5, false], ['CAM', 'm2', 30, 50, false], ['CNC', 'adet', 15, 19, false], ['CAM', 'adet', 0, 25, true],
   ]);
-  // Satış müşteri fiyatını yine görmez
+  // Satış müşteri fiyatını yine görmez; yöneticinin sandık bedeli satırını hiç almaz
   const html = await (await sales.request.get(`/siparisler/${id}`)).text();
   expect(html).not.toMatch(/"offerPrice":"?5[02]/);
   expect(html).not.toContain('52,50');
+  expect(html).not.toContain('data-crate-fee');
+  expect(html).not.toMatch(/\\?"crateFee\\?":\s*true/);
+  await sales.goto(`/siparisler/${id}`);
+  await expect(sales.locator('#teklif')).toBeVisible();
+  await expect(sales.locator('#teklif')).not.toContainText('Sandık parası');
+  await expect(sales.locator('#teklif tbody tr')).toHaveCount(3); // cam, cam, CNC — sandık bedeli satırı yok
 });

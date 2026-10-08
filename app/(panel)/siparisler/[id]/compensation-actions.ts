@@ -85,7 +85,10 @@ export async function decideCompensationAction(formData: FormData) {
 export async function removeOrderAction(formData: FormData) {
   const user = await requirePermission('ORDER_CANCEL');
   const id = text(formData, 'id');
-  const r = await removeOrder(db, { orderId: id, confirm: formData.get('confirm') === 'on', actor: await actorOf(user) });
+  // İkinci adımın ayrı onayı (Paket 4): yöneticinin yazdığı sipariş numarası + önizlemedeki sipariş sürümü (sunucuda denetlenir)
+  const raw = text(formData, 'v');
+  const v = raw === '' ? NaN : Number(raw);
+  const r = await removeOrder(db, { orderId: id, confirmNo: text(formData, 'confirmNo'), expectedVersion: Number.isInteger(v) && v >= 0 ? v : null, actor: await actorOf(user) });
   if (r.ok) {
     refresh(id);
     revalidatePath('/', 'layout');

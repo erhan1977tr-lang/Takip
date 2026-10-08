@@ -127,7 +127,9 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   assert.deepEqual(await receivers('ORDER_REVISION_REQUESTED', o.id), ['drawer', 'sales1'], 'atanmış çizimci + ilgili satışçı; yönetici / öbür satışçı / öbür çizimci yok');
   assert.deepEqual(await receivers('ORDER_DRAWING_APPROVED', o.id), ['drawer', 'sales1']);
   assert.deepEqual(await receivers('ORDER_OFFER_SUBMITTED', o.id), ['admin', 'admin2'], 'satışın teklifi yöneticiye; müşteriye gitmez');
-  assert.deepEqual(await receivers('ORDER_OFFER_SENT', o.id), ['a1', 'a2', 'sales1'], 'müşteri + ilgili satışçı; gönderen yönetici kendine bildirim almaz');
+  // Yöneticinin teklifi müşteriye göndermesi yalnızca müşteriye (Paket 4): satışa zil yok (e-posta zaten yalnızca müşteriye);
+  // gönderen yönetici kendine bildirim almaz. Satışın öbür olayları (revizyon, onay, yeni sipariş) değişmedi (yukarıda).
+  assert.deepEqual(await receivers('ORDER_OFFER_SENT', o.id), ['a1', 'a2'], 'yalnızca müşteri: satışa ve yöneticiye bildirim yok');
   assert.equal(await db.notification.count({ where: { type: 'ORDER_HOLD' } }), 0);
   assert.equal(first.created, await db.notification.count());
   // Denetimci ve başka firmanın müşterisi hiçbir bildirim almaz
@@ -143,7 +145,7 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   const linkOf = async (type, userId) => (await notes({ type, userId, orderId: o.id }))[0]?.link;
   assert.equal(await linkOf('ORDER_DRAWING_UPLOADED', U.a1.id), `/siparisler/${o.id}#cizim-onay`);
   assert.equal(await linkOf('ORDER_OFFER_SENT', U.a1.id), `/siparisler/${o.id}#teklif`);
-  assert.equal(await linkOf('ORDER_OFFER_SENT', U.sales1.id), `/siparisler/${o.id}#teklif`);
+  assert.equal(await linkOf('ORDER_OFFER_SENT', U.sales1.id), undefined, 'satışa teklif gönderim bildirimi yok');
   assert.equal(await linkOf('ORDER_DRAWING_APPROVED', U.drawer.id), `/siparisler/${o.id}#cizim`);
   assert.equal(await linkOf('ORDER_CREATED', U.admin.id), `/siparisler/${o.id}`);
 

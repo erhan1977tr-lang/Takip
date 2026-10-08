@@ -1,51 +1,99 @@
-// Siparişi silme / geri yükleme (Aşama 9, karar 110) — yalnızca yönetici (ORDER_CANCEL; yetki burada, sunucuda denetlenir).
+// Siparişi silme / geri yükleme (Aşama 9, karar 110; iki aşamalı onay ve mali kilit — fonksiyonel paket 4) — yalnızca
+// yönetici (ORDER_CANCEL; yetki burada, sunucuda denetlenir).
 //
-//   "Sil" veritabanından SİLMEZ: sipariş kaydı ve ona bağlı her şey (FGO belgeleri, proforma / avans / fatura, değişmez
-//   yükleme onayları ve düzeltmeleri, denetim kaydı, çizim sürümleri, muhasebe kayıtları, bildirimler) yerinde durur.
-//   Sipariş yalnızca olağan kullanımdan kalkar:
+//   "Sil" veritabanından SİLMEZ: sipariş kaydı ve ona bağlı her şey (teklif sürümleri, çizim sürümleri, dosyalar, notlar,
+//   denetim kaydı, bildirimler) yerinde durur. Sipariş yalnızca olağan kullanımdan kalkar:
 //     - removedAt dolar → sipariş kapsamı (server/orders/scope.js) onu hiçbir role göstermez: listeler, arama, sipariş
 //       sayfası, teklifler, dosya indirme, iş akışı işlemleri;
 //     - durum IPTAL olur → iptal edilmiş siparişi dışlayan her yer (yükleme planı ve onayı, aktarım, sandık, müşteri
 //       proforması / faturası, sipariş başına belge, kârlılık planı, kuyruklar) onu da dışlar. Önceki durum
 //       removedStatus'ta saklanır.
-//   Silme hiçbir FGO işlemi yapmaz (storno / düzeltme / silme yok — 7F-2 ertelendi); kesilmiş belgeler Muhasebe'de görünmeye
-//   devam eder. Kuyrukta bekleyen bir belge / depo e-postası varken silinmez (BUSY): önce o iş bitmeli ya da vazgeçilmeli.
+//   İki aşama (Paket 4): 1) önizleme — sipariş numarası, sonucu ve engeller (removalPreview, yalnızca okur); 2) ayrı son
+//   onay — yönetici sipariş numarasını yazar (removeOrder; sunucu numarayı ve önizlemedeki sürümü denetler).
+//   Mali / operasyonel geçmişi olan sipariş SİLİNMEZ (LOCKED + nedenler — server/orders/financial-lock.js): silinen sipariş
+//   faturalamadan, yükleme planından ve depodan düştüğü için açık süreç (fatura, avans, teslim) tamamlanamaz kalırdı.
+//   Kuyrukta bekleyen bir belge / depo e-postası varken de silinmez (BUSY). Silme hiçbir FGO işlemi yapmaz.
 //
 //   "Geri yükle": sipariş önceki durumuna döner, removedAt boşalır. Hiçbir kayıt yeniden üretilmez (silinirken hiçbir şey
-//   silinmediği için çoğalacak bir şey yoktur). İki işlem de geçmişe (REMOVED / RESTORED) ve denetim kaydına yazılır.
+//   silinmediği için çoğalacak bir şey yoktur). İki işlem de geçmişe (REMOVED / RESTORED) ve denetim kaydına yazılır;
+//   engellenen silme denemesi ORDER_REMOVE_BLOCKED olarak denetime yazılır.
 import { can } from '../auth/permissions.js';
 import { writeAudit, writeHistory } from './journal.js';
 import { refreshSla } from './transitions.js';
+import { busyOf, loadLockFacts, lockReasons } from './financial-lock.js';
 
-const fail = (code) => ({ ok: false, code });
-/** Kuyrukta beklerken siparişin silinmesini engelleyen işler (belge kesimi, depo e-postası) */
-const BUSY_JOBS = ['FGO_GLASS', 'FGO_PROFORMA', 'FGO_INVOICE', 'WAREHOUSE_EMAIL'];
+const fail = (code, extra = {}) => ({ ok: false, code, ...extra });
+/** Sipariş numarası karşılaştırması (ikinci adımın onayı): boşluk ve büyük-küçük harf farkı sayılmaz */
+const sameNo = (a, b) => String(a ?? '').trim().toLocaleUpperCase('tr-TR') === String(b ?? '').trim().toLocaleUpperCase('tr-TR') && String(b ?? '').trim() !== '';
 
 /**
- * Siparişi siler (yumuşak). confirm: ikinci adımın açık onayı ("Bu siparişin sistemden kaldırılacağını onaylıyorum").
- * @param {any} db
- * @param {{ orderId: string, confirm: boolean, actor: { id: string, role: string, ip?: string | null }, now?: Date }} p
- * @returns {Promise<{ ok: true, orderNo: string } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM_REQUIRED' | 'NOT_FOUND' | 'ALREADY_REMOVED' | 'BUSY' }>}
+ * Silme önizlemesi (1. adım — yalnızca okur): silinecek sipariş, sonucu ve silmeyi engelleyen nedenler. Son karar
+ * removeOrder'da AYNI kuralla (server/orders/financial-lock.js → lockReasons 'remove'), kilit altında yeniden verilir.
+ *   busy: kuyrukta bekleyen belge isteği / depo e-postası / sonuçlanmamış müşteri belgesi (önce iş bitmeli)
+ *   reasons: mali / operasyonel geçmiş (FGO belgesi, müşteri belgesi kapsamı, onaylı yükleme, yüklenmiş sipariş, profilde
+ *            proforma / ödeme / depo / teslim / fatura) — varsa silinmez
+ * @param {any} db  @param {string} orderId
+ * @returns {Promise<null | { orderNo: string, title: string | null, version: number, busy: boolean, reasons: import('./financial-lock.js').LockReason[],
+ *   kept: { offers: number, drawings: number, files: number, notes: number } }>}
  */
-export async function removeOrder(db, { orderId, confirm, actor, now = new Date() }) {
+export async function removalPreview(db, orderId) {
+  const id = String(orderId ?? '');
+  const order = await db.order.findUnique({
+    where: { id },
+    select: { orderNo: true, title: true, version: true, removedAt: true, _count: { select: { offers: true, drawings: true, files: true, notes: true } } },
+  });
+  if (!order || order.removedAt) return null;
+  const facts = await loadLockFacts(db, id);
+  if (!facts) return null;
+  return {
+    orderNo: order.orderNo, title: order.title ?? null, version: order.version, busy: busyOf(facts), reasons: lockReasons(facts, 'remove'),
+    kept: { offers: order._count.offers, drawings: order._count.drawings, files: order._count.files, notes: order._count.notes },
+  };
+}
+
+/**
+ * Siparişi siler (yumuşak) — iki aşamalı onayın ikinci adımı (Paket 4). confirmNo: yöneticinin elle yazdığı sipariş
+ * numarası (siparişinkiyle aynı olmalı); expectedVersion: önizlemedeki sipariş sürümü (bu arada değiştiyse STALE).
+ * Engeller (kilit altında): kuyrukta iş → BUSY · mali / operasyonel geçmiş → LOCKED + nedenler (denetim kaydına da yazılır:
+ * ORDER_REMOVE_BLOCKED). Hiçbir kayıt fiziksel olarak silinmez.
+ * Kilit sırası belge isteği, yükleme onayı ve fiyat güncellemesiyle aynı: yükleme onayı → sipariş belgesi → sipariş satırı.
+ * @param {any} db
+ * @param {{ orderId: string, confirmNo: string | null | undefined, expectedVersion?: number | null, actor: { id: string, role: string, ip?: string | null }, now?: Date }} p
+ * @returns {Promise<{ ok: true, orderNo: string } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM_REQUIRED' | 'NOT_FOUND' | 'ALREADY_REMOVED' | 'STALE' | 'BUSY' | 'LOCKED', reasons?: object[] }>}
+ */
+export async function removeOrder(db, { orderId, confirmNo, expectedVersion = null, actor, now = new Date() }) {
   if (!can(actor?.role, 'ORDER_CANCEL')) return fail('FORBIDDEN');
-  if (!confirm) return fail('CONFIRM_REQUIRED');
+  if (!String(confirmNo ?? '').trim()) return fail('CONFIRM_REQUIRED');
   return db.$transaction(async (tx) => {
     const id = String(orderId ?? '');
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('loading-confirmation', 0))`;
     // Sipariş başına belge isteğiyle aynı kilit: silme ile belge isteği birbirinin arasına giremez
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
+    // Sipariş satırı kilitlenir: aynı anda çalışan iş akışı işlemi (depo, teslim, ödeme …) bitene kadar beklenir, sonra
+    // güncel kayıtlarla karar verilir
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
     const order = await tx.order.findUnique({
       where: { id },
       select: {
         id: true, orderNo: true, status: true, version: true, removedAt: true, customerId: true, orderTypeCode: true,
-        _count: { select: { fgoDocuments: true, loadedItems: true, drawings: true, compensationsFrom: true, compensationsTo: true } },
-        billingBatchOrders: { where: { activeKey: { not: null } }, select: { batch: { select: { status: true } } } },
+        _count: { select: { offers: true, drawings: true, files: true, notes: true, compensationsFrom: true, compensationsTo: true, crateLinks: true } },
       },
     });
     if (!order) return fail('NOT_FOUND');
     if (order.removedAt) return fail('ALREADY_REMOVED');
-    const queued = await tx.notificationOutbox.count({ where: { orderId: order.id, type: { in: BUSY_JOBS }, status: 'PENDING' } });
-    if (queued > 0 || order.billingBatchOrders.some((b) => b.batch?.status === 'PENDING')) return fail('BUSY');
+    if (!sameNo(confirmNo, order.orderNo)) return fail('CONFIRM_REQUIRED');
+    if (expectedVersion != null && Number(expectedVersion) !== order.version) return fail('STALE');
+    const facts = await loadLockFacts(tx, order.id);
+    if (!facts || busyOf(facts)) return fail('BUSY');
+    const reasons = lockReasons(facts, 'remove');
+    if (reasons.length) {
+      // Engellenen deneme de denetime yazılır (yalnızca neden kodları ve belge no / gün — tutar yok)
+      await writeAudit(tx, {
+        action: 'ORDER_REMOVE_BLOCKED', entityType: 'Order', entityId: order.id, userId: actor.id,
+        details: { orderNo: order.orderNo, status: order.status, reasons },
+      }, actor);
+      return fail('LOCKED', { reasons });
+    }
     await tx.order.update({
       where: { id: order.id },
       data: { removedAt: now, removedById: actor.id, removedStatus: order.status, status: 'IPTAL', slaDeadline: null, version: { increment: 1 } },
@@ -56,7 +104,10 @@ export async function removeOrder(db, { orderId, confirm, actor, now = new Date(
       details: {
         orderNo: order.orderNo, customerId: order.customerId, orderType: order.orderTypeCode, statusBefore: order.status,
         // Korunan kayıtların sayısı (hiçbiri silinmedi / değişmedi)
-        kept: { fgoDocuments: order._count.fgoDocuments, loadingItems: order._count.loadedItems, drawings: order._count.drawings, billingBatches: order.billingBatchOrders.length, compensations: order._count.compensationsFrom + order._count.compensationsTo },
+        kept: {
+          offers: order._count.offers, drawings: order._count.drawings, files: order._count.files, notes: order._count.notes,
+          crateLinks: order._count.crateLinks, compensations: order._count.compensationsFrom + order._count.compensationsTo,
+        },
       },
     }, actor);
     return { ok: true, orderNo: order.orderNo };

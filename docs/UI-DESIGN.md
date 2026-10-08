@@ -363,9 +363,23 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 - "Önemli kararlar" card (`#kararlar`): `.section-head` with the create button; each decision is a `.note.comp-entry`
   (order no, TELAFİ badge, quantity, status badge; source, prices, destination, creator / date in `.small` / `.meta`).
   A pending decision shows the Admin approve / reject forms inline.
-- "Siparişi sil" (`#sil`, `.remove-order`, Admin only): a `.btn-danger` opens the section; consequences, a `.check`
-  confirmation and a `.btn-danger-solid` that is disabled until the box is ticked. Removed orders: `#silinen` card with a
+- "Siparişi sil" (`#sil`, `.remove-order`, Admin only — two stages since 3.54.0): a `.btn-danger` opens step 1
+  (`[data-remove-step="1"]`: `.remove-target` with the order number, then either the consequences or an `.alert-error`
+  `[data-remove-blocked]` with the lock reasons as a `.plain-list`); "Devam et" (`.btn-danger`, only when not blocked)
+  opens step 2 (`[data-remove-step="2"]`: the order number typed into `#sil-no`; the `.btn-danger-solid` stays disabled
+  until it matches). "Vazgeç" closes the section at every step. Removed orders: `#silinen` card with a
   `details.removed-list` on the orders page (restore = `ConfirmButton primary`).
+
+### Admin panel (3.54.0)
+
+- Order info card: Admin sees neither "İstenen camlar" nor the "Sandıklar" card (`#sandik`); crates stay on the loading
+  day. No layout change to `.order-info`.
+- Crate fee (Admin only): "+ Sandık parası" in the Admin offer editor; the row carries `badge-info` `[data-crate-fee]`
+  "Sandık bedeli · satış görmez" (editor and offer view, Admin only); no dimensions, unit fixed "adet", no "+CNC / +Delik".
+- Price lock: `.alert-warn#fiyat-kilidi` under the offer view (title, text, reasons as `.plain-list`) instead of the
+  "Teklifi güncelle" link. "Güncelle ve müşteriye gönder" asks for confirmation (`window.confirm`, new version number).
+- "Hareketler" (Admin): customer price changes are `.timeline` items `li[data-price-change=<version>]` with a nested
+  `ul.price-changes` (one line per changed row: old → new) and `.small.muted` total; no dot on the nested lines.
 
 ### Compensation price + one-piece operations (3.44.0)
 

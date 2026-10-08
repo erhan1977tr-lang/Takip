@@ -641,6 +641,10 @@ model OfferLine {
   //                böylece ayırma toplam m²'yi ve tutarı değiştirmez. Sunucu her kayıtta yeniden hesaplar (assignPieceBases).
   splitGroup       String?
   pieceBase        Int     @default(0)
+  // Sandık bedeli (Paket 4): yöneticinin girdiği sandık parası satırı. Olağan bir adetli satırdır (tutar, fatura, yükleme
+  // ve kârlılık aynı kuralla) — işaret yalnızca görünürlüğü belirler: satışa hiç gitmez, satışın kaydı satırı korur;
+  // yönetici ve müşteri (denetimci de) görür. Yalnızca yönetici açar (server/orders/transitions.js → offerEdit).
+  crateFee         Boolean @default(false)
 
   @@index([compensationId])
 }

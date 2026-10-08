@@ -12,7 +12,8 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW }
 //  - kaynak adedi: telafi açılınca ana siparişte o camın adedi düşer (temiz siparişte; teklifin yeni sürümü)
 //  - işlemler (karar 113, 157): CNC tek bir cama aittir — işlemsiz cam işlem miras almaz; işlemli tek camın işlemi telafiye
 //    taşınır ve telafide müşteri fiyatı 0'dır
-//  - siparişi sil: yalnızca yönetici, iki adım (bölüm + onay kutusu); sipariş olağan ekranlardan kalkar; geri yüklenir
+//  - siparişi sil: yalnızca yönetici, iki aşama (sipariş no + sonuç → sipariş numarasını yazarak son onay); sipariş olağan
+//    ekranlardan kalkar; geri yüklenir (mali geçmişi olan siparişin silinmemesi: e2e/38-yonetici-paneli.spec.ts)
 // FGO bu veritabanında KAPALIDIR: hiçbir belge kesilmez.
 test.describe.configure({ mode: 'serial' });
 
@@ -421,19 +422,34 @@ test('müşteri, çizim ve denetimci: telafi düğmesi, "Önemli kararlar" ve TE
   await sales.context().close();
 });
 
-test('yönetici: siparişi sil iki adımlıdır; sipariş olağan ekranlardan kalkar, kayıtlar durur; geri yüklenir — başka rol geri yükleyemez', async ({ browser }) => {
+test('yönetici: siparişi sil iki aşamalıdır; sipariş olağan ekranlardan kalkar, kayıtlar durur; geri yüklenir — başka rol geri yükleyemez', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${removeId}`);
   const box = admin.locator('#sil');
-  // 1. adım: bölüm açılır; 2. adım: sonuçlar + onay kutusu — kutu işaretlenmeden kırmızı düğme çalışmaz
-  await expect(box.getByText('Bu siparişin sistemden kaldırılacağını onaylıyorum.')).toHaveCount(0);
+  // 1. aşama (fonksiyonel paket 4): silinecek sipariş numarası ve sonucu; "Vazgeç" bölümü kapatır
+  await expect(box.locator('[data-remove-step]')).toHaveCount(0);
   await box.getByRole('button', { name: 'Siparişi sil' }).click();
-  await expect(box).toContainText('Kayıtlar silinmez');
-  const submit = box.locator('button.btn-danger-solid');
+  const step1 = box.locator('[data-remove-step="1"]');
+  await expect(step1).toContainText('Silinecek sipariş: UNS7903');
+  await expect(step1).toContainText('Kayıtlar silinmez');
+  await expect(step1.locator('[data-remove-blocked]')).toHaveCount(0);
+  await step1.getByRole('button', { name: 'Vazgeç' }).click();
+  await expect(box.locator('[data-remove-step]')).toHaveCount(0);
+  // 2. aşama: ayrı son onay — sipariş numarası yazılmadan (ya da yanlış yazılınca) kırmızı düğme çalışmaz; "Vazgeç" kapatır
+  await box.getByRole('button', { name: 'Siparişi sil' }).click();
+  await box.getByRole('button', { name: 'Devam et' }).click();
+  const step2 = box.locator('[data-remove-step="2"]');
+  const submit = step2.locator('button.btn-danger-solid');
   await expect(submit).toHaveText('Siparişi sil');
   await expect(submit).toBeDisabled();
+  await step2.getByLabel('Silmeyi onaylamak için sipariş numarasını yazın: UNS7903').fill('UNS7904');
+  await expect(submit).toBeDisabled();
+  await step2.getByRole('button', { name: 'Vazgeç' }).click();
+  await expect(box.locator('[data-remove-step]')).toHaveCount(0);
+  await box.getByRole('button', { name: 'Siparişi sil' }).click();
+  await box.getByRole('button', { name: 'Devam et' }).click();
   await shot(admin, 'siparis-sil');
-  await box.getByLabel('Bu siparişin sistemden kaldırılacağını onaylıyorum.').check();
+  await step2.getByLabel('Silmeyi onaylamak için sipariş numarasını yazın: UNS7903').fill('uns7903');
   await expect(submit).toBeEnabled();
   await submit.click();
   await expect(admin).toHaveURL(/silindi=UNS7903/);

@@ -95,6 +95,9 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DWG_NOTE_LONG: 'order.errors.dwgNoteLong',
   DWG_FILE: 'order.errors.dwgFile',
   DWG_INFECTED: 'order.errors.dwgInfected',
+  // Yönetici paneli (Paket 4): sandık bedeli yalnızca yöneticinin; mali kilitli siparişte geçmiş fiyat değişmez
+  CRATE_FEE_ADMIN: 'order.errors.crateFeeAdmin',
+  PRICE_LOCKED: 'order.errors.priceLocked',
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
@@ -125,6 +128,18 @@ const WORKFLOW_ERRORS: Record<string, string> = {
 };
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);
+}
+
+/**
+ * Mali kilit nedeni (server/orders/financial-lock.js → lockReasons) → metin. Belge türü sabit metinle, belge no / gün
+ * kayıttan (ekrana dış veri yazılmaz: yalnızca seri+numara ve tarih).
+ */
+export function lockReasonText(t: T, r: { code: string; ref?: string | null; kind?: string | null }): string {
+  const kind = r.kind && ['PROFORMA', 'ADVANCE', 'INVOICE'].includes(r.kind) ? t(k(`accounting.receivables.kind.${r.kind}`)) : '';
+  const ref = typeof r.ref === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(r.ref) ? r.ref.split('-').reverse().join('.') : r.ref.slice(0, 40)) : '';
+  const code = ['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT', 'CONFIRMED_LOADING', 'SHIPPED', 'PROFILE_FINANCE', 'PROFILE_WAREHOUSE'].includes(r.code) ? r.code : 'FGO_DOCUMENT';
+  const text = t(k(`order.lock.${code}`), { kind });
+  return ref ? `${text} (${ref})` : text;
 }
 
 /** Dosya kontrolü sonucu (fileProblem) → metin; sorun yoksa null. */

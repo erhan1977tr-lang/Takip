@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { type CurrentUser, requirePermission } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT, type Dict, type T } from '@/lib/i18n';
-import { fileProblemText, offerProblemTexts, workflowErrorText } from '@/lib/labels';
+import { fileProblemText, lockReasonText, offerProblemTexts, workflowErrorText } from '@/lib/labels';
 import { loadOrder } from '@/lib/orders';
 import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
@@ -58,6 +58,9 @@ async function act(
       // Fiyatı eksik satırlar: hangi ürün / işlem olduğu yazılır
       const problems = (e.details as { problems?: unknown[] } | undefined)?.problems;
       if (e.code === 'SALES_PRICE_MISSING' && problems?.length) redirect(err(orderId, `${t('order.errors.salesPriceMissing')} ${offerProblemTexts(m, problems).join(' ')}`));
+      // Mali kilit (Paket 4): fiyat neden değiştirilemez — belge / onaylı yükleme (sabit metin + belge no / gün)
+      const reasons = (e.details as { reasons?: { code: string; ref?: string | null; kind?: string | null }[] } | undefined)?.reasons;
+      if (e.code === 'PRICE_LOCKED') redirect(err(orderId, [t('order.errors.priceLocked'), ...(reasons ?? []).map((r) => lockReasonText(t, r))].join(' · ')) + '#teklif');
       redirect(err(orderId, workflowErrorText(t, e.code, e.details as Record<string, unknown>)));
     }
     throw e;
@@ -408,12 +411,12 @@ export async function retryNoteTranslationAction(formData: FormData) {
  * from: işlem eklemek için ayrılan tek camın kaynağı (aynı teklifin mevcut satırı — fiyatları ondan taşınır, karar 113)
  * splitGroup: ayrılmış cam grubunun anahtarı (karar 114) — sunucu grubu doğrular ve sırayı (pieceBase) kendisi hesaplar
  */
-type LineInput = { id: string | null; from?: string | null; splitGroup?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; offerPrice?: string | null };
+type LineInput = { id: string | null; from?: string | null; splitGroup?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; crateFee?: boolean; offerPrice?: string | null };
 
 function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
-  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from'), group = col('l_group');
+  const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from'), group = col('l_group'), crate = col('l_crate');
   const withOffer = oprice.length > 0;
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
@@ -431,9 +434,12 @@ function readLines(formData: FormData, t: T): LineInput[] | string {
     const op = withOffer && oprice[i] ? Number(oprice[i].replace(',', '.')) : null;
     if (op !== null && (!Number.isFinite(op) || op < 0 || op > 1_000_000)) return t('order.errors.linePrice', { n: i + 1 });
     const isFree = free[i] === '1';
+    // Sandık bedeli (Paket 4): adetli, ölçüsüz cam türü satır. İşaret yalnızca yöneticinin kaydında geçerlidir — satışın
+    // kaydında sunucu yok sayar (server/orders/transitions.js → salesInput)
+    const isCrate = !sub && crate[i] === '1';
     lines.push({
-      description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: e, boyMm: b, adet: a,
-      unit: sub || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree,
+      description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: isCrate ? null : e, boyMm: isCrate ? null : b, adet: a,
+      unit: sub || isCrate || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree, crateFee: isCrate,
       id: ids[i] || null,
       ...(!ids[i] && from[i] && !sub ? { from: from[i].slice(0, 40) } : {}),
       splitGroup: !sub && isSplitKey(group[i]) ? group[i] : null,

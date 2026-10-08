@@ -8,7 +8,9 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
-import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
+import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isCrateText, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
+import { priceLock } from './financial-lock.js';
+import { priceChanges } from './price-changes.js';
 import { verifyReviewToken } from './review.js';
 import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
 import { getEnv } from '../env.js';
@@ -195,8 +197,9 @@ function decidableDrawing(h) {
 
 // compensationId: TELAFİ satırının işareti (Aşama 9) — satır düzenlenince / teklifin yeni sürümü açılınca satırla taşınır
 // splitGroup / pieceBase: ayrılmış cam grubu (karar 114) — teklifin yeni sürümüne ve kopyalarına satırla birlikte taşınır
+// crateFee: yöneticinin sandık bedeli satırı (Paket 4) — yeni sürüme ve kopyalara satırla birlikte taşınır
 const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId', 'splitGroup'];
-export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, sortOrder: i });
+export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, crateFee: !!l.crateFee, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, sortOrder: i });
 const priceNum = (v) => (v == null || v === '' ? null : Number(v));
 
 /**
@@ -278,9 +281,62 @@ function requireOfferPrices(lines) {
  * (mevcut kural, offerProblems → missing_prices). Taslak kaydı (save) engellenmez.
  */
 function requireSalesPrices(lines) {
-  const p = offerProblems(lines.map((l) => ({ ...l, unitPrice: l.unitPrice == null ? '' : String(l.unitPrice) })))
+  // Yöneticinin sandık bedeli satırı (Paket 4) satışın tablosunda yoktur: satış fiyatı aranmaz
+  const p = offerProblems(lines.filter((l) => !l.crateFee).map((l) => ({ ...l, unitPrice: l.unitPrice == null ? '' : String(l.unitPrice) })))
     .filter((x) => x.code === 'missing_prices');
   if (p.length) throw new WorkflowError('SALES_PRICE_MISSING', { problems: p });
+}
+
+/**
+ * Sandık bedeli (fonksiyonel paket 4) — yalnızca yöneticinin satırı. Satışın (müşteri fiyatını göremeyen teklif yazarının)
+ * kaydında:
+ *   - gelen satırlarda sandık bedeli işareti yok sayılır; satış sandık parası satırı EKLEYEMEZ (açıklamayı elle yazsa da —
+ *     yeni satırın adı sandık parasıysa CRATE_FEE_ADMIN), yöneticinin sandık satırının kimliğiyle de gelemez (o satırı
+ *     görmez; taklit istek CRATE_FEE_ADMIN);
+ *   - yöneticinin sandık satırları satışa hiç gönderilmediği için formunda yoktur: kayıtta olduğu gibi KORUNUR (satırların
+ *     sonunda, saklı değerleriyle) — satışın kaydı yöneticinin satırını silmez / değiştirmez.
+ * Bu sürümden önce satışın eklediği sandık satırı (işaretsiz, kimliği satışın formunda) olağan satır olarak düzenlenir.
+ * @param {object[]} lines  formdan gelen satırlar
+ * @param {object[]} existing  teklifin kayıtlı satırları
+ * @returns {{ lines: object[], kept: object[] }}  kept: korunan yönetici sandık satırları (kayıtlı hâlleriyle)
+ */
+function salesInput(lines, existing) {
+  const crateIds = new Set(existing.filter((l) => l.crateFee).map((l) => l.id));
+  const known = new Set(existing.map((l) => l.id));
+  const out = (lines ?? []).map((l) => {
+    if (l.id && crateIds.has(l.id)) throw new WorkflowError('CRATE_FEE_ADMIN');
+    const isNew = !l.id || !known.has(l.id);
+    if (isNew && (l.kind ?? 'CAM') === 'CAM' && isCrateText(l.description)) throw new WorkflowError('CRATE_FEE_ADMIN');
+    return { ...l, crateFee: false };
+  });
+  return { lines: out, kept: existing.filter((l) => l.crateFee) };
+}
+/**
+ * Yöneticinin satırları: sandık bedeli işareti yalnızca cam türü (adetli sandık) satırında geçerlidir. Kayıtlı sandık bedeli
+ * satırı kimliğiyle geldiğinde işaret korunur (işareti taşımayan eski / yarım form satırı satışa açmaz).
+ * @param {object[]} lines  @param {object[]} [existing]  teklifin kayıtlı satırları
+ */
+const adminInput = (lines, existing = []) => {
+  const crateIds = new Set(existing.filter((l) => l.crateFee).map((l) => l.id));
+  return (lines ?? []).map((l) => ({ ...l, crateFee: (!!l.crateFee || (!!l.id && crateIds.has(l.id))) && (l.kind ?? 'CAM') === 'CAM' }));
+};
+
+/**
+ * Yöneticinin müşteri fiyatı değişikliği (Paket 4): satır satır eski → yeni fiyat, sipariş, teklif sürümü, kullanıcı ve
+ * zaman denetim kaydına (OFFER_PRICE_CHANGED) yazılır. Değişiklik yoksa kayıt yazılmaz. Tutar geçmiş notuna yazılmaz.
+ * @param {any} h  @param {{ offerId: string, intent: string, sent: boolean, currency: string, before: object[], after: object[] }} p
+ */
+async function recordPriceChange(h, { offerId, intent, sent, currency, before, after }) {
+  const { changes, more } = priceChanges(before, after);
+  if (changes.length === 0) return null;
+  const { tx, order, actor } = h;
+  const version = await tx.offer.count({ where: { orderId: order.id } });
+  const total = (lines) => offerTotals(atOfferPrice(lines.map((l) => ({ ...l, unitPrice: String(l.unitPrice ?? 0), offerPrice: l.offerPrice == null ? null : String(l.offerPrice) })))).amount.toFixed(2);
+  await writeAudit(tx, {
+    action: 'OFFER_PRICE_CHANGED', entityType: 'Order', entityId: order.id, userId: actor.id,
+    details: { orderNo: order.orderNo, offerId, version, intent, sent, currency, changes, more, oldTotal: total(before), newTotal: total(after) },
+  }, actor);
+  return { version, count: changes.length + more };
 }
 
 /**
@@ -306,8 +362,10 @@ async function offerEdit(h, intent) {
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
   const admin = can(actor.role, 'OFFER_SEND');
   requireOwnedOps(payload.lines);
+  // Sandık bedeli yalnızca yöneticinindir (Paket 4): satışın kaydı yöneticinin sandık satırını korur, yenisini açamaz
+  const input = admin ? { lines: adminInput(payload.lines, offer.lines), kept: [] } : salesInput(payload.lines, offer.lines);
   // Ayrılmış camların sırası (pieceBase) her kayıtta sunucuda yeniden hesaplanır: m² ve tutar kalemin toplam adedinden (karar 114)
-  const merged = assignPieceBases(mergePrices(await completeLines(h, offer, payload.lines), offer.lines, admin));
+  const merged = assignPieceBases([...mergePrices(await completeLines(h, offer, input.lines), offer.lines, admin), ...input.kept]);
   let saved = await writeLines(tx, offer.id, merged, offer.lines);
   // Satış yöneticiye gönderirken müşteri fiyatı boş satırlar müşterinin fiyat tablosundan dolar (karar 32)
   if (intent === 'submit') {
@@ -348,9 +406,15 @@ async function offerEdit(h, intent) {
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
     h.event('OFFER_RETURNED', payload.returnNote);
   }
+  // Yöneticinin müşteri fiyatı değişikliği (Paket 4): satır satır eski → yeni, ayrı denetim kaydı (OFFER_PRICE_CHANGED).
+  // Gönderilmemiş teklifte müşteri yeni fiyatı yalnızca "onayla ve gönder" ile görür (müşteriye yalnızca gönderilmiş teklif gider).
+  const priceChange = admin
+    ? await recordPriceChange(h, { offerId: offer.id, intent, sent: intent === 'approve', currency: offer.currency, before: offer.lines, after: intent === 'submit' ? saved : merged })
+    : null;
   h.sla = true;
   h.audit = {
     offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}),
+    ...(priceChange ? { priceChange } : {}),
     ...(h.compensationPrices?.length ? { compensationPrices: h.compensationPrices } : {}),
   };
 }
@@ -677,13 +741,22 @@ const ACTIONS = {
     if (!h.payload.returnNote) throw new WorkflowError('RETURN_REASON');
     return offerEdit(h, 'return');
   },
-  /** Müşterideki teklifi yönetici günceller: eski sürüm kalır, yeni sürüm hemen müşteriye gönderilmiş sayılır. */
+  /**
+   * Müşterideki teklifi yönetici günceller: eski sürüm kalır, yeni sürüm yöneticinin açık "Güncelle ve müşteriye gönder"
+   * işlemiyle müşteriye gider. Mali kilit (Paket 4 — server/orders/financial-lock.js): siparişin FGO belgesi, müşteri
+   * belgesi kapsamı, kuyrukta bekleyen belge isteği ya da onaylı yükleme kalemi varsa geçmiş fiyat değişmez
+   * (PRICE_LOCKED + nedenler; düzeltme belgesi 7F-2'dir). Denetim, belge isteği ve yükleme onayıyla AYNI danışma kilitleri
+   * altında (yükleme onayı → sipariş belgesi) yapılır: kilit denetimi ile yeni sürüm arasına belge / onay giremez.
+   */
   async update_offer(h) {
     const { tx, order, actor, payload, now } = h;
     const prev = latestOffer(order);
     if (!prev) throw new WorkflowError('OFFER_NOT_FOUND');
+    // Danışma kilitleri (ACTION_LOCKS) sürüm artışından önce alındı: denetim ile yeni sürüm arasına belge / onay giremez
+    const locked = await priceLock(tx, order.id);
+    if (locked.length) throw new WorkflowError('PRICE_LOCKED', { reasons: locked });
     requireOwnedOps(payload.lines);
-    const lines = assignPieceBases(mergePrices(await completeLines(h, prev, payload.lines), prev.lines, true));
+    const lines = assignPieceBases(mergePrices(await completeLines(h, prev, adminInput(payload.lines, prev.lines)), prev.lines, true));
     requireOfferPrices(lines);
     const { amount, offerAmount } = amounts(lines);
     // Müşteriye gitmiş teklif değişmez: yeni sürüm açılır ve hemen müşteriye gönderilmiş sayılır
@@ -704,11 +777,26 @@ const ACTIONS = {
     // Olay notu yalnızca yöneticinin açıklaması (tutarlar denetim kaydında; satış müşteri fiyatını görmez)
     h.event('OFFER_UPDATED', payload.note || null);
     const compensationPrices = await recordCompensationPrices(tx, lines);
-    h.audit = { offerId: created.id, from, offerAmount, amount, lines: lines.length, ...(compensationPrices.length ? { compensationPrices } : {}) };
+    // Satır satır eski → yeni müşteri fiyatı, yeni sürümün numarasıyla (Paket 4)
+    const priceChange = await recordPriceChange(h, { offerId: created.id, intent: 'update', sent: true, currency: prev.currency, before: prev.lines, after: lines });
+    h.audit = {
+      offerId: created.id, from, offerAmount, amount, lines: lines.length, ...(compensationPrices.length ? { compensationPrices } : {}),
+      ...(priceChange ? { priceChange } : {}),
+    };
   },
   async check_offer(h) {
     h.event('OFFER_CHECKED', h.order.drawings.length ? `v${h.order.drawings.length}` : null);
   },
+};
+
+/**
+ * İşlemlerin danışma kilitleri — sürüm artışından ÖNCE alınır (executeAction). Müşterideki teklifin yeni sürümü
+ * (Paket 4): mali kilit denetimi yükleme onayı ve sipariş belgesi isteğiyle aynı kilitler altında (sıra: yükleme onayı →
+ * sipariş belgesi — telafi ve belge isteğiyle aynı sıra).
+ * @type {Record<string, (order: { id: string }) => string[]>}
+ */
+const ACTION_LOCKS = {
+  update_offer: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
 };
 
 export const ORDER_ACTIONS = Object.keys(ACTIONS);
@@ -732,7 +820,7 @@ async function glassFinish(h, entries) {
  * Sonuçtaki outboxIds: işlemin yazdığı kuyruk olayları — işlem kaydedildikten SONRA uygulama içi bildirimi hemen dağıtmak
  * için (lib/notifications.ts → deliverInAppNow → server/notifications/inapp.js → dispatchInAppFor; işçi aynı olayı yeniden dener, tekrar yazılmaz).
  */
-export async function executeAction(db, { workflow, actions, include, finish = null, orderId, action, actor, payload = {} }) {
+export async function executeAction(db, { workflow, actions, include, finish = null, locks = {}, orderId, action, actor, payload = {} }) {
   const def = actions[action];
   if (!def) throw new WorkflowError('UNKNOWN_ACTION');
   const scope = actor.system ? {} : orderScope({ appRole: actor.role, customerId: actor.customerId ?? null });
@@ -752,6 +840,9 @@ export async function executeAction(db, { workflow, actions, include, finish = n
       },
       async apply(tx, order) {
         if (payload.expectedVersion != null && Number(payload.expectedVersion) !== order.version) return null;
+        // İşlemin danışma kilitleri (varsa — ör. update_offer: yükleme onayı → sipariş belgesi) sürüm artışından ÖNCE
+        // alınır: kilit sırası belge isteği, yükleme onayı ve telafiyle aynıdır (önce danışma kilidi, sonra sipariş satırı)
+        for (const key of locks[action]?.(order) ?? []) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
         // Sürüm artırılır ve satır kilitlenir: aynı anda gelen ikinci işlem burada bekler, sonra CONFLICT alır
         const bumped = await tx.order.updateMany({ where: { id: order.id, version: order.version }, data: { version: { increment: 1 } } });
         if (bumped.count === 0) return null;
@@ -803,5 +894,5 @@ export async function executeAction(db, { workflow, actions, include, finish = n
  * @throws {WorkflowError} NOT_FOUND | NOT_ALLOWED | CONFLICT | STALE_DRAWING | OFFER_NOT_FOUND | ...
  */
 export function runOrderAction(db, { orderId, action, actor, payload = {} }) {
-  return executeAction(db, { workflow: glassWorkflow, actions: ACTIONS, include: INCLUDE, finish: glassFinish, orderId, action, actor, payload });
+  return executeAction(db, { workflow: glassWorkflow, actions: ACTIONS, include: INCLUDE, finish: glassFinish, locks: ACTION_LOCKS, orderId, action, actor, payload });
 }

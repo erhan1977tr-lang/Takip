@@ -62,10 +62,11 @@ export const INAPP_RULES = {
   ORDER_DWG_READY: { to: () => ['orderSales'], link: orderPart('cizim') },
   ORDER_DWG_RESUBMITTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
   ORDER_DWG_FACTORY_REQUESTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
-  // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride
+  // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride. Yöneticinin teklifi
+  // müşteriye göndermesi (ilk gönderim ya da yeni sürüm) yalnızca MÜŞTERİYE bildirilir — satışa ne zil ne e-posta (Paket 4)
   ORDER_OFFER_SUBMITTED: { to: () => ['admin'] },
   ORDER_OFFER_RETURNED: { to: () => ['orderSales'] },
-  ORDER_OFFER_SENT: { to: () => ['customer', 'orderSales'], link: orderPart('teklif') },
+  ORDER_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_OFFER_UPDATED: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_PROFILE_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },

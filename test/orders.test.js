@@ -86,8 +86,13 @@ test('teklif satıştan çıktıktan sonra satış değişiklik yapamaz; müşte
   assert.ok(has({ role: 'ADMIN', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }, 'update_offer'));
   assert.ok(has({ role: 'ADMIN', status: 'URETIMDE', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }, 'update_offer'));
   assert.ok(!has({ role: 'ADMIN', status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }, 'update_offer'));
-  assert.ok(!has({ role: 'ADMIN', status: 'YUKLENDI', offer: 'GONDERILDI' }, 'update_offer'));
-  assert.ok(!has({ role: 'SATIS', status: 'URETIMDE', offer: 'GONDERILDI' }, 'update_offer'));
+  // Paket 4: yönetici müşteri fiyatını "her zaman" günceller — yüklendi olarak işaretlenmiş siparişte de (mali kilit işlemin
+  // kendisinde: server/orders/financial-lock.js). Arşivlenmiş / iptal siparişte ve satışta hiçbir durumda yok.
+  assert.ok(has({ role: 'ADMIN', status: 'YUKLENDI', drawing: 'ONAYLANDI', offer: 'GONDERILDI' }, 'update_offer'));
+  for (const status of ['YENI', 'ARSIVLENDI', 'IPTAL']) assert.ok(!has({ role: 'ADMIN', status, offer: 'GONDERILDI' }, 'update_offer'), status);
+  for (const status of ['HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI']) {
+    for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI']) assert.ok(!has({ role, status, offer: 'GONDERILDI' }, 'update_offer'), `${role}/${status}`);
+  }
 });
 
 test('satış kararını geri alma: teklif satıştayken ve çizim müşteriye gitmeden', () => {

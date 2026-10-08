@@ -388,5 +388,35 @@ export default {
     dwgNoteLong: 'Explicația este prea lungă (cel mult 2000 de caractere).',
     dwgFile: 'Selectați cel puțin un fișier DWG sau DXF.',
     dwgInfected: 'Unul dintre fișierele verificate s-a dovedit infectat; acest desen nu poate fi acceptat pentru producție.',
+    // Panoul administratorului (pachetul 4)
+    crateFeeAdmin: 'Costul ambalajului (ladă) îl introduce doar administratorul; oferta nu a fost salvată.',
+    priceLocked: 'Prețul nu poate fi modificat: comanda are înregistrări financiare sau de încărcare; prețul istoric nu se schimbă în aceste înregistrări.',
+  },
+  // Motivele blocării financiare / operaționale (pachetul 4 — modificarea prețului și ștergerea)
+  lock: {
+    FGO_DOCUMENT: 'Document FGO emis: {kind}',
+    BILLING_BATCH: 'Inclusă într-un document al clientului: {kind}',
+    PENDING_DOCUMENT: 'O cerere de document așteaptă în coadă',
+    CONFIRMED_LOADING: 'Încărcarea este confirmată',
+    SHIPPED: 'Marcată ca încărcată / arhivată',
+    PROFILE_FINANCE: 'Există proformă, plată sau factură',
+    PROFILE_WAREHOUSE: 'Trimisă la depozit sau predată',
+  },
+  // Prețul ofertei trimise clientului este blocat (administrator — pachetul 4)
+  priceLock: {
+    title: 'Prețul nu poate fi modificat.',
+    text: 'Prețul acestei comenzi este înregistrat într-un document financiar sau într-o încărcare confirmată; aceste înregistrări nu se modifică pe ascuns. Documentul de corecție (storno / factură de corecție) nu există încă în sistem.',
+  },
+  // „Istoric” al administratorului: modificarea prețului pentru client (din jurnalul de audit — pachetul 4)
+  priceHistory: {
+    label: 'Prețul pentru client a fost modificat (oferta v{v})',
+    sent: 'trimisă clientului',
+    draft: 'ciornă — clientul nu o vede',
+    line: 'rândul {no}',
+    added: 'adăugat',
+    removed: 'eliminat',
+    free: 'gratuit',
+    more: '+{n} rânduri',
+    total: 'Total: {from} → {to}',
   },
 };

@@ -8,7 +8,7 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
 import {
-  blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, personText, roleText, slaText, stageText,
+  blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, lockReasonText, personText, roleText, slaText, stageText,
 } from '@/lib/labels';
 import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
@@ -28,6 +28,9 @@ import { loadCompensations, loadCompensationForm, type CompEntry } from '@/lib/c
 import { compensableLines } from '@/server/orders/compensation.js';
 import { CompensationForm } from './CompensationForm';
 import { RemoveOrder } from './RemoveOrder';
+import { removalPreview } from '@/server/orders/removal.js';
+import { priceLock } from '@/server/orders/financial-lock.js';
+import { loadPriceChanges, type PriceChangeEntry } from '@/lib/price-history';
 import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
 import { guestHostOptions } from '@/server/loading/crates.js';
@@ -116,10 +119,17 @@ export default async function OrderPage({
   }
   const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
-  // "Siparişi sil" (yalnızca yönetici — ORDER_CANCEL): sayfanın en altında, iki adımlı (karar 110)
+  // "Siparişi sil" (yalnızca yönetici — ORDER_CANCEL): sayfanın en altında, iki aşamalı onay (karar 110; Paket 4). Önizleme
+  // (sipariş no, sonuç ve engeller) sunucuda, silmeyle aynı kuraldan (server/orders/removal.js → removalPreview)
   const removeErrors = m.compensation.remove.errors;
-  const removeError = sp.silHata ? removeErrors[sp.silHata as keyof typeof removeErrors] ?? removeErrors.NOT_FOUND : null;
-  const removal = (docs: number) => (userCan(user, 'ORDER_CANCEL') ? <RemoveOrder orderId={order.id} docs={docs} error={removeError} m={m.compensation.remove} /> : null);
+  const removeError = sp.silHata && Object.hasOwn(removeErrors, sp.silHata) ? removeErrors[sp.silHata as keyof typeof removeErrors] : sp.silHata ? removeErrors.NOT_FOUND : null;
+  const removal = userCan(user, 'ORDER_CANCEL') ? await removalPreview(db, order.id) : null;
+  const removalBox = removal ? (
+    <RemoveOrder
+      orderId={order.id} error={removeError} m={m.compensation.remove}
+      preview={{ ...removal, reasons: removal.reasons.map((r) => lockReasonText(t, r)) }}
+    />
+  ) : null;
   if (order.orderTypeCode === 'PROFILE_ORDER') {
     // Profil siparişi (Aşama 6): kendi akışı ve ekranı; dosya, not ve geçmiş ortak
     const acts = availableActions({ role: user.appRole, status: order.status, onHold: false, canApprove: user.canApprove, drawing: 'YOK', offer: null, orderType: order.orderTypeCode });
@@ -133,7 +143,7 @@ export default async function OrderPage({
         order={order} user={user} sp={sp} t={t} m={m} locale={locale}
         files={fileCard}
         notes={<Notes order={order} user={user} t={t} />}
-        history={<>{removal(userCan(user, 'ORDER_CANCEL') ? await db.fgoDocument.count({ where: { orderId: order.id } }) : 0)}<History order={order} isCustomer={isCustomer} t={t} /></>}
+        history={<>{removalBox}<History order={order} isCustomer={isCustomer} t={t} /></>}
       />
     );
   }
@@ -154,7 +164,10 @@ export default async function OrderPage({
   // Çizim ekibi görünümü: çizim yapar, teklif görmez (fiyat / sandık / cam ticari bölümleri gösterilmez)
   const drawerView = userCan(user, 'DRAWING_WORK') && !userCan(user, 'OFFER_VIEW');
   const editable = !!offer && (can('edit_offer') || can('approve_price'));
-  const updating = !editable && !!offer && can('update_offer') && sp.teklif === 'guncelle';
+  // Müşterideki teklifin fiyatı (yönetici — Paket 4): mali kilit (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği,
+  // onaylı yükleme) varsa "Teklifi güncelle" yerine gerekçe gösterilir. Asıl denetim işlemde (update_offer), kilit altında.
+  const lockedPrice = !editable && !!offer && can('update_offer') ? await priceLock(db, order.id) : [];
+  const updating = !editable && !!offer && can('update_offer') && lockedPrice.length === 0 && sp.teklif === 'guncelle';
   const glasses = editable || updating
     ? await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })
     : [];
@@ -219,6 +232,8 @@ export default async function OrderPage({
     && order.drawingTrack === 'REVIZYON_ISTENDI' && lastDrawing?.status === 'REVIZYON_ISTENDI' ? lastDrawing : undefined;
   const lastRequest = revisionAsked ? [...revisionAsked.revisions].reverse().find((r) => r.kind === 'TALEP') : undefined;
   const updateHref = `/siparisler/${order.id}?teklif=guncelle#teklif`;
+  // Yöneticinin "Hareketler"i: müşteri fiyatı değişiklikleri (denetim kaydından; tutarlar yalnızca yöneticide — Paket 4)
+  const priceChanges = await loadPriceChanges(order.id, user);
   const ok = okText(m, sp.ok);
   // Kırık / telafi camı (karar 108): satış ve yönetici (OFFER_PREPARE). Giriş, müşteriye gönderilmiş teklifin cam satırı.
   const canComp = !isCustomer && userCan(user, 'OFFER_PREPARE');
@@ -355,7 +370,8 @@ export default async function OrderPage({
           {can('update_offer') ? t('order.check.admin') : t('order.check.other')}
           {can('update_offer') && !updating && (
             <div className="row" style={{ marginTop: 10 }}>
-              <Link href={updateHref} className="btn btn-primary">{t('order.check.update')}</Link>
+              {/* Mali kilitte (Paket 4) fiyat güncellenemez: yalnızca "değişiklik yok" kalır; gerekçe teklif kartında */}
+              {lockedPrice.length === 0 && <Link href={updateHref} className="btn btn-primary">{t('order.check.update')}</Link>}
               <form action={checkOfferAction}>
                 <input type="hidden" name="id" value={order.id} />
                 <button className="btn">{t('order.check.noChange')}</button>
@@ -404,8 +420,8 @@ export default async function OrderPage({
           })),
         ]}
       >
-        {/* "İstenen camlar" satış görünümünde gösterilmez (veri durur; teklif tablosu zaten bu camlarla açılır) */}
-        {!salesView && !drawerView && order.items.length > 0 && (
+        {/* "İstenen camlar" satış ve yönetici görünümünde gösterilmez (Paket 4; veri durur — teklif tablosu zaten bu camlarla açılır) */}
+        {!salesView && !drawerView && !userCan(user, 'OFFER_SEND') && order.items.length > 0 && (
           <>
             <h3 className="sub-title">{t('order.info.requestedGlass')}</h3>
             <ul className="plain-list">
@@ -436,7 +452,9 @@ export default async function OrderPage({
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
             id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: !!l.compensationId, splitGroup: l.splitGroup ?? '',
+            crate: l.crateFee,
           }))}
+          nextVersion={sentVersions + 1}
           m={m.offer}
           common={m.common}
           problemsMsg={m.offerProblems}
@@ -448,8 +466,8 @@ export default async function OrderPage({
       )}
 
       {shownOffer && (
-        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
-          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} />
+        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
+          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))} />
       )}
       {/* Özel durum (karar 124): yalnızca yönetici, teklif tablosunun hemen altında — başka firmanın yüklemesiyle gidecek */}
       {guestHost}
@@ -463,32 +481,62 @@ export default async function OrderPage({
       {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
-      {/* "Sandıklar" satış görünümünde gösterilmez (sandıklar Yüklemeler sekmesinde girilir) */}
-      {!isCustomer && !salesView && !drawerView && order.status !== 'YENI' && <Crates order={order} t={t} />}
-      {removal(fgoDocs.length)}
-      <History order={order} isCustomer={isCustomer} t={t} />
+      {/* "Sandıklar" satış ve yönetici görünümünde gösterilmez (Paket 4): sandıklar Yüklemeler sekmesinde girilir ve orada
+          görünür; kayıtlar ve işlevler değişmedi */}
+      {!isCustomer && !salesView && !drawerView && !userCan(user, 'OFFER_SEND') && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      {removalBox}
+      <History order={order} isCustomer={isCustomer} t={t} priceChanges={priceChanges} />
     </>
   );
 }
 
-function History({ order, isCustomer, t }: { order: OrderDetail; isCustomer: boolean; t: T }) {
-  // Sol menünün altında (eski düzen); veri bu sayfanın yüklediği siparişten gelir, ayrı istek yok
+function History({ order, isCustomer, t, priceChanges = [] }: { order: OrderDetail; isCustomer: boolean; t: T; priceChanges?: PriceChangeEntry[] }) {
+  // Sol menünün altında (eski düzen); veri bu sayfanın yüklediği siparişten gelir. Yöneticide müşteri fiyatı değişiklikleri
+  // (denetim kaydından — Paket 4) olaylarla tarih sırasında birlikte gösterilir; başka role hiç gelmez (lib/price-history.ts).
+  type Item = { at: Date; key: string; node: React.ReactNode };
+  const items: Item[] = [];
+  for (const e of order.events) {
+    const label = eventText(t, e.event, isCustomer);
+    if (label === null) continue;
+    const note = eventNoteText(t, e.event, e.note, isCustomer);
+    items.push({
+      at: new Date(e.createdAt), key: e.id,
+      node: (
+        <li key={e.id}>
+          <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${personText(t, e.user)}` : ''}</div>
+          <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
+        </li>
+      ),
+    });
+  }
+  const money = (v: string | null, cur: string) => (v === 'FREE' ? t('order.priceHistory.free') : v == null ? '—' : fmtMoney(v, cur));
+  for (const c of priceChanges) {
+    items.push({
+      at: new Date(c.at), key: `p${c.id}`,
+      node: (
+        <li key={`p${c.id}`} data-price-change={c.version}>
+          <div className="when">{fmtDateTime(c.at)}{c.who ? ` · ${c.who}` : ''}</div>
+          <div><b>{t('order.priceHistory.label', { v: c.version })}</b> — {c.sent ? t('order.priceHistory.sent') : t('order.priceHistory.draft')}</div>
+          <ul className="price-changes">
+            {c.changes.map((x) => {
+              const what = [x.kind === 'CNC' || x.kind === 'DELIK' ? lineKindText(t, x.kind) : '', x.description, x.enMm && x.boyMm ? `${x.enMm}×${x.boyMm}` : ''].filter(Boolean).join(' ');
+              const change = x.change === 'ADDED' ? `${t('order.priceHistory.added')}: ${money(x.new, c.currency)}`
+                : x.change === 'REMOVED' ? `${money(x.old, c.currency)} → ${t('order.priceHistory.removed')}`
+                  : `${money(x.old, c.currency)} → ${money(x.new, c.currency)}`;
+              return <li key={`${x.no}${x.change}`}>{t('order.priceHistory.line', { no: x.no })} {what}: <b>{change}</b></li>;
+            })}
+          </ul>
+          {c.more > 0 && <div className="small muted">{t('order.priceHistory.more', { n: c.more })}</div>}
+          {c.oldTotal != null && c.newTotal != null && <div className="small muted">{t('order.priceHistory.total', { from: fmtMoney(c.oldTotal, c.currency), to: fmtMoney(c.newTotal, c.currency) })}</div>}
+        </li>
+      ),
+    });
+  }
+  items.sort((a, b) => b.at.getTime() - a.at.getTime());
   return (
     <SidebarPortal>
       <div className="nav-section">{t('order.history')}</div>
-      <ul className="timeline side-timeline">
-        {order.events.map((e) => {
-          const label = eventText(t, e.event, isCustomer);
-          if (label === null) return null;
-          const note = eventNoteText(t, e.event, e.note, isCustomer);
-          return (
-            <li key={e.id}>
-              <div className="when">{fmtDateTime(e.createdAt)}{!isCustomer && e.user ? ` · ${personText(t, e.user)}` : ''}</div>
-              <div><b>{label}</b>{note ? ` — ${note}` : ''}</div>
-            </li>
-          );
-        })}
-      </ul>
+      <ul className="timeline side-timeline">{items.map((i) => i.node)}</ul>
     </SidebarPortal>
   );
 }
@@ -632,7 +680,7 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, priceLocked = [] }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; priceLocked?: string[] }) {
   // Kırık / telafi (karar 108): yalnızca müşteriye gönderilmiş teklifin fiziksel cam satırlarında, satış ve yöneticide
   const compCol = !!compIds && compIds.size > 0 && !!compHref;
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
@@ -682,6 +730,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                       {desc}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
                       {!isCustomer && l.compensationId && <> <span className="badge badge-warn">{t('compensation.badge')}</span></>}
+                      {/* Yöneticinin sandık bedeli (Paket 4): satış bu satırı hiç almaz; yönetici "satış görmez" rozetiyle görür */}
+                      {admin && l.crateFee && <> <span className="badge badge-info" data-crate-fee>{t('offer.editor.crateBadge')}</span></>}
                     </td>
                     <td>{l.poz ?? ''}</td>
                     <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
@@ -720,6 +770,13 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
         </span>
       </div>
+      {/* Mali kilit (yönetici — Paket 4): "Teklifi güncelle" yerine neden fiyatın değişmeyeceği */}
+      {admin && priceLocked.length > 0 && (
+        <div className="alert alert-warn" id="fiyat-kilidi" style={{ marginTop: 10 }}>
+          <b>{t('order.priceLock.title')}</b> {t('order.priceLock.text')}
+          <ul className="plain-list" style={{ marginTop: 6 }}>{priceLocked.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      )}
       {admin && order.orderTypeCode === 'GLASS_ORDER' && (
         <form action={setCustomerExcelAction} className="row" style={{ gap: 8, marginTop: 8 }}>
           <input type="hidden" name="id" value={order.id} />

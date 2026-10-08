@@ -309,6 +309,10 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .side-timeline li { padding-bottom: 10px; font-size: var(--fs-meta); line-height: 1.4; }
 .side-timeline li b { font-weight: 600; }
 .side-timeline li .when { font-size: var(--fs-meta); }
+/* Yöneticinin "Hareketler"i: müşteri fiyatı değişikliğinin satırları (olayın içinde; zaman çizelgesinin noktası yok) */
+.timeline .price-changes { list-style: none; margin: 2px 0 2px; padding: 0; }
+.timeline .price-changes li { padding: 0 0 2px; }
+.timeline .price-changes li::before { content: none; }
 /* Sipariş bilgileri (eski GKH TAKIP düzeni): alt alta satırlar, solda gri etiket, sağda değer */
 .order-info { margin: 0; border-top: 1px solid var(--border); }
 .order-info > div { display: grid; grid-template-columns: minmax(170px, 38%) 1fr; border-bottom: 1px solid var(--border); }
@@ -895,7 +899,8 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .offer-view td.actions { width: 1%; text-align: right; }
 .offer-view td.actions .btn-link { white-space: normal; padding: 0; line-height: 1.25; text-align: right; }
 .offer-view.has-actions td:nth-child(2) { min-width: 160px; }
-.remove-order .check { align-items: flex-start; }
+.remove-order .remove-target { margin: 0 0 10px; }
+.remove-order #sil-no { max-width: 260px; }
 .removed-list > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 
 /* muhasebe (tahsilat, yükleme kârlılığı, fabrika cari hesabı) */

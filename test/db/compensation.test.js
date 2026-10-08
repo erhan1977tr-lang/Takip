@@ -638,8 +638,8 @@ dbTest('özel durum sandığı: firmayı yalnızca yönetici seçer, sandığı 
   assert.deepEqual([await visibleTo(U.custB, T2.id), await visibleTo(U.custA, T2.id)], [0, 1]);
 });
 
-dbTest('siparişi sil / geri yükle: yalnızca yönetici, çift onaylı; olağan ekranlardan kalkar, FGO / yükleme / denetim kayıtları durur; geri yükleme hiçbir şeyi çoğaltmaz', async () => {
-  // R: X gününde yüklendi (onaylı yükleme kalemleri var), FGO belgesi ve çizimi var
+dbTest('siparişi sil / geri yükle (iki aşamalı — fonksiyonel paket 4): yalnızca yönetici; mali / operasyonel geçmişi olan sipariş silinmez; silinen sipariş olağan ekranlardan kalkar, kayıtlar durur; geri yükleme hiçbir şeyi çoğaltmaz', async () => {
+  // R: X gününde yüklendi (onaylı yükleme kalemleri var), FGO belgesi ve çizimi var — silinemez
   await db.fgoDocument.create({ data: { orderId: R.id, kind: 'PROFORMA', series: 'PRF', number: '9100', issuedAt: new Date() } });
   await db.drawing.create({ data: { orderId: R.id, version: 1, status: 'ONAYLANDI', uploadedById: U.drawer.id, scanStatus: 'SKIPPED' } });
   const counts = async (id) => ({
@@ -651,29 +651,39 @@ dbTest('siparişi sil / geri yükle: yalnızca yönetici, çift onaylı; olağan
   assert.deepEqual([before.docs, before.drawings, before.items > 0], [1, 1, true]);
   const audits = await db.auditLog.count();
 
-  // Yalnızca yönetici (satış dahil hiçbir rol silemez / geri yükleyemez); onay kutusu olmadan yönetici de silemez
+  // Yalnızca yönetici (satış dahil hiçbir rol silemez / geri yükleyemez); ikinci adımın onayı sipariş numarasıdır
   for (const u of [U.sales, U.drawer, U.inspector, U.custA]) {
-    assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirm: true, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
+    assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirmNo: 'ABC400', actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
   }
-  assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirm: false, actor: act(U.admin) }), { ok: false, code: 'CONFIRM_REQUIRED' });
-  assert.deepEqual(await rm.removeOrder(db, { orderId: 'yok', confirm: true, actor: act(U.admin) }), { ok: false, code: 'NOT_FOUND' });
+  for (const confirmNo of ['', null, 'ABC401']) assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirmNo, actor: act(U.admin) }), { ok: false, code: 'CONFIRM_REQUIRED' }, String(confirmNo));
+  assert.deepEqual(await rm.removeOrder(db, { orderId: 'yok', confirmNo: 'ABC400', actor: act(U.admin) }), { ok: false, code: 'NOT_FOUND' });
+  // Mali / operasyonel geçmiş (FGO belgesi, onaylı yükleme): silinmez — nedenler döner, deneme denetime yazılır
+  const reasons = [{ code: 'FGO_DOCUMENT', kind: 'PROFORMA', ref: 'PRF9100' }, { code: 'CONFIRMED_LOADING', ref: X }];
+  assert.deepEqual((await rm.removalPreview(db, R.id)).reasons, reasons);
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirmNo: 'ABC400', actor: act(U.admin) }), { ok: false, code: 'LOCKED', reasons });
+  assert.equal((await load(R.id)).removedAt, null);
+  assert.deepEqual(await counts(R.id), before);
+  const blocked = await db.auditLog.findFirstOrThrow({ where: { action: 'ORDER_REMOVE_BLOCKED', entityId: R.id } });
+  assert.deepEqual([blocked.userId, blocked.details.orderNo, blocked.details.reasons], [U.admin.id, 'ABC400', reasons]);
   // Kuyrukta bekleyen FGO belgesi varken silinmez (silme FGO'da hiçbir işlem yapmaz / işi düşürmez)
   const job = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', orderId: R2.id, payload: { kind: 'PROFORMA' } } });
-  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirm: true, actor: act(U.admin) }), { ok: false, code: 'BUSY' });
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirmNo: 'ABC401', actor: act(U.admin) }), { ok: false, code: 'BUSY' });
   await db.notificationOutbox.delete({ where: { id: job.id } });
-  assert.equal((await load(R.id)).removedAt, null);
 
-  // --- Sil
+  // --- Sil (R2: ileri tarihli, belgesi / onaylı yüklemesi yok): önizlemedeki sürüm + yazılan numara (harf farkı yok sayılır)
+  const before2 = await counts(R2.id);
+  const preview = await rm.removalPreview(db, R2.id);
+  assert.deepEqual([preview.orderNo, preview.busy, preview.reasons], ['ABC401', false, []]);
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirmNo: 'ABC401', expectedVersion: preview.version + 1, actor: act(U.admin) }), { ok: false, code: 'STALE' });
   const daysBefore = (await b.customerLoadingDays(db, { customerId: A.id })).find((x) => x.day === F1);
-  assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirm: true, actor: act(U.admin) }), { ok: true, orderNo: 'ABC400' });
-  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirm: true, actor: act(U.admin) }), { ok: true, orderNo: 'ABC401' });
-  const gone = await load(R.id);
-  assert.deepEqual([gone.removedAt instanceof Date, gone.removedById, gone.removedStatus, gone.status, gone.version], [true, U.admin.id, 'URETIMDE', 'IPTAL', R.version + 1]);
-  assert.deepEqual(await rm.removeOrder(db, { orderId: R.id, confirm: true, actor: act(U.admin) }), { ok: false, code: 'ALREADY_REMOVED' });
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirmNo: ' abc401 ', expectedVersion: preview.version, actor: act(U.admin) }), { ok: true, orderNo: 'ABC401' });
+  const gone = await load(R2.id);
+  assert.deepEqual([gone.removedAt instanceof Date, gone.removedById, gone.removedStatus, gone.status, gone.version], [true, U.admin.id, 'URETIMDE', 'IPTAL', preview.version + 1]);
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirmNo: 'ABC401', actor: act(U.admin) }), { ok: false, code: 'ALREADY_REMOVED' });
   // Olağan ekranlardan kalkar: hiçbir rolün sipariş kapsamında yok (liste, arama, sipariş sayfası, dosyalar, işlemler)
-  for (const u of Object.values(U)) assert.equal(await visibleTo(u, R.id), 0, u.appRole);
-  await assert.rejects(runOrderAction(db, { orderId: R.id, action: 'set_ship_date', actor: act(U.admin), payload: { date: at(F2) } }), /NOT_FOUND/);
-  assert.deepEqual(await create({ orderId: R.id, lineId: R.offers[0].lines[0].id, quantity: 1, dest: newOn(N1), actor: act(U.admin) }), { ok: false, code: 'NOT_FOUND' });
+  for (const u of Object.values(U)) assert.equal(await visibleTo(u, R2.id), 0, u.appRole);
+  await assert.rejects(runOrderAction(db, { orderId: R2.id, action: 'set_ship_date', actor: act(U.admin), payload: { date: at(F2) } }), /NOT_FOUND/);
+  assert.deepEqual(await create({ orderId: R2.id, lineId: R2.offers[0].lines[0].id, quantity: 1, dest: newOn(N1), actor: act(U.admin) }), { ok: false, code: 'NOT_FOUND' });
   // Yükleme planı, müşteri proforması ve telafi hedefleri: silinen ileri tarihli sipariş (ABC401) hiçbirinde yok
   const daysAfter = (await b.customerLoadingDays(db, { customerId: A.id })).find((x) => x.day === F1);
   assert.equal(daysAfter.eligible + daysAfter.excluded, daysBefore.eligible + daysBefore.excluded - 1);
@@ -681,28 +691,31 @@ dbTest('siparişi sil / geri yükle: yalnızca yönetici, çift onaylı; olağan
   assert.ok(![...pb.included, ...pb.excluded].some((x) => x.orderNo === 'ABC401'));
   assert.ok(!(await comp.compensationDestinations(db, { source: { id: S.id, customerId: A.id, currency: 'EUR' } })).some((x) => x.orderNo === 'ABC401'));
   assert.deepEqual(await create({ orderId: S.id, lineId: lineG1.id, quantity: 1, dest: into(R2), actor: act(U.admin) }), { ok: false, code: 'DEST_CLOSED' });
-  assert.deepEqual((await rm.removedOrders(db)).map((o) => o.orderNo).sort(), ['ABC400', 'ABC401']);
-  // Kayıtlar durur: FGO belgesi, onaylı yükleme kalemleri, çizim, teklif — hiçbiri silinmedi / değişmedi; denetim + geçmiş yazıldı
-  assert.deepEqual(await counts(R.id), before);
-  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'ORDER_REMOVED', entityId: R.id } });
-  assert.deepEqual([audit.userId, audit.details.orderNo, audit.details.statusBefore, audit.details.kept.fgoDocuments, audit.details.kept.loadingItems > 0, audit.details.kept.drawings], [U.admin.id, 'ABC400', 'URETIMDE', 1, true, 1]);
-  assert.ok((await events(R.id)).includes('REMOVED'));
-  // Onaylı günün kârlılığı (tarihsel kayıt) silinen siparişin yüklenmiş camını saymaya devam eder
+  assert.deepEqual((await rm.removedOrders(db)).map((o) => o.orderNo), ['ABC401']);
+  // Kayıtlar durur: teklif, satırlar, bildirimler — hiçbiri silinmedi / değişmedi; denetim + geçmiş yazıldı
+  assert.deepEqual(await counts(R2.id), before2);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'ORDER_REMOVED', entityId: R2.id } });
+  assert.deepEqual([audit.userId, audit.details.orderNo, audit.details.statusBefore, audit.details.kept.offers], [U.admin.id, 'ABC401', 'URETIMDE', 1]);
+  assert.ok((await events(R2.id)).includes('REMOVED'));
+  // Onaylı günün kârlılığı (tarihsel kayıt) değişmez: silinemeyen R dahil X gününde onaylanan üç sipariş
   const day = (await supplierData(db, date(dayOf(1)))).days.find((x) => x.day === X);
   assert.equal(day.orders, 3, 'X gününde onaylanan üç sipariş (ABC124, ABC200, ABC400)');
 
   // --- Geri yükle: yalnızca yönetici; önceki durumuna döner; hiçbir kayıt çoğalmaz
-  for (const u of [U.sales, U.drawer, U.inspector, U.custA]) assert.deepEqual(await rm.restoreOrder(db, { orderId: R.id, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
-  assert.deepEqual(await rm.restoreOrder(db, { orderId: R.id, actor: act(U.admin) }), { ok: true, orderNo: 'ABC400', status: 'URETIMDE' });
-  const back = await load(R.id);
-  assert.deepEqual([back.removedAt, back.removedById, back.removedStatus, back.status, back.version], [null, null, null, 'URETIMDE', R.version + 2]);
-  assert.deepEqual(await counts(R.id), before, 'geri yükleme belge / yükleme / teklif / bildirim / telafi / sipariş çoğaltmaz');
-  assert.deepEqual(await rm.restoreOrder(db, { orderId: R.id, actor: act(U.admin) }), { ok: false, code: 'NOT_REMOVED' });
-  assert.deepEqual([await visibleTo(U.admin, R.id), await visibleTo(U.custA, R.id), await visibleTo(U.sales, R.id)], [1, 1, 1]);
-  assert.ok((await events(R.id)).includes('RESTORED'));
+  for (const u of [U.sales, U.drawer, U.inspector, U.custA]) assert.deepEqual(await rm.restoreOrder(db, { orderId: R2.id, actor: act(u) }), { ok: false, code: 'FORBIDDEN' }, u.appRole);
+  assert.deepEqual(await rm.restoreOrder(db, { orderId: R2.id, actor: act(U.admin) }), { ok: true, orderNo: 'ABC401', status: 'URETIMDE' });
+  const back = await load(R2.id);
+  assert.deepEqual([back.removedAt, back.removedById, back.removedStatus, back.status, back.version], [null, null, null, 'URETIMDE', preview.version + 2]);
+  assert.deepEqual(await counts(R2.id), before2, 'geri yükleme belge / yükleme / teklif / bildirim / telafi / sipariş çoğaltmaz');
+  assert.deepEqual(await rm.restoreOrder(db, { orderId: R2.id, actor: act(U.admin) }), { ok: false, code: 'NOT_REMOVED' });
+  assert.deepEqual([await visibleTo(U.admin, R2.id), await visibleTo(U.custA, R2.id), await visibleTo(U.sales, R2.id)], [1, 1, 1]);
+  assert.ok((await events(R2.id)).includes('RESTORED'));
+  // Yeniden silinir (sonraki testler için silinmiş kalır): geri yüklenen sipariş yine iki aşamayla silinir
+  assert.deepEqual(await rm.removeOrder(db, { orderId: R2.id, confirmNo: 'ABC401', expectedVersion: back.version, actor: act(U.admin) }), { ok: true, orderNo: 'ABC401' });
   assert.equal(await db.auditLog.count({ where: { action: { in: ['ORDER_REMOVED', 'ORDER_RESTORED'] } } }), 3);
-  assert.ok(await db.auditLog.count() >= audits + 3);
+  assert.ok(await db.auditLog.count() >= audits + 4);
   assert.deepEqual((await rm.removedOrders(db)).map((o) => o.orderNo), ['ABC401']);
+  assert.equal((await load(R.id)).removedAt, null, 'belgesi olan sipariş hâlâ yerinde');
 });
 
 dbTest('kaynak adedi (karar 157): temiz siparişte 20 cam → 3 telafi → ana siparişte 17; adet, m² ve tutar iki kez sayılmaz; eski teklif sürümü değişmez', async () => {

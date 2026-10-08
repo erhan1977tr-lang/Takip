@@ -18,6 +18,11 @@ const include = {
   profile: { select: { stage: true } },
 } satisfies Prisma.OrderInclude;
 type Row = Prisma.OrderGetPayload<{ include: typeof include }>;
+/** Satış (Paket 4): yöneticinin sandık bedeli satırı satışa gitmez — satır sayısında da yoktur */
+const salesInclude = {
+  ...include,
+  offers: { orderBy: { createdAt: 'desc' }, include: { _count: { select: { lines: { where: { crateFee: false } } } } } },
+} satisfies Prisma.OrderInclude;
 
 export default async function OffersPage() {
   const user = await requirePermission('OFFER_VIEW');
@@ -80,16 +85,17 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
   const { t } = await getT();
   // Yönetici satış tutarı ile müşteri tutarını yan yana görür (karar 4); satış yalnızca kendi tutarını
   const admin = userCan(user, 'OFFER_SEND');
-  const orders = sanitizeRows(user, await db.order.findMany({
+  const query = {
     where: admin
       // Karar geri alınıp yeniden incelemeye dönen siparişin (YENI) taslağı burada gösterilmez.
       ? { ...orderScope(user), status: { notIn: [...CLOSED, 'YENI'] as OrderStatus[] }, offers: { some: {} } }
       // Satış (karar 155): teklif tablosu henüz açılmamış siparişler de listelenir (karar bekleyen ve teklifsiz siparişler)
       : { ...orderScope(user), status: { notIn: CLOSED as OrderStatus[] } },
-    include,
     orderBy: [{ estimatedShipDate: 'asc' }, { createdAt: 'asc' }],
     take: 500,
-  }));
+  } satisfies Prisma.OrderFindManyArgs;
+  const rows: Row[] = admin ? await db.order.findMany({ ...query, include }) : await db.order.findMany({ ...query, include: salesInclude });
+  const orders = sanitizeRows(user, rows);
   const latest = (o: Row) => o.offers[0] as Row['offers'][number] | undefined;
   // Yönetici: son teklifin durumuna göre üç grup. Satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu
   // açılmamış siparişler" — yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez.

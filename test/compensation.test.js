@@ -218,12 +218,15 @@ test('yetki sunucuda: müşteri, çizim ve denetimci telafi açamaz; satış ona
   }
   for (const role of ['SATIS', 'MUSTERI', 'CIZIM', 'DENETIMCI', null]) {
     assert.deepEqual(await decideCompensation(null, { id: 'x', approve: true, actor: { id: 'u', role } }), { ok: false, code: 'FORBIDDEN' }, String(role));
-    assert.deepEqual(await removeOrder(null, { orderId: 'x', confirm: true, actor: { id: 'u', role } }), { ok: false, code: 'FORBIDDEN' }, String(role));
+    assert.deepEqual(await removeOrder(null, { orderId: 'x', confirmNo: 'ABC1', actor: { id: 'u', role } }), { ok: false, code: 'FORBIDDEN' }, String(role));
     assert.deepEqual(await restoreOrder(null, { orderId: 'x', actor: { id: 'u', role } }), { ok: false, code: 'FORBIDDEN' }, String(role));
   }
   // Onaysız istek (ikinci adım atlanmış) yetkili kullanıcıda da reddedilir
   assert.deepEqual(await createCompensation(null, { orderId: 'x', lineId: 'y', quantity: 1, mode: 'FREE', dest: { type: 'NEW', day: '2099-01-01' }, requestKey: 'k'.repeat(20), confirm: false, actor: { id: 'u', role: 'SATIS' } }), { ok: false, code: 'CONFIRM_REQUIRED' });
-  assert.deepEqual(await removeOrder(null, { orderId: 'x', confirm: false, actor: { id: 'u', role: 'ADMIN' } }), { ok: false, code: 'CONFIRM_REQUIRED' });
+  // Silme (Paket 4): ikinci adımın onayı = yöneticinin yazdığı sipariş numarası; boşsa veritabanına hiç gidilmez
+  for (const confirmNo of [undefined, null, '', '   ']) {
+    assert.deepEqual(await removeOrder(null, { orderId: 'x', confirmNo, actor: { id: 'u', role: 'ADMIN' } }), { ok: false, code: 'CONFIRM_REQUIRED' }, String(confirmNo));
+  }
 });
 
 test('yönetici bildirimi: karar başlıkta (bedelsiz / aynı fiyat / farklı fiyat), tutar yok; firma adı maskeleme kuralı değişmedi', () => {
@@ -263,12 +266,14 @@ test('metinler: her hata kodunun ve yeni olayların metni var', () => {
   for (const k of ['created', 'sent', 'updated', 'pricing', 'pending', 'duplicate', 'applied', 'rejected']) assert.equal(typeof m.ok[k], 'string', k);
   assert.equal(m.sourceResult.reduced.replace('{before}', '20').replace('{after}', '17'), 'Kaynak siparişte bu camın adedi 20 → 17 oldu; teklifin yeni sürümü müşteride.');
   for (const r of reasons) assert.equal(typeof m.form.destReason[r], 'string', r);
-  for (const c of ['FORBIDDEN', 'CONFIRM_REQUIRED', 'NOT_FOUND', 'ALREADY_REMOVED', 'NOT_REMOVED', 'BUSY']) assert.equal(typeof m.remove.errors[c], 'string', c);
+  for (const c of ['FORBIDDEN', 'CONFIRM_REQUIRED', 'NOT_FOUND', 'ALREADY_REMOVED', 'NOT_REMOVED', 'BUSY', 'LOCKED', 'STALE']) assert.equal(typeof m.remove.errors[c], 'string', c);
   for (const e of ['COMPENSATION', 'COMPENSATION_ADDED', 'COMPENSATION_PENDING', 'COMPENSATION_REJECTED', 'REMOVED', 'RESTORED']) {
     assert.deepEqual(EVENTS[e], { customer: false }, `${e}: yalnızca iç ekip görür`);
     assert.equal(typeof tr.events[e].label, 'string', e);
   }
   assert.equal(m.form.confirm.replace('{qty}', '3'), 'Yukarıdaki kararı onaylıyorum: 3 cam telafi olarak eklensin.');
   assert.equal(m.form.submit, 'Telafi camını ekle');
-  assert.equal(m.remove.confirm, 'Bu siparişin sistemden kaldırılacağını onaylıyorum.');
+  // İki aşamalı silme (Paket 4): 1. adım sipariş no + sonuç, 2. adım sipariş numarası yazılarak ayrı onay
+  assert.equal(m.remove.confirm.replace('{order}', 'ABC124'), 'Silmeyi onaylamak için sipariş numarasını yazın: ABC124');
+  for (const k of ['step1', 'target', 'blockedTitle', 'blockedText', 'continue', 'step2', 'keptCounts']) assert.equal(typeof m.remove[k], 'string', k);
 });

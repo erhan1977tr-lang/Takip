@@ -255,11 +255,17 @@ function num(v) {
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
- * "Sandık parası" teklif satırı: adetle fiyatlanan normal bir satır (tür CAM, birim adet). Satış "+ Sandık parası" ile ekler;
- * açıklaması iki dilde tanınır ve kaydedilirken iki dildeki adı yazılır (server/pricing/tables.js → enrichLines).
- * Metin sözlükte de aynıdır (offer.editor.crateLine).
+ * "Sandık parası" teklif satırı: adetle fiyatlanan normal bir satır (tür CAM, birim adet). Açıklaması iki dilde tanınır ve
+ * kaydedilirken iki dildeki adı yazılır (server/pricing/tables.js → enrichLines). Metin sözlükte de aynıdır
+ * (offer.editor.crateLine).
+ * Sandık bedeli (fonksiyonel paket 4): satırı yalnızca YÖNETİCİ ekler (OfferLine.crateFee); satış teklif tablosunda bu
+ * satırı görmez ve ekleyemez (sunucu: server/orders/transitions.js → salesInput). Bu sürümden önce satışın eklediği sandık
+ * satırları (crateFee = false) olağan satır olarak kalır.
  */
 export const CRATE_LINE = { tr: 'Sandık parası', ro: 'Ambalaj (ladă)' };
+const upTr = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('tr-TR');
+/** Açıklama sandık parası satırının adı mı (iki dilde; büyük-küçük harf ve boşluk farkı sayılmaz) */
+export const isCrateText = (description) => [CRATE_LINE.tr, CRATE_LINE.ro].some((n) => upTr(n) === upTr(description));
 
 /** Teklif satırı türleri (metni: status.lineKind.<tür>). */
 export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];
@@ -522,8 +528,10 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (preparing && drawing === 'YOK' && (admin || (sales && offerAtSales))) a.push('send_to_drawing');
   if (offerWriter && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
   if (admin && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
-  // Müşterideki teklifi yalnızca yönetici günceller (çizim revizyonu ölçüleri değiştirdiyse; üretimdeyken de).
-  if (admin && (preparing || status === 'URETIMDE') && offer === 'GONDERILDI') a.push('update_offer');
+  // Müşterideki teklifi yalnızca yönetici günceller (yeni sürüm — eski sürüm kalır): hazırlanırken, üretimde ve yüklendi
+  // olarak işaretlenmiş siparişte (Paket 4: "her zaman"). Mali kilit (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge
+  // isteği, onaylı yükleme) işlemin kendisinde denetlenir: server/orders/financial-lock.js → update_offer.
+  if (admin && (preparing || status === 'URETIMDE' || status === 'YUKLENDI') && offer === 'GONDERILDI') a.push('update_offer');
   // Satış kararını geri alma: teklif hâlâ satıştayken ve çizim müşteriye gitmeden. Sipariş yeniden karar bekler.
   if (sales && preparing && offerAtSales && (drawing === 'GEREKLI' || drawing === 'YAPILIYOR')) a.push('undo_drawing');
   if (sales && preparing && offerAtSales && drawing === 'YOK') a.push('undo_no_drawing');

@@ -14,7 +14,7 @@ import { ExcelImport } from './ExcelImport';
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
 /** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
-type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean };
+type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
@@ -57,6 +57,8 @@ export function OfferEditor(props: {
   importGlass?: string;
   /** Müşterinin siparişindeki camlar (cam adı + adet): "Tabloyu temizle" tabloyu bu ilk hâline döndürür */
   original?: { description: string; adet: string }[];
+  /** Güncellemede müşteriye gidecek sürümün numarası (onay penceresinde yazılır) */
+  nextVersion?: number;
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
@@ -128,8 +130,11 @@ export function OfferEditor(props: {
     const base = blankGlass();
     return [...ls.slice(0, i), { ...base, ...describe(base, l.description) }, ...ls.slice(i)];
   });
-  /** "+ Sandık parası": adetle fiyatlanan normal bir teklif satırı (fiyatı satış girer; sistemde sandık fiyat tablosu yok) */
-  const addCrate = () => setLines((ls) => [...ls, { ...blankGlass(), description: m.editor.crateLine, unit: 'adet', adet: '1' }]);
+  /**
+   * "+ Sandık parası" (yalnızca yönetici — Paket 4): yöneticinin sandık bedeli; adetle fiyatlanan olağan bir teklif satırıdır
+   * (tutar, fatura ve yükleme hesabı aynı). Satış bu satırı görmez ve ekleyemez — kural sunucuda (transitions.js → salesInput).
+   */
+  const addCrate = () => setLines((ls) => [...ls, { ...blankGlass(), description: m.editor.crateLine, unit: 'adet', adet: '1', crate: true }]);
   /**
    * "Tabloyu temizle": tablo, müşterinin siparişindeki ilk hâline döner (sipariş camları, adetleri ve liste fiyatları).
    * Yalnızca ekrandaki tablo değişir; kaydedilene kadar hiçbir şey yazılmaz. Sipariş ve dosyalar değişmez.
@@ -239,6 +244,7 @@ export function OfferEditor(props: {
                     <input type="hidden" name="l_group" value={l.splitGroup ?? ''} />
                     <input type="hidden" name="l_kind" value={l.kind} />
                     <input type="hidden" name="l_free" value={l.free ? '1' : '0'} />
+                    <input type="hidden" name="l_crate" value={l.crate ? '1' : '0'} />
                   </td>
                   <td className="desc">
                     <span className="desc-row">
@@ -255,14 +261,16 @@ export function OfferEditor(props: {
                     <div className="line-actions">
                       {l.free && <span className="badge badge-ok">{m.free}</span>}
                       {l.comp && <span className="badge badge-warn">{m.telafi}</span>}
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
-                      {!sub && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      {l.crate && <span className="badge badge-info" data-crate-fee>{m.editor.crateBadge}</span>}
+                      {!sub && !l.crate && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
+                      {!sub && !l.crate && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
                       {owns && <button type="button" className="btn btn-link" title={m.editor.copyPieceTitle} onClick={() => copyPiece(l.key)}>{m.editor.copyPiece}</button>}
                       <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
                     </div>
                   </td>
                   <td className="c-poz"><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} aria-label={m.cols.poz} /></td>
-                  {sub ? (
+                  {/* CNC / delik ve sandık bedeli satırının ölçüsü yoktur */}
+                  {sub || l.crate ? (
                     <><td><input type="hidden" name="l_en" value="" /></td><td><input type="hidden" name="l_boy" value="" /></td></>
                   ) : (
                     <>
@@ -273,8 +281,8 @@ export function OfferEditor(props: {
                   {/* İşlemli cam tek adettir: adet kutusu kilitlidir (çoğaltmak için "aynısından bir tane daha") */}
                   <td className="c-qty"><input name="l_adet" inputMode="numeric" value={l.adet} readOnly={owns && l.adet === '1'} title={owns ? m.editor.onePieceQty : undefined}
                     onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
-                  <td className={sub ? 'c-text' : 'c-unit'}>
-                    {sub ? (
+                  <td className={sub || l.crate ? 'c-text' : 'c-unit'}>
+                    {sub || l.crate ? (
                       <><input type="hidden" name="l_unit" value="adet" /><span className="muted">{common.unitPiece}</span></>
                     ) : (
                       <select name="l_unit" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label={m.cols.unit}>
@@ -283,7 +291,7 @@ export function OfferEditor(props: {
                       </select>
                     )}
                   </td>
-                  <td className="num">{sub ? '' : fmt(tot.metraj)}</td>
+                  <td className="num">{sub || l.crate ? '' : fmt(tot.metraj)}</td>
                   <td className={adminMode ? 'num' : 'c-price'}>
                     {adminMode ? (
                       // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz
@@ -344,7 +352,7 @@ export function OfferEditor(props: {
       <div className="offer-tools">
         <div className="group">
           <button type="button" className="btn" onClick={() => setLines([...lines, blankGlass()])}>+ {m.editor.addGlass}</button>
-          <button type="button" className="btn" onClick={addCrate}>+ {m.editor.addCrate}</button>
+          {adminMode && <button type="button" className="btn" onClick={addCrate}>+ {m.editor.addCrate}</button>}
           {props.mode === 'sales' && (props.excelFiles?.length ?? 0) > 0 && (
             <>
               <span className="sep" aria-hidden="true" />
@@ -387,7 +395,11 @@ export function OfferEditor(props: {
         {isUpdate ? (
           <>
             <a href={props.cancelHref ?? '#'} className="btn">{common.cancel}</a>
-            <button type="submit" onClick={intent('update')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.updateAndSend}</button>
+            <button type="submit" onClick={(e) => {
+              // Yeni fiyat müşteriye yalnızca bu açık gönderimle gider (Paket 4): onay penceresi
+              if (!window.confirm(interpolate(m.editor.updateConfirm, { n: props.nextVersion ?? '' }))) { e.preventDefault(); return; }
+              intent('update')();
+            }} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.updateAndSend}</button>
           </>
         ) : (
           <button type="submit" onClick={intent('save')} className="btn" disabled={opsBad}>{m.editor.saveDraft}</button>

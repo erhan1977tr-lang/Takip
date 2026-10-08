@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.54.0 — 08.10.2026
+
+Fonksiyonel paket 4 — yönetici paneli, sipariş ve teklif yönetimi (kararlar 170–174). Veritabanı şeması: teklif satırına sandık
+bedeli işareti (`OfferLine.crateFee`); migration CI'da üretilir.
+
+- **Sipariş bilgileri (yönetici):** yöneticinin sipariş ekranında "İstenen camlar" ve "Sandıklar" bölümü yok. Yalnızca sunum
+  sadeleşti: sandık kayıtları, Yüklemeler'deki sandık girişi, ağırlık ve nakliye listesi aynen çalışır.
+- **Müşteri fiyatı her zaman güncellenir:** gönderilmemiş teklifte olağan fiyat onayı; müşteriye gönderilmiş teklifte yeni sürüm
+  ("Teklifi güncelle ve müşteriye gönder" onay penceresiyle — müşteri yeni fiyatı yalnızca bu gönderimden sonra görür; eski sürüm
+  aynen kalır). Yüklendi olarak işaretlenmiş siparişte de güncellenir. FGO belgesi, müşteri belgesi, kuyrukta bekleyen belge isteği
+  ya da onaylı yükleme varsa fiyat değişmez: "Teklifi güncelle" yerine neden gösterilir (belge no / onay günü); sunucu da reddeder.
+- **Fiyat hareketi:** yöneticinin her müşteri fiyatı değişikliği denetim kaydına yazılır (kullanıcı, zaman, sipariş, teklif
+  sürümü, satır satır eski → yeni fiyat, toplam) ve yöneticinin "Hareketler"inde görünür. Satış, müşteri ve denetimci görmez.
+- **Sandık bedeli yalnızca yöneticinin:** "+ Sandık parası" yalnızca yöneticinin teklif tablosunda ("Sandık bedeli · satış görmez"
+  rozeti). Yönetici ve müşteri teklifte görür, müşteri tutarına girer; satışın teklif tablosuna, sayfasına ve verisine hiç gitmez
+  (satışın kaydı satırı korur, satış sandık satırı ekleyemez). Tutar, fatura ve yükleme hesabı değişmedi.
+- **Bildirim:** teklif müşteriye gönderilince (ilk gönderim ya da yeni sürüm) yalnızca müşteri bilgilendirilir; satışa zil ve
+  e-posta yok. Satışın öbür bildirimleri değişmedi.
+- **Siparişi sil (yalnızca yönetici) iki aşamalı:** 1) silinecek sipariş numarası ve sonucu, 2) sipariş numarası yazılarak ayrı son
+  onay; "Vazgeç" her adımda; sunucu da numarayı ve siparişin bu arada değişmediğini denetler. FGO belgesi, müşteri belgesi, onaylı
+  yükleme, "yüklendi" işareti ya da profilde proforma / ödeme / depo / teslim kaydı olan sipariş silinmez — neden gösterilir ve
+  engellenen deneme denetime yazılır. Silme yine yumuşaktır (kayıtlar durur, geri yüklenir).
+
 ## 3.53.2 — 08.10.2026
 
 Paket 3 doğrulama düzeltmesi: müşterinin "düzeltilmiş dosya" alanının etiketi gönder düğmesinin adından ayrıldı

@@ -388,5 +388,35 @@ export default {
     dwgNoteLong: 'Açıklama çok uzun (en fazla 2000 karakter).',
     dwgFile: 'En az bir DWG ya da DXF dosyası seçin.',
     dwgInfected: 'İncelenen dosyalardan biri virüslü çıktı; bu çizim üretime hazır kabul edilemez.',
+    // Yönetici paneli (Paket 4)
+    crateFeeAdmin: 'Sandık bedelini yalnızca sistem yöneticisi girer; teklif kaydedilmedi.',
+    priceLocked: 'Fiyat değiştirilemez: siparişin mali ya da yükleme kaydı var; geçmiş fiyat bu kayıtlarda değişmez.',
+  },
+  // Mali / operasyonel kilit nedenleri (Paket 4 — fiyat değişikliği ve silme; server/orders/financial-lock.js)
+  lock: {
+    FGO_DOCUMENT: 'FGO belgesi kesildi: {kind}',
+    BILLING_BATCH: 'Müşteri belgesi kapsamında: {kind}',
+    PENDING_DOCUMENT: 'Kuyrukta bekleyen belge isteği var',
+    CONFIRMED_LOADING: 'Yüklemesi onaylandı',
+    SHIPPED: 'Yüklendi / arşivlendi olarak işaretli',
+    PROFILE_FINANCE: 'Proforma, ödeme ya da fatura kaydı var',
+    PROFILE_WAREHOUSE: 'Depoya gönderildi ya da teslim edildi',
+  },
+  // Müşterideki teklifin fiyatı kilitli (yönetici — Paket 4)
+  priceLock: {
+    title: 'Fiyat değiştirilemez.',
+    text: 'Bu siparişin fiyatı mali belgede ya da onaylı yüklemede kayıtlıdır; bu kayıtlar sessizce değiştirilmez. Düzeltme belgesi (storno / düzeltme faturası) sistemde henüz yok.',
+  },
+  // Yöneticinin "Hareketler"i: müşteri fiyatı değişikliği (denetim kaydından — Paket 4)
+  priceHistory: {
+    label: 'Müşteri fiyatı değişti (teklif v{v})',
+    sent: 'müşteriye gönderildi',
+    draft: 'taslak — müşteri görmez',
+    line: '{no}. satır',
+    added: 'eklendi',
+    removed: 'kaldırıldı',
+    free: 'bedelsiz',
+    more: '+{n} satır daha',
+    total: 'Toplam: {from} → {to}',
   },
 };

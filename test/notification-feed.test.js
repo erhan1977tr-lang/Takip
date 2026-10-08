@@ -134,6 +134,13 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   assert.deepEqual(INAPP_RULES.ORDER_SENT_TO_DRAWING.to(glass), ['drawer']);
   assert.deepEqual(INAPP_RULES.ORDER_DRAWING_UPLOADED.to(glass), ['customer']);
   assert.deepEqual(INAPP_RULES.ORDER_OFFER_SUBMITTED.to(glass), ['admin'], 'satışın teklifi yöneticiye — müşteriye değil');
+  // Yönetici teklifi müşteriye gönderince (ilk gönderim / yeni sürüm) yalnızca müşteri bilgilendirilir — satışa ne zil ne
+  // e-posta (Paket 4). Satışın öbür olayları değişmedi: geri gönderilen teklif, revizyon, onay.
+  for (const t of ['ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED']) {
+    assert.deepEqual(INAPP_RULES[t].to(glass), ['customer'], `${t}: zil yalnızca müşteriye`);
+    assert.deepEqual(NOTIFY_RULES[t](glass), ['customer'], `${t}: e-posta yalnızca müşteriye`);
+  }
+  assert.deepEqual(INAPP_RULES.ORDER_OFFER_RETURNED.to(glass), ['orderSales'], 'geri gönderilen teklif satışa bildirilir');
   assert.deepEqual([INAPP_RULES.ACCOUNTING_ACTION.to(glass), INAPP_RULES.ACCOUNTING_ACTION.includeActor], [['accounting'], true]);
   assert.deepEqual(AUDIENCE_ROLES, { admin: ['ADMIN'], sales: ['SATIS'], accounting: ['ADMIN'], loading: ['ADMIN'] });
   // E-posta giden her olayın uygulama içi karşılığı var (kanal ayrı; kural tablosu e-postayı değiştirmez)

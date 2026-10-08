@@ -38,16 +38,19 @@ function priceView(user: CurrentUser): PriceView {
   if (userCan(user, 'OFFER_SEND')) return 'admin';
   return userCan(user, 'PRICE_FINAL_VIEW') ? 'customer' : 'sales';
 }
-type OfferLike = { amount: unknown; offerAmount?: unknown; lines?: { unitPrice: unknown; offerPrice?: unknown; listPrice?: unknown }[] };
+type OfferLike = { amount: unknown; offerAmount?: unknown; lines?: { unitPrice: unknown; offerPrice?: unknown; listPrice?: unknown; crateFee?: boolean }[] };
 /**
  * Teklif fiyatlarını role göre temizler. Müşteri/denetimci için "fiyat" müşteri fiyatıdır (satırda unitPrice ve
  * teklifte amount alanına yazılır; satış fiyatı hiç gitmez). Satış müşteri fiyatını hiç almaz.
+ * Sandık bedeli (Paket 4): yöneticinin sandık satırı satışa hiç gitmez (satır, müşteri fiyatıyla birlikte yöneticinin ve
+ * müşterinin teklifindedir; satış fiyatı 0 olduğundan satışın tutarını değiştirmez). Satışın kaydı satırı korur
+ * (server/orders/transitions.js → salesInput).
  * Eski teklifler (3.10 öncesi, offerAmount yok): gönderilen tutar zaten yöneticinin tutarıydı.
  */
 function offerPrices<O extends OfferLike>(view: PriceView, o: O): O {
   if (view === 'admin') return o;
   if (view === 'sales') {
-    return { ...o, offerAmount: null, ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, offerPrice: null })) } : {}) } as O;
+    return { ...o, offerAmount: null, ...(o.lines ? { lines: o.lines.filter((l) => !l.crateFee).map((l) => ({ ...l, offerPrice: null })) } : {}) } as O;
   }
   const legacy = o.offerAmount == null;
   return {
