@@ -123,8 +123,6 @@ export default {
     sentAt: 'Gönderildi: {date}',
     version: 'Sürüm {n}',
     stockShort: '{n} eksik',
-    shortageTitle: 'Stok yetmiyor',
-    shortageText: 'Stok yetmeyen ürünler: {list}. Sipariş yine de depoya gönderilebilir.',
     // Stok yetersizliği (karar 165): sipariş engellenmez; işaret = açık "Önemli kararlar" kaydı; sayılar yalnızca yöneticide
     stock: {
       mark: 'Stok yetersiz',

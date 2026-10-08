@@ -21,11 +21,12 @@ alanları eklendi (`DrawingRevision.translation*`; migration CI'da üretilir).
   Not **bir kez** Türkçeye çevrilip saklanır: iç ekip özgün not + çeviriyi görür, müşteri ve denetimci yalnızca özgün notu;
   sayfa yenilemesi çeviri yapmaz. Eski işaretli talepler iç ekipte işaretleriyle görünür.
 - **Tekliflerim (müşteri ana sayfası):** başlangıç / bitiş tarihi; firmanın cam teklifleri (her siparişin son gönderilen
-  teklifi), liste ve **PDF dökümü** — her teklif ayrı ve ayrıntılı (cam satırları, adet, m², müşteri fiyatı), sonda toplam m²
+  teklifi), "Göster" ile liste (aralık seçilmeden ana sayfa döküm sorgusu yapmaz) ve **PDF dökümü** — her teklif ayrı ve ayrıntılı (cam satırları, adet, m², müşteri fiyatı), sonda toplam m²
   ve toplam tutar (para birimi başına); GKH logosu; Türkçe / Romence harfler; dosya adı panel dilinde. Yalnızca kendi
   firmasının teklifleri; fabrika / satış fiyatı hiçbir yerde yok.
 - **Stok yetersizliği uyarısı (profil):** sipariş engellenmez; yöneticinin "Önemli kararlar"ına tek kayıt (gereken / mevcut /
-  eksik), sipariş "Stok yetersiz" olarak işaretlenir; yönetici "Gördüm" ile kararını kapatır. Müşteri uyarıyı ve ürünleri görür,
+  eksik), sipariş "Stok yetersiz" olarak işaretlenir; yönetici sipariş gelir gelmez (fiyatlandırmadan depoya gidene kadar)
+  siparişte stok durumu tablosunu görür ve "Gördüm" ile kararını kapatır. Müşteri uyarıyı ve ürünleri görür,
   stok sayılarını görmez.
 - **Müşteri bildirimleri:** bağlantı ilgili bölüme iner (yeni çizim → kırmızı bilgilendirme, teklif → teklif bölümü); iç
   olaylar müşteriye gitmez (test listesiyle sabit); yenileme yeni bildirim / e-posta / çeviri üretmez.

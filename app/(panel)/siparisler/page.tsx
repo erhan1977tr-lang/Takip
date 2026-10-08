@@ -16,7 +16,7 @@ import { approvedDrawingList, latestOfferStatus, queuesFor } from '@/server/orde
 import { deleteDraftAction } from './yeni/actions';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { restoreOrderAction } from './[id]/compensation-actions';
-import { canSeeOfferReport, loadOfferReport } from '@/lib/customer-offers';
+import { canSeeOfferReport, loadOfferReport, offerReportRange } from '@/lib/customer-offers';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -228,11 +228,16 @@ const REPORT_LIST_MAX = 50;
  * Müşteri ana sayfası → "Tekliflerim" (karar 164). Form GET'tir: "Göster" bu sayfayı tarih aralığıyla yeniler, "PDF indir"
  * aynı alanlarla /teklifler/pdf adresinden dökümü indirir (sayfadan çıkmadan). Veri lib/customer-offers.ts'ten: firma
  * kapsamı ve müşteri fiyatı sunucuda; liste ve PDF aynı hesaptan.
+ *   Liste yalnızca müşteri bir aralık gösterince (adreste bas / bit) yüklenir: ana sayfanın her açılışı ve 60 saniyelik
+ *   otomatik yenileme döküm sorgusu yapmaz, sipariş listesindeki sipariş bağlantıları ikilenmez. "PDF indir" varsayılan
+ *   aralıkla (bu ay) da çalışır.
  */
 async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t, locale } = await getT();
-  const res = await loadOfferReport(user, { bas: sp.bas, bit: sp.bit }, t, locale);
-  const rows = res.ok && !res.tooMany ? res.report.sections : [];
+  const chosen = sp.bas !== undefined || sp.bit !== undefined;
+  const res = chosen ? await loadOfferReport(user, { bas: sp.bas, bit: sp.bit }, t, locale) : null;
+  const range = res ?? offerReportRange({});
+  const rows = res?.ok && !res.tooMany ? res.report.sections : [];
   return (
     <form className="card offer-report" id="tekliflerim" method="get" action="/siparisler">
       <h2>{t('offers.report.title')}</h2>
@@ -242,20 +247,20 @@ async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
       <div className="offer-report-range">
         <div>
           <label htmlFor="rapor-bas">{t('offers.report.from')}</label>
-          <input id="rapor-bas" name="bas" type="date" required defaultValue={res.from} />
+          <input id="rapor-bas" name="bas" type="date" required defaultValue={range.from} />
         </div>
         <div>
           <label htmlFor="rapor-bit">{t('offers.report.to')}</label>
-          <input id="rapor-bit" name="bit" type="date" required defaultValue={res.to} />
+          <input id="rapor-bit" name="bit" type="date" required defaultValue={range.to} />
         </div>
         <div className="row">
           <button type="submit" className="btn">{t('offers.report.show')}</button>
           <button type="submit" className="btn btn-primary" formAction="/teklifler/pdf">{t('offers.report.pdf')}</button>
         </div>
       </div>
-      {!res.ok && <div className="alert alert-error" role="alert">{t(`offers.report.errors.${res.code}` as MsgKey)}</div>}
-      {res.ok && res.tooMany && <div className="alert alert-warn">{t('offers.report.errors.TOO_MANY')}</div>}
-      {res.ok && !res.tooMany && rows.length === 0 && <p className="muted" data-report-empty>{t('offers.report.empty')}</p>}
+      {res && !res.ok && <div className="alert alert-error" role="alert">{t(`offers.report.errors.${res.code}` as MsgKey)}</div>}
+      {res?.ok && res.tooMany && <div className="alert alert-warn">{t('offers.report.errors.TOO_MANY')}</div>}
+      {res?.ok && !res.tooMany && rows.length === 0 && <p className="muted" data-report-empty>{t('offers.report.empty')}</p>}
       {rows.length > 0 && (
         <div className="table-wrap">
           <table className="offer-report-table">
@@ -279,7 +284,7 @@ async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
                 </tr>
               ))}
             </tbody>
-            {res.ok && (
+            {res?.ok && (
               <tfoot>
                 {res.report.totals.map((x) => (
                   <tr key={x.currency} data-report-total={x.currency}>

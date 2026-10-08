@@ -284,8 +284,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
         </div>
       )}
 
-      {/* Yönetici: stok durumu (karar 165) — gereken / mevcut (şu anki stok) / eksik; sipariş engellenmedi, karar yöneticide */}
-      {admin && !cancelled && short.length > 0 && BEFORE_WAREHOUSE.includes(stage) && (
+      {/* Yönetici: stok durumu (karar 165) — gereken / mevcut (şu anki stok) / eksik; sipariş engellenmedi, karar yöneticide.
+          Sipariş gelir gelmez (fiyat beklerken) görünür ve depoya gidene (stok düşene) kadar kalır. */}
+      {admin && !cancelled && short.length > 0 && idx >= 0 && idx < PROFILE_STAGES.indexOf('DEPODA') && (
         <div className="card" id="stok">
           <h2>{t('profile.page.stock.title')} {stockAlert && <Badge tone="danger">{t('profile.page.stock.mark')}</Badge>}</h2>
           <p className="muted small">{t('profile.page.stock.intro')}</p>

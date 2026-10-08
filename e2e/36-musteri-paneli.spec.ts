@@ -98,6 +98,12 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   // Ana sayfanın üst bölümü: özet kutularından ve sipariş listesinden önce
   const order = await cust.locator('main').evaluate((m) => [...m.querySelectorAll('#tekliflerim, .stats')].map((e) => (e.id ? e.id : 'stats')));
   expect(order[0]).toBe('tekliflerim');
+  // Aralık gösterilmeden liste yüklenmez (ana sayfa her açılışta döküm sorgusu yapmaz, sipariş bağlantıları ikilenmez);
+  // tarih alanları bu ayın ilk günü → bugün
+  await expect(card.locator('table')).toHaveCount(0);
+  await expect(card.locator('[data-report-empty]')).toHaveCount(0);
+  await expect(card.getByLabel('Başlangıç tarihi')).toHaveValue(/^\d{4}-\d{2}-01$/);
+  await expect(card.getByLabel('Bitiş tarihi')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   await card.getByLabel('Başlangıç tarihi').fill('2026-01-01');
   await card.getByLabel('Bitiş tarihi').fill('2026-01-31');
   await card.getByRole('button', { name: 'Göster' }).click();

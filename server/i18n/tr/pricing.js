@@ -154,7 +154,6 @@ export default {
     compOpen: 'Siparişte karar ver',
     // Stok yetersizliği (karar 165): sipariş anındaki gereken / mevcut / eksik
     stockLine: '{code} {name}: gereken {qty} {unit} · mevcut {stock} · eksik {missing}',
-    stockOpen: 'Siparişi aç',
     kindGlass: 'Cam',
     resolve: 'Gördüm',
     resolved: 'Kapatıldı.',

@@ -121,8 +121,6 @@ export default {
     sentAt: 'Trimisă: {date}',
     version: 'Versiunea {n}',
     stockShort: 'lipsă {n}',
-    shortageTitle: 'Stoc insuficient',
-    shortageText: 'Produse cu stoc insuficient: {list}. Comanda poate fi totuși trimisă la depozit.',
     // Stoc insuficient (decizia 165): comanda nu este blocată; marcajul = înregistrarea deschisă din „Decizii importante”
     stock: {
       mark: 'Stoc insuficient',

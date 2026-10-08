@@ -20,6 +20,11 @@ export function canSeeOfferReport(user: CurrentUser): boolean {
   return user.type === 'CUSTOMER' && !!user.customerId && userCan(user, 'OFFER_EXPORT');
 }
 
+/** Formdaki aralık (boşsa bu ayın ilk günü → bugün); veritabanına gitmez */
+export function offerReportRange(q: { bas?: string; bit?: string }) {
+  return offerRange(q, localDay(new Date(), getEnv().APP_TIMEZONE));
+}
+
 const include = {
   customer: { select: { name: true } },
   offers: {
@@ -39,7 +44,7 @@ export type OfferReportResult =
  */
 export async function loadOfferReport(user: CurrentUser, q: { bas?: string; bit?: string }, t: T, locale: 'tr' | 'ro'): Promise<OfferReportResult> {
   const tz = getEnv().APP_TIMEZONE;
-  const range = offerRange(q, localDay(new Date(), tz));
+  const range = offerReportRange(q);
   if (!range.ok) return range;
   if (!canSeeOfferReport(user)) return { ok: true, from: range.from, to: range.to, report: { from: range.from, to: range.to, sections: [], totals: [] }, tooMany: false };
   const window = offerWindow(range);

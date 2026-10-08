@@ -151,7 +151,6 @@ export default {
     compTier: { CUSTOMER: 'preț client', SALES: 'preț de vânzare' },
     // Stoc insuficient (decizia 165): necesar / disponibil / lipsă la momentul comenzii
     stockLine: '{code} {name}: necesar {qty} {unit} · disponibil {stock} · lipsă {missing}',
-    stockOpen: 'Deschide comanda',
     compOpen: 'Decide în comandă',
     kindGlass: 'Sticlă',
     resolve: 'Am văzut',
