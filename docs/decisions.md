@@ -226,7 +226,7 @@ yetersizliği engellemez (gönderim öncesi uyarı); müşteri yalnızca kendi e
 kritik eşik ürün başına tek "Önemli kararlar" kaydı; "Rezerve" sütunu (onaylı, depoya gitmemiş — hareket değil); denetimci stoğu
 salt okunur görür (`STOCK_VIEW`). (178) stoğa yazan her yol aynı ürün kilidini alır (sayım ↔ depo çıkışı açığı kapandı). Şema
 değişikliği: `ProfileProduct.packContent` / `packMeasure` / `criticalStock`, `ProfileGlassThickness`, `ProfileSystem`,
-`ProfileCalcItem`, enum `ProfileMeasure` / `ProfileColor` (CI migration). **Ürün sahibinin bilgisine:** (1) Hesaplayıcı müşteride
+`ProfileCalcItem`, enum `ProfileMeasure` / `ProfileColor`, yetki anahtarı `PermissionKey.STOCK_VIEW` (CI migration). **Ürün sahibinin bilgisine:** (1) Hesaplayıcı müşteride
 ancak yönetici en az bir sistemi (satırlarıyla) tanımlayınca görünür; profil boyları (MR23 / RM bar boyu), torba içerikleri, 1 m
 için tüketim katsayıları ve cam kalınlıkları girilmeden o seçimde hesap yapılmaz — ekran eksikleri ürün ve kalem adıyla sayar.
 (2) Karar 165'teki "stok sayısı müşteriye gösterilmez" kuralı bu kararla değişti: müşteri kendi siparişindeki eksik ürünlerin

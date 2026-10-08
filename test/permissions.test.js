@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { can, PERMISSIONS, READ_ONLY, ROLE_PERMISSIONS, ROLES } from '../server/auth/permissions.js';
 
 const who = (perm) => ROLES.filter((r) => can(r, perm)).sort();
@@ -54,4 +55,12 @@ test('yetki: tam matris', () => {
     MUSTERI: 'ORDER_VIEW ORDER_CREATE DRAWING_APPROVE OFFER_VIEW PRICE_FINAL_VIEW SHIPMENT_VIEW OFFER_EXPORT ACCOUNT_SETTINGS OFFER_APPROVE FILE_UPLOAD NOTE_ADD CUSTOMER_NAME_VIEW',
     DENETIMCI: 'ORDER_VIEW OFFER_VIEW PRICE_FINAL_VIEW SHIPMENT_VIEW TRANSPORT_LIST_VIEW STOCK_VIEW FILE_INTERNAL_VIEW NOTE_INTERNAL_VIEW CUSTOMER_NAME_VIEW',
   });
+});
+
+// Rol yetkileri veritabanında PermissionKey enum'uyla saklanır (seed bu tabloyu eşitler): yeni yetki ŞEMAYA da eklenmeli
+test('yetki: matristeki her yetki şemanın PermissionKey enum\'unda (ve tersi)', () => {
+  const schema = fs.readFileSync(new URL('../prisma/schema.prisma', import.meta.url), 'utf8');
+  const body = /enum PermissionKey \{([^}]*)\}/.exec(schema)?.[1] ?? '';
+  const keys = body.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
+  assert.deepEqual([...keys].sort(), Object.keys(PERMISSIONS).sort());
 });

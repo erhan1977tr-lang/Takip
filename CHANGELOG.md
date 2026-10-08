@@ -8,7 +8,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 Fonksiyonel paket 5 — profil hesaplayıcı ve stok yönetimi (kararlar 175–178). Veritabanı şeması: ürünün paket içeriği ve kritik
 stok eşiği (`ProfileProduct.packContent` / `packMeasure` / `criticalStock`), hesaplayıcının cam kalınlıkları, sistemleri ve
-satırları (`ProfileGlassThickness`, `ProfileSystem`, `ProfileCalcItem`); migration CI'da üretilir.
+satırları (`ProfileGlassThickness`, `ProfileSystem`, `ProfileCalcItem`), salt okunur stok yetkisi (`PermissionKey.STOCK_VIEW`);
+migration CI'da üretilir.
 
 - **Profil hesaplayıcı (yönetici yapılandırır):** Profil Kataloğu → "Profil Hesaplayıcı": cam kalınlıkları, sistemler (ör. MR23,
   RM29) ve her sistemin kalemleri — ürün, renk (RAL 7016 / Eloxat) ya da cam kalınlığı koşulu, 1 m korkuluk için tüketim. Bir
