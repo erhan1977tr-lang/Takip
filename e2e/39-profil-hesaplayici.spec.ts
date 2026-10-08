@@ -94,6 +94,8 @@ test('yönetici: kesin paket içerikleri; cam kalınlıkları ve MR23 sistemi; �
   for (const code of ['MR23-7016', 'MR23-ELX']) {
     await admin.goto('/admin/profil-katalogu');
     await admin.locator('tr', { hasText: code }).getByRole('link', { name: 'Düzenle' }).click();
+    // Düzenleme formu yüklenmeden doldurulmaz (önceki "yeni ürün" formu yerini alınca girilen değer kaybolur)
+    await expect(admin.locator('#pc-code')).toHaveValue(code);
     await admin.fill('#pc-pack', '6');
     await admin.selectOption('#pc-measure', 'M');
     await admin.locator('#urun').getByRole('button', { name: 'Kaydet' }).click();
