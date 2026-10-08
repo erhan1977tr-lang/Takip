@@ -173,7 +173,22 @@ export async function removeCalcItem(db, { id }, actor) {
 
 // ---------- okuma ----------
 
-/** Yöneticinin ayar ekranı: sistemler (satırlarıyla), kalınlıklar ve her sistemin eksikleri */
+/**
+ * @typedef {{ toString(): string }} DecimalLike
+ * @typedef {{ id: string, code: string, nameTr: string, nameRo: string, unitCode: string, isActive: boolean,
+ *   packContent: DecimalLike | null, packMeasure: string | null, category: { isActive: boolean } }} AdminCalcProduct
+ * @typedef {{ id: string, mm: DecimalLike, isActive: boolean }} AdminCalcThickness
+ * @typedef {{ id: string, systemId: string, slot: string, sortOrder: number, productId: string | null, product: AdminCalcProduct | null,
+ *   color: string | null, thicknessId: string | null, thickness: AdminCalcThickness | null, perMeter: DecimalLike | null }} AdminCalcItem
+ * @typedef {{ id: string, code: string, nameTr: string, nameRo: string, isActive: boolean, sortOrder: number, items: AdminCalcItem[],
+ *   problems: import('./calculator.js').CalcError[] }} AdminCalcSystem
+ */
+
+/**
+ * Yöneticinin ayar ekranı: sistemler (satırlarıyla), kalınlıklar ve her sistemin eksikleri
+ * @param {import('@prisma/client').PrismaClient} db
+ * @returns {Promise<{ systems: AdminCalcSystem[], thicknesses: AdminCalcThickness[] }>}
+ */
 export async function loadCalcAdmin(db) {
   const [systems, thicknesses] = await Promise.all([
     db.profileSystem.findMany({ orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: CALC_INCLUDE }),
@@ -185,6 +200,9 @@ export async function loadCalcAdmin(db) {
 /**
  * Müşterinin hesaplayıcısındaki seçenekler: etkin sistemler (satırı olan) ve etkin cam kalınlıkları. Sistem yoksa
  * hesaplayıcı gösterilmez.
+ * @param {import('@prisma/client').PrismaClient} db
+ * @returns {Promise<{ systems: { id: string, code: string, nameTr: string, nameRo: string, needs: { color: boolean, thickness: boolean } }[],
+ *   thicknesses: { id: string, mm: string }[] }>}
  */
 export async function loadCalcOptions(db) {
   const [systems, thicknesses] = await Promise.all([

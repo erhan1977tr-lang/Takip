@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.55.2 — 08.10.2026
+
+Paket 5 doğrulama düzeltmesi: hesaplayıcının okuma servisleri (`loadCalcAdmin`, `loadCalcOptions`) dönüş türlerini açıkça
+bildiriyor — yöneticinin "Profil Hesaplayıcı" sayfası ile müşterinin yeni sipariş sayfası tür denetiminden geçer. Davranış
+değişmedi.
+
 ## 3.55.1 — 08.10.2026
 
 Paket 5 doğrulama düzeltmesi: yeni salt okunur stok yetkisi (`STOCK_VIEW`) veritabanının yetki listesine (`PermissionKey`) de
