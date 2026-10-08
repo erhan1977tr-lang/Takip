@@ -56,11 +56,13 @@ function textOf(pdf) {
   return out.join('\n');
 }
 
-// En küçük gerçek JPEG başlığı (SOF0 boyutu) — PDF'e gömülür; her çağrı ayrı içerik (sağlama toplamı farklı)
+// En küçük gerçek JPEG başlığı (SOF0 boyutu) — PDF'e gömülür; her çağrı ayrı içerik (sağlama toplamı farklı; ad verilse de)
 let seq = 0;
-function photoFile(name = `foto-${++seq}.jpg`, content = null) {
+function photoFile(name = null, content = null) {
+  const n = ++seq;
+  name ??= `foto-${n}.jpg`;
   const sof = Buffer.from([0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x20, 0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
-  const buf = content ?? Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from([0xff, 0xfe, 0x00, 0x08]), Buffer.from(String(seq).padStart(6, '0')), sof, Buffer.from([0xff, 0xd9])]);
+  const buf = content ?? Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from([0xff, 0xfe, 0x00, 0x08]), Buffer.from(String(n).padStart(6, '0')), sof, Buffer.from([0xff, 0xd9])]);
   const storageKey = `2026/10/${crypto.randomUUID()}.jpg`;
   fs.mkdirSync(path.join(UPLOAD, '2026', '10'), { recursive: true });
   fs.writeFileSync(path.join(UPLOAD, storageKey), buf);
@@ -222,11 +224,12 @@ dbTest('depo: stok yetersizliği siparişi engellemez; depoya gönderim çift st
 }));
 
 dbTest('teslim onayı: bir kez işlenir (eşzamanlı ikinci onay reddedilir); yeni stok hareketi yok; FGO açıkken fatura işi BİR kez (mevcut kural)', offline(async () => {
+  // Sipariş FGO kapalıyken depoya gider (açıkken elle proforma kur ister — mevcut kural); FGO teslimden önce açılır
+  const { id } = await depotOrder();
   await saveFgoSettings(db, {
     enabled: true, dailyLimit: 0, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21,
   }, { key: 'GIZLI', secret: 'f'.repeat(40) }, actor(people.admin));
   try {
-    const { id } = await depotOrder();
     const moves = await db.stockMovement.count({ where: { orderId: id } });
     const doc = () => ({ storageKey: `2026/10/${crypto.randomUUID()}.pdf`, name: 'imza.pdf', size: 10, mime: 'application/pdf', checksum: 'c', scanStatus: 'CLEAN' });
     const both = await Promise.allSettled([
