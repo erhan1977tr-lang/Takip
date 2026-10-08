@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.58.1 — 08.10.2026
+
+Paket 8 doğrulama düzeltmesi (davranış değişmedi): teslimat belgesi yardımcılarının (`deliveryDocs`, `takesDeliveryDocs`) tür
+bildirimleri eklendi — sipariş sayfası ve depo bağlantısı sayfasındaki fotoğraf / rapor listeleri tip denetiminden geçer.
+
 ## 3.58.0 — 08.10.2026
 
 Fonksiyonel paket 8 — depo, teslimat, çalışma takvimleri ve teslimat belgeleri (kararlar 192–197). Veritabanı şeması: çalışma

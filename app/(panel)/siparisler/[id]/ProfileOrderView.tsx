@@ -81,7 +81,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
     : [];
   // Teslimat belgeleri (karar 195–196): sipariş depoya iletildikten sonra; müşteri kendi siparişinde görür (kişi adı yok)
   const docsStage = DELIVERY_DOC_STAGES.includes(stage);
-  const docs = docsStage || cancelled ? await deliveryDocs(db, order.id, { staff: !isCustomer }) : { photos: [], reports: [] };
+  const docs: Awaited<ReturnType<typeof deliveryDocs>> = docsStage || cancelled ? await deliveryDocs(db, order.id, { staff: !isCustomer }) : { photos: [], reports: [] };
   const canDocs = admin && takesDeliveryDocs({ stage, status: order.status });
   const reportKey = crypto.randomBytes(18).toString('base64url');
   const idx = PROFILE_STAGES.indexOf(stage);

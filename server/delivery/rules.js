@@ -35,7 +35,10 @@ export function photoProblem(f) {
   return null;
 }
 
-/** Sipariş teslimat belgesi alabilir mi (adım ve durum) */
+/**
+ * Sipariş teslimat belgesi alabilir mi (adım ve durum)
+ * @param {{ stage: string | null | undefined, status: string, removedAt?: Date | string | null }} o
+ */
 export function takesDeliveryDocs({ stage, status, removedAt = null }) {
   return !removedAt && status !== 'IPTAL' && DELIVERY_DOC_STAGES.includes(stage);
 }

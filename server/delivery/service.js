@@ -148,8 +148,14 @@ export async function createDeliveryReport(db, { orderId, note = null, requestKe
 }
 
 /**
+ * @typedef {{ id: string, name: string, size: number, scanStatus: string, createdAt: Date, via: string, by: string | null }} DeliveryPhotoView
+ * @typedef {{ id: string, revision: number, stage: string, via: string, createdAt: Date, deliveryDay: Date | null, by: string | null }} DeliveryReportView
+ */
+
+/**
  * Sayfa için teslimat belgeleri. Müşteriye (staff false) iç ekipten kişi adı gitmez — yalnızca "depo" / "GKH".
  * @param {any} db  @param {string} orderId  @param {{ staff: boolean }} o
+ * @returns {Promise<{ photos: DeliveryPhotoView[], reports: DeliveryReportView[] }>}
  */
 export async function deliveryDocs(db, orderId, { staff }) {
   const [photos, reports] = await Promise.all([
