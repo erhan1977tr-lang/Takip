@@ -490,7 +490,7 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   assert.equal(await db.billingBatchOrder.count({ where: { orderId: a2.id, activeKey: { not: null } } }), 1);
 });
 
-dbTest('aktarılan kalan da aynı günün başka müşteri sandığına konabilir; o günün sandık formunda kendi müşterisinin siparişi sayılır', async () => {
+dbTest('aktarılan kalan da aynı günün başka müşteri sandığına konabilir; o gün misafir olduğu için kendi firmasının sandığına konamaz ve kendi firmasına sandık açılmaz (Paket 7, karar 188)', async () => {
   const D = dayOf(-30), F = dayOf(50);
   const A = await firm('Carry A SRL', 'CYA');
   const B = await firm('Carry B SRL', 'CYB');
@@ -512,11 +512,14 @@ dbTest('aktarılan kalan da aynı günün başka müşteri sandığına konabili
   assert.deepEqual([options.days, options.hosts.filter((h) => h.id === B.id).length, options.hosts.some((h) => h.id === A.id)], [[D, F], 1, false]);
   assert.deepEqual(await cr.setGuestHost(db, { orderId: a.id, hostId: B.id, actor: actor() }), { ok: true, changed: true, hostId: B.id });
   assert.deepEqual(await cr.assignGuestCrate(db, { day: F, orderId: a.id, crateId: crate.id, actor: sales }), { ok: true, crateNo: 3 });
-  // Kendi sandığı da girilebilir: aktarılan kalan o günün siparişidir
-  assert.deepEqual(await cr.saveDayCrates(db, { day: F, customerId: A.id, rows: [{ ...one, crateNo: 4, orderIds: [a.id] }], actor: sales }), { ok: true, count: 1 });
+  // Kalan o gün B'nin sandığıyla gidiyor (misafir): A'nın sandığına konamaz; A'nın o gün başka siparişi olmadığı için A'ya
+  // yeni sandık da açılamaz (Paket 7 — "+ Sandık ekle" kapalı, sunucu reddeder)
+  assert.deepEqual(await cr.saveDayCrates(db, { day: F, customerId: A.id, rows: [{ ...one, crateNo: 4, orderIds: [a.id] }], actor: sales }), { ok: false, code: 'GUEST_ORDER' });
+  assert.deepEqual(await cr.saveDayCrates(db, { day: F, customerId: A.id, rows: [{ ...one, crateNo: 4 }], actor: sales }), { ok: false, code: 'GUEST_ONLY' });
+  assert.equal(await db.crate.count({ where: { shipDay: date(F), customerId: A.id } }), 0);
   const list = await transportList(db, F);
-  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.guests.map((u) => `${u.firm} · ${u.orderNo}`)])]), [['CYA', [[4, '', []]]], ['CYB', [[3, '', [`Carry A SRL · ${a.orderNo}`]]]]]);
-  assert.deepEqual(list.missing, []);
+  assert.deepEqual(list.groups.map((x) => [x.code, x.crates.map((k) => [k.crateNo, k.note, k.guests.map((u) => `${u.firm} · ${u.orderNo}`)])]), [['CYB', [[3, '', [`Carry A SRL · ${a.orderNo}`]]]]]);
+  assert.deepEqual(list.missing, [], 'misafir sipariş B\'nin sandığında: "sandığı girilmemiş" sayılmaz');
   // Onay ve fatura yine gerçek müşteride: kalan 2 adet A'nın faturasında
   assert.equal((await confirm(F, [], evening(F))).ok, true);
   const view = await billing(F);
