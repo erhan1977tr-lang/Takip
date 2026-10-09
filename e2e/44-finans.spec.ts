@@ -69,9 +69,10 @@ test('yönetici: FGO ve elle kaynaklar ayrı; elle ödeme kaydı belge kesmez; a
   await expect(card.locator('[data-fin=match]')).toHaveAttribute('data-match', 'NONE');
   await expect(card.locator('[data-payments]')).toHaveCount(0);
 
-  // Elle kayıt: 100 EUR × 5 (proformanın kuru) = 500 RON — FGO'ya / kuyruğa hiçbir şey gitmez
+  // Elle kayıt: 123,45 EUR × 5 (proformanın kuru) = 617,25 RON — FGO'ya / kuyruğa hiçbir şey gitmez. Tutar başka dosyaların
+  // belgeleriyle (ör. 500 RON'luk avans faturası) "aynı müşteride aynı tutar" eşleşmesi doğurmasın diye sıra dışı seçildi.
   const form = card.locator('[data-payment-form]');
-  await form.locator('#mp-amount').fill('100');
+  await form.locator('#mp-amount').fill('123,45');
   await form.locator('#mp-currency').selectOption('EUR');
   await form.locator('#mp-ref').fill('OP 4401');
   await form.getByRole('button', { name: 'Ödemeyi kaydet' }).click();
@@ -79,14 +80,14 @@ test('yönetici: FGO ve elle kaynaklar ayrı; elle ödeme kaydı belge kesmez; a
   await expect(form.locator('#mp-amount')).toHaveValue('');
   const rows = card.locator('[data-payments] tbody tr');
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('100,00 EUR');
-  await expect(rows.first()).toContainText('500,00 RON');
+  await expect(rows.first()).toContainText('123,45 EUR');
+  await expect(rows.first()).toContainText('617,25 RON');
   await expect(rows.first()).toContainText('Avans faturası kesilmedi');
-  await expect(card.locator('[data-fin=manual]')).toContainText('500,00 RON');
-  await expect(card.locator('[data-fin=required]')).toContainText('500,00 RON');
+  await expect(card.locator('[data-fin=manual]')).toContainText('617,25 RON');
+  await expect(card.locator('[data-fin=required]')).toContainText('617,25 RON');
   await expect(card.locator('[data-fin=match]')).toHaveAttribute('data-match', 'MANUAL_ONLY');
   // Finans / FGO kartı: avans düğmesi elle kayda dayanır (FGO kapalı: istek kuyruğa girmez)
-  await expect(page.locator('#finans #avans-durumu')).toContainText('500,00');
+  await expect(page.locator('#finans #avans-durumu')).toContainText('617,25');
   await expect(page.locator('#finans').getByRole('button', { name: 'Avans Faturası Gönder' })).toBeVisible();
   const db = await prisma();
   expect(await db.manualPayment.count({ where: { orderId } })).toBe(1);
@@ -94,7 +95,7 @@ test('yönetici: FGO ve elle kaynaklar ayrı; elle ödeme kaydı belge kesmez; a
   expect(await db.auditLog.count({ where: { action: 'MANUAL_PAYMENT_RECORDED', details: { path: ['orderId'], equals: orderId } } })).toBe(1);
 
   // Aynı tutar yeniden: durur, eşleşme listelenir; kutu işaretlenip yeniden gönderilince kaydedilir
-  await form.locator('#mp-amount').fill('100');
+  await form.locator('#mp-amount').fill('123,45');
   await form.getByRole('button', { name: 'Ödemeyi kaydet' }).click();
   await expect(form.locator('[data-duplicate-risk]')).toBeVisible();
   await expect(form.locator('[data-duplicate-lines]')).toContainText('Elle ödeme');
@@ -114,7 +115,7 @@ test('yönetici: FGO ve elle kaynaklar ayrı; elle ödeme kaydı belge kesmez; a
   await expect(page).toHaveURL(/finOk=voided/);
   await expect(card.locator('[data-payments] tbody tr')).toHaveCount(2);
   await expect(card.locator('[data-payments] tbody tr[data-voided="1"]')).toContainText('Aynı havale iki kez girildi');
-  await expect(card.locator('[data-fin=manual]')).toContainText('500,00 RON');
+  await expect(card.locator('[data-fin=manual]')).toContainText('617,25 RON');
   await db.$disconnect();
 
   // Önemli kararlar: onaylanan aynı tutar riski, siparişin Ödemeler kartına götürür
