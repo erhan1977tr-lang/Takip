@@ -1,7 +1,7 @@
 // "Sıra bende" kuyrukları: rol yetkisine göre bölümler; profil siparişleri satış/çizim kuyruklarına düşmez (Aşama 3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SALES_QUEUES, approvedDrawingList, dwgDrawingGroups, queuesFor, salesOfferGroups } from '../server/orders/queues.js';
+import { ADMIN_QUEUES, SALES_QUEUES, approvedDrawingList, dwgDrawingGroups, needsOfferCheck, queuesFor, salesOfferGroups } from '../server/orders/queues.js';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
 const h = (n) => new Date(NOW + n * 3_600_000);
@@ -37,9 +37,9 @@ test('kuyruk: satış (karar 155) — "Sıra bende"de yalnızca yeni siparişler
   const approved = row({ drawingTrack: 'ONAYLANDI' });
   const s = queuesFor([...all, approved], { review: true, send: false, drawing: false, userId: 'satis' }, NOW);
   for (const k of ['approvedDrawings', 'offersToPrepare', 'atCustomer', 'production', 'held', 'priceApproval', 'drawingJobs']) assert.equal(ids(s, k), null, k);
-  // Yönetici ve çizim ekibinin bölümleri değişmedi
-  assert.deepEqual(keys(queuesFor(all, { review: true, send: true, drawing: true }, NOW)).slice(0, 7),
-    ['newOrders', 'offersToPrepare', 'priceApproval', 'offerCheck', 'atCustomer', 'approvedDrawings', 'production']);
+  // Yöneticinin bölümleri ayrı kural (karar 217 — ADMIN_QUEUES); çizim ekibininki değişmedi
+  assert.deepEqual(keys(queuesFor(all, { review: true, send: true, drawing: true }, NOW)), ADMIN_QUEUES);
+  assert.deepEqual(keys(queuesFor(all, { review: false, send: false, drawing: true }, NOW)), ['drawingJobs', 'atCustomer', 'approvedDrawings', 'sla', 'held']);
 });
 
 test('teklifler, satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler"', () => {
@@ -56,10 +56,24 @@ test('teklifler, satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Tek
   assert.equal(listed.size, g.reduce((n, x) => n + x.rows.length, 0));
 });
 
-test('kuyruk: yönetici — fiyat onayı bekleyenler', () => {
-  const q = queuesFor(all, { review: true, send: true, drawing: true }, NOW);
-  assert.deepEqual(ids(q, 'priceApproval'), [rows.yonetimde.id]);
-  assert.equal(ids(q, 'drawingJobs'), null, 'satış kararı veren rol çizim işleri kuyruğunu görmez');
+test('kuyruk: yönetici (karar 217) — yalnızca dört tablo: yeni siparişler, teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler', () => {
+  const profilNew = row({ orderTypeCode: 'PROFILE_ORDER', status: 'YENI', profile: { stage: 'FIYAT_BEKLIYOR' } });
+  const profilSent = row({ orderTypeCode: 'PROFILE_ORDER', status: 'HAZIRLANIYOR', profile: { stage: 'TEKLIF_GONDERILDI' } });
+  const profilCancelled = row({ orderTypeCode: 'PROFILE_ORDER', status: 'IPTAL', profile: { stage: 'FIYAT_BEKLIYOR' } });
+  const q = queuesFor([...all, profilNew, profilSent, profilCancelled], { review: true, send: true, drawing: true, userId: 'yonetici' }, NOW);
+  assert.deepEqual(keys(q), ['newOrders', 'offersToPrepare', 'sla', 'profilePricing']);
+  assert.deepEqual(keys(q), ADMIN_QUEUES);
+  assert.deepEqual(ids(q, 'newOrders'), [rows.yeni.id]);
+  assert.deepEqual(ids(q, 'offersToPrepare').sort(), [rows.teklifYok.id, rows.teklifSatista.id].sort());
+  assert.deepEqual(ids(q, 'sla'), [rows.yeni.id]);
+  assert.deepEqual(ids(q, 'profilePricing'), [profilNew.id], 'yalnızca fiyat bekleyen, kapanmamış profil siparişi');
+  // Bir sipariş birden çok tabloda olabilir (yeni ve SLA riskli)
+  assert.ok(ids(q, 'newOrders').includes(rows.yeni.id) && ids(q, 'sla').includes(rows.yeni.id));
+  // Öteki tablolar yalnızca bu ekrandan kalktı
+  for (const k of ['priceApproval', 'offerCheck', 'atCustomer', 'approvedDrawings', 'production', 'held', 'drawingJobs', 'profileUnapproved', 'profilePayment', 'profilePickup', 'profileInvoice']) assert.equal(ids(q, k), null, k);
+  // Profil tabloları ayrı satırlardan verilebilir (sayaçla aynı kapsam — profil bölümü): sıra bende o satırlardan
+  const sep = queuesFor(all, { review: true, send: true, drawing: true }, NOW, [profilNew, profilSent]);
+  assert.deepEqual(ids(sep, 'profilePricing'), [profilNew.id]);
 });
 
 test('kuyruk: çizim ekibi — çizim işleri ve müşteri onayındakiler; teklif kuyrukları yok', () => {
@@ -104,10 +118,11 @@ test('kuyruk: yöneticinin Çizim Paneli — çizim ekibinin kuyrukları, ekibin
   const d = queuesFor(list, { review: false, send: false, drawing: true, userId: 'cizimci-1' }, NOW);
   assert.deepEqual(keys(d), ['drawingJobs', 'atCustomer', 'myDrawings', 'approvedDrawings', 'sla']);
   assert.deepEqual(ids(d, 'drawingJobs').sort(), [mine.id, open.id, pricing.id].sort());
-  // Yöneticinin kendi "Sıra bende" sayfası değişmedi: çizim işleri kuyruğu yok, fiyat onayı var
+  // Yöneticinin kendi "Sıra bende" sayfası (karar 217): yalnızca dört tablo — çizim işleri ve fiyat onayı yok
   const a = queuesFor(list, { review: true, send: true, drawing: true, userId: 'yonetici' }, NOW);
   assert.equal(ids(a, 'drawingJobs'), null);
-  assert.deepEqual(ids(a, 'priceApproval'), [pricing.id]);
+  assert.equal(ids(a, 'priceApproval'), null);
+  assert.deepEqual(keys(a), ADMIN_QUEUES);
 });
 
 test('kuyruk: süresi geçenler en üstte, sonra son tarihi en yakın olan; SLA\'sızlar sonda', () => {
@@ -128,11 +143,13 @@ test('kuyruk: müşterinin onayladığı çizimler ayrı bölümde (hazırlanır
   const q = queuesFor([approved, inProduction, held, pending], { review: false, send: false, drawing: true, userId: 'ben' }, NOW);
   assert.deepEqual(ids(q, 'approvedDrawings').sort(), [approved.id, inProduction.id].sort());
   assert.deepEqual(ids(q, 'atCustomer'), [pending.id]);
-  // Yönetici de görür (karar 84); satışın "Sıra bende"sinde bu bölüm yok (karar 155); profil siparişi bu listeye de
-  // girmez; yetkisiz (denetimci) görmez
+  // Yönetici Çizim Paneli'nde görür (karar 84; kendi "Sıra bende"sinde değil — karar 217); satışın "Sıra bende"sinde bu
+  // bölüm yok (karar 155); profil siparişi bu listeye de girmez; yetkisiz (denetimci) görmez
+  const panel = { review: false, send: false, drawing: true, allDrawers: true };
   assert.equal(ids(queuesFor([approved, held], { review: true, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
-  assert.deepEqual(ids(queuesFor([approved], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), [approved.id]);
-  assert.deepEqual(ids(queuesFor([{ ...approved, orderTypeCode: 'PROFILE_ORDER' }], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), []);
+  assert.equal(ids(queuesFor([approved], { review: true, send: true, drawing: true }, NOW), 'approvedDrawings'), null);
+  assert.deepEqual(ids(queuesFor([approved], panel, NOW), 'approvedDrawings'), [approved.id]);
+  assert.deepEqual(ids(queuesFor([{ ...approved, orderTypeCode: 'PROFILE_ORDER' }], panel, NOW), 'approvedDrawings'), []);
   assert.equal(ids(queuesFor([approved], { review: false, send: false, drawing: false }, NOW), 'approvedDrawings'), null);
 });
 
@@ -178,8 +195,9 @@ test('teklif kontrolü: müşterinin DWG/DXF karar kaydı ilk çizimi "ikinci" y
   const sent = { status: 'GONDERILDI', sentAt: h(-10) };
   const rec = (version, status, at) => ({ id: `r${version}`, version, source: 'MUSTERI_DXF_DWG', status, createdAt: h(at - 1), decidedAt: h(at) });
   const fac = (version, status, at) => ({ id: `f${version}`, version, source: 'FABRIKA', status, createdAt: h(at - 1), sentAt: h(at) });
-  const check = (drawings) => queuesFor([row({ drawingTrack: 'ONAY_BEKLIYOR', offers: [sent], drawings })], { review: true, send: true, drawing: true }, NOW)
-    .find((q) => q.key === 'offerCheck').rows.length;
+  // Kural (needsOfferCheck) sipariş sayfasındaki "teklif kontrolü" uyarısının kuralıdır; yöneticinin "Sıra bende"sinde ayrı
+  // tablo olarak artık yok (karar 217)
+  const check = (drawings) => [row({ drawingTrack: 'ONAY_BEKLIYOR', offers: [sent], drawings })].filter((o) => needsOfferCheck(o)).length;
   // "Çizimi Güncelle" sonrası ilk fabrika çizimi (v2) teklif gönderildikten sonra geldi: yine İLK çizim → kontrol yok
   assert.equal(check([rec(1, 'YAPILIYOR', -20), fac(2, 'ONAY_BEKLIYOR', -1)]), 0);
   // Fabrika revizyonu (ikinci fabrika çizimi): kontrol (eski davranış)

@@ -7,6 +7,8 @@ import { useState, type ReactNode } from 'react';
  * Yükleme günü firma tablosunun bir firması (Paket 7): ana satır + açılır iki bölüm — alt siparişler ve sandıklar.
  * İçerik sunucuda hazırlanır (adlar role göre maskeli, tutarlar yetkiye göre süzülmüş); burada yalnızca aç / kapa durumu
  * tutulur. Bölümler DOM'da kalır (gizli), böylece sunucu işlemi sonrası yenilemede form durumu kaybolmaz.
+ * Sağdaki işlemler (Yönetici Paneli Paketi 1, karar 215): belge işlemleri yetkisi olan rolde PDF | Excel | Özet | Sandık;
+ * satışta yalnızca Sandık (to = null — belge adresleri sunucuda da reddedilir: lib/loading.ts → canFirmDocs).
  */
 export function FirmRows(props: {
   id: string;
@@ -18,9 +20,10 @@ export function FirmRows(props: {
   orders: ReactNode;
   crates: ReactNode;
   cols: number;
-  to: { pdf: string; xlsx: string; summary: string };
+  /** Belge işlemlerinin adresleri; null: rol belge işlemlerini görmez (yalnızca Sandık) */
+  to: { pdf: string; xlsx: string; summary: string } | null;
   open?: { orders?: boolean; crates?: boolean };
-  m: { toggle: string; crates: string; pdf: string; xlsx: string; summary: string };
+  m: { toggle: string; crates: string; pdf: string; xlsx: string; summary: string; actions: string };
 }) {
   const [orders, setOrders] = useState(!!props.open?.orders);
   const [crates, setCrates] = useState(!!props.open?.crates);
@@ -45,18 +48,25 @@ export function FirmRows(props: {
           {props.badges}
         </td>
         {props.cells}
-        <td className="actions firm-actions">
-          <button type="button" className={`btn${crates ? ' active' : ''}`} aria-expanded={crates} aria-controls={cratesId} data-action="crates" onClick={() => setCrates((v) => !v)}>{props.m.crates}</button>
-          <a className="btn" href={props.to.pdf} data-action="pdf">{props.m.pdf}</a>
-          <a className="btn" href={props.to.xlsx} data-action="xlsx">{props.m.xlsx}</a>
-          <Link className="btn" href={props.to.summary} data-action="summary">{props.m.summary}</Link>
+        <td className="actions firm-actions" data-label={props.m.actions}>
+          {/* Sıra: PDF | Excel | Özet | Sandık — tek satırda; alan daralırsa sonraki satıra geçer (flex-wrap), tablo yatay kaymaz */}
+          <div className="firm-acts">
+            {props.to && (
+              <>
+                <a className="btn" href={props.to.pdf} data-action="pdf">{props.m.pdf}</a>
+                <a className="btn" href={props.to.xlsx} data-action="xlsx">{props.m.xlsx}</a>
+                <Link className="btn" href={props.to.summary} data-action="summary">{props.m.summary}</Link>
+              </>
+            )}
+            <button type="button" className={`btn${crates ? ' active' : ''}`} aria-expanded={crates} aria-controls={cratesId} data-action="crates" onClick={() => setCrates((v) => !v)}>{props.m.crates}</button>
+          </div>
         </td>
       </tr>
       <tr className="firm-orders" id={ordersId} hidden={!orders}>
-        <td colSpan={props.cols}>{props.orders}</td>
+        <td colSpan={props.cols}><div className="firm-sub">{props.orders}</div></td>
       </tr>
       <tr className="firm-crates" id={cratesId} hidden={!crates}>
-        <td colSpan={props.cols}>{props.crates}</td>
+        <td colSpan={props.cols}><div className="firm-sub">{props.crates}</div></td>
       </tr>
     </tbody>
   );

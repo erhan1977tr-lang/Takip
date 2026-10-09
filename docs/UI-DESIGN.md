@@ -600,6 +600,28 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   (warn border / soft background) holding two white sub-forms in `.grid-2`: "FGO'da belge VAR" (series + number) and "FGO'da belge
   YOK" (confirm checkbox + retry / abandon). The Finans / FGO card shows `[data-fgo-uncertain]` with a link to `#belirsiz`.
 
+## Admin panel fixes 1 (3.63.0, decisions 215–218)
+
+- Loading firm table (`.firm-wrap`, `.firm-wrap-docs` when the row has PDF / Excel / Özet): short headers that may wrap (full
+  name in `title`), every cell carries `data-label`; actions sit in `.firm-acts` (flex, one line at a container width ≥ 1190 px).
+  When the table does not fit its own container (`@container firmwrap`: ≤ 1069 px with document actions, ≤ 899 px without) each
+  firm becomes a card — labelled number grid, then actions; open sub-rows (`tr.firm-orders`, `tr.firm-crates`) below the card.
+  Expanded content lives in `.firm-sub` (its own container; never widens the table): sub-orders table becomes a labelled grid at
+  ≤ 819 px, the crate editor (`.crate-editor`) at ≤ 879 px (inputs fill the cell; checkboxes keep their size). Never add a
+  horizontal page scroll; never use a viewport media query for these — the sidebar changes the available width.
+- Labelled grid for any wide table: `<div class="table-wrap stack-wrap [stack-wide]"><table class="stack-table">` with `data-label`
+  on cells; `.stack-head` / `.stack-full` span the row, `.stack-skip` and empty cells hide, `.stack-n` (row number column) hides
+  and `.stack-only` (number prefix in the description) shows. Threshold 699 px, `.stack-wide` 919 px; the wrapper keeps
+  `overflow-x:auto` as a last resort (the table scrolls inside its card, the page never does).
+- Firm summary (`/yuklemeler/ozet`): `#ozet-tutarlar` (Admin; factory and offer per currency), `#ozet-siparisler` (stack table),
+  `#ozet-ayrinti` with one `section.order-detail[data-order-detail]` per order (`.order-detail-head`: link, title, replan / not-sent
+  badges) and `.detail-table[data-currency]`; on Admin a group header row `tr.detail-groups` ("Fabrika satış (EUR)" /
+  "Müşteri teklifi (EUR)") over `.grp-factory` (neutral `--surface-3`) and `.grp-offer` (`--primary-soft`) columns;
+  amount cells `[data-col=factory|offer]`. Tokens only.
+- Nav section counter: `.nav-section` may carry the shared `.msg-count` pill (`[data-nav-count]`, `aria-hidden`, text in an
+  `.sr-only` span + `title`); on the mobile nav, which has no section names, the same pill sits on the section's list link
+  (`mobileCount`) and the link's name does not change. One counter style for messages and sections.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

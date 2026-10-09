@@ -4,7 +4,7 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { userCan } from '@/lib/permissions';
 import {
-  crateDay, cratesBetween, dayEntry, firmsOfDay, guestCratesBetween, guestHostNames, moneyView, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay,
+  canFirmDocs, crateDay, cratesBetween, dayEntry, firmsOfDay, guestCratesBetween, guestHostNames, moneyView, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay,
   type CrateRow, type DayEntry, type DayFirm, type DayFirms, type GuestLink, type LoadRow, type MoneyView,
 } from '@/lib/loading';
 import { customerLabel } from '@/lib/orders';
@@ -295,15 +295,16 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
             <div className="stat"><div className="k">{t('loading.day.stats.gross')}</div><div className="v">{kg(total.grossKg)}<small>{t('common.unitKg')}</small></div></div>
             <div className="stat"><div className="k">{t('loading.day.stats.crates')}</div><div className="v">{total.crates}<small>{t('common.unitPiece')}</small></div></div>
           </div>
+          {/* Açıklama: iç ekipte kısa (karar 215); müşterinin takvimindeki metin değişmez */}
           <p className="muted small load-note">
             {total.estimatedCrates > 0 && (
               <>
-                {t('loading.day.estimate', {
+                {t(isCustomer ? 'loading.day.estimateCustomer' : 'loading.day.estimate', {
                   netKg: kg(total.estimatedNetKg), crates: count('crate', total.estimatedCrates), tare: CRATE_TARE_KG, max: fmtNum(CRATE_MAX_KG, 0),
                 })}{' '}
               </>
             )}
-            {t('loading.day.note')}
+            {t(isCustomer ? 'loading.day.noteCustomer' : 'loading.day.note')}
           </p>
           {isCustomer
             ? <CustomerDay firm={firms[0]} money={money} t={t} />
@@ -314,30 +315,39 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
   );
 }
 
+/** Firma tablosunun sayı sütunları: kısa başlık (ekranda) + tam adı (title, dar ekranda hücre etiketi kısa ad) */
+const FIRM_COLS = ['orders', 'glass', 'cnc', 'holes', 'm2', 'net', 'crates', 'gross'] as const;
+type FirmCol = (typeof FIRM_COLS)[number] | 'factory' | 'offer';
+
 /**
  * İç ekip: firma bazlı ana tablo (Paket 7, karar 186). Her firma o gün TEK satırdır; satır açılınca alt siparişler, "Sandık" ile
  * o firmanın o günkü sandıkları açılır. Ticari sütunlar siparişin sahibinde, sandık / ağırlık sütunları camı taşıyan firmada
  * (misafir yükte ev sahibi). Tutar sütunları yetkiye göre: fabrika satış (yönetici, satış), teklif (yönetici, denetimci).
+ * Düzen (Yönetici Paneli Paketi 1, karar 215): kısa başlıklar (tam ad ipucunda), sıkı hücreler; tablo kendi alanına sığmıyorsa
+ * (dar masaüstü, telefon) her firma etiketli bir kart olur — sayfa ve tablo yatay kaymaz (app/globals.css → .firm-wrap).
+ * Sağdaki işlemler: belge yetkisi olan rolde PDF | Excel | Özet | Sandık; satışta yalnızca Sandık.
  */
 function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: CurrentUser; day: string; sum: DayFirms; dayCrates: CrateRow[]; money: MoneyView; sp: SP; t: T; m: Dict }) {
   const { firms, total } = sum;
   const cols = 10 + (money.sales ? 1 : 0) + (money.offer ? 1 : 0);
   const canEdit = userCan(user, 'CRATE_EDIT');
   const canPlace = userCan(user, 'LOADING_CONFIRM');
+  const docs = canFirmDocs(user);
+  const short = (c: FirmCol) => t(`loading.firm.short.${c}` as MsgKey);
+  const head = (c: FirmCol) => <th key={c} className="num" scope="col" title={t(`loading.firm.cols.${c}` as MsgKey)}>{short(c)}</th>;
   // Misafir camın bilgisi (ev sahibinin sandık içeriğinde): sipariş no · sahibi · cam adedi · m² — tüm firmaların satırlarından
   const rowOf = new Map(firms.flatMap((f) => f.rows.map((r) => [r.entry.orderId, r] as const)));
   return (
-    <div className="table-wrap load-wrap">
+    <div className={`table-wrap load-wrap firm-wrap${money.sales && money.offer ? ' firm-wrap-both' : ''}${docs ? ' firm-wrap-docs' : ''}`}>
       <table className="load-table firm-table">
         <thead>
           <tr>
-            <th>{t('loading.firm.cols.firm')}</th><th className="num">{t('loading.firm.cols.orders')}</th>
-            <th className="num">{t('loading.firm.cols.glass')}</th><th className="num">{t('loading.firm.cols.cnc')}</th><th className="num">{t('loading.firm.cols.holes')}</th>
-            <th className="num">{t('loading.firm.cols.m2')}</th><th className="num">{t('loading.firm.cols.net')}</th><th className="num">{t('loading.firm.cols.crates')}</th>
-            <th className="num">{t('loading.firm.cols.gross')}</th>
-            {money.sales && <th className="num">{t('loading.firm.cols.factory')}</th>}
-            {money.offer && <th className="num">{t('loading.firm.cols.offer')}</th>}
-            <th className="actions">{t('loading.firm.cols.actions')}</th>
+            <th scope="col">{t('loading.firm.cols.firm')}</th>
+            {FIRM_COLS.map(head)}
+            {money.sales && head('factory')}
+            {money.offer && head('offer')}
+            {/* İşlemler sütununun başlığı yalnızca ekran okuyucuya (dar sütun: düğmeler sütunun genişliğini belirler) */}
+            <th className="actions" scope="col"><span className="sr-only">{t('loading.firm.short.actions')}</span></th>
           </tr>
         </thead>
         {firms.map((f) => {
@@ -351,9 +361,12 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
               id={f.id}
               name={f.name}
               cols={cols}
-              to={firmUrls(day, f.id)}
+              to={docs ? firmUrls(day, f.id) : null}
               open={{ crates: sp.acik === f.id }}
-              m={{ toggle: t('loading.firm.toggle'), crates: t('loading.firm.actions.crates'), pdf: t('loading.firm.actions.pdf'), xlsx: t('loading.firm.actions.xlsx'), summary: t('loading.firm.actions.summary') }}
+              m={{
+                toggle: t('loading.firm.toggle'), crates: t('loading.firm.actions.crates'), pdf: t('loading.firm.actions.pdf'), xlsx: t('loading.firm.actions.xlsx'),
+                summary: t('loading.firm.actions.summary'), actions: t('loading.firm.short.actions'),
+              }}
               badges={(
                 <div className="firm-badges">
                   {/* Fiziksel sandık sahipliği (ticari sahiplik değişmez): bu firmanın başka firma sandığıyla giden siparişleri / bu firmanın sandıklarıyla giden misafir yük */}
@@ -373,19 +386,19 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
               )}
               cells={(
                 <>
-                  <td className="num" data-col="orders">{f.orders}</td>
-                  <td className="num" data-col="glass">{f.camAdet}</td>
-                  <td className="num" data-col="cnc">{dash(f.cnc)}</td>
-                  <td className="num" data-col="holes">{dash(f.delik)}</td>
-                  <td className="num" data-col="m2">{fmtNum(f.metraj)}</td>
-                  <td className="num" data-col="net">{kg(f.netKg)}</td>
-                  <td className="num" data-col="crates">
+                  <td className="num" data-col="orders" data-label={short('orders')}>{f.orders}</td>
+                  <td className="num" data-col="glass" data-label={short('glass')}>{f.camAdet}</td>
+                  <td className="num" data-col="cnc" data-label={short('cnc')}>{dash(f.cnc)}</td>
+                  <td className="num" data-col="holes" data-label={short('holes')}>{dash(f.delik)}</td>
+                  <td className="num" data-col="m2" data-label={short('m2')}>{fmtNum(f.metraj)}</td>
+                  <td className="num" data-col="net" data-label={short('net')}>{kg(f.netKg)}</td>
+                  <td className="num" data-col="crates" data-label={short('crates')}>
                     {f.crates}{' '}
                     {f.realCrates ? <span className="badge badge-ok">{t('loading.day.real')}</span> : f.crates > 0 ? <span className="muted small">{t('loading.day.estimated')}</span> : null}
                   </td>
-                  <td className="num" data-col="gross">{kg(f.grossKg)}</td>
-                  {money.sales && <td className="num" data-col="factory">{amounts(f.money, 'sales')}</td>}
-                  {money.offer && <td className="num" data-col="offer">{amounts(f.money, 'offer')}</td>}
+                  <td className="num" data-col="gross" data-label={short('gross')}>{kg(f.grossKg)}</td>
+                  {money.sales && <td className="num" data-col="factory" data-label={short('factory')}>{amounts(f.money, 'sales')}</td>}
+                  {money.offer && <td className="num" data-col="offer" data-label={short('offer')}>{amounts(f.money, 'offer')}</td>}
                 </>
               )}
               orders={<FirmOrders firm={f} money={money} t={t} />}
@@ -395,14 +408,18 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
         })}
         <tfoot>
           <tr>
-            <td>{t('common.total')}</td>
-            <td className="num" data-col="orders">{total.orders}</td>
-            <td className="num" data-col="glass">{total.camAdet}</td><td className="num" data-col="cnc">{dash(total.cnc)}</td><td className="num" data-col="holes">{dash(total.delik)}</td>
-            <td className="num" data-col="m2">{fmtNum(total.metraj)}</td><td className="num" data-col="net">{kg(total.netKg)}</td>
-            <td className="num" data-col="crates">{total.crates}</td><td className="num" data-col="gross">{kg(total.grossKg)}</td>
-            {money.sales && <td className="num" data-col="factory">{amounts(total.money, 'sales')}</td>}
-            {money.offer && <td className="num" data-col="offer">{amounts(total.money, 'offer')}</td>}
-            <td />
+            <td className="firm-total">{t('common.total')}</td>
+            <td className="num" data-col="orders" data-label={short('orders')}>{total.orders}</td>
+            <td className="num" data-col="glass" data-label={short('glass')}>{total.camAdet}</td>
+            <td className="num" data-col="cnc" data-label={short('cnc')}>{dash(total.cnc)}</td>
+            <td className="num" data-col="holes" data-label={short('holes')}>{dash(total.delik)}</td>
+            <td className="num" data-col="m2" data-label={short('m2')}>{fmtNum(total.metraj)}</td>
+            <td className="num" data-col="net" data-label={short('net')}>{kg(total.netKg)}</td>
+            <td className="num" data-col="crates" data-label={short('crates')}>{total.crates}</td>
+            <td className="num" data-col="gross" data-label={short('gross')}>{kg(total.grossKg)}</td>
+            {money.sales && <td className="num" data-col="factory" data-label={short('factory')}>{amounts(total.money, 'sales')}</td>}
+            {money.offer && <td className="num" data-col="offer" data-label={short('offer')}>{amounts(total.money, 'offer')}</td>}
+            <td className="firm-total-pad" />
           </tr>
         </tfoot>
       </table>
@@ -434,14 +451,18 @@ function OrderBadges({ row, t, customer }: { row: Row; t: T; customer: boolean }
 function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T }) {
   const sub = rowsTotal(firm.rows);
   if (firm.rows.length === 0) return <p className="muted small">{t('loading.firm.noOrders')}</p>;
+  const L = {
+    glass: t('loading.firm.sub.glass'), cnc: t('loading.firm.sub.cnc'), holes: t('loading.firm.sub.holes'), m2: t('loading.firm.sub.m2'),
+    factory: t('loading.firm.sub.factory'), offer: t('loading.firm.sub.offer'),
+  };
   return (
     <table className="sub-table firm-orders-table">
       <thead>
         <tr>
-          <th>{t('loading.firm.sub.order')}</th><th className="num">{t('loading.firm.sub.glass')}</th><th className="num">{t('loading.firm.sub.cnc')}</th>
-          <th className="num">{t('loading.firm.sub.holes')}</th><th className="num">{t('loading.firm.sub.m2')}</th>
-          {money.sales && <th className="num">{t('loading.firm.sub.factory')}</th>}
-          {money.offer && <th className="num">{t('loading.firm.sub.offer')}</th>}
+          <th>{t('loading.firm.sub.order')}</th><th className="num">{L.glass}</th><th className="num">{L.cnc}</th>
+          <th className="num">{L.holes}</th><th className="num">{L.m2}</th>
+          {money.sales && <th className="num">{L.factory}</th>}
+          {money.offer && <th className="num">{L.offer}</th>}
         </tr>
       </thead>
       <tbody>
@@ -463,12 +484,12 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
                   </div>
                 )}
               </td>
-              <td className="num">{e.load.camAdet}</td>
-              <td className="num">{dash(e.load.cnc)}</td>
-              <td className="num">{dash(e.load.delik)}</td>
-              <td className="num">{fmtNum(e.load.metraj)}</td>
-              {money.sales && <td className="num">{e.money.sales != null ? fmtMoney(e.money.sales, e.money.currency) : <span className="muted">—</span>}</td>}
-              {money.offer && <td className="num">{e.money.offer != null ? fmtMoney(e.money.offer, e.money.currency) : <span className="muted">—</span>}</td>}
+              <td className="num" data-label={L.glass}>{e.load.camAdet}</td>
+              <td className="num" data-label={L.cnc}>{dash(e.load.cnc)}</td>
+              <td className="num" data-label={L.holes}>{dash(e.load.delik)}</td>
+              <td className="num" data-label={L.m2}>{fmtNum(e.load.metraj)}</td>
+              {money.sales && <td className="num" data-label={L.factory}>{e.money.sales != null ? fmtMoney(e.money.sales, e.money.currency) : <span className="muted">—</span>}</td>}
+              {money.offer && <td className="num" data-label={L.offer}>{e.money.offer != null ? fmtMoney(e.money.offer, e.money.currency) : <span className="muted">—</span>}</td>}
             </tr>
           );
         })}
@@ -476,9 +497,10 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
       <tfoot>
         <tr>
           <td>{t('loading.firm.sub.total', { n: sub.orders })}</td>
-          <td className="num">{sub.camAdet}</td><td className="num">{dash(sub.cnc)}</td><td className="num">{dash(sub.delik)}</td><td className="num">{fmtNum(sub.metraj)}</td>
-          {money.sales && <td className="num">{amounts(sub.money, 'sales')}</td>}
-          {money.offer && <td className="num">{amounts(sub.money, 'offer')}</td>}
+          <td className="num" data-label={L.glass}>{sub.camAdet}</td><td className="num" data-label={L.cnc}>{dash(sub.cnc)}</td>
+          <td className="num" data-label={L.holes}>{dash(sub.delik)}</td><td className="num" data-label={L.m2}>{fmtNum(sub.metraj)}</td>
+          {money.sales && <td className="num" data-label={L.factory}>{amounts(sub.money, 'sales')}</td>}
+          {money.offer && <td className="num" data-label={L.offer}>{amounts(sub.money, 'offer')}</td>}
         </tr>
       </tfoot>
     </table>

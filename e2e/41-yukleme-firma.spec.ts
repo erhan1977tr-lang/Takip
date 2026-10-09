@@ -85,8 +85,12 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   const page = await as(browser, ADMIN, ADMIN_PW);
   await page.goto(DAY_URL);
   const table = page.locator('.card#gun .firm-table');
+  // Kısa başlıklar (Yönetici Paneli Paketi 1, karar 215); tam adı ipucunda (title)
   expect(await heads(table.locator(':scope > thead th'))).toEqual([
-    'Firma', 'Sipariş adedi', 'Cam adedi', 'CNC adedi', 'Delik adedi', 'Toplam m²', 'Net ağırlık (kg)', 'Sandık adedi', 'Brüt ağırlık (kg)', 'Fabrika satış tutarı', 'Teklif tutarı', 'İşlemler',
+    'Firma', 'Sipariş', 'Cam', 'CNC', 'Delik', 'm²', 'Net kg', 'Sandık', 'Brüt kg', 'Fabrika satış', 'Teklif tutarı', 'İşlemler',
+  ]);
+  expect(await table.locator(':scope > thead th[title]').evaluateAll((els) => els.map((e) => e.getAttribute('title')))).toEqual([
+    'Sipariş adedi', 'Cam adedi', 'CNC adedi', 'Delik adedi', 'Toplam m²', 'Net ağırlık (kg)', 'Sandık adedi', 'Brüt ağırlık (kg)', 'Fabrika satış tutarı', 'Teklif tutarı',
   ]);
   await expect(table.locator(':scope > tbody.firm'), 'firma başına tek satır').toHaveCount(2);
   const u = firmOf(page, uns.name);
@@ -263,7 +267,7 @@ test('firma işlemleri: Sandık / PDF / Excel / Özet — yalnızca o firma ve g
   }
 });
 
-test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt sipariş, takvim, misafir uyarısı, sandık ekranı, ipuçları, sayfa verisi, Excel, özet); tutar yalnızca fabrika satış', async ({ browser }) => {
+test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt sipariş, takvim, misafir uyarısı, sandık ekranı, ipuçları, sayfa verisi, gün Excel\'i); tutar yalnızca fabrika satış; firma PDF / Excel / Özet satışa kapalı', async ({ browser }) => {
   const sales = await as(browser, SALES2, TEAM_PW);
   await sales.goto(DAY_URL);
   // Sayfanın bütün verisi (HTML + sunucu bileşeni yükü) tam adı içermez
@@ -289,28 +293,27 @@ test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt 
   for (const n of [uns.name, beta.name]) await expect(sales.locator('main'), `ekran: ${n}`).not.toContainText(n);
   // Tutar: yalnızca fabrika satış (müşteri teklif tutarı satışa gelmez)
   expect(await heads(sales.locator('.card#gun .firm-table > thead th'))).toEqual([
-    'Firma', 'Sipariş adedi', 'Cam adedi', 'CNC adedi', 'Delik adedi', 'Toplam m²', 'Net ağırlık (kg)', 'Sandık adedi', 'Brüt ağırlık (kg)', 'Fabrika satış tutarı', 'İşlemler',
+    'Firma', 'Sipariş', 'Cam', 'CNC', 'Delik', 'm²', 'Net kg', 'Sandık', 'Brüt kg', 'Fabrika satış', 'İşlemler',
   ]);
+  // Firma satırında satış yalnızca "Sandık"ı görür (karar 215)
+  expect(await u.locator('tr.firm-row .firm-acts [data-action]').evaluateAll((els) => els.map((e) => e.getAttribute('data-action')))).toEqual(['crates']);
   expect(await cells(u, ['factory'])).toEqual(['314,00 EUR']);
   expect(await heads(uo.locator('thead th'))).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış']);
   await shot(sales, 'yukleme-firma-tablosu-satis');
 
-  // Excel'ler ve özet: maskeli; teklif tutarı yok; firma çıktısında hiç tutar yok
+  // Gün Excel'i (satışın gün belgesi — durur): maskeli; teklif tutarı yok
   const sum = await xlsx(sales, `/yuklemeler/dokum?gun=${DAY}`);
   expect(sum.rows.some((r) => r[0] === mask(uns.name))).toBe(true);
   const lines = await reportSheet(sum.buf, 2);
   for (const n of [uns.name, beta.name]) expect(JSON.stringify([sum.rows, lines]), `özet Excel: ${n}`).not.toContain(n);
   expect(sum.rows.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı'))).toBe(false);
-  const fx = await xlsx(sales, `/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=xlsx`);
-  expect(JSON.stringify(fx.rows)).not.toContain(uns.name);
-  expect(fx.rows[0][0]).toContain(mask(uns.name));
-  for (const amount of [190, 129, 440, 314]) expect(fx.rows.flat(), `firma çıktısında tutar yok: ${amount}`).not.toContain(amount);
+  // Firma PDF / Excel / Özet satışa kapalı (karar 215): sunucu reddeder, Özet yükleme gününe döner (maskeli sayfa)
+  for (const f of ['pdf', 'xlsx']) expect((await sales.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=${f}`)).status(), f).toBe(403);
   await sales.goto(`/yuklemeler/ozet?gun=${DAY}&firma=${uns.id}`);
-  await expect(sales.locator('h1')).toHaveText(`Yükleme özeti — ${mask(uns.name)}`);
-  await expect(sales.locator('#ozet-tutarlar')).toHaveCount(0);
-  for (const n of [uns.name, beta.name]) await expect(sales.locator('main'), `özet: ${n}`).not.toContainText(n);
+  await expect(sales).toHaveURL(new RegExp(`/yuklemeler\\?gun=${DAY}$`));
+  await expect(sales.locator('#ozet-siparisler, #ozet-tutarlar, #ozet-ayrinti')).toHaveCount(0);
   const ozetHtml = await (await sales.request.get(`/yuklemeler/ozet?gun=${DAY}&firma=${uns.id}`)).text();
-  for (const n of [uns.name, beta.name]) expect(ozetHtml, `özet verisi: ${n}`).not.toContain(n);
+  for (const n of [uns.name, beta.name]) expect(ozetHtml, `özet adresi: ${n}`).not.toContain(n);
   await sales.context().close();
 });
 

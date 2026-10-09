@@ -1,5 +1,11 @@
 export default {
   operations: 'Operațiuni',
+  // Secțiunea comenzilor de profile a administratorului (Pachetul 1 al panoului de administrare, decizia 216): tabelele de
+  // profile și definițiile de profile; lângă numele secțiunii, contorul comenzilor noi de profile
+  profileOrders: 'Comenzi de profile',
+  profileOrderList: 'Comenzi de profile',
+  // {n}: comenzi noi de profile care așteaptă prețul administratorului
+  profileNew: '{n} comenzi noi de profile așteaptă prețul',
   drawingTeam: 'Echipa de desen',
   drawingPanel: 'Panou desen',
   // Lista echipei de desen „Desene primite ca DXF/DWG” (decizia 167)

@@ -3,10 +3,17 @@ import type { MsgKey } from './i18n';
 
 // Rol adları sözlükte: roles.<ROL> (lib/labels.ts → roleText)
 
-/** Menü tanımı (metinler sözlük anahtarı; panel düzeni çevirir). */
-export type NavDef = { href: string; key: MsgKey } | { section: MsgKey };
+/** Sunucuda sayılan menü sayaçları (panel düzeni hesaplar): profileNew — yöneticinin fiyatını bekleyen yeni profil siparişi */
+export type NavCount = 'profileNew';
+/**
+ * Menü tanımı (metinler sözlük anahtarı; panel düzeni çevirir). Bölüm sayacı (count) yan menüde bölüm adının yanında; telefonda
+ * bölüm adı çizilmediği için aynı sayaç bölümün bağlantısında (mobileCount) görünür.
+ */
+export type NavDef = { href: string; key: MsgKey; mobileCount?: NavCount } | { section: MsgKey; count?: NavCount };
 /** Çevrilmiş menü öğesi (NavLinks bileşenine giden) */
-export type NavItem = { href: string; label: string; count?: number; countLabel?: string } | { section: string };
+export type NavItem =
+  | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number }
+  | { section: string; count?: number; countLabel?: string };
 
 export const NAV: Record<AppRole, NavDef[]> = {
   ADMIN: [
@@ -15,6 +22,15 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/teklifler', key: 'nav.offers' },
     { href: '/admin/kararlar', key: 'nav.alerts' },
     { href: '/yuklemeler', key: 'nav.loadings' },
+    // Profil siparişleri (Yönetici Paneli Paketi 1, karar 216): profil tabloları ve profil tanımları tek bölümde. Bölüm adının
+    // yanında yeni profil siparişi sayacı (fiyat bekleyen — server/orders/queues.js → newProfileCount; telefonda bağlantıda)
+    { section: 'nav.profileOrders', count: 'profileNew' },
+    { href: '/siparisler?view=profil', key: 'nav.profileOrderList', mobileCount: 'profileNew' },
+    { href: '/admin/profil-katalogu', key: 'nav.profileCatalog' },
+    // Profil hesaplayıcısının sistemleri, kalemleri ve cam kalınlıkları (Paket 5, karar 175)
+    { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
+    { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
+    { href: '/admin/stok', key: 'nav.stock' },
     // Çizim ekibinin paneli (aynı sayfa, aynı kuyruklar; yönetici tam firma adlarını görür) — siparisler/page.tsx
     { section: 'nav.drawingTeam' },
     { href: '/siparisler?panel=cizim', key: 'nav.drawingPanel' },
@@ -35,11 +51,6 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/admin/katalog', key: 'nav.catalog' },
     { href: '/admin/fiyatlar', key: 'nav.prices' },
     { href: '/admin/musteri-fiyatlari', key: 'nav.customerPrices' },
-    { href: '/admin/profil-katalogu', key: 'nav.profileCatalog' },
-    // Profil hesaplayıcısının sistemleri, kalemleri ve cam kalınlıkları (Paket 5, karar 175)
-    { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
-    { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
-    { href: '/admin/stok', key: 'nav.stock' },
     // "Ayarlar" (eski adı "Entegrasyonlar"): Entegrasyonlar ve Tedarikçiler sekmeleri — karar 179
     { href: '/admin/entegrasyonlar', key: 'nav.adminSettings' },
     // Kendi hesap ayarları (dil, ses — Paket 9, karar 198); bütün iç roller

@@ -2,7 +2,7 @@
 export default {
   title: 'Încărcări',
   titleCustomer: 'Calendarul meu de încărcări',
-  intro: 'Lucrări grupate după ziua de încărcare. Comenzile puse în așteptare nu apar în această listă.',
+  intro: 'Lucrări pe zile de încărcare; comenzile în așteptare nu apar.',
   introCustomer: 'Ziua în care se încarcă fiecare dintre comenzile dvs. Faceți clic pe o zi pentru a vedea comenzile din ziua respectivă.',
   // Excelul „Rezumat încărcare” (Pachetul 7): foaia 1 rezumat pe firme + relația cu lada fizică, foaia 2 detaliu pe rânduri
   summary: {
@@ -87,6 +87,11 @@ export default {
       firm: 'Firmă', orders: 'Nr. comenzi', glass: 'Bucăți sticlă', cnc: 'Nr. CNC', holes: 'Nr. găuri', m2: 'Total m²',
       net: 'Greutate netă (kg)', crates: 'Nr. lăzi', gross: 'Greutate brută (kg)', factory: 'Valoare vânzare fabrică', offer: 'Valoare ofertă', actions: 'Acțiuni',
     },
+    // Titluri scurte de coloană (Pachetul 1 al panoului de administrare, decizia 215): pe ecran numele scurt, numele complet în indiciu (cols); pe ecran îngust eticheta celulei
+    short: {
+      orders: 'Comenzi', glass: 'Sticlă', cnc: 'CNC', holes: 'Găuri', m2: 'm²', net: 'Net kg', crates: 'Lăzi', gross: 'Brut kg',
+      factory: 'Vânzare fabrică', offer: 'Valoare ofertă', actions: 'Acțiuni',
+    },
     actions: { crates: 'Lăzi', pdf: 'PDF', xlsx: 'Excel', summary: 'Rezumat' },
     sub: { order: 'Nr. comandă', glass: 'Sticlă', cnc: 'CNC', holes: 'Găuri', m2: 'Total m²', factory: 'Vânzare fabrică', offer: 'Valoare ofertă', total: 'Total · {n} comenzi' },
     away: '{n} comenzi în lăzile altei firme: {hosts}',
@@ -117,11 +122,18 @@ export default {
     noCrates: 'Pentru această firmă nu s-au introdus lăzi în această zi.',
     noOrders: 'Această firmă nu are comenzi în această zi.',
     physicalNote: 'Numărul de lăzi și greutățile urmează lada fizică: greutatea sticlei care pleacă în lada altei firme se contorizează la acea ladă; dacă nu s-au introdus lăzi, valorile sunt estimate.',
+    // Detaliul comenzilor (decizia 215): rândurile ofertei trimise clientului pentru fiecare comandă — la nivelul „Ofertele mele”
+    detailTitle: 'DETALIU COMENZI',
+    detailSheet: 'Detaliu',
+    subtotal: 'Total comandă',
+    notSent: 'Oferta nu a fost încă trimisă clientului — fără valoare',
+    // {from}: prima zi de încărcare a restului (zz.ll.aaaa)
+    replanNote: 'Rest replanificat din încărcarea din {from}',
   },
   // Pagina „Rezumat” a rândului firmei (Pachetul 7, decizia 187): doar firma + ziua; valorile doar pentru administrator
   firmSummary: {
     title: 'Rezumat încărcare — {firm}',
-    intro: 'Încărcarea din {date}. Valorile comerciale (comenzi, sticlă, CNC, găuri, m², valori) provin din comenzile firmei; lăzile și greutatea din lada fizică ce transportă sticla.',
+    intro: 'Încărcarea din {date}. Lăzile și greutatea urmează lada fizică.',
     back: '‹ Înapoi la ziua de încărcare',
     notFound: 'Această firmă nu are încărcare în această zi.',
     financeTitle: 'Valori',
@@ -134,6 +146,15 @@ export default {
     noAway: 'Această firmă nu are comenzi în lada altei firme.',
     noIn: 'În lăzile acestei firme nu există comenzi ale altor firme.',
     noCrates: 'Pentru această firmă nu s-au introdus lăzi în această zi.',
+    // Detaliul comenzilor (decizia 215): rândurile ofertei fiecărei comenzi; la administrator vânzarea fabricii și oferta clientului în grupuri de coloane separate
+    detailTitle: 'Detaliu comenzi',
+    factoryGroup: 'Vânzare fabrică ({cur})',
+    offerGroup: 'Ofertă client ({cur})',
+    orderTotal: 'Total comandă',
+    factoryShort: 'Fabrică',
+    offerShort: 'Client',
+    notSent: 'Oferta nu a fost încă trimisă clientului: fără valoare pentru client.',
+    noLines: 'Această comandă nu are rânduri de ofertă.',
     cols: {
       order: 'Nr. comandă', project: 'Proiect', glass: 'Sticlă', cnc: 'CNC', holes: 'Găuri', m2: 'Total m²', factory: 'Vânzare fabrică', offer: 'Valoare ofertă',
       currency: 'Monedă', crate: 'Ladă', dims: 'Dimensiuni (mm)', net: 'Net (kg)', gross: 'Brut (kg)', contents: 'Conținut', owner: 'Proprietar comercial', host: 'Ladă fizică',
@@ -163,15 +184,18 @@ export default {
       crates: 'Lăzi',
     },
     // {crates}: „2 lăzi”
-    estimate: 'Estimare pentru planificare: brut = sticlă {netKg} kg + {crates} × {tare} kg tara (greutatea sticlei per client se împarte la maximum {max} kg pe ladă, cu rotunjire în sus).',
-    note: 'Dacă pentru un client s-au introdus lăzi, greutatea netă/brută și numărul de lăzi ale acelui client în acea zi provin din datele REALE și au prioritate față de estimare. Greutatea sticlei se calculează din kg/m² din catalog.',
+    estimate: 'Brut estimat: sticlă {netKg} kg + {crates} × {tare} kg tara (maximum {max} kg sticlă pe ladă).',
+    note: 'La firmele cu lăzi introduse, numărul de lăzi și greutățile provin din datele reale.',
+    // Calendarul de încărcări al clientului: textele anterioare (ecranul clientului nu se schimbă în acest pachet)
+    estimateCustomer: 'Estimare pentru planificare: brut = sticlă {netKg} kg + {crates} × {tare} kg tara (greutatea sticlei per client se împarte la maximum {max} kg pe ladă, cu rotunjire în sus).',
+    noteCustomer: 'Dacă pentru un client s-au introdus lăzi, greutatea netă/brută și numărul de lăzi ale acelui client în acea zi provin din datele REALE și au prioritate față de estimare. Greutatea sticlei se calculează din kg/m² din catalog.',
     crates: {
       title: 'Dimensiunile și greutățile lăzilor',
       toggle: 'Lăzi',
       label: 'Etichetă ladă',
       count: 'lăzi: {n}',
       updated: 'actualizat · {when} · {who}',
-      intro: 'Sursa listei trimise transportatorului. Lăzile introduse înlocuiesc numărul estimat de lăzi al acestui client. Numărul lăzii este unic în ziua respectivă.',
+      intro: 'Sursa listei de transport; numărul lăzii este unic în ziua respectivă.',
       covers: 'Aceste lăzi cuprind comenzile: {list}',
       cols: { no: 'Ladă', length: 'Lungime (mm)', width: 'Lățime (mm)', height: 'Înălțime (mm)', net: 'Greutate netă (kg)', gross: 'Greutate brută (kg)', note: 'Notă', orders: 'Comenzi', contents: 'Conținut' },
       add: '+ Adaugă ladă',

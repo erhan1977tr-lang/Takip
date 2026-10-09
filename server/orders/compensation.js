@@ -630,6 +630,15 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
           ? { type: 'COMPENSATION_PENDING', orderId: destOrder.id, createdById: actor.id, createdAt: now, details: alert }
           : { type: 'COMPENSATION_PRICE', orderId: src.id, createdById: actor.id, createdAt: now, details: alert },
       });
+      // Yöneticiye e-posta (Yönetici Paneli Paketi 1, karar 218): telafi camında müşteri fiyatı DEĞİŞTİ — farklı fiyat seçildi ya
+      // da bedelsiz açıldı (priceDecision → changed). Aynı fiyat korunduysa e-posta yok. Telafi başına bir olay (çift tıklama
+      // yukarıdaki istek anahtarıyla döner); işlemi yapan yöneticiye kendi işlemi e-postalanmaz. Olayda tutar yoktur.
+      if (decision.changed) {
+        await enqueueOutbox(tx, {
+          type: 'ORDER_COMPENSATION_PRICE', orderId: destOrder.id,
+          payload: { actorId: actor.id, compensationId: comp.id, mode: decision.mode, qty, sourceOrderNo: src.orderNo, pending: status === 'PENDING' || !direct },
+        });
+      }
       // Yöneticiye BİR bildirim (işlemden sonra; işlemi yapan yöneticiye kendi işlemi bildirilmez)
       notice = status === 'PENDING'
         ? { key: `comp-pending:${comp.id}`, type: 'COMPENSATION_PENDING', orderId: destOrder.id, qty, ref: src.orderNo, link: `/siparisler/${destOrder.id}#kararlar` }

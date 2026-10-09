@@ -399,7 +399,11 @@ async function offerEdit(h, intent) {
     // Satış tutarı geçmiş notuna yazılmaz (AUD-1): tutar denetim kaydında (h.audit.amount); geçmişi çizim ve denetimci de görür
     h.event('OFFER_SUBMITTED');
     // Liste fiyatından farklı fiyat → yöneticinin "Önemli kararlar" listesi
-    h.overrides = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines: saved, actor, now });
+    const ov = await recordPriceOverrides(tx, { orderId: order.id, offerId: offer.id, orderNo: order.orderNo, currency: offer.currency, lines: saved, actor, now });
+    h.overrides = ov.count;
+    // Satış fabrika fiyat tablosundaki fiyatı GERÇEKTEN değiştirdi (son kayıttan farklı fark) → yöneticiye e-posta (karar 218).
+    // Aynı fiyatların yeniden gönderimi yeni bildirim üretmez; olayda tutar yoktur.
+    if (ov.changed) h.outbox.push(outboxEvent('ORDER_PRICE_OVERRIDE', { orderId: order.id, payload: { actorId: actor.id ?? null, alertId: ov.alertId, qty: ov.count } }));
   } else if (intent === 'approve') {
     requireOfferPrices(saved);
     await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now, offerAmount } });

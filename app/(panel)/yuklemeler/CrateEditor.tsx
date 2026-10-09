@@ -82,8 +82,9 @@ export function CrateEditor(props: {
   const payload = JSON.stringify(rows.map(({ key: _k, guests: _g, origNo: _o, ...r }) => r));
   const many = props.orders.length > 1;
   // Sütun genişlikleri sınıftan gelir (app/globals.css → .crate-table .c-no / .c-dim / .c-kg)
+  // data-label: dar alanda (telefon, dar masaüstü) satır etiketli bir ızgara olur — başlık satırı gizlenir (app/globals.css)
   const cell = (r: Row, k: 'crateNo' | 'lengthMm' | 'widthMm' | 'heightMm' | 'netKg' | 'grossKg', label: string) => (
-    <td className={k === 'crateNo' ? 'c-no' : k === 'netKg' || k === 'grossKg' ? 'c-kg' : 'c-dim'}>
+    <td className={k === 'crateNo' ? 'c-no' : k === 'netKg' || k === 'grossKg' ? 'c-kg' : 'c-dim'} data-label={label}>
       <input value={r[k]} inputMode={k === 'netKg' || k === 'grossKg' ? 'decimal' : 'numeric'} aria-label={`${label} (${r.crateNo || '—'})`}
         readOnly={k === 'crateNo' && guestsOf(r).length > 0}
         onChange={(e) => set(r.key, { [k]: e.target.value.replace(k === 'netKg' || k === 'grossKg' ? /[^\d.,]/g : /\D/g, '') } as Partial<Row>)} />
@@ -124,9 +125,9 @@ export function CrateEditor(props: {
                   {cell(r, 'heightMm', m.cols.height)}
                   {cell(r, 'netKg', m.cols.net)}
                   {cell(r, 'grossKg', m.cols.gross)}
-                  <td className="c-note"><input value={r.note} maxLength={200} aria-label={`${m.cols.note} (${r.crateNo || '—'})`} onChange={(e) => set(r.key, { note: e.target.value })} /></td>
+                  <td className="c-note" data-label={m.cols.note}><input value={r.note} maxLength={200} aria-label={`${m.cols.note} (${r.crateNo || '—'})`} onChange={(e) => set(r.key, { note: e.target.value })} /></td>
                   {many && (
-                    <td className="crate-orders">
+                    <td className="crate-orders" data-label={m.cols.orders}>
                       {props.orders.map((o) => (
                         <label key={o.id} className="crate-pick small">
                           <input type="checkbox" checked={r.orderIds.includes(o.id)} aria-label={`${o.orderNo} (${r.crateNo || '—'})`}

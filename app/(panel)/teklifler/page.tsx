@@ -9,7 +9,7 @@ import { fmtDate, fmtMoney } from '@/lib/format';
 import { Badge, CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { CLOSED } from '@/server/orders/rules.js';
-import { salesOfferGroups } from '@/server/orders/queues.js';
+import { adminOfferGroups, salesOfferGroups } from '@/server/orders/queues.js';
 
 const include = {
   customer: { select: { name: true } },
@@ -97,10 +97,12 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
   const rows: Row[] = admin ? await db.order.findMany({ ...query, include }) : await db.order.findMany({ ...query, include: salesInclude });
   const orders = sanitizeRows(user, rows);
   const latest = (o: Row) => o.offers[0] as Row['offers'][number] | undefined;
-  // Yönetici: son teklifin durumuna göre üç grup. Satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu
-  // açılmamış siparişler" — yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez.
+  // Yönetici: son teklifin durumuna göre üç grup (server/orders/queues.js → adminOfferGroups). Satış (karar 155): yalnızca
+  // "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler" — yönetici onayındaki ve müşterideki teklifler satışın bu
+  // sayfasında listelenmez.
+  const byStatus = admin ? adminOfferGroups(orders) : [];
   const groups: { key: string; title: MsgKey; empty: MsgKey; rows: Row[] }[] = admin
-    ? GROUPS.map((g) => ({ key: g.status, title: g.title, empty: g.empty, rows: orders.filter((o) => latest(o)?.status === g.status) }))
+    ? GROUPS.map((g) => ({ key: g.status, title: g.title, empty: g.empty, rows: byStatus.find((x) => x.key === g.status)?.rows ?? [] }))
     : salesOfferGroups(orders).map((g) => ({ key: g.key, title: `offers.groups.${g.key}.title` as MsgKey, empty: `offers.groups.${g.key}.empty` as MsgKey, rows: g.rows }));
   return (
     <>

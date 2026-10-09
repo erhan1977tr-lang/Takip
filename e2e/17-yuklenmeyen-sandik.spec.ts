@@ -375,11 +375,8 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   expect(s.lines.find((r) => r[0] === 'UNS7701')![1]).toBe(mask(uns.name));
   for (const x of [uns.name, beta.name]) expect(JSON.stringify([s.firms, s.lines]), `satış Excel'inde tam ad yok: ${x}`).not.toContain(x);
   expect(s.firms.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı')), 'satış Excel\'inde teklif tutarı yok').toBe(false);
-  const sx = await firmXlsx(salesPage, uns.id);
-  expect(sx.rows.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı')), 'satışın firma çıktısında tutar yok').toBe(false);
-  expect(sx.rows.flat(), 'ne teklif ne fabrika satış tutarı').not.toContain(500);
-  expect(sx.rows.flat()).not.toContain(370);
-  expect(JSON.stringify(sx.rows)).not.toContain(uns.name);
+  // Firma PDF / Excel satışa kapalı (Yönetici Paneli Paketi 1, karar 215): satış firma satırında yalnızca "Sandık"ı görür
+  for (const f of ['pdf', 'xlsx']) expect((await salesPage.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=${f}`)).status(), `satış: ${f}`).toBe(403);
   await salesPage.context().close();
 
   // Sipariş sahibi müşteri: kendi siparişi için yalnızca sandık numarası; ev sahibinin adı, siparişi, sandık ölçüsü yok

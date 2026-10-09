@@ -28,6 +28,8 @@ export default {
     GUEST_CRATE_HOSTED: { title: 'Încărcătură suplimentară în lada dvs.', customer: 'Încărcătură suplimentară în lada dvs.' },
     GUEST_CRATE_UNHOSTED: { title: 'Încărcătura suplimentară a fost scoasă din lada dvs.', customer: 'Încărcătura suplimentară a fost scoasă din lada dvs.' },
     INVOICE_OVERDUE: { title: 'Factură în așteptare: sticla încărcată nu a fost facturată' },
+    // Vânzările au modificat prețul fabricii (decizia 218) — către administrator; fără sume
+    ORDER_PRICE_OVERRIDE: { title: 'Vânzările au modificat prețul fabricii' },
     ACCOUNTING_ACTION: { title: 'Acțiune contabilă necesară: factura nu corespunde încărcării corectate' },
     FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
     FGO_UNCERTAIN: { title: 'Rezultatul documentului FGO este incert: verificați în FGO și decideți' },
@@ -63,6 +65,8 @@ export default {
     FGO_FAILED: '{error}',
     FGO_UNCERTAIN: 'Identificator FGO (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
+    // {qty}: numărul de rânduri cu preț diferit de tabelul fabricii
+    ORDER_PRICE_OVERRIDE: '{qty} rânduri diferite · detalii în Decizii importante',
     COMPENSATION_PENDING: '{qty} buc. · sursa {ref}',
     COMPENSATION_FREE: '{qty} buc. · sursa {ref}',
     COMPENSATION_SAME: '{qty} buc. · sursa {ref}',

@@ -144,8 +144,19 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   assert.deepEqual([INAPP_RULES.ACCOUNTING_ACTION.to(glass), INAPP_RULES.ACCOUNTING_ACTION.includeActor], [['accounting'], true]);
   // supplier: tedarik ve satın alma (Paket 6, karar 181–183) — yalnızca SUPPLIER_MANAGE (yönetici)
   assert.deepEqual(AUDIENCE_ROLES, { admin: ['ADMIN'], sales: ['SATIS'], accounting: ['ADMIN'], loading: ['ADMIN'], supplier: ['ADMIN'] });
-  // E-posta giden her olayın uygulama içi karşılığı var (kanal ayrı; kural tablosu e-postayı değiştirmez)
-  for (const t of Object.keys(NOTIFY_RULES)) assert.ok(INAPP_TYPES.includes(t), t);
+  // E-posta giden her olayın uygulama içi karşılığı var (kanal ayrı; kural tablosu e-postayı değiştirmez). Telafi fiyatı
+  // (karar 218): uygulama içi karşılığı telafi başına TEK bildirimdir (COMPENSATION_* — server/orders/compensation.js →
+  // notifyAdmins, karar 157); kuyruk olayından ikinci bir zil satırı yazılmaz
+  const ownInApp = ['ORDER_COMPENSATION_PRICE'];
+  for (const t of Object.keys(NOTIFY_RULES)) assert.ok(INAPP_TYPES.includes(t) || ownInApp.includes(t), t);
+  assert.equal(INAPP_RULES.ORDER_COMPENSATION_PRICE, undefined, 'telafi başına ikinci zil bildirimi yok');
+  // Yöneticinin e-postaları (karar 218): yeni sipariş (cam: satış + yönetici), fabrika fiyatı değişikliği, geri alma, telafi fiyatı
+  assert.deepEqual(NOTIFY_RULES.ORDER_CREATED(glass), ['sales', 'admin']);
+  assert.deepEqual(NOTIFY_RULES.ORDER_CREATED(profile), ['admin']);
+  for (const t of ['ORDER_PRICE_OVERRIDE', 'ORDER_OFFER_WITHDRAWN', 'ORDER_COMPENSATION_PRICE']) assert.deepEqual(NOTIFY_RULES[t](glass), ['admin'], t);
+  // Geri alma: yöneticinin zili güncel — aynı siparişin okunmamış "yöneticiye gönderildi" bildirimi okunmuş sayılır
+  assert.deepEqual([INAPP_RULES.ORDER_OFFER_WITHDRAWN.to(glass), INAPP_RULES.ORDER_OFFER_WITHDRAWN.supersedes], [['admin'], ['ORDER_OFFER_SUBMITTED']]);
+  assert.deepEqual(INAPP_RULES.ORDER_PRICE_OVERRIDE.to(glass), ['admin']);
 });
 
 test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişinin müşteri olayları gider — iç olaylar (teklifin yöneticiye gitmesi, revizyon / onayın çizimciye gitmesi, muhasebe, yükleme) müşteri alıcı kümesinde yok; bağlantı ilgili bölüme iner', () => {

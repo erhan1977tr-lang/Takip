@@ -4,6 +4,31 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.63.0 — 09.10.2026
+
+Yönetici paneli düzeltme paketi 1 (kararlar 215–218). Veritabanı şeması değişmedi.
+
+- **Yükleme sayfası:** üst açıklamalar kısaldı, firma tablosu sıkılaştı (kısa başlıklar, tam adı üzerine gelince). Firma
+  satırında yönetici "PDF | Excel | Özet | Sandık", satış yalnızca "Sandık" görür; firma PDF / Excel / Özet adresleri satışa
+  sunucuda da kapalıdır (satışın nakliye listesi ve günün Yükleme Özeti değişmedi). Masaüstünde yatay kaydırma yok: tablo
+  alanına sığmazsa her firma etiketli bir kart olur; geniş ekranda dört işlem tek satırda; telefonda (390 px) taşma yok.
+- **Firma PDF / Excel:** her siparişin teklif satırları ("Tekliflerim" ayrıntısında: açıklama, poz, ölçü, adet, m², birim
+  fiyat, tutar, ara toplam); sandık parası ayrı kalem; yalnızca müşteri teklif tutarı (fabrika tutarı yok), farklı para
+  birimleri ayrı toplanır. Excel'de ikinci sayfa ayrıntı; PDF ile aynı veri. Logo, düzen ve dosya adları aynı.
+- **Özet:** yöneticide fabrika satış ve müşteri teklifi para birimi başına ayrı kutularda, sipariş tablosunda ve her
+  siparişin satırlarında ayrı sütun gruplarında; adet, m², CNC, delik, sandık ve ağırlıklar aynı hesaptan.
+- **Sandık:** yönetici ve satış mevcut yetkiyle düzenler; kaydedince firma satırı ve Özet güncellenir; misafir yükün sandığı
+  ve ağırlığı yine bir kez sayılır. Dar ekranda sandık formu da etiketli ızgaradır.
+- **Profil Siparişleri:** yöneticinin menüsünde profil sipariş listesi, katalog, hesaplama ayarı, profil fiyatları ve stok
+  tek bölümde; bölüm adının yanında fiyatını bekleyen yeni profil siparişlerinin sayısı (kırmızı yuvarlak, sunucuda sayılır).
+- **Yöneticinin "Sıra bende"si:** yalnızca Yeni siparişler, Teklif hazırlanacaklar, SLA riski / gecikenler ve Profil — fiyat
+  bekleyenler. Fiyat onayı bekleyen teklifler Teklifler sayfasında, çizim tabloları Çizim Paneli'nde. Satışın ekranı aynı.
+- **Yöneticinin e-postaları:** yeni müşteri siparişi (cam ve profil), satışın fabrika fiyatını gerçekten değiştirmesi (aynı
+  fiyatı yeniden göndermek e-posta üretmez), satışın teklifi geri alması (yöneticinin zilindeki eski "teklif gönderildi"
+  bildirimi de okunmuş sayılır), telafi camında farklı fiyat / bedelsiz kararı ve müşterinin profil teklifini onaylaması.
+  Şifre sıfırlamada yöneticiye e-posta yok. Olay başına bir e-posta; yeniden denemede tekrar gitmez; işlemi yapan yöneticiye
+  kendi işlemi gitmez; tutar yazılmaz. Diğer rollerin, mali belgelerin ve kritik bildirimlerin e-postaları değişmedi.
+
 ## 3.62.1 — 09.10.2026
 
 Satış paneli düzeltme paketi 1 — ek gereksinimler (karar 214). Veritabanı şeması değişmedi; yetkiler ve görünürlük aynı.

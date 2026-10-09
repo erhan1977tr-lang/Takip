@@ -27,6 +27,8 @@ export default {
   tabs: {
     active: 'Active',
     work: 'Sarcinile mele',
+    // Tabelele de profile ale administratorului (decizia 216)
+    profile: 'Comenzi de profile',
     all: 'Toate comenzile active',
     archive: 'Încărcate și arhivă',
   },
@@ -65,6 +67,7 @@ export default {
       admin: 'Comenzi',
       sales: 'Panou vânzări',
       inspector: 'Toate comenzile (inspecție)',
+      profile: 'Comenzi de profile',
     },
     searchPlaceholder: 'Caută nr. comandă / titlu',
     sortNewest: 'Cele mai noi',

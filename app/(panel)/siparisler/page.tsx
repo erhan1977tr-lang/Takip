@@ -14,7 +14,7 @@ import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/co
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { STOCK_SHORTAGE_ALERT } from '@/server/profile/stock.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
-import { approvedDrawingList, dwgDrawingGroups, latestOfferStatus, queuesFor } from '@/server/orders/queues.js';
+import { approvedDrawingList, dwgDrawingGroups, latestOfferStatus, profileQueues, queuesFor } from '@/server/orders/queues.js';
 import { dwgReview, isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
 import { DwgDecision } from './[id]/DwgDecision';
 import { deleteDraftAction } from './yeni/actions';
@@ -415,12 +415,17 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   // "DXF/DWG olarak gelen çizimler" (karar 167): yalnızca çizim yetkisinde (çizim ekibi; yönetici Çizim Paneli'nden).
   // Yetkisiz rolde parametre yok sayılır — kararların kendisi zaten sunucu işlemlerinde denetlenir.
   const canDwg = userCan(user, 'DRAWING_WORK');
-  const view = sp.view === 'dwg' && !canDwg ? (hasTurn ? 'work' : 'all') : sp.view ?? (hasTurn ? 'work' : 'all');
   // Çizim Paneli, çizim ekibinin bu sayfasıdır. Çizim yetkisi (DRAWING_WORK) olan ama kendi paneli başka olan kullanıcı
   // (yönetici) soldaki "Çizim Ekibi → Çizim Paneli" ile aynı paneli açar (?panel=cizim): aynı kapsam, aynı kuyruklar,
   // ekibin tamamı için. Yetkisi olmayan rollerde (satış, denetimci, müşteri) parametre yok sayılır. Satırlar yine
   // bakan kullanıcıya göre temizlenir: yönetici tam firma adını, çizim ekibi maskeli adı görür.
   const teamPanel = sp.panel === DRAWING_PANEL && userCan(user, 'DRAWING_WORK') && userCan(user, 'ORDER_REVIEW');
+  // "Profil Siparişleri" bölümü (Yönetici Paneli Paketi 1, karar 216): profil tabloları (?view=profil) yalnızca profil
+  // fiyatını veren rolde (OFFER_SEND — yönetici); satış ve çizim profil siparişlerini zaten hiç görmez (orderScope)
+  const canProfile = userCan(user, 'OFFER_SEND') && !teamPanel;
+  const fallback = hasTurn ? 'work' : 'all';
+  const view = (sp.view === 'dwg' && !canDwg) || (sp.view === 'profil' && !canProfile) ? fallback : sp.view ?? fallback;
+  const profileView = view === 'profil';
   /** Bu sayfanın bağlantıları: yöneticinin Çizim Paneli'nde panel parametresi korunur */
   const here = (params: Record<string, string | undefined> = {}, hash = '') => {
     const p = new URLSearchParams();
@@ -429,7 +434,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     const qs = p.toString();
     return `/siparisler${qs ? `?${qs}` : ''}${hash}`;
   };
-  const rows = sanitizeRows(user, await db.order.findMany({
+  const rows: Row[] = profileView ? [] : sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       ...(teamPanel ? drawingScope : {}),
@@ -440,11 +445,18 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     orderBy: [{ estimatedShipDate: view === 'archive' ? 'desc' : 'asc' }, { createdAt: 'asc' }],
     take: 300,
   }));
+  // Profil tabloları (yönetici): ayrı sorgu — bölüm sayacıyla aynı kapsam (orderScope), cam satırlarının 300 sınırından bağımsız
+  const profileRows: Row[] = canProfile && (view === 'work' || profileView) ? sanitizeRows(user, await db.order.findMany({
+    where: { ...orderScope(user), ...searchWhere(sp.q), orderTypeCode: 'PROFILE_ORDER', status: { notIn: CLOSED as OrderStatus[] } },
+    include: listInclude,
+    orderBy: [{ createdAt: 'asc' }],
+    take: 300,
+  })) : [];
 
   const role = user.appRole;
   const queues = teamPanel
     ? queuesFor(rows, { review: false, send: false, drawing: true, allDrawers: true })
-    : queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK'), userId: user.id });
+    : queuesFor(rows, { review: userCan(user, 'ORDER_REVIEW'), send: userCan(user, 'OFFER_SEND'), drawing: userCan(user, 'DRAWING_WORK'), userId: user.id }, Date.now(), canProfile ? profileRows : undefined);
   // Yöneticiye: karantinada virüslü dosya varsa uyarı (ayrıntı Entegrasyonlar sayfasında)
   // Yöneticiye: bekleyen önemli kararlar (ör. satışçı liste fiyatını değiştirdi) — girişte ilk bu görünür
   // (Çizim Paneli'nde gösterilmez: o panel çizim ekibinin gördüğüyle aynıdır)
@@ -456,7 +468,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   return (
     <>
       <div className="page-head">
-        <h1>{role === 'CIZIM' || teamPanel ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
+        <h1>{profileView ? t('orders.internal.titles.profile') : role === 'CIZIM' || teamPanel ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
       {alerts > 0 && (
         <div className="alert alert-warn">
@@ -470,6 +482,8 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       )}
       <div className="tabs">
         {hasTurn && <Link href={here()} className={view === 'work' ? 'active' : ''}>{t('orders.tabs.work')}</Link>}
+        {/* Profil siparişleri (karar 216): yöneticinin profil tabloları — soldaki "Profil Siparişleri" bölümüyle aynı sayfa */}
+        {canProfile && <Link href={here({ view: 'profil' })} className={profileView ? 'active' : ''} data-tab="profil">{t('orders.tabs.profile')}</Link>}
         {/* Çizim ekibinin panelinde (çizimci; yönetici Çizim Paneli'nde) DXF/DWG listesi de bir sekmedir */}
         {canDwg && (teamPanel || !userCan(user, 'ORDER_REVIEW')) && <Link href={here({ view: 'dwg' })} className={view === 'dwg' ? 'active' : ''}>{t('orders.internal.dwg.title')}</Link>}
         <Link href={here({ view: hasTurn ? 'all' : undefined })} className={view === 'all' ? 'active' : ''}>{t('orders.tabs.all')}</Link>
@@ -536,7 +550,14 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
         </>
       )}
       {view === 'dwg' && <DwgDrawings user={user} rows={rows} />}
-      {view !== 'work' && view !== 'dwg' && (
+      {/* Profil siparişleri (karar 216): adım adım profil tabloları; ilki ("fiyat bekleyenler") bölüm sayacıyla aynı kural */}
+      {profileView && profileQueues(profileRows).map((q) => (
+        <Section key={q.key} id={`profil-${q.key}`} title={t(`orders.internal.sections.${q.key}.title` as MsgKey)} count={q.rows.length}
+          tone={q.key === 'profilePricing' && q.rows.length ? 'badge-danger' : undefined}>
+          <InternalTable user={user} rows={q.rows} empty={t(`orders.internal.sections.${q.key}.empty` as MsgKey)} group={false} />
+        </Section>
+      ))}
+      {view !== 'work' && view !== 'dwg' && !profileView && (
         <Section title={view === 'archive' ? t('orders.internal.sections.archive') : t('orders.internal.sections.active')} count={rows.length}>
           <InternalTable user={user} rows={rows} empty={t('orders.internal.sections.none')} />
         </Section>

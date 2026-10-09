@@ -19,9 +19,17 @@ import { customerMailLang, snapshotLang } from './lang.js';
  * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
  * orderSales: siparişle ilgilenen satışçı (order.salesUsers — bkz. orderSalesUsers).
  * Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84).
+ * Yöneticinin e-postaları (Yönetici Paneli Paketi 1, karar 218) yalnızca şu olaylarda: müşterinin yeni siparişi (cam ve
+ * profil), satışın fabrika fiyatını gerçekten değiştirmesi (ORDER_PRICE_OVERRIDE — aynı fiyatın yeniden gönderimi olay
+ * yazmaz), satışın yöneticiye gönderdiği teklifi geri alması, telafi camında müşteri fiyatının değişmesi (farklı fiyat /
+ * bedelsiz — aynı fiyat olay yazmaz) ve müşterinin profil teklifini onaylaması. Şifre sıfırlamayı yönetici başlatır ve kod
+ * kullanıcıya kendiliğinden gider: yöneticiye e-posta yok. Rutin yönetici e-postası yoktur.
  */
 export const NOTIFY_RULES = {
-  ORDER_CREATED: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales']),
+  ORDER_CREATED: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales', 'admin']),
+  ORDER_PRICE_OVERRIDE: () => ['admin'],
+  ORDER_OFFER_WITHDRAWN: () => ['admin'],
+  ORDER_COMPENSATION_PRICE: () => ['admin'],
   ORDER_SENT_TO_DRAWING: () => ['drawer'],
   ORDER_REVISION_REQUESTED: () => ['drawer', 'orderSales'],
   ORDER_DRAWING_APPROVED: () => ['drawer', 'orderSales'],
@@ -62,9 +70,11 @@ const loc = (l) => (l === 'tr' ? 'tr' : 'ro');
 /**
  * Olayın alıcıları: [{ email, locale, role }] (e-postaya göre tekil). role: firma adı maskesi için (müşteride null).
  * lang: olay yazılırken belirlenen müşteri e-posta dili (payload.lang — karar 200); yoksa (eski olay) bugünkü kural.
- * @param {any} db @param {string} type @param {any} order @param {{ lang?: 'ro' | 'tr' | null }} [o]
+ * actorId: işlemi yapan — yönetici kümesinde kendisine kendi işlemi e-postalanmaz; yönetici kümesi yalnızca etkin
+ * hesaplardır (karar 218; uygulama içi bildirimle aynı kural).
+ * @param {any} db @param {string} type @param {any} order @param {{ lang?: 'ro' | 'tr' | null, actorId?: string | null }} [o]
  */
-export async function recipientsFor(db, type, order, { lang: snapshot = null } = {}) {
+export async function recipientsFor(db, type, order, { lang: snapshot = null, actorId = null } = {}) {
   const audiences = NOTIFY_RULES[type]?.(order) ?? [];
   const out = new Map();
   const add = (email, locale, role) => {
@@ -90,6 +100,9 @@ export async function recipientsFor(db, type, order, { lang: snapshot = null } =
       const known = (order.salesUsers ?? []).filter((u) => ROLE_SETS.sales.includes(u.appRole));
       const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales } }, select: { email: true, language: true, appRole: true } });
       for (const u of users) add(u.email, u.language, u.appRole);
+    } else if (a === 'admin') {
+      const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS.admin }, isActive: true }, select: { id: true, email: true, language: true, appRole: true } });
+      for (const u of users) if (!actorId || u.id !== actorId) add(u.email, u.language, u.appRole);
     } else {
       const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS[a] ?? [] } }, select: { email: true, language: true, appRole: true } });
       for (const u of users) add(u.email, u.language, u.appRole);
@@ -141,8 +154,9 @@ const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, da
 export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null, payload = null }) {
   const t = (k, params) => translate(recipient.locale, k, params);
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
+  const admin = adminText(type, payload, t);
   const what = recipient.role
-    ? (type === 'ORDER_CREATED' ? t('notify.newOrder') : t(`events.${event}.label`))
+    ? (type === 'ORDER_CREATED' ? t('notify.newOrder') : admin?.what ?? t(`events.${event}.label`))
     : t(`events.${event}.customer`);
   const firm = recipient.role && !can(recipient.role, 'CUSTOMER_NAME_VIEW') ? maskName(order.customer?.name) : order.customer?.name ?? '';
   const link = `${appUrl}/siparisler/${order.id}`;
@@ -156,6 +170,8 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
     ...(DELIVERY_DAY_TYPES.includes(type) && isDay(payload?.day) ? [[t('notify.deliveryDay'), dmyOf(payload.day)]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.version ? [[t('notify.drawingVersion'), `v${revision.version}`]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.note ? [[t('notify.revisionNote'), String(revision.note).slice(0, 2000)]] : []),
+    // Yöneticinin e-postalarında olayın açıklaması (tutar yazılmaz — ayrıntı sipariş sayfasında ve "Önemli kararlar"da)
+    ...(recipient.role && admin?.detail ? [[t('notify.description'), admin.detail]] : []),
   ];
   const subject = `${order.orderNo} — ${what}`;
   const extra = DELIVERY_DAY_TYPES.includes(type) ? t('notify.deliveryNote') : null;
@@ -167,6 +183,24 @@ ${extra ? `<p style="color:#6b7280;margin:12px 0 0">${esc(extra)}</p>` : ''}
 <p style="margin-top:16px"><a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">${esc(t('notify.open'))}</a></p>
 <p style="color:#6b7280;font-size:12px;margin-bottom:0">${esc(t('notify.footer'))}</p>` });
   return { subject, text, html };
+}
+
+/**
+ * Yöneticiye giden olayların başlığı ve açıklaması (karar 218). Değerler olayın kuyruk verisinden; tutar hiç yazılmaz.
+ * @param {string} type @param {any} payload @param {(k: string, p?: object) => string} t
+ * @returns {{ what: string | null, detail: string } | null}
+ */
+function adminText(type, payload, t) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const n = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  if (type === 'ORDER_PRICE_OVERRIDE') return { what: t('notify.admin.priceOverride'), detail: t('notify.admin.priceOverrideDetail', { n: n(p.qty) ?? 1 }) };
+  if (type === 'ORDER_OFFER_WITHDRAWN') return { what: null, detail: t('notify.admin.withdrawnDetail') };
+  if (type === 'ORDER_COMPENSATION_PRICE') {
+    const mode = p.mode === 'FREE' ? 'free' : 'custom';
+    const detail = t('notify.admin.compensationDetail', { qty: n(p.qty) ?? 1, source: String(p.sourceOrderNo ?? '—').slice(0, 40) });
+    return { what: t(`notify.admin.compensation.${mode}`), detail: p.pending ? `${detail} ${t('notify.admin.compensationPending')}` : detail };
+  }
+  return null;
 }
 
 /**
@@ -216,7 +250,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       const audiences = order ? NOTIFY_RULES[row.type]?.(order) ?? [] : [];
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
-      const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload) }) : [];
+      const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null }) : [];
       if (!order || recipients.length === 0) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: order ? 'alıcı yok' : 'sipariş yok' } });
         skipped++;

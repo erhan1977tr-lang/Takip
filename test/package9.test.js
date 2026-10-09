@@ -52,7 +52,8 @@ test('e-posta dili olay yazılırken saklanır: e-posta giden sipariş olayına 
   assert.ok(Object.keys(NOTIFY_RULES).every((t) => t.startsWith('ORDER_')), 'e-posta kuralı yalnızca sipariş olaylarında');
   // Gönderim tarafı olaydaki dili kullanır (eski olayda kural gönderim anında)
   const email = strip(read('server/notifications/email.js'));
-  assert.ok(email.includes('recipientsFor(db, row.type, order, { lang: snapshotLang(payload) })'));
+  // (karar 218: aynı çağrı işlemi yapanı da verir — yöneticiye kendi işlemi e-postalanmaz)
+  assert.ok(email.includes("recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null })"));
   assert.ok(email.includes('const lang = snapshot ?? customerMailLang(creator);'));
 });
 

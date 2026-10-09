@@ -4,6 +4,7 @@
 // Beklemedeki siparişler iş kuyruklarında değil, ayrı "Beklemede" bölümünde görünür.
 import { offerNeedsCheck } from './rules.js';
 import { dwgReview, lastProductionDrawing } from './dwg-review.js';
+import { orderScope } from './scope.js';
 
 export const SLA_RISK_HOURS = 6;
 /**
@@ -11,6 +12,35 @@ export const SLA_RISK_HOURS = 6;
  * Teklif işleri Teklifler sayfasındadır (salesOfferGroups); öteki siparişler "Tüm aktif siparişler" sekmesinde durur.
  */
 export const SALES_QUEUES = ['newOrders', 'sla'];
+/**
+ * Yöneticinin "Sıra bende" bölümleri (Yönetici Paneli Paketi 1, karar 217): yalnızca dört tablo, bu sırayla — yeni siparişler,
+ * teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler. Öteki tablolar YALNIZCA bu ekrandan kalkar:
+ * fiyat onayı bekleyen teklifler Teklifler sayfasında, çizim tabloları Çizim Paneli'nde, profilin öteki adımları "Profil
+ * Siparişleri" bölümünde (profileQueues), beklemedekiler "Tüm aktif siparişler"de. Bir sipariş birden çok tabloda olabilir
+ * (ör. yeni ve SLA riskli). Satışın ve çizim ekibinin bölümleri değişmez.
+ */
+export const ADMIN_QUEUES = ['newOrders', 'offersToPrepare', 'sla', 'profilePricing'];
+/**
+ * Yeni profil siparişi (karar 216): müşteri gönderdi, yöneticinin fiyatını bekliyor (FIYAT_BEKLIYOR). Kapanmış (iptal,
+ * arşiv / faturalandı) sipariş sayılmaz. "Profil Siparişleri" bölümünün sayacı (newProfileWhere — sunucuda, kullanıcının
+ * kapsamında sayılır) ve "Profil — fiyat bekleyenler" tablosu (profileQueues) bu tek kuraldan.
+ */
+export const PROFILE_NEW_STAGE = 'FIYAT_BEKLIYOR';
+const PROFILE_CLOSED = ['IPTAL', 'ARSIVLENDI'];
+/** @param {{ orderTypeCode: string, status: string, profile?: { stage: string } | null }} o */
+export const isNewProfileOrder = (o) => o.orderTypeCode === 'PROFILE_ORDER' && !PROFILE_CLOSED.includes(o.status) && o.profile?.stage === PROFILE_NEW_STAGE;
+/** isNewProfileOrder'ın sorgu koşulu (Prisma where; çağıran kullanıcının kapsamını — orderScope — ekler) */
+export const newProfileWhere = () => ({ orderTypeCode: 'PROFILE_ORDER', status: { notIn: [...PROFILE_CLOSED] }, profile: { is: { stage: PROFILE_NEW_STAGE } } });
+/**
+ * "Profil Siparişleri" bölüm sayacı (karar 216): kullanıcının kapsamındaki (orderScope — silinmiş sipariş hiç sayılmaz) yeni
+ * profil siparişleri, sunucuda. Çağıran yalnızca bölümü gören rolde sayar (panel düzeni — lib/roles.ts → NavCount).
+ * @param {any} db  Prisma istemcisi
+ * @param {{ appRole: string, customerId?: string | null }} user
+ * @returns {Promise<number>}
+ */
+export function newProfileCount(db, user) {
+  return db.order.count({ where: { ...orderScope(user), ...newProfileWhere() } });
+}
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
 /** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null,
@@ -63,10 +93,11 @@ export function dwgDrawingGroups(rows, now = Date.now()) {
  *   allDrawers: çizim ekibinin panelini ekibin tamamı için gören (yönetici — "Çizim Paneli"): yapılacak çizimler kime
  *   atanmış olursa olsun listelenir; kişiye özel "Benim çizimlerim" bölümü olmaz
  * @param {number} [now]
+ * @param {R[]} [profiles]  profil tablolarının satırları (yönetici; ayrı sorgudan — sayaçla aynı kapsam). Yoksa rows.
  * @returns {{ key: string, rows: R[] }[]}
  */
-export function queuesFor(rows, can, now = Date.now()) {
-  const out = buildQueues(rows, can, now);
+export function queuesFor(rows, can, now = Date.now(), profiles) {
+  const out = buildQueues(rows, can, now, profiles ?? rows);
   // Her kuyrukta süresi geçenler en üstte, sonra son tarihi en yakın olanlar (SLA'sız olanlar sonda)
   return out.map((q) => ({ ...q, rows: bySla(q.rows, now) }));
 }
@@ -81,7 +112,7 @@ export function bySla(rows, now = Date.now()) {
   });
 }
 
-function buildQueues(rows, can, now) {
+function buildQueues(rows, can, now, profiles) {
   const glass = rows.filter((o) => o.orderTypeCode === 'GLASS_ORDER');
   const active = glass.filter((o) => !o.onHold);
   const prep = active.filter((o) => o.status === 'HAZIRLANIYOR');
@@ -117,9 +148,11 @@ function buildQueues(rows, can, now) {
   out.push({ key: 'sla', rows: active.filter((o) => o.slaDeadline && o.slaDeadline.getTime() - now < SLA_RISK_HOURS * 3_600_000) });
   const held = glass.filter((o) => o.onHold);
   if (held.length) out.push({ key: 'held', rows: held });
-  if (can.send) out.push(...profileQueues(rows));
-  // Satış (satış kararı yetkisi var, fiyat onayı yetkisi yok): yalnızca SALES_QUEUES. Yönetici ve çizim ekibi etkilenmez.
+  if (can.send) out.push(...profileQueues(profiles));
+  // Satış (satış kararı yetkisi var, fiyat onayı yetkisi yok): yalnızca SALES_QUEUES. Çizim ekibi etkilenmez.
   if (can.review && !can.send) return out.filter((q) => SALES_QUEUES.includes(q.key));
+  // Yönetici (fiyat onayı yetkisi): yalnızca ADMIN_QUEUES, o sırayla (karar 217)
+  if (can.send) return ADMIN_QUEUES.map((k) => out.find((q) => q.key === k)).filter((q) => q != null);
   return out;
 }
 
@@ -143,6 +176,18 @@ export function salesOfferGroups(rows) {
 }
 
 /**
+ * Yöneticinin Teklifler sayfası: son teklifin durumuna göre üç grup — satışta (HAZIRLANIYOR), yöneticinin fiyatını bekleyen
+ * (YONETIMDE — yöneticinin bekleyen kuyruğu; satış geri alınca teklif hemen satışa döner, karar 212) ve müşteride
+ * (GONDERILDI). Çağıranın sorgusu kapanmış ve kararı geri alınmış (YENI) siparişleri zaten eler.
+ * @template {{ offers: { status: string }[] }} R
+ * @param {R[]} rows
+ * @returns {{ key: 'HAZIRLANIYOR' | 'YONETIMDE' | 'GONDERILDI', rows: R[] }[]}
+ */
+export function adminOfferGroups(rows) {
+  return /** @type {const} */ (['HAZIRLANIYOR', 'YONETIMDE', 'GONDERILDI']).map((key) => ({ key, rows: rows.filter((o) => latestOfferStatus(o) === key) }));
+}
+
+/**
  * "Müşteriden onaylı çizimler" listesi (eski adı "Müşteri tarafından onaylanmış çizimler"): yükleme gününe göre süzülür (day: YYYY-AA-GG; boş = hepsi),
  * yükleme gününe göre gruplanır, grup içinde onay zamanına göre en yeni (varsayılan) ya da en eski üstte.
  * @template {{ estimatedShipDate: Date | null, drawingSince?: Date | null }} R
@@ -162,7 +207,8 @@ export function approvedDrawingList(rows, { day = null, oldest = false, dayOf })
 }
 
 /**
- * Profil siparişi kuyrukları (yalnızca yönetici): adım adım. İptal/arşiv zaten listede yoktur.
+ * Profil siparişi kuyrukları (yalnızca yönetici): adım adım — "Profil Siparişleri" bölümünün tabloları (karar 216); ilki
+ * ("fiyat bekleyenler") yöneticinin "Sıra bende"sinde de durur. İptal/arşiv zaten listede yoktur.
  * @template {{ orderTypeCode: string, status: string, profile?: { stage: string } | null }} R
  * @param {R[]} rows
  */
@@ -170,7 +216,8 @@ export function profileQueues(rows) {
   const prof = rows.filter((o) => o.orderTypeCode === 'PROFILE_ORDER' && o.status !== 'IPTAL' && o.profile);
   const at = (...stages) => prof.filter((o) => stages.includes(o.profile.stage));
   return [
-    { key: 'profilePricing', rows: at('FIYAT_BEKLIYOR') },
+    // Sayaçla aynı kural (isNewProfileOrder): yeni profil siparişi = yöneticinin fiyatını bekleyen
+    { key: 'profilePricing', rows: rows.filter(isNewProfileOrder) },
     { key: 'profileUnapproved', rows: at('TEKLIF_GONDERILDI') },
     { key: 'profilePayment', rows: at('ONAYLANDI', 'PROFORMA') },
     { key: 'profilePickup', rows: at('DEPODA') },

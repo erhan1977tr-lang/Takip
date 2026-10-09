@@ -37,6 +37,21 @@ const num = (v) => {
 };
 
 /**
+ * Yükleme hesabının kullandığı teklif — TEK kural (yükleme ekranı: lib/loading.ts → loadOf; firma PDF / Excel / Özet
+ * ayrıntısı: server/loading/firm-export.js → orderDetail): müşteri görünümünde yalnızca müşteriye gönderilmiş son teklif;
+ * iç ekip için gönderilmiş son teklif, yoksa son taslak. Teklifler en yeniden eskiye sıralı gelir.
+ * @template {{ status: string }} O
+ * @param {O[] | null | undefined} offers
+ * @param {boolean} customerView
+ * @returns {O | null}
+ */
+export function loadedOffer(offers, customerView) {
+  const list = offers ?? [];
+  const sent = list.find((x) => x.status === 'GONDERILDI') ?? null;
+  return customerView ? sent : sent ?? list[0] ?? null;
+}
+
+/**
  * Bir siparişin yükü.
  * @param {{
  *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null, pieceBase?: number|null}[],

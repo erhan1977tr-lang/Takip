@@ -2,7 +2,7 @@
 export default {
   title: 'Yüklemeler',
   titleCustomer: 'Yükleme takvimim',
-  intro: 'Yükleme gününe göre gruplanmış işler. Beklemeye alınanlar bu listede görünmez.',
+  intro: 'Yükleme gününe göre işler; beklemedekiler görünmez.',
   introCustomer: 'Siparişlerinizin hangi gün yükleneceği. Bir güne tıklayınca o günün siparişleri açılır.',
   // "Yükleme Özeti" Excel'i (Paket 7): 1. sayfa firma bazlı özet + fiziksel sandık ilişkisi, 2. sayfa satır dökümü
   summary: {
@@ -87,6 +87,11 @@ export default {
       firm: 'Firma', orders: 'Sipariş adedi', glass: 'Cam adedi', cnc: 'CNC adedi', holes: 'Delik adedi', m2: 'Toplam m²',
       net: 'Net ağırlık (kg)', crates: 'Sandık adedi', gross: 'Brüt ağırlık (kg)', factory: 'Fabrika satış tutarı', offer: 'Teklif tutarı', actions: 'İşlemler',
     },
+    // Kısa sütun başlıkları (Yönetici Paneli Paketi 1, karar 215): ekranda kısa ad, tam adı ipucunda (cols); dar ekranda hücre etiketi
+    short: {
+      orders: 'Sipariş', glass: 'Cam', cnc: 'CNC', holes: 'Delik', m2: 'm²', net: 'Net kg', crates: 'Sandık', gross: 'Brüt kg',
+      factory: 'Fabrika satış', offer: 'Teklif tutarı', actions: 'İşlemler',
+    },
     actions: { crates: 'Sandık', pdf: 'PDF', xlsx: 'Excel', summary: 'Özet' },
     sub: { order: 'Sipariş No', glass: 'Cam', cnc: 'CNC', holes: 'Delik', m2: 'Toplam m²', factory: 'Fabrika Satış', offer: 'Teklif Tutarı', total: 'Toplam · {n} sipariş' },
     away: '{n} sipariş başka firmanın sandığıyla: {hosts}',
@@ -117,11 +122,18 @@ export default {
     noCrates: 'Bu firma için bu gün sandık girilmedi.',
     noOrders: 'Bu firmanın bu gün siparişi yok.',
     physicalNote: 'Sandık adedi ve ağırlıklar fiziksel sandığa göredir: başka firmanın sandığıyla giden camın ağırlığı o sandıkta sayılır; sandık girilmediyse tahmindir.',
+    // Sipariş ayrıntısı (karar 215): her siparişin müşteriye gönderilen teklif satırları — "Tekliflerim" düzeyinde
+    detailTitle: 'SİPARİŞ AYRINTISI',
+    detailSheet: 'Ayrıntı',
+    subtotal: 'Sipariş toplamı',
+    notSent: 'Teklif müşteriye henüz gönderilmedi — tutar yok',
+    // {from}: kalanın ilk yükleme günü (gg.aa.yyyy)
+    replanNote: '{from} yüklemesinden aktarılan kalan',
   },
   // Firma satırının "Özet" sayfası (Paket 7, karar 187): yalnızca o firma + gün; tutarlar yalnızca yöneticide
   firmSummary: {
     title: 'Yükleme özeti — {firm}',
-    intro: '{date} yüklemesi. Ticari değerler (sipariş, cam, CNC, delik, m², tutar) firmanın kendi siparişlerinden; sandık ve ağırlık camı taşıyan fiziksel sandıktan.',
+    intro: '{date} yüklemesi. Sandık ve ağırlık fiziksel sandığa göredir.',
     back: '‹ Yükleme gününe dön',
     notFound: 'Bu firmanın bu gün yüklemesi yok.',
     financeTitle: 'Tutarlar',
@@ -134,6 +146,15 @@ export default {
     noAway: 'Bu firmanın başka firmanın sandığıyla giden siparişi yok.',
     noIn: 'Bu firmanın sandıklarında başka firmanın siparişi yok.',
     noCrates: 'Bu firma için bu gün sandık girilmedi.',
+    // Sipariş ayrıntısı (karar 215): her siparişin teklif satırları; yöneticide fabrika satış ve müşteri teklifi ayrı sütun grupları
+    detailTitle: 'Sipariş ayrıntısı',
+    factoryGroup: 'Fabrika satış ({cur})',
+    offerGroup: 'Müşteri teklifi ({cur})',
+    orderTotal: 'Sipariş toplamı',
+    factoryShort: 'Fabrika',
+    offerShort: 'Müşteri',
+    notSent: 'Teklif müşteriye henüz gönderilmedi: müşteri tutarı yok.',
+    noLines: 'Bu siparişin teklif satırı yok.',
     cols: {
       order: 'Sipariş No', project: 'Proje', glass: 'Cam', cnc: 'CNC', holes: 'Delik', m2: 'Toplam m²', factory: 'Fabrika satış', offer: 'Teklif tutarı',
       currency: 'Para birimi', crate: 'Sandık', dims: 'Ölçü (mm)', net: 'Net (kg)', gross: 'Brüt (kg)', contents: 'İçerik', owner: 'Ticari sahip', host: 'Fiziksel sandık',
@@ -163,15 +184,18 @@ export default {
       crates: 'Sandık',
     },
     // {crates}: "2 sandık"
-    estimate: "Planlama tahmini: brüt = cam {netKg} kg + {crates} × {tare} kg dara (cam ağırlığı müşteri başına azami {max} kg'a bölünüp yukarı yuvarlanıyor).",
-    note: 'Bir müşteri için sandık girildiyse o müşterinin o günkü net/brüt ağırlığı ve sandık sayısı GERÇEK kayıtlardan gelir ve tahminin önüne geçer. Cam ağırlığı katalogdaki kg/m² değerinden hesaplanır.',
+    estimate: 'Tahmini brüt: cam {netKg} kg + {crates} × {tare} kg dara (sandık başına en çok {max} kg cam).',
+    note: 'Sandık girilen firmada sandık sayısı ve ağırlıklar gerçek kayıttan gelir.',
+    // Müşterinin yükleme takvimi: önceki metinler (müşteri ekranı bu pakette değişmez)
+    estimateCustomer: "Planlama tahmini: brüt = cam {netKg} kg + {crates} × {tare} kg dara (cam ağırlığı müşteri başına azami {max} kg'a bölünüp yukarı yuvarlanıyor).",
+    noteCustomer: 'Bir müşteri için sandık girildiyse o müşterinin o günkü net/brüt ağırlığı ve sandık sayısı GERÇEK kayıtlardan gelir ve tahminin önüne geçer. Cam ağırlığı katalogdaki kg/m² değerinden hesaplanır.',
     crates: {
       title: 'Sandık ölçüleri ve ağırlıkları',
       toggle: 'Sandıklar',
       label: 'Sandık etiketi',
       count: '{n} sandık',
       updated: 'güncellendi · {when} · {who}',
-      intro: 'Nakliyeciye gönderilen listenin kaynağı. Girilen sandıklar bu müşterinin tahmini sandık sayısının önüne geçer. Sandık numarası o gün içinde tektir.',
+      intro: 'Nakliye listesinin kaynağı; sandık numarası o gün tektir.',
       covers: 'Bu sandıklar şu siparişleri kapsıyor: {list}',
       cols: { no: 'Sandık', length: 'Uzunluk (mm)', width: 'Genişlik (mm)', height: 'Yükseklik (mm)', net: 'Net ağırlık (kg)', gross: 'Brüt ağırlık (kg)', note: 'Not', orders: 'Siparişler', contents: 'İçerik' },
       add: '+ Sandık ekle',

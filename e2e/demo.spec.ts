@@ -38,9 +38,14 @@ const shot = async (page: Page, name: string) => {
 
 test('yönetici: teklif kontrolü, fiyat onayı ve demo posta kutusuyla yeni kullanıcı', async ({ browser }) => {
   const admin = await as(browser, 'yonetici@ornek.test');
-  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' }).getByRole('link', { name: 'ORN104' })).toBeVisible();
-  await expect(admin.locator('.card', { hasText: 'Fiyat onayı bekleyen' }).getByRole('link', { name: 'ORN105' })).toBeVisible();
+  // Yöneticinin "Sıra bende"si yalnızca dört tablodur (karar 217): fiyat onayı bekleyen teklif Teklifler sayfasında, teklif
+  // kontrolü (gönderimden sonra gelen revize çizim) sipariş sayfasında
+  const sections = (await admin.locator('main .card-flush > .card-head h2').allTextContents()).map((x) => x.replace(/\s*\d+\s*$/, '').trim());
+  expect(sections).toEqual(['Yeni siparişler — karar bekliyor', 'Teklif hazırlanacaklar', 'SLA riski / gecikenler', 'Profil — fiyat bekleyenler']);
   await shot(admin, '01-yonetici-siparisler');
+  await admin.goto('/teklifler');
+  await expect(admin.locator('[data-group=YONETIMDE]').getByRole('link', { name: 'ORN105' })).toBeVisible();
+  await admin.goto('/siparisler?view=all');
 
   await admin.getByRole('link', { name: 'ORN104' }).first().click();
   await expect(admin.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi (v2')).toBeVisible();

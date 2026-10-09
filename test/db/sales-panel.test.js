@@ -7,7 +7,7 @@ import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { CRATE_LINE, atOfferPrice, isSalesCrate, offerTotals } from '../../server/orders/rules.js';
-import { queuesFor, salesOfferGroups } from '../../server/orders/queues.js';
+import { adminOfferGroups, salesOfferGroups } from '../../server/orders/queues.js';
 import { glassTotals, proformaLines } from '../../server/glass/billing.js';
 
 let db;
@@ -45,7 +45,9 @@ const plain = (lines) => lines.map((l) => ({ ...l, unitPrice: String(l.unitPrice
 const queueRows = () => db.order.findMany({
   include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 }, drawings: true, events: { where: { event: 'OFFER_CHECKED' }, orderBy: { createdAt: 'desc' }, take: 1 } },
 });
-const priceQueue = async () => queuesFor(await queueRows(), { review: false, send: true, drawing: false }).find((q) => q.key === 'priceApproval').rows.map((o) => o.id);
+// Yöneticinin bekleyen kuyruğu: Teklifler sayfasının "yönetici fiyatı bekleyen" grubu (adminOfferGroups — karar 217'den beri
+// "Sıra bende"de ayrı tablo değil)
+const priceQueue = async () => adminOfferGroups(await queueRows()).find((q) => q.key === 'YONETIMDE').rows.map((o) => o.id);
 const awaitingSales = async () => salesOfferGroups(await queueRows()).find((g) => g.key === 'awaitingPrice').rows.map((o) => o.id);
 
 before(async () => {

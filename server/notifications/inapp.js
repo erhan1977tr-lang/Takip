@@ -67,6 +67,12 @@ export const INAPP_RULES = {
   // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride. Yöneticinin teklifi
   // müşteriye göndermesi (ilk gönderim ya da yeni sürüm) yalnızca MÜŞTERİYE bildirilir — satışa ne zil ne e-posta (Paket 4)
   ORDER_OFFER_SUBMITTED: { to: () => ['admin'] },
+  // Satış fabrika fiyat tablosundaki fiyatı gerçekten değiştirdi (karar 218; aynı fiyatın yeniden gönderimi olay yazmaz):
+  // yöneticiye, siparişin "Önemli kararlar" bölümüne
+  ORDER_PRICE_OVERRIDE: { to: () => ['admin'], link: orderPart('kararlar') },
+  // Satış, yöneticiye gönderdiği teklifi geri aldı (karar 212 → 218): yöneticiye; aynı siparişin okunmamış "teklif yöneticiye
+  // gönderildi" bildirimi artık güncel değil — okunmuş sayılır (supersedes), zil güncel durumu gösterir
+  ORDER_OFFER_WITHDRAWN: { to: () => ['admin'], supersedes: ['ORDER_OFFER_SUBMITTED'] },
   ORDER_OFFER_RETURNED: { to: () => ['orderSales'] },
   ORDER_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_OFFER_UPDATED: { to: () => ['customer'], link: orderPart('teklif') },
@@ -209,6 +215,14 @@ async function fanOut(db, row) {
   if (!rule || !order || order.removedAt) return 0;
   const payload = obj(row.payload);
   const users = await recipientsOf(db, rule.to(order, payload), order, { actorId: rule.includeActor ? null : payload.actorId ?? null });
+  // Bu olayın geçersiz kıldığı önceki bildirimler (ör. geri alınan teklifin "yöneticiye gönderildi"si): aynı siparişin,
+  // bu alıcıların okunmamış satırları okunmuş sayılır. Olaylar sırayla dağıtıldığından sonraki yeni gönderim etkilenmez.
+  if (rule.supersedes?.length && users.length) {
+    await db.notification.updateMany({
+      where: { orderId: order.id, type: { in: rule.supersedes }, userId: { in: users.map((u) => u.id) }, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
   // Metne yalnızca gereken, herkesin görebileceği değerler girer (gün, adet, belge no) — tutar ve not girmez
   const params = {
     ...(payload.day ? { day: String(payload.day) } : row.type === 'ORDER_SHIP_DATE' && shipDay(order) ? { day: shipDay(order) } : {}),

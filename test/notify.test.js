@@ -10,9 +10,11 @@ const order = {
   assignedDrawer: null,
 };
 const users = [
-  { email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN' },
-  { email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS' },
-  { email: 'cizim@gkh.test', language: 'tr', appRole: 'CIZIM' },
+  { id: 'u-admin', email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN', isActive: true },
+  { id: 'u-satis', email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS', isActive: true },
+  { id: 'u-cizim', email: 'cizim@gkh.test', language: 'tr', appRole: 'CIZIM', isActive: true },
+  // Pasif yönetici hesabı (karar 218): yöneticinin e-postaları yalnızca etkin hesaplara
+  { id: 'u-eski', email: 'eski-yonetici@gkh.test', language: 'ro', appRole: 'ADMIN', isActive: false },
 ];
 const optedOut = [];
 const fakeDb = (rows = []) => {
@@ -20,7 +22,7 @@ const fakeDb = (rows = []) => {
   return {
     rows,
     user: {
-      findMany: async ({ where }) => users.filter((u) => where.appRole.in.includes(u.appRole)),
+      findMany: async ({ where }) => users.filter((u) => where.appRole.in.includes(u.appRole) && (where.isActive === undefined || u.isActive === where.isActive)),
       findFirst: async ({ where }) => optedOut.find((e) => e === where.email.equals.toLowerCase()) ?? null,
     },
     order: { findUnique: async () => order },
@@ -51,7 +53,8 @@ const fakeDb = (rows = []) => {
 test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-postası; yeni cam siparişi → satış; çizim → çizim ekibi', async () => {
   const db = fakeDb();
   assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test', 'office@glass.test']);
-  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', order)).map((r) => r.email), ['satis@gkh.test']);
+  // Yeni cam siparişi satışa VE yöneticiye (karar 218); pasif yönetici hesabına gitmez
+  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', order)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test']);
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', { ...order, orderTypeCode: 'PROFILE_ORDER' })).map((r) => r.email), ['admin@gkh.test'], 'profil satışa gitmez');
   assert.deepEqual((await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', order)).map((r) => r.email), ['cizim@gkh.test']);
   const assigned = { ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } };
@@ -153,10 +156,48 @@ test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi g
   const db = fakeDb();
   const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
   assert.deepEqual(await recipientsFor(db, 'ORDER_OFFER_SENT', off), [], 'siparişi açan kapattı: ne kendisine ne firma adresine');
-  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test'], 'iç ekip bildirimi sürer');
+  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test'], 'iç ekip bildirimi sürer');
   optedOut.push('office@glass.test');
   assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
   optedOut.length = 0;
   const fixed = { ...order, createdBy: { ...order.createdBy, language: 'ro', fixedLanguage: 'tr' } };
   assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', fixed)).map((r) => r.locale), ['tr', 'tr']);
+});
+
+test('yöneticinin e-postaları (karar 218): yeni sipariş, fabrika fiyatı değişikliği, geri alma, telafi fiyatı; işlemi yapan yöneticiye ve pasif hesaba gitmez; tutar yazılmaz', async () => {
+  const db = fakeDb();
+  for (const type of ['ORDER_PRICE_OVERRIDE', 'ORDER_OFFER_WITHDRAWN', 'ORDER_COMPENSATION_PRICE']) {
+    assert.deepEqual((await recipientsFor(db, type, order)).map((r) => r.email), ['admin@gkh.test'], `${type}: yalnızca etkin yönetici`);
+    // Telafiyi yöneticinin kendisi açtıysa kendi işlemi kendisine e-postalanmaz
+    assert.deepEqual(await recipientsFor(db, type, order, { actorId: 'u-admin' }), [], `${type}: işlemi yapana değil`);
+  }
+  // Satışın / müşterinin işlemi yöneticiye gider (işlemi yapan yönetici değil)
+  assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_WITHDRAWN', order, { actorId: 'u-satis' })).map((r) => r.email), ['admin@gkh.test']);
+  // Şifre sıfırlama: yönetici başlatır, kod kullanıcıya kendiliğinden gider — yöneticiye e-posta olayı yok
+  for (const type of ['ORDER_PASSWORD_RESET', 'PASSWORD_RESET', 'USER_PASSWORD_RESET']) assert.deepEqual(await recipientsFor(db, type, order), [], type);
+  const at = new Date('2026-10-09T08:00:00Z');
+  const admin = { locale: 'tr', role: 'ADMIN' };
+  const render = (type, payload) => renderNotification({ type, order, createdAt: at, recipient: admin, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', payload });
+  const over = render('ORDER_PRICE_OVERRIDE', { qty: 2, alertId: 'a1' });
+  assert.equal(over.subject, 'GLA68 — Satış fabrika fiyatını değiştirdi');
+  assert.match(over.text, /Açıklama: Satış, teklifi 2 satırda fabrika fiyat tablosundaki fiyattan farklı/);
+  assert.match(over.text, /https:\/\/takip\.test\/siparisler\/o1/);
+  const back = render('ORDER_OFFER_WITHDRAWN', {});
+  assert.equal(back.subject, 'GLA68 — Satış, yöneticiye gönderdiği teklifi geri aldı');
+  assert.match(back.text, /Açıklama: Teklif yeniden satışta/);
+  const free = render('ORDER_COMPENSATION_PRICE', { mode: 'FREE', qty: 3, sourceOrderNo: 'GLA60', pending: false });
+  assert.equal(free.subject, 'GLA68 — Telafi camı bedelsiz açıldı');
+  assert.match(free.text, /3 adet telafi camı · kaynak sipariş GLA60\./);
+  const custom = render('ORDER_COMPENSATION_PRICE', { mode: 'CUSTOM', qty: 1, sourceOrderNo: 'GLA60', pending: true });
+  assert.equal(custom.subject, 'GLA68 — Telafi camı için farklı fiyat seçildi');
+  assert.match(custom.text, /yöneticinin onayını bekliyor/);
+  // Romence ve ortak GKH düzeni (logo başlığı); hiçbir e-postada tutar / para birimi yok
+  const ro = renderNotification({ type: 'ORDER_PRICE_OVERRIDE', order, createdAt: at, recipient: { locale: 'ro', role: 'ADMIN' }, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', payload: { qty: 1 } });
+  assert.equal(ro.subject, 'GLA68 — Vânzările au modificat prețul fabricii');
+  for (const m of [over, back, free, custom, ro]) {
+    assert.match(m.html, /cid:gkh-logo@takip|gkh-logo/);
+    assert.doesNotMatch(m.text, /EUR|RON|\d+,\d{2}/, 'tutar yok');
+  }
+  // Yeni sipariş e-postası (yöneticiye de): mevcut metin
+  assert.equal(render('ORDER_CREATED', null).subject, 'GLA68 — Yeni sipariş');
 });

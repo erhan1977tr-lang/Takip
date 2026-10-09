@@ -1,5 +1,11 @@
 export default {
   operations: 'Operasyon',
+  // Yöneticinin profil siparişleri bölümü (Yönetici Paneli Paketi 1, karar 216): profil tabloları ve profil tanımları; bölüm
+  // adının yanında yeni profil siparişi sayacı
+  profileOrders: 'Profil Siparişleri',
+  profileOrderList: 'Profil siparişleri',
+  // {n}: yöneticinin fiyatını bekleyen yeni profil siparişi
+  profileNew: '{n} yeni profil siparişi fiyat bekliyor',
   drawingTeam: 'Çizim Ekibi',
   drawingPanel: 'Çizim Paneli',
   // Çizim ekibinin "DXF/DWG olarak gelen çizimler" listesi (karar 167)

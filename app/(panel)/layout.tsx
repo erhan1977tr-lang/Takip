@@ -1,8 +1,8 @@
 import { Suspense } from 'react';
 import { requireUser, sessionRemainingMs } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
-import { NAV, type NavDef, type NavItem } from '@/lib/roles';
-import { getT } from '@/lib/i18n';
+import { NAV, type NavCount, type NavDef, type NavItem } from '@/lib/roles';
+import { getT, type MsgKey } from '@/lib/i18n';
 import { roleText } from '@/lib/labels';
 import { NavLinks } from './NavLinks';
 import { BrandLogo, VersionTag } from '@/components/BrandLogo';
@@ -16,6 +16,7 @@ import { NotificationCenter } from '@/components/NotificationCenter';
 import { loadFeed } from '@/lib/notifications';
 import { db } from '@/lib/db';
 import { unreadTotal } from '@/server/notes/unread.js';
+import { newProfileCount } from '@/server/orders/queues.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,10 +33,22 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   // Okunmamış sipariş mesajlarının toplamı (karar 199): yalnızca kullanıcının kapsamındaki siparişler; "Siparişler" bağlantısında
   const messages = await unreadTotal(db, user);
   const ordersHref = '/siparisler';
-  const nav: NavItem[] = defs.map((d) => ('section' in d ? { section: t(d.section) }
-    : d.href === ordersHref && messages.total > 0
+  // Bölüm sayaçları (karar 216): yalnızca menüsünde o sayaç olan rolde, kullanıcının kapsamında sunucuda sayılır
+  const wants = (c: NavCount) => defs.some((d) => ('section' in d ? d.count === c : d.mobileCount === c));
+  const counts: Record<NavCount, number> = { profileNew: wants('profileNew') ? await newProfileCount(db, user) : 0 };
+  const COUNT_LABEL: Record<NavCount, MsgKey> = { profileNew: 'nav.profileNew' };
+  const countLabel = (c: NavCount, n: number) => t(COUNT_LABEL[c], { n });
+  const nav: NavItem[] = defs.map((d): NavItem => {
+    if ('section' in d) {
+      const n = d.count ? counts[d.count] : 0;
+      return d.count && n > 0 ? { section: t(d.section), count: n, countLabel: countLabel(d.count, n) } : { section: t(d.section) };
+    }
+    const item: Extract<NavItem, { href: string }> = d.href === ordersHref && messages.total > 0
       ? { href: d.href, label: t(d.key), count: messages.total, countLabel: t('order.notes.unread', { n: messages.total }) }
-      : { href: d.href, label: t(d.key) }));
+      : { href: d.href, label: t(d.key) };
+    const mobile = d.mobileCount ? counts[d.mobileCount] : 0;
+    return d.mobileCount && mobile > 0 ? { ...item, mobileCount: mobile, countLabel: countLabel(d.mobileCount, mobile) } : item;
+  });
   const firm = user.customer?.name;
   const role = roleText(t, user.appRole);
   const customerFirm = user.appRole === 'MUSTERI' && firm ? firm : '';

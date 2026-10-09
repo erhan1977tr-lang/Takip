@@ -28,6 +28,8 @@ export default {
     GUEST_CRATE_HOSTED: { title: 'Misafir yük: sandığınıza başka firmanın camı yüklendi', customer: 'Misafir yük: sandığınıza başka firmanın camı yüklendi' },
     GUEST_CRATE_UNHOSTED: { title: 'Misafir yük sandığınızdan çıkarıldı', customer: 'Misafir yük sandığınızdan çıkarıldı' },
     INVOICE_OVERDUE: { title: 'Fatura bekliyor: yüklenen cam fatura edilmedi' },
+    // Satış fabrika fiyatını değiştirdi (karar 218) — yöneticiye; tutar yazılmaz
+    ORDER_PRICE_OVERRIDE: { title: 'Satış fabrika fiyatını değiştirdi' },
     ACCOUNTING_ACTION: { title: 'Muhasebe işlemi gerekli: fatura düzeltilmiş yüklemeyle uyuşmuyor' },
     FGO_FAILED: { title: "FGO'da belge kesilemedi" },
     FGO_UNCERTAIN: { title: "FGO belgesinin sonucu belirsiz: FGO'yu kontrol edip karar verin" },
@@ -63,6 +65,8 @@ export default {
     FGO_FAILED: '{error}',
     FGO_UNCERTAIN: 'FGO kimliği (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
+    // {qty}: fabrika fiyat tablosundaki fiyattan farklı satır sayısı
+    ORDER_PRICE_OVERRIDE: '{qty} satır farklı · ayrıntı Önemli kararlar\'da',
     COMPENSATION_PENDING: '{qty} adet · kaynak {ref}',
     COMPENSATION_FREE: '{qty} adet · kaynak {ref}',
     COMPENSATION_SAME: '{qty} adet · kaynak {ref}',

@@ -20,13 +20,28 @@ import { priceOverrides } from './tables.js';
 export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE', 'STOCK_CRITICAL', 'FINANCE_REVIEW', 'DUPLICATE_RISK', 'FGO_UNCERTAIN'];
 
 /**
+ * Fiyat farkının parmak izi (satır sırası hariç: tür, açıklama, liste fiyatı, satış fiyatı, bedelsiz). Aynı farkın yeniden
+ * gönderimi "değişmedi" sayılır — yöneticiye yeni e-posta gitmez (Yönetici Paneli Paketi 1, karar 218).
+ * @param {{ kind?: string | null, description?: string | null, listPrice: unknown, unitPrice: unknown, free?: boolean }[] | null | undefined} diffs
+ * @returns {string}
+ */
+export function overrideKey(diffs) {
+  return (Array.isArray(diffs) ? diffs : [])
+    .map((d) => JSON.stringify([d?.kind ?? null, String(d?.description ?? ''), Number(d?.listPrice).toFixed(2), Number(d?.unitPrice).toFixed(2), !!d?.free]))
+    .sort().join('|');
+}
+
+/**
  * Satışçı teklifi yöneticiye gönderirken çağrılır (iş akışı işleminin içinde, aynı tx).
- * @returns {Promise<number>} liste fiyatından farklı satır sayısı
+ * changed: fark, siparişin SON kaydından (açık ya da "Gördüm" ile kapanmış) farklı — satış fabrika fiyatını gerçekten
+ * değiştirdi; aynı fiyatların yeniden gönderimi (geri alma / geri gönderme sonrası) false (karar 218).
+ * @returns {Promise<{ count: number, changed: boolean, alertId: string | null }>} count: liste fiyatından farklı satır sayısı
  */
 export async function recordPriceOverrides(tx, { orderId, offerId, orderNo, currency, lines, actor, now = new Date() }) {
+  const last = await tx.adminAlert.findFirst({ where: { type: 'PRICE_OVERRIDE', orderId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { details: true } });
   await tx.adminAlert.updateMany({ where: { type: 'PRICE_OVERRIDE', orderId, resolvedAt: null }, data: { resolvedAt: now } });
   const diffs = priceOverrides(lines);
-  if (diffs.length === 0) return 0;
+  if (diffs.length === 0) return { count: 0, changed: false, alertId: null };
   const alert = await tx.adminAlert.create({
     data: { type: 'PRICE_OVERRIDE', orderId, offerId, createdById: actor.id, createdAt: now, details: { orderNo, currency, lines: diffs } },
   });
@@ -34,7 +49,8 @@ export async function recordPriceOverrides(tx, { orderId, offerId, orderNo, curr
     action: 'PRICE_OVERRIDE', entityType: 'Offer', entityId: offerId, userId: actor.id,
     details: { orderId, orderNo, alertId: alert.id, lines: diffs },
   }, actor);
-  return diffs.length;
+  const before = last?.details && typeof last.details === 'object' && !Array.isArray(last.details) ? /** @type {any} */ (last.details).lines : [];
+  return { count: diffs.length, changed: overrideKey(diffs) !== overrideKey(before), alertId: alert.id };
 }
 
 /**

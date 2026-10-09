@@ -28,6 +28,8 @@ export default {
   tabs: {
     active: 'Aktif',
     work: 'Sıra bende',
+    // Yöneticinin profil tabloları (karar 216)
+    profile: 'Profil siparişleri',
     all: 'Tüm aktif siparişler',
     archive: 'Yüklenen ve arşiv',
   },
@@ -66,6 +68,7 @@ export default {
       admin: 'Siparişler',
       sales: 'Satış Paneli',
       inspector: 'Tüm siparişler (denetim)',
+      profile: 'Profil Siparişleri',
     },
     searchPlaceholder: 'Sipariş no / başlık ara',
     sortNewest: 'En yeni',

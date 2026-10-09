@@ -193,10 +193,12 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(sales.locator('.offer-table')).toHaveCount(0);
   await expect(sales.getByRole('button', { name: /Geri Al/ })).toHaveCount(0);
 
-  // Yönetici: listede "Teklif kontrolü" altında görür, teklifi günceller; müşteri yeni fiyatı hemen görür
+  // Yönetici: sipariş sayfasında "teklif kontrolü" uyarısını görür (karar 217'den beri "Sıra bende"de ayrı tablo yok), teklifi
+  // günceller; müşteri yeni fiyatı hemen görür
   await admin.goto('/siparisler');
-  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' }).getByRole('link', { name: 'UNS2' })).toBeVisible();
+  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' })).toHaveCount(0);
   await admin.goto(`/siparisler/${ids.b}`);
+  await expect(admin.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi')).toBeVisible();
   await admin.getByRole('link', { name: 'Teklifi güncelle' }).first().click();
   await expect(admin.getByText('Müşterideki teklifi güncelliyorsunuz.')).toBeVisible();
   await admin.getByLabel('Müşteri fiyatı').first().fill('50');
@@ -208,8 +210,6 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(admin.getByText('Teklif müşteriye gönderildikten sonra revize çizim yüklendi')).toHaveCount(0);
   await expect(admin.getByText('sürüm 2', { exact: true })).toBeVisible();
   await expect(admin.getByText('otomatik olarak üretime alındı')).toHaveCount(0); // çizim hâlâ müşteride
-  await admin.goto('/siparisler');
-  await expect(admin.locator('.card', { hasText: 'Teklif kontrolü' }).getByRole('link', { name: 'UNS2' })).toHaveCount(0);
 
   await cust.goto(`/siparisler/${ids.b}`);
   await expect(cust.locator('#teklif tfoot')).toContainText('300,00 EUR');

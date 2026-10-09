@@ -340,6 +340,8 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .side-foot a { color: var(--muted); }
 .topbar-brand { display: none; }
 .nav-section { font-size: var(--fs-meta); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 20px 12px 8px; }
+/* Bölüm sayacı (karar 216 — yeni profil siparişi): bölüm adının yanında kırmızı yuvarlak (.msg-count) */
+.nav-section .msg-count { letter-spacing: 0; vertical-align: 1px; }
 .nav a { display: block; padding: 10px 12px; margin-bottom: 3px; font-size: 15.5px; line-height: 1.35; border-radius: var(--radius-sm); color: var(--text-2); text-decoration: none; font-weight: 500; }
 .nav a:hover { background: rgba(27, 35, 48, .06); color: var(--text); }
 .nav a.active { background: var(--primary); color: #fff; font-weight: 600; box-shadow: var(--shadow-sm); }
@@ -736,10 +738,10 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .crate-table td { padding: 7px 8px; white-space: nowrap; vertical-align: middle; border-bottom: 1px solid var(--divider); }
 .crate-table input { padding: 8px 10px; font-size: var(--fs-body); }
 .crate-table .c-no input { width: 68px; font-weight: 600; }
-.crate-table .c-dim input { width: 98px; text-align: right; font-variant-numeric: tabular-nums; }
-.crate-table .c-kg input { width: 104px; text-align: right; font-variant-numeric: tabular-nums; }
+.crate-table .c-dim input { width: 86px; text-align: right; font-variant-numeric: tabular-nums; }
+.crate-table .c-kg input { width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
 .crate-table th.c-note { width: 100%; }
-.crate-table td.c-note input { min-width: 160px; }
+.crate-table td.c-note input { min-width: 130px; }
 .crate-table td.c-del { text-align: center; padding-left: 2px; padding-right: 2px; }
 .crate-table.readonly { margin-top: 10px; width: auto; min-width: 60%; }
 .crate-table.readonly td { padding: 9px 12px; }
@@ -948,9 +950,73 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .firm-caret { display: inline-block; width: 12px; color: var(--primary); font-size: 12px; }
 .firm-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 5px 0 0 19px; }
 .firm-badges .badge { white-space: normal; text-align: left; }
-.firm-table td.firm-actions .btn:not(.btn-link) { padding: 5px 10px; font-size: var(--fs-meta); }
+.firm-table td.firm-actions .btn:not(.btn-link) { padding: 4px 8px; font-size: var(--fs-meta); }
 .firm-table td.firm-actions .btn.active { background: var(--primary-soft); border-color: var(--primary-border); color: var(--primary); }
 .firm-table > tbody.firm > tr.firm-orders > td, .firm-table > tbody.firm > tr.firm-crates > td { background: var(--surface); border-top: 0; border-bottom: 0; padding: 4px 12px 16px 31px; }
+/* Sıkı düzen (Yönetici Paneli Paketi 1, karar 215): kısa başlıklar iki satıra inebilir, hücreler dar; işlemler tek satırda
+   (PDF | Excel | Özet | Sandık — alan daralırsa sonraki satıra geçer). Açılan bölümlerin içeriği tabloyu genişletmez
+   (.firm-sub: kendi içinde kayar / yerleşir). Tablo kendi alanına sığmıyorsa (dar masaüstü, telefon) her firma etiketli bir
+   kart olur — aşağıdaki @container kuralları; eşik role göre sütun sayısından (yönetici: iki tutar + belge işlemleri). */
+.firm-wrap { container: firmwrap / inline-size; }
+.firm-table > thead th { white-space: normal; vertical-align: bottom; line-height: 1.25; padding: 9px 6px; }
+.firm-table > tbody.firm > tr.firm-row > td, .firm-table > tfoot td { padding-left: 6px; padding-right: 6px; }
+/* Sandık: sayı ve "gerçek / tahmini" işareti dar sütunda alt alta inebilir; tutarlar tek satır */
+.firm-table td[data-col=crates] { white-space: normal; }
+.firm-table td[data-col=crates] .badge { margin-top: 2px; }
+.firm-table > thead th:first-child, .firm-table > tbody.firm > tr.firm-row > td:first-child, .firm-table > tfoot td:first-child { padding-left: 14px; }
+.firm-table > thead th:last-child, .firm-table > tbody.firm > tr.firm-row > td:last-child, .firm-table > tfoot td:last-child { padding-right: 14px; }
+.firm-table td.firm-cell { min-width: 140px; }
+.firm-table .firm-toggle { max-width: 240px; }
+.firm-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.firm-sub { width: 0; min-width: 100%; container: firmsub / inline-size; overflow-x: auto; }
+/* Alt siparişlerde misafir yük rozeti satıra sığmazsa alt satıra iner (sütunu genişletmez) */
+.firm-orders-table .badge { white-space: normal; text-align: left; }
+/* Geniş alanda dört işlem kesin tek satırda (tablonun en dar hâli bu genişliğe sığar) */
+@container firmwrap (min-width: 1190px) { .firm-acts { flex-wrap: nowrap; } }
+/* Belge işlemleri olan tabloda sütun en az iki düğme genişliğinde: sığmazsa 2 + 2 satır (tek tek alt alta değil) */
+.firm-wrap-docs > .firm-table td.firm-actions { min-width: 144px; }
+.firm-table td[data-label]::before { content: none; }
+/* Kart düzeni: her firma bir kart — ad + rozetler, etiketli sayılar ızgarası, işlemler; açılan bölümler kartın altında */
+@container firmwrap (max-width: 1069px) {
+  .firm-wrap-docs > .firm-table > thead { display: none; }
+  .firm-wrap-docs > .firm-table, .firm-wrap-docs > .firm-table > tbody.firm, .firm-wrap-docs > .firm-table > tfoot { display: block; width: 100%; }
+  .firm-wrap-docs > .firm-table > tbody.firm + tbody.firm, .firm-wrap-docs > .firm-table > tfoot { border-top: 1px solid var(--border); }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-row, .firm-wrap-docs > .firm-table > tfoot > tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px 14px; padding: 14px 16px; background: var(--surface); }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-row.open, .firm-wrap-docs > .firm-table > tfoot > tr { background: var(--surface-2); }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-row > td, .firm-wrap-docs > .firm-table > tfoot > tr > td { display: block; padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
+  .firm-wrap-docs > .firm-table td.firm-cell, .firm-wrap-docs > .firm-table td.firm-actions, .firm-wrap-docs > .firm-table td.firm-total { grid-column: 1 / -1; }
+  .firm-wrap-docs > .firm-table td.firm-total-pad { display: none; }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-row > td[data-label]::before, .firm-wrap-docs > .firm-table > tfoot > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
+  .firm-wrap-docs > .firm-table td.firm-actions::before { content: none !important; }
+  .firm-wrap-docs > .firm-table .firm-acts { justify-content: flex-start; }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-orders:not([hidden]), .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-crates:not([hidden]) { display: block; }
+  .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-orders > td, .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-crates > td { display: block; padding: 4px 16px 16px; }
+}
+@container firmwrap (max-width: 899px) {
+  .firm-wrap > .firm-table > thead { display: none; }
+  .firm-wrap > .firm-table, .firm-wrap > .firm-table > tbody.firm, .firm-wrap > .firm-table > tfoot { display: block; width: 100%; }
+  .firm-wrap > .firm-table > tbody.firm + tbody.firm, .firm-wrap > .firm-table > tfoot { border-top: 1px solid var(--border); }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-row, .firm-wrap > .firm-table > tfoot > tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px 14px; padding: 14px 16px; background: var(--surface); }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-row.open, .firm-wrap > .firm-table > tfoot > tr { background: var(--surface-2); }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-row > td, .firm-wrap > .firm-table > tfoot > tr > td { display: block; padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
+  .firm-wrap > .firm-table td.firm-cell, .firm-wrap > .firm-table td.firm-actions, .firm-wrap > .firm-table td.firm-total { grid-column: 1 / -1; }
+  .firm-wrap > .firm-table td.firm-total-pad { display: none; }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-row > td[data-label]::before, .firm-wrap > .firm-table > tfoot > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
+  .firm-wrap > .firm-table td.firm-actions::before { content: none !important; }
+  .firm-wrap > .firm-table .firm-acts { justify-content: flex-start; }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-orders:not([hidden]), .firm-wrap > .firm-table > tbody.firm > tr.firm-crates:not([hidden]) { display: block; }
+  .firm-wrap > .firm-table > tbody.firm > tr.firm-orders > td, .firm-wrap > .firm-table > tbody.firm > tr.firm-crates > td { display: block; padding: 4px 16px 16px; }
+}
+/* Açılan alt siparişler dar alanda: sipariş başına etiketli ızgara (başlık satırı gizli) — eşik iki tutar sütunlu tabloya göre */
+@container firmsub (max-width: 819px) {
+  .firm-orders-table > thead { display: none; }
+  .firm-orders-table, .firm-orders-table > tbody, .firm-orders-table > tfoot { display: block; }
+  .firm-orders-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--divider); }
+  .firm-orders-table > tfoot > tr { border-bottom: 0; background: var(--surface-2); }
+  .firm-orders-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; background: none; }
+  .firm-orders-table td:first-child { grid-column: 1 / -1; }
+  .firm-orders-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
+}
 .sub-table { width: 100%; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
 .sub-table th { background: var(--surface-2); font-size: var(--fs-meta); padding: 8px 10px; border-top: 0; }
 .sub-table td { padding: 8px 10px; vertical-align: middle; }
@@ -960,6 +1026,79 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .crate-locked { color: var(--warn); font-weight: 600; margin: 0 0 10px; }
 .crate-table tr.crate-guests td { background: var(--warn-soft); color: var(--warn); white-space: normal; padding: 5px 8px 7px 14px; }
 .crate-table td.crate-contents { white-space: normal; }
+.firm-table .firm-badges { max-width: 240px; }
+/* Sandık formu dar alanda (telefon, dar masaüstü — karar 215): her sandık etiketli bir ızgara; başlık satırı gizli, giriş
+   alanları hücreyi doldurur; silme düğmesi satırın sağ üstünde. Yatay kaydırma yok. */
+.crate-editor { container: crateeditor / inline-size; }
+.crate-editor .section-head .badge { white-space: normal; text-align: left; }
+@container crateeditor (max-width: 879px) {
+  .crate-editor .crate-table > thead { display: none; }
+  .crate-editor .crate-table, .crate-editor .crate-table > tbody { display: block; width: 100%; }
+  .crate-editor .crate-table > tbody > tr:not(.crate-guests) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px 10px; padding: 10px 0; }
+  .crate-editor .crate-table > tbody > tr.crate-guests { display: block; }
+  .crate-editor .crate-table > tbody > tr > td { display: block; padding: 0; border: 0; white-space: normal; min-width: 0; }
+  .crate-editor .crate-table > tbody > tr.crate-guests > td { padding: 6px 10px; border-radius: var(--radius-sm); }
+  .crate-editor .crate-table > tbody + tbody { border-top: 1px solid var(--divider); }
+  .crate-editor .crate-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+  .crate-editor .crate-table td input:not([type=checkbox]) { width: 100%; min-width: 0; }
+  .crate-editor .crate-table td.c-note, .crate-editor .crate-table td.crate-orders { grid-column: 1 / -1; }
+  .crate-editor .crate-table td.crate-orders { display: flex; }
+  .crate-editor .crate-table td.crate-orders::before { flex-basis: 100%; }
+  .crate-editor .crate-table td.c-del { grid-column: 4; grid-row: 1; align-self: start; }
+}
+
+/* Etiketli ızgara (karar 215): tablo kendi alanına sığmadığında her satır, hücre etiketleriyle (data-label) bir ızgara olur;
+   başlık satırları gizlenir, sayfa yatay kaymaz. Kullanım: <div class="stack-wrap"> <table class="stack-table">; hücrede
+   data-label. .stack-head (başlık hücresi) ve .stack-full (açıklama) satırın tamamını kaplar; .stack-skip ve boş hücre gizlenir;
+   .stack-n (sıra no sütunu) ızgarada gizlenir, numara açıklamanın başındaki .stack-only içinde görünür. Eşik: 700 px; çok sütunlu
+   tablo (.stack-wide) 920 px. Beklenmedik uzun içerikte tablo kendi alanında kayar (sayfa kaymaz, içerik kesilmez). */
+.stack-wrap { container: stackwrap / inline-size; overflow-x: auto; }
+.stack-only { display: none; }
+@container stackwrap (max-width: 919px) {
+  .stack-wide > .stack-table > thead { display: none; }
+  .stack-wide > .stack-table, .stack-wide > .stack-table > tbody, .stack-wide > .stack-table > tfoot { display: block; width: 100%; }
+  .stack-wide > .stack-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--divider); }
+  .stack-wide > .stack-table > tfoot > tr { border-bottom: 0; background: var(--surface-2); }
+  .stack-wide > .stack-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; white-space: normal; }
+  .stack-wide > .stack-table td:is(.stack-head, .stack-full) { grid-column: 1 / -1; }
+  .stack-wide > .stack-table td:is(.stack-skip, :empty) { display: none; }
+  .stack-wide > .stack-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
+  .stack-wide > .stack-table :is(tbody, tfoot) > tr > td { background: none; }
+  .stack-wide > .stack-table > tbody > tr.sub-line { background: var(--surface-2); }
+  .stack-wide > .stack-table td.stack-n { display: none; }
+  .stack-wide > .stack-table .stack-only { display: inline; }
+}
+@container stackwrap (max-width: 699px) {
+  .stack-wrap:not(.stack-wide) > .stack-table > thead { display: none; }
+  .stack-wrap:not(.stack-wide) > .stack-table, .stack-wrap:not(.stack-wide) > .stack-table > tbody, .stack-wrap:not(.stack-wide) > .stack-table > tfoot { display: block; width: 100%; }
+  .stack-wrap:not(.stack-wide) > .stack-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--divider); }
+  .stack-wrap:not(.stack-wide) > .stack-table > tfoot > tr { border-bottom: 0; background: var(--surface-2); }
+  .stack-wrap:not(.stack-wide) > .stack-table td { display: block; padding: 0; border: 0; text-align: left; min-width: 0; white-space: normal; }
+  .stack-wrap:not(.stack-wide) > .stack-table td:is(.stack-head, .stack-full) { grid-column: 1 / -1; }
+  .stack-wrap:not(.stack-wide) > .stack-table td:is(.stack-skip, :empty) { display: none; }
+  .stack-wrap:not(.stack-wide) > .stack-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
+  .stack-wrap:not(.stack-wide) > .stack-table :is(tbody, tfoot) > tr > td { background: none; }
+  .stack-wrap:not(.stack-wide) > .stack-table > tbody > tr.sub-line { background: var(--surface-2); }
+  .stack-wrap:not(.stack-wide) > .stack-table td.stack-n { display: none; }
+  .stack-wrap:not(.stack-wide) > .stack-table .stack-only { display: inline; }
+}
+/* Özet: sipariş ayrıntısı (karar 215) — sipariş başına teklif satırları; yöneticide fabrika satış ve müşteri teklifi ayrı
+   sütun grupları (para birimi grup başlığında) */
+.order-detail { padding: 14px 20px 18px; border-top: 1px solid var(--divider); }
+.order-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; }
+.order-detail-head .badge { white-space: normal; text-align: left; }
+.detail-table td.c-desc { min-width: 160px; white-space: normal; }
+/* Dar masaüstünde başlıklar ve birim fiyatın birimi ("/ m²") alt satıra inebilir: tablo kendi alanında kalır */
+.detail-table th { white-space: normal; vertical-align: bottom; }
+.detail-table td.grp-factory, .detail-table td.grp-offer { white-space: normal; }
+.detail-table tfoot td { white-space: nowrap; }
+.detail-table tr.detail-groups > * { border-bottom: 1px solid var(--border); text-align: center; }
+.detail-table tr.detail-groups > td { background: var(--surface); }
+.detail-table th.grp-factory { background: var(--surface-3); }
+.detail-table th.grp-offer { background: var(--primary-soft); color: var(--primary); }
+.detail-table tbody td.grp-factory { background: var(--surface-2); }
+.detail-table tr.sub-line td.c-desc { padding-left: 26px; }
+@media (max-width: 760px) { .order-detail { padding: 12px 16px 16px; } }
 
 /* Kırık / telafi camı (karar 108): teklif tablosunun altındaki form, "Önemli kararlar" kartı, siparişi sil */
 .comp-choice { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }

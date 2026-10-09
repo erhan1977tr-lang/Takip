@@ -2,11 +2,12 @@ import { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { customerLabel, orderScope, sanitizeRows } from './orders';
-import { userCan } from './permissions';
-import { dayKey, orderLoad } from '../server/orders/loading.js';
+import { userCan, type Permission } from './permissions';
+import { dayKey, loadedOffer, orderLoad } from '../server/orders/loading.js';
 import { effectiveItems } from '../server/loading/confirmation.js';
 import { crateOrdersWhere } from '../server/loading/crates.js';
 import { dayFirms } from '../server/loading/day-firms.js';
+import { firmDocsAllowed } from '../server/loading/firm-export.js';
 
 export const loadInclude = {
   // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir.
@@ -145,7 +146,8 @@ export async function notLoadedByOrder(rows: LoadRow[]): Promise<Map<string, { q
  */
 export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'price'>, customerView: boolean) {
   const sent = o.offers.find((x) => x.status === 'GONDERILDI');
-  const offer = customerView ? sent : sent ?? o.offers[0];
+  // Hangi teklif: tek kural (server/orders/loading.js → loadedOffer) — firma PDF / Excel / Özet ayrıntısı da aynısını kullanır
+  const offer = loadedOffer(o.offers, customerView);
   const load = orderLoad({
     lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
     items: o.items,
@@ -233,6 +235,21 @@ export const crateDay = (c: { shipDay: Date | null }) => (c.shipDay ? c.shipDay.
 export type MoneyView = { sales: boolean; offer: boolean };
 export function moneyView(user: CurrentUser): MoneyView {
   return { sales: userCan(user, 'OFFER_PREPARE'), offer: userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW') };
+}
+
+/**
+ * Firma satırının belge işlemleri — PDF, Excel, Özet (Yönetici Paneli Paketi 1, karar 215). Tek kural:
+ * server/loading/firm-export.js → firmDocsAllowed (yükleme belgelerini indiren + müşteri fiyatını gören rol: yönetici, salt
+ * okuyan denetimci). Satış firma satırında yalnızca "Sandık"ı görür; adresler sunucuda bu kuralla reddedilir.
+ */
+export const canFirmDocs = (user: CurrentUser) => firmDocsAllowed((p: string) => userCan(user, p as Permission));
+
+/**
+ * Satırın MÜŞTERİ fiyatı (temizlenmiş veride): yönetici iki fiyatı da alır (offerPrice); müşteri fiyatını gören diğer rolde
+ * (denetimci) satırın fiyatı zaten müşteri fiyatıdır (unitPrice — lib/orders.ts → offerPrices).
+ */
+export function customerPriceOf(user: CurrentUser): (l: { unitPrice?: unknown; offerPrice?: unknown }) => unknown {
+  return userCan(user, 'OFFER_SEND') ? (l) => l.offerPrice : (l) => l.unitPrice;
 }
 
 /** Yükleme gününün sipariş satırı: sayfa satırı (o), yükü (load) ve firma tablosunun (server/loading/day-firms.js) alanları */

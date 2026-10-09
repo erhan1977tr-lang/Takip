@@ -1,6 +1,8 @@
-// Firma yükleme listesi PDF'i (Yüklemeler → firma satırı → "PDF"; Paket 7, karar 187): seçilen firmanın o günkü siparişleri
-// (sipariş no, proje, cam adedi, CNC, delik, toplam m², yalnızca müşteri teklif tutarı — görebilen rolde), firmanın sandıkları
-// (no, ölçü, net, brüt, içindeki siparişler, not) ve notlar. Veri: server/loading/firm-export.js → firmExportData (Excel ile aynı).
+// Firma yükleme listesi PDF'i (Yüklemeler → firma satırı → "PDF"; Paket 7, karar 187; ayrıntı karar 215): seçilen firmanın o
+// günkü siparişleri (sipariş no, proje, cam adedi, CNC, delik, toplam m², yalnızca müşteri teklif tutarı — görebilen rolde),
+// SİPARİŞ AYRINTILARI (her siparişin teklif satırları: sıra, açıklama, poz, en, boy, adet, m², birim fiyat, tutar — CNC / delik
+// alt satır, sandık parası ayrı kalem; sipariş ara toplamı), firmanın sandıkları (no, ölçü, net, brüt, içindeki siparişler, not)
+// ve notlar. Veri: server/loading/firm-export.js → firmExportData (Excel ile aynı: kapsam ve tutarlar birebir).
 // Ortak başlık (resmî GKH logosu, oranı korunur — server/pdf/brand.js) ve ortak altbilgi (firma adı + sayfa / toplam); uzun
 // tablolar sayfaya bölünür, her yeni sayfada tablo başlığı yinelenir. Türkçe ve Romence harfler gömülü yazı tipiyle (pdf.js).
 import { PdfDoc, fitText, wrapText } from './pdf.js';
@@ -22,8 +24,12 @@ const LPAD = { orders: 12, project: 6 };
  * @param {ReturnType<typeof import('../loading/firm-export.js').firmExportData>} d
  * @param {{ title: string, firm: string, day: string, generated: string, ordersTitle: string, cratesTitle: string, total: string,
  *   noOrders: string, noCrates: string, stats: [string, string][], notes: string[],
- *   cols: { order: string, project: string, glass: string, cnc: string, holes: string, m2: string, offer: string, crate: string, dims: string, net: string, gross: string, orders: string, note: string } }} text
- *   day: "Yükleme günü: 08.10.2026" · generated: "Oluşturma: …" · stats: [etiket, değer] (sipariş, cam, …, brüt)
+ *   detailTitle?: string, subtotal?: string, free?: string, piece?: string, notSent?: string, replanNote?: string,
+ *   cols: { order: string, project: string, glass: string, cnc: string, holes: string, m2: string, offer: string, crate: string, dims: string, net: string, gross: string, orders: string, note: string,
+ *     n?: string, desc?: string, poz?: string, en?: string, boy?: string, adet?: string, unitPrice?: string, amount?: string } }} text
+ *   day: "Yükleme günü: 08.10.2026" · generated: "Oluşturma: …" · stats: [etiket, değer] (sipariş, cam, …, brüt) ·
+ *   detailTitle: ayrıntı bölümünün başlığı (yoksa ayrıntı yazılmaz) · notSent: gönderilmemiş teklifin notu ·
+ *   replanNote: "{from} yüklemesinden aktarılan kalan"
  * @returns {Buffer}
  */
 export function firmLoadingPdf(d, text) {
@@ -44,6 +50,8 @@ export function firmLoadingPdf(d, text) {
   };
   const OC = cols(OW);
   const CC = cols(CW);
+  // Ayrıntı tablosu (teklif PDF'iyle aynı düzen; toplam 515)
+  const DC = cols({ n: 22, desc: 160, poz: 40, en: 40, boy: 40, adet: 32, m2: 48, unit: 70, amount: 63 });
   let page;
   let y = 0;
   /** @type {(() => void) | null} */
@@ -131,6 +139,57 @@ export function firmLoadingPdf(d, text) {
       y += ROW;
     });
     y += 10;
+  }
+
+  // Sipariş ayrıntıları (karar 215): her siparişin teklif satırları — cam satırı numaralı, CNC / delik alt satır, sandık parası
+  // ayrı kalem; ara toplam = siparişler tablosundaki tutar (aynı veri). Gönderilmemiş teklifte fiyat / tutar yok.
+  const withDetail = d.orders.filter((o) => o.detail?.rows?.length);
+  if (text.detailTitle && withDetail.length) {
+    section(text.detailTitle);
+    const c = text.cols;
+    const dAlign = { n: 'left', desc: 'left', poz: 'left' };
+    for (const o of withDetail) {
+      const cur = o.offer != null ? o.currency : '';
+      const dLabels = {
+        n: c.n ?? '#', desc: c.desc ?? '', poz: c.poz ?? '', en: c.en ?? '', boy: c.boy ?? '', adet: c.adet ?? '', m2: c.m2,
+        unit: c.unitPrice ?? '', amount: cur ? `${c.amount ?? ''} (${cur})` : c.amount ?? '',
+      };
+      // Başlık şeridi + tablo başlığı + en az bir satır aynı sayfada kalır
+      ensure(ROW * 3 + 10);
+      page.rect(M, y, WIDTH, ROW + 4, { fill: 0.88, stroke: false });
+      const notes = [
+        o.replanFrom && text.replanNote ? text.replanNote.replace('{from}', o.replanFrom.split('-').reverse().join('.')) : '',
+        o.offer == null && text.notSent ? text.notSent : '',
+      ].filter(Boolean).join(' · ');
+      const rightW = 200;
+      page.text(M + 4, y + 14.5, fitText(`${o.orderNo}${o.title ? ` — ${o.title}` : ''}`, 10, WIDTH - rightW - 12, true), { size: 10, bold: true, color: BLUE });
+      if (notes) page.text(M + WIDTH - rightW - 4, y + 14.5, fitText(notes, 8.5, rightW), { size: 8.5, color: GREY, align: 'right', width: rightW });
+      y += ROW + 6;
+      repeat = () => head(DC, dLabels, dAlign);
+      head(DC, dLabels, dAlign);
+      for (const r of o.detail.rows) {
+        ensure(ROW);
+        cell(DC, 'n', r.n == null ? '' : String(r.n), { align: 'left' });
+        cell(DC, 'desc', r.sub ? `   ${r.desc}` : r.desc, { align: 'left', color: r.sub ? GREY : undefined });
+        cell(DC, 'poz', r.poz ?? '', { align: 'left' });
+        cell(DC, 'en', r.en == null ? '' : String(r.en));
+        cell(DC, 'boy', r.boy == null ? '' : String(r.boy));
+        cell(DC, 'adet', String(r.adet));
+        cell(DC, 'm2', r.m2 == null ? '—' : m2(r.m2));
+        cell(DC, 'unit', r.unitPrice == null ? '—' : r.free ? text.free ?? '' : `${money(r.unitPrice)} / ${r.unit === 'm2' ? 'm²' : text.piece ?? ''}`);
+        cell(DC, 'amount', r.amount == null ? '—' : money(r.amount));
+        y += ROW;
+        page.line(M, y, M + WIDTH, y, 0.4, 0.85);
+      }
+      repeat = null;
+      // Sipariş ara toplamı: m² ve (gönderilmiş teklifte) tutar
+      ensure(ROW + 8);
+      y += 4;
+      page.text(M + WIDTH - 330, y + 12, text.subtotal ?? text.total, { size: 9, bold: true });
+      page.text(DC.m2.x - 60, y + 12, `${m2(o.detail.metraj)} m²`, { size: 9, bold: true, align: 'right', width: DC.m2.w + 60 - 3 });
+      if (o.offer != null) page.text(DC.amount.x - 70, y + 12, `${money(o.offer)} ${o.currency}`, { size: 9, bold: true, align: 'right', width: DC.amount.w + 70 - 3 });
+      y += ROW + 12;
+    }
   }
 
   // Sandıklar (fiziksel): yalnızca bu firmanın sandıkları ve içlerindeki bu firmanın siparişleri
