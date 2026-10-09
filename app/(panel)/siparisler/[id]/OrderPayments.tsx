@@ -19,6 +19,12 @@ const MATCH_TONE = { NONE: 'muted', FGO_ONLY: 'info', MANUAL_ONLY: 'warn', MATCH
 const BASIS_TONE = { FGO: 'info', MANUAL: 'purple', FGO_MANUAL: 'ok' } as const;
 const FIN_ERRORS = ['FORBIDDEN', 'REASON', 'ALREADY_VOID', 'INVOICED', 'BUSY', 'NOT_FOUND', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'NOT_ALLOWED', 'NO_PROFORMA', 'PENDING', 'NOTHING_TO_ADVANCE', 'DUPLICATE_RISK'];
 const rateText = (r: string | null) => (r == null ? null : Number(r).toFixed(4).replace('.', ','));
+/** orderFinanceView satırları (server/finance/view.js) */
+type PaymentRow = {
+  id: string; paidOn: Date; amount: number; currency: string; ron: number; rate: number | null; method: string; reference: string | null; note: string | null;
+  createdBy: string | null; createdAt: Date; voidedAt: Date | null; voidReason: string | null; outside: boolean; advanceRef: string | null; linked: boolean;
+};
+type AdvanceRow = { id: string; ref: string | null; at: Date; amount: number; basis: string; status: string };
 
 /**
  * Siparişin ödemeleri ve avansı (Paket 10, karar 210; yalnızca yönetici — ACCOUNTING_MANAGE). Kaynaklar ayrı gösterilir:
@@ -94,7 +100,7 @@ export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
                 </tr>
               </thead>
               <tbody>
-                {v.payments.map((p) => (
+                {(v.payments as PaymentRow[]).map((p) => (
                   <tr key={p.id} data-payment-row={p.id} data-voided={p.voidedAt ? '1' : undefined} className={p.voidedAt ? 'muted' : undefined}>
                     <td>{fmtDate(p.paidOn)}</td>
                     <td className="num">{fmtMoney(p.amount, p.currency)}</td>
@@ -134,7 +140,7 @@ export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
         <h3>{t('finance.advance.list')}</h3>
         {v.advances.length === 0 ? <p className="empty">{t('finance.advance.none')}</p> : (
           <ul className="plain-list" data-advances>
-            {v.advances.map((a) => (
+            {(v.advances as AdvanceRow[]).map((a) => (
               <li key={a.id} data-advance={a.ref ?? a.id}>
                 <span className="mono">{a.ref ?? '—'}</span> · {fmtDate(a.at)} · <b>{fmtMoney(a.amount, 'RON')}</b>{' '}
                 <Badge tone={BASIS_TONE[a.basis as keyof typeof BASIS_TONE] ?? 'muted'}>{m.badge[a.basis as keyof typeof m.badge] ?? a.basis}</Badge>

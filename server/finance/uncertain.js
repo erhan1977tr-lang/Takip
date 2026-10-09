@@ -162,7 +162,10 @@ export async function resolveUncertainJob(db, { jobId, action, series = '', numb
   return { ok: true, doc: `${s}${n}` };
 }
 
-/** Siparişin / partinin beklemedeki belirsiz işleri (ekran) */
+/**
+ * Siparişin / partinin beklemedeki belirsiz işleri (ekran)
+ * @param {any} db  @param {{ orderId?: string | null, batchIds?: string[] }} [o]
+ */
 export function parkedJobs(db, { orderId = null, batchIds = [] } = {}) {
   const or = [];
   if (orderId) or.push({ orderId });
