@@ -10,6 +10,9 @@ import { isFirmCode, suggestFirmCode } from '@/lib/prefix';
 import { getT, type T, type MsgKey } from '@/lib/i18n';
 import { parseFxPolicy } from '@/server/fx/resolve.js';
 import { isEmail } from '@/server/documents/delivery.js';
+import { actorOf } from '@/lib/actor';
+import { deleteCustomer, removeOrphanFiles } from '@/server/customers/deletion.js';
+import { removeUpload } from '@/server/files/store.js';
 
 export type FirmFormState = { error?: string; ok?: string; values?: Record<string, string> };
 
@@ -134,4 +137,22 @@ export async function updateFirmAction(formData: FormData) {
   await audit('CUSTOMER_UPDATE', 'Customer', id, admin.id, { before: { name: firm.name, prefix: firm.prefix, billingEmail: firm.billingEmail, ...fxBefore }, after: { name: data.name, prefix: data.prefix, billingEmail: mailAfter, ...fxAfter } });
   revalidatePath('/admin/firms');
   redirect(`/admin/firms?saved=${encodeURIComponent(data.name)}`);
+}
+
+/**
+ * Müşteri firmasını siler (Paket A, karar 221) — CUSTOMER_DELETE (yönetici ve Yönetici Yardımcısı). İki adım: firma sayfası
+ * önce etkilenecek kayıtları ve engelleri gösterir (?sil=1), yönetici firma adını elle yazarak onaylar; sunucu adı, önizleme
+ * parmak izini ve engelleri kilit altında yeniden denetler. Diskteki dosyalar işlem bittikten sonra ve yalnızca artık hiçbir
+ * kaydın göstermediği dosyalarsa silinir.
+ */
+export async function deleteCustomerAction(formData: FormData) {
+  const user = await requirePermission('CUSTOMER_DELETE');
+  const id = String(formData.get('id') ?? '');
+  const r = await deleteCustomer(db, { customerId: id, confirmName: formData.get('confirm'), fingerprint: formData.get('fp'), actor: await actorOf(user) });
+  if (!r.ok) redirect(`/admin/firms/${encodeURIComponent(id)}?sil=1&delError=${encodeURIComponent(r.code)}#firma-sil`);
+  const done = r as Extract<typeof r, { ok: true }>;
+  const files = await removeOrphanFiles(db, done.storageKeys, removeUpload);
+  if (files.failed) console.error('firma silme: diskten kaldırılamayan dosya sayısı', files.failed);
+  revalidatePath('/admin/firms');
+  redirect(`/admin/firms?deleted=${encodeURIComponent(done.name)}`);
 }

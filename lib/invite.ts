@@ -67,6 +67,25 @@ export async function issueInvite(
   }
 }
 
+/**
+ * E-posta değişikliği (karar 222): yeni adrese bağlı tek kullanımlık, süreli kodu ÖNCE e-postayla gönderir; kayıt yazılmaz.
+ * Gönderim başarılıysa çağıran (server/users/lifecycle.js → applyEmailChange) değişikliği ve davet kaydını tek işlemde
+ * yazar; gönderilemezse hiçbir şey değişmez. Dönen `error` SMTP'nin ham metni DEĞİLDİR (yalnızca sunucu günlüğüne yazılır).
+ */
+export async function sendEmailChangeCode(p: { to: string; name: string; firmName: string | null; language: string }): Promise<
+  { sent: true; invite: { codeHash: string; expiresAt: Date } } | { sent: false }
+> {
+  const { code, record } = createInvite(p.to, authSecret(), inviteTtlHours());
+  try {
+    const { mailer, cfg } = await getMailer();
+    await sendInviteEmail(mailer, cfg, { to: p.to, code, name: p.name, firmName: p.firmName ?? undefined, language: p.language, purpose: 'emailChange' });
+    return { sent: true, invite: { codeHash: record.codeHash, expiresAt: record.expiresAt } };
+  } catch (err) {
+    console.error('E-posta değişikliği kodu gönderilemedi:', err instanceof Error ? err.name : 'hata');
+    return { sent: false };
+  }
+}
+
 /** Kullanıcının durumu: aktif / davet gönderildi / davet edilmedi. */
 export async function inviteStatus(userId: string, hasPassword: boolean) {
   if (hasPassword) return { state: 'active' as const };

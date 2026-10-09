@@ -7,8 +7,9 @@ import { PROFILE_CATEGORIES, PROFILE_PRODUCTS } from '../prisma/seed/data/profil
 
 const uniq = (a) => new Set(a).size === a.length;
 
-test('seed: beş rol, yetkiler bilinen anahtarlar', () => {
-  assert.deepEqual(ROLES.map((r) => r.code).sort(), ['ADMIN', 'CIZIM', 'DENETIMCI', 'MUSTERI', 'SATIS']);
+test('seed: altı rol (Yönetici Yardımcısı — karar 219), yetkiler bilinen anahtarlar', () => {
+  assert.deepEqual(ROLES.map((r) => r.code).sort(), ['ADMIN', 'CIZIM', 'DENETIMCI', 'MUSTERI', 'SATIS', 'YONETICI_YARDIMCISI']);
+  for (const r of ROLES) assert.ok(r.description, `${r.code}: açıklama`);
   for (const r of ROLES) for (const p of r.permissions) assert.ok(PERMISSIONS.includes(p), `${r.code}: ${p}`);
 });
 

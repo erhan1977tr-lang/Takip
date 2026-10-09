@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { requirePermission } from '@/lib/auth/session';
+import { requireAnyPermission } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
@@ -34,15 +35,20 @@ const ERR: Record<string, MsgKey> = {
 };
 
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const user = await requirePermission('SETTINGS_MANAGE');
+  // Kritik / güvenlik ayarları (FGO bağlantısı, not çevirisi anahtarı, antivirüs, ortam uyarıları) yalnızca SETTINGS_MANAGE
+  // (gerçek yönetici); operasyonel ayarlar (günün BT kuru, fatura hatırlatma günü, depo alıcıları) OPS_SETTINGS_MANAGE —
+  // Yönetici Yardımcısı yalnızca bunları görür (karar 219). Her işlem kendi yetkisini ayrıca ister (actions.ts).
+  const user = await requireAnyPermission(['SETTINGS_MANAGE', 'OPS_SETTINGS_MANAGE']);
+  const full = userCan(user, 'SETTINGS_MANAGE');
+  const ops = userCan(user, 'OPS_SETTINGS_MANAGE');
   const { t } = await getT();
   const sp = await searchParams;
   // Gerçek sunucuda yok sayılan ayarların ADLARI — yalnızca bilinen sabit adlar (değer bu sayfaya hiç gelmez)
-  const ignoredNames: string[] = ignoredOnServer();
+  const ignoredNames: string[] = full ? ignoredOnServer() : [];
   const envIgnored = SERVER_IGNORED.filter((name: string) => ignoredNames.includes(name));
   const s = await getAvSettings(db);
   const [health, pendingFiles, pendingDrawings, infectedFiles, infectedDrawings, statusRow, blocked, pendingDrawingFiles, infectedDrawingFiles] = await Promise.all([
-    s.enabled ? avHealth(s) : Promise.resolve(null),
+    full && s.enabled ? avHealth(s) : Promise.resolve(null),
     db.orderFile.count({ where: { scanStatus: 'PENDING' } }),
     db.drawing.count({ where: { scanStatus: 'PENDING' } }),
     db.orderFile.findMany({ where: { scanStatus: 'INFECTED' }, orderBy: { scannedAt: 'desc' }, take: 20, include: { order: { select: { id: true, orderNo: true } } } }),
@@ -120,7 +126,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {sp.ok === 'warehouse' && <div className="alert alert-ok">{t('profile.settings.saved')}</div>}
       {sp.error === 'warehouse' && <div className="alert alert-error">{t('profile.settings.bad', { list: sp.detail ?? '' })}</div>}
 
-      {/* FGO (fatura sistemi; Aşama 6b) */}
+      {/* FGO (fatura sistemi; Aşama 6b) — bağlantı ayarları kritik: yalnızca SETTINGS_MANAGE */}
+      {full && (<>
       {sp.ok === 'fgo' && <div className="alert alert-ok">{t('admin.integrations.fgo.saved')}</div>}
       {sp.error === 'fgo' && <div className="alert alert-error">{t('admin.integrations.fgo.bad', { what: sp.detail ?? '' })}</div>}
       {sp.ok === 'fgoTest' && <div className="alert alert-ok">{t('admin.integrations.fgo.testOk', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
@@ -171,9 +178,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       <div className="row" style={{ marginTop: -8, marginBottom: 16 }}>
         <form action={testFgoAction}><button className="btn">{t('admin.integrations.fgo.test')}</button></form>
       </div>
+      </>)}
+      {/* Operasyonel ayarlar (OPS_SETTINGS_MANAGE — yönetici ve Yönetici Yardımcısı): günün BT kuru, fatura uyarısı, depo alıcıları */}
+      {ops && (<>
       {sp.ok === 'fxDaily' && <div className="alert alert-ok">{t('admin.integrations.fgo.dailySaved', { rate: sp.rate ?? '' })}</div>}
       {sp.error === 'fxDaily' && <div className="alert alert-error">{t('admin.integrations.fgo.dailyBad')}</div>}
-      <form action={saveDailyRateAction} className="card">
+      <form action={saveDailyRateAction} className="card" id="kur">
         <h2>{t('admin.integrations.fgo.dailyTitle')}</h2>
         <p className="muted small">{t('admin.integrations.fgo.dailyIntro')}</p>
         <div className="row">
@@ -199,8 +209,10 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </div>
         <div className="hint">{t('admin.integrations.accounting.hint', { max: UNINVOICED_MAX_DAYS })}</div>
       </form>
+      </>)}
 
       {/* Not çevirisi (karar 127): sipariş notları yazılırken bir kez çevrilir; anahtar yalnızca burada girilir, gösterilmez */}
+      {full && (<>
       {sp.ok === 'translate' && <div className="alert alert-ok">{t('admin.integrations.translate.saved')}</div>}
       {sp.error === 'translate' && <div className="alert alert-error">{t(`admin.integrations.translate.bad.${trBad}` as MsgKey)}</div>}
       {sp.ok === 'translateTest' && <div className="alert alert-ok">{t('admin.integrations.translate.testOk', { sample: sp.detail ?? '' })}</div>}
@@ -235,7 +247,9 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <form action={testTranslateAction} id="ceviri-dene"><button className="btn" disabled={!noteTr.hasKey}>{t('admin.integrations.translate.test')}</button></form>
         <span className="muted small">{t('admin.integrations.translate.testHint')}</span>
       </div>
+      </>)}
 
+      {ops && (
       <form action={saveWarehouseAction} className="card" id="depo">
         <h2>{t('profile.settings.title')}</h2>
         <p className="muted small">{t('profile.settings.intro')}</p>
@@ -247,6 +261,9 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <button className="btn btn-primary">{t('profile.settings.save')}</button>
         </div>
       </form>
+      )}
+
+      {full && (<>
 
       <div className="card" id="antivirus">
         <h2>{t('admin.integrations.av.title')}</h2>
@@ -325,6 +342,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           </div>
         )}
       </div>
+      </>)}
     </>
   );
 }

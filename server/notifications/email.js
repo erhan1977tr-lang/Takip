@@ -70,8 +70,10 @@ const loc = (l) => (l === 'tr' ? 'tr' : 'ro');
 /**
  * Olayın alıcıları: [{ email, locale, role }] (e-postaya göre tekil). role: firma adı maskesi için (müşteride null).
  * lang: olay yazılırken belirlenen müşteri e-posta dili (payload.lang — karar 200); yoksa (eski olay) bugünkü kural.
- * actorId: işlemi yapan — yönetici kümesinde kendisine kendi işlemi e-postalanmaz; yönetici kümesi yalnızca etkin
- * hesaplardır (karar 218; uygulama içi bildirimle aynı kural).
+ * actorId: işlemi yapan — yönetici kümesinde kendisine kendi işlemi e-postalanmaz (karar 218).
+ * Pasif kullanıcıya operasyonel e-posta GİTMEZ (Paket A, karar 220): bütün kitlelerde — sipariş sahibi müşteri kullanıcısı,
+ * atanmış çizimci, ilgili satışçı / satış ekibi, yönetici ve diğer roller — yalnızca etkin hesaplar (uygulama içi bildirimle
+ * aynı kural). Firmanın kendi e-posta adresi bir kullanıcı değildir; o adres pasif bir hesabın adresiyse yine gönderilmez.
  * @param {any} db @param {string} type @param {any} order @param {{ lang?: 'ro' | 'tr' | null, actorId?: string | null }} [o]
  */
 export async function recipientsFor(db, type, order, { lang: snapshot = null, actorId = null } = {}) {
@@ -90,21 +92,24 @@ export async function recipientsFor(db, type, order, { lang: snapshot = null, ac
       const mine = creator && creator.customerId === order.customerId;
       if (mine && creator.emailNotifications === false) continue;
       const lang = snapshot ?? customerMailLang(creator);
-      if (mine) add(creator.email, lang, null);
+      if (mine && creator.isActive !== false) add(creator.email, lang, null);
       const firm = order.customer?.email;
-      if (isEmail(firm) && !(await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, emailNotifications: false }, select: { id: true } }))) add(firm, lang, null);
+      const blocked = isEmail(firm)
+        ? await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, OR: [{ emailNotifications: false }, { isActive: false }] }, select: { id: true } })
+        : null;
+      if (isEmail(firm) && !blocked) add(firm, lang, null);
     } else if (a === 'drawer' && order.assignedDrawer) {
-      add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
+      if (order.assignedDrawer.isActive !== false) add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
     } else if (a === 'orderSales') {
       // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa (siparişi yönetici yönlendirdiyse) satış ekibi. Yönetici değil.
-      const known = (order.salesUsers ?? []).filter((u) => ROLE_SETS.sales.includes(u.appRole));
-      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales } }, select: { email: true, language: true, appRole: true } });
+      const known = (order.salesUsers ?? []).filter((u) => u.isActive !== false && ROLE_SETS.sales.includes(u.appRole));
+      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales }, isActive: true }, select: { email: true, language: true, appRole: true } });
       for (const u of users) add(u.email, u.language, u.appRole);
     } else if (a === 'admin') {
       const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS.admin }, isActive: true }, select: { id: true, email: true, language: true, appRole: true } });
       for (const u of users) if (!actorId || u.id !== actorId) add(u.email, u.language, u.appRole);
     } else {
-      const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS[a] ?? [] } }, select: { email: true, language: true, appRole: true } });
+      const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS[a] ?? [] }, isActive: true }, select: { email: true, language: true, appRole: true } });
       for (const u of users) add(u.email, u.language, u.appRole);
     }
   }
@@ -236,8 +241,8 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
         where: { id: row.orderId },
         include: {
           customer: { select: { name: true, email: true } },
-          createdBy: { select: { email: true, language: true, fixedLanguage: true, emailNotifications: true, customerId: true } },
-          assignedDrawer: { select: { email: true, language: true, appRole: true } },
+          createdBy: { select: { email: true, language: true, fixedLanguage: true, emailNotifications: true, customerId: true, isActive: true } },
+          assignedDrawer: { select: { email: true, language: true, appRole: true, isActive: true } },
         },
       }) : null;
       // Belge FGO'da kesildiyse müşteriye belge e-postası gider (PDF ekiyle); aynı olay için ikinci e-posta gönderilmez

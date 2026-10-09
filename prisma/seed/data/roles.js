@@ -6,6 +6,7 @@ export const PERMISSIONS = Object.keys(PERMISSION_DOCS);
 
 const DESCRIPTIONS = {
   ADMIN: 'Sistem yöneticisi — tam yetki, son fiyat ve müşteriye gönderim',
+  YONETICI_YARDIMCISI: 'Yönetici yardımcısı — yöneticinin operasyonel yetkileri; kullanıcı / rol, güvenlik ve kritik ayar yönetimi ve giriş logları yok',
   SATIS: 'Satış — cam siparişini inceler, teklif hazırlar; müşteriye gönderemez, iptal edemez',
   CIZIM: 'Çizim ekibi — çizim sürümleri ve revizyonlar; fiyat görmez',
   MUSTERI: 'Müşteri — yalnızca kendi firmasının siparişleri',

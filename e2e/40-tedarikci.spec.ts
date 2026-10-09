@@ -257,12 +257,13 @@ test('tahmini yükleme tarihi: yalnızca yönetici girer; 2 gün kala yöneticiy
     const id = orderUrl.split('/').pop()!;
     const notes = await db.notification.findMany({ where: { type: 'SUPPLIER_ETA', dedupeKey: `supplier-eta:${id}:${day(1)}` }, include: { user: { select: { appRole: true } } } });
     expect(notes.length).toBeGreaterThan(0);
-    expect(notes.every((n) => n.user.appRole === 'ADMIN')).toBe(true);
+    // SUPPLIER_MANAGE: yönetici ve Yönetici Yardımcısı (karar 219)
+    expect(notes.every((n) => ['ADMIN', 'YONETICI_YARDIMCISI'].includes(n.user.appRole))).toBe(true);
     expect(notes[0].link).toBe(orderUrl);
     // Aynı tarih için ikinci hatırlatma yok (işçinin turu da aynı anahtarı yazar)
     worker();
     expect(await db.notification.count({ where: { type: 'SUPPLIER_ETA', dedupeKey: `supplier-eta:${id}:${day(1)}` } })).toBe(notes.length);
-    expect(await db.notification.count({ where: { type: 'SUPPLIER_ETA', user: { appRole: { not: 'ADMIN' } } } })).toBe(0);
+    expect(await db.notification.count({ where: { type: 'SUPPLIER_ETA', user: { appRole: { notIn: ['ADMIN', 'YONETICI_YARDIMCISI'] } } } })).toBe(0);
   } finally {
     await db.$disconnect();
   }

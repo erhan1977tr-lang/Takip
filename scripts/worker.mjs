@@ -32,6 +32,7 @@ import { getEnv, startupEnv } from '../server/env.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
+import { pruneLoginEvents } from '../server/auth/login-log.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
 import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
 import { dispatchSupplierOrderEmails } from '../server/suppliers/dispatch.js';
@@ -122,14 +123,14 @@ async function fgoSyncTick() {
 }
 
 // Saatte bir (ve işçi başlarken): geçersiz oturum satırları + eski hatalı giriş kayıtları silinir (SEC-11).
-// Kullanıcıyı etkilemez: bu oturumlar zaten kabul edilmiyordu.
+// Kullanıcıyı etkilemez: bu oturumlar zaten kabul edilmiyordu. Aynı turda 365 günden eski giriş logları da silinir (karar 223).
 const PRUNE_MS = 3_600_000;
 let prunedAt = 0;
 async function pruneTick() {
   if (Date.now() - prunedAt < PRUNE_MS) return;
   prunedAt = Date.now();
-  const r = await pruneSessions(db);
-  if (r.sessions || r.failures) log('oturum temizliği:', JSON.stringify(r));
+  const r = { ...(await pruneSessions(db)), loginEvents: await pruneLoginEvents(db) };
+  if (r.sessions || r.failures || r.loginEvents) log('oturum temizliği:', JSON.stringify(r));
 }
 
 // Saatte bir: uyarı günü gelmiş, kapanış faturası kesilmemiş yüklemeler → muhasebe yetkisine uygulama içi bildirim.

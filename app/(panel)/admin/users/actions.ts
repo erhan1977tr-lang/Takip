@@ -6,12 +6,15 @@ import { Prisma, type AppRole } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission, destroyAllSessions } from '@/lib/auth/session';
 import { audit } from '@/lib/audit';
-import { issueInvite } from '@/lib/invite';
+import { issueInvite, sendEmailChangeCode } from '@/lib/invite';
 import { getT } from '@/lib/i18n';
+import { actorOf } from '@/lib/actor';
+import { applyEmailChange, checkEmailChange, deleteUser } from '@/server/users/lifecycle.js';
 
 export type UserFormState = { error?: string; ok?: string; warn?: string; values?: Record<string, string> };
 
-const ASSIGNABLE: AppRole[] = ['MUSTERI', 'SATIS', 'CIZIM', 'DENETIMCI'];
+// Yönetici Yardımcısı (karar 219) atanabilir; yönetici rolü bu ekrandan verilmez (yalnızca sunucu komutu — scripts/create-admin.mjs)
+const ASSIGNABLE: AppRole[] = ['MUSTERI', 'SATIS', 'CIZIM', 'DENETIMCI', 'YONETICI_YARDIMCISI'];
 // Davet e-postası dilleri: formda yalnızca Romence ve Türkçe sunulur (eski 'en' kayıtları olduğu gibi kalır)
 const LANGS = ['ro', 'tr'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -77,7 +80,7 @@ async function targetUser(formData: FormData, adminId: string) {
   const id = String(formData.get('id') ?? '');
   if (id === adminId) redirect('/admin/users?error=self');
   const user = await db.user.findUnique({ where: { id } });
-  if (!user) redirect('/admin/users?error=notfound');
+  if (!user || user.deletedAt) redirect('/admin/users?error=notfound');
   return user;
 }
 
@@ -114,4 +117,51 @@ export async function toggleActiveAction(formData: FormData) {
   await audit(isActive ? 'USER_ACTIVATE' : 'USER_DEACTIVATE', 'User', user.id, admin.id);
   revalidatePath('/admin/users');
   redirect(`/admin/users?ok=${isActive ? 'activated' : 'deactivated'}&email=${encodeURIComponent(user.email)}`);
+}
+
+// Sonuç kodu → sayfa uyarısı (sayfa yalnızca bilinen kodları sabit metne çevirir)
+const LIFECYCLE_ERR: Record<string, string> = {
+  FORBIDDEN: 'forbidden', NOT_FOUND: 'notfound', SELF: 'self', PROTECTED: 'protected', DELETED: 'notfound',
+  INVALID_EMAIL: 'invalidEmail', SAME_EMAIL: 'sameEmail', EMAIL_TAKEN: 'emailTaken', STALE: 'stale', CONFIRM_REQUIRED: 'confirm', INVITE: 'mail',
+};
+const errOf = (code: string) => LIFECYCLE_ERR[code] ?? 'notfound';
+
+/**
+ * Kullanıcının e-posta adresini değiştirir (yalnızca gerçek yönetici — USER_MANAGE, karar 222). Sıra:
+ *   1. ön denetim (biçim, benzersizlik, hedef: kendisi / yönetici / silinmiş değil);
+ *   2. yeni adrese tek kullanımlık, süreli kod gönderilir — gönderilemezse HİÇBİR ŞEY değişmez (hesap erişilebilir kalır);
+ *   3. tek işlemde: e-posta güncellenir, şifre sıfırlanır, bütün oturumlar silinir, eski davetler kapanır, yeni davet kaydı
+ *      ve denetim kaydı (eski → yeni adres) yazılır. Bu arada hedef değiştiyse işlem yapılmaz (gönderilen kod geçersiz kalır).
+ */
+export async function changeEmailAction(formData: FormData) {
+  const admin = await requirePermission('USER_MANAGE');
+  const actor = await actorOf(admin);
+  const id = String(formData.get('id') ?? '');
+  const back = (q: string) => redirect(`/admin/users?${q}`);
+  const check = await checkEmailChange(db, { targetId: id, newEmail: formData.get('email'), actor });
+  if (!check.ok) back(`error=${errOf(check.code)}&eposta=${encodeURIComponent(id)}`);
+  const ok = check as Extract<typeof check, { ok: true }>;
+  const mail = await sendEmailChangeCode({ to: ok.email, name: ok.user.name, firmName: ok.user.firmName, language: ok.user.language });
+  if (!mail.sent) {
+    await audit('USER_EMAIL_CHANGE_FAILED', 'User', ok.user.id, admin.id, { reason: 'mail' });
+    back(`error=mailChange&eposta=${encodeURIComponent(id)}`);
+  }
+  const sent = mail as Extract<typeof mail, { sent: true }>;
+  const r = await applyEmailChange(db, { targetId: id, oldEmail: ok.user.email, newEmail: ok.email, invite: sent.invite, actor });
+  if (!r.ok) back(`error=${errOf(r.code)}&eposta=${encodeURIComponent(id)}`);
+  revalidatePath('/admin/users');
+  back(`ok=emailChanged&email=${encodeURIComponent(ok.email)}`);
+}
+
+/**
+ * Kullanıcıyı siler (anonimleştirir — karar 221; yalnızca gerçek yönetici). İki adım: sayfa önce etkilenecek kayıtları
+ * gösterir (?sil=<id>), yönetici kullanıcının e-posta adresini elle yazarak onaylar; sunucu adresi yeniden denetler.
+ */
+export async function deleteUserAction(formData: FormData) {
+  const admin = await requirePermission('USER_MANAGE');
+  const id = String(formData.get('id') ?? '');
+  const r = await deleteUser(db, { targetId: id, confirmEmail: formData.get('confirm'), actor: await actorOf(admin) });
+  if (!r.ok) redirect(`/admin/users?error=${errOf(r.code)}${r.code === 'CONFIRM_REQUIRED' ? `&sil=${encodeURIComponent(id)}` : ''}`);
+  revalidatePath('/admin/users');
+  redirect(`/admin/users?ok=deleted&email=${encodeURIComponent((r as { email: string }).email)}`);
 }

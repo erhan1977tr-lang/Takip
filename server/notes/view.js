@@ -18,7 +18,7 @@ export const STALE_PENDING_MS = 2 * 60_000;
  */
 export function translationTarget(role) {
   if (role === 'MUSTERI') return 'tr';
-  if (role === 'ADMIN' || role === 'SATIS' || role === 'CIZIM') return 'ro';
+  if (role === 'ADMIN' || role === 'YONETICI_YARDIMCISI' || role === 'SATIS' || role === 'CIZIM') return 'ro';
   return null;
 }
 

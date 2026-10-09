@@ -56,8 +56,8 @@ test('bildirim alıcıları ve metinleri: fatura bekliyor yalnızca muhasebe yet
   for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI']) assert.ok(!AUDIENCE_ROLES.accounting.includes(role), role);
   assert.ok(AUDIENCE_ROLES.accounting.includes('ADMIN'));
   // Yetki: ev sahibi FİRMAYI yalnızca yönetici (LOADING_CONFIRM) seçer; sandığı satış da seçebilir (CRATE_EDIT)
-  assert.deepEqual(Object.keys(ROLE_PERMISSIONS).filter((r) => can(r, 'LOADING_CONFIRM')), ['ADMIN']);
-  assert.deepEqual(Object.keys(ROLE_PERMISSIONS).filter((r) => can(r, 'CRATE_EDIT')).sort(), ['ADMIN', 'SATIS']);
+  assert.deepEqual(Object.keys(ROLE_PERMISSIONS).filter((r) => can(r, 'LOADING_CONFIRM')), ['ADMIN', 'YONETICI_YARDIMCISI']);
+  assert.deepEqual(Object.keys(ROLE_PERMISSIONS).filter((r) => can(r, 'CRATE_EDIT')).sort(), ['ADMIN', 'SATIS', 'YONETICI_YARDIMCISI']);
 
   const overdue = { type: 'INVOICE_OVERDUE', params: { aud: 'staff', orderNo: 'ALE53', firm: 'ALEGRAD', day: '2026-10-09', qty: 6 } };
   assert.deepEqual(renderInApp('tr', overdue), { title: 'Fatura bekliyor: yüklenen cam fatura edilmedi', body: 'ALE53 · ALEGRAD · yükleme 09.10.2026 · 6 gündür fatura edilmedi' });

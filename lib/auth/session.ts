@@ -102,6 +102,16 @@ export async function requirePermission(permission: Permission): Promise<Current
   return user;
 }
 
+/**
+ * Yetkilerden EN AZ BİRİ gerekir (ör. Ayarlar sayfası: kritik ayarlar SETTINGS_MANAGE, operasyonel ayarlar
+ * OPS_SETTINGS_MANAGE — karar 219). Sayfa hangi bölümü göstereceğini ayrıca userCan ile seçer; her işlem kendi yetkisini ister.
+ */
+export async function requireAnyPermission(permissions: Permission[]): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!permissions.some((p) => userCan(user, p))) redirect(homeFor(user.appRole));
+  return user;
+}
+
 /** Oturum yoksa girişe, rol uymuyorsa kendi ana sayfasına yönlendirir. Yeni kodda requirePermission kullanın. */
 export async function requireUser(roles?: AppRole[]): Promise<CurrentUser> {
   const { user, idle } = await loadSession();

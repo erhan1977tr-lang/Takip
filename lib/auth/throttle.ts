@@ -39,7 +39,7 @@ export async function runAttempt<T extends { ok: boolean }>(
   email: string,
   ip: string,
   verify: () => Promise<T>,
-): Promise<{ locked: true; minutes: number } | { locked: false; outcome: T }> {
+): Promise<{ locked: true; minutes: number } | { locked: false; outcome: T; filled?: string[] }> {
   const result = (await runAttemptIn(db, { kind, email, ip }, verify)) as
     | { locked: true; minutes: number }
     | { locked: false; outcome: T; filled?: string[] };

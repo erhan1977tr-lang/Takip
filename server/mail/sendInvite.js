@@ -5,10 +5,10 @@ import { sendBrandedMail } from './send.js';
 /**
  * @param {object} transport  nodemailer taşıyıcısı ya da sendMail(msg) metodu olan herhangi bir nesne
  * @param {object} cfg        readMailConfig() çıktısı
- * @param {object} p          { to, code, name, firmName, language }
+ * @param {object} p          { to, code, name, firmName, language, purpose } — purpose 'emailChange': e-posta değişikliği metni
  * @returns {Promise<{messageId?: string}>}
  */
-export async function sendInviteEmail(transport, cfg, { to, code, name, firmName, language }) {
+export async function sendInviteEmail(transport, cfg, { to, code, name, firmName, language, purpose = 'invite' }) {
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new Error(`Geçersiz alıcı adresi: "${to}"`);
   const { subject, text, html } = renderInviteEmail({
     code,
@@ -18,6 +18,7 @@ export async function sendInviteEmail(transport, cfg, { to, code, name, firmName
     ttlHours: cfg.inviteTtlHours,
     appUrl: cfg.appUrl,
     email: to,
+    purpose,
   });
   const info = await sendBrandedMail(transport, { from: cfg.from, to, subject, text, html, lang: language });
   return { messageId: info && info.messageId };

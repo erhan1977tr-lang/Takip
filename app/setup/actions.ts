@@ -13,6 +13,7 @@ import { isLocale } from '@/server/i18n/index.js';
 import { verifyInviteCode } from '@/server/auth/invite-claim.js';
 import { recordCodeFailure } from '@/server/auth/lock-events.js';
 import { requestIp, runAttempt } from '@/lib/auth/throttle';
+import { codeOwner, recordLoginEvent } from '@/server/auth/login-log.js';
 
 function back(email: string, error?: string) {
   return `/setup?email=${encodeURIComponent(email)}${error ? `&error=${error}` : ''}`;
@@ -39,6 +40,10 @@ export async function verifyCodeAction(formData: FormData) {
     // o sonuç ancak bir hak harcandıysa oluşur, bu yüzden davet başına en çok 5 satır. Davet yok / kullanılmış / süresi
     // dolmuş / kilitli ise kod karşılaştırılmamıştır: kayıt yazılmaz. Kodun kendisi hiçbir kayda verilmez.
     if (result.reason === 'wrong_code') await recordCodeFailure(db, { email, ip });
+    // Giriş logu (karar 223): kod yalnızca 'wrong_code'da o hesabın gerçek davetiyle karşılaştırılmıştır → kullanıcı kesin;
+    // öteki sonuçlarda olay kullanıcıya bağlanmaz
+    const owner = result.reason === 'wrong_code' ? await codeOwner(db, email) : null;
+    await recordLoginEvent(db, { kind: 'CODE', success: false, user: owner, ip, locked: !!attempt.filled?.length });
     redirect(back(email, 'wrong_code'));
   }
 
@@ -80,5 +85,6 @@ export async function setPasswordAction(formData: FormData) {
     if (invite.user.language !== lang) await db.user.update({ where: { id: invite.userId }, data: { language: lang } });
   }
   await audit('PASSWORD_SET', 'User', invite.userId, invite.userId);
+  await recordLoginEvent(db, { kind: 'SETUP', success: true, user: { id: invite.userId, appRole: invite.user.appRole }, ip: await requestIp() });
   redirect(homeFor(invite.user.appRole));
 }

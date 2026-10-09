@@ -36,6 +36,7 @@ enum UserType {
 // Yetkiler rol adına değil server/auth/permissions.js matrisine göre verilir.
 enum AppRole {
   ADMIN     // Sistem Yöneticisi
+  YONETICI_YARDIMCISI // Yönetici Yardımcısı: operasyonel yönetici; kullanıcı / güvenlik / kritik ayar yok (karar 219)
   SATIS
   CIZIM
   MUSTERI
@@ -87,6 +88,31 @@ enum PermissionKey {
   ACCOUNT_SETTINGS
   LOADING_CONFIRM
   SUPPLIER_MANAGE
+  OPS_SETTINGS_MANAGE
+  CUSTOMER_DELETE
+}
+
+// Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
+// bilgisi ve DENENEN e-posta metni hiç yazılmaz; kimliği kesin olmayan başarısız deneme kullanıcıya bağlanmaz (userId boş).
+enum LoginEventKind {
+  LOGIN // e-posta + şifre
+  CODE  // davet kodu adımı
+  SETUP // davetle şifre belirlendi (ilk giriş)
+}
+
+model LoginEvent {
+  id        String         @id @default(cuid())
+  userId    String?
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role      AppRole?       // olay anındaki rol (kullanıcı biliniyorsa)
+  kind      LoginEventKind
+  success   Boolean
+  locked    Boolean        @default(false) // bu başarısız deneme bir giriş sınırını doldurdu (geçici kilit başladı)
+  ip        String?
+  createdAt DateTime       @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model RolePermission {
@@ -157,8 +183,11 @@ model User {
   compensationsCreated Compensation[] @relation("CompensationCreatedBy")
   compensationsDecided Compensation[] @relation("CompensationDecidedBy")
   deliveryReports    DeliveryReport[] @relation("DeliveryReportCreatedBy")
+  loginEvents        LoginEvent[]
 
   isActive     Boolean    @default(true)
+  // Silinmiş kullanıcı (karar 221): satır silinmez (denetim kaydı değiştirilemez), kimliği anonimleştirilir ve listeden kalkar
+  deletedAt    DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 }

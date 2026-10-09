@@ -1,7 +1,7 @@
 'use server';
 
 // Ayarlar → Çalışma Takvimleri (Paket 8, karar 192). Kural ve kayıt server/calendar/*'te; burada yalnızca form okuma ve
-// yönlendirme. Yetki: SETTINGS_MANAGE (yalnızca yönetici) — burada ve serviste ayrı ayrı.
+// yönlendirme. Yetki: OPS_SETTINGS_MANAGE (yönetici ve Yönetici Yardımcısı — karar 219) — burada ve serviste ayrı ayrı.
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -14,7 +14,7 @@ const PATH = '/admin/entegrasyonlar/takvimler';
 
 /** Bir günü elle açık / kapalı işaretle ya da kararı kaldır (AUTO) */
 export async function setOverrideAction(fd: FormData) {
-  const admin = await requirePermission('SETTINGS_MANAGE');
+  const admin = await requirePermission('OPS_SETTINGS_MANAGE');
   const calendar = String(fd.get('calendar') ?? '');
   const day = String(fd.get('day') ?? '');
   const month = /^\d{4}-\d{2}$/.test(String(fd.get('month') ?? '')) ? String(fd.get('month')) : day.slice(0, 7);

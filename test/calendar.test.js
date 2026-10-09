@@ -227,14 +227,14 @@ test('elle karar formu: takvim, gün ve karar doğrulanır; açıklama sadeleşt
   assert.equal(nextOpenDay('RO_DEPOT', '2026-12-24'), '2026-12-28');
 });
 
-test('yapı: takvim kuralları dış servise bağlanmaz; tek yazar setOverride (SETTINGS_MANAGE, denetim kaydı); profil tarihi takvimden', () => {
+test('yapı: takvim kuralları dış servise bağlanmaz; tek yazar setOverride (OPS_SETTINGS_MANAGE, denetim kaydı); profil tarihi takvimden', () => {
   for (const f of ['server/calendar/holidays.js', 'server/calendar/rules.js', 'server/calendar/service.js']) {
     const src = read(f);
     assert.ok(!/\bfetch\(|https?:\/\/|node:http|node:net/.test(src), `${f} dış bağlantı içermez`);
   }
   const service = read('server/calendar/service.js');
   assert.ok(/if \(!allowed\(actor\)\) return FORBIDDEN;/.test(service));
-  assert.ok(service.includes("can(actor.role, 'SETTINGS_MANAGE')"));
+  assert.ok(service.includes("can(actor.role, 'OPS_SETTINGS_MANAGE')")); // karar 219: operasyonel ayar (yönetici + Yönetici Yardımcısı)
   assert.ok(service.includes("action: 'WORK_CALENDAR_OVERRIDE'"));
   // Takvim istisnasına başka yazar yok
   const writers = [];

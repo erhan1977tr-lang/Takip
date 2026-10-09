@@ -4,13 +4,16 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { CreateFirmForm } from './FirmForm';
+import { userCan } from '@/lib/permissions';
 
 export default async function FirmsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requirePermission('CUSTOMER_MANAGE');
+  const me = await requirePermission('CUSTOMER_MANAGE');
+  // Kullanıcılar sayfası yalnızca USER_MANAGE (gerçek yönetici — karar 219): Yönetici Yardımcısına bağlantı gösterilmez
+  const canUsers = userCan(me, 'USER_MANAGE');
   const { t, m } = await getT();
   const sp = await searchParams;
   const firms = await db.customer.findMany({
@@ -23,10 +26,11 @@ export default async function FirmsPage({
     <>
       <div className="page-head">
         <h1>{t('admin.firms.title')}</h1>
-        <p className="muted">{rich(t('admin.firms.intro'), { users: <Link href="/admin/users">{t('admin.firms.usersTab')}</Link> })}</p>
+        <p className="muted">{rich(t('admin.firms.intro'), { users: canUsers ? <Link href="/admin/users">{t('admin.firms.usersTab')}</Link> : <b>{t('admin.firms.usersTab')}</b> })}</p>
       </div>
       {sp.saved && <div className="alert alert-ok">{t('admin.firms.saved', { name: sp.saved })}</div>}
-      <CreateFirmForm groups={groups} m={m.admin.firmForm} />
+      {sp.deleted && <div className="alert alert-ok" data-firm-deleted>{t('admin.firmDelete.done', { name: sp.deleted })}</div>}
+      <CreateFirmForm groups={groups} m={m.admin.firmForm} canUsers={canUsers} />
 
       <div className="card card-flush">
         <div className="card-head"><h2>{t('admin.firms.listTitle', { n: firms.length })}</h2></div>

@@ -132,6 +132,7 @@ const STAFF = [
   { id: 'y1', email: 'yonetici1@fabrika.test', name: 'Yönetici Bir', appRole: 'ADMIN' },
   { id: 'y2', email: 'yonetici2@fabrika.test', name: 'Yönetici İki', appRole: 'ADMIN' },
   { id: 'y3', email: 'eski-yonetici@fabrika.test', name: 'Pasif Yönetici', appRole: 'ADMIN', isActive: false },
+  { id: 'yy1', email: 'yardimci@fabrika.test', name: 'Yönetici Yardımcısı', appRole: 'YONETICI_YARDIMCISI' },
   { id: 's1', email: 'satis@fabrika.test', name: 'Satış', appRole: 'SATIS' },
   { id: 'c1', email: 'cizim@fabrika.test', name: 'Çizim', appRole: 'CIZIM' },
   { id: 'd1', email: 'denetim@fabrika.test', name: 'Denetim', appRole: 'DENETIMCI' },
@@ -358,7 +359,9 @@ test('hesabı OLMAYAN e-posta: kullanıcıya bağlı kayıt ve bildirim yok; yal
 // ───────────────────────── yöneticiye bildirim ─────────────────────────
 
 test('bildirim: yalnızca gerçek kullanıcı + e-posta geneli kilit; yalnızca etkin yöneticiler; içerikte sır yok', async () => {
-  assert.deepEqual(AUDIENCE_ROLES.admin, ['ADMIN']);
+  // Güvenlik bildirimi yalnızca gerçek yöneticiye (karar 220): Yönetici Yardımcısı operasyonel 'admin' kitlesindedir, 'security'de değil
+  assert.deepEqual(AUDIENCE_ROLES.security, ['ADMIN']);
+  assert.ok(AUDIENCE_ROLES.admin.includes('YONETICI_YARDIMCISI'));
   const db = world();
   const out = await recordLock(db, { kind: 'LOGIN', email: E, ip: IP, filled: ['email'], now: at(0), timeZone: TZ, log: quiet });
   assert.deepEqual(out, { audit: true, notified: 2 });
@@ -367,7 +370,7 @@ test('bildirim: yalnızca gerçek kullanıcı + e-posta geneli kilit; yalnızca 
   // Alanlar sabit: kullanıcının adı + kayıtlı e-postası, alıcı türü. IP, tür, kapsam, şifre, kod, anahtar yok
   assert.deepEqual(db.st.notifications.map((n) => n.params), Array(2).fill({ user: 'Hedef Kişi · hedef@ornek.test', aud: 'staff' }));
   // Satış / çizim / denetimci / müşteri / pasif yönetici almaz
-  for (const id of ['y3', 's1', 'c1', 'd1', 'm1', 'hedef']) assert.equal(db.st.notifications.some((n) => n.userId === id), false, id);
+  for (const id of ['y3', 'yy1', 's1', 'c1', 'd1', 'm1', 'hedef']) assert.equal(db.st.notifications.some((n) => n.userId === id), false, id);
   // Metin iki dilde; yedek metin (Romence) satırda saklanır
   assert.deepEqual(renderInApp('tr', db.st.notifications[0]), { title: 'Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi', body: 'Hedef Kişi · hedef@ornek.test' });
   assert.deepEqual(renderInApp('ro', db.st.notifications[0]), { title: 'Securitate: autentificarea unui cont a fost blocată după prea multe încercări greșite', body: 'Hedef Kişi · hedef@ornek.test' });
@@ -569,7 +572,7 @@ test('yapı: kilitli istek yolu yazmaz; kilit kaydı tek yerde; ekranlar ve sarm
   assert.deepEqual([...read('server/auth/lock-events.js').matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]), ['../orders/journal.js', '../notifications/inapp.js', '../profile/dates.js', './throttle.js']);
   assert.equal(/notificationOutbox|sendMail|sendBrandedMail|enqueueOutbox|nodemailer|fetch\(/.test(svc), false, 'e-posta / dış istek yok');
   assert.equal(/password|passwordHash|codeHash|cookie|token|userAgent|secret/i.test(svc), false, 'servis sır alanı tanımaz');
-  assert.ok(svc.includes("audience: 'admin'") && svc.includes("scopes.includes('email')"));
+  assert.ok(svc.includes("audience: 'security'") && svc.includes("scopes.includes('email')"));
   assert.equal((svc.match(/notifyStaff\(/g) ?? []).length, 1);
   assert.equal((svc.match(/writeAudit\(/g) ?? []).length, 2);
   // Hak ayırma: dolan sınır aynı sayımdan, kilitlerin altında ve kayıttan sonra hesaplanır; kilit kararını etkilemez

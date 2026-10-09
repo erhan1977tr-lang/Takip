@@ -51,6 +51,24 @@ const STRINGS = {
   },
 };
 
+// E-posta adresi değişikliği (karar 222): aynı kod / bağlantı akışı, farklı metin — hesap yeni adrese taşındı, şifre yeniden belirlenir
+const EMAIL_CHANGE = {
+  tr: {
+    subject: 'Takip hesabınızın e-posta adresi değiştirildi — doğrulama kodunuz',
+    intro: (f) => (f ? `${f} için Takip hesabınızın e-posta adresi yönetici tarafından bu adresle değiştirildi.` : 'Takip hesabınızın e-posta adresi yönetici tarafından bu adresle değiştirildi.'),
+    steps: 'Güvenliğiniz için önceki oturumlar kapatıldı ve şifreniz sıfırlandı. Aşağıdaki bağlantıyı açın, kodu girin ve yeni şifrenizi belirleyin.',
+    button: 'Şifremi belirle',
+    ignore: 'Bu değişikliği beklemiyorsanız sistem yöneticinize haber verin.',
+  },
+  ro: {
+    subject: 'Adresa de e-mail a contului dumneavoastră Takip a fost schimbată — codul de verificare',
+    intro: (f) => (f ? `Adresa de e-mail a contului dumneavoastră Takip (${f}) a fost schimbată de administrator cu această adresă.` : 'Adresa de e-mail a contului dumneavoastră Takip a fost schimbată de administrator cu această adresă.'),
+    steps: 'Pentru siguranța dumneavoastră, sesiunile anterioare au fost închise și parola a fost resetată. Deschideți linkul de mai jos, introduceți codul și setați o parolă nouă.',
+    button: 'Setează parola',
+    ignore: 'Dacă nu vă așteptați la această schimbare, anunțați administratorul sistemului.',
+  },
+};
+
 export const SUPPORTED_LANGUAGES = Object.keys(STRINGS);
 
 function esc(s) {
@@ -68,10 +86,13 @@ function esc(s) {
  * @param {number} [p.ttlHours]  geçerlilik süresi
  * @param {string} [p.appUrl]    uygulamanın adresi
  * @param {string} [p.email]     alıcının e-postası: ilk giriş ekranı bu adresle açılır (kodun gönderildiği kişi zaten odur)
+ * @param {'invite' | 'emailChange'} [p.purpose]  emailChange: yönetici e-posta adresini değiştirdi (karar 222)
  */
-export function renderInviteEmail({ code, name, firmName, language = 'tr', ttlHours = 24, appUrl = '', email = '' }) {
+export function renderInviteEmail({ code, name, firmName, language = 'tr', ttlHours = 24, appUrl = '', email = '', purpose = 'invite' }) {
   if (!/^\d{6}$/.test(String(code))) throw new Error('Kod 6 haneli olmalı');
-  const t = STRINGS[language] || STRINGS.tr;
+  const base = STRINGS[language] || STRINGS.tr;
+  const change = purpose === 'emailChange' ? (Object.hasOwn(EMAIL_CHANGE, language) ? EMAIL_CHANGE[language] : EMAIL_CHANGE.tr) : null;
+  const t = change ? { ...base, ...change } : base;
   const lang = STRINGS[language] ? language : 'tr';
   // İlk giriş ekranı (kod + şifre). Giriş ekranı davet bekleyen hesabı ayırt etmez (SEC-10); bağlantı doğrudan buraya gelir.
   const loginUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/setup${email ? `?email=${encodeURIComponent(email)}` : ''}` : '';

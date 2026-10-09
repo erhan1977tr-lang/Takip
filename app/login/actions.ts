@@ -9,6 +9,7 @@ import { audit } from '@/lib/audit';
 import { requestIp, runAttempt } from '@/lib/auth/throttle';
 import { homeFor } from '@/lib/roles';
 import { isLocale } from '@/server/i18n/index.js';
+import { recordLoginEvent } from '@/server/auth/login-log.js';
 
 export async function loginAction(formData: FormData) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
@@ -38,9 +39,12 @@ export async function loginAction(formData: FormData) {
   // ek sorgu. Kilit olayı (LOGIN_LOCKED), kilidi oluşturan başarısız denemeyle birlikte bir kez yazılmıştır
   // (lib/auth/throttle.ts → runAttempt). Eskiden buradaki her istek kalıcı tabloya bir satır ekliyordu (sınırsız).
   if (attempt.locked) redirect(`${back}&error=locked&m=${attempt.minutes}`);
+  // Giriş logu (karar 223): sayılan her deneme bir satır; kullanıcı yalnızca şifre o hesapla karşılaştırıldıysa yazılır
+  // (yanlış şifre). Hesap yok / pasif / şifresi yok → "bilinmeyen hesap" (denenen adres saklanmaz).
   if (!attempt.outcome.ok) {
     const failed = attempt.outcome.user;
     if (failed) await audit('LOGIN_FAILED', 'User', failed.id, failed.id, { ip });
+    await recordLoginEvent(db, { kind: 'LOGIN', success: false, user: failed, ip, locked: !!attempt.filled?.length });
     redirect(`${back}&error=invalid`);
   }
   const user = attempt.outcome.user;
@@ -54,5 +58,6 @@ export async function loginAction(formData: FormData) {
     if (user.language !== loginLang) await db.user.update({ where: { id: user.id }, data: { language: loginLang } });
   }
   await audit('USER_LOGIN', 'User', user.id, user.id, { ip });
+  await recordLoginEvent(db, { kind: 'LOGIN', success: true, user, ip });
   redirect(homeFor(user.appRole));
 }

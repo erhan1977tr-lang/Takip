@@ -427,7 +427,7 @@ test('yapı: adres yalnızca sunucu ayarından; ekranda giriş alanı yok; işle
   assert.ok(actions.includes("redirect(back({ error: 'scanStopped', detail: avErrorCode(r.stopped) }));"));
   assert.equal(/\.error\.slice\(|\.stopped\.slice\(|signature: r\.signature/.test(actions), false, 'ham hata / imza metni adrese yazılmaz');
   // Ekran: adres salt-okunur; hata ayrıntısı yalnızca bilinen kod → sabit metin; imza adı temizlenir
-  assert.ok(page.includes("await requirePermission('SETTINGS_MANAGE');"));
+  assert.ok(page.includes("await requireAnyPermission(['SETTINGS_MANAGE', 'OPS_SETTINGS_MANAGE']);") && page.includes("const full = userCan(user, 'SETTINGS_MANAGE');"));
   assert.equal(/name="host"|name="port"|id="av-host"|id="av-port"/.test(page), false, 'adres / port giriş alanı yok');
   assert.ok(page.includes('data-av-host>{s.host}</td>') && page.includes('data-av-port>{s.port}</td>'));
   assert.ok(page.includes("const avReason = (AV_ERRORS as readonly string[]).find((code) => code === sp.detail) ?? 'unknown';"));

@@ -86,11 +86,12 @@ export async function recordLock(db, { kind, email, ip, filled, now = new Date()
   } catch (e) {
     log('kilit olayı denetim kaydına yazılamadı', why(e));
   }
-  // Yalnızca gerçek kullanıcı + e-posta geneli kilit: yöneticiye haber. Bildirim yazılamazsa akış etkilenmez.
+  // Yalnızca gerçek kullanıcı + e-posta geneli kilit: yöneticiye haber (kitle 'security' = USER_MANAGE — Yönetici Yardımcısı
+  // güvenlik bildirimi almaz, karar 220). Bildirim yazılamazsa akış etkilenmez.
   if (user && scopes.includes('email')) {
     try {
       out.notified = await notifyStaff(db, {
-        audience: 'admin', key: lockNoticeKey(user.id, localDay(now, timeZone)), type: LOCK_NOTICE,
+        audience: 'security', key: lockNoticeKey(user.id, localDay(now, timeZone)), type: LOCK_NOTICE,
         params: { user: [user.name, user.email].filter(Boolean).join(' · ').slice(0, 200) }, link: '/admin/users',
       });
     } catch (e) {

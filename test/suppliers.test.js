@@ -451,7 +451,8 @@ test('menü: "Entegrasyonlar" artık "Ayarlar"; satın alma bölümü yalnızca 
   const roles = read('lib/roles.ts');
   assert.match(roles, /\{ href: '\/admin\/entegrasyonlar', key: 'nav\.adminSettings' \}/);
   assert.ok(!roles.includes("key: 'nav.integrations'"));
-  const admin = roles.slice(roles.indexOf('ADMIN: ['), roles.indexOf('SATIS: ['));
+  // Yöneticinin menüsü ADMIN_NAV; Yönetici Yardımcısı aynı listeden türetilir (SUPPLIER_MANAGE onda da var — karar 219)
+  const admin = roles.slice(roles.indexOf('const ADMIN_NAV: NavDef[] = ['), roles.indexOf('export const NAV'));
   const rest = roles.slice(roles.indexOf('SATIS: ['));
   for (const href of ['/siparisler/tedarik', '/admin/muhasebe/tedarikciler']) {
     assert.ok(admin.includes(`'${href}'`), href);

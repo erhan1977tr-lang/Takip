@@ -2,13 +2,16 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
-import { getT } from '@/lib/i18n';
+import { getT, type MsgKey } from '@/lib/i18n';
 import { getEnv } from '@/lib/env';
 import { FxInfo, FxUnavailableNote, fxPolicyLabel } from '@/components/FxInfo';
 import { FX_MARKUP_MAX, previewExchangeRate, trimPercent } from '@/server/fx/resolve.js';
 import { bnrRate } from '@/server/fx/bnr.js';
 import { localDay } from '@/server/profile/dates.js';
-import { updateFirmAction } from '../actions';
+import { deleteCustomerAction, updateFirmAction } from '../actions';
+import { userCan } from '@/lib/permissions';
+import { actorOf } from '@/lib/actor';
+import { customerDeletionPreview } from '@/server/customers/deletion.js';
 import { FxPolicyFields } from '../FxPolicyFields';
 
 export default async function EditFirmPage({
@@ -18,12 +21,18 @@ export default async function EditFirmPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requirePermission('CUSTOMER_MANAGE');
+  const user = await requirePermission('CUSTOMER_MANAGE');
   const { t, m } = await getT();
   const { id } = await params;
   const sp = await searchParams;
   const f = await db.customer.findUnique({ where: { id } });
   if (!f) notFound();
+  // Firma silme (karar 221): yalnızca müşteri firması ve CUSTOMER_DELETE; önizleme ?sil=1 ile açılır (yalnızca okur)
+  const canDelete = f.type === 'CUSTOMER' && userCan(user, 'CUSTOMER_DELETE');
+  const del = canDelete && sp.sil === '1' ? await customerDeletionPreview(db, { customerId: f.id, actor: await actorOf(user) }) : null;
+  const preview = del && del.ok ? del : null;
+  const DEL_ERR = ['CONFIRM_REQUIRED', 'STALE', 'BLOCKED', 'NOT_FOUND', 'FORBIDDEN'];
+  const delError = sp.delError && DEL_ERR.includes(sp.delError) ? sp.delError : null;
   // Bugünün kuru (kayıtlı politikayla): BNR 30 dakika saklanır; alınamazsa "alınamadı" gösterilir, başka kur gösterilmez.
   const fxToday = f.type === 'CUSTOMER'
     ? await previewExchangeRate(db, { customer: f, currency: 'EUR', day: localDay(new Date(), getEnv().APP_TIMEZONE), bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
@@ -82,6 +91,42 @@ export default async function EditFirmPage({
           <button type="submit" className="btn btn-primary">{t('common.save')}</button>
         </div>
       </form>
+      {canDelete && !preview && (
+        <div className="card" id="firma-sil-baslat">
+          <h2>{t('admin.firmDelete.title')}</h2>
+          <p className="muted small">{t('admin.firmDelete.hint')}</p>
+          <Link href={`/admin/firms/${f.id}?sil=1#firma-sil`} className="btn btn-danger" data-action="delete-firm">{t('admin.firmDelete.start')}</Link>
+        </div>
+      )}
+      {preview && (
+        <form action={deleteCustomerAction} className="card" id="firma-sil" data-firm-delete={f.id}>
+          <h2>{t('admin.firmDelete.title')}</h2>
+          {delError && <div className="alert alert-error">{t(`admin.firmDelete.errors.${delError}` as MsgKey)}</div>}
+          {preview.blockers.length > 0 ? (
+            <div className="alert alert-error" data-delete-blocked>
+              <b>{t('admin.firmDelete.blockedTitle')}</b>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {preview.blockers.map((b) => <li key={b.code} data-blocker={b.code}>{t(`admin.firmDelete.blockers.${b.code}` as MsgKey, { n: b.n })}</li>)}
+              </ul>
+            </div>
+          ) : (
+            <>
+              <div className="alert alert-error">{t('admin.firmDelete.intro')}</div>
+              <p className="small" data-delete-counts>{t('admin.firmDelete.counts', preview.counts)}</p>
+              {preview.orderNos.length > 0 && <p className="small muted" data-delete-orders>{t('admin.firmDelete.orders', { list: preview.orderNos.join(', ') })}</p>}
+              <p className="small">{t('admin.firmDelete.kept')}</p>
+              <input type="hidden" name="id" value={f.id} />
+              <input type="hidden" name="fp" value={preview.fingerprint} />
+              <label htmlFor="firma-onay">{t('admin.firmDelete.confirmLabel', { name: f.name })}</label>
+              <input id="firma-onay" name="confirm" required autoComplete="off" />
+            </>
+          )}
+          <div className="row end" style={{ marginTop: 12 }}>
+            <Link href={`/admin/firms/${f.id}`} className="btn">{t('common.cancel')}</Link>
+            {preview.blockers.length === 0 && <button type="submit" className="btn btn-danger-solid">{t('admin.firmDelete.submit')}</button>}
+          </div>
+        </form>
+      )}
       {fxToday && (
         <div className="card" id="kur-bugun">
           <h2>{t('fx.todayTitle')}</h2>

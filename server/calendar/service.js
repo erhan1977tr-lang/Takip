@@ -1,13 +1,13 @@
 // Çalışma takvimi istisnaları (Paket 8, karar 192) — veritabanı tarafı. Yöneticinin elle açık / kapalı işaretlediği günler
 // (WorkCalendarOverride) otomatik kuraldan (hafta sonu, resmî tatil) önce gelir. TEK yazar setOverride'dır: yalnızca
-// SETTINGS_MANAGE (eylemde ve burada — FORBIDDEN, veritabanına gitmeden), takvim başına danışma kilidi, her değişiklik
+// OPS_SETTINGS_MANAGE (karar 219; eylemde ve burada — FORBIDDEN, veritabanına gitmeden), takvim başına danışma kilidi, her değişiklik
 // denetim kaydında (WORK_CALENDAR_OVERRIDE: önce / sonra). Okuma: loadOverrides (yalnızca okuma; dış servis yok).
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
 import { CALENDARS, addDaysKey, calendarToday, parseOverride } from './rules.js';
 
 const FORBIDDEN = Object.freeze({ ok: false, code: 'FORBIDDEN' });
-const allowed = (actor) => !!actor?.id && can(actor.role, 'SETTINGS_MANAGE');
+const allowed = (actor) => !!actor?.id && can(actor.role, 'OPS_SETTINGS_MANAGE');
 /** "YYYY-MM-DD" → @db.Date sütununa yazılacak tarih */
 const dateOf = (day) => new Date(`${day}T00:00:00.000Z`);
 const keyOf = (d) => new Date(d).toISOString().slice(0, 10);

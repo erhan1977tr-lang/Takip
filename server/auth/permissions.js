@@ -4,8 +4,10 @@
 //
 // Kararlar: Denetimci yalnızca görüntüler (karar 8), müşteriye gönderilmiş teklifi ve iç notları görür;
 // satış iptal edemez (karar 3); yönetici fiyatını yönetici, müşteri ve denetimci dışında kimse görmez (karar 4).
+// Yönetici Yardımcısı (Paket A, karar 219): yöneticinin bütün operasyonel yetkileri — kullanıcı / rol yönetimi,
+// güvenlik ve kritik sistem ayarları ve denetim / giriş kayıtları HARİÇ (ADMIN_ONLY). Yeni bir FGO yetkisi yoktur.
 
-export const ROLES = ['ADMIN', 'SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI'];
+export const ROLES = ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI'];
 
 /** Yetki → açıklama (belgeleme ve yönetici ekranı için). */
 export const PERMISSIONS = {
@@ -33,13 +35,15 @@ export const PERMISSIONS = {
   NOTE_ADD: 'Not yazar',
   NOTE_INTERNAL_VIEW: 'İç notları görür',
   CUSTOMER_NAME_VIEW: 'Müşteri firmasının tam adını ve iletişim bilgilerini görür',
-  USER_MANAGE: 'Kullanıcıları yönetir',
+  USER_MANAGE: 'Kullanıcıları ve rolleri yönetir: oluşturur, siler, e-postasını değiştirir, davet / şifre sıfırlama gönderir (yalnızca yönetici)',
   CUSTOMER_MANAGE: 'Firmaları yönetir',
+  CUSTOMER_DELETE: 'Müşteri firmasını ve yalnızca ona ait test kayıtlarını siler (önizleme + açık onay; resmi belgesi olan firma silinemez — karar 221)',
   CATALOG_MANAGE: 'Katalogları yönetir',
   PRICE_TABLE_MANAGE: 'Fiyat tablolarını ve satışçı atamalarını yönetir',
   ALERT_VIEW: 'Önemli kararlar listesini görür ve kapatır',
-  SETTINGS_MANAGE: 'Ayarlar ve entegrasyonlar',
-  AUDIT_VIEW: 'Denetim kaydını görür',
+  SETTINGS_MANAGE: 'Kritik sistem ve güvenlik ayarları: FGO bağlantısı, antivirüs, not çevirisi anahtarı (yalnızca yönetici)',
+  OPS_SETTINGS_MANAGE: 'Operasyonel ayarlar: günün BT kuru, fatura hatırlatma günü, depo e-posta alıcıları, çalışma takvimleri',
+  AUDIT_VIEW: 'Denetim kaydını ve giriş loglarını görür (yalnızca yönetici)',
   ACCOUNTING_MANAGE: 'Muhasebe: tahsilat, yükleme kârlılığı, fabrika cari hesabı',
   LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
   SUPPLIER_MANAGE: 'Tedarik ve satın alma: tedarikçiler, ürünlerin alış fiyatı, tedarikçi siparişleri (onay / gönderim), tahmini yükleme tarihi, tedarikçi ödemeleri ve hesapları (karar 179–184; yalnızca yönetici)',
@@ -47,9 +51,14 @@ export const PERMISSIONS = {
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
 const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
+/** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. */
+export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW'];
+
+const ADMIN_PERMISSIONS = Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p));
 
 export const ROLE_PERMISSIONS = {
-  ADMIN: Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p)),
+  ADMIN: ADMIN_PERMISSIONS,
+  YONETICI_YARDIMCISI: ADMIN_PERMISSIONS.filter((p) => !ADMIN_ONLY.includes(p)),
   SATIS: [
     'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW', 'CRATE_EDIT', 'TRANSPORT_LIST_VIEW',
     'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW',

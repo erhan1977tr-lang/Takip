@@ -29,10 +29,10 @@ const holidayName = (t: T, country: string, h: Holiday) => h.names.map((k) => t(
  * Ayarlar → Çalışma Takvimleri (Paket 8, karar 192–193): Romanya deposu ve Türkiye fabrikası takvimleri — ayrı ayrı. Ay
  * görünümünde her günün durumu (açık, hafta sonu, resmî tatil, yarım gün, elle açık / kapalı); bir günü elle işaretleme;
  * yaklaşan resmî tatiller; elle verilen kararlar. Tatil verisi kodla gelir (server/calendar/holidays.js; sayfa dış servise
- * bağlanmaz); verisi olmayan yıl açık uyarıyla gösterilir. Yalnızca SETTINGS_MANAGE.
+ * bağlanmaz); verisi olmayan yıl açık uyarıyla gösterilir. Yalnızca OPS_SETTINGS_MANAGE.
  */
 export default async function CalendarsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const user = await requirePermission('SETTINGS_MANAGE');
+  const user = await requirePermission('OPS_SETTINGS_MANAGE');
   const { t, intl } = await getT();
   const sp = await searchParams;
   const calendar = isCalendar(sp.takvim) ? (sp.takvim as keyof typeof CALENDARS) : 'RO_DEPOT';

@@ -28,6 +28,9 @@ export const AUDIENCE_ROLES = {
   loading: rolesWith((r) => can(r, 'LOADING_CONFIRM')),
   // Tedarik ve satın alma (Paket 6, karar 181–183): tahmini yükleme hatırlatması, tedarikçi e-postası gönderilemedi
   supplier: rolesWith((r) => can(r, 'SUPPLIER_MANAGE')),
+  // Güvenlik / kullanıcı yönetimi (Paket A, karar 220): hesap kilidi vb. yalnızca gerçek yöneticiye (USER_MANAGE) gider —
+  // Yönetici Yardımcısı operasyonel 'admin' kitlesindedir ama bu kitlede değildir
+  security: rolesWith((r) => can(r, 'USER_MANAGE')),
 };
 
 const orderLink = (o) => `/siparisler/${o.id}`;
@@ -352,7 +355,7 @@ export async function dispatchInAppFor(db, ids, { now = new Date(), log = () => 
  * İşçiden / eşitlemeden doğan olaylar için doğrudan bildirim (kuyruk olayı olmayan: FGO'da belge kesilemedi, proformaya
  * tahsilat geldi → avans faturası gerekli). Alıcı yalnızca yetkiye göre iç ekip kümesi; anahtar olayın kimliğidir.
  * @param {any} db
- * @param {{ audience: 'accounting' | 'admin' | 'loading' | 'supplier', key: string, type: string, orderId?: string | null, firmName?: string | null, params?: object, link: string, actorId?: string | null }} n
+ * @param {{ audience: 'accounting' | 'admin' | 'loading' | 'supplier' | 'security', key: string, type: string, orderId?: string | null, firmName?: string | null, params?: object, link: string, actorId?: string | null }} n
  *   actorId: işlemi yapan kullanıcı — verilirse kendisine bildirilmez (kuyruk olaylarındaki kuralın aynısı)
  * @returns {Promise<number>}
  */

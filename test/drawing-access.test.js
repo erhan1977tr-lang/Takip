@@ -22,7 +22,7 @@ const SCHEMA_STATUSES = (() => {
   const body = /enum DrawingStatus \{([\s\S]*?)\}/.exec(read('prisma/schema.prisma'))[1];
   return body.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
 })();
-const INTERNAL = ['ADMIN', 'SATIS', 'CIZIM', 'DENETIMCI'];
+const INTERNAL = ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS', 'CIZIM', 'DENETIMCI'];
 
 test('roller: iç dosyaları gören roller (yönetici, satış, çizim, denetimci) ve görmeyen tek rol (müşteri) — kural yetkiye bakar, rol adına değil', () => {
   assert.deepEqual([...ROLES].sort(), [...INTERNAL, 'MUSTERI'].sort());

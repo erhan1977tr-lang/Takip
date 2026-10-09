@@ -39,7 +39,7 @@ const kindLabel = (k) => ({ CNC: 'CNC', DELIK: 'Delik' })[k] ?? k;
 
 test('belge işlemleri (karar 215): PDF / Excel / Özet yalnızca yükleme belgesi + müşteri fiyatı yetkisinde — yönetici ve denetimci; satış, çizim, müşteri değil', () => {
   const allowed = ROLES.filter((r) => firmDocsAllowed((p) => can(r, p)));
-  assert.deepEqual(allowed.sort(), ['ADMIN', 'DENETIMCI']);
+  assert.deepEqual(allowed.sort(), ['ADMIN', 'DENETIMCI', 'YONETICI_YARDIMCISI']); // Yönetici Yardımcısı: yöneticinin operasyonel yetkileri (karar 219)
   // Satış yükleme belgelerini (nakliye listesi, gün özeti) indirir ama firma satırında yalnızca "Sandık"ı görür
   assert.ok(can('SATIS', 'TRANSPORT_LIST_VIEW') && can('SATIS', 'CRATE_EDIT') && !can('SATIS', 'PRICE_FINAL_VIEW'));
 });
@@ -215,7 +215,8 @@ test('profil bölümü (karar 216): yeni profil siparişi = fiyat bekleyen, kapa
 
 test('menü (karar 216): yöneticinin "Profil Siparişleri" bölümü sayaçlı; profil tabloları ve profil tanımları bu bölümde; başka rol menüsünde yok', () => {
   const roles = src('lib/roles.ts');
-  const admin = roles.slice(roles.indexOf('ADMIN: ['), roles.indexOf('SATIS: ['));
+  // Yöneticinin menüsü ADMIN_NAV (Yönetici Yardımcısı aynı listeden Kullanıcılar çıkarılarak türetilir — karar 219)
+  const admin = roles.slice(roles.indexOf('const ADMIN_NAV: NavDef[] = ['), roles.indexOf('export const NAV'));
   const rest = roles.slice(roles.indexOf('SATIS: ['));
   const section = admin.slice(admin.indexOf("{ section: 'nav.profileOrders'"), admin.indexOf("{ section: 'nav.drawingTeam'"));
   assert.match(section, /\{ section: 'nav\.profileOrders', count: 'profileNew' \}/);

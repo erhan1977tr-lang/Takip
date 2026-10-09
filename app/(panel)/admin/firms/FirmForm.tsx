@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { Dict } from '@/lib/i18n';
 import { createFirmAction, type FirmFormState } from './actions';
 
-export function CreateFirmForm({ groups, m }: { groups: string[]; m: Dict['admin']['firmForm'] }) {
+export function CreateFirmForm({ groups, m, canUsers }: { groups: string[]; m: Dict['admin']['firmForm']; canUsers: boolean }) {
   const [state, action, pending] = useActionState<FirmFormState, FormData>(createFirmAction, {});
   const formRef = useRef<HTMLFormElement>(null);
   const v = state.values ?? {};
@@ -16,7 +16,7 @@ export function CreateFirmForm({ groups, m }: { groups: string[]; m: Dict['admin
   return (
     <form ref={formRef} action={action} className="card">
       <h2>{m.title}</h2>
-      {state.ok && <div className="alert alert-ok">{state.ok} <Link href="/admin/users">{m.assignUsers}</Link></div>}
+      {state.ok && <div className="alert alert-ok">{state.ok} {canUsers && <Link href="/admin/users">{m.assignUsers}</Link>}</div>}
       <div className="grid">
         <div>
           <label htmlFor="f-name">{m.name}</label>

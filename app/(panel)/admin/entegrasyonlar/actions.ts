@@ -58,9 +58,12 @@ export async function scanNowAction() {
   redirect(back({ ok: 'scanned', scanned: r.scanned, clean: r.clean, infected: r.infected }));
 }
 
+// Operasyonel ayarlar (karar 219): depo alıcıları, fatura uyarı günü ve günün BT kuru OPS_SETTINGS_MANAGE ister — yönetici
+// ve Yönetici Yardımcısı. FGO bağlantısı, not çevirisi anahtarı ve antivirüs SETTINGS_MANAGE (yalnızca yönetici) kalır.
+
 /** Profil siparişi: depo e-postası alıcıları (Aşama 6) */
 export async function saveWarehouseAction(formData: FormData) {
-  const user = await requirePermission('SETTINGS_MANAGE');
+  const user = await requirePermission('OPS_SETTINGS_MANAGE');
   const r = parseRecipients(String(formData.get('recipients') ?? ''));
   if (!r.ok) redirect(back({ error: 'warehouse', detail: r.bad.join(', ') }) + '#depo');
   await saveWarehouseSettings(db, { recipients: r.recipients }, await actorOf(user));
@@ -90,7 +93,7 @@ export async function saveFgoAction(formData: FormData) {
 
 /** Muhasebe uyarısı (karar 126): "Fatura edilmemiş sipariş uyarısı" — yüklemeden sonra kaç takvim günü (0–60; boş = 6) */
 export async function saveAccountingAction(formData: FormData) {
-  const user = await requirePermission('SETTINGS_MANAGE');
+  const user = await requirePermission('OPS_SETTINGS_MANAGE');
   const r = parseUninvoicedDays(formData.get('uninvoicedDays'));
   if (!r.ok) redirect(back({ error: 'accounting' }) + '#muhasebe');
   await saveAccountingSettings(db, { uninvoicedDays: r.value }, await actorOf(user));
@@ -137,10 +140,10 @@ export async function testFgoAction() {
 
 /** Günün BT EUR satış kuru (elle): kur politikası BT olan müşterilerin bugünkü belgeleri bu kurla kesilir (karar 95, 98). */
 export async function saveDailyRateAction(formData: FormData) {
-  const user = await requirePermission('SETTINGS_MANAGE');
+  const user = await requirePermission('OPS_SETTINGS_MANAGE');
   const rate = parseManualRate(String(formData.get('rate') ?? ''));
-  if (rate == null) redirect(back({ error: 'fxDaily' }) + '#fgo');
+  if (rate == null) redirect(back({ error: 'fxDaily' }) + '#kur');
   await saveDailyRate(db, { day: localDay(new Date(), getEnv().APP_TIMEZONE), rate }, await actorOf(user), writeAudit);
   revalidatePath('/admin/entegrasyonlar');
-  redirect(back({ ok: 'fxDaily', rate: rate.toFixed(4) }) + '#fgo');
+  redirect(back({ ok: 'fxDaily', rate: rate.toFixed(4) }) + '#kur');
 }

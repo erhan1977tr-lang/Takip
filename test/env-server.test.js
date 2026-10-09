@@ -236,8 +236,8 @@ test('yapı: bu dört ayar hiçbir yerde ham ortamdan okunmaz; tüketiciler doğ
   assert.equal(/validateEnv|formatEnvReport/.test(inst), false, 'uygulama kendi doğrulamasını yazmaz');
   // Kart: yetki sayfanın ilk işi; adlar sabit listeden; uyarı yoksa çizilmez; değer okunmaz
   const page = strip(read('app/(panel)/admin/entegrasyonlar/page.tsx'));
-  assert.ok(page.includes("await requirePermission('SETTINGS_MANAGE');"));
-  assert.ok(page.includes('const ignoredNames: string[] = ignoredOnServer();'));
+  assert.ok(page.includes("await requireAnyPermission(['SETTINGS_MANAGE', 'OPS_SETTINGS_MANAGE']);") && page.includes("const full = userCan(user, 'SETTINGS_MANAGE');"));
+  assert.ok(page.includes('const ignoredNames: string[] = full ? ignoredOnServer() : [];')); // yalnızca gerçek yönetici (karar 219)
   assert.ok(page.includes('const envIgnored = SERVER_IGNORED.filter((name: string) => ignoredNames.includes(name));'));
   assert.ok(page.includes('{envIgnored.length > 0 && ('));
   const card = page.slice(page.indexOf('{envIgnored.length > 0 && ('), page.indexOf('{okMsg &&'));
