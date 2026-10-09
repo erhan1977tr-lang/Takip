@@ -122,7 +122,9 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   for (const absent of ['UNS9603', 'UNS9604', 'BET9605', '500,00', '700,00', '800,00', '99,00']) await expect(card).not.toContainText(absent);
   // Satış fiyatı sayfanın ham yanıtında (HTML + RSC) da yok
   const raw = await (await cust.request.get('/siparisler?bas=2026-01-01&bit=2026-01-31')).text();
-  for (const p of SALES_PRICES) expect(raw.includes(p), `sayfada satış fiyatı: ${p}`).toBe(false);
+  // Sayı sınırıyla aranır: "09.11.2026" gibi bir tarih (bugüne göre değişen yükleme günleri) fiyat sayılmaz
+  const price = (p: string) => new RegExp(`(?<![\\d.,])${p.replace(/[.,]/g, '\\$&')}(?![\\d.,])`);
+  for (const p of SALES_PRICES) expect(price(p).test(raw), `sayfada satış fiyatı: ${p}`).toBe(false);
   for (const o of ['BET9605', 'Beta raporu']) expect(raw.includes(o)).toBe(false);
 
   // PDF: aynı aralık, aynı toplamlar; her teklif ayrı; dosya adı Türkçe

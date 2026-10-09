@@ -206,7 +206,8 @@ test('yönetici: soldaki "Çizim Ekibi → Çizim Paneli" çizim ekibinin paneli
   const link = admin.locator('.sidebar').getByRole('link', { name: 'Çizim Paneli' });
   await expect(link).toHaveAttribute('href', '/siparisler?panel=cizim');
   await expect(admin.getByRole('heading', { name: 'Siparişler', exact: true })).toBeVisible();
-  await expect(admin.locator('.sidebar a.active')).toHaveText('Siparişler');
+  // "Siparişler" bağlantısında okunmamış mesaj sayacı olabilir (Paket 9, karar 199) — bağlantının adı değişmez
+  await expect(admin.locator('.sidebar a.active')).toHaveAccessibleName('Siparişler');
   await link.click();
   await expect(admin).toHaveURL(/\/siparisler\?panel=cizim$/);
   await expect(admin.getByRole('heading', { name: 'Çizim Paneli' })).toBeVisible();
