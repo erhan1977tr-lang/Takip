@@ -51,7 +51,9 @@ test('veri: bu dosyaya özel müşteri ve satış kullanıcısı, cam siparişi'
   await admin.context().close();
   const db = await prisma();
   const writer = await db.user.findUniqueOrThrow({ where: { email: WRITER }, include: { customer: true } });
-  const no = 9000 + Math.floor(Math.random() * 900);
+  // Firmanın kullanılmayan bir numarası (rastgele numara başka dosyanın siparişiyle çakışabiliyordu)
+  const last = await db.order.aggregate({ where: { customerId: writer.customerId! }, _max: { customerOrderNo: true } });
+  const no = Math.max(9000, (last._max.customerOrderNo ?? 0) + 1);
   const o = await db.order.create({
     data: { orderNo: `${writer.customer!.prefix}${no}`, customerOrderNo: no, title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'HAZIRLANIYOR' },
   });
