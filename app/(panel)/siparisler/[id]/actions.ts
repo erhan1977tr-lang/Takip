@@ -5,7 +5,7 @@
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import { type CurrentUser, requirePermission } from '@/lib/auth/session';
+import { type CurrentUser, requirePermission, requireUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT, type Dict, type T } from '@/lib/i18n';
 import { fileProblemText, lockReasonText, offerProblemTexts, workflowErrorText } from '@/lib/labels';
@@ -21,6 +21,7 @@ import { addNote, retryDrawingTranslation, retryNoteTranslation, translateDrawin
 import { deliverInAppNow } from '@/lib/notifications';
 import { revisionNote } from '@/server/orders/revision-note.js';
 import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
+import { markNotesRead } from '@/server/notes/unread.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -380,14 +381,30 @@ export async function addNoteAction(formData: FormData) {
   const { t } = await getT();
   // Not her durumda kaydedilir; müşteriye açık not (çeviri açıksa) bir kez çevrilir ve sonucu saklanır (karar 127).
   // Çeviri başarısız olsa da not durur — kural ve görünürlük server/notes/translation.js'te.
-  const r = await addNote(db, { orderId: order.id, actor: await actorOf(user), text: formData.get('text'), internal: formData.get('internal') === 'on' });
+  // requestKey: formun tek kullanımlık anahtarı — çift tıklama / yeniden gönderim ikinci notu ve ikinci bildirimi yazmaz (karar 199)
+  const r = await addNote(db, {
+    orderId: order.id, actor: await actorOf(user), text: formData.get('text'), internal: formData.get('internal') === 'on', requestKey: formData.get('requestKey'),
+  });
   // Sınırlar (karar 147) addNote içinde, sunucuda uygulanır: not hızı (RATE_LIMIT) ve siparişteki toplam not (ORDER_LIMIT)
   if (!r.ok) {
     redirect(err(order.id, t(r.code === 'EMPTY' ? 'order.errors.emptyNote'
       : r.code === 'RATE_LIMIT' ? 'order.errors.noteRateLimit'
         : r.code === 'ORDER_LIMIT' ? 'order.errors.noteOrderLimit' : 'order.errors.notAllowed')));
   }
+  // Mesaj bildirimi (zil) hemen dağıtılır; işçi yedektir (aynı dağıtıcı, aynı tekrar engeli)
+  if (r.outboxId) await deliverInAppNow([r.outboxId]);
   done(order.id, 'note_added');
+}
+
+/**
+ * Sipariş sayfası açıldı: bu siparişin mesajları, ekranda gösterilen en yeni nota kadar "okundu" (karar 199). Yalnızca
+ * oturumdaki kullanıcının kendi okunma kaydı; sipariş kapsamda değilse hiçbir şey yazılmaz. Oturumu uzatmaz.
+ * @returns okunma kaydı / zil değişti mi (istemci yalnızca o zaman menüdeki sayacı tazeler)
+ */
+export async function markNotesReadAction(orderId: string, upTo: string | null): Promise<boolean> {
+  const user = await requireUser();
+  const r = await markNotesRead(db, { user, orderId: String(orderId ?? ''), upTo: typeof upTo === 'string' ? upTo : null });
+  return r.ok && r.changed;
 }
 
 /** Çevrilemeyen notun çevirisini bir kez daha ister (yalnızca iç ekip; kural server/notes/translation.js) */

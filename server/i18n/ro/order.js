@@ -317,6 +317,9 @@ export default {
     aria: 'Notă',
     internalCheck: 'Notă internă — clientul nu o vede',
     noEdit: 'Nota trimisă nu mai poate fi modificată',
+    // Contor mesaje necitite (decizia 199)
+    unread: '{n} mesaje necitite',
+    new: 'Nou',
     send: 'Trimite',
     // Traducere automată (decizia 127). translatedLabel se citește după LIMBA traducerii, nu după limba interfeței:
     // eticheta traducerii în română vine din acest dicționar, cea a traducerii în turcă din dicționarul turcesc.

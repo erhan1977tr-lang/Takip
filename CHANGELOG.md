@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.59.0 — 09.10.2026
+
+Fonksiyonel paket 9 — genel UX, bildirimler, dil ayarları, anlık arama ve oturum güvenliği (kararlar 198–202). Veritabanı şeması:
+mesajların okunma kaydı (`OrderNoteRead`, kullanıcı + sipariş) ve not formunun tek kullanımlık anahtarı (`OrderNote.requestKey`).
+Migration elle yazıldı: mevcut notlar okunmuş sayılır (eski mesajlar birden kırmızı sayaç olarak çıkmaz); notlara dokunulmaz.
+
+- **Dil ayarı bütün rollerde:** "Ayarlar" (müşteri) / "Hesabım → Hesap ayarları" (iç ekip): Otomatik (varsayılan — giriş ekranının
+  algıladığı dil), Türkçe, Română. Seçilen dil hemen geçerli olur ve her yeni girişte kullanılır. Bildirim sesi her rolde; e-posta
+  tercihi yalnızca müşteride.
+- **Müşteri e-postasının dili:** olay oluşturulurken belirlenip saklanır (kayıtlı tercih → Otomatik'te algılanan dil → Romence);
+  işçi sonradan değiştirmez. Tedarikçi sipariş e-postası her zaman Türkçe; mali belge e-postaları değişmedi.
+- **Mesaj sayaçları:** okunmamış mesaj sayısı kırmızı sayaçla sipariş listesinde (satırda, mesajlara götürür), sipariş sayfasının
+  "Notlar" başlığında (yeni mesajlar işaretli) ve sol menüde "Siparişler"in yanında. Sayı kullanıcıya özel ve kalıcıdır; yalnızca
+  görebildiği siparişler ve mesajlar (müşteri iç notu saymaz), başkasının yazdığı mesajlar. Sipariş açılınca okundu olur (geri
+  gitmez); yenileme sayacı geri getirmez.
+- **Bildirim zili:** müşteriye açık her mesaj tek bildirim — müşterinin mesajı yöneticiye, ilgili satışçıya ve atanmış çizimciye
+  (profil siparişinde yalnızca yöneticiye); iç ekibin mesajı müşteriye; iç not kimseye. Bildirim hemen düşer, tıklayınca mesajlara
+  gider; mesaj metni bildirime girmez; satış / çizimde firma adı maskeli. Sipariş açılınca o mesajların bildirimi de okunur.
+- **Tekilleştirme:** çift tıklama / yeniden gönderim / paralel istek ikinci mesaj ve ikinci bildirim yazmaz (tek kullanımlık form
+  anahtarı); diğer olaylar mevcut tekilleştirmeyle.
+- **Anlık arama:** sipariş listelerinde ve cam kataloğunda yazdıkça süzer (300 ms); geç gelen eski yanıt yenisini ezmez; boş arama
+  normal liste; "Aranıyor…" ve "sonuç yok" durumları; firma adıyla arama yok; liste sunucuda süzülür (en çok 300 satır).
+- 30 dakika hareketsizlik çıkışı ve not çevirisi değişmedi; testlerle yeniden doğrulandı. Paket 7 ve Paket 8 ekranları aynı.
+
 ## 3.58.1 — 08.10.2026
 
 Paket 8 doğrulama düzeltmesi (davranış değişmedi): teslimat belgesi yardımcılarının (`deliveryDocs`, `takesDeliveryDocs`) tür

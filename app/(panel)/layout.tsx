@@ -14,6 +14,8 @@ import { AutoRefresh } from '@/components/AutoRefresh';
 import { SessionActivity } from '@/components/SessionActivity';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { loadFeed } from '@/lib/notifications';
+import { db } from '@/lib/db';
+import { unreadTotal } from '@/server/notes/unread.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +29,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const defs: NavDef[] = demo && userCan(user, 'SETTINGS_MANAGE')
     ? [...NAV.ADMIN, { section: 'nav.demo' }, { href: '/demo/posta', key: 'nav.demoMail' }]
     : NAV[user.appRole];
-  const nav: NavItem[] = defs.map((d) => ('section' in d ? { section: t(d.section) } : { href: d.href, label: t(d.key) }));
+  // Okunmamış sipariş mesajlarının toplamı (karar 199): yalnızca kullanıcının kapsamındaki siparişler; "Siparişler" bağlantısında
+  const messages = await unreadTotal(db, user);
+  const ordersHref = '/siparisler';
+  const nav: NavItem[] = defs.map((d) => ('section' in d ? { section: t(d.section) }
+    : d.href === ordersHref && messages.total > 0
+      ? { href: d.href, label: t(d.key), count: messages.total, countLabel: t('order.notes.unread', { n: messages.total }) }
+      : { href: d.href, label: t(d.key) }));
   const firm = user.customer?.name;
   const role = roleText(t, user.appRole);
   const customerFirm = user.appRole === 'MUSTERI' && firm ? firm : '';

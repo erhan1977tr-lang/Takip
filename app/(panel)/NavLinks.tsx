@@ -27,8 +27,10 @@ export function NavLinks({ items, variant }: { items: NavItem[]; variant: 'side'
     }
     const active = it.href === activeHref;
     return (
-      <Link key={it.href} href={it.href} className={active ? 'active' : undefined}>
+      <Link key={it.href} href={it.href} className={active ? 'active' : undefined} title={it.count ? it.countLabel : undefined}>
         {it.label}
+        {/* Okunmamış sipariş mesajları (karar 199) — sayı sunucuda hesaplanır; bağlantının adı değişmez (açıklama title'da) */}
+        {it.count ? <span className="msg-count" data-nav-unread={it.count} aria-hidden="true">{it.count > 99 ? '99+' : it.count}</span> : null}
       </Link>
     );
   });

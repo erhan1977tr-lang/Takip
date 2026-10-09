@@ -10,6 +10,7 @@ export default {
   open: 'Aç',
   download: 'İndir',
   search: 'Ara',
+  searching: 'Aranıyor…',
   details: 'Detay',
   back: 'Geri',
   yes: 'Evet',

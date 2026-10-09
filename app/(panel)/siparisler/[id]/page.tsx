@@ -7,6 +7,9 @@ import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
+import { countText, isUnreadNote, unreadThreshold } from '@/server/notes/unread.js';
+import { MarkNotesRead } from '@/components/MarkNotesRead';
+import { randomUUID } from 'node:crypto';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, lockReasonText, personText, roleText, slaText, stageText,
 } from '@/lib/labels';
@@ -38,7 +41,7 @@ import { FgoDocLink } from '@/components/FgoDocLink';
 import { RevisionNote } from '@/components/RevisionNote';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
-  addFilesAction, addNoteAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
+  addFilesAction, addNoteAction, markNotesReadAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction,
@@ -119,6 +122,9 @@ export default async function OrderPage({
   }
   const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
+  // Okunmamış mesaj eşiği (karar 199): sayfa açılmadan önceki okunma anı — yeni mesajlar işaretlenir, sonra okundu olur
+  const noteSince = await unreadThreshold(db, user, order.id);
+  const notesCard = <Notes order={order} user={user} t={t} since={noteSince} />;
   // "Siparişi sil" (yalnızca yönetici — ORDER_CANCEL): sayfanın en altında, iki aşamalı onay (karar 110; Paket 4). Önizleme
   // (sipariş no, sonuç ve engeller) sunucuda, silmeyle aynı kuraldan (server/orders/removal.js → removalPreview)
   const removeErrors = m.compensation.remove.errors;
@@ -142,7 +148,7 @@ export default async function OrderPage({
       <ProfileOrderView
         order={order} user={user} sp={sp} t={t} m={m} locale={locale}
         files={fileCard}
-        notes={<Notes order={order} user={user} t={t} />}
+        notes={notesCard}
         history={<>{removalBox}<History order={order} isCustomer={isCustomer} t={t} /></>}
       />
     );
@@ -395,7 +401,7 @@ export default async function OrderPage({
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
       {drawerView && <DrawingReview order={order} user={user} can={can} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
-      <Notes order={order} user={user} t={t} />
+      {notesCard}
 
       <OrderInfo
         title={t('order.info.title')}
@@ -1298,7 +1304,7 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
   );
 }
 
-function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T }) {
+function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUser; t: T; since: Date }) {
   const isCustomer = user.appRole === 'MUSTERI';
   // İç notlar müşteriye hiç yüklenmez; çeviri alanları da role göre sunucuda temizlenmiştir (sanitizeOrder → notesFor):
   // denetimciye çeviri alanı hiç gelmez (notu yalnızca özgün dilinde görür), müşteriye yalnızca tamamlanmış Romence çeviri.
@@ -1307,19 +1313,27 @@ function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T
   const staff = canRetryTranslation(user.appRole);
   const canRetry = staff;
   const now = new Date();
+  // Okunmamış: başkasının yazdığı, okunma anından sonraki (gösterilen notlar zaten role göre süzülmüş — liste sayacıyla aynı kural)
+  const unread = notes.filter((n) => isUnreadNote(n, user, since)).length;
+  const latest = notes.length ? new Date(notes[notes.length - 1].createdAt).toISOString() : null;
   return (
     <div className="card" id="notlar">
-      <h2>{t('order.notes.title')}</h2>
+      <MarkNotesRead orderId={order.id} latest={latest} mark={markNotesReadAction} />
+      <h2>
+        {t('order.notes.title')}
+        {unread > 0 && <span className="msg-count" data-unread-notes={unread} title={t('order.notes.unread', { n: unread })} aria-hidden="true">{countText(unread)}</span>}
+      </h2>
       <p className="muted small">{t('order.notes.intro')}{!isCustomer && ` ${t('order.notes.introInternal')}`}</p>
       {notes.length === 0 && <p className="muted">{t('order.notes.none')}</p>}
       {notes.map((n) => {
+        const fresh = isUnreadNote(n, user, since);
         const st = translationState(n, now);
         const lang = n.translationLang === 'tr' || n.translationLang === 'ro' ? n.translationLang : null;
         // Çeviri sayfa açılırken YAPILMAZ: yalnızca not yazılırken saklanan sonuç gösterilir (karar 127)
         const translated = st?.state === 'done' && lang && n.translation ? n.translation : null;
         const reason = st?.state === 'failed' ? (TRANSLATE_ERRORS.includes(st.code ?? '') ? st.code : 'ERROR') : null;
         return (
-          <div key={n.id} className={`note ${n.internal ? 'internal' : ''}`} data-note={n.id}>
+          <div key={n.id} className={`note ${n.internal ? 'internal' : ''} ${fresh ? 'note-new' : ''}`} data-note={n.id} data-new={fresh ? '1' : undefined}>
             {translated && <div className="note-label">{t('order.notes.original')}</div>}
             <div className="pre note-text">{n.text}</div>
             {translated && lang && (
@@ -1345,12 +1359,15 @@ function Notes({ order, user, t }: { order: OrderDetail; user: CurrentUser; t: T
             <div className="meta">
               {personText(t, n.user)}{(!isCustomer || n.user.appRole === 'MUSTERI') && personText(t, n.user) !== roleText(t, n.user.appRole) ? ` (${roleText(t, n.user.appRole)})` : ''} · {fmtDateTime(n.createdAt)}
               {n.internal && <> · <b>{t('order.notes.internal')}</b></>}
+              {fresh && <> · <span className="badge badge-danger">{t('order.notes.new')}</span></>}
             </div>
           </div>
         );
       })}
       {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
+        {/* Tek kullanımlık anahtar (karar 199): çift tıklama / yeniden gönderim ikinci mesajı yazmaz */}
+        <input type="hidden" name="requestKey" value={randomUUID()} />
         <textarea name="text" rows={2} required placeholder={t('order.notes.placeholder')} aria-label={t('order.notes.aria')} />
         <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
           {userCan(user, 'NOTE_INTERNAL_VIEW') ? <label className="check small"><input type="checkbox" name="internal" /> {t('order.notes.internalCheck')}</label> : <span />}

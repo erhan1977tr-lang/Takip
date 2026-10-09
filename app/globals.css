@@ -359,6 +359,11 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .notif-bell:hover, .notif-bell[aria-expanded=true] { background: var(--surface-3); color: var(--text); }
 .notif-bell:focus-visible, .notif-read:focus-visible, .notif-switch:focus-visible, .notif-close:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .notif-badge { position: absolute; top: -5px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
+/* Okunmamış sipariş mesajı sayacı (Paket 9, karar 199): sol menü, sipariş listesi satırı, notlar başlığı — tek görünüm */
+.msg-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; }
+.nav a.active .msg-count, .mobile-nav a.active .msg-count { box-shadow: 0 0 0 2px #fff; }
+.msg-count-link { text-decoration: none; }
+.msg-count-link:focus-visible { outline: none; border-radius: var(--radius-pill); box-shadow: 0 0 0 3px var(--focus); }
 .notif-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; width: 380px; max-width: calc(100vw - 24px); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); overflow: hidden; }
 .notif-head, .notif-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; font-size: var(--fs-sm); }
 .notif-head { border-bottom: 1px solid var(--border); }
@@ -463,6 +468,13 @@ a.notif-main:hover .notif-title, button.notif-main:hover .notif-link { text-deco
 .sla-over { color: var(--danger); white-space: nowrap; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
 .toolbar input[type='search'] { width: auto; flex: 1; min-width: 180px; max-width: 340px; }
+/* Anlık arama (Paket 9, karar 201): kutu + "aranıyor…" durumu; dar ekranda tam genişlik, yatay taşma yok */
+.live-search { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; max-width: 420px; }
+.live-search input[type='search'] { flex: 1; min-width: 0; max-width: none; }
+.live-search-state { font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; }
+.live-search-state:empty { display: none; }
+.search-result { font-size: var(--fs-meta); color: var(--muted); margin: -8px 0 12px; }
+@media (max-width: 640px) { .live-search { flex-basis: 100%; max-width: none; } }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; white-space: nowrap; }
 .tabs a { padding: 9px 14px; text-decoration: none; color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tabs a:hover { color: var(--text); }
@@ -510,6 +522,7 @@ a.notif-main:hover .notif-title, button.notif-main:hover .notif-link { text-deco
 .note-translation.note-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: var(--fs-meta); }
 .note-translation.note-state.failed { border-left-color: var(--danger); color: var(--danger); }
 .note-translation form { margin: 0; }
+.note.note-new { border-left: 3px solid var(--danger); }
 /* ----- Teklif tablosu (OfferEditor.tsx) — eski TAKİP: çerçeveli hücreler, geniş açıklama, ayrı toplam satırı ----- */
 .offer-card { border-left: 3px solid var(--primary); }
 .offer-wrap { border: 1px solid var(--border); border-radius: 10px; container-type: inline-size; }

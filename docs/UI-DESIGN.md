@@ -555,6 +555,19 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 - Delivery report PDF: shared brand header + footer, `kv` info rows, note, items table with repeated header, photo list with
   links, then one embedded photo per box (507 × 292, EXIF orientation applied; a photo that cannot be embedded is marked).
 
+## Messages, settings and live search (3.59.0, decisions 198–202)
+
+- Unread message counter: one look everywhere — `.msg-count` (red pill, white bold number, 1…99 / "99+"; `components/MsgCount.tsx`).
+  Order list row: after the order number, wrapped in `a.msg-count-link` to `#notlar` (`[data-unread]`). Sidebar / mobile nav: inside
+  the "Siparişler" link (`[data-nav-unread]`, `aria-hidden`; the link's `title` carries "n okunmamış mesaj" so its accessible name
+  stays "Siparişler"). Order page: in the "Notlar" heading (`[data-unread-notes]`); new notes get `.note.note-new` (red left border)
+  and a danger `Badge` "Yeni" in the meta line (`[data-new="1"]`). Never a second counter style.
+- Settings `/ayarlar` (all roles): customer title "Ayarlar", staff "Hesap ayarları" (sidebar section "Hesabım"); language select
+  Otomatik / Türkçe / Română; e-mail checkbox only for the customer; sound for everyone.
+- Live search (`components/LiveSearch.tsx`): replaces the plain search input inside the existing `.toolbar` / card-head forms; the
+  "Ara" button stays. `.live-search` wrapper (input + `.live-search-state` "Aranıyor…", `aria-live`); full width below 640 px.
+  Result line under the toolbar: `p.search-result[data-search-result]` ("Aramayla eşleşen: n" / "Aramanızla eşleşen sipariş yok.").
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
@@ -564,6 +577,6 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - Profile order detail page:
   layout and hierarchy (the old TAKİP arrangement) — not redesigned yet; they only inherit the shared styles.
 - ~250 inline `style={{…}}` uses in `.tsx` (mostly margins and widths) — move to classes when each page is touched.
-- Old-system features that do not exist here and were not faked: "Hesabım" button,
+- Old-system features that do not exist here and were not faked:
   per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9),
   offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle").
