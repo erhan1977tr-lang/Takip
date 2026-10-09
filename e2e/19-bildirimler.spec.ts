@@ -117,8 +117,11 @@ test('müşteri: 7 eski okunmamış → rozet 7, sekme "(7) …", ses / açılı
   expect(await db.notification.count({ where: { userId: custId, orderId, isRead: false } })).toBe(0);
 
   // "Okundu" düğmesi ve "tümünü okundu" (sipariş sayfası dışında): eski 7 bildirim yeniden okunmamış yapılır
+  // (istemci tarafı gezinme: sayfa yeniden yüklenmez, ses sayacı korunur)
+  await page.locator('.sidebar a[href="/siparisler"]').first().click();
+  await expect(page).toHaveURL(/\/siparisler$/);
   await db.notification.updateMany({ where: { userId: custId, dedupeKey: { startsWith: 'e2e:old:' } }, data: { isRead: false, readAt: null } });
-  await page.goto('/siparisler');
+  await poll(page);
   await expect(bell.locator('.notif-badge')).toHaveText('7');
   await bell.click();
   await page.locator('.notif-panel .notif-item.unread').first().locator('.notif-read').click();
