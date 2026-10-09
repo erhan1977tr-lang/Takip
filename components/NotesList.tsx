@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 /** Bir notun okunmuş sayılması için ekranda kesintisiz görünmesi gereken süre (ms) ve görünür oranı */
 const SEEN_MS = 600;
 const SEEN_RATIO = 0.6;
+/** Liste açıkken Notlar bölümünden gönderilen bir işlemin (not ekle, çeviriyi yeniden dene) dönüşünde liste açık kalır */
+const KEEP_OPEN_MS = 30_000;
+const keepKey = (orderId: string) => `takip:notes-open:${orderId}`;
 
 /**
  * Sipariş sayfasının mesaj listesi (karar 205; Paket 9'un "sipariş açılınca okundu" kuralının yerine). Mesajlar YALNIZCA
@@ -16,6 +19,7 @@ const SEEN_RATIO = 0.6;
  *     %60 oranında SEEN_MS boyunca kesintisiz görününce "görüldü" sayılır; okunma anı görülen en yeni notun anına ilerler
  *     (sunucu: markNotesRead — kullanıcıya özel, geri gitmez, aynı not iki kez sayılmaz) ve o notların zil bildirimleri de
  *     okunur. Görülmeyen (aşağıda kalan) yeni not okunmamış kalır.
+ *   - Liste açıkken Notlar bölümünden gönderilen form (not ekle, çeviriyi yeniden dene) dönünce liste açık kalır (30 sn).
  * Bu bir kullanıcı etkinliği değildir: oturumu uzatmaz (karar 135).
  */
 export function NotesList({ orderId, unread, mark, labels, children }: {
@@ -31,6 +35,26 @@ export function NotesList({ orderId, unread, mark, labels, children }: {
   const [open, setOpen] = useState(unread === 0);
   const sent = useRef<number>(0); // sunucuya bildirilen en yeni an (ms)
   const pending = useRef(false);
+
+  // Liste açıkken Notlar bölümünden bir form gönderildi: sunucu işleminin yönlendirmesi sayfayı yeniden kurar (adres
+  // parçası korunmaz) — kullanıcının açtığı liste kısa süre içinde döndüğünde açık kalır. Yalnızca bu tarayıcı sekmesi; tarayıcı
+  // deposu yoksa liste kapalı başlar (okunmamış kalır — güvenli taraf).
+  useEffect(() => {
+    try {
+      const at = Number(sessionStorage.getItem(keepKey(orderId)));
+      sessionStorage.removeItem(keepKey(orderId));
+      if (Number.isFinite(at) && at > 0 && Date.now() - at < KEEP_OPEN_MS) setOpen(true);
+    } catch { /* depo yok */ }
+  }, [orderId]);
+  useEffect(() => {
+    if (!open) return;
+    const onSubmit = (e: Event) => {
+      if (!(e.target instanceof Element) || !e.target.closest('#notlar')) return;
+      try { sessionStorage.setItem(keepKey(orderId), String(Date.now())); } catch { /* depo yok */ }
+    };
+    document.addEventListener('submit', onSubmit, true);
+    return () => document.removeEventListener('submit', onSubmit, true);
+  }, [open, orderId]);
 
   // Bildirimden / bağlantıdan gelindi (#notlar): liste açılır ve görünür yapılır
   useEffect(() => {

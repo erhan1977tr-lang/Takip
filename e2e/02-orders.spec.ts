@@ -349,7 +349,8 @@ test('notlar: iç not müşteriye görünmez', async ({ browser }) => {
   await sales.getByRole('button', { name: 'Gönder', exact: true }).click();
 
   const cust = await as(browser, CUSTOMER, CUST_PW);
-  await cust.goto(`/siparisler/${ids.b}`);
+  // Okunmamış mesaj varken Notlar listesi kapalı başlar (karar 205); #notlar (bildirim / liste bağlantısı) açar
+  await cust.goto(`/siparisler/${ids.b}#notlar`);
   await expect(cust.getByText('Teklifiniz bugün hazır olacak')).toBeVisible();
   await expect(cust.getByText('Müşteriyle fiyatı telefonda konuştuk')).toHaveCount(0);
 });
