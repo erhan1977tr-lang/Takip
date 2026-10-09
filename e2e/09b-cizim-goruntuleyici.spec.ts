@@ -338,8 +338,11 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   expect(filtered).toBeLessThanOrEqual(total);
   await drawer.goto('/siparisler?yukleme=2000-01-01');
   await expect(approved(drawer)).toContainText('Onaylanmış çizim yok.');
+  // Yönetici: onaylı çizimler Çizim Paneli'nde (karar 217 — yöneticinin "Sıra bende"sinde yalnızca dört tablo var)
   const adminPage = await as(browser, ADMIN, ADMIN_PW);
   await adminPage.goto('/siparisler');
+  await expect(approved(adminPage)).toHaveCount(0);
+  await adminPage.goto('/siparisler?panel=cizim');
   await expect(approved(adminPage).locator(`a[href="/siparisler/${id}"]`).first()).toBeVisible();
   await adminPage.context().close();
   // Satış: "Sıra bende"de yalnızca "Yeni siparişler" ve "SLA riski / gecikenler" — onaylanmış çizimler bölümü (ve teklif /

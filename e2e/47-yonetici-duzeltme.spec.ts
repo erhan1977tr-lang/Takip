@@ -204,7 +204,8 @@ test('firma PDF / Excel: aynı kapsam — sipariş başına teklif satırları (
   // 2. sayfa: her teklif satırı; sipariş no her satırda; sandık parası iki ayrı numaralı kalem
   const detail = ex.detail.filter((r) => typeof r?.[0] === 'string' && /^UNS93/.test(String(r[0])));
   const of = (no: string) => detail.filter((r) => r[0] === no);
-  expect(of('UNS9301').map((r) => [r[2], r[3], r[7], r[10], r[11]])).toEqual([
+  // Boş hücre (numarasız CNC / delik alt satırı) okunurken null gelir — '' olarak karşılaştırılır
+  expect(of('UNS9301').map((r) => [r[2] ?? '', r[3], r[7], r[10], r[11]])).toEqual([
     [1, 'Temper', 2, 100, 'EUR'], ['', 'CNC', 2, 20, 'EUR'], ['', 'Delik', 4, 20, 'EUR'], [2, 'Sandık parası', 2, 60, 'EUR'], [3, 'Sandık parası', 1, 45, 'EUR'],
   ]);
   expect(of('UNS9302').map((r) => [r[2], r[10]])).toEqual([[1, 50]]);
