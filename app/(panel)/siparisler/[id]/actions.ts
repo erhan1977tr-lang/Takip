@@ -21,7 +21,7 @@ import { addNote, retryDrawingTranslation, retryNoteTranslation, translateDrawin
 import { deliverInAppNow } from '@/lib/notifications';
 import { revisionNote } from '@/server/orders/revision-note.js';
 import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
-import { markNotesRead } from '@/server/notes/unread.js';
+import { markOrderSeen } from '@/server/notifications/order-alerts.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -397,13 +397,14 @@ export async function addNoteAction(formData: FormData) {
 }
 
 /**
- * Sipariş sayfası açıldı: bu siparişin mesajları, ekranda gösterilen en yeni nota kadar "okundu" (karar 199). Yalnızca
- * oturumdaki kullanıcının kendi okunma kaydı; sipariş kapsamda değilse hiçbir şey yazılmaz. Oturumu uzatmaz.
- * @returns okunma kaydı / zil değişti mi (istemci yalnızca o zaman menüdeki sayacı tazeler)
+ * Sipariş sayfası açıldı (karar 224; karar 205'in yerine): oturumdaki kullanıcının BU siparişteki uyarıları (zil — ORDER_…)
+ * ve mesajları, sayfanın çizildiği ana (upTo) kadar okundu. Yalnızca kendi kayıtları; sipariş kapsamda değilse hiçbir şey
+ * yazılmaz. Sayfa çizimi değil istemci bileşeni (components/OrderSeen.tsx) çağırır. Oturumu uzatmaz.
+ * @returns bir şey değişti mi (istemci yalnızca o zaman menüdeki sayaçları tazeler)
  */
-export async function markNotesReadAction(orderId: string, upTo: string | null): Promise<boolean> {
+export async function markOrderSeenAction(orderId: string, upTo: string): Promise<boolean> {
   const user = await requireUser();
-  const r = await markNotesRead(db, { user, orderId: String(orderId ?? ''), upTo: typeof upTo === 'string' ? upTo : null });
+  const r = await markOrderSeen(db, { user, orderId: String(orderId ?? ''), upTo: typeof upTo === 'string' ? upTo : null });
   return r.ok && r.changed;
 }
 

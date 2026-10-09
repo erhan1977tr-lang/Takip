@@ -292,12 +292,23 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
   // Sağlayıcı çeviri servisinde yalnızca altı yerde seçilir (addNote, retryNoteTranslation, translateRevision,
   // translateDrawingNote, retryDrawingTranslation, testTranslation) ve yalnızca runTranslation / testTranslation içinde çağrılır
   const svc = APP.find((s) => s.file === 'server/notes/translation.js').text;
-  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 6);
+  // + translateOrderNote (siparişin ilk mesajı — karar 225)
+  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 7);
   assert.equal((svc.match(/await translator\(|await \(translator \?\? translatorFor\(\)\)\(/g) ?? []).length, 2);
   assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'not çevirisi: runTranslation yalnızca addNote ve retryNoteTranslation içinden');
-  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 5, '+ translateRevision (karar 163), translateDrawingNote ve retryDrawingTranslation (karar 168) — başka çağıran yok');
+  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 6, '+ translateRevision (karar 163), translateOrderNote (karar 225), translateDrawingNote ve retryDrawingTranslation (karar 168) — başka çağıran yok');
   // Bu işlevleri çağıran dosyalar: yalnızca iki "use server" işlem dosyası (form gönderimiyle çalışır; GET / çizimle değil)
   assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation|translateRevision|translateDrawingNote|retryDrawingTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
+  // Siparişin ilk mesajı (karar 225): yalnızca Yeni Sipariş sunucu işleminden, sipariş KAYDEDİLDİKTEN sonra, bir kez
+  assert.deepEqual(filesWith(/\btranslateOrderNote\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/yeni/actions.ts']);
+  const newOrder = APP.find((s) => s.file === 'app/(panel)/siparisler/yeni/actions.ts').text;
+  assert.ok(newOrder.startsWith("'use server'"));
+  assert.ok(newOrder.indexOf('await createGlassOrder(') < newOrder.indexOf('await firstNoteTranslation(orderId, actor);'));
+  assert.ok(newOrder.indexOf('await createProfileOrder(') < newOrder.lastIndexOf('await firstNoteTranslation(orderId, actor);'));
+  assert.equal((newOrder.match(/await firstNoteTranslation\(/g) ?? []).length, 2);
+  const firstFn = svc.slice(svc.indexOf('export async function translateOrderNote('), svc.indexOf('export async function translateDrawingNote('));
+  assert.match(firstFn, /userId: String\(actor\.id \?\? ''\), internal: false, translationStatus: null/);
+  assert.match(firstFn, /updateMany\(\{\s*where: \{ id: note\.id, translationStatus: null \}/);
   // Revizyon notu (karar 163): talep yazıldıktan SONRA, yalnızca talebi yazan kullanıcının sunucu işleminden; bir kez —
   // sahiplenme yalnızca çeviri durumu hiç yazılmamış talebe uygulanır (çevrilmiş / çevrilemedi / sürüyor yeniden çevrilmez)
   const rev = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function testTranslation('));
@@ -323,7 +334,7 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
     assert.ok(APP.find((s) => s.file === file).text.startsWith("'use server'"), `${file}: sunucu işlemi`);
   }
   // Çeviri servisini içe aktaranlar: iki işlem dosyası + Entegrasyonlar sayfası (yalnızca ayar okur: getTranslateSettings, failedTranslations)
-  assert.deepEqual(filesWith(/notes\/translation(\.js)?['"]/), ['app/(panel)/admin/entegrasyonlar/actions.ts', 'app/(panel)/admin/entegrasyonlar/page.tsx', 'app/(panel)/siparisler/[id]/actions.ts']);
+  assert.deepEqual(filesWith(/notes\/translation(\.js)?['"]/), ['app/(panel)/admin/entegrasyonlar/actions.ts', 'app/(panel)/admin/entegrasyonlar/page.tsx', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/yeni/actions.ts']);
   const settingsPage = APP.find((s) => s.file === 'app/(panel)/admin/entegrasyonlar/page.tsx').text;
   assert.match(settingsPage, /import \{ failedTranslations, getTranslateSettings \} from '@\/server\/notes\/translation\.js';/);
   // İşçi (scripts/worker.mjs) ve onun kullandığı sunucu kodu not çevirisini hiç yüklemez: işçi çeviri yapamaz, yeniden deneyemez

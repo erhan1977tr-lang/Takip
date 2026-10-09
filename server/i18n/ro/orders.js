@@ -57,6 +57,8 @@ export default {
       gone: 'Ciorna nu a fost găsită.',
     },
   },
+  // Alertă de comandă necitită (karar 224)
+  alerts: { unread: '{n} noutăți necitite la comandă' },
   internal: {
     infectedBanner: 'În carantină sunt {n} fișiere infectate; acestea nu pot fi descărcate.',
     infectedLink: 'Integrări →',

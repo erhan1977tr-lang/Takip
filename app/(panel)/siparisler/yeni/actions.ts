@@ -19,6 +19,7 @@ import { WorkflowError } from '@/server/domain/workflow.js';
 import { MAX_PROFILE_QTY, profileOrderItems, readQuantities } from '@/server/profile/rules.js';
 import { createProfileOrder } from '@/server/profile/create.js';
 import { saveProfileDraft } from '@/server/profile/drafts.js';
+import { translateOrderNote } from '@/server/notes/translation.js';
 
 export type NewOrderState = {
   error?: string;
@@ -117,6 +118,8 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
     return fail(t('newOrder.errors.saveFailed'));
   }
   await discardFiles(dropped);
+  // İlk mesaj (karar 225): sipariş kaydedildikten SONRA bir kez Türkçeye çevrilir; çeviri hatası siparişi etkilemez
+  if (note) await firstNoteTranslation(orderId, actor);
   redirect(`/siparisler/${orderId}?ok=created`);
 }
 
@@ -237,6 +240,16 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     console.error('Profil siparişi oluşturulamadı', err);
     return fail(t('newOrder.errors.saveFailed'));
   }
+  if (note) await firstNoteTranslation(orderId, actor);
   revalidatePath('/siparisler');
   redirect(`/siparisler/${orderId}?ok=profile_created`);
+}
+
+/** Siparişin ilk mesajının tek seferlik çevirisi (karar 225). Hiçbir hata sipariş oluşturmayı bozmaz. */
+async function firstNoteTranslation(orderId: string, actor: Awaited<ReturnType<typeof actorOf>>) {
+  try {
+    await translateOrderNote(db, { orderId, actor });
+  } catch (err) {
+    console.warn('[not çevirisi] ilk mesaj çevrilemedi', orderId, err instanceof Error ? err.name : 'hata');
+  }
 }

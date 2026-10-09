@@ -446,7 +446,11 @@ test('sınırlar tek yerde, sunucuda: notu yazan tek kod addNote; sıra — hak 
   // Varsayılan sayaçlar uygulamanın ortak örneğidir; sunucu işlemi kendi sayaç / sınırını veremez (addNote,
   // retryNoteTranslation, translateRevision — revizyon notu müşterinin aynı çeviri hakkını kullanır, karar 163 —,
   // translateDrawingNote ve retryDrawingTranslation — çizim alanının notları, karar 168)
-  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 5);
+  // + translateOrderNote (siparişin ilk mesajı — karar 225): müşterinin aynı çeviri hakkı, sahiplenmeden önce
+  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 6);
+  const first = svc.slice(svc.indexOf('export async function translateOrderNote('), svc.indexOf('export async function translateDrawingNote('));
+  assert.ok(first.indexOf('translateReady(settings)') < first.indexOf('limits.translation(actor, now.getTime())'));
+  assert.ok(first.indexOf('limits.translation(actor, now.getTime())') < first.indexOf("translationStatus: 'PENDING'"));
   const revision = svc.slice(svc.indexOf('export async function translateRevision('), svc.indexOf('export async function translateDrawingNote('));
   assert.ok(revision.includes('limits.translation(actor, now.getTime())'), 'revizyon notunun çevirisi müşterinin çeviri hakkından düşer');
   // Çizim alanı (karar 168): sürüm notunun çevirisi çeviri hakkından, "yeniden dene" yeniden deneme hakkından — ikisi de

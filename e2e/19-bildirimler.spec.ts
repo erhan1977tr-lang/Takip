@@ -111,13 +111,18 @@ test('müşteri: 7 eski okunmamış → rozet 7, sekme "(7) …", ses / açılı
   expect(await plays(page)).toBe(2);
   await toast.locator('a.notif-main').click();
   await expect(page).toHaveURL(new RegExp(`/siparisler/${orderId}`));
-  await expect(bell.locator('.notif-badge')).toHaveText('10');
   expect((await db.notification.findFirstOrThrow({ where: { dedupeKey: 'e2e:new:4' } })).isRead).toBe(true);
+  // Sipariş sayfası açıldı (karar 224): bu kullanıcının BU siparişteki bütün uyarıları okundu → rozet kalkar
+  await expect(bell.locator('.notif-badge')).toHaveCount(0);
+  expect(await db.notification.count({ where: { userId: custId, orderId, isRead: false } })).toBe(0);
 
-  // "Okundu" düğmesi ve "tümünü okundu": rozet ve başlık güncellenir, sonunda rozet kalkar
+  // "Okundu" düğmesi ve "tümünü okundu" (sipariş sayfası dışında): eski 7 bildirim yeniden okunmamış yapılır
+  await db.notification.updateMany({ where: { userId: custId, dedupeKey: { startsWith: 'e2e:old:' } }, data: { isRead: false, readAt: null } });
+  await page.goto('/siparisler');
+  await expect(bell.locator('.notif-badge')).toHaveText('7');
   await bell.click();
   await page.locator('.notif-panel .notif-item.unread').first().locator('.notif-read').click();
-  await expect(bell.locator('.notif-badge')).toHaveText('9');
+  await expect(bell.locator('.notif-badge')).toHaveText('6');
   await page.locator('.notif-panel').getByRole('button', { name: 'Marchează toate ca citite' }).click();
   await expect(bell.locator('.notif-badge')).toHaveCount(0);
   await expect(page).not.toHaveTitle(/^\(\d+\)/);

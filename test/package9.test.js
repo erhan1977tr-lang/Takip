@@ -185,13 +185,12 @@ test('formun anahtarı hiçbir role dönmez; not ekranı ve liste aynı okunmam�
   assert.equal((list.match(/unreadNotesFor\(user, /g) ?? []).length, 2, 'müşteri ve iç liste');
   const layout = strip(read('app/(panel)/layout.tsx'));
   assert.ok(layout.includes('unreadTotal(db, user)'));
-  // Okundu (karar 205): yalnızca mesaj ekranda GERÇEKTEN görülünce — okunmamış varsa liste kapalı başlar; açıkken notun
-  // kendisi görünür sekmede belirli oranla ve süreyle görünmeli; sayfa açılışı / yenileme / yoklama okumaz
-  const mark = read('components/NotesList.tsx');
-  assert.ok(mark.includes('useState(unread === 0)'), 'okunmamış varsa kapalı başlar');
-  assert.ok(mark.includes('new IntersectionObserver(') && mark.includes("document.visibilityState !== 'visible'") && mark.includes('SEEN_MS'));
-  assert.ok(mark.includes("if (!open || !root"), 'kapalı liste hiçbir şey okumaz');
+  // Okundu (karar 224 — karar 205'in yerine): sipariş sayfası AÇILINCA, sayfa çizildikten sonra istemci bileşeni çağırır;
+  // yalnızca sayfanın çizildiği ana kadar; sekme görünür değilse görünür olunca. Ayrı yoklama yok.
+  const mark = read('components/OrderSeen.tsx');
+  assert.ok(mark.includes("document.visibilityState !== 'visible'") && mark.includes('mark(orderId, upTo)'));
   assert.ok(!/fetch\(|setInterval/.test(mark), 'ayrı yoklama yok');
+  assert.ok(!fs.existsSync(new URL('../components/NotesList.tsx', import.meta.url)), 'mesajlar doğrudan açık (karar 225): gizleyen liste kaldırıldı');
   assert.ok(!fs.existsSync(new URL('../components/MarkNotesRead.tsx', import.meta.url)), 'sayfa açılınca okuyan eski bileşen kaldırıldı');
 });
 
@@ -233,12 +232,12 @@ test('30 dakika kuralı: 29. dakikada açık, 30. dakikada kapalı; otomatik ist
   assert.equal(sessionState({ expiresAt: now + DAY, lastSeenAt: now - 30 * MIN + 1 }, now), 'ok');
   assert.equal(sessionState(s(30), now), 'idle');
   // Bu paketteki yeni sunucu kodu oturuma yazmaz
-  for (const f of ['server/notes/unread.js', 'components/NotesList.tsx', 'components/LiveSearch.tsx', 'app/(panel)/ayarlar/actions.ts']) {
+  for (const f of ['server/notes/unread.js', 'server/notifications/order-alerts.js', 'components/OrderSeen.tsx', 'components/LiveSearch.tsx', 'app/(panel)/ayarlar/actions.ts']) {
     assert.ok(!/recordActivity|reportSessionActivity|lastSeenAt/.test(strip(read(f))), f);
   }
 });
 
-test('okundu düzeltmesi (karar 205): mesaj bildirimi tıklanınca okunmaz (yalnızca mesaj görülünce); öbür bildirim türleri eskisi gibi tıklanınca okunur', async () => {
+test('okundu (karar 224, 205 yerine): mesaj bildirimi tıklanınca okunmaz — sipariş sayfası açılınca okunur; öbür bildirim türleri eskisi gibi tıklanınca okunur', async () => {
   const { toastFor } = await import('../server/notifications/feed.js');
   const lib = readFileSync('lib/notifications.ts', 'utf8');
   assert.match(lib, /readOnView: n\.type === NOTE_EVENT/, 'akış: yalnızca sipariş mesajı bildirimi "görülünce okunur"');
@@ -253,11 +252,10 @@ test('okundu düzeltmesi (karar 205): mesaj bildirimi tıklanınca okunmaz (yaln
   const one = { id: 'n1', title: 't', body: '', link: '/siparisler/x#notlar', createdAt: '2026-10-09T10:00:00.000Z' };
   assert.equal(toastFor([{ ...one, readOnView: true }])?.readOnView, true);
   assert.equal(toastFor([one])?.readOnView, false);
-  // Sipariş sayfası açılınca okuma yok: okuma yalnızca liste açık + görünürlük gözlemiyle (NotesList), sayfada başka çağrı yok
+  // Sipariş sayfası açılınca okunur (karar 224): sayfa işlemi kendisi çağırmaz — istemci bileşeni (OrderSeen) çizimden sonra
   const page = readFileSync('app/(panel)/siparisler/[id]/page.tsx', 'utf8');
-  assert.equal(page.match(/markNotesReadAction/g)?.length, 2, 'içe aktarma + NotesList\'e verilen işlev — sayfa kendisi çağırmaz');
-  assert.doesNotMatch(page, /markNotesReadAction\(/);
-  const list = readFileSync('components/NotesList.tsx', 'utf8');
-  assert.match(list, /useState\(unread === 0\)/, 'okunmamış varsa liste kapalı başlar');
-  assert.doesNotMatch(list, /setInterval|takip:poll|AutoRefresh/, 'yoklama okumaz');
+  assert.equal(page.match(/markOrderSeenAction/g)?.length, 2, 'içe aktarma + OrderSeen\'e verilen işlev — sayfa kendisi çağırmaz');
+  assert.doesNotMatch(page, /markOrderSeenAction\(/);
+  assert.match(page, /<OrderSeen orderId=\{order\.id\} upTo=\{now\.toISOString\(\)\} mark=\{markOrderSeenAction\} \/>/);
+  assert.doesNotMatch(page, /data-notes-toggle|NotesList/, 'mesajlar doğrudan açık (karar 225)');
 });

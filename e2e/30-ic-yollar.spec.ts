@@ -146,12 +146,14 @@ test('bildirim bağlantısı: kayıttaki güvensiz bağlantı bağlantısız gö
     await item(bad[1].id).locator('div.notif-main').click();
     await expect(page).toHaveURL(`${ORIGIN}/siparisler`);
     expect(outside, 'site dışına istek').toEqual([]);
-    // Geçerli bağlantı: aynen yazılır, tıklanınca okundu olur ve sipariş sayfası (parçasıyla) açılır
+    expect((await db.notification.findUniqueOrThrow({ where: { id: bad[0].id } })).isRead, 'bağlantısız bildirim tıklamayla okundu olmaz').toBe(false);
+    // Geçerli bağlantı: aynen yazılır, tıklanınca okundu olur ve sipariş sayfası (parçasıyla) açılır. Sipariş sayfasını
+    // açmak o siparişteki bütün uyarıları da okur (karar 224) — bağlantısız bildirimler de bu siparişe ait
     await expect(item(ok.id).locator('a.notif-main')).toHaveAttribute('href', good);
     await item(ok.id).locator('a.notif-main').click();
     await expect(page).toHaveURL(`${ORIGIN}${good}`);
     await expect.poll(async () => (await db.notification.findUniqueOrThrow({ where: { id: ok.id } })).isRead).toBe(true);
-    expect((await db.notification.findUniqueOrThrow({ where: { id: bad[0].id } })).isRead, 'bağlantısız bildirim tıklamayla okundu olmaz').toBe(false);
+    await expect.poll(async () => (await db.notification.findUniqueOrThrow({ where: { id: bad[0].id } })).isRead).toBe(true);
     expect(outside).toEqual([]);
   } finally {
     await db.notification.deleteMany({ where: { userId: user.id, dedupeKey: { startsWith: 'e2e:path:' } } });

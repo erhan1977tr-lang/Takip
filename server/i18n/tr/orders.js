@@ -58,6 +58,8 @@ export default {
       gone: 'Taslak bulunamadı.',
     },
   },
+  // Okunmamış sipariş uyarısı (karar 224)
+  alerts: { unread: '{n} okunmamış sipariş gelişmesi' },
   internal: {
     infectedBanner: 'Karantinada {n} virüslü dosya var; bu dosyalar indirilemez.',
     infectedLink: 'Entegrasyonlar →',

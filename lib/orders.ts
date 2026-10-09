@@ -11,6 +11,7 @@ import { orderPeopleView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
 import { drawingsView } from '../server/orders/drawing-access.js';
 import { unreadCounts } from '../server/notes/unread.js';
+import { orderAlertCounts } from '../server/notifications/order-alerts.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -200,4 +201,13 @@ export { suggestNextNo } from '../server/orders/create.js';
  */
 export async function unreadNotesFor(user: CurrentUser, orderIds: string[]): Promise<Map<string, number>> {
   return unreadCounts(db, user, orderIds);
+}
+
+/**
+ * Listede gösterilen siparişlerin okunmamış SİPARİŞ UYARILARI (karar 224): kullanıcının o siparişteki okunmamış zil
+ * bildirimleri — yeni mesaj hariç (mesajın kendi sayacı var). Kural server/notifications/order-alerts.js; sipariş sayfası
+ * açılınca yalnızca o kullanıcının o siparişteki uyarıları okunur.
+ */
+export async function orderAlertsFor(user: CurrentUser, orderIds: string[]): Promise<Map<string, number>> {
+  return orderAlertCounts(db, user, orderIds, { messages: false });
 }

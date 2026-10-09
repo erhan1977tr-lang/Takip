@@ -5,7 +5,8 @@ import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict, type MsgKey } from '@/lib/i18n';
 import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
-import { customerLabel, drawingScope, orderScope, sanitizeRows, unreadNotesFor } from '@/lib/orders';
+import { customerLabel, drawingScope, orderAlertsFor, orderScope, sanitizeRows, unreadNotesFor } from '@/lib/orders';
+import { OrderAlert } from '@/components/OrderAlert';
 import { MsgCount } from '@/components/MsgCount';
 import { LiveSearch } from '@/components/LiveSearch';
 import { userCan } from '@/lib/permissions';
@@ -339,6 +340,8 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
     : []);
   // Okunmamış mesaj sayısı (karar 199) — satırlar zaten kullanıcının kapsamından geçmiştir
   const unread = await unreadNotesFor(user, rows.map((o) => o.id));
+  // Okunmamış sipariş uyarıları (karar 224): kullanıcıya özel; sipariş açılınca yalnızca onun uyarıları okunur
+  const alerts = await orderAlertsFor(user, rows.map((o) => o.id));
   const groups = new Map<string, Row[]>();
   for (const o of rows) {
     const k = group ? t('orders.internal.shipGroup', { date: fmtDate(o.estimatedShipDate) }) : '';
@@ -361,6 +364,7 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
                   <td>
                     <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>
                     <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
+                    <OrderAlert n={alerts.get(o.id)} label={t('orders.alerts.unread', { n: alerts.get(o.id) ?? 0 })} href={`/siparisler/${o.id}`} />
                     {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
                     {stockShort.has(o.id) && <> <Badge tone="danger">{t('profile.page.stock.mark')}</Badge></>}
                     {/* Revizyon istendi: satır kırmızı, rozet belirgin; DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167) */}
@@ -468,7 +472,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   return (
     <>
       <div className="page-head">
-        <h1>{profileView ? t('orders.internal.titles.profile') : role === 'CIZIM' || teamPanel ? t('orders.internal.titles.drawing') : role === 'ADMIN' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
+        <h1>{profileView ? t('orders.internal.titles.profile') : role === 'CIZIM' || teamPanel ? t('orders.internal.titles.drawing') : role === 'ADMIN' || role === 'YONETICI_YARDIMCISI' ? t('orders.internal.titles.admin') : role === 'DENETIMCI' ? t('orders.internal.titles.inspector') : t('orders.internal.titles.sales')}</h1>
       </div>
       {alerts > 0 && (
         <div className="alert alert-warn">

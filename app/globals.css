@@ -362,10 +362,13 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .notif-bell:focus-visible, .notif-read:focus-visible, .notif-switch:focus-visible, .notif-close:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .notif-badge { position: absolute; top: -5px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
 /* Okunmamış sipariş mesajı sayacı (Paket 9, karar 199): sol menü, sipariş listesi satırı, notlar başlığı — tek görünüm */
-.notes-toggle { display: inline-flex; margin: 2px 0 10px; padding-left: 0; }
 .msg-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; }
 .nav a.active .msg-count, .mobile-nav a.active .msg-count { box-shadow: 0 0 0 2px #fff; }
 .msg-count-link { text-decoration: none; }
+/* Okunmamış sipariş uyarısı (karar 224): mesaj sayacından ayrı — mavi yuvarlak; sipariş sayfası açılınca kullanıcıya özel okunur */
+.order-alert { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; }
+.order-alert-link { text-decoration: none; }
+.order-alert-link:focus-visible { outline: none; border-radius: var(--radius-pill); box-shadow: 0 0 0 3px var(--focus); }
 .msg-count-link:focus-visible { outline: none; border-radius: var(--radius-pill); box-shadow: 0 0 0 3px var(--focus); }
 .notif-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; width: 380px; max-width: calc(100vw - 24px); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); overflow: hidden; }
 .notif-head, .notif-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; font-size: var(--fs-sm); }

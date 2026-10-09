@@ -310,6 +310,56 @@ export async function translateRevision(db, { revisionId, orderId, actor, now = 
 }
 
 /**
+ * Siparişin İLK mesajını (müşterinin Yeni Sipariş formunda yazdığı not — sipariş oluşturulurken aynı işlemde kaydedilir)
+ * BİR KEZ Türkçeye çevirir (Paket A, karar 225). Yalnızca sipariş BAŞARIYLA oluşturulduktan sonra, Yeni Sipariş sunucu
+ * işleminden, notun kendi yazarı için çağrılır. Kural sipariş notuyla aynıdır: yön yazanın rolünden (müşteri → Türkçe),
+ * özgün metin değişmez, sonuç aynı satıra yazılır; sahiplenme tek koşullu güncellemedir (translationStatus boş) — iki istek
+ * / yeniden deneme aynı notu iki kez çevirmez; çeviri hatası siparişi bozmaz (FAILED + güvenli kod; iç ekip "yeniden dene"
+ * ile ister). Sayfa açılışı / yenileme çeviri YAPMAZ. Görünürlük değişmedi (server/notes/view.js): yönetici, yardımcısı,
+ * satış ve çizim özgün + Türkçe; denetimci yalnızca özgün; müşteri yalnızca özgün.
+ * @param {any} db
+ * @param {{ orderId: string, actor: { id: string, role: string, customerId?: string | null }, now?: Date,
+ *   translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' | null } | { ok: false, code: 'NOT_FOUND' | 'NOT_ALLOWED' }>}
+ */
+export async function translateOrderNote(db, { orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  const target = translationTarget(actor?.role);
+  if (!target) return { ok: true, translation: null };
+  const note = await db.orderNote.findFirst({
+    where: {
+      orderId: String(orderId ?? ''), userId: String(actor.id ?? ''), internal: false, translationStatus: null,
+      order: orderScope({ appRole: actor.role, customerId: actor.customerId }),
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, text: true },
+  });
+  if (!note?.text?.trim()) return { ok: false, code: 'NOT_FOUND' };
+  let settings = null;
+  try {
+    settings = await readSettings(db);
+  } catch {
+    settings = null; // ayar okunamadıysa not çevirisiz kalır (sipariş zaten kayıtlıdır)
+  }
+  if (!translateReady(settings)) return { ok: true, translation: null };
+  if (!limits.translation(actor, now.getTime())) {
+    await db.orderNote.updateMany({
+      where: { id: note.id, translationStatus: null },
+      data: { translationLang: target, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now },
+    });
+    return { ok: true, translation: 'FAILED' };
+  }
+  const claimed = await db.orderNote.updateMany({
+    where: { id: note.id, translationStatus: null },
+    data: { translationLang: target, translationStatus: 'PENDING', translationAt: now },
+  });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: note.id, text: note.text, translationLang: target }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'orderNote',
+  });
+  return { ok: true, translation: status };
+}
+
+/**
  * Müşteriye GÖNDERİLEN çizim sürümünün müşteri notunu (Drawing.noteCustomer — çizimcinin müşteriye yazdığı Türkçe not)
  * BİR KEZ Romence'ye çevirir ve sürümün satırına yazar (karar 168). Not taslakta değişebilir; müşteriye gittiği anda kesinleşir
  * — bu yüzden çeviri gönderimden (send_drawing) hemen sonraki sunucu işleminden, YALNIZCA gönderen kullanıcı için yapılır.

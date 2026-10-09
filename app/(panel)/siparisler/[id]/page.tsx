@@ -8,7 +8,7 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
 import { countText, isUnreadNote, unreadThreshold } from '@/server/notes/unread.js';
-import { NotesList } from '@/components/NotesList';
+import { OrderSeen } from '@/components/OrderSeen';
 import { randomUUID } from 'node:crypto';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, lockReasonText, personText, roleText, slaText, stageText,
@@ -43,7 +43,7 @@ import { FgoDocLink } from '@/components/FgoDocLink';
 import { RevisionNote } from '@/components/RevisionNote';
 import { decideCompensationAction, restoreOrderAction } from './compensation-actions';
 import {
-  addFilesAction, addNoteAction, markNotesReadAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
+  addFilesAction, addNoteAction, markOrderSeenAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
   withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction, withdrawOfferAction,
@@ -1347,17 +1347,19 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
   const now = new Date();
   // Okunmamış: başkasının yazdığı, okunma anından sonraki (gösterilen notlar zaten role göre süzülmüş — liste sayacıyla aynı kural)
   const unread = notes.filter((n) => isUnreadNote(n, user, since)).length;
-  // Okundu yalnızca mesaj GERÇEKTEN görülünce (karar 205): okunmamış varsa liste kapalı başlar; açılıp ekranda görünen not okunur
+  // Mesajlar doğrudan açık gösterilir (karar 225 — "Mesajları göster" düğmesi yok); sayfa açılınca okunur (karar 224 —
+  // components/OrderSeen.tsx). "Yeni" vurgusu, sayfanın çizildiği andaki okunma eşiğine göredir.
   return (
     <div className="card" id="notlar">
+      {/* Sipariş açıldı → bu kullanıcının bu siparişteki uyarıları ve mesajları okundu (karar 224; tarayıcıda, çizimden sonra) */}
+      <OrderSeen orderId={order.id} upTo={now.toISOString()} mark={markOrderSeenAction} />
       <h2>
         {t('order.notes.title')}
         {unread > 0 && <span className="msg-count" data-unread-notes={unread} title={t('order.notes.unread', { n: unread })} aria-hidden="true">{countText(unread)}</span>}
       </h2>
       <p className="muted small">{t('order.notes.intro')}{!isCustomer && ` ${t('order.notes.introInternal')}`}</p>
       {notes.length === 0 && <p className="muted">{t('order.notes.none')}</p>}
-      {notes.length > 0 && <NotesList orderId={order.id} unread={unread} mark={markNotesReadAction}
-        labels={{ show: unread > 0 ? t('order.notes.showNew', { n: unread }) : t('order.notes.show'), hide: t('order.notes.hide') }}>
+      {notes.length > 0 && <div id="notlar-liste" data-notes-open="1">
       {notes.map((n) => {
         const fresh = isUnreadNote(n, user, since);
         const st = translationState(n, now);
@@ -1397,7 +1399,7 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
           </div>
         );
       })}
-      </NotesList>}
+      </div>}
       {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
         {/* Tek kullanımlık anahtar (karar 199): çift tıklama / yeniden gönderim ikinci mesajı yazmaz */}
