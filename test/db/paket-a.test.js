@@ -198,7 +198,7 @@ dbTest('müşteri silme (karar 221): yalnızca kendi kayıtları; başka müşte
   const guest = await db.crateOrder.create({ data: { crateId: crate.id, orderId: ob.id } });
   const blocked = await deleteCustomer(db, { customerId: T.id, confirmName: T.name, fingerprint: p.fingerprint, actor: act(U.yy) });
   assert.deepEqual([blocked.code, blocked.blockers.map((b) => b.code)], ['BLOCKED', ['SHARED_CRATE']]);
-  await db.crateOrder.delete({ where: { id: guest.id } });
+  await db.crateOrder.deleteMany({ where: { crateId: guest.crateId, orderId: guest.orderId } });
   // Yanlış ad / eski önizleme
   assert.equal((await deleteCustomer(db, { customerId: T.id, confirmName: 'Başka Ad', fingerprint: p.fingerprint, actor: act(U.yy) })).code, 'CONFIRM_REQUIRED');
   assert.equal((await deleteCustomer(db, { customerId: T.id, confirmName: T.name, fingerprint: 'eski', actor: act(U.yy) })).code, 'STALE');
