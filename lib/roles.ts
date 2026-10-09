@@ -6,7 +6,7 @@ import type { MsgKey } from './i18n';
 /** Menü tanımı (metinler sözlük anahtarı; panel düzeni çevirir). */
 export type NavDef = { href: string; key: MsgKey } | { section: MsgKey };
 /** Çevrilmiş menü öğesi (NavLinks bileşenine giden) */
-export type NavItem = { href: string; label: string } | { section: string };
+export type NavItem = { href: string; label: string; count?: number; countLabel?: string } | { section: string };
 
 export const NAV: Record<AppRole, NavDef[]> = {
   ADMIN: [
@@ -42,18 +42,25 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/admin/stok', key: 'nav.stock' },
     // "Ayarlar" (eski adı "Entegrasyonlar"): Entegrasyonlar ve Tedarikçiler sekmeleri — karar 179
     { href: '/admin/entegrasyonlar', key: 'nav.adminSettings' },
+    // Kendi hesap ayarları (dil, ses — Paket 9, karar 198); bütün iç roller
+    { section: 'nav.account' },
+    { href: '/ayarlar', key: 'nav.mySettings' },
   ],
   SATIS: [
     { section: 'nav.operations' },
     { href: '/siparisler', key: 'nav.orders' },
     { href: '/teklifler', key: 'nav.offers' },
     { href: '/yuklemeler', key: 'nav.loadings' },
+    { section: 'nav.account' },
+    { href: '/ayarlar', key: 'nav.mySettings' },
   ],
   CIZIM: [
     { section: 'nav.operations' },
     { href: '/siparisler', key: 'nav.orders' },
     // Müşterinin DWG/DXF olarak gönderdiği çizimler: üç karar (Üretime Hazır / Çizim Hatalı / Çizimi Güncelle) — karar 167
     { href: '/siparisler?view=dwg', key: 'nav.dwgDrawings' },
+    { section: 'nav.account' },
+    { href: '/ayarlar', key: 'nav.mySettings' },
   ],
   // Denetimci yalnızca görüntüler (karar 8); profil stoğunu salt okunur görür (karar 177 — STOCK_VIEW)
   DENETIMCI: [
@@ -62,6 +69,8 @@ export const NAV: Record<AppRole, NavDef[]> = {
     { href: '/teklifler', key: 'nav.offers' },
     { href: '/yuklemeler', key: 'nav.loadings' },
     { href: '/admin/stok', key: 'nav.stock' },
+    { section: 'nav.account' },
+    { href: '/ayarlar', key: 'nav.mySettings' },
   ],
   MUSTERI: [
     { section: 'nav.customerPortal' },

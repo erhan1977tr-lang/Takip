@@ -153,9 +153,10 @@ test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişin
   const toCustomer = INAPP_TYPES.filter((t) => [glass, profile].some((o) => INAPP_RULES[t].to(o, {}).includes('customer'))).sort();
   // Yeni bir olay müşteriye açılacaksa bilerek buraya eklenmelidir. ORDER_DWG_FAULTY (karar 167): çizimci müşterinin DWG/DXF
   // çizimini hatalı buldu — müşterinin yanıtı bekleniyor. ORDER_DELIVERY_DATE_CHANGED / ORDER_PICKUP_MOVED (Paket 8, karar 194):
-  // profil siparişinin tahmini teslim günü yönetici tarafından değiştirildi / depoya iletilirken depo kuralıyla ileri kaydı
+  // profil siparişinin tahmini teslim günü yönetici tarafından değiştirildi / depoya iletilirken depo kuralıyla ileri kaydı.
+  // ORDER_NOTE_ADDED (Paket 9, karar 199): iç ekibin müşteriye açık mesajı — müşterinin kendi mesajı iç ekibe gider (aşağıda)
   assert.deepEqual(toCustomer, [
-    'LOADING_REPLANNED', 'ORDER_DELIVERY_DATE_CHANGED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_INVOICED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED',
+    'LOADING_REPLANNED', 'ORDER_DELIVERY_DATE_CHANGED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_INVOICED', 'ORDER_NOTE_ADDED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED',
     'ORDER_PICKUP_MOVED', 'ORDER_PROFILE_OFFER_SENT', 'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
   ]);
   assert.equal(INAPP_RULES.ORDER_DELIVERY_DATE_CHANGED.link(profile, {}), '/siparisler/o2#teslim');

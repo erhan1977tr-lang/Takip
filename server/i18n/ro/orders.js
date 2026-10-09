@@ -8,6 +8,11 @@ export default {
     customer: { one: 'client', few: 'clienți', other: 'de clienți' },
     crate: { one: 'ladă', few: 'lăzi', other: 'de lăzi' },
   },
+  // Căutare instantanee (Pachetul 9, decizia 201)
+  search: {
+    results: 'Rezultatele căutării: {n}',
+    none: 'Nicio comandă nu corespunde căutării.',
+  },
   cols: {
     order: 'Comandă',
     customer: 'Client',

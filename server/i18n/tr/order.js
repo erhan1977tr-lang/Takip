@@ -317,6 +317,9 @@ export default {
     aria: 'Not',
     internalCheck: 'İç not — müşteri görmez',
     noEdit: 'Gönderilen not düzeltilemez',
+    // Okunmamış mesaj sayacı (karar 199)
+    unread: '{n} okunmamış mesaj',
+    new: 'Yeni',
     send: 'Gönder',
     // Otomatik çeviri (karar 127). translatedLabel arayüz diline göre DEĞİL, çevirinin diline göre okunur:
     // Türkçe çevirinin etiketi bu sözlükten, Romence çevirinin etiketi Romence sözlükten gelir.

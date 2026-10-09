@@ -10,6 +10,7 @@ export default {
   open: 'Deschide',
   download: 'Descarcă',
   search: 'Caută',
+  searching: 'Se caută…',
   details: 'Detalii',
   back: 'Înapoi',
   yes: 'Da',

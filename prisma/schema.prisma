@@ -142,6 +142,7 @@ model User {
   invites            UserInvite[]
   sessions           Session[]
   orderNotes         OrderNote[]
+  orderNoteReads     OrderNoteRead[]
   orderFiles         OrderFile[]
   orderEvents        OrderEvent[] @relation("OrderEventBy")
   orderDrafts        OrderDraft[]
@@ -365,6 +366,7 @@ model Order {
   files             OrderFile[]
   alerts            AdminAlert[]
   notes             OrderNote[]
+  noteReads         OrderNoteRead[]
   outbox            NotificationOutbox[]
   fgoDocuments      FgoDocument[]
   billingBatchOrders BillingBatchOrder[]
@@ -522,7 +524,22 @@ model OrderNote {
   translationStatus NoteTranslationStatus? // boş: çeviri uygulanmadı
   translationError  String?                // güvenli hata kodu (TIMEOUT, QUOTA, AUTH …); Google'ın metni / anahtar saklanmaz
   translationAt     DateTime?              // son durum değişikliği (çeviri / deneme zamanı)
+  // Formun tek kullanımlık anahtarı (Paket 9, karar 199): çift tıklama / yeniden gönderim ikinci notu yazmaz
+  requestKey        String?  @unique
 
+  @@index([orderId, createdAt])
+}
+
+// Kullanıcının siparişteki mesajları en son ne zamana kadar okuduğu (Paket 9, karar 199): sipariş sayfası açılınca
+// ilerler, hiçbir zaman geri gitmez. Okunmamış sayısı = görebildiği, başkasının yazdığı ve bu andan sonraki notlar.
+model OrderNoteRead {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime
+
+  @@id([userId, orderId])
   @@index([orderId])
 }
 

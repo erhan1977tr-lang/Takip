@@ -76,6 +76,14 @@ export function noteView(role, n) {
   return { ...n, ...NO_TRANSLATION };
 }
 
+/** @template N @param {N} n @returns {N} */
+function withoutKey(n) {
+  if (!n || typeof n !== 'object' || !('requestKey' in n)) return n;
+  const rest = /** @type {any} */ ({ ...n });
+  delete rest.requestKey;
+  return rest;
+}
+
 /**
  * Siparişin notları, görenin rolüne göre: iç notlar yalnızca iç notları görebilen role (mevcut kural, değişmedi);
  * çeviri alanları noteView ile.
@@ -86,7 +94,8 @@ export function noteView(role, n) {
  */
 export function notesFor(role, notes) {
   const all = can(role, 'NOTE_INTERNAL_VIEW');
-  return notes.filter((n) => all || !n.internal).map((n) => noteView(role, n));
+  // Formun tek kullanımlık anahtarı (karar 199) yalnızca tekrar engelidir: hiçbir role dönmez
+  return notes.filter((n) => all || !n.internal).map((n) => noteView(role, withoutKey(n)));
 }
 
 /**

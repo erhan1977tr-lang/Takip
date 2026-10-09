@@ -44,6 +44,8 @@ export default {
     // Aprovizionare (Pachetul 6) — doar administratorului
     SUPPLIER_ETA: { title: 'Comandă furnizor: încărcare estimată în 2 zile' },
     SUPPLIER_EMAIL_FAILED: { title: 'E-mailul comenzii către furnizor nu a putut fi trimis' },
+    // Mesaj la comandă (Pachetul 9, decizia 199): textul mesajului nu intră în notificare
+    ORDER_NOTE_ADDED: { title: 'Mesaj nou la comandă', customer: 'Aveți un mesaj nou la comandă' },
   },
   detail: {
     ORDER_SHIP_DATE: 'data nouă {date}',

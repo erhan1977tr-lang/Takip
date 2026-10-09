@@ -36,6 +36,9 @@ export default {
   newOrder: 'Yeni Sipariş',
   myOffers: 'Tekliflerim',
   settings: 'Ayarlar',
+  // İç ekibin kendi hesap ayarları (dil, ses — Paket 9, karar 198)
+  account: 'Hesabım',
+  mySettings: 'Hesap ayarları',
   myLoadings: 'Yükleme takvimim',
   financeDocs: 'Mali belgeler',
   demoMail: 'Demo posta kutusu',

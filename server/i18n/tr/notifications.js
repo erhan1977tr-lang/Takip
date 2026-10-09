@@ -44,6 +44,8 @@ export default {
     // Tedarik ve satın alma (Paket 6) — yalnızca yöneticiye
     SUPPLIER_ETA: { title: 'Tedarikçi siparişi: tahmini yükleme 2 gün içinde' },
     SUPPLIER_EMAIL_FAILED: { title: 'Tedarikçi sipariş e-postası gönderilemedi' },
+    // Sipariş mesajı (Paket 9, karar 199): mesajın metni bildirime girmez
+    ORDER_NOTE_ADDED: { title: 'Siparişte yeni mesaj', customer: 'Siparişinizde yeni mesaj var' },
   },
   detail: {
     ORDER_SHIP_DATE: 'yeni tarih {date}',

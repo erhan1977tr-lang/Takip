@@ -13,6 +13,7 @@ import { can, ROLE_PERMISSIONS } from '../auth/permissions.js';
 import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 import { brandedHtml, sendBrandedMail } from '../mail/send.js';
+import { customerMailLang, snapshotLang } from './lang.js';
 
 /**
  * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
@@ -60,8 +61,10 @@ const loc = (l) => (l === 'tr' ? 'tr' : 'ro');
 
 /**
  * Olayın alıcıları: [{ email, locale, role }] (e-postaya göre tekil). role: firma adı maskesi için (müşteride null).
+ * lang: olay yazılırken belirlenen müşteri e-posta dili (payload.lang — karar 200); yoksa (eski olay) bugünkü kural.
+ * @param {any} db @param {string} type @param {any} order @param {{ lang?: 'ro' | 'tr' | null }} [o]
  */
-export async function recipientsFor(db, type, order) {
+export async function recipientsFor(db, type, order, { lang: snapshot = null } = {}) {
   const audiences = NOTIFY_RULES[type]?.(order) ?? [];
   const out = new Map();
   const add = (email, locale, role) => {
@@ -76,7 +79,7 @@ export async function recipientsFor(db, type, order) {
       const creator = order.createdBy;
       const mine = creator && creator.customerId === order.customerId;
       if (mine && creator.emailNotifications === false) continue;
-      const lang = creator?.fixedLanguage || creator?.language || 'ro';
+      const lang = snapshot ?? customerMailLang(creator);
       if (mine) add(creator.email, lang, null);
       const firm = order.customer?.email;
       if (isEmail(firm) && !(await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, emailNotifications: false }, select: { id: true } }))) add(firm, lang, null);
@@ -213,7 +216,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       const audiences = order ? NOTIFY_RULES[row.type]?.(order) ?? [] : [];
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
-      const recipients = order ? await recipientsFor(db, row.type, order) : [];
+      const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload) }) : [];
       if (!order || recipients.length === 0) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: order ? 'alıcı yok' : 'sipariş yok' } });
         skipped++;

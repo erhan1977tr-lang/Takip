@@ -78,6 +78,13 @@ export const INAPP_RULES = {
   // yalnızca müşteriye; bağlantı siparişin teslimat bölümüne. Gün olayın verisindedir (değişiklik başına bir bildirim).
   ORDER_DELIVERY_DATE_CHANGED: { to: () => ['customer'], link: orderPart('teslim') },
   ORDER_PICKUP_MOVED: { to: () => ['customer'], link: orderPart('teslim') },
+  // Sipariş mesajı (Paket 9, karar 199 — olayı notu yazan addNote yazar): müşterinin mesajı yöneticiye + ilgili
+  // satışçıya + atanmış çizimciye (profil siparişi satışa / çizime uğramaz → yalnızca yönetici); iç ekibin müşteriye açık
+  // mesajı müşteriye. İç not olay yazmaz. Mesaj başına bir bildirim; metin bildirime girmez; e-posta yok.
+  ORDER_NOTE_ADDED: {
+    to: (o, p) => (p?.fromCustomer ? (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['admin', 'orderSales', 'drawer']) : ['customer']),
+    link: orderPart('notlar'),
+  },
   // Yükleme
   ORDER_SHIP_DATE: { to: () => ['customer'] },
   ORDER_SHIPPED: { to: () => ['customer'] },

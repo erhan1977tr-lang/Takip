@@ -5,7 +5,9 @@ import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict, type MsgKey } from '@/lib/i18n';
 import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
-import { customerLabel, drawingScope, orderScope, sanitizeRows } from '@/lib/orders';
+import { customerLabel, drawingScope, orderScope, sanitizeRows, unreadNotesFor } from '@/lib/orders';
+import { MsgCount } from '@/components/MsgCount';
+import { LiveSearch } from '@/components/LiveSearch';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtDateTime, fmtMoney, fmtMonth, fmtNum, isoDay } from '@/lib/format';
 import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
@@ -109,6 +111,8 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     orderBy: [{ estimatedShipDate: archive ? 'desc' : 'asc' }, { createdAt: 'desc' }],
   }));
   const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
+  // Okunmamış mesaj sayısı (karar 199): satırdaki kırmızı sayaç, mesajlara götürür
+  const unread = await unreadNotesFor(user, orders.map((o) => o.id));
   const groups = new Map<string, Row[]>();
   for (const o of orders) {
     const day = o.profile?.pickupDate ?? o.estimatedShipDate;
@@ -186,9 +190,11 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       </div>
       <form className="toolbar">
         {archive && <input type="hidden" name="view" value="archive" />}
-        <input type="search" name="q" placeholder={t('orders.customer.searchPlaceholder')} defaultValue={sp.q ?? ''} />
+        {/* Anlık arama (karar 201): yazdıkça sunucu listeyi süzer; Enter / düğme olağan aramadır */}
+        <LiveSearch key={archive ? 'archive' : 'active'} defaultValue={sp.q ?? ''} placeholder={t('orders.customer.searchPlaceholder')} label={t('orders.customer.searchPlaceholder')} searching={t('common.searching')} />
         <button className="btn" type="submit">{t('common.search')}</button>
       </form>
+      {sp.q?.trim() && orders.length > 0 && <p className="search-result" role="status" data-search-result={orders.length}>{t('orders.search.results', { n: orders.length })}</p>}
 
       <div className="card card-flush">
         {orders.length === 0 ? (
@@ -208,7 +214,11 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                   <GroupRows key={month} label={`${month} (${list.length})`} cols={5}>
                     {list.map((o) => (
                       <tr key={o.id}>
-                        <td><Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div></td>
+                        <td>
+                          <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>
+                          <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
+                          {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div>
+                        </td>
                         {o.profile ? (() => {
                           const s = profileCustomerText(t, { status: o.status, stage: o.profile.stage });
                           return <><td><Badge tone={s.tone}>{s.label}</Badge></td><td className="hide-sm">{s.next}</td></>;
@@ -327,6 +337,8 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
   const stockShort = new Set(userCan(user, 'ALERT_VIEW') && profileIds.length
     ? (await db.adminAlert.findMany({ where: { type: STOCK_SHORTAGE_ALERT, resolvedAt: null, orderId: { in: profileIds } }, select: { orderId: true } })).map((a) => a.orderId)
     : []);
+  // Okunmamış mesaj sayısı (karar 199) — satırlar zaten kullanıcının kapsamından geçmiştir
+  const unread = await unreadNotesFor(user, rows.map((o) => o.id));
   const groups = new Map<string, Row[]>();
   for (const o of rows) {
     const k = group ? t('orders.internal.shipGroup', { date: fmtDate(o.estimatedShipDate) }) : '';
@@ -347,7 +359,9 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
               {list.map((o) => (
                 <tr key={o.id} className={revisionAsked(o) ? 'row-alert' : undefined} data-revision-row={revisionAsked(o) ? o.orderNo : undefined}>
                   <td>
-                    <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>{o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
+                    <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>
+                    <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
+                    {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
                     {stockShort.has(o.id) && <> <Badge tone="danger">{t('profile.page.stock.mark')}</Badge></>}
                     {/* Revizyon istendi: satır kırmızı, rozet belirgin; DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167) */}
                     {revisionAsked(o) && <> <Badge tone="danger">{t('orders.internal.revisionRow')}</Badge></>}
@@ -464,9 +478,15 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
       <form className="toolbar">
         {teamPanel && <input type="hidden" name="panel" value={DRAWING_PANEL} />}
         <input type="hidden" name="view" value={view} />
-        <input type="search" name="q" placeholder={t('orders.internal.searchPlaceholder')} defaultValue={sp.q ?? ''} />
+        {/* Anlık arama (karar 201): yazdıkça sunucu listeyi süzer (en çok 300 satır, kapsam ve maske sunucuda) */}
+        <LiveSearch key={`${view}|${teamPanel ? 'p' : ''}`} defaultValue={sp.q ?? ''} placeholder={t('orders.internal.searchPlaceholder')} label={t('orders.internal.searchPlaceholder')} searching={t('common.searching')} />
         <button className="btn" type="submit">{t('common.search')}</button>
       </form>
+      {sp.q?.trim() && (
+        <p className="search-result" role="status" data-search-result={rows.length}>
+          {rows.length ? t('orders.search.results', { n: rows.length }) : t('orders.search.none')}
+        </p>
+      )}
 
       {view === 'work' && (
         <>

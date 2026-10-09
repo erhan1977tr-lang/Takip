@@ -9,6 +9,11 @@ export default {
     customer: { one: 'müşteri', few: 'müşteri', other: 'müşteri' },
     crate: { one: 'sandık', few: 'sandık', other: 'sandık' },
   },
+  // Anlık arama (Paket 9, karar 201)
+  search: {
+    results: 'Aramayla eşleşen: {n}',
+    none: 'Aramanızla eşleşen sipariş yok.',
+  },
   cols: {
     order: 'Sipariş',
     customer: 'Müşteri',

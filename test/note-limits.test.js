@@ -40,6 +40,7 @@ const inspector = { id: 'insp', role: 'DENETIMCI', customerId: 'F' };
 function fakeDb({ settings = READY, orders = [{ id: 'o1', customerId: 'A' }, { id: 'o2', customerId: 'A' }, { id: 'oB', customerId: 'B' }] } = {}) {
   const notes = [];
   const audits = [];
+  const outbox = [];
   const queues = new Map();
   const tick = () => new Promise((r) => setImmediate(r));
   const match = (n, w) => Object.entries(w).every(([k, v]) => {
@@ -70,9 +71,11 @@ function fakeDb({ settings = READY, orders = [{ id: 'o1', customerId: 'A' }, { i
       async findFirst({ where }) { await tick(); const n = notes.find((x) => x.id === where.id && x.orderId === where.orderId); return n ? { ...n } : null; },
     },
     auditLog: { async create({ data }) { audits.push(data); return data; } },
+    // Mesaj bildirimi (karar 199): müşteriye açık not aynı işlemde tek kuyruk olayı yazar
+    notificationOutbox: { async create({ data }) { await tick(); const r = { id: `ob${outbox.length + 1}`, ...data }; outbox.push(r); return r; } },
   };
   return {
-    ...model, notes, audits,
+    ...model, notes, audits, outbox,
     /** Sipariş notlarını doğrudan ekler (test verisi; sınırlardan geçmez) */
     seed(orderId, count, extra = {}) { for (let i = 0; i < count; i++) notes.push({ id: `seed${notes.length + 1}`, orderId, userId: 'seed', text: 'x', internal: false, translation: null, translationLang: null, translationStatus: null, translationError: null, translationAt: null, ...extra }); },
     async $transaction(fn) {
@@ -270,7 +273,7 @@ test('çeviri hakkı yalnızca sağlayıcı gerçekten çağrılacaksa harcanır
   const p = provider();
   // Çeviri kapalı: 40 müşteri notu, çağrı yok, hak durur
   const off = fakeDb({ settings: { enabled: false, keySealed: READY.keySealed } });
-  for (let i = 0; i < 40; i++) assert.deepEqual(await add(off, cust(1), { limits, translator: p.fn }), { ok: true, noteId: `n${i + 1}`, translation: null });
+  for (let i = 0; i < 40; i++) assert.deepEqual(await add(off, cust(1), { limits, translator: p.fn }), { ok: true, noteId: `n${i + 1}`, translation: null, outboxId: `ob${i + 1}` });
   assert.equal(p.calls.length, 0);
   assert.deepEqual(off.notes.map((n) => n.translationStatus), Array(40).fill(null));
   const on = fakeDb();

@@ -10,6 +10,7 @@ import { drawingTranslationsFor, notesFor } from '../server/notes/view.js';
 import { orderPeopleView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
 import { drawingsView } from '../server/orders/drawing-access.js';
+import { unreadCounts } from '../server/notes/unread.js';
 
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
@@ -192,3 +193,11 @@ export function sentOffer(order: { offers: OfferRow[] }): OfferRow | undefined {
 
 // Sipariş numarası önerisi ve iş akışı işlemleri: server/orders/create.js ve server/orders/transitions.js
 export { suggestNextNo } from '../server/orders/create.js';
+
+/**
+ * Listede gösterilen siparişlerin okunmamış mesaj sayıları (karar 199). Kimlikler, kullanıcının kapsamından geçmiş
+ * satırlardan gelir (liste sorgusu orderScope kullanır); kural server/notes/unread.js.
+ */
+export async function unreadNotesFor(user: CurrentUser, orderIds: string[]): Promise<Map<string, number>> {
+  return unreadCounts(db, user, orderIds);
+}

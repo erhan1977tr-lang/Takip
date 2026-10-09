@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { changeGlassAction, saveGlassAction } from './actions';
 import { ImportCatalog } from './ImportCatalog';
+import { LiveSearch } from '@/components/LiveSearch';
 
 const MSG: Record<string, [string, MsgKey]> = {
   added: ['ok', 'admin.catalog.msg.added'],
@@ -105,7 +106,8 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
         <div className="card-head row">
           <h2>{t('admin.catalog.listTitle', { n: filtered ? `${items.length} / ${total}` : total })}</h2>
           <form className="row">
-            <input type="search" name="q" defaultValue={q} placeholder={t('admin.catalog.search')} aria-label={t('admin.catalog.search')} />
+            {/* Anlık arama (karar 201): yazdıkça liste sunucuda süzülür; "yalnızca pasif" kutusu adreste korunur */}
+            <LiveSearch key={onlyInactive ? 'pasif' : 'hepsi'} defaultValue={q} placeholder={t('admin.catalog.search')} label={t('admin.catalog.search')} searching={t('common.searching')} />
             <label className="row small"><input type="checkbox" name="durum" value="pasif" defaultChecked={onlyInactive} /> {t('admin.catalog.onlyInactive')}</label>
             <button className="btn" type="submit">{t('common.search')}</button>
           </form>

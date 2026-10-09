@@ -36,6 +36,9 @@ export default {
   newOrder: 'Comandă nouă',
   myOffers: 'Ofertele mele',
   settings: 'Setări',
+  // Setările proprii ale echipei interne (limbă, sunet — Pachetul 9, decizia 198)
+  account: 'Contul meu',
+  mySettings: 'Setările contului',
   myLoadings: 'Calendarul meu de încărcări',
   financeDocs: 'Documente financiare',
   demoMail: 'Cutie poștală demo',

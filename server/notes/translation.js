@@ -12,7 +12,8 @@
 import { can } from '../auth/permissions.js';
 import { STALE_PENDING_MS, canRetryTranslation, translationTarget } from './view.js';
 import { orderScope } from '../orders/scope.js';
-import { writeAudit } from '../orders/journal.js';
+import { enqueueOutbox, writeAudit } from '../orders/journal.js';
+import { NOTE_EVENT } from './unread.js';
 import { getEnv } from '../env.js';
 import { openSecret, sealSecret } from '../crypto/secret.js';
 import { TranslateError, translatorFor } from './provider.js';
@@ -29,6 +30,11 @@ export { STALE_PENDING_MS, canRetryTranslation, drawingNoteView, noteView, notes
 export const TRANSLATE_KEY = 'translate';
 const SECRET_PURPOSE = 'translate-key';
 export const NOTE_MAX = 4000;
+
+/** Not formunun tek kullanımlık anahtarı (sayfa üretir): 16–64 güvenli karakter; başka bir değer anahtarsız sayılır */
+export function noteRequestKey(v) {
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v) ? v : null;
+}
 /** Bağlantı denemesinde çevrilen zararsız metin */
 export const TEST_PHRASE = 'Bună ziua';
 
@@ -136,13 +142,21 @@ async function runTranslation(db, note, { settings, secret, translator, now, tab
  *   çeviri hızı : müşteri notunda yazanın çeviri hakkı dolduysa not YİNE yazılır, sağlayıcı ÇAĞRILMAZ; not
  *                 FAILED + RATE_LIMIT olarak kaydedilir (iç ekip nedenini görür, "yeniden dene" ile sonra çevirtir).
  * Sağlayıcı çağrısı her zaman veritabanı işlemi BİTTİKTEN sonra yapılır (kilit ağ isteği boyunca tutulmaz).
+ *
+ * Mesaj bildirimi ve tekrar engeli (Paket 9, karar 199):
+ *   - Müşteriye açık not, AYNI veritabanı işleminde tek kuyruk olayı yazar (ORDER_NOTE_ADDED: noteId, müşteri tarafı mı)
+ *     → zil (server/notifications/inapp.js). İç not olay yazmaz (müşteriye hiçbir iz gitmez). E-posta gönderilmez.
+ *   - requestKey: formun tek kullanımlık anahtarı. Aynı anahtar (çift tıklama, yeniden gönderim, iki paralel istek)
+ *     ikinci not ve ikinci olay yazmaz; ilk not döner (duplicate). Anahtar siparişe ve yazana bağlıdır; başkasının
+ *     anahtarı başka bir notu döndürmez. Paralel isteklerde sıralama siparişin not kilidiyle, son güvence benzersiz
+ *     sütundur (OrderNote.requestKey).
  * @param {any} db
  * @param {{ orderId: string, actor: { id: string, role: string, customerId?: string | null }, text: unknown, internal?: boolean,
- *   now?: Date, translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
- * @returns {Promise<{ ok: true, noteId: string, translation: 'DONE' | 'SAME' | 'FAILED' | null }
+ *   requestKey?: unknown, now?: Date, translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, noteId: string, translation: 'DONE' | 'SAME' | 'FAILED' | null, outboxId: string | null, duplicate?: boolean }
  *   | { ok: false, code: 'FORBIDDEN' | 'EMPTY' | 'RATE_LIMIT' | 'NOT_FOUND' | 'ORDER_LIMIT' }>}
  */
-export async function addNote(db, { orderId, actor, text, internal = false, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+export async function addNote(db, { orderId, actor, text, internal = false, requestKey = null, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
   if (!can(actor?.role, 'NOTE_ADD')) return { ok: false, code: 'FORBIDDEN' };
   const body = String(text ?? '').trim().slice(0, NOTE_MAX);
   if (!body) return { ok: false, code: 'EMPTY' };
@@ -162,24 +176,49 @@ export async function addNote(db, { orderId, actor, text, internal = false, now 
     }
   }
   const translate = !!(target && translateReady(settings));
-  const created = await db.$transaction(async (tx) => {
+  const key = noteRequestKey(requestKey);
+  const write = () => db.$transaction(async (tx) => {
     // Siparişin notları tek sırada yazılır: sayım, bu kilidi alan işlemden önce bitmiş bütün kayıtları görür
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-notes:${order.id}`}, 0))`;
+    // Aynı formun ikinci gönderimi: ilk not döner, ikinci not / olay yazılmaz
+    if (key) {
+      const same = await tx.orderNote.findFirst({ where: { requestKey: key, orderId: order.id, userId: actor.id }, select: { id: true, translationStatus: true } });
+      if (same) return { duplicate: same };
+    }
     if (await tx.orderNote.count({ where: { orderId: order.id } }) >= limits.perOrder) return null;
     // Çeviri hakkı yalnızca çeviri gerçekten yapılacaksa ve not yazılacaksa alınır (hak = bir sağlayıcı çağrısı)
     const limited = translate && !limits.translation(actor, now.getTime());
     const state = !translate ? {}
       : limited ? { translationLang: target, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now }
         : { translationLang: target, translationStatus: 'PENDING', translationAt: now };
-    const note = await tx.orderNote.create({ data: { orderId: order.id, userId: actor.id, text: body, internal: isInternal, createdAt: now, ...state } });
-    return { note, limited };
+    const note = await tx.orderNote.create({ data: { orderId: order.id, userId: actor.id, text: body, internal: isInternal, createdAt: now, requestKey: key, ...state } });
+    // Mesaj bildirimi (karar 199): yalnızca müşteriye açık not; olayda not metni YOK (yalnızca kimliği ve yönü)
+    const event = isInternal ? null : await enqueueOutbox(tx, {
+      type: NOTE_EVENT, orderId: order.id, payload: { noteId: note.id, fromCustomer: !can(actor.role, 'NOTE_INTERNAL_VIEW'), actorId: actor.id },
+    });
+    return { note, limited, outboxId: event?.id ?? null };
   }, { isolationLevel: 'ReadCommitted' });
+  let created;
+  try {
+    created = await write();
+  } catch (e) {
+    // Aynı anahtarla eşzamanlı başka bir sipariş için yazılmış not (benzersiz sütun): yeni not yazılmaz
+    if (key && e?.code === 'P2002') {
+      const same = await db.orderNote.findFirst({ where: { requestKey: key, orderId: order.id, userId: actor.id }, select: { id: true, translationStatus: true } });
+      if (same) created = { duplicate: same };
+      else return { ok: false, code: 'NOT_FOUND' };
+    } else throw e;
+  }
   if (!created) return { ok: false, code: 'ORDER_LIMIT' };
-  const { note, limited } = created;
+  if ('duplicate' in created) {
+    const st = created.duplicate.translationStatus;
+    return { ok: true, noteId: created.duplicate.id, translation: st === 'DONE' || st === 'SAME' || st === 'FAILED' ? st : null, outboxId: null, duplicate: true };
+  }
+  const { note, limited, outboxId } = created;
   // Çeviri yok (kapalı / iç not) ya da çeviri hakkı dolmuş: sağlayıcı ÇAĞRILMAZ; not kayıtlıdır
-  if (!translate || limited) return { ok: true, noteId: note.id, translation: translate ? 'FAILED' : null };
+  if (!translate || limited) return { ok: true, noteId: note.id, translation: translate ? 'FAILED' : null, outboxId };
   const status = await runTranslation(db, note, { settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now });
-  return { ok: true, noteId: note.id, translation: status };
+  return { ok: true, noteId: note.id, translation: status, outboxId };
 }
 
 /**
