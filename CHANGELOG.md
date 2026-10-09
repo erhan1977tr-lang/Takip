@@ -4,6 +4,39 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.64.0 — 10.10.2026
+
+Paket A — kullanıcılar, roller, güvenlik ve bildirimler (kararlar 219–225). Veritabanı şeması değişti: yeni rol
+`YONETICI_YARDIMCISI`, iki yeni yetki (`OPS_SETTINGS_MANAGE`, `CUSTOMER_DELETE`), `User.deletedAt` ve `LoginEvent` tablosu
+(yalnızca ekleme; mevcut veri silinmez / değişmez).
+
+- **Yönetici Yardımcısı:** yeni rol, kendi hesabıyla; yöneticinin operasyonel yetkilerinin tamamı (siparişler ve silme,
+  müşteriler ve müşteri silme, operasyonel ayarlar, fabrika ve müşteri fiyatları, teklif hazırlama / onay, mevcut FGO işlemleri,
+  çizim, yükleme, sandık, stok, tedarik). Kullanıcı / rol yönetimi, kullanıcının e-postasını değiştirme, güvenlik ve kritik
+  ayarlar (FGO bağlantısı, not çevirisi anahtarı, antivirüs) ve giriş logları yok — arayüzde ve sunucuda. Menüde
+  "Kullanıcılar" yok; Ayarlar yalnızca operasyonel bölümlerle açılır. Yönetici yeni rolü Kullanıcılar ekranından verir.
+- **Bildirimler:** yardımcı yöneticinin operasyonel e-postalarını ve zil bildirimlerini alır; hesap kilidi bildirimi yalnızca
+  gerçek yöneticiye. Pasif kullanıcılara operasyonel e-posta gitmez (sipariş sahibi müşteri kullanıcısı, çizimci, satışçı,
+  yönetici, diğer roller).
+- **Kullanıcı silme (yalnızca yönetici):** önizleme + e-posta adresini yazarak onay; kimlik bilgileri silinir, hesap kapanır,
+  adres yeniden kullanılabilir; notlar ve geçmiş "Silinmiş kullanıcı" olarak kalır. Yönetici hesabı ve kişinin kendi hesabı
+  silinemez.
+- **Müşteri silme (yönetici ve yardımcısı):** firma sayfasında önizleme (silinecek kayıtlar, engeller) + firma adını yazarak
+  onay. Yalnızca o firmanın siparişleri ve onlara bağlı kayıtlar silinir; başka müşteriler, paylaşılan dosyalar, ortak
+  yüklemeler ve denetim kaydı kalır. FGO belgesi / ödeme / onaylı yükleme / teslim kaydı gibi resmî ya da değiştirilemez izi
+  olan firma silinemez. Toplu silme yok.
+- **E-posta değişikliği (yalnızca yönetici):** biçim ve benzersizlik denetimi; önce yeni adrese tek kullanımlık, süreli kod
+  gider (gönderilemezse hiçbir şey değişmez), sonra adres değişir, şifre sıfırlanır, bütün oturumlar kapanır; denetim kaydı.
+- **Giriş Logları (Ayarlar, yalnızca yönetici):** kullanıcı, rol, tarih / saat, IP, sonuç; süzgeç ve sayfalama; 365 gün
+  saklanır, sonra otomatik silinir. Şifre, kod ve denenen e-posta adresi kaydedilmez; kimliği kesin olmayan deneme "Bilinmeyen
+  hesap".
+- **Sipariş uyarıları:** iç ekibin sipariş listesinde kullanıcıya özel mavi sayaç (yeni gelişme); sipariş sayfası açılınca
+  yalnızca açan kullanıcının o siparişteki uyarıları ve mesajları okunur (karar 205'in yerine). Müşteri göstergesi Paket B'de.
+- **Mesajlar:** sipariş notları "Mesajları göster" düğmesi olmadan doğrudan açık. Müşterinin Yeni Sipariş formundaki ilk mesajı
+  sipariş oluşturulduktan sonra bir kez Türkçeye çevrilir (yönetici, yardımcısı, satış, çizim görür; denetimci yalnızca özgün).
+- Testler: `test/paket-a.test.js`, `test/db/paket-a.test.js`, `e2e/48-paket-a.spec.ts`; yetki matrisi, bildirim kitleleri,
+  Paket 9 okuma kuralı ve yapı testleri yeni kararlara göre güncellendi. Gerçek FGO / ANAF / SMTP / Google çağrısı yok.
+
 ## 3.63.0 — 09.10.2026
 
 Yönetici paneli düzeltme paketi 1 (kararlar 215–218). Veritabanı şeması değişmedi.

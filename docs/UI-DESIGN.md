@@ -622,6 +622,20 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   `.sr-only` span + `title`); on the mobile nav, which has no section names, the same pill sits on the section's list link
   (`mobileCount`) and the link's name does not change. One counter style for messages and sections.
 
+## Paket A (3.64.0, decisions 219–225)
+
+- Order alert counter `.order-alert` (`components/OrderAlert.tsx`, `[data-order-alerts]`): the same pill shape as `.msg-count` but
+  `--primary` (blue) — unread order developments for that user; the red `.msg-count` stays the message counter. Sits after the
+  order number in the internal order list; links to the order. Never compute it in the browser.
+- Order page notes are always open (`#notlar-liste[data-notes-open="1"]`; no "Mesajları göster" toggle); unread notes keep
+  `.note-new`. `components/OrderSeen.tsx` renders nothing.
+- Users page: e-mail change card `#eposta-degistir` (warn alert + one input + primary confirm) and delete preview `#kullanici-sil`
+  (error alert, removed / kept counts, typed e-mail, `.btn-danger-solid`), both opened by a query link on the row
+  (`[data-action=change-email]`, `[data-action=delete-user]`). Firm page: `#firma-sil-baslat` (outline danger link) →
+  `#firma-sil` (blockers list `[data-blocker]` or counts + typed name + solid danger button).
+- Settings → "Giriş Logları" tab: filter card `#giris-suzgec` (`.grid`, GET form) + table `#giris-loglari` (badges ok / danger,
+  `kilit başladı` warn badge, IP in `.mono`), pager `[data-login-pager]` with ‹ Önceki / Sonraki ›.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);
