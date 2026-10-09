@@ -68,6 +68,5 @@ export default {
     CAM: 'Sticlă',
     CNC: 'CNC',
     DELIK: 'Găuri',
-    SANDIK: 'Ladă', // costul de ladă al vânzărilor (decizia 211) — doar în textul problemelor
   },
 };

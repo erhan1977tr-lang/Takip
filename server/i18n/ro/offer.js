@@ -93,9 +93,8 @@ export default {
     addCrate: 'Cost ladă',
     crateLine: 'Ambalaj (ladă)',
     crateBadge: 'Cost ambalaj · nevizibil pentru vânzări',
-    // Costul de ladă al vânzărilor (decizia 211): se adaugă sub un rând de sticlă, ca prelucrările
-    addSalesCrate: 'Ladă',
-    salesCrateBadge: 'Ladă',
+    // Costul de ladă al vânzărilor (deciziile 211, 214): rând independent, adăugat ca la administrator („+ Cost ladă”, addCrate);
+    // eticheta apare doar pe ecranul administratorului
     salesCrateAdminBadge: 'Cost ladă · vânzări',
     salesCratePriceAria: 'Preț cost ladă',
     salesCrateOfferPriceAria: 'Preț client cost ladă',

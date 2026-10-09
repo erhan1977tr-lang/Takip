@@ -29,7 +29,7 @@ const newOrder = async (title) => {
 // 1000 × 500 mm × 2 = 1 m²; satış fiyatı 40
 const glass = (extra = {}) => ({ description: 'Cam', poz: null, enMm: 1000, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false, ...extra });
 const cnc = (extra = {}) => ({ description: '', poz: null, enMm: null, boyMm: null, adet: 1, unit: 'adet', unitPrice: '10.00', kind: 'CNC', free: false, ...extra });
-// Satışın sandık ücreti: ekranın "+Sandık" satırı (işaretsiz, adetli, ölçüsüz)
+// Satışın sandık parası: ekranın "+ Sandık parası" satırı (işaretsiz, adetli, ölçüsüz; bağımsız kalem — karar 214)
 const salesCrate = (extra = {}) => ({ description: CRATE_LINE.tr, poz: null, enMm: null, boyMm: null, adet: 2, unit: 'adet', unitPrice: '25.00', kind: 'CAM', free: false, ...extra });
 const versions = (orderId) => db.offer.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
 const latest = async (orderId) => (await versions(orderId)).at(-1);
@@ -69,7 +69,7 @@ after(closeDb);
 dbTest('satışın sandık ücreti: satış ekler / değiştirir (işaretsiz, adetli, ölçüsüz); yönetici görür ve fiyatlar; müşteri ve belge tutarına bir kez girer', offline(async () => {
   const o = await newOrder('Satış sandığı');
   await run(o.id, 'no_drawing', 'sales');
-  // Satış: cam + CNC + kendi sandık ücreti (cam prosesleri gibi camın altında) — ölçü / m² birimiyle gelse de adetli, ölçüsüz yazılır
+  // Satış: cam + CNC + kendi sandık parası (bağımsız kalem; tablodaki yeri serbest) — ölçü / m² birimiyle gelse de adetli, ölçüsüz yazılır
   await run(o.id, 'save_offer', 'sales', { lines: [glass({ adet: 1 }), cnc(), salesCrate({ unit: 'm2', enMm: 700, boyMm: 700 }), glass({ description: 'Temper' })] });
   let offer = await latest(o.id);
   const row = (l) => [l.kind, l.unit, l.adet, l.enMm, String(l.unitPrice), l.crateFee, l.descriptionRo];
@@ -110,7 +110,8 @@ dbTest('satışın sandık ücreti: satış ekler / değiştirir (işaretsiz, ad
   assert.deepEqual([sent.status, String(sent.offerAmount), String(sent.amount)], ['GONDERILDI', '260', '130']);
   const lines = plain(sent.lines);
   assert.deepEqual([offerTotals(atOfferPrice(lines)).amount, offerTotals(lines).crate, offerTotals(lines).adet], [260, 4, 3]);
-  // Belgeler: fatura gruplarının toplamı = müşteri toplamı (sandık ücreti üstündeki camın grubunda); proformada ayrı satır
+  // Belgeler: fatura gruplarının toplamı = müşteri toplamı (sandık parası üstündeki camın grubunda); proformada ayrı satır
+  // (ürün sahibinin kararı, karar 214 — proforma değişmedi)
   const groups = glassTotals({ lines });
   assert.equal(Math.round(groups.reduce((s, g) => s + g.total, 0) * 100) / 100, 260);
   const pro = proformaLines({ lines });

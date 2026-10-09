@@ -107,9 +107,11 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
 
 ## Order detail and offer editor (3.28.0)
 
-- Section order on the order page (all roles except Drawing): status + actions → customer files → notes →
-  order information → drawings/approval → offer (editor or view) → finance / crates; history lives in the
-  sidebar. Drawing team (3.53.0): customer files → technical drawing files (`#cizim-dosyalari`: start + upload +
+- Section order on the order page (all roles except Drawing — Admin, Sales, Customer, Inspector; decision 214): status +
+  actions → customer files → notes → order information (`#bilgiler`) → offer table (`#teklif`, editor or view; the
+  "Özel durum" box and the compensation form stay right below it) → technical drawings and approval (`#cizim`) →
+  important decisions / finance / crates; history lives in the sidebar. The cards stack in one column, so desktop and
+  phone show the same order. Drawing team (3.53.0): customer files → technical drawing files (`#cizim-dosyalari`: start + upload +
   versions with files) → drawing approval and revision (`#cizim`: state line, DWG/DXF decision box, approval /
   revision history, withdraw) → notes → order information; no stepper or action cards — status is shown as badges
   in the page head; no offer / finance / crates.
@@ -120,9 +122,11 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   .c-qty / .c-unit / .c-price`, never inline). Row actions sit under the description (`.line-actions`),
   the same-glass `+` is `.btn-dup`, delete is `.btn-del` in its own column, totals are the `tfoot` row.
   Tools live in one `.offer-tools` bar. The read-only offer uses `table.offer-view`.
-- Process-like rows (CNC / hole and the salesperson's crate fee — decision 211) are `tr.sub-line`: no row
-  number, a kind badge first; the crate fee row (`tr[data-sales-crate]`) has no dimensions or m². The admin's
-  hidden crate fee keeps its numbered row and `[data-crate-fee]` badge.
+- Process rows (CNC / hole) are `tr.sub-line`: no row number, a kind badge first. Crate-fee rows are ordinary numbered
+  rows for both owners (decision 214): added with "+ Sandık parası" in the `.offer-tools` bar right after "+ Cam ekle"
+  (Sales and Admin; never a per-row crate button), no dimensions or m², own quantity and unit price. The salesperson's
+  row (`tr[data-sales-crate]`) has a read-only description and, only on Admin screens, the `[data-sales-crate-badge]` /
+  `[data-sales-crate]` badge; the admin's hidden crate fee keeps its `[data-crate-fee]` badge.
 - Long offer tables (editable and read-only alike — decision 213) get `components/TableJump.tsx` with the
   table wrapper `#offer-table` as target: fixed `.table-jump` ↑ / ↓ on the right, shown only while the table is
   taller than ~90 % of the viewport and on screen; ↑ lands the header just below the sticky `.topbar`.

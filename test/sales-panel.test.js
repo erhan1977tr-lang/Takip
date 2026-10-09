@@ -1,5 +1,7 @@
-// Satış paneli düzeltme paketi 1 (3.62.0): satışın sandık ücreti (karar 211), "Yöneticiye göndermeyi geri al" (karar 212),
-// uzun teklif tablosunda ↑ / ↓ her durumda (karar 213). Saf kurallar + yapı denetimi (veritabanıyla: test/db/sales-panel.test.js).
+// Satış paneli düzeltme paketi 1 (3.62.0, 3.62.1): satışın sandık parası (karar 211, 214 — yöneticinin tablosuyla aynı düzen:
+// bağımsız, numaralı kalem), "Yöneticiye göndermeyi geri al" (karar 212), uzun teklif tablosunda ↑ / ↓ her durumda (karar
+// 213), sipariş sayfasında Sipariş Bilgileri → Teklif Tablosu → Teknik Çizim ve Onaylar (karar 214). Saf kurallar + yapı
+// denetimi (veritabanıyla: test/db/sales-panel.test.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -41,7 +43,7 @@ test('toplamlar: sandık ücreti tutara BİR kez girer, cam adedine girmez (offe
   assert.deepEqual(offerTotals(lines.filter((l) => !l.crateFee)), { metraj: 3, amount: 180, adet: 6, cnc: 1, delik: 0, crate: 2 });
 });
 
-test('belgeler: satışın sandık ücreti cam prosesleri gibi — faturada üstündeki camın tutarına eklenir, proformada ayrı adetli satır; iki kez sayılmaz', () => {
+test('belgeler: sandık parası faturada ve yükleme dökümünde camın tutarına eklenir, proformada ayrı adetli satır (ürün sahibinin kararı); iki kez sayılmaz', () => {
   const offer = { lines: plain([glass(), cnc(), salesCrate(), glass({ id: 'g2', description: 'Temper', descriptionRo: 'Securizat', adet: 4, offerPrice: '20' })]) };
   const customerTotal = offerTotals(atOfferPrice(offer.lines)).amount; // 50 + 15 + 60 + 40 = 165
   assert.equal(customerTotal, 165);
@@ -52,28 +54,30 @@ test('belgeler: satışın sandık ücreti cam prosesleri gibi — faturada üst
   // RON fatura satırları: aynı parçalardan (kur 5, TVA 21) — toplam tek kez
   const inv = invoiceLines(offer, 5, 21);
   assert.equal(inv.reduce((s, l) => s + l.net, 0), 825);
-  // Proforma: sandık ayrı adetli satır (Romence adıyla), CNC gibi
+  // Proforma: sandık ayrı adetli satır (Romence adıyla), CNC gibi — ürün sahibinin kararı (karar 214): proforma değişmedi
   const pro = proformaLines(offer);
   assert.deepEqual(pro.map((r) => [r.name, r.qty, r.eur]), [['Sticlă', 1, 50], ['Prelucrare CNC', 1, 15], [CRATE_LINE.ro, 2, 30], ['Securizat', 2, 20]]);
   assert.equal(Math.round(pro.reduce((s, r) => s + r.qty * r.eur, 0) * 100) / 100, customerTotal);
 });
 
-test('teklif eksikleri: satışın sandık ücreti numarasız — "n. Sandık" (üstündeki camın numarası); sonraki camın numarası değişmez', () => {
+test('teklif eksikleri: sandık parası (satışın ya da yöneticinin) bağımsız, numaralı kalem — "n. satır (Sandık parası)"', () => {
   const lines = plain([glass(), salesCrate({ unitPrice: '' }), glass({ id: 'g2', description: 'Temper', unitPrice: '' })]);
   const p = offerProblems(lines);
-  assert.deepEqual(p, [{ code: 'missing_prices', rows: [{ n: 1, kind: 'SANDIK' }, { n: 2, kind: 'CAM', desc: 'Temper' }] }]);
-  assert.match(formatOfferProblems(p, { offerProblems: DICTS.tr.offerProblems, lineKind: DICTS.tr.status.lineKind })[0], /1\. Sandık, 2\. satır \(Temper\)/);
-  assert.match(formatOfferProblems(p, { offerProblems: DICTS.ro.offerProblems, lineKind: DICTS.ro.status.lineKind })[0], /1\. Ladă, rândul 2 \(Temper\)/);
-  // Yöneticinin sandık bedeli eskisi gibi numaralı satırdır
+  assert.deepEqual(p, [{ code: 'missing_prices', rows: [{ n: 2, kind: 'CAM', desc: CRATE_LINE.tr }, { n: 3, kind: 'CAM', desc: 'Temper' }] }]);
+  assert.match(formatOfferProblems(p, { offerProblems: DICTS.tr.offerProblems, lineKind: DICTS.tr.status.lineKind })[0], /2\. satır \(Sandık parası\), 3\. satır \(Temper\)/);
+  assert.match(formatOfferProblems(p, { offerProblems: DICTS.ro.offerProblems, lineKind: DICTS.ro.status.lineKind })[0], /rândul 2 \(Sandık parası\), rândul 3 \(Temper\)/);
+  // Yöneticinin sandık bedeli de aynı düzende
   assert.deepEqual(offerProblems(plain([glass(), adminCrate({ unitPrice: '' })])), [{ code: 'missing_prices', rows: [{ n: 2, kind: 'CAM', desc: CRATE_LINE.tr }] }]);
-  // İşlem sahipliği değişmedi: işlem camın hemen altında, sandık satırı sonra
+  // İşlem sahipliği değişmedi
   assert.deepEqual(offerProblems(plain([glass({ adet: 1 }), cnc(), salesCrate()])), []);
+  // "n. Sandık" satır türü artık yok (karar 214): sözlükte de yok
+  for (const d of [DICTS.tr, DICTS.ro]) assert.equal(Object.hasOwn(d.status.lineKind, 'SANDIK'), false);
 });
 
-test('teklif PDF / Excel verisi: satışın sandık ücreti ekrandaki gibi numarasız ve girintili; yöneticinin sandık bedeli numaralı', () => {
+test('teklif PDF / Excel verisi: sandık parası (satışın ve yöneticinin) ekrandaki gibi numaralı, girintisiz kalem', () => {
   const data = offerExportData({ lines: plain([glass(), salesCrate(), glass({ id: 'g2' }), adminCrate()]), price: (l) => l.offerPrice, locale: 'tr', kindLabel: (k) => k });
   assert.deepEqual(data.rows.map((r) => [r.n, r.sub, r.desc, r.unit, r.amount]), [
-    [1, false, 'Cam', 'm2', 50], [null, true, CRATE_LINE.tr, 'adet', 60], [2, false, 'Cam', 'm2', 50], [3, false, CRATE_LINE.tr, 'adet', 45],
+    [1, false, 'Cam', 'm2', 50], [2, false, CRATE_LINE.tr, 'adet', 60], [3, false, 'Cam', 'm2', 50], [4, false, CRATE_LINE.tr, 'adet', 45],
   ]);
   assert.equal(data.total, 205);
 });
@@ -108,7 +112,9 @@ test('geçmiş: OFFER_WITHDRAWN müşteriye kapalı; iç ekipte satır görünü
   for (const d of [DICTS.tr, DICTS.ro]) {
     assert.ok(d.events.OFFER_WITHDRAWN.label);
     assert.ok(d.order.ok.offer_withdrawn && d.order.errors.offerNotOwner && d.offer.view.withdraw && d.offer.view.withdrawConfirm);
-    assert.ok(d.offer.editor.addSalesCrate && d.offer.editor.salesCrateAdminBadge && d.offer.editor.countCrates && d.status.lineKind.SANDIK);
+    assert.ok(d.offer.editor.addCrate && d.offer.editor.salesCrateAdminBadge && d.offer.editor.countCrates);
+    // Cam satırı altındaki "+Sandık" ve satıştaki "Sandık" rozeti kaldırıldı (karar 214)
+    assert.equal(Object.hasOwn(d.offer.editor, 'addSalesCrate') || Object.hasOwn(d.offer.editor, 'salesCrateBadge'), false);
   }
   assert.equal(DICTS.tr.offer.view.withdraw, 'Yöneticiye göndermeyi geri al');
 });
@@ -142,8 +148,32 @@ test('yapı: sandık sahipliği sunucuda; geri alma tek işlemde (gönderen, dur
   const jump = src('components/TableJump.tsx');
   assert.match(jump, /document\.querySelector\('\.topbar'\)/);
   assert.match(jump, /window\.scrollTo\(/);
-  // Satışın "+Sandık" düğmesi yalnızca satış düzenleyicisinde; yöneticinin "+ Sandık parası" değişmedi
+  // "+ Sandık parası" (karar 214): satışta ve yöneticide tablonun altındaki araç çubuğunda, "+ Cam ekle"nin hemen yanında;
+  // cam satırının altında sandık düğmesi yok. Satışınki satışın satırını, yöneticininki yöneticinin (gizli) satırını ekler.
   const ed = src('app/(panel)/siparisler/[id]/OfferEditor.tsx');
-  assert.match(ed, /\{!adminMode && !sub && !crateRow && <button type="button" className="btn btn-link" data-add-sales-crate onClick=\{\(\) => addSalesCrate\(l\.key\)\}>/);
-  assert.match(ed, /\{adminMode && <button type="button" className="btn" onClick=\{addCrate\}>/);
+  const tools = ed.slice(ed.indexOf('<div className="offer-tools">'), ed.indexOf('<TableJump'));
+  assert.match(tools, /\+ \{m\.editor\.addGlass\}<\/button>\s*\{adminMode && <button type="button" className="btn" onClick=\{addCrate\}>\+ \{m\.editor\.addCrate\}<\/button>\}[\s\S]{0,200}\{!adminMode && <button type="button" className="btn" data-add-sales-crate onClick=\{addSalesCrate\}>\+ \{m\.editor\.addCrate\}<\/button>\}/);
+  assert.equal((ed.match(/addSalesCrate/g) ?? []).length, 2, 'tanım + araç çubuğundaki tek düğme');
+  assert.doesNotMatch(ed, /addSalesCrate\(l\.key\)|blockEnd/);
+  // Satışın sandık parası numaralı kalemdir (yöneticinin satırı gibi): numara yalnızca CNC / delik satırında atlanır
+  assert.match(ed, /if \(!sub\) glassNo \+= 1;/);
+  assert.match(ed, /readOnly=\{sc\}/);
+  assert.match(page, /if \(!sub\) n \+= 1;/);
+});
+
+test('sipariş sayfası (karar 214): Sipariş Bilgileri → Teklif Tablosu → Teknik Çizim ve Onaylar; çizim ekibinin ekranı değişmedi', () => {
+  const page = src('app/(panel)/siparisler/[id]/page.tsx');
+  const main = page.slice(page.indexOf('export default async function OrderPage'), page.indexOf('function History('));
+  const at = (needle) => { const i = main.indexOf(needle); assert.ok(i >= 0, needle); return i; };
+  // Yönetici, satış, müşteri, denetimci: bilgiler → teklif (düzenleme / görünüm; altında özel durum ve telafi formu) → çizim
+  assert.ok(at('<OrderInfo') < at('<OfferEditor') && at('<OfferEditor') < at('<OfferView '));
+  assert.ok(at('<OfferView ') < at('{guestHost}') && at('{guestHost}') < at('<CompensationForm'));
+  assert.ok(at('<CompensationForm') < at('{!drawerView && <Drawings ') && at('{!drawerView && <Drawings ') < at('{canComp && <Decisions'));
+  assert.equal(main.split('<Drawings ').length - 1, 1, 'çizim kartı bir kez');
+  // Çizim ekibi: müşteri dosyaları → çizim dosyaları → onay / revizyon → notlar → sipariş bilgileri (karar 169; değişmedi)
+  assert.ok(at('{drawerView && <Files ') < at('{drawerView && <DrawingFiles ') && at('{drawerView && <DrawingFiles ') < at('{drawerView && <DrawingReview '));
+  assert.ok(at('{drawerView && <DrawingReview ') < at('\n      {notesCard}\n') && at('\n      {notesCard}\n') < at('<OrderInfo'));
+  // Görünürlük kuralları aynı: çizim kartı çizimi olmayan siparişte yok; teklif görünümü / düzenleyici koşulları değişmedi
+  assert.match(page, /if \(order\.drawingTrack === 'YOK' && order\.drawings\.length === 0\) return null;/);
+  assert.match(page, /const shownOffer = !userCan\(user, 'OFFER_VIEW'\) \? undefined : isCustomer \? sent : editable \|\| updating \? undefined : offer;/);
 });

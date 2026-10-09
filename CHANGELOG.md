@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.62.1 — 09.10.2026
+
+Satış paneli düzeltme paketi 1 — ek gereksinimler (karar 214). Veritabanı şeması değişmedi; yetkiler ve görünürlük aynı.
+
+- **Satışın sandık parası yöneticinin düzeninde:** cam satırlarının altındaki "+Sandık" kaldırıldı. Sandık parası tablonun
+  altında, "+ Cam ekle"nin yanındaki "+ Sandık parası" düğmesiyle eklenir; normal, numaralı teklif kalemidir (kendi adedi ve
+  birim fiyatı, ölçüsüz). Yönetici satırı "Sandık ücreti · satışın" rozetiyle görür; yöneticinin kendi sandık bedeli satışa
+  yine hiçbir yerde görünmez. Belgeler değişmedi: sandık parası faturada ve yükleme özetlerinde camın tutarına dahil,
+  proformada ayrı satır; toplamda bir kez sayılır.
+- **Sipariş sayfasında bölüm sırası:** teknik çizimi olan siparişte yönetici, satış, müşteri ve denetimci ekranında Sipariş
+  Bilgileri → Teklif Tablosu → Teknik Çizim ve Onaylar (masaüstü ve telefonda aynı). Çizim ekibinin ekranı değişmedi.
+
 ## 3.62.0 — 09.10.2026
 
 Satış paneli düzeltme paketi 1 (kararlar 211–213). Veritabanı şeması değişmedi.

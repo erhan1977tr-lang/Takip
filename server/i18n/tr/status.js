@@ -68,6 +68,5 @@ export default {
     CAM: 'Cam',
     CNC: 'CNC',
     DELIK: 'Delik',
-    SANDIK: 'Sandık', // satışın sandık ücreti (karar 211) — satır türü değil, yalnızca sorun metninde
   },
 };

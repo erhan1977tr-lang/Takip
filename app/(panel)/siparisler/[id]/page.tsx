@@ -393,9 +393,10 @@ export default async function OrderPage({
       )}
 
       {/*
-        Bölüm sırası (eski TAKİP düzeni; her bölüm bir kez gösterilir):
+        Bölüm sırası (her bölüm bir kez gösterilir; yönetici, satış, müşteri ve denetimci aynı sıra — karar 214):
           sıra kimde + yapılabilecek işlemler → 1) müşteri sipariş dosyaları → 2) notlar → 3) sipariş bilgileri →
-          4) teknik çizimler ve onay → 5) teklif (düzenleme ya da görünüm) → 6) finans / sandık; hareketler sol menüde.
+          4) teklif tablosu (düzenleme ya da görünüm; altında özel durum ve telafi formu) → 5) teknik çizimler ve onay →
+          6) önemli kararlar / finans / sandık; hareketler sol menüde. Yalnızca yer değişti: görünürlük kuralları aynı.
         Çizim ekibi (karar 77, 84; Paket 3): 1) müşterinin sipariş dosyaları → 2) teknik çizim dosyaları (çizime başla, taslağa
           yükleme, sürümlerin dosyaları) → 3) çizim onayı ve revizyon (DWG/DXF kararı, onay / revizyon geçmişi, geri çekme) →
           4) notlar → 5) sipariş bilgileri. Adım çubuğu ve işlem kartları yok (durum başlıkta rozetle); teklif / ticari bölüm yok.
@@ -442,7 +443,6 @@ export default async function OrderPage({
           </>
         )}
       </OrderInfo>
-      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
 
       {(editable || updating) && offer && (
         <OfferEditor
@@ -464,7 +464,8 @@ export default async function OrderPage({
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
             id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: !!l.compensationId, splitGroup: l.splitGroup ?? '',
             crate: l.crateFee,
-            // Satışın sandık ücreti (karar 211): cam prosesleri gibi gösterilir; yöneticinin sandık bedeli satışa hiç gelmez
+            // Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzen (numaralı, ölçüsüz, adı sabit);
+            // yöneticinin sandık bedeli satışa hiç gelmez
             salesCrate: isSalesCrate(l),
           }))}
           nextVersion={sentVersions + 1}
@@ -499,6 +500,9 @@ export default async function OrderPage({
           error={compError} cancelHref={`/siparisler/${order.id}#teklif`} locale={locale} intl={intl} m={m.compensation} kinds={m.status.lineKind}
         />
       )}
+      {/* Teknik çizimler ve onay (karar 214): teklif tablosundan SONRA — Sipariş Bilgileri → Teklif Tablosu → Teknik Çizim ve
+          Onaylar. Çizimi olmayan siparişte kart yok; çizim ekibinin kendi ekranı (dosyalar → çizim → onay) değişmedi. */}
+      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
       {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
@@ -748,23 +752,23 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                 const tot = offerLineTotals({ ...l, unitPrice: (admin ? l.offerPrice ?? 0 : l.unitPrice).toString() });
                 const unitTxt = (v: { toString(): string } | null) => (v == null ? '—' : `${fmtNum(v.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : t('common.unitPiece')}`);
                 const sub = l.kind === 'CNC' || l.kind === 'DELIK';
-                // Satışın sandık ücreti (karar 211): cam prosesi gibi üstündeki camın altında, numarasız
-                const salesCrate = isSalesCrate(l);
-                if (!sub && !salesCrate) n += 1;
+                // Satışın sandık parası (karar 211, 214): bağımsız, numaralı kalem (yöneticinin sandık satırıyla aynı); rozet yalnızca yöneticide
+                const salesCrate = admin && isSalesCrate(l);
+                if (!sub) n += 1;
                 const kindLabel = sub ? lineKindText(t, l.kind) : '';
                 const desc = sub && (l.description === kindLabel || l.description === LEGACY_SUB_DESC[l.kind]) ? ''
                   : locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
                 return (
-                  <tr key={l.id} className={sub || salesCrate ? 'sub-line' : undefined}>
-                    <td className="muted">{sub || salesCrate ? '' : n}</td>
+                  <tr key={l.id} className={sub ? 'sub-line' : undefined}>
+                    <td className="muted">{sub ? '' : n}</td>
                     <td>
                       {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
-                      {salesCrate && !isCustomer && <span className="badge badge-info" data-sales-crate>{admin ? t('offer.editor.salesCrateAdminBadge') : t('offer.editor.salesCrateBadge')}</span>}{' '}
                       {desc}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
                       {!isCustomer && l.compensationId && <> <span className="badge badge-warn">{t('compensation.badge')}</span></>}
                       {/* Yöneticinin sandık bedeli (Paket 4): satış bu satırı hiç almaz; yönetici "satış görmez" rozetiyle görür */}
                       {admin && l.crateFee && <> <span className="badge badge-info" data-crate-fee>{t('offer.editor.crateBadge')}</span></>}
+                      {salesCrate && <> <span className="badge badge-info" data-sales-crate>{t('offer.editor.salesCrateAdminBadge')}</span></>}
                     </td>
                     <td>{l.poz ?? ''}</td>
                     <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>

@@ -271,14 +271,16 @@ const upTr = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLocaleUpperCas
 /** Açıklama sandık parası satırının adı mı (iki dilde; büyük-küçük harf ve boşluk farkı sayılmaz) */
 export const isCrateText = (description) => [CRATE_LINE.tr, CRATE_LINE.ro].some((n) => upTr(n) === upTr(description));
 /**
- * Sandık ücreti satırı: sandık parası adlı, adetle fiyatlanan cam türü satır (yöneticinin ya da satışın). Tutarı, faturası ve
- * yükleme hesabı olağan adetli satırla aynıdır (faturada üstündeki cam satırına eklenir — CNC / delik gibi).
+ * Sandık parası satırı: sandık parası adlı, adetle fiyatlanan cam türü satır (yöneticinin ya da satışın). Teklif tablosunda
+ * bağımsız, numaralı kalemdir; tutarı olağan adetli satır kuralıyla bir kez sayılır: faturada ve yükleme dökümünde camın
+ * tutarına eklenir (server/glass/billing.js → glassGroups), proformada ayrı adetli satırdır (ürün sahibinin kararı, karar 214).
  * @param {{ kind?: string | null, unit?: string | null, description?: unknown }} l
  */
 export const isCrateLine = (l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'adet' && isCrateText(l.description);
 /**
- * Satışın sandık ücreti (karar 211): satışın kendi eklediği, kendisinin gördüğü ve değiştirdiği sandık satırı — cam
- * prosesleri gibi bir cam satırının altında durur. Yöneticinin sandık bedeli (crateFee) satışa hiç gitmez.
+ * Satışın sandık parası (karar 211, 214): satışın kendi eklediği, kendisinin gördüğü ve değiştirdiği sandık satırı —
+ * yöneticinin sandık satırıyla aynı düzende bağımsız, numaralı teklif kalemi. Yöneticinin sandık bedeli (crateFee) satışa
+ * hiç gitmez.
  * @param {{ kind?: string | null, unit?: string | null, description?: unknown, crateFee?: boolean | null }} l
  */
 export const isSalesCrate = (l) => !l.crateFee && isCrateLine(l);
@@ -459,20 +461,14 @@ export function offerProblems(lines) {
   let glassNo = 0, seenGlass = false, glass = null;
   for (const l of lines) {
     const sub = isSub(l);
-    // Satışın sandık ücreti (karar 211) cam prosesi gibi numarasızdır: "n. Sandık" (üstündeki camın numarasıyla)
-    const crate = !sub && isSalesCrate(l);
-    const row = () => ({ n: glassNo, kind: sub ? String(l.kind) : crate ? 'SANDIK' : 'CAM' });
-    if (!sub) {
-      if (!crate) glassNo += 1;
-      seenGlass = true;
-      glass = { row: crate ? row() : { n: glassNo, kind: 'CAM', ...(l.description ? { desc: String(l.description).slice(0, 60) } : {}) }, many: Math.trunc(num(l.adet)) > 1, done: false };
-    }
+    if (!sub) { glassNo += 1; seenGlass = true; glass = { row: { n: glassNo, kind: 'CAM', ...(l.description ? { desc: String(l.description).slice(0, 60) } : {}) }, many: Math.trunc(num(l.adet)) > 1, done: false }; }
     // İşlem satırı adedi 1'den büyük cama bağlı: hangi camda olduğu belli değil
     if (sub && glass?.many && !glass.done) { glass.done = true; shared.push(glass.row); }
+    const row = { n: glassNo, kind: sub ? String(l.kind) : 'CAM' };
     if (sub && !seenGlass) p.push({ code: 'sub_without_glass', kind: String(l.kind) });
-    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row: row() });
+    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row });
     // Fiyatı eksik satır: camda/üründe açıklaması da yazılır (hangi ürün olduğu görünsün)
-    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && !crate && l.description ? { ...row(), desc: String(l.description).slice(0, 60) } : row());
+    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && l.description ? { ...row, desc: String(l.description).slice(0, 60) } : row);
   }
   if (noPrice.length) p.push({ code: 'missing_prices', rows: noPrice });
   if (shared.length) p.push({ code: 'ops_multi_glass', rows: shared });

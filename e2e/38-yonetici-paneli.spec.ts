@@ -2,8 +2,9 @@ import { test, expect } from '@playwright/test';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, fillOffer, firmWithOrder, newOrder, openFirm } from './helpers';
 
 // Fonksiyonel paket 4 — yönetici paneli:
-//  - sandık bedeli yalnızca yöneticinin satırıdır: yöneticinin ve müşterinin teklifinde görünür ve toplama girer; satış
-//    görmez (sayfanın ham yanıtında da yok); teklif müşteriye gidince bildirim yalnızca müşteriye (satışa zil yok)
+//  - yöneticinin sandık bedeli: yöneticinin ve müşterinin teklifinde görünür ve toplama girer; satış görmez (sayfanın ham
+//    yanıtında da yok; satışın kendi "+ Sandık parası" satırı ayrıdır — karar 214); teklif müşteriye gidince bildirim
+//    yalnızca müşteriye (satışa zil yok)
 //  - yöneticinin sipariş ekranında "İstenen camlar" ve "Sandıklar" bölümü yok; sandık kaydı ve Yüklemeler görünümü değişmez
 //  - müşterideki teklifin fiyatı: yeni sürüm (eski sürüm durur), müşteri yeni fiyatı ancak açık gönderimden sonra görür,
 //    değişiklik yöneticinin "Hareketler"inde (kim, ne zaman, sürüm, eski → yeni); satış görmez
@@ -30,7 +31,9 @@ test('sandık bedeli yöneticinin satırıdır: yönetici ve müşteri görür, 
   await sales.goto(`/siparisler/${orderId}`);
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await fillOffer(sales, '40'); // 3 × 1000 × 2000 mm = 6 m² × 40 = 240 (satış tutarı)
-  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(0);
+  // Satışın "+ Sandık parası" düğmesi kendi (görünen) satırı içindir (karar 214); burada kullanılmaz — yöneticinin sandık
+  // bedeli ayrı satırdır ve satışa hiç görünmez
+  await expect(sales.locator('.offer-tools').getByRole('button', { name: '+ Sandık parası' })).toHaveCount(1);
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
 

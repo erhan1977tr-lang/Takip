@@ -94,9 +94,8 @@ export default {
     addCrate: 'Sandık parası',
     crateLine: 'Sandık parası',
     crateBadge: 'Sandık bedeli · satış görmez',
-    // Satışın sandık ücreti (karar 211): cam prosesleri gibi bir cam satırının altına eklenir
-    addSalesCrate: 'Sandık',
-    salesCrateBadge: 'Sandık',
+    // Satışın sandık parası (karar 211, 214): yöneticinin tablosundaki gibi "+ Sandık parası" (addCrate) ile bağımsız kalem;
+    // rozet yalnızca yöneticinin ekranında
     salesCrateAdminBadge: 'Sandık ücreti · satışın',
     salesCratePriceAria: 'Sandık ücreti fiyatı',
     salesCrateOfferPriceAria: 'Sandık ücreti müşteri fiyatı',

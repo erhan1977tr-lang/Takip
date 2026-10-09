@@ -4,8 +4,8 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, newOrder } from
 const SALES = 'fiyat-satis@e2e.test'; // 08'de açıldı (05'te satis@e2e.test bilerek kilitlendi)
 
 // Görünüm 3. aşama: sipariş sayfasının bölüm sırası (dosyalar → notlar → sipariş bilgileri → teklif) ve teklif
-// tablosunun araçları (aynı camdan "+", tek fiyat, tabloyu temizle). Sandık bedeli yalnızca yöneticinin satırıdır (fonksiyonel
-// paket 4): satışın tablosunda "+ Sandık parası" yok; yönetici fiyatlandırırken ekler.
+// tablosunun araçları (aynı camdan "+", tek fiyat, tabloyu temizle). Yöneticinin sandık bedeli satışa görünmez (fonksiyonel
+// paket 4); satışın "+ Sandık parası" düğmesi yöneticininkiyle aynı yerde, satışın kendi (görünen) satırını ekler (karar 214).
 test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Düzen', 'duzen.pdf'); // müşteri formunda cam adedi yok (karar 160): tablo 1 adetle açılır
@@ -47,8 +47,10 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await price.nth(1).fill('40');
   await expect(price.first()).toHaveValue('44');
 
-  // "+ Sandık parası" satışta yok (fonksiyonel paket 4): sandık bedelini yalnızca yönetici girer, satış görmez
-  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(0);
+  // "+ Sandık parası" (karar 214): tablonun altında, "+ Cam ekle"nin yanında — satışın kendi satırı; cam satırının altında
+  // sandık düğmesi yok. Yöneticinin sandık bedeli satışa hiç gelmez (e2e 38, 45)
+  await expect(sales.locator('.offer-tools').getByRole('button', { name: '+ Sandık parası' })).toHaveCount(1);
+  await expect(sales.locator('.offer-table').getByRole('button', { name: /Sandık/ })).toHaveCount(0);
 
   // Olağan "+" yalnızca cam cinsini çoğaltır (fonksiyonel paket 1): CNC'li camın "+"ı yeni satıra işlemi KOPYALAMAZ; ölçü
   // de taşımaz. İşlemleriyle birlikte kopyalayan ayrı düğme "+ aynısı"dır; telafi camındaki "işlemleri taşı" kuralı da ayrıdır.
@@ -85,7 +87,8 @@ test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yaln�
   await sales.goto(`/siparisler/${id}`);
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await expect(sales.locator('.offer-table')).toBeVisible();
-  // Satış: iki cam satırı (ikincisinde CNC); satış fiyatları 30 / 30 / 15. Sandık bedelini satış giremez (Paket 4).
+  // Satış: iki cam satırı (ikincisinde CNC); satış fiyatları 30 / 30 / 15. Satışın "+ Sandık parası" düğmesi var (karar 214)
+  // ama bu testte kullanılmaz; yöneticinin sandık bedeli ayrı ve satışa görünmez (Paket 4).
   await sales.getByRole('button', { name: 'Aynı camdan yeni satır ekle' }).click();
   const en = sales.getByLabel('En', { exact: true });
   const boy = sales.getByLabel('Boy', { exact: true });
@@ -95,7 +98,7 @@ test('yönetici: "Tek fiyatı tüm satırlara uygula" müşteri fiyatını yaln�
   await boy.nth(1).fill('1000');
   await sales.getByRole('button', { name: '+CNC' }).nth(1).click();
   await sales.getByLabel('CNC fiyatı').fill('15');
-  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(0);
+  await expect(sales.getByRole('button', { name: /Sandık parası/ })).toHaveCount(1);
   const unit = sales.getByLabel('Birim fiyat', { exact: true });
   await expect(unit).toHaveCount(2);
   await unit.nth(0).fill('30');

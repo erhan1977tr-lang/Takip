@@ -1,9 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, fillOffer, login, newOrder } from './helpers';
 
-// Satış paneli düzeltme paketi 1 (3.62.0):
-//  - satışın sandık ücreti (karar 211): satış "+Sandık" ile cam prosesleri gibi ekler / değiştirir; yönetici görür ve
-//    müşteri fiyatını girer; yöneticinin sandık bedeli satışa hiçbir ekranda / yanıtta görünmez; müşteri toplamı tek sayım
+// Satış paneli düzeltme paketi 1 (3.62.0, 3.62.1):
+//  - satışın sandık parası (karar 211, 214): yöneticinin tablosundaki gibi "+ Cam ekle"nin yanındaki "+ Sandık parası" ile
+//    bağımsız, numaralı kalem (kendi adedi ve birim fiyatı; cam satırının altında "+Sandık" yok); satış ekler / değiştirir,
+//    yönetici görür ve müşteri fiyatını girer; yöneticinin sandık bedeli satışa hiçbir ekranda / yanıtta görünmez; müşteri
+//    toplamı tek sayım
 //  - "Yöneticiye göndermeyi geri al" (karar 212): yalnızca gönderen satışçıya, yönetici göndermeden önce; geri alınan
 //    teklif yeniden düzenlenir ve gönderilir; yöneticinin taslağı / sandık bedeli kaybolmaz; gönderildikten sonra yok
 //  - uzun teklif tablosunda ↑ / ↓ (karar 213): teklif yöneticiye gittikten sonra (salt okunur) da görünür, tablonun
@@ -26,12 +28,20 @@ test('satışın sandık ücreti ve geri alma: satış ekler / değiştirir, yö
   await sales.goto(`/siparisler/${orderId}`);
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await fillOffer(sales, '40'); // 3 × 1000 × 2000 mm = 6 m² × 40 = 240
-  // "+Sandık" cam satırının altına (cam prosesleri gibi): adetli, ölçüsüz, fiyatını satış girer
-  await sales.locator('[data-add-sales-crate]').first().click();
+  // Cam satırının altında "+Sandık" yok; tablonun altında "+ Cam ekle"nin yanında "+ Sandık parası" (yöneticinin düzeni)
+  await expect(sales.locator('.offer-table [data-add-sales-crate]')).toHaveCount(0);
+  const tools = sales.locator('.offer-tools .group').first();
+  await expect(tools.getByRole('button')).toHaveText(['+ Cam ekle', '+ Sandık parası']); // yan yana, bu sırayla
+  await tools.getByRole('button', { name: '+ Sandık parası' }).click();
+  // Bağımsız, numaralı kalem: tablonun sonunda 2. satır; ölçüsüz, adetli; satışın ekranında rozet yok; adı sabit
   const crateRow = sales.locator('.offer-table tr[data-sales-crate]');
   await expect(crateRow).toHaveCount(1);
-  await expect(crateRow.locator('[data-sales-crate-badge]')).toHaveText('Sandık');
-  await expect(crateRow).toContainText('Sandık parası');
+  await expect(sales.locator('.offer-table tbody tr').last()).toHaveAttribute('data-sales-crate', '');
+  await expect(crateRow.locator('td.c-no')).toHaveText('2');
+  await expect(crateRow).toHaveClass(/glass-line/);
+  await expect(crateRow.locator('[data-sales-crate-badge], [data-crate-fee]')).toHaveCount(0);
+  await expect(crateRow.getByLabel('Açıklama', { exact: true })).toHaveValue('Sandık parası');
+  await expect(crateRow.getByLabel('Açıklama', { exact: true })).not.toBeEditable();
   await expect(crateRow.getByLabel('En', { exact: true })).toHaveCount(0);
   await sales.getByLabel('Sandık adedi').fill('2');
   await sales.getByLabel('Sandık ücreti fiyatı').fill('20');
@@ -39,11 +49,11 @@ test('satışın sandık ücreti ve geri alma: satış ekler / değiştirir, yö
   await expect(sales.locator('.offer-table tfoot')).toContainText('280,00 EUR'); // 240 + 2 × 20
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
-  // Salt okunur teklif: satışın sandık satırı (rozetli, numarasız) ve geri alma düğmesi
-  const viewCrate = sales.locator('#teklif tbody tr', { has: sales.locator('[data-sales-crate]') });
-  await expect(viewCrate).toHaveCount(1);
+  // Salt okunur teklif: satışın sandık parası numaralı 2. kalem (satışta rozet yok) ve geri alma düğmesi
+  const viewCrate = sales.locator('#teklif tbody tr').nth(1);
   await expect(viewCrate).toContainText('Sandık parası');
-  await expect(viewCrate.locator('[data-sales-crate]')).toHaveText('Sandık');
+  await expect(viewCrate.locator('td').first()).toHaveText('2');
+  await expect(sales.locator('#teklif [data-sales-crate], #teklif [data-crate-fee]')).toHaveCount(0);
   await expect(sales.locator('#teklif tfoot')).toContainText('280,00 EUR');
   await expect(sales.getByRole('button', { name: 'Yöneticiye göndermeyi geri al', exact: true })).toBeVisible();
   // Kısa tabloda ↑ / ↓ yok
@@ -54,6 +64,8 @@ test('satışın sandık ücreti ve geri alma: satış ekler / değiştirir, yö
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${orderId}`);
   await expect(admin.locator('.offer-table tr[data-sales-crate] [data-sales-crate-badge]')).toHaveText('Sandık ücreti · satışın');
+  await expect(admin.locator('.offer-table tr[data-sales-crate] td.c-no')).toHaveText('2');
+  await expect(admin.locator('[data-add-sales-crate]')).toHaveCount(0); // yöneticinin düğmesi kendi (gizli) sandık bedeli
   await expect(admin.getByRole('button', { name: 'Yöneticiye göndermeyi geri al' })).toHaveCount(0);
   await admin.getByLabel('Müşteri fiyatı', { exact: true }).first().fill('50');
   await admin.getByLabel('Sandık ücreti müşteri fiyatı').fill('30');
@@ -94,6 +106,8 @@ test('satışın sandık ücreti ve geri alma: satış ekler / değiştirir, yö
   await cust.goto(`/siparisler/${orderId}`);
   await expect(cust.locator('#teklif tfoot')).toContainText('415,00 EUR');
   await expect(cust.locator('#teklif [data-sales-crate], #teklif [data-crate-fee]')).toHaveCount(0);
+  // Müşteride iki sandık parası da numaralı ayrı kalem (cam 1, sandık 2, sandık 3)
+  await expect(cust.locator('#teklif tbody tr td:first-child')).toHaveText(['1', '2', '3']);
   // Gönderildikten sonra satışta geri alma yok
   await sales.goto(`/siparisler/${orderId}`);
   await expect(sales.getByRole('button', { name: 'Yöneticiye göndermeyi geri al' })).toHaveCount(0);
