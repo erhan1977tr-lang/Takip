@@ -398,8 +398,10 @@ dbTest('aynı anda / çift tıklama: telafi numarası ve kaydı çoğalmaz', asy
   await assert.rejects(db.order.create({ data: { orderNo: 'ABC200-X', customerOrderNo: 200, compSeq: 1, customerId: A.id, createdById: U.admin.id } }), /Unique constraint/);
   // Yinelenen istek bildirim de çoğaltmaz: her telafi siparişi için olağan iki olay (teklif müşteride, üretime geçti) BİR kez
   const outbox = await db.notificationOutbox.groupBy({ by: ['orderId', 'type'], where: { order: { compOfId: S2.id } }, _count: true });
-  // (+ telafi başına BİR yönetici e-postası olayı — bedelsiz: müşteri fiyatı değişti, karar 218; yinelenen istek çoğaltmaz)
-  assert.deepEqual(outbox.map((o) => [o.type, o._count]).sort(), [...Array(5).fill([ADMIN_MAIL, 1]), ...Array(5).fill(['ORDER_OFFER_SENT', 1]), ...Array(5).fill(['ORDER_PRODUCTION', 1])]);
+  // (+ yönetici e-postası olayı yalnızca müşteri fiyatı değişen telafide — karar 218: dört "aynı fiyat" telafisinde yok,
+  // bedelsiz telafide BİR tane; üç kez gönderilen form ikinci olay yazmaz)
+  assert.deepEqual(outbox.map((o) => [o.type, o._count]).sort(), [[ADMIN_MAIL, 1], ...Array(5).fill(['ORDER_OFFER_SENT', 1]), ...Array(5).fill(['ORDER_PRODUCTION', 1])]);
+  assert.deepEqual(outbox.filter((o) => o.type === ADMIN_MAIL).map((o) => o.orderId), [dup[0].destOrderId]);
   // "Önemli kararlar": telafi başına BİR kayıt; yöneticiye telafi başına, kişi başına BİR bildirim (yinelenen istek çoğaltmaz)
   assert.equal(await db.adminAlert.count({ where: { orderId: S2.id, type: 'COMPENSATION_PRICE' } }), 5);
   const ids = [...new Set([...rs, ...dup].map((r) => r.compensationId))];
