@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as } from './helpers';
 
 // Paket 10 (kararlar 206–210) — sipariş finansı ekranı.
 //  - yönetici: "Ödemeler ve avans" kartında FGO tahsilatı ve elle kayıtlar ayrı rozetlerle; elle ödeme kaydı (belge kesmez),
@@ -11,6 +11,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as } from './helper
 // FGO bu veritabanında KAPALIDIR ve kapalı kalır: hiçbir belge kesilmez, FGO'ya istek gitmez.
 test.describe.configure({ mode: 'serial' });
 
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const TITLE = `Finans e2e ${Date.now().toString(36)}`;
 let orderId = '';
 let orderNo = '';
