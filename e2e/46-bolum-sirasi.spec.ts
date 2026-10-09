@@ -26,8 +26,10 @@ async function infoOfferDrawing(page: Page, who: string) {
   const t = await tops(page);
   expect(t.bilgiler!, `${who}: bilgiler < teklif`).toBeLessThan(t.teklif!);
   expect(t.teklif!, `${who}: teklif < çizim`).toBeLessThan(t.cizim!);
-  // Çizim kartı tek (çizim ekibinin ayrı kartları bu rollerde yok)
-  await expect(page.locator('#cizim-dosyalari')).toHaveCount(0);
+  // Çizim kartı tek (çizim ekibinin ayrı "Teknik çizim dosyaları" kartı bu rollerde yok). Yöneticide çizim yükleme formu
+  // (çapası #cizim-dosyalari) mevcut düzende #cizim kartının İÇİNDE durur — ayrı bölüm değildir.
+  await expect(page.locator('.card#cizim-dosyalari')).toHaveCount(0);
+  expect(await page.locator('#cizim-dosyalari').count(), `${who}: #cizim-dosyalari yalnızca #cizim içinde`).toBe(await page.locator('#cizim #cizim-dosyalari').count());
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${who}: yatay taşma yok`).toBe(true);
 }
 
