@@ -1,11 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as } from './helpers';
 
-// Fonksiyonel paket 5 — profil hesaplayıcı + stok yönetimi (kararlar 175–177):
-//  - kesin paket içerikleri katalogda (GK15 137, AD45 24, MC12 27, MC16 43 m / kutu); bar boyu, katsayı, kalınlık ve
-//    sistemleri yönetici girer; eksik değer varsa hesap yapılmaz ve eksik adıyla söylenir (yöneticide de, müşteride de)
-//  - müşteri: sistem + renk + cam kalınlığı + toplam metre → MR23 kalınlığa göre MC12 / MC16; sonuç formdaki adetlere aktarılır,
-//    elle değiştirilebilir; yeniden hesapta üzerine yazılacak adetler önce gösterilir (Vazgeç / Evet); adetli aksesuar elle
+// Fonksiyonel paket 5 — profil hesaplayıcı + stok yönetimi (kararlar 175–177) ve korkuluk hesaplayıcısının kesin kuralları
+// (kararlar 203–204):
+//  - kesin paket içerikleri katalogda (GK15 137, AD45 24, MC12 27, MC16 43 m / kutu, profiller 6 m); varsayılan sistemler
+//    FBL90 / FBL115 (korkuluk profili) ve MR23 / RM29 (küpeşte), cam 6+6 / 8+8 hazır; yöneticinin yeni sistemi eksikse hesap
+//    yapılmaz ve eksik adıyla söylenir (yöneticide de, müşteride de)
+//  - müşteri: cam + renk + profil + küpeşte + toplam metre → profil ve küpeşte birlikte; sonuç formdaki adetlere aktarılır,
+//    elle değiştirilebilir; yeniden hesapta üzerine yazılacak adetler önce gösterilir (Vazgeç / Evet); adetli aksesuar elle;
+//    Romence panelde Romence, tablet / mobilde taşma yok
 //  - gönderimden önce stok uyarısı (engellemez); siparişte müşterinin kendi eksik ürünleri gereken / mevcut / eksik ile
 //  - yönetici: kritik eşik (tek "Önemli kararlar" kaydı), "Rezerve" sütunu (onaylı, depoya gitmemiş); denetimci salt okunur;
 //    satış / çizim / müşteri genel stoğu göremez
@@ -42,120 +45,126 @@ async function addRow(admin: Page, slot: string, code: string | null, color: str
 }
 const formQty = (page: Page, code: string) => page.locator('table.profile-pick tr', { hasText: code }).locator('input.qty-input');
 
-test('yönetici: kesin paket içerikleri; cam kalınlıkları ve MR23 sistemi; çakışan satır reddedilir; eksik bar boyu "Eksikler"de, girilince sistem hazır', async ({ browser }) => {
+test('yönetici: kesin paket içerikleri ve korkuluk varsayılanları (karar 203) hazır — FBL90 / FBL115 / MR23 / RM29, 6+6 / 8+8, 6 m boy; çakışan satır reddedilir; eksik katsayı "Eksikler"de', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto('/admin/profil-katalogu');
-  for (const [code, text] of [['GK15', '137 m / kutu'], ['AD45', '24 m / kutu'], ['MC12', '27 m / kutu'], ['MC16', '43 m / kutu']]) {
+  for (const [code, text] of [['GK15', '137 m / kutu'], ['AD45', '24 m / kutu'], ['MC12', '27 m / kutu'], ['MC16', '43 m / kutu'], ['MR23-7016', '6 m / boy'], ['FBL90-ELX', '6 m / boy']]) {
     await expect(admin.locator(`[data-pack="${code}"]`), code).toHaveText(text);
   }
-  await expect(admin.locator('[data-pack="MR23-7016"]')).toHaveText('—'); // bar boyu tahmin edilmez
   await expect(admin.locator('.sidebar').getByRole('link', { name: 'Profil Hesaplayıcı' })).toBeVisible();
 
   await admin.goto('/admin/profil-katalogu/hesaplama');
   await expect(admin.getByRole('heading', { name: 'Profil Hesaplayıcı', level: 1 })).toBeVisible();
-  await expect(admin.locator('#sistemler')).toContainText('Henüz sistem yok');
-  for (const [i, mm] of ['12,76', '16,76'].entries()) {
-    await admin.fill('#th-mm', mm);
-    await admin.locator('#kalinlik').getByRole('button', { name: 'Ekle', exact: true }).click();
-    await expect(admin.locator('#kalinlik tr[data-thickness]')).toHaveCount(i + 1);
+  await expect(admin.locator('[data-calc-defaults="applied"]')).toBeVisible();
+  await expect(admin.locator('#kalinlik tr[data-thickness]')).toHaveCount(2);
+  await expect(admin.locator('#kalinlik tr[data-thickness="12.76"]')).toContainText('6+6');
+  await expect(admin.locator('#kalinlik tr[data-thickness="16.76"]')).toContainText('8+8');
+  for (const [code, kind] of [['FBL90', 'Profil'], ['FBL115', 'Profil'], ['MR23', 'Küpeşte'], ['RM29', 'Küpeşte']]) {
+    const row = admin.locator(`#sistemler tr[data-system="${code}"]`);
+    await expect(row, code).toContainText('Hazır');
+    await expect(row.locator('[data-kind]'), code).toHaveText(kind);
   }
-  await expect(admin.getByText('Eklendi.')).toBeVisible();
-  await admin.fill('#sy-code', 'MR23');
-  await admin.fill('#sy-ro', 'MR23 mână curentă');
-  await admin.fill('#sy-tr', 'MR23 el tutamağı');
-  await admin.locator('#yeni-sistem').getByRole('button', { name: 'Sistem ekle' }).click();
-  await expect(admin).toHaveURL(/sistem=/);
+  // Aynı kalemde aynı renge uyan ikinci satır reddedilir (varsayılan sistemde de)
+  await admin.locator('#sistemler tr[data-system="MR23"]').getByRole('link', { name: 'Aç' }).click();
   await expect(admin.locator('#sistem h2')).toContainText('MR23');
-  await addRow(admin, 'Profil', 'MR23-7016', 'RAL7016', '', '1', 1);
-  await addRow(admin, 'Profil', 'MR23-ELX', 'ELOXAT', '', '1', 2);
-  await addRow(admin, 'El tutamağı contası', 'MC12', '', '12,76 mm', '1', 3);
-  await addRow(admin, 'El tutamağı contası', 'MC16', '', '16,76 mm', '1', 4);
-  // Aynı kalemde aynı renge uyan ikinci satır reddedilir
+  await expect(admin.locator('#se-kind')).toHaveValue('HANDRAIL');
   await addRow(admin, 'profil', 'MR23-ELX', '', '', '1', null);
   await expect(admin.getByText('Bu kalemde aynı renge ve cam kalınlığına uyan bir satır zaten var.')).toBeVisible();
   await expect(admin.locator('#kalemler tr[data-calc-item]')).toHaveCount(4);
-  // Bar boyu girilmemiş: iki renkte de eksik, ürün adıyla
-  const problems = admin.locator('#eksikler li[data-problem="NO_PACK"]');
-  await expect(problems).toHaveCount(2);
-  await expect(problems.first()).toContainText('MR23-7016 ürününün paket içeriği');
-  await expect(admin.locator('#sistemler tr[data-system="MR23"]')).toContainText('2 eksik');
 
-  // Eksik katsayılı deneme sistemi: müşteri hesapta aynı eksikliği görür
+  // Yöneticinin yeni bir korkuluk profili (eksik katsayıyla): müşteri hesapta aynı eksikliği görür
   await admin.goto('/admin/profil-katalogu/hesaplama');
   await admin.fill('#sy-code', 'EKSIK');
   await admin.fill('#sy-ro', 'Eksik deneme');
   await admin.fill('#sy-tr', 'Eksik deneme');
+  await admin.selectOption('#sy-kind', 'PROFILE');
   await admin.locator('#yeni-sistem').getByRole('button', { name: 'Sistem ekle' }).click();
   await expect(admin.locator('#sistem h2')).toContainText('EKSIK');
   await addRow(admin, 'Conta', 'GK15', '', '', '', 1);
   await expect(admin.locator('#eksikler li[data-problem="NO_PER_METER"]')).toContainText('GK15 için 1 m korkuluk başına tüketim katsayısı girilmemiş');
-
-  // Bar boyunu yönetici girer (Profil Kataloğu → ürün → paket içeriği)
-  for (const code of ['MR23-7016', 'MR23-ELX']) {
-    await admin.goto('/admin/profil-katalogu');
-    await admin.locator('tr', { hasText: code }).getByRole('link', { name: 'Düzenle' }).click();
-    // Düzenleme formu yüklenmeden doldurulmaz (önceki "yeni ürün" formu yerini alınca girilen değer kaybolur)
-    await expect(admin.locator('#pc-code')).toHaveValue(code);
-    await admin.fill('#pc-pack', '6');
-    await admin.selectOption('#pc-measure', 'M');
-    await admin.locator('#urun').getByRole('button', { name: 'Kaydet' }).click();
-    await expect(admin.getByText('Kaydedildi.')).toBeVisible();
-    await expect(admin.locator(`[data-pack="${code}"]`)).toHaveText('6 m / boy');
-  }
-  await admin.goto('/admin/profil-katalogu/hesaplama');
-  await expect(admin.locator('#sistemler tr[data-system="MR23"]')).toContainText('Hazır');
-  await admin.locator('#sistemler tr[data-system="MR23"]').getByRole('link', { name: 'Aç' }).click();
-  await expect(admin.locator('#eksikler [data-calc-ready]')).toBeVisible();
   await admin.context().close();
 });
 
-test('müşteri: hesaplayıcı — MR23 kalınlığa göre MC12 / MC16; forma aktarım, elle değişiklik, üzerine yazma onayı; eksik değer; stok uyarısı engellemez', async ({ browser }) => {
+test('müşteri: beş alan (cam, renk, profil, küpeşte, metre) — FBL90 + MR23 birlikte; 6+6 → MC12, 8+8 → MC16; RM29 contasız; forma aktarım, elle değişiklik korunur, üzerine yazma onayı; eksik değer; stok uyarısı engellemez', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.setViewportSize({ width: 1440, height: 900 });
   await cust.goto('/siparisler/yeni?tip=PROFILE_ORDER');
   const calc = cust.locator('#hesaplayici');
-  await expect(calc.getByRole('heading', { name: 'Metraj hesaplayıcı' })).toBeVisible();
-  await calc.locator('#calc-system').selectOption({ label: 'MR23 — MR23 el tutamağı' });
+  await expect(calc.getByRole('heading', { name: 'Profil ve aksesuar hesaplayıcı' })).toBeVisible();
+  // Masaüstünde beş alan tek yatay satırda, sırasıyla; "artıkları kullan" seçeneği yok
+  const labels = await calc.locator('.calc-grid label').allInnerTexts();
+  expect(labels).toEqual(['Cam tipi', 'Profil rengi', 'Profil tipi', 'Küpeşte', 'Toplam metre']);
+  const tops = await calc.locator('.calc-grid .calc-field').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size, 'tek satır').toBe(1);
+  await expect(calc.locator('input[type=checkbox]')).toHaveCount(0);
+  expect(await calc.locator('#calc-thickness option').allInnerTexts()).toEqual(['— cam seçin —', '6+6', '8+8']);
+  expect(await calc.locator('#calc-color option').allInnerTexts()).toEqual(['— renk seçin —', '7016 MAT', 'Eloxat']);
+  expect(await calc.locator('#calc-handrail option').allInnerTexts()).toEqual(['Yok', 'MR23', 'RM29']);
+  await calc.locator('#calc-thickness').selectOption({ label: '8+8' });
   await calc.locator('#calc-color').selectOption('RAL7016');
-  await calc.locator('#calc-thickness').selectOption({ label: '16,76 mm' });
+  await calc.locator('#calc-profile').selectOption({ label: 'FBL 90' });
+  await calc.locator('#calc-handrail').selectOption({ label: 'MR23' });
   // Geçersiz metre: miktar üretilmez
   await calc.locator('#calc-meters').fill('-5');
   await calc.getByRole('button', { name: 'Hesapla' }).click();
   await expect(calc.locator('[data-calc-errors]')).toContainText('Metre geçersiz');
   await expect(calc.locator('[data-calc-result]')).toHaveCount(0);
-  // Enter hesaplar, formu göndermez
-  await calc.locator('#calc-meters').fill('30');
+  // Örnek A: 20 m → FBL90 4 boy, PANA-L90 + PANA-90-16 4 poşet, MR23 4 boy, MC16 1 kutu (Enter hesaplar, formu göndermez)
+  await calc.locator('#calc-meters').fill('20');
   await calc.locator('#calc-meters').press('Enter');
   const res = calc.locator('[data-calc-result]');
-  await expect(res.locator('tr[data-calc-row="MR23-7016"] [data-calc-qty]')).toHaveText('5');
-  await expect(res.locator('tr[data-calc-row="MC16"] [data-calc-qty]')).toHaveText('1');
-  await expect(res.locator('tr[data-calc-row="MC12"]')).toHaveCount(0);
-  await expect(res.locator('tr[data-calc-row="MR23-7016"] [data-calc-stock]')).toHaveText('Stok yetersiz: gereken 5, mevcut 0, eksik 5');
+  const row = (code: string) => res.locator(`tr[data-calc-row="${code}"]`);
+  await expect(res.locator('tr[data-calc-row]')).toHaveCount(5);
+  for (const [code, qty, unit, color] of [['FBL90-7016', '4', 'boy', '7016 MAT'], ['PANA-L90', '4', 'poşet', '—'], ['PANA-90-16', '4', 'poşet', '—'], ['MR23-7016', '4', 'boy', '7016 MAT'], ['MC16', '1', 'kutu', '—']]) {
+    await expect(row(code).locator('[data-calc-qty]'), code).toHaveText(qty);
+    await expect(row(code).locator('[data-calc-unit]'), code).toHaveText(unit);
+    await expect(row(code).locator('[data-calc-color]'), code).toHaveText(color);
+  }
   await expect(cust).toHaveURL(/tip=PROFILE_ORDER$/);
-  // 12,76 mm → MC12 (27 m / kutu): 30 m → 2 kutu
-  await calc.locator('#calc-thickness').selectOption({ label: '12,76 mm' });
+  // 6+6 → MC12 ve PANA-90-12 (MC16 / PANA-90-16 yok)
+  await calc.locator('#calc-thickness').selectOption({ label: '6+6' });
   await calc.getByRole('button', { name: 'Hesapla' }).click();
-  await expect(res.locator('tr[data-calc-row="MC12"] [data-calc-qty]')).toHaveText('2');
-  await expect(res.locator('tr[data-calc-row="MC16"]')).toHaveCount(0);
-  await calc.locator('#calc-thickness').selectOption({ label: '16,76 mm' });
+  await expect(row('MC12').locator('[data-calc-qty]')).toHaveText('1');
+  await expect(row('PANA-90-12').locator('[data-calc-qty]')).toHaveText('4');
+  await expect(res.locator('tr[data-calc-row="MC16"], tr[data-calc-row="PANA-90-16"]')).toHaveCount(0);
+  // Örnek B: 25 m, FBL115 + RM29, 6+6 → RM12, conta yok
+  await calc.locator('#calc-profile').selectOption({ label: 'FBL 115' });
+  await calc.locator('#calc-handrail').selectOption({ label: 'RM29' });
+  await calc.locator('#calc-meters').fill('25');
   await calc.getByRole('button', { name: 'Hesapla' }).click();
+  await expect(row('RM12-7016').locator('[data-calc-qty]')).toHaveText('5');
+  await expect(row('PANA-115-12').locator('[data-calc-qty]')).toHaveText('5');
+  await expect(res.locator('tr[data-calc-row="MC12"], tr[data-calc-row="MC16"]')).toHaveCount(0);
+  // Küpeşte yok: yalnız FBL + poşetler
+  await calc.locator('#calc-handrail').selectOption({ label: 'Yok' });
+  await calc.getByRole('button', { name: 'Hesapla' }).click();
+  await expect(res.locator('tr[data-calc-row]')).toHaveCount(3);
+
+  // 8+8, FBL90 + MR23, 30 m → forma aktar
+  await calc.locator('#calc-thickness').selectOption({ label: '8+8' });
+  await calc.locator('#calc-profile').selectOption({ label: 'FBL 90' });
+  await calc.locator('#calc-handrail').selectOption({ label: 'MR23' });
+  await calc.locator('#calc-meters').fill('30');
+  await calc.getByRole('button', { name: 'Hesapla' }).click();
+  await expect(row('MR23-7016').locator('[data-calc-qty]')).toHaveText('5');
+  await expect(row('MR23-7016').locator('[data-calc-stock]')).toHaveText('Stok yetersiz: gereken 5, mevcut 0, eksik 5');
   await calc.getByRole('button', { name: 'Forma aktar' }).click();
   await expect(calc.locator('[data-calc-applied]')).toBeVisible();
-  await expect(formQty(cust, 'MR23-7016')).toHaveValue('5');
-  await expect(formQty(cust, 'MC16')).toHaveValue('1');
+  for (const [code, q] of [['FBL90-7016', '5'], ['PANA-L90', '5'], ['PANA-90-16', '5'], ['MR23-7016', '5'], ['MC16', '1']]) await expect(formQty(cust, code), code).toHaveValue(q);
   await expect(cust.locator('table.profile-pick tr', { hasText: 'MC16' }).locator('[data-calc-mark="calc"]')).toHaveText('hesaplandı');
   // Müşteri değiştirir; adetli aksesuarı elle ekler
   await formQty(cust, 'MC16').fill('3');
   await expect(cust.locator('table.profile-pick tr', { hasText: 'MC16' }).locator('[data-calc-mark="edited"]')).toHaveText('değiştirildi');
   await formQty(cust, 'SPIGOTI').fill('12');
-  // Yeniden hesap (40 m): üzerine yazılacak adetler önce gösterilir; "Vazgeç" hiçbir şeyi değiştirmez
+  // Yeniden hesap (40 m) formu değiştirmez; aktarımda üzerine yazılacaklar önce gösterilir; "Vazgeç" hiçbir şeyi değiştirmez
   await calc.locator('#calc-meters').fill('40');
   await calc.getByRole('button', { name: 'Hesapla' }).click();
-  await expect(res.locator('tr[data-calc-row="MR23-7016"] [data-calc-qty]')).toHaveText('7');
+  await expect(row('MR23-7016').locator('[data-calc-qty]')).toHaveText('7');
+  await expect(formQty(cust, 'MC16')).toHaveValue('3');
   await calc.getByRole('button', { name: 'Forma aktar' }).click();
   const confirm = calc.locator('[data-calc-confirm]');
   await expect(confirm).toContainText('Girdiğiniz miktarların üzerine yazılacak');
-  await expect(confirm.locator('li')).toHaveCount(2);
-  await expect(confirm).toContainText('MC16 — ');
+  await expect(confirm.locator('li')).toHaveCount(5);
   await expect(confirm).toContainText(': 3 → 1');
   await expect(confirm).toContainText(': 5 → 7');
   await confirm.getByRole('button', { name: 'Vazgeç' }).click();
@@ -166,17 +175,22 @@ test('müşteri: hesaplayıcı — MR23 kalınlığa göre MC12 / MC16; forma ak
   await expect(formQty(cust, 'MC16')).toHaveValue('1');
   await expect(formQty(cust, 'MR23-7016')).toHaveValue('7');
   await expect(formQty(cust, 'SPIGOTI')).toHaveValue('12'); // hesap dışındaki ürüne dokunulmadı
+  // Müşteri hesaplanan miktarları değiştirebilir: bu sipariş yalnızca küpeşte + conta + spigot
+  for (const code of ['FBL90-7016', 'PANA-L90', 'PANA-90-16']) await formQty(cust, code).fill('0');
 
-  // Eksik katsayı: hiçbir miktar üretilmez, eksik değer ve yöneticinin tamamlaması gerektiği söylenir
-  await calc.locator('#calc-system').selectOption({ label: 'EKSIK — Eksik deneme' });
-  await expect(calc.locator('#calc-color')).toBeDisabled();
-  await expect(calc.locator('#calc-thickness')).toBeDisabled();
+  // Eksik katsayı (yöneticinin yeni profili): hiçbir miktar üretilmez, eksik değer ve yöneticinin tamamlaması gerektiği söylenir
+  await calc.locator('#calc-profile').selectOption({ label: 'Eksik deneme' });
   await calc.locator('#calc-meters').fill('10');
   await calc.getByRole('button', { name: 'Hesapla' }).click();
   await expect(calc.locator('[data-calc-errors]')).toContainText('GK15 için 1 m korkuluk başına tüketim katsayısı girilmemiş');
   await expect(calc.locator('[data-calc-errors]')).toContainText('yöneticinin tamamlaması gerekiyor');
   await expect(calc.locator('[data-calc-result]')).toHaveCount(0);
   await expect(formQty(cust, 'MR23-7016')).toHaveValue('7');
+
+  // Hesap hiçbir şey yazmadı: stok hareketi / sipariş yok
+  const db0 = await prisma();
+  const moves = await db0.stockMovement.count();
+  await db0.$disconnect();
 
   // Gönderim: stok uyarısı (yalnızca bu formdaki yetmeyen ürünler) — engellemez
   await cust.fill('#title', 'Metraj hesabı');
@@ -199,9 +213,45 @@ test('müşteri: hesaplayıcı — MR23 kalınlığa göre MC12 / MC16; forma ak
     expect(Object.fromEntries(items.map((i) => [i.code, i.qty]))).toEqual({ 'MR23-7016': 7, MC16: 1, SPIGOTI: 12 });
     expect(await db.adminAlert.count({ where: { orderId: id, type: 'STOCK_SHORTAGE' } })).toBe(1);
     expect(await db.adminAlert.count({ where: { orderId: id } })).toBe(1);
+    expect(await db.stockMovement.count(), 'hesap ve sipariş stok hareketi yazmaz').toBe(moves);
   } finally {
     await db.$disconnect();
   }
+});
+
+test('müşteri: hesaplayıcı Romence panelde Romence; tablette 3, mobilde tek sütun — yatay taşma yok; ürün kodları çevrilmez', async ({ browser }) => {
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.context().addCookies([{ name: 'takip_lang', value: 'ro', url: new URL(cust.url()).origin }]);
+  await cust.goto('/siparisler/yeni?tip=PROFILE_ORDER');
+  const calc = cust.locator('#hesaplayici');
+  await expect(cust.locator('html')).toHaveAttribute('lang', 'ro');
+  await expect(calc.getByRole('heading', { name: 'Calculator profile și accesorii' })).toBeVisible();
+  expect(await calc.locator('.calc-grid label').allInnerTexts()).toEqual(['Tip geam', 'Culoare profil', 'Dimensiune profil', 'Mână curentă', 'Metri totali']);
+  expect(await calc.locator('#calc-handrail option').allInnerTexts()).toEqual(['Fără', 'MR23', 'RM29']);
+  await calc.locator('#calc-thickness').selectOption({ label: '6+6' });
+  await calc.locator('#calc-color').selectOption('ELOXAT');
+  await calc.locator('#calc-profile').selectOption({ label: 'FBL 115' });
+  await calc.locator('#calc-handrail').selectOption({ label: 'MR23' });
+  await calc.locator('#calc-meters').fill('60');
+  await calc.getByRole('button', { name: 'Calculează' }).click();
+  const res = calc.locator('[data-calc-result]');
+  // Örnek D (Eloxat): FBL115 10, L115/115-12 10, MR23 10, MC12 3
+  for (const [code, qty, unit] of [['FBL115-ELX', '10', 'bară'], ['PANA-L115', '10', 'pungi'], ['PANA-115-12', '10', 'pungi'], ['MR23-ELX', '10', 'bară'], ['MC12', '3', 'cutii']]) {
+    await expect(res.locator(`tr[data-calc-row="${code}"] [data-calc-qty]`), code).toHaveText(qty);
+    await expect(res.locator(`tr[data-calc-row="${code}"] [data-calc-unit]`), code).toHaveText(unit);
+  }
+  await expect(res.getByRole('button', { name: 'Transferă în formular' })).toBeVisible();
+  await expect(res.locator('thead')).toContainText('Cod produs');
+  for (const [w, cols] of [[900, 3], [390, 1]] as const) {
+    await cust.setViewportSize({ width: w, height: 900 });
+    const xs = await calc.locator('.calc-grid .calc-field').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+    expect(new Set(xs).size, `${w}px: ${cols} sütun`).toBe(cols);
+    // Hesaplayıcı kartı ekrandan taşmaz ve kendi içinde yatay kaydırma gerektirmez (sonuç tablosu kendi kaydırma kutusunda)
+    const [right, sw, cw, iw] = await calc.evaluate((el) => [el.getBoundingClientRect().right, el.scrollWidth, el.clientWidth, window.innerWidth]);
+    expect(right, `${w}px: kart ekranda`).toBeLessThanOrEqual(iw + 1);
+    expect(sw, `${w}px: yatay taşma yok`).toBeLessThanOrEqual(cw + 1);
+  }
+  await cust.context().close();
 });
 
 test('yönetici: "Rezerve" (onaylı, depoya gitmemiş — stok hareketi değil); kritik eşik → tek "Önemli kararlar" kaydı', async ({ browser }) => {

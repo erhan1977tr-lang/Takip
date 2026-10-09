@@ -9,3 +9,4 @@ export const PACK_CONTENTS = Object.freeze([
   Object.freeze({ code: 'MC12', content: '27', measure: 'M' }),
   Object.freeze({ code: 'MC16', content: '43', measure: 'M' }),
 ]);
+

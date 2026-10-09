@@ -63,7 +63,9 @@ async function approvedOrder(lines) {
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) return;
   db = await getDb();
-  await resetDb(db); // roller, sipariş tipleri, profil kataloğu (27 ürün) ve kesin paket içerikleri
+  // roller, sipariş tipleri, profil kataloğu (27 ürün) ve kesin paket içerikleri — korkuluk varsayılanları (karar 203) OLMADAN:
+  // bu dosya yöneticinin kendi ayarını sıfırdan kurar (varsayılanlar: test/db/railing-calc.test.js)
+  await resetDb(db, { calcDefaults: false });
   factory = await db.customer.create({ data: { name: 'GKH', type: 'FACTORY' } });
   firm = await db.customer.create({ data: { name: 'Hesap Cam', prefix: 'HES' } });
   const mk = (key, appRole, customerId, extra = {}) =>
@@ -175,7 +177,8 @@ dbTest('hesap (karar 175–176): bar boyu girilmeden hesap yok (eksik adıyla); 
   // Pasif sistem hesaplanmaz; müşterinin seçenek listesinde yok
   await calc.saveSystem(db, { id: sys.id, nameRo: sys.nameRo, nameTr: sys.nameTr, isActive: false }, act(U.admin));
   assert.deepEqual((await calc.runCalc(db, { systemId: sys.id, color: 'RAL7016', thicknessId: t12.id, meters: '30' })).errors, [{ code: 'SYSTEM_INACTIVE' }]);
-  assert.equal((await calc.loadCalcOptions(db)).systems.length, 0);
+  const off = await calc.loadCalcOptions(db);
+  assert.equal(off.profiles.length + off.handrails.length, 0);
   await calc.saveSystem(db, { id: sys.id, nameRo: sys.nameRo, nameTr: sys.nameTr, isActive: true }, act(U.admin));
   // RM29: katalogda yok → yönetici ürünü (paket içeriğiyle) ve sistemi açar; MR23'ün MC kuralı uygulanmaz
   const cat = await db.profileCategory.findUniqueOrThrow({ where: { code: 'PROFILE_ALUMINIU' } });
@@ -187,8 +190,14 @@ dbTest('hesap (karar 175–176): bar boyu girilmeden hesap yok (eksik adıyla); 
   for (const [code, color] of [['RM29-7016', 'RAL7016'], ['RM29-ELX', 'ELOXAT']]) {
     assert.ok((await calc.addCalcItem(db, { systemId: rm.id, slot: 'Profil', productId: (await prod(code)).id, color, perMeter: '1' }, act(U.admin))).ok);
   }
+  // Türü seçilmemiş sistem müşteri hesaplayıcısında görünmez (karar 203); küpeşte olarak işaretlenince görünür
+  assert.deepEqual(await calc.loadCalcOptions(db).then((o) => [o.profiles, o.handrails]), [[], []]);
+  for (const s of [sys, await db.profileSystem.findUniqueOrThrow({ where: { id: rm.id } })]) {
+    assert.ok((await calc.saveSystem(db, { id: s.id, nameRo: s.nameRo, nameTr: s.nameTr, isActive: true, kind: 'HANDRAIL' }, act(U.admin))).ok);
+  }
+  assert.deepEqual((await calc.saveSystem(db, { id: rm.id, nameRo: 'RM29', nameTr: 'RM29', kind: 'BOGUS' }, act(U.admin))), { ok: false, code: 'KIND' });
   const opts = await calc.loadCalcOptions(db);
-  assert.deepEqual(opts.systems.map((s) => [s.code, s.needs]), [['MR23', { color: true, thickness: true }], ['RM29', { color: true, thickness: false }]]);
+  assert.deepEqual([opts.profiles.map((s) => s.code), opts.handrails.map((s) => s.code)], [[], ['MR23', 'RM29']]);
   for (const thicknessId of [t12.id, t16.id, '']) {
     const x = await calc.runCalc(db, { systemId: rm.id, color: 'RAL7016', thicknessId, meters: '30' });
     assert.deepEqual(x.lines.map((l) => [l.code, l.qty]), [['RM29-7016', 5]], 'MC12 / MC16 yok');

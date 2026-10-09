@@ -1162,6 +1162,12 @@ enum ProfileMeasure {
   BUC
 }
 
+// Hesap sisteminin türü (karar 203): korkuluk profili ya da küpeşte
+enum ProfileSystemKind {
+  PROFILE
+  HANDRAIL
+}
+
 // Profil rengi (hesaplayıcının renk seçimi)
 enum ProfileColor {
   RAL7016
@@ -1172,6 +1178,8 @@ enum ProfileColor {
 model ProfileGlassThickness {
   id        String   @id @default(cuid())
   mm        Decimal  @unique @db.Decimal(6, 2)
+  // Müşterinin gördüğü ad (ör. "6+6" — lamine cam; boş = "12,76 mm"; karar 203)
+  label     String?
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   calcItems ProfileCalcItem[]
@@ -1185,6 +1193,9 @@ model ProfileSystem {
   code      String   @unique
   nameRo    String
   nameTr    String
+  // Müşteri hesaplayıcısındaki yeri (karar 203): korkuluk profili (FBL90 / FBL115) ya da küpeşte (MR23 / RM29) — iki AYRI
+  // seçim. Boş = müşteri hesaplayıcısında görünmez (yönetici türünü seçince görünür).
+  kind      ProfileSystemKind?
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   items     ProfileCalcItem[]

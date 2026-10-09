@@ -12,7 +12,7 @@ import { addCalcItem, addThickness, removeCalcItem, saveSystem, setThicknessActi
 const PATH = '/admin/profil-katalogu/hesaplama';
 const CODES: Record<string, string> = {
   FORBIDDEN: 'forbidden', BAD_MM: 'mm', EXISTS: 'exists', NOT_FOUND: 'not_found', CODE: 'code', NAME: 'name', SLOT: 'slot', COLOR: 'color',
-  PER_METER: 'per_meter', PRODUCT: 'product', THICKNESS: 'thickness', OVERLAP: 'overlap', NO_PRODUCT: 'no_product',
+  PER_METER: 'per_meter', PRODUCT: 'product', THICKNESS: 'thickness', OVERLAP: 'overlap', NO_PRODUCT: 'no_product', KIND: 'kind', LABEL: 'label',
 };
 const field = (fd: FormData, k: string) => String(fd.get(k) ?? '');
 /** Sonuç adresi: açık sistem (varsa) + mesaj + bölüm */
@@ -26,7 +26,7 @@ function fail(code: string, system: string | null, anchor: string): never {
 export async function addThicknessAction(fd: FormData) {
   const admin = await requirePermission('CATALOG_MANAGE');
   const system = field(fd, 'sistem') || null;
-  const r = await addThickness(db, { mm: field(fd, 'mm') }, await actorOf(admin));
+  const r = await addThickness(db, { mm: field(fd, 'mm'), label: field(fd, 'label') }, await actorOf(admin));
   if (!r.ok) fail(r.code, system, 'kalinlik');
   revalidatePath(PATH);
   go('ok=added', system, 'kalinlik');
@@ -44,7 +44,8 @@ export async function toggleThicknessAction(fd: FormData) {
 export async function saveSystemAction(fd: FormData) {
   const admin = await requirePermission('CATALOG_MANAGE');
   const id = field(fd, 'id') || null;
-  const r = await saveSystem(db, { id, code: field(fd, 'code'), nameRo: field(fd, 'nameRo'), nameTr: field(fd, 'nameTr'), isActive: !!fd.get('isActive') }, await actorOf(admin));
+  // kind: müşteri hesaplayıcısındaki yeri (karar 203) — formda her zaman var (boş = gösterilmez)
+  const r = await saveSystem(db, { id, code: field(fd, 'code'), nameRo: field(fd, 'nameRo'), nameTr: field(fd, 'nameTr'), isActive: !!fd.get('isActive'), kind: field(fd, 'kind') || null }, await actorOf(admin));
   if (!r.ok) fail(r.code, id, id ? 'sistem' : 'yeni-sistem');
   revalidatePath(PATH);
   go(id ? 'ok=saved' : 'ok=added', r.id, 'sistem');

@@ -360,6 +360,7 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .notif-bell:focus-visible, .notif-read:focus-visible, .notif-switch:focus-visible, .notif-close:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .notif-badge { position: absolute; top: -5px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
 /* Okunmamış sipariş mesajı sayacı (Paket 9, karar 199): sol menü, sipariş listesi satırı, notlar başlığı — tek görünüm */
+.notes-toggle { display: inline-flex; margin: 2px 0 10px; padding-left: 0; }
 .msg-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; }
 .nav a.active .msg-count, .mobile-nav a.active .msg-count { box-shadow: 0 0 0 2px #fff; }
 .msg-count-link { text-decoration: none; }
@@ -809,21 +810,20 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 /* Profil stoğu (Paket 5): satırdaki kritik eşik formu (yönetici) */
 .threshold-form { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .threshold-form .qty-input { width: 84px; }
-/* Metraj hesaplayıcısı (Paket 5): profil siparişi formunun üstünde yatay, kompakt alan; dar ekranda alt alta */
-.calc-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 6px 0 4px; }
-.calc-bar .calc-field { display: flex; flex-direction: column; min-width: 150px; flex: 1 1 150px; }
-.calc-bar .calc-field label { margin: 0 0 4px; }
-.calc-bar .calc-system { flex: 2 1 220px; }
-.calc-bar .calc-meters { flex: 0 1 140px; min-width: 120px; }
-.calc-bar .calc-meters input { text-align: right; font-weight: 700; }
+/* Korkuluk hesaplayıcısı (karar 204): beş alan geniş ekranda tek satır, tablette 3 / 2 sütun, mobilde tek sütun; eşit yükseklik */
+.calc-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; margin: 6px 0 0; }
+.calc-grid .calc-field { display: flex; flex-direction: column; min-width: 0; }
+.calc-grid .calc-field label { margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calc-grid select, .calc-grid input { width: 100%; min-width: 0; height: 38px; }
+.calc-grid .calc-meters input { text-align: right; font-weight: 700; }
+.calc-actions { margin-top: 10px; }
+@media (max-width: 1100px) { .calc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .calc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .calc-grid { grid-template-columns: minmax(0, 1fr); } .calc-actions .btn { width: 100%; } }
 .calc-result { margin-top: 12px; }
 .calc-result .sub-title { margin-top: 0; }
 .calc-result .row, .calc-card .alert .row { margin-top: 10px; }
 .calc-card .alert { margin-top: 12px; }
-@media (max-width: 640px) {
-  .calc-bar .calc-field, .calc-bar .calc-meters { flex: 1 1 100%; }
-  .calc-bar > .btn { width: 100%; }
-}
 /* Tedarikçi siparişi (Paket 6): satır düzenleyicisi, onay / gönder kutusu; geçersiz alan kırmızı çerçeveli */
 .supplier-lines td { vertical-align: top; }
 .supplier-lines select { min-width: 200px; }

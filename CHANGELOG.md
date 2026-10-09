@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.60.0 — 09.10.2026
+
+Profil ve aksesuar hesaplayıcısı (korkuluk kuralları) ve Paket 9 mesaj "okundu" düzeltmesi (kararlar 203–205). Veritabanı
+şeması: sistem türü (`ProfileSystem.kind`: korkuluk profili / küpeşte) ve cam kalınlığının müşteriye görünen adı
+(`ProfileGlassThickness.label`); migration elle yazıldı, yalnızca sütun ekler.
+
+- **Korkuluk hesaplayıcısı hazır gelir:** FBL 90 / FBL 115 korkuluk profilleri, MR23 / RM29 küpeşteler ve 6+6 / 8+8 cam
+  hesaplayıcı ayarına bir kez yazılır (yönetici bir değer girmek zorunda değil). FBL: 6 m boy, her boy için bir PANA-L ve bir
+  PANA-12 (6+6) / PANA-16 (8+8) poşeti; MR23: 6 m boy + MC12 (27 m / kutu, 6+6) ya da MC16 (43 m / kutu, 8+8); RM29: RM12 (6+6) /
+  RM16 (8+8), conta yok. GK15 ve AD45 hesaplayıcıya girmez. Yöneticinin değiştirdiği ayar ve paket içerikleri ezilmez; katalogda bir
+  kod eksikse ya da birimi yanlışsa hiçbir şey yazılmaz ve hesaplayıcı ayarı sayfası eksik kodları gösterir.
+- **Müşteri ekranı:** Cam tipi, Profil rengi (7016 MAT / Eloxat), Profil tipi, Küpeşte (Yok / MR23 / RM29) ve Toplam metre —
+  masaüstünde tek satır, tablet ve telefonda alt alta, taşma yok. Profil ve küpeşte birlikte hesaplanır; sonuç tablosu ürün kodu,
+  açıklama, renk, miktar ve birimi gösterir. Forma aktarım eskisi gibi: üzerine yazılacak miktarlar önce gösterilir, onaysız hiçbir
+  şey değişmez. Hesap sipariş, stok hareketi veya bildirim oluşturmaz. Türkçe ve Romence.
+- **Yönetici:** hesaplayıcı ayarında sistemin türü (korkuluk profili / küpeşte / müşteriye gösterilmez) ve cam kalınlığının adı
+  (ör. 6+6) düzenlenir; değişiklikler denetim kaydına yazılır.
+- **Mesaj okundu düzeltmesi:** siparişi açmak, yenilemek ve otomatik yenileme mesajları artık okumaz. Okunmamış mesaj varsa Notlar
+  listesi kapalı başlar ("Mesajları göster (n yeni)"); mesaj ekranda görülünce okunur (sayaç ve zil bildirimi birlikte). Mesaj
+  bildirimine tıklamak Notlar bölümünü açar, bildirimi mesaj görülünce okur; öbür bildirimler eskisi gibi tıklanınca okunur.
+  Okunma kullanıcıya özeldir; başka kullanıcının sayacı değişmez.
+
 ## 3.59.0 — 09.10.2026
 
 Fonksiyonel paket 9 — genel UX, bildirimler, dil ayarları, anlık arama ve oturum güvenliği (kararlar 198–202). Veritabanı şeması:

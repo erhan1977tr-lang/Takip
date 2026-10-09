@@ -4,11 +4,11 @@
 import type { MsgKey, T } from './i18n';
 import { fmtDec } from './format';
 
-export type CalcError = { code: string; slot?: string; product?: string; color?: string | null; thicknessMm?: string | null; max?: number };
+export type CalcError = { code: string; slot?: string; product?: string; color?: string | null; thicknessMm?: string | null; max?: number; system?: string };
 
 /** Yöneticinin ayarından kaynaklanan (müşterinin düzeltemeyeceği) hatalar */
 const ADMIN_CODES = new Set(['SYSTEM_EMPTY', 'NO_OPTION', 'AMBIGUOUS', 'PRODUCT_INACTIVE', 'PRODUCT_GONE', 'NO_PER_METER', 'NO_PACK', 'NO_THICKNESS']);
-const KNOWN = new Set([...ADMIN_CODES, 'METERS_EMPTY', 'METERS_BAD', 'METERS_ZERO', 'METERS_TOO_LARGE', 'SYSTEM_INACTIVE', 'COLOR_REQUIRED', 'THICKNESS_REQUIRED', 'NO_PRODUCTS', 'TOO_MANY']);
+const KNOWN = new Set([...ADMIN_CODES, 'PROFILE_REQUIRED', 'METERS_EMPTY', 'METERS_BAD', 'METERS_ZERO', 'METERS_TOO_LARGE', 'SYSTEM_INACTIVE', 'COLOR_REQUIRED', 'THICKNESS_REQUIRED', 'NO_PRODUCTS', 'TOO_MANY']);
 
 /** Koşulun metni: "Eloxat · 12,76 mm" (koşul yoksa "bu seçim") */
 export function calcCondition(t: T, e: { color?: string | null; thicknessMm?: string | null }): string {
@@ -26,7 +26,7 @@ export function calcCondition(t: T, e: { color?: string | null; thicknessMm?: st
 export function calcErrorText(t: T, e: CalcError, { system = '', customer = false }: { system?: string; customer?: boolean } = {}): string {
   if (!KNOWN.has(e.code)) return t('profile.calc.unavailable');
   const text = t(`profile.calc.error.${e.code}` as MsgKey, {
-    slot: e.slot ?? '', product: e.product ?? '', system, condition: calcCondition(t, e), max: fmtDec(e.max ?? 0, 0),
+    slot: e.slot ?? '', product: e.product ?? '', system: e.system ?? system, condition: calcCondition(t, e), max: fmtDec(e.max ?? 0, 0),
   });
   return customer && ADMIN_CODES.has(e.code) ? `${text} ${t('profile.calc.adminNeeded')}` : text;
 }

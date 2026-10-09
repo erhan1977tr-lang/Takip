@@ -41,7 +41,7 @@ test('temelden SONRA gelen bildirim yenidir: açılır bildirim + tam bir ses; o
   const fresh = s.poll([item('n1', 10), ...old]);
   assert.deepEqual(fresh.map((i) => i.id), ['n1']);
   assert.deepEqual([s.sounds, s.toasts.length], [1, 1]);
-  assert.deepEqual(s.toasts[0], { single: true, id: 'n1', title: 'Başlık n1', body: 'Gövde n1', link: '/siparisler/n1' });
+  assert.deepEqual(s.toasts[0], { single: true, id: 'n1', title: 'Başlık n1', body: 'Gövde n1', link: '/siparisler/n1', readOnView: false });
   // Aynı bildirim sonraki yoklamada yeniden "yeni" olmaz
   s.poll([item('n1', 10), ...old]);
   assert.deepEqual([s.sounds, s.toasts.length], [1, 1]);

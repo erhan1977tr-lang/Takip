@@ -88,9 +88,11 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       // Metraj hesaplayıcısı (Paket 5, karar 175): yönetici etkin bir sistem tanımlamadıysa gösterilmez
       loadCalcOptions(db),
     ]);
-    const calc = calcOptions.systems.length ? {
-      systems: calcOptions.systems.map((x) => ({ id: x.id, label: `${x.code} — ${localName(x, locale)}`, needsColor: x.needs.color, needsThickness: x.needs.thickness })),
-      thicknesses: calcOptions.thicknesses.map((x) => ({ id: x.id, label: t('profile.calc.mm', { mm: fmtDec(x.mm, 2) }) })),
+    // Hesaplayıcı (karar 203–204): en az bir korkuluk profili varsa; seçenek adları kullanıcının dilinde, kodlar çevrilmez
+    const calc = calcOptions.profiles.length ? {
+      profiles: calcOptions.profiles.map((x) => ({ id: x.id, label: localName(x, locale) })),
+      handrails: calcOptions.handrails.map((x) => ({ id: x.id, label: localName(x, locale) })),
+      thicknesses: calcOptions.thicknesses.map((x) => ({ id: x.id, label: x.label ?? t('profile.calc.mm', { mm: fmtDec(x.mm, 2) }) })),
     } : null;
     const pdraft: ProfileDraft | undefined = draftRow ? {
       id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',

@@ -2,7 +2,7 @@
 // anlık arama ve oturum kuralı — saf kurallar ve yapı denetimleri. Veritabanı davranışı: test/db/package9.test.js.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 import { CUSTOMER_DEFAULT_LANG, customerMailLang, snapshotLang } from '../server/notifications/lang.js';
 import { UNREAD_WINDOW_DAYS, countText, isUnreadNote, unreadSince, seesInternal, NOTE_EVENT } from '../server/notes/unread.js';
 import { INAPP_RULES, renderInApp } from '../server/notifications/inapp.js';
@@ -184,10 +184,14 @@ test('formun anahtarı hiçbir role dönmez; not ekranı ve liste aynı okunmam�
   assert.equal((list.match(/unreadNotesFor\(user, /g) ?? []).length, 2, 'müşteri ve iç liste');
   const layout = strip(read('app/(panel)/layout.tsx'));
   assert.ok(layout.includes('unreadTotal(db, user)'));
-  // Okundu: sayfa açılınca, istemci bileşeni — yalnızca görünür sekmede, en yeni not değiştiğinde
-  const mark = read('components/MarkNotesRead.tsx');
-  assert.ok(mark.includes("document.visibilityState !== 'visible'") && mark.includes('done.current === key'));
+  // Okundu (karar 205): yalnızca mesaj ekranda GERÇEKTEN görülünce — okunmamış varsa liste kapalı başlar; açıkken notun
+  // kendisi görünür sekmede belirli oranla ve süreyle görünmeli; sayfa açılışı / yenileme / yoklama okumaz
+  const mark = read('components/NotesList.tsx');
+  assert.ok(mark.includes('useState(unread === 0)'), 'okunmamış varsa kapalı başlar');
+  assert.ok(mark.includes('new IntersectionObserver(') && mark.includes("document.visibilityState !== 'visible'") && mark.includes('SEEN_MS'));
+  assert.ok(mark.includes("if (!open || !root"), 'kapalı liste hiçbir şey okumaz');
   assert.ok(!/fetch\(|setInterval/.test(mark), 'ayrı yoklama yok');
+  assert.ok(!fs.existsSync(new URL('../components/MarkNotesRead.tsx', import.meta.url)), 'sayfa açılınca okuyan eski bileşen kaldırıldı');
 });
 
 test('dil ayarı (karar 198): bütün roller için (kendi kaydı); e-posta tercihi yalnızca müşteri hesabında; seçenekler Otomatik / Türkçe / Română', () => {
@@ -228,7 +232,31 @@ test('30 dakika kuralı: 29. dakikada açık, 30. dakikada kapalı; otomatik ist
   assert.equal(sessionState({ expiresAt: now + DAY, lastSeenAt: now - 30 * MIN + 1 }, now), 'ok');
   assert.equal(sessionState(s(30), now), 'idle');
   // Bu paketteki yeni sunucu kodu oturuma yazmaz
-  for (const f of ['server/notes/unread.js', 'components/MarkNotesRead.tsx', 'components/LiveSearch.tsx', 'app/(panel)/ayarlar/actions.ts']) {
+  for (const f of ['server/notes/unread.js', 'components/NotesList.tsx', 'components/LiveSearch.tsx', 'app/(panel)/ayarlar/actions.ts']) {
     assert.ok(!/recordActivity|reportSessionActivity|lastSeenAt/.test(strip(read(f))), f);
   }
+});
+
+test('okundu düzeltmesi (karar 205): mesaj bildirimi tıklanınca okunmaz (yalnızca mesaj görülünce); öbür bildirim türleri eskisi gibi tıklanınca okunur', async () => {
+  const { toastFor } = await import('../server/notifications/feed.js');
+  const lib = readFileSync('lib/notifications.ts', 'utf8');
+  assert.match(lib, /readOnView: n\.type === NOTE_EVENT/, 'akış: yalnızca sipariş mesajı bildirimi "görülünce okunur"');
+  assert.equal(NOTE_EVENT, 'ORDER_NOTE_ADDED');
+  const center = readFileSync('components/NotificationCenter.tsx', 'utf8');
+  const open = center.slice(center.indexOf('const openItem'), center.indexOf('const badge'));
+  assert.match(open, /if \(!readOnView\) \{ markRead\(id, link\); return; \}/, 'öbür türler: tıklama okur (değişmedi)');
+  assert.equal(open.match(/markRead\(/g)?.length, 1, 'mesaj bildirimi yolunda okuma isteği yok');
+  assert.match(center, /openItem\(e, n\.id, n\.link, n\.readOnView\)/);
+  assert.match(center, /readOnView/);
+  // Açılır bildirim de aynı bilgiyi taşır
+  const one = { id: 'n1', title: 't', body: '', link: '/siparisler/x#notlar', createdAt: '2026-10-09T10:00:00.000Z' };
+  assert.equal(toastFor([{ ...one, readOnView: true }])?.readOnView, true);
+  assert.equal(toastFor([one])?.readOnView, false);
+  // Sipariş sayfası açılınca okuma yok: okuma yalnızca liste açık + görünürlük gözlemiyle (NotesList), sayfada başka çağrı yok
+  const page = readFileSync('app/(panel)/siparisler/[id]/page.tsx', 'utf8');
+  assert.equal(page.match(/markNotesReadAction/g)?.length, 2, 'içe aktarma + NotesList\'e verilen işlev — sayfa kendisi çağırmaz');
+  assert.doesNotMatch(page, /markNotesReadAction\(/);
+  const list = readFileSync('components/NotesList.tsx', 'utf8');
+  assert.match(list, /useState\(unread === 0\)/, 'okunmamış varsa liste kapalı başlar');
+  assert.doesNotMatch(list, /setInterval|takip:poll|AutoRefresh/, 'yoklama okumaz');
 });

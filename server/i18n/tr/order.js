@@ -320,6 +320,10 @@ export default {
     // Okunmamış mesaj sayacı (karar 199)
     unread: '{n} okunmamış mesaj',
     new: 'Yeni',
+    // Mesaj listesi (karar 205): okunmamış varsa kapalı başlar; görülen mesaj okunur
+    show: 'Mesajları göster',
+    showNew: 'Mesajları göster ({n} yeni)',
+    hide: 'Mesajları gizle',
     send: 'Gönder',
     // Otomatik çeviri (karar 127). translatedLabel arayüz diline göre DEĞİL, çevirinin diline göre okunur:
     // Türkçe çevirinin etiketi bu sözlükten, Romence çevirinin etiketi Romence sözlükten gelir.

@@ -163,11 +163,18 @@ export function NotificationCenter({ feed, sound, m, intl }: { feed: Feed; sound
       router.refresh();
     });
   };
-  const openItem = (e: React.MouseEvent, id: string, link: string | null) => {
+  const openItem = (e: React.MouseEvent, id: string, link: string | null, readOnView = false) => {
     e.preventDefault();
     setOpen(false);
     setToast(null);
-    markRead(id, link);
+    if (!readOnView) { markRead(id, link); return; }
+    // Sipariş mesajı (karar 205): tıklamak okumaz — mesajlar bölümü açılır, mesaj ekranda görülünce okunur
+    if (!link) return;
+    const target = new URL(link, window.location.href);
+    if (target.pathname === window.location.pathname && target.hash) {
+      if (window.location.hash === target.hash) window.dispatchEvent(new HashChangeEvent('hashchange'));
+      else window.location.hash = target.hash.slice(1);
+    } else router.push(link);
   };
 
   const badge = badgeText(data.unread);
@@ -197,7 +204,7 @@ export function NotificationCenter({ feed, sound, m, intl }: { feed: Feed; sound
               {data.items.map((n) => (
                 <li key={n.id} className={`notif-item${n.isRead ? '' : ' unread'}`} data-id={n.id}>
                   {n.link ? (
-                    <a href={n.link} className="notif-main" onClick={(e) => openItem(e, n.id, n.link)}>
+                    <a href={n.link} className="notif-main" onClick={(e) => openItem(e, n.id, n.link, n.readOnView)}>
                       <span className="notif-title">{n.title}</span>
                       {n.body && <span className="notif-body">{n.body}</span>}
                       <span className="notif-time">{time.format(new Date(n.createdAt))}</span>
@@ -236,7 +243,7 @@ export function NotificationCenter({ feed, sound, m, intl }: { feed: Feed; sound
           </div>
           {toast.single ? (
             toast.link ? (
-              <a href={toast.link} className="notif-main" onClick={(e) => openItem(e, toast.id, toast.link)}>
+              <a href={toast.link} className="notif-main" onClick={(e) => openItem(e, toast.id, toast.link, toast.readOnView)}>
                 <span className="notif-title">{toast.title}</span>
                 {toast.body && <span className="notif-body">{toast.body}</span>}
               </a>

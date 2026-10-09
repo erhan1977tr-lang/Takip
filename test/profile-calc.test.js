@@ -332,15 +332,17 @@ test('hız sınırı: hesaplayıcı ve gönderim öncesi stok uyarısı kullanı
   assert.ok(PROFILE_CALC_LIMITS.calc.limit >= 30 && PROFILE_CALC_LIMITS.stockCheck.limit >= 10);
 });
 
-test('seed: yalnızca ürün sahibinin kesin paket içerikleri (GK15 137, AD45 24, MC12 27, MC16 43 m / kutu); katsayı, sistem, RM29 yok', () => {
+test('seed: ürün sahibinin kesin paket içerikleri (GK15 137, AD45 24, MC12 27, MC16 43 m / kutu); korkuluk varsayılanları ayrı adımda, tek yazıcıdan (karar 203); RM29 ürünü yok', () => {
   assert.deepEqual(PACK_CONTENTS.map((p) => [p.code, p.content, p.measure]), [['GK15', '137', 'M'], ['AD45', '24', 'M'], ['MC12', '27', 'M'], ['MC16', '43', 'M']]);
   for (const p of PACK_CONTENTS) assert.ok(PROFILE_PRODUCTS.some((x) => x.code === p.code), p.code);
   assert.equal(PROFILE_PRODUCTS.some((x) => x.code.startsWith('RM29')), false, 'RM29 kendiliğinden eklenmez');
   const step = read('prisma/seed/steps/profile-calc.mjs');
-  assert.doesNotMatch(step, /profileSystem\.(create|upsert)|profileCalcItem|profileGlassThickness|perMeter/, 'seed sistem / satır / kalınlık / katsayı yazmaz');
+  // Seed adımları sistem / satır / kalınlık yazmaz: korkuluk varsayılanlarının TEK yazıcısı server/profile/calc-defaults.js
+  assert.doesNotMatch(step, /profileSystem\.(create|upsert)|profileCalcItem|profileGlassThickness|perMeter/, 'seed adımı doğrudan yazmaz');
+  assert.match(step, /applyRailingDefaults\(db\)/);
   assert.match(step, /packContent: null, packMeasure: null/, 'yalnızca boş içeriğe yazar');
   assert.match(step, /PACK_SEED_ACTION/);
-  assert.match(read('prisma/seed/base.mjs'), /profileCatalogStep, profileCalcStep\]/, 'katalogdan sonra çalışır');
+  assert.match(read('prisma/seed/base.mjs'), /profileCatalogStep, profileCalcStep, profileCalcDefaultsStep\]/, 'katalogdan ve paket içeriklerinden sonra çalışır');
 });
 
 test('yapı: stoğa yazan her yol ürün kilidini alır; stok sayfası denetimciye salt okunur; müşteri işlemi genel stok okumaz', () => {

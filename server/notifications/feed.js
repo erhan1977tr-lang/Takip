@@ -53,12 +53,12 @@ export function soundFor({ fresh, soundEnabled, interacted, stored = null }) {
 /**
  * Yeni bildirim partisinin açılır bildirimi: tek bildirimse kendisi (başlık, metin, bağlantı); birden çoksa tek özet
  * (en yeni üç başlık + kalan sayısı) — parti başına tek açılır bildirim.
- * @param {{ id: string, title: string, body: string, link: string | null }[]} fresh
- * @returns {null | { single: true, id: string, title: string, body: string, link: string | null } | { single: false, count: number, titles: string[], more: number }}
+ * @param {{ id: string, title: string, body: string, link: string | null, readOnView?: boolean }[]} fresh
+ * @returns {null | { single: true, id: string, title: string, body: string, link: string | null, readOnView: boolean } | { single: false, count: number, titles: string[], more: number }}
  */
 export function toastFor(fresh) {
   if (!fresh.length) return null;
-  if (fresh.length === 1) return { single: true, id: fresh[0].id, title: fresh[0].title, body: fresh[0].body, link: fresh[0].link ?? null };
+  if (fresh.length === 1) return { single: true, id: fresh[0].id, title: fresh[0].title, body: fresh[0].body, link: fresh[0].link ?? null, readOnView: fresh[0].readOnView === true };
   return { single: false, count: fresh.length, titles: fresh.slice(0, 3).map((i) => i.title), more: Math.max(0, fresh.length - 3) };
 }
 

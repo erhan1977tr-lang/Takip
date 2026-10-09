@@ -320,6 +320,10 @@ export default {
     // Contor mesaje necitite (decizia 199)
     unread: '{n} mesaje necitite',
     new: 'Nou',
+    // Lista de mesaje (decizia 205): închisă dacă există mesaje necitite; mesajul văzut devine citit
+    show: 'Arată mesajele',
+    showNew: 'Arată mesajele ({n} noi)',
+    hide: 'Ascunde mesajele',
     send: 'Trimite',
     // Traducere automată (decizia 127). translatedLabel se citește după LIMBA traducerii, nu după limba interfeței:
     // eticheta traducerii în română vine din acest dicționar, cea a traducerii în turcă din dicționarul turcesc.

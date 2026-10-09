@@ -28,6 +28,8 @@ const MSG: Record<string, [string, MsgKey]> = {
   per_meter: ['error', 'profile.calcAdmin.msg.perMeter'],
   product: ['error', 'profile.calcAdmin.msg.product'],
   thickness: ['error', 'profile.calcAdmin.msg.thickness'],
+  kind: ['error', 'profile.calcAdmin.msg.kind'],
+  label: ['error', 'profile.calcAdmin.msg.label'],
   overlap: ['error', 'profile.calcAdmin.msg.overlap'],
   no_product: ['error', 'profile.calcAdmin.msg.noProduct'],
 };
@@ -39,7 +41,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
   await requirePermission('CATALOG_MANAGE');
   const { t, locale } = await getT();
   const sp = await searchParams;
-  const [{ systems, thicknesses }, products] = await Promise.all([
+  const [{ systems, thicknesses, defaults }, products] = await Promise.all([
     loadCalcAdmin(db),
     db.profileProduct.findMany({ orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { code: 'asc' }], select: { id: true, code: true, nameTr: true, nameRo: true, isActive: true } }),
   ]);
@@ -60,6 +62,16 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
         <p className="muted small">{t('profile.calcAdmin.rule')}</p>
       </div>
       {msg && <div className={`alert ${msg[0] === 'ok' ? 'alert-ok' : 'alert-error'}`} role={msg[0] === 'ok' ? 'status' : 'alert'}>{t(msg[1])}</div>}
+      {/* Korkuluk hesaplayıcısının varsayılanları (karar 203): yazıldı mı; yazılamadıysa eksik / uyumsuz ürün kodları */}
+      {defaults.applied ? (
+        <div className="alert alert-info" data-calc-defaults="applied">{t('profile.calcAdmin.defaults.applied')}</div>
+      ) : (defaults.missing.length > 0 || defaults.wrongUnit.length > 0) ? (
+        <div className="alert alert-error" role="alert" data-calc-defaults="blocked">
+          <b>{t('profile.calcAdmin.defaults.blocked')}</b>
+          {defaults.missing.length > 0 && <div className="mono small" data-missing-codes>{t('profile.calcAdmin.defaults.missing', { codes: defaults.missing.join(', ') })}</div>}
+          {defaults.wrongUnit.length > 0 && <div className="mono small">{t('profile.calcAdmin.defaults.wrongUnit', { codes: defaults.wrongUnit.map((w) => `${w.code} (${w.unit} ≠ ${w.expected})`).join(', ') })}</div>}
+        </div>
+      ) : null}
 
       <div className="grid-2">
         <div className="card" id="kalinlik">
@@ -71,7 +83,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
                 <tbody>
                   {thicknesses.map((x) => (
                     <tr key={x.id} data-thickness={x.mm.toString()} style={x.isActive ? undefined : { opacity: 0.55 }}>
-                      <td><b>{mm(x.mm)}</b></td>
+                      <td><b>{x.label ?? mm(x.mm)}</b>{x.label && <span className="muted small"> · {mm(x.mm)}</span>}</td>
                       <td>{x.isActive ? <Badge tone="ok">{t('profile.calcAdmin.thickness.active')}</Badge> : <Badge tone="muted">{t('profile.calcAdmin.thickness.inactive')}</Badge>}</td>
                       <td className="actions">
                         <form action={toggleThicknessAction}>
@@ -91,6 +103,8 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
             {keep}
             <label htmlFor="th-mm">{t('profile.calcAdmin.thickness.mm')}</label>
             <input id="th-mm" name="mm" inputMode="decimal" required maxLength={8} className="c-amount" placeholder="12,76" />
+            <label htmlFor="th-label">{t('profile.calcAdmin.thickness.label')}</label>
+            <input id="th-label" name="label" maxLength={20} className="c-amount" placeholder="6+6" title={t('profile.calcAdmin.thickness.labelHint')} />
             <button className="btn">{t('profile.calcAdmin.thickness.add')}</button>
           </form>
         </div>
@@ -112,6 +126,14 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
               <input id="sy-tr" name="nameTr" maxLength={80} />
               <div className="hint">{t('profile.calcAdmin.system.nameTrHint')}</div>
             </div>
+            <div>
+              <label htmlFor="sy-kind">{t('profile.calcAdmin.system.kind')}</label>
+              <select id="sy-kind" name="kind" defaultValue="">
+                <option value="">{t('profile.calcAdmin.system.kindNone')}</option>
+                <option value="PROFILE">{t('profile.calcAdmin.system.kinds.PROFILE')}</option>
+                <option value="HANDRAIL">{t('profile.calcAdmin.system.kinds.HANDRAIL')}</option>
+              </select>
+            </div>
           </div>
           <label className="row" style={{ marginTop: 10 }}>
             <input type="checkbox" name="isActive" defaultChecked /> {t('profile.calcAdmin.system.active')}
@@ -127,7 +149,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
             <table>
               <thead>
                 <tr>
-                  <th>{t('profile.calcAdmin.system.colCode')}</th><th>{t('profile.calcAdmin.system.colName')}</th>
+                  <th>{t('profile.calcAdmin.system.colCode')}</th><th>{t('profile.calcAdmin.system.colName')}</th><th>{t('profile.calcAdmin.system.colKind')}</th>
                   <th className="num">{t('profile.calcAdmin.system.colRows')}</th><th>{t('profile.calcAdmin.system.colState')}</th><th />
                 </tr>
               </thead>
@@ -136,6 +158,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
                   <tr key={s.id} data-system={s.code} className={current?.id === s.id ? 'picked' : undefined} style={s.isActive ? undefined : { opacity: 0.55 }}>
                     <td className="mono"><b>{s.code}</b></td>
                     <td>{localName(s, locale)}</td>
+                    <td data-kind={s.kind ?? ''}>{s.kind === 'PROFILE' || s.kind === 'HANDRAIL' ? t(`profile.calcAdmin.system.kindShort.${s.kind}` as MsgKey) : <span className="muted small" title={t('profile.calcAdmin.system.noKind')}>—</span>}</td>
                     <td className="num">{s.items.length}</td>
                     <td>
                       {!s.isActive && <><Badge tone="muted">{t('profile.calcAdmin.system.inactive')}</Badge> </>}
@@ -163,6 +186,14 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
               <div>
                 <label htmlFor="se-tr">{t('profile.calcAdmin.system.nameTr')}</label>
                 <input id="se-tr" name="nameTr" maxLength={80} defaultValue={current.nameTr} />
+              </div>
+              <div>
+                <label htmlFor="se-kind">{t('profile.calcAdmin.system.kind')}</label>
+                <select id="se-kind" name="kind" defaultValue={current.kind ?? ''}>
+                  <option value="">{t('profile.calcAdmin.system.kindNone')}</option>
+                  <option value="PROFILE">{t('profile.calcAdmin.system.kinds.PROFILE')}</option>
+                  <option value="HANDRAIL">{t('profile.calcAdmin.system.kinds.HANDRAIL')}</option>
+                </select>
               </div>
             </div>
             <label className="row" style={{ marginTop: 10 }}>
@@ -196,7 +227,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
                           <tr key={it.id} data-calc-item={`${slot.label}|${p?.code ?? '-'}`}>
                             <td>{p ? <><b className="mono">{p.code}</b> <span className="muted small">{localName(p, locale)}</span>{!p.isActive && <> <Badge tone="muted">{t('profile.calcAdmin.thickness.inactive')}</Badge></>}</> : <span className="muted">{t('profile.calcAdmin.items.notNeeded')}</span>}</td>
                             <td>{colorText(it.color)}</td>
-                            <td>{it.thickness ? mm(it.thickness.mm) : t('profile.calcAdmin.items.all')}</td>
+                            <td>{it.thickness ? (it.thickness.label ? `${it.thickness.label} (${mm(it.thickness.mm)})` : mm(it.thickness.mm)) : t('profile.calcAdmin.items.all')}</td>
                             <td className="num">
                               {p ? (
                                 <form action={updateItemAction} className="threshold-form">
@@ -265,7 +296,7 @@ export default async function ProfileCalcPage({ searchParams }: { searchParams: 
                 <label htmlFor="it-thickness">{t('profile.calcAdmin.items.thickness')}</label>
                 <select id="it-thickness" name="thicknessId" defaultValue="">
                   <option value="">{t('profile.calcAdmin.items.all')}</option>
-                  {thicknesses.filter((x) => x.isActive).map((x) => <option key={x.id} value={x.id}>{mm(x.mm)}</option>)}
+                  {thicknesses.filter((x) => x.isActive).map((x) => <option key={x.id} value={x.id}>{x.label ? `${x.label} (${mm(x.mm)})` : mm(x.mm)}</option>)}
                 </select>
               </div>
             </div>

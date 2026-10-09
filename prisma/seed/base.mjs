@@ -9,14 +9,16 @@ import { cratesStep } from './steps/crates.mjs';
 import { drawingFilesStep } from './steps/drawing-files.mjs';
 import { offerPricesStep } from './steps/offer-prices.mjs';
 import { profileCatalogStep } from './steps/profile-catalog.mjs';
-import { profileCalcStep } from './steps/profile-calc.mjs';
+import { profileCalcDefaultsStep, profileCalcStep } from './steps/profile-calc.mjs';
 
-export const STEPS = [rolesStep, orderTypesStep, cratesStep, drawingFilesStep, offerPricesStep, profileCatalogStep, profileCalcStep];
+export const STEPS = [rolesStep, orderTypesStep, cratesStep, drawingFilesStep, offerPricesStep, profileCatalogStep, profileCalcStep, profileCalcDefaultsStep];
 
 /** @param {import('@prisma/client').PrismaClient} db */
-export async function runBaseSeed(db, { log = console.log } = {}) {
+export async function runBaseSeed(db, { log = console.log, skip = [] } = {}) {
   const done = [];
   for (const step of STEPS) {
+    // skip: yalnızca testler (ör. hesaplayıcının varsayılanları olmadan yöneticinin kendi ayarını sınayan eski testler)
+    if (step.id && skip.includes(step.id)) continue;
     if (!step.available(db)) {
       log(`  – ${step.name}: tablo yok, atlandı`);
       continue;

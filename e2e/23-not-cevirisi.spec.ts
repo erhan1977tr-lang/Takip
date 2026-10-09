@@ -57,7 +57,7 @@ async function forge(page: Page, url: string, field: string, data: Record<string
 }
 /** Not yazar (sipariş sayfasındaki mevcut form) */
 async function writeNote(page: Page, text: string, internal = false) {
-  await page.goto(orderUrl);
+  await page.goto(`${orderUrl}#notlar`);
   await page.locator('#notlar textarea[name=text]').fill(text);
   if (internal) await page.locator('#notlar input[name=internal]').check();
   await page.locator('#notlar form', { has: page.locator('textarea[name=text]') }).getByRole('button').click();
@@ -173,7 +173,7 @@ test('müşteri Romence yazar → yönetici ve satış özgün notu + Türkçe �
   // Yönetici ve satış: özgün Romence not + hemen altında "Türkçe · otomatik çevrilmiştir" ile Türkçesi
   for (const [who, email, pw] of [['yönetici', ADMIN, ADMIN_PW], ['satış', SALES, TEAM_PW]] as const) {
     const p = await as(browser, email, pw);
-    await p.goto(orderUrl);
+    await p.goto(`${orderUrl}#notlar`);
     const n = noteOf(p, RO_NOTE).first();
     await expect(n.locator('.note-label').first(), who).toHaveText('Özgün mesaj');
     await expect(n.locator('.note-text'), who).toHaveText(RO_NOTE);
@@ -192,7 +192,7 @@ test('müşteri Romence yazar → yönetici ve satış özgün notu + Türkçe �
   }
   // Denetimci: notu görür (mevcut yetkisi) ama yalnızca özgün Romence metni; Türkçe çeviri ekranda da yanıtta da yok
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
-  await insp.goto(orderUrl);
+  await insp.goto(`${orderUrl}#notlar`);
   const own = noteOf(insp, RO_NOTE).first();
   await expect(own.locator('.note-text')).toHaveText(RO_NOTE);
   await expect(own.locator('.note-translation')).toHaveCount(0);
@@ -259,7 +259,7 @@ test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi gö
 
   // Yönetici iç notu görür (çevirisiz); başka firmanın müşterisi siparişi, notları ve çevirileri göremez
   const admin = await as(browser, ADMIN, ADMIN_PW);
-  await admin.goto(orderUrl);
+  await admin.goto(`${orderUrl}#notlar`);
   await expect(noteOf(admin, INTERNAL_NOTE)).toContainText('iç not');
   await expect(noteOf(admin, INTERNAL_NOTE).locator('.note-translation')).toHaveCount(0);
   await expect(admin.locator('#notlar .note')).toHaveCount(3);
@@ -275,7 +275,7 @@ test('iç ekip Türkçe yazar → müşteri özgün notu + Romence çeviriyi gö
   await admin.context().close();
   // Denetimci: ekibin notunu yalnızca özgün Türkçe hâliyle görür (Romence çeviri yok); iç notu eskisi gibi görür
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
-  await insp.goto(orderUrl);
+  await insp.goto(`${orderUrl}#notlar`);
   await expect(insp.locator('#notlar .note')).toHaveCount(3);
   await expect(noteOf(insp, TR_NOTE).first().locator('.note-text')).toHaveText(TR_NOTE);
   await expect(noteOf(insp, INTERNAL_NOTE)).toContainText('iç not');
@@ -307,7 +307,7 @@ test('çeviri yapılamazsa not yine kaydedilir: müşteri notunu görür, iç ek
   expect([row.text, row.translation, row.translationLang, row.translationStatus, row.translationError]).toEqual([FAIL_NOTE, null, 'tr', 'FAILED', 'TIMEOUT']);
 
   const admin = await as(browser, ADMIN, ADMIN_PW);
-  await admin.goto(orderUrl);
+  await admin.goto(`${orderUrl}#notlar`);
   const n = noteOf(admin, FAIL_NOTE).first();
   await expect(n.locator('.note-text')).toHaveText(FAIL_NOTE);
   const failed = n.locator('[data-translation-failed="TIMEOUT"]');
@@ -327,7 +327,7 @@ test('çeviri yapılamazsa not yine kaydedilir: müşteri notunu görür, iç ek
 
   // Denetimci: çevrilemeyen notu özgün hâliyle görür; hata bilgisi, durum ve "yeniden dene" ona gitmez; taklit istek reddedilir
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
-  await insp.goto(orderUrl);
+  await insp.goto(`${orderUrl}#notlar`);
   await expect(noteOf(insp, FAIL_NOTE).first().locator('.note-text')).toHaveText(FAIL_NOTE);
   await expect(insp.locator('[data-translation-failed]')).toHaveCount(0);
   await expect(insp.getByRole('button', { name: 'Çeviriyi yeniden dene' })).toHaveCount(0);
@@ -371,7 +371,7 @@ test('sayfa açılışı, yenileme, 60 saniyelik otomatik yenileme, bildirim yok
   // Her rol: açılış + üç yenileme + bildirim yoklaması (zilin JSON akışı)
   for (const [who, email, pw] of [['yönetici', ADMIN, ADMIN_PW], ['satış', SALES, TEAM_PW], ['müşteri', CUSTOMER, CUST_PW], ['denetimci', INSPECTOR, INSPECTOR_PW]] as const) {
     const p = await as(browser, email, pw);
-    await p.goto(orderUrl);
+    await p.goto(`${orderUrl}#notlar`);
     for (let i = 0; i < 3; i++) await p.reload();
     await expect(noteOf(p, OLD_RO).locator('.note-text'), who).toHaveText(OLD_RO);
     await expect(noteOf(p, OLD_RO).locator('.note-translation'), `${who}: eski not çevrilmez`).toHaveCount(0);
@@ -386,7 +386,7 @@ test('sayfa açılışı, yenileme, 60 saniyelik otomatik yenileme, bildirim yok
   // her seferinde sunucu bileşeni yeniden çizilir (RSC isteği) — çeviri yapılmaz
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.clock.install();
-  await admin.goto(orderUrl);
+  await admin.goto(`${orderUrl}#notlar`);
   await expect(noteOf(admin, FAIL_NOTE).first().locator('[data-translation-failed="TIMEOUT"]')).toBeVisible();
   for (let i = 0; i < 3; i++) {
     const refreshed = admin.waitForResponse((r) => r.url().includes(`/siparisler/${orderId}`) && (r.url().includes('_rsc=') || r.request().headers().rsc === '1'), { timeout: 30_000 });
@@ -459,7 +459,7 @@ test('çeviri kapatılınca notlar eskisi gibi çevirisiz kaydedilir; önceki ç
   await cust.context().close();
   const row = await db.orderNote.findFirstOrThrow({ where: { orderId, text } });
   expect([row.translation, row.translationLang, row.translationStatus, row.translationError, row.translationAt]).toEqual([null, null, null, null, null]);
-  await admin.goto(orderUrl);
+  await admin.goto(`${orderUrl}#notlar`);
   await expect(noteOf(admin, text).locator('.note-text')).toHaveText(text);
   await expect(noteOf(admin, text).locator('.note-translation')).toHaveCount(0);
   await expect(noteOf(admin, text).locator('.note-label')).toHaveCount(0);

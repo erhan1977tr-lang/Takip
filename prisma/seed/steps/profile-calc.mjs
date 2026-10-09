@@ -26,3 +26,23 @@ export const profileCalcStep = {
     });
   },
 };
+
+// Korkuluk hesaplayıcısının kesin kuralları (karar 203) — varsayılan yapılandırma, bir kez; yöneticinin kaydına dokunmaz.
+// Katalogda gereken ürün yoksa (ya da birimi farklıysa) hiçbir şey yazılmaz, eksik kodlar söylenir ve sonraki çalıştırmada
+// yeniden denenir. Kural ve yazıcı: server/profile/calc-defaults.js.
+import { applyRailingDefaults } from '../../../server/profile/calc-defaults.js';
+
+export const profileCalcDefaultsStep = {
+  id: 'profile-calc-defaults',
+  name: 'profil hesaplayıcı (korkuluk varsayılanları)',
+  available: (db) => typeof db.profileSystem?.findMany === 'function' && typeof db.auditLog?.findFirst === 'function',
+  async run(db) {
+    const r = await applyRailingDefaults(db);
+    if (r.state === 'already') return 'daha önce yazıldı';
+    if (r.state === 'blocked') {
+      const wrong = (r.wrongUnit ?? []).map((w) => `${w.code} (${w.unit} ≠ ${w.expected})`);
+      return `YAZILMADI — katalogda eksik: ${(r.missing ?? []).join(', ') || '—'}; birimi farklı: ${wrong.join(', ') || '—'}`;
+    }
+    return `oluşturulan: ${(r.created ?? []).join(', ') || '—'}; mevcut (dokunulmadı): ${(r.kept ?? []).join(', ') || '—'}`;
+  },
+};

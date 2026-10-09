@@ -60,10 +60,11 @@ export async function closeDb() {
 }
 
 /** Tüm uygulama tablolarını boşaltır (migration kaydı hariç) ve temel veriyi (roller, sipariş tipleri) yeniden yükler. */
-export async function resetDb(db) {
+/** @param {{ calcDefaults?: boolean }} [o]  calcDefaults: false → korkuluk hesaplayıcısının varsayılanları yazılmaz (karar 203) */
+export async function resetDb(db, { calcDefaults = true } = {}) {
   await truncateAll(db);
   const { runBaseSeed } = await import('../../prisma/seed/base.mjs');
-  await runBaseSeed(db, { log: () => {} });
+  await runBaseSeed(db, { log: () => {}, skip: calcDefaults ? [] : ['profile-calc-defaults'] });
 }
 
 async function truncateAll(db) {

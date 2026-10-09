@@ -8,7 +8,8 @@
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
 import { cleanCode } from './catalog.js';
-import { PROFILE_COLORS, calculate, cleanSlot, overlaps, parsePerMeter, parseThickness, slotKey, systemNeeds, systemProblems } from './calculator.js';
+import { PROFILE_COLORS, SYSTEM_KINDS, calculate, calculateRailing, cleanSlot, overlaps, parsePerMeter, parseThickness, slotKey, systemProblems } from './calculator.js';
+import { railingDefaultsStatus } from './calc-defaults.js';
 import { stockLevels } from './stock.js';
 
 const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('profile-calc', 0))`;
@@ -26,16 +27,27 @@ export const CALC_INCLUDE = {
 
 // ---------- cam kalınlıkları ----------
 
-/** @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'FORBIDDEN' | 'BAD_MM' | 'EXISTS' }>} */
-export async function addThickness(db, { mm }, actor) {
+/** Cam kalınlığının müşteriye görünen adı (ör. "6+6"): en çok 20 karakter; boş = null ("12,76 mm" gösterilir) */
+export const cleanThicknessLabel = (v) => clean(v, 21) || null;
+
+/**
+ * @param {any} db
+ * @param {{ mm: unknown, label?: unknown }} v  label: müşteriye görünen ad (karar 203; isteğe bağlı)
+ * @param {any} actor
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'FORBIDDEN' | 'BAD_MM' | 'EXISTS' | 'LABEL' }>}
+ */
+export async function addThickness(db, v, actor) {
   if (!allowed(actor)) return FORBIDDEN;
-  const v = parseThickness(mm);
-  if (!v.ok) return { ok: false, code: 'BAD_MM' };
+  const { mm, label = null } = v ?? {};
+  const parsed = parseThickness(mm);
+  if (!parsed.ok) return { ok: false, code: 'BAD_MM' };
+  const name = cleanThicknessLabel(label);
+  if (name && name.length > 20) return { ok: false, code: 'LABEL' };
   return db.$transaction(async (tx) => {
     await lock(tx);
-    if (await tx.profileGlassThickness.findUnique({ where: { mm: v.value } })) return { ok: false, code: 'EXISTS' };
-    const t = await tx.profileGlassThickness.create({ data: { mm: v.value } });
-    await writeAudit(tx, { action: 'PROFILE_CALC_THICKNESS', entityType: 'ProfileGlassThickness', entityId: t.id, userId: actor.id, details: { mm: v.value, created: true } }, actor);
+    if (await tx.profileGlassThickness.findUnique({ where: { mm: parsed.value } })) return { ok: false, code: 'EXISTS' };
+    const t = await tx.profileGlassThickness.create({ data: { mm: parsed.value, label: name } });
+    await writeAudit(tx, { action: 'PROFILE_CALC_THICKNESS', entityType: 'ProfileGlassThickness', entityId: t.id, userId: actor.id, details: { mm: parsed.value, label: name, created: true } }, actor);
     return { ok: true, id: t.id };
   });
 }
@@ -58,8 +70,10 @@ export async function setThicknessActive(db, { id, active }, actor) {
 
 /**
  * Sistem ekler ya da düzenler (kod kalıcıdır; sistem silinmez, pasif yapılır).
- * @param {{ id?: string | null, code?: unknown, nameRo?: unknown, nameTr?: unknown, isActive?: boolean }} v
- * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'FORBIDDEN' | 'CODE' | 'NAME' | 'EXISTS' | 'NOT_FOUND' }>}
+ * kind (karar 203): müşteri hesaplayıcısındaki yeri — PROFILE (korkuluk profili) / HANDRAIL (küpeşte) / boş (görünmez).
+ * Düzenlemede kind verilmezse (undefined) değişmez.
+ * @param {{ id?: string | null, code?: unknown, nameRo?: unknown, nameTr?: unknown, isActive?: boolean, kind?: unknown }} v
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'FORBIDDEN' | 'CODE' | 'NAME' | 'EXISTS' | 'NOT_FOUND' | 'KIND' }>}
  */
 export async function saveSystem(db, v, actor) {
   if (!allowed(actor)) return FORBIDDEN;
@@ -67,15 +81,19 @@ export async function saveSystem(db, v, actor) {
   const nameTr = clean(v.nameTr, 81) || nameRo;
   if (!nameRo || nameRo.length > 80 || nameTr.length > 80) return { ok: false, code: 'NAME' };
   const isActive = v.isActive !== false;
+  const kindGiven = v.kind !== undefined;
+  const kind = v.kind ? String(v.kind) : null;
+  if (kind && !SYSTEM_KINDS.includes(kind)) return { ok: false, code: 'KIND' };
   return db.$transaction(async (tx) => {
     await lock(tx);
     if (v.id) {
       const cur = await tx.profileSystem.findUnique({ where: { id: v.id } });
       if (!cur) return { ok: false, code: 'NOT_FOUND' };
-      await tx.profileSystem.update({ where: { id: cur.id }, data: { nameRo, nameTr, isActive } });
+      const nextKind = kindGiven ? kind : cur.kind;
+      await tx.profileSystem.update({ where: { id: cur.id }, data: { nameRo, nameTr, isActive, kind: /** @type {any} */ (nextKind) } });
       await writeAudit(tx, {
         action: 'PROFILE_CALC_SYSTEM', entityType: 'ProfileSystem', entityId: cur.id, userId: actor.id,
-        details: { code: cur.code, before: { nameRo: cur.nameRo, nameTr: cur.nameTr, isActive: cur.isActive }, after: { nameRo, nameTr, isActive } },
+        details: { code: cur.code, before: { nameRo: cur.nameRo, nameTr: cur.nameTr, isActive: cur.isActive, kind: cur.kind }, after: { nameRo, nameTr, isActive, kind: nextKind } },
       }, actor);
       return { ok: true, id: cur.id };
     }
@@ -83,8 +101,8 @@ export async function saveSystem(db, v, actor) {
     if (!code) return { ok: false, code: 'CODE' };
     if (await tx.profileSystem.findUnique({ where: { code } })) return { ok: false, code: 'EXISTS' };
     const last = await tx.profileSystem.aggregate({ _max: { sortOrder: true } });
-    const s = await tx.profileSystem.create({ data: { code, nameRo, nameTr, isActive, sortOrder: (last._max.sortOrder ?? 0) + 10 } });
-    await writeAudit(tx, { action: 'PROFILE_CALC_SYSTEM', entityType: 'ProfileSystem', entityId: s.id, userId: actor.id, details: { code, created: true, after: { nameRo, nameTr, isActive } } }, actor);
+    const s = await tx.profileSystem.create({ data: { code, nameRo, nameTr, isActive, kind: /** @type {any} */ (kind), sortOrder: (last._max.sortOrder ?? 0) + 10 } });
+    await writeAudit(tx, { action: 'PROFILE_CALC_SYSTEM', entityType: 'ProfileSystem', entityId: s.id, userId: actor.id, details: { code, created: true, after: { nameRo, nameTr, isActive, kind } } }, actor);
     return { ok: true, id: s.id };
   });
 }
@@ -177,41 +195,73 @@ export async function removeCalcItem(db, { id }, actor) {
  * @typedef {{ toString(): string }} DecimalLike
  * @typedef {{ id: string, code: string, nameTr: string, nameRo: string, unitCode: string, isActive: boolean,
  *   packContent: DecimalLike | null, packMeasure: string | null, category: { isActive: boolean } }} AdminCalcProduct
- * @typedef {{ id: string, mm: DecimalLike, isActive: boolean }} AdminCalcThickness
+ * @typedef {{ id: string, mm: DecimalLike, label: string | null, isActive: boolean }} AdminCalcThickness
  * @typedef {{ id: string, systemId: string, slot: string, sortOrder: number, productId: string | null, product: AdminCalcProduct | null,
  *   color: string | null, thicknessId: string | null, thickness: AdminCalcThickness | null, perMeter: DecimalLike | null }} AdminCalcItem
- * @typedef {{ id: string, code: string, nameTr: string, nameRo: string, isActive: boolean, sortOrder: number, items: AdminCalcItem[],
+ * @typedef {{ id: string, code: string, nameTr: string, nameRo: string, isActive: boolean, sortOrder: number, kind: string | null, items: AdminCalcItem[],
  *   problems: import('./calculator.js').CalcError[] }} AdminCalcSystem
  */
 
 /**
  * Yöneticinin ayar ekranı: sistemler (satırlarıyla), kalınlıklar ve her sistemin eksikleri
  * @param {import('@prisma/client').PrismaClient} db
- * @returns {Promise<{ systems: AdminCalcSystem[], thicknesses: AdminCalcThickness[] }>}
+ * @returns {Promise<{ systems: AdminCalcSystem[], thicknesses: AdminCalcThickness[],
+ *   defaults: { applied: boolean, missing: string[], wrongUnit: { code: string, unit: string, expected: string }[] } }>}
  */
 export async function loadCalcAdmin(db) {
-  const [systems, thicknesses] = await Promise.all([
+  const [systems, thicknesses, defaults] = await Promise.all([
     db.profileSystem.findMany({ orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: CALC_INCLUDE }),
     db.profileGlassThickness.findMany({ orderBy: { mm: 'asc' } }),
+    railingDefaultsStatus(db),
   ]);
-  return { systems: systems.map((s) => ({ ...s, problems: systemProblems(s, thicknesses) })), thicknesses };
+  return { systems: systems.map((s) => ({ ...s, problems: systemProblems(s, thicknesses) })), thicknesses, defaults };
 }
 
 /**
- * Müşterinin hesaplayıcısındaki seçenekler: etkin sistemler (satırı olan) ve etkin cam kalınlıkları. Sistem yoksa
- * hesaplayıcı gösterilmez.
+ * Müşterinin hesaplayıcısındaki seçenekler (karar 203): korkuluk profilleri (tür PROFILE) ve küpeşteler (tür HANDRAIL) —
+ * etkin ve satırı olan sistemler —, etkin cam kalınlıkları (müşteriye görünen adıyla). Korkuluk profili yoksa hesaplayıcı
+ * gösterilmez. Türü seçilmemiş sistem müşteride görünmez.
  * @param {import('@prisma/client').PrismaClient} db
- * @returns {Promise<{ systems: { id: string, code: string, nameTr: string, nameRo: string, needs: { color: boolean, thickness: boolean } }[],
- *   thicknesses: { id: string, mm: string }[] }>}
+ * @returns {Promise<{ profiles: { id: string, code: string, nameTr: string, nameRo: string }[],
+ *   handrails: { id: string, code: string, nameTr: string, nameRo: string }[], thicknesses: { id: string, mm: string, label: string | null }[] }>}
  */
 export async function loadCalcOptions(db) {
   const [systems, thicknesses] = await Promise.all([
-    db.profileSystem.findMany({ where: { isActive: true, items: { some: {} } }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }], include: { items: { select: { color: true, thicknessId: true } } } }),
+    db.profileSystem.findMany({ where: { isActive: true, kind: { not: null }, items: { some: {} } }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] }),
     db.profileGlassThickness.findMany({ where: { isActive: true }, orderBy: { mm: 'asc' } }),
   ]);
+  const view = (s) => ({ id: s.id, code: s.code, nameTr: s.nameTr, nameRo: s.nameRo });
   return {
-    systems: systems.map((s) => ({ id: s.id, code: s.code, nameTr: s.nameTr, nameRo: s.nameRo, needs: systemNeeds(s.items) })),
-    thicknesses: thicknesses.map((t) => ({ id: t.id, mm: t.mm.toString() })),
+    profiles: systems.filter((s) => s.kind === 'PROFILE').map(view),
+    handrails: systems.filter((s) => s.kind === 'HANDRAIL').map(view),
+    thicknesses: thicknesses.map((t) => ({ id: t.id, mm: t.mm.toString(), label: t.label ?? null })),
+  };
+}
+
+/**
+ * Müşterinin korkuluk hesabı (karar 203): profil (zorunlu) + küpeşte (boş = yok) + renk + cam + metre → `calculateRailing`.
+ * Başarılıysa yalnızca stoğu yetmeyen ürünler için gereken / mevcut / eksik (runCalc ile aynı kural). Yalnızca okur: kayıt,
+ * stok hareketi, bildirim yazmaz.
+ * @param {{ profileId: unknown, handrailId?: unknown, color?: unknown, thicknessId?: unknown, meters: unknown }} input
+ */
+export async function runRailingCalc(db, input) {
+  const handrailId = String(input.handrailId ?? '');
+  const [profile, handrail, thicknesses] = await Promise.all([
+    db.profileSystem.findFirst({ where: { id: String(input.profileId ?? ''), isActive: true }, include: CALC_INCLUDE }),
+    handrailId ? db.profileSystem.findFirst({ where: { id: handrailId, isActive: true }, include: CALC_INCLUDE }) : null,
+    db.profileGlassThickness.findMany(),
+  ]);
+  const systems = [profile, handrail].filter(Boolean).map((s) => ({ code: s.code, nameTr: s.nameTr, nameRo: s.nameRo }));
+  const res = calculateRailing({ profile, handrail, handrailWanted: !!handrailId }, input, thicknesses);
+  if (!res.ok) return { ...res, systems };
+  const levels = await stockLevels(db, res.lines.map((l) => l.productId));
+  return {
+    ...res,
+    systems,
+    lines: res.lines.map((l) => {
+      const available = Math.max(0, levels.get(l.productId) ?? 0);
+      return { ...l, stock: available < l.qty ? { available, missing: l.qty - available } : null };
+    }),
   };
 }
 

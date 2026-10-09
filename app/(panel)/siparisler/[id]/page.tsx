@@ -8,7 +8,7 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
 import { countText, isUnreadNote, unreadThreshold } from '@/server/notes/unread.js';
-import { MarkNotesRead } from '@/components/MarkNotesRead';
+import { NotesList } from '@/components/NotesList';
 import { randomUUID } from 'node:crypto';
 import {
   blockerText, customerDrawingText, customerSummaryText, eventNoteText, eventText, lineKindText, lockReasonText, personText, roleText, slaText, stageText,
@@ -1315,16 +1315,17 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
   const now = new Date();
   // Okunmamış: başkasının yazdığı, okunma anından sonraki (gösterilen notlar zaten role göre süzülmüş — liste sayacıyla aynı kural)
   const unread = notes.filter((n) => isUnreadNote(n, user, since)).length;
-  const latest = notes.length ? new Date(notes[notes.length - 1].createdAt).toISOString() : null;
+  // Okundu yalnızca mesaj GERÇEKTEN görülünce (karar 205): okunmamış varsa liste kapalı başlar; açılıp ekranda görünen not okunur
   return (
     <div className="card" id="notlar">
-      <MarkNotesRead orderId={order.id} latest={latest} mark={markNotesReadAction} />
       <h2>
         {t('order.notes.title')}
         {unread > 0 && <span className="msg-count" data-unread-notes={unread} title={t('order.notes.unread', { n: unread })} aria-hidden="true">{countText(unread)}</span>}
       </h2>
       <p className="muted small">{t('order.notes.intro')}{!isCustomer && ` ${t('order.notes.introInternal')}`}</p>
       {notes.length === 0 && <p className="muted">{t('order.notes.none')}</p>}
+      {notes.length > 0 && <NotesList orderId={order.id} unread={unread} mark={markNotesReadAction}
+        labels={{ show: unread > 0 ? t('order.notes.showNew', { n: unread }) : t('order.notes.show'), hide: t('order.notes.hide') }}>
       {notes.map((n) => {
         const fresh = isUnreadNote(n, user, since);
         const st = translationState(n, now);
@@ -1333,7 +1334,7 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
         const translated = st?.state === 'done' && lang && n.translation ? n.translation : null;
         const reason = st?.state === 'failed' ? (TRANSLATE_ERRORS.includes(st.code ?? '') ? st.code : 'ERROR') : null;
         return (
-          <div key={n.id} className={`note ${n.internal ? 'internal' : ''} ${fresh ? 'note-new' : ''}`} data-note={n.id} data-new={fresh ? '1' : undefined}>
+          <div key={n.id} className={`note ${n.internal ? 'internal' : ''} ${fresh ? 'note-new' : ''}`} data-note={n.id} data-at={new Date(n.createdAt).toISOString()} data-new={fresh ? '1' : undefined}>
             {translated && <div className="note-label">{t('order.notes.original')}</div>}
             <div className="pre note-text">{n.text}</div>
             {translated && lang && (
@@ -1364,6 +1365,7 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
           </div>
         );
       })}
+      </NotesList>}
       {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
         {/* Tek kullanımlık anahtar (karar 199): çift tıklama / yeniden gönderim ikinci mesajı yazmaz */}

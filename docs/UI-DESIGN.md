@@ -448,14 +448,15 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 ## Profile calculator and stock (3.55.0, decisions 175–178)
 
 - Customer profile form: `ProfileCalculator` is a `.card.calc-card#hesaplayici` right under the order-info card — title, one
-  `.muted.small` intro, then ONE horizontal `.calc-bar` (flex, wraps; `.calc-field` label-over-control: system `.calc-system`,
-  color, thickness — disabled with "not needed" when the system has no such condition —, metres `.calc-meters` right-aligned,
-  then the `.btn-primary` "Hesapla"). Errors: `.alert-error[data-calc-errors]` with a `.plain-list`. Result: `.calc-result`
-  (`h3.sub-title` + `table.profile-table.calc-table`: product, need text, quantity `[data-calc-qty]` + unit; a short item shows a
+  `.muted.small` intro, then the field grid `.calc-grid` (since 3.60.0 — decision 204): five `.calc-field` (label over a 38 px
+  control) in this order — glass `#calc-thickness`, colour `#calc-color`, profile `#calc-profile`, handrail `#calc-handrail` (first
+  option "Yok" / "Fără"), metres `.calc-meters` (right-aligned, bold); 5 columns on desktop, 3 ≤ 1100 px, 2 ≤ 760 px, 1 ≤ 480 px;
+  labels never wrap (ellipsis). Below it `.calc-actions` with the `.btn-primary` "Hesapla" (full width on phones). Errors: `.alert-error[data-calc-errors]` with a `.plain-list`. Result: `.calc-result`
+  (`h3.sub-title` + `table.profile-table.calc-table` in a `.table-wrap`: code (mono), description + need text, colour
+  `[data-calc-color]` ("—" when the row has no colour condition), quantity `[data-calc-qty]`, unit `[data-calc-unit]`; a short item shows a
   `.small.text-danger[data-calc-stock]` line) and a `.row` "Forma aktar" (`.btn-primary`) / "Sonucu kapat" (`.btn-link`). Overwrite
   confirmation is inline, never `window.confirm`: `.alert-warn[data-calc-confirm]` (title, text, `.plain-list` "product: old → new",
-  `.row` "Evet, üzerine yaz" `.btn-primary` + "Vazgeç" `.btn`). Success `.alert-ok[data-calc-applied]`. On narrow screens every
-  field and the button take the full width. Form rows carry `badge-info[data-calc-mark=calc]` "hesaplandı" or
+  `.row` "Evet, üzerine yaz" `.btn-primary` + "Vazgeç" `.btn`). Success `.alert-ok[data-calc-applied]`. Form rows carry `badge-info[data-calc-mark=calc]` "hesaplandı" or
   `badge-warn[data-calc-mark=edited]` "değiştirildi" next to the code.
 - Pre-submit stock warning: `.alert-warn#stok-uyari[data-stock-check]` above the submit bar (title, intro,
   `table.profile-table.stock-check-table` needed / available / missing — missing `.text-danger` —, `.row` "Yine de gönder"
@@ -473,6 +474,11 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   inline `form.threshold-form` with a `.qty-input` and "Eşiği kaydet"), status (`[data-status]`: danger `Badge` "Kritik",
   `.small.text-danger` "rezerveye N eksik"). A critical row is `tr.row-alert`. "Önemli kararlar" shows a `STOCK_CRITICAL` row
   with the product code linking to `/admin/stok#s-<id>` and `li[data-critical]`.
+
+
+- Order page notes (3.60.0, decision 205): `NotesList` wraps the note list. With unread messages it starts closed: a `.btn.btn-link.notes-toggle`
+  `[data-notes-toggle]` ("Mesajları göster (n yeni)" / "Mesajları gizle", `aria-expanded`, `aria-controls="notlar-liste"`) above
+  `#notlar-liste[hidden]`; the compose form stays visible. `#notlar` in the address opens it. Never mark notes read on page load.
 
 ## Suppliers, purchasing and supplier accounts (3.56.0, decisions 179–185)
 

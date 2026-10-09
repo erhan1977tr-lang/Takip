@@ -139,7 +139,7 @@ export const slotKey = (v) => (cleanSlot(v) ?? '').normalize('NFC').toLocaleUppe
  * @typedef {{ id: string, slot: string, sortOrder?: number, productId: string | null, product?: CalcProduct | null,
  *   color: string | null, thicknessId: string | null, perMeter: unknown }} CalcItem
  * @typedef {{ id: string, mm: unknown, isActive: boolean }} CalcThickness
- * @typedef {{ code: string, slot?: string, product?: string, color?: string | null, thicknessMm?: string | null, max?: number }} CalcError
+ * @typedef {{ code: string, slot?: string, product?: string, color?: string | null, thicknessMm?: string | null, max?: number, system?: string }} CalcError
  */
 
 /** Satırın koşulu bu seçime uyuyor mu (boş koşul = hepsi) */
@@ -176,7 +176,7 @@ const mmText = (t) => (t ? fromScaled(toScaled(t.mm, SCALE.mm) ?? 0n, SCALE.mm) 
  * Bir seçim (renk, cam kalınlığı) için her kalemin satırı. Hata varsa satır dönmez (o kalem için).
  * @param {{ key: string, label: string, items: CalcItem[] }[]} slots
  * @param {string | null} color  @param {CalcThickness | null} thickness
- * @returns {{ errors: CalcError[], picks: { slot: string, product: CalcProduct, per: bigint, content: bigint }[] }}
+ * @returns {{ errors: CalcError[], picks: { slot: string, product: CalcProduct, per: bigint, content: bigint, colored: boolean }[] }}
  */
 function resolve(slots, color, thickness) {
   /** @type {CalcError[]} */
@@ -198,7 +198,7 @@ function resolve(slots, color, thickness) {
     const packOk = content != null && content > 0n && MEASURES.includes(p.packMeasure ?? '');
     if (!perOk) errors.push({ code: 'NO_PER_METER', slot: s.label, product: p.code });
     if (!packOk) errors.push({ code: 'NO_PACK', product: p.code });
-    if (perOk && packOk) picks.push({ slot: s.label, product: p, per: /** @type {bigint} */ (per), content: /** @type {bigint} */ (content) });
+    if (perOk && packOk) picks.push({ slot: s.label, product: p, per: /** @type {bigint} */ (per), content: /** @type {bigint} */ (content), colored: item.color != null });
   }
   return { errors, picks };
 }
@@ -236,7 +236,8 @@ export function needText(need6, measure) {
  * @param {CalcThickness[]} thicknesses  tanımlı cam kalınlıkları (etkin olmayanlar seçilemez)
  * @returns {{ ok: false, errors: CalcError[] } | { ok: true, meters: string, color: string | null, thicknessId: string | null,
  *   lines: { productId: string, code: string, nameTr: string, nameRo: string, unitCode: string, measure: string, need: string,
- *   content: string, qty: number, slots: string[] }[] }}
+ *   content: string, qty: number, slots: string[], colored: boolean }[] }}
+ *   colored: ürün renge göre seçildi (ör. FBL90-7016) — sonuç tablosunda rengi yazılır; renksiz ürün (conta, poşet) "—"
  */
 export function calculate(system, input, thicknesses) {
   const meters = parseMeters(input.meters);
@@ -258,26 +259,56 @@ export function calculate(system, input, thicknesses) {
   if (res.picks.length === 0) return { ok: false, errors: [{ code: 'NO_PRODUCTS' }] };
 
   // Aynı ürünün ihtiyaçları toplanır, bir kez yuvarlanır
-  /** @type {Map<string, { product: CalcProduct, content: bigint, need: bigint, slots: string[] }>} */
+  /** @type {Map<string, { product: CalcProduct, content: bigint, need: bigint, slots: string[], colored: boolean }>} */
   const byProduct = new Map();
   for (const pk of res.picks) {
     const need = BigInt(meters.cm) * pk.per; // 10⁻² × 10⁻⁴ = 10⁻⁶
     const cur = byProduct.get(pk.product.id);
-    if (cur) { cur.need += need; cur.slots.push(pk.slot); } else byProduct.set(pk.product.id, { product: pk.product, content: pk.content, need, slots: [pk.slot] });
+    if (cur) { cur.need += need; cur.slots.push(pk.slot); cur.colored ||= pk.colored; } else byProduct.set(pk.product.id, { product: pk.product, content: pk.content, need, slots: [pk.slot], colored: pk.colored });
   }
   const lines = [];
-  for (const { product, content, need, slots } of byProduct.values()) {
+  for (const { product, content, need, slots, colored } of byProduct.values()) {
     const c6 = content * 1000n; // 10⁻³ → 10⁻⁶
     const qty = (need + c6 - 1n) / c6;
     if (qty > BigInt(MAX_PROFILE_QTY)) { errors.push({ code: 'TOO_MANY', product: product.code, max: MAX_PROFILE_QTY }); continue; }
     lines.push({
       productId: product.id, code: product.code, nameTr: product.nameTr, nameRo: product.nameRo, unitCode: product.unitCode,
       measure: String(product.packMeasure), need: needText(need, String(product.packMeasure)), content: fromScaled(content, SCALE.content),
-      qty: Number(qty), slots,
+      qty: Number(qty), slots, colored,
     });
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true, meters: fromScaled(BigInt(meters.cm), SCALE.meters), color, thicknessId: thickness?.id ?? null, lines };
+}
+
+/** Hesap sisteminin müşteri hesaplayıcısındaki türü (karar 203): korkuluk profili ya da küpeşte — iki AYRI seçim */
+export const SYSTEM_KINDS = Object.freeze(['PROFILE', 'HANDRAIL']);
+
+/**
+ * Korkuluk hesabı (karar 203): müşteri korkuluk profilini (FBL90 / FBL115 — türü PROFILE, zorunlu) ve küpeşteyi (MR23 / RM29 —
+ * türü HANDRAIL; boş = "yok") AYRI seçer; ikisinin ürünleri AYNI renk, cam ve metreyle BİRLİKTE hesaplanır. Kural `calculate`'in
+ * kendisidir (tek formül): iki sistemin satırları tek bir hesaba konur, kalemler sistem koduyla ayrılır ("FBL90 · Profil",
+ * "MR23 · Profil"); aynı ürün iki sistemde geçerse ihtiyaçları toplanıp bir kez yuvarlanır. Bir sistemde eksik değer varsa
+ * HİÇBİR miktar dönmez (yarım sonuç yok).
+ * @param {{ profile: ({ code: string, kind?: string | null, isActive: boolean, items: CalcItem[] }) | null,
+ *   handrail: ({ code: string, kind?: string | null, isActive: boolean, items: CalcItem[] }) | null, handrailWanted?: boolean }} sel
+ *   handrailWanted: müşteri bir küpeşte seçti (seçtiği bulunamadıysa / pasifse hata; seçmediyse yalnızca profil hesaplanır)
+ * @param {{ color?: unknown, thicknessId?: unknown, meters: unknown }} input
+ * @param {CalcThickness[]} thicknesses
+ * @returns {ReturnType<typeof calculate>}
+ */
+export function calculateRailing({ profile, handrail, handrailWanted = false }, input, thicknesses) {
+  const meters = parseMeters(input.meters);
+  if (!meters.ok) return calculate(null, input, thicknesses); // metre hatası tek yerden
+  if (!profile) return { ok: false, errors: [{ code: 'PROFILE_REQUIRED' }] };
+  if (!profile.isActive || profile.kind !== 'PROFILE') return { ok: false, errors: [{ code: 'SYSTEM_INACTIVE' }] };
+  if (handrailWanted && (!handrail || !handrail.isActive || handrail.kind !== 'HANDRAIL')) return { ok: false, errors: [{ code: 'SYSTEM_INACTIVE' }] };
+  const systems = [profile, ...(handrailWanted && handrail ? [handrail] : [])];
+  const empty = systems.filter((s) => (s.items ?? []).length === 0);
+  if (empty.length) return { ok: false, errors: empty.map((s) => ({ code: 'SYSTEM_EMPTY', system: s.code })) };
+  // Sistemlerin satırları sırasını korur (önce profil, sonra küpeşte)
+  const items = systems.flatMap((s, n) => (s.items ?? []).map((i) => ({ ...i, slot: `${s.code} · ${i.slot}`, sortOrder: n * 1_000_000 + (i.sortOrder ?? 0) })));
+  return calculate({ isActive: true, items }, input, thicknesses);
 }
 
 /**

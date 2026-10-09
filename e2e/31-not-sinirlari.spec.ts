@@ -35,7 +35,7 @@ const noteForm = (page: Page) => page.locator('#notlar form', { has: page.locato
 const noteOf = (page: Page, text: string) => page.locator('#notlar .note', { hasText: text });
 /** Not formunu gönderir (sonucu çağıran denetler) */
 async function submitNote(page: Page, text: string) {
-  await page.goto(orderUrl);
+  await page.goto(`${orderUrl}#notlar`);
   await page.locator('#notlar textarea[name=text]').fill(text);
   await noteForm(page).getByRole('button').click();
 }
@@ -156,7 +156,7 @@ test('hız sınırı yüzünden çevrilmeyen not: iç ekip nedeni ve "yeniden de
   const before = await same();
 
   const staff = await as(browser, STAFF, TEAM_PW);
-  await staff.goto(orderUrl);
+  await staff.goto(`${orderUrl}#notlar`);
   const n = noteOf(staff, LIMITED_NOTE).first();
   await expect(n.locator('.note-text')).toHaveText(LIMITED_NOTE);
   const failed = n.locator('[data-translation-failed="RATE_LIMIT"]');
@@ -170,7 +170,7 @@ test('hız sınırı yüzünden çevrilmeyen not: iç ekip nedeni ve "yeniden de
   // Müşteri (Romence arayüz): notunu özgün hâliyle görür; durum, neden ve "yeniden dene" ona gitmez
   const cust = await as(browser, WRITER, TEAM_PW);
   await romanian(cust);
-  await cust.goto(orderUrl);
+  await cust.goto(`${orderUrl}#notlar`);
   await expect(noteOf(cust, LIMITED_NOTE).locator('.note-text')).toHaveText(LIMITED_NOTE);
   await expect(cust.locator('[data-translation-failed]')).toHaveCount(0);
   const custBody = await (await cust.request.get(orderUrl)).text();
@@ -183,7 +183,7 @@ test('hız sınırı yüzünden çevrilmeyen not: iç ekip nedeni ve "yeniden de
   await cust.context().close();
   // Denetimci: özgün not; durum, neden ve "yeniden dene" yok
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
-  await insp.goto(orderUrl);
+  await insp.goto(`${orderUrl}#notlar`);
   await expect(noteOf(insp, LIMITED_NOTE).first().locator('.note-text')).toHaveText(LIMITED_NOTE);
   await expect(insp.locator('[data-translation-failed]')).toHaveCount(0);
   const inspBody = await (await insp.request.get(orderUrl)).text();
@@ -193,7 +193,7 @@ test('hız sınırı yüzünden çevrilmeyen not: iç ekip nedeni ve "yeniden de
   expect(await db.auditLog.count({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: row.id } })).toBe(0);
 
   // İç ekip açıkça yeniden ister → çevrilir (sahte sağlayıcı), bir kez
-  await staff.goto(orderUrl);
+  await staff.goto(`${orderUrl}#notlar`);
   await noteOf(staff, LIMITED_NOTE).first().getByRole('button', { name: 'Çeviriyi yeniden dene' }).click();
   await expect(staff).toHaveURL(/ok=note_translated/);
   const done = noteOf(staff, LIMITED_NOTE).first();
@@ -229,7 +229,7 @@ test('"yeniden dene" sınırı: kullanıcı başına 10 dakikada 20 çağrı —
   const blocked = await forge(staff, field, { id: orderId, noteId: row.id });
   expect(blocked.searchParams.get('error')).toBe(TR_RETRY_LIMIT);
   // Ekranda da aynı ileti; not "çevrilemedi" olarak, yeniden denenebilir hâlde durur
-  await staff.goto(orderUrl);
+  await staff.goto(`${orderUrl}#notlar`);
   await noteOf(staff, FAILING_NOTE).first().getByRole('button', { name: 'Çeviriyi yeniden dene' }).click();
   await expect(staff.locator('.alert-error', { hasText: 'çeviri denemesi' })).toHaveText(TR_RETRY_LIMIT);
   await expect(noteOf(staff, FAILING_NOTE).first().locator('[data-translation-failed="TIMEOUT"]')).toBeVisible();
@@ -242,7 +242,7 @@ test('"yeniden dene" sınırı: kullanıcı başına 10 dakikada 20 çağrı —
 
   // Sınır kullanıcı başınadır: yönetici aynı notu deneyebilir (sağlayıcıya gider; sahte sağlayıcı yine çeviremez)
   const admin = await as(browser, ADMIN, ADMIN_PW);
-  await admin.goto(orderUrl);
+  await admin.goto(`${orderUrl}#notlar`);
   await noteOf(admin, FAILING_NOTE).first().getByRole('button', { name: 'Çeviriyi yeniden dene' }).click();
   await expect(admin.locator('.alert-error', { hasText: 'Çeviri yine yapılamadı' })).toBeVisible();
   expect(await db.auditLog.count({ where: { action: 'NOTE_TRANSLATION_RETRY', entityId: row.id } })).toBe(20);

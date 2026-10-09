@@ -3,8 +3,9 @@ import { ADMIN, ADMIN_PW, INSPECTOR_PW, TEAM_PW, as, createUser, firstLogin, out
 
 // Paket 9 (kararlar 198–202) — dil ayarı, sipariş mesajı sayaçları ve bildirimi, tekilleştirme, anlık arama, mobil taşma.
 //  - Ayarlar: bütün rollerde (iç ekip "Hesap ayarları"); Otomatik varsayılan; seçilen dil yeniden girişte de geçerli
-//  - müşterinin mesajı: yöneticide ve ilgili satışta zil + siparişte kırmızı sayaç; zil #notlar'a götürür; sipariş açılınca
-//    okundu (sayaç ve zil birlikte); yenileme / otomatik yenileme sayacı geri getirmez; satışta firma adı maskeli
+//  - müşterinin mesajı: yöneticide ve ilgili satışta zil + siparişte kırmızı sayaç; zil #notlar'a götürür; siparişi açmak
+//    (Notlar kapalı) ve yenileme okumaz; mesaj görününce okundu (sayaç ve zil birlikte; karar 205); başka kullanıcının
+//    sayacı değişmez; satışta firma adı maskeli
 //  - aynı form iki kez gönderilse de tek mesaj, tek bildirim; iç not müşteriye hiçbir iz bırakmaz
 //  - denetimci notu yalnızca özgün dilinde görür; sayfa yenilemesi çeviri yapmaz (çeviri satırı değişmez)
 //  - anlık arama: yazdıkça süzülür, geç gelen eski yanıt yenisini ezmez, boş arama normal liste, "sonuç yok" durumu,
@@ -102,7 +103,7 @@ test('dil ayarı: iç ekipte "Hesap ayarları"; Otomatik varsayılan; Română s
   await cust.context().close();
 });
 
-test('mesaj: müşterinin mesajı (çift tıklamayla bile) tek kez yazılır; yönetici / satışta sayaç + zil; zil #notlar\'a götürür; açılınca okundu, yenileme geri getirmez; satışta firma maskeli', async ({ browser }) => {
+test('mesaj: müşterinin mesajı (çift tıklamayla bile) tek kez yazılır; yönetici / satışta sayaç + zil; açmak ve yenilemek okumaz; zil #notlar\'a götürür, mesaj görününce okundu; satış etkilenmez, firma maskeli', async ({ browser }) => {
   const db = await prisma();
   const cust = await as(browser, WRITER, TEAM_PW);
   await cust.goto(`/siparisler/${orderId}`);
@@ -121,15 +122,28 @@ test('mesaj: müşterinin mesajı (çift tıklamayla bile) tek kez yazılır; y�
   await admin.goto(`/siparisler?view=all&q=${encodeURIComponent(TITLE)}`);
   await expect(rowOf(admin).locator('.msg-count')).toHaveText('1');
   await expect(admin.locator('.sidebar [data-nav-unread]')).toBeVisible();
+  const adminBell = () => db.notification.findMany({ where: { orderId, type: 'ORDER_NOTE_ADDED', user: { email: ADMIN } } });
+  // Siparişi açmak (Notlar kapalı) okumaz: liste kapalı başlar, sayaç ve zil olduğu gibi kalır; yenileme de okumaz (karar 205)
+  await admin.goto(`/siparisler/${orderId}`);
+  await expect(admin.locator('#notlar [data-unread-notes]')).toHaveText('1');
+  await expect(admin.locator('#notlar [data-notes-toggle]')).toHaveText('Mesajları göster (1 yeni)');
+  await expect(admin.locator('#notlar-liste')).toBeHidden();
+  await admin.waitForTimeout(1500);
+  await admin.reload();
+  await admin.waitForTimeout(1500);
+  await expect(admin.locator('#notlar [data-unread-notes]')).toHaveText('1');
+  expect((await adminBell()).every((x) => !x.isRead), 'sipariş açmak zili okumaz').toBe(true);
+  expect(await db.orderNoteRead.count({ where: { orderId, user: { email: ADMIN } } })).toBe(0);
+  // Zile tıklamak da tek başına okumaz: #notlar'a götürür, liste açılır, mesaj görününce okunur (sayaç ve zil birlikte)
   await admin.locator('.notif-bell').click();
   const item = admin.locator('.notif-item', { hasText: orderNo }).first();
   await expect(item).toContainText('Siparişte yeni mesaj');
   await expect(item.locator('a.notif-main')).toHaveAttribute('href', `/siparisler/${orderId}#notlar`);
   await item.locator('a.notif-main').click();
   await expect(admin).toHaveURL(new RegExp(`/siparisler/${orderId}#notlar`));
-  await expect(admin.locator('#notlar [data-new="1"]')).toHaveCount(1);
-  // Açıldı → okundu (sayaç ve zil); yenileme sayacı geri getirmez
-  await expect.poll(async () => (await db.notification.findMany({ where: { orderId, type: 'ORDER_NOTE_ADDED', user: { email: ADMIN } } })).every((x) => x.isRead)).toBe(true);
+  await expect(admin.locator('#notlar-liste')).toBeVisible();
+  await expect(admin.locator('#notlar [data-new="1"]')).toBeVisible();
+  await expect.poll(async () => (await adminBell()).every((x) => x.isRead)).toBe(true);
   await admin.reload();
   await expect(admin.locator('#notlar [data-unread-notes]')).toHaveCount(0);
   await admin.goto(`/siparisler?view=all&q=${encodeURIComponent(TITLE)}`);
@@ -163,6 +177,13 @@ test('iç ekibin mesajı müşteriye zil + sayaç; iç not müşteriye hiçbir i
   await cust.goto(`/siparisler/${orderId}`);
   expect(await cust.content()).not.toContain('gizli iç not');
   await expect(cust.locator('#notlar [data-new="1"]')).toHaveCount(1);
+  // Notlar kapalı: okunmadı; "Mesajları göster" → mesaj görünür → okundu (zil de); başka sekmede açmak gerekmez
+  await expect(cust.locator('#notlar-liste')).toBeHidden();
+  await cust.locator('#notlar [data-notes-toggle]').click();
+  await expect(cust.locator('#notlar [data-new="1"]')).toBeVisible();
+  await expect.poll(async () => (await db.notification.findMany({ where: { orderId, type: 'ORDER_NOTE_ADDED', user: { email: WRITER } } })).every((x) => x.isRead)).toBe(true);
+  await cust.goto('/siparisler');
+  await expect(rowOf(cust).locator('.msg-count')).toHaveCount(0);
   await cust.context().close();
 
   // Denetimci: çevirisi saklanmış müşteri notunu yalnızca özgün dilinde görür; iki yenileme çeviri satırını değiştirmez
