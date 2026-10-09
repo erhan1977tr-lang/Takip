@@ -35,5 +35,22 @@ print(text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
 PY
 )"
   [ -n "$fails" ] && echo "::error title=${name} — başarısız testler::${fails}"
+  # Ayrıntılı not 6000 karakterde kesilir: başarısız testlerin TAMAMININ kısa listesi (başlık + ilk test dosyası satırı) ayrı notta
+  index="$(python3 - "$log" <<'PY'
+import re, sys
+out, want = [], False
+for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
+    line = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', line.rstrip('\n'))
+    if line.startswith('not ok'):
+        out.append(line[:240]); want = True
+    elif want and re.search(r'(?:test|e2e)/[\w./-]+\.(?:test|spec)\.(?:js|ts):\d+', line):
+        out.append('    ' + re.search(r'(?:test|e2e)/[\w./-]+\.(?:test|spec)\.(?:js|ts):\d+(?::\d+)?', line).group(0)); want = False
+    elif re.match(r'(ok |# Subtest)', line):
+        want = False
+text = '\n'.join(out)[:6000]
+print(text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
+PY
+)"
+  [ -n "$index" ] && echo "::error title=${name} — başarısız test listesi::${index}"
 fi
 exit "$status"

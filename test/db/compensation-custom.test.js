@@ -87,7 +87,12 @@ dbTest('farklı fiyat, temiz kaynak: kaynak yeni sürümle düşer; telafi fiyat
   assert.deepEqual([T.orderNo, T.status, T.offers.length, T.offers[0].status, T.offers[0].sentAt, T.price], ['ABC500-T', 'HAZIRLANIYOR', 1, 'YONETIMDE', null, null]);
   assert.deepEqual(T.offers[0].lines.map((l) => [l.adet, l.offerPrice, l.unitPrice.toString(), !!l.compensationId]), [[3, null, '30', true]]);
   assert.deepEqual(customerOffers(T), []);
-  assert.equal(await db.notificationOutbox.count({ where: { orderId: T.id } }), 0, 'müşteriye "teklif hazır" gitmez');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: T.id, type: { not: 'ORDER_COMPENSATION_PRICE' } } }), 0, 'müşteriye "teklif hazır" gitmez');
+  // Yöneticiye e-posta (karar 218): farklı fiyat = müşteri fiyatı değişiyor → telafi başına BİR olay; tutar taşımaz,
+  // yöneticinin fiyatını beklediği açıklamada (pending)
+  const mail = await db.notificationOutbox.findMany({ where: { orderId: T.id, type: 'ORDER_COMPENSATION_PRICE' } });
+  assert.deepEqual(mail.map((m) => [m.payload.compensationId, m.payload.mode, m.payload.qty, m.payload.sourceOrderNo, m.payload.pending]), [[r.compensationId, 'CUSTOM', 3, S.orderNo, true]]);
+  assert.deepEqual(contains(mail, ['66.96', '66,96', '81.37']), [], 'e-posta olayında tutar yok');
   // Miktarlar: kaynak + telafi = önceki (adet ve m²)
   assert.equal(pieces(customerOffers(src)[0]) + pieces(T.offers[0]), 10);
   // Denetim: adet değişikliği (önce → sonra) ve kaynağın yeni sürümü

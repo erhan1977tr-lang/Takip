@@ -26,6 +26,8 @@ let db, A, B, S, S2, NL, D1, F, R, R2, BF, L, lineG1, lineOp, lineG2;
 let net = 0;
 const realFetch = globalThis.fetch;
 const act = (u) => ({ id: u.id, role: u.appRole, ip: '127.0.0.1', customerId: u.customerId });
+// Yöneticinin telafi fiyatı e-postası (karar 218): müşteriye giden olaylardan ayrı sayılır
+const ADMIN_MAIL = 'ORDER_COMPENSATION_PRICE';
 const dayOf = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const at = (key) => new Date(`${key}T12:00:00Z`);
 const date = (key) => new Date(`${key}T00:00:00Z`);
@@ -222,7 +224,10 @@ dbTest('yüklenip teslim edilmiş siparişten telafi (satış, bedelsiz, yeni si
 
   // Bildirimler: müşteriye olağan "teklif hazır" olayı; yöneticiye telafi başına BİR bildirim (karar başlıkta). Yöneticinin
   // fiyat onayı sırasına düşmediği için "teklif yöneticide" olayı YOK.
-  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: T.id } })).map((o) => o.type).sort(), ['ORDER_OFFER_SENT', 'ORDER_PRODUCTION']);
+  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: T.id, type: { not: ADMIN_MAIL } } })).map((o) => o.type).sort(), ['ORDER_OFFER_SENT', 'ORDER_PRODUCTION']);
+  // Yöneticiye e-posta (karar 218): bedelsiz = müşteri fiyatı değişti → telafi başına BİR olay (tutar yok; işlemi yapan hariç)
+  const mail = await db.notificationOutbox.findMany({ where: { type: ADMIN_MAIL, payload: { path: ['compensationId'], equals: r.compensationId } } });
+  assert.deepEqual(mail.map((m) => [m.orderId, m.payload.mode, m.payload.qty, m.payload.sourceOrderNo, m.payload.pending, m.payload.actorId]), [[T.id, 'FREE', 1, 'ABC124', false, U.sales.id]]);
   let notes = await noticesOf(r.compensationId);
   assert.deepEqual(notes.map((x) => [x.type, x.userId]).sort(), [['COMPENSATION_FREE', U.admin.id], ['COMPENSATION_FREE', U.admin2.id]].sort(), 'yalnızca yöneticiler, kişi başına tek bildirim');
   assert.deepEqual([notes[0].link, notes[0].orderId, notes[0].params.qty, notes[0].params.ref, notes[0].params.orderNo], [`/siparisler/${T.id}#kararlar`, T.id, 1, 'ABC124', 'ABC124-T']);
@@ -285,7 +290,9 @@ dbTest('fiyat kararı: satış bedelsiz / aynı fiyat / farklı fiyat seçer ama
   // Camın müşteri fiyatı boş (yönetici belirleyecek); işlemlerin müşteri fiyatı yine 0
   assert.deepEqual(T4.offers[0].lines.map(lineRow), [['CAM', 1, '30', null, false, true], ['CNC', 1, '5', '0', true, true], ['DELIK', 2, '2', '0', true, true]]);
   assert.equal(await db.price.count({ where: { orderId: T4.id } }), 0);
-  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: T4.id } })).map((o) => o.type), [], 'müşteriye hiçbir şey gitmedi');
+  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: T4.id, type: { not: ADMIN_MAIL } } })).map((o) => o.type), [], 'müşteriye hiçbir şey gitmedi');
+  // Yöneticiye: farklı fiyat → bir e-posta olayı, fiyatını beklediği açıklamada (karar 218)
+  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: T4.id, type: ADMIN_MAIL } })).map((o) => [o.payload.mode, o.payload.pending]), [['CUSTOM', true]]);
   assert.deepEqual((await events(T4.id)).sort(), ['COMPENSATION_ADDED', 'CREATED']);
   row = await compOf(r.compensationId);
   assert.deepEqual([row.status, row.priceMode, row.free, row.offerPrice, row.normalPrice.toString()], ['APPLIED', 'CUSTOM', false, null, '66.96']);
@@ -391,7 +398,8 @@ dbTest('aynı anda / çift tıklama: telafi numarası ve kaydı çoğalmaz', asy
   await assert.rejects(db.order.create({ data: { orderNo: 'ABC200-X', customerOrderNo: 200, compSeq: 1, customerId: A.id, createdById: U.admin.id } }), /Unique constraint/);
   // Yinelenen istek bildirim de çoğaltmaz: her telafi siparişi için olağan iki olay (teklif müşteride, üretime geçti) BİR kez
   const outbox = await db.notificationOutbox.groupBy({ by: ['orderId', 'type'], where: { order: { compOfId: S2.id } }, _count: true });
-  assert.deepEqual(outbox.map((o) => [o.type, o._count]).sort(), [...Array(5).fill(['ORDER_OFFER_SENT', 1]), ...Array(5).fill(['ORDER_PRODUCTION', 1])]);
+  // (+ telafi başına BİR yönetici e-postası olayı — bedelsiz: müşteri fiyatı değişti, karar 218; yinelenen istek çoğaltmaz)
+  assert.deepEqual(outbox.map((o) => [o.type, o._count]).sort(), [...Array(5).fill([ADMIN_MAIL, 1]), ...Array(5).fill(['ORDER_OFFER_SENT', 1]), ...Array(5).fill(['ORDER_PRODUCTION', 1])]);
   // "Önemli kararlar": telafi başına BİR kayıt; yöneticiye telafi başına, kişi başına BİR bildirim (yinelenen istek çoğaltmaz)
   assert.equal(await db.adminAlert.count({ where: { orderId: S2.id, type: 'COMPENSATION_PRICE' } }), 5);
   const ids = [...new Set([...rs, ...dup].map((r) => r.compensationId))];
@@ -435,7 +443,8 @@ dbTest('hedef: müşterinin ileri tarihli siparişi — taslak teklife eklenir; 
   assert.deepEqual([d.offers.length, d.offers[0].status, d.version], [1, 'HAZIRLANIYOR', D1.version + 1]);
   assert.deepEqual(d.offers[0].lines.map(lineRow), [['CAM', 5, '30', '66.96', false, false], ['CAM', 1, '30', '0', true, true], ['CNC', 1, '5', '0', true, true], ['DELIK', 2, '2', '0', true, true]]);
   assert.equal(d.offers[0].amount.toString(), '300', 'taslağın satış tutarı yeniden hesaplanır (5 cam × 2 m² × 30; bedelsiz satırlar 0)');
-  assert.equal(await db.notificationOutbox.count({ where: { orderId: D1.id } }), 0);
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: D1.id, type: { not: ADMIN_MAIL } } }), 0);
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: D1.id, type: ADMIN_MAIL } }), 1, 'bedelsiz: yöneticiye bir e-posta olayı (karar 218)');
   assert.deepEqual([(await compOf(r.compensationId)).destType, (await compOf(r.compensationId)).loadingDay.toISOString().slice(0, 10)], ['EXISTING', F1]);
   assert.ok((await events(D1.id)).includes('COMPENSATION_ADDED'));
   // Olağan akış: satış taslağı kaydeder (form bedelsiz satırın fiyatını 0 gönderir) → TELAFİ işareti ve fabrika maliyeti korunur
