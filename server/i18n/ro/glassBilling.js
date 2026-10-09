@@ -3,13 +3,14 @@ export default {
   title: "Financiar / FGO",
   none: "Nu există încă documente FGO.",
   rate: "Curs document: {rate} RON / EUR ({date})",
-  paidManual: "Înregistrare veche — plată introdusă manual: {amount} · {date}. Nu se mai folosește; plata se citește numai din FGO.",
+  paidManual: "Înregistrare veche — plată introdusă manual: {amount} · {date}. Nu se mai folosește; plățile sunt în cardul Plăți și avans de mai jos.",
   chain: {
     title: "Încasarea proformei și avansul",
     paid: "Încasat în FGO",
+    manual: "Înregistrare manuală",
     advanced: "Avans facturat",
     required: "Avans de facturat",
-    note: "Încasarea se citește numai din FGO (automat la fiecare oră; pentru actualizare imediată: Contabilitate → Încasări sticlă → Actualizează din FGO). Suma nu se introduce manual.",
+    note: "Încasarea se citește din FGO (automat la fiecare oră; pentru actualizare imediată: Contabilitate → Încasări sticlă → Actualizează din FGO) sau administratorul înregistrează plata manual mai jos. Avans de facturat = valoarea mai mare dintre cele două − avansul facturat; aceeași plată nu se numără de două ori.",
   },
   wait: {
     batch: "Această comandă este inclusă în documente la nivel de client ({ref}); pe comandă nu se emit documente separate. Factura se emite din încărcarea confirmată (Încărcări → ziua → Facturare).",
@@ -18,11 +19,12 @@ export default {
     pending: "Documentul se emite (în cel mult un minut).",
     no_offer: "Nu există ofertă trimisă clientului; documentul nu poate fi emis.",
     wait_loading: "Factura de avans a fost emisă. După încărcare (la 2 zile după ziua de încărcare) se emite factura.",
-    advance_required: "Factura finală nu poate fi emisă încă: pentru {amount} din încasarea proformei în FGO nu s-a emis factura de avans. Emiteți mai întâi factura de avans; factura finală scade avansurile facturate.",
-    wait_payment: "Se așteaptă plata proformei. Plata se citește numai din FGO: când încasarea apare în FGO (automat la fiecare oră sau Contabilitate → Încasări sticlă → Actualizează din FGO) apare butonul pentru factura de avans.",
+    advance_required: "Factura finală nu poate fi emisă încă: pentru {amount} din încasarea proformei (FGO sau înregistrare manuală) nu s-a emis factura de avans. Emiteți mai întâi factura de avans; factura finală scade avansurile facturate.",
+    wait_payment: "Se așteaptă plata proformei. Butonul pentru factura de avans apare când încasarea apare în FGO (automat la fiecare oră sau Contabilitate → Încasări sticlă → Actualizează din FGO) sau când plata este înregistrată manual mai jos.",
   },
   failed: "Nu s-a putut emite în FGO: {error}",
   retry: "Ultima încercare a eșuat ({error}); se reîncearcă.",
+  uncertain: "Rezultatul documentului trimis la FGO este incert: documentul poate fi deja emis în FGO și nu a fost retrimis. Verificați în FGO și decideți mai jos.",
   mail: "E-mail către client",
   mailSent: "trimis {date}",
   mailFailed: "netrimis: {error}",
@@ -34,7 +36,7 @@ export default {
   },
   confirm: {
     proforma: "Emiteți proforma în FGO și o trimiteți clientului pe e-mail?",
-    advance: "Emiteți în FGO factura de avans pentru {amount} încasați pe proformă și încă nefacturați ca avans și o trimiteți clientului?",
+    advance: "Emiteți în FGO factura de avans pentru {amount} încasați pe proformă și încă nefacturați ca avans (bază: {basis}) și o trimiteți clientului?",
     invoice: "Emiteți factura în FGO și o trimiteți clientului? (Sumele facturilor de avans emise se scad.)",
   },
   ok: {
@@ -46,5 +48,7 @@ export default {
     BAD_RATE: "Cursul manual nu este valid (ex.: 5,0934).",
     RATE_LOCKED: "Cursul acestei comenzi este deja stabilit de proformă; nu poate fi înlocuit cu un curs manual.",
     NOT_ALLOWED: "Documentul nu poate fi emis acum (există deja sau nu este rândul lui).",
+    DUPLICATE_RISK: "Există un avans / o plată cu aceeași sumă la același client: verificați potrivirile și bifați confirmarea.",
+    FORBIDDEN: "Nu aveți drept pentru această operațiune.",
   },
 };

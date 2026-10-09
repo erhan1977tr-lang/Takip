@@ -12,7 +12,8 @@ const back = (id: string, q: string) => `/siparisler/${id}?${q}#finans`;
 
 /**
  * Proforma / avans faturası / fatura iste: kuyruğa alınır ve hemen denenir (işçi de dakikada bir dener).
- * Avans faturasının tutarı formdan GELMEZ: FGO'nun proformada gösterdiği tahsilat − avansı kesilen (karar 104).
+ * Avans faturasının tutarı formdan GELMEZ: max(FGO tahsilatı, elle kayıtlar) − avansı kesilen (karar 104, 207). Aynı
+ * müşteride aynı tutar varsa formdaki onay kutusu (ack = eşleşmelerin anahtarı) işaretlenmeden istenmez (karar 208).
  */
 export async function glassDocumentAction(fd: FormData) {
   const user = await requirePermission('OFFER_SEND');
@@ -20,7 +21,9 @@ export async function glassDocumentAction(fd: FormData) {
   const kind = String(fd.get('kind') ?? '');
   if (!['PROFORMA', 'ADVANCE', 'INVOICE'].includes(kind)) redirect(back(id, 'fgoError=NOT_ALLOWED'));
   // Elle kur (isteğe bağlı): geçerliliği ve "kur zaten belirli" denetimi requestGlassDocument'ta
-  const r = await requestGlassDocument(db, { orderId: id, kind, actor: await actorOf(user), manualRate: String(fd.get('fxRate') ?? '').trim() || null });
+  const r = await requestGlassDocument(db, {
+    orderId: id, kind, actor: await actorOf(user), manualRate: String(fd.get('fxRate') ?? '').trim() || null, ack: String(fd.get('ack') ?? '') || null,
+  });
   if (!r.ok) redirect(back(id, `fgoError=${r.code}`));
   await dispatchGlassJobs(db, { onlyOrderId: id });
   revalidatePath(`/siparisler/${id}`);

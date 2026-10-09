@@ -128,7 +128,7 @@ export default {
     title: 'Bekleyen önemli kararlar',
     intro: 'Bu listedeki her satırda bir insan kararı bekleniyor. Kararınızı verip “Gördüm” deyin.',
     empty: 'Şu an bekleyen bir karar yok. Satışçı liste fiyatını değiştirdiğinde burada listelenir.',
-    type: { FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor', STOCK_SHORTAGE: 'Profil siparişi: stok yetersiz (sipariş engellenmedi)', STOCK_CRITICAL: 'Kritik stok: ürün eşiğe indi' },
+    type: { FINANCE_REVIEW: 'Finans: ödeme incelemesi gerekli', DUPLICATE_RISK: 'Finans: aynı müşteride aynı tutar — yönetici ayrı ödeme olarak onayladı', FGO_UNCERTAIN: "FGO belgesinin sonucu belirsiz: FGO'yu kontrol edip karar verin", FGO_NUMBER: "FGO faturayı istenen numarayla kesmedi (Entegrasyonlar → Sonraki fatura numarası)", FGO_FAILED: "Profil siparişi: FGO'da proforma/fatura kesilemedi", PRICE_OVERRIDE: 'Satışçı liste fiyatını değiştirdi', WAREHOUSE_EMAIL_FAILED: 'Profil siparişi: depo e-postası gönderilemedi', COMPENSATION_PRICE: 'Telafi camı: fiyat kararı', COMPENSATION_PENDING: 'Telafi camı yönetici onayını bekliyor', STOCK_SHORTAGE: 'Profil siparişi: stok yetersiz (sipariş engellenmedi)', STOCK_CRITICAL: 'Kritik stok: ürün eşiğe indi' },
     error: 'Hata: {error}',
     colOrder: 'Sipariş',
     colWhat: 'Ne oldu',

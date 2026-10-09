@@ -15,8 +15,11 @@
 /** İşlem kirası: bir FGO isteği en çok 20 sn sürer (iş başına birkaç istek ≈ en kötü 1,5 dk); 10 dk güvenle aşar. */
 export const FGO_LEASE_MS = 10 * 60_000;
 
-/** Kirada OLMAYAN, hata nedeniyle bekleyen işler (öne alınabilir): hata yazılmış olanlar. */
-export const WAITING_JOBS = { lastError: { not: null } };
+/**
+ * Kirada OLMAYAN, hata nedeniyle bekleyen işler (öne alınabilir): hata yazılmış olanlar. Sonucu belirsiz kaldığı için
+ * yöneticinin kararını bekleyen iş ("[BELIRSIZ] …", karar 209 — server/finance/uncertain.js) öne ALINMAZ.
+ */
+export const WAITING_JOBS = { AND: [{ lastError: { not: null } }, { NOT: { lastError: { startsWith: '[BELIRSIZ]' } } }] };
 
 /**
  * İşi sahiplenir: yalnızca BİR çağıran true alır; FGO'ya yalnızca o gider.

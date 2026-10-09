@@ -13,6 +13,8 @@ import { FxInfo } from '@/components/FxInfo';
 import { fxOfferNote } from '@/lib/fx-note';
 import { padRate } from '@/server/fx/decimal.js';
 import { OrderInfo } from './OrderInfo';
+import { OrderPayments } from './OrderPayments';
+import { isParked } from '@/server/finance/uncertain.js';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { DEPOT_CALENDAR, depotPhase, depotToday, earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
@@ -216,7 +218,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
             {fgoJob && (
               <div className="small">
                 <b>{t('profile.page.fgo.title')}:</b>{' '}
-                {fgoJob.status === 'SENT' ? t('profile.page.fgo.sent', { date: fmtDateTime(fgoJob.sentAt) })
+                {isParked(fgoJob) ? <span className="danger" data-fgo-uncertain>{t('glassBilling.uncertain')} <a href="#belirsiz">{t('finance.uncertain.title')}</a></span>
+                  : fgoJob.status === 'SENT' ? t('profile.page.fgo.sent', { date: fmtDateTime(fgoJob.sentAt) })
                   : fgoJob.status === 'FAILED' ? <span className="danger">{t('profile.page.fgo.failed', { error: fgoJob.lastError ?? '—' })}</span>
                     : fgoJob.status === 'SKIPPED' ? t('profile.page.fgo.skipped')
                       : fgoJob.attempts > 0 ? <span className="danger">{t('profile.page.fgo.retry', { n: fgoJob.attempts, error: fgoJob.lastError ?? '—', date: fmtDateTime(fgoJob.availableAt) })}</span>
@@ -322,6 +325,15 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
             )}
           </div>
         </div>
+      )}
+
+      {/* Ödemeler ve avans (Paket 10, karar 206–210): elle ödeme kaydı, FGO tahsilatı, isteğe bağlı avans faturası, belirsiz
+          FGO belgesi kararı — yalnızca yönetici (ACCOUNTING_MANAGE) */}
+      {userCan(user, 'ACCOUNTING_MANAGE') && (
+        <OrderPayments
+          orderId={order.id} t={t} m={m.finance} sp={sp} profile
+          total={sent ? { amount: profileTotals(sent.lines).amount, currency: sent.currency } : null}
+        />
       )}
 
       {/* Yönetici: stok durumu (karar 165) — gereken / mevcut (şu anki stok) / eksik; sipariş engellenmedi, karar yöneticide.

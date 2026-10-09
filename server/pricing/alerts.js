@@ -12,7 +12,12 @@ import { priceOverrides } from './tables.js';
 // server/profile/stock.js → recordStockShortage).
 // STOCK_CRITICAL: ürünün stoğu yöneticinin kritik eşiğine indi — ürün başına tek açık kayıt (karar 177;
 // server/profile/stock.js → recordCriticalStock, setCriticalStock).
-export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE', 'STOCK_CRITICAL'];
+// FINANCE_REVIEW: elle ödeme kaydı ile FGO tahsilatı uyuşmuyor / fazla ödeme / FGO'nun doğrulamadığı elle avans / iptal
+// edilmiş siparişin proformasına FGO tahsilatı (karar 208; server/finance/service.js → financeReviewTick).
+// DUPLICATE_RISK: aynı müşteride aynı tutar — yönetici eşleşmeyi gördü ve "ayrı ödeme" diye onayladı (karar 208).
+// FGO_UNCERTAIN: belge kesme isteğinin sonucu belirsiz — yönetici FGO'ya bakıp karar verecek (karar 209;
+// server/finance/uncertain.js). Hepsi dedupeKey ile tekildir (aynı durum için ikinci kayıt açılmaz).
+export const ALERT_TYPES = ['PRICE_OVERRIDE', 'COMPENSATION_PRICE', 'COMPENSATION_PENDING', 'STOCK_SHORTAGE', 'STOCK_CRITICAL', 'FINANCE_REVIEW', 'DUPLICATE_RISK', 'FGO_UNCERTAIN'];
 
 /**
  * Satışçı teklifi yöneticiye gönderirken çağrılır (iş akışı işleminin içinde, aynı tx).
@@ -38,7 +43,8 @@ export async function recordPriceOverrides(tx, { orderId, offerId, orderNo, curr
  */
 export async function resolveAlert(db, id, actor) {
   return db.$transaction(async (tx) => {
-    const r = await tx.adminAlert.updateMany({ where: { id, resolvedAt: null }, data: { resolvedAt: new Date(), resolvedById: actor.id } });
+    // Belirsiz FGO belgesi (karar 209) "Gördüm" ile kapanmaz: yöneticinin FGO kararıyla (resolveUncertainJob) kapanır
+    const r = await tx.adminAlert.updateMany({ where: { id, resolvedAt: null, type: { not: 'FGO_UNCERTAIN' } }, data: { resolvedAt: new Date(), resolvedById: actor.id } });
     if (r.count === 0) return false;
     await writeAudit(tx, { action: 'ALERT_RESOLVE', entityType: 'AdminAlert', entityId: id, userId: actor.id }, actor);
     return true;

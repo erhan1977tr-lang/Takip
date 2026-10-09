@@ -31,5 +31,6 @@ import supplier from './supplier.js';
 import exportFiles from './exports.js';
 import calendar from './calendar.js';
 import delivery from './delivery.js';
+import finance from './finance.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, notifications, settings, fx, compensation, documents, supplier, exports: exportFiles, calendar, delivery };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, notifications, settings, fx, compensation, documents, supplier, exports: exportFiles, calendar, delivery, finance };

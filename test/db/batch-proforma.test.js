@@ -12,6 +12,8 @@ const { listDocuments, paymentStatus, receivables, refreshDocuments, removeDocum
 const { confirmLoading, previewLoading } = await import('../../server/loading/confirmation.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
+const { isParked, resolveUncertainJob } = await import('../../server/finance/uncertain.js');
+const { UNCERTAIN_RECORDERS } = await import('../../server/finance/recorders.js');
 
 const SECRET = 'b'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -296,9 +298,10 @@ dbTest('çift tıklama / eşzamanlı istek / işçi yeniden denemesi: tek parti,
   assert.equal(await db.billingBatch.count({ where: { customerId: c.id } }), 1);
   const batchId = results.find((r) => r.ok).batchId;
 
-  // İşçi: geçici FGO hatası → yeniden denenir (kur ve satırlar partiden; yeni parti oluşmaz); eşzamanlı iki tur tek belge keser
+  // İşçi: geçici FGO hatası → yeniden denenir (kur ve satırlar partiden; yeni parti oluşmaz); eşzamanlı iki tur tek belge keser.
+  // 429 = FGO isteği işlemedi (sonuç kesin). 5xx / zaman aşımı belirsizdir ve yöneticiye gider (test/db/finance.test.js).
   let down = true;
-  const fgo = fakeFgo(500, { emit: () => (down ? new Response('oops', { status: 503 }) : null) });
+  const fgo = fakeFgo(500, { emit: () => (down ? new Response('oops', { status: 429 }) : null) });
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: batchId })), { done: 0, failed: 1 });
   let bt = await batchOf(batchId);
   assert.equal(bt.status, 'PENDING');
@@ -312,6 +315,57 @@ dbTest('çift tıklama / eşzamanlı istek / işçi yeniden denemesi: tek parti,
   bt = await batchOf(batchId);
   assert.deepEqual([bt.status, bt.lastError, `${bt.document.series}${bt.document.number}`], ['ISSUED', null, 'PRF501']);
   assert.equal(await db.fgoDocument.count({ where: { batchId } }), 1);
+});
+
+dbTest('belirsiz FGO yanıtı (müşteri proforması, karar 209): parti beklemede kalır, siparişler tutulur, yeniden denenmez; yönetici FGO\'daki belgeyi doğrulayıp kaydeder ya da vazgeçer', async () => {
+  // FGO belgeyi KESTİ ama yanıt kayboldu (504): belge FGO'da PRF801 olarak var, TAKİP bilmiyor
+  let mode = 'lost';
+  const inFgo = new Map();
+  const fgo = fakeFgo(800, {
+    status: (form) => inFgo.get(`${form.Serie}${form.Numar}`) ?? { gone: true },
+    emit: () => (mode === 'lost' ? new Response('Gateway Timeout', { status: 504 }) : null),
+  });
+  const c = await customer('Belirsiz Lot SRL', 'BLT');
+  await order(c, D1);
+  const r = await create(c, [K1]);
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId })), { done: 0, failed: 1 });
+  let bt = await batchOf(r.batchId);
+  assert.equal(bt.status, 'PENDING');
+  assert.match(bt.lastError, /^\[BELIRSIZ\]/);
+  const job = await db.notificationOutbox.findFirst({ where: { type: b.BATCH_FGO, payload: { path: ['batchId'], equals: r.batchId } } });
+  assert.ok(isParked(job));
+  const expected = job.payload.uncertain.expectedGross;
+  assert.ok(expected > 0);
+  assert.equal(await db.adminAlert.count({ where: { type: 'FGO_UNCERTAIN', resolvedAt: null, details: { path: ['batchId'], equals: r.batchId } } }), 1);
+  assert.deepEqual((await preview(c, [K1])).excluded.map((x) => x.reason), ['IN_BATCH'], 'parti siparişleri tutar');
+  mode = 'ok';
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { now: new Date(Date.now() + 86_400_000) })), { done: 0, failed: 0 }, 'yeniden denenmez');
+  assert.equal(fgo.calls.length, 0);
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: r.batchId, action: 'retry', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, 'belirsiz parti "kesilemedi" değildir');
+  const resolve = (o) => resolveUncertainJob(db, { jobId: job.id, actor: actor(), secret: SECRET, appUrl: 'https://t', fetchImpl: fgo.fetchImpl, recorders: UNCERTAIN_RECORDERS, ...o });
+  assert.deepEqual(await resolve({ action: 'RECORD', series: 'PRF', number: '801', actor: actor('SALES') }), { ok: false, code: 'FORBIDDEN' });
+  inFgo.set('PRF802', { Valoare: '1210.00', ValoareAchitata: '0' });
+  assert.deepEqual(await resolve({ action: 'RECORD', series: 'PRF', number: '802' }), { ok: false, code: 'TOTAL_MISMATCH', fgoTotal: 1210, expected });
+  inFgo.set('PRF801', { Valoare: expected.toFixed(2), ValoareAchitata: '0' });
+  assert.deepEqual(await resolve({ action: 'RECORD', series: 'PRF', number: '801' }), { ok: true, doc: 'PRF801' });
+  bt = await batchOf(r.batchId);
+  assert.deepEqual([bt.status, `${bt.document.series}${bt.document.number}`, bt.lastError], ['ISSUED', 'PRF801', null]);
+  assert.equal(fgo.calls.length, 0, 'belge kesme isteği gitmedi');
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: job.id } })).status, 'SENT');
+  assert.equal(await db.adminAlert.count({ where: { type: 'FGO_UNCERTAIN', resolvedAt: null, details: { path: ['batchId'], equals: r.batchId } } }), 0);
+
+  // Vazgeç: parti FAILED olur — mevcut "yeniden dene / vazgeç" kararı yöneticide; vazgeçince siparişler yeniden uygun
+  const c2 = await customer('Vazgec Lot SRL', 'VZL');
+  await order(c2, D1);
+  const r2 = await create(c2, [K1]);
+  mode = 'lost';
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r2.batchId })), { done: 0, failed: 1 });
+  mode = 'ok';
+  const job2 = await db.notificationOutbox.findFirst({ where: { type: b.BATCH_FGO, payload: { path: ['batchId'], equals: r2.batchId } } });
+  assert.deepEqual(await resolveUncertainJob(db, { jobId: job2.id, action: 'ABANDON', confirm: true, actor: actor(), recorders: UNCERTAIN_RECORDERS }), { ok: true });
+  assert.equal((await batchOf(r2.batchId)).status, 'FAILED');
+  assert.deepEqual(await b.reviewFailedBatch(db, { batchId: r2.batchId, action: 'void', actor: actor() }), { ok: true });
+  assert.deepEqual((await preview(c2, [K1])).excluded, []);
 });
 
 dbTest('FGO kesin reddederse parti FAILED: siparişler tutulur; yönetici yeniden dener ya da vazgeçer (siparişler yeniden uygun)', async () => {

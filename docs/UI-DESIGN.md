@@ -574,6 +574,22 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
   "Ara" button stays. `.live-search` wrapper (input + `.live-search-state` "Aranıyor…", `aria-live`); full width below 640 px.
   Result line under the toolbar: `p.search-result[data-search-result]` ("Aramayla eşleşen: n" / "Aramanızla eşleşen sipariş yok.").
 
+## Order finance (3.61.0, decisions 206–210)
+
+- "Ödemeler ve avans" card `#odemeler` (`OrderPayments.tsx`, Admin only) below the glass "Finans / FGO" card and on the profile
+  page. Summary is a `.kv` table (`[data-fin=…]`); sources are told apart by `Badge` only — FGO-verified `info` "FGO", manual
+  `purple` "Elle", both `ok` "FGO + elle"; match state badge (`[data-match]`: none muted, FGO only info, not in FGO yet warn, matched
+  ok, mismatch danger); review notes are `.alert.alert-warn`. Manual payments: `.table-wrap > table[data-payments]`, voided rows
+  `tr.muted[data-voided]`, void form inside `<details>` in `td.actions`. Advance invoices: `.plain-list[data-advances]`.
+- Payment form `[data-payment-form]` (`ManualPaymentForm.tsx`): `.fx-block` + `.grid` fields `#mp-date`, `#mp-amount`,
+  `#mp-currency`, `#mp-method`, `#mp-ref`, `#mp-note`; result `.alert` inside the form.
+- Same customer + same amount: `components/DuplicateAck.tsx` — `.alert.alert-warn.dup-risk[data-duplicate-risk]` with the match
+  lines and a required `.check` checkbox `[data-duplicate-ack]`; used inside every advance / payment form (order page, customer
+  proforma page, loading billing). Never a second warning style.
+- Uncertain FGO result: `components/UncertainReview.tsx` — `.fx-block#belirsiz`, one `.uncertain-job[data-uncertain-job]` per job
+  (warn border / soft background) holding two white sub-forms in `.grid-2`: "FGO'da belge VAR" (series + number) and "FGO'da belge
+  YOK" (confirm checkbox + retry / abandon). The Finans / FGO card shows `[data-fgo-uncertain]` with a link to `#belirsiz`.
+
 ## Left for the page-level phase
 
 Done so far: tokens and shared classes (3.26.0); shell, dashboards and standard list pages (3.27.0);

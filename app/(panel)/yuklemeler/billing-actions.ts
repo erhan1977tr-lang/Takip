@@ -51,7 +51,8 @@ export async function createInvoiceAction(fd: FormData) {
 /** "Avans faturası kes": müşteri proformasına gelen, avansı kesilmemiş tahsilat kadar (yükleme öncesi ya da sonrası) */
 export async function createAdvanceAction(fd: FormData) {
   const user = await requirePermission('ACCOUNTING_MANAGE');
-  const r = await createAdvanceBatch(db, { proformaBatchId: String(fd.get('proformaBatchId') ?? ''), actor: await actorOf(user) });
+  // ack: aynı müşteride aynı tutar eşleşmesini yönetici gördü ve onayladı (karar 208) — sunucu eşleşmeleri yeniden hesaplar
+  const r = await createAdvanceBatch(db, { proformaBatchId: String(fd.get('proformaBatchId') ?? ''), actor: await actorOf(user), ack: String(fd.get('ack') ?? '') || null });
   if (!r.ok) redirect(back(fd, { faturaHata: r.code }));
   await dispatchBatchJobs(db, { onlyBatchId: r.batchId });
   refresh();

@@ -4,6 +4,31 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.61.0 — 09.10.2026
+
+Paket 10 — finans, avans faturaları, ödeme eşleştirme ve FGO güvenliği (kararlar 206–210). Veritabanı şeması yalnızca ekleme:
+elle ödeme kaydı (`ManualPayment`, silinemez — veritabanı tetikleyicisi), avansın dayanağı (`FgoDocument.basis`,
+`BillingBatch.basis`) ve "Önemli kararlar" tekilleştirme anahtarı (`AdminAlert.dedupeKey`). Eski kayıtlar eşleştirilmedi, hiçbir
+belge kesilmedi.
+
+- **Elle ödeme kaydı (yalnızca yönetici):** siparişin yeni "Ödemeler ve avans" kartında ödeme tarihi, tutar, para birimi, yöntem
+  ve açıklama / referans ile. Kayıt FGO'da belge kesmez; EUR ödeme proformanın kayıtlı kuruyla RON'a çevrilir. Kayıt silinmez,
+  gerekçeyle geçersiz kılınır; her şey denetim kaydına yazılır.
+- **Aynı ödeme iki kez avanslanmaz:** avans faturası = FGO'nun doğruladığı tahsilat ile elle kayıtlardan büyük olanı − avansı
+  kesilen. 2.000 EUR elle kaydedilip avansı kesildikten sonra aynı tutar FGO'da görünürse ikinci avans faturası istenemez.
+  Kısmi, fazla ve uyuşmayan ödemeler "inceleme gerekli" olarak gösterilir.
+- **Aynı müşteride aynı tutar:** başka siparişte aynı tutarlı ödeme / avans varsa kayıt da avans isteği de durur; yönetici
+  eşleşmeleri görüp kutuyu işaretleyerek açıkça onaylar, onay "Önemli kararlar"a düşer.
+- **Profil siparişi:** cam kuralıyla isteğe bağlı avans faturası; teslim faturası kesilmiş avansları eksi satırla düşer ve
+  avansı kesilmemiş tahsilat yüzünden beklemez.
+- **Sonucu belirsiz FGO belgesi:** belge kesme isteği FGO'ya ulaşmış olabilir ama yanıt alınamadıysa iş yeniden gönderilmez;
+  yönetici FGO'yu kontrol edip belgeyi seri + numarayla doğrulayarak kaydeder, ya da belge yoksa açık onayla yeniden gönderir /
+  vazgeçer. Bağlantı hiç kurulamadıysa eskisi gibi yeniden denenir.
+- **"Önemli kararlar":** elle kayıt ile FGO uyuşmazlığı, fazla ödeme, FGO'da doğrulanmayan elle avans, iptal edilmiş siparişin
+  proformasına tahsilat, onaylanan aynı tutar ve belirsiz FGO belgesi — her durum bir kez; kayda giden bağlantıyla.
+- Değişmeyenler: BT kuru kuralı (günlük elle kur, saklanan kur değişmez), mali belge e-postası (TAKİP gönderir; E-mail facturare →
+  firma e-postası → "Email yok"), tedarikçi / fabrika / nakliye / kârlılık ekranları, satış ve çizimde firma maskesi.
+
 ## 3.60.0 — 09.10.2026
 
 Profil ve aksesuar hesaplayıcısı (korkuluk kuralları) ve Paket 9 mesaj "okundu" düzeltmesi (kararlar 203–205). Veritabanı

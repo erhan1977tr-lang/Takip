@@ -20,7 +20,8 @@
 import { PrismaClient } from '@prisma/client';
 import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antivirus.js';
 import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
-import { dispatchFgoJobs } from '../server/profile/fgo-jobs.js';
+import { dispatchFgoJobs, dispatchProfileAdvanceJobs } from '../server/profile/fgo-jobs.js';
+import { financeReviewTick as reviewFinance } from '../server/finance/service.js';
 import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
 import { dispatchBatchJobs } from '../server/glass/batch.js';
 import { syncFgoDocuments } from '../server/accounting/receivables.js';
@@ -86,6 +87,9 @@ async function profileTick() {
   const now = new Date();
   const f = await dispatchFgoJobs(db, { now, log });
   if (f.done || f.failed) log('FGO:', JSON.stringify(f));
+  // Profil avans faturası (Paket 10): yalnızca yöneticinin açık isteğiyle kuyruğa giren işler
+  const pa = await dispatchProfileAdvanceJobs(db, { now, log });
+  if (pa.done || pa.failed) log('FGO profil avansı:', JSON.stringify(pa));
   const g = await dispatchGlassJobs(db, { now, log });
   if (g.done || g.failed) log('FGO cam:', JSON.stringify(g));
   const b = await dispatchBatchJobs(db, { now, log });
@@ -167,6 +171,19 @@ async function autoArchiveTick() {
   if (r.archived || r.skipped) log('otomatik arşiv:', JSON.stringify(r));
 }
 
+// Saatte bir (Paket 10, karar 208): elle ödeme kaydı olan zincirlerde FGO ile elle kayıt uyuşmazlığı, fazla ödeme, FGO'nun
+// doğrulamadığı elle avans ve iptal edilmiş siparişin proformasına gelen FGO tahsilatı → "Önemli kararlar" (aynı durum için
+// bir kez). Yalnızca veritabanı okur; hiçbir belge kesmez, FGO'ya istek yapmaz.
+const FINANCE_REVIEW_EVERY_MS = 3_600_000;
+let financeReviewedAt = 0;
+async function financeTick() {
+  if (once) return; // --once (testler): kural test/db/finance.test.js'te doğrudan denenir
+  if (Date.now() - financeReviewedAt < FINANCE_REVIEW_EVERY_MS) return;
+  financeReviewedAt = Date.now();
+  const r = await reviewFinance(db, { now: new Date() });
+  if (r.created) log('finans incelemesi:', JSON.stringify(r));
+}
+
 // Uygulama içi bildirimler turun BAŞINDA da dağıtılır (Paket 3 — bildirim gecikmesi): virüs taraması ve FGO işleri uzun
 // sürse de zil beklemez. Uygulama, iş akışı işleminden hemen sonra kendi olaylarını zaten dağıtır (lib/notifications.ts →
 // deliverInAppNow); bu adım o dağıtım yapılamadığında yedektir. Aynı olay aynı kullanıcıya bir kez yazılır (benzersiz anahtar).
@@ -224,6 +241,11 @@ while (!stopping) {
     await supplierEtaTick();
   } catch (e) {
     log('tedarikçi hatırlatması hatası:', e?.message ?? e);
+  }
+  try {
+    await financeTick();
+  } catch (e) {
+    log('finans incelemesi hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

@@ -18,6 +18,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { SidebarPortal } from '@/components/Sidebar';
 import { OrderInfo } from './OrderInfo';
 import { GlassFinance } from './GlassFinance';
+import { OrderPayments } from './OrderPayments';
 import { fxOfferNote } from '@/lib/fx-note';
 import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { ProfileOrderView } from './ProfileOrderView';
@@ -487,6 +488,13 @@ export default async function OrderPage({
       {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
+      {/* Ödemeler ve avans (Paket 10): FGO tahsilatı ve elle kayıtlar ayrı, belirsiz FGO belgesi kararı — yalnızca yönetici */}
+      {userCan(user, 'ACCOUNTING_MANAGE') && (
+        <OrderPayments
+          orderId={order.id} t={t} m={m.finance} sp={sp} profile={false}
+          total={order.price && sent ? { amount: Number(order.price.amount), currency: sent.currency } : null}
+        />
+      )}
       {/* "Sandıklar" satış ve yönetici görünümünde gösterilmez (Paket 4): sandıklar Yüklemeler sekmesinde girilir ve orada
           görünür; kayıtlar ve işlevler değişmedi */}
       {!isCustomer && !salesView && !drawerView && !userCan(user, 'OFFER_SEND') && order.status !== 'YENI' && <Crates order={order} t={t} />}

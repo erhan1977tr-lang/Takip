@@ -49,6 +49,8 @@ import { dailyLimitReached, fgoReady, getFgoSettings, missingBilling } from '../
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { GLASS_FGO, glassLines, glassTotals, invoiceLines, netOf } from './billing.js';
 import { BATCH_FGO, coverageOf } from './batch.js';
+import { centsText, paymentState, toCents } from '../finance/payments.js';
+import { advanceRisk, financeLock, recordDuplicateAck } from '../finance/service.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v) => (v == null ? 0 : Number(v));
@@ -71,9 +73,10 @@ const fxOfBatch = (b) => ({
 
 /**
  * Müşteri proformasının (PROFORMA partisi) avans durumu — tek yerde hesaplanır.
- *   paid            : FGO'nun proformada gösterdiği tahsilat (TVA dahil)
+ *   paid            : FGO'nun proformada gösterdiği tahsilat (TVA dahil) — "FGO doğrulandı"
+ *   manualRon       : partinin siparişlerinde yöneticinin elle kaydettiği ödemeler (RON; karar 206)
  *   advanced        : etkin avans partilerinin toplamı (kuyruktaki / kesilemeyen dahil)
- *   advanceRequired : avansı henüz kesilmemiş tahsilat (> 0 ise fatura kesilmez)
+ *   advanceRequired : max(paid, manualRon) − advanced (> 0 ise fatura kesilmez; aynı ödeme iki kez sayılmaz — karar 207)
  *   advances[].left : kesilmiş avansın henüz faturada düşülmemiş kısmı
  * @param {any} db  @param {string} proformaBatchId
  */
@@ -96,12 +99,13 @@ export async function chainState(db, proformaBatchId) {
     const spent = used.get(a.id) ?? 0;
     return { batchId: a.id, status: a.status, ref: refOf(a.document), lastError: a.lastError ?? null, planned, gross, used: spent, left: a.status === 'ISSUED' ? round2(Math.max(0, gross - spent)) : 0 };
   });
-  const paid = num(p.document?.paid);
-  const advanced = round2(advances.reduce((s, a) => s + a.planned, 0));
-  const advanceRequired = paid - advanced > EPS ? round2(paid - advanced) : 0;
+  const manual = await db.manualPayment.findMany({ where: { batchId: p.id }, select: { ron: true, voidedAt: true } });
+  const plannedCents = advances.reduce((s, a) => s + toCents(a.planned), 0n);
+  const payments = paymentState({ fgoPaid: p.document?.paid ?? 0, proformaTotal: p.document?.total ?? null, payments: manual, advanced: centsText(plannedCents) });
   return {
-    batch: p, ref: refOf(p.document), total: p.document?.total == null ? null : Number(p.document.total), paid, advanced, advanceRequired,
-    advancePending: advances.some((a) => a.status !== 'ISSUED'), advances, invoices: invoices.length,
+    batch: p, ref: refOf(p.document), total: p.document?.total == null ? null : Number(p.document.total),
+    paid: payments.fgoPaid, manualRon: payments.manualRon, advanced: payments.advanced, advanceRequired: payments.advanceRequired, basis: payments.advanceBasis,
+    match: payments.match, payments, advancePending: advances.some((a) => a.status !== 'ISSUED'), advances, invoices: invoices.length,
   };
 }
 
@@ -109,10 +113,11 @@ export async function chainState(db, proformaBatchId) {
  * Avans faturası partisi: proformaya gelen ve avansı kesilmemiş tahsilat kadar (uydurma tutar yok). Yükleme öncesi de
  * sonrası da kesilebilir. Tek satır: "Avans marfă conform proformă …" (sipariş başına avans faturasıyla aynı).
  * @param {any} db
- * @param {{ proformaBatchId: string, actor: any, now?: Date }} o
- * @returns {Promise<{ ok: true, batchId: string, amount: number } | { ok: false, code: string }>}
+ * Aynı müşteride aynı tutarlı avans / başka zincirde aynı tutarlı elle kayıt varsa DUPLICATE_RISK (karar 208): ack = ackKey.
+ * @param {{ proformaBatchId: string, actor: any, now?: Date, ack?: string | null }} o
+ * @returns {Promise<{ ok: true, batchId: string, amount: number } | { ok: false, code: string, matches?: any[], ackKey?: string }>}
  */
-export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new Date() }) {
+export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new Date(), ack = null }) {
   if (!can(actor?.role, 'ACCOUNTING_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   const settings = await getFgoSettings(db);
   if (!fgoReady(settings)) return { ok: false, code: 'FGO_DISABLED' };
@@ -121,12 +126,17 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
   if (!head) return { ok: false, code: 'NOT_FOUND' };
   try {
     return await db.$transaction(async (tx) => {
+      // Kilit sırası: müşteri finans kilidi (elle ödeme kaydıyla sıralanır, karar 206) → müşteri parti kilidi
+      await financeLock(tx, head.customerId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`billing-batch:${head.customerId}`}, 0))`;
       const st = await chainState(tx, proformaBatchId);
       if (!st || st.batch.kind !== 'PROFORMA') return { ok: false, code: 'NOT_FOUND' };
       if (st.batch.status !== 'ISSUED' || !st.batch.document) return { ok: false, code: 'NOT_ALLOWED' };
       if (st.advancePending) return { ok: false, code: 'ADVANCE_PENDING' };
       if (!(st.advanceRequired > 0)) return { ok: false, code: 'NOTHING_TO_ADVANCE' };
+      // Aynı müşteride aynı tutar (karar 208): yönetici gördüğü eşleşmeleri onaylamadan avans partisi açılmaz
+      const risk = await advanceRisk(tx, { customerId: head.customerId, ron: st.advanceRequired, chainKey: `batch:${proformaBatchId}`, now });
+      if (risk.matches.length && ack !== risk.ackKey) return { ok: false, code: 'DUPLICATE_RISK', matches: risk.matches, ackKey: risk.ackKey };
       const p = st.batch;
       const gross = st.advanceRequired;
       const net = netOf(gross, settings.vatRate);
@@ -135,7 +145,7 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
       const batch = await tx.billingBatch.create({
         data: {
           customerId: p.customerId, kind: 'ADVANCE', status: 'PENDING', parentId: p.id, uniqueKey, currency: p.currency, loadingDays: p.loadingDays,
-          selectionKey: uniqueKey, sourceTotal: '0.00', ronNet: net.toFixed(2), createdById: actor.id, createdAt: now,
+          selectionKey: uniqueKey, sourceTotal: '0.00', ronNet: net.toFixed(2), createdById: actor.id, createdAt: now, basis: st.basis,
           // Avans RON'dur; zincirin kur kaydı (proformanınki) partide de durur
           fxRate: p.fxRate, fxDate: p.fxDate, fxSource: p.fxSource, fxPolicy: p.fxPolicy, fxCurrency: p.fxCurrency, fxBaseRate: p.fxBaseRate,
           fxMarkupPercent: p.fxMarkupPercent, fxSourceDate: p.fxSourceDate, fxResolvedAt: p.fxResolvedAt, fxManual: p.fxManual,
@@ -147,7 +157,11 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
       await tx.notificationOutbox.create({ data: { type: BATCH_FGO, payload: { batchId: batch.id } } });
       const statuses = new Map((await tx.order.findMany({ where: { id: { in: orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
       for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_REQUESTED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: actor.id, note: `ADVANCE · ${st.ref}` });
-      await writeAudit(tx, { action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id, details: { customerId: p.customerId, kind: 'ADVANCE', proforma: st.ref, proformaBatchId: p.id, paid: st.paid, advancedBefore: st.advanced, amountRon: gross } }, actor);
+      await writeAudit(tx, {
+        action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id,
+        details: { customerId: p.customerId, kind: 'ADVANCE', proforma: st.ref, proformaBatchId: p.id, basis: st.basis, paid: st.paid, manualRon: st.manualRon, advancedBefore: st.advanced, amountRon: gross, ...(risk.matches.length ? { duplicateAck: risk.matches.map((m) => m.key) } : {}) },
+      }, actor);
+      if (risk.matches.length) await recordDuplicateAck(tx, { orderId: null, customerId: p.customerId, subject: 'ADVANCE', matches: risk.matches, amountRon: gross, actor, key: `batch:${batch.id}` });
       return { ok: true, batchId: batch.id, amount: gross };
     }, { timeout: 30_000 });
   } catch (e) {

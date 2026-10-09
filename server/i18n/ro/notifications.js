@@ -30,6 +30,7 @@ export default {
     INVOICE_OVERDUE: { title: 'Factură în așteptare: sticla încărcată nu a fost facturată' },
     ACCOUNTING_ACTION: { title: 'Acțiune contabilă necesară: factura nu corespunde încărcării corectate' },
     FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
+    FGO_UNCERTAIN: { title: 'Rezultatul documentului FGO este incert: verificați în FGO și decideți' },
     ADVANCE_REQUIRED: { title: 'Încasare pe proformă: este necesară factura de avans' },
     COMPENSATION_PENDING: { title: 'O sticlă de înlocuire așteaptă aprobarea dvs.' },
     // Sticlă de înlocuire deschisă (decizia 157) — doar administratorului, o notificare per înlocuire; decizia este în titlu
@@ -60,6 +61,7 @@ export default {
     INVOICE_OVERDUE: 'încărcare {date} · nefacturată de {qty} zile',
     ACCOUNTING_ACTION: 'încărcarea din {date} · factura {ref}',
     FGO_FAILED: '{error}',
+    FGO_UNCERTAIN: 'Identificator FGO (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
     COMPENSATION_PENDING: '{qty} buc. · sursa {ref}',
     COMPENSATION_FREE: '{qty} buc. · sursa {ref}',

@@ -181,12 +181,13 @@ export default {
       NOTHING_TO_INVOICE: "Faturalanacak kapsam kalmadı.",
       NOTHING_TO_ADVANCE: "Avansı kesilecek tahsilat yok (FGO'da tahsilat görünmüyor ya da avansı kesilmiş). Gerekirse önce \"FGO ile Güncelle\".",
       ADVANCE_PENDING: "Bu proforma için bir avans faturası zaten kuyrukta ya da kesilemedi.",
+      DUPLICATE_RISK: "Aynı müşteride aynı tutarlı bir avans / ödeme var: eşleşmeleri kontrol edip onay kutusunu işaretleyin.",
     },
     docNote: {
       INVOICE: "müşteri faturası · yükleme onayı: {day}",
       ADVANCE: "avans faturası · proforma {ref}",
     },
-    chainInfo: "tahsil edilen {paid} · avansı kesilen {advanced}",
+    chainInfo: "FGO tahsilatı {paid} · elle kayıt {manual} · avansı kesilen {advanced}",
     sumNote: "Müşteri belge zinciri tek borçtur: avans ve fatura kendi tutarıyla, proforma yalnızca henüz faturalanmamış ve avansla karşılanmamış kısmıyla sayılır.",
   },
   impact: {

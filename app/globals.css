@@ -1080,3 +1080,10 @@ td.acc-entries { min-width: 240px; font-size: var(--fs-meta); }
   .cal-month .cal-cell .cal-tag { display: none; }
   .cal-month .cal-blank { min-height: 44px; }
 }
+
+/* ----- Sipariş finansı (Paket 10, kararlar 206–210): elle ödeme, aynı tutar onayı, sonucu belirsiz FGO belgesi ----- */
+.dup-risk { margin: 10px 0; }
+.dup-risk .plain-list { margin: 4px 0 0; }
+.uncertain-job { border: 1px solid var(--warn-border); background: var(--warn-soft); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
+.uncertain-job h4 { margin: 0 0 6px; font-size: var(--fs-table); }
+.uncertain-job form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }

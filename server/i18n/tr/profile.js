@@ -258,6 +258,8 @@ export default {
     fxRequired: "FGO açık: fatura proformanın kuruyla kesileceği için BT EUR kurunu girin.",
     fxLocked: "Proforma FGO'dan müşterinin kur politikasındaki kurla kesildi; fatura aynı kurla kesilir, kur değiştirilemez.",
     fgoDisabled: "FGO bağlantısı kapalı ya da ayarları eksik (Yönetici → Entegrasyonlar).",
+    fgoBusy: 'Bu belge için FGO işi zaten kuyrukta; ikinci iş yazılmadı.',
+    fgoUncertain: "FGO'ya gönderilen belgenin sonucu belirsiz: önce Finans bölümünde FGO'yu kontrol edip karar verin.",
     noItems: 'En az bir ürün için adet girin.',
     badQty: 'Adetler 0 ile {max} arasında tam sayı olmalı.',
     productGone: 'Seçtiğiniz ürünlerden biri artık katalogda yok; sayfayı yenileyip tekrar deneyin.',

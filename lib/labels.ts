@@ -129,6 +129,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   FX_RATE_REQUIRED: 'profile.errors.fxRequired',
   FX_RATE_LOCKED: 'profile.errors.fxLocked',
   FGO_DISABLED: 'profile.errors.fgoDisabled',
+  FGO_BUSY: 'profile.errors.fgoBusy',
+  FGO_UNCERTAIN: 'profile.errors.fgoUncertain',
 };
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);

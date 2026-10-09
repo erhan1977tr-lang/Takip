@@ -53,3 +53,35 @@ export async function reviewBatchAction(fd: FormData) {
   revalidatePath(PAGE);
   redirect(back(customerId, [], '', { ok: action }, '#partiler'));
 }
+
+/**
+ * Belirsiz sonuçlu müşteri belgesi (parti; karar 209): yöneticinin kararı — FGO'daki belgeyi kaydet (FGO'dan doğrulanır),
+ * yeniden gönder (aynı IdExtern) ya da vazgeç (parti FAILED olur; mevcut "yeniden dene / vazgeç" kuralı).
+ */
+export async function resolveBatchUncertainAction(fd: FormData) {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const { getEnv } = await import('@/lib/env');
+  const { resolveUncertainJob } = await import('@/server/finance/uncertain.js');
+  const { UNCERTAIN_RECORDERS } = await import('@/server/finance/recorders.js');
+  const customerId = String(fd.get('customerId') ?? '');
+  // İki onaylı düğme (RETRY / ABANDON) aynı formda: basılanın değeri dolu olan alandır (ConfirmButton)
+  const action = fd.getAll('do').map(String).find(Boolean) ?? '';
+  const env = getEnv();
+  const jobId = String(fd.get('jobId') ?? '');
+  // Yeniden gönderilecek partinin kimliği formdan değil, işin kendisinden
+  const job = await db.notificationOutbox.findUnique({ where: { id: jobId }, select: { payload: true } });
+  const batchId = String((job?.payload as { batchId?: unknown } | null)?.batchId ?? '');
+  const r = await resolveUncertainJob(db, {
+    jobId, action: action as 'RECORD' | 'RETRY' | 'ABANDON', series: String(fd.get('series') ?? ''), number: String(fd.get('number') ?? ''),
+    confirm: fd.get('confirm') === '1', actor: await actorOf(user), secret: env.AUTH_SECRET, appUrl: env.APP_URL ?? '', recorders: UNCERTAIN_RECORDERS,
+  });
+  if (r.ok && action === 'RETRY' && batchId) await dispatchBatchJobs(db, { onlyBatchId: batchId });
+  revalidatePath(PAGE);
+  revalidatePath('/admin/kararlar');
+  if (!r.ok) {
+    const extra: Record<string, string> = { uncError: r.code };
+    if (r.code === 'TOTAL_MISMATCH' && 'fgoTotal' in r) Object.assign(extra, { fgoTotal: String(r.fgoTotal), expected: String(r.expected) });
+    redirect(back(customerId, [], '', extra, '#belirsiz'));
+  }
+  redirect(back(customerId, [], '', { uncOk: action }, '#belirsiz'));
+}

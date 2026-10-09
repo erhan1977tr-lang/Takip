@@ -151,6 +151,8 @@ model User {
   replansCreated     LoadingReplan[] @relation("ReplanCreatedBy")
   loadingCorrections LoadingCorrection[] @relation("LoadingCorrectedBy")
   billingBatches     BillingBatch[] @relation("BillingBatchCreatedBy")
+  manualPayments     ManualPayment[] @relation("ManualPaymentCreatedBy")
+  manualPaymentsVoided ManualPayment[] @relation("ManualPaymentVoidedBy")
   ordersRemoved      Order[]        @relation("OrderRemovedBy")
   compensationsCreated Compensation[] @relation("CompensationCreatedBy")
   compensationsDecided Compensation[] @relation("CompensationDecidedBy")
@@ -264,6 +266,7 @@ model Customer {
   replans       LoadingReplan[]
   billingBatches BillingBatch[]
   compensations Compensation[]
+  manualPayments ManualPayment[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
   priceTable    PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
@@ -369,6 +372,7 @@ model Order {
   noteReads         OrderNoteRead[]
   outbox            NotificationOutbox[]
   fgoDocuments      FgoDocument[]
+  manualPayments    ManualPayment[]
   billingBatchOrders BillingBatchOrder[]
   glassBilling      GlassBilling?
   profile           ProfileOrder?        // yalnızca profil siparişinde
@@ -777,6 +781,9 @@ model AdminAlert {
   offerId      String?
   offer        Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
   details      Json
+  // Aynı durum için ikinci kayıt açılmasın (Paket 10, karar 206): ör. "fin:<zincir>:<tür>:<tutarlar>", "fgo-uncertain:<iş>".
+  // Boş = tekilleştirme yok (eski türler).
+  dedupeKey    String?   @unique
   createdById  String?
   createdBy    User?     @relation("AlertCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt    DateTime  @default(now())
@@ -1447,7 +1454,11 @@ model FgoDocument {
   // Yalnızca sipariş başına ADVANCE: bu avansın karşıladığı tahsilat (TVA dahil, istenen tutar). "Avansı kesilen" toplam
   // bundan hesaplanır; FGO'nun gösterdiği toplam (total) kuruş yuvarlamasıyla farklı olabilir.
   advanced   Decimal?  @db.Decimal(14, 2)
+  // Yalnızca ADVANCE (Paket 10, karar 207): avansın dayanağı — FGO (FGO'nun proformada gösterdiği tahsilat), MANUAL
+  // (yöneticinin elle kaydettiği ödeme) ya da FGO_MANUAL (ikisi aynı tutarı gösteriyordu). Eski kayıtlarda boş (= FGO).
+  basis      String?
   createdAt  DateTime  @default(now())
+  coveredPayments ManualPayment[] @relation("ManualPaymentAdvanceDoc")
 
   @@unique([series, number])
   @@unique([orderId, kind, seq]) // sipariş başına her türden sıra başına tek belge (çift kesim veritabanında da engellenir)
@@ -1508,9 +1519,13 @@ model BillingBatch {
   lastError    String?
   voidedAt     DateTime?
   voidReason   String?
+  // Yalnızca ADVANCE partisi (Paket 10, karar 207): FGO | MANUAL | FGO_MANUAL (FgoDocument.basis ile aynı)
+  basis        String?
   orders       BillingBatchOrder[]
   lines        BillingBatchLine[]
   document     FgoDocument?
+  manualPayments  ManualPayment[] @relation("ManualPaymentBatch")
+  coveredPayments ManualPayment[] @relation("ManualPaymentAdvanceBatch")
 
   @@index([customerId])
   @@index([status])
@@ -1908,4 +1923,56 @@ model SupplierPayment {
   createdAt   DateTime @default(now())
 
   @@index([supplierId, paidOn])
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Yöneticinin elle kaydettiği müşteri ödemesi / avansı (Paket 10, kararlar 206–208). FGO'nun doğruladığı tahsilattan
+// (FgoDocument.paid) AYRIDIR ve onun yerine geçmez. Kayıt tek başına belge kesmez; avans faturası yöneticinin ayrı ve açık
+// isteğiyle, zincirin kuralıyla kesilir (server/finance/payments.js → advanceable: max(FGO tahsilatı, elle kayıtlar) −
+// avansı kesilen — aynı ödeme iki kez faturalanmaz). Kayıt düzenlenmez ve silinmez: yalnızca gerekçeyle geçersiz kılınır
+// (avans faturasına girmişse kılınamaz). Veritabanı tetikleyicisi para alanlarının değişmesini ve silmeyi reddeder.
+//   Zincir: sipariş başına belge zinciri (batchId boş) ya da siparişin girdiği müşteri proforması (batchId = PROFORMA partisi)
+//   ron / rate: zincirin kayıtlı kuruyla kayıt anında hesaplanan RON karşılığı (EUR ödeme); RON ödemede rate boş
+// ---------------------------------------------------------------------------------------------------------------------
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CARD
+  OTHER
+}
+
+model ManualPayment {
+  id             String        @id @default(cuid())
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  batchId        String?
+  batch          BillingBatch? @relation("ManualPaymentBatch", fields: [batchId], references: [id], onDelete: Restrict)
+  proformaRef    String        // kayıt anındaki proforma (seri + numara) — izlenebilirlik
+  paidOn         DateTime      @db.Date
+  amount         Decimal       @db.Decimal(14, 2)
+  currency       String        // EUR | RON
+  method         PaymentMethod
+  reference      String?
+  note           String?
+  ron            Decimal       @db.Decimal(14, 2)
+  rate           Decimal?      @db.Decimal(10, 4)
+  // Bu ödemeyi karşılayan avans faturası (sipariş zinciri) ya da avans partisi (müşteri zinciri); belge FGO'da silinirse boşalır
+  advanceDocId   String?
+  advanceDoc     FgoDocument?  @relation("ManualPaymentAdvanceDoc", fields: [advanceDocId], references: [id], onDelete: SetNull)
+  advanceBatchId String?
+  advanceBatch   BillingBatch? @relation("ManualPaymentAdvanceBatch", fields: [advanceBatchId], references: [id], onDelete: SetNull)
+  requestKey     String        @unique // formun tek kullanımlık anahtarı (çift gönderim tek kayıt)
+  createdById    String
+  createdBy      User          @relation("ManualPaymentCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime      @default(now())
+  voidedAt       DateTime?
+  voidedById     String?
+  voidedBy       User?         @relation("ManualPaymentVoidedBy", fields: [voidedById], references: [id])
+  voidReason     String?
+
+  @@index([orderId])
+  @@index([customerId, paidOn])
+  @@index([batchId])
 }

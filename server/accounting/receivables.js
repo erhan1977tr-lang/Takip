@@ -288,7 +288,9 @@ export async function refreshDocuments(db, {
 
 /**
  * Proformaya gelen tahsilatın avansı kesilmemiş kısmı varsa bildirim (cam: sipariş başına zincir ve müşteri proforması
- * zinciri; hesap mevcut tek kaynaklardan — orderChain / chainState). Profil siparişinde avans faturası yoktur.
+ * zinciri; hesap mevcut tek kaynaklardan — orderChain / chainState; elle kaydedilip avansı kesilmiş ödeme FGO'da görününce
+ * yeniden "gerekli" sayılmaz — karar 207). Profil siparişinde avans faturası isteğe bağlıdır (nihai faturayı bekletmez):
+ * bildirim yok.
  */
 async function advanceNotice(db, d, paid) {
   const { notifyAdvanceRequired } = await import('../notifications/inapp.js');
@@ -302,10 +304,10 @@ async function advanceNotice(db, d, paid) {
     return;
   }
   if (!d.orderId) return;
-  const order = await db.order.findUnique({ where: { id: d.orderId }, select: { orderTypeCode: true, status: true, fgoDocuments: true } });
+  const order = await db.order.findUnique({ where: { id: d.orderId }, select: { orderTypeCode: true, status: true, fgoDocuments: true, manualPayments: { where: { batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } } } });
   if (order?.orderTypeCode !== 'GLASS_ORDER' || order.status === 'IPTAL') return;
   const { orderChain } = await import('../glass/billing.js');
-  const chain = orderChain(order.fgoDocuments);
+  const chain = orderChain(order.fgoDocuments, order.manualPayments);
   if (!chain.invoice && chain.advanceRequired > 0) await notifyAdvanceRequired(db, { doc: d, paid, required: chain.advanceRequired });
 }
 

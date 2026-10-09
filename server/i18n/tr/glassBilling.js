@@ -3,13 +3,14 @@ export default {
   title: "Finans / FGO",
   none: "Henüz FGO belgesi yok.",
   rate: "Belge kuru: {rate} RON / EUR ({date})",
-  paidManual: "Eski kayıt — elle girilen ödeme: {amount} · {date}. Artık kullanılmaz; ödeme yalnızca FGO'dan okunur.",
+  paidManual: "Eski kayıt — elle girilen ödeme: {amount} · {date}. Artık kullanılmaz; ödemeler aşağıdaki Ödemeler ve avans kartında.",
   chain: {
     title: "Proforma tahsilatı ve avans",
     paid: "FGO tahsilatı",
+    manual: "Elle kayıt",
     advanced: "Avansı kesilen",
     required: "Avansı kesilecek",
-    note: "Tahsilat yalnızca FGO'dan okunur (saatte bir otomatik; hemen görmek için Muhasebe → Cam Tahsilat → FGO ile Güncelle). Tutar elle girilmez.",
+    note: "Tahsilat FGO'dan okunur (saatte bir otomatik; hemen görmek için Muhasebe → Cam Tahsilat → FGO ile Güncelle) ya da yönetici ödemeyi aşağıda elle kaydeder. Avansı kesilecek = ikisinden büyük olan − avansı kesilen; aynı ödeme iki kez sayılmaz.",
   },
   wait: {
     batch: "Bu sipariş müşteri düzeyindeki belgelerde ({ref}); sipariş başına ayrı belge kesilmez. Fatura onaylı yüklemeden kesilir (Yüklemeler → gün → Faturalama).",
@@ -18,11 +19,12 @@ export default {
     pending: "Belge kesiliyor (bir dakika içinde).",
     no_offer: "Müşteriye gönderilmiş teklif yok; belge kesilemez.",
     wait_loading: "Avans faturası kesildi. Cam yüklenince (yükleme gününden 2 gün sonra) fatura kesilir.",
-    advance_required: "Kapanış faturası henüz kesilemez: FGO'da proformaya gelen tahsilatın {amount} tutarındaki kısmının avans faturası kesilmemiş. Önce avans faturasını kesin; kapanış faturası kesilen avansları düşer.",
-    wait_payment: "Proforma ödemesi bekleniyor. Ödeme yalnızca FGO'dan okunur: FGO'da tahsilat görününce (saatte bir otomatik ya da Muhasebe → Cam Tahsilat → FGO ile Güncelle) avans faturası düğmesi çıkar.",
+    advance_required: "Kapanış faturası henüz kesilemez: proformaya gelen tahsilatın (FGO ya da elle kayıt) {amount} tutarındaki kısmının avans faturası kesilmemiş. Önce avans faturasını kesin; kapanış faturası kesilen avansları düşer.",
+    wait_payment: "Proforma ödemesi bekleniyor. FGO'da tahsilat görününce (saatte bir otomatik ya da Muhasebe → Cam Tahsilat → FGO ile Güncelle) ya da ödeme aşağıda elle kaydedilince avans faturası düğmesi çıkar.",
   },
   failed: "FGO'da kesilemedi: {error}",
   retry: "Son deneme olmadı ({error}); yeniden denenecek.",
+  uncertain: "FGO'ya gönderilen belgenin sonucu belirsiz: belge FGO'da kesilmiş olabilir, yeniden gönderilmedi. FGO'yu kontrol edip aşağıda karar verin.",
   mail: "Müşteriye e-posta",
   mailSent: "gönderildi {date}",
   mailFailed: "gönderilemedi: {error}",
@@ -34,7 +36,7 @@ export default {
   },
   confirm: {
     proforma: "FGO'da proforma kesilip müşteriye e-postayla gönderilsin mi?",
-    advance: "FGO'da proformaya gelen ve avansı kesilmemiş {amount} tahsilat için avans faturası kesilip müşteriye gönderilsin mi?",
+    advance: "Proformaya gelen ve avansı kesilmemiş {amount} tahsilat için (dayanak: {basis}) FGO'da avans faturası kesilip müşteriye gönderilsin mi?",
     invoice: "FGO'da fatura kesilip müşteriye gönderilsin mi? (Kesilmiş avans faturalarının tutarı düşülür.)",
   },
   ok: {
@@ -46,5 +48,7 @@ export default {
     BAD_RATE: "Elle girilen kur geçersiz (ör.: 5,0934).",
     RATE_LOCKED: "Bu siparişin kuru proformayla belirlenmiş; elle kurla değiştirilemez.",
     NOT_ALLOWED: "Bu belge şu an kesilemez (zaten kesilmiş ya da sırası değil).",
+    DUPLICATE_RISK: "Aynı müşteride aynı tutarlı bir avans / ödeme var: eşleşmeleri kontrol edip onay kutusunu işaretleyin.",
+    FORBIDDEN: "Bu işlem için yetkiniz yok.",
   },
 };

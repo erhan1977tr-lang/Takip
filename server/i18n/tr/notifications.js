@@ -30,6 +30,7 @@ export default {
     INVOICE_OVERDUE: { title: 'Fatura bekliyor: yüklenen cam fatura edilmedi' },
     ACCOUNTING_ACTION: { title: 'Muhasebe işlemi gerekli: fatura düzeltilmiş yüklemeyle uyuşmuyor' },
     FGO_FAILED: { title: "FGO'da belge kesilemedi" },
+    FGO_UNCERTAIN: { title: "FGO belgesinin sonucu belirsiz: FGO'yu kontrol edip karar verin" },
     ADVANCE_REQUIRED: { title: 'Proformaya tahsilat geldi: avans faturası gerekli' },
     COMPENSATION_PENDING: { title: 'Telafi camı onayınızı bekliyor' },
     // Telafi camı açıldı (karar 157) — yalnızca yöneticiye, telafi başına bir bildirim; karar başlıkta
@@ -60,6 +61,7 @@ export default {
     INVOICE_OVERDUE: 'yükleme {date} · {qty} gündür fatura edilmedi',
     ACCOUNTING_ACTION: '{date} yüklemesi · fatura {ref}',
     FGO_FAILED: '{error}',
+    FGO_UNCERTAIN: 'FGO kimliği (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
     COMPENSATION_PENDING: '{qty} adet · kaynak {ref}',
     COMPENSATION_FREE: '{qty} adet · kaynak {ref}',

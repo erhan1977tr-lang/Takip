@@ -82,6 +82,8 @@ export const STAFF_EVENT_POLICY = {
   FGO_DOC_ISSUED: FGO_FACT, FGO_DOC_EMAILED: FGO_FACT, FGO_DOC_DELETED: FGO_FACT,
   FGO_DOC_REQUESTED: ACCOUNTING_ONLY, FGO_FAILED: ACCOUNTING_ONLY, FGO_RETRY: ACCOUNTING_ONLY, COST_CORRECTED: ACCOUNTING_ONLY,
   GLASS_PAID: ACCOUNTING_ONLY, // eski (artık yazılmıyor): ödeme tutarı
+  // Paket 10: elle ödeme kaydı / geçersiz kılma ve sonucu belirsiz FGO belgesi (karar 206, 209) — yalnızca muhasebe
+  PAYMENT_RECORDED: ACCOUNTING_ONLY, PAYMENT_VOIDED: ACCOUNTING_ONLY, FGO_UNCERTAIN: ACCOUNTING_ONLY, FGO_UNCERTAIN_RESOLVED: ACCOUNTING_ONLY,
 };
 /** Tabloda olmayan olay: yalnızca muhasebe (yönetici) — yeni bir olay kodu tabloya eklenmeden kimseye açılmaz */
 export const UNKNOWN_EVENT_POLICY = ACCOUNTING_ONLY;

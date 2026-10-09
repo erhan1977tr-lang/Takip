@@ -12,6 +12,10 @@ import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { DOC_EMAIL, GLASS_FGO, billingState, isLoaded } from '@/server/glass/billing.js';
 import { localDay } from '@/server/profile/dates.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { DuplicateAck } from '@/components/DuplicateAck';
+import { dupTexts, matchLines, type MatchView } from '@/lib/finance';
+import { advanceRisk } from '@/server/finance/service.js';
+import { isParked } from '@/server/finance/uncertain.js';
 import { glassDocumentAction } from './glass-billing-actions';
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
@@ -21,14 +25,16 @@ type Job = { type: string; status: string; lastError: string | null; payload: un
 
 /**
  * Cam siparişinin Finans / FGO bölümü (yönetici). Muhasebe → Cam Tahsilat ile aynı kayıtlar (FgoDocument).
- * Düğmeler belge durumuna göre: proforma → (FGO'da tahsilat) → avans faturası → (yüklenince) fatura. Ödeme yalnızca
- * FGO'dan okunur (karar 104): tahsilat − avansı kesilen > 0 ise avans faturası düğmesi yüklemeden sonra da çıkar.
+ * Düğmeler belge durumuna göre: proforma → (tahsilat) → avans faturası → (yüklenince) fatura. Tahsilat = FGO'nun gösterdiği
+ * ya da yöneticinin elle kaydettiği (büyük olan; karar 207): tahsilat − avansı kesilen > 0 ise avans faturası düğmesi
+ * yüklemeden sonra da çıkar. Aynı müşteride aynı tutarlı avans / ödeme varsa düğmenin formunda eşleşmeler ve zorunlu onay
+ * kutusu (karar 208). Sonucu belirsiz iş (karar 209) yeniden denenmez; karar kutusu Ödemeler kartında (#belirsiz).
  */
 export async function GlassFinance({ order, t, sp }: {
-  order: { id: string; status: string; actualShipDate: Date | null; estimatedShipDate: Date | null; offers: { status: string }[] };
+  order: { id: string; customerId: string; status: string; actualShipDate: Date | null; estimatedShipDate: Date | null; offers: { status: string }[] };
   t: T; sp: Record<string, string | undefined>;
 }) {
-  const [docs, billing, jobs, batchOrders] = await Promise.all([
+  const [docs, billing, jobs, batchOrders, payments] = await Promise.all([
     db.fgoDocument.findMany({ where: { orderId: order.id }, orderBy: { issuedAt: 'asc' } }) as Promise<Doc[]>,
     db.glassBilling.findUnique({ where: { orderId: order.id } }),
     db.notificationOutbox.findMany({ where: { orderId: order.id, type: { in: [GLASS_FGO, DOC_EMAIL] } }, orderBy: { createdAt: 'desc' }, take: 10 }) as Promise<Job[]>,
@@ -37,14 +43,21 @@ export async function GlassFinance({ order, t, sp }: {
       where: { orderId: order.id, activeKey: { not: null } }, orderBy: { batch: { createdAt: 'asc' } },
       select: { batch: { select: { status: true, customerId: true, document: { select: { series: true, number: true, link: true } } } } },
     }),
+    // Sipariş başına zincirin elle ödeme kayıtları (karar 206; müşteri proformasındakiler partinin zincirinde)
+    db.manualPayment.findMany({ where: { orderId: order.id, batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } }),
   ]);
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const pending = jobs.filter((j) => j.type === GLASS_FGO && j.status === 'PENDING');
   const st = billingState({
     status: order.status, loaded: isLoaded(order, today), docs,
     pending: pending.map((j) => (j.payload as { kind?: string } | null)?.kind ?? ''), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
-    inBatch: batchOrders.length > 0,
+    inBatch: batchOrders.length > 0, payments,
   });
+  // Aynı müşteride aynı tutar (karar 208): avans düğmesinin formunda eşleşmeler + onay kutusu (sunucu yeniden denetler)
+  const risk = st.actions.includes('advance')
+    ? await advanceRisk(db, { customerId: order.customerId, ron: st.advanceRequired, chainKey: `order:${order.id}` })
+    : { matches: [], ackKey: '' };
+  const parked = jobs.find((j) => j.type === GLASS_FGO && isParked(j));
   // Müşteri düzeyindeki belgeler (müşteri proforması, onaylı yüklemeden müşteri faturası): numaraları ya da durumu
   const batchRefs = batchOrders.map((x) => (x.batch.document ? `${x.batch.document.series}${x.batch.document.number}` : t(`accounting.batch.status.${x.batch.status}` as MsgKey)));
   // Kur henüz belirlenmediyse (proforma ya da doğrudan fatura bu belgeyle belirleyecek) ve teklif EUR ise:
@@ -67,7 +80,7 @@ export async function GlassFinance({ order, t, sp }: {
     <div className="card" id="finans">
       <h2>{t('glassBilling.title')}</h2>
       {sp.fgoOk && <div className="alert alert-ok">{t('glassBilling.ok.requested')}</div>}
-      {sp.fgoError && <div className="alert alert-error">{t(`glassBilling.errors.${['FGO_DISABLED', 'FGO_DAILY_LIMIT', 'BAD_RATE', 'RATE_LOCKED'].includes(sp.fgoError) ? sp.fgoError : 'NOT_ALLOWED'}` as MsgKey)}</div>}
+      {sp.fgoError && <div className="alert alert-error" data-fgo-error={sp.fgoError}>{t(`glassBilling.errors.${['FGO_DISABLED', 'FGO_DAILY_LIMIT', 'BAD_RATE', 'RATE_LOCKED', 'DUPLICATE_RISK', 'FORBIDDEN'].includes(sp.fgoError) ? sp.fgoError : 'NOT_ALLOWED'}` as MsgKey)}</div>}
       {docs.length > 0 ? (
         <div className="table-wrap">
           <table>
@@ -131,7 +144,8 @@ export async function GlassFinance({ order, t, sp }: {
         <div className="fx-block" id="avans-durumu">
           <h3>{t('glassBilling.chain.title')}</h3>
           <p className="small">
-            {t('glassBilling.chain.paid')}: <b>{fmtMoney(st.paid, 'RON')}</b> · {t('glassBilling.chain.advanced')}: <b>{fmtMoney(st.advanced, 'RON')}</b> ·{' '}
+            {t('glassBilling.chain.paid')}: <b>{fmtMoney(st.paid, 'RON')}</b> · {t('glassBilling.chain.manual')}: <b>{fmtMoney(st.manualRon, 'RON')}</b> ·{' '}
+            {t('glassBilling.chain.advanced')}: <b>{fmtMoney(st.advanced, 'RON')}</b> ·{' '}
             {t('glassBilling.chain.required')}: {st.advanceRequired > 0 ? <Badge tone="warn">{fmtMoney(st.advanceRequired, 'RON')}</Badge> : <b>{fmtMoney(st.advanceRequired, 'RON')}</b>}
           </p>
           <p className="muted small">{t('glassBilling.chain.note')}</p>
@@ -151,7 +165,9 @@ export async function GlassFinance({ order, t, sp }: {
           </div>
         ) : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
       {lastJob?.status === 'FAILED' && <div className="alert alert-error">{t('glassBilling.failed', { error: lastJob.lastError ?? '—' })}</div>}
-      {lastJob?.status === 'PENDING' && lastJob.lastError && <div className="alert alert-warn">{t('glassBilling.retry', { error: lastJob.lastError })}</div>}
+      {parked
+        ? <div className="alert alert-warn" data-fgo-uncertain>{t('glassBilling.uncertain')} <a href="#belirsiz">{t('finance.uncertain.title')}</a></div>
+        : lastJob?.status === 'PENDING' && lastJob.lastError && <div className="alert alert-warn">{t('glassBilling.retry', { error: lastJob.lastError })}</div>}
       {/* Müşteri e-postası (yalnızca TAKİP gönderir): kapatılmış iş yalnızca "e-posta yok" ise gösterilir */}
       {lastMail && (lastMail.status !== 'SKIPPED' || lastMail.lastError === 'NO_EMAIL') && (
         <p className="small">
@@ -174,7 +190,8 @@ export async function GlassFinance({ order, t, sp }: {
                 <input id={`gb-rate-${a}`} name="fxRate" inputMode="decimal" maxLength={10} style={{ width: 110 }} title={t('fx.manualHint')} />
               </span>
             )}
-            <ConfirmButton primary message={t(`glassBilling.confirm.${a}` as MsgKey, { amount: fmtMoney(st.advanceRequired, 'RON') })}>{t(`glassBilling.button.${a}` as MsgKey)}</ConfirmButton>
+            {a === 'advance' && <DuplicateAck lines={matchLines(t, risk.matches as MatchView[])} ackKey={risk.ackKey} texts={dupTexts(t)} id="gb-ack" />}
+            <ConfirmButton primary message={t(`glassBilling.confirm.${a}` as MsgKey, { amount: fmtMoney(st.advanceRequired, 'RON'), basis: t(`finance.badge.${st.basis}` as MsgKey) })}>{t(`glassBilling.button.${a}` as MsgKey)}</ConfirmButton>
           </form>
         ))}
       </div>

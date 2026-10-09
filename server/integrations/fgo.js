@@ -316,13 +316,34 @@ export async function afterInvoiceIssued(db, { sent, issued, orderId }) {
   await db.integrationSetting.update({ where: { key: FGO_KEY }, data: { value: { ...v, invoiceNext: null } } });
 }
 
-/** FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır. */
+/**
+ * FGO hata mesajı geçici mi (yeniden denenebilir)? Ağ/zaman aşımı/5xx: evet; FGO'nun "Success: false" yanıtı: hayır.
+ * uncertain (Paket 10, karar 209): istek FGO'ya ULAŞMIŞ OLABİLİR ve sonucu bilinmiyor — bağlantı kurulduktan sonra kopan /
+ * zaman aşımına uğrayan istek, 5xx, okunamayan yanıt, numarasız "başarılı" yanıt. Belge kesen istekte (emitere, emit: true)
+ * böyle bir hata körlemesine yeniden denenmez: iş durdurulur ve yöneticinin incelemesine gider (server/finance/uncertain.js).
+ * Bağlantının hiç kurulamadığı (ECONNREFUSED, DNS, bağlantı zaman aşımı, TLS) ve 429 (istek işlenmedi) hatalar belirsiz değildir.
+ */
 export class FgoError extends Error {
-  /** @param {string} message @param {{ retry: boolean }} o */
-  constructor(message, { retry }) {
+  /** @param {string} message @param {{ retry: boolean, uncertain?: boolean }} o */
+  constructor(message, { retry, uncertain = false }) {
     super(message);
     this.retry = retry;
+    this.uncertain = uncertain;
+    /** belge kesen istekte mi oluştu (fgoEmit) */
+    this.emit = false;
   }
+}
+
+/** İstek FGO'ya hiç gitmedi: bağlantı kurulamadı (sonuç kesin: belge kesilmedi) */
+const NOT_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'EADDRNOTAVAIL', 'UND_ERR_CONNECT_TIMEOUT']);
+/**
+ * fetch hatası isteğin gönderilmediğini KESİN gösteriyor mu (undici: e.cause.code; TLS el sıkışması da gövdeden önce düşer).
+ * Bilinmeyen her hata "gönderilmiş olabilir" sayılır.
+ * @param {unknown} e
+ */
+export function requestNotSent(e) {
+  const codes = [e?.code, e?.cause?.code, e?.cause?.cause?.code].filter((c) => typeof c === 'string');
+  return codes.some((c) => NOT_SENT_CODES.has(c) || /^ERR_TLS_|CERT/.test(c));
 }
 
 async function post(settings, path, form, fetchImpl) {
@@ -333,30 +354,42 @@ async function post(settings, path, form, fetchImpl) {
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     });
   } catch (e) {
-    throw new FgoError(`FGO'ya ulaşılamadı: ${String(e?.message ?? e).slice(0, 200)}`, { retry: true });
+    throw new FgoError(`FGO'ya ulaşılamadı: ${String(e?.message ?? e).slice(0, 200)}`, { retry: true, uncertain: !requestNotSent(e) });
   }
   const body = await res.text();
   let json;
   try {
     json = JSON.parse(body);
   } catch {
-    throw new FgoError(`FGO yanıtı okunamadı (HTTP ${res.status})`, { retry: res.status >= 500 || res.status === 429 });
+    // 2xx ama okunamayan yanıt ya da 5xx: FGO isteği işlemiş olabilir; 4xx / 429: işlenmedi
+    throw new FgoError(`FGO yanıtı okunamadı (HTTP ${res.status})`, { retry: res.status >= 500 || res.status === 429, uncertain: res.status < 400 || res.status >= 500 });
   }
-  if (res.status >= 500 || res.status === 429) throw new FgoError(`FGO HTTP ${res.status}: ${json?.Message ?? ''}`.trim(), { retry: true });
+  if (res.status >= 500 || res.status === 429) throw new FgoError(`FGO HTTP ${res.status}: ${json?.Message ?? ''}`.trim(), { retry: true, uncertain: res.status >= 500 });
   if (!json?.Success) throw new FgoError(String(json?.Message ?? `HTTP ${res.status}`).slice(0, 400), { retry: false });
   return json;
 }
 
 /**
  * Belge keser. @returns {Promise<{ series: string, number: string, link: string | null }>}
+ * Hata her zaman FgoError'dur ve emit: true taşır (belirsizse uncertain: true — yeniden denenmez, karar 209).
  */
 export async function fgoEmit(settings, form, fetchImpl = fetch) {
-  const json = await post(settings, '/factura/emitere', form, fetchImpl);
-  const fac = json.Factura ?? {};
-  if (!fac.Numar) throw new FgoError('FGO belge numarası dönmedi', { retry: false });
-  const link = typeof fac.Link === 'string' && /^https:\/\//i.test(fac.Link) ? fac.Link.slice(0, 500) : null;
-  return { series: String(fac.Serie ?? form.Serie), number: String(fac.Numar), link };
+  try {
+    const json = await post(settings, '/factura/emitere', form, fetchImpl);
+    const fac = json.Factura ?? {};
+    // "Başarılı" ama numarasız yanıt: belge kesilmiş olabilir — sonuç belirsiz
+    if (!fac.Numar) throw new FgoError('FGO belge numarası dönmedi', { retry: false, uncertain: true });
+    const link = typeof fac.Link === 'string' && /^https:\/\//i.test(fac.Link) ? fac.Link.slice(0, 500) : null;
+    return { series: String(fac.Serie ?? form.Serie), number: String(fac.Numar), link };
+  } catch (e) {
+    const err = e instanceof FgoError ? e : new FgoError(String(e?.message ?? e).slice(0, 300), { retry: true, uncertain: true });
+    err.emit = true;
+    throw err;
+  }
 }
+
+/** Belge kesen istek sonucu belirsiz kaldı mı (karar 209): iş durdurulur, yönetici inceler */
+export const uncertainEmit = (e) => e instanceof FgoError && e.emit === true && e.uncertain === true;
 
 /**
  * Belgenin PDF bağlantısı (factura/print): yalnızca OKUR, belge kesmez / değiştirmez. Kayıtlı bağlantı yoksa ya da artık

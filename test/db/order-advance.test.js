@@ -36,7 +36,8 @@ function fakeFgo(start) {
     }
     if (fgo.failNext > 0) {
       fgo.failNext -= 1;
-      throw new Error('bağlantı koptu');
+      // Bağlantı hiç kurulamadı (ECONNREFUSED): istek FGO'ya gitmedi — sonuç kesin, mevcut yeniden deneme kuralı (karar 209)
+      throw Object.assign(new TypeError('fetch failed: bağlantı koptu'), { cause: { code: 'ECONNREFUSED' } });
     }
     calls.push(form);
     n += 1;

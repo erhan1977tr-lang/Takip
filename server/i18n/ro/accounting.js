@@ -181,12 +181,13 @@ export default {
       NOTHING_TO_INVOICE: "Nu a mai rămas nimic de facturat.",
       NOTHING_TO_ADVANCE: "Nu există încasare pentru factura de avans (în FGO nu apare încasare sau avansul a fost deja facturat). Dacă este cazul, mai întâi „Actualizează din FGO”.",
       ADVANCE_PENDING: "Pentru această proformă există deja o factură de avans în coadă sau neemisă.",
+      DUPLICATE_RISK: "Există un avans / o plată cu aceeași sumă la același client: verificați potrivirile și bifați confirmarea.",
     },
     docNote: {
       INVOICE: "factură client · încărcare confirmată: {day}",
       ADVANCE: "factură de avans · proforma {ref}",
     },
-    chainInfo: "încasat {paid} · avans facturat {advanced}",
+    chainInfo: "încasat în FGO {paid} · înregistrare manuală {manual} · avans facturat {advanced}",
     sumNote: "Lanțul de documente al clientului este o singură datorie: avansul și factura se iau cu valoarea lor, proforma doar cu partea încă nefacturată și neacoperită de avans.",
   },
   impact: {

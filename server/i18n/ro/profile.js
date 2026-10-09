@@ -256,6 +256,8 @@ export default {
     fxRequired: "FGO activ: introduceți cursul EUR BT, deoarece factura se emite cu cursul proformei.",
     fxLocked: "Proforma a fost emisă în FGO cu cursul din politica clientului; factura se emite cu același curs, cursul nu se poate schimba.",
     fgoDisabled: "Conexiunea FGO este inactivă sau incompletă (Administrator → Integrări).",
+    fgoBusy: 'Pentru acest document există deja o lucrare FGO în coadă; nu s-a creat a doua.',
+    fgoUncertain: 'Rezultatul documentului trimis la FGO este incert: verificați întâi în FGO și decideți în secțiunea Finanțe.',
     noItems: 'Introduceți cantitatea pentru cel puțin un produs.',
     badQty: 'Cantitățile trebuie să fie numere întregi între 0 și {max}.',
     productGone: 'Unul dintre produsele alese nu mai este în catalog; reîncărcați pagina și încercați din nou.',

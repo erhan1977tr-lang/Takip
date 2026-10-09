@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
 import { resolveAlertAction } from './actions';
 import { unitLabel } from '@/server/profile/catalog.js';
 
@@ -21,7 +21,21 @@ type Details = {
   stock?: { code?: string; nameTr?: string; nameRo?: string; unitCode?: string; qty?: number; stock?: number; missing?: number }[];
   /** Kritik stok (karar 177): ürün, o anki stok (level), eşik, neden (giriş / sayım / depo çıkışı / eşik değişikliği) */
   productId?: string; code?: string; nameTr?: string; nameRo?: string; unitCode?: string; level?: number; threshold?: number; cause?: string;
+  /** Finans (Paket 10): FINANCE_REVIEW (code, proforma, FGO / elle tutarlar), DUPLICATE_RISK (subject, amountRon, matches),
+   * FGO_UNCERTAIN (kind, idExtern, expectedGross); müşteri proforması zincirinde sipariş yok → customerId */
+  proforma?: string | null; fgoPaid?: number; manualRon?: number; subject?: string; amountRon?: number;
+  matches?: { ref?: string | null; orderNo?: string | null; kind?: string }[]; kind?: string; idExtern?: string; expectedGross?: number; customerId?: string | null;
 };
+const FINANCE_CODES = ['MISMATCH', 'OVERPAID', 'MANUAL_UNVERIFIED', 'FGO_PAID_CANCELLED'];
+const UNC_KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE', 'FGO_PROFORMA', 'FGO_INVOICE'];
+/** Finans kaydının açılacağı yer: siparişin Ödemeler kartı / belirsiz kutusu ya da (sipariş yoksa) müşteri proforması sayfası */
+const financeHref = (type: string, orderId: string | null, d: Details) => {
+  const at = type === 'FGO_UNCERTAIN' ? 'belirsiz' : 'odemeler';
+  if (orderId) return `/siparisler/${orderId}#${at}`;
+  const c = typeof d.customerId === 'string' && /^[a-z0-9]{8,40}$/i.test(d.customerId) ? `?musteri=${d.customerId}` : '';
+  return `/admin/muhasebe/cam/proforma${c}#${type === 'FGO_UNCERTAIN' ? 'belirsiz' : 'partiler'}`;
+};
+const FINANCE_TYPES = ['FINANCE_REVIEW', 'DUPLICATE_RISK', 'FGO_UNCERTAIN'];
 const CRITICAL_SOURCES = ['GIRIS', 'SAYIM', 'CIKIS', 'THRESHOLD'];
 const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
 const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED'];
@@ -57,7 +71,28 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               })}
             </li>
           ))}
-          {d.error && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
+          {d.error && a.type !== 'FGO_UNCERTAIN' && <li>{t('pricing.alerts.error', { error: d.error })}</li>}
+          {a.type === 'FINANCE_REVIEW' && d.code && FINANCE_CODES.includes(d.code) && (
+            <li data-finance-review={d.code}>
+              {t(`finance.alerts.review.${d.code}` as MsgKey, { fgo: fmtMoney(d.fgoPaid ?? 0, 'RON'), manual: fmtMoney(d.manualRon ?? 0, 'RON') })}
+              {d.proforma && <span className="muted"> · {t('finance.alerts.proforma', { ref: d.proforma })}</span>}
+            </li>
+          )}
+          {a.type === 'DUPLICATE_RISK' && (
+            <li data-duplicate-alert={d.subject}>
+              {t('finance.alerts.dup', {
+                subject: t(`finance.alerts.subject.${d.subject === 'PAYMENT' ? 'PAYMENT' : 'ADVANCE'}` as MsgKey), amount: fmtMoney(d.amountRon ?? 0, 'RON'),
+                list: (Array.isArray(d.matches) ? d.matches : []).map((x) => x.ref || x.orderNo || '—').join(', '),
+              })}
+            </li>
+          )}
+          {a.type === 'FGO_UNCERTAIN' && (
+            <li data-uncertain-alert={d.idExtern}>
+              {t('finance.alerts.uncertain', {
+                kind: t(`finance.uncertain.kinds.${UNC_KINDS.includes(d.kind ?? '') ? d.kind : 'INVOICE'}` as MsgKey), ref: d.idExtern ?? '—', amount: fmtMoney(d.expectedGross ?? 0, 'RON'),
+              })}
+            </li>
+          )}
           {a.type === 'STOCK_CRITICAL' && (
             <li data-critical={d.code}>
               {t('pricing.alerts.criticalLine', {
@@ -121,7 +156,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                     <td>
                       {a.type === 'STOCK_CRITICAL'
                         ? <Link href={`/admin/stok#s-${encodeURIComponent(((a.details ?? {}) as Details).productId ?? '')}`}>{((a.details ?? {}) as Details).code ?? '—'}</Link>
-                        : a.order ? <Link href={`/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : a.type === 'STOCK_SHORTAGE' ? 'stok' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}
+                        : a.order ? <Link href={FINANCE_TYPES.includes(a.type) ? financeHref(a.type, a.order.id, (a.details ?? {}) as Details) : `/siparisler/${a.order.id}#${a.type.startsWith('COMPENSATION') ? 'kararlar' : a.type === 'STOCK_SHORTAGE' ? 'stok' : 'teklif'}`}>{a.order.orderNo}</Link> : ((a.details ?? {}) as Details).orderNo ?? '—'}
                     </td>
                     <td>{what(a)}</td>
                     <td>{a.createdBy?.name ?? '—'}</td>
@@ -130,7 +165,11 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                       {a.type === 'STOCK_CRITICAL' && supply && /^[a-z0-9]{8,40}$/i.test(((a.details ?? {}) as Details).productId ?? '') && (
                         <Link className="btn btn-link" href={`/siparisler/tedarik/yeni?urun=${((a.details ?? {}) as Details).productId}`} data-prepare-order>{t('supplier.alerts.prepare')}</Link>
                       )}
-                      {a.type === 'COMPENSATION_PENDING' && a.order ? (
+                      {/* Finans kayıtları: kayda götüren bağlantı (belirsiz FGO belgesi "Gördüm" ile kapanmaz — karar Ödemeler kartında) */}
+                      {FINANCE_TYPES.includes(a.type) && (
+                        <Link className={`btn${a.type === 'FGO_UNCERTAIN' ? ' btn-primary' : ' btn-link'}`} href={financeHref(a.type, a.order?.id ?? null, (a.details ?? {}) as Details)} data-finance-open>{t('finance.alerts.open')}</Link>
+                      )}
+                      {a.type === 'FGO_UNCERTAIN' ? null : a.type === 'COMPENSATION_PENDING' && a.order ? (
                         // Onay bekleyen telafi "Gördüm" ile kapanmaz: karar siparişin "Önemli kararlar" kartında verilir
                         <Link className="btn btn-primary" href={`/siparisler/${a.order.id}#kararlar`}>{t('pricing.alerts.compOpen')}</Link>
                       ) : (

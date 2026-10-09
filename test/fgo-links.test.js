@@ -555,6 +555,8 @@ test('yapı: sayfalarda ham mali belge bağlantılı href yok — her yer FgoDoc
     'app/(panel)/admin/muhasebe/ReceivablesView.tsx': 1,
     'app/(panel)/admin/muhasebe/cam/proforma/page.tsx': 1,
     'app/(panel)/siparisler/[id]/GlassFinance.tsx': 2,
+    // Ödemeler ve avans kartı (Paket 10): profil siparişinin FGO belgeleri
+    'app/(panel)/siparisler/[id]/OrderPayments.tsx': 1,
     'app/(panel)/siparisler/[id]/ProfileOrderView.tsx': 2,
     'app/(panel)/siparisler/[id]/page.tsx': 1,
     'app/(panel)/yuklemeler/LoadingBilling.tsx': 1,

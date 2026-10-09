@@ -11,6 +11,9 @@ import { bnrRate } from '@/server/fx/bnr.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
 import { loadingBilling } from '@/server/glass/invoice-batch.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { DuplicateAck } from '@/components/DuplicateAck';
+import { dupTexts, matchLines, type MatchView } from '@/lib/finance';
+import { advanceRisk } from '@/server/finance/service.js';
 import { createAdvanceAction, createInvoiceAction, reviewInvoiceBatchAction } from './billing-actions';
 import { ImpactNote, type Impact } from './ImpactNote';
 
@@ -18,7 +21,7 @@ const STATUS_TONE: Record<string, string> = { PENDING: 'info', ISSUED: 'ok', FAI
 const PAY_TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
 const ERRORS = [
   'FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'NOT_CONFIRMED', 'BAD_DAY', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'STALE_PREVIEW', 'ALREADY_INVOICED', 'NOTHING_TO_INVOICE',
-  'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING',
+  'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING', 'DUPLICATE_RISK',
 ];
 const PROBLEMS = ['BILLING_MISSING', 'FX_UNAVAILABLE', 'ADVANCE_REQUIRED'];
 // Sipariş seçimiyle ilgili engeller (karar 125): metinleri müşteri proforması ekranıyla ortak
@@ -48,6 +51,15 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
     ? (PROBLEMS.includes(failed) || SELECT_PROBLEMS.includes(failed) ? problemKey(failed) : `accounting.invoice.errors.${ERRORS.includes(failed) ? failed : 'NOT_ALLOWED'}`)
     : null;
   const hasAny = r.customers.some((c) => c.groups.length || c.issued.length || c.excluded.length);
+  // Avans düğmesi olan zincirlerde aynı müşteride aynı tutar (karar 208): eşleşmeler + zorunlu onay kutusu formda
+  const risks = new Map<string, { lines: string[]; ackKey: string }>();
+  for (const c of r.customers) {
+    for (const g of c.groups) {
+      if (!g.chain || !(g.chain.advanceRequired > 0) || g.chain.advancePending || risks.has(g.chain.proformaBatchId)) continue;
+      const risk = await advanceRisk(db, { customerId: c.customerId, ron: g.chain.advanceRequired, chainKey: `batch:${g.chain.proformaBatchId}` });
+      risks.set(g.chain.proformaBatchId, { lines: matchLines(t, risk.matches as MatchView[]), ackKey: risk.ackKey });
+    }
+  }
   // Seçim kutuları yalnızca birden çok uygun siparişi olan grupta (tek siparişte seçilecek bir şey yok)
   const multi = (g: { orders: unknown[]; unselected: unknown[] }) => g.orders.length + g.unselected.length > 1;
 
@@ -202,6 +214,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
                   <form action={createAdvanceAction}>
                     <input type="hidden" name="day" value={day} />
                     <input type="hidden" name="proformaBatchId" value={g.chain.proformaBatchId} />
+                    <DuplicateAck lines={risks.get(g.chain.proformaBatchId)?.lines ?? []} ackKey={risks.get(g.chain.proformaBatchId)?.ackKey ?? ''} texts={dupTexts(t)} />
                     <ConfirmButton primary message={t('accounting.invoice.advanceConfirm', { ref: g.chain.ref ?? '', amount: ron(g.chain.advanceRequired) })}>
                       {t('accounting.invoice.advanceCreate', { amount: ron(g.chain.advanceRequired) })}
                     </ConfirmButton>

@@ -28,7 +28,8 @@ const SHIP = new Date(`${new Date(Date.now() + 10 * 86_400_000).toISOString().sl
 const bnrImpl = async () => ({ ok: true, rate: '5.0000', date: dayKey(new Date()), url: 'https://curs.bnr.ro/nbrfxrates.xml' });
 
 /**
- * Sahte FGO. calls: FGO'ya giden HER belge isteği (başarısız olanlar dahil). failNext: sıradaki istek ağ hatasıyla düşer.
+ * Sahte FGO. calls: FGO'ya giden HER belge isteği (başarısız olanlar dahil). failNext: sıradaki istek bağlantı kurulamadan
+ * düşer (ECONNREFUSED — istek gitmedi; belirsiz sonuç ayrı testte: test/db/finance.test.js).
  * hold(): sıradaki isteğin yanıtı release() çağrılana kadar bekletilir; inFlight istek FGO'ya ulaşınca çözülür.
  */
 function fakeFgo(start) {
@@ -46,7 +47,8 @@ function fakeFgo(start) {
     fgo.calls.push(form);
     if (fgo.failNext > 0) {
       fgo.failNext -= 1;
-      throw new Error('bağlantı koptu');
+      // Bağlantı hiç kurulamadı (ECONNREFUSED): istek FGO'ya gitmedi — sonuç kesin, mevcut yeniden deneme kuralı (karar 209)
+      throw Object.assign(new TypeError('fetch failed: bağlantı koptu'), { cause: { code: 'ECONNREFUSED' } });
     }
     entered();
     await gate;

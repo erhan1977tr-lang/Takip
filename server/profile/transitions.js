@@ -161,6 +161,15 @@ async function queueFgo(h, type) {
   return true;
 }
 
+/**
+ * Siparişin kuyruktaki (bekleyen) FGO işleri. Belge kesme sonucu belirsiz kalan iş ("[BELIRSIZ] …", karar 209) de bekleyen
+ * iştir: yönetici FGO'ya bakıp karar verene kadar o belge için yeni iş ya da elle belge girilmez.
+ */
+async function pendingFgoJobs(h, types) {
+  return h.tx.notificationOutbox.findMany({ where: { orderId: h.order.id, status: 'PENDING', type: { in: types } }, select: { type: true, lastError: true } });
+}
+const parkedJob = (jobs) => jobs.some((j) => typeof j.lastError === 'string' && j.lastError.startsWith('[BELIRSIZ]'));
+
 /** Elle girilen kur (yönetici): boş → null; geçersiz → hata */
 function manualRate(v) {
   if (v == null || String(v).trim() === '') return null;
@@ -284,6 +293,8 @@ const ACTIONS = {
    * artık kesilmez (işçi adım değiştiği için atlar).
    */
   async mark_proforma(h) {
+    // Sonucu belirsiz FGO proforması (karar 209): FGO'da kesilmiş olabilir — önce yönetici FGO'ya bakıp karar verir
+    if (parkedJob(await pendingFgoJobs(h, [FGO_PROFORMA]))) throw new WorkflowError('FGO_UNCERTAIN');
     const proformaNo = shortText(h.payload.proformaNo, 60);
     const given = manualRate(h.payload.fxRate);
     const rate = given ?? (h.order.profile.fxRate != null ? Number(h.order.profile.fxRate) : null);
@@ -316,6 +327,10 @@ const ACTIONS = {
     const stage = h.order.profile.stage;
     const type = stage === 'ONAYLANDI' ? FGO_PROFORMA : stage === 'TESLIM_EDILDI' ? FGO_INVOICE : null;
     if (!type) throw new WorkflowError('NOT_ALLOWED');
+    // Aynı belge için kuyrukta iş varsa (beklemede ya da sonucu belirsiz) ikinci iş yazılmaz (karar 209)
+    const jobs = await pendingFgoJobs(h, [FGO_PROFORMA, FGO_INVOICE]);
+    if (parkedJob(jobs)) throw new WorkflowError('FGO_UNCERTAIN');
+    if (jobs.length) throw new WorkflowError('FGO_BUSY');
     const rate = manualRate(h.payload.fxRate);
     if (rate != null) {
       // Fatura, proformanın kuruyla kesilir: proforma FGO'dan kesildiyse kur değiştirilemez
@@ -388,6 +403,7 @@ const ACTIONS = {
     h.audit = { via: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN', files: files.map((f) => ({ name: f.name, checksum: f.checksum ?? null })), fgo };
   },
   async mark_invoiced(h) {
+    if (parkedJob(await pendingFgoJobs(h, [FGO_INVOICE, 'FGO_PROFILE_ADVANCE']))) throw new WorkflowError('FGO_UNCERTAIN');
     const invoiceNo = shortText(h.payload.invoiceNo, 60);
     await setStage(h, 'FATURALANDI', { invoiceNo, invoicedAt: h.now });
     h.event('INVOICED', invoiceNo);

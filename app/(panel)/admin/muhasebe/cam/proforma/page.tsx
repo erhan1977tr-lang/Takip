@@ -12,8 +12,13 @@ import { getFgoSettings } from '@/server/integrations/fgo.js';
 import { batchCustomers, cleanDays, customerLoadingDays, listBatches, previewBatch } from '@/server/glass/batch.js';
 import { chainState } from '@/server/glass/invoice-batch.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { DuplicateAck } from '@/components/DuplicateAck';
+import { UncertainReview } from '@/components/UncertainReview';
+import { dupTexts, matchLines, type MatchView } from '@/lib/finance';
+import { advanceRisk } from '@/server/finance/service.js';
+import { parkedJobs } from '@/server/finance/uncertain.js';
 import { createAdvanceAction, reviewInvoiceBatchAction } from '@/app/(panel)/yuklemeler/billing-actions';
-import { createBatchAction, reviewBatchAction } from './actions';
+import { createBatchAction, resolveBatchUncertainAction, reviewBatchAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +32,7 @@ type Batch = Prisma.BillingBatchGetPayload<{ include: {
   customer: { select: { name: true } }; document: true; createdBy: { select: { name: true } };
   orders: { select: { orderId: true; orderNo: true; loadingDay: true } };
 } }>;
-const INVOICE_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING'];
+const INVOICE_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING', 'DUPLICATE_RISK'];
 const dmy = (day: string) => day.split('-').reverse().join('.');
 const dayText = (d: Date) => dmy(new Date(d).toISOString().slice(0, 10));
 
@@ -61,17 +66,26 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     : null;
   const p = preview?.ok ? preview : null;
   // Kesilmiş proformaların avans durumu (FGO'da görünen tahsilat, avansı kesilen, avansı kesilmemiş tahsilat)
-  const chains = new Map<string, { paid: number; advanced: number; advanceRequired: number; advancePending: boolean; ref: string | null; failed: { batchId: string; lastError: string | null }[] }>();
+  // + elle kaydedilen ödemeler (karar 206) ve avans düğmesi için aynı müşteride aynı tutar eşleşmeleri (karar 208)
+  const chains = new Map<string, { paid: number; manualRon: number; advanced: number; advanceRequired: number; advancePending: boolean; ref: string | null; failed: { batchId: string; lastError: string | null }[]; dup: { lines: string[]; ackKey: string } }>();
   for (const b of batches) {
     if (b.status !== 'ISSUED') continue;
     const st = await chainState(db, b.id);
     if (st) {
+      const risk = st.advanceRequired > 0 && !st.advancePending
+        ? await advanceRisk(db, { customerId: b.customerId, ron: st.advanceRequired, chainKey: `batch:${b.id}` })
+        : { matches: [], ackKey: '' };
       chains.set(b.id, {
-        paid: st.paid, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, ref: st.ref,
+        paid: st.paid, manualRon: st.manualRon, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, ref: st.ref,
+        dup: { lines: matchLines(t, risk.matches as MatchView[]), ackKey: risk.ackKey },
         failed: (st.advances as { batchId: string; status: string; lastError: string | null }[]).filter((a) => a.status === 'FAILED').map((a) => ({ batchId: a.batchId, lastError: a.lastError })),
       });
     }
   }
+  // Sonucu belirsiz parti işleri (karar 209): seçili müşterinin partileri (proforma, avans, fatura)
+  const customerBatchIds = chosen ? (await db.billingBatch.findMany({ where: { customerId: chosen.id }, select: { id: true } })).map((x) => x.id) : [];
+  const parked = await parkedJobs(db, { batchIds: customerBatchIds });
+  const unc = { uncOk: one(sp.uncOk) || undefined, uncError: one(sp.uncError) || undefined, fgoTotal: one(sp.fgoTotal) || undefined, expected: one(sp.expected) || undefined };
   const errorKind = one(sp.faturaHata);
   const okKind = one(sp.fatura);
   const problemText = (code: string) => (SELECT_PROBLEMS.includes(code) ? t(`accounting.batch.select.${code}` as MsgKey) : t(`accounting.batch.problems.${code}` as MsgKey, {
@@ -93,6 +107,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       {error && <div className="alert alert-error">{errorText}</div>}
       {okKind && <div className="alert alert-ok">{t(`accounting.invoice.ok.${['created', 'advance', 'retry', 'void'].includes(okKind) ? okKind : 'advance'}` as MsgKey)}</div>}
       {errorKind && <div className="alert alert-error">{t(`accounting.invoice.errors.${INVOICE_ERRORS.includes(errorKind) ? errorKind : 'NOT_ALLOWED'}` as MsgKey)}</div>}
+      {/* Sonucu belirsiz FGO belgesi (karar 209): yönetici FGO'yu kontrol edip karar verir */}
+      {(parked.length > 0 || unc.uncOk || unc.uncError) && (
+        <div className="card">
+          <UncertainReview jobs={parked} t={t} action={resolveBatchUncertainAction} hidden={<input type="hidden" name="customerId" value={chosen?.id ?? ''} />} sp={unc} />
+        </div>
+      )}
 
       {/* 1. Müşteri */}
       <form method="get" action={PAGE} className="card" id="musteri">
@@ -305,8 +325,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                         ? <FgoDocLink link={b.document.link}>{b.document.series}{b.document.number}</FgoDocLink>
                         : '—'}
                       {b.issuedAt && <span className="cell-note">{fmtDate(b.issuedAt)}</span>}
-                      {chains.has(b.id) && chains.get(b.id)!.paid > 0 && (
-                        <span className="cell-note">{t('accounting.invoice.chainInfo', { paid: fmtMoney(chains.get(b.id)!.paid, 'RON'), advanced: fmtMoney(chains.get(b.id)!.advanced, 'RON') })}</span>
+                      {chains.has(b.id) && (chains.get(b.id)!.paid > 0 || chains.get(b.id)!.manualRon > 0) && (
+                        <span className="cell-note" data-chain-info>{t('accounting.invoice.chainInfo', { paid: fmtMoney(chains.get(b.id)!.paid, 'RON'), manual: fmtMoney(chains.get(b.id)!.manualRon, 'RON'), advanced: fmtMoney(chains.get(b.id)!.advanced, 'RON') })}</span>
                       )}
                     </td>
                     <td className="actions">
@@ -315,6 +335,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                         <form action={createAdvanceAction}>
                           <input type="hidden" name="proformaBatchId" value={b.id} />
                           <input type="hidden" name="customerId" value={chosen?.id ?? ''} />
+                          <DuplicateAck lines={chains.get(b.id)!.dup.lines} ackKey={chains.get(b.id)!.dup.ackKey} texts={dupTexts(t)} />
                           <ConfirmButton primary message={t('accounting.invoice.advanceConfirm', { ref: chains.get(b.id)!.ref ?? '', amount: fmtMoney(chains.get(b.id)!.advanceRequired, 'RON') })}>
                             {t('accounting.invoice.advanceCreate', { amount: fmtMoney(chains.get(b.id)!.advanceRequired, 'RON') })}
                           </ConfirmButton>

@@ -29,12 +29,15 @@ import { loadedDays } from '../loading/confirmation.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
-  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, orderDetail, reserveInvoiceNumber, ronPrice,
+  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, orderDetail, reserveInvoiceNumber, ronPrice, uncertainEmit,
 } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
 import { GLASS_FGO, proformaLines, sentOffer } from './billing.js';
 import { queueDocEmail } from '../documents/delivery.js';
+import { centsText, toCents } from '../finance/payments.js';
+import { linkCoveredPayments } from '../finance/service.js';
+import { expectedGross, parkUncertain } from '../finance/uncertain.js';
 
 export const BATCH_FGO = 'FGO_BATCH';
 export const BATCH_KIND = 'PROFORMA';
@@ -429,12 +432,17 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
     const attempt = row.attempts + 1;
     const batchId = String(row.payload?.batchId ?? '');
     const skip = (why) => db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: why } });
+    let prepared = null;
+    let form = null;
+    let fgoLines = [];
+    let batchRow = null;
     try {
       const batch = await db.billingBatch.findUnique({
         where: { id: batchId },
         include: { customer: true, document: true, confirmation: { select: { shipDay: true } }, orders: { orderBy: { orderNo: 'asc' } }, lines: { orderBy: { sortOrder: 'asc' } } },
       });
       if (!batch || batch.status === 'VOID') { await skip('parti yok ya da geçersiz'); continue; }
+      batchRow = batch;
       if (batch.document) { await skip('belge zaten var'); continue; }
       if (!fgoReady(settings)) throw new Permanent('FGO kapalı');
       const missing = missingBilling(batch.customer);
@@ -444,34 +452,21 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       if (await dailyLimitReached(db, settings, localDayStart(now, timeZone))) throw new Error(`Günlük FGO belge sınırı (${settings.dailyLimit}) doldu`);
       const lines = batchFgoLines(batch);
       if (lines.length === 0) throw new Permanent('Partide satır yok');
+      fgoLines = lines;
       const rate = Number(batch.fxRate);
       const proforma = batch.kind === 'PROFORMA';
       // Avans ve fatura: numarayı FGO verir (karar 87); yalnızca yönetici elle numara girdiyse o numara gönderilir
       const sentNo = proforma ? null : await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl, sleep });
-      const form = emitereForm({
+      form = emitereForm({
         settings, key, kind: proforma ? 'proforma' : 'invoice', orderNo: batch.orders.map((o) => o.orderNo).join(', '), appUrl, customer: batch.customer, lines, rate,
         // Aynı parti iki kez kesilmesin: FGO da aynı IdExtern'i reddeder (VerificareDuplicat)
         extern: `LOT-${batch.id}`, text: batchText(batch), rateNote: false, number: sentNo,
       });
+      prepared = { kind: batch.kind };
       const doc = await fgoEmit(settings, form, fetchImpl);
       // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır (kayıt yazılamasa bile numara yinelenmez)
       if (!proforma) await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: null }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
-      const created = await db.$transaction(async (tx) => {
-        const d = await tx.fgoDocument.create({ data: { batchId: batch.id, kind: batch.kind, series: doc.series, number: doc.number, issuedAt: now, link: doc.link } });
-        await tx.billingBatch.update({ where: { id: batch.id }, data: { status: 'ISSUED', issuedAt: now, lastError: null } });
-        await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
-        // Müşteri e-postası: belge kaydıyla aynı işlemde, belge başına bir kez (server/documents/delivery.js)
-        await queueDocEmail(tx, { docId: d.id });
-        const statuses = new Map((await tx.order.findMany({ where: { id: { in: batch.orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
-        for (const o of batch.orders) {
-          await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_ISSUED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: null, note: `${batch.kind}:${doc.series}${doc.number}` });
-        }
-        await writeAudit(tx, {
-          action: 'FGO_DOC_ISSUED', entityType: 'BillingBatch', entityId: batch.id, userId: null,
-          details: { kind: batch.kind, series: doc.series, number: doc.number, orders: batch.orders.map((o) => o.orderNo), fxRate: rate, fxSource: batch.fxSource, amountRonNet: Number(batch.ronNet) },
-        }, { role: 'SYSTEM' });
-        return d;
-      });
+      const created = await recordBatchIssued(db, { batchId: batch.id, rowId: row.id, doc, now });
       done++;
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
@@ -482,6 +477,16 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
     } catch (e) {
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);
+      // Belge FGO'da kesilmiş olabilir (karar 209): yeniden denenmez — parti kuyrukta (PENDING) tutulur, yönetici FGO'ya bakıp karar verir
+      if (uncertainEmit(e) && prepared && form && batchRow) {
+        await parkUncertain(db, row, {
+          target: 'BATCH', kind: batchRow.kind, orderIds: [], batchId, customerId: batchRow.customerId, prepared,
+          expected: expectedGross(fgoLines, { rate: Number(batchRow.fxRate), vatRate: settings.vatRate }), series: form.Serie, idExtern: form.IdExtern, error: msg, now,
+        });
+        await db.billingBatch.updateMany({ where: { id: batchId, status: 'PENDING' }, data: { lastError: `[BELIRSIZ] ${msg}`.slice(0, 500) } });
+        log('müşteri belgesi: sonuç belirsiz — yönetici incelemesine gönderildi', batchId);
+        continue;
+      }
       const final = e instanceof Permanent || (e instanceof FgoError && !e.retry) || attempt >= MAX_ATTEMPTS;
       await db.notificationOutbox.update({
         where: { id: row.id },
@@ -500,6 +505,44 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
     }
   }
   return { done, failed };
+}
+
+/**
+ * Kesilen parti belgesini kaydeder — işçinin başarı yolu; sonucu belirsiz kalan ve yöneticinin FGO'dan doğruladığı belge de
+ * bununla yazılır (server/finance/uncertain.js, karar 209). İş satırı yalnızca hâlâ bekliyorsa SENT olur. Avans partisinde
+ * karşıladığı elle ödeme kayıtları bu partiye bağlanır (karar 207).
+ * @param {any} db  @param {{ batchId: string, rowId: string, doc: { series: string, number: string, link?: string | null }, now?: Date }} p
+ */
+export async function recordBatchIssued(db, { batchId, rowId, doc, now = new Date() }) {
+  return db.$transaction(async (tx) => {
+    const batch = await tx.billingBatch.findUnique({ where: { id: batchId }, include: { orders: { orderBy: { orderNo: 'asc' } }, document: true } });
+    if (!batch || batch.document || batch.status === 'VOID') throw new Error('JOB_STATE');
+    const job = await tx.notificationOutbox.updateMany({ where: { id: rowId, status: 'PENDING' }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
+    if (job.count !== 1) throw new Error('JOB_STATE');
+    const d = await tx.fgoDocument.create({ data: { batchId: batch.id, kind: batch.kind, series: doc.series, number: doc.number, issuedAt: now, link: doc.link ?? null, ...(batch.kind === 'ADVANCE' ? { basis: batch.basis ?? 'FGO' } : {}) } });
+    await tx.billingBatch.update({ where: { id: batch.id }, data: { status: 'ISSUED', issuedAt: now, lastError: null } });
+    let linked = [];
+    if (batch.kind === 'ADVANCE' && batch.parentId) {
+      // Zincirde avansı kesilen toplam: proformanın geçersiz olmayan avans partileri (bu dahil)
+      const advances = await tx.billingBatch.findMany({ where: { parentId: batch.parentId, kind: 'ADVANCE', status: { not: 'VOID' } }, select: { lines: { select: { ronGross: true } } } });
+      const total = advances.flatMap((a) => a.lines).reduce((s, l) => s + toCents(l.ronGross), 0n);
+      linked = await linkCoveredPayments(tx, { where: { batchId: batch.parentId }, link: { advanceBatchId: batch.id }, advancedTotal: centsText(total) });
+    }
+    // Müşteri e-postası: belge kaydıyla aynı işlemde, belge başına bir kez (server/documents/delivery.js)
+    await queueDocEmail(tx, { docId: d.id });
+    const statuses = new Map((await tx.order.findMany({ where: { id: { in: batch.orders.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
+    for (const o of batch.orders) {
+      await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_ISSUED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: null, note: `${batch.kind}:${doc.series}${doc.number}` });
+    }
+    await writeAudit(tx, {
+      action: 'FGO_DOC_ISSUED', entityType: 'BillingBatch', entityId: batch.id, userId: null,
+      details: {
+        kind: batch.kind, series: doc.series, number: doc.number, orders: batch.orders.map((o) => o.orderNo), fxRate: Number(batch.fxRate), fxSource: batch.fxSource, amountRonNet: Number(batch.ronNet),
+        ...(batch.kind === 'ADVANCE' ? { basis: batch.basis ?? 'FGO', payments: linked } : {}),
+      },
+    }, { role: 'SYSTEM' });
+    return d;
+  });
 }
 
 /**
