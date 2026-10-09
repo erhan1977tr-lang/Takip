@@ -398,7 +398,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         // Tutar: istek anında saklanan (max(FGO tahsilatı, elle kayıtlar) − avansı kesilen). Kaynak bu arada azaldıysa kesilmez.
         advanceGross = row.payload?.amount != null ? round2(Number(row.payload.amount)) : chain.advanceRequired;
         if (!(advanceGross > 0)) throw new Permanent('Avansı kesilecek tahsilat yok');
-        if (advanceGross - chain.advanceRequired > EPS) throw new Permanent(`Tahsilat değişti: avansı kesilecek tutar ${chain.advanceRequired.toFixed(2)} RON, istenen ${advanceGross.toFixed(2)} RON`);
+        if (advanceGross - chain.advanceRequired > EPS) throw new Permanent(`Ödemedeki tahsilat değişti: avansı kesilecek tutar ${chain.advanceRequired.toFixed(2)} RON, istenen ${advanceGross.toFixed(2)} RON`);
         lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, ron: netOf(advanceGross, settings.vatRate) }];
       } else {
         // Romence ad: satırda yoksa katalogdaki camın Romence adı ve rengi

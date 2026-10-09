@@ -256,7 +256,7 @@ export async function dispatchProfileAdvanceJobs(db, { now = new Date(), fetchIm
       const st = orderPaymentState(chain, payments);
       const gross = Math.round(Number(row.payload?.amount ?? 0) * 100) / 100;
       if (!(gross > 0)) throw new Permanent('Avansı kesilecek tahsilat yok');
-      if (gross - st.advanceRequired > 0.005) throw new Permanent(`Tahsilat değişti: avansı kesilecek tutar ${st.advanceRequired.toFixed(2)} RON, istenen ${gross.toFixed(2)} RON`);
+      if (gross - st.advanceRequired > 0.005) throw new Permanent(`Ödemedeki tahsilat değişti: avansı kesilecek tutar ${st.advanceRequired.toFixed(2)} RON, istenen ${gross.toFixed(2)} RON`);
       const ref = `${chain.proforma.series}${chain.proforma.number}`;
       lines = [{ code: '', name: `Avans marfă conform proformă ${ref}`, unit: FGO_UM.adet, qty: 1, ron: netOf(gross, settings.vatRate), detail: orderDetail(chain.order.orderNo) }];
       const sentNo = await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });

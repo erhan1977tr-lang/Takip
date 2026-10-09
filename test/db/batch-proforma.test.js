@@ -160,7 +160,7 @@ dbTest('bir müşteri + birden çok yükleme günü + birden çok sipariş → T
 
   // Kapsanan sipariş için sipariş başına belge istenemez (tek çift faturalama denetimi); parti dışındaki sipariş için istenebilir
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: a1.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' });
-  assert.deepEqual(g.billingState({ status: 'URETIMDE', loaded: true, docs: [], pending: [], hasOffer: true, inBatch: true }), { actions: [], wait: 'batch', paid: 0, advanced: 0, advanceRequired: 0 });
+  assert.deepEqual(g.billingState({ status: 'URETIMDE', loaded: true, docs: [], pending: [], hasOffer: true, inBatch: true }), { actions: [], wait: 'batch', paid: 0, manualRon: 0, advanced: 0, advanceRequired: 0, basis: 'FGO', match: 'NONE' });
   // Aynı siparişler yeni partiye giremez: önizlemede nedenleriyle dışarıda
   const again = await preview(abc, [K1, K2, K3]);
   assert.deepEqual(again.included.map((o) => o.orderNo), [a5.orderNo]);

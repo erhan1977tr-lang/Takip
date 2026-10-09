@@ -273,7 +273,7 @@ dbTest('ödenmiş proforma + avans faturası yok + yüklenmiş: kapanış fatura
   assert.equal(blocked.calls.length, 0, 'belge kesilmedi');
   const job = await db.notificationOutbox.findFirst({ where: { orderId: c.id, type: 'FGO_GLASS' } });
   assert.equal(job.status, 'FAILED');
-  assert.match(job.lastError, /PRF9003: FGO'da avansı kesilmemiş 300\.00 RON tahsilat var/);
+  assert.match(job.lastError, /PRF9003: avansı kesilmemiş 300\.00 RON tahsilat var \(FGO ya da elle kayıt\)/);
   assert.equal(await db.adminAlert.count({ where: { orderId: c.id, type: 'FGO_FAILED' } }), 1, 'yöneticiye açıkça bildirilir');
   assert.equal(await db.fgoDocument.count({ where: { orderId: c.id, kind: 'INVOICE' } }), 0);
 
