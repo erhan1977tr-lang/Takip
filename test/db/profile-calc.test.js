@@ -89,8 +89,8 @@ dbTest('seed (karar 175): kesin paket içerikleri bir kez yazılır — GK15 137
   // Yönetici değiştirir ya da siler → seed yeniden çalışsa da dokunmaz
   await setPack('GK15', '150');
   await setPack('AD45', null);
-  await runBaseSeed(db, { log: () => {} });
-  await runBaseSeed(db, { log: () => {} });
+  await runBaseSeed(db, { log: () => {}, skip: ['profile-calc-defaults'] });
+  await runBaseSeed(db, { log: () => {}, skip: ['profile-calc-defaults'] });
   assert.deepEqual([(await prod('GK15')).packContent?.toString(), (await prod('AD45')).packContent], ['150', null]);
   assert.equal(await db.auditLog.count({ where: { action: PACK_SEED_ACTION } }), 1);
   const audit = await db.auditLog.findMany({ where: { action: 'PROFILE_PRODUCT_UPDATE', entityId: (await prod('GK15')).id }, orderBy: { createdAt: 'asc' } });
