@@ -8,6 +8,7 @@ import type { CurrentUser } from './auth/session';
 import { sentOffer, type OrderDetail } from './orders';
 import { userCan } from './permissions';
 import { ambiguousOps, compensableLines, compensationDestinations, notLoadedLinks, sourceState } from '../server/orders/compensation.js';
+import { isSalesCrate } from '../server/orders/rules.js';
 
 export type CompEntry = {
   id: string; status: 'APPLIED' | 'PENDING' | 'REJECTED';
@@ -111,7 +112,7 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   // Cam satırı sırası teklif tablosundaki "#" ile aynı (işlem satırları sayılmaz)
   const glassNo = new Map<string, number>();
   let n = 0;
-  for (const l of sent.lines) if (l.kind !== 'CNC' && l.kind !== 'DELIK') glassNo.set(l.id, ++n);
+  for (const l of sent.lines) if (l.kind !== 'CNC' && l.kind !== 'DELIK' && !isSalesCrate(l)) glassNo.set(l.id, ++n);
   return {
     orderId: order.id, orderNo: order.orderNo, nextNo: `${rootNo}-T${seq > 1 ? seq : ''}`, currency: sent.currency, admin, minDay: tomorrow,
     requestKey: crypto.randomUUID(),

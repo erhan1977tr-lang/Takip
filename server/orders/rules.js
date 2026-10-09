@@ -205,6 +205,7 @@ export const EVENTS = {
   DWG_FACTORY_REQUESTED: { customer: true },
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
+  OFFER_WITHDRAWN: { customer: false }, // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
   OFFER_SENT: { customer: true },
   OFFER_REVISED: { customer: false },
   OFFER_UPDATED: { customer: true },
@@ -269,6 +270,18 @@ export const CRATE_LINE = { tr: 'Sandık parası', ro: 'Ambalaj (ladă)' };
 const upTr = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('tr-TR');
 /** Açıklama sandık parası satırının adı mı (iki dilde; büyük-küçük harf ve boşluk farkı sayılmaz) */
 export const isCrateText = (description) => [CRATE_LINE.tr, CRATE_LINE.ro].some((n) => upTr(n) === upTr(description));
+/**
+ * Sandık ücreti satırı: sandık parası adlı, adetle fiyatlanan cam türü satır (yöneticinin ya da satışın). Tutarı, faturası ve
+ * yükleme hesabı olağan adetli satırla aynıdır (faturada üstündeki cam satırına eklenir — CNC / delik gibi).
+ * @param {{ kind?: string | null, unit?: string | null, description?: unknown }} l
+ */
+export const isCrateLine = (l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'adet' && isCrateText(l.description);
+/**
+ * Satışın sandık ücreti (karar 211): satışın kendi eklediği, kendisinin gördüğü ve değiştirdiği sandık satırı — cam
+ * prosesleri gibi bir cam satırının altında durur. Yöneticinin sandık bedeli (crateFee) satışa hiç gitmez.
+ * @param {{ kind?: string | null, unit?: string | null, description?: unknown, crateFee?: boolean | null }} l
+ */
+export const isSalesCrate = (l) => !l.crateFee && isCrateLine(l);
 
 /** Teklif satırı türleri (metni: status.lineKind.<tür>). */
 export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];
@@ -307,7 +320,10 @@ export function offerLineTotals(line) {
     : base ? round2(round2(end * price) - round2(start * price)) : round2(metraj * price);
   return { metraj, amount };
 }
-/** Toplamlar. adet = cam adedi (CNC / delik adetleri ayrı sayılır). */
+/**
+ * Toplamlar. adet = cam adedi (CNC / delik adetleri ve sandık ücreti satırlarının adedi ayrı sayılır — sandık cam değildir,
+ * karar 211). Tutar her satırda bir kez sayılır.
+ */
 export function offerTotals(lines) {
   return lines.reduce(
     (acc, l) => {
@@ -317,12 +333,21 @@ export function offerTotals(lines) {
       acc.amount = round2(acc.amount + t.amount);
       if (l.kind === 'CNC') acc.cnc += n;
       else if (l.kind === 'DELIK') acc.delik += n;
+      else if (isCrateLine(l)) acc.crate += n;
       else acc.adet += n;
       return acc;
     },
-    { metraj: 0, amount: 0, adet: 0, cnc: 0, delik: 0 }
+    { metraj: 0, amount: 0, adet: 0, cnc: 0, delik: 0, crate: 0 }
   );
 }
+
+/**
+ * Teklifi yöneticiye son gönderen kullanıcı (karar 212): "Yöneticiye göndermeyi geri al" yalnızca ona açılır. İşlemin
+ * kendisi aynı kuralı veritabanında yeniden denetler (transitions.js → withdraw_offer).
+ * @param {{ event: string, userId?: string | null }[]} events  en yeniden eskiye sıralı
+ * @returns {string | null}
+ */
+export const offerSubmitter = (events) => events.find((e) => e.event === 'OFFER_SUBMITTED')?.userId ?? null;
 
 // ---------- İşlem sahipliği (karar 113) ----------
 // CNC ve delik TEK bir fiziksel cama aittir: işlem satırı üstündeki cam satırına bağlıdır ve o cam satırının adedi 1
@@ -434,14 +459,20 @@ export function offerProblems(lines) {
   let glassNo = 0, seenGlass = false, glass = null;
   for (const l of lines) {
     const sub = isSub(l);
-    if (!sub) { glassNo += 1; seenGlass = true; glass = { row: { n: glassNo, kind: 'CAM', ...(l.description ? { desc: String(l.description).slice(0, 60) } : {}) }, many: Math.trunc(num(l.adet)) > 1, done: false }; }
+    // Satışın sandık ücreti (karar 211) cam prosesi gibi numarasızdır: "n. Sandık" (üstündeki camın numarasıyla)
+    const crate = !sub && isSalesCrate(l);
+    const row = () => ({ n: glassNo, kind: sub ? String(l.kind) : crate ? 'SANDIK' : 'CAM' });
+    if (!sub) {
+      if (!crate) glassNo += 1;
+      seenGlass = true;
+      glass = { row: crate ? row() : { n: glassNo, kind: 'CAM', ...(l.description ? { desc: String(l.description).slice(0, 60) } : {}) }, many: Math.trunc(num(l.adet)) > 1, done: false };
+    }
     // İşlem satırı adedi 1'den büyük cama bağlı: hangi camda olduğu belli değil
     if (sub && glass?.many && !glass.done) { glass.done = true; shared.push(glass.row); }
-    const row = { n: glassNo, kind: sub ? String(l.kind) : 'CAM' };
     if (sub && !seenGlass) p.push({ code: 'sub_without_glass', kind: String(l.kind) });
-    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row });
+    if (!sub && l.unit !== 'adet' && (!num(l.enMm) || !num(l.boyMm))) p.push({ code: 'missing_dims', row: row() });
     // Fiyatı eksik satır: camda/üründe açıklaması da yazılır (hangi ürün olduğu görünsün)
-    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && l.description ? { ...row, desc: String(l.description).slice(0, 60) } : row);
+    if (!l.free && !(num(l.unitPrice) > 0)) noPrice.push(!sub && !crate && l.description ? { ...row(), desc: String(l.description).slice(0, 60) } : row());
   }
   if (noPrice.length) p.push({ code: 'missing_prices', rows: noPrice });
   if (shared.length) p.push({ code: 'ops_multi_glass', rows: shared });
@@ -531,6 +562,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (preparing && drawing === 'YOK' && (admin || (sales && offerAtSales))) a.push('send_to_drawing');
   if (offerWriter && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
   if (admin && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
+  // Satış, yöneticiye gönderdiği teklifi yönetici fiyatlandırıp müşteriye göndermeden geri alabilir (karar 212). Teklifi
+  // gönderenin kendisi olması ve aynı anda yöneticinin işlemi işlemin kendisinde denetlenir (transitions.js → withdraw_offer).
+  if (offerWriter && !admin && preparing && offer === 'YONETIMDE') a.push('withdraw_offer');
   // Müşterideki teklifi yalnızca yönetici günceller (yeni sürüm — eski sürüm kalır): hazırlanırken, üretimde ve yüklendi
   // olarak işaretlenmiş siparişte (Paket 4: "her zaman"). Mali kilit (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge
   // isteği, onaylı yükleme) işlemin kendisinde denetlenir: server/orders/financial-lock.js → update_offer.

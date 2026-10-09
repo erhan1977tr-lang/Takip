@@ -235,9 +235,14 @@ dbTest('sandık bedeli: yalnızca yöneticinin satırı — satışın kaydı sa
   const base = salesForm(offer.lines);
   const fake = { id: crateId, description: 'Sandık parası', poz: null, enMm: null, boyMm: null, adet: 3, unit: 'adet', kind: 'CAM', free: false, unitPrice: '0.00' };
   assert.equal(await codeOf(run(o.id, 'save_offer', 'sales', { lines: [...base, fake] })), 'CRATE_FEE_ADMIN');
+  // Sandık parası adıyla açılan YENİ satış satırı satışın kendi sandık ücretidir (karar 211 — Paket 4'te reddediliyordu):
+  // işaretsiz (satış görür), adetli, ölçüsüz; yöneticinin sandık bedeli olmaz (Türkçe / Romence, yazım farkıyla da)
   for (const description of ['Sandık parası', ' sandık  PARASI', 'Ambalaj (ladă)']) {
-    assert.equal(await codeOf(run(o.id, 'submit_offer', 'sales', { lines: [...base, { ...fake, id: null, description, unitPrice: '25.00' }] })), 'CRATE_FEE_ADMIN', description);
+    await run(o.id, 'save_offer', 'sales', { lines: [...base, { ...fake, id: null, description, unitPrice: '25.00', unit: 'm2', enMm: 700, boyMm: 700 }] });
+    const own = (await latest(o.id)).lines.filter((l) => !l.crateFee && l.description === 'Sandık parası');
+    assert.deepEqual(own.map((l) => [l.unit, l.enMm, l.boyMm, String(l.unitPrice), l.descriptionRo]), [['adet', null, null, '25', 'Ambalaj (ladă)']], description);
   }
+  await run(o.id, 'save_offer', 'sales', { lines: base });
   // İşaretle gelen (taklit) satış satırı olağan satırdır: satışın kaydında sandık bedeli işareti yok sayılır
   await run(o.id, 'save_offer', 'sales', { lines: [...base, { ...fake, id: null, description: 'Ek cam', unit: 'm2', enMm: 500, boyMm: 500, adet: 1, unitPrice: '40.00', crateFee: true }] });
   offer = await latest(o.id);

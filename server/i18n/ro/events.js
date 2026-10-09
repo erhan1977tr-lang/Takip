@@ -17,6 +17,7 @@ export default {
   DRAWING_APPROVED: { label: 'Desen aprobat de client', customer: 'Desen aprobat' },
   OFFER_SUBMITTED: { label: 'Ofertă trimisă la aprobarea administratorului' },
   OFFER_RETURNED: { label: 'Ofertă returnată la vânzări' },
+  OFFER_WITHDRAWN: { label: 'Vânzările au retras oferta trimisă administratorului' },
   OFFER_SENT: { label: 'Preț aprobat, oferta trimisă clientului', customer: 'Oferta dvs. este gata' },
   OFFER_REVISED: { label: 'Oferta se revizuiește' },
   OFFER_UPDATED: { label: 'Ofertă actualizată de administrator', customer: 'Oferta dvs. a fost actualizată' },

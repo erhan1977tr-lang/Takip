@@ -132,7 +132,8 @@ test('kaynak adedi (karar 157): 20 cam → 3 telafi → ana siparişte 17; adet,
     assert.equal(Math.round((a.sale + t.sale) * 100) / 100, mode === 'NORMAL' ? before.sale : a.sale, `${mode}: müşteri tutarı`);
     assert.equal(t.sale, mode === 'NORMAL' ? 401.76 : 0);
   }
-  assert.deepEqual([before.adet, before.m2, sum(r.lines).adet, sum(r.lines).m2], [25, 41, 22, 35]);
+  // Cam adedi sandık satırını saymaz (karar 211: sandık cam değildir — offerTotals.crate)
+  assert.deepEqual([before.adet, before.m2, sum(r.lines).adet, sum(r.lines).m2], [24, 41, 21, 35]);
 
   // Satırın tamamı telafi edilirse satır kalkar; İŞLEMLİ tek camda işlem satırları da kalkar (telafiye taşındılar)
   const withOps = [glass({ adet: 9 }), glass({ id: 'g9', adet: 1 }), cnc({ adet: 1 }), hole({ adet: 2 }), glass({ id: 'g2', enMm: 500, boyMm: 500, adet: 4 })];

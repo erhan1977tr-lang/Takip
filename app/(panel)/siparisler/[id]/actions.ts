@@ -510,6 +510,18 @@ export async function saveOfferAction(formData: FormData) {
   done(id, intent === 'save' ? 'offer_saved' : res?.produced ? `offer_${intent}_production` : `offer_${intent}`);
 }
 
+/**
+ * "Yöneticiye göndermeyi geri al" (karar 212): satış, yöneticiye gönderdiği teklifi yönetici fiyatlandırıp müşteriye
+ * göndermeden geri alır. Kim / ne zaman kuralı işlemin kendisinde (transitions.js → withdraw_offer): yalnızca teklifi
+ * gönderen satışçı, teklif hâlâ yöneticideyken; sayfanın sipariş sürümü verilir (bu arada yönetici işlem yaptıysa CONFLICT).
+ */
+export async function withdrawOfferAction(formData: FormData) {
+  const user = await requirePermission('OFFER_PREPARE');
+  const id = orderIdOf(formData);
+  await act(user, id, 'withdraw_offer', { expectedVersion: expectedVersion(formData) });
+  done(id, 'offer_withdrawn');
+}
+
 /** Yönetici, teklif gönderildikten sonra gelen çizimi kontrol etti ve teklifte değişiklik gerekmiyor. */
 export async function checkOfferAction(formData: FormData) {
   await simple(formData, 'check_offer', 'offer_checked');

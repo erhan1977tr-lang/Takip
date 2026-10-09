@@ -56,6 +56,10 @@ export default {
     jumpBottom: 'La sfârșitul tabelului ofertei',
   },
   view: {
+    // „Anulează trimiterea către administrator” (decizia 212)
+    withdraw: 'Anulează trimiterea către administrator',
+    withdrawConfirm: 'Oferta va fi scoasă din coada de aprobare a prețurilor a administratorului și o veți putea modifica din nou. Continuați?',
+    withdrawHint: 'Administratorul nu a stabilit încă prețul și nu a trimis oferta clientului: o puteți retrage și modifica.',
     title: 'Ofertă',
     titleCustomer: 'Oferta dvs.',
     version: 'versiunea {n}',
@@ -89,6 +93,14 @@ export default {
     addCrate: 'Cost ladă',
     crateLine: 'Ambalaj (ladă)',
     crateBadge: 'Cost ambalaj · nevizibil pentru vânzări',
+    // Costul de ladă al vânzărilor (decizia 211): se adaugă sub un rând de sticlă, ca prelucrările
+    addSalesCrate: 'Ladă',
+    salesCrateBadge: 'Ladă',
+    salesCrateAdminBadge: 'Cost ladă · vânzări',
+    salesCratePriceAria: 'Preț cost ladă',
+    salesCrateOfferPriceAria: 'Preț client cost ladă',
+    salesCrateQtyAria: 'Număr de lăzi',
+    countCrates: 'lăzi: {n}',
     reset: 'Resetează tabelul',
     resetConfirm: 'Tabelul ofertei revine la starea inițială (sticla din comanda clientului); rândurile și prețurile introduse se șterg. Continuați?',
     duplicateGlass: 'Adaugă un rând nou cu aceeași sticlă',

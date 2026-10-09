@@ -17,6 +17,7 @@ export default {
   DWG_FACTORY_REQUESTED: { label: 'Müşteri fabrikadan yeni çizim istedi', customer: 'Fabrikadan yeni çizim istediniz' },
   OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi' },
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi' },
+  OFFER_WITHDRAWN: { label: 'Satış, yöneticiye gönderdiği teklifi geri aldı' },
   OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   OFFER_REVISED: { label: 'Teklif revize ediliyor' },
   OFFER_UPDATED: { label: 'Teklif yönetici tarafından güncellendi', customer: 'Teklifiniz güncellendi' },

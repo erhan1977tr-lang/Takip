@@ -97,6 +97,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DWG_INFECTED: 'order.errors.dwgInfected',
   // Yönetici paneli (Paket 4): sandık bedeli yalnızca yöneticinin; mali kilitli siparişte geçmiş fiyat değişmez
   CRATE_FEE_ADMIN: 'order.errors.crateFeeAdmin',
+  // "Yöneticiye göndermeyi geri al" (karar 212): yalnızca teklifi gönderen satışçı
+  OFFER_NOT_OWNER: 'order.errors.offerNotOwner',
   PRICE_LOCKED: 'order.errors.priceLocked',
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',

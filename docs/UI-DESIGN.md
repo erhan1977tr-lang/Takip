@@ -120,6 +120,12 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   .c-qty / .c-unit / .c-price`, never inline). Row actions sit under the description (`.line-actions`),
   the same-glass `+` is `.btn-dup`, delete is `.btn-del` in its own column, totals are the `tfoot` row.
   Tools live in one `.offer-tools` bar. The read-only offer uses `table.offer-view`.
+- Process-like rows (CNC / hole and the salesperson's crate fee — decision 211) are `tr.sub-line`: no row
+  number, a kind badge first; the crate fee row (`tr[data-sales-crate]`) has no dimensions or m². The admin's
+  hidden crate fee keeps its numbered row and `[data-crate-fee]` badge.
+- Long offer tables (editable and read-only alike — decision 213) get `components/TableJump.tsx` with the
+  table wrapper `#offer-table` as target: fixed `.table-jump` ↑ / ↓ on the right, shown only while the table is
+  taller than ~90 % of the viewport and on screen; ↑ lands the header just below the sticky `.topbar`.
 - Never put `#teklif td…` rules in CSS: an ID selector silently overrides the editor's column rules
   (this caused the old description truncation).
 - Buttons on this page: approve = `.btn-success`, cancel order = solid red, send back / request revision /

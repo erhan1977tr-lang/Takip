@@ -14,7 +14,8 @@ import { ExcelImport } from './ExcelImport';
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
 /** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
-type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean };
+type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean;
+  /** Satışın sandık ücreti (karar 211): cam prosesleri gibi bir cam satırının altında; satış ekler / değiştirir, yönetici görür */ salesCrate?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
@@ -71,7 +72,8 @@ export function OfferEditor(props: {
   const totals = useMemo(() => offerTotals(calc), [calc]);
   const offerTot = useMemo(() => offerTotals(atOfferPrice(calc)), [calc]);
   const problems = useMemo(() => {
-    const used = lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice || l.offerPrice);
+    // crateFee: yöneticinin sandık bedeli satırı — satışın sandık ücretinden ayrılır (karar 211; numaralandırma sunucuyla aynı)
+    const used = lines.filter((l) => l.kind !== 'CAM' || l.description || l.enMm || l.boyMm || l.unitPrice || l.offerPrice).map((l) => ({ ...l, crateFee: !!l.crate }));
     return offerProblems(adminMode ? atOfferPrice(used) : used);
   }, [lines, adminMode]);
   const problemTexts = useMemo(
@@ -81,6 +83,15 @@ export function OfferEditor(props: {
   /** Satır türünün adı: "CNC" / "Delik" (dile göre) */
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  /**
+   * Cam satırının bloğunun sonu: işlem satırları (CNC / delik) ve satışın sandık ücreti satırları camındır (karar 211).
+   * İşlem satırı her zaman camın hemen altında, sandık satırlarından önce durur (işlem sahipliği, karar 113).
+   */
+  const blockEnd = (ls: Line[], i: number) => {
+    let j = i + 1;
+    while (j < ls.length && (ls[j].kind !== 'CAM' || ls[j].salesCrate)) j++;
+    return j;
+  };
   /**
    * "Tek fiyatı tüm satırlara uygula" (yalnızca ekrandaki düzenleme kolaylığı): işaretliyken bir m² cam satırına yazılan
    * fiyat bedelsiz olmayan tüm m² cam satırlarına yazılır. CNC, delik ve adetli satırlar (sandık parası) değişmez.
@@ -117,7 +128,7 @@ export function OfferEditor(props: {
       const base = { ...blankGlass(), enMm: String(r.en), boyMm: String(r.boy), adet: String(r.adet) };
       return { ...base, ...describe(base, glass) };
     });
-    const keep = ls.filter((l, i) => !(l.kind === 'CAM' && !l.id && !l.enMm && !l.boyMm && ls[i + 1]?.kind !== 'CNC' && ls[i + 1]?.kind !== 'DELIK'));
+    const keep = ls.filter((l, i) => !(l.kind === 'CAM' && !l.salesCrate && !l.crate && !l.id && !l.enMm && !l.boyMm && ls[i + 1]?.kind !== 'CNC' && ls[i + 1]?.kind !== 'DELIK' && !ls[i + 1]?.salesCrate));
     return [...keep, ...added];
   });
   /**
@@ -125,8 +136,7 @@ export function OfferEditor(props: {
    * kopyalanmaz; yeni satır elle eklenen cam satırıyla aynı kuralla oluşur (blankGlass + describe → liste fiyatı).
    */
   const duplicateGlass = (l: Line) => setLines((ls) => {
-    let i = ls.findIndex((x) => x.key === l.key) + 1;
-    while (i < ls.length && ls[i].kind !== 'CAM') i++;
+    const i = blockEnd(ls, ls.findIndex((x) => x.key === l.key));
     const base = blankGlass();
     return [...ls.slice(0, i), { ...base, ...describe(base, l.description) }, ...ls.slice(i)];
   });
@@ -135,6 +145,15 @@ export function OfferEditor(props: {
    * (tutar, fatura ve yükleme hesabı aynı). Satış bu satırı görmez ve ekleyemez — kural sunucuda (transitions.js → salesInput).
    */
   const addCrate = () => setLines((ls) => [...ls, { ...blankGlass(), description: m.editor.crateLine, unit: 'adet', adet: '1', crate: true }]);
+  /**
+   * "+Sandık" (yalnızca satış — karar 211): satışın sandık ücreti, cam prosesleri gibi bu cam satırının (işlemlerinin ve
+   * varsa önceki sandık satırlarının) altına. Adetle fiyatlanan, ölçüsüz bir satırdır; tutarı faturada bu camın tutarına
+   * eklenir (sunucudaki mevcut kural). Fiyatını satış girer; müşteri fiyatını yönetici.
+   */
+  const addSalesCrate = (key: number) => setLines((ls) => {
+    const j = blockEnd(ls, ls.findIndex((l) => l.key === key));
+    return [...ls.slice(0, j), { ...blankGlass(), description: m.editor.crateLine, unit: 'adet', adet: '1', salesCrate: true }, ...ls.slice(j)];
+  });
   /**
    * "Tabloyu temizle": tablo, müşterinin siparişindeki ilk hâline döner (sipariş camları, adetleri ve liste fiyatları).
    * Yalnızca ekrandaki tablo değişir; kaydedilene kadar hiçbir şey yazılmaz. Sipariş ve dosyalar değişmez.
@@ -171,14 +190,16 @@ export function OfferEditor(props: {
     const i = ls.findIndex((l) => l.key === key);
     let j = i + 1;
     while (j < ls.length && ls[j].kind !== 'CAM') j++;
+    // Kopya camla işlemlerini taşır (sandık ücreti kopyalanmaz); camın bloğunun (sandık satırları dahil) altına eklenir
     const copy = [pieceOf(ls[i]), ...ls.slice(i + 1, j).map((s) => ({ ...s, key: seq++, id: '' }))];
-    return [...ls.slice(0, j), ...copy, ...ls.slice(j)];
+    const end = blockEnd(ls, i);
+    return [...ls.slice(0, end), ...copy, ...ls.slice(end)];
   });
-  /** Cam satırı silinince altındaki CNC / delik satırları da silinir. */
+  /** Cam satırı silinince altındaki CNC / delik (ve satışın sandık ücreti) satırları da silinir. */
   const remove = (key: number) => setLines((ls) => {
     const i = ls.findIndex((l) => l.key === key);
     let j = i + 1;
-    if (ls[i].kind === 'CAM') while (j < ls.length && ls[j].kind !== 'CAM') j++;
+    if (ls[i].kind === 'CAM' && !ls[i].salesCrate) while (j < ls.length && (ls[j].kind !== 'CAM' || (!ls[i].crate && ls[j].salesCrate))) j++;
     const next = [...ls.slice(0, i), ...ls.slice(j)];
     return next.length ? next : [blankGlass()];
   });
@@ -230,15 +251,19 @@ export function OfferEditor(props: {
               const cl = calc[idx] ?? l;
               const tot = offerLineTotals(adminMode ? { ...cl, unitPrice: l.offerPrice } : cl);
               const sub = l.kind !== 'CAM';
+              // Satışın sandık ücreti (karar 211): cam prosesi gibi gösterilir (numarasız, açıklama sabit) — sandık satırı
+              // (yöneticinin ya da satışın) ölçüsüzdür, adetle fiyatlanır
+              const sc = !!l.salesCrate;
+              const crateRow = !!l.crate || sc;
               // İşlem (CNC / delik) taşıyan cam satırı: tek bir fiziksel camdır
               const owns = !sub && (lines[idx + 1]?.kind === 'CNC' || lines[idx + 1]?.kind === 'DELIK');
-              if (!sub) glassNo += 1;
+              if (!sub && !sc) glassNo += 1;
               const kind = kindName(l.kind);
               const shownPrice = adminMode ? l.offerPrice : l.unitPrice;
               const missing = !l.free && !(Number(shownPrice.replace(',', '.')) > 0) && (sub || !!(l.description || l.enMm || l.boyMm));
               return (
-                <tr key={l.key} className={sub ? 'sub-line' : 'glass-line'}>
-                  <td className="c-no muted">{sub ? '' : glassNo}
+                <tr key={l.key} className={sub || sc ? 'sub-line' : 'glass-line'} data-sales-crate={sc ? '' : undefined}>
+                  <td className="c-no muted">{sub || sc ? '' : glassNo}
                     <input type="hidden" name="l_id" value={l.id} />
                     <input type="hidden" name="l_from" value={l.id ? '' : l.from ?? ''} />
                     <input type="hidden" name="l_group" value={l.splitGroup ?? ''} />
@@ -249,9 +274,15 @@ export function OfferEditor(props: {
                   <td className="desc">
                     <span className="desc-row">
                       {sub && <span className="badge badge-info">{kind}</span>}
-                      <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} title={l.description || undefined} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
-                        onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
-                      {!sub && l.unit === 'm2' && (
+                      {sc ? (
+                        // Satışın sandık ücretinin adı sabittir (iki dildeki adı sunucu yazar)
+                        <><span className="badge badge-info" data-sales-crate-badge>{adminMode ? m.editor.salesCrateAdminBadge : m.editor.salesCrateBadge}</span>
+                          <input type="hidden" name="l_desc" value={l.description} /><span>{l.description}</span></>
+                      ) : (
+                        <input name="l_desc" list={sub ? undefined : 'catalog'} value={l.description} title={l.description || undefined} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
+                          onChange={(e) => setDescription(l, e.target.value)} aria-label={sub ? interpolate(m.editor.subDescAria, { kind }) : m.cols.description} />
+                      )}
+                      {!sub && !crateRow && l.unit === 'm2' && (
                         <button type="button" className="btn btn-dup" title={m.editor.duplicateGlass} aria-label={m.editor.duplicateGlass} onClick={() => duplicateGlass(l)}>+</button>
                       )}
                     </span>
@@ -262,15 +293,17 @@ export function OfferEditor(props: {
                       {l.free && <span className="badge badge-ok">{m.free}</span>}
                       {l.comp && <span className="badge badge-warn">{m.telafi}</span>}
                       {l.crate && <span className="badge badge-info" data-crate-fee>{m.editor.crateBadge}</span>}
-                      {!sub && !l.crate && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
-                      {!sub && !l.crate && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      {!sub && !crateRow && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'CNC')}>+{lineKind.CNC}</button>}
+                      {!sub && !crateRow && <button type="button" className="btn btn-link" onClick={() => addSub(l.key, 'DELIK')}>+{lineKind.DELIK}</button>}
+                      {/* Satışın sandık ücreti (karar 211): cam prosesleri gibi bu camın altına */}
+                      {!adminMode && !sub && !crateRow && <button type="button" className="btn btn-link" data-add-sales-crate onClick={() => addSalesCrate(l.key)}>+{m.editor.addSalesCrate}</button>}
                       {owns && <button type="button" className="btn btn-link" title={m.editor.copyPieceTitle} onClick={() => copyPiece(l.key)}>{m.editor.copyPiece}</button>}
                       <button type="button" className="btn btn-link" onClick={() => set(l.key, { free: !l.free })}>{l.free ? m.editor.makePaid : m.editor.makeFree}</button>
                     </div>
                   </td>
                   <td className="c-poz"><input name="l_poz" value={l.poz} onChange={(e) => set(l.key, { poz: e.target.value })} aria-label={m.cols.poz} /></td>
-                  {/* CNC / delik ve sandık bedeli satırının ölçüsü yoktur */}
-                  {sub || l.crate ? (
+                  {/* CNC / delik ve sandık satırının ölçüsü yoktur */}
+                  {sub || crateRow ? (
                     <><td><input type="hidden" name="l_en" value="" /></td><td><input type="hidden" name="l_boy" value="" /></td></>
                   ) : (
                     <>
@@ -280,9 +313,9 @@ export function OfferEditor(props: {
                   )}
                   {/* İşlemli cam tek adettir: adet kutusu kilitlidir (çoğaltmak için "aynısından bir tane daha") */}
                   <td className="c-qty"><input name="l_adet" inputMode="numeric" value={l.adet} readOnly={owns && l.adet === '1'} title={owns ? m.editor.onePieceQty : undefined}
-                    onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : m.cols.qty} /></td>
-                  <td className={sub || l.crate ? 'c-text' : 'c-unit'}>
-                    {sub || l.crate ? (
+                    onChange={(e) => set(l.key, { adet: e.target.value.replace(/\D/g, '') })} aria-label={sub ? interpolate(m.editor.subQtyAria, { kind }) : sc ? m.editor.salesCrateQtyAria : m.cols.qty} /></td>
+                  <td className={sub || crateRow ? 'c-text' : 'c-unit'}>
+                    {sub || crateRow ? (
                       <><input type="hidden" name="l_unit" value="adet" /><span className="muted">{common.unitPiece}</span></>
                     ) : (
                       <select name="l_unit" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label={m.cols.unit}>
@@ -291,7 +324,7 @@ export function OfferEditor(props: {
                       </select>
                     )}
                   </td>
-                  <td className="num">{sub || l.crate ? '' : fmt(tot.metraj)}</td>
+                  <td className="num">{sub || crateRow ? '' : fmt(tot.metraj)}</td>
                   <td className={adminMode ? 'num' : 'c-price'}>
                     {adminMode ? (
                       // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz
@@ -300,7 +333,7 @@ export function OfferEditor(props: {
                       <>
                         <input name="l_price" inputMode="decimal" value={l.free ? '' : l.unitPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
                           onChange={(e) => setPrice(l, 'unitPrice', e.target.value)}
-                          aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : m.cols.unitPrice} />
+                          aria-label={sub ? interpolate(m.editor.subPriceAria, { kind }) : sc ? m.editor.salesCratePriceAria : m.cols.unitPrice} />
                         {l.free && <input type="hidden" name="l_price" value="0" />}
                       </>
                     )}
@@ -314,7 +347,7 @@ export function OfferEditor(props: {
                     <td className="c-price">
                       <input name="l_oprice" inputMode="decimal" value={l.free ? '' : l.offerPrice} disabled={l.free} className={missing ? 'input-missing' : undefined}
                         onChange={(e) => setPrice(l, 'offerPrice', e.target.value)}
-                        aria-label={sub ? interpolate(m.editor.subOfferPriceAria, { kind }) : m.cols.offerPrice} />
+                        aria-label={sub ? interpolate(m.editor.subOfferPriceAria, { kind }) : sc ? m.editor.salesCrateOfferPriceAria : m.cols.offerPrice} />
                       {l.free && <input type="hidden" name="l_oprice" value="0" />}
                     </td>
                   )}
@@ -333,6 +366,7 @@ export function OfferEditor(props: {
                 {interpolate(m.editor.countGlass, { n: totals.adet })}
                 {totals.cnc ? ` · ${interpolate(m.editor.countCnc, { n: totals.cnc })}` : ''}
                 {totals.delik ? ` · ${interpolate(m.editor.countHoles, { n: totals.delik })}` : ''}
+                {totals.crate ? ` · ${interpolate(m.editor.countCrates, { n: totals.crate })}` : ''}
               </td>
               <td className="num">{fmt(totals.metraj)} m²</td>
               {adminMode ? <td className="num muted">{fmt(totals.amount)}</td> : <td />}

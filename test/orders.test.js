@@ -80,7 +80,9 @@ test('teklif satıştan çıktıktan sonra satış değişiklik yapamaz; müşte
   for (const offer of ['YONETIMDE', 'GONDERILDI']) {
     for (const drawing of ['YOK', 'GEREKLI', 'YAPILIYOR', 'ONAY_BEKLIYOR', 'REVIZYON_ISTENDI']) {
       const a = availableActions({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing, offer });
-      assert.ok(!a.some((x) => /offer|undo|send_to_drawing/.test(x)), `${drawing}/${offer}: ${a}`);
+      // Yöneticideki teklifi satış yalnızca geri alabilir (karar 212) — düzenleme / gönderme / geri alma dışında hiçbir şey
+      const allowed = offer === 'YONETIMDE' ? ['withdraw_offer'] : [];
+      assert.deepEqual(a.filter((x) => /offer|undo|send_to_drawing/.test(x)), allowed, `${drawing}/${offer}: ${a}`);
     }
   }
   assert.ok(has({ role: 'ADMIN', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR', offer: 'GONDERILDI' }, 'update_offer'));
@@ -272,7 +274,7 @@ test('müşteri adı maskeleme', () => {
 test('teklif satırı: m² ve adet', () => {
   assert.deepEqual(offerLineTotals({ enMm: 1000, boyMm: 2000, adet: 3, unit: 'm2', unitPrice: '41,5' }), { metraj: 6, amount: 249 });
   assert.deepEqual(offerLineTotals({ adet: 4, unit: 'adet', unitPrice: 12.5 }), { metraj: 0, amount: 50 });
-  assert.deepEqual(offerTotals([{ enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: 10 }, { adet: 1, unit: 'adet', unitPrice: 5 }]), { metraj: 2, amount: 25, adet: 3, cnc: 0, delik: 0 });
+  assert.deepEqual(offerTotals([{ enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: 10 }, { adet: 1, unit: 'adet', unitPrice: 5 }]), { metraj: 2, amount: 25, adet: 3, cnc: 0, delik: 0, crate: 0 });
 });
 
 test('CNC / delik satırları ve bedelsiz', () => {
@@ -281,7 +283,7 @@ test('CNC / delik satırları ve bedelsiz', () => {
     { kind: 'CNC', description: '', enMm: 1000, boyMm: 2000, adet: 2, unit: 'adet', unitPrice: '15' }, // 30, metraja girmez
     { kind: 'DELIK', description: '', adet: 12, unit: 'adet', unitPrice: '2', free: true }, // bedelsiz
   ];
-  assert.deepEqual(offerTotals(lines), { metraj: 2, amount: 78, adet: 1, cnc: 2, delik: 12 });
+  assert.deepEqual(offerTotals(lines), { metraj: 2, amount: 78, adet: 1, cnc: 2, delik: 12, crate: 0 });
   assert.deepEqual(offerProblems(lines), []);
   const p = offerProblems([lines[0], { ...lines[1], unitPrice: '' }, { ...lines[2], free: false, unitPrice: '0' }]);
   assert.equal(p.length, 1);
@@ -321,7 +323,7 @@ test('işlem eklenirken cam ayrılır: adet 5 → 4 + 1; toplam adet, m², birim
   // Toplamlar: satış fiyatıyla ve müşteri fiyatıyla aynı
   assert.deepEqual(offerTotals(r.lines), offerTotals(before));
   assert.deepEqual(offerTotals(atOfferPrice(r.lines)), offerTotals(atOfferPrice(before)));
-  assert.deepEqual(offerTotals(r.lines), { metraj: 10.5, amount: 255, adet: 7, cnc: 0, delik: 0 });
+  assert.deepEqual(offerTotals(r.lines), { metraj: 10.5, amount: 255, adet: 7, cnc: 0, delik: 0, crate: 0 });
   // İşlem eklendikten sonra kural sağlanır
   const withOp = [...r.lines.slice(0, 2), { kind: 'DELIK', adet: 2, unit: 'adet', unitPrice: '2', offerPrice: '3' }, ...r.lines.slice(2)];
   assert.deepEqual([sharedOpsGlasses(withOp), offerProblems(withOp)], [[], []]);

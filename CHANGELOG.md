@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.62.0 — 09.10.2026
+
+Satış paneli düzeltme paketi 1 (kararlar 211–213). Veritabanı şeması değişmedi.
+
+- **Satışın sandık ücreti:** satış teklif tablosunda cam satırının "+Sandık" düğmesiyle (CNC / delik gibi) kendi sandık ücretini
+  ekler ve değiştirir; satır camın altında, numarasız, adetle fiyatlanır. Yönetici satırı "Sandık ücreti · satışın" rozetiyle
+  görür ve müşteri fiyatını girer. Tutar teklif toplamına bir kez girer; faturada üstündeki camın tutarına eklenir, proformada
+  ayrı satırdır. Yöneticinin eklediği sandık bedeli satışa hiçbir ekranda ve yanıtta görünmez; satırların sahibi değişmez.
+- **"Yöneticiye göndermeyi geri al":** satış, yöneticiye gönderdiği teklifi yönetici fiyatlandırıp müşteriye göndermeden geri
+  alabilir; teklif yeniden düzenlenir ve gönderilir. Yalnızca teklifi gönderen satışçı; yönetici aynı anda gönderirse yalnızca
+  biri kaydedilir. Geçmiş ve denetim kaydı durur; teklif yöneticinin fiyat onayı listesinden çıkar, yeniden gönderilince döner.
+- **Uzun teklif tablosunda ↑ / ↓:** teklif yöneticiye gönderildikten sonra (salt okunur) da görünür; tablonun başına ve sonuna
+  kaydırır (üst çubuğun altında kalmaz); kısa tabloda yok; telefonda da çalışır.
+
 ## 3.61.0 — 09.10.2026
 
 Paket 10 — finans, avans faturaları, ödeme eşleştirme ve FGO güvenliği (kararlar 206–210). Veritabanı şeması yalnızca ekleme:

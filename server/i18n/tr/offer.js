@@ -57,6 +57,10 @@ export default {
     jumpBottom: 'Teklif tablosunun sonuna',
   },
   view: {
+    // "Yöneticiye göndermeyi geri al" (karar 212)
+    withdraw: 'Yöneticiye göndermeyi geri al',
+    withdrawConfirm: 'Teklif sistem yöneticisinin fiyat onayı kuyruğundan çıkarılacak ve yeniden düzenlemenize açılacak. Devam edilsin mi?',
+    withdrawHint: 'Yönetici henüz fiyatlandırıp müşteriye göndermediği için teklifi geri alıp değiştirebilirsiniz.',
     title: 'Teklif',
     titleCustomer: 'Teklifiniz',
     version: 'sürüm {n}',
@@ -90,6 +94,14 @@ export default {
     addCrate: 'Sandık parası',
     crateLine: 'Sandık parası',
     crateBadge: 'Sandık bedeli · satış görmez',
+    // Satışın sandık ücreti (karar 211): cam prosesleri gibi bir cam satırının altına eklenir
+    addSalesCrate: 'Sandık',
+    salesCrateBadge: 'Sandık',
+    salesCrateAdminBadge: 'Sandık ücreti · satışın',
+    salesCratePriceAria: 'Sandık ücreti fiyatı',
+    salesCrateOfferPriceAria: 'Sandık ücreti müşteri fiyatı',
+    salesCrateQtyAria: 'Sandık adedi',
+    countCrates: '{n} sandık',
     reset: 'Tabloyu temizle',
     resetConfirm: 'Teklif tablosu ilk hâline (müşterinin siparişindeki camlar) dönecek; girdiğiniz satırlar ve fiyatlar silinecek. Devam edilsin mi?',
     duplicateGlass: 'Aynı camdan yeni satır ekle',

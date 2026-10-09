@@ -33,6 +33,7 @@ export default {
     offer_approve: 'Prețul a fost aprobat; oferta este în panoul clientului.',
     offer_approve_production: 'Prețul a fost aprobat; oferta este în panoul clientului. Deoarece desenul este aprobat (sau nu este necesar), comanda a fost trecută automat în producție.',
     offer_return: 'Oferta a fost returnată la vânzări.',
+    offer_withdrawn: 'Oferta a fost retrasă de la administrator; o puteți modifica și retrimite.',
     offer_updated: 'Oferta a fost actualizată; clientul vede noua versiune.',
     offer_checked: 'Oferta a fost marcată ca fiind la zi față de noul desen.',
     undo_drawing: 'Trimiterea la desen a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
@@ -396,7 +397,8 @@ export default {
     dwgFile: 'Selectați cel puțin un fișier DWG sau DXF.',
     dwgInfected: 'Unul dintre fișierele verificate s-a dovedit infectat; acest desen nu poate fi acceptat pentru producție.',
     // Panoul administratorului (pachetul 4)
-    crateFeeAdmin: 'Costul ambalajului (ladă) îl introduce doar administratorul; oferta nu a fost salvată.',
+    crateFeeAdmin: 'Rândul de cost ambalaj al administratorului nu poate fi modificat de vânzări; oferta nu a fost salvată.',
+    offerNotOwner: 'Această ofertă a fost trimisă administratorului de alt agent de vânzări; doar acesta o poate retrage.',
     priceLocked: 'Prețul nu poate fi modificat: comanda are înregistrări financiare sau de încărcare; prețul istoric nu se schimbă în aceste înregistrări.',
   },
   // Motivele blocării financiare / operaționale (pachetul 4 — modificarea prețului și ștergerea)

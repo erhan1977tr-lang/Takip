@@ -3,7 +3,7 @@
 // (offerLineTotals); burada yalnızca müşteriye giden fiyat kullanılır, satış fiyatı hiçbir dosyaya girmez.
 // Kim indirir: OFFER_EXPORT (yönetici, müşteri). Excel: OFFER_SEND (yönetici) her zaman; müşteri yalnızca yöneticinin
 // siparişte açtığı izinle (Order.customerExcel). Kontrol sunucuda (route) yapılır: canExportOffer.
-import { offerLineTotals } from './rules.js';
+import { isSalesCrate, offerLineTotals } from './rules.js';
 import { writeReportXlsx } from '../files/xlsx-report.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -30,7 +30,9 @@ export function offerExportData({ lines, price, locale, kindLabel }) {
   let metraj = 0, total = 0;
   const rows = lines.map((l) => {
     const sub = isSub(l);
-    if (!sub) n += 1;
+    // Satışın sandık ücreti (karar 211): ekrandaki gibi cam prosesi düzeninde — numarasız, üstündeki camın altında
+    const crate = !sub && isSalesCrate(l);
+    if (!sub && !crate) n += 1;
     const p = price(l);
     const unitPrice = l.free ? 0 : p == null || p === '' ? null : Number(p);
     const tot = offerLineTotals({ ...l, unitPrice: String(unitPrice ?? 0) });
@@ -42,7 +44,7 @@ export function offerExportData({ lines, price, locale, kindLabel }) {
     if (m2) metraj = round2(metraj + m2);
     total = round2(total + tot.amount);
     return {
-      n: sub ? null : n, sub, desc, poz: l.poz ?? '', en: l.enMm ?? null, boy: l.boyMm ?? null, adet: Number(l.adet) || 0,
+      n: sub || crate ? null : n, sub: sub || crate, desc, poz: l.poz ?? '', en: l.enMm ?? null, boy: l.boyMm ?? null, adet: Number(l.adet) || 0,
       m2, unit: !sub && l.unit === 'm2' ? 'm2' : 'adet', unitPrice, free: !!l.free, amount: round2(tot.amount),
     };
   });

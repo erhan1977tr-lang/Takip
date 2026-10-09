@@ -26,8 +26,9 @@ import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricin
 import { loadOf, shipDay } from '@/lib/loading';
 import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
 import {
-  ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, isViewable, offerLineTotals, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
+  ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, isSalesCrate, isViewable, offerLineTotals, offerSubmitter, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
+import { TableJump } from '@/components/TableJump';
 import { loadCompensations, loadCompensationForm, type CompEntry } from '@/lib/compensation';
 import { compensableLines } from '@/server/orders/compensation.js';
 import { CompensationForm } from './CompensationForm';
@@ -45,7 +46,7 @@ import {
   addFilesAction, addNoteAction, markNotesReadAction, retryNoteTranslationAction, approveDrawingAction, archiveAction, cancelAction, checkOfferAction, holdAction, setCustomerExcelAction,
   markShippedAction, noDrawingAction, sendToDrawingAction, setShipDateAction,
   removeDrawingFileAction, startDrawingAction, undoDrawingAction, undoNoDrawingAction, uploadDrawingAction,
-  withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction,
+  withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction, withdrawOfferAction,
 } from './actions';
 import { DwgDecision } from './DwgDecision';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
@@ -213,6 +214,9 @@ export default async function OrderPage({
   // Veri zaten sunucuda temizlendi (lib/orders.ts → sanitizeOrder); çizim ekibi teklif görmez,
   // müşteri ve denetimci yalnızca müşteriye gönderilmiş teklifi görür.
   const shownOffer = !userCan(user, 'OFFER_VIEW') ? undefined : isCustomer ? sent : editable || updating ? undefined : offer;
+  // "Yöneticiye göndermeyi geri al" (karar 212): yalnızca teklifi yöneticiye gönderen satışçıya, yönetici fiyatlandırıp
+  // müşteriye göndermeden önce. Asıl denetim işlemde (transitions.js → withdraw_offer: gönderen, durum, sipariş sürümü).
+  const withdrawable = can('withdraw_offer') && !!user.id && offerSubmitter(order.events) === user.id;
   const finalPrice = !userCan(user, 'OFFER_DRAFT_VIEW');
   const sentVersions = order.offers.filter((o) => o.status === 'GONDERILDI').length;
   // Müşteriye gönderilmiş son sürüm (taslak sayılmaz)
@@ -460,6 +464,8 @@ export default async function OrderPage({
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
             id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: !!l.compensationId, splitGroup: l.splitGroup ?? '',
             crate: l.crateFee,
+            // Satışın sandık ücreti (karar 211): cam prosesleri gibi gösterilir; yöneticinin sandık bedeli satışa hiç gelmez
+            salesCrate: isSalesCrate(l),
           }))}
           nextVersion={sentVersions + 1}
           m={m.offer}
@@ -474,7 +480,15 @@ export default async function OrderPage({
 
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
-          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))} />
+          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
+          withdraw={withdrawable ? (
+            <form action={withdrawOfferAction} className="row" style={{ gap: 8 }}>
+              <input type="hidden" name="id" value={order.id} />
+              <input type="hidden" name="v" value={order.version} />
+              <span className="muted small">{t('offer.view.withdrawHint')}</span>
+              <ConfirmButton outline message={t('offer.view.withdrawConfirm')}>{t('offer.view.withdraw')}</ConfirmButton>
+            </form>
+          ) : undefined} />
       )}
       {/* Özel durum (karar 124): yalnızca yönetici, teklif tablosunun hemen altında — başka firmanın yüklemesiyle gidecek */}
       {guestHost}
@@ -695,7 +709,7 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, priceLocked = [] }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; priceLocked?: string[] }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, priceLocked = [], withdraw }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; priceLocked?: string[]; withdraw?: React.ReactNode }) {
   // Kırık / telafi (karar 108): yalnızca müşteriye gönderilmiş teklifin fiziksel cam satırlarında, satış ve yöneticide
   const compCol = !!compIds && compIds.size > 0 && !!compHref;
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
@@ -723,7 +737,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           )}
         </span>
       </div>
-      <div className="table-wrap offer-wrap">
+      {/* Uzun tabloda ↑ / ↓ (TableJump): düzenlenebilir tabloyla aynı — teklif yöneticide ya da müşterideyken de görünür */}
+      <div className="table-wrap offer-wrap" id="offer-table">
         <table className={compCol ? 'offer-view has-actions' : 'offer-view'}>
           <thead><tr><th>#</th><th>{t('offer.cols.description')}</th><th>{t('offer.cols.poz')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th><th className="num">{t('offer.cols.qty')}</th><th className="num">{t('offer.cols.metraj')}</th><th className="num">{admin ? t('offer.cols.salesPrice') : t('offer.cols.unitPrice')}</th>{admin && <th className="num">{t('offer.cols.offerPrice')}</th>}<th className="num">{admin ? t('offer.cols.offerAmount') : t('offer.cols.amount')}</th>{compCol && <th />}</tr></thead>
           <tbody>
@@ -733,15 +748,18 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                 const tot = offerLineTotals({ ...l, unitPrice: (admin ? l.offerPrice ?? 0 : l.unitPrice).toString() });
                 const unitTxt = (v: { toString(): string } | null) => (v == null ? '—' : `${fmtNum(v.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : t('common.unitPiece')}`);
                 const sub = l.kind === 'CNC' || l.kind === 'DELIK';
-                if (!sub) n += 1;
+                // Satışın sandık ücreti (karar 211): cam prosesi gibi üstündeki camın altında, numarasız
+                const salesCrate = isSalesCrate(l);
+                if (!sub && !salesCrate) n += 1;
                 const kindLabel = sub ? lineKindText(t, l.kind) : '';
                 const desc = sub && (l.description === kindLabel || l.description === LEGACY_SUB_DESC[l.kind]) ? ''
                   : locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
                 return (
-                  <tr key={l.id} className={sub ? 'sub-line' : undefined}>
-                    <td className="muted">{sub ? '' : n}</td>
+                  <tr key={l.id} className={sub || salesCrate ? 'sub-line' : undefined}>
+                    <td className="muted">{sub || salesCrate ? '' : n}</td>
                     <td>
                       {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
+                      {salesCrate && !isCustomer && <span className="badge badge-info" data-sales-crate>{admin ? t('offer.editor.salesCrateAdminBadge') : t('offer.editor.salesCrateBadge')}</span>}{' '}
                       {desc}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
                       {!isCustomer && l.compensationId && <> <span className="badge badge-warn">{t('compensation.badge')}</span></>}
@@ -785,6 +803,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
         </span>
       </div>
+      {withdraw && <div style={{ marginTop: 10 }} data-offer-withdraw>{withdraw}</div>}
+      <TableJump targetId="offer-table" up={t('offer.import.jumpTop')} down={t('offer.import.jumpBottom')} />
       {/* Mali kilit (yönetici — Paket 4): "Teklifi güncelle" yerine neden fiyatın değişmeyeceği */}
       {admin && priceLocked.length > 0 && (
         <div className="alert alert-warn" id="fiyat-kilidi" style={{ marginTop: 10 }}>

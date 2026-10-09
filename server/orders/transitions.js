@@ -62,6 +62,7 @@ export const REQUIRES = {
   submit_offer: ['submit_offer'],
   approve_offer: ['approve_price'],
   return_offer: ['return_offer'],
+  withdraw_offer: ['withdraw_offer'],
   update_offer: ['update_offer'],
   check_offer: ['update_offer'],
 };
@@ -288,37 +289,46 @@ function requireSalesPrices(lines) {
 }
 
 /**
- * Sandık bedeli (fonksiyonel paket 4) — yalnızca yöneticinin satırı. Satışın (müşteri fiyatını göremeyen teklif yazarının)
- * kaydında:
- *   - gelen satırlarda sandık bedeli işareti yok sayılır; satış sandık parası satırı EKLEYEMEZ (açıklamayı elle yazsa da —
- *     yeni satırın adı sandık parasıysa CRATE_FEE_ADMIN), yöneticinin sandık satırının kimliğiyle de gelemez (o satırı
- *     görmez; taklit istek CRATE_FEE_ADMIN);
+ * Sandık ücreti satırının iki sahibi vardır (karar 211); sahiplik satırda saklıdır (OfferLine.crateFee) ve bir kez yazılır:
+ *   - yöneticinin sandık bedeli (crateFee = true): satışa HİÇ gitmez (lib/orders.ts → offerPrices);
+ *   - satışın sandık ücreti (crateFee = false, sandık parası adlı adetli satır — rules.js → isSalesCrate): satış ekler,
+ *     görür ve değiştirir; yönetici de görür ve müşteri fiyatını girer. Cam prosesleri gibi bir cam satırının altında durur;
+ *     tutarı faturada o camın tutarına eklenir (server/glass/billing.js — mevcut kural, bir kez sayılır).
+ * Satışın (müşteri fiyatını göremeyen teklif yazarının) kaydında:
+ *   - gelen satırlarda yöneticinin sandık bedeli işareti yok sayılır; yöneticinin sandık satırının kimliğiyle gelinemez (o
+ *     satırı görmez; taklit istek CRATE_FEE_ADMIN);
+ *   - sandık parası adlı cam türü satır satışın sandık ücretidir: adetle fiyatlanır, ölçüsü yoktur (sunucu böyle yazar);
  *   - yöneticinin sandık satırları satışa hiç gönderilmediği için formunda yoktur: kayıtta olduğu gibi KORUNUR (satırların
  *     sonunda, saklı değerleriyle) — satışın kaydı yöneticinin satırını silmez / değiştirmez.
- * Bu sürümden önce satışın eklediği sandık satırı (işaretsiz, kimliği satışın formunda) olağan satır olarak düzenlenir.
  * @param {object[]} lines  formdan gelen satırlar
  * @param {object[]} existing  teklifin kayıtlı satırları
  * @returns {{ lines: object[], kept: object[] }}  kept: korunan yönetici sandık satırları (kayıtlı hâlleriyle)
  */
 function salesInput(lines, existing) {
   const crateIds = new Set(existing.filter((l) => l.crateFee).map((l) => l.id));
-  const known = new Set(existing.map((l) => l.id));
   const out = (lines ?? []).map((l) => {
     if (l.id && crateIds.has(l.id)) throw new WorkflowError('CRATE_FEE_ADMIN');
-    const isNew = !l.id || !known.has(l.id);
-    if (isNew && (l.kind ?? 'CAM') === 'CAM' && isCrateText(l.description)) throw new WorkflowError('CRATE_FEE_ADMIN');
-    return { ...l, crateFee: false };
+    const crate = (l.kind ?? 'CAM') === 'CAM' && isCrateText(l.description);
+    return { ...l, crateFee: false, ...(crate ? { unit: 'adet', enMm: null, boyMm: null, splitGroup: null } : {}) };
   });
   return { lines: out, kept: existing.filter((l) => l.crateFee) };
 }
 /**
- * Yöneticinin satırları: sandık bedeli işareti yalnızca cam türü (adetli sandık) satırında geçerlidir. Kayıtlı sandık bedeli
- * satırı kimliğiyle geldiğinde işaret korunur (işareti taşımayan eski / yarım form satırı satışa açmaz).
+ * Yöneticinin satırları: sandık bedeli işareti yalnızca cam türü (adetli sandık) satırında geçerlidir. Satırın sahibi
+ * değişmez (karar 211): kayıtlı satır kimliğiyle geldiğinde saklı işaretini korur — yöneticinin sandık bedeli satışa
+ * açılmaz, satışın sandık ücreti de yöneticinin kaydıyla satıştan gizlenmez. Yöneticinin EKLEDİĞİ sandık satırı (işaretli
+ * ya da sandık parası adlı) her zaman yöneticinin sandık bedelidir: satış görmez.
  * @param {object[]} lines  @param {object[]} [existing]  teklifin kayıtlı satırları
  */
 const adminInput = (lines, existing = []) => {
-  const crateIds = new Set(existing.filter((l) => l.crateFee).map((l) => l.id));
-  return (lines ?? []).map((l) => ({ ...l, crateFee: (!!l.crateFee || (!!l.id && crateIds.has(l.id))) && (l.kind ?? 'CAM') === 'CAM' }));
+  const byId = new Map(existing.map((l) => [l.id, l]));
+  return (lines ?? []).map((l) => {
+    const own = l.id ? byId.get(l.id) : undefined;
+    const cam = (l.kind ?? 'CAM') === 'CAM';
+    const crateFee = cam && (own ? !!own.crateFee : !!l.crateFee || isCrateText(l.description));
+    // Yeni sandık bedeli satırı adetle fiyatlanır, ölçüsü yoktur (ekranın gönderdiğiyle aynı; taklit / elle yazılmış satır için)
+    return { ...l, crateFee, ...(crateFee && !own ? { unit: 'adet', enMm: null, boyMm: null, splitGroup: null } : {}) };
+  });
 };
 
 /**
@@ -740,6 +750,30 @@ const ACTIONS = {
   return_offer(h) {
     if (!h.payload.returnNote) throw new WorkflowError('RETURN_REASON');
     return offerEdit(h, 'return');
+  },
+  /**
+   * "Yöneticiye göndermeyi geri al" (karar 212): satış, yöneticiye gönderdiği teklifi yönetici fiyatlandırıp müşteriye
+   * göndermeden geri alır — teklif yeniden satışın taslağıdır (HAZIRLANIYOR), satış düzenleyip yeniden gönderir.
+   *  - Yalnızca teklifi yöneticiye son gönderen satışçı (son OFFER_SUBMITTED olayının kullanıcısı): OFFER_NOT_OWNER.
+   *  - Eşzamanlılık: sipariş sürümü (iyimser kilit, executeAction) ve teklifin durumu koşullu güncellenir — yönetici aynı
+   *    anda onaylayıp gönderdiyse / geri gönderdiyse geri alma yazılmaz (CONFLICT ya da NOT_ALLOWED).
+   *  - Hiçbir şey silinmez: satırlar, yöneticinin taslak müşteri fiyatları ve sandık bedeli satırları teklifte kalır (satış
+   *    müşteri fiyatını ve yöneticinin sandık bedelini görmez). Geçmiş (OFFER_WITHDRAWN) ve denetim kaydı yazılır.
+   *  - Teklif yöneticinin fiyat onayı kuyruğundan çıkar (kuyruk teklifin durumundan okunur); bu gönderimin açık "liste
+   *    fiyatından farklı fiyat" uyarıları kapanır — yeniden gönderimde güncel olanlar yeniden yazılır (recordPriceOverrides).
+   */
+  async withdraw_offer(h) {
+    const { tx, order, actor, now } = h;
+    const offer = latestOffer(order);
+    if (!offer || offer.status !== 'YONETIMDE') throw new WorkflowError('NOT_ALLOWED');
+    const last = await tx.orderEvent.findFirst({ where: { orderId: order.id, event: 'OFFER_SUBMITTED' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { userId: true } });
+    if (!last || !actor.id || last.userId !== actor.id) throw new WorkflowError('OFFER_NOT_OWNER');
+    const moved = await tx.offer.updateMany({ where: { id: offer.id, status: 'YONETIMDE' }, data: { status: 'HAZIRLANIYOR', statusSince: now } });
+    if (moved.count !== 1) throw new WorkflowError('CONFLICT');
+    const alerts = await tx.adminAlert.updateMany({ where: { type: 'PRICE_OVERRIDE', orderId: order.id, resolvedAt: null }, data: { resolvedAt: now } });
+    h.event('OFFER_WITHDRAWN');
+    h.sla = true;
+    h.audit = { offerId: offer.id, offerFrom: 'YONETIMDE', offerTo: 'HAZIRLANIYOR', closedAlerts: alerts.count };
   },
   /**
    * Müşterideki teklifi yönetici günceller: eski sürüm kalır, yeni sürüm yöneticinin açık "Güncelle ve müşteriye gönder"
