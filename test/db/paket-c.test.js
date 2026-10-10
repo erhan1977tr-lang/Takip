@@ -79,7 +79,7 @@ dbTest('tahmini yükleme tarihi: yükleme tamamlanınca kilitli — Yüklendi / 
   for (const [status, quantity] of [['LOADED', 1], ['NOT_LOADED', 1]]) {
     const i = snapshotLine(partial, partial.offers[0], line, { quantity, status, reason: status === 'NOT_LOADED' ? 'BROKEN' : null });
     await db.loadingConfirmationItem.create({
-      data: { ...i, confirmationId: conf.id, scopeKey: `line:${line.id}`, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2), costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4) },
+      data: { ...i, confirmationId: conf.id, scopeKey: `l:${line.id}`, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2), costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4) },
     });
   }
   const before = (await db.order.findUniqueOrThrow({ where: { id: partial.id } })).estimatedShipDate.toISOString();
