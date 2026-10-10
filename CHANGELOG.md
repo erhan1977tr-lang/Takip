@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.72.0 — 10.10.2026
+
+P6 — yönetici acil erişim kurtarma (karar 246). Şema değişmedi; uygulamada yeni sayfa / adres yok.
+
+- **Sunucu komutu `takip yonetici-kurtar E-POSTA`** (yalnızca root, yalnızca etkileşimli SSH terminali): var olan, etkin bir
+  yönetici (ADMIN) hesabının şifresini yeniler. Yeni şifre ekranda görünmeden iki kez sorulur; komut satırına, ortama,
+  geçmişe ya da günlüğe yazılmaz. Tek işlemde: şifre özeti, bütün açık oturumların kapatılması, bekleyen kodların geçersiz
+  kılınması ve `ADMIN_RECOVERY` denetim kaydı. Giriş deneme sayaçlarına dokunulmaz (karar 148–149); kilit en geç 15 dakikada
+  kendiliğinden açılır. Yeni hesap açılmaz, rol değişmez;
+  başarısız deneme `ADMIN_RECOVERY_FAILED` olarak (yalnızca kod) yazılır. Kullanım: `docs/yonetici-kurtarma.md`.
+- Şifre özeti tek modülde (`server/auth/password-hash.js`); uygulamanın giriş ve şifre belirleme akışı aynı işlevi
+  kullanır (biçim ve parametreler değişmedi).
+- Testler: kurallar ve komut akışı (birim), gerçek veritabanında kurtarma / hatalı hesap / yetki / tekrar / eşzamanlı /
+  başarısız işlem / terminalsiz çalıştırma, uçtan uca: açık oturumun kapanması ve yeni şifreyle giriş.
+
 ## 3.71.3 — 10.10.2026
 
 - P5 veritabanı testi: otomatik arşivin yinelenen turundan sonraki denetim kaydı sayısı (onaysız "Yüklendi" artık

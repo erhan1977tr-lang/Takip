@@ -5,6 +5,7 @@
 #   takip guncelle                   GitHub'da testlerden geçmiş yeni sürüm varsa hemen yayınla
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
 #   takip yonetici E-POSTA "AD" [--reset]   yönetici hesabı aç (ya da şifresini sıfırla) → tek kullanımlık kod
+#   takip yonetici-kurtar E-POSTA    VAR OLAN yönetici hesabına acil erişim: yeni şifre (gizli girilir), oturumlar kapanır
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
 #   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
@@ -717,6 +718,21 @@ cmd_admin() {
   compose run --rm tools node scripts/create-admin.mjs "$email" "$name" --factory "$factory" "$@"
 }
 
+# Yönetici acil erişim kurtarma (karar 246). Yalnızca root, yalnızca etkileşimli terminal (SSH). Şifre bu kabukta OKUNMAZ:
+# araç konteynerindeki komut terminalden görünmeden sorar — komut satırına, ortam değişkenine, geçmişe ya da günlüğe düşmez.
+# Operatör etiketi (SSH / sudo kullanıcı adı) denetim kaydına yazılır; gizli değildir.
+cmd_admin_recover() {
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip yonetici-kurtar …)."; return 1; }
+  if [ $# -ne 1 ] || [ -z "${1:-}" ] || [ "${1#-}" != "$1" ]; then
+    say 'Kullanım: takip yonetici-kurtar E-POSTA   (şifre komut satırından verilmez; komut sorar)'
+    return 1
+  fi
+  if [ ! -t 0 ] || [ ! -t 1 ]; then say "✘ Bu komut yalnızca etkileşimli terminalde (SSH oturumu) çalışır."; return 1; fi
+  local op=${SUDO_USER:-$(logname 2>/dev/null || id -un)}
+  op=$(printf '%s' "$op" | tr -cd 'A-Za-z0-9._@-' | cut -c1-64)
+  compose run --rm -e TAKIP_OPERATOR="${op:-unknown}" tools node scripts/admin-recover.mjs "$1"
+}
+
 cmd_github() {
   say "GitHub erişim anahtarı (fine-grained token): yalnızca Takip deposu; izinler: Contents → Read-only, Actions → Read-only."
   say "Oluşturmak için: github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens."
@@ -1122,6 +1138,7 @@ main() {
     kur | fx) compose run --rm tools node scripts/fx-check.mjs "$@" ;;
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
+    yonetici-kurtar | admin-recover) cmd_admin_recover "$@" ;;
     yedek | backup) cmd_backup ;;
     restore | geri-yukle) cmd_restore "$@" ;;
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
@@ -1132,7 +1149,7 @@ main() {
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,17p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,18p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

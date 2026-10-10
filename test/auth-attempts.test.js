@@ -616,7 +616,8 @@ test('yapı: deneme kaydını ve davet deneme sayısını yazan başka uygulama 
   // Davetin deneme sayısı yalnızca koşullu hak alma / geri verme ile değişir
   const inviteWriters = using(/userInvite\.(create|update|updateMany|upsert)\(/);
   // server/users/lifecycle.js: yöneticinin e-posta değişikliği (karar 222) — eski davetleri kapatır, yeni adrese davet yazar; attempts'e dokunmaz
-  assert.deepEqual(inviteWriters, [path.join('app', 'setup', 'actions.ts'), path.join('lib', 'invite.ts'), path.join('scripts', 'create-admin.mjs'), path.join('server', 'auth', 'invite-claim.js'), path.join('server', 'users', 'lifecycle.js')]);
+  // server/auth/admin-recovery.js: SSH acil kurtarma (karar 246) — açık davetleri kapatır (usedAt); attempts'e dokunmaz
+  assert.deepEqual(inviteWriters, [path.join('app', 'setup', 'actions.ts'), path.join('lib', 'invite.ts'), path.join('scripts', 'create-admin.mjs'), path.join('server', 'auth', 'admin-recovery.js'), path.join('server', 'auth', 'invite-claim.js'), path.join('server', 'users', 'lifecycle.js')]);
   assert.deepEqual(inviteWriters.filter((f) => /attempts/.test(strip(read(f)))), [path.join('server', 'auth', 'invite-claim.js')], 'attempts yalnızca hak alma / geri verme ile değişir');
   assert.deepEqual(using(/verifyInviteCode\(/), [path.join('app', 'setup', 'actions.ts'), path.join('server', 'auth', 'invite-claim.js')]);
   assert.deepEqual(using(/\b(runAttempt|runAttemptIn)\(/), [path.join('app', 'login', 'actions.ts'), path.join('app', 'setup', 'actions.ts'), path.join('lib', 'auth', 'throttle.ts'), path.join('server', 'auth', 'attempts.js')]);
