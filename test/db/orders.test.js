@@ -238,7 +238,7 @@ dbTest('geçiş: çizim döngüsü; taslak → gönder; müşteri eski sürümü
     annotations: JSON.stringify([{ fileId: v1File, page: 1, type: 'pin', x: 0.5, y: 0.25, text: 'burası' }, { fileId: 'baska-dosya', page: 1, type: 'pin', x: 0.1, y: 0.1, text: 'x' }]),
   });
   const rev = await db.drawingRevision.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } });
-  assert.deepEqual(rev.annotations, [{ fileId: v1File, page: 1, type: 'pin', x: 0.5, y: 0.25, text: 'burası' }], 'başka dosyaya işaret atılır');
+  assert.deepEqual(rev.annotations, [{ id: 'm1', no: 1, fileId: v1File, page: 1, type: 'pin', x: 0.5, y: 0.25, text: 'burası' }], 'başka dosyaya işaret atılır; kalıcı kimlik / numara verilir (P5)');
   assert.equal(rev.comment, 'Yükseklik 1100 olsun');
   const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('v2')] });
   assert.equal(v2.result.version, 2);

@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.71.1 — 10.10.2026
+
+- P5 veritabanı testi: saklanan işaret kalıcı kimlik ve numarayı taşır (yalnızca test beklentisi).
+
 ## 3.71.0 — 10.10.2026
 
 P5 — müşteri ekranları (karar 243–244). Şema değişmedi; rol yetkileri ve firma izolasyonu değişmedi.
