@@ -19,6 +19,7 @@ import { SidebarPortal } from '@/components/Sidebar';
 import { OrderInfo } from './OrderInfo';
 import { ShipDateEdit } from './ShipDateEdit';
 import { shipDateLocked } from '@/server/orders/ship-date.js';
+import { compensationTagText, loadCompensationTags, physicalVsBillable } from '@/server/orders/compensation-tag.js';
 import { GlassFinance } from './GlassFinance';
 import { OrderPayments } from './OrderPayments';
 import { fxOfferNote } from '@/lib/fx-note';
@@ -250,6 +251,9 @@ export default async function OrderPage({
   const shipLocked = !isCustomer && order.orderTypeCode === 'GLASS_ORDER'
     && (['YUKLENDI', 'ARSIVLENDI'].includes(order.status) || await shipDateLocked(db, order.id));
   const shipEditable = can('set_ship_date') && !shipLocked;
+  // Telafi etiketi (karar 231): gerçek telafi numarası (yeni telafi siparişi) ya da "<kaynak> telafisi" — tek sorgu
+  const compTags = await loadCompensationTags(db, order.offers.flatMap((o) => o.lines));
+  const compTagText = (id: string) => compensationTagText(compTags.get(id) ?? null, { newText: t('compensation.tag.new'), existingText: t('compensation.tag.existing') }) || t('compensation.badge');
   // Yöneticinin "Hareketler"i: müşteri fiyatı değişiklikleri (denetim kaydından; tutarlar yalnızca yöneticide — Paket 4)
   const priceChanges = await loadPriceChanges(order.id, user);
   const ok = okText(m, sp.ok);
@@ -481,7 +485,7 @@ export default async function OrderPage({
             poz: l.poz ?? '', enMm: l.enMm?.toString() ?? '', boyMm: l.boyMm?.toString() ?? '',
             adet: String(l.adet), unit: l.unit, unitPrice: Number(l.unitPrice) ? Number(l.unitPrice).toFixed(2) : '',
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
-            id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: !!l.compensationId, splitGroup: l.splitGroup ?? '',
+            id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: l.compensationId ? compTagText(l.compensationId) : undefined, splitGroup: l.splitGroup ?? '',
             crate: l.crateFee,
             // Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzen (numaralı, ölçüsüz, adı sabit);
             // yöneticinin sandık bedeli satışa hiç gelmez
@@ -500,7 +504,7 @@ export default async function OrderPage({
 
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
-          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
+          compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} compTag={compTagText} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
           withdraw={withdrawable ? (
             <form action={withdrawOfferAction} className="row" style={{ gap: 8 }}>
               <input type="hidden" name="id" value={order.id} />
@@ -724,7 +728,7 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, priceLocked = [], withdraw }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; priceLocked?: string[]; withdraw?: React.ReactNode }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, compTag, priceLocked = [], withdraw }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; compTag?: (id: string) => string; priceLocked?: string[]; withdraw?: React.ReactNode }) {
   // Kırık / telafi (karar 108): yalnızca müşteriye gönderilmiş teklifin fiziksel cam satırlarında, satış ve yöneticide
   const compCol = !!compIds && compIds.size > 0 && !!compHref;
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
@@ -736,6 +740,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
   const total = offer.status === 'GONDERILDI' && order.price && finalPrice && !admin ? order.price.amount : offer.amount;
   const offerTotal = admin ? offerTotals(atOfferPrice(offer.lines.map((l) => ({ ...l, unitPrice: l.unitPrice.toString(), offerPrice: l.offerPrice?.toString() ?? null })))).amount : 0;
   const updated = offer.status === 'GONDERILDI' && versions > 1;
+  const pvb = physicalVsBillable(offer.lines);
   return (
     <div className="card" id="teklif">
       <div className="section-head">
@@ -773,10 +778,11 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                   <tr key={l.id} className={sub ? 'sub-line' : undefined}>
                     <td className="muted">{sub ? '' : n}</td>
                     <td>
+                      {/* Telafi etiketi cam türünün üstünde, gerçek telafi numarasıyla (karar 231; müşteri de görür) */}
+                      {!sub && l.compensationId && <div className="comp-tag"><span className="badge badge-warn" data-comp-tag>{compTag ? compTag(l.compensationId) : t('compensation.badge')}</span></div>}
                       {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
                       {desc}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
-                      {!isCustomer && l.compensationId && <> <span className="badge badge-warn">{t('compensation.badge')}</span></>}
                       {/* Yöneticinin sandık bedeli (Paket 4): satış bu satırı hiç almaz; yönetici "satış görmez" rozetiyle görür */}
                       {admin && l.crateFee && <> <span className="badge badge-info" data-crate-fee>{t('offer.editor.crateBadge')}</span></>}
                       {salesCrate && <> <span className="badge badge-info" data-sales-crate>{t('offer.editor.salesCrateAdminBadge')}</span></>}
@@ -808,6 +814,10 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
       </div>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>
+          {/* Bedelsiz telafi (karar 231): fiziksel üretilir ve yüklenir, faturalanacak miktara eklenmez — ikisi ayrı yazılır */}
+          {pvb.free.pieces > 0 && <><span data-physical={`${pvb.physical.pieces}|${pvb.billable.pieces}`}>{t('offer.physical', {
+            pieces: pvb.physical.pieces, m2: fmtM2(pvb.physical.m2), bPieces: pvb.billable.pieces, bM2: fmtM2(pvb.billable.m2), fPieces: pvb.free.pieces, fM2: fmtM2(pvb.free.m2),
+          })}</span><br /></>}
           {t('common.pricesExclVat')}
           {/* Kur notu müşterinin kur politikasından gelir; politika satış / çizim ekibine gitmez (SEC-07) → onlarda not yok */}
           {offer.currency === 'EUR' && order.customer.fxPolicy && <><br />{fxOfferNote(t, order.customer.fxPolicy)}</>}

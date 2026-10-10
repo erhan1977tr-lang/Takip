@@ -7,6 +7,7 @@ const M = 40;
 const ROW = 18;
 const BLUE = [0.07, 0.36, 0.55];
 const GREY = [0.45, 0.45, 0.45];
+const ORANGE = [0.72, 0.4, 0.05];
 // Sütun genişlikleri (toplam 515 = A4 − 2 × kenar)
 const W = { n: 22, desc: 150, poz: 45, en: 42, boy: 42, adet: 32, m2: 46, unit: 72, amount: 64 };
 
@@ -59,8 +60,12 @@ export function offerPdf(data, text) {
 
   newPage(true);
   for (const r of data.rows) {
-    ensure(ROW);
-    const cell = (k, s, o = {}) => page.text(C[k].x + (o.align === 'left' ? 3 : 0), y + 12.5, fitText(s, 8, C[k].w - 5, !!o.bold), { size: 8, align: o.align ?? 'right', width: C[k].w - 3, bold: !!o.bold, color: o.color });
+    // Telafi etiketi (karar 231): cam türünün üstünde küçük, renkli satır; satır o kadar yüksek
+    const h = r.tag ? ROW + 9 : ROW;
+    ensure(h);
+    const base = r.tag ? y + 9 : y;
+    if (r.tag) page.text(C.desc.x + 3, y + 9, fitText(r.tag, 6.5, C.desc.w - 5, true), { size: 6.5, bold: true, color: ORANGE });
+    const cell = (k, s, o = {}) => page.text(C[k].x + (o.align === 'left' ? 3 : 0), base + 12.5, fitText(s, 8, C[k].w - 5, !!o.bold), { size: 8, align: o.align ?? 'right', width: C[k].w - 3, bold: !!o.bold, color: o.color });
     cell('n', r.n == null ? '' : String(r.n), { align: 'left' });
     cell('desc', r.sub ? `   ${r.desc}` : r.desc, { align: 'left', color: r.sub ? GREY : undefined });
     cell('poz', r.poz, { align: 'left' });
@@ -70,7 +75,7 @@ export function offerPdf(data, text) {
     cell('m2', r.m2 == null ? '—' : area(r.m2));
     cell('unit', r.free ? text.free : r.unitPrice == null ? '—' : `${money(r.unitPrice)} / ${r.unit === 'm2' ? 'm²' : text.piece}`);
     cell('amount', money(r.amount));
-    y += ROW;
+    y += h;
     page.line(M, y, M + 515, y, 0.4, 0.85);
   }
   ensure(60);

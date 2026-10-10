@@ -23,9 +23,10 @@ export function canExportOffer(format, { canExport, isAdmin, customerExcel }) {
 /**
  * Teklif satırları → dışa aktarılacak satırlar ve toplam. price(l): satırın müşteri fiyatı (yönetici: offerPrice;
  * müşteri: temizlenmiş veride unitPrice zaten müşteri fiyatıdır).
- * @param {{ lines: object[], price: (l: any) => unknown, locale: 'tr' | 'ro', kindLabel: (k: string) => string }} p
+ * tagOf(l): telafi satırının etiketi (karar 231 — server/orders/compensation-tag.js); verilmezse etiket yok.
+ * @param {{ lines: object[], price: (l: any) => unknown, locale: 'tr' | 'ro', kindLabel: (k: string) => string, tagOf?: (l: any) => string | null }} p
  */
-export function offerExportData({ lines, price, locale, kindLabel }) {
+export function offerExportData({ lines, price, locale, kindLabel, tagOf = () => null }) {
   let n = 0;
   let metraj = 0, total = 0;
   const rows = lines.map((l) => {
@@ -42,7 +43,7 @@ export function offerExportData({ lines, price, locale, kindLabel }) {
     if (m2) metraj = round2(metraj + m2);
     total = round2(total + tot.amount);
     return {
-      n: sub ? null : n, sub, desc, poz: l.poz ?? '', en: l.enMm ?? null, boy: l.boyMm ?? null, adet: Number(l.adet) || 0,
+      n: sub ? null : n, sub, desc, tag: sub ? null : tagOf(l) || null, poz: l.poz ?? '', en: l.enMm ?? null, boy: l.boyMm ?? null, adet: Number(l.adet) || 0,
       m2, unit: !sub && l.unit === 'm2' ? 'm2' : 'adet', unitPrice, free: !!l.free, amount: round2(tot.amount),
     };
   });
@@ -69,7 +70,8 @@ export function offerXlsx(data, text) {
           { header: c.en, width: 9, type: 'mm' }, { header: c.boy, width: 9, type: 'mm' }, { header: c.adet, width: 7, type: 'int' },
           { header: c.m2, width: 11, type: 'm2' }, { header: `${c.unitPrice} (${text.currency})`, width: 16, type: 'dec2' }, { header: `${c.amount} (${text.currency})`, width: 16, type: 'dec2' },
         ],
-        rows: data.rows.map((r) => [r.n ?? '', r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount]),
+        // Telafi etiketi açıklamanın üstünde (ayrı satır — sütun kaydırmalı)
+        rows: data.rows.map((r) => [r.n ?? '', r.tag ? `${r.tag}\n${r.desc}` : r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount]),
         totals: [[text.total, '', '', '', '', '', data.metraj || '', '', data.total]],
       }],
       notes: text.notes,

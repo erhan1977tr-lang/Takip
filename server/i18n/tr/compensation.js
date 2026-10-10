@@ -2,6 +2,8 @@
 // Yalnızca iç ekip (satış, yönetici) görür.
 export default {
   badge: 'TELAFİ',
+  // Telafi etiketi (karar 231): teklif tablolarında, PDF ve Excel'de cam türünün üstünde; müşteri de görür
+  tag: { new: 'Telafi {no}', existing: '{source} telafisi' },
   rowAction: 'Kırık / Telafi',
   rowActionTitle: 'Bu cam için kırık / telafi camı aç',
   // Fiyat metinleri

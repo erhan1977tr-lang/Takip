@@ -2,6 +2,7 @@
 // Văzut doar de echipa internă (vânzări, administrator).
 export default {
   badge: 'ÎNLOCUIRE',
+  tag: { new: 'Înlocuire {no}', existing: 'Înlocuire pentru {source}' },
   rowAction: 'Spartă / Înlocuire',
   rowActionTitle: 'Deschide o sticlă de înlocuire pentru acest rând',
   free: 'Gratuit',

@@ -314,8 +314,10 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   await expect(admin).toHaveURL(/telafiOk=applied/);
   // Kaynak adedi onayla birlikte düştü (4 → 3)
   await expect(admin.locator('[data-comp-source=dustu]')).toContainText('4 → 3');
-  await expect(admin.locator('#teklif tbody tr', { hasText: 'TELAFİ' })).toHaveCount(1);
-  await expect(admin.locator('#teklif tbody tr', { hasText: 'TELAFİ' })).toContainText('Lamine');
+  // Telafi etiketi (karar 231): var olan siparişe eklenen telafi — kaynak numarasıyla, cam türünün üstünde
+  await expect(admin.locator('#teklif tbody tr [data-comp-tag]')).toHaveCount(1);
+  await expect(admin.locator('#teklif tbody tr [data-comp-tag]')).toHaveText('UNS7901 telafisi');
+  await expect(admin.locator('#teklif tbody tr', { has: admin.locator('[data-comp-tag]') })).toContainText('Lamine');
   await expect(admin.locator('#kararlar .comp-entry[data-status=APPLIED]')).toHaveCount(1);
 
   const db = await prisma();
@@ -334,7 +336,8 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   // olağan düğmeyle müşteriye gönderir (ayrı bir fiyat sistemi yok)
   await admin.goto(`/siparisler/${pricingId}`);
   await expect(admin.locator('h1')).toContainText('Telafi e2e 7901');
-  await expect(admin.locator('.line-actions .badge', { hasText: 'TELAFİ' })).toHaveCount(1);
+  await expect(admin.locator('#teklif [data-comp-tag]')).toHaveCount(1);
+  await expect(admin.locator('#teklif [data-comp-tag]')).toHaveText('Telafi UNS7901-T3');
   const price = admin.getByLabel('Müşteri fiyatı', { exact: true });
   await expect(price).toHaveCount(1);
   await expect(price).toHaveValue('');
@@ -385,7 +388,7 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   await admin.context().close();
 });
 
-test('müşteri, çizim ve denetimci: telafi düğmesi, "Önemli kararlar" ve TELAFİ rozeti müşteride yok; siparişi sil bölümü yalnızca yöneticide', async ({ browser }) => {
+test('müşteri, çizim ve denetimci: telafi düğmesi ve "Önemli kararlar" müşteride yok; müşteri gerçek telafi numarasını görür (karar 231); siparişi sil bölümü yalnızca yöneticide', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   await cust.goto(`/siparisler/${srcId}`);
   await expect(cust.locator('#teklif')).toBeVisible();
@@ -397,10 +400,15 @@ test('müşteri, çizim ve denetimci: telafi düğmesi, "Önemli kararlar" ve TE
   await expect(cust.locator('#telafi')).toHaveCount(0);
   await cust.goto(`/siparisler/${futureId}`);
   await expect(cust.locator('#teklif')).toContainText('Lamine'); // teklifin yeni sürümü müşteride
+  // Telafi etiketi (karar 231): müşteri de görür — kaynak siparişin numarasıyla; iç "TELAFİ" rozeti yok
+  await expect(cust.locator('#teklif [data-comp-tag]')).toHaveText('UNS7901 telafisi');
   expect(await cust.content()).not.toContain('TELAFİ');
-  // Bedelsiz telafi siparişinin teklifi yöneticiye uğramadan müşterinin panelinde (olağan sipariş; TELAFİ rozeti yok)
+  // Bedelsiz telafi siparişinin teklifi yöneticiye uğramadan müşterinin panelinde: gerçek telafi numarası; fiziksel ve
+  // faturalanacak cam ayrı yazılır (bedelsiz cam faturalanmaz)
   await cust.goto(`/siparisler/${freeId}`);
   await expect(cust.locator('#teklif')).toContainText('Temper');
+  await expect(cust.locator('#teklif [data-comp-tag]').first()).toHaveText('Telafi UNS7901-T');
+  await expect(cust.locator('#teklif [data-physical]')).toContainText('Faturalanacak: 0 cam');
   expect(await cust.content()).not.toContain('TELAFİ');
   // Telafi siparişleri müşterinin "Tekliflerim" listesinde olağan sipariş olarak görünür
   await cust.goto('/teklifler');

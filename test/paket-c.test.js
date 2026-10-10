@@ -92,3 +92,24 @@ test('m² gösterimi (karar 232): ekran, PDF ve Excel üç ondalık; hesap deği
     assert.ok(!/fmtNum\([^,()]*(metraj|\.m2)\)/.test(read(f)), f);
   }
 });
+
+test('telafi etiketi (karar 231): yeni telafi siparişinin gerçek numarası; var olan siparişte kaynak numarasıyla; numara uydurulmaz', async () => {
+  const { compensationTag, compensationTagText, physicalVsBillable } = await import('../server/orders/compensation-tag.js');
+  const texts = { newText: 'Telafi {no}', existingText: '{source} telafisi' };
+  assert.deepEqual(compensationTag({ destType: 'NEW', destOrder: { orderNo: 'ALE46-T2' }, sourceOrder: { orderNo: 'ALE46' } }), { kind: 'NEW', no: 'ALE46-T2' });
+  assert.equal(compensationTagText(compensationTag({ destType: 'NEW', destOrder: { orderNo: 'ALE46-T2' }, sourceOrder: { orderNo: 'ALE46' } }), texts), 'Telafi ALE46-T2');
+  assert.equal(compensationTagText(compensationTag({ destType: 'EXISTING', destOrder: { orderNo: 'ALE50' }, sourceOrder: { orderNo: 'ALE46' } }), texts), 'ALE46 telafisi');
+  assert.equal(compensationTag(null), null);
+  assert.equal(compensationTagText(null, texts), '');
+  // Bedelsiz telafi: fizikselde sayılır, faturalanacakta sayılmaz; CNC / delik / adetli satır cam sayılmaz
+  const g = (adet, extra = {}) => ({ kind: 'CAM', unit: 'm2', enMm: 1000, boyMm: 1000, adet, unitPrice: '30', offerPrice: '50', ...extra });
+  const r = physicalVsBillable([g(5), g(2, { free: true, compensationId: 'c1' }), { kind: 'CNC', unit: 'adet', adet: 3 }, { kind: 'CAM', unit: 'adet', adet: 1, description: 'Sandık' }]);
+  assert.deepEqual(r, { physical: { pieces: 7, m2: 7 }, billable: { pieces: 5, m2: 5 }, free: { pieces: 2, m2: 2 } });
+  // Dışa aktarma: etiket cam satırında (işlem satırında değil); Excel'de açıklamanın üstünde
+  const { offerExportData } = await import('../server/orders/offer-export.js');
+  const data = offerExportData({ lines: [g(1, { id: 'a', description: 'Temper', compensationId: 'c1', free: true }), { kind: 'CNC', unit: 'adet', adet: 1, description: 'CNC', compensationId: 'c1' }], price: (l) => l.offerPrice, locale: 'tr', kindLabel: (k) => k, tagOf: () => 'Telafi ALE46-T2' });
+  assert.deepEqual(data.rows.map((x) => [x.tag, x.amount]), [['Telafi ALE46-T2', 0], [null, 0]]);
+  const page = read('app/(panel)/siparisler/[id]/page.tsx');
+  assert.ok(page.includes('data-comp-tag'));
+  assert.ok(read('server/orders/offer-export.js').includes('r.tag ? `${r.tag}\\n${r.desc}` : r.desc'));
+});

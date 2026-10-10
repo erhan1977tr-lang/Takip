@@ -696,6 +696,8 @@ tr.sub-line td { background: #f4f7fb; }
 tr.sub-line td.desc, tr.sub-line td:nth-child(2) { padding-left: 26px; }
 /* Satır işlemleri açıklamanın altında: + CNC · + Delik · bedelsiz */
 .line-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin-top: 5px; }
+/* Telafi etiketi (karar 231): gerçek telafi numarası cam türünün üstünde (teklif tablosu, düzenleyici, yükleme özeti) */
+.comp-tag { margin-bottom: 3px; line-height: 1; }
 .line-actions .btn-link { padding: 1px 0; font-size: var(--fs-meta); }
 input.input-missing { background: var(--danger-soft); border-color: #e5837a; }
 input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }

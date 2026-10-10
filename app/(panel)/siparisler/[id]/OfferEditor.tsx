@@ -14,7 +14,7 @@ import { ExcelImport } from './ExcelImport';
  * id: kayıtlı satır ('' → yeni) · unitPrice: satış fiyatı · offerPrice: müşteri fiyatı (yalnızca yönetici görür/girer, karar 4)
  */
 /** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
-type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı (kırık / telafi camı — yalnızca rozet; işaret sunucuda satırla taşınır) */ comp?: boolean; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean;
+type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı: gerçek telafi numarasının etiketi (karar 231 — yalnızca gösterim; işaret sunucuda satırla taşınır) */ comp?: string; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean;
   /** Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzende bağımsız, numaralı kalem; satış ekler / değiştirir, yönetici görür */ salesCrate?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
@@ -262,6 +262,8 @@ export function OfferEditor(props: {
                     <input type="hidden" name="l_crate" value={l.crate ? '1' : '0'} />
                   </td>
                   <td className="desc">
+                    {/* Telafi etiketi cam türünün üstünde (karar 231) */}
+                    {l.comp && <div className="comp-tag"><span className="badge badge-warn" data-comp-tag>{l.comp}</span></div>}
                     <span className="desc-row">
                       {sub && <span className="badge badge-info">{kind}</span>}
                       <input name="l_desc" list={sub || sc ? undefined : 'catalog'} value={l.description} title={l.description || undefined} placeholder={sub ? interpolate(m.editor.subDescPlaceholder, { kind }) : undefined}
@@ -275,7 +277,6 @@ export function OfferEditor(props: {
                     {/* Satırın işlemleri: açıklamanın hemen altında (ek işlem satırı ekle, bedelsiz yap) */}
                     <div className="line-actions">
                       {l.free && <span className="badge badge-ok">{m.free}</span>}
-                      {l.comp && <span className="badge badge-warn">{m.telafi}</span>}
                       {l.crate && <span className="badge badge-info" data-crate-fee>{m.editor.crateBadge}</span>}
                       {/* Yönetici satışın sandık parasını rozetle ayırır (satış görür); satışın ekranında rozet yok — yöneticinin sandık satırının düzeni */}
                       {sc && adminMode && <span className="badge badge-info" data-sales-crate-badge>{m.editor.salesCrateAdminBadge}</span>}

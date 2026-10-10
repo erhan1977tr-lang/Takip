@@ -2,6 +2,8 @@
 // İstemci bileşenine bu ad alanı (m.offer) prop olarak gider.
 export default {
   free: 'bedelsiz',
+  // Bedelsiz telafi (karar 231): fiziksel üretilir / yüklenir, faturalanmaz
+  physical: 'Fiziksel: {pieces} cam · {m2} m² — Faturalanacak: {bPieces} cam · {bM2} m² (bedelsiz: {fPieces} cam · {fM2} m²)',
   // TELAFİ satırı rozeti (kırık / telafi camı — Aşama 9; yalnızca iç ekip)
   telafi: 'TELAFİ',
   // Tablo sütunları (düzenleyicide alanların aria-label'ı da bunlardır)

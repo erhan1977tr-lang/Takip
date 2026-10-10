@@ -2,6 +2,7 @@
 // Componenta client primește acest spațiu de nume (m.offer) ca prop.
 export default {
   free: 'gratuit',
+  physical: 'Fizic: {pieces} buc. · {m2} m² — De facturat: {bPieces} buc. · {bM2} m² (gratuit: {fPieces} buc. · {fM2} m²)',
   telafi: 'ÎNLOCUIRE',
   // Coloanele tabelului (în editor sunt și aria-label-urile câmpurilor)
   cols: {
