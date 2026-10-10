@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.71.0 — 10.10.2026
+
+P5 — müşteri ekranları (karar 243–244). Şema değişmedi; rol yetkileri ve firma izolasyonu değişmedi.
+
+- **Revizyon ekranı:** ayrı "İşaretler / Marcaje" paneli yok. Her işaretin açıklaması "Revizyon notu / Nota de revizie"
+  bölümünde, işaretin numarasıyla ("#3") yazılır. İşaretlerin KALICI kimliği ve numarası vardır: başka bir işaret silinse,
+  sıra değişse ya da taslak yeniden açılsa numara değişmez, silinen numara yeniden verilmez; açıklama işaretin kendi
+  kaydındadır, yanlış işarete bağlanamaz. Sunucu kimlik / numarayı doğrular, nottaki "#n:" maddesi kalıcı numarayla yazılır.
+  Başka sürümün işareti alınmaz; dosya erişimi (AUD-8) değişmedi.
+- **Müşteri sipariş listesi:** "Yüklenen ve arşiv / Încărcate și arhivă" bölümünde yalnızca kapanmış (arşivlenmiş / iptal)
+  ve onaylı yüklemeyle EKSİKSİZ yüklenmiş siparişler. Tarihi geçmiş yüklenmemiş sipariş, kısmen yüklenmiş (kalanı olan)
+  sipariş ve onaylı yüklemesi olmayan "Yüklendi" siparişi Active'de kalır. Active tahmini yükleme gününe göre artan
+  (profilde teslim günü; tarihsiz sonda).
+- Testler: işaret kimliği / numarası ve not bağı (birim), liste ayrımı ve sırası (birim + veritabanı), revizyon ekranı ve
+  müşteri listesi (uçtan uca).
+
 ## 3.70.2 — 10.10.2026
 
 - P4 veritabanı testi: yeniden hesaplama karşılaştırması Decimal alanları düz değere çevirerek yapılır (yalnızca test).

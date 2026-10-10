@@ -7,13 +7,20 @@ export const ANNOTATION_TYPES = ['pin', 'rect', 'free', 'text'];
 export const MAX_ANNOTATIONS = 200;
 export const MAX_POINTS = 400;
 export const MAX_ANNOTATION_TEXT = 500;
+/** İşaret numarasının üst sınırı (kalıcı numara — P5, karar 244) */
+export const MAX_ANNOTATION_NO = 999;
+const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 
 const unit = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, Math.round(v * 10000) / 10000)) : null);
 
 /**
  * @param {unknown} raw      tarayıcıdan gelen dizi (ya da JSON metni)
  * @param {string[]} fileIds işaretlenebilecek dosyalar (karar verilen sürümün dosyaları)
- * @returns {{ fileId: string, page: number, type: string, x: number, y: number, w?: number, h?: number, points?: number[][], text: string }[]}
+ * Kalıcı kimlik ve numara (P5 — karar 244): her işaret bir kimlik (id) ve bir numara (no) taşır. Numara işaret konduğunda
+ * verilir ve DEĞİŞMEZ: başka işaret silinse, sıra değişse ya da taslak yeniden açılsa da aynı kalır; nottaki "#<no>: …" maddesi
+ * ve çizim üstündeki numara hep aynı işareti gösterir. Geçerli ve tekil id / no korunur; eksik, bozuk ya da yinelenen id
+ * "m<sıra>" ile, numara mevcut en büyük numaradan sonra sırayla verilir (eski kayıtta — numarasız — sıra numarası: 1, 2, …).
+ * @returns {{ id: string, no: number, fileId: string, page: number, type: string, x: number, y: number, w?: number, h?: number, points?: number[][], text: string }[]}
  */
 export function cleanAnnotations(raw, fileIds) {
   let list = raw;
@@ -42,9 +49,32 @@ export function cleanAnnotations(raw, fileIds) {
       if (pts.length < 2) continue;
       item.points = pts;
     }
-    out.push(item);
+    out.push({ item, id: typeof a.id === 'string' && ID_RE.test(a.id) ? a.id : null, no: Number.isInteger(a.no) && a.no >= 1 && a.no <= MAX_ANNOTATION_NO ? a.no : null });
   }
-  return out;
+  return withIdentity(out);
+}
+
+/** Kimlik ve numara ataması (cleanAnnotations): geçerli + tekil olan korunur, diğerleri sırayla verilir */
+function withIdentity(list) {
+  const ids = new Set(), nos = new Set();
+  const keep = list.map(({ id, no }) => {
+    const okId = id != null && !ids.has(id);
+    if (okId) ids.add(id);
+    const okNo = no != null && !nos.has(no);
+    if (okNo) nos.add(no);
+    return { id: okId ? id : null, no: okNo ? no : null };
+  });
+  let next = Math.max(0, ...nos);
+  let seq = 0;
+  return list.map(({ item }, i) => {
+    let { id, no } = keep[i];
+    while (id == null) {
+      const cand = `m${++seq}`;
+      if (!ids.has(cand)) { id = cand; ids.add(cand); }
+    }
+    if (no == null) no = ++next;
+    return { id, no, ...item };
+  });
 }
 
 /**

@@ -18,7 +18,7 @@ test('işaretler: yalnızca bu sürümün dosyalarına; konumlar 0–1; tür ve 
   ];
   const out = cleanAnnotations(raw, ['f1']);
   assert.equal(out.length, 4);
-  assert.deepEqual(out[0], { fileId: 'f1', page: 1, type: 'pin', x: 0.25, y: 0.5, text: '1100 mm olmalı' });
+  assert.deepEqual(out[0], { id: 'm1', no: 1, fileId: 'f1', page: 1, type: 'pin', x: 0.25, y: 0.5, text: '1100 mm olmalı' });
   assert.deepEqual([out[1].w, out[1].h].map((v) => Math.round(v * 100) / 100), [0.1, 0.1], 'dikdörtgen sayfanın dışına taşmaz');
   assert.deepEqual(out[2].points, [[0.1, 0.1], [0.2, 0.3], [1, 0]], 'geçersiz nokta atılır, taşan nokta sınıra çekilir');
   assert.equal(out[3].text.length, 500);
@@ -28,4 +28,30 @@ test('işaretler: yalnızca bu sürümün dosyalarına; konumlar 0–1; tür ve 
   assert.deepEqual(cleanAnnotations(raw, []), [], 'dosya yoksa işaret yok');
   const many = Array.from({ length: MAX_ANNOTATIONS + 50 }, () => ({ fileId: 'f1', page: 1, type: 'pin', x: 0.5, y: 0.5 }));
   assert.equal(cleanAnnotations(many, ['f1']).length, MAX_ANNOTATIONS);
+});
+
+test('P5 (karar 244): kalıcı kimlik ve numara — geçerli ve tekil olan korunur; eksik / bozuk / yinelenen sırayla verilir; eski kayıtta sıra', async () => {
+  const { revisionNoteWithMarks } = await import('../server/orders/revision-note.js');
+  const pin = (extra) => ({ fileId: 'f1', page: 1, type: 'pin', x: 0.5, y: 0.5, text: '', ...extra });
+  // Müşteri #2'yi sildi: #1 ve #3 kalır, numaralar değişmez
+  const kept = cleanAnnotations([pin({ id: 'a1', no: 1, text: 'sol üst' }), pin({ id: 'a3', no: 3, text: 'sağ alt' })], ['f1']);
+  assert.deepEqual(kept.map((a) => [a.id, a.no, a.text]), [['a1', 1, 'sol üst'], ['a3', 3, 'sağ alt']]);
+  // Nottaki madde işaretin KALICI numarasıyla: "#3", sıradaki "#2" değil — açıklama yanlış işarete bağlanamaz
+  assert.deepEqual(revisionNoteWithMarks(['ölçü 1100'], kept), { ok: true, text: '1. ölçü 1100\n2. #1: sol üst\n3. #3: sağ alt', items: ['ölçü 1100', '#1: sol üst', '#3: sağ alt'] });
+  // Sıra değişse de numara işarette kalır
+  const swapped = cleanAnnotations([pin({ id: 'a3', no: 3, text: 'sağ alt' }), pin({ id: 'a1', no: 1, text: 'sol üst' })], ['f1']);
+  assert.equal(revisionNoteWithMarks([], swapped).text, '1. #3: sağ alt\n2. #1: sol üst');
+  // Başka sürümün dosyasındaki işaret atılır; kalanların numarası değişmez
+  const other = cleanAnnotations([pin({ id: 'x', no: 1, fileId: 'eski-surum', text: 'eski' }), pin({ id: 'y', no: 2, text: 'yeni' })], ['f1']);
+  assert.deepEqual(other.map((a) => [a.id, a.no]), [['y', 2]]);
+  assert.equal(revisionNoteWithMarks([], other).text, '1. #2: yeni');
+  // Yinelenen / bozuk kimlik ve numara: ilki korunur, sonrakilere en büyük numaradan sonra sırayla
+  const dup = cleanAnnotations([pin({ id: 'a', no: 5 }), pin({ id: 'a', no: 5 }), pin({ id: '<script>', no: 0 }), pin({ no: 1.5 })], ['f1']);
+  assert.deepEqual(dup.map((a) => [a.id, a.no]), [['a', 5], ['m1', 6], ['m2', 7], ['m3', 8]]);
+  // Eski (numarasız) kayıt: listedeki sıra — önceki davranış
+  const legacy = cleanAnnotations([pin({ text: 'bir' }), pin({ text: 'iki' })], ['f1']);
+  assert.deepEqual(legacy.map((a) => a.no), [1, 2]);
+  assert.equal(revisionNoteWithMarks([], legacy).text, '1. #1: bir\n2. #2: iki');
+  // Numara üst sınırı aşılırsa kabul edilmez, sıradan verilir
+  assert.deepEqual(cleanAnnotations([pin({ no: 5000 })], ['f1']).map((a) => a.no), [1]);
 });

@@ -241,13 +241,16 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   // "Revizyon notu": numaralı maddeler; madde ya da açıklamalı işaret zorunlu (boş / yalnızca boşluk gönderilemez)
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled();
   await expect(cust.getByText('Revizyon notu (ya da açıklamalı bir işaret) zorunludur.')).toBeVisible();
+  // Ayrı "İşaretler" paneli yok (P5 — karar 244): işaret açıklamaları "Revizyon notu" bölümünde, işaretin numarasıyla
+  await expect(cust.locator('.viewer-side')).toHaveCount(0);
+  await expect(cust.locator('.viewer-decide [data-revision-marks]')).toBeVisible();
   // İğne: sayfanın %25 / %50 noktasına (konum sayfaya oranlı saklanır)
   const layer = cust.locator('.viewer-layer.editable').first();
   const box = (await layer.boundingBox())!;
   await layer.click({ position: { x: box.width * 0.25, y: box.height * 0.5 } });
   await expect(cust.locator('.ann-pin')).toHaveCount(1);
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeDisabled(); // açıklamasız işaret tek başına yetmez
-  await cust.getByLabel('İşaretler 1', { exact: true }).fill('Bu köşe 5 mm');
+  await cust.getByLabel('#1 işaretinin açıklaması', { exact: true }).fill('Bu köşe 5 mm');
   await expect(cust.getByRole('button', { name: 'Revizyon iste' })).toBeEnabled();
   // Dikdörtgen: sürükleyerek
   await cust.getByRole('button', { name: 'Dikdörtgen', exact: true }).click();
@@ -262,7 +265,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
   await expect(cust.locator('.ann-pin')).toHaveCount(1);
   await expect(cust.locator('.ann-rect')).toHaveCount(1);
-  await expect(cust.getByLabel('İşaretler 1', { exact: true })).toHaveValue('Bu köşe 5 mm');
+  await expect(cust.getByLabel('#1 işaretinin açıklaması', { exact: true })).toHaveValue('Bu köşe 5 mm');
   // Yakınlaştırınca işaret sayfaya göre aynı yerde kalır
   await cust.getByRole('button', { name: 'Yakınlaştır' }).click();
   {
@@ -271,6 +274,30 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
     expect(Math.abs((p2.x + p2.width / 2 - l2.x) / l2.width - 0.25)).toBeLessThan(0.02);
     expect(Math.abs((p2.y + p2.height / 2 - l2.y) / l2.height - 0.5)).toBeLessThan(0.02);
   }
+  // Kalıcı numara (P5 — karar 244): üçüncü işaret #3; #2 silinince #1 ve #3 numaralarını korur, açıklamalar kendi işaretinde kalır
+  await cust.getByRole('button', { name: 'Sığdır' }).click();
+  await cust.getByRole('button', { name: 'İğne', exact: true }).click();
+  {
+    const l3 = (await cust.locator('.viewer-layer.editable').first().boundingBox())!;
+    await cust.locator('.viewer-layer.editable').first().click({ position: { x: l3.width * 0.75, y: l3.height * 0.8 } });
+  }
+  await expect(cust.locator('.ann-pin')).toHaveCount(2);
+  await cust.getByLabel('#3 işaretinin açıklaması', { exact: true }).fill('Sağ alt köşe');
+  await cust.getByRole('button', { name: '#2 işaretini sil' }).click();
+  await expect(cust.locator('.ann-rect')).toHaveCount(0);
+  await expect(cust.locator('[data-revision-marks] [data-mark-no]')).toHaveCount(2);
+  expect(await cust.locator('[data-revision-marks] [data-mark-no]').evaluateAll((els) => els.map((e) => e.getAttribute('data-mark-no')))).toEqual(['1', '3']);
+  await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
+  await expect(cust.getByLabel('#1 işaretinin açıklaması', { exact: true })).toHaveValue('Bu köşe 5 mm');
+  await expect(cust.getByLabel('#3 işaretinin açıklaması', { exact: true })).toHaveValue('Sağ alt köşe');
+  // Yeni işaret silinen numarayı yeniden almaz (#4)
+  {
+    const l4 = (await cust.locator('.viewer-layer.editable').first().boundingBox())!;
+    await cust.locator('.viewer-layer.editable').first().click({ position: { x: l4.width * 0.1, y: l4.height * 0.1 } });
+  }
+  await expect(cust.getByLabel('#4 işaretinin açıklaması', { exact: true })).toBeVisible();
+  await cust.getByRole('button', { name: '#4 işaretini sil' }).click();
+  await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   await cust.getByLabel('Madde 1', { exact: true }).fill('   ');
   await cust.getByLabel('Madde 1', { exact: true }).fill('Bu ölçü 1100 olmalı');
   await cust.getByRole('button', { name: '+ Madde ekle' }).click();
@@ -291,10 +318,12 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
     const db = new PrismaClient();
     try {
       const rev = await db.drawingRevision.findFirstOrThrow({ where: { drawing: { orderId: id } }, orderBy: { createdAt: 'desc' }, include: { drawing: { include: { files: true } } } });
-      expect(rev.comment).toBe('1. Bu ölçü 1100 olmalı\n2. Bu kenar yuvarlatılsın\n3. 2 delik Ø12\n4. #1: Bu köşe 5 mm');
+      expect(rev.comment).toBe('1. Bu ölçü 1100 olmalı\n2. Bu kenar yuvarlatılsın\n3. 2 delik Ø12\n4. #1: Bu köşe 5 mm\n5. #3: Sağ alt köşe');
       const plan = rev.drawing.files.find((f) => f.name === 'plan-v1.pdf')!;
-      const marks = rev.annotations as { fileId: string; type: string; x: number; y: number; text: string }[];
-      expect(marks.map((a) => [a.fileId === plan.id, a.type, a.text])).toEqual([[true, 'pin', 'Bu köşe 5 mm'], [true, 'rect', '']]);
+      const marks = rev.annotations as { id: string; no: number; fileId: string; type: string; x: number; y: number; text: string }[];
+      // Kalıcı kimlik + numara saklanır (P5 — karar 244): silinen #2 yok, #3 numarasını korur
+      expect(marks.map((a) => [a.fileId === plan.id, a.type, a.text, a.no])).toEqual([[true, 'pin', 'Bu köşe 5 mm', 1], [true, 'pin', 'Sağ alt köşe', 3]]);
+      expect(new Set(marks.map((a) => a.id)).size).toBe(2);
       expect(Math.abs(marks[0].x - 0.25)).toBeLessThan(0.02);
       expect(Math.abs(marks[0].y - 0.5)).toBeLessThan(0.02);
     } finally {
@@ -308,16 +337,17 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await drawer.goto(`/siparisler/${id}`);
   await expect(drawer.locator('.page-head .badge', { hasText: 'Revizyon istendi' })).toBeVisible();
   const request = drawer.locator('#cizim .note', { hasText: 'Revizyon talebi:' }).first();
-  await expect(request.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm']);
+  await expect(request.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm', '#3: Sağ alt köşe']);
   await drawer.getByRole('link', { name: 'çizim üzerinde gör (2 işaret)' }).click();
   await drawer.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
-  await expect(drawer.locator('.ann-pin')).toHaveCount(1);
-  await expect(drawer.locator('.ann-rect')).toHaveCount(1);
+  await expect(drawer.locator('.ann-pin')).toHaveText(['1', '3']);
+  await expect(drawer.locator('.ann-rect')).toHaveCount(0);
   await expect(drawer.locator('.viewer-side')).toContainText('Bu köşe 5 mm');
-  const pin = await drawer.locator('.ann-pin').evaluate((e: HTMLElement) => [parseFloat(e.style.left), parseFloat(e.style.top)]);
+  await expect(drawer.locator('.viewer-side .badge-info')).toHaveText(['1', '3']); // iç ekipte salt okunur panel aynı numaralarla
+  const pin = await drawer.locator('.ann-pin').first().evaluate((e: HTMLElement) => [parseFloat(e.style.left), parseFloat(e.style.top)]);
   expect(Math.abs(pin[0] - 25)).toBeLessThan(2);
   expect(Math.abs(pin[1] - 50)).toBeLessThan(2);
-  await expect(drawer.locator('.viewer-requests ol.revision-list li')).toHaveCount(4);
+  await expect(drawer.locator('.viewer-requests ol.revision-list li')).toHaveCount(5);
   await expect(drawer.locator('.viewer-layer.editable')).toHaveCount(0); // çizimci işaretleri değiştiremez
   await expect(drawer.getByRole('button', { name: 'Müşteriye gönder' })).toHaveCount(0); // eski sürüm yeniden gönderilemez
 
@@ -335,7 +365,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(cust.getByRole('link', { name: 'Revizyon iste' })).toHaveCount(0);
   const v1 = cust.locator('.drawing-version', { hasText: 'plan-v1.pdf' });
   await expect(v1).toContainText('revizyon istendi');
-  await expect(v1.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm']);
+  await expect(v1.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm', '#3: Sağ alt köşe']);
   await expect(v1.getByRole('link', { name: /işaret\)/ })).toHaveCount(0); // işaret bağlantısı yalnızca iç ekipte
   await expect(v1.locator('.file-row')).toHaveCount(4); // v1'in dosyaları (teknik ek dahil) aynen duruyor
   await expect(cust.locator('.drawing-version', { hasText: 'plan-v2.pdf' })).toContainText('onaylandı');
@@ -343,11 +373,11 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(cust.locator('textarea[name=item]')).toHaveCount(0);
   await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
   // Eski sürüm salt görüntülenir: müşteri kendi talebinin işaretlerini görür (karar 227), değiştiremez
-  await expect(cust.locator('.ann-pin')).toHaveCount(1);
+  await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   await expect(cust.locator('.viewer-side')).toContainText('Bu köşe 5 mm');
   await expect(cust.locator('.viewer-layer.editable')).toHaveCount(0);
   await expect(cust.locator('.viewer-side input')).toHaveCount(0);
-  await expect(cust.locator('.viewer-requests ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm']);
+  await expect(cust.locator('.viewer-requests ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm', '#3: Sağ alt köşe']);
 
   // Onaylanmış çizimler: çizim ekibi ve yönetici görür (satışın "Sıra bende"sinde yok — fonksiyonel paket 1); yükleme
   // gününe göre süzme, en yeni / en eski

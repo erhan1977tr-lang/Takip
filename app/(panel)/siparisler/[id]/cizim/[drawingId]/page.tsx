@@ -100,6 +100,8 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
             placeholder: t('order.customer.revisionPlaceholder'), item: t('order.viewer.revisionItem'), add: t('order.viewer.addItem'),
             remove: t('order.viewer.removeItem'), submit: t('order.steps.request_revision'), required: t('order.viewer.noteRequired'),
             cancel: t('common.cancel'), backHref: `/siparisler/${order.id}/cizim/${d.id}`,
+            marks: t('order.viewer.revisionMarks'), marksHint: t('order.viewer.revisionMarksHint'), markLabel: t('order.viewer.revisionMarkLabel'),
+            markPlaceholder: t('order.viewer.notePlaceholder'), markRemove: t('order.viewer.revisionMarkRemove'), tools: viewer.tools, page: viewer.page,
           }}
         />
       )}
