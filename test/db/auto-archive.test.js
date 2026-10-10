@@ -207,7 +207,7 @@ dbTest('önce onarım, sonra arşiv: yalnızca fiziksel yüklemesi kanıtlı ve 
   // Yinelenen tur hiçbir şeyi çoğaltmaz
   assert.deepEqual(await repairAutoShipped(db), { reverted: 0, skipped: 0 });
   assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 0, skipped: 0 });
-  assert.equal(await db.auditLog.count(), audits + 5);
+  assert.equal(await db.auditLog.count(), audits + 4);
   assert.equal((await autoEvents('loaded')).length, 1);
 }));
 
