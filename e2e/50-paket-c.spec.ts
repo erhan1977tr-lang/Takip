@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, SALES, TEAM_PW, as, firmOf, openFirm, setShipDate } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, setShipDate } from './helpers';
 
 // Paket C (kararlar 230–237), gerçek sunucuda. FGO e2e veritabanında KAPALIDIR (gerçek FGO / ANAF isteği yok).
 //  - tahmini yükleme tarihi: Sipariş Bilgileri'nde satır içi; onay penceresinde eski → yeni; müşteride düzenleme yok;
@@ -10,6 +10,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, SALES, TEAM_PW, as, f
 test.describe.configure({ mode: 'serial' });
 
 const INSPECTOR = 'denetim@e2e.test';
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const RUN = Date.now().toString(36);
 const DAY = new Date(Date.now() + 131 * 86_400_000).toISOString().slice(0, 10); // yalnızca bu dosyanın yükleme günü
 const OTHER_DAY = new Date(Date.now() + 132 * 86_400_000).toISOString().slice(0, 10);
