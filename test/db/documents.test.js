@@ -120,7 +120,8 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   assert.deepEqual(keys(form, 'Descriere'), ['Comanda UMI7', 'Comanda UMI7']);
   assert.deepEqual([form['Continut[0][UM]'], form['Continut[0][NrProduse]'], form['Continut[0][PretUnitar]'], form['Continut[0][CotaTVA]']], ['mp', '2', '250.00', '21']);
   assert.deepEqual([form['Continut[1][UM]'], form['Continut[1][NrProduse]'], form['Continut[1][PretUnitar]']], ['buc', '2', '50.00']);
-  assert.deepEqual([form.IdExtern, form.Valuta, form.Text, 'Numar' in form], ['UMI7-P', 'RON', 'Ușă duș', false]);
+  assert.deepEqual([form.IdExtern, form.Valuta, 'Numar' in form], ['UMI7-P', 'RON', false]);
+  assert.match(form.Text, /^Curs BNR: 5\.0000 RON\/EUR \(data \d{2}\.\d{2}\.\d{4}\)\.$/, 'Paket C (karar 235): kur cümlesi');
   // FGO'ya e-posta gönderme isteği / alanı yok: müşterinin e-postası yalnızca müşteri kartı bilgisi olarak gider
   assert.deepEqual(Object.keys(form).filter((k) => /mail/i.test(k)), ['Client[Email]']);
   assert.ok(fgo.urls.every((u) => /\/factura\/(emitere|getstatus)$/.test(u)), 'belge kesiminde yalnızca emitere + getstatus');

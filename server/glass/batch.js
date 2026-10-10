@@ -33,7 +33,7 @@ import {
 } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
-import { GLASS_FGO, proformaLines, sentOffer } from './billing.js';
+import { GLASS_FGO, glassDocText, proformaLines, sentOffer } from './billing.js';
 import { queueDocEmail } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { linkCoveredPayments } from '../finance/service.js';
@@ -460,7 +460,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       form = emitereForm({
         settings, key, kind: proforma ? 'proforma' : 'invoice', orderNo: batch.orders.map((o) => o.orderNo).join(', '), appUrl, customer: batch.customer, lines, rate,
         // Aynı parti iki kez kesilmesin: FGO da aynı IdExtern'i reddeder (VerificareDuplicat)
-        extern: `LOT-${batch.id}`, text: batchText(batch), rateNote: false, number: sentNo,
+        extern: `LOT-${batch.id}`, text: [batchText(batch), glassDocText(batch.currency, batch)].filter(Boolean).join(' '), rateNote: false, number: sentNo,
       });
       prepared = { kind: batch.kind };
       const doc = await fgoEmit(settings, form, fetchImpl);

@@ -419,7 +419,7 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const ia = await invoice(X, A, fgo);
   const ib = await invoice(X, B, fgo);
   assert.deepEqual(fgo.calls.map((f) => [f['Client[Denumire]'], names(f)]), [
-    ['Crate Owner A SRL', [`Comanda ${a1.orderNo} — Sticlă securizată`]], ['Crate Host B SRL', [`Comanda ${b1.orderNo} — Sticlă securizată`]],
+    ['Crate Owner A SRL', [`Comanda ${a1.orderNo} — Sticla`]], ['Crate Host B SRL', [`Comanda ${b1.orderNo} — Sticla`]],
   ]);
   assert.deepEqual([ia.customerId, ib.customerId, ia.fxRate.toString(), ib.fxRate.toString()], [A.id, B.id, '5.1', '5']);
   assert.ok(!JSON.stringify(fgo.calls[1]).includes(a1.orderNo) && !JSON.stringify(fgo.calls[0]).includes('Crate Host'));

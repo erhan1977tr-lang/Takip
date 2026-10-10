@@ -110,7 +110,7 @@ dbTest('bir müşteri + bir yükleme + bir sipariş → tek parti, tek FGO profo
   const f = fgo.calls[0];
   assert.deepEqual([f.Serie, f.Valuta, f.IdExtern, f['Continut[0][Denumire]'], f['Continut[0][NrProduse]'], f['Continut[0][UM]'], f['Continut[0][PretUnitar]']],
     ['PRF', 'RON', `LOT-${r.batchId}`, `Comanda ${o.orderNo} — Sticlă securizată 10 mm`, '2', 'mp', '250.00']);
-  assert.match(f.Text, new RegExp(`^Comanda: ${o.orderNo}\\. Încărcare planificată: \\d{2}\\.\\d{2}\\.\\d{4}\\.$`));
+  assert.match(f.Text, new RegExp(`^Comanda: ${o.orderNo}\\. Încărcare planificată: \\d{2}\\.\\d{2}\\.\\d{4}\\. Curs BNR: 5\\.0000 RON/EUR \\(data \\d{2}\\.\\d{2}\\.\\d{4}\\)\\.$`));
   const bt = await batchOf(r.batchId);
   assert.deepEqual([bt.status, bt.document.kind, `${bt.document.series}${bt.document.number}`, bt.document.orderId, bt.document.total.toString()], ['ISSUED', 'PROFORMA', 'PRF101', null, '1210']);
   for (const role of ['SALES', 'CUSTOMER']) assert.deepEqual(await b.reviewFailedBatch(db, { batchId: r.batchId, action: 'void', actor: actor(role) }), { ok: false, code: 'FORBIDDEN' });

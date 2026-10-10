@@ -27,7 +27,7 @@ import { expectedGross, parkUncertain } from '../finance/uncertain.js';
 import { getEnv } from '../env.js';
 import { parseManualRate } from '../fx/bt.js';
 import { bnrRate } from '../fx/bnr.js';
-import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
+import { FxUnavailable, fxDocumentText, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
   FGO_UM, FgoError, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, ronTotal, ronPrice, grossOf, reserveInvoiceNumber, afterInvoiceIssued, orderDetail, uncertainEmit,
 } from '../integrations/fgo.js';
@@ -141,8 +141,24 @@ export function invoiceLines(offer, rate, vatRate) {
       net = round2(net + n);
       gross = round2(gross + grossOf(n, vatRate));
     }
-    return { code: '', name: g.name, unit: FGO_UM.m2, qty: g.qty, net, gross };
+    // Nihai faturada ürün adı "Sticla …" (Paket C — karar 236): gruplama özgün adla yapılır, yalnızca yazılan ad kısalır
+    return { code: '', name: invoiceProductName(g.name), unit: FGO_UM.m2, qty: g.qty, net, gross };
   });
+}
+
+/**
+ * Nihai faturadaki cam adı (Paket C — karar 236, ürün sahibinin seçimi): Romence ad "Sticlă" ile başlıyorsa "Sticla" + teknik
+ * kısım yazılır; hemen ardından gelen "securizată" / "laminată" kelimeleri atılır (kalınlık / tip, PVB, şekil ve renk kalır):
+ * "STICLĂ SECURIZATĂ LAMINATĂ 4.2.4., PVB OPAQUE (GRI+GRI)" → "Sticla 4.2.4., PVB OPAQUE (GRI+GRI)". "Sticl…" ile
+ * başlamayan ad değişmez. Proforma ve avans faturası etkilenmez; tutarlar, miktar ve gruplama değişmez.
+ * @param {unknown} name
+ */
+export function invoiceProductName(name) {
+  const s = String(name ?? '').replace(/\s+/g, ' ').trim();
+  const m = /^sticl[ăĂaA](?=[\s,.;:-]|$)/i.exec(s);
+  if (!m) return s;
+  const rest = s.slice(m[0].length).replace(/^(?:[\s,]*(?:securizat|laminat)[ăĂaA]?(?=[\s,.;:-]|$))+/i, '').replace(/^[\s,]+/, '');
+  return rest ? `Sticla ${rest}` : 'Sticla';
 }
 
 /**
@@ -176,6 +192,16 @@ export function proformaLines(offer) {
     out.push(row);
   }
   return out;
+}
+
+/**
+ * Cam belgesinin (proforma / avans / fatura) FGO açıklaması (Paket C — karar 235): uygulanan kur cümlesi (fxDocumentText —
+ * "Curs de vânzare BT: …", "Curs BNR: … (data …)", "Curs de schimb aplicat: …"). RON belgede ya da kur kaydı yoksa boş.
+ * @param {string} currency  @param {{ fxRate?: unknown } | null | undefined} snap
+ */
+export function glassDocText(currency, snap) {
+  if (currency !== 'EUR' || !snap || snap.fxRate == null || !(Number(snap.fxRate) > 0)) return '';
+  return `${fxDocumentText({ fxCurrency: 'EUR', ...snap })}.`;
 }
 
 /** TVA dahil tutar → TVA hariç birim fiyat (avans satırı) */
@@ -428,8 +454,9 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         settings, key, kind: kind === 'PROFORMA' ? 'proforma' : 'invoice', orderNo: order.orderNo, appUrl, customer: order.customer, lines,
         // IdExtern: sipariş + tür (+ ikinci ve sonraki avans faturasında sıra) — aynı iş yeniden denense de aynı kalır
         rate, extern: `${order.orderNo}-${SUFFIX[kind]}${seq > 1 ? seq : ''}`,
-        // Açıklama: yalnızca cam siparişinin açıklaması (ürün sahibinin isteği)
-        text: order.title ?? '', rateNote: false,
+        // Açıklama (Paket C — karar 235): sipariş başlığı DEĞİL, belgenin kuru — kayıtlı kur (proforma zincirinin kaydı) ya da bu
+        // belge için şimdi çözülen kur; RON belgede ve kur bilinmiyorsa boş (uydurulmaz)
+        text: glassDocText(offer.currency, b?.fxRate != null ? b : fx ? fxSnapshot(fx, rateDay) : null), rateNote: false,
         number: sentNo,
       });
       prepared = {
