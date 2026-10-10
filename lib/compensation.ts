@@ -68,6 +68,11 @@ export type CompFormLine = {
    * "aynı fiyat"ı seçer, tutarı sunucu taşır (iki kademeli fiyat, karar 4). Kaynak bedelsizse 0.
    */
   normal: number | null; free: boolean;
+  /**
+   * Kaynak satırda kayıtlı müşteri fiyatı var mı (tutar DEĞİL — satışa da gider). Yoksa "aynı fiyat" doğrudan müşteriye
+   * gitmez: ekranın akışı sunucunun izlediği yolla aynı olsun diye (compensationFlow).
+   */
+  priced: boolean;
   /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen taşınır; müşteri fiyatları telafide 0'dır (karar 157) */
   ops: { kind: string; adet: number; description: string }[];
   /** İşlemler adedi 1'den büyük satıra bağlı (eski kayıt): hangi camda olduğu belli değil — telafi açılamaz (karar 113) */
@@ -97,6 +102,8 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   type Line = OrderDetail['offers'][number]['lines'][number];
   const groups: { line: Line; subs: Line[] }[] = compensableLines(sent.lines);
   if (groups.length === 0) return null;
+  // Satışın siparişinde müşteri fiyatları temizlenmiştir: "fiyat var mı" bilgisi veritabanından (yalnızca var / yok)
+  const pricedIds = new Set((await db.offerLine.findMany({ where: { offerId: sent.id, offerPrice: { not: null } }, select: { id: true } })).map((l) => l.id));
   const [state, links, destinations, root] = await Promise.all([
     sourceState(db, order.id),
     notLoadedLinks(db, order.id),
@@ -118,7 +125,7 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
     source: { reducible: state.ok, reason: state.ok ? null : state.reason },
     lines: groups.map((g) => ({
       id: g.line.id, n: glassNo.get(g.line.id) ?? 0, glass: g.line.description, glassRo: g.line.descriptionRo, enMm: g.line.enMm ?? 0, boyMm: g.line.boyMm ?? 0, adet: g.line.adet,
-      normal: !admin ? null : g.line.free ? 0 : num(g.line.offerPrice), free: g.line.free,
+      normal: !admin ? null : g.line.free ? 0 : num(g.line.offerPrice), free: g.line.free, priced: pricedIds.has(g.line.id),
       ops: g.subs.map((s) => ({ kind: s.kind, adet: s.adet, description: s.description ?? '' })),
       ambiguous: ambiguousOps(g),
       links: links.filter((x) => x.lineId === g.line.id).map((x) => ({ itemId: x.itemId, day: x.day, free: x.free })),

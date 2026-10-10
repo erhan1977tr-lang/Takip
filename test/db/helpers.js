@@ -76,3 +76,45 @@ async function truncateAll(db) {
     db.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`),
   ]);
 }
+
+/**
+ * Nihai fatura (karar 239) — testlerin ortak yolu: onaylı yükleme (siparişin gönderilmiş teklifinin kopyası, confirmLoading
+ * ile aynı işlev: snapshotLine) → yükleme gününün Faturalama kartı (loadingBilling) → fatura partisi (createInvoiceBatch) →
+ * işçi (dispatchBatchJobs). Sipariş düzeyinde nihai fatura yoktur. FGO yalnızca verilen sahte fetchImpl ile çağrılır.
+ *   loaded: cam satırlarının yüklenen adedi (verilmezse tamamı); kalan NOT_LOADED kaydedilir.
+ * @returns {Promise<{ day: string, group: any, created: any, run: { done: number, failed: number } | null, doc: any }>}
+ */
+export async function finalInvoiceFor(db, { order, adminId, actor, day, bnrImpl, dispatchCtx, loaded = null }) {
+  const { snapshotLine } = await import('../../server/loading/confirmation.js');
+  const inv = await import('../../server/glass/invoice-batch.js');
+  const b = await import('../../server/glass/batch.js');
+  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${day}T00:00:00Z`), confirmedById: adminId, confirmedAt: new Date(`${day}T12:00:00Z`) } });
+  const full = await db.order.findUnique({ where: { id: order.id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
+  const offer = full.offers.find((x) => x.status === 'GONDERILDI');
+  const rows = [];
+  for (const l of offer.lines) {
+    const all = Number(l.adet);
+    const glass = (l.kind ?? 'CAM') === 'CAM';
+    const qty = loaded == null || !glass ? all : loaded;
+    if (qty > 0) rows.push(snapshotLine(full, offer, l, { quantity: qty }));
+    if (qty < all) rows.push(snapshotLine(full, offer, l, { quantity: all - qty, status: 'NOT_LOADED', reason: 'test' }));
+  }
+  await db.loadingConfirmationItem.createMany({
+    data: rows.map((i) => ({ ...i, confirmationId: conf.id, scopeKey: `l:${i.offerLineId}`, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2), costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4) })),
+  });
+  const r = await inv.loadingBilling(db, { day, bnrImpl });
+  const group = r.ok ? r.customers.flatMap((c) => c.groups).find((x) => x.orders.some((y) => y.orderId === order.id)) ?? null : null;
+  if (!group || group.problems.length) return { day, group, created: null, run: null, doc: null };
+  const created = await inv.createInvoiceBatch(db, { day, groupKey: group.key, previewKey: group.previewKey, actor, bnrImpl });
+  if (!created.ok || !dispatchCtx) return { day, group, created, run: null, doc: null };
+  const run = await b.dispatchBatchJobs(db, { ...dispatchCtx, onlyBatchId: created.batchId });
+  return { day, group, created, run, doc: await db.fgoDocument.findFirst({ where: { batchId: created.batchId } }) };
+}
+
+let finalDayNo = 100;
+/** finalInvoiceFor için ayrı, geçmiş bir yükleme günü (onay gün başına tektir); dosya başına farklı başlangıç verilebilir */
+export function nextPastDay(start = null) {
+  if (start != null && finalDayNo < start) finalDayNo = start;
+  finalDayNo += 1;
+  return new Date(Date.now() - finalDayNo * 86_400_000).toISOString().slice(0, 10);
+}

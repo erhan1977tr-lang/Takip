@@ -44,7 +44,7 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
@@ -54,6 +54,9 @@ jobs:
         run: |
           sudo apt-get install -y -qq age >/dev/null
           sudo bash deploy/test/backup-permissions.sh
+
+      - name: Yedek alarmı ve bekçi — mantık testi (sahte docker / rclone / systemctl; gerçek e-posta gönderilmez)
+        run: sudo bash deploy/test/backup-alert.sh
 
       - name: Kurulum (temiz makine)
         run: |
@@ -362,6 +365,11 @@ jobs:
           cat enc.log
           grep -q 'KAPALI' enc.log
           sudo systemctl list-timers --all | grep -E 'takip-(deploy|backup)'
+          # Yedek bekçisi (karar 249) kurulumla etkin
+          sudo systemctl is-enabled takip-backup-check.timer
+          sudo takip yedek-kontrol durum
+          # Testin geri kalanında saatlik bekçi araya girip geçici araç kapsayıcısı açmasın (kapsayıcı karşılaştırmaları)
+          sudo systemctl stop takip-backup-check.timer
 
       - name: Şifreli yedek (age) — kurulum denemesi, gece yedeği, Drive'dan çözerek geri yükleme, anahtar kaybı, anahtar yenileme
         run: |

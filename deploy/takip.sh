@@ -4,8 +4,10 @@
 #   takip durum                      yayındaki sürüm, son güncellemeler, servisler
 #   takip guncelle                   GitHub'da testlerden geçmiş yeni sürüm varsa hemen yayınla
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
-#   takip yonetici E-POSTA "AD" [--reset]   yönetici hesabı aç (ya da şifresini sıfırla) → tek kullanımlık kod
+#   takip yonetici E-POSTA "AD"     YENİ yönetici hesabı aç → tek kullanımlık kod (var olan hesabın rolü / şifresi değişmez)
+#   takip yonetici-kurtar E-POSTA    VAR OLAN yönetici hesabına acil erişim: yeni şifre (gizli girilir), oturumlar kapanır
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
+#   takip yedek-kontrol [durum]      yedek bekçisi: sorun / 26 saattir başarılı yedek yoksa e-posta alarmı (saatte bir kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
 #   takip restore-test [TARİH]       yedeği canlıya dokunmadan geçici veritabanına yükleyip dener
 #   takip yedek-sifreleme [kur|yenile]   Google Drive'a giden yedeklerin şifrelenmesi: durum / kurulum / anahtar yenileme
@@ -252,7 +254,24 @@ upload_one() { # upload_one DOSYA ALT_KLASÖR
   rclone copyto "$1" "$dst" --retries 3 --low-level-retries 10 >>"$LOGS/backup.log" 2>&1 || return 1
   l=$(md5sum "$1" | cut -d' ' -f1)
   r=$(rclone md5sum "$dst" 2>>"$LOGS/backup.log" | cut -d' ' -f1)
-  [ -n "$r" ] && [ "$l" = "$r" ]
+  # 2: yüklendi ama Drive'daki kopya doğrulanamadı (bütünlük)
+  [ -n "$r" ] && [ "$l" = "$r" ] || return 2
+}
+
+# Doğrulanmış yerel yedeği Drive'a koyar (ALICI doluysa önce şifreleyip çözerek doğrular). Sorun kodunu yazar (boş = tamam).
+drive_copy() { # drive_copy DOSYA ALT_KLASÖR ETİKET [ALICI]
+  local src=$1 rc=0
+  if [ -n "${4:-}" ]; then
+    if ! encrypt_one "$1" "$4"; then blog "✘ Google Drive: $3 yedeği şifrelenemedi/doğrulanamadı — Drive'a gönderilmedi (yerel yedek duruyor)"; echo ENCRYPT; return 0; fi
+    src=$1.age
+  fi
+  upload_one "$src" "$2" || rc=$?
+  case $rc in
+    0) blog "✔ Google Drive: $2/$(basename "$src") yüklendi$([ -n "${4:-}" ] && echo ' (şifreli; çözülerek ve md5 ile doğrulandı)' || echo ', md5 doğrulandı')" ;;
+    2) blog "✘ Google Drive: $3 yedeği yüklendi ama doğrulanamadı (md5) (yerel yedek duruyor)"; echo DRIVE_VERIFY ;;
+    *) blog "✘ Google Drive: $3 yedeği yüklenemedi (yerel yedek duruyor)"; echo DRIVE_UPLOAD ;;
+  esac
+  return 0
 }
 
 DAILY_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)$'
@@ -291,7 +310,7 @@ backup_retention() { # backup_retention yerel | backup_retention uzak [DESEN]
 # Sunucudaki yedek zamanlayıcısı depodakinden farklıysa güncellenir (her gün 03:00 Europe/Bucharest)
 sync_backup_timer() {
   local u synced=0
-  for u in takip-backup.service takip-backup.timer; do
+  for u in takip-backup.service takip-backup.timer takip-backup-check.service takip-backup-check.timer; do
     [ -f "$SRC/deploy/systemd/$u" ] && [ -d /etc/systemd/system ] || continue
     if ! cmp -s "$SRC/deploy/systemd/$u" "/etc/systemd/system/$u"; then
       cp "$SRC/deploy/systemd/$u" "/etc/systemd/system/$u" 2>/dev/null && synced=1
@@ -299,6 +318,10 @@ sync_backup_timer() {
   done
   if [ $synced = 1 ]; then
     systemctl daemon-reload && systemctl restart takip-backup.timer && blog "  yedek zamanlayıcısı güncellendi: her gün 03:00 (Europe/Bucharest)"
+  fi
+  # Bekçi zamanlayıcısı (karar 249) kurulu ama etkin değilse etkinleştirilir (ilk kez gelen sürüm)
+  if [ -f /etc/systemd/system/takip-backup-check.timer ] && command -v systemctl >/dev/null 2>&1 && ! systemctl is-enabled --quiet takip-backup-check.timer 2>/dev/null; then
+    systemctl daemon-reload && systemctl enable --now takip-backup-check.timer >/dev/null 2>&1 && blog "  yedek bekçisi etkinleştirildi: saatte bir (takip-backup-check.timer)"
   fi
   return 0
 }
@@ -703,8 +726,9 @@ cmd_smtp() {
   env_set SMTP_USER "$user"
   env_set SMTP_PASS "'$pass'"
   env_set MAIL_FROM "\"$from\""
-  compose up -d app >/dev/null 2>&1
-  say "✔ Kaydedildi, uygulama yeni ayarlarla başlatıldı."
+  # E-postayı işçi gönderir: ikisi birlikte yeni ayarlarla başlar (P7)
+  compose up -d app worker >/dev/null 2>&1
+  say "✔ Kaydedildi, uygulama ve arka plan işçisi yeni ayarlarla başlatıldı."
   tty_read to "Deneme e-postası gidecek adres (boş bırakırsan atlanır): "
   if [ -n "$to" ]; then compose run --rm tools node scripts/test-mail.mjs "$to" tr; fi
 }
@@ -712,9 +736,25 @@ cmd_smtp() {
 cmd_admin() {
   local email=${1:-} name=${2:-} factory
   if [ $# -ge 2 ]; then shift 2; else shift $#; fi
-  if [ -z "$email" ]; then say 'Kullanım: takip yonetici E-POSTA "Ad Soyad" [--reset]'; return 1; fi
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip yonetici …)."; return 1; }
+  if [ -z "$email" ]; then say 'Kullanım: takip yonetici E-POSTA "Ad Soyad"   (şifresini unutan yönetici: sudo takip yonetici-kurtar E-POSTA)'; return 1; fi
   factory=$(env_get FACTORY_NAME); factory=${factory:-GKH Trading}
   compose run --rm tools node scripts/create-admin.mjs "$email" "$name" --factory "$factory" "$@"
+}
+
+# Yönetici acil erişim kurtarma (karar 246). Yalnızca root, yalnızca etkileşimli terminal (SSH). Şifre bu kabukta OKUNMAZ:
+# araç konteynerindeki komut terminalden görünmeden sorar — komut satırına, ortam değişkenine, geçmişe ya da günlüğe düşmez.
+# Operatör etiketi (SSH / sudo kullanıcı adı) denetim kaydına yazılır; gizli değildir.
+cmd_admin_recover() {
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip yonetici-kurtar …)."; return 1; }
+  if [ $# -ne 1 ] || [ -z "${1:-}" ] || [ "${1#-}" != "$1" ]; then
+    say 'Kullanım: takip yonetici-kurtar E-POSTA   (şifre komut satırından verilmez; komut sorar)'
+    return 1
+  fi
+  if [ ! -t 0 ] || [ ! -t 1 ]; then say "✘ Bu komut yalnızca etkileşimli terminalde (SSH oturumu) çalışır."; return 1; fi
+  local op=${SUDO_USER:-$(logname 2>/dev/null || id -un)}
+  op=$(printf '%s' "$op" | tr -cd 'A-Za-z0-9._@-' | cut -c1-64)
+  compose run --rm -e TAKIP_OPERATOR="${op:-unknown}" tools node scripts/admin-recover.mjs "$1"
 }
 
 cmd_github() {
@@ -742,7 +782,8 @@ LAST_TS=''
 # run_backup [ALICI] — ALICI doluysa Drive'a yalnızca şifreli kopya gider (kilit çağıranda alınmıştır)
 run_backup() {
   sync_backup_timer
-  local ts f g ok_local=1 ok_remote=1 enc=${1:-}
+  local ts f g c ok_local=1 ok_remote=1 enc=${1:-} bad=''
+  # Bu yedeğin sorun kodları (yedek alarmı — karar 249); sonunda $STATE/backup-last-run'a yazılır
   ts=$(TZ=$BACKUP_TZ date +%Y-%m-%d_%H%M%S)
   LAST_TS=$ts
   blog "▶ yedek $ts$([ -n "$enc" ] && echo ' (Google Drive kopyası şifreli)' || true)"
@@ -753,7 +794,7 @@ run_backup() {
   else
     blog "✘ veritabanı yedeği BAŞARISIZ (alınamadı ya da geri yüklenemedi)"
     ok_local=0
-    if [ -n "$f" ]; then mv -f "$f" "$f.bozuk"; fi
+    if [ -n "$f" ]; then mv -f "$f" "$f.bozuk"; bad="$bad DB_VERIFY"; else bad="$bad DB_DUMP"; fi
     f=
   fi
 
@@ -763,33 +804,29 @@ run_backup() {
   else
     blog "✘ dosya yedeği BAŞARISIZ"
     ok_local=0
-    if [ -n "$g" ]; then mv -f "$g" "$g.bozuk"; fi
+    if [ -n "$g" ]; then mv -f "$g" "$g.bozuk"; bad="$bad FILES_VERIFY"; else bad="$bad FILES"; fi
     g=
   fi
 
   # Drive: yalnızca doğrulanmış yerel dosyalar gider
   if ! command -v rclone >/dev/null 2>&1; then
     blog "✘ Google Drive: rclone kurulu değil; yedek yalnızca yerelde"
-    ok_remote=0
-  elif [ -n "$enc" ]; then
+    ok_remote=0; bad="$bad RCLONE_MISSING"
+  elif [ -n "$enc" ] && ! enc_ready "$enc"; then
     # Şifreleme açık: Drive'a açık (şifresiz) dosya ASLA gönderilmez. Şifrelenemiyorsa yerel yedek durur, Drive adımı hata verir.
-    if ! enc_ready "$enc"; then
-      blog "✘ Google Drive: yedek şifreleme açık ama age ya da anahtar ($BACKUP_KEY) kullanılamıyor — Drive'a hiçbir şey gönderilmedi (yerel yedek duruyor)"
-      ok_remote=0
-    else
-      if [ -n "$f" ] && encrypt_one "$f" "$enc" && upload_one "$f.age" database; then blog "✔ Google Drive: database/$(basename "$f").age yüklendi (şifreli; çözülerek ve md5 ile doğrulandı)"
-      else blog "✘ Google Drive: veritabanı yedeği şifrelenemedi/yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
-      if [ -n "$g" ] && encrypt_one "$g" "$enc" && upload_one "$g.age" uploads; then blog "✔ Google Drive: uploads/$(basename "$g").age yüklendi (şifreli; çözülerek ve md5 ile doğrulandı)"
-      else blog "✘ Google Drive: dosya yedeği şifrelenemedi/yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
-      # Şifreli kopya yalnızca Drive içindir; yerelde açık kopya tutulur
+    blog "✘ Google Drive: yedek şifreleme açık ama age ya da anahtar ($BACKUP_KEY) kullanılamıyor — Drive'a hiçbir şey gönderilmedi (yerel yedek duruyor)"
+    ok_remote=0; bad="$bad ENCRYPT"
+  else
+    # Yerel yedeği alınamayan parça Drive'a gidemez (kodu yukarıda yazıldı); Drive adımı yine eksik sayılır
+    if [ -n "$f" ]; then c=$(drive_copy "$f" database veritabanı "$enc"); else c=''; ok_remote=0; fi
+    if [ -n "$c" ]; then ok_remote=0; bad="$bad $c"; fi
+    if [ -n "$g" ]; then c=$(drive_copy "$g" uploads dosya "$enc"); else c=''; ok_remote=0; fi
+    if [ -n "$c" ]; then ok_remote=0; bad="$bad $c"; fi
+    # Şifreli kopya yalnızca Drive içindir; yerelde açık kopya tutulur
+    if [ -n "$enc" ]; then
       if [ -n "$f" ]; then rm -f "${f:?}.age" "${f:?}.age.tmp"; fi
       if [ -n "$g" ]; then rm -f "${g:?}.age" "${g:?}.age.tmp"; fi
     fi
-  else
-    if [ -n "$f" ] && upload_one "$f" database; then blog "✔ Google Drive: database/$(basename "$f") yüklendi, md5 doğrulandı"
-    else blog "✘ Google Drive: veritabanı yedeği yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
-    if [ -n "$g" ] && upload_one "$g" uploads; then blog "✔ Google Drive: uploads/$(basename "$g") yüklendi, md5 doğrulandı"
-    else blog "✘ Google Drive: dosya yedeği yüklenemedi/doğrulanamadı (yerel yedek duruyor)"; ok_remote=0; fi
   fi
 
   # Eskiler yalnızca bu gece her şey tamamsa silinir (Drive'a gidemeyen günlerde yerel kopyalar korunur)
@@ -800,9 +837,110 @@ run_backup() {
   fi
   # Pazar günleri antivirüs motorunun yeni sürümü alınır (virüs tanımları zaten sürekli güncellenir)
   if [ "$(date +%u)" = 7 ]; then compose build --pull clamav >/dev/null 2>&1 && compose up -d clamav >/dev/null 2>&1 || true; fi
+  # Yedek alarmı (karar 249): bu yedeğin sonucu kaydedilir ve değerlendirilir (alarm / iyileşme e-postası). Alarm hatası
+  # yedeğin sonucunu değiştirmez.
+  echo "$bad" | xargs -r -n1 2>/dev/null | sort -u | xargs -r >"$STATE/backup-last-run" || true
+  backup_evaluate || true
   if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then blog "✔ yedek $ts tamam (yerel + Google Drive)"; return 0; fi
   blog "✘ yedek $ts EKSİK (yerel: $([ $ok_local = 1 ] && echo tamam || echo HATA), Google Drive: $([ $ok_remote = 1 ] && echo tamam || echo HATA))"
   return 1
+}
+
+# ---------- yedek alarmı ve bekçi (karar 249) ----------
+# Sorunlar: son yedeğin kodları ($STATE/backup-last-run) + son TAM başarılı yedek (yerel + Drive, $STATE/backup-last-ok)
+# 26 saatten eski (STALE) + gece yedeği zamanlayıcısı çalışmıyor (BACKUP_TIMER) + bekçi zamanlayıcısı çalışmıyor ya da
+# 3 saattir çalışmadı (CHECK_TIMER). Aynı sorun kümesi için e-posta en çok 24 saatte bir; küme değişince hemen; sorunlar
+# bitince bir kez "düzeldi". Durum: $STATE/backup-alert ("KODLAR|gönderim zamanı"), geçmiş: $LOGS/backup-alert.log.
+# E-postaya / günlüğe yalnızca kodlar yazılır — komut çıktısı, yol, token, anahtar, şifre YAZILMAZ.
+BACKUP_STALE_SECONDS=$((26 * 3600))
+BACKUP_CHECK_STALE_SECONDS=$((3 * 3600))
+BACKUP_ALERT_REPEAT_SECONDS=$((24 * 3600))
+alog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$LOGS/backup-alert.log"; }
+mtime() { stat -c %Y "$1" 2>/dev/null || echo ''; }
+# TAKIP_ASSUME_SYSTEMD=1: yalnızca mantık testi (deploy/test/backup-alert.sh, sahte systemctl)
+has_systemd() { command -v systemctl >/dev/null 2>&1 && { [ -d /run/systemd/system ] || [ "${TAKIP_ASSUME_SYSTEMD:-}" = 1 ]; }; }
+# Son başarılı yedeğin yaşı (sn). Hiç yoksa bekçinin ilk gördüğü an esas alınır (kurulumdan hemen sonra alarm verilmez).
+backup_age() {
+  local now t; now=$(date +%s)
+  t=$(mtime "$STATE/backup-last-ok")
+  if [ -z "$t" ]; then
+    [ -e "$STATE/backup-watch-since" ] || : >"$STATE/backup-watch-since"
+    t=$(mtime "$STATE/backup-watch-since")
+  fi
+  echo $((now - ${t:-$now}))
+}
+backup_problems() {
+  local codes='' age t now
+  now=$(date +%s)
+  if [ -s "$STATE/backup-last-run" ]; then codes=$(cat "$STATE/backup-last-run"); fi
+  age=$(backup_age)
+  [ "$age" -le "$BACKUP_STALE_SECONDS" ] || codes="$codes STALE"
+  if has_systemd; then
+    systemctl is-active --quiet takip-backup.timer || codes="$codes BACKUP_TIMER"
+    if [ -f /etc/systemd/system/takip-backup-check.timer ]; then
+      systemctl is-active --quiet takip-backup-check.timer || codes="$codes CHECK_TIMER"
+    fi
+  fi
+  # Bekçinin kendisi: son çalışma 3 saatten eskiyse (yedek de bekçiyi denetler — karşılıklı)
+  t=$(mtime "$STATE/backup-check-last")
+  if [ -n "$t" ] && [ $((now - t)) -gt "$BACKUP_CHECK_STALE_SECONDS" ]; then codes="$codes CHECK_TIMER"; fi
+  echo "$codes" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true
+}
+backup_alert() { # backup_alert FAIL|RECOVERED SAAT [KOD …] → 0 gönderildi
+  local kind=$1 hours=$2 host; shift 2
+  host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9.-' | cut -c1-64)
+  compose run --rm --no-deps -T tools node scripts/backup-alert.mjs "$kind" --age "$hours" --host "${host:-sunucu}" "$@" >>"$LOGS/backup-alert.log" 2>&1
+}
+backup_evaluate() {
+  local codes prev='' sent=0 now hours line
+  codes=$(backup_problems)
+  now=$(date +%s)
+  hours=$(( $(backup_age) / 3600 ))
+  if [ -s "$STATE/backup-alert" ]; then line=$(head -1 "$STATE/backup-alert"); prev=${line%%|*}; sent=${line##*|}; fi
+  [[ $sent =~ ^[0-9]+$ ]] || sent=0
+  if [ -n "$codes" ]; then
+    if [ "$codes" = "$prev" ] && [ $((now - ${sent:-0})) -lt "$BACKUP_ALERT_REPEAT_SECONDS" ]; then
+      return 0 # aynı alarm 24 saat içinde gönderildi
+    fi
+    # shellcheck disable=SC2086 # kodlar tek kelimeliktir; bilerek ayrı argüman
+    if backup_alert FAIL "$hours" $codes; then
+      echo "$codes|$now" >"$STATE/backup-alert"
+      alog "ALARM gönderildi: $codes"
+      blog "✘ yedek alarmı e-postası gönderildi: $codes"
+    else
+      alog "ALARM GÖNDERİLEMEDİ (e-posta): $codes — bir sonraki denetimde yeniden denenecek"
+      blog "✘ yedek alarmı e-postası gönderilemedi: $codes"
+    fi
+  elif [ -n "$prev" ]; then
+    if backup_alert RECOVERED "$hours"; then
+      rm -f "$STATE/backup-alert"
+      alog "DÜZELDİ (önceki: $prev)"
+      blog "✔ yedek alarmı kapandı (düzeldi; önceki sorun: $prev)"
+    else
+      alog "DÜZELDİ ama e-posta gönderilemedi (önceki: $prev) — yeniden denenecek"
+    fi
+  fi
+  return 0
+}
+# Bekçi: takip-backup-check.timer saatte bir çalıştırır (takip yedek-kontrol). Yedekle aynı kilidi BEKLEMEZ (yedek saatlerce
+# sürebilir); yalnızca durum dosyalarını okur ve gerekirse e-posta gönderir.
+cmd_backup_check() {
+  case ${1:-} in
+    durum | status)
+      local codes; codes=$(backup_problems)
+      say "Son başarılı yedek (yerel + Drive): $([ -f "$STATE/backup-last-ok" ] && echo "$(( $(backup_age) / 3600 )) saat önce ($(cat "$STATE/backup-last-ok"))" || echo 'kayıt yok')"
+      say "Son yedeğin sorunları : $([ -s "$STATE/backup-last-run" ] && cat "$STATE/backup-last-run" || echo yok)"
+      say "Şu anki sorunlar      : ${codes:-yok}"
+      say "Açık alarm            : $([ -s "$STATE/backup-alert" ] && cut -d'|' -f1 "$STATE/backup-alert" || echo yok)"
+      say "Bekçi son çalışma     : $([ -f "$STATE/backup-check-last" ] && date -d "@$(mtime "$STATE/backup-check-last")" '+%F %T' || echo 'hiç')"
+      return 0 ;;
+    '') ;;
+    *) say 'Kullanım: takip yedek-kontrol [durum]'; return 1 ;;
+  esac
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı."; return 1; }
+  sync_backup_timer
+  : >"$STATE/backup-check-last"
+  backup_evaluate
 }
 
 # ---------- geri yükleme ----------
@@ -1122,7 +1260,9 @@ main() {
     kur | fx) compose run --rm tools node scripts/fx-check.mjs "$@" ;;
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
+    yonetici-kurtar | admin-recover) cmd_admin_recover "$@" ;;
     yedek | backup) cmd_backup ;;
+    yedek-kontrol | backup-check) cmd_backup_check "$@" ;;
     restore | geri-yukle) cmd_restore "$@" ;;
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
     yedek-sifreleme | backup-encryption) cmd_backup_encryption "$@" ;;
@@ -1132,7 +1272,7 @@ main() {
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,17p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,19p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

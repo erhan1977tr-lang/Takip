@@ -9,7 +9,8 @@ import { bnrRate } from '@/server/fx/bnr.js';
 import { padRate } from '@/server/fx/decimal.js';
 import { previewExchangeRate } from '@/server/fx/resolve.js';
 import { paymentStatus, remaining } from '@/server/accounting/receivables.js';
-import { DOC_EMAIL, GLASS_FGO, billingState, isLoaded } from '@/server/glass/billing.js';
+import { DOC_EMAIL, GLASS_FGO, billingState } from '@/server/glass/billing.js';
+import { invoiceOrderKey } from '@/server/glass/invoice-batch.js';
 import { localDay } from '@/server/profile/dates.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import { DuplicateAck } from '@/components/DuplicateAck';
@@ -19,13 +20,15 @@ import { isParked } from '@/server/finance/uncertain.js';
 import { glassDocumentAction } from './glass-billing-actions';
 
 const TONE = { UNKNOWN: 'muted', UNPAID: 'danger', PARTIAL: 'warn', PAID: 'ok' } as const;
-const KIND_ACTION = { proforma: 'PROFORMA', advance: 'ADVANCE', invoice: 'INVOICE' } as const;
+const KIND_ACTION = { proforma: 'PROFORMA', advance: 'ADVANCE' } as const;
 type Doc = { id: string; kind: string; seq: number; advanced: { toString(): string } | null; series: string; number: string; link: string | null; issuedAt: Date; total: { toString(): string } | null; paid: { toString(): string } | null };
 type Job = { type: string; status: string; lastError: string | null; payload: unknown; createdAt: Date; sentAt: Date | null };
 
 /**
  * Cam siparişinin Finans / FGO bölümü (yönetici). Muhasebe → Cam Tahsilat ile aynı kayıtlar (FgoDocument).
- * Düğmeler belge durumuna göre: proforma → (tahsilat) → avans faturası → (yüklenince) fatura. Tahsilat = FGO'nun gösterdiği
+ * Düğmeler belge durumuna göre: proforma → (tahsilat) → avans faturası. Nihai fatura burada değil (P1, karar 239): onaylı
+ * yüklemeden, yükleme gününün Faturalama kartında — yalnızca yüklenen miktar, ödeme şartı yok; bu kart onaylı yüklemeleri ve
+ * faturalanıp faturalanmadıklarını gösterir, oraya bağlantı verir. Tahsilat = FGO'nun gösterdiği
  * ya da yöneticinin elle kaydettiği (büyük olan; karar 207): tahsilat − avansı kesilen > 0 ise avans faturası düğmesi
  * yüklemeden sonra da çıkar. Aynı müşteride aynı tutarlı avans / ödeme varsa düğmenin formunda eşleşmeler ve zorunlu onay
  * kutusu (karar 208). Sonucu belirsiz iş (karar 209) yeniden denenmez; karar kutusu Ödemeler kartında (#belirsiz).
@@ -34,35 +37,42 @@ export async function GlassFinance({ order, t, sp }: {
   order: { id: string; customerId: string; status: string; actualShipDate: Date | null; estimatedShipDate: Date | null; offers: { status: string }[] };
   t: T; sp: Record<string, string | undefined>;
 }) {
-  const [docs, billing, jobs, batchOrders, payments] = await Promise.all([
+  const [docs, billing, jobs, batchOrders, payments, confirmed] = await Promise.all([
     db.fgoDocument.findMany({ where: { orderId: order.id }, orderBy: { issuedAt: 'asc' } }) as Promise<Doc[]>,
     db.glassBilling.findUnique({ where: { orderId: order.id } }),
     db.notificationOutbox.findMany({ where: { orderId: order.id, type: { in: [GLASS_FGO, DOC_EMAIL] } }, orderBy: { createdAt: 'desc' }, take: 10 }) as Promise<Job[]>,
     // Sipariş etkin bir müşteri partisinde mi (müşteri proforması, karar 100): sipariş başına belge istenemez
     db.billingBatchOrder.findMany({
       where: { orderId: order.id, activeKey: { not: null } }, orderBy: { batch: { createdAt: 'asc' } },
-      select: { batch: { select: { status: true, customerId: true, document: { select: { series: true, number: true, link: true } } } } },
+      select: { activeKey: true, batch: { select: { kind: true, status: true, customerId: true, document: { select: { series: true, number: true, link: true } } } } },
     }),
     // Sipariş başına zincirin elle ödeme kayıtları (karar 206; müşteri proformasındakiler partinin zincirinde)
     db.manualPayment.findMany({ where: { orderId: order.id, batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } }),
+    // Siparişin onaylı yüklemeleri (karar 239): nihai fatura bunlardan, yükleme gününün Faturalama kartında kesilir
+    db.loadingConfirmation.findMany({ where: { items: { some: { orderId: order.id } } }, orderBy: { shipDay: 'asc' }, select: { id: true, shipDay: true } }),
   ]);
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const pending = jobs.filter((j) => j.type === GLASS_FGO && j.status === 'PENDING');
+  // Yalnızca müşteri PROFORMA partisi sipariş başına belgeyi dışlar; onaylı yüklemeden kesilen fatura partileri ayrı listelenir
+  const proformaBatches = batchOrders.filter((x) => x.batch.kind === 'PROFORMA');
   const st = billingState({
-    status: order.status, loaded: isLoaded(order, today), docs,
+    status: order.status, loaded: confirmed.length > 0, docs,
     pending: pending.map((j) => (j.payload as { kind?: string } | null)?.kind ?? ''), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
-    inBatch: batchOrders.length > 0, payments,
+    inBatch: proformaBatches.length > 0, payments, invoiced: batchOrders.some((x) => x.activeKey?.startsWith('INVOICE:')),
   });
+  // Onaylı yükleme başına fatura durumu: bu onaydan fatura partisi (kuyrukta / kesildi / kesilemedi) ya da henüz yok
+  const invoiceOf = new Map(batchOrders.filter((x) => x.activeKey?.startsWith('INVOICE:')).map((x) => [x.activeKey, x.batch]));
+  const loadings = confirmed.map((c) => ({ day: c.shipDay.toISOString().slice(0, 10), batch: invoiceOf.get(invoiceOrderKey(c.id, order.id)) ?? null }));
   // Aynı müşteride aynı tutar (karar 208): avans düğmesinin formunda eşleşmeler + onay kutusu (sunucu yeniden denetler)
   const risk = st.actions.includes('advance')
     ? await advanceRisk(db, { customerId: order.customerId, ron: st.advanceRequired, chainKey: `order:${order.id}` })
     : { matches: [], ackKey: '' };
   const parked = jobs.find((j) => j.type === GLASS_FGO && isParked(j));
   // Müşteri düzeyindeki belgeler (müşteri proforması, onaylı yüklemeden müşteri faturası): numaraları ya da durumu
-  const batchRefs = batchOrders.map((x) => (x.batch.document ? `${x.batch.document.series}${x.batch.document.number}` : t(`accounting.batch.status.${x.batch.status}` as MsgKey)));
+  const batchRefs = proformaBatches.map((x) => (x.batch.document ? `${x.batch.document.series}${x.batch.document.number}` : t(`accounting.batch.status.${x.batch.status}` as MsgKey)));
   // Kur henüz belirlenmediyse (proforma ya da doğrudan fatura bu belgeyle belirleyecek) ve teklif EUR ise:
   // müşterinin kur politikasıyla bugünün kuru gösterilir, yönetici isterse elle kur girer (karar 95–96).
-  const setsRate = billing?.fxRate == null && (st.actions.includes('proforma') || st.actions.includes('invoice'));
+  const setsRate = billing?.fxRate == null && st.actions.includes('proforma');
   const fxOrder = setsRate ? await db.order.findUnique({
     where: { id: order.id },
     select: { customer: { select: { fxPolicy: true, fxMarkupPercent: true } }, offers: { where: { status: 'GONDERILDI' }, orderBy: { createdAt: 'desc' }, take: 1, select: { currency: true } } },
@@ -155,15 +165,36 @@ export async function GlassFinance({ order, t, sp }: {
       {/* Yüklenmiş + FGO'da avansı kesilmemiş tahsilat: kapanış faturası engellenir, önce avans faturası (karar 104) */}
       {st.wait === 'advance_required'
         ? <div className="alert alert-warn" id="fatura-engeli">{t('glassBilling.wait.advance_required', { amount: fmtMoney(st.advanceRequired, 'RON') })}</div>
-        : st.wait === 'batch' && batchOrders.length > 0 ? (
+        : st.wait === 'batch' && proformaBatches.length > 0 ? (
           <div className="alert alert-info" id="musteri-proformasi">
             {t('glassBilling.wait.batch', { ref: batchRefs.join(', ') })}{' '}
-            {batchOrders.map((x) => x.batch.document && (
+            {proformaBatches.map((x) => x.batch.document && (
               <FgoDocLink key={`${x.batch.document.series}${x.batch.document.number}`} link={x.batch.document.link} fallback={null}>{x.batch.document.series}{x.batch.document.number} </FgoDocLink>
             ))}
-            <a href={`/admin/muhasebe/cam/proforma?musteri=${batchOrders[0].batch.customerId}#partiler`}>{t('accounting.batch.open')}</a>
+            <a href={`/admin/muhasebe/cam/proforma?musteri=${proformaBatches[0].batch.customerId}#partiler`}>{t('accounting.batch.open')}</a>
           </div>
-        ) : st.wait && <p className="small muted">{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
+        ) : st.wait === 'payment_after_invoice'
+          ? <div className="alert alert-warn" id="tahsilat-karari" data-billing-wait={st.wait}>{t('glassBilling.wait.payment_after_invoice', { amount: fmtMoney(st.advanceRequired, 'RON') })}</div>
+          : st.wait && <p className="small muted" data-billing-wait={st.wait}>{t(`glassBilling.wait.${st.wait}` as MsgKey)}</p>}
+      {/* Nihai fatura onaylı yüklemeden (karar 239): her onaylı yüklemenin fatura durumu ve Faturalama kartı */}
+      {loadings.length > 0 && (
+        <div className="fx-block" id="nihai-fatura">
+          <h3>{t('glassBilling.final.title')}</h3>
+          <ul className="small">
+            {loadings.map((l) => (
+              <li key={l.day} data-loading-day={l.day} data-invoice-state={l.batch ? l.batch.status : 'OPEN'}>
+                {fmtDate(l.day)} —{' '}
+                {l.batch
+                  ? l.batch.document
+                    ? <FgoDocLink link={l.batch.document.link}>{l.batch.document.series}{l.batch.document.number}</FgoDocLink>
+                    : t(`accounting.batch.status.${l.batch.status}` as MsgKey)
+                  : t('glassBilling.final.open')}{' '}
+                <a href={`/yuklemeler?gun=${l.day}#faturalama`}>{t('glassBilling.final.go')}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {lastJob?.status === 'FAILED' && <div className="alert alert-error">{t('glassBilling.failed', { error: lastJob.lastError ?? '—' })}</div>}
       {parked
         ? <div className="alert alert-warn" data-fgo-uncertain>{t('glassBilling.uncertain')} <a href="#belirsiz">{t('finance.uncertain.title')}</a></div>

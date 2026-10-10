@@ -82,7 +82,8 @@ export async function transportList(db, day, { label = (name) => name } = {}) {
       where: { shipDay: d, customerId: { not: null } },
       include: {
         customer: { select: { prefix: true, name: true } },
-        orders: { select: { order: { select: { orderNo: true, customerId: true, customer: { select: { prefix: true, name: true } } } } } },
+        // İptal edilmiş / kaldırılmış siparişin sandık bağı listeye girmez (AUD-15, P7)
+        orders: { where: { order: { status: { not: 'IPTAL' }, removedAt: null } }, select: { order: { select: { orderNo: true, customerId: true, customer: { select: { prefix: true, name: true } } } } } },
       },
     }),
     db.order.findMany({

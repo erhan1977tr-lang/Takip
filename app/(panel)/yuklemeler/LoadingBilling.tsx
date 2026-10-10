@@ -55,7 +55,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
   const risks = new Map<string, { lines: string[]; ackKey: string }>();
   for (const c of r.customers) {
     for (const g of c.groups) {
-      if (!g.chain || !(g.chain.advanceRequired > 0) || g.chain.advancePending || risks.has(g.chain.proformaBatchId)) continue;
+      if (!g.chain?.proformaBatchId || !(g.chain.advanceRequired > 0) || g.chain.advancePending || risks.has(g.chain.proformaBatchId)) continue;
       const risk = await advanceRisk(db, { customerId: c.customerId, ron: g.chain.advanceRequired, chainKey: `batch:${g.chain.proformaBatchId}` });
       risks.set(g.chain.proformaBatchId, { lines: matchLines(t, risk.matches as MatchView[]), ackKey: risk.ackKey });
     }
@@ -108,7 +108,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
             <div key={g.key} className="bill-group" data-group={g.key}>
               <p className="small">
                 {g.chain
-                  ? t('accounting.invoice.chain', { ref: g.chain.ref ?? '—', total: ron(g.chain.total), paid: ron(g.chain.paid), advanced: ron(g.chain.advanced) })
+                  ? t(g.chain.kind === 'ORDER' ? 'accounting.invoice.orderChain' : 'accounting.invoice.chain', { ref: g.chain.ref ?? '—', total: ron(g.chain.total), paid: ron(g.chain.paid), advanced: ron(g.chain.advanced) })
                   : t('accounting.invoice.direct')}
               </p>
               <div className="table-wrap load-wrap">
@@ -158,7 +158,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
                       </tr>
                     ))}
                     {g.storno.map((s) => (
-                      <tr className="sub glass-row bill-storno" key={s.advanceBatchId}>
+                      <tr className="sub glass-row bill-storno" key={s.advanceBatchId ?? s.advanceDocId ?? s.ref ?? ''}>
                         <td colSpan={4}>Stornare avans conform factură {s.ref}</td>
                         <td className="num">−{fmtNum(s.net)}</td>
                         <td className="num">−{fmtNum(s.gross)}</td>
@@ -210,7 +210,11 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
               ))}
               <div className="row end" style={{ marginTop: 12 }}>
                 {/* Proformada avansı kesilmemiş tahsilat: avans faturası yüklemeden sonra da kesilebilir; kesilince fatura açılır */}
-                {g.chain && g.chain.advanceRequired > 0 && !g.chain.advancePending && (
+                {/* Siparişin kendi zinciri (karar 239): avans faturası sipariş sayfasının Ödemeler ve avans kartında */}
+                {g.chain?.kind === 'ORDER' && g.chain.advanceRequired > 0 && g.chain.orderId && (
+                  <Link className="btn" href={`/siparisler/${g.chain.orderId}#odemeler`}>{t('accounting.invoice.orderAdvance')}</Link>
+                )}
+                {g.chain?.proformaBatchId && g.chain.advanceRequired > 0 && !g.chain.advancePending && (
                   <form action={createAdvanceAction}>
                     <input type="hidden" name="day" value={day} />
                     <input type="hidden" name="proformaBatchId" value={g.chain.proformaBatchId} />

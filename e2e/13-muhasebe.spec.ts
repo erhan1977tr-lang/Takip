@@ -234,7 +234,9 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
   // isteği oluşturmaz.
   await admin.goto(paidUrl);
   await expect(admin.locator('#gb-paid')).toHaveCount(0);
-  await expect(admin.locator('#finans')).toContainText('ödeme aşağıda elle kaydedilince');
+  // Nihai fatura sipariş sayfasından kesilmez (karar 239): bekleme metni Faturalama kartına yönlendirir
+  await expect(admin.locator('#finans [data-billing-wait="final_from_loading"]')).toContainText('Faturalama kartında');
+  await expect(admin.locator('#finans')).toContainText('ya da yönetici ödemeyi aşağıda elle kaydeder');
   await expect(admin.locator('#finans input[name=amount]')).toHaveCount(0);
   await expect(admin.locator('#avans-durumu')).toContainText('FGO tahsilatı');
   const ok2 = await forge(admin, paidUrl, docField, { id: paidOrderId, kind: 'ADVANCE', amount: '300' });

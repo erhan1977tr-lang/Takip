@@ -15,6 +15,7 @@ import { Badge, CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/co
 import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { STOCK_SHORTAGE_ALERT } from '@/server/profile/stock.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
+import { customerStatusWhere, partitionCustomerOrders } from '@/server/orders/customer-list.js';
 import { approvedDrawingList, dwgDrawingGroups, latestOfferStatus, profileQueues, queuesFor } from '@/server/orders/queues.js';
 import { dwgReview, isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
 import { DwgDecision } from './[id]/DwgDecision';
@@ -103,15 +104,15 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const { t, locale, m, intl } = await getT();
   const { unit } = counter(m, intl);
   const archive = sp.view === 'archive';
-  const orders = sanitizeRows(user, await db.order.findMany({
-    where: {
-      ...orderScope(user),
-      ...searchWhere(sp.q),
-      status: archive ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },
-    },
+  // Bölüm ve sıra (P5 — karar 243; server/orders/customer-list.js): arşivde yalnızca kapanmış (arşivlenmiş / iptal) ve
+  // onaylı yüklemeyle EKSİKSİZ yüklenmiş siparişler; yüklenmemiş, gecikmiş ve kalanı olan sipariş Active'de. Active tahmini
+  // yükleme gününe göre artan. Kapsam (firma izolasyonu) yine orderScope.
+  const bucket = archive ? 'archive' : 'active';
+  const found = await db.order.findMany({
+    where: { AND: [orderScope(user), searchWhere(sp.q), customerStatusWhere(bucket) as Prisma.OrderWhereInput] },
     include: listInclude,
-    orderBy: [{ estimatedShipDate: archive ? 'desc' : 'asc' }, { createdAt: 'desc' }],
-  }));
+  });
+  const orders = sanitizeRows(user, await partitionCustomerOrders(db, found, bucket));
   const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
   // Okunmamış mesaj sayısı (karar 199): satırdaki kırmızı sayaç, mesajlara götürür
   const unread = await unreadNotesFor(user, orders.map((o) => o.id));

@@ -278,3 +278,32 @@ test('metinler: her hata kodunun ve yeni olayların metni var', () => {
   assert.equal(m.remove.confirm.replace('{order}', 'ABC124'), 'Silmeyi onaylamak için sipariş numarasını yazın: ABC124');
   for (const k of ['step1', 'target', 'blockedTitle', 'blockedText', 'continue', 'step2', 'keptCounts']) assert.equal(typeof m.remove[k], 'string', k);
 });
+
+// P2-A: ekranın gösterdiği yol (compensationFlow) sunucunun izlediği yolla aynı — kaynak müşteri fiyatı boşken "aynı fiyat"
+// doğrudan gitmez. Bütün kombinasyonlar priceDecision().direct ve createCompensation'ın dallarıyla karşılaştırılır.
+test('telafi akışı: ekran kuralı sunucu kuralıyla aynı (kaynak fiyatı boşken "aynı fiyat" doğrudan gitmez)', async () => {
+  const { compensationFlow } = await import('../server/orders/compensation-flow.js');
+  for (const mode of ['FREE', 'NORMAL', 'CUSTOM']) {
+    for (const admin of [false, true]) {
+      for (const sourceFree of [false, true]) {
+        for (const sourcePriced of [false, true]) {
+          const line = { free: sourceFree, unitPrice: '30', offerPrice: sourcePriced ? '66.96' : null };
+          const d = priceDecision({ admin, mode, price: mode === 'CUSTOM' && admin ? '70' : null, line });
+          assert.equal(d.ok, true);
+          for (const [destType, via] of [['NEW', null], ['EXISTING', 'DRAFT'], ['EXISTING', 'SENT']]) {
+            const f = compensationFlow({ mode, admin, destType, via, sourceFree, sourcePriced });
+            // Sunucu (createCompensation): taslak hedef → taslağa eklenir; kesin fiyat → doğrudan; müşterideki hedefte satış
+            // kesin olmayan kararla PENDING, yönetici farklı fiyatla yeni sürüm, fiyatsız satırla PRICE_REQUIRED; yeni sipariş → fiyat onayı
+            const missing = d.offerPrice == null && !d.free;
+            const server = via === 'DRAFT' ? 'draft' : d.direct ? 'direct'
+              : via === 'SENT' ? (!admin ? 'pending' : missing ? 'priceRequired' : 'adminSent') : 'pricing';
+            assert.equal(f, server, JSON.stringify({ mode, admin, sourceFree, sourcePriced, destType, via }));
+          }
+        }
+      }
+    }
+  }
+  assert.equal(compensationFlow({ mode: 'NORMAL', admin: false, destType: 'NEW', sourcePriced: false }), 'pricing');
+  assert.equal(compensationFlow({ mode: 'NORMAL', admin: false, destType: 'NEW', sourcePriced: true }), 'direct');
+  for (const lang of [tr, ro]) assert.equal(typeof lang.compensation.form.keepHintNoPrice, 'string');
+});

@@ -3,7 +3,7 @@
 // FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları sahte fetchImpl'e gider; BNR ve BT de sahtedir (ağa çıkılmaz).
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDb, dbTest, getDb, resetDb } from './helpers.js';
+import { closeDb, dbTest, finalInvoiceFor, getDb, nextPastDay, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { saveDailyRate } = await import('../../server/fx/bt.js');
@@ -112,13 +112,16 @@ dbTest('BNR + %2: proforma BNR × 1,02 ile kesilir; kur kaydı saklanır ve sonr
   await db.fgoDocument.updateMany({ where: { orderId: o.id, kind: 'PROFORMA' }, data: { paid: '314.72' } });
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'ADVANCE', actor: actor(), manualRate: '5,5000' }), { ok: true }, 'avans kuru belirlemez: elle kur yok sayılır');
   await g.dispatchGlassJobs(db, ctx(fgo, { bnrImpl: bnr('6.0000') }));
-  await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(Date.now() - 3 * 86_400_000) } });
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor(), manualRate: '5,5000' }), { ok: false, code: 'RATE_LOCKED' }, 'kur proformayla belirlendi: elle kurla değiştirilemez');
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor() }), { ok: true });
-  await g.dispatchGlassJobs(db, ctx(fgo, { bnrImpl: never('BNR (fatura kuru yeniden çözmez)') }));
+  // Nihai fatura sipariş düzeyinde istenemez (karar 239); onaylı yüklemeden, proformanın kayıtlı kuruyla kesilir — kur yeniden çözülmez
+  assert.equal((await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor(), manualRate: '5,5000' })).code, 'NOT_ALLOWED');
+  const fin = await finalInvoiceFor(db, { order: o, adminId: admin.id, actor: actor(), day: nextPastDay(400), bnrImpl: never('BNR (fatura kuru yeniden çözmez)'), dispatchCtx: ctx(fgo) });
+  assert.equal(fin.created?.ok, true, JSON.stringify(fin.group?.problems ?? fin.created));
+  assert.equal(fin.group.fx.finalRate, '5.2020', 'grup kuru proformanın kaydı');
   assert.equal(fgo.calls.length, 3);
   // Fatura: 2 m² × 50 EUR × 5,2020 = 520,20 + TVA %21 = 629,44
   assert.equal(fgo.calls[2]['Continut[0][PretTotal]'], '629.44', 'fatura proformanın kuruyla (5,2020), yeni BNR / BT ile değil');
+  const batch = await db.billingBatch.findUnique({ where: { id: fin.created.batchId } });
+  assert.equal(batch.fxRate.toString(), '5.202');
   const b2 = await billing(o);
   for (const k of ['fxRate', 'fxSource', 'fxPolicy', 'fxCurrency', 'fxBaseRate', 'fxMarkupPercent', 'fxManual', 'fxSourceDate', 'fxResolvedAt', 'fxDate']) {
     assert.equal(String(b2[k]), String(b[k]), `kur kaydı değişmedi: ${k}`);

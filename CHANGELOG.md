@@ -4,6 +4,239 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.73.3 — 10.10.2026
+
+P7 — canlıya geçiş hazırlığı (karar 250). Uygulama davranışı değişmedi.
+
+- `docs/canliya-gecis-p7.md`: değişen paketler, migration analizi (yalnızca `20261010124850_ci`, ekleme), salt okunur ön
+  kontroller, yayın ve yayın sonrası adımlar, FGO açısından geri dönüş sınırları, GO / NO-GO listesi, operatör komutları,
+  güvenlik testi (Strix) kapsamı ve açık riskler.
+- `deploy/canliya-gecis/p7-onkontrol.sql` ve `p7-geri-donus.sql`: yalnızca SELECT, READ ONLY işlem. Gerçek şemada hatasız
+  çalıştıkları ve yazma içermedikleri veritabanı testiyle denetlenir.
+
+## 3.73.2 — 10.10.2026
+
+P7 — yedek alarmı ve bekçi (karar 249). Şema değişmedi; mevcut yedekleme, şifreleme ve saklama kuralları aynen.
+
+- **Alarm e-postası:** gece yedeğinde veritabanı dökümü (`DB_DUMP`), veritabanı geri yükleme denetimi (`DB_VERIFY`), dosya
+  arşivi (`FILES`, `FILES_VERIFY`), şifreleme (`ENCRYPT`), Google Drive yüklemesi (`DRIVE_UPLOAD`) ya da Drive kopyasının md5
+  doğrulaması (`DRIVE_VERIFY`) başarısız olursa — veya rclone yoksa (`RCLONE_MISSING`) — yöneticiye e-posta gider.
+- **Bekçi:** yeni `takip-backup-check.timer` saatte bir `takip yedek-kontrol` çalıştırır: son TAM başarılı yedek (yerel +
+  Drive) 26 saatten eskiyse (`STALE` — gece yedeği hiç çalışmadıysa da), gece yedeği zamanlayıcısı çalışmıyorsa
+  (`BACKUP_TIMER`) alarm verir. Gece yedeği de bekçiyi denetler: bekçi 3 saattir çalışmadıysa `CHECK_TIMER`.
+- **Gereksiz tekrar yok:** aynı sorun kümesi için en çok 24 saatte bir e-posta; sorun değişince hemen; sorunlar bitince bir
+  kez "düzeldi" e-postası. Geçmiş `/opt/takip/logs/backup-alert.log`. Gönderilemeyen alarm gönderilmiş sayılmaz, bir sonraki
+  denetimde yeniden denenir. `takip yedek-kontrol durum` yalnızca okur.
+- **Sır yok:** e-postaya ve alarm günlüğüne yalnızca sabit metin, sorun kodları, sunucu adı ve saat girer (komut çıktısı,
+  yol, token, anahtar, şifre, adres yazılmaz). Alıcılar: `.env`'deki `BACKUP_ALERT_EMAIL` (virgülle), boşsa etkin yöneticiler.
+- Testler: e-posta ve alıcı kuralları (birim, sahte taşıyıcı), kabuk mantığı (sahte docker / rclone / systemctl; 12 durum),
+  kurulumda bekçinin etkin olduğu (gerçek sunucu kurulumu testi). Gerçek e-posta gönderilmez.
+
+## 3.73.1 — 10.10.2026
+
+P7 — nihai fatura güvenliği (karar 248; P1 / karar 239'un incelemesi). Şema değişmedi; mevcut belgeler değişmez.
+
+- **Avanslı siparişin proforması FGO'da silinmişse** yükleme gününden "zincirsiz" fatura kesilmez (`CHAIN_ROOT_MISSING`):
+  eskiden bu durumda avans düşülmeden tam fatura kesilebilirdi. Sipariş Faturalama kartında nedeniyle gösterilir ve "fatura
+  bekliyor" listesinde kalır; karar muhasebeye aittir.
+- **Onayda cam yüklenmeyip yalnızca fiyatlı işlem / sandık kalemi yüklendiyse** kapsam sessizce "kalem yok" sayılmaz
+  (`OPS_WITHOUT_GLASS`): kartta ve "fatura bekliyor" listesinde görünür (otomatik faturalanmaz — muhasebe kararı).
+- **Zincirden fatura kesildikten sonra gelen tahsilat** (karar 239, seçenek a) "fatura bekliyor" listesinde artık "kesilebilir"
+  gibi görünmez; nedeni yazar.
+- Testler: üç durum + deploy anında kuyrukta kalmış (daha önce denenmiş) eski kapanış faturası işinin FGO'ya gitmeden
+  kapandığı.
+
+## 3.73.0 — 10.10.2026
+
+P7 — güvenlik sertleştirmesi (karar 248; önceki denetimden açık kalan maddeler). Şema değişmedi.
+
+- **AUD-16:** PNG görseller en çok 16 MP çözülür ve sıkıştırılmış veri yalnızca beklenen boyuta kadar açılır. Küçük bir
+  dosyanın gigabaytlara açılması (teslim fotoğrafı / katalog görseli → teslim raporu, depo PDF'i) uygulamayı ya da işçiyi
+  çökertemez; böyle bir görsel belgeye girmez.
+- **AUD-15:** iptal edilen ya da kaldırılan sipariş, ev sahibi firmanın sandığında "misafir yük" olarak nakliye listesinde ve
+  yükleme gününde gösterilmez (kayıt silinmez).
+- **AUD-17:** bekleyen telafi kararı uyarısı "Gördüm" ile sunucuda da kapatılamaz (onay / ret ile kapanır).
+- **`takip smtp`:** SMTP ayarı değişince e-postayı gönderen arka plan işçisi de yeni ayarlarla yeniden başlar.
+
+## 3.72.2 — 10.10.2026
+
+Kurulum komutu `takip yonetici` güvenli hâle getirildi (karar 247). Şema değişmedi.
+
+- **Sessiz rol yükseltme kapatıldı:** komut artık yalnızca YENİ bir yönetici hesabı açar. Eskiden e-postası bilinen herhangi bir
+  hesap (müşteri, satış, çizim, denetimci, yönetici yardımcısı; pasif hesap da) — davet bekliyorsa hiç seçenek gerekmeden,
+  şifresi varsa `--reset` ile — sessizce yönetici yapılıyor, etkinleştiriliyor ve şifresi silinip yeni kod üretiliyordu. Şimdi
+  var olan hesapta rol, tür, etkinlik, ad ve şifre değişmez; komut nedenini yazıp reddeder.
+- **`--reset` kaldırıldı:** verilirse hiçbir şey değişmez. Şifresini unutan yönetici için tek yol `sudo takip yonetici-kurtar`
+  (karar 246, değişmedi).
+- Şifresini henüz belirlememiş (kodu süresi dolmuş) etkin yönetici için komutu yeniden çalıştırmak yalnızca yeni kod üretir;
+  eski kodlar kapanır.
+- İlk kurulum (`install.sh`) aynı komutla, aynı çıktıyla (`CODE=`) çalışır. Komut artık root ister (diğer sunucu komutları gibi).
+  Kontrol ve yazma tek işlemde, hesap satırı kilitlenerek; her sonuç denetime yazılır (`ADMIN_BOOTSTRAP` mode CREATED /
+  CODE_REISSUED, reddedilen istek `ADMIN_BOOTSTRAP_REFUSED` — yalnızca neden kodu).
+- Testler: karar tablosu ve yapı (birim), gerçek veritabanında ilk kurulum / ek yönetici / her rol için yükseltme denemesi /
+  `--reset` / yarım kalmış kurulum / eşzamanlı açılış / gerçek komut süreci, uçtan uca: müşteri ve yönetici hesapları komuttan
+  sonra değişmeden girer.
+
+## 3.72.1 — 10.10.2026
+
+- P6 uçtan uca testi: tahmin edilen kurtarma adreslerinin 404 olduğu denetlenir; Next'in 404 sayfası istenen yolu kendi
+  yükünde geri yazdığı için gövdede yalnızca kurtarma içeriği (`ADMIN_RECOVERY`) aranır. Uygulama değişmedi.
+
+## 3.72.0 — 10.10.2026
+
+P6 — yönetici acil erişim kurtarma (karar 246). Şema değişmedi; uygulamada yeni sayfa / adres yok.
+
+- **Sunucu komutu `takip yonetici-kurtar E-POSTA`** (yalnızca root, yalnızca etkileşimli SSH terminali): var olan, etkin bir
+  yönetici (ADMIN) hesabının şifresini yeniler. Yeni şifre ekranda görünmeden iki kez sorulur; komut satırına, ortama,
+  geçmişe ya da günlüğe yazılmaz. Tek işlemde: şifre özeti, bütün açık oturumların kapatılması, bekleyen kodların geçersiz
+  kılınması ve `ADMIN_RECOVERY` denetim kaydı. Giriş deneme sayaçlarına dokunulmaz (karar 148–149); kilit en geç 15 dakikada
+  kendiliğinden açılır. Yeni hesap açılmaz, rol değişmez;
+  başarısız deneme `ADMIN_RECOVERY_FAILED` olarak (yalnızca kod) yazılır. Kullanım: `docs/yonetici-kurtarma.md`.
+- Şifre özeti tek modülde (`server/auth/password-hash.js`); uygulamanın giriş ve şifre belirleme akışı aynı işlevi
+  kullanır (biçim ve parametreler değişmedi).
+- Testler: kurallar ve komut akışı (birim), gerçek veritabanında kurtarma / hatalı hesap / yetki / tekrar / eşzamanlı /
+  başarısız işlem / terminalsiz çalıştırma, uçtan uca: açık oturumun kapanması ve yeni şifreyle giriş.
+
+## 3.71.3 — 10.10.2026
+
+- P5 veritabanı testi: otomatik arşivin yinelenen turundan sonraki denetim kaydı sayısı (onaysız "Yüklendi" artık
+  arşivlenmediği için bir eksik; yalnızca test beklentisi).
+
+## 3.71.2 — 10.10.2026
+
+P5 kapanış düzeltmeleri (karar 245; karar 244'e ek).
+
+- **Otomatik arşiv (45 gün):** satışın "Yüklendi" düğmesi tek başına kanıt sayılmaz. YUKLENDI siparişi de yalnızca onaylı
+  yükleme(ler) camını eksiksiz kapsıyorsa arşivlenir; onaysız ya da kalanı açık sipariş süre dolsa da arşive geçmez ve
+  müşterinin Active listesinde kalır. Aday sorgusu yalnızca onaylı yüklemesi olan siparişleri alır. İptal ve elle arşivleme
+  değişmedi; daha önce otomatik arşivlenmiş siparişlere dokunulmaz.
+- **Revizyon işaretleri:** taslakta verilmiş en büyük numara taslakla birlikte (tarayıcının oturum belleğinde) saklanır;
+  sayfa yenilense de silinen son numara yeniden verilmez. Veritabanı değişikliği yok.
+
+## 3.71.1 — 10.10.2026
+
+- P5 veritabanı testi: saklanan işaret kalıcı kimlik ve numarayı taşır (yalnızca test beklentisi).
+
+## 3.71.0 — 10.10.2026
+
+P5 — müşteri ekranları (karar 243–244). Şema değişmedi; rol yetkileri ve firma izolasyonu değişmedi.
+
+- **Revizyon ekranı:** ayrı "İşaretler / Marcaje" paneli yok. Her işaretin açıklaması "Revizyon notu / Nota de revizie"
+  bölümünde, işaretin numarasıyla ("#3") yazılır. İşaretlerin KALICI kimliği ve numarası vardır: başka bir işaret silinse,
+  sıra değişse ya da taslak yeniden açılsa numara değişmez, silinen numara yeniden verilmez; açıklama işaretin kendi
+  kaydındadır, yanlış işarete bağlanamaz. Sunucu kimlik / numarayı doğrular, nottaki "#n:" maddesi kalıcı numarayla yazılır.
+  Başka sürümün işareti alınmaz; dosya erişimi (AUD-8) değişmedi.
+- **Müşteri sipariş listesi:** "Yüklenen ve arşiv / Încărcate și arhivă" bölümünde yalnızca kapanmış (arşivlenmiş / iptal)
+  ve onaylı yüklemeyle EKSİKSİZ yüklenmiş siparişler. Tarihi geçmiş yüklenmemiş sipariş, kısmen yüklenmiş (kalanı olan)
+  sipariş ve onaylı yüklemesi olmayan "Yüklendi" siparişi Active'de kalır. Active tahmini yükleme gününe göre artan
+  (profilde teslim günü; tarihsiz sonda).
+- Testler: işaret kimliği / numarası ve not bağı (birim), liste ayrımı ve sırası (birim + veritabanı), revizyon ekranı ve
+  müşteri listesi (uçtan uca).
+
+## 3.70.2 — 10.10.2026
+
+- P4 veritabanı testi: yeniden hesaplama karşılaştırması Decimal alanları düz değere çevirerek yapılır (yalnızca test).
+
+## 3.70.1 — 10.10.2026
+
+- P4 düzeltmesi (lint): proforma FGO satırına iç alanların gitmemesi açık alan listesiyle sağlanır; davranış aynı.
+
+## 3.70.0 — 10.10.2026
+
+P4 — proformada aynı camların birleştirilmesi (karar 242). Şema değişmedi; nihai fatura, avans, tahsilat, alacak, kur ve KDV
+kuralları değişmedi; mevcut belgeler geriye dönük değişmez.
+
+- **Sipariş proforması ve müşteri proforması (sipariş içinde):** aynı teknik cam adına sahip satırlar — farklı ölçü ve farklı
+  birim fiyatlı olanlar da — tek satırda; miktar m² toplamı. Anahtar camın Romence teknik adı (boşluk / büyük-küçük harf farkı
+  yok sayılır); nihai faturadaki kısaltılmış "Sticla …" adı anahtar değildir. Siparişler arasında birleştirme yok.
+- **Tutar korunur:** birleşik satırın tutarı parça parça hesaplanır ve FGO'ya TVA dahil toplamla (PretTotal) gider — belge
+  toplamı (TVA hariç ve dahil) birleştirmeden önceki proformayla kuruşu kuruşuna aynı. Farklı fiyatlarda gösterilen birim
+  fiyat m² ağırlıklı ortalamadır (yalnızca gösterim; önizlemede "ort." / "medie" işareti).
+- **Ayrı kalır:** CNC, delik, sandık bedeli ve m² dışındaki diğer kalemler; bedelsiz satırlar proformaya hiç girmez.
+- Testler: saf kural (gruplama, ortalama, ayrı kalemler, 400 turluk kuruş özellik testi, nihai fatura değişmez), veritabanı +
+  sahte FGO (sipariş proforması ve müşteri partisi), uçtan uca önizleme (TR / RO).
+
+## 3.69.3 — 10.10.2026
+
+- P3 uçtan uca testi: denetimcinin firma tutarı gerçek gönderimdeki gibi müşteri tutarı kaydından (Price) okunur; test verisi
+  bu kaydı da yazar. Uygulama davranışı değişmedi.
+
+## 3.69.2 — 10.10.2026
+
+- P3 düzeltmesi: "Döküm" sayfasının para birimi toplamları müşteri sırasından bağımsız, para birimi adına göre sıralı
+  (EUR, RON, …).
+
+## 3.69.1 — 10.10.2026
+
+- P3 düzeltmesi: firma "Özet" sayfasının "Sipariş toplamı" metni (`loading.firmSummary.orderTotal`) yanlışlıkla silinmişti;
+  geri eklendi (tr / ro).
+
+## 3.69.0 — 10.10.2026
+
+P3 — iki sayfalı Yükleme Özeti Excel'i (karar 241). Şema değişmedi; hesaplar ve finansal kayıtlar değişmedi.
+
+- **"Firmalar"** sayfası: bilgi satırları (onaylı / PLANLANAN), firma bazlı özet (sandık, ağırlık, rolün görebildiği tutarlar)
+  ve misafir yük tablosu.
+- **"Döküm"** sayfası: düz tablo — SİPARİŞ NO | MÜŞTERİ | PROJE | AÇIKLAMA | ADET | BİRİM | METRAJ | BİRİM FİYAT | TUTAR |
+  Para birimi; her kalem bir satır, sipariş blokları yok, süzgeç / sıralama açık, para birimi başına toplam tablonun altında.
+- **Yönetici / yönetici yardımcısı:** ek **"Döküm (Fabrika)"** sayfası (aynı satırlar fabrika fiyatıyla); "Döküm" müşteri
+  fiyatıyla. **Satış:** fabrika fiyatı, maskeli adlar; müşteri fiyatı dosyada yok. **Denetimci:** müşteri fiyatı; fabrika fiyatı
+  dosyada yok. Müşteri ve çizimci erişemez (403).
+- Testler: sayfa adları, sütun sırası, çok sipariş / çok para birimi toplamları, kısmi yükleme, rol bazlı fiyat / ad
+  (XLSX paketinin tüm parçaları taranır), formül enjeksiyonu, belge özelliği ve tanımlı ad denetimi.
+
+## 3.68.1 — 10.10.2026
+
+- P2 düzeltmesi (tip kontrolü): telafi formunun hedef listesindeki "yönetici onayı bekler" işareti de aynı akış kuralından
+  (`compensationFlow`) gelir.
+
+## 3.68.0 — 10.10.2026
+
+P2 — telafi "aynı fiyat" denetimi ve teklif toplam metrajı (karar 240). Şema değişmedi; finansal kurallar değişmedi.
+
+- **Telafi formu, kaynak müşteri fiyatı boşken "Aynı fiyat":** ekran artık sunucuyla aynı yolu gösterir — teklif doğrudan
+  müşteriye gitmez (yeni telafi siparişinde yöneticinin fiyat onayı; müşterideki teklifte satış için yönetici onayı;
+  yöneticide "fiyat gerekli" uyarısı ve gönderim kapalı). Önceden form "doğrudan müşteriye gider" diyordu. Satışa tutar
+  gitmez; yalnızca "kaynakta müşteri fiyatı var mı" bilgisi.
+- **Aynı fiyat / işlem adedi:** veritabanı testleriyle doğrulandı — aynı fiyatla taşınan telafi camı bedelsiz değil, kaynağın
+  müşteri ve fabrika fiyatıyla taşınır; CNC / delik adetleri aynen taşınır (1'e inmez). Taşınan işlem satırlarının müşteri
+  fiyatı karar 157 gereği 0'dır ve "Bedelsiz" görünür (değişmedi).
+- **Toplam metraj:** sipariş sayfasındaki salt okunur teklif tablosunun altında "Toplam metraj" (teklifin kendi hesabı; üç
+  ondalık gösterim).
+
+## 3.67.3 — 10.10.2026
+
+- P1 e2e: Finans / FGO kartının bekleme metni beklentisi yeni kurala göre güncellendi (nihai fatura Faturalama kartından).
+
+## 3.67.2 — 10.10.2026
+
+- Müşteri faturası oluşturulurken işlem içinde kur yeniden çözülmez: aynı günün diğer fatura gruplarının kuru ilk
+  hesaptan alınır (önceden işlem içinde BNR'ye ağ isteği gidebiliyordu). Hedef grubun kuru, tutarlar ve kurallar değişmedi.
+- P1 testleri: sahte FGO belge toplamını gerçekçi döndürür; bir testte değişken çakışması giderildi.
+
+## 3.67.1 — 10.10.2026
+
+- P1 düzeltmesi: tip kontrolü için `billingState` parametre tanımına `invoiced` eklendi. Davranış değişmedi.
+
+## 3.67.0 — 10.10.2026
+
+P1 — nihai fatura güvenliği (karar 239). Şema: iki boş bırakılabilir sütun eklendi (`BillingBatch.chainOrderId`,
+`BillingBatchLine.refDocId`); var olan veri değiştirilmedi.
+
+- **Nihai fatura yalnızca onaylı yüklemeden:** kendi proforması olan cam siparişinin nihai faturası artık sipariş
+  sayfasındaki "Fatura Gönder" ile ve "tahmini tarih + 2 gün" kuralıyla kesilmez; yükleme gününün **Faturalama** kartında,
+  yalnızca o yüklemede onaylanan (LOADED) ve henüz faturalanmamış miktar için, siparişin kendi zincirinde kesilir.
+  Kısmi yüklemede kalan, yüklendiği onaydan faturalanır. Tahsilat şart değildir.
+- **Avans düşümü:** siparişin avans faturaları faturalara "Stornare avans conform factură …" satırıyla, her faturanın
+  değeriyle sınırlı ve toplamda bir kez düşülür; avansı kesilmemiş tahsilat varken fatura kesilmez.
+- **Kur:** faturada proformanın kayıtlı kuru kullanılır; kur kaydı yoksa fatura kesilmez (yeniden çözülmez).
+- **Fatura sonrası tahsilat:** nihai fatura kesildikten sonra proformaya gelen yeni tahsilat otomatik avans / mahsup
+  yapılmaz; o siparişin yeni faturası ve avansı durur, yöneticiye "muhasebe incelemesi gerekli" uyarısı gösterilir.
+  Diğer siparişlerin faturalanması etkilenmez.
+- Sipariş sayfasında "Nihai fatura" bölümü: onaylı yüklemeler ve fatura durumları, Faturalama kartına bağlantı.
+- Onaylı yüklemesi olan siparişe sipariş düzeyinde proforma kesilmez; kuyrukta kalmış eski sipariş düzeyi fatura işi
+  FGO'ya gitmeden kapatılır.
+
 ## 3.66.1 — 10.10.2026
 
 Paket D — çizim erişimi ve dosya güvenliği doğrulaması (karar 238). Erişim kuralı (AUD-8, karar 146) değişmedi; şema değişmedi.

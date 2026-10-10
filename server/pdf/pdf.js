@@ -126,6 +126,9 @@ export function jpegOrientation(buf) {
  *   color : görselin kendi rengi (zemine basılmamış) + alpha: piksel başına saydamlık (PDF'te /SMask ile kullanılır)
  * Desteklenmeyen biçimde null.
  */
+/** PNG için en çok piksel (16 MP, ör. 4096 × 4096) — daha büyüğü çözülmez (görsel belgeye girmez) */
+export const PNG_MAX_PIXELS = 16_000_000;
+
 export function decodePng(buf) {
   if (buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47) return null;
   let i = 8, w = 0, h = 0, depth = 0, type = 0, interlace = 0, palette = null, trns = null;
@@ -141,13 +144,14 @@ export function decodePng(buf) {
     else if (kind === 'IEND') break;
     i += 12 + len;
   }
-  if (!w || !h || interlace || w * h > 40_000_000) return null;
+  // Sıkıştırma bombası (AUD-16, P7): piksel sınırı ve açılan veri en çok beklenen boyut kadar (fazlası okunmaz)
+  if (!w || !h || interlace || w * h > PNG_MAX_PIXELS) return null;
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[type];
   if (!channels || ![1, 2, 4, 8, 16].includes(depth) || (depth < 8 && type !== 0 && type !== 3) || (type === 3 && !palette)) return null;
   let raw;
-  try { raw = zlib.inflateSync(Buffer.concat(idat)); } catch { return null; }
   const bitsPerPixel = channels * depth;
   const stride = Math.ceil((w * bitsPerPixel) / 8);
+  try { raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: (stride + 1) * h }); } catch { return null; }
   const bpp = Math.max(1, bitsPerPixel >> 3);
   if (raw.length < (stride + 1) * h) return null;
   const px = Buffer.alloc(stride * h);

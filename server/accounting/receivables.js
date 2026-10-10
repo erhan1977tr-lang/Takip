@@ -39,7 +39,7 @@ export function remaining(total, paid) {
  *     hangisi büyükse) karşılamadığı kısım sayılır; her avans faturasının kendi kalanı ayrıca sayılır.
  * Tutarı FGO'dan henüz okunmamış belge (total yok) toplamlara girmez. Para birimleri birbirine eklenmez.
  * @param {{ id: string, orderId: string | null, batchId?: string | null, kind: string, currency: string, total: unknown, paid: unknown,
- *   batch?: { parentId?: string | null, lines?: { ronGross: unknown, refBatchId: string | null }[] } | null }[]} docs
+ *   batch?: { parentId?: string | null, chainOrderId?: string | null, lines?: { ronGross: unknown, refBatchId: string | null, refDocId?: string | null }[] } | null }[]} docs
  * @returns {{ shares: Map<string, { debt: number | null, rest: number | null, replaced: boolean }>,
  *   sums: Record<string, { total: number, paid: number, rest: number }> }}
  */
@@ -56,7 +56,9 @@ export function receivables(docs) {
   const shares = new Map();
   const own = (d) => ({ debt: numOrNull(d.total), rest: remaining(d.total, d.paid), replaced: false });
   for (const list of byOrder.values()) {
-    if (list[0].orderId == null) {
+    // Müşteri belge zinciri ya da siparişin kendi zincirinden onaylı yüklemeyle kesilen müşteri faturaları (karar 239):
+    // proforma + avanslar + o zincirden düşen faturalar tek borç birimidir (aynı pay hesabı)
+    if (list[0].orderId == null || list.some((d) => d.orderId == null)) {
       chainShares(list, shares, own);
       continue;
     }
@@ -91,7 +93,7 @@ export function receivables(docs) {
 }
 
 /** Belgenin borç birimi: sipariş ya da müşteri belge zinciri (zincirin kökü proforma partisi; yoksa partinin kendisi) */
-export const unitOf = (d) => d.orderId ?? `batch:${d.batch?.parentId ?? d.batchId}`;
+export const unitOf = (d) => d.orderId ?? d.batch?.chainOrderId ?? `batch:${d.batch?.parentId ?? d.batchId}`;
 
 /**
  * Müşteri belge zincirinin payları (karar 101) — tek ticari borç:
@@ -115,8 +117,10 @@ function chainShares(list, shares, own) {
   }
   const sum = (rows, pick) => round2(rows.reduce((s, x) => s + pick(x), 0));
   const lines = invoices.flatMap((d) => d.batch?.lines ?? []);
-  const goods = sum(lines.filter((l) => !l.refBatchId), (l) => Number(l.ronGross ?? 0));
-  const offset = sum(lines.filter((l) => l.refBatchId), (l) => Number(l.ronGross ?? 0));
+  // Avans düşümü satırı: müşteri avans partisi (refBatchId) ya da siparişin avans faturası (refDocId, karar 239)
+  const isOffset = (l) => !!(l.refBatchId || l.refDocId);
+  const goods = sum(lines.filter((l) => !isOffset(l)), (l) => Number(l.ronGross ?? 0));
+  const offset = sum(lines.filter(isOffset), (l) => Number(l.ronGross ?? 0));
   const advanced = sum(advances, (d) => Number(d.total ?? 0));
   const open = Math.max(0, round2(Number(proforma.total) - goods));
   const debt = Math.max(0, round2(open - Math.max(0, advanced - offset)));
@@ -155,11 +159,11 @@ export async function backfillDocuments(db) {
 
 /** Parti belgesinin listede ve borç hesabında gereken alanları */
 const BATCH_SELECT = {
-  id: true, kind: true, parentId: true, loadingDays: true, customer: { select: { name: true } },
+  id: true, kind: true, parentId: true, chainOrderId: true, loadingDays: true, customer: { select: { name: true } },
   orders: { select: { orderId: true, orderNo: true }, orderBy: { orderNo: 'asc' } },
   confirmation: { select: { shipDay: true } },
   parent: { select: { document: { select: { series: true, number: true } } } },
-  lines: { select: { ronGross: true, refBatchId: true } },
+  lines: { select: { ronGross: true, refBatchId: true, refDocId: true } },
 };
 
 /** Sipariş tipinin belgeleri: sipariş belgeleri + (cam) müşteri partisi belgeleri */
@@ -250,7 +254,7 @@ export async function refreshDocuments(db, {
     const all = await db.fgoDocument.findMany({
       where: orderType ? docsOfType(orderType) : {},
       orderBy: [{ checkedAt: { sort: 'asc', nulls: 'first' } }],
-      include: { batch: { select: { parentId: true, lines: { select: { ronGross: true, refBatchId: true } } } } },
+      include: { batch: { select: { parentId: true, chainOrderId: true, lines: { select: { ronGross: true, refBatchId: true, refDocId: true } } } } },
     });
     const { shares } = receivables(all);
     const docs = all

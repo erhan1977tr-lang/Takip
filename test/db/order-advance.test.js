@@ -1,5 +1,6 @@
 // Sipariş başına cam belge zincirinde avans (Aşama 7F-1, karar 104) — veritabanıyla.
-//   proforma → FGO'da tahsilat → avans faturası (tahsilat − avansı kesilen) → kapanış faturası (her avans için düşüm).
+//   proforma → FGO'da tahsilat → avans faturası (tahsilat − avansı kesilen) → nihai fatura ONAYLI yüklemeden, yükleme gününün
+//   Faturalama kartında, siparişin zincirinde (karar 239 — her avans için düşüm; sipariş düzeyinde nihai fatura yok).
 //   Ödemenin tek kaynağı FGO'dur; yönetici tutar giremez. Avans yüklemeden önce de sonra da kesilir; sonradan gelen her
 //   tahsilat için yeni bir avans faturası (seq). Avansı kesilmemiş tahsilat varken kapanış faturası kesilmez.
 // FGO'ya GERÇEK istek yapılmaz: bütün FGO çağrıları (emitere, getstatus) sahte fetchImpl'e gider.
@@ -13,6 +14,10 @@ const { writeAudit } = await import('../../server/orders/journal.js');
 const { localDay } = await import('../../server/profile/dates.js');
 const { listDocuments, receivables, refreshDocuments } = await import('../../server/accounting/receivables.js');
 const g = await import('../../server/glass/billing.js');
+const b = await import('../../server/glass/batch.js');
+const inv = await import('../../server/glass/invoice-batch.js');
+const { snapshotLine } = await import('../../server/loading/confirmation.js');
+const { dayKey } = await import('../../server/orders/loading.js');
 
 const SECRET = 'a'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -50,7 +55,8 @@ function fakeFgo(start) {
   };
   return fgo;
 }
-const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZone: TZ, fetchImpl: fgo.fetchImpl, ...extra });
+const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZone: TZ, fetchImpl: fgo.fetchImpl, sleep: async () => {}, ...extra });
+const never = async () => { throw new Error('BNR çağrılmamalıydı'); };
 const lines = (form) => Object.keys(form).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => {
   const i = k.match(/\[(\d+)\]/)[1];
   return [form[k], form[`Continut[${i}][NrProduse]`], form[`Continut[${i}][PretUnitar]`] ?? null];
@@ -62,7 +68,7 @@ async function fgoPays(fgo, ref, paid) {
   assert.equal(r.ok, true);
 }
 const docsOf = (orderId) => db.fgoDocument.findMany({ where: { orderId }, orderBy: [{ issuedAt: 'asc' }, { seq: 'asc' }] });
-const stateOf = async (o, loaded) => g.billingState({ status: 'URETIMDE', loaded, docs: await docsOf(o.id), pending: [], hasOffer: true });
+const stateOf = async (o, loaded) => g.billingState({ status: 'URETIMDE', loaded, docs: await docsOf(o.id), pending: [], hasOffer: true, invoiced: await g.hasChainInvoice(db, o.id) });
 const request = (o, kind) => g.requestGlassDocument(db, { orderId: o.id, kind, actor: actor() });
 const jobs = (o, kind) => db.notificationOutbox.findMany({ where: { orderId: o.id, type: 'FGO_GLASS', payload: { path: ['kind'], equals: kind } }, orderBy: { createdAt: 'asc' } });
 
@@ -81,8 +87,36 @@ async function glassOrder(shipOffsetDays) {
     },
   });
 }
-/** Yükleme günü + 2 gün geçti: sipariş "yüklenmiş" (proforma yüklemeden önce kesilir; yüklenmiş siparişte proforma yoktur) */
-const markLoaded = (o) => db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(Date.now() - 5 * 86_400_000) } });
+let dayNo = 60;
+/**
+ * Onaylı yükleme (karar 92 — tarih yükleme kanıtı değildir): siparişin gönderilmiş teklifinin kopyası, confirmLoading ile
+ * aynı işlev (snapshotLine). Yükleme günü döner (her onay ayrı geçmiş gün).
+ */
+async function markLoaded(o) {
+  const day = dayKey(new Date(`${new Date(Date.now() - (dayNo += 1) * 86_400_000).toISOString().slice(0, 10)}T12:00:00Z`));
+  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${day}T00:00:00Z`), confirmedById: admin.id, confirmedAt: new Date(`${day}T12:00:00Z`) } });
+  const full = await db.order.findUnique({ where: { id: o.id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
+  const offer = full.offers.find((x) => x.status === 'GONDERILDI');
+  const rows = offer.lines.map((l) => snapshotLine(full, offer, l, { quantity: Number(l.adet) }));
+  await db.loadingConfirmationItem.createMany({
+    data: rows.map((i) => ({ ...i, confirmationId: conf.id, scopeKey: `l:${i.offerLineId}`, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2), costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4) })),
+  });
+  return day;
+}
+/** Yükleme gününün Faturalama kartında siparişin fatura grubu */
+async function groupOf(day, o) {
+  const r = await inv.loadingBilling(db, { day, bnrImpl: never });
+  return r.customers.flatMap((c) => c.groups).find((x) => x.orders.some((y) => y.orderId === o.id)) ?? null;
+}
+/** Nihai fatura (yükleme günü, siparişin zinciri): parti + işçi; kesilen FGO formu döner */
+async function finalInvoice(day, o, fgo) {
+  const grp = await groupOf(day, o);
+  assert.ok(grp, 'sipariş Faturalama kartında');
+  const created = await inv.createInvoiceBatch(db, { day, groupKey: grp.key, previewKey: grp.previewKey, actor: actor(), bnrImpl: never });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId })), { done: 1, failed: 0 });
+  return { form: fgo.calls.at(-1), batchId: created.batchId, grp };
+}
 /** Proforma kesilir (sahte FGO); numarası döner */
 async function proforma(o, fgo) {
   assert.deepEqual(await request(o, 'PROFORMA'), { ok: true });
@@ -108,17 +142,19 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   const o = await glassOrder(10);
   const fgo = fakeFgo(100);
   const pf = await proforma(o, fgo); // PRF101, 726 RON
-  await markLoaded(o); // proformadan sonra cam yüklendi; avans faturası henüz yok
-  // FGO'da tahsilat yok: avans istenemez, kapanış faturası istenebilir (ödenmemiş proforma — mevcut akış)
+  const day = await markLoaded(o); // proformadan sonra cam yüklendi (onaylı); avans faturası henüz yok
+  // FGO'da tahsilat yok: avans istenemez; nihai fatura yükleme gününden kesilebilir (ödenmemiş proforma engel değil)
   let st = await stateOf(o, true);
-  assert.deepEqual([st.actions, st.paid, st.advanced, st.advanceRequired], [['invoice'], 0, 0, 0]);
+  assert.deepEqual([st.actions, st.wait, st.paid, st.advanced, st.advanceRequired], [[], 'final_from_loading', 0, 0, 0]);
+  assert.deepEqual((await groupOf(day, o)).problems, [], 'ödeme şartı yok');
   assert.deepEqual(await request(o, 'ADVANCE'), { ok: false, code: 'NOT_ALLOWED' });
 
   // --- Kısmi ödeme FGO'da görünür (300 / 726): avans düğmesi YÜKLEMEDEN SONRA da çıkar, fatura engellenir
   await fgoPays(fgo, pf, 300);
   st = await stateOf(o, true);
   assert.deepEqual([st.actions, st.wait, st.paid, st.advanced, st.advanceRequired], [['advance'], 'advance_required', 300, 0, 300]);
-  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' }, 'avansı kesilmemiş tahsilat varken kapanış faturası istenemez');
+  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' }, 'sipariş düzeyinde nihai fatura yok');
+  assert.deepEqual((await groupOf(day, o)).problems, ['ADVANCE_REQUIRED'], 'avansı kesilmemiş tahsilat varken nihai fatura kesilmez');
   // Çift tıklama / aynı anda iki istek: tek iş
   const twice = await Promise.all([request(o, 'ADVANCE'), request(o, 'ADVANCE')]);
   assert.deepEqual(twice.map((x) => x.ok).sort(), [false, true]);
@@ -133,16 +169,17 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   assert.deepEqual([a1.Serie, a1.IdExtern, lines(a1)], ['GKH', `${o.orderNo}-A`, [[`Avans marfă conform proformă ${pf}`, '1', '247.93']]], '300 / 1,21');
   let docs = await docsOf(o.id);
   assert.deepEqual(docs.map((d) => [d.kind, d.seq, d.advanced?.toString() ?? null]), [['PROFORMA', 1, null], ['ADVANCE', 1, '300']]);
-  // Tahsilatın tamamının avansı kesildi: şimdi kapanış faturası istenebilir; yeni avans istenemez (1 banlık yuvarlama farkı avans doğurmaz)
+  // Tahsilatın tamamının avansı kesildi: nihai fatura kesilebilir; yeni avans istenemez (1 banlık yuvarlama farkı avans doğurmaz)
   st = await stateOf(o, true);
-  assert.deepEqual([st.actions, st.paid, st.advanced, st.advanceRequired], [['invoice'], 300, 300, 0]);
+  assert.deepEqual([st.actions, st.paid, st.advanced, st.advanceRequired], [[], 300, 300, 0]);
+  assert.deepEqual((await groupOf(day, o)).problems, []);
   assert.deepEqual(await request(o, 'ADVANCE'), { ok: false, code: 'NOT_ALLOWED' });
 
   // --- Sonradan ek ödeme (toplam 726): ikinci avans yalnızca fark kadar (426); fatura yine engellenir
   await fgoPays(fgo, pf, 726);
   st = await stateOf(o, true);
   assert.deepEqual([st.actions, st.wait, st.paid, st.advanced, st.advanceRequired], [['advance'], 'advance_required', 726, 300, 426]);
-  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' });
+  assert.deepEqual((await groupOf(day, o)).problems, ['ADVANCE_REQUIRED']);
   assert.deepEqual(await request(o, 'ADVANCE'), { ok: true });
   // Yeniden deneme: ilk denemede FGO'ya ulaşılamadı → iş kuyrukta kalır; ikinci denemede aynı IdExtern ile tek belge
   fgo.failNext = 1;
@@ -163,21 +200,22 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   const mine = async () => (await listDocuments(db, 'GLASS_ORDER')).filter((d) => d.orderId === o.id);
   assert.equal(receivables(await mine()).sums.RON.total, 726);
 
-  // --- Kapanış faturası: cam satırı + HER avans için düşüm satırı (sırasıyla)
+  // --- Nihai fatura (yükleme günü, siparişin zinciri): cam satırı + HER avans için düşüm satırı (sırasıyla, tutarı aşmadan)
   st = await stateOf(o, true);
-  assert.deepEqual([st.actions, st.advanceRequired], [['invoice'], 0]);
-  assert.deepEqual(await request(o, 'INVOICE'), { ok: true });
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 1, failed: 0 });
-  const inv = fgo.calls[3];
-  assert.equal(inv.IdExtern, `${o.orderNo}-F`);
-  assert.deepEqual(lines(inv), [
-    ['Securizat', '2', null], // cam satırı TVA dahil toplamla gider (PretTotal)
+  assert.deepEqual([st.actions, st.advanceRequired], [[], 0]);
+  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' });
+  const fin = await finalInvoice(day, o, fgo);
+  assert.equal(fin.form.IdExtern, `LOT-${fin.batchId}`);
+  assert.deepEqual(lines(fin.form), [
+    [`Comanda ${o.orderNo} — Securizat`, '2', null], // cam satırı TVA dahil toplamla gider (PretTotal)
     [`Stornare avans conform factură ${adv1.series}${adv1.number}`, '-1', '247.93'],
     [`Stornare avans conform factură ${adv2.series}${adv2.number}`, '-1', '352.07'],
   ]);
-  assert.equal(inv['Continut[0][PretTotal]'], '726.00');
-  assert.deepEqual((await stateOf(o, true)).actions, [], 'belge akışı tamam');
-  assert.equal(receivables(await mine()).sums.RON.total, 726, 'fatura avansları düştü: borç yine 726');
+  assert.equal(fin.form['Continut[0][PretTotal]'], '726.00');
+  assert.deepEqual(fin.grp.storno.map((x) => x.gross), [300, 426], 'her avans bir kez, kendi tutarıyla');
+  assert.equal(await groupOf(day, o), null, 'aynı yükleme ikinci kez faturalanmaz');
+  const mineAll = async () => (await listDocuments(db, 'GLASS_ORDER')).filter((d) => d.orderId === o.id || d.batch?.chainOrderId === o.id);
+  assert.equal(receivables(await mineAll()).sums.RON.total, 726, 'fatura avansları düştü: borç yine 726');
   // Denetim: avans isteği ve kesimi tutar kaynağıyla (FGO tahsilatı, önceki avans)
   const audits = await db.auditLog.findMany({ where: { entityId: o.id, action: 'FGO_DOC_REQUEST' }, orderBy: { createdAt: 'asc' } });
   assert.deepEqual(audits.filter((a) => a.details.kind === 'ADVANCE').map((a) => [a.details.seq, a.details.fgoPaid, a.details.advancedBefore, a.details.amountRon]), [[1, 300, 0, 300], [2, 726, 300, 426]]);
@@ -191,7 +229,7 @@ dbTest('avans yüklemeden ÖNCE de kesilir; ödemenin tek kaynağı FGO: elle gi
   assert.equal(g.markGlassPaid, undefined, 'elle "ödeme alındı" işlemi kaldırıldı');
   await db.glassBilling.update({ where: { orderId: o.id }, data: { paidAt: new Date(), paidAmount: '500.00', paidById: admin.id } });
   let st = await stateOf(o, false);
-  assert.deepEqual([st.actions, st.wait, st.paid, st.advanceRequired], [[], 'wait_payment', 0, 0]);
+  assert.deepEqual([st.actions, st.wait, st.paid, st.advanceRequired], [[], 'final_from_loading', 0, 0]);
   assert.deepEqual(await request(o, 'ADVANCE'), { ok: false, code: 'NOT_ALLOWED' }, 'FGO\'da tahsilat yokken avans kesilmez');
   // İstekte tutar taşınamaz: fazladan alan yok sayılır, tutar FGO'dan
   await fgoPays(fgo, pf, 726);
@@ -200,8 +238,8 @@ dbTest('avans yüklemeden ÖNCE de kesilir; ödemenin tek kaynağı FGO: elle gi
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 1, failed: 0 });
   assert.deepEqual(lines(fgo.calls[1]), [[`Avans marfă conform proformă ${pf}`, '1', '600.00']], '726 / 1,21 — elle kayıttaki 500 değil');
   st = await stateOf(o, false);
-  assert.deepEqual([st.actions, st.wait, st.advanced], [[], 'wait_loading', 726]);
-  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' }, 'yüklenmeden kapanış faturası yok');
+  assert.deepEqual([st.actions, st.wait, st.advanced], [[], 'final_from_loading', 726]);
+  assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' }, 'sipariş düzeyinde nihai fatura yok');
 });
 
 dbTest('kesim anında yeniden bakılır: tahsilat azaldıysa avans kesilmez; fatura kuyruktayken tahsilat geldiyse fatura kesilmez (önce avans)', async () => {
@@ -223,24 +261,27 @@ dbTest('kesim anında yeniden bakılır: tahsilat azaldıysa avans kesilmez; fat
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: a.id })), { done: 1, failed: 0 });
   assert.equal((await docsOf(a.id)).find((d) => d.kind === 'ADVANCE').advanced.toString(), '100');
 
-  // B) Ödenmemiş proformada fatura istenir; iş kuyruktayken tahsilat görünür → kesim anında durur, FGO'ya gidilmez
-  const b = await glassOrder(10);
-  const pb = await proforma(b, fgo);
-  await markLoaded(b);
-  assert.deepEqual(await request(b, 'INVOICE'), { ok: true });
+  // B) Ödenmemiş proforma, onaylı yükleme: nihai fatura (yükleme günü) istenir; parti kuyruktayken tahsilat görünür.
+  //    Karar 239 (seçenek a): fatura isteğinden sonra görünen tahsilat KENDİLİĞİNDEN avans sayılmaz, faturaya mahsup edilmez;
+  //    fatura kayıttan kesilir (kayıt değişmez), avans düğmesi çıkmaz — muhasebe kararı uyarısı
+  const bo = await glassOrder(10);
+  const pb = await proforma(bo, fgo);
+  const dayB = await markLoaded(bo);
+  const grp = await groupOf(dayB, bo);
+  assert.deepEqual([grp.orderChainId, grp.problems, grp.storno], [bo.id, [], []]);
+  const created = await inv.createInvoiceBatch(db, { day: dayB, groupKey: grp.key, previewKey: grp.previewKey, actor: actor(), bnrImpl: never });
+  assert.equal(created.ok, true);
   await fgoPays(fgo, pb, 250);
-  const callsBefore = fgo.calls.length;
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: b.id })), { done: 0, failed: 1 });
-  assert.equal(fgo.calls.length, callsBefore, 'fatura kesilmedi');
-  const [jb] = await jobs(b, 'INVOICE');
-  assert.deepEqual([jb.status, /avansı kesilmemiş 250\.00 RON/.test(jb.lastError)], ['FAILED', true]);
-  // Çıkmaz yok: avans kesilir, sonra fatura avansı düşer
-  assert.deepEqual((await stateOf(b, true)).actions, ['advance']);
-  assert.deepEqual(await request(b, 'ADVANCE'), { ok: true });
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: b.id })), { done: 1, failed: 0 });
-  assert.deepEqual(await request(b, 'INVOICE'), { ok: true });
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: b.id })), { done: 1, failed: 0 });
+  assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId })), { done: 1, failed: 0 });
   const last = fgo.calls.at(-1);
-  assert.deepEqual(lines(last).map((l) => l[0].replace(/GKH\d+/, 'GKH#')), ['Securizat', 'Stornare avans conform factură GKH#']);
-  assert.equal(lines(last)[1][2], '206.61', '250 / 1,21');
+  assert.deepEqual(lines(last).map((l) => l[0]), [`Comanda ${bo.orderNo} — Securizat`], 'mahsup yok: kayıttaki fatura');
+  const sb = await stateOf(bo, true);
+  assert.deepEqual([sb.actions, sb.wait, sb.advanceRequired], [[], 'payment_after_invoice', 250]);
+  assert.deepEqual(await request(bo, 'ADVANCE'), { ok: false, code: 'NOT_ALLOWED' }, 'fatura sonrası tahsilat için avans istenemez');
+  // Kuyrukta kalmış eski bir avans isteği de kesimde durur (FGO'ya gitmez)
+  await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', orderId: bo.id, payload: { kind: 'ADVANCE', orderNo: bo.orderNo, seq: 1, amount: 250 } } });
+  const before = fgo.calls.length;
+  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: bo.id })), { done: 0, failed: 1 });
+  assert.equal(fgo.calls.length, before);
+  assert.equal((await db.fgoDocument.findFirst({ where: { orderId: bo.id, kind: 'PROFORMA' } })).paid.toString(), '250', 'tahsilat kaydı değişmez');
 });

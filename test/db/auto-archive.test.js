@@ -95,7 +95,7 @@ before(async () => {
   await order('loaded', DUE); // tam 45 gün önce eksiksiz yüklendi
   await order('edge', EDGE); // 44 gün önce eksiksiz yüklendi
   await order('chain', '2026-06-02'); // 2 cam yüklenmedi → 10.08'e aktarıldı ve o gün yüklendi
-  await order('shipped', '2026-06-06'); // satış "Yüklendi" dedi (kişi)
+  await order('shipped', '2026-06-06'); // satış "Yüklendi" dedi (kişi) ama yükleme onayı YOK — karar 245: kanıt değil
   await order('autoLoaded', '2026-06-08'); // 3.51.0'ın "Yüklendi"si, ama yüklemesi gerçekten onaylı
   await order('autoThenArchived', '2026-05-06'); // 3.51.0'ın "Yüklendi"sinden sonra bir kişi arşivledi
 
@@ -158,10 +158,11 @@ dbTest('önce onarım, sonra arşiv: yalnızca fiziksel yüklemesi kanıtlı ve 
   assert.deepEqual((await autoEvents('autoThenArchived')).map((e) => e[0]), ['AUTO_SHIPPED'], 'kişinin kararından sonra onarım yok');
 
   // 2) Arşiv
-  assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 3, skipped: 0 });
+  assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 2, skipped: 0 });
   assert.deepEqual(await statuses('planned', 'partial', 'active', 'hold', 'changed', 'auto', 'loaded', 'edge', 'chain', 'shipped', 'autoLoaded', 'autoThenArchived'), {
     planned: 'URETIMDE', partial: 'URETIMDE', active: 'URETIMDE', hold: 'URETIMDE', changed: 'URETIMDE', auto: 'URETIMDE',
-    loaded: 'ARSIVLENDI', edge: 'URETIMDE', chain: 'URETIMDE', shipped: 'ARSIVLENDI', autoLoaded: 'ARSIVLENDI', autoThenArchived: 'ARSIVLENDI',
+    // shipped: onaysız "Yüklendi" — süre dolsa da arşivlenmez, müşterinin Active listesinde kalır (karar 243, 245)
+    loaded: 'ARSIVLENDI', edge: 'URETIMDE', chain: 'URETIMDE', shipped: 'YUKLENDI', autoLoaded: 'ARSIVLENDI', autoThenArchived: 'ARSIVLENDI',
   });
   // Kanıtı olmayan sipariş hiçbir şekilde "Yüklendi" yapılmadı: kayıtları aynen durur
   for (const k of ['planned', 'partial', 'active', 'hold', 'changed', 'auto']) assert.ok(!(await events(k)).some((e) => e.event === 'AUTO_ARCHIVED' || (e.toStatus === 'YUKLENDI' && e.event !== 'AUTO_SHIPPED')), k);
@@ -180,17 +181,18 @@ dbTest('önce onarım, sonra arşiv: yalnızca fiziksel yüklemesi kanıtlı ve 
     [null, 'SYSTEM', 'auto_archive', ['AUTO_ARCHIVED'], 'URETIMDE', 'ARSIVLENDI', true, 'CONFIRMED', DUE, '2026-09-15'],
   );
   const shippedAudit = (await db.auditLog.findMany({ where: { action: 'ORDER_TRANSITION', entityId: O.shipped.id } })).find((a) => a.details.action === 'auto_archive');
-  assert.deepEqual([shippedAudit.details.via, shippedAudit.details.loadingDay, shippedAudit.details.from], ['SHIPPED', '2026-06-06', 'YUKLENDI']);
+  assert.equal(shippedAudit, undefined, 'onaysız "Yüklendi" arşivlenmedi');
+  assert.ok(!(await events('shipped')).some((e) => e.event === 'AUTO_ARCHIVED'));
   assert.deepEqual((await autoEvents('autoLoaded')).map((e) => e[0]), ['AUTO_SHIPPED', 'AUTO_SHIP_REVERTED', 'AUTO_ARCHIVED']);
   // Denetim: geri alma başına ve arşiv başına bir kayıt
-  assert.equal(await db.auditLog.count(), audits + 2 + 3);
+  assert.equal(await db.auditLog.count(), audits + 2 + 2);
 
   // Fatura / belge / bildirim yok: FGO belgeleri aynı, yeni FGO işi yok; kuyruk olayları hiçbir bildirim kuralına girmez
   assert.deepEqual(await db.fgoDocument.findMany({ orderBy: { id: 'asc' } }), docs);
   assert.equal(await db.notificationOutbox.count({ where: { type: { startsWith: 'FGO' } } }), outboxJobs);
   assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: O.loaded.id }, orderBy: { createdAt: 'asc' } })).map((x) => x.type), ['ORDER_AUTO_ARCHIVED']);
   const autoRows = await db.notificationOutbox.findMany({ where: { type: { in: ['ORDER_AUTO_ARCHIVED', 'ORDER_AUTO_SHIP_REVERTED', 'ORDER_AUTO_SHIPPED'] } } });
-  assert.equal(autoRows.length, 3 + 2 + 3);
+  assert.equal(autoRows.length, 2 + 2 + 3);
   await n.dispatchInApp(db);
   assert.equal(await db.notification.count({ where: { dedupeKey: { in: autoRows.map((r) => `outbox:${r.id}`) } } }), 0, 'hiçbir kullanıcıya bildirim yok');
   assert.equal(await db.notification.count({ where: { orderId: { in: [O.loaded.id, O.autoLoaded.id, O.auto.id] } } }), 0);
@@ -205,7 +207,7 @@ dbTest('önce onarım, sonra arşiv: yalnızca fiziksel yüklemesi kanıtlı ve 
   // Yinelenen tur hiçbir şeyi çoğaltmaz
   assert.deepEqual(await repairAutoShipped(db), { reverted: 0, skipped: 0 });
   assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 0, skipped: 0 });
-  assert.equal(await db.auditLog.count(), audits + 5);
+  assert.equal(await db.auditLog.count(), audits + 4);
   assert.equal((await autoEvents('loaded')).length, 1);
 }));
 

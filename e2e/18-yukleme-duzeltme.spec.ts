@@ -68,6 +68,16 @@ test('veri: yüklenecek sipariş ve yüklenmiş, proforması kısmen ödenmiş s
   const f = await order(7802, new Date('2026-01-13T12:00:00Z'));
   await db.fgoDocument.create({ data: { orderId: f.id, kind: 'PROFORMA', series: 'PRF', number: '78001', total: '600.00', paid: '400.00', issuedAt: new Date('2026-01-05T10:00:00Z'), checkedAt: new Date() } });
   await db.fgoDocument.create({ data: { orderId: f.id, kind: 'ADVANCE', seq: 1, advanced: '150.00', series: 'GKH', number: '78002', total: '150.00', paid: '0', issuedAt: new Date('2026-01-08T10:00:00Z'), checkedAt: new Date() } });
+  // "Yüklenmiş" = onaylı yükleme kaydı (karar 239: tarih değil) — teklif satırının kopyası, 10 adet yüklendi
+  const fl = f.offers[0].lines[0];
+  const fc = await db.loadingConfirmation.create({ data: { shipDay: new Date('2026-01-13T00:00:00Z'), confirmedById: admin.id, note: 'e2e avans' } });
+  await db.loadingConfirmationItem.create({
+    data: {
+      confirmationId: fc.id, orderId: f.id, customerId: f.customerId, offerLineId: fl.id, scopeKey: `l:${fl.id}`, sortOrder: fl.sortOrder, kind: fl.kind, unit: fl.unit,
+      description: fl.description, descriptionRo: fl.descriptionRo, enMm: fl.enMm, boyMm: fl.boyMm, quantity: 10, m2: 10, currency: 'EUR',
+      unitCost: fl.unitPrice, unitSale: fl.offerPrice, costAmount: 370, saleAmount: 500, status: 'LOADED',
+    },
+  });
   await db.$disconnect();
   orderId = o.id;
   lineId = o.offers[0].lines[0].id;
@@ -181,6 +191,10 @@ test('yönetici: yüklenmiş siparişte FGO tahsilatının avansı kesilmemiş k
   await expect(card.locator('#fatura-engeli')).toContainText('250,00');
   await expect(card.getByRole('button', { name: 'Avans Faturası Gönder' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Fatura Gönder', exact: true })).toHaveCount(0);
+  // Nihai fatura yükleme gününün Faturalama kartından (karar 239): onaylı yükleme açık kapsam olarak listelenir
+  const fin = card.locator('#nihai-fatura [data-loading-day="2026-01-13"]');
+  await expect(fin).toHaveAttribute('data-invoice-state', 'OPEN');
+  await expect(fin.locator('a[href="/yuklemeler?gun=2026-01-13#faturalama"]')).toHaveCount(1);
   await expect(card.locator('input[name=amount]')).toHaveCount(0);
   await shot(page, 'siparis-avans-yukleme-sonrasi');
   await page.context().close();

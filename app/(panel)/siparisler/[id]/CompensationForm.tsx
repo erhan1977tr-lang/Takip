@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { Dict } from '@/lib/i18n';
 import type { CompEntry, CompFormData } from '@/lib/compensation';
 import { interpolate } from '@/server/i18n/interpolate.js';
+import { compensationFlow } from '@/server/orders/compensation-flow.js';
 import { createCompensationAction } from './compensation-actions';
 
 const dmy = (day: string) => day.slice(0, 10).split('-').reverse().join('.');
@@ -67,14 +68,15 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   // Kaynak adedi (karar 157): temiz siparişte telafi adedi kadar düşer; kaynakta başka cam kalmıyorsa telafi açılmaz
   const left = line && qtyOk ? line.adet - n : null;
   const emptySource = data.source.reducible && left === 0 && data.lines.length === 1;
-  const ready = qtyOk && priceOk && destOk && !emptySource;
-  // Satışın "farklı fiyat" kararı, teklifi müşteride olan siparişte yöneticinin onayını bekler
-  const waitsAdmin = (via: 'DRAFT' | 'SENT' | null | undefined) => via === 'SENT' && !data.admin && mode === 'CUSTOM';
-  const pending = destType === 'EXISTING' && waitsAdmin(dest?.via);
-  // Teklifin yolu: taslağa eklenir · yöneticinin fiyatlandırmasına gider · doğrudan müşteriye gider
-  const flow = destType === 'EXISTING' && dest?.via === 'DRAFT' ? f.flow.draft
-    : mode !== 'CUSTOM' ? f.flow.direct
-      : data.admin && destType === 'EXISTING' ? f.flow.adminSent : f.flow.pricing;
+  // Teklifin yolu — sunucunun izlediği yolla aynı kural (compensationFlow): kaynakta müşteri fiyatı yoksa "aynı fiyat" da
+  // doğrudan gitmez (yeni siparişte fiyat onayı, müşterideki teklifte satış için onay bekler, yönetici için fiyat gerekir)
+  const route = line ? compensationFlow({ mode, admin: data.admin, destType: destType || 'NEW', via: destType === 'EXISTING' ? dest?.via ?? null : null, sourceFree: line.free, sourcePriced: line.priced }) : null;
+  const pending = route === 'pending';
+  // Hedef listesinde "yönetici onayı bekler" işareti: aynı kural, her hedefin teklif durumuyla
+  const waitsAdmin = (via: 'DRAFT' | 'SENT' | null | undefined) => compensationFlow({ mode, admin: data.admin, destType: 'EXISTING', via: via ?? null, sourceFree: !!line?.free, sourcePriced: line ? line.priced : true }) === 'pending';
+  const priceRequired = route === 'priceRequired';
+  const ready = qtyOk && priceOk && destOk && !emptySource && !priceRequired;
+  const flow = route === 'draft' ? f.flow.draft : route === 'direct' ? f.flow.direct : route === 'adminSent' ? f.flow.adminSent : f.flow.pricing;
   // Önceki telafiler: aynı satır ya da — kaynak adedi düşünce teklifin yeni sürümü açıldığı için — aynı cam ve ölçü
   const past = line ? history.filter((h) => h.status !== 'REJECTED' && (h.sourceLineId === line.id || (h.glass === line.glass && h.enMm === line.enMm && h.boyMm === line.boyMm))) : [];
   const eligible = data.destinations.filter((d) => !d.reason);
@@ -82,7 +84,9 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
 
   // Satışa müşteri fiyatının tutarı gelmez (normal = null): "yöneticinin belirlediği fiyat" yazılır
   const normalText = !line ? '—' : line.free ? m.free : line.normal == null ? f.adminPrice : perM2(line.normal);
-  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (!data.admin ? f.sumPriceAdmin : priceOk ? perM2(p) : '—') : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
+  // Aynı fiyat: kaynakta müşteri fiyatı yoksa kesin fiyat yoktur — fiyatı yönetici belirler (sunucu da öyle yürür)
+  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (!data.admin ? f.sumPriceAdmin : priceOk ? perM2(p) : '—')
+    : line && !line.free && !line.priced ? f.sumPriceAdmin : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
   const opsText = (l: { ops: { kind: string; adet: number; description: string }[] }) =>
     l.ops.map((o) => `${interpolate(f.opsItem, { kind: kinds[o.kind as keyof typeof kinds] ?? o.kind, n: o.adet })}${o.description ? ` (${o.description})` : ''}`).join(', ');
 
@@ -160,7 +164,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                 value={price} onChange={(e) => { setPrice(e.target.value); change(); }} style={{ width: 200 }} />
             )}
           </div>
-          <p className="hint" data-mode-hint={mode}>{mode === 'FREE' ? f.freeHint : mode === 'NORMAL' ? f.keepHint : data.admin ? f.adminCustomHint : f.salesCustomHint}</p>
+          <p className="hint" data-mode-hint={mode}>{mode === 'FREE' ? f.freeHint : mode === 'NORMAL' ? (line && !line.free && !line.priced ? f.keepHintNoPrice : f.keepHint) : data.admin ? f.adminCustomHint : f.salesCustomHint}</p>
         </fieldset>
 
         <fieldset className="field comp-choice">
@@ -218,6 +222,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
           </div>
         )}
         {emptySource && <div className="alert alert-error">{m.errors.SOURCE_EMPTY}</div>}
+        {priceRequired && <div className="alert alert-error" data-price-required>{m.errors.PRICE_REQUIRED}</div>}
         <div className="row end" style={{ marginTop: 12 }}>
           <Submit disabled={!ready || !sure}>{f.submit}</Submit>
         </div>

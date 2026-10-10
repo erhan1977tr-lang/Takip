@@ -59,8 +59,9 @@ export async function recordPriceOverrides(tx, { orderId, offerId, orderNo, curr
  */
 export async function resolveAlert(db, id, actor) {
   return db.$transaction(async (tx) => {
-    // Belirsiz FGO belgesi (karar 209) "Gördüm" ile kapanmaz: yöneticinin FGO kararıyla (resolveUncertainJob) kapanır
-    const r = await tx.adminAlert.updateMany({ where: { id, resolvedAt: null, type: { not: 'FGO_UNCERTAIN' } }, data: { resolvedAt: new Date(), resolvedById: actor.id } });
+    // Belirsiz FGO belgesi (karar 209) "Gördüm" ile kapanmaz: yöneticinin FGO kararıyla (resolveUncertainJob) kapanır.
+    // Bekleyen telafi kararı da (AUD-17, P7): onay / ret ile kapanır — arayüzde gizli düğme sunucuda da reddedilir
+    const r = await tx.adminAlert.updateMany({ where: { id, resolvedAt: null, type: { notIn: ['FGO_UNCERTAIN', 'COMPENSATION_PENDING'] } }, data: { resolvedAt: new Date(), resolvedById: actor.id } });
     if (r.count === 0) return false;
     await writeAudit(tx, { action: 'ALERT_RESOLVE', entityType: 'AdminAlert', entityId: id, userId: actor.id }, actor);
     return true;

@@ -1,0 +1,8 @@
+[Unit]
+Description=Takip — yedek bekçisi (sorun ya da 26 saattir başarılı yedek yoksa e-posta alarmı)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/takip yedek-kontrol
+Nice=10

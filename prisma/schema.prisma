@@ -1545,6 +1545,9 @@ model BillingBatch {
   // INVOICE: faturanın kaynağı olan onaylı yükleme (yalnızca LOADED kalemler)
   confirmationId String?
   confirmation   LoadingConfirmation? @relation(fields: [confirmationId], references: [id], onDelete: Restrict)
+  // INVOICE (P1, karar 239): siparişin KENDİ proforma zincirinden düşen müşteri faturası — o siparişin kimliği. Kur ve avans
+  // düşümü siparişin zincirinden (GlassBilling, sipariş başına avans faturaları); borç hesabında siparişin birimine girer.
+  chainOrderId   String?
   createdById  String
   createdBy    User     @relation("BillingBatchCreatedBy", fields: [createdById], references: [id])
   createdAt    DateTime @default(now())
@@ -1562,6 +1565,7 @@ model BillingBatch {
 
   @@index([customerId])
   @@index([status])
+  @@index([chainOrderId])
 }
 
 // Partinin kaynak siparişleri: sipariş no, o anki planlanan yükleme günü, kullanılan teklif sürümü ve tutarı.
@@ -1604,6 +1608,7 @@ model BillingBatchLine {
   ronNet      Decimal? @db.Decimal(14, 2)
   ronGross    Decimal? @db.Decimal(14, 2)
   refBatchId  String?  // avans düşümü satırı: düşülen avans partisi (avansın ne kadarının kullanıldığı buradan)
+  refDocId    String?  // avans düşümü satırı (P1, karar 239): düşülen SİPARİŞ avans faturası (FgoDocument, sipariş başına zincir)
 
   @@index([batchId])
 }

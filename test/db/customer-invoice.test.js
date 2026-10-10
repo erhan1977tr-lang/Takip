@@ -330,13 +330,14 @@ dbTest('müşteri proforması zinciri: yalnızca onaylanan kapsam faturalanır; 
   assert.equal(fgo.calls.filter((x) => x.Serie === 'GKH').length, 5, '2 avans + 3 fatura');
 });
 
-dbTest('uyumsuz kapsam tek faturada birleştirilmez: farklı para birimi ve farklı kur zinciri ayrı fatura grubu; sipariş başına zinciri olan sipariş dışarıda', async () => {
+dbTest('uyumsuz kapsam tek faturada birleştirilmez: farklı para birimi ve farklı kur zinciri ayrı fatura grubu; kendi proforması olan sipariş kendi zincirinin kuruyla ayrı grup (karar 239)', async () => {
   const c = await customer('Split SRL', 'SPL');
   const eur = await order(c);
   const ron = await order(c, { currency: 'RON' });
   const inProforma = await order(c, { shipDate: noon(12) });
   const own = await order(c);
   await db.fgoDocument.create({ data: { orderId: own.id, kind: 'PROFORMA', series: 'PRF', number: '9100', issuedAt: new Date() } });
+  await db.glassBilling.create({ data: { orderId: own.id, fxRate: '5.1', fxDate: noon(-3), fxSource: 'MANUAL', fxManual: true, fxCurrency: 'EUR' } });
   const pv = await b.previewBatch(db, { customerId: c.id, days: [dayKey(noon(12))], bnrImpl: bnr('4.9000') });
   const pr = await b.createBatch(db, { customerId: c.id, days: [dayKey(noon(12))], key: pv.key, actor: actor(), bnrImpl: bnr('4.9000') });
   const fgo = fakeFgo(400);
@@ -346,15 +347,17 @@ dbTest('uyumsuz kapsam tek faturada birleştirilmez: farklı para birimi ve fark
   const r = await billing(day);
   const cb = r.customers.find((x) => x.customerId === c.id);
   assert.deepEqual(cb.groups.map((x) => [x.currency, x.chainId, x.fx.finalRate, x.orders.map((o) => o.orderNo)]).sort(), [
-    ['EUR', null, '5.0000', [eur.orderNo]], ['EUR', pr.batchId, '4.9000', [inProforma.orderNo]], ['RON', null, '1.0000', [ron.orderNo]],
+    ['EUR', null, '5.0000', [eur.orderNo]], ['EUR', null, '5.1000', [own.orderNo]], ['EUR', pr.batchId, '4.9000', [inProforma.orderNo]], ['RON', null, '1.0000', [ron.orderNo]],
   ].sort(), 'kurlar ortalanmaz: zincir kendi kuruyla, doğrudan fatura bugünkü kurla, RON çevrimsiz');
-  assert.equal(new Set(cb.groups.map((x) => x.key)).size, 3);
-  assert.deepEqual(cb.excluded.map((o) => [o.orderNo, o.reason, o.ref]), [[own.orderNo, 'ORDER_CHAIN', 'PRF9100']], 'sipariş başına zinciri olan sipariş: faturası sipariş sayfasından');
+  assert.equal(new Set(cb.groups.map((x) => x.key)).size, 4);
+  assert.deepEqual(cb.groups.find((x) => x.orderChainId === own.id)?.chain?.ref, 'PRF9100', 'kendi proformasının zinciri');
+  assert.deepEqual(cb.excluded, []);
   for (const grp of cb.groups) assert.equal((await createInvoice(day, grp)).ok, true);
   await b.dispatchBatchJobs(db, ctx(fgo));
-  assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, kind: 'INVOICE' } }), 3);
+  assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, kind: 'INVOICE' } }), 4);
+  assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, kind: 'INVOICE', chainOrderId: own.id } }), 1);
   const totals = fgo.calls.slice(1).map((f) => f['Continut[0][PretTotal]']).sort();
-  assert.deepEqual(totals, ['121.00', '592.90', '605.00'], 'RON 100 · EUR 100 × 4,9 · EUR 100 × 5,0 (TVA dahil)');
+  assert.deepEqual(totals, ['121.00', '592.90', '605.00', '617.10'], 'RON 100 · EUR 100 × 4,9 · EUR 100 × 5,0 · EUR 100 × 5,1 (TVA dahil)');
 });
 
 dbTest('kesilemeyen fatura kapsamı tutar ve yeniden denenir; vazgeçilirse ya da fatura FGO\'da silinirse yalnızca belge durumu geri alınır — yükleme onayı değişmez', async () => {
@@ -572,7 +575,7 @@ dbTest('doğrudan faturada elle kur: partiye MANUAL olarak kaydedilir, fatura ta
   assert.deepEqual((await billing(day, { bnrImpl: bnr('6.0000') })).customers[0].issued.map((i) => [i.ref, i.total]), [['GKH801', 635.25]]);
 });
 
-dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse engeldir: FGO\'da silinen belge ve bırakılan istek siparişi müşteri faturasına açar', async () => {
+dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse ayrı zincirdir: FGO\'da silinen belge ve bırakılan istek siparişi müşteri faturasına açar', async () => {
   const c = await customer('Cover SRL', 'COV');
   const [deleted, failed, pending, active] = [await order(c), await order(c), await order(c), await order(c)];
   // Sipariş başına belgeler / istekler (yalnızca veritabanı kaydı; FGO'ya gidilmez)
@@ -584,9 +587,15 @@ dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse engeldir: FGO\'da 
   await confirm(day, [{ order: deleted }, { order: failed }, { order: pending }, { order: active }]);
   const view = async () => (await billing(day)).customers.find((x) => x.customerId === c.id);
   let v = await view();
-  // Kesilemeyip kalan istek kapsam değildir; duran belge ve kuyruktaki istek kapsamdır
-  assert.deepEqual(v.groups.map((x) => x.orders.map((o) => o.orderNo)), [[failed.orderNo]]);
-  assert.deepEqual(v.excluded.map((x) => [x.orderNo, x.reason, x.ref]), [[deleted.orderNo, 'ORDER_CHAIN', 'PRF9201'], [pending.orderNo, 'ORDER_CHAIN', null], [active.orderNo, 'ORDER_CHAIN', 'PRF9202']]);
+  // Kesilemeyip kalan istek kapsam değildir; kuyruktaki istek dışarıda bekler; kendi proforması olan sipariş kendi zincirinin
+  // grubunda (karar 239) — proformanın kur kaydı yoksa kesilmez (CHAIN_RATE_MISSING), başka kura düşülmez
+  const lists = (x) => x.groups.map((y) => y.orders.map((o) => o.orderNo).join(',')).sort();
+  assert.deepEqual(lists(v), [deleted.orderNo, failed.orderNo, active.orderNo].sort());
+  for (const o of [deleted, active]) {
+    const grp = v.groups.find((x) => x.orderChainId === o.id);
+    assert.ok(grp?.problems.includes('CHAIN_RATE_MISSING'), o.orderNo);
+  }
+  assert.deepEqual(v.excluded.map((x) => [x.orderNo, x.reason, x.ref]), [[pending.orderNo, 'ORDER_PENDING', null]]);
 
   // Belge FGO'da silindi (kaydı kalkar) ve kuyruktaki istek kesilemeyip bırakıldı → kapsam serbest; duran belge hâlâ engel
   const fgo = fakeFgo(900);
@@ -596,9 +605,11 @@ dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse engeldir: FGO\'da 
   assert.equal(await db.fgoDocument.count({ where: { id: gone.id } }), 0);
   await db.notificationOutbox.update({ where: { id: job.id }, data: { status: 'FAILED', lastError: 'Client invalid' } });
   v = await view();
-  assert.deepEqual(v.groups.map((x) => x.orders.map((o) => o.orderNo)), [[deleted.orderNo, failed.orderNo, pending.orderNo]], 'geçmişte belgesi / isteği olmuş olmak engel değil');
-  assert.deepEqual(v.excluded.map((x) => [x.orderNo, x.ref]), [[active.orderNo, 'PRF9202']]);
-  const r = await createInvoice(day, v.groups[0]);
+  const direct = v.groups.find((x) => x.orderChainId == null);
+  assert.deepEqual(direct.orders.map((o) => o.orderNo), [deleted.orderNo, failed.orderNo, pending.orderNo], 'geçmişte belgesi / isteği olmuş olmak engel değil');
+  assert.deepEqual(v.groups.filter((x) => x.orderChainId).map((x) => [x.orderChainId, x.chain.ref]), [[active.id, 'PRF9202']]);
+  assert.deepEqual(v.excluded, []);
+  const r = await createInvoice(day, direct);
   assert.deepEqual([r.ok, r.orders], [true, 3]);
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
   assert.deepEqual(names(fgo.calls[0]).map((n) => n.split(' — ')[0]), [deleted, failed, pending].map((o) => `Comanda ${o.orderNo}`));
@@ -839,11 +850,11 @@ dbTest('fatura bekliyor: kısmi yüklemede yalnızca yüklenen kapsam; hiç yük
   assert.deepEqual(await mine(5), []);
   assert.deepEqual(await mine(), [[partial.orderNo, null, false], [own.orderNo, null, false], [gone.orderNo, null, false]], 'yüklenmeyen ve bedelsiz kapsam için uyarı yok');
 
-  // Sipariş başına zincir: proforma ve avans faturası kapatmaz (fatura sipariş sayfasından kesilecek); fatura kapatır
+  // Sipariş başına zincir: proforma ve avans faturası kapatmaz (nihai fatura yükleme gününün faturalama kartından kesilir — karar 239); eski sipariş faturası kapatır
   await db.fgoDocument.create({ data: { orderId: own.id, kind: 'PROFORMA', series: 'PRF', number: '9801', issuedAt: new Date() } });
-  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, 'ORDER_CHAIN', false]);
+  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, null, false]);
   await db.fgoDocument.create({ data: { orderId: own.id, kind: 'ADVANCE', series: 'GKH', number: '9802', issuedAt: new Date() } });
-  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, 'ORDER_CHAIN', false]);
+  assert.deepEqual((await mine()).find((r) => r[0] === own.orderNo), [own.orderNo, null, false]);
   await db.fgoDocument.create({ data: { orderId: own.id, kind: 'INVOICE', series: 'GKH', number: '9803', issuedAt: new Date() } });
   assert.equal((await mine()).find((r) => r[0] === own.orderNo), undefined);
 

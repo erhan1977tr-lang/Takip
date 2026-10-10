@@ -29,6 +29,8 @@ export default {
     preview: "Previzualizare",
     previewTitle: "Previzualizare — proforma care se emite",
     dayHead: "Ziua de încărcare {day}",
+    avgPrice: 'medie',
+    avgPriceTitle: 'Rânduri cu același tip de sticlă și prețuri diferite: prețul afișat este media ponderată pe m²; valoarea se calculează pe rânduri.',
     col: {
       line: "Comandă / rând (descriere FGO)",
       qty: "Cantitate",
@@ -139,8 +141,12 @@ export default {
       payable: "Total factură (RON, cu TVA)",
     },
     chain: "Proformă client {ref}: total {total}, încasat în FGO {paid}, avans facturat {advanced}. Cursul este cel al proformei (nu se restabilește).",
+    orderChain: "Proforma comenzii {ref}: total {total}, încasat {paid}, avans facturat {advanced}. Factura cuprinde doar sticla încărcată la această încărcare; cursul este cel al proformei (nu se redetermină). Plata nu este o condiție.",
+    orderAdvance: "Factura de avans se emite din pagina comenzii (Plăți și avans)",
     direct: "Fără proformă: factura se emite direct; cursul se stabilește acum din politica de curs a clientului și se salvează odată cu factura.",
     problems: {
+      PAYMENT_AFTER_INVOICE: "După emiterea unei facturi din lanțul comenzii, pe proformă apare o încasare de {amount} fără factură de avans: nu este clar dacă este avans sau plata facturii. Factura pentru restul nu se emite până la decizia contabilă.",
+      CHAIN_RATE_MISSING: "Proforma comenzii nu are curs înregistrat; cursul nu se inventează. Verificați secțiunea Financiar / FGO din pagina comenzii.",
       BILLING_MISSING: "Datele de facturare ale clientului sunt incomplete ({list}); completați-le în pagina Clienți.",
       FX_UNAVAILABLE: "Cursul nu a putut fi stabilit; factura nu se poate genera fără curs.",
       ADVANCE_REQUIRED: "Pe proformă există o încasare de {amount} fără factură de avans: mai întâi trebuie emisă factura de avans. După emiterea ei se activează butonul de factură.",
@@ -156,10 +162,13 @@ export default {
     amounts: "total {total} · plătit {paid} · rest {rest}",
     excludedTitle: "Comenzi care nu intră în factura clientului",
     reason: {
-      ORDER_CHAIN: "comanda are propriul lanț de documente; factura se emite din pagina comenzii",
+      ORDER_PENDING: "documentul propriu al comenzii (proformă / avans) se emite; după emitere se poate factura",
+      ORDER_INVOICED: "comanda este facturată integral prin factura finală veche emisă din pagina comenzii",
       PROFORMA_NOT_ISSUED: "proforma client nu a fost încă emisă (în coadă sau neemisă)",
       CURRENCY: "monedă neacceptată",
       NO_LINES: "nu există rânduri de sticlă cu preț de facturat",
+      CHAIN_ROOT_MISSING: "comanda are factură de avans, dar proforma a fost ștearsă în FGO: emisă fără lanț, avansul nu s-ar scădea — este necesară decizia contabilă",
+      OPS_WITHOUT_GLASS: "la această încărcare nu există sticlă, dar s-au încărcat operații / ladă cu preț: nu se facturează automat — este necesară decizia contabilă",
       ACCOUNTING_ACTION: "acțiune contabilă necesară: sticla replanificată la această zi este deja inclusă în factura emisă înainte de corecția încărcării — nu se facturează din nou",
     },
     ok: {
@@ -197,7 +206,7 @@ export default {
     requiredNote: "NU se emite automat nicio factură, factură suplimentară, stornare sau document de corecție, iar documentul emis nu se modifică; acest conținut nu se facturează din nou. Clarificați cu contabilul.",
     code: {
       NO_BILLING: "din această încărcare nu s-a emis factură — factura se emite din starea curentă (corectată)",
-      ORDER_CHAIN: "în lanțul de documente al comenzii ({ref}); factura se emite pentru întreaga comandă din pagina comenzii",
+      ORDER_CHAIN: "comanda este facturată integral prin factura finală veche ({ref}) emisă din pagina comenzii",
       QUEUED_BILLING: "factura este în coadă",
       FAILED_BILLING: "factura nu a putut fi emisă (așteaptă reîncercare sau renunțare)",
       NO_FINANCIAL_DIFFERENCE: "factura {ref}: fără diferență financiară",
@@ -220,10 +229,13 @@ export default {
     open: "Deschide facturarea",
     openOrder: "Comandă (Financiar / FGO)",
     note: {
-      ORDER_CHAIN: "comanda are propriul lanț de documente — factura se emite din pagina comenzii",
+      ORDER_PENDING: "documentul propriu al comenzii (proformă / avans) se emite — după emitere se poate factura",
       PROFORMA_NOT_ISSUED: "proforma clientului este în coadă sau nu a putut fi emisă",
       INVOICE_QUEUED: "cererea de factură este în coadă",
       INVOICE_FAILED: "factura nu a putut fi emisă în FGO — reîncercați sau renunțați",
+      CHAIN_ROOT_MISSING: "comanda are factură de avans, dar proforma a fost ștearsă în FGO: emisă fără lanț, avansul nu s-ar scădea — este necesară decizia contabilă",
+      OPS_WITHOUT_GLASS: "la această încărcare nu există sticlă, dar s-au încărcat operații / ladă cu preț: nu se facturează automat — este necesară decizia contabilă",
+      PAYMENT_AFTER_INVOICE: "după emiterea unei facturi din lanț, pe proformă apare o încasare fără factură de avans — factura nu se emite până la decizia contabilă",
     },
   },
   receivables: {

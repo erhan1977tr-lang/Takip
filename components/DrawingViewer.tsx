@@ -9,7 +9,11 @@ import { useEffect, useRef, useState } from 'react';
 // karar 227 ile geri geldi): işaretler talebe bağlanıp saklanır; açıklamaları numaralı nota eklenir. Dosyalar /dosya/cizim/<id>
 // adresinden gelir: yetki ve firma kapsamı orada, sunucuda denetlenir. Çizim dosyası hiç değişmez.
 
-export type Annotation = { fileId: string; page: number; type: 'pin' | 'rect' | 'free' | 'text'; x: number; y: number; w?: number; h?: number; points?: number[][]; text: string };
+/** id / no: kalıcı kimlik ve numara (P5 — karar 244; sunucu server/orders/annotations.js doğrular). Numara işaret konduğunda
+ *  verilir, başka işaret silinse de değişmez; numarasız eski kayıtta listedeki sıra gösterilir. */
+export type Annotation = { id?: string; no?: number; fileId: string; page: number; type: 'pin' | 'rect' | 'free' | 'text'; x: number; y: number; w?: number; h?: number; points?: number[][]; text: string };
+/** İşaretin gösterilen numarası */
+export const markNo = (a: Annotation, i: number) => (Number.isInteger(a.no) && (a.no as number) > 0 ? (a.no as number) : i + 1);
 export type ViewerFile = { id: string; name: string };
 export type ViewerText = {
   tools: { pin: string; rect: string; free: string; text: string };
@@ -69,10 +73,14 @@ function PdfPage({ doc, n, children }: { doc: any; n: number; children: React.Re
   return <div className="viewer-page"><canvas ref={canvas} />{children}</div>;
 }
 
-export function DrawingViewer({ files, annotations, editable = false, onChange, text, side }: {
+export function DrawingViewer({ files, annotations, editable = false, onChange, text, side, notesPanel = true, numberFrom = 0 }: {
   files: ViewerFile[]; annotations: Annotation[]; editable?: boolean; onChange?: (a: Annotation[]) => void; text: ViewerText;
   /** Sağ sütunun üstünde gösterilen bölüm (karar / gönderim / revizyon notu) */
   side?: React.ReactNode;
+  /** Ayrı "İşaretler" bölümü. Müşterinin revizyon ekranı göstermez: işaret açıklamaları "Nota de revizie" içindedir (P5). */
+  notesPanel?: boolean;
+  /** Bu taslakta o ana kadar verilmiş en büyük işaret numarası (silinenler dahil — taslakla saklanır; P5 karar 244) */
+  numberFrom?: number;
 }) {
   const [fileId, setFileId] = useState(files.find((f) => kindOf(f.name) !== 'other')?.id ?? files[0]?.id ?? '');
   const [tool, setTool] = useState<Tool>('pin');
@@ -105,7 +113,16 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
   }, [url, kind]);
 
   const set = (next: Annotation[]) => onChange?.(next);
-  const add = (a: Annotation) => { set([...annotations, a]); setFocus(annotations.length); };
+  // Kalıcı numara (P5 — karar 244): o ana kadar verilmiş en büyük numaranın bir fazlası; silinen işaretin numarası bu
+  // ekranda yeniden verilmez (silinen işaretin açıklaması da onunla gider — not başka işarete bağlanamaz)
+  const top = useRef(0);
+  const add = (a: Annotation) => {
+    const no = Math.max(top.current, numberFrom, ...annotations.map((x, i) => markNo(x, i))) + 1;
+    top.current = no;
+    const id = `m${no}-${Math.random().toString(36).slice(2, 8)}`;
+    set([...annotations, { ...a, id, no }]);
+    setFocus(annotations.length);
+  };
   const at = (e: React.PointerEvent | React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
@@ -164,7 +181,7 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
     };
     return (
       <div className={`viewer-layer${editable ? ' editable' : ''}${drawing ? ' drawing' : ''}`} {...handlers}>
-        {here.map(({ a, i }) => shape(a, i + 1, `a${i}`))}
+        {here.map(({ a, i }) => shape(a, markNo(a, i), a.id ?? `a${i}`))}
         {draft && draft.page === page && shape(draft.type === 'rect' ? { ...draft, x: draft.points![0][0], y: draft.points![0][1] } : draft, null, 'draft')}
       </div>
     );
@@ -214,19 +231,19 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
         {side}
         {/* "İşaretler" bölümü yalnızca işaret varken (kayıtlı revizyon talebi) ya da düzenlemede (müşterinin revizyon
             ekranı — karar 227) gösterilir; boş bölüm gösterilmez (karar 162). */}
-        {(editable || annotations.length > 0) && <div className="viewer-side card">
+        {notesPanel && (editable || annotations.length > 0) && <div className="viewer-side card">
           <h2>{text.notes} <span className="badge">{annotations.length}</span></h2>
           {annotations.length === 0 && <p className="muted">{text.noNotes}</p>}
           {annotations.map((a, i) => (
-            <div key={i} className="viewer-note">
-              <span className="badge badge-info">{i + 1}</span>
+            <div key={a.id ?? i} className="viewer-note">
+              <span className="badge badge-info">{markNo(a, i)}</span>
               <span className="small muted">{text.tools[a.type]}{files.length > 1 ? ` · ${files.find((f) => f.id === a.fileId)?.name ?? ''}` : ''}{a.page > 1 ? ` · ${text.page} ${a.page}` : ''}</span>
               {editable ? (
                 <>
-                  <input value={a.text} maxLength={500} placeholder={text.notePlaceholder} aria-label={`${text.notes} ${i + 1}`} autoFocus={focus === i}
+                  <input value={a.text} maxLength={500} placeholder={text.notePlaceholder} aria-label={`${text.notes} ${markNo(a, i)}`} autoFocus={focus === i}
                     onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
                     onChange={(e) => set(annotations.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
-                  <button type="button" className="btn btn-link danger" aria-label={`${text.remove} ${i + 1}`} onClick={() => set(annotations.filter((_, j) => j !== i))}>✕</button>
+                  <button type="button" className="btn btn-link danger" aria-label={`${text.remove} ${markNo(a, i)}`} onClick={() => set(annotations.filter((_, j) => j !== i))}>✕</button>
                 </>
               ) : <span>{a.text || '—'}</span>}
             </div>

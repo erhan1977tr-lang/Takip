@@ -140,7 +140,7 @@ export async function ReceivablesView({ type, sp }: { type: 'PROFILE_ORDER' | 'G
                       {o.note && <span className="cell-note">{t(`accounting.overdue.note.${o.note}` as MsgKey)}</span>}
                     </td>
                     <td className="actions">
-                      {o.note === 'ORDER_CHAIN'
+                      {o.note === 'ORDER_PENDING'
                         ? <Link className="btn" href={`/siparisler/${o.orderId}#finans`}>{t('accounting.overdue.openOrder')}</Link>
                         : <Link className="btn" href={`/yuklemeler?gun=${o.day}#faturalama`}>{t('accounting.overdue.open')}</Link>}
                     </td>

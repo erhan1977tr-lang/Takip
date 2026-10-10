@@ -5,8 +5,9 @@
 //   (runOrderAction → geçmiş + denetim kaydı, iyimser kilit: aynı sipariş iki kez arşivlenmez).
 //
 //   Kanıt — tek kural: loadingProof (iş akışı işlemi kayıttan önce aynı kuralı, aynı veritabanı işleminde yeniden uygular):
-//     SHIPPED   durum YUKLENDI ve onu bir KİŞİ verdi (satışın "Yüklendi" düğmesi). Yükleme günü: fiili (yoksa planlanan) gün.
-//     CONFIRMED durum URETIMDE ve onaylı yükleme(ler) siparişin camını EKSİKSİZ kapsıyor — kanıt yükleme onayıdır, planlanan
+//     (P5 — karar 245: eskiden kanıt sayılan "SHIPPED" yolu — yalnızca satışın "Yüklendi" düğmesi — kaldırıldı; YUKLENDI
+//     siparişi de aşağıdaki onay kanıtını ister.)
+//     CONFIRMED durum URETIMDE ya da YUKLENDI ve onaylı yükleme(ler) siparişin camını EKSİKSİZ kapsıyor — kanıt yükleme onayıdır, planlanan
 //               tarih değil (karar 92): geçerli kalemlerde (effectiveItems) yüklenen cam var; yüklenmeyen her adet ileri bir
 //               güne aktarılmış ya da yerine uygulanmış bir telafi açılmış; siparişe onaydan sonra cam eklenmemiş (müşterideki
 //               teklifte onaylardakinden fazla cam adedi yok). Yükleme günü: camın yüklendiği SON onaylı gün.
@@ -52,7 +53,7 @@ export function cutoffDay(today, days = AUTO_ARCHIVE_DAYS) {
  *   items: siparişin bütün onay kalemleri (bütün sıralar) · replans: siparişin bütün aktarımları · compensated: kapsam
  *   ("<onay>|<kapsam>") → yerine UYGULANMIŞ telafi adedi · sent: müşterideki son teklifin satırları (yoksa null) ·
  *   lastShip: siparişi "Yüklendi" yapan son olay (SHIPPED | AUTO_SHIPPED | null)
- * @typedef {{ ok: true, via: 'SHIPPED' | 'CONFIRMED', day: string } | { ok: false, reason: 'NOT_GLASS' | 'REMOVED' | 'ON_HOLD' | 'STATUS' | 'REPLAN_ACTIVE' | 'NOT_LOADED_OPEN' | 'AUTO_SHIPPED' | 'NO_DATE' | 'NOT_CONFIRMED' | 'NOT_IN_LOADING' }} Proof
+ * @typedef {{ ok: true, via: 'CONFIRMED', day: string } | { ok: false, reason: 'NOT_GLASS' | 'REMOVED' | 'ON_HOLD' | 'STATUS' | 'REPLAN_ACTIVE' | 'NOT_LOADED_OPEN' | 'AUTO_SHIPPED' | 'NOT_CONFIRMED' | 'NOT_IN_LOADING' }} Proof
  */
 
 /** Cam (m²) satırlarının adedi, cam + ölçüye göre (onay kalemi ve teklif satırı aynı anlık kopya alanlarını taşır) */
@@ -91,12 +92,10 @@ export function loadingProof(order, ev) {
   }
   for (const [k, q] of ev.compensated) if (open.has(k)) open.set(k, open.get(k) - q);
   if ([...open.values()].some((q) => q > 0)) return no('NOT_LOADED_OPEN');
-  if (order.status === 'YUKLENDI') {
-    // "Yüklendi"yi bir kişi vermiş olmalı; 3.51.0'ın tarih kuralıyla verilmiş durum kanıt değildir (önce geri alınır)
-    if (ev.lastShip === 'AUTO_SHIPPED') return no('AUTO_SHIPPED');
-    const d = order.actualShipDate ?? order.estimatedShipDate;
-    return d ? { ok: true, via: 'SHIPPED', day: dayKey(d) } : no('NO_DATE');
-  }
+  // 3.51.0'ın tarih kuralıyla verilmiş "Yüklendi" önce geri alınır (repairAutoShipped)
+  if (order.status === 'YUKLENDI' && ev.lastShip === 'AUTO_SHIPPED') return no('AUTO_SHIPPED');
+  // P5 düzeltmesi (karar 245): satışın "Yüklendi" düğmesi TEK BAŞINA kanıt değildir — YUKLENDI siparişi de yalnızca onaylı
+  // yükleme(ler) camını eksiksiz kapsıyorsa arşivlenir; onaysız "Yüklendi" müşterinin Active listesinde kalır (karar 243).
   const loaded = eff.filter((i) => i.status === 'LOADED' && i.quantity > 0);
   if (loaded.length === 0) return no('NOT_CONFIRMED');
   // Onaydan sonra siparişe eklenen cam hiçbir onayda yoktur (sipariş tarihinden yeniden plana girmez): yüklenmiş sayılmaz.
@@ -247,10 +246,9 @@ export async function autoArchiveOrders(db, { now = new Date(), batch = 100, max
       where: {
         orderTypeCode: 'GLASS_ORDER', onHold: false, removedAt: null, id: { gt: after },
         replans: { none: { status: 'ACTIVE' } },
-        OR: [
-          { status: 'YUKLENDI', OR: [{ actualShipDate: { lt: before } }, { actualShipDate: null, estimatedShipDate: { lt: before } }] },
-          { status: 'URETIMDE', loadedItems: { some: { status: 'LOADED', confirmation: { shipDay: { lt: before } } } } },
-        ],
+        // Aday yalnızca onaylı yüklemesi olan sipariş (karar 245: tarih ve "Yüklendi" düğmesi tek başına aday yapmaz)
+        status: { in: ['URETIMDE', 'YUKLENDI'] },
+        loadedItems: { some: { status: 'LOADED', confirmation: { shipDay: { lt: before } } } },
       },
       select: ORDER_SELECT,
       orderBy: { id: 'asc' },
