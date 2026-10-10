@@ -22,6 +22,7 @@ import { deleteDraftAction } from './yeni/actions';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { restoreOrderAction } from './[id]/compensation-actions';
 import { canSeeOfferReport, loadOfferReport, offerReportRange } from '@/lib/customer-offers';
+import { ReportGroup } from '@/components/ReportGroup';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -261,6 +262,12 @@ async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
   const res = chosen ? await loadOfferReport(user, { bas: sp.bas, bit: sp.bit }, t, locale) : null;
   const range = res ?? offerReportRange({});
   const rows = res?.ok && !res.tooMany ? res.report.sections : [];
+  // Ekranda en çok REPORT_LIST_MAX sipariş bölümü (PDF hepsini içerir); gruplar yükleme gününe göre (karar 226)
+  const shown = new Set(rows.slice(0, REPORT_LIST_MAX).map((s) => s.key));
+  const more = rows.length > REPORT_LIST_MAX;
+  const groups = res?.ok && !res.tooMany
+    ? res.report.groups.map((g) => ({ ...g, sections: g.sections.filter((s) => shown.has(s.key)) })).filter((g) => g.sections.length > 0)
+    : [];
   return (
     <form className="card offer-report" id="tekliflerim" method="get" action="/siparisler">
       <h2>{t('offers.report.title')}</h2>
@@ -284,45 +291,75 @@ async function OfferReport({ user, sp }: { user: CurrentUser; sp: SP }) {
       {res && !res.ok && <div className="alert alert-error" role="alert">{t(`offers.report.errors.${res.code}` as MsgKey)}</div>}
       {res?.ok && res.tooMany && <div className="alert alert-warn">{t('offers.report.errors.TOO_MANY')}</div>}
       {res?.ok && !res.tooMany && rows.length === 0 && <p className="muted" data-report-empty>{t('offers.report.empty')}</p>}
-      {rows.length > 0 && (
-        <div className="table-wrap">
-          <table className="offer-report-table">
-            <thead>
-              <tr>
-                <th>{t('offers.report.cols.order')}</th><th>{t('offers.report.cols.date')}</th>
-                <th className="num">{t('offers.report.cols.m2')}</th><th className="num">{t('offers.report.cols.amount')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, REPORT_LIST_MAX).map((s) => (
-                <tr key={s.orderId} data-report-order={s.orderNo}>
-                  <td>
-                    <Link className="order-no" href={`/siparisler/${s.orderId}#teklif`}>{s.orderNo}</Link>
-                    {s.version > 1 && <> <span className="badge badge-info">v{s.version}</span></>}
-                    {s.title && <div className="muted small">{s.title}</div>}
-                  </td>
-                  <td>{fmtDate(`${s.day}T12:00:00Z`)}</td>
-                  <td className="num">{fmtNum(s.data.metraj)}</td>
-                  <td className="num"><b>{fmtMoney(s.data.total, s.currency)}</b></td>
-                </tr>
+      {groups.map((g) => (
+        <ReportGroup
+          key={g.day ?? '-'} day={g.day ?? '-'} showLabel={t('offers.report.groupShow')} hideLabel={t('offers.report.groupHide')}
+          head={(
+            <>
+              <b>{g.day ? `${t('offers.report.loadingDate')}: ${fmtDate(`${g.day}T12:00:00Z`)}` : t('offers.report.noDate')}</b>
+              {g.totals.map((x) => (
+                <span key={x.currency} className="muted small" data-group-total={x.currency}>
+                  {' · '}{t('offers.report.count', { n: x.count })} · {fmtNum(x.m2, 3)} m² · {t('offers.report.pieces', { n: x.pieces })} · <b>{fmtMoney(x.amount, x.currency)}</b>
+                </span>
               ))}
-            </tbody>
-            {res?.ok && (
-              <tfoot>
-                {res.report.totals.map((x) => (
-                  <tr key={x.currency} data-report-total={x.currency}>
-                    <td>{t('offers.report.total')} · {t('offers.report.count', { n: x.count })}</td>
-                    <td />
-                    <td className="num">{fmtNum(x.m2)}</td>
-                    <td className="num">{fmtMoney(x.amount, x.currency)}</td>
-                  </tr>
-                ))}
-              </tfoot>
-            )}
-          </table>
+            </>
+          )}
+        >
+          {g.sections.map((s) => (
+            <div key={s.key} className="report-order" data-report-order={s.orderNo} data-report-day={s.day ?? '-'}>
+              <div className="report-order-head">
+                <span>
+                  <Link className="order-no" href={`/siparisler/${s.orderId}#teklif`}>{s.orderNo}</Link>
+                  {s.version > 1 && <> <span className="badge badge-info">v{s.version}</span></>}
+                  {s.partial && <> <span className="badge badge-warn" title={t('offers.report.partial')} data-partial>{t('offers.report.partialBadge')}</span></>}
+                  {s.title && <span className="muted small"> {s.title}</span>}
+                </span>
+                <span className="muted small">{t('offers.report.cols.date')}: {fmtDate(`${s.offerDay}T12:00:00Z`)}</span>
+                <b data-report-amount>{fmtMoney(s.data.total, s.currency)}</b>
+              </div>
+              <div className="table-wrap">
+                <table className="offer-report-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>{t('offer.cols.description')}</th><th className="num">{t('offer.cols.width')}</th><th className="num">{t('offer.cols.height')}</th>
+                      <th className="num">{t('offer.cols.qty')}</th><th>{t('offers.report.um')}</th><th className="num">{t('offer.cols.metraj')}</th>
+                      <th className="num">{t('offer.cols.unitPrice')}</th><th className="num">{t('offer.cols.amount')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {s.data.rows.map((r, i) => (
+                      <tr key={i} className={r.sub ? 'muted' : undefined}>
+                        <td>{r.n ?? ''}</td><td>{r.desc}{r.poz ? <span className="muted small"> · {r.poz}</span> : null}</td>
+                        <td className="num">{r.en ?? ''}</td><td className="num">{r.boy ?? ''}</td><td className="num">{r.adet}</td>
+                        <td>{r.unit === 'm2' ? 'm²' : t('common.unitPiece')}</td>
+                        <td className="num">{r.m2 == null ? '' : fmtNum(r.m2, 3)}</td>
+                        <td className="num">{r.free ? t('offer.free') : r.unitPrice == null ? '—' : fmtNum(r.unitPrice)}</td>
+                        <td className="num">{fmtNum(r.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4}>{t('offers.report.subtotal')}</td><td className="num">{t('offers.report.pieces', { n: s.pieces })}</td><td />
+                      <td className="num">{fmtNum(s.data.metraj, 3)}</td><td /><td className="num">{fmtMoney(s.data.total, s.currency)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ))}
+        </ReportGroup>
+      ))}
+      {res?.ok && !res.tooMany && res.report.totals.length > 0 && (
+        <div className="report-grand" data-report-grand>
+          {res.report.totals.map((x) => (
+            <div key={x.currency} data-report-total={x.currency}>
+              <b>{t('offers.report.grandTotal')}</b> · {t('offers.report.count', { n: x.count })} · {fmtNum(x.m2, 3)} m² · {t('offers.report.pieces', { n: x.pieces })} · <b>{fmtMoney(x.amount, x.currency)}</b>
+            </div>
+          ))}
         </div>
       )}
-      {rows.length > REPORT_LIST_MAX && <p className="muted small">{t('offers.report.more', { n: REPORT_LIST_MAX })}</p>}
+      {more && <p className="muted small">{t('offers.report.more', { n: REPORT_LIST_MAX })}</p>}
       {rows.length > 0 && <p className="muted small">{t('common.pricesExclVat')}</p>}
     </form>
   );

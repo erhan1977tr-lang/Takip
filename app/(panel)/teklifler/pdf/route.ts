@@ -10,9 +10,9 @@ import { contentDisposition } from '@/server/files/export-name.js';
 
 export const dynamic = 'force-dynamic';
 
-// GET /teklifler/pdf?bas=YYYY-MM-DD&bit=YYYY-MM-DD — "Tekliflerim" dökümü (karar 164): müşteri kullanıcısının KENDİ
-// firmasının cam teklifleri (müşteriye gönderilmiş son sürüm, gönderildiği gün aralıkta), her teklif ayrı ve ayrıntılı,
-// sonda toplam m² ve toplam tutar. Yalnızca müşteri kullanıcısı (User.type = CUSTOMER) + OFFER_EXPORT; başkasına 404.
+// GET /teklifler/pdf?bas=YYYY-MM-DD&bit=YYYY-MM-DD — "Tekliflerim" dökümü (karar 164, karar 226): müşteri kullanıcısının
+// KENDİ firmasının cam teklifleri (müşteriye gönderilmiş son sürüm) YÜKLEME GÜNÜNE göre gruplanmış, her sipariş ayrı ve
+// ayrıntılı, grup ve genel toplam (m², cam adedi, tutar). Yalnızca müşteri kullanıcısı (User.type = CUSTOMER) + OFFER_EXPORT; başkasına 404.
 // Fiyatlar müşteri fiyatıdır (lib/customer-offers.ts → sanitizeRows); dosya adı seçili panel dilinde.
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -31,18 +31,20 @@ export async function GET(req: Request) {
     range: `${fmtDate(`${res.from}T12:00:00Z`)} – ${fmtDate(`${res.to}T12:00:00Z`)}`,
     generated: t('offers.report.generated', { date: fmtDate(new Date()) }),
     offerDate: t('offers.customer.cols.date'),
+    loadingDate: t('offers.report.loadingDate'), noDate: t('offers.report.noDate'),
+    partial: t('offers.report.partial'), continued: t('offers.report.continued'),
     version: t('offers.report.version'),
     cols: {
       // Dar sütunlar: ölçüler mm'dir (teklif PDF'indeki "(mm)" ekli başlık bu sütuna sığmıyordu)
       n: '#', desc: t('offer.cols.description'), poz: t('offer.cols.poz'), en: t('offer.cols.width'), boy: t('offer.cols.height'),
-      adet: t('offer.cols.qty'), m2: t('offer.cols.metraj'), unitPrice: t('offer.cols.unitPrice'), amount: t('offer.cols.amount'),
+      adet: t('offer.cols.qty'), um: t('offers.report.um'), m2: t('offer.cols.metraj'), unitPrice: t('offer.cols.unitPrice'), amount: t('offer.cols.amount'),
     },
-    free: t('offer.free'), piece: t('common.unitPiece'), subtotal: t('offers.report.subtotal'), grandTotal: t('offers.report.grandTotal'),
-    count: t('offers.report.count'), empty: t('offers.report.empty'),
+    free: t('offer.free'), piece: t('common.unitPiece'), groupTotal: t('offers.report.groupTotal'), grandTotal: t('offers.report.grandTotal'),
+    count: t('offers.report.count'), pieces: t('offers.report.pieces'), empty: t('offers.report.empty'),
     notes: [t('common.pricesExclVat'), ...(currencies.has('EUR') ? [fxOfferNote(t, user.customer?.fxPolicy)] : [])],
   };
   const body = offerSummaryPdf(report, text);
-  await audit('OFFER_REPORT_EXPORT', 'Customer', user.customerId, user.id, { from: res.from, to: res.to, offers: report.sections.length });
+  await audit('OFFER_REPORT_EXPORT', 'Customer', user.customerId, user.id, { from: res.from, to: res.to, orders: report.orders, sections: report.sections.length });
   const name = offerReportFileName(t('exports.names.offerReport'), res);
   return new Response(new Uint8Array(body), {
     headers: {

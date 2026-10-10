@@ -21,7 +21,7 @@ const INSPECTOR = 'denetim@e2e.test';
 const SALES = 'fiyat-satis@e2e.test';
 const FAKE_KEY = 'e2e-sahte-anahtar-0123456789abcdef';
 // Satış (fabrika) fiyatları — müşteri ekranında / PDF'te HİÇ geçmemeli
-const SALES_PRICES = ['37,13', '25,37', '9,11', '37.13', '25.37', '9.11'];
+const SALES_PRICES = ['37,13', '25,37', '9,11', '7,77', '37.13', '25.37', '9.11', '7.77'];
 let revOrderId = '';
 
 async function prisma() {
@@ -84,6 +84,10 @@ test('veri: not çevirisi açık (sahte sağlayıcı — test modu); iki firman�
     ]);
     await order(uns, 9603, 'Rapor iptal', [offer('2026-01-15T10:00:00Z', [line({ description: 'İptal', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '500' })])], { status: 'IPTAL' });
     await order(uns, 9604, 'Rapor şubat', [offer('2026-02-05T10:00:00Z', [line({ description: 'Şubat', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '700' })])]);
+    // UNS9606 (Paket B — karar 226): teklif aralıktan ÖNCE gönderildi, yüklemesi 15.01.2026 → "Yükleme: 15.01.2026" grubunda;
+    // 1000 × 1000 × 5 = 5 m² × 10 = 50,00
+    await order(uns, 9606, 'Rapor yükleme', [offer('2025-12-28T10:00:00Z', [line({ description: 'Yükleme camı', enMm: 1000, boyMm: 1000, adet: 5, unitPrice: '7.77', offerPrice: '10' })])],
+      { estimatedShipDate: new Date('2026-01-15T00:00:00Z') });
     await order(beta, 9605, 'Beta raporu', [offer('2026-01-12T10:00:00Z', [line({ description: 'Beta cam', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '800' })])]);
   } finally {
     await db.$disconnect();
@@ -108,17 +112,40 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   await card.getByLabel('Bitiş tarihi').fill('2026-01-31');
   await card.getByRole('button', { name: 'Göster' }).click();
   await expect(cust).toHaveURL(/bas=2026-01-01&bit=2026-01-31/);
-  const rows = cust.locator('#tekliflerim tbody tr');
+  // Yükleme gününe göre gruplar (Paket B — karar 226): 15.01.2026 grubu önce, tarihi belli olmayanlar en sonda; gruplar
+  // kapalı gelir, her biri kendi "Göster" / "Gizle" düğmesiyle açılır
+  const groups = card.locator('[data-report-group]');
+  await expect(groups).toHaveCount(2);
+  await expect(groups.nth(0)).toHaveAttribute('data-report-group', '2026-01-15');
+  await expect(groups.nth(1)).toHaveAttribute('data-report-group', '-');
+  await expect(groups.nth(0)).toContainText('Yükleme: 15.01.2026');
+  await expect(groups.nth(0)).toContainText('50,00 EUR');
+  await expect(groups.nth(1)).toContainText('Yükleme tarihi henüz belli değil');
+  await expect(groups.nth(1)).toContainText('339,00 EUR');
+  await expect(groups.nth(0).locator('.report-order').first()).toBeHidden();
+  await groups.nth(1).locator('[data-group-toggle]').click();
+  await expect(groups.nth(1).locator('[data-group-toggle]')).toHaveText('Gizle');
+  await expect(groups.nth(0).locator('[data-group-toggle]')).toHaveText('Göster'); // diğer grup kapalı kalır
+  await expect(groups.nth(0).locator('.report-order').first()).toBeHidden();
+  const rows = groups.nth(1).locator('.report-order');
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText('UNS9601');
   await expect(rows.nth(0)).toContainText('10.01.2026');
   await expect(rows.nth(0)).toContainText('249,00 EUR');
+  await expect(rows.nth(0)).toContainText('6,000'); // metraj 3 ondalıkla
   await expect(rows.nth(1)).toContainText('UNS9602');
   await expect(rows.nth(1).locator('.badge')).toHaveText('v2');
   await expect(rows.nth(1)).toContainText('90,00 EUR');
-  await expect(cust.locator('#tekliflerim tfoot')).toContainText('2 teklif');
-  await expect(cust.locator('#tekliflerim tfoot')).toContainText('339,00 EUR');
-  await expect(cust.locator('#tekliflerim tfoot td.num').first()).toHaveText('8,00');
+  await groups.nth(0).locator('[data-group-toggle]').click();
+  await expect(groups.nth(0).locator('.report-order')).toHaveCount(1);
+  await expect(groups.nth(0).locator('.report-order')).toContainText('UNS9606');
+  await groups.nth(1).locator('[data-group-toggle]').click();
+  await expect(groups.nth(1).locator('.report-order').first()).toBeHidden();
+  await expect(groups.nth(0).locator('.report-order')).toBeVisible();
+  const grand = card.locator('[data-report-grand]');
+  await expect(grand).toContainText('3 sipariş');
+  await expect(grand).toContainText('13,000 m²');
+  await expect(grand).toContainText('389,00 EUR');
   for (const absent of ['UNS9603', 'UNS9604', 'BET9605', '500,00', '700,00', '800,00', '99,00']) await expect(card).not.toContainText(absent);
   // Satış fiyatı sayfanın ham yanıtında (HTML + RSC) da yok
   const raw = await (await cust.request.get('/siparisler?bas=2026-01-01&bit=2026-01-31')).text();
@@ -134,7 +161,8 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   const lines = pdfLines(pdf);
   const has = (s: string) => lines.some((l) => l.includes(s));
-  for (const s of ['TEKLİFLERİM', 'Ünsal Cam', 'UNS9601 — Rapor duș cabină', 'UNS9602 — Rapor balustradă', 'sürüm 2', 'Temper ğüşöç', '249,00 EUR', '90,00 EUR', 'Genel toplam', '2 teklif', '339,00 EUR', '8 m²']) {
+  for (const s of ['TEKLİFLERİM', 'Ünsal Cam', 'Yükleme: 15.01.2026', 'UNS9606 — Rapor yükleme', 'Teklif tarihi: 28.12.2025', 'Yükleme tarihi henüz belli değil',
+    'UNS9601 — Rapor duș cabină', 'UNS9602 — Rapor balustradă', 'sürüm 2', 'Temper ğüşöç', '249,00 EUR', '90,00 EUR', '50,00 EUR', 'Yükleme toplamı', 'Genel toplam', '3 sipariş', '389,00 EUR', '13,000 m²']) {
     expect(has(s), `PDF'te yok: ${s} — ${lines.join(' | ')}`).toBe(true);
   }
   for (const s of ['UNS9603', 'UNS9604', 'BET9605', 'Eski sürüm', ...SALES_PRICES]) expect(has(s), `PDF'te olmamalı: ${s}`).toBe(false);
@@ -154,7 +182,7 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   const [ro] = await Promise.all([cust.waitForEvent('download'), cust.locator('#tekliflerim').getByRole('button', { name: 'Descarcă PDF' }).click()]);
   expect(ro.suggestedFilename()).toBe('Ofertele-Mele-2026-01-01_2026-01-31.pdf');
   const roLines = pdfLines(fs.readFileSync((await ro.path())!));
-  for (const s of ['OFERTELE MELE', 'Total general', 'Oferte: 2', 'Data ofertei: 20.01.2026', '339,00 EUR']) expect(roLines.some((l) => l.includes(s)), `RO PDF'te yok: ${s}`).toBe(true);
+  for (const s of ['OFERTELE MELE', 'Termen: 15.01.2026', 'Total general', 'Comenzi: 3', 'Data ofertei: 20.01.2026', '389,00 EUR']) expect(roLines.some((l) => l.includes(s)), `RO PDF'te yok: ${s}`).toBe(true);
   await cust.context().close();
 
   // Başka firma: kendi dökümü yalnızca kendi teklifleri (Ünsal'ın teklifleri yok)

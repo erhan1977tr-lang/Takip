@@ -582,6 +582,13 @@ summary { cursor: pointer; }
 .offer-report-range input[type='date'] { width: auto; min-width: 160px; }
 .offer-report-range .row { gap: 8px; }
 .offer-report-table tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); }
+.report-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 10px 0; background: var(--surface); }
+.report-group-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.report-group-title { min-width: 0; overflow-wrap: anywhere; }
+.report-group-body { padding: 4px 12px 10px; }
+.report-order { margin-top: 10px; }
+.report-order-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; padding: 6px 0; border-top: 2px solid var(--primary-border); }
+.report-grand { margin-top: 12px; padding-top: 8px; border-top: 2px solid var(--border-strong); display: grid; gap: 4px; }
 .type-row { gap: 10px; margin-top: 8px; }
 /* Eski çok camlı taslak: camlar salt okunur listede, tutulacak cam tek seçimle */
 .legacy-glass th.c-keep { width: 72px; }

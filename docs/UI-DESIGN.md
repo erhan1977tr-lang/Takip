@@ -439,8 +439,12 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 
 - Customer home (`/siparisler`): `form.card#tekliflerim` (GET) right under the page head, before the `.stats` row —
   title, intro, `.offer-report-range` (two `type=date` inputs + "Göster" `.btn` + "PDF indir" `.btn-primary` with
-  `formAction="/teklifler/pdf"`), errors as `.alert-error`, then `table.offer-report-table` (order link + `v2` badge,
-  date, m², amount) with per-currency totals in `tfoot`. No new control types.
+  `formAction="/teklifler/pdf"`), errors as `.alert-error`, then (Paket B, decision 226) one `section.report-group`
+  per LOADING day (`components/ReportGroup.tsx`: `.report-group-head` = day + per-currency totals, always visible, and a
+  plain `.btn` "Göster" ↔ "Gizle" with `aria-expanded`; each group opens / closes on its own, closed by default), inside
+  `.report-order` blocks (`.report-order-head`: order link + `v2` / "Kısmi" badges, offer date, amount; then
+  `table.offer-report-table` with the lines, metraj with 3 decimals, part total in `tfoot`), and `.report-grand` with
+  the per-currency grand totals. No new control types.
 - Order page (customer): a drawing waiting for the customer shows `.alert.alert-error#cizim-onay` above the stepper
   (bold title + text + one `.btn-primary` "Aç ve incele"); the customer card's first button is the same link
   (`.btn-primary`), approve stays `.btn-success`, revision becomes a plain `.btn`. In the drawings card the pending

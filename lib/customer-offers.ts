@@ -32,6 +32,14 @@ const include = {
     orderBy: { createdAt: 'desc' },
     include: { lines: { orderBy: { sortOrder: 'asc' } } },
   },
+  // Yükleme bölümleri (Paket B — karar 226): yalnızca adet ve gün; onay kaleminin fiyat / maliyet alanları seçilmez
+  loadedItems: {
+    select: { confirmationId: true, offerLineId: true, replanId: true, revision: true, status: true, quantity: true, confirmation: { select: { shipDay: true } } },
+  },
+  replans: {
+    where: { status: 'ACTIVE' },
+    select: { status: true, quantity: true, shipDay: true, sourceItem: { select: { offerLineId: true } } },
+  },
 } satisfies Prisma.OrderInclude;
 
 export type OfferReportResult =
@@ -46,7 +54,7 @@ export async function loadOfferReport(user: CurrentUser, q: { bas?: string; bit?
   const tz = getEnv().APP_TIMEZONE;
   const range = offerReportRange(q);
   if (!range.ok) return range;
-  if (!canSeeOfferReport(user)) return { ok: true, from: range.from, to: range.to, report: { from: range.from, to: range.to, sections: [], totals: [] }, tooMany: false };
+  if (!canSeeOfferReport(user)) return { ok: true, from: range.from, to: range.to, report: { from: range.from, to: range.to, sections: [], groups: [], totals: [], orders: 0 }, tooMany: false };
   const window = offerWindow(range);
   const raw = await db.order.findMany({
     where: {
@@ -54,7 +62,16 @@ export async function loadOfferReport(user: CurrentUser, q: { bas?: string; bit?
       customerId: user.customerId!,
       orderTypeCode: 'GLASS_ORDER',
       status: { not: 'IPTAL' },
-      offers: { some: { status: 'GONDERILDI', sentAt: { gte: window.gte, lt: window.lt } } },
+      offers: { some: { status: 'GONDERILDI' } },
+      // Aralık yükleme gününe uygulanır (karar 226): planlanan gün, onaylı yükleme, etkin aktarım ya da (tarihsiz bölüm
+      // için) teklifin gönderildiği gün. Pencere bir gün geniştir; kesin süzme customerOfferReport'ta.
+      OR: [
+        { estimatedShipDate: { gte: window.gte, lt: window.lt } },
+        { actualShipDate: { gte: window.gte, lt: window.lt } },
+        { loadedItems: { some: { confirmation: { shipDay: { gte: window.gte, lt: window.lt } } } } },
+        { replans: { some: { status: 'ACTIVE', shipDay: { gte: window.gte, lt: window.lt } } } },
+        { offers: { some: { status: 'GONDERILDI', sentAt: { gte: window.gte, lt: window.lt } } } },
+      ],
     },
     include,
     orderBy: { createdAt: 'asc' },
@@ -67,6 +84,6 @@ export async function loadOfferReport(user: CurrentUser, q: { bas?: string; bit?
     kindLabel: (k: string) => lineKindText(t, k),
     price: (l: { unitPrice: unknown }) => l.unitPrice,
   });
-  const tooMany = report.sections.length > OFFER_REPORT_MAX || raw.length > OFFER_REPORT_MAX * 2;
+  const tooMany = report.orders > OFFER_REPORT_MAX || raw.length > OFFER_REPORT_MAX * 2;
   return { ok: true, from: range.from, to: range.to, report, tooMany };
 }
