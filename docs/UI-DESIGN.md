@@ -374,8 +374,10 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 ## Compensation, decisions card, order removal (3.42.0)
 
 - Offer table (`.offer-view`): last column `td.actions` with a `.btn-link` "Kırık / Telafi" on physical glass rows only;
-  `badge-warn` "TELAFİ" next to the description of compensation lines (internal users; also in the offer editor's
-  `.line-actions`).
+  compensation lines carry the real compensation number as a `badge-warn` tag ABOVE the glass type — `.comp-tag >
+  .badge[data-comp-tag]` ("Telafi ALE46-T2" / "ALE46 telafisi"; every role that sees the offer; also in the offer editor's
+  description cell) — decisions.md #231. With free compensation glass, a muted `[data-physical]` line under the table states
+  physical vs billable pieces / m². m² values everywhere: 3 decimals (`fmtM2`, #232).
 - Compensation form: one `.card.comp-form` (`#telafi`) directly under the offer table — no modal, no wizard pages.
   `.grid-2` (glass select + quantity), `.comp-history` (`.alert-warn`, earlier compensations of the line), price and
   destination as `fieldset.comp-choice` (price = `.chip` radios, destination = two `.comp-dest` rows), then

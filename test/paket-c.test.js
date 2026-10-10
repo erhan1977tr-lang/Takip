@@ -1,4 +1,4 @@
-// Paket C — saf kurallar ve yapı denetimleri (kararlar 230–236). Veritabanı / ağ yok.
+// Paket C — saf kurallar ve yapı denetimleri (kararlar 230–237). Veritabanı / ağ yok.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

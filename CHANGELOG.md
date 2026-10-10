@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.66.0 — 10.10.2026
+
+Paket C — sipariş, yükleme ve FGO düzeltmeleri (kararlar 230–237). Veritabanı şeması değişmedi; veri dönüştürülmedi.
+
+- **Tahmini yükleme tarihi:** Sipariş Bilgileri'nde tarihin yanında "Değiştir" ile düzenlenir; kaydetmeden önce eski → yeni
+  gün onay penceresi. Yönetici, Yönetici Yardımcısı ve Satış değiştirir; müşteri, çizim ve denetimci değiştiremez. Yükleme
+  tamamlanınca (Yüklendi / Arşiv ya da onaylı yükleme kaydı — kısmi yükleme dahil) sunucuda kilitli. Denetim kaydında eski
+  ve yeni gün. İşlemler kartındaki ayrı tarih formu kaldırıldı.
+- **Telafi etiketi:** telafi camı teklif tablosunda, teklif PDF'inde ve Excel'inde cam türünün üstünde gerçek telafi
+  numarasıyla etiketlenir (yeni telafi siparişi: "Telafi ALE46-T2"; var olan siparişe eklenen telafi: "ALE46 telafisi").
+  Bedelsiz telafide teklifin altında fiziksel ve faturalanacak cam ayrı yazılır; bedelsiz cam faturalanmaz.
+- **m² üç ondalık:** ekran, PDF ve Excel'de m² 3 ondalıkla gösterilir; hesap değişmedi.
+- **Yükleme Özeti Excel'i:** tek sayfa — bilgi, firma özeti, misafir yük, ardından müşteri → sipariş blokları (sipariş
+  toplamı, müşteri toplamı, para birimi başına genel toplam). Aynı ad yalnızca aynı siparişte birleşir; birim fiyat camın
+  ağırlıklı ortalaması, tutara CNC / delik / sandık dahil. Onaylı günde yalnızca fiilen yüklenen kalemler; onaysız gün
+  "PLANLANAN" olarak yazılır. Bedelsiz telafi ayrı satır, tutarı 0. Satışta firma adları maskeli.
+- **Sandık:** sandık formundaki sipariş seçim kutuları kaldırıldı; yeni sandık firmanın o günkü kendi siparişlerinin
+  hepsine otomatik bağlanır, kayıtlı sandıklar bağlarını korur (başka firma / başka gün bağlanmaz). Yükleme günü firma
+  satırında işlemler iki satırda: PDF / Excel, Özet / Sandık.
+- **FGO:** cam proforma / avans / faturasının açıklamasında sipariş başlığı yerine belgenin kur cümlesi (kur yoksa ya da
+  RON belgede boş); nihai faturada ürün adı "Sticla …" (proforma ve avans değişmedi).
+- **Fiyat gizliliği:** müşteri fiyatı olmayan eski tekliflerde satış / fabrika fiyatı müşteriye ve denetimciye gösterilmez
+  (tutar "—"); yükleme tutarı, yükleme onayı kopyası ve kârlılık da iç fiyata geri düşmez.
+
 ## 3.65.1 — 10.10.2026
 
 Paket B düzeltmesi (karar 226). Veritabanı şeması değişmedi.
