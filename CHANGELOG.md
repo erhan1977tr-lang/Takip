@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.65.1 — 10.10.2026
+
+Paket B düzeltmesi (karar 226). Veritabanı şeması değişmedi.
+
+- **Tekliflerim tarih aralığı:** aralık yeniden teklifin **gönderildiği güne** göre seçer (eski davranış); seçilen teklifler
+  yükleme gününe göre gruplanmaya devam eder (aralıktaki teklifin bütün yükleme bölümleri listelenir). Liste ve PDF aynı.
+
 ## 3.65.0 — 10.10.2026
 
 Paket B — müşteri paneli (kararlar 226–229). Veritabanı şeması değişti (yalnızca ekleme; mevcut veri değişmez).

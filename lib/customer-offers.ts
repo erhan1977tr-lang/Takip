@@ -62,16 +62,9 @@ export async function loadOfferReport(user: CurrentUser, q: { bas?: string; bit?
       customerId: user.customerId!,
       orderTypeCode: 'GLASS_ORDER',
       status: { not: 'IPTAL' },
-      offers: { some: { status: 'GONDERILDI' } },
-      // Aralık yükleme gününe uygulanır (karar 226): planlanan gün, onaylı yükleme, etkin aktarım ya da (tarihsiz bölüm
-      // için) teklifin gönderildiği gün. Pencere bir gün geniştir; kesin süzme customerOfferReport'ta.
-      OR: [
-        { estimatedShipDate: { gte: window.gte, lt: window.lt } },
-        { actualShipDate: { gte: window.gte, lt: window.lt } },
-        { loadedItems: { some: { confirmation: { shipDay: { gte: window.gte, lt: window.lt } } } } },
-        { replans: { some: { status: 'ACTIVE', shipDay: { gte: window.gte, lt: window.lt } } } },
-        { offers: { some: { status: 'GONDERILDI', sentAt: { gte: window.gte, lt: window.lt } } } },
-      ],
+      // Aralık teklifin gönderildiği güne uygulanır (karar 164; 3.65.1). Pencere bir gün geniştir; kesin süzme
+      // customerOfferReport'ta (son gönderilen sürümün yerel günü)
+      offers: { some: { status: 'GONDERILDI', sentAt: { gte: window.gte, lt: window.lt } } },
     },
     include,
     orderBy: { createdAt: 'asc' },

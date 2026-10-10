@@ -46,7 +46,7 @@ export default {
   // Pagina principală a clientului → „Ofertele mele” (decizia 164): interval de date, listă și raport PDF
   report: {
     title: 'Ofertele mele',
-    intro: 'Alegeți intervalul: „Afișează” listează ofertele de sticlă ale firmei dvs. (ultima ofertă a fiecărei comenzi) după zilele de ÎNCĂRCARE din interval; „Descarcă PDF” descarcă aceeași listă cu fiecare comandă în detaliu.',
+    intro: 'Alegeți intervalul: „Afișează” listează ofertele de sticlă trimise firmei dvs. în acest interval (ultima ofertă a fiecărei comenzi), grupate după ziua de încărcare; „Descarcă PDF” descarcă aceeași listă cu fiecare comandă în detaliu.',
     from: 'Data de început',
     to: 'Data de sfârșit',
     show: 'Afișează',

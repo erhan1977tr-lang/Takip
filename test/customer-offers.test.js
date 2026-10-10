@@ -55,23 +55,24 @@ test('teklif seçimi: siparişin müşteriye gönderilmiş SON sürümü; yükle
   assert.deepEqual(customerOfferReport(orders, { from: '2026-09-01', to: '2026-09-30', timeZone: TZ, locale: 'tr', kindLabel, price }).sections, []);
 });
 
-test('yükleme gününe göre gruplar: aralık YÜKLEME gününe uygulanır; teklifi aralıktan önce gönderilmiş sipariş de yüklemesiyle gelir; gruplar gün sırasıyla', () => {
+test('yükleme gününe göre gruplar: aralık teklifin GÖNDERİLDİĞİ güne uygulanır (eski davranış korunur — 3.65.1); aralıktaki teklif hangi yükleme gününde olursa olsun listelenir; gruplar gün sırasıyla', () => {
   const l = (adet, p = '10') => [glass({ description: 'Temper', enMm: 1000, boyMm: 1000, adet, unitPrice: p })];
   const orders = [
     order('GLA20', [offer('a', '2026-09-10T08:00:00Z', l(2))], { estimatedShipDate: new Date('2026-10-02T00:00:00Z') }),
     order('GLA21', [offer('b', '2026-09-25T08:00:00Z', l(3))], { estimatedShipDate: new Date('2026-10-02T00:00:00Z') }),
     // Gerçek yükleme günü planlanandan önce gelir
     order('GLA22', [offer('c', '2026-09-26T08:00:00Z', l(1))], { estimatedShipDate: new Date('2026-10-20T00:00:00Z'), actualShipDate: new Date('2026-10-09T00:00:00Z') }),
-    // Aralık dışı yükleme: teklif aralıkta gönderilmiş olsa da yok
-    order('GLA23', [offer('d', '2026-10-05T08:00:00Z', l(1))], { estimatedShipDate: new Date('2026-11-04T00:00:00Z') }),
+    // Teklif aralık dışında (ekimde) gönderildi: eylül aralığında yok — yüklemesi ne olursa olsun
+    order('GLA23', [offer('d', '2026-10-05T08:00:00Z', l(1))], { estimatedShipDate: new Date('2026-09-15T00:00:00Z') }),
   ];
-  const r = customerOfferReport(orders, { from: '2026-10-01', to: '2026-10-31', timeZone: TZ, locale: 'tr', kindLabel, price });
+  const r = customerOfferReport(orders, { from: '2026-09-01', to: '2026-09-30', timeZone: TZ, locale: 'tr', kindLabel, price });
   assert.deepEqual(r.groups.map((g) => [g.day, g.sections.map((s) => s.orderNo)]), [['2026-10-02', ['GLA20', 'GLA21']], ['2026-10-09', ['GLA22']]]);
   assert.deepEqual(r.groups[0].totals, [{ currency: 'EUR', count: 2, m2: 5, pieces: 5, amount: 50 }]);
   assert.equal(r.sections[0].offerDay, '2026-09-10', 'teklif tarihi ayrı alan: yükleme günüyle karışmaz');
-  assert.ok(!r.sections.some((s) => s.orderNo === 'GLA23'));
-  // Yalnız eylül: hiçbir yükleme yok (teklif tarihleri eylülde olsa da gruplar yükleme gününe göredir)
-  assert.equal(customerOfferReport(orders, { from: '2026-09-01', to: '2026-09-30', timeZone: TZ, locale: 'tr', kindLabel, price }).sections.length, 0);
+  assert.ok(!r.sections.some((s) => s.orderNo === 'GLA23'), 'yükleme günü aralıkta olsa da teklifi aralık dışında');
+  // Ekim aralığı: yalnızca ekimde gönderilen teklif (yükleme günü eylülde) — eylülde gönderilenler yok
+  const oct = customerOfferReport(orders, { from: '2026-10-01', to: '2026-10-31', timeZone: TZ, locale: 'tr', kindLabel, price });
+  assert.deepEqual(oct.groups.map((g) => [g.day, g.sections.map((s) => s.orderNo)]), [['2026-09-15', ['GLA23']]]);
 });
 
 /** Onay kalemi (GEÇERLİ hâl effectiveItems ile seçilir) */
@@ -119,9 +120,10 @@ test('kısmi yükleme: satır onaylı yüklemeye, etkin aktarıma ve tarihsiz ka
   assert.equal(sumC('metraj'), whole.m2);
   // Her grup yalnızca kendi bölümünün tutarını taşır (tam tutar değil)
   for (const g of r.groups) assert.ok(g.totals[0].amount < whole.amount, `${g.day}: ${g.totals[0].amount}`);
-  // Aralık yükleme gününe: yalnız 09.10 → yalnızca o bölüm (+ siparişin tarihsiz kalanı)
-  const one = customerOfferReport([split], { from: '2026-10-09', to: '2026-10-09', timeZone: TZ, locale: 'tr', kindLabel, price });
-  assert.deepEqual(one.sections.map((s) => s.day), ['2026-10-09', null]);
+  // Aralık teklif gününe: teklif (20.09) aralıktaysa BÜTÜN bölümler gelir; değilse hiçbiri
+  const one = customerOfferReport([split], { from: '2026-09-20', to: '2026-09-20', timeZone: TZ, locale: 'tr', kindLabel, price });
+  assert.deepEqual(one.sections.map((s) => s.day), ['2026-10-02', '2026-10-09', '2026-10-16', null]);
+  assert.deepEqual(customerOfferReport([split], { from: '2026-10-01', to: '2026-10-31', timeZone: TZ, locale: 'tr', kindLabel, price }).sections, []);
 });
 
 test('loadingParts: onay kalemi teklif satırlarına bağlanamıyorsa sipariş bölünmez (ilk onay günü); onayı olmayan sipariş planlanan günde', () => {
@@ -174,7 +176,7 @@ const TEXT = (locale) => (locale === 'tr' ? {
 
 test('PDF: yükleme günü başlıkları; her sipariş ayrı başlıkla (yükleme + teklif tarihi); metraj 3 ondalık; grup ve genel toplam; TR / RO harfleri; satış fiyatı yok', () => {
   const orders = [
-    order('UNS12', [offer('a', '2026-09-28T08:00:00Z', [glass({ description: 'Securizat 8mm șlefuit', enMm: 1000, boyMm: 2000, adet: 3, unitPrice: '41.5' })]), offer('z', '2026-09-02T08:00:00Z', [])],
+    order('UNS12', [offer('a', '2026-10-01T08:00:00Z', [glass({ description: 'Securizat 8mm șlefuit', enMm: 1000, boyMm: 2000, adet: 3, unitPrice: '41.5' })]), offer('z', '2026-09-02T08:00:00Z', [])],
       { title: 'Duș cabină — ıııi', estimatedShipDate: new Date('2026-10-02T00:00:00Z') }),
     order('UNS13', [offer('b', '2026-10-03T08:00:00Z', [glass({ description: 'Temper ğüşöç', enMm: 500, boyMm: 1000, adet: 4, unitPrice: '30' }), { kind: 'CNC', description: 'CNC', adet: 2, unit: 'adet', unitPrice: '15', free: false }])],
       { estimatedShipDate: new Date('2026-10-09T00:00:00Z') }),
@@ -182,7 +184,7 @@ test('PDF: yükleme günü başlıkları; her sipariş ayrı başlıkla (yüklem
   const report = customerOfferReport(orders, { from: '2026-10-01', to: '2026-10-31', timeZone: TZ, locale: 'tr', kindLabel, price });
   const lines = pdfLines(offerSummaryPdf(report, TEXT('tr')));
   const has = (s) => lines.some((l) => l.includes(s));
-  for (const s of ['TEKLİFLERİM', 'Ünsal Cam Şirketi', 'Yükleme: 02.10.2026', 'Yükleme: 09.10.2026', 'UNS12 — Duș cabină — ıııi', 'Teklif tarihi: 28.09.2026', 'sürüm 2',
+  for (const s of ['TEKLİFLERİM', 'Ünsal Cam Şirketi', 'Yükleme: 02.10.2026', 'Yükleme: 09.10.2026', 'UNS12 — Duș cabină — ıııi', 'Teklif tarihi: 01.10.2026', 'sürüm 2',
     'UNS13', 'Securizat 8mm șlefuit', 'Temper ğüşöç', '6,000', 'Yükleme toplamı', 'Genel toplam', '2 sipariş', '7 adet']) {
     assert.ok(has(s), `PDF'te yok: ${s}\n${lines.join(' | ')}`);
   }
@@ -205,7 +207,7 @@ test('PDF: yükleme günü başlıkları; her sipariş ayrı başlıkla (yüklem
 
 test('PDF: kısmi yüklenen sipariş her günde yalnızca kendi bölümüyle; genel toplam bölünmemiş siparişle aynı', () => {
   const lines = [glass({ id: 'L1', description: 'Laminat', enMm: 1000, boyMm: 1000, adet: 5, unitPrice: '10' })];
-  const o = order('UNS40', [offer('x', '2026-09-20T08:00:00Z', lines)], {
+  const o = order('UNS40', [offer('x', '2026-10-01T08:00:00Z', lines)], {
     estimatedShipDate: new Date('2026-10-02T00:00:00Z'),
     loadedItems: [item({ day: '2026-10-02', offerLineId: 'L1', quantity: 3 }), item({ day: '2026-10-02', offerLineId: 'L1', quantity: 2, status: 'NOT_LOADED' })],
     replans: [{ status: 'ACTIVE', quantity: 2, shipDay: new Date('2026-10-09T00:00:00Z'), sourceItem: { offerLineId: 'L1' } }],

@@ -84,10 +84,13 @@ test('veri: not çevirisi açık (sahte sağlayıcı — test modu); iki firman�
     ]);
     await order(uns, 9603, 'Rapor iptal', [offer('2019-01-15T10:00:00Z', [line({ description: 'İptal', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '500' })])], { status: 'IPTAL' });
     await order(uns, 9604, 'Rapor şubat', [offer('2019-02-05T10:00:00Z', [line({ description: 'Şubat', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '700' })])]);
-    // UNS9606 (Paket B — karar 226): teklif aralıktan ÖNCE gönderildi, yüklemesi 15.01.2019 → "Yükleme: 15.01.2019" grubunda;
+    // UNS9606 (Paket B — karar 226): teklif aralıkta (05.01), yüklemesi 15.01.2019 → "Yükleme: 15.01.2019" grubunda;
     // 1000 × 1000 × 5 = 5 m² × 10 = 50,00
-    await order(uns, 9606, 'Rapor yükleme', [offer('2018-12-28T10:00:00Z', [line({ description: 'Yükleme camı', enMm: 1000, boyMm: 1000, adet: 5, unitPrice: '7.77', offerPrice: '10' })])],
+    await order(uns, 9606, 'Rapor yükleme', [offer('2019-01-05T10:00:00Z', [line({ description: 'Yükleme camı', enMm: 1000, boyMm: 1000, adet: 5, unitPrice: '7.77', offerPrice: '10' })])],
       { estimatedShipDate: new Date('2019-01-15T00:00:00Z') });
+    // UNS9607 (3.65.1): yüklemesi aralıkta ama teklifi aralıktan ÖNCE gönderildi → aralık teklif gününe göre: dökümde YOK
+    await order(uns, 9607, 'Rapor eski teklif', [offer('2018-12-27T10:00:00Z', [line({ description: 'Eski teklif camı', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '600' })])],
+      { estimatedShipDate: new Date('2019-01-20T00:00:00Z') });
     await order(beta, 9605, 'Beta raporu', [offer('2019-01-12T10:00:00Z', [line({ description: 'Beta cam', enMm: 1000, boyMm: 1000, adet: 1, unitPrice: '1', offerPrice: '800' })])]);
   } finally {
     await db.$disconnect();
@@ -146,7 +149,7 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   await expect(grand).toContainText('3 sipariş');
   await expect(grand).toContainText('13,000 m²');
   await expect(grand).toContainText('389,00 EUR');
-  for (const absent of ['UNS9603', 'UNS9604', 'BET9605', '500,00', '700,00', '800,00', '99,00']) await expect(card).not.toContainText(absent);
+  for (const absent of ['UNS9603', 'UNS9604', 'UNS9607', 'BET9605', '500,00', '600,00', '700,00', '800,00', '99,00']) await expect(card).not.toContainText(absent);
   // Satış fiyatı sayfanın ham yanıtında (HTML + RSC) da yok
   const raw = await (await cust.request.get('/siparisler?bas=2019-01-01&bit=2019-01-31')).text();
   // Sayı sınırıyla aranır: "09.11.2026" gibi bir tarih (bugüne göre değişen yükleme günleri) fiyat sayılmaz
@@ -161,11 +164,11 @@ test('Tekliflerim: ana sayfanın üstünde tarih aralığı; yalnızca kendi fir
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   const lines = pdfLines(pdf);
   const has = (s: string) => lines.some((l) => l.includes(s));
-  for (const s of ['TEKLİFLERİM', 'Ünsal Cam', 'Yükleme: 15.01.2019', 'UNS9606 — Rapor yükleme', 'Teklif tarihi: 28.12.2018', 'Yükleme tarihi henüz belli değil',
+  for (const s of ['TEKLİFLERİM', 'Ünsal Cam', 'Yükleme: 15.01.2019', 'UNS9606 — Rapor yükleme', 'Teklif tarihi: 05.01.2019', 'Yükleme tarihi henüz belli değil',
     'UNS9601 — Rapor duș cabină', 'UNS9602 — Rapor balustradă', 'sürüm 2', 'Temper ğüşöç', '249,00 EUR', '90,00 EUR', '50,00 EUR', 'Yükleme toplamı', 'Genel toplam', '3 sipariş', '389,00 EUR', '13,000 m²']) {
     expect(has(s), `PDF'te yok: ${s} — ${lines.join(' | ')}`).toBe(true);
   }
-  for (const s of ['UNS9603', 'UNS9604', 'BET9605', 'Eski sürüm', ...SALES_PRICES]) expect(has(s), `PDF'te olmamalı: ${s}`).toBe(false);
+  for (const s of ['UNS9603', 'UNS9604', 'UNS9607', 'BET9605', 'Eski sürüm', ...SALES_PRICES]) expect(has(s), `PDF'te olmamalı: ${s}`).toBe(false);
   expect(lines.some((l) => l.includes('?')), 'yazı tipinde olmayan karakter yok').toBe(false);
   // GKH logosu (ortak marka görseli) gömülü
   expect(pdf.toString('latin1')).toMatch(/\/Subtype \/Image /);

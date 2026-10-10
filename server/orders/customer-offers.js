@@ -3,8 +3,9 @@
 // fiyatı — sanitizeRows), PDF server/pdf/offer-summary.js'tedir.
 //   - Kapsam: yalnızca CAM siparişleri (satırlar, m², müşteri teklif tutarı); iptal edilmiş sipariş dökümde yoktur.
 //   - Teklif = siparişin müşteriye gönderilmiş SON sürümü (yeni sürüm eskisinin yerini alır; aynı sipariş iki kez sayılmaz).
-//   - Paket B (karar 226): döküm YÜKLEME GÜNÜNE göre gruplanır, aralık yükleme gününe uygulanır (loadingParts,
-//     customerOfferReport); kısmi yüklenen sipariş bölümlerine ayrılır, tutarı iki kez sayılmaz.
+//   - Paket B (karar 226): döküm YÜKLEME GÜNÜNE göre gruplanır (loadingParts, customerOfferReport); tarih aralığı
+//     teklifin GÖNDERİLDİĞİ güne uygulanır (eski davranış — ürün sahibi, 3.65.1); kısmi yüklenen sipariş bölümlerine
+//     ayrılır, tutarı iki kez sayılmaz.
 //   - Satırlar ve tutarlar teklif PDF'iyle AYNI hesaptan (offerExportData → offerLineTotals); fiyat erişimcisi çağırandan
 //     gelir ve yalnızca müşteri fiyatıdır — fabrika / satış fiyatı hiçbir zaman dökümde yoktur.
 //   - Toplamlar para birimi başına ayrı (farklı para birimleri toplanmaz): sipariş sayısı, toplam m², cam adedi, tutar.
@@ -144,9 +145,8 @@ const totalsOf = (map) => [...map.values()]
 /**
  * Döküm (Paket B — karar 226): teklifler YÜKLEME GÜNÜNE göre gruplanır. orders: firmanın siparişleri, teklifleri ve
  * satırlarıyla (role göre temizlenmiş), yükleme verisiyle (loadingParts).
- *   Aralık YÜKLEME gününe uygulanır: tarihli bölüm başlangıç ≤ gün ≤ bitiş ise dökümdedir. Tarihi belli olmayan bölüm
- *   (planlanmamış sipariş ya da planlanmamış kalan), teklifin gönderildiği gün aralıktaysa ya da siparişin tarihli bir
- *   bölümü dökümdeyse listelenir ("Yükleme tarihi belli değil" grubu, en sonda).
+ *   Aralık teklifin GÖNDERİLDİĞİ yerel güne uygulanır (eski davranış korunur — 3.65.1): aralıktaki her teklifin bütün
+ *   yükleme bölümleri listelenir; tarihi belli olmayan bölüm "Yükleme tarihi belli değil" grubundadır (en sonda).
  *   Toplamlar para birimi başına (farklı para birimleri toplanmaz); grup ve genel toplamda bir sipariş BİR KEZ sayılır
  *   (count = farklı sipariş), m² / adet / tutar bölümlerin toplamıdır (bölümler satırın ticari toplamını paylaşır).
  * @param {any[]} orders
@@ -165,11 +165,11 @@ export function customerOfferReport(orders, { from, to, timeZone, locale, kindLa
     const offer = sent[0];
     if (!offer) continue;
     const offerDay = localDay(new Date(offer.sentAt), timeZone);
+    // Aralık TEKLİFİN GÖNDERİLDİĞİ güne uygulanır (karar 164 — 3.65.1'de korunarak geri alındı): aralıktaki teklifin
+    // bütün yükleme bölümleri listelenir, gruplama yükleme gününe göredir
+    if (offerDay < from || offerDay > to) continue;
     const parts = loadingParts(order, offer);
-    const inRange = (d) => d != null && d >= from && d <= to;
-    const anyDated = parts.some((p) => inRange(p.day));
     for (const p of parts) {
-      if (p.day != null ? !inRange(p.day) : !(anyDated || (offerDay >= from && offerDay <= to))) continue;
       const data = offerExportData({ lines: p.lines, price, locale, kindLabel });
       // Sıra numarası teklifteki numaradır (bölümde 1'den yeniden başlamaz)
       data.rows.forEach((r, i) => { if (!r.sub) r.n = p.lines[i].lineNo ?? r.n; });

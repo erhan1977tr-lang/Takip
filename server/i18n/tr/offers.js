@@ -46,7 +46,7 @@ export default {
   // Müşteri ana sayfası → "Tekliflerim" (karar 164): tarih aralığı, liste ve PDF dökümü
   report: {
     title: 'Tekliflerim',
-    intro: 'Tarih aralığını seçin: “Göster” bu aralıktaki YÜKLEME günlerine göre firmanızın cam tekliflerini (her siparişin son teklifi) listeler; “PDF indir” aynı listeyi her siparişi ayrıntılı gösteren döküm olarak indirir.',
+    intro: 'Tarih aralığını seçin: “Göster” bu aralıkta firmanıza gönderilen cam tekliflerini (her siparişin son teklifi) yükleme gününe göre gruplayarak listeler; “PDF indir” aynı listeyi her siparişi ayrıntılı gösteren döküm olarak indirir.',
     from: 'Başlangıç tarihi',
     to: 'Bitiş tarihi',
     show: 'Göster',
