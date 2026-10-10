@@ -258,10 +258,10 @@ dbTest('fatura numarası: numarayı FGO verir ve dönen numara kaydedilir; elle 
   await fgoOn(0, { invoiceNext: 553 });
   const stale = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '553' } } });
   assert.ok(stale, 'ilk testteki avans faturası GKH553 sistemde kayıtlı');
-  const b = await issue(72, fake({ gone: ['553'] }));
-  assert.deepEqual(b.r, { done: 1, failed: 0 });
+  const b2 = await issue(72, fake({ gone: ['553'] }));
+  assert.deepEqual(b2.r, { done: 1, failed: 0 });
   assert.equal(calls[1].Numar, '553', 'tam girilen numara');
-  assert.equal(b.doc.number, '553', 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
+  assert.equal(b2.doc.number, '553', 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
   assert.ok(await db.auditLog.findFirst({ where: { action: 'FGO_DOC_REMOVED' } }));
   assert.equal(await setting(), null, 'elle numara tek seferlik: kendiliğinden +1 yapılmaz');
 

@@ -28,11 +28,23 @@ const evening = (key) => new Date(`${key}T16:00:00Z`);
 function fakeFgo(start) {
   let n = start;
   const calls = [];
+  const state = new Map();
   const fetchImpl = async (url, init) => {
     const form = Object.fromEntries(new URLSearchParams(init.body));
-    if (String(url).endsWith('/factura/getstatus')) return new Response(JSON.stringify({ Success: true, Factura: { Valoare: '0.00', ValoareAchitata: '0.00' } }));
+    if (String(url).endsWith('/factura/getstatus')) {
+      const doc = state.get(`${form.Serie}${form.Numar}`);
+      return new Response(JSON.stringify({ Success: true, Factura: { Valoare: (doc ?? 0).toFixed(2), ValoareAchitata: '0.00' } }));
+    }
     calls.push(form);
     n += 1;
+    // Belge toplamı gönderilen satırlardan (TVA dahil): PretTotal varsa o, yoksa adet × birim fiyat × 1,21
+    let total = 0;
+    for (let i = 0; form[`Continut[${i}][Denumire]`] != null; i++) {
+      total += form[`Continut[${i}][PretTotal]`] != null
+        ? Number(form[`Continut[${i}][PretTotal]`])
+        : Math.round(Number(form[`Continut[${i}][NrProduse]`]) * Number(form[`Continut[${i}][PretUnitar]`]) * 121) / 100;
+    }
+    state.set(`${form.Serie}${n}`, Math.round(total * 100) / 100);
     return new Response(JSON.stringify({ Success: true, Factura: { Numar: String(n), Serie: form.Serie, Link: `https://fgo.example/${form.Serie}${n}.pdf` } }));
   };
   return { calls, fetchImpl };

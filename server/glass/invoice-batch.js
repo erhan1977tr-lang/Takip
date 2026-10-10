@@ -649,7 +649,10 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, orderI
       for (const id of f.g.orders.map((o) => o.orderId).sort()) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
       }
-      const again = await loadingBilling(tx, { day, now, fx: { [groupKey]: f.g.fx }, select, vatRate: settings.vatRate });
+      // İşlem içinde kur yeniden çözülmez: grupların kuru ilk hesaptan (hedef grup için önizlemedeki kur). Diğer grupların
+      // sonucu burada kullanılmaz; yalnızca işlem içinde ağ (BNR) isteği yapılmasın diye dondurulur.
+      const frozen = Object.fromEntries(first.customers.flatMap((c) => c.groups).filter((x) => x.fx).map((x) => [x.key, x.fx]));
+      const again = await loadingBilling(tx, { day, now, fx: { ...frozen, [groupKey]: f.g.fx }, bnrImpl, select, vatRate: settings.vatRate });
       if (!again.ok) return again;
       const x = find(again);
       if (!x) return { ok: false, code: 'NOTHING_TO_INVOICE' };
