@@ -23,11 +23,12 @@ export const dynamic = 'force-dynamic';
 //   - çizimci: "Kontrol Et" (taslak sürüm; müşteri taslağı hiç göremez). "Müşteriye gönder" YALNIZCA bu ekrandadır:
 //     sayfa, bu taslak + bu kullanıcı + bu dosyalar için imzalı bir kontrol kanıtı üretir (server/orders/review.js);
 //     send_drawing kanıt olmadan çalışmaz (düğmeyi gizlemek değil, sunucu denetimi).
-//   - müşteri: "Aç ve incele" → "Bu çizimi onayla" ya da "Revizyon iste" (?revizyon=1: numaralı maddelerle zorunlu not —
-//     karar 162; çizim üzerine işaretleme ve "İşaretler" bölümü müşteri ekranında yok). İkisi de onay yetkisi ister
-//     (availableActions); yetkisiz kullanıcı yalnızca inceler.
-//   - iç ekip: revizyon talebini (numaralı not + saklanan Türkçe çevirisi, karar 163) ve eski taleplerin çizim üzerindeki
-//     işaretlerini görür (?rev=<talep>); müşteri kendi talebini yalnızca özgün dilinde görür
+//   - müşteri: "Aç ve incele" → "Bu çizimi onayla" ya da "Revizyon iste" (?revizyon=1: çizim üzerine İğne / Dikdörtgen /
+//     Serbest / Metin işaretleri ve numaralı "Nota de revizie" — karar 162, Paket B karar 227). İkisi de onay yetkisi ister
+//     (availableActions) ve yalnızca SON, karar bekleyen sürümde açılır (eski sürüm salt görüntülenir; sunucu da
+//     STALE_DRAWING ile reddeder); yetkisiz kullanıcı yalnızca inceler.
+//   - iç ekip: revizyon talebini (numaralı not + saklanan Türkçe çevirisi, karar 163) görür; talebin işaretleri sürümü
+//     görebilen herkese salt okunur gösterilir (?rev=<talep>); müşteri kendi talebini yalnızca özgün dilinde görür
 // Sipariş loadOrder ile yüklenir: firma kapsamı ve role göre temizlik sunucuda (başka firmanın siparişi → 404,
 // müşteriye taslak sürüm gelmez; geri çekilen sürümün içeriği gelmez). Dosyalar /dosya/cizim/<id> adresinden, aynı kuralla gelir.
 export default async function DrawingPage({ params, searchParams }: { params: Promise<{ id: string; drawingId: string }>; searchParams: Promise<{ revizyon?: string; rev?: string }> }) {
@@ -59,9 +60,9 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
   const review = sending && clean && viewable ? reviewToken({ secret: authSecret(), drawingId: d.id, userId: user.id, files: d.files }) : null;
   const files = d.files.filter((f) => f.scanStatus !== 'INFECTED').map((f) => ({ id: f.id, name: f.name }));
   const revision = d.revisions.find((r) => r.id === sp.rev) ?? d.revisions[d.revisions.length - 1];
-  // Eski taleplerin çizim üstü işaretleri yalnızca iç ekibe gösterilir; müşteri ekranında işaret yok (karar 162)
-  const internal = userCan(user, 'FILE_INTERNAL_VIEW');
-  const annotations = internal && revision ? (cleanAnnotations(revision.annotations, files.map((f) => f.id)) as Annotation[]) : [];
+  // Revizyon taleplerinin çizim üstü işaretleri (karar 227): sürümü görebilen herkes görür (müşteri kendi işaretlerini,
+  // iç ekip ve denetimci talebin işaretlerini) — salt okunur; değiştirme yolu yoktur (talep kaydı değişmez)
+  const annotations = revision ? (cleanAnnotations(revision.annotations, files.map((f) => f.id)) as Annotation[]) : [];
   const back = `/siparisler/${order.id}#cizim`;
   const viewer: ViewerText = {
     tools: { pin: t('order.viewer.pin'), rect: t('order.viewer.rect'), free: t('order.viewer.free'), text: t('order.viewer.text') },
@@ -150,7 +151,7 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
                   <RevisionNote r={r} role={user.appRole} t={t} />
                   <div className="meta">
                     {fmtDateTime(r.createdAt)}
-                    {internal && r.id !== revision?.id && Array.isArray(r.annotations) && r.annotations.length > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.viewer.showMarks')}</Link></>}
+                    {r.id !== revision?.id && Array.isArray(r.annotations) && r.annotations.length > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.viewer.showMarks')}</Link></>}
                   </div>
                 </div>
               ))}

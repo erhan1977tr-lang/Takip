@@ -98,3 +98,19 @@ test('çizim alanının iç ekip notları (karar 168): "çizim hatalı" açıkla
   const cust = drawingTranslationsFor('MUSTERI', [version]);
   assert.deepEqual([cust[0].translation, cust[0].revisions[0].translation], ['Marginea corectată cu 5 mm', 'Lipsește stratul de cote']);
 });
+
+// Paket B (karar 227): çizim üstü işaretlerin açıklaması numaralı nota "#<işaret no>: …" maddesi olarak eklenir
+test('revisionNoteWithMarks: açıklamalı işaretler maddelerin sonuna işaret numarasıyla eklenir; açıklamasız işaret madde değildir', async () => {
+  const { revisionNoteWithMarks, REVISION_ITEM_MAX } = await import('../server/orders/revision-note.js');
+  const marks = [{ text: 'Bu köşe 5 mm' }, { text: '' }, { text: '  Delik\nburada  ' }];
+  assert.deepEqual(revisionNoteWithMarks(['Ölçü 1100', ''], marks), { ok: true, text: '1. Ölçü 1100\n2. #1: Bu köşe 5 mm\n3. #3: Delik burada', items: ['Ölçü 1100', '#1: Bu köşe 5 mm', '#3: Delik burada'] });
+  // Madde yok ama açıklamalı işaret var → geçerli; ikisi de yok → EMPTY
+  assert.equal(revisionNoteWithMarks([''], [{ text: 'Yalnız işaret' }]).text, '1. #1: Yalnız işaret');
+  assert.deepEqual(revisionNoteWithMarks([''], [{ text: '' }]), { ok: false, code: 'EMPTY' });
+  // Uzun işaret açıklaması madde sınırına kısaltılır (önek dahil)
+  const long = revisionNoteWithMarks([], [{ text: 'x'.repeat(600) }]);
+  assert.equal(long.ok, true);
+  assert.equal(long.items[0].length, REVISION_ITEM_MAX);
+  // İşaretsiz çağrı eski davranıştır
+  assert.deepEqual(revisionNoteWithMarks(['a', 'b']), { ok: true, text: '1. a\n2. b', items: ['a', 'b'] });
+});

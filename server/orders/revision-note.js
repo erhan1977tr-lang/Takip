@@ -42,6 +42,26 @@ export function revisionNote(items) {
 }
 
 /**
+ * Paket B (karar 227): müşteri revizyon ekranında çizim üstüne işaret koyar (iğne, dikdörtgen, serbest, metin) ve her
+ * işarete kısa bir açıklama yazabilir. İşaretin açıklaması numaralı nota "#<işaret no>: metin" maddesi olarak eklenir —
+ * böylece not ile işaret aynı numarayla bağlanır ve işaret açıklamaları da notla birlikte BİR KEZ çevrilir. İşaret
+ * numarası, doğrulanmış işaret listesindeki sırasıdır (çizim üstünde ve "İşaretler" bölümünde gösterilen numara).
+ * Maddesiz ama açıklamalı işaret içeren talep geçerlidir; ikisi de yoksa EMPTY.
+ * @param {unknown[]} items  formdaki maddeler
+ * @param {{ text?: string }[]} annotations  doğrulanmış işaretler (server/orders/annotations.js → cleanAnnotations)
+ */
+export function revisionNoteWithMarks(items, annotations = []) {
+  const marks = (Array.isArray(annotations) ? annotations : [])
+    .map((a, i) => {
+      const text = cleanRevisionItem(a?.text);
+      const prefix = `#${i + 1}: `;
+      return text ? prefix + text.slice(0, REVISION_ITEM_MAX - prefix.length) : '';
+    })
+    .filter(Boolean);
+  return revisionNote([...(Array.isArray(items) ? items : [items]), ...marks]);
+}
+
+/**
  * Saklanan (ya da çevrilmiş) notun maddeleri: her satır sırayla "n. metin" ise maddeler; değilse null (eski serbest not —
  * olduğu gibi gösterilir).
  * @param {unknown} text

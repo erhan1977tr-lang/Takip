@@ -19,7 +19,8 @@ import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, 
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 import { addNote, retryDrawingTranslation, retryNoteTranslation, translateDrawingNote, translateRevision } from '@/server/notes/translation.js';
 import { deliverInAppNow } from '@/lib/notifications';
-import { revisionNote } from '@/server/orders/revision-note.js';
+import { revisionNoteWithMarks } from '@/server/orders/revision-note.js';
+import { cleanAnnotationsLoose } from '@/server/orders/annotations.js';
 import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
 import { markOrderSeen } from '@/server/notifications/order-alerts.js';
 
@@ -236,15 +237,18 @@ export async function requestRevisionAction(formData: FormData) {
   const id = orderIdOf(formData);
   const drawingId = String(formData.get('drawingId') ?? '') || undefined;
   const items = formData.getAll('item');
-  const note = revisionNote(items.length ? items : [formData.get('comment')]);
+  // Çizim üstü işaretler (Paket B — karar 227): JSON; sunucuda bu sürümün dosyalarına göre doğrulanır
+  // (server/orders/annotations.js) ve talebe bağlanır. Açıklamalı işaretler numaralı nota "#n: …" maddesi olarak eklenir
+  // (revisionNoteWithMarks — iş akışında, doğrulanmış işaret sırasıyla).
+  const annotations = String(formData.get('annotations') ?? '').slice(0, 400_000);
+  const raw = items.length ? items : [formData.get('comment')];
+  // Ön denetim (dosyaya bakmadan): hem madde hem açıklamalı işaret yoksa iş akışına gidilmez; asıl denetim iş akışında
+  const note = revisionNoteWithMarks(raw, cleanAnnotationsLoose(annotations));
   if (!note.ok) {
     const { t } = await getT();
     redirect(err(id, t(note.code === 'TOO_MANY' ? 'order.errors.revisionTooMany' : note.code === 'TOO_LONG' ? 'order.errors.revisionTooLong' : 'order.errors.revisionEmpty')));
   }
-  // Çizim üstü işaretler (eski istemciler): JSON; sunucuda doğrulanır (server/orders/annotations.js). Müşteri ekranında
-  // işaretleme yok (karar 162) — alan gelmezse talep işaretsizdir.
-  const annotations = String(formData.get('annotations') ?? '').slice(0, 400_000);
-  const res = await act(user, id, 'request_revision', { comment: note.text, drawingId, annotations });
+  const res = await act(user, id, 'request_revision', { comment: note.text, items: raw.map((x) => String(x ?? '')), drawingId, annotations });
   if (res?.revisionId) {
     // Talep kayıtlıdır: çeviri adımındaki beklenmedik hata (veritabanı) talebi bozmaz, yalnızca günlüğe güvenli kod yazılır
     await translateRevision(db, { revisionId: res.revisionId, orderId: id, actor: await actorOf(user) })

@@ -1,4 +1,4 @@
-// Revizyon talebindeki çizim üstü işaretler (müşteri "Revizyon iste" ekranında koyar): iğne, dikdörtgen, serbest çizgi,
+// Revizyon talebindeki çizim üstü işaretler (müşteri "Revizyon iste" ekranında koyar — karar 162 ile kaldırılmış, Paket B / karar 227 ile geri geldi): iğne, dikdörtgen, serbest çizgi,
 // metin. Konumlar sayfanın genişlik / yüksekliğine oranlıdır (0–1), böylece her ekran boyutunda aynı yere düşer.
 // Tarayıcıdan gelen veri burada doğrulanır ve sadeleştirilir; DrawingRevision.annotations (JSON) olarak saklanır.
 // İşaretler sürümün dosyasını değiştirmez; revizyon talebiyle birlikte geçmişte kalır.
@@ -45,4 +45,19 @@ export function cleanAnnotations(raw, fileIds) {
     out.push(item);
   }
   return out;
+}
+
+/**
+ * Ön denetim için (dosya listesi bilinmeden): işaretleri kendi dosya kimlikleriyle doğrular. Saklanan liste HER ZAMAN iş
+ * akışında sürümün gerçek dosyalarıyla cleanAnnotations'tan geçer; bu işlev yalnızca formun boş olup olmadığını anlamak içindir.
+ * @param {unknown} raw
+ */
+export function cleanAnnotationsLoose(raw) {
+  let list = raw;
+  if (typeof raw === 'string') {
+    try { list = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(list)) return [];
+  const ids = list.slice(0, MAX_ANNOTATIONS).map((a) => (a && typeof a === 'object' && typeof a.fileId === 'string' ? a.fileId : '')).filter(Boolean);
+  return cleanAnnotations(list, ids);
 }

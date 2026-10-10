@@ -75,6 +75,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   INVALID_DATE: 'order.errors.invalidDate',
   CANCEL_REASON: 'order.errors.cancelReason',
   REVISION_COMMENT: 'order.errors.revisionComment',
+  REVISION_TOO_MANY: 'order.errors.revisionTooMany',
+  REVISION_TOO_LONG: 'order.errors.revisionTooLong',
   RETURN_REASON: 'order.errors.returnReason',
   DRAWING_FILE: 'order.errors.drawingFile',
   DRAWING_NO_DRAFT: 'order.errors.drawingNoDraft',

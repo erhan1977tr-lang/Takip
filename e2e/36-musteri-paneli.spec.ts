@@ -242,7 +242,7 @@ test('yeni çizim: bildirim zili → siparişteki kırmızı bilgilendirme; ana 
   await alert.getByRole('link', { name: 'Aç ve incele' }).click();
   await expect(cust.locator('.viewer-side')).toHaveCount(0); // boş "İşaretler" bölümü yok
   await cust.locator('.viewer-decide').getByRole('link', { name: 'Revizyon iste' }).click();
-  await expect(cust.getByRole('button', { name: 'İğne' })).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'İğne', exact: true })).toBeVisible(); // işaret araçları geri geldi (Paket B — karar 227)
   const submit = cust.getByRole('button', { name: 'Revizyon iste' });
   await expect(submit).toBeDisabled();
   await expect(async () => {

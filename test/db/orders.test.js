@@ -250,6 +250,35 @@ dbTest('geçiş: çizim döngüsü; taslak → gönder; müşteri eski sürümü
     [[1, 'REVIZYON_ISTENDI', 1, true, people.cust.id], [2, 'ONAYLANDI', 1, true, people.cust.id]], 'eski sürüm silinmez');
 });
 
+dbTest('Paket B (karar 227): müşteri revizyonu — işaretler sürüme ve talebe bağlı saklanır, açıklamaları numaralı nota "#n" ile eklenir; eski sürüme karar verilemez', async () => {
+  const o = await newOrder();
+  await run(o.id, 'send_to_drawing', 'sales');
+  const v1 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('p1')] });
+  await send(o.id, 'drawer', { drawingId: v1.result.drawingId });
+  const f1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } })).id;
+  // Ne madde ne açıklamalı işaret → REVISION_COMMENT
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'cust', { items: [''], comment: '', drawingId: v1.result.drawingId, annotations: JSON.stringify([{ fileId: f1, page: 1, type: 'pin', x: 0.1, y: 0.1, text: '' }]) })), 'REVISION_COMMENT');
+  // Başka dosyaya konmuş işaret atılır; numara doğrulanmış listedeki sıradır
+  await run(o.id, 'request_revision', 'cust', {
+    items: ['Ölçü 1100', ''], comment: 'yok sayılır', drawingId: v1.result.drawingId,
+    annotations: JSON.stringify([
+      { fileId: 'baska', page: 1, type: 'pin', x: 0.2, y: 0.2, text: 'atılır' },
+      { fileId: f1, page: 1, type: 'rect', x: 0.1, y: 0.1, w: 0.2, h: 0.2, text: '' },
+      { fileId: f1, page: 2, type: 'free', x: 0.3, y: 0.3, points: [[0.3, 0.3], [0.4, 0.5]], text: 'Bu çizgi düz olsun' },
+    ]),
+  });
+  const rev = await db.drawingRevision.findFirstOrThrow({ where: { drawingId: v1.result.drawingId } });
+  assert.equal(rev.comment, '1. Ölçü 1100\n2. #2: Bu çizgi düz olsun');
+  assert.deepEqual(rev.annotations.map((a) => [a.type, a.page, a.text]), [['rect', 1, ''], ['free', 2, 'Bu çizgi düz olsun']]);
+  // Yeni sürüm gönderildikten sonra eski sürüme (bayat sekme) ne onay ne revizyon
+  const v2 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('p2')] });
+  await send(o.id, 'drawer', { drawingId: v2.result.drawingId });
+  assert.equal(await codeOf(run(o.id, 'request_revision', 'cust', { items: ['eski'], drawingId: v1.result.drawingId })), 'STALE_DRAWING');
+  assert.equal(await codeOf(run(o.id, 'approve_drawing', 'cust', { drawingId: v1.result.drawingId })), 'STALE_DRAWING');
+  assert.equal((await db.drawing.findUniqueOrThrow({ where: { id: v2.result.drawingId } })).status, 'ONAY_BEKLIYOR', 'son sürüm etkilenmedi');
+  assert.equal(await db.drawingRevision.count({ where: { drawing: { orderId: o.id } } }), 1);
+});
+
 dbTest('çizim: çoklu dosya taslağa eklenir; taranmamış dosyayla gönderilemez; gönderilen sürümün dosyası çıkarılamaz', async () => {
   const o = await newOrder();
   await run(o.id, 'send_to_drawing', 'sales');

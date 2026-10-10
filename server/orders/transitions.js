@@ -8,6 +8,7 @@ import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
+import { revisionNoteWithMarks } from './revision-note.js';
 import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isCrateText, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
 import { priceLock } from './financial-lock.js';
 import { priceChanges } from './price-changes.js';
@@ -650,13 +651,19 @@ const ACTIONS = {
     if (latest) h.audit = { drawingId: latest.id, version: latest.version };
   },
   async request_revision(h) {
-    const comment = h.payload.comment;
-    if (!comment) throw new WorkflowError('REVISION_COMMENT');
+    let comment = h.payload.comment;
     const latest = decidableDrawing(h);
+    // Çizim üstü işaretler yalnızca bu sürümün dosyalarına konabilir; doğrulanıp sadeleştirilerek saklanır (karar 227)
+    const annotations = latest ? cleanAnnotations(h.payload.annotations, latest.files.map((f) => f.id)) : [];
+    // Numaralı not = maddeler + açıklamalı işaretler ("#n: …", aynı numarayla bağlı — server/orders/revision-note.js)
+    if (Array.isArray(h.payload.items)) {
+      const note = revisionNoteWithMarks(h.payload.items, annotations);
+      if (!note.ok) throw new WorkflowError(note.code === 'EMPTY' ? 'REVISION_COMMENT' : note.code === 'TOO_MANY' ? 'REVISION_TOO_MANY' : 'REVISION_TOO_LONG');
+      comment = note.text;
+    }
+    if (!comment) throw new WorkflowError('REVISION_COMMENT');
     if (latest) {
       await h.tx.drawing.update({ where: { id: latest.id }, data: { status: 'REVIZYON_ISTENDI', decidedAt: h.now, decidedById: h.actor.id } });
-      // Çizim üstü işaretler yalnızca bu sürümün dosyalarına konabilir; doğrulanıp sadeleştirilerek saklanır
-      const annotations = cleanAnnotations(h.payload.annotations, latest.files.map((f) => f.id));
       const revision = await h.tx.drawingRevision.create({ data: { drawingId: latest.id, kind: 'TALEP', requestedById: h.actor.id, comment, ...(annotations.length ? { annotations } : {}) } });
       // revisionId: talebin notu, işlem bittikten SONRA bir kez çevrilir (sunucu işlemi → çeviri servisinin
       // translateRevision işlevi, karar 163); iş akışı çeviriyi beklemez, çeviri hatası talebi bozmaz
