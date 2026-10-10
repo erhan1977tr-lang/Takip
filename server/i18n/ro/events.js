@@ -42,6 +42,7 @@ export default {
   SHIP_DATE: { label: 'Data estimată de încărcare s-a schimbat', customer: 'Data estimată de încărcare a fost actualizată' },
   PROFILE_OFFER_SENT: { label: 'Prețurile au fost introduse, oferta a fost trimisă clientului', customer: 'Oferta dvs. este gata' },
   PROFILE_APPROVED: { label: 'Clientul a aprobat oferta (data ridicării)', customer: 'Ați aprobat oferta (data ridicării)' },
+  PROFILE_DIRECT: { label: 'Comandă directă cu lista de prețuri (data ridicării)', customer: 'Comanda dvs. a fost transmisă direct cu lista dvs. de prețuri (data ridicării)' },
   PICKUP_UPDATED: { label: 'Datele de ridicare s-au schimbat', customer: 'Datele de ridicare au fost actualizate' },
   PICKUP_MOVED: { label: 'Data de livrare (ridicare) a fost mutată conform regulii depozitului (la transmiterea către depozit)', customer: 'Data estimată de livrare (ridicare) a fost mutată' },
   PROFORMA: { label: 'Proformă emisă', customer: 'Proformă emisă' },

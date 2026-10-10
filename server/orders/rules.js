@@ -229,6 +229,7 @@ export const EVENTS = {
   // Profil siparişi (Aşama 6)
   PROFILE_OFFER_SENT: { customer: true },
   PROFILE_APPROVED: { customer: true, note: true },
+  PROFILE_DIRECT: { customer: true, note: true }, // Paket B (karar 229): fiyat listesiyle doğrudan sipariş (not: alış günü)
   PICKUP_UPDATED: { customer: true, note: true },
   PICKUP_MOVED: { customer: true, note: true },
   PROFORMA: { customer: true, note: true },

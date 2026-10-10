@@ -42,6 +42,7 @@ export default {
   SHIP_DATE: { label: 'Tahmini yükleme tarihi değişti', customer: 'Tahmini yükleme tarihi güncellendi' },
   PROFILE_OFFER_SENT: { label: 'Fiyatlar girildi, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   PROFILE_APPROVED: { label: 'Müşteri teklifi onayladı (alış günü)', customer: 'Teklifi onayladınız (alış günü)' },
+  PROFILE_DIRECT: { label: 'Fiyat listesiyle doğrudan sipariş verildi (alış günü)', customer: 'Siparişiniz fiyat listenizle doğrudan iletildi (alış günü)' },
   PICKUP_UPDATED: { label: 'Teslim bilgileri değişti', customer: 'Teslim bilgileri güncellendi' },
   PICKUP_MOVED: { label: 'Teslim (alış) günü depo kuralına göre ileri kaydı (depoya iletilirken)', customer: 'Tahmini teslim (alış) gününüz ileri kaydı' },
   PROFORMA: { label: 'Proforma kesildi', customer: 'Proforma kesildi' },

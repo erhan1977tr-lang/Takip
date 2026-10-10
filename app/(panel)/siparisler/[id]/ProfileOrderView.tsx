@@ -6,7 +6,7 @@ import { customerLabel, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import type { Dict, MsgKey, T } from '@/lib/i18n';
-import { profileCustomerText, profileStageText } from '@/lib/labels';
+import { pickupFieldsText, profileCustomerText, profileStageText } from '@/lib/labels';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { FxInfo } from '@/components/FxInfo';
@@ -15,7 +15,7 @@ import { padRate } from '@/server/fx/decimal.js';
 import { OrderInfo } from './OrderInfo';
 import { OrderPayments } from './OrderPayments';
 import { isParked } from '@/server/finance/uncertain.js';
-import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, profileActions, profileTotals } from '@/server/profile/rules.js';
+import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, customerPickupOpen, missingPickup, pickupEditDeadline, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { DEPOT_CALENDAR, depotPhase, depotToday, earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
 import { coverageGaps, hasYearData } from '@/server/calendar/rules.js';
@@ -38,6 +38,7 @@ type Line = Offer['lines'][number];
 /** ?ok=<kod> → profile.ok.<kod> metni */
 function okText(t: T, m: Dict, code: string | undefined, at: string | undefined, n?: string): string | null {
   if (code === 'profile_created') return t('profile.ok.created');
+  if (code === 'profile_direct') return t('profile.ok.created_direct');
   if (!code || !Object.hasOwn(m.profile.ok, code)) return null;
   // at: gün ("YYYY-MM-DD", taşınan alış günü) ya da an · n: teslimat raporunun sürümü
   return t(`profile.ok.${code}` as MsgKey, { date: !at ? '' : /^\d{4}-\d{2}-\d{2}$/.test(at) ? fmtDate(at) : fmtDateTime(at), n: /^\d{1,4}$/.test(n ?? '') ? String(n) : '' });
@@ -76,6 +77,11 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const minPickup = minPickupDate ? isoDay(minPickupDate) : '';
   const staffMin = isoDay(depotToday(now));
   const phase = depotPhase({ stage, status: order.status, pickupDate: p?.pickupDate ?? null, now });
+  // Teslim bilgisi (karar 229): eksik alanlar (depo formu öncesi) ve müşterinin son değişiklik günü (alış gününden bir gün önce)
+  const pickupMissing = p && !cancelled ? missingPickup(p) : [];
+  const pickupDay = p?.pickupDate ? isoDay(p.pickupDate) : null;
+  const editDeadline = pickupDay ? pickupEditDeadline(pickupDay) : null;
+  const customerOpen = customerPickupOpen({ pickupDay, today: isoDay(depotToday(now)) });
   // Tatil verisi eksikse yöneticiye açık uyarı (gizlenmez): önümüzdeki 180 gün ya da siparişin teslim günü
   const pickupYear = p?.pickupDate ? new Date(p.pickupDate).getUTCFullYear() : null;
   const gapYears = admin
@@ -476,8 +482,21 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               ) : null}
               {phase !== 'DELIVERED' && <p className="muted small" data-delivery-note>{t('delivery.card.estimateNote')} {t('delivery.card.rule')}</p>}
               {isCustomer && stockAlert && phase !== 'DELIVERED' && <div className="alert alert-warn" data-delivery-stock>{t('delivery.card.stockNote')}</div>}
-              {p?.pickupDate && can('update_pickup') && (PICKUP_EDITABLE.includes(stage) || (admin && stage === 'DEPODA')) ? (
-                <details style={{ marginTop: 10 }}>
+              {/* Eksik teslim bilgisi (karar 229): depoya sipariş formu bu bilgiler tamamlanmadan gitmez — ne eksik açıkça yazılır */}
+              {pickupMissing.length > 0 && BEFORE_WAREHOUSE.includes(stage) && (
+                <div className={`alert ${isCustomer ? 'alert-error' : 'alert-warn'}`} id="teslim-eksik" data-pickup-missing={pickupMissing.join(',')}>
+                  {isCustomer ? (
+                    <><b>{t('profile.page.pickup.missingTitle')}</b> {t('profile.page.pickup.missingText', { fields: pickupFieldsText(t, pickupMissing) })}</>
+                  ) : t('profile.page.pickup.missingStaff', { fields: pickupFieldsText(t, pickupMissing), date: editDeadline ? fmtDate(editDeadline) : '—' })}
+                </div>
+              )}
+              {isCustomer && p?.pickupDate && PICKUP_EDITABLE.includes(stage) && (
+                customerOpen
+                  ? <p className="muted small" data-pickup-deadline={editDeadline ?? ''}>{t('profile.page.pickup.deadline', { date: editDeadline ? fmtDate(editDeadline) : '—' })}</p>
+                  : <div className="alert alert-info" data-pickup-deadline-passed>{t('profile.page.pickup.deadlinePassed')}</div>
+              )}
+              {p?.pickupDate && can('update_pickup') && (PICKUP_EDITABLE.includes(stage) || (admin && stage === 'DEPODA')) && (!isCustomer || customerOpen) ? (
+                <details style={{ marginTop: 10 }} open={pickupMissing.length > 0 && BEFORE_WAREHOUSE.includes(stage)}>
                   <summary className="small" style={{ cursor: 'pointer' }}>{t('profile.page.pickup.edit')}</summary>
                   <form action={updatePickupAction} style={{ marginTop: 8 }}>
                     {hidden}
@@ -486,9 +505,10 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                     <input id="up-date" name="pickupDate" type="date" required min={admin ? staffMin : minPickup} defaultValue={isoDay(p.pickupDate)} />
                     <div className="hint">{admin ? t('delivery.card.adminHint') : t('profile.page.approve.dateHint', { date: fmtDate(minPickup) })}</div>
                     <label htmlFor="up-phone" className="small">{t('profile.page.pickup.phone')}</label>
-                    <input id="up-phone" name="phone" type="tel" required maxLength={40} defaultValue={p.contactPhone ?? ''} />
+                    {/* Depoya gitmeden önce telefon / plaka boş bırakılabilir (karar 229); depodaki siparişte zorunlu */}
+                    <input id="up-phone" name="phone" type="tel" required={stage === 'DEPODA'} maxLength={40} defaultValue={p.contactPhone ?? ''} />
                     <label htmlFor="up-plate" className="small">{t('profile.page.pickup.plate')}</label>
-                    <input id="up-plate" name="plate" required maxLength={60} defaultValue={p.vehiclePlate ?? ''} style={{ textTransform: 'uppercase' }} />
+                    <input id="up-plate" name="plate" required={stage === 'DEPODA'} maxLength={60} defaultValue={p.vehiclePlate ?? ''} style={{ textTransform: 'uppercase' }} />
                     <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-primary">{t('profile.page.pickup.save')}</button></div>
                   </form>
                   {/* "Depoya iletilene kadar" notu müşterinin değiştirebildiği adımlar için; depodaki siparişte yöneticiye adminHint yeter */}

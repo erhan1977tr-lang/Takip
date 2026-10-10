@@ -11,7 +11,7 @@ import { fileProblemText, workflowErrorText } from '@/lib/labels';
 import { actorOf } from '@/lib/actor';
 import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles } from '@/lib/uploads';
-import { fileProblem } from '@/server/orders/rules.js';
+import { fileProblem, parseDateOnly } from '@/server/orders/rules.js';
 import { createGlassOrder } from '@/server/orders/create.js';
 import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, keepDraftGlass, saveDraft } from '@/server/orders/drafts.js';
 import { CUSTOMER_GLASS_TYPES, glassOrderItems } from '@/server/catalog/glass.js';
@@ -175,7 +175,7 @@ export async function keepDraftGlassAction(formData: FormData) {
 // ---------------- Profil siparişi (Aşama 6) ----------------
 export type ProfileOrderState = {
   error?: string;
-  values?: { title: string; no: string; note: string; qty: Record<string, string> };
+  values?: { title: string; no: string; note: string; qty: Record<string, string>; pickupDate?: string; phone?: string; plate?: string };
 };
 
 /** Profil siparişi: yalnızca adedi > 0 olan ürünler siparişe girer. Taslak da buradan kaydedilir. */
@@ -193,7 +193,10 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
   const qtys = formData.getAll('p_qty').map(String);
   const rows = ids.map((id, i) => ({ id, qty: qtys[i] ?? '' }));
   const qty = Object.fromEntries(rows.filter((r) => r.qty !== '').map((r) => [r.id, r.qty]));
-  const values = { title, no: noRaw, note, qty };
+  const values = {
+    title, no: noRaw, note, qty,
+    pickupDate: String(formData.get('pickupDate') ?? '').slice(0, 10), phone: String(formData.get('phone') ?? '').slice(0, 60), plate: String(formData.get('plate') ?? '').slice(0, 80),
+  };
   const fail = (error: string) => ({ error, values });
 
   if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail(t('newOrder.errors.noFirm'));
@@ -227,12 +230,26 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
   const items = profileOrderItems(read.lines, products);
   if (!items.ok) return fail(t(items.code === 'NO_ITEMS' ? 'profile.errors.noItems' : 'profile.errors.productGone'));
 
+  // Fiyat listesiyle doğrudan sipariş (Paket B — karar 229): alış günü zorunlu, telefon / plaka isteğe bağlı — sunucu,
+  // firmanın bağlı etkin listesine ve satırların fiyatına göre doğrudan mı olağan akış mı olduğuna KENDİ karar verir.
+  // requestKey: formun tek seferlik anahtarı (çift tıklama / yeniden deneme ikinci sipariş ve proforma açmaz)
+  const pickup = {
+    pickupDate: parseDateOnly(String(formData.get('pickupDate') ?? '')) ?? undefined,
+    phone: String(formData.get('phone') ?? '').slice(0, 60),
+    plate: String(formData.get('plate') ?? '').slice(0, 80),
+  };
+  const requestKey = String(formData.get('requestKey') ?? '').slice(0, 64) || null;
   let orderId: string;
+  let direct = false;
+  let duplicate = false;
   try {
     const created = await createProfileOrder(db, {
       actor, firm: { id: firm.id, prefix: firm.prefix }, title: title || null, requestedNo: no, suggestedNo, items: items.items, note: note || null, draftId,
+      pickup, requestKey,
     });
     orderId = created.id;
+    direct = created.direct;
+    duplicate = created.duplicate;
   } catch (err) {
     if (err instanceof WorkflowError) {
       return fail(err.code === 'DRAFT_GONE' ? draftErrorText(t, err.code) : workflowErrorText(t, err.code, err.details as Record<string, unknown>));
@@ -240,9 +257,10 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     console.error('Profil siparişi oluşturulamadı', err);
     return fail(t('newOrder.errors.saveFailed'));
   }
-  if (note) await firstNoteTranslation(orderId, actor);
+  // Aynı form ikinci kez geldi: ilk sipariş gösterilir (ilk mesaj zaten ilk gönderimde çevrildi)
+  if (note && !duplicate) await firstNoteTranslation(orderId, actor);
   revalidatePath('/siparisler');
-  redirect(`/siparisler/${orderId}?ok=profile_created`);
+  redirect(`/siparisler/${orderId}?ok=${direct ? 'profile_direct' : 'profile_created'}`);
 }
 
 /** Siparişin ilk mesajının tek seferlik çevirisi (karar 225). Hiçbir hata sipariş oluşturmayı bozmaz. */

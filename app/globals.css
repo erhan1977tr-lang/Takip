@@ -801,6 +801,8 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .profile-pick th.c-thumb { width: 76px; }
 .profile-pick th.c-unit { width: 150px; }
 .profile-pick th.c-qty { width: 130px; }
+.profile-pick th.c-price { width: 110px; }
+.direct-total { margin: 8px 0 0; }
 .profile-pick td:nth-child(2) { white-space: normal; overflow-wrap: anywhere; }
 .profile-pick td:nth-child(2) label { margin: 0; }
 @media (max-width: 640px) {

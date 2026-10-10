@@ -7,7 +7,9 @@ export const PROFILE_CURRENCY = 'EUR';
 
 /**
  * Firmanın profil fiyatları: ürün id → fiyat ve fiyatın kaynağı.
- * @returns {Promise<{ tableName: string | null, price: (product: { id: string, listPrice: unknown }) => number | null }>}
+ * direct (Paket B — karar 229): firmaya bağlı ETKİN bir fiyat tablosu var → müşteri fiyatları görür ve doğrudan sipariş verir
+ * (pasif / bağlı olmayan tablo → olağan teklif akışı). Fiyat kuralı aynıdır: tablo fiyatı, yoksa katalog liste fiyatı.
+ * @returns {Promise<{ tableName: string | null, direct: boolean, price: (product: { id: string, listPrice: unknown }) => number | null }>}
  */
 export async function profilePricesFor(db, customerId) {
   const firm = await db.customer.findUnique({
@@ -18,6 +20,7 @@ export async function profilePricesFor(db, customerId) {
   const custom = new Map((table?.items ?? []).map((i) => [i.productId, Number(i.unitPrice)]));
   return {
     tableName: table?.name ?? null,
+    direct: !!table,
     price: (p) => custom.get(p.id) ?? (p.listPrice == null ? null : Number(p.listPrice)),
   };
 }

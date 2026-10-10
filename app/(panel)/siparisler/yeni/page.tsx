@@ -18,6 +18,10 @@ import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { readProfileDraftItems } from '@/server/profile/drafts.js';
 import { loadCalcOptions } from '@/server/profile/calc-service.js';
 import { fmtDec } from '@/lib/format';
+import { randomUUID } from 'node:crypto';
+import { profilePricesFor } from '@/server/profile/pricing.js';
+import { DEPOT_CALENDAR, earliestPickup } from '@/server/profile/dates.js';
+import { calendarOverrides } from '@/server/calendar/service.js';
 
 // Yeni sipariş: önce sipariş tipi seçilir (tipler veritabanından; yalnızca etkin olanlar).
 // Tek tip etkinken seçim ekranı atlanır. Profil siparişi (Aşama 6) kendi formunu kullanır.
@@ -94,6 +98,20 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       handrails: calcOptions.handrails.map((x) => ({ id: x.id, label: localName(x, locale) })),
       thicknesses: calcOptions.thicknesses.map((x) => ({ id: x.id, label: x.label ?? t('profile.calc.mm', { mm: fmtDec(x.mm, 2) }) })),
     } : null;
+    // Fiyat listesiyle doğrudan sipariş (Paket B — karar 229): firmaya bağlı ETKİN fiyat tablosu varsa müşteri fiyatları
+    // (tablo fiyatı, yoksa katalog liste fiyatı — teklifle aynı kural) ve toplamı görür, alış günüyle doğrudan sipariş verir.
+    // Fiyatlar yalnızca bu firmanınkidir (sunucuda); fabrika / alış fiyatı hiç gelmez. Asıl karar ve tutar sunucuda
+    // (createProfileOrder) yeniden hesaplanır.
+    const pricing = await profilePricesFor(db, firm.id);
+    let minPickup = '';
+    if (pricing.direct) {
+      const now = new Date();
+      try { minPickup = earliestPickup({ now, overrides: await calendarOverrides(db, DEPOT_CALENDAR, { now }) }).toISOString().slice(0, 10); } catch { minPickup = ''; }
+    }
+    const direct = pricing.direct ? {
+      table: pricing.tableName ?? '', minPickup,
+      prices: Object.fromEntries(items.map((p) => [p.id, pricing.price(p)])) as Record<string, number | null>,
+    } : null;
     const pdraft: ProfileDraft | undefined = draftRow ? {
       id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',
       no: draftRow.customerOrderNo != null ? String(draftRow.customerOrderNo) : null,
@@ -104,7 +122,8 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         <div className="page-head">
           <p className="small"><Link href="/siparisler">{t('newOrder.back')}</Link></p>
           <h1>{pdraft ? t('newOrder.draftTitle') : t('profile.form.title')}</h1>
-          <p className="muted">{t('profile.form.intro')}</p>
+          {/* Doğrudan siparişte "fiyatları yönetici girer" yazmaz — fiyat listesi kartı açıklar (karar 229) */}
+          {!direct && <p className="muted">{t('profile.form.intro')}</p>}
           {typeRow}
           {draftRow && <p className="muted small">{t('newOrder.draftSavedAt', { date: fmtDate(draftRow.updatedAt) })}</p>}
         </div>
@@ -114,7 +133,8 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
           categories={cats.map((c) => ({ code: c.code, name: localName(c, locale) }))}
           products={items.map((p) => ({ id: p.id, code: p.code, name: localName(p, locale), unit: unitLabel(p.unitCode, locale), imageId: p.imageId, categoryCode: p.category.code }))}
           suggestedNo={nextNo} prefix={firm.prefix} draft={pdraft} m={m.profile.form} mc={m.profile.calc} calc={calc}
-          notes={[t('profile.notes.pickup'), fxOfferNote(t, fxPolicy)]}
+          notes={[t('profile.notes.pickup'), ...(direct ? [t('profile.notes.vat')] : []), fxOfferNote(t, fxPolicy)]}
+          direct={direct} requestKey={randomUUID()}
         />
         {draftRow && (
           <form action={deleteDraftAction} className="row end">

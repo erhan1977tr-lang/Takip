@@ -34,6 +34,22 @@ export default {
     vat: 'Prețurile nu includ TVA.',
   },
   form: {
+    // Comandă directă cu lista de prețuri (Paket B — decizia 229)
+    direct: {
+      title: 'Lista dvs. de prețuri și datele de ridicare',
+      intro: 'Comandați cu lista de prețuri atribuită firmei dvs.: prețurile și totalul sunt mai jos. Comanda este transmisă direct, fără ofertă de la administrator și fără aprobare; vă trimitem proforma.',
+      table: 'Lista de prețuri: {name}',
+      date: 'Data ridicării',
+      dateHint: 'Cel mai devreme {date} (dacă comanda este transmisă azi depozitului). Dacă este transmisă mai târziu, data ridicării se mută conform regulii depozitului.',
+      phone: 'Telefon de contact (opțional)',
+      plate: 'Numărul vehiculului (opțional)',
+      later: 'Puteți adăuga telefonul și numărul vehiculului din pagina comenzii până cu o zi înainte de data ridicării. Fără aceste date comanda nu poate fi trimisă depozitului și e-mailul către depozit nu pleacă.',
+      colPrice: 'Preț unitar (EUR)',
+      colAmount: 'Valoare (EUR)',
+      total: 'Total (fără TVA)',
+      noPrice: 'fără preț',
+      unpriced: 'Unele produse alese nu au preț în lista dvs.: această comandă merge la stabilirea prețurilor de către administrator (se aplică pașii de ofertă și aprobare).',
+    },
     title: 'Comandă nouă de profile',
     intro: 'Introduceți cantitățile produselor pe care doriți să le ridicați de la depozit. Doar produsele cu cantitate intră în comandă. Prețurile sunt stabilite de administrator; veți vedea oferta când este gata.',
     info: {
@@ -251,7 +267,12 @@ export default {
       label: 'Denumirea poate avea cel mult 20 de caractere.',
     },
   },
+  // Datele de ridicare necesare formularului de depozit (decizia 229)
+  pickupField: { pickupDate: 'data ridicării', contactPhone: 'telefon', vehiclePlate: 'numărul vehiculului' },
   errors: {
+    pickupMissing: 'Alegeți data ridicării (livrării).',
+    pickupInfoMissing: 'Datele de ridicare sunt incomplete ({fields}); comanda nu poate fi trimisă depozitului. Va fi transmisă după completarea lor.',
+    pickupDeadline: 'Datele de ridicare pot fi modificate până cu o zi înainte de data ridicării; termenul a expirat. Pentru modificări contactați-ne.',
     badFxRate: "Curs invalid. Introduceți un număr între 3,5 și 8 (ex. 4,9765).",
     fxRequired: "FGO activ: introduceți cursul EUR BT, deoarece factura se emite cu cursul proformei.",
     fxLocked: "Proforma a fost emisă în FGO cu cursul din politica clientului; factura se emite cu același curs, cursul nu se poate schimba.",
@@ -281,6 +302,9 @@ export default {
     deliveryFileType: 'Se pot încărca doar PDF, JPG sau PNG: {name}',
   },
   ok: {
+    created_direct: 'Comanda dvs. a fost transmisă direct cu lista dvs. de prețuri. Proforma vă va fi trimisă când este gata.',
+    paid_missing: 'Plata a fost înregistrată; comanda NU a fost trimisă depozitului deoarece datele de ridicare sunt incomplete (vedeți „Date de ridicare”). Va fi transmisă după completarea lor.',
+    pickup_forwarded: 'Datele de ridicare au fost completate; comanda plătită a fost transmisă depozitului.',
     fgo_retry: "Lucrarea FGO a fost repusă în coadă; se încearcă în cel mult un minut.",
     created: 'Comanda de profile a fost trimisă. Oferta va apărea aici după stabilirea prețurilor.',
     prices_saved: 'Prețurile au fost salvate.',
@@ -367,6 +391,11 @@ export default {
       notApproved: 'Clientul nu a aprobat încă oferta.',
     },
     pickup: {
+      missingTitle: 'Date de ridicare incomplete:',
+      missingText: '{fields}. Fără aceste date comanda nu poate fi trimisă depozitului și e-mailul către depozit nu pleacă.',
+      deadline: 'Ultima zi pentru modificări: {date} (cu o zi înainte de data ridicării).',
+      deadlinePassed: 'Termenul pentru modificarea datelor de ridicare a expirat (până cu o zi înainte de data ridicării). Pentru modificări contactați-ne.',
+      missingStaff: 'Date de ridicare incomplete ({fields}): comanda nu poate fi trimisă depozitului. Clientul le poate completa până la {date}; dvs. le puteți completa oricând.',
       title: 'Date de ridicare',
       date: 'Data ridicării',
       phone: 'Telefon',

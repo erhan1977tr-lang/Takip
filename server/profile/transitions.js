@@ -5,8 +5,8 @@ import { outboxEvent } from '../domain/outbox.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
-import { DEPOT_CALENDAR, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
-import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
+import { DEPOT_CALENDAR, DEPOT_TIME_ZONE, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
+import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, customerPickupOpen, missingPickup, missingPrices, optionalField, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
 import { calendarOverrides } from '../calendar/service.js';
 import { can } from '../auth/permissions.js';
 import { deductOrderStock, returnOrderStock, shortages, stockLevels, stockLockKeys } from './stock.js';
@@ -140,17 +140,29 @@ async function pickupInput(h, { requireAll }) {
     if (problem) throw new WorkflowError(problem);
     out.pickupDate = dayDate(dayKeyOf(d));
   }
+  // Depoya gitmeden önce telefon ve plaka boş bırakılabilir (Paket B — karar 229: depo formu gönderilmeden önce
+  // tamamlanır; eksikse sipariş depoya gönderilmez). Onayda (requireAll) ve depodaki siparişte zorunlu kalır.
+  const optional = !requireAll && BEFORE_WAREHOUSE.includes(h.order.profile.stage);
   if (p.phone !== undefined || requireAll) {
-    const phone = cleanPhone(p.phone);
-    if (!phone) throw new WorkflowError('BAD_PHONE');
+    const phone = optional ? optionalField(p.phone, cleanPhone) : cleanPhone(p.phone);
+    if (phone === undefined || (!optional && !phone)) throw new WorkflowError('BAD_PHONE');
     out.contactPhone = phone;
   }
   if (p.plate !== undefined || requireAll) {
-    const plate = cleanPlate(p.plate);
-    if (!plate) throw new WorkflowError('BAD_PLATE');
+    const plate = optional ? optionalField(p.plate, cleanPlate) : cleanPlate(p.plate);
+    if (plate === undefined || (!optional && !plate)) throw new WorkflowError('BAD_PLATE');
     out.vehiclePlate = plate;
   }
   return out;
+}
+
+/**
+ * Depoya sipariş formu gitmeden önceki son denetim (karar 229): alış günü, telefon ve plaka dolu olmalı. Eksikse depo
+ * e-postası kuyruğa girmez, stok düşülmez; eksik alanlar hatanın ayrıntısındadır.
+ */
+function requirePickupInfo(profile) {
+  const missing = missingPickup(profile);
+  if (missing.length) throw new WorkflowError('PICKUP_INFO_MISSING', { fields: missing });
 }
 
 /** FGO açıksa kuyruğa iş ekler (gönderim işçide; işlem içinde dış istek yapılmaz) */
@@ -197,6 +209,7 @@ const shortText = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(
  */
 async function toWarehouse(h, extra) {
   const p = h.order.profile;
+  requirePickupInfo({ ...p, ...extra });
   const items = h.order.profileItems.map((i) => ({ productId: i.productId, qty: i.qty }));
   const levels = await stockLevels(h.tx, items.map((i) => i.productId).filter(Boolean));
   const missing = shortages(items, levels);
@@ -276,8 +289,10 @@ const ACTIONS = {
     const stage = h.order.profile.stage;
     const staff = isStaff(h);
     if (!(PICKUP_EDITABLE.includes(stage) || (staff && stage === 'DEPODA'))) throw new WorkflowError('PICKUP_LOCKED');
-    const info = await pickupInput(h, { requireAll: false });
     const prev = h.order.profile.pickupDate ? dayKeyOf(h.order.profile.pickupDate) : null;
+    // Müşteri alış gününden BİR GÜN ÖNCESİNE kadar değiştirebilir (karar 229; depo günü, sunucu saati)
+    if (!staff && !customerPickupOpen({ pickupDay: prev, today: localDay(h.now, DEPOT_TIME_ZONE) })) throw new WorkflowError('PICKUP_DEADLINE');
+    const info = await pickupInput(h, { requireAll: false });
     const before = { pickupDate: prev, contactPhone: h.order.profile.contactPhone, vehiclePlate: h.order.profile.vehiclePlate };
     await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: info });
     const date = info.pickupDate ?? h.order.profile.pickupDate;
@@ -285,8 +300,19 @@ const ACTIONS = {
     const changed = staff && !!day && day !== prev;
     if (changed) h.event('DELIVERY_DATE_CHANGED', dayText(date), { day, ...(prev ? { prevDay: prev } : {}) });
     else h.event('PICKUP_UPDATED', date ? dayText(date) : null);
-    h.audit = { before, after: { ...before, ...info, pickupDate: day }, ...(changed ? { deliveryDateChanged: true } : {}) };
-    h.result = { deliveryDateChanged: changed };
+    // Ödemesi alınmış ama teslim bilgisi eksik olduğu için depoya gidemeyen sipariş (karar 229): bilgiler şimdi
+    // tamamlandıysa ödeme kuralıyla aynı yoldan HEMEN depoya iletilir (bir kez; stok kilitleri PROFILE_LOCKS'ta)
+    const merged = { ...h.order.profile, ...info };
+    let forwarded = false;
+    if (h.order.profile.paidAt && BEFORE_WAREHOUSE.includes(stage) && missingPickup(merged).length === 0) {
+      h.order.profile = merged;
+      const r = await forwardPickup(h);
+      const missing = await toWarehouse(h, { pickupDate: r.pickupDate });
+      forwarded = true;
+      h.result = { deliveryDateChanged: changed, forwarded, shortages: missing, moved: r.moved, pickupDate: r.pickupDate };
+    }
+    h.audit = { before, after: { ...before, ...info, pickupDate: day }, ...(changed ? { deliveryDateChanged: true } : {}), ...(forwarded ? { forwarded: true } : {}) };
+    if (!forwarded) h.result = { deliveryDateChanged: changed, forwarded: false };
   },
   /**
    * Proforma elle kesildi. FGO açıksa kur zorunludur (fatura aynı kurla kesilir); kuyruktaki otomatik proforma
@@ -361,6 +387,15 @@ const ACTIONS = {
       return;
     }
     h.event('PAID', dayText(paidAt));
+    // Teslim bilgisi eksik (karar 229): ödeme kaydedilir, sipariş depoya GÖNDERİLMEZ (depo e-postası yok, stok düşülmez);
+    // bilgiler tamamlanınca (müşteri ya da yönetici) sipariş aynı kuralla depoya iletilir (update_pickup)
+    const missingInfo = missingPickup(h.order.profile);
+    if (missingInfo.length) {
+      await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: { paidAt } });
+      h.audit = { paidAt: dayKeyOf(paidAt), stage: h.order.profile.stage, pickupMissing: missingInfo };
+      h.result = { sent: false, shortages: [], moved: false, pickupMissing: missingInfo };
+      return;
+    }
     // Sipariş ŞİMDİ depoya iletilir: alış günü bu anın depo kuralıyla denetlenir (karar 194)
     const r = await forwardPickup(h);
     const missing = await toWarehouse(h, { paidAt, pickupDate: r.pickupDate });
@@ -370,6 +405,7 @@ const ACTIONS = {
   /** "Siparişi depoya gönder": yönetici ödeme beklemeden gönderir (alış günü bu anın depo kuralıyla denetlenir). */
   async send_to_warehouse(h) {
     if (!h.order.profile.pickupDate) throw new WorkflowError('PICKUP_MISSING');
+    requirePickupInfo(h.order.profile);
     const r = await forwardPickup(h);
     const missing = await toWarehouse(h, { pickupDate: r.pickupDate });
     h.audit = { manual: true, shortages: missing, pickupDate: dayKeyOf(r.pickupDate), moved: r.moved };
@@ -468,7 +504,8 @@ export const PROFILE_ACTIONS = Object.keys(ACTIONS);
  * @param {{ profileItems: { productId: string | null }[] }} order
  */
 const stockLocks = (order) => stockLockKeys(order.profileItems.map((i) => i.productId));
-export const PROFILE_LOCKS = { mark_paid: stockLocks, send_to_warehouse: stockLocks, cancel: stockLocks };
+// update_pickup (karar 229): ödenmiş ama teslim bilgisi eksik sipariş, bilgi tamamlanınca depoya iletilir (stok çıkışı)
+export const PROFILE_LOCKS = { mark_paid: stockLocks, send_to_warehouse: stockLocks, cancel: stockLocks, update_pickup: stockLocks };
 
 /**
  * Profil siparişi işlemi.

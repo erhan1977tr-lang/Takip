@@ -14,6 +14,11 @@ export type ProfileCategoryOption = { code: string; name: string };
 export type ProfileDraft = { id: string; title: string; no: string | null; note: string; qty: Record<string, string> };
 
 const picked = (q: string | undefined) => /^\d+$/.test(q ?? '') && Number(q) > 0;
+/** Fiyat listesiyle doğrudan sipariş (Paket B — karar 229): firmaya bağlı listenin adı, en erken alış günü, ürün fiyatları */
+export type ProfileDirect = { table: string; minPickup: string; prices: Record<string, number | null> };
+const money = (v: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+/** Satır tutarı kuruş olarak (yalnızca gösterim; asıl tutar sunucuda — profileTotals) */
+const cents = (price: number, qty: number) => Math.round(price * 100) * qty;
 
 /**
  * Profil siparişi formu: kategori kategori ürünler (görsel, ad/kod, birim, adet). Yalnızca adedi > 0 olan ürünler siparişe girer.
@@ -22,9 +27,10 @@ const picked = (q: string | undefined) => /^\d+$/.test(q ?? '') && Number(q) > 0
  * stoğu yetmeyen ürünler gösterilir, sipariş engellenmez ("Yine de gönder").
  * m: sözlüğün profile.form parçası · mc: profile.calc parçası
  */
-export function ProfileOrderForm({ categories, products, suggestedNo, prefix, draft, m, mc, calc, notes }: {
+export function ProfileOrderForm({ categories, products, suggestedNo, prefix, draft, m, mc, calc, notes, direct = null, requestKey }: {
   categories: ProfileCategoryOption[]; products: ProfileOption[]; suggestedNo: number; prefix: string; draft?: ProfileDraft;
   m: Dict['profile']['form']; mc: Dict['profile']['calc']; calc: CalcOptions | null; notes: string[];
+  direct?: ProfileDirect | null; requestKey: string;
 }) {
   const [state, action, pending] = useActionState<ProfileOrderState, FormData>(createProfileOrderAction, {});
   const v = state.values;
@@ -40,6 +46,12 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   const skipCheck = useRef(false);
   const busy = useRef(false);
   const selected = Object.values(qty).filter(picked).length;
+  // Doğrudan sipariş: seçili her ürünün fiyatı listede varsa (yoksa sipariş olağan akışa gider — sunucu da aynı kuralla karar verir)
+  const pickedIds = Object.keys(qty).filter((id) => picked(qty[id]));
+  const priceOf = (id: string) => direct?.prices[id] ?? null;
+  const unpriced = !!direct && pickedIds.some((id) => priceOf(id) == null);
+  const directNow = !!direct && !unpriced;
+  const totalCents = direct ? pickedIds.reduce((sum, id) => sum + (priceOf(id) != null ? cents(priceOf(id)!, Number(qty[id])) : 0), 0) : 0;
   const code = `${prefix}P${no || '…'}`;
   const names = Object.fromEntries(products.map((p) => [p.id, `${p.code} — ${p.name}`]));
 
@@ -74,6 +86,34 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   return (
     <form action={action} ref={formRef} onSubmit={onSubmit}>
       {draft && <input type="hidden" name="draftId" value={draft.id} />}
+      <input type="hidden" name="requestKey" value={requestKey} />
+      {/* Fiyat listesiyle doğrudan sipariş (karar 229): sayfanın üstünde fiyat listesi bilgisi, alış günü (zorunlu), telefon ve
+          plaka (isteğe bağlı) — "Teklifi onaylayın" adımı yok; sipariş doğrudan iletilir, proforma gelir */}
+      {direct && (
+        <div className="card turn" id="dogrudan" data-direct-order>
+          <h2>{m.direct.title}</h2>
+          <p className="muted small">{m.direct.intro}</p>
+          {direct.table && <p className="small"><b>{interpolate(m.direct.table, { name: direct.table })}</b></p>}
+          <div className="grid-3">
+            <div>
+              <label htmlFor="dg-date">{m.direct.date}{directNow ? ' *' : ''}</label>
+              <input id="dg-date" name="pickupDate" type="date" required={directNow && selected > 0} min={direct.minPickup || undefined} defaultValue={v?.pickupDate || direct.minPickup} />
+              {direct.minPickup && <div className="hint">{interpolate(m.direct.dateHint, { date: direct.minPickup.split('-').reverse().join('.') })}</div>}
+            </div>
+            <div>
+              <label htmlFor="dg-phone">{m.direct.phone}</label>
+              <input id="dg-phone" name="phone" type="tel" maxLength={40} autoComplete="tel" defaultValue={v?.phone ?? ''} />
+            </div>
+            <div>
+              <label htmlFor="dg-plate">{m.direct.plate}</label>
+              <input id="dg-plate" name="plate" maxLength={60} placeholder="B 123 ABC" defaultValue={v?.plate ?? ''} style={{ textTransform: 'uppercase' }} />
+            </div>
+          </div>
+          <p className="hint">{m.direct.later}</p>
+          <p className="direct-total" data-direct-total={(totalCents / 100).toFixed(2)}>{m.direct.total}: <b>{money(totalCents / 100)} EUR</b></p>
+          {unpriced && <div className="alert alert-warn" data-direct-unpriced>{m.direct.unpriced}</div>}
+        </div>
+      )}
       <div className="card">
         <h2>{m.info.title}</h2>
         <div className="grid-2">
@@ -114,7 +154,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
             <div className="table-wrap">
               {/* Sütun genişlikleri sabit: birim ve adet sütunları her kategoride aynı hizada */}
               <table className="profile-table profile-pick">
-                <thead><tr><th className="c-thumb" /><th>{m.colProduct}</th><th className="c-unit">{m.colUnit}</th><th className="c-qty num">{m.colQty}</th></tr></thead>
+                <thead><tr><th className="c-thumb" /><th>{m.colProduct}</th><th className="c-unit">{m.colUnit}</th>{direct && <><th className="c-price num">{m.direct.colPrice}</th><th className="c-price num">{m.direct.colAmount}</th></>}<th className="c-qty num">{m.colQty}</th></tr></thead>
                 <tbody>
                   {list.map((p) => {
                     const q = qty[p.id] ?? '';
@@ -132,6 +172,12 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
                           </div>
                         </td>
                         <td className="muted">{p.unit}</td>
+                        {direct && (
+                          <>
+                            <td className="num" data-price={priceOf(p.id) ?? ''}>{priceOf(p.id) != null ? money(priceOf(p.id)!) : <span className="muted small">{m.direct.noPrice}</span>}</td>
+                            <td className="num">{picked(q) && priceOf(p.id) != null ? money(cents(priceOf(p.id)!, Number(q)) / 100) : ''}</td>
+                          </>
+                        )}
                         <td className="num">
                           <input type="hidden" name="p_id" value={p.id} />
                           <input id={`q-${p.id}`} name="p_qty" type="number" inputMode="numeric" min={0} max={100000} step={1} value={q} placeholder="0"
@@ -190,6 +236,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
       <div className="card submit-bar sticky-submit">
         <ul className="submit-check">
           <li className={selected ? 'done' : undefined}>{selected ? interpolate(m.selected, { n: selected }) : m.submit.needItem}</li>
+          {direct && selected > 0 && <li className="done">{m.direct.total}: <b>{money(totalCents / 100)} EUR</b></li>}
         </ul>
         <div className="row">
           <button type="submit" name="intent" value="draft" className="btn" formNoValidate disabled={pending}>{m.submit.draft}</button>

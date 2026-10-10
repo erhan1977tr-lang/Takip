@@ -121,6 +121,13 @@ export function loadingParts(order, offer) {
   return [...parts.entries()].sort((a, b) => dayCmp(a[0], b[0])).map(([day, ls]) => ({ day, lines: ls }));
 }
 
+/**
+ * @typedef {{ key: string, orderId: string, orderNo: string, title: string | null, day: string | null, offerDay: string,
+ *   version: number, currency: string, partial: boolean, data: ReturnType<typeof offerExportData>, pieces: number }} ReportSection
+ * @typedef {{ currency: string, count: number, m2: number, pieces: number, amount: number }} ReportTotal
+ */
+
+/** @param {Map<string, any>} map @param {ReportSection} s */
 const addTotal = (map, s) => {
   const t = map.get(s.currency) ?? { currency: s.currency, orders: new Set(), m2c: 0, pieces: 0, ac: 0 };
   t.orders.add(s.orderId);
@@ -129,6 +136,7 @@ const addTotal = (map, s) => {
   t.ac += cents(s.data.total);
   map.set(s.currency, t);
 };
+/** @param {Map<string, any>} map @returns {ReportTotal[]} */
 const totalsOf = (map) => [...map.values()]
   .map((t) => ({ currency: t.currency, count: t.orders.size, m2: t.m2c / 100, pieces: t.pieces, amount: t.ac / 100 }))
   .sort((x, y) => x.currency.localeCompare(y.currency));
@@ -143,8 +151,11 @@ const totalsOf = (map) => [...map.values()]
  *   (count = farklı sipariş), m² / adet / tutar bölümlerin toplamıdır (bölümler satırın ticari toplamını paylaşır).
  * @param {any[]} orders
  * @param {{ from: string, to: string, timeZone: string, locale: 'tr' | 'ro', kindLabel: (k: string) => string, price: (l: any) => unknown }} o
+ * @returns {{ from: string, to: string, sections: ReportSection[], groups: { day: string | null, sections: ReportSection[], totals: ReportTotal[] }[],
+ *   totals: ReportTotal[], orders: number }}
  */
 export function customerOfferReport(orders, { from, to, timeZone, locale, kindLabel, price }) {
+  /** @type {ReportSection[]} */
   const sections = [];
   for (const order of orders) {
     if (order.orderTypeCode !== 'GLASS_ORDER' || order.status === 'IPTAL') continue;
@@ -170,6 +181,7 @@ export function customerOfferReport(orders, { from, to, timeZone, locale, kindLa
     }
   }
   sections.sort((x, y) => dayCmp(x.day, y.day) || x.orderNo.localeCompare(y.orderNo, 'tr'));
+  /** @type {{ day: string | null, sections: ReportSection[], totalsMap: Map<string, any> }[]} */
   const groups = [];
   const grand = new Map();
   for (const s of sections) {

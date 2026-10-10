@@ -175,3 +175,55 @@ export function cleanPlate(v) {
   if (!s || s.length > 60 || !/^[A-Z0-9ĂÂÎȘȚŞŢ\s\-,/]+$/.test(s)) return null;
   return s;
 }
+
+// ---------- fiyat listesiyle doğrudan sipariş ve teslim bilgisi (Paket B — karar 229) ----------
+// Müşteriye bağlı ETKİN bir profil fiyat tablosu varsa ve siparişin her ürününün fiyatı belliyse (tablo fiyatı ya da
+// katalog liste fiyatı — mevcut fiyat kuralı, server/profile/pricing.js), sipariş yönetici teklifi ve müşteri onayı
+// OLMADAN doğrudan ONAYLANDI adımında açılır (fiyatların kopyası gönderilmiş teklif olarak saklanır; FGO açıksa proforma
+// kuyruğa girer). Fiyatı belli olmayan ürün varsa sipariş olağan akışa (yönetici fiyatlandırması) gider — fiyat uydurulmaz.
+// Doğrudan siparişte yalnızca alış (teslim) günü zorunludur; telefon ve plaka boş olabilir.
+
+/** Depoya sipariş formu (depo e-postası) gitmeden önce dolu olması gereken teslim bilgileri */
+export const PICKUP_REQUIRED = ['pickupDate', 'contactPhone', 'vehiclePlate'];
+
+/**
+ * Eksik teslim bilgileri (sıra sabit). Boş liste: depoya gönderilebilir.
+ * @param {{ pickupDate?: unknown, contactPhone?: string | null, vehiclePlate?: string | null } | null | undefined} profile
+ * @returns {('pickupDate' | 'contactPhone' | 'vehiclePlate')[]}
+ */
+export function missingPickup(profile) {
+  return /** @type {any} */ (PICKUP_REQUIRED.filter((k) => {
+    const v = profile?.[k];
+    return v == null || (typeof v === 'string' && !v.trim());
+  }));
+}
+
+/**
+ * Müşteri teslim bilgisini alış gününden BİR GÜN ÖNCESİNE kadar (o gün dahil) değiştirebilir; alış günü ve sonrası kapalı.
+ * Günler Romanya deposunun yerel günüdür (sunucu saati; tarayıcı saati kullanılmaz). Alış günü yoksa açıktır.
+ * @param {{ pickupDay: string | null, today: string }} p  "YYYY-MM-DD"
+ */
+export function customerPickupOpen({ pickupDay, today }) {
+  return !pickupDay || today < pickupDay;
+}
+
+/**
+ * Alış gününe göre müşterinin son değişiklik günü ("YYYY-MM-DD"): alış gününden bir önceki gün.
+ * @param {string} pickupDay
+ */
+export function pickupEditDeadline(pickupDay) {
+  const d = new Date(`${pickupDay}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * İsteğe bağlı telefon / plaka: boş → null (izinli), dolu ama geçersiz → undefined (hata).
+ * @param {unknown} v  @param {(v: unknown) => string | null} clean
+ * @returns {string | null | undefined}
+ */
+export function optionalField(v, clean) {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  return clean(s) ?? undefined;
+}

@@ -302,7 +302,8 @@ test('stok: müşteriye giden değerler — yalnızca gereken / mevcut / eksik; 
 
 test('stok: kilit anahtarları tekrarsız ve SIRALI (her yazan aynı sırayla kilitler — kilitlenme yok); depo çıkışı ve iptal kilitli', () => {
   assert.deepEqual(stockLockKeys(['b', 'a', null, 'b', undefined, 'c']), ['stock:a', 'stock:b', 'stock:c']);
-  assert.deepEqual(Object.keys(PROFILE_LOCKS).sort(), ['cancel', 'mark_paid', 'send_to_warehouse']);
+  // update_pickup (Paket B — karar 229): ödenmiş, bilgisi eksik sipariş bilgi tamamlanınca depoya iletilir (stok çıkışı)
+  assert.deepEqual(Object.keys(PROFILE_LOCKS).sort(), ['cancel', 'mark_paid', 'send_to_warehouse', 'update_pickup']);
   const order = { profileItems: [{ productId: 'z' }, { productId: null }, { productId: 'a' }] };
   for (const fn of Object.values(PROFILE_LOCKS)) assert.deepEqual(fn(order), ['stock:a', 'stock:z']);
 });

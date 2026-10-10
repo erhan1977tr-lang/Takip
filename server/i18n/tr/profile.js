@@ -36,6 +36,22 @@ export default {
     vat: 'Fiyatlar TVA (KDV) hariçtir.',
   },
   form: {
+    // Fiyat listesiyle doğrudan sipariş (Paket B — karar 229)
+    direct: {
+      title: 'Fiyat listeniz ve teslim bilgileri',
+      intro: 'Size tanımlı fiyat listesiyle sipariş veriyorsunuz: fiyatlar ve toplam tutar aşağıda. Sipariş yönetici teklifi ve onay beklemeden doğrudan iletilir; proforma size gönderilir.',
+      table: 'Fiyat listesi: {name}',
+      date: 'Alış günü',
+      dateHint: 'En erken {date} (sipariş bugün depoya iletilirse). Sipariş depoya daha geç iletilirse alış günü depo kuralına göre ileri kayar.',
+      phone: 'İletişim telefonu (isteğe bağlı)',
+      plate: 'Araç plakası (isteğe bağlı)',
+      later: 'Telefon ve plakayı alış gününden bir gün öncesine kadar sipariş sayfasından ekleyebilirsiniz. Bu bilgiler tamamlanmadan sipariş depoya gönderilemez ve depoya sipariş e-postası gitmez.',
+      colPrice: 'Birim fiyat (EUR)',
+      colAmount: 'Tutar (EUR)',
+      total: 'Toplam (TVA hariç)',
+      noPrice: 'fiyat yok',
+      unpriced: 'Seçtiğiniz bazı ürünlerin fiyatı listenizde yok: bu sipariş yöneticinin fiyatlandırmasına gider (teklif ve onay adımları uygulanır).',
+    },
     title: 'Yeni Profil Siparişi',
     intro: 'Depodan almak istediğiniz ürünlerin adetlerini yazın. Yalnızca adet girdiğiniz ürünler siparişe girer. Fiyatları yönetici girer; teklif hazır olunca size gösterilir.',
     info: {
@@ -253,7 +269,12 @@ export default {
       label: 'Ad en fazla 20 karakter olabilir.',
     },
   },
+  // Depo formu için gereken teslim bilgileri (karar 229)
+  pickupField: { pickupDate: 'alış günü', contactPhone: 'telefon', vehiclePlate: 'araç plakası' },
   errors: {
+    pickupMissing: 'Alış (teslim) gününü seçin.',
+    pickupInfoMissing: 'Teslim bilgileri eksik ({fields}); sipariş depoya gönderilemez. Bilgiler tamamlanınca depoya iletilir.',
+    pickupDeadline: 'Teslim bilgileri alış gününden bir gün öncesine kadar değiştirilebilir; süre doldu. Değişiklik için bizimle iletişime geçin.',
     badFxRate: "Kur geçersiz. 3,5 ile 8 arasında bir sayı yazın (ör. 4,9765).",
     fxRequired: "FGO açık: fatura proformanın kuruyla kesileceği için BT EUR kurunu girin.",
     fxLocked: "Proforma FGO'dan müşterinin kur politikasındaki kurla kesildi; fatura aynı kurla kesilir, kur değiştirilemez.",
@@ -283,6 +304,9 @@ export default {
     deliveryFileType: 'Yalnızca PDF, JPG ya da PNG yüklenebilir: {name}',
   },
   ok: {
+    created_direct: 'Siparişiniz fiyat listenizle doğrudan iletildi. Proforma hazırlanınca size gönderilir.',
+    paid_missing: 'Ödeme kaydedildi; teslim bilgileri eksik olduğu için sipariş depoya GÖNDERİLMEDİ (eksikler “Teslim bilgileri”nde). Bilgiler tamamlanınca depoya iletilir.',
+    pickup_forwarded: 'Teslim bilgileri tamamlandı; ödemesi alınmış sipariş depoya iletildi.',
     fgo_retry: "FGO işi yeniden kuyruğa alındı; bir dakika içinde denenecek.",
     created: 'Profil siparişiniz gönderildi. Yönetici fiyatlandırınca teklifiniz burada görünecek.',
     prices_saved: 'Fiyatlar kaydedildi.',
@@ -369,6 +393,11 @@ export default {
       notApproved: 'Müşteri teklifi henüz onaylamadı.',
     },
     pickup: {
+      missingTitle: 'Teslim bilgileri eksik:',
+      missingText: '{fields}. Sipariş, bu bilgiler tamamlanmadan depoya gönderilemez ve depoya sipariş e-postası gitmez.',
+      deadline: 'Son değişiklik günü: {date} (alış gününden bir gün önce).',
+      deadlinePassed: 'Teslim bilgilerini değiştirme süresi doldu (alış gününden bir gün öncesine kadar). Değişiklik için bizimle iletişime geçin.',
+      missingStaff: 'Teslim bilgileri eksik ({fields}): sipariş depoya gönderilemez. Müşteri {date} tarihine kadar tamamlayabilir; siz her zaman tamamlayabilirsiniz.',
       title: 'Teslim bilgileri',
       date: 'Alış günü',
       phone: 'Telefon',

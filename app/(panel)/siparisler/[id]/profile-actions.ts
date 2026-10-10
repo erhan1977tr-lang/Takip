@@ -91,7 +91,8 @@ export async function updatePickupAction(fd: FormData) {
     phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''),
     expectedVersion: expectedVersion(fd),
   });
-  done(id, `ok=${r?.deliveryDateChanged ? 'delivery_date' : 'pickup_updated'}#teslim`);
+  // Ödemesi alınmış, bilgisi eksik sipariş bilgiler tamamlanınca depoya iletildi (karar 229)
+  done(id, `ok=${r?.forwarded ? 'pickup_forwarded' : r?.deliveryDateChanged ? 'delivery_date' : 'pickup_updated'}#teslim`);
 }
 
 export async function proformaAction(fd: FormData) {
@@ -106,7 +107,9 @@ export async function paidAction(fd: FormData) {
   const id = idOf(fd);
   const r = await act(user, id, 'mark_paid', { paidDate: parseDateOnly(String(fd.get('paidDate') ?? '')) ?? new Date('x') });
   // Ödeme teyidi siparişi hemen depoya gönderir (depoya önceden gönderilmişse yalnızca ödeme kaydedilir)
-  const code = !r?.sent ? 'paid_only' : Array.isArray(r.shortages) && r.shortages.length ? 'paid_shortage' : r.moved ? 'paid_moved' : 'paid';
+  // Teslim bilgisi eksik (karar 229): ödeme kaydedildi, sipariş depoya gönderilmedi
+  const code = Array.isArray(r?.pickupMissing) && r.pickupMissing.length ? 'paid_missing'
+    : !r?.sent ? 'paid_only' : Array.isArray(r.shortages) && r.shortages.length ? 'paid_shortage' : r.moved ? 'paid_moved' : 'paid';
   const at = r?.pickupDate instanceof Date ? r.pickupDate.toISOString().slice(0, 10) : '';
   done(id, `ok=${code}&at=${encodeURIComponent(at)}`);
 }

@@ -1341,6 +1341,10 @@ model ProfileOrder {
   proformaLink     String?      // FGO'nun belge bağlantısı
   proformaAmount   Decimal?     @db.Decimal(12, 2) // RON, TVA hariç
   invoiceLink      String?
+  // Paket B (karar 229): müşteriye bağlı fiyat listesiyle DOĞRUDAN verilen sipariş (yönetici teklifi / müşteri onayı yok)
+  direct           Boolean      @default(false)
+  // Formun tek seferlik anahtarı: aynı gönderim (çift tıklama, yeniden deneme) ikinci sipariş / proforma açmaz
+  requestKey       String?      @unique
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @default(now()) @updatedAt
 

@@ -123,6 +123,9 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   BAD_PHONE: 'profile.errors.badPhone',
   BAD_PLATE: 'profile.errors.badPlate',
   PICKUP_LOCKED: 'profile.errors.pickupLocked',
+  PICKUP_MISSING: 'profile.errors.pickupMissing',
+  PICKUP_INFO_MISSING: 'profile.errors.pickupInfoMissing',
+  PICKUP_DEADLINE: 'profile.errors.pickupDeadline',
   PAID_IN_FUTURE: 'profile.errors.paidInFuture',
   DELIVERY_FILE: 'profile.errors.deliveryFile',
   NO_ITEMS: 'profile.errors.noItems',
@@ -137,7 +140,15 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   FGO_UNCERTAIN: 'profile.errors.fgoUncertain',
 };
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
+  // Eksik teslim bilgileri (karar 229): alan adları kullanıcının dilinde, sabit sırayla
+  if (code === 'PICKUP_INFO_MISSING') return t(k('profile.errors.pickupInfoMissing'), { fields: pickupFieldsText(t, details?.fields) });
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);
+}
+
+/** Teslim bilgisi alanları (server/profile/rules.js → PICKUP_REQUIRED) → metin; bilinmeyen alan yazılmaz */
+export function pickupFieldsText(t: T, fields: unknown): string {
+  const known = ['pickupDate', 'contactPhone', 'vehiclePlate'];
+  return (Array.isArray(fields) ? fields : []).filter((f): f is string => typeof f === 'string' && known.includes(f)).map((f) => t(k(`profile.pickupField.${f}`))).join(', ');
 }
 
 /**
