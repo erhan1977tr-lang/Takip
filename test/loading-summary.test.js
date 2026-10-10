@@ -61,6 +61,10 @@ test('Döküm düz tablo: sütun sırası; her kalem bir satır; aynı siparişi
     ['BET1', 'BETA CAM', '', 'Temper', 4, 'm²', 2, 200, 400, 'RON'],
   ]);
   assert.deepEqual(d.totals, [['', '', '', 'TOPLAM', 6, '', 8.23, '', 399.52, 'EUR'], ['', '', '', 'TOPLAM', 4, '', 2, '', 400, 'RON']]);
+  // Toplam satırları para birimi adına göre (müşteri sırasından bağımsız)
+  const swapped = loadingSummarySheets({ subtitle: '', stats: [], firms: [], total: firm('T', {}), guests: [], money: { sales: false, offer: false }, text: TEXT,
+    details: [{ sheetName: 'Döküm', title: 'D', lines: buildLoadingSummary([{ ...ORDERS[2], customer: { id: 'z', name: 'AAA' } }, ORDERS[1]], { priceOf: (l) => l.offerPrice }) }] });
+  assert.deepEqual(swapped[1].blocks[0].totals.map((r) => r[9]), ['EUR', 'RON']);
   const [f] = sheetsFor({ admin: true })[2].blocks;
   assert.deepEqual(f.rows.map((r) => [r[0], r[7], r[8]]), [['ALE46', 30, 130], ['ALE46', 20, 24.6], ['ALE47', 30, 90], ['BET1', 160, 320]]);
   // Excel: METRAJ 3 ondalık gösterim (değer 2 ondalık hesap); süzgeç yalnızca başlık + kalem satırları

@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.69.2 — 10.10.2026
+
+- P3 düzeltmesi: "Döküm" sayfasının para birimi toplamları müşteri sırasından bağımsız, para birimi adına göre sıralı
+  (EUR, RON, …).
+
 ## 3.69.1 — 10.10.2026
 
 - P3 düzeltmesi: firma "Özet" sayfasının "Sipariş toplamı" metni (`loading.firmSummary.orderTotal`) yanlışlıkla silinmişti;

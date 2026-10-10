@@ -186,8 +186,8 @@ export function loadingSummarySheets({ subtitle, stats, firms, total, guests, de
       blocks: [{
         columns: detailColumns,
         rows: detailRows(d.lines, text),
-        // Para birimi başına toplam (para birimleri toplanmaz); tablonun altında, süzgeç aralığının dışında
-        totals: Object.entries(d.lines.totals).map(([cur, t]) => ['', '', '', text.total, t.adet, '', t.m2, '', t.total, cur]),
+        // Para birimi başına toplam (para birimleri toplanmaz; para birimi adına göre sıralı); tablonun altında, süzgeç aralığının dışında
+        totals: Object.entries(d.lines.totals).sort(([a], [b]) => a.localeCompare(b)).map(([cur, t]) => ['', '', '', text.total, t.adet, '', t.m2, '', t.total, cur]),
         empty: text.linesNone,
       }],
     })),
