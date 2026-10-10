@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.66.1 — 10.10.2026
+
+Paket D — çizim erişimi ve dosya güvenliği doğrulaması (karar 238). Erişim kuralı (AUD-8, karar 146) değişmedi; şema değişmedi.
+
+- **Güvenlik testleri:** çizim dosyalarına erişim gerçek sunucuda rol × dosya matrisiyle sınanır — başka firmanın
+  dosyası (dosya kimliği, eski sürüm kimliği, `?ac=1`), taslak ve geri çekilen sürüm, eski tek-dosya düzeni, müşterinin
+  DWG kaydı, kaldırılmış sipariş, çizim / satış kapsamı, klasör dışını gösteren saklama anahtarı, path traversal, dosya
+  listesi ve sayfa yanıtında sızıntı. Reddedilen istekte dosya içeriği, adı, saklama anahtarı dönmez; indirme kaydı yazılmaz.
+- **"güncel" etiketi:** geri çekilmiş çizim sürümü artık "güncel" diye işaretlenmez (yenisi henüz gönderilmediyse müşteri
+  hiçbir sürümü güncel görmez).
+
 ## 3.66.0 — 10.10.2026
 
 Paket C — sipariş, yükleme ve FGO düzeltmeleri (kararlar 230–237). Veritabanı şeması değişmedi; veri dönüştürülmedi.

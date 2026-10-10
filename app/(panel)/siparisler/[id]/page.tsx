@@ -1251,7 +1251,9 @@ function DrawingState({ order, t }: { order: OrderDetail; t: T }) {
 function VersionList({ order, user, can, t, part }: { order: OrderDetail; user: CurrentUser; can: Can; t: T; part: 'all' | 'files' | 'review' }) {
   // Müşteriye taslak sürüm hiç gelmez; geri çekilen sürümün yalnızca satırı gelir (dosyasız, müşteri notsuz) — sanitizeOrder, karar 146
   const versions = [...order.drawings].reverse();
-  const latest = versions[0];
+  // "güncel" yalnızca en son sürümdür ve geri çekilmiş sürüm hiçbir zaman güncel değildir (Paket D): son gönderilen sürüm
+  // geri çekilip yenisi henüz gönderilmediyse müşteri (yenisi taslak — ona gelmez) hiçbir sürümü "güncel" görmez
+  const latest = versions[0]?.status === 'GERI_CEKILDI' ? undefined : versions[0];
   // "Teknik çizim dosyaları": yalnızca fabrika sürümleri (müşterinin dosyası sipariş dosyalarındadır) ·
   // "Çizim onayı ve revizyon": müşteriye gitmiş sürümler ve müşterinin karar kayıtları (taslak burada değil)
   const shown = versions.filter((d) => (part === 'files' ? !isCustomerDrawingRecord(d) : part === 'review' ? d.status !== 'TASLAK' : true));
