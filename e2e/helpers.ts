@@ -321,3 +321,16 @@ export async function seeSections(page: Page, selectors: string[]) {
     await page.waitForTimeout(900);
   }
 }
+
+/**
+ * Tahmini yükleme tarihi — Sipariş Bilgileri'nde satır içi düzenleme (karar 230): "Değiştir" → tarih → "Kaydet" →
+ * eski → yeni onay penceresi kabul edilir. Onay metni döndürülür.
+ */
+export async function setShipDate(page: Page, day: string): Promise<string> {
+  await page.locator('[data-ship-edit]').click();
+  const form = page.locator('[data-ship-form]');
+  await form.locator('#ship-date').fill(day);
+  const message = new Promise<string>((resolve) => page.once('dialog', (d) => { resolve(d.message()); void d.accept(); }));
+  await form.getByRole('button', { name: 'Kaydet' }).click();
+  return message;
+}

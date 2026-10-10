@@ -117,6 +117,12 @@ export default {
   shipDate: {
     label: 'Încărcare estimată',
     submit: 'Actualizează data',
+    edit: 'Modifică',
+    save: 'Salvează',
+    cancel: 'Renunță',
+    confirm: 'Modificați data estimată de încărcare?\n{from} → {to}',
+    none: 'fără dată',
+    locked: 'Încărcarea este finalizată — data nu mai poate fi modificată.',
   },
   cancel: {
     summary: 'Anulează comanda',
@@ -357,6 +363,8 @@ export default {
   errors: {
     notAllowed: 'Această acțiune nu este posibilă în acest moment (este posibil ca starea comenzii să se fi schimbat). Reîncărcați pagina.',
     invalidDate: 'Selectați o dată validă.',
+    shipDateLocked: 'Încărcarea este finalizată; data estimată de încărcare nu mai poate fi modificată.',
+    shipDateUnchanged: 'Data este aceeași; nu s-a modificat nimic.',
     cancelReason: 'Introduceți motivul anulării.',
     drawingFile: 'Selectați fișierul desenului.',
     salesPriceMissing: 'Există rânduri fără preț; oferta nu a fost trimisă.',

@@ -17,6 +17,8 @@ import { CustomerBadge, DrawingBadge, OfferBadge, OrderBadge } from '@/component
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { SidebarPortal } from '@/components/Sidebar';
 import { OrderInfo } from './OrderInfo';
+import { ShipDateEdit } from './ShipDateEdit';
+import { shipDateLocked } from '@/server/orders/ship-date.js';
 import { GlassFinance } from './GlassFinance';
 import { OrderPayments } from './OrderPayments';
 import { fxOfferNote } from '@/lib/fx-note';
@@ -243,6 +245,11 @@ export default async function OrderPage({
     && order.drawingTrack === 'REVIZYON_ISTENDI' && lastDrawing?.status === 'REVIZYON_ISTENDI' ? lastDrawing : undefined;
   const lastRequest = revisionAsked ? [...revisionAsked.revisions].reverse().find((r) => r.kind === 'TALEP') : undefined;
   const updateHref = `/siparisler/${order.id}?teklif=guncelle#teklif`;
+  // Tahmini yükleme tarihi (karar 230): satır içi düzenleme; kilit = Yüklendi / Arşiv / İptal ya da onaylı yükleme kalemi
+  // (sunucu işlemi aynı kuralı yeniden uygular: transitions.js → set_ship_date / shipDateLocked)
+  const shipLocked = !isCustomer && order.orderTypeCode === 'GLASS_ORDER'
+    && (['YUKLENDI', 'ARSIVLENDI'].includes(order.status) || await shipDateLocked(db, order.id));
+  const shipEditable = can('set_ship_date') && !shipLocked;
   // Yöneticinin "Hareketler"i: müşteri fiyatı değişiklikleri (denetim kaydından; tutarlar yalnızca yöneticide — Paket 4)
   const priceChanges = await loadPriceChanges(order.id, user);
   const ok = okText(m, sp.ok);
@@ -420,7 +427,19 @@ export default async function OrderPage({
           order.drawingTrack !== 'YOK' && { label: t('order.info.revisions'), value: t('order.info.revisionRounds', { n: order.revisionCount }) },
           !!order.assignedDrawer && !isCustomer && { label: t('order.info.drawer'), value: order.assignedDrawer.name || order.assignedDrawer.email },
           { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
-          { label: t('order.info.estimatedShip'), value: fmtDate(order.estimatedShipDate) },
+          {
+            label: t('order.info.estimatedShip'),
+            value: isCustomer || drawerView ? fmtDate(order.estimatedShipDate) : (
+              <ShipDateEdit
+                orderId={order.id} version={order.version} current={isoDay(order.estimatedShipDate)} currentText={fmtDate(order.estimatedShipDate)}
+                editable={shipEditable} locked={shipLocked} action={setShipDateAction}
+                labels={{
+                  edit: t('order.shipDate.edit'), save: t('order.shipDate.save'), cancel: t('order.shipDate.cancel'), none: t('order.shipDate.none'),
+                  confirm: t('order.shipDate.confirm', { from: '%FROM%', to: '%TO%' }), locked: t('order.shipDate.locked'), field: t('order.shipDate.label'),
+                }}
+              />
+            ),
+          },
           !!order.actualShipDate && { label: t('order.info.shipped'), value: fmtDate(order.actualShipDate) },
           // Etiketler müşteri kaydından (Yönetim → Müşteriler: Customer.camEtiket / Customer.sandikEtiket)
           !isCustomer && !drawerView && { label: t('order.info.camEtiket'), value: order.customer.camEtiket ?? '—' },
@@ -658,7 +677,8 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
   if (can('unhold')) btn('uh', holdAction, t('order.steps.unhold'), <input type="hidden" name="hold" value="0" />);
 
   // Çizim başlatma ve çizim yükleme "Teknik çizimler ve onay" bölümündedir (Drawings)
-  const hasForms = can('set_ship_date') || can('cancel');
+  // Tahmini yükleme tarihi Sipariş Bilgileri'nde satır içi düzenlenir (karar 230)
+  const hasForms = can('cancel');
 
   return (
     <>
@@ -680,15 +700,6 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
             <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0 }}>
               <b>{t('order.actions.waitingFor')}</b> {blockers.map((b) => blockerText(t, b)).join(' · ')}
             </div>
-          )}
-
-          {can('set_ship_date') && (
-            <form action={setShipDateAction} className="row" style={{ marginTop: 14 }}>
-              {hidden}
-              <label htmlFor="ship-date" style={{ margin: 0 }}>{t('order.shipDate.label')}</label>
-              <input id="ship-date" name="date" type="date" defaultValue={isoDay(order.estimatedShipDate)} style={{ width: 'auto' }} required />
-              <button className="btn">{t('order.shipDate.submit')}</button>
-            </form>
           )}
 
           {can('cancel') && (

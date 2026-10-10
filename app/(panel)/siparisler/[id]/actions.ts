@@ -129,7 +129,8 @@ export async function setShipDateAction(formData: FormData) {
     const { t } = await getT();
     redirect(err(id, t('order.errors.invalidDate')));
   }
-  await act(user, id, 'set_ship_date', { date: d });
+  // Rol, durum, onaylı yükleme kilidi ve sipariş sürümü işlemde denetlenir (karar 230)
+  await act(user, id, 'set_ship_date', { date: d, expectedVersion: expectedVersion(formData) });
   done(id, 'ship_date');
 }
 

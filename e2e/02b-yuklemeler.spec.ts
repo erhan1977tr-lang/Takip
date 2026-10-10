@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { CUSTOMER, CUST_PW, SALES, TEAM_PW as PW, as, firmOf, openFirm } from './helpers';
+import { CUSTOMER, CUST_PW, SALES, TEAM_PW as PW, as, firmOf, openFirm, setShipDate } from './helpers';
 
 // 02-orders'tan sonra çalışır: UNS2 üretimde, teklifi 1000×2000×3 (6 m², 66.3 lamine).
 const LOAD_DAY = '2027-03-19';
@@ -10,8 +10,7 @@ test('yükleme takvimi: tahmini yük, gerçek sandık kaydı, müşteri ve firma
   await sales.getByRole('link', { name: 'UNS2' }).first().click();
   await expect(sales).toHaveURL(/\/siparisler\/[a-z0-9]+$/);
   const orderUrl = sales.url();
-  await sales.fill('#ship-date', LOAD_DAY);
-  await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
+  await setShipDate(sales, LOAD_DAY);
   await expect(sales.locator('.alert-ok')).toContainText('Tahmini yükleme tarihi güncellendi');
   // 6 m² × 30 kg/m² (katalogdaki ağırlık, karar 22) = 180 kg → 1 sandık, brüt 230 kg (yükleme sekmesinde)
   // Satışın sipariş sayfasında "Sandıklar" bölümü yok (sandıklar Yüklemeler sekmesinde)

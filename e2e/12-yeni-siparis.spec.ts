@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, login, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, login, sampleFile, setShipDate } from './helpers';
 
 // Müşteri "Yeni Sipariş" (karar 85): sipariş tipi seçimi durur; cam siparişinde TEK cam tipi (formda "+ Cam ekle" yok,
 // sunucu ikinci camı reddeder); tahmini yükleme tarihi mevcut hesaptan gelir ve siparişe aynı tarih yazılır; dosya
@@ -142,8 +142,7 @@ test('yeni cam siparişi: tip seçimi, tek cam, yükleme tarihi, dosya listesi; 
 test('yükleme tarihi: satış değiştirince müşteri her yerde yeni tarihi görür; başka firma siparişi ve taslağı açamaz', async ({ browser }) => {
   const sales = await as(browser, SALES2, TEAM_PW);
   await sales.goto(orderUrl);
-  await sales.fill('#ship-date', '2027-05-14');
-  await sales.getByRole('button', { name: 'Tarihi güncelle' }).click();
+  await setShipDate(sales, '2027-05-14');
   await expect(sales.getByText('Tahmini yükleme tarihi güncellendi.')).toBeVisible();
   await sales.context().close();
 

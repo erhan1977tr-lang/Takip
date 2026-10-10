@@ -73,6 +73,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   STALE_DRAWING: 'order.errors.staleDrawing',
   OFFER_NOT_FOUND: 'order.errors.offerNotFound',
   INVALID_DATE: 'order.errors.invalidDate',
+  SHIP_DATE_LOCKED: 'order.errors.shipDateLocked',
+  SHIP_DATE_UNCHANGED: 'order.errors.shipDateUnchanged',
   CANCEL_REASON: 'order.errors.cancelReason',
   REVISION_COMMENT: 'order.errors.revisionComment',
   REVISION_TOO_MANY: 'order.errors.revisionTooMany',

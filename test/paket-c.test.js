@@ -59,3 +59,23 @@ test('fiyat gizliliği (karar 237): müşteri fiyatı yoksa satış / fabrika fi
   assert.equal(row.cost, 60);
   assert.notEqual(row.sale, 60);
 });
+
+test('tahmini yükleme tarihi (karar 230): Yönetici, Yönetici Yardımcısı, Satış; Yüklendi / Arşiv / İptal kilitli; müşteri, çizim, denetimci yok', async () => {
+  const { availableActions } = await import('../server/orders/rules.js');
+  const acts = (role, status = 'URETIMDE') => availableActions({ role, status, onHold: false, canApprove: true, drawing: 'YOK', offer: 'GONDERILDI', orderType: 'GLASS_ORDER' });
+  for (const role of ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS']) {
+    assert.ok(acts(role).includes('set_ship_date'), role);
+    for (const status of ['YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.ok(!acts(role, status).includes('set_ship_date'), `${role} ${status}`);
+  }
+  for (const role of ['MUSTERI', 'CIZIM', 'DENETIMCI']) assert.ok(!acts(role).includes('set_ship_date'), role);
+  // Sunucu işlemi onaylı yükleme kilidini ve aynı günü kendisi denetler; eski ayrı form kaldırıldı
+  const tr = read('server/orders/transitions.js');
+  const fn = tr.slice(tr.indexOf('async set_ship_date(h)'), tr.indexOf('async mark_shipped(h)'));
+  assert.ok(fn.includes("if (await shipDateLocked(h.tx, h.order.id)) throw new WorkflowError('SHIP_DATE_LOCKED');"));
+  assert.ok(fn.includes("h.audit = { fromDate: before ? dayKey(before) : null, toDate: dayKey(d) };"));
+  const page = read('app/(panel)/siparisler/[id]/page.tsx');
+  assert.ok(!page.includes("t('order.shipDate.submit')"), 'işlemler kartındaki eski form yok');
+  assert.ok(page.includes('<ShipDateEdit'));
+  const action = read('app/(panel)/siparisler/[id]/actions.ts');
+  assert.ok(action.includes("await act(user, id, 'set_ship_date', { date: d, expectedVersion: expectedVersion(formData) });"));
+});

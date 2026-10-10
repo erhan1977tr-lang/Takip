@@ -117,6 +117,12 @@ export default {
   shipDate: {
     label: 'Tahmini yükleme',
     submit: 'Tarihi güncelle',
+    edit: 'Değiştir',
+    save: 'Kaydet',
+    cancel: 'Vazgeç',
+    confirm: 'Tahmini yükleme tarihi değiştirilsin mi?\n{from} → {to}',
+    none: 'tarih yok',
+    locked: 'Yükleme tamamlandı — tarih değiştirilemez.',
   },
   cancel: {
     summary: 'Siparişi iptal et',
@@ -357,6 +363,8 @@ export default {
   errors: {
     notAllowed: 'Bu işlem şu anda yapılamaz (sipariş durumu değişmiş olabilir). Sayfayı yenileyin.',
     invalidDate: 'Geçerli bir tarih seçin.',
+    shipDateLocked: 'Yükleme tamamlandı; tahmini yükleme tarihi artık değiştirilemez.',
+    shipDateUnchanged: 'Tarih aynı; değişiklik yapılmadı.',
     cancelReason: 'İptal nedeni yazın.',
     drawingFile: 'Çizim dosyası seçin.',
     salesPriceMissing: 'Fiyatı girilmemiş satır var; teklif gönderilmedi.',

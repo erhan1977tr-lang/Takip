@@ -21,6 +21,7 @@ import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForC
 import { recordPriceOverrides } from '../pricing/alerts.js';
 import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
+import { shipDateLocked } from './ship-date.js';
 
 export { WorkflowError };
 
@@ -502,9 +503,19 @@ const ACTIONS = {
     h.sla = true;
     h.auto = true;
   },
+  /**
+   * Tahmini yükleme tarihi (Paket C — karar 230): Yönetici, Yönetici Yardımcısı ve Satış (ORDER_REVIEW). Yükleme
+   * tamamlandıktan sonra kilitlidir: durum Yüklendi / Arşiv (CLOSED — availableActions) ya da siparişin herhangi bir
+   * yükleme onayı kalemi var (kısmi / çoklu yükleme dahil: kalan cam yalnızca yeniden planlama ile taşınır — karar 106).
+   * Aynı gün yeniden yazılmaz. Denetim kaydında eski → yeni gün; sandıklar ve SHIP_DATE olayı eskisi gibi.
+   */
   async set_ship_date(h) {
     const d = h.payload.date;
     if (!(d instanceof Date) || Number.isNaN(d.getTime())) throw new WorkflowError('INVALID_DATE');
+    if (await shipDateLocked(h.tx, h.order.id)) throw new WorkflowError('SHIP_DATE_LOCKED');
+    const before = h.order.estimatedShipDate ?? null;
+    if (before && dayKey(before) === dayKey(d)) throw new WorkflowError('SHIP_DATE_UNCHANGED');
+    h.audit = { fromDate: before ? dayKey(before) : null, toDate: dayKey(d) };
     await h.set({ estimatedShipDate: d });
     await followCrates(h, h.order.actualShipDate ?? d);
     h.event('SHIP_DATE', dayText(d));
