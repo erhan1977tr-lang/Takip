@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.65.0 — 10.10.2026
+
+Paket B — müşteri paneli (kararlar 226–229).
+
+- **Tekliflerim yükleme gününe göre:** liste ve PDF teklifleri YÜKLEME gününe göre gruplar; her grup kendi "Göster" /
+  "Gizle" düğmesiyle açılır / kapanır. Tarih aralığı yükleme gününe uygulanır; tarihi henüz belli olmayan siparişler
+  "Yükleme tarihi henüz belli değil" grubunda. PDF'te her yükleme günü ayrı başlık, altında her sipariş kendi başlığıyla
+  (yükleme günü + teklif tarihi + tutar), satırlar, yükleme toplamı ve genel toplam (m², cam adedi, tutar); metraj 3
+  ondalıkla gösterilir (hesap değişmedi); uzun açıklamalar iki satıra kayar, uzun sipariş sonraki sayfada "devam" başlığıyla
+  sürer. Kısmi yüklenen sipariş, onaylı yükleme / aktarım kayıtlarına göre her günde yalnızca kendi bölümüyle görünür;
+  bölümlerin toplamı siparişin tutarına eşittir (çift sayım yok). Yalnızca müşteri fiyatı.
+- **Teknik çizim:** müşterinin revizyon ekranında çizim üzerine İğne, Dikdörtgen, Serbest ve Metin işaretleri geri geldi.
+  İşaretler sürüme ve revizyon talebine bağlı saklanır, sayfaya oranlıdır (yakınlaştırmada yerinde kalır); taslak sayfa
+  yenilenince kaybolmaz. İşaret açıklamaları "Nota de revizie"ye "#işaret no" maddesi olarak eklenir ve notla birlikte bir
+  kez çevrilir. Kayıtlı işaretleri sürümü görebilen herkes salt okunur görür. Eski sürüme karar verilemez (sunucu denetimi).
+- **"Bir mesajınız var":** müşteri sipariş listesinde, okunmamış gelişmesi olan siparişin yanında kırmızı uyarı.
+  Okunma kuralı daraltıldı (karar 224 → 228): sipariş sayfasını açmak uyarıları tek başına okumaz; her uyarı gösterildiği
+  bölüm (çizim, teklif, kararlar, teslim, sayfa başlığı) ekranda gerçekten görülünce, mesaj ise kendisi görülünce yalnızca
+  o kullanıcı için okunur. Sayfa yeniden çizdirilmez; zil ve sayaçlar korunur.
+
 ## 3.64.1 — 10.10.2026
 
 Paket A düzeltmesi (karar 224). Veritabanı şeması değişmedi.
