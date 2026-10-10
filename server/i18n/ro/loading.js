@@ -163,6 +163,7 @@ export default {
     detailTitle: 'Detaliu comenzi',
     factoryGroup: 'Vânzare fabrică ({cur})',
     offerGroup: 'Ofertă client ({cur})',
+    orderTotal: 'Total comandă',
     factoryShort: 'Fabrică',
     offerShort: 'Client',
     notSent: 'Oferta nu a fost încă trimisă clientului: fără valoare pentru client.',

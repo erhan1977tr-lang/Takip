@@ -164,6 +164,7 @@ export default {
     detailTitle: 'Sipariş ayrıntısı',
     factoryGroup: 'Fabrika satış ({cur})',
     offerGroup: 'Müşteri teklifi ({cur})',
+    orderTotal: 'Sipariş toplamı',
     factoryShort: 'Fabrika',
     offerShort: 'Müşteri',
     notSent: 'Teklif müşteriye henüz gönderilmedi: müşteri tutarı yok.',
