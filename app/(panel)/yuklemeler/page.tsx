@@ -8,7 +8,7 @@ import {
   type CrateRow, type DayEntry, type DayFirm, type DayFirms, type GuestLink, type LoadRow, type MoneyView,
 } from '@/lib/loading';
 import { customerLabel } from '@/lib/orders';
-import { fmtDate, fmtDateTime, fmtMoney, fmtMonth, fmtNum, weekdayNames } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtM2, fmtMoney, fmtMonth, fmtNum, weekdayNames } from '@/lib/format';
 import { Badge, CustomerBadge, OrderBadge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { parseDateOnly } from '@/server/orders/rules.js';
@@ -166,7 +166,7 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
         <p className="cal-sum">
           {rich(t('loading.monthTotal'), {
             orders: <><b>{monthTotal.orders}</b> {unit('order', monthTotal.orders)}</>,
-            m2: <b>{fmtNum(monthTotal.metraj)}</b>,
+            m2: <b>{fmtM2(monthTotal.metraj)}</b>,
             kg: <b>{kg(monthTotal.netKg)}</b>,
           })}
         </p>
@@ -200,7 +200,7 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
                   <div className="cal-names">
                     {names.slice(0, 3).map((n) => <div key={n}>{n}</div>)}
                     {names.length > 3 && <div className="muted">+{count(isCustomer ? 'order' : 'customer', names.length - 3)}</div>}
-                    {isSel && s && <div className="muted small">{fmtNum(s.total.metraj)} m² · {kg(s.total.grossKg)} kg</div>}
+                    {isSel && s && <div className="muted small">{fmtM2(s.total.metraj)} m² · {kg(s.total.grossKg)} kg</div>}
                   </div>
                 </Link>
               );
@@ -245,7 +245,7 @@ async function DayList({ user, days, href, selected, isCustomer }: { user: Curre
                 <td><Link href={href(key)}><b>{fmtDate(`${key}T12:00:00Z`)}</b></Link></td>
                 <td className="num">{total.orders}</td>
                 <td>{names.join(', ')}</td>
-                <td className="num">{fmtNum(total.metraj)} m²</td>
+                <td className="num">{fmtM2(total.metraj)} m²</td>
                 <td className="num">{total.camAdet}</td>
                 <td className="num">{total.crates}</td>
                 <td className="num">{kg(total.grossKg)} kg</td>
@@ -290,7 +290,7 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
         <>
           <div className="stats stats-5">
             <div className="stat"><div className="k">{t('loading.day.stats.orders')}</div><div className="v">{total.orders}</div></div>
-            <div className="stat"><div className="k">{t('loading.day.stats.metraj')}</div><div className="v">{fmtNum(total.metraj)}<small>{t('common.unitM2')}</small></div></div>
+            <div className="stat"><div className="k">{t('loading.day.stats.metraj')}</div><div className="v">{fmtM2(total.metraj)}<small>{t('common.unitM2')}</small></div></div>
             <div className="stat"><div className="k">{t('loading.day.stats.glass')}</div><div className="v">{total.camAdet}<small>{t('common.unitPiece')}</small></div></div>
             <div className="stat"><div className="k">{t('loading.day.stats.gross')}</div><div className="v">{kg(total.grossKg)}<small>{t('common.unitKg')}</small></div></div>
             <div className="stat"><div className="k">{t('loading.day.stats.crates')}</div><div className="v">{total.crates}<small>{t('common.unitPiece')}</small></div></div>
@@ -390,7 +390,7 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
                   <td className="num" data-col="glass" data-label={short('glass')}>{f.camAdet}</td>
                   <td className="num" data-col="cnc" data-label={short('cnc')}>{dash(f.cnc)}</td>
                   <td className="num" data-col="holes" data-label={short('holes')}>{dash(f.delik)}</td>
-                  <td className="num" data-col="m2" data-label={short('m2')}>{fmtNum(f.metraj)}</td>
+                  <td className="num" data-col="m2" data-label={short('m2')}>{fmtM2(f.metraj)}</td>
                   <td className="num" data-col="net" data-label={short('net')}>{kg(f.netKg)}</td>
                   <td className="num" data-col="crates" data-label={short('crates')}>
                     {f.crates}{' '}
@@ -413,7 +413,7 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
             <td className="num" data-col="glass" data-label={short('glass')}>{total.camAdet}</td>
             <td className="num" data-col="cnc" data-label={short('cnc')}>{dash(total.cnc)}</td>
             <td className="num" data-col="holes" data-label={short('holes')}>{dash(total.delik)}</td>
-            <td className="num" data-col="m2" data-label={short('m2')}>{fmtNum(total.metraj)}</td>
+            <td className="num" data-col="m2" data-label={short('m2')}>{fmtM2(total.metraj)}</td>
             <td className="num" data-col="net" data-label={short('net')}>{kg(total.netKg)}</td>
             <td className="num" data-col="crates" data-label={short('crates')}>{total.crates}</td>
             <td className="num" data-col="gross" data-label={short('gross')}>{kg(total.grossKg)}</td>
@@ -487,7 +487,7 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
               <td className="num" data-label={L.glass}>{e.load.camAdet}</td>
               <td className="num" data-label={L.cnc}>{dash(e.load.cnc)}</td>
               <td className="num" data-label={L.holes}>{dash(e.load.delik)}</td>
-              <td className="num" data-label={L.m2}>{fmtNum(e.load.metraj)}</td>
+              <td className="num" data-label={L.m2}>{fmtM2(e.load.metraj)}</td>
               {money.sales && <td className="num" data-label={L.factory}>{e.money.sales != null ? fmtMoney(e.money.sales, e.money.currency) : <span className="muted">—</span>}</td>}
               {money.offer && <td className="num" data-label={L.offer}>{e.money.offer != null ? fmtMoney(e.money.offer, e.money.currency) : <span className="muted">—</span>}</td>}
             </tr>
@@ -498,7 +498,7 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
         <tr>
           <td>{t('loading.firm.sub.total', { n: sub.orders })}</td>
           <td className="num" data-label={L.glass}>{sub.camAdet}</td><td className="num" data-label={L.cnc}>{dash(sub.cnc)}</td>
-          <td className="num" data-label={L.holes}>{dash(sub.delik)}</td><td className="num" data-label={L.m2}>{fmtNum(sub.metraj)}</td>
+          <td className="num" data-label={L.holes}>{dash(sub.delik)}</td><td className="num" data-label={L.m2}>{fmtM2(sub.metraj)}</td>
           {money.sales && <td className="num" data-label={L.factory}>{amounts(sub.money, 'sales')}</td>}
           {money.offer && <td className="num" data-label={L.offer}>{amounts(sub.money, 'offer')}</td>}
         </tr>
@@ -521,7 +521,7 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m
   const ownIds = new Set(own.map((o) => o.id));
   const guestText = (orderId: string) => {
     const r = rowOf.get(orderId);
-    return r ? t('loading.firm.guestLine', { order: r.entry.orderNo, owner: r.entry.customerName, glass: r.entry.load.camAdet, m2: fmtNum(r.entry.load.metraj) }) : '';
+    return r ? t('loading.firm.guestLine', { order: r.entry.orderNo, owner: r.entry.customerName, glass: r.entry.load.camAdet, m2: fmtM2(r.entry.load.metraj) }) : '';
   };
   const guestsOf = (crateId: string) => firm.guestsIn.filter((g) => g.crateId === crateId).map((g) => guestText(g.orderId)).filter(Boolean);
   const last = [...firm.crateList].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
@@ -578,7 +578,7 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m
           <p className="small guest-head"><b>{t('loading.guest.blockTitle')}</b></p>
           {firm.guestsIn.map((x) => (
             <form key={`in-${x.orderId}-${x.crateId ?? ''}`} action={guestCrateAction} className="row small guest-line guest-in" data-order={x.orderId}>
-              <span><Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link> · {x.ownerName}{rowOf.get(x.orderId) && <span className="muted"> · {t('loading.firm.guestGlass', { glass: rowOf.get(x.orderId)!.entry.load.camAdet, m2: fmtNum(rowOf.get(x.orderId)!.entry.load.metraj) })}</span>}</span>
+              <span><Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link> · {x.ownerName}{rowOf.get(x.orderId) && <span className="muted"> · {t('loading.firm.guestGlass', { glass: rowOf.get(x.orderId)!.entry.load.camAdet, m2: fmtM2(rowOf.get(x.orderId)!.entry.load.metraj) })}</span>}</span>
               {canEdit && x.byHost ? (
                 firm.crateList.length > 0 ? (
                   <>
@@ -661,7 +661,7 @@ function CustomerDay({ firm, money, t }: { firm: DayFirm | undefined; money: Mon
                 <td className="num">{e.load.camAdet}</td>
                 <td className="num">{dash(e.load.cnc)}</td>
                 <td className="num">{dash(e.load.delik)}</td>
-                <td className="num">{fmtNum(e.load.metraj)}</td>
+                <td className="num">{fmtM2(e.load.metraj)}</td>
                 <td className="num">{kg(e.load.netKg)}</td>
                 <td className="num">
                   {r.crateNos.length || r.guest?.crateNo != null
@@ -681,7 +681,7 @@ function CustomerDay({ firm, money, t }: { firm: DayFirm | undefined; money: Mon
           {firm.crateList.length > 0 && (
             <tr className="group-total">
               <td><b className="group-name">{firm.name}</b></td>
-              <td className="num">{firm.camAdet}</td><td className="num">{dash(firm.cnc)}</td><td className="num">{dash(firm.delik)}</td><td className="num">{fmtNum(firm.metraj)}</td><td className="num">{kg(firm.netKg)}</td>
+              <td className="num">{firm.camAdet}</td><td className="num">{dash(firm.cnc)}</td><td className="num">{dash(firm.delik)}</td><td className="num">{fmtM2(firm.metraj)}</td><td className="num">{kg(firm.netKg)}</td>
               <td className="num">{firm.crates}{' '}<span className="badge badge-ok">{t('loading.day.real')}</span></td>
               <td className="num">{kg(firm.grossKg)}</td>
               {money.offer && <td className="num">{amounts(firm.money, 'offer')}</td>}
@@ -701,7 +701,7 @@ function CustomerDay({ firm, money, t }: { firm: DayFirm | undefined; money: Mon
         <tfoot>
           <tr>
             <td>{t('common.total')}</td>
-            <td className="num">{firm.camAdet}</td><td className="num">{dash(firm.cnc)}</td><td className="num">{dash(firm.delik)}</td><td className="num">{fmtNum(firm.metraj)}</td><td className="num">{kg(firm.netKg)}</td>
+            <td className="num">{firm.camAdet}</td><td className="num">{dash(firm.cnc)}</td><td className="num">{dash(firm.delik)}</td><td className="num">{fmtM2(firm.metraj)}</td><td className="num">{kg(firm.netKg)}</td>
             <td className="num">{firm.crates}</td><td className="num">{kg(firm.grossKg)}</td>
             {money.offer && <td className="num">{amounts(firm.money, 'offer')}</td>}
           </tr>

@@ -85,7 +85,7 @@ function formatOf(col) {
     case 'dec2': return { id: 4 }; // #,##0.00
     case 'dec3': return { code: '#,##0.000' };
     case 'kg': return { code: '#,##0" kg"' };
-    case 'm2': return { code: '#,##0.00" m²"' };
+    case 'm2': return { code: '#,##0.000" m²"' }; // m² her yerde 3 ondalık (karar 232)
     case 'mm': return { id: 1 }; // 0
     case 'money': return col.unit ? { code: `#,##0.00" ${String(col.unit).replace(/"/g, '')}"` } : { id: 4 };
     default: return { id: 0 };

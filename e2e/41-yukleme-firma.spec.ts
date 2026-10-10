@@ -195,7 +195,7 @@ test('firma işlemleri: Sandık / PDF / Excel / Özet — yalnızca o firma ve g
   await expect(crates.locator(`.guest-note[data-order="${ids.UNS8603}"]`)).toContainText(`UNS8603 — Bu sipariş ${beta.name} firmasının sandıkları ile gelecektir.`);
   await expect(crates.getByRole('button', { name: '+ Sandık ekle' }), 'firmanın misafir olmayan siparişleri var').toBeEnabled();
   const bc = await openFirm(firmOf(page, beta.name), 'crates');
-  await expect(bc.locator(`.guest-box form.guest-in[data-order="${ids.UNS8603}"]`)).toContainText(`UNS8603 · ${uns.name} · 1 cam · 1,00 m²`);
+  await expect(bc.locator(`.guest-box form.guest-in[data-order="${ids.UNS8603}"]`)).toContainText(`UNS8603 · ${uns.name} · 1 cam · 1,000 m²`);
 
   // Excel: yalnızca bu firma ve gün; finansal olarak yalnızca teklif tutarı (fabrika satış tutarı hiçbir hücrede yok)
   const ex = await xlsx(page, `/yuklemeler/firma?${q}&bicim=xlsx`);

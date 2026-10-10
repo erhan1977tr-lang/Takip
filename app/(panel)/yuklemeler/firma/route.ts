@@ -3,7 +3,7 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { canFirmDocs, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
-import { fmtDate, fmtNum } from '@/lib/format';
+import { fmtDate, fmtM2, fmtNum } from '@/lib/format';
 import { fxOfferNote } from '@/lib/fx-note';
 import { downloadHeaders, exportName, exportSubtitle } from '@/lib/exports';
 import { parseDateOnly } from '@/server/orders/rules.js';
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     [t('loading.firmExport.stats.glass'), String(firm.camAdet)],
     [t('loading.firmExport.stats.cnc'), String(firm.cnc)],
     [t('loading.firmExport.stats.holes'), String(firm.delik)],
-    [t('loading.firmExport.stats.m2'), `${fmtNum(firm.metraj)} m²`],
+    [t('loading.firmExport.stats.m2'), `${fmtM2(firm.metraj)} m²`],
     [t('loading.firmExport.stats.net'), `${fmtNum(firm.netKg, 0)} kg`],
     [t('loading.firmExport.stats.crates'), `${firm.crates}${firm.realCrates || firm.crates === 0 ? '' : ` (${t('loading.firmExport.estimated')})`}`],
     [t('loading.firmExport.stats.gross'), `${fmtNum(firm.grossKg, 0)} kg`],

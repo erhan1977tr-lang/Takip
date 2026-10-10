@@ -260,7 +260,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   const pick = hostBox.locator(`.guest-box form.guest-in[data-order="${orderU}"]`);
   await expect(hostBox.locator('.guest-box')).toContainText('ÖZEL DURUM / MİSAFİR YÜK');
   await expect(pick).toContainText(`UNS7701 · ${mask(uns.name)}`);
-  await expect(pick).toContainText('10 cam · 10,00 m²');
+  await expect(pick).toContainText('10 cam · 10,000 m²');
   expect(await pick.locator('select[name=crateId] option').allInnerTexts(), 'yalnızca ev sahibi firmanın o günkü sandıkları').toEqual(['— sandık seçimi bekliyor —', '15']);
   await expect(pick.locator('select[name=crateId]')).toHaveValue('');
   await pick.locator('select[name=crateId]').selectOption(crateId);
@@ -269,7 +269,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await expect(sales.locator('#gun .guest-waiting')).toHaveCount(0);
   await expect(sales.locator(`.firm-crates-box[data-owner="${beta.id}"] .guest-box form.guest-in[data-order="${orderU}"] select[name=crateId]`)).toHaveValue(crateId);
   // Ev sahibinin sandık listesinde misafir camın sipariş / cam bilgisi (sandık 15'in satırında); sandık silinemez
-  await expect(sales.locator(`.firm-crates-box[data-owner="${beta.id}"] .crate-guests[data-crate="15"]`)).toContainText(`Misafir yük: UNS7701 · ${mask(uns.name)} · 10 cam · 10,00 m²`);
+  await expect(sales.locator(`.firm-crates-box[data-owner="${beta.id}"] .crate-guests[data-crate="15"]`)).toContainText(`Misafir yük: UNS7701 · ${mask(uns.name)} · 10 cam · 10,000 m²`);
   // Satış sipariş sayfasında "özel durum" denetimini görmez (firma kararı yöneticinin)
   await sales.goto(`/siparisler/${orderU}`);
   await expect(sales.locator('body')).toContainText('UNS7701');
@@ -287,7 +287,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await expect(uCrates.getByRole('button', { name: '+ Sandık ekle' })).toBeDisabled();
   const bCrates = await openFirm(firmOf(page, beta.name), 'crates');
   await expect(bCrates.locator(`.guest-box form.guest-in[data-order="${orderU}"]`)).toContainText(`UNS7701 · ${uns.name}`);
-  await expect(bCrates.locator('.crate-guests[data-crate="15"]')).toContainText(`Misafir yük: UNS7701 · ${uns.name} · 10 cam · 10,00 m²`);
+  await expect(bCrates.locator('.crate-guests[data-crate="15"]')).toContainText(`Misafir yük: UNS7701 · ${uns.name} · 10 cam · 10,000 m²`);
   // Fiziksel ağırlık ev sahibinin sandığında (60 + 200 = 260 kg net, 310 kg brüt); Ünsal için ayrıca sandık / ağırlık oluşmaz.
   // Ticari sayılar değişmedi. Aynı sandık bir kez sayılır, brüt iki kez hesaplanmaz.
   expect(await numbers(page, uns.name, beta.name)).toEqual(hosted);

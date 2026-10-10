@@ -79,3 +79,16 @@ test('tahmini yükleme tarihi (karar 230): Yönetici, Yönetici Yardımcısı, S
   const action = read('app/(panel)/siparisler/[id]/actions.ts');
   assert.ok(action.includes("await act(user, id, 'set_ship_date', { date: d, expectedVersion: expectedVersion(formData) });"));
 });
+
+test('m² gösterimi (karar 232): ekran, PDF ve Excel üç ondalık; hesap değişmez', () => {
+  const fmt = read('lib/format.ts');
+  assert.ok(fmt.includes('export function fmtM2(') && fmt.includes('return fmtNum(n, 3);'));
+  assert.ok(read('server/files/xlsx-report.js').includes(`case 'm2': return { code: '#,##0.000" m²"' };`));
+  assert.ok(read('server/pdf/firm-loading.js').includes('minimumFractionDigits: 3, maximumFractionDigits: 3'));
+  assert.ok(read('server/pdf/offer.js').includes("cell('m2', r.m2 == null ? '—' : area(r.m2));"));
+  assert.ok(read('app/(panel)/siparisler/[id]/OfferEditor.tsx').includes('fmtArea(totals.metraj)'));
+  // m² hücreleri fmtNum(…metraj) ile 2 ondalık yazılmaz
+  for (const f of ['app/(panel)/yuklemeler/page.tsx', 'app/(panel)/yuklemeler/ozet/page.tsx', 'app/(panel)/yuklemeler/LoadingConfirm.tsx', 'app/(panel)/yuklemeler/LoadingBilling.tsx', 'app/(panel)/siparisler/[id]/page.tsx']) {
+    assert.ok(!/fmtNum\([^,()]*(metraj|\.m2)\)/.test(read(f)), f);
+  }
+});

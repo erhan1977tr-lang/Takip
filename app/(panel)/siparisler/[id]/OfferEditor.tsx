@@ -31,6 +31,8 @@ const upper = (s: string) => s.trim().replace(/\s+/g, ' ').toLocaleUpperCase('tr
 const samePrice = (a: string, b: string) => Math.abs(Number(a.replace(',', '.') || 0) - Number(b.replace(',', '.') || 0)) < 0.005;
 
 const fmt = (n: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+/** m² her yerde 3 ondalıkla gösterilir (karar 232; hesap değişmez) */
+const fmtArea = (n: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(n);
 
 export function OfferEditor(props: {
   orderId: string;
@@ -306,7 +308,7 @@ export function OfferEditor(props: {
                       </select>
                     )}
                   </td>
-                  <td className="num">{sub || crateRow ? '' : fmt(tot.metraj)}</td>
+                  <td className="num">{sub || crateRow ? '' : fmtArea(tot.metraj)}</td>
                   <td className={adminMode ? 'num' : 'c-price'}>
                     {adminMode ? (
                       // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz
@@ -350,7 +352,7 @@ export function OfferEditor(props: {
                 {totals.delik ? ` · ${interpolate(m.editor.countHoles, { n: totals.delik })}` : ''}
                 {totals.crate ? ` · ${interpolate(m.editor.countCrates, { n: totals.crate })}` : ''}
               </td>
-              <td className="num">{fmt(totals.metraj)} m²</td>
+              <td className="num">{fmtArea(totals.metraj)} m²</td>
               {adminMode ? <td className="num muted">{fmt(totals.amount)}</td> : <td />}
               {adminMode && <td />}
               <td className="num grand">{fmt(adminMode ? offerTot.amount : totals.amount)} {props.currency}</td>

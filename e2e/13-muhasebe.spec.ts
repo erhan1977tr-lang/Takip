@@ -135,7 +135,7 @@ test('yönetici: Tedarikçi Hesap Durumu — yükleme kârı, eksik maliyet uyar
   await expect(page.getByRole('heading', { name: 'Tedarikçi Hesap Durumu' })).toBeVisible();
   // Yükleme satırı: satış 1045 − maliyet 610 − transport 150 = 285
   const row = page.locator('#yuklemeler tr', { hasText: dmy(LOADED) });
-  await expect(row).toContainText('10,00 m²');
+  await expect(row).toContainText('10,000 m²');
   await expect(row).toContainText('1.045,00');
   await expect(row).toContainText('610,00');
   await expect(row).toContainText('150,00');
@@ -309,7 +309,7 @@ test('yükleme onayı: önizleme, yalnızca yönetici onaylar (dört rol taklit 
   await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('1.045,00 EUR');
   await expect(box.locator('tr.sub', { hasText: '9101' }).first()).toContainText('625,00 EUR');
   await expect(box.locator('tr.glass-row', { hasText: 'Temper' })).toContainText('10,00');
-  await expect(box.locator('tfoot')).toContainText('1 sipariş · 5 cam · 10,00 m²');
+  await expect(box.locator('tfoot')).toContainText('1 sipariş · 5 cam · 10,000 m²');
   await shot(admin, '53-yukleme-onay-onizleme');
 
   // Onaylanmamış günde diğer roller onay bölümünü görmez; taklit istekle de onaylayamaz

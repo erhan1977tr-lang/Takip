@@ -37,6 +37,11 @@ export function fmtNum(n: number | string | { toString(): string } | null | unde
   return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number.isFinite(v) ? v : 0);
 }
 
+/** m² gösterimi: her yerde 3 ondalık (Paket C — karar 232). Hesap değişmez; yalnızca gösterim. */
+export function fmtM2(n: number | string | { toString(): string } | null | undefined): string {
+  return fmtNum(n, 3);
+}
+
 /** Ondalık sayı, gereksiz sıfırsız (137 → "137", 12.5 → "12,5"; en çok `digits` ondalık) — paket içeriği, metre, tüketim */
 export function fmtDec(n: number | string | { toString(): string } | null | undefined, digits = 4): string {
   const v = Number(n ?? 0);

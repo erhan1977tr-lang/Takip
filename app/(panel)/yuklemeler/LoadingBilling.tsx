@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import type { CurrentUser } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { userCan } from '@/lib/permissions';
-import { fmtDate, fmtMoney, fmtNum } from '@/lib/format';
+import { fmtDate, fmtM2, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { FxInfo, FxUnavailableNote } from '@/components/FxInfo';
@@ -140,7 +140,7 @@ export async function LoadingBilling({ user, day, sp }: { user: CurrentUser; day
                         <tr className="sub glass-row" key={`${o.orderId}-${i}`}>
                           <td>{l.name}</td>
                           <td className="num">{l.pieces}</td>
-                          <td className="num">{fmtNum(l.m2)}</td>
+                          <td className="num">{fmtM2(l.m2)}</td>
                           <td className="num">{fmtNum(l.amount)}</td>
                           <td className="num">{g.fx ? fmtNum(l.net) : '—'}</td>
                           <td className="num">{g.fx ? fmtNum(l.gross) : '—'}</td>

@@ -4,7 +4,7 @@ import type { CurrentUser } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { userCan } from '@/lib/permissions';
 import { customerLabel } from '@/lib/orders';
-import { fmtDate, fmtDateTime, fmtMoney, fmtNum } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtM2, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { dayKey } from '@/server/orders/loading.js';
@@ -75,9 +75,9 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
         </tbody>
         <tfoot>
           <tr>
-            <td>{t('loading.confirm.total')} · {t('loading.confirm.totalLine', { orders: s.totals.orders, pieces: s.totals.adet, m2: fmtNum(s.totals.m2) })}</td>
+            <td>{t('loading.confirm.total')} · {t('loading.confirm.totalLine', { orders: s.totals.orders, pieces: s.totals.adet, m2: fmtM2(s.totals.m2) })}</td>
             <td className="num">{s.totals.adet}</td>
-            <td className="num">{fmtNum(s.totals.m2)}</td>
+            <td className="num">{fmtM2(s.totals.m2)}</td>
             {money && <td className="num">{amounts(s.totals.byCur, 'sale')}</td>}
             {money && <td className="num">{amounts(s.totals.byCur, 'cost')}</td>}
           </tr>
@@ -412,7 +412,7 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
                 <input name="note" maxLength={300} placeholder={t('loading.confirm.notePlaceholder')} aria-label={t('loading.confirm.note')} />
               </div>
               <div className="group">
-                <ConfirmButton success message={t('loading.confirm.dialog', { date: dmy(day), orders: s.totals.orders, pieces: s.totals.adet, m2: fmtNum(s.totals.m2) })}>
+                <ConfirmButton success message={t('loading.confirm.dialog', { date: dmy(day), orders: s.totals.orders, pieces: s.totals.adet, m2: fmtM2(s.totals.m2) })}>
                   {t('loading.confirm.button')}
                 </ConfirmButton>
               </div>
@@ -430,7 +430,7 @@ function CustomerRows({ c, label, money, amounts, from }: { c: CustomerRow; labe
       <tr className="group-total">
         <td><b className="group-name">{label}</b></td>
         <td className="num">{c.adet}</td>
-        <td className="num">{fmtNum(c.m2)}</td>
+        <td className="num">{fmtM2(c.m2)}</td>
         {money && <td className="num">{amounts(c.byCur, 'sale')}</td>}
         {money && <td className="num">{amounts(c.byCur, 'cost')}</td>}
       </tr>
@@ -452,7 +452,7 @@ function OrderRows({ o, money, from }: { o: OrderRow; money: boolean; from: (day
           {o.replanFrom.map((d) => <span key={d} className="badge badge-warn replan-badge">{from(d)}</span>)}
         </td>
         <td className="num">{o.adet}</td>
-        <td className="num">{fmtNum(o.m2)}</td>
+        <td className="num">{fmtM2(o.m2)}</td>
         {money && <td className="num">{fmtMoney(o.sale, o.currency)}</td>}
         {money && <td className="num">{fmtMoney(o.cost, o.currency)}</td>}
       </tr>
@@ -460,7 +460,7 @@ function OrderRows({ o, money, from }: { o: OrderRow; money: boolean; from: (day
         <tr className="sub glass-row" key={g.name}>
           <td>{g.name}</td>
           <td className="num">{g.adet}</td>
-          <td className="num">{fmtNum(g.m2)}</td>
+          <td className="num">{fmtM2(g.m2)}</td>
           {money && <td className="num">{fmtNum(g.sale)}</td>}
           {money && <td className="num">{fmtNum(g.cost)}</td>}
         </tr>

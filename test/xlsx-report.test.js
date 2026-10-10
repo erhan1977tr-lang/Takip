@@ -103,7 +103,7 @@ test('rapor: AutoFilter ilk tabloda, başlığın altından dondurulmuş bölme,
 test('rapor: sayı / birim / para biçimleri (değer sayı kalır), başlık ve toplam biçimi; sayfa adları güvenli ve tek', () => {
   const buf = writeReportXlsx({ sheets: [SHEET, { ...SHEET, name: 'Firmalar' }, { ...SHEET, name: 'a/b?c*[d]:e çok uzun bir sayfa adı otuz bir karakteri aşar' }] });
   const styles = part(buf, 'xl/styles.xml');
-  for (const code of ['#,##0.00&quot; m²&quot;', '#,##0&quot; kg&quot;', '#,##0.00&quot; EUR&quot;']) assert.ok(styles.includes(`formatCode="${code}"`), code);
+  for (const code of ['#,##0.000&quot; m²&quot;', '#,##0&quot; kg&quot;', '#,##0.00&quot; EUR&quot;']) assert.ok(styles.includes(`formatCode="${code}"`), code);
   assert.match(styles, /<fill><patternFill patternType="solid"><fgColor rgb="FFEAF1FB"\/>/, 'başlık zemini');
   assert.match(styles, /<alignment horizontal="center" vertical="center" wrapText="1"\/>/, 'başlık hücresi');
   assert.match(styles, /<alignment vertical="top" wrapText="1"\/>/, 'uzun metin kaydırılır');

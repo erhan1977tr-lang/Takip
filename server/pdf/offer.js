@@ -12,6 +12,8 @@ const W = { n: 22, desc: 150, poz: 45, en: 42, boy: 42, adet: 32, m2: 46, unit: 
 
 const money = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 const num = (v) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(v);
+/** m² her yerde 3 ondalık (karar 232) */
+const area = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(v);
 
 /**
  * @param {ReturnType<typeof import('../orders/offer-export.js').offerExportData>} data
@@ -65,7 +67,7 @@ export function offerPdf(data, text) {
     cell('en', r.en == null ? '' : String(r.en));
     cell('boy', r.boy == null ? '' : String(r.boy));
     cell('adet', String(r.adet));
-    cell('m2', r.m2 == null ? '—' : num(r.m2));
+    cell('m2', r.m2 == null ? '—' : area(r.m2));
     cell('unit', r.free ? text.free : r.unitPrice == null ? '—' : `${money(r.unitPrice)} / ${r.unit === 'm2' ? 'm²' : text.piece}`);
     cell('amount', money(r.amount));
     y += ROW;
@@ -75,7 +77,7 @@ export function offerPdf(data, text) {
   y += 6;
   page.line(M + 515 - 220, y, M + 515, y, 1.2, 0.2);
   page.text(M + 515 - 220, y + 16, text.total, { size: 11, bold: true, color: BLUE });
-  if (data.metraj) page.text(C.m2.x - 40, y + 16, `${num(data.metraj)} m²`, { size: 9, align: 'right', width: C.m2.w + 40 });
+  if (data.metraj) page.text(C.m2.x - 40, y + 16, `${area(data.metraj)} m²`, { size: 9, align: 'right', width: C.m2.w + 40 });
   page.text(C.amount.x - 60, y + 16, `${money(data.total)} ${text.currency}`, { size: 11, bold: true, align: 'right', width: C.amount.w + 60 });
   y += 36;
   for (const note of text.notes) {

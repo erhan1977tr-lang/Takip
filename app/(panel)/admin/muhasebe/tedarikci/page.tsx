@@ -3,7 +3,7 @@ import type { FactoryPayment, LoadingCost } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
-import { fmtDate, fmtMoney, fmtNum, isoDay } from '@/lib/format';
+import { fmtDate, fmtM2, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getEnv } from '@/lib/env';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
@@ -184,7 +184,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                           {d.outside.length > 0 && <span className="cell-note">{t('accounting.supplier.loadings.outside', { list: d.outside.map((o) => o.orderNo).join(', ') })}</span>}
                         </td>
                       )}
-                      {i === 0 && <td className="num" rowSpan={entries.length}>{fmtNum(d.m2)} m²</td>}
+                      {i === 0 && <td className="num" rowSpan={entries.length}>{fmtM2(d.m2)} m²</td>}
                       <td>{c}</td>
                       <td className="num">{fmtNum(v.sale)}</td>
                       <td className="num">{fmtNum(v.cost)}</td>

@@ -15,7 +15,8 @@ const BLUE = [0.07, 0.36, 0.55];
 const GREY = [0.45, 0.45, 0.45];
 
 const money = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-const m2 = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+/** m² her yerde 3 ondalık (karar 232) */
+const m2 = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(v);
 const kg = (v) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(v);
 // Sola dayalı sütun sağa dayalı bir sütunun hemen ardından geliyorsa araya boşluk (sayı ile metin bitişmesin)
 const LPAD = { orders: 12, project: 6 };

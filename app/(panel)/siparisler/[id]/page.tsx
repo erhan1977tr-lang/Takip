@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { fmtBytes, fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
+import { fmtBytes, fmtDate, fmtDateTime, fmtM2, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { translate } from '@/server/i18n/index.js';
 import { TRANSLATE_ERRORS, canRetryTranslation, translationState } from '@/server/notes/view.js';
@@ -783,7 +783,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                     </td>
                     <td>{l.poz ?? ''}</td>
                     <td className="num">{l.enMm ?? ''}</td><td className="num">{l.boyMm ?? ''}</td><td className="num">{l.adet}</td>
-                    <td className="num">{!sub && l.unit === 'm2' ? `${fmtNum(tot.metraj)} m²` : '—'}</td>
+                    <td className="num">{!sub && l.unit === 'm2' ? `${fmtM2(tot.metraj)} m²` : '—'}</td>
                     <td className={`num${admin ? ' muted' : ''}`}>{l.free ? t('offer.free') : unitTxt(l.unitPrice)}</td>
                     {admin && <td className="num">{l.free ? t('offer.free') : unitTxt(l.offerPrice)}</td>}
                     <td className="num">{fmtNum(tot.amount)}</td>
@@ -937,7 +937,7 @@ function Crates({ order, t }: { order: OrderDetail; t: T }) {
   return (
     <div className="card" id="sandik">
       <h2>{t('order.crates.title')}</h2>
-      <p className="muted small">{t('order.crates.plan', { m2: fmtNum(load.metraj), glass: load.camAdet, net: fmtNum(load.netKg, 0) })}</p>
+      <p className="muted small">{t('order.crates.plan', { m2: fmtM2(load.metraj), glass: load.camAdet, net: fmtNum(load.netKg, 0) })}</p>
       <p>{nos.length ? t('order.crates.linked', { list: nos.join(', ') }) : <span className="muted">{t('order.crates.none')}</span>}</p>
       <p className="muted small">
         {t('order.crates.where')}{' '}

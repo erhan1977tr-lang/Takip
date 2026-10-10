@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey, type T } from '@/lib/i18n';
 import { userCan } from '@/lib/permissions';
 import { canFirmDocs, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
-import { fmtDate, fmtMoney, fmtNum } from '@/lib/format';
+import { fmtDate, fmtM2, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { firmSummaryData } from '@/server/loading/firm-export.js';
@@ -58,7 +58,7 @@ export default async function FirmSummaryPage({ searchParams }: { searchParams: 
   const stats: [string, string][] = [
     [t('loading.firm.cols.orders'), String(firm.orders)], [t('loading.firm.cols.glass'), String(firm.camAdet)],
     [t('loading.firm.cols.cnc'), String(firm.cnc)], [t('loading.firm.cols.holes'), String(firm.delik)],
-    [t('loading.firm.cols.m2'), fmtNum(firm.metraj)], [t('loading.firm.cols.net'), kg(firm.netKg)],
+    [t('loading.firm.cols.m2'), fmtM2(firm.metraj)], [t('loading.firm.cols.net'), kg(firm.netKg)],
     [t('loading.firm.cols.crates'), `${firm.crates}${firm.realCrates || firm.crates === 0 ? '' : ` (${t('loading.day.estimated')})`}`],
     [t('loading.firm.cols.gross'), kg(firm.grossKg)],
   ];
@@ -127,7 +127,7 @@ export default async function FirmSummaryPage({ searchParams }: { searchParams: 
                   <td className="num" data-label={L.glass}>{o.camAdet}</td>
                   <td className="num" data-label={L.cnc}>{dash(o.cnc)}</td>
                   <td className="num" data-label={L.holes}>{dash(o.delik)}</td>
-                  <td className="num" data-label={L.m2}>{fmtNum(o.metraj)}</td>
+                  <td className="num" data-label={L.m2}>{fmtM2(o.metraj)}</td>
                   {admin && <td className="num" data-col="factory" data-label={L.factory}>{o.sales != null ? fmtMoney(o.sales, o.currency) : '—'}</td>}
                   {admin && <td className="num" data-col="offer" data-label={L.offer}>{o.offer != null ? fmtMoney(o.offer, o.currency) : '—'}</td>}
                 </tr>
@@ -139,7 +139,7 @@ export default async function FirmSummaryPage({ searchParams }: { searchParams: 
                 <td className="num" data-label={L.glass}>{sub.camAdet}</td>
                 <td className="num" data-label={L.cnc}>{dash(sub.cnc)}</td>
                 <td className="num" data-label={L.holes}>{dash(sub.delik)}</td>
-                <td className="num" data-label={L.m2}>{fmtNum(sub.metraj)}</td>
+                <td className="num" data-label={L.m2}>{fmtM2(sub.metraj)}</td>
                 {admin && <td className="num" data-col="factory" data-label={L.factory}>{s.currencies.filter((c) => s.totals[c].hasSales).map((c) => <div key={c}>{fmtMoney(s.totals[c].sales, c)}</div>)}</td>}
                 {admin && <td className="num" data-col="offer" data-label={L.offer}>{s.currencies.filter((c) => s.totals[c].hasOffer).map((c) => <div key={c}>{fmtMoney(s.totals[c].offer, c)}</div>)}</td>}
               </tr>
@@ -178,7 +178,7 @@ export default async function FirmSummaryPage({ searchParams }: { searchParams: 
                       {(c.orderIds ?? []).map((id) => rowOf.get(id)).filter((r) => r && r.entry.customerId === firm.id).map((r) => <div key={r!.entry.orderId}>{r!.entry.orderNo}</div>)}
                       {firm.guestsIn.filter((g) => g.crateId === c.id).map((g) => (
                         <div key={g.orderId} data-guest={g.orderId}>
-                          <Badge tone="warn">{t('loading.firm.guestLine', { order: g.orderNo, owner: g.ownerName, glass: rowOf.get(g.orderId)?.entry.load.camAdet ?? 0, m2: fmtNum(rowOf.get(g.orderId)?.entry.load.metraj ?? 0) })}</Badge>
+                          <Badge tone="warn">{t('loading.firm.guestLine', { order: g.orderNo, owner: g.ownerName, glass: rowOf.get(g.orderId)?.entry.load.camAdet ?? 0, m2: fmtM2(rowOf.get(g.orderId)?.entry.load.metraj ?? 0) })}</Badge>
                         </div>
                       ))}
                     </td>
@@ -272,7 +272,7 @@ function OrderDetail({ o, admin, t }: { o: SummaryOrder; admin: boolean; t: T })
                   <td className="num" data-label={C.en}>{r.en ?? '—'}</td>
                   <td className="num" data-label={C.boy}>{r.boy ?? '—'}</td>
                   <td className="num" data-label={C.adet}>{r.adet}</td>
-                  <td className="num" data-label={C.m2}>{r.m2 != null ? fmtNum(r.m2) : '—'}</td>
+                  <td className="num" data-label={C.m2}>{r.m2 != null ? fmtM2(r.m2) : '—'}</td>
                   {admin && (
                     <>
                       <td className="num grp-factory" data-label={`${C.f} · ${C.unit}`}>{unitOf(r, r.salesUnitPrice)}</td>
@@ -287,7 +287,7 @@ function OrderDetail({ o, admin, t }: { o: SummaryOrder; admin: boolean; t: T })
             <tfoot>
               <tr>
                 <td colSpan={6} className="stack-head">{t('loading.firmSummary.orderTotal')}</td>
-                <td className="num" data-label={C.m2}>{fmtNum(o.detail.metraj)}</td>
+                <td className="num" data-label={C.m2}>{fmtM2(o.detail.metraj)}</td>
                 {admin && (
                   <>
                     <td className="grp-factory stack-skip" />
