@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.67.3 — 10.10.2026
+
+- P1 e2e: Finans / FGO kartının bekleme metni beklentisi yeni kurala göre güncellendi (nihai fatura Faturalama kartından).
+
 ## 3.67.2 — 10.10.2026
 
 - Müşteri faturası oluşturulurken işlem içinde kur yeniden çözülmez: aynı günün diğer fatura gruplarının kuru ilk
