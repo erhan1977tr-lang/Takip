@@ -119,16 +119,18 @@ test('veri: aynı yükleme gününde Ünsal\'ın iki siparişi (biri iki sandık
   await db.$disconnect();
 });
 
-test('yükleme günü: yöneticide PDF | Excel | Özet | Sandık (geniş ekranda tek satırda); satışta yalnızca Sandık — belge adresleri satışa sunucuda kapalı', async ({ browser }) => {
+test('yükleme günü: yöneticide PDF / Excel ve Özet / Sandık iki satırda (karar 234); satışta yalnızca Sandık — belge adresleri satışa sunucuda kapalı', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.setViewportSize({ width: 1920, height: 1000 });
   await admin.goto(DAY_URL);
   const u = firmOf(admin, uns.name);
   expect(await actionsOf(u)).toEqual(['pdf', 'xlsx', 'summary', 'crates']);
   expect(await actionsOf(firmOf(admin, beta.name))).toEqual(['pdf', 'xlsx', 'summary', 'crates']);
-  expect(await actionRows(u), 'geniş ekranda dört işlem tek satırda').toBe(1);
+  expect(await actionRows(u), 'geniş ekranda da iki satır: PDF / Excel, Özet / Sandık').toBe(2);
+  expect(await u.locator('tr.firm-row [data-acts-line=docs] [data-action]').evaluateAll((els) => els.map((e) => e.getAttribute('data-action')))).toEqual(['pdf', 'xlsx']);
+  expect(await u.locator('tr.firm-row [data-acts-line=more] [data-action]').evaluateAll((els) => els.map((e) => e.getAttribute('data-action')))).toEqual(['summary', 'crates']);
   await admin.setViewportSize({ width: 1440, height: 900 });
-  expect(await actionRows(u), '1440 px: en çok iki satır (tek tek alt alta değil)').toBeLessThanOrEqual(2);
+  expect(await actionRows(u), '1440 px: iki satır (tek tek alt alta değil)').toBe(2);
   // Kısa başlıklar; tam adı ipucunda
   const th = admin.locator('.card#gun .firm-table > thead th');
   expect((await th.allTextContents()).map((s) => s.trim())).toEqual(['Firma', 'Sipariş', 'Cam', 'CNC', 'Delik', 'm²', 'Net kg', 'Sandık', 'Brüt kg', 'Fabrika satış', 'Teklif tutarı', 'İşlemler']);

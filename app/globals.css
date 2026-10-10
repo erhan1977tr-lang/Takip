@@ -757,8 +757,6 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .crate-table.readonly { margin-top: 10px; width: auto; min-width: 60%; }
 .crate-table.readonly td { padding: 9px 12px; }
 .crate-editor .tool-bar { margin-top: 12px; }
-.crate-table td.crate-orders { display: flex; flex-wrap: wrap; gap: 4px 10px; white-space: normal; }
-.crate-orders .crate-pick { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-weight: 500; }
 
 /* Çizim sürümleri: her sürüm bir blok; taslak (müşteri görmez) kesik çerçeveli */
 .drawing-version { border-top: 1px solid var(--border); padding: 12px 0; }
@@ -980,13 +978,15 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .firm-table > thead th:last-child, .firm-table > tbody.firm > tr.firm-row > td:last-child, .firm-table > tfoot td:last-child { padding-right: 14px; }
 .firm-table td.firm-cell { min-width: 140px; }
 .firm-table .firm-toggle { max-width: 240px; }
-.firm-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+/* Firma satırı işlemleri iki satırda (karar 234): 1) PDF / Excel 2) Özet / Sandık — iki eşit sütunlu ızgara; satış (yalnızca
+   Sandık) tek düğme. Satır kapları (.firm-acts-line) ızgaraya karışır (display: contents) */
+.firm-acts { display: grid; grid-template-columns: repeat(2, auto); justify-content: end; gap: 4px; }
+.firm-acts-line { display: contents; }
+.firm-acts .btn { justify-content: center; }
 .firm-sub { width: 0; min-width: 100%; container: firmsub / inline-size; overflow-x: auto; }
 /* Alt siparişlerde misafir yük rozeti satıra sığmazsa alt satıra iner (sütunu genişletmez) */
 .firm-orders-table .badge { white-space: normal; text-align: left; }
-/* Geniş alanda dört işlem kesin tek satırda (tablonun en dar hâli bu genişliğe sığar) */
-@container firmwrap (min-width: 1190px) { .firm-acts { flex-wrap: nowrap; } }
-/* Belge işlemleri olan tabloda sütun en az iki düğme genişliğinde: sığmazsa 2 + 2 satır (tek tek alt alta değil) */
+/* Belge işlemleri olan tabloda sütun en az iki düğme genişliğinde (2 + 2 satır) */
 .firm-wrap-docs > .firm-table td.firm-actions { min-width: 144px; }
 .firm-table td[data-label]::before { content: none; }
 /* Kart düzeni: her firma bir kart — ad + rozetler, etiketli sayılar ızgarası, işlemler; açılan bölümler kartın altında */
@@ -1001,7 +1001,7 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .firm-wrap-docs > .firm-table td.firm-total-pad { display: none; }
   .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-row > td[data-label]::before, .firm-wrap-docs > .firm-table > tfoot > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
   .firm-wrap-docs > .firm-table td.firm-actions::before { content: none !important; }
-  .firm-wrap-docs > .firm-table .firm-acts { justify-content: flex-start; }
+  .firm-wrap-docs > .firm-table .firm-acts { justify-content: start; }
   .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-orders:not([hidden]), .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-crates:not([hidden]) { display: block; }
   .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-orders > td, .firm-wrap-docs > .firm-table > tbody.firm > tr.firm-crates > td { display: block; padding: 4px 16px 16px; }
 }
@@ -1016,7 +1016,7 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .firm-wrap > .firm-table td.firm-total-pad { display: none; }
   .firm-wrap > .firm-table > tbody.firm > tr.firm-row > td[data-label]::before, .firm-wrap > .firm-table > tfoot > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); }
   .firm-wrap > .firm-table td.firm-actions::before { content: none !important; }
-  .firm-wrap > .firm-table .firm-acts { justify-content: flex-start; }
+  .firm-wrap > .firm-table .firm-acts { justify-content: start; }
   .firm-wrap > .firm-table > tbody.firm > tr.firm-orders:not([hidden]), .firm-wrap > .firm-table > tbody.firm > tr.firm-crates:not([hidden]) { display: block; }
   .firm-wrap > .firm-table > tbody.firm > tr.firm-orders > td, .firm-wrap > .firm-table > tbody.firm > tr.firm-crates > td { display: block; padding: 4px 16px 16px; }
 }
@@ -1054,9 +1054,7 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .crate-editor .crate-table > tbody + tbody { border-top: 1px solid var(--divider); }
   .crate-editor .crate-table td[data-label]::before { content: attr(data-label); display: block; font-size: var(--fs-meta); font-weight: 600; color: var(--muted); margin-bottom: 2px; }
   .crate-editor .crate-table td input:not([type=checkbox]) { width: 100%; min-width: 0; }
-  .crate-editor .crate-table td.c-note, .crate-editor .crate-table td.crate-orders { grid-column: 1 / -1; }
-  .crate-editor .crate-table td.crate-orders { display: flex; }
-  .crate-editor .crate-table td.crate-orders::before { flex-basis: 100%; }
+  .crate-editor .crate-table td.c-note { grid-column: 1 / -1; }
   .crate-editor .crate-table td.c-del { grid-column: 4; grid-row: 1; align-self: start; }
 }
 

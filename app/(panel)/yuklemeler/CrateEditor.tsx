@@ -21,8 +21,10 @@ const kgNum = (s: string) => {
 const fmt0 = (n: number) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(n);
 
 /**
- * Bir müşterinin bir günlük sandıkları (yükleme sekmesi): no, uzunluk / genişlik / yükseklik, net / brüt, not,
- * sandıktaki siparişler. Hepsi birlikte kaydedilir; sunucu yeniden doğrular (server/loading/crates.js).
+ * Bir müşterinin bir günlük sandıkları (yükleme sekmesi): no, uzunluk / genişlik / yükseklik, net / brüt, not. Sipariş
+ * seçimi yok (Paket C — karar 234): yeni sandık sunucuda firmanın o günkü kendi (misafir olmayan) bütün siparişlerine
+ * bağlanır, kayıtlı sandık (origNo ile tanınır) bağlarını korur. Hepsi birlikte kaydedilir; sunucu yeniden doğrular
+ * (server/loading/crates.js → saveDayCrates, links: 'auto').
  * Misafir sipariş (başka firmanın sandığıyla giden) listede yoktur; firmanın misafir olmayan siparişi yoksa (locked)
  * "+ Sandık ekle" kapalıdır — sunucu da reddeder (GUEST_ORDER / GUEST_ONLY).
  */
@@ -63,7 +65,8 @@ export function CrateEditor(props: {
     if (props.locked) return;
     setRows((rs) => [...rs, {
       key: seq++, crateNo: nextNo(), lengthMm: '', widthMm: '', heightMm: '', netKg: '', grossKg: '', note: '',
-      orderIds: props.orders.length === 1 ? [props.orders[0].id] : [],
+      // Yalnızca gösterim (kapsanan siparişler): bağı sunucu kurar — firmanın o günkü kendi bütün siparişleri
+      orderIds: props.orders.map((o) => o.id),
     }]);
   };
   const totals = useMemo(() => {
@@ -78,9 +81,9 @@ export function CrateEditor(props: {
   }, [rows, props.glassKg, props.tare]);
   const covered = [...new Set(rows.flatMap((r) => r.orderIds))]
     .map((id) => props.orders.find((o) => o.id === id)?.orderNo).filter(Boolean);
-  // Gönderilen veri: yalnızca sandık alanları (misafir yük satırı gösterim içindir; sunucu bağı kendisi korur)
-  const payload = JSON.stringify(rows.map(({ key: _k, guests: _g, origNo: _o, ...r }) => r));
-  const many = props.orders.length > 1;
+  // Gönderilen veri: yalnızca sandık alanları + kayıtlı sandığın numarası (origNo). Sipariş bağı gönderilmez: sunucu kurar /
+  // korur (misafir yük satırı da gösterim içindir; sunucu bağı kendisi korur)
+  const payload = JSON.stringify(rows.map(({ key: _k, guests: _g, orderIds: _i, ...r }) => r));
   // Sütun genişlikleri sınıftan gelir (app/globals.css → .crate-table .c-no / .c-dim / .c-kg)
   // data-label: dar alanda (telefon, dar masaüstü) satır etiketli bir ızgara olur — başlık satırı gizlenir (app/globals.css)
   const cell = (r: Row, k: 'crateNo' | 'lengthMm' | 'widthMm' | 'heightMm' | 'netKg' | 'grossKg', label: string) => (
@@ -90,7 +93,7 @@ export function CrateEditor(props: {
         onChange={(e) => set(r.key, { [k]: e.target.value.replace(k === 'netKg' || k === 'grossKg' ? /[^\d.,]/g : /\D/g, '') } as Partial<Row>)} />
     </td>
   );
-  const colCount = 8 + (many ? 1 : 0);
+  const colCount = 8;
 
   return (
     <form action={action} className="crate-editor">
@@ -113,7 +116,7 @@ export function CrateEditor(props: {
             <thead>
               <tr>
                 <th>{m.cols.no}</th><th>{m.cols.length}</th><th>{m.cols.width}</th><th>{m.cols.height}</th>
-                <th>{m.cols.net}</th><th>{m.cols.gross}</th><th className="c-note">{m.cols.note}</th>{many && <th>{m.cols.orders}</th>}<th />
+                <th>{m.cols.net}</th><th>{m.cols.gross}</th><th className="c-note">{m.cols.note}</th><th />
               </tr>
             </thead>
             {rows.map((r) => (
@@ -126,17 +129,6 @@ export function CrateEditor(props: {
                   {cell(r, 'netKg', m.cols.net)}
                   {cell(r, 'grossKg', m.cols.gross)}
                   <td className="c-note" data-label={m.cols.note}><input value={r.note} maxLength={200} aria-label={`${m.cols.note} (${r.crateNo || '—'})`} onChange={(e) => set(r.key, { note: e.target.value })} /></td>
-                  {many && (
-                    <td className="crate-orders" data-label={m.cols.orders}>
-                      {props.orders.map((o) => (
-                        <label key={o.id} className="crate-pick small">
-                          <input type="checkbox" checked={r.orderIds.includes(o.id)} aria-label={`${o.orderNo} (${r.crateNo || '—'})`}
-                            onChange={(e) => set(r.key, { orderIds: e.target.checked ? [...r.orderIds, o.id] : r.orderIds.filter((x) => x !== o.id) })} />
-                          {o.orderNo}
-                        </label>
-                      ))}
-                    </td>
-                  )}
                   <td className="c-del">
                     <button type="button" className="btn btn-link btn-del" aria-label={m.remove} title={guestsOf(r).length ? m.guestKept : m.remove}
                       disabled={guestsOf(r).length > 0} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>✕</button>

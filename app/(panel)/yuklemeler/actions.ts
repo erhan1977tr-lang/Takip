@@ -33,7 +33,8 @@ export async function saveDayCratesAction(_prev: CratesState, formData: FormData
   if (!v.ok) {
     return { error: v.errors.slice(0, 5).map((e) => t(`loading.day.crates.err.${e.code}` as MsgKey, { row: e.row })).join(' ') };
   }
-  const r = await saveDayCrates(db, { day, customerId, rows: v.rows, actor: await actorOf(user) });
+  // Sipariş seçimi formdan gelmez (karar 234): yeni sandık firmanın o günkü kendi siparişlerine, kayıtlı sandık bağlarını korur
+  const r = await saveDayCrates(db, { day, customerId, rows: v.rows, actor: await actorOf(user), links: 'auto' });
   if (!r.ok) return { error: t(`loading.day.crates.err.${r.code}` as MsgKey, { list: (r.numbers ?? []).join(', ') }) };
   revalidatePath('/yuklemeler');
   return { ok: t('loading.day.crates.saved'), savedAt: Date.now() };

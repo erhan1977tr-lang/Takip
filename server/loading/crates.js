@@ -36,7 +36,7 @@ const num = (v) => {
  * @param {{ crateNo?: unknown, lengthMm?: unknown, widthMm?: unknown, heightMm?: unknown, netKg?: unknown, grossKg?: unknown, note?: unknown, orderIds?: unknown[] }[]} raw
  * @returns {{ ok: true, rows: CrateInput[] } | { ok: false, errors: { row: number, code: string }[] }}
  *   hata kodları: NO (sandık no 1–999 tam sayı), DUPLICATE_NO, DIM, WEIGHT, GROSS_LT_NET, NOTE, TOO_MANY
- * @typedef {{ crateNo: number, lengthMm: number | null, widthMm: number | null, heightMm: number | null, netKg: number | null, grossKg: number | null, note: string | null, orderIds: string[] }} CrateInput
+ * @typedef {{ origNo?: number | null, crateNo: number, lengthMm: number | null, widthMm: number | null, heightMm: number | null, netKg: number | null, grossKg: number | null, note: string | null, orderIds: string[] }} CrateInput
  */
 export function validateCrates(raw) {
   const rows = [];
@@ -58,7 +58,10 @@ export function validateCrates(raw) {
     else if (net != null && gross != null && gross < net) errors.push({ row, code: 'GROSS_LT_NET' });
     const note = clean(r.note);
     if (note.length > 200) errors.push({ row, code: 'NOTE' });
+    // origNo: kayıtlı sandığın sunucudaki numarası (yeni satırda yok) — otomatik bağda kayıtlı sandık bununla tanınır (karar 234)
+    const orig = num(r.origNo);
     rows.push({
+      origNo: Number.isInteger(orig) && orig >= 1 && orig <= MAX_CRATE_NO ? orig : null,
       crateNo: no, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2],
       netKg: net == null ? null : Math.round(net * 100) / 100, grossKg: gross == null ? null : Math.round(gross * 100) / 100,
       note: note || null, orderIds: [...new Set((r.orderIds ?? []).map(clean).filter(Boolean))],
@@ -173,9 +176,15 @@ export async function guestOrdersOn(tx, customerId, day, orders) {
  * Misafir sipariş (Paket 7 — başka firmanın sandığıyla giden; guestOrdersOn) bu firmanın sandığına konamaz (GUEST_ORDER);
  * firmanın o gün misafir olmayan siparişi yoksa yeni sandık açılamaz (GUEST_ONLY) — var olan sandıklar düzeltilebilir / silinebilir.
  * Kural ekranda da uygulanır ("+ Sandık ekle" kapalı) ama esas olan bu denetimdir.
+ * Otomatik bağ (Paket C — karar 234; links = 'auto', Yüklemeler ekranının işlemi): sipariş seçimi formdan gelmez —
+ * satırın orderIds'i yok sayılır. origNo ile tanınan kayıtlı sandık kendi bağlarını korur (yalnızca bu firmanın o günkü,
+ * misafir olmayan siparişleri); yeni sandık bu firmanın o günkü misafir OLMAYAN bütün siparişlerine bağlanır. Başka
+ * firmanın / başka günün siparişi bağlanmaz; geçmiş kayıtlar yeniden bağlanmaz. links verilmezse (servis / test çağrısı)
+ * satırın orderIds'i eski kurala göre doğrulanır.
+ * @param {{ day: string, customerId: string, rows: CrateInput[], actor: any, links?: 'auto' | 'explicit' }} args
  * @returns {Promise<{ ok: true, count: number } | { ok: false, code: 'NO_ORDERS' | 'NUMBER_TAKEN' | 'BAD_ORDER' | 'HAS_GUESTS' | 'GUEST_ORDER' | 'GUEST_ONLY', numbers?: number[] }>}
  */
-export async function saveDayCrates(db, { day, customerId, rows, actor }) {
+export async function saveDayCrates(db, { day, customerId, rows: input, actor, links = 'explicit' }) {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crates:${day}`}, 0))`;
     const orders = await dayOrders(tx, customerId, day);
@@ -186,13 +195,14 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
     const guests = new Map(stored.map((c) => [c.crateNo, c.orders.filter((x) => x.order.customerId !== customerId).map((x) => x.orderId)]).filter(([, ids]) => ids.length));
     const before = stored.map((c) => ({ ...c, orders: c.orders.filter((x) => x.order.customerId === customerId) }));
     if (orders.length === 0 && before.length === 0) return { ok: false, code: 'NO_ORDERS' };
+    const guestIds = await guestOrdersOn(tx, customerId, day, orders);
+    const ownOrders = orders.filter((o) => !guestIds.has(o.id));
+    const rows = links === 'auto' ? autoLinkRows(input, before, ownOrders) : input;
     const valid = new Set(orders.map((o) => o.id));
     if (rows.some((r) => r.orderIds.some((id) => !valid.has(id)))) return { ok: false, code: 'BAD_ORDER' };
     // Misafir sipariş ev sahibinin sandığıyla gider: kendi firmasının sandığına konamaz; yalnızca misafir siparişi olan firmaya
     // yeni sandık açılamaz (önceden girilmiş sandık numaraları düzeltilebilir ya da silinebilir)
-    const guestIds = await guestOrdersOn(tx, customerId, day, orders);
     if (rows.some((r) => r.orderIds.some((id) => guestIds.has(id)))) return { ok: false, code: 'GUEST_ORDER' };
-    const ownOrders = orders.filter((o) => !guestIds.has(o.id));
     if (orders.length > 0 && ownOrders.length === 0 && rows.some((r) => !before.some((b) => b.crateNo === r.crateNo))) return { ok: false, code: 'GUEST_ONLY' };
     const kept = new Set(rows.map((r) => r.crateNo));
     const orphaned = [...guests.keys()].filter((no) => !kept.has(no));
@@ -204,8 +214,8 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
 
     await tx.crate.deleteMany({ where: { shipDay: dayDate(day), customerId } });
     for (const r of rows) {
-      // Tek siparişli günde sandık o siparişindir (sipariş misafir değilse)
-      const orderIds = r.orderIds.length ? r.orderIds : orders.length === 1 && ownOrders.length === 1 ? [ownOrders[0].id] : [];
+      // Tek siparişli günde sandık o siparişindir (sipariş misafir değilse). Otomatik bağda bağlar autoLinkRows'tan gelir.
+      const orderIds = r.orderIds.length || links === 'auto' ? r.orderIds : orders.length === 1 && ownOrders.length === 1 ? [ownOrders[0].id] : [];
       await tx.crate.create({
         data: {
           shipDay: dayDate(day), customerId, crateNo: r.crateNo, lengthMm: r.lengthMm, widthMm: r.widthMm, heightMm: r.heightMm,
@@ -221,12 +231,34 @@ export async function saveDayCrates(db, { day, customerId, rows, actor }) {
     });
     await writeAudit(tx, {
       action: 'CRATES_SAVE', entityType: 'Customer', entityId: customerId, userId: actor.id,
-      details: { day, before: before.map(brief), after: rows.map(brief) },
+      details: { day, before: before.map(brief), after: rows.map(brief), ...(links === 'auto' ? { links: 'auto' } : {}) },
     }, actor);
     for (const o of orders) {
       await writeHistory(tx, { orderId: o.id, event: 'CRATES', from: o.status, to: o.status, actorId: actor.id, note: String(rows.length) });
     }
     return { ok: true, count: rows.length };
+  });
+}
+
+/**
+ * Otomatik sandık bağı (karar 234, saf): satırın orderIds'i yok sayılır. origNo kayıtlı bir sandığa karşılık geliyorsa (aynı
+ * numara bir kez) o sandığın kayıtlı bağları korunur — yalnızca bugünün misafir olmayan kendi siparişleriyle kesişimi; yeni
+ * sandık misafir olmayan bütün kendi siparişlerine bağlanır.
+ * @param {CrateInput[]} rows  @param {{ crateNo: number, orders: { orderId: string }[] }[]} stored  bu firmanın bağları
+ * @param {{ id: string }[]} ownOrders  firmanın o günkü misafir olmayan siparişleri
+ */
+export function autoLinkRows(rows, stored, ownOrders) {
+  const own = ownOrders.map((o) => o.id);
+  const ownSet = new Set(own);
+  const byNo = new Map(stored.map((c) => [c.crateNo, c]));
+  const claimed = new Set();
+  return rows.map((r) => {
+    const match = r.origNo != null && !claimed.has(r.origNo) ? byNo.get(r.origNo) : undefined;
+    if (match) {
+      claimed.add(r.origNo);
+      return { ...r, orderIds: [...new Set(match.orders.map((x) => x.orderId).filter((id) => ownSet.has(id)))] };
+    }
+    return { ...r, orderIds: [...own] };
   });
 }
 

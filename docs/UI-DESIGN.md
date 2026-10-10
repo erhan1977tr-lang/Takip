@@ -145,7 +145,7 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   (17 px, 15 px under 360 px). Never style these with literal colours — change the tokens.
 - Day detail (internal roles): `.table-wrap.load-wrap > table.load-table.firm-table`, ONE `tbody.firm[data-firm]` per
   firm (`FirmRows.tsx`): `tr.firm-row` (`.firm-toggle` button with the name + `.firm-caret`, `.firm-badges`, numeric
-  cells `td[data-col]`, `td.actions.firm-actions` = Sandık / PDF / Excel / Özet) → hidden `tr.firm-orders` (nested
+  cells `td[data-col]`, `td.actions.firm-actions` = PDF / Excel, Özet / Sandık in two lines) → hidden `tr.firm-orders` (nested
   `table.sub-table.firm-orders-table`, `tr[data-order]`, `tfoot` total) → hidden `tr.firm-crates` (`.firm-crates-box`:
   `.guest-note` warnings, crate editor, `.guest-box` for hosted guest loads). The table's own total is `> tfoot`. Customers
   keep the order-based `table.load-table` with their own crates (`tr.crate-row` + `<details>`).
@@ -607,7 +607,7 @@ logo through the shared branding infrastructure (`server/branding`, decisions.md
 ## Admin panel fixes 1 (3.63.0, decisions 215–218)
 
 - Loading firm table (`.firm-wrap`, `.firm-wrap-docs` when the row has PDF / Excel / Özet): short headers that may wrap (full
-  name in `title`), every cell carries `data-label`; actions sit in `.firm-acts` (flex, one line at a container width ≥ 1190 px).
+  name in `title`), every cell carries `data-label`; actions sit in `.firm-acts` (two-column grid, two lines — 1) PDF / Excel 2) Özet / Sandık; `.firm-acts-line` is `display: contents`; Sales sees only Sandık — decisions.md #234).
   When the table does not fit its own container (`@container firmwrap`: ≤ 1069 px with document actions, ≤ 899 px without) each
   firm becomes a card — labelled number grid, then actions; open sub-rows (`tr.firm-orders`, `tr.firm-crates`) below the card.
   Expanded content lives in `.firm-sub` (its own container; never widens the table): sub-orders table becomes a labelled grid at

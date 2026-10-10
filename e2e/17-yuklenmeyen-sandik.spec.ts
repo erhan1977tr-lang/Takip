@@ -245,8 +245,9 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
     f.requestSubmit();
   }, JSON.stringify(rows));
   const crateRow = (orderIds: string[]) => ({ crateNo: '31', lengthMm: '2400', widthMm: '800', heightMm: '900', netKg: '', grossKg: '', note: '', orderIds });
+  // Formdan gelen sipariş seçimi yok sayılır (karar 234): misafir siparişi gizli alana yazmak da sandığa bağlamaz
   await forgeCrates([crateRow([orderU])]);
-  await expect(own.locator('.crate-editor .alert-error')).toContainText('Misafir sipariş (başka firmanın sandıklarıyla giden) bu firmanın sandığına konamaz.');
+  await expect(own.locator('.crate-editor .alert-error')).toContainText('yeni sandık açılamaz');
   await forgeCrates([crateRow([])]);
   await expect(own.locator('.crate-editor .alert-error')).toContainText('yeni sandık açılamaz');
   db = await prisma();

@@ -10,7 +10,7 @@ test('sandık: satırlar doğrulanır, boş satır atlanır', () => {
     { crateNo: '16', netKg: '1043,5' },
   ]);
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.rows[0], { crateNo: 15, lengthMm: 2700, widthMm: 541, heightMm: 1182, netKg: 1275, grossKg: 1335, note: 'FOL2', orderIds: ['a'] });
+  assert.deepEqual(ok.rows[0], { origNo: null, crateNo: 15, lengthMm: 2700, widthMm: 541, heightMm: 1182, netKg: 1275, grossKg: 1335, note: 'FOL2', orderIds: ['a'] });
   assert.deepEqual([ok.rows[1].crateNo, ok.rows[1].netKg, ok.rows[1].grossKg, ok.rows[1].lengthMm], [16, 1043.5, null, null]);
 
   const bad = validateCrates([
@@ -41,4 +41,24 @@ test('sandık: girilen sandıklar tahminin önüne geçer; boş net cam ağırl�
   ]);
   // ikinci sandığın neti: 2100 / 2 = 1050, brütü 1050 + 50
   assert.deepEqual([g.crates, g.netKg, g.grossKg, g.realCrates, g.estimatedCrates], [2, 2325, 2435, true, 0]);
+});
+
+test('otomatik sandık bağı (karar 234): yeni sandık kendi bütün siparişlerine; kayıtlı sandık (origNo) bağlarını korur; formdan gelen sipariş yok sayılır', async () => {
+  const { autoLinkRows } = await import('../server/loading/crates.js');
+  const v = validateCrates([
+    { origNo: '5', crateNo: '5', orderIds: ['YABANCI'] },
+    { origNo: '6', crateNo: '9' },
+    { crateNo: '7', orderIds: ['b'] },
+    { origNo: '5', crateNo: '8' },
+  ]);
+  assert.equal(v.ok, true);
+  assert.deepEqual(v.rows.map((r) => r.origNo), [5, 6, null, 5]);
+  const stored = [{ crateNo: 5, orders: [{ orderId: 'a' }, { orderId: 'gone' }] }, { crateNo: 6, orders: [] }];
+  const out = autoLinkRows(v.rows, stored, [{ id: 'a' }, { id: 'b' }]);
+  assert.deepEqual(out.map((r) => [r.crateNo, r.orderIds]), [
+    [5, ['a']], // kayıtlı: yalnızca bugünün kendi siparişleriyle kesişim; formdaki yabancı kimlik yok sayılır
+    [9, []], // kayıtlı, numarası değişti: bağları (boş) korunur — yeniden bağlanmaz
+    [7, ['a', 'b']], // yeni: firmanın o günkü misafir olmayan bütün siparişleri
+    [8, ['a', 'b']], // aynı origNo ikinci kez: yeni sandık sayılır
+  ]);
 });

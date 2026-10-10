@@ -49,16 +49,19 @@ export function FirmRows(props: {
         </td>
         {props.cells}
         <td className="actions firm-actions" data-label={props.m.actions}>
-          {/* Sıra: PDF | Excel | Özet | Sandık — tek satırda; alan daralırsa sonraki satıra geçer (flex-wrap), tablo yatay kaymaz */}
+          {/* İki satır (Paket C — karar 234): 1) PDF / Excel 2) Özet / Sandık. Belgeleri göremeyen rolde (satış) yalnızca Sandık.
+              Aynı bağlantılar, aynı yetki; sandık formu yine satırın altında açılır. */}
           <div className="firm-acts">
             {props.to && (
-              <>
+              <div className="firm-acts-line" data-acts-line="docs">
                 <a className="btn" href={props.to.pdf} data-action="pdf">{props.m.pdf}</a>
                 <a className="btn" href={props.to.xlsx} data-action="xlsx">{props.m.xlsx}</a>
-                <Link className="btn" href={props.to.summary} data-action="summary">{props.m.summary}</Link>
-              </>
+              </div>
             )}
-            <button type="button" className={`btn${crates ? ' active' : ''}`} aria-expanded={crates} aria-controls={cratesId} data-action="crates" onClick={() => setCrates((v) => !v)}>{props.m.crates}</button>
+            <div className="firm-acts-line" data-acts-line="more">
+              {props.to && <Link className="btn" href={props.to.summary} data-action="summary">{props.m.summary}</Link>}
+              <button type="button" className={`btn${crates ? ' active' : ''}`} aria-expanded={crates} aria-controls={cratesId} data-action="crates" onClick={() => setCrates((v) => !v)}>{props.m.crates}</button>
+            </div>
           </div>
         </td>
       </tr>
