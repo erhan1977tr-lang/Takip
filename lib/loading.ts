@@ -301,3 +301,40 @@ export async function loadDay(user: CurrentUser, day: string) {
   const rows: LoadRow[] = [...dated.map((o) => (missing.has(o.id) ? { ...o, notLoaded: missing.get(o.id) } : o)), ...carried.filter((o) => shipDay(o) === day)];
   return { rows, crates, guests: guests.filter((l) => l.day === day), hostNames: await guestHostNames(user, rows) };
 }
+
+/** "Yükleme Özeti" dökümünün girdisi (server/loading/summary.js → buildLoadingSummary): teklif satırı biçiminde */
+export type SummaryOrder = { orderNo: string; title: string | null; currency: string; customer: { id: string; name: string }; lines: Record<string, unknown>[] };
+
+/**
+ * Onaylı yükleme gününün dökümü (Paket C — karar 233): yalnızca etkin (en son düzeltme) YÜKLENDİ kalemleri — planlanan
+ * miktar değil. Gün onaylı değilse null (çağıran planı kullanır ve "planlanan" yazar).
+ * Fiyat role göre TEK alana yazılır (diğer fiyat hiç taşınmaz): yönetici ve denetimci müşteri fiyatı (unitSale), satış satış
+ * fiyatı (unitCost); satışa yöneticinin sandık bedeli kalemi hiç gelmez. Firma adı role göre (customerLabel); kapsam orderScope.
+ */
+export async function confirmedSummaryOrders(user: CurrentUser, day: string): Promise<SummaryOrder[] | null> {
+  const conf = await db.loadingConfirmation.findUnique({ where: { shipDay: new Date(`${day}T00:00:00Z`) }, select: { id: true } });
+  if (!conf) return null;
+  const items = await db.loadingConfirmationItem.findMany({
+    where: { confirmationId: conf.id, order: orderScope(user) },
+    orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }, { revision: 'asc' }],
+    include: { order: { select: { orderNo: true, title: true } }, customer: { select: { id: true, name: true } }, offerLine: { select: { crateFee: true } } },
+  });
+  const customerPrice = userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW');
+  const byOrder = new Map<string, SummaryOrder>();
+  for (const it of effectiveItems(items)) {
+    if (it.status !== 'LOADED') continue;
+    if (!customerPrice && it.offerLine?.crateFee) continue;
+    const price = customerPrice ? (it.unitSale == null ? null : Number(it.unitSale)) : Number(it.unitCost);
+    const o = byOrder.get(it.orderId) ?? {
+      orderNo: it.order.orderNo, title: it.order.title ?? null, currency: it.currency,
+      customer: { id: it.customer.id, name: customerLabel(user, it.customer.name) }, lines: [],
+    };
+    o.lines.push({
+      id: it.offerLineId ?? it.id, description: it.description, descriptionRo: it.descriptionRo, enMm: it.enMm, boyMm: it.boyMm,
+      adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, sortOrder: it.sortOrder, pieceBase: it.pieceBase ?? 0,
+      unitPrice: price, offerPrice: price,
+    });
+    byOrder.set(it.orderId, o);
+  }
+  return [...byOrder.values()];
+}

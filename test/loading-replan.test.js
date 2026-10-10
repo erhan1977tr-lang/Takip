@@ -122,18 +122,20 @@ test('yükleme özeti (Paket 7): "Sandık (Fiziksel)" sütunu yok; misafir yük 
     { id: 'a1', orderNo: 'AAA001', title: 'Proje A', customer: { id: 'A', name: 'Customer A' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [g(2), hole] }] },
     { id: 'b1', orderNo: 'BBB001', title: 'Proje B', customer: { id: 'B', name: 'Customer B' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [g(3)] }] },
   ];
-  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
-  // Ticari satırlar: A'nın siparişi A'nın satırında (B'nin satırına eklenmez), delik camın tutarında; satırda sandık alanı yok
-  assert.deepEqual(s.rows.map((r) => [r.customer, r.orders.join(','), r.adet, r.m2, r.total, r.unit]), [['Customer A', 'AAA001', 2, 2, 54, 27], ['Customer B', 'BBB001', 3, 3, 72, 24]]);
-  assert.ok(s.rows.every((r) => !('crates' in r)));
+  const s = buildLoadingSummary(orders.map((o) => ({ orderNo: o.orderNo, title: o.title, customer: o.customer, currency: 'EUR', lines: o.offers[0].lines })), { priceOf: (l) => l.offerPrice });
+  // Ticari satırlar: A'nın siparişi A'nın bloğunda (B'ye eklenmez), delik camın tutarında (birim fiyat camın); sandık alanı yok
+  const flatRows = s.customers.flatMap((c) => c.orders.flatMap((o) => o.rows.map((r) => [c.name, o.orderNo, r.adet, r.m2, r.total, r.price])));
+  assert.deepEqual(flatRows, [['Customer A', 'AAA001', 2, 2, 54, 24], ['Customer B', 'BBB001', 3, 3, 72, 24]]);
+  assert.ok(s.customers.every((c) => c.orders.every((o) => o.rows.every((r) => !('crates' in r)))));
   const money = (offer) => ({ EUR: { sales: 0, offer, hasSales: false, hasOffer: true } });
   const firm = (name, o) => ({ name, orders: 1, camAdet: o.glass, cnc: 0, delik: o.holes, metraj: o.glass, netKg: o.net, crates: o.crates, grossKg: o.gross, money: money(o.amount) });
   // A'nın camı B'nin sandığında: A'da sandık / ağırlık 0, B'de 1 sandık (fiziksel); ticari sayılar sahibinde
   const firms = [firm('Customer A', { glass: 2, holes: 2, net: 0, crates: 0, gross: 0, amount: 54 }), firm('Customer B', { glass: 3, holes: 0, net: 100, crates: 1, gross: 150, amount: 72 })];
   const total = { ...firm('TOPLAM', { glass: 5, holes: 2, net: 100, crates: 1, gross: 150, amount: 126 }), orders: 2 };
   const text = {
-    title: 'YÜKLEME ÖZETİ', linesTitle: 'DÖKÜM', sheetFirms: 'Firmalar', sheetLines: 'Döküm', firmsTitle: 'FİRMA BAZLI ÖZET', guestTitle: 'MİSAFİR YÜK', guestNone: 'yok',
-    total: 'TOPLAM', unit: 'm²', currency: 'Para birimi', cols: ['NO', 'MÜŞTERİ', 'PROJE', 'CAM', 'ADET', 'BİRİM', 'M2', 'FİYAT', 'TUTAR'],
+    title: 'YÜKLEME ÖZETİ', sheetName: 'Yükleme Özeti', linesTitle: 'DÖKÜM', linesNone: 'yok', firmsTitle: 'FİRMA BAZLI ÖZET', guestTitle: 'MİSAFİR YÜK', guestNone: 'yok',
+    total: 'TOPLAM', orderTotal: 'Sipariş toplamı', customerTotal: 'Müşteri toplamı', grandTitle: 'GENEL TOPLAM', free: 'bedelsiz', unit: 'm²', currency: 'Para birimi',
+    cols: { desc: 'CAM', qty: 'ADET', unit: 'BİRİM', m2: 'M2', price: 'FİYAT', amount: 'TUTAR' },
     firmCols: { firm: 'Firma', orders: 'Sipariş', glass: 'Cam', cnc: 'CNC', holes: 'Delik', m2: 'm²', net: 'Net', crates: 'Sandık', gross: 'Brüt', factory: 'Fabrika satış', offer: 'Teklif tutarı' },
     guestCols: { order: 'SİPARİŞ NO', owner: 'TİCARİ SAHİP', host: 'FİZİKSEL SANDIK SAHİBİ', crate: 'SANDIK' },
   };
@@ -155,9 +157,11 @@ test('yükleme özeti (Paket 7): "Sandık (Fiziksel)" sütunu yok; misafir yük 
   assert.deepEqual(x.find((r) => r[0] === 'TOPLAM').slice(0, 10), ['TOPLAM', 2, 5, 0, 2, 5, 100, 1, 150, 126]);
   // Misafir yük tablosu firma tablosunun sütunlarına hizalı (birleştirilmiş hücreler): sipariş · ticari sahip · fiziksel sandık sahibi · sandık
   assert.deepEqual(x.find((r) => r[0] === 'AAA001').filter((v) => v != null), ['AAA001', 'Customer A', 'Customer B', '#15']);
-  // 2. sayfa: satır dökümü (para birimi ayrı sütunda; sandık sütunu yok)
-  assert.deepEqual(sheets[1].blocks[0].rows.find((r) => r[0] === 'AAA001'), ['AAA001', 'Customer A', 'Proje A', '10 MM TEMPER', 2, 'm²', 2, 27, 54, 'EUR']);
-  assert.deepEqual(sheets[1].blocks[0].totals, [['', '', '', 'TOPLAM', 5, '', 5, '', 126, 'EUR']]);
+  // Aynı sayfada sipariş blokları (karar 233; sandık sütunu yok) ve genel toplam
+  assert.equal(sheets.length, 1);
+  assert.deepEqual(sheets[0].blocks[2].title, 'Customer A · AAA001 — Proje A');
+  assert.deepEqual(sheets[0].blocks[2].rows, [['10 MM TEMPER', 2, 'm²', 2, 24, 54]]);
+  assert.deepEqual(sheets[0].blocks.at(-1).totals, [['TOPLAM (EUR)', 5, '', 5, '', 126]]);
 });
 
 test('nakliye listesi: sandık ev sahibinin grubunda kalır, içindeki başka firma camı sandığın altında MİSAFİR YÜK olarak yazar; o sipariş "sandığı girilmemiş" sayılmaz', () => {

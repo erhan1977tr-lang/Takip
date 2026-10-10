@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, reportSheet } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, reportSheet, summaryBlock } from './helpers';
 
 // Paket 7 — Yüklemeler firma tablosu, firma işlemleri, takvim göstergeleri, maskeleme ve dosya adları (karar 186–191).
 //  - firma başına tek satır; açılınca alt siparişler; ana satır = alt siparişlerin toplamı; sipariş adedi ≠ cam adedi;
@@ -127,7 +127,7 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   await expect(u.locator('tr.firm-orders')).toBeHidden();
   await expect(u.locator('.firm-toggle')).toHaveAttribute('aria-expanded', 'false');
 
-  // Yükleme Özeti (Excel): firma bazlı özet ekrandaki tabloyla aynı; para birimleri ayrı sütun; satır dökümü 2. sayfada
+  // Yükleme Özeti (Excel): firma bazlı özet ekrandaki tabloyla aynı; para birimleri ayrı sütun; sipariş blokları AYNI sayfada (karar 233)
   const sum = await xlsx(page, `/yuklemeler/dokum?gun=${DAY}`);
   const head = sum.rows.find((r) => r[0] === 'Firma')!;
   expect(head.slice(9)).toEqual(['Fabrika satış tutarı (EUR)', 'Fabrika satış tutarı (RON)', 'Teklif tutarı (EUR)', 'Teklif tutarı (RON)']);
@@ -137,8 +137,12 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   expect(line('TOPLAM')).toEqual(['TOPLAM', 4, 10, 2, 4, 10, 200, 2, 300, 314, 300, 440, 400]);
   const guest = sum.rows.find((r) => r[0] === 'UNS8603')!;
   expect([guest[1], guest[5], guest[8]], 'fiziksel sandık ilişkisi ayrı tabloda').toEqual([uns.name, beta.name, 'sandık seçimi bekliyor']);
-  const lines = await reportSheet(sum.buf, 2);
-  for (const no of ['UNS8601', 'UNS8602', 'UNS8603', 'BET8604']) expect(lines.some((r) => String(r[0] ?? '').includes(no)), `satır dökümü ikinci sayfada: ${no}`).toBe(true);
+  const one = await reportSheet(sum.buf, 1);
+  expect(await reportSheet(sum.buf, 2), 'tek çalışma sayfası').toEqual([]);
+  for (const no of ['UNS8601', 'UNS8602', 'UNS8603', 'BET8604']) expect(summaryBlock(one, `${no.startsWith('BET') ? beta.name : uns.name} · ${no}`), `sipariş bloğu aynı sayfada: ${no}`).not.toBeNull();
+  // Genel toplam para birimi başına (birimler toplanmaz)
+  expect(one.some((r) => r[0] === 'GENEL TOPLAM')).toBe(true);
+  expect(one.some((r) => r[0] === 'TOPLAM (EUR)') && one.some((r) => r[0] === 'TOPLAM (RON)')).toBe(true);
   await page.context().close();
 });
 
@@ -304,8 +308,17 @@ test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt 
   // Gün Excel'i (satışın gün belgesi — durur): maskeli; teklif tutarı yok
   const sum = await xlsx(sales, `/yuklemeler/dokum?gun=${DAY}`);
   expect(sum.rows.some((r) => r[0] === mask(uns.name))).toBe(true);
-  const lines = await reportSheet(sum.buf, 2);
+  const lines = await reportSheet(sum.buf, 1);
   for (const n of [uns.name, beta.name]) expect(JSON.stringify([sum.rows, lines]), `özet Excel: ${n}`).not.toContain(n);
+  // Sipariş blok başlıkları da maskeli (karar 233)
+  expect(summaryBlock(lines, `${mask(uns.name)} · UNS8601`)).not.toBeNull();
+  // Excel'in belge özellikleri (docProps) de tam adı taşımaz
+  const { openZip } = await import('../server/files/zip.js');
+  const zip = openZip(sum.buf);
+  for (const part of ['docProps/core.xml', 'docProps/app.xml', 'xl/workbook.xml']) {
+    const xml = zip.read(part)?.toString('utf8') ?? '';
+    for (const n of [uns.name, beta.name]) expect(xml, `${part}: ${n}`).not.toContain(n);
+  }
   expect(sum.rows.flat().some((c) => typeof c === 'string' && c.startsWith('Teklif tutarı'))).toBe(false);
   // Firma PDF / Excel / Özet satışa kapalı (karar 215): sunucu reddeder, Özet yükleme gününe döner (maskeli sayfa)
   for (const f of ['pdf', 'xlsx']) expect((await sales.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=${f}`)).status(), f).toBe(403);
@@ -339,7 +352,7 @@ test('dosya adları panel dilinde ve güvenli karakterlerle (TR / RO); belge iç
     const ro = await xlsx(page, `/yuklemeler/dokum?gun=${DAY}`);
     expect(ro.rows[0][0]).toBe(`REZUMAT ÎNCĂRCARE · ${dmy(DAY)}`);
     const { readXlsx } = await import('../server/files/xlsx.js');
-    expect(readXlsx(ro.buf).sheetName).toBe('Firme');
+    expect(readXlsx(ro.buf).sheetName).toBe('Rezumat încărcare');
     const fro = await xlsx(page, `/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=xlsx`);
     expect(String(fro.rows[0][0])).toContain('LISTĂ DE ÎNCĂRCARE');
   } finally {

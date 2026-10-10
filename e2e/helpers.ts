@@ -334,3 +334,19 @@ export async function setShipDate(page: Page, day: string): Promise<string> {
   await form.getByRole('button', { name: 'Kaydet' }).click();
   return message;
 }
+
+/**
+ * "Yükleme Özeti" (karar 233, tek sayfa): başlığı `titlePrefix` ile başlayan sipariş bloğunun satırları (başlık satırı hariç;
+ * veri + toplam satırları). Sütunlar: açıklama (A), adet (E), birim (F), m² (G), ort. birim fiyat (H), tutar (J).
+ */
+export function summaryBlock(rows: (string | number | null)[][], titlePrefix: string): { title: string; rows: (string | number | null)[][] } | null {
+  const at = rows.findIndex((r) => typeof r?.[0] === 'string' && r[0].startsWith(titlePrefix));
+  if (at < 0) return null;
+  const out: (string | number | null)[][] = [];
+  for (let i = at + 2; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every((c) => c == null)) break;
+    out.push(r);
+  }
+  return { title: String(rows[at][0]), rows: out };
+}

@@ -113,3 +113,19 @@ test('telafi etiketi (karar 231): yeni telafi siparişinin gerçek numarası; va
   assert.ok(page.includes('data-comp-tag'));
   assert.ok(read('server/orders/offer-export.js').includes('r.tag ? `${r.tag}\\n${r.desc}` : r.desc'));
 });
+
+test('yükleme özeti (karar 233): onaylı gün yalnızca etkin YÜKLENDİ kalemleri; fiyat role göre tek alanda; satışa yönetici sandık bedeli ve müşteri fiyatı gitmez; ad maskeli', () => {
+  const lib = read('lib/loading.ts');
+  const fn = lib.slice(lib.indexOf('export async function confirmedSummaryOrders'));
+  assert.ok(fn.includes('for (const it of effectiveItems(items))') && fn.includes("if (it.status !== 'LOADED') continue;"));
+  assert.ok(fn.includes("where: { confirmationId: conf.id, order: orderScope(user) }"), 'kapsam');
+  assert.ok(fn.includes("const customerPrice = userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW');"));
+  assert.ok(fn.includes('const price = customerPrice ? (it.unitSale == null ? null : Number(it.unitSale)) : Number(it.unitCost);'));
+  assert.ok(fn.includes('unitPrice: price, offerPrice: price,'), 'diğer fiyat hiç taşınmaz');
+  assert.ok(fn.includes('if (!customerPrice && it.offerLine?.crateFee) continue;'));
+  assert.ok(fn.includes('name: customerLabel(user, it.customer.name)'));
+  const route = read('app/(panel)/yuklemeler/dokum/route.ts');
+  assert.ok(route.includes('const confirmed = await confirmedSummaryOrders(user, day);'));
+  assert.ok(route.includes("confirmed ? t('loading.summary.stateConfirmed') : t('loading.summary.statePlanned')"), 'planlanan açıkça etiketli');
+  assert.ok(route.includes("priceOf: (l) => (confirmed || !userCan(user, 'OFFER_SEND') ? l.unitPrice : l.offerPrice)"));
+});

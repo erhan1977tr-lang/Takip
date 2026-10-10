@@ -2,7 +2,7 @@ import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
-import { dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
+import { confirmedSummaryOrders, dayEntry, firmsOfDay, loadDay, moneyView, type SummaryOrder } from '@/lib/loading';
 import { fmtDate } from '@/lib/format';
 import { downloadHeaders, exportName, exportSubtitle } from '@/lib/exports';
 import { parseDateOnly } from '@/server/orders/rules.js';
@@ -11,7 +11,8 @@ import { writeReportXlsx } from '@/server/files/xlsx-report.js';
 
 export const dynamic = 'force-dynamic';
 
-// GET /yuklemeler/dokum?gun=YYYY-MM-DD — seçilen yükleme gününün "Yükleme Özeti" Excel'i (Paket 7). İç ekip (yönetici, satış,
+// GET /yuklemeler/dokum?gun=YYYY-MM-DD — seçilen yükleme gününün "Yükleme Özeti" Excel'i (Paket 7; Paket C — karar 233: tek
+// sayfa, müşteri → sipariş blokları, ağırlıklı ortalama birim fiyat, onaylı günde yalnızca yüklenen kalemler). İç ekip (yönetici, satış,
 // denetimci: TRANSPORT_LIST_VIEW); müşteri erişemez. Veriler Yüklemeler sayfasıyla aynı sorgulardan, role göre temizlenmiş gelir
 // (lib/loading.ts → loadDay): satışta firma adı maskeli. Firma bazlı özet ekrandaki firma tablosuyla AYNI hesaptan (firmsOfDay —
 // ticari değerler siparişin sahibinde, sandık / ağırlık sandığın sahibinde); tutar sütunları yetkiye göre: fabrika satış
@@ -29,11 +30,20 @@ export async function GET(req: Request) {
   const entries = data.rows.map((o) => dayEntry(o, { customer: false, money }));
   const { firms, total } = firmsOfDay(user, entries, data.crates, data.guests, data.hostNames);
   const dmy = (k: string) => fmtDate(`${k}T12:00:00Z`);
-  // Satır dökümü: aktarılan kalan satırında "… yüklemesinden aktarıldı" notu (karar 102)
-  const lines = buildLoadingSummary(
-    data.rows.map((o) => (o.replan ? { ...o, title: [o.title, t('loading.replan.from', { date: dmy(o.replan.fromDay) })].filter(Boolean).join(' · ') } : o)),
-    { priceOf: (l) => (userCan(user, 'OFFER_SEND') ? l.offerPrice : l.unitPrice) },
-  );
+  // Döküm (karar 233): onaylı gün → yalnızca etkin YÜKLENDİ kalemleri (fiyat role göre tek alanda); onaysız gün → planlanan
+  // teklif miktarları (açıkça "planlanan"). Aktarılan kalan satırında "… yüklemesinden aktarıldı" notu (karar 102).
+  const confirmed = await confirmedSummaryOrders(user, day);
+  const planned: SummaryOrder[] = data.rows.flatMap((o) => {
+    const offer = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
+    if (!offer) return [];
+    const title = o.replan ? [o.title, t('loading.replan.from', { date: dmy(o.replan.fromDay) })].filter(Boolean).join(' · ') : o.title;
+    return [{ orderNo: o.orderNo, title: title ?? null, currency: offer.currency, customer: o.customer, lines: offer.lines as unknown as Record<string, unknown>[] }];
+  });
+  const lines = buildLoadingSummary(confirmed ?? planned, {
+    // Planlanan: temizlenmiş veride yönetici müşteri fiyatını offerPrice'ta, denetimci müşteri fiyatını / satış satış fiyatını
+    // unitPrice'ta görür. Onaylı: fiyat zaten role göre tek alanda (confirmedSummaryOrders).
+    priceOf: (l) => (confirmed || !userCan(user, 'OFFER_SEND') ? l.unitPrice : l.offerPrice),
+  });
   // Misafir yük (fiziksel sandık ilişkisi): ticari sahip ve sandığın sahibi ayrı sütunlarda — adlar role göre maskeli
   const guests = firms.flatMap((f) => f.rows.filter((r) => r.guest).map((r) => ({
     orderNo: r.entry.orderNo, owner: f.name, host: r.guest!.hostName,
@@ -43,6 +53,8 @@ export async function GET(req: Request) {
   const sheets = loadingSummarySheets({
     subtitle: exportSubtitle(t, t('loading.summary.dayLine', { date: dmy(day) })),
     stats: [
+      // Kaynak açıkça: onaylı yükleme (yalnızca yüklenenler) ya da planlanan miktarlar
+      [t('loading.summary.state'), confirmed ? t('loading.summary.stateConfirmed') : t('loading.summary.statePlanned')],
       [t('loading.summary.orders'), total.orders],
       [t('loading.summary.lines'), lines.offerLines],
       [t('loading.summary.glassKg'), `${Math.round(total.netKg)} kg`],
@@ -51,15 +63,19 @@ export async function GET(req: Request) {
       [t('loading.summary.ops'), t('loading.summary.opsIncluded')],
       [t('loading.summary.price'), finalPrice ? t('loading.summary.priceFinal') : t('loading.summary.priceSales')],
       [t('loading.summary.currency'), Object.keys(lines.totals).join(', ') || '—'],
+      [t('loading.summary.avgPrice'), t('loading.summary.avgPriceNote')],
     ],
     firms, total: { ...total, name: t('loading.summary.total') }, guests, lines, money,
     text: {
-      title: `${t('loading.summary.title')} · ${dmy(day)}`, linesTitle: `${t('loading.summary.linesTitle')} · ${dmy(day)}`,
-      sheetFirms: t('loading.summary.sheetFirms'), sheetLines: t('loading.summary.sheetLines'), firmsTitle: t('loading.summary.firmsTitle'),
-      guestTitle: t('loading.summary.guestTitle'), guestNone: t('loading.summary.guestNone'), total: t('loading.summary.total'), unit: 'm²',
-      currency: t('loading.summary.currency'),
-      cols: [t('loading.summary.colOrder'), t('loading.summary.colCustomer'), t('loading.summary.colProject'), t('loading.summary.colGlass'),
-        t('loading.summary.colQty'), t('loading.summary.colUnit'), t('loading.summary.colM2'), t('loading.summary.colPrice'), t('loading.summary.colAmount')],
+      title: `${t('loading.summary.title')} · ${dmy(day)}`, sheetName: t('loading.summary.sheetName'),
+      linesTitle: t('loading.summary.linesTitle'), linesNone: t('loading.summary.linesNone'),
+      firmsTitle: t('loading.summary.firmsTitle'), guestTitle: t('loading.summary.guestTitle'), guestNone: t('loading.summary.guestNone'),
+      total: t('loading.summary.total'), orderTotal: t('loading.summary.orderTotal'), customerTotal: t('loading.summary.customerTotal'),
+      grandTitle: t('loading.summary.grandTitle'), free: t('loading.summary.free'), unit: 'm²', currency: t('loading.summary.currency'),
+      cols: {
+        desc: t('loading.summary.colGlass'), qty: t('loading.summary.colQty'), unit: t('loading.summary.colUnit'), m2: t('loading.summary.colM2'),
+        price: t('loading.summary.colAvgPrice'), amount: t('loading.summary.colAmount'),
+      },
       firmCols: {
         firm: t('loading.firm.cols.firm'), orders: t('loading.firm.cols.orders'), glass: t('loading.firm.cols.glass'), cnc: t('loading.firm.cols.cnc'),
         holes: t('loading.firm.cols.holes'), m2: t('loading.firm.cols.m2'), net: t('loading.firm.cols.net'), crates: t('loading.firm.cols.crates'),

@@ -1,68 +1,104 @@
-// Yükleme özeti (Yüklemeler → "Yükleme Özeti Excel"; eski adı "Yükleme Dökümü"): seçilen yükleme gününün tüm müşteri /
-// siparişleri tek Excel'de. Paket 7: 1. sayfa firma bazlı özet (yükleme ekranındaki firma tablosuyla aynı değerler —
-// server/loading/day-firms.js) ve misafir yük / fiziksel sandık ilişkisi AYRI tabloda; 2. sayfa satır dökümü. Satırlarda
-// "Sandık (Fiziksel)" sütunu yoktur (kaldırıldı): ticari satır sahibinde kalır, fiziksel ilişki ayrı tablodadır.
-// Veri yalnızca mevcut kayıtlardan: o gün yüklenecek cam siparişleri (gün = gerçek ya da tahmini yükleme günü; elle
-// değiştirilen tarih esas) ve teklif satırları. Satırlar müşteriye göre gruplanır. Tek satır = müşteri + para birimi +
-// cam + camın BİRİM FİYATI (karar 83): aynı müşteri, aynı cam, aynı fiyat → siparişler arasında da tek satır (adet ve m²
-// toplanır, sipariş / proje adları birlikte yazılır); aynı cam farklı fiyatla → ayrı satırlar (fiyatlar birleştirilip
-// ortalanmaz). Tutar faturadaki kuralla hesaplanır (server/glass/billing.js → glassTotals): cam fiyatı + o cam satırına
-// ait CNC / delik / m² dışındaki diğer kalemler (sandık parası dahil); bunlar ayrıca listelenmez. Birim fiyat = tutar / m²
-// (eklenen işlem yoksa camın birim fiyatının kendisi).
-// Hangi fiyat: rolün görebildiği fiyat (yönetici / denetimci: müşteri fiyatı; satış: satış fiyatı) — veriler sunucuda
-// role göre temizlenmiş gelir (lib/orders.ts → sanitizeRows; satışa müşteri fiyatı ve firma tam adı hiç gelmez).
+// Yükleme özeti (Yüklemeler → "Yükleme Özeti Excel"): seçilen yükleme gününün tüm müşteri / siparişleri TEK çalışma
+// sayfasında (Paket C — karar 233):
+//   1) bilgi satırları (onaylı mı / planlanan mı açıkça yazılır), 2) firma bazlı özet (yükleme ekranındaki firma tablosuyla
+//   aynı değerler — server/loading/day-firms.js) ve misafir yük / fiziksel sandık ilişkisi, 3) müşteri → sipariş döküm
+//   blokları: her sipariş kendi bloğunda ("müşteri · sipariş no — başlık"), altında sipariş ara toplamı; müşterinin son
+//   siparişinin altında müşteri toplamı; sonda para birimi başına genel toplam (para birimleri toplanmaz).
+// Satırlar: aynı siparişin içinde aynı ad → tek satır (siparişler arasında birleştirilmez). Tutar fatura kuralıyla
+// (server/glass/billing.js → glassTotals): cam + o cama ait CNC / delik / diğer kalemler (sandık parası dahil) — birleştirme
+// tutarı değiştirmez (her satırın parçaları aynen toplanır). Birim fiyat = camın AĞIRLIKLI ortalaması Σ(m² × fiyat) / Σm²
+// (yalnızca cam satırları; işlemler tutardadır, birim fiyatta değil).
+// Bedelsiz telafi (karar 231): fiziksel olarak yüklenir — ayrı satır, fiyat ve tutar 0 (faturalanmaz, satış değildir).
+// Kaynak: onaylı gün → yalnızca etkin YÜKLENDİ kalemleri (effectiveItems + itemAsLine; çağıran verir); onaysız gün →
+// planlanan teklif miktarları (açıkça "planlanan" yazılır).
+// Hangi fiyat ve firma adı: rolün görebildiği (çağıran temizlenmiş veri ve priceOf verir: yönetici müşteri fiyatı,
+// denetimci müşteri fiyatı, satış satış fiyatı; satışta firma adları maskeli).
 import { glassTotals } from '../glass/billing.js';
+import { isM2Glass, offerLineTotals } from '../orders/rules.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const round3 = (n) => Math.round(n * 1000) / 1000;
+const add = (t, r) => {
+  t.adet += r.adet;
+  t.m2 = round3(t.m2 + r.m2);
+  t.total = round2(t.total + r.total);
+  return t;
+};
+const zero = () => ({ adet: 0, m2: 0, total: 0 });
 
 /**
- * Satır dökümü: müşteri + para birimi + cam + birim fiyat başına tek satır.
- * @param {{ orderNo: string, title: string | null, customer: { id: string, name: string }, offers: { status: string, currency: string, lines: object[] }[] }[]} orders
- * @param {{ priceOf: (l: any) => unknown }} o
+ * Bir siparişin döküm satırları (aynı ad tek satır; bedelsiz cam ayrı satır, tutarı 0).
+ * @param {object[]} lines  teklif satırı biçiminde
+ * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string }} o
+ * @returns {{ name: string, adet: number, m2: number, price: number, total: number, free: boolean }[]}
  */
-export function buildLoadingSummary(orders, { priceOf }) {
-  const rows = new Map();
+export function orderSummaryRows(lines, { priceOf, nameOf = (l) => l.description }) {
+  const name = (l) => String(nameOf(l) ?? '').trim();
+  // Ağırlıklı ortalama cam fiyatı: Σ(m² × fiyat) / Σm² — yalnızca fiyatlı, bedelsiz olmayan m² cam satırları
+  const weight = new Map();
+  for (const l of lines) {
+    if (!isM2Glass(l) || l.free || priceOf(l) == null) continue;
+    const m2 = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
+    if (!(m2 > 0)) continue;
+    const w = weight.get(name(l)) ?? { m2: 0, value: 0 };
+    w.m2 += m2;
+    w.value += m2 * Number(priceOf(l));
+    weight.set(name(l), w);
+  }
+  const paid = glassTotals({ lines }, { nameOf: name, priceOf }).map((g) => {
+    const w = weight.get(g.name);
+    return { name: g.name, adet: g.adet, m2: g.qty, price: w && w.m2 > 0 ? round2(w.value / w.m2) : g.price, total: g.total, free: false };
+  });
+  // Bedelsiz cam (telafi): fiziksel yük — satır görünür, tutar 0
+  const free = new Map();
+  for (const l of lines) {
+    if (!isM2Glass(l) || !l.free) continue;
+    const m2 = offerLineTotals({ ...l, unitPrice: 0 }).metraj;
+    if (!(m2 > 0)) continue;
+    const r = free.get(name(l)) ?? { name: name(l), adet: 0, m2: 0, price: 0, total: 0, free: true };
+    r.adet += Math.max(0, Math.trunc(Number(l.adet) || 0));
+    r.m2 = round3(r.m2 + m2);
+    free.set(name(l), r);
+  }
+  return [...paid, ...free.values()];
+}
+
+/**
+ * Döküm: müşteri → sipariş; sipariş ara toplamı, müşteri toplamı ve genel toplam para birimi başına.
+ * @param {{ orderNo: string, title: string | null, currency: string, customer: { id: string, name: string }, lines: object[] }[]} orders
+ * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string }} o
+ */
+export function buildLoadingSummary(orders, { priceOf, nameOf }) {
+  const byCustomer = new Map();
   let offerLines = 0;
   for (const o of orders) {
-    const offer = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
-    if (!offer) continue;
-    offerLines += offer.lines.length;
-    for (const g of glassTotals(offer, { nameOf: (l) => l.description, priceOf, byPrice: true })) {
-      const key = `${o.customer.id}|${offer.currency}|${g.name}|${g.price}`;
-      const r = rows.get(key) ?? { customer: o.customer.name, currency: offer.currency, name: g.name, price: g.price, parts: 0, orders: [], titles: [], adet: 0, m2: 0, total: 0 };
-      r.parts += 1;
-      if (!r.orders.includes(o.orderNo)) r.orders.push(o.orderNo);
-      if (o.title && !r.titles.includes(o.title)) r.titles.push(o.title);
-      r.adet += g.adet;
-      r.m2 = round3(r.m2 + g.qty);
-      r.total = round2(r.total + g.total);
-      rows.set(key, r);
-    }
+    offerLines += o.lines.length;
+    const rows = orderSummaryRows(o.lines, { priceOf, nameOf });
+    if (rows.length === 0) continue;
+    const c = byCustomer.get(o.customer.id) ?? { id: o.customer.id, name: o.customer.name, orders: [], totals: {} };
+    const subtotal = rows.reduce(add, zero());
+    c.orders.push({ orderNo: o.orderNo, title: o.title, currency: o.currency, rows, subtotal });
+    add((c.totals[o.currency] ??= zero()), subtotal);
+    byCustomer.set(o.customer.id, c);
   }
-  const list = [...rows.values()]
-    // Birim fiyat: eklenen işlem yoksa camın birim fiyatının kendisi (yuvarlama farkı sayılmaz); varsa tutar / m²
-    .map(({ parts, ...r }) => ({ ...r, unit: Math.abs(r.total - r.m2 * r.price) <= 0.02 * parts ? r.price : r.m2 > 0 ? round2(r.total / r.m2) : 0 }))
-    .sort((a, b) => a.customer.localeCompare(b.customer, 'tr') || a.name.localeCompare(b.name, 'tr') || a.price - b.price);
+  const customers = [...byCustomer.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'));
   const totals = {};
-  for (const r of list) {
-    const t = (totals[r.currency] ??= { adet: 0, m2: 0, total: 0 });
-    t.adet += r.adet;
-    t.m2 = round3(t.m2 + r.m2);
-    t.total = round2(t.total + r.total);
+  for (const c of customers) {
+    c.orders.sort((a, b) => a.orderNo.localeCompare(b.orderNo, 'tr', { numeric: true }));
+    for (const [cur, t] of Object.entries(c.totals)) add((totals[cur] ??= zero()), t);
   }
-  return { rows: list, totals, orders: orders.length, offerLines };
+  return { customers, totals, orders: orders.length, offerLines };
 }
 
 /**
  * @typedef {{ name: string, orders: number, camAdet: number, cnc: number, delik: number, metraj: number, netKg: number, crates: number, grossKg: number,
  *   money: Record<string, { sales: number, offer: number, hasSales: boolean, hasOffer: boolean }> }} FirmLine
  * @typedef {{ orderNo: string, owner: string, host: string, crate: string }} GuestLine  crate: "#15" ya da "sandık seçimi bekliyor"
- * @typedef {{ title: string, linesTitle: string, sheetFirms: string, sheetLines: string, firmsTitle: string, guestTitle: string, guestNone: string,
- *   total: string, unit: string, currency: string, cols: string[],
+ * @typedef {{ title: string, sheetName: string, linesTitle: string, linesNone: string, firmsTitle: string, guestTitle: string, guestNone: string,
+ *   total: string, orderTotal: string, customerTotal: string, grandTitle: string, free: string, unit: string, currency: string,
+ *   cols: { desc: string, qty: string, unit: string, m2: string, price: string, amount: string },
  *   firmCols: { firm: string, orders: string, glass: string, cnc: string, holes: string, m2: string, net: string, crates: string, gross: string, factory: string, offer: string },
  *   guestCols: { order: string, owner: string, host: string, crate: string } }} SummaryText
- *   cols: satır dökümünün 9 başlığı (sipariş, müşteri, proje, açıklama, adet, birim, metraj, birim fiyat, tutar)
  */
 
 /**
@@ -82,9 +118,9 @@ export function moneyColumns(firms, money) {
 }
 
 /**
- * "Yükleme Özeti" çalışma kitabının sayfaları (server/files/xlsx-report.js → writeReportXlsx):
- *   1. sayfa: başlık bilgileri + firma bazlı özet (firma başına tek satır, toplam) + misafir yük / fiziksel sandık ilişkisi
- *   2. sayfa: satır dökümü (buildLoadingSummary) ve para birimi başına toplam
+ * "Yükleme Özeti" çalışma kitabı — TEK sayfa (karar 233; server/files/xlsx-report.js → writeReportXlsx): bilgi satırları,
+ * firma bazlı özet + misafir yük ilişkisi, ardından müşteri → sipariş döküm blokları ve genel toplam.
+ * Döküm sütunları firma tablosunun sütunlarına hizalıdır (açıklama 4 sütun, birim fiyat 2 sütun).
  * @param {{ subtitle: string, stats: [string, string | number][], firms: FirmLine[], total: FirmLine, guests: GuestLine[],
  *   lines: ReturnType<typeof buildLoadingSummary>, money: { sales: boolean, offer: boolean }, text: SummaryText }} p
  * @returns {import('../files/xlsx-report.js').Sheet[]}
@@ -105,35 +141,55 @@ export function loadingSummarySheets({ subtitle, stats, firms, total, guests, li
     ...mcols.map((c) => ({ header: `${c.key === 'sales' ? fc.factory : fc.offer} (${c.cur})`, width: 16, type: /** @type {const} */ ('money'), unit: c.cur })),
   ];
   const gc = text.guestCols;
-  const detail = [
-    { header: text.cols[0], width: 18, type: 'wrap' }, { header: text.cols[1], width: 24, type: 'wrap' }, { header: text.cols[2], width: 24, type: 'wrap' },
-    { header: text.cols[3], width: 40, type: 'wrap' }, { header: text.cols[4], width: 8, type: 'int' }, { header: text.cols[5], width: 7, type: 'text' },
-    { header: text.cols[6], width: 11, type: 'dec2' }, { header: text.cols[7], width: 13, type: 'dec2' }, { header: text.cols[8], width: 14, type: 'dec2' },
-    { header: text.currency, width: 9, type: 'text' },
+  const c = text.cols;
+  /** @type {(cur: string) => import('../files/xlsx-report.js').Column[]} */
+  const detail = (cur) => [
+    { header: c.desc, width: 40, type: 'wrap', span: 4 }, { header: c.qty, width: 9, type: 'int' }, { header: c.unit, width: 12, type: 'text' },
+    { header: c.m2, width: 12, type: 'm2' }, { header: `${c.price} (${cur})`, width: 22, type: 'dec2', span: 2 }, { header: `${c.amount} (${cur})`, width: 16, type: 'dec2' },
   ];
-  return [
-    {
-      name: text.sheetFirms, title: text.title, subtitle, landscape: true, info: stats,
-      blocks: [
-        { title: text.firmsTitle, columns: firmColumns, rows: firms.map((f) => firmRow(f)), totals: [firmRow(total, text.total)] },
-        {
-          title: text.guestTitle, empty: text.guestNone,
-          // Firma tablosunun sütunlarına hizalı: sipariş (Firma sütunu), ticari sahip (4 sütun), fiziksel sandık sahibi (3), sandık (1)
-          columns: [
-            { header: gc.order, width: 30, type: 'text' }, { header: gc.owner, width: 38, type: 'wrap', span: 4 },
-            { header: gc.host, width: 34, type: 'wrap', span: 3 }, { header: gc.crate, width: 12, type: 'text' },
-          ],
-          rows: guests.map((g) => [g.orderNo, g.owner, g.host, g.crate]),
-        },
-      ],
-    },
-    {
-      name: text.sheetLines, title: text.linesTitle, subtitle, landscape: true,
-      blocks: [{
-        columns: /** @type {import('../files/xlsx-report.js').Column[]} */ (detail),
-        rows: lines.rows.map((r) => [r.orders.join(', '), r.customer, r.titles.join(', '), r.name, r.adet, text.unit, r.m2, r.unit, r.total, r.currency]),
-        totals: Object.entries(lines.totals).map(([cur, t]) => ['', '', '', text.total, t.adet, '', t.m2, '', t.total, cur]),
-      }],
-    },
-  ];
+  const row = (r) => [r.free ? `${r.name} — ${text.free}` : r.name, r.adet, text.unit, r.m2, r.price, r.total];
+  const sumRow = (label, t) => [label, t.adet, '', t.m2, '', t.total];
+  /** @type {import('../files/xlsx-report.js').Block[]} */
+  const blocks = [];
+  for (const cust of lines.customers) {
+    cust.orders.forEach((o, i) => {
+      const last = i === cust.orders.length - 1;
+      blocks.push({
+        title: `${cust.name} · ${o.orderNo}${o.title ? ` — ${o.title}` : ''}`,
+        columns: detail(o.currency),
+        rows: o.rows.map(row),
+        totals: [
+          sumRow(text.orderTotal, o.subtotal),
+          // Müşteri toplamı: müşterinin son siparişinin altında, para birimi başına
+          ...(last ? Object.entries(cust.totals).map(([cur, t]) => sumRow(`${text.customerTotal} (${cur})`, t)) : []),
+        ],
+      });
+    });
+  }
+  return [{
+    name: text.sheetName, title: text.title, subtitle, landscape: true, info: stats,
+    blocks: [
+      { title: text.firmsTitle, columns: firmColumns, rows: firms.map((f) => firmRow(f)), totals: [firmRow(total, text.total)] },
+      {
+        title: text.guestTitle, empty: text.guestNone,
+        // Firma tablosunun sütunlarına hizalı: sipariş (Firma sütunu), ticari sahip (4 sütun), fiziksel sandık sahibi (3), sandık (1)
+        columns: [
+          { header: gc.order, width: 30, type: 'text' }, { header: gc.owner, width: 38, type: 'wrap', span: 4 },
+          { header: gc.host, width: 34, type: 'wrap', span: 3 }, { header: gc.crate, width: 12, type: 'text' },
+        ],
+        rows: guests.map((g) => [g.orderNo, g.owner, g.host, g.crate]),
+      },
+      ...(blocks.length ? blocks : [{ title: text.linesTitle, columns: detail(''), rows: [], empty: text.linesNone }]),
+      {
+        title: text.grandTitle,
+        columns: [
+          { header: text.currency, width: 40, type: 'text', span: 4 }, { header: c.qty, width: 9, type: 'int' }, { header: c.unit, width: 12, type: 'text' },
+          { header: c.m2, width: 12, type: 'm2' }, { header: '', width: 22, type: 'text', span: 2 }, { header: c.amount, width: 16, type: 'dec2' },
+        ],
+        rows: [],
+        totals: Object.entries(lines.totals).map(([cur, t]) => [`${text.total} (${cur})`, t.adet, '', t.m2, '', t.total]),
+        empty: Object.keys(lines.totals).length ? undefined : text.linesNone,
+      },
+    ],
+  }];
 }

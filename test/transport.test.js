@@ -47,7 +47,18 @@ test('nakliye listesi PDF: geçerli PDF, birçok sandıkta birden çok sayfa', (
   assert.equal(empty.subarray(0, 5).toString(), '%PDF-');
 });
 
-test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m²), CNC / delik camın tutarına dahil; Excel', async () => {
+/** Eski test verisi (sipariş + teklifler) → döküm girdisi (karar 233: { orderNo, title, currency, customer, lines }) */
+const flat = (orders) => orders.map((o) => ({ orderNo: o.orderNo, title: o.title, customer: o.customer, currency: o.offers[0].currency, lines: o.offers[0].lines }));
+/** Döküm satırları: [müşteri, sipariş, ad, adet, m², ort. fiyat, tutar, bedelsiz] */
+const rowsOf = (s) => s.customers.flatMap((c) => c.orders.flatMap((o) => o.rows.map((r) => [c.name, o.orderNo, r.name, r.adet, r.m2, r.price, r.total, r.free])));
+const SUMMARY_TEXT = {
+  title: 'YÜKLEME ÖZETİ · 02.10.2026', sheetName: 'Yükleme Özeti', linesTitle: 'SİPARİŞ DÖKÜMÜ', linesNone: '-', firmsTitle: 'F', guestTitle: 'G', guestNone: '-',
+  total: 'TOPLAM', orderTotal: 'Sipariş toplamı', customerTotal: 'Müşteri toplamı', grandTitle: 'GENEL TOPLAM', free: 'bedelsiz (telafi)', unit: 'm²', currency: 'Para birimi',
+  cols: { desc: 'AÇIKLAMA', qty: 'ADET', unit: 'BİRİM', m2: 'METRAJ', price: 'ORT. BİRİM FİYAT', amount: 'TUTAR' },
+  firmCols: { firm: '', orders: '', glass: '', cnc: '', holes: '', m2: '', net: '', crates: '', gross: '', factory: '', offer: '' }, guestCols: { order: '', owner: '', host: '', crate: '' },
+};
+
+test('yükleme özeti (karar 233): müşteri → sipariş; aynı ad yalnızca AYNI siparişte birleşir; CNC / delik tutarda; toplamlar; tek sayfa', async () => {
   const { buildLoadingSummary, loadingSummarySheets } = await import('../server/loading/summary.js');
   const { glassLines } = await import('../server/glass/billing.js');
   const glass = (description, en, boy, adet, offerPrice, unitPrice) => ({ kind: 'CAM', unit: 'm2', description, descriptionRo: `RO ${description}`, enMm: en, boyMm: boy, adet, offerPrice, unitPrice });
@@ -63,35 +74,38 @@ test('yükleme dökümü: müşteriye göre grup, aynı cam tek satır (adet + m
     ] }] },
     { orderNo: 'GLA61', title: null, customer: { id: 'g', name: 'GLASSANDMORE' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass('88.3 TEMPER LAMİNE', 1000, 1000, 1, '40', '25')] }] },
   ];
-  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
-  assert.deepEqual(s.rows.map((r) => [r.customer, r.orders.join(','), r.name, r.adet, r.m2, r.total, r.unit]), [
-    ['ALEGRAD', 'ALE46', '10 MM TEMPER', 1, 1, 24, 24],
-    ['ALEGRAD', 'ALE46,ALE47', '88.3 TEMPER LAMİNE', 5, 7, 370, 52.86], // (4 m² × 50 + 2 CNC × 10) + 3 m² × 50; birim = 370 / 7
-    ['GLASSANDMORE', 'GLA61', '88.3 TEMPER LAMİNE', 1, 1, 40, 40],
+  const s = buildLoadingSummary(flat(orders), { priceOf: (l) => l.offerPrice });
+  assert.deepEqual(rowsOf(s), [
+    // ALE46: 4 m² × 50 + 2 CNC × 10 = 220 (ortalama birim fiyat yalnızca cam: 50); 10 MM ayrı satır
+    ['ALEGRAD', 'ALE46', '88.3 TEMPER LAMİNE', 2, 4, 50, 220, false],
+    ['ALEGRAD', 'ALE46', '10 MM TEMPER', 1, 1, 24, 24, false],
+    // ALE47 aynı cam ama başka sipariş: ayrı blok (siparişler arasında birleştirilmez); bedelsiz delik tutara girmez
+    ['ALEGRAD', 'ALE47', '88.3 TEMPER LAMİNE', 3, 3, 50, 150, false],
+    ['GLASSANDMORE', 'GLA61', '88.3 TEMPER LAMİNE', 1, 1, 40, 40, false],
   ]);
-  assert.ok(!s.rows.some((r) => /CNC|Delik/.test(r.name)), 'işlemler ayrıca listelenmez');
+  const [ale] = s.customers;
+  assert.deepEqual(ale.orders.map((o) => o.subtotal), [{ adet: 3, m2: 5, total: 244 }, { adet: 3, m2: 3, total: 150 }]);
+  assert.deepEqual(ale.totals, { EUR: { adet: 6, m2: 8, total: 394 } });
   assert.deepEqual(s.totals, { EUR: { adet: 7, m2: 9, total: 434 } });
-  // Fatura hesabıyla aynı tutar (aynı fonksiyon)
+  // Fatura hesabıyla aynı tutar (aynı fonksiyon): sipariş ara toplamı = faturanın cam satırları toplamı
   assert.equal(glassLines(orders[0].offers[0]).reduce((a, l) => a + l.eurTotal, 0), 244);
-  // Satış: yalnızca satış fiyatı (müşteri fiyatı verisi hiç gelmez)
-  const sales = buildLoadingSummary(orders.map((o) => ({ ...o, offers: o.offers.map((f) => ({ ...f, lines: f.lines.map((l) => ({ ...l, offerPrice: null })) })) })), { priceOf: (l) => l.unitPrice });
+  // Satış: yalnızca satış fiyatı
+  const sales = buildLoadingSummary(flat(orders).map((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l, offerPrice: null })) })), { priceOf: (l) => l.unitPrice });
   assert.equal(sales.totals.EUR.total, 4 * 30 + 2 * 5 + 20 + 3 * 30 + 25);
-  // "Yükleme Özeti" Excel'inin 2. sayfası (satır dökümü — Paket 7): satırlar ve toplam aynen, para birimi ayrı sütunda
+  // Excel: TEK sayfa — firmalar, misafir yük, sonra sipariş blokları ("müşteri · sipariş — başlık"), genel toplam
   const empty = { name: '', orders: 0, camAdet: 0, cnc: 0, delik: 0, metraj: 0, netKg: 0, crates: 0, grossKg: 0, money: {} };
-  const [, lines] = loadingSummarySheets({
-    subtitle: '', stats: [['Sipariş', 3]], firms: [], total: empty, guests: [], lines: s, money: { sales: false, offer: true },
-    text: {
-      title: 'YÜKLEME ÖZETİ', linesTitle: 'YÜKLEME ÖZETİ · SATIR DÖKÜMÜ · 02.10.2026', sheetFirms: 'Firmalar', sheetLines: 'Döküm', firmsTitle: 'F', guestTitle: 'G', guestNone: '-',
-      total: 'TOPLAM', unit: 'm²', currency: 'Para birimi', cols: ['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR'],
-      firmCols: { firm: '', orders: '', glass: '', cnc: '', holes: '', m2: '', net: '', crates: '', gross: '', factory: '', offer: '' }, guestCols: { order: '', owner: '', host: '', crate: '' },
-    },
-  });
-  assert.equal(lines.title, 'YÜKLEME ÖZETİ · SATIR DÖKÜMÜ · 02.10.2026');
-  assert.deepEqual(lines.blocks[0].rows.find((r) => r[0] === 'ALE46, ALE47'), ['ALE46, ALE47', 'ALEGRAD', 'Adrian, Sura Mica', '88.3 TEMPER LAMİNE', 5, 'm²', 7, 52.86, 370, 'EUR']);
-  assert.deepEqual(lines.blocks[0].totals, [['', '', '', 'TOPLAM', 7, '', 9, '', 434, 'EUR']]);
+  const sheets = loadingSummarySheets({ subtitle: '', stats: [['Sipariş', 3]], firms: [], total: empty, guests: [], lines: s, money: { sales: false, offer: true }, text: SUMMARY_TEXT });
+  assert.equal(sheets.length, 1, 'tek çalışma sayfası');
+  const blocks = sheets[0].blocks;
+  assert.deepEqual(blocks.map((b) => b.title), ['F', 'G', 'ALEGRAD · ALE46 — Adrian', 'ALEGRAD · ALE47 — Sura Mica', 'GLASSANDMORE · GLA61', 'GENEL TOPLAM']);
+  assert.deepEqual(blocks[2].rows[0], ['88.3 TEMPER LAMİNE', 2, 'm²', 4, 50, 220]);
+  assert.deepEqual(blocks[2].totals, [['Sipariş toplamı', 3, '', 5, '', 244]]);
+  assert.deepEqual(blocks[3].totals, [['Sipariş toplamı', 3, '', 3, '', 150], ['Müşteri toplamı (EUR)', 6, '', 8, '', 394]]);
+  assert.deepEqual(blocks[5].totals, [['TOPLAM (EUR)', 7, '', 9, '', 434]]);
+  assert.equal(blocks[2].columns[4].header, 'ORT. BİRİM FİYAT (EUR)');
 });
 
-test('yükleme dökümü: aynı cam farklı birim fiyatla ayrı satır (ortalama yok); aynı fiyat siparişler arasında tek satır', async () => {
+test('yükleme özeti: ağırlıklı ortalama birim fiyat Σ(m² × fiyat) / Σm²; birleştirme toplamı değiştirmez; para birimleri toplanmaz', async () => {
   const { buildLoadingSummary } = await import('../server/loading/summary.js');
   const { glassLines } = await import('../server/glass/billing.js');
   const G = '66.3 TEMPER LAMİNE CAM (REFLEKTE FÜME + ŞEFFAF)';
@@ -101,39 +115,45 @@ test('yükleme dökümü: aynı cam farklı birim fiyatla ayrı satır (ortalama
   const orders = [
     { orderNo: 'ALE40', title: 'Adina', customer: { id: 'a', name: 'ALEGRAD' }, offers: [ale40] },
     { orderNo: 'ALE41', title: 'Sibiu', customer: { id: 'a', name: 'ALEGRAD' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass(1000, 1000, 2, 75)] }] },
-    { orderNo: 'GLA1', title: null, customer: { id: 'g', name: 'GLASSANDMORE' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass(1000, 1000, 1, 75)] }] },
+    { orderNo: 'ALE42', title: 'Lei', customer: { id: 'a', name: 'ALEGRAD' }, offers: [{ status: 'GONDERILDI', currency: 'RON', lines: [glass(1000, 1000, 1, 400)] }] },
   ];
-  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
-  assert.deepEqual(s.rows.map((r) => [r.customer, r.orders.join(','), r.titles.join(','), r.adet, r.m2, r.unit, r.total]), [
-    // 75'lik cam: ALE40 (6 m² + 0,07 m²) + ALE41 (2 m²) tek satırda; birim fiyat tam 75 (işlem yok, yuvarlama farkı sayılmaz)
-    ['ALEGRAD', 'ALE40,ALE41', 'Adina,Sibiu', 6, 8.07, 75, 605.25],
-    // 90'lık cam ayrı satır; deliği (2 × 3) kendi tutarında → 366 / 4 m² = 91,5
-    ['ALEGRAD', 'ALE40', 'Adina', 4, 4, 91.5, 366],
-    // başka müşteri aynı cam ve fiyatla da olsa ayrı
-    ['GLASSANDMORE', 'GLA1', '', 1, 1, 75, 75],
+  const s = buildLoadingSummary(flat(orders), { priceOf: (l) => l.offerPrice });
+  // ALE40: 75'lik (6 + 0,07 m²) ve 90'lık (4 m²) cam aynı adla TEK satır: Σ(m² × fiyat) / Σm² = 815,25 / 10,07 = 80,96;
+  // tutar = 450 + 360 + delik 6 + 5,25 = 821,25 (faturanın cam satırlarıyla aynı)
+  assert.deepEqual(rowsOf(s), [
+    ['ALEGRAD', 'ALE40', G, 8, 10.07, 80.96, 821.25, false],
+    ['ALEGRAD', 'ALE41', G, 2, 2, 75, 150, false],
+    ['ALEGRAD', 'ALE42', G, 1, 1, 400, 400, false],
   ]);
-  assert.ok(s.rows.every((r) => r.name === G));
-  // Tutarın kaynağı fatura hesabı: dökümdeki ALE40 payı = faturadaki cam satırının tutarı (455,25 + 366)
   assert.equal(glassLines(ale40).reduce((a, l) => a + l.eurTotal, 0), 821.25);
-  assert.equal(s.totals.EUR.total, 605.25 + 366 + 75);
+  // Birleştirme toplamı değiştirmez: fiyat başına ayrı satırların toplamıyla aynı
+  const { glassTotals } = await import('../server/glass/billing.js');
+  assert.equal(glassTotals(ale40, { nameOf: (l) => l.description, priceOf: (l) => l.offerPrice, byPrice: true }).reduce((a, g) => a + g.total, 0), 821.25);
+  assert.deepEqual(s.customers[0].totals, { EUR: { adet: 10, m2: 12.07, total: 971.25 }, RON: { adet: 1, m2: 1, total: 400 } });
+  assert.deepEqual(s.totals, { EUR: { adet: 10, m2: 12.07, total: 971.25 }, RON: { adet: 1, m2: 1, total: 400 } });
 });
 
-test('yükleme dökümü: sandık parası faturadaki gibi camın tutarına eklenir (ayrı satır olmaz); aynı müşteri + aynı cam tek satır', async () => {
+test('yükleme özeti: sandık parası faturadaki gibi camın tutarına eklenir (ayrı satır olmaz; birim fiyata girmez); bedelsiz telafi ayrı satır, tutar 0', async () => {
   const { buildLoadingSummary } = await import('../server/loading/summary.js');
   const { invoiceLines } = await import('../server/glass/billing.js');
-  const glass = (adet) => ({ kind: 'CAM', unit: 'm2', description: '10 MM TEMPER', descriptionRo: 'Securizat 10', enMm: 1000, boyMm: 1000, adet, offerPrice: '24', unitPrice: '20' });
+  const glass = (adet, extra = {}) => ({ kind: 'CAM', unit: 'm2', description: '10 MM TEMPER', descriptionRo: 'Securizat 10', enMm: 1000, boyMm: 1000, adet, offerPrice: '24', unitPrice: '20', ...extra });
   const crateFee = { kind: 'CAM', unit: 'adet', description: 'Sandık parası', descriptionRo: 'Ambalaj (ladă)', adet: 1, offerPrice: '30', unitPrice: '25' };
-  const offer = { status: 'GONDERILDI', currency: 'EUR', lines: [glass(2), crateFee] };
+  const offer = { status: 'GONDERILDI', currency: 'EUR', lines: [glass(2), crateFee, glass(1, { free: true, offerPrice: '0', compensationId: 'c1' })] };
   const orders = [
     { orderNo: 'ADE6', title: 'Radera', customer: { id: 'x', name: 'ADER GLASS' }, offers: [offer] },
     { orderNo: 'ADE7', title: 'Harry', customer: { id: 'x', name: 'ADER GLASS' }, offers: [{ status: 'GONDERILDI', currency: 'EUR', lines: [glass(3)] }] },
   ];
-  const s = buildLoadingSummary(orders, { priceOf: (l) => l.offerPrice });
-  // 2 m² × 24 + 30 sandık parası + 3 m² × 24 = 150; birim = 150 / 5 m²
-  assert.deepEqual(s.rows.map((r) => [r.orders.join(','), r.name, r.adet, r.m2, r.total, r.unit]), [['ADE6,ADE7', '10 MM TEMPER', 5, 5, 150, 30]]);
-  assert.ok(!s.rows.some((r) => /Sandık/.test(r.name)));
-  // Fatura da aynı kuralla: tek cam satırı, sandık parası camın tutarında (2 × 24 + 30 = 78)
+  const s = buildLoadingSummary(flat(orders), { priceOf: (l) => l.offerPrice });
+  // ADE6: 2 m² × 24 + 30 sandık parası = 78 (birim fiyat camın: 24); bedelsiz telafi camı fiziksel satır, 0
+  assert.deepEqual(rowsOf(s), [
+    ['ADER GLASS', 'ADE6', '10 MM TEMPER', 2, 2, 24, 78, false],
+    ['ADER GLASS', 'ADE6', '10 MM TEMPER', 1, 1, 0, 0, true],
+    ['ADER GLASS', 'ADE7', '10 MM TEMPER', 3, 3, 24, 72, false],
+  ]);
+  assert.deepEqual(s.customers[0].orders[0].subtotal, { adet: 3, m2: 3, total: 78 }, 'fiziksel adet bedelsiz camı içerir; tutar içermez');
+  // Fatura da aynı kuralla: tek cam satırı, sandık parası camın tutarında (2 × 24 + 30 = 78); bedelsiz cam faturada yok
   const inv = invoiceLines(offer, 1, 0);
   assert.equal(inv.length, 1);
   assert.equal(inv[0].net, 78);
+  assert.equal(s.totals.EUR.total, 150);
 });

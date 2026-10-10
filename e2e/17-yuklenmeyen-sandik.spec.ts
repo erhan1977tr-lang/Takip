@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmOf, openFirm, reportSheet } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmOf, openFirm, reportSheet, summaryBlock } from './helpers';
 
 // Aşama 7E — yüklenmeyen camın ileri güne aktarılması (karar 102) ve başka müşterinin sandığına fiziksel yerleşim (karar 103, 124),
 // Paket 7 firma tablosu ve misafir yük kuralları (karar 186–189).
@@ -300,7 +300,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${beta.id}"]`)).not.toContainText('UNS7701');
 
   // Yükleme Özeti (Excel): firma bazlı özet — misafir sipariş ticari sahibinin satırında, sandık ve ağırlık ev sahibinde; fiziksel
-  // sandık ilişkisi ayrı tabloda; "Sandık (Fiziksel)" sütunu yok; satır dökümü ikinci sayfada gerçek müşteride
+  // sandık ilişkisi ayrı tabloda; "Sandık (Fiziksel)" sütunu yok; sipariş blokları aynı sayfada gerçek müşteride (karar 233)
   const { readXlsx } = await import('../server/files/xlsx.js');
   type Rows = (string | number | null)[][];
   const summary = async (p: Page) => {
@@ -308,7 +308,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
     expect(res.status()).toBe(200);
     expect(res.headers()['content-disposition']).toContain(`filename="Yukleme-Ozeti-${DAY}.xlsx"`);
     const buf = await res.body();
-    return { firms: readXlsx(buf).rows as Rows, lines: await reportSheet(buf, 2) };
+    return { firms: readXlsx(buf).rows as Rows, lines: await reportSheet(buf, 1) };
   };
   const { firms, lines } = await summary(page);
   const stat = (k: string) => firms.find((r) => r[0] === k)?.[1];
@@ -320,10 +320,12 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   const relation = firms.find((r) => r[0] === 'UNS7701')!;
   expect([relation[1], relation[5], relation[8]], 'ticari sahip · fiziksel sandık sahibi · sandık').toEqual([uns.name, beta.name, '#15']);
   expect([...firms, ...lines].flat(), 'fiziksel sandık sütunu kaldırıldı').not.toContain('SANDIK (FİZİKSEL)');
-  const guestLine = lines.find((r) => r[0] === 'UNS7701')!;
-  expect([guestLine[1], guestLine[4], guestLine[6]]).toEqual([uns.name, 10, 10]);
-  const hostLine = lines.find((r) => r[0] === 'BET7702')!;
-  expect([hostLine[1], hostLine[4], hostLine[6]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([beta.name, 3, 3]);
+  // Onaylı gün: yalnızca yüklenen kalemler; misafir siparişin bloğu ticari sahibinde, ev sahibinin bloğuna misafir cam eklenmez
+  expect(lines.some((r) => r[0] === 'Kaynak' && String(r[1]).startsWith('Onaylı yükleme'))).toBe(true);
+  const guestLine = summaryBlock(lines, `${uns.name} · UNS7701`)!.rows[0];
+  expect([guestLine[4], guestLine[6]]).toEqual([10, 10]);
+  const hostLine = summaryBlock(lines, `${beta.name} · BET7702`)!.rows[0];
+  expect([hostLine[4], hostLine[6]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([3, 3]);
   // Firma çıktısı (yalnızca o firma ve gün; finansal olarak yalnızca teklif tutarı): misafir siparişte yalnızca sandık NUMARASI
   const firmXlsx = async (p: Page, id: string) => {
     const res = await p.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${id}&bicim=xlsx`);
