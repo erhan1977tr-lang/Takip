@@ -32,21 +32,30 @@ export function RevisionForm({ orderId, drawingId, files, viewer, m }: {
 }) {
   const key = `takip:revizyon:${drawingId}`;
   const [items, setItems] = useState<string[]>(['']);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotations, setAnnotationsRaw] = useState<Annotation[]>([]);
+  // Taslakta verilmiş en büyük işaret numarası (silinenler dahil): taslakla birlikte saklanır, sayfa yenilense de silinen
+  // numara yeniden verilmez (P5 — karar 244). Yalnızca büyür.
+  const [used, setUsed] = useState(0);
+  const setAnnotations = (next: Annotation[]) => {
+    setUsed((u) => Math.max(u, ...next.map((a, i) => markNo(a, i))));
+    setAnnotationsRaw(next);
+  };
   const restored = useRef(false);
   // Taslağı geri yükle (yalnızca ilk açılışta; sunucu çizimi bunu bilmez — istemci belleği)
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(key);
       if (raw) {
-        const d = JSON.parse(raw) as { items?: unknown; annotations?: unknown };
+        const d = JSON.parse(raw) as { items?: unknown; annotations?: unknown; used?: unknown };
         const ids = new Set(files.map((f) => f.id));
         if (Array.isArray(d.items) && d.items.length) setItems(d.items.slice(0, MAX_ITEMS).map((x) => String(x ?? '').slice(0, MAX_ITEM)));
         // Başka sürümün işareti alınmaz (anahtar sürüme özel; dosya kimlikleri de denetlenir). Numarasız eski taslak işaretine
         // sırayla kalıcı numara verilir.
         if (Array.isArray(d.annotations)) {
           const list = (d.annotations as Annotation[]).filter((a) => a && typeof a === 'object' && ids.has(a.fileId));
-          setAnnotations(list.map((a, i) => ({ ...a, id: a.id ?? `m${markNo(a, i)}`, no: markNo(a, i) })));
+          setAnnotationsRaw(list.map((a, i) => ({ ...a, id: a.id ?? `m${markNo(a, i)}`, no: markNo(a, i) })));
+          const saved = Number(d.used);
+          setUsed(Math.max(Number.isInteger(saved) && saved > 0 && saved < 100000 ? saved : 0, ...list.map((a, i) => markNo(a, i))));
         }
       }
     } catch { /* bellek yok / bozuk: boş form */ }
@@ -54,8 +63,8 @@ export function RevisionForm({ orderId, drawingId, files, viewer, m }: {
   }, [key, files]);
   useEffect(() => {
     if (!restored.current) return;
-    try { sessionStorage.setItem(key, JSON.stringify({ items, annotations })); } catch { /* bellek yok */ }
-  }, [key, items, annotations]);
+    try { sessionStorage.setItem(key, JSON.stringify({ items, annotations, used })); } catch { /* bellek yok */ }
+  }, [key, items, annotations, used]);
   const empty = !items.some((x) => x.trim()) && !annotations.some((a) => a.text.trim());
   const set = (i: number, v: string) => setItems(items.map((x, j) => (j === i ? v : x)));
   return (
@@ -64,7 +73,7 @@ export function RevisionForm({ orderId, drawingId, files, viewer, m }: {
       <input type="hidden" name="drawingId" value={drawingId} />
       <input type="hidden" name="annotations" value={JSON.stringify(annotations)} />
       <DrawingViewer
-        files={files} annotations={annotations} editable onChange={setAnnotations} text={viewer} notesPanel={false}
+        files={files} annotations={annotations} editable onChange={setAnnotations} text={viewer} notesPanel={false} numberFrom={used}
         side={(
           <div className="card turn viewer-decide">
             <h2>{m.title}</h2>

@@ -55,3 +55,12 @@ test('P5 (karar 244): kalıcı kimlik ve numara — geçerli ve tekil olan korun
   // Numara üst sınırı aşılırsa kabul edilmez, sıradan verilir
   assert.deepEqual(cleanAnnotations([pin({ no: 5000 })], ['f1']).map((a) => a.no), [1]);
 });
+
+test('P5 (karar 244): taslakta verilmiş en büyük numara taslakla saklanır — sayfa yenilense de silinen numara yeniden verilmez', async () => {
+  const fs = await import('node:fs');
+  const form = fs.readFileSync(new URL('../app/(panel)/siparisler/[id]/cizim/[drawingId]/RevisionForm.tsx', import.meta.url), 'utf8');
+  assert.ok(form.includes('JSON.stringify({ items, annotations, used })'), 'sayaç taslakla saklanır');
+  assert.ok(form.includes('numberFrom={used}'), 'görüntüleyici yeni numarayı sayaçtan sonra verir');
+  const viewer = fs.readFileSync(new URL('../components/DrawingViewer.tsx', import.meta.url), 'utf8');
+  assert.ok(viewer.includes('Math.max(top.current, numberFrom, ...annotations.map((x, i) => markNo(x, i))) + 1'));
+});

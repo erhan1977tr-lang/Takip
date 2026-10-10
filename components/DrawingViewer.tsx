@@ -73,12 +73,14 @@ function PdfPage({ doc, n, children }: { doc: any; n: number; children: React.Re
   return <div className="viewer-page"><canvas ref={canvas} />{children}</div>;
 }
 
-export function DrawingViewer({ files, annotations, editable = false, onChange, text, side, notesPanel = true }: {
+export function DrawingViewer({ files, annotations, editable = false, onChange, text, side, notesPanel = true, numberFrom = 0 }: {
   files: ViewerFile[]; annotations: Annotation[]; editable?: boolean; onChange?: (a: Annotation[]) => void; text: ViewerText;
   /** Sağ sütunun üstünde gösterilen bölüm (karar / gönderim / revizyon notu) */
   side?: React.ReactNode;
   /** Ayrı "İşaretler" bölümü. Müşterinin revizyon ekranı göstermez: işaret açıklamaları "Nota de revizie" içindedir (P5). */
   notesPanel?: boolean;
+  /** Bu taslakta o ana kadar verilmiş en büyük işaret numarası (silinenler dahil — taslakla saklanır; P5 karar 244) */
+  numberFrom?: number;
 }) {
   const [fileId, setFileId] = useState(files.find((f) => kindOf(f.name) !== 'other')?.id ?? files[0]?.id ?? '');
   const [tool, setTool] = useState<Tool>('pin');
@@ -115,7 +117,7 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
   // ekranda yeniden verilmez (silinen işaretin açıklaması da onunla gider — not başka işarete bağlanamaz)
   const top = useRef(0);
   const add = (a: Annotation) => {
-    const no = Math.max(top.current, ...annotations.map((x, i) => markNo(x, i))) + 1;
+    const no = Math.max(top.current, numberFrom, ...annotations.map((x, i) => markNo(x, i))) + 1;
     top.current = no;
     const id = `m${no}-${Math.random().toString(36).slice(2, 8)}`;
     set([...annotations, { ...a, id, no }]);

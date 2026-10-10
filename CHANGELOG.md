@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.71.2 — 10.10.2026
+
+P5 kapanış düzeltmeleri (karar 245; karar 244'e ek).
+
+- **Otomatik arşiv (45 gün):** satışın "Yüklendi" düğmesi tek başına kanıt sayılmaz. YUKLENDI siparişi de yalnızca onaylı
+  yükleme(ler) camını eksiksiz kapsıyorsa arşivlenir; onaysız ya da kalanı açık sipariş süre dolsa da arşive geçmez ve
+  müşterinin Active listesinde kalır. Aday sorgusu yalnızca onaylı yüklemesi olan siparişleri alır. İptal ve elle arşivleme
+  değişmedi; daha önce otomatik arşivlenmiş siparişlere dokunulmaz.
+- **Revizyon işaretleri:** taslakta verilmiş en büyük numara taslakla birlikte (tarayıcının oturum belleğinde) saklanır;
+  sayfa yenilense de silinen son numara yeniden verilmez. Veritabanı değişikliği yok.
+
 ## 3.71.1 — 10.10.2026
 
 - P5 veritabanı testi: saklanan işaret kalıcı kimlik ve numarayı taşır (yalnızca test beklentisi).

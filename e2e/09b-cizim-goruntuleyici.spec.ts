@@ -298,6 +298,20 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(cust.getByLabel('#4 işaretinin açıklaması', { exact: true })).toBeVisible();
   await cust.getByRole('button', { name: '#4 işaretini sil' }).click();
   await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
+  // Sayfa yenilense de silinen son numara (#4) yeniden verilmez: sayaç taslakla saklanır (karar 244)
+  await cust.reload();
+  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
+  await expect(cust.getByLabel('#3 işaretinin açıklaması', { exact: true })).toHaveValue('Sağ alt köşe');
+  await cust.getByRole('button', { name: 'İğne', exact: true }).click();
+  {
+    const l5 = (await cust.locator('.viewer-layer.editable').first().boundingBox())!;
+    await cust.locator('.viewer-layer.editable').first().click({ position: { x: l5.width * 0.1, y: l5.height * 0.15 } });
+  }
+  await expect(cust.getByLabel('#5 işaretinin açıklaması', { exact: true })).toBeVisible();
+  await expect(cust.getByLabel('#4 işaretinin açıklaması', { exact: true })).toHaveCount(0);
+  await cust.getByRole('button', { name: '#5 işaretini sil' }).click();
+  await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   await cust.getByLabel('Madde 1', { exact: true }).fill('   ');
   await cust.getByLabel('Madde 1', { exact: true }).fill('Bu ölçü 1100 olmalı');
   await cust.getByRole('button', { name: '+ Madde ekle' }).click();

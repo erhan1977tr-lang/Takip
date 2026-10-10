@@ -87,16 +87,29 @@ test('onaydan sonra siparişe eklenen cam yüklenmiş sayılmaz (müşterideki t
   assert.equal(loadingProof(order(), ev({ items: full, sent: [{ ...GLASS, adet: 10 }, { ...GLASS, kind: 'CNC', unit: 'adet', adet: 3 }] })).ok, true);
 });
 
-test('"Yüklendi" durumu: yalnızca bir KİŞİNİN verdiği "Yüklendi" kanıttır; 3.51.0 tarih kuralının verdiği değil', () => {
+test('"Yüklendi" durumu (karar 245): satışın düğmesi tek başına kanıt DEĞİL — onaylı eksiksiz yükleme gerekir; 3.51.0 tarih kuralı da değil', () => {
   const y = (extra = {}) => order({ status: 'YUKLENDI', actualShipDate: at('2026-07-01'), ...extra });
-  assert.deepEqual(loadingProof(y(), ev({ lastShip: 'SHIPPED' })), { ok: true, via: 'SHIPPED', day: '2026-07-01' });
-  assert.deepEqual(loadingProof(y(), ev({ lastShip: null })), { ok: true, via: 'SHIPPED', day: '2026-07-01' }, 'eski kayıt (olay yok)');
+  // Onaylı yükleme yok: süre dolsa da arşivlenmez (müşterinin Active listesinde kalır)
+  assert.deepEqual(loadingProof(y(), ev({ lastShip: 'SHIPPED' })), { ok: false, reason: 'NOT_CONFIRMED' });
+  assert.deepEqual(loadingProof(y(), ev({ lastShip: null })), { ok: false, reason: 'NOT_CONFIRMED' }, 'eski kayıt (olay yok)');
+  assert.equal(autoArchiveDue(loadingProof(y(), ev({ lastShip: 'SHIPPED' })), '2027-01-01'), false, '45 gün çoktan geçmiş olsa da');
   assert.deepEqual(loadingProof(y(), ev({ lastShip: 'AUTO_SHIPPED' })), { ok: false, reason: 'AUTO_SHIPPED' });
-  assert.deepEqual(loadingProof(y({ actualShipDate: null, estimatedShipDate: null }), ev({ lastShip: 'SHIPPED' })), { ok: false, reason: 'NO_DATE' });
+  // Onaylı ve eksiksiz yüklenmiş "Yüklendi": kanıt onaydır, gün onaylı yükleme günü
+  const full = [item('c1', '2026-06-01', 'LOADED', 10)];
+  assert.deepEqual(loadingProof(y(), ev({ lastShip: 'SHIPPED', items: full })), { ok: true, via: 'CONFIRMED', day: '2026-06-01' });
   // Kişi "Yüklendi" dese de onayda açık kalan ya da etkin aktarım varsa fiziksel yükleme bitmemiştir
   const split = [item('c1', '2026-06-01', 'LOADED', 8), item('c1', '2026-06-01', 'NOT_LOADED', 2)];
   assert.deepEqual(loadingProof(y(), ev({ lastShip: 'SHIPPED', items: split })), { ok: false, reason: 'NOT_LOADED_OPEN' });
   assert.deepEqual(loadingProof(y(), ev({ lastShip: 'SHIPPED', items: split, replans: [replan('c1', 'ACTIVE', 2)] })), { ok: false, reason: 'REPLAN_ACTIVE' });
+});
+
+test('aday sorgusu (karar 245): yalnızca onaylı yüklemesi olan sipariş; "Yüklendi" + tarih tek başına aday yapmaz', () => {
+  const src = fs.readFileSync(new URL('../server/orders/auto-archive.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export async function autoArchiveOrders'));
+  assert.ok(fn.includes("status: { in: ['URETIMDE', 'YUKLENDI'] },"));
+  assert.ok(fn.includes("loadedItems: { some: { status: 'LOADED', confirmation: { shipDay: { lt: before } } } },"));
+  assert.ok(!/actualShipDate: \{ lt: before \}/.test(fn), 'planlanan / fiili tarihle aday yok');
+  assert.ok(!src.includes("via: 'SHIPPED'"), 'SHIPPED kanıt yolu yok');
 });
 
 test('işlemler yalnızca işçiye açık: hiçbir rol tetikleyemez; tarih kuralının "Yüklendi" işlemi artık yok', () => {
