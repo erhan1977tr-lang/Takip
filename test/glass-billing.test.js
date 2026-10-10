@@ -1,7 +1,7 @@
 // Cam siparişi FGO belge akışı — saf kurallar.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { billingState, glassLines, invoiceLines, netOf, orderChain, proformaLines, renderDocEmail } from '../server/glass/billing.js';
+import { billingState, glassLines, invoiceLines, netOf, orderChain, proformaFgoLines, proformaLines, renderDocEmail } from '../server/glass/billing.js';
 import { grossOf, ronPrice } from '../server/integrations/fgo.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -38,12 +38,16 @@ test('fatura RON satırları: eklenen kalemler TVA hariç; genel toplam proforma
   const inv = invoiceLines(offer, rate, 21);
   assert.deepEqual(inv.map((l) => [l.name, l.unit, l.qty]), [['Securizat 8 mm', 'mp', 2.13], ['Laminat 44.2', 'mp', 0.78]]);
   assert.ok(!inv.some((l) => /CNC|Gaură/.test(l.name)), 'faturada yalnızca cam');
-  const pf = proformaLines(offer).map((l) => round2(l.qty * ronPrice(l.eur, rate)));
+  // Proforma (P4 — karar 242): aynı cam tek satır (iki parça → TVA hariç / dahil toplamla); CNC ve delik ayrı satır
+  const fgo = proformaFgoLines(proformaLines(offer), rate, 21);
+  assert.deepEqual(fgo.map((l) => l.name), ['Securizat 8 mm', 'Prelucrare CNC', 'Gaură', 'Laminat 44.2']);
+  const pf = fgo.map((l) => (l.net != null ? l.net : round2(l.qty * ronPrice(l.eur, rate))));
+  const pg = fgo.map((l, i) => (l.gross != null ? l.gross : grossOf(pf[i], 21)));
   const sum = (xs) => round2(xs.reduce((s, x) => s + x, 0));
   assert.equal(sum(inv.map((l) => l.net)), sum(pf), 'TVA hariç toplam = proforma');
-  assert.equal(sum(inv.map((l) => l.gross)), sum(pf.map((n) => grossOf(n, 21))), 'TVA dahil toplam = proforma');
-  // CNC/delik cama TVA hariç eklenir: Securizat = cam + 3 CNC + 7 delik + ikinci cam (her biri proformadaki gibi)
-  assert.equal(inv[0].net, sum([pf[0], pf[1], pf[2], pf[3]]));
+  assert.equal(sum(inv.map((l) => l.gross)), sum(pg), 'TVA dahil toplam = proforma');
+  // CNC/delik cama TVA hariç eklenir: Securizat = iki cam (proformanın birleşik satırı) + 3 CNC + 7 delik
+  assert.equal(inv[0].net, sum([pf[0], pf[1], pf[2]]));
 });
 
 test('proforma satırları ayrıntılı: cam (nitelik, m²), CNC ve delik ayrı satırlarda; ölçü/adet adda yok', () => {
@@ -54,11 +58,11 @@ test('proforma satırları ayrıntılı: cam (nitelik, m²), CNC ve delik ayrı 
     { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 2, offerPrice: '2.5' },
     { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 1000, adet: 1, offerPrice: '50' },
   ] });
+  // Aynı teknik cam tek satır (P4 — karar 242); CNC ve delik ayrı satırlar, birbirleriyle de birleşmez
   assert.deepEqual(lines, [
-    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 4, eur: 50 },
-    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10 },
-    { code: '', name: 'Gaură', unit: 'buc', qty: 2, eur: 2.5 },
-    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 1, eur: 50 },
+    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 5, eur: 50, averaged: false, parts: [{ qty: 4, eur: 50 }, { qty: 1, eur: 50 }] },
+    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10, averaged: false, parts: [{ qty: 3, eur: 10 }] },
+    { code: '', name: 'Gaură', unit: 'buc', qty: 2, eur: 2.5, averaged: false, parts: [{ qty: 2, eur: 2.5 }] },
   ]);
 });
 

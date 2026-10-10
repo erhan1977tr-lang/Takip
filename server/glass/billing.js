@@ -175,17 +175,32 @@ export function invoiceProductName(name) {
 }
 
 /**
- * Proforma satırları — ayrıntılı (ürün sahibinin kuralı): her cam satırı ayrı (yalnızca Romence niteliği, ölçü/adet
- * yazılmaz; miktar m²), CNC ve delik ayrı satırlar ("Prelucrare CNC", "Gaură"; adetle), m² dışındaki diğer kalemler adetle.
- * Bedelsiz ve fiyatsız satırlar yazılmaz.
- * Müşteri proforması (server/glass/batch.js) da aynı satırları kullanır.
- * @returns {{ code: string, name: string, unit: string, qty: number, eur: number }[]}
+ * Proformada cam grubunun anahtarı (P4 — karar 242): doğru TEKNİK cam adı = satırın Romence niteliği (katalogdan; boşsa
+ * açıklama) — boşluklar tekleştirilir, büyük / küçük harf farkı yok sayılır. Müşteriye kısaltılmış gösterilen ad (nihai
+ * faturadaki "Sticla …", karar 236) anahtar DEĞİLDİR: "Sticlă securizată 8 mm" ile "Sticlă laminată 8 mm" ayrı kalır.
+ * Para birimi ve KDV oranı belge düzeyindedir (bir teklifte tek, müşteri partisi tek para birimi); bedelsiz satır proformaya
+ * hiç girmez; satırda indirim alanı yoktur — bu yüzden anahtarda ayrıca yer almazlar. Yalnızca m² cam satırları gruplanır.
+ */
+export const proformaGlassKey = (name) => String(name).replace(/\s+/g, ' ').trim().toLocaleUpperCase('ro');
+
+/**
+ * Proforma satırları (ürün sahibinin kuralı; P4 — karar 242: aynı teknik cam tek satır): AYNI teknik camın satırları
+ * (proformaGlassKey) — farklı ölçü ve farklı birim fiyatlı olanlar da — tek satırda toplanır (miktar m² toplamı); satır ilk
+ * görüldüğü yerde durur, adı yalnızca camın Romence niteliği (ölçü / adet yazılmaz). CNC ve delik AYRI satırlar ("Prelucrare
+ * CNC", "Gaură"; adetle), m² dışındaki diğer kalemler (sandık parası vb.) adetle ayrı — hiçbiri cam grubuna girmez ve
+ * birbirleriyle birleşmez. Bedelsiz ve fiyatsız satırlar yazılmaz. Müşteri proforması (server/glass/batch.js) da aynı satırları
+ * kullanır (sipariş içinde; siparişler arasında birleştirme yok).
+ * Tutar kaybolmaz / artmaz: her satır parts'ı taşır (birleşen teklif satırları { qty, eur }); belge tutarı parça parça
+ * hesaplanır (proformaAmount, proformaFgoLines: adet × round2(EUR × kur), KDV parça başına) — birleştirilmemiş proformayla
+ * kuruşu kuruşuna aynı. eur: gösterilen birim fiyat — tek fiyatlı satırda o fiyat, farklı fiyatlarda m² ağırlıklı ortalama
+ * Σ(m² × fiyat) / Σm² (yalnızca gösterim; tutar bundan hesaplanmaz). averaged: farklı fiyatlar birleşti.
+ * Ayrılmış cam (karar 114): aynı kalemin devamı olan satır önceki parçasına eklenir — proforma, cam ayrılmadan önceki
+ * satırlarla aynıdır (end: parçanın kalemde bittiği m²).
+ * @returns {{ code: string, name: string, unit: string, qty: number, eur: number, averaged: boolean, parts: { qty: number, eur: number }[] }[]}
  */
 export function proformaLines(offer) {
   const out = [];
-  // Ayrılmış cam (karar 114): aynı kalemin devamı olan satır önceki satırına eklenir — proforma, cam ayrılmadan önceki
-  // satırlarla aynıdır (ends: cam satırının kalemde bittiği m²)
-  const ends = new Map();
+  const glass = new Map();
   for (const l of offer.lines) {
     if (l.free || l.offerPrice == null) continue;
     const eur = Number(l.offerPrice);
@@ -193,18 +208,58 @@ export function proformaLines(offer) {
     const qty = isGlass ? offerLineTotals({ ...l, unitPrice: 0 }).metraj : Math.max(0, Math.trunc(Number(l.adet) || 0));
     if (!(qty > 0)) continue;
     const name = l.kind === 'CNC' ? 'Prelucrare CNC' : l.kind === 'DELIK' ? 'Gaură' : String(l.descriptionRo || l.description).trim();
-    const start = isGlass ? pieceStartArea(l) : 0;
-    const prev = start > 0 ? out.find((r) => ends.has(r) && r.name === name && r.eur === eur && Math.abs(ends.get(r) - start) < 0.005) : null;
-    if (prev) {
-      prev.qty = round2(prev.qty + qty);
-      ends.set(prev, round2(ends.get(prev) + qty));
+    if (!isGlass) {
+      out.push({ code: '', name, unit: FGO_UM.adet, qty, eur, averaged: false, parts: [{ qty, eur }] });
       continue;
     }
-    const row = { code: '', name, unit: isGlass ? FGO_UM.m2 : FGO_UM.adet, qty, eur };
-    if (isGlass) ends.set(row, round2(start + qty));
-    out.push(row);
+    const key = proformaGlassKey(name);
+    let row = glass.get(key);
+    if (!row) {
+      row = { code: '', name, unit: FGO_UM.m2, qty: 0, eur, averaged: false, parts: [] };
+      glass.set(key, row);
+      out.push(row);
+    }
+    const start = pieceStartArea(l);
+    const prev = start > 0 ? row.parts.find((p) => p.end != null && p.eur === eur && Math.abs(p.end - start) < 0.005) : null;
+    if (prev) {
+      prev.qty = round2(prev.qty + qty);
+      prev.end = round2(prev.end + qty);
+    } else {
+      row.parts.push({ qty, eur, end: round2(start + qty) });
+    }
+    row.qty = round2(row.qty + qty);
+  }
+  for (const row of out) {
+    row.parts = row.parts.map((p) => ({ qty: p.qty, eur: p.eur }));
+    if (row.parts.some((p) => p.eur !== row.parts[0].eur)) {
+      row.averaged = true;
+      row.eur = round2(row.parts.reduce((s, p) => s + p.qty * p.eur, 0) / row.qty);
+    }
   }
   return out;
+}
+
+/** Proforma satırının kaynak para birimindeki kesin tutarı: Σ round2(parça m² × fiyat) — gösterilen ortalama fiyattan DEĞİL */
+export const proformaAmount = (row) => round2((row.parts ?? [{ qty: row.qty, eur: row.eur }]).reduce((s, p) => s + round2(p.qty * p.eur), 0));
+
+/**
+ * Proforma satırlarının RON tutarı (FGO'nun satır başına hesabıyla): her parça adet × round2(EUR × kur), KDV parça başına.
+ * Birden çok parçalı (birleşmiş) satır FGO'ya TVA dahil toplamla (PretTotal) gider — nihai faturadaki yöntemle aynı
+ * (karar 63); tek parçalı satır eskisi gibi birim fiyatla (PretUnitar). Böylece belge toplamı birleştirmeden önceki
+ * proformayla kuruşu kuruşuna aynıdır.
+ * @param {ReturnType<typeof proformaLines>} rows  @param {number} rate  @param {unknown} vatRate
+ */
+export function proformaFgoLines(rows, rate, vatRate) {
+  return rows.map(({ parts, averaged, ...row }) => {
+    if (!parts || parts.length < 2) return row;
+    let net = 0, gross = 0;
+    for (const p of parts) {
+      const n = round2(p.qty * ronPrice(p.eur, rate));
+      net = round2(net + n);
+      gross = round2(gross + grossOf(n, vatRate));
+    }
+    return { ...row, net, gross };
+  });
 }
 
 /**
@@ -464,7 +519,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
           for (const l of offer.lines) if (!l.descriptionRo && glasses.has(l.glassProductId)) l.descriptionRo = glasses.get(l.glassProductId);
         }
         // Proforma ayrıntılı (CNC ve delik ayrı satır); fatura yalnızca cam (işlemler cama eklenir)
-        lines = kind === 'PROFORMA' ? proformaLines(offer) : invoiceLines(offer, rate, settings.vatRate);
+        lines = kind === 'PROFORMA' ? proformaFgoLines(proformaLines(offer), rate, settings.vatRate) : invoiceLines(offer, rate, settings.vatRate);
         if (lines.length === 0) throw new Permanent('Teklifte fiyatlı cam satırı yok');
         if (kind === 'INVOICE') {
           // Avans düşümü: kesilmiş her avans faturasının TVA hariç tutarı eksi satır olarak (sırasıyla)

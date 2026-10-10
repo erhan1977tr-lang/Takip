@@ -198,7 +198,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                             <td>{l.name}</td>
                             <td className="num">{fmtNum(l.qty)}</td>
                             <td>{l.unit}</td>
-                            <td className="num">{fmtNum(l.price)}</td>
+                            <td className="num" {...(l.averaged ? { 'data-avg-price': '' } : {})}>
+                              {fmtNum(l.price)}
+                              {l.averaged && <span className="muted small" title={t('accounting.batch.avgPriceTitle')}> {t('accounting.batch.avgPrice')}</span>}
+                            </td>
                             <td className="num">{fmtNum(l.amount)}</td>
                           </tr>
                         )),

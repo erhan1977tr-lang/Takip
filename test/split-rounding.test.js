@@ -130,8 +130,9 @@ test('proforma ve fatura: ayrılmış cam ayrı satır / parça olmaz — belgel
   // Maliyet tarafı (satış fiyatıyla, bedelsiz dahil) da aynı
   const opts = { nameOf: (l) => l.description, priceOf: (l) => l.unitPrice, includeFree: true };
   assert.deepEqual(glassTotals(after, opts), glassTotals(before, opts));
-  // Eski hesapta proforma iki cam satırı (1,33 + 0,33) ve 1,66 m² gösterirdi
-  assert.deepEqual(proformaLines({ lines: naive(after.lines) }).map((l) => l.qty), [1.33, 0.33, 1.48]);
+  // Eski hesapta (pieceBase yok) satır başına yuvarlama 1,33 + 0,33 = 1,66 m² verirdi — proformada tek satırda (P4) da öyle;
+  // ayırma kuralı (pieceBase) 1,67'yi korur
+  assert.deepEqual(proformaLines({ lines: naive(after.lines) }).map((l) => [l.qty, l.parts.map((p) => p.qty)]), [[1.66, [1.33, 0.33]], [1.48, [1.48]]]);
   // Ücretli delik: yalnızca kendi satırı / tutarı eklenir, cam satırı aynı kalır
   const paid = { lines: splitWithHole(before.lines) };
   assert.deepEqual(proformaLines(paid).map((l) => [l.name, l.qty, l.eur]), [['Securizat', 1.67, 66.96], ['Gaură', 2, 5], ['Laminat', 1.48, 77.77]]);
@@ -139,7 +140,10 @@ test('proforma ve fatura: ayrılmış cam ayrı satır / parça olmaz — belgel
   assert.equal(glassTotals(paid)[0].qty, 1.67);
   // Ayrılan cama yönetici başka müşteri fiyatı verdiyse ayrı satırdır (fiyat farklı); m² toplamı yine 1,67
   const other = { lines: after.lines.map((l, i) => (i === 1 ? { ...l, offerPrice: '70.00' } : l)) };
-  assert.deepEqual(proformaLines(other).slice(0, 2).map((l) => [l.qty, l.eur]), [[1.33, 66.96], [0.34, 70]]);
+  // Proforma (P4 — karar 242): aynı cam tek satır, iki fiyat parça olarak kalır; gösterilen fiyat ağırlıklı ortalama
+  const [o0] = proformaLines(other);
+  assert.deepEqual([o0.qty, o0.averaged, o0.parts], [1.67, true, [{ qty: 1.33, eur: 66.96 }, { qty: 0.34, eur: 70 }]]);
+  assert.equal(o0.eur, Math.round(((1.33 * 66.96 + 0.34 * 70) / 1.67) * 100) / 100);
 });
 
 test('onaylı yükleme: kalemler satırın sırasını (pieceBase) taşır; yüklenen m², satış ve maliyet ayrılmamış satırla aynı', () => {

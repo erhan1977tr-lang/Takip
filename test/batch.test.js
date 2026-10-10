@@ -19,7 +19,7 @@ const order = (over = {}) => ({ id: 'o1', orderNo: 'ABC001', title: 'Ușă', sta
 test('sipariş planı: satırlar sipariş proformasıyla aynı kuraldan; açıklama kaynak sipariş numarasıyla başlar; fabrika maliyeti yok', () => {
   const p = planOrder(order(), { day: '2026-10-16' });
   assert.equal(p.reason, null);
-  assert.deepEqual(p.lines, [
+  assert.deepEqual(p.lines.map(({ name, unit, qty, price, amount }) => ({ name, unit, qty, price, amount })), [
     { name: 'Comanda ABC001 — Sticlă securizată 10 mm', unit: 'mp', qty: 3, price: 50, amount: 150 },
     { name: 'Comanda ABC001 — Prelucrare CNC', unit: 'buc', qty: 3, price: 10, amount: 30 },
     { name: 'Comanda ABC001 — Taxă ladă', unit: 'buc', qty: 1, price: 25, amount: 25 },

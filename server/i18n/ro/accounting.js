@@ -29,6 +29,8 @@ export default {
     preview: "Previzualizare",
     previewTitle: "Previzualizare — proforma care se emite",
     dayHead: "Ziua de încărcare {day}",
+    avgPrice: 'medie',
+    avgPriceTitle: 'Rânduri cu același tip de sticlă și prețuri diferite: prețul afișat este media ponderată pe m²; valoarea se calculează pe rânduri.',
     col: {
       line: "Comandă / rând (descriere FGO)",
       qty: "Cantitate",

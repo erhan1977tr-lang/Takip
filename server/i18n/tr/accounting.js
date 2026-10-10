@@ -29,6 +29,8 @@ export default {
     preview: "Önizle",
     previewTitle: "Önizleme — kesilecek proforma",
     dayHead: "Yükleme günü {day}",
+    avgPrice: 'ort.',
+    avgPriceTitle: 'Aynı camın farklı fiyatlı satırları birleşti: gösterilen fiyat m² ağırlıklı ortalamadır; tutar satırlardan ayrı ayrı hesaplanır.',
     col: {
       line: "Sipariş / satır (FGO açıklaması)",
       qty: "Miktar",

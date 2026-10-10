@@ -33,7 +33,7 @@ import {
 } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
-import { GLASS_FGO, glassDocText, proformaLines, sentOffer } from './billing.js';
+import { GLASS_FGO, glassDocText, proformaAmount, proformaFgoLines, proformaLines, sentOffer } from './billing.js';
 import { queueDocEmail } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { linkCoveredPayments } from '../finance/service.js';
@@ -60,7 +60,8 @@ export const loadingDayOf = (order) => {
 
 /**
  * @typedef {'CANCELLED' | 'ON_HOLD' | 'ALREADY_LOADED' | 'NO_SENT_OFFER' | 'NO_PRICES' | 'CURRENCY' | 'ORDER_DOCUMENT' | 'ORDER_PENDING' | 'IN_BATCH'} ExcludeReason
- * @typedef {{ name: string, unit: string, qty: number, price: number, amount: number }} BatchLine
+ * @typedef {{ name: string, unit: string, qty: number, price: number, amount: number, averaged?: boolean, parts?: { qty: number, eur: number }[] }} BatchLine  price: gösterilen birim fiyat
+ *   (birleşmiş camda m² ağırlıklı ortalama), amount: parça parça kesin tutar (P4 — karar 242)
  * @typedef {{ orderId: string, orderNo: string, title: string | null, day: string, offerId: string | null, currency: string | null, reason: ExcludeReason | null,
  *   ref: string | null, lines: BatchLine[], subtotal: number }} BatchOrder
  * @typedef {import('../fx/resolve.js').FxResult} FxResult
@@ -106,8 +107,9 @@ export function planOrder(order, { day, loaded = false, pendingOrderJob = false 
   if (offer.currency !== 'EUR' && offer.currency !== 'RON') return no('CURRENCY');
   // Müşteri fiyatı: bedelsiz olmayan her satırda olmalı (eksik fiyatlı teklif belgeye yarım girmez)
   if (offer.lines.some((l) => !l.free && l.offerPrice == null)) return no('NO_PRICES');
+  // Aynı teknik cam sipariş içinde tek satır (P4 — karar 242); tutar parça parça (ortalama fiyattan değil)
   const lines = proformaLines(offer).map((l) => ({
-    name: `Comanda ${order.orderNo} — ${l.name}`.slice(0, 250), unit: l.unit, qty: l.qty, price: l.eur, amount: round2(l.qty * l.eur),
+    name: `Comanda ${order.orderNo} — ${l.name}`.slice(0, 250), unit: l.unit, qty: l.qty, price: l.eur, amount: proformaAmount(l), averaged: l.averaged, parts: l.parts,
   }));
   if (lines.length === 0) return no('NO_PRICES');
   return { ...out, lines, subtotal: round2(lines.reduce((s, l) => s + l.amount, 0)) };
@@ -192,7 +194,7 @@ export const cleanDays = (days) => [...new Set((Array.isArray(days) ? days : [da
 function batchKey({ customerId, days, orders, currency, fx }) {
   const body = JSON.stringify({
     customerId, days, currency, fx: fx ? [fx.policy, fx.finalRate, fx.source, fx.sourceDate, fx.manual] : null,
-    orders: orders.map((o) => [o.orderId, o.offerId, o.day, o.lines.map((l) => [l.name, l.unit, l.qty, l.price])]),
+    orders: orders.map((o) => [o.orderId, o.offerId, o.day, o.lines.map((l) => [l.name, l.unit, l.qty, l.price, l.amount, (l.parts ?? []).map((p) => [p.qty, p.eur])])]),
   });
   return crypto.createHash('sha256').update(body).digest('hex');
 }
@@ -259,10 +261,13 @@ export async function previewBatch(db, { customerId, days, orderIds = null, now 
   if (fx && currencies.length === 1) {
     vatRate ??= (await getFgoSettings(db)).vatRate;
     ronNet = 0; ronGross = 0;
+    // Birleşmiş cam satırı parça parça (FGO'ya PretTotal — proformaFgoLines); diğerleri adet × round2(fiyat × kur)
     for (const l of included.flatMap((o) => o.lines)) {
-      const n = round2(l.qty * ronPrice(l.price, fx.rate));
-      ronNet = round2(ronNet + n);
-      ronGross = round2(ronGross + grossOf(n, vatRate));
+      for (const p of l.parts?.length ? l.parts : [{ qty: l.qty, eur: l.price }]) {
+        const n = round2(p.qty * ronPrice(p.eur, fx.rate));
+        ronNet = round2(ronNet + n);
+        ronGross = round2(ronGross + grossOf(n, vatRate));
+      }
     }
   }
   const byDay = selected.map((day) => ({ day, orders: orders.filter((o) => o.day === day) }));
@@ -318,7 +323,15 @@ export async function createBatch(db, { customerId, days, orderIds = null, key, 
             })),
           },
           lines: {
-            create: p.included.flatMap((o) => o.lines.map((l) => ({ orderId: o.orderId, name: l.name, unit: l.unit, quantity: String(l.qty), unitPrice: l.price.toFixed(2), amount: l.amount.toFixed(2) })))
+            // Birleşmiş cam satırı (birden çok parça): RON TVA hariç / dahil toplamı partinin kuruyla bir kez yazılır; işçi FGO'ya
+            // PretTotal gönderir (batchFgoLines → ronGross). Tek parçalı satır eskisi gibi birim fiyatla.
+            create: p.included.flatMap((o) => o.lines.map((l) => {
+              const ron = (l.parts?.length ?? 0) > 1 ? proformaFgoLines([{ code: '', name: l.name, unit: l.unit, qty: l.qty, eur: l.price, parts: l.parts }], p.fx.rate, settings.vatRate)[0] : null;
+              return {
+                orderId: o.orderId, name: l.name, unit: l.unit, quantity: String(l.qty), unitPrice: l.price.toFixed(2), amount: l.amount.toFixed(2),
+                ...(ron ? { ronNet: ron.net.toFixed(2), ronGross: ron.gross.toFixed(2) } : {}),
+              };
+            }))
               .map((l, i) => ({ ...l, sortOrder: i })),
           },
         },

@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.70.0 — 10.10.2026
+
+P4 — proformada aynı camların birleştirilmesi (karar 242). Şema değişmedi; nihai fatura, avans, tahsilat, alacak, kur ve KDV
+kuralları değişmedi; mevcut belgeler geriye dönük değişmez.
+
+- **Sipariş proforması ve müşteri proforması (sipariş içinde):** aynı teknik cam adına sahip satırlar — farklı ölçü ve farklı
+  birim fiyatlı olanlar da — tek satırda; miktar m² toplamı. Anahtar camın Romence teknik adı (boşluk / büyük-küçük harf farkı
+  yok sayılır); nihai faturadaki kısaltılmış "Sticla …" adı anahtar değildir. Siparişler arasında birleştirme yok.
+- **Tutar korunur:** birleşik satırın tutarı parça parça hesaplanır ve FGO'ya TVA dahil toplamla (PretTotal) gider — belge
+  toplamı (TVA hariç ve dahil) birleştirmeden önceki proformayla kuruşu kuruşuna aynı. Farklı fiyatlarda gösterilen birim
+  fiyat m² ağırlıklı ortalamadır (yalnızca gösterim; önizlemede "ort." / "medie" işareti).
+- **Ayrı kalır:** CNC, delik, sandık bedeli ve m² dışındaki diğer kalemler; bedelsiz satırlar proformaya hiç girmez.
+- Testler: saf kural (gruplama, ortalama, ayrı kalemler, 400 turluk kuruş özellik testi, nihai fatura değişmez), veritabanı +
+  sahte FGO (sipariş proforması ve müşteri partisi), uçtan uca önizleme (TR / RO).
+
 ## 3.69.3 — 10.10.2026
 
 - P3 uçtan uca testi: denetimcinin firma tutarı gerçek gönderimdeki gibi müşteri tutarı kaydından (Price) okunur; test verisi
