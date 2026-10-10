@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.64.1 — 10.10.2026
+
+Paket A düzeltmesi (karar 224). Veritabanı şeması değişmedi.
+
+- **Sipariş açılınca okundu:** işaretlemeden sonra sipariş sayfası artık yeniden çizdirilmiyor; yalnızca zil tazeleniyor.
+  Açık formların (ör. siparişi silme adımları) durumu korunuyor, "yeni" mesaj vurgusu bu ziyaret boyunca kalıyor ve
+  yeniden işaretleme döngüsü oluşmuyor. Menü sayaçları bir sonraki ortak yenilemede (en geç 60 sn) güncellenir.
+- Testler: müşteri silme veritabanı testinde sandık bağı bileşik anahtarla silinir; bildirim uçtan uca testi istemci
+  tarafı gezinmeyle çalışır.
+
 ## 3.64.0 — 10.10.2026
 
 Paket A — kullanıcılar, roller, güvenlik ve bildirimler (kararlar 219–225). Veritabanı şeması değişti: yeni rol
