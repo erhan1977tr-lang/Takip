@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.73.0 — 10.10.2026
+
+P7 — güvenlik sertleştirmesi (karar 248; önceki denetimden açık kalan maddeler). Şema değişmedi.
+
+- **AUD-16:** PNG görseller en çok 16 MP çözülür ve sıkıştırılmış veri yalnızca beklenen boyuta kadar açılır. Küçük bir
+  dosyanın gigabaytlara açılması (teslim fotoğrafı / katalog görseli → teslim raporu, depo PDF'i) uygulamayı ya da işçiyi
+  çökertemez; böyle bir görsel belgeye girmez.
+- **AUD-15:** iptal edilen ya da kaldırılan sipariş, ev sahibi firmanın sandığında "misafir yük" olarak nakliye listesinde ve
+  yükleme gününde gösterilmez (kayıt silinmez).
+- **AUD-17:** bekleyen telafi kararı uyarısı "Gördüm" ile sunucuda da kapatılamaz (onay / ret ile kapanır).
+- **`takip smtp`:** SMTP ayarı değişince e-postayı gönderen arka plan işçisi de yeni ayarlarla yeniden başlar.
+
 ## 3.72.2 — 10.10.2026
 
 Kurulum komutu `takip yonetici` güvenli hâle getirildi (karar 247). Şema değişmedi.

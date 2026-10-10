@@ -704,8 +704,9 @@ cmd_smtp() {
   env_set SMTP_USER "$user"
   env_set SMTP_PASS "'$pass'"
   env_set MAIL_FROM "\"$from\""
-  compose up -d app >/dev/null 2>&1
-  say "✔ Kaydedildi, uygulama yeni ayarlarla başlatıldı."
+  # E-postayı işçi gönderir: ikisi birlikte yeni ayarlarla başlar (P7)
+  compose up -d app worker >/dev/null 2>&1
+  say "✔ Kaydedildi, uygulama ve arka plan işçisi yeni ayarlarla başlatıldı."
   tty_read to "Deneme e-postası gidecek adres (boş bırakırsan atlanır): "
   if [ -n "$to" ]; then compose run --rm tools node scripts/test-mail.mjs "$to" tr; fi
 }

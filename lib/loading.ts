@@ -201,7 +201,8 @@ export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date
   const links = await db.crateOrder.findMany({
     where: {
       crate: { shipDay: { gte: from, lt: to }, customerId: { not: null } },
-      ...(customer ? { order: { customerId: user.customerId ?? '__none__' } } : {}),
+      // İptal edilmiş / kaldırılmış sipariş misafir yük olarak gösterilmez (AUD-15, P7)
+      order: { status: { not: 'IPTAL' }, removedAt: null, ...(customer ? { customerId: user.customerId ?? '__none__' } : {}) },
     },
     select: {
       orderId: true, order: { select: { orderNo: true, customerId: true, guestHostId: true, customer: { select: { name: true } } } },
