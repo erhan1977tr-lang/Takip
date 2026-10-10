@@ -652,3 +652,17 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - Old-system features that do not exist here and were not faked:
   per-section search/sort/group controls on the panels, "act on behalf of customer" bar (Phase 9),
   offer header fields (company / project / delivery date inside the editor), offer lock ("Kilitle").
+
+## Customer panel — Paket B (3.65.0, decisions 226–229)
+
+- Customer order list: an order with unread developments shows the red pill `.order-alert.order-alert-msg` with the text
+  "Bir mesajınız var" / "Aveți un mesaj" (`OrderAlert` with `text`), next to the existing red message counter. Internal
+  lists keep the blue count pill.
+- Drawing viewer, customer revision screen: the four marking tools (İğne / Dikdörtgen / Serbest / Metin) in `.viewer-tools`
+  and the "İşaretler" side card with one text input per mark (existing viewer classes; no new controls).
+- New profile order, customer with a price list: `.card.turn#dogrudan` at the top (title, intro, list name, `.grid-3`
+  with the pickup date (required), phone and plate (optional), hint, `.direct-total`, `.alert-warn` when a picked product
+  has no price); the product tables get two `th.c-price` columns (unit price, amount); the sticky submit bar shows the total.
+- Profile order page, delivery card `#teslim`: missing pickup info as `.alert#teslim-eksik` (customer `.alert-error`, staff
+  `.alert-warn`) naming the missing fields; the customer's last change day as `.muted.small`, or `.alert-info` when passed.
+

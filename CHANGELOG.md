@@ -6,7 +6,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 ## 3.65.0 — 10.10.2026
 
-Paket B — müşteri paneli (kararlar 226–229).
+Paket B — müşteri paneli (kararlar 226–229). Veritabanı şeması değişti (yalnızca ekleme; mevcut veri değişmez).
 
 - **Tekliflerim yükleme gününe göre:** liste ve PDF teklifleri YÜKLEME gününe göre gruplar; her grup kendi "Göster" /
   "Gizle" düğmesiyle açılır / kapanır. Tarih aralığı yükleme gününe uygulanır; tarihi henüz belli olmayan siparişler
@@ -23,6 +23,15 @@ Paket B — müşteri paneli (kararlar 226–229).
   Okunma kuralı daraltıldı (karar 224 → 228): sipariş sayfasını açmak uyarıları tek başına okumaz; her uyarı gösterildiği
   bölüm (çizim, teklif, kararlar, teslim, sayfa başlığı) ekranda gerçekten görülünce, mesaj ise kendisi görülünce yalnızca
   o kullanıcı için okunur. Sayfa yeniden çizdirilmez; zil ve sayaçlar korunur.
+- **Fiyat listeli profil siparişi:** firmaya bağlı etkin profil fiyat listesi olan müşteri, Yeni Profil Siparişi
+  formunda fiyatları, satır tutarlarını ve toplamı görür; alış günü zorunlu, telefon ve plaka isteğe bağlı. Sipariş
+  yönetici teklifi ve müşteri onayı olmadan doğrudan onaylı açılır (FGO açıksa tek proforma; stok rezervesi ve stok
+  uyarısı olağan). Fiyatı belli olmayan ürün varsa ya da liste pasifse eski akış. Çift tıklama / yeniden deneme ikinci
+  sipariş açmaz (tek seferlik form anahtarı).
+- **Teslim bilgisi ve depo formu:** müşteri teslim bilgilerini alış gününden bir gün öncesine kadar değiştirebilir.
+  Alış günü, telefon ve plaka tamamlanmadan sipariş depoya gönderilmez ve depo e-postası gitmez; "Ödeme alındı" yalnızca
+  ödemeyi kaydeder, bilgiler tamamlanınca ödenmiş sipariş bir kez depoya iletilir. Eksikler sipariş sayfasında yazılır.
+- Veritabanı şeması: `ProfileOrder.direct`, `ProfileOrder.requestKey` (benzersiz) — yalnızca ekleme.
 
 ## 3.64.1 — 10.10.2026
 
