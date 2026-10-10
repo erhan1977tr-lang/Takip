@@ -72,6 +72,8 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   // doğrudan gitmez (yeni siparişte fiyat onayı, müşterideki teklifte satış için onay bekler, yönetici için fiyat gerekir)
   const route = line ? compensationFlow({ mode, admin: data.admin, destType: destType || 'NEW', via: destType === 'EXISTING' ? dest?.via ?? null : null, sourceFree: line.free, sourcePriced: line.priced }) : null;
   const pending = route === 'pending';
+  // Hedef listesinde "yönetici onayı bekler" işareti: aynı kural, her hedefin teklif durumuyla
+  const waitsAdmin = (via: 'DRAFT' | 'SENT' | null | undefined) => compensationFlow({ mode, admin: data.admin, destType: 'EXISTING', via: via ?? null, sourceFree: !!line?.free, sourcePriced: line ? line.priced : true }) === 'pending';
   const priceRequired = route === 'priceRequired';
   const ready = qtyOk && priceOk && destOk && !emptySource && !priceRequired;
   const flow = route === 'draft' ? f.flow.draft : route === 'direct' ? f.flow.direct : route === 'adminSent' ? f.flow.adminSent : f.flow.pricing;
