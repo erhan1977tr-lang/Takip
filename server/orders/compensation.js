@@ -146,6 +146,9 @@ export function priceDecision({ admin, mode, price = null, line }) {
   return !srcFree && same(p, normalPrice) ? normal : { ...base, mode: 'CUSTOM', free: false, unitCost: normalCost, offerPrice: p, changed: true, direct: false };
 }
 
+// Telafi teklifinin yolu (ekran) — bağımlılıksız modülde (istemci de kullanır); sunucunun yolu priceDecision().direct
+export { compensationFlow } from './compensation-flow.js';
+
 const COPY = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'unit', 'kind', 'glassProductId', 'listPrice'];
 const copyOf = (l) => ({ ...Object.fromEntries(COPY.map((k) => [k, l[k] ?? null])), weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), listPrice: numOrNull(l.listPrice) });
 

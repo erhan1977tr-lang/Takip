@@ -741,6 +741,9 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
   const offerTotal = admin ? offerTotals(atOfferPrice(offer.lines.map((l) => ({ ...l, unitPrice: l.unitPrice.toString(), offerPrice: l.offerPrice?.toString() ?? null })))).amount : 0;
   const updated = offer.status === 'GONDERILDI' && versions > 1;
   const pvb = physicalVsBillable(offer.lines);
+  // Toplam metraj (P2-B): teklifin kendi hesabı (offerTotals — satır m²'si iki ondalık, toplam iki ondalık); fiyattan bağımsız,
+  // gösterim üç ondalık (fmtM2). Fiyat alanı kullanılmaz: rolün göremediği fiyat hesaba girmez.
+  const totalM2 = offerTotals(offer.lines.map((l) => ({ ...l, unitPrice: '0', offerPrice: null }))).metraj;
   return (
     <div className="card" id="teklif">
       <div className="section-head">
@@ -812,6 +815,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           </tfoot>
         </table>
       </div>
+      <p className="small" style={{ margin: '8px 0 0' }} data-offer-m2={totalM2.toFixed(2)}>{t('offer.view.totalM2', { m2: fmtM2(totalM2) })}</p>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {/* Bedelsiz telafi (karar 231): fiziksel üretilir ve yüklenir, faturalanacak miktara eklenmez — ikisi ayrı yazılır */}

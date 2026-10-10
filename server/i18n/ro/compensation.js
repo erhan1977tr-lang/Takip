@@ -73,6 +73,7 @@ export default {
     noOps: 'fără operații',
     customLabel: 'Preț înlocuire ({cur}/m²)',
     keepHint: 'Același preț: se folosește prețul pentru client stabilit de administrator în oferta sursă. Oferta ajunge direct la client; administratorul nu o mai tarifează.',
+    keepHintNoPrice: 'Același preț: linia sursă nu are preț pentru client înregistrat. Oferta nu ajunge direct la client; prețul îl stabilește administratorul.',
     freeHint: 'Gratuit: prețul pentru client devine 0 și oferta ajunge direct la client; nu apare în proformă și în factură. Costul de fabrică rămâne și apare în profitabilitate.',
     salesCustomHint: 'Alt preț: prețul pentru client îl stabilește administratorul. Înlocuirea ajunge la tarifarea administratorului; nu ajunge la client fără preț.',
     adminCustomHint: 'Alt preț: prețul pentru client introdus se scrie pe sticla de înlocuire (prețul operațiilor pentru client rămâne 0).',

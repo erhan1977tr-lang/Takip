@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.68.0 — 10.10.2026
+
+P2 — telafi "aynı fiyat" denetimi ve teklif toplam metrajı (karar 240). Şema değişmedi; finansal kurallar değişmedi.
+
+- **Telafi formu, kaynak müşteri fiyatı boşken "Aynı fiyat":** ekran artık sunucuyla aynı yolu gösterir — teklif doğrudan
+  müşteriye gitmez (yeni telafi siparişinde yöneticinin fiyat onayı; müşterideki teklifte satış için yönetici onayı;
+  yöneticide "fiyat gerekli" uyarısı ve gönderim kapalı). Önceden form "doğrudan müşteriye gider" diyordu. Satışa tutar
+  gitmez; yalnızca "kaynakta müşteri fiyatı var mı" bilgisi.
+- **Aynı fiyat / işlem adedi:** veritabanı testleriyle doğrulandı — aynı fiyatla taşınan telafi camı bedelsiz değil, kaynağın
+  müşteri ve fabrika fiyatıyla taşınır; CNC / delik adetleri aynen taşınır (1'e inmez). Taşınan işlem satırlarının müşteri
+  fiyatı karar 157 gereği 0'dır ve "Bedelsiz" görünür (değişmedi).
+- **Toplam metraj:** sipariş sayfasındaki salt okunur teklif tablosunun altında "Toplam metraj" (teklifin kendi hesabı; üç
+  ondalık gösterim).
+
 ## 3.67.3 — 10.10.2026
 
 - P1 e2e: Finans / FGO kartının bekleme metni beklentisi yeni kurala göre güncellendi (nihai fatura Faturalama kartından).

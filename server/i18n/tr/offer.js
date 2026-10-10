@@ -59,6 +59,8 @@ export default {
     jumpBottom: 'Teklif tablosunun sonuna',
   },
   view: {
+    // Teklif tablosunun altında toplam metraj (P2-B)
+    totalM2: 'Toplam metraj: {m2} m²',
     // "Yöneticiye göndermeyi geri al" (karar 212)
     withdraw: 'Yöneticiye göndermeyi geri al',
     withdrawConfirm: 'Teklif sistem yöneticisinin fiyat onayı kuyruğundan çıkarılacak ve yeniden düzenlemenize açılacak. Devam edilsin mi?',

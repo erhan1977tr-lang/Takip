@@ -57,6 +57,8 @@ export default {
     jumpBottom: 'La sfârșitul tabelului ofertei',
   },
   view: {
+    // Metraj total sub tabelul ofertei (P2-B)
+    totalM2: 'Metraj total: {m2} m²',
     // „Anulează trimiterea către administrator” (decizia 212)
     withdraw: 'Anulează trimiterea către administrator',
     withdrawConfirm: 'Oferta va fi scoasă din coada de aprobare a prețurilor a administratorului și o veți putea modifica din nou. Continuați?',

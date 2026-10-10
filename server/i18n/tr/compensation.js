@@ -77,6 +77,7 @@ export default {
     noOps: 'işlemsiz',
     customLabel: 'Telafi fiyatı ({cur}/m²)',
     keepHint: 'Aynı fiyat: yöneticinin kaynak teklifte belirlediği müşteri fiyatı kullanılır. Teklif doğrudan müşteriye gider; yönetici yeniden fiyatlandırmaz.',
+    keepHintNoPrice: 'Aynı fiyat: kaynak satırda kayıtlı müşteri fiyatı yok. Teklif doğrudan müşteriye gitmez; fiyatı yönetici belirler.',
     freeHint: 'Bedelsiz: müşteriye fiyat 0 olur ve teklif doğrudan müşteriye gider; proformaya ve faturaya yazılmaz. Fabrika maliyeti durur ve kârlılıkta görünür.',
     salesCustomHint: 'Farklı fiyat: müşteri fiyatını yönetici belirler. Telafi yöneticinin fiyatlandırmasına gider; fiyatlandırılmadan müşteriye gitmez.',
     adminCustomHint: "Farklı fiyat: girdiğiniz müşteri fiyatı telafi camına yazılır (işlemlerin müşteri fiyatı 0 kalır).",
