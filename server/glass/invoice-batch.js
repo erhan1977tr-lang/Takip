@@ -388,6 +388,10 @@ export async function heldReplans(db, replanIds) {
  *     ACCOUNTING_ACTION   — bu güne aktarılıp yüklenen cam kaynağındaki kesilmiş faturada zaten faturalanmış (karar 105)
  *     CURRENCY / NO_LINES — faturalanabilir kalem yok
  *     PROFORMA_NOT_ISSUED — müşteri proforması henüz kesilmedi (kuyrukta / kesilemedi)
+ *     CHAIN_ROOT_MISSING  — siparişin avans faturası var ama proforması yok (FGO'da silinmiş): zincirsiz kesilirse avans
+ *                           düşülmez — muhasebe kararı gerekir (P7)
+ *     OPS_WITHOUT_GLASS   — bu onayda yüklenen cam yok ama fiyatlı işlem / sandık kalemi yüklenmiş: kalem cama eklenemez,
+ *                           otomatik faturalanmaz — muhasebe kararı gerekir (P7)
  *   OPEN       : faturalanabilir (currency, chainId: müşteri proforması partisi ya da null, orderChainId: siparişin kendi
  *                proforma zinciri ya da null — karar 239, offerId)
  * @param {{ confirmationId: string, order: any, items: any[], pendingJob: boolean, held: Map<string, string> }} p
@@ -403,11 +407,17 @@ export function invoiceScope({ confirmationId, order, items, pendingJob, held })
   const legacy = order.fgoDocuments.find((d) => d.kind === 'INVOICE');
   if (legacy) return no('ORDER_INVOICED', refOf(legacy));
   const ownProforma = order.fgoDocuments.some((d) => d.kind === 'PROFORMA');
+  // Zincirin kökü silinmiş (P7): avans faturası duruyor ama proforma yok → zincirsiz (DIRECT) kesilen fatura avansı düşmezdi
+  if (!ownProforma && order.fgoDocuments.some((d) => d.kind === 'ADVANCE')) return no('CHAIN_ROOT_MISSING');
   const hold = items.map((i) => (i.replanId ? held.get(i.replanId) : null)).find(Boolean);
   if (hold) return no('ACCOUNTING_ACTION', hold);
   const currency = items[0]?.currency ?? null;
   if (currency !== 'EUR' && currency !== 'RON') return no('CURRENCY');
-  if (glassLines({ lines: items.map(itemAsLine) }).length === 0) return no('NO_LINES');
+  if (glassLines({ lines: items.map(itemAsLine) }).length === 0) {
+    // Cam yok ama fiyatlı işlem / sandık kalemi yüklenmiş (P7): sessizce "kalem yok" sayılmaz — görünür ve hatırlatılır
+    const pricedOps = items.some((i) => !i.free && Number(i.saleAmount ?? 0) > 0);
+    return no(pricedOps ? 'OPS_WITHOUT_GLASS' : 'NO_LINES');
+  }
   const pro = order.billingBatchOrders.find((b) => b.batch.kind === 'PROFORMA');
   if (pro && pro.batch.status !== 'ISSUED') return no('PROFORMA_NOT_ISSUED');
   return { state: /** @type {const} */ ('OPEN'), currency, chainId: pro ? pro.batch.id : null, orderChainId: ownProforma ? order.id : null, offerId: pro?.offerId ?? null };

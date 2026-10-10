@@ -15,6 +15,8 @@ const rp = await import('../../server/loading/replan.js');
 const g = await import('../../server/glass/billing.js');
 const b = await import('../../server/glass/batch.js');
 const inv = await import('../../server/glass/invoice-batch.js');
+const un = await import('../../server/accounting/uninvoiced.js');
+const { removeDeletedDocument } = await import('../../server/integrations/fgo-deleted.js');
 
 const SECRET = 'p'.repeat(40);
 const TZ = 'Europe/Bucharest';
@@ -295,4 +297,79 @@ dbTest('birden çok sipariş proforması + kısmi yükleme; fatura sonrası gele
   // Önceki kayıtlar değişmez
   assert.equal(String((await db.fgoDocument.findUnique({ where: { id: pa.id } })).paid), '605');
   assert.equal(await db.billingBatch.count({ where: { chainOrderId: a.id, kind: 'INVOICE' } }), 1);
+}));
+
+// ---- P7 (karar 248): sessizce yanlış / eksik faturalanabilecek üç durum görünür olur ----
+const reminders = async (o, day) => (await un.uninvoicedLoadings(db, { now: at(dayOf(400)), days: 0 })).filter((x) => x.orderId === o.id && x.day === day).map((x) => x.note);
+const excludedOf = async (day, o) => {
+  const r = await billing(day);
+  return r.customers.flatMap((x) => x.excluded).filter((x) => x.orderId === o.id).map((x) => x.reason);
+};
+
+dbTest('P7: avans kesilmiş siparişin proforması FGO\'da silinirse fatura zincirsiz (avanssız) kesilmez — CHAIN_ROOT_MISSING görünür ve hatırlatılır; BNR istenmez', offline(async () => {
+  const F = await firm('Final Root SRL', 'FRO');
+  const D = dayOf(120);
+  const o = await glassOrder(F, D, [glassLine(2)]);
+  const fgo = fakeFgo(5000);
+  const pf = await ownProforma(o, fgo);
+  const adv = await payAndAdvance(o, pf, '605.00', fgo);
+  await removeDeletedDocument(db, pf, 'Factura nu exista');
+  assert.equal(await db.fgoDocument.count({ where: { orderId: o.id, kind: 'PROFORMA' } }), 0);
+  assert.equal(await db.fgoDocument.count({ where: { id: adv.id } }), 1, 'avans duruyor');
+  assert.equal((await confirm(D)).ok, true);
+  const r = await inv.loadingBilling(db, { day: D, bnrImpl: never('BNR') });
+  assert.equal(r.customers.flatMap((x) => x.groups).some((x) => x.orders.some((y) => y.orderId === o.id)), false, 'zincirsiz grup yok');
+  assert.deepEqual(await excludedOf(D, o), ['CHAIN_ROOT_MISSING']);
+  assert.deepEqual(await reminders(o, D), ['CHAIN_ROOT_MISSING']);
+  assert.equal(await db.billingBatch.count({ where: { kind: 'INVOICE', orders: { some: { orderId: o.id } } } }), 0);
+}));
+
+dbTest('P7: onayda cam yüklenmeyip yalnızca fiyatlı işlem / sandık kalemi yüklendiyse sessiz "kalem yok" değil — OPS_WITHOUT_GLASS görünür ve hatırlatılır', offline(async () => {
+  const F = await firm('Final Ops SRL', 'FOP');
+  const D = dayOf(130);
+  const o = await glassOrder(F, D, [glassLine(2), { description: 'CNC', adet: 1, unit: 'adet', kind: 'CNC', unitPrice: '5', offerPrice: '10' }]);
+  const fgo = fakeFgo(6000);
+  await ownProforma(o, fgo);
+  assert.equal((await confirm(D, [{ order: o, quantity: 2 }])).ok, true, 'camın tamamı yüklenmedi; CNC yüklendi');
+  assert.deepEqual(await excludedOf(D, o), ['OPS_WITHOUT_GLASS']);
+  assert.deepEqual(await reminders(o, D), ['OPS_WITHOUT_GLASS']);
+  // Fiyatsız / bedelsiz kalem için davranış aynen: NO_LINES, hatırlatma yok
+  const F2 = await firm('Final Ops2 SRL', 'FOQ');
+  const D2 = dayOf(131);
+  const o2 = await glassOrder(F2, D2, [glassLine(2), { description: 'CNC', adet: 1, unit: 'adet', kind: 'CNC', unitPrice: '5', offerPrice: '0', free: true }]);
+  assert.equal((await confirm(D2, [{ order: o2, quantity: 2 }])).ok, true);
+  assert.deepEqual(await excludedOf(D2, o2), ['NO_LINES']);
+  assert.deepEqual(await reminders(o2, D2), []);
+}));
+
+dbTest('P7: zincirden fatura kesildikten sonra gelen tahsilat — kalan kapsamın hatırlatması "kesilebilir" değil PAYMENT_AFTER_INVOICE notuyla', offline(async () => {
+  const F = await firm('Final Pai SRL', 'FPA');
+  const D1 = dayOf(140), D2 = dayOf(147);
+  const o = await glassOrder(F, D1, [glassLine(4)]);
+  const fgo = fakeFgo(7000);
+  const pf = await ownProforma(o, fgo);
+  assert.equal((await confirm(D1, [{ order: o, quantity: 1 }])).ok, true);
+  await issue(D1, o, fgo);
+  await replanAll(D1, D2);
+  assert.equal((await confirm(D2)).ok, true);
+  assert.deepEqual(await reminders(o, D2), [null], 'tahsilat yokken kesilebilir');
+  await db.fgoDocument.update({ where: { id: pf.id }, data: { paid: '605.00' } });
+  assert.deepEqual(await reminders(o, D2), ['PAYMENT_AFTER_INVOICE']);
+  assert.deepEqual(await reminders(o, D1), [], 'ilk onay faturalandı');
+}));
+
+dbTest('P7: deploy anında kuyrukta kalmış eski sipariş düzeyi kapanış faturası işi (daha önce denenmiş olsa da) FGO\'ya gitmeden kapanır; o sürede kapsam ORDER_PENDING', offline(async () => {
+  const F = await firm('Final Legacy SRL', 'FLG');
+  const D = dayOf(150);
+  const o = await glassOrder(F, D, [glassLine(1)]);
+  const fgo = fakeFgo(8000);
+  await ownProforma(o, fgo);
+  assert.equal((await confirm(D)).ok, true);
+  const job = await db.notificationOutbox.create({ data: { type: g.GLASS_FGO, orderId: o.id, attempts: 1, availableAt: new Date(Date.now() - 60_000), payload: { kind: 'INVOICE', orderNo: o.orderNo } } });
+  assert.deepEqual(await excludedOf(D, o), ['ORDER_PENDING']);
+  const before = fgo.calls.length;
+  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 0, failed: 1 });
+  assert.equal(fgo.calls.length, before, "FGO'ya istek yok");
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: job.id } })).status, 'FAILED');
+  assert.equal(await db.fgoDocument.count({ where: { orderId: o.id, kind: 'INVOICE' } }), 0);
 }));

@@ -26,7 +26,7 @@ import { writeAudit } from '../orders/journal.js';
 import { effectiveItems } from '../loading/confirmation.js';
 import { localDay } from '../profile/dates.js';
 import { GLASS_FGO } from '../glass/billing.js';
-import { heldReplans, invoiceScope } from '../glass/invoice-batch.js';
+import { heldReplans, invoiceScope, orderChainState } from '../glass/invoice-batch.js';
 import { notifyStaff } from '../notifications/inapp.js';
 
 export const ACCOUNTING_KEY = 'accounting';
@@ -112,7 +112,8 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
       where: { id: { in: orderIds } },
       select: {
         id: true, orderNo: true, customerId: true, removedAt: true, customer: { select: { name: true } },
-        fgoDocuments: { select: { kind: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } },
+        fgoDocuments: { select: { id: true, kind: true, seq: true, series: true, number: true, total: true, paid: true, advanced: true }, orderBy: { issuedAt: 'asc' } },
+        manualPayments: { where: { batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } },
         billingBatchOrders: { where: { activeKey: { not: null } }, select: { activeKey: true, offerId: true, batch: { select: { id: true, kind: true, status: true, document: { select: { series: true, number: true } } } } } },
       },
     }),
@@ -142,8 +143,14 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
       // Faturalanamayan kapsam uyarı üretmez (kalem yok / para birimi dışı / muhasebe işlemi bekleyen dondurma)
       // Siparişin kendi belge isteği kuyrukta / müşteri proforması kesilmedi: kapsam açık (bilgi notuyla); eski sipariş düzeyi
       // kapanış faturası (ORDER_INVOICED) kapsamı kapatmıştır — sorgu da onu dışlar
-      if (sc.reason !== 'ORDER_PENDING' && sc.reason !== 'PROFORMA_NOT_ISSUED') continue;
+      // P7: muhasebe kararı bekleyen kapsamlar da listelenir (sessizce faturasız kalmasın)
+      if (!['ORDER_PENDING', 'PROFORMA_NOT_ISSUED', 'CHAIN_ROOT_MISSING', 'OPS_WITHOUT_GLASS'].includes(sc.reason)) continue;
       note = sc.reason;
+    } else if (sc.orderChainId) {
+      // Siparişin kendi zinciri: zincirden fatura kesildikten sonra gelen tahsilat kalan kapsamı muhasebe kararına kadar
+      // bekletir (karar 239, seçenek a) — "kesilebilir" diye gösterilmez (P7)
+      const st = await orderChainState(db, order);
+      if (st && st.advanceRequired > 0 && st.invoices > 0) note = 'PAYMENT_AFTER_INVOICE';
     }
     out.push({
       confirmationId: p.confirmationId, orderId: order.id, orderNo: order.orderNo, customerId: order.customerId, customerName: order.customer?.name ?? '',

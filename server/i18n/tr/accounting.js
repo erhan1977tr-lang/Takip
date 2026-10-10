@@ -167,6 +167,8 @@ export default {
       PROFORMA_NOT_ISSUED: "müşteri proforması henüz kesilmedi (kuyrukta ya da kesilemedi)",
       CURRENCY: "para birimi desteklenmiyor",
       NO_LINES: "faturalanacak fiyatlı cam satırı yok",
+      CHAIN_ROOT_MISSING: "siparişin avans faturası var ama proforması FGO'da silinmiş: zincirsiz kesilirse avans düşülmez — muhasebe kararı gerekir",
+      OPS_WITHOUT_GLASS: "bu yüklemede cam yok ama fiyatlı işlem / sandık kalemi yüklendi: otomatik faturalanmaz — muhasebe kararı gerekir",
       ACCOUNTING_ACTION: "muhasebe işlemi gerekli: bu güne aktarılan cam, yükleme düzeltmesinden önce kesilmiş faturada zaten var — yeniden faturalanmaz",
     },
     ok: {
@@ -231,6 +233,9 @@ export default {
       PROFORMA_NOT_ISSUED: "müşteri proforması kuyrukta ya da kesilemedi",
       INVOICE_QUEUED: "fatura isteği kuyrukta",
       INVOICE_FAILED: "fatura FGO'da kesilemedi — yeniden deneyin ya da vazgeçin",
+      CHAIN_ROOT_MISSING: "siparişin avans faturası var ama proforması FGO'da silinmiş: zincirsiz kesilirse avans düşülmez — muhasebe kararı gerekir",
+      OPS_WITHOUT_GLASS: "bu yüklemede cam yok ama fiyatlı işlem / sandık kalemi yüklendi: otomatik faturalanmaz — muhasebe kararı gerekir",
+      PAYMENT_AFTER_INVOICE: "zincirden fatura kesildikten sonra proformada avansı kesilmemiş tahsilat var — muhasebe kararına kadar fatura kesilmez",
     },
   },
   receivables: {

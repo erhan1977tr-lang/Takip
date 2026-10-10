@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.73.1 — 10.10.2026
+
+P7 — nihai fatura güvenliği (karar 248; P1 / karar 239'un incelemesi). Şema değişmedi; mevcut belgeler değişmez.
+
+- **Avanslı siparişin proforması FGO'da silinmişse** yükleme gününden "zincirsiz" fatura kesilmez (`CHAIN_ROOT_MISSING`):
+  eskiden bu durumda avans düşülmeden tam fatura kesilebilirdi. Sipariş Faturalama kartında nedeniyle gösterilir ve "fatura
+  bekliyor" listesinde kalır; karar muhasebeye aittir.
+- **Onayda cam yüklenmeyip yalnızca fiyatlı işlem / sandık kalemi yüklendiyse** kapsam sessizce "kalem yok" sayılmaz
+  (`OPS_WITHOUT_GLASS`): kartta ve "fatura bekliyor" listesinde görünür (otomatik faturalanmaz — muhasebe kararı).
+- **Zincirden fatura kesildikten sonra gelen tahsilat** (karar 239, seçenek a) "fatura bekliyor" listesinde artık "kesilebilir"
+  gibi görünmez; nedeni yazar.
+- Testler: üç durum + deploy anında kuyrukta kalmış (daha önce denenmiş) eski kapanış faturası işinin FGO'ya gitmeden
+  kapandığı.
+
 ## 3.73.0 — 10.10.2026
 
 P7 — güvenlik sertleştirmesi (karar 248; önceki denetimden açık kalan maddeler). Şema değişmedi.

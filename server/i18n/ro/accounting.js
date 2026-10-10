@@ -167,6 +167,8 @@ export default {
       PROFORMA_NOT_ISSUED: "proforma client nu a fost încă emisă (în coadă sau neemisă)",
       CURRENCY: "monedă neacceptată",
       NO_LINES: "nu există rânduri de sticlă cu preț de facturat",
+      CHAIN_ROOT_MISSING: "comanda are factură de avans, dar proforma a fost ștearsă în FGO: emisă fără lanț, avansul nu s-ar scădea — este necesară decizia contabilă",
+      OPS_WITHOUT_GLASS: "la această încărcare nu există sticlă, dar s-au încărcat operații / ladă cu preț: nu se facturează automat — este necesară decizia contabilă",
       ACCOUNTING_ACTION: "acțiune contabilă necesară: sticla replanificată la această zi este deja inclusă în factura emisă înainte de corecția încărcării — nu se facturează din nou",
     },
     ok: {
@@ -231,6 +233,9 @@ export default {
       PROFORMA_NOT_ISSUED: "proforma clientului este în coadă sau nu a putut fi emisă",
       INVOICE_QUEUED: "cererea de factură este în coadă",
       INVOICE_FAILED: "factura nu a putut fi emisă în FGO — reîncercați sau renunțați",
+      CHAIN_ROOT_MISSING: "comanda are factură de avans, dar proforma a fost ștearsă în FGO: emisă fără lanț, avansul nu s-ar scădea — este necesară decizia contabilă",
+      OPS_WITHOUT_GLASS: "la această încărcare nu există sticlă, dar s-au încărcat operații / ladă cu preț: nu se facturează automat — este necesară decizia contabilă",
+      PAYMENT_AFTER_INVOICE: "după emiterea unei facturi din lanț, pe proformă apare o încasare fără factură de avans — factura nu se emite până la decizia contabilă",
     },
   },
   receivables: {
