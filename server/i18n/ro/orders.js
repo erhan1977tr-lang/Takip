@@ -58,7 +58,7 @@ export default {
     },
   },
   // Alertă de comandă necitită (karar 224)
-  alerts: { unread: '{n} noutăți necitite la comandă' },
+  alerts: { unread: '{n} noutăți necitite la comandă', customer: 'Aveți un mesaj' },
   internal: {
     infectedBanner: 'În carantină sunt {n} fișiere infectate; acestea nu pot fi descărcate.',
     infectedLink: 'Integrări →',

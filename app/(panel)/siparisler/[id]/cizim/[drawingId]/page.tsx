@@ -14,7 +14,8 @@ import { cleanAnnotations } from '@/server/orders/annotations.js';
 import { reviewToken } from '@/server/orders/review.js';
 import { drawingAccess } from '@/server/orders/drawing-access.js';
 import { isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
-import { approveDrawingAction, sendDrawingAction } from '../../actions';
+import { approveDrawingAction, markOrderSeenAction, sendDrawingAction } from '../../actions';
+import { OrderSeen } from '@/components/OrderSeen';
 import { RevisionForm } from './RevisionForm';
 
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,8 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
   } as Record<string, string[]>)[d.status];
   return (
     <>
+      {/* Çizim ekranda görüldü → bu kullanıcının bu siparişteki çizim uyarıları okundu (karar 228; yalnızca çizim bölümü) */}
+      {files.length > 0 && <OrderSeen orderId={order.id} upTo={new Date().toISOString()} mark={markOrderSeenAction} only={['cizim']} />}
       <div className="page-head">
         <p className="small"><Link href={back}>← {order.orderNo}</Link></p>
         <h1>{revising ? t('order.viewer.titleRevision') : t('order.viewer.title')}</h1>

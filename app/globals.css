@@ -367,6 +367,7 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .msg-count-link { text-decoration: none; }
 /* Okunmamış sipariş uyarısı (karar 224): mesaj sayacından ayrı — mavi yuvarlak; sipariş sayfası açılınca kullanıcıya özel okunur */
 .order-alert { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; }
+.order-alert-msg { background: var(--danger); }
 .order-alert-link { text-decoration: none; }
 .order-alert-link:focus-visible { outline: none; border-radius: var(--radius-pill); box-shadow: 0 0 0 3px var(--focus); }
 .msg-count-link:focus-visible { outline: none; border-radius: var(--radius-pill); box-shadow: 0 0 0 3px var(--focus); }

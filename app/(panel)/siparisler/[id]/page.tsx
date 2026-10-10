@@ -1347,11 +1347,12 @@ function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUse
   const now = new Date();
   // Okunmamış: başkasının yazdığı, okunma anından sonraki (gösterilen notlar zaten role göre süzülmüş — liste sayacıyla aynı kural)
   const unread = notes.filter((n) => isUnreadNote(n, user, since)).length;
-  // Mesajlar doğrudan açık gösterilir (karar 225 — "Mesajları göster" düğmesi yok); sayfa açılınca okunur (karar 224 —
-  // components/OrderSeen.tsx). "Yeni" vurgusu, sayfanın çizildiği andaki okunma eşiğine göredir.
+  // Mesajlar doğrudan açık gösterilir (karar 225 — "Mesajları göster" düğmesi yok); her mesaj ekranda GÖRÜLDÜĞÜNDE okunur,
+  // diğer uyarılar gösterildikleri bölüm görüldüğünde (Paket B — karar 228; components/OrderSeen.tsx). "Yeni" vurgusu,
+  // sayfanın çizildiği andaki okunma eşiğine göredir.
   return (
     <div className="card" id="notlar">
-      {/* Sipariş açıldı → bu kullanıcının bu siparişteki uyarıları ve mesajları okundu (karar 224; tarayıcıda, çizimden sonra) */}
+      {/* Bölüm / mesaj görüldü → yalnızca bu kullanıcının o bölümdeki uyarıları okundu (karar 228; tarayıcıda, çizimden sonra) */}
       <OrderSeen orderId={order.id} upTo={now.toISOString()} mark={markOrderSeenAction} />
       <h2>
         {t('order.notes.title')}

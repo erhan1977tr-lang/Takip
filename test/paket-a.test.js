@@ -146,15 +146,18 @@ test('bildirimler (karar 220): güvenlik kitlesi yalnızca USER_MANAGE; pasif ku
   assert.match(strip(read('server/auth/lock-events.js')), /audience: 'security'/);
 });
 
-test('sipariş uyarıları ve mesajlar (karar 224–225): sayfa çizimi yazmaz; okuma istemci bileşeninden; mesajlar doğrudan açık', () => {
+test('sipariş uyarıları ve mesajlar (karar 224–225, Paket B karar 228): sayfa çizimi yazmaz; okuma istemci bileşeninden, bölüm görülünce; mesajlar doğrudan açık', () => {
   const svc = strip(read('server/notifications/order-alerts.js'));
-  assert.match(svc, /userId: user\.id, orderId, isRead: false, type: \{ startsWith: ORDER_ALERT_PREFIX \}, createdAt: \{ lte: at \}/);
+  assert.match(svc, /where: \{ userId: user\.id, orderId: order\.id, isRead: false, createdAt: \{ lte: at \}, OR: or \}/);
   assert.doesNotMatch(svc, /recordActivity|lastSeenAt|session/);
   const page = strip(read('app/(panel)/siparisler/[id]/page.tsx'));
   assert.doesNotMatch(page, /markOrderSeen\(db|markOrderSeenAction\(/, 'sayfa çizimi okundu yazmaz');
   assert.match(page, /<div id="notlar-liste" data-notes-open="1">/);
   const list = strip(read('app/(panel)/siparisler/page.tsx'));
   assert.match(list, /const alerts = await orderAlertsFor\(user, rows\.map\(\(o\) => o\.id\)\);/);
+  // Müşteri listesi: kırmızı "Bir mesajınız var" (Paket B — karar 228), mesaj uyarıları dahil
+  assert.match(list, /const alerts = await orderAlertsFor\(user, orders\.map\(\(o\) => o\.id\), \{ messages: true \}\);/);
+  assert.match(list, /text=\{t\('orders\.alerts\.customer'\)\}/);
   // İlk mesaj çevirisi: sipariş kaydından sonra, hata siparişi bozmaz
   const fn = strip(read('app/(panel)/siparisler/yeni/actions.ts'));
   assert.match(fn, /async function firstNoteTranslation\(orderId: string, actor[^)]*\) \{\n\s+try \{\n\s+await translateOrderNote\(db, \{ orderId, actor \}\);\n\s+\} catch/);

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, INSPECTOR_PW, TEAM_PW, as, createUser, firstLogin, outboxCodeFor } from './helpers';
+import { ADMIN, ADMIN_PW, INSPECTOR_PW, TEAM_PW, as, createUser, firstLogin, outboxCodeFor, seeSections } from './helpers';
 
 // Paket 9 (kararlar 198–202) — dil ayarı, sipariş mesajı sayaçları ve bildirimi, tekilleştirme, anlık arama, mobil taşma.
 //  - Ayarlar: bütün rollerde (iç ekip "Hesap ayarları"); Otomatik varsayılan; seçilen dil yeniden girişte de geçerli
@@ -125,8 +125,8 @@ test('mesaj: müşterinin mesajı (çift tıklamayla bile) tek kez yazılır; y�
   await expect(rowOf(admin).locator('.msg-count')).toHaveText('1');
   await expect(admin.locator('.sidebar [data-nav-unread]')).toBeVisible();
   const adminBell = () => db.notification.findMany({ where: { orderId, type: 'ORDER_NOTE_ADDED', user: { email: ADMIN } } });
-  // Zil #notlar'a götürür; sipariş açılınca mesajlar doğrudan görünür ("Mesajları göster" yok — karar 225) ve bu kullanıcının
-  // o siparişteki uyarıları + mesajları okundu olur (karar 224): sayaç ve zil birlikte
+  // Zil #notlar'a götürür; mesajlar doğrudan görünür ("Mesajları göster" yok — karar 225) ve ekranda görülen mesaj bu
+  // kullanıcı için okundu olur (Paket B — karar 228): sayaç ve zil birlikte
   await admin.locator('.notif-bell').click();
   const item = admin.locator('.notif-item', { hasText: orderNo }).first();
   await expect(item).toContainText('Siparişte yeni mesaj');
@@ -170,9 +170,10 @@ test('iç ekibin mesajı müşteriye zil + sayaç; iç not müşteriye hiçbir i
   await expect(cust.locator('.notif-item', { hasText: orderNo })).toHaveCount(1);
   await cust.goto(`/siparisler/${orderId}`);
   expect(await cust.content()).not.toContain('gizli iç not');
-  // Mesajlar doğrudan açık (karar 225); sipariş açılınca okundu (karar 224 — zil de)
+  // Mesajlar doğrudan açık (karar 225); mesaj ekranda GÖRÜLÜNCE okundu (Paket B — karar 228; zil de)
   await expect(cust.locator('#notlar [data-new="1"]')).toHaveCount(1);
   await expect(cust.locator('#notlar [data-new="1"]')).toBeVisible();
+  await seeSections(cust, ['#notlar [data-new="1"]']);
   await expect.poll(async () => (await db.notification.findMany({ where: { orderId, type: 'ORDER_NOTE_ADDED', user: { email: WRITER } } })).every((x) => x.isRead)).toBe(true);
   await cust.goto('/siparisler');
   await expect(rowOf(cust).locator('.msg-count')).toHaveCount(0);

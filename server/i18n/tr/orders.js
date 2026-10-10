@@ -59,7 +59,7 @@ export default {
     },
   },
   // Okunmamış sipariş uyarısı (karar 224)
-  alerts: { unread: '{n} okunmamış sipariş gelişmesi' },
+  alerts: { unread: '{n} okunmamış sipariş gelişmesi', customer: 'Bir mesajınız var' },
   internal: {
     infectedBanner: 'Karantinada {n} virüslü dosya var; bu dosyalar indirilemez.',
     infectedLink: 'Entegrasyonlar →',

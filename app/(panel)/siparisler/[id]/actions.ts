@@ -22,7 +22,7 @@ import { deliverInAppNow } from '@/lib/notifications';
 import { revisionNoteWithMarks } from '@/server/orders/revision-note.js';
 import { cleanAnnotationsLoose } from '@/server/orders/annotations.js';
 import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
-import { markOrderSeen } from '@/server/notifications/order-alerts.js';
+import { markSectionsSeen } from '@/server/notifications/order-alerts.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const err = (id: string, msg: string) => back(id, `error=${encodeURIComponent(msg)}`);
@@ -401,14 +401,17 @@ export async function addNoteAction(formData: FormData) {
 }
 
 /**
- * Sipariş sayfası açıldı (karar 224; karar 205'in yerine): oturumdaki kullanıcının BU siparişteki uyarıları (zil — ORDER_…)
- * ve mesajları, sayfanın çizildiği ana (upTo) kadar okundu. Yalnızca kendi kayıtları; sipariş kapsamda değilse hiçbir şey
+ * Sipariş sayfasında bölüm(ler) GÖRÜLDÜ (Paket B — karar 228; karar 224'ü daraltır): oturumdaki kullanıcının BU siparişteki,
+ * o bölümlerde gösterilen uyarıları (zil — ORDER_…) upTo anına kadar okundu; "notlar" bölümünde görülen mesajın anına kadar
+ * mesajlar. Sayfayı açmak tek başına hiçbir şeyi okumaz. Yalnızca kendi kayıtları; sipariş kapsamda değilse hiçbir şey
  * yazılmaz. Sayfa çizimi değil istemci bileşeni (components/OrderSeen.tsx) çağırır. Oturumu uzatmaz.
  * @returns bir şey değişti mi (istemci yalnızca o zaman menüdeki sayaçları tazeler)
  */
-export async function markOrderSeenAction(orderId: string, upTo: string): Promise<boolean> {
+export async function markOrderSeenAction(orderId: string, upTo: string, sections: string[]): Promise<boolean> {
   const user = await requireUser();
-  const r = await markOrderSeen(db, { user, orderId: String(orderId ?? ''), upTo: typeof upTo === 'string' ? upTo : null });
+  // Bölüm adları sunucuda beyaz listeyle süzülür (server/notifications/order-alerts.js → SECTION_KEYS); kapsam yeniden denetlenir
+  const list = Array.isArray(sections) ? sections.slice(0, 10).map((x) => String(x ?? '').slice(0, 20)) : [];
+  const r = await markSectionsSeen(db, { user, orderId: String(orderId ?? ''), upTo: typeof upTo === 'string' ? upTo : null, sections: list });
   return r.ok && r.changed;
 }
 

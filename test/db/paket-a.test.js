@@ -11,7 +11,7 @@ import { recordLock } from '../../server/auth/lock-events.js';
 import { applyEmailChange, checkEmailChange, deleteUser, deletedEmail, userDeletionPreview } from '../../server/users/lifecycle.js';
 import { customerDeletionPreview, deleteCustomer, removeOrphanFiles } from '../../server/customers/deletion.js';
 import { LOGIN_LOG_RETENTION_DAYS, pruneLoginEvents, recordLoginEvent } from '../../server/auth/login-log.js';
-import { markOrderSeen, orderAlertCounts, orderAlertTotal } from '../../server/notifications/order-alerts.js';
+import { markOrderSeen, markSectionsSeen, orderAlertCounts, orderAlertTotal, sectionOf } from '../../server/notifications/order-alerts.js';
 import { createInvite } from '../../server/auth/inviteCode.js';
 import { verifyInviteCode } from '../../server/auth/invite-claim.js';
 
@@ -259,7 +259,7 @@ dbTest('giriş logu (karar 223): sır yok; kimliği kesin olmayan deneme kullan�
   assert.equal(await db.loginEvent.count({ where: { ip: '1.2.3.5' } }), 1);
 }));
 
-dbTest('sipariş uyarıları (karar 224): yalnızca o kullanıcının o siparişteki uyarıları okunur; sonra gelen, başka kullanıcının ve başka siparişin uyarısı kalır', offline(async () => {
+dbTest('sipariş uyarıları (karar 224 — bütün bölümler): yalnızca o kullanıcının o siparişteki uyarıları okunur; sonra gelen, başka kullanıcının ve başka siparişin uyarısı kalır', offline(async () => {
   const o1 = await newOrder(A, 'custA', 'Uyarı 1');
   const o2 = await newOrder(A, 'custA', 'Uyarı 2');
   await dispatchInApp(db, { now: new Date() });
@@ -289,6 +289,46 @@ dbTest('sipariş uyarıları (karar 224): yalnızca o kullanıcının o sipariş
   assert.ok((await orderAlertTotal(db, U.custA)).total >= 1);
   // Denetimciye sipariş bildirimi yazılmaz → uyarısı yok
   assert.equal((await orderAlertCounts(db, U.inspector, [o1.id, o2.id])).size, 0);
+}));
+
+dbTest('Paket B (karar 228): sayfayı açmak okumaz — uyarı yalnızca gösterildiği bölüm görülünce, yalnızca o kullanıcı için okunur; mesaj görülen mesajın anına kadar', offline(async () => {
+  const o = await newOrder(A, 'custA', 'Bölüm uyarısı');
+  await dispatchInApp(db, { now: new Date() });
+  await db.notification.deleteMany({ where: { orderId: o.id } });
+  const t0 = new Date(Date.now() - 60_000);
+  const mk = (u, type, at = t0) => db.notification.create({ data: { userId: u.id, message: 'x', type, orderId: o.id, createdAt: at } });
+  await mk(U.custA, 'ORDER_DRAWING_UPLOADED');
+  await mk(U.custA, 'ORDER_OFFER_SENT');
+  await mk(U.custA, 'ORDER_SHIP_DATE');
+  await mk(U.custA2, 'ORDER_DRAWING_UPLOADED');
+  const unread = (u) => db.notification.findMany({ where: { userId: u.id, orderId: o.id, isRead: false }, select: { type: true } }).then((x) => x.map((n) => n.type).sort());
+  const now = new Date();
+  // Bölüm adı yok / bilinmeyen bölüm → hiçbir şey yazılmaz (sayfayı açmak tek başına okumaz)
+  assert.deepEqual(await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: [], now }), { ok: true, changed: false });
+  assert.deepEqual(await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: ['__proto__', 'x'], now }), { ok: true, changed: false });
+  assert.deepEqual(await unread(U.custA), ['ORDER_DRAWING_UPLOADED', 'ORDER_OFFER_SENT', 'ORDER_SHIP_DATE']);
+  // Çizim bölümü görüldü: yalnızca çizim uyarısı, yalnızca bu kullanıcı
+  assert.deepEqual(await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: ['cizim'], now }), { ok: true, changed: true });
+  assert.deepEqual(await unread(U.custA), ['ORDER_OFFER_SENT', 'ORDER_SHIP_DATE']);
+  assert.deepEqual(await unread(U.custA2), ['ORDER_DRAWING_UPLOADED'], 'aynı firmanın başka kullanıcısı etkilenmez');
+  // Sayfa başlığı (durum): bölümlerin dışındaki uyarılar; teklif uyarısı kalır
+  await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: ['durum'], now });
+  assert.deepEqual(await unread(U.custA), ['ORDER_OFFER_SENT']);
+  await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: ['teklif'], now });
+  assert.deepEqual(await unread(U.custA), []);
+  assert.equal(sectionOf('ORDER_DWG_FAULTY'), 'cizim');
+  assert.equal(sectionOf('ORDER_YENI_TUR'), 'durum', 'bilinmeyen tür sayfa başlığıyla okunur — sonsuza dek kalmaz');
+  // Mesajlar: görülen mesajın anına kadar; sonraki mesaj okunmamış kalır
+  const n1 = await db.orderNote.create({ data: { orderId: o.id, userId: U.admin.id, text: 'bir', internal: false, createdAt: new Date(now.getTime() - 30_000) } });
+  const n2 = await db.orderNote.create({ data: { orderId: o.id, userId: U.admin.id, text: 'iki', internal: false, createdAt: new Date(now.getTime() - 10_000) } });
+  await mk(U.custA, 'ORDER_NOTE_ADDED', new Date(n1.createdAt.getTime() - 1000)); // eşlemesiz eski mesaj bildirimi (ilk mesajdan önce)
+  await mk(U.custA, 'ORDER_NOTE_ADDED', new Date(n2.createdAt.getTime() + 1000)); // ikinci mesajın bildirimi
+  await markSectionsSeen(db, { user: U.custA, orderId: o.id, sections: ['notlar'], upTo: n1.createdAt, now });
+  const read = await db.orderNoteRead.findUniqueOrThrow({ where: { userId_orderId: { userId: U.custA.id, orderId: o.id } } });
+  assert.equal(read.lastReadAt.getTime(), n1.createdAt.getTime());
+  assert.deepEqual(await unread(U.custA), ['ORDER_NOTE_ADDED'], 'ikinci (görülmemiş) mesajın bildirimi kalır');
+  // Kapsam dışı: başka firmanın müşterisi hiçbir şey yazamaz
+  assert.deepEqual(await markSectionsSeen(db, { user: U.custB, orderId: o.id, sections: ['durum'], now }), { ok: false, code: 'NOT_FOUND' });
 }));
 
 dbTest('ilk mesaj (karar 225): sipariş oluşturulduktan sonra bir kez Türkçeye; ikinci çağrı / yenileme çevirmez; denetimci yalnızca özgün metni görür', offline(async () => {

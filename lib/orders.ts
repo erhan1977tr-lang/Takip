@@ -208,6 +208,6 @@ export async function unreadNotesFor(user: CurrentUser, orderIds: string[]): Pro
  * bildirimleri — yeni mesaj hariç (mesajın kendi sayacı var). Kural server/notifications/order-alerts.js; sipariş sayfası
  * açılınca yalnızca o kullanıcının o siparişteki uyarıları okunur.
  */
-export async function orderAlertsFor(user: CurrentUser, orderIds: string[]): Promise<Map<string, number>> {
-  return orderAlertCounts(db, user, orderIds, { messages: false });
+export async function orderAlertsFor(user: CurrentUser, orderIds: string[], { messages = false }: { messages?: boolean } = {}): Promise<Map<string, number>> {
+  return orderAlertCounts(db, user, orderIds, { messages });
 }

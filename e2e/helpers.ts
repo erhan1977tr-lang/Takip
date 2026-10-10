@@ -308,3 +308,16 @@ export async function reportSheet(buf: Buffer, n: number): Promise<(string | num
   }
   return Array.from(rows, (r) => r ?? []);
 }
+
+/**
+ * Sipariş sayfasında bölüm(ler)i ekranda GÖRÜR (Paket B — karar 228): uyarı, gösterildiği bölüm ekranda en az 600 ms
+ * görününce okunur. Sayfada olmayan bölüm atlanır (o bölümün uyarıları sayfa başlığıyla okunur).
+ */
+export async function seeSections(page: Page, selectors: string[]) {
+  for (const sel of selectors) {
+    const el = page.locator(sel).first();
+    if (!(await el.count())) continue;
+    await el.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(900);
+  }
+}

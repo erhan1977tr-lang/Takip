@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, TEAM_PW, as, firstLogin, login, outboxCodeFor } from './helpers';
+import { ADMIN, ADMIN_PW, TEAM_PW, as, firstLogin, login, outboxCodeFor, seeSections } from './helpers';
 
 // Paket A (3.64.0, kararlar 219–225):
 //  - Yönetici Yardımcısı: kendi hesabıyla girer; menüde Kullanıcılar yok; kullanıcı sayfası ve Giriş Logları açılmaz (sunucu
@@ -207,7 +207,7 @@ test('müşteri silme (Yönetici Yardımcısı): yalnızca o firmanın kayıtlar
   }
 });
 
-test('sipariş uyarısı: listede sayaç; sipariş açılınca yalnızca açan kullanıcının uyarısı okunur', async ({ browser }) => {
+test('sipariş uyarısı: listede sayaç; bölüm görülünce yalnızca gören kullanıcının uyarısı okunur', async ({ browser }) => {
   const db = await prisma();
   try {
     const admin = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
@@ -222,6 +222,8 @@ test('sipariş uyarısı: listede sayaç; sipariş açılınca yalnızca açan k
     const row = page.locator('tr', { has: page.locator(`a.order-no[href="/siparisler/${order.id}"]`) });
     await expect(row.locator('.order-alert')).toHaveText('1');
     await page.goto(`/siparisler/${order.id}`);
+    // Paket B (karar 228): çizim uyarısı, çizim bölümü ekranda görülünce okunur (sayfayı açmak tek başına okumaz)
+    await seeSections(page, ['.page-head', '#cizim']);
     await expect.poll(() => db.notification.count({ where: { userId: admin.id, orderId: order.id, isRead: false } })).toBe(0);
     expect(await db.notification.count({ where: { userId: yyUser.id, orderId: order.id, isRead: false } }), 'başka kullanıcının uyarısı kalır').toBe(1);
     await page.goto(`/siparisler?view=all&q=${encodeURIComponent(order.orderNo)}`);

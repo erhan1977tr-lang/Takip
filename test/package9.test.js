@@ -185,10 +185,12 @@ test('formun anahtarı hiçbir role dönmez; not ekranı ve liste aynı okunmam�
   assert.equal((list.match(/unreadNotesFor\(user, /g) ?? []).length, 2, 'müşteri ve iç liste');
   const layout = strip(read('app/(panel)/layout.tsx'));
   assert.ok(layout.includes('unreadTotal(db, user)'));
-  // Okundu (karar 224 — karar 205'in yerine): sipariş sayfası AÇILINCA, sayfa çizildikten sonra istemci bileşeni çağırır;
-  // yalnızca sayfanın çizildiği ana kadar; sekme görünür değilse görünür olunca. Ayrı yoklama yok.
+  // Okundu (Paket B — karar 228, karar 224'ü daraltır): bölüm / mesaj ekranda GÖRÜLÜNCE, sayfa çizildikten sonra istemci
+  // bileşeni çağırır; görünür sekme, yeterli görünürlük, kısa bekleme; yalnızca sayfanın çizildiği ana kadar. Ayrı yoklama yok.
   const mark = read('components/OrderSeen.tsx');
-  assert.ok(mark.includes("document.visibilityState !== 'visible'") && mark.includes('mark(orderId, upTo)'));
+  assert.ok(mark.includes("document.visibilityState === 'visible'") && mark.includes('mark(orderId, at, fresh)') && mark.includes('new IntersectionObserver('));
+  assert.ok(mark.includes('DWELL_MS = 600'));
+  assert.ok(!/router\.refresh\(/.test(mark), 'sayfa yeniden çizdirilmez (karar 224 korunur)');
   assert.ok(!/fetch\(|setInterval/.test(mark), 'ayrı yoklama yok');
   assert.ok(!fs.existsSync(new URL('../components/NotesList.tsx', import.meta.url)), 'mesajlar doğrudan açık (karar 225): gizleyen liste kaldırıldı');
   assert.ok(!fs.existsSync(new URL('../components/MarkNotesRead.tsx', import.meta.url)), 'sayfa açılınca okuyan eski bileşen kaldırıldı');
@@ -237,7 +239,7 @@ test('30 dakika kuralı: 29. dakikada açık, 30. dakikada kapalı; otomatik ist
   }
 });
 
-test('okundu (karar 224, 205 yerine): mesaj bildirimi tıklanınca okunmaz — sipariş sayfası açılınca okunur; öbür bildirim türleri eskisi gibi tıklanınca okunur', async () => {
+test('okundu (karar 228): mesaj bildirimi tıklanınca okunmaz — mesaj ekranda görülünce okunur; öbür bildirim türleri eskisi gibi tıklanınca okunur', async () => {
   const { toastFor } = await import('../server/notifications/feed.js');
   const lib = readFileSync('lib/notifications.ts', 'utf8');
   assert.match(lib, /readOnView: n\.type === NOTE_EVENT/, 'akış: yalnızca sipariş mesajı bildirimi "görülünce okunur"');
@@ -252,7 +254,7 @@ test('okundu (karar 224, 205 yerine): mesaj bildirimi tıklanınca okunmaz — s
   const one = { id: 'n1', title: 't', body: '', link: '/siparisler/x#notlar', createdAt: '2026-10-09T10:00:00.000Z' };
   assert.equal(toastFor([{ ...one, readOnView: true }])?.readOnView, true);
   assert.equal(toastFor([one])?.readOnView, false);
-  // Sipariş sayfası açılınca okunur (karar 224): sayfa işlemi kendisi çağırmaz — istemci bileşeni (OrderSeen) çizimden sonra
+  // Bölüm görülünce okunur (karar 228): sayfa işlemi kendisi çağırmaz — istemci bileşeni (OrderSeen) çizimden sonra
   const page = readFileSync('app/(panel)/siparisler/[id]/page.tsx', 'utf8');
   assert.equal(page.match(/markOrderSeenAction/g)?.length, 2, 'içe aktarma + OrderSeen\'e verilen işlev — sayfa kendisi çağırmaz');
   assert.doesNotMatch(page, /markOrderSeenAction\(/);

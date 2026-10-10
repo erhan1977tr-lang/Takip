@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, seeSections } from './helpers';
 
 // Aşama 8 — uygulama içi bildirimler (karar 107): zil + okunmamış sayacı, sessiz ilk yükleme, yeni bildirimde açılır
 // bildirim + TEK ses, sekme başlığı, okundu işaretleme (listeyi açmak okundu yapmaz), ses tercihi, müşteri yalıtımı ve
@@ -112,9 +112,12 @@ test('müşteri: 7 eski okunmamış → rozet 7, sekme "(7) …", ses / açılı
   await toast.locator('a.notif-main').click();
   await expect(page).toHaveURL(new RegExp(`/siparisler/${orderId}`));
   expect((await db.notification.findFirstOrThrow({ where: { dedupeKey: 'e2e:new:4' } })).isRead).toBe(true);
-  // Sipariş sayfası açıldı (karar 224): bu kullanıcının BU siparişteki bütün uyarıları okundu → rozet kalkar
+  // Sipariş sayfası: uyarılar gösterildikleri bölüm ekranda GÖRÜLÜNCE okunur (Paket B — karar 228; sayfayı açmak tek başına
+  // okumaz): teklif ve çizim bölümleri görülünce bu kullanıcının bu siparişteki uyarıları okundu → rozet kalkar
+  await seeSections(page, ['.page-head', '#teklif', '#cizim']);
+  await expect.poll(() => db.notification.count({ where: { userId: custId, orderId, isRead: false } })).toBe(0);
+  await poll(page);
   await expect(bell.locator('.notif-badge')).toHaveCount(0);
-  expect(await db.notification.count({ where: { userId: custId, orderId, isRead: false } })).toBe(0);
 
   // "Okundu" düğmesi ve "tümünü okundu" (sipariş sayfası dışında): eski 7 bildirim yeniden okunmamış yapılır
   // (istemci tarafı gezinme: sayfa yeniden yüklenmez, ses sayacı korunur)

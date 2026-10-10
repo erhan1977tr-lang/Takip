@@ -1,6 +1,6 @@
 import { test, expect, type APIResponse, type BrowserContext } from '@playwright/test';
 import type { PrismaClient } from '@prisma/client';
-import { CUSTOMER, CUST_PW, as } from './helpers';
+import { CUSTOMER, CUST_PW, as, seeSections } from './helpers';
 
 // Uygulama içi yol kuralı (güvenlik denetimi AUD-6 + bildirim bağlantısı maddesi, karar 145): /dil yönlendirmesinin
 // dönüş adresi ve bildirim bağlantısı aynı doğrulayıcıdan geçer (server/security/internal-path.js). Tarayıcı sekme /
@@ -147,12 +147,14 @@ test('bildirim bağlantısı: kayıttaki güvensiz bağlantı bağlantısız gö
     await expect(page).toHaveURL(`${ORIGIN}/siparisler`);
     expect(outside, 'site dışına istek').toEqual([]);
     expect((await db.notification.findUniqueOrThrow({ where: { id: bad[0].id } })).isRead, 'bağlantısız bildirim tıklamayla okundu olmaz').toBe(false);
-    // Geçerli bağlantı: aynen yazılır, tıklanınca okundu olur ve sipariş sayfası (parçasıyla) açılır. Sipariş sayfasını
-    // açmak o siparişteki bütün uyarıları da okur (karar 224) — bağlantısız bildirimler de bu siparişe ait
+    // Geçerli bağlantı: aynen yazılır, tıklanınca okundu olur ve sipariş sayfası (parçasıyla) açılır. Siparişin teklif
+    // bölümü ekranda görülünce o bölümün öbür uyarıları da okunur (Paket B — karar 228) — bağlantısız bildirimler de bu
+    // siparişin teklif uyarılarıdır
     await expect(item(ok.id).locator('a.notif-main')).toHaveAttribute('href', good);
     await item(ok.id).locator('a.notif-main').click();
     await expect(page).toHaveURL(`${ORIGIN}${good}`);
     await expect.poll(async () => (await db.notification.findUniqueOrThrow({ where: { id: ok.id } })).isRead).toBe(true);
+    await seeSections(page, ['.page-head', '#teklif']);
     await expect.poll(async () => (await db.notification.findUniqueOrThrow({ where: { id: bad[0].id } })).isRead).toBe(true);
     expect(outside).toEqual([]);
   } finally {

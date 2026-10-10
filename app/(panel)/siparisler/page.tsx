@@ -115,6 +115,9 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   const count = (f: (o: Row) => boolean) => (archive ? 0 : orders.filter(f).length);
   // Okunmamış mesaj sayısı (karar 199): satırdaki kırmızı sayaç, mesajlara götürür
   const unread = await unreadNotesFor(user, orders.map((o) => o.id));
+  // "Bir mesajınız var" (Paket B — karar 228): müşterinin o siparişte okunmamış gelişmesi (çizim onaya sunuldu, teklif,
+  // mesaj …) — kullanıcıya özel; gelişme ilgili bölümde görülünce yalnızca o kullanıcı için kalkar
+  const alerts = await orderAlertsFor(user, orders.map((o) => o.id), { messages: true });
   const groups = new Map<string, Row[]>();
   for (const o of orders) {
     const day = o.profile?.pickupDate ?? o.estimatedShipDate;
@@ -219,6 +222,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                         <td>
                           <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>
                           <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
+                          <OrderAlert n={alerts.get(o.id)} text={t('orders.alerts.customer')} label={t('orders.alerts.unread', { n: alerts.get(o.id) ?? 0 })} href={`/siparisler/${o.id}`} />
                           {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div>
                         </td>
                         {o.profile ? (() => {
