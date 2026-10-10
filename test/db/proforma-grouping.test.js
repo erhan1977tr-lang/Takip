@@ -134,7 +134,7 @@ dbTest('sipariş proforması: aynı teknik cam tek satır (farklı ölçü / fiy
   // Aynı teklif yeniden hesaplanırsa aynı satırlar (belirleyici)
   const full = await db.order.findUnique({ where: { id: o.id }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
   const offer = full.offers[0];
-  assert.deepEqual(g.proformaLines(offer), g.proformaLines(structuredClone(offer)));
+  assert.deepEqual(g.proformaLines(offer), g.proformaLines({ lines: offer.lines.map((l) => ({ ...l, offerPrice: l.offerPrice == null ? null : String(l.offerPrice) })) }));
   // Nihai fatura satırları değişmedi: yalnızca cam (CNC / delik / sandık cama eklenir), aynı ad bir grup
   const inv = g.invoiceLines(offer, RATE, 21);
   assert.deepEqual(inv.map((l) => [l.name, l.qty]), [['Sticla 8 mm', 4.5], ['Sticla 44.2', 0.78], ['Sticla 10 mm', 1]]);
