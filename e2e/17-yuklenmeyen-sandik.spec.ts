@@ -169,10 +169,10 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   const foot = (p: Page) => p.locator('.card#gun .firm-table > tfoot tr');
   const numbers = async (p: Page, a: string, b: string) => [await cells(firmRow(p, a)), await cells(firmRow(p, b)), await cells(foot(p))];
   // Yerleşimden önce: cam 20 kg/m² — Ünsal 10 m² = 200 kg (1 tahmini sandık, brüt 250); Beta 3 m² = 60 kg (kendi sandığı, brüt 110)
-  const before = [['1', '10', '–', '–', '10,00', '200', '1', '250'], ['1', '3', '–', '–', '3,00', '60', '1', '110'], ['2', '13', '–', '–', '13,00', '260', '2', '360']];
+  const before = [['1', '10', '–', '–', '10,000', '200', '1', '250'], ['1', '3', '–', '–', '3,000', '60', '1', '110'], ['2', '13', '–', '–', '13,000', '260', '2', '360']];
   // Ev sahibi seçildikten sonra (sandık seçilmeden de): sipariş Ünsal'ın satırında kalır (1 sipariş · 10 cam · 10 m²); camı Beta'nın
   // sandıklarıyla gider — ağırlık Beta'da, Ünsal'a sandık açılmaz; gün toplamında tek sandık, cam ağırlığı bir kez
-  const hosted = [['1', '10', '–', '–', '10,00', '0', '0', '0'], ['1', '3', '–', '–', '3,00', '260', '1', '310'], ['2', '13', '–', '–', '13,00', '260', '1', '310']];
+  const hosted = [['1', '10', '–', '–', '10,000', '0', '0', '0'], ['1', '3', '–', '–', '3,000', '260', '1', '310'], ['2', '13', '–', '–', '13,000', '260', '1', '310']];
   expect(await numbers(page, uns.name, beta.name)).toEqual(before);
   await expect(page.locator('#gun .guest-waiting')).toHaveCount(0);
   await expect(page.locator('.cal-day.sel .cal-count')).toHaveText('2');
@@ -293,7 +293,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   expect(await numbers(page, uns.name, beta.name)).toEqual(hosted);
   // Ana satır = alt siparişlerin toplamı
   await expect(uOrders.locator('tfoot')).toContainText('Toplam · 1 sipariş');
-  expect((await uOrders.locator('tfoot td').allInnerTexts()).slice(1, 5).map((s) => s.trim())).toEqual(['10', '–', '–', '10,00']);
+  expect((await uOrders.locator('tfoot td').allInnerTexts()).slice(1, 5).map((s) => s.trim())).toEqual(['10', '–', '–', '10,000']);
   await shot(page, 'baska-musterinin-sandigi');
   // Fatura: sipariş gerçek müşterisinin bölümünde; ev sahibinin faturasında yok
   await expect(page.locator(`#faturalama section.bill-customer[data-customer="${uns.id}"]`)).toContainText('Comanda UNS7701');
@@ -509,7 +509,7 @@ test('özel durum kaldırılınca normal sandık yönetimi: misafir yerleşim ka
   const cells = async (row: Locator) => Promise.all(COLS.map(async (c) => (await row.locator(`td[data-col="${c}"]`).innerText()).trim().split(/\s/)[0]));
   expect([
     await cells(firmOf(admin, uns.name).locator('tr.firm-row')), await cells(firmOf(admin, beta.name).locator('tr.firm-row')), await cells(admin.locator('.card#gun .firm-table > tfoot tr')),
-  ]).toEqual([['1', '10', '–', '–', '10,00', '200', '1', '250'], ['1', '3', '–', '–', '3,00', '60', '1', '110'], ['2', '13', '–', '–', '13,00', '260', '2', '360']]);
+  ]).toEqual([['1', '10', '–', '–', '10,000', '200', '1', '250'], ['1', '3', '–', '–', '3,000', '60', '1', '110'], ['2', '13', '–', '–', '13,000', '260', '2', '360']]);
   await expect(admin.locator('#gun .guest-waiting')).toHaveCount(0);
   await expect(admin.locator('.cal-day.sel .cal-guests'), 'misafir yük kalmadı: kırmızı gösterge yok').toHaveCount(0);
   const own = await openFirm(firmOf(admin, uns.name), 'crates');

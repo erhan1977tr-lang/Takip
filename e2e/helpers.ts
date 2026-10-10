@@ -324,13 +324,18 @@ export async function seeSections(page: Page, selectors: string[]) {
 
 /**
  * Tahmini yükleme tarihi — Sipariş Bilgileri'nde satır içi düzenleme (karar 230): "Değiştir" → tarih → "Kaydet" →
- * eski → yeni onay penceresi kabul edilir. Onay metni döndürülür.
+ * eski → yeni onay penceresi (sayfa as() ile açılmış olmalı: pencereyi ortak işleyici kabul eder). Onay metni döndürülür.
  */
 export async function setShipDate(page: Page, day: string): Promise<string> {
-  await page.locator('[data-ship-edit]').click();
   const form = page.locator('[data-ship-form]');
+  // İstemci bileşeni: sayfa etkileşime hazır olana kadar yinelenir
+  await expect(async () => {
+    if (!(await form.isVisible())) await page.locator('[data-ship-edit]').click();
+    await expect(form).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await form.locator('#ship-date').fill(day);
-  const message = new Promise<string>((resolve) => page.once('dialog', (d) => { resolve(d.message()); void d.accept(); }));
+  // Onay penceresini as() içindeki ortak işleyici kabul eder; burada yalnızca metni okunur
+  const message = new Promise<string>((resolve) => page.once('dialog', (d) => resolve(d.message())));
   await form.getByRole('button', { name: 'Kaydet' }).click();
   return message;
 }

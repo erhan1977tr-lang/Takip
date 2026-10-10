@@ -117,10 +117,10 @@ test('yönetici: onaylı günün Faturalama bölümü — müşteri başına ön
   // Satır = FGO açıklaması: kaynak sipariş numarasıyla; CNC ait olduğu cam satırına eklenir (fatura kuralı)
   const rows = direct.locator('tr.glass-row');
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0)).toContainText('Comanda FTR1 — Sticlă securizată 10 mm');
+  await expect(rows.nth(0)).toContainText('Comanda FTR1 — Sticla 10 mm');
   await expect(rows.nth(0)).toContainText('120,00');
   // Kısmi yükleme: 10 adedin yalnızca yüklenen 8'i (8 m², 400 EUR)
-  await expect(rows.nth(1)).toContainText('Comanda FTR2 — Sticlă securizată 10 mm');
+  await expect(rows.nth(1)).toContainText('Comanda FTR2 — Sticla 10 mm');
   await expect(rows.nth(1).locator('td').nth(1)).toHaveText('8');
   await expect(rows.nth(1)).toContainText('400,00');
   // 520 EUR × 5,1000 → 2.652,00 + TVA = 3.208,92 RON

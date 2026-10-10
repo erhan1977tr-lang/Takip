@@ -249,9 +249,9 @@ test('fatura: seçim fatura grubu başınadır; yalnızca seçilen siparişlerin
   await expect(orderRow(direct, 'SCM53')).toContainText('seçilmedi — bu belgeye girmez');
   const rows = direct.locator('tr.glass-row:not(.bill-storno)');
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0)).toContainText('Comanda SCM51 — Sticlă securizată 10 mm');
+  await expect(rows.nth(0)).toContainText('Comanda SCM51 — Sticla 10 mm');
   // Kısmi yükleme: SCM52'nin yalnızca yüklenen 8 adedi (400 EUR)
-  await expect(rows.nth(1)).toContainText('Comanda SCM52 — Sticlă securizată 10 mm');
+  await expect(rows.nth(1)).toContainText('Comanda SCM52 — Sticla 10 mm');
   await expect(rows.nth(1).locator('td').nth(1)).toHaveText('8');
   await expect(rows.nth(1)).toContainText('400,00');
   await expect(direct.locator('.stats')).toContainText('500,00');
@@ -288,7 +288,7 @@ test('fatura: seçim fatura grubu başınadır; yalnızca seçilen siparişlerin
   const doc = await fgo.issue(made.batchId);
   expect(fgo.calls).toHaveLength(1);
   const sent = fgo.calls[0];
-  expect(fgo.names(sent)).toEqual(['Comanda SCM51 — Sticlă securizată 10 mm', 'Comanda SCM52 — Sticlă securizată 10 mm']);
+  expect(fgo.names(sent)).toEqual(['Comanda SCM51 — Sticla 10 mm', 'Comanda SCM52 — Sticla 10 mm']);
   expect([sent['Continut[0][NrProduse]'], sent['Continut[1][NrProduse]'], sent['Continut[1][PretTotal]']], 'SCM52: yalnızca yüklenen 8 adet').toEqual(['2', '8', '2468.40']);
   for (const no of ['SCM53', 'SCM54', 'SCM55']) expect(JSON.stringify(sent), `${no} faturada yok`).not.toContain(no);
   expect(`${doc.series}${doc.number}`).toBe('GKH990201');
@@ -440,7 +440,7 @@ test('Cam Tahsilat: kalıcı "FATURA BEKLİYOR" listesi — uyarı günü ayara 
   // Kapanış faturası KESİLDİ: uyarı kendiliğinden kalkar
   const invDoc = await fgo.issue(queued.batchId);
   expect(invDoc.kind).toBe('INVOICE');
-  expect(fgo.names(fgo.calls[1])).toEqual(['Comanda SCM55 — Sticlă securizată 10 mm', 'Stornare avans conform factură GKH990301']);
+  expect(fgo.names(fgo.calls[1])).toEqual(['Comanda SCM55 — Sticla 10 mm', 'Stornare avans conform factură GKH990301']);
   await page.goto(RECEIVABLES);
   await expect(row('SCM55')).toHaveCount(0);
 
@@ -452,7 +452,7 @@ test('Cam Tahsilat: kalıcı "FATURA BEKLİYOR" listesi — uyarı günü ayara 
   expect(later).toMatchObject({ ok: true, orders: 1 });
   if (!later.ok) throw new Error(later.code);
   await fgo.issue(later.batchId);
-  expect(fgo.names(fgo.calls[2])).toEqual(['Comanda SCM53 — Sticlă securizată 10 mm']);
+  expect(fgo.names(fgo.calls[2])).toEqual(['Comanda SCM53 — Sticla 10 mm']);
   await page.goto(RECEIVABLES);
   await expect(row('SCM53')).toHaveCount(0);
   await expect(row('SCM54')).toHaveCount(1);

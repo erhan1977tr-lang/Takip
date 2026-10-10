@@ -97,13 +97,13 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   const b = firmOf(page, beta.name);
   // Ünsal: 3 sipariş · 6 cam · CNC 2 · delik 4 · 8 m²; camı 7 m² × 20 kg = 140 kg (misafir 1 m² Beta'da) · 1 tahmini sandık · brüt 190
   const ux = await cells(u, [...NUM, 'factory', 'offer']);
-  expect(ux.map((s, i) => (i === 6 ? s.split(/\s/)[0] : s))).toEqual(['3', '6', '2', '4', '8,00', '140', '1', '190', '314,00 EUR', '440,00 EUR']);
+  expect(ux.map((s, i) => (i === 6 ? s.split(/\s/)[0] : s))).toEqual(['3', '6', '2', '4', '8,000', '140', '1', '190', '314,00 EUR', '440,00 EUR']);
   // Beta: 1 sipariş · 4 cam · 2 m²; kendi camı 40 kg + misafir 20 kg = 60 · 1 sandık · brüt 110; tutarlar RON
   const bx = await cells(b, [...NUM, 'factory', 'offer']);
-  expect(bx.map((s, i) => (i === 6 ? s.split(/\s/)[0] : s))).toEqual(['1', '4', '–', '–', '2,00', '60', '1', '110', '300,00 RON', '400,00 RON']);
+  expect(bx.map((s, i) => (i === 6 ? s.split(/\s/)[0] : s))).toEqual(['1', '4', '–', '–', '2,000', '60', '1', '110', '300,00 RON', '400,00 RON']);
   // Gün toplamı: tutarlar para birimi başına alt alta (toplanmaz)
   const foot = (await table.locator(':scope > tfoot td').allInnerTexts()).map((s) => s.trim());
-  expect(foot.slice(0, 11)).toEqual(['Toplam', '4', '10', '2', '4', '10,00', '200', '2', '300', '314,00 EUR\n300,00 RON', '440,00 EUR\n400,00 RON']);
+  expect(foot.slice(0, 11)).toEqual(['Toplam', '4', '10', '2', '4', '10,000', '200', '2', '300', '314,00 EUR\n300,00 RON', '440,00 EUR\n400,00 RON']);
 
   // Alt siparişler: Sipariş No | Cam | CNC | Delik | Toplam m² | Fabrika Satış | Teklif Tutarı; toplam satırı = ana satır
   const uo = await openFirm(u);
@@ -111,15 +111,15 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   expect(await heads(uo.locator('thead th'))).toEqual(['Sipariş No', 'Cam', 'CNC', 'Delik', 'Toplam m²', 'Fabrika Satış', 'Teklif Tutarı']);
   await expect(uo.locator('tbody tr[data-order]')).toHaveCount(3);
   const sub = async (no: string) => (await uo.locator(`tr[data-order="${ids[no]}"] td`).allInnerTexts()).slice(1).map((s) => s.trim());
-  expect(await sub('UNS8601')).toEqual(['3', '2', '4', '3,00', '129,00 EUR', '190,00 EUR']);
-  expect(await sub('UNS8602')).toEqual(['2', '–', '–', '4,00', '148,00 EUR', '200,00 EUR']);
-  expect(await sub('UNS8603')).toEqual(['1', '–', '–', '1,00', '37,00 EUR', '50,00 EUR']);
+  expect(await sub('UNS8601')).toEqual(['3', '2', '4', '3,000', '129,00 EUR', '190,00 EUR']);
+  expect(await sub('UNS8602')).toEqual(['2', '–', '–', '4,000', '148,00 EUR', '200,00 EUR']);
+  expect(await sub('UNS8603')).toEqual(['1', '–', '–', '1,000', '37,00 EUR', '50,00 EUR']);
   await expect(uo.locator(`tr[data-order="${ids.UNS8603}"] .guest-badge`)).toContainText(`sandık bekliyor → ${beta.name}`);
   const subFoot = (await uo.locator('tfoot td').allInnerTexts()).map((s) => s.trim());
-  expect(subFoot).toEqual(['Toplam · 3 sipariş', '6', '2', '4', '8,00', '314,00 EUR', '440,00 EUR']);
+  expect(subFoot).toEqual(['Toplam · 3 sipariş', '6', '2', '4', '8,000', '314,00 EUR', '440,00 EUR']);
   expect(subFoot.slice(1), 'ana satır = alt siparişlerin toplamı').toEqual([ux[1], ux[2], ux[3], ux[4], ux[8], ux[9]]);
   const bo = await openFirm(b);
-  expect((await bo.locator(`tr[data-order="${ids.BET8604}"] td`).allInnerTexts()).slice(1).map((s) => s.trim())).toEqual(['4', '–', '–', '2,00', '300,00 RON', '400,00 RON']);
+  expect((await bo.locator(`tr[data-order="${ids.BET8604}"] td`).allInnerTexts()).slice(1).map((s) => s.trim())).toEqual(['4', '–', '–', '2,000', '300,00 RON', '400,00 RON']);
   await shot(page, 'yukleme-firma-tablosu');
   await shot(page, 'yukleme-firma-tablosu', true);
   // Kapat: alt siparişler gizlenir
