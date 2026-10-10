@@ -260,7 +260,7 @@ export function orderChain(docs, payments = []) {
  *   kararı beklenir (payment_after_invoice) — kural ürün sahibine soruldu; yanlış belge kesilmez.
  *   wait: cancelled | batch | done (eski sipariş düzeyi kapanış faturası var) | pending | no_offer | final_from_loading |
  *         advance_required (onaylı yüklemesi var + avansı kesilmemiş tahsilat: önce avans faturası) | payment_after_invoice
- * @param {{ status: string, loaded: boolean, docs: { kind: string, seq?: number | null, paid?: unknown, total?: unknown, advanced?: unknown }[], pending?: string[], hasOffer: boolean, inBatch?: boolean, payments?: { ron: unknown, voidedAt?: unknown }[] }} p
+ * @param {{ status: string, loaded: boolean, docs: { kind: string, seq?: number | null, paid?: unknown, total?: unknown, advanced?: unknown }[], pending?: string[], hasOffer: boolean, inBatch?: boolean, payments?: { ron: unknown, voidedAt?: unknown }[], invoiced?: boolean }} p
  * @returns {{ actions: ('proforma' | 'advance')[], wait: string | null, paid: number, manualRon: number, advanced: number, advanceRequired: number, basis: string, match: string }}
  */
 export function billingState({ status, loaded, docs, pending = [], hasOffer, inBatch = false, payments = [], invoiced = false }) {
