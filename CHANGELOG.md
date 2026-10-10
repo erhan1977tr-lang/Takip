@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.73.3 — 10.10.2026
+
+P7 — canlıya geçiş hazırlığı (karar 250). Uygulama davranışı değişmedi.
+
+- `docs/canliya-gecis-p7.md`: değişen paketler, migration analizi (yalnızca `20261010124850_ci`, ekleme), salt okunur ön
+  kontroller, yayın ve yayın sonrası adımlar, FGO açısından geri dönüş sınırları, GO / NO-GO listesi, operatör komutları,
+  güvenlik testi (Strix) kapsamı ve açık riskler.
+- `deploy/canliya-gecis/p7-onkontrol.sql` ve `p7-geri-donus.sql`: yalnızca SELECT, READ ONLY işlem. Gerçek şemada hatasız
+  çalıştıkları ve yazma içermedikleri veritabanı testiyle denetlenir.
+
 ## 3.73.2 — 10.10.2026
 
 P7 — yedek alarmı ve bekçi (karar 249). Şema değişmedi; mevcut yedekleme, şifreleme ve saklama kuralları aynen.
