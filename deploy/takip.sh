@@ -4,7 +4,7 @@
 #   takip durum                      yayındaki sürüm, son güncellemeler, servisler
 #   takip guncelle                   GitHub'da testlerden geçmiş yeni sürüm varsa hemen yayınla
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
-#   takip yonetici E-POSTA "AD" [--reset]   yönetici hesabı aç (ya da şifresini sıfırla) → tek kullanımlık kod
+#   takip yonetici E-POSTA "AD"     YENİ yönetici hesabı aç → tek kullanımlık kod (var olan hesabın rolü / şifresi değişmez)
 #   takip yonetici-kurtar E-POSTA    VAR OLAN yönetici hesabına acil erişim: yeni şifre (gizli girilir), oturumlar kapanır
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
@@ -713,7 +713,8 @@ cmd_smtp() {
 cmd_admin() {
   local email=${1:-} name=${2:-} factory
   if [ $# -ge 2 ]; then shift 2; else shift $#; fi
-  if [ -z "$email" ]; then say 'Kullanım: takip yonetici E-POSTA "Ad Soyad" [--reset]'; return 1; fi
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip yonetici …)."; return 1; }
+  if [ -z "$email" ]; then say 'Kullanım: takip yonetici E-POSTA "Ad Soyad"   (şifresini unutan yönetici: sudo takip yonetici-kurtar E-POSTA)'; return 1; fi
   factory=$(env_get FACTORY_NAME); factory=${factory:-GKH Trading}
   compose run --rm tools node scripts/create-admin.mjs "$email" "$name" --factory "$factory" "$@"
 }

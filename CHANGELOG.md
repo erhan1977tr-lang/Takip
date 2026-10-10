@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.72.2 — 10.10.2026
+
+Kurulum komutu `takip yonetici` güvenli hâle getirildi (karar 247). Şema değişmedi.
+
+- **Sessiz rol yükseltme kapatıldı:** komut artık yalnızca YENİ bir yönetici hesabı açar. Eskiden e-postası bilinen herhangi bir
+  hesap (müşteri, satış, çizim, denetimci, yönetici yardımcısı; pasif hesap da) — davet bekliyorsa hiç seçenek gerekmeden,
+  şifresi varsa `--reset` ile — sessizce yönetici yapılıyor, etkinleştiriliyor ve şifresi silinip yeni kod üretiliyordu. Şimdi
+  var olan hesapta rol, tür, etkinlik, ad ve şifre değişmez; komut nedenini yazıp reddeder.
+- **`--reset` kaldırıldı:** verilirse hiçbir şey değişmez. Şifresini unutan yönetici için tek yol `sudo takip yonetici-kurtar`
+  (karar 246, değişmedi).
+- Şifresini henüz belirlememiş (kodu süresi dolmuş) etkin yönetici için komutu yeniden çalıştırmak yalnızca yeni kod üretir;
+  eski kodlar kapanır.
+- İlk kurulum (`install.sh`) aynı komutla, aynı çıktıyla (`CODE=`) çalışır. Komut artık root ister (diğer sunucu komutları gibi).
+  Kontrol ve yazma tek işlemde, hesap satırı kilitlenerek; her sonuç denetime yazılır (`ADMIN_BOOTSTRAP` mode CREATED /
+  CODE_REISSUED, reddedilen istek `ADMIN_BOOTSTRAP_REFUSED` — yalnızca neden kodu).
+- Testler: karar tablosu ve yapı (birim), gerçek veritabanında ilk kurulum / ek yönetici / her rol için yükseltme denemesi /
+  `--reset` / yarım kalmış kurulum / eşzamanlı açılış / gerçek komut süreci, uçtan uca: müşteri ve yönetici hesapları komuttan
+  sonra değişmeden girer.
+
 ## 3.72.1 — 10.10.2026
 
 - P6 uçtan uca testi: tahmin edilen kurtarma adreslerinin 404 olduğu denetlenir; Next'in 404 sayfası istenen yolu kendi

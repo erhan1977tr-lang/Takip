@@ -186,7 +186,7 @@ EOF
   # ---------- 6. yönetici ----------
   local code=""
   if admin_exists "$BASE"; then
-    ok "Yönetici hesabı zaten var (unutulursa: takip yonetici E-POSTA \"AD\" --reset)"
+    ok "Yönetici hesabı zaten var (şifre unutulursa: sudo takip yonetici-kurtar E-POSTA)"
   else
     step "İlk yönetici hesabı"
     local out

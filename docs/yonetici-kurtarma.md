@@ -68,5 +68,7 @@ Vazgeçmek için Ctrl+C (hiçbir şey değişmez).
 
   Yöneticinin sonraki girişi Ayarlar → Giriş logları sayfasında görünür.
 - Hesabın ele geçirildiğinden şüpheleniliyorsa kurtarmadan sonra hesabın son işlemlerini denetim kaydından gözden geçirin.
-- İlk kurulumdaki `takip yonetici E-POSTA "AD" [--reset]` komutu ayrıdır. O komut yeni yönetici açar ve tek kullanımlık kod
-  üretir. Acil kurtarma için `yonetici-kurtar` kullanın.
+- İlk kurulumdaki `takip yonetici E-POSTA "AD"` komutu ayrıdır (karar 247): yalnızca YENİ yönetici hesabı açar ve tek
+  kullanımlık kod üretir. Var olan hesabın rolünü, türünü, etkinliğini ya da şifresini değiştirmez; eski `--reset` seçeneği
+  kaldırıldı (verilirse hiçbir şey değişmeden reddedilir). Şifresini henüz belirlememiş (kodu süresi dolmuş) bir yönetici için
+  komutu yeniden çalıştırmak yalnızca yeni kod üretir. Şifresi olan yönetici için acil erişim yalnızca `yonetici-kurtar`dır.

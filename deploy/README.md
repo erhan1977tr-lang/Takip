@@ -41,7 +41,8 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 |---|---|
 | `takip durum` | Yayındaki sürüm, son güncellemeler, servisler (işçinin kullanıcısı, yükleme dosyalarının sahipliği), disk, yedekler |
 | `takip smtp` | E-posta ayarları (kullanıcılara davet kodu gidebilmesi için gerekli) + deneme e-postası |
-| `takip yonetici E-POSTA "Ad Soyad"` | Yeni yönetici açar; `--reset` ile şifresini sıfırlar. Tek kullanımlık kod ekrana yazılır |
+| `takip yonetici E-POSTA "Ad Soyad"` | Yalnızca YENİ yönetici hesabı açar (var olan hesabın rolü / şifresi değişmez; şifresini henüz belirlememiş yöneticiye yeni kod). Tek kullanımlık kod ekrana yazılır |
+| `takip yonetici-kurtar E-POSTA` | Şifresini unutan VAR OLAN yöneticiye acil erişim (root + terminal; şifre gizli girilir) — `docs/yonetici-kurtarma.md` |
 | `takip guncelle` | Yeni sürüm varsa beklemeden yayınla |
 | `takip yedek` | Hemen yedek al (veritabanı + dosyalar, Google Drive'a kopya) |
 | `takip restore yesterday` / `takip restore 2026-09-30` | O günün en son tam yedeğine geri dön (önce güvenlik yedeği; tarihi yazarak onay) |

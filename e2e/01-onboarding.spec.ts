@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, firstLogin, outboxCodeFor } from './helpers';
 
 // Akış: yönetici ilk girişi → firma → kullanıcı daveti → müşterinin ilk girişi → yetki kontrolü
@@ -101,6 +101,36 @@ test('davet edilen müşteri kodla girer, şifresini belirler ve yalnızca kendi
   await page.fill('#password', CUST_PW);
   await page.click('button[type=submit]');
   await expect(page).toHaveURL(/\/siparisler$/);
+});
+
+test('kurulum komutu var olan hesabın rolünü / şifresini değiştirmez; --reset kaldırıldı (karar 247)', async ({ page }) => {
+  const run = (...args: string[]) => spawnSync('node', ['scripts/create-admin.mjs', ...args], { encoding: 'utf8', env: process.env });
+  // Müşteri hesabı yönetici yapılamaz (davet bekleyen ya da şifreli fark etmez)
+  const promote = run(CUSTOMER, 'Yükseltme Denemesi');
+  expect(promote.status, promote.stdout + promote.stderr).toBe(1);
+  expect(promote.stdout).not.toMatch(/CODE=/);
+  // Şifreli yönetici: --reset de, düz çağrı da reddedilir (acil erişim yalnızca yonetici-kurtar)
+  for (const args of [[ADMIN, 'E2E Yönetici', '--reset'], [ADMIN, 'E2E Yönetici']]) {
+    const r = run(...args);
+    expect(r.status, args.join(' ')).toBe(1);
+    expect(r.stderr).toMatch(/yonetici-kurtar/);
+    expect(r.stdout).not.toMatch(/CODE=/);
+  }
+  // Müşteri hâlâ yalnızca kendi paneline girer; yönetici eski şifresiyle girer
+  await page.goto('/login');
+  await page.fill('#email', CUSTOMER);
+  await page.fill('#password', CUST_PW);
+  await page.click('button[type=submit]');
+  await expect(page.getByText('Müşteri · Ünsal Cam')).toBeVisible();
+  await page.goto('/admin/users');
+  await expect(page).toHaveURL(/\/siparisler$/);
+  await page.click('text=Çıkış');
+  await page.fill('#email', ADMIN);
+  await page.fill('#password', ADMIN_PW);
+  await page.click('button[type=submit]');
+  await expect(page).toHaveURL(/\/siparisler$/);
+  await page.goto('/admin/users');
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar', exact: true })).toBeVisible();
 });
 
 test('mobil görünümde menü üstte yatay listelenir', async ({ browser }) => {

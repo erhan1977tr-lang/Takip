@@ -72,6 +72,8 @@ npm run dev                   # http://localhost:3000
 ```
 
 `create-admin` ekrana tek kullanımlık bir kod yazar. Girişte e-postanızı yazıp şifreyi boş bırakın, kodu girin ve şifrenizi belirleyin.
+Komut yalnızca YENİ yönetici hesabı açar; var olan bir hesabın rolünü ya da şifresini değiştirmez (karar 247). Şifresini
+unutan yönetici için sunucuda `sudo takip yonetici-kurtar E-POSTA` kullanılır (`docs/yonetici-kurtarma.md`).
 
 ## Testler
 
