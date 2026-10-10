@@ -375,6 +375,17 @@ test('yükleme özeti (P3 — karar 241): rol bazlı sayfa / fiyat / ad; yetkisi
     return all;
   };
 
+  // Gerçek gönderimde olduğu gibi müşteri tutarı Price kaydında da dursun (denetimcinin firma tutarı bu kayıttan — karar 237)
+  const db = await prisma();
+  try {
+    const adminUser = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
+    for (const [no, amount] of [['UNS8601', '190.00'], ['UNS8602', '200.00'], ['UNS8603', '50.00'], ['BET8604', '400.00']] as const) {
+      await db.price.upsert({ where: { orderId: ids[no] }, create: { orderId: ids[no], amount, setById: adminUser.id }, update: { amount } });
+    }
+  } finally {
+    await db.$disconnect();
+  }
+
   // Yönetici: Firmalar + Döküm (müşteri fiyatı) + Döküm (Fabrika); tam ad
   const admin = await as(browser, ADMIN, ADMIN_PW);
   const a = await get(admin);
