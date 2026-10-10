@@ -76,8 +76,8 @@ export const dueDayOf = (startDay, days) => addDays(startDay, days);
 /**
  * Uyarı günü gelmiş ve kapanış faturası kesilmemiş kapsamlar (onay + sipariş), en eski yükleme önce. day: yükleme günü ·
  * confirmedDay: "Yükleme yapıldı" kaydının günü (sayacın başlangıcı) · dueDay = confirmedDay + gün · daysSince: confirmedDay'den beri.
- *   note: neden hâlâ açık (yalnızca bilgi) — null: fatura kesilebilir · ORDER_CHAIN: sipariş kendi belge zincirinde (fatura
- *   sipariş sayfasından) · PROFORMA_NOT_ISSUED: müşteri proforması kesilemedi / kuyrukta · INVOICE_QUEUED / INVOICE_FAILED:
+ *   note: neden hâlâ açık (yalnızca bilgi) — null: fatura kesilebilir · ORDER_PENDING: siparişin kendi belge isteği kuyrukta (kesilince
+ *   fatura yükleme gününden) · PROFORMA_NOT_ISSUED: müşteri proforması kesilemedi / kuyrukta · INVOICE_QUEUED / INVOICE_FAILED:
  *   fatura isteği kuyrukta / kesilemedi.
  * @param {any} db
  * @param {{ now?: Date, days?: number }} [o]  days verilmezse ayardan okunur
@@ -140,7 +140,9 @@ export async function uninvoicedLoadings(db, { now = new Date(), days = undefine
       note = sc.batch.status === 'FAILED' ? 'INVOICE_FAILED' : 'INVOICE_QUEUED';
     } else if (sc.state === 'EXCLUDED') {
       // Faturalanamayan kapsam uyarı üretmez (kalem yok / para birimi dışı / muhasebe işlemi bekleyen dondurma)
-      if (sc.reason !== 'ORDER_CHAIN' && sc.reason !== 'PROFORMA_NOT_ISSUED') continue;
+      // Siparişin kendi belge isteği kuyrukta / müşteri proforması kesilmedi: kapsam açık (bilgi notuyla); eski sipariş düzeyi
+      // kapanış faturası (ORDER_INVOICED) kapsamı kapatmıştır — sorgu da onu dışlar
+      if (sc.reason !== 'ORDER_PENDING' && sc.reason !== 'PROFORMA_NOT_ISSUED') continue;
       note = sc.reason;
     }
     out.push({

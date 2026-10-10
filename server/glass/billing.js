@@ -13,8 +13,12 @@
 //     avans faturası (seq 1, 2, …). Avansı kesilmemiş tahsilat varken kapanış faturası KESİLMEZ.
 //   - Belge kesme sonucu belirsiz kalırsa (zaman aşımı, 5xx …) iş körlemesine yeniden denenmez: yönetici FGO'ya bakıp
 //     karar verir (server/finance/uncertain.js, karar 209).
-//   - Cam yüklendi = yükleme gününden (gerçek, yoksa tahmini) 2 gün sonra.
-//   - Yüklenince kapanış faturası: cam satırları + her avans için onu düşen eksi satır ("Stornare avans").
+//   - Nihai (kapanış) fatura SİPARİŞ DÜZEYİNDE KESİLMEZ (P1, karar 239 — eski "yükleme günü + 2 gün" kuralının ve sipariş
+//     sayfasındaki "Fatura Gönder" düğmesinin yerine): nihai fatura yalnızca onaylı yüklemeden, yükleme gününün Faturalama
+//     kartında kesilir (server/glass/invoice-batch.js) — yalnızca o onayda YÜKLENEN ve henüz faturalanmamış miktar; kısmi
+//     yüklemede kısmi fatura; ödeme şartı yok. Siparişin kendi proforması varsa o fatura siparişin zincirindedir (kur =
+//     proformanın kuru, avans faturaları "Stornare avans" eksi satırıyla düşülür). Eski sipariş düzeyi fatura belgeleri
+//     (FgoDocument INVOICE) okunur, yenisi istenemez; kuyrukta kalmış eski bir istek FGO'ya gitmeden reddedilir.
 //   - Kur: müşterinin kur politikası (server/fx/resolve.js); proformada çözülür ve saklanır, avans ve kapanış faturası
 //     proformanın kuruyla; proforma yoksa fatura kesilirken çözülür.
 //   - Günlük belge sınırı (deneme güvenliği) FGO ayarlarında.
@@ -39,18 +43,27 @@ import { glassLabel } from '../catalog/glass.js';
 export const GLASS_FGO = 'FGO_GLASS';
 // Müşteriye belge e-postası (tek sahibi TAKİP): server/documents/delivery.js. Eski içe aktarmalar için buradan da verilir.
 export { DOC_EMAIL, dispatchDocEmails, renderDocEmail } from '../documents/delivery.js';
-export const LOADED_AFTER_DAYS = 2;
 export const KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE'];
 const SUFFIX = { PROFORMA: 'P', ADVANCE: 'A', INVOICE: 'F' };
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-/** Cam yüklendi mi: yükleme günü + 2 gün ≤ bugün (bugün: "YYYY-MM-DD") */
-export function isLoaded(order, today) {
-  const d = order.actualShipDate ?? order.estimatedShipDate;
-  if (!d) return false;
-  const x = new Date(`${new Date(d).toISOString().slice(0, 10)}T12:00:00Z`);
-  x.setUTCDate(x.getUTCDate() + LOADED_AFTER_DAYS);
-  return x.toISOString().slice(0, 10) <= today;
+/**
+ * Siparişin onaylı yükleme kaydı var mı (herhangi bir onayda — yüklenen ya da yüklenmeyen kalem; düzeltmeler dahil). Tarih
+ * değil kayıt (karar 92, 239): onaylı yüklemesi olan siparişe sipariş düzeyi proforma kesilmez; nihai fatura yükleme
+ * gününün Faturalama kartındadır. Tahmini yükleme tarihi kilidiyle aynı soru (server/orders/ship-date.js).
+ * @param {any} db  @param {string} orderId
+ */
+export async function hasConfirmedLoading(db, orderId) {
+  return (await db.loadingConfirmationItem.count({ where: { orderId } })) > 0;
+}
+
+/**
+ * Siparişin kendi zincirinden onaylı yüklemeyle nihai fatura istendi / kesildi mi (geçersiz kılınmamış INVOICE partisi,
+ * BillingBatch.chainOrderId — karar 239). Varsa proformaya sonradan görünen tahsilat otomatik avans sayılmaz.
+ * @param {any} db  @param {string} orderId
+ */
+export async function hasChainInvoice(db, orderId) {
+  return (await db.billingBatch.count({ where: { chainOrderId: orderId, kind: 'INVOICE', status: { not: 'VOID' } } })) > 0;
 }
 
 /** Müşteriye gönderilmiş son teklif */
@@ -235,28 +248,36 @@ export function orderChain(docs, payments = []) {
 }
 
 /**
- * Düğmeler (yönetici). docs: siparişin FgoDocument'leri; pending: kuyruktaki belge türleri.
- * inBatch: sipariş etkin bir müşteri partisinde (müşteri proforması, karar 100) — aynı ticari tutar iki belgeyle
- * faturalanmasın diye sipariş başına hiçbir belge istenemez; yükleme sonrası fatura müşteri düzeyinde kesilecek (7D-3).
- * Avans (karar 104): proformada avansı kesilmemiş FGO tahsilatı varsa — yüklemeden önce de sonra da — tek düğme "avans
- * faturası"dır; o tahsilatın avansı kesilmeden kapanış faturası istenemez (wait: advance_required).
+ * Sipariş sayfasının belge düğmeleri (yönetici). docs: siparişin FgoDocument'leri; pending: kuyruktaki belge türleri.
+ * inBatch: sipariş etkin bir müşteri PROFORMA partisinde (karar 100) — sipariş başına belge istenemez. (Onaylı yüklemeden
+ * kesilen müşteri faturası partisi bunu sayılmaz: siparişin kendi proforma zinciri o faturadan sonra da avans alabilir.)
+ * loaded: siparişin onaylı yükleme kaydı var (hasConfirmedLoading) — sipariş düzeyi proforma artık istenemez.
+ * Avans (karar 104, 207): proformada avansı kesilmemiş tahsilat varsa — yüklemeden önce de sonra da — "avans faturası".
+ * Nihai fatura burada YOKTUR (P1, karar 239): onaylı yüklemeden, yükleme gününün Faturalama kartında kesilir; ödeme şartı
+ * yoktur. Avansı kesilmemiş tahsilat varken o fatura da kesilmez (önce avans — invoice-batch ADVANCE_REQUIRED).
+ * invoiced: siparişin zincirinden onaylı yüklemeyle kesilmiş (ya da kuyruktaki) nihai fatura var. O zaman proformaya sonradan
+ *   görünen tahsilat KENDİLİĞİNDEN avans sayılmaz (faturalanmış malın ödemesi olabilir): avans düğmesi çıkmaz, muhasebe
+ *   kararı beklenir (payment_after_invoice) — kural ürün sahibine soruldu; yanlış belge kesilmez.
+ *   wait: cancelled | batch | done (eski sipariş düzeyi kapanış faturası var) | pending | no_offer | final_from_loading |
+ *         advance_required (onaylı yüklemesi var + avansı kesilmemiş tahsilat: önce avans faturası) | payment_after_invoice
  * @param {{ status: string, loaded: boolean, docs: { kind: string, seq?: number | null, paid?: unknown, total?: unknown, advanced?: unknown }[], pending?: string[], hasOffer: boolean, inBatch?: boolean, payments?: { ron: unknown, voidedAt?: unknown }[] }} p
- * @returns {{ actions: ('proforma' | 'advance' | 'invoice')[], wait: string | null, paid: number, manualRon: number, advanced: number, advanceRequired: number, basis: string, match: string }}
+ * @returns {{ actions: ('proforma' | 'advance')[], wait: string | null, paid: number, manualRon: number, advanced: number, advanceRequired: number, basis: string, match: string }}
  */
-export function billingState({ status, loaded, docs, pending = [], hasOffer, inBatch = false, payments = [] }) {
+export function billingState({ status, loaded, docs, pending = [], hasOffer, inBatch = false, payments = [], invoiced = false }) {
   const c = orderChain(docs, payments);
   const res = (actions, wait = null) => ({ actions, wait, paid: c.paid, manualRon: c.manualRon, advanced: c.advanced, advanceRequired: c.advanceRequired, basis: c.basis, match: c.match });
   if (status === 'IPTAL') return res([], 'cancelled');
-  if (inBatch) return res([], 'batch');
+  if (inBatch && !c.proforma) return res([], 'batch');
   if (c.invoice) return res([], 'done');
   if (pending.length) return res([], 'pending');
   if (!hasOffer) return res([], 'no_offer');
-  // FGO'da avansı kesilmemiş tahsilat: önce avans faturası (tutar = tahsilat − avansı kesilen; uydurma tutar yok)
-  if (c.advanceRequired > 0) return res(['advance'], loaded ? 'advance_required' : null);
-  if (loaded) return res(['invoice']);
-  if (!c.proforma) return res(['proforma']);
-  if (c.advances.length) return res([], 'wait_loading');
-  return res([], 'wait_payment');
+  // FGO'da / elle kaydedilmiş, avansı kesilmemiş tahsilat: avans faturası (tutar = tahsilat − avansı kesilen; uydurma yok)
+  // Nihai fatura kesildikten sonra proformada görünen tahsilat: otomatik avans yok (muhasebe kararı)
+  if (c.advanceRequired > 0 && invoiced) return res([], 'payment_after_invoice');
+  // Onaylı yüklemesi varsa: avans kesilmeden nihai fatura (yükleme günü Faturalama kartı) da kesilemez — açık uyarı
+  if (c.advanceRequired > 0) return res(['advance'], loaded ? 'advance_required' : 'final_from_loading');
+  if (!c.proforma) return res(loaded ? [] : ['proforma'], loaded ? 'final_from_loading' : null);
+  return res([], 'final_from_loading');
 }
 
 /**
@@ -287,19 +308,21 @@ export async function requestGlassDocument(db, { orderId, kind, actor, now = new
       where: { id: orderId },
       include: {
         offers: { orderBy: { createdAt: 'desc' }, select: { id: true, status: true } }, fgoDocuments: true, glassBilling: true,
-        billingBatchOrders: { where: { activeKey: { not: null } }, select: { id: true } },
+        // Yalnızca müşteri PROFORMA partisi sipariş başına belgeyi dışlar (onaylı yüklemeden kesilen müşteri faturası değil)
+        billingBatchOrders: { where: { activeKey: { not: null }, batch: { kind: 'PROFORMA' } }, select: { id: true } },
         manualPayments: { where: { batchId: null } },
       },
     });
     if (!order || order.orderTypeCode !== 'GLASS_ORDER') return { ok: false, code: 'NOT_FOUND' };
     const pending = await tx.notificationOutbox.findMany({ where: { orderId, type: GLASS_FGO, status: 'PENDING' } });
     const st = billingState({
-      status: order.status, loaded: isLoaded(order, localDay(now, tz)), docs: order.fgoDocuments,
+      status: order.status, loaded: await hasConfirmedLoading(tx, orderId), docs: order.fgoDocuments, invoiced: await hasChainInvoice(tx, orderId),
       pending: pending.map((p) => p.payload?.kind), hasOffer: order.offers.some((o) => o.status === 'GONDERILDI'),
       inBatch: order.billingBatchOrders.length > 0, payments: order.manualPayments,
     });
-    const action = { PROFORMA: 'proforma', ADVANCE: 'advance', INVOICE: 'invoice' }[kind];
-    if (!st.actions.includes(action)) return { ok: false, code: 'NOT_ALLOWED' };
+    // Sipariş düzeyinde nihai fatura yok (karar 239): INVOICE hiçbir durumda istenemez
+    const action = { PROFORMA: 'proforma', ADVANCE: 'advance' }[kind];
+    if (!action || !st.actions.includes(action)) return { ok: false, code: 'NOT_ALLOWED' };
     // Kur zaten belirlenmişse (proformanın kuru) elle kur yok sayılmaz, reddedilir: saklanan kur değişmez
     const useManual = manual != null && kind !== 'ADVANCE';
     if (useManual && order.glassBilling?.fxRate != null) return { ok: false, code: 'RATE_LOCKED' };
@@ -363,6 +386,9 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
     try {
       if (!fgoReady(settings)) throw new Permanent('FGO kapalı');
       if (!KINDS.includes(kind)) throw new Permanent('bilinmeyen belge türü');
+      // Sipariş düzeyi kapanış faturası kaldırıldı (karar 239): kuyrukta kalmış eski bir istek FGO'ya GİTMEDEN reddedilir —
+      // nihai fatura yalnızca onaylı yüklemeden (yüklenen miktar) kesilir
+      if (kind === 'INVOICE') throw new Permanent('Sipariş düzeyinde kapanış faturası kesilmez: nihai fatura onaylı yüklemeden, yükleme gününün Faturalama kartında kesilir');
       order = await db.order.findUnique({
         where: { id: row.orderId ?? '' },
         include: {
@@ -372,7 +398,11 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       });
       if (!order || order.status === 'IPTAL') throw new Permanent('sipariş yok ya da iptal');
       // İş kuyruktayken sipariş bir müşteri partisine girmiş olamaz (parti bekleyen isteği dışlar); yine de kesimden önce bakılır
-      if (await db.billingBatchOrder.count({ where: { orderId: order.id, activeKey: { not: null } } })) throw new Permanent('Sipariş bir müşteri proformasında; sipariş başına belge kesilmez');
+      if (await db.billingBatchOrder.count({ where: { orderId: order.id, activeKey: { not: null }, batch: { kind: 'PROFORMA' } } })) throw new Permanent('Sipariş bir müşteri proformasında; sipariş başına belge kesilmez');
+      // Onaylı yüklemesi olan siparişe sipariş düzeyi proforma kesilmez (istek anında da denetlenir)
+      if (kind === 'PROFORMA' && await hasConfirmedLoading(db, order.id)) throw new Permanent('Siparişin onaylı yüklemesi var; sipariş düzeyi proforma kesilmez');
+      // Zincirden nihai fatura kesildikten sonra avans faturası kesilmez (tahsilat faturalanmış malın ödemesi olabilir)
+      if (kind === 'ADVANCE' && await hasChainInvoice(db, order.id)) throw new Permanent('Siparişin zincirinden nihai fatura kesildi; sonradan gelen tahsilat için avans faturası kesilmez (muhasebe kararı)');
       // Sipariş başına zincir: proforma ve kapanış faturası tektir; avans faturası sırayla (seq) birden çok olabilir.
       // Ödeme: FGO tahsilatı ve elle kayıtlar (karar 207)
       const chain = orderChain(order.fgoDocuments, order.manualPayments);

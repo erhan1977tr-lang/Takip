@@ -33,6 +33,15 @@
 //   zaten faturalanmış, sipariş zincirinde, muhasebe işlemi bekleyen …) seçilirse fatura oluşturulmaz (NOT_ELIGIBLE).
 //   Seçilmeyen sipariş olduğu gibi kalır ve aynı onaydan sonraki faturaya girer; avans düşümü seçilen faturanın tutarına göredir.
 //
+//   Siparişin KENDİ proforma zinciri (P1, karar 239 — önceki "sipariş sayfasından, siparişin tamamı" kuralının yerine):
+//   kendi proforması (FgoDocument PROFORMA) olan siparişin nihai faturası da BURADAN, aynı hesapla kesilir — yalnızca o
+//   onayda YÜKLENEN ve henüz faturalanmamış kapsam (kısmi yüklemede kısmi fatura; kalan sonraki onayın faturasına girer).
+//   Ödeme şartı yoktur. Zincir siparişin kendisidir: kur = proformanın kur kaydı (GlassBilling, yeniden çözülmez), avans =
+//   siparişin avans faturaları (her biri en çok kendi kalanı kadar, "Stornare avans" eksi satırı; BillingBatchLine.refDocId),
+//   avansı kesilmemiş tahsilat varken fatura kesilmez (ADVANCE_REQUIRED). Her böyle sipariş kendi fatura grubudur (kendi
+//   kuru), parti BillingBatch.chainOrderId taşır. Sipariş düzeyinde istek kuyruktayken (proforma / avans kesiliyor) kapsam
+//   beklenir (ORDER_PENDING); eski sipariş düzeyi kapanış faturası olan sipariş yeniden faturalanmaz (ORDER_INVOICED).
+//
 //   Parti (BillingBatch, kind INVOICE / ADVANCE) değişmez kopyadır; belgeyi işçi yalnızca kayıttan keser
 //   (server/glass/batch.js → dispatchBatchJobs). Tekrar engeli: müşteri + sipariş kilitleri, önizleme parmak izi,
 //   BillingBatch.uniqueKey ve BillingBatchOrder.activeKey (veritabanında benzersiz), FGO IdExtern.
@@ -47,8 +56,8 @@ import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import { dailyLimitReached, fgoReady, getFgoSettings, missingBilling } from '../integrations/fgo.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
-import { GLASS_FGO, glassLines, glassTotals, invoiceLines, netOf } from './billing.js';
-import { BATCH_FGO, coverageOf } from './batch.js';
+import { GLASS_FGO, glassLines, glassTotals, invoiceLines, netOf, orderChain } from './billing.js';
+import { BATCH_FGO } from './batch.js';
 import { centsText, paymentState, toCents } from '../finance/payments.js';
 import { advanceRisk, financeLock, recordDuplicateAck } from '../finance/service.js';
 
@@ -58,8 +67,9 @@ const ddmmyyyy = (day) => day.split('-').reverse().join('.');
 const isUnique = (e) => e?.code === 'P2002';
 const EPS = 0.005;
 
-/** Fatura grubunun kimliği = partinin tekrar anahtarı */
-export const invoiceKeyOf = ({ confirmationId, customerId, currency, chainId }) => `INVOICE:${confirmationId}:${customerId}:${currency}:${chainId ?? 'DIRECT'}`;
+/** Fatura grubunun kimliği = partinin tekrar anahtarı (zincir: müşteri proforması partisi, siparişin kendi zinciri ya da yok) */
+export const invoiceKeyOf = ({ confirmationId, customerId, currency, chainId, orderChainId = null }) =>
+  `INVOICE:${confirmationId}:${customerId}:${currency}:${chainId ?? (orderChainId ? `ORDER-${orderChainId}` : 'DIRECT')}`;
 /** Bir siparişin bir onaydaki yüklenen kapsamı bir kez faturalanır */
 export const invoiceOrderKey = (confirmationId, orderId) => `INVOICE:${confirmationId}:${orderId}`;
 const refOf = (doc) => (doc ? `${doc.series}${doc.number}` : null);
@@ -70,6 +80,59 @@ const fxOfBatch = (b) => ({
   finalRate: Number(b.fxRate).toFixed(4), rate: Number(b.fxRate), source: b.fxSource, sourceDate: new Date(b.fxSourceDate).toISOString().slice(0, 10),
   resolvedAt: new Date(b.fxResolvedAt).toISOString(), manual: b.fxManual === true,
 });
+
+/**
+ * Siparişin proformasının kur kaydı → çözücü sonucu biçimi (siparişin zincirindeki fatura proformanın kurunu kullanır;
+ * yeniden çözülmez — karar 96). Eski kayıtta eksik alanlar kur kaydının kendisinden tamamlanır. Kur yoksa null.
+ * @param {any} b  GlassBilling  @param {string} currency
+ */
+export function fxOfOrderChain(b, currency) {
+  if (!b || b.fxRate == null || !(Number(b.fxRate) > 0)) return null;
+  const day = (d) => new Date(d).toISOString().slice(0, 10);
+  const rateDay = b.fxDate ?? b.fxResolvedAt ?? new Date();
+  return {
+    policy: b.fxPolicy ?? 'MANUAL', currency: b.fxCurrency ?? currency, baseRate: Number(b.fxBaseRate ?? b.fxRate).toFixed(4),
+    markupPercent: b.fxMarkupPercent == null ? null : Number(b.fxMarkupPercent).toFixed(3), finalRate: Number(b.fxRate).toFixed(4), rate: Number(b.fxRate),
+    source: b.fxSource ?? 'MANUAL', sourceDate: day(b.fxSourceDate ?? rateDay), resolvedAt: new Date(b.fxResolvedAt ?? rateDay).toISOString(), manual: b.fxManual === true,
+  };
+}
+
+/** Siparişin proforma kur kaydı → fatura partisinin kur alanları (eski kayıtta eksikler kayıttan tamamlanır) */
+function fxDataOfOrderChain(b, currency) {
+  const rateDay = b.fxDate ?? b.fxResolvedAt ?? new Date();
+  return {
+    fxRate: b.fxRate, fxDate: rateDay, fxSource: b.fxSource ?? 'MANUAL', fxPolicy: b.fxPolicy ?? 'MANUAL', fxCurrency: b.fxCurrency ?? currency,
+    fxBaseRate: b.fxBaseRate ?? b.fxRate, fxMarkupPercent: b.fxMarkupPercent ?? null, fxSourceDate: b.fxSourceDate ?? rateDay,
+    fxResolvedAt: b.fxResolvedAt ?? rateDay, fxManual: b.fxManual === true,
+  };
+}
+
+/**
+ * Siparişin KENDİ proforma zincirinin (sipariş başına FgoDocument'ler) fatura için avans durumu (P1, karar 239). Tahsilat
+ * ve avans tek kuraldan (orderChain — sipariş sayfası, istek ve işçi aynı sonucu kullanır); her avans faturasının kalanı =
+ * avansın tutarı − bu zincirin etkin (VOID olmayan) fatura partilerinde onu düşen satırlar (BillingBatchLine.refDocId).
+ * @param {any} db  @param {{ id: string, fgoDocuments: any[], manualPayments?: any[] }} order
+ */
+export async function orderChainState(db, order) {
+  const c = orderChain(order.fgoDocuments, order.manualPayments ?? []);
+  if (!c.proforma) return null;
+  const ids = c.advances.map((a) => a.id).filter(Boolean);
+  const invoices = await db.billingBatch.count({ where: { chainOrderId: order.id, kind: 'INVOICE', status: { not: 'VOID' } } });
+  const usedRows = ids.length
+    ? await db.billingBatchLine.findMany({ where: { refDocId: { in: ids }, batch: { kind: 'INVOICE', status: { not: 'VOID' } } }, select: { refDocId: true, ronGross: true } })
+    : [];
+  const used = new Map();
+  for (const r of usedRows) used.set(r.refDocId, round2((used.get(r.refDocId) ?? 0) + num(r.ronGross)));
+  const advances = c.advances.map((a) => {
+    const gross = a.total != null ? Number(a.total) : num(a.advanced);
+    const spent = used.get(a.id) ?? 0;
+    return { docId: a.id, ref: refOf(a), gross, used: spent, left: round2(Math.max(0, gross - spent)) };
+  });
+  return {
+    ref: refOf(c.proforma), total: c.proforma.total == null ? null : Number(c.proforma.total), paid: c.paid, manualRon: c.manualRon,
+    advanced: c.advanced, advanceRequired: c.advanceRequired, basis: c.basis, match: c.match, advancePending: false, advances, invoices,
+  };
+}
 
 /**
  * Müşteri proformasının (PROFORMA partisi) avans durumu — tek yerde hesaplanır.
@@ -173,17 +236,17 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
 /**
  * @typedef {{ name: string, pieces: number, m2: number, amount: number, net: number, gross: number }} InvoiceLine
  * @typedef {{ orderId: string, orderNo: string, title: string | null, offerId: string | null, lines: InvoiceLine[], sourceTotal: number, ronNet: number, ronGross: number }} InvoiceOrder
- * @typedef {{ advanceBatchId: string, ref: string | null, gross: number, net: number }} StornoLine
+ * @typedef {{ advanceBatchId: string | null, advanceDocId?: string | null, ref: string | null, gross: number, net: number }} StornoLine
  * @typedef {{ batchId: string, status: string, ref: string | null, link: string | null, total: number | null, paid: number | null, lastError: string | null, orders: string[], impacts: OrderImpact[] }} IssuedInvoice
  * @typedef {{
- *   key: string, currency: string, chainId: string | null,
- *   chain: null | { ref: string | null, total: number | null, paid: number, advanced: number, advanceRequired: number, advancePending: boolean, proformaBatchId: string },
+ *   key: string, currency: string, chainId: string | null, orderChainId: string | null,
+ *   chain: null | { kind: 'BATCH' | 'ORDER', orderId: string | null, ref: string | null, total: number | null, paid: number, advanced: number, advanceRequired: number, advancePending: boolean, proformaBatchId: string | null },
  *   orders: InvoiceOrder[], unselected: { orderId: string, orderNo: string, title: string | null }[], uniqueKey: string,
  *   fx: import('../fx/resolve.js').FxResult | null, fxError: { code: string, error: string } | null,
  *   sourceTotal: number, ronNet: number | null, ronGross: number | null, storno: StornoLine[], payable: number | null,
  *   problems: string[], previewKey: string,
  * }} InvoiceGroup
- * @typedef {{ orderId: string, orderNo: string, reason: 'ORDER_CHAIN' | 'PROFORMA_NOT_ISSUED' | 'CURRENCY' | 'NO_LINES' | 'ACCOUNTING_ACTION', ref: string | null }} ExcludedOrder
+ * @typedef {{ orderId: string, orderNo: string, reason: 'ORDER_PENDING' | 'ORDER_INVOICED' | 'PROFORMA_NOT_ISSUED' | 'CURRENCY' | 'NO_LINES' | 'ACCOUNTING_ACTION', ref: string | null }} ExcludedOrder
  * @typedef {{ customerId: string, name: string, missingBilling: string[], groups: InvoiceGroup[], issued: IssuedInvoice[], excluded: ExcludedOrder[] }} CustomerBilling
  * @typedef {{ ok: true, day: string, confirmationId: string, revision: number, customers: CustomerBilling[] }} LoadingBilling
  */
@@ -217,7 +280,7 @@ function commercialScope(items) {
  * Bir onayın verilen (geçerli ya da düzeltme sonrası olacak) kalemlerindeki yüklenen ticari kapsam, o onaydan kesilmiş
  * etkin fatura partisinin saklı kapsamıyla (BillingBatchLine) sipariş başına karşılaştırılır:
  *   NO_BILLING              : bu onaydan fatura yok (kapsam serbest; fatura geçerli durumdan kesilir)
- *   ORDER_CHAIN             : sipariş başına belge zincirinde (fatura siparişin tamamı için sipariş sayfasından kesilir)
+ *   ORDER_CHAIN             : eski sipariş düzeyi kapanış faturası (siparişin tamamı, sipariş sayfasından — karar 239'dan önce)
  *   QUEUED_BILLING          : fatura kuyrukta (kesilmek üzere) — düzeltme yapılamaz
  *   FAILED_BILLING          : fatura kesilemedi — önce yönetici yeniden dener ya da vazgeçer
  *   NO_FINANCIAL_DIFFERENCE : fatura kesilmiş, yüklenen ticari kapsam aynı
@@ -233,16 +296,14 @@ function commercialScope(items) {
 export async function orderImpacts(db, { confirmationId, items, orderIds = undefined }) {
   const ids = orderIds ?? [...new Set(items.map((i) => i.orderId))];
   if (ids.length === 0) return new Map();
-  const [orders, jobs, covered, rows] = await Promise.all([
+  const [orders, covered, rows] = await Promise.all([
     db.order.findMany({ where: { id: { in: ids } }, select: { id: true, orderNo: true, fgoDocuments: { select: { kind: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } } } }),
-    db.notificationOutbox.findMany({ where: { orderId: { in: ids }, type: GLASS_FGO, status: 'PENDING' }, select: { orderId: true } }),
     db.billingBatchOrder.findMany({
       where: { activeKey: { in: ids.map((id) => invoiceOrderKey(confirmationId, id)) } },
       select: { orderId: true, batch: { select: { id: true, status: true, currency: true, document: true, lines: { select: { orderId: true, pieces: true, amount: true, refBatchId: true } } } } },
     }),
     withRoLabels(db, items.filter((i) => ids.includes(i.orderId))),
   ]);
-  const pending = new Set(jobs.map((j) => j.orderId));
   const out = new Map();
   for (const o of orders) {
     // Teklif sırasıyla: işlem satırları (CNC, delik) faturadaki gibi üstündeki cama eklenir
@@ -250,8 +311,10 @@ export async function orderImpacts(db, { confirmationId, items, orderIds = undef
     const base = { orderId: o.id, orderNo: o.orderNo, batchId: null, ref: null, currency: rows.find((i) => i.orderId === o.id)?.currency ?? null, invoiced: null, effective, diff: 0, invoicePaid: false, advanceDeducted: false };
     const b = covered.find((x) => x.orderId === o.id)?.batch ?? null;
     if (!b) {
-      const own = coverageOf({ fgoDocuments: o.fgoDocuments }, pending.has(o.id));
-      out.set(o.id, { ...base, code: own ? 'ORDER_CHAIN' : 'NO_BILLING', ref: own?.ref ?? null });
+      // Kendi proforma zinciri olan sipariş de onaydan faturalanır (karar 239); yalnızca eski sipariş düzeyi kapanış faturası
+      // siparişin tamamını faturalamıştır
+      const legacy = o.fgoDocuments.find((d) => d.kind === 'INVOICE');
+      out.set(o.id, { ...base, code: legacy ? 'ORDER_CHAIN' : 'NO_BILLING', ref: legacy ? refOf(legacy) : null });
       continue;
     }
     const mine = b.lines.filter((l) => l.orderId === o.id);
@@ -320,13 +383,13 @@ export async function heldReplans(db, replanIds) {
  * "fatura bekliyor" uyarısı (server/accounting/uninvoiced.js) aynı kuralı kullanır; ikinci bir uygunluk kuralı yazılmaz.
  *   IN_INVOICE : kapsam bu onaydan bir fatura partisinde (kuyrukta / kesilmiş / kesilemedi) — yeniden faturalanmaz
  *   EXCLUDED   : müşteri faturasına girmez (reason, ref):
- *     ORDER_CHAIN         — sipariş başına belge zinciri: fatura sipariş sayfasından kesilir. Karar, çift faturalama denetiminin
- *                           tek yeri olan coverageOf'tan gelir (karar 100): yalnızca ŞU AN geçerli bir kapsam (siparişin duran
- *                           FGO belgesi ya da kuyruktaki isteği). FGO'da silinen belge / bırakılan istek kapsamı serbest bırakır.
+ *     ORDER_PENDING       — siparişin kendi belge isteği kuyrukta (proforma / avans kesiliyor): kesilince yeniden bakılır
+ *     ORDER_INVOICED      — eski sipariş düzeyi kapanış faturası siparişin tamamını faturalamış (karar 239'dan önce)
  *     ACCOUNTING_ACTION   — bu güne aktarılıp yüklenen cam kaynağındaki kesilmiş faturada zaten faturalanmış (karar 105)
  *     CURRENCY / NO_LINES — faturalanabilir kalem yok
  *     PROFORMA_NOT_ISSUED — müşteri proforması henüz kesilmedi (kuyrukta / kesilemedi)
- *   OPEN       : faturalanabilir (currency, chainId: müşteri proforması partisi ya da null, offerId)
+ *   OPEN       : faturalanabilir (currency, chainId: müşteri proforması partisi ya da null, orderChainId: siparişin kendi
+ *                proforma zinciri ya da null — karar 239, offerId)
  * @param {{ confirmationId: string, order: any, items: any[], pendingJob: boolean, held: Map<string, string> }} p
  *   items: siparişin bu onaydaki GEÇERLİ yüklenen kalemleri
  */
@@ -334,8 +397,12 @@ export function invoiceScope({ confirmationId, order, items, pendingJob, held })
   const no = (reason, ref = null) => ({ state: /** @type {const} */ ('EXCLUDED'), reason, ref });
   const inv = order.billingBatchOrders.find((b) => b.activeKey === invoiceOrderKey(confirmationId, order.id));
   if (inv) return { state: /** @type {const} */ ('IN_INVOICE'), batch: inv.batch };
-  const own = coverageOf({ fgoDocuments: order.fgoDocuments }, pendingJob);
-  if (own) return no('ORDER_CHAIN', own.ref);
+  // Siparişin kendi belgeleri (karar 239): istek kuyruktaysa beklenir; eski kapanış faturası varsa sipariş faturalanmıştır;
+  // kendi proforması varsa kapsam siparişin zincirinde faturalanır
+  if (pendingJob) return no('ORDER_PENDING');
+  const legacy = order.fgoDocuments.find((d) => d.kind === 'INVOICE');
+  if (legacy) return no('ORDER_INVOICED', refOf(legacy));
+  const ownProforma = order.fgoDocuments.some((d) => d.kind === 'PROFORMA');
   const hold = items.map((i) => (i.replanId ? held.get(i.replanId) : null)).find(Boolean);
   if (hold) return no('ACCOUNTING_ACTION', hold);
   const currency = items[0]?.currency ?? null;
@@ -343,7 +410,7 @@ export function invoiceScope({ confirmationId, order, items, pendingJob, held })
   if (glassLines({ lines: items.map(itemAsLine) }).length === 0) return no('NO_LINES');
   const pro = order.billingBatchOrders.find((b) => b.batch.kind === 'PROFORMA');
   if (pro && pro.batch.status !== 'ISSUED') return no('PROFORMA_NOT_ISSUED');
-  return { state: /** @type {const} */ ('OPEN'), currency, chainId: pro ? pro.batch.id : null, offerId: pro?.offerId ?? null };
+  return { state: /** @type {const} */ ('OPEN'), currency, chainId: pro ? pro.batch.id : null, orderChainId: ownProforma ? order.id : null, offerId: pro?.offerId ?? null };
 }
 
 /** Parmak izi: önizlenen = kesilen (kalemler, kur, avans düşümü) */
@@ -351,7 +418,7 @@ function previewKeyOf(g) {
   const body = JSON.stringify({
     key: g.key, fx: g.fx ? [g.fx.finalRate, g.fx.source, g.fx.sourceDate, g.fx.manual] : null,
     orders: g.orders.map((o) => [o.orderId, o.lines.map((l) => [l.name, l.pieces, l.m2, l.amount, l.net, l.gross])]),
-    storno: g.storno.map((s) => [s.advanceBatchId, s.gross]),
+    storno: g.storno.map((s) => [s.advanceBatchId, s.advanceDocId ?? null, s.gross]),
   });
   return crypto.createHash('sha256').update(body).digest('hex');
 }
@@ -391,7 +458,10 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
       where: { id: { in: orderIds } },
       select: {
         id: true, orderNo: true, title: true, customerId: true, customerOrderNo: true, customer: true,
-        fgoDocuments: { select: { kind: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } },
+        // Siparişin kendi zinciri (karar 239): belgeler (avans tutarları), proformanın kur kaydı, elle ödeme kayıtları
+        fgoDocuments: { select: { id: true, kind: true, seq: true, series: true, number: true, total: true, paid: true, advanced: true }, orderBy: { issuedAt: 'asc' } },
+        glassBilling: true,
+        manualPayments: { where: { batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } },
         billingBatchOrders: { where: { activeKey: { not: null } }, select: { activeKey: true, offerId: true, batch: { select: { id: true, kind: true, status: true, document: { select: { series: true, number: true } } } } } },
       },
       orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
@@ -433,8 +503,8 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
     const sc = invoiceScope({ confirmationId: conf.id, order: o, items, pendingJob: pending.has(o.id), held });
     if (sc.state === 'IN_INVOICE') continue;
     if (sc.state === 'EXCLUDED') { c.excluded.push({ orderId: o.id, orderNo: o.orderNo, reason: sc.reason, ref: sc.ref }); continue; }
-    const key = invoiceKeyOf({ confirmationId: conf.id, customerId: o.customerId, currency: sc.currency, chainId: sc.chainId });
-    const g = c.open.get(key) ?? { key, currency: sc.currency, chainId: sc.chainId, raw: [] };
+    const key = invoiceKeyOf({ confirmationId: conf.id, customerId: o.customerId, currency: sc.currency, chainId: sc.chainId, orderChainId: sc.orderChainId });
+    const g = c.open.get(key) ?? { key, currency: sc.currency, chainId: sc.chainId, orderChainId: sc.orderChainId, raw: [] };
     g.raw.push({ order: o, items, offerId: sc.offerId });
     c.open.set(key, g);
   }
@@ -446,6 +516,8 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
       const problems = [];
       if (c.missingBilling.length) problems.push('BILLING_MISSING');
       const st = g.chainId ? await chainState(db, g.chainId) : null;
+      // Siparişin kendi zinciri (karar 239): grupta tek sipariş; kur ve avans o siparişin zincirinden
+      const ost = g.orderChainId ? await orderChainState(db, g.raw[0].order) : null;
       // Kur: zincirdeyse proformanın kur kaydı; zincirsizse müşterinin kur politikasından bir kez (RON'da çevrim yok)
       let rate = fx[g.key] ?? null;
       let fxError = null;
@@ -454,13 +526,19 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
         else if (g.currency === 'RON') rate = { policy: c.customer.fxPolicy, currency: 'RON', baseRate: '1.0000', markupPercent: null, finalRate: '1.0000', rate: 1, source: 'RON', sourceDate: today, resolvedAt: now.toISOString(), manual: false };
         else {
           try {
-            rate = await resolveExchangeRate(db, { customer: c.customer, currency: g.currency, day: today, now, manualRate: manual?.key === g.key ? manual.rate : null, bnrImpl });
+            if (ost) {
+              // Proformanın kuru (kesilirken saklandı); yoksa uydurulmaz, başka kaynağa geçilmez
+              rate = fxOfOrderChain(g.raw[0].order.glassBilling, g.currency);
+            } else {
+              rate = await resolveExchangeRate(db, { customer: c.customer, currency: g.currency, day: today, now, manualRate: manual?.key === g.key ? manual.rate : null, bnrImpl });
+            }
           } catch (e) {
             fxError = { code: e instanceof FxUnavailable ? e.code : 'ERROR', error: String(e?.message ?? e).slice(0, 300) };
           }
         }
       }
-      if (!rate) problems.push('FX_UNAVAILABLE');
+      // Siparişin zincirinde proformanın kur kaydı yoksa fatura beklemez değil, kesilmez: kur uydurulmaz (karar 96)
+      if (!rate) problems.push(ost ? 'CHAIN_RATE_MISSING' : 'FX_UNAVAILABLE');
       // Sipariş seçimi: yalnızca bu grubun uygun siparişleri daraltılır; grupta olmayan sipariş seçilemez
       const picked = select && select.key === g.key ? new Set((select.orderIds ?? []).map(String)) : null;
       const chosen = picked ? g.raw.filter((x) => picked.has(x.order.id)) : g.raw;
@@ -487,14 +565,32 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
         for (const a of st.advances) {
           const take = round2(Math.min(a.left, room));
           if (!(take > 0)) continue;
-          storno.push({ advanceBatchId: a.batchId, ref: a.ref, gross: take, net: netOf(take, vatRate) });
+          storno.push({ advanceBatchId: a.batchId, advanceDocId: null, ref: a.ref, gross: take, net: netOf(take, vatRate) });
+          room = round2(room - take);
+        }
+      }
+      // Siparişin kendi zinciri: aynı kural — avansı kesilmemiş tahsilat varken fatura yok; avans faturaları sırayla, her biri
+      // en çok kalanı ve faturanın kalan tutarı kadar düşülür (aynı avans iki kez düşülmez: kullanılan kısım partilerde saklı)
+      if (ost) {
+        // Zincirden fatura kesildikten sonra proformada görünen tahsilat: avans mı faturanın ödemesi mi — muhasebe kararı;
+        // otomatik avans / mahsup yok, kalan kapsamın faturası bekler (yanlış belge kesilmez)
+        if (ost.advanceRequired > 0) problems.push(ost.invoices > 0 ? 'PAYMENT_AFTER_INVOICE' : 'ADVANCE_REQUIRED');
+        let room = ronGross ?? 0;
+        for (const a of ost.advances) {
+          const take = round2(Math.min(a.left, room));
+          if (!(take > 0)) continue;
+          storno.push({ advanceBatchId: null, advanceDocId: a.docId, ref: a.ref, gross: take, net: netOf(take, vatRate) });
           room = round2(room - take);
         }
       }
       /** @type {InvoiceGroup} */
       const group = {
-        key: g.key, currency: g.currency, chainId: g.chainId,
-        chain: st ? { ref: st.ref, total: st.total, paid: st.paid, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, proformaBatchId: st.batch.id } : null,
+        key: g.key, currency: g.currency, chainId: g.chainId, orderChainId: g.orderChainId ?? null,
+        chain: st
+          ? { kind: 'BATCH', orderId: null, ref: st.ref, total: st.total, paid: st.paid, advanced: st.advanced, advanceRequired: st.advanceRequired, advancePending: st.advancePending, proformaBatchId: st.batch.id }
+          : ost
+            ? { kind: 'ORDER', orderId: g.orderChainId, ref: ost.ref, total: ost.total, paid: ost.paid, advanced: ost.advanced, advanceRequired: ost.advanceRequired, advancePending: false, proformaBatchId: null }
+            : null,
         orders: list, unselected,
         // Tekrar anahtarı: grubun tamamı faturalanıyorsa grubun anahtarı; yalnızca bir kısmı seçildiyse (ya da grubun anahtarı
         // bu onaydan kesilmiş etkin bir faturada duruyorsa) seçime özgü anahtar — kalan siparişler aynı onaydan ayrı faturaya
@@ -546,6 +642,9 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, orderI
   if (f.g.previewKey !== previewKey) return { ok: false, code: 'STALE_PREVIEW' };
   try {
     return await db.$transaction(async (tx) => {
+      // Kilit sırası: müşteri finans kilidi (elle ödeme / avans istekleriyle sıralanır, karar 206) → müşteri parti kilidi →
+      // sipariş belge kilitleri. Avans durumu (tahsilat, kuyruktaki istek) kilitler altında yeniden hesaplanır.
+      await financeLock(tx, f.c.customerId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`billing-batch:${f.c.customerId}`}, 0))`;
       for (const id of f.g.orders.map((o) => o.orderId).sort()) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
@@ -564,17 +663,22 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, orderI
         orderId: o.orderId, name: l.name, unit: 'mp', quantity: String(l.m2), pieces: l.pieces, amount: l.amount.toFixed(2), ronNet: l.net.toFixed(2), ronGross: l.gross.toFixed(2),
       })));
       // Avans düşümü: eksi satır (miktar −1, TVA hariç birim fiyat); hangi avanstan ne kadar düşüldüğü satırda saklanır
+      // Siparişin kendi zincirinde düşüm satırı o siparişindir (FGO kaleminde "Comanda …" — sipariş faturasıyla aynı, karar 111)
       const storno = g.storno.map((y) => ({
-        orderId: null, name: `Stornare avans conform factură ${y.ref}`, unit: 'buc', quantity: '-1', ronUnit: y.net.toFixed(2), ronNet: (-y.net).toFixed(2), ronGross: y.gross.toFixed(2), refBatchId: y.advanceBatchId,
+        orderId: g.orderChainId ?? null, name: `Stornare avans conform factură ${y.ref}`, unit: 'buc', quantity: '-1', ronUnit: y.net.toFixed(2), ronNet: (-y.net).toFixed(2), ronGross: y.gross.toFixed(2),
+        refBatchId: y.advanceBatchId ?? null, refDocId: y.advanceDocId ?? null,
       }));
-      // Zincirdeki fatura proformanın kur kaydını taşır (tarihleriyle); doğrudan faturada kur şimdi çözülmüştür
+      // Zincirdeki fatura proformanın kur kaydını taşır (tarihleriyle): müşteri proforması partisi ya da siparişin kendi
+      // proforması (GlassBilling — karar 239); doğrudan faturada kur şimdi çözülmüştür. RON siparişin zincirinde kur 1.
       const parent = g.chainId ? await tx.billingBatch.findUnique({ where: { id: g.chainId } }) : null;
+      const chainBilling = g.orderChainId && g.currency !== 'RON' ? await tx.glassBilling.findUnique({ where: { orderId: g.orderChainId } }) : null;
+      if (g.orderChainId && g.currency !== 'RON' && !fxOfOrderChain(chainBilling, g.currency)) return { ok: false, code: 'FX_UNAVAILABLE' };
       const fxData = parent
         ? { fxRate: parent.fxRate, fxDate: parent.fxDate, fxSource: parent.fxSource, fxPolicy: parent.fxPolicy, fxCurrency: parent.fxCurrency, fxBaseRate: parent.fxBaseRate, fxMarkupPercent: parent.fxMarkupPercent, fxSourceDate: parent.fxSourceDate, fxResolvedAt: parent.fxResolvedAt, fxManual: parent.fxManual }
-        : fxSnapshot(g.fx, docDay);
+        : chainBilling ? fxDataOfOrderChain(chainBilling, g.currency) : fxSnapshot(g.fx, docDay);
       const batch = await tx.billingBatch.create({
         data: {
-          customerId: x.c.customerId, kind: 'INVOICE', status: 'PENDING', parentId: g.chainId, confirmationId: again.confirmationId, uniqueKey: g.uniqueKey, currency: g.currency,
+          customerId: x.c.customerId, kind: 'INVOICE', status: 'PENDING', parentId: g.chainId, chainOrderId: g.orderChainId ?? null, confirmationId: again.confirmationId, uniqueKey: g.uniqueKey, currency: g.currency,
           loadingDays: [shipDay], selectionKey: g.previewKey, sourceTotal: g.sourceTotal.toFixed(2), ronNet: round2(g.ronNet - stornoNet).toFixed(2), createdById: actor.id, createdAt: now,
           ...fxData,
           orders: { create: g.orders.map((o) => ({ orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: shipDay, sourceAmount: o.sourceTotal.toFixed(2), activeKey: invoiceOrderKey(again.confirmationId, o.orderId), loadingRevision: again.revision })) },
@@ -591,6 +695,7 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, orderI
         details: {
           customerId: x.c.customerId, kind: 'INVOICE', confirmationId: again.confirmationId, loadingRevision: again.revision, day, orders: g.orders.map((o) => o.orderNo), currency: g.currency, sourceTotal: g.sourceTotal,
           ronNet: g.ronNet, ronGross: g.ronGross, storno: g.storno.map((y) => ({ advance: y.ref, gross: y.gross })), proformaBatchId: g.chainId,
+          ...(g.orderChainId ? { orderChain: g.orderChainId, proforma: g.chain?.ref ?? null, paid: g.chain?.paid ?? 0 } : {}),
           ...(g.unselected.length ? { notSelected: g.unselected.map((o) => o.orderNo) } : {}),
           fxRate: g.fx.finalRate, fxSource: g.fx.source, fxSourceDate: g.fx.sourceDate, fxManual: g.fx.manual,
         },

@@ -1,18 +1,10 @@
 // Cam siparişi FGO belge akışı — saf kurallar.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { billingState, glassLines, invoiceLines, isLoaded, netOf, orderChain, proformaLines, renderDocEmail } from '../server/glass/billing.js';
+import { billingState, glassLines, invoiceLines, netOf, orderChain, proformaLines, renderDocEmail } from '../server/glass/billing.js';
 import { grossOf, ronPrice } from '../server/integrations/fgo.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-
-test('cam yüklendi: yükleme gününden 2 gün sonra (gerçek, yoksa tahmini gün)', () => {
-  const o = (a, e) => ({ actualShipDate: a ? new Date(a) : null, estimatedShipDate: e ? new Date(e) : null });
-  assert.equal(isLoaded(o(null, '2026-10-01T00:00:00Z'), '2026-10-02'), false);
-  assert.equal(isLoaded(o(null, '2026-10-01T00:00:00Z'), '2026-10-03'), true);
-  assert.equal(isLoaded(o('2026-09-20T00:00:00Z', '2026-10-30T00:00:00Z'), '2026-09-22'), true, 'gerçek gün öncelikli');
-  assert.equal(isLoaded(o(null, null), '2030-01-01'), false);
-});
 
 test('belge satırları: yalnızca cam (Romence nitelik, ölçü/adet yok); CNC ve delik tutarı ilgili cama eklenir', () => {
   const lines = glassLines({ lines: [
@@ -70,38 +62,39 @@ test('proforma satırları ayrıntılı: cam (nitelik, m²), CNC ve delik ayrı 
   ]);
 });
 
-test('düğmeler: proforma → (FGO tahsilatı) → avans → (yüklenince) fatura; müşteri onayı yok; tekrar kesim yok', () => {
+test('düğmeler (karar 239): proforma → (tahsilat) → avans; nihai fatura sipariş sayfasında YOK — ne tarih ne ödeme açar', () => {
   const base = { status: 'URETIMDE', loaded: false, docs: [], pending: [], hasOffer: true };
   const P = { kind: 'PROFORMA', paid: null }, F = { kind: 'INVOICE' };
   const A = (advanced, seq = 1) => ({ kind: 'ADVANCE', seq, advanced, total: advanced });
-  assert.deepEqual(billingState(base).actions, ['proforma']);
-  // Ödeme yalnızca FGO'dan: tahsilat görünmüyorsa düğme yok (elle "ödeme alındı" kaldırıldı — karar 104)
-  assert.deepEqual([billingState({ ...base, docs: [P] }).actions, billingState({ ...base, docs: [P] }).wait], [[], 'wait_payment']);
-  assert.deepEqual(billingState({ ...base, docs: [{ ...P, paid: '500' }] }).actions, ['advance'], 'FGO\'da tahsilat görünürse');
+  const both = (p) => { const r = billingState(p); return [r.actions, r.wait]; };
+  assert.deepEqual(both(base), [['proforma'], null]);
+  // Proforma var, tahsilat yok: düğme yok; nihai fatura onaylı yüklemeden (yükleme günü Faturalama kartı) — "ödeme bekleniyor" yok
+  assert.deepEqual(both({ ...base, docs: [P] }), [[], 'final_from_loading']);
+  assert.deepEqual(both({ ...base, docs: [{ ...P, paid: '0' }] }), [[], 'final_from_loading'], 'ödenmemiş proforma engel değil');
+  assert.deepEqual(billingState({ ...base, docs: [{ ...P, paid: '500' }] }).actions, ['advance'], 'tahsilat görünürse avans');
   assert.deepEqual(billingState({ ...base, docs: [{ ...P, paid: '500' }], billing: { paidAmount: '300' } }).advanceRequired, 500, 'elle girilmiş eski ödeme kaydı okunmaz');
-  assert.deepEqual(billingState({ ...base, docs: [P], billing: { paidAmount: '300' } }).actions, [], 'FGO\'da tahsilat yoksa elle kayıt avans açmaz');
-  assert.deepEqual([billingState({ ...base, docs: [{ ...P, paid: '500' }, A('500')] }).actions, billingState({ ...base, docs: [{ ...P, paid: '500' }, A('500')] }).wait], [[], 'wait_loading'], 'avanstan sonra yüklemeyi bekler');
-  assert.deepEqual(billingState({ ...base, loaded: true }).actions, ['invoice'], 'yüklendi, avans yok → fatura');
-  assert.deepEqual(billingState({ ...base, loaded: true, docs: [P] }).actions, ['invoice']);
-  assert.deepEqual(billingState({ ...base, loaded: true, docs: [{ ...P, paid: '500' }, A('500')] }).actions, ['invoice'], 'tahsilatın tamamının avansı kesilmiş → kapanış faturası');
-  assert.deepEqual(billingState({ ...base, loaded: true, docs: [P, A('500'), F] }).actions, []);
-  // Karar 104: ödenmiş proforma + avansı kesilmemiş tahsilat + yüklenmiş → çıkmaz yok: avans faturası düğmesi; fatura engelli
-  const dead = billingState({ ...base, loaded: true, docs: [{ ...P, paid: '500' }] });
-  assert.deepEqual([dead.actions, dead.wait, dead.paid, dead.advanced, dead.advanceRequired], [['advance'], 'advance_required', 500, 0, 500]);
-  // Kısmi ödeme, sonra ek ödeme: ikinci avans yalnızca fark kadar (yüklemeden önce de sonra da)
+  assert.deepEqual(both({ ...base, docs: [{ ...P, paid: '500' }, A('500')] }), [[], 'final_from_loading']);
+  // Onaylı yükleme (loaded = kayıt var): hiçbir durumda 'invoice' yok; proformasız siparişe artık proforma da istenmez
+  for (const docs of [[], [P], [{ ...P, paid: '0' }], [{ ...P, paid: '500' }, A('500')], [{ ...P, paid: '800' }, A('500'), A('300', 2)]]) {
+    const r = billingState({ ...base, loaded: true, docs });
+    assert.ok(!r.actions.includes('invoice'), JSON.stringify(docs));
+    assert.equal(r.wait, 'final_from_loading');
+  }
+  assert.deepEqual(billingState({ ...base, loaded: true }).actions, [], 'onaylı yüklemesi olan siparişe sipariş düzeyi proforma yok');
+  // Avans: yüklemeden önce de sonra da yalnızca fark kadar
   for (const loaded of [false, true]) {
     const more = billingState({ ...base, loaded, docs: [{ ...P, paid: '800' }, A('500')] });
-    assert.deepEqual([more.actions, more.paid, more.advanced, more.advanceRequired], [['advance'], 800, 500, 300]);
+    assert.deepEqual([more.actions, more.wait, more.paid, more.advanced, more.advanceRequired], [['advance'], loaded ? 'advance_required' : 'final_from_loading', 800, 500, 300]);
   }
-  assert.deepEqual(billingState({ ...base, loaded: true, docs: [{ ...P, paid: '800' }, A('500'), A('300', 2)] }).actions, ['invoice'], 'iki avansla tahsilatın tamamı karşılandı');
-  // Ödenmemiş proforma (FGO 0 gösteriyor): akış değişmedi
-  assert.deepEqual(billingState({ ...base, loaded: true, docs: [{ ...P, paid: '0' }] }).actions, ['invoice']);
-  // Kuruş yuvarlaması yeni avans doğurmaz (avansın karşıladığı tahsilat = istenen tutar; FGO toplamı 1 ban farklı olabilir)
+  assert.deepEqual(both({ ...base, loaded: true, docs: [P, A('500'), F] }), [[], 'done'], 'eski sipariş düzeyi kapanış faturası: belge akışı tamam');
   assert.equal(billingState({ ...base, docs: [{ ...P, paid: '100.00' }, { kind: 'ADVANCE', seq: 1, advanced: '100.00', total: '99.99' }] }).advanceRequired, 0);
   assert.deepEqual(billingState({ ...base, pending: ['PROFORMA'] }).actions, [], 'kesilirken ikinci istek yok');
   assert.deepEqual(billingState({ ...base, docs: [{ ...P, paid: '500' }], pending: ['ADVANCE'] }).actions, [], 'avans kuyruktayken ikinci avans isteği yok (çift tıklama)');
   assert.deepEqual(billingState({ ...base, hasOffer: false }).actions, []);
   assert.deepEqual(billingState({ ...base, status: 'IPTAL' }).actions, []);
+  // Müşteri proforması partisi sipariş başına belgeyi dışlar; kendi proforması olan sipariş (fatura partisinde olsa da) avans alabilir
+  assert.deepEqual(both({ ...base, inBatch: true }), [[], 'batch']);
+  assert.deepEqual(billingState({ ...base, inBatch: true, docs: [{ ...P, paid: '500' }] }).actions, ['advance']);
 });
 
 test('sipariş zinciri (orderChain): tahsilat − avansı kesilen; sıra; eski kayıtta avans tutarı = FGO toplamı', () => {

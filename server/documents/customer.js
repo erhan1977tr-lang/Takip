@@ -17,9 +17,9 @@ const INCLUDE = {
   order: { select: { id: true, orderNo: true, removedAt: true } },
   batch: {
     select: {
-      id: true, parentId: true,
+      id: true, parentId: true, chainOrderId: true,
       orders: { select: { orderId: true, orderNo: true, order: { select: { removedAt: true } } }, orderBy: { orderNo: 'asc' } },
-      lines: { select: { ronGross: true, refBatchId: true } },
+      lines: { select: { ronGross: true, refBatchId: true, refDocId: true } },
     },
   },
 };

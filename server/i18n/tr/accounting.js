@@ -139,8 +139,12 @@ export default {
       payable: "Fatura toplamı (RON, TVA dahil)",
     },
     chain: "Müşteri proforması {ref}: toplam {total}, FGO'da tahsil edilen {paid}, avansı kesilen {advanced}. Kur proformanın kurudur (yeniden belirlenmez).",
+    orderChain: "Sipariş proforması {ref}: toplam {total}, tahsil edilen {paid}, avansı kesilen {advanced}. Fatura yalnızca bu yüklemede yüklenen camı kapsar; kur proformanın kurudur (yeniden belirlenmez). Ödeme şartı yoktur.",
+    orderAdvance: "Avans faturası sipariş sayfasından kesilir (Ödemeler ve avans)",
     direct: "Proforma yok: fatura doğrudan kesilir; kur müşterinin kur politikasından şimdi belirlenir ve faturayla birlikte kaydedilir.",
     problems: {
+      PAYMENT_AFTER_INVOICE: "Siparişin zincirinden fatura kesildikten sonra proformada avansı kesilmemiş {amount} tahsilat görünüyor: avans mı faturanın ödemesi mi belirsiz. Kalan kapsamın faturası muhasebe kararına kadar kesilmez.",
+      CHAIN_RATE_MISSING: "Siparişin proformasında kur kaydı yok; kur uydurulmaz. Sipariş sayfasındaki Finans / FGO bölümünü kontrol edin.",
       BILLING_MISSING: "Müşterinin fatura bilgisi eksik ({list}); Müşteriler sayfasında tamamlayın.",
       FX_UNAVAILABLE: "Kur belirlenemedi; kuru girmeden fatura oluşturulamaz.",
       ADVANCE_REQUIRED: "Proformada avansı kesilmemiş {amount} tahsilat var: önce avans faturası kesilmeli. Avans faturası kesilince fatura düğmesi açılır.",
@@ -156,7 +160,8 @@ export default {
     amounts: "toplam {total} · ödenen {paid} · kalan {rest}",
     excludedTitle: "Müşteri faturasına girmeyen siparişler",
     reason: {
-      ORDER_CHAIN: "siparişin kendi belge zinciri var; faturası sipariş sayfasından kesilir",
+      ORDER_PENDING: "siparişin kendi belge isteği (proforma / avans) kesiliyor; kesilince faturalanabilir",
+      ORDER_INVOICED: "sipariş, sipariş sayfasından kesilen eski kapanış faturasıyla tamamen faturalanmış",
       PROFORMA_NOT_ISSUED: "müşteri proforması henüz kesilmedi (kuyrukta ya da kesilemedi)",
       CURRENCY: "para birimi desteklenmiyor",
       NO_LINES: "faturalanacak fiyatlı cam satırı yok",
@@ -197,7 +202,7 @@ export default {
     requiredNote: "Otomatik fatura, ek fatura, storno ya da düzeltme belgesi KESİLMEZ ve kesilmiş belge değiştirilmez; bu kapsam yeniden faturalanmaz. Muhasebecinizle netleştirin.",
     code: {
       NO_BILLING: "bu yüklemeden fatura kesilmemiş — fatura geçerli (düzeltilmiş) durumdan kesilir",
-      ORDER_CHAIN: "sipariş başına belge zincirinde ({ref}); fatura siparişin tamamı için sipariş sayfasından kesilir",
+      ORDER_CHAIN: "sipariş, sipariş sayfasından kesilen eski kapanış faturasıyla ({ref}) tamamen faturalanmış",
       QUEUED_BILLING: "fatura kuyrukta",
       FAILED_BILLING: "fatura kesilemedi (yeniden deneme ya da vazgeçme bekliyor)",
       NO_FINANCIAL_DIFFERENCE: "fatura {ref}: finansal fark yok",
@@ -220,7 +225,7 @@ export default {
     open: "Faturalamayı aç",
     openOrder: "Sipariş (Finans / FGO)",
     note: {
-      ORDER_CHAIN: "siparişin kendi belge zinciri var — fatura sipariş sayfasından kesilir",
+      ORDER_PENDING: "siparişin kendi belge isteği (proforma / avans) kesiliyor — kesilince faturalanabilir",
       PROFORMA_NOT_ISSUED: "müşteri proforması kuyrukta ya da kesilemedi",
       INVOICE_QUEUED: "fatura isteği kuyrukta",
       INVOICE_FAILED: "fatura FGO'da kesilemedi — yeniden deneyin ya da vazgeçin",

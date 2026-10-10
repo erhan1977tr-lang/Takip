@@ -27,26 +27,30 @@ test('uyarı günü = onaylı yükleme günü + takvim günü (ay / yıl sonu da
   assert.equal(daysBetween('2026-10-24', '2026-10-26'), 2, 'yaz saati bitişi gün sayısını bozmaz');
 });
 
-test('fatura kapsamı kararı (invoiceScope): faturada / sipariş zinciri / muhasebe işlemi / kalemsiz / proforma bekliyor / faturalanabilir', () => {
+test('fatura kapsamı kararı (invoiceScope): faturada / siparişin kendi zinciri / muhasebe işlemi / kalemsiz / proforma bekliyor / faturalanabilir', () => {
   const item = (extra = {}) => ({ orderId: 'o1', currency: 'EUR', kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Sticlă', enMm: 1000, boyMm: 1000, quantity: 2, m2: 2, unitSale: 50, unitCost: 30, free: false, sortOrder: 0, replanId: null, ...extra });
   const order = (extra = {}) => ({ id: 'o1', fgoDocuments: [], billingBatchOrders: [], ...extra });
   const scope = (o, items = [item()], extra = {}) => invoiceScope({ confirmationId: 'c1', order: o, items, pendingJob: false, held: new Map(), ...extra });
-  assert.deepEqual(scope(order()), { state: 'OPEN', currency: 'EUR', chainId: null, offerId: null });
+  assert.deepEqual(scope(order()), { state: 'OPEN', currency: 'EUR', chainId: null, orderChainId: null, offerId: null });
   // Bu onaydan fatura partisinde (durumu ne olursa olsun yeniden faturalanmaz; uyarıyı yalnızca KESİLMİŞ olan kapatır)
   const inBatch = (status) => order({ billingBatchOrders: [{ activeKey: invoiceOrderKey('c1', 'o1'), offerId: null, batch: { id: 'b1', kind: 'INVOICE', status, document: null } }] });
   for (const status of ['PENDING', 'FAILED', 'ISSUED']) assert.deepEqual([scope(inBatch(status)).state, scope(inBatch(status)).batch.status], ['IN_INVOICE', status]);
   // Başka onayın faturası bu onayın kapsamını kapatmaz
   assert.equal(scope(order({ billingBatchOrders: [{ activeKey: invoiceOrderKey('c2', 'o1'), offerId: null, batch: { id: 'b2', kind: 'INVOICE', status: 'ISSUED', document: null } }] })).state, 'OPEN');
-  // Sipariş başına belge zinciri (proforma / avans): müşteri faturasına girmez — fatura sipariş sayfasından
-  assert.deepEqual(scope(order({ fgoDocuments: [{ kind: 'PROFORMA', series: 'PRF', number: '7' }] })), { state: 'EXCLUDED', reason: 'ORDER_CHAIN', ref: 'PRF7' });
-  assert.deepEqual(scope(order(), [item()], { pendingJob: true }), { state: 'EXCLUDED', reason: 'ORDER_CHAIN', ref: null });
+  // Siparişin kendi proforma zinciri (karar 239): onaydan faturalanır, zincir = sipariş (kur ve avans siparişten); ödeme şartı yok
+  assert.deepEqual(scope(order({ fgoDocuments: [{ kind: 'PROFORMA', series: 'PRF', number: '7' }] })), { state: 'OPEN', currency: 'EUR', chainId: null, orderChainId: 'o1', offerId: null });
+  assert.deepEqual(scope(order({ fgoDocuments: [{ kind: 'PROFORMA', series: 'PRF', number: '7', paid: '0' }, { kind: 'ADVANCE', series: 'GKH', number: '8' }] })).orderChainId, 'o1');
+  // Siparişin kendi belge isteği kuyrukta: bekler; eski sipariş düzeyi kapanış faturası: tamamı faturalanmış, yeniden faturalanmaz
+  assert.deepEqual(scope(order(), [item()], { pendingJob: true }), { state: 'EXCLUDED', reason: 'ORDER_PENDING', ref: null });
+  assert.deepEqual(scope(order({ fgoDocuments: [{ kind: 'PROFORMA', series: 'PRF', number: '7' }] }), [item()], { pendingJob: true }), { state: 'EXCLUDED', reason: 'ORDER_PENDING', ref: null });
+  assert.deepEqual(scope(order({ fgoDocuments: [{ kind: 'PROFORMA', series: 'PRF', number: '7' }, { kind: 'INVOICE', series: 'GKH', number: '9' }] })), { state: 'EXCLUDED', reason: 'ORDER_INVOICED', ref: 'GKH9' });
   // Muhasebe işlemi bekleyen dondurma, bedelsiz / fiyatsız kalem, desteklenmeyen para birimi: faturalanamaz
   assert.deepEqual(scope(order(), [item({ replanId: 'r1' })], { held: new Map([['r1', 'GKH12']]) }), { state: 'EXCLUDED', reason: 'ACCOUNTING_ACTION', ref: 'GKH12' });
   assert.deepEqual(scope(order(), [item({ free: true })]), { state: 'EXCLUDED', reason: 'NO_LINES', ref: null });
   assert.deepEqual(scope(order(), [item({ currency: 'USD' })]), { state: 'EXCLUDED', reason: 'CURRENCY', ref: null });
   // Müşteri proforması zinciri: kesilmişse faturalanabilir (kur zinciri = o parti); kesilmemişse bekler
   const pro = (status) => order({ billingBatchOrders: [{ activeKey: 'PROFORMA:o1', offerId: 'of1', batch: { id: 'p1', kind: 'PROFORMA', status, document: null } }] });
-  assert.deepEqual(scope(pro('ISSUED')), { state: 'OPEN', currency: 'EUR', chainId: 'p1', offerId: 'of1' });
+  assert.deepEqual(scope(pro('ISSUED')), { state: 'OPEN', currency: 'EUR', chainId: 'p1', orderChainId: null, offerId: 'of1' });
   assert.deepEqual(scope(pro('FAILED')), { state: 'EXCLUDED', reason: 'PROFORMA_NOT_ISSUED', ref: null });
 });
 

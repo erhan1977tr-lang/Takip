@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.67.0 — 10.10.2026
+
+P1 — nihai fatura güvenliği (karar 239). Şema: iki boş bırakılabilir sütun eklendi (`BillingBatch.chainOrderId`,
+`BillingBatchLine.refDocId`); var olan veri değiştirilmedi.
+
+- **Nihai fatura yalnızca onaylı yüklemeden:** kendi proforması olan cam siparişinin nihai faturası artık sipariş
+  sayfasındaki "Fatura Gönder" ile ve "tahmini tarih + 2 gün" kuralıyla kesilmez; yükleme gününün **Faturalama** kartında,
+  yalnızca o yüklemede onaylanan (LOADED) ve henüz faturalanmamış miktar için, siparişin kendi zincirinde kesilir.
+  Kısmi yüklemede kalan, yüklendiği onaydan faturalanır. Tahsilat şart değildir.
+- **Avans düşümü:** siparişin avans faturaları faturalara "Stornare avans conform factură …" satırıyla, her faturanın
+  değeriyle sınırlı ve toplamda bir kez düşülür; avansı kesilmemiş tahsilat varken fatura kesilmez.
+- **Kur:** faturada proformanın kayıtlı kuru kullanılır; kur kaydı yoksa fatura kesilmez (yeniden çözülmez).
+- **Fatura sonrası tahsilat:** nihai fatura kesildikten sonra proformaya gelen yeni tahsilat otomatik avans / mahsup
+  yapılmaz; o siparişin yeni faturası ve avansı durur, yöneticiye "muhasebe incelemesi gerekli" uyarısı gösterilir.
+  Diğer siparişlerin faturalanması etkilenmez.
+- Sipariş sayfasında "Nihai fatura" bölümü: onaylı yüklemeler ve fatura durumları, Faturalama kartına bağlantı.
+- Onaylı yüklemesi olan siparişe sipariş düzeyinde proforma kesilmez; kuyrukta kalmış eski sipariş düzeyi fatura işi
+  FGO'ya gitmeden kapatılır.
+
 ## 3.66.1 — 10.10.2026
 
 Paket D — çizim erişimi ve dosya güvenliği doğrulaması (karar 238). Erişim kuralı (AUD-8, karar 146) değişmedi; şema değişmedi.

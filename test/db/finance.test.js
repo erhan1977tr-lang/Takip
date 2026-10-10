@@ -5,7 +5,7 @@
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
+import { closeDb, dbTest, finalInvoiceFor, getDb, nextPastDay, offline, resetDb } from './helpers.js';
 
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 const { refreshDocuments } = await import('../../server/accounting/receivables.js');
@@ -193,12 +193,18 @@ dbTest('elle avans: kayıt belge kesmez; avans faturası elle kayda dayanır; ay
   const issued = await db.auditLog.findFirst({ where: { action: 'FGO_DOC_ISSUED', entityId: o.id, details: { path: ['kind'], equals: 'ADVANCE' } } });
   assert.deepEqual([issued.details.basis, issued.details.payments], ['MANUAL', [p1.id]]);
 
-  // Yüklendi: kapanış faturası kesilen avansı eksi satırla düşer (avansı kesilmemiş tahsilat yok → engel yok)
-  await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(Date.now() - 5 * 86_400_000) } });
-  assert.deepEqual(await request(o, 'INVOICE'), { ok: true });
-  assert.deepEqual(await dispatch(o), { done: 1, failed: 0 });
+  // Onaylı yükleme: nihai fatura yükleme gününün faturalama kartından (sipariş zinciri) kesilir; kesilen avans eksi satırla düşer
+  assert.equal((await request(o, 'INVOICE')).code, 'NOT_ALLOWED', 'sipariş düzeyinde kapanış faturası yok');
+  const fin = await finalInvoiceFor(db, { order: o, adminId: admin.id, actor: actor(), day: nextPastDay(300), bnrImpl, dispatchCtx: ctx() });
+  assert.equal(fin.created?.ok, true, JSON.stringify(fin.group?.problems ?? fin.created));
+  assert.deepEqual(fin.run, { done: 1, failed: 0 });
   const inv = fgo.calls.at(-1);
-  assert.deepEqual([inv.IdExtern, inv['Continut[1][Denumire]'], inv['Continut[1][NrProduse]']], [`${o.orderNo}-F`, `Stornare avans conform factură ${ref(adv)}`, '-1']);
+  const names = Object.keys(inv).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => inv[k]);
+  assert.equal(inv.IdExtern, `LOT-${fin.created.batchId}`);
+  assert.ok(names.some((n) => n.startsWith(`Comanda ${o.orderNo} — `)), names.join(' | '));
+  assert.ok(names.includes(`Stornare avans conform factură ${ref(adv)}`), names.join(' | '));
+  assert.equal(await db.fgoDocument.count({ where: { batchId: fin.created.batchId, kind: 'INVOICE' } }), 1);
+  assert.ok(await db.notificationOutbox.findFirst({ where: { type: d.DOC_EMAIL, payload: { path: ['docId'], equals: fin.doc.id } } }));
   // Belge başına tek müşteri e-postası işi
   for (const doc of await db.fgoDocument.findMany({ where: { orderId: o.id } })) {
     assert.equal(await db.notificationOutbox.count({ where: { type: d.DOC_EMAIL, payload: { path: ['docId'], equals: doc.id } } }), 1, doc.kind);

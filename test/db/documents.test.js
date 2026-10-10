@@ -10,6 +10,8 @@ const { saveFgoSettings, getFgoSettings } = await import('../../server/integrati
 const { dayKey } = await import('../../server/orders/loading.js');
 const { refreshDocuments } = await import('../../server/accounting/receivables.js');
 const g = await import('../../server/glass/billing.js');
+const inv = await import('../../server/glass/invoice-batch.js');
+const { snapshotLine } = await import('../../server/loading/confirmation.js');
 const b = await import('../../server/glass/batch.js');
 const d = await import('../../server/documents/delivery.js');
 const cd = await import('../../server/documents/customer.js');
@@ -87,6 +89,26 @@ async function issue(o, kind, fgo) {
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind, actor: actor() }), { ok: true });
   return g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id }));
 }
+let dayNo = 40;
+/**
+ * Nihai fatura (karar 239): onaylı yükleme (snapshotLine — confirmLoading ile aynı kopya) → yükleme gününün Faturalama
+ * kartı → fatura partisi → işçi. Sipariş düzeyinde nihai fatura yoktur. { done, failed, batchId } döner.
+ */
+async function issueFinal(o, fgo) {
+  const day = dayKey(new Date(`${new Date(Date.now() - (dayNo += 1) * 86_400_000).toISOString().slice(0, 10)}T12:00:00Z`));
+  const conf = await db.loadingConfirmation.create({ data: { shipDay: new Date(`${day}T00:00:00Z`), confirmedById: admin.id, confirmedAt: new Date(`${day}T12:00:00Z`) } });
+  const full = await db.order.findUnique({ where: { id: o.id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
+  const offer = full.offers.find((x) => x.status === 'GONDERILDI');
+  await db.loadingConfirmationItem.createMany({
+    data: offer.lines.map((l) => snapshotLine(full, offer, l, { quantity: Number(l.adet) })).map((i) => ({ ...i, confirmationId: conf.id, scopeKey: `l:${i.offerLineId}`, m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2), costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4) })),
+  });
+  const r = await inv.loadingBilling(db, { day, bnrImpl: bnr('5.0000') });
+  const grp = r.customers.flatMap((c) => c.groups).find((x) => x.orders.some((y) => y.orderId === o.id));
+  const created = await inv.createInvoiceBatch(db, { day, groupKey: grp.key, previewKey: grp.previewKey, actor: actor(), bnrImpl: bnr('5.0000') });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  return { ...(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId, sleep: async () => {} }))), batchId: created.batchId };
+}
+const finalDocOf = (batchId) => db.fgoDocument.findFirst({ where: { batchId } });
 const notices = (userId) => db.notification.findMany({ where: { userId, type: { in: Object.values(n.DOC_NOTICE) } }, orderBy: { createdAt: 'asc' } });
 
 before(async () => {
@@ -447,12 +469,12 @@ dbTest('müşteri kendi proforma, avans faturası ve faturasını görür; ödem
   const adv = (await docsOf(o.id)).find((x) => x.kind === 'ADVANCE');
   await db.fgoDocument.update({ where: { id: adv.id }, data: { total: '300.00', paid: '300.00' } });
   assert.deepEqual((await view()).sort(), [['ADVANCE', 'GKH602', 'PAID'], ['PROFORMA', 'PRF601', 'PARTIAL']]);
-  // Yüklendi → kapanış faturası; proforma "faturalandı"
-  await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(Date.now() - 4 * 86_400_000) } });
-  assert.deepEqual(await issue(o, 'INVOICE', fgo), { done: 1, failed: 0 });
+  // Onaylı yükleme → nihai fatura yükleme gününden, siparişin zincirinde (karar 239); proforma "faturalandı"
+  const fin = await issueFinal(o, fgo);
+  assert.deepEqual([fin.done, fin.failed], [1, 0]);
   assert.deepEqual(keys(fgo.calls[2], 'Descriere'), [`Comanda ${o.orderNo}`, `Comanda ${o.orderNo}`], 'fatura: cam kalemi + avans düşümü aynı siparişin');
-  const inv = (await docsOf(o.id)).find((x) => x.kind === 'INVOICE');
-  await db.fgoDocument.update({ where: { id: inv.id }, data: { total: '305.00', paid: '0' } });
+  const invDoc = await finalDocOf(fin.batchId);
+  await db.fgoDocument.update({ where: { id: invDoc.id }, data: { total: '305.00', paid: '0' } });
   assert.deepEqual((await view()).sort(), [['ADVANCE', 'GKH602', 'PAID'], ['INVOICE', 'GKH603', 'UNPAID'], ['PROFORMA', 'PRF601', 'REPLACED']]);
   const row = (await cd.customerDocuments(db, C.id)).find((x) => x.kind === 'INVOICE');
   assert.deepEqual([row.orders, row.total, row.currency], [[{ id: o.id, orderNo: o.orderNo }], 305, 'RON']);
@@ -596,26 +618,27 @@ dbTest('fatura e-postası (billingEmail): öncelik, geri düşüş, geçersiz ad
 dbTest('tek seferlik fatura numarası: FGO\'da kullanılınca boşalır — belge kaydı yazılamasa bile (eski numara sonraki faturaya gitmez)', async () => {
   const E = await customer('Numar SRL', 'NUM');
   const o1 = await order(E, noon(-5)), o2 = await order(E, noon(-5));
-  // Olağan: elle numara bir kez gönderilir, fatura kesilince alan boşalır; sonraki faturada Numar yok
+  // Olağan: elle numara bir kez gönderilir, fatura kesilince alan boşalır; sonraki faturada Numar yok (nihai fatura onaylı
+  // yüklemeden — karar 239)
   await fgoOn({ invoiceNext: 900 });
   const fgo = fakeFgo(899);
-  assert.deepEqual(await issue(o1, 'INVOICE', fgo), { done: 1, failed: 0 });
+  assert.deepEqual(await issueFinal(o1, fgo).then((r) => [r.done, r.failed]), [1, 0]);
   assert.equal(fgo.calls[0].Numar, '900');
   assert.equal((await getFgoSettings(db)).invoiceNext, null, 'başarılı kullanımdan sonra boş');
-  assert.deepEqual(await issue(o2, 'INVOICE', fgo), { done: 1, failed: 0 });
+  assert.deepEqual(await issueFinal(o2, fgo).then((r) => [r.done, r.failed]), [1, 0]);
   assert.ok(!('Numar' in fgo.calls[1]), 'sonraki faturanın numarasını FGO verir');
 
   // FGO belgeyi kesti ama kayıt yazılamadı (FGO'nun döndürdüğü numara sistemde başka belgede kayıtlı): alan yine boşalır
   const o3 = await order(E, noon(-5)), o4 = await order(E, noon(-5));
   await fgoOn({ invoiceNext: 950 });
   const clash = fakeFgo(0, { emit: (form) => new Response(JSON.stringify({ Success: true, Factura: { Numar: '900', Serie: form.Serie, Link: null } })) });
-  assert.deepEqual(await g.requestGlassDocument(db, { orderId: o3.id, kind: 'INVOICE', actor: actor() }), { ok: true });
-  assert.deepEqual(await g.dispatchGlassJobs(db, ctx(clash, { onlyOrderId: o3.id })), { done: 0, failed: 1 });
-  assert.equal((await docsOf(o3.id)).length, 0, 'kayıt yazılamadı');
+  const r3 = await issueFinal(o3, clash);
+  assert.deepEqual([r3.done, r3.failed], [0, 1]);
+  assert.equal(await finalDocOf(r3.batchId), null, 'kayıt yazılamadı');
   assert.equal((await getFgoSettings(db)).invoiceNext, null, 'numara FGO\'da kullanıldı: alan boşaldı');
   assert.equal(await db.notificationOutbox.count({ where: { type: d.DOC_EMAIL, orderId: o3.id } }), 0, 'kaydı olmayan belgenin e-postası yok');
   const next = fakeFgo(960);
-  assert.deepEqual(await issue(o4, 'INVOICE', next), { done: 1, failed: 0 });
+  assert.deepEqual(await issueFinal(o4, next).then((r) => [r.done, r.failed]), [1, 0]);
   assert.ok(!('Numar' in next.calls[0]), 'eski elle numara sonraki faturaya gönderilmedi');
   await fgoOn();
 });
