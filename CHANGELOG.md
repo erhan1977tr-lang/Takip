@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.73.2 — 10.10.2026
+
+P7 — yedek alarmı ve bekçi (karar 249). Şema değişmedi; mevcut yedekleme, şifreleme ve saklama kuralları aynen.
+
+- **Alarm e-postası:** gece yedeğinde veritabanı dökümü (`DB_DUMP`), veritabanı geri yükleme denetimi (`DB_VERIFY`), dosya
+  arşivi (`FILES`, `FILES_VERIFY`), şifreleme (`ENCRYPT`), Google Drive yüklemesi (`DRIVE_UPLOAD`) ya da Drive kopyasının md5
+  doğrulaması (`DRIVE_VERIFY`) başarısız olursa — veya rclone yoksa (`RCLONE_MISSING`) — yöneticiye e-posta gider.
+- **Bekçi:** yeni `takip-backup-check.timer` saatte bir `takip yedek-kontrol` çalıştırır: son TAM başarılı yedek (yerel +
+  Drive) 26 saatten eskiyse (`STALE` — gece yedeği hiç çalışmadıysa da), gece yedeği zamanlayıcısı çalışmıyorsa
+  (`BACKUP_TIMER`) alarm verir. Gece yedeği de bekçiyi denetler: bekçi 3 saattir çalışmadıysa `CHECK_TIMER`.
+- **Gereksiz tekrar yok:** aynı sorun kümesi için en çok 24 saatte bir e-posta; sorun değişince hemen; sorunlar bitince bir
+  kez "düzeldi" e-postası. Geçmiş `/opt/takip/logs/backup-alert.log`. Gönderilemeyen alarm gönderilmiş sayılmaz, bir sonraki
+  denetimde yeniden denenir. `takip yedek-kontrol durum` yalnızca okur.
+- **Sır yok:** e-postaya ve alarm günlüğüne yalnızca sabit metin, sorun kodları, sunucu adı ve saat girer (komut çıktısı,
+  yol, token, anahtar, şifre, adres yazılmaz). Alıcılar: `.env`'deki `BACKUP_ALERT_EMAIL` (virgülle), boşsa etkin yöneticiler.
+- Testler: e-posta ve alıcı kuralları (birim, sahte taşıyıcı), kabuk mantığı (sahte docker / rclone / systemctl; 12 durum),
+  kurulumda bekçinin etkin olduğu (gerçek sunucu kurulumu testi). Gerçek e-posta gönderilmez.
+
 ## 3.73.1 — 10.10.2026
 
 P7 — nihai fatura güvenliği (karar 248; P1 / karar 239'un incelemesi). Şema değişmedi; mevcut belgeler değişmez.

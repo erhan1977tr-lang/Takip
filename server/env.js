@@ -123,6 +123,15 @@ export const ENV_VARS = {
   SMTP_USER: { group: 'mail', desc: 'SMTP kullanıcı adı' },
   SMTP_PASS: { group: 'mail', secret: true, desc: 'SMTP şifresi' },
   MAIL_FROM: { group: 'mail', desc: 'Gönderen ADRESİ (ör. info@gkh.ro). Görünen ad her e-postada "GKH Trading Invest SRL" olur; buradaki ad kullanılmaz' },
+  BACKUP_ALERT_EMAIL: {
+    group: 'mail',
+    parse: (v) => {
+      const list = String(v).split(/[\s,;]+/).filter(Boolean);
+      if (list.length > 10 || list.some((x) => !/^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/.test(x))) throw new Error('virgülle ayrılmış en çok 10 geçerli e-posta adresi olmalı');
+      return list.join(',');
+    },
+    desc: 'Yedek alarmı alıcıları (virgülle ayrılmış). Boşsa etkin yöneticiler (ADMIN) alır (karar 249)',
+  },
   NOTIFY_EMAILS: { group: 'mail', parse: parseBool, default: true, desc: 'Sipariş olaylarında bildirim e-postaları gönderilsin mi (false = kapalı; olaylar kuyrukta kalır)' },
   MAIL_OUTBOX_DIR: { group: 'dev', desc: 'Ayarlıysa e-posta gönderilmez, bu klasöre yazılır (yalnızca geliştirme/test/demo; gerçek sunucuda yok sayılır)' },
 

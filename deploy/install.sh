@@ -196,7 +196,7 @@ EOF
   fi
 
   # ---------- 7. otomatik güncelleme ve yedek ----------
-  systemctl enable --now takip-deploy.timer takip-backup.timer >/dev/null 2>&1
+  systemctl enable --now takip-deploy.timer takip-backup.timer takip-backup-check.timer >/dev/null 2>&1
   ok "Otomatik güncelleme (2 dakikada bir kontrol) ve gece yedeği açık"
 
   printf '\n\033[1;32m══════════════════════ Kurulum tamamlandı ══════════════════════\033[0m\n'
