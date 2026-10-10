@@ -434,7 +434,7 @@ function OrderBadges({ row, t, customer }: { row: Row; t: T; customer: boolean }
   return (
     <>
       {customer
-        ? <CustomerBadge status={o.status} drawing={o.drawingTrack} offer={row.entry.load.amount != null ? 'GONDERILDI' : null} />
+        ? <CustomerBadge status={o.status} drawing={o.drawingTrack} offer={o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null} />
         : <OrderBadge status={o.status} onHold={o.onHold} />}
       {/* Aktarılmış kalan: satır siparişin tamamı değil, önceki yüklemede yüklenmeyen adet (karar 102) */}
       {o.replan && <> <span className="badge badge-warn replan-badge">{t('loading.replan.from', { date: dmy(o.replan.fromDay) })}</span></>}

@@ -47,7 +47,8 @@ type OfferLike = { amount: unknown; offerAmount?: unknown; lines?: { unitPrice: 
  * Sandık bedeli (Paket 4): yöneticinin sandık satırı satışa hiç gitmez (satır, müşteri fiyatıyla birlikte yöneticinin ve
  * müşterinin teklifindedir; satış fiyatı 0 olduğundan satışın tutarını değiştirmez). Satışın kaydı satırı korur
  * (server/orders/transitions.js → salesInput).
- * Eski teklifler (3.10 öncesi, offerAmount yok): gönderilen tutar zaten yöneticinin tutarıydı.
+ * Müşteri fiyatı yoksa (eski teklif: offerAmount / offerPrice boş) fiyat BOŞ döner — satış / fabrika fiyatına hiçbir
+ * durumda düşülmez (Paket C — karar 237). Teklif tutarının kaynağı: Price (gönderimde yazılan müşteri tutarı) ya da offerAmount.
  */
 function offerPrices<O extends OfferLike>(view: PriceView, o: O): O {
   if (view === 'admin') return o;
@@ -57,9 +58,10 @@ function offerPrices<O extends OfferLike>(view: PriceView, o: O): O {
   const legacy = o.offerAmount == null;
   return {
     ...o,
-    amount: legacy ? o.amount : o.offerAmount,
+    amount: o.offerAmount ?? null,
     offerAmount: null,
-    ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, unitPrice: legacy ? l.unitPrice : l.offerPrice ?? ZERO, offerPrice: null, listPrice: null })) } : {}),
+    // Bedelsiz satır her zaman 0; fiyatı girilmemiş satır: güncel teklifte 0 (eski davranış), eski teklifte boş
+    ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, unitPrice: l.offerPrice ?? (legacy ? null : ZERO), offerPrice: null, listPrice: null })) } : {}),
   } as O;
 }
 

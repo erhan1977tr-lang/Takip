@@ -749,7 +749,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
             {(() => {
               let n = 0;
               return offer.lines.map((l) => {
-                const tot = offerLineTotals({ ...l, unitPrice: (admin ? l.offerPrice ?? 0 : l.unitPrice).toString() });
+                const tot = offerLineTotals({ ...l, unitPrice: (admin ? l.offerPrice ?? 0 : l.unitPrice ?? 0).toString() });
                 const unitTxt = (v: { toString(): string } | null) => (v == null ? '—' : `${fmtNum(v.toString())} / ${!sub && l.unit === 'm2' ? 'm²' : t('common.unitPiece')}`);
                 const sub = l.kind === 'CNC' || l.kind === 'DELIK';
                 // Satışın sandık parası (karar 211, 214): bağımsız, numaralı kalem (yöneticinin sandık satırıyla aynı); rozet yalnızca yöneticide
@@ -790,7 +790,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
             {admin ? (
               <tr><td colSpan={7}>{t('common.total')}</td><td className="num muted">{fmtMoney(offer.amount.toString(), offer.currency)}</td><td /><td className="num"><b>{fmtMoney(offerTotal.toFixed(2), offer.currency)}</b></td>{compCol && <td />}</tr>
             ) : (
-              <tr><td colSpan={8}>{t('common.total')}</td><td className="num"><b>{fmtMoney(total.toString(), offer.currency)}</b></td>{compCol && <td />}</tr>
+              <tr><td colSpan={8}>{t('common.total')}</td><td className="num">{total == null ? <span className="muted">—</span> : <b>{fmtMoney(total.toString(), offer.currency)}</b>}</td>{compCol && <td />}</tr>
             )}
           </tfoot>
         </table>

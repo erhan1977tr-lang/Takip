@@ -50,9 +50,9 @@ export function orderLine(o) {
     lines: sent.lines.map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
     items: o.items ?? [],
   });
-  // 3.10 öncesi teklif (müşteri fiyatı sütunu yok): müşteriye giden fiyat satırdaki tek fiyattı (lib/orders.ts → offerPrices)
+  // Satış = yalnızca müşteri fiyatı (offerPrice); eski teklifte (müşteri fiyatı yok) maliyet satış sayılmaz (Paket C — karar 237)
   const legacy = sent.offerAmount == null;
-  const t = lineTotals(legacy ? sent.lines.map((l) => ({ ...l, offerPrice: l.unitPrice })) : sent.lines);
+  const t = lineTotals(sent.lines);
   // Maliyeti eksik satırlar (yönetici Muhasebe'de yalnızca bunların maliyetini girebilir — server/accounting/cost-correction.js)
   const noCostLines = legacy ? [] : sent.lines.filter(missingCost).map((l) => ({
     lineId: l.id, description: l.description, kind: l.kind ?? 'CAM', unit: l.unit ?? 'm2', adet: l.adet, offerPrice: Number(l.offerPrice),

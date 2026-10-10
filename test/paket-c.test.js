@@ -1,7 +1,12 @@
 // Paket C — saf kurallar ve yapı denetimleri (kararlar 230–236). Veritabanı / ağ yok.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { glassDocText, invoiceProductName, invoiceLines } from '../server/glass/billing.js';
+import { snapshotLine } from '../server/loading/confirmation.js';
+import { orderLine } from '../server/accounting/supplier.js';
+
+const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
 
 test('nihai fatura ürün adı (karar 236): "Sticla" + teknik kısım; securizată / laminată atılır; başka ad değişmez', () => {
   assert.equal(invoiceProductName('STICLĂ SECURIZATĂ LAMINATĂ 4.2.4., PVB OPAQUE (GRI+GRI)'), 'Sticla 4.2.4., PVB OPAQUE (GRI+GRI)');
@@ -32,4 +37,25 @@ test('FGO açıklaması (karar 235): EUR belgede kayıtlı kurun cümlesi; RON y
   assert.equal(glassDocText('EUR', null), '');
   assert.equal(glassDocText('EUR', { fxRate: null }), '');
   assert.equal(glassDocText('EUR', { fxRate: '0' }), '');
+});
+
+test('fiyat gizliliği (karar 237): müşteri fiyatı yoksa satış / fabrika fiyatına düşülmez', () => {
+  // Teklif görünümü (lib/orders.ts → offerPrices): eski teklifte de müşteri fiyatı = offerPrice; tutar = offerAmount
+  const orders = read('lib/orders.ts');
+  const fn = orders.slice(orders.indexOf('function offerPrices'), orders.indexOf('export function sanitizeRows'));
+  assert.ok(fn.includes('amount: o.offerAmount ?? null,'));
+  assert.ok(fn.includes('unitPrice: l.offerPrice ?? (legacy ? null : ZERO)'));
+  assert.ok(!/legacy \? (o\.amount|l\.unitPrice)/.test(fn), 'satış fiyatına geri düşüş yok');
+  // Yükleme tutarı: Price ya da offerAmount — satış tutarı (amount) değil
+  const loading = read('lib/loading.ts');
+  assert.ok(!loading.includes('sent.offerAmount ?? sent.amount'));
+  // Yükleme onayı kopyası: eski teklifte satış fiyatı boş, maliyet satış sayılmaz
+  const line = { id: 'l1', kind: 'CAM', unit: 'm2', enMm: 1000, boyMm: 1000, adet: 2, unitPrice: '30', offerPrice: null };
+  const o = { id: 'o1', customerId: 'c1' };
+  const snap = snapshotLine(o, { currency: 'EUR', offerAmount: null }, line);
+  assert.deepEqual([snap.unitCost, snap.unitSale], [30, null]);
+  // Kârlılık: eski teklifte maliyet satış tutarı olarak yazılmaz
+  const row = orderLine({ id: 'o1', orderNo: 'ABC1', actualShipDate: new Date('2026-10-01T10:00:00Z'), estimatedShipDate: null, offers: [{ status: 'GONDERILDI', currency: 'EUR', offerAmount: null, lines: [line] }] });
+  assert.equal(row.cost, 60);
+  assert.notEqual(row.sale, 60);
 });

@@ -56,16 +56,15 @@ export const shipDayDate = (day) => new Date(`${day}T00:00:00.000Z`);
  * Tutarlar yuvarlanmadan (4 hane) saklanır; toplamlar mevcut kuralla grup düzeyinde yuvarlanır.
  *   maliyet = miktar × OfferLine.unitPrice (müşteriye bedelsiz satırda da sayılır — karar 89)
  *   satış   = miktar × OfferLine.offerPrice (bedelsiz satırda 0)
- * Eski tekliflerde (müşteri fiyatı sütunu yok) müşteriye giden fiyat satırdaki tek fiyattır.
+ * Müşteri fiyatı yoksa (eski teklif dahil) satış fiyatı boş kalır; maliyet satış fiyatı sayılmaz (Paket C — karar 237).
  */
 export function snapshotLine(order, offer, l, { quantity = l.adet, status = 'LOADED', reason = null, note = null } = {}) {
   const qty = int(quantity);
   const glass = isGlassLine(l);
   const m2 = glass ? offerLineTotals({ ...l, adet: qty, unit: 'm2', unitPrice: 0 }).metraj : 0;
   const base = glass ? m2 : qty;
-  const legacy = offer.offerAmount == null;
   const unitCost = Number(l.unitPrice ?? 0);
-  const unitSale = legacy ? unitCost : l.offerPrice == null ? null : Number(l.offerPrice);
+  const unitSale = l.offerPrice == null ? null : Number(l.offerPrice);
   return {
     orderId: order.id, customerId: order.customerId, offerLineId: l.id ?? null, sortOrder: l.sortOrder ?? 0,
     kind: l.kind ?? 'CAM', unit: l.unit ?? 'm2', description: l.description ?? '', descriptionRo: l.descriptionRo ?? null,

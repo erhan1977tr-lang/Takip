@@ -60,7 +60,7 @@ async function CustomerOffers({ user }: { user: CurrentUser }) {
                       {inspector && <td>{customerLabel(user, o.customer.name)}</td>}
                       <td>{o.profile ? (() => { const x = profileCustomerText(t, { status: o.status, stage: o.profile.stage }); return <Badge tone={x.tone}>{x.label}</Badge>; })() : <CustomerBadge status={o.status} drawing={o.drawingTrack} offer="GONDERILDI" />}</td>
                       <td>{fmtDate(sent.sentAt)}</td>
-                      <td className="num"><b>{fmtMoney((o.price?.amount ?? sent.amount).toString(), sent.currency)}</b></td>
+                      <td className="num">{(() => { const v = o.price?.amount ?? sent.amount; return v == null ? <span className="muted">—</span> : <b>{fmtMoney(v.toString(), sent.currency)}</b>; })()}</td>
                       <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn">{t('offers.customer.view')}</Link></td>
                     </tr>
                   );

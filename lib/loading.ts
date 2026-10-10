@@ -154,7 +154,9 @@ export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'price'>, customerV
   });
   // amount: müşteriye giden (yönetici) tutar · salesAmount: satış tutarı (karar 4; hangisi görünür: sayfa yetkiye göre seçer,
   // veriler zaten role göre temizlenmiştir — satışa müşteri tutarı, müşteriye satış tutarı hiç gelmez)
-  const amount = sent ? Number(o.price?.amount ?? sent.offerAmount ?? sent.amount) : null;
+  // Müşteri tutarı yalnızca Price ya da offerAmount'tan; satış tutarına (amount) düşülmez (Paket C — karar 237)
+  const customerAmount = sent ? o.price?.amount ?? sent.offerAmount ?? null : null;
+  const amount = customerAmount == null ? null : Number(customerAmount);
   const cur = sent ?? o.offers[0];
   const salesAmount = cur ? Number(cur.amount) : null;
   return { ...load, amount, salesAmount, currency: cur?.currency ?? 'EUR' };
@@ -261,7 +263,7 @@ export function dayEntry(o: LoadRow, { customer, money }: { customer: boolean; m
   const load = loadOf(o, customer);
   return {
     o, load, orderId: o.id, orderNo: o.orderNo, customerId: o.customer.id, customerName: o.customer.name, guestHostId: o.guestHostId ?? null, replan: !!o.replan,
-    // Görünmeyen tutar null: satışta load.amount satış tutarına düşer (müşteri fiyatı satışa hiç gelmez) — teklif sütununa yazılmaz
+    // Görünmeyen tutar null: müşteri tutarı satışa hiç gelmez (load.amount satışta boştur) — teklif sütununa yazılmaz
     money: { currency: load.currency, sales: money.sales ? load.salesAmount : null, offer: money.offer ? load.amount : null },
   };
 }
