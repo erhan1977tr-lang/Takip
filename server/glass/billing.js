@@ -250,7 +250,10 @@ export const proformaAmount = (row) => round2((row.parts ?? [{ qty: row.qty, eur
  * @param {ReturnType<typeof proformaLines>} rows  @param {number} rate  @param {unknown} vatRate
  */
 export function proformaFgoLines(rows, rate, vatRate) {
-  return rows.map(({ parts, averaged, ...row }) => {
+  return rows.map((r) => {
+    // İç alanlar (parts, averaged) FGO satırına gitmez
+    const { parts } = r;
+    const row = { code: r.code, name: r.name, unit: r.unit, qty: r.qty, eur: r.eur };
     if (!parts || parts.length < 2) return row;
     let net = 0, gross = 0;
     for (const p of parts) {
