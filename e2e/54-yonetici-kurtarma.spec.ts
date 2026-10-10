@@ -68,6 +68,7 @@ test('uygulamada kurtarma adresi yok: tahmin edilen yollar bulunamaz', async ({ 
   for (const url of ['/admin/kurtar', '/admin/recover', '/api/admin/recover', '/kurtar', '/yonetici-kurtar']) {
     const r = await request.get(url, { maxRedirects: 0 });
     expect([404, 307, 308], url).toContain(r.status());
-    expect(await r.text(), url).not.toMatch(/ADMIN_RECOVERY|yonetici-kurtar/);
+    // (Next'in 404 sayfası istenen yolu kendi yükünde geri yazar; o yüzden yalnızca kurtarma içeriği aranır)
+    expect(await r.text(), url).not.toContain('ADMIN_RECOVERY');
   }
 });

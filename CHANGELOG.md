@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.72.1 — 10.10.2026
+
+- P6 uçtan uca testi: tahmin edilen kurtarma adreslerinin 404 olduğu denetlenir; Next'in 404 sayfası istenen yolu kendi
+  yükünde geri yazdığı için gövdede yalnızca kurtarma içeriği (`ADMIN_RECOVERY`) aranır. Uygulama değişmedi.
+
 ## 3.72.0 — 10.10.2026
 
 P6 — yönetici acil erişim kurtarma (karar 246). Şema değişmedi; uygulamada yeni sayfa / adres yok.
