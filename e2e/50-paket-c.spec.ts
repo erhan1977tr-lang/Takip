@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, setShipDate } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, reportSheet, setShipDate, summaryBlock } from './helpers';
 
 // Paket C (kararlar 230–237), gerçek sunucuda. FGO e2e veritabanında KAPALIDIR (gerçek FGO / ANAF isteği yok).
 //  - tahmini yükleme tarihi: Sipariş Bilgileri'nde satır içi; onay penceresinde eski → yeni; müşteride düzenleme yok;
@@ -17,6 +17,7 @@ const OTHER_DAY = new Date(Date.now() + 132 * 86_400_000).toISOString().slice(0,
 const dmy = (k: string) => k.split('-').reverse().join('.');
 const mask = (name: string) => `${name.slice(0, 3)}**********`;
 const ids: Record<string, string> = {};
+const nos: Record<string, string> = {};
 let firm = { id: '', name: '', prefix: '' };
 
 async function prisma() {
@@ -42,6 +43,7 @@ test('veri: müşterinin firmasında bu dosyaya özel siparişler (yükleme gün
         },
       });
       ids[key] = o.id;
+      nos[key] = o.orderNo;
     };
     await mk('ship', 1, DAY, { offerAmount: '61.70', offerPrice: '50' });
     await mk('second', 2, DAY, { offerAmount: '61.70', offerPrice: '50' });
@@ -62,6 +64,18 @@ test('tahmini yükleme tarihi: satış satır içinde değiştirir (onayda eski 
   await expect(sales.locator('#bilgiler [data-ship-date]')).toHaveAttribute('data-ship-date', next);
   // İşlemler kartında ayrı tarih formu yok
   await expect(sales.getByRole('button', { name: 'Tarihi güncelle' })).toHaveCount(0);
+  // Yükleme Özeti (PLANLANAN, onaysız gün): tarihi değişen yüklenmemiş sipariş eski günün özetinden çıkar, yeni günün
+  // özetine girer; üst özet ve döküm aynı satırlardan
+  const summary = async (day: string) => {
+    const res = await sales.request.get(`/yuklemeler/dokum?gun=${day}`);
+    expect(res.status()).toBe(200);
+    return reportSheet(await res.body(), 1);
+  };
+  const [oldDay, newDay] = [await summary(DAY), await summary(next)];
+  expect(String(oldDay[0][0])).toContain('· PLANLANAN');
+  expect(summaryBlock(oldDay, `${mask(firm.name)} · ${nos.ship}`), 'eski günden çıktı').toBeNull();
+  expect(summaryBlock(oldDay, `${mask(firm.name)} · ${nos.second}`), 'aynı günün öbür siparişi kalır').not.toBeNull();
+  expect(summaryBlock(newDay, `${mask(firm.name)} · ${nos.ship}`), 'yeni güne girdi').not.toBeNull();
   // Geri al (sonraki testler için aynı gün) — yine onaylı
   await setShipDate(sales, DAY);
   await expect(sales.locator('#bilgiler [data-ship-date]')).toHaveAttribute('data-ship-date', DAY);
