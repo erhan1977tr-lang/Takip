@@ -33,6 +33,8 @@ export default {
     sheetName: 'Yükleme Özeti',
     linesTitle: 'SİPARİŞ DÖKÜMÜ',
     linesNone: 'Bu günde dökülecek cam satırı yok.',
+    tagPlanned: 'PLANLANAN',
+    tagConfirmed: 'YÜKLENEN',
     state: 'Kaynak',
     stateConfirmed: 'Onaylı yükleme — yalnızca fiilen yüklenen kalemler',
     statePlanned: 'PLANLANAN — yükleme onayı yok; miktarlar teklif / plandan',

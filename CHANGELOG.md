@@ -18,8 +18,9 @@ Paket C — sipariş, yükleme ve FGO düzeltmeleri (kararlar 230–237). Verita
 - **m² üç ondalık:** ekran, PDF ve Excel'de m² 3 ondalıkla gösterilir; hesap değişmedi.
 - **Yükleme Özeti Excel'i:** tek sayfa — bilgi, firma özeti, misafir yük, ardından müşteri → sipariş blokları (sipariş
   toplamı, müşteri toplamı, para birimi başına genel toplam). Aynı ad yalnızca aynı siparişte birleşir; birim fiyat camın
-  ağırlıklı ortalaması, tutara CNC / delik / sandık dahil. Onaylı günde yalnızca fiilen yüklenen kalemler; onaysız gün
-  "PLANLANAN" olarak yazılır. Bedelsiz telafi ayrı satır, tutarı 0. Satışta firma adları maskeli.
+  ağırlıklı ortalaması, tutara CNC / delik / sandık dahil. Onaylı günde firma özeti, sipariş blokları ve bütün toplamlar
+  yalnızca fiilen yüklenen kalemlerden (10 planlanan / 8 yüklenen → her bölüm 8); onaysız günde hepsi planlanan miktardan.
+  Başlıklar "PLANLANAN" / "YÜKLENEN" etiketli; ikisi aynı dosyada karışmaz. Bedelsiz telafi ayrı satır, tutarı 0. Satışta firma adları maskeli.
 - **Sandık:** sandık formundaki sipariş seçim kutuları kaldırıldı; yeni sandık firmanın o günkü kendi siparişlerinin
   hepsine otomatik bağlanır, kayıtlı sandıklar bağlarını korur (başka firma / başka gün bağlanmaz). Yükleme günü firma
   satırında işlemler iki satırda: PDF / Excel, Özet / Sandık.

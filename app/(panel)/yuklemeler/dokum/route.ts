@@ -2,7 +2,7 @@ import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
-import { confirmedSummaryOrders, dayEntry, firmsOfDay, loadDay, moneyView, type SummaryOrder } from '@/lib/loading';
+import { confirmedDayRows, dayEntry, firmsOfDay, loadDay, moneyView, type SummaryOrder } from '@/lib/loading';
 import { fmtDate } from '@/lib/format';
 import { downloadHeaders, exportName, exportSubtitle } from '@/lib/exports';
 import { parseDateOnly } from '@/server/orders/rules.js';
@@ -27,23 +27,27 @@ export async function GET(req: Request) {
   if (!parseDateOnly(day)) return new Response(t('loading.transport.badDay'), { status: 400 });
   const data = await loadDay(user, day);
   const money = moneyView(user);
-  const entries = data.rows.map((o) => dayEntry(o, { customer: false, money }));
+  // Tek kaynak (karar 233; düzeltme 3.66.0): onaylı gün → BÜTÜN miktar ve toplamlar (firma özeti, sipariş blokları, müşteri
+  // ve genel toplam, ağırlık) yalnızca etkin YÜKLENDİ kalemlerinden (confirmedDayRows); onaysız gün → planlanan teklif
+  // miktarları, açıkça "PLANLANAN". Aynı dosyada planlanan ve gerçekleşen karışmaz. Fiziksel sandıklar girilen kayıttır.
+  const confirmedRows = await confirmedDayRows(user, day);
+  const confirmed = confirmedRows != null;
+  // Başlıklarda da açık etiket: PLANLANAN / YÜKLENEN
+  const tag = confirmed ? t('loading.summary.tagConfirmed') : t('loading.summary.tagPlanned');
+  const rows = confirmedRows ?? data.rows;
+  const entries = rows.map((o) => dayEntry(o, { customer: false, money }));
   const { firms, total } = firmsOfDay(user, entries, data.crates, data.guests, data.hostNames);
   const dmy = (k: string) => fmtDate(`${k}T12:00:00Z`);
-  // Döküm (karar 233): onaylı gün → yalnızca etkin YÜKLENDİ kalemleri (fiyat role göre tek alanda); onaysız gün → planlanan
-  // teklif miktarları (açıkça "planlanan"). Aktarılan kalan satırında "… yüklemesinden aktarıldı" notu (karar 102).
-  const confirmed = await confirmedSummaryOrders(user, day);
-  const planned: SummaryOrder[] = data.rows.flatMap((o) => {
+  // Aktarılan kalan satırında "… yüklemesinden aktarıldı" notu (karar 102)
+  const orders: SummaryOrder[] = rows.flatMap((o) => {
     const offer = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
     if (!offer) return [];
     const title = o.replan ? [o.title, t('loading.replan.from', { date: dmy(o.replan.fromDay) })].filter(Boolean).join(' · ') : o.title;
     return [{ orderNo: o.orderNo, title: title ?? null, currency: offer.currency, customer: o.customer, lines: offer.lines as unknown as Record<string, unknown>[] }];
   });
-  const lines = buildLoadingSummary(confirmed ?? planned, {
-    // Planlanan: temizlenmiş veride yönetici müşteri fiyatını offerPrice'ta, denetimci müşteri fiyatını / satış satış fiyatını
-    // unitPrice'ta görür. Onaylı: fiyat zaten role göre tek alanda (confirmedSummaryOrders).
-    priceOf: (l) => (confirmed || !userCan(user, 'OFFER_SEND') ? l.unitPrice : l.offerPrice),
-  });
+  // Temizlenmiş veride yönetici müşteri fiyatını offerPrice'ta, denetimci müşteri fiyatını / satış satış fiyatını unitPrice'ta
+  // görür (onaylı günde de aynı: onay kopyasının maliyeti unitPrice, müşteri fiyatı offerPrice)
+  const lines = buildLoadingSummary(orders, { priceOf: (l) => (userCan(user, 'OFFER_SEND') ? l.offerPrice : l.unitPrice) });
   // Misafir yük (fiziksel sandık ilişkisi): ticari sahip ve sandığın sahibi ayrı sütunlarda — adlar role göre maskeli
   const guests = firms.flatMap((f) => f.rows.filter((r) => r.guest).map((r) => ({
     orderNo: r.entry.orderNo, owner: f.name, host: r.guest!.hostName,
@@ -67,11 +71,11 @@ export async function GET(req: Request) {
     ],
     firms, total: { ...total, name: t('loading.summary.total') }, guests, lines, money,
     text: {
-      title: `${t('loading.summary.title')} · ${dmy(day)}`, sheetName: t('loading.summary.sheetName'),
+      title: `${t('loading.summary.title')} · ${dmy(day)} · ${tag}`, sheetName: t('loading.summary.sheetName'),
       linesTitle: t('loading.summary.linesTitle'), linesNone: t('loading.summary.linesNone'),
-      firmsTitle: t('loading.summary.firmsTitle'), guestTitle: t('loading.summary.guestTitle'), guestNone: t('loading.summary.guestNone'),
+      firmsTitle: `${t('loading.summary.firmsTitle')} · ${tag}`, guestTitle: t('loading.summary.guestTitle'), guestNone: t('loading.summary.guestNone'),
       total: t('loading.summary.total'), orderTotal: t('loading.summary.orderTotal'), customerTotal: t('loading.summary.customerTotal'),
-      grandTitle: t('loading.summary.grandTitle'), free: t('loading.summary.free'), unit: 'm²', currency: t('loading.summary.currency'),
+      grandTitle: `${t('loading.summary.grandTitle')} · ${tag}`, free: t('loading.summary.free'), unit: 'm²', currency: t('loading.summary.currency'),
       cols: {
         desc: t('loading.summary.colGlass'), qty: t('loading.summary.colQty'), unit: t('loading.summary.colUnit'), m2: t('loading.summary.colM2'),
         price: t('loading.summary.colAvgPrice'), amount: t('loading.summary.colAmount'),

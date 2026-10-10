@@ -141,7 +141,7 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   expect(await reportSheet(sum.buf, 2), 'tek çalışma sayfası').toEqual([]);
   for (const no of ['UNS8601', 'UNS8602', 'UNS8603', 'BET8604']) expect(summaryBlock(one, `${no.startsWith('BET') ? beta.name : uns.name} · ${no}`), `sipariş bloğu aynı sayfada: ${no}`).not.toBeNull();
   // Genel toplam para birimi başına (birimler toplanmaz)
-  expect(one.some((r) => r[0] === 'GENEL TOPLAM')).toBe(true);
+  expect(one.some((r) => r[0] === 'GENEL TOPLAM · PLANLANAN')).toBe(true);
   expect(one.some((r) => r[0] === 'TOPLAM (EUR)') && one.some((r) => r[0] === 'TOPLAM (RON)')).toBe(true);
   await page.context().close();
 });
@@ -350,7 +350,7 @@ test('dosya adları panel dilinde ve güvenli karakterlerle (TR / RO); belge iç
       `attachment; filename="Incarcare-UNS-${DAY}.xlsx"`, `attachment; filename="Incarcare-UNS-${DAY}.pdf"`,
     ]);
     const ro = await xlsx(page, `/yuklemeler/dokum?gun=${DAY}`);
-    expect(ro.rows[0][0]).toBe(`REZUMAT ÎNCĂRCARE · ${dmy(DAY)}`);
+    expect(ro.rows[0][0]).toBe(`REZUMAT ÎNCĂRCARE · ${dmy(DAY)} · PLANIFICAT`);
     const { readXlsx } = await import('../server/files/xlsx.js');
     expect(readXlsx(ro.buf).sheetName).toBe('Rezumat încărcare');
     const fro = await xlsx(page, `/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=xlsx`);

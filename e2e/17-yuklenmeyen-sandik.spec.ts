@@ -312,11 +312,18 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   };
   const { firms, lines } = await summary(page);
   const stat = (k: string) => firms.find((r) => r[0] === k)?.[1];
-  expect([stat('Cam ağırlığı'), stat('Sandık'), stat('Sevk ağırlığı')]).toEqual(['260 kg', 1, '310 kg']);
+  // Onaylı gün (karar 233, düzeltme): üst özet de yalnızca YÜKLENEN miktardan — UNS7701'in 10 camından 8'i yüklendi
+  // (2 kırık, "Düzelt" ile). Cam 20 kg/m²: Ünsal 8 m² (ağırlığı Beta'nın sandığında) + Beta 3 m² = 220 kg, brüt 270
+  expect(firms.find((r) => r[0] === 'Kaynak')?.[1]).toBe('Onaylı yükleme — yalnızca fiilen yüklenen kalemler');
+  expect(String(firms[0][0])).toContain('· YÜKLENEN');
+  expect([stat('Cam ağırlığı'), stat('Sandık'), stat('Sevk ağırlığı')]).toEqual(['220 kg', 1, '270 kg']);
   const firmLine = (rows: Rows, name: string) => rows.find((r) => r[0] === name)?.slice(0, 9);
-  expect(firmLine(firms, uns.name)).toEqual([uns.name, 1, 10, 0, 0, 10, 0, 0, 0]);
-  expect(firmLine(firms, beta.name)).toEqual([beta.name, 1, 3, 0, 0, 3, 260, 1, 310]);
-  expect(firmLine(firms, 'TOPLAM')).toEqual(['TOPLAM', 2, 13, 0, 0, 13, 260, 1, 310]);
+  expect(firmLine(firms, uns.name)).toEqual([uns.name, 1, 8, 0, 0, 8, 0, 0, 0]);
+  expect(firmLine(firms, beta.name)).toEqual([beta.name, 1, 3, 0, 0, 3, 220, 1, 270]);
+  expect(firmLine(firms, 'TOPLAM')).toEqual(['TOPLAM', 2, 11, 0, 0, 11, 220, 1, 270]);
+  // Genel toplam da yüklenen: 11 cam · 11 m² · 11 × 50 = 550 EUR (planlanan 13 / 650 hiçbir yerde yok)
+  expect(firms.find((r) => r[0] === 'TOPLAM (EUR)')?.filter((v) => v != null && v !== '')).toEqual(['TOPLAM (EUR)', 11, 11, 550]);
+  expect(firms.flat().filter((v) => v === 13 || v === 650), 'planlanan miktar karışmaz').toEqual([]);
   const relation = firms.find((r) => r[0] === 'UNS7701')!;
   expect([relation[1], relation[5], relation[8]], 'ticari sahip · fiziksel sandık sahibi · sandık').toEqual([uns.name, beta.name, '#15']);
   expect([...firms, ...lines].flat(), 'fiziksel sandık sütunu kaldırıldı').not.toContain('SANDIK (FİZİKSEL)');

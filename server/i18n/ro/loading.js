@@ -32,6 +32,8 @@ export default {
     sheetName: 'Rezumat încărcare',
     linesTitle: 'DETALIU PE COMENZI',
     linesNone: 'În această zi nu există rânduri de sticlă.',
+    tagPlanned: 'PLANIFICAT',
+    tagConfirmed: 'ÎNCĂRCAT',
     state: 'Sursă',
     stateConfirmed: 'Încărcare confirmată — doar articolele încărcate efectiv',
     statePlanned: 'PLANIFICAT — încărcarea nu este confirmată; cantități din ofertă / plan',

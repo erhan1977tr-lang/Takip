@@ -306,35 +306,52 @@ export async function loadDay(user: CurrentUser, day: string) {
 export type SummaryOrder = { orderNo: string; title: string | null; currency: string; customer: { id: string; name: string }; lines: Record<string, unknown>[] };
 
 /**
- * Onaylı yükleme gününün dökümü (Paket C — karar 233): yalnızca etkin (en son düzeltme) YÜKLENDİ kalemleri — planlanan
- * miktar değil. Gün onaylı değilse null (çağıran planı kullanır ve "planlanan" yazar).
- * Fiyat role göre TEK alana yazılır (diğer fiyat hiç taşınmaz): yönetici ve denetimci müşteri fiyatı (unitSale), satış satış
- * fiyatı (unitCost); satışa yöneticinin sandık bedeli kalemi hiç gelmez. Firma adı role göre (customerLabel); kapsam orderScope.
+ * Onaylı yükleme gününün satırları (Paket C — karar 233; düzeltme 3.66.0): yükleme ONAYLANMIŞSA "Yükleme Özeti"nin BÜTÜN
+ * miktar ve toplamları (firma özeti, sipariş blokları, müşteri ve genel toplamlar, cam ağırlığı) yalnızca etkin (en son
+ * düzeltme — effectiveItems) YÜKLENDİ kalemlerinden gelir: planlanan ve gerçekleşen miktar aynı dosyada karışmaz. Her
+ * sipariş için onay kalemlerinden bir teklif kopyası kurulur (aktarılan kalan satırlarıyla aynı yöntem — replanRowsBetween):
+ * adet / m² = yüklenen, maliyet / satış = kalemin kaydı (bugünkü teklif / fiyat tablosu değil). Hiç yüklenmeyen ya da onaya
+ * girmeyen sipariş yer almaz. Rol süzgeci olağan yoldan (sanitizeRows: satışa müşteri fiyatı ve yöneticinin sandık bedeli
+ * gitmez; firma adı maskeli). Gün onaylı değilse null — çağıran planı kullanır ve "PLANLANAN" yazar.
  */
-export async function confirmedSummaryOrders(user: CurrentUser, day: string): Promise<SummaryOrder[] | null> {
+export async function confirmedDayRows(user: CurrentUser, day: string): Promise<LoadRow[] | null> {
   const conf = await db.loadingConfirmation.findUnique({ where: { shipDay: new Date(`${day}T00:00:00Z`) }, select: { id: true } });
   if (!conf) return null;
   const items = await db.loadingConfirmationItem.findMany({
     where: { confirmationId: conf.id, order: orderScope(user) },
     orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }, { revision: 'asc' }],
-    include: { order: { select: { orderNo: true, title: true } }, customer: { select: { id: true, name: true } }, offerLine: { select: { crateFee: true } } },
+    include: { offerLine: { select: { crateFee: true } }, replan: { select: { fromDay: true } } },
   });
-  const customerPrice = userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW');
-  const byOrder = new Map<string, SummaryOrder>();
-  for (const it of effectiveItems(items)) {
-    if (it.status !== 'LOADED') continue;
-    if (!customerPrice && it.offerLine?.crateFee) continue;
-    const price = customerPrice ? (it.unitSale == null ? null : Number(it.unitSale)) : Number(it.unitCost);
-    const o = byOrder.get(it.orderId) ?? {
-      orderNo: it.order.orderNo, title: it.order.title ?? null, currency: it.currency,
-      customer: { id: it.customer.id, name: customerLabel(user, it.customer.name) }, lines: [],
-    };
-    o.lines.push({
-      id: it.offerLineId ?? it.id, description: it.description, descriptionRo: it.descriptionRo, enMm: it.enMm, boyMm: it.boyMm,
-      adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, sortOrder: it.sortOrder, pieceBase: it.pieceBase ?? 0,
-      unitPrice: price, offerPrice: price,
+  const loaded = effectiveItems(items).filter((it: (typeof items)[number]) => it.status === 'LOADED');
+  const byOrder = new Map<string, (typeof items)[number][]>();
+  for (const it of loaded) byOrder.set(it.orderId, [...(byOrder.get(it.orderId) ?? []), it]);
+  if (byOrder.size === 0) return [];
+  const orders = await db.order.findMany({ where: { id: { in: [...byOrder.keys()] }, ...orderScope(user) }, include: loadInclude });
+  const rows: LoadRow[] = orders.map((o) => {
+    const list = byOrder.get(o.id) ?? [];
+    const base = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];
+    let cost = 0, sale = 0;
+    const lines = list.map((it) => {
+      cost += Number(it.costAmount);
+      sale += Number(it.saleAmount);
+      return {
+        ...(base?.lines.find((l) => l.id === it.offerLineId) ?? {}),
+        id: it.offerLineId ?? it.id, offerId: base?.id ?? '', sortOrder: it.sortOrder, description: it.description, descriptionRo: it.descriptionRo,
+        enMm: it.enMm, boyMm: it.boyMm, adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, glassProductId: it.glassProductId,
+        weightKgM2: it.weightKgM2, unitPrice: it.unitCost, offerPrice: it.unitSale, listPrice: null, pieceBase: it.pieceBase ?? 0, splitGroup: null,
+        crateFee: it.offerLine?.crateFee ?? false,
+      } as unknown as OrderRow['offers'][number]['lines'][number];
     });
-    byOrder.set(it.orderId, o);
-  }
-  return [...byOrder.values()];
+    const offer = {
+      ...(base ?? {}), id: base?.id ?? `onay-${o.id}`, status: 'GONDERILDI', currency: list[0]?.currency ?? base?.currency ?? 'EUR',
+      amount: new Prisma.Decimal(cost.toFixed(2)), offerAmount: new Prisma.Decimal(sale.toFixed(2)), lines,
+    } as unknown as OrderRow['offers'][number];
+    // Yalnızca aktarılan kalan yüklendiyse (bütün kalemler aktarımdan): "… yüklemesinden aktarıldı" notu korunur
+    const fromReplan = list.length > 0 && list.every((it) => it.replan);
+    return {
+      ...o, offers: [offer], price: null, items: [],
+      ...(fromReplan ? { replan: { day, fromDay: isoDay(list[0].replan!.fromDay), status: 'CONFIRMED' as const } } : {}),
+    };
+  });
+  return hideHost(user, sanitizeRows(user, rows));
 }

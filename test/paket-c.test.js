@@ -114,18 +114,44 @@ test('telafi etiketi (karar 231): yeni telafi siparişinin gerçek numarası; va
   assert.ok(read('server/orders/offer-export.js').includes('r.tag ? `${r.tag}\\n${r.desc}` : r.desc'));
 });
 
-test('yükleme özeti (karar 233): onaylı gün yalnızca etkin YÜKLENDİ kalemleri; fiyat role göre tek alanda; satışa yönetici sandık bedeli ve müşteri fiyatı gitmez; ad maskeli', () => {
+test('yükleme özeti (karar 233, düzeltme): onaylı günde BÜTÜN bölümler (firma özeti, bloklar, toplamlar) yalnızca etkin YÜKLENDİ kalemlerinden; onaysızda planlanan, etiketli', () => {
   const lib = read('lib/loading.ts');
-  const fn = lib.slice(lib.indexOf('export async function confirmedSummaryOrders'));
-  assert.ok(fn.includes('for (const it of effectiveItems(items))') && fn.includes("if (it.status !== 'LOADED') continue;"));
+  const fn = lib.slice(lib.indexOf('export async function confirmedDayRows'));
+  assert.ok(fn.includes("const loaded = effectiveItems(items).filter((it: (typeof items)[number]) => it.status === 'LOADED');"));
   assert.ok(fn.includes("where: { confirmationId: conf.id, order: orderScope(user) }"), 'kapsam');
-  assert.ok(fn.includes("const customerPrice = userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW');"));
-  assert.ok(fn.includes('const price = customerPrice ? (it.unitSale == null ? null : Number(it.unitSale)) : Number(it.unitCost);'));
-  assert.ok(fn.includes('unitPrice: price, offerPrice: price,'), 'diğer fiyat hiç taşınmaz');
-  assert.ok(fn.includes('if (!customerPrice && it.offerLine?.crateFee) continue;'));
-  assert.ok(fn.includes('name: customerLabel(user, it.customer.name)'));
+  assert.ok(fn.includes('adet: it.quantity,'), 'adet = yüklenen');
+  assert.ok(fn.includes('cost += Number(it.costAmount);') && fn.includes('sale += Number(it.saleAmount);'), 'tutar = onay kaydı');
+  assert.ok(fn.includes('crateFee: it.offerLine?.crateFee ?? false,'), 'yöneticinin sandık bedeli satışa süzülür');
+  assert.ok(fn.includes('return hideHost(user, sanitizeRows(user, rows));'), 'olağan rol süzgeci');
+  assert.ok(!lib.includes('confirmedSummaryOrders'), 'ayrı (yalnızca döküm için) okuyucu yok');
   const route = read('app/(panel)/yuklemeler/dokum/route.ts');
-  assert.ok(route.includes('const confirmed = await confirmedSummaryOrders(user, day);'));
-  assert.ok(route.includes("confirmed ? t('loading.summary.stateConfirmed') : t('loading.summary.statePlanned')"), 'planlanan açıkça etiketli');
-  assert.ok(route.includes("priceOf: (l) => (confirmed || !userCan(user, 'OFFER_SEND') ? l.unitPrice : l.offerPrice)"));
+  assert.ok(route.includes('const rows = confirmedRows ?? data.rows;'));
+  assert.ok(route.includes('const entries = rows.map((o) => dayEntry(o, { customer: false, money }));'), 'firma özeti aynı satırlardan');
+  assert.ok(route.includes('const orders: SummaryOrder[] = rows.flatMap('), 'döküm aynı satırlardan');
+  assert.ok(!/data\.rows\.(map|flatMap)/.test(route), 'planlanan satır onaylı günde hiçbir bölüme girmez');
+  assert.ok(route.includes("confirmed ? t('loading.summary.stateConfirmed') : t('loading.summary.statePlanned')"));
+  assert.ok(route.includes("const tag = confirmed ? t('loading.summary.tagConfirmed') : t('loading.summary.tagPlanned');"), 'başlıklar etiketli');
+});
+
+test('yükleme özeti: 10 planlanan / 8 yüklenen — onay kopyasından kurulan satırla firma özeti ve döküm 8 adet', async () => {
+  const { buildLoadingSummary } = await import('../server/loading/summary.js');
+  const { dayFirms } = await import('../server/loading/day-firms.js');
+  const { orderLoad } = await import('../server/orders/loading.js');
+  // Onay kopyası satırı (confirmedDayRows ile aynı biçim): yüklenen 8 adet
+  const line = { kind: 'CAM', unit: 'm2', description: 'Temper', enMm: 1000, boyMm: 1000, adet: 8, unitPrice: 37, offerPrice: 50, weightKgM2: 20 };
+  const s = buildLoadingSummary([{ orderNo: 'UNS1', title: null, currency: 'EUR', customer: { id: 'u', name: 'Ünsal' }, lines: [line] }], { priceOf: (l) => l.offerPrice });
+  assert.deepEqual(s.totals, { EUR: { adet: 8, m2: 8, total: 400 } });
+  const load = orderLoad({ lines: [line], items: [] });
+  assert.deepEqual([load.camAdet, load.metraj, load.netKg], [8, 8, 160]);
+  assert.equal(typeof dayFirms, 'function');
+});
+
+test('m² gösterimi (karar 232) doğrulama: 1234 × 1000 mm → hesap kuralı 2 ondalık 1,23 m²; gösterim 1,230 (tutar 1,23 × fiyat ile tutarlı)', async () => {
+  const { offerLineTotals } = await import('../server/orders/rules.js');
+  const t = offerLineTotals({ kind: 'CAM', unit: 'm2', enMm: 1234, boyMm: 1000, adet: 1, unitPrice: '50' });
+  assert.deepEqual([t.metraj, t.amount], [1.23, 61.5]);
+  const fmt = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(t.metraj);
+  assert.equal(fmt, '1,230', 'gösterim hesaplanan değerin kendisi (1,234 gösterilseydi tutarla çelişirdi: 1,234 × 50 = 61,70)');
+  // 10 adet: alan satır düzeyinde bir kez yuvarlanır (12,34 m²) — 3 ondalık gösterim 12,340
+  assert.equal(offerLineTotals({ kind: 'CAM', unit: 'm2', enMm: 1234, boyMm: 1000, adet: 10, unitPrice: '50' }).metraj, 12.34);
 });
