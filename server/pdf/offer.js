@@ -12,7 +12,6 @@ const ORANGE = [0.72, 0.4, 0.05];
 const W = { n: 22, desc: 150, poz: 45, en: 42, boy: 42, adet: 32, m2: 46, unit: 72, amount: 64 };
 
 const money = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-const num = (v) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(v);
 /** m² her yerde 3 ondalık (karar 232) */
 const area = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(v);
 
