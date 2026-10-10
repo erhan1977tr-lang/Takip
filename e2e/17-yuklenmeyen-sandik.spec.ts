@@ -322,8 +322,9 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   expect([...firms, ...lines].flat(), 'fiziksel sandık sütunu kaldırıldı').not.toContain('SANDIK (FİZİKSEL)');
   // Onaylı gün: yalnızca yüklenen kalemler; misafir siparişin bloğu ticari sahibinde, ev sahibinin bloğuna misafir cam eklenmez
   expect(lines.some((r) => r[0] === 'Kaynak' && String(r[1]).startsWith('Onaylı yükleme'))).toBe(true);
+  // Onaylı gün: gerçek sevk miktarı — 10 camdan 2'si kırık ("Düzelt" ile 8 / 2), dökümde yüklenen 8 adet / 8 m²
   const guestLine = summaryBlock(lines, `${uns.name} · UNS7701`)!.rows[0];
-  expect([guestLine[4], guestLine[6]]).toEqual([10, 10]);
+  expect([guestLine[4], guestLine[6]]).toEqual([8, 8]);
   const hostLine = summaryBlock(lines, `${beta.name} · BET7702`)!.rows[0];
   expect([hostLine[4], hostLine[6]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([3, 3]);
   // Firma çıktısı (yalnızca o firma ve gün; finansal olarak yalnızca teklif tutarı): misafir siparişte yalnızca sandık NUMARASI
