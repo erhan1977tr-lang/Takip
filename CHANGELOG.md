@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.69.0 — 10.10.2026
+
+P3 — iki sayfalı Yükleme Özeti Excel'i (karar 241). Şema değişmedi; hesaplar ve finansal kayıtlar değişmedi.
+
+- **"Firmalar"** sayfası: bilgi satırları (onaylı / PLANLANAN), firma bazlı özet (sandık, ağırlık, rolün görebildiği tutarlar)
+  ve misafir yük tablosu.
+- **"Döküm"** sayfası: düz tablo — SİPARİŞ NO | MÜŞTERİ | PROJE | AÇIKLAMA | ADET | BİRİM | METRAJ | BİRİM FİYAT | TUTAR |
+  Para birimi; her kalem bir satır, sipariş blokları yok, süzgeç / sıralama açık, para birimi başına toplam tablonun altında.
+- **Yönetici / yönetici yardımcısı:** ek **"Döküm (Fabrika)"** sayfası (aynı satırlar fabrika fiyatıyla); "Döküm" müşteri
+  fiyatıyla. **Satış:** fabrika fiyatı, maskeli adlar; müşteri fiyatı dosyada yok. **Denetimci:** müşteri fiyatı; fabrika fiyatı
+  dosyada yok. Müşteri ve çizimci erişemez (403).
+- Testler: sayfa adları, sütun sırası, çok sipariş / çok para birimi toplamları, kısmi yükleme, rol bazlı fiyat / ad
+  (XLSX paketinin tüm parçaları taranır), formül enjeksiyonu, belge özelliği ve tanımlı ad denetimi.
+
 ## 3.68.1 — 10.10.2026
 
 - P2 düzeltmesi (tip kontrolü): telafi formunun hedef listesindeki "yönetici onayı bekler" işareti de aynı akış kuralından

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, reportSheet, setShipDate, summaryBlock } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, firmOf, openFirm, reportSheet, setShipDate, summaryLines } from './helpers';
 
 // Paket C (kararlar 230–237), gerçek sunucuda. FGO e2e veritabanında KAPALIDIR (gerçek FGO / ANAF isteği yok).
 //  - tahmini yükleme tarihi: Sipariş Bilgileri'nde satır içi; onay penceresinde eski → yeni; müşteride düzenleme yok;
@@ -69,13 +69,17 @@ test('tahmini yükleme tarihi: satış satır içinde değiştirir (onayda eski 
   const summary = async (day: string) => {
     const res = await sales.request.get(`/yuklemeler/dokum?gun=${day}`);
     expect(res.status()).toBe(200);
-    return reportSheet(await res.body(), 1);
+    const buf = await res.body();
+    return { firms: await reportSheet(buf, 1), lines: await reportSheet(buf, 2) };
   };
   const [oldDay, newDay] = [await summary(DAY), await summary(next)];
-  expect(String(oldDay[0][0])).toContain('· PLANLANAN');
-  expect(summaryBlock(oldDay, `${mask(firm.name)} · ${nos.ship}`), 'eski günden çıktı').toBeNull();
-  expect(summaryBlock(oldDay, `${mask(firm.name)} · ${nos.second}`), 'aynı günün öbür siparişi kalır').not.toBeNull();
-  expect(summaryBlock(newDay, `${mask(firm.name)} · ${nos.ship}`), 'yeni güne girdi').not.toBeNull();
+  expect(String(oldDay.firms[0][0])).toContain('· PLANLANAN');
+  expect(String(oldDay.lines[0][0])).toContain('· PLANLANAN');
+  expect(summaryLines(oldDay.lines, nos.ship), 'eski günden çıktı').toEqual([]);
+  expect(summaryLines(oldDay.lines, nos.second).length, 'aynı günün öbür siparişi kalır').toBeGreaterThan(0);
+  expect(summaryLines(newDay.lines, nos.ship).length, 'yeni güne girdi').toBeGreaterThan(0);
+  // Satış: müşteri adı maskeli
+  expect(summaryLines(newDay.lines, nos.ship)[0][1]).toBe(mask(firm.name));
   // Geri al (sonraki testler için aynı gün) — yine onaylı
   await setShipDate(sales, DAY);
   await expect(sales.locator('#bilgiler [data-ship-date]')).toHaveAttribute('data-ship-date', DAY);

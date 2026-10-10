@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmOf, openFirm, reportSheet, summaryBlock } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW, firmOf, openFirm, reportSheet, summaryLines } from './helpers';
 
 // Aşama 7E — yüklenmeyen camın ileri güne aktarılması (karar 102) ve başka müşterinin sandığına fiziksel yerleşim (karar 103, 124),
 // Paket 7 firma tablosu ve misafir yük kuralları (karar 186–189).
@@ -308,7 +308,7 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
     expect(res.status()).toBe(200);
     expect(res.headers()['content-disposition']).toContain(`filename="Yukleme-Ozeti-${DAY}.xlsx"`);
     const buf = await res.body();
-    return { firms: readXlsx(buf).rows as Rows, lines: await reportSheet(buf, 1) };
+    return { firms: readXlsx(buf).rows as Rows, lines: await reportSheet(buf, 2) };
   };
   const { firms, lines } = await summary(page);
   const stat = (k: string) => firms.find((r) => r[0] === k)?.[1];
@@ -321,18 +321,18 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   expect(firmLine(firms, uns.name)).toEqual([uns.name, 1, 8, 0, 0, 8, 0, 0, 0]);
   expect(firmLine(firms, beta.name)).toEqual([beta.name, 1, 3, 0, 0, 3, 220, 1, 270]);
   expect(firmLine(firms, 'TOPLAM')).toEqual(['TOPLAM', 2, 11, 0, 0, 11, 220, 1, 270]);
-  // Genel toplam da yüklenen: 11 cam · 11 m² · 11 × 50 = 550 EUR (planlanan 13 / 650 hiçbir yerde yok)
-  expect(firms.find((r) => r[0] === 'TOPLAM (EUR)')?.filter((v) => v != null && v !== '')).toEqual(['TOPLAM (EUR)', 11, 11, 550]);
-  expect(firms.flat().filter((v) => v === 13 || v === 650), 'planlanan miktar karışmaz').toEqual([]);
+  // Genel toplam da yüklenen (Döküm sayfasının altında): 11 cam · 11 m² · 11 × 50 = 550 EUR (planlanan 13 / 650 hiçbir yerde yok)
+  expect(lines.find((r) => r[3] === 'TOPLAM' && r[9] === 'EUR')?.filter((v) => v != null && v !== '')).toEqual(['TOPLAM', 11, 11, 550, 'EUR']);
+  expect([...firms, ...lines].flat().filter((v) => v === 13 || v === 650), 'planlanan miktar karışmaz').toEqual([]);
   const relation = firms.find((r) => r[0] === 'UNS7701')!;
   expect([relation[1], relation[5], relation[8]], 'ticari sahip · fiziksel sandık sahibi · sandık').toEqual([uns.name, beta.name, '#15']);
   expect([...firms, ...lines].flat(), 'fiziksel sandık sütunu kaldırıldı').not.toContain('SANDIK (FİZİKSEL)');
   // Onaylı gün: yalnızca yüklenen kalemler; misafir siparişin bloğu ticari sahibinde, ev sahibinin bloğuna misafir cam eklenmez
-  expect(lines.some((r) => r[0] === 'Kaynak' && String(r[1]).startsWith('Onaylı yükleme'))).toBe(true);
+  expect(String(lines[0][0])).toContain('· YÜKLENEN');
   // Onaylı gün: gerçek sevk miktarı — 10 camdan 2'si kırık ("Düzelt" ile 8 / 2), dökümde yüklenen 8 adet / 8 m²
-  const guestLine = summaryBlock(lines, `${uns.name} · UNS7701`)!.rows[0];
-  expect([guestLine[4], guestLine[6]]).toEqual([8, 8]);
-  const hostLine = summaryBlock(lines, `${beta.name} · BET7702`)!.rows[0];
+  const [guestLine] = summaryLines(lines, 'UNS7701');
+  expect([guestLine[1], guestLine[4], guestLine[6]]).toEqual([uns.name, 8, 8]);
+  const [hostLine] = summaryLines(lines, 'BET7702');
   expect([hostLine[4], hostLine[6]], 'ev sahibinin satırına misafir cam eklenmez').toEqual([3, 3]);
   // Firma çıktısı (yalnızca o firma ve gün; finansal olarak yalnızca teklif tutarı): misafir siparişte yalnızca sandık NUMARASI
   const firmXlsx = async (p: Page, id: string) => {

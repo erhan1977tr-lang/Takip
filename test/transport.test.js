@@ -52,9 +52,9 @@ const flat = (orders) => orders.map((o) => ({ orderNo: o.orderNo, title: o.title
 /** Döküm satırları: [müşteri, sipariş, ad, adet, m², ort. fiyat, tutar, bedelsiz] */
 const rowsOf = (s) => s.customers.flatMap((c) => c.orders.flatMap((o) => o.rows.map((r) => [c.name, o.orderNo, r.name, r.adet, r.m2, r.price, r.total, r.free])));
 const SUMMARY_TEXT = {
-  title: 'YÜKLEME ÖZETİ · 02.10.2026', sheetName: 'Yükleme Özeti', linesTitle: 'SİPARİŞ DÖKÜMÜ', linesNone: '-', firmsTitle: 'F', guestTitle: 'G', guestNone: '-',
-  total: 'TOPLAM', orderTotal: 'Sipariş toplamı', customerTotal: 'Müşteri toplamı', grandTitle: 'GENEL TOPLAM', free: 'bedelsiz (telafi)', unit: 'm²', currency: 'Para birimi',
-  cols: { desc: 'AÇIKLAMA', qty: 'ADET', unit: 'BİRİM', m2: 'METRAJ', price: 'ORT. BİRİM FİYAT', amount: 'TUTAR' },
+  title: 'YÜKLEME ÖZETİ · 02.10.2026', sheetFirms: 'Firmalar', linesNone: '-', firmsTitle: 'F', guestTitle: 'G', guestNone: '-',
+  total: 'TOPLAM', free: 'bedelsiz (telafi)', unit: 'm²',
+  cols: { order: 'SİPARİŞ NO', customer: 'MÜŞTERİ', project: 'PROJE', desc: 'AÇIKLAMA', qty: 'ADET', unit: 'BİRİM', m2: 'METRAJ', price: 'BİRİM FİYAT', amount: 'TUTAR', currency: 'Para birimi' },
   firmCols: { firm: '', orders: '', glass: '', cnc: '', holes: '', m2: '', net: '', crates: '', gross: '', factory: '', offer: '' }, guestCols: { order: '', owner: '', host: '', crate: '' },
 };
 
@@ -92,17 +92,25 @@ test('yükleme özeti (karar 233): müşteri → sipariş; aynı ad yalnızca AY
   // Satış: yalnızca satış fiyatı
   const sales = buildLoadingSummary(flat(orders).map((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l, offerPrice: null })) })), { priceOf: (l) => l.unitPrice });
   assert.equal(sales.totals.EUR.total, 4 * 30 + 2 * 5 + 20 + 3 * 30 + 25);
-  // Excel: TEK sayfa — firmalar, misafir yük, sonra sipariş blokları ("müşteri · sipariş — başlık"), genel toplam
+  // Excel (P3 — karar 241): "Firmalar" + düz "Döküm" (her kalem bir satır, sipariş blokları yok); toplam para birimi başına
   const empty = { name: '', orders: 0, camAdet: 0, cnc: 0, delik: 0, metraj: 0, netKg: 0, crates: 0, grossKg: 0, money: {} };
-  const sheets = loadingSummarySheets({ subtitle: '', stats: [['Sipariş', 3]], firms: [], total: empty, guests: [], lines: s, money: { sales: false, offer: true }, text: SUMMARY_TEXT });
-  assert.equal(sheets.length, 1, 'tek çalışma sayfası');
-  const blocks = sheets[0].blocks;
-  assert.deepEqual(blocks.map((b) => b.title), ['F', 'G', 'ALEGRAD · ALE46 — Adrian', 'ALEGRAD · ALE47 — Sura Mica', 'GLASSANDMORE · GLA61', 'GENEL TOPLAM']);
-  assert.deepEqual(blocks[2].rows[0], ['88.3 TEMPER LAMİNE', 2, 'm²', 4, 50, 220]);
-  assert.deepEqual(blocks[2].totals, [['Sipariş toplamı', 3, '', 5, '', 244]]);
-  assert.deepEqual(blocks[3].totals, [['Sipariş toplamı', 3, '', 3, '', 150], ['Müşteri toplamı (EUR)', 6, '', 8, '', 394]]);
-  assert.deepEqual(blocks[5].totals, [['TOPLAM (EUR)', 7, '', 9, '', 434]]);
-  assert.equal(blocks[2].columns[4].header, 'ORT. BİRİM FİYAT (EUR)');
+  const sheets = loadingSummarySheets({
+    subtitle: '', stats: [['Sipariş', 3]], firms: [], total: empty, guests: [], details: [{ sheetName: 'Döküm', title: 'D', lines: s }],
+    money: { sales: false, offer: true }, text: SUMMARY_TEXT,
+  });
+  assert.deepEqual(sheets.map((x) => x.name), ['Firmalar', 'Döküm']);
+  assert.deepEqual(sheets[0].blocks.map((b) => b.title), ['F', 'G']);
+  assert.equal(sheets[1].blocks.length, 1, 'düz tablo: tek blok');
+  const [d] = sheets[1].blocks;
+  assert.deepEqual(d.columns.map((c) => c.header), ['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR', 'Para birimi']);
+  assert.deepEqual(d.rows, [
+    ['ALE46', 'ALEGRAD', 'Adrian', '88.3 TEMPER LAMİNE', 2, 'm²', 4, 50, 220, 'EUR'],
+    ['ALE46', 'ALEGRAD', 'Adrian', '10 MM TEMPER', 1, 'm²', 1, 24, 24, 'EUR'],
+    ['ALE47', 'ALEGRAD', 'Sura Mica', '88.3 TEMPER LAMİNE', 3, 'm²', 3, 50, 150, 'EUR'],
+    ['GLA61', 'GLASSANDMORE', '', '88.3 TEMPER LAMİNE', 1, 'm²', 1, 40, 40, 'EUR'],
+  ]);
+  assert.deepEqual(d.totals, [['', '', '', 'TOPLAM', 7, '', 9, '', 434, 'EUR']]);
+  assert.equal(d.columns[6].type, 'm2', 'metraj 3 ondalık gösterim');
 });
 
 test('yükleme özeti: ağırlıklı ortalama birim fiyat Σ(m² × fiyat) / Σm²; birleştirme toplamı değiştirmez; para birimleri toplanmaz', async () => {
