@@ -195,7 +195,8 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   await form.locator('#comp-day').fill(NEW_DAY);
   await expect(summary.locator('[data-sum=fiyat]')).toContainText('37,00 EUR/m²');
   await expect(summary).toContainText('Yeni telafi siparişi (UNS7901-T2)');
-  await expect(summary.locator('[data-sum=islem]')).toContainText('CNC × 1 — kaynak fiyatlarıyla');
+  await expect(summary.locator('[data-sum=islem]')).toContainText('CNC × 1');
+  await expect(summary.locator('[data-sum=islem]')).toContainText('— kaynak fiyatlarıyla');
   await expect(summary.locator('[data-sum=kaynak]')).toContainText('1 → 0 adet');
   await shot(page, 'telafi-islemli-cam');
   await summary.locator('.comp-confirm input').check();
