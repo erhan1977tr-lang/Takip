@@ -395,9 +395,9 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   const owner = await as(browser, CUSTOMER, CUST_PW);
   await owner.goto(DAY_URL);
   await expect(owner.locator('.load-table tr', { hasText: 'UNS7701' }).first().locator('.crate-nos')).toContainText('#15');
-  const away = owner.locator('#sandik-bilgileri [data-away=UNS7701]');
-  await expect(away).toContainText('#15');
-  await expect(away).toContainText('2400 × 1600 × 900');
+  const awayRow = owner.locator('#sandik-bilgileri [data-away=UNS7701]');
+  await expect(awayRow).toContainText('#15');
+  await expect(awayRow).toContainText('2400 × 1600 × 900');
   await expect(owner.locator('#sandik-bilgileri [data-hosted]')).toHaveCount(0);
   const ownerHtml = await (await owner.request.get(DAY_URL)).text();
   for (const secret of [beta.name, 'BET7702', orderB, beta.id]) expect(ownerHtml, `sipariş sahibi: ${secret}`).not.toContain(secret);
@@ -422,9 +422,9 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   const host = await as(browser, BETA, TEAM_PW);
   await host.goto(DAY_URL);
   await expect(host.locator('.load-table .crate-table')).toContainText('2400');
-  const hosted = host.locator('#sandik-bilgileri [data-hosted=UNS7701]');
-  await expect(hosted).toContainText('#15');
-  await expect(hosted).toContainText(uns.name);
+  const hostedRow = host.locator('#sandik-bilgileri [data-hosted=UNS7701]');
+  await expect(hostedRow).toContainText('#15');
+  await expect(hostedRow).toContainText(uns.name);
   await expect(host.locator('#sandik-bilgileri [data-away]')).toHaveCount(0);
   const hostHtml = await (await host.request.get(DAY_URL)).text();
   for (const secret of [orderU, `/siparisler/${orderU}`]) expect(hostHtml, `ev sahibi: ${secret}`).not.toContain(secret);
