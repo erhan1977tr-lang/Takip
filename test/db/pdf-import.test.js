@@ -9,7 +9,7 @@ import { createGlassOrder } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { importPreview, importTarget, recordUploads, emptyGlassLines } from '../../server/orders/pdf-import/service.js';
 import { scanPending } from '../../server/files/antivirus.js';
-import { checkUpload } from '../../server/files/limits.js';
+import { checkUpload, UPLOAD_LIMITS } from '../../server/files/limits.js';
 import { removeOrphanFiles } from '../../server/customers/deletion.js';
 import { eventsFor } from '../../server/orders/order-view.js';
 import { DESC_BRONZE, DESC_TENTESOL, FORM_CNC, form, itemsOf } from '../fixtures/factory-pdf.js';
@@ -247,10 +247,13 @@ dbTest('antivirüs: bekleyen fabrika PDF’i arka planda taranır; virüslü PDF
   assert.ok(r.infected >= 1);
   assert.equal((await db.offerImport.findUnique({ where: { id: up.ids[0] } })).scanStatus, 'INFECTED');
   assert.ok((await preview('sales', o.id, up.ids)).imports[0].blocking.some((b) => b.code === 'INFECTED'));
-  // Kota: siparişin dosyalarına fabrika PDF'leri de sayılır (2 GB sınırı) — çok büyük kayıt varsa yeni yükleme reddedilir
-  await db.offerImport.update({ where: { id: up.ids[0] }, data: { size: 2_100_000_000 } });
-  const verdict = await checkUpload(db, [{ name: 'x.pdf', size: 10 }], { userId: people.sales.id, orderId: o.id }, { root: '/tmp', minFreeMb: 0 });
-  assert.equal(verdict?.code, 'order_quota');
+  // Kota: siparişin dosyalarına fabrika PDF'leri de sayılır — sipariş sınırını dolduran kayıt varsa yeni yükleme reddedilir
+  // (sınır testte küçültülür; kural aynı)
+  const limits = { ...UPLOAD_LIMITS, order: { bytes: 1_000_000, files: 400 } };
+  await db.offerImport.update({ where: { id: up.ids[0] }, data: { size: 999_985 } }); // + müşterinin 10 baytlık sipariş dosyası = 999.995
+  const ctx = { userId: people.sales.id, orderId: o.id };
+  assert.equal((await checkUpload(db, [{ name: 'x.pdf', size: 10 }], ctx, { root: '/tmp', minFreeMb: 0, limits }))?.code, 'order_quota');
+  assert.equal(await checkUpload(db, [{ name: 'x.pdf', size: 1 }], ctx, { root: '/tmp', minFreeMb: 0, limits }), null);
   // Dosya temizliği: kaydı duran anahtar silinmez
   const removed = [];
   assert.deepEqual(await removeOrphanFiles(db, [file.storageKey], async (k) => { removed.push(k); }), { removed: 0, kept: 1, failed: 0 });
