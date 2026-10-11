@@ -390,7 +390,7 @@ export function OfferEditor(props: {
           {props.mode !== 'update' && props.pdfImports && (
             <>
               <span className="sep" aria-hidden="true" />
-              <PdfImport orderId={props.orderId} version={props.version} dirty={dirty} previous={props.pdfImports} m={m.pdf} />
+              <PdfImport orderId={props.orderId} dirty={dirty} previous={props.pdfImports} m={m.pdf} />
             </>
           )}
           <span className="sep" aria-hidden="true" />

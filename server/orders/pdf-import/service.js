@@ -120,9 +120,9 @@ const fingerprintOf = (imp, plan) => crypto.createHash('sha256')
 
 /**
  * Ön izleme (ve aktarmanın yeniden hesabı — aynı işlev). db: veritabanı ya da işlem (tx).
- * @param {{ actor: any, order: any, offer: any, importIds: string[], choices?: object, locale?: string }} p
+ * @param {{ order: any, offer: any, importIds: string[], choices?: object, locale?: string }} p
  */
-export async function buildPreview(db, { actor, order, offer, importIds, choices = {}, locale = 'tr' }) {
+export async function buildPreview(db, { order, offer, importIds, choices = {}, locale = 'tr' }) {
   const ids = [...new Set((importIds ?? []).map(String))].slice(0, MAX_PDFS * 3);
   const imports = await db.offerImport.findMany({ where: { id: { in: ids }, orderId: order.id }, orderBy: { createdAt: 'asc' } });
   const glasses = await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }] });
@@ -187,7 +187,7 @@ export async function importPreview(db, { actor, orderId, importIds, choices, lo
   if (!allowed(actor)) return FORBIDDEN;
   const t = await loadTarget(db, { orderId, actor });
   if (!t.ok) return t;
-  const p = await buildPreview(db, { actor, order: t.order, offer: t.offer, importIds, choices, locale });
+  const p = await buildPreview(db, { order: t.order, offer: t.offer, importIds, choices, locale });
   // Firma adını göremeyen rol (satış): PDF'ten okunan serbest satır metni gönderilmez (müşteri adı taşıyabilir — maskeleme kuralı).
   // Proje yalnızca kod + numara olarak döner (plan.header.projectCode); "Proje / Müşterisi" metninin kendisi hiç dönmez.
   const masked = !can(actor.role, 'CUSTOMER_NAME_VIEW');
@@ -219,7 +219,7 @@ export async function applyImports(h, complete) {
   for (const no of [...new Set(nos)]) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`pdf-import:${no}`}, 0))`;
 
   const full = await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { customer: { select: { prefix: true } }, items: true } });
-  const preview = await buildPreview(tx, { actor, order: { ...order, customer: full.customer, items: full.items }, offer, importIds: ids, choices: payload.choices ?? {} });
+  const preview = await buildPreview(tx, { order: { ...order, customer: full.customer, items: full.items }, offer, importIds: ids, choices: payload.choices ?? {} });
   if (preview.imports.length !== ids.length) throw new WorkflowError('PDF_IMPORT_STALE');
   for (const w of wanted) {
     const p = preview.imports.find((x) => x.id === String(w.id));

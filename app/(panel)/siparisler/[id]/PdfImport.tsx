@@ -20,9 +20,8 @@ const day = (d: string | null) => (d ? d.split('-').reverse().join('.') : '—')
  * kaldırılacak boş satırlar) ve gösterim. Aktarma ön izlemenin parmak iziyle gider; sunucu yeniden hesaplar.
  * Kaydedilmemiş editör değişikliği varken aktarma kapalıdır (aktarma kayıtlı tabloya ekler, sayfa yenilenir).
  */
-export function PdfImport({ orderId, version, dirty, previous, m }: {
+export function PdfImport({ orderId, dirty, previous, m }: {
   orderId: string;
-  version: number;
   dirty: boolean;
   previous: { id: string; name: string; factoryNo: string | null; applied: boolean }[];
   m: Dict['offer']['pdf'];
