@@ -165,7 +165,8 @@ dbTest('yüklenip teslim edilmiş siparişten telafi (satış, bedelsiz, yeni si
   // --- Satış: işlemli TEK cam, BEDELSİZ, yeni telafi siparişi (müşterinin ileri tarihli siparişleri VAR; yine de yeni sipariş seçilebilir)
   const r = await create({ orderId: S.id, lineId: lineOp.id, quantity: 1, mode: 'FREE', dest: newOn(N1), actor: act(U.sales) });
   assert.deepEqual([r.ok, r.status, r.destOrderNo, r.created, r.duplicate, r.via, r.direct], [true, 'APPLIED', 'ABC124-T', true, false, 'NEW', true]);
-  assert.deepEqual(r.source, NOT_REDUCED('LOADED'), 'kaynak yüklenmiş: adedi düşmez, telafi ek üretimdir');
+  // Bedelsiz telafi (karar 256): kaynak adedi HİÇ değişmez (yüklenmiş olsa da olmasa da) — nedeni FREE
+  assert.deepEqual(r.source, NOT_REDUCED('FREE'), 'bedelsiz: kaynak adedi değişmez, telafi ayrı ek üretimdir');
   const T = await load(r.destOrderId);
   // Bedelsiz: teklif yöneticiye uğramadan müşteriye gönderilmiş açılır; çizim gerekmediği için sipariş kendiliğinden üretime geçer
   assert.deepEqual(
@@ -198,7 +199,7 @@ dbTest('yüklenip teslim edilmiş siparişten telafi (satış, bedelsiz, yeni si
     [alert.orderId, alert.createdById, alert.details.orderNo, alert.details.glass, alert.details.quantity, alert.details.tier, alert.details.mode, alert.details.normal, alert.details.price, alert.details.currency, alert.details.destOrderNo, alert.details.day, alert.details.direct],
     [S.id, U.sales.id, 'ABC124', '1 × Temper Lamine 44.2 1000×2000', 1, 'CUSTOMER', 'FREE', 66.96, 0, 'EUR', 'ABC124-T', N1, true],
   );
-  assert.deepEqual([alert.details.compensationId, alert.details.source], [r.compensationId, NOT_REDUCED('LOADED')]);
+  assert.deepEqual([alert.details.compensationId, alert.details.source], [r.compensationId, NOT_REDUCED('FREE')]);
   assert.ok(alert.createdAt instanceof Date);
   assert.equal(await db.adminAlert.count(), alerts0 + 1, 'ikinci bir kayıt (bekleyen karar vb.) açılmaz');
   // Denetim kaydı: kim, kaynak sipariş / satır, telafi, adet, karar, önceki ve uygulanan fiyat, hedef, kaynak adedi
@@ -209,7 +210,7 @@ dbTest('yüklenip teslim edilmiş siparişten telafi (satış, bedelsiz, yeni si
   );
   assert.ok(audit.createdAt instanceof Date);
   assert.deepEqual(audit.details.operations, [{ kind: 'CNC', adet: 1, unitPrice: 5, offerPrice: 0, free: true }, { kind: 'DELIK', adet: 2, unitPrice: 2, offerPrice: 0, free: true }], 'bedelsiz: taşınan işlemlerin müşteri fiyatı 0, maliyet durur');
-  assert.deepEqual(audit.details.source, { ...NOT_REDUCED('LOADED'), offerId: null });
+  assert.deepEqual(audit.details.source, { ...NOT_REDUCED('FREE'), offerId: null });
   // Geçmiş: kaynakta ve hedefte; notta tutar yok
   const ev = await db.orderEvent.findFirstOrThrow({ where: { orderId: S.id, event: 'COMPENSATION' } });
   assert.equal(ev.note, `1 × Temper Lamine 44.2 1000×2000 → ABC124-T / ${dmy(N1)}`);
@@ -368,11 +369,11 @@ dbTest('fiyat kararı (karar 251): bedelsiz / aynı fiyat / farklı fiyat doğru
   assert.equal(await db.adminAlert.count({ where: { type: 'COMPENSATION_PENDING' } }), 0);
 
   // --- Telafinin telafisi + KAYNAK ADEDİ (karar 157): kaynak ABC124-T2 TEMİZ bir sipariştir (yüklenmedi, belgesi yok) →
-  // 2 camından 1'i telafi edilince ana siparişte 1 cam kalır (teklifin yeni sürümü; eski sürüm değişmez). Yeni sipariş
-  // numarası KÖK siparişten (ABC124-T8), kök ilişkisiyle.
+  // 2 camından 1'i BEDELLİ (aynı fiyat) telafi edilince ana siparişte 1 cam kalır (teklifin yeni sürümü; eski sürüm
+  // değişmez). Yeni sipariş numarası KÖK siparişten (ABC124-T8), kök ilişkisiyle.
   const t2Before = await load(T2.id);
   assert.deepEqual(await comp.sourceState(db, T2.id), { ok: true });
-  r = await create({ orderId: T2.id, lineId: t2Before.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(N1), actor: act(U.sales) });
+  r = await create({ orderId: T2.id, lineId: t2Before.offers[0].lines[0].id, quantity: 1, mode: 'NORMAL', dest: newOn(N1), actor: act(U.sales) });
   assert.deepEqual([r.ok, r.source], [true, REDUCED(2, 1)]);
   const T8 = await load(r.destOrderId);
   assert.deepEqual([T8.orderNo, T8.compSeq, T8.compOfId, T8.customerOrderNo, (await compOf(r.compensationId)).sourceOrderId], ['ABC124-T8', 8, S.id, 124, T2.id]);
@@ -382,9 +383,9 @@ dbTest('fiyat kararı (karar 251): bedelsiz / aynı fiyat / farklı fiyat doğru
   // TELAFİ işareti ve fiyatlar yeni sürüme taşınır; müşteri tutarı kalan 1 cam: 2 m² × 66,96
   assert.deepEqual(t2After.offers[0].lines.map(lineRow), [['CAM', 1, '30', '66.96', false, true]]);
   assert.deepEqual([t2After.offers[0].offerAmount.toString(), (await db.price.findUniqueOrThrow({ where: { orderId: T2.id } })).amount.toString()], ['133.92', '133.92']);
-  // Kaynakta cam kalmayacaksa telafi açılmaz (siparişin bütün camı telafi edilemez) — hiçbir kayıt oluşmaz
+  // Bedelli telafide kaynakta cam kalmayacaksa telafi açılmaz (siparişin bütün camı telafi edilemez) — hiçbir kayıt oluşmaz
   counts = await stable();
-  assert.deepEqual(await create({ orderId: T2.id, lineId: t2After.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(N1), actor: act(U.sales) }), { ok: false, code: 'SOURCE_EMPTY' });
+  assert.deepEqual(await create({ orderId: T2.id, lineId: t2After.offers[0].lines[0].id, quantity: 1, mode: 'NORMAL', dest: newOn(N1), actor: act(U.sales) }), { ok: false, code: 'SOURCE_EMPTY' });
   // Bayat form: eski sürümün satırıyla gelen istek aynı camı ikinci kez düşemez
   assert.deepEqual(await create({ orderId: T2.id, lineId: t2Before.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(N1), actor: act(U.sales) }), { ok: false, code: 'CONFLICT' });
   assert.deepEqual(await stable(), counts);
@@ -441,20 +442,32 @@ dbTest('hedef: müşterinin ileri tarihli siparişi — taslak teklife eklenir; 
   const of = (o) => list.find((x) => x.id === o.id);
   assert.deepEqual([of(D1).via, of(D1).day, of(D1).orderNo], ['DRAFT', F1, 'ABC131']);
   assert.deepEqual([of(F).via, of(F).day, of(F).reason], ['SENT', F2, null]);
-  assert.deepEqual([of(onHold).reason, of(fresh).reason, of(ron).reason, of(billed).reason], ['ON_HOLD', 'NO_OFFER', 'CURRENCY', 'BILLING']);
+  // Proformalı sipariş hedef OLABİLİR (karar 256: yalnızca nihai fatura engeldir); nihai faturalı sipariş olamaz
+  const invoiced = await order(A, 155, F1, [glassLine(1)]);
+  await db.fgoDocument.create({ data: { orderId: invoiced.id, kind: 'INVOICE', series: 'GKH', number: '9010', issuedAt: new Date() } });
+  const list2 = await comp.compensationDestinations(db, { source: { id: S.id, customerId: A.id, currency: 'EUR' } });
+  const of2 = (o) => list2.find((x) => x.id === o.id);
+  assert.deepEqual([of(onHold).reason, of(fresh).reason, of(ron).reason, of(billed).reason, of(billed).via], ['ON_HOLD', 'NO_OFFER', 'CURRENCY', null, 'SENT']);
+  assert.deepEqual([of2(invoiced).reason, of2(invoiced).via], ['FINAL_INVOICE', null]);
   assert.equal(of(today), undefined, 'bugünün siparişi ileri tarihli değil');
   assert.ok(!list.some((x) => x.id === BF.id || x.id === S.id), 'başka müşterinin siparişi ve kaynağın kendisi listede yok');
   assert.ok(list.some((x) => x.orderNo === 'ABC124-T'), 'telafi siparişi de olağan bir sipariştir');
   // Başka müşterinin ileri tarihli siparişi yok: liste boş; yeni telafi siparişi yine açılır (OTH7-T)
   assert.deepEqual(await comp.compensationDestinations(db, { source: { id: BF.id, customerId: B.id, currency: 'EUR' } }), []);
-  for (const [o, code] of [[onHold, 'DEST_ON_HOLD'], [fresh, 'DEST_NO_OFFER'], [ron, 'DEST_CURRENCY'], [billed, 'DEST_BILLING'], [today, 'DEST_NOT_FUTURE'], [S, 'DEST_SAME_ORDER']]) {
+  for (const [o, code] of [[onHold, 'DEST_ON_HOLD'], [fresh, 'DEST_NO_OFFER'], [ron, 'DEST_CURRENCY'], [invoiced, 'DEST_FINAL_INVOICE'], [today, 'DEST_NOT_FUTURE'], [S, 'DEST_SAME_ORDER']]) {
     assert.deepEqual(await create({ orderId: S.id, lineId: lineG1.id, quantity: 1, dest: into(o), actor: act(U.admin) }), { ok: false, code }, code);
   }
+  // Proformalı hedefe bedelsiz telafi eklenir (teklifin yeni sürümü müşteride); kesilmiş proforma DEĞİŞMEZ
+  const billedDoc = JSON.stringify(await db.fgoDocument.findMany({ where: { orderId: billed.id } }));
+  const intoBilled = await create({ orderId: S.id, lineId: lineG1.id, quantity: 1, mode: 'FREE', dest: into(billed), actor: act(U.admin) });
+  assert.deepEqual([intoBilled.ok, intoBilled.status, intoBilled.via, intoBilled.direct, intoBilled.source], [true, 'APPLIED', 'SENT', true, NOT_REDUCED('FREE')]);
+  assert.deepEqual((await load(billed.id)).offers[0].lines.map(lineRow), [['CAM', 1, '30', '66.96', false, false], ['CAM', 1, '30', '0', true, true]]);
+  assert.equal(JSON.stringify(await db.fgoDocument.findMany({ where: { orderId: billed.id } })), billedDoc, 'proforma kaydı değişmez');
 
   // --- Taslak teklif (satışta): satış bedelsiz telafi ekler → satırlar taslağa eklenir, sürüm artar, müşteriye hiçbir şey gitmez
   let r = await create({ orderId: S.id, lineId: lineOp.id, quantity: 1, mode: 'FREE', dest: into(D1), actor: act(U.sales) });
   // direct false: satırlar henüz gönderilmemiş teklife eklendi — müşteriye teklifin olağan akışıyla (yönetici onayı) gider
-  assert.deepEqual([r.ok, r.status, r.destOrderNo, r.created, r.via, r.direct, r.source], [true, 'APPLIED', 'ABC131', false, 'DRAFT', false, NOT_REDUCED('LOADED')]);
+  assert.deepEqual([r.ok, r.status, r.destOrderNo, r.created, r.via, r.direct, r.source], [true, 'APPLIED', 'ABC131', false, 'DRAFT', false, NOT_REDUCED('FREE')]);
   assert.deepEqual((await alertOf(r.compensationId)).map((a) => [a.type, a.details.mode, a.details.direct]), [['COMPENSATION_PRICE', 'FREE', false]]);
   let d = await load(D1.id);
   assert.deepEqual([d.offers.length, d.offers[0].status, d.version], [1, 'HAZIRLANIYOR', D1.version + 1]);
@@ -562,14 +575,16 @@ dbTest('hedef: müşterinin ileri tarihli siparişi — taslak teklife eklenir; 
   assert.deepEqual([done.status, done.free, done.offerPrice.toString()], ['APPLIED', true, '0']);
   assert.equal((await alerts('COMPENSATION_PENDING')).filter((x) => !x.resolvedAt).length, 0);
   const applied = await db.auditLog.findFirstOrThrow({ where: { action: 'COMPENSATION_APPLIED', details: { path: ['compensationId'], equals: r.compensationId } } });
-  assert.deepEqual([applied.userId, applied.entityId, applied.details.quantity, applied.details.priceMode, applied.details.free, applied.details.offerPrice, applied.details.normalPrice, applied.details.source], [U.admin.id, SU.id, 1, 'CUSTOM', true, 0, null, { ...NOT_REDUCED('CLOSED'), offerId: null }]);
+  // Yönetici kararı bedelsiz yaptı: kaynak adedi değişmez (karar 256 — nedeni FREE)
+  assert.deepEqual([applied.userId, applied.entityId, applied.details.quantity, applied.details.priceMode, applied.details.free, applied.details.offerPrice, applied.details.normalPrice, applied.details.source], [U.admin.id, SU.id, 1, 'CUSTOM', true, 0, null, { ...NOT_REDUCED('FREE'), offerId: null }]);
   assert.ok(await db.auditLog.findFirst({ where: { action: 'COMPENSATION_REJECTED', entityId: SU.id } }));
 
-  // İleri tarihli siparişi olmayan müşteri: yeni ileri gün seçilir → OTH7-T. Kaynak (OTH7) temiz: 3 camından 1'i düşer.
+  // İleri tarihli siparişi olmayan müşteri: yeni ileri gün seçilir → OTH7-T. Kaynak (OTH7) temiz ama telafi BEDELSİZ:
+  // 3 camı aynen kalır (karar 256 — bedelsiz telafi ayrı ek üretimdir)
   r = await create({ orderId: BF.id, lineId: BF.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
-  assert.deepEqual([r.ok, r.destOrderNo, r.source], [true, 'OTH7-T', REDUCED(3, 2)]);
+  assert.deepEqual([r.ok, r.destOrderNo, r.source], [true, 'OTH7-T', NOT_REDUCED('FREE')]);
   assert.equal((await load(r.destOrderId)).customerId, B.id);
-  assert.deepEqual((await load(BF.id)).offers[0].lines.map((l) => [l.kind, l.adet]), [['CAM', 2]]);
+  assert.deepEqual((await load(BF.id)).offers.map((o) => o.lines.map((l) => [l.kind, l.adet])), [[['CAM', 3]]], 'kaynak teklifin yeni sürümü açılmadı');
 });
 
 dbTest('yüklenmeyen camla ilişki: telafisi açılan adet ayrıca aktarılamaz (aynı cam iki kez üretilmez); onay kaydı değişmez', async () => {
@@ -808,31 +823,38 @@ dbTest('kaynak adedi (karar 157): temiz siparişte 20 cam → 3 telafi → ana s
   const [alert] = await alertOf(r.compensationId);
   assert.deepEqual([alert.type, alert.orderId, alert.details.mode, alert.details.quantity, alert.details.source], ['COMPENSATION_PRICE', C.id, 'NORMAL', 3, REDUCED(20, 17)]);
 
-  // --- Satış, BEDELSİZ: işlemli TEK cam. Cam ve işlemleri kaynaktan kalkar, telafiye taşınır; telafide cam da işlemler de 0
+  // --- Satış, BEDELSİZ (karar 256): işlemli TEK cam. Kaynak teklif DEĞİŞMEZ (yeni sürüm yok, cam ve işlemleri yerinde kalır);
+  // telafi ayrı ek üretimdir: cam ve işlemleri telafiye kopyalanır, müşteri fiyatları 0, fabrika maliyeti durur
   const opLine = c1.offers[0].lines[1];
   r = await create({ orderId: C.id, lineId: opLine.id, quantity: 1, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
-  assert.deepEqual([r.destOrderNo, r.source], ['ABC160-T2', REDUCED(1, 0)]);
+  assert.deepEqual([r.destOrderNo, r.source], ['ABC160-T2', NOT_REDUCED('FREE')]);
   const c2 = await load(C.id);
-  assert.deepEqual(c2.offers[0].lines.map(lineRow), [['CAM', 17, '30', '66.96', false, false], ['CAM', 4, '20', '40', false, false], ['CAM', 1, '25', '30', false, false]]);
-  // müşteri: 2276,64 + 40 + 30 = 2346,64 (bedelsiz camın 133,92'si ve işlemlerinin 14'ü artık hiçbir siparişte ücretli değil)
-  assert.equal(c2.offers[0].offerAmount.toString(), '2346.64');
+  assert.equal(JSON.stringify(c2.offers), JSON.stringify(c1.offers), 'bedelsiz telafi kaynak teklifi değiştirmez');
+  assert.deepEqual([c2.version, c2.offers.length], [c1.version, 2]);
+  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: C.id } })).map((o) => o.type), ['ORDER_OFFER_UPDATED'], 'kaynak için yeni "teklif güncellendi" olayı yok');
   const T2 = await load(r.destOrderId);
   assert.deepEqual(T2.offers[0].lines.map(lineRow), [['CAM', 1, '30', '0', true, true], ['CNC', 1, '5', '0', true, true], ['DELIK', 2, '2', '0', true, true]]);
   assert.deepEqual([T2.offers[0].lines.map((l) => l.sortOrder), new Set(T2.offers[0].lines.map((l) => l.compensationId)).size, T2.offers[0].offerAmount.toString()], [[0, 1, 2], 1, '0']);
-  // Adet ve m² yine korunur; fabrika maliyeti de (bedelsiz satırlar maliyetiyle birlikte sayılınca)
+  // Ücretli kapsam iki kez sayılmaz (kaynak + bedelli telafi = başlangıç); bedelsiz telafi bunun ÜSTÜNE ayrı, izlenebilir
+  // fiziksel üretimdir: 1 cam, 2 m², müşteri tutarı 0, fabrika maliyeti 69
+  assert.deepEqual([totals(c2.offers[0].lines).adet + tel.adet, round2(totals(c2.offers[0].lines).m2 + tel.m2), round2(totals(c2.offers[0].lines).sale + tel.sale)], [start.adet, start.m2, start.sale]);
   const costOf = (lines) => totals(lines.map((l) => ({ ...l, free: false }))).cost;
-  assert.deepEqual(
-    [totals(c2.offers[0].lines).adet + tel.adet + 1, round2(totals(c2.offers[0].lines).m2 + tel.m2 + totals(T2.offers[0].lines).m2), round2(costOf(c2.offers[0].lines) + costOf(T1.offers[0].lines) + costOf(T2.offers[0].lines))],
-    [start.adet, start.m2, start.cost],
-  );
+  assert.deepEqual([totals(T2.offers[0].lines).adet, totals(T2.offers[0].lines).m2, totals(T2.offers[0].lines).sale, costOf(T2.offers[0].lines)], [1, 2, 0, 69]);
+  assert.equal((await compOf(r.compensationId)).sourceLineId, opLine.id, 'telafi kaydı kaynak satırı izler');
+  // Aynı form iki kez gönderilse de (çift tıklama) ikinci telafi / miktar hareketi yok
+  const freeKey = key();
+  const twice = await Promise.all([1, 2].map(() => comp.createCompensation(db, { orderId: C.id, lineId: c2.offers[0].lines[0].id, quantity: 2, mode: 'FREE', dest: newOn(F2), requestKey: freeKey, confirm: true, actor: act(U.sales) })));
+  assert.deepEqual([twice.map((x) => x.duplicate).sort(), new Set(twice.map((x) => x.compensationId)).size], [[false, true], 1]);
+  assert.equal(await db.compensation.count({ where: { requestKey: freeKey } }), 1);
+  assert.equal(JSON.stringify((await load(C.id)).offers), JSON.stringify(c1.offers), 'kaynak adedi hâlâ 17');
 
   // --- Bayat form (aynı anda dört istek, hepsi teklifin AYNI sürümündeki satırla): yalnızca biri uygulanır; adet bir kez düşer
   const line17 = c2.offers[0].lines[0];
   const rs = await Promise.all([1, 2, 3, 4].map(() => create({ orderId: C.id, lineId: line17.id, quantity: 1, dest: newOn(F2), actor: act(U.sales) })));
   assert.deepEqual(rs.map((x) => (x.ok ? 'ok' : x.code)).sort(), ['CONFLICT', 'CONFLICT', 'CONFLICT', 'ok']);
   const c3 = await load(C.id);
-  assert.deepEqual([c3.offers.length, c3.offers[0].lines[0].adet], [4, 16]);
-  assert.equal(await db.compensation.count({ where: { sourceOrderId: C.id } }), 3);
+  assert.deepEqual([c3.offers.length, c3.offers[0].lines[0].adet], [3, 16]);
+  assert.equal(await db.compensation.count({ where: { sourceOrderId: C.id } }), 4);
 
   // --- Var olan siparişe (teklifi müşteride) — yönetici, farklı fiyat 50: hedefin yeni sürümü hemen gider; kaynak 16 → 14
   const E = await order(A, 161, F2, [glassLine(5)]);
@@ -862,7 +884,7 @@ dbTest('kaynak adedi (karar 157): temiz siparişte 20 cam → 3 telafi → ana s
   // --- Karar beklerken kaynak teklif değişirse (başka bir telafi ya da yöneticinin güncellemesi) adet KENDİLİĞİNDEN düşürülmez
   r = await create({ orderId: CU.id, lineId: cu.offers[0].lines[0].id, quantity: 2, mode: 'CUSTOM', price: '35', dest: into(E), actor: act(U.sales) });
   assert.equal(r.status, 'PENDING');
-  const other = await create({ orderId: CU.id, lineId: cu.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
+  const other = await create({ orderId: CU.id, lineId: cu.offers[0].lines[0].id, quantity: 1, mode: 'NORMAL', dest: newOn(F2), actor: act(U.sales) });
   assert.deepEqual(other.source, REDUCED(10, 9));
   assert.deepEqual(await comp.decideCompensation(db, { id: r.compensationId, approve: true, price: '45', actor: act(U.admin) }), { ok: true, status: 'APPLIED', destOrderId: E.id, sourceOrderId: CU.id, source: NOT_REDUCED('CHANGED') });
   cu = await load(CU.id);
@@ -890,7 +912,7 @@ dbTest('kaynak adedi yalnızca temiz siparişte düşer: belgeli, belge isteği 
   // Belge isteği kuyrukta olan sipariş
   const H = await order(A, 163, F1, [glassLine(6)]);
   const job = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', orderId: H.id, payload: { kind: 'PROFORMA' } } });
-  await unchanged(H, 'BILLING', { mode: 'FREE' });
+  await unchanged(H, 'BILLING', { mode: 'CUSTOM', price: '35' });
   await db.notificationOutbox.delete({ where: { id: job.id } });
   // İstek kalkınca sipariş yeniden temizdir: adet düşer
   assert.deepEqual(await comp.sourceState(db, H.id), { ok: true });
@@ -904,18 +926,101 @@ dbTest('kaynak adedi yalnızca temiz siparişte düşer: belgeli, belge isteği 
   const M = await order(A, 165, F1, [glassLine(2), crateFee()]);
   const counts = async () => [await db.compensation.count(), await db.order.count(), await db.offer.count(), await db.adminAlert.count(), await db.notification.count(), await db.orderEvent.count()];
   const before = await counts();
-  for (const [u, mode] of [[U.sales, 'FREE'], [U.sales, 'NORMAL'], [U.sales, 'CUSTOM'], [U.admin, 'FREE']]) {
+  for (const [u, mode] of [[U.sales, 'NORMAL'], [U.sales, 'CUSTOM'], [U.admin, 'NORMAL'], [U.admin, 'CUSTOM']]) {
     assert.deepEqual(await create({ orderId: M.id, lineId: M.offers[0].lines[0].id, quantity: 2, mode, price: mode === 'CUSTOM' ? '35' : null, dest: newOn(F2), actor: act(u) }), { ok: false, code: 'SOURCE_EMPTY' }, `${u.appRole} ${mode}`);
   }
   assert.deepEqual(await counts(), before);
-  const one = await create({ orderId: M.id, lineId: M.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
+  // Bedelsiz telafi kaynaktan düşmez (karar 256): siparişin bütün camı için de açılabilir; kaynak aynen kalır
+  const whole = await create({ orderId: M.id, lineId: M.offers[0].lines[0].id, quantity: 2, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
+  assert.deepEqual([whole.ok, whole.source], [true, NOT_REDUCED('FREE')]);
+  assert.deepEqual((await load(M.id)).offers.map((o) => o.lines.map((l) => [l.description, l.adet])), [[['Temper Lamine 44.2', 2], ['Sandık parası', 1]]]);
+  const one = await create({ orderId: M.id, lineId: M.offers[0].lines[0].id, quantity: 1, mode: 'NORMAL', dest: newOn(F2), actor: act(U.sales) });
   assert.deepEqual(one.source, REDUCED(2, 1));
   assert.deepEqual((await load(M.id)).offers[0].lines.map((l) => [l.description, l.adet]), [['Temper Lamine 44.2', 1], ['Sandık parası', 1]]);
+});
+
+dbTest('mali engel (karar 256): yalnızca kesilmiş NİHAİ FATURA telafiyi engeller; proforma, avans faturası ve bekleyen belge isteği engellemez; kesilmiş belgeler değişmez', async () => {
+  const docsBefore = async () => JSON.stringify(await db.fgoDocument.findMany({ orderBy: { number: 'asc' } }));
+  // Proformalı (9301), avans faturalı (9302 + proforma 9304) ve belge isteği kuyrukta olan siparişler: telafi AÇILIR — satış ve
+  // yönetici, bedelsiz ve bedelli. Bedelli telafide kaynak adedi belgeli siparişte düşmez (BILLING — mevcut kural), bedelsizde FREE.
+  const P1 = await order(A, 170, F1, [glassLine(6)]);
+  await db.fgoDocument.create({ data: { orderId: P1.id, kind: 'PROFORMA', series: 'PRF', number: '9301', issuedAt: new Date() } });
+  const P2 = await order(A, 171, F1, [glassLine(6)]);
+  await db.fgoDocument.create({ data: { orderId: P2.id, kind: 'PROFORMA', series: 'PRF', number: '9304', issuedAt: new Date() } });
+  await db.fgoDocument.create({ data: { orderId: P2.id, kind: 'ADVANCE', series: 'GKH', number: '9302', issuedAt: new Date(), advanced: '100.00' } });
+  const P3 = await order(A, 172, F1, [glassLine(6)]);
+  const job = await db.notificationOutbox.create({ data: { type: 'FGO_GLASS', orderId: P3.id, payload: { kind: 'PROFORMA' } } });
+  const docs0 = await docsBefore();
+  for (const o of [P1, P2, P3]) {
+    assert.deepEqual(await comp.compensationBlock(db, o.id), { blocked: false }, o.orderNo);
+    const free = await create({ orderId: o.id, lineId: o.offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: newOn(F2), actor: act(U.sales) });
+    assert.deepEqual([free.ok, free.status, free.source], [true, 'APPLIED', NOT_REDUCED('FREE')], `${o.orderNo} bedelsiz`);
+    const paid = await create({ orderId: o.id, lineId: o.offers[0].lines[0].id, quantity: 2, mode: 'NORMAL', dest: newOn(F2), actor: act(U.admin) });
+    assert.deepEqual([paid.ok, paid.status, paid.source], [true, 'APPLIED', NOT_REDUCED('BILLING')], `${o.orderNo} bedelli`);
+    assert.deepEqual((await load(o.id)).offers.map((x) => x.lines.map((l) => l.adet)), [[6]], `${o.orderNo}: kaynak teklif değişmedi`);
+  }
+  // Kesilmiş belgeler, kuyruktaki istek ve ödemeler değişmedi / silinmedi
+  assert.equal(await docsBefore(), docs0);
+  assert.equal((await db.notificationOutbox.findUniqueOrThrow({ where: { id: job.id } })).status, 'PENDING');
+  await db.notificationOutbox.delete({ where: { id: job.id } });
+
+  // --- Nihai fatura: (a) siparişin kendi FGO faturası, (b) siparişi kapsayan KESİLMİŞ müşteri / zincir faturası partisi
+  const P4 = await order(A, 173, F1, [glassLine(6)]);
+  await db.fgoDocument.create({ data: { orderId: P4.id, kind: 'PROFORMA', series: 'PRF', number: '9305', issuedAt: new Date() } });
+  await db.fgoDocument.create({ data: { orderId: P4.id, kind: 'INVOICE', series: 'GKH', number: '9303', issuedAt: new Date() } });
+  const P5 = await order(A, 174, F1, [glassLine(6)]);
+  const batchData = (status) => ({
+    customerId: A.id, kind: 'INVOICE', status, currency: 'EUR', loadingDays: [date(F1)], selectionKey: `k-${status}`, sourceTotal: '10', ronNet: '50',
+    fxRate: '5.0000', fxDate: date(dayOf(0)), fxSource: 'BNR', fxPolicy: 'BNR', fxCurrency: 'EUR', fxBaseRate: '5', fxSourceDate: date(dayOf(0)), fxResolvedAt: new Date(), fxManual: false,
+    createdById: U.admin.id, orders: { create: [{ orderId: P5.id, orderNo: P5.orderNo, loadingDay: date(F1), sourceAmount: '10', activeKey: status === 'VOID' ? null : `INVOICE:test-${status}:${P5.id}` }] },
+  });
+  // Kuyrukta bekleyen (PENDING), kesilemeyen (FAILED) ve FGO'da silinip geçersizleşen (VOID) fatura partisi engel DEĞİLDİR
+  const pending = await db.billingBatch.create({ data: batchData('PENDING') });
+  assert.deepEqual(await comp.compensationBlock(db, P5.id), { blocked: false });
+  await db.billingBatchOrder.updateMany({ where: { batchId: pending.id }, data: { activeKey: null } });
+  await db.billingBatch.update({ where: { id: pending.id }, data: { status: 'VOID' } });
+  assert.deepEqual(await comp.compensationBlock(db, P5.id), { blocked: false });
+  const issued = await db.billingBatch.create({ data: batchData('ISSUED') });
+  await db.fgoDocument.create({ data: { batchId: issued.id, kind: 'INVOICE', series: 'GKH', number: '9306', issuedAt: new Date() } });
+  assert.deepEqual(await comp.compensationBlock(db, P4.id), { blocked: true, code: 'FINAL_INVOICE', ref: 'GKH9303' });
+  assert.deepEqual(await comp.compensationBlock(db, P5.id), { blocked: true, code: 'FINAL_INVOICE', ref: 'GKH9306' });
+  assert.deepEqual([...(await comp.finalInvoices(db, [P1.id, P2.id, P3.id, P4.id, P5.id])).entries()].sort(), [[P4.id, 'GKH9303'], [P5.id, 'GKH9306']].sort());
+
+  // Sunucu engeli: hiçbir rol, hiçbir kararla, hiçbir hedefe telafi açamaz — hiçbir kayıt yazılmaz
+  const counts = async () => [await db.compensation.count(), await db.order.count(), await db.offer.count(), await db.offerLine.count(), await db.adminAlert.count(), await db.notificationOutbox.count(), await db.orderEvent.count(), await db.auditLog.count()];
+  const docs1 = await docsBefore();
+  const F3 = await order(A, 175, F2, [glassLine(2)]);
+  const base = await counts();
+  for (const o of [P4, P5]) {
+    for (const [u, mode] of [[U.sales, 'FREE'], [U.sales, 'NORMAL'], [U.sales, 'CUSTOM'], [U.admin, 'FREE'], [U.admin, 'NORMAL'], [U.admin, 'CUSTOM']]) {
+      for (const dest of [newOn(F2), into(F3)]) {
+        const res = await create({ orderId: o.id, lineId: o.offers[0].lines[0].id, quantity: 1, mode, price: mode === 'CUSTOM' ? '35' : null, dest, actor: act(u) });
+        assert.deepEqual(res, { ok: false, code: 'FINAL_INVOICE' }, `${o.orderNo} ${u.appRole} ${mode} ${dest.type}`);
+      }
+    }
+  }
+  assert.deepEqual(await counts(), base, 'reddedilen istek hiçbir şey yazmaz');
+  assert.equal(await docsBefore(), docs1);
+  // Hedef olarak da: nihai faturalı sipariş listede seçilemez, doğrudan istek reddedilir
+  const list = await comp.compensationDestinations(db, { source: { id: P1.id, customerId: A.id, currency: 'EUR' } });
+  assert.deepEqual([list.find((x) => x.id === P4.id).reason, list.find((x) => x.id === P5.id).reason], ['FINAL_INVOICE', 'FINAL_INVOICE']);
+  assert.deepEqual(await create({ orderId: P1.id, lineId: (await load(P1.id)).offers[0].lines[0].id, quantity: 1, mode: 'FREE', dest: into(P4), actor: act(U.admin) }), { ok: false, code: 'DEST_FINAL_INVOICE' });
+
+  // Onay bekleyen karar: kaynağın nihai faturası bu arada kesildiyse yönetici onaylayamaz (FINAL_INVOICE); reddetmek serbest
+  const Q = await order(A, 176, OLD, [glassLine(3, { offerPrice: null })]);
+  const D = await order(A, 177, F2, [glassLine(1)]);
+  const pend = await create({ orderId: Q.id, lineId: Q.offers[0].lines[0].id, quantity: 1, mode: 'CUSTOM', price: '35', dest: into(D), actor: act(U.sales) });
+  assert.equal(pend.status, 'PENDING');
+  await db.fgoDocument.create({ data: { orderId: Q.id, kind: 'INVOICE', series: 'GKH', number: '9307', issuedAt: new Date() } });
+  const dBefore = JSON.stringify((await load(D.id)).offers);
+  assert.deepEqual(await comp.decideCompensation(db, { id: pend.compensationId, approve: true, price: '45', actor: act(U.admin) }), { ok: false, code: 'FINAL_INVOICE' });
+  assert.deepEqual([(await compOf(pend.compensationId)).status, JSON.stringify((await load(D.id)).offers)], ['PENDING', dBefore]);
+  assert.equal((await comp.decideCompensation(db, { id: pend.compensationId, approve: false, actor: act(U.admin) })).status, 'REJECTED');
 });
 
 dbTest('hiçbir ağ çağrısı yapılmadı (FGO gerçek bir sistemdir; bu dosya FGO belgesi kesmez)', async () => {
   assert.equal(net, 0);
   // Belge kayıtları yalnızca testin doğrudan yazdığı üç satırdır; telafi / silme belge üretmez
-  assert.deepEqual((await db.fgoDocument.findMany({ orderBy: { number: 'asc' } })).map((d) => d.number), ['9001', '9100', '9200']);
+  assert.deepEqual((await db.fgoDocument.findMany({ orderBy: { number: 'asc' } })).map((d) => d.number), ['9001', '9010', '9100', '9200', '9301', '9302', '9303', '9304', '9305', '9306', '9307']);
   assert.equal(await db.notificationOutbox.count({ where: { type: { in: ['FGO_GLASS', 'FGO_BATCH', 'FGO_PROFORMA', 'FGO_INVOICE'] } } }), 0);
 });

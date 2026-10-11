@@ -12,10 +12,13 @@ export default {
   // Sipariş sayfası: "Önemli kararlar" kartı
   decisions: {
     title: 'Önemli kararlar',
-    intro: 'Bu siparişle ilgili kırık / telafi kararları. Telafi açılınca kaynak siparişte o camın adedi düşer (sipariş yüklenmemiş ve belgesizse); telafi camı olağan iş akışıyla ilerler.',
+    intro: 'Bu siparişle ilgili kırık / telafi kararları. Bedelli telafide kaynak siparişte o camın adedi düşer (sipariş yüklenmemiş ve belgesizse); bedelsiz telafide kaynak adedi değişmez. Telafi camı olağan iş akışıyla ilerler.',
     create: 'Kırık / Telafi Camı Oluştur',
     none: 'Bu sipariş için telafi kararı yok.',
     noSentOffer: 'Telafi camı, müşteriye gönderilmiş teklifin cam satırından açılır. Bu siparişin gönderilmiş teklifi yok.',
+    // Nihai fatura kesilmiş (karar 256): telafi açılamaz
+    finalInvoice: 'Bu sipariş için nihai fatura (factură finală) kesildi ({ref}): kırık / telafi camı açılamaz. Proforma, avans faturası ya da bekleyen belge isteği engel değildir; yalnızca nihai fatura engeldir.',
+    noneBlocked: 'Bu sipariş için telafi kararı yok.',
     qty: '{qty} adet telafi',
     source: 'Kaynak cam: {glass}',
     sourceOrder: 'Kaynak sipariş: {order}',
@@ -50,7 +53,7 @@ export default {
   // Telafi formu (teklif tablosunun altındaki kart)
   form: {
     title: 'Kırık / Telafi camı',
-    intro: 'Telafi camı, seçtiğiniz hedefte olağan iş akışıyla (yükleme, fatura) ilerler. Kaynak siparişte bu camın adedi telafi adedi kadar düşer (sipariş yüklenmemiş ve belgesizse).',
+    intro: 'Telafi camı, seçtiğiniz hedefte olağan iş akışıyla (yükleme, fatura) ilerler. Bedelli telafide kaynak siparişte bu camın adedi telafi adedi kadar düşer (sipariş yüklenmemiş ve belgesizse). Bedelsiz telafide kaynak adedi değişmez: telafi ayrı ek üretimdir.',
     cancel: 'Vazgeç',
     glass: 'Cam',
     glassPick: 'Cam satırını seçin',
@@ -82,7 +85,7 @@ export default {
     destPending: '{order} — {date} · yönetici onayı gerekir',
     destBlocked: '{order} — {date} · {reason}',
     destReason: {
-      NO_OFFER: 'teklifi henüz açılmamış', CURRENCY: 'para birimi farklı', BILLING: 'FGO belgesi var', LOADED: 'yükleme onaylanmış',
+      NO_OFFER: 'teklifi henüz açılmamış', CURRENCY: 'para birimi farklı', FINAL_INVOICE: 'nihai fatura kesilmiş', LOADED: 'yükleme onaylanmış',
       ON_HOLD: 'beklemede', CLOSED: 'kapalı', NOT_FUTURE: 'yükleme günü geçmiş', SAME_ORDER: 'kaynak sipariş', OTHER_CUSTOMER: 'başka müşteri', NOT_GLASS: 'cam siparişi değil',
     },
     destNew: 'Yeni telafi siparişi oluştur',
@@ -99,6 +102,8 @@ export default {
     sumOpsFree: '{list} — fiyat 0 (bedelsiz)',
     sumSourceQty: 'Kaynak siparişte kalan',
     sumSourceQtyValue: '{before} → {after} adet',
+    // Bedelsiz telafi (karar 256): kaynak adedi değişmez
+    sumSourceQtyFree: '{before} adet — değişmez (bedelsiz telafi ayrı ek üretimdir)',
     // Kaynak adedi düşürülemiyor (karar 157): telafi ek üretimdir — kayıttan ÖNCE gösterilen uyarı
     sourceKept: {
       LOADED: 'Kaynak siparişin yüklemesi onaylanmış: adedi düşürülmez; telafi ek üretim olarak açılır.',
@@ -129,6 +134,7 @@ export default {
       LOADED: 'Kaynak siparişin yüklemesi onaylandığı için adedi değişmedi; telafi ek üretim olarak açıldı.',
       BILLING: 'Kaynak siparişin belgesi olduğu için adedi değişmedi; telafi ek üretim olarak açıldı.',
       CLOSED: 'Kaynak sipariş kapalı olduğu için adedi değişmedi; telafi ek üretim olarak açıldı.',
+      FREE: 'Bedelsiz telafi: kaynak siparişin adedi değişmedi; telafi ayrı ek üretim olarak açıldı.',
       CHANGED: 'Kaynak siparişin teklifi karardan sonra değiştiği için adedi kendiliğinden düşürülmedi; gerekiyorsa kaynak teklifi güncelleyin.',
       PENDING: 'Kaynak siparişin adedi, yönetici kararı onayladığında düşer.',
     },
@@ -156,6 +162,7 @@ export default {
     PRICE_REQUIRED: 'Müşteriye gidecek teklifte telafi satırının müşteri fiyatı olmalı (ya da bedelsiz).',
     CONFLICT: 'Aynı anda başka bir işlem yapıldı; sayfayı yenileyip yeniden deneyin.',
     NOT_PENDING: 'Bu telafi kararı artık onay beklemiyor.',
+    FINAL_INVOICE: 'Bu sipariş için nihai fatura (factură finală) kesildi: telafi camı açılamaz.',
     DEST_NOT_FOUND: 'Hedef sipariş bulunamadı.',
     DEST_SAME_ORDER: 'Telafi camı kaynak siparişin kendisine eklenemez.',
     DEST_OTHER_CUSTOMER: 'Telafi camı yalnızca aynı müşterinin siparişine eklenir.',
@@ -166,7 +173,7 @@ export default {
     DEST_LOADED: 'Hedef siparişin yüklemesi onaylanmış.',
     DEST_NO_OFFER: 'Hedef siparişin teklifi bu işleme uygun değil.',
     DEST_CURRENCY: 'Hedef siparişin para birimi farklı.',
-    DEST_BILLING: 'Hedef siparişin FGO belgesi var; yeni telafi siparişi oluşturun.',
+    DEST_FINAL_INVOICE: 'Hedef siparişin nihai faturası (factură finală) kesildi; yeni telafi siparişi oluşturun.',
   },
   // Siparişi sil / geri yükle (yalnızca yönetici)
   remove: {

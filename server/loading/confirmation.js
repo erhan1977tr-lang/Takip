@@ -22,7 +22,7 @@
 //     kârlılık, fatura) bu işlevi kullanır; ayrı bir "düzeltilmiş" hesap yoktur.
 import crypto from 'node:crypto';
 import { can } from '../auth/permissions.js';
-import { offerLineTotals, parseDateOnly } from '../orders/rules.js';
+import { missingCost, offerLineTotals, parseDateOnly } from '../orders/rules.js';
 import { dayKey } from '../orders/loading.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { glassTotals } from '../glass/billing.js';
@@ -171,7 +171,7 @@ export function lineTotals(lines, nameOf = (l) => l.description) {
     m2: round2(glass.reduce((s, g) => s + g.m2, 0)),
     cost: sumTotals(cost),
     sale: round2(glass.reduce((s, g) => s + g.sale, 0)),
-    noCost: lines.filter((l) => !l.free && Number(l.offerPrice ?? 0) > 0 && !(Number(l.unitPrice ?? 0) > 0)).length,
+    noCost: lines.filter(missingCost).length,
   };
 }
 

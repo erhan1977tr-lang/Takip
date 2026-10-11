@@ -8,11 +8,16 @@
 //   Kaynak: müşteriye GÖNDERİLMİŞ teklifin bir fiziksel cam satırı (m², ölçülü). Telafi camı kaynağın kayıtlı bilgisinden
 //   kopyalanır (cam, ölçü, ağırlık, liste fiyatı) — güncel fiyat tablosu okunmaz.
 //
-//   KAYNAK ADEDİ (karar 157): telafi açılınca ana siparişte kalan adet = önceki adet − telafi adedi (20 → 3 telafi → 17).
-//     Yalnızca TEMİZ kaynakta uygulanır: sipariş açık (hazırlanıyor / üretimde), hiçbir onaylı yüklemede kalemi yok ve belge
+//   NİHAİ FATURA (karar 256): siparişin nihai faturası (factură finală) kesilmişse telafi AÇILAMAZ (FINAL_INVOICE) — kaynakta
+//     da, var olan hedef siparişte de. Proforma, avans faturası ya da kuyrukta bekleyen belge isteği engel DEĞİLDİR; kesilmiş
+//     belgeler, ödemeler ve muhasebe bağlantıları hiçbir durumda değişmez. Tek kural: finalInvoices.
+//
+//   KAYNAK ADEDİ (karar 157, 256): BEDELLİ telafi açılınca ana siparişte kalan adet = önceki adet − telafi adedi (20 → 3 telafi
+//     → 17). BEDELSİZ telafide (müşteri fiyatı 0) kaynak adedi HİÇ değişmez: telafi ayrı, izlenebilir ek üretimdir (kaynak
+//     teklifin yeni sürümü açılmaz; nedeni FREE). Bedelli telafide adet yalnızca TEMİZ kaynakta düşer: sipariş açık (hazırlanıyor / üretimde), hiçbir onaylı yüklemede kalemi yok ve belge
 //     kapsamı yok (FGO belgesi, kuyrukta belge isteği, etkin parti) — sourceReducible. Uygulanış: kaynağın müşterideki
 //     teklifinin YENİ sürümü açılır (eski sürüm DEĞİŞMEZ); adedi 0'a inen cam satırı, ona ait işlem satırlarıyla kalkar.
-//     Kaynak yüklenmiş ya da belgeliyse teklifi DEĞİŞMEZ — onaylı yükleme ve kesilmiş belge değiştirilemez (storno yok);
+//     Kaynak yüklenmiş ya da belgeliyse (proforma dahil) teklifi DEĞİŞMEZ — onaylı yükleme ve kesilmiş belge değiştirilemez (storno yok);
 //     telafi bu durumda eskisi gibi EK üretimdir. Böylece adet, m² ve tutar iki siparişte iki kez sayılmaz.
 //
 //   İŞLEMLER (karar 113, 157, 251): CNC / delik TEK bir cama aittir. Kaynak, işlemli tek bir cam satırıysa işlemleri
@@ -219,12 +224,15 @@ export function reducedSourceLines(lines, lineId, quantity) {
 /**
  * Bir sipariş telafi HEDEFİ olabilir mi (aynı müşterinin ileri tarihli, açık cam siparişi)?
  *   via DRAFT: teklif henüz müşteriye gitmemiş — satırlar taslağa eklenir · via SENT: teklif müşteride — yeni sürüm gerekir.
+ * Mali belgelerden YALNIZCA nihai fatura engeldir (karar 256): proforma, avans faturası, kuyrukta bekleyen belge isteği ya da
+ * etkin müşteri proforması hedefi engellemez (kesilmiş belgeler değişmez; telafi satırları sonraki faturaya onaylı
+ * yüklemeden girer — server/glass/invoice-batch.js).
  * @param {any} o  sipariş (offers en yeniden eskiye)
- * @param {{ sourceOrderId: string, customerId: string, currency: string, today: string, day: string | null, locked: boolean, coverage: unknown }} c
- *   locked: yükleme günü onaylanmış ya da siparişin bir onayda kalemi var · coverage: FGO belgesi / kuyrukta istek / etkin parti
- * @returns {{ ok: true, via: 'DRAFT' | 'SENT' } | { ok: false, reason: 'SAME_ORDER' | 'OTHER_CUSTOMER' | 'NOT_GLASS' | 'CLOSED' | 'ON_HOLD' | 'NOT_FUTURE' | 'LOADED' | 'NO_OFFER' | 'CURRENCY' | 'BILLING' }}
+ * @param {{ sourceOrderId: string, customerId: string, currency: string, today: string, day: string | null, locked: boolean, finalInvoice?: string | null }} c
+ *   locked: yükleme günü onaylanmış ya da siparişin bir onayda kalemi var · finalInvoice: kesilmiş nihai faturanın numarası
+ * @returns {{ ok: true, via: 'DRAFT' | 'SENT' } | { ok: false, reason: 'SAME_ORDER' | 'OTHER_CUSTOMER' | 'NOT_GLASS' | 'CLOSED' | 'ON_HOLD' | 'NOT_FUTURE' | 'LOADED' | 'NO_OFFER' | 'CURRENCY' | 'FINAL_INVOICE' }}
  */
-export function destinationCheck(o, { sourceOrderId, customerId, currency, today, day, locked, coverage }) {
+export function destinationCheck(o, { sourceOrderId, customerId, currency, today, day, locked, finalInvoice = null }) {
   const no = (reason) => ({ ok: false, reason });
   if (o.id === sourceOrderId) return no('SAME_ORDER');
   if (o.customerId !== customerId) return no('OTHER_CUSTOMER');
@@ -238,7 +246,7 @@ export function destinationCheck(o, { sourceOrderId, customerId, currency, today
   // İki fiyat sütunu olmayan eski teklif de hedef olamaz.
   if (!offer || (offer.status === 'GONDERILDI' && offer.offerAmount == null)) return no('NO_OFFER');
   if (offer.currency !== currency) return no('CURRENCY');
-  if (coverage) return no('BILLING');
+  if (finalInvoice) return no('FINAL_INVOICE');
   return { ok: true, via: offer.status === 'GONDERILDI' ? 'SENT' : 'DRAFT' };
 }
 
@@ -252,19 +260,58 @@ const loadingDay = (o) => {
   return d ? dayKey(d) : null;
 };
 
-/** Aday siparişlerin hedef denetimi için gereken ortak bilgiler (onaylı günler, onayda kalemi olanlar, kuyruktaki belge istekleri) */
+/**
+ * Siparişlerin KESİLMİŞ nihai faturaları (karar 256) — telafinin tek mali engeli. Nihai fatura (factură finală):
+ *   · siparişin kendi FGO faturası (FgoDocument.kind = INVOICE — eski sipariş başına fatura) ya da
+ *   · siparişi kapsayan, FGO'da kesilmiş (ISSUED) fatura partisi (BillingBatch.kind = INVOICE: onaylı yüklemeden müşteri ya
+ *     da sipariş zinciri faturası). FGO'da silinip geçersizleşen (VOID), kuyrukta bekleyen (PENDING) ya da kesilemeyen
+ *     (FAILED) fatura kesilmiş sayılmaz.
+ * Proforma, avans faturası ve bekleyen belge isteği nihai fatura DEĞİLDİR. Hiçbir belgeye dokunmaz (yalnızca okur).
+ * @param {any} db  @param {string[]} ids
+ * @returns {Promise<Map<string, string>>}  sipariş → fatura numarası (seri + no)
+ */
+export async function finalInvoices(db, ids) {
+  const out = new Map();
+  const list = [...new Set(ids.filter(Boolean))];
+  if (list.length === 0) return out;
+  const [docs, batches] = await Promise.all([
+    db.fgoDocument.findMany({ where: { orderId: { in: list }, kind: 'INVOICE' }, select: { orderId: true, series: true, number: true }, orderBy: { issuedAt: 'asc' } }),
+    db.billingBatchOrder.findMany({
+      where: { orderId: { in: list }, batch: { kind: 'INVOICE', status: 'ISSUED' } },
+      select: { orderId: true, batch: { select: { document: { select: { series: true, number: true } } } } },
+    }),
+  ]);
+  for (const d of docs) if (!out.has(d.orderId)) out.set(d.orderId, `${d.series}${d.number}`);
+  for (const b of batches) if (!out.has(b.orderId)) out.set(b.orderId, b.batch.document ? `${b.batch.document.series}${b.batch.document.number}` : '—');
+  return out;
+}
+
+/**
+ * Bu siparişten telafi açılabilir mi — mali engel (karar 256): yalnızca kesilmiş nihai fatura. Ekran (sipariş sayfası,
+ * telafi formu) ve sunucu (createCompensation / decideCompensation) aynı işlevi kullanır.
+ * @param {any} db  @param {string} orderId
+ * @returns {Promise<{ blocked: false } | { blocked: true, code: 'FINAL_INVOICE', ref: string }>}
+ */
+export async function compensationBlock(db, orderId) {
+  const ref = (await finalInvoices(db, [orderId])).get(orderId);
+  return ref ? { blocked: true, code: 'FINAL_INVOICE', ref } : { blocked: false };
+}
+
+/** Aday siparişlerin hedef denetimi için gereken ortak bilgiler (onaylı günler, onayda kalemi olanlar, kuyruktaki belge istekleri, nihai faturalar) */
 async function destFacts(db, orders) {
   const ids = orders.map((o) => o.id);
   const days = [...new Set(orders.map(loadingDay).filter(Boolean))];
-  const [confirmed, items, jobs] = await Promise.all([
+  const [confirmed, items, jobs, invoiced] = await Promise.all([
     days.length ? db.loadingConfirmation.findMany({ where: { shipDay: { in: days.map(shipDayDate) } }, select: { shipDay: true } }) : [],
     ids.length ? db.loadingConfirmationItem.findMany({ where: { orderId: { in: ids } }, select: { orderId: true }, distinct: ['orderId'] }) : [],
     ids.length ? db.notificationOutbox.findMany({ where: { orderId: { in: ids }, type: GLASS_FGO, status: 'PENDING' }, select: { orderId: true } }) : [],
+    finalInvoices(db, ids),
   ]);
   return {
     confirmedDays: new Set(confirmed.map((c) => c.shipDay.toISOString().slice(0, 10))),
     inConfirmation: new Set(items.map((i) => i.orderId)),
     pendingJobs: new Set(jobs.map((j) => j.orderId)),
+    finalInvoices: invoiced,
   };
 }
 const checkWith = (o, facts, src, today) => {
@@ -272,7 +319,7 @@ const checkWith = (o, facts, src, today) => {
   return destinationCheck(o, {
     sourceOrderId: src.id, customerId: src.customerId, currency: src.currency, today, day,
     locked: (day != null && facts.confirmedDays.has(day)) || facts.inConfirmation.has(o.id),
-    coverage: coverageOf(o, facts.pendingJobs.has(o.id)),
+    finalInvoice: facts.finalInvoices.get(o.id) ?? null,
   });
 };
 /** Kaynağın adedi düşürülebilir mi — güncel kayıtlarla (sipariş DEST_INCLUDE ile yüklenmiş olmalı) */
@@ -483,6 +530,8 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
       const src = await tx.order.findUnique({ where: { id: head.id }, include: DEST_INCLUDE });
       if (!src || src.orderTypeCode !== 'GLASS_ORDER' || src.removedAt) return fail('NOT_FOUND');
       if (src.status === 'IPTAL') return fail('ORDER_CANCELLED');
+      // Nihai fatura kesilmişse telafi açılamaz (karar 256) — proforma / avans / bekleyen belge isteği engel değildir
+      if ((await finalInvoices(tx, [src.id])).has(src.id)) return fail('FINAL_INVOICE');
       const sent = sentOfferOf(src);
       // Fiyatların kaynağı müşteriye gönderilmiş teklif (iki fiyat sütunlu); yoksa telafi açılmaz
       if (!sent || sent.offerAmount == null) return fail('NO_SENT_OFFER');
@@ -503,8 +552,9 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
       const lines = compensationLines({ line: group.line, subs: group.subs, quantity: qty, decision });
       const source = { id: src.id, customerId: src.customerId, currency: sent.currency };
 
-      // Kaynak adedi (karar 157): temiz siparişte düşer. Kaynakta hiç cam kalmayacaksa telafi açılmaz.
-      const reducible = await reducibleNow(tx, src);
+      // Kaynak adedi (karar 157, 256): BEDELSİZ telafide hiç değişmez (ayrı ek üretim — nedeni FREE); bedelli telafide temiz
+      // siparişte düşer. Kaynakta hiç cam kalmayacaksa (bedelli) telafi açılmaz.
+      const reducible = decision.free ? { ok: false, reason: 'FREE' } : await reducibleNow(tx, src);
       const plan = reducible.ok ? reducedSourceLines(sent.lines, group.line.id, qty) : null;
       if (reducible.ok && (!plan || plan.empty)) return fail('SOURCE_EMPTY');
 
@@ -713,6 +763,8 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       await lockOrders(tx, [head.sourceOrderId, head.destOrderId]);
       const comp = await tx.compensation.findUnique({ where: { id: head.id }, include: { sourceOrder: { select: { id: true, orderNo: true, status: true } } } });
       if (!comp || comp.status !== 'PENDING' || !comp.destOrderId) return fail('NOT_PENDING');
+      // Onay telafiyi uygular: kaynak siparişin nihai faturası bu arada kesildiyse onaylanmaz (karar 256); ret her zaman serbest
+      if (approve && (await finalInvoices(tx, [comp.sourceOrderId])).has(comp.sourceOrderId)) return fail('FINAL_INVOICE');
       const close = { decidedById: actor.id, decidedAt: now, decisionNote: text };
       const closeAlerts = () => tx.adminAlert.updateMany({
         where: { type: 'COMPENSATION_PENDING', resolvedAt: null, details: { path: ['compensationId'], equals: comp.id } }, data: { resolvedAt: now, resolvedById: actor.id },
@@ -743,12 +795,14 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       const offerPrice = isFree ? 0 : entered != null ? entered : comp.offerPrice == null ? null : Number(comp.offerPrice);
       if (!isFree && !(offerPrice > 0)) return fail('PRICE_REQUIRED');
 
-      // Kaynak adedi (karar 157): kaynak teklif karardan beri aynı sürümse ve sipariş temizse düşer; değilse değişmez
+      // Kaynak adedi (karar 157, 256): bedelsiz kararda hiç değişmez; bedellide kaynak teklif karardan beri aynı sürümse ve
+      // sipariş temizse düşer; değilse değişmez
       const src = await tx.order.findUnique({ where: { id: comp.sourceOrderId }, include: DEST_INCLUDE });
       const sent = src ? sentOfferOf(src) : null;
       let plan = null;
       let kept = null;
-      if (!src || !sent || sent.id !== comp.sourceOfferId) kept = 'CHANGED';
+      if (isFree) kept = 'FREE';
+      else if (!src || !sent || sent.id !== comp.sourceOfferId) kept = 'CHANGED';
       else {
         const reducible = await reducibleNow(tx, src);
         if (!reducible.ok) kept = reducible.reason;

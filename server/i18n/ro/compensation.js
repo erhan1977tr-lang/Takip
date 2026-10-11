@@ -9,10 +9,13 @@ export default {
   perM2: '{price} {cur}/m²',
   decisions: {
     title: 'Decizii importante',
-    intro: 'Deciziile de înlocuire legate de această comandă. La deschiderea unei înlocuiri, cantitatea acelei sticle scade în comanda sursă (dacă comanda nu este încărcată și nu are documente); sticla de înlocuire urmează fluxul obișnuit.',
+    intro: 'Deciziile de înlocuire legate de această comandă. La înlocuirea cu plată, cantitatea acelei sticle scade în comanda sursă (dacă comanda nu este încărcată și nu are documente); la înlocuirea gratuită cantitatea sursă nu se schimbă. Sticla de înlocuire urmează fluxul obișnuit.',
     create: 'Creează sticlă spartă / de înlocuire',
     none: 'Nu există decizii de înlocuire pentru această comandă.',
     noSentOffer: 'Sticla de înlocuire se deschide dintr-un rând de sticlă al ofertei trimise clientului. Această comandă nu are ofertă trimisă.',
+    // Factură finală emisă (decizia 256): nu se poate deschide o înlocuire
+    finalInvoice: 'Pentru această comandă a fost emisă factura finală ({ref}): nu se poate crea sticlă spartă / de înlocuire. Proforma, factura de avans sau o cerere de document în așteptare nu blochează; blochează doar factura finală.',
+    noneBlocked: 'Nu există decizii de înlocuire pentru această comandă.',
     qty: '{qty} buc. înlocuire',
     source: 'Sticla sursă: {glass}',
     sourceOrder: 'Comanda sursă: {order}',
@@ -46,7 +49,7 @@ export default {
   },
   form: {
     title: 'Sticlă spartă / de înlocuire',
-    intro: 'Sticla de înlocuire urmează, la destinația aleasă, fluxul obișnuit (încărcare, factură). În comanda sursă, cantitatea acestei sticle scade cu cantitatea înlocuită (dacă comanda nu este încărcată și nu are documente).',
+    intro: 'Sticla de înlocuire urmează, la destinația aleasă, fluxul obișnuit (încărcare, factură). La înlocuirea cu plată, în comanda sursă cantitatea acestei sticle scade cu cantitatea înlocuită (dacă comanda nu este încărcată și nu are documente). La înlocuirea gratuită cantitatea sursă nu se schimbă: înlocuirea este producție suplimentară separată.',
     cancel: 'Renunță',
     glass: 'Sticlă',
     glassPick: 'Alegeți rândul de sticlă',
@@ -78,7 +81,7 @@ export default {
     destPending: '{order} — {date} · necesită aprobarea administratorului',
     destBlocked: '{order} — {date} · {reason}',
     destReason: {
-      NO_OFFER: 'oferta nu este încă deschisă', CURRENCY: 'altă monedă', BILLING: 'are document FGO', LOADED: 'încărcare confirmată',
+      NO_OFFER: 'oferta nu este încă deschisă', CURRENCY: 'altă monedă', FINAL_INVOICE: 'are factură finală emisă', LOADED: 'încărcare confirmată',
       ON_HOLD: 'în așteptare', CLOSED: 'închisă', NOT_FUTURE: 'ziua de încărcare a trecut', SAME_ORDER: 'comanda sursă', OTHER_CUSTOMER: 'alt client', NOT_GLASS: 'nu este comandă de sticlă',
     },
     destNew: 'Creează o comandă nouă de înlocuire',
@@ -95,6 +98,8 @@ export default {
     sumOpsFree: '{list} — preț 0 (gratuit)',
     sumSourceQty: 'Rămâne în comanda sursă',
     sumSourceQtyValue: '{before} → {after} buc.',
+    // Înlocuire gratuită (decizia 256): cantitatea sursă nu se schimbă
+    sumSourceQtyFree: '{before} buc. — nu se schimbă (înlocuirea gratuită este producție suplimentară separată)',
     // Cantitatea sursă nu poate fi redusă (decizia 157): înlocuirea este producție suplimentară — avertisment ÎNAINTE de salvare
     sourceKept: {
       LOADED: 'Încărcarea comenzii sursă este confirmată: cantitatea nu scade; înlocuirea se deschide ca producție suplimentară.',
@@ -125,6 +130,7 @@ export default {
       LOADED: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece încărcarea ei este confirmată; înlocuirea a fost deschisă ca producție suplimentară.',
       BILLING: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece are document; înlocuirea a fost deschisă ca producție suplimentară.',
       CLOSED: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece comanda este închisă; înlocuirea a fost deschisă ca producție suplimentară.',
+      FREE: 'Înlocuire gratuită: cantitatea din comanda sursă nu s-a schimbat; înlocuirea a fost deschisă ca producție suplimentară separată.',
       CHANGED: 'Cantitatea din comanda sursă nu a fost redusă automat, deoarece oferta ei s-a schimbat după decizie; dacă este necesar, actualizați oferta sursă.',
       PENDING: 'Cantitatea din comanda sursă scade când administratorul aprobă decizia.',
     },
@@ -152,6 +158,7 @@ export default {
     PRICE_REQUIRED: 'În oferta care ajunge la client, rândul de înlocuire trebuie să aibă preț pentru client (sau să fie gratuit).',
     CONFLICT: 'S-a efectuat o altă operațiune în același timp; reîncărcați pagina și încercați din nou.',
     NOT_PENDING: 'Această decizie de înlocuire nu mai așteaptă aprobare.',
+    FINAL_INVOICE: 'Pentru această comandă a fost emisă factura finală: nu se poate crea sticlă de înlocuire.',
     DEST_NOT_FOUND: 'Comanda de destinație nu a fost găsită.',
     DEST_SAME_ORDER: 'Sticla de înlocuire nu poate fi adăugată la comanda sursă.',
     DEST_OTHER_CUSTOMER: 'Sticla de înlocuire se adaugă doar la o comandă a aceluiași client.',
@@ -162,7 +169,7 @@ export default {
     DEST_LOADED: 'Încărcarea comenzii de destinație este confirmată.',
     DEST_NO_OFFER: 'Oferta comenzii de destinație nu este potrivită pentru această operațiune.',
     DEST_CURRENCY: 'Comanda de destinație are altă monedă.',
-    DEST_BILLING: 'Comanda de destinație are document FGO; creați o comandă nouă de înlocuire.',
+    DEST_FINAL_INVOICE: 'Comanda de destinație are factura finală emisă; creați o comandă nouă de înlocuire.',
   },
   remove: {
     cancel: 'Renunță',

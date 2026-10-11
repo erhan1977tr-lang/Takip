@@ -203,7 +203,7 @@ test('belgeler: bedelsiz telafi belgeye girmez; aynı / farklı fiyatta işlemle
 });
 
 test('hedef denetimi: aynı müşterinin ileri tarihli, açık, teklifli cam siparişi; taslak / müşterideki teklif ayrımı', () => {
-  const base = { sourceOrderId: 's', customerId: 'c', currency: 'EUR', today: '2026-10-10', day: '2026-10-30', locked: false, coverage: null };
+  const base = { sourceOrderId: 's', customerId: 'c', currency: 'EUR', today: '2026-10-10', day: '2026-10-30', locked: false, finalInvoice: null };
   const order = (extra = {}) => ({ id: 'd', customerId: 'c', orderTypeCode: 'GLASS_ORDER', status: 'URETIMDE', onHold: false, removedAt: null, offers: [{ status: 'GONDERILDI', currency: 'EUR', offerAmount: '100' }], ...extra });
   assert.deepEqual(destinationCheck(order(), base), { ok: true, via: 'SENT' });
   assert.deepEqual(destinationCheck(order({ status: 'HAZIRLANIYOR', offers: [{ status: 'YONETIMDE', currency: 'EUR' }] }), base), { ok: true, via: 'DRAFT' });
@@ -219,7 +219,11 @@ test('hedef denetimi: aynı müşterinin ileri tarihli, açık, teklifli cam sip
   assert.equal(reason(order(), { locked: true }), 'LOADED');
   assert.equal(reason(order({ status: 'YENI', offers: [] })), 'NO_OFFER');
   assert.equal(reason(order({ offers: [{ status: 'GONDERILDI', currency: 'RON', offerAmount: '1' }] })), 'CURRENCY');
-  assert.equal(reason(order(), { coverage: { reason: 'ORDER_DOCUMENT', ref: 'PRF1' } }), 'BILLING');
+  // Mali belgelerden yalnızca kesilmiş NİHAİ FATURA engeldir (karar 256); proforma / avans / bekleyen istek hedefi engellemez
+  assert.equal(reason(order(), { finalInvoice: 'GKH101' }), 'FINAL_INVOICE');
+  for (const coverage of [{ reason: 'ORDER_DOCUMENT', ref: 'PRF1' }, { reason: 'ORDER_PENDING', ref: null }, { reason: 'IN_BATCH', ref: 'PRF2' }]) {
+    assert.deepEqual(destinationCheck(order(), { ...base, coverage }), { ok: true, via: 'SENT' }, coverage.reason);
+  }
 });
 
 test('yetki sunucuda: müşteri, çizim ve denetimci telafi açamaz; satış onaylayamaz; silme / geri yükleme yalnızca yöneticide', async () => {
@@ -264,16 +268,25 @@ test('yönetici bildirimi: karar başlıkta (bedelsiz / aynı fiyat / farklı fi
 
 test('metinler: her hata kodunun ve yeni olayların metni var', () => {
   const m = tr.compensation;
-  const reasons = ['SAME_ORDER', 'OTHER_CUSTOMER', 'NOT_GLASS', 'CLOSED', 'ON_HOLD', 'NOT_FUTURE', 'LOADED', 'NO_OFFER', 'CURRENCY', 'BILLING'];
+  const reasons = ['SAME_ORDER', 'OTHER_CUSTOMER', 'NOT_GLASS', 'CLOSED', 'ON_HOLD', 'NOT_FUTURE', 'LOADED', 'NO_OFFER', 'CURRENCY', 'FINAL_INVOICE'];
   const codes = [
     'FORBIDDEN', 'CONFIRM_REQUIRED', 'BAD_REQUEST', 'BAD_QUANTITY', 'BAD_DEST', 'BAD_DAY', 'NOT_FUTURE', 'DAY_CONFIRMED', 'NOT_FOUND', 'ORDER_CANCELLED', 'NO_SENT_OFFER',
     'BAD_LINE', 'BAD_MODE', 'BAD_PRICE', 'BAD_LINK', 'NOT_LOADED_CAPACITY', 'PRICE_REQUIRED', 'CONFLICT', 'NOT_PENDING', 'DEST_NOT_FOUND', ...reasons.map((r) => `DEST_${r}`),
-    'PRICE_FORBIDDEN', 'AMBIGUOUS_OPS', 'SOURCE_EMPTY',
+    'PRICE_FORBIDDEN', 'AMBIGUOUS_OPS', 'SOURCE_EMPTY', 'FINAL_INVOICE',
   ];
   for (const c of codes) assert.equal(typeof m.errors[c], 'string', c);
   // Kaynak adedi (karar 157): kayıttan önceki uyarı ve kayıttan sonraki sonuç metinleri, sonuç iletileri
   for (const r of ['LOADED', 'BILLING', 'CLOSED']) assert.equal(typeof m.form.sourceKept[r], 'string', r);
-  for (const r of ['LOADED', 'BILLING', 'CLOSED', 'CHANGED', 'PENDING']) assert.equal(typeof m.sourceResult.kept[r], 'string', r);
+  for (const r of ['LOADED', 'BILLING', 'CLOSED', 'CHANGED', 'PENDING', 'FREE']) assert.equal(typeof m.sourceResult.kept[r], 'string', r);
+  // Nihai fatura engeli (karar 256): iki dilde anlaşılır metin; Romence metin "factură finală" der
+  for (const lang of [tr, ro]) {
+    assert.ok(lang.compensation.decisions.finalInvoice.includes('{ref}'));
+    assert.equal(typeof lang.compensation.form.sumSourceQtyFree, 'string');
+    assert.equal(typeof lang.pricing.alerts.compSourceReason.FREE, 'string');
+  }
+  assert.match(ro.compensation.errors.FINAL_INVOICE, /factura finală/);
+  assert.match(ro.compensation.decisions.finalInvoice, /factura finală/);
+  assert.match(tr.compensation.errors.FINAL_INVOICE, /factură finală/);
   for (const k of ['created', 'sent', 'updated', 'pricing', 'pending', 'duplicate', 'applied', 'rejected']) assert.equal(typeof m.ok[k], 'string', k);
   assert.equal(m.sourceResult.reduced.replace('{before}', '20').replace('{after}', '17'), 'Kaynak siparişte bu camın adedi 20 → 17 oldu; teklifin yeni sürümü müşteride.');
   for (const r of reasons) assert.equal(typeof m.form.destReason[r], 'string', r);

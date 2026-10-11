@@ -235,9 +235,12 @@ function mergePrices(lines, existing, admin) {
     // Bedelsiz TELAFİ satırı (karar 108): müşteriye bedelsizdir ama fabrika maliyeti durur — satış formu bedelsiz satırın
     // fiyatını 0 gönderir; kayıtlı maliyet korunur (bedelsiz telafi kârlılıkta maliyetiyle görünmeli).
     const keepCost = !admin && old?.compensationId && l.free;
+    // Yöneticinin sandık bedeli (karar 257): fabrika maliyeti kuralla 0 EUR — kayda gerçekten 0 yazılır (yeni satırda,
+    // kayıtta ve teklifin yeni sürümünde); "maliyet eksik" sayılmaz (rules.js → missingCost). Müşteri fiyatı ayrı girilir.
+    const crateCost = admin && l.crateFee;
     return {
       ...l,
-      unitPrice: admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : keepCost ? old.unitPrice : l.unitPrice,
+      unitPrice: crateCost ? 0 : admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : keepCost ? old.unitPrice : l.unitPrice,
       offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
       compensationId: old?.compensationId ?? null,
       // Fabrika PDF'i kaynağı (karar 255): kayıtlı satırdan (ya da ayrılan camın kaynağından) taşınır; formdan gelen yok sayılır

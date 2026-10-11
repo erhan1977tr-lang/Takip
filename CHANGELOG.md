@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.76.0 — 11.10.2026
+
+Son dört fonksiyonel düzeltme (karar 256–258). Şema değişmedi; migration yok.
+
+- **Telafi camında mali engel (karar 256):** telafiyi YALNIZCA kesilmiş nihai fatura (factură finală) engeller — siparişin
+  kendi FGO faturası ya da siparişi kapsayan, FGO'da kesilmiş müşteri / zincir faturası. Proforma, avans faturası ve
+  kuyrukta bekleyen belge isteği engel değildir (kaynakta da, var olan hedef siparişte de; proformalı sipariş artık telafi
+  hedefi olabilir). Nihai faturalı siparişte "Kırık / Telafi" düğmeleri gösterilmez, "Önemli kararlar"da nedeni ve fatura
+  numarası yazar (Romence: "a fost emisă factura finală"); sunucu aynı kuralı uygular (`FINAL_INVOICE`,
+  `DEST_FINAL_INVOICE`; bekleyen kararın onayı da). Kesilmiş belgeler, ödemeler ve muhasebe bağlantıları değişmez.
+- **Bedelsiz telafide kaynak adedi değişmez (karar 256):** müşteri fiyatı 0 olan telafide ana siparişin cam adedi
+  düşürülmez ve kaynak teklifin yeni sürümü açılmaz; telafi ayrı, izlenebilir ek üretimdir (telafi siparişi / satırları,
+  kaynak satır kaydı). Bedelli telafide (aynı fiyat / farklı fiyat) mevcut adet düşürme kuralı ve fiyat / onay akışı aynen.
+  Form özeti ve sonuç iletisi "değişmez" der; "Önemli kararlar"da neden "bedelsiz telafi".
+- **Sandık parası fabrika maliyeti 0 EUR (karar 257):** yöneticinin eklediği sandık parası satırının fabrika maliyeti
+  (`unitPrice`) kayda 0 yazılır — yeni satırda, yeniden kayıtta, gönderimde ve teklifin yeni sürümünde. Sandık satırı
+  "maliyet eksik" uyarısına girmez (tedarikçi sayfası, yükleme onayı / kârlılık); kural tek yerde (`missingCost`).
+  Müşteri fiyatı bağımsız; satır ayrı numaralı kalem; proforma / fatura / yükleme özeti kuralları değişmedi.
+- **Mali belge alıcısı (karar 258):** "E-mail facturare" yalnızca TEK geçerli adres kabul eder (birden çok adres, "Ad
+  <adres>", ardışık / baştaki / sondaki nokta geçersiz). Geçersiz fatura e-postası firmanın e-postasına düşer; ikisi de
+  geçersizse "Email yok". Firma sayfası, gönderimle aynı işlevle (`financialRecipient`) proforma / avans / nihai fatura
+  e-postalarının GERÇEK alıcısını gösterir. Diğer bildirimlerin alıcıları değişmedi.
+
 ## 3.75.3 — 11.10.2026
 
 - PDF aktarımı: özgün fabrika PDF'i kalıcı saklanmaz. Yüklenen dosya içerik denetimi ve antivirüsten geçer, metni okunur,

@@ -34,7 +34,20 @@ export const PDF_WAIT_ATTEMPTS = 2;
 export const NO_EMAIL = 'NO_EMAIL';
 
 const backoffMinutes = (attempt) => [1, 5, 15, 30, 60, 120, 240, 480][Math.min(attempt, 7)];
-export const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+/**
+ * Tek bir geçerli e-posta adresi mi (mali belge alıcısı ve "E-mail facturare" alanı — karar 115, 258): boşluksuz, tek "@",
+ * noktalı alan adı; birden çok adres ya da "Ad <adres>" biçimi (virgül, noktalı virgül, köşeli / normal parantez, çift
+ * tırnak, ters bölü) ve ardışık / baştaki / sondaki nokta GEÇERSİZDİR — geçersiz adrese gönderilmez, sıradaki adrese düşülür.
+ */
+const EMAIL_CHAR = '[^\\s@,;<>()\\[\\]"\\\\]';
+const EMAIL_RE = new RegExp(`^${EMAIL_CHAR}+@${EMAIL_CHAR}+\\.${EMAIL_CHAR}+$`);
+export const isEmail = (s) => {
+  if (typeof s !== 'string') return false;
+  const v = s.trim();
+  if (v.length === 0 || v.length > 254 || !EMAIL_RE.test(v)) return false;
+  const [local, domain] = v.split('@');
+  return ![local, domain].some((p) => p.startsWith('.') || p.endsWith('.') || p.includes('..'));
+};
 
 /**
  * Mali belge e-postasının alıcısı (karar 115) — yalnızca proforma / avans faturası / fatura e-postaları için:

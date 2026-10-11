@@ -286,6 +286,15 @@ export const isCrateLine = (l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2'
  * @param {{ kind?: string | null, unit?: string | null, description?: unknown, crateFee?: boolean | null }} l
  */
 export const isSalesCrate = (l) => !l.crateFee && isCrateLine(l);
+/**
+ * Fabrika maliyeti (satış fiyatı, OfferLine.unitPrice) eksik mi (karar 28, 257) — "maliyet eksik" uyarısının TEK kuralı
+ * (tedarikçi sayfası, yükleme onayı / kârlılık, eksik maliyet düzeltmesi): müşterinin ödediği (bedelsiz değil, müşteri fiyatı
+ * > 0) ama maliyeti 0 / boş satır. Sandık parası satırı bu uyarıya GİRMEZ: yöneticinin sandık bedelinin fabrika maliyeti
+ * kuralla 0 EUR'dur (kayıtta 0 yazılır — server/orders/transitions.js → mergePrices); satışın sandık ücretinin fiyatını satış
+ * girer. Onay kalemlerinde işaret (crateFee) yoktur; sandık satırı adı ve adetli birimiyle tanınır (isCrateLine).
+ * @param {{ free?: boolean | null, crateFee?: boolean | null, kind?: string | null, unit?: string | null, description?: unknown, offerPrice?: unknown, unitPrice?: unknown }} l
+ */
+export const missingCost = (l) => !l.free && !l.crateFee && !isCrateLine(l) && num(l.offerPrice) > 0 && !(num(l.unitPrice) > 0);
 
 /** Teklif satırı türleri (metni: status.lineKind.<tür>). */
 export const LINE_KINDS = ['CAM', 'CNC', 'DELIK'];

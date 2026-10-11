@@ -93,3 +93,16 @@ test('mali belge alıcısı: billingEmail → Customer.email → yok; geçersiz 
   assert.equal(financialRecipient({ email: null, billingEmail: null, users: [{ email: 'user@client.ro' }], contactPerson: 'x@y.ro' }), null);
   assert.equal(financialRecipient(null), null);
 });
+
+// Karar 258: tek bir adres olmalı — birden çok adres / "Ad <adres>" / bozuk nokta geçersizdir; geçersiz fatura e-postası
+// sessizce firmanın e-postasına düşer, ikisi de geçersizse "Email yok" (iş NO_EMAIL ile kapanır, gönderilmez)
+test('mali belge alıcısı: geçersiz adres biçimleri atlanır (birden çok adres, ad + adres, ardışık nokta)', () => {
+  for (const bad of ['a@b.ro;c@d.ro', 'a@b.ro,c@d.ro', 'Ion Pop <a@b.ro>', '"a"@b.ro', 'a(b)@c.ro', 'a\\b@c.ro', 'a@@b.ro', 'a@b', '.a@b.ro', 'a.@b.ro', 'a@b..ro', 'a@b.ro.', 'a@.b.ro', `${'x'.repeat(250)}@b.ro`, 'a b@c.ro']) {
+    assert.equal(isEmail(bad), false, bad);
+    assert.equal(financialRecipient({ billingEmail: bad, email: 'office@client.ro' }), 'office@client.ro', bad);
+    assert.equal(financialRecipient({ billingEmail: bad, email: bad }), null, bad);
+  }
+  for (const good of ['facturi@client.ro', "o'brien@client.ro", 'a.b-c+d@sub.client.ro', ' facturi@client.ro ']) assert.equal(isEmail(good), true, good);
+  // Önce fatura e-postası: ikisi de geçerliyse her zaman billingEmail
+  assert.equal(financialRecipient({ billingEmail: 'facturi@client.ro', email: 'office@client.ro' }), 'facturi@client.ro');
+});

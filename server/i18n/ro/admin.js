@@ -198,7 +198,10 @@ export default {
     address: 'Adresă',
     billingEmail: 'E-mail facturare',
     billingEmailHint: 'Proformele și facturile emise prin TAKİP vor fi trimise la această adresă.',
-    billingEmailFallback: 'Dacă rămâne necompletat, se folosește e-mailul firmei ({email}).',
+    // Destinatarul actual al documentelor financiare (decizia 258) — aceeași regulă ca la trimitere
+    recipientBilling: 'E-mailurile cu proforma, factura de avans și factura finală se trimit la: {email} (e-mail facturare).',
+    recipientFallback: 'E-mailul de facturare este gol sau nevalid: e-mailurile cu proforma, factura de avans și factura finală se trimit la e-mailul firmei: {email}.',
+    recipientNone: 'Nu există o adresă validă (e-mailul de facturare și e-mailul firmei sunt goale sau nevalide): e-mailurile documentelor financiare nu se trimit, documentul apare cu „Email yok”.',
     sandikHint: 'Se tipărește pe eticheta fizică și pe lista de transport; poate fi modificată pentru fiecare comandă.',
     saving: 'Se salvează…',
     create: 'Creează',

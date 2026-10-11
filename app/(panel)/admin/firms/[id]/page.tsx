@@ -12,6 +12,7 @@ import { deleteCustomerAction, updateFirmAction } from '../actions';
 import { userCan } from '@/lib/permissions';
 import { actorOf } from '@/lib/actor';
 import { customerDeletionPreview } from '@/server/customers/deletion.js';
+import { financialRecipient } from '@/server/documents/delivery.js';
 import { FxPolicyFields } from '../FxPolicyFields';
 
 export default async function EditFirmPage({
@@ -74,7 +75,15 @@ export default async function EditFirmPage({
           <div>
             <label htmlFor="billingEmail">{t('admin.firmForm.billingEmail')}</label>
             <input id="billingEmail" name="billingEmail" type="email" maxLength={200} defaultValue={f.billingEmail ?? ''} autoComplete="off" />
-            <p className="hint">{t('admin.firmForm.billingEmailHint')}{f.email ? ` ${t('admin.firmForm.billingEmailFallback', { email: f.email })}` : ''}</p>
+            <p className="hint">{t('admin.firmForm.billingEmailHint')}</p>
+            {/* Mali belgelerin GERÇEK alıcısı (karar 258): gönderimle aynı işlev (financialRecipient) — fatura e-postası geçerliyse o,
+                değilse firmanın e-postası; ikisi de geçersizse belge e-postası "Email yok" olarak kapanır */}
+            {(() => {
+              const to = financialRecipient(f);
+              return to
+                ? <p className="hint" data-financial-recipient={to}>{t(to === f.billingEmail?.trim() ? 'admin.firmForm.recipientBilling' : 'admin.firmForm.recipientFallback', { email: to })}</p>
+                : <div className="alert alert-warn" data-financial-recipient="">{t('admin.firmForm.recipientNone')}</div>;
+            })()}
           </div>
         </div>
         {/* Kur politikası (Aşama 7D-1): cam FGO belgelerinin kuru; seçilmediyse eski kural */}

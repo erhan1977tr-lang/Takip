@@ -230,14 +230,14 @@ dbTest('açık kalan kapanınca sipariş arşive geçer: aktarımdan vazgeçmek 
   assert.deepEqual(await rp.cancelReplan(db, { replanId: replan.id, actor: act(U.admin) }), { ok: true });
   assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 0, skipped: 0 });
   assert.equal(await status('active'), 'URETIMDE');
-  // partial: yüklenmeyen 2 camın yerine telafi camı açılır (bedelsiz, yeni telafi siparişi; kaynak yüklendiği için ek üretim)
+  // partial: yüklenmeyen 2 camın yerine telafi camı açılır (bedelsiz, yeni telafi siparişi; bedelsiz telafi kaynaktan düşmez — ek üretim, karar 256)
   const item = await db.loadingConfirmationItem.findFirstOrThrow({ where: { orderId: O.partial.id, status: 'NOT_LOADED' } });
   const r = await comp.createCompensation(db, {
     orderId: O.partial.id, lineId: O.partial.offers[0].lines[0].id, quantity: 2, mode: 'FREE', dest: { type: 'NEW', day: FUTURE },
     notLoadedItemId: item.id, requestKey: `arsiv-telafi-${'x'.repeat(16)}`, confirm: true, actor: act(U.sales),
   });
   assert.equal(r.ok, true, r.code);
-  assert.deepEqual([r.status, r.source.reduced, r.source.reason], ['APPLIED', false, 'LOADED']);
+  assert.deepEqual([r.status, r.source.reduced, r.source.reason], ['APPLIED', false, 'FREE']);
   assert.deepEqual(await autoArchiveOrders(db, { now: NOW }), { archived: 1, skipped: 0 });
   assert.equal(await status('partial'), 'ARSIVLENDI');
   // Telafi siparişi kendi akışındadır (yükleme onayı yok): arşivlenmez

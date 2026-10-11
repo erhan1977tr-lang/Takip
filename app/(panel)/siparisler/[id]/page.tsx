@@ -33,7 +33,7 @@ import {
 } from '@/server/orders/rules.js';
 import { TableJump } from '@/components/TableJump';
 import { loadCompensations, loadCompensationForm, type CompEntry } from '@/lib/compensation';
-import { compensableLines } from '@/server/orders/compensation.js';
+import { compensableLines, compensationBlock } from '@/server/orders/compensation.js';
 import { CompensationForm } from './CompensationForm';
 import { RemoveOrder } from './RemoveOrder';
 import { removalPreview } from '@/server/orders/removal.js';
@@ -265,7 +265,10 @@ export default async function OrderPage({
   // Kırık / telafi camı (karar 108): satış ve yönetici (OFFER_PREPARE). Giriş, müşteriye gönderilmiş teklifin cam satırı.
   const canComp = !isCustomer && userCan(user, 'OFFER_PREPARE');
   const comps = canComp ? await loadCompensations(order.id, user) : [];
-  const compIds = new Set<string>(canComp && sent && order.status !== 'IPTAL' ? compensableLines(sent.lines).map((g) => String(g.line.id)) : []);
+  // Mali engel (karar 256): yalnızca kesilmiş nihai fatura telafiyi kapatır — proforma / avans / bekleyen istek kapatmaz.
+  // Düğmeler gizlenir ve neden yazılır; sunucu aynı kuralı createCompensation içinde yeniden uygular.
+  const compBlock = canComp && sent && order.orderTypeCode === 'GLASS_ORDER' && order.status !== 'IPTAL' ? await compensationBlock(db, order.id) : { blocked: false as const };
+  const compIds = new Set<string>(canComp && sent && order.status !== 'IPTAL' && !compBlock.blocked ? compensableLines(sent.lines).map((g) => String(g.line.id)) : []);
   const compHref = (lineId: string) => `/siparisler/${order.id}?telafi=${lineId}#telafi`;
   const compForm = compIds.size > 0 && sp.telafi ? await loadCompensationForm(order, user) : null;
   // Özel durum (karar 124): yalnızca yönetici (LOADING_CONFIRM) görür; yalnızca FİRMA seçer. Sandık Yüklemeler ekranında seçilir.
@@ -305,7 +308,7 @@ export default async function OrderPage({
   const srcAfter = digits(sp.kalan);
   const compSource = !compOk ? null
     : sp.kaynak === 'dustu' && srcBefore != null && srcAfter != null ? { warn: false, text: t('compensation.sourceResult.reduced', { before: srcBefore, after: srcAfter }) }
-      : sp.kaynak && Object.hasOwn(srcKept, sp.kaynak) ? { warn: sp.kaynak !== 'PENDING', text: srcKept[sp.kaynak as keyof typeof srcKept] } : null;
+      : sp.kaynak && Object.hasOwn(srcKept, sp.kaynak) ? { warn: sp.kaynak !== 'PENDING' && sp.kaynak !== 'FREE', text: srcKept[sp.kaynak as keyof typeof srcKept] } : null;
 
   return (
     <>
@@ -535,7 +538,7 @@ export default async function OrderPage({
       {/* Teknik çizimler ve onay (karar 214): teklif tablosundan SONRA — Sipariş Bilgileri → Teklif Tablosu → Teknik Çizim ve
           Onaylar. Çizimi olmayan siparişte kart yok; çizim ekibinin kendi ekranı (dosyalar → çizim → onay) değişmedi. */}
       {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
-      {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} error={compForm ? null : compError} t={t} locale={locale} />}
+      {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} blockedRef={compBlock.blocked ? compBlock.ref : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
       {/* Ödemeler ve avans (Paket 10): FGO tahsilatı ve elle kayıtlar ayrı, belirsiz FGO belgesi kararı — yalnızca yönetici */}
@@ -872,7 +875,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
  * türünü (bedelsiz / aynı fiyat / farklı fiyat). Satışın "farklı fiyat" kararı, hedef siparişin teklifi müşterideyse
  * yöneticinin onayını bekler; onay / ret burada verilir (yalnızca yönetici) — karar 157.
  */
-function Decisions({ order, user, comps, createHref, error, t, locale }: { order: OrderDetail; user: CurrentUser; comps: CompEntry[]; createHref: string | null; error: string | null; t: T; locale: 'tr' | 'ro' }) {
+function Decisions({ order, user, comps, createHref, blockedRef = null, error, t, locale }: { order: OrderDetail; user: CurrentUser; comps: CompEntry[]; createHref: string | null; blockedRef?: string | null; error: string | null; t: T; locale: 'tr' | 'ro' }) {
   const admin = userCan(user, 'OFFER_SEND');
   const price = (v: number | null, cur: string) => (v == null ? '—' : v === 0 ? t('compensation.free') : t('compensation.perM2', { price: fmtNum(v), cur }));
   return (
@@ -883,7 +886,9 @@ function Decisions({ order, user, comps, createHref, error, t, locale }: { order
       </div>
       <p className="muted small">{t('compensation.decisions.intro')}</p>
       {error && <div className="alert alert-error">{error}</div>}
-      {comps.length === 0 && <p className="muted">{createHref ? t('compensation.decisions.none') : t('compensation.decisions.noSentOffer')}</p>}
+      {/* Nihai fatura kesilmiş (karar 256): telafi açılamaz — nedeni ve faturanın numarası */}
+      {blockedRef && <div className="alert alert-warn" data-comp-blocked="FINAL_INVOICE">{t('compensation.decisions.finalInvoice', { ref: blockedRef })}</div>}
+      {comps.length === 0 && <p className="muted">{createHref ? t('compensation.decisions.none') : blockedRef ? t('compensation.decisions.noneBlocked') : t('compensation.decisions.noSentOffer')}</p>}
       {comps.map((c) => {
         const glass = `${locale === 'ro' && c.glassRo ? c.glassRo : c.glass}${c.enMm && c.boyMm ? ` · ${c.enMm}×${c.boyMm}` : ''}`;
         const customerTier = c.tier === 'CUSTOMER';

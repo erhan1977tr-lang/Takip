@@ -7,7 +7,7 @@ import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { sentOffer, type OrderDetail } from './orders';
 import { userCan } from './permissions';
-import { ambiguousOps, compensableLines, compensationDestinations, notLoadedLinks, sourceState } from '../server/orders/compensation.js';
+import { ambiguousOps, compensableLines, compensationBlock, compensationDestinations, notLoadedLinks, sourceState } from '../server/orders/compensation.js';
 
 export type CompEntry = {
   id: string; status: 'APPLIED' | 'PENDING' | 'REJECTED';
@@ -107,6 +107,8 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   type Line = OrderDetail['offers'][number]['lines'][number];
   const groups: { line: Line; subs: Line[] }[] = compensableLines(sent.lines);
   if (groups.length === 0) return null;
+  // Nihai fatura kesilmişse form açılmaz (karar 256; sunucu da reddeder — FINAL_INVOICE)
+  if ((await compensationBlock(db, order.id)).blocked) return null;
   // Satışın siparişinde müşteri fiyatları temizlenmiştir: "fiyat var mı" bilgisi veritabanından (yalnızca var / yok)
   const pricedIds = new Set((await db.offerLine.findMany({ where: { offerId: sent.id, offerPrice: { not: null } }, select: { id: true } })).map((l) => l.id));
   const [state, links, destinations, root] = await Promise.all([

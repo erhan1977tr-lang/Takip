@@ -149,7 +149,7 @@ export default {
     compToPrice: 'yönetici belirleyecek',
     compSource: 'Kaynak siparişte kalan adet: {before} → {after}',
     compSourceKept: 'Kaynak adedi değişmedi ({reason}) — telafi ek üretimdir',
-    compSourceReason: { LOADED: 'yüklemesi onaylanmış', BILLING: 'belgesi var', CLOSED: 'sipariş kapalı' },
+    compSourceReason: { LOADED: 'yüklemesi onaylanmış', BILLING: 'belgesi var', CLOSED: 'sipariş kapalı', FREE: 'bedelsiz telafi — kaynak adedi değişmez' },
     compSourcePending: 'Kaynak adedi onayla birlikte düşer',
     compTier: { CUSTOMER: 'müşteri fiyatı', SALES: 'satış fiyatı' },
     compOpen: 'Siparişte karar ver',

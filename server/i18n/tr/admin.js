@@ -200,7 +200,10 @@ export default {
     address: 'Adres',
     billingEmail: 'Fatura e-postası (E-mail facturare)',
     billingEmailHint: 'TAKİP üzerinden kesilen proformalar ve faturalar bu adrese gönderilir.',
-    billingEmailFallback: 'Boş bırakılırsa firmanın kayıtlı e-postasına ({email}) gider.',
+    // Mali belgelerin şu anki alıcısı (karar 258) — gönderimle aynı kural
+    recipientBilling: 'Proforma, avans faturası ve nihai fatura e-postaları şu adrese gider: {email} (fatura e-postası).',
+    recipientFallback: 'Fatura e-postası boş ya da geçersiz: proforma, avans faturası ve nihai fatura e-postaları firmanın kayıtlı e-postasına gider: {email}.',
+    recipientNone: 'Geçerli bir adres yok (fatura e-postası ve firmanın e-postası boş ya da geçersiz): mali belge e-postaları gönderilmez, belge "Email yok" olarak görünür.',
     sandikHint: 'Fiziksel etikete ve nakliye listesine basılır; sipariş bazında değiştirilebilir.',
     saving: 'Kaydediliyor…',
     create: 'Oluştur',

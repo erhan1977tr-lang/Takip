@@ -22,6 +22,7 @@
 // yani fiilen yüklenen camı izler. Kesilmiş bir fatura düzeltilmiş yüklemeyle uyuşmuyorsa muhasebe düzeltilmiş SAYILMAZ:
 // gün "muhasebe işlemi gerekli" olarak işaretlenir (accounting) — fark otomatik belgeyle kapatılmaz (Aşama 7F-2).
 import { dayKey, orderLoad } from '../orders/loading.js';
+import { missingCost } from '../orders/rules.js';
 import { effectiveItems, itemAsLine, lineTotals } from '../loading/confirmation.js';
 import { ACTION_REQUIRED, orderImpacts } from '../glass/invoice-batch.js';
 
@@ -30,8 +31,9 @@ const add = (map, cur, key, v) => {
   const o = (map[cur] ??= { sale: 0, cost: 0, transport: 0 });
   o[key] = round2(o[key] + v);
 };
-/** Müşterinin ödediği (bedelsiz değil, müşteri fiyatı > 0) ama fabrika maliyeti (satış fiyatı) kayıtlı olmayan satır */
-export const missingCost = (l) => !l.free && Number(l.offerPrice ?? 0) > 0 && !(Number(l.unitPrice ?? 0) > 0);
+/** Müşterinin ödediği (bedelsiz değil, müşteri fiyatı > 0) ama fabrika maliyeti (satış fiyatı) kayıtlı olmayan satır — kural
+ *  tek yerde (sandık parası satırı girmez — karar 257): server/orders/rules.js */
+export { missingCost };
 
 /**
  * Siparişin muhasebe satırı: müşteriye gönderilmiş son teklif. Gönderilmiş teklifi olmayan sipariş null.

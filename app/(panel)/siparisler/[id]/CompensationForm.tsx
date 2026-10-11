@@ -65,9 +65,13 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const priceOk = !custom || (price.trim() !== '' && Number.isFinite(p) && p > 0);
   const dest = data.destinations.find((d) => d.id === destId) ?? null;
   const destOk = destType === 'NEW' ? day >= data.minDay : destType === 'EXISTING' ? !!dest && !dest.reason : false;
-  // Kaynak adedi (karar 157): temiz siparişte telafi adedi kadar düşer; kaynakta başka cam kalmıyorsa telafi açılmaz
+  // Bedelsiz karar (müşteri fiyatı 0) — sunucunun priceDecision().free ile aynı: "Bedelsiz", ya da kaynak satır zaten
+  // bedelsizse aynı fiyat / satışın farklı fiyatı. Bedelsiz telafide kaynak adedi HİÇ değişmez (karar 256).
+  const freeDecision = mode === 'FREE' || (!!line?.free && !(mode === 'CUSTOM' && data.admin));
+  // Kaynak adedi (karar 157): bedelli telafide temiz siparişte telafi adedi kadar düşer; kaynakta başka cam kalmıyorsa açılmaz
+  const reduces = data.source.reducible && !freeDecision;
   const left = line && qtyOk ? line.adet - n : null;
-  const emptySource = data.source.reducible && left === 0 && data.lines.length === 1;
+  const emptySource = reduces && left === 0 && data.lines.length === 1;
   // Teklifin yolu — sunucunun izlediği yolla aynı kural (compensationFlow): kaynakta müşteri fiyatı yoksa "aynı fiyat" da
   // doğrudan gitmez (yeni siparişte fiyat onayı, müşterideki teklifte satış için onay bekler, yönetici için fiyat gerekir)
   const route = line ? compensationFlow({ mode, admin: data.admin, destType: destType || 'NEW', via: destType === 'EXISTING' ? dest?.via ?? null : null, sourceFree: line.free, sourcePriced: line.priced }) : null;
@@ -200,8 +204,11 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                 <tr><td>{f.sumSource}</td><td className="mono">{data.orderNo}</td></tr>
                 <tr><td>{f.sumGlass}</td><td>{glassOf(line)} · {line.enMm}×{line.boyMm}</td></tr>
                 <tr><td>{f.sumQty}</td><td>{n}</td></tr>
-                {data.source.reducible && left != null && (
+                {reduces && left != null && (
                   <tr data-sum="kaynak"><td>{f.sumSourceQty}</td><td><b>{interpolate(f.sumSourceQtyValue, { before: line.adet, after: left })}</b></td></tr>
+                )}
+                {freeDecision && (
+                  <tr data-sum="kaynak" data-source-free><td>{f.sumSourceQty}</td><td><b>{interpolate(f.sumSourceQtyFree, { before: line.adet })}</b></td></tr>
                 )}
                 {line.ops.length > 0 && <tr data-sum="islem"><td>{f.sumOps}</td><td>{interpolate(mode === 'FREE' ? f.sumOpsFree : f.sumOpsValue, { list: opsText(line) })}</td></tr>}
                 <tr data-sum="fiyat"><td>{f.sumPrice}</td><td><b>{priceText}</b>{adminPrices && <span className="muted"> · {f.sumPriceAdmin}</span>}</td></tr>

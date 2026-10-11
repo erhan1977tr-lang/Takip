@@ -48,6 +48,21 @@ test('sandık bedeli yöneticinin satırıdır: yönetici ve müşteri görür, 
   await price.nth(1).fill('25');
   await admin.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
   await expect(admin.getByText('Teklif taslak olarak kaydedildi.')).toBeVisible();
+  // Sandık parası fabrika maliyeti (karar 257): kayda GERÇEKTEN 0 EUR yazılır (boş değil); sayfa yeniden açılıp kaydedilince
+  // de 0 kalır; müşteri fiyatı (25) bağımsızdır
+  {
+    const db0 = await prisma();
+    const crateLine = () => db0.offerLine.findFirstOrThrow({ where: { crateFee: true, offer: { orderId } }, orderBy: { offer: { createdAt: 'desc' } } });
+    let l = await crateLine();
+    expect([l.unitPrice === null, Number(l.unitPrice), Number(l.offerPrice)]).toEqual([false, 0, 25]);
+    await admin.goto(`/siparisler/${orderId}`);
+    await expect(admin.locator('.offer-table [data-crate-fee]')).toHaveCount(1);
+    await admin.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
+    await expect(admin.getByText('Teklif taslak olarak kaydedildi.')).toBeVisible();
+    l = await crateLine();
+    expect([Number(l.unitPrice), Number(l.offerPrice)]).toEqual([0, 25]);
+    await db0.$disconnect();
+  }
   await cust.goto(`/siparisler/${orderId}`);
   await expect(cust.locator('#teklif')).toHaveCount(0);
   expect(await cust.content()).not.toContain('325,00');

@@ -559,6 +559,15 @@ dbTest('fatura e-postası (billingEmail): öncelik, geri düşüş, geçersiz ad
   const E = await customer('Eronat SRL', 'ERO', { email: 'office@eronat.test', billingEmail: 'adres-degil' });
   await send(E, 20);
   assert.equal(to().at(-1), 'office@eronat.test');
+  // Birden çok adres / "Ad <adres>" tek alıcı değildir (karar 258): geçersiz sayılır, firmanın e-postasına düşülür; ikisine
+  // birden gönderilmez
+  for (const [i, bad] of ['facturi@eronat.test;contabil@eronat.test', 'facturi@eronat.test, contabil@eronat.test', 'Facturi <facturi@eronat.test>'].entries()) {
+    const M = await customer(`Multi ${i} SRL`, `ML${'ABC'[i]}`, { email: `birou${i}@eronat.test`, billingEmail: bad });
+    const sentBefore = to().length;
+    const y = await send(M, 23 + i);
+    assert.deepEqual(to().slice(sentBefore), [`birou${i}@eronat.test`], bad);
+    assert.equal((await emails(y.doc.id))[0].payload.to, `birou${i}@eronat.test`);
+  }
 
   // Bildirim tercihi mali belgeyi ETKİLEMEZ: firmanın bütün kullanıcıları e-posta bildirimlerini kapatmış olsa da belge gider;
   // alıcı yine firmanın adresidir — kullanıcıların giriş e-postasına gönderilmez

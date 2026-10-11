@@ -9,7 +9,8 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, INSPECTOR_PW }
 //    fiyat alanı: satışta SATIŞ fiyatı, yöneticide müşteri fiyatı). Satış hiçbir müşteri fiyatı tutarı görmez.
 //  - Kaynakta müşteri fiyatı varsa her karar doğrudan müşteriye gider (yönetici onayı yok); yönetici "Önemli kararlar",
 //    bildirim ve e-postayla haberdar olur (bekleyen karar / fiyat onayı yolu: test/db/compensation*.test.js)
-//  - kaynak adedi: telafi açılınca ana siparişte o camın adedi düşer (temiz siparişte; teklifin yeni sürümü)
+//  - kaynak adedi: BEDELLİ telafi açılınca ana siparişte o camın adedi düşer (temiz siparişte; teklifin yeni sürümü);
+//    BEDELSİZ telafide kaynak adedi hiç değişmez — ayrı ek üretimdir (karar 256)
 //  - işlemler (karar 113, 251): CNC tek bir cama aittir — işlemsiz cam işlem miras almaz; işlemli tek camın işlemi telafiye
 //    taşınır; fiyatı bedelsizde 0, aynı / farklı fiyatta kaynaktaki gibi
 //  - siparişi sil: yalnızca yönetici, iki aşama (sipariş no + sonuç → sipariş numarasını yazarak son onay); sipariş olağan
@@ -99,7 +100,7 @@ test('veri: temiz kaynak sipariş, kapalı sipariş, müşterinin ileri tarihli 
   line2 = src.offers[0].lines[3].id;
 });
 
-test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; işlemli tek cam aynı fiyatla → UNS7901-T2 (CNC fiyatıyla taşınır); farklı fiyat → satış fiyatı girilir, yönetici onayı beklenmez (karar 251); satış müşteri fiyatını görmez', async ({ browser }) => {
+test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 adet DEĞİŞMEZ (karar 256); işlemli tek cam aynı fiyatla → UNS7901-T2 (CNC fiyatıyla taşınır, kaynak 1 → 0); farklı fiyat → satış fiyatı girilir, yönetici onayı beklenmez (karar 251); satış müşteri fiyatını görmez', async ({ browser }) => {
   const page = await as(browser, SALES, TEAM_PW);
   await page.goto(`/siparisler/${srcId}`);
   const table = page.locator('#teklif');
@@ -149,7 +150,9 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   await expect(summary.locator('[data-sum=fiyat]')).toContainText('0,00 EUR/m² (Bedelsiz)');
   await expect(summary).toContainText('Yeni telafi siparişi (UNS7901-T)');
   await expect(summary).toContainText(dmy(NEW_DAY));
-  await expect(summary.locator('[data-sum=kaynak]')).toContainText('9 → 6 adet');
+  // Bedelsiz telafi kaynaktan düşmez (karar 256): özet bunu söyler
+  await expect(summary.locator('[data-sum=kaynak]')).toContainText('9 adet — değişmez (bedelsiz telafi ayrı ek üretimdir)');
+  await expect(summary.locator('[data-source-free]')).toHaveCount(1);
   await expect(summary.locator('[data-sum=akis]')).toHaveCount(0);
   await expect(summary).not.toContainText('Önceki müşteri fiyatı');
   await expect(summary).toContainText('Yukarıdaki kararı onaylıyorum: 3 cam telafi olarak eklensin.');
@@ -159,7 +162,8 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   await submit.click();
   await expect(page).toHaveURL(/telafiOk=sent/);
   await expect(page.locator('.alert-ok', { hasText: 'Telafi siparişi açıldı: UNS7901-T. Teklifi müşteriye gönderildi' })).toBeVisible();
-  await expect(page.locator('[data-comp-source=dustu]')).toContainText('Kaynak siparişte bu camın adedi 9 → 6 oldu');
+  await expect(page.locator('[data-comp-source=FREE]')).toContainText('Bedelsiz telafi: kaynak siparişin adedi değişmedi');
+  await expect(page.locator('[data-comp-source=dustu]')).toHaveCount(0);
   const card = page.locator('#kararlar');
   let entry = card.locator('.comp-entry').first();
   for (const text of ['UNS7901', 'TELAFİ', '3 adet telafi', 'Kaynak cam: Temper · 1000×1000', 'Fiyat kararı: Bedelsiz', `Hedef: UNS7901-T / ${dmy(NEW_DAY)}`, 'Oluşturan:', 'Tarih:']) {
@@ -175,10 +179,10 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   expect([t.status, t.compSeq, t.compOfId, t.offers.length, t.offers[0].status]).toEqual(['URETIMDE', 1, srcId, 1, 'GONDERILDI']);
   // Müşteri fiyatı 0, fabrika maliyeti durur; işlemsiz cam CNC miras almaz (aynı camın CNC'li kardeşi olsa da)
   expect(t.offers[0].lines.map(lineRow)).toEqual([['CAM', 3, 37, 0, true, true]]);
-  // Kaynak: teklifin yeni sürümü — 9 camdan 6'sı kaldı; öteki satırlar aynen. Eski sürüm duruyor.
+  // Kaynak DEĞİŞMEDİ: yeni teklif sürümü yok, 9 cam aynen (bedelsiz telafi ayrı ek üretimdir)
   let src = await sentOffer(db, srcId);
-  expect([src.versions, src.rows]).toEqual([2, [['Temper', 6], ['Temper', 1], ['CNC', 1], ['Lamine', 4], ['Sandık parası', 1]]]);
-  [line1, lineOp, line2] = [src.lines[0].id, src.lines[1].id, src.lines[3].id];
+  expect([src.versions, src.rows]).toEqual([1, [['Temper', 9], ['Temper', 1], ['CNC', 1], ['Lamine', 4], ['Sandık parası', 1]]]);
+  expect([src.lines[0].id, src.lines[1].id, src.lines[3].id]).toEqual([line1, lineOp, line2]);
 
   // --- "Önemli kararlar" → aynı form; cam burada seçilir; önceki telafi gösterilir.
   // İşlemli TEK cam, AYNI FİYAT, yeni telafi siparişi: CNC kaynaktaki fiyatlarıyla taşınır (karar 251 — 0'a düşmez)
@@ -209,7 +213,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   expect(t2.offers[0].lines.map(lineRow)).toEqual([['CAM', 1, 37, 66.96, false, true], ['CNC', 1, 5, 8, false, true]]);
   // Kaynakta işlemli cam ve CNC satırı kalktı (telafiye taşındı)
   src = await sentOffer(db, srcId);
-  expect([src.versions, src.rows]).toEqual([3, [['Temper', 6], ['Lamine', 4], ['Sandık parası', 1]]]);
+  expect([src.versions, src.rows]).toEqual([2, [['Temper', 9], ['Lamine', 4], ['Sandık parası', 1]]]);
   [line1, line2] = [src.lines[0].id, src.lines[1].id];
 
   // --- FARKLI FİYAT, yeni telafi siparişi: satış kendi satış fiyatını girer (39); müşteri fiyatı kaynağınki kalır. Yönetici
@@ -224,7 +228,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   await expect(summary).toContainText('Yeni telafi siparişi (UNS7901-T3)');
   await expect(summary.locator('[data-sum=fiyat]')).toContainText('39,00 EUR/m²');
   await expect(summary).not.toContainText('yönetici belirleyecek');
-  await expect(summary.locator('[data-sum=kaynak]')).toContainText('6 → 5 adet');
+  await expect(summary.locator('[data-sum=kaynak]')).toContainText('9 → 8 adet');
   await summary.locator('.comp-confirm input').check();
   await form.getByRole('button', { name: 'Telafi camını ekle' }).click();
   await expect(page).toHaveURL(/telafiOk=sent/);
@@ -238,7 +242,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   expect([t3.status, t3.offers[0].status, t3.offers[0].sentAt instanceof Date]).toEqual(['URETIMDE', 'GONDERILDI', true]);
   expect(t3.offers[0].lines.map(lineRow)).toEqual([['CAM', 1, 39, 66.96, false, true]]);
   src = await sentOffer(db, srcId);
-  expect([src.versions, src.rows]).toEqual([4, [['Temper', 5], ['Lamine', 4], ['Sandık parası', 1]]]);
+  expect([src.versions, src.rows]).toEqual([3, [['Temper', 8], ['Lamine', 4], ['Sandık parası', 1]]]);
   [line1, line2] = [src.lines[0].id, src.lines[1].id];
 
   // --- FARKLI FİYAT, müşterinin ileri tarihli siparişine (teklifi müşteride): yönetici onayı beklenmez — yeni sürüm hemen gider
@@ -263,7 +267,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 → 6; iş
   expect(f.offers[0].lines.map((l) => [l.description, l.adet, Number(l.unitPrice), Number(l.offerPrice), !!l.compensationId])).toEqual([['Temper', 5, 37, 66.96, false], ['Lamine', 1, 43, 77.77, true]]);
   expect(f.offers[1].lines.length).toBe(1); // eski sürüm değişmedi
   src = await sentOffer(db, srcId);
-  expect([src.versions, src.rows]).toEqual([5, [['Temper', 5], ['Lamine', 3], ['Sandık parası', 1]]]);
+  expect([src.versions, src.rows]).toEqual([4, [['Temper', 8], ['Lamine', 3], ['Sandık parası', 1]]]);
   line1 = src.lines[0].id;
 
   // "Önemli kararlar": telafi başına BİR kayıt (dört karar kaynakta); bekleyen karar yok
@@ -290,7 +294,7 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   await expect(free).toContainText('3 × Temper 1000×1000 → UNS7901-T');
   await expect(free).toContainText('teklif doğrudan müşteriye gitti');
   await expect(free).toContainText('Önceki müşteri fiyatı: 66,96 EUR/m² → Telafi: Bedelsiz (müşteri fiyatı)');
-  await expect(free).toContainText('Kaynak siparişte kalan adet: 9 → 6');
+  await expect(free).toContainText('Kaynak adedi değişmedi (bedelsiz telafi — kaynak adedi değişmez)');
   const same = priceRows.filter({ hasText: 'Karar: Aynı fiyat' });
   await expect(same).toContainText('Önceki müşteri fiyatı: 66,96 EUR/m² → Telafi: 66,96 EUR/m² (müşteri fiyatı)');
   await expect(same).toContainText('Kaynak siparişte kalan adet: 1 → 0');
@@ -298,7 +302,7 @@ test('yönetici: her telafi "Önemli kararlar"da (karar, önceki → uygulanan f
   const custom = priceRows.filter({ hasText: 'Karar: Farklı fiyat' }).filter({ hasText: 'UNS7901-T3' });
   await expect(custom).toContainText('Önceki satış fiyatı: 37,00 EUR/m² → Telafi: 39,00 EUR/m² — müşteri fiyatı değişmedi');
   await expect(custom).toContainText('teklif doğrudan müşteriye gitti');
-  await expect(custom).toContainText('Kaynak siparişte kalan adet: 6 → 5');
+  await expect(custom).toContainText('Kaynak siparişte kalan adet: 9 → 8');
   await expect(admin.locator('tr', { hasText: 'Telafi camı yönetici onayını bekliyor' })).toHaveCount(0);
   await shot(admin, 'telafi-onemli-kararlar');
 
