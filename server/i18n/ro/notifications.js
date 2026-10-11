@@ -38,7 +38,7 @@ export default {
     // Sticlă de înlocuire deschisă (decizia 157) — doar administratorului, o notificare per înlocuire; decizia este în titlu
     COMPENSATION_FREE: { title: 'Sticlă de înlocuire deschisă: gratuit' },
     COMPENSATION_SAME: { title: 'Sticlă de înlocuire deschisă: același preț' },
-    COMPENSATION_CUSTOM: { title: 'Sticlă de înlocuire deschisă: alt preț (prețul îl stabilește administratorul)' },
+    COMPENSATION_CUSTOM: { title: 'Sticlă de înlocuire deschisă: alt preț — actualizați prețul pentru client dacă este nevoie' },
     DOC_PROFORMA: { title: 'Proforma este disponibilă.', customer: 'Proforma este disponibilă.' },
     DOC_ADVANCE: { title: 'Factura de avans este disponibilă.', customer: 'Factura de avans este disponibilă.' },
     DOC_INVOICE: { title: 'Factura este disponibilă.', customer: 'Factura este disponibilă.' },

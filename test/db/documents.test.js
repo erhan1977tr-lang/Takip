@@ -472,7 +472,9 @@ dbTest('müşteri kendi proforma, avans faturası ve faturasını görür; ödem
   // Onaylı yükleme → nihai fatura yükleme gününden, siparişin zincirinde (karar 239); proforma "faturalandı"
   const fin = await issueFinal(o, fgo);
   assert.deepEqual([fin.done, fin.failed], [1, 0]);
-  assert.deepEqual(keys(fgo.calls[2], 'Descriere'), [`Comanda ${o.orderNo}`, `Comanda ${o.orderNo}`], 'fatura: cam kalemi + avans düşümü aynı siparişin');
+  // Nihai fatura (karar 252): kalemlerde sipariş numarası yok (açıklama da ad öneki de)
+  assert.deepEqual(keys(fgo.calls[2], 'Descriere'), [], 'faturada kalem açıklaması yok');
+  assert.ok(!keys(fgo.calls[2], 'Denumire').some((n) => n.includes('Comanda')));
   const invDoc = await finalDocOf(fin.batchId);
   await db.fgoDocument.update({ where: { id: invDoc.id }, data: { total: '305.00', paid: '0' } });
   assert.deepEqual((await view()).sort(), [['ADVANCE', 'GKH602', 'PAID'], ['INVOICE', 'GKH603', 'UNPAID'], ['PROFORMA', 'PRF601', 'REPLACED']]);

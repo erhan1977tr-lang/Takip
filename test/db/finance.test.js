@@ -201,7 +201,9 @@ dbTest('elle avans: kayıt belge kesmez; avans faturası elle kayda dayanır; ay
   const inv = fgo.calls.at(-1);
   const names = Object.keys(inv).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => inv[k]);
   assert.equal(inv.IdExtern, `LOT-${fin.created.batchId}`);
-  assert.ok(names.some((n) => n.startsWith(`Comanda ${o.orderNo} — `)), names.join(' | '));
+  // Nihai fatura (karar 252): kalem adında sipariş numarası yok
+  assert.ok(!names.some((n) => n.includes('Comanda')), names.join(' | '));
+  assert.ok(names.some((n) => !n.startsWith('Stornare')), names.join(' | '));
   assert.ok(names.includes(`Stornare avans conform factură ${ref(adv)}`), names.join(' | '));
   assert.equal(await db.fgoDocument.count({ where: { batchId: fin.created.batchId, kind: 'INVOICE' } }), 1);
   assert.ok(await db.notificationOutbox.findFirst({ where: { type: d.DOC_EMAIL, payload: { path: ['docId'], equals: fin.doc.id } } }));

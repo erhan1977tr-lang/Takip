@@ -6,6 +6,7 @@ import { userCan, type Permission } from './permissions';
 import { dayKey, loadedOffer, orderLoad } from '../server/orders/loading.js';
 import { effectiveItems } from '../server/loading/confirmation.js';
 import { crateOrdersWhere } from '../server/loading/crates.js';
+import { crateRelations } from '../server/loading/crate-relations.js';
 import { dayFirms } from '../server/loading/day-firms.js';
 import { firmDocsAllowed } from '../server/loading/firm-export.js';
 
@@ -215,6 +216,39 @@ export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date
     crateId: customer ? '' : l.crate.id, hostId: customer ? '' : l.crate.customerId!, hostName: customer ? '' : l.crate.customer?.name ?? '',
     byHost: !customer && l.order.guestHostId === l.crate.customerId,
   }));
+}
+
+export type CrateRelations = ReturnType<typeof crateRelations>;
+/**
+ * Müşteri paneli "Sandık bilgileri" (karar 254): seçilen yükleme gününde müşterinin taraf olduğu misafir yük ilişkileri —
+ * kendi siparişi başka firmanın sandığında (away) ya da kendi sandığında başka firmanın siparişi (hosted). Kural ve
+ * döndürülen alanlar server/loading/crate-relations.js'tedir. Sorgu yalnızca müşterinin taraf olduğu bağları okur
+ * (sipariş sahibi YA DA sandık sahibi bu firma); iç ekip ve firması olmayan kullanıcı için boştur.
+ */
+export async function customerCrateRelations(user: CurrentUser, day: string): Promise<CrateRelations> {
+  const firm = user.appRole === 'MUSTERI' && user.type === 'CUSTOMER' ? user.customerId : null;
+  if (!firm) return { away: [], hosted: [] };
+  const d = new Date(`${day}T00:00:00Z`);
+  const live = { status: { not: 'IPTAL' as const }, removedAt: null };
+  const links = await db.crateOrder.findMany({
+    where: {
+      crate: { shipDay: d, customerId: { not: null } },
+      order: live,
+      OR: [{ order: { customerId: firm } }, { crate: { customerId: firm } }],
+    },
+    select: {
+      order: { select: { id: true, orderNo: true, customerId: true, customer: { select: { name: true } } } },
+      crate: {
+        select: {
+          id: true, crateNo: true, shipDay: true, customerId: true, lengthMm: true, widthMm: true, heightMm: true, netAgirlik: true, brutAgirlik: true, daraKg: true,
+          customer: { select: { sandikEtiket: true } },
+          // Yalnızca etiketin kaynağı (sandık sahibinin kendi siparişlerinin etiketi); başka bilgi seçilmez
+          orders: { where: { order: live }, select: { order: { select: { customerId: true, sandikEtiket: true } } } },
+        },
+      },
+    },
+  });
+  return crateRelations(links, firm);
 }
 
 /**

@@ -70,7 +70,7 @@ export default {
     noPrice: 'Acest document nu conține prețuri.',
     empty: 'Nu există lăzi introduse pentru această zi.',
     // Sub ladă: sticla altei firme (amplasare fizică) — "ÎNCĂRCĂTURĂ SUPLIMENTARĂ: firma · comanda"
-    guest: 'ÎNCĂRCĂTURĂ SUPLIMENTARĂ',
+    guest: 'Încărcătură suplimentară',
     // Administratorul a ales firma-gazdă, lada nu a fost încă aleasă: "comanda → codul firmei"
     waiting: 'Situație specială — se așteaptă alegerea lăzii',
     badDay: 'Alegeți o zi de încărcare validă.',
@@ -202,6 +202,15 @@ export default {
     // Calendarul de încărcări al clientului: textele anterioare (ecranul clientului nu se schimbă în acest pachet)
     estimateCustomer: 'Estimare pentru planificare: brut = sticlă {netKg} kg + {crates} × {tare} kg tara (greutatea sticlei per client se împarte la maximum {max} kg pe ladă, cu rotunjire în sus).',
     noteCustomer: 'Dacă pentru un client s-au introdus lăzi, greutatea netă/brută și numărul de lăzi ale acelui client în acea zi provin din datele REALE și au prioritate față de estimare. Greutatea sticlei se calculează din kg/m² din catalog.',
+    // Panoul clientului — încărcătură suplimentară (decizia 254): proprietarul lăzii și proprietarul încărcăturii o văd în panoul propriu
+    relations: {
+      title: 'Informații lăzi — încărcătură suplimentară',
+      awayTitle: 'Comenzile dvs. care merg cu lada altei firme',
+      awayNote: 'Pentru aceste comenzi nu există ladă separată; merg cu lada fizică a firmei gazdă. Comanda rămâne în lista dvs.',
+      hostedTitle: 'Comenzile altor firme care merg cu lăzile dvs.',
+      hostedNote: 'Lada este a dvs.; greutatea se socotește în greutatea lăzii. Prețul, documentele și fișierele comenzii nu vă sunt accesibile.',
+      cols: { day: 'Data încărcării', order: 'Comanda', label: 'Etichetă ladă', crate: 'Nr. ladă', dims: 'L × l × Î (mm)', weight: 'Greutate (kg)', firm: 'Firma' },
+    },
     crates: {
       title: 'Dimensiunile și greutățile lăzilor',
       toggle: 'Lăzi',

@@ -1,5 +1,5 @@
 // Nakliye listesi (Yüklemeler → "Nakliye Listesi", yönetici / satış / denetimci): bir yükleme gününün sandıkları,
-// müşteri koduna göre gruplu. Yalnızca mevcut kayıtlardan okunur — Crate (Yüklemeler sekmesinde girilen sandıklar)
+// FİZİKSEL SANDIK ETİKETİNE göre gruplu (karar 253; müşteri adına göre değil). Yalnızca mevcut kayıtlardan okunur — Crate (Yüklemeler sekmesinde girilen sandıklar)
 // ve o gün yüklenecek CAM siparişleri (gün = Order.actualShipDate ?? estimatedShipDate; satış/yönetici tarihi
 // değiştirdiyse yeni gün). Ayrı nakliye kaydı tutulmaz. Fiyat bilgisi yoktur.
 import { CRATE_TARE_KG, dayKey } from '../orders/loading.js';
@@ -19,12 +19,35 @@ export function crateWeight(c) {
 }
 
 /**
- * Saf: sandıklar ve siparişlerden liste. Grup = müşteri kodu (yoksa adı); sandıklar numaraya göre.
+ * Sandığın fiziksel etiketi (karar 253): sandıktaki KENDİ siparişlerinin sandık etiketi (sipariş etiketi, boşsa firmanın
+ * varsayılanı — Order.sandikEtiket ?? Customer.sandikEtiket); kendi siparişi bağlı değilse firmanın varsayılan etiketi.
+ * Etiket hiç girilmemişse firma kodu, o da yoksa firma adı (görene göre — satışa maskeli). Sandıktaki siparişlerin
+ * etiketleri farklıysa hepsi (" / " ile) yazılır — tahmin edilmez.
+ * @param {{ customerId: string | null, customer?: { prefix?: string | null, name?: string, sandikEtiket?: string | null } | null,
+ *   orders?: { order: { customerId: string, sandikEtiket?: string | null } }[] }} c
+ * @param {(name: string) => string} [label]
+ * @param {{ fallback?: boolean }} [o]  fallback: false → girilmiş etiket yoksa boş (firma kodu / adı yazılmaz)
+ */
+export function crateLabel(c, label = (name) => name, { fallback = true } = {}) {
+  const firm = String(c.customer?.sandikEtiket ?? '').trim();
+  const own = (c.orders ?? []).map((x) => x.order).filter((o) => o.customerId === c.customerId);
+  const labels = [...new Set(own.map((o) => String(o.sandikEtiket ?? '').trim() || firm).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  if (labels.length) return labels.join(' / ');
+  // fallback: false — yalnızca girilmiş etiket (müşteri ekranı: ev sahibi firmanın kodu / adı yazılmaz)
+  if (!fallback) return firm;
+  return firm || c.customer?.prefix || label(c.customer?.name ?? '');
+}
+
+/**
+ * Saf: sandıklar ve siparişlerden liste. Grup = FİZİKSEL SANDIK ETİKETİ (crateLabel; karar 253) — aynı etiketli sandıklar
+ * (farklı firmalardan olsalar da) tek grupta; grup başına sandık adedi ve ara toplam ağırlık; sandıklar numaraya göre.
+ * Her fiziksel sandık bir satırdır ve bir kez sayılır (birden çok siparişle ilişkili olsa da).
  * Sandığı girilmemiş müşterilerin siparişleri "sandık ölçüsü girilmemiş" olarak ayrıca listelenir.
- * Sandıkta başka müşterinin siparişi varsa (fiziksel yerleşim, karar 103, 124) sandığın ALTINDA "misafir yük" olarak
- * listelenir (guests: firma + sipariş no); sandık ev sahibinin grubunda kalır, ağırlığı sandığın ağırlığıdır. Başka
- * müşterinin sandığına konmuş sipariş "sandığı girilmemiş" sayılmaz. Ev sahibi firması seçilmiş ama sandığı henüz
- * seçilmemiş siparişler `waiting`te döner. Firma adı görene göre yazılır (label: satışa maskeli).
+ * Sandıkta başka müşterinin siparişi varsa (fiziksel yerleşim, karar 103, 124) sandığın NOTUNDA "misafir yük" olarak
+ * gösterilir (guests: firma + sipariş no); sandık ev sahibinin grubunda kalır, ağırlığı sandığın ağırlığıdır. Gerçek bir
+ * ev sahibi sandığına bağlı misafir sipariş "sandığı girilmemiş" sayılmaz; bağı olmayan (sandığı henüz seçilmemiş ya da
+ * kaydı eksik) sipariş uyarıda KALIR. Ev sahibi firması seçilmiş ama sandığı henüz seçilmemiş siparişler `waiting`te
+ * de döner. Misafir için sandık uydurulmaz. Firma adı görene göre yazılır (label: satışa maskeli).
  * @param {{ crateNo: number, lengthMm: number | null, widthMm: number | null, heightMm: number | null, dimensions?: string | null,
  *   netAgirlik?: unknown, brutAgirlik?: unknown, daraKg?: unknown, note: string | null, customerId: string | null,
  *   customer: { prefix: string | null, name: string } | null,
@@ -34,10 +57,13 @@ export function crateWeight(c) {
  */
 export function buildTransportList(crates, orders, { label = (name) => name } = {}) {
   const groups = new Map();
+  const withCrates = new Set(); // o gün sandığı girilmiş firmalar
   const placed = new Set(); // başka müşterinin sandığına konmuş siparişler
   for (const c of crates) {
     if (!c.customerId) continue;
-    const g = groups.get(c.customerId) ?? { code: c.customer?.prefix || c.customer?.name || '', crates: [], totalKg: 0 };
+    withCrates.add(c.customerId);
+    const code = crateLabel(c, label);
+    const g = groups.get(code) ?? { code, crates: [], totalKg: 0 };
     const weight = crateWeight(c);
     const dims = [c.lengthMm, c.widthMm, c.heightMm];
     const guests = (c.orders ?? []).map((x) => x.order).filter((o) => o.customerId !== c.customerId);
@@ -50,14 +76,14 @@ export function buildTransportList(crates, orders, { label = (name) => name } = 
       guests: guests.map((o) => ({ orderNo: o.orderNo, code: o.customer?.prefix || '', firm: label(o.customer?.name ?? '') })).sort((a, b) => a.orderNo.localeCompare(b.orderNo)),
     });
     if (weight != null) g.totalKg = Math.round((g.totalKg + weight) * 100) / 100;
-    groups.set(c.customerId, g);
+    groups.set(code, g);
   }
   const list = [...groups.values()].sort((a, b) => a.code.localeCompare(b.code));
   for (const g of list) g.crates.sort((a, b) => a.crateNo - b.crateNo);
-  const missing = [...new Set(orders.filter((o) => !groups.has(o.customerId) && !placed.has(o.orderNo)).map((o) => o.orderNo))];
+  const missing = [...new Set(orders.filter((o) => !withCrates.has(o.customerId) && !placed.has(o.orderNo)).map((o) => o.orderNo))];
   // Özel durum: ev sahibi firma seçilmiş, sandık henüz seçilmemiş (sipariş başına bir kez). Aktarılan kalan (replan) yalnızca
   // ev sahibi firmanın o gün de yüklemesi varsa bekleyen sayılır — yoksa kalan kendi firmasının yüküyle gider.
-  const hostHere = (id) => groups.has(id) || orders.some((o) => o.customerId === id);
+  const hostHere = (id) => withCrates.has(id) || orders.some((o) => o.customerId === id);
   const waiting = [...new Map(orders.filter((o) => o.guestHost && !placed.has(o.orderNo) && (!o.replan || hostHere(o.guestHostId)))
     .map((o) => [o.orderNo, { orderNo: o.orderNo, host: o.guestHost.prefix || label(o.guestHost.name) }])).values()];
   return {
@@ -81,9 +107,9 @@ export async function transportList(db, day, { label = (name) => name } = {}) {
     db.crate.findMany({
       where: { shipDay: d, customerId: { not: null } },
       include: {
-        customer: { select: { prefix: true, name: true } },
+        customer: { select: { prefix: true, name: true, sandikEtiket: true } },
         // İptal edilmiş / kaldırılmış siparişin sandık bağı listeye girmez (AUD-15, P7)
-        orders: { where: { order: { status: { not: 'IPTAL' }, removedAt: null } }, select: { order: { select: { orderNo: true, customerId: true, customer: { select: { prefix: true, name: true } } } } } },
+        orders: { where: { order: { status: { not: 'IPTAL' }, removedAt: null } }, select: { order: { select: { orderNo: true, customerId: true, sandikEtiket: true, customer: { select: { prefix: true, name: true } } } } } },
       },
     }),
     db.order.findMany({

@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.74.0 — 11.10.2026
+
+Acil düzeltme paketi (duzeltme6; karar 251–254). Şema değişmedi, migration yok.
+
+- **Telafi camı (karar 251):** "Aynı fiyat"ta camın işlemleri (CNC, delik) kaynaktaki fiyatlarıyla taşınır (artık 0'a
+  düşmez); "Bedelsiz"de cam ve işlemler 0. "Farklı fiyat"ın yanında fiyat alanı (EUR/m²): satışta satış fiyatı, yöneticide
+  müşteri fiyatı; işlem fiyatları sıfırlanmaz. Farklı fiyatlı telafi yönetici onayı beklemez — yönetici "Önemli kararlar",
+  bildirim ve e-postayla haberdar olur, isterse "Teklifi güncelle" ile müşteri fiyatını değiştirir. Satış formundan
+  "Önceki müşteri fiyatı", "Akış" satırları ve düğme açıklamaları kaldırıldı. Satış müşteri fiyatını yine görmez.
+- **Nihai fatura (karar 252):** FGO'ya giden kalemde sipariş numarası yok (ad öneki ve açıklama); alt metin yalnızca
+  uygulanan kurun cümlesi (kayıtlı kurdan). Proforma ve avans değişmedi.
+- **Nakliye listesi (karar 253):** fiziksel sandık etiketine göre gruplu; grup başına sandık adedi ve ara toplam ağırlık;
+  misafir yük sandığın notunda; gerçek ev sahibi sandığındaki misafir sipariş "sandık ölçüsü girilmemiş" uyarısına girmez.
+- **Müşteri yüklemeleri (karar 254):** "Sandık bilgileri — misafir yük": misafir yük sahibi ev sahibi sandığı (etiket, no,
+  ölçü, ağırlık, gün), ev sahibi kendi sandığındaki misafir yükü (firma, sipariş no) görür; üçüncü müşteri görmez.
+
 ## 3.73.3 — 10.10.2026
 
 P7 — canlıya geçiş hazırlığı (karar 250). Uygulama davranışı değişmedi.

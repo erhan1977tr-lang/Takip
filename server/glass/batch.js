@@ -398,14 +398,35 @@ export async function reviewFailedBatch(db, { batchId, action, actor, now = new 
  * Kalemin FGO açıklaması (Continut[Descriere], karar 111): satırın KENDİ kaynak siparişi ("Comanda UMI7") — partinin
  * kayıtlı sipariş listesinden; bütün siparişler her kaleme yazılmaz. Tek siparişe ait olmayan satırda (müşteri
  * proformasının avansı, avans düşümü) açıklama yoktur.
+ * NİHAİ FATURA (karar 252): kalemde sipariş numarası YOKTUR — ne ürün adının başında ("Comanda X — " öneki, kayıtta
+ * durur ama FGO'ya gitmez) ne de açıklamada; satırda yalnızca cam / ürün adı. Proforma ve avans değişmez. Tutar, miktar,
+ * birim ve TVA aynıdır.
  */
 export const batchFgoLines = (batch) => batch.lines.map((l) => {
   const orderNo = l.orderId ? batch.orders.find((o) => o.orderId === l.orderId)?.orderNo ?? null : null;
-  const base = { code: '', name: l.name, unit: l.unit, qty: Number(l.quantity), ...(orderNo ? { detail: orderDetail(orderNo) } : {}) };
+  const invoice = batch.kind === 'INVOICE';
+  const base = { code: '', name: invoice ? invoiceLineName(l.name, orderNo) : l.name, unit: l.unit, qty: Number(l.quantity), ...(orderNo && !invoice ? { detail: orderDetail(orderNo) } : {}) };
   if (l.ronUnit != null) return { ...base, ron: Number(l.ronUnit) };
   if (l.ronGross != null) return { ...base, net: Number(l.ronNet), gross: Number(l.ronGross) };
   return { ...base, eur: Number(l.unitPrice) };
 });
+
+/** Nihai fatura kalemi: kayıttaki "Comanda {no} — " öneki FGO'ya gitmez (karar 252) */
+export function invoiceLineName(name, orderNo) {
+  const prefix = orderNo ? `Comanda ${orderNo} — ` : null;
+  return prefix && String(name).startsWith(prefix) ? String(name).slice(prefix.length) : String(name);
+}
+
+/**
+ * FGO belgesinin açıklaması (Text). Nihai fatura (karar 252): YALNIZCA uygulanan kur cümlesi — zincirin kayıtlı kurundan
+ * (glassDocText: "Curs de schimb aplicat: 6.0000 RON/EUR." / BT / BNR — proformadaki cümleyle aynı kural); sipariş ve
+ * yükleme açıklaması yazılmaz; RON belgede boştur. Proforma ve avans: kaynak siparişler + günler + kur cümlesi (değişmedi).
+ */
+export function batchDocText(batch) {
+  const fx = glassDocText(batch.currency, batch);
+  if (batch.kind === 'INVOICE') return fx;
+  return [batchText(batch), fx].filter(Boolean).join(' ');
+}
 
 /**
  * Belgenin açıklaması: kaynak siparişler ve — proformada seçilen yükleme günleri, faturada onaylı yükleme günü,
@@ -473,7 +494,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       form = emitereForm({
         settings, key, kind: proforma ? 'proforma' : 'invoice', orderNo: batch.orders.map((o) => o.orderNo).join(', '), appUrl, customer: batch.customer, lines, rate,
         // Aynı parti iki kez kesilmesin: FGO da aynı IdExtern'i reddeder (VerificareDuplicat)
-        extern: `LOT-${batch.id}`, text: [batchText(batch), glassDocText(batch.currency, batch)].filter(Boolean).join(' '), rateNote: false, number: sentNo,
+        extern: `LOT-${batch.id}`, text: batchDocText(batch), rateNote: false, number: sentNo,
       });
       prepared = { kind: batch.kind };
       const doc = await fgoEmit(settings, form, fetchImpl);

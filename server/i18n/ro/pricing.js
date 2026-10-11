@@ -138,6 +138,7 @@ export default {
     free: 'gratuit',
     comp: '{glass} → {dest} / {date}',
     compPrice: "Preț client anterior: {normal} → Înlocuire: {price}",
+    compPriceSales: 'Preț de vânzare anterior: {normal} → Înlocuire: {price} — prețul pentru client nu s-a schimbat; dacă este nevoie, actualizați oferta în comanda de destinație',
     compFree: 'Gratuit',
     // Decizia de înlocuire (decizia 157): tipul deciziei, prețul pe care îl va stabili administratorul și cantitatea comenzii sursă
     compMode: 'Decizie: {mode}',

@@ -43,8 +43,8 @@ const formLines = (lines, withOffer) => lines.map((l) => ({
   unitPrice: l.free ? '0.00' : Number(l.unitPrice).toFixed(2),
   ...(withOffer ? { offerPrice: l.free ? '0.00' : l.offerPrice == null ? null : Number(l.offerPrice).toFixed(2) } : {}),
 }));
-// Beklenen telafi satırları: cam kaynağın fiyatlarıyla (bedelsiz DEĞİL), işlemler kaynağın adediyle (1'e inmez), müşteri fiyatı 0
-const SAME_WITH_OPS = [['CAM', 1, '30', '66.96', false, true], ['CNC', 3, '5', '0', true, true], ['DELIK', 5, '2', '0', true, true]];
+// Beklenen telafi satırları: cam ve işlemler kaynağın fiyatlarıyla (bedelsiz DEĞİL — karar 251), işlemler kaynağın adediyle (1'e inmez)
+const SAME_WITH_OPS = [['CAM', 1, '30', '66.96', false, true], ['CNC', 3, '5', '8', false, true], ['DELIK', 5, '2', '3', false, true]];
 
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) return;
@@ -110,7 +110,7 @@ dbTest('aynı fiyat → yeni telafi siparişi ve müşterideki hedef teklif (sat
   r = await create({ orderId: S.id, lineId: opsGlass.id, quantity: 1, dest: { type: 'EXISTING', orderId: F.id }, actor: act(U.sales) });
   assert.deepEqual([r.ok, r.status, r.via, r.direct], [true, 'APPLIED', 'SENT', true], JSON.stringify(r));
   const f = await load(F.id);
-  assert.deepEqual(compRows(f), [['CAM', 1, '30', '66.96', false, true], ['CNC', 2, '5', '0', true, true], ['DELIK', 4, '2', '0', true, true]]);
+  assert.deepEqual(compRows(f), [['CAM', 1, '30', '66.96', false, true], ['CNC', 2, '5', '8', false, true], ['DELIK', 4, '2', '3', false, true]]);
 }));
 
 dbTest('kaynak müşteri fiyatı boşken "aynı fiyat": doğrudan müşteriye gitmez — yeni siparişte yöneticinin fiyat onayı, müşterideki teklifte satış için onay bekler, yönetici için fiyat ister; ekranın akışı sunucuyla aynı', offline(async () => {

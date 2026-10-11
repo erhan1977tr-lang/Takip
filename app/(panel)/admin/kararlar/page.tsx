@@ -120,7 +120,8 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
           )}
           {d.compensationId && (a.type === 'COMPENSATION_PRICE' || d.mode === 'CUSTOM') && (
             <li>
-              {t('pricing.alerts.compPrice', {
+              {/* Satışın farklı fiyatı satış kademesindedir (karar 251): müşteri fiyatı değişmedi — yönetici isterse günceller */}
+              {t(d.tier === 'SALES' ? 'pricing.alerts.compPriceSales' : 'pricing.alerts.compPrice', {
                 normal: d.normal == null ? '—' : `${fmtNum(d.normal)} ${d.currency ?? ''}/m²`,
                 price: d.mode === 'FREE' || d.price === 0 ? t('pricing.alerts.compFree') : d.price == null ? (d.mode === 'CUSTOM' ? t('pricing.alerts.compToPrice') : '—') : `${fmtNum(d.price)} ${d.currency ?? ''}/m²`,
               })}{d.tier ? ` (${t(`pricing.alerts.compTier.${d.tier}` as MsgKey)})` : ''}

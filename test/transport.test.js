@@ -1,7 +1,7 @@
 // Nakliye listesi (Yüklemeler → PDF): gruplama, ağırlık, eksik sandık; PDF üretimi.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTransportList, crateWeight } from '../server/loading/transport.js';
+import { buildTransportList, crateLabel, crateWeight } from '../server/loading/transport.js';
 import { transportListPdf } from '../server/pdf/transport-list.js';
 
 const crate = (customerId, prefix, crateNo, extra = {}) => ({
@@ -32,6 +32,67 @@ test('nakliye listesi: müşteri koduna göre gruplar, ara toplam, toplam; sand�
   assert.equal(crateWeight({ brutAgirlik: null, netAgirlik: null }), null);
 });
 
+// Karar 253 — ürün sahibinin örneği (nakliye-2026-10-02): SB 3 sandık 2.400 kg, TM 5 sandık 6.373 kg, toplam 8 sandık
+// 8.773 kg. ADE6 SB'nin 1 numaralı sandığında misafir yük: notta yazar, "sandık ölçüsü girilmemiş" uyarısına girmez.
+test('nakliye listesi (karar 253): FİZİKSEL SANDIK ETİKETİNE göre gruplar; ara toplam; misafir yük notta ve eksik uyarısında değil', () => {
+  const S = { prefix: 'SBL', name: 'Sistem Balustrada SRL', sandikEtiket: 'SB' };
+  const T = { prefix: 'TMG', name: 'Tim Glass SRL', sandikEtiket: 'TM' };
+  const own = (customerId, orderNo, extra = {}) => ({ order: { orderNo, customerId, sandikEtiket: null, customer: null, ...extra } });
+  const box = (customerId, customer, crateNo, kg, dims, orders) => ({
+    customerId, customer, crateNo, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2], netAgirlik: null, brutAgirlik: String(kg), daraKg: null, note: null, orders,
+  });
+  const crates = [
+    box('s', S, 8, 581, [2716, 507, 1520], [own('s', 'SBL10')]),
+    box('s', S, 1, 984, [2770, 490, 1470], [own('s', 'SBL10'), own('ade', 'ADE6', { customer: { prefix: 'ADE', name: 'ADER GLASS' } })]),
+    box('s', S, 2, 835, [3482, 462, 1385], [own('s', 'SBL11')]),
+    box('t', T, 3, 1388, [2716, 620, 1960], [own('t', 'TMG4')]),
+    box('t', T, 4, 1257, [2416, 608, 980], [own('t', 'TMG4')]),
+    box('t', T, 5, 1233, [2270, 660, 980], [own('t', 'TMG4')]),
+    box('t', T, 6, 1295, [2420, 621, 980], [own('t', 'TMG4')]),
+    box('t', T, 7, 1200, [2253, 647, 980], [own('t', 'TMG4')]),
+  ];
+  const orders = [
+    { orderNo: 'SBL10', customerId: 's' }, { orderNo: 'SBL11', customerId: 's' }, { orderNo: 'TMG4', customerId: 't' },
+    // Misafir: ev sahibi SB'nin gerçek sandığına bağlı
+    { orderNo: 'ADE6', customerId: 'ade', guestHostId: 's', guestHost: { prefix: 'SBL', name: S.name } },
+    // Olağan sipariş, firmasının o gün sandığı yok → uyarıda kalır
+    { orderNo: 'NOC1', customerId: 'noc' },
+  ];
+  const list = buildTransportList(crates, orders);
+  assert.deepEqual(list.groups.map((g) => [g.code, g.crates.length, g.totalKg]), [['SB', 3, 2400], ['TM', 5, 6373]]);
+  assert.deepEqual(list.groups[0].crates.map((c) => [c.crateNo, c.dims, c.weight]), [[1, '2770 × 490 × 1470', 984], [2, '3482 × 462 × 1385', 835], [8, '2716 × 507 × 1520', 581]]);
+  assert.deepEqual([list.crateCount, list.totalKg], [8, 8773]);
+  // Misafir yük ilgili fiziksel sandıkta; ayrı / sahte sandık yok; eksik uyarısında YOK
+  assert.deepEqual(list.groups[0].crates[0].guests, [{ orderNo: 'ADE6', code: 'ADE', firm: 'ADER GLASS' }]);
+  assert.deepEqual(list.missing, ['NOC1']);
+  assert.deepEqual(list.waiting, [], 'sandığı seçilmiş misafir beklemede değil');
+  // Firma adı grupta yok (etiket esas); satışa giden listede misafir firma maskeli
+  assert.ok(!list.groups.some((g) => /Balustrada|Tim Glass/.test(g.code)));
+  const masked = buildTransportList(crates, orders, { label: (n) => `${n.slice(0, 3)}**********` });
+  assert.equal(masked.groups[0].crates[0].guests[0].firm, 'ADE**********');
+
+  // Sandık bağı OLMAYAN misafir (ev sahibi seçilmiş, sandık seçilmemiş): uyarı gizlenmez + "sandık seçimi bekliyor"
+  const unlinked = buildTransportList(crates.map((c) => ({ ...c, orders: c.orders.filter((x) => x.order.orderNo !== 'ADE6') })), orders);
+  assert.deepEqual([unlinked.missing, unlinked.waiting], [['ADE6', 'NOC1'], [{ orderNo: 'ADE6', host: 'SBL' }]]);
+  // Karma: aynı etiketi taşıyan farklı firmaların sandıkları aynı grupta; bir sandık birden çok siparişte de bir kez sayılır
+  const mixed = buildTransportList([...crates, box('x', { prefix: 'XYZ', name: 'X SRL', sandikEtiket: 'SB' }, 9, 100, [1, 1, 1], [own('x', 'XYZ1'), own('x', 'XYZ2')])], orders);
+  assert.deepEqual(mixed.groups.map((g) => [g.code, g.crates.length, g.totalKg]), [['SB', 4, 2500], ['TM', 5, 6373]]);
+  assert.deepEqual([mixed.crateCount, mixed.totalKg], [9, 8873]);
+});
+
+test('sandık etiketi: siparişin etiketi > firmanın varsayılanı > firma kodu > firma adı (görene göre); farklı etiketler tahmin edilmez', () => {
+  const c = (customer, orders = []) => ({ customerId: 'a', customer, orders: orders.map((o) => ({ order: { customerId: 'a', ...o } })) });
+  assert.equal(crateLabel(c({ prefix: 'AAA', name: 'A', sandikEtiket: 'FIRMA' }, [{ sandikEtiket: 'OZEL' }])), 'OZEL');
+  assert.equal(crateLabel(c({ prefix: 'AAA', name: 'A', sandikEtiket: 'FIRMA' }, [{ sandikEtiket: null }])), 'FIRMA');
+  assert.equal(crateLabel(c({ prefix: 'AAA', name: 'A', sandikEtiket: 'FIRMA' })), 'FIRMA');
+  assert.equal(crateLabel(c({ prefix: 'AAA', name: 'A', sandikEtiket: '  ' })), 'AAA');
+  assert.equal(crateLabel(c({ prefix: null, name: 'Gizli Firma SRL', sandikEtiket: null }), (n) => `${n.slice(0, 3)}**********`), 'Giz**********', 'firma adı görene göre (satışa maskeli)');
+  assert.equal(crateLabel(c({ prefix: 'AAA', name: 'A', sandikEtiket: null }, [{ sandikEtiket: 'Y' }, { sandikEtiket: 'X' }, { sandikEtiket: 'Y' }])), 'X / Y');
+  // Başka firmanın (misafir) siparişinin etiketi ev sahibi sandığın etiketini değiştirmez
+  const guest = { customerId: 'a', customer: { prefix: 'AAA', name: 'A', sandikEtiket: 'EV' }, orders: [{ order: { customerId: 'b', sandikEtiket: 'MISAFIR' } }] };
+  assert.equal(crateLabel(guest), 'EV');
+});
+
 test('nakliye listesi PDF: geçerli PDF, birçok sandıkta birden çok sayfa', () => {
   const text = {
     title: 'NAKLİYE LİSTESİ', day: 'Yükleme günü', colNo: 'Sandık no', colDims: 'U × G × Y (mm)', colKg: 'Ağırlık (kg)', colNote: 'Not',
@@ -44,6 +105,11 @@ test('nakliye listesi PDF: geçerli PDF, birçok sandıkta birden çok sayfa', (
   const big = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text, list: buildTransportList(many, []) });
   assert.ok((big.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length >= 2);
   const empty = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text, list: buildTransportList([], [{ orderNo: 'X1', customerId: 'x' }]) });
+  // Misafir yük not sütununda (sandığın notuyla birlikte, alt alta)
+  const guest = transportListPdf({ day: '2026-10-02', company: 'GKH Trading', text: { ...text, guest: 'Misafir yük' }, list: buildTransportList([
+    crate('sb', 'SB', 1, { brutAgirlik: '984', note: 'kırılabilir', orders: [{ order: { orderNo: 'ADE6', customerId: 'ade', customer: { prefix: 'ADE', name: 'ADER GLASS' } } }, { order: { orderNo: 'ADE7', customerId: 'ade', customer: { prefix: 'ADE', name: 'ADER GLASS' } } }] }),
+  ], []) });
+  assert.equal(guest.subarray(0, 5).toString(), '%PDF-');
   assert.equal(empty.subarray(0, 5).toString(), '%PDF-');
 });
 

@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { receivables, unitOf } from '../server/accounting/receivables.js';
-import { batchFgoLines, batchText } from '../server/glass/batch.js';
+import { batchDocText, batchFgoLines, batchText, invoiceLineName } from '../server/glass/batch.js';
+import { emitereForm } from '../server/integrations/fgo.js';
 import { invoiceKeyOf, invoiceOrderKey } from '../server/glass/invoice-batch.js';
 
 let n = 0;
@@ -104,6 +105,41 @@ test('belge açıklaması: kaynak siparişler; faturada onaylı yükleme günü,
   assert.equal(batchText({ kind: 'ADVANCE', orders, loadingDays: [day] }), 'Comenzi: ABC001, ABC002.');
   assert.equal(batchText({ kind: 'PROFORMA', orders, loadingDays: [day] }), 'Comenzi: ABC001, ABC002. Încărcare planificată: 23.10.2026.');
   for (const kind of ['INVOICE', 'ADVANCE', 'PROFORMA']) assert.doesNotMatch(batchText({ kind, orders, confirmation: { shipDay: day }, loadingDays: [day] }), /curs|RON|%/i);
+});
+
+test('nihai fatura (karar 252): kalemde sipariş numarası yok (ad öneki ve açıklama); alt metin yalnızca kayıtlı kurun cümlesi; proforma değişmez', () => {
+  const orders = [{ orderId: 'o1', orderNo: 'ACU1' }, { orderId: 'o2', orderNo: 'ACU2' }];
+  const day = new Date('2026-10-05T00:00:00Z');
+  const lines = [
+    { orderId: 'o1', name: 'Comanda ACU1 — Sticla 8.3.8. GRI+GRI', unit: 'mp', quantity: '295.41', unitPrice: null, ronUnit: null, ronNet: '127617.10', ronGross: '154416.69' },
+    { orderId: 'o2', name: 'Comanda ACU2 — Sticla 10 mm', unit: 'mp', quantity: '2', unitPrice: null, ronUnit: null, ronNet: '600.00', ronGross: '726.00' },
+    { orderId: 'o1', name: 'Stornare avans conform factură GKH699', unit: 'buc', quantity: '-1', unitPrice: null, ronUnit: '44972.47', ronNet: '-44972.47', ronGross: '54416.69' },
+  ];
+  const fx = { currency: 'EUR', fxRate: '6.0000', fxSource: 'MANUAL', fxPolicy: 'BT_UNIT_SELL', fxDate: day, fxSourceDate: day };
+  const invoice = { kind: 'INVOICE', orders, lines, confirmation: { shipDay: day }, loadingDays: [day], ...fx };
+  const inv = batchFgoLines(invoice);
+  assert.deepEqual(inv.map((l) => [l.name, l.detail ?? null, l.qty]), [['Sticla 8.3.8. GRI+GRI', null, 295.41], ['Sticla 10 mm', null, 2], ['Stornare avans conform factură GKH699', null, -1]]);
+  // Tutarlar, birim ve miktar aynen
+  assert.deepEqual([inv[0].net, inv[0].gross, inv[1].gross, inv[2].ron], [127617.1, 154416.69, 726, 44972.47]);
+  // Alt metin: yalnızca uygulanan kur — kayıtlı kurla (sabit değer değil); sipariş / yükleme açıklaması yok
+  assert.equal(batchDocText(invoice), 'Curs de schimb aplicat: 6.0000 RON/EUR.');
+  assert.equal(batchDocText({ ...invoice, fxRate: '5.0960' }), 'Curs de schimb aplicat: 5.0960 RON/EUR.');
+  assert.equal(batchDocText({ ...invoice, currency: 'RON', fxRate: null }), '', 'RON faturada kur yok');
+  // Politikanın kendi cümlesi proformadaki gibi (BT günlük kuru)
+  assert.equal(batchDocText({ ...invoice, fxSource: 'MANUAL_DAY' }), 'Curs de vânzare BT: 6.0000 RON/EUR.');
+  const settings = { cui: '1', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
+  const f = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'ACU1, ACU2', appUrl: '', customer: { name: 'Acu' }, lines: inv, rate: 6, extern: 'LOT-b1', text: batchDocText(invoice), rateNote: false });
+  assert.equal(f.Text, 'Curs de schimb aplicat: 6.0000 RON/EUR.');
+  assert.ok(!Object.entries(f).some(([k, v]) => k.startsWith('Continut') && /Comanda/.test(String(v))), 'faturanın hiçbir kaleminde "Comanda" yok');
+  assert.ok(!Object.keys(f).some((k) => /Descriere/.test(k)));
+  // Proforma ve avans değişmez: kalem adı kayıttaki gibi, açıklamada kendi siparişi; metinde siparişler + günler + kur
+  const proforma = { ...invoice, kind: 'PROFORMA', lines: lines.slice(0, 2).map((l) => ({ ...l, ronNet: null, ronGross: null, unitPrice: '50.00' })) };
+  assert.deepEqual(batchFgoLines(proforma).map((l) => [l.name, l.detail]), [['Comanda ACU1 — Sticla 8.3.8. GRI+GRI', 'Comanda ACU1'], ['Comanda ACU2 — Sticla 10 mm', 'Comanda ACU2']]);
+  assert.equal(batchDocText(proforma), 'Comenzi: ACU1, ACU2. Încărcare planificată: 05.10.2026. Curs de schimb aplicat: 6.0000 RON/EUR.');
+  assert.equal(batchDocText({ ...invoice, kind: 'ADVANCE' }), 'Comenzi: ACU1, ACU2. Curs de schimb aplicat: 6.0000 RON/EUR.');
+  // Önek yalnızca satırın KENDİ siparişininse kalkar
+  assert.equal(invoiceLineName('Comanda ACU2 — Sticla', 'ACU1'), 'Comanda ACU2 — Sticla');
+  assert.equal(invoiceLineName('Sticla', null), 'Sticla');
 });
 
 test('tekrar anahtarları: fatura = onay + müşteri + para birimi + zincir; sipariş kapsamı = onay + sipariş', () => {

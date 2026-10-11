@@ -71,7 +71,7 @@ export default {
     noPrice: 'Bu belge fiyat bilgisi içermez.',
     empty: 'Bu güne girilmiş sandık yok.',
     // Sandığın altında: başka firmanın camı (fiziksel yerleşim) — "MİSAFİR YÜK: firma · sipariş"
-    guest: 'MİSAFİR YÜK',
+    guest: 'Misafir yük',
     // Yönetici ev sahibi firmayı seçti, sandık henüz seçilmedi: "sipariş → firma kodu"
     waiting: 'Özel durum — sandık seçimi bekliyor',
     badDay: 'Geçerli bir yükleme günü seçin.',
@@ -203,6 +203,15 @@ export default {
     // Müşterinin yükleme takvimi: önceki metinler (müşteri ekranı bu pakette değişmez)
     estimateCustomer: "Planlama tahmini: brüt = cam {netKg} kg + {crates} × {tare} kg dara (cam ağırlığı müşteri başına azami {max} kg'a bölünüp yukarı yuvarlanıyor).",
     noteCustomer: 'Bir müşteri için sandık girildiyse o müşterinin o günkü net/brüt ağırlığı ve sandık sayısı GERÇEK kayıtlardan gelir ve tahminin önüne geçer. Cam ağırlığı katalogdaki kg/m² değerinden hesaplanır.',
+    // Müşteri paneli — misafir yük ilişkisi (karar 254): sandık sahibi ve misafir yük sahibi kendi panelinde görür
+    relations: {
+      title: 'Sandık bilgileri — misafir yük',
+      awayTitle: 'Başka firmanın sandığıyla giden siparişleriniz',
+      awayNote: 'Bu siparişler için ayrı sandık yoktur; ev sahibi firmanın fiziksel sandığıyla gider. Sipariş kendi listenizde kalır.',
+      hostedTitle: 'Sandıklarınızla giden başka firma siparişleri',
+      hostedNote: 'Sandık sizindir; ağırlığı sandığın ağırlığında sayılır. Misafir siparişin fiyatı, belgeleri ve dosyaları size açılmaz.',
+      cols: { day: 'Yükleme günü', order: 'Sipariş', label: 'Sandık etiketi', crate: 'Sandık no', dims: 'U × G × Y (mm)', weight: 'Ağırlık (kg)', firm: 'Firma' },
+    },
     crates: {
       title: 'Sandık ölçüleri ve ağırlıkları',
       toggle: 'Sandıklar',

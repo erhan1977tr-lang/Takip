@@ -150,7 +150,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId })), { done: 1, failed: 0 });
   const invForm = fgo.calls[2];
   assert.equal(invForm.IdExtern, `LOT-${created.batchId}`);
-  assert.equal(invForm['Continut[0][Denumire]'], 'Comanda GLA68 — Securizat');
+  assert.equal(invForm['Continut[0][Denumire]'], 'Securizat', 'nihai faturada sipariş numarası yok (karar 252)');
   assert.ok(!('Numar' in invForm), 'fatura numarasını FGO verir');
   assert.equal(invForm['Continut[0][PretTotal]'], '726.00', 'faturada CNC cama eklenir: cam 605 + CNC 121 (TVA dahil), proforma kuru');
   assert.equal(invForm['Continut[1][NrProduse]'], '-1');
@@ -343,7 +343,7 @@ dbTest('ödenmiş proforma + avans yok + onaylı yükleme: nihai fatura bekler (
   assert.equal(created.ok, true);
   const fgo = fakeFgo(950);
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId })), { done: 1, failed: 0 });
-  assert.equal(fgo.calls[0]['Continut[0][Denumire]'], `Comanda ${bo.orderNo} — Securizat`);
+  assert.equal(fgo.calls[0]['Continut[0][Denumire]'], 'Securizat');
   assert.ok(!('Continut[1][Denumire]' in fgo.calls[0]), 'avans yoksa düşüm satırı yok');
   assert.equal((await db.fgoDocument.findFirst({ where: { orderId: bo.id, kind: 'PROFORMA' } })).paid.toString(), '0', 'proforma ödenmiş sayılmaz');
 

@@ -168,7 +168,8 @@ dbTest('onay yoksa fatura yok (tarih + 2 gün kuralı yok); onaylı yükleme + s
   assert.equal(form.IdExtern, `LOT-${id}`);
   assert.equal(form.Serie, 'GKH');
   assert.equal(lines(form).length, 1);
-  assert.match(lines(form)[0][0], new RegExp(`^Comanda ${o.orderNo} — `));
+  // Nihai fatura (karar 252): kalem adında sipariş numarası yok
+  assert.ok(lines(form)[0][0].length > 0 && !lines(form)[0][0].includes('Comanda'), lines(form)[0][0]);
   assert.equal(lines(form)[0][1], '605.00');
   // Proformanın ödeme kaydı faturayla değişmez
   const pf2 = await db.fgoDocument.findUnique({ where: { id: pf.id } });
@@ -193,7 +194,8 @@ dbTest('kısmi yükleme: yalnızca onaylanan adet; ikinci yükleme yalnızca kal
   assert.deepEqual(first.grp.orders[0].lines.map((l) => [l.pieces, l.gross]), [[3, 907.5]]);
   assert.deepEqual(first.grp.storno.map((s) => [s.advanceDocId, s.ref, s.gross]), [[adv.id, ref(adv), 907.5]], 'avans faturanın değeriyle sınırlı');
   assert.equal(first.grp.payable, 0);
-  assert.deepEqual(lines(first.form).map((l) => l[0].startsWith(`Comanda ${o.orderNo} — `) || l[0] === `Stornare avans conform factură ${ref(adv)}`), [true, true]);
+  assert.deepEqual(lines(first.form).map((l) => !l[0].includes('Comanda') || l[0] === `Stornare avans conform factură ${ref(adv)}`), [true, true]);
+  assert.equal(lines(first.form)[1][0], `Stornare avans conform factură ${ref(adv)}`);
   assert.equal(first.batch.chainOrderId, o.id);
   assert.equal(first.batch.lines.find((l) => l.refDocId)?.refDocId, adv.id);
 
