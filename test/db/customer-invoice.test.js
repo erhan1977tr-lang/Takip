@@ -568,7 +568,8 @@ dbTest('doğrudan faturada elle kur: partiye MANUAL olarak kaydedilir, fatura ta
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId, bnrImpl: never('BNR') })), { done: 1, failed: 0 });
   const f = fgo.calls[0];
   assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][PretTotal]'], f.Valuta], ['2', '635.25', 'RON']);
-  assert.match(f.Text, / Curs de schimb aplicat: 5\.2500 RON\/EUR\.$/, 'Paket C (karar 235): belgenin kayıtlı elle kuru yazılır');
+  // Karar 252: nihai faturanın alt metni yalnızca kayıtlı (elle) kurun cümlesi
+  assert.match(f.Text, /^Curs de schimb aplicat: 5\.2500 RON\/EUR\.$/, 'Paket C (karar 235): belgenin kayıtlı elle kuru yazılır');
   assert.doesNotMatch(f.Text, /%/, 'yüzde hiçbir yerde yazmaz');
   const issued = await batchOf(r.batchId);
   assert.deepEqual(snap(issued), snap(saved), 'kur kaydı değişmedi');
@@ -614,7 +615,9 @@ dbTest('sipariş başına kapsam yalnızca ŞU AN geçerliyse ayrı zincirdir: F
   const r = await createInvoice(day, direct);
   assert.deepEqual([r.ok, r.orders], [true, 3]);
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId }));
-  assert.deepEqual(names(fgo.calls[0]).map((n) => n.split(' — ')[0]), [deleted, failed, pending].map((o) => `Comanda ${o.orderNo}`));
+  // Nihai faturada kalem adında sipariş numarası yok (karar 252); kayıttaki kopyada her satırın siparişi durur
+  assert.deepEqual(names(fgo.calls[0]), ['Sticla 10 mm', 'Sticla 10 mm', 'Sticla 10 mm']);
+  assert.deepEqual((await batchOf(r.batchId)).lines.map((l) => l.name.split(' — ')[0]).sort(), [deleted, failed, pending].map((o) => `Comanda ${o.orderNo}`).sort());
   // Karşılıklı dışlama iki yönde: müşteri faturasına giren sipariş sipariş başına belge alamaz; kendi belgesi olan faturaya girmedi
   for (const o of [deleted, failed, pending]) assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'PROFORMA', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, o.orderNo);
   assert.equal(await db.billingBatchOrder.count({ where: { orderId: active.id } }), 0);

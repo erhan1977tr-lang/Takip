@@ -208,7 +208,7 @@ dbTest('yüklenip teslim edilmiş siparişten telafi (satış, bedelsiz, yeni si
     [U.sales.id, 'SATIS', r.compensationId, 'ABC124', lineOp.id, 1, 'FREE', 66.96, 0, 30, true, true, 'NEW', 'ABC124-T', N1, true],
   );
   assert.ok(audit.createdAt instanceof Date);
-  assert.deepEqual(audit.details.operations, [{ kind: 'CNC', adet: 1, offerPrice: 0 }, { kind: 'DELIK', adet: 2, offerPrice: 0 }], 'telafiye taşınan işlemlerin müşteri fiyatı 0');
+  assert.deepEqual(audit.details.operations, [{ kind: 'CNC', adet: 1, unitPrice: 5, offerPrice: 0, free: true }, { kind: 'DELIK', adet: 2, unitPrice: 2, offerPrice: 0, free: true }], 'bedelsiz: taşınan işlemlerin müşteri fiyatı 0, maliyet durur');
   assert.deepEqual(audit.details.source, { ...NOT_REDUCED('LOADED'), offerId: null });
   // Geçmiş: kaynakta ve hedefte; notta tutar yok
   const ev = await db.orderEvent.findFirstOrThrow({ where: { orderId: S.id, event: 'COMPENSATION' } });
@@ -611,21 +611,25 @@ dbTest('olağan akış: bedelsiz telafi siparişi yüklenir; kârlılıkta satı
   assert.deepEqual(sent.offers[0].lines.map(lineRow), [['CAM', 1, '30', '0', true, true], ['CNC', 1, '5', '0', true, true], ['DELIK', 2, '2', '0', true, true]]);
   // Müşteri proforması önizlemesi (FGO'ya gidecek satırların hesabı — hiçbir şey yazmaz, FGO'ya istek atmaz), N1 günü:
   //   · bedelsiz telafi siparişleri belgeye GİRMEZ (yazılacak satırı yok)
-  //   · aynı fiyatlı telafide yalnızca CAM satırı vardır; taşınan işlemler (müşteri fiyatı 0) satır olmaz, tutara eklenmez
+  //   · aynı fiyatlı telafide taşınan işlemler kaynaktaki fiyatlarıyla belgeye girer (karar 251; proformada ayrı satır)
   const pa = await b.previewBatch(db, { customerId: A.id, days: [N1], bnrImpl: bnr });
   const inc = (no) => pa.included.find((x) => x.orderNo === no);
   const exc = (no) => pa.excluded.find((x) => x.orderNo === no);
   assert.deepEqual([inc('ABC124-T'), exc('ABC124-T').reason], [undefined, 'NO_PRICES'], 'bedelsiz telafi (işlemli) proformaya girmez');
   assert.deepEqual([inc('ABC124-T6'), exc('ABC124-T6').reason], [undefined, 'NO_PRICES'], 'bedelsiz telafi proformaya girmez');
-  assert.deepEqual(inc('ABC124-T3').lines.map((l) => [l.name, l.qty, l.price, l.amount]), [['Comanda ABC124-T3 — Sticlă laminată 44.2', 2, 66.96, 133.92]]);
-  assert.deepEqual([inc('ABC124-T3').subtotal, exc('ABC124-T3')], [133.92, undefined]);
-  // Yöneticinin fiyatlandırdığı "farklı fiyat" telafisi (55): cam satırı girilen fiyatla; işlemler yine yok
-  assert.deepEqual(inc('ABC124-T4').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 55, 110]]);
-  // Fiyatlandırılmamış "farklı fiyat" telafisinin müşteride teklifi yoktur: belgeye giremez
-  assert.deepEqual([inc('ABC124-T5'), exc('ABC124-T5').reason], [undefined, 'NO_SENT_OFFER']);
-  // Belgeye giren hiçbir satır 0 fiyatlı değil ve işlem satırı (CNC / delik) değil
+  assert.deepEqual(inc('ABC124-T3').lines.map((l) => [l.name, l.qty, l.price, l.amount]), [
+    ['Comanda ABC124-T3 — Sticlă laminată 44.2', 2, 66.96, 133.92], ['Comanda ABC124-T3 — Prelucrare CNC', 1, 8, 8], ['Comanda ABC124-T3 — Gaură', 2, 3, 6],
+  ]);
+  assert.deepEqual([inc('ABC124-T3').subtotal, exc('ABC124-T3')], [147.92, undefined]);
+  // Satışın farklı fiyatı (satış kademesi): müşteri belgesi müşteri fiyatıyla — yönetici sonradan 60'a güncelledi; işlemler kaynak fiyatıyla
+  assert.deepEqual(inc('ABC124-T4').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 60, 120], [1, 8, 8], [2, 3, 6]]);
+  // Kaynakta müşteri fiyatı olmayan telafiyi yönetici fiyat onayında fiyatlandırdı (55)
+  assert.deepEqual(inc('ABC126-T').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 55, 110]]);
+  // Yöneticinin farklı fiyatı (50) doğrudan müşteride: belgeye girer
+  assert.deepEqual(inc('ABC124-T5').lines.map((l) => [l.qty, l.price, l.amount]), [[0.25, 50, 12.5]]);
+  // Belgeye giren hiçbir satır 0 fiyatlı değil (bedelsiz satır yazılmaz)
   const allLines = pa.included.flatMap((o) => o.lines);
-  assert.ok(allLines.length > 0 && allLines.every((l) => l.price > 0 && l.amount > 0 && !/Prelucrare CNC|Gaură/.test(l.name)));
+  assert.ok(allLines.length > 0 && allLines.every((l) => l.price > 0 && l.amount > 0));
   // Yükleme: sipariş P gününde yüklenir (olağan yükleme planı ve onayı)
   await db.order.update({ where: { id: T.id }, data: { estimatedShipDate: at(P) } });
   const preview = await c.previewLoading(db, P);
