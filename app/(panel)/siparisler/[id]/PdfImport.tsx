@@ -117,7 +117,8 @@ export function PdfImport({ orderId, dirty, previous, m }: {
             <ul className="plain-list small">
               {previous.map((p) => (
                 <li key={p.id}>
-                  <a href={`/dosya/fabrika/${p.id}?ac=1`} target="_blank" rel="noreferrer" className="mono">{p.name}</a>
+                  {/* Özgün PDF saklanmaz (3.75.3): yalnızca adı ve aktarım durumu */}
+                  <span className="mono" data-previous-pdf>{p.name}</span>
                   {p.factoryNo ? ` · ${p.factoryNo}` : ''} · <span className={`badge ${p.applied ? 'badge-ok' : 'badge-muted'}`}>{p.applied ? m.statusApplied : m.statusPreview}</span>
                 </li>
               ))}

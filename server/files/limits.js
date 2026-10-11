@@ -107,7 +107,8 @@ export async function checkUpload(db, files, ctx, { root, minFreeMb, now = new D
       db.drawingFile.findMany({ where, select: RECENT }),
       // Tedarikçi siparişinin teknik ekleri (Paket 6) yalnızca iç ekipten (yönetici) gelir: kullanıcının kendi kotasına sayılır
       firmId ? Promise.resolve([]) : db.supplierOrderFile.findMany({ where: { uploadedById: user.id, createdAt: where.createdAt }, select: RECENT }),
-      // Fabrika PDF'i aktarımları (karar 255) yalnızca teklif hazırlayan iç ekipten gelir: kullanıcının kendi kotasına sayılır
+      // Fabrika PDF'i aktarımları (karar 255): dosya okunduktan sonra silinir (diskte yer tutmaz, sipariş kotasına sayılmaz) ama
+      // yükleme hızı sınırına sayılır — yalnızca teklif hazırlayan iç ekipten gelir, kullanıcının kendi kotasıdır
       firmId ? Promise.resolve([]) : db.offerImport.findMany({ where: { uploadedById: user.id, createdAt: where.createdAt }, select: RECENT }),
     ]);
     recent = [...a, ...b, ...c, ...d, ...e];
@@ -119,7 +120,6 @@ export async function checkUpload(db, files, ctx, { root, minFreeMb, now = new D
       : (await Promise.all([
         db.orderFile.findMany({ where: { orderId: ctx.orderId }, select: SIZE }),
         db.drawingFile.findMany({ where: { drawing: { orderId: ctx.orderId } }, select: SIZE }),
-        db.offerImport.findMany({ where: { orderId: ctx.orderId }, select: SIZE }),
       ])).flat();
   }
   const freeBytes = minFreeMb > 0 ? await freeBytesOf(root, statfs) : null;

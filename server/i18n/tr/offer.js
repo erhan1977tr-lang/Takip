@@ -62,7 +62,7 @@ export default {
   pdf: {
     button: "PDF'den Aktar",
     title: 'Fabrika sipariş PDF’lerinden aktar',
-    intro: 'Fabrikanın sipariş formlarını (GlassWorld biçimi) yükleyin. Veriler önce ön izlemede gösterilir; onaylamadan teklif tablosuna hiçbir şey yazılmaz. Fabrika alış fiyatları satış fiyatı sütununa gelir; müşteri fiyatı boş kalır. Teklif yöneticiye kendiliğinden gönderilmez.',
+    intro: 'Fabrikanın sipariş formlarını (GlassWorld biçimi) yükleyin. Veriler önce ön izlemede gösterilir; onaylamadan teklif tablosuna hiçbir şey yazılmaz. Fabrika alış fiyatları satış fiyatı sütununa gelir; müşteri fiyatı boş kalır. Teklif yöneticiye kendiliğinden gönderilmez. Özgün PDF saklanmaz: okunduktan sonra silinir, yalnızca okunan bilgiler ve dosya adı kalır.',
     files: 'PDF dosyaları (birden çok seçilebilir)',
     upload: 'Yükle ve ön izle',
     uploading: 'PDF’ler yükleniyor ve okunuyor…',

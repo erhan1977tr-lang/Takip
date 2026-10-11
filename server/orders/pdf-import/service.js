@@ -4,6 +4,7 @@
 //
 //   Yetki   : yalnızca teklif hazırlayanlar (OFFER_PREPARE: yönetici, yönetici yardımcısı, satış) — her işlevin ilk denetimi.
 //             Kaynak PDF ve fabrika alış fiyatları müşteri, denetimci ve çizim ekibine hiçbir yoldan gitmez.
+//   Dosya   : özgün PDF okunduktan sonra silinir (3.75.3); yalnızca ayrıştırılmış kopya ve dosya bilgisi (ad, boyut, özet) kalır.
 //   Mükerrer: aynı dosya (SHA-256) aynı siparişe bir kez kaydedilir; aynı fabrika sipariş numarası bir siparişe — satırları
 //             teklifte durdukça — bir kez, başka bir siparişe hiç aktarılmaz; bir aktarımdaki iki PDF aynı numarayı taşıyamaz.
 import crypto from 'node:crypto';
@@ -61,8 +62,9 @@ export async function importTarget(db, { orderId, actor }) {
 
 /**
  * Saklanmış PDF'leri (storeFiles — içerik denetimi + antivirüs) aktarma kaydına çevirir: metin çıkarılır ve ayrıştırılır;
- * okunamayan PDF de kaydedilir (sabit hata koduyla — ön izleme gösterir). Aynı dosya aynı siparişte zaten varsa yeni
- * kayıt açılmaz: var olan kayıt kullanılır, yeni saklanan dosya `discard` listesinde döner (çağıran diskten siler).
+ * okunamayan PDF de kaydedilir (sabit hata koduyla — ön izleme gösterir). Özgün PDF KALICI SAKLANMAZ: kayıt dosya
+ * anahtarı olmadan yazılır ve okunan HER dosya `discard` listesinde döner (çağıran diskten siler). Aynı dosya aynı
+ * siparişte zaten varsa yeni kayıt açılmaz: var olan kayıt kullanılır.
  * @param {any} db
  * @param {{ actor: any, orderId: string, stored: { storageKey: string, name: string, size: number, mime?: string | null, checksum: string, scanStatus: string, scannedAt?: Date | null }[], readFile: (storageKey: string) => Promise<Uint8Array>, extract?: typeof extractTextItems }} p
  * @returns {Promise<{ ok: true, ids: string[], discard: { storageKey: string }[] } | { ok: false, code: string }>}
@@ -89,13 +91,14 @@ export async function recordUploads(db, { actor, orderId, stored, readFile, extr
     try {
       const row = await db.offerImport.create({
         data: {
-          orderId: t.order.id, name: String(f.name).slice(0, 255), storageKey: f.storageKey, size: f.size, mime: f.mime ?? null, checksum: f.checksum,
+          orderId: t.order.id, name: String(f.name).slice(0, 255), storageKey: null, size: f.size, mime: f.mime ?? null, checksum: f.checksum,
           scanStatus: f.scanStatus, scannedAt: f.scannedAt ?? null, uploadedById: actor.id ?? null,
           parsed: parsed ?? undefined, parseError, factoryOrderNo: parsed?.header.factoryNo ?? null,
         },
         select: { id: true },
       });
       ids.push(row.id);
+      discard.push({ storageKey: f.storageKey });
     } catch (e) {
       // Aynı dosya aynı anda iki kez: ilk kayıt kullanılır
       if (/** @type {any} */ (e)?.code !== 'P2002') throw e;

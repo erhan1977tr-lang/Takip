@@ -111,7 +111,10 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   // Liste fiyatı (fiyat tablosu) karşılaştırma için durur: 95 / CNC 6 — fark gönderimde "Önemli kararlar"a düşer
   assert.deepEqual(offer.lines.map((l) => (l.listPrice == null ? null : Number(l.listPrice))), [95, 6, 95, 6, 95]);
   assert.equal(String(offer.amount), '634', 'TAKİP hesabı: 300 + 124 + 10 + 200');
+  // Özgün PDF saklanmaz: kayıt dosyasız, okunan her dosya silinmek üzere döner; ayrıştırılmış kopya ve özet durur
+  assert.deepEqual(up.discard.map((d) => d.storageKey).sort(), [...FILES.keys()].slice(-2).sort());
   const imports = await db.offerImport.findMany({ where: { orderId: o.id }, orderBy: { createdAt: 'asc' } });
+  assert.deepEqual(imports.map((i) => [i.storageKey, !!i.parsed, i.checksum.length > 0, i.name.endsWith('.pdf')]), [[null, true, true, true], [null, true, true, true]]);
   assert.deepEqual(imports.map((i) => [i.status, i.offerId, !!i.appliedAt, i.appliedById, !!i.fingerprint]), [['APPLIED', offer.id, true, people.sales.id, true], ['APPLIED', offer.id, true, people.sales.id, true]]);
   assert.deepEqual(new Set(offer.lines.map((l) => l.importId)), new Set(imports.map((i) => i.id)));
   const ev = await db.orderEvent.findMany({ where: { orderId: o.id, event: 'OFFER_PDF_IMPORTED' } });
@@ -238,26 +241,27 @@ dbTest('satış aktarılan satırları düzenler (kaynak işareti korunur), elle
   assert.deepEqual(sent.lines.map((l) => [String(l.unitPrice), String(l.offerPrice), !!l.importId]), [['98', '150', true], ['5', '9', true]]);
 }));
 
-dbTest('antivirüs: bekleyen fabrika PDF’i arka planda taranır; virüslü PDF ön izlemede engellenir; kota ve dosya temizliği kayıtları sayar', offline(async () => {
+dbTest('özgün PDF saklanmaz: taranmamış (bekleyen) PDF uyarıyla ön izlenir; arka plan taraması ve sipariş kotası dosyasız kayıtları saymaz; anahtarı kayıtsız kalan dosya temizlenir', offline(async () => {
   const o = await newOrder(48);
   const file = { ...pdf(form({ no: '96001', project: 'MUSTERIX ABC 48', rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 48'], total: '1 1,000 100,00', sub: '100,00', grand: '120,00' })), scanStatus: 'PENDING' };
   const up = await upload('sales', o.id, [file]);
+  assert.deepEqual(up.discard, [{ storageKey: file.storageKey }]);
+  const row = await db.offerImport.findUnique({ where: { id: up.ids[0] } });
+  assert.deepEqual([row.storageKey, row.scanStatus, row.factoryOrderNo], [null, 'PENDING', '96001']);
   assert.deepEqual((await preview('sales', o.id, up.ids)).imports[0].warnings.map((w) => w.code), ['NOT_SCANNED']);
-  const r = await scanPending(db, { enabled: true, host: '127.0.0.1', port: 1 }, { scan: async () => ({ status: 'infected', signature: 'Test-Sig' }) });
-  assert.ok(r.infected >= 1);
-  assert.equal((await db.offerImport.findUnique({ where: { id: up.ids[0] } })).scanStatus, 'INFECTED');
-  assert.ok((await preview('sales', o.id, up.ids)).imports[0].blocking.some((b) => b.code === 'INFECTED'));
-  // Kota: siparişin dosyalarına fabrika PDF'leri de sayılır — sipariş sınırını dolduran kayıt varsa yeni yükleme reddedilir
-  // (sınır testte küçültülür; kural aynı)
+  // Arka plan taraması fabrika PDF kayıtlarına bakmaz (dosya yok)
+  let scanned = 0;
+  await scanPending(db, { enabled: true, host: '127.0.0.1', port: 1 }, { scan: async () => { scanned++; return { status: 'clean' }; } });
+  assert.equal((await db.offerImport.findUnique({ where: { id: up.ids[0] } })).scanStatus, 'PENDING');
+  assert.equal(scanned, 0);
+  // Sipariş kotası diskte duran dosyaları sayar: dosyasız kayıt (büyük de olsa) sayılmaz
   const limits = { ...UPLOAD_LIMITS, order: { bytes: 1_000_000, files: 400 } };
-  await db.offerImport.update({ where: { id: up.ids[0] }, data: { size: 999_985 } }); // + müşterinin 10 baytlık sipariş dosyası = 999.995
-  const ctx = { userId: people.sales.id, orderId: o.id };
-  assert.equal((await checkUpload(db, [{ name: 'x.pdf', size: 10 }], ctx, { root: '/tmp', minFreeMb: 0, limits }))?.code, 'order_quota');
-  assert.equal(await checkUpload(db, [{ name: 'x.pdf', size: 1 }], ctx, { root: '/tmp', minFreeMb: 0, limits }), null);
-  // Dosya temizliği: kaydı duran anahtar silinmez
+  await db.offerImport.update({ where: { id: up.ids[0] }, data: { size: 999_985 } });
+  assert.equal(await checkUpload(db, [{ name: 'x.pdf', size: 10 }], { userId: people.sales.id, orderId: o.id }, { root: '/tmp', minFreeMb: 0, limits }), null);
+  // Dosya temizliği: hiçbir kaydın göstermediği anahtar silinir
   const removed = [];
-  assert.deepEqual(await removeOrphanFiles(db, [file.storageKey], async (k) => { removed.push(k); }), { removed: 0, kept: 1, failed: 0 });
-  assert.deepEqual(removed, []);
+  assert.deepEqual(await removeOrphanFiles(db, [file.storageKey], async (k) => { removed.push(k); }), { removed: 1, kept: 0, failed: 0 });
+  assert.deepEqual(removed, [file.storageKey]);
 }));
 
 dbTest('boş satır kuralı: yalnızca ölçüsüz, işlemsiz, sandık / telafi / aktarım olmayan cam satırı', () => {

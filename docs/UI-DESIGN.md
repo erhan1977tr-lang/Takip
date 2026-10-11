@@ -680,4 +680,4 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
   (A, B with ok / rounding / unexplained badges, VAT and grand total marked "not used").
 - The apply button is disabled while any included PDF is blocked, while the editor has unsaved changes (an
   `.alert-warn` says so) and while a request runs. Previously uploaded factory PDFs are a collapsed `.pdf-previous` list
-  linking to `/dosya/fabrika/<id>` (staff with `OFFER_PREPARE` only).
+  of file names only — the original PDF is not kept (3.75.3), so there is no link.

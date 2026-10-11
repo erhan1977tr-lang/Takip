@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.75.3 — 11.10.2026
+
+- PDF aktarımı: özgün fabrika PDF'i kalıcı saklanmaz. Yüklenen dosya içerik denetimi ve antivirüsten geçer, metni okunur,
+  sonra diskten silinir; izlenebilirlik için dosya adı, boyutu, SHA-256 özeti, fabrika no ve okunan bilgiler kalır.
+  Fabrika PDF'i için indirme bağlantısı kaldırıldı. Yöneticinin aktarımı değişmedi. Şema: `OfferImport.storageKey` boş
+  bırakılabilir (CI migration).
+
 ## 3.75.2 — 11.10.2026
 
 - Teklif düzenleyicisi her işlemden sonra (kayıt, PDF aktarımı) kayıtlı satırlarla yeniden kurulur: aktarılan satırlar

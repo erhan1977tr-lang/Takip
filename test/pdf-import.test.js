@@ -314,10 +314,15 @@ test('yapı: her sunucu işlemi önce OFFER_PREPARE ister; servis de denetler; f
   assert.match(svc, /const allowed = \(actor\) => !!actor && can\(actor\.role, 'OFFER_PREPARE'\);/);
 });
 
-test('yapı: /dosya/fabrika yalnızca OFFER_PREPARE + sipariş kapsamı; müşteri / denetimci teklif satırında kaynak almaz; geçmiş satırı kapalı', async () => {
+test('yapı: özgün fabrika PDF’i saklanmaz (indirme yolu yok, kayıt dosyasız, okunan dosya silinir); müşteri / denetimci kaynak almaz; geçmiş satırı kapalı', async () => {
   const route = read('app/dosya/[kind]/[id]/route.ts');
-  assert.match(route, /kind === 'fabrika' && userCan\(user, 'OFFER_PREPARE'\)/);
-  assert.match(route, /db\.offerImport\.findFirst\(\{ where: \{ id, order: scope \}/);
+  assert.ok(!/fabrika|offerImport/.test(route), 'fabrika PDF’i için indirme yolu yok');
+  const svc = read('server/orders/pdf-import/service.js');
+  const rec = svc.slice(svc.indexOf('export async function recordUploads('), svc.indexOf('export function emptyGlassLines('));
+  assert.match(rec, /storageKey: null,/);
+  assert.match(rec, /ids\.push\(row\.id\);\n\s*discard\.push\(\{ storageKey: f\.storageKey \}\);/);
+  assert.match(read('prisma/schema.prisma'), /storageKey     String\?  @unique/);
+  for (const f of ['server/files/antivirus.js', 'server/customers/deletion.js']) assert.ok(!/offerImport\.(findMany|count)/.test(read(f)), f);
   assert.match(read('lib/orders.ts'), /importId: null, sourceRow: null/);
   const { STAFF_EVENT_POLICY } = await import('../server/orders/order-view.js');
   const { EVENTS } = await import('../server/orders/rules.js');

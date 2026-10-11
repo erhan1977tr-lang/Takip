@@ -5,7 +5,7 @@ import { form } from '../test/fixtures/factory-pdf.js';
 
 // Fabrika PDF'i aktarımı (karar 255) — gerçek sunucuda, gerçek ClamAV ile: satış birden çok fabrika PDF'ini yükler, ön izler,
 // yanlış projeyi dışarıda bırakıp onaylar; satırlar (Poz, ölçü, adet, alış fiyatı) teklif tablosuna gelir, müşteri fiyatı
-// yoktur, teklif yöneticiye KENDİLİĞİNDEN gitmez — satış elle gönderir. Kaynak PDF'e yalnızca satış / yönetici erişir.
+// yoktur, teklif yöneticiye KENDİLİĞİNDEN gitmez — satış elle gönderir. Özgün PDF saklanmaz (okunduktan sonra silinir).
 // PDF'ler bu testte TAKİP'in PDF yazıcısıyla üretilen SENTETİK fabrika formlarıdır (gerçek müşteri / fiyat yok).
 const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const INSPECTOR = 'denetim@e2e.test';
@@ -27,7 +27,7 @@ const file = (name: string, buffer: Buffer) => ({ name, mimeType: 'application/p
 
 test.describe.configure({ mode: 'serial' });
 
-test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer engeli, aktarma ve elle yöneticiye gönderme; kaynak PDF yalnızca satış / yönetici', async ({ browser }) => {
+test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer engeli, aktarma ve elle yöneticiye gönderme; özgün PDF saklanmaz; müşteri / denetimci aktarımı görmez', async ({ browser }) => {
   test.setTimeout(180_000);
   const cust = await as(browser, CUSTOMER, CUST_PW);
   await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
@@ -97,19 +97,23 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
   await expect(dlg.locator('[data-pdf-file="97001"] [data-code="ALREADY_IMPORTED"]')).toBeVisible({ timeout: 60_000 });
   await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
-  const href = await dlg.locator('.pdf-previous a').first().getAttribute('href');
-  expect(href).toMatch(/^\/dosya\/fabrika\/[a-z0-9]+\?ac=1$/);
+  // Özgün PDF saklanmaz (3.75.3): önceki PDF'ler yalnızca adlarıyla listelenir, indirme bağlantısı yok
+  await expect(dlg.locator('[data-previous-pdf]').first()).toHaveText('fabrika-1.pdf');
+  await expect(dlg.locator('a[href^="/dosya/fabrika/"]')).toHaveCount(0);
   await dlg.getByRole('button', { name: 'Kapat' }).click();
-
-  // Kaynak PDF: satış açar; müşteri, denetimci ve çizimci 404 (varlığı da belli olmaz)
-  const own = await sales.request.get(href!);
-  expect(own.status()).toBe(200);
-  expect(own.headers()['content-type']).toContain('application/pdf');
-  expect((await cust.request.get(href!)).status()).toBe(404);
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  try {
+    const rows = await db.offerImport.findMany({ where: { order: { orderNo } }, select: { id: true, storageKey: true, parsed: true, factoryOrderNo: true } });
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.every((r) => r.storageKey === null && r.parsed !== null)).toBe(true);
+    // Eski bir indirme adresi bile hiçbir role dosya vermez
+    for (const p of [sales, cust]) expect((await p.request.get(`/dosya/fabrika/${rows[0].id}?ac=1`)).status()).toBe(404);
+  } finally {
+    await db.$disconnect();
+  }
   const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
-  expect((await insp.request.get(href!)).status()).toBe(404);
   const drawer = await as(browser, DRAWER, TEAM_PW);
-  expect((await drawer.request.get(href!)).status()).toBe(404);
   // Müşterinin ve denetimcinin sipariş sayfası fabrika PDF'ini / aktarım kaydını göstermez
   for (const p of [cust, insp]) {
     await p.goto(orderUrl);

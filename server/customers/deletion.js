@@ -166,16 +166,15 @@ export async function deleteCustomer(db, { customerId, confirmName, fingerprint,
     const ids = info.orders.map((o) => o.id);
     const inOrders = { orderId: { in: ids } };
     // Disk dosyalarının anahtarları (kayıtlar silinmeden önce)
-    const [orderFiles, drawingFiles, drawings, draftFiles, factoryPdfs] = await Promise.all([
+    const [orderFiles, drawingFiles, drawings, draftFiles] = await Promise.all([
       tx.orderFile.findMany({ where: inOrders, select: { storageKey: true } }),
       tx.drawingFile.findMany({ where: { drawing: inOrders }, select: { storageKey: true } }),
       tx.drawing.findMany({ where: { ...inOrders, fileUrl: { not: null } }, select: { fileUrl: true } }),
       tx.orderDraftFile.findMany({ where: { draft: { customerId: id } }, select: { storageKey: true } }),
-      tx.offerImport.findMany({ where: inOrders, select: { storageKey: true } }),
     ]);
     const storageKeys = [...new Set([
       ...orderFiles.map((f) => f.storageKey), ...drawingFiles.map((f) => f.storageKey),
-      ...drawings.map((d) => d.fileUrl), ...draftFiles.map((f) => f.storageKey), ...factoryPdfs.map((f) => f.storageKey),
+      ...drawings.map((d) => d.fileUrl), ...draftFiles.map((f) => f.storageKey),
     ].filter((k) => typeof k === 'string' && k))];
     const offerIds = (await tx.offer.findMany({ where: inOrders, select: { id: true } })).map((o) => o.id);
 
@@ -216,15 +215,14 @@ export async function removeOrphanFiles(db, keys, remove) {
   const out = { removed: 0, kept: 0, failed: 0 };
   for (const key of keys) {
     try {
-      const [a, b, c, d, e, f] = await Promise.all([
+      const [a, b, c, d, e] = await Promise.all([
         db.orderFile.count({ where: { storageKey: key } }),
         db.drawingFile.count({ where: { storageKey: key } }),
         db.drawing.count({ where: { fileUrl: key } }),
         db.orderDraftFile.count({ where: { storageKey: key } }),
         db.supplierOrderFile.count({ where: { storageKey: key } }),
-        db.offerImport.count({ where: { storageKey: key } }),
       ]);
-      if (a + b + c + d + e + f > 0) { out.kept++; continue; }
+      if (a + b + c + d + e > 0) { out.kept++; continue; }
       await remove(key);
       out.removed++;
     } catch {

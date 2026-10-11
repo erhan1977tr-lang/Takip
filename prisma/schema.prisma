@@ -715,8 +715,10 @@ model OfferLine {
 }
 
 // Fabrika sipariş PDF'i aktarımı (karar 255). Kaynak PDF ve fabrika alış fiyatları gizlidir: yalnızca teklif hazırlayan roller
-// (OFFER_PREPARE — yönetici, yönetici yardımcısı, satış) erişir; dosya /dosya/fabrika/<id> ile, aynı yetkiyle verilir. Sipariş
-// dosyası (OrderFile) DEĞİLDİR: müşteri / iç dosya listelerine hiç girmez. Kayıt silinmez; aktarılınca APPLIED olur.
+// (OFFER_PREPARE — yönetici, yönetici yardımcısı, satış) görür. Özgün PDF dosyası KALICI SAKLANMAZ (3.75.3): yüklenince
+// içerik denetimi + antivirüsten geçer, metni okunur, dosya diskten silinir (storageKey boş). İzlenebilirlik için dosya adı,
+// boyutu, SHA-256 özeti, tarama sonucu, fabrika no ve ayrıştırılmış kopya kalır. Sipariş dosyası (OrderFile) DEĞİLDİR.
+// Kayıt silinmez; aktarılınca APPLIED olur.
 //   parsed : PDF'ten okunan değişmez kopya (başlık, satırlar, işlemler, iskonto, net tutarlar, Ara Toplam — tutarlar kuruş)
 model OfferImport {
   id             String   @id @default(cuid())
@@ -724,7 +726,7 @@ model OfferImport {
   order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   status         String   @default("PREVIEW") // PREVIEW | APPLIED
   name           String   // özgün dosya adı
-  storageKey     String   @unique
+  storageKey     String?  @unique // her zaman boş: özgün PDF saklanmaz (3.75.3); eski kayıtlar için alan durur
   size           Int
   mime           String?
   checksum       String   // SHA-256 (hex): aynı dosya aynı siparişe bir kez
