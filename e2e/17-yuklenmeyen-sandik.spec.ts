@@ -390,10 +390,15 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   for (const f of ['pdf', 'xlsx']) expect((await salesPage.request.get(`/yuklemeler/firma?gun=${DAY}&firma=${uns.id}&bicim=${f}`)).status(), `satış: ${f}`).toBe(403);
   await salesPage.context().close();
 
-  // Sipariş sahibi müşteri: kendi siparişi için yalnızca sandık numarası; ev sahibinin adı, siparişi, sandık ölçüsü yok
+  // Sipariş sahibi (misafir yük) müşteri: kendi siparişinin gittiği ev sahibi sandığı — "Sandık bilgileri"nde sandık no, ölçü,
+  // ağırlık, etiket ve gün (karar 254); ev sahibinin adı / kimliği ve o sandıktaki başka sipariş YOK
   const owner = await as(browser, CUSTOMER, CUST_PW);
   await owner.goto(DAY_URL);
   await expect(owner.locator('.load-table tr', { hasText: 'UNS7701' }).first().locator('.crate-nos')).toContainText('#15');
+  const awayRow = owner.locator('#sandik-bilgileri [data-away=UNS7701]');
+  await expect(awayRow).toContainText('#15');
+  await expect(awayRow).toContainText('2400 × 1600 × 900');
+  await expect(owner.locator('#sandik-bilgileri [data-hosted]')).toHaveCount(0);
   const ownerHtml = await (await owner.request.get(DAY_URL)).text();
   for (const secret of [beta.name, 'BET7702', orderB, beta.id]) expect(ownerHtml, `sipariş sahibi: ${secret}`).not.toContain(secret);
   await expect(owner.locator('.guest-box')).toHaveCount(0);
@@ -408,16 +413,21 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   await expect(owner.locator('#ozel-durum')).toHaveCount(0);
   const ownerOrderHtml = await (await owner.request.get(`/siparisler/${orderU}`)).text();
   for (const secret of [beta.name, beta.id]) expect(ownerOrderHtml, `sipariş sayfası: ${secret}`).not.toContain(secret);
-  await expect(owner.locator('.crate-table'), 'ev sahibinin sandık ölçüleri görünmez').toHaveCount(0);
+  await expect(owner.locator('.crate-table'), 'sipariş sayfasında ev sahibinin sandık ölçüleri görünmez').toHaveCount(0);
   expect((await owner.request.get(`/siparisler/${orderB}`)).status()).toBe(404);
   await owner.context().close();
 
-  // Ev sahibi müşteri: kendi sandığını görür; içindeki başka müşteri siparişinden hiçbir iz yok, o siparişe erişemez
+  // Ev sahibi müşteri: kendi sandığını görür; "Sandık bilgileri"nde sandığındaki misafir yük ilişkisi (misafir firma + sipariş no —
+  // misafir yük bildirimiyle aynı bilgi, karar 124, 254). Misafir siparişin kimliği, fiyatı, belgesi, dosyası yok; siparişe erişemez
   const host = await as(browser, BETA, TEAM_PW);
   await host.goto(DAY_URL);
   await expect(host.locator('.load-table .crate-table')).toContainText('2400');
+  const hostedRow = host.locator('#sandik-bilgileri [data-hosted=UNS7701]');
+  await expect(hostedRow).toContainText('#15');
+  await expect(hostedRow).toContainText(uns.name);
+  await expect(host.locator('#sandik-bilgileri [data-away]')).toHaveCount(0);
   const hostHtml = await (await host.request.get(DAY_URL)).text();
-  for (const secret of ['UNS7701', uns.name, orderU]) expect(hostHtml, `ev sahibi: ${secret}`).not.toContain(secret);
+  for (const secret of [orderU, `/siparisler/${orderU}`]) expect(hostHtml, `ev sahibi: ${secret}`).not.toContain(secret);
   // Sandık paylaşımı siparişe erişim vermez (IDOR yok): sipariş, teklif PDF'i ve dosyaları ev sahibine kapalı
   expect((await host.request.get(`/siparisler/${orderU}`)).status()).toBe(404);
   expect((await host.request.get(`/siparisler/${orderU}/teklif`)).status(), 'misafir siparişin teklifi').not.toBe(200);

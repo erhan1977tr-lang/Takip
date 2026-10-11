@@ -43,36 +43,41 @@ test('işlemler tek bir cama aittir: adedi 1\'den büyük satıra bağlı işlem
 
 test('fiyat kararı — yönetici (müşteri fiyatı): aynı fiyat / bedelsiz / farklı fiyat; fabrika maliyeti hiç değişmez', () => {
   const line = glass();
-  // direct: fiyat kesin — teklif yöneticinin yeniden fiyatlandırmasına uğramadan müşteriye gidebilir
+  // direct: müşteri fiyatı kesin — teklif yöneticinin yeniden fiyatlandırmasına uğramadan müşteriye gidebilir
   assert.deepEqual(priceDecision({ admin: true, mode: 'NORMAL', line }), { ok: true, tier: 'CUSTOMER', normalCost: 30, normalPrice: 66.96, mode: 'NORMAL', free: false, unitCost: 30, offerPrice: 66.96, changed: false, direct: true });
   const free = priceDecision({ admin: true, mode: 'FREE', line });
   assert.deepEqual([free.free, free.offerPrice, free.unitCost, free.changed, free.direct], [true, 0, 30, true, true], 'bedelsiz: müşteri fiyatı 0, maliyet durur');
+  // Yöneticinin farklı fiyatı MÜŞTERİ fiyatıdır ve kesindir (karar 251: ek onay yok)
   const custom = priceDecision({ admin: true, mode: 'CUSTOM', price: '50,00', line });
-  assert.deepEqual([custom.mode, custom.offerPrice, custom.unitCost, custom.changed, custom.tier, custom.direct], ['CUSTOM', 50, 30, true, 'CUSTOMER', false]);
+  assert.deepEqual([custom.mode, custom.offerPrice, custom.unitCost, custom.changed, custom.tier, custom.direct], ['CUSTOM', 50, 30, true, 'CUSTOMER', true]);
   // Normal fiyatla aynı "farklı fiyat" değişiklik sayılmaz
   assert.equal(priceDecision({ admin: true, mode: 'CUSTOM', price: '66.96', line }).mode, 'NORMAL');
 });
 
-test('fiyat kararı — satış (karar 157): üç kararı seçer (bedelsiz / aynı fiyat / farklı fiyat); müşteri fiyatını HİÇBİR kararda giremez', () => {
+test('fiyat kararı — satış (karar 251): farklı fiyat SATIŞ fiyatıdır; müşteri fiyatı kaynaktaki gibi kalır ve yönetici onayı beklenmez', () => {
   const line = glass();
-  // AYNI FİYAT: yöneticinin kaynak teklifteki müşteri fiyatı AYNEN (sunucuda kopyalanır) — satışın yazdığı tutar yok sayılır
+  // AYNI FİYAT: kaynağın iki fiyatı AYNEN (sunucuda kopyalanır) — satışın yazdığı tutar yok sayılır
   const same = priceDecision({ admin: false, mode: 'NORMAL', line });
   assert.deepEqual(same, { ok: true, tier: 'CUSTOMER', normalCost: 30, normalPrice: 66.96, mode: 'NORMAL', free: false, unitCost: 30, offerPrice: 66.96, changed: false, direct: true });
   assert.deepEqual(same, priceDecision({ admin: true, mode: 'NORMAL', line }), 'satış ve yönetici için aynı sonuç');
-  assert.deepEqual(priceDecision({ admin: false, mode: 'NORMAL', price: '1', line }), same, '"aynı fiyat"ta istekle gelen tutar kullanılmaz: fiyat kaynağın yönetici fiyatıdır');
+  assert.deepEqual(priceDecision({ admin: false, mode: 'NORMAL', price: '1', line }), same, '"aynı fiyat"ta istekle gelen tutar kullanılmaz');
   // BEDELSİZ: müşteri fiyatı 0, fabrika maliyeti durur; doğrudan müşteriye
   const free = priceDecision({ admin: false, mode: 'FREE', line });
   assert.deepEqual([free.free, free.unitCost, free.offerPrice, free.normalPrice, free.changed, free.tier, free.direct], [true, 30, 0, 66.96, true, 'CUSTOMER', true]);
   assert.deepEqual(priceDecision({ admin: false, mode: 'FREE', price: '99', line }), free, 'bedelsizde istekle gelen tutar kullanılmaz');
-  // FARKLI FİYAT: satış SEÇER ama fiyatı belirlemez — müşteri fiyatı boş kalır, telafi yöneticinin fiyatlandırmasına gider
-  const custom = priceDecision({ admin: false, mode: 'CUSTOM', line });
-  assert.deepEqual(custom, { ok: true, tier: 'CUSTOMER', normalCost: 30, normalPrice: 66.96, mode: 'CUSTOM', free: false, unitCost: 30, offerPrice: null, changed: true, direct: false });
-  for (const price of ['', '   ', null, undefined]) assert.deepEqual(priceDecision({ admin: false, mode: 'CUSTOM', price, line }), custom, `boş fiyat: ${String(price)}`);
-  // Satış fiyat yazdıysa istek reddedilir — tutar ne olursa olsun (önceki fiyatın aynısı, maliyet, 0 ya da geçersiz metin dahil)
-  for (const price of ['25', '30', '66.96', '100', '0', '-5', 'abc']) assert.deepEqual(priceDecision({ admin: false, mode: 'CUSTOM', price, line }), { ok: false, code: 'PRICE_FORBIDDEN' }, String(price));
-  // Kaynağın müşteri fiyatı kayıtlı değilse (eski kayıt) "aynı fiyat" kesin fiyat değildir: yöneticinin fiyatlandırmasına gider
+  // FARKLI FİYAT: satışın girdiği fiyat SATIŞ fiyatıdır; müşteri fiyatı kaynağınki (satış onu görmez / yazamaz); kesin → doğrudan
+  const custom = priceDecision({ admin: false, mode: 'CUSTOM', price: '35,50', line });
+  assert.deepEqual(custom, { ok: true, tier: 'SALES', normalCost: 30, normalPrice: 66.96, mode: 'CUSTOM', free: false, unitCost: 35.5, offerPrice: 66.96, changed: true, direct: true });
+  // Satış hiçbir girdiyle müşteri fiyatını değiştiremez
+  for (const price of ['1', '66.96', '100', '999']) assert.equal(priceDecision({ admin: false, mode: 'CUSTOM', price, line }).offerPrice, 66.96, String(price));
+  // Fiyat zorunlu ve pozitif; kaynağın satış fiyatının aynısı "aynı fiyat"tır
+  for (const price of ['', '   ', null, undefined, '0', '-5', 'abc', '2000000']) assert.deepEqual(priceDecision({ admin: false, mode: 'CUSTOM', price, line }), { ok: false, code: 'BAD_PRICE' }, `fiyat: ${String(price)}`);
+  assert.deepEqual(priceDecision({ admin: false, mode: 'CUSTOM', price: '30', line }), same);
+  // Kaynağın müşteri fiyatı kayıtlı değilse (eski kayıt) kesin müşteri fiyatı yoktur: yöneticinin fiyatlandırmasına gider
   const legacy = priceDecision({ admin: false, mode: 'NORMAL', line: glass({ offerPrice: null }) });
   assert.deepEqual([legacy.offerPrice, legacy.direct], [null, false]);
+  const legacyCustom = priceDecision({ admin: false, mode: 'CUSTOM', price: '40', line: glass({ offerPrice: null }) });
+  assert.deepEqual([legacyCustom.unitCost, legacyCustom.offerPrice, legacyCustom.direct], [40, null, false]);
 });
 
 test('fiyat kararı: geçersiz seçenek / fiyat reddedilir; kaynağı bedelsiz satırın normali bedelsizdir', () => {
@@ -84,29 +89,34 @@ test('fiyat kararı: geçersiz seçenek / fiyat reddedilir; kaynağı bedelsiz s
   assert.deepEqual(COMP_MODES, ['NORMAL', 'FREE', 'CUSTOM']);
 });
 
-test('telafi satırları: cam ve üretim bilgisi kaynaktan; işlemler telafiye taşınır ve MÜŞTERİ fiyatları her kararda 0\'dır (maliyet durur)', () => {
+test('telafi satırları (karar 251): işlemler aynen taşınır; yalnızca BEDELSİZDE işlem fiyatları 0, aynı / farklı fiyatta kaynaktaki gibi', () => {
   // İşlemli kaynak TEK bir camdır: işlemleri aynen (tür, açıklama, adet) taşınır — oran / yuvarlama yok
   const line = glass({ adet: 1 });
   const subs = [cnc({ adet: 1, description: 'Kulp yuvası' }), hole({ adet: 2 })];
   const rows = (lines) => lines.map((l) => [l.kind, l.description, l.adet, l.unitPrice, l.offerPrice, l.free]);
-  const ops = [['CNC', 'Kulp yuvası', 1, 5, 0, true], ['DELIK', 'Delik', 2, 2, 0, true]];
-  // BEDELSİZ: cam 0, işlemler 0
+  const freeOps = [['CNC', 'Kulp yuvası', 1, 5, 0, true], ['DELIK', 'Delik', 2, 2, 0, true]];
+  const keptOps = [['CNC', 'Kulp yuvası', 1, 5, 8, false], ['DELIK', 'Delik', 2, 2, 3, false]];
+  // BEDELSİZ: cam ve işlemlerin müşteri fiyatı 0 (maliyet durur)
   const free = compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin: false, mode: 'FREE', line }) });
-  assert.deepEqual(rows(free), [['CAM', 'Temper Lamine 44.2', 1, 30, 0, true], ...ops]);
-  // AYNI FİYAT: cam kaynağın yönetici fiyatıyla; işlemlerin müşteri fiyatı yine 0 (kaynakta 8 ve 3 idi)
+  assert.deepEqual(rows(free), [['CAM', 'Temper Lamine 44.2', 1, 30, 0, true], ...freeOps]);
+  // AYNI FİYAT (işlemli cam): cam ve işlemlerin İKİ fiyatı kaynaktaki gibi — hiçbiri 0'a düşmez
   const same = compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin: false, mode: 'NORMAL', line }) });
-  assert.deepEqual(rows(same), [['CAM', 'Temper Lamine 44.2', 1, 30, 66.96, false], ...ops]);
-  // FARKLI FİYAT — satış: camın müşteri fiyatı boş (yönetici belirleyecek); işlemler 0
-  const pending = compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin: false, mode: 'CUSTOM', line }) });
-  assert.deepEqual(rows(pending), [['CAM', 'Temper Lamine 44.2', 1, 30, null, false], ...ops]);
-  // FARKLI FİYAT — yönetici: yalnızca cam satırı girilen fiyatı alır; işlemler 0
+  assert.deepEqual(rows(same), [['CAM', 'Temper Lamine 44.2', 1, 30, 66.96, false], ...keptOps]);
+  // FARKLI FİYAT — satış: camın satış fiyatı girilen, müşteri fiyatı kaynağınki; işlem fiyatları SIFIRLANMAZ
+  const sales = compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin: false, mode: 'CUSTOM', price: '35', line }) });
+  assert.deepEqual(rows(sales), [['CAM', 'Temper Lamine 44.2', 1, 35, 66.96, false], ...keptOps]);
+  // FARKLI FİYAT — yönetici: camın müşteri fiyatı girilen; işlem fiyatları kaynaktaki gibi
   const custom = compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin: true, mode: 'CUSTOM', price: 50, line }) });
-  assert.deepEqual(rows(custom), [['CAM', 'Temper Lamine 44.2', 1, 30, 50, false], ...ops]);
-  // İşlem-cam ilişkisi korunur: işlem satırları camın hemen altında, aynı sırayla; müşteri tutarına hiç girmezler
-  for (const lines of [free, same, custom]) {
-    assert.deepEqual(lines.map((l) => l.kind), ['CAM', 'CNC', 'DELIK']);
-    assert.equal(offerTotals(atOfferPrice(lines)).amount, offerTotals(atOfferPrice(lines.slice(0, 1))).amount, 'işlemler müşteri tutarını değiştirmez');
-  }
+  assert.deepEqual(rows(custom), [['CAM', 'Temper Lamine 44.2', 1, 30, 50, false], ...keptOps]);
+  // İşlem-cam ilişkisi korunur; tutar = birim fiyat × miktar (müşteri: 2 m² × 66.96 + 8 + 2 × 3)
+  for (const lines of [free, same, sales, custom]) assert.deepEqual(lines.map((l) => l.kind), ['CAM', 'CNC', 'DELIK']);
+  assert.equal(offerTotals(atOfferPrice(same)).amount, Math.round((2 * 66.96 + 8 + 6) * 100) / 100);
+  assert.equal(offerTotals(atOfferPrice(free)).amount, 0, 'bedelsiz: müşteri tutarı 0');
+  assert.equal(offerTotals(atOfferPrice(sales)).amount, offerTotals(atOfferPrice(same)).amount, 'satışın farklı fiyatı müşteri tutarını değiştirmez');
+  assert.equal(offerTotals(sales).amount, Math.round((2 * 35 + 5 + 4) * 100) / 100, 'satış tutarı girilen fiyatla');
+  // Kaynakta bedelsiz işlem aynı fiyatta bedelsiz kalır
+  const freeSub = compensationLines({ line, subs: [cnc({ adet: 1, free: true, offerPrice: '0' })], quantity: 1, decision: priceDecision({ admin: false, mode: 'NORMAL', line }) });
+  assert.deepEqual(rows(freeSub).slice(1), [['CNC', 'CNC', 1, 5, 0, true]]);
   // İşlemsiz (standart) kardeş cam: aynı ölçü, adetle — telafisi işlem TAŞIMAZ
   const std = compensationLines({ line: glass({ id: 'g0', adet: 4 }), subs: [], quantity: 3, decision: priceDecision({ admin: false, mode: 'NORMAL', line: glass({ adet: 4 }) }) });
   assert.deepEqual(std.map((l) => [l.kind, l.adet, l.offerPrice]), [['CAM', 3, 66.96]]);
@@ -168,23 +178,23 @@ test('kaynak adedi yalnızca TEMİZ siparişte düşer: açık, onaylı yükleme
   assert.deepEqual(sourceReducible({ status: 'URETIMDE' }, { inConfirmation: true, coverage: { reason: 'ORDER_PENDING' } }), { ok: false, reason: 'LOADED' });
 });
 
-test('bedelsiz telafi ve telafi işlemleri proformaya / faturaya (FGO satırlarına) girmez', () => {
+test('belgeler: bedelsiz telafi belgeye girmez; aynı / farklı fiyatta işlemler kaynaktaki fiyatlarla belgeye girer (karar 251)', () => {
   const line = glass({ adet: 1 });
   const subs = [cnc({ adet: 1 }), hole({ adet: 2 })];
   const offerOf = (mode, admin = false, price = null) => ({ lines: compensationLines({ line, subs, quantity: 1, decision: priceDecision({ admin, mode, price, line }) }) });
   // BEDELSİZ: hiçbir satır yok — belgeye yazılacak bir şey kalmaz
   assert.deepEqual(proformaLines(offerOf('FREE')), []);
   assert.deepEqual(invoiceLines(offerOf('FREE'), 5, 21), []);
-  // AYNI FİYAT / FARKLI FİYAT: yalnızca cam satırı; işlemler (müşteri fiyatı 0) ayrı satır olmaz, cam tutarına da eklenmez
-  for (const [o, eur] of [[offerOf('NORMAL'), 66.96], [offerOf('CUSTOM', true, 50), 50]]) {
-    assert.deepEqual(proformaLines(o).map((r) => [r.name, r.unit, r.qty, r.eur]), [['Sticlă laminată 44.2', 'mp', 2, eur]]);
-    const [inv] = invoiceLines(o, 5, 21);
-    assert.deepEqual([invoiceLines(o, 5, 21).length, inv.qty, inv.net], [1, 2, Math.round(2 * eur * 5 * 100) / 100]);
+  // AYNI FİYAT / FARKLI FİYAT: kaynağın kendi satırları gibi — proformada cam + CNC + delik; faturada işlemler cam satırına eklenir
+  for (const [o, eur] of [[offerOf('NORMAL'), 66.96], [offerOf('CUSTOM', false, '35'), 66.96], [offerOf('CUSTOM', true, '50'), 50]]) {
+    assert.deepEqual(proformaLines(o).map((r) => [r.unit, r.qty, r.eur]), [['mp', 2, eur], ['buc', 1, 8], ['buc', 2, 3]]);
+    const inv = invoiceLines(o, 5, 21);
+    assert.deepEqual([inv.length, inv[0].qty], [1, 2]);
   }
-  // Satışın "farklı fiyat" kararı fiyatlandırılmadan belgeye giremez (fiyatsız satır yazılmaz)
-  assert.deepEqual(proformaLines(offerOf('CUSTOM')), []);
-  // Karşılaştırma — kaynağın kendi satırları (işlemler fiyatlı): proformada üç satır vardır
-  assert.equal(proformaLines({ lines: [line, ...subs] }).length, 3);
+  // Satışın farklı fiyatı müşterinin belgesini değiştirmez (müşteri fiyatı kaynağınki)
+  assert.deepEqual(proformaLines(offerOf('CUSTOM', false, '35')), proformaLines(offerOf('NORMAL')));
+  // Karşılaştırma — kaynağın kendi satırları: aynı fiyatlı telafinin belgesi kaynağınkiyle aynı
+  assert.deepEqual(proformaLines({ lines: [line, ...subs] }), proformaLines(offerOf('NORMAL')));
   // Var olan siparişe eklenen bedelsiz telafi o siparişin belgesini değiştirmez
   const own = glass({ id: 'o1', adet: 5 });
   const free = offerOf('FREE').lines;
@@ -279,31 +289,31 @@ test('metinler: her hata kodunun ve yeni olayların metni var', () => {
   for (const k of ['step1', 'target', 'blockedTitle', 'blockedText', 'continue', 'step2', 'keptCounts']) assert.equal(typeof m.remove[k], 'string', k);
 });
 
-// P2-A: ekranın gösterdiği yol (compensationFlow) sunucunun izlediği yolla aynı — kaynak müşteri fiyatı boşken "aynı fiyat"
-// doğrudan gitmez. Bütün kombinasyonlar priceDecision().direct ve createCompensation'ın dallarıyla karşılaştırılır.
-test('telafi akışı: ekran kuralı sunucu kuralıyla aynı (kaynak fiyatı boşken "aynı fiyat" doğrudan gitmez)', async () => {
+// P2-A, karar 251: ekranın gösterdiği yol (compensationFlow) sunucunun izlediği yolla aynı. Bütün kombinasyonlar
+// priceDecision().direct ve createCompensation'ın dallarıyla karşılaştırılır.
+test('telafi akışı: ekran kuralı sunucu kuralıyla aynı; farklı fiyat yönetici onayı beklemez (kaynakta müşteri fiyatı varsa)', async () => {
   const { compensationFlow } = await import('../server/orders/compensation-flow.js');
   for (const mode of ['FREE', 'NORMAL', 'CUSTOM']) {
     for (const admin of [false, true]) {
       for (const sourceFree of [false, true]) {
         for (const sourcePriced of [false, true]) {
           const line = { free: sourceFree, unitPrice: '30', offerPrice: sourcePriced ? '66.96' : null };
-          const d = priceDecision({ admin, mode, price: mode === 'CUSTOM' && admin ? '70' : null, line });
+          const d = priceDecision({ admin, mode, price: mode === 'CUSTOM' ? '70' : null, line });
           assert.equal(d.ok, true);
           for (const [destType, via] of [['NEW', null], ['EXISTING', 'DRAFT'], ['EXISTING', 'SENT']]) {
             const f = compensationFlow({ mode, admin, destType, via, sourceFree, sourcePriced });
-            // Sunucu (createCompensation): taslak hedef → taslağa eklenir; kesin fiyat → doğrudan; müşterideki hedefte satış
-            // kesin olmayan kararla PENDING, yönetici farklı fiyatla yeni sürüm, fiyatsız satırla PRICE_REQUIRED; yeni sipariş → fiyat onayı
-            const missing = d.offerPrice == null && !d.free;
-            const server = via === 'DRAFT' ? 'draft' : d.direct ? 'direct'
-              : via === 'SENT' ? (!admin ? 'pending' : missing ? 'priceRequired' : 'adminSent') : 'pricing';
+            // Sunucu (createCompensation): taslak hedef → taslağa eklenir; kesin müşteri fiyatı → doğrudan; müşterideki hedefte
+            // satış kesin olmayan kararla PENDING, yönetici fiyatsız satırla PRICE_REQUIRED; yeni sipariş → fiyat onayı
+            const server = via === 'DRAFT' ? 'draft' : d.direct ? 'direct' : via === 'SENT' ? (!admin ? 'pending' : 'priceRequired') : 'pricing';
             assert.equal(f, server, JSON.stringify({ mode, admin, sourceFree, sourcePriced, destType, via }));
           }
         }
       }
     }
   }
+  // Satışın farklı fiyatı: kaynakta müşteri fiyatı varsa her hedefte doğrudan (yönetici onayı yok)
+  for (const [destType, via] of [['NEW', null], ['EXISTING', 'SENT']]) assert.equal(compensationFlow({ mode: 'CUSTOM', admin: false, destType, via, sourcePriced: true }), 'direct');
   assert.equal(compensationFlow({ mode: 'NORMAL', admin: false, destType: 'NEW', sourcePriced: false }), 'pricing');
   assert.equal(compensationFlow({ mode: 'NORMAL', admin: false, destType: 'NEW', sourcePriced: true }), 'direct');
-  for (const lang of [tr, ro]) assert.equal(typeof lang.compensation.form.keepHintNoPrice, 'string');
+  for (const lang of [tr, ro]) for (const k of ['keepWith', 'freeWith', 'customLabel', 'sumOpsFree']) assert.equal(typeof lang.compensation.form[k], 'string', k);
 });

@@ -205,9 +205,9 @@ dbTest('telafi fiyatı (E): farklı fiyat ya da bedelsiz → yöneticiye e-posta
   const same = await create('sales', 'NORMAL');
   assert.equal(same.ok, true, JSON.stringify(same));
   assert.equal((await compEvents()).length, 0);
-  // Bedelsiz (fiyat değişti) ve farklı fiyat (satış seçer, fiyatı yönetici belirler): birer olay
+  // Bedelsiz (fiyat değişti) ve farklı fiyat (satış kendi satış fiyatını girer — karar 251): birer olay; yönetici onayı beklenmez
   const free = await create('sales', 'FREE');
-  const custom = await create('sales', 'CUSTOM');
+  const custom = await create('sales', 'CUSTOM', { price: '35' });
   assert.ok(free.ok && custom.ok);
   // Çift tıklama: aynı istek anahtarı ilk sonucu döner, ikinci olay yazılmaz
   const key = `yp-dup-${'x'.repeat(16)}`;
@@ -219,7 +219,7 @@ dbTest('telafi fiyatı (E): farklı fiyat ya da bedelsiz → yöneticiye e-posta
   assert.equal(byAdmin.ok, true, JSON.stringify(byAdmin));
   const evs = await compEvents();
   assert.deepEqual(evs.map((e) => [e.payload.mode, e.payload.qty, e.payload.sourceOrderNo, !!e.payload.pending]), [
-    ['FREE', 1, 'YPC900', false], ['CUSTOM', 1, 'YPC900', true], ['FREE', 1, 'YPC900', false], ['CUSTOM', 1, 'YPC900', true],
+    ['FREE', 1, 'YPC900', false], ['CUSTOM', 1, 'YPC900', false], ['FREE', 1, 'YPC900', false], ['CUSTOM', 1, 'YPC900', false],
   ]);
   assert.ok(evs.every((e) => !/"(offerPrice|price|amount)"/.test(JSON.stringify(e.payload))), 'olayda tutar yok');
   await pump();
@@ -228,7 +228,9 @@ dbTest('telafi fiyatı (E): farklı fiyat ya da bedelsiz → yöneticiye e-posta
   assert.equal(comp(people.admin2).length, 4, 'öbür yönetici, yöneticinin kendi telafisi dahil');
   assert.equal(comp(people.eski).length, 0);
   assert.equal(comp(people.sales).length, 0);
-  assert.ok(comp(people.admin2).some((m) => /kaynak sipariş YPC900\. Müşteri fiyatı yöneticinin onayını bekliyor\./.test(m.text)));
+  assert.ok(comp(people.admin2).some((m) => /kaynak sipariş YPC900\./.test(m.text)));
+  // Farklı fiyat yönetici onayı beklemez (kaynakta müşteri fiyatı var): e-postada "onay bekliyor" yazmaz
+  assert.ok(!comp(people.admin2).some((m) => /onayını bekliyor/.test(m.text)));
 }));
 
 dbTest('profil bölümü sayacı (karar 216): kullanıcının kapsamında fiyat bekleyen profil siparişleri; iptal, arşiv, silinmiş ve öbür adımlar sayılmaz', offline(async () => {

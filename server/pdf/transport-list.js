@@ -1,6 +1,7 @@
-// "Nakliye listesi" PDF'i (ürün sahibinin örneğinin düzeni): başlık + yükleme günü; müşteri kodu başına ara toplam
-// satırı ve sandıklar (no, U × G × Y mm, ağırlık kg, not); sonda sandık adedi ve toplam ağırlık; sandığı girilmemiş
-// siparişler. Sandıkta başka firmanın camı varsa (misafir yük, karar 124) sandığın hemen altında ayrı satırda yazılır.
+// "Nakliye listesi" PDF'i (ürün sahibinin örneğinin düzeni): başlık + yükleme günü; SANDIK ETİKETİ başına ara toplam
+// satırı (sandık adedi + ağırlık; karar 253) ve sandıklar (no, U × G × Y mm, ağırlık kg, not); sonda sandık adedi ve toplam
+// ağırlık; sandığı girilmemiş siparişler. Sandıkta başka firmanın camı varsa (misafir yük, karar 124) sandığın NOT
+// sütununda yazılır.
 // Her sayfanın başlığında, sağ üstte resmî GKH logosu (ortak başlık — server/pdf/brand.js; karar 129).
 // Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
 import { PdfDoc, fitText } from './pdf.js';
@@ -68,14 +69,17 @@ export function transportListPdf({ day, list, text, company = BRAND.company }) {
       page.text(x.no, y + 15, String(c.crateNo), { size: 9.5, align: 'center', width: COL.no });
       page.text(x.dims, y + 15, fitText(c.dims || '—', 9.5, COL.dims - 6), { size: 9.5 });
       page.text(x.kg, y + 15, c.weight == null ? '—' : fmtKg(c.weight), { size: 9.5, align: 'right', width: COL.kg });
-      if (c.note) page.text(x.note, y + 15, fitText(c.note, 8, noteW() - 8), { size: 8, color: GREY });
+      // Not sütunu: sandığın notu ve misafir yük (karar 253 — sandığın notunda: "Misafir yük: firma · sipariş no";
+      // yalnızca fiziksel bilgi). Birden çok kalem alt alta, aynı sütunda.
+      const notes = [
+        ...(c.note ? [{ t: c.note, guest: false }] : []),
+        ...(c.guests ?? []).map((gu) => ({ t: `${text.guest}: ${[gu.firm, gu.orderNo].filter(Boolean).join(' · ')}`, guest: true })),
+      ];
+      notes.forEach((n, i) => {
+        if (i > 0) { y += ROW - 8; ensure(ROW - 8); }
+        page.text(x.note, y + 15, fitText(n.t, 8, noteW() - 8, n.guest), n.guest ? { size: 8, bold: true, color: BLUE } : { size: 8, color: GREY });
+      });
       y += ROW;
-      // Misafir yük: bu sandıkta giden başka firmanın camı (yalnızca fiziksel bilgi: firma · sipariş no)
-      for (const gu of c.guests ?? []) {
-        ensure(ROW - 4);
-        page.text(x.dims, y + 12, fitText(`${text.guest}: ${[gu.firm, gu.orderNo].filter(Boolean).join(' · ')}`, 8.5, W() - COL.no - 6, true), { size: 8.5, bold: true, color: BLUE });
-        y += ROW - 4;
-      }
       page.line(M, y, page.width - M, y, 0.4, 0.85);
     }
   });

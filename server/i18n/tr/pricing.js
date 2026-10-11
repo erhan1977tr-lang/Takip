@@ -140,6 +140,7 @@ export default {
     // Telafi camı (Aşama 9): {glass} = adet × cam ve ölçü
     comp: '{glass} → {dest} / {date}',
     compPrice: "Önceki müşteri fiyatı: {normal} → Telafi: {price}",
+    compPriceSales: 'Önceki satış fiyatı: {normal} → Telafi: {price} — müşteri fiyatı değişmedi; gerekirse hedef siparişte teklifi güncelleyin',
     compFree: 'Bedelsiz',
     // Telafi kararı (karar 157): karar türü, yöneticinin belirleyeceği fiyat ve kaynak siparişin adedi
     compMode: 'Karar: {mode}',

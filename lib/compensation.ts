@@ -1,7 +1,7 @@
 // Kırık / telafi camı (Aşama 9) — sipariş sayfasının verisi: "Önemli kararlar" kartındaki telafi geçmişi ve telafi
 // formunun seçenekleri. Kurallar server/orders/compensation.js'tedir; burada yalnızca yükleme ve ROLE GÖRE TEMİZLİK var:
 // satış müşteri fiyatını görmez (karar 4) — müşteri fiyatı üzerinden verilen kararın tutarı satışa hiç gitmez, yalnızca
-// kararın türü (bedelsiz / aynı fiyat / farklı fiyat) gider (karar 157: üç kararı satış da seçer, tutarı görmeden).
+// kararın türü gider. Satışın "farklı fiyat"ı satış kademesindedir ve satışa kendi tutarıyla görünür (karar 251).
 import crypto from 'node:crypto';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
@@ -69,11 +69,16 @@ export type CompFormLine = {
    */
   normal: number | null; free: boolean;
   /**
+   * Formdaki "Aynı fiyat — …" düğmesinde gösterilen, kullanıcının KENDİ kademesindeki fiyat (karar 251): yöneticide
+   * müşteri fiyatı, satışta kendi satış fiyatı. Satışa müşteri fiyatı hiçbir alanda gitmez. Kaynak bedelsizse 0.
+   */
+  own: number | null;
+  /**
    * Kaynak satırda kayıtlı müşteri fiyatı var mı (tutar DEĞİL — satışa da gider). Yoksa "aynı fiyat" doğrudan müşteriye
    * gitmez: ekranın akışı sunucunun izlediği yolla aynı olsun diye (compensationFlow).
    */
   priced: boolean;
-  /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen taşınır; müşteri fiyatları telafide 0'dır (karar 157) */
+  /** Bu TEK cama ait işlemler (CNC / delik): telafiye aynen taşınır; fiyatları bedelsizde 0, öteki kararlarda kaynaktaki gibi (karar 251) */
   ops: { kind: string; adet: number; description: string }[];
   /** İşlemler adedi 1'den büyük satıra bağlı (eski kayıt): hangi camda olduğu belli değil — telafi açılamaz (karar 113) */
   ambiguous: boolean;
@@ -126,6 +131,8 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
     lines: groups.map((g) => ({
       id: g.line.id, n: glassNo.get(g.line.id) ?? 0, glass: g.line.description, glassRo: g.line.descriptionRo, enMm: g.line.enMm ?? 0, boyMm: g.line.boyMm ?? 0, adet: g.line.adet,
       normal: !admin ? null : g.line.free ? 0 : num(g.line.offerPrice), free: g.line.free, priced: pricedIds.has(g.line.id),
+      // Satışın siparişinde unitPrice satış fiyatıdır (müşteri fiyatı temizlenmiş); yöneticide müşteri fiyatı gösterilir
+      own: g.line.free ? 0 : admin ? num(g.line.offerPrice) : num(g.line.unitPrice),
       ops: g.subs.map((s) => ({ kind: s.kind, adet: s.adet, description: s.description ?? '' })),
       ambiguous: ambiguousOps(g),
       links: links.filter((x) => x.lineId === g.line.id).map((x) => ({ itemId: x.itemId, day: x.day, free: x.free })),

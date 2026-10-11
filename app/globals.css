@@ -747,6 +747,9 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .crate-editor .section-head h3 { margin: 0; font-size: 17px; }
 .crate-intro { margin: 0 0 12px; }
 .crate-table { font-size: var(--fs-table); }
+/* Müşteri: misafir yük ilişkisi (Yüklemelerim → Sandık bilgileri, karar 254) */
+.crate-relations { margin-top: 16px; }
+.crate-relations h4 { margin: 12px 0 6px; font-size: var(--fs-body); }
 .crate-table th { white-space: normal; vertical-align: bottom; padding: 9px 8px; border-top: 0; }
 .crate-table td { padding: 7px 8px; white-space: nowrap; vertical-align: middle; border-bottom: 1px solid var(--divider); }
 .crate-table input { padding: 8px 10px; font-size: var(--fs-body); }

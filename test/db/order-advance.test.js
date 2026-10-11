@@ -207,7 +207,7 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   const fin = await finalInvoice(day, o, fgo);
   assert.equal(fin.form.IdExtern, `LOT-${fin.batchId}`);
   assert.deepEqual(lines(fin.form), [
-    [`Comanda ${o.orderNo} — Securizat`, '2', null], // cam satırı TVA dahil toplamla gider (PretTotal)
+    ['Securizat', '2', null], // cam satırı TVA dahil toplamla gider (PretTotal); sipariş numarası yok (karar 252)
     [`Stornare avans conform factură ${adv1.series}${adv1.number}`, '-1', '247.93'],
     [`Stornare avans conform factură ${adv2.series}${adv2.number}`, '-1', '352.07'],
   ]);
@@ -274,7 +274,7 @@ dbTest('kesim anında yeniden bakılır: tahsilat azaldıysa avans kesilmez; fat
   await fgoPays(fgo, pb, 250);
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: created.batchId })), { done: 1, failed: 0 });
   const last = fgo.calls.at(-1);
-  assert.deepEqual(lines(last).map((l) => l[0]), [`Comanda ${bo.orderNo} — Securizat`], 'mahsup yok: kayıttaki fatura');
+  assert.deepEqual(lines(last).map((l) => l[0]), ['Securizat'], 'mahsup yok: kayıttaki fatura');
   const sb = await stateOf(bo, true);
   assert.deepEqual([sb.actions, sb.wait, sb.advanceRequired], [[], 'payment_after_invoice', 250]);
   assert.deepEqual(await request(bo, 'ADVANCE'), { ok: false, code: 'NOT_ALLOWED' }, 'fatura sonrası tahsilat için avans istenemez');

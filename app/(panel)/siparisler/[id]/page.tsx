@@ -901,6 +901,8 @@ function Decisions({ order, user, comps, createHref, error, t, locale }: { order
                   {t(customerTier ? 'compensation.decisions.normalCustomer' : 'compensation.decisions.normalSales', { price: price(c.normal, c.currency) })}{' · '}
                   <b>{t(customerTier ? 'compensation.decisions.priceCustomer' : 'compensation.decisions.priceSales', { price: price(c.price, c.currency) })}</b>
                   {c.awaitingPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}
+                  {/* Satışın farklı fiyatı (karar 251): yöneticiye bilgi — müşteri fiyatı kaynaktaki gibi; isterse günceller */}
+                  {admin && c.tier === 'SALES' && c.mode === 'CUSTOM' && <div className="hint" data-comp-sales-tier>{t('compensation.decisions.salesTierHint')}</div>}
                 </>
               ) : <>{t('compensation.decisions.modeOnly', { mode: t(`compensation.decisions.mode.${c.mode}` as MsgKey) })}{c.awaitingPrice && <> · {t('compensation.decisions.priceAdminPending')}</>}</>}
             </div>

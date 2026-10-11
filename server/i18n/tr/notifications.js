@@ -38,7 +38,7 @@ export default {
     // Telafi camı açıldı (karar 157) — yalnızca yöneticiye, telafi başına bir bildirim; karar başlıkta
     COMPENSATION_FREE: { title: 'Telafi camı açıldı: bedelsiz' },
     COMPENSATION_SAME: { title: 'Telafi camı açıldı: aynı fiyat' },
-    COMPENSATION_CUSTOM: { title: 'Telafi camı açıldı: farklı fiyat (fiyatı yönetici belirler)' },
+    COMPENSATION_CUSTOM: { title: 'Telafi camı açıldı: farklı fiyat — gerekirse müşteri fiyatını güncelleyin' },
     DOC_PROFORMA: { title: 'Proforma hazır.', customer: 'Proformanız hazır.' },
     DOC_ADVANCE: { title: 'Avans faturası hazır.', customer: 'Avans faturanız hazır.' },
     DOC_INVOICE: { title: 'Fatura hazır.', customer: 'Faturanız hazır.' },

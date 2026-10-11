@@ -4,8 +4,8 @@ import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { userCan } from '@/lib/permissions';
 import {
-  canFirmDocs, crateDay, cratesBetween, dayEntry, firmsOfDay, guestCratesBetween, guestHostNames, moneyView, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay,
-  type CrateRow, type DayEntry, type DayFirm, type DayFirms, type GuestLink, type LoadRow, type MoneyView,
+  canFirmDocs, crateDay, cratesBetween, customerCrateRelations, dayEntry, firmsOfDay, guestCratesBetween, guestHostNames, moneyView, notLoadedByOrder, ordersShippingBetween, replanRowsBetween, shipDay,
+  type CrateRelations, type CrateRow, type DayEntry, type DayFirm, type DayFirms, type GuestLink, type LoadRow, type MoneyView,
 } from '@/lib/loading';
 import { customerLabel } from '@/lib/orders';
 import { fmtDate, fmtDateTime, fmtM2, fmtMoney, fmtMonth, fmtNum, weekdayNames } from '@/lib/format';
@@ -266,6 +266,9 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
   const { firms, total } = sum;
   // Özel durum — sandık seçimi bekleyenler (yalnızca iç ekip; müşteri satırlarında ev sahibi bilgisi hiç yoktur)
   const waiting = isCustomer ? [] : firms.flatMap((f) => f.rows.filter((r) => r.guest?.waiting).map((r) => ({ firm: f, row: r })));
+  // Müşteri: misafir yük ilişkisi (karar 254) — yalnızca müşterinin taraf olduğu bağlar (lib/loading.ts)
+  const rel = isCustomer ? await customerCrateRelations(user, day) : null;
+  const relations = rel && (rel.away.length || rel.hosted.length) ? rel : null;
   return (
     <div className="card" id="gun">
       <div className="section-head">
@@ -309,6 +312,7 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
           {isCustomer
             ? <CustomerDay firm={firms[0]} money={money} t={t} />
             : <FirmTable user={user} day={day} sum={sum} dayCrates={crates} money={money} sp={sp} t={t} m={m} />}
+          {relations && <CrateRelationsView rel={relations} t={t} />}
         </>
       )}
     </div>
@@ -600,6 +604,69 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m
                 : <span className="badge badge-danger">{t('loading.guest.waitingShort')}</span>}
             </form>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Müşteri: "Sandık bilgileri — misafir yük" (karar 254). away: kendi siparişi başka firmanın sandığında — sandık etiketi,
+ * numarası, ölçüleri, ağırlığı (ev sahibinin adı yok); hosted: kendi sandığında başka firmanın siparişi — firma ve sipariş no.
+ */
+function CrateRelationsView({ rel, t }: { rel: CrateRelations; t: T }) {
+  const dims = (r: { lengthMm: number | null; widthMm: number | null; heightMm: number | null }) =>
+    [r.lengthMm, r.widthMm, r.heightMm].some((x) => x != null) ? [r.lengthMm, r.widthMm, r.heightMm].map((x) => x ?? '—').join(' × ') : '—';
+  const day = (d: string | null) => (d ? fmtDate(`${d}T12:00:00Z`) : '—');
+  return (
+    <div className="crate-relations" id="sandik-bilgileri">
+      <h3 className="sub-title">{t('loading.day.relations.title')}</h3>
+      {rel.away.length > 0 && (
+        <div data-relations="away">
+          <h4>{t('loading.day.relations.awayTitle')}</h4>
+          <div className="table-wrap">
+            <table className="crate-table readonly">
+              <thead>
+                <tr>
+                  <th>{t('loading.day.relations.cols.order')}</th><th>{t('loading.day.relations.cols.label')}</th><th>{t('loading.day.relations.cols.crate')}</th>
+                  <th>{t('loading.day.relations.cols.dims')}</th><th className="num">{t('loading.day.relations.cols.weight')}</th><th>{t('loading.day.relations.cols.day')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rel.away.map((r) => (
+                  <tr key={`${r.orderId}:${r.crateNo}`} data-away={r.orderNo}>
+                    <td><Link className="order-no" href={`/siparisler/${r.orderId}`}>{r.orderNo}</Link></td>
+                    <td>{r.label || '—'}</td><td>#{r.crateNo}</td><td>{dims(r)}</td>
+                    <td className="num">{r.weightKg != null ? kg(r.weightKg) : '—'}</td><td>{day(r.day)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="hint">{t('loading.day.relations.awayNote')}</p>
+        </div>
+      )}
+      {rel.hosted.length > 0 && (
+        <div data-relations="hosted">
+          <h4>{t('loading.day.relations.hostedTitle')}</h4>
+          <div className="table-wrap">
+            <table className="crate-table readonly">
+              <thead>
+                <tr>
+                  <th>{t('loading.day.relations.cols.crate')}</th><th>{t('loading.day.relations.cols.label')}</th><th>{t('loading.day.relations.cols.firm')}</th>
+                  <th>{t('loading.day.relations.cols.order')}</th><th>{t('loading.day.relations.cols.day')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rel.hosted.map((r) => (
+                  <tr key={`${r.crateId}:${r.orderNo}`} data-hosted={r.orderNo}>
+                    <td>#{r.crateNo}</td><td>{r.label || '—'}</td><td>{r.firm}</td><td className="mono">{r.orderNo}</td><td>{day(r.day)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="hint">{t('loading.day.relations.hostedNote')}</p>
         </div>
       )}
     </div>

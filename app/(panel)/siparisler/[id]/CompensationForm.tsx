@@ -21,8 +21,8 @@ function Submit({ disabled, children }: { disabled: boolean; children: React.Rea
  * Kırık / telafi camı formu (karar 108, 157) — teklif tablosunun altında tek, kısa bir kart: cam → adet → fiyat → hedef →
  * özet ve açık onay. Teklif satırındaki "Kırık / Telafi" (cam önceden seçili gelir) ve "Önemli kararlar"daki düğme (cam
  * burada seçilir) aynı formu açar. Buradaki denetimler yalnızca kolaylıktır; her şey sunucuda yeniden doğrulanır.
- *   Fiyat: Bedelsiz · Aynı fiyat · Farklı fiyat — üçünü satış da seçer; satışın formunda FİYAT ALANI YOKTUR (farklı fiyatı
- *   yönetici belirler) ve hiçbir müşteri fiyatı tutarı gösterilmez (iki kademeli fiyat, karar 4).
+ *   Fiyat: Bedelsiz · Aynı fiyat · Farklı fiyat (yanında fiyat alanı) — her rol yalnızca KENDİ kademesindeki fiyatı görür ve
+ *   girer (karar 4, 251): yönetici müşteri fiyatını, satış kendi satış fiyatını. Satışa hiçbir müşteri fiyatı tutarı gitmez.
  */
 export function CompensationForm({ data, preselect, history, error, cancelHref, locale, intl, m, kinds }: {
   data: CompFormData;
@@ -44,7 +44,7 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const [lineId, setLineId] = useState(() => (preselect && pickable(preselect) ? preselect : data.lines.length === 1 && pickable(data.lines[0].id) ? data.lines[0].id : ''));
   const [qty, setQty] = useState('1');
   const [item, setItem] = useState('');
-  // Fiyat kararı (karar 157): üç seçenek herkese açık; farklı fiyatın tutarını yalnızca yönetici girer
+  // Fiyat kararı (karar 157, 251): üç seçenek herkese açık; farklı fiyatı her rol kendi kademesinde girer
   const modes = ['FREE', 'NORMAL', 'CUSTOM'] as const;
   const [mode, setMode] = useState<'NORMAL' | 'FREE' | 'CUSTOM'>('NORMAL');
   const [price, setPrice] = useState('');
@@ -60,9 +60,9 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const n = Number(qty);
   const qtyOk = !!line && Number.isInteger(n) && n >= 1 && n <= max;
   const p = Number(price.replace(',', '.'));
-  // Farklı fiyat: yönetici pozitif bir fiyat girer; satış fiyat GİRMEZ (alan yoktur) — fiyatı yönetici belirler
-  const adminPrice = data.admin && mode === 'CUSTOM';
-  const priceOk = !adminPrice || (price.trim() !== '' && Number.isFinite(p) && p > 0);
+  // Farklı fiyat: pozitif fiyat (yöneticide müşteri fiyatı, satışta satış fiyatı — sunucu kademeyi rolden belirler)
+  const custom = mode === 'CUSTOM';
+  const priceOk = !custom || (price.trim() !== '' && Number.isFinite(p) && p > 0);
   const dest = data.destinations.find((d) => d.id === destId) ?? null;
   const destOk = destType === 'NEW' ? day >= data.minDay : destType === 'EXISTING' ? !!dest && !dest.reason : false;
   // Kaynak adedi (karar 157): temiz siparişte telafi adedi kadar düşer; kaynakta başka cam kalmıyorsa telafi açılmaz
@@ -76,17 +76,16 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
   const waitsAdmin = (via: 'DRAFT' | 'SENT' | null | undefined) => compensationFlow({ mode, admin: data.admin, destType: 'EXISTING', via: via ?? null, sourceFree: !!line?.free, sourcePriced: line ? line.priced : true }) === 'pending';
   const priceRequired = route === 'priceRequired';
   const ready = qtyOk && priceOk && destOk && !emptySource && !priceRequired;
-  const flow = route === 'draft' ? f.flow.draft : route === 'direct' ? f.flow.direct : route === 'adminSent' ? f.flow.adminSent : f.flow.pricing;
   // Önceki telafiler: aynı satır ya da — kaynak adedi düşünce teklifin yeni sürümü açıldığı için — aynı cam ve ölçü
   const past = line ? history.filter((h) => h.status !== 'REJECTED' && (h.sourceLineId === line.id || (h.glass === line.glass && h.enMm === line.enMm && h.boyMm === line.boyMm))) : [];
   const eligible = data.destinations.filter((d) => !d.reason);
   const change = () => setSure(false);
 
-  // Satışa müşteri fiyatının tutarı gelmez (normal = null): "yöneticinin belirlediği fiyat" yazılır
-  const normalText = !line ? '—' : line.free ? m.free : line.normal == null ? f.adminPrice : perM2(line.normal);
-  // Aynı fiyat: kaynakta müşteri fiyatı yoksa kesin fiyat yoktur — fiyatı yönetici belirler (sunucu da öyle yürür)
-  const priceText = mode === 'FREE' ? m.free : mode === 'CUSTOM' ? (!data.admin ? f.sumPriceAdmin : priceOk ? perM2(p) : '—')
-    : line && !line.free && !line.priced ? f.sumPriceAdmin : !line || line.free || line.normal != null ? normalText : f.sameAdmin;
+  // Telafi fiyatı (kullanıcının kendi kademesinde): bedelsiz 0 · aynı fiyat kaynağın fiyatı · farklı fiyat girilen. Kaynakta
+  // müşteri fiyatı yoksa (eski kayıt) satışın kararında da müşteri fiyatını yönetici belirler — özet bunu söyler.
+  const ownText = line && line.own != null ? perM2(line.own) : '—';
+  const priceText = mode === 'FREE' ? `${perM2(0)} (${m.free})` : mode === 'CUSTOM' ? (priceOk ? perM2(p) : '—') : ownText;
+  const adminPrices = !!line && !line.free && !line.priced && !data.admin && mode !== 'FREE';
   const opsText = (l: { ops: { kind: string; adet: number; description: string }[] }) =>
     l.ops.map((o) => `${interpolate(f.opsItem, { kind: kinds[o.kind as keyof typeof kinds] ?? o.kind, n: o.adet })}${o.description ? ` (${o.description})` : ''}`).join(', ');
 
@@ -147,24 +146,21 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
 
         <fieldset className="field comp-choice">
           <legend>{f.price}</legend>
-          {line && <p className="small">{data.admin ? interpolate(f.normalCustomer, { price: normalText }) : f.normalSales}</p>}
-          <div className="row">
+          <div className="row comp-price">
             {modes.map((k) => (
               <label key={k} className="chip">
                 <input type="radio" name="modeChoice" value={k} checked={mode === k} onChange={() => { setMode(k); change(); }} />
                 <span>
-                  {k === 'NORMAL' ? (line && line.normal != null && !line.free ? interpolate(f.keepWith, { price: perM2(line.normal) }) : f.keep)
-                    : k === 'FREE' ? (data.admin ? interpolate(f.freeWith, { cur: data.currency }) : f.free) : f.custom}
+                  {k === 'NORMAL' ? (line && line.own != null ? interpolate(f.keepWith, { price: perM2(line.own) }) : f.keep)
+                    : k === 'FREE' ? interpolate(f.freeWith, { cur: data.currency }) : f.custom}
                 </span>
               </label>
             ))}
-            {/* Fiyat alanı yalnızca yöneticide: satışın formunda müşteri fiyatı girilemez */}
-            {adminPrice && (
-              <input name="price" inputMode="decimal" required aria-label={interpolate(f.customLabel, { cur: data.currency })} placeholder={interpolate(f.customLabel, { cur: data.currency })}
-                value={price} onChange={(e) => { setPrice(e.target.value); change(); }} style={{ width: 200 }} />
-            )}
+            {/* "Farklı fiyat"ın hemen yanında fiyat alanı (karar 251): yöneticide müşteri fiyatı, satışta satış fiyatı */}
+            <input name="price" inputMode="decimal" data-comp-price disabled={!custom} required={custom}
+              aria-label={interpolate(f.customLabel, { cur: data.currency })} placeholder={interpolate(f.customLabel, { cur: data.currency })}
+              value={custom ? price : ''} onChange={(e) => { setPrice(e.target.value); change(); }} style={{ width: 200 }} />
           </div>
-          <p className="hint" data-mode-hint={mode}>{mode === 'FREE' ? f.freeHint : mode === 'NORMAL' ? (line && !line.free && !line.priced ? f.keepHintNoPrice : f.keepHint) : data.admin ? f.adminCustomHint : f.salesCustomHint}</p>
         </fieldset>
 
         <fieldset className="field comp-choice">
@@ -207,12 +203,10 @@ export function CompensationForm({ data, preselect, history, error, cancelHref, 
                 {data.source.reducible && left != null && (
                   <tr data-sum="kaynak"><td>{f.sumSourceQty}</td><td><b>{interpolate(f.sumSourceQtyValue, { before: line.adet, after: left })}</b></td></tr>
                 )}
-                {line.ops.length > 0 && <tr data-sum="islem"><td>{f.sumOps}</td><td>{interpolate(f.sumOpsValue, { list: opsText(line) })}</td></tr>}
-                <tr><td>{f.sumNormal}</td><td>{normalText}</td></tr>
-                <tr><td>{f.sumPrice}</td><td><b>{priceText}</b></td></tr>
+                {line.ops.length > 0 && <tr data-sum="islem"><td>{f.sumOps}</td><td>{interpolate(mode === 'FREE' ? f.sumOpsFree : f.sumOpsValue, { list: opsText(line) })}</td></tr>}
+                <tr data-sum="fiyat"><td>{f.sumPrice}</td><td><b>{priceText}</b>{adminPrices && <span className="muted"> · {f.sumPriceAdmin}</span>}</td></tr>
                 <tr><td>{f.sumDest}</td><td>{destType === 'NEW' ? `${f.sumDestNew} (${data.nextNo})` : dest?.orderNo}</td></tr>
                 <tr><td>{f.sumDay}</td><td>{dmy(destType === 'NEW' ? day : dest?.day ?? '')}</td></tr>
-                {!pending && <tr data-sum="akis"><td>{f.sumFlow}</td><td>{flow}</td></tr>}
               </tbody>
             </table>
             {pending && <div className="alert alert-info">{f.sumPending}</div>}
