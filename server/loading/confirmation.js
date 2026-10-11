@@ -26,6 +26,7 @@ import { missingCost, offerLineTotals, parseDateOnly } from '../orders/rules.js'
 import { dayKey } from '../orders/loading.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { glassTotals } from '../glass/billing.js';
+import { sortByOrderNo } from '../orders/order-number.js';
 
 /**
  * @typedef {{ orderId: string, orderNo: string, title: string | null, customerId: string, customerName: string, currency: string, offerId?: string, items: any[], replanFrom?: string[] }} ConfirmOrder
@@ -43,6 +44,8 @@ import { glassTotals } from '../glass/billing.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const round4 = (n) => Math.round((n + Number.EPSILON) * 10000) / 10000;
+// m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 const int = (v) => Math.max(0, Math.trunc(Number(v) || 0));
 
 export const isGlassLine = (l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2';
@@ -71,7 +74,9 @@ export function snapshotLine(order, offer, l, { quantity = l.adet, status = 'LOA
     glassProductId: l.glassProductId ?? null, enMm: l.enMm ?? null, boyMm: l.boyMm ?? null,
     weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), free: !!l.free,
     // Ayrılmış cam (karar 114): satırın kalemdeki sırası kopyalanır — m² teklifteki kuralla (kalemin toplamından) hesaplanır
-    quantity: qty, pieceBase: glass ? int(l.pieceBase) : 0, m2, currency: offer.currency,
+    quantity: qty, pieceBase: glass ? int(l.pieceBase) : 0,
+    // Bir camın kayıtlı m²'si (karar 261): onay kaleminde de m² teklifteki kuralla (3 ondalık) hesaplanır
+    pieceM2: glass && l.pieceM2 != null && l.pieceM2 !== '' ? String(l.pieceM2) : null, m2, currency: offer.currency,
     unitCost, unitSale,
     costAmount: round4(base * unitCost),
     saleAmount: l.free || unitSale == null ? 0 : round4(base * unitSale),
@@ -93,7 +98,7 @@ export function snapshotOfItem(it, { quantity, status = 'LOADED', reason = null,
     id: it.offerLineId ?? null, sortOrder: it.sortOrder, kind: it.kind, unit: it.unit, description: it.description, descriptionRo: it.descriptionRo ?? null,
     glassProductId: it.glassProductId ?? null, enMm: it.enMm ?? null, boyMm: it.boyMm ?? null, weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2),
     free: !!it.free, adet: quantity, unitPrice: Number(it.unitCost), offerPrice: it.unitSale == null ? null : Number(it.unitSale),
-    pieceBase: it.pieceBase ?? 0,
+    pieceBase: it.pieceBase ?? 0, pieceM2: it.pieceM2 ?? null,
   };
   // offerAmount dolu: müşteri fiyatı kalemdeki unitSale'dir (eski teklif kuralı kalemde zaten uygulanmıştır)
   const row = snapshotLine({ id: it.orderId, customerId: it.customerId }, { currency: it.currency, offerAmount: 0 }, line, { quantity, status, reason, note });
@@ -148,7 +153,7 @@ export const itemAsLine = (it) => ({
   id: it.offerLineId ?? it.id, description: it.description, descriptionRo: it.descriptionRo, enMm: it.enMm, boyMm: it.boyMm,
   adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, sortOrder: it.sortOrder,
   unitPrice: Number(it.unitCost), offerPrice: it.unitSale == null ? null : Number(it.unitSale),
-  weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2), pieceBase: it.pieceBase ?? 0,
+  weightKgM2: it.weightKgM2 == null ? null : Number(it.weightKgM2), pieceBase: it.pieceBase ?? 0, pieceM2: it.pieceM2 ?? null,
 });
 
 const sumTotals = (rows) => round2(rows.reduce((s, r) => s + r.total, 0));
@@ -168,7 +173,7 @@ export function lineTotals(lines, nameOf = (l) => l.description) {
   return {
     glass,
     adet: glass.reduce((s, g) => s + g.adet, 0),
-    m2: round2(glass.reduce((s, g) => s + g.m2, 0)),
+    m2: round3(glass.reduce((s, g) => s + g.m2, 0)),
     cost: sumTotals(cost),
     sale: round2(glass.reduce((s, g) => s + g.sale, 0)),
     noCost: lines.filter(missingCost).length,
@@ -298,7 +303,7 @@ export function summarize(orders, nameOf) {
     c.orders.push({ orderId: o.orderId, orderNo: o.orderNo, title: o.title ?? null, currency: o.currency, ...t, replanFrom: o.replanFrom ?? [] });
     for (const x of [c, totals]) {
       x.adet += t.adet;
-      x.m2 = round2(x.m2 + t.m2);
+      x.m2 = round3(x.m2 + t.m2);
       const cur = (x.byCur[o.currency] ??= { sale: 0, cost: 0 });
       cur.sale = round2(cur.sale + t.sale);
       cur.cost = round2(cur.cost + t.cost);
@@ -328,9 +333,9 @@ async function ordersOfDay(db, day) {
       ],
     },
     include: ORDER_INCLUDE,
-    orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
+    orderBy: [{ customerId: 'asc' }, { orderNo: 'asc' }],
   });
-  return rows.filter((o) => dayKey(o.actualShipDate ?? o.estimatedShipDate) === day);
+  return sortByOrderNo(rows, (o) => o.orderNo, (o) => o.customerId).filter((o) => dayKey(o.actualShipDate ?? o.estimatedShipDate) === day);
 }
 
 /**
@@ -467,7 +472,7 @@ export async function confirmLoading(db, { day, key, note = null, notLoaded = []
       const c = await tx.loadingConfirmation.create({ data: { shipDay, confirmedById: actor.id, confirmedAt: now, note: text } });
       await tx.loadingConfirmationItem.createMany({
         data: plan.items.map((i) => ({
-          ...i, confirmationId: c.id, scopeKey: itemKey(i), m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
+          ...i, confirmationId: c.id, scopeKey: itemKey(i), m2: i.m2.toFixed(3), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
           costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4),
         })),
       });

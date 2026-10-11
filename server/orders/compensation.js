@@ -62,6 +62,7 @@ import { amounts, autoProduction, lineData, refreshSla } from './transitions.js'
 import { effectiveItems, isGlassLine, itemKey, shipDayDate } from '../loading/confirmation.js';
 import { compensatedByScope } from '../loading/compensated.js';
 import { coverageOf } from '../glass/batch.js';
+import { sortByOrderNo } from './order-number.js';
 
 export const COMP_MODES = ['NORMAL', 'FREE', 'CUSTOM'];
 const OPEN_STATUSES = ['YENI', 'HAZIRLANIYOR', 'URETIMDE'];
@@ -163,7 +164,11 @@ export function priceDecision({ admin, mode, price = null, line }) {
 export { compensationFlow } from './compensation-flow.js';
 
 const COPY = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'unit', 'kind', 'glassProductId', 'listPrice'];
-const copyOf = (l) => ({ ...Object.fromEntries(COPY.map((k) => [k, l[k] ?? null])), weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), listPrice: numOrNull(l.listPrice) });
+// Bir camın m²'si (karar 261) ve şekilli cam (karar 262) de aynen taşınır: telafi camı kaynağın aynısıdır
+const copyOf = (l) => ({
+  ...Object.fromEntries(COPY.map((k) => [k, l[k] ?? null])), weightKgM2: l.weightKgM2 == null ? null : Number(l.weightKgM2), listPrice: numOrNull(l.listPrice),
+  pieceM2: l.pieceM2 == null || l.pieceM2 === '' ? null : String(l.pieceM2), shaped: !!l.shaped,
+});
 
 /**
  * Telafi satırları: cam satırı (adet = telafi adedi, kararın fiyatlarıyla) + o cama ait işlem satırları — AYNEN (aynı
@@ -355,10 +360,10 @@ export async function compensationDestinations(db, { source, now = new Date() })
       OR: [{ actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } }],
     },
     include: DEST_INCLUDE,
-    orderBy: [{ estimatedShipDate: 'asc' }, { customerOrderNo: 'asc' }, { compSeq: 'asc' }],
+    orderBy: [{ estimatedShipDate: 'asc' }, { orderNo: 'asc' }],
     take: 100,
   });
-  const future = rows.filter((o) => (loadingDay(o) ?? '') > today);
+  const future = sortByOrderNo(rows, (o) => o.orderNo, (o) => (o.estimatedShipDate ? o.estimatedShipDate.toISOString() : '')).filter((o) => (loadingDay(o) ?? '') > today);
   const facts = await destFacts(db, future);
   return future.map((o) => {
     const c = checkWith(o, facts, source, today);
@@ -596,7 +601,7 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
         // Numara KÖK siparişten türer (telafinin telafisi de kökün sırasını izler): ABC124-T, -T2, -T3 …
         const root = src.compOfId ? await tx.order.findUnique({ where: { id: src.compOfId } }) : src;
         if (!root) return fail('NOT_FOUND');
-        const last = await tx.order.aggregate({ where: { customerId: src.customerId, orderTypeCode: 'GLASS_ORDER', customerOrderNo: root.customerOrderNo }, _max: { compSeq: true } });
+        const last = await tx.order.aggregate({ where: { customerId: src.customerId, orderTypeCode: 'GLASS_ORDER', customerOrderNo: root.customerOrderNo, numberActive: true }, _max: { compSeq: true } });
         const seq = (last._max.compSeq ?? 0) + 1;
         destOrder = await tx.order.create({
           data: {

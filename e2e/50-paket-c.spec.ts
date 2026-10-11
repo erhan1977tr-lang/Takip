@@ -36,7 +36,7 @@ test('veri: müşterinin firmasında bu dosyaya özel siparişler (yükleme gün
       const no = base * 10 + k;
       const o = await db.order.create({
         data: {
-          orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: `Paket C ${key} ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: u.id,
+          orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: `Paket C ${key} ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: u.id,
           status: 'URETIMDE', drawingTrack: 'YOK', estimatedShipDate: new Date(`${day}T09:00:00Z`),
           offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: offer.offerAmount, createdById: admin.id, sentAt: new Date(),
             lines: { create: [{ sortOrder: 0, description: 'Temper 10', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1234, boyMm: 1000, adet: 1, unit: 'm2', unitPrice: '37.13', offerPrice: offer.offerPrice, kind: 'CAM' }] } } },

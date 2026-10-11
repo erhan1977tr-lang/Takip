@@ -46,6 +46,10 @@ export { DOC_EMAIL, dispatchDocEmails, renderDocEmail } from '../documents/deliv
 export const KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE'];
 const SUFFIX = { PROFORMA: 'P', ADVANCE: 'A', INVOICE: 'F' };
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+// m² 3 ondalık (karar 261): parça m²'leri ve toplamları üç haneye yuvarlanır; ayrılmış camın devamı aynı m²'de başlar
+// (eşitlik payı 3 ondalığın yarısından küçük — eski 2 ondalıklı değerlerde sonuç aynıdır)
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
+const AREA_EPS = 0.0005;
 
 /**
  * Siparişin onaylı yükleme kaydı var mı (herhangi bir onayda — yüklenen ya da yüklenmeyen kalem; düzeltmeler dahil). Tarih
@@ -101,13 +105,13 @@ function glassGroups(offer, { nameOf = (l) => l.descriptionRo || l.description, 
       g.adet += Math.max(0, Math.trunc(Number(l.adet) || 0));
       // Ayrılmış camın devamı: aynı fiyatlı, kalemde tam bu m²'de biten önceki parçaya eklenir
       const start = pieceStartArea(l);
-      const prev = start > 0 ? g.parts.find((p) => p.end != null && p.price === price && Math.abs(p.end - start) < 0.005) : null;
+      const prev = start > 0 ? g.parts.find((p) => p.end != null && p.price === price && Math.abs(p.end - start) < AREA_EPS) : null;
       if (prev) {
-        prev.qty = round2(prev.qty + qty);
-        prev.end = round2(prev.end + qty);
+        prev.qty = round3(prev.qty + qty);
+        prev.end = round3(prev.end + qty);
         g.parts.push(...carry);
       } else {
-        g.parts.push({ qty, price, end: round2(start + qty) }, ...carry);
+        g.parts.push({ qty, price, end: round3(start + qty) }, ...carry);
       }
       carry = [];
       groups.set(key, g);
@@ -220,14 +224,14 @@ export function proformaLines(offer) {
       out.push(row);
     }
     const start = pieceStartArea(l);
-    const prev = start > 0 ? row.parts.find((p) => p.end != null && p.eur === eur && Math.abs(p.end - start) < 0.005) : null;
+    const prev = start > 0 ? row.parts.find((p) => p.end != null && p.eur === eur && Math.abs(p.end - start) < AREA_EPS) : null;
     if (prev) {
-      prev.qty = round2(prev.qty + qty);
-      prev.end = round2(prev.end + qty);
+      prev.qty = round3(prev.qty + qty);
+      prev.end = round3(prev.end + qty);
     } else {
-      row.parts.push({ qty, eur, end: round2(start + qty) });
+      row.parts.push({ qty, eur, end: round3(start + qty) });
     }
-    row.qty = round2(row.qty + qty);
+    row.qty = round3(row.qty + qty);
   }
   for (const row of out) {
     row.parts = row.parts.map((p) => ({ qty: p.qty, eur: p.eur }));

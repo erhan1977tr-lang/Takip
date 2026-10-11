@@ -27,6 +27,8 @@ import { effectiveItems, itemAsLine, lineTotals } from '../loading/confirmation.
 import { ACTION_REQUIRED, orderImpacts } from '../glass/invoice-batch.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+// m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 const add = (map, cur, key, v) => {
   const o = (map[cur] ??= { sale: 0, cost: 0, transport: 0 });
   o[key] = round2(o[key] + v);
@@ -49,7 +51,7 @@ export function orderLine(o) {
   const d = o.actualShipDate ?? o.estimatedShipDate;
   if (!sent || !d) return null;
   const load = orderLoad({
-    lines: sent.lines.map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
+    lines: sent.lines.map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase, pieceM2: l.pieceM2 })),
     items: o.items ?? [],
   });
   // Satış = yalnızca müşteri fiyatı (offerPrice); eski teklifte (müşteri fiyatı yok) maliyet satış sayılmaz (Paket C — karar 237)
@@ -76,7 +78,7 @@ export function confirmedLine(g) {
   if (loaded.length === 0) return null;
   const t = lineTotals(loaded.map(itemAsLine));
   return {
-    orderId: g.orderId, orderNo: g.orderNo, day: g.day, currency: loaded[0].currency, m2: round2(loaded.reduce((s, i) => s + Number(i.m2), 0)),
+    orderId: g.orderId, orderNo: g.orderNo, day: g.day, currency: loaded[0].currency, m2: round3(loaded.reduce((s, i) => s + Number(i.m2), 0)),
     sale: t.sale, cost: t.cost, noCost: t.noCost, noCostLines: [], confirmed: true,
   };
 }
@@ -129,7 +131,7 @@ export function loadingProfits(lines, costs, { confirmedDays = new Set(), outsid
     if (!l) continue;
     const d = dayOf(l.day);
     d.orders++;
-    d.m2 = round2(d.m2 + l.m2);
+    d.m2 = round3(d.m2 + l.m2);
     add(d.byCur, l.currency, 'sale', l.sale);
     add(d.byCur, l.currency, 'cost', l.cost);
     if (l.noCost > 0) d.noCost.push({ orderId: l.orderId, orderNo: l.orderNo });

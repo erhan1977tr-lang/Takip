@@ -6,7 +6,7 @@
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
-import { MAX_ORDER_NO, formatTypedNo, pickNumber } from '../orders/create.js';
+import { formatTypedNo, pickNumber, requestedNumbers } from '../orders/create.js';
 import { slaDeadline } from '../orders/rules.js';
 import { PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, optionalField, orderStatusFor, profileTotals } from './rules.js';
 import { PROFILE_CURRENCY, profilePricesFor } from './pricing.js';
@@ -43,7 +43,7 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
 /**
  * @param {import('@prisma/client').PrismaClient} db
  * @param {{ actor: { id: string, role: string, ip?: string | null }, firm: { id: string, prefix: string }, title: string | null,
- *   requestedNo: number, suggestedNo: number | null, items: object[], note?: string | null, draftId?: string | null,
+ *   requestedNo: string | number, suggestedNo: string | number | null, items: object[], note?: string | null, draftId?: string | null,
  *   pickup?: { pickupDate?: unknown, phone?: unknown, plate?: unknown } | null, requestKey?: string | null, now?: Date }} p
  *   items: profileOrderItems() sonucu
  *   pickup / requestKey: Paket B (karar 229) — fiyat listesiyle doğrudan siparişte alış günü (zorunlu), telefon ve plaka
@@ -51,7 +51,7 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
  */
 export async function createProfileOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, note = null, draftId = null, pickup = null, requestKey = null, now: at = null }) {
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
-  if (!Number.isInteger(requestedNo) || requestedNo <= 0 || requestedNo > MAX_ORDER_NO) throw new WorkflowError('BAD_NUMBER');
+  const asked = requestedNumbers(requestedNo, suggestedNo, firm.prefix).requested;
   if (!items.length) throw new WorkflowError('NO_ITEMS');
   const key = profileRequestKey(requestKey);
   try {
@@ -134,7 +134,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         details: {
           orderNo, type: PROFILE_TYPE, items: items.length, priceTable: pricing.tableName,
           ...(direct ? { direct: true, offerAmount: amount, pickupDate: dayKeyOf(info.pickupDate), fgo } : {}),
-          ...(draftId ? { fromDraft: true } : {}), ...(no !== requestedNo ? { requestedNo, assignedNo: no } : {}),
+          ...(draftId ? { fromDraft: true } : {}), ...(no !== asked ? { requestedNo: asked, assignedNo: no } : {}),
         },
       }, actor);
       await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, type: PROFILE_TYPE, ...(direct ? { direct: true } : {}) } }));
@@ -143,7 +143,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
       // yazılmaz (yeni profil siparişi yöneticiye zaten bildirilir — ORDER_CREATED). Doğrudan sipariş ONAYLANDI adımında
       // açıldığı için stok rezervesine de hemen girer (reservedLevels — karar 177).
       const stock = await recordStockShortage(tx, { orderId: order.id, orderNo, items, actor, now });
-      return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== requestedNo, shortage: stock.lines.length, direct, duplicate: false };
+      return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== asked, shortage: stock.lines.length, direct, duplicate: false };
     });
   } catch (e) {
     // Eşzamanlı iki gönderim aynı anahtarla: biri yazar, öteki benzersizlikte durur → ilk sipariş döner

@@ -74,7 +74,7 @@ test('veri: müşteri; gelecekteki günlere planlı üç sipariş; onaylı yükl
   const order = async (no: number, pieces: number, ship: string, currency = 'EUR') => {
     const o = await db.order.create({
       data: {
-        orderNo: `SCM${no}`, customerOrderNo: no, title: `Seçim e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(`${ship}T12:00:00Z`),
+        orderNo: `SCM${no}`, customerOrderNo: String(no), title: `Seçim e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(`${ship}T12:00:00Z`),
         offers: { create: { status: 'GONDERILDI', currency, amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(),
           lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: pieces, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' }] } } },
       },

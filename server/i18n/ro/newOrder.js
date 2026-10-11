@@ -48,7 +48,7 @@ export default {
       name: 'Denumirea comenzii',
       namePlaceholder: 'ex. Sticlă pentru cabină de duș',
       number: 'Numărul dvs. de comandă',
-      numberHint: 'Număr propus (următorul după ultima dvs. comandă) — îl puteți modifica. Cod comandă: {code}',
+      numberHint: 'Număr propus (următorul după ultima dvs. comandă) — îl puteți modifica; se acceptă și cratimă (40-1, 001-1). Cod comandă: {code}',
     },
     files: {
       title: 'Fișierele comenzii (obligatoriu)',
@@ -88,7 +88,7 @@ export default {
   errors: {
     noFirm: 'Contul dvs. nu este asociat unei firme client. Contactați administratorul.',
     titleRequired: 'Denumirea comenzii este obligatorie.',
-    badNumber: 'Numărul comenzii trebuie să fie un număr întreg pozitiv.',
+    badNumber: 'Numărul comenzii trebuie să conțină cifre; părțile pot fi separate prin cratimă (ex. 40, 40-1, 001-1).',
     noFiles: 'Încărcați cel puțin un fișier al comenzii.',
     tooManyFiles: 'Puteți încărca cel mult 20 de fișiere odată.',
     oneGlass: 'Într-o comandă se poate alege un singur tip de sticlă.',

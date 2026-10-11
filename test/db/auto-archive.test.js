@@ -36,7 +36,7 @@ async function order(key, day, extra = {}) {
   no++;
   O[key] = await db.order.create({
     data: {
-      orderNo: `ABC${no}`, customerOrderNo: no, title: `Proje ${key}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'URETIMDE',
+      orderNo: `ABC${no}`, customerOrderNo: String(no), title: `Proje ${key}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'URETIMDE',
       estimatedShipDate: at(day), ...extra,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '300', offerAmount: '669.60', createdById: U.admin.id, sentAt: new Date('2026-05-01T09:00:00Z'), lines: { create: [{ sortOrder: 0, ...glassLine(10) }] } } },
     },

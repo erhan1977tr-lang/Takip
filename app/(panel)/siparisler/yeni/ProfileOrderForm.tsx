@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { interpolate } from '@/server/i18n/interpolate.js';
+import { parseCustomerOrderNo } from '@/server/orders/order-number.js';
 import { createProfileOrderAction, type ProfileOrderState } from './actions';
 import { checkProfileStockAction, type StockCheckLine } from './profile-calc-actions';
 import { ProfileCalculator, type CalcOptions } from './ProfileCalculator';
@@ -28,7 +29,7 @@ const cents = (price: number, qty: number) => Math.round(price * 100) * qty;
  * m: sözlüğün profile.form parçası · mc: profile.calc parçası
  */
 export function ProfileOrderForm({ categories, products, suggestedNo, prefix, draft, m, mc, calc, notes, direct = null, requestKey }: {
-  categories: ProfileCategoryOption[]; products: ProfileOption[]; suggestedNo: number; prefix: string; draft?: ProfileDraft;
+  categories: ProfileCategoryOption[]; products: ProfileOption[]; suggestedNo: string; prefix: string; draft?: ProfileDraft;
   m: Dict['profile']['form']; mc: Dict['profile']['calc']; calc: CalcOptions | null; notes: string[];
   direct?: ProfileDirect | null; requestKey: string;
 }) {
@@ -52,7 +53,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   const unpriced = !!direct && pickedIds.some((id) => priceOf(id) == null);
   const directNow = !!direct && !unpriced;
   const totalCents = direct ? pickedIds.reduce((sum, id) => sum + (priceOf(id) != null ? cents(priceOf(id)!, Number(qty[id])) : 0), 0) : 0;
-  const code = `${prefix}P${no || '…'}`;
+  const code = `${prefix}P${parseCustomerOrderNo(no, prefix) ?? (no || '…')}`;
   const names = Object.fromEntries(products.map((p) => [p.id, `${p.code} — ${p.name}`]));
 
   const setQty = (next: Record<string, string>) => {
@@ -123,7 +124,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
           </div>
           <div>
             <label htmlFor="no">{m.info.number}</label>
-            <input id="no" name="customerOrderNo" type="text" inputMode="numeric" required value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, ''))} />
+            <input id="no" name="customerOrderNo" type="text" autoCapitalize="characters" spellCheck={false} maxLength={30} pattern="[A-Za-z]{0,3}[0-9]+(-[0-9]+)*" required value={no} onChange={(e) => setNo(e.target.value.replace(/[^0-9A-Za-z-]/g, '').toUpperCase())} />
             <input type="hidden" name="suggestedNo" value={suggestedNo} />
             <div className="hint">{rich(m.info.numberHint, { code: <b>{code}</b> })}</div>
           </div>

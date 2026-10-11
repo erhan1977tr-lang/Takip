@@ -61,6 +61,10 @@ const isGroupSection = (t) => folded(t).includes('URUN GRUP BILGILERI');
 const PAGE_HEADER = [/SIPARIS FORMU/, /^SIPARIS NO\b/, /^MUSTERI ADI\b/, /^PROJE\s*\/\s*MUSTERISI\b/, /^ADRES\s*:/, /SIPARIS TARIHI/, /TESLIM TARIHI/, /RAPOR TARIHI/, /^FORM NO\b/, /^TRAKYA\b/];
 const isPageHeader = (t) => { const f = folded(t); return PAGE_HEADER.some((r) => r.test(f)); };
 
+/** Açıklama devamı olabilecek metin: harf içerir, tutar / ölçü dizisi içermez, yalnızca güvenli karakterler */
+const isDescContinuation = (t) => /\p{L}/u.test(t) && !/\d,\d{2}/.test(t) && !/\d{2,5}\s+\d{2,5}\s+\d/.test(t)
+  && /^[\p{L}\d\s.,+\-()]+$/u.test(t) && !/^TOPLAM\b/.test(folded(t));
+
 const dateOf = (text, label) => {
   const m = new RegExp(`${label}\\s*:\\s*(\\d{2})[-./](\\d{2})[-./](\\d{4})`).exec(folded(text));
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
@@ -105,6 +109,7 @@ export function parseFactoryOrder(lines) {
   // ---- Tablo ----
   let state = 'rows';
   let pending = null; // S.No + açıklaması okunmuş, sayıları bekleyen cam satırı
+  let afterGlass = false; // bir önceki tablo satırı cam satırıydı (ya da onun açıklama devamı) — karar 262
   let i = headerStart + 1;
   for (; i < list.length && state === 'rows'; i++) {
     const l = list[i];
@@ -127,7 +132,9 @@ export function parseFactoryOrder(lines) {
       const lead = /^(\d{1,4})\s+(.+)$/.exec(before);
       if (lead) { sno = Number(lead[1]); description = lead[2]; }
       else if (!before && pending) { sno = pending.sno; description = pending.description; }
-      else { problems.push({ code: 'UNRECOGNIZED_LINE', line: l.n, text: t }); pending = null; continue; }
+      // Açıklamanın ikinci satırı sayılarla aynı satırda (karar 262): "66.3 TEMPER LAMİNE CAM - ŞEKİLLİ" / "REFLEKTE FÜME + ŞEFFAF 1000 …"
+      else if (pending && !/^\d/.test(before)) { sno = pending.sno; description = `${pending.description} ${before}`; }
+      else { problems.push({ code: 'UNRECOGNIZED_LINE', line: l.n, text: t }); pending = null; afterGlass = false; continue; }
       if (lead && pending) problems.push({ code: 'ROW_INCOMPLETE', line: pending.line, text: pending.description });
       pending = null;
       rows.push({
@@ -135,6 +142,7 @@ export function parseFactoryOrder(lines) {
         en: Number(g[1]), boy: Number(g[2]), adet: Number(g[3]), m2: milli(g[4]), totalM2: milli(g[5]),
         unitPrice: moneyCents(g[6]), discount: discountBp(g[7]), amount: moneyCents(g[8]), poz: (g[9] ?? '').trim() || null, ops: [],
       });
+      afterGlass = true;
       continue;
     }
     const op = OP_LINE.exec(t);
@@ -145,10 +153,19 @@ export function parseFactoryOrder(lines) {
         line: l.n, name: op[1].trim(), unit: op[2] ?? null, qty: milli(op[3]), totalQty: milli(op[4]),
         unitPrice: moneyCents(op[5]), discount: discountBp(op[6]), amount: moneyCents(op[7]),
       });
+      afterGlass = false;
       continue;
     }
-    // S.No + cam adı (sayıları sonraki satırda): ad bir kalınlık ("6 mm") taşır
-    const desc = /^(\d{1,4})\s+(\d{1,2}(?:[.,]\d+)?\s*mm\b.*)$/iu.exec(t);
+    // S.No + cam adı (sayıları sonraki satırda): ad bir kalınlık ("6 mm") ya da "CAM" sözcüğünü taşır ("66.3 TEMPER LAMİNE CAM")
+    const desc = /^(\d{1,4})\s+(\d{1,2}(?:[.,]\d+)?\s*mm\b.*)$/iu.exec(t) ?? (/^(\d{1,4})\s+(\d.*)$/u.test(t) && /\bCAM\b/.test(folded(t)) && !/\d,\d{2}/.test(t) ? /^(\d{1,4})\s+(\d.*)$/u.exec(t) : null);
+    // Cam satırının açıklama devamı (sayıların ALTINDA kalan ikinci satır, ör. "REFLEKTE FÜME + ŞEFFAF" — karar 262):
+    // yalnızca harf / rakam / + - . ( ) taşıyan, tutar içermeyen, yeni bir sıra numarasıyla başlamayan metin
+    if (!desc && afterGlass && rows.length && !pending && isDescContinuation(t)) {
+      const row = rows[rows.length - 1];
+      row.description = `${row.description} ${t}`.replace(/\s+/g, ' ').trim();
+      continue;
+    }
+    afterGlass = false;
     if (desc) {
       if (pending) problems.push({ code: 'ROW_INCOMPLETE', line: pending.line, text: pending.description });
       pending = { line: l.n, sno: Number(desc[1]), description: desc[2].trim() };

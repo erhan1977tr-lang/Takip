@@ -52,6 +52,8 @@ export function offerWindow({ from, to }) {
 }
 
 const cents = (n) => Math.round((Number(n) + Number.EPSILON) * 100);
+/** m² binde bir birimle (3 ondalık — karar 261; eski 2 ondalıklı değerlerde sonuç aynı) */
+const milli = (n) => Math.round((Number(n) + Number.EPSILON) * 1000);
 const dayOfDate = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 /** Yükleme günü sırası: tarihli günler artan, tarihi belli olmayan bölüm en sonda */
 const dayCmp = (a, b) => (a === b ? 0 : a == null ? 1 : b == null ? -1 : a < b ? -1 : 1);
@@ -130,16 +132,16 @@ export function loadingParts(order, offer) {
 
 /** @param {Map<string, any>} map @param {ReportSection} s */
 const addTotal = (map, s) => {
-  const t = map.get(s.currency) ?? { currency: s.currency, orders: new Set(), m2c: 0, pieces: 0, ac: 0 };
+  const t = map.get(s.currency) ?? { currency: s.currency, orders: new Set(), m2m: 0, pieces: 0, ac: 0 };
   t.orders.add(s.orderId);
-  t.m2c += cents(s.data.metraj);
+  t.m2m += milli(s.data.metraj);
   t.pieces += s.pieces;
   t.ac += cents(s.data.total);
   map.set(s.currency, t);
 };
 /** @param {Map<string, any>} map @returns {ReportTotal[]} */
 const totalsOf = (map) => [...map.values()]
-  .map((t) => ({ currency: t.currency, count: t.orders.size, m2: t.m2c / 100, pieces: t.pieces, amount: t.ac / 100 }))
+  .map((t) => ({ currency: t.currency, count: t.orders.size, m2: t.m2m / 1000, pieces: t.pieces, amount: t.ac / 100 }))
   .sort((x, y) => x.currency.localeCompare(y.currency));
 
 /**

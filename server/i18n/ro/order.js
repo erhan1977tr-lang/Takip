@@ -396,6 +396,7 @@ export default {
     lineDescription: 'Rândul {n}: lipsește descrierea.',
     lineDims: 'Rândul {n}: dimensiunile trebuie să fie între 1 și 10000 mm.',
     lineQty: 'Rândul {n}: cantitate nevalidă.',
+    lineM2: 'Rândul {n}: suprafață nevalidă — introduceți o valoare în m² mai mare decât zero, cu cel mult 3 zecimale.',
     linePrice: 'Rândul {n}: preț nevalid.',
     offerNotEditable: 'Oferta nu poate fi modificată în acest moment.',
     offerNotFound: 'Oferta nu a fost găsită.',

@@ -351,7 +351,7 @@ enum DrawingTrack {
 
 model Order {
   id                String      @id @default(cuid())
-  orderNo           String      @unique // firma kodu + müşterinin sipariş numarası: "GLA68" (karar 5)
+  orderNo           String      // firma kodu + müşterinin sipariş numarası: "GLA68" (karar 5); etkin siparişlerde tek (numberActive)
   customerId        String
   customer          Customer    @relation(fields: [customerId], references: [id])
   orderTypeCode     String      @default("GLASS_ORDER")
@@ -359,7 +359,9 @@ model Order {
   // İyimser kilit: her iş akışı işleminde bir artar; aynı anda yapılan iki işlemden ikincisi reddedilir.
   version           Int         @default(0)
 
-  customerOrderNo   Int         // müşterinin sipariş numarası: formda bir sonraki numarayla gelir, müşteri değiştirebilir
+  // Müşterinin sipariş numarası METİN olarak (karar 259): "40", "40-1", "001-1" — tire ve baştaki sıfırlar korunur.
+  // Formda bir sonraki numarayla gelir (yalnızca rakamlı numaraların en büyüğü + 1), müşteri değiştirebilir
+  customerOrderNo   String
   title             String?     // "Gabi panou dus" gibi kısa açıklama
   customerExcel     Boolean     @default(false) // yönetici izni: müşteri teklifi Excel olarak indirebilir (PDF her zaman)
   status            OrderStatus @default(YENI)
@@ -431,13 +433,18 @@ model Order {
   removedById       String?
   removedBy         User?       @relation("OrderRemovedBy", fields: [removedById], references: [id])
   removedStatus     OrderStatus?
+  // Numara tekilliği yalnızca etkin siparişlerde (karar 260): etkin sipariş true, silinmiş sipariş NULL. Benzersiz
+  // indeksler bu sütunu içerir (PostgreSQL'de NULL değerler birbirine eşit sayılmaz) — silinmiş siparişin numarası yeni
+  // siparişe verilebilir; silinmiş siparişin kendisi ve geçmişi değişmez. Geri yükleme numara boşsa yapılır.
+  numberActive      Boolean?    @default(true)
 
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
   // Numara firma ve sipariş tipi içinde tektir: GLA12 (cam) ile GLAP12 (profil) ayrı sıralardır; telafi siparişleri
   // (compSeq > 0) kök siparişin numarasını paylaşır ve sıra numarasıyla ayrılır (aynı anda iki istek aynı numarayı alamaz)
-  @@unique([customerId, orderTypeCode, customerOrderNo, compSeq])
+  @@unique([customerId, orderTypeCode, customerOrderNo, compSeq, numberActive], map: "Order_customer_number_active_key")
+  @@unique([orderNo, numberActive], map: "Order_orderNo_active_key")
   @@index([removedAt])
   @@index([orderTypeCode])
   @@index([status])
@@ -457,7 +464,7 @@ model OrderDraft {
   createdById     String
   createdBy       User     @relation(fields: [createdById], references: [id])
   title           String?
-  customerOrderNo Int?     // müşteri kendi numarasını yazdıysa; boşsa gönderirken bir sonraki numara önerilir
+  customerOrderNo String?  // müşteri kendi numarasını yazdıysa (metin — karar 259); boşsa gönderirken bir sonraki numara önerilir
   note            String?  // "Ek bilgi": gönderilince müşterinin görebildiği not olur
   items           Json     @default("[]") // [{ glassProductId, qty }]
   files           OrderDraftFile[]
@@ -700,6 +707,11 @@ model OfferLine {
   //                böylece ayırma toplam m²'yi ve tutarı değiştirmez. Sunucu her kayıtta yeniden hesaplar (assignPieceBases).
   splitGroup       String?
   pieceBase        Int     @default(0)
+  // Bir camın m²'si (karar 261): fabrika PDF'inden (3 ondalık) ya da elle girilen metraj (satırın toplam m² ÷ adet). Doluysa
+  // satırın metrajı = parça m² × adet, 3 ondalık; boşsa (eski satır) eski kural: en × boy × adet, 2 ondalık. Fiyat kuralı aynı.
+  pieceM2          Decimal? @db.Decimal(18, 9)
+  // Şekilli cam (karar 262): satırın niteliği — katalog camı, fiyat, ölçü, adet ve işlemler değişmez
+  shaped           Boolean @default(false)
   // Sandık bedeli (Paket 4): yöneticinin girdiği sandık parası satırı. Olağan bir adetli satırdır (tutar, fatura, yükleme
   // ve kârlılık aynı kuralla) — işaret yalnızca görünürlüğü belirler: satışa hiç gitmez, satışın kaydı satırı korur;
   // yönetici ve müşteri (denetimci de) görür. Yalnızca yönetici açar (server/orders/transitions.js → offerEdit).
@@ -729,7 +741,7 @@ model OfferImport {
   storageKey     String?  @unique // her zaman boş: özgün PDF saklanmaz (3.75.3); eski kayıtlar için alan durur
   size           Int
   mime           String?
-  checksum       String   // SHA-256 (hex): aynı dosya aynı siparişe bir kez
+  checksum       String   // SHA-256 (hex)
   scanStatus     FileScanStatus @default(PENDING)
   scanSignature  String?
   scannedAt      DateTime?
@@ -746,7 +758,9 @@ model OfferImport {
   fingerprint    String?  // aktarılan ön izlemenin parmak izi
   lines          OfferLine[]
 
-  @@unique([orderId, checksum])
+  // Aynı dosya aynı siparişe yeniden yüklenebilir (karar 263): önceki aktarımın satırları tekliften tamamen silindiyse yeni
+  // kayıt açılır. Mükerrer engeli sunucudadır (server/orders/pdf-import/service.js), dosya özeti tek başına engel değildir.
+  @@index([orderId, checksum])
   @@index([factoryOrderNo])
   @@index([scanStatus])
 }
@@ -1776,7 +1790,8 @@ model LoadingConfirmationItem {
   // FİİLEN onaylanan miktar: kısmi yüklemede teklif satırının adedinden az olabilir (kalan kısım NOT_LOADED kaydıdır)
   quantity       Int
   pieceBase      Int      @default(0) // OfferLine.pieceBase kopyası (karar 114): ayrılmış camın kalemdeki sırası — m² aynı kuralla hesaplanır
-  m2             Decimal  @db.Decimal(10, 2) // cam satırında onaylanan m²; diğer satırlarda 0
+  pieceM2        Decimal? @db.Decimal(18, 9) // OfferLine.pieceM2 kopyası (karar 261): bir camın m²'si — m² teklifteki kuralla
+  m2             Decimal  @db.Decimal(12, 3) // cam satırında onaylanan m² (3 ondalık — karar 261); diğer satırlarda 0
   currency       String
   unitCost       Decimal  @db.Decimal(12, 2) // fabrika maliyeti: OfferLine.unitPrice (satış fiyatı)
   unitSale       Decimal? @db.Decimal(12, 2) // müşteri fiyatı: OfferLine.offerPrice (yönetici)
@@ -1830,7 +1845,7 @@ model LoadingReplan {
   customerId   String
   customer     Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
   quantity     Int      // aktarılan adet (> 0; kalanın tamamı ya da bir kısmı)
-  m2           Decimal  @db.Decimal(10, 2)
+  m2           Decimal  @db.Decimal(12, 3)
   reason       String   // kaynağın nedeni (BROKEN | MISSING | NOT_READY | OTHER)
   fromDay      DateTime @db.Date // kaynağın yükleme günü (yüklenmediği onay)
   shipDay      DateTime @db.Date // yeni yükleme günü

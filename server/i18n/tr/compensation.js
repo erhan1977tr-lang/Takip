@@ -213,6 +213,7 @@ export default {
       NOT_FOUND: 'Sipariş bulunamadı.',
       ALREADY_REMOVED: 'Sipariş zaten silinmiş.',
       NOT_REMOVED: 'Sipariş silinmiş değil.',
+      NUMBER_TAKEN: 'Sipariş geri yüklenmedi: numarası silindikten sonra yeni bir siparişe verildi.',
       BUSY: 'Bu sipariş için kuyrukta bekleyen bir FGO belgesi ya da depo e-postası var. İş bitince (ya da vazgeçilince) yeniden deneyin.',
     },
   },

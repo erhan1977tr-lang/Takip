@@ -38,6 +38,7 @@ import { queueDocEmail } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { linkCoveredPayments } from '../finance/service.js';
 import { expectedGross, parkUncertain } from '../finance/uncertain.js';
+import { sortByOrderNo } from '../orders/order-number.js';
 
 export const BATCH_FGO = 'FGO_BATCH';
 export const BATCH_KIND = 'PROFORMA';
@@ -130,9 +131,9 @@ async function plannedOrders(db, { customerId, today }) {
       OR: [{ actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } }],
     },
     include: ORDER_INCLUDE,
-    orderBy: [{ customerOrderNo: 'asc' }],
+    orderBy: [{ orderNo: 'asc' }],
   });
-  const future = rows.map((o) => ({ o, day: loadingDayOf(o) })).filter((x) => x.day != null && x.day >= today);
+  const future = sortByOrderNo(rows, (o) => o.orderNo).map((o) => ({ o, day: loadingDayOf(o) })).filter((x) => x.day != null && x.day >= today);
   const ids = future.map((x) => x.o.id);
   const [loaded, jobs] = await Promise.all([
     loadedDays(db, ids),

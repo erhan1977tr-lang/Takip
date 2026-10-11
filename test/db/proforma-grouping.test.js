@@ -81,7 +81,7 @@ const LINES = [
 async function glassOrder(customer, no, shipDate, lines = LINES) {
   return db.order.create({
     data: {
-      orderNo: `${customer.prefix}${no}`, customerOrderNo: no, title: 'Proje', orderTypeCode: 'GLASS_ORDER', customerId: customer.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
+      orderNo: `${customer.prefix}${no}`, customerOrderNo: String(no), title: 'Proje', orderTypeCode: 'GLASS_ORDER', customerId: customer.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '1', offerAmount: '1', createdById: admin.id, sentAt: new Date(),
         lines: { create: lines.map((l, i) => ({ sortOrder: i, ...l })) } } },
     },

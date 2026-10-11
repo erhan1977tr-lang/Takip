@@ -23,7 +23,7 @@ async function order(firm, { drawer = null, type = 'GLASS_ORDER', by = null } = 
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: `Proje ${no}`, orderTypeCode: type, customerId: firm.id,
+      orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: `Proje ${no}`, orderTypeCode: type, customerId: firm.id,
       createdById: (by ?? (firm.id === A.id ? U.a1 : U.b1)).id, status: 'HAZIRLANIYOR', drawingTrack: drawer ? 'YAPILIYOR' : 'YOK', assignedDrawerId: drawer?.id ?? null,
     },
   });

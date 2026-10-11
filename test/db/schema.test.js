@@ -14,10 +14,10 @@ dbTest('şema: sipariş numarası ve firma ön eki veritabanında benzersiz', as
   const firm = await db.customer.create({ data: { name: 'Test Firma', prefix: 'TST' } });
   await assert.rejects(db.customer.create({ data: { name: 'Başka Firma', prefix: 'TST' } }), { code: 'P2002' });
   const user = await db.user.create({ data: { type: 'CUSTOMER', name: 'T', email: 'm@tst.test', appRole: 'MUSTERI', customerId: firm.id } });
-  const data = { orderNo: 'TST1', customerOrderNo: 1, title: 'x', customerId: firm.id, createdById: user.id };
+  const data = { orderNo: 'TST1', customerOrderNo: '1', title: 'x', customerId: firm.id, createdById: user.id };
   await db.order.create({ data });
   await assert.rejects(db.order.create({ data }), { code: 'P2002' });
-  await assert.rejects(db.order.create({ data: { ...data, customerOrderNo: 2 } }), { code: 'P2002' }); // aynı orderNo
+  await assert.rejects(db.order.create({ data: { ...data, customerOrderNo: '2' } }), { code: 'P2002' }); // aynı orderNo
 });
 
 dbTest('şema: tüm migration\'lar uygulanmış', async () => {

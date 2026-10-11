@@ -19,8 +19,8 @@
 import { groupLoad } from './crates.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-// m² toplamı groupLoad ile aynı yuvarlamayla (sayfadaki eski toplamlarla birebir aynı sonuç)
-const addM2 = (a, b) => Math.round((a + b) * 100) / 100;
+// m² toplamı groupLoad ile aynı yuvarlamayla — 3 ondalık (karar 261; eski 2 ondalıklı toplamlarla birebir aynı sonuç)
+const addM2 = (a, b) => Math.round((a + b) * 1000) / 1000;
 
 /**
  * @typedef {{ metraj: number, camAdet: number, cnc?: number, delik?: number, netKg: number }} EntryLoad

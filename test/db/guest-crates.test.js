@@ -37,7 +37,7 @@ before(async () => {
   const cust = await db.user.create({ data: { email: 'c@guest.test', name: 'M', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: firms.A.id } });
   const mk = async (key, firm, no, extra = {}) => {
     orders[key] = await db.order.create({
-      data: { orderNo: `${firms[firm].prefix}${no}`, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', customerId: firms[firm].id, createdById: cust.id, status: 'URETIMDE', estimatedShipDate: at(D), ...extra },
+      data: { orderNo: `${firms[firm].prefix}${no}`, customerOrderNo: String(no), orderTypeCode: 'GLASS_ORDER', customerId: firms[firm].id, createdById: cust.id, status: 'URETIMDE', estimatedShipDate: at(D), ...extra },
     });
   };
   await mk('a1', 'A', 1, { guestHostId: null }); // misafir yapılacak

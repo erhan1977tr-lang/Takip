@@ -28,7 +28,7 @@ before(async () => {
   x1 = await db.user.create({ data: { email: 'x1@guvenlik.test', name: 'X1', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: X.id } });
   x2 = await db.user.create({ data: { email: 'x2@guvenlik.test', name: 'X2', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: X.id } });
   y1 = await db.user.create({ data: { email: 'y1@guvenlik.test', name: 'Y1', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: Y.id } });
-  order = await db.order.create({ data: { orderNo: 'KOT1', customerOrderNo: 1, title: 'Kota', orderTypeCode: 'GLASS_ORDER', customerId: X.id, createdById: x1.id, status: 'URETIMDE' } });
+  order = await db.order.create({ data: { orderNo: 'KOT1', customerOrderNo: '1', title: 'Kota', orderTypeCode: 'GLASS_ORDER', customerId: X.id, createdById: x1.id, status: 'URETIMDE' } });
 });
 after(closeDb);
 
@@ -83,7 +83,7 @@ dbTest('SEC-05: yükleme kotası gerçek kayıtlardan — müşteri firması bir
   // Sipariş kotası: sipariş dosyaları (2500 MB) + çizim dosyaları (300 MB) 2 GB'ı aşmış → iç ekip de ekleyemez
   assert.deepEqual(await checkUpload(db, [f('yeni.dwg', 1)], { userId: staff.id, orderId: order.id }, OPTS), { code: 'order_quota', name: '' });
   // Başka (boş) sipariş etkilenmez
-  const other = await db.order.create({ data: { orderNo: 'DIG1', customerOrderNo: 1, title: 'Diger', orderTypeCode: 'GLASS_ORDER', customerId: Y.id, createdById: y1.id, status: 'URETIMDE' } });
+  const other = await db.order.create({ data: { orderNo: 'DIG1', customerOrderNo: '1', title: 'Diger', orderTypeCode: 'GLASS_ORDER', customerId: Y.id, createdById: y1.id, status: 'URETIMDE' } });
   assert.equal(await checkUpload(db, [f('yeni.dwg', 50)], { userId: staff.id, orderId: other.id }, OPTS), null);
 
   // Depo bağlantısı (giriş yok): yalnızca depodan yüklenenler sayılır — 200 MB / 40 dosya

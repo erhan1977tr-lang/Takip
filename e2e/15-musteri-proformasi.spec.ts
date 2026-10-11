@@ -54,7 +54,7 @@ test('veri: müşteri, üç yükleme gününe planlı siparişler, günün BT ku
   const firm = await db.customer.create({ data: { name: 'Lot E2E SRL', prefix: 'LOT', email: 'lot@e2e.test', taxId: '778899', county: 'Cluj', city: 'Cluj-Napoca', address: 'Str. Lot 1' } });
   const order = (no: number, ship: Date) => db.order.create({
     data: {
-      orderNo: `LOT${no}`, customerOrderNo: no, title: `Lot e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
+      orderNo: `LOT${no}`, customerOrderNo: String(no), title: `Lot e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [
           { sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' },

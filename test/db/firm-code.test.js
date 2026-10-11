@@ -30,7 +30,7 @@ dbTest('firma kodu: eski kodlar 3 harfe taşınır, sipariş numaraları da gün
   const ab = await mk('AB Cam', 'AB');
   const mixed = await mk('X1 Y2', 'X1Y2');
   const user = await db.user.create({ data: { type: 'CUSTOMER', name: 'U', email: 'u@kod.test', appRole: 'MUSTERI', customerId: mirela.id } });
-  const order = (customerId, prefix, n) => db.order.create({ data: { orderNo: `${prefix}${n}`, customerOrderNo: n, customerId, createdById: user.id } });
+  const order = (customerId, prefix, n) => db.order.create({ data: { orderNo: `${prefix}${n}`, customerOrderNo: String(n), customerId, createdById: user.id } });
   await order(mir.id, 'MIR', 5);
   await order(mirela.id, 'MIRELA', 12);
   await order(ab.id, 'AB', 3);

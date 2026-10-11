@@ -32,7 +32,7 @@ test('veri: nihai faturalı ve proformalı iki sipariş (ayrı firma), mali belg
   const firm = await db.customer.create({ data: { name: 'Telafi Fatura SRL', prefix: 'QZF', email: 'office@qzf.test', fxPolicy: 'BNR' } });
   const order = (no: number) => db.order.create({
     data: {
-      orderNo: `QZF${no}`, customerOrderNo: no, title: `Fatura telafi ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
+      orderNo: `QZF${no}`, customerOrderNo: String(no), title: `Fatura telafi ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(`${iso(30)}T12:00:00Z`),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(), lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 6, unit: 'm2', kind: 'CAM', unitPrice: '37', offerPrice: '66.96' }] } } },
     },
@@ -100,7 +100,7 @@ test('telafi: nihai fatura varsa düğme yok, neden yazılı (TR / RO); doğruda
   await expect(sales.locator('[data-comp-source=FREE]')).toContainText('Bedelsiz telafi: kaynak siparişin adedi değişmedi');
   const src = await db.order.findUniqueOrThrow({ where: { id: profId }, include: { offers: { include: { lines: true } } } });
   expect([src.offers.length, src.offers[0].lines.map((l) => l.adet)]).toEqual([1, [6]]);
-  const t = await db.order.findUniqueOrThrow({ where: { orderNo: 'QZF2-T' }, include: { offers: { include: { lines: true } } } });
+  const t = await db.order.findFirstOrThrow({ where: { orderNo: 'QZF2-T' }, include: { offers: { include: { lines: true } } } });
   expect(t.offers[0].lines.map((l) => [l.adet, Number(l.unitPrice), Number(l.offerPrice), l.free, !!l.compensationId])).toEqual([[2, 37, 0, true, true]]);
   expect(JSON.stringify(await db.fgoDocument.findMany({ where: { orderId: profId } }))).toBe(docs);
   await db.$disconnect();

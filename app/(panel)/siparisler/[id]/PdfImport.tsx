@@ -98,6 +98,7 @@ export function PdfImport({ orderId, dirty, previous, m }: {
     if (p.code === 'PDF_UNREADABLE') params.reason = (m.reasons as Record<string, string>)[String(p.reason)] ?? String(p.reason ?? '');
     if (p.code === 'UNRECOGNIZED_LINE') params.text = p.text ? `: ${String(p.text)}` : '';
     if (p.code === 'ROW_INCOMPLETE') params.text = p.text ? String(p.text) : '—';
+    if (p.code === 'AREA_MISMATCH') { params.pdfM2 = (Number(p.pdfM2) / 1000).toFixed(3); params.dimsM2 = (Number(p.dimsM2) / 1000).toFixed(3); }
     return interpolate(tpl, params as Record<string, string | number>);
   };
   const excludedRows = ids.filter((id) => excluded[id]);
@@ -248,7 +249,10 @@ function FragmentRows({ r, m }: { r: NonNullable<Imp['plan']>['rows'][number]; m
         <td className="mono">{r.poz}{!r.pozFromPdf && <div className="small muted">{m.pozFallback}</div>}</td>
         <td>
           <div className="small muted">{r.description}</div>
-          <div data-glass-label>{r.glassLabel ?? '—'}</div>
+          <div data-glass-label>{r.glassLabel ?? '—'}{' '}
+            {/* Normal / Şekilli (karar 262): açıklamadan ayrı okunur; aktarımdan sonra teklif tablosunda değiştirilebilir */}
+            <span className={`badge ${r.shaped ? 'badge-info' : 'badge-muted'}`} data-pdf-shape={r.shaped ? 'shaped' : 'normal'}>{r.shaped ? m.shapeShaped : m.shapeNormal}</span>
+          </div>
         </td>
         <td className="mono">{r.en} × {r.boy}</td>
         <td className="num">{r.adet}</td>

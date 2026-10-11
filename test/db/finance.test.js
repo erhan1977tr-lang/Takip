@@ -101,7 +101,7 @@ async function order(c, { currency = 'EUR' } = {}) {
   seq += 1;
   return db.order.create({
     data: {
-      orderNo: `${c.prefix}${seq}`, customerOrderNo: seq, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE',
+      orderNo: `${c.prefix}${seq}`, customerOrderNo: String(seq), title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + 10 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency, amount: '60.00', offerAmount: currency === 'EUR' ? '100.00' : '500.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: currency === 'EUR' ? '50' : '250', kind: 'CAM' }] } } },

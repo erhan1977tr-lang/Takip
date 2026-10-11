@@ -544,6 +544,8 @@ a.notif-main:hover .notif-title, button.notif-main:hover .notif-link { text-deco
 .offer-table .c-poz input { width: 68px; }
 .offer-table .c-dim input { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
 .offer-table .c-qty input { width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Metraj elle düzenlenebilir, 3 ondalık (karar 261) */
+.offer-table .c-m2 input { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
 .offer-table .c-unit select { width: 78px; padding-right: 4px; }
 .offer-table .c-price input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
 .offer-table td.num, .offer-table td.c-text { padding-top: 15px; }
@@ -699,6 +701,8 @@ tr.sub-line td.desc, tr.sub-line td:nth-child(2) { padding-left: 26px; }
 /* Telafi etiketi (karar 231): gerçek telafi numarası cam türünün üstünde (teklif tablosu, düzenleyici, yükleme özeti) */
 .comp-tag { margin-bottom: 3px; line-height: 1; }
 .line-actions .btn-link { padding: 1px 0; font-size: var(--fs-meta); }
+/* Normal / Şekilli cam (karar 262): satır işlemlerinin yanında küçük seçim */
+.line-actions .shape-select { width: auto; min-height: 0; padding: 1px 6px; font-size: var(--fs-meta); }
 input.input-missing { background: var(--danger-soft); border-color: #e5837a; }
 input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .list-changed { color: var(--warn); }

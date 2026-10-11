@@ -194,7 +194,7 @@ async function main(db) {
     const drawingSince = o.drawingSince != null ? ago(o.drawingSince) : null;
     const rec = await db.order.create({
       data: {
-        orderNo: `${DEMO_FIRM.prefix}${o.no}`, customerOrderNo: o.no, title: o.title, customerId: firm.id, createdById: cust.id,
+        orderNo: `${DEMO_FIRM.prefix}${o.no}`, customerOrderNo: String(o.no), title: o.title, customerId: firm.id, createdById: cust.id,
         status, drawingTrack: drawing, drawingSince, camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket,
         assignedDrawerId: o.drawer ? drawer.id : null, revisionCount: o.revisions ?? 0,
         slaDeadline: slaDeadline({

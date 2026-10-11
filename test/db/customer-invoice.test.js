@@ -62,7 +62,7 @@ async function order(c, { pieces = 2, cnc = false, currency = 'EUR', shipDate = 
   seq += 1;
   return db.order.create({
     data: {
-      orderNo: `${c.prefix}${String(seq).padStart(3, '0')}`, customerOrderNo: seq, title: 'Ușă', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
+      orderNo: `${c.prefix}${String(seq).padStart(3, '0')}`, customerOrderNo: String(seq), title: 'Ușă', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
       offers: { create: { status: 'GONDERILDI', currency, amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [
           { sortOrder: 0, description: 'Temper 10', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: pieces, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' },

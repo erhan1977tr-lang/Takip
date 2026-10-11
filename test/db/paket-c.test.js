@@ -25,7 +25,7 @@ async function order(firm, extra = {}) {
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `${firm.prefix}${no}`, customerOrderNo: no, customerId: firm.id, createdById: U.cust.id, status: 'URETIMDE', estimatedShipDate: ship, orderTypeCode: 'GLASS_ORDER', drawingTrack: 'YOK',
+      orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), customerId: firm.id, createdById: U.cust.id, status: 'URETIMDE', estimatedShipDate: ship, orderTypeCode: 'GLASS_ORDER', drawingTrack: 'YOK',
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60', offerAmount: '100', createdById: U.admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper 10', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
       ...extra,

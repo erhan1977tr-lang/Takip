@@ -61,8 +61,10 @@ dbTest('numara: aynı anda 10 sipariş → 10 farklı ardışık numara (öneril
     actor: actor(people.cust), firm, title: `Eşzamanlı ${i}`, requestedNo: first, suggestedNo: first,
     items: [{ glassName: 'Cam', camAdedi: 1 }], files: [fileMeta(`c${i}`)],
   })));
-  const nos = results.map((r) => r.customerOrderNo).sort((a, b) => a - b);
-  assert.deepEqual(nos, Array.from({ length: 10 }, (_, i) => first + i));
+  // Numara metindir (karar 259): ardışık rakamlı numaralar
+  const nos = results.map((r) => Number(r.customerOrderNo)).sort((a, b) => a - b);
+  assert.deepEqual(nos, Array.from({ length: 10 }, (_, i) => Number(first) + i));
+  assert.ok(results.every((r) => typeof r.customerOrderNo === 'string'));
   assert.equal(new Set(results.map((r) => r.orderNo)).size, 10);
   assert.ok(results.every((r) => r.orderNo === `GLA${r.customerOrderNo}`));
   assert.equal(results.filter((r) => r.bumped).length, 9);
@@ -75,7 +77,7 @@ dbTest('numara: müşterinin yazdığı numara doluysa kaydedilmez; boşsa yazd�
   assert.equal(await codeOf(dup), 'DUPLICATE_NUMBER');
   const custom = await createGlassOrder(db, { actor: actor(people.cust), firm, title: 'x', requestedNo: 500, suggestedNo: next, items: [ITEM], files: [fileMeta('d2')] });
   assert.deepEqual([custom.orderNo, custom.bumped], ['GLA500', false]);
-  assert.equal(await suggestNextNo(db, firm.id), 501);
+  assert.equal(await suggestNextNo(db, firm.id), '501');
   // Başka firma aynı numarayı kullanabilir (kodlar farklı)
   const ale = await createGlassOrder(db, { actor: actor(people.other), firm: otherFirm, title: 'x', requestedNo: 500, suggestedNo: 1, items: [ITEM], files: [fileMeta('d3')] });
   assert.equal(ale.orderNo, 'ALE500');

@@ -147,7 +147,7 @@ test('veri: müşterinin siparişi (not akışı için)', async () => {
   const cust = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER }, include: { customer: true } });
   const o = await db.order.create({
     data: {
-      orderNo: `${cust.customer!.prefix}9701`, customerOrderNo: 9701, title: 'Not çevirisi e2e', orderTypeCode: 'GLASS_ORDER', customerId: cust.customerId!, createdById: cust.id, status: 'URETIMDE',
+      orderNo: `${cust.customer!.prefix}9701`, customerOrderNo: '9701', title: 'Not çevirisi e2e', orderTypeCode: 'GLASS_ORDER', customerId: cust.customerId!, createdById: cust.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + 30 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' }] } } },

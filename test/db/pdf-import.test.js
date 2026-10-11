@@ -12,7 +12,8 @@ import { scanPending } from '../../server/files/antivirus.js';
 import { checkUpload, UPLOAD_LIMITS } from '../../server/files/limits.js';
 import { removeOrphanFiles } from '../../server/customers/deletion.js';
 import { eventsFor } from '../../server/orders/order-view.js';
-import { DESC_BRONZE, DESC_TENTESOL, FORM_CNC, form, itemsOf } from '../fixtures/factory-pdf.js';
+import { DESC_BRONZE, DESC_NORMAL, DESC_SHAPED, DESC_TENTESOL, FORM_CNC, form, itemsOf, shapedForm } from '../fixtures/factory-pdf.js';
+import { offerTotals } from '../../server/orders/rules.js';
 
 let db;
 let firm;
@@ -90,9 +91,10 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   const p = await preview('sales', o.id, up.ids);
   assert.equal(p.ok, true);
   assert.deepEqual(p.imports.map((i) => [i.factoryNo, i.blocking, i.warnings.map((w) => w.code)]), [
-    ['90001', [], ['ROUNDING_DIFFERENCE']], ['90002', [], []],
+    ['90001', [], []], ['90002', [], []],
   ]);
-  assert.deepEqual(p.imports[0].plan.checks.b, { takipTotal: 43400, subtotal: 43350, diff: 50, explained: true });
+  // m² PDF'ten 3 ondalıkla aynen (karar 261): 1,235 m² × 100 = 123,50 — 2 ondalığa yuvarlamadan doğan fark yok
+  assert.deepEqual(p.imports[0].plan.checks.b, { takipTotal: 43350, subtotal: 43350, diff: 0, explained: true });
   assert.ok(!JSON.stringify(p).includes('MUSTERIX'), 'proje metni (müşteri adı) satışa dönmez');
   assert.deepEqual(p.empty.map((e) => e.id), [before.lines[0].id]);
   // Önizleme hiçbir şey yazmaz
@@ -110,7 +112,8 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   ]);
   // Liste fiyatı (fiyat tablosu) karşılaştırma için durur: 95 / CNC 6 — fark gönderimde "Önemli kararlar"a düşer
   assert.deepEqual(offer.lines.map((l) => (l.listPrice == null ? null : Number(l.listPrice))), [95, 6, 95, 6, 95]);
-  assert.equal(String(offer.amount), '634', 'TAKİP hesabı: 300 + 124 + 10 + 200');
+  assert.equal(String(offer.amount), '633.5', 'TAKİP hesabı: 300 + 123,50 + 10 + 200 (PDF m²’si aynen — karar 261)');
+  assert.deepEqual(offer.lines.map((l) => (l.pieceM2 == null ? null : Number(l.pieceM2))), [3, null, 1.235, null, 2]);
   // Özgün PDF saklanmaz: kayıt dosyasız, okunan her dosya silinmek üzere döner; ayrıştırılmış kopya ve özet durur
   assert.deepEqual(up.discard.map((d) => d.storageKey).sort(), [...FILES.keys()].slice(-2).sort());
   const imports = await db.offerImport.findMany({ where: { orderId: o.id }, orderBy: { createdAt: 'asc' } });
@@ -121,7 +124,7 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   assert.deepEqual(ev.map((e) => e.note), ['90001, 90002']);
   const audit = await db.auditLog.findFirst({ where: { entityId: o.id, action: 'ORDER_TRANSITION' }, orderBy: { createdAt: 'desc' } });
   assert.equal(audit.details.action, 'import_offer_pdf');
-  assert.deepEqual(audit.details.pdfImport.map((x) => [x.factoryNo, x.lines, x.subtotal, x.takipTotal, x.diff]), [['90001', 4, 43350, 43400, 50], ['90002', 1, 20000, 20000, 0]]);
+  assert.deepEqual(audit.details.pdfImport.map((x) => [x.factoryNo, x.lines, x.subtotal, x.takipTotal, x.diff]), [['90001', 4, 43350, 43350, 0], ['90002', 1, 20000, 20000, 0]]);
   // Geçmiş satırı yalnızca teklif hazırlayanlara (çizim / denetimci / müşteri görmez)
   for (const [role, seen] of [['ADMIN', true], ['SATIS', true], ['CIZIM', false], ['DENETIMCI', false], ['MUSTERI', false]]) {
     assert.equal(eventsFor(role, ev).length === 1, seen, role);
@@ -241,14 +244,14 @@ dbTest('satış aktarılan satırları düzenler (kaynak işareti korunur), elle
   assert.deepEqual(sent.lines.map((l) => [String(l.unitPrice), String(l.offerPrice), !!l.importId]), [['98', '150', true], ['5', '9', true]]);
 }));
 
-dbTest('özgün PDF saklanmaz: taranmamış (bekleyen) PDF uyarıyla ön izlenir; arka plan taraması ve sipariş kotası dosyasız kayıtları saymaz; anahtarı kayıtsız kalan dosya temizlenir', offline(async () => {
+dbTest('özgün PDF saklanmaz: taranmamış (bekleyen) PDF aktarılamaz (antivirüs zorunlu — karar 263); arka plan taraması ve sipariş kotası dosyasız kayıtları saymaz; anahtarı kayıtsız kalan dosya temizlenir', offline(async () => {
   const o = await newOrder(48);
   const file = { ...pdf(form({ no: '96001', project: 'MUSTERIX ABC 48', rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 48'], total: '1 1,000 100,00', sub: '100,00', grand: '120,00' })), scanStatus: 'PENDING' };
   const up = await upload('sales', o.id, [file]);
   assert.deepEqual(up.discard, [{ storageKey: file.storageKey }]);
   const row = await db.offerImport.findUnique({ where: { id: up.ids[0] } });
   assert.deepEqual([row.storageKey, row.scanStatus, row.factoryOrderNo], [null, 'PENDING', '96001']);
-  assert.deepEqual((await preview('sales', o.id, up.ids)).imports[0].warnings.map((w) => w.code), ['NOT_SCANNED']);
+  assert.deepEqual((await preview('sales', o.id, up.ids)).imports[0].blocking.map((w) => w.code), ['NOT_SCANNED']);
   // Arka plan taraması fabrika PDF kayıtlarına bakmaz (dosya yok)
   let scanned = 0;
   await scanPending(db, { enabled: true, host: '127.0.0.1', port: 1 }, { scan: async () => { scanned++; return { status: 'clean' }; } });
@@ -274,3 +277,115 @@ dbTest('boş satır kuralı: yalnızca ölçüsüz, işlemsiz, sandık / telafi 
   ];
   assert.deepEqual(emptyGlassLines(lines).map((l) => l.id), ['a']);
 });
+
+// ---------- 3.77.0 (karar 261–263) ----------
+const offerTotalsOf = (offer) => offerTotals(offer.lines.map((l) => ({ ...l, unitPrice: String(l.unitPrice) })));
+const formLines = (lines, extra = () => ({})) => lines.map((l) => ({
+  id: l.id, description: l.description, poz: l.poz, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, free: l.free,
+  unitPrice: Number(l.unitPrice).toFixed(2), splitGroup: l.splitGroup, pieceM2: l.pieceM2 == null ? null : String(l.pieceM2), shaped: l.shaped, ...extra(l),
+}));
+
+dbTest('yeniden aktarım (karar 263): satırları teklifte durdukça aynı PDF engelli; satırların TAMAMI silinince aynı PDF yeni kayıtla, ön izleme + onayla yeniden aktarılır; eşzamanlı istek mükerrer satır üretmez', offline(async () => {
+  const o = await newOrder(60);
+  const lines = form({ no: '97601', project: 'MUSTERIX ABC 60', rows: [
+    `1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 60',
+    `2 ${DESC_TENTESOL}`, '1000 2000 1 2,000 2,000 100,00 TL 0,0 200,00 ABC 60',
+  ], total: '2 3,000 300,00', sub: '300,00', grand: '360,00' });
+  const first = await upload('sales', o.id, [pdf(lines, 'reimport-sum')]);
+  const p1 = await preview('sales', o.id, first.ids);
+  assert.deepEqual(p1.imports[0].blocking, []);
+  await apply('sales', o.id, await versionOf(o.id), fp(p1), { dropEmpty: p1.empty.map((e) => e.id) });
+  let offer = await latest(o.id);
+  assert.equal(offer.lines.filter((l) => l.importId).length, 2);
+
+  // Satırlar teklifte: aynı dosya aynı kayda düşer, aktarılamaz (sunucu da reddeder)
+  const again = await upload('sales', o.id, [pdf(lines, 'reimport-sum')]);
+  assert.deepEqual(again.ids, first.ids);
+  assert.deepEqual((await preview('sales', o.id, again.ids)).imports[0].blocking.map((b) => b.code), ['ALREADY_IMPORTED']);
+  // Satırların bir kısmı silindi: engel sürer
+  await run(o.id, 'save_offer', 'sales', { lines: formLines(offer.lines.slice(1)), expectedVersion: await versionOf(o.id) });
+  const partly = await upload('sales', o.id, [pdf(lines, 'reimport-sum')]);
+  assert.deepEqual(partly.ids, first.ids);
+  assert.ok((await preview('sales', o.id, partly.ids)).imports[0].blocking.some((b) => b.code === 'ALREADY_IMPORTED'));
+
+  // Satırların tamamı silindi (satışçı hata fark etti): aynı PDF yeni kayıtla yeniden aktarılabilir
+  await run(o.id, 'save_offer', 'sales', { lines: [{ description: 'Elle satır', poz: null, enMm: 500, boyMm: 500, adet: 1, unit: 'm2', unitPrice: '10.00', kind: 'CAM', free: false }], expectedVersion: await versionOf(o.id) });
+  assert.equal((await latest(o.id)).lines.filter((l) => l.importId).length, 0);
+  const third = await upload('sales', o.id, [pdf(lines, 'reimport-sum')]);
+  assert.equal(third.ids.length, 1);
+  assert.notEqual(third.ids[0], first.ids[0], 'yeni kayıt; eski aktarım kaydı geçmiş olarak durur');
+  assert.equal((await db.offerImport.findUniqueOrThrow({ where: { id: first.ids[0] } })).status, 'APPLIED');
+  const p3 = await preview('sales', o.id, third.ids);
+  assert.deepEqual(p3.imports[0].blocking, [], 'dosya özeti ve fabrika numarası tek başına engel değil');
+  // Yalnızca ön izleme + onayla: önizleme hiçbir şey yazmaz
+  assert.equal((await latest(o.id)).lines.filter((l) => l.importId).length, 0);
+  // Aynı onay iki kez (çift tıklama / iki sekme): biri yazılır, öteki sürüm kilidine takılır — mükerrer satır yok
+  const v = await versionOf(o.id);
+  const [x, y] = await Promise.all([codeOf(apply('sales', o.id, v, fp(p3))), codeOf(apply('sales', o.id, v, fp(p3)))]);
+  assert.deepEqual([x, y].sort(), ['CONFLICT', 'OK']);
+  offer = await latest(o.id);
+  assert.deepEqual(offer.lines.filter((l) => l.importId).map((l) => [l.importId, l.enMm, l.boyMm]), [[third.ids[0], 1000, 1000], [third.ids[0], 1000, 2000]]);
+  // Yeniden aktarılınca engel geri gelir
+  const fourth = await upload('sales', o.id, [pdf(lines, 'reimport-sum')]);
+  assert.deepEqual(fourth.ids, third.ids);
+  assert.ok((await preview('sales', o.id, fourth.ids)).imports[0].blocking.some((b) => b.code === 'ALREADY_IMPORTED'));
+  // Eski aktarım kaydı (satırları silinmiş) yeniden aktarılmaya çalışılırsa: ALREADY_IMPORTED (yalnızca yeni kayıt kullanılır)
+  assert.ok((await preview('sales', o.id, first.ids)).imports[0].blocking.some((b) => b.code === 'ALREADY_IMPORTED'));
+}));
+
+dbTest('yeniden aktarım: aynı dosyanın eşzamanlı iki yüklemesi tek kayıt; aynı dosyanın iki ayrı kaydı aynı anda aktarılamaz; taranamayan dosya yeniden yüklenince yeni tarama sonucu yazılır', offline(async () => {
+  const o = await newOrder(61);
+  const lines = form({ no: '97611', project: 'MUSTERIX ABC 61', rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 61'], total: '1 1,000 100,00', sub: '100,00', grand: '120,00' });
+  const [a, b] = await Promise.all([upload('sales', o.id, [pdf(lines, 'par-sum')]), upload('sales', o.id, [pdf(lines, 'par-sum')])]);
+  assert.deepEqual(a.ids, b.ids, 'kilit: aynı sipariş + aynı dosya tek kayıt');
+  assert.equal(await db.offerImport.count({ where: { orderId: o.id, checksum: 'par-sum' } }), 1);
+  // Antivirüs zorunlu: tarayıcıya ulaşılamadı (PENDING) → engel; dosya temiz taranınca aynı kayıt güncellenir
+  const pend = await upload('sales', o.id, [{ ...pdf(lines, 'scan-sum'), scanStatus: 'PENDING' }]);
+  assert.ok((await preview('sales', o.id, pend.ids)).imports[0].blocking.some((x) => x.code === 'NOT_SCANNED'));
+  const skipped = await upload('sales', o.id, [{ ...pdf(lines, 'scan-sum'), scanStatus: 'SKIPPED' }]);
+  assert.deepEqual(skipped.ids, pend.ids);
+  assert.ok((await preview('sales', o.id, pend.ids)).imports[0].blocking.some((x) => x.code === 'NOT_SCANNED'), 'tarama kapalıyken de aktarılmaz');
+  const clean = await upload('sales', o.id, [pdf(lines, 'scan-sum')]);
+  assert.deepEqual(clean.ids, pend.ids);
+  assert.equal((await db.offerImport.findUniqueOrThrow({ where: { id: pend.ids[0] } })).scanStatus, 'CLEAN');
+  // İki kayıttan biri aktarılınca öteki (aynı dosya özeti) "zaten aktarıldı" olur — aynı numara da olduğu için ikinci engel
+  await db.offerImport.create({ data: { orderId: o.id, name: 'kopya.pdf', size: 1, checksum: 'par-sum', scanStatus: 'CLEAN', parsed: (await db.offerImport.findUniqueOrThrow({ where: { id: a.ids[0] } })).parsed, factoryOrderNo: '97611' } });
+  const twins = await db.offerImport.findMany({ where: { orderId: o.id, checksum: 'par-sum' }, orderBy: { createdAt: 'asc' } });
+  const pa = await preview('sales', o.id, [twins[0].id]);
+  await apply('sales', o.id, await versionOf(o.id), fp(pa));
+  const pb = await preview('sales', o.id, [twins[1].id]);
+  assert.ok(pb.imports[0].blocking.some((x) => x.code === 'ALREADY_IMPORTED'));
+  assert.equal(await codeOf(apply('sales', o.id, await versionOf(o.id), fp(pb))), 'PDF_IMPORT_BLOCKED');
+  assert.equal((await latest(o.id)).lines.filter((l) => l.importId).length, 1);
+}));
+
+dbTest('metraj ve şekilli cam (karar 261, 262): PDF’in 3 ondalıklı m²si ve normal / şekilli ayrımı satıra yazılır; aynı teknik cam aynı katalog camıyla eşleşir; satış türü değiştirir — fiyat, POZ, ölçü, metraj, işlem değişmez', offline(async () => {
+  const o = await newOrder(62);
+  const up = await upload('sales', o.id, [pdf(shapedForm({ no: '97621', code: 'ABC 62' }))]);
+  let p = await preview('sales', o.id, up.ids);
+  // Fabrika açıklaması bu düzende kod taşımaz: cam elle seçilir (her iki satır için aynı katalog camı)
+  const choices = { glass: Object.fromEntries(p.imports[0].plan.glassChoices.map((g) => [g.key, g.ref.id])) };
+  p = await preview('sales', o.id, up.ids, choices);
+  assert.deepEqual(p.imports[0].blocking, []);
+  assert.deepEqual(p.imports[0].plan.rows.map((r) => [r.shaped, r.description]), [[false, DESC_NORMAL], [true, DESC_SHAPED]]);
+  await apply('sales', o.id, await versionOf(o.id), fp(p), { choices, dropEmpty: p.empty.map((e) => e.id) });
+  let offer = await latest(o.id);
+  const glass = offer.lines.filter((l) => l.importId);
+  assert.deepEqual(glass.map((l) => [l.shaped, l.glassProductId, Number(l.pieceM2), l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.poz]), [
+    [false, g.ref.id, 2.386, 1183, 2017, 2, '100', 'ABC 62'],
+    [true, g.ref.id, 1, 1000, 1000, 1, '100', 'ABC 62'],
+  ]);
+  // PDF metrajı aynen: 4,772 + 1,000 = 5,772 m² ve 577,20 EUR (eskiden 4,77 m² → 577,00)
+  assert.deepEqual([offerTotalsOf(offer).metraj, String(offer.amount)], [5.772, '577.2']);
+  // Özgün fabrika açıklaması izlenebilir: aktarım kaydındaki ayrıştırılmış kopya
+  const imp = await db.offerImport.findUniqueOrThrow({ where: { id: up.ids[0] } });
+  assert.deepEqual(imp.parsed.rows.map((r) => r.description), [DESC_NORMAL, DESC_SHAPED]);
+  // Satış türleri ters çevirir (normal → şekilli, şekilli → normal) ve kaydeder; yeniden açılınca korunur
+  const stamp = (ls) => ls.map((l) => [l.id, String(l.unitPrice), l.poz, l.enMm, l.boyMm, l.adet, l.pieceM2 == null ? null : Number(l.pieceM2), l.importId, l.sourceRow]);
+  const before = stamp(offer.lines);
+  await run(o.id, 'save_offer', 'sales', { lines: formLines(offer.lines, (l) => ({ shaped: !l.shaped })), expectedVersion: await versionOf(o.id) });
+  offer = await latest(o.id);
+  assert.deepEqual(offer.lines.filter((l) => l.importId).map((l) => l.shaped), [true, false]);
+  assert.deepEqual(stamp(offer.lines), before, 'fiyat, POZ, ölçü, adet, metraj ve kaynak değişmez');
+  assert.deepEqual([offerTotalsOf(offer).metraj, String(offer.amount)], [5.772, '577.2']);
+}));

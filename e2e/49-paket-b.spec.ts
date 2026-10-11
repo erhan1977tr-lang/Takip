@@ -46,7 +46,7 @@ test('veri: bu dosyaya özel firma (fiyat listeli), iki müşteri kullanıcısı
   try {
     const u = await db2.user.findUniqueOrThrow({ where: { email: CUST }, include: { customer: true } });
     const o = await db2.order.create({
-      data: { orderNo: `${u.customer!.prefix}1`, customerOrderNo: 1, title: `PB cam ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: firmId, createdById: u.id, status: 'HAZIRLANIYOR', drawingTrack: 'YAPILIYOR' },
+      data: { orderNo: `${u.customer!.prefix}1`, customerOrderNo: '1', title: `PB cam ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: firmId, createdById: u.id, status: 'HAZIRLANIYOR', drawingTrack: 'YAPILIYOR' },
     });
     glassOrderId = o.id;
   } finally {

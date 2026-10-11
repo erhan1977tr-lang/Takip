@@ -26,7 +26,7 @@ async function order(day, lines, { offer = 'GONDERILDI', status = 'URETIMDE' } =
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `${A.prefix}${no}`, customerOrderNo: no, title: `P2A ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status, estimatedShipDate: at(day),
+      orderNo: `${A.prefix}${no}`, customerOrderNo: String(no), title: `P2A ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status, estimatedShipDate: at(day),
       offers: { create: { status: offer, currency: 'EUR', amount: '0', offerAmount: '0', createdById: U.admin.id, ...(offer === 'GONDERILDI' ? { sentAt: new Date() } : {}), lines: { create: lines.map((l, i) => ({ sortOrder: i, ...l })) } } },
     },
     include: FULL,

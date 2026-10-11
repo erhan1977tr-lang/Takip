@@ -52,10 +52,11 @@ test('veri: bu dosyaya özel müşteri ve satış kullanıcısı, cam siparişi'
   const db = await prisma();
   const writer = await db.user.findUniqueOrThrow({ where: { email: WRITER }, include: { customer: true } });
   // Firmanın kullanılmayan bir numarası (rastgele numara başka dosyanın siparişiyle çakışabiliyordu)
-  const last = await db.order.aggregate({ where: { customerId: writer.customerId! }, _max: { customerOrderNo: true } });
-  const no = Math.max(9000, (last._max.customerOrderNo ?? 0) + 1);
+  // Numara metindir (karar 259): rakamlı numaraların en büyüğü sayı olarak
+  const used = (await db.order.findMany({ where: { customerId: writer.customerId! }, select: { customerOrderNo: true } })).map((r) => Number(r.customerOrderNo)).filter(Number.isFinite);
+  const no = Math.max(9000, Math.max(0, ...used) + 1);
   const o = await db.order.create({
-    data: { orderNo: `${writer.customer!.prefix}${no}`, customerOrderNo: no, title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'HAZIRLANIYOR' },
+    data: { orderNo: `${writer.customer!.prefix}${no}`, customerOrderNo: String(no), title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'HAZIRLANIYOR' },
   });
   orderId = o.id;
   orderNo = o.orderNo;

@@ -60,7 +60,7 @@ test('veri: FGO\'da silinmiş görünen iki proforma, sağlam bir proforma, baş
   const make = async (no: number, number: string, checkError: string | null) => {
     const o = await db.order.create({
       data: {
-        orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: 'Belge kaldırma e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
+        orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: 'Belge kaldırma e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
         status: 'URETIMDE', estimatedShipDate: day(30),
         offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '120.00', offerAmount: '200.00', createdById: admin.id, sentAt: new Date(),
           lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 2000, adet: 1, unit: 'm2', unitPrice: '60', offerPrice: '100', kind: 'CAM' }] } } },

@@ -49,7 +49,7 @@ test('veri: müşterinin proforma / avans faturası / faturası, e-posta durumla
   const beta = await db.user.findUniqueOrThrow({ where: { email: BETA }, include: { customer: true } });
   await db.customer.update({ where: { id: u.customer!.id }, data: { email: FIRM_MAIL } });
   const order = (firm: { id: string; prefix: string | null }, no: number) => db.order.create({
-    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: `Belge e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date('2026-12-10T12:00:00Z') },
+    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: `Belge e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date('2026-12-10T12:00:00Z') },
   });
   const doc = async (key: string, o: { id: string }, kind: string, series: string, number: string, total: string, paid: string, minutesAgo: number) => {
     const d = await db.fgoDocument.create({ data: { orderId: o.id, kind, series, number, total, paid, issuedAt: new Date(Date.now() - minutesAgo * 60_000), checkedAt: new Date() } });

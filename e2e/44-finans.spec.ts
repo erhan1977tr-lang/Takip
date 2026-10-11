@@ -41,11 +41,12 @@ test('veri: müşterinin EUR cam siparişi, FGO proforması (kesilmiş, tahsilat
   const db = await prisma();
   const admin = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
   const u = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER }, include: { customer: true } });
-  const last = await db.order.aggregate({ where: { customerId: u.customerId! }, _max: { customerOrderNo: true } });
-  const no = Math.max(9400, (last._max.customerOrderNo ?? 0) + 1);
+  // Numara metindir (karar 259): rakamlı numaraların en büyüğü sayı olarak
+  const used = (await db.order.findMany({ where: { customerId: u.customerId! }, select: { customerOrderNo: true } })).map((r) => Number(r.customerOrderNo)).filter(Number.isFinite);
+  const no = Math.max(9400, Math.max(0, ...used) + 1);
   const o = await db.order.create({
     data: {
-      orderNo: `${u.customer!.prefix}${no}`, customerOrderNo: no, title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: u.customerId!, createdById: admin.id, status: 'URETIMDE',
+      orderNo: `${u.customer!.prefix}${no}`, customerOrderNo: String(no), title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: u.customerId!, createdById: admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + 20 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },

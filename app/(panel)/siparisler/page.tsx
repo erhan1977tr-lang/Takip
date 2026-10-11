@@ -78,7 +78,8 @@ function searchWhere(q?: string): Prisma.OrderWhereInput {
     OR: [
       { orderNo: { contains: s, mode: 'insensitive' } },
       { title: { contains: s, mode: 'insensitive' } },
-      ...(/^\d+$/.test(s) ? [{ customerOrderNo: Number(s) }] : []),
+      // Müşteri sipariş numarası metindir (karar 259): "40-1", "001-1" yazıldığı gibi aranır (tire ve baştaki sıfırlar korunur)
+      { customerOrderNo: { equals: s.toUpperCase() } },
     ],
   };
 }

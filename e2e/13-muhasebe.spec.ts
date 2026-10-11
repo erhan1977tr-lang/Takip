@@ -58,7 +58,7 @@ test('veri: FGO belgeleri, yüklenmiş sipariş, transport ve fabrika ödemesi',
   const firm = await db.customer.findUniqueOrThrow({ where: { id: cust.customerId! } });
   const order = (no: number, ship: Date, lines: Prisma.OfferLineCreateWithoutOfferInput[]) => db.order.create({
     data: {
-      orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: 'Muhasebe e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
+      orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: 'Muhasebe e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
       status: 'URETIMDE', estimatedShipDate: ship,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '610.00', offerAmount: '1045.00', createdById: admin.id, sentAt: new Date(), lines: { create: lines } } },
     },

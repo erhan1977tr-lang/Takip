@@ -48,7 +48,7 @@ export default {
       name: 'Sipariş adı',
       namePlaceholder: 'örn. Duş kabini camı',
       number: 'Sipariş numaranız',
-      numberHint: 'Önerilen numara (son siparişinizden bir sonraki) — değiştirebilirsiniz. Sipariş kodu: {code}',
+      numberHint: 'Önerilen numara (son siparişinizden bir sonraki) — değiştirebilirsiniz; tireli numara da olur (40-1, 001-1). Sipariş kodu: {code}',
     },
     files: {
       title: 'Sipariş dosyaları (zorunlu)',
@@ -88,7 +88,7 @@ export default {
   errors: {
     noFirm: 'Hesabınız bir müşteri firmasına bağlı değil. Yöneticinize başvurun.',
     titleRequired: 'Sipariş adı gerekli.',
-    badNumber: 'Sipariş numarası pozitif bir tam sayı olmalı.',
+    badNumber: 'Sipariş numarası rakamlardan oluşmalı; bölümler tireyle ayrılabilir (ör. 40, 40-1, 001-1).',
     noFiles: 'En az bir sipariş dosyası yükleyin.',
     tooManyFiles: 'Tek seferde en fazla 20 dosya yükleyebilirsiniz.',
     oneGlass: 'Bir siparişte yalnızca bir cam tipi seçilebilir.',

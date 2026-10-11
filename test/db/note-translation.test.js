@@ -63,7 +63,7 @@ before(async () => {
   await user('custA', 'MUSTERI', A.id);
   await user('custB', 'MUSTERI', B.id);
   const order = (f, no, extra = {}) => db.order.create({
-    data: { orderNo: `${f.prefix}${no}`, customerOrderNo: no, title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', ...extra },
+    data: { orderNo: `${f.prefix}${no}`, customerOrderNo: String(no), title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', ...extra },
   });
   OA = await order(A, 1);
   OB = await order(B, 1);
@@ -412,7 +412,7 @@ dbTest('çeviri özgün metinle aynıysa (not zaten hedef dilde): "aynı" olarak
 dbTest('sayfa açılışı / yenileme / otomatik yenileme hiçbir durumda çeviri isteği yapmaz: DONE, SAME, FAILED, yarıda kalmış ve çevirisiz (eski) notlar okunurken aynen kalır', offline(async () => {
   await enable();
   // Ayrı bir siparişte her durumdan bir not
-  const O = await db.order.create({ data: { orderNo: 'ALF9', customerOrderNo: 9, title: 'Yenileme', orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI' } });
+  const O = await db.order.create({ data: { orderNo: 'ALF9', customerOrderNo: '9', title: 'Yenileme', orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI' } });
   const p = provider(async ({ text, target }) => {
     if (text.includes('HATA')) throw new TranslateError('QUOTA');
     if (text.includes('AYNI')) return { text };
@@ -500,7 +500,7 @@ const at = (ms) => new Date(T0 + ms);
 let seq = 100;
 const newOrder = (f = A, extra = {}) => {
   seq += 1;
-  return db.order.create({ data: { orderNo: `${f.prefix}${seq}`, customerOrderNo: seq, title: `Sınır ${seq}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', ...extra } });
+  return db.order.create({ data: { orderNo: `${f.prefix}${seq}`, customerOrderNo: String(seq), title: `Sınır ${seq}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: U.admin.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', ...extra } });
 };
 const noteCount = (order, where = {}) => db.orderNote.count({ where: { orderId: order.id, ...where } });
 const seed = (order, n, user = U.custA, extra = {}) => db.orderNote.createMany({ data: Array.from({ length: n }, (_, i) => ({ orderId: order.id, userId: user.id, text: `eski not ${i + 1}`, ...extra })) });

@@ -79,7 +79,7 @@ test('veri: Ünsal\'ın üç siparişi (biri CNC / delikli, biri Beta\'nın sand
   const order = async (c: { id: string; prefix: string | null }, no: number, lines: Line[], o: { amount: string; offer: string; currency?: string; guestHostId?: string }) => {
     const created = await db.order.create({
       data: {
-        orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `Firma tablosu ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE',
+        orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `Firma tablosu ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE',
         estimatedShipDate: new Date(`${DAY}T12:00:00Z`), guestHostId: o.guestHostId ?? null,
         offers: { create: { status: 'GONDERILDI', currency: o.currency ?? 'EUR', amount: o.amount, offerAmount: o.offer, createdById: admin.id, sentAt: new Date(),
           lines: { create: lines.map((l, i) => ({ sortOrder: i, descriptionRo: l.kind === 'CAM' ? 'Sticlă securizată' : null, ...l })) } } },

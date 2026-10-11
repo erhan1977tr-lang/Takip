@@ -19,7 +19,7 @@ before(async () => {
 after(closeDb);
 
 const order = (f, no, data = {}) => db.order.create({
-  data: { orderNo: `${f.prefix}${no}`, customerOrderNo: no, title: `P${no}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(`${X}T12:00:00Z`), ...data },
+  data: { orderNo: `${f.prefix}${no}`, customerOrderNo: String(no), title: `P${no}`, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(`${X}T12:00:00Z`), ...data },
 });
 
 dbTest('AUD-15: iptal edilen ya da kaldırılan misafir sipariş ev sahibinin sandığında listelenmez; etkin olan listelenir', offline(async () => {

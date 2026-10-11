@@ -18,6 +18,8 @@ import { offerExportData } from '../orders/offer-export.js';
 import { loadedOffer } from '../orders/loading.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+// m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 const dims = (c) => [c.lengthMm, c.widthMm, c.heightMm].some((d) => d != null)
   ? [c.lengthMm, c.widthMm, c.heightMm].map((d) => (d == null ? '—' : String(d))).join(' × ')
   : (c.dimensions ?? '');
@@ -158,7 +160,7 @@ export function detailTotals(d) {
   for (const o of d.orders) {
     if (o.offer == null || !o.detail.currency) continue;
     const t = by.get(o.currency) ?? { currency: o.currency, m2: 0, amount: 0 };
-    t.m2 = round2(t.m2 + o.detail.metraj);
+    t.m2 = round3(t.m2 + o.detail.metraj);
     t.amount = round2(t.amount + o.offer);
     by.set(o.currency, t);
   }

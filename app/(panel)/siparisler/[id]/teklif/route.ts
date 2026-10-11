@@ -41,7 +41,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     tagOf: (l) => (l.compensationId ? compensationTagText(tags.get(l.compensationId) ?? null, tagTexts) : null),
     // Yalnızca müşteri fiyatı: yönetici → offerPrice; müşteride temizlenmiş unitPrice zaten müşteri fiyatıdır
     price: (l) => (isAdmin ? l.offerPrice : l.unitPrice),
-    locale, kindLabel: (k) => lineKindText(t, k as string),
+    locale, kindLabel: (k) => lineKindText(t, k as string), shapedLabel: t('offer.shaped'),
   });
   const pvb = physicalVsBillable(offer.lines);
   const physicalText = t('offer.physical', {

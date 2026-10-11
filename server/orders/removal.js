@@ -96,7 +96,8 @@ export async function removeOrder(db, { orderId, confirmNo, expectedVersion = nu
     }
     await tx.order.update({
       where: { id: order.id },
-      data: { removedAt: now, removedById: actor.id, removedStatus: order.status, status: 'IPTAL', slaDeadline: null, version: { increment: 1 } },
+      // Numara serbest kalır (karar 260): silinmiş siparişin numarası yeni siparişe verilebilir — sipariş no ve geçmiş değişmez
+      data: { removedAt: now, removedById: actor.id, removedStatus: order.status, status: 'IPTAL', slaDeadline: null, numberActive: null, version: { increment: 1 } },
     });
     await writeHistory(tx, { orderId: order.id, event: 'REMOVED', from: order.status, to: 'IPTAL', actorId: actor.id });
     await writeAudit(tx, {
@@ -115,30 +116,53 @@ export async function removeOrder(db, { orderId, confirmNo, expectedVersion = nu
 }
 
 /**
- * Silinmiş siparişi geri yükler: önceki durumuna döner. Hiçbir kayıt yeniden üretilmez.
+ * Silinmiş siparişi geri yükler: önceki durumuna döner. Hiçbir kayıt yeniden üretilmez. Silindikten sonra numarası yeni
+ * bir siparişe verildiyse geri yüklenmez (NUMBER_TAKEN — karar 260).
  * @param {any} db
  * @param {{ orderId: string, actor: { id: string, role: string, ip?: string | null }, now?: Date }} p
- * @returns {Promise<{ ok: true, orderNo: string, status: string } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_REMOVED' }>}
+ * @returns {Promise<{ ok: true, orderNo: string, status: string } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_REMOVED' | 'NUMBER_TAKEN', orderNo?: string }>}
  */
 export async function restoreOrder(db, { orderId, actor }) {
   if (!can(actor?.role, 'ORDER_CANCEL')) return fail('FORBIDDEN');
-  return db.$transaction(async (tx) => {
-    const id = String(orderId ?? '');
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
-    const order = await tx.order.findUnique({ where: { id }, select: { id: true, orderNo: true, status: true, removedAt: true, removedStatus: true, orderTypeCode: true } });
-    if (!order) return fail('NOT_FOUND');
-    if (!order.removedAt) return fail('NOT_REMOVED');
-    const status = order.removedStatus ?? order.status;
-    await tx.order.update({
-      where: { id: order.id },
-      data: { removedAt: null, removedById: null, removedStatus: null, status, version: { increment: 1 } },
+  const id = String(orderId ?? '');
+  const head = await db.order.findUnique({ where: { id }, select: { customerId: true } });
+  if (!head) return fail('NOT_FOUND');
+  try {
+    return await db.$transaction(async (tx) => {
+      // Numara kilidi (sipariş oluşturmayla aynı, karar 260) → sipariş belgesi kilidi: sıra telafi / oluşturma ile aynı
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-no:${head.customerId}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`glass-billing:${id}`}, 0))`;
+      const order = await tx.order.findUnique({
+        where: { id },
+        select: { id: true, orderNo: true, status: true, removedAt: true, removedStatus: true, orderTypeCode: true, customerId: true, customerOrderNo: true, compSeq: true },
+      });
+      if (!order) return fail('NOT_FOUND');
+      if (!order.removedAt) return fail('NOT_REMOVED');
+      // Silindikten sonra numarası yeni bir siparişe verildiyse geri yüklenmez (iki etkin sipariş aynı numarayı taşıyamaz)
+      const taken = await tx.order.findFirst({
+        where: {
+          id: { not: order.id }, numberActive: true,
+          OR: [{ orderNo: order.orderNo }, { customerId: order.customerId, orderTypeCode: order.orderTypeCode, customerOrderNo: order.customerOrderNo, compSeq: order.compSeq }],
+        },
+        select: { orderNo: true },
+      });
+      if (taken) return fail('NUMBER_TAKEN', { orderNo: taken.orderNo });
+      const status = order.removedStatus ?? order.status;
+      await tx.order.update({
+        where: { id: order.id },
+        data: { removedAt: null, removedById: null, removedStatus: null, status, numberActive: true, version: { increment: 1 } },
+      });
+      // Cam siparişinde SLA son tarihi güncel duruma göre yeniden hesaplanır (profil siparişinin SLA'sı kendi akışındadır)
+      if (order.orderTypeCode === 'GLASS_ORDER') await refreshSla(tx, order.id);
+      await writeHistory(tx, { orderId: order.id, event: 'RESTORED', from: 'IPTAL', to: status, actorId: actor.id });
+      await writeAudit(tx, { action: 'ORDER_RESTORED', entityType: 'Order', entityId: order.id, userId: actor.id, details: { orderNo: order.orderNo, status } }, actor);
+      return { ok: true, orderNo: order.orderNo, status };
     });
-    // Cam siparişinde SLA son tarihi güncel duruma göre yeniden hesaplanır (profil siparişinin SLA'sı kendi akışındadır)
-    if (order.orderTypeCode === 'GLASS_ORDER') await refreshSla(tx, order.id);
-    await writeHistory(tx, { orderId: order.id, event: 'RESTORED', from: 'IPTAL', to: status, actorId: actor.id });
-    await writeAudit(tx, { action: 'ORDER_RESTORED', entityType: 'Order', entityId: order.id, userId: actor.id, details: { orderNo: order.orderNo, status } }, actor);
-    return { ok: true, orderNo: order.orderNo, status };
-  });
+  } catch (e) {
+    // Yarış: numara aynı anda yeni siparişe verildi (benzersiz indeks) — geri yükleme yapılmaz
+    if (/** @type {any} */ (e)?.code === 'P2002') return fail('NUMBER_TAKEN');
+    throw e;
+  }
 }
 
 /** Silinmiş siparişler (yönetici ekranı: geri yükleme). En yeniler önce. */

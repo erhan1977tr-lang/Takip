@@ -208,6 +208,7 @@ export default {
       NOT_FOUND: 'Comanda nu a fost găsită.',
       ALREADY_REMOVED: 'Comanda este deja ștearsă.',
       NOT_REMOVED: 'Comanda nu este ștearsă.',
+      NUMBER_TAKEN: 'Comanda nu a fost restaurată: numărul ei a fost atribuit unei comenzi noi după ștergere.',
       BUSY: 'Pentru această comandă există în coadă un document FGO sau un e-mail către depozit. Încercați din nou după finalizare (sau după renunțare).',
     },
   },

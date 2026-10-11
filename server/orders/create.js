@@ -12,16 +12,20 @@ import { CUSTOMER_GLASS_TYPES } from '../catalog/glass.js';
 import { isLegacyMultiGlass } from './drafts.js';
 import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
-
-export const MAX_ORDER_NO = 9_999_999;
+import { parseCustomerOrderNo } from './order-number.js';
 
 /**
- * Firmanın bu tipteki bir sonraki sipariş numarası (en büyük + 1). Cam ve profil siparişleri ayrı sıralardır
- * (GLA12 ve GLAP12 ayrı siparişlerdir).
+ * Firmanın bu tipteki bir sonraki sipariş numarası: yalnızca rakamdan oluşan ETKİN numaraların en büyüğü + 1 (metin —
+ * karar 259). Tireli numaralar ("40-1") sırayı değiştirmez; silinmiş siparişin numarası sayılmaz (karar 260). Cam ve
+ * profil siparişleri ayrı sıralardır (GLA12 ve GLAP12 ayrı siparişlerdir).
+ * @returns {Promise<string>}
  */
 export async function suggestNextNo(db, customerId, orderTypeCode = 'GLASS_ORDER') {
-  const last = await db.order.aggregate({ where: { customerId, orderTypeCode }, _max: { customerOrderNo: true } });
-  return (last._max.customerOrderNo ?? 0) + 1;
+  const rows = await db.$queryRaw`
+    SELECT MAX(CAST("customerOrderNo" AS BIGINT)) AS "max" FROM "Order"
+    WHERE "customerId" = ${customerId} AND "orderTypeCode" = ${orderTypeCode} AND "numberActive" IS TRUE AND "customerOrderNo" ~ '^[0-9]{1,15}$'`;
+  const max = rows?.[0]?.max == null ? 0n : BigInt(rows[0].max);
+  return String(max + 1n);
 }
 
 /** Sipariş numarası metni: firma kodu + numara */
@@ -31,13 +35,27 @@ export const formatOrderNo = (code, no) => `${code}${no}`;
 export const formatTypedNo = (format, code, no) => String(format || '{CODE}{SEQ}').replace('{CODE}', code).replace('{SEQ}', String(no));
 
 /**
+ * Formdaki numarayı ve önerilen numarayı doğrular (oluşturma ve taslak aynı kural — server/orders/order-number.js).
+ * @returns {{ requested: string, suggested: string | null }}
+ */
+export function requestedNumbers(requestedNo, suggestedNo, prefix) {
+  const requested = parseCustomerOrderNo(requestedNo, prefix);
+  if (!requested) throw new WorkflowError('BAD_NUMBER');
+  return { requested, suggested: suggestedNo == null ? null : parseCustomerOrderNo(suggestedNo, prefix) };
+}
+
+/**
  * Numara seçimi (firma + tip kilidinin içinde çağrılır): numara boşsa istenen, doluysa (öneri değiştirilmediyse)
- * bir sonraki boş numara; müşteri kendisi yazdıysa DUPLICATE_NUMBER.
+ * bir sonraki boş numara; müşteri kendisi yazdıysa DUPLICATE_NUMBER. Yalnızca ETKİN siparişler numarayı tutar
+ * (karar 260): silinmiş siparişin numarası yeniden verilebilir. Telafi siparişleri kök siparişin numarasını taşır —
+ * silinmiş kökün etkin telafi siparişi varsa numara boş sayılmaz.
+ * @returns {Promise<string>}
  */
 export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, suggestedNo, format, code }) {
-  const auto = suggestedNo != null && requestedNo === suggestedNo;
-  let no = requestedNo;
-  const taken = await tx.order.findFirst({ where: { customerId, orderTypeCode, customerOrderNo: no }, select: { id: true } });
+  const { requested, suggested } = requestedNumbers(requestedNo, suggestedNo, code);
+  const auto = suggested != null && requested === suggested;
+  let no = requested;
+  const taken = await tx.order.findFirst({ where: { customerId, orderTypeCode, customerOrderNo: no, numberActive: true }, select: { id: true } });
   if (taken) {
     if (!auto) throw new WorkflowError('DUPLICATE_NUMBER', { orderNo: formatTypedNo(format, code, no) });
     no = await suggestNextNo(tx, customerId, orderTypeCode);
@@ -51,19 +69,19 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
  * @param {{ id: string, role: string, ip?: string | null }} p.actor
  * @param {{ id: string, prefix: string, camEtiket?: string | null, sandikEtiket?: string | null }} p.firm
  * @param {string} p.title
- * @param {number} p.requestedNo      formdaki numara
- * @param {number | null} p.suggestedNo  formun açıldığında önerdiği numara (değiştirilmediyse otomatik mod)
+ * @param {string | number} p.requestedNo      formdaki numara (metin — karar 259)
+ * @param {string | number | null} p.suggestedNo  formun açıldığında önerdiği numara (değiştirilmediyse otomatik mod)
  * @param {object[]} p.items          glassOrderItems() sonucu (katalogdan anlık kopya): tam olarak bir cam tipi (karar 85)
  * @param {object[]} p.files          yeni kaydedilmiş dosyalar (server/files/store.js → storeUpload)
  * @param {string | null} [p.note]    "Ek bilgi": müşterinin görebildiği ilk not
  * @param {string | null} [p.draftId] taslaktan gönderiliyorsa: taslağın dosyaları siparişe geçer, taslak silinir
  * @param {string[]} [p.dropDraftFileIds]  taslakta olup müşterinin çıkardığı dosyalar (siparişe geçmez)
- * @returns {Promise<{ id: string, orderNo: string, customerOrderNo: number, bumped: boolean, dropped: { storageKey: string }[] }>}
+ * @returns {Promise<{ id: string, orderNo: string, customerOrderNo: string, bumped: boolean, dropped: { storageKey: string }[] }>}
  *   dropped: işlemden sonra diskten silinecek dosyalar
  */
 export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [] }) {
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
-  if (!Number.isInteger(requestedNo) || requestedNo <= 0 || requestedNo > MAX_ORDER_NO) throw new WorkflowError('BAD_NUMBER');
+  requestedNumbers(requestedNo, suggestedNo, firm.prefix);
   // Müşterinin yeni cam siparişi tam olarak bir cam tipi içerir (formdan bağımsız, sunucu kuralı). Yalnızca yeni
   // sipariş oluşturmayı bağlar: eski çok camlı siparişlere ve teklif tablosuna dokunmaz.
   if (!Array.isArray(items) || items.length === 0) throw new WorkflowError('NO_GLASS');
@@ -108,9 +126,9 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     await writeHistory(tx, { orderId: order.id, event: 'CREATED', from: null, to: 'YENI', actorId: actor.id });
     await writeAudit(tx, {
       action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
-      details: { orderNo, files: allFiles.length, ...(draftId ? { fromDraft: true } : {}), ...(no !== requestedNo ? { requestedNo, assignedNo: no } : {}) },
+      details: { orderNo, files: allFiles.length, ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
     }, actor);
     await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, actorId: actor.id } }));
-    return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== requestedNo, dropped };
+    return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== parseCustomerOrderNo(requestedNo, firm.prefix), dropped };
   });
 }

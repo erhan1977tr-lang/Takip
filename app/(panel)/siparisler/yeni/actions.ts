@@ -13,6 +13,7 @@ import { filesFrom } from '@/lib/storage';
 import { discardFiles, storeFiles } from '@/lib/uploads';
 import { fileProblem, parseDateOnly } from '@/server/orders/rules.js';
 import { createGlassOrder } from '@/server/orders/create.js';
+import { parseCustomerOrderNo } from '@/server/orders/order-number.js';
 import { MAX_DRAFT_FILES, MAX_NOTE, deleteDraft, keepDraftGlass, saveDraft } from '@/server/orders/drafts.js';
 import { CUSTOMER_GLASS_TYPES, glassOrderItems } from '@/server/catalog/glass.js';
 import { WorkflowError } from '@/server/domain/workflow.js';
@@ -46,9 +47,10 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
 
   if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail(t('newOrder.errors.noFirm'));
   if (note.length > MAX_NOTE) return fail(t('newOrder.errors.noteTooLong', { n: MAX_NOTE }));
-  const suggestedNo = /^\d+$/.test(suggestedRaw) ? Number(suggestedRaw) : null;
-  const no = noRaw === '' ? null : Number(noRaw);
-  if (no !== null && (!Number.isInteger(no) || no <= 0 || no > 9_999_999)) return fail(t('newOrder.errors.badNumber'));
+  // Müşteri sipariş numarası metindir (karar 259): "40", "40-1", "001-1"; firmanın kendi koduyla yazılırsa kod atılır
+  const suggestedNo = parseCustomerOrderNo(suggestedRaw, firm.prefix);
+  const no = noRaw === '' ? null : parseCustomerOrderNo(noRaw, firm.prefix);
+  if (noRaw !== '' && no === null) return fail(t('newOrder.errors.badNumber'));
 
   const files = filesFrom(formData, 'files');
   if (files.length > MAX_DRAFT_FILES) return fail(t('newOrder.errors.tooManyFiles'));
@@ -84,7 +86,7 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
     let saved: { id: string; removed: { storageKey: string }[] };
     try {
       saved = await saveDraft(db, {
-        actor, firm: { id: firm.id }, draftId,
+        actor, firm: { id: firm.id, prefix: firm.prefix }, draftId,
         // Önerilen numara değiştirilmediyse saklanmaz: taslağa dönüldüğünde o anki sıradaki numara önerilir
         values: { title, note, lines: glasses, customerOrderNo: no !== null && no !== suggestedNo ? no : null },
         files: stored.stored, removeFileIds: removed,
@@ -201,9 +203,10 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
 
   if (!firm || firm.type !== 'CUSTOMER' || !firm.prefix) return fail(t('newOrder.errors.noFirm'));
   if (note.length > MAX_NOTE) return fail(t('newOrder.errors.noteTooLong', { n: MAX_NOTE }));
-  const suggestedNo = /^\d+$/.test(suggestedRaw) ? Number(suggestedRaw) : null;
-  const no = noRaw === '' ? null : Number(noRaw);
-  if (no !== null && (!Number.isInteger(no) || no <= 0 || no > 9_999_999)) return fail(t('newOrder.errors.badNumber'));
+  // Müşteri sipariş numarası metindir (karar 259): "40", "40-1", "001-1"; firmanın kendi koduyla yazılırsa kod atılır
+  const suggestedNo = parseCustomerOrderNo(suggestedRaw, firm.prefix);
+  const no = noRaw === '' ? null : parseCustomerOrderNo(noRaw, firm.prefix);
+  if (noRaw !== '' && no === null) return fail(t('newOrder.errors.badNumber'));
   const read = readQuantities(rows);
   if (!read.ok) return fail(read.code === 'BAD_QTY' ? t('profile.errors.badQty', { max: MAX_PROFILE_QTY }) : t('profile.errors.tooMany'));
   const actor = await actorOf(user);
@@ -212,7 +215,7 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     let saved: { id: string };
     try {
       saved = await saveProfileDraft(db, {
-        actor, firm: { id: firm.id }, draftId,
+        actor, firm: { id: firm.id, prefix: firm.prefix }, draftId,
         values: { title, note, lines: read.lines, customerOrderNo: no !== null && no !== suggestedNo ? no : null },
       });
     } catch (err) {

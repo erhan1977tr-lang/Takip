@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
 import { interpolate } from '@/server/i18n/interpolate.js';
+import { parseCustomerOrderNo } from '@/server/orders/order-number.js';
 import { ALLOWED_EXT, fileProblem } from '@/server/orders/rules.js';
 import { createOrderAction, type NewOrderState } from './actions';
 
@@ -38,7 +39,7 @@ function applyFiles(el: HTMLInputElement | null, list: File[]) {
  * m: sözlüğün newOrder.form parçası (sunucudaki sayfa, kullanıcının diline göre verir).
  */
 export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m }: {
-  catalog: GlassOption[]; suggestedNo: number; prefix: string; shipDate: string; draft?: DraftData; m: Dict['newOrder']['form'];
+  catalog: GlassOption[]; suggestedNo: string; prefix: string; shipDate: string; draft?: DraftData; m: Dict['newOrder']['form'];
 }) {
   const [state, action, pending] = useActionState<NewOrderState, FormData>(createOrderAction, {});
   const v = state.values;
@@ -84,10 +85,10 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
           </div>
           <div>
             <label htmlFor="no">{m.info.number}</label>
-            <input id="no" name="customerOrderNo" type="text" inputMode="numeric" required value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, ''))} />
+            <input id="no" name="customerOrderNo" type="text" autoCapitalize="characters" spellCheck={false} maxLength={30} pattern="[A-Za-z]{0,3}[0-9]+(-[0-9]+)*" required value={no} onChange={(e) => setNo(e.target.value.replace(/[^0-9A-Za-z-]/g, '').toUpperCase())} />
             {/* Önerilen numara değiştirilmediyse ve bu arada başka sipariş aldıysa sunucu bir sonraki numarayı verir */}
             <input type="hidden" name="suggestedNo" value={suggestedNo} />
-            <div className="hint">{rich(m.info.numberHint, { code: <b>{prefix}{no || '…'}</b> })}</div>
+            <div className="hint">{rich(m.info.numberHint, { code: <b>{prefix}{parseCustomerOrderNo(no, prefix) ?? (no || '…')}</b> })}</div>
           </div>
         </div>
       </div>

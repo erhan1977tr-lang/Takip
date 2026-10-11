@@ -83,7 +83,7 @@ export function validateCrates(raw) {
 export function groupLoad(loads, crates = [], { guestKg = 0 } = {}) {
   let metraj = 0, camAdet = 0, cnc = 0, delik = 0, glassKg = guestKg;
   for (const l of loads) {
-    metraj = Math.round((metraj + l.metraj) * 100) / 100;
+    metraj = Math.round((metraj + l.metraj) * 1000) / 1000; // 3 ondalık (karar 261)
     camAdet += l.camAdet;
     cnc += l.cnc ?? 0;
     delik += l.delik ?? 0;

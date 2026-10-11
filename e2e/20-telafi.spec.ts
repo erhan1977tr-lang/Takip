@@ -70,7 +70,7 @@ test('veri: temiz kaynak sipariş, kapalı sipariş, müşterinin ileri tarihli 
   const glass = (i: number, extra: Record<string, unknown>) => ({ sortOrder: i, unit: 'm2', kind: 'CAM', ...extra });
   const order = (no: number, ship: Date, lines: Record<string, unknown>[]) => db.order.create({
     data: {
-      orderNo: `${u.customer!.prefix}${no}`, customerOrderNo: no, title: `Telafi e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: u.customer!.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
+      orderNo: `${u.customer!.prefix}${no}`, customerOrderNo: String(no), title: `Telafi e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: u.customer!.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(), lines: { create: lines as never } } },
     },
     include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } } },
@@ -173,7 +173,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 adet DEĞ�
 
   const db = await prisma();
   const full = { offers: { orderBy: { createdAt: 'desc' as const }, include: { lines: { orderBy: { sortOrder: 'asc' as const } } } } };
-  const t = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T' }, include: full });
+  const t = await db.order.findFirstOrThrow({ where: { orderNo: 'UNS7901-T' }, include: full });
   freeId = t.id;
   // Bedelsiz: teklif yöneticiye uğramadan müşteride; çizim gerekmediği için sipariş üretimde
   expect([t.status, t.compSeq, t.compOfId, t.offers.length, t.offers[0].status]).toEqual(['URETIMDE', 1, srcId, 1, 'GONDERILDI']);
@@ -207,7 +207,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 adet DEĞ�
   await form.getByRole('button', { name: 'Telafi camını ekle' }).click();
   await expect(page.locator('.alert-ok', { hasText: 'Telafi siparişi açıldı: UNS7901-T2.' })).toBeVisible();
   await expect(page.locator('[data-comp-source=dustu]')).toContainText('1 → 0');
-  const t2 = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T2' }, include: full });
+  const t2 = await db.order.findFirstOrThrow({ where: { orderNo: 'UNS7901-T2' }, include: full });
   expect([t2.status, t2.offers[0].status]).toEqual(['URETIMDE', 'GONDERILDI']);
   // Cam ve CNC kaynaktaki fiyatlarıyla (satış 37 / 5, müşteri 66,96 / 8)
   expect(t2.offers[0].lines.map(lineRow)).toEqual([['CAM', 1, 37, 66.96, false, true], ['CNC', 1, 5, 8, false, true]]);
@@ -237,7 +237,7 @@ test('satış: bedelsiz → UNS7901-T doğrudan müşteride, kaynak 9 adet DEĞ�
   await expect(entry.locator('[data-comp-mode=CUSTOM]')).toHaveText('Farklı fiyat');
   await expect(entry).toContainText('Telafi fiyatı (satış): 39,00 EUR/m²');
   await expect(entry).not.toContainText('Müşteri fiyatını yönetici belirleyecek');
-  const t3 = await db.order.findUniqueOrThrow({ where: { orderNo: 'UNS7901-T3' }, include: full });
+  const t3 = await db.order.findFirstOrThrow({ where: { orderNo: 'UNS7901-T3' }, include: full });
   pricingId = t3.id;
   expect([t3.status, t3.offers[0].status, t3.offers[0].sentAt instanceof Date]).toEqual(['URETIMDE', 'GONDERILDI', true]);
   expect(t3.offers[0].lines.map(lineRow)).toEqual([['CAM', 1, 39, 66.96, false, true]]);

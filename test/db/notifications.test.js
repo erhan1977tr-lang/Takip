@@ -59,7 +59,7 @@ async function glassOrder(firm, day, { drawer = null, type = 'GLASS_ORDER', adet
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: `Proje ${no}`, orderTypeCode: type, customerId: firm.id, createdById: U.a1.id, status: 'URETIMDE', estimatedShipDate: at(day),
+      orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: `Proje ${no}`, orderTypeCode: type, customerId: firm.id, createdById: U.a1.id, status: 'URETIMDE', estimatedShipDate: at(day),
       assignedDrawerId: drawer?.id ?? null,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '0', offerAmount: '0', createdById: U.admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată', enMm: 1000, boyMm: 1000, adet, unit: 'm2', kind: 'CAM', unitPrice: '30', offerPrice: '50' }] } } },

@@ -5,6 +5,7 @@
 import { WorkflowError } from '../domain/workflow.js';
 import { CUSTOMER_GLASS_TYPES, MAX_GLASS_QTY, clean } from '../catalog/glass.js';
 import { writeAudit } from './journal.js';
+import { parseCustomerOrderNo } from './order-number.js';
 
 export const MAX_DRAFT_FILES = 20;
 export const MAX_NOTE = 2000;
@@ -48,7 +49,7 @@ export const isLegacyMultiGlass = (items) => readDraftItems(items).length > CUST
  * ad ve numara aynen kalır). Çıkan camlar denetim kaydına yazılır. Satır hem sırasıyla hem cam kimliğiyle verilir:
  * ekrandaki liste bu arada değiştiyse (başka sekme) işlem reddedilir.
  * @param {import('@prisma/client').PrismaClient} db
- * @param {{ actor: { id: string, role?: string, ip?: string | null }, firm: { id: string }, draftId: string, index: number, glassProductId: string }} p
+ * @param {{ actor: { id: string, role?: string, ip?: string | null }, firm: { id: string, prefix?: string | null }, draftId: string, index: number, glassProductId: string }} p
  * @returns {Promise<{ id: string, kept: { glassProductId: string, qty: number }, dropped: { glassProductId: string, qty: number }[] }>}
  */
 export async function keepDraftGlass(db, { actor, firm, draftId, index, glassProductId }) {
@@ -71,9 +72,9 @@ export async function keepDraftGlass(db, { actor, firm, draftId, index, glassPro
  * @param {import('@prisma/client').PrismaClient} db
  * @param {object} p
  * @param {{ id: string }} p.actor
- * @param {{ id: string }} p.firm
+ * @param {{ id: string, prefix?: string | null }} p.firm
  * @param {string | null} p.draftId
- * @param {{ title: string, customerOrderNo: number | null, note: string, lines: { id: string, qty: string }[] }} p.values
+ * @param {{ title: string, customerOrderNo: string | number | null, note: string, lines: { id: string, qty: string }[] }} p.values
  * @param {object[]} p.files          yeni kaydedilmiş dosyalar
  * @param {string[]} p.removeFileIds  taslaktan çıkarılacak dosyalar
  * @returns {Promise<{ id: string, removed: { storageKey: string }[] }>}  removed: işlemden sonra diskten silinecekler
@@ -81,8 +82,10 @@ export async function keepDraftGlass(db, { actor, firm, draftId, index, glassPro
 export async function saveDraft(db, { actor, firm, draftId, values, files = [], removeFileIds = [] }) {
   const title = clean(values.title).slice(0, MAX_TITLE) || null;
   const note = String(values.note ?? '').trim().slice(0, MAX_NOTE) || null;
-  const no = values.customerOrderNo;
-  if (no != null && (!Number.isInteger(no) || no <= 0 || no > 9_999_999)) throw new WorkflowError('BAD_NUMBER');
+  // Müşteri numarası metindir (karar 259): oluşturmayla aynı kural (server/orders/order-number.js)
+  const raw = values.customerOrderNo;
+  const no = raw == null || raw === '' ? null : parseCustomerOrderNo(raw, firm.prefix ?? null);
+  if (raw != null && raw !== '' && no == null) throw new WorkflowError('BAD_NUMBER');
   const items = draftLines(values.lines);
 
   return db.$transaction(async (tx) => {

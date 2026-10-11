@@ -4,6 +4,33 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.77.0 — 11.10.2026
+
+Son beş düzeltme (karar 259–263). Veri koruyan migration: `20261011191822_order_number_text_area3_shaped` (tip
+genişletme, yeni boş sütunlar, indeksler; hiçbir kayıt silinmez).
+
+- **Silinen siparişin numarası (karar 260):** yönetici bir siparişi silince aynı müşteri aynı sipariş numarasıyla yeniden
+  sipariş açabilir. Numara tekilliği yalnızca etkin siparişlerde (`Order.numberActive`; benzersiz indeksler bu sütunla).
+  Etkin siparişte tekillik ve diğer firmalar aynen; silinen sipariş, numarası ve geçmişi değişmez, yeni siparişle
+  karışmaz. Geri yükleme numara boşsa yapılır, değilse "numarası yeni bir siparişe verildi" uyarısıyla reddedilir.
+- **Aynı fabrika PDF'i (karar 263):** aktarılan satırların TAMAMI silinip teklif kaydedilince aynı PDF yeniden yüklenir ve
+  ön izleme + onayla yeniden aktarılır; satırlar durdukça mükerrer engeli sürer. Dosya özeti tek başına kalıcı engel
+  değil; kayıt seçimi ve aktarma sunucuda kilit altında (eşzamanlı / tekrarlanan istek mükerrer satır üretmez).
+  Antivirüs zorunlu: temiz taranmamış PDF (tarayıcıya ulaşılamadı / tarama kapalı) aktarılamaz. Özgün PDF yine saklanmaz.
+- **Tireli müşteri sipariş numarası (karar 259):** "40", "40-1", "40-2", "ALE40-1", "001-1" kabul; numara metin olarak
+  saklanır, tire ve baştaki sıfırlar korunur; oluşturma, taslak, arama ve görüntüleme aynı değer. Firma koduyla yazılan
+  numarada kod atılır (ALE40-1 → sipariş ALE40-1). Öneri yalnızca rakamlı numaralardan. Fabrika PDF'inin projesi tireli
+  numarayı aynen karşılaştırır.
+- **Metraj 3 ondalık (karar 261):** yalnızca m². Fabrika PDF'inin 3 ondalıklı metrajı aynen satıra yazılır (PDF ile teklif
+  toplam metrajı tutar); satış metrajı teklif tablosunda elle 3 ondalıkla düzeltebilir — kayıtta, yeniden açılışta, yeni
+  teklif sürümünde, yükleme onayında, proforma / fatura miktarında, Excel / PDF çıktılarında korunur. Eski satırlar eski
+  kuralla aynen hesaplanır. Fiyat hassasiyeti, tutar / KDV / FGO yuvarlama kuralları değişmedi. PDF m²si ölçüyle
+  uyuşmuyorsa aktarma durur (fark gizlenmez).
+- **Normal / Şekilli cam (karar 262):** PDF açıklamasındaki "ŞEKİLLİ" teknik özelliklerden ayrı tanınır (iki satıra bölünmüş
+  açıklama birleşir); aynı teknik cam aynı katalog camıyla eşleşir. Satış teklif tablosunda Normal ↔ Şekilli seçer;
+  kayıtta ve yeni sürümde korunur; fiyat, POZ, ölçü, adet / metraj ve CNC / delik değişmez. Teklif görünümünde ve teklif
+  PDF / Excel'inde "Şekilli" yazar.
+
 ## 3.76.0 — 11.10.2026
 
 Son dört fonksiyonel düzeltme (karar 256–258). Şema değişmedi; migration yok.

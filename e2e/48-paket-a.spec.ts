@@ -163,7 +163,7 @@ test('müşteri silme (Yönetici Yardımcısı): yalnızca o firmanın kayıtlar
     const mkFirm = async (name: string, prefix: string) => {
       const f = await db.customer.create({ data: { name, prefix } });
       const u = await db.user.create({ data: { email: `m-${prefix.toLowerCase()}-${RUN}@e2e.test`, name: 'Test Müşteri', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: f.id } });
-      const o = await db.order.create({ data: { orderNo: `${prefix}1`, customerOrderNo: 1, title: 'Test', orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: u.id, status: 'YENI' } });
+      const o = await db.order.create({ data: { orderNo: `${prefix}1`, customerOrderNo: '1', title: 'Test', orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: u.id, status: 'YENI' } });
       await db.orderNote.create({ data: { orderId: o.id, userId: u.id, text: 'test notu' } });
       await db.notification.create({ data: { userId: admin.id, message: 'x', type: 'ORDER_CREATED', orderId: o.id } });
       return { f, u, o };

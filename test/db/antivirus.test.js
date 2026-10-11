@@ -30,7 +30,7 @@ before(async () => {
   const firm = await db.customer.create({ data: { name: 'Virus Test', prefix: 'VIR' } });
   admin = await db.user.create({ data: { email: 'yonetici@av.test', name: 'Y', type: 'INTERNAL', appRole: 'ADMIN', customerId: factory.id } });
   const cust = await db.user.create({ data: { email: 'm@av.test', name: 'M', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: firm.id } });
-  order = await db.order.create({ data: { orderNo: 'VIR1', customerOrderNo: 1, customerId: firm.id, createdById: cust.id } });
+  order = await db.order.create({ data: { orderNo: 'VIR1', customerOrderNo: '1', customerId: firm.id, createdById: cust.id } });
   const file = (name, key, scanStatus = 'PENDING') => ({ name, storageKey: key, size: 10, uploadedById: cust.id, orderId: order.id, scanStatus });
   put('2026/09/temiz.pdf');
   put('2026/09/virus.pdf');

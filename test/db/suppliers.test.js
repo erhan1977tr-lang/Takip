@@ -352,7 +352,7 @@ dbTest('revizyon: gönderilmiş sipariş değişmez; yeni revizyon ayrı onaylan
 }));
 
 dbTest('tahmini yükleme tarihi: yalnızca yönetici; 2 gün önce yöneticiye bir kez; tarih değişince yeni tarihe göre; başka role ve müşteriye gitmez; cam siparişine dokunmaz', offline(async () => {
-  const glass = await db.order.create({ data: { orderNo: 'TED1', customerOrderNo: 1, customerId: firm.id, createdById: U.cust.id, estimatedShipDate: new Date('2026-10-20T12:00:00Z') } });
+  const glass = await db.order.create({ data: { orderNo: 'TED1', customerOrderNo: '1', customerId: firm.id, createdById: U.cust.id, estimatedShipDate: new Date('2026-10-20T12:00:00Z') } });
   const glassBefore = JSON.stringify(await db.order.findUniqueOrThrow({ where: { id: glass.id } }));
   const sup = await supplier('Takvim Tedarik');
   const id = await draft(sup, [{ code: 'MC12', qty: '1' }]);

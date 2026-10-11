@@ -194,7 +194,7 @@ export async function correctLoading(db, { day, input, reason, key, actor, now =
       await tx.loadingConfirmationItem.createMany({
         data: plan.rows.map((i) => ({
           ...i, confirmationId: plan.confirmationId, revision: plan.revision, correctionId: c.id, scopeKey: itemKey(i),
-          m2: i.m2.toFixed(2), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
+          m2: i.m2.toFixed(3), unitCost: i.unitCost.toFixed(2), unitSale: i.unitSale == null ? null : i.unitSale.toFixed(2),
           costAmount: i.costAmount.toFixed(4), saleAmount: i.saleAmount.toFixed(4),
         })),
       });

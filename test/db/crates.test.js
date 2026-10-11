@@ -30,7 +30,7 @@ before(async () => {
   sales = await db.user.create({ data: { email: 's@crate.test', name: 'Satış', type: 'INTERNAL', appRole: 'SATIS', customerId: factory.id } });
   const cust = await db.user.create({ data: { email: 'c@crate.test', name: 'M', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: a.id } });
   const mk = (key, firm, no, extra = {}) => db.order.create({
-    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: no, customerId: firm.id, createdById: cust.id, status: 'URETIMDE', estimatedShipDate: ship, ...extra },
+    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), customerId: firm.id, createdById: cust.id, status: 'URETIMDE', estimatedShipDate: ship, ...extra },
   }).then((o) => { orders[key] = o; });
   await mk('a1', a, 1);
   await mk('a2', a, 2);

@@ -23,7 +23,7 @@ async function glassOrder(firm, day, lines, { offerStatus = 'GONDERILDI', ...ext
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
+      orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id,
       status: 'URETIMDE', estimatedShipDate: at(day), ...extra,
       offers: { create: { status: offerStatus, currency: 'EUR', amount: '0', offerAmount: '0', createdById: admin.id, sentAt: new Date(), lines: { create: lines.map((l, i) => ({ sortOrder: i, ...l })) } } },
     },

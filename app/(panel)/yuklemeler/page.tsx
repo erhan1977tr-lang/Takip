@@ -120,7 +120,7 @@ export default async function LoadingPage({ searchParams }: { searchParams: Prom
     dayGuests = guestsOf(selected, extraGuests);
   }
   const monthTotal = monthDays.map((k) => sumOf(k).total).reduce(
-    (a, x) => ({ orders: a.orders + x.orders, metraj: Math.round((a.metraj + x.metraj) * 100) / 100, netKg: a.netKg + x.netKg }),
+    (a, x) => ({ orders: a.orders + x.orders, metraj: Math.round((a.metraj + x.metraj) * 1000) / 1000, netKg: a.netKg + x.netKg }),
     { orders: 0, metraj: 0, netKg: 0 },
   );
 

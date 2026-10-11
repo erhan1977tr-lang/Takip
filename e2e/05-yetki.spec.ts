@@ -96,7 +96,7 @@ test('geçmiş ve kişiler: satış / çizim müşteri kişisini, alıcı e-post
   const BILLING = 'facturi-istoric@unsal.test';
   const no = 9905;
   const order = await db.order.create({
-    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: no, customerId: firm.id, createdById: person.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', title: 'AUD geçmiş testi' },
+    data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), customerId: firm.id, createdById: person.id, status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', title: 'AUD geçmiş testi' },
   });
   try {
     // Eski biçimde (3.50.10'dan önce) yazılmış satırlar + müşteri kişisinin olay, not ve dosyası

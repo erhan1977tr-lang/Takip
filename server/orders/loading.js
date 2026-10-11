@@ -31,6 +31,10 @@ export function glassKgPerM2(description) {
 function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+/** m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır */
+function round3(n) {
+  return Math.round((n + Number.EPSILON) * 1000) / 1000;
+}
 const num = (v) => {
   const n = Number(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
@@ -54,7 +58,7 @@ export function loadedOffer(offers, customerView) {
 /**
  * Bir siparişin yükü.
  * @param {{
- *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null, pieceBase?: number|null}[],
+ *   lines?: {description: string, enMm?: number|null, boyMm?: number|null, adet: number, unit?: string, unitPrice?: any, kind?: string, weightKgM2?: number|null, pieceBase?: number|null, pieceM2?: unknown}[],
  *   items?: {camAdedi: number}[],
  *   crates?: {netAgirlik?: any, brutAgirlik?: any, daraKg?: any}[],
  * }} p
@@ -69,7 +73,7 @@ export function orderLoad({ lines = [], items = [], crates = [] }) {
   const glassLines = lines.filter((l) => (l.kind ?? 'CAM') === 'CAM' && (l.unit ?? 'm2') === 'm2');
   for (const l of glassLines) {
     const m = offerLineTotals({ ...l, unit: 'm2', unitPrice: 0 }).metraj;
-    metraj = round2(metraj + m);
+    metraj = round3(metraj + m);
     camAdet += Math.max(0, Math.trunc(num(l.adet)));
     // Katalogdaki ağırlık (teklif satırındaki anlık kopya) önce; yoksa açıklamadan tahmin
     glassKg += m * ((l.weightKgM2 != null ? num(l.weightKgM2) : null) ?? glassKgPerM2(l.description) ?? DEFAULT_KG_PER_M2);
@@ -97,7 +101,7 @@ export function orderLoad({ lines = [], items = [], crates = [] }) {
 export function sumLoads(loads) {
   let metraj = 0, camAdet = 0, cnc = 0, delik = 0, netKg = 0, realCrates = 0, realGross = 0, estNet = 0;
   for (const l of loads) {
-    metraj = round2(metraj + l.metraj);
+    metraj = round3(metraj + l.metraj);
     camAdet += l.camAdet;
     cnc += l.cnc ?? 0;
     delik += l.delik ?? 0;

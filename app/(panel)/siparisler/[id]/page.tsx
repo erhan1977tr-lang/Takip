@@ -498,6 +498,8 @@ export default async function OrderPage({
             kind: l.kind, free: l.free, listPrice: l.listPrice != null ? Number(l.listPrice).toFixed(2) : '',
             id: l.id, offerPrice: l.offerPrice != null ? Number(l.offerPrice).toFixed(2) : '', comp: l.compensationId ? compTagText(l.compensationId) : undefined, splitGroup: l.splitGroup ?? '',
             crate: l.crateFee,
+            // Bir camın kayıtlı m²'si (karar 261; boş = eski satır) ve şekilli cam (karar 262)
+            pieceM2: l.pieceM2 != null ? String(l.pieceM2) : '', shaped: !!l.shaped,
             // Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzen (numaralı, ölçüsüz, adı sabit);
             // yöneticinin sandık bedeli satışa hiç gelmez
             salesCrate: isSalesCrate(l),
@@ -797,6 +799,8 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                       {!sub && l.compensationId && <div className="comp-tag"><span className="badge badge-warn" data-comp-tag>{compTag ? compTag(l.compensationId) : t('compensation.badge')}</span></div>}
                       {sub && <span className="badge badge-info">{kindLabel}</span>}{' '}
                       {desc}
+                      {/* Şekilli cam (karar 262): satırın niteliği, herkes görür */}
+                      {!sub && l.shaped && <> <span className="badge badge-info" data-shaped>{t('offer.shaped')}</span></>}
                       {l.free && <> <span className="badge badge-ok">{t('offer.free')}</span></>}
                       {/* Yöneticinin sandık bedeli (Paket 4): satış bu satırı hiç almaz; yönetici "satış görmez" rozetiyle görür */}
                       {admin && l.crateFee && <> <span className="badge badge-info" data-crate-fee>{t('offer.editor.crateBadge')}</span></>}

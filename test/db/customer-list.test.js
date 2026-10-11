@@ -15,7 +15,7 @@ const at = (offset) => new Date(Date.now() + offset * 86_400_000);
 async function order(c, no, { status = 'URETIMDE', ship = at(5), adet = 3 } = {}) {
   return db.order.create({
     data: {
-      orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `Liste ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status, estimatedShipDate: ship,
+      orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `Liste ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status, estimatedShipDate: ship,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '1', offerAmount: '1', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
     },

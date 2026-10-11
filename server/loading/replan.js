@@ -150,7 +150,7 @@ export async function replanNotLoaded(db, { itemId, day, quantity = null, replac
       const m2 = snapshotOfItem(item, { quantity: wanted }).m2;
       const replan = await tx.loadingReplan.create({
         data: {
-          sourceItemId: item.id, orderId: item.orderId, customerId: item.customerId, quantity: wanted, m2: m2.toFixed(2),
+          sourceItemId: item.id, orderId: item.orderId, customerId: item.customerId, quantity: wanted, m2: m2.toFixed(3),
           reason: item.notLoadedReason ?? 'OTHER', fromDay: item.confirmation.shipDay, shipDay, activeKey: `${item.confirmationId}|${key}|${day}`, createdById: actor.id, createdAt: now,
         },
       });

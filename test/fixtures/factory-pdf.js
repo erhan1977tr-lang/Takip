@@ -48,5 +48,18 @@ export const FORM_CNC = form({
 });
 
 
+// Normal / şekilli cam (karar 262) — kullanıcının verdiği açıklama düzeni: cam adı iki satıra bölünmüş, ikinci satır
+// sayılarla aynı satırda; aynı teknik cam, ikincisi "- ŞEKİLLİ". Metraj 3 ondalık (1183 × 2017 = 2,386 m² — karar 261).
+export const DESC_NORMAL = '66.3 TEMPER LAMİNE CAM REFLEKTE FÜME + ŞEFFAF';
+export const DESC_SHAPED = '66.3 TEMPER LAMİNE CAM - ŞEKİLLİ REFLEKTE FÜME + ŞEFFAF';
+export const shapedForm = ({ no = '97001', code = 'ABC 40' } = {}) => form({
+  no, project: `MUSTERIX ${code}`,
+  rows: [
+    '1 66.3 TEMPER LAMİNE CAM', `REFLEKTE FÜME + ŞEFFAF 1183 2017 2 2,386 4,772 100,00 TL 0,0 477,20 ${code}`,
+    '2 66.3 TEMPER LAMİNE CAM - ŞEKİLLİ', `REFLEKTE FÜME + ŞEFFAF 1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ${code}`,
+  ],
+  total: '3 5,772 577,20', sub: '577,20', vat: '115,44', grand: '692,64',
+});
+
 /** Satırları pdf.js parçası biçimine çevirir (satır başına bir parça, 12 pt aralık) — çıkarma adımı olmadan test için */
 export const itemsOf = (lines) => lines.map((l, i) => ({ page: l.page, x: 20, y: 40 + i * 12, str: l.text }));

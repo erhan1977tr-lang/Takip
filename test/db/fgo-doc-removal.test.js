@@ -53,7 +53,7 @@ const remove = (docId, fgo, who = actor()) => removeDocumentDeletedInFgo(db, { d
 async function glassOrder(no) {
   return db.order.create({
     data: {
-      orderNo: `GLA${no}`, customerOrderNo: no, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(Date.now() + 10 * 86_400_000),
+      orderNo: `GLA${no}`, customerOrderNo: String(no), title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: new Date(Date.now() + 10 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
     },

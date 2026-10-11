@@ -70,7 +70,7 @@ test('veri: not çevirisi açık (sahte sağlayıcı — test modu); iki firman�
       lines: { create: lines }, ...extra,
     });
     const order = (firm: { id: string; prefix: string | null }, no: number, title: string, offers: object[], extra: object = {}) => db.order.create({
-      data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: no, title, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: adminUser.id, status: 'URETIMDE', offers: { create: offers }, ...extra },
+      data: { orderNo: `${firm.prefix}${no}`, customerOrderNo: String(no), title, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: adminUser.id, status: 'URETIMDE', offers: { create: offers }, ...extra },
     });
     // UNS9601: 1000 × 2000 × 3 = 6 m² × 41,50 = 249,00 (satış fiyatı 37,13 — müşteriye gitmez)
     await order(uns, 9601, 'Rapor duș cabină', [offer('2019-01-10T10:00:00Z', [line({ description: 'Securizat 8mm', enMm: 1000, boyMm: 2000, adet: 3, unitPrice: '37.13', offerPrice: '41.50' })])]);

@@ -259,6 +259,7 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 
 /**
  * "Sandık parası" teklif satırı: adetle fiyatlanan normal bir satır (tür CAM, birim adet). Açıklaması iki dilde tanınır ve
@@ -303,11 +304,33 @@ const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
 const qtyOf = (line) => Math.max(0, Math.trunc(num(line.adet)));
 /** Ayrılmış camın kalemdeki sırası (karar 114): satırın ilk camından önceki cam sayısı; olağan satırda 0. */
 const pieceBaseOf = (line) => (isSub(line) || line.unit === 'adet' ? 0 : Math.max(0, Math.trunc(num(line.pieceBase))));
-/** q adet camın m²'si — yuvarlama TEK yerde: kalemin (toplam adedin) m²'si iki haneye yuvarlanır */
+/**
+ * Bir camın kayıtlı m²'si (karar 261): fabrika PDF'inden gelen ya da elle girilen metraj (OfferLine.pieceM2). Boş / 0 →
+ * eski satır (kayıtlı m² yok).
+ */
+export const pieceAreaOf = (line) => {
+  if (isSub(line) || line?.pieceM2 == null || line.pieceM2 === '') return 0;
+  const n = num(line.pieceM2);
+  return n > 0 ? n : 0;
+};
+/** Ölçüden bir camın m²'si — fabrikanın kuralı: en × boy, 3 ondalık (yarım yukarı). Yeni / ölçüsü değişen satırda kullanılır. */
+export const pieceAreaFromDims = (en, boy) => {
+  const e = num(en), b = num(boy);
+  return e > 0 && b > 0 ? round3((e * b) / 1_000_000) : 0;
+};
+/**
+ * q adet camın m²'si — yuvarlama TEK yerde. Kayıtlı parça m²'si varsa (karar 261): parça m² × adet, 3 ondalık (erken iki
+ * haneye yuvarlama yok); yoksa eski kural: kalemin (toplam adedin) m²'si en × boy'dan iki haneye — eski teklifler, onaylar
+ * ve belgeler aynı sonucu verir.
+ */
 const areaOf = (line, q) => {
   const en = num(line.enMm), boy = num(line.boyMm);
-  return !isSub(line) && en > 0 && boy > 0 ? round2(((en * boy) / 1_000_000) * q) : 0;
+  if (isSub(line) || !(en > 0 && boy > 0)) return 0;
+  const piece = pieceAreaOf(line);
+  return piece > 0 ? round3(piece * q) : round2(((en * boy) / 1_000_000) * q);
 };
+/** m² farkının / toplamının yuvarlanması satırın kuralıyla (3 ondalık kayıtlı m², 2 ondalık eski satır) */
+const roundArea = (line, v) => (pieceAreaOf(line) > 0 ? round3(v) : round2(v));
 /** Satırın kalemde başladığı m² (ayrılmış camda kendinden önceki camların m²'si; olağan satırda 0). */
 export const pieceStartArea = (line) => areaOf(line, pieceBaseOf(line));
 
@@ -328,7 +351,7 @@ export function offerLineTotals(line) {
   const base = pieceBaseOf(line);
   const start = base ? areaOf(line, base) : 0;
   const end = areaOf(line, base + adet);
-  const metraj = base ? round2(end - start) : end;
+  const metraj = base ? roundArea(line, end - start) : end;
   const amount = sub || line.unit === 'adet' ? round2(adet * price)
     : base ? round2(round2(end * price) - round2(start * price)) : round2(metraj * price);
   return { metraj, amount };
@@ -342,7 +365,7 @@ export function offerTotals(lines) {
     (acc, l) => {
       const t = offerLineTotals(l);
       const n = qtyOf(l);
-      acc.metraj = round2(acc.metraj + t.metraj);
+      acc.metraj = round3(acc.metraj + t.metraj);
       acc.amount = round2(acc.amount + t.amount);
       if (l.kind === 'CNC') acc.cnc += n;
       else if (l.kind === 'DELIK') acc.delik += n;
@@ -414,7 +437,7 @@ export function splitOnePiece(lines, index, piece = (l) => ({ ...l }), newKey = 
 
 /**
  * Ayrılmış cam gruplarının sırasını (pieceBase) hesaplar — her teklif kaydında sunucuda ve ekranda aynı işlev (karar 114).
- * Grup: aynı splitGroup anahtarını taşıyan, AYNI cam (açıklama), aynı ölçü, m² birimli cam satırları; sırayla
+ * Grup: aynı splitGroup anahtarını taşıyan, AYNI cam (açıklama), aynı ölçü ve aynı parça m²'si (karar 261), m² birimli cam satırları; sırayla
  * pieceBase = gruptaki önceki satırların adet toplamı. Gruba uymayan (camı / ölçüsü farklılaşmış) ya da tek kalan satır
  * olağan satırdır: anahtarı ve sırası sıfırlanır. Fiyat gruba üyelik koşulu değildir (m² geometridir); tutar her satırın
  * kendi fiyatıyla hesaplanır.
@@ -431,7 +454,8 @@ export function assignPieceBases(lines) {
     if (!g) groups.set(l.splitGroup, [i]);
     else {
       const ref = lines[g[0]];
-      if (String(ref.description ?? '') === String(l.description ?? '') && num(ref.enMm) === num(l.enMm) && num(ref.boyMm) === num(l.boyMm)) g.push(i);
+      if (String(ref.description ?? '') === String(l.description ?? '') && num(ref.enMm) === num(l.enMm) && num(ref.boyMm) === num(l.boyMm)
+        && pieceAreaOf(ref) === pieceAreaOf(l)) g.push(i);
     }
   }
   for (const [key, idx] of groups) {

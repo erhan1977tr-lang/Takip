@@ -88,7 +88,7 @@ before(async () => {
   const firm = await db.customer.create({ data: { name: 'Sunucu Kipi SRL', prefix: 'SNK' } });
   await db.user.create({ data: { email: 'yonetici@sunucu-kipi.test', name: 'Y', type: 'INTERNAL', appRole: 'ADMIN', customerId: factory.id } });
   const cust = await db.user.create({ data: { email: RECIPIENT, name: 'M', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: firm.id, language: 'ro' } });
-  order = await db.order.create({ data: { orderNo: 'SNK1', customerOrderNo: 1, title: 'Sunucu kipi', customerId: firm.id, createdById: cust.id } });
+  order = await db.order.create({ data: { orderNo: 'SNK1', customerOrderNo: '1', title: 'Sunucu kipi', customerId: firm.id, createdById: cust.id } });
   // Bildirim e-postaları "başlangıç anı"ndan sonraki olaylar içindir: testteki olaylar işlensin diye başlangıç geçmişe alınır
   const since = { at: new Date(0).toISOString() };
   await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: since }, update: { value: since } });

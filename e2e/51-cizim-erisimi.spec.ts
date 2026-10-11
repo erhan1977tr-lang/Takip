@@ -84,7 +84,7 @@ test('veri: iki firma, bütün sürüm durumları, eski düzen, kaldırılmış 
     const prefix = owner.customer!.prefix ?? 'XXX';
     const o = await db.order.create({
       data: {
-        orderNo: `${prefix}${no}`, customerOrderNo: no, title: `Paket D ${key} ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: owner.customer!.id,
+        orderNo: `${prefix}${no}`, customerOrderNo: String(no), title: `Paket D ${key} ${RUN}`, orderTypeCode: 'GLASS_ORDER', customerId: owner.customer!.id,
         createdById: owner.id, status: 'HAZIRLANIYOR', drawingTrack: 'ONAY_BEKLIYOR', ...data,
       },
     });

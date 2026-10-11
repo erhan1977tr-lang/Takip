@@ -396,6 +396,7 @@ export default {
     lineDescription: '{n}. satırda açıklama eksik.',
     lineDims: '{n}. satırda ölçü 1–10000 mm arasında olmalı.',
     lineQty: '{n}. satırda adet geçersiz.',
+    lineM2: '{n}. satırda metraj geçersiz: sıfırdan büyük, en çok 3 ondalıklı bir m² girin.',
     linePrice: '{n}. satırda fiyat geçersiz.',
     offerNotEditable: 'Teklif şu anda düzenlenemez.',
     offerNotFound: 'Teklif bulunamadı.',

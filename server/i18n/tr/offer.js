@@ -2,6 +2,8 @@
 // İstemci bileşenine bu ad alanı (m.offer) prop olarak gider.
 export default {
   free: 'bedelsiz',
+  // Şekilli cam (karar 262): teklif tablosunda, PDF ve Excel çıktılarında cam adının yanında
+  shaped: 'Şekilli',
   // Bedelsiz telafi (karar 231): fiziksel üretilir / yüklenir, faturalanmaz
   physical: 'Fiziksel: {pieces} cam · {m2} m² — Faturalanacak: {bPieces} cam · {bM2} m² (bedelsiz: {fPieces} cam · {fM2} m²)',
   // TELAFİ satırı rozeti (kırık / telafi camı — Aşama 9; yalnızca iç ekip)
@@ -148,17 +150,21 @@ export default {
       OPS_QTY_AMBIGUOUS: '{row}. satır: “{name}” işleminin miktarı ({qty}) cam adedine ({pieces}) tam bölünmüyor; hangi cama ait olduğu belirsiz.',
       POZ_FALLBACK: 'Bazı satırlarda Poz yok; Poz alanına fabrika sipariş numarası ({factoryNo}) yazıldı.',
       SUBTOTAL_MISMATCH: 'PDF satır toplamı ({pdfSum}) Ara Toplam ({subtotal}) ile tutmuyor. Aktarılmaz.',
-      ROUNDING_DIFFERENCE: 'TAKİP hesabı ile Ara Toplam arasında {diff} EUR yuvarlama farkı var (fabrika m²’yi 3, TAKİP 2 ondalıkla hesaplar). Fark için satır ya da düzeltme eklenmez.',
+      ROUNDING_DIFFERENCE: 'TAKİP hesabı ile Ara Toplam arasında {diff} EUR yuvarlama farkı var (birim fiyat yuvarlaması). Fark için satır ya da düzeltme eklenmez.',
       UNEXPLAINED_DIFFERENCE: 'TAKİP hesabı ile Ara Toplam arasında açıklanamayan {diff} EUR fark var. Aktarılmaz.',
-      ALREADY_IMPORTED: 'Bu PDF bu siparişe zaten aktarıldı.',
+      AREA_MISMATCH: '{row}. satırda PDF’teki m² ({pdfM2}) ölçüyle (en × boy = {dimsM2}) uyuşmuyor. Aktarılmaz; satırı elle girin.',
+      SHAPE_UNCERTAIN: '{row}. satırın açıklamasında şekil bilgisi belirsiz ({description}); normal cam olarak aktarılır — gerekirse teklif tablosunda “Şekilli” seçin.',
+      ALREADY_IMPORTED: 'Bu PDF bu siparişe zaten aktarıldı ve satırları teklifte duruyor. Yeniden aktarmak için önce o satırları silip teklifi kaydedin.',
       INFECTED: 'Dosyada virüs bulundu; karantinada.',
-      NOT_SCANNED: 'Dosya henüz virüs taramasından geçmedi.',
+      NOT_SCANNED: 'Dosya virüs taramasından geçmedi (tarayıcıya ulaşılamadı ya da tarama kapalı); aktarılamaz. Tarama çalışırken dosyayı yeniden yükleyin.',
       PDF_UNREADABLE: 'PDF okunamadı: {reason}.',
       DUPLICATE_IN_BATCH: 'Aynı fabrika sipariş numarası ({factoryNo}) bu aktarımda birden çok PDF’te var.',
       DUPLICATE_FACTORY_ORDER: 'Fabrika siparişi {factoryNo} bu teklife zaten aktarılmış.',
       FACTORY_ORDER_ON_OTHER: 'Fabrika siparişi {factoryNo} başka bir siparişe ({orderNo}) aktarılmış.',
     },
     kinds: { CNC: 'CNC', DELIK: 'Delik' },
+    shapeNormal: 'Normal',
+    shapeShaped: 'Şekilli',
   },
   view: {
     // Teklif tablosunun altında toplam metraj (P2-B)
@@ -210,6 +216,11 @@ export default {
     reset: 'Tabloyu temizle',
     resetConfirm: 'Teklif tablosu ilk hâline (müşterinin siparişindeki camlar) dönecek; girdiğiniz satırlar ve fiyatlar silinecek. Devam edilsin mi?',
     duplicateGlass: 'Aynı camdan yeni satır ekle',
+    m2Aria: 'Metraj (m²)',
+    m2Hint: 'Metraj 3 ondalığa kadar elle düzeltilebilir; ölçü değişince ölçüden yeniden hesaplanır.',
+    shapeAria: 'Cam türü: normal ya da şekilli',
+    shapeNormal: 'Normal',
+    shapeShaped: 'Şekilli',
     opsHint: "CNC / delik tek bir cam içindir. Adedi 1'den büyük bir cama +CNC / +Delik derseniz o camlardan biri ayrı satıra (adet 1) ayrılır ve işlem ona eklenir; işlemsiz camlar satırında adetle durur.",
     splitNote: 'Cam ayrıldı: işlem tek cama eklendi, kalan camlar satırında duruyor. Toplam adet ve birim fiyatlar değişmedi.',
     onePieceQty: 'İşlemli cam tek adettir. Aynı işlemli camdan bir tane daha için "+ aynısı"nı kullanın.',

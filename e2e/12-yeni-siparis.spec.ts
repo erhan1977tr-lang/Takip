@@ -282,7 +282,7 @@ test('eski çok camlı sipariş normal açılır; satış teklif tablosunda "+ C
   const { PrismaClient } = await import('@prisma/client');
   const db = new PrismaClient();
   try {
-    const order = await db.order.findUniqueOrThrow({ where: { orderNo } });
+    const order = await db.order.findFirstOrThrow({ where: { orderNo } });
     await db.orderItem.create({ data: { orderId: order.id, glassName: 'ESKİ İKİNCİ CAM — FÜME', glassNameRo: 'A DOUA STICLĂ VECHE — GRI', camAdedi: 6 } });
   } finally {
     await db.$disconnect();

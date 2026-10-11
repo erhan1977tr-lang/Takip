@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { formatOfferProblems } from '@/server/i18n/format.js';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { applyLinePrice, assignPieceBases, atOfferPrice, offerLineTotals, offerProblems, offerTotals, splitOnePiece } from '@/server/orders/rules.js';
+import { applyLinePrice, assignPieceBases, atOfferPrice, offerLineTotals, offerProblems, offerTotals, pieceAreaFromDims, splitOnePiece } from '@/server/orders/rules.js';
 import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
 import { ExcelImport } from './ExcelImport';
@@ -16,13 +16,20 @@ import { PdfImport } from './PdfImport';
  */
 /** from: işlem eklemek için ayrılan tek camın kaynak satırı (kayıtlı satırın kimliği) — sunucu fiyatları ondan taşır (karar 113) */
 type Line = { key: number; id: string; from?: string; /** ayrılmış cam grubu (karar 114): aynı ticari kalemin satırları — m² ve tutar toplam adetten */ splitGroup?: string | null; description: string; poz: string; enMm: string; boyMm: string; adet: string; unit: string; unitPrice: string; kind: string; free: boolean; listPrice: string; offerPrice: string; /** TELAFİ satırı: gerçek telafi numarasının etiketi (karar 231 — yalnızca gösterim; işaret sunucuda satırla taşınır) */ comp?: string; /** Yöneticinin sandık bedeli satırı (Paket 4): satış görmez; yalnızca yönetici ekler */ crate?: boolean;
-  /** Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzende bağımsız, numaralı kalem; satış ekler / değiştirir, yönetici görür */ salesCrate?: boolean };
+  /** Satışın sandık parası (karar 211, 214): yöneticinin sandık satırıyla aynı düzende bağımsız, numaralı kalem; satış ekler / değiştirir, yönetici görür */ salesCrate?: boolean;
+  /** Bir camın m²'si (karar 261): PDF'ten ya da elle girilen metraj ÷ adet; '' = eski satır (en × boy, 2 ondalık) */ pieceM2?: string;
+  /** Metraj kutusunda yazılmakta olan metin (yalnızca ekranda; kayda gitmez) */ m2Edit?: string;
+  /** Şekilli cam (karar 262): satırın niteliği — fiyat, ölçü, adet ve işlemler değişmez */ shaped?: boolean };
 
 /** Fiyat tablosu (karar 26): cam adı (ekrandaki dilde ve Türkçe) → m² fiyatı; delik ve CNC adet fiyatı */
 export type EditorPricing = { name: string; glass: Record<string, number>; holePrice: number | null; cncPrice: number | null };
 
 let seq = 1000;
-const blankGlass = (): Line => ({ key: seq++, id: '', description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false, listPrice: '', offerPrice: '' });
+const blankGlass = (): Line => ({ key: seq++, id: '', description: '', poz: '', enMm: '', boyMm: '', adet: '1', unit: 'm2', unitPrice: '', kind: 'CAM', free: false, listPrice: '', offerPrice: '', pieceM2: '', shaped: false });
+/** Ölçüden bir camın m²'si (fabrikanın kuralı: en × boy, 3 ondalık) — '' ölçü eksikse */
+const autoPiece = (en: string, boy: string) => { const a = pieceAreaFromDims(en, boy); return a > 0 ? a.toFixed(3) : ''; };
+/** Elle yazılan satır metrajı (3 ondalığa kadar, virgül ya da nokta) → sayı; geçersizse null */
+const parseArea = (t: string) => { const v = t.trim().replace(',', '.'); return /^\d{1,6}(\.\d{1,3})?$/.test(v) && Number(v) > 0 ? Number(v) : null; };
 const money2 = (n: number | null | undefined) => (n != null ? n.toFixed(2) : '');
 const blankSub = (kind: 'CNC' | 'DELIK', price: number | null, customerPrice: number | null): Line => {
   const p = money2(price);
@@ -71,7 +78,7 @@ export function OfferEditor(props: {
     props.initial.length ? props.initial.map((l, i) => ({ key: i, ...l })) : [blankGlass()]
   );
   // Kaydedilmemiş değişiklik var mı (PDF aktarımı kayıtlı tabloya ekler ve sayfayı yeniler — önce kayıt istenir)
-  const snapshot = (ls: Line[]) => JSON.stringify(ls.map(({ key: _k, ...rest }) => rest));
+  const snapshot = (ls: Line[]) => JSON.stringify(ls.map(({ key: _k, m2Edit: _e, ...rest }) => rest));
   const [initialSnap] = useState(() => snapshot(lines));
   const dirty = useMemo(() => snapshot(lines) !== initialSnap, [lines, initialSnap]);
   // Yönetici (fiyat onayı ve güncelleme) müşteri fiyatıyla çalışır; satış fiyatı yalnızca yanında görünür
@@ -91,6 +98,26 @@ export function OfferEditor(props: {
   /** Satır türünün adı: "CNC" / "Delik" (dile göre) */
   const kindName = (kind: string) => lineKind[kind as keyof typeof lineKind] ?? kind;
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  /**
+   * Ölçü değişince camın m²'si ölçüden yeniden hesaplanır (fabrikanın kuralı: en × boy, 3 ondalık — karar 261); elle girilmiş
+   * metraj ölçüyle birlikte geçerliliğini yitirir. Adet değişince parça m²'si aynı kalır (metraj = parça m² × adet).
+   */
+  const setDims = (l: Line, enMm: string, boyMm: string) => set(l.key, { enMm, boyMm, pieceM2: autoPiece(enMm, boyMm), m2Edit: undefined });
+  /**
+   * Metrajı elle düzenleme (karar 261): satırın m²'si 3 ondalığa kadar yazılır; kayda parça m²'si (metraj ÷ adet) gider —
+   * sonraki kayıtlarda değer korunur, adet değişince orantılı kalır. Aynı kalemin ayrılmış camları (karar 114) aynı parça
+   * m²'sini taşır. Geçersiz yazı kayda gitmez (kutudan çıkınca son geçerli değer görünür).
+   */
+  const setArea = (l: Line, text: string) => setLines((ls) => {
+    const v = parseArea(text);
+    const q = Math.max(1, Math.trunc(Number(l.adet) || 0));
+    const piece = v == null ? null : String(Number((v / q).toFixed(9)));
+    return ls.map((x) => {
+      if (x.key === l.key) return { ...x, m2Edit: text, ...(piece ? { pieceM2: piece } : {}) };
+      if (piece && l.splitGroup && x.splitGroup === l.splitGroup) return { ...x, pieceM2: piece };
+      return x;
+    });
+  });
   /**
    * "Tek fiyatı tüm satırlara uygula" (yalnızca ekrandaki düzenleme kolaylığı): işaretliyken bir m² cam satırına yazılan
    * fiyat bedelsiz olmayan tüm m² cam satırlarına yazılır. CNC, delik ve adetli satırlar (sandık parası) değişmez.
@@ -124,7 +151,7 @@ export function OfferEditor(props: {
   const importRows = (rows: { en: number; boy: number; adet: number }[]) => setLines((ls) => {
     const glass = props.importGlass ?? '';
     const added = rows.map((r) => {
-      const base = { ...blankGlass(), enMm: String(r.en), boyMm: String(r.boy), adet: String(r.adet) };
+      const base = { ...blankGlass(), enMm: String(r.en), boyMm: String(r.boy), adet: String(r.adet), pieceM2: autoPiece(String(r.en), String(r.boy)) };
       return { ...base, ...describe(base, glass) };
     });
     // Sandık parası satırı (ölçüsüz, bağımsız kalem — karar 214) boş cam satırı sayılmaz: aktarma onu silmez
@@ -283,6 +310,14 @@ export function OfferEditor(props: {
                     {!sub && l.description.length > 28 && <div className="desc-full">{l.description}</div>}
                     {/* Satırın işlemleri: açıklamanın hemen altında (ek işlem satırı ekle, bedelsiz yap) */}
                     <div className="line-actions">
+                      <input type="hidden" name="l_shaped" value={!sub && !crateRow && l.shaped ? '1' : '0'} />
+                      {/* Normal / Şekilli cam (karar 262): yalnızca satırın niteliği — fiyat, POZ, ölçü, adet ve işlemler değişmez */}
+                      {!sub && !crateRow && (
+                        <select className="shape-select" data-shape value={l.shaped ? 'shaped' : 'normal'} onChange={(e) => set(l.key, { shaped: e.target.value === 'shaped' })} aria-label={m.editor.shapeAria}>
+                          <option value="normal">{m.editor.shapeNormal}</option>
+                          <option value="shaped">{m.editor.shapeShaped}</option>
+                        </select>
+                      )}
                       {l.free && <span className="badge badge-ok">{m.free}</span>}
                       {l.crate && <span className="badge badge-info" data-crate-fee>{m.editor.crateBadge}</span>}
                       {/* Yönetici satışın sandık parasını rozetle ayırır (satış görür); satışın ekranında rozet yok — yöneticinin sandık satırının düzeni */}
@@ -299,8 +334,8 @@ export function OfferEditor(props: {
                     <><td><input type="hidden" name="l_en" value="" /></td><td><input type="hidden" name="l_boy" value="" /></td></>
                   ) : (
                     <>
-                      <td className="c-dim"><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => set(l.key, { enMm: e.target.value.replace(/\D/g, '') })} aria-label={m.cols.width} /></td>
-                      <td className="c-dim"><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => set(l.key, { boyMm: e.target.value.replace(/\D/g, '') })} aria-label={m.cols.height} /></td>
+                      <td className="c-dim"><input name="l_en" inputMode="numeric" value={l.enMm} onChange={(e) => setDims(l, e.target.value.replace(/\D/g, ''), l.boyMm)} aria-label={m.cols.width} /></td>
+                      <td className="c-dim"><input name="l_boy" inputMode="numeric" value={l.boyMm} onChange={(e) => setDims(l, l.enMm, e.target.value.replace(/\D/g, ''))} aria-label={m.cols.height} /></td>
                     </>
                   )}
                   {/* İşlemli cam tek adettir: adet kutusu kilitlidir (çoğaltmak için "aynısından bir tane daha") */}
@@ -316,7 +351,15 @@ export function OfferEditor(props: {
                       </select>
                     )}
                   </td>
-                  <td className="num">{sub || crateRow ? '' : fmtArea(tot.metraj)}</td>
+                  <td className="num c-m2">
+                    <input type="hidden" name="l_pm2" value={sub || crateRow || l.unit !== 'm2' ? '' : l.pieceM2 ?? ''} />
+                    {sub || crateRow ? '' : l.unit === 'm2' && l.enMm && l.boyMm ? (
+                      // Metraj elle düzenlenebilir (3 ondalık — karar 261); kutudan çıkınca hesaplanan değer gösterilir
+                      <input inputMode="decimal" className="m2-input" data-m2-input value={l.m2Edit ?? fmtArea(tot.metraj)}
+                        onChange={(e) => setArea(l, e.target.value.replace(/[^\d.,]/g, ''))} onBlur={() => set(l.key, { m2Edit: undefined })}
+                        aria-label={m.editor.m2Aria} title={m.editor.m2Hint} />
+                    ) : fmtArea(tot.metraj)}
+                  </td>
                   <td className={adminMode ? 'num' : 'c-price'}>
                     {adminMode ? (
                       // Yönetici satış fiyatını değiştirmez; sunucu da yönetici kaydında satış fiyatına dokunmaz

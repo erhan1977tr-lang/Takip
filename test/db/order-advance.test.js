@@ -77,7 +77,7 @@ async function glassOrder(shipOffsetDays) {
   const no = seq++;
   return db.order.create({
     data: {
-      orderNo: `ADV${no}`, customerOrderNo: no, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
+      orderNo: `ADV${no}`, customerOrderNo: String(no), title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + shipOffsetDays * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '70.00', offerAmount: '120.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [

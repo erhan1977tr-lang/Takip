@@ -29,7 +29,7 @@ async function depot({ expiresAt = T0 + 86_400_000, status } = {}) {
   const n = ++seq;
   await db.order.create({
     data: {
-      orderNo: `KAPP${n}`, customerOrderNo: n, title: `kapı ${n}`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id, ...(status ? { status } : {}),
+      orderNo: `KAPP${n}`, customerOrderNo: String(n), title: `kapı ${n}`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id, ...(status ? { status } : {}),
       profile: { create: { stage: 'DEPODA', pickupDate: new Date('2027-03-19T00:00:00Z'), warehouseSentAt: new Date(T0), depotTokenHash: hashToken(token), depotTokenExpiresAt: new Date(expiresAt) } },
     },
   });

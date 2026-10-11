@@ -75,11 +75,11 @@ dbTest('profil kataloğu seed: 4 kategori, 27 ürün, görseller veritabanında'
 });
 
 dbTest('numara: profil siparişi GLAP1, GLAP2 … cam numaralarından ayrı sıra; eşzamanlı 5 sipariş benzersiz', async () => {
-  await db.order.create({ data: { orderNo: 'GLA1', customerOrderNo: 1, customerId: firm.id, createdById: people.cust.id } });
+  await db.order.create({ data: { orderNo: 'GLA1', customerOrderNo: '1', customerId: firm.id, createdById: people.cust.id } });
   const a = await newProfileOrder([['GK15', 3]]);
   assert.equal(a.orderNo, 'GLAP1');
   const results = await Promise.all(Array.from({ length: 5 }, () => newProfileOrder([['AD45', 1]])));
-  assert.deepEqual(results.map((r) => r.customerOrderNo).sort((x, y) => x - y), [2, 3, 4, 5, 6]);
+  assert.deepEqual(results.map((r) => Number(r.customerOrderNo)).sort((x, y) => x - y), [2, 3, 4, 5, 6]);
   assert.ok(results.every((r) => r.orderNo === `GLAP${r.customerOrderNo}`));
 });
 
@@ -392,7 +392,7 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   assert.equal(await db.notification.count({ where: { orderId: id, type: { in: Object.values(DOC_NOTICE) } } }), 0);
   assert.ok((await db.notification.count({ where: { orderId: id, type: 'ORDER_PROFORMA', userId: people.cust.id } })) === 1);
   // Müşteri ekranı: profil belgeleri + aynı firmanın cam belgesi tek listede; başka firma göremez
-  const glass = await db.order.create({ data: { orderNo: 'GLA9001', customerOrderNo: 9001, title: 'Cam', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE' } });
+  const glass = await db.order.create({ data: { orderNo: 'GLA9001', customerOrderNo: '9001', title: 'Cam', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE' } });
   await db.fgoDocument.create({ data: { orderId: glass.id, kind: 'PROFORMA', series: 'PRF', number: '9001', issuedAt: new Date(Date.now() + 1000), total: '605.00', paid: '605.00' } });
   const list = await customerDocuments(db, firm.id);
   assert.deepEqual(list.filter((x) => ['PRF9001', 'PRF552', 'GKH684'].includes(x.ref)).map((x) => [x.ref, x.kind, x.orders[0].orderNo, x.payment]), [
@@ -586,7 +586,7 @@ dbTest('Muhasebe: yükleme kârı ve fabrika bakiyesi; ödemeler yüklemeye bağ
   const { supplierData } = await import('../../server/accounting/supplier.js');
   const glass = await db.order.create({
     data: {
-      orderNo: 'GLA900', customerOrderNo: 900, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'YUKLENDI',
+      orderNo: 'GLA900', customerOrderNo: '900', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'YUKLENDI',
       estimatedShipDate: new Date('2026-09-15T00:00:00Z'), actualShipDate: new Date('2026-09-15T00:00:00Z'),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '600.00', offerAmount: '1000.00', createdById: people.admin.id, lines: { create: [{ sortOrder: 0, description: 'Cam', enMm: 1000, boyMm: 2000, adet: 5, unit: 'm2', unitPrice: '60.00', offerPrice: '100.00', kind: 'CAM' }] } } },
     },

@@ -26,7 +26,7 @@ test('veri: Ünsal için gecikmiş / kısmi / eksiksiz yüklenmiş / onaysız "Y
     const make = async (c: { id: string; prefix: string | null }, no: number, ship: Date, status: 'URETIMDE' | 'YUKLENDI' = 'URETIMDE') => {
       const o = await db.order.create({
         data: {
-          orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `P5 liste ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status, estimatedShipDate: ship,
+          orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `P5 liste ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status, estimatedShipDate: ship,
           offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '1', offerAmount: '150', createdById: admin.id, sentAt: new Date(),
             lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 3, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },
         },

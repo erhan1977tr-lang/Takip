@@ -25,7 +25,7 @@ test('veri: bir firma, aynı camın iki fiyatlı satırları + CNC + başka cam 
   firmId = firm.id;
   await db.order.create({
     data: {
-      orderNo: 'GRE1', customerOrderNo: 1, title: 'Grupare e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: day,
+      orderNo: 'GRE1', customerOrderNo: '1', title: 'Grupare e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: day,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '100.00', offerAmount: '285.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [
           { sortOrder: 0, description: 'Temper 10', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' },

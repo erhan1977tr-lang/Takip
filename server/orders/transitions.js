@@ -204,9 +204,11 @@ function decidableDrawing(h) {
 // compensationId: TELAFİ satırının işareti (Aşama 9) — satır düzenlenince / teklifin yeni sürümü açılınca satırla taşınır
 // splitGroup / pieceBase: ayrılmış cam grubu (karar 114) — teklifin yeni sürümüne ve kopyalarına satırla birlikte taşınır
 // crateFee: yöneticinin sandık bedeli satırı (Paket 4) — yeni sürüme ve kopyalara satırla birlikte taşınır
-const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId', 'splitGroup'];
+// pieceM2: bir camın m²'si (karar 261 — PDF'ten ya da elle; boş = eski satır) · shaped: şekilli cam (karar 262) — yeni sürüme
+// ve kopyalara satırla birlikte taşınır; fiyat, ölçü ve adet kuralına dokunmaz
+const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId', 'splitGroup', 'pieceM2'];
 // importId / sourceRow: fabrika PDF'inden aktarılan satırın kaynağı (karar 255) — tarayıcıdan gelmez; kayıtlı satırdan taşınır (mergePrices)
-export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, crateFee: !!l.crateFee, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, importId: l.importId ?? null, sourceRow: l.sourceRow ?? null, sortOrder: i });
+export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, crateFee: !!l.crateFee, shaped: (l.kind ?? 'CAM') === 'CAM' && !!l.shaped, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, importId: l.importId ?? null, sourceRow: l.sourceRow ?? null, sortOrder: i });
 const priceNum = (v) => (v == null || v === '' ? null : Number(v));
 
 /**
@@ -246,6 +248,11 @@ function mergePrices(lines, existing, admin) {
       // Fabrika PDF'i kaynağı (karar 255): kayıtlı satırdan (ya da ayrılan camın kaynağından) taşınır; formdan gelen yok sayılır
       importId: old?.importId ?? null,
       sourceRow: old?.sourceRow ?? null,
+      // Parça m²'si (karar 261) ve şekilli cam (karar 262): formdan gelir (teklif tablosu her satırda gönderir). Alanı hiç
+      // göndermeyen eski istemcide kayıtlı değer korunur — m² yalnızca ölçü aynıysa (ölçü değişince ölçüden yeniden
+      // hesaplanır); sessizce eski 2 ondalıklı kurala dönülmez
+      pieceM2: l.pieceM2 !== undefined ? (l.pieceM2 === '' ? null : l.pieceM2) : old && Number(old.enMm ?? 0) === Number(l.enMm ?? 0) && Number(old.boyMm ?? 0) === Number(l.boyMm ?? 0) ? old.pieceM2 ?? null : null,
+      shaped: l.shaped !== undefined ? !!l.shaped : !!old?.shaped,
     };
   });
 }

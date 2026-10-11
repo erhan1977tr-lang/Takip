@@ -34,7 +34,7 @@ const glass = (adet, offerPrice = '66.96') => ({ description: 'Temper Lamine 44.
 async function order(no, day, adet = 10, { unpriced = false } = {}) {
   const o = await db.order.create({
     data: {
-      orderNo: `ABC${no}`, customerOrderNo: no, title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'URETIMDE', estimatedShipDate: at(day),
+      orderNo: `ABC${no}`, customerOrderNo: String(no), title: `Proje ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: A.id, createdById: U.admin.id, status: 'URETIMDE', estimatedShipDate: at(day),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: (adet * 2 * 30).toFixed(2), offerAmount: (adet * 2 * 66.96).toFixed(2), createdById: U.admin.id, sentAt: new Date(), lines: { create: [{ sortOrder: 0, ...glass(adet, unpriced ? null : '66.96') }] } } },
       price: { create: { amount: (adet * 2 * 66.96).toFixed(2), setById: U.admin.id } },
     },

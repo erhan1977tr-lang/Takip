@@ -7,6 +7,8 @@ import { offerLineTotals } from './rules.js';
 import { writeReportXlsx } from '../files/xlsx-report.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+// m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır
+const round3 = (n) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 const isSub = (l) => l.kind === 'CNC' || l.kind === 'DELIK';
 
 /**
@@ -24,9 +26,10 @@ export function canExportOffer(format, { canExport, isAdmin, customerExcel }) {
  * Teklif satırları → dışa aktarılacak satırlar ve toplam. price(l): satırın müşteri fiyatı (yönetici: offerPrice;
  * müşteri: temizlenmiş veride unitPrice zaten müşteri fiyatıdır).
  * tagOf(l): telafi satırının etiketi (karar 231 — server/orders/compensation-tag.js); verilmezse etiket yok.
- * @param {{ lines: object[], price: (l: any) => unknown, locale: 'tr' | 'ro', kindLabel: (k: string) => string, tagOf?: (l: any) => string | null }} p
+ * shapedLabel: şekilli cam satırının açıklamasına eklenen ad (karar 262, ör. "Şekilli"); verilmezse eklenmez.
+ * @param {{ lines: object[], price: (l: any) => unknown, locale: 'tr' | 'ro', kindLabel: (k: string) => string, tagOf?: (l: any) => string | null, shapedLabel?: string | null }} p
  */
-export function offerExportData({ lines, price, locale, kindLabel, tagOf = () => null }) {
+export function offerExportData({ lines, price, locale, kindLabel, tagOf = () => null, shapedLabel = null }) {
   let n = 0;
   let metraj = 0, total = 0;
   const rows = lines.map((l) => {
@@ -38,9 +41,9 @@ export function offerExportData({ lines, price, locale, kindLabel, tagOf = () =>
     const label = sub ? kindLabel(l.kind) : '';
     const own = locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
     const extra = sub && (own === label || own === l.kind || own === 'Delik' || own === 'CNC') ? '' : (own ?? '');
-    const desc = sub ? [label, extra].filter(Boolean).join(' – ') : extra;
+    const desc = sub ? [label, extra].filter(Boolean).join(' – ') : shapedLabel && l.shaped ? `${extra} (${shapedLabel})` : extra;
     const m2 = !sub && l.unit === 'm2' ? tot.metraj : null;
-    if (m2) metraj = round2(metraj + m2);
+    if (m2) metraj = round3(metraj + m2);
     total = round2(total + tot.amount);
     return {
       n: sub ? null : n, sub, desc, tag: sub ? null : tagOf(l) || null, poz: l.poz ?? '', en: l.enMm ?? null, boy: l.boyMm ?? null, adet: Number(l.adet) || 0,

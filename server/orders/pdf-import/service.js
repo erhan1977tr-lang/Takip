@@ -5,8 +5,9 @@
 //   Yetki   : yalnızca teklif hazırlayanlar (OFFER_PREPARE: yönetici, yönetici yardımcısı, satış) — her işlevin ilk denetimi.
 //             Kaynak PDF ve fabrika alış fiyatları müşteri, denetimci ve çizim ekibine hiçbir yoldan gitmez.
 //   Dosya   : özgün PDF okunduktan sonra silinir (3.75.3); yalnızca ayrıştırılmış kopya ve dosya bilgisi (ad, boyut, özet) kalır.
-//   Mükerrer: aynı dosya (SHA-256) aynı siparişe bir kez kaydedilir; aynı fabrika sipariş numarası bir siparişe — satırları
-//             teklifte durdukça — bir kez, başka bir siparişe hiç aktarılmaz; bir aktarımdaki iki PDF aynı numarayı taşıyamaz.
+//   Mükerrer: aynı dosya (SHA-256) ve aynı fabrika sipariş numarası bir siparişe — satırları teklifte durdukça — bir kez
+//             aktarılır (satırlar tamamen silinince aynı PDF yeniden aktarılabilir — karar 263); başka bir siparişe hiç
+//             aktarılmaz; bir aktarımdaki iki PDF aynı numarayı taşıyamaz. Yalnızca temiz taranmış PDF aktarılır.
 import crypto from 'node:crypto';
 import { can } from '../../auth/permissions.js';
 import { glassLabel } from '../../catalog/glass.js';
@@ -61,10 +62,27 @@ export async function importTarget(db, { orderId, actor }) {
 }
 
 /**
+ * Aynı dosyanın (SHA-256) bu siparişteki önceki kayıtlarından hangisi kullanılır (karar 263):
+ *   - satırları güncel teklifte duran aktarılmış (APPLIED) kayıt → o kayıt (ön izleme "zaten aktarıldı" der, aktarma yok);
+ *   - aktarılmamış (PREVIEW) kayıt → o kayıt (aynı dosyanın yeni taraması yazılır);
+ *   - yalnızca satırları tekliften tamamen silinmiş aktarılmış kayıtlar → null: dosya YENİDEN aktarılabilir, yeni kayıt açılır.
+ * Dosya özeti tek başına kalıcı engel değildir.
+ * @param {any} tx  @param {string} orderId  @param {string} checksum  @param {Set<string>} liveImportIds  güncel teklifteki aktarım kayıtları
+ */
+async function reusableImport(tx, orderId, checksum, liveImportIds) {
+  const same = await tx.offerImport.findMany({ where: { orderId, checksum }, orderBy: { createdAt: 'desc' }, select: { id: true, status: true } });
+  return same.find((r) => r.status === 'APPLIED' && liveImportIds.has(r.id)) ?? same.find((r) => r.status !== 'APPLIED') ?? null;
+}
+
+/** Aynı sipariş + aynı dosya için kayıt seçimi ve yazımı sıraya girer (eşzamanlı iki yükleme tek kayıt üretir) */
+const fileLock = (tx, orderId, checksum) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`pdf-import-file:${orderId}:${checksum}`}, 0))`;
+
+/**
  * Saklanmış PDF'leri (storeFiles — içerik denetimi + antivirüs) aktarma kaydına çevirir: metin çıkarılır ve ayrıştırılır;
  * okunamayan PDF de kaydedilir (sabit hata koduyla — ön izleme gösterir). Özgün PDF KALICI SAKLANMAZ: kayıt dosya
- * anahtarı olmadan yazılır ve okunan HER dosya `discard` listesinde döner (çağıran diskten siler). Aynı dosya aynı
- * siparişte zaten varsa yeni kayıt açılmaz: var olan kayıt kullanılır.
+ * anahtarı olmadan yazılır ve okunan HER dosya `discard` listesinde döner (çağıran diskten siler). Aynı dosya bu siparişte
+ * zaten kayıtlıysa kayıt seçimi reusableImport'ta (karar 263): aktarılmamış ya da satırları teklifte duran kayıt yeniden
+ * kullanılır (taramanın sonucu güncellenir); önceki aktarımın satırları tamamen silindiyse yeni kayıt açılır.
  * @param {any} db
  * @param {{ actor: any, orderId: string, stored: { storageKey: string, name: string, size: number, mime?: string | null, checksum: string, scanStatus: string, scannedAt?: Date | null }[], readFile: (storageKey: string) => Promise<Uint8Array>, extract?: typeof extractTextItems }} p
  * @returns {Promise<{ ok: true, ids: string[], discard: { storageKey: string }[] } | { ok: false, code: string }>}
@@ -73,11 +91,12 @@ export async function recordUploads(db, { actor, orderId, stored, readFile, extr
   if (!allowed(actor)) return FORBIDDEN;
   const t = await loadTarget(db, { orderId, actor });
   if (!t.ok) return t;
+  const liveImportIds = new Set(t.offer.lines.map((l) => l.importId).filter(Boolean));
   const ids = [];
   const discard = [];
   for (const f of stored) {
-    const same = await db.offerImport.findUnique({ where: { orderId_checksum: { orderId: t.order.id, checksum: f.checksum } }, select: { id: true } });
-    if (same) { ids.push(same.id); discard.push({ storageKey: f.storageKey }); continue; }
+    discard.push({ storageKey: f.storageKey });
+    // Dosya okunup ayrıştırılır (kilit dışında — yavaş iş); kayıt seçimi ve yazımı kilit altında
     let parsed = null;
     let parseError = null;
     try {
@@ -88,8 +107,15 @@ export async function recordUploads(db, { actor, orderId, stored, readFile, extr
     } catch {
       parseError = 'UNREADABLE';
     }
-    try {
-      const row = await db.offerImport.create({
+    const id = await db.$transaction(async (tx) => {
+      await fileLock(tx, t.order.id, f.checksum);
+      const reuse = await reusableImport(tx, t.order.id, f.checksum, liveImportIds);
+      if (reuse) {
+        // Aynı dosyanın yeni taraması: aktarılmamış kayıtta tarama sonucu güncellenir (önceki "taranamadı" kalıcı olmaz)
+        if (reuse.status !== 'APPLIED') await tx.offerImport.update({ where: { id: reuse.id }, data: { scanStatus: f.scanStatus, scannedAt: f.scannedAt ?? null } });
+        return reuse.id;
+      }
+      const row = await tx.offerImport.create({
         data: {
           orderId: t.order.id, name: String(f.name).slice(0, 255), storageKey: null, size: f.size, mime: f.mime ?? null, checksum: f.checksum,
           scanStatus: f.scanStatus, scannedAt: f.scannedAt ?? null, uploadedById: actor.id ?? null,
@@ -97,16 +123,9 @@ export async function recordUploads(db, { actor, orderId, stored, readFile, extr
         },
         select: { id: true },
       });
-      ids.push(row.id);
-      discard.push({ storageKey: f.storageKey });
-    } catch (e) {
-      // Aynı dosya aynı anda iki kez: ilk kayıt kullanılır
-      if (/** @type {any} */ (e)?.code !== 'P2002') throw e;
-      const first = await db.offerImport.findUnique({ where: { orderId_checksum: { orderId: t.order.id, checksum: f.checksum } }, select: { id: true } });
-      if (!first) throw e;
-      ids.push(first.id);
-      discard.push({ storageKey: f.storageKey });
-    }
+      return row.id;
+    });
+    ids.push(id);
   }
   return { ok: true, ids: [...new Set(ids)], discard };
 }
@@ -142,14 +161,22 @@ export async function buildPreview(db, { order, offer, importIds, choices = {}, 
     : [];
   const seen = new Map();
   for (const i of imports) if (i.factoryOrderNo) seen.set(i.factoryOrderNo, (seen.get(i.factoryOrderNo) ?? 0) + 1);
+  // Aynı dosyanın (SHA-256) satırları teklifte duran başka bir aktarımı (karar 263): satırlar durdukça aynı PDF yeniden
+  // aktarılamaz; satırlar tamamen silindiyse engel kalkar
+  const sums = [...new Set(imports.map((i) => i.checksum))];
+  const liveSame = sums.length && liveImportIds.size
+    ? await db.offerImport.findMany({ where: { orderId: order.id, checksum: { in: sums }, status: 'APPLIED', id: { in: [...liveImportIds] } }, select: { id: true, checksum: true } })
+    : [];
 
   const out = [];
   for (const imp of imports) {
     const blocking = [];
     const warnings = [];
-    if (imp.status === 'APPLIED') blocking.push({ code: 'ALREADY_IMPORTED' });
+    if (imp.status === 'APPLIED' || liveSame.some((x) => x.checksum === imp.checksum && x.id !== imp.id)) blocking.push({ code: 'ALREADY_IMPORTED' });
+    // Antivirüs zorunlu (karar 263): yalnızca temiz taranmış PDF aktarılır — tarama yapılamadıysa (antivirüs kapalı ya da
+    // erişilemez: PENDING / SKIPPED) aktarma engellenir; dosya tarayıcı çalışırken yeniden yüklenir
     if (imp.scanStatus === 'INFECTED') blocking.push({ code: 'INFECTED' });
-    else if (imp.scanStatus === 'PENDING') warnings.push({ code: 'NOT_SCANNED' });
+    else if (imp.scanStatus !== 'CLEAN') blocking.push({ code: 'NOT_SCANNED' });
     let plan = null;
     if (imp.parseError || !imp.parsed) blocking.push({ code: 'PDF_UNREADABLE', reason: imp.parseError ?? 'UNREADABLE' });
     else {
@@ -220,6 +247,9 @@ export async function applyImports(h, complete) {
   const nos = (await tx.offerImport.findMany({ where: { id: { in: ids }, orderId: order.id }, select: { factoryOrderNo: true } }))
     .map((r) => r.factoryOrderNo).filter(Boolean).sort();
   for (const no of [...new Set(nos)]) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`pdf-import:${no}`}, 0))`;
+  // Aynı dosya: kayıt seçimiyle aynı kilit (karar 263) — sıralı alınır
+  const sums = (await tx.offerImport.findMany({ where: { id: { in: ids }, orderId: order.id }, select: { checksum: true } })).map((r) => r.checksum).sort();
+  for (const c of [...new Set(sums)]) await fileLock(tx, order.id, c);
 
   const full = await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { customer: { select: { prefix: true } }, items: true } });
   const preview = await buildPreview(tx, { order: { ...order, customer: full.customer, items: full.items }, offer, importIds: ids, choices: payload.choices ?? {} });

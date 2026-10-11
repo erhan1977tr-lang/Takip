@@ -79,11 +79,11 @@ dbTest('taslak: kaydedilir, dosya çıkarılır/eklenir; gönderilince dosyalar 
   const drop = row.files.find((f) => f.storageKey === f1.storageKey);
   const d2 = await saveDraft(db, {
     actor: actor(cust), firm, draftId: d.id,
-    values: { title: 'Duş', note: 'Kenarlar rodajlı', customerOrderNo: 900, lines: [{ id: g.id, qty: '2' }] }, files: [file()], removeFileIds: [drop.id],
+    values: { title: 'Duş', note: 'Kenarlar rodajlı', customerOrderNo: '900', lines: [{ id: g.id, qty: '2' }] }, files: [file()], removeFileIds: [drop.id],
   });
   assert.deepEqual(d2.removed.map((f) => f.storageKey), [f1.storageKey], 'çıkarılan dosya diskten silinmek üzere döner');
   const saved = await db.orderDraft.findUniqueOrThrow({ where: { id: d.id }, include: { files: true } });
-  assert.deepEqual([saved.title, saved.note, saved.customerOrderNo, saved.items, saved.files.length], ['Duş', 'Kenarlar rodajlı', 900, [{ glassProductId: g.id, qty: 2 }], 2]);
+  assert.deepEqual([saved.title, saved.note, saved.customerOrderNo, saved.items, saved.files.length], ['Duş', 'Kenarlar rodajlı', '900', [{ glassProductId: g.id, qty: 2 }], 2]);
   // Taslak satışın listesinde değildir: sipariş sayısı değişmez
   const before = await db.order.count();
   // Başka firma taslağı göremez / gönderemez / silemez
@@ -132,7 +132,7 @@ dbTest('eski çok camlı taslak: bakmak değiştirmez; çözülmeden gönderilem
   const f = file();
   const legacy = await saveDraft(db, {
     actor: actor(cust), firm, draftId: null, files: [f],
-    values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: 777, lines: [{ id: a.id, qty: '2' }, { id: b.id, qty: '5' }, { id: gone.id, qty: '1' }] },
+    values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: '777', lines: [{ id: a.id, qty: '2' }, { id: b.id, qty: '5' }, { id: gone.id, qty: '1' }] },
   });
   const all = [{ glassProductId: a.id, qty: 2 }, { glassProductId: b.id, qty: 5 }, { glassProductId: gone.id, qty: 1 }];
   const snap = async () => {
@@ -172,14 +172,14 @@ dbTest('eski çok camlı taslak: bakmak değiştirmez; çözülmeden gönderilem
   const res = await keep(cust, firm, 1, b.id);
   assert.deepEqual([res.id, res.kept, res.dropped], [legacy.id, all[1], [all[0], all[2]]]);
   const d = await db.orderDraft.findUniqueOrThrow({ where: { id: legacy.id }, include: { files: true } });
-  assert.deepEqual([d.items, d.title, d.note, d.customerOrderNo, d.files.map((x) => x.storageKey)], [[all[1]], 'Eski taslak', 'Eski not', 777, [f.storageKey]]);
+  assert.deepEqual([d.items, d.title, d.note, d.customerOrderNo, d.files.map((x) => x.storageKey)], [[all[1]], 'Eski taslak', 'Eski not', '777', [f.storageKey]]);
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'DRAFT_GLASS_KEPT', entityId: legacy.id } });
   assert.deepEqual([audit.userId, audit.actorRole, audit.details.kept, audit.details.dropped], [cust.id, 'MUSTERI', all[1], [all[0], all[2]]], 'çıkan camlar denetim kaydında');
   assert.equal(await codeOf(keep(cust, firm, 0, b.id)), 'DRAFT_NOT_LEGACY', 'artık normal taslak');
   assert.equal(await oldItems(), oldBefore, 'gönderilmiş eski çok camlı sipariş değişmedi');
 
   // 5) Sonrası normal tek cam akışı: taslak kaydedilir ve gönderilir
-  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: legacy.id, values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: 777, lines: [{ id: b.id, qty: '5' }] } })), 'OK');
+  assert.equal(await codeOf(saveDraft(db, { actor: actor(cust), firm, draftId: legacy.id, values: { title: 'Eski taslak', note: 'Eski not', customerOrderNo: '777', lines: [{ id: b.id, qty: '5' }] } })), 'OK');
   const items = glassOrderItems([{ id: b.id, qty: '5' }], [b]).items;
   const o = await createGlassOrder(db, { actor: actor(cust), firm, title: 'Eski taslak', requestedNo: 777, items, note: 'Eski not', draftId: legacy.id });
   assert.equal(o.orderNo, 'GLA777');

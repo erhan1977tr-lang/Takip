@@ -67,7 +67,7 @@ test('veri: iki müşterinin aynı güne planlı siparişleri ve ev sahibi müş
   const ship = new Date(`${DAY}T12:00:00Z`);
   const order = (c: { id: string; prefix: string | null }, no: number, pieces: number) => db.order.create({
     data: {
-      orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `Aktarım e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
+      orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `Aktarım e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
       // Teklif tutarları satırlardan: fabrika satış 37 / m², müşteri fiyatı 50 / m² (1 m² cam)
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: (pieces * 37).toFixed(2), offerAmount: (pieces * 50).toFixed(2), createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: pieces, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' }] } } },
@@ -154,7 +154,7 @@ test('yönetici: "Yükleme yapıldı" hepsini kaydeder; 10 adedin 2\'si kırık 
   const replans = await db.loadingReplan.findMany({ where: { orderId: orderU } });
   expect(replans.map((r) => [r.status, r.quantity, r.customerId, r.shipDay.toISOString().slice(0, 10)])).toEqual([['ACTIVE', 2, uns.id, NEW_DAY]]);
   expect(await db.auditLog.count({ where: { action: 'REPLAN_NOT_LOADED', entityId: orderU } })).toBe(1);
-  expect(await db.order.count({ where: { customerId: uns.id, customerOrderNo: 7701 } }), 'kopya sipariş açılmadı').toBe(1);
+  expect(await db.order.count({ where: { customerId: uns.id, customerOrderNo: '7701' } }), 'kopya sipariş açılmadı').toBe(1);
   await db.$disconnect();
   await page.context().close();
 });

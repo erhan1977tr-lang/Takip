@@ -119,7 +119,7 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   ]);
   // Bir sonraki telafi siparişi numarası (bilgi; kesin numara kayıt anında kilit altında verilir)
   const rootNo = root?.orderNo ?? order.orderNo;
-  const last = await db.order.aggregate({ where: { customerId: order.customerId, orderTypeCode: 'GLASS_ORDER', customerOrderNo: root?.customerOrderNo ?? order.customerOrderNo }, _max: { compSeq: true } });
+  const last = await db.order.aggregate({ where: { customerId: order.customerId, orderTypeCode: 'GLASS_ORDER', customerOrderNo: root?.customerOrderNo ?? order.customerOrderNo, numberActive: true }, _max: { compSeq: true } });
   const seq = (last._max.compSeq ?? 0) + 1;
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
   // Cam satırı sırası teklif tablosundaki "#" ile aynı (işlem satırları sayılmaz)

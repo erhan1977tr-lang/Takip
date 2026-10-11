@@ -4,6 +4,7 @@
 // değiştirdiyse yeni gün). Ayrı nakliye kaydı tutulmaz. Fiyat bilgisi yoktur.
 import { CRATE_TARE_KG, dayKey } from '../orders/loading.js';
 import { dayDate } from './crates.js';
+import { sortByOrderNo } from '../orders/order-number.js';
 
 const kg = (v) => (v == null || v === '' ? null : Number(v));
 
@@ -118,8 +119,8 @@ export async function transportList(db, day, { label = (name) => name } = {}) {
         OR: [{ actualShipDate: window }, { actualShipDate: null, estimatedShipDate: window }],
       },
       select: { orderNo: true, customerId: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true, guestHost: { select: { prefix: true, name: true } } },
-      orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
-    }),
+      orderBy: [{ customerId: 'asc' }, { orderNo: 'asc' }],
+    }).then((rows) => sortByOrderNo(rows, (o) => o.orderNo, (o) => o.customerId)),
     // Yüklenmeyen kalanı bu güne aktarılmış siparişler de o günün yükündedir (karar 102)
     db.order.findMany({
       where: { orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, replans: { some: { shipDay: d, status: { not: 'CANCELLED' } } } },

@@ -184,7 +184,7 @@ dbTest('geri alma (C): yöneticiye e-posta; bekleyen kuyruk ve zil güncel — e
 dbTest('telafi fiyatı (E): farklı fiyat ya da bedelsiz → yöneticiye e-posta; aynı fiyat → yok; çift tıklama tek olay; işlemi yapan yöneticiye kendi işlemi gitmez', offline(async () => {
   const src = await db.order.create({
     data: {
-      orderNo: 'YPC900', customerOrderNo: 900, title: 'Telafi kaynağı', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE',
+      orderNo: 'YPC900', customerOrderNo: '900', title: 'Telafi kaynağı', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(`${dayOf(-3)}T12:00:00Z`),
       offers: {
         create: {
@@ -237,7 +237,7 @@ dbTest('profil bölümü sayacı (karar 216): kullanıcının kapsamında fiyat 
   let no = 0;
   const profile = (stage, status = 'YENI', extra = {}) => db.order.create({
     data: {
-      orderNo: `YPCP${++no}`, customerOrderNo: no, title: 'Profil', orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: people.cust.id, status, ...extra,
+      orderNo: `YPCP${++no}`, customerOrderNo: String(no), title: 'Profil', orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: people.cust.id, status, ...extra,
       profile: { create: { stage } },
     },
   });

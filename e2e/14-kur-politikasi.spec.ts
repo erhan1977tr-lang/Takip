@@ -56,7 +56,7 @@ test('veri: kur politikası için ayrı müşteri ve belgesi olmayan EUR cam sip
   expect([firm.fxPolicy, firm.fxMarkupPercent], 'yeni müşteri: varsayılan politika BT').toEqual(['BT_UNIT_SELL', null]);
   const order = await db.order.create({
     data: {
-      orderNo: 'KUR1', customerOrderNo: 1, title: 'Kur e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
+      orderNo: 'KUR1', customerOrderNo: '1', title: 'Kur e2e', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE',
       estimatedShipDate: new Date(Date.now() + 20 * 86_400_000),
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [{ sortOrder: 0, description: 'Temper', descriptionRo: 'Securizat', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' }] } } },

@@ -9,6 +9,7 @@ import { crateOrdersWhere } from '../server/loading/crates.js';
 import { crateRelations } from '../server/loading/crate-relations.js';
 import { dayFirms } from '../server/loading/day-firms.js';
 import { firmDocsAllowed } from '../server/loading/firm-export.js';
+import { sortByOrderNo } from '../server/orders/order-number.js';
 
 export const loadInclude = {
   // sandikEtiket: yükleme sayfasında (iç ekip) müşteri başlığında gösterilir; sipariş kendi etiketiyle ezebilir.
@@ -51,8 +52,8 @@ export async function ordersShippingBetween(user: CurrentUser, from: Date, to: D
       ],
     },
     include: loadInclude,
-    orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
-  })));
+    orderBy: [{ customerId: 'asc' }, { orderNo: 'asc' }],
+  }).then((rows) => sortByOrderNo(rows, (o) => o.orderNo, (o) => o.customerId))));
 }
 
 export function shipDay(o: { actualShipDate: Date | null; estimatedShipDate: Date | null; replan?: { day: string } }): string | null {
@@ -97,7 +98,7 @@ export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date)
         ...(base?.lines.find((l) => l.id === s.offerLineId) ?? {}),
         id: s.offerLineId ?? s.id, offerId: base?.id ?? '', sortOrder: s.sortOrder, description: s.description, descriptionRo: s.descriptionRo,
         enMm: s.enMm, boyMm: s.boyMm, adet: r.quantity, unit: s.unit, kind: s.kind, free: s.free, glassProductId: s.glassProductId,
-        weightKgM2: s.weightKgM2, unitPrice: s.unitCost, offerPrice: s.unitSale, listPrice: null, pieceBase: s.pieceBase, splitGroup: null,
+        weightKgM2: s.weightKgM2, unitPrice: s.unitCost, offerPrice: s.unitSale, listPrice: null, pieceBase: s.pieceBase, pieceM2: s.pieceM2 ?? null, splitGroup: null,
       } as unknown as OrderRow['offers'][number]['lines'][number];
     });
     const offer = {
@@ -150,7 +151,7 @@ export function loadOf(o: Pick<LoadRow, 'offers' | 'items' | 'price'>, customerV
   // Hangi teklif: tek kural (server/orders/loading.js → loadedOffer) — firma PDF / Excel / Özet ayrıntısı da aynısını kullanır
   const offer = loadedOffer(o.offers, customerView);
   const load = orderLoad({
-    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase })),
+    lines: (offer?.lines ?? []).map((l) => ({ description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, weightKgM2: l.weightKgM2 != null ? Number(l.weightKgM2) : null, pieceBase: l.pieceBase, pieceM2: l.pieceM2 })),
     items: o.items,
   });
   // amount: müşteriye giden (yönetici) tutar · salesAmount: satış tutarı (karar 4; hangisi görünür: sayfa yetkiye göre seçer,
@@ -373,7 +374,7 @@ export async function confirmedDayRows(user: CurrentUser, day: string): Promise<
         ...(base?.lines.find((l) => l.id === it.offerLineId) ?? {}),
         id: it.offerLineId ?? it.id, offerId: base?.id ?? '', sortOrder: it.sortOrder, description: it.description, descriptionRo: it.descriptionRo,
         enMm: it.enMm, boyMm: it.boyMm, adet: it.quantity, unit: it.unit, kind: it.kind, free: it.free, glassProductId: it.glassProductId,
-        weightKgM2: it.weightKgM2, unitPrice: it.unitCost, offerPrice: it.unitSale, listPrice: null, pieceBase: it.pieceBase ?? 0, splitGroup: null,
+        weightKgM2: it.weightKgM2, unitPrice: it.unitCost, offerPrice: it.unitSale, listPrice: null, pieceBase: it.pieceBase ?? 0, pieceM2: it.pieceM2 ?? null, splitGroup: null,
         crateFee: it.offerLine?.crateFee ?? false,
       } as unknown as OrderRow['offers'][number]['lines'][number];
     });

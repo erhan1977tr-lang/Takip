@@ -60,6 +60,7 @@ import { GLASS_FGO, glassLines, glassTotals, invoiceLines, netOf, orderChain } f
 import { BATCH_FGO } from './batch.js';
 import { centsText, paymentState, toCents } from '../finance/payments.js';
 import { advanceRisk, financeLock, recordDuplicateAck } from '../finance/service.js';
+import { sortByOrderNo } from '../orders/order-number.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v) => (v == null ? 0 : Number(v));
@@ -474,8 +475,8 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
         manualPayments: { where: { batchId: null }, select: { ron: true, voidedAt: true, proformaRef: true } },
         billingBatchOrders: { where: { activeKey: { not: null } }, select: { activeKey: true, offerId: true, batch: { select: { id: true, kind: true, status: true, document: { select: { series: true, number: true } } } } } },
       },
-      orderBy: [{ customerId: 'asc' }, { customerOrderNo: 'asc' }],
-    }),
+      orderBy: [{ customerId: 'asc' }, { orderNo: 'asc' }],
+    }).then((rows) => sortByOrderNo(rows, (o) => o.orderNo, (o) => o.customerId)),
     orderIds.length ? db.notificationOutbox.findMany({ where: { orderId: { in: orderIds }, type: GLASS_FGO, status: 'PENDING' }, select: { orderId: true } }) : [],
     db.billingBatch.findMany({
       where: { confirmationId: conf.id, kind: 'INVOICE', status: { not: 'VOID' } },

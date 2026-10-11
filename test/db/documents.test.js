@@ -73,7 +73,7 @@ async function order(c, shipDate, { cnc = false, no = null } = {}) {
   const num = no ?? seq;
   return db.order.create({
     data: {
-      orderNo: `${c.prefix}${num}`, customerOrderNo: num, title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
+      orderNo: `${c.prefix}${num}`, customerOrderNo: String(num), title: 'Ușă duș', orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: shipDate,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [
           { sortOrder: 0, description: 'Temper 10', descriptionRo: '6.2.6., Sticla, Gri-Transparent, securizata', enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '30', offerPrice: '50', kind: 'CAM' },

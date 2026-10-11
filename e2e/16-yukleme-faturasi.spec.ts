@@ -52,7 +52,7 @@ test('veri: iki müşteri, onaylı yükleme (biri kısmi), bir müşteri proform
   const other = await db.customer.create({ data: { name: 'Fatura Doi SRL', prefix: 'FTD', email: 'ftd@e2e.test', taxId: '667799', county: 'Bihor', city: 'Oradea', address: 'Str. Doi 2' } });
   const order = (c: { id: string; prefix: string | null }, no: number, pieces: number, cnc: boolean) => db.order.create({
     data: {
-      orderNo: `${c.prefix}${no}`, customerOrderNo: no, title: `Fatura e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
+      orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `Fatura e2e ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE', estimatedShipDate: ship,
       offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60.00', offerAmount: '100.00', createdById: admin.id, sentAt: new Date(),
         lines: { create: [
           { sortOrder: 0, description: 'Temper', descriptionRo: 'Sticlă securizată 10 mm', enMm: 1000, boyMm: 1000, adet: pieces, unit: 'm2', unitPrice: '37', offerPrice: '50', kind: 'CAM' },

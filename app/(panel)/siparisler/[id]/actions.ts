@@ -437,12 +437,17 @@ export async function retryNoteTranslationAction(formData: FormData) {
  * from: işlem eklemek için ayrılan tek camın kaynağı (aynı teklifin mevcut satırı — fiyatları ondan taşınır, karar 113)
  * splitGroup: ayrılmış cam grubunun anahtarı (karar 114) — sunucu grubu doğrular ve sırayı (pieceBase) kendisi hesaplar
  */
-type LineInput = { id: string | null; from?: string | null; splitGroup?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; crateFee?: boolean; offerPrice?: string | null };
+type LineInput = { id: string | null; from?: string | null; splitGroup?: string | null; description: string; poz: string | null; enMm: number | null; boyMm: number | null; adet: number; unit: string; unitPrice: string; kind: string; free: boolean; crateFee?: boolean; offerPrice?: string | null;
+  /** Bir camın m²'si (karar 261): PDF'ten ya da elle girilen metraj ÷ adet; null = eski satır (en × boy kuralı); alan formda yoksa undefined (kayıtlı değer korunur) */ pieceM2?: string | null;
+  /** Şekilli cam (karar 262); alan formda yoksa undefined */ shaped?: boolean };
+/** Parça m²'si: pozitif, en çok 1000 m², en çok 9 ondalık (satırın 3 ondalıklı metrajının adede bölümü) */
+const PIECE_M2 = /^\d{1,4}(\.\d{1,9})?$/;
 
 function readLines(formData: FormData, t: T): LineInput[] | string {
   const col = (k: string) => formData.getAll(k).map((v) => String(v).trim());
   const desc = col('l_desc'), poz = col('l_poz'), en = col('l_en'), boy = col('l_boy'), adet = col('l_adet'), unit = col('l_unit'), price = col('l_price');
   const kinds = col('l_kind'), free = col('l_free'), ids = col('l_id'), oprice = col('l_oprice'), from = col('l_from'), group = col('l_group'), crate = col('l_crate');
+  const pm2 = col('l_pm2'), shaped = col('l_shaped');
   const withOffer = oprice.length > 0;
   const lines: LineInput[] = [];
   for (let i = 0; i < desc.length; i++) {
@@ -463,12 +468,21 @@ function readLines(formData: FormData, t: T): LineInput[] | string {
     // Sandık bedeli (Paket 4): adetli, ölçüsüz cam türü satır. İşaret yalnızca yöneticinin kaydında geçerlidir — satışın
     // kaydında sunucu yok sayar (server/orders/transitions.js → salesInput)
     const isCrate = !sub && crate[i] === '1';
+    const isM2 = !sub && !isCrate && unit[i] !== 'adet';
+    // Metraj (karar 261): yalnızca ölçülü m² cam satırında; 3 ondalığa kadar elle girilebilir (sunucu sınırları denetler)
+    const pmRaw = (pm2[i] ?? '').replace(',', '.');
+    let pieceM2: string | null = null;
+    if (isM2 && e !== null && b !== null && pmRaw !== '') {
+      if (!PIECE_M2.test(pmRaw) || !(Number(pmRaw) > 0) || Number(pmRaw) > 1000) return t('order.errors.lineM2', { n: i + 1 });
+      pieceM2 = pmRaw;
+    }
     lines.push({
       description: desc[i].slice(0, 300), poz: poz[i] ? poz[i].slice(0, 60) : null, enMm: isCrate ? null : e, boyMm: isCrate ? null : b, adet: a,
       unit: sub || isCrate || unit[i] === 'adet' ? 'adet' : 'm2', unitPrice: (isFree ? 0 : p).toFixed(2), kind, free: isFree, crateFee: isCrate,
       id: ids[i] || null,
       ...(!ids[i] && from[i] && !sub ? { from: from[i].slice(0, 40) } : {}),
       splitGroup: !sub && isSplitKey(group[i]) ? group[i] : null,
+      ...(pm2.length ? { pieceM2 } : {}), ...(shaped.length ? { shaped: !sub && !isCrate && shaped[i] === '1' } : {}),
       ...(withOffer ? { offerPrice: isFree ? '0.00' : op === null ? null : op.toFixed(2) } : {}),
     });
   }

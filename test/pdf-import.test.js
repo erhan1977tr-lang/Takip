@@ -143,11 +143,17 @@ test('katalog: kod + renk birebir aynı TEK cam otomatik; aynı kodlu başkalar�
 
 // ---------------------------------------------------------------- müşteri / proje
 test('proje: firma kodu + numara siparişle aynı olmalı; büyük/küçük harf ve boşluk farkı yok sayılır; farklı / belirsiz reddedilir', () => {
-  const order = { prefix: 'ABC', customerOrderNo: 40 };
-  assert.deepEqual(projectRefs('musterix abc40 ŞANTİYE'), [{ code: 'ABC', no: 40 }]);
-  assert.deepEqual(projectCheck('MUSTERIX ABC 40', order), { ok: true, code: 'ABC', no: 40 });
-  assert.deepEqual(projectCheck('musterix  abc   40 MANDACHE', order), { ok: true, code: 'ABC', no: 40 });
-  assert.equal(projectCheck('MUSTERIX ABC 40-1', order).ok, true);
+  const order = { prefix: 'ABC', customerOrderNo: '40' };
+  assert.deepEqual(projectRefs('musterix abc40 ŞANTİYE'), [{ code: 'ABC', no: '40' }]);
+  assert.deepEqual(projectCheck('MUSTERIX ABC 40', order), { ok: true, code: 'ABC', no: '40' });
+  assert.deepEqual(projectCheck('musterix  abc   40 MANDACHE', order), { ok: true, code: 'ABC', no: '40' });
+  // Tireli müşteri numarası (karar 259): "ABC 40-1" ayrı bir siparişin numarasıdır — 40 numaralı siparişe aktarılmaz;
+  // 40-1 numaralı siparişe aynen eşleşir (baştaki sıfır da korunur)
+  assert.deepEqual(projectCheck('MUSTERIX ABC 40-1', order), { ok: false, code: 'WRONG_PROJECT', found: 'ABC 40-1' });
+  assert.deepEqual(projectCheck('MUSTERIX ABC 40-1 MANDACHE', { prefix: 'ABC', customerOrderNo: '40-1' }), { ok: true, code: 'ABC', no: '40-1' });
+  assert.deepEqual(projectCheck('ABC 001-1', { prefix: 'ABC', customerOrderNo: '001-1' }), { ok: true, code: 'ABC', no: '001-1' });
+  assert.equal(projectCheck('ABC 001-1', { prefix: 'ABC', customerOrderNo: '1-1' }).code, 'WRONG_PROJECT');
+  assert.equal(projectCheck('ABC 40', { prefix: 'ABC', customerOrderNo: 40 }).ok, true, 'eski çağıran (sayı) da çalışır');
   assert.deepEqual(projectCheck('BASKA FIRMA XYZ 40', order), { ok: false, code: 'WRONG_CUSTOMER', found: 'XYZ' });
   assert.deepEqual(projectCheck('MUSTERIX ABC 41', order), { ok: false, code: 'WRONG_PROJECT', found: 'ABC 41' });
   assert.equal(projectCheck('MUSTERIX ABC 40 ABC 41', order).code, 'PROJECT_AMBIGUOUS');
@@ -157,7 +163,7 @@ test('proje: firma kodu + numara siparişle aynı olmalı; büyük/küçük harf
 });
 
 // ---------------------------------------------------------------- plan
-const ORDER = { prefix: 'ABC', customerOrderNo: 40, glass: CATALOG[0] };
+const ORDER = { prefix: 'ABC', customerOrderNo: '40', glass: CATALOG[0] };
 const plan = (lines, extra = {}) => buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'cimp000000000000000000001', order: ORDER, catalog: CATALOG.filter((g) => g.isActive !== false), ...extra });
 
 test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice), müşteri fiyatı boş; Poz PDF’ten; kaynak satır no', () => {
@@ -173,19 +179,22 @@ test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice
   assert.ok(!JSON.stringify(p.header).includes('MUSTERIX'), 'proje metni (müşteri adı) planın başlığına girmez');
 });
 
-test('B denetimi: TAKİP m²’yi satır başına 2 ondalıkla hesaplar (değişmez); doğrulanmış yuvarlama farkı yalnızca uyarı, satır eklenmez', () => {
+test('B denetimi: PDF’in 3 ondalıklı m²’si aynen kullanılır (karar 261) — 2 ondalığa yuvarlamadan doğan fark kalmaz; satır eklenmez', () => {
   const p = plan(FORM_CNC);
-  // PDF 300,00 + 123,50 + 2 × 5 = 433,50 · TAKİP 300,00 + 1,24 × 100 = 124,00 + 10 = 434,00
+  // PDF 300,00 + 123,50 + 2 × 5 = 433,50 · TAKİP 300,00 + 1,235 × 100 = 123,50 + 10 = 433,50 (eskiden 1,24 m² → 434,00)
   assert.deepEqual(p.checks.a, { pdfSum: 43350, subtotal: 43350, ok: true });
-  assert.deepEqual(p.checks.b, { takipTotal: 43400, subtotal: 43350, diff: 50, explained: true });
-  assert.deepEqual(p.warnings.map((w) => [w.code, w.diff]), [['ROUNDING_DIFFERENCE', '0.50']]);
+  assert.deepEqual(p.checks.b, { takipTotal: 43350, subtotal: 43350, diff: 0, explained: true });
+  assert.deepEqual(p.warnings.filter((w) => w.code === 'ROUNDING_DIFFERENCE'), []);
+  assert.deepEqual(p.lines.filter((l) => l.kind === 'CAM').map((l) => [l.pieceM2, l.adet]), [['3.000', 1], ['1.235', 1]]);
+  assert.deepEqual(p.rows.map((r) => [r.m2, r.totalM2, r.takipM2]), [[3000, 3000, 3000], [1235, 1235, 1235]]);
   assert.equal(p.lines.length, 4, 'fark için satır / düzeltme / ek ücret yok');
   assert.deepEqual([p.checks.vat, p.checks.grandTotal], [8670, 52020]);
 });
 
 test('açıklanamayan fark (PDF m²’si en × boy değil) aktarmayı durdurur; A tutmazsa da durur', () => {
   const p = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,250 1,250 100,00 TL 0,0 125,00 ABC 40'], total: '1 1,250 125,00', sub: '125,00', grand: '150,00' }));
-  assert.deepEqual(p.blocking.map((b) => b.code), ['UNEXPLAINED_DIFFERENCE']);
+  // m² PDF'ten aynen alınır (karar 261): PDF m²'si ölçüyle uyuşmayınca fark tutara yansımaz ama gizlenmez — aktarma durur
+  assert.deepEqual(p.blocking.map((b) => [b.code, b.row, b.pdfM2, b.dimsM2]), [['AREA_MISMATCH', 1, 1250, 1000]]);
   const a = plan(form({ rows: FORM_CNC.slice(7, 13).map((l) => l.text), total: '2 4,235 433,50', sub: '400,00', grand: '480,00' }));
   assert.ok(a.blocking.some((b) => b.code === 'SUBTOTAL_MISMATCH'));
 });
@@ -320,7 +329,8 @@ test('yapı: özgün fabrika PDF’i saklanmaz (indirme yolu yok, kayıt dosyas�
   const svc = read('server/orders/pdf-import/service.js');
   const rec = svc.slice(svc.indexOf('export async function recordUploads('), svc.indexOf('export function emptyGlassLines('));
   assert.match(rec, /storageKey: null,/);
-  assert.match(rec, /ids\.push\(row\.id\);\n\s*discard\.push\(\{ storageKey: f\.storageKey \}\);/);
+  // Okunan her dosya, kaydı yeni açılsa da var olan kayıt kullanılsa da (karar 263) silinmek üzere döner — döngünün ilk adımı
+  assert.match(rec, /for \(const f of stored\) \{\n\s*discard\.push\(\{ storageKey: f\.storageKey \}\);/);
   assert.match(read('prisma/schema.prisma'), /storageKey     String\?  @unique/);
   for (const f of ['server/files/antivirus.js', 'server/customers/deletion.js']) assert.ok(!/offerImport\.(findMany|count)/.test(read(f)), f);
   assert.match(read('lib/orders.ts'), /importId: null, sourceRow: null/);

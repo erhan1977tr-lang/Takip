@@ -11,24 +11,29 @@
 //   İşlem           : işlem satırı kendinden önceki cama aittir. İşlemli cam tek adetlik satırlara ayrılır (karar 113, 114 —
 //                     aynı ticari kalem, toplam m² ve tutar değişmez); işlem miktarı cam adedine tam bölünmeli.
 //   Denetim A       : PDF satır tutarları toplamı = Ara Toplam (KDV hariç). Değilse aktarma yok.
-//   Denetim B       : TAKİP'in mevcut hesabıyla toplam (m² satır başına 2 ondalık — değişmez) ↔ Ara Toplam. Fark yalnızca
-//                     doğrulanmış yuvarlamadan geliyorsa (PDF m²'si = en × boy, birim fiyat yuvarlaması yarım kuruş sınırında)
-//                     uyarıdır; açıklanamayan fark aktarmayı durdurur. Fark için satır, gizli düzeltme ya da ek ücret yazılmaz.
+//   Metraj          : PDF'in 3 ondalıklı m²'si aynen satıra yazılır (pieceM2 — karar 261); PDF m²'si ölçüyle (en × boy, 3
+//                     ondalık) uyuşmuyorsa aktarma durur (AREA_MISMATCH — gerçek fark gizlenmez).
+//   Denetim B       : TAKİP'in hesabıyla toplam ↔ Ara Toplam. Fark yalnızca doğrulanmış yuvarlamadan geliyorsa (birim fiyat
+//                     yuvarlaması yarım kuruş sınırında) uyarıdır; açıklanamayan fark aktarmayı durdurur. Fark için satır, gizli
+//                     düzeltme ya da ek ücret yazılmaz.
 import { assignPieceBases, offerLineTotals } from '../rules.js';
 import { checkSubtotal, expectedAmount } from './parse.js';
 import { factoryGlassSignature, fold, glassCandidates, orderGlassVerdict } from './glass.js';
 
-/** Firma kodu (3 harf) + proje numarası çiftleri: "musterix ABC 40" → [{ code: 'ABC', no: 40 }] */
+/**
+ * Firma kodu (3 harf) + proje numarası çiftleri: "musterix ABC 40" → [{ code: 'ABC', no: '40' }], "ABC 40-1" → '40-1'.
+ * Numara metindir (karar 259): tire ve baştaki sıfırlar korunur, siparişin müşteri numarasıyla aynen karşılaştırılır.
+ */
 export function projectRefs(text) {
   const f = fold(text);
   const out = [];
-  for (const m of f.matchAll(/(?:^|[^A-Z0-9])([A-Z]{3})\s*-?\s*(\d{1,7})(?!\d)/g)) out.push({ code: m[1], no: Number(m[2]) });
+  for (const m of f.matchAll(/(?:^|[^A-Z0-9])([A-Z]{3})\s*-?\s*(\d{1,10}(?:-\d{1,10}){0,3})(?![\d-])/g)) out.push({ code: m[1], no: m[2] });
   return out;
 }
 
 /**
  * PDF'in müşteri / projesi bu sipariş mi.
- * @returns {{ ok: true, code: string, no: number } | { ok: false, code: 'PROJECT_MISSING' | 'PROJECT_UNRECOGNIZED' | 'WRONG_CUSTOMER' | 'WRONG_PROJECT' | 'PROJECT_AMBIGUOUS', found?: string }}
+ * @returns {{ ok: true, code: string, no: string } | { ok: false, code: 'PROJECT_MISSING' | 'PROJECT_UNRECOGNIZED' | 'WRONG_CUSTOMER' | 'WRONG_PROJECT' | 'PROJECT_AMBIGUOUS', found?: string }}
  */
 export function projectCheck(projectText, { prefix, customerOrderNo }) {
   if (!projectText) return { ok: false, code: 'PROJECT_MISSING' };
@@ -39,8 +44,21 @@ export function projectCheck(projectText, { prefix, customerOrderNo }) {
   if (!ours.length) return { ok: false, code: 'WRONG_CUSTOMER', found: codes.join(', ') };
   const nos = [...new Set(ours.map((r) => r.no))];
   if (codes.length > 1 || nos.length > 1) return { ok: false, code: 'PROJECT_AMBIGUOUS', found: refs.map((r) => `${r.code} ${r.no}`).join(', ') };
-  if (nos[0] !== customerOrderNo) return { ok: false, code: 'WRONG_PROJECT', found: `${prefix} ${nos[0]}` };
+  if (nos[0] !== String(customerOrderNo ?? '')) return { ok: false, code: 'WRONG_PROJECT', found: `${prefix} ${nos[0]}` };
   return { ok: true, code: prefix, no: nos[0] };
+}
+
+/**
+ * Normal / şekilli cam (karar 262): fabrika açıklamasında "ŞEKİLLİ" sözcüğü (Türkçe harf, büyük / küçük harf, boşluk ve satır
+ * sonu farkı yok sayılır — açıklama satırları birleştirilmiştir) → şekilli; yoksa normal. Teknik özelliklerden (kalınlık, PVB,
+ * renk, temper, laminasyon) ayrı okunur. Sözcüğe benzeyen ama tam olmayan yazım ("ŞEKİL") belirsizdir: normal kabul edilir,
+ * ön izleme uyarır, satışçı teklif tablosunda düzeltir.
+ * @returns {{ shaped: boolean, uncertain: boolean }}
+ */
+export function shapeOf(description) {
+  const f = fold(description).replace(/\s+/g, ' ');
+  const shaped = /(?:^|[^A-Z])SEKILLI(?![A-Z])/.test(f);
+  return { shaped, uncertain: !shaped && /SEKIL/.test(f) };
 }
 
 /** İşlemin TAKİP türü: DELİK geçen → DELIK, CNC → CNC; başka bir ad tanınmaz (tahmin edilmez, kullanıcı seçer) */
@@ -63,7 +81,7 @@ export const opKey = (name) => fold(name).replace(/\s+/g, ' ').trim();
  * @param {object} p
  * @param {ReturnType<import('./parse.js').parseFactoryOrder>} p.parsed
  * @param {string} p.importKey   satırların ayrılmış cam grubu anahtarı için (içe aktarma kaydının kimliği)
- * @param {{ prefix: string, customerOrderNo: number, glass: { id?: string | null, nameTr?: string | null, colorTr?: string | null, nameRo?: string | null, colorRo?: string | null } | null }} p.order
+ * @param {{ prefix: string, customerOrderNo: string | number, glass: { id?: string | null, nameTr?: string | null, colorTr?: string | null, nameRo?: string | null, colorRo?: string | null } | null }} p.order
  * @param {{ id: string, nameTr: string, colorTr?: string, nameRo?: string, colorRo?: string, isActive?: boolean, label: string }[]} p.catalog  etkin camlar (label: Türkçe ad — teklif satırının açıklaması)
  * @param {{ glass?: Record<string, string>, ops?: Record<string, string> }} [p.choices]
  */
@@ -146,9 +164,14 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
       return { ...o, kind, total, net, perPiece: total != null && total % r.adet === 0 ? total / r.adet : null };
     });
     const startIdx = lines.length;
+    // Şekilli cam (karar 262): açıklamadaki "ŞEKİLLİ" teknik özelliklerden ayrı okunur (cam cinsi / katalog eşleşmesi değişmez)
+    const shape = shapeOf(r.description);
+    if (shape.uncertain) warnings.push({ code: 'SHAPE_UNCERTAIN', row: sourceRow, description: r.description });
+    // Bir camın m²'si (karar 261): PDF'teki 3 ondalıklı m² aynen (binde bir → "2.386"); okunamadıysa eski kural
+    const pieceM2 = r.m2 != null && r.m2 > 0 ? (r.m2 / 1000).toFixed(3) : null;
     const glassLine = (adet, splitGroup) => ({
       kind: 'CAM', description: glass?.label ?? r.description, glassProductId: glass?.id ?? null, poz, enMm: r.en, boyMm: r.boy, adet, unit: 'm2',
-      unitPrice: glassNet == null ? '' : cents(glassNet), free: false, offerPrice: null, splitGroup, sourceRow,
+      unitPrice: glassNet == null ? '' : cents(glassNet), free: false, offerPrice: null, splitGroup, sourceRow, pieceM2, shaped: shape.shaped,
     });
     const opLine = (o, adet) => ({
       kind: o.kind ?? 'CNC', description: o.name, glassProductId: null, poz: '', enMm: null, boyMm: null, adet, unit: 'adet',
@@ -181,12 +204,15 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     const opsOk = ops.every((o) => o.net != null && o.total != null && Math.abs(o.net * o.total - o.amount) <= (o.discount === 0 ? 1 : tol(o.totalQty)));
     const rowOk = areaOk && priceOk && opsOk;
     if (!rowOk) explained = false;
+    // PDF'in m²'si ölçüyle (en × boy, 3 ondalık) uyuşmuyor: m² PDF'ten aynen alınacağı için (karar 261) fark tutarda görünmez —
+    // gerçek fark gizlenmez, aktarma durur (satır elle girilir)
+    if (!areaOk && r.m2 != null) blocking.push({ code: 'AREA_MISMATCH', row: sourceRow, pdfM2: r.m2, dimsM2: exactArea });
     let takipGlass = 0; let takipOps = 0; let takipM2 = 0;
     for (let k = startIdx; k < endIdx; k++) {
       if (calc[k].kind === 'CAM') { takipGlass += toCents(totals[k].amount); takipM2 += Math.round(totals[k].metraj * 1000); } else takipOps += toCents(totals[k].amount);
     }
     return {
-      sourceRow, description: r.description, glassKey: glassKey(r.description), glassLabel: glass?.label ?? null, poz, pozFromPdf: !!r.poz,
+      sourceRow, description: r.description, glassKey: glassKey(r.description), glassLabel: glass?.label ?? null, poz, pozFromPdf: !!r.poz, shaped: shapeOf(r.description).shaped,
       en: r.en, boy: r.boy, adet: r.adet, m2: r.m2, totalM2: r.totalM2, takipM2,
       unitPrice: r.unitPrice, discount: r.discount, netUnit: glassNet, amount: r.amount, takipAmount: takipGlass,
       ops: ops.map((o) => ({ name: o.name, kind: o.kind, qty: o.total, perPiece: o.perPiece, unitPrice: o.unitPrice, discount: o.discount, netUnit: o.net, amount: o.amount })),
