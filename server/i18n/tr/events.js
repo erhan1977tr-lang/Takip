@@ -18,6 +18,7 @@ export default {
   OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi' },
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi' },
   OFFER_WITHDRAWN: { label: 'Satış, yöneticiye gönderdiği teklifi geri aldı' },
+  OFFER_PDF_IMPORTED: { label: 'Fabrika PDF\'i teklif tablosuna aktarıldı' },
   OFFER_SENT: { label: 'Fiyat onaylandı, teklif müşteriye gönderildi', customer: 'Teklifiniz hazır' },
   OFFER_REVISED: { label: 'Teklif revize ediliyor' },
   OFFER_UPDATED: { label: 'Teklif yönetici tarafından güncellendi', customer: 'Teklifiniz güncellendi' },

@@ -206,6 +206,7 @@ export const EVENTS = {
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
   OFFER_WITHDRAWN: { customer: false }, // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
+  OFFER_PDF_IMPORTED: { customer: false }, // fabrika PDF'i teklif tablosuna aktarıldı (karar 255)
   OFFER_SENT: { customer: true },
   OFFER_REVISED: { customer: false },
   OFFER_UPDATED: { customer: true },

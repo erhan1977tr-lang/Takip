@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.75.0 — 11.10.2026
+
+Fabrika sipariş PDF'i aktarımı (karar 255). Şema: `OfferImport`, `OfferLine.importId` / `sourceRow` (CI migration).
+
+- **Teklif tablosunda "PDF'den Aktar"** (satış ve yönetici): bir ya da birden çok Trakya Cam / GlassWorld sipariş formu
+  yüklenir (içerik denetimi + antivirüs), ön izlemede gösterilir; onaylanınca satırlar teklif tablosunun sonuna eklenir.
+  Cam cinsi (6.3.6 gibi; PVB kat sayısı = PVB ÷ 0,38), ölçü, adet, gerçek Poz, CNC / delik satırları ve fabrika alış
+  fiyatları (EUR; "TL" etiketi yok sayılır, kur dönüşümü yok) satış fiyatı sütununa gelir; müşteri fiyatı boş kalır.
+  Teklif yöneticiye kendiliğinden gönderilmez.
+- **Denetimler:** PDF satırları ↔ KDV hariç Ara Toplam (A) ve TAKİP hesabı ↔ Ara Toplam (B). Doğrulanmış m² yuvarlama
+  farkı uyarı olarak gösterilir; açıklanamayan fark, yanlış müşteri / proje, siparişin camıyla uyuşmayan cam,
+  mükerrer PDF ya da fabrika siparişi aktarımı durdurur. KDV ve Genel Toplam kullanılmaz. m² hesabı değişmedi.
+- **Gizlilik:** kaynak fabrika PDF'leri ve alış fiyatları yalnızca yönetici ve satışa açıktır; müşteri, denetimci ve
+  çizimci erişemez (dosya sipariş dosyası değildir; `/dosya/fabrika/…` yetkiyle). Satış ön izlemede müşterinin adını görmez.
+
 ## 3.74.0 — 11.10.2026
 
 Acil düzeltme paketi (duzeltme6; karar 251–254). Şema değişmedi, migration yok.

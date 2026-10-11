@@ -434,7 +434,7 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   // Müşteri (yeni sipariş / taslak), ekip (çizim, dosya ekleme, teslim belgesi, katalog görseli, tedarikçi siparişinin teknik
   // eki — Paket 6) ve depo bağlantısı
   assert.deepEqual(hits.storeFiles.sort(), [
-    'app/(panel)/admin/profil-katalogu/actions.ts', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/profile-actions.ts',
+    'app/(panel)/admin/profil-katalogu/actions.ts', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/pdf-import-actions.ts', 'app/(panel)/siparisler/[id]/profile-actions.ts',
     'app/(panel)/siparisler/tedarik/actions.ts', 'app/(panel)/siparisler/yeni/actions.ts', 'app/depo/[token]/actions.ts', 'lib/uploads.ts',
   ]);
   // Tedarikçi siparişinin eki: işlem yapan bilgisi ve sınır denetimi dosyalar saklanmadan ÖNCE; kayıt olmazsa (hata ya da
@@ -458,6 +458,13 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   const depot = read('app/depo/[token]/actions.ts');
   assert.equal((depot.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/g) ?? []).length, 3, 'teslim onayı + ek belge + teslimat fotoğrafı (Paket 8, karar 195)');
   assert.match(depot, /storeFiles\(files, \{ userId: null, orderId: p\.orderId, depot: true \}\)/);
+  // Fabrika PDF'i aktarımı (karar 255): işlem yapan ve hedef (yetki + düzenlenebilir teklif) saklamadan ÖNCE; kayıt olmazsa
+  // saklanan dosyalar silinir; aynı dosya zaten kayıtlıysa yeni saklanan kopya silinir
+  const pdfImport = read('app/(panel)/siparisler/[id]/pdf-import-actions.ts');
+  assert.ok(pdfImport.indexOf('const actor = await actorOf(user);') < pdfImport.indexOf('await importTarget(') && pdfImport.indexOf('await importTarget(') < pdfImport.indexOf('await storeFiles('));
+  assert.match(pdfImport, /if \(!res\.ok\) \{ await discardFiles\(stored\.stored\);/);
+  assert.match(pdfImport, /await discardFiles\(res\.discard\);/);
+  assert.match(pdfImport, /\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);/);
   const catalogue = read('app/(panel)/admin/profil-katalogu/actions.ts');
   assert.match(catalogue, /try \{\s*data = full \? await fsp\.readFile\(full\) : null;\s*\} finally \{\s*await discardFiles\(\[s\]\);\s*\}/);
   assert.doesNotMatch(catalogue, /removeUpload/);

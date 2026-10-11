@@ -1,0 +1,127 @@
+import { test, expect } from '@playwright/test';
+import { CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
+import { PdfDoc } from '../server/pdf/pdf.js';
+import { form } from '../test/fixtures/factory-pdf.js';
+
+// Fabrika PDF'i aktarımı (karar 255) — gerçek sunucuda, gerçek ClamAV ile: satış birden çok fabrika PDF'ini yükler, ön izler,
+// yanlış projeyi dışarıda bırakıp onaylar; satırlar (Poz, ölçü, adet, alış fiyatı) teklif tablosuna gelir, müşteri fiyatı
+// yoktur, teklif yöneticiye KENDİLİĞİNDEN gitmez — satış elle gönderir. Kaynak PDF'e yalnızca satış / yönetici erişir.
+// PDF'ler bu testte TAKİP'in PDF yazıcısıyla üretilen SENTETİK fabrika formlarıdır (gerçek müşteri / fiyat yok).
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
+const INSPECTOR = 'denetim@e2e.test';
+const GLASS_LABEL = '10 MM TEMPER CAM — BRONZ'; // 07'nin kataloğu (26-excel-aktar ile aynı cam)
+const GLASS_PDF = '10 mm Temperli Bronz Cam DR';
+
+function factoryPdf(lines: { page: number; text: string }[]): Buffer {
+  const doc = new PdfDoc({ title: 'Siparis Formu' });
+  let page = doc.addPage();
+  let y = 40;
+  for (const l of lines) {
+    if (y > 800) { page = doc.addPage(); y = 40; }
+    page.text(20, y, l.text, { size: 7 });
+    y += 12;
+  }
+  return Buffer.from(doc.toBuffer());
+}
+const file = (name: string, buffer: Buffer) => ({ name, mimeType: 'application/pdf', buffer });
+
+test.describe.configure({ mode: 'serial' });
+
+test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer engeli, aktarma ve elle yöneticiye gönderme; kaynak PDF yalnızca satış / yönetici', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
+  await cust.fill('#title', 'PDF aktarma');
+  await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS_LABEL });
+  await cust.setInputFiles('#files', sampleFile('cizim-pdf-aktar.pdf'));
+  await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
+  await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/, { timeout: 45_000 });
+  const orderUrl = new URL(cust.url()).pathname;
+  const orderNo = (await cust.locator('.page-head .mono').first().textContent())!.trim();
+  const [, code, no] = /^([A-Z]{3})(\d+)$/.exec(orderNo)!;
+
+  const pdf1 = factoryPdf(form({
+    no: '97001', project: `MUSTERIX ${code} ${no}`,
+    rows: [`1 ${GLASS_PDF}`, '1000 2000 1 2,000 2,000 60,00 TL 0,0 120,00 POZ-A', 'CNC İŞLEMİ ADET 1,000 1,000 4,00 TL 0,0 4,00',
+      `2 ${GLASS_PDF}`, '1500 1000 2 1,500 3,000 60,00 TL 0,0 180,00 POZ-A'],
+    total: '3 5,000 304,00', sub: '304,00', vat: '60,80', grand: '364,80',
+  }));
+  const pdf2 = factoryPdf(form({ no: '97002', project: `MUSTERIX ${code} ${no}`, rows: [`1 ${GLASS_PDF} 700 800 1 0,560 0,560 60,00 TL 0,0 33,60 POZ-B`], total: '1 0,560 33,60', sub: '33,60', grand: '40,32' }));
+  const wrong = factoryPdf(form({ no: '97003', project: `MUSTERIX ${code} ${Number(no) + 900}`, rows: [`1 ${GLASS_PDF} 700 800 1 0,560 0,560 60,00 TL 0,0 33,60 POZ-C`], total: '1 0,560 33,60', sub: '33,60', grand: '40,32' }));
+
+  // Satış: teklif tablosu → "PDF'den Aktar"
+  const sales = await as(browser, SALES, TEAM_PW);
+  await sales.goto(orderUrl);
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.getByLabel('Açıklama').first()).toHaveValue(GLASS_LABEL);
+  await sales.getByRole('button', { name: "PDF'den Aktar" }).click();
+  const dlg = sales.locator('dialog.pdf-import[open]');
+  await expect(dlg).toBeVisible();
+  await sales.setInputFiles('#pdf-files', [file('fabrika-1.pdf', pdf1), file('fabrika-2.pdf', pdf2), file('fabrika-yanlis.pdf', wrong)]);
+  await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
+  await expect(dlg.locator('[data-pdf-file]')).toHaveCount(3, { timeout: 60_000 });
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-factory-no]')).toHaveText('97001');
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-project]')).toHaveText(`${code} ${no}`);
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-check="a"]')).toContainText('tutuyor');
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-check="b"]')).toHaveAttribute('data-diff', '0');
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-check="vat"]')).toContainText('kullanılmaz');
+  await expect(dlg.locator('[data-pdf-file="97003"] [data-pdf-blocking] [data-code="WRONG_PROJECT"]')).toBeVisible();
+  // Satış firma adını göremez: PDF'teki "Proje / Müşterisi" metni (müşteri adı) ön izlemeye gelmez
+  await expect(dlg).not.toContainText('MUSTERIX');
+  await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
+  // Yanlış projenin PDF'i aktarımın dışında bırakılınca onay açılır
+  await dlg.locator('[data-pdf-file="97003"]').getByLabel('Bu PDF’i aktar').uncheck();
+  await expect(dlg.locator('[data-pdf-file]')).toHaveCount(2);
+  await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeEnabled();
+  await dlg.getByRole('button', { name: 'Teklif tablosuna aktar' }).click();
+  await expect(sales).toHaveURL(/ok=pdf_imported/, { timeout: 45_000 });
+
+  // Teklif tablosu: ilk ölçüsüz satır kaldırıldı (ön izlemede işaretliydi); satırlar sırayla; Poz PDF'ten; alış fiyatı satış fiyatında
+  const poz = sales.getByLabel('Poz', { exact: true });
+  await expect(poz).toHaveCount(4); // 3 cam satırı (1000×2000, 1500×1000 ×2 — işlemsiz, tek satır —, 700×800) + 1 CNC satırı
+  await expect(sales.getByLabel('En', { exact: true })).toHaveCount(3);
+  expect(await sales.getByLabel('En', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['1000', '1500', '700']);
+  expect(await sales.getByLabel('Adet', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['1', '2', '1']);
+  expect(await sales.getByLabel('CNC fiyatı').inputValue()).toBe('4.00');
+  expect(await sales.getByLabel('Birim fiyat', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['60.00', '60.00', '60.00']);
+  const pozValues = await poz.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(pozValues.filter(Boolean)).toEqual(['POZ-A', 'POZ-A', 'POZ-B']);
+  // Teklif hâlâ satışta (yöneticiye kendiliğinden gitmedi)
+  await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
+
+  // Mükerrer: aynı PDF yeniden yüklenince ön izleme engeller; kaydedilmemiş değişiklik varken aktarma kapalı
+  await sales.getByLabel('Adet', { exact: true }).nth(1).fill('3');
+  await sales.getByRole('button', { name: "PDF'den Aktar" }).click();
+  await expect(dlg.locator('[data-pdf-dirty]')).toBeVisible();
+  await sales.setInputFiles('#pdf-files', [file('fabrika-1-tekrar.pdf', pdf1)]);
+  await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
+  await expect(dlg.locator('[data-pdf-file="97001"] [data-code="ALREADY_IMPORTED"]')).toBeVisible({ timeout: 60_000 });
+  await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
+  const href = await dlg.locator('.pdf-previous a').first().getAttribute('href');
+  expect(href).toMatch(/^\/dosya\/fabrika\/[a-z0-9]+\?ac=1$/);
+  await dlg.getByRole('button', { name: 'Kapat' }).click();
+
+  // Kaynak PDF: satış açar; müşteri, denetimci ve çizimci 404 (varlığı da belli olmaz)
+  const own = await sales.request.get(href!);
+  expect(own.status()).toBe(200);
+  expect(own.headers()['content-type']).toContain('application/pdf');
+  expect((await cust.request.get(href!)).status()).toBe(404);
+  const insp = await as(browser, INSPECTOR, INSPECTOR_PW);
+  expect((await insp.request.get(href!)).status()).toBe(404);
+  const drawer = await as(browser, DRAWER, TEAM_PW);
+  expect((await drawer.request.get(href!)).status()).toBe(404);
+  // Müşterinin ve denetimcinin sipariş sayfası fabrika PDF'ini / aktarım kaydını göstermez
+  for (const p of [cust, insp]) {
+    await p.goto(orderUrl);
+    const html = await p.content();
+    expect(html).not.toContain('/dosya/fabrika/');
+    expect(html).not.toContain('97001');
+  }
+
+  // Satış satırı düzenleyip kaydeder ve teklifi ELLE yöneticiye gönderir (mevcut düğme)
+  await sales.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
+  await expect(sales).toHaveURL(/ok=offer_saved/);
+  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  await expect(sales).toHaveURL(/ok=offer_submit/);
+  for (const p of [cust, insp, drawer, sales]) await p.context().close();
+});

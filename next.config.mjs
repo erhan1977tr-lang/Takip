@@ -9,7 +9,8 @@ const nextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   eslint: { ignoreDuringBuilds: true },
-  serverExternalPackages: ['nodemailer'],
+  // pdfjs-dist: fabrika PDF'i aktarımı sunucuda metin okur (karar 255) — paketlenmez, node_modules'tan yüklenir
+  serverExternalPackages: ['nodemailer', 'pdfjs-dist'],
   // pdf.js'in standart yazı tipleri ve cMap'leri (çizim görüntüleyici) üretim çıktısına (standalone) girsin:
   // app/pdfjs/[kind]/[file]/route.ts bunları node_modules/pdfjs-dist içinden sunar.
   outputFileTracingIncludes: {

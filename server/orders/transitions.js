@@ -22,6 +22,7 @@ import { recordPriceOverrides } from '../pricing/alerts.js';
 import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
 import { shipDateLocked } from './ship-date.js';
+import { applyImports } from './pdf-import/service.js';
 
 export { WorkflowError };
 
@@ -67,6 +68,8 @@ export const REQUIRES = {
   withdraw_offer: ['withdraw_offer'],
   update_offer: ['update_offer'],
   check_offer: ['update_offer'],
+  // Fabrika PDF'i aktarımı (karar 255): teklif tablosunu düzenleyebilen (satış taslağı / yöneticinin fiyat onayı)
+  import_offer_pdf: ['edit_offer', 'approve_price'],
 };
 
 /** Cam siparişi akışı: bir işlemin geçerli olup olmadığı tüm hatların (çizim, teklif, bekleme) durumuna bakar. */
@@ -202,7 +205,8 @@ function decidableDrawing(h) {
 // splitGroup / pieceBase: ayrılmış cam grubu (karar 114) — teklifin yeni sürümüne ve kopyalarına satırla birlikte taşınır
 // crateFee: yöneticinin sandık bedeli satırı (Paket 4) — yeni sürüme ve kopyalara satırla birlikte taşınır
 const LINE_FIELDS = ['description', 'descriptionRo', 'poz', 'enMm', 'boyMm', 'adet', 'unit', 'unitPrice', 'kind', 'free', 'glassProductId', 'weightKgM2', 'listPrice', 'offerPrice', 'compensationId', 'splitGroup'];
-export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, crateFee: !!l.crateFee, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, sortOrder: i });
+// importId / sourceRow: fabrika PDF'inden aktarılan satırın kaynağı (karar 255) — tarayıcıdan gelmez; kayıtlı satırdan taşınır (mergePrices)
+export const lineData = (l, i) => ({ ...Object.fromEntries(LINE_FIELDS.map((k) => [k, l[k] ?? null])), adet: l.adet ?? 1, unit: l.unit ?? 'm2', kind: l.kind ?? 'CAM', free: !!l.free, crateFee: !!l.crateFee, unitPrice: l.unitPrice ?? 0, pieceBase: l.pieceBase ?? 0, importId: l.importId ?? null, sourceRow: l.sourceRow ?? null, sortOrder: i });
 const priceNum = (v) => (v == null || v === '' ? null : Number(v));
 
 /**
@@ -236,6 +240,9 @@ function mergePrices(lines, existing, admin) {
       unitPrice: admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : keepCost ? old.unitPrice : l.unitPrice,
       offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
       compensationId: old?.compensationId ?? null,
+      // Fabrika PDF'i kaynağı (karar 255): kayıtlı satırdan (ya da ayrılan camın kaynağından) taşınır; formdan gelen yok sayılır
+      importId: old?.importId ?? null,
+      sourceRow: old?.sourceRow ?? null,
     };
   });
 }
@@ -467,6 +474,41 @@ async function dwgDecide(h, decision) {
 }
 
 const ACTIONS = {
+  /**
+   * Fabrika PDF'lerini teklif tablosuna aktarır (karar 255). Kurallar server/orders/pdf-import/*: ön izleme aynı işlemde
+   * yeniden hesaplanır (parmak izi), engel varsa hiçbir şey yazılmaz. Satırlar sona eklenir; fabrika alış fiyatları satış
+   * fiyatına (unitPrice) yazılır, müşteri fiyatı boş kalır. Teklifin durumu değişmez (yöneticiye gönderilmez).
+   */
+  async import_offer_pdf(h) {
+    const r = await applyImports(h, (tx, offer, lines) => completeLines({ ...h, tx }, offer, lines));
+    const placed = assignPieceBases(r.all);
+    for (let i = r.kept.length; i < placed.length; i++) {
+      const l = placed[i];
+      await h.tx.offerLine.create({ data: { ...lineData({ ...l, offerPrice: null }, l.sortOrder), offerId: r.offer.id } });
+    }
+    const saved = await h.tx.offerLine.findMany({ where: { offerId: r.offer.id }, orderBy: { sortOrder: 'asc' } });
+    const admin = can(h.actor.role, 'OFFER_SEND');
+    const { amount, offerAmount } = amounts(saved);
+    await h.tx.offer.update({ where: { id: r.offer.id }, data: { amount, ...(admin ? { offerAmount } : {}) } });
+    const ids = r.preview.imports.map((p) => p.id);
+    const marked = await h.tx.offerImport.updateMany({
+      where: { id: { in: ids }, orderId: h.order.id, status: 'PREVIEW' },
+      data: { status: 'APPLIED', offerId: r.offer.id, appliedAt: h.now, appliedById: h.actor.id ?? null },
+    });
+    if (marked.count !== ids.length) throw new WorkflowError('PDF_IMPORT_STALE');
+    for (const p of r.preview.imports) await h.tx.offerImport.update({ where: { id: p.id }, data: { fingerprint: p.fingerprint } });
+    const nos = r.preview.imports.map((p) => p.factoryNo).filter(Boolean);
+    // Geçmiş notunda yalnızca fabrika sipariş numaraları (tutar yok); satırı ve notu yalnızca teklif hazırlayanlar görür
+    h.event('OFFER_PDF_IMPORTED', nos.join(', ') || null);
+    h.audit = {
+      offerId: r.offer.id, lines: r.added.length, dropped: r.drop.length, amount,
+      pdfImport: r.preview.imports.map((p) => ({
+        importId: p.id, factoryNo: p.factoryNo, lines: p.lines.length,
+        subtotal: p.plan?.checks.b.subtotal ?? null, takipTotal: p.plan?.checks.b.takipTotal ?? null, diff: p.plan?.checks.b.diff ?? null,
+      })),
+    };
+    h.result = { imported: r.added.length, pdfs: ids.length };
+  },
   async send_to_drawing(h) {
     // Tek etkin çizimci varsa iş kendiliğinden ona atanır (ürün sahibinin kararı); birden çoksa çizimci üstlenir.
     const drawers = await h.tx.user.findMany({ where: { appRole: 'CIZIM', isActive: true }, select: { id: true }, take: 2 });

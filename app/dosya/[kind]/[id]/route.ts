@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic';
 // /dosya/tedarik/<SupplierOrderFile id> — tedarikçi siparişinin teknik eki: yalnızca SUPPLIER_MANAGE (yönetici; karar 181)
 // /dosya/teslimat/<DeliveryPhoto id> — profil teslimat fotoğrafı: siparişi gören (müşteri yalnızca kendi siparişi; karar 195)
 // /dosya/rapor/<DeliveryReport id> — teslimat raporu PDF'i, kopyadan görenin dilinde üretilir (karar 196); süreli bağlantı yok
+// /dosya/fabrika/<OfferImport id> — fabrika sipariş PDF'i (karar 255): yalnızca OFFER_PREPARE (yönetici, satış) + sipariş kapsamı
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
   const { t, locale } = await getT();
@@ -56,6 +57,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     // bu türe uygulanmaz); başka firmanın fotoğrafı kapsam dışıdır → 404
     const ph = await db.deliveryPhoto.findFirst({ where: { id, order: scope }, select: { file: { select: { storageKey: true, name: true, mime: true, scanStatus: true, orderId: true } } } });
     if (ph) file = ph.file;
+  } else if (kind === 'fabrika' && userCan(user, 'OFFER_PREPARE')) {
+    // Fabrika PDF'i ve alış fiyatları gizlidir: müşteri, denetimci ve çizim ekibine 404 (varlığı da belli olmaz)
+    const f = await db.offerImport.findFirst({ where: { id, order: scope }, select: { storageKey: true, name: true, mime: true, scanStatus: true, orderId: true } });
+    if (f) file = f;
   } else if (kind === 'tedarik' && userCan(user, 'SUPPLIER_MANAGE')) {
     // Tedarikçi siparişinin eki: yetkisi olmayan herkese 404 (varlığı da belli olmaz)
     const f = await db.supplierOrderFile.findUnique({ where: { id }, select: { storageKey: true, name: true, mime: true, scanStatus: true, revision: { select: { orderId: true } } } });
@@ -65,7 +70,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   // Virüslü dosya karantinadadır; kimseye verilmez
   if (file.scanStatus === 'INFECTED') return new Response(t('common.fileInfected'), { status: 403 });
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
-  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : 'OrderFile', id, user.id,
+  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : kind === 'fabrika' ? 'OfferImport' : 'OrderFile', id, user.id,
     { ...(kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId }), name: file.name });
 
   const full = resolveKey(file.storageKey);

@@ -101,14 +101,16 @@ export async function checkUpload(db, files, ctx, { root, minFreeMb, now = new D
     // Müşteri: firmanın bütün kullanıcıları birlikte; iç ekip: yalnızca kendisi
     const by = firmId ? { uploadedBy: { customerId: firmId, type: 'CUSTOMER' } } : { uploadedById: user.id };
     const where = { ...by, createdAt: { gte: new Date(now.getTime() - DAY_MS) } };
-    const [a, b, c, d] = await Promise.all([
+    const [a, b, c, d, e] = await Promise.all([
       db.orderFile.findMany({ where, select: RECENT }),
       db.orderDraftFile.findMany({ where, select: RECENT }),
       db.drawingFile.findMany({ where, select: RECENT }),
       // Tedarikçi siparişinin teknik ekleri (Paket 6) yalnızca iç ekipten (yönetici) gelir: kullanıcının kendi kotasına sayılır
       firmId ? Promise.resolve([]) : db.supplierOrderFile.findMany({ where: { uploadedById: user.id, createdAt: where.createdAt }, select: RECENT }),
+      // Fabrika PDF'i aktarımları (karar 255) yalnızca teklif hazırlayan iç ekipten gelir: kullanıcının kendi kotasına sayılır
+      firmId ? Promise.resolve([]) : db.offerImport.findMany({ where: { uploadedById: user.id, createdAt: where.createdAt }, select: RECENT }),
     ]);
-    recent = [...a, ...b, ...c, ...d];
+    recent = [...a, ...b, ...c, ...d, ...e];
   }
   let order = null;
   if (ctx.orderId) {
@@ -117,6 +119,7 @@ export async function checkUpload(db, files, ctx, { root, minFreeMb, now = new D
       : (await Promise.all([
         db.orderFile.findMany({ where: { orderId: ctx.orderId }, select: SIZE }),
         db.drawingFile.findMany({ where: { drawing: { orderId: ctx.orderId } }, select: SIZE }),
+        db.offerImport.findMany({ where: { orderId: ctx.orderId }, select: SIZE }),
       ])).flat();
   }
   const freeBytes = minFreeMb > 0 ? await freeBytesOf(root, statfs) : null;

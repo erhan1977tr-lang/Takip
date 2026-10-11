@@ -170,6 +170,8 @@ model User {
   orderNotes         OrderNote[]
   orderNoteReads     OrderNoteRead[]
   orderFiles         OrderFile[]
+  offerImportsUploaded OfferImport[] @relation("OfferImportUploadedBy")
+  offerImportsApplied  OfferImport[] @relation("OfferImportAppliedBy")
   orderEvents        OrderEvent[] @relation("OrderEventBy")
   orderDrafts        OrderDraft[]
   orderDraftFiles    OrderDraftFile[]
@@ -396,6 +398,7 @@ model Order {
   shipment          Shipment?   @relation(fields: [shipmentId], references: [id])
   events            OrderEvent[]
   files             OrderFile[]
+  offerImports      OfferImport[] // fabrika PDF'i aktarımları (karar 255): yalnızca yönetici ve satış görür
   alerts            AdminAlert[]
   notes             OrderNote[]
   noteReads         OrderNoteRead[]
@@ -701,8 +704,49 @@ model OfferLine {
   // ve kârlılık aynı kuralla) — işaret yalnızca görünürlüğü belirler: satışa hiç gitmez, satışın kaydı satırı korur;
   // yönetici ve müşteri (denetimci de) görür. Yalnızca yönetici açar (server/orders/transitions.js → offerEdit).
   crateFee         Boolean @default(false)
+  // Fabrika PDF'inden aktarılan satır (karar 255): kaynak aktarma kaydı + PDF'teki satır no (S.No). Satış / yönetici
+  // kaydında ve teklifin yeni sürümünde satırla taşınır; müşteri, denetimci ve çizim ekibine gönderilmez (lib/orders.ts).
+  importId         String?
+  import           OfferImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  sourceRow        Int?
 
   @@index([compensationId])
+  @@index([importId])
+}
+
+// Fabrika sipariş PDF'i aktarımı (karar 255). Kaynak PDF ve fabrika alış fiyatları gizlidir: yalnızca teklif hazırlayan roller
+// (OFFER_PREPARE — yönetici, yönetici yardımcısı, satış) erişir; dosya /dosya/fabrika/<id> ile, aynı yetkiyle verilir. Sipariş
+// dosyası (OrderFile) DEĞİLDİR: müşteri / iç dosya listelerine hiç girmez. Kayıt silinmez; aktarılınca APPLIED olur.
+//   parsed : PDF'ten okunan değişmez kopya (başlık, satırlar, işlemler, iskonto, net tutarlar, Ara Toplam — tutarlar kuruş)
+model OfferImport {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status         String   @default("PREVIEW") // PREVIEW | APPLIED
+  name           String   // özgün dosya adı
+  storageKey     String   @unique
+  size           Int
+  mime           String?
+  checksum       String   // SHA-256 (hex): aynı dosya aynı siparişe bir kez
+  scanStatus     FileScanStatus @default(PENDING)
+  scanSignature  String?
+  scannedAt      DateTime?
+  uploadedById   String?
+  uploadedBy     User?    @relation("OfferImportUploadedBy", fields: [uploadedById], references: [id])
+  createdAt      DateTime @default(now())
+  parseError     String?  // okunamayan PDF: sabit kod (server/orders/pdf-import/extract.js → EXTRACT_ERRORS)
+  parsed         Json?
+  factoryOrderNo String?
+  offerId        String?  // aktarıldığı teklif
+  appliedAt      DateTime?
+  appliedById    String?
+  appliedBy      User?    @relation("OfferImportAppliedBy", fields: [appliedById], references: [id])
+  fingerprint    String?  // aktarılan ön izlemenin parmak izi
+  lines          OfferLine[]
+
+  @@unique([orderId, checksum])
+  @@index([factoryOrderNo])
+  @@index([scanStatus])
 }
 
 // Telafi / kırık cam kararı (Aşama 9, karar 108): var olan bir siparişin bir camının yeniden üretilmesi. Yüklenmeyen cam

@@ -34,6 +34,7 @@ export default {
     offer_approve_production: 'Prețul a fost aprobat; oferta este în panoul clientului. Deoarece desenul este aprobat (sau nu este necesar), comanda a fost trecută automat în producție.',
     offer_return: 'Oferta a fost returnată la vânzări.',
     offer_withdrawn: 'Oferta a fost retrasă de la administrator; o puteți modifica și retrimite.',
+    pdf_imported: 'PDF-urile fabricii au fost importate în tabelul ofertei. Verificați rândurile și modificați-le dacă este nevoie; pentru trimiterea la administrator apăsați chiar dumneavoastră „Trimite oferta administratorului”.',
     offer_updated: 'Oferta a fost actualizată; clientul vede noua versiune.',
     offer_checked: 'Oferta a fost marcată ca fiind la zi față de noul desen.',
     undo_drawing: 'Trimiterea la desen a fost anulată. Comanda așteaptă din nou o decizie; ciorna ofertei a fost păstrată.',
@@ -411,6 +412,9 @@ export default {
     // Panoul administratorului (pachetul 4)
     crateFeeAdmin: 'Rândul de cost ambalaj al administratorului nu poate fi modificat de vânzări; oferta nu a fost salvată.',
     offerNotOwner: 'Această ofertă a fost trimisă administratorului de alt agent de vânzări; doar acesta o poate retrage.',
+    pdfImportBlocked: 'PDF-ul nu a putut fi importat: obstacolele din previzualizare nu au fost rezolvate.',
+    pdfImportStale: 'Previzualizarea s-a schimbat între timp (oferta, catalogul sau alt import). Reîmprospătați previzualizarea și încercați din nou.',
+    pdfImportEmpty: 'Niciun PDF selectat pentru import.',
     priceLocked: 'Prețul nu poate fi modificat: comanda are înregistrări financiare sau de încărcare; prețul istoric nu se schimbă în aceste înregistrări.',
   },
   // Motivele blocării financiare / operaționale (pachetul 4 — modificarea prețului și ștergerea)

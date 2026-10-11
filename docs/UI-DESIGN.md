@@ -668,3 +668,16 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - Profile order page, delivery card `#teslim`: missing pickup info as `.alert#teslim-eksik` (customer `.alert-error`, staff
   `.alert-warn`) naming the missing fields; the customer's last change day as `.muted.small`, or `.alert-info` when passed.
 
+
+## Factory PDF import (3.75.0, decision 255)
+
+- "PDF'den Aktar" sits in the offer editor toolbar next to "Excel'den Aktar" (`PdfImport.tsx`; sales and admin modes,
+  never in "update"). It opens `<dialog class="modal modal-wide pdf-import">`.
+- One `.pdf-import-file` section per uploaded PDF: file name (`.mono`), "Bu PDF'i aktar" checkbox, `.pdf-head` (factory
+  no, project code + number, dates), blocking problems in `.alert-error`, warnings in `.alert-warn`, choice selects
+  (glass type / operation kind) only where the server could not decide, the rows table (`.table-wrap > table.pdf-rows`;
+  operation rows `.sub-line`; rows whose amount difference is not a verified rounding `.row-invalid`) and `.pdf-checks`
+  (A, B with ok / rounding / unexplained badges, VAT and grand total marked "not used").
+- The apply button is disabled while any included PDF is blocked, while the editor has unsaved changes (an
+  `.alert-warn` says so) and while a request runs. Previously uploaded factory PDFs are a collapsed `.pdf-previous` list
+  linking to `/dosya/fabrika/<id>` (staff with `OFFER_PREPARE` only).

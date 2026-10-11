@@ -61,7 +61,8 @@ function offerPrices<O extends OfferLike>(view: PriceView, o: O): O {
     amount: o.offerAmount ?? null,
     offerAmount: null,
     // Bedelsiz satır her zaman 0; fiyatı girilmemiş satır: güncel teklifte 0 (eski davranış), eski teklifte boş
-    ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, unitPrice: l.offerPrice ?? (legacy ? null : ZERO), offerPrice: null, listPrice: null })) } : {}),
+    // Fabrika PDF'i kaynağı (karar 255) yalnızca teklif hazırlayanlara: müşteri ve denetimci satırın kaynağını almaz
+    ...(o.lines ? { lines: o.lines.map((l) => ({ ...l, unitPrice: l.offerPrice ?? (legacy ? null : ZERO), offerPrice: null, listPrice: null, ...('importId' in l ? { importId: null, sourceRow: null } : {}) })) } : {}),
   } as O;
 }
 

@@ -8,6 +8,7 @@ import { applyLinePrice, assignPieceBases, atOfferPrice, offerLineTotals, offerP
 import { TableJump } from '@/components/TableJump';
 import { saveOfferAction } from './actions';
 import { ExcelImport } from './ExcelImport';
+import { PdfImport } from './PdfImport';
 
 /**
  * listPrice: fiyat tablosundaki liste fiyatı ('' → yok). Sunucu kayıtta yeniden hesaplar; burada yalnızca gösterilir.
@@ -62,11 +63,17 @@ export function OfferEditor(props: {
   original?: { description: string; adet: string }[];
   /** Güncellemede müşteriye gidecek sürümün numarası (onay penceresinde yazılır) */
   nextVersion?: number;
+  /** Fabrika PDF'i aktarımı (karar 255; yönetici ve satış): siparişe daha önce yüklenen fabrika PDF'leri. Verilmezse düğme yok. */
+  pdfImports?: { id: string; name: string; factoryNo: string | null; applied: boolean }[];
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
     props.initial.length ? props.initial.map((l, i) => ({ key: i, ...l })) : [blankGlass()]
   );
+  // Kaydedilmemiş değişiklik var mı (PDF aktarımı kayıtlı tabloya ekler ve sayfayı yeniler — önce kayıt istenir)
+  const snapshot = (ls: Line[]) => JSON.stringify(ls.map(({ key: _k, ...rest }) => rest));
+  const [initialSnap] = useState(() => snapshot(lines));
+  const dirty = useMemo(() => snapshot(lines) !== initialSnap, [lines, initialSnap]);
   // Yönetici (fiyat onayı ve güncelleme) müşteri fiyatıyla çalışır; satış fiyatı yalnızca yanında görünür
   const adminMode = props.mode !== 'sales';
   // Ayrılmış camların kalemdeki sırası (pieceBase): hesap sunucudakiyle aynı işlevle yapılır — ayırma toplamı değiştirmez
@@ -378,6 +385,12 @@ export function OfferEditor(props: {
             <>
               <span className="sep" aria-hidden="true" />
               <ExcelImport orderId={props.orderId} files={props.excelFiles!} glass={props.importGlass ?? ''} onImport={importRows} m={m.import} />
+            </>
+          )}
+          {props.mode !== 'update' && props.pdfImports && (
+            <>
+              <span className="sep" aria-hidden="true" />
+              <PdfImport orderId={props.orderId} version={props.version} dirty={dirty} previous={props.pdfImports} m={m.pdf} />
             </>
           )}
           <span className="sep" aria-hidden="true" />

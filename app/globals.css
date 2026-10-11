@@ -878,6 +878,17 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .import-preview td.col-picked { font-weight: 600; background: var(--primary-soft); }
 .import-preview tr.row-invalid > td.col-picked { background: var(--danger-soft); }
 .import-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 8px; }
+/* Fabrika PDF'i aktarımı (karar 255): PDF başına bölüm, başlık bilgileri, satırlar ve denetimler */
+.pdf-import-file { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); margin: var(--sp-3) 0; }
+.pdf-import-file .sub-title { margin: 0; word-break: break-all; }
+.pdf-head { display: grid; grid-template-columns: max-content 1fr max-content 1fr; gap: 4px 12px; margin: 8px 0; }
+.pdf-head dt { color: var(--muted); font-weight: 600; }
+.pdf-head dd { margin: 0; }
+.pdf-rows tr.row-invalid > td { background: var(--danger-soft); }
+.pdf-rows tr.sub-line > td { background: var(--surface-2); }
+.pdf-checks { display: grid; gap: 4px; margin-top: 8px; }
+.pdf-previous { margin: 8px 0 12px; }
+@media (max-width: 640px) { .pdf-head { grid-template-columns: max-content 1fr; } }
 .import-invalid { margin: 0 0 8px; font-size: var(--fs-meta); color: var(--danger); }
 
 /* Çizim görüntüleyici (components/DrawingViewer.tsx) */

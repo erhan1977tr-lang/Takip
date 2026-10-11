@@ -103,6 +103,10 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   CRATE_FEE_ADMIN: 'order.errors.crateFeeAdmin',
   // "Yöneticiye göndermeyi geri al" (karar 212): yalnızca teklifi gönderen satışçı
   OFFER_NOT_OWNER: 'order.errors.offerNotOwner',
+  // Fabrika PDF'i aktarımı (karar 255)
+  PDF_IMPORT_BLOCKED: 'order.errors.pdfImportBlocked',
+  PDF_IMPORT_STALE: 'order.errors.pdfImportStale',
+  PDF_IMPORT_EMPTY: 'order.errors.pdfImportEmpty',
   PRICE_LOCKED: 'order.errors.priceLocked',
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',

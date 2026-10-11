@@ -34,6 +34,7 @@ export default {
     offer_approve_production: 'Fiyat onaylandı; teklif müşterinin panelinde. Çizim onaylı (ya da gereksiz) olduğu için sipariş otomatik olarak üretime alındı.',
     offer_return: 'Teklif satışa geri gönderildi.',
     offer_withdrawn: 'Teklif yöneticiden geri alındı; düzenleyip yeniden gönderebilirsiniz.',
+    pdf_imported: 'Fabrika PDF’leri teklif tablosuna aktarıldı. Satırları kontrol edip gerekirse düzenleyin; yöneticiye göndermek için “Teklifi yöneticiye gönder”e kendiniz basın.',
     offer_updated: 'Teklif güncellendi; müşteri yeni sürümü görüyor.',
     offer_checked: 'Teklif yeni çizime göre güncel olarak işaretlendi.',
     undo_drawing: 'Çizime gönderme geri alındı. Sipariş yeniden karar bekliyor; teklif taslağı korundu.',
@@ -411,6 +412,9 @@ export default {
     // Yönetici paneli (Paket 4)
     crateFeeAdmin: 'Yöneticinin sandık bedeli satırı satış tarafından değiştirilemez; teklif kaydedilmedi.',
     offerNotOwner: 'Bu teklifi yöneticiye başka bir satışçı gönderdi; yalnızca o geri alabilir.',
+    pdfImportBlocked: 'PDF aktarılamadı: ön izlemedeki engeller giderilmedi.',
+    pdfImportStale: 'Ön izleme bu arada değişti (teklif, katalog ya da başka bir aktarım). Ön izlemeyi yenileyip yeniden deneyin.',
+    pdfImportEmpty: 'Aktarılacak PDF seçilmedi.',
     priceLocked: 'Fiyat değiştirilemez: siparişin mali ya da yükleme kaydı var; geçmiş fiyat bu kayıtlarda değişmez.',
   },
   // Mali / operasyonel kilit nedenleri (Paket 4 — fiyat değişikliği ve silme; server/orders/financial-lock.js)

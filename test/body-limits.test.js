@@ -13,6 +13,7 @@ import { EXCEL_MAX_BYTES } from '../server/files/xlsx.js';
 import { MAX_FILE_BYTES } from '../server/orders/rules.js';
 import { MAX_IMAGE_BYTES } from '../server/profile/catalog.js';
 import { FILE_LIMITS } from '../server/suppliers/rules.js';
+import { MAX_PDFS, PDF_IMPORT_LIMITS } from '../server/orders/pdf-import/service.js';
 import { readCaddyfile } from './caddyfile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -127,6 +128,8 @@ test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli s�
     'app/(panel)/admin/stok/actions.ts': { pages: ['/admin/stok'], file: EXCEL_MAX_BYTES, request: EXCEL_MAX_BYTES },
     // Tedarikçi siparişinin teknik ekleri (Paket 6): sayfası /siparisler/tedarik/<id> → yükleme kademesi (gövde kapısı: oturum)
     'app/(panel)/siparisler/tedarik/actions.ts': { pages: ['/siparisler/tedarik/cmabc123'], file: FILE_LIMITS.fileBytes, request: FILE_LIMITS.totalBytes },
+    // Fabrika PDF'i aktarımı (karar 255): teklif tablosu sipariş sayfasında → yükleme kademesi (gövde kapısı: oturum)
+    'app/(panel)/siparisler/[id]/pdf-import-actions.ts': { pages: ['/siparisler/cmabc123'], file: PDF_IMPORT_LIMITS.maxBytes, request: PDF_IMPORT_LIMITS.maxBytes * MAX_PDFS },
   };
   // Depoda dosya okuyan başka işlem dosyası yok: yenisi eklenirse sayfası Caddyfile'da tanımlanmadan bu test geçmez
   const found = [];
@@ -164,6 +167,8 @@ test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli s�
   assert.match(read('app/(panel)/siparisler/tedarik/[id]/page.tsx'), /<form action=\{uploadFilesAction\}/);
   assert.equal(FILE_LIMITS.fileBytes, 10 * MiB);
   assert.equal(FILE_LIMITS.totalBytes, 20 * MiB);
+  assert.deepEqual([PDF_IMPORT_LIMITS.maxBytes, MAX_PDFS], [15 * MiB, 10]);
+  assert.match(read('app/(panel)/siparisler/[id]/OfferEditor.tsx'), /<PdfImport /);
 });
 
 test('varsayılan 2 MB, dosyasız en büyük formlara fazlasıyla yeter (form gövdesi veriyle büyüyen sayfalar)', () => {

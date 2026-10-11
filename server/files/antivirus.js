@@ -6,7 +6,7 @@ import { avErrorCode, ping, safeSignature, scanFile, version } from './clamav.js
 import { quarantine, resolveKey } from './store.js';
 
 export const AV_KEY = 'antivirus';
-const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', drawingFile: 'DrawingFile', orderDraftFile: 'OrderDraftFile', supplierOrderFile: 'SupplierOrderFile' };
+const ENTITY = { orderFile: 'OrderFile', drawing: 'Drawing', drawingFile: 'DrawingFile', orderDraftFile: 'OrderDraftFile', supplierOrderFile: 'SupplierOrderFile', offerImport: 'OfferImport' };
 export const AV_STATUS_KEY = 'antivirus.status';
 
 /**
@@ -96,12 +96,15 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
   const draftFiles = await db.orderDraftFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
   // Tedarikçi siparişinin teknik ekleri (Paket 6): taranmadan tedarikçiye gönderilmez
   const supplierFiles = await db.supplierOrderFile.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
+  // Fabrika PDF'i aktarımları (karar 255): taranmadan da ön izlenebilir (uyarıyla), virüslü çıkarsa aktarılamaz / verilmez
+  const factoryPdfs = await db.offerImport.findMany({ where: { scanStatus: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: limit });
   const items = [
     ...files.map((f) => ({ model: 'orderFile', id: f.id, orderId: f.orderId, key: f.storageKey, name: f.name })),
     ...drawingFiles.map((f) => ({ model: 'drawingFile', id: f.id, orderId: f.drawing.orderId, key: f.storageKey, name: `v${f.drawing.version} · ${f.name}` })),
     ...drawings.map((d) => ({ model: 'drawing', id: d.id, orderId: d.orderId, key: d.fileUrl, name: d.fileName || `v${d.version}` })),
     ...draftFiles.map((f) => ({ model: 'orderDraftFile', id: f.id, orderId: null, key: f.storageKey, name: f.name })),
     ...supplierFiles.map((f) => ({ model: 'supplierOrderFile', id: f.id, orderId: null, key: f.storageKey, name: f.name })),
+    ...factoryPdfs.map((f) => ({ model: 'offerImport', id: f.id, orderId: f.orderId, key: f.storageKey, name: f.name })),
   ];
   for (const it of items) {
     const full = resolveKey(it.key);

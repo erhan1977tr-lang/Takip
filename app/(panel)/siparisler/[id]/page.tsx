@@ -183,6 +183,11 @@ export default async function OrderPage({
     ? await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })
     : [];
   const catalog = glasses.map((g) => glassLabel(g, locale));
+  // Fabrika PDF'i aktarımı (karar 255): yalnızca teklif hazırlayanlar (yönetici, satış) ve yalnızca düzenlenebilir teklifte
+  const pdfImports = editable && !updating && userCan(user, 'OFFER_PREPARE')
+    ? (await db.offerImport.findMany({ where: { orderId: order.id }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true, factoryOrderNo: true, status: true } }))
+      .map((i) => ({ id: i.id, name: i.name, factoryNo: i.factoryOrderNo, applied: i.status === 'APPLIED' }))
+    : undefined;
   // Müşteriye özel fiyatlar (yönetici; karar 32): yöneticinin eklediği satırın müşteri fiyatı buradan dolar
   let customerPricing: EditorPricing | null = null;
   if ((editable || updating) && offer && userCan(user, 'OFFER_SEND')) {
@@ -499,6 +504,7 @@ export default async function OrderPage({
           excelFiles={order.files.filter((f) => f.kind === 'CUSTOMER' && /\.xlsx?$/i.test(f.name) && f.scanStatus !== 'INFECTED').map((f) => ({ id: f.id, name: f.name }))}
           importGlass={order.items[0] ? itemGlassName(order.items[0], locale) ?? '' : ''}
           original={order.items.map((it) => ({ description: itemGlassName(it, locale) ?? '', adet: String(Math.max(1, it.camAdedi || 1)) }))}
+          pdfImports={pdfImports}
         />
       )}
 

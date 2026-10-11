@@ -53,6 +53,8 @@ const PRICING = { row: ALL, note: 'OFFER_DRAFT_VIEW' };
 const FGO_FACT = { row: 'PRICE_FINAL_VIEW', note: ACCOUNTING };
 /** Muhasebe işleri ve dış servis hata metni: yalnızca muhasebe (yönetici) */
 const ACCOUNTING_ONLY = { row: ACCOUNTING, note: ACCOUNTING };
+/** Fabrika PDF'i aktarımı (karar 255): kaynak fabrika belgesi gizlidir — satırı ve notu (fabrika sipariş no) yalnızca teklif hazırlayanlar */
+const FACTORY_SOURCE = { row: 'OFFER_PREPARE', note: 'OFFER_PREPARE' };
 
 /**
  * İç ekip için olay politikası: row = satırı, note = notu görmek için gereken yetki (null: siparişi gören her iç rol).
@@ -78,6 +80,7 @@ export const STAFF_EVENT_POLICY = {
   WAREHOUSE_EMAIL_FAILED: { row: ALL, note: 'OFFER_SEND' }, // SMTP hata metni
   // teklif fiyatlandırması: çizim ve denetimci satış tutarını görmez (eski OFFER_SUBMITTED notu tutar taşır)
   OFFER_SUBMITTED: PRICING, OFFER_RETURNED: PRICING, OFFER_WITHDRAWN: PRICING, OFFER_REVISED: PRICING, OFFER_UPDATED: PRICING,
+  OFFER_PDF_IMPORTED: FACTORY_SOURCE,
   // FGO / muhasebe
   FGO_DOC_ISSUED: FGO_FACT, FGO_DOC_EMAILED: FGO_FACT, FGO_DOC_DELETED: FGO_FACT,
   FGO_DOC_REQUESTED: ACCOUNTING_ONLY, FGO_FAILED: ACCOUNTING_ONLY, FGO_RETRY: ACCOUNTING_ONLY, COST_CORRECTED: ACCOUNTING_ONLY,
