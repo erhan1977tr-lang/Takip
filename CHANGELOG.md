@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.75.2 — 11.10.2026
+
+- Teklif düzenleyicisi her işlemden sonra (kayıt, PDF aktarımı) kayıtlı satırlarla yeniden kurulur: aktarılan satırlar
+  hemen görünür ve sonraki kayıtta ekrandaki eski satırlar onların yerine geçmez.
+- PDF aktarımının açıklama metninden fabrika adı çıkarıldı.
+
 ## 3.75.1 — 11.10.2026
 
 - PDF aktarımı: kullanılmayan parametreler kaldırıldı (davranış değişmedi).

@@ -334,4 +334,6 @@ test('yapı: aktarma yöneticiye göndermez, müşteri fiyatı yazmaz; teklif sa
   assert.match(body, /lineData\(\{ \.\.\.l, offerPrice: null \}/);
   assert.match(tr, /importId: old\?\.importId \?\? null,\n\s*sourceRow: old\?\.sourceRow \?\? null,/);
   assert.match(tr, /import_offer_pdf: \['edit_offer', 'approve_price'\]/);
+  // Aktarmadan (ve her işlemden) sonra düzenleyici kayıtlı satırlarla yeniden kurulur: eski istemci durumu satırların yerine geçmez
+  assert.match(read('app/(panel)/siparisler/[id]/page.tsx'), /<OfferEditor\s+\/\/[^\n]*\n[^\n]*\n\s+key=\{`\$\{offer\.id\}:\$\{order\.version\}`\}/);
 });

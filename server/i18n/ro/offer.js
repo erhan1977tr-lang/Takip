@@ -60,7 +60,7 @@ export default {
   pdf: {
     button: 'Import din PDF',
     title: 'Import din PDF-urile de comandă ale fabricii',
-    intro: 'Încărcați formularele de comandă ale fabricii (Trakya Cam / GlassWorld). Datele apar mai întâi în previzualizare; fără confirmare nu se scrie nimic în tabelul ofertei. Prețurile de achiziție de la fabrică intră în coloana prețului de vânzare; prețul clientului rămâne gol. Oferta nu se trimite automat administratorului.',
+    intro: 'Încărcați formularele de comandă ale fabricii (format GlassWorld). Datele apar mai întâi în previzualizare; fără confirmare nu se scrie nimic în tabelul ofertei. Prețurile de achiziție de la fabrică intră în coloana prețului de vânzare; prețul clientului rămâne gol. Oferta nu se trimite automat administratorului.',
     files: 'Fișiere PDF (se pot selecta mai multe)',
     upload: 'Încarcă și previzualizează',
     uploading: 'PDF-urile se încarcă și se citesc…',

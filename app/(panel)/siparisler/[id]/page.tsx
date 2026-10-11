@@ -474,6 +474,9 @@ export default async function OrderPage({
 
       {(editable || updating) && offer && (
         <OfferEditor
+          // Sipariş sürümü her işlemde artar: işlemden (kayıt, PDF aktarımı…) sonra düzenleyici kayıtlı satırlarla yeniden kurulur.
+          // Aynı sayfaya dönüşte istemci durumu korunsaydı ekrandaki eski satırlar bir sonraki kayıtta kayıtlı satırların yerine geçerdi.
+          key={`${offer.id}:${order.version}`}
           orderId={order.id}
           version={order.version}
           mode={updating ? 'update' : can('approve_price') ? 'admin' : 'sales'}

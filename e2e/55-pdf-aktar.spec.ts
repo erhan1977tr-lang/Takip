@@ -121,6 +121,9 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   // Satış satırı düzenleyip kaydeder ve teklifi ELLE yöneticiye gönderir (mevcut düğme)
   await sales.getByRole('button', { name: 'Taslak olarak kaydet' }).click();
   await expect(sales).toHaveURL(/ok=offer_saved/);
+  // Kayıt aktarılan satırları korur (düzenleyici kayıtlı satırlarla yeniden kurulur); değişen adet yazıldı
+  await expect(sales.getByLabel('Poz', { exact: true })).toHaveCount(4);
+  expect(await sales.getByLabel('Adet', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['1', '3', '1']);
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales).toHaveURL(/ok=offer_submit/);
   for (const p of [cust, insp, drawer, sales]) await p.context().close();
