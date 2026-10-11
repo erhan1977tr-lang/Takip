@@ -31,7 +31,8 @@ test('satışın sandık ücreti ve geri alma: satış ekler / değiştirir, yö
   // Cam satırının altında "+Sandık" yok; tablonun altında "+ Cam ekle"nin yanında "+ Sandık parası" (yöneticinin düzeni)
   await expect(sales.locator('.offer-table [data-add-sales-crate]')).toHaveCount(0);
   const tools = sales.locator('.offer-tools .group').first();
-  await expect(tools.getByRole('button')).toHaveText(['+ Cam ekle', '+ Sandık parası']); // yan yana, bu sırayla
+  // yan yana, bu sırayla; ardından fabrika PDF'i aktarımı (karar 255 — araç çubuğunda ayraçtan sonra)
+  await expect(tools.getByRole('button')).toHaveText(['+ Cam ekle', '+ Sandık parası', "PDF'den Aktar"]);
   await tools.getByRole('button', { name: '+ Sandık parası' }).click();
   // Bağımsız, numaralı kalem: tablonun sonunda 2. satır; ölçüsüz, adetli; satışın ekranında rozet yok; adı sabit
   const crateRow = sales.locator('.offer-table tr[data-sales-crate]');
