@@ -364,7 +364,7 @@ dbTest('metraj ve şekilli cam (karar 261, 262): PDF’in 3 ondalıklı m²si ve
   const up = await upload('sales', o.id, [pdf(shapedForm({ no: '97621', code: 'ABC 62' }))]);
   let p = await preview('sales', o.id, up.ids);
   // Fabrika açıklaması bu düzende kod taşımaz: cam elle seçilir (her iki satır için aynı katalog camı)
-  const choices = { glass: Object.fromEntries(p.imports[0].plan.glassChoices.map((g) => [g.key, g.ref.id])) };
+  const choices = { glass: Object.fromEntries(p.imports[0].plan.glassChoices.map((c) => [c.key, g.ref.id])) };
   p = await preview('sales', o.id, up.ids, choices);
   assert.deepEqual(p.imports[0].blocking, []);
   assert.deepEqual(p.imports[0].plan.rows.map((r) => [r.shaped, r.description]), [[false, DESC_NORMAL], [true, DESC_SHAPED]]);
