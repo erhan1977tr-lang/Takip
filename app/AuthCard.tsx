@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { BrandLogo } from '@/components/BrandLogo';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { getT } from '@/lib/i18n';
@@ -14,7 +15,11 @@ export async function AuthCard({ children, next }: { children: React.ReactNode; 
           <div className="auth-product">{t('common.product')}</div>
         </div>
         {children}
-        <div className="footer-note">Developed by gkhdigital.ro and gkhdigital.com</div>
+        <div className="footer-note">
+          <Link href="/privacy">{t('auth.login.privacyLink')}</Link>
+          <br />
+          Developed by gkhdigital.ro and gkhdigital.com
+        </div>
       </main>
     </div>
   );

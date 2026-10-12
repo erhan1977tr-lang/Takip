@@ -13,6 +13,7 @@ export default {
     infoIdle: 'Din motive de securitate, sesiunea a fost închisă: nicio activitate timp de 30 de minute. Vă rugăm să vă autentificați din nou.',
     demoTitle: 'Mediu demo',
     demoIntro: '— funcționează cu date de exemplu. Alegeți un cont:',
+    privacyLink: 'Politica de confidențialitate',
     demoPassword: 'Parola se află în fișierul DEMO-GIRIS.txt din mediul demo.',
   },
   setup: {

@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.78.0 — 12.10.2026
+
+- **Gizlilik politikası:** herkese açık yeni sayfa **https://takip.gkh.ro/privacy** (oturum gerekmez; uygulama mağazası /
+  entegrasyon formlarındaki "privacy policy" bağlantısı). Metin sayfanın dilinde (RO | TR, dil düğmeleriyle), altında
+  İngilizcesi. İçerik uygulamanın gerçekte işlediği verileri anlatır: hesap, müşteri firma, sipariş / dosya, mali belge,
+  giriş ve denetim kayıtları; yalnızca zorunlu çerezler; hizmet sağlayıcılar (Contabo, Google Drive yedeği, Google Cloud
+  Translation, FGO, SMTP); saklama süreleri (giriş kaydı 365 gün, yedek 14 gün, muhasebe belgeleri 10 yıl). Metin:
+  `app/privacy/content.ts` — yeni veri, dış hizmet ya da saklama süresi eklenince üç dil birlikte güncellenir.
+- Giriş ve ilk giriş kartının altına "Gizlilik politikası" bağlantısı eklendi.
+
 ## 3.77.0 — 11.10.2026
 
 Son beş düzeltme (karar 259–263). Veri koruyan migration: `20261011191822_order_number_text_area3_shaped` (tip

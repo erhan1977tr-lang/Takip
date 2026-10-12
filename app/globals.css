@@ -276,6 +276,15 @@ dialog.modal::backdrop { background: rgba(22, 28, 38, .42); }
 .steps div.on { background: var(--primary); }
 .code-input { text-align: center; font-size: 22px; letter-spacing: .5em; font-family: var(--font-mono); }
 .footer-note { text-align: center; font-size: var(--fs-meta); color: var(--faint); margin-top: 20px; }
+.footer-note a { color: var(--muted); }
+/* Gizlilik politikası (/privacy): giriş kartının geniş, uzun metinli hali */
+.legal-card { max-width: 760px; line-height: 1.6; }
+.legal-card h1 { font-size: 22px; margin: 4px 0 2px; }
+.legal-card h2 { font-size: 15px; margin: 22px 0 6px; }
+.legal-card ul { padding-left: 20px; margin: 6px 0; }
+.legal-card li { margin: 4px 0; }
+.legal-en { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 14px; }
+.legal-en summary { cursor: pointer; font-weight: 700; color: var(--primary); }
 
 /* ---------- 7 · panel iskeleti ---------- */
 /* Tüm roller aynı iskeleti kullanır: app/(panel)/layout.tsx (menü öğeleri rolün yetkisinden gelir) */
