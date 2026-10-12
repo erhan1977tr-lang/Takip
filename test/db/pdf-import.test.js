@@ -94,7 +94,7 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
     ['90001', [], []], ['90002', [], []],
   ]);
   // m² PDF'ten 3 ondalıkla aynen (karar 261): 1,235 m² × 100 = 123,50 — 2 ondalığa yuvarlamadan doğan fark yok
-  assert.deepEqual(p.imports[0].plan.checks.b, { takipTotal: 43350, subtotal: 43350, diff: 0, explained: true });
+  assert.deepEqual(p.imports[0].plan.checks.b, { takipTotal: 43350, pdfSum: 43350, subtotal: 43350, diff: 0, explained: true });
   assert.ok(!JSON.stringify(p).includes('MUSTERIX'), 'proje metni (müşteri adı) satışa dönmez');
   assert.deepEqual(p.empty.map((e) => e.id), [before.lines[0].id]);
   // Önizleme hiçbir şey yazmaz
@@ -104,11 +104,11 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   const offer = await latest(o.id);
   assert.equal(offer.status, 'HAZIRLANIYOR', 'yöneticiye gönderilmedi');
   assert.deepEqual(offer.lines.map((l) => [l.kind, l.description, l.poz, l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice, l.sourceRow, l.glassProductId]), [
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 3000, 1000, 1, '100', null, 1, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90001', 3000, 1000, 1, '100', null, 1, g.ref.id],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, '5', null, 1, null],
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 1235, 1000, 1, '100', null, 2, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90001', 1235, 1000, 1, '100', null, 2, g.ref.id],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, '5', null, 2, null],
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 2000, 1000, 1, '100', null, 1, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90002', 2000, 1000, 1, '100', null, 1, g.ref.id],
   ]);
   // Liste fiyatı (fiyat tablosu) karşılaştırma için durur: 95 / CNC 6 — fark gönderimde "Önemli kararlar"a düşer
   assert.deepEqual(offer.lines.map((l) => (l.listPrice == null ? null : Number(l.listPrice))), [95, 6, 95, 6, 95]);
@@ -124,7 +124,7 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   assert.deepEqual(ev.map((e) => e.note), ['90001, 90002']);
   const audit = await db.auditLog.findFirst({ where: { entityId: o.id, action: 'ORDER_TRANSITION' }, orderBy: { createdAt: 'desc' } });
   assert.equal(audit.details.action, 'import_offer_pdf');
-  assert.deepEqual(audit.details.pdfImport.map((x) => [x.factoryNo, x.lines, x.subtotal, x.takipTotal, x.diff]), [['90001', 4, 43350, 43350, 0], ['90002', 1, 20000, 20000, 0]]);
+  assert.deepEqual(audit.details.pdfImport.map((x) => [x.factoryNo, x.lines, x.subtotal, x.rowSum, x.subtotalDiff, x.takipTotal, x.diff]), [['90001', 4, 43350, 43350, 0, 43350, 0], ['90002', 1, 20000, 20000, 0, 20000, 0]]);
   // Geçmiş satırı yalnızca teklif hazırlayanlara (çizim / denetimci / müşteri görmez)
   for (const [role, seen] of [['ADMIN', true], ['SATIS', true], ['CIZIM', false], ['DENETIMCI', false], ['MUSTERI', false]]) {
     assert.equal(eventsFor(role, ev).length === 1, seen, role);
@@ -372,8 +372,8 @@ dbTest('metraj ve şekilli cam (karar 261, 262): PDF’in 3 ondalıklı m²si ve
   let offer = await latest(o.id);
   const glass = offer.lines.filter((l) => l.importId);
   assert.deepEqual(glass.map((l) => [l.shaped, l.glassProductId, Number(l.pieceM2), l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.poz]), [
-    [false, g.ref.id, 2.386, 1183, 2017, 2, '100', 'ABC 62'],
-    [true, g.ref.id, 1, 1000, 1000, 1, '100', 'ABC 62'],
+    [false, g.ref.id, 2.386, 1183, 2017, 2, '100', '97621'],
+    [true, g.ref.id, 1, 1000, 1000, 1, '100', '97621'],
   ]);
   // PDF metrajı aynen: 4,772 + 1,000 = 5,772 m² ve 577,20 EUR (eskiden 4,77 m² → 577,00)
   assert.deepEqual([offerTotalsOf(offer).metraj, String(offer.amount)], [5.772, '577.2']);

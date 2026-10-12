@@ -170,9 +170,9 @@ test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice
   const p = plan(FORM_CNC);
   assert.deepEqual(p.blocking, []);
   assert.deepEqual(p.lines.map((l) => [l.kind, l.description, l.poz, l.enMm, l.boyMm, l.adet, l.unit, l.unitPrice, l.offerPrice, l.sourceRow, l.glassProductId]), [
-    ['CAM', '6.3.6 Füme Reflekte', 'ABC 40', 3000, 1000, 1, 'm2', '100.00', null, 1, 'g-ref'],
+    ['CAM', '6.3.6 Füme Reflekte', '90001', 3000, 1000, 1, 'm2', '100.00', null, 1, 'g-ref'],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, 'adet', '5.00', null, 1, null],
-    ['CAM', '6.3.6 Füme Reflekte', 'ABC 40', 1235, 1000, 1, 'm2', '100.00', null, 2, 'g-ref'],
+    ['CAM', '6.3.6 Füme Reflekte', '90001', 1235, 1000, 1, 'm2', '100.00', null, 2, 'g-ref'],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, 'adet', '5.00', null, 2, null],
   ]);
   assert.equal(p.header.projectCode, 'ABC 40');
@@ -182,8 +182,8 @@ test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice
 test('B denetimi: PDF’in 3 ondalıklı m²’si aynen kullanılır (karar 261) — 2 ondalığa yuvarlamadan doğan fark kalmaz; satır eklenmez', () => {
   const p = plan(FORM_CNC);
   // PDF 300,00 + 123,50 + 2 × 5 = 433,50 · TAKİP 300,00 + 1,235 × 100 = 123,50 + 10 = 433,50 (eskiden 1,24 m² → 434,00)
-  assert.deepEqual(p.checks.a, { pdfSum: 43350, subtotal: 43350, ok: true, rounding: false });
-  assert.deepEqual(p.checks.b, { takipTotal: 43350, subtotal: 43350, diff: 0, explained: true });
+  assert.deepEqual(p.checks.a, { pdfSum: 43350, subtotal: 43350, ok: true, diff: 0 });
+  assert.deepEqual(p.checks.b, { takipTotal: 43350, pdfSum: 43350, subtotal: 43350, diff: 0, explained: true });
   assert.deepEqual(p.warnings.filter((w) => w.code === 'ROUNDING_DIFFERENCE'), []);
   assert.deepEqual(p.lines.filter((l) => l.kind === 'CAM').map((l) => [l.pieceM2, l.adet]), [['3.000', 1], ['1.235', 1]]);
   assert.deepEqual(p.rows.map((r) => [r.m2, r.totalM2, r.takipM2]), [[3000, 3000, 3000], [1235, 1235, 1235]]);
@@ -191,30 +191,39 @@ test('B denetimi: PDF’in 3 ondalıklı m²’si aynen kullanılır (karar 261)
   assert.deepEqual([p.checks.vat, p.checks.grandTotal], [8670, 52020]);
 });
 
-test('açıklanamayan fark (PDF m²’si en × boy değil) aktarmayı durdurur; A tutmazsa da durur', () => {
+test('açıklanamayan fark (PDF m²’si en × boy değil, satır tutarı fiyatla tutmuyor) aktarmayı durdurur; Ara Toplam farkı tek başına durdurmaz', () => {
   const p = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,250 1,250 100,00 TL 0,0 125,00 ABC 40'], total: '1 1,250 125,00', sub: '125,00', grand: '150,00' }));
   // m² PDF'ten aynen alınır (karar 261): PDF m²'si ölçüyle uyuşmayınca fark tutara yansımaz ama gizlenmez — aktarma durur
   assert.deepEqual(p.blocking.map((b) => [b.code, b.row, b.pdfM2, b.dimsM2]), [['AREA_MISMATCH', 1, 1250, 1000]]);
+  // Satır tutarı ölçü × fiyatla açıklanamıyor (1 m² × 100,00 ≠ 150,00) → durur (Ara Toplam satırlarla aynı olsa da)
+  const bad = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 150,00 ABC 40'], total: '1 1,000 150,00', sub: '150,00', grand: '180,00' }));
+  assert.ok(bad.blocking.some((b) => b.code === 'UNEXPLAINED_DIFFERENCE'));
+  // Ara Toplam satırlardan 33,50 düşük, satırlar kendi içinde doğru → yalnız uyarı (karar 266)
   const a = plan(form({ rows: FORM_CNC.slice(7, 13).map((l) => l.text), total: '2 4,235 433,50', sub: '400,00', grand: '480,00' }));
-  assert.ok(a.blocking.some((b) => b.code === 'SUBTOTAL_MISMATCH'));
+  assert.deepEqual(a.blocking, []);
+  assert.deepEqual(a.warnings.filter((w) => w.code === 'SUBTOTAL_DIFFERENCE').map((w) => [w.pdfSum, w.subtotal, w.diff]), [['433.50', '400.00', '-33.50']]);
 });
 
-test('Ara Toplam ile satır toplamı arasında küçük yuvarlama farkı (ADE 8: 769,62 / 769,64) aktarmayı durdurmaz; maliyetler PDF’ten aynen', () => {
+test('Ara Toplam ↔ satır toplamı farkı hiçbir tutarda tek başına engel değil (karar 266, ADE 8: 769,62 / 769,64); Ara Toplam aynen, satır fiyatları değişmez', () => {
   const rows = [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 40', `2 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 40'];
-  const p = plan(form({ rows, total: '2 2,000 200,00', sub: '200,02', grand: '240,02' }));
-  assert.deepEqual(p.blocking, []);
-  assert.deepEqual(p.warnings.filter((w) => w.code === 'SUBTOTAL_ROUNDING').map((w) => [w.pdfSum, w.subtotal, w.diff]), [['200.00', '200.02', '0.02']]);
-  assert.equal(p.checks.a.ok, false);
-  assert.equal(p.checks.a.rounding, true);
-  assert.equal(p.checks.b.explained, true);
-  assert.deepEqual(p.lines.map((l) => [l.kind, l.unitPrice, l.offerPrice]), [['CAM', '100.00', null], ['CAM', '100.00', null]], 'alış maliyeti PDF’ten, müşteri fiyatı boş');
-  assert.equal(p.lines.length, 2, 'fark için satır / düzeltme eklenmez');
-  // sınırın üstü (2 tutarlı satır → en çok 2 kuruş) ve büyük fark aktarmayı durdurmaya devam eder
-  for (const sub of ['200,03', '199,97', '210,00']) {
-    const q = plan(form({ rows, total: '2 2,000 200,00', sub, grand: '250,00' }));
-    assert.ok(q.blocking.some((b) => b.code === 'SUBTOTAL_MISMATCH'), sub);
-    assert.equal(q.checks.a.rounding, false);
+  for (const [sub, diff] of [['200,02', '0.02'], ['200,03', '0.03'], ['199,97', '-0.03'], ['210,00', '10.00'], ['150,00', '-50.00']]) {
+    const p = plan(form({ rows, total: '2 2,000 200,00', sub, grand: '250,00' }));
+    assert.deepEqual(p.blocking, [], sub);
+    assert.deepEqual(p.warnings.filter((w) => w.code === 'SUBTOTAL_DIFFERENCE').map((w) => w.diff), [diff], sub);
+    assert.equal(p.checks.a.ok, false);
+    assert.equal(p.checks.a.subtotal, Math.round(Number(sub.replace(',', '.')) * 100), 'Ara Toplam aynen (kuruş)');
+    assert.equal(p.checks.a.diff, Math.round(Number(diff) * 100));
+    // B denetimi PDF satır toplamına göre: satırlar tam açıklanıyor → fark yok
+    assert.deepEqual([p.checks.b.pdfSum, p.checks.b.takipTotal, p.checks.b.diff, p.checks.b.explained], [20000, 20000, 0, true]);
+    assert.deepEqual(p.lines.map((l) => [l.kind, l.unitPrice, l.offerPrice]), [['CAM', '100.00', null], ['CAM', '100.00', null]], 'alış maliyeti PDF’ten, müşteri fiyatı boş');
+    assert.equal(p.lines.length, 2, 'fark için satır / düzeltme eklenmez');
   }
+  // Fark yoksa uyarı da yok
+  const same = plan(form({ rows, total: '2 2,000 200,00', sub: '200,00', grand: '240,00' }));
+  assert.deepEqual([same.blocking, same.warnings.filter((w) => w.code === 'SUBTOTAL_DIFFERENCE')], [[], []]);
+  // Ara Toplam okunamıyorsa aktarma durur — tahmin edilmez
+  const none = plan(form({ rows, total: '2 2,000 200,00', sub: '200,00', grand: '240,00' }).filter((l) => !/Ara Toplam/.test(l.text)));
+  assert.ok(none.blocking.some((b) => b.code === 'SUBTOTAL_MISSING'));
 });
 
 test('iskontolu satır: net birim fiyat = net tutar ÷ miktar (2 ondalık); yuvarlama farkı açıklanır, gizli düzeltme yok', () => {
@@ -268,13 +277,22 @@ test('cam: siparişin camıyla belirgin uyuşmazlık durdurur; sipariş camı do
   assert.ok(foreign.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'));
 });
 
-test('Poz: aynı Poz birden çok satırda olabilir; Poz yoksa fabrika sipariş no yazılır ve uyarı verilir', () => {
+test('Poz = PDF’in üst bölümündeki ana Sipariş No (karar 266): satırın Poz sütunu, S.No ve "121.001" yazılmaz; okunamazsa aktarma durur', () => {
+  // Satırda Poz sütunu dolu ("ABC 40") olsa da cam satırlarının Poz'u ana Sipariş No; işlem satırının Poz'u boş
   const p = plan(FORM_CNC);
-  assert.deepEqual(p.lines.filter((l) => l.kind === 'CAM').map((l) => l.poz), ['ABC 40', 'ABC 40']);
-  const noPoz = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '3000 1000 1 3,000 3,000 100,00 TL 0,0 300,00'], total: '1 3,000 300,00', sub: '300,00', grand: '360,00' }));
-  assert.equal(noPoz.lines[0].poz, '90001');
-  assert.ok(noPoz.warnings.some((w) => w.code === 'POZ_FALLBACK'));
-  assert.equal(noPoz.rows[0].pozFromPdf, false);
+  assert.deepEqual(p.lines.map((l) => [l.kind, l.poz]), [['CAM', '90001'], ['CNC', ''], ['CAM', '90001'], ['CNC', '']]);
+  assert.deepEqual(p.rows.map((r) => r.poz), ['90001', '90001']);
+  assert.ok(!p.lines.some((l) => ['121.001', '1', '2', 'ABC 40'].includes(l.poz)));
+  // Poz sütunu boş satır da aynı
+  const noPoz = plan(form({ no: '81037', rows: [`1 ${DESC_TENTESOL}`, '3000 1000 1 3,000 3,000 100,00 TL 0,0 300,00', `2 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00'], total: '2 4,000 400,00', sub: '400,00', grand: '480,00' }));
+  assert.deepEqual([noPoz.blocking, noPoz.lines.map((l) => l.poz)], [[], ['81037', '81037']]);
+  assert.equal(noPoz.warnings.filter((w) => w.code === 'POZ_FALLBACK').length, 0);
+  // Ana Sipariş No okunamıyor (yok / iki aday) → hata, aktarma yok (yanlış Poz tahmin edilmez)
+  const rows = FORM_CNC.slice(7, 13).map((l) => l.text);
+  const missing = plan(form({ no: '', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
+  assert.ok(missing.blocking.some((b) => b.code === 'FACTORY_NO_MISSING'));
+  const two = plan(form({ no: '81037 81038', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
+  assert.ok(two.blocking.some((b) => b.code === 'FACTORY_NO_AMBIGUOUS'));
 });
 
 test('yanlış müşteri / yanlış proje PDF’i aktarılmaz', () => {

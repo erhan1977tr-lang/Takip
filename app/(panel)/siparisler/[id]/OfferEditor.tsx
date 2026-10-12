@@ -72,7 +72,7 @@ export function OfferEditor(props: {
   nextVersion?: number;
   /** Fabrika PDF'i aktarımı (karar 255; yönetici ve satış): siparişe daha önce yüklenen fabrika PDF'leri. Verilmezse düğme yok. */
   pdfImports?: { id: string; name: string; factoryNo: string | null; applied: boolean }[];
-  /** Satış: kayıtlı teklif tablosunu fiyatsız PDF / Excel indirme (teklif/route.ts — sunucuda yetki ve fiyatsızlık) */
+  /** Satış: kayıtlı teklif tablosunu kendi fiyatıyla PDF / Excel indirme (teklif/route.ts — sunucuda yetki, müşteri fiyatı yok; karar 267) */
   salesExport?: boolean;
 }) {
   const { m, common, lineKind } = props;

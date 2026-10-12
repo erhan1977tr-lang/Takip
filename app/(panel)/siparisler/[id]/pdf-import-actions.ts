@@ -29,12 +29,12 @@ export type PdfImportPreview = {
     plan: null | {
       header: { factoryNo: string | null; orderDate: string | null; deliveryDate: string | null; projectCode: string | null };
       rows: {
-        sourceRow: number; description: string; glassKey: string; glassLabel: string | null; poz: string; pozFromPdf: boolean; shaped: boolean;
+        sourceRow: number; description: string; glassKey: string; glassLabel: string | null; poz: string; shaped: boolean;
         en: number; boy: number; adet: number; m2: number; totalM2: number; takipM2: number;
         unitPrice: number; discount: number; netUnit: number | null; amount: number; takipAmount: number; takipOps: number; explained: boolean;
         ops: { name: string; kind: string | null; qty: number | null; perPiece: number | null; unitPrice: number; discount: number; netUnit: number | null; amount: number }[];
       }[];
-      checks: { a: { pdfSum: number; subtotal: number | null; ok: boolean; rounding?: boolean }; b: { takipTotal: number; subtotal: number | null; diff: number | null; explained: boolean }; vat: number | null; grandTotal: number | null };
+      checks: { a: { pdfSum: number; subtotal: number | null; ok: boolean; diff: number | null }; b: { takipTotal: number; pdfSum: number; subtotal: number | null; diff: number; explained: boolean }; vat: number | null; grandTotal: number | null };
       glassChoices: { key: string; description: string; code: string | null; auto: boolean; selected: string | null; selectedLabel: string | null; candidates: { id: string; label: string }[] }[];
       opChoices: { key: string; name: string; auto: boolean; kind: string | null }[];
       lineCount: number;

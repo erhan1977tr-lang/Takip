@@ -749,7 +749,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
   // Asıl kontrol indirme adresinde (teklif/route.ts) yapılır.
   const exportHref = (f: 'pdf' | 'xlsx') => `/siparisler/${order.id}/teklif?format=${f}`;
-  // Satış: kendi teklif tablosu her durumda, fiyatsız (route: noPrices)
+  // Satış: kendi teklif tablosu her durumda, kendi satış fiyatıyla (karar 267)
   const showExport = order.orderTypeCode === 'GLASS_ORDER' && (salesExport || (canExport && (admin || offer.status === 'GONDERILDI')));
   // Veriler role göre temizlendi (lib/orders.ts → offerPrices): müşteri/denetimcide unitPrice ve amount müşteri fiyatıdır,
   // satışta satış fiyatı. Yönetici iki fiyatı yan yana görür (karar 4).

@@ -9,9 +9,7 @@ const BLUE = [0.07, 0.36, 0.55];
 const GREY = [0.45, 0.45, 0.45];
 const ORANGE = [0.72, 0.4, 0.05];
 // Sütun genişlikleri (toplam 515 = A4 − 2 × kenar)
-const W_PRICED = { n: 22, desc: 150, poz: 45, en: 42, boy: 42, adet: 32, m2: 46, unit: 72, amount: 64 };
-// Fiyatsız tablo (satış — text.noPrices): fiyat / tutar sütunu yok, açıklama genişler (toplam yine 515)
-const W_PLAIN = { n: 22, desc: 286, poz: 45, en: 42, boy: 42, adet: 32, m2: 46 };
+const W = { n: 22, desc: 150, poz: 45, en: 42, boy: 42, adet: 32, m2: 46, unit: 72, amount: 64 };
 
 const money = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 /** m² her yerde 3 ondalık (karar 232) */
@@ -23,8 +21,6 @@ const area = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, m
  * @returns {Buffer}
  */
 export function offerPdf(data, text) {
-  const priced = !text.noPrices;
-  const W = priced ? W_PRICED : W_PLAIN;
   const doc = new PdfDoc({ title: `${text.title} ${text.orderNo}`, author: BRAND.company });
   const logo = brandImage(doc); // resmî GKH logosu (ortak başlık — server/pdf/brand.js)
   let page;
@@ -41,7 +37,7 @@ export function offerPdf(data, text) {
     const h = (k, s, align = 'right') => page.text(C[k].x + (align === 'left' ? 3 : 0), y + 12.5, fitText(s, 7.5, C[k].w - 4, true), { size: 7.5, bold: true, align, width: C[k].w - 3 });
     h('n', text.cols.n, 'left'); h('desc', text.cols.desc, 'left'); h('poz', text.cols.poz, 'left');
     h('en', text.cols.en); h('boy', text.cols.boy); h('adet', text.cols.adet); h('m2', text.cols.m2);
-    if (priced) { h('unit', text.cols.unitPrice); h('amount', `${text.cols.amount} (${text.currency})`); }
+    h('unit', text.cols.unitPrice); h('amount', `${text.cols.amount} (${text.currency})`);
     y += ROW;
   };
   const newPage = (first) => {
@@ -76,10 +72,8 @@ export function offerPdf(data, text) {
     cell('boy', r.boy == null ? '' : String(r.boy));
     cell('adet', String(r.adet));
     cell('m2', r.m2 == null ? '—' : area(r.m2));
-    if (priced) {
-      cell('unit', r.free ? text.free : r.unitPrice == null ? '—' : `${money(r.unitPrice)} / ${r.unit === 'm2' ? 'm²' : text.piece}`);
-      cell('amount', money(r.amount));
-    }
+    cell('unit', r.free ? text.free : r.unitPrice == null ? '—' : `${money(r.unitPrice)} / ${r.unit === 'm2' ? 'm²' : text.piece}`);
+    cell('amount', money(r.amount));
     y += h;
     page.line(M, y, M + 515, y, 0.4, 0.85);
   }
@@ -87,9 +81,8 @@ export function offerPdf(data, text) {
   y += 6;
   page.line(M + 515 - 220, y, M + 515, y, 1.2, 0.2);
   page.text(M + 515 - 220, y + 16, text.total, { size: 11, bold: true, color: BLUE });
-  if (data.metraj) page.text(C.m2.x - 40, y + 16, `${area(data.metraj)} m²`, { size: 9, align: 'right', width: C.m2.w + 40, bold: !priced });
-  if (priced) page.text(C.amount.x - 60, y + 16, `${money(data.total)} ${text.currency}`, { size: 11, bold: true, align: 'right', width: C.amount.w + 60 });
-  else page.text(C.adet.x, y + 16, String(data.rows.reduce((s, r) => s + (r.sub ? 0 : r.adet), 0)), { size: 9, align: 'right', width: C.adet.w - 3, bold: true });
+  if (data.metraj) page.text(C.m2.x - 40, y + 16, `${area(data.metraj)} m²`, { size: 9, align: 'right', width: C.m2.w + 40 });
+  page.text(C.amount.x - 60, y + 16, `${money(data.total)} ${text.currency}`, { size: 11, bold: true, align: 'right', width: C.amount.w + 60 });
   y += 36;
   for (const note of text.notes) {
     for (const l of wrapText(note, 8, 515)) { ensure(12); page.text(M, y, l, { size: 8, color: GREY }); y += 11; }

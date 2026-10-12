@@ -201,10 +201,10 @@ export function PdfImport({ orderId, dirty, previous, m }: {
                   <b>{m.checks}</b>
                   <div data-check="a">
                     {interpolate(m.checkA, { sum: money(imp.plan.checks.a.pdfSum), sub: money(imp.plan.checks.a.subtotal) })}{' '}
-                    <span className={`badge ${imp.plan.checks.a.ok ? 'badge-ok' : imp.plan.checks.a.rounding ? 'badge-warn' : 'badge-danger'}`}>{imp.plan.checks.a.ok ? m.ok : imp.plan.checks.a.rounding ? m.explained : m.notOk}</span>
+                    <span className={`badge ${imp.plan.checks.a.ok ? 'badge-ok' : 'badge-warn'}`}>{imp.plan.checks.a.ok ? m.ok : m.subtotalKept}</span>
                   </div>
                   <div data-check="b" data-diff={imp.plan.checks.b.diff ?? ''}>
-                    {interpolate(m.checkB, { takip: money(imp.plan.checks.b.takipTotal), sub: money(imp.plan.checks.b.subtotal), diff: money(imp.plan.checks.b.diff) })}{' '}
+                    {interpolate(m.checkB, { takip: money(imp.plan.checks.b.takipTotal), sum: money(imp.plan.checks.b.pdfSum), diff: money(imp.plan.checks.b.diff) })}{' '}
                     {imp.plan.checks.b.diff === 0
                       ? <span className="badge badge-ok">{m.ok}</span>
                       : <span className={`badge ${imp.plan.checks.b.explained ? 'badge-warn' : 'badge-danger'}`}>{imp.plan.checks.b.explained ? m.explained : m.unexplained}</span>}
@@ -246,7 +246,7 @@ function FragmentRows({ r, m }: { r: NonNullable<Imp['plan']>['rows'][number]; m
     <>
       <tr className={r.explained ? 'glass-line' : 'glass-line row-invalid'} data-source-row={r.sourceRow}>
         <td className="muted">{r.sourceRow}</td>
-        <td className="mono">{r.poz}{!r.pozFromPdf && <div className="small muted">{m.pozFallback}</div>}</td>
+        <td className="mono" data-pdf-poz>{r.poz}<div className="small muted">{m.pozFactory}</div></td>
         <td>
           <div className="small muted">{r.description}</div>
           <div data-glass-label>{r.glassLabel ?? '—'}{' '}

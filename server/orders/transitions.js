@@ -514,7 +514,9 @@ const ACTIONS = {
       offerId: r.offer.id, lines: r.added.length, dropped: r.drop.length, amount,
       pdfImport: r.preview.imports.map((p) => ({
         importId: p.id, factoryNo: p.factoryNo, lines: p.lines.length,
-        subtotal: p.plan?.checks.b.subtotal ?? null, takipTotal: p.plan?.checks.b.takipTotal ?? null, diff: p.plan?.checks.b.diff ?? null,
+        // Ara Toplam (fabrika KDV hariç alış toplamı) aynen; satır toplamı ve fark ayrı (karar 266) — kuruş
+        subtotal: p.plan?.checks.a.subtotal ?? null, rowSum: p.plan?.checks.a.pdfSum ?? null, subtotalDiff: p.plan?.checks.a.diff ?? null,
+        takipTotal: p.plan?.checks.b.takipTotal ?? null, diff: p.plan?.checks.b.diff ?? null,
       })),
     };
     h.result = { imported: r.added.length, pdfs: ids.length };

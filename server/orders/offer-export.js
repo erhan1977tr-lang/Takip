@@ -2,9 +2,9 @@
 // alır; PDF (server/pdf/offer.js) ve Excel aynı veriden (offerExportData) üretilir. Fiyat hesabı mevcut kuraldır
 // (offerLineTotals); burada yalnızca müşteriye giden fiyat kullanılır, satış fiyatı hiçbir dosyaya girmez.
 // Kim indirir: OFFER_EXPORT (yönetici, müşteri). Excel: OFFER_SEND (yönetici) her zaman; müşteri yalnızca yöneticinin
-// siparişte açtığı izinle (Order.customerExcel). Satış (OFFER_PREPARE, OFFER_SEND yok): kendi teklif tablosunu PDF ve Excel
-// olarak FİYATSIZ indirir (ölçü, adet, metraj) — satış fiyatı / fabrika alış fiyatı da müşteri fiyatı da dosyaya girmez
-// (text.noPrices). Kontrol sunucuda (route) yapılır: canExportOffer.
+// siparişte açtığı izinle (Order.customerExcel). Satış (OFFER_PREPARE, OFFER_SEND yok — karar 265, 267): kendi teklif
+// tablosunu PDF ve Excel olarak, tabloda gördüğü fiyatla (satış fiyatı = unitPrice, rolüne göre temizlenmiş veriden)
+// indirir; müşteri fiyatı ve yöneticinin sandık satırı satışa hiç gelmez. Kontrol sunucuda (route) yapılır: canExportOffer.
 import { offerLineTotals } from './rules.js';
 import { writeReportXlsx } from '../files/xlsx-report.js';
 
@@ -67,21 +67,18 @@ export function offerXlsx(data, text) {
   // Ortak rapor düzeni (Paket 7, karar 190): logo, başlık + firma / tarih satırı, biçimli tablo, filtre, dondurulmuş başlık,
   // m² ve para biçimleri, toplam satırı, notlar. Satırlar ve tutarlar aynen (offerExportData).
   const c = text.cols;
-  // Fiyatsız tablo (satış): fiyat ve tutar sütunları hiç yazılmaz
-  const priced = !text.noPrices;
-  const cut = (row) => (priced ? row : row.slice(0, 7));
   return writeReportXlsx({
     sheets: [{
       name: text.orderNo, title: `${text.title} ${text.orderNo}`, subtitle: [text.firm, text.date].filter(Boolean).join(' · '), landscape: true,
       blocks: [{
-        columns: cut([
-          { header: c.n, width: 5, type: 'int' }, { header: c.desc, width: priced ? 44 : 60, type: 'wrap' }, { header: c.poz, width: 10, type: 'text' },
+        columns: [
+          { header: c.n, width: 5, type: 'int' }, { header: c.desc, width: 44, type: 'wrap' }, { header: c.poz, width: 10, type: 'text' },
           { header: c.en, width: 9, type: 'mm' }, { header: c.boy, width: 9, type: 'mm' }, { header: c.adet, width: 7, type: 'int' },
           { header: c.m2, width: 11, type: 'm2' }, { header: `${c.unitPrice} (${text.currency})`, width: 16, type: 'dec2' }, { header: `${c.amount} (${text.currency})`, width: 16, type: 'dec2' },
-        ]),
+        ],
         // Telafi etiketi açıklamanın üstünde (ayrı satır — sütun kaydırmalı)
-        rows: data.rows.map((r) => cut([r.n ?? '', r.tag ? `${r.tag}\n${r.desc}` : r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount])),
-        totals: [cut([text.total, '', '', '', '', data.rows.reduce((s, r) => s + (r.sub ? 0 : r.adet), 0) || '', data.metraj || '', '', data.total]).map((v, i) => (priced && i === 5 ? '' : v))],
+        rows: data.rows.map((r) => [r.n ?? '', r.tag ? `${r.tag}\n${r.desc}` : r.desc, r.poz, r.en ?? '', r.boy ?? '', r.adet, r.m2 ?? '', r.free ? text.free : r.unitPrice ?? '', r.amount]),
+        totals: [[text.total, '', '', '', '', '', data.metraj || '', '', data.total]],
       }],
       notes: text.notes,
     }],

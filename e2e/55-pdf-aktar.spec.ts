@@ -47,7 +47,7 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
       `2 ${GLASS_PDF}`, '1500 1000 2 1,500 3,000 60,00 TL 0,0 180,00 POZ-A'],
     total: '3 5,000 304,00', sub: '304,00', vat: '60,80', grand: '364,80',
   }));
-  const pdf2 = factoryPdf(form({ no: '97002', project: `MUSTERIX ${code} ${no}`, rows: [`1 ${GLASS_PDF} 700 800 1 0,560 0,560 60,00 TL 0,0 33,60 POZ-B`], total: '1 0,560 33,60', sub: '33,60', grand: '40,32' }));
+  const pdf2 = factoryPdf(form({ no: '97002', project: `MUSTERIX ${code} ${no}`, rows: [`1 ${GLASS_PDF} 700 800 1 0,560 0,560 60,00 TL 0,0 33,60 POZ-B`], total: '1 0,560 33,60', sub: '33,67', grand: '40,40' }));
   const wrong = factoryPdf(form({ no: '97003', project: `MUSTERIX ${code} ${Number(no) + 900}`, rows: [`1 ${GLASS_PDF} 700 800 1 0,560 0,560 60,00 TL 0,0 33,60 POZ-C`], total: '1 0,560 33,60', sub: '33,60', grand: '40,32' }));
 
   // Satış: teklif tablosu → "PDF'den Aktar"
@@ -67,6 +67,12 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   await expect(dlg.locator('[data-pdf-file="97001"] [data-check="b"]')).toHaveAttribute('data-diff', '0');
   await expect(dlg.locator('[data-pdf-file="97001"] [data-check="vat"]')).toContainText('kullanılmaz');
   await expect(dlg.locator('[data-pdf-file="97003"] [data-pdf-blocking] [data-code="WRONG_PROJECT"]')).toBeVisible();
+  // Ara Toplam (33,67) satır toplamından (33,60) 0,07 farklı: yalnız uyarı (karar 266) — engel yok, Ara Toplam aynen
+  await expect(dlg.locator('[data-pdf-file="97002"] [data-check="a"]')).toContainText('Ara Toplam aynen saklanır');
+  await expect(dlg.locator('[data-pdf-file="97002"] [data-code="SUBTOTAL_DIFFERENCE"]')).toBeVisible();
+  await expect(dlg.locator('[data-pdf-file="97002"] [data-pdf-blocking]')).toHaveCount(0);
+  // Poz = PDF'in ana Sipariş No'su (satırdaki POZ-A / POZ-B değil)
+  expect(await dlg.locator('[data-pdf-file="97001"] [data-pdf-poz]').evaluateAll((els) => els.map((e) => e.firstChild?.textContent))).toEqual(['97001', '97001']);
   // Satış firma adını göremez: PDF'teki "Proje / Müşterisi" metni (müşteri adı) ön izlemeye gelmez
   await expect(dlg).not.toContainText('MUSTERIX');
   await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
@@ -86,7 +92,7 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   expect(await sales.getByLabel('CNC fiyatı').inputValue()).toBe('4.00');
   expect(await sales.getByLabel('Birim fiyat', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['60.00', '60.00', '60.00']);
   const pozValues = await poz.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-  expect(pozValues.filter(Boolean)).toEqual(['POZ-A', 'POZ-A', 'POZ-B']);
+  expect(pozValues.filter(Boolean)).toEqual(['97001', '97001', '97002']); // her satır kendi PDF'inin ana Sipariş No'su (karar 266)
   // Teklif hâlâ satışta (yöneticiye kendiliğinden gitmedi)
   await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
 
@@ -129,24 +135,29 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   // Kayıt aktarılan satırları korur (düzenleyici kayıtlı satırlarla yeniden kurulur); değişen adet yazıldı
   await expect(sales.getByLabel('Poz', { exact: true })).toHaveCount(4);
   expect(await sales.getByLabel('Adet', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['1', '3', '1']);
-  // Satışın teklif tablosu indirmesi (3.78.0): PDF + Excel, FİYATSIZ — alış fiyatı (60,00 / 4,00) dosyaya girmez; m² 3 ondalık
+  // Satışın teklif tablosu indirmesi (karar 267): PDF + Excel, satışın KENDİ fiyatıyla; müşteri fiyatı yok; m² 3 ondalık
   await expect(sales.locator('[data-offer-export="pdf"]')).toBeVisible();
   await expect(sales.locator('[data-offer-export="xlsx"]')).toBeVisible();
   const xr = await sales.request.get(`${orderUrl}/teklif?format=xlsx`);
   expect(xr.status()).toBe(200);
   const xrows = readXlsx(Buffer.from(await xr.body())).rows;
-  const cells = xrows.flat().filter((v) => v != null && v !== '').map(String);
-  expect(cells.some((v) => /^(60|4)(\.0+)?$|Birim fiyat|Tutar/.test(v))).toBe(false);
-  expect(xrows.every((r) => r.length <= 7)).toBe(true);
+  expect(xrows.some((r) => r.length === 9)).toBe(true);
+  const xglass = xrows.filter((r) => /^\d+$/.test(String(r[0] ?? '')) && r[3] != null);
+  expect(xglass.map((r) => [String(r[2]), Number(r[3]), Number(r[5]), Number(r[6]), Number(r[7]), Number(r[8])])).toEqual([
+    ['97001', 1000, 1, 2, 60, 120], ['97001', 1500, 3, 4.5, 60, 270], ['97002', 700, 1, 0.56, 60, 33.6],
+  ]);
   const xtotal = xrows.find((r) => r[0] === 'Toplam')!;
-  expect([Number(xtotal[5]), Number(xtotal[6])]).toEqual([5, 7.06]);
+  expect([Number(xtotal[6]), Number(xtotal[8])]).toEqual([7.06, 427.6]);
+  // Firma adı maskeli; müşteri adı dosyada yok
+  const cells = xrows.flat().filter((v) => v != null && v !== '').map(String);
+  expect(cells.some((v) => v.includes(`${code}**********`))).toBe(true);
   const pr = await sales.request.get(`${orderUrl}/teklif?format=pdf`);
   expect(pr.status()).toBe(200);
   expect(pr.headers()['content-type']).toContain('application/pdf');
   expect((await drawer.request.get(`${orderUrl}/teklif?format=xlsx`)).status()).not.toBe(200);
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales).toHaveURL(/ok=offer_submit/);
-  // Teklif yöneticideyken de satış kendi tablosunu fiyatsız indirebilir
+  // Teklif yöneticideyken de satış kendi tablosunu (kendi fiyatıyla) indirebilir
   await expect(sales.locator('#teklif a[href$="format=xlsx"]')).toBeVisible();
   expect((await sales.request.get(`${orderUrl}/teklif?format=xlsx`)).status()).toBe(200);
   for (const p of [cust, insp, drawer, sales]) await p.context().close();

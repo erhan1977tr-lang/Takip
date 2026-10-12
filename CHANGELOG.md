@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.79.0 — 12.10.2026
+
+Üç düzeltme (karar 266–267). Migration yok.
+
+- **Fabrika PDF'i — Ara Toplam farkı (karar 266):** PDF satır toplamı ile Ara Toplam arasındaki fark artık hiçbir tutarda
+  tek başına aktarmayı durdurmaz (3.78.0'daki 0,02–0,10 EUR sınırı kaldırıldı); ön izlemede uyarı, "Teklif tablosuna
+  aktar" yeterli. Ara Toplam fabrika alış toplamı olarak aynen saklanır (aktarım kaydı + denetim kaydında satır toplamı ve
+  fark); satır fiyatları değişmez, fark için satır eklenmez, müşteri fiyatı boş. Satırın kendi tutarı açıklanamıyorsa,
+  Ara Toplam okunamıyorsa, cam eşleşmesi / satır hatası varsa aktarma eskisi gibi durur.
+- **Fabrika PDF'i — Poz (karar 266):** aktarılan her cam satırının Poz'u PDF'in üst bölümündeki ana Sipariş No'su
+  (ör. GLA 64-1 → 81037); yanındaki numara (121.001), S.No ve satırdaki Poz sütunu yazılmaz. Birden çok PDF'te her satır
+  kendi PDF'inin numarasını taşır; numara okunamazsa aktarma durur.
+- **Satışın teklif tablosu PDF / Excel (karar 267):** dosya artık satışın kendi fiyatlarını (birim fiyat, tutar, toplam)
+  taşır; müşteri fiyatı, yöneticinin sandık satırı ve kur notu girmez, firma adı maskeli, m² 3 ondalık. Yönetici ve müşteri
+  dosyaları değişmedi.
+
 ## 3.78.0 — 12.10.2026
 
 İki küçük düzeltme (karar 264–265). Migration yok.
