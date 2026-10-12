@@ -41,3 +41,36 @@ test('teklif dışa aktarma: müşteri fiyatıyla satırlar ve toplam; PDF ve Ex
   const pdf = offerPdf(data, text);
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
 });
+
+test('satışın teklif tablosu: PDF ve Excel her zaman, FİYATSIZ — satış / alış ve müşteri fiyatı dosyaya girmez; m² 3 ondalık', () => {
+  const sales = { canExport: false, isAdmin: false, customerExcel: false, isSales: true };
+  assert.equal(canExportOffer('pdf', sales), true);
+  assert.equal(canExportOffer('xlsx', sales), true, 'müşteri Excel izni gerekmez');
+  assert.equal(canExportOffer('csv', sales), false);
+  const lines = [
+    { kind: 'CAM', description: 'Temper 8mm', poz: 'K1', enMm: 1235, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '31.37', offerPrice: '57.11', pieceM2: '1.235', shaped: true },
+    { kind: 'CNC', description: 'CNC', adet: 2, unit: 'adet', unitPrice: '4.44', offerPrice: '9.99' },
+  ];
+  // route: satışta price → null (fiyatsız)
+  const data = offerExportData({ lines, price: () => null, locale: 'tr', kindLabel: (k) => k, shapedLabel: 'Şekilli' });
+  assert.equal(data.metraj, 2.47);
+  const text = {
+    title: 'TEKLİF TABLOSU', orderNo: 'GLA40-1', firm: 'GLA**********', date: '12.10.2026', currency: 'EUR', notes: ['Fiyatsız'], noPrices: true,
+    cols: { n: '#', desc: 'Açıklama', poz: 'Poz', en: 'En', boy: 'Boy', adet: 'Adet', m2: 'm²', unitPrice: 'Birim fiyat', amount: 'Tutar' },
+    free: 'Bedelsiz', total: 'Toplam', piece: 'adet',
+  };
+  const x = readXlsx(offerXlsx(data, text)).rows;
+  const flat = x.flat().map(String);
+  assert.ok(!flat.some((v) => /31[.,]37|57[.,]11|4[.,]44|9[.,]99|Birim fiyat|Tutar/.test(v)), 'fiyat ya da fiyat sütunu yok');
+  assert.ok(x.every((r) => r.length <= 7), 'yalnızca 7 sütun');
+  const totalRow = x.find((r) => r[0] === 'Toplam');
+  assert.equal(Number(totalRow[5]), 2, 'toplam adet');
+  assert.equal(Number(totalRow[6]), 2.47, 'toplam metraj');
+  assert.ok(x.some((r) => r[1] === 'Temper 8mm (Şekilli)' && Number(r[6]) === 2.47));
+  const pdf = offerPdf(data, text);
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+  // yönetici / müşteri dosyası değişmedi: fiyat sütunları yerinde
+  const priced = readXlsx(offerXlsx(offerExportData({ lines, price: (l) => l.offerPrice, locale: 'tr', kindLabel: (k) => k }), { ...text, noPrices: false })).rows;
+  assert.ok(!priced.find((r) => r[0] === 'Toplam')[5], 'fiyatlı dosyada toplam satırı eskisi gibi (adet boş)');
+  assert.ok(priced.some((r) => r.length === 9));
+});

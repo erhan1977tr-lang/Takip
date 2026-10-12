@@ -191,11 +191,20 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
 
   // ---- Denetimler ----
   const a = checkSubtotal(parsed);
-  if (parsed.totals.subtotal != null && !a.ok) blocking.push({ code: 'SUBTOTAL_MISMATCH', pdfSum: cents(a.pdfSum), subtotal: cents(parsed.totals.subtotal) });
+  // A: PDF satır tutarları ↔ Ara Toplam. Fabrika her satır tutarını kuruşa yuvarlar, Ara Toplamı yuvarlanmamış tutarlardan
+  // hesaplayabilir (ör. ADE 8: satırlar 769,62 · Ara Toplam 769,64). Bu küçük fark (subtotalTolerance) uyarıdır, aktarmayı
+  // durdurmaz: kabul "Teklif tablosuna aktar" ile verilir; fark için satır / düzeltme eklenmez, hiçbir maliyet değişmez.
+  // Daha büyük fark aktarmayı durdurur.
+  const aDiff = parsed.totals.subtotal == null ? null : parsed.totals.subtotal - a.pdfSum;
+  const aSmall = !a.ok && aDiff != null && Math.abs(aDiff) <= subtotalTolerance(parsed);
+  if (parsed.totals.subtotal != null && !a.ok) {
+    if (aSmall) warnings.push({ code: 'SUBTOTAL_ROUNDING', pdfSum: cents(a.pdfSum), subtotal: cents(parsed.totals.subtotal), diff: cents(aDiff) });
+    else blocking.push({ code: 'SUBTOTAL_MISMATCH', pdfSum: cents(a.pdfSum), subtotal: cents(parsed.totals.subtotal) });
+  }
   const calc = assignPieceBases(lines);
   const totals = calc.map((l) => offerLineTotals({ ...l, unitPrice: l.unitPrice === '' ? '0' : l.unitPrice }));
   const takipTotal = totals.reduce((s, t) => s + toCents(t.amount), 0);
-  let explained = a.ok;
+  let explained = a.ok || aSmall;
   const previewRows = rows.map(({ r, sourceRow, ops, glassNet, startIdx, endIdx, poz, glass }) => {
     const exactArea = divRound(r.en * r.boy, 1000); // binde bir m² (fabrika: en × boy, 3 ondalık)
     const areaOk = r.m2 === exactArea;
@@ -233,7 +242,7 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     glassChoices: [...glassChoices.values()],
     opChoices: [...opChoices.values()],
     checks: {
-      a: { pdfSum: a.pdfSum, subtotal, ok: a.ok },
+      a: { pdfSum: a.pdfSum, subtotal, ok: a.ok, rounding: aSmall },
       b: { takipTotal, subtotal, diff, explained: diff === 0 || (diff != null && explained) },
       vat: parsed.totals.vat, grandTotal: parsed.totals.grandTotal,
     },
@@ -241,6 +250,14 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     blocking: dedupe(blocking),
     warnings: dedupe(warnings),
   };
+}
+
+/** Ara Toplam ile satır toplamı arasında yuvarlama sayılan en büyük fark (kuruş): tutarlı satır başına yarım kuruş, en az 2,
+ *  en çok 10 kuruş (0,10 EUR). Bunun üstü açıklanamayan fark sayılır. */
+export const SUBTOTAL_TOLERANCE_MAX = 10;
+export function subtotalTolerance(parsed) {
+  const n = parsed.rows.reduce((k, r) => k + (r.amount != null ? 1 : 0) + r.ops.filter((o) => o.amount != null).length, 0);
+  return Math.min(SUBTOTAL_TOLERANCE_MAX, Math.max(2, Math.ceil(n / 2)));
 }
 
 function dedupe(list) {

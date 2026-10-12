@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
 import { PdfDoc } from '../server/pdf/pdf.js';
+import { readXlsx } from '../server/files/xlsx.js';
 import { form } from '../test/fixtures/factory-pdf.js';
 
 // Fabrika PDF'i aktarımı (karar 255) — gerçek sunucuda, gerçek ClamAV ile: satış birden çok fabrika PDF'ini yükler, ön izler,
@@ -128,7 +129,25 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   // Kayıt aktarılan satırları korur (düzenleyici kayıtlı satırlarla yeniden kurulur); değişen adet yazıldı
   await expect(sales.getByLabel('Poz', { exact: true })).toHaveCount(4);
   expect(await sales.getByLabel('Adet', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['1', '3', '1']);
+  // Satışın teklif tablosu indirmesi (3.78.0): PDF + Excel, FİYATSIZ — alış fiyatı (60,00 / 4,00) dosyaya girmez; m² 3 ondalık
+  await expect(sales.locator('[data-offer-export="pdf"]')).toBeVisible();
+  await expect(sales.locator('[data-offer-export="xlsx"]')).toBeVisible();
+  const xr = await sales.request.get(`${orderUrl}/teklif?format=xlsx`);
+  expect(xr.status()).toBe(200);
+  const xrows = readXlsx(Buffer.from(await xr.body())).rows;
+  const cells = xrows.flat().filter((v) => v != null && v !== '').map(String);
+  expect(cells.some((v) => /^(60|4)(\.0+)?$|Birim fiyat|Tutar/.test(v))).toBe(false);
+  expect(xrows.every((r) => r.length <= 7)).toBe(true);
+  const xtotal = xrows.find((r) => r[0] === 'Toplam')!;
+  expect([Number(xtotal[5]), Number(xtotal[6])]).toEqual([5, 7.06]);
+  const pr = await sales.request.get(`${orderUrl}/teklif?format=pdf`);
+  expect(pr.status()).toBe(200);
+  expect(pr.headers()['content-type']).toContain('application/pdf');
+  expect((await drawer.request.get(`${orderUrl}/teklif?format=xlsx`)).status()).not.toBe(200);
   await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
   await expect(sales).toHaveURL(/ok=offer_submit/);
+  // Teklif yöneticideyken de satış kendi tablosunu fiyatsız indirebilir
+  await expect(sales.locator('#teklif a[href$="format=xlsx"]')).toBeVisible();
+  expect((await sales.request.get(`${orderUrl}/teklif?format=xlsx`)).status()).toBe(200);
   for (const p of [cust, insp, drawer, sales]) await p.context().close();
 });

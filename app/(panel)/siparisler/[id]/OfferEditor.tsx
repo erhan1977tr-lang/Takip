@@ -72,6 +72,8 @@ export function OfferEditor(props: {
   nextVersion?: number;
   /** Fabrika PDF'i aktarımı (karar 255; yönetici ve satış): siparişe daha önce yüklenen fabrika PDF'leri. Verilmezse düğme yok. */
   pdfImports?: { id: string; name: string; factoryNo: string | null; applied: boolean }[];
+  /** Satış: kayıtlı teklif tablosunu fiyatsız PDF / Excel indirme (teklif/route.ts — sunucuda yetki ve fiyatsızlık) */
+  salesExport?: boolean;
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
@@ -441,7 +443,16 @@ export function OfferEditor(props: {
             <input type="checkbox" checked={onePrice} onChange={(e) => setOnePrice(e.target.checked)} /> {m.editor.onePrice}
           </label>
         </div>
-        {props.mode === 'sales' && <button type="button" className="btn btn-danger" onClick={resetTable}>{m.editor.reset}</button>}
+        <div className="group">
+          {props.salesExport && (
+            <>
+              <a className="btn" href={`/siparisler/${props.orderId}/teklif?format=pdf`} title={m.export.savedOnly} data-offer-export="pdf">{m.export.pdf}</a>
+              <a className="btn" href={`/siparisler/${props.orderId}/teklif?format=xlsx`} title={m.export.savedOnly} data-offer-export="xlsx">{m.export.xlsx}</a>
+              {dirty && <span className="muted small" data-export-saved-only>{m.export.savedOnly}</span>}
+            </>
+          )}
+          {props.mode === 'sales' && <button type="button" className="btn btn-danger" onClick={resetTable}>{m.editor.reset}</button>}
+        </div>
       </div>
       <TableJump targetId="offer-table" up={m.import.jumpTop} down={m.import.jumpBottom} />
       <p className="muted small" style={{ margin: '8px 0 0' }}>{common.pricesExclVat}{adminMode && props.customerPricing ? ` · ${interpolate(m.editor.customerTableInfo, { name: props.customerPricing.name })}` : ''}</p>

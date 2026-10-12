@@ -201,7 +201,7 @@ export function PdfImport({ orderId, dirty, previous, m }: {
                   <b>{m.checks}</b>
                   <div data-check="a">
                     {interpolate(m.checkA, { sum: money(imp.plan.checks.a.pdfSum), sub: money(imp.plan.checks.a.subtotal) })}{' '}
-                    <span className={`badge ${imp.plan.checks.a.ok ? 'badge-ok' : 'badge-danger'}`}>{imp.plan.checks.a.ok ? m.ok : m.notOk}</span>
+                    <span className={`badge ${imp.plan.checks.a.ok ? 'badge-ok' : imp.plan.checks.a.rounding ? 'badge-warn' : 'badge-danger'}`}>{imp.plan.checks.a.ok ? m.ok : imp.plan.checks.a.rounding ? m.explained : m.notOk}</span>
                   </div>
                   <div data-check="b" data-diff={imp.plan.checks.b.diff ?? ''}>
                     {interpolate(m.checkB, { takip: money(imp.plan.checks.b.takipTotal), sub: money(imp.plan.checks.b.subtotal), diff: money(imp.plan.checks.b.diff) })}{' '}

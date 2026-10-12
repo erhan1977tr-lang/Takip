@@ -35,6 +35,9 @@ export default {
     turnOn: 'İzin ver',
     turnOff: 'İzni kaldır',
     denied: 'Bu teklifi bu biçimde indirme izniniz yok.',
+    tableTitle: 'TEKLİF TABLOSU',
+    noPricesNote: 'Fiyatsız teklif tablosu: ölçü, adet ve metraj. Fiyatlar bu dosyada yer almaz.',
+    savedOnly: 'Kayıtlı teklif tablosu indirilir; kaydedilmemiş değişiklikler dosyada yer almaz.',
   },
   import: {
     button: "Excel'den Aktar",
@@ -149,6 +152,7 @@ export default {
       OP_QTY_FRACTION: '{row}. satırın “{name}” işleminin miktarı tam sayı değil.',
       OPS_QTY_AMBIGUOUS: '{row}. satır: “{name}” işleminin miktarı ({qty}) cam adedine ({pieces}) tam bölünmüyor; hangi cama ait olduğu belirsiz.',
       POZ_FALLBACK: 'Bazı satırlarda Poz yok; Poz alanına fabrika sipariş numarası ({factoryNo}) yazıldı.',
+      SUBTOTAL_ROUNDING: 'PDF satır toplamı ({pdfSum}) ile Ara Toplam ({subtotal}) arasında {diff} EUR yuvarlama farkı var. Fabrika PDF’indeki tutarlar esas alınır; fark için satır ya da düzeltme eklenmez.',
       SUBTOTAL_MISMATCH: 'PDF satır toplamı ({pdfSum}) Ara Toplam ({subtotal}) ile tutmuyor. Aktarılmaz.',
       ROUNDING_DIFFERENCE: 'TAKİP hesabı ile Ara Toplam arasında {diff} EUR yuvarlama farkı var (birim fiyat yuvarlaması). Fark için satır ya da düzeltme eklenmez.',
       UNEXPLAINED_DIFFERENCE: 'TAKİP hesabı ile Ara Toplam arasında açıklanamayan {diff} EUR fark var. Aktarılmaz.',

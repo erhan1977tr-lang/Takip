@@ -32,6 +32,9 @@ export default {
     turnOn: 'Permite',
     turnOff: 'Retrage permisiunea',
     denied: 'Nu aveți permisiunea de a descărca această ofertă în acest format.',
+    tableTitle: 'TABEL OFERTĂ',
+    noPricesNote: 'Tabel ofertă fără prețuri: dimensiuni, cantități și suprafață. Prețurile nu apar în acest fișier.',
+    savedOnly: 'Se descarcă tabelul ofertei salvat; modificările nesalvate nu apar în fișier.',
   },
   import: {
     button: 'Importă din Excel',
@@ -146,6 +149,7 @@ export default {
       OP_QTY_FRACTION: 'Rândul {row}: cantitatea operației „{name}” nu este un număr întreg.',
       OPS_QTY_AMBIGUOUS: 'Rândul {row}: cantitatea operației „{name}” ({qty}) nu se împarte exact la numărul de sticle ({pieces}); nu este clar cărei sticle îi aparține.',
       POZ_FALLBACK: 'Unele rânduri nu au Poz; în câmpul Poz s-a scris numărul comenzii fabricii ({factoryNo}).',
+      SUBTOTAL_ROUNDING: 'Între totalul rândurilor PDF ({pdfSum}) și Subtotal ({subtotal}) există o diferență de rotunjire de {diff} EUR. Se iau în considerare sumele din PDF-ul fabricii; pentru diferență nu se adaugă rând sau corecție.',
       SUBTOTAL_MISMATCH: 'Totalul rândurilor PDF ({pdfSum}) nu corespunde cu Subtotalul ({subtotal}). Nu se importă.',
       ROUNDING_DIFFERENCE: 'Între calculul TAKİP și Subtotal există o diferență de rotunjire de {diff} EUR (rotunjirea prețului unitar). Pentru diferență nu se adaugă rând sau corecție.',
       UNEXPLAINED_DIFFERENCE: 'Între calculul TAKİP și Subtotal există o diferență neexplicată de {diff} EUR. Nu se importă.',

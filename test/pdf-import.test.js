@@ -182,7 +182,7 @@ test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice
 test('B denetimi: PDF’in 3 ondalıklı m²’si aynen kullanılır (karar 261) — 2 ondalığa yuvarlamadan doğan fark kalmaz; satır eklenmez', () => {
   const p = plan(FORM_CNC);
   // PDF 300,00 + 123,50 + 2 × 5 = 433,50 · TAKİP 300,00 + 1,235 × 100 = 123,50 + 10 = 433,50 (eskiden 1,24 m² → 434,00)
-  assert.deepEqual(p.checks.a, { pdfSum: 43350, subtotal: 43350, ok: true });
+  assert.deepEqual(p.checks.a, { pdfSum: 43350, subtotal: 43350, ok: true, rounding: false });
   assert.deepEqual(p.checks.b, { takipTotal: 43350, subtotal: 43350, diff: 0, explained: true });
   assert.deepEqual(p.warnings.filter((w) => w.code === 'ROUNDING_DIFFERENCE'), []);
   assert.deepEqual(p.lines.filter((l) => l.kind === 'CAM').map((l) => [l.pieceM2, l.adet]), [['3.000', 1], ['1.235', 1]]);
@@ -197,6 +197,24 @@ test('açıklanamayan fark (PDF m²’si en × boy değil) aktarmayı durdurur; 
   assert.deepEqual(p.blocking.map((b) => [b.code, b.row, b.pdfM2, b.dimsM2]), [['AREA_MISMATCH', 1, 1250, 1000]]);
   const a = plan(form({ rows: FORM_CNC.slice(7, 13).map((l) => l.text), total: '2 4,235 433,50', sub: '400,00', grand: '480,00' }));
   assert.ok(a.blocking.some((b) => b.code === 'SUBTOTAL_MISMATCH'));
+});
+
+test('Ara Toplam ile satır toplamı arasında küçük yuvarlama farkı (ADE 8: 769,62 / 769,64) aktarmayı durdurmaz; maliyetler PDF’ten aynen', () => {
+  const rows = [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 40', `2 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 ABC 40'];
+  const p = plan(form({ rows, total: '2 2,000 200,00', sub: '200,02', grand: '240,02' }));
+  assert.deepEqual(p.blocking, []);
+  assert.deepEqual(p.warnings.filter((w) => w.code === 'SUBTOTAL_ROUNDING').map((w) => [w.pdfSum, w.subtotal, w.diff]), [['200.00', '200.02', '0.02']]);
+  assert.equal(p.checks.a.ok, false);
+  assert.equal(p.checks.a.rounding, true);
+  assert.equal(p.checks.b.explained, true);
+  assert.deepEqual(p.lines.map((l) => [l.kind, l.unitPrice, l.offerPrice]), [['CAM', '100.00', null], ['CAM', '100.00', null]], 'alış maliyeti PDF’ten, müşteri fiyatı boş');
+  assert.equal(p.lines.length, 2, 'fark için satır / düzeltme eklenmez');
+  // sınırın üstü (2 tutarlı satır → en çok 2 kuruş) ve büyük fark aktarmayı durdurmaya devam eder
+  for (const sub of ['200,03', '199,97', '210,00']) {
+    const q = plan(form({ rows, total: '2 2,000 200,00', sub, grand: '250,00' }));
+    assert.ok(q.blocking.some((b) => b.code === 'SUBTOTAL_MISMATCH'), sub);
+    assert.equal(q.checks.a.rounding, false);
+  }
 });
 
 test('iskontolu satır: net birim fiyat = net tutar ÷ miktar (2 ondalık); yuvarlama farkı açıklanır, gizli düzeltme yok', () => {

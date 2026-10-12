@@ -513,11 +513,12 @@ export default async function OrderPage({
           importGlass={order.items[0] ? itemGlassName(order.items[0], locale) ?? '' : ''}
           original={order.items.map((it) => ({ description: itemGlassName(it, locale) ?? '', adet: String(Math.max(1, it.camAdedi || 1)) }))}
           pdfImports={pdfImports}
+          salesExport={!updating && !can('approve_price') && !userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
         />
       )}
 
       {shownOffer && (
-        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')}
+        <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} salesExport={!userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
           compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} compTag={compTagText} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
           withdraw={withdrawable ? (
             <form action={withdrawOfferAction} className="row" style={{ gap: 8 }}>
@@ -742,13 +743,14 @@ type Offer = OrderDetail['offers'][number];
 // Eski kayıtlarda açıklaması boş CNC / delik satırına tür adı yazılırdı; rozetle aynı bilgi tekrar gösterilmez.
 const LEGACY_SUB_DESC: Record<string, string> = { CNC: 'CNC', DELIK: 'Delik' };
 
-function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, compIds, compHref, compTag, priceLocked = [], withdraw }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; compTag?: (id: string) => string; priceLocked?: string[]; withdraw?: React.ReactNode }) {
+function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref, t, locale, admin, canExport, salesExport = false, compIds, compHref, compTag, priceLocked = [], withdraw }: { order: OrderDetail; offer: Offer; isCustomer: boolean; finalPrice: boolean; versions: number; updateHref?: string; t: T; locale: 'tr' | 'ro'; admin: boolean; canExport: boolean; salesExport?: boolean; compIds?: Set<string>; compHref?: (lineId: string) => string; compTag?: (id: string) => string; priceLocked?: string[]; withdraw?: React.ReactNode }) {
   // Kırık / telafi (karar 108): yalnızca müşteriye gönderilmiş teklifin fiziksel cam satırlarında, satış ve yöneticide
   const compCol = !!compIds && compIds.size > 0 && !!compHref;
   // Dışa aktarma (server/orders/offer-export.js): yönetici PDF + Excel; müşteri PDF, Excel yalnızca yöneticinin izniyle.
   // Asıl kontrol indirme adresinde (teklif/route.ts) yapılır.
   const exportHref = (f: 'pdf' | 'xlsx') => `/siparisler/${order.id}/teklif?format=${f}`;
-  const showExport = canExport && (admin || offer.status === 'GONDERILDI') && order.orderTypeCode === 'GLASS_ORDER';
+  // Satış: kendi teklif tablosu her durumda, fiyatsız (route: noPrices)
+  const showExport = order.orderTypeCode === 'GLASS_ORDER' && (salesExport || (canExport && (admin || offer.status === 'GONDERILDI')));
   // Veriler role göre temizlendi (lib/orders.ts → offerPrices): müşteri/denetimcide unitPrice ve amount müşteri fiyatıdır,
   // satışta satış fiyatı. Yönetici iki fiyatı yan yana görür (karar 4).
   const total = offer.status === 'GONDERILDI' && order.price && finalPrice && !admin ? order.price.amount : offer.amount;
@@ -844,7 +846,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
         </p>
         <span className="row" style={{ gap: 8 }}>
           {showExport && <a className="btn" href={exportHref('pdf')}>{t('offer.export.pdf')}</a>}
-          {showExport && (admin || order.customerExcel) && <a className="btn" href={exportHref('xlsx')}>{t('offer.export.xlsx')}</a>}
+          {showExport && (admin || salesExport || order.customerExcel) && <a className="btn" href={exportHref('xlsx')}>{t('offer.export.xlsx')}</a>}
           {updateHref && <Link href={updateHref} className="btn">{t('offer.view.update')}</Link>}
         </span>
       </div>

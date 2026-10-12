@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.78.0 — 12.10.2026
+
+İki küçük düzeltme (karar 264–265). Migration yok.
+
+- **Fabrika PDF'i — Ara Toplam yuvarlaması (karar 264):** PDF satır toplamı ile Ara Toplam arasındaki küçük kuruş farkı
+  (ör. 769,62 / 769,64) artık aktarmayı durdurmaz; ön izlemede uyarı olarak görünür, "Teklif tablosuna aktar" yeterli.
+  Alış maliyetleri PDF satırlarından aynen alınır, fark için satır / düzeltme eklenmez, müşteri fiyatı boş kalır. Büyük
+  ya da açıklanamayan fark eskisi gibi durdurur. m², fiyat hesabı, fiyat listeleri, POZ / CNC / cam eşleşmesi değişmedi.
+- **Satışın teklif tablosu PDF / Excel (karar 265):** teklif tablosunda "PDF İndir" ve "Excel İndir". Mevcut teklif
+  dışa aktarma altyapısı (GKH logolu); satış dosyası fiyatsızdır — ölçü, Poz, adet, metraj (3 ondalık). Hiçbir fiyat
+  (satış / alış, müşteri) dosyaya girmez. Yönetici ve müşteri dosyaları değişmedi.
+
 ## 3.77.0 — 11.10.2026
 
 Son beş düzeltme (karar 259–263). Veri koruyan migration: `20261011191822_order_number_text_area3_shaped` (tip
