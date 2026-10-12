@@ -148,9 +148,9 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   ]);
   const xtotal = xrows.find((r) => r[0] === 'Toplam')!;
   expect([Number(xtotal[6]), Number(xtotal[8])]).toEqual([7.06, 427.6]);
-  // Firma adı maskeli; müşteri adı dosyada yok
+  // Firma adı satışa maskeli gelir: tam firma adı ve PDF'teki müşteri adı dosyada yok
   const cells = xrows.flat().filter((v) => v != null && v !== '').map(String);
-  expect(cells.some((v) => v.includes(`${code}**********`))).toBe(true);
+  expect(cells.some((v) => /Ünsal|MUSTERIX/.test(v))).toBe(false);
   const pr = await sales.request.get(`${orderUrl}/teklif?format=pdf`);
   expect(pr.status()).toBe(200);
   expect(pr.headers()['content-type']).toContain('application/pdf');
