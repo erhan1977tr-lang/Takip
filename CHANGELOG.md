@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.79.1 — 12.10.2026
+
+Tek geri düzeltme (karar 268). Migration yok.
+
+- **Fabrika PDF'i — Poz geri alındı:** aktarılan cam satırının Poz'u yeniden PDF satırının kendi Poz sütunundaki değer
+  (3.79.0 öncesi davranış). Birden çok PDF'te her satır kendi satırının değerini taşır; Poz sütunu boş satırda eski
+  davranış aynen: fabrika sipariş no yazılır ve uyarı verilir. Başka hiçbir kural değişmedi (Ara Toplam farkı, fiyatlar,
+  m², satış dışa aktarması, yetkiler aynen).
+
 ## 3.79.0 — 12.10.2026
 
 Üç düzeltme (karar 266–267). Migration yok.

@@ -134,8 +134,8 @@ test('PDF: iki satıra bölünmüş cam adı birleşir; normal ve şekilli satı
   const plan = buildImportPlan({ parsed, importKey: 'imp1', order, catalog, choices });
   assert.deepEqual(plan.blocking, []);
   assert.deepEqual(plan.lines.map((l) => [l.shaped, l.glassProductId, l.pieceM2, l.enMm, l.boyMm, l.adet, l.unitPrice, l.poz]), [
-    [false, 'g1', '2.386', 1183, 2017, 2, '100.00', '97001'],
-    [true, 'g1', '1.000', 1000, 1000, 1, '100.00', '97001'],
+    [false, 'g1', '2.386', 1183, 2017, 2, '100.00', 'ABC 40'],
+    [true, 'g1', '1.000', 1000, 1000, 1, '100.00', 'ABC 40'],
   ]);
   assert.deepEqual(plan.rows.map((r) => [r.shaped, r.description]), [[false, DESC_NORMAL], [true, DESC_SHAPED]]);
   // 3 ondalıklı m² aynen: TAKİP toplamı Ara Toplam ile kuruşu kuruşuna (yapay eşitleme yok — PDF'in kendi m²si)

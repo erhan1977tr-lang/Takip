@@ -246,7 +246,7 @@ function FragmentRows({ r, m }: { r: NonNullable<Imp['plan']>['rows'][number]; m
     <>
       <tr className={r.explained ? 'glass-line' : 'glass-line row-invalid'} data-source-row={r.sourceRow}>
         <td className="muted">{r.sourceRow}</td>
-        <td className="mono" data-pdf-poz>{r.poz}<div className="small muted">{m.pozFactory}</div></td>
+        <td className="mono">{r.poz}{!r.pozFromPdf && <div className="small muted">{m.pozFallback}</div>}</td>
         <td>
           <div className="small muted">{r.description}</div>
           <div data-glass-label>{r.glassLabel ?? '—'}{' '}

@@ -104,11 +104,11 @@ dbTest('tek + çoklu PDF (aynı proje): ön izleme → onay → satırlar sona e
   const offer = await latest(o.id);
   assert.equal(offer.status, 'HAZIRLANIYOR', 'yöneticiye gönderilmedi');
   assert.deepEqual(offer.lines.map((l) => [l.kind, l.description, l.poz, l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice, l.sourceRow, l.glassProductId]), [
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90001', 3000, 1000, 1, '100', null, 1, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 3000, 1000, 1, '100', null, 1, g.ref.id],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, '5', null, 1, null],
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90001', 1235, 1000, 1, '100', null, 2, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 1235, 1000, 1, '100', null, 2, g.ref.id],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, '5', null, 2, null],
-    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', '90002', 2000, 1000, 1, '100', null, 1, g.ref.id],
+    ['CAM', '6.3.6 Temperli Lamine — Füme Reflekte-Şeffaf', 'ABC 40', 2000, 1000, 1, '100', null, 1, g.ref.id],
   ]);
   // Liste fiyatı (fiyat tablosu) karşılaştırma için durur: 95 / CNC 6 — fark gönderimde "Önemli kararlar"a düşer
   assert.deepEqual(offer.lines.map((l) => (l.listPrice == null ? null : Number(l.listPrice))), [95, 6, 95, 6, 95]);
@@ -372,8 +372,8 @@ dbTest('metraj ve şekilli cam (karar 261, 262): PDF’in 3 ondalıklı m²si ve
   let offer = await latest(o.id);
   const glass = offer.lines.filter((l) => l.importId);
   assert.deepEqual(glass.map((l) => [l.shaped, l.glassProductId, Number(l.pieceM2), l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.poz]), [
-    [false, g.ref.id, 2.386, 1183, 2017, 2, '100', '97621'],
-    [true, g.ref.id, 1, 1000, 1000, 1, '100', '97621'],
+    [false, g.ref.id, 2.386, 1183, 2017, 2, '100', 'ABC 62'],
+    [true, g.ref.id, 1, 1000, 1000, 1, '100', 'ABC 62'],
   ]);
   // PDF metrajı aynen: 4,772 + 1,000 = 5,772 m² ve 577,20 EUR (eskiden 4,77 m² → 577,00)
   assert.deepEqual([offerTotalsOf(offer).metraj, String(offer.amount)], [5.772, '577.2']);

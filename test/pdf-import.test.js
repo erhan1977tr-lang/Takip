@@ -170,9 +170,9 @@ test('plan: cam ve CNC ayrı satır; alış fiyatı satış fiyatına (unitPrice
   const p = plan(FORM_CNC);
   assert.deepEqual(p.blocking, []);
   assert.deepEqual(p.lines.map((l) => [l.kind, l.description, l.poz, l.enMm, l.boyMm, l.adet, l.unit, l.unitPrice, l.offerPrice, l.sourceRow, l.glassProductId]), [
-    ['CAM', '6.3.6 Füme Reflekte', '90001', 3000, 1000, 1, 'm2', '100.00', null, 1, 'g-ref'],
+    ['CAM', '6.3.6 Füme Reflekte', 'ABC 40', 3000, 1000, 1, 'm2', '100.00', null, 1, 'g-ref'],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, 'adet', '5.00', null, 1, null],
-    ['CAM', '6.3.6 Füme Reflekte', '90001', 1235, 1000, 1, 'm2', '100.00', null, 2, 'g-ref'],
+    ['CAM', '6.3.6 Füme Reflekte', 'ABC 40', 1235, 1000, 1, 'm2', '100.00', null, 2, 'g-ref'],
     ['CNC', 'CNC İŞLEMİ', '', null, null, 1, 'adet', '5.00', null, 2, null],
   ]);
   assert.equal(p.header.projectCode, 'ABC 40');
@@ -277,22 +277,19 @@ test('cam: siparişin camıyla belirgin uyuşmazlık durdurur; sipariş camı do
   assert.ok(foreign.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'));
 });
 
-test('Poz = PDF’in üst bölümündeki ana Sipariş No (karar 266): satırın Poz sütunu, S.No ve "121.001" yazılmaz; okunamazsa aktarma durur', () => {
-  // Satırda Poz sütunu dolu ("ABC 40") olsa da cam satırlarının Poz'u ana Sipariş No; işlem satırının Poz'u boş
+test('Poz: PDF satırının kendi Poz değeri aynen yazılır (3.79.1 — 3.79.0 öncesi davranış); aynı Poz birden çok satırda olabilir; Poz yoksa fabrika sipariş no yazılır ve uyarı verilir', () => {
   const p = plan(FORM_CNC);
-  assert.deepEqual(p.lines.map((l) => [l.kind, l.poz]), [['CAM', '90001'], ['CNC', ''], ['CAM', '90001'], ['CNC', '']]);
-  assert.deepEqual(p.rows.map((r) => r.poz), ['90001', '90001']);
-  assert.ok(!p.lines.some((l) => ['121.001', '1', '2', 'ABC 40'].includes(l.poz)));
-  // Poz sütunu boş satır da aynı
-  const noPoz = plan(form({ no: '81037', rows: [`1 ${DESC_TENTESOL}`, '3000 1000 1 3,000 3,000 100,00 TL 0,0 300,00', `2 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00'], total: '2 4,000 400,00', sub: '400,00', grand: '480,00' }));
-  assert.deepEqual([noPoz.blocking, noPoz.lines.map((l) => l.poz)], [[], ['81037', '81037']]);
-  assert.equal(noPoz.warnings.filter((w) => w.code === 'POZ_FALLBACK').length, 0);
-  // Ana Sipariş No okunamıyor (yok / iki aday) → hata, aktarma yok (yanlış Poz tahmin edilmez)
-  const rows = FORM_CNC.slice(7, 13).map((l) => l.text);
-  const missing = plan(form({ no: '', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
-  assert.ok(missing.blocking.some((b) => b.code === 'FACTORY_NO_MISSING'));
-  const two = plan(form({ no: '81037 81038', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
-  assert.ok(two.blocking.some((b) => b.code === 'FACTORY_NO_AMBIGUOUS'));
+  assert.deepEqual(p.lines.filter((l) => l.kind === 'CAM').map((l) => l.poz), ['ABC 40', 'ABC 40']);
+  assert.deepEqual(p.lines.filter((l) => l.kind !== 'CAM').map((l) => l.poz), ['', '']);
+  assert.ok(!p.lines.some((l) => ['121.001', '90001'].includes(l.poz)), 'ana Sipariş No / yanındaki numara Poz sütunu doluyken yazılmaz');
+  assert.equal(p.warnings.filter((w) => w.code === 'POZ_FALLBACK').length, 0);
+  // Satırlar farklı Poz taşıyorsa her biri kendi değerini alır
+  const mixed = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 POZ-A', `2 ${DESC_TENTESOL}`, '1000 1000 1 1,000 1,000 100,00 TL 0,0 100,00 POZ-B'], total: '2 2,000 200,00', sub: '200,00', grand: '240,00' }));
+  assert.deepEqual([mixed.blocking, mixed.lines.map((l) => l.poz)], [[], ['POZ-A', 'POZ-B']]);
+  const noPoz = plan(form({ rows: [`1 ${DESC_TENTESOL}`, '3000 1000 1 3,000 3,000 100,00 TL 0,0 300,00'], total: '1 3,000 300,00', sub: '300,00', grand: '360,00' }));
+  assert.equal(noPoz.lines[0].poz, '90001');
+  assert.ok(noPoz.warnings.some((w) => w.code === 'POZ_FALLBACK'));
+  assert.equal(noPoz.rows[0].pozFromPdf, false);
 });
 
 test('yanlış müşteri / yanlış proje PDF’i aktarılmaz', () => {

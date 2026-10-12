@@ -29,7 +29,7 @@ export type PdfImportPreview = {
     plan: null | {
       header: { factoryNo: string | null; orderDate: string | null; deliveryDate: string | null; projectCode: string | null };
       rows: {
-        sourceRow: number; description: string; glassKey: string; glassLabel: string | null; poz: string; shaped: boolean;
+        sourceRow: number; description: string; glassKey: string; glassLabel: string | null; poz: string; pozFromPdf: boolean; shaped: boolean;
         en: number; boy: number; adet: number; m2: number; totalM2: number; takipM2: number;
         unitPrice: number; discount: number; netUnit: number | null; amount: number; takipAmount: number; takipOps: number; explained: boolean;
         ops: { name: string; kind: string | null; qty: number | null; perPiece: number | null; unitPrice: number; discount: number; netUnit: number | null; amount: number }[];

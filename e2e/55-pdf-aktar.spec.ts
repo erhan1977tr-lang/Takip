@@ -71,8 +71,6 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   await expect(dlg.locator('[data-pdf-file="97002"] [data-check="a"]')).toContainText('Ara Toplam aynen saklanır');
   await expect(dlg.locator('[data-pdf-file="97002"] [data-code="SUBTOTAL_DIFFERENCE"]')).toBeVisible();
   await expect(dlg.locator('[data-pdf-file="97002"] [data-pdf-blocking]')).toHaveCount(0);
-  // Poz = PDF'in ana Sipariş No'su (satırdaki POZ-A / POZ-B değil)
-  expect(await dlg.locator('[data-pdf-file="97001"] [data-pdf-poz]').evaluateAll((els) => els.map((e) => e.firstChild?.textContent))).toEqual(['97001', '97001']);
   // Satış firma adını göremez: PDF'teki "Proje / Müşterisi" metni (müşteri adı) ön izlemeye gelmez
   await expect(dlg).not.toContainText('MUSTERIX');
   await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
@@ -92,7 +90,7 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   expect(await sales.getByLabel('CNC fiyatı').inputValue()).toBe('4.00');
   expect(await sales.getByLabel('Birim fiyat', { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual(['60.00', '60.00', '60.00']);
   const pozValues = await poz.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-  expect(pozValues.filter(Boolean)).toEqual(['97001', '97001', '97002']); // her satır kendi PDF'inin ana Sipariş No'su (karar 266)
+  expect(pozValues.filter(Boolean)).toEqual(['POZ-A', 'POZ-A', 'POZ-B']); // her satır kendi PDF satırının Poz değeri (3.79.1)
   // Teklif hâlâ satışta (yöneticiye kendiliğinden gitmedi)
   await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
 
@@ -144,7 +142,7 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   expect(xrows.some((r) => r.length === 9)).toBe(true);
   const xglass = xrows.filter((r) => /^\d+$/.test(String(r[0] ?? '')) && r[3] != null);
   expect(xglass.map((r) => [String(r[2]), Number(r[3]), Number(r[5]), Number(r[6]), Number(r[7]), Number(r[8])])).toEqual([
-    ['97001', 1000, 1, 2, 60, 120], ['97001', 1500, 3, 4.5, 60, 270], ['97002', 700, 1, 0.56, 60, 33.6],
+    ['POZ-A', 1000, 1, 2, 60, 120], ['POZ-A', 1500, 3, 4.5, 60, 270], ['POZ-B', 700, 1, 0.56, 60, 33.6],
   ]);
   const xtotal = xrows.find((r) => r[0] === 'Toplam')!;
   expect([Number(xtotal[6]), Number(xtotal[8])]).toEqual([7.06, 427.6]);

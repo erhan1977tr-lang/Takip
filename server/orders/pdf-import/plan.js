@@ -143,13 +143,13 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
   // ---- Teklif satırları ----
   const lines = [];
   const rows = [];
+  let pozFallback = false;
   parsed.rows.forEach((r, ri) => {
     const sourceRow = r.sno ?? ri + 1;
     const g = glassChoices.get(glassKey(r.description));
     const glass = g?.selected ? byId.get(g.selected) : null;
-    // POZ = PDF'in üst bölümündeki ana fabrika Sipariş No (karar 266): satırın kendi Poz sütunu, S.No ya da başlıktaki
-    // başka numara (ör. "121.001") kullanılmaz. Ana numara okunamazsa FACTORY_NO_MISSING / _AMBIGUOUS aktarmayı durdurur.
-    const poz = header.factoryNo ?? '';
+    const poz = (r.poz ?? '').slice(0, 60) || header.factoryNo || '';
+    if (!r.poz) pozFallback = true;
     const valid = [r.m2, r.totalM2, r.unitPrice, r.discount, r.amount].every((v) => v != null) && r.adet > 0;
     // Net birim fiyat: iskonto yoksa PDF'in birim fiyatı; varsa net tutar ÷ toplam m² (2 ondalık, yarı yukarı)
     const glassNet = !valid ? null : r.discount === 0 ? r.unitPrice : divRound(r.amount * 1000, r.totalM2);
@@ -187,6 +187,7 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     }
     rows.push({ r, ri, sourceRow, ops, glassNet, startIdx, endIdx: lines.length, poz, glass });
   });
+  if (pozFallback && header.factoryNo) warnings.push({ code: 'POZ_FALLBACK', factoryNo: header.factoryNo });
 
   // ---- Denetimler ----
   const a = checkSubtotal(parsed);
@@ -219,7 +220,7 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
       if (calc[k].kind === 'CAM') { takipGlass += toCents(totals[k].amount); takipM2 += Math.round(totals[k].metraj * 1000); } else takipOps += toCents(totals[k].amount);
     }
     return {
-      sourceRow, description: r.description, glassKey: glassKey(r.description), glassLabel: glass?.label ?? null, poz, shaped: shapeOf(r.description).shaped,
+      sourceRow, description: r.description, glassKey: glassKey(r.description), glassLabel: glass?.label ?? null, poz, pozFromPdf: !!r.poz, shaped: shapeOf(r.description).shaped,
       en: r.en, boy: r.boy, adet: r.adet, m2: r.m2, totalM2: r.totalM2, takipM2,
       unitPrice: r.unitPrice, discount: r.discount, netUnit: glassNet, amount: r.amount, takipAmount: takipGlass,
       ops: ops.map((o) => ({ name: o.name, kind: o.kind, qty: o.total, perPiece: o.perPiece, unitPrice: o.unitPrice, discount: o.discount, netUnit: o.net, amount: o.amount })),
