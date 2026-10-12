@@ -57,13 +57,21 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '6. Transferuri în afara SEE',
+        h: '6. Datele de utilizator Google',
+        p: [
+          "Când un administrator GKH conectează un cont Google la TAKİP (de exemplu Google Drive pentru copiile de rezervă), aplicația accesează doar datele necesare acestei funcții: adresa de e-mail a contului și fișierele din dosarul de copii de rezervă creat de aplicație (GKH_TAKIP_BACKUPS). Nu citim alte fișiere, e-mailuri, contacte sau alte date Google.",
+          "Datele Google sunt folosite exclusiv pentru a furniza această funcție. Nu le vindem, nu le transmitem terților, nu le folosim pentru publicitate și nu le folosim pentru a antrena modele de inteligență artificială. Tokenul de acces este stocat doar pe serverul nostru, accesibil numai administratorului de sistem, și poate fi retras oricând din https://myaccount.google.com/permissions; după retragere ștergem tokenul de acces.",
+          "Utilizarea și transferul către orice altă aplicație a informațiilor primite de la API-urile Google respectă Google API Services User Data Policy (https://developers.google.com/terms/api-services-user-data-policy), inclusiv cerințele de utilizare limitată (Limited Use).",
+        ],
+      },
+      {
+        h: '7. Transferuri în afara SEE',
         p: [
           'Unii furnizori (de exemplu Google) pot prelucra date în afara Spațiului Economic European. În aceste cazuri transferul se face pe baza garanțiilor prevăzute de GDPR (clauze contractuale standard sau decizia de adecvare UE-SUA).',
         ],
       },
       {
-        h: '7. Cât timp păstrăm datele',
+        h: '8. Cât timp păstrăm datele',
         li: [
           'Datele de cont și de comenzi: pe durata relației comerciale și ulterior cât este necesar pentru obligațiile legale.',
           'Documente contabile: 10 ani, conform legislației din România.',
@@ -72,19 +80,19 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '8. Securitate',
+        h: '9. Securitate',
         p: [
           'Conexiune criptată (HTTPS), parole și coduri stocate doar ca hash, acces pe roluri verificat pe server, deconectare automată după 30 de minute de inactivitate, scanare antivirus a fișierelor încărcate și copii de rezervă zilnice.',
         ],
       },
       {
-        h: '9. Drepturile dumneavoastră',
+        h: '10. Drepturile dumneavoastră',
         p: [
           `Aveți dreptul de acces, rectificare, ștergere, restricționare, portabilitate și opoziție. Pentru exercitarea lor scrieți-ne la ${CONTACT}. Aveți și dreptul de a depune o plângere la Autoritatea Națională de Supraveghere a Prelucrării Datelor cu Caracter Personal (ANSPDCP, www.dataprotection.ro).`,
         ],
       },
       {
-        h: '10. Modificări',
+        h: '11. Modificări',
         p: ['Putem actualiza această politică; versiunea curentă este întotdeauna publicată la https://takip.gkh.ro/privacy.'],
       },
     ],
@@ -136,13 +144,21 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '6. AEA dışına aktarım',
+        h: '6. Google kullanıcı verileri',
+        p: [
+          "Bir GKH yöneticisi TAKİP’e bir Google hesabı bağladığında (örneğin yedekler için Google Drive), uygulama yalnızca bu işlev için gereken verilere erişir: hesabın e-posta adresi ve uygulamanın oluşturduğu yedek klasöründeki (GKH_TAKIP_BACKUPS) dosyalar. Başka dosya, e-posta, kişi veya Google verisi okunmaz.",
+          "Google verileri yalnızca bu işlevi sağlamak için kullanılır. Satılmaz, üçüncü taraflara aktarılmaz, reklam için ve yapay zekâ modeli eğitmek için kullanılmaz. Erişim anahtarı yalnızca sunucumuzda, sadece sistem yöneticisinin erişebildiği bir yerde saklanır ve https://myaccount.google.com/permissions adresinden her zaman geri alınabilir; geri alındığında erişim anahtarı silinir.",
+          "Google API’lerinden alınan bilgilerin kullanımı ve başka bir uygulamaya aktarımı, sınırlı kullanım (Limited Use) şartları dahil Google API Services User Data Policy’ye (https://developers.google.com/terms/api-services-user-data-policy) uygundur.",
+        ],
+      },
+      {
+        h: '7. AEA dışına aktarım',
         p: [
           'Bazı sağlayıcılar (örneğin Google) verileri Avrupa Ekonomik Alanı dışında işleyebilir. Bu durumda aktarım GDPR’nin öngördüğü güvencelere (standart sözleşme maddeleri veya AB-ABD yeterlilik kararı) dayanır.',
         ],
       },
       {
-        h: '7. Saklama süreleri',
+        h: '8. Saklama süreleri',
         li: [
           'Hesap ve sipariş bilgileri: ticari ilişki süresince ve sonrasında yasal yükümlülükler için gerektiği kadar.',
           'Muhasebe belgeleri: Romanya mevzuatı gereği 10 yıl.',
@@ -151,19 +167,19 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '8. Güvenlik',
+        h: '9. Güvenlik',
         p: [
           'Şifreli bağlantı (HTTPS), şifre ve kodların yalnızca özet olarak saklanması, sunucuda denetlenen rol bazlı yetki, 30 dakika işlem yapılmayınca otomatik çıkış, yüklenen dosyalarda virüs taraması ve günlük yedek.',
         ],
       },
       {
-        h: '9. Haklarınız',
+        h: '10. Haklarınız',
         p: [
           `Erişim, düzeltme, silme, kısıtlama, veri taşınabilirliği ve itiraz haklarına sahipsiniz. Bunun için ${CONTACT} adresinden bize yazın. Romanya veri koruma otoritesine (ANSPDCP, www.dataprotection.ro) şikâyette bulunma hakkınız da vardır.`,
         ],
       },
       {
-        h: '10. Değişiklikler',
+        h: '11. Değişiklikler',
         p: ['Bu politika güncellenebilir; güncel sürüm her zaman https://takip.gkh.ro/privacy adresindedir.'],
       },
     ],
@@ -215,13 +231,21 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '6. Transfers outside the EEA',
+        h: '6. Google user data',
+        p: [
+          "When a GKH administrator connects a Google account to TAKİP (for example Google Drive for backups), the application accesses only the data that feature needs: the account’s e-mail address and the files in the backup folder the application creates (GKH_TAKIP_BACKUPS). We do not read any other files, e-mails, contacts or Google data.",
+          "Google user data is used only to provide that feature. We do not sell it, transfer it to third parties, use it for advertising or use it to train artificial intelligence models. The access token is stored only on our server, accessible to the system administrator only, and access can be revoked at any time at https://myaccount.google.com/permissions; after revocation we delete the token.",
+          "TAKİP’s use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy (https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
+        ],
+      },
+      {
+        h: '7. Transfers outside the EEA',
         p: [
           'Some providers (for example Google) may process data outside the European Economic Area. Such transfers rely on the safeguards provided by the GDPR (standard contractual clauses or the EU-US adequacy decision).',
         ],
       },
       {
-        h: '7. Retention',
+        h: '8. Retention',
         li: [
           'Account and order data: for the duration of the business relationship and afterwards as long as legal obligations require.',
           'Accounting documents: 10 years, as required by Romanian law.',
@@ -230,19 +254,19 @@ export const POLICY: Record<'ro' | 'tr' | 'en', Policy> = {
         ],
       },
       {
-        h: '8. Security',
+        h: '9. Security',
         p: [
           'Encrypted connection (HTTPS), passwords and codes stored only as hashes, role-based access checked on the server, automatic sign-out after 30 minutes of inactivity, antivirus scanning of uploaded files and daily backups.',
         ],
       },
       {
-        h: '9. Your rights',
+        h: '10. Your rights',
         p: [
           `You have the right of access, rectification, erasure, restriction, portability and objection. To exercise them, write to us at ${CONTACT}. You may also lodge a complaint with the Romanian data protection authority (ANSPDCP, www.dataprotection.ro).`,
         ],
       },
       {
-        h: '10. Changes',
+        h: '11. Changes',
         p: ['We may update this policy; the current version is always published at https://takip.gkh.ro/privacy.'],
       },
     ],
