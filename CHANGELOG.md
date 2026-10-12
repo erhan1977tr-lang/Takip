@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.78.1 — 12.10.2026
+
+- **Google OAuth doğrulaması:** politikada "Google kullanıcı verileri" bölümü (erişilen veri, yalnızca o işlev için kullanım,
+  paylaşım / reklam / yapay zekâ eğitimi yok, iznin geri alınması) ve Google API Services User Data Policy "Limited Use"
+  beyanı. `robots.txt` yalnızca `/privacy`'ye izin verir (diğer her yol kapalı kalır).
+
 ## 3.78.0 — 12.10.2026
 
 - **Gizlilik politikası:** herkese açık yeni sayfa **https://takip.gkh.ro/privacy** (oturum gerekmez; uygulama mağazası /
@@ -12,9 +18,6 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   giriş ve denetim kayıtları; yalnızca zorunlu çerezler; hizmet sağlayıcılar (Contabo, Google Drive yedeği, Google Cloud
   Translation, FGO, SMTP); saklama süreleri (giriş kaydı 365 gün, yedek 14 gün, muhasebe belgeleri 10 yıl). Metin:
   `app/privacy/content.ts` — yeni veri, dış hizmet ya da saklama süresi eklenince üç dil birlikte güncellenir.
-- **Google OAuth doğrulaması:** politikada "Google kullanıcı verileri" bölümü (erişilen veri, yalnızca o işlev için kullanım,
-  paylaşım / reklam / yapay zekâ eğitimi yok, iznin geri alınması) ve Google API Services User Data Policy "Limited Use"
-  beyanı. `robots.txt` yalnızca `/privacy`'ye izin verir (diğer her yol kapalı kalır).
 - Giriş ve ilk giriş kartının altına "Gizlilik politikası" bağlantısı eklendi.
 
 ## 3.77.0 — 11.10.2026
