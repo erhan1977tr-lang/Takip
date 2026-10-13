@@ -148,6 +148,9 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   const line1 = admin.locator('#taslak tr[data-line="1"]');
   await expect(line1.getByLabel('Birim alış fiyatı 1', { exact: true })).toHaveValue('2,75');
   await expect(line1.locator('[data-line-total]')).toHaveText('33,00 EUR');
+  // Taslak düzenleme ekranında Renk/RAL sütunu yok (karar 272)
+  await expect(admin.locator('#taslak th', { hasText: /Renk/ })).toHaveCount(0);
+  await expect(admin.locator('#taslak .color-input')).toHaveCount(0);
   // Fiyatı olmayan ürün: eklenebilir, "Fiyat yok" (uydurulmaz)
   await admin.locator('#taslak').getByRole('button', { name: '+ Satır ekle' }).click();
   const line2 = admin.locator('#taslak tr[data-line="2"]');
@@ -179,6 +182,8 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   await expect(admin.locator('[data-supplier-status="GONDERIM_BEKLIYOR"]')).toBeVisible();
   await expect(admin.locator('#taslak')).toHaveCount(0); // kesin revizyon düzenlenmez
   await expect(admin.locator('#gonderilen tr[data-final-line="MC12"]')).toContainText('33,00 EUR');
+  await expect(admin.locator('#gonderilen th', { hasText: /Renk/ })).toHaveCount(0); // detay ekranında da yok (karar 272)
+  await expect(admin.locator('#gonderilen th', { hasText: 'Birim alış fiyatı' })).toHaveCount(1);
   // Gönderilmeden "Gönderildi" görünmez; işçi bir kez gönderir
   worker();
   await admin.reload();
@@ -192,7 +197,7 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   expect(m.html).toContain('Merhaba,');
   expect(m.html).toContain('Aşağıda detayları bulunan siparişimizi bilgilerinize sunarız.');
   expect(m.html).toContain('Ürün Kodu');
-  // Tablo yalnızca dört sütun (karar 271): Ürün Kodu · Açıklama · Miktar · Birim
+  // Fiyatsız satır var → fiyat sütunları yok (karar 181); Renk/RAL hiç yok (karar 271): Ürün Kodu · Açıklama · Miktar · Birim
   const thead = /<thead>([\s\S]*?)<\/thead>/.exec(m.html)?.[1] ?? '';
   expect([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1])).toEqual(['Ürün Kodu', 'Açıklama', 'Miktar', 'Birim']);
   expect(m.html).not.toContain('Renk/RAL');

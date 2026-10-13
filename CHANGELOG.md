@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.81.1 — 13.10.2026
+
+Tedarikçi siparişleri — iki düzeltme (karar 272). Migration yok.
+
+- **E-posta fiyatları geri geldi:** 3.81.0'da yanlışlıkla kaldırılan Birim Fiyat, Toplam ve Genel Toplam, 3.81.0 öncesi
+  koşullu kuralla yeniden yazılır (her satırın fiyatı varsa gösterilir, fiyatsız satır varsa tamamen kaldırılır).
+  Renk/RAL e-postada yine yok. Logo, sipariş bilgileri, not ve ekler aynı.
+- **Renk/RAL sütunu** taslak düzenleme ve sipariş detay (gönderilen sürüm) ekranlarından da kaldırıldı. Kayıtlı renk
+  değerleri silinmez; taslak kaydedilirken mevcut renk korunur.
+
 ## 3.81.0 — 13.10.2026
 
 Satın Alma — Renk/RAL sütunu kaldırıldı (karar 271). Migration yok.

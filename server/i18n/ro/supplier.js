@@ -165,7 +165,7 @@ export default {
       pickProduct: 'Alegeți produsul',
       ownProducts: 'Produsele acestui furnizor',
       otherProducts: 'Alte produse',
-      col: { product: 'Produs', code: 'Cod produs', description: 'Descriere', color: 'Culoare/RAL', qty: 'Cantitate', unit: 'Unitate', price: 'Preț unitar de achiziție', total: 'Total' },
+      col: { product: 'Produs', code: 'Cod produs', description: 'Descriere', qty: 'Cantitate', unit: 'Unitate', price: 'Preț unitar de achiziție', total: 'Total' },
       catalogPrice: 'Preț de achiziție înregistrat',
       useCatalog: 'Folosește prețul înregistrat',
       noPrice: 'Fără preț',

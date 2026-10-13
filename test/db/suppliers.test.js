@@ -240,9 +240,9 @@ dbTest('işçi: başarılı gönderim → "Gönderildi"; tek e-posta (Türkçe k
   assert.equal(m.to, sup.email);
   assert.equal(m.from, 'GKH Trading Invest SRL <siparis@gkh.test>');
   assert.equal(m.subject, `GKH Trading Invest – Sipariş ${o.orderNo} – Başarılı Tedarik`);
-  // Tablo yalnızca Ürün Kodu · Açıklama · Miktar · Birim (karar 271); renk ve fiyat veritabanında kalır, e-postaya yazılmaz
-  assert.ok(m.html.includes('Merhaba,') && m.html.includes('MC12'));
-  for (const s of ['Renk/RAL', 'RAL 7016', 'Birim Fiyat', '25,00 EUR', 'Genel Toplam']) assert.ok(!m.html.includes(s) && !m.text.includes(s), s);
+  // Fiyatlı sipariş: Birim Fiyat · Toplam · Genel Toplam yazılır (karar 272); Renk/RAL yazılmaz, renk veritabanında kalır (karar 271)
+  assert.ok(m.html.includes('Merhaba,') && m.html.includes('Birim Fiyat') && m.html.includes('25,00 EUR') && m.html.includes('Genel Toplam'));
+  for (const s of ['Renk/RAL', 'RAL 7016']) assert.ok(!m.html.includes(s) && !m.text.includes(s), s);
   const line = await db.supplierOrderLine.findFirstOrThrow({ where: { revision: { orderId: id } } });
   assert.deepEqual([line.color, String(line.unitPrice)], ['RAL 7016', '2.5']);
   assert.ok(m.text.includes('Siparişimizin tarafınıza ulaştığını ve tahmini yükleme tarihini teyit etmenizi rica ederiz.'));

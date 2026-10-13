@@ -155,7 +155,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
             <table>
               <thead>
                 <tr>
-                  <th>{t('supplier.order.editor.col.code')}</th><th>{t('supplier.order.editor.col.description')}</th><th>{t('supplier.order.editor.col.color')}</th>
+                  <th>{t('supplier.order.editor.col.code')}</th><th>{t('supplier.order.editor.col.description')}</th>
                   <th className="num">{t('supplier.order.editor.col.qty')}</th><th>{t('supplier.order.editor.col.unit')}</th>
                   <th className="num">{t('supplier.order.editor.col.price')}</th><th className="num">{t('supplier.order.editor.col.total')}</th>
                 </tr>
@@ -163,7 +163,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               <tbody>
                 {final.lines.map((l) => (
                   <tr key={l.id} data-final-line={l.code}>
-                    <td className="mono">{l.code}</td><td>{l.description}</td><td>{l.color || '—'}</td>
+                    <td className="mono">{l.code}</td><td>{l.description}</td>
                     <td className="num">{l.qty}</td><td>{unitLabel(l.unitCode, locale)}</td>
                     <td className="num nowrap">{l.unitPrice != null ? `${fmtDec(l.unitPrice.toString(), 4)} ${order.currency}` : <Badge tone="warn">{t('supplier.order.editor.noPrice')}</Badge>}</td>
                     <td className="num nowrap">{l.lineTotal != null ? `${fmtNum(l.lineTotal.toString())} ${order.currency}` : '—'}</td>
@@ -172,7 +172,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={6} className="num"><b>{t('supplier.order.editor.grandTotal')}</b></td>
+                  <td colSpan={5} className="num"><b>{t('supplier.order.editor.grandTotal')}</b></td>
                   <td className="num nowrap" data-final-total><b>{final.total != null ? `${fmtNum(final.total.toString())} ${order.currency}` : '—'}</b></td>
                 </tr>
               </tfoot>

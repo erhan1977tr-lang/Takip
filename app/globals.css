@@ -850,7 +850,6 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .supplier-lines td { vertical-align: top; }
 .supplier-lines select { min-width: 200px; }
 .supplier-lines .text-input { min-width: 140px; }
-.supplier-lines .color-input { width: 110px; }
 .supplier-lines tfoot td { border-top: 2px solid var(--border); }
 .approve-box { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 /* Profil kataloğu → ürün formu: alış bilgisi bölümü (yalnızca yönetici) */

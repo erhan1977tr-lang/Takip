@@ -99,13 +99,13 @@ export function SupplierOrderEditor(props: {
           <table className="supplier-lines">
             <thead>
               <tr>
-                <th>#</th><th>{m.editor.col.product}</th><th>{m.editor.col.description}</th><th>{m.editor.col.color}</th>
+                <th>#</th><th>{m.editor.col.product}</th><th>{m.editor.col.description}</th>
                 <th className="num">{m.editor.col.qty}</th><th>{m.editor.col.unit}</th><th className="num">{m.editor.col.price}</th>
                 <th className="num">{m.editor.col.total}</th><th />
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={9} className="empty">{m.editor.empty}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} className="empty">{m.editor.empty}</td></tr>}
               {rows.map((r, i) => {
                 const p = byId.get(r.productId);
                 const n = i + 1;
@@ -122,7 +122,6 @@ export function SupplierOrderEditor(props: {
                       {p?.otherSupplier && <div className="muted small">{interpolate(m.editor.otherSupplier, { name: p.otherSupplier })}</div>}
                     </td>
                     <td><input value={r.description} maxLength={200} className="text-input" placeholder={p?.nameTr ?? ''} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={`${m.editor.col.description} ${n}`} /></td>
-                    <td><input value={r.color} maxLength={40} className="color-input" onChange={(e) => update(r.key, { color: e.target.value })} aria-label={`${m.editor.col.color} ${n}`} /></td>
                     <td className="num">
                       <input value={r.qty} inputMode="numeric" maxLength={6} className="qty-input"
                         onChange={(e) => update(r.key, { qty: e.target.value })} aria-label={`${m.editor.col.qty} ${n}`} aria-invalid={!!r.qty && !validQty(r.qty)} />
@@ -151,7 +150,7 @@ export function SupplierOrderEditor(props: {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={7} className="num"><b>{m.editor.grandTotal}</b></td>
+                <td colSpan={6} className="num"><b>{m.editor.grandTotal}</b></td>
                 <td className="num nowrap" data-grand-total><b>{fmt(totals.total)} {currency}</b></td>
                 <td />
               </tr>

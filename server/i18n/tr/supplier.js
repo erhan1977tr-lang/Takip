@@ -165,7 +165,7 @@ export default {
       pickProduct: 'Ürün seçin',
       ownProducts: 'Bu tedarikçinin ürünleri',
       otherProducts: 'Diğer ürünler',
-      col: { product: 'Ürün', code: 'Ürün Kodu', description: 'Açıklama', color: 'Renk/RAL', qty: 'Miktar', unit: 'Birim', price: 'Birim alış fiyatı', total: 'Toplam' },
+      col: { product: 'Ürün', code: 'Ürün Kodu', description: 'Açıklama', qty: 'Miktar', unit: 'Birim', price: 'Birim alış fiyatı', total: 'Toplam' },
       catalogPrice: 'Kayıtlı alış fiyatı',
       useCatalog: 'Kayıtlı fiyatı kullan',
       noPrice: 'Fiyat yok',
