@@ -27,7 +27,7 @@ import { OfferEditor, type EditorPricing } from './OfferEditor';
 import { ProfileOrderView } from './ProfileOrderView';
 import { loadPricing, pricingForCustomer, pricingForUser } from '@/server/pricing/tables.js';
 import { loadOf, shipDay } from '@/lib/loading';
-import { glassLabel, itemGlassName } from '@/server/catalog/glass.js';
+import { glassLabel, itemGlassName, orderGlassTypes } from '@/server/catalog/glass.js';
 import {
   ALLOWED_EXT, STAGES, atOfferPrice, availableActions, drawingFlags, isSalesCrate, isViewable, offerLineTotals, offerSubmitter, offerTotals, offerNeedsCheck, productionBlockers, slaInfo, stageIndex,
 } from '@/server/orders/rules.js';
@@ -463,15 +463,15 @@ export default async function OrderPage({
           })),
         ]}
       >
-        {/* "İstenen camlar" satış ve yönetici görünümünde gösterilmez (Paket 4; veri durur — teklif tablosu zaten bu camlarla açılır) */}
-        {!salesView && !drawerView && !userCan(user, 'OFFER_SEND') && order.items.length > 0 && (
-          <>
+        {/* Cam tipleri (karar 269): yalnızca adlar, aynı ad bir kez — ölçü, adet, m², fiyat yok. Çizim ekibi görünümü değişmedi
+            (cam / ticari bölümler orada gösterilmez). Veri: siparişin kalemleri (OrderItem). */}
+        {!drawerView && order.items.length > 0 && (
+          <div data-glass-types>
             <h3 className="sub-title">{t('order.info.requestedGlass')}</h3>
             <ul className="plain-list">
-              {/* Adet yalnızca girilmişse (eski siparişler): müşteri formunda cam adedi yok, 0 = belirtilmedi (karar 160) */}
-              {order.items.map((it) => <li key={it.id}>{itemGlassName(it, locale) || t('order.info.glassFallback')}{it.camAdedi > 0 ? ` × ${it.camAdedi}` : ''}</li>)}
+              {orderGlassTypes(order.items, locale, t('order.info.glassFallback')).map((name) => <li key={name}>{name}</li>)}
             </ul>
-          </>
+          </div>
         )}
       </OrderInfo>
 

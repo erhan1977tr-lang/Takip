@@ -14,7 +14,7 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   await expect(sales.locator('.offer-table')).toBeVisible();
 
-  // Satış: işlemler → müşteri dosyaları → notlar → sipariş bilgileri → teklif tablosu; "İstenen camlar" ve "Sandıklar" yok
+  // Satış: işlemler → müşteri dosyaları → notlar → sipariş bilgileri → teklif tablosu; "Sandıklar" yok; cam tipi Sipariş Bilgileri altında (karar 269)
   const order = async (page: typeof sales) => {
     const heads = await page.locator('main h2').allTextContents();
     return (h: string) => heads.findIndex((x) => x.includes(h));
@@ -25,7 +25,8 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   expect(pos('Notlar')).toBeLessThan(pos('Sipariş bilgileri'));
   expect(pos('Sipariş bilgileri')).toBeLessThan(pos('Teklif tablosu'));
   expect(pos('Sandıklar')).toBe(-1);
-  await expect(sales.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(sales.locator('#bilgiler [data-glass-types] li')).toHaveCount(1);
+  await expect(sales.locator('#bilgiler [data-glass-types]')).not.toContainText('×');
 
   // Aynı camdan "+": hemen altına, aynı cam adıyla yeni satır
   const desc = sales.getByLabel('Açıklama', { exact: true });
@@ -68,14 +69,14 @@ test('sipariş sayfası: bölüm sırası ve teklif tablosu araçları', async (
   await expect(sales.getByLabel('Adet', { exact: true })).toHaveValue('1'); // siparişte adet yok → 1 (karar 160)
   await expect(sales.getByLabel('CNC fiyatı')).toHaveCount(0);
 
-  // Yönetici: aynı sıra; "İstenen camlar" ve "Sandıklar" yöneticinin sipariş ekranında da yok (fonksiyonel paket 4)
+  // Yönetici: aynı sıra; "Sandıklar" yöneticinin sipariş ekranında da yok (fonksiyonel paket 4); cam tipi görünür (karar 269)
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${id}`);
   pos = await order(admin);
   expect(pos('Müşteri sipariş dosyaları')).toBeLessThan(pos('Notlar'));
   expect(pos('Notlar')).toBeLessThan(pos('Sipariş bilgileri'));
   await expect(admin.locator('#bilgiler')).toBeVisible();
-  await expect(admin.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(admin.locator('#bilgiler [data-glass-types] li')).toHaveCount(1);
   expect(pos('Sandıklar')).toBe(-1);
 });
 

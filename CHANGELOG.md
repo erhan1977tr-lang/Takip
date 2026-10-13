@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.80.0 — 13.10.2026
+
+Üç düzeltme (karar 269). Migration yok.
+
+- **Çizim Ekibi — revizyon talepleri:** müşterinin revizyon talebi, sipariş başka bir çizimciye (ya da yöneticiye) atanmış
+  olsa da çizim ekibinin "Sıra bende → Yapılacak çizimler" bölümünde görünür — yöneticinin Çizim Paneli'ndeki listeyle aynı.
+  Satır aynı kırmızı "Revizyon istendi" görünümüyle; SLA bölümü, atama ve "Benim çizimlerim" değişmedi.
+- **Sipariş Bilgileri — cam tipi:** cam tipleri yeniden Sipariş Bilgileri kartının altında (yönetici ve satış dahil), yalnızca
+  adlarıyla, aynı ad bir kez; adet / ölçü / m² / fiyat yok. Çizim ekibi görünümü değişmedi.
+- **Yönetici menüsü sırası:** Operasyon, Çizim Ekibi, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar, Hesap
+  Ayarları (alt menüler ve bağlantılar aynı; masaüstü ve telefon aynı listeden).
+
 ## 3.79.1 — 12.10.2026
 
 Tek geri düzeltme (karar 268). Migration yok.

@@ -947,6 +947,12 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
     - **Sales export (#267, replaces the price-less part of #265):** `teklif/route.ts` — `isSales` (OFFER_PREPARE without OFFER_SEND) exports `currentOffer` as PDF and Excel with `price = unitPrice` from the role-sanitized lines (`offerPrices`: no customer price, no Admin crate-fee lines), no FX note, masked firm name. Never read `offerPrice` or unsanitized lines for a Sales file. Buttons: `salesExport` in `OfferEditor` (sales mode) and `OfferView`. Admin / customer exports are unchanged.
     - Tests: `test/pdf-import.test.js`, `test/offer-export.test.js`, `test/db/pdf-import.test.js`, `e2e/55-pdf-aktar.spec.ts`.
 
+141. **Drawer revision list, glass types, admin menu order (3.80.0, decisions.md #269).**
+    - **Revision requests:** in `buildQueues` (`server/orders/queues.js`) a `REVIZYON_ISTENDI` order enters every Drawing user's `drawingJobs` whoever it is assigned to (same list as the Admin's `allDrawers` panel); other drawing work keeps "assigned to me or unassigned". Assignment (`assignedDrawerId`), "Benim çizimlerim" and the SLA section are unchanged; the row keeps the shared `row-alert` style.
+    - **Glass types:** the order page renders `orderGlassTypes` (`server/catalog/glass.js`: `OrderItem` names only, first-seen order, duplicates removed) inside `OrderInfo` (`[data-glass-types]`) for every role except the Drawing view; never add quantity, dimensions, m² or prices there (replaces the "not for Admin / Sales" part of #78).
+    - **Admin menu:** `ADMIN_NAV` (`lib/roles.ts`) section order Operasyon → Çizim Ekibi → Muhasebe → Satın Alma → Profil Siparişleri → Kişiler → Tanımlar → Hesap Ayarları; links and their inner order unchanged; the assistant's menu is derived from it.
+    - Tests: `test/queues.test.js`, `test/glass-types.test.js`, `test/admin-fixes.test.js`, `e2e/10b-…`, `e2e/12-…`, `e2e/38-…`.
+
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
 - UI strings only via `server/i18n/{tr,ro}/*.js` — never hard-code visible text. Both locales must have the same keys (enforced by `test/i18n.test.js`).

@@ -236,6 +236,24 @@ export const MAX_GLASS_QTY = 9999;
 
 /** Sipariş satırındaki camın kullanıcının dilindeki adı (anlık kopyadan) */
 export const itemGlassName = (it, locale) => (locale === 'ro' ? it.glassNameRo || it.glassName : it.glassName) || null;
+/**
+ * Sipariş Bilgileri altındaki cam tipleri (karar 269): yalnızca cam tipi ADLARI, ilk görülme sırasıyla, aynı ad bir kez
+ * (boşluk / büyük-küçük harf farkı aynı sayılır). Ölçü, adet, m², fiyat yok. Adı olmayan kalem `fallback` ile bir kez.
+ * @param {{ glassName?: string | null, glassNameRo?: string | null }[]} items  siparişin kalemleri (OrderItem — mevcut veri)
+ * @param {string} locale
+ * @param {string} fallback
+ * @returns {string[]}
+ */
+export function orderGlassTypes(items, locale, fallback) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items ?? []) {
+    const name = (itemGlassName(it, locale) ?? '').trim() || fallback;
+    const key = name.replace(/\s+/g, ' ').toLocaleLowerCase(locale === 'ro' ? 'ro' : 'tr');
+    if (!seen.has(key)) { seen.add(key); out.push(name); }
+  }
+  return out;
+}
 
 /**
  * Tek camı ekler ya da düzenler (yönetici sayfası). Denetim kaydına önce/sonra yazılır.

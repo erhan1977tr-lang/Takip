@@ -126,8 +126,10 @@ function buildQueues(rows, can, now, profiles) {
     out.push({ key: 'offerCheck', rows: active.filter(needsOfferCheck) });
   }
   if (can.drawing && !can.review) {
-    // Çizilecekler: bana atanmış ya da henüz kimseye atanmamış işler
-    const mineOrOpen = (o) => can.allDrawers || !o.assignedDrawerId || o.assignedDrawerId === can.userId;
+    // Çizilecekler: bana atanmış ya da henüz kimseye atanmamış işler. Müşterinin revizyon talebi (REVIZYON_ISTENDI) ise
+    // kime atanmış olursa olsun bütün çizim ekibinin "Yapılacak çizimler"inde görünür — yönetici panelindeki (allDrawers)
+    // ile aynı liste (karar 269; atama değişmez: işi kimin üstlendiği assignedDrawerId'de kalır, "Benim çizimlerim" aynen).
+    const mineOrOpen = (o) => can.allDrawers || !o.assignedDrawerId || o.assignedDrawerId === can.userId || o.drawingTrack === 'REVIZYON_ISTENDI';
     out.push({ key: 'drawingJobs', rows: prep.filter((o) => DRAWING_WORK.includes(o.drawingTrack) && mineOrOpen(o)) });
   }
   if (can.review || can.drawing) {

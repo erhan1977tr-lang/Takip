@@ -208,3 +208,17 @@ test('teklif kontrolü: müşterinin DWG/DXF karar kaydı ilk çizimi "ikinci" y
   // Karar bekleyen düzeltilmiş müşteri dosyası çizim değildir
   assert.equal(check([rec(1, 'REVIZYON_ISTENDI', -20), rec(2, 'BEKLIYOR', -1)]), 0);
 });
+
+test('kuyruk (karar 269): müşterinin revizyon talebi başka çizimciye (ya da yöneticiye) atanmış olsa da çizim ekibinin "Yapılacak çizimler"inde — yönetici panelindeki listeyle aynı; SLA riskinde de kalır; atama ve "Benim çizimlerim" değişmez', () => {
+  const rev = row({ drawingTrack: 'REVIZYON_ISTENDI', assignedDrawerId: 'yonetici', slaDeadline: new Date(NOW - 1_800_000) });
+  const otherWork = row({ drawingTrack: 'YAPILIYOR', assignedDrawerId: 'yonetici' });
+  const heldRev = row({ drawingTrack: 'REVIZYON_ISTENDI', assignedDrawerId: 'yonetici', onHold: true });
+  const list = [rev, otherWork, heldRev, rows.profil];
+  const drawer = queuesFor(list, { review: false, send: false, drawing: true, userId: 'cizimci-1' }, NOW);
+  const panel = queuesFor(list, { review: false, send: false, drawing: true, allDrawers: true }, NOW);
+  assert.deepEqual(ids(drawer, 'drawingJobs'), [rev.id], 'revizyon talebi görünür; başkasının devam eden işi görünmez');
+  assert.ok(ids(panel, 'drawingJobs').includes(rev.id), 'yönetici panelinde de');
+  assert.ok(ids(drawer, 'sla').includes(rev.id), 'SLA riski / gecikenler bölümünde kalır');
+  assert.deepEqual(ids(drawer, 'myDrawings'), [], 'atama değişmez: başkasının işi "Benim çizimlerim"e girmez');
+  assert.equal(rev.assignedDrawerId, 'yonetici');
+});

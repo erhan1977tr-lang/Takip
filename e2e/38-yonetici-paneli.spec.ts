@@ -5,7 +5,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, 
 //  - yöneticinin sandık bedeli: yöneticinin ve müşterinin teklifinde görünür ve toplama girer; satış görmez (sayfanın ham
 //    yanıtında da yok; satışın kendi "+ Sandık parası" satırı ayrıdır — karar 214); teklif müşteriye gidince bildirim
 //    yalnızca müşteriye (satışa zil yok)
-//  - yöneticinin sipariş ekranında "İstenen camlar" ve "Sandıklar" bölümü yok; sandık kaydı ve Yüklemeler görünümü değişmez
+//  - yöneticinin sipariş ekranında "Sandıklar" bölümü yok; cam tipi yalnızca adıyla görünür (karar 269); sandık kaydı ve Yüklemeler görünümü değişmez
 //  - müşterideki teklifin fiyatı: yeni sürüm (eski sürüm durur), müşteri yeni fiyatı ancak açık gönderimden sonra görür,
 //    değişiklik yöneticinin "Hareketler"inde (kim, ne zaman, sürüm, eski → yeni); satış görmez
 //  - mali kilit: FGO belgesi kesilmiş siparişte "Teklifi güncelle" yerine gerekçe; sipariş silinmez (1. adımda neden)
@@ -99,7 +99,7 @@ test('sandık bedeli yöneticinin satırıdır: yönetici ve müşteri görür, 
   await Promise.all([cust.context().close(), sales.context().close(), admin.context().close()]);
 });
 
-test('yöneticinin sipariş bilgileri sade: "İstenen camlar" ve "Sandıklar" yok; sandık kaydı ve Yüklemeler görünümü değişmez', async ({ browser }) => {
+test('yöneticinin sipariş bilgileri sade: "Sandıklar" yok, cam tipi yalnızca adıyla (karar 269); sandık kaydı ve Yüklemeler görünümü değişmez', async ({ browser }) => {
   const db = await prisma();
   const order = await db.order.findUniqueOrThrow({ where: { id: orderId } });
   const day = (order.actualShipDate ?? order.estimatedShipDate)!.toISOString().slice(0, 10);
@@ -113,7 +113,8 @@ test('yöneticinin sipariş bilgileri sade: "İstenen camlar" ve "Sandıklar" yo
   const info = admin.locator('#bilgiler');
   await expect(info).toBeVisible();
   await expect(info).toContainText(orderNo);
-  await expect(admin.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(admin.locator('#bilgiler [data-glass-types]')).toHaveCount(1);
+  await expect(admin.locator('#bilgiler [data-glass-types]')).not.toContainText('×');
   await expect(admin.locator('#sandik')).toHaveCount(0);
   // Sipariş bilgileri dikey düzende (etiket | değer satırları) kalır
   expect(await info.locator('dl.order-info > div').count()).toBeGreaterThanOrEqual(5);

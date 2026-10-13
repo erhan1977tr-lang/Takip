@@ -15,21 +15,14 @@ export type NavItem =
   | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number }
   | { section: string; count?: number; countLabel?: string };
 
+// Ana bölüm sırası (karar 269): Operasyon, Çizim Ekibi, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
+// Hesap Ayarları — her bölüm kendi alt menüleriyle, alt menülerin iç sırası değişmeden.
 const ADMIN_NAV: NavDef[] = [
   { section: 'nav.operations' },
   { href: '/siparisler', key: 'nav.orders' },
   { href: '/teklifler', key: 'nav.offers' },
   { href: '/admin/kararlar', key: 'nav.alerts' },
   { href: '/yuklemeler', key: 'nav.loadings' },
-  // Profil siparişleri (Yönetici Paneli Paketi 1, karar 216): profil tabloları ve profil tanımları tek bölümde. Bölüm adının
-  // yanında yeni profil siparişi sayacı (fiyat bekleyen — server/orders/queues.js → newProfileCount; telefonda bağlantıda)
-  { section: 'nav.profileOrders', count: 'profileNew' },
-  { href: '/siparisler?view=profil', key: 'nav.profileOrderList', mobileCount: 'profileNew' },
-  { href: '/admin/profil-katalogu', key: 'nav.profileCatalog' },
-  // Profil hesaplayıcısının sistemleri, kalemleri ve cam kalınlıkları (Paket 5, karar 175)
-  { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
-  { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
-  { href: '/admin/stok', key: 'nav.stock' },
   // Çizim ekibinin paneli (aynı sayfa, aynı kuyruklar; yönetici tam firma adlarını görür) — siparisler/page.tsx
   { section: 'nav.drawingTeam' },
   { href: '/siparisler?panel=cizim', key: 'nav.drawingPanel' },
@@ -43,6 +36,15 @@ const ADMIN_NAV: NavDef[] = [
   { section: 'nav.purchasing' },
   { href: '/siparisler/tedarik', key: 'nav.supplierOrders' },
   { href: '/admin/muhasebe/tedarikciler', key: 'nav.supplierAccounts' },
+  // Profil siparişleri (Yönetici Paneli Paketi 1, karar 216): profil tabloları ve profil tanımları tek bölümde. Bölüm adının
+  // yanında yeni profil siparişi sayacı (fiyat bekleyen — server/orders/queues.js → newProfileCount; telefonda bağlantıda)
+  { section: 'nav.profileOrders', count: 'profileNew' },
+  { href: '/siparisler?view=profil', key: 'nav.profileOrderList', mobileCount: 'profileNew' },
+  { href: '/admin/profil-katalogu', key: 'nav.profileCatalog' },
+  // Profil hesaplayıcısının sistemleri, kalemleri ve cam kalınlıkları (Paket 5, karar 175)
+  { href: '/admin/profil-katalogu/hesaplama', key: 'nav.profileCalc' },
+  { href: '/admin/profil-fiyatlari', key: 'nav.profilePrices' },
+  { href: '/admin/stok', key: 'nav.stock' },
   { section: 'nav.people' },
   { href: '/admin/users', key: 'nav.users' },
   { href: '/admin/firms', key: 'nav.firms' },

@@ -290,17 +290,18 @@ test('eski çok camlı sipariş normal açılır; satış teklif tablosunda "+ C
   const cust = await as(browser, CUSTOMER, CUST_PW);
   expect((await cust.goto(orderUrl))?.status()).toBe(200);
   await expect(cust.locator('.plain-list li', { hasText: GLASS })).toHaveText(GLASS);
-  await expect(cust.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toBeVisible(); // eski kayıtta adet varsa gösterilir
+  // Yalnızca cam tipi adları (karar 269): eski kayıttaki adet de gösterilmez; iki farklı cam tipi ikisi de görünür
+  await expect(cust.locator('[data-glass-types] li')).toHaveText([GLASS, 'ESKİ İKİNCİ CAM — FÜME']);
   await cust.goto('/siparisler');
   await expect(cust.getByRole('link', { name: orderNo, exact: true })).toBeVisible();
   await cust.context().close();
 
-  // Yönetici: sipariş açılır; "İstenen camlar" yöneticinin sipariş ekranında gösterilmez (fonksiyonel paket 4) — sipariş
-  // satırları kayıtta durur ve teklif tablosu yine onlarla açılır
+  // Yönetici: sipariş açılır; cam tipleri Sipariş Bilgileri altında yalnızca adlarıyla (karar 269 — fonksiyonel paket 4'te
+  // kaldırılmıştı); adet / ölçü / fiyat yok
   const admin = await as(browser, ADMIN, ADMIN_PW);
   expect((await admin.goto(orderUrl))?.status()).toBe(200);
   await expect(admin.locator('#bilgiler')).toBeVisible();
-  await expect(admin.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(admin.locator('#bilgiler [data-glass-types] li')).toHaveText([GLASS, 'ESKİ İKİNCİ CAM — FÜME']);
   await expect(admin.getByText('ESKİ İKİNCİ CAM — FÜME × 6')).toHaveCount(0);
   await admin.context().close();
 
