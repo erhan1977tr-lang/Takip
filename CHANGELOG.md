@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.80.1 — 13.10.2026
+
+Tek düzeltme (karar 270). Migration yok.
+
+- **Çizim Ekibi — cam tipi:** çizim ekibinin sipariş sayfasında da Sipariş Bilgileri altında "İstenen camlar" (yalnızca
+  cam tipi adları, tekrarsız; adet / ölçü / m² / fiyat yok). Öteki rollerin görünümü değişmedi.
+
 ## 3.80.0 — 13.10.2026
 
 Üç düzeltme (karar 269). Migration yok.

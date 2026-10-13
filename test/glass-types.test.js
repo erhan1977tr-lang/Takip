@@ -19,10 +19,11 @@ test('cam tipleri: yalnızca adlar, ilk görülme sırasıyla, aynı ad bir kez 
   assert.ok(!orderGlassTypes(items, 'tr', 'Cam').some((n) => /×|\d+\s*adet|m²/.test(n)));
 });
 
-test('sayfa: cam tipleri Sipariş Bilgileri kartının içinde, çizim ekibi dışındaki rollere; adet yazılmaz', () => {
+test('sayfa (karar 270): cam tipleri Sipariş Bilgileri kartının içinde, çizim ekibi dahil bütün rollere; adet yazılmaz', () => {
   const src = fs.readFileSync(new URL('../app/(panel)/siparisler/[id]/page.tsx', import.meta.url), 'utf8');
   const block = src.slice(src.indexOf('<OrderInfo'), src.indexOf('</OrderInfo>'));
-  assert.match(block, /\{!drawerView && order\.items\.length > 0 && \(/);
+  assert.match(block, /\{order\.items\.length > 0 && \(/);
+  assert.ok(!/drawerView && order\.items/.test(block), 'çizim ekibi görünümü de cam tiplerini gösterir');
   assert.match(block, /orderGlassTypes\(order\.items, locale, t\('order\.info\.glassFallback'\)\)/);
   assert.ok(!/camAdedi/.test(block), 'adet gösterilmez');
 });

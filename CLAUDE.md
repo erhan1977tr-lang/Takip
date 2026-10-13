@@ -949,7 +949,7 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
 
 141. **Drawer revision list, glass types, admin menu order (3.80.0, decisions.md #269).**
     - **Revision requests:** in `buildQueues` (`server/orders/queues.js`) a `REVIZYON_ISTENDI` order enters every Drawing user's `drawingJobs` whoever it is assigned to (same list as the Admin's `allDrawers` panel); other drawing work keeps "assigned to me or unassigned". Assignment (`assignedDrawerId`), "Benim çizimlerim" and the SLA section are unchanged; the row keeps the shared `row-alert` style.
-    - **Glass types:** the order page renders `orderGlassTypes` (`server/catalog/glass.js`: `OrderItem` names only, first-seen order, duplicates removed) inside `OrderInfo` (`[data-glass-types]`) for every role except the Drawing view; never add quantity, dimensions, m² or prices there (replaces the "not for Admin / Sales" part of #78).
+    - **Glass types:** the order page renders `orderGlassTypes` (`server/catalog/glass.js`: `OrderItem` names only, first-seen order, duplicates removed) inside `OrderInfo` (`[data-glass-types]`, heading "İstenen camlar") for EVERY role, the Drawing view included (3.80.1, decisions.md #270); never add quantity, dimensions, m² or prices there (replaces the "not for Admin / Sales" part of #78).
     - **Admin menu:** `ADMIN_NAV` (`lib/roles.ts`) section order Operasyon → Çizim Ekibi → Muhasebe → Satın Alma → Profil Siparişleri → Kişiler → Tanımlar → Hesap Ayarları; links and their inner order unchanged; the assistant's menu is derived from it.
     - Tests: `test/queues.test.js`, `test/glass-types.test.js`, `test/admin-fixes.test.js`, `e2e/10b-…`, `e2e/12-…`, `e2e/38-…`.
 

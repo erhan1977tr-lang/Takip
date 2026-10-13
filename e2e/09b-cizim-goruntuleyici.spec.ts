@@ -106,12 +106,14 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
 
   // Çizimci sipariş sayfası (karar 84; Paket 3): 1) müşteri sipariş dosyaları 2) teknik çizim dosyaları (yükleme bu bölümde)
   // 3) çizim onayı ve revizyon 4) notlar 5) sipariş bilgileri. Adım çubuğu / işlem kartı yok (durum küçük rozetle); sandık /
-  // teklif / istenen camlar yok.
+  // teklif yok; "İstenen camlar" Sipariş bilgileri altında yalnızca cam tipi adıyla (karar 270).
   const drawer = await as(browser, DRAWER, TEAM_PW);
   await drawer.goto(`/siparisler/${id}`);
   await expect(drawer.locator('#sandik')).toHaveCount(0);
   await expect(drawer.locator('#teklif')).toHaveCount(0);
-  await expect(drawer.getByText('İstenen camlar')).toHaveCount(0);
+  await expect(drawer.locator('#bilgiler [data-glass-types] h3')).toHaveText('İstenen camlar');
+  await expect(drawer.locator('#bilgiler [data-glass-types] li')).toHaveCount(1);
+  await expect(drawer.locator('#bilgiler [data-glass-types]')).not.toContainText('×');
   await expect(drawer.locator('.stepper')).toHaveCount(0);
   await expect(drawer.locator('.card.turn')).toHaveCount(0);
   await expect(drawer.locator('.page-head .badge', { hasText: 'Çizim bekliyor' })).toBeVisible();

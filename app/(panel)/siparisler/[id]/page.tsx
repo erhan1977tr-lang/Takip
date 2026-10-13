@@ -463,9 +463,9 @@ export default async function OrderPage({
           })),
         ]}
       >
-        {/* Cam tipleri (karar 269): yalnızca adlar, aynı ad bir kez — ölçü, adet, m², fiyat yok. Çizim ekibi görünümü değişmedi
-            (cam / ticari bölümler orada gösterilmez). Veri: siparişin kalemleri (OrderItem). */}
-        {!drawerView && order.items.length > 0 && (
+        {/* Cam tipleri (karar 269, 270): bütün rollere — çizim ekibi dahil — yalnızca adlar, aynı ad bir kez; ölçü, adet, m²,
+            fiyat yok. Veri: siparişin kalemleri (OrderItem). */}
+        {order.items.length > 0 && (
           <div data-glass-types>
             <h3 className="sub-title">{t('order.info.requestedGlass')}</h3>
             <ul className="plain-list">
