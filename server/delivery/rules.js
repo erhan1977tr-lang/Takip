@@ -12,6 +12,20 @@ export const PHOTO_MAX_BYTES = 20 * 1024 * 1024;
 /** Fotoğraf ve rapor bu adımlarda eklenir */
 export const DELIVERY_DOC_STAGES = Object.freeze(['DEPODA', 'TESLIM_EDILDI', 'FATURALANDI']);
 export const REPORT_NOTE_MAX = 1000;
+/**
+ * İmzalı teslim belgesi (karar 273): depo bağlantısından yüklenen dosya = siparişin `OrderFile` kaydı, `source = DEPOT_LINK`
+ * (teslim onayıyla ya da teslimden sonra eklenen). Tek kural: belge listesi ve indirme yolu (`/dosya/teslim-belgesi/<id>`)
+ * aynı koşulu kullanır. Yalnızca profil siparişi; başka kaynaklı iç dosyalar (depo formu, fotoğraf, yönetici yüklemesi) değil.
+ */
+export const SIGNED_DOC_SOURCE = 'DEPOT_LINK';
+/**
+ * Prisma koşulu: verilen sipariş kapsamındaki (orderScope) imzalı teslim belgeleri. Virüslü dosya hiçbir zaman listelenmez.
+ * @param {object} [scope] orderScope(user) — başka firmanın siparişi kapsam dışıdır
+ * @returns {{ source: string, scanStatus: { not: 'INFECTED' }, order: { AND: any[] } }}
+ */
+export function signedDocWhere(scope) {
+  return { source: SIGNED_DOC_SOURCE, scanStatus: { not: 'INFECTED' }, order: { AND: [scope ?? {}, { orderTypeCode: 'PROFILE_ORDER' }] } };
+}
 /** Teslimat raporuna gömülecek fotoğraf sınırları (PDF bellek ve süre sınırı) — aşan fotoğraf güvenli bağlantıyla listelenir */
 export const REPORT_EMBED = Object.freeze({ photos: 24, totalBytes: 40 * 1024 * 1024, jpegBytes: 12 * 1024 * 1024, pngBytes: 4 * 1024 * 1024, pngPixels: 9_000_000 });
 

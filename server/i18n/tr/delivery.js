@@ -13,6 +13,8 @@ export default {
     adminHint: 'Teslim gününü değiştirirseniz müşteriye bildirilir. Depo bağlantısı sayfası güncel günü gösterir; depo e-postası yeniden gönderilmez.',
     noData: 'Romanya {years} resmî tatil verisi sistemde yok: bu yıl için teslim günü yalnızca hafta sonu ve elle kapatılan günlere göre hesaplanır (Ayarlar → Çalışma Takvimleri).',
   },
+  // İmzalı teslim belgesi (karar 273): depo bağlantısından yüklenen belge; müşteri kendi siparişinde görür
+  signed: { label: 'Teslim belgesi', open: 'Aç', scanning: 'taranıyor' },
   photos: {
     title: 'Teslimat fotoğrafları',
     none: 'Henüz teslimat fotoğrafı yok.',

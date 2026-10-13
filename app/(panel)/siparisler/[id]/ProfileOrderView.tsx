@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import type { CurrentUser } from '@/lib/auth/session';
-import { customerLabel, type OrderDetail } from '@/lib/orders';
+import { customerLabel, orderScope, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import type { Dict, MsgKey, T } from '@/lib/i18n';
@@ -89,7 +89,23 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
     : [];
   // Teslimat belgeleri (karar 195–196): sipariş depoya iletildikten sonra; müşteri kendi siparişinde görür (kişi adı yok)
   const docsStage = DELIVERY_DOC_STAGES.includes(stage);
-  const docs: Awaited<ReturnType<typeof deliveryDocs>> = docsStage || cancelled ? await deliveryDocs(db, order.id, { staff: !isCustomer }) : { photos: [], reports: [] };
+  const docs: Awaited<ReturnType<typeof deliveryDocs>> = docsStage || cancelled
+    ? await deliveryDocs(db, order.id, { staff: !isCustomer, scope: orderScope(user) })
+    : { photos: [], reports: [], signed: [] };
+  // İmzalı teslim belgesi bağlantıları (karar 273): yalnızca belge varsa; her belge ayrı "Aç / Deschide" — boş / kırık bağlantı yok
+  const signedLinks = docs.signed.length === 0 ? null : (
+    <span data-signed-docs={docs.signed.length}>
+      {docs.signed.map((f, i) => (
+        <span key={f.id}>
+          {i > 0 ? ' · ' : ''}
+          <a href={`/dosya/teslim-belgesi/${f.id}?ac=1`} target="_blank" rel="noopener" data-signed-doc={f.id} title={f.name}>
+            {t('delivery.signed.open')}{docs.signed.length > 1 ? ` (${i + 1})` : ''}
+          </a>
+          {f.scanStatus === 'PENDING' ? <span className="muted small"> ({t('delivery.signed.scanning')})</span> : null}
+        </span>
+      ))}
+    </span>
+  );
   const canDocs = admin && takesDeliveryDocs({ stage, status: order.status });
   const reportKey = crypto.randomBytes(18).toString('base64url');
   const idx = PROFILE_STAGES.indexOf(stage);
@@ -118,7 +134,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   // FGO (Aşama 6b): bu siparişin son proforma/fatura işi
   const fgoJob = order.outbox.find((x) => x.type === 'FGO_PROFORMA' || x.type === 'FGO_INVOICE');
   const fxText = p?.fxRate != null
-    ? `${t('profile.page.fgo.fxValue', { rate: Number(p.fxRate).toFixed(4).replace('.', ','), date: fmtDate(p.fxDate) })}${p.fxSource?.startsWith('MANUAL') ? ` (${t('profile.page.fgo.fxManual')})` : ''}`
+    ? `${t('profile.page.fgo.fxValue', { rate: Number(p.fxRate).toFixed(4).replace('.', ','), date: fmtDate(p.fxDate) })}${!isCustomer && p.fxSource?.startsWith('MANUAL') ? ` (${t('profile.page.fgo.fxManual')})` : ''}`
     : null;
   const warehouseFile = order.files.find((f) => f.source === 'WAREHOUSE_FORM');
   const hidden = <input type="hidden" name="id" value={order.id} />;
@@ -393,7 +409,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           !!p?.paidAt && { label: t('profile.page.info.paidAt'), value: fmtDate(p.paidAt) },
           // "Depoya gönderildi" müşteri ekranında yok; "Teslim" (Predare) yalnızca tarih — saat yok (karar 161)
           !isCustomer && !!p?.warehouseSentAt && { label: t('profile.page.info.warehouseSentAt'), value: fmtDateTime(p.warehouseSentAt) },
-          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: `${fmtDate(p.deliveredAt)}${!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}` },
+          !!p?.deliveredAt && { label: t('profile.page.info.deliveredAt'), value: <>{fmtDate(p.deliveredAt)}{!isCustomer && p.deliveredVia ? ` · ${t(`profile.page.info.via.${p.deliveredVia}` as MsgKey)}` : ''}{!isCustomer && signedLinks ? <> · {signedLinks}</> : null}</> },
           !!p?.invoicedAt && { label: t('profile.page.info.invoiceNo'), value: <>{p.invoiceNo ?? '—'} · {fmtDate(p.invoicedAt)}<FgoDocLink link={p.invoiceLink} prefix=" · " fallback={null}>{t('profile.page.fgo.open')}</FgoDocLink></> },
         ]}
       />
@@ -474,12 +490,16 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                   )}
                   <tr><td>{t('profile.page.pickup.phone')}</td><td>{p.contactPhone ?? '—'}</td></tr>
                   <tr><td>{t('profile.page.pickup.plate')}</td><td>{p.vehiclePlate ?? '—'}</td></tr>
+                  {signedLinks && <tr data-signed-row><td>{t('delivery.signed.label')}</td><td>{signedLinks}</td></tr>}
                 </tbody></table>
               ) : minPickup ? (
                 <p data-delivery-estimate={minPickup} style={{ marginTop: 0 }}>
                   {t(isCustomer ? 'delivery.card.estimateBefore' : 'delivery.card.estimateBeforeStaff', { date: fmtDate(minPickup) })}
                 </p>
               ) : null}
+              {!p?.pickupDate && signedLinks && (
+                <table className="kv"><tbody><tr data-signed-row><td>{t('delivery.signed.label')}</td><td>{signedLinks}</td></tr></tbody></table>
+              )}
               {phase !== 'DELIVERED' && <p className="muted small" data-delivery-note>{t('delivery.card.estimateNote')} {t('delivery.card.rule')}</p>}
               {isCustomer && stockAlert && phase !== 'DELIVERED' && <div className="alert alert-warn" data-delivery-stock>{t('delivery.card.stockNote')}</div>}
               {/* Eksik teslim bilgisi (karar 229): depoya sipariş formu bu bilgiler tamamlanmadan gitmez — ne eksik açıkça yazılır */}

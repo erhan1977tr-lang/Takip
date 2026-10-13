@@ -17,7 +17,7 @@ import { localDay } from '../profile/dates.js';
 import { deliveryReportPdf } from '../pdf/delivery-report.js';
 import { exportFileName } from '../files/export-name.js';
 import { createRateLimiter } from '../security/rate-limit.js';
-import { canManageDelivery, photosToEmbed, reportContentKey, reportNote, reportSnapshot, takesDeliveryDocs } from './rules.js';
+import { canManageDelivery, photosToEmbed, reportContentKey, reportNote, reportSnapshot, signedDocWhere, takesDeliveryDocs } from './rules.js';
 
 const FORBIDDEN = Object.freeze({ ok: false, code: 'FORBIDDEN' });
 
@@ -150,15 +150,18 @@ export async function createDeliveryReport(db, { orderId, note = null, requestKe
 /**
  * @typedef {{ id: string, name: string, size: number, scanStatus: string, createdAt: Date, via: string, by: string | null }} DeliveryPhotoView
  * @typedef {{ id: string, revision: number, stage: string, via: string, createdAt: Date, deliveryDay: Date | null, by: string | null }} DeliveryReportView
+ * @typedef {{ id: string, name: string, scanStatus: string, createdAt: Date }} SignedDocView
  */
 
 /**
  * Sayfa için teslimat belgeleri. Müşteriye (staff false) iç ekipten kişi adı gitmez — yalnızca "depo" / "GKH".
- * @param {any} db  @param {string} orderId  @param {{ staff: boolean }} o
- * @returns {Promise<{ photos: DeliveryPhotoView[], reports: DeliveryReportView[] }>}
+ * İmzalı teslim belgeleri (karar 273) görenin sipariş kapsamıyla (scope = orderScope; depo sayfasında verilmez: bağlantı zaten
+ * siparişe bağlı) ve indirme yoluyla aynı kuralla (signedDocWhere) listelenir.
+ * @param {any} db  @param {string} orderId  @param {{ staff: boolean, scope?: object }} o
+ * @returns {Promise<{ photos: DeliveryPhotoView[], reports: DeliveryReportView[], signed: SignedDocView[] }>}
  */
-export async function deliveryDocs(db, orderId, { staff }) {
-  const [photos, reports] = await Promise.all([
+export async function deliveryDocs(db, orderId, { staff, scope }) {
+  const [photos, reports, signed] = await Promise.all([
     db.deliveryPhoto.findMany({
       where: { orderId, file: { scanStatus: { not: 'INFECTED' } } },
       orderBy: { createdAt: 'asc' },
@@ -168,6 +171,12 @@ export async function deliveryDocs(db, orderId, { staff }) {
       where: { orderId },
       orderBy: { revision: 'desc' },
       select: { id: true, revision: true, stage: true, via: true, createdAt: true, deliveryDay: true, createdBy: { select: { name: true } } },
+    }),
+    // İmzalı teslim belgeleri (karar 273): aynı koşul indirme yolunda da kullanılır (signedDocWhere)
+    db.orderFile.findMany({
+      where: { orderId, ...signedDocWhere(scope) },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, scanStatus: true, createdAt: true },
     }),
   ]);
   return {
@@ -179,6 +188,7 @@ export async function deliveryDocs(db, orderId, { staff }) {
       id: r.id, revision: r.revision, stage: r.stage, via: r.via, createdAt: r.createdAt, deliveryDay: r.deliveryDay,
       by: staff && r.via === 'ADMIN' ? r.createdBy?.name ?? null : null,
     })),
+    signed: signed.map((f) => ({ id: f.id, name: f.name, scanStatus: f.scanStatus, createdAt: f.createdAt })),
   };
 }
 

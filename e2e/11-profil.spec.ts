@@ -231,11 +231,25 @@ test('depo e-postası (PDF) ve depo bağlantısından imzalı belgeyle teslim; f
   await expect(admin.getByText('Fatura kaydedildi; sipariş arşivlendi.')).toBeVisible();
   await admin.context().close();
 
-  // Müşteri iç dosyaları (depo formu, imzalı belge) görmez
+  // Müşteri iç dosyaları (depo formu) görmez; depodan yüklenen İMZALI TESLİM BELGESİNİ "Teslimat" kartında açar (karar 273)
   const cust = await as(browser, CUSTOMER, CUST_PW);
   await cust.goto(url);
-  await expect(cust.getByText('imza.pdf')).toHaveCount(0);
   await expect(cust.getByText(/Comanda-Depozit/)).toHaveCount(0);
+  const signedRow = cust.locator('#teslim tr[data-signed-row]');
+  await expect(signedRow).toContainText('Teslim belgesi');
+  const signedLink = signedRow.getByRole('link', { name: 'Aç' });
+  await expect(signedLink).toHaveCount(1);
+  const signedHref = (await signedLink.getAttribute('href'))!;
+  expect(signedHref).toMatch(/^\/dosya\/teslim-belgesi\/[^/?]+\?ac=1$/);
+  const got = await cust.request.get(signedHref);
+  expect(got.status()).toBe(200);
+  expect(got.headers()['content-type']).toBe('application/pdf');
+  expect((await got.body()).toString()).toContain('imzali teslim');
+  // Aynı dosya iç dosya yolundan müşteriye verilmez (iç dosya kuralı değişmedi)
+  const signedId = signedHref.split('/')[3].split('?')[0];
+  expect((await cust.request.get(`/dosya/siparis/${signedId}`)).status()).toBe(404);
+  // Müşteri kur satırında "elle girildi" yazmaz (karar 273)
+  await expect(cust.locator('dl.order-info')).not.toContainText('elle girildi');
   // Müşteri ekranı (karar 161): "Depoya gönderildi" yok; "Teslim" yalnızca tarih (saat yok); dosya yükleme alanı yok
   const info = cust.locator('dl.order-info');
   await expect(info.locator('dt', { hasText: 'Depoya gönderildi' })).toHaveCount(0);
@@ -248,5 +262,13 @@ test('depo e-postası (PDF) ve depo bağlantısından imzalı belgeyle teslim; f
   await admin2.goto(url);
   await expect(admin2.locator('dl.order-info dt', { hasText: 'Depoya gönderildi' })).toHaveCount(1);
   await expect(admin2.locator('dl.order-info div', { has: admin2.locator('dt', { hasText: /^Teslim$/ }) }).locator('dd')).toHaveText(/^\d{2}\.\d{2}\.\d{4}( · .+)?$/);
+  // "Depo bağlantısı" satırı imzalı belgeyi açar (karar 273)
+  const adminLink = admin2.locator('dl.order-info div', { has: admin2.locator('dt', { hasText: /^Teslim$/ }) }).getByRole('link', { name: 'Aç' });
+  await expect(adminLink).toHaveAttribute('href', signedHref);
+  expect((await admin2.request.get(signedHref)).status()).toBe(200);
   await admin2.context().close();
+  // Profil siparişini görmeyen rol belgeyi alamaz
+  const sales = await as(browser, SALES, TEAM_PW);
+  expect((await sales.request.get(signedHref)).status()).toBe(404);
+  await sales.context().close();
 });

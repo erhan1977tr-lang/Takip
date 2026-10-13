@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.82.0 — 13.10.2026
+
+Profil siparişi — teslim belgesi ve müşteri kur metni (karar 273). Migration yok.
+
+- **İmzalı teslim belgesi müşteriye açıldı:** depo bağlantısından yüklenen belge (PDF / JPG / PNG) siparişin iç dosyası
+  olarak kaydediliyordu ve iç dosya kuralı yüzünden müşteriye hiç verilmiyordu. Yeni güvenli yol `/dosya/teslim-belgesi/<id>`
+  (oturum + sipariş kapsamı; yalnızca depo bağlantısı kaynaklı belge, yalnızca profil siparişi, virüslü dosya asla; her
+  erişim `FILE_DOWNLOAD` denetiminde). Müşteri "Teslimat / Livrare" kartında "Teslim belgesi / Document de predare" satırı,
+  her belge için ayrı "Aç / Deschide" bağlantısı; belge yoksa satır yok. Mevcut kayıtlı belgeler de aynı yoldan açılır.
+- **Yönetici "Teslim · depo bağlantısı" satırı** artık belgeleri açan bağlantıları gösterir (yönetici, yardımcı, denetimci).
+- **Müşteri kur satırı:** "(introdus manual) / (elle girildi)" ibaresi müşteriye gösterilmez; kur, tarih ve hesaplama
+  aynı; iç ekip ekranı değişmedi.
+- Teslimat fotoğrafları, depo yükleme / teslim onayı, iç dosya kuralı ve FGO / e-posta akışları değişmedi.
+
 ## 3.81.1 — 13.10.2026
 
 Tedarikçi siparişleri — iki düzeltme (karar 272). Migration yok.

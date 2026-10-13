@@ -13,6 +13,8 @@ export default {
     adminHint: 'Dacă modificați data de livrare, clientul este anunțat. Pagina linkului de depozit afișează data actuală; e-mailul pentru depozit nu se retrimite.',
     noData: 'Datele despre sărbătorile legale din România pentru {years} lipsesc din sistem: pentru acest an data de livrare se calculează doar după weekend și zilele închise manual (Setări → Calendare de lucru).',
   },
+  // İmzalı teslim belgesi (karar 273): depo bağlantısından yüklenen belge; müşteri kendi siparişinde görür
+  signed: { label: 'Document de predare', open: 'Deschide', scanning: 'scanare în curs' },
   photos: {
     title: 'Fotografii de livrare',
     none: 'Încă nu există fotografii de livrare.',

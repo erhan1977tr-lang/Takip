@@ -9,6 +9,7 @@ import { resolveKey } from '@/lib/storage';
 import { getT } from '@/lib/i18n';
 import { findDrawingFile } from '@/server/orders/drawing-access.js';
 import { renderDeliveryReport, reportLimiter } from '@/server/delivery/service.js';
+import { signedDocWhere } from '@/server/delivery/rules.js';
 import { contentDisposition } from '@/server/files/export-name.js';
 import { getEnv } from '@/server/env.js';
 
@@ -17,6 +18,8 @@ export const dynamic = 'force-dynamic';
 // /dosya/siparis/<OrderFile id>  ·  /dosya/cizim/<DrawingFile id> (eski: <Drawing id>)  ·  /dosya/urun/<ProfileImage id>
 // /dosya/tedarik/<SupplierOrderFile id> — tedarikçi siparişinin teknik eki: yalnızca SUPPLIER_MANAGE (yönetici; karar 181)
 // /dosya/teslimat/<DeliveryPhoto id> — profil teslimat fotoğrafı: siparişi gören (müşteri yalnızca kendi siparişi; karar 195)
+// /dosya/teslim-belgesi/<OrderFile id> — depodan yüklenen imzalı teslim belgesi (profil): siparişi gören (müşteri yalnızca kendi
+//   siparişi; karar 273). Koşul tek yerde: signedDocWhere (server/delivery/rules.js) — başka kaynaklı iç dosya bu yoldan verilmez.
 // /dosya/rapor/<DeliveryReport id> — teslimat raporu PDF'i, kopyadan görenin dilinde üretilir (karar 196); süreli bağlantı yok
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string; id: string }> }) {
   const user = await getCurrentUser();
@@ -56,6 +59,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
     // bu türe uygulanmaz); başka firmanın fotoğrafı kapsam dışıdır → 404
     const ph = await db.deliveryPhoto.findFirst({ where: { id, order: scope }, select: { file: { select: { storageKey: true, name: true, mime: true, scanStatus: true, orderId: true } } } });
     if (ph) file = ph.file;
+  } else if (kind === 'teslim-belgesi') {
+    // İmzalı teslim belgesi (karar 273): yalnızca depo bağlantısından yüklenen belge (source = DEPOT_LINK) ve profil siparişi;
+    // siparişin kapsamı yeter (müşteri kendi siparişinin belgesini görür). Başka firmanın / başka türdeki dosya → 404
+    const f = await db.orderFile.findFirst({ where: { id, ...signedDocWhere(scope) }, select: { storageKey: true, name: true, mime: true, scanStatus: true, orderId: true } });
+    if (f) file = f;
   } else if (kind === 'tedarik' && userCan(user, 'SUPPLIER_MANAGE')) {
     // Tedarikçi siparişinin eki: yetkisi olmayan herkese 404 (varlığı da belli olmaz)
     const f = await db.supplierOrderFile.findUnique({ where: { id }, select: { storageKey: true, name: true, mime: true, scanStatus: true, revision: { select: { orderId: true } } } });

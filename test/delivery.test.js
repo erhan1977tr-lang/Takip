@@ -11,6 +11,7 @@ import {
   reportSnapshot, takesDeliveryDocs,
 } from '../server/delivery/rules.js';
 import { deliveryReportPdf } from '../server/pdf/delivery-report.js';
+import { SIGNED_DOC_SOURCE, signedDocWhere } from '../server/delivery/rules.js';
 import { jpegOrientation, orientationMatrix } from '../server/pdf/pdf.js';
 import { FONTS } from '../server/pdf/fonts.js';
 import { BRAND } from '../server/branding/index.js';
@@ -229,4 +230,26 @@ test('yapı: dosya yolu — teslimat fotoğrafı ve rapor sipariş kapsamından;
   assert.ok(route.includes('renderDeliveryReport(db, {') && route.includes('orderWhere: scope'));
   assert.ok(route.includes('reportLimiter.take(userId)') && route.includes("audit('DELIVERY_REPORT_VIEW'"));
   assert.ok(route.indexOf("kind === 'rapor'") > route.indexOf("if (!userCan(user, 'ORDER_VIEW'))"), 'giriş ve sipariş görme yetkisinden sonra');
+});
+
+// ---------- imzalı teslim belgesi + müşteri kur metni (karar 273) ----------
+
+test('imzalı teslim belgesi kuralı: yalnızca depo bağlantısı kaynağı, virüslü değil, profil siparişi, verilen sipariş kapsamı içinde', () => {
+  const scope = { customerId: 'firma-1', removedAt: null };
+  assert.equal(SIGNED_DOC_SOURCE, 'DEPOT_LINK');
+  assert.deepEqual(signedDocWhere(scope), { source: 'DEPOT_LINK', scanStatus: { not: 'INFECTED' }, order: { AND: [scope, { orderTypeCode: 'PROFILE_ORDER' }] } });
+});
+
+test('yapı: teslim belgesi yolu tek kuralı kullanır; sayfa bağlantıyı yalnızca belge varsa çizer; müşteri kur satırında "elle girildi" yok', () => {
+  const route = read('app/dosya/[kind]/[id]/route.ts');
+  assert.ok(route.includes("kind === 'teslim-belgesi'") && route.includes('db.orderFile.findFirst({ where: { id, ...signedDocWhere(scope) }'));
+  assert.ok(route.indexOf("kind === 'teslim-belgesi'") > route.indexOf("if (!userCan(user, 'ORDER_VIEW'))"), 'giriş ve sipariş görme yetkisinden sonra');
+  // İç dosya (siparis) yolu değişmedi: müşteri yalnızca CUSTOMER dosyası
+  assert.ok(route.includes("...(userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { kind: 'CUSTOMER' })"));
+  const view = read('app/(panel)/siparisler/[id]/ProfileOrderView.tsx');
+  assert.ok(view.includes('const signedLinks = docs.signed.length === 0 ? null'), 'belge yoksa bağlantı yok');
+  assert.ok(view.includes('/dosya/teslim-belgesi/${f.id}?ac=1'));
+  assert.ok(view.includes("{signedLinks && <tr data-signed-row>"), 'Livrare satırı yalnızca belge varsa');
+  assert.ok(view.includes("!isCustomer && p.fxSource?.startsWith('MANUAL') ? ` (${t('profile.page.fgo.fxManual')})`"), 'müşteriye "(introdus manual)" yok');
+  assert.ok(view.includes('scope: orderScope(user)'), 'liste görenin kapsamıyla');
 });

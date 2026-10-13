@@ -27,6 +27,7 @@ const { addDaysKey, isOpenDay } = await import('../../server/calendar/rules.js')
 const { createDeliveryReport, deliveryDocs, recordDeliveryPhoto, renderDeliveryReport } = await import('../../server/delivery/service.js');
 const { dispatchInApp } = await import('../../server/notifications/inapp.js');
 const { orderScope } = await import('../../server/orders/scope.js');
+const { signedDocWhere } = await import('../../server/delivery/rules.js');
 const { saveFgoSettings } = await import('../../server/integrations/fgo.js');
 
 let db;
@@ -107,6 +108,7 @@ before(async () => {
   await mk('sales', 'SATIS', factory.id);
   await mk('drawer', 'CIZIM', factory.id);
   await mk('inspector', 'DENETIMCI', factory.id);
+  await mk('assist', 'YONETICI_YARDIMCISI', factory.id);
   await mk('cust', 'MUSTERI', firm.id, { canApprove: true });
   await mk('other', 'MUSTERI', otherFirm.id, { canApprove: true });
   const gk = await db.profileProduct.findUnique({ where: { code: 'GK15' } });
@@ -301,6 +303,65 @@ dbTest('fotoğraf erişimi: siparişin müşterisi ve siparişi gören iç ekip;
   await db.order.update({ where: { id }, data: { removedAt: new Date() } });
   for (const who of ['cust', 'admin']) assert.equal(await find(who), null, `silinmiş: ${who}`);
   await db.order.update({ where: { id }, data: { removedAt: null } });
+}));
+
+// ---------- imzalı teslim belgesi (karar 273) ----------
+
+/** Diske yazılmış dosya (PDF / JPG / PNG) — imzalı teslim belgesi olarak depo bağlantısından yüklenmiş gibi */
+function docFile(name, mime, head) {
+  const buf = Buffer.concat([head, Buffer.from(crypto.randomUUID())]);
+  const storageKey = `2026/10/${crypto.randomUUID()}.${name.split('.').pop()}`;
+  fs.mkdirSync(path.join(UPLOAD, '2026', '10'), { recursive: true });
+  fs.writeFileSync(path.join(UPLOAD, storageKey), buf);
+  return { storageKey, name, size: buf.length, mime, checksum: crypto.createHash('sha256').update(buf).digest('hex'), scanStatus: 'CLEAN', scanSignature: null, scannedAt: new Date() };
+}
+
+dbTest('imzalı teslim belgesi: depo onayıyla yüklenen PDF / JPG / PNG siparişe bağlı; müşteri kendi belgesini, yönetici / yardımcı / denetimci görür; başka firma, satış, çizim göremez; başka kaynaklı iç dosya ve virüslü dosya bu yoldan verilmez', offline(async () => {
+  const { id } = await depotOrder([['GK15', 1]]);
+  const docs = [
+    docFile('imzali.pdf', 'application/pdf', Buffer.from('%PDF-1.4\n')),
+    docFile('imza.jpg', 'image/jpeg', Buffer.from([0xff, 0xd8, 0xff])),
+    docFile('imza.png', 'image/png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  ];
+  await runProfileAction(db, { orderId: id, action: 'mark_delivered', actor: depotActor('1.2.3.4'), payload: { files: docs } });
+  // Kayıtlar: siparişin iç dosyası, kaynak depo bağlantısı (mevcut kayıt biçimi değişmedi)
+  const rows = await db.orderFile.findMany({ where: { orderId: id, source: 'DEPOT_LINK' }, orderBy: { createdAt: 'asc' } });
+  assert.deepEqual(rows.map((r) => [r.name, r.kind, r.uploadedById]).sort(), [['imza.jpg', 'INTERNAL', null], ['imza.png', 'INTERNAL', null], ['imzali.pdf', 'INTERNAL', null]]);
+  // Aynı siparişte başka iç dosyalar: teslimat fotoğrafı, yönetici dosyası, virüslü depo dosyası — belge listesinde yok
+  await recordDeliveryPhoto(db, { orderId: id, stored: photoFile('foto.jpg'), actor: depotActor('1.2.3.4') });
+  const internal = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: null, name: 'ic.pdf', storageKey: '2026/10/ic.pdf', size: 3, scanStatus: 'CLEAN' } });
+  const infected = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: 'DEPOT_LINK', name: 'virus.pdf', storageKey: '2026/10/virus.pdf', size: 3, scanStatus: 'INFECTED' } });
+
+  // Sayfa listesi (deliveryDocs) — müşteri ve iç ekip aynı belgeleri görür; fotoğraf mekanizması değişmedi
+  const cust = await deliveryDocs(db, id, { staff: false, scope: scopeOf('cust') });
+  assert.deepEqual(cust.signed.map((f) => f.name).sort(), ['imza.jpg', 'imza.png', 'imzali.pdf']);
+  assert.equal(cust.photos.length, 1);
+  assert.deepEqual((await deliveryDocs(db, id, { staff: true, scope: scopeOf('admin') })).signed.length, 3);
+  assert.deepEqual((await deliveryDocs(db, id, { staff: false, scope: scopeOf('other') })).signed, [], 'başka firmanın kapsamında boş');
+
+  // İndirme yolunun sorgusu (app/dosya/[kind]/[id]/route.ts → teslim-belgesi)
+  const find = (fileId, who) => db.orderFile.findFirst({ where: { id: fileId, ...signedDocWhere(scopeOf(who)) }, select: { id: true } });
+  for (const r of rows) {
+    for (const who of ['cust', 'admin', 'assist', 'inspector']) assert.ok(await find(r.id, who), `${who}: ${r.name}`);
+    for (const who of ['other', 'sales', 'drawer']) assert.equal(await find(r.id, who), null, `${who}: ${r.name}`);
+  }
+  for (const who of ['cust', 'admin']) {
+    assert.equal(await find(internal.id, who), null, `başka kaynaklı iç dosya: ${who}`);
+    assert.equal(await find(infected.id, who), null, `virüslü: ${who}`);
+  }
+  const photoRow = await db.orderFile.findFirst({ where: { orderId: id, source: 'DELIVERY_PHOTO' } });
+  assert.equal(await find(photoRow.id, 'cust'), null, 'fotoğraf yalnızca kendi yolundan (teslimat)');
+  // Cam siparişine yazılmış DEPOT_LINK dosyası (olmaması gereken) bu yoldan verilmez — yalnızca profil siparişi
+  const glass = await db.order.create({ data: { orderNo: 'TES900', customerId: firm.id, customerOrderNo: '900', orderTypeCode: 'GLASS_ORDER', title: 'cam', createdById: people.cust.id } });
+  const stray = await db.orderFile.create({ data: { orderId: glass.id, kind: 'INTERNAL', source: 'DEPOT_LINK', name: 'x.pdf', storageKey: '2026/10/x.pdf', size: 3, scanStatus: 'CLEAN' } });
+  assert.equal(await find(stray.id, 'admin'), null);
+  // Silinmiş sipariş: kimse göremez
+  await db.order.update({ where: { id }, data: { removedAt: new Date() } });
+  for (const who of ['cust', 'admin']) assert.equal(await find(rows[0].id, who), null, `silinmiş: ${who}`);
+  await db.order.update({ where: { id }, data: { removedAt: null } });
+  // Belge yoksa liste boş (sayfa bağlantı göstermez)
+  const bare = await depotOrder([['GK15', 1]]);
+  assert.deepEqual((await deliveryDocs(db, bare.id, { staff: false, scope: scopeOf('cust') })).signed, []);
 }));
 
 // ---------- teslimat raporu ----------
