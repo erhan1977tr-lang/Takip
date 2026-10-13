@@ -52,7 +52,7 @@ export default async function NewSupplierOrderPage({ searchParams }: { searchPar
       {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.currency}</option>)}
     </select>
   );
-  // Ürün satırları (tek ürün ya da bir tedarikçi grubu): seçim kutusu, bilgi sütunları, miktar ve renk
+  // Ürün satırları (tek ürün ya da bir tedarikçi grubu): seçim kutusu, bilgi sütunları ve miktar (Renk/RAL sütunu yok — karar 271)
   const Lines = ({ items, single }: { items: Row[]; single: boolean }) => (
     <div className="table-wrap">
       <table>
@@ -62,7 +62,7 @@ export default async function NewSupplierOrderPage({ searchParams }: { searchPar
             <th>{t('supplier.create.col.code')}</th><th>{t('supplier.create.col.product')}</th>
             <th className="num">{t('supplier.create.col.stock')}</th><th className="num">{t('supplier.create.col.reserved')}</th>
             <th className="num">{t('supplier.create.col.threshold')}</th><th className="num">{t('supplier.create.col.expected')}</th>
-            <th>{t('supplier.create.col.price')}</th><th>{t('supplier.create.col.qty')}</th><th>{t('supplier.create.col.color')}</th>
+            <th>{t('supplier.create.col.price')}</th><th>{t('supplier.create.col.qty')}</th>
           </tr>
         </thead>
         <tbody>
@@ -82,7 +82,6 @@ export default async function NewSupplierOrderPage({ searchParams }: { searchPar
                   <input name={`qty-${p.id}`} inputMode="numeric" pattern="[0-9]*" maxLength={6} className="qty-input" required={single}
                     aria-label={`${t('supplier.create.col.qty')} ${p.code}`} /> <span className="muted small">{unitLabel(orderUnitOf(p), locale)}</span>
                 </td>
-                <td><input name={`color-${p.id}`} maxLength={40} className="qty-input" aria-label={`${t('supplier.create.col.color')} ${p.code}`} /></td>
               </tr>
             );
           })}

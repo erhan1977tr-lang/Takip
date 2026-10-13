@@ -122,7 +122,7 @@ export default {
     allProducts: 'Ciornă goală pentru orice produse: ',
     col: {
       pick: 'Alege', code: 'Cod', product: 'Produs', supplier: 'Furnizor definit', stock: 'Stoc', reserved: 'Rezervat', threshold: 'Prag',
-      expected: 'Așteptat', qty: 'Cantitate comandată', color: 'Culoare / RAL', unit: 'Unitate', price: 'Preț de achiziție',
+      expected: 'Așteptat', qty: 'Cantitate comandată', unit: 'Unitate', price: 'Preț de achiziție',
     },
   },
 

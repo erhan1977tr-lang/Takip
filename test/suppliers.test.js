@@ -272,9 +272,9 @@ test('e-posta: konu tam biçimde; Türkçe metinler eksiksiz ve doğru karakterl
   assert.equal(renderSupplierOrderEmail({ ...MAIL, revision: 2 }).subject, 'GKH Trading Invest – Sipariş TS-2026-007 – Işık Profil Ürünleri Ltd. Şti. – Revizyon 2');
   // Metin sırası (düz metin)
   const order = ['Merhaba,', 'Aşağıda detayları bulunan siparişimizi bilgilerinize sunarız.', 'Sipariş No: TS-2026-007', 'Sipariş Tarihi: 08.10.2026',
-    'Tedarikçi: Işık Profil Ürünleri Ltd. Şti.', 'Ürün Kodu | Açıklama | Renk/RAL | Miktar | Birim | Birim Fiyat | Toplam',
-    'GK15 | Çift dudaklı cam contası | RAL 7016 | 12 | kutu | 12,50 EUR | 150,00 EUR', 'MC12 | Küpeşte <özel> & "kesim" | — | 3 | adet | 1.234,5678 EUR | 3.703,70 EUR',
-    'Genel Toplam: 3.853,70 EUR', 'Sipariş Notu:', 'Yükleme öncesi arayınız.', 'Ekler: teknik-çizim.pdf',
+    'Tedarikçi: Işık Profil Ürünleri Ltd. Şti.', 'Ürün Kodu | Açıklama | Miktar | Birim',
+    'GK15 | Çift dudaklı cam contası | 12 | kutu', 'MC12 | Küpeşte <özel> & "kesim" | 3 | adet',
+    'Sipariş Notu:', 'Yükleme öncesi arayınız.', 'Ekler: teknik-çizim.pdf',
     'Siparişimizin tarafınıza ulaştığını ve tahmini yükleme tarihini teyit etmenizi rica ederiz.', 'İyi çalışmalar dileriz.', 'GKH Trading Invest SRL'];
   let at = -1;
   for (const s of order) {
@@ -284,7 +284,7 @@ test('e-posta: konu tam biçimde; Türkçe metinler eksiksiz ve doğru karakterl
   }
   // HTML: aynı metinler, sütun başlıkları sırayla, kaçışlama, logo üstte
   const h = m.html;
-  const cols = ['Ürün Kodu', 'Açıklama', 'Renk/RAL', 'Miktar', 'Birim', 'Birim Fiyat', 'Toplam'];
+  const cols = ['Ürün Kodu', 'Açıklama', 'Miktar', 'Birim'];
   const thead = /<thead>([\s\S]*?)<\/thead>/.exec(h)?.[1] ?? '';
   assert.deepEqual([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1]), cols);
   assert.ok(h.includes('Küpeşte &lt;özel&gt; &amp; &quot;kesim&quot;'), 'açıklama kaçışlanır');
@@ -292,7 +292,7 @@ test('e-posta: konu tam biçimde; Türkçe metinler eksiksiz ve doğru karakterl
   assert.ok(h.indexOf(`cid:${MAIL_LOGO_CID}`) > 0 && h.indexOf(`cid:${MAIL_LOGO_CID}`) < h.indexOf('Merhaba,'), 'logo gövdeden önce');
   assert.ok(h.indexOf('</table>', h.indexOf('<thead>')) < h.indexOf('Sipariş Notu'), 'not tablonun altında');
   assert.ok(h.indexOf('Sipariş Notu') < h.indexOf(SUPPLIER_EMAIL_TEXT.closing), 'kapanış en sonda');
-  for (const s of [SUPPLIER_EMAIL_TEXT.greeting, SUPPLIER_EMAIL_TEXT.intro, SUPPLIER_EMAIL_TEXT.closing, SUPPLIER_EMAIL_TEXT.regards, SUPPLIER_EMAIL_TEXT.company, '3.853,70 EUR', '08.10.2026']) {
+  for (const s of [SUPPLIER_EMAIL_TEXT.greeting, SUPPLIER_EMAIL_TEXT.intro, SUPPLIER_EMAIL_TEXT.closing, SUPPLIER_EMAIL_TEXT.regards, SUPPLIER_EMAIL_TEXT.company, '08.10.2026']) {
     assert.ok(h.includes(s), s);
   }
   // Türkçe karakterler bozulmaz (ne düz metinde ne HTML'de mojibake / varlık kodu)
@@ -302,16 +302,23 @@ test('e-posta: konu tam biçimde; Türkçe metinler eksiksiz ve doğru karakterl
   assert.match(h, /<meta charset="utf-8">/);
 });
 
-test('e-posta: fiyatı olmayan satır varsa fiyat sütunları ve genel toplam boş bırakılmaz, tamamen kaldırılır', () => {
-  const lines = [MAIL.lines[0], { ...MAIL.lines[1], unitPrice: null, lineTotal: null }];
-  const m = renderSupplierOrderEmail({ ...MAIL, lines, showPrices: showPrices(lines), total: null });
-  const thead = /<thead>([\s\S]*?)<\/thead>/.exec(m.html)?.[1] ?? '';
-  assert.deepEqual([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1]), ['Ürün Kodu', 'Açıklama', 'Renk/RAL', 'Miktar', 'Birim']);
-  for (const s of ['Birim Fiyat', 'Genel Toplam', '12,50', '150,00', 'EUR']) {
-    assert.ok(!m.html.includes(s) && !m.text.includes(s), `fiyat izi yok: ${s}`);
+test('e-posta tablosu yalnızca Ürün Kodu · Açıklama · Miktar · Birim (karar 271): Renk/RAL, fiyat ve toplam hiç yazılmaz', () => {
+  const priced = MAIL.lines;
+  const unpriced = [MAIL.lines[0], { ...MAIL.lines[1], unitPrice: null, lineTotal: null }];
+  for (const [lines, sp, total] of [[priced, true, MAIL.total], [unpriced, showPrices(unpriced), null]]) {
+    const m = renderSupplierOrderEmail({ ...MAIL, lines, showPrices: sp, total });
+    const thead = /<thead>([\s\S]*?)<\/thead>/.exec(m.html)?.[1] ?? '';
+    assert.deepEqual([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1]), ['Ürün Kodu', 'Açıklama', 'Miktar', 'Birim']);
+    const tbody = /<tbody>([\s\S]*?)<\/tbody>/.exec(m.html)?.[1] ?? '';
+    for (const row of tbody.match(/<tr>[\s\S]*?<\/tr>/g) ?? []) assert.equal((row.match(/<td/g) ?? []).length, 4, 'her satır 4 hücre');
+    for (const s of ['Renk/RAL', 'RAL 7016', 'Birim Fiyat', 'Genel Toplam', '12,50', '150,00', '3.853,70', 'EUR']) {
+      assert.ok(!m.html.includes(s) && !m.text.includes(s), `tabloda yok: ${s}`);
+    }
+    assert.ok(m.text.includes('Ürün Kodu | Açıklama | Miktar | Birim\n'));
+    assert.ok(m.text.includes('GK15 | Çift dudaklı cam contası | 12 | kutu\n'));
+    // Diğer içerik korunur: sipariş no, tarih, tedarikçi, not, ekler, kapanış
+    for (const s of ['TS-2026-007', '08.10.2026', 'Işık Profil Ürünleri Ltd. Şti.', 'Sipariş Notu', 'teknik-çizim.pdf', SUPPLIER_EMAIL_TEXT.closing]) assert.ok(m.html.includes(s), s);
   }
-  assert.ok(m.text.includes('Ürün Kodu | Açıklama | Renk/RAL | Miktar | Birim\n'));
-  assert.ok(m.text.includes('GK15 | Çift dudaklı cam contası | RAL 7016 | 12 | kutu\n'));
   // Not ve ek yoksa o bölümler de yazılmaz
   const bare = renderSupplierOrderEmail({ ...MAIL, note: '  ', attachments: [] });
   assert.ok(!bare.text.includes('Sipariş Notu') && !bare.html.includes('Sipariş Notu') && !bare.text.includes('Ekler:'));
@@ -458,4 +465,11 @@ test('menü: "Entegrasyonlar" artık "Ayarlar"; satın alma bölümü yalnızca 
     assert.ok(admin.includes(`'${href}'`), href);
     assert.ok(!rest.includes(`'${href}'`), `${href} başka rolün menüsünde yok`);
   }
+});
+
+test('tedarikçi siparişi oluşturma ekranında Renk/RAL sütunu ve giriş alanı yok (karar 271); diğer sütunlar ve miktar girişi duruyor', () => {
+  const page = fs.readFileSync(new URL('../app/(panel)/siparisler/tedarik/yeni/page.tsx', import.meta.url), 'utf8');
+  assert.ok(!/col\.color|name=\{`color-/.test(page), 'renk başlığı / girişi kalmadı');
+  for (const k of ['code', 'product', 'stock', 'reserved', 'threshold', 'expected', 'price', 'qty']) assert.ok(page.includes(`supplier.create.col.${k}'`), k);
+  assert.ok(page.includes('name={`qty-${p.id}`}') && page.includes('name="pick"'));
 });

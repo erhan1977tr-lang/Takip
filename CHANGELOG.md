@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.81.0 — 13.10.2026
+
+Satın Alma — Renk/RAL sütunu kaldırıldı (karar 271). Migration yok.
+
+- **Tedarikçi siparişi oluşturma ekranı** (`/siparisler/tedarik/yeni`, tek ürün, kritik stok grupları ve "Tedarikçisi
+  tanımlı olmayan ürünler"): "Renk / RAL" başlığı ve giriş alanı yok; ürün kodu, açıklama, stok, rezerve, eşik, beklenen,
+  alış fiyatı ve sipariş miktarı aynı; "Seçilenlerle taslak oluştur" değişmedi.
+- **Tedarikçi sipariş e-postası:** ürün tablosu yalnızca Ürün Kodu · Açıklama · Miktar · Birim (Renk/RAL, Birim Fiyat,
+  Toplam ve genel toplam yazılmaz). Logo, sipariş no, tarih, tedarikçi, not, ekler ve kapanış aynı.
+- Veritabanındaki renk / fiyat verisi, mevcut siparişler ve taslaklar, hesaplamalar, katalog ve tedarikçi kayıtları
+  değişmedi.
+
 ## 3.80.1 — 13.10.2026
 
 Tek düzeltme (karar 270). Migration yok.

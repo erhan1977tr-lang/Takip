@@ -122,7 +122,7 @@ export default {
     allProducts: 'Tüm ürünler için boş taslak: ',
     col: {
       pick: 'Seç', code: 'Kod', product: 'Ürün', supplier: 'Tanımlı tedarikçi', stock: 'Stok', reserved: 'Rezerve', threshold: 'Eşik',
-      expected: 'Beklenen', qty: 'Sipariş miktarı', color: 'Renk / RAL', unit: 'Birim', price: 'Alış fiyatı',
+      expected: 'Beklenen', qty: 'Sipariş miktarı', unit: 'Birim', price: 'Alış fiyatı',
     },
   },
 

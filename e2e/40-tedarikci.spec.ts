@@ -136,7 +136,9 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   await expect(admin.locator('#ts-supplier option:checked')).toContainText(SUP); // ürünün tanımlı tedarikçisi
   await expect(admin.locator('tr[data-create-row="MC12"]')).toContainText('2,75 EUR');
   await admin.locator('input[name^="qty-"]').fill('12');
-  await admin.locator('input[name^="color-"]').fill('RAL 7016');
+  // Renk/RAL sütunu yok (karar 271): ne başlık ne giriş alanı
+  await expect(admin.locator('input[name^="color-"]')).toHaveCount(0);
+  await expect(admin.locator('th', { hasText: /Renk/ })).toHaveCount(0);
   await admin.getByRole('button', { name: 'Taslak oluştur' }).click();
   await expect(admin.getByText('Taslak oluşturuldu. E-posta gönderilmedi.')).toBeVisible();
   orderUrl = new URL(admin.url()).pathname;
@@ -190,8 +192,11 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   expect(m.html).toContain('Merhaba,');
   expect(m.html).toContain('Aşağıda detayları bulunan siparişimizi bilgilerinize sunarız.');
   expect(m.html).toContain('Ürün Kodu');
-  expect(m.html).toContain('RAL 7016');
-  expect(m.html).not.toContain('Birim Fiyat'); // fiyatsız satır var → fiyat sütunları yok
+  // Tablo yalnızca dört sütun (karar 271): Ürün Kodu · Açıklama · Miktar · Birim
+  const thead = /<thead>([\s\S]*?)<\/thead>/.exec(m.html)?.[1] ?? '';
+  expect([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1])).toEqual(['Ürün Kodu', 'Açıklama', 'Miktar', 'Birim']);
+  expect(m.html).not.toContain('Renk/RAL');
+  expect(m.html).not.toContain('Birim Fiyat');
   expect(m.html).not.toContain('Genel Toplam');
   expect(m.text).toContain('Siparişimizin tarafınıza ulaştığını ve tahmini yükleme tarihini teyit etmenizi rica ederiz.');
   expect(m.attachments.map((a: { filename: string }) => a.filename)[0]).toBe('teknik-cizim.pdf');
