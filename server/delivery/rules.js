@@ -19,13 +19,19 @@ export const REPORT_NOTE_MAX = 1000;
  */
 export const SIGNED_DOC_SOURCE = 'DEPOT_LINK';
 /**
- * Prisma koşulu: verilen sipariş kapsamındaki (orderScope) imzalı teslim belgeleri. Virüslü dosya hiçbir zaman listelenmez.
+ * Prisma koşulu: verilen sipariş kapsamındaki (orderScope) imzalı teslim belgeleri. YALNIZCA antivirüs taraması tamamlanmış
+ * ve TEMİZ (CLEAN) dosya (karar 274): PENDING (taranmadı / bekliyor), SKIPPED (taranmadı), INFECTED ve bilinmeyen her değer
+ * dışarıda kalır — eşitlik koşulu, izin listesi tek değer. Liste ve indirme yolu aynı koşulu kullanır.
  * @param {object} [scope] orderScope(user) — başka firmanın siparişi kapsam dışıdır
- * @returns {{ source: string, scanStatus: { not: 'INFECTED' }, order: { AND: any[] } }}
+ * @returns {{ source: string, scanStatus: 'CLEAN', order: { AND: any[] } }}
  */
+/** @type {'CLEAN'} */
+export const SIGNED_DOC_SCAN = 'CLEAN';
 export function signedDocWhere(scope) {
-  return { source: SIGNED_DOC_SOURCE, scanStatus: { not: 'INFECTED' }, order: { AND: [scope ?? {}, { orderTypeCode: 'PROFILE_ORDER' }] } };
+  return { source: SIGNED_DOC_SOURCE, scanStatus: SIGNED_DOC_SCAN, order: { AND: [scope ?? {}, { orderTypeCode: 'PROFILE_ORDER' }] } };
 }
+/** İndirmeden hemen önce ikinci denetim: yalnızca tam olarak 'CLEAN' (boş / bilinmeyen / başka değer → hayır) */
+export const signedDocServable = (scanStatus) => scanStatus === SIGNED_DOC_SCAN;
 /** Teslimat raporuna gömülecek fotoğraf sınırları (PDF bellek ve süre sınırı) — aşan fotoğraf güvenli bağlantıyla listelenir */
 export const REPORT_EMBED = Object.freeze({ photos: 24, totalBytes: 40 * 1024 * 1024, jpegBytes: 12 * 1024 * 1024, pngBytes: 4 * 1024 * 1024, pngPixels: 9_000_000 });
 

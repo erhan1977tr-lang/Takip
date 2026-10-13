@@ -14,7 +14,7 @@ export default {
     noData: 'Romanya {years} resmî tatil verisi sistemde yok: bu yıl için teslim günü yalnızca hafta sonu ve elle kapatılan günlere göre hesaplanır (Ayarlar → Çalışma Takvimleri).',
   },
   // İmzalı teslim belgesi (karar 273): depo bağlantısından yüklenen belge; müşteri kendi siparişinde görür
-  signed: { label: 'Teslim belgesi', open: 'Aç', scanning: 'taranıyor' },
+  signed: { label: 'Teslim belgesi', open: 'Aç' },
   photos: {
     title: 'Teslimat fotoğrafları',
     none: 'Henüz teslimat fotoğrafı yok.',

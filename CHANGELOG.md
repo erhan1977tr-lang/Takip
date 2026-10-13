@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.82.1 — 13.10.2026
+
+Güvenlik düzeltmesi (karar 274). Migration yok.
+
+- **İmzalı teslim belgesi yalnızca TEMİZ ise verilir:** `/dosya/teslim-belgesi/<id>` artık yalnızca antivirüs taraması
+  tamamlanmış ve `CLEAN` olan belgeyi gönderir; `PENDING`, `SKIPPED`, `INFECTED` ve bilinmeyen her durum "bulunamadı"
+  (404) döner — içerik gönderilmez, indirme kaydı yazılmaz, durum dışarıya söylenmez. Sorgu koşulu + içerikten önce ikinci
+  denetim (`signedDocServable`). Sayfadaki "Aç / Deschide" bağlantısı da yalnızca temiz belgeler için çıkar (tarama
+  bitince kendiliğinden görünür). Oturum, sipariş kapsamı, roller, diğer dosya yolları ve teslimat fotoğrafları değişmedi.
+
 ## 3.82.0 — 13.10.2026
 
 Profil siparişi — teslim belgesi ve müşteri kur metni (karar 273). Migration yok.

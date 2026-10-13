@@ -331,6 +331,9 @@ dbTest('imzalı teslim belgesi: depo onayıyla yüklenen PDF / JPG / PNG sipari�
   await recordDeliveryPhoto(db, { orderId: id, stored: photoFile('foto.jpg'), actor: depotActor('1.2.3.4') });
   const internal = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: null, name: 'ic.pdf', storageKey: '2026/10/ic.pdf', size: 3, scanStatus: 'CLEAN' } });
   const infected = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: 'DEPOT_LINK', name: 'virus.pdf', storageKey: '2026/10/virus.pdf', size: 3, scanStatus: 'INFECTED' } });
+  // Taraması tamamlanmamış depo belgeleri (karar 274): bekleyen ve taranmamış — listede yok, indirme yolundan verilmez
+  const pending = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: 'DEPOT_LINK', name: 'bekleyen.pdf', storageKey: '2026/10/bekleyen.pdf', size: 3, scanStatus: 'PENDING' } });
+  const skipped = await db.orderFile.create({ data: { orderId: id, kind: 'INTERNAL', source: 'DEPOT_LINK', name: 'taranmadi.png', storageKey: '2026/10/taranmadi.png', size: 3, scanStatus: 'SKIPPED' } });
 
   // Sayfa listesi (deliveryDocs) — müşteri ve iç ekip aynı belgeleri görür; fotoğraf mekanizması değişmedi
   const cust = await deliveryDocs(db, id, { staff: false, scope: scopeOf('cust') });
@@ -345,10 +348,17 @@ dbTest('imzalı teslim belgesi: depo onayıyla yüklenen PDF / JPG / PNG sipari�
     for (const who of ['cust', 'admin', 'assist', 'inspector']) assert.ok(await find(r.id, who), `${who}: ${r.name}`);
     for (const who of ['other', 'sales', 'drawer']) assert.equal(await find(r.id, who), null, `${who}: ${r.name}`);
   }
-  for (const who of ['cust', 'admin']) {
+  for (const who of ['cust', 'admin', 'assist', 'inspector']) {
     assert.equal(await find(internal.id, who), null, `başka kaynaklı iç dosya: ${who}`);
     assert.equal(await find(infected.id, who), null, `virüslü: ${who}`);
+    assert.equal(await find(pending.id, who), null, `tarama bekliyor: ${who}`);
+    assert.equal(await find(skipped.id, who), null, `taranmadı: ${who}`);
   }
+  // Tarama sonra temiz çıkarsa belge açılır (kayıt değişmeden, yalnızca işçinin yazdığı tarama sonucu)
+  await db.orderFile.update({ where: { id: pending.id }, data: { scanStatus: 'CLEAN', scannedAt: new Date() } });
+  assert.ok(await find(pending.id, 'cust'));
+  assert.equal(await find(pending.id, 'other'), null);
+  assert.deepEqual((await deliveryDocs(db, id, { staff: false, scope: scopeOf('cust') })).signed.map((f) => f.name).sort(), ['bekleyen.pdf', 'imza.jpg', 'imza.png', 'imzali.pdf']);
   const photoRow = await db.orderFile.findFirst({ where: { orderId: id, source: 'DELIVERY_PHOTO' } });
   assert.equal(await find(photoRow.id, 'cust'), null, 'fotoğraf yalnızca kendi yolundan (teslimat)');
   // Cam siparişine yazılmış DEPOT_LINK dosyası (olmaması gereken) bu yoldan verilmez — yalnızca profil siparişi

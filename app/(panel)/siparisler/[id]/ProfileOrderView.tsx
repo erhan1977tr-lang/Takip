@@ -101,7 +101,6 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           <a href={`/dosya/teslim-belgesi/${f.id}?ac=1`} target="_blank" rel="noopener" data-signed-doc={f.id} title={f.name}>
             {t('delivery.signed.open')}{docs.signed.length > 1 ? ` (${i + 1})` : ''}
           </a>
-          {f.scanStatus === 'PENDING' ? <span className="muted small"> ({t('delivery.signed.scanning')})</span> : null}
         </span>
       ))}
     </span>

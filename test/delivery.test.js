@@ -11,7 +11,7 @@ import {
   reportSnapshot, takesDeliveryDocs,
 } from '../server/delivery/rules.js';
 import { deliveryReportPdf } from '../server/pdf/delivery-report.js';
-import { SIGNED_DOC_SOURCE, signedDocWhere } from '../server/delivery/rules.js';
+import { SIGNED_DOC_SOURCE, signedDocServable, signedDocWhere } from '../server/delivery/rules.js';
 import { jpegOrientation, orientationMatrix } from '../server/pdf/pdf.js';
 import { FONTS } from '../server/pdf/fonts.js';
 import { BRAND } from '../server/branding/index.js';
@@ -237,12 +237,23 @@ test('yapı: dosya yolu — teslimat fotoğrafı ve rapor sipariş kapsamından;
 test('imzalı teslim belgesi kuralı: yalnızca depo bağlantısı kaynağı, virüslü değil, profil siparişi, verilen sipariş kapsamı içinde', () => {
   const scope = { customerId: 'firma-1', removedAt: null };
   assert.equal(SIGNED_DOC_SOURCE, 'DEPOT_LINK');
-  assert.deepEqual(signedDocWhere(scope), { source: 'DEPOT_LINK', scanStatus: { not: 'INFECTED' }, order: { AND: [scope, { orderTypeCode: 'PROFILE_ORDER' }] } });
+  assert.deepEqual(signedDocWhere(scope), { source: 'DEPOT_LINK', scanStatus: 'CLEAN', order: { AND: [scope, { orderTypeCode: 'PROFILE_ORDER' }] } });
+});
+
+test('imzalı teslim belgesi: yalnızca taraması tamamlanmış TEMİZ dosya verilir (karar 274); bekleyen, taranmamış, virüslü, bilinmeyen, boş → hayır', () => {
+  assert.equal(signedDocServable('CLEAN'), true);
+  for (const s of ['PENDING', 'SKIPPED', 'INFECTED', 'SCANNING', 'FAILED', 'ERROR', 'clean', ' CLEAN', 'CLEAN ', '', null, undefined, 0, true, {}, ['CLEAN']]) {
+    assert.equal(signedDocServable(s), false, String(JSON.stringify(s)));
+  }
 });
 
 test('yapı: teslim belgesi yolu tek kuralı kullanır; sayfa bağlantıyı yalnızca belge varsa çizer; müşteri kur satırında "elle girildi" yok', () => {
   const route = read('app/dosya/[kind]/[id]/route.ts');
   assert.ok(route.includes("kind === 'teslim-belgesi'") && route.includes('db.orderFile.findFirst({ where: { id, ...signedDocWhere(scope) }'));
+  // İkinci denetim içerik gönderilmeden ve indirme kaydı yazılmadan önce (karar 274)
+  assert.ok(route.includes('if (f && signedDocServable(f.scanStatus)) file = f;'));
+  assert.ok(route.indexOf('signedDocServable(f.scanStatus)') < route.indexOf("await audit('FILE_DOWNLOAD'"));
+  assert.ok(route.indexOf('signedDocServable(f.scanStatus)') < route.indexOf('fs.createReadStream(full)'));
   assert.ok(route.indexOf("kind === 'teslim-belgesi'") > route.indexOf("if (!userCan(user, 'ORDER_VIEW'))"), 'giriş ve sipariş görme yetkisinden sonra');
   // İç dosya (siparis) yolu değişmedi: müşteri yalnızca CUSTOMER dosyası
   assert.ok(route.includes("...(userCan(user, 'FILE_INTERNAL_VIEW') ? {} : { kind: 'CUSTOMER' })"));

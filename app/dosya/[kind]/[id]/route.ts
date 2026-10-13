@@ -9,7 +9,7 @@ import { resolveKey } from '@/lib/storage';
 import { getT } from '@/lib/i18n';
 import { findDrawingFile } from '@/server/orders/drawing-access.js';
 import { renderDeliveryReport, reportLimiter } from '@/server/delivery/service.js';
-import { signedDocWhere } from '@/server/delivery/rules.js';
+import { signedDocServable, signedDocWhere } from '@/server/delivery/rules.js';
 import { contentDisposition } from '@/server/files/export-name.js';
 import { getEnv } from '@/server/env.js';
 
@@ -62,8 +62,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   } else if (kind === 'teslim-belgesi') {
     // İmzalı teslim belgesi (karar 273): yalnızca depo bağlantısından yüklenen belge (source = DEPOT_LINK) ve profil siparişi;
     // siparişin kapsamı yeter (müşteri kendi siparişinin belgesini görür). Başka firmanın / başka türdeki dosya → 404
+    // Yalnızca taraması tamamlanmış TEMİZ belge (karar 274): sorgu koşulu + ikinci denetim; aksi hâlde "bulunamadı" (404) —
+    // tarama durumu ve dosyanın varlığı dışarıya söylenmez, içerik gönderilmez, indirme kaydı yazılmaz
     const f = await db.orderFile.findFirst({ where: { id, ...signedDocWhere(scope) }, select: { storageKey: true, name: true, mime: true, scanStatus: true, orderId: true } });
-    if (f) file = f;
+    if (f && signedDocServable(f.scanStatus)) file = f;
   } else if (kind === 'tedarik' && userCan(user, 'SUPPLIER_MANAGE')) {
     // Tedarikçi siparişinin eki: yetkisi olmayan herkese 404 (varlığı da belli olmaz)
     const f = await db.supplierOrderFile.findUnique({ where: { id }, select: { storageKey: true, name: true, mime: true, scanStatus: true, revision: { select: { orderId: true } } } });
