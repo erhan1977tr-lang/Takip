@@ -16,6 +16,8 @@ Regresyon denetimi sonrası küçük düzeltmeler (karar 275). Migration yok; ro
   denetim yalnızca almayanlara gönderir, alarm kaybolmaz. Herkes alınca 24 saatlik yineleme kuralı eskisi gibi işler.
   "Düzeldi" e-postası için de aynı kural. Eski durum dosyası biçimi okunmaya devam eder.
 - **Teklif ekranı:** `data-offer-m2` niteliği görünen metinle aynı 3 ondalıkla yazılır. Hesaplama ve fiyatlar değişmedi.
+- **Sunucu kurulum testi:** işçi ve gövde kapısı deneme verisi betikleri müşteri sipariş numarasını metin olarak yazar
+  (3.77.0'dan beri alan metin — karar 259; betikler sayı yazdığı için kurulum testi duruyordu). Uygulama kodu değil.
 
 ## 3.82.2 — 13.10.2026
 

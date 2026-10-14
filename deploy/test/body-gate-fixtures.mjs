@@ -53,14 +53,14 @@ const inactive = await session(passive.id);
 
 const n = (await db.order.count({ where: { customerId: firm.id } })) + 1;
 const glass = await db.order.create({
-  data: { orderNo: `KAP${n}`, customerOrderNo: n, title: 'kapı denemesi', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE' },
+  data: { orderNo: `KAP${n}`, customerOrderNo: String(n), title: 'kapı denemesi', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE' },
 });
 /** Teslim edilmiş profil siparişi + depo bağlantısı (özetiyle; uygulamadaki gibi) */
 async function delivered(k, expiresAt) {
   const t = token();
   const order = await db.order.create({
     data: {
-      orderNo: `KAPP${n + k}`, customerOrderNo: n + k, title: `kapı denemesi (profil ${k})`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id,
+      orderNo: `KAPP${n + k}`, customerOrderNo: String(n + k), title: `kapı denemesi (profil ${k})`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id,
       profile: {
         create: {
           stage: 'TESLIM_EDILDI', pickupDate: new Date('2027-03-19T00:00:00Z'), contactPhone: '+40700000000', vehiclePlate: 'B 00 KAP', warehouseSentAt: new Date(now - 60 * MIN),

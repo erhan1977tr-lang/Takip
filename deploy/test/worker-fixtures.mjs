@@ -40,7 +40,7 @@ await db.integrationSetting.upsert({ where: { key: WAREHOUSE_KEY }, create: { ke
 
 const n = (await db.order.count({ where: { customerId: firm.id } })) + 1;
 const glass = await db.order.create({
-  data: { orderNo: `ISC${n}`, customerOrderNo: n, title: `işçi denemesi ${label}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE' },
+  data: { orderNo: `ISC${n}`, customerOrderNo: String(n), title: `işçi denemesi ${label}`, orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: admin.id, status: 'URETIMDE' },
 });
 // Uygulamanın yazdığı gibi: geçmiş bir ay klasörü + rastgele adlı dosyalar
 const dir = '2025/01';
@@ -58,7 +58,7 @@ const virus = await put('virus', eicar());
 
 const profile = await db.order.create({
   data: {
-    orderNo: `ISCP${n}`, customerOrderNo: n, title: `işçi denemesi ${label} (profil)`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id,
+    orderNo: `ISCP${n}`, customerOrderNo: String(n), title: `işçi denemesi ${label} (profil)`, orderTypeCode: 'PROFILE_ORDER', customerId: firm.id, createdById: admin.id,
     profile: { create: { stage: 'DEPODA', pickupDate: new Date('2027-03-19T00:00:00Z'), contactPhone: '+40700000000', vehiclePlate: 'B 00 TST', warehouseSentAt: new Date() } },
     profileItems: { create: [{ code: `TST-${label}`, nameRo: 'Profil de test', nameTr: 'Deneme profili', unitCode: 'BUCATI', categoryCode: 'ACCESORII', qty: 2 }] },
   },
