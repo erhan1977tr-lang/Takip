@@ -215,6 +215,10 @@ test('tek kural, üç kullanıcı: sipariş verisi, dosya adresi ve görüntüle
   const audit = route.indexOf("await audit('FILE_DOWNLOAD'");
   assert.ok(notFound > 0 && audit > notFound, 'önce bulunamadı, sonra FILE_DOWNLOAD');
   assert.equal(route.split("audit('FILE_DOWNLOAD'").length - 1, 1, 'tek kayıt noktası');
+  // Diskteki dosya kayıttan ÖNCE doğrulanır (karar 275): yok / okunamaz → 404, kayıt yazılmaz
+  const missing = route.indexOf("return new Response(t('common.fileMissing'), { status: 404 });");
+  assert.ok(missing > notFound && missing < audit, 'önce diskte var mı, sonra FILE_DOWNLOAD');
+  assert.ok(route.indexOf('fs.statSync(full)') < missing && route.indexOf('fs.createReadStream(full)') > audit);
   assert.ok(route.indexOf('findDrawingFile(') < notFound);
 
   const viewer = strip(read('app/(panel)/siparisler/[id]/cizim/[drawingId]/page.tsx'));

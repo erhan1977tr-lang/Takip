@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.82.3 — 14.10.2026
+
+Regresyon denetimi sonrası küçük düzeltmeler (karar 275). Migration yok; roller, yetkiler ve dosya erişim kuralları değişmedi.
+
+- **İndirme kaydı yalnızca gerçekten gönderilen dosya için:** `/dosya/...` yolunda dosyanın diskte bulunduğu (ve okunabilir
+  bir dosya olduğu) artık `FILE_DOWNLOAD` denetim kaydından ÖNCE doğrulanır; diskte olmayan dosya "dosya yok" (404) döner ve
+  kayıt yazılmaz. Yetki, kapsam, virüslü dosya ve imzalı teslim belgesi kuralları aynı.
+- **Yedek alarmı kısmi gönderimde tekrarlanmaz:** alarm her alıcıya ayrı denenir; bir alıcının hatası ötekileri durdurmaz.
+  Bir kısmı aldıysa sunucu aracı alanların tek yönlü anahtarlarını (adres değil) durum dosyasına yazar; sonraki saatlik
+  denetim yalnızca almayanlara gönderir, alarm kaybolmaz. Herkes alınca 24 saatlik yineleme kuralı eskisi gibi işler.
+  "Düzeldi" e-postası için de aynı kural. Eski durum dosyası biçimi okunmaya devam eder.
+- **Teklif ekranı:** `data-offer-m2` niteliği görünen metinle aynı 3 ondalıkla yazılır. Hesaplama ve fiyatlar değişmedi.
+
 ## 3.82.2 — 13.10.2026
 
 Güvenlik düzeltmesi (karar 274). Migration yok.

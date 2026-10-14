@@ -2,6 +2,7 @@
 // konteynerinde scripts/backup-alert.mjs'i SABİT KODLARLA çağırır; bu modül e-postayı üretir ve gönderir.
 // Kural: e-postaya yalnızca sabit metin, sorun kodları, sunucu adı ve saat girer — günlük satırı, komut çıktısı, dosya yolu,
 // token, anahtar, şifre ya da hata metni ASLA girmez (kodlar dışındaki her şey reddedilir / atılır).
+import crypto from 'node:crypto';
 import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 
 /** Bilinen sorun kodları → Türkçe açıklama (sunucu operatörü / yönetici okur) */
@@ -118,20 +119,47 @@ ${age != null ? `<p>Son başarılı yedek (yerel + Google Drive): ${age} saat ö
 }
 
 /**
- * @param {{ transport: any, from: string, recipients: string[], kind: string, codes?: string[], host?: string, ageHours?: number | null, now?: Date }} p
- * @returns {Promise<{ ok: true, sent: number } | { ok: false, code: 'BAD_KIND' | 'NO_CODES' | 'NO_RECIPIENTS' | 'SEND_FAILED' }>}
+ * Alıcının kısa, tek yönlü anahtarı (16 onaltılık): sunucu aracı "bu alarmı kim aldı" bilgisini ADRES YAZMADAN saklar
+ * (karar 275). Aynı adres her zaman aynı anahtarı verir; anahtardan adres çıkarılamaz.
  */
-export async function sendBackupAlert({ transport, from, recipients, kind, codes = [], host, ageHours = null, now = new Date() }) {
+export const recipientKey = (addr) => crypto.createHash('sha256').update(`takip-backup-alert|${String(addr).toLowerCase()}`).digest('hex').slice(0, 16);
+/** "--skip" değeri: yalnızca biçimi doğru anahtarlar (en çok 10); başka her şey atılır */
+export function cleanKeys(v) {
+  const list = (Array.isArray(v) ? v : String(v ?? '').split(','))
+    .map((s) => String(s).trim()).filter((s) => /^[a-f0-9]{16}$/.test(s));
+  return [...new Set(list)].slice(0, MAX_RECIPIENTS);
+}
+
+/**
+ * Her alıcıya ayrı ileti; bir alıcının hatası ötekileri durdurmaz (karar 275). skip: bu alarmı ÖNCEKİ denemede almış
+ * alıcıların anahtarları — onlara yeniden gönderilmez. delivered: bu alarmı almış alıcıların (önceki + şimdiki) anahtarları.
+ * Sonuç: hepsi aldı → ok · bir kısmı aldı, bir kısmına gönderilemedi → PARTIAL · hiçbiri almadı → SEND_FAILED.
+ * @param {{ transport: any, from: string, recipients: string[], kind: string, codes?: string[], host?: string, ageHours?: number | null, now?: Date, skip?: string[] }} p
+ * @returns {Promise<{ ok: true, sent: number, delivered: string[] } | { ok: false, code: 'PARTIAL', sent: number, failed: number, delivered: string[] } | { ok: false, code: 'BAD_KIND' | 'NO_CODES' | 'NO_RECIPIENTS' | 'SEND_FAILED', delivered?: string[] }>}
+ */
+export async function sendBackupAlert({ transport, from, recipients, kind, codes = [], host, ageHours = null, now = new Date(), skip = [] }) {
   if (!BACKUP_ALERT_KINDS.includes(kind)) return { ok: false, code: 'BAD_KIND' };
   const list = cleanCodes(codes);
   if (kind === 'FAIL' && list.length === 0) return { ok: false, code: 'NO_CODES' };
   if (!recipients?.length) return { ok: false, code: 'NO_RECIPIENTS' };
   const msg = renderBackupAlert({ kind: /** @type {'FAIL' | 'RECOVERED'} */ (kind), codes: list, host, ageHours, now });
-  try {
-    // Alıcılar birbirini görmez: her adrese ayrı ileti
-    for (const to of recipients) await sendBrandedMail(transport, { from, to, subject: msg.subject, text: msg.text, html: msg.html });
-  } catch {
-    return { ok: false, code: 'SEND_FAILED' };
+  const done = new Set(cleanKeys(skip));
+  const delivered = [];
+  let sent = 0;
+  let failed = 0;
+  // Alıcılar birbirini görmez: her adrese ayrı ileti
+  for (const to of recipients) {
+    const key = recipientKey(to);
+    if (done.has(key)) { delivered.push(key); continue; }
+    try {
+      await sendBrandedMail(transport, { from, to, subject: msg.subject, text: msg.text, html: msg.html });
+      delivered.push(key);
+      sent++;
+    } catch {
+      failed++;
+    }
   }
-  return { ok: true, sent: recipients.length };
+  if (!failed) return { ok: true, sent, delivered };
+  if (delivered.length) return { ok: false, code: 'PARTIAL', sent, failed, delivered };
+  return { ok: false, code: 'SEND_FAILED', delivered };
 }

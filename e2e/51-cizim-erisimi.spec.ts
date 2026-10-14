@@ -217,13 +217,15 @@ const fileUrls = (key: string, kind = 'cizim') => [`/dosya/${kind}/${F[key].id}`
 /** Eski bağlantı: sürüm kimliği (+ ?ac=1) */
 const legacyUrls = (key: string) => [`/dosya/cizim/${V[key]}`, `/dosya/cizim/${V[key]}?ac=1`];
 
-// Klasör dışı anahtarlı (X) satırlar hariç: o dosya yetkili kullanıcıya bulunur ama diskte okunmaz (404 "dosya yok");
-// indirme kaydı dosya bulunduğunda, diskten okumadan önce yazılır (değişmedi)
+// Klasör dışı anahtarlı (X) satırlar ayrıca sayılır (xDownloads): o dosya yetkili kullanıcıya bulunur ama diskte okunmaz
+// (404 "dosya yok"); indirme kaydı yalnızca diskte gerçekten bulunan dosya için yazılır (karar 275) → X için hiç kayıt yok
 const downloads = async (email: string) => {
   const u = await db.user.findUniqueOrThrow({ where: { email } });
   const ids = Object.entries(F).filter(([k]) => k !== 'xrel' && k !== 'xabs').map(([, f]) => f.id);
   return db.auditLog.count({ where: { action: 'FILE_DOWNLOAD', userId: u.id, entityId: { in: [...ids, ...Object.values(V).filter((v) => v !== V.X1)] } } });
 };
+/** Klasör dışı anahtarlı (diskte okunamayan) dosyalar için yazılmış indirme kayıtları — herhangi bir kullanıcıdan */
+const xDownloads = () => db.auditLog.count({ where: { action: 'FILE_DOWNLOAD', entityId: { in: [F.xrel.id, F.xabs.id, V.X1] } } });
 
 // ---------------------------------------------------------------- testler
 test('rol × dosya matrisi: dosya kimliği, ?ac=1, eski sürüm kimliği — izinli istek dosyanın kendisi, öbürleri içerik vermez', async ({ browser }) => {
@@ -284,6 +286,8 @@ test('rol × dosya matrisi: dosya kimliği, ?ac=1, eski sürüm kimliği — izi
   // dosyasını alamadı, kendi B dosyasını 4 kez aldı (dosya kimliği ve eski bağlantı, her biri indir + aç)
   expect(await downloads(CUSTOMER) - before.custA).toBe(allowedA);
   expect(await downloads(BETA) - before.custB).toBe(4);
+  // Diskte bulunmayan dosya: yanıt 404, indirme kaydı yazılmaz (karar 275)
+  expect(await xDownloads()).toBe(0);
 });
 
 test('?ac=1: yalnızca PDF / JPG / PNG tarayıcıda açılır; öbür türler her zaman ek olarak iner; ek parametreler yok sayılır', async () => {

@@ -850,8 +850,9 @@ run_backup() {
 # Sorunlar: son yedeğin kodları ($STATE/backup-last-run) + son TAM başarılı yedek (yerel + Drive, $STATE/backup-last-ok)
 # 26 saatten eski (STALE) + gece yedeği zamanlayıcısı çalışmıyor (BACKUP_TIMER) + bekçi zamanlayıcısı çalışmıyor ya da
 # 3 saattir çalışmadı (CHECK_TIMER). Aynı sorun kümesi için e-posta en çok 24 saatte bir; küme değişince hemen; sorunlar
-# bitince bir kez "düzeldi". Durum: $STATE/backup-alert ("KODLAR|gönderim zamanı"), geçmiş: $LOGS/backup-alert.log.
-# E-postaya / günlüğe yalnızca kodlar yazılır — komut çıktısı, yol, token, anahtar, şifre YAZILMAZ.
+# bitince bir kez "düzeldi". Durum: $STATE/backup-alert ("KODLAR|ZAMAN|ANAHTARLAR" — aşağıda), geçmiş: $LOGS/backup-alert.log.
+# E-postaya / günlüğe yalnızca kodlar yazılır — komut çıktısı, yol, token, anahtar, şifre YAZILMAZ (alıcıların tek yönlü
+# anahtarları — adres değil — yalnızca durum dosyasına yazılır, karar 275).
 BACKUP_STALE_SECONDS=$((26 * 3600))
 BACKUP_CHECK_STALE_SECONDS=$((3 * 3600))
 BACKUP_ALERT_REPEAT_SECONDS=$((24 * 3600))
@@ -886,36 +887,66 @@ backup_problems() {
   if [ -n "$t" ] && [ $((now - t)) -gt "$BACKUP_CHECK_STALE_SECONDS" ]; then codes="$codes CHECK_TIMER"; fi
   echo "$codes" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true
 }
-backup_alert() { # backup_alert FAIL|RECOVERED SAAT [KOD …] → 0 gönderildi
-  local kind=$1 hours=$2 host; shift 2
+# backup_alert FAIL|RECOVERED SAAT ATLA [KOD …] → 0 hepsi aldı · 3 kısmen · diğer: gönderilemedi.
+# ATLA: bu alarmı daha önce almış alıcıların anahtarları (virgülle; adres değil — karar 275). Alarmı alanların anahtarları
+# ALERT_DELIVERED'a yazılır; "TESLIM" satırı günlüğe yazılmaz.
+ALERT_DELIVERED=''
+backup_alert() {
+  local kind=$1 hours=$2 skip=$3 host out rc=0; shift 3
   host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9.-' | cut -c1-64)
-  compose run --rm --no-deps -T tools node scripts/backup-alert.mjs "$kind" --age "$hours" --host "${host:-sunucu}" "$@" >>"$LOGS/backup-alert.log" 2>&1
+  out=$(compose run --rm --no-deps -T tools node scripts/backup-alert.mjs "$kind" --age "$hours" --host "${host:-sunucu}" ${skip:+--skip "$skip"} "$@" 2>>"$LOGS/backup-alert.log") || rc=$?
+  ALERT_DELIVERED=$(printf '%s\n' "$out" | sed -n 's/^TESLIM //p' | tail -n 1 | tr -cd 'a-f0-9,')
+  printf '%s\n' "$out" | grep -v '^TESLIM ' >>"$LOGS/backup-alert.log" || true
+  return "$rc"
 }
+# Durum dosyası backup-alert: "KODLAR|ZAMAN|ANAHTARLAR". ZAMAN = alarmın HERKESE ulaştığı an (24 saatlik yineleme bundan sayılır);
+# 0 = kısmen gönderildi (ANAHTARLAR: alanlar) → sonraki denetim yalnızca almayanlara gönderir. Eski biçim "KODLAR|ZAMAN" = tamamlanmış.
+# backup-alert-recovered: "düzeldi" e-postasını almış alıcıların anahtarları (kısmi gönderimde).
 backup_evaluate() {
-  local codes prev='' sent=0 now hours line
+  local codes prev='' sent=0 keys='' skip='' now hours line rc
   codes=$(backup_problems)
   now=$(date +%s)
   hours=$(( $(backup_age) / 3600 ))
-  if [ -s "$STATE/backup-alert" ]; then line=$(head -1 "$STATE/backup-alert"); prev=${line%%|*}; sent=${line##*|}; fi
+  if [ -s "$STATE/backup-alert" ]; then
+    line=$(head -1 "$STATE/backup-alert"); prev=${line%%|*}; line=${line#*|}; sent=${line%%|*}
+    [ "$line" != "$sent" ] && keys=${line#*|}
+  fi
   [[ $sent =~ ^[0-9]+$ ]] || sent=0
+  keys=$(printf '%s' "$keys" | tr -cd 'a-f0-9,')
   if [ -n "$codes" ]; then
-    if [ "$codes" = "$prev" ] && [ $((now - ${sent:-0})) -lt "$BACKUP_ALERT_REPEAT_SECONDS" ]; then
-      return 0 # aynı alarm 24 saat içinde gönderildi
+    rm -f "$STATE/backup-alert-recovered"
+    if [ "$codes" = "$prev" ]; then
+      if [ "$sent" -gt 0 ] && [ $((now - sent)) -lt "$BACKUP_ALERT_REPEAT_SECONDS" ]; then
+        return 0 # aynı alarm 24 saat içinde herkese gönderildi
+      fi
+      [ "$sent" = 0 ] && skip=$keys # kısmi gönderim sürüyor: alanlara yeniden gönderilmez
     fi
+    rc=0
     # shellcheck disable=SC2086 # kodlar tek kelimeliktir; bilerek ayrı argüman
-    if backup_alert FAIL "$hours" $codes; then
-      echo "$codes|$now" >"$STATE/backup-alert"
+    backup_alert FAIL "$hours" "$skip" $codes || rc=$?
+    if [ "$rc" = 0 ]; then
+      echo "$codes|$now|" >"$STATE/backup-alert"
       alog "ALARM gönderildi: $codes"
       blog "✘ yedek alarmı e-postası gönderildi: $codes"
+    elif [ "$rc" = 3 ] && [ -n "$ALERT_DELIVERED" ]; then
+      echo "$codes|0|$ALERT_DELIVERED" >"$STATE/backup-alert"
+      alog "ALARM KISMEN gönderildi: $codes — gönderilemeyen alıcılara bir sonraki denetimde yeniden denenecek"
+      blog "✘ yedek alarmı e-postası kısmen gönderildi: $codes"
     else
       alog "ALARM GÖNDERİLEMEDİ (e-posta): $codes — bir sonraki denetimde yeniden denenecek"
       blog "✘ yedek alarmı e-postası gönderilemedi: $codes"
     fi
   elif [ -n "$prev" ]; then
-    if backup_alert RECOVERED "$hours"; then
-      rm -f "$STATE/backup-alert"
+    if [ -s "$STATE/backup-alert-recovered" ]; then skip=$(head -1 "$STATE/backup-alert-recovered" | tr -cd 'a-f0-9,'); fi
+    rc=0
+    backup_alert RECOVERED "$hours" "$skip" || rc=$?
+    if [ "$rc" = 0 ]; then
+      rm -f "$STATE/backup-alert" "$STATE/backup-alert-recovered"
       alog "DÜZELDİ (önceki: $prev)"
       blog "✔ yedek alarmı kapandı (düzeldi; önceki sorun: $prev)"
+    elif [ "$rc" = 3 ] && [ -n "$ALERT_DELIVERED" ]; then
+      echo "$ALERT_DELIVERED" >"$STATE/backup-alert-recovered"
+      alog "DÜZELDİ ama e-posta kısmen gönderildi (önceki: $prev) — gönderilemeyen alıcılara yeniden denenecek"
     else
       alog "DÜZELDİ ama e-posta gönderilemedi (önceki: $prev) — yeniden denenecek"
     fi

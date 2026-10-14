@@ -25,6 +25,8 @@ export FAKE_UPLOADS=$ROOT/uploads FAKE_BACKUPS=$TAKIP_BASE/backups
 
 # Sahte docker: pg_dump / pg_restore / psql / tar; "compose run … backup-alert.mjs" → $FAKE_STATE/alerts (bir satır = bir
 # e-posta isteği; argümanlar). dump-fail: pg_dump hata · alert-fail: e-posta gönderilemedi (çıkış 1).
+# two-recipients: iki alıcı (anahtarları KA, KB); --skip'te olana gönderilmez, her gerçek gönderim $FAKE_STATE/mails'e
+# "TÜR ANAHTAR" satırı olarak yazılır; b-fail: B alıcısına gönderilemez → kısmi (çıkış 3) — karar 275
 cat >"$FAKE/docker" <<'SH'
 #!/usr/bin/env bash
 S=$FAKE_STATE
@@ -35,6 +37,17 @@ if [ "$1" = compose ]; then
       a=${args#*backup-alert.mjs }
       echo "$a" | sed 's/ *$//' >>"$S/alerts"
       [ -f "$S/alert-fail" ] && exit 1
+      if [ -f "$S/two-recipients" ]; then
+        kind=${a%% *}; skip=$(echo "$a" | sed -n 's/.*--skip \([a-f0-9,]*\).*/\1/p'); got=() failed=0
+        for k in aaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbb; do
+          if [[ ",$skip," == *",$k,"* ]]; then got+=("$k"); continue; fi
+          if [ "$k" = bbbbbbbbbbbbbbbb ] && [ -f "$S/b-fail" ]; then failed=1; continue; fi
+          echo "$kind $k" >>"$S/mails"; got+=("$k")
+        done
+        echo "yedek alarmı gönderildi"; (IFS=,; echo "TESLIM ${got[*]}")
+        [ "$failed" = 1 ] && exit 3
+        exit 0
+      fi
       echo "yedek alarmı gönderildi" ;;
     *' ps --status running -q db '*) echo dbkapsayici ;;
     *' pg_dump '*) [ -f "$S/dump-fail" ] && exit 1; printf 'PGDMP sahte %s\n' "$(date +%s%N)" ;;
@@ -179,12 +192,44 @@ takip yedek-kontrol; [ "$(alerts)" = $((c + 1)) ] || fail "hatırlatma yinelendi
 clear_flag dump-fail; takip yedek
 ok "24 saat sonra bir hatırlatma, sonra sessiz"
 
+# 13. Kısmi gönderim (karar 275): A aldı, B'ye gönderilemedi → sonraki denetim yalnızca B'ye dener; A aynı alarmı yeniden
+# almaz; B alınca alarm tamamlanır ve 24 saat sessiz kalır. "Düzeldi" e-postası için de aynı kural.
+mails() { if [ -f "$FAKE_STATE/mails" ]; then grep -c "^$1 $2\$" "$FAKE_STATE/mails" || true; else echo 0; fi; }
+KA=aaaaaaaaaaaaaaaa KB=bbbbbbbbbbbbbbbb
+set_flag two-recipients; set_flag b-fail; set_flag dump-fail
+takip yedek || true
+[ "$(mails FAIL $KA)" = 1 ] && [ "$(mails FAIL $KB)" = 0 ] || fail "ilk kısmi gönderim"
+grep -qE "^DB_DUMP\|0\|$KA\$" "$STATE/backup-alert" || fail "kısmi durum: $(cat "$STATE/backup-alert")"
+grep -q 'ALARM KISMEN' "$TAKIP_BASE/logs/backup-alert.log" || fail "kısmi gönderim kayda geçmedi"
+if grep -q 'TESLIM' "$TAKIP_BASE/logs/backup-alert.log"; then fail "TESLIM satırı günlüğe yazıldı"; fi
+takip yedek-kontrol; takip yedek-kontrol
+[ "$(mails FAIL $KA)" = 1 ] || fail "A aynı alarmı yeniden aldı"
+[[ "$(last_alert)" == *"--skip $KA "* ]] || fail "yeniden deneme A'yı atlamıyor: $(last_alert)"
+grep -qE "^DB_DUMP\|0\|$KA\$" "$STATE/backup-alert" || fail "B'ye gönderilemezken alarm kayboldu / tamamlandı sayıldı"
+clear_flag b-fail
+takip yedek-kontrol
+[ "$(mails FAIL $KA)" = 1 ] && [ "$(mails FAIL $KB)" = 1 ] || fail "B'ye yeniden deneme: A=$(mails FAIL $KA) B=$(mails FAIL $KB)"
+grep -qE "^DB_DUMP\|[1-9][0-9]*\|\$" "$STATE/backup-alert" || fail "tamamlanan alarm kaydı: $(cat "$STATE/backup-alert")"
+c=$(alerts); takip yedek-kontrol; [ "$(alerts)" = "$c" ] || fail "tamamlanan alarm 24 saat içinde yinelendi"
+# Düzeldi: A aldı, B'ye gönderilemedi → alarm açık kalır; sonraki denetimde yalnızca B; B alınca kapanır
+set_flag b-fail; clear_flag dump-fail
+takip yedek
+[ "$(mails RECOVERED $KA)" = 1 ] && [ "$(mails RECOVERED $KB)" = 0 ] || fail "kısmi düzeldi"
+[ -s "$STATE/backup-alert" ] && grep -qx "$KA" "$STATE/backup-alert-recovered" || fail "kısmi düzeldi durumu"
+takip yedek-kontrol
+[ "$(mails RECOVERED $KA)" = 1 ] || fail "A düzeldi e-postasını yeniden aldı"
+clear_flag b-fail; takip yedek-kontrol
+[ "$(mails RECOVERED $KB)" = 1 ] && [ ! -e "$STATE/backup-alert" ] && [ ! -e "$STATE/backup-alert-recovered" ] || fail "düzeldi tamamlanmadı"
+c=$(alerts); takip yedek-kontrol; [ "$(alerts)" = "$c" ] || fail "düzeldikten sonra gereksiz e-posta"
+clear_flag two-recipients
+ok "kısmi gönderim: alanlara yinelenmez, almayanlara yeniden denenir, alarm kaybolmaz"
+
 # 11. Sırlar: alarm argümanlarında, alarm / yedek günlüğünde ve çıktıda SMTP şifresi, GitHub token'ı, .env içeriği yok
 for f in "$FAKE_STATE/alerts" "$TAKIP_BASE/logs/backup-alert.log" "$TAKIP_BASE/logs/backup.log" "$ROOT/out"; do
   if grep -qF -e "$SECRET" -e "$TOKEN" -e 'yedek@alarm.test' "$f"; then fail "sır sızdı: $f"; fi
 done
 # Alarm argümanları yalnızca sabit biçim: tür, yaş, sunucu adı, bilinen kodlar
-bad=$(grep -vE '^(FAIL|RECOVERED) --age [0-9]+ --host [A-Za-z0-9.-]+( (DB_DUMP|DB_VERIFY|FILES|FILES_VERIFY|RCLONE_MISSING|ENCRYPT|DRIVE_UPLOAD|DRIVE_VERIFY|STALE|BACKUP_TIMER|CHECK_TIMER))*$' "$FAKE_STATE/alerts" || true)
+bad=$(grep -vE '^(FAIL|RECOVERED) --age [0-9]+ --host [A-Za-z0-9.-]+( --skip [a-f0-9,]+)?( (DB_DUMP|DB_VERIFY|FILES|FILES_VERIFY|RCLONE_MISSING|ENCRYPT|DRIVE_UPLOAD|DRIVE_VERIFY|STALE|BACKUP_TIMER|CHECK_TIMER))*$' "$FAKE_STATE/alerts" || true)
 [ -z "$bad" ] || fail "beklenmeyen alarm argümanı: $bad"
 ok "sır yok; alarm yalnızca sabit kodlar taşır"
 

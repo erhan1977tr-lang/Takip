@@ -833,7 +833,7 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
           </tfoot>
         </table>
       </div>
-      <p className="small" style={{ margin: '8px 0 0' }} data-offer-m2={totalM2.toFixed(2)}>{t('offer.view.totalM2', { m2: fmtM2(totalM2) })}</p>
+      <p className="small" style={{ margin: '8px 0 0' }} data-offer-m2={totalM2.toFixed(3)}>{t('offer.view.totalM2', { m2: fmtM2(totalM2) })}</p>
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {/* Bedelsiz telafi (karar 231): fiziksel üretilir ve yüklenir, faturalanacak miktara eklenmez — ikisi ayrı yazılır */}

@@ -74,13 +74,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   if (!file) return new Response(t('common.fileNotFound'), { status: 404 });
   // Virüslü dosya karantinadadır; kimseye verilmez
   if (file.scanStatus === 'INFECTED') return new Response(t('common.fileInfected'), { status: 403 });
+  // Diskteki dosya ÖNCE doğrulanır: yoksa (ya da okunamıyorsa) 404 ve indirme kaydı yazılmaz — kayıt yalnızca gerçekten
+  // gönderilecek dosya için (karar 275)
+  const full = resolveKey(file.storageKey);
+  let stat: fs.Stats | null = null;
+  try { stat = full ? fs.statSync(full) : null; } catch { stat = null; }
+  if (!full || !stat || !stat.isFile()) return new Response(t('common.fileMissing'), { status: 404 });
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
   await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : 'OrderFile', id, user.id,
     { ...(kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId }), name: file.name });
-
-  const full = resolveKey(file.storageKey);
-  if (!full || !fs.existsSync(full)) return new Response(t('common.fileMissing'), { status: 404 });
-  const stat = fs.statSync(full);
   const ascii = file.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
   // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir.
   const ext = file.name.toLowerCase().split('.').pop() ?? '';

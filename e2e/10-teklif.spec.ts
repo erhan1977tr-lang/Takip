@@ -66,7 +66,7 @@ test('teklif: satış fiyatı ↔ müşteri fiyatı; kim neyi görür', async ({
   await expect(cust.getByText('Fiyatlar KDV hariçtir.').first()).toBeVisible();
   // Toplam metraj (P2-B): salt okunur teklif tablosunun altında, hesap iki ondalık / gösterim üç ondalık; fiyattan bağımsız
   await expect(cust.locator('#teklif [data-offer-m2]')).toHaveText('Toplam metraj: 3,000 m²');
-  await expect(cust.locator('#teklif [data-offer-m2]')).toHaveAttribute('data-offer-m2', '3.00');
+  await expect(cust.locator('#teklif [data-offer-m2]')).toHaveAttribute('data-offer-m2', '3.000');
 
   // Satış müşteri fiyatını hiçbir yerde görmez (sayfanın ham yanıtında da yok)
   await sales.goto(url);
