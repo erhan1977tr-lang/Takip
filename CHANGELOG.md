@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.82.4 — 14.10.2026
+
+Yayın kapısı yarış durumu düzeltmesi (karar 276). Yalnızca sunucu aracı (`deploy/takip.sh`) ve testleri; uygulama kodu,
+veritabanı ve migration değişmedi.
+
+- **Kök neden:** sunucu aracı bir commit'in CI sonucunu GitHub'a yalnızca commit SHA'sıyla soruyor, dal / olay ayırmadan
+  en yeni "CI" koşusunu alıyordu. 3.82.3'te aynı commit çalışma dalında CI'dan geçmişti; `backend`'e itildikten sonra
+  `backend` koşusu oluşana kadar o başarılı sonuç yeterli sayıldı ve sürüm `backend` CI'ı bitmeden yayınlandı. Sunucu
+  kurulum testi (deploy-test) de hiç beklenmiyordu.
+- **Yeni kapı:** yalnızca izlenen dalın KENDİ koşuları sayılır — commit SHA, dal, `push` olayı, iş akışı DOSYA YOLU
+  (`ci.yml`, `deploy-test.yml`) ve depo birlikte doğrulanır; aynı commit + dal için en yeni koşu geçerlidir; yalnızca
+  `success` başarıdır. Koşu yoksa, sürüyorsa ya da GitHub API okunamazsa yayın beklemeye alınır; başarısız / iptal / zaman
+  aşımı vb. → yayınlanmaz. `deploy/`, `Dockerfile`, `.dockerignore`, `app/surum` ya da kurulum iş akışı değiştiyse
+  `backend`'deki sunucu kurulum testi de başarılı olmalıdır.
+- **Dal ucu:** otomatik / elle güncelleme yalnızca dalın güncel ucunu yayınlar; derlemeden önce ve veritabanı yedeği /
+  migration'dan hemen önce uç ve kapı yeniden denetlenir. Uç değiştiyse ya da kapı bozulduysa eski commit yayınlanmaz,
+  çalışan sürüm aynen sürer.
+- Kapıyı atlayan `TAKIP_SKIP_CI_GATE` (yalnızca kurulum testleri için) her kullanımda yayın günlüğüne yazılır; zamanlayıcı
+  servisi bu değişkeni vermez.
+
 ## 3.82.3 — 14.10.2026
 
 Regresyon denetimi sonrası küçük düzeltmeler (karar 275). Migration yok; roller, yetkiler ve dosya erişim kuralları değişmedi.

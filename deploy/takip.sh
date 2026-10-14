@@ -19,7 +19,8 @@
 #   takip kur [ADRES]                Banca Transilvania EUR satış kuru sunucudan okunabiliyor mu (FGO)
 #
 # Otomatik güncelleme (systemd: takip-deploy.timer, 2 dakikada bir → takip _otomatik):
-#   izlenen daldaki son commit GitHub'daki CI testlerinden geçtiyse sunucuda derlenir,
+#   izlenen dalın GÜNCEL ucu, YALNIZCA o dalın kendi GitHub koşularında CI'dan (ve deploy/ vb. değiştiyse sunucu
+#   kurulum testinden) geçtiyse sunucuda derlenir (başka dalın sonucu sayılmaz; derleme sonrası uç ve kapı yeniden denetlenir),
 #   veritabanı yedeklenir, migration uygulanır ve yeni sürüm başlatılır. Açılmazsa önceki sürüme dönülür.
 #   Testlerden geçmeyen commit hiç yayınlanmaz. Depo özel: GitHub'a /opt/takip/github-token ile bağlanılır.
 set -Eeuo pipefail
@@ -48,7 +49,12 @@ BACKUPS=$BASE/backups
 REPO_SLUG=${TAKIP_REPO:-erhan1977tr-lang/Takip}
 API=https://api.github.com/repos/$REPO_SLUG
 TOKEN_FILE=$BASE/github-token
-CI_WORKFLOW=CI
+# Yayın kapısının zorunlu iş akışları — DOSYA YOLUYLA tanınır (ad değişebilir, yol depodaki kimliktir; karar 276)
+CI_WORKFLOW_PATH=.github/workflows/ci.yml
+INSTALL_WORKFLOW_PATH=.github/workflows/deploy-test.yml
+# Sunucu kurulum testinin (deploy-test.yml) tetiklendiği yollar — o dosyadaki "paths" listesiyle AYNI olmalı
+# (test/deploy-gate.test.js karşılaştırır). Bu yollardan biri değiştiyse yayın kurulum testini de bekler.
+INSTALL_TEST_PATHS=(deploy Dockerfile .dockerignore app/surum .github/workflows/deploy-test.yml)
 VERBOSE=${VERBOSE:-0}
 
 mkdir -p "$STATE" "$LOGS"
@@ -102,12 +108,18 @@ gh_curl() { # gh_curl YOL → gövde + son satırda HTTP kodu
   curl "${a[@]}" "$API$1"
 }
 
-# ---------- CI kontrolü ----------
-# Bir commit'in GitHub Actions'taki "CI" iş akışı sonucu: success | failure | pending | none | cancelled
-# (stdout'a yalnızca sonuç yazılır)
-ci_state() {
-  local resp code run st co
-  resp=$(gh_curl "/actions/runs?head_sha=$1&per_page=30") || { echo pending; return; }
+# ---------- CI kontrolü (yayın kapısı, karar 276) ----------
+# Bir commit YALNIZCA izlenen dalın (backend) KENDİ koşularıyla yayınlanabilir: GitHub'daki koşu
+#   head_sha = commit · head_branch = izlenen dal · event = push · path = iş akışı dosyası · depo = bu depo
+# olmalıdır. Başka dalda (çalışma dalı, PR) aynı commit için geçmiş başarılı koşu ASLA yeterli sayılmaz. Aynı commit + dal
+# için birden çok koşu varsa EN YENİSİ geçerlidir. Koşu yoksa, sürüyorsa, API okunamazsa → bekle (pending); başarı dışındaki
+# her sonuç (failure, cancelled, timed_out, skipped, …) → failure. Hiçbir durumda "bilinmiyor" başarı sayılmaz.
+
+# run_state SHA İŞ_AKIŞI_YOLU DAL → success | failure | pending | none (stdout'a yalnızca sonuç)
+run_state() {
+  local sha=$1 wf=$2 b=$3 resp code run st co
+  [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo pending; return; }
+  resp=$(gh_curl "/actions/runs?head_sha=$sha&branch=$b&event=push&per_page=100") || { echo pending; return; }
   code=${resp##*$'\n'}
   resp=${resp%$'\n'*}
   case $code in
@@ -119,34 +131,93 @@ ci_state() {
       ;;
     *) echo pending; return ;;
   esac
-  run=$(jq -c --arg n "$CI_WORKFLOW" '[.workflow_runs[] | select(.name == $n)] | sort_by(.created_at) | last // empty' <<<"$resp")
-  if [ -z "$run" ]; then echo none; return; fi
-  st=$(jq -r .status <<<"$run")
-  co=$(jq -r .conclusion <<<"$run")
+  run=$(jq -ce --arg s "$sha" --arg b "$b" --arg p "$wf" --arg r "$REPO_SLUG" '
+    [ .workflow_runs[]
+      | select(.head_sha == $s and .head_branch == $b and .event == "push" and .path == $p
+          and ((.repository.full_name // "") | ascii_downcase) == ($r | ascii_downcase)
+          and ((.head_repository.full_name // "") | ascii_downcase) == ($r | ascii_downcase)) ]
+    | sort_by(.created_at, .run_number) | last // {}' <<<"$resp" 2>/dev/null) || { echo pending; return; }
+  [ "$run" = '{}' ] && { echo none; return; }
+  st=$(jq -r '.status // ""' <<<"$run")
+  co=$(jq -r '.conclusion // ""' <<<"$run")
   if [ "$st" != completed ]; then echo pending
   elif [ "$co" = success ]; then echo success
-  elif [ "$co" = cancelled ]; then echo cancelled
   else echo failure; fi
 }
 
-# Commit yayınlanabilir mi? CI'nin kendisinin yazdığı commit'ler (kilit dosyası, migration) CI başlatmaz;
-# onların içeriğini bir önceki commit'in CI koşusu üretip test ettiği için o koşunun sonucu geçerlidir.
-gate() {
-  local sha=$1 s info email subject parents
-  if [ "${TAKIP_SKIP_CI_GATE:-0}" = 1 ]; then echo success; return; fi
+# ci_state SHA [DAL] — izlenen daldaki "CI" (ci.yml) koşusunun sonucu: success | failure | pending | none
+ci_state() { run_state "$1" "$CI_WORKFLOW_PATH" "${2:-$(branch)}"; }
+
+# CI'nin kendisinin yazdığı commit'ler (kilit dosyası, migration) CI başlatmaz; onların içeriğini bir önceki commit'in
+# — AYNI DALDAKİ — CI koşusu üretip test ettiği için o koşunun sonucu geçerlidir.
+ci_gate() { # ci_gate SHA DAL
+  local sha=$1 b=$2 s info email subject parents
   for _ in 1 2 3 4 5; do
-    s=$(ci_state "$sha")
+    s=$(ci_state "$sha" "$b")
     case $s in success | pending | failure) echo "$s"; return ;; esac
-    info=$(git -C "$SRC" log -1 --format='%ae%x09%s%x09%P' "$sha")
+    info=$(git -C "$SRC" log -1 --format='%ae%x09%s%x09%P' "$sha" 2>/dev/null) || { echo pending; return; }
     email=${info%%$'\t'*}; info=${info#*$'\t'}; subject=${info%%$'\t'*}; parents=${info#*$'\t'}
     if [[ $email == *github-actions* && $subject == CI:* && -n $parents ]]; then
       sha=${parents%% *}
       continue
     fi
-    if [ "$s" = cancelled ]; then echo failure; else echo pending; fi
+    echo pending
     return
   done
   echo pending
+}
+
+# Sunucu kurulum testi (deploy-test.yml) yalnızca INSTALL_TEST_PATHS değişince çalışır. Yayın onu şu durumda bekler:
+#  · yayındaki commit (TABAN) bilinir ve TABAN..SHA aralığında bu yollar değiştiyse: değişikliği içeren EN YENİ commit
+#    (L) ile SHA arasındaki commit'lerden, izlenen dalda kurulum testi koşusu olan EN YENİSİ başarılı olmalı (koşu yoksa
+#    henüz oluşmamıştır → bekle); bu yollar değişmediyse kurulum testi gerekmez;
+#  · TABAN bilinmiyorsa (ilk kurulum): SHA ve önceki 20 commit'ten kurulum testi koşusu olan en yenisi başarılı olmalı.
+install_gate() { # install_gate SHA DAL [TABAN]
+  local sha=$1 b=$2 base=${3:-} last c s list
+  if [ -n "$base" ] && git -C "$SRC" merge-base --is-ancestor "$base" "$sha" 2>/dev/null; then
+    [ "$base" = "$sha" ] && { echo success; return; }
+    if git -C "$SRC" diff --quiet "$base" "$sha" -- "${INSTALL_TEST_PATHS[@]}" 2>/dev/null; then echo success; return; fi
+    last=$(git -C "$SRC" log -1 --first-parent --format=%H "$base..$sha" -- "${INSTALL_TEST_PATHS[@]}" 2>/dev/null) || { echo pending; return; }
+    list=$(git -C "$SRC" rev-list --first-parent "$base..$sha" 2>/dev/null) || { echo pending; return; }
+    # Aralıkta yol değişikliği ancak birleştirme dışı bir yoldan geldiyse (L bulunamadı): en temkinli seçim — SHA'nın kendisi
+    [ -n "$last" ] || last=$sha
+  else
+    list=$(git -C "$SRC" rev-list --first-parent -n 21 "$sha" 2>/dev/null) || { echo pending; return; }
+    last=''
+  fi
+  for c in $list; do
+    s=$(run_state "$c" "$INSTALL_WORKFLOW_PATH" "$b")
+    case $s in
+      none) ;;
+      *) echo "$s"; return ;;
+    esac
+    [ -n "$last" ] && [ "$c" = "$last" ] && break
+  done
+  echo pending
+}
+
+# gate SHA [TABAN] — yayınlanabilir mi: izlenen daldaki CI VE (gerekiyorsa) sunucu kurulum testi başarılı.
+# Sonuç: success | failure | pending. Biri failure ise failure; biri bekliyorsa / okunamıyorsa pending.
+gate() {
+  local sha=$1 base=${2:-} b ci inst
+  if [ "${TAKIP_SKIP_CI_GATE:-0}" = 1 ]; then
+    # Yalnızca kurulum testleri (CI makinesi) ve bilinçli elle kullanım içindir; zamanlayıcı bu değişkeni vermez
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ⚠ TAKIP_SKIP_CI_GATE=1: yayın kapısı ATLANDI ($(short "$sha"))" >>"$LOGS/deploy.log"
+    echo success
+    return
+  fi
+  b=$(branch)
+  ci=$(ci_gate "$sha" "$b")
+  [ "$ci" = success ] || { echo "$ci"; return; }
+  inst=$(install_gate "$sha" "$b" "$base")
+  echo "$inst"
+}
+
+# İzlenen dalın GitHub'daki güncel ucu hâlâ SHA mı (yayının son adımlarından önce; karar 276). Okunamazsa "hayır".
+head_is() { # head_is SHA
+  local b; b=$(branch)
+  git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b" 2>/dev/null || return 1
+  [ "$(git -C "$SRC" rev-parse "origin/$b" 2>/dev/null || true)" = "$1" ]
 }
 
 # ---------- yedek ----------
@@ -496,9 +567,14 @@ cmd_cache() {
 }
 
 # ---------- yayınlama ----------
-do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
-  local sha=$1 prev=${2:-} s ver f prev_tag
+do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın güncel ucu yayınlanır (otomatik / elle güncelleme)
+  local sha=$1 prev=${2:-} only_head=${3:-} s ver f prev_tag
   s=$(short "$sha"); ver=$(version_of "$sha")
+  # Kapıdan sonra dal ilerlediyse ESKİ commit yayınlanmaz (bir sonraki tur yeni ucu değerlendirir); çalışan sürüme dokunulmaz
+  if [ "$only_head" = uc ] && ! head_is "$sha"; then
+    log "⏸ $ver ($s) yayınlanmadı: '$(branch)' dalının ucu değişti ya da doğrulanamadı; çalışan sürüm aynen sürüyor."
+    return 0
+  fi
   log "▶ $ver ($s) yayınlanıyor…"
 
   # Yalnızca test / belge değiştiyse uygulama yeniden derlenmez
@@ -543,6 +619,18 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA
     return 1
   fi
 
+  # Derleme uzun sürer: veritabanına / kapsayıcılara dokunmadan HEMEN ÖNCE dal ucu ve yayın kapısı yeniden denetlenir
+  if [ "$only_head" = uc ]; then
+    local why=''
+    if ! head_is "$sha"; then why='dal ucu değişti ya da doğrulanamadı'
+    elif [ "$(gate "$sha" "$prev")" != success ]; then why='yayın kapısı artık başarılı değil'
+    fi
+    if [ -n "$why" ]; then
+      [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+      log "⏸ $ver ($s) yayınlanmadı: derleme sırasında $why; çalışan sürüm aynen sürüyor."
+      return 0
+    fi
+  fi
   if ! f=$(backup_db "once-$s"); then
     [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
     log "✘ $ver ($s): veritabanı yedeği alınamadı; güvenlik için yayınlanmadı (bir sonraki denemede tekrar denenecek)."
@@ -630,17 +718,18 @@ auto_deploy() {
     info "$(short "$head") daha önce yayınlanamadı; yeni bir güncelleme bekleniyor."
     return 0
   fi
-  g=$(gate "$head")
+  g=$(gate "$head" "$current")
   [ -f "$STATE/last_error" ] && grep -q 'GitHub' "$STATE/last_error" && [ "$g" != pending ] && clear_error
   case $g in
-    pending) info "$(short "$head") için testler sürüyor; bitince yayınlanacak."; return 0 ;;
+    success) ;;
     failure)
       echo "$head" >"$STATE/failed"
-      log "✘ $(version_of "$head") ($(short "$head")) testlerden geçmedi; yayınlanmadı."
+      log "✘ $(version_of "$head") ($(short "$head")) '$(branch)' dalındaki testlerden geçmedi; yayınlanmadı."
       return 0
       ;;
+    *) info "$(short "$head") için '$(branch)' dalındaki testler (CI / sunucu kurulumu) bekleniyor; bitince yayınlanacak."; return 0 ;;
   esac
-  do_deploy "$head" "$current"
+  do_deploy "$head" "$current" uc
 }
 
 # İlk kurulum: daldaki en yeni, testlerden geçmiş commit yayınlanır.
@@ -650,6 +739,12 @@ first_deploy() {
   local b sha g
   b=$(branch)
   git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b"
+  # Sunucuda zaten yayında bir sürüm varsa ilk kurulum yolu da yalnızca dalın güncel ucunu yayınlar (karar 276)
+  if [ -n "$(cat "$STATE/deployed" 2>/dev/null || true)" ]; then
+    flock -u 9
+    auto_deploy
+    return $?
+  fi
   for sha in $(git -C "$SRC" rev-list --first-parent -n 30 "origin/$b"); do
     # Bu araçtan önceki sürümler bu düzenle yayınlanamaz
     git -C "$SRC" cat-file -e "$sha:deploy/takip.sh" 2>/dev/null || break

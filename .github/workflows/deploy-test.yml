@@ -44,8 +44,11 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh deploy/test/deploy-gate.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+
+      - name: Yayın kapısı — mantık testi (sahte GitHub API / docker, geçici git deposu; yalnızca backend'in kendi koşuları sayılır)
+        run: bash deploy/test/deploy-gate.sh
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
         run: bash deploy/test/cache-housekeeping.sh
