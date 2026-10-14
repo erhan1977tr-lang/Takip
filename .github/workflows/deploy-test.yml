@@ -97,17 +97,26 @@ jobs:
           compose logs --tail 60 clamav worker
           exit 1
 
-      - name: CI kapısı (gerçek GitHub API; CI'nin yazdığı commit'te üst commit'in sonucu)
+      - name: CI kapısı (gerçek GitHub API, salt okunur; yalnızca backend'in kendi koşuları — karar 276)
         env:
           GH: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gate() { sudo env GITHUB_TOKEN="$GH" takip _ci "$1"; }
-          [ "$(gate 1e117de)" = success ]
-          [ "$(gate 7c76031)" = failure ]
-          [ "$(gate d75ccda)" = failure ]
-          [ "$(gate cf140a5)" = success ]
+          # takip _ci SHA DAL [TABAN]: yalnızca okur, hiçbir şey yayınlamaz
+          gate() { sudo env GITHUB_TOKEN="$GH" takip _ci "$@"; }
+          [ "$(gate 1e117de backend)" = success ]
+          [ "$(gate 7c76031 backend)" = failure ]
+          # CI'nin yazdığı commit: üst commit'in AYNI daldaki koşusu geçerli
+          [ "$(gate d75ccda backend)" = failure ]
+          [ "$(gate cf140a5 backend 'cf140a5^')" = success ]
+          # 3.82.3 olayı: ebf17a83 yalnızca çalışma dalında CI'dan geçti, backend'de koşusu yok → yayın yok (bekle)
+          [ "$(gate ebf17a83 backend 9b438bcd)" = pending ]
+          # Aynı commit kendi dalında: CI başarılı ama deploy/ değişti ve sunucu kurulum testi başarısız → başarısız
+          [ "$(gate ebf17a83 fix/3.82.3-regresyon-duzeltmeleri 9b438bcd)" = failure ]
+          # backend'de CI + sunucu kurulum testi başarılı → yayınlanabilir; yalnızca uygulama değişikliği → kurulum testi gerekmez
+          [ "$(gate 6514a99f backend 9b438bcd)" = success ]
+          [ "$(gate 9b438bcd backend 46bab823)" = success ]
           # Geçersiz anahtar: yayın yapılmaz ("pending"), hata kayda geçer
-          [ "$(sudo env GITHUB_TOKEN=gecersiz takip _ci 1e117de 2>/dev/null)" = pending ]
+          [ "$(sudo env GITHUB_TOKEN=gecersiz takip _ci 1e117de backend 2>/dev/null)" = pending ]
           sudo grep -q 'GitHub anahtarı geçersiz' /opt/takip/logs/deploy.log
 
       - name: Yeniden kurulum anahtarları korur

@@ -65,7 +65,8 @@ say() { echo "$*"; }
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOGS/deploy.log"; }
 info() { if [ "$VERBOSE" = 1 ]; then echo "$*"; fi; }
 compose() { docker compose -p takip --env-file "$ENV_FILE" -f "$SRC/deploy/docker-compose.yml" "$@"; }
-branch() { cat "$STATE/branch" 2>/dev/null || echo backend; }
+# GATE_BRANCH yalnızca salt okunur tanı komutu "takip _ci SHA DAL" içindir; yayın her zaman izlenen dalı kullanır
+branch() { if [ -n "${GATE_BRANCH:-}" ]; then echo "$GATE_BRANCH"; else cat "$STATE/branch" 2>/dev/null || echo backend; fi; }
 short() { echo "${1:0:7}"; }
 version_of() { git -C "$SRC" show "$1:package.json" 2>/dev/null | jq -r .version 2>/dev/null || echo '?'; }
 tty_read() { # tty_read DEĞİŞKEN "soru" [gizli]
@@ -741,6 +742,11 @@ first_deploy() {
   git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b"
   # Sunucuda zaten yayında bir sürüm varsa ilk kurulum yolu da yalnızca dalın güncel ucunu yayınlar (karar 276)
   if [ -n "$(cat "$STATE/deployed" 2>/dev/null || true)" ]; then
+    sha=$(git -C "$SRC" rev-parse "origin/$b")
+    if [ "$sha" = "$(cat "$STATE/deployed")" ]; then
+      log "✔ $(version_of "$sha") ($(short "$sha")) zaten yayında."
+      return 0
+    fi
     flock -u 9
     auto_deploy
     return $?
@@ -1380,7 +1386,8 @@ main() {
     guncelle | update) VERBOSE=1 auto_deploy ;;
     _otomatik) auto_deploy ;;
     _ilk) first_deploy ;;
-    _ci) gate "$(git -C "$SRC" rev-parse "$1")" ;;
+    # Salt okunur tanı: takip _ci SHA [DAL] [TABAN] — yayın kapısının sonucu (success | failure | pending); hiçbir şey yayınlanmaz
+    _ci) GATE_BRANCH=${2:-} gate "$(git -C "$SRC" rev-parse "$1")" "${3:+$(git -C "$SRC" rev-parse "$3")}" ;;
     github) cmd_github ;;
     antivirus | av) compose run --rm tools node scripts/av-check.mjs ;;
     kur | fx) compose run --rm tools node scripts/fx-check.mjs "$@" ;;
