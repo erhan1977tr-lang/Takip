@@ -523,8 +523,9 @@ test('yapı: FGO\'nun verdiği adrese istek gönderen TEK yer downloadFgoPdf; ba
   // Sunucuda başka hiçbir yer redirect seçeneği vermez / FGO bağlantısını kendisi indirmez
   const server = walk('server', /\.js$/).concat(walk('lib', /\.tsx?$/), walk('app', /\.tsx?$/), walk('scripts', /\.m?js$/));
   // Telegram asistanı (karar 278) sabit Telegram / AI adreslerine gider ve yönlendirmeyi HİÇ izlemez (redirect: 'error')
-  const assistant = ['server/assistant/ai.js', 'server/assistant/telegram.js'];
-  assert.deepEqual(server.filter((f) => /redirect:\s*['"]/.test(noComments(read(f)))), [...assistant, 'server/documents/fgo-pdf.js']);
+  // CAD önizleme istemcisi (karar 283) yalnızca sunucu ortamındaki iç hizmet adresine gider, yönlendirme izlemez
+  const assistant = ['server/assistant/ai.js', 'server/assistant/telegram.js', 'server/files/cad-preview.js'];
+  assert.deepEqual(server.filter((f) => /redirect:\s*['"]/.test(noComments(read(f)))), [...assistant.slice(0, 2), 'server/documents/fgo-pdf.js', assistant[2]]);
   for (const f of assistant) assert.deepEqual([...new Set([...noComments(read(f)).matchAll(/redirect:\s*'(\w+)'/g)].map((m) => m[1]))], ['error'], f);
   const del = noComments(read('server/documents/delivery.js'));
   assert.ok(!del.includes('fetchImpl(') && !del.includes('.arrayBuffer('), 'delivery.js kendisi indirme yapmaz');

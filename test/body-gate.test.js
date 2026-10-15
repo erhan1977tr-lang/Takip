@@ -332,7 +332,8 @@ test('yapı: sunucu işlemleri kendi denetimini yapmaya devam eder (kapı yetkil
   assert.match(read('app/depo/[token]/actions.ts'), /db\.authFailure\.create\(/);
   // Next sınırı ve bellek sınırı bu değişiklikte de yok / aynı (SEC-12)
   assert.match(read('next.config.mjs'), /bodySizeLimit: '250mb'/);
-  const compose = read('deploy/docker-compose.yml');
+  // CAD önizleme hizmetinin (karar 283) kendi sınırları bu kararın kapsamı dışındadır; diğer servislerde sınır yok
+  const compose = read('deploy/docker-compose.yml').replace(/^  cad:\n(?:(?: {4}.*|\s*)\n)+/m, '');
   for (const k of ['mem_limit', 'mem_reservation', 'memswap_limit', 'cpus', 'pids_limit', 'deploy', 'ulimits']) assert.doesNotMatch(compose, new RegExp(`^\\s*${k}:`, 'm'), k);
 });
 

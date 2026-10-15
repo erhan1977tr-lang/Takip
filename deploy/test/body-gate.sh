@@ -103,7 +103,9 @@ post() {
   UP=${out##* }
 }
 # Uygulama kapsayıcısının ağdan aldığı toplam bayt (Caddy'nin ilettiği gövde buradan görünür)
-rx() { sudo docker exec "$APP_ID" cat /sys/class/net/eth0/statistics/rx_bytes; }
+# Uygulama kapsayıcısının aldığı bayt: geri döngü dışındaki BÜTÜN arayüzlerin toplamı (3.88.0'dan beri iki ağı var:
+# default + CAD önizleme iç ağı — karar 283; eth0 hangisi olursa olsun ölçüm doğru kalır)
+rx() { sudo docker exec "$APP_ID" sh -c 't=0; for f in /sys/class/net/*/statistics/rx_bytes; do case "$f" in */lo/*) continue;; esac; t=$((t + $(cat "$f"))); done; echo "$t"'; }
 # İsteği vekil değil uygulama yanıtladı: kapı reddi (401), boyut reddi (413), bağlantı / vekil hatası (000 / 502 / 504) değil
 by_app() { case $CODE in 401 | 413 | 000 | 502 | 504) return 1 ;; esac; }
 # Kapının hiçbir kaydı değiştirmediğini görmek için: oturumlar (son etkinlik anlarıyla), hatalı deneme ve denetim kaydı sayıları

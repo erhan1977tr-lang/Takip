@@ -27,6 +27,7 @@ import { STOCK_SHORTAGE_ALERT, customerShortageView, stockLevels } from '@/serve
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { PreviewFor } from '@/components/PreviewFor';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, deliveryPhotoAction, deliveryReportAction, invoicedAction, paidAction,
   profilePricesAction, proformaAction, resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
@@ -100,7 +101,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           {i > 0 ? ' · ' : ''}
           <a href={`/dosya/teslim-belgesi/${f.id}?ac=1`} target="_blank" rel="noopener" data-signed-doc={f.id} title={f.name}>
             {t('delivery.signed.open')}{docs.signed.length > 1 ? ` (${i + 1})` : ''}
-          </a>
+          </a>{' '}
+          <PreviewFor href={`/dosya/teslim-belgesi/${f.id}`} name={f.name} />
         </span>
       ))}
     </span>
@@ -555,6 +557,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                       <figcaption className="small muted">
                         {fmtDateTime(ph.createdAt)} · {ph.by ?? t(`delivery.photos.by.${ph.via === 'DEPOT_LINK' ? 'DEPOT_LINK' : 'ADMIN'}`)}
                         {ph.scanStatus === 'PENDING' ? ` · ${t('delivery.photos.scanning')}` : ''}
+                        <div><PreviewFor href={`/dosya/teslimat/${ph.id}`} name={ph.name} scanStatus={ph.scanStatus} /></div>
                       </figcaption>
                     </figure>
                   ))}

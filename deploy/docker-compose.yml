@@ -40,11 +40,53 @@ services:
       DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
       UPLOAD_DIR: /data/uploads
       CLAMAV_HOST: clamav
+      # DWG / DXF önizleme hizmeti (karar 283; aşağıdaki "cad" servisi) — iç ağ adresi
+      CAD_SERVICE_URL: http://cad:3311
     volumes:
       - uploads:/data/uploads
+    # default: veritabanı, antivirüs, Caddy · cad: YALNIZCA önizleme hizmetine giden iç ağ
+    networks:
+      - default
+      - cad
     depends_on:
       db:
         condition: service_healthy
+
+  # DWG / DXF önizleme hizmeti (karar 283; server/cad/service.mjs). Uygulamayla AYNI imaj, ayrı ve kısıtlı kapsayıcı:
+  # - ağı yalnızca "cad" iç ağıdır (internal): internete, veritabanına, antivirüse ulaşamaz; yalnızca uygulama ona ulaşır;
+  # - yükleme birimi, .env ve gizli ayar YOK: uygulama yetki denetiminden sonra dosyanın baytlarını gönderir, geometri döner;
+  # - root değil (nobody), bütün yetenekler bırakılır, ayrıcalık edinilemez, kök dosya sistemi salt okunur; geçici
+  #   dosyalar yalnızca bellekteki /tmp'de (her istekte açılıp silinir);
+  # - bellek / işlemci / süreç sayısı sınırlı; dönüştürücü (GNU LibreDWG dwg2dxf, GPLv3+) ayrıca prlimit ve süre
+  #   sınırıyla, tek tek çalışır (docs/adr/0014-cad-onizleme.md).
+  cad:
+    image: ${APP_IMAGE:-ghcr.io/erhan1977tr-lang/takip}:${APP_TAG:-latest}
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    memswap_limit: 3g
+    cpus: 1.5
+    pids_limit: 64
+    restart: unless-stopped
+    logging: *logging
+    command: ["node", "/app/cad/service.mjs"]
+    environment:
+      CAD_PORT: "3311"
+      NODE_ENV: production
+    networks:
+      - cad
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3311/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   # Yükleme biriminin sahipliği (SEC-12, karar 137): işçi artık root değil, uygulamayla aynı kullanıcıyla (1001:1001)
   # çalışır. Eski sürümlerde işçi root'tu ve yazdığı dosyalar (depo PDF'i, ay klasörü, karantina) root'a aitti; bu tek
@@ -146,6 +188,12 @@ services:
       - caddy-config:/config
     depends_on:
       - app
+
+networks:
+  default:
+  # Önizleme hizmetinin ağı: dışarıya çıkışı yok (internal); üyeleri yalnızca app ve cad
+  cad:
+    internal: true
 
 volumes:
   db-data:

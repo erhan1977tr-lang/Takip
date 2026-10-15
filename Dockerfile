@@ -31,6 +31,26 @@ ENV NODE_ENV=production
 # migration + temel veri (tekrar çalıştırılabilir)
 CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed/base.mjs"]
 
+# GNU LibreDWG (DWG → DXF; karar 283, docs/adr/0014-cad-onizleme.md). Sabit sürüm, kaynak tarball'ı SHA-256 ile doğrulanır
+# (değişirse derleme durur). Yalnızca dwg2dxf programı kullanılır; uygulama koduyla ilgisi olmadığı için bu katman
+# yayınlar arasında önbellekten gelir. Lisans: GPLv3+ — ayrı program olarak çalıştırılır; lisans metni imaja konur.
+FROM base AS libredwg
+ARG LIBREDWG_VERSION=0.14
+ARG LIBREDWG_SHA256=62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential pkg-config curl xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN curl -fsSL --retry 3 -o libredwg.tar.xz "https://github.com/LibreDWG/libredwg/releases/download/${LIBREDWG_VERSION}/libredwg-${LIBREDWG_VERSION}.tar.xz" \
+  && echo "${LIBREDWG_SHA256}  libredwg.tar.xz" | sha256sum -c - \
+  && tar -xJf libredwg.tar.xz && cd "libredwg-${LIBREDWG_VERSION}" \
+  && ./configure --prefix=/opt/libredwg --disable-shared --enable-static --disable-bindings --disable-python --disable-docs --enable-release \
+  && make -j"$(nproc)" -C src && make -j"$(nproc)" -C programs dwg2dxf \
+  && install -D -m 0755 programs/dwg2dxf /opt/libredwg/bin/dwg2dxf && strip /opt/libredwg/bin/dwg2dxf \
+  && install -D -m 0644 COPYING /opt/libredwg/share/COPYING \
+  && printf 'GNU LibreDWG %s (GPLv3+)\nKaynak: https://github.com/LibreDWG/libredwg/releases/download/%s/libredwg-%s.tar.xz\nSHA-256: %s\nAna sayfa: https://www.gnu.org/software/libredwg/\n' \
+    "${LIBREDWG_VERSION}" "${LIBREDWG_VERSION}" "${LIBREDWG_VERSION}" "${LIBREDWG_SHA256}" > /opt/libredwg/share/SOURCE \
+  && /opt/libredwg/bin/dwg2dxf --version
+
 FROM base AS runner
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 UPLOAD_DIR=/data/uploads
 RUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app app \
@@ -39,6 +59,11 @@ COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
 COPY --from=builder --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=app:app /app/node_modules/@prisma ./node_modules/@prisma
+# DWG / DXF önizleme hizmeti (karar 283): "cad" servisi bu imajı ayrı kullanıcıyla çalıştırır. Kod ve dönüştürücü root'a ait,
+# salt okunur; GPL lisans metni ve kaynak adresi /usr/share/doc/libredwg altında.
+COPY --from=builder /app/server/cad /app/cad
+COPY --from=libredwg /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
+COPY --from=libredwg /opt/libredwg/share/ /usr/share/doc/libredwg/
 # Derlenen commit (sunucu kurulumu verir; /surum ve logonun üzerindeki ipucunda görünür)
 ARG GIT_SHA=dev
 ENV GIT_SHA=$GIT_SHA

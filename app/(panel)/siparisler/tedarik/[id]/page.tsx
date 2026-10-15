@@ -23,6 +23,7 @@ import {
 import { supplierErrorText } from '../labels';
 import { SupplierStatusBadge } from '@/components/SupplierStatus';
 import { SupplierOrderEditor, type EditorProduct } from './SupplierOrderEditor';
+import { PreviewFor } from '@/components/PreviewFor';
 
 export const dynamic = 'force-dynamic';
 
@@ -426,6 +427,7 @@ async function FileItem({ f, children }: { f: { id: string; name: string; size: 
           <Badge tone={SCAN_TONE[f.scanStatus]}>{t(`supplier.order.files.scan.${f.scanStatus}` as MsgKey)}</Badge> {fmtBytes(f.size)} · {fmtDateTime(f.createdAt)}
         </div>
       </div>
+      <PreviewFor href={`/dosya/tedarik/${f.id}`} name={f.name} scanStatus={f.scanStatus} />
       {f.scanStatus !== 'INFECTED' && <a className="btn" href={`/dosya/tedarik/${f.id}`}>{t('common.download')}</a>}
       {children}
     </div>

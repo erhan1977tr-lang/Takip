@@ -24,6 +24,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { restoreOrderAction } from './[id]/compensation-actions';
 import { canSeeOfferReport, loadOfferReport, offerReportRange } from '@/lib/customer-offers';
 import { ReportGroup } from '@/components/ReportGroup';
+import { PreviewFor } from '@/components/PreviewFor';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -646,7 +647,7 @@ async function DwgDrawings({ user, rows }: { user: CurrentUser; rows: Row[] }) {
                         <div className="muted small">{o.title}</div>
                       </td>
                       <td className="mono">{customerLabel(user, o.customer.name)}</td>
-                      <td><div className="dwg-files">{files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}</div></td>
+                      <td><div className="dwg-files">{files.map((f) => <span key={f.id} className="dwg-file"><a className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a> <PreviewFor href={`/dosya/siparis/${f.id}`} name={f.name} /></span>)}</div></td>
                       <td><Sla deadline={o.slaDeadline} /></td>
                       <td><DwgDecision orderId={o.id} can={{ ready: true, faulty: true, update: true }} t={t} /></td>
                     </tr>

@@ -4,6 +4,38 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.88.3 — 15.10.2026
+
+- Önizleme istek sınırının kodu `PREVIEW_LIMIT` oldu (not çevirisinin `RATE_LIMIT` durumuyla karışmasın; ekranda metin aynı).
+
+## 3.88.2 — 15.10.2026
+
+- Önizleme yolunun denetim kaydı alanlarına tip düzeltmesi (davranış değişmedi).
+
+## 3.88.1 — 15.10.2026
+
+- DWG / DXF önizlemesinde çizim alanı, çizim verisi geldikten sonra oluştuğunda da ölçülür ve yakınlaştırma / kaydırma
+  çalışır (3.88.0'ın ilk denemesinde boş kalabiliyordu); kod düzeni denetimi düzeltmeleri. Davranış başka yönde değişmedi.
+
+## 3.88.0 — 15.10.2026
+
+Güvenli dosya önizlemesi: PDF, JPG / PNG / WEBP, DWG ve DXF dosyaları indirmeden, uygulama içinde görülebilir (karar 283,
+ADR 0014). Veritabanı değişmedi; indirme ve erişim kuralları aynı.
+
+- **"Önizle / Previzualizare"** düğmesi sipariş dosyaları, çizim dosyaları, müşterinin DWG / DXF kayıtları (çizim ekibinin
+  "DXF/DWG olarak gelen çizimler" listesi dahil), tedarikçi siparişi ekleri, profil teslim belgesi ve teslimat fotoğraflarında.
+  "Aç" ve "İndir" olduğu gibi duruyor. Tek ortak pencere: dosya adı, indir, kapat; telefonda tam ekran.
+- **PDF:** çok sayfa, sayfa geçişi, yakınlaştırma, kaydırma; sayfalar ekrana yaklaştıkça çizilir (büyük PDF'te hızlı).
+  **Resim:** yakınlaştır, kaydır (fare / dokunmatik), ekrana sığdır.
+- **DWG / DXF:** çizim koyu zeminde gösterilir; yakınlaştır, kaydır, sığdır, katmanları aç / kapat. DWG, sunucuda GNU
+  LibreDWG 0.14 ile DXF'e dönüştürülür — ayrı, kısıtlı bir kapsayıcıda (internete / veritabanına erişimi yok, sınırlı bellek
+  ve süre). Gösterilemeyen ya da yaklaşık gösterilen nesneler (ör. tablo, çok satırlı çıkıntı, 3B katı) ve dönüştürücünün
+  okuyamadığı bölümler pencerenin üstünde açıkça listelenir; çizim sessizce eksik gösterilmez. Birim yalnızca dosyada
+  yazandır; ölçü uydurulmaz.
+- **Güvenlik:** önizleme indirmeyle aynı yetki kuralından geçer (başka firmanın dosyası, iç dosya, geri çekilmiş çizim
+  sürümü, virüslü dosya açılmaz); dosya türü içeriğinden belirlenir (adı .pdf olup içi başka olan dosya önizlenmez);
+  önizleme ayrı denetim kaydına yazılır; kullanıcı başına istek sınırı; önbellek yok.
+
 ## 3.87.1 — 15.10.2026
 
 - Mal kabulü ekranının veri tipleri derleme için tamamlandı (davranış değişmedi; karar 282'nin devamı).
