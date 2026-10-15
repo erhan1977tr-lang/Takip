@@ -29,6 +29,7 @@ import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
 import { getEnv, startupEnv } from '../server/env.js';
+import { createAssistant } from '../server/assistant/bot.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
@@ -202,6 +203,20 @@ async function tick() {
 }
 
 log('işçi başladı');
+
+// Telegram asistanı (karar 278): yalnızca okur; kendi uzun sorgulama döngüsünde, işçinin işlerinden bağımsız çalışır.
+// Yapılandırma eksik / hatalıysa kapalı kalır (yalnızca neden kodu yazılır; değer yazılmaz). --once ile çalışmaz.
+const assistantStop = new AbortController();
+let assistantRun = Promise.resolve();
+if (!once) {
+  const assistant = createAssistant({ db, env, log });
+  if (assistant.enabled) {
+    assistantRun = assistant.run(assistantStop.signal).catch((e) => log('asistan durdu:', e?.code ?? 'ERR'));
+  } else if (assistant.reason !== 'NOT_CONFIGURED') {
+    log('asistan kapalı:', assistant.reason);
+  }
+}
+
 while (!stopping) {
   try {
     await inAppTick();
@@ -257,5 +272,7 @@ while (!stopping) {
     };
   });
 }
+assistantStop.abort();
+await Promise.race([assistantRun, new Promise((r) => setTimeout(r, 30_000))]);
 await db.$disconnect();
 log('işçi durdu');

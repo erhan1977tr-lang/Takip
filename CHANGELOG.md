@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.84.0 — 15.10.2026
+
+TAKİP Telegram asistanı (karar 278). Mevcut ekranlar, iş akışları ve veriler değişmedi; veritabanı şeması değişmedi.
+
+- **Türkçe yazılı ve sesli sorular** gerçek TAKİP verisiyle yanıtlanır: genel durum, sipariş arama / ayrıntı, firma bilgisi
+  ve alacağı, yükleme planı, profil stoğu, alacaklar, FGO belgeleri, faturası kesilmemiş yüklemeler, tedarikçi hesapları.
+- **Yalnızca izinli tek kullanıcı** (`TELEGRAM_ALLOWED_USER_ID`, özel sohbet); başka herkes yanıtsız kalır.
+- **Kesinlikle salt okunur:** model SQL yazamaz; yalnızca sabit, parametreleri doğrulanan araçları çağırır ve her araç
+  PostgreSQL READ ONLY işleminde çalışır. Veri değiştirme, fatura / FGO / e-posta / bildirim yok.
+- Düşük maliyetli model (varsayılan `gpt-4.1-mini`, ses için `gpt-4o-mini-transcribe`), soru / tur / araç / boyut
+  sınırları, sabit Türkçe hata metinleri; jeton ve anahtar yalnızca sunucudaki `.env`'de, günlüğe yazılmaz.
+- İşçi süreci çalıştırır (yalnızca giden bağlantı: Telegram uzun sorgulama + AI API); ayarlar yoksa kapalı kalır.
+  Kurulum: `docs/telegram-asistan.md`.
+
 ## 3.83.3 — 15.10.2026
 
 - Ticari teklif düzenleyicisi: profil satırının belgedeki miktarı (ML / paket ya da adet) fiyat girilmeden de gösterilir
