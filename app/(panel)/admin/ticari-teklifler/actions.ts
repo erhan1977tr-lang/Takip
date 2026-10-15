@@ -125,6 +125,7 @@ export async function calcOfferProfileAction(input: {
           const alt = fromScaled(full, 2);
           if (packsFor(alt, content) === l.qty) meters = alt;
         }
+      }
       return { productId: l.productId, meters, qty: content ? null : l.qty, color: l.colored && (color === 'RAL7016' || color === 'ELOXAT') ? color : '' };
     }),
   };
