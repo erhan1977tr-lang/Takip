@@ -75,7 +75,6 @@ test('kısmi mal kabulü: önceki / yeni / kalan; yalnızca girilen miktar stoğ
     await expect(box).not.toContainText('11,5'); // alış fiyatı mal kabulünde yok
     await rm.locator('input[type="number"]').fill('6');
     await box.locator('#rc-ref').fill('AVZ-E2E-1');
-    admin.once('dialog', (d) => d.accept());
     await box.getByRole('button', { name: 'Mal kabulünü kaydet' }).click();
     await expect(admin).toHaveURL(/ok=receivedPart/);
     await expect(admin.getByText('Mal kabulü kaydedildi: miktarlar stoğa eklendi')).toBeVisible();
@@ -139,7 +138,6 @@ test('kalan teslimat siparişi tamamlar: "Teslim alındı", mal kabulü kapanır
     const box = admin.locator('#mal-kabul');
     await box.locator('tr[data-receipt-line="RM12-7016"] input[type="number"]').fill('4');
     await box.locator('tr[data-receipt-line="GK15"] input[type="number"]').fill('4');
-    admin.once('dialog', (d) => d.accept());
     await box.getByRole('button', { name: 'Mal kabulünü kaydet' }).click();
     await expect(admin).toHaveURL(/ok=receivedAll/);
     await expect(admin.locator('[data-supplier-status="TESLIM_ALINDI"]')).toBeVisible();
