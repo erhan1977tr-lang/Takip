@@ -52,7 +52,7 @@ sudo docker inspect -f '{{json .HostConfig.SecurityOpt}}' "$id" | grep -q 'no-ne
 [ "$(sudo docker inspect -f '{{.HostConfig.Memory}}' "$id")" -gt 0 ]
 [ "$(sudo docker inspect -f '{{.HostConfig.NanoCpus}}' "$id")" -gt 0 ]
 [ "$(sudo docker inspect -f '{{.HostConfig.PidsLimit}}' "$id")" -gt 0 ]
-[ "$(sudo docker inspect -f '{{len .Mounts}}' "$id")" = 1 ]   # yalnızca /tmp (tmpfs); yükleme birimi YOK
+[ "$(sudo docker inspect -f '{{len .Mounts}}' "$id")" = 0 ]   # bağlı birim yok (yükleme birimi YOK); /tmp bellekte (aşağıda)
 sudo docker inspect -f '{{json .HostConfig.Tmpfs}}' "$id" | grep -q '"/tmp"'
 nets=$(sudo docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$id")
 [ "$nets" = "takip_cad " ]
