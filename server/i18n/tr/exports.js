@@ -14,5 +14,7 @@ export default {
     profileCatalog: 'Profil Kataloğu',
     profileStock: 'Profil Stoğu',
     deliveryReport: 'Teslimat Raporu',
+    commercialOffer: 'Ticari Teklif',
+    commercialOfferInternal: 'Ticari Teklif İç',
   },
 };

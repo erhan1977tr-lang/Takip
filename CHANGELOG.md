@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.83.0 — 15.10.2026
+
+Bağımsız yönetici ticari teklifi (karar 277). Yeni tablolar (`CommercialOffer`, `CommercialOfferVersion`) ve yeni yetki
+(`COMMERCIAL_OFFER_MANAGE`: yönetici + yönetici yardımcısı). Mevcut sipariş, sipariş teklifi, üretim, yükleme, FGO, stok ve
+bildirim işlevleri değişmedi.
+
+- **Menü:** "Ticari Teklif" bölümü (Çizim Ekibi ile Muhasebe arasında): "Teklif Oluştur" ve "Teklifler".
+- **Tamamen bağımsız:** teklif sipariş / sipariş teklifi / FGO / stok / bildirim yazmaz; "Kabul edildi" yalnızca kayıttır —
+  sipariş oluşturulmaz, müşteri siparişini kendi TAKİP hesabından verir.
+- **Teklif:** otomatik numara (son + 1; ilk kesinleşmeye kadar elle değiştirilebilir, tekil), tarih, firma (kayıtlı müşteri
+  isteğe bağlı), geçerlilik (iş günü), numaralı koşullar + "*" notlar, EUR tutarlar (KDV hariç).
+- **Cam:** katalogdan cam, en / boy / adet → m² otomatik (parça m² 3 ondalık, mevcut sipariş kuralıyla aynı), satış €/m²,
+  tutar bir kez yarım-yukarı 2 ondalık.
+- **Profil / aksesuar:** katalogdan ürün, kod, renk; metreyle satılan üründe (profil çubuğu, conta kutusu) yalnızca metre
+  girilir — paket sayısı mevcut profil hesaplayıcısının yuvarlamasıyla, belgede miktar ML ve €/ML. "Profil hesaplayıcısı"
+  kutusu mevcut korkuluk hesabını (yalnızca okur) çalıştırıp ürünleri tabloya ekler. Satış ve maliyet fiyatı önerisi
+  katalogdan (liste fiyatı; alış fiyatı yalnızca EUR ve aynı birimde).
+- **İç hesap:** satır maliyeti, cam nakliye + gümrük, toplam maliyet, brüt kâr, kâr marjı (maliyeti girilmemiş satır kâra
+  sayılmaz; "maliyet eksik" uyarısı). Yalnızca yönetici ekranı ve iç Excel'de.
+- **Belgeler:** Romence müşteri PDF'i (GKH logosu, örnek teklif düzeni; maliyet / kâr asla — yalnızca müşteri görünümünden
+  üretilir; kesinleşmemiş sürüm "CIORNĂ" damgalı) ve iç Excel (satış, maliyet, kâr, marj).
+- **Sürümler ve geçmiş:** taslak kaydı (eşzamanlı düzenlemede çakışma uyarısı), "Kesinleştir" → sürüm değişmez; değişiklik
+  "Yeni sürüm aç" ile; kabul / ret / iptal (gerekçe) kaydı; her işlem denetim kaydında, sayfada geçmiş.
+
 ## 3.82.4 — 14.10.2026
 
 Yayın kapısı yarış durumu düzeltmesi (karar 276). Yalnızca sunucu aracı (`deploy/takip.sh`) ve testleri; uygulama kodu,

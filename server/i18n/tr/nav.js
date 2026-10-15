@@ -10,6 +10,10 @@ export default {
   drawingPanel: 'Çizim Paneli',
   // Çizim ekibinin "DXF/DWG olarak gelen çizimler" listesi (karar 167)
   dwgDrawings: 'DXF/DWG olarak gelen çizimler',
+  // Bağımsız ticari teklif (karar 277)
+  commercialOffers: 'Ticari Teklif',
+  commercialOfferNew: 'Teklif Oluştur',
+  commercialOfferList: 'Teklifler',
   accounting: 'Muhasebe',
   profileReceivables: 'Profil Tahsilat',
   glassReceivables: 'Cam Tahsilat',

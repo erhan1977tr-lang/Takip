@@ -10,6 +10,10 @@ export default {
   drawingPanel: 'Panou desen',
   // Lista echipei de desen „Desene primite ca DXF/DWG” (decizia 167)
   dwgDrawings: 'Desene primite ca DXF/DWG',
+  // Ofertă comercială independentă (decizia 277)
+  commercialOffers: 'Ofertă comercială',
+  commercialOfferNew: 'Creează ofertă',
+  commercialOfferList: 'Oferte',
   accounting: 'Contabilitate',
   profileReceivables: 'Încasări profile',
   glassReceivables: 'Încasări sticlă',

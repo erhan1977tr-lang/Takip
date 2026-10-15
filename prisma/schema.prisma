@@ -90,6 +90,7 @@ enum PermissionKey {
   SUPPLIER_MANAGE
   OPS_SETTINGS_MANAGE
   CUSTOMER_DELETE
+  COMMERCIAL_OFFER_MANAGE
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
@@ -186,6 +187,9 @@ model User {
   compensationsDecided Compensation[] @relation("CompensationDecidedBy")
   deliveryReports    DeliveryReport[] @relation("DeliveryReportCreatedBy")
   loginEvents        LoginEvent[]
+  commercialOffers   CommercialOffer[] @relation("CommercialOfferCreatedBy")
+  commercialOfferVersions CommercialOfferVersion[] @relation("CommercialOfferVersionBy")
+  commercialOffersIssued CommercialOfferVersion[] @relation("CommercialOfferIssuedBy")
 
   isActive     Boolean    @default(true)
   // Silinmiş kullanıcı (karar 221): satır silinmez (denetim kaydı değiştirilemez), kimliği anonimleştirilir ve listeden kalkar
@@ -298,6 +302,7 @@ model Customer {
   billingBatches BillingBatch[]
   compensations Compensation[]
   manualPayments ManualPayment[]
+  commercialOffers CommercialOffer[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
   priceTable    PriceTable? @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
@@ -2074,4 +2079,58 @@ model ManualPayment {
   @@index([orderId])
   @@index([customerId, paidOn])
   @@index([batchId])
+}
+
+// ---------------------------------------------------------
+// BAĞIMSIZ TİCARİ TEKLİF (3.83.0, karar 277)
+// ---------------------------------------------------------
+// Yönetici / Yönetici Yardımcısının hazırladığı cam + profil / aksesuar ticari teklifi. Sipariş, sipariş teklifi (Offer),
+// üretim, yükleme, FGO ve stok ile HİÇBİR bağı yoktur: kabul edilmesi sipariş oluşturmaz (müşteri siparişini kendi hesabından
+// verir). Kural ve hesap: server/commercial/rules.js; yazan tek yer: server/commercial/service.js.
+enum CommercialOfferStatus {
+  TASLAK // düzenleniyor (müşteri belgesi "TASLAK" damgalı)
+  HAZIR  // sürüm kesinleşti (değişmez); değişiklik yeni sürümle
+  KABUL  // müşteri kabul etti — yalnızca kayıt (sipariş açılmaz)
+  RED
+  IPTAL
+}
+
+model CommercialOffer {
+  id             String                 @id @default(cuid())
+  no             Int                    @unique // ekranda 4 hane ("0496"); taslakken değiştirilebilir
+  status         CommercialOfferStatus  @default(TASLAK)
+  customerId     String?
+  customer       Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  firmName       String                 // belgedeki firma adı (kopya; arama / liste için)
+  total          Decimal                @db.Decimal(14, 2) // güncel sürümün toplamı (EUR, KDV hariç)
+  currentVersion Int                    @default(1)
+  editVersion    Int                    @default(0) // iyimser kilit (eşzamanlı düzenleme)
+  statusNote     String?
+  createdById    String
+  createdBy      User                   @relation("CommercialOfferCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  versions       CommercialOfferVersion[]
+
+  @@index([status, updatedAt])
+}
+
+// Teklifin sürümü: başlık + satırlar + iç maliyetler tek kopya (data). issuedAt dolu = kesinleşmiş sürüm, değişmez.
+model CommercialOfferVersion {
+  id          String          @id @default(cuid())
+  offerId     String
+  offer       CommercialOffer @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  version     Int
+  data        Json
+  total       Decimal         @db.Decimal(14, 2)
+  cost        Decimal         @db.Decimal(14, 2)
+  issuedAt    DateTime?
+  issuedById  String?
+  issuedBy    User?           @relation("CommercialOfferIssuedBy", fields: [issuedById], references: [id])
+  createdById String
+  createdBy   User            @relation("CommercialOfferVersionBy", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([offerId, version])
 }

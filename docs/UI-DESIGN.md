@@ -681,3 +681,13 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 - The apply button is disabled while any included PDF is blocked, while the editor has unsaved changes (an
   `.alert-warn` says so) and while a request runs. Previously uploaded factory PDFs are a collapsed `.pdf-previous` list
   of file names only — the original PDF is not kept (3.75.3), so there is no link.
+
+## Commercial offers (3.83.0, decision 277)
+
+- Admin-only pages under `/admin/ticari-teklifler`: list (tabs per status, search), `yeni` and `[id]` share one client
+  editor (`OfferEditor.tsx`). Cards: offer details (`.grid-3`), glass lines and profile lines (`.commercial-lines` inside
+  `.table-wrap`), the profile calculator box (`.commercial-calc` + the shared `.calc-grid`), terms / internal note
+  (`.grid-2`), totals (`table.kv`, `[data-total=…]`). An issued version renders the same editor inside a disabled
+  `.fieldset-plain`.
+- Cost, profit and margin are shown only here and in the internal Excel; the customer PDF never shows them.
+
