@@ -244,6 +244,8 @@ test('yapı: asistan yalnızca okur — yazma yöntemi, ham SQL, e-posta / bildi
   const worker = read('scripts/worker.mjs');
   assert.match(worker, /if \(!once\) \{\n  const assistant = createAssistant\(\{ db, env, log \}\);/);
   assert.doesNotMatch(worker, /process\.env\.(TELEGRAM|OPENAI)/);
+  // Kapanışta bekleme zamanlayıcısı süreci açık tutmaz (worker --once testleri hemen çıkmalı)
+  assert.match(worker, /setTimeout\(r, 30_000\)\.unref\(\)/);
   // Kullandığı mevcut servisler salt okunur (yazma yapmaz)
   for (const fn of ['receivables', 'listDocuments', 'stockLevels', 'reservedLevels', 'supplierAccounts', 'uninvoicedLoadings']) assert.match(tools, new RegExp(`\\b${fn}\\b`));
 });

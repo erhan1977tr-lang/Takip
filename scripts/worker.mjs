@@ -272,7 +272,8 @@ while (!stopping) {
     };
   });
 }
+// Asistan döngüsünün bitmesi en çok 30 sn beklenir; zamanlayıcı süreci açık tutmaz (--once hemen çıkar)
 assistantStop.abort();
-await Promise.race([assistantRun, new Promise((r) => setTimeout(r, 30_000))]);
+await Promise.race([assistantRun, new Promise((r) => setTimeout(r, 30_000).unref())]);
 await db.$disconnect();
 log('işçi durdu');
