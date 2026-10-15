@@ -13,6 +13,7 @@ import { logoutAction } from './actions';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { SessionActivity } from '@/components/SessionActivity';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import { PreviewProvider } from '@/components/FilePreview';
 import { loadFeed } from '@/lib/notifications';
 import { db } from '@/lib/db';
 import { unreadTotal } from '@/server/notes/unread.js';
@@ -98,7 +99,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           </div>
         </header>
         <Suspense fallback={null}><NavLinks items={nav} variant="mobile" /></Suspense>
-        <main className="content">{children}</main>
+        <main className="content"><PreviewProvider text={{ ...m.files.preview, download: m.common.download }}>{children}</PreviewProvider></main>
         <AutoRefresh />
         {/* 30 dakika etkinlik olmayan oturum kapanır (karar 135): gerçek etkinliği bildirir; yenilemeler uzatmaz */}
         <SessionActivity remainingMs={await sessionRemainingMs()} />

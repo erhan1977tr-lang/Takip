@@ -40,6 +40,9 @@ jobs:
       TRANSLATE_FAKE: '1'
       # Antivirüs: sunucudakiyle aynı ClamAV imajı (deploy/clamav); uçtan uca testler gerçek taramayla çalışır
       CLAMAV_HOST: 127.0.0.1
+      # DWG / DXF önizleme hizmeti (karar 283): sunucudakiyle aynı kod (server/cad/service.mjs) ve aynı sabit LibreDWG
+      # sürümü; aşağıda önbellekli derlenip başlatılır
+      CAD_SERVICE_URL: http://127.0.0.1:3311
     steps:
       - uses: actions/checkout@v4
 
@@ -165,6 +168,39 @@ jobs:
             }
             process.exit(1);
           })" || { docker logs --tail 60 clamav; exit 1; }
+
+      # Sunucudaki imajla aynı tarif (Dockerfile "libredwg" aşaması): sabit sürüm, SHA-256 doğrulaması, statik dwg2dxf.
+      # Örnek DWG'ler LibreDWG'nin kendi test dosyalarıdır (müşteri dosyası değil); uçtan uca test gerçek DWG'yi önizler.
+      - name: GNU LibreDWG (önbellek)
+        id: libredwg
+        uses: actions/cache@v4
+        with:
+          path: ~/.libredwg
+          key: libredwg-0.14-62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275-${{ runner.os }}-v1
+
+      - name: GNU LibreDWG derle (önbellekte yoksa)
+        if: steps.libredwg.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          v=0.14; sum=62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275
+          d=$(mktemp -d)
+          curl -fsSL --retry 3 -o "$d/l.tar.xz" "https://github.com/LibreDWG/libredwg/releases/download/$v/libredwg-$v.tar.xz"
+          echo "$sum  $d/l.tar.xz" | sha256sum -c -
+          tar -xJf "$d/l.tar.xz" -C "$d"
+          ( cd "$d/libredwg-$v" \
+            && ./configure --disable-shared --enable-static --disable-bindings --disable-python --disable-docs --enable-release > /dev/null \
+            && make -j"$(nproc)" -C src > /dev/null && make -j"$(nproc)" -C programs dwg2dxf > /dev/null )
+          install -D -m 0755 "$d/libredwg-$v/programs/dwg2dxf" ~/.libredwg/bin/dwg2dxf
+          mkdir -p ~/.libredwg/ornek
+          cp "$d/libredwg-$v/test/test-data/sample_2018.dwg" "$d/libredwg-$v/test/test-data/example_2000.dwg" ~/.libredwg/ornek/
+          rm -rf "$d"
+
+      - name: DWG / DXF önizleme hizmetini başlat
+        run: |
+          ~/.libredwg/bin/dwg2dxf --version
+          DWG2DXF_BIN="$HOME/.libredwg/bin/dwg2dxf" CAD_PORT=3311 CAD_HOST=127.0.0.1 nohup node server/cad/service.mjs > cad.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3311/health && exit 0; sleep 1; done
+          cat cad.log; exit 1
 
       - name: Sunucuyu başlat
         run: |

@@ -44,7 +44,7 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/backup-retention.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh deploy/test/deploy-gate.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/backup-retention.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh deploy/test/cad-preview.sh deploy/test/deploy-gate.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Yayın kapısı — mantık testi (sahte GitHub API / docker, geçici git deposu; yalnızca backend'in kendi koşuları sayılır)
@@ -92,7 +92,7 @@ jobs:
         run: |
           compose() { sudo docker compose -p takip --env-file /opt/takip/.env -f /opt/takip/src/deploy/docker-compose.yml "$@"; }
           compose ps --status running --services | tee servisler.txt
-          grep -qx worker servisler.txt && grep -qx clamav servisler.txt
+          grep -qx worker servisler.txt && grep -qx clamav servisler.txt && grep -qx cad servisler.txt
           for i in $(seq 1 30); do
             if sudo takip antivirus; then exit 0; fi
             sleep 10
@@ -281,6 +281,9 @@ jobs:
 
       - name: Gerçek sunucu işareti (AUD-13, karar 151) — gerçek Compose — .env işareti ezemez; sunucuya kopyalanmış demo / test ayarları yok sayılır (site açık, çerez Secure, e-posta klasörü yok, uyarı kartı); demo verisi betiği çalışmaz
         run: bash deploy/test/env-marker.sh
+
+      - name: DWG / DXF önizleme hizmeti (karar 283) — gerçek Docker — nobody, salt okunur, yeteneksiz, sınırlı, yalnızca iç ağ (internet / veritabanı / antivirüs yok); sabit LibreDWG 0.14 + lisans; LibreDWG'nin kendi gerçek DWG örnekleri (AutoCAD DXF'iyle kapsam karşılaştırması, sessiz eksik yok); bozuk / sahte DWG sabit kodla reddedilir
+        run: bash deploy/test/cad-preview.sh
 
       - name: Yalnızca belge değişikliği yeniden derlenmez
         run: |

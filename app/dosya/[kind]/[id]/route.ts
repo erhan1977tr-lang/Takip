@@ -12,6 +12,8 @@ import { renderDeliveryReport, reportLimiter } from '@/server/delivery/service.j
 import { signedDocServable, signedDocWhere } from '@/server/delivery/rules.js';
 import { contentDisposition } from '@/server/files/export-name.js';
 import { getEnv } from '@/server/env.js';
+import { PREVIEW_ROUTE_KINDS, PREVIEW_STATUS, SNIFF_BYTES, previewDecision } from '@/server/files/preview.js';
+import { cadCache, cadCacheKey, previewLimiter, requestCadPreview } from '@/server/files/cad-preview.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,9 +82,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   let stat: fs.Stats | null = null;
   try { stat = full ? fs.statSync(full) : null; } catch { stat = null; }
   if (!full || !stat || !stat.isFile()) return new Response(t('common.fileMissing'), { status: 404 });
+  const entity = kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : 'OrderFile';
+  const owner = kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId };
+  // Önizleme (karar 283): erişim kuralı İNDİRMEYLE BİREBİR aynıdır — yukarıdaki sorgu, virüs ve disk denetiminden sonra gelir
+  const onizle = new URL(req.url).searchParams.get('onizle');
+  if (onizle !== null) {
+    if (!(PREVIEW_ROUTE_KINDS as readonly string[]).includes(kind)) return new Response(t('common.fileNotFound'), { status: 404 });
+    return previewResponse({ onizle, full, stat, file, userId: user.id, entity, id, owner });
+  }
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
-  await audit('FILE_DOWNLOAD', kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : 'OrderFile', id, user.id,
-    { ...(kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId }), name: file.name });
+  await audit('FILE_DOWNLOAD', entity, id, user.id, { ...owner, name: file.name });
   const ascii = file.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
   // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir.
   const ext = file.name.toLowerCase().split('.').pop() ?? '';
@@ -98,6 +107,67 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
       'Cache-Control': kind === 'teslimat' && inline ? 'private, max-age=3600' : 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     },
+  });
+}
+
+const previewFail = (code: string) =>
+  Response.json({ ok: false, code }, {
+    status: PREVIEW_STATUS[code as keyof typeof PREVIEW_STATUS] ?? 422,
+    headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' },
+  });
+
+/**
+ * Önizleme yanıtı (karar 283). Türü dosyanın İÇERİĞİ belirler (uzantı ailesiyle uyuşmalı — previewDecision):
+ * - "?onizle=1": PDF / resim dosyanın kendisi; içerik türü imzadan, tarayıcıda çalıştırılabilir içerik engelli
+ *   (CSP sandbox), önbellek yok.
+ * - "?onizle=cad": DWG / DXF → iç CAD hizmeti → geometri JSON'u (özel süreç içi önbellek; anahtar = dosyanın kendisi).
+ * Kullanıcı başına istek sınırı; her başarılı önizleme FILE_PREVIEW olarak kaydedilir (indirme kaydından ayrı).
+ */
+async function previewResponse({ onizle, full, stat, file, userId, entity, id, owner }: {
+  onizle: string; full: string; stat: fs.Stats; file: { storageKey: string; name: string }; userId: string; entity: string; id: string;
+  owner: Record<string, string>;
+}) {
+  if (onizle !== '1' && onizle !== 'cad') return previewFail('UNSUPPORTED');
+  const gate = previewLimiter.take(userId);
+  if (!gate.ok) return previewFail('RATE_LIMIT');
+  const head = Buffer.alloc(SNIFF_BYTES);
+  let n = 0;
+  try {
+    const fd = fs.openSync(full, 'r');
+    try { n = fs.readSync(fd, head, 0, SNIFF_BYTES, 0); } finally { fs.closeSync(fd); }
+  } catch {
+    return previewFail('INVALID');
+  }
+  const d = previewDecision(file.name, head.subarray(0, n), stat.size);
+  if (!d.ok) return previewFail(d.code);
+  if (onizle === '1') {
+    if (d.family === 'cad' || !d.mime) return previewFail('UNSUPPORTED');
+    await audit('FILE_PREVIEW', entity, id, userId, { ...owner, name: file.name, preview: d.content });
+    const stream = Readable.toWeb(fs.createReadStream(full)) as unknown as ReadableStream;
+    return new Response(stream, {
+      headers: {
+        'Content-Type': d.mime,
+        'Content-Length': String(stat.size),
+        'Content-Disposition': 'inline',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+        'Cross-Origin-Resource-Policy': 'same-origin',
+      },
+    });
+  }
+  if (d.family !== 'cad') return previewFail('UNSUPPORTED');
+  const key = cadCacheKey({ storageKey: file.storageKey, size: stat.size, mtimeMs: stat.mtimeMs });
+  let json = cadCache.get(key);
+  if (!json) {
+    const r = await requestCadPreview({ url: getEnv().CAD_SERVICE_URL, type: d.content as 'dwg' | 'dxf', path: full, size: stat.size });
+    if (!r.ok) return previewFail(r.code);
+    json = r.json;
+    cadCache.set(key, json);
+  }
+  await audit('FILE_PREVIEW', entity, id, userId, { ...owner, name: file.name, preview: d.content });
+  return new Response(json, {
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' },
   });
 }
 

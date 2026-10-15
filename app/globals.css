@@ -45,6 +45,8 @@
   --warn-soft: #fdf4de;
   --warn-border: #f1dca3;
   --warn-accent: #e09a16;   /* "sıra sizde" şeridi, geçerli adım */
+  /* CAD önizleme tuvali (karar 283): çizimler CAD alışkanlığıyla koyu zemine çizilir */
+  --cad-bg: #1f2329;
   --purple: #5b2fa8;
   --purple-soft: #f1ecfb;
   --purple-border: #d9cdf3;
@@ -792,6 +794,8 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .dwg-faulty form { display: grid; gap: 8px; margin-top: 8px; max-width: 560px; }
 .dwg-faulty textarea { resize: vertical; }
 .dwg-files { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.dwg-file { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dwg-file .btn { padding-top: 2px; padding-bottom: 2px; }
 .dwg-hints { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: var(--fs-meta); }
 /* Kararın kutusu: kararı bekleyen iş — sarı zemin ("sıra sizde"), çizim bölümünün başında */
 .dwg-panel { padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--warn-border); border-left: 3px solid var(--warn-accent); border-radius: var(--radius-sm); background: var(--warn-soft); }
@@ -1264,3 +1268,45 @@ td.acc-entries { min-width: 240px; font-size: var(--fs-meta); }
 .uncertain-job { border: 1px solid var(--warn-border); background: var(--warn-soft); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
 .uncertain-job h4 { margin: 0 0 6px; font-size: var(--fs-table); }
 .uncertain-job form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
+
+/* ----- Ortak dosya önizlemesi (karar 283): components/FilePreview.tsx + FilePreviewViewer.tsx ----- */
+dialog.modal.preview-modal { width: calc(100% - 24px); max-width: 1400px; height: calc(100vh - 24px); height: calc(100dvh - 24px); max-height: none; padding: 0; overflow: hidden; }
+dialog.modal.preview-modal[open] { display: flex; flex-direction: column; }
+.preview-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.preview-name { flex: 1 1 200px; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.preview-actions { display: flex; gap: 6px; margin-left: auto; }
+.preview-zoom, .preview-pages { display: inline-flex; align-items: center; gap: 4px; }
+.preview-zoom .btn, .preview-pages .btn { min-width: 34px; padding-left: 8px; padding-right: 8px; }
+.preview-pct, .preview-pages > span { min-width: 3.5em; text-align: center; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.preview-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; background: var(--surface-3); }
+.preview-status { margin: auto; padding: 24px; max-width: 560px; text-align: center; }
+.preview-status .alert { text-align: left; margin: 0; }
+.preview-scroll { position: relative; flex: 1 1 auto; min-width: 0; overflow: auto; padding: 12px; }
+.preview-page { margin: 0 auto 12px; background: var(--surface); box-shadow: var(--shadow-sm); line-height: 0; }
+.preview-page canvas { display: block; width: 100%; height: 100%; }
+.preview-stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; user-select: none; }
+.preview-stage:active { cursor: grabbing; }
+.preview-stage img { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; image-rendering: auto; }
+.preview-cad { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 260px; }
+.preview-cad-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.preview-cad-stage { background: var(--cad-bg); }
+.preview-cad-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.preview-cad-stage .preview-status { position: absolute; inset: 0; color: var(--surface); display: flex; align-items: center; justify-content: center; }
+.preview-warn { margin: 8px; }
+.preview-warn .plain-list { margin: 4px 0; }
+.preview-side { border-left: 1px solid var(--border); background: var(--surface); padding: 12px; overflow: auto; display: grid; gap: 12px; align-content: start; }
+.preview-layers summary { cursor: pointer; font-weight: 600; }
+.preview-layers .plain-list { padding-left: 0; list-style: none; }
+.preview-layer { display: flex; align-items: center; gap: 6px; font-weight: 400; cursor: pointer; }
+.preview-layer input { width: auto; }
+.preview-layer-name { overflow-wrap: anywhere; }
+.preview-swatch { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
+@media (max-width: 760px) {
+  dialog.modal.preview-modal { width: 100%; max-width: 100%; height: 100vh; height: 100dvh; border-radius: 0; }
+  .preview-head { padding: 8px 10px; }
+  .preview-name { flex-basis: 100%; }
+  .preview-actions { margin-left: 0; }
+  .preview-cad { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .preview-side { border-left: 0; border-top: 1px solid var(--border); max-height: 34vh; }
+}

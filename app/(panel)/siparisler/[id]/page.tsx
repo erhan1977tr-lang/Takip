@@ -52,6 +52,7 @@ import {
   withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction, withdrawOfferAction,
 } from './actions';
 import { DwgDecision } from './DwgDecision';
+import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
@@ -1093,7 +1094,7 @@ function CustomerRecord({ order, d, user, t }: { order: OrderDetail; d: DrawingR
       </div>
       {files.length > 0 && (
         <div className="dwg-files">
-          {files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}
+          {files.map((f) => <span key={f.id} className="dwg-file"><a className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a> <PreviewFor href={`/dosya/siparis/${f.id}`} name={f.name} /></span>)}
         </div>
       )}
       <RevisionNotes order={order} d={d} user={user} t={t} />
@@ -1232,7 +1233,7 @@ function DwgPanel({ order, can, t }: { order: OrderDetail; can: Can; t: T }) {
           <>
             <div className="small"><b>{t('order.dwg.files')}</b></div>
             <div className="dwg-files" style={{ margin: '4px 0 10px' }}>
-              {files.map((f) => <a key={f.id} className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a>)}
+              {files.map((f) => <span key={f.id} className="dwg-file"><a className="mono small" href={`/dosya/siparis/${f.id}`}>{f.name}</a> <PreviewFor href={`/dosya/siparis/${f.id}`} name={f.name} /></span>)}
             </div>
           </>
         )}
@@ -1349,6 +1350,7 @@ function FileButtons({ href, name, scanStatus, t }: { href: string; name: string
   if (scanStatus === 'INFECTED') return null;
   return (
     <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+      <PreviewFor href={href} name={name} scanStatus={scanStatus} />
       {isViewable(name) && <a className="btn" href={`${href}?ac=1`} target="_blank" rel="noopener">{t('common.open')}</a>}
       <a className="btn" href={href}>{t('common.download')}</a>
     </span>

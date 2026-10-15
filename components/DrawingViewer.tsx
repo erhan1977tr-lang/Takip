@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { PDF_ASSETS, loadPdfjs } from './pdfjs';
+import { PreviewButton } from './FilePreview';
 
 // Çizim görüntüleyici (sipariş → cizim/[drawingId]): PDF (pdf.js, tarayıcıda) ve görseller sayfa sayfa gösterilir; üstünde
 // işaretler gösterilir: İğne, Dikdörtgen, Serbest, Metin. Konumlar sayfaya oranlıdır (0–1). İç ekip eski revizyon
@@ -28,26 +30,7 @@ const kindOf = (name: string) => {
 };
 const pct = (v: number) => `${v * 100}%`;
 
-/**
- * pdf.js (yalnızca tarayıcıda, ilk PDF açılınca yüklenir). Çalışan iş parçacığı ayrı dosya istemesin diye ana iş
- * parçacığında çalışır. Yazı tipi gömülmemiş PDF'ler ve CJK metinler için pdf.js'in kendi varlıkları (standart yazı
- * tipleri, cMap'ler) uygulamanın kendi adresinden gelir: app/pdfjs/[kind]/[file] — dış sunucuya (CDN) istek atılmaz.
- * useSystemFonts kapalı: gömülü olmayan yazı tipleri cihazdaki yazı tipine göre değil, hep pdf.js'in kendi standart
- * yazı tipleriyle çizilir — çizim her cihazda (müşterinin telefonu dahil) aynı görünür.
- * PDF içindeki görsellerin çözücüleri (JPEG, JPEG 2000, JBIG2) pdf.js paketinin içindedir.
- */
-const PDF_ASSETS = { standardFontDataUrl: '/pdfjs/standard_fonts/', cMapUrl: '/pdfjs/cmaps/', cMapPacked: true, useSystemFonts: false };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let pdfjsPromise: Promise<any> | null = null;
-function loadPdfjs() {
-  pdfjsPromise ??= (async () => {
-    const [lib, worker] = await Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.mjs')]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).pdfjsWorker = { WorkerMessageHandler: worker.WorkerMessageHandler };
-    return lib;
-  })();
-  return pdfjsPromise;
-}
+// pdf.js yükleyicisi ortaktır: components/pdfjs.ts (dosya önizlemesi de kullanır)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function PdfPage({ doc, n, children }: { doc: any; n: number; children: React.ReactNode }) {
@@ -213,7 +196,12 @@ export function DrawingViewer({ files, annotations, editable = false, onChange, 
         {editable && kind !== 'other' && <p className="hint viewer-hint">{text.hint}</p>}
         <div className="viewer-scroll">
           <div style={{ width: pct(zoom) }}>
-            {kind === 'other' && <p className="muted">{text.noPreview} <a href={`/dosya/cizim/${fileId}`}>{text.download}</a></p>}
+            {kind === 'other' && (
+              <p className="muted">
+                {text.noPreview} <a href={`/dosya/cizim/${fileId}`}>{text.download}</a>
+                {file && /\.(dwg|dxf)$/i.test(file.name) && <> <PreviewButton href={`/dosya/cizim/${file.id}`} name={file.name} family="cad" /></>}
+              </p>
+            )}
             {kind === 'pdf' && !doc && !error && <p className="muted">{text.loading}</p>}
             {error && <p className="muted">{text.failed} <a href={`/dosya/cizim/${fileId}`}>{text.download}</a></p>}
             {kind === 'image' && !error && (

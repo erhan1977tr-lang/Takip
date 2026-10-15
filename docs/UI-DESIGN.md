@@ -691,3 +691,14 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
   `.fieldset-plain`.
 - Cost, profit and margin are shown only here and in the internal Excel; the customer PDF never shows them.
 
+## File preview (3.88.0, decision 283)
+
+- One shared window for every file list: `PreviewButton` / `PreviewFor` renders "Önizle" next to the existing "Aç" /
+  "İndir"; the window is `<dialog class="modal preview-modal">` (`.preview-head` name / tools / download + close,
+  `.preview-body`). PDF pages `.preview-page` in `.preview-scroll`; images and CAD in `.preview-stage` (pan / zoom by
+  pointer, wheel, pinch); CAD adds `.preview-side` (units, layers `.preview-layer`) and `.alert.alert-warn.preview-warn`
+  for everything that is not or only approximately shown.
+- The CAD canvas background is the token `--cad-bg` (dark, CAD convention). Drawing colours come from the file and are
+  drawn on the canvas; the layer swatch (`.preview-swatch`) is the only inline colour (data, not styling).
+- ≤ 760 px the window is full screen and the CAD side panel drops below the drawing.
+

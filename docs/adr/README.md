@@ -18,3 +18,4 @@ yeni bir ADR yazılır ve eskisinin durumu "Yerini aldı: ADR xxxx" olarak günc
 | 0011 | Ortam değişkenleri ve doğrulama | Kabul |
 | 0012 | Sunucu kurulumu ve otomatik güncelleme | Kabul |
 | 0013 | Yedek şifreleme (Google Drive kopyası) | Kabul |
+| 0014 | Güvenli dosya önizlemesi ve DWG / DXF için GNU LibreDWG | Kabul |

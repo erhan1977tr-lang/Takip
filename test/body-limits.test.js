@@ -223,7 +223,8 @@ test('zaman aşımları ve sürümden bağımsızlık; bellek sınırı bu deği
   assert.equal((code.match(/\btransport\b/g) ?? []).length, 1);
   assert.doesNotMatch(/^\(uygulama\) \{\n([\s\S]*?)\n\}$/m.exec(code)[1], /transport|timeout/);
   // Uygulama kapsayıcısına bellek / işlemci / süreç sınırı EKLENMEDİ (AUD-4'ün o bölümü SEC-12 kararını bekliyor)
-  const compose = read('deploy/docker-compose.yml');
+  // CAD önizleme hizmetinin (karar 283) kendi sınırları bu kararın kapsamı dışındadır; diğer servislerde sınır yok
+  const compose = read('deploy/docker-compose.yml').replace(/^  cad:\n(?:(?: {4}.*|\s*)\n)+/m, '');
   for (const key of ['mem_limit', 'mem_reservation', 'memswap_limit', 'cpus', 'pids_limit', 'deploy', 'ulimits']) assert.doesNotMatch(compose, new RegExp(`^\\s*${key}:`, 'm'), key);
   // Caddy imajı ve bağlama aynı
   assert.match(compose, /image: caddy:2\n/);

@@ -111,6 +111,8 @@ export const ENV_VARS = {
   // Tarayıcının adresinin TEK kaynağı bu iki değişkendir (karar 150): uygulamadan / veritabanından değiştirilemez
   CLAMAV_HOST: { group: 'app', desc: 'Antivirüs (clamd) adresi — yalnızca buradan gelir, uygulamadan değiştirilemez; tanımlıysa yüklenen dosyalar taranır (sunucuda: clamav)' },
   CLAMAV_PORT: { group: 'app', parse: parseInt10(1, 65535), default: 3310, desc: 'Antivirüs (clamd) portu — yalnızca buradan gelir' },
+  // DWG / DXF önizleme hizmeti (karar 283): ayrı, ağı yalnızca uygulamayla paylaşan kapsayıcı. Boşsa DWG / DXF önizlemesi kapalı
+  CAD_SERVICE_URL: { group: 'app', parse: parseUrl(['http:']), desc: 'DWG / DXF önizleme hizmetinin iç adresi (sunucuda docker compose verir: http://cad:3311); boşsa CAD önizlemesi kapalı' },
 
   // --- veritabanı ---
   DATABASE_URL: { group: 'db', required: true, secret: true, parse: parseUrl(['postgresql:', 'postgres:']), desc: 'PostgreSQL bağlantısı' },

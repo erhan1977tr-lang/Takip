@@ -25,7 +25,7 @@ function service(name) {
   }
   return out.join('\n');
 }
-const SERVICES = ['db', 'app', 'uploads-init', 'worker', 'clamav', 'tools', 'caddy'];
+const SERVICES = ['db', 'app', 'uploads-init', 'worker', 'cad', 'clamav', 'tools', 'caddy'];
 
 test('işçi uygulamanın kullanıcısıyla (1001:1001) çalışır; imajı (tools) aynı kalır', () => {
   const worker = service('worker');
@@ -45,10 +45,10 @@ test('tools imajı ve servisi değişmedi: migration / yönetim / yedek komutlar
   const dockerfile = read('Dockerfile');
   const tools = dockerfile.slice(dockerfile.indexOf('FROM builder AS tools'), dockerfile.indexOf('FROM base AS runner'));
   assert.doesNotMatch(tools, /^USER /m, 'tools aşamasında kullanıcı tanımlanmaz');
-  // Kullanıcı yalnızca işçide ve sahiplik servisinde tanımlı
+  // Kullanıcı yalnızca işçide, sahiplik servisinde ve CAD önizleme hizmetinde (karar 283, nobody) tanımlı
   for (const name of SERVICES) {
     const has = /^ {4}user:/m.test(service(name));
-    assert.equal(has, name === 'worker' || name === 'uploads-init', `${name}: user`);
+    assert.equal(has, name === 'worker' || name === 'uploads-init' || name === 'cad', `${name}: user`);
   }
 });
 
@@ -155,18 +155,23 @@ test('işçi ayrıcalıksız: bütün yetenekler bırakılır, no-new-privileges
   assert.doesNotMatch(worker, /cap_add|privileged|seccomp|apparmor|unconfined/);
 });
 
-test('ayrıcalık ayarı YALNIZCA işçide: diğer servisler ve kaynak sınırları bu kararda değişmedi', () => {
+test('ayrıcalık ayarı YALNIZCA işçide ve CAD önizleme hizmetinde: diğer servisler ve kaynak sınırları değişmedi', () => {
+  // CAD önizleme hizmeti (karar 283) kendi kararıyla eklenmiş ayrı, kısıtlı kapsayıcıdır (test/cad-preview.test.js);
+  // uygulama, veritabanı, Caddy, antivirüs, araçlar ve sahiplik servisinin ayarları bu kararlarda değişmedi
+  const hardened = (name) => name === 'worker' || name === 'cad';
   for (const name of SERVICES) {
     const def = service(name);
-    assert.equal(/^ {4}cap_drop:/m.test(def), name === 'worker', `${name}: cap_drop`);
-    assert.equal(/^ {4}security_opt:/m.test(def), name === 'worker', `${name}: security_opt`);
-    assert.doesNotMatch(def, /cap_add|privileged:|read_only:|tmpfs:/, `${name}: başka ayrıcalık ayarı yok`);
-    // Kaynak sınırı (bellek / işlemci / süreç sayısı) bu kararın kapsamında değil
+    assert.equal(/^ {4}cap_drop:/m.test(def), hardened(name), `${name}: cap_drop`);
+    assert.equal(/^ {4}security_opt:/m.test(def), hardened(name), `${name}: security_opt`);
+    assert.doesNotMatch(def, /cap_add|privileged:/, `${name}: ayrıcalık eklenmez`);
+    if (name === 'cad') continue;
+    assert.doesNotMatch(def, /read_only:|tmpfs:/, `${name}: başka ayrıcalık ayarı yok`);
+    // Kaynak sınırı (bellek / işlemci / süreç sayısı) bu kararların kapsamında değil
     assert.doesNotMatch(def, /mem_limit|memswap_limit|cpus:|cpu_shares|pids_limit|ulimits:|deploy:/, `${name}: kaynak sınırı yok`);
   }
   const body = compose.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  assert.equal(body.match(/cap_drop/g).length, 1);
-  assert.equal(body.match(/no-new-privileges/g).length, 1);
+  assert.equal(body.match(/cap_drop/g).length, 2);
+  assert.equal(body.match(/no-new-privileges/g).length, 2);
 });
 
 test('sunucu aracı: geri yükleme dosyaları yine 1001:1001 yapar; durum satırı yalnızca okur', () => {
