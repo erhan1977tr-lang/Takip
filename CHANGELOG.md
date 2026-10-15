@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.88.1 — 15.10.2026
+
+- DWG / DXF önizlemesinde çizim alanı, çizim verisi geldikten sonra oluştuğunda da ölçülür ve yakınlaştırma / kaydırma
+  çalışır (3.88.0'ın ilk denemesinde boş kalabiliyordu); kod düzeni denetimi düzeltmeleri. Davranış başka yönde değişmedi.
+
 ## 3.88.0 — 15.10.2026
 
 Güvenli dosya önizlemesi: PDF, JPG / PNG / WEBP, DWG ve DXF dosyaları indirmeden, uygulama içinde görülebilir (karar 283,

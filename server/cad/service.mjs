@@ -130,12 +130,12 @@ export function createCadService(o = {}) {
     }
     if (state.waiting.length >= L.queue) return Promise.resolve(false);
     return new Promise((resolve) => {
-      let entry;
+      // Zamanlayıcı geri çağrısı yalnızca daha sonra çalışır; o anda `entry` tanımlıdır
       const timer = setTimeout(() => {
         state.waiting = state.waiting.filter((w) => w !== entry);
         resolve(false);
       }, L.waitMs);
-      entry = () => {
+      const entry = () => {
         clearTimeout(timer);
         state.active++;
         resolve(true);

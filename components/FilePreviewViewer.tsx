@@ -41,7 +41,7 @@ const isFail = (v: unknown): v is Fail => !!v && typeof v === 'object' && 'code'
 
 type View = { s: number; tx: number; ty: number };
 
-function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, { min, max }: { min: number; max: number }) {
+function usePanZoom(el: HTMLDivElement | null, { min, max }: { min: number; max: number }) {
   const [view, setView] = useState<View>({ s: 1, tx: 0, ty: 0 });
   const zoomAt = useCallback((f: number, cx: number, cy: number) => {
     setView((v) => {
@@ -51,7 +51,6 @@ function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, { min, max }: {
     });
   }, [min, max]);
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const pts = new Map<number, { x: number; y: number }>();
     let pinch = 0;
@@ -103,25 +102,25 @@ function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, { min, max }: {
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
     };
-  }, [ref, zoomAt]);
-  const zoomCenter = (f: number) => {
-    const el = ref.current;
+  }, [el, zoomAt]);
+  const zoomCenter = useCallback((f: number) => {
     if (el) zoomAt(f, el.clientWidth / 2, el.clientHeight / 2);
-  };
+  }, [el, zoomAt]);
   return { view, setView, zoomCenter };
 }
 
-/** Kapsayıcının boyutu */
-function useSize(ref: React.RefObject<HTMLElement | null>) {
+/**
+ * Kapsayıcının boyutu. Öğenin kendisi izlenir (geri çağırmalı ref ile): öğe sonradan (veri gelince) oluşsa da ölçülür.
+ */
+function useSize(el: HTMLElement | null) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
     setSize({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
-  }, [ref]);
+  }, [el]);
   return size;
 }
 
@@ -199,8 +198,10 @@ function PdfView({ href, text, setTools }: { href: string; text: PreviewText; se
   const [zoom, setZoom] = useState(1);
   const [aspect, setAspect] = useState(1.414);
   const [current, setCurrent] = useState(1);
-  const scroll = useRef<HTMLDivElement>(null);
-  const { w } = useSize(scroll);
+  const scroll = useRef<HTMLDivElement | null>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const scrollRef = useCallback((n: HTMLDivElement | null) => { scroll.current = n; setScrollEl(n); }, []);
+  const { w } = useSize(scrollEl);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -258,17 +259,17 @@ function PdfView({ href, text, setTools }: { href: string; text: PreviewText; se
 
   if (fail) return <Status text={text} code={fail} />;
   return (
-    <div className="preview-scroll" ref={scroll} onScroll={onScroll} data-preview-pdf={total || undefined}>
+    <div className="preview-scroll" ref={scrollRef} onScroll={onScroll} data-preview-pdf={total || undefined}>
       {!doc && <Status text={text} />}
       {doc && w > 0 && Array.from({ length: total }, (_, i) => (
-        <PdfPreviewPage key={i + 1} doc={doc} n={i + 1} width={pageWidth} aspect={aspect} root={scroll} />
+        <PdfPreviewPage key={i + 1} doc={doc} n={i + 1} width={pageWidth} aspect={aspect} root={scrollEl} />
       ))}
     </div>
   );
 }
 
 /** Tek sayfa: görünür alana yaklaşınca çizilir, çok uzaklaşınca tuval boşaltılır */
-function PdfPreviewPage({ doc, n, width, aspect, root }: { doc: PdfDoc; n: number; width: number; aspect: number; root: React.RefObject<HTMLDivElement | null> }) {
+function PdfPreviewPage({ doc, n, width, aspect, root }: { doc: PdfDoc; n: number; width: number; aspect: number; root: HTMLDivElement | null }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [near, setNear] = useState(false);
@@ -277,7 +278,7 @@ function PdfPreviewPage({ doc, n, width, aspect, root }: { doc: PdfDoc; n: numbe
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting), { root: root.current, rootMargin: '900px 0px' });
+    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting), { root, rootMargin: '900px 0px' });
     io.observe(el);
     return () => io.disconnect();
   }, [root]);
@@ -323,7 +324,7 @@ function ImageView({ href, name, text, setTools }: { href: string; name: string;
   const [src, setSrc] = useState('');
   const [fail, setFail] = useState('');
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
-  const stage = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const size = useSize(stage);
   const { view, setView, zoomCenter } = usePanZoom(stage, { min: 0.02, max: 20 });
 
@@ -356,7 +357,7 @@ function ImageView({ href, name, text, setTools }: { href: string; name: string;
 
   if (fail) return <Status text={text} code={fail} />;
   return (
-    <div className="preview-stage" ref={stage} data-preview-image={nat ? `${nat.w}x${nat.h}` : undefined}>
+    <div className="preview-stage" ref={setStage} data-preview-image={nat ? `${nat.w}x${nat.h}` : undefined}>
       {!nat && <Status text={text} />}
       {src && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -427,7 +428,7 @@ function CadView({ href, name, text, setTools }: { href: string; name: string; t
   const [res, setRes] = useState<CadResult | null>(null);
   const [fail, setFail] = useState('');
   const [hidden, setHidden] = useState<Set<number>>(new Set());
-  const stage = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useSize(stage);
   const { view, setView, zoomCenter } = usePanZoom(stage, { min: 1e-9, max: 1e9 });
@@ -555,7 +556,7 @@ function CadView({ href, name, text, setTools }: { href: string; name: string; t
             <div className="small">{text.warnHint}</div>
           </div>
         )}
-        <div className="preview-stage preview-cad-stage" ref={stage}>
+        <div className="preview-stage preview-cad-stage" ref={setStage}>
           {!ext && <div className="preview-status muted" data-preview-empty>{text.empty}</div>}
           <canvas ref={canvas} />
         </div>

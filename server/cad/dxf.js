@@ -713,7 +713,7 @@ function drawEntity(o, r, m, parent, blocks, stack, inBlock) {
       const maj = [num(r, 11), num(r, 21), num(r, 31, 0)];
       const ratio = num(r, 40, 1);
       const minor = cross(n, maj).map((v) => v * ratio);
-      let t0 = num(r, 41, 0);
+      const t0 = num(r, 41, 0);
       let t1 = num(r, 42, TAU);
       while (t1 <= t0) t1 += TAU;
       const steps = Math.max(8, Math.min(720, Math.ceil(((t1 - t0) / TAU) * 128)));
