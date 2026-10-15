@@ -329,7 +329,7 @@ dbTest('9) INTRAREA MARFĂ belgesi: yalnızca teslim alınan miktarlar; alış f
 dbTest('10) e-posta: hata stoğu geri almaz; alıcı başına bir ileti; bir alıcının hatası öbürünü engellemez; yarıda kalan alıcıya yeniden gönderilmez; mükerrer yok', offline(async () => {
   const id = await sentOrder([['RM16-ELX', 10]]);
   const s0 = await level('RM16-ELX');
-  const r = await receive(id, { 'RM16-ELX': 10 });
+  assert.ok((await receive(id, { 'RM16-ELX': 10 })).ok);
   const s1 = await level('RM16-ELX');
   assert.equal(s1, s0 + 10);
   const [job] = await receiptJobs(id);

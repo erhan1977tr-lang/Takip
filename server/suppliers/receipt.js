@@ -145,7 +145,13 @@ export async function receiveGoods(db, v, actor, opts = {}) {
 /**
  * Sipariş ekranının mal kabulü bölümü: kesin revizyonun satırları (sipariş edilen / teslim alınan / kalan, birim uyumu) ve
  * kabuller (satırlar, kaydeden, depo e-postası durumu). Fiyat / maliyet döndürmez.
+ * @typedef {{ id: string, code: string, description: string, color: string | null, qty: number, unitCode: string, sortOrder: number,
+ *   length: string | null, compatible: boolean, ordered: number, received: number, remaining: number }} ReceiptLineView
+ * @typedef {{ id: string, seq: number, receivedOn: Date, reference: string | null, note: string | null, complete: boolean, createdAt: Date,
+ *   lines: { id: string, code: string, description: string, qty: number, unitCode: string }[], _count: { stockMoves: number },
+ *   by: string | null, mail: { status: string, sentTo: number, lastError: string | null } | null }} ReceiptView
  * @param {any} db  @param {string} orderId
+ * @returns {Promise<{ lines: ReceiptLineView[], receipts: ReceiptView[] } | null>}
  */
 export async function loadReceipts(db, orderId) {
   const order = await db.supplierOrder.findUnique({
