@@ -14,7 +14,7 @@ import { writeZip } from './zip.js';
 import { BRAND, brandLogoBytes, brandLogoSize } from '../branding/index.js';
 
 /**
- * @typedef {'text' | 'wrap' | 'int' | 'dec2' | 'dec3' | 'kg' | 'm2' | 'mm' | 'money'} ColType
+ * @typedef {'text' | 'wrap' | 'int' | 'dec2' | 'dec3' | 'dec4' | 'kg' | 'm2' | 'mm' | 'money'} ColType
  * @typedef {{ header: string, width: number, type?: ColType, unit?: string, span?: number }} Column
  *   width: karakter · unit: para birimi (yalnızca money — hücre biçimine yazılır: "1.234,50 EUR") · span: sütunun kapladığı
  *   hücre sayısı (birleştirilir; aynı sayfadaki ikinci tablo ilk tablonun sütunlarına hizalanır — sütun genişliğini ilk tablo
@@ -84,6 +84,7 @@ function formatOf(col) {
     case 'int': return { id: 3 }; // #,##0
     case 'dec2': return { id: 4 }; // #,##0.00
     case 'dec3': return { code: '#,##0.000' };
+    case 'dec4': return { code: '#,##0.00##' }; // birim fiyat: 2–4 ondalık (girilen hassasiyet)
     case 'kg': return { code: '#,##0" kg"' };
     case 'm2': return { code: '#,##0.000" m²"' }; // m² her yerde 3 ondalık (karar 232)
     case 'mm': return { id: 1 }; // 0
@@ -91,7 +92,7 @@ function formatOf(col) {
     default: return { id: 0 };
   }
 }
-const isNumericType = (t) => ['int', 'dec2', 'dec3', 'kg', 'm2', 'mm', 'money'].includes(t ?? 'text');
+const isNumericType = (t) => ['int', 'dec2', 'dec3', 'dec4', 'kg', 'm2', 'mm', 'money'].includes(t ?? 'text');
 
 /** Kitap genelinde biçim kaydı: aynı birleşim bir kez yazılır */
 function styleBook() {

@@ -851,6 +851,14 @@ tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .supplier-lines select { min-width: 200px; }
 .supplier-lines .text-input { min-width: 140px; }
 .supplier-lines tfoot td { border-top: 2px solid var(--border); }
+/* Bağımsız ticari teklif (karar 277): satır tabloları, hesaplayıcı kutusu, düzenleyicinin çerçevesiz alan grubu */
+.commercial-lines td { vertical-align: top; }
+.commercial-lines select { min-width: 180px; }
+.commercial-lines .text-input { min-width: 180px; width: 100%; }
+.commercial-lines .qty-input { width: 84px; }
+.commercial-calc { margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.commercial-calc h3 { margin-top: 0; }
+.fieldset-plain { border: 0; margin: 0; padding: 0; min-width: 0; }
 .approve-box { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 /* Profil kataloğu → ürün formu: alış bilgisi bölümü (yalnızca yönetici) */
 .purchase-box { margin-top: 14px; border-top: 1px solid var(--border); }

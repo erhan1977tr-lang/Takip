@@ -14,5 +14,7 @@ export default {
     profileCatalog: 'Catalog Profile',
     profileStock: 'Stoc Profile',
     deliveryReport: 'Raport Livrare',
+    commercialOffer: 'Ofertă',
+    commercialOfferInternal: 'Ofertă Internă',
   },
 };

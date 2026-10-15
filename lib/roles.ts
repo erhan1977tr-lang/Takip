@@ -15,7 +15,7 @@ export type NavItem =
   | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number }
   | { section: string; count?: number; countLabel?: string };
 
-// Ana bölüm sırası (karar 269): Operasyon, Çizim Ekibi, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
+// Ana bölüm sırası (karar 269; karar 277 Ticari Teklif'i Çizim Ekibi ile Muhasebe arasına ekler): Operasyon, Çizim Ekibi, Ticari Teklif, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
 // Hesap Ayarları — her bölüm kendi alt menüleriyle, alt menülerin iç sırası değişmeden.
 const ADMIN_NAV: NavDef[] = [
   { section: 'nav.operations' },
@@ -28,6 +28,10 @@ const ADMIN_NAV: NavDef[] = [
   { href: '/siparisler?panel=cizim', key: 'nav.drawingPanel' },
   // Müşterinin DWG/DXF çizimleri için çizimci kararı (karar 167) — çizim ekibinin aynı listesi
   { href: '/siparisler?panel=cizim&view=dwg', key: 'nav.dwgDrawings' },
+  // Bağımsız ticari teklif (3.83.0, karar 277): sipariş / FGO / stokla bağı yok — yalnızca COMMERCIAL_OFFER_MANAGE
+  { section: 'nav.commercialOffers' },
+  { href: '/admin/ticari-teklifler/yeni', key: 'nav.commercialOfferNew' },
+  { href: '/admin/ticari-teklifler', key: 'nav.commercialOfferList' },
   { section: 'nav.accounting' },
   { href: '/admin/muhasebe/profil', key: 'nav.profileReceivables' },
   { href: '/admin/muhasebe/cam', key: 'nav.glassReceivables' },

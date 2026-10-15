@@ -213,18 +213,19 @@ test('profil bölümü (karar 216): yeni profil siparişi = fiyat bekleyen, kapa
   assert.deepEqual(seen[0], { removedAt: null, ...newProfileWhere() }, 'silinmiş sipariş sayılmaz (orderScope)');
 });
 
-test('menü (karar 269): yöneticinin ana bölüm sırası — Operasyon, Çizim Ekibi, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar, Hesap Ayarları; alt menüler kendi bölümünde, iç sıraları aynı', () => {
+test('menü (karar 269, 277): yöneticinin ana bölüm sırası — Operasyon, Çizim Ekibi, Ticari Teklif, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar, Hesap Ayarları; alt menüler kendi bölümünde, iç sıraları aynı', () => {
   const roles = src('lib/roles.ts');
   const admin = roles.slice(roles.indexOf('const ADMIN_NAV: NavDef[] = ['), roles.indexOf('export const NAV'));
   const entries = [...admin.matchAll(/\{ (section|href): '([^']+)'/g)].map((m) => [m[1], m[2]]);
   const sections = entries.filter(([k]) => k === 'section').map(([, v]) => v);
-  assert.deepEqual(sections, ['nav.operations', 'nav.drawingTeam', 'nav.accounting', 'nav.purchasing', 'nav.profileOrders', 'nav.people', 'nav.definitions', 'nav.account']);
+  assert.deepEqual(sections, ['nav.operations', 'nav.drawingTeam', 'nav.commercialOffers', 'nav.accounting', 'nav.purchasing', 'nav.profileOrders', 'nav.people', 'nav.definitions', 'nav.account']);
   const groups = {};
   let cur = null;
   for (const [k, v] of entries) { if (k === 'section') { cur = v; groups[cur] = []; } else groups[cur].push(v); }
   assert.deepEqual(groups, {
     'nav.operations': ['/siparisler', '/teklifler', '/admin/kararlar', '/yuklemeler'],
     'nav.drawingTeam': ['/siparisler?panel=cizim', '/siparisler?panel=cizim&view=dwg'],
+    'nav.commercialOffers': ['/admin/ticari-teklifler/yeni', '/admin/ticari-teklifler'],
     'nav.accounting': ['/admin/muhasebe/profil', '/admin/muhasebe/cam', '/admin/muhasebe/tedarikci'],
     'nav.purchasing': ['/siparisler/tedarik', '/admin/muhasebe/tedarikciler'],
     'nav.profileOrders': ['/siparisler?view=profil', '/admin/profil-katalogu', '/admin/profil-katalogu/hesaplama', '/admin/profil-fiyatlari', '/admin/stok'],
