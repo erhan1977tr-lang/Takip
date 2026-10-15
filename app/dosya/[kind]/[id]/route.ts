@@ -83,7 +83,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   try { stat = full ? fs.statSync(full) : null; } catch { stat = null; }
   if (!full || !stat || !stat.isFile()) return new Response(t('common.fileMissing'), { status: 404 });
   const entity = kind === 'cizim' ? 'DrawingFile' : kind === 'tedarik' ? 'SupplierOrderFile' : kind === 'teslimat' ? 'DeliveryPhoto' : 'OrderFile';
-  const owner = kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId };
+  const owner: Record<string, string> = kind === 'tedarik' ? { supplierOrderId: file.orderId } : { orderId: file.orderId };
   // Önizleme (karar 283): erişim kuralı İNDİRMEYLE BİREBİR aynıdır — yukarıdaki sorgu, virüs ve disk denetiminden sonra gelir
   const onizle = new URL(req.url).searchParams.get('onizle');
   if (onizle !== null) {

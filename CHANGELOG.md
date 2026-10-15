@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.88.2 — 15.10.2026
+
+- Önizleme yolunun denetim kaydı alanlarına tip düzeltmesi (davranış değişmedi).
+
 ## 3.88.1 — 15.10.2026
 
 - DWG / DXF önizlemesinde çizim alanı, çizim verisi geldikten sonra oluştuğunda da ölçülür ve yakınlaştırma / kaydırma
