@@ -48,7 +48,7 @@ export default {
       NOT_DXF: 'Fișierul nu este un fișier DXF valid.',
       TOO_LARGE: 'Fișierul este prea mare pentru previzualizare. Îl puteți descărca.',
       TOO_COMPLEX: 'Desenul este prea complex pentru previzualizare. Îl puteți descărca.',
-      RATE_LIMIT: 'Prea multe previzualizări într-un timp scurt. Încercați din nou puțin mai târziu.',
+      PREVIEW_LIMIT: 'Prea multe previzualizări într-un timp scurt. Încercați din nou puțin mai târziu.',
       UNAVAILABLE: 'Previzualizarea DWG / DXF nu este disponibilă momentan. Puteți descărca fișierul.',
       BUSY: 'Serviciul de previzualizare este ocupat. Încercați din nou puțin mai târziu.',
       TIMEOUT: 'Previzualizarea nu a putut fi pregătită la timp. Puteți descărca fișierul.',

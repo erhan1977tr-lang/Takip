@@ -129,7 +129,7 @@ async function previewResponse({ onizle, full, stat, file, userId, entity, id, o
 }) {
   if (onizle !== '1' && onizle !== 'cad') return previewFail('UNSUPPORTED');
   const gate = previewLimiter.take(userId);
-  if (!gate.ok) return previewFail('RATE_LIMIT');
+  if (!gate.ok) return previewFail('PREVIEW_LIMIT');
   const head = Buffer.alloc(SNIFF_BYTES);
   let n = 0;
   try {

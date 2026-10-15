@@ -86,7 +86,7 @@ function previewExt(name) {
 
 /** Önizleme hata kodu → HTTP durumu (yanıt gövdesi yalnızca sabit kod taşır) */
 export const PREVIEW_STATUS = Object.freeze({
-  UNSUPPORTED: 415, MISMATCH: 415, BINARY_DXF: 415, TOO_LARGE: 413, RATE_LIMIT: 429, UNAVAILABLE: 503, BUSY: 503,
+  UNSUPPORTED: 415, MISMATCH: 415, BINARY_DXF: 415, TOO_LARGE: 413, PREVIEW_LIMIT: 429, UNAVAILABLE: 503, BUSY: 503,
   TIMEOUT: 504, CONVERT_FAILED: 422, INVALID: 422, NOT_DXF: 415, TOO_COMPLEX: 422,
 });
 

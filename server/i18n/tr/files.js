@@ -48,7 +48,7 @@ export default {
       NOT_DXF: 'Dosya geçerli bir DXF dosyası değil.',
       TOO_LARGE: 'Dosya önizleme için çok büyük. Dosyayı indirerek açabilirsiniz.',
       TOO_COMPLEX: 'Çizim önizleme için çok karmaşık. Dosyayı indirerek açabilirsiniz.',
-      RATE_LIMIT: 'Kısa sürede çok fazla önizleme istendi. Lütfen biraz sonra tekrar deneyin.',
+      PREVIEW_LIMIT: 'Kısa sürede çok fazla önizleme istendi. Lütfen biraz sonra tekrar deneyin.',
       UNAVAILABLE: 'DWG / DXF önizlemesi şu anda kullanılamıyor. Dosyayı indirerek açabilirsiniz.',
       BUSY: 'Önizleme hizmeti şu anda meşgul. Lütfen biraz sonra tekrar deneyin.',
       TIMEOUT: 'Önizleme zamanında hazırlanamadı. Dosyayı indirerek açabilirsiniz.',
