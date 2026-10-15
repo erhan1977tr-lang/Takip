@@ -426,7 +426,8 @@ export default {
     CONFIRMED_LOADING: 'Încărcarea este confirmată',
     SHIPPED: 'Marcată ca încărcată / arhivată',
     PROFILE_FINANCE: 'Există proformă, plată sau factură',
-    PROFILE_WAREHOUSE: 'Trimisă la depozit sau predată',
+    PROFILE_WAREHOUSE: 'Predată (marfa a ieșit din depozit)',
+    MANUAL_PAYMENT: 'Există o plată introdusă manual',
   },
   // Prețul ofertei trimise clientului este blocat (administrator — pachetul 4)
   priceLock: {

@@ -47,7 +47,7 @@ test('mali kilit: depo e-postası fiyatı kilitlemez, silmeyi geçici olarak eng
   assert.equal(busyOf(facts({ batches: [{ kind: 'PROFORMA', status: 'PENDING', document: null }] })), true);
   assert.equal(busyOf(facts({ batches: [{ kind: 'PROFORMA', status: 'ISSUED', document: null }] })), false);
   assert.equal(busyOf(facts({ jobs: ['FGO_DOC_EMAIL', 'ORDER_OFFER_SENT'] })), false, 'e-posta / bildirim işi silmeyi bekletmez');
-  assert.deepEqual([...BUSY_JOBS].sort(), ['FGO_GLASS', 'FGO_INVOICE', 'FGO_PROFORMA', 'WAREHOUSE_EMAIL']);
+  assert.deepEqual([...BUSY_JOBS].sort(), ['FGO_GLASS', 'FGO_INVOICE', 'FGO_PROFILE_ADVANCE', 'FGO_PROFORMA', 'WAREHOUSE_EMAIL']);
   // Yüklendi / arşivlendi olarak işaretlenmiş cam siparişi: fiyat (onaylı yükleme / belge yoksa) değişebilir, sipariş silinmez
   for (const status of ['YUKLENDI', 'ARSIVLENDI']) {
     assert.deepEqual(lockReasons(facts({ status }), 'price'), [], status);
@@ -59,8 +59,12 @@ test('mali kilit: depo e-postası fiyatı kilitlemez, silmeyi geçici olarak eng
   assert.deepEqual(lockReasons(profile({ proformaNo: 'PRF0003' }), 'remove'), [{ code: 'PROFILE_FINANCE', ref: 'PRF0003' }]);
   assert.deepEqual(lockReasons(profile({ paidAt: new Date() }), 'remove'), [{ code: 'PROFILE_FINANCE', ref: null }]);
   assert.deepEqual(lockReasons(profile({ invoiceNo: 'GKH0009', proformaNo: 'PRF0003' }), 'remove'), [{ code: 'PROFILE_FINANCE', ref: 'GKH0009' }]);
-  assert.deepEqual(lockReasons(profile({ stockDeducted: true }), 'remove'), [{ code: 'PROFILE_WAREHOUSE', ref: null }]);
+  // 3.86.0 (karar 281): depoya gönderilmiş / stoktan düşülmüş ama teslim edilmemiş profil siparişi silinebilir (stok iade
+  // edilir); teslim edilmiş sipariş ve elle girilmiş ödeme silmeyi engeller
+  assert.deepEqual(lockReasons(profile({ stockDeducted: true, warehouseSentAt: new Date() }), 'remove'), []);
   assert.deepEqual(lockReasons(profile({ deliveredAt: new Date(), warehouseSentAt: new Date() }), 'remove'), [{ code: 'PROFILE_WAREHOUSE', ref: null }]);
+  assert.deepEqual(lockReasons({ ...profile({}), payments: 1 }, 'remove'), [{ code: 'MANUAL_PAYMENT', ref: null }]);
+  assert.deepEqual(lockReasons({ ...profile({}), payments: 1 }, 'price'), []);
   assert.deepEqual(lockReasons(profile({ stockDeducted: false, proformaNo: null }), 'remove'), []);
   assert.deepEqual(lockReasons(profile({ proformaNo: 'PRF0003' }), 'price'), [], 'profil geçmişi fiyat kilidinde sayılmaz (profil fiyatı kendi akışında)');
 });

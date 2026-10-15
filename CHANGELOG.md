@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.86.0 — 15.10.2026
+
+Profil siparişi silme ve otomatik stok iadesi (karar 281). Veritabanı şeması değişmedi; FGO'da hiçbir belge kesilmez,
+iptal edilmez ya da değiştirilmez.
+
+- **Yalnızca Yönetici ve Yönetici Yardımcısı** (`ORDER_CANCEL`) profil siparişini siler; diğer roller arayüzde düğmeyi
+  görmez, sunucu da reddeder.
+- **FGO doğrulaması:** silme anında FGO canlı olarak (yalnızca okuma — `factura/getstatus`) doğrulanır. FGO kapalıysa,
+  anahtar yoksa ya da FGO kesin yanıt vermiyorsa sipariş SİLİNMEZ; deneme denetim kaydına yazılır.
+- **Mali engel:** proforma, avans, fatura, FGO belgesi, kuyrukta bekleyen FGO işi (avans dahil) ya da elle girilmiş ödeme
+  kaydı varsa silinmez. Teslim edilmiş (mal depodan çıkmış) sipariş silinmez.
+- **Stok iadesi:** depoya gönderilmiş, stoktan düşülmüş ama teslim edilmemiş sipariş silinebilir; siparişin gerçek stok
+  hareketlerinin net düşümü aynı işlemde IADE hareketiyle geri eklenir (depo onayı yok). Düşülmemiş miktar eklenmez; iptalde
+  zaten iade edilmiş miktar yeniden eklenmez. Mevcut hareketler silinmez.
+- **Tek işlem:** mantıksal silme, stok iadesi, geçmiş ve denetim kaydı birlikte; hata olursa hepsi geri alınır. Tekrarlanan /
+  eşzamanlı silme ikinci iade oluşturmaz.
+- **Onay penceresi:** sipariş numarası, stoğa geri eklenecek ürün ve miktarlar, FGO doğrulaması notu; sonuçta kısa bildirim
+  (silinen sipariş + geri eklenen stok). Stoğu iade edilmiş silinmiş sipariş geri yüklenmez.
+
 ## 3.85.1 — 15.10.2026
 
 - Telegram asistanı, yükleme günü aracı: plana girmeyen siparişte boş gün alanı yazılmaz (yalnızca araç çıktısı; 3.85.0'ın

@@ -14,18 +14,21 @@
 //   CONFIRMED_LOADING  onaylı yükleme kalemi (yüklendi ya da yüklenmedi — değişmez kopya)
 //   SHIPPED            (silme) yüklendi / arşivlendi olarak işaretlenmiş sipariş
 //   PROFILE_FINANCE    (silme) profil: proforma, ödeme ya da fatura kaydı
-//   PROFILE_WAREHOUSE  (silme) profil: depoya gönderildi, stoktan düşüldü ya da teslim edildi
+//   PROFILE_WAREHOUSE  (silme) profil: teslim edildi (mal depodan çıktı). Depoya gönderilmiş / stoktan düşülmüş ama teslim
+//                      edilmemiş profil siparişi 3.86.0'dan beri silinebilir: düşülen stok aynı işlemde geri eklenir
+//                      (server/orders/removal.js, karar 281)
+//   MANUAL_PAYMENT     (silme) yöneticinin elle girdiği ödeme kaydı (iptal edilmiş olsa da mali geçmiştir)
 // Kural saf işlevdir (lockReasons); veriler loadLockFacts ile tek sorgu grubundan gelir. İşlemler kilidi kendi
 // veritabanı işleminde, belge isteği / yükleme onayıyla aynı danışma kilitleri altında yeniden denetler.
 
 /** Silmeyi geçici olarak engelleyen kuyruk işleri (önce iş bitmeli ya da vazgeçilmeli — BUSY) */
-export const BUSY_JOBS = Object.freeze(['FGO_GLASS', 'FGO_PROFORMA', 'FGO_INVOICE', 'WAREHOUSE_EMAIL']);
+export const BUSY_JOBS = Object.freeze(['FGO_GLASS', 'FGO_PROFORMA', 'FGO_INVOICE', 'FGO_PROFILE_ADVANCE', 'WAREHOUSE_EMAIL']);
 /** Fiyatı kilitleyen belge işleri (depo e-postası fiyatı etkilemez) */
 const DOCUMENT_JOBS = Object.freeze(['FGO_GLASS', 'FGO_PROFORMA', 'FGO_INVOICE']);
 /** Yüklendi / arşivlendi: fiziksel olarak gitmiş sipariş */
 const SHIPPED_STATUSES = Object.freeze(['YUKLENDI', 'ARSIVLENDI']);
 
-export const LOCK_CODES = Object.freeze(['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT', 'CONFIRMED_LOADING', 'SHIPPED', 'PROFILE_FINANCE', 'PROFILE_WAREHOUSE']);
+export const LOCK_CODES = Object.freeze(['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT', 'CONFIRMED_LOADING', 'SHIPPED', 'PROFILE_FINANCE', 'PROFILE_WAREHOUSE', 'MANUAL_PAYMENT']);
 
 const DOC_KINDS = Object.freeze(['PROFORMA', 'ADVANCE', 'INVOICE']);
 const docKind = (k) => (DOC_KINDS.includes(k) ? k : 'PROFORMA');
@@ -39,6 +42,7 @@ const day = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : typeof d 
  *   documents: { kind: string, series: string, number: string }[],
  *   batches: { kind: string, status: string, document: { series: string, number: string } | null }[],
  *   jobs: string[],
+ *   payments?: number,
  *   loadingDays: (Date | string)[],
  *   profile: { proformaNo?: string | null, proformaAt?: Date | null, paidAt?: Date | null, warehouseSentAt?: Date | null,
  *     stockDeducted?: boolean | null, deliveredAt?: Date | null, invoiceNo?: string | null, invoicedAt?: Date | null } | null,
@@ -67,7 +71,9 @@ export function lockReasons(f, purpose) {
     if (f.orderTypeCode === 'GLASS_ORDER' && SHIPPED_STATUSES.includes(f.status)) out.push({ code: 'SHIPPED', ref: null });
     const p = f.profile;
     if (p && (p.proformaNo || p.proformaAt || p.paidAt || p.invoiceNo || p.invoicedAt)) out.push({ code: 'PROFILE_FINANCE', ref: p.invoiceNo || p.proformaNo || null });
-    if (p && (p.warehouseSentAt || p.stockDeducted || p.deliveredAt)) out.push({ code: 'PROFILE_WAREHOUSE', ref: null });
+    // Teslim edilmiş (mal depodan çıkmış) sipariş silinmez: düşülen stoğu geri eklemek gerçeğe aykırı olur
+    if (p && p.deliveredAt) out.push({ code: 'PROFILE_WAREHOUSE', ref: null });
+    if ((f.payments ?? 0) > 0) out.push({ code: 'MANUAL_PAYMENT', ref: null });
   }
   return out.slice(0, 8);
 }
@@ -93,9 +99,10 @@ export async function loadLockFacts(db, orderId) {
     },
   });
   if (!order) return null;
-  const [jobs, items] = await Promise.all([
+  const [jobs, items, payments] = await Promise.all([
     db.notificationOutbox.findMany({ where: { orderId: id, type: { in: [...BUSY_JOBS] }, status: 'PENDING' }, select: { type: true } }),
     db.loadingConfirmationItem.findMany({ where: { orderId: id }, select: { confirmation: { select: { shipDay: true } } }, distinct: ['confirmationId'] }),
+    db.manualPayment.count({ where: { orderId: id } }),
   ]);
   return {
     status: order.status,
@@ -103,6 +110,7 @@ export async function loadLockFacts(db, orderId) {
     documents: order.fgoDocuments,
     batches: order.billingBatchOrders.map((b) => b.batch).filter(Boolean).map((b) => ({ kind: b.kind, status: b.status, document: b.document ?? null })),
     jobs: jobs.map((j) => j.type),
+    payments,
     loadingDays: items.map((i) => i.confirmation.shipDay),
     profile: order.profile ?? null,
   };

@@ -13,6 +13,9 @@ export type RemovalPreview = {
   busy: boolean;
   reasons: string[];
   kept: { offers: number; drawings: number; files: number; notes: number };
+  /** Profil siparişi (karar 281): silme anında FGO doğrulanır; stoktan düşülmüş miktar geri eklenir (ekrana hazır satırlar) */
+  profile?: boolean;
+  stockReturn?: string[];
 };
 
 const norm = (s: string) => s.trim().toLocaleUpperCase('tr-TR');
@@ -61,6 +64,20 @@ export function RemoveOrder({ orderId, preview, error, m }: { orderId: string; p
               ) : (
                 <>
                   <p>{m.intro}</p>
+                  {preview.profile && (
+                    <div className="alert alert-warn" data-remove-stock>
+                      <b>{m.stockTitle}</b>
+                      {preview.stockReturn && preview.stockReturn.length > 0 ? (
+                        <>
+                          <p className="small" style={{ margin: '4px 0' }}>{m.stockIntro}</p>
+                          <ul className="plain-list">{preview.stockReturn.map((s) => <li key={s} data-stock-line>{s}</li>)}</ul>
+                        </>
+                      ) : (
+                        <p className="small" style={{ margin: '4px 0' }} data-stock-none>{m.stockNone}</p>
+                      )}
+                      <p className="muted small" style={{ margin: '4px 0 0' }} data-fgo-note>{m.fgoNote}</p>
+                    </div>
+                  )}
                   <p>{m.kept}</p>
                   <p className="muted small">{interpolate(m.keptCounts, preview.kept)}</p>
                   <p className="muted small">{m.restoreHint}</p>
@@ -77,6 +94,12 @@ export function RemoveOrder({ orderId, preview, error, m }: { orderId: string; p
               <h3 className="sub-title">{m.step2}</h3>
               <input type="hidden" name="id" value={orderId} />
               <input type="hidden" name="v" value={preview.version} />
+              {preview.profile && preview.stockReturn && preview.stockReturn.length > 0 && (
+                <div className="alert alert-warn small" data-remove-stock-confirm>
+                  <b>{m.stockTitle}</b>
+                  <ul className="plain-list">{preview.stockReturn.map((s) => <li key={s}>{s}</li>)}</ul>
+                </div>
+              )}
               <label htmlFor="sil-no">{interpolate(m.confirm, { order: preview.orderNo })}</label>
               <input id="sil-no" name="confirmNo" type="text" autoComplete="off" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} />
               <div className="row" style={{ marginTop: 12 }}>
