@@ -307,6 +307,23 @@ export function emptyOffer(today) {
 }
 
 /**
+ * Satırın belgedeki miktarı — fiyattan bağımsız (düzenleyici, fiyat girilmeden de gösterir). Metreyle fiyatlanan üründe
+ * { packs, bill: paket × içerik (ML) }, diğerinde { packs: adet, bill: adet }. Geçersiz giriş → null.
+ * @param {{ meters?: unknown, qty?: unknown }} l  @param {string | null} content
+ */
+export function billQuantity(l, content) {
+  if (content) {
+    const m = toScaled(String(l?.meters ?? '').trim(), 2);
+    if (m == null || m <= 0n || m > BigInt(LIMITS.qty) * 100n) return null;
+    const packs = packsFor(fromScaled(m, 2), content);
+    if (packs == null || packs > LIMITS.qty) return null;
+    return { packs, bill: fromScaled(BigInt(packs) * toScaled(content, 3), 3) };
+  }
+  const qty = int(l?.qty, 1, LIMITS.qty);
+  return qty == null ? null : { packs: qty, bill: String(qty) };
+}
+
+/**
  * Düzenleyicinin canlı ara hesabı (tarayıcı): eksik / hatalı satır toplama KATILMAZ ve `null` döner; geçerli satırlar
  * computeOffer'dan (sunucuyla aynı kural). Kayıt her zaman sunucuda parseOffer ile yeniden doğrulanır.
  * @param {{ glass: any[], profile: any[], glassExtraCost?: string }} v

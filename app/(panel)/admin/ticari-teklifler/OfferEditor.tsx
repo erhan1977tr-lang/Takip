@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useTransition } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { PROFILE_COLORS, previewOffer } from '@/server/commercial/rules.js';
+import { PROFILE_COLORS, billQuantity, previewOffer } from '@/server/commercial/rules.js';
 import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferAction } from './actions';
 
 export type EditorGlass = { id: string; label: string; descRo: string };
@@ -290,7 +290,12 @@ export function OfferEditor(props: {
                             : <input className="qty-input" inputMode="numeric" maxLength={6} value={l.qty} onChange={(ev) => setP(l.key, { qty: ev.target.value })} aria-label={`${e.col.quantity} ${n}`} data-qty />}
                         </td>
                         <td className="num nowrap" data-bill>
-                          {c ? <>{nf(0, 3).format(Number(c.billQty))} {c.perMl ? 'ML' : p?.unit}{c.perMl && <div className="small muted">{interpolate(e.packs, { n: c.qty, unit: p?.unit ?? '' })}</div>}</> : '—'}
+                          {(() => {
+                            // Miktar fiyattan bağımsız gösterilir (aynı kural: billQuantity)
+                            const q = p ? billQuantity(l, p.content) : null;
+                            if (!q) return '—';
+                            return <>{nf(0, 3).format(Number(q.bill))} {p?.content ? 'ML' : p?.unit}{p?.content && <div className="small muted">{interpolate(e.packs, { n: q.packs, unit: p.unit })}</div>}</>;
+                          })()}
                         </td>
                         <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setP(l.key, { price: ev.target.value })} aria-label={`${e.col.unitPrice} ${n}`} /></td>
                         <td className="num nowrap" data-amount>{money(c?.amount)}</td>

@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.83.3 — 15.10.2026
+
+- Ticari teklif düzenleyicisi: profil satırının belgedeki miktarı (ML / paket ya da adet) fiyat girilmeden de gösterilir
+  (`billQuantity` — aynı kural; hesap ve kayıt değişmedi).
+
 ## 3.83.2 — 15.10.2026
 
 - Ticari teklif: tip kontrolü düzeltmeleri (düzenleyici durum güncellemesi, PDF iletişim bilgisi türü; davranış değişmedi).

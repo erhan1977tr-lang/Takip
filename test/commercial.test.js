@@ -8,7 +8,7 @@ import zlib from 'node:zlib';
 import { can, ROLE_PERMISSIONS, ROLES } from '../server/auth/permissions.js';
 import {
   DEFAULT_TERMS, GKH_CONTACT, computeOffer, customerView, offerNoText, packsFor, parseOffer, perMlContent, pieceMilli, previewOffer,
-  profileDefaults, validityText, fromScaled,
+  profileDefaults, validityText, fromScaled, billQuantity,
 } from '../server/commercial/rules.js';
 import { internalSheets } from '../server/commercial/export.js';
 import { commercialOfferPdf } from '../server/pdf/commercial-offer.js';
@@ -107,6 +107,12 @@ test('profil: metre → tam paket (hesaplayıcının yuvarlaması), metreyle fiy
   assert.equal(packsFor('300', '6'), 50);
   assert.equal(packsFor('300.01', '6'), 51);
   assert.equal(packsFor('0.01', '137'), 1);
+  // Belgedeki miktar fiyattan bağımsız (düzenleyici fiyat girilmeden gösterir)
+  assert.deepEqual(billQuantity({ meters: '270' }, '137'), { packs: 2, bill: '274' });
+  assert.deepEqual(billQuantity({ meters: '300,5' }, '6'), { packs: 51, bill: '306' });
+  assert.deepEqual(billQuantity({ qty: '900' }, null), { packs: 900, bill: '900' });
+  assert.equal(billQuantity({ meters: '0' }, '6'), null);
+  assert.equal(billQuantity({ qty: '1.5' }, null), null);
   assert.equal(perMlContent({ packMeasure: 'M', packContent: '6.000' }), '6');
   assert.equal(perMlContent({ packMeasure: 'BUC', packContent: '10' }), null);
   assert.equal(perMlContent({ packMeasure: 'M', packContent: null }), null);
