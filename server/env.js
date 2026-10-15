@@ -135,6 +135,14 @@ export const ENV_VARS = {
   NOTIFY_EMAILS: { group: 'mail', parse: parseBool, default: true, desc: 'Sipariş olaylarında bildirim e-postaları gönderilsin mi (false = kapalı; olaylar kuyrukta kalır)' },
   MAIL_OUTBOX_DIR: { group: 'dev', desc: 'Ayarlıysa e-posta gönderilmez, bu klasöre yazılır (yalnızca geliştirme/test/demo; gerçek sunucuda yok sayılır)' },
 
+  // --- Telegram asistanı (karar 278) — üçü de tanımlıysa işçi botu açar; biçimi yanlışsa bot KAPALI kalır (uygulama /
+  // işçi durmaz; yalnızca neden kodu günlüğe yazılır). Değerler sırdır: hiçbir günlüğe / ekrana yazılmaz.
+  TELEGRAM_BOT_TOKEN: { group: 'assistant', secret: true, desc: 'Telegram bot jetonu (BotFather) — yalnızca sunucudaki .env' },
+  TELEGRAM_ALLOWED_USER_ID: { group: 'assistant', secret: true, desc: 'Botu kullanabilecek TEK Telegram kullanıcı kimliği (sayı); başka herkes yanıtsız kalır' },
+  OPENAI_API_KEY: { group: 'assistant', secret: true, desc: 'Asistanın yapay zekâ anahtarı (OpenAI uyumlu API: sohbet + ses → metin) — yalnızca sunucudaki .env' },
+  ASSISTANT_MODEL: { group: 'assistant', desc: 'Asistanın sohbet modeli (boşsa gpt-4.1-mini)' },
+  ASSISTANT_STT_MODEL: { group: 'assistant', desc: 'Sesli mesaj → metin modeli (boşsa gpt-4o-mini-transcribe)' },
+
   // --- demo / test ---
   DEMO_MODE: {
     group: 'dev',
