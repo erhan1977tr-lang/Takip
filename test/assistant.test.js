@@ -5,10 +5,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { LIMITS, TEXT, answer, assistantConfig, createAssistant, isAllowed, systemPrompt } from '../server/assistant/bot.js';
-import { TOOLS, ToolError, runTool, toolDefinitions, validateArgs } from '../server/assistant/tools.js';
+import { CLOSING, LIMITS, TEXT, TEXT_RO, VOICE_MARK, answer, assistantConfig, createAssistant, detectLang, isAllowed, splitVoice, systemPrompt, voiceInstructions } from '../server/assistant/bot.js';
+import { TOOLS, ToolError, normalizeOrderNo, runTool, toolDefinitions, validateArgs } from '../server/assistant/tools.js';
 import { splitText, telegramClient } from '../server/assistant/telegram.js';
-import { transcribe } from '../server/assistant/ai.js';
+import { TTS_MAX_CHARS, speech, transcribe } from '../server/assistant/ai.js';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -22,9 +22,10 @@ const NOW = new Date('2026-10-15T09:00:00Z');
 globalThis.fetch = async (u) => { throw new Error(`test: gerçek ağ isteği (${String(u).slice(0, 40)})`); };
 
 /** Sahte Telegram + AI: istekleri kaydeder; AI yanıtları sırayla verilir */
-function fakeNet({ ai = [], transcript = 'GLA68 nerede', aiStatus = 200 } = {}) {
+function fakeNet({ ai = [], transcript = 'GLA68 nerede', aiStatus = 200, ttsStatus = 200 } = {}) {
   const calls = [];
   const sent = [];
+  const voices = [];
   let aiIndex = 0;
   const json = (status, body) => ({ ok: status < 300, status, json: async () => body, arrayBuffer: async () => new ArrayBuffer(0) });
   const fetchImpl = async (url, init = {}) => {
@@ -35,10 +36,12 @@ function fakeNet({ ai = [], transcript = 'GLA68 nerede', aiStatus = 200 } = {}) 
     if (u.startsWith('https://api.telegram.org/bot')) {
       const method = u.split('/').pop();
       if (method === 'sendMessage') sent.push(body.text);
+      if (method === 'sendVoice') voices.push(body);
       if (method === 'getFile') return json(200, { ok: true, result: { file_path: 'voice/x.oga', file_size: 3 } });
       return json(200, { ok: true, result: method === 'getUpdates' ? [] : true });
     }
     if (u === 'https://api.openai.com/v1/audio/transcriptions') return json(200, { text: transcript });
+    if (u === 'https://api.openai.com/v1/audio/speech') return ttsStatus === 200 ? { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([79, 103, 103, 83, 1, 2]).buffer } : json(ttsStatus, {});
     if (u === 'https://api.openai.com/v1/chat/completions') {
       if (aiStatus !== 200) return json(aiStatus, { error: { message: `iç hata ${KEY}` } });
       const next = ai[Math.min(aiIndex++, ai.length - 1)] ?? { content: 'Tamam.' };
@@ -46,7 +49,7 @@ function fakeNet({ ai = [], transcript = 'GLA68 nerede', aiStatus = 200 } = {}) 
     }
     throw new Error(`beklenmeyen adres ${u}`);
   };
-  return { fetchImpl, calls, sent };
+  return { fetchImpl, calls, sent, voices };
 }
 /** Sahte veritabanı: READ ONLY işlem + siparis_ara'nın kullandığı okuma */
 function fakeDb(rows = [{ orderNo: 'GLA68', title: 'Duş', status: 'URETIMDE', onHold: false, orderTypeCode: 'GLASS_ORDER', estimatedShipDate: new Date('2026-10-20T12:00:00Z'), createdAt: NOW, customer: { name: 'Glass and More' }, profile: null }]) {
@@ -191,7 +194,7 @@ test('bot: sesli mesaj → dosya indirilir → Türkçe metne çevrilir → yan�
   assert.equal(net.sent.at(-1), '🎤 "GLA68 ne durumda"\n\nÜretimde.');
   const stt = net.calls.find((c) => c.url.endsWith('/audio/transcriptions'));
   assert.ok(stt.body instanceof FormData);
-  assert.equal(stt.body.get('language'), 'tr');
+  assert.equal(stt.body.get('language'), null, 'dil sabitlenmez: Türkçe ve Romence ses');
   assert.equal(stt.body.get('model'), 'gpt-4o-mini-transcribe');
   await bot.handleUpdate(msg({ text: undefined, voice: { file_id: 'F2', duration: 500 } }));
   assert.equal(net.sent.at(-1), TEXT.voiceTooLong);
@@ -248,4 +251,114 @@ test('yapı: asistan yalnızca okur — yazma yöntemi, ham SQL, e-posta / bildi
   assert.match(worker, /setTimeout\(r, 30_000\)\.unref\(\)/);
   // Kullandığı mevcut servisler salt okunur (yazma yapmaz)
   for (const fn of ['receivables', 'listDocuments', 'stockLevels', 'reservedLevels', 'supplierAccounts', 'uninvoicedLoadings']) assert.match(tools, new RegExp(`\\b${fn}\\b`));
+});
+
+// ---------------------------------------------------------------- 3.85.0 (karar 280)
+test('3.85: sipariş numarası biçimi — boşluk, küçük harf, Türkçe İ / ı', () => {
+  assert.equal(normalizeOrderNo('ale 40'), 'ALE40');
+  assert.equal(normalizeOrderNo(' Gla68 '), 'GLA68');
+  assert.equal(normalizeOrderNo('glı 68'), 'GLI68');
+  assert.equal(normalizeOrderNo('ALE-40'), 'ALE-40');
+  assert.deepEqual(validateArgs(TOOLS.siparis_camlari.fields, { siparis_no: 'ale 40' }), { siparis_no: 'ale 40' });
+  for (const bad of ["ALE40' OR 1=1", 'ALE40;DROP', 'x'.repeat(31)]) assert.throws(() => validateArgs(TOOLS.siparis_camlari.fields, { siparis_no: bad }), ToolError, bad);
+  for (const t of ['siparis_camlari', 'yukleme_durumu', 'yukleme_gunu', 'sandiklar']) assert.ok(Object.hasOwn(TOOLS, t), t);
+});
+
+test('3.85: dil algılama — Türkçe varsayılan; Romence harf ya da sözcük → ro', () => {
+  assert.equal(detectLang('GLA68 ne durumda?'), 'tr');
+  assert.equal(detectLang('Yarınki yükleme'), 'tr');
+  assert.equal(detectLang('Câte lăzi are comanda ALE40?'), 'ro');
+  assert.equal(detectLang('Care este situatia comenzii GLA68?'), 'ro');
+  assert.equal(detectLang('ALE40'), 'tr');
+  assert.equal(TEXT_RO.failed.length > 0 && TEXT_RO.failed !== TEXT.failed, true);
+});
+
+test('3.85: sistem yönergesi — dil, hitap ve kapanış; 3 ondalık m²; bulunamadı ≠ veri eksik; ses ayracı yalnızca sesli soruda', () => {
+  const p = systemPrompt('2026-10-15');
+  for (const s of ['Romence', CLOSING.tr, CLOSING.ro, '"sahip"', '3 ondalık', 'bulunamadi', 'veriEksik', 'bedelsiz telafi', 'sandikSayisi', 'SALT OKUNUR']) assert.ok(p.includes(s), s);
+  assert.ok(!p.includes(VOICE_MARK), 'yazılı soruda ses ayracı istenmez');
+  assert.ok(systemPrompt('2026-10-15', { voice: true }).includes(VOICE_MARK));
+});
+
+test('3.85: sesli yanıtın bölünmesi — yazılı tam metin, sesli kısa özet; ayraç yoksa metnin başı; uzun özet kapanışla kısaltılır', () => {
+  const r = splitVoice(`• ALE40: 10 cam, 12,343 m²\n• Yüklenen 6 cam\n${CLOSING.tr}\n${VOICE_MARK}\nSahip, ALE40'ta on cam var. ${CLOSING.tr}`, 'tr');
+  assert.ok(r.text.startsWith('• ALE40') && r.text.endsWith(CLOSING.tr) && !r.text.includes(VOICE_MARK));
+  assert.equal(r.speech, `Sahip, ALE40'ta on cam var. ${CLOSING.tr}`);
+  assert.equal(splitVoice('Üretimde.').speech, 'Üretimde.');
+  const long = splitVoice(`x\n${VOICE_MARK}\n${'Uzun bir cümle burada. '.repeat(80)}`, 'ro');
+  assert.ok(long.speech.length <= TTS_MAX_CHARS && long.speech.endsWith(CLOSING.ro));
+  assert.match(voiceInstructions('ro'), /Romanian/);
+  assert.match(voiceInstructions('tr'), /Turkish/);
+  assert.match(voiceInstructions('tr'), /feminine, warm, soft and gently flirtatious/);
+});
+
+test('3.85: yapılandırma — ses modeli gpt-4o-mini-tts, ses coral; geçersiz ses adı varsayılana döner', () => {
+  const c = assistantConfig(ENV);
+  assert.equal(c.ttsModel, 'gpt-4o-mini-tts');
+  assert.equal(c.ttsVoice, 'coral');
+  assert.equal(assistantConfig({ ...ENV, ASSISTANT_TTS_VOICE: 'nova' }).ttsVoice, 'nova');
+  assert.equal(assistantConfig({ ...ENV, ASSISTANT_TTS_VOICE: '../x' }).ttsVoice, 'coral');
+});
+
+test('3.85: yazılı soru → YALNIZCA yazılı yanıt (ses üretilmez, sesli mesaj gönderilmez)', async () => {
+  const net = fakeNet({ ai: [{ content: `GLA68 üretimde. ${CLOSING.tr}` }] });
+  const bot = createAssistant({ db: fakeDb().db, env: ENV, fetchImpl: net.fetchImpl, clock: () => NOW });
+  await bot.handleUpdate(msg());
+  assert.deepEqual(net.sent, [`GLA68 üretimde. ${CLOSING.tr}`]);
+  assert.equal(net.calls.filter((c) => c.url.endsWith('/audio/speech')).length, 0);
+  assert.equal(net.voices.length, 0);
+  const ai = net.calls.find((c) => c.url.endsWith('/chat/completions'));
+  assert.ok(!ai.body.messages[0].content.includes(VOICE_MARK));
+});
+
+test('3.85: sesli soru → yazılı tam yanıt + sesli kısa özet (gpt-4o-mini-tts, coral, OGG); Romence soruda Romence ses', async () => {
+  const net = fakeNet({ ai: [{ content: `Ayrıntılı yanıt\n${CLOSING.tr}\n${VOICE_MARK}\nKısa özet. ${CLOSING.tr}` }], transcript: 'ALE40 ne kadar yüklendi' });
+  const bot = createAssistant({ db: fakeDb().db, env: ENV, fetchImpl: net.fetchImpl, clock: () => NOW });
+  await bot.handleUpdate(msg({ text: undefined, voice: { file_id: 'F1', duration: 5, file_size: 3 } }));
+  assert.deepEqual(net.sent, [`🎤 "ALE40 ne kadar yüklendi"\n\nAyrıntılı yanıt\n${CLOSING.tr}`]);
+  const tts = net.calls.filter((c) => c.url.endsWith('/audio/speech'));
+  assert.equal(tts.length, 1);
+  assert.equal(tts[0].body.model, 'gpt-4o-mini-tts');
+  assert.equal(tts[0].body.voice, 'coral');
+  assert.equal(tts[0].body.response_format, 'opus');
+  assert.equal(tts[0].body.input, `Kısa özet. ${CLOSING.tr}`);
+  assert.match(tts[0].body.instructions, /Turkish/);
+  assert.equal(net.voices.length, 1);
+  assert.ok(net.voices[0] instanceof FormData);
+  assert.equal(net.voices[0].get('chat_id'), String(USER));
+  assert.equal(net.voices[0].get('voice').type, 'audio/ogg');
+  const ai = net.calls.find((c) => c.url.endsWith('/chat/completions'));
+  assert.ok(ai.body.messages[0].content.includes(VOICE_MARK), 'sesli soruda ses özeti istenir');
+  assert.equal(bot.stats.voiced, 1);
+
+  const ro = fakeNet({ ai: [{ content: `Răspuns\n${VOICE_MARK}\nRezumat. ${CLOSING.ro}` }], transcript: 'Câte lăzi are comanda ALE40?' });
+  const botRo = createAssistant({ db: fakeDb().db, env: ENV, fetchImpl: ro.fetchImpl, clock: () => NOW });
+  await botRo.handleUpdate(msg({ text: undefined, voice: { file_id: 'F2', duration: 4 } }));
+  assert.match(ro.calls.find((c) => c.url.endsWith('/audio/speech')).body.instructions, /Romanian/);
+  assert.equal(ro.voices.length, 1);
+});
+
+test('3.85: ses üretilemezse yazılı yanıt yine gider; hata kullanıcıya ham gitmez; Romence soruda Romence hata metni', async () => {
+  const net = fakeNet({ ai: [{ content: `Yanıt\n${VOICE_MARK}\nÖzet.` }], ttsStatus: 500 });
+  const logs = [];
+  const bot = createAssistant({ db: fakeDb().db, env: ENV, fetchImpl: net.fetchImpl, clock: () => NOW, log: (...a) => logs.push(a.join(' ')) });
+  await bot.handleUpdate(msg({ text: undefined, voice: { file_id: 'F1', duration: 5 } }));
+  assert.equal(net.sent.length, 1);
+  assert.ok(net.sent[0].endsWith('Yanıt'));
+  assert.equal(net.voices.length, 0);
+  assert.ok(logs.some((l) => l === 'asistan: ses yanıtı AI_FAILED'));
+  const bad = fakeNet({ aiStatus: 500 });
+  const botRo = createAssistant({ db: fakeDb().db, env: ENV, fetchImpl: bad.fetchImpl, clock: () => NOW });
+  await botRo.handleUpdate(msg({ text: 'Câte lăzi are comanda ALE40?' }));
+  assert.equal(bad.sent.at(-1), TEXT_RO.failed);
+});
+
+test('3.85: TTS istemcisi — boş metin / boş ya da çok büyük ses reddedilir; metin kısaltılır', async () => {
+  await assert.rejects(speech({ apiKey: KEY, model: 'm', voice: 'coral', input: '  ', fetchImpl: async () => { throw new Error('çağrılmamalı'); } }), (e) => e.code === 'AI_FAILED');
+  await assert.rejects(speech({ apiKey: KEY, model: 'm', voice: 'coral', input: 'x', fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) }) }), (e) => e.code === 'AI_FAILED');
+  await assert.rejects(speech({ apiKey: KEY, model: 'm', voice: 'coral', input: 'x', fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(6 * 1024 * 1024) }) }), (e) => e.code === 'AI_FAILED');
+  let sentBody;
+  const buf = await speech({ apiKey: KEY, model: 'm', voice: 'coral', input: 'y'.repeat(5000), fetchImpl: async (u, init) => { sentBody = JSON.parse(init.body); assert.equal(init.redirect, 'error'); return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer }; } });
+  assert.equal(buf.length, 1);
+  assert.equal(sentBody.input.length, TTS_MAX_CHARS);
 });
