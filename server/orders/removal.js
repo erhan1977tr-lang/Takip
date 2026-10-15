@@ -117,7 +117,7 @@ export async function removalPreview(db, orderId) {
  * @param {any} db
  * @param {{ orderId: string, confirmNo: string | null | undefined, expectedVersion?: number | null, actor: { id: string, role: string, ip?: string | null }, now?: Date,
  *   fgoCheck?: (() => Promise<{ ok: boolean, code?: string, at?: Date }>) | null }} p
- * @returns {Promise<{ ok: true, orderNo: string, stockReturned: { code: string, qty: number, unit: string }[] } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM_REQUIRED' | 'NOT_FOUND' | 'ALREADY_REMOVED' | 'STALE' | 'BUSY' | 'LOCKED' | 'FGO_UNVERIFIED', reasons?: object[], fgo?: string }>}
+ * @returns {Promise<{ ok: true, orderNo: string, stockReturned?: { code: string, qty: number, unit: string }[] } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM_REQUIRED' | 'NOT_FOUND' | 'ALREADY_REMOVED' | 'STALE' | 'BUSY' | 'LOCKED' | 'FGO_UNVERIFIED', reasons?: object[], fgo?: string }>}
  */
 export async function removeOrder(db, { orderId, confirmNo, expectedVersion = null, actor, now = new Date(), fgoCheck = null }) {
   if (!can(actor?.role, 'ORDER_CANCEL')) return fail('FORBIDDEN');
@@ -210,7 +210,8 @@ export async function removeOrder(db, { orderId, confirmNo, expectedVersion = nu
         ...(profile ? { fgoVerifiedAt: fgo.toISOString(), stockReturned: returned.map((r) => ({ productId: r.productId, code: r.code, qty: r.qty, unit: r.unit })) } : {}),
       },
     }, actor);
-    return { ok: true, orderNo: order.orderNo, stockReturned: returned.map((r) => ({ code: r.code, qty: r.qty, unit: r.unit })) };
+    // Cam siparişinin sonucu eskisiyle aynı; profil siparişinde stoğa geri eklenenler de döner
+    return { ok: true, orderNo: order.orderNo, ...(profile ? { stockReturned: returned.map((r) => ({ code: r.code, qty: r.qty, unit: r.unit })) } : {}) };
   });
 }
 

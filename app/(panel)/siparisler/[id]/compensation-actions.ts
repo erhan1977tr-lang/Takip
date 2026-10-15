@@ -99,7 +99,7 @@ export async function removeOrderAction(formData: FormData) {
     refresh(id);
     revalidatePath('/', 'layout');
     // Kısa sonuç: stoğa geri eklenen ürünler (kod*adet*birim; sayfada yeniden doğrulanır)
-    const back = r.stockReturned.slice(0, 12).map((s) => `${s.code}*${s.qty}*${s.unit}`).join('|');
+    const back = (r.stockReturned ?? []).slice(0, 12).map((s) => `${s.code}*${s.qty}*${s.unit}`).join('|');
     redirect(`/siparisler?silindi=${encodeURIComponent(r.orderNo)}${back ? `&iade=${encodeURIComponent(back)}` : ''}#silinen`);
   }
   redirect(r.code === 'NOT_FOUND' || r.code === 'ALREADY_REMOVED' ? `/siparisler?silHata=${r.code}` : `/siparisler/${id}?silHata=${r.code}#sil`);

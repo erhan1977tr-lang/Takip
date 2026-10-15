@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.86.1 — 15.10.2026
+
+- Siparişi silme: cam siparişinin sonucu eskisiyle birebir aynı; stoğa geri eklenenler yalnızca profil siparişinde döner
+  (karar 281'in devamı).
+
 ## 3.86.0 — 15.10.2026
 
 Profil siparişi silme ve otomatik stok iadesi (karar 281). Veritabanı şeması değişmedi; FGO'da hiçbir belge kesilmez,
