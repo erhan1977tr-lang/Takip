@@ -40,7 +40,7 @@ set -x
 # ---------- 1. kapsayıcı ayarları ----------
 id=$(cad)
 [ -n "$id" ]
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   [ "$(sudo docker inspect -f '{{.State.Health.Status}}' "$id")" = healthy ] && break
   sleep 2
 done
@@ -162,7 +162,7 @@ echo "::notice title=CAD önizleme — gerçek DWG örnekleri::$(tail -n 1 "$T/s
 
 # ---------- 4. hizmet ayakta, geçici dosya kalmadı, yeniden başlatılmadı ----------
 [ "$(sudo docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$id")" = "running 0" ]
-for i in $(seq 1 20); do [ -z "$(compose exec -T cad ls -A /tmp)" ] && break; sleep 1; done
+for _ in $(seq 1 20); do [ -z "$(compose exec -T cad ls -A /tmp)" ] && break; sleep 1; done
 [ -z "$(compose exec -T cad ls -A /tmp)" ]
 sudo rm -rf "$T"
 echo "CAD önizleme testi tamam"
