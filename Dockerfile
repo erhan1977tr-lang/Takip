@@ -37,7 +37,7 @@ CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed/base.mjs"]
 FROM base AS libredwg
 ARG LIBREDWG_VERSION=0.14
 ARG LIBREDWG_SHA256=62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl xz-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential pkg-config curl xz-utils \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 RUN curl -fsSL --retry 3 -o libredwg.tar.xz "https://github.com/LibreDWG/libredwg/releases/download/${LIBREDWG_VERSION}/libredwg-${LIBREDWG_VERSION}.tar.xz" \
