@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import zlib from 'node:zlib';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as, reportSheet } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, reportSheet } from './helpers';
 import { FONTS } from '../server/pdf/fonts.js';
 
 // Bağımsız yönetici ticari teklifi (3.83.0, karar 277):
@@ -10,6 +10,8 @@ import { FONTS } from '../server/pdf/fonts.js';
 //  - kesinleştir → sürüm değişmez; kabul yalnızca kayıt: sipariş / teklif / FGO / stok / bildirim YAZILMAZ
 //  - satış ve müşteri: sayfa, PDF / Excel ve sunucu işlemi kapalı
 test.describe.configure({ mode: 'serial' });
+
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 
 let offerUrl = '';
 
