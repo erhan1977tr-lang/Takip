@@ -64,7 +64,7 @@ export function OfferEditor(props: {
   const pv = previewOffer(payloadObj, (id) => pById.get(id)?.content ?? null);
   const T = pv.totals;
 
-  const set = (patch: Partial<EditorData>) => setD((x) => ({ ...x, ...patch }));
+  const set = (patch: Partial<Omit<EditorData, 'glass' | 'profile'>>) => setD((x) => ({ ...x, ...patch }));
   const setG = (key: number, patch: Partial<GlassLine>) => setD((x) => ({ ...x, glass: x.glass.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const setP = (key: number, patch: Partial<ProfileLine>) => setD((x) => ({ ...x, profile: x.profile.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const pickGlass = (key: number, id: string) => setD((x) => ({

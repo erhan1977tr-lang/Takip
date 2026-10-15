@@ -40,7 +40,7 @@ const colsOf = (W) => {
 /**
  * @param {ReturnType<typeof import('../commercial/rules.js').customerView>} v
  * @param {Record<string, string>} t  Romence metinler (commercial.pdf.* — route çevirir)
- * @param {{ address: string, phone: string, web: string[], email: string }} contact
+ * @param {{ address: string, phone: string, web: readonly string[], email: string }} contact
  * @returns {Buffer}
  */
 export function commercialOfferPdf(v, t, contact) {
