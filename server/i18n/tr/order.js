@@ -426,7 +426,8 @@ export default {
     CONFIRMED_LOADING: 'Yüklemesi onaylandı',
     SHIPPED: 'Yüklendi / arşivlendi olarak işaretli',
     PROFILE_FINANCE: 'Proforma, ödeme ya da fatura kaydı var',
-    PROFILE_WAREHOUSE: 'Depoya gönderildi ya da teslim edildi',
+    PROFILE_WAREHOUSE: 'Teslim edildi (mal depodan çıktı)',
+    MANUAL_PAYMENT: 'Elle girilmiş ödeme kaydı var',
   },
   // Müşterideki teklifin fiyatı kilitli (yönetici — Paket 4)
   priceLock: {

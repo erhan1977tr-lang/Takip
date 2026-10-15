@@ -138,7 +138,10 @@ export default async function OrderPage({
   const removalBox = removal ? (
     <RemoveOrder
       orderId={order.id} error={removeError} m={m.compensation.remove}
-      preview={{ ...removal, reasons: removal.reasons.map((r) => lockReasonText(t, r)) }}
+      preview={{
+        ...removal, reasons: removal.reasons.map((r) => lockReasonText(t, r)),
+        stockReturn: removal.stockReturn.map((s) => t('compensation.remove.stockLine', { code: s.code, name: (locale === 'ro' ? s.nameRo : s.nameTr) || s.nameTr, qty: s.qty, unit: s.unit })),
+      }}
     />
   ) : null;
   if (order.orderTypeCode === 'PROFILE_ORDER') {

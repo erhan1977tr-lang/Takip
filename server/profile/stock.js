@@ -339,6 +339,37 @@ export async function returnOrderStock(tx, { orderId, orderNo, actorId }) {
   return data.length;
 }
 
+/**
+ * Siparişin stok hareketlerinden iade edilecek miktar (saf; karar 281): ürün başına NET hareket (çıkış −, iade +); net
+ * düşüm (< 0) kadar iade edilir, net sıfır ya da artı ürün iade edilmez. Önceki iadeler (iptal) hesaba girer: aynı miktar
+ * iki kez iade edilmez.
+ * @param {{ productId: string, qty: number }[]} moves
+ * @returns {{ productId: string, qty: number }[]}
+ */
+export function stockToReturn(moves) {
+  const net = new Map();
+  for (const m of moves ?? []) net.set(m.productId, (net.get(m.productId) ?? 0) + Math.trunc(Number(m.qty) || 0));
+  return [...net].filter(([, q]) => q < 0).map(([productId, q]) => ({ productId, qty: -q })).sort((a, b) => a.productId.localeCompare(b.productId));
+}
+
+/**
+ * Silinen profil siparişinin stok iadesi (karar 281; server/orders/removal.js → removeOrder, AYNI işlemde): siparişin
+ * gerçek stok hareketlerinin net düşümü IADE hareketiyle geri eklenir (ürün kilitleri altında yeniden okunur). Düşülmemiş
+ * miktar eklenmez; tahmin yok. at: hareket zamanı (geri yükleme kuralı bu zamana bakar).
+ * @returns {Promise<{ productId: string, qty: number }[]>}
+ */
+export async function returnRemovedOrderStock(tx, { orderId, orderNo, actorId, at }) {
+  const first = await tx.stockMovement.findMany({ where: { orderId }, select: { productId: true } });
+  await lockStock(tx, first.map((m) => m.productId));
+  const back = stockToReturn(await tx.stockMovement.findMany({ where: { orderId }, select: { productId: true, qty: true } }));
+  if (!back.length) return [];
+  await lockStock(tx, back.map((r) => r.productId)); // yeniden giriş serbest
+  await tx.stockMovement.createMany({
+    data: back.map((r) => ({ productId: r.productId, qty: r.qty, kind: 'IADE', orderId, note: `${orderNo} — sipariş silindi`, createdById: actorId, createdAt: at })),
+  });
+  return back;
+}
+
 // ---------- Excel ----------
 const headerKey = (s) => clean(s).toLocaleUpperCase('tr-TR').replace(/\s/g, '');
 

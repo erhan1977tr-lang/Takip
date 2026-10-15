@@ -10,7 +10,8 @@ import { requirePermission } from '@/lib/auth/session';
 import { loadOrder } from '@/lib/orders';
 import { actorOf } from '@/lib/actor';
 import { createCompensation, decideCompensation } from '@/server/orders/compensation.js';
-import { removeOrder, restoreOrder } from '@/server/orders/removal.js';
+import { removeOrder, restoreOrder, verifyFgoForRemoval } from '@/server/orders/removal.js';
+import { getEnv } from '@/lib/env';
 
 const text = (fd: FormData, k: string) => String(fd.get(k) ?? '').trim();
 
@@ -88,11 +89,18 @@ export async function removeOrderAction(formData: FormData) {
   // İkinci adımın ayrı onayı (Paket 4): yöneticinin yazdığı sipariş numarası + önizlemedeki sipariş sürümü (sunucuda denetlenir)
   const raw = text(formData, 'v');
   const v = raw === '' ? NaN : Number(raw);
-  const r = await removeOrder(db, { orderId: id, confirmNo: text(formData, 'confirmNo'), expectedVersion: Number.isInteger(v) && v >= 0 ? v : null, actor: await actorOf(user) });
+  // Profil siparişi (karar 281): silme anında FGO canlı doğrulanır (yalnızca okur); doğrulanamazsa silinmez
+  const secret = getEnv().AUTH_SECRET;
+  const r = await removeOrder(db, {
+    orderId: id, confirmNo: text(formData, 'confirmNo'), expectedVersion: Number.isInteger(v) && v >= 0 ? v : null, actor: await actorOf(user),
+    fgoCheck: () => verifyFgoForRemoval(db, { secret }),
+  });
   if (r.ok) {
     refresh(id);
     revalidatePath('/', 'layout');
-    redirect(`/siparisler?silindi=${encodeURIComponent(r.orderNo)}#silinen`);
+    // Kısa sonuç: stoğa geri eklenen ürünler (kod*adet*birim; sayfada yeniden doğrulanır)
+    const back = (r.stockReturned ?? []).slice(0, 12).map((s) => `${s.code}*${s.qty}*${s.unit}`).join('|');
+    redirect(`/siparisler?silindi=${encodeURIComponent(r.orderNo)}${back ? `&iade=${encodeURIComponent(back)}` : ''}#silinen`);
   }
   redirect(r.code === 'NOT_FOUND' || r.code === 'ALREADY_REMOVED' ? `/siparisler?silHata=${r.code}` : `/siparisler/${id}?silHata=${r.code}#sil`);
 }

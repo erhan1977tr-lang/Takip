@@ -351,7 +351,7 @@ test('yapı: stoğa yazan her yol ürün kilidini alır; stok sayfası denetimci
   // stockMovement.create / createMany yazan her işlev, yazmadan önce lockStock çağırır
   const fns = stock.split(/\nexport (?:async )?function /).slice(1);
   const writers = fns.filter((f) => /stockMovement\.(create|createMany)\(/.test(f));
-  assert.deepEqual(writers.map((f) => f.slice(0, f.indexOf('('))).sort(), ['addStockMovement', 'applyStockImport', 'deductOrderStock', 'returnOrderStock']);
+  assert.deepEqual(writers.map((f) => f.slice(0, f.indexOf('('))).sort(), ['addStockMovement', 'applyStockImport', 'deductOrderStock', 'returnOrderStock', 'returnRemovedOrderStock']);
   for (const f of writers) assert.ok(f.indexOf('lockStock(') > 0 && f.indexOf('lockStock(') < f.search(/stockMovement\.(create|createMany)\(/), f.slice(0, 40));
   // Uygulamada stok hareketi yalnızca stock.js'te yazılır
   const walk = (dir) => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {

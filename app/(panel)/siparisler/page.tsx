@@ -678,10 +678,18 @@ async function RemovedOrders({ sp }: { sp: SP }) {
   });
   const errors = m.compensation.remove.errors;
   const error = sp.silHata ? errors[sp.silHata as keyof typeof errors] ?? errors.NOT_FOUND : null;
+  // Silme sonucunda stoğa geri eklenen ürünler (karar 281) — adresten gelir, yalnızca güvenli biçimdeki parçalar gösterilir
+  const stockBack = String(sp.iade ?? '').split('|').filter((x) => /^[A-Za-z0-9._-]{1,40}\*\d{1,7}\*[A-Za-z]{0,12}$/.test(x)).slice(0, 12)
+    .map((x) => { const [code, qty, unit] = x.split('*'); return `${code} ${qty} ${unit}`.trim(); });
   if (rows.length === 0 && !sp.silindi && !error) return null;
   return (
     <div className="card" id="silinen">
-      {sp.silindi && <div className="alert alert-ok">{t('compensation.remove.ok', { order: sp.silindi })}</div>}
+      {sp.silindi && (
+        <div className="alert alert-ok" data-removed-ok>
+          {t('compensation.remove.ok', { order: sp.silindi })}
+          {stockBack.length > 0 && <> {t('compensation.remove.okStock', { items: stockBack.join(', ') })}</>}
+        </div>
+      )}
       {error && <div className="alert alert-error">{error}</div>}
       <details className="removed-list" open={!!sp.silindi || !!error}>
         <summary>{t('compensation.remove.listTitle')} <span className="badge">{rows.length}</span></summary>
