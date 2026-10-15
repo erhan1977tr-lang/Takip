@@ -142,6 +142,8 @@ export const ENV_VARS = {
   OPENAI_API_KEY: { group: 'assistant', secret: true, desc: 'Asistanın yapay zekâ anahtarı (OpenAI uyumlu API: sohbet + ses → metin) — yalnızca sunucudaki .env' },
   ASSISTANT_MODEL: { group: 'assistant', desc: 'Asistanın sohbet modeli (boşsa gpt-4.1-mini)' },
   ASSISTANT_STT_MODEL: { group: 'assistant', desc: 'Sesli mesaj → metin modeli (boşsa gpt-4o-mini-transcribe)' },
+  ASSISTANT_TTS_MODEL: { group: 'assistant', desc: 'Sesli soruya sesli yanıt modeli (boşsa gpt-4o-mini-tts)' },
+  ASSISTANT_TTS_VOICE: { group: 'assistant', desc: 'Sesli yanıtın sesi (boşsa coral)' },
 
   // --- demo / test ---
   DEMO_MODE: {

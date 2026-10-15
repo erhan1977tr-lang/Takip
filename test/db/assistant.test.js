@@ -59,6 +59,7 @@ dbTest('asistan: her araç gerçek şemada hatasız çalışır ve hiçbir tablo
     genel_ozet: {}, siparis_ara: { metin: 'GLA' }, siparis_detay: { siparis_no: 'gla68' }, musteri_bilgi: { firma: 'glass' },
     yukleme_plani: { baslangic: '2026-10-15', bitis: '2026-10-20' }, stok_durumu: {}, alacaklar: {}, fatura_belgeleri: { firma: 'GLA' },
     faturalanmamis_yuklemeler: {}, tedarikci_hesaplari: {},
+    siparis_camlari: { siparis_no: 'gla 68' }, yukleme_durumu: { siparis_no: 'GLA68' }, yukleme_gunu: { gun: '2026-10-16' }, sandiklar: { gun: '2026-10-16' },
   };
   assert.deepEqual(Object.keys(args).sort(), Object.keys(TOOLS).sort(), 'her araç denendi');
   const s0 = await snapshot();
@@ -81,6 +82,13 @@ dbTest('asistan: her araç gerçek şemada hatasız çalışır ve hiçbir tablo
   assert.equal(out.alacaklar.cam.toplamlar.RON.rest, 4000);
   assert.equal(out.alacaklar.cam.enCokKalan[0].firma, 'Glass and More SRL');
   assert.equal(out.fatura_belgeleri.belgeler[0].no, 'PRF501');
+  // 3.85.0: teklif tablosu olmayan sipariş "bulunamadı" değil "veri eksik"; sandık girilmemiş gün de öyle
+  assert.deepEqual(out.siparis_camlari.veriEksik, ['TEKLIF_TABLOSU_YOK']);
+  assert.equal(out.siparis_camlari.no, 'GLA68');
+  assert.deepEqual(out.yukleme_durumu.veriEksik, ['TEKLIF_TABLOSU_YOK']);
+  assert.equal(out.yukleme_gunu.durum, 'PLANLANDI');
+  assert.deepEqual(out.yukleme_gunu.planaGirmeyen, [{ no: 'GLA68', neden: 'NO_SENT_OFFER' }]);
+  assert.deepEqual(out.sandiklar.veriEksik, ['SANDIK_GIRILMEMIS']);
   // Bulunamayan kayıt ve hatalı aralık sabit yanıt
   assert.deepEqual(await runTool(ro, 'siparis_detay', '{"siparis_no":"YOK1"}', CTX), { bulunamadi: 'YOK1' });
   assert.deepEqual(await runTool(ro, 'yukleme_plani', '{"baslangic":"2026-10-01","bitis":"2026-12-01"}', CTX), { hata: 'RANGE' });

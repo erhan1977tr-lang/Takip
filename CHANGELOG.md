@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.85.1 — 15.10.2026
+
+- Telegram asistanı, yükleme günü aracı: plana girmeyen siparişte boş gün alanı yazılmaz (yalnızca araç çıktısı; 3.85.0'ın
+  devamı, karar 280).
+
+## 3.85.0 — 15.10.2026
+
+Telegram asistanı geliştirmeleri (karar 280). Asistan yine kesinlikle salt okunur ve tek kullanıcılı; uygulama ekranları,
+iş akışları, veritabanı şeması değişmedi.
+
+- **Yeni araçlar:** siparişin camları (cam türü, en × boy, adet, satır ve toplam m²; CNC / delik), siparişin yükleme durumu
+  (fiilen yüklenen, ileri güne planlanan / aktarılan, henüz planlanmamış kalan), yükleme günü (onaylı gün yüklenen,
+  onaylanmamış gün planlanan; sandık sayısı) ve sandıklar (sandık no, ölçü, ağırlık, içindeki siparişler, misafir yük —
+  her sandık bir kez). Hesaplar TAKİP'in mevcut kurallarıyla (`offerLineTotals`, `loadingParts`, `effectiveItems`,
+  `previewLoading` / `loadConfirmation`); m² 3 ondalık; ticari cam ile bedelsiz telafi camı ayrı sayılır.
+- **Sipariş numarası araması:** "ALE40", "ale 40", "ALE-40"; bulunamadı (kaldırılmış / benzer numaralar) ile veri eksik
+  (ör. teklif tablosu açılmamış, sandık girilmemiş) ayrı yanıtlanır.
+- **Dil:** Türkçe soruya Türkçe, Romence soruya Romence yanıt (sabit hata metinleri de); ses → metin dili sabitlenmez.
+- **Sesli yanıt:** sesli soruya yazılı (tam ayrıntı) + sesli kısa özet (`gpt-4o-mini-tts`, ses `coral`, sıcak / yumuşak ton);
+  yazılı soruya yalnızca yazılı yanıt. Ses üretilemezse yazılı yanıt yine gider. Hitap "sahip", kapanış "Başka bir emrin
+  olur mu, sahip?" (Romence: "stăpâne", "Mai ai vreo poruncă, stăpâne?").
+
 ## 3.84.1 — 15.10.2026
 
 Yedek saklama süreleri (karar 279). Yalnızca sunucu aracı (`deploy/takip.sh`); uygulama, veritabanı ve yedeğin kendisi değişmedi.

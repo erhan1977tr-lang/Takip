@@ -6,13 +6,16 @@
 export const AI_BASE = 'https://api.openai.com/v1';
 export const AI_TIMEOUT_MS = 45_000;
 export const MAX_OUTPUT_TOKENS = 900;
+/** Sesli yanıt: okunacak metin ve üretilen ses dosyası sınırı */
+export const TTS_MAX_CHARS = 800;
+export const TTS_MAX_BYTES = 5 * 1024 * 1024;
 
 export class AiError extends Error {
   /** @param {string} code AI_AUTH | AI_RATE | AI_TIMEOUT | AI_FAILED */
   constructor(code) { super(code); this.code = code; }
 }
 
-async function post(path, { apiKey, body, json = true, fetchImpl = fetch, timeoutMs = AI_TIMEOUT_MS }) {
+async function post(path, { apiKey, body, json = true, binary = false, fetchImpl = fetch, timeoutMs = AI_TIMEOUT_MS }) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res;
@@ -32,6 +35,12 @@ async function post(path, { apiKey, body, json = true, fetchImpl = fetch, timeou
   if (res.status === 401 || res.status === 403) throw new AiError('AI_AUTH');
   if (res.status === 429) throw new AiError('AI_RATE');
   if (!res.ok) throw new AiError('AI_FAILED');
+  if (binary) {
+    let buf;
+    try { buf = Buffer.from(await res.arrayBuffer()); } catch { throw new AiError('AI_FAILED'); }
+    if (!buf.length || buf.length > TTS_MAX_BYTES) throw new AiError('AI_FAILED');
+    return buf;
+  }
   try {
     return await res.json();
   } catch {
@@ -54,17 +63,27 @@ export async function chat({ apiKey, model, messages, tools, fetchImpl, timeoutM
 }
 
 /**
- * Ses → metin (Türkçe). audio: Telegram sesli mesajı (OGG/Opus).
+ * Ses → metin (Türkçe ya da Romence; dil sağlayıcı tarafından algılanır). audio: Telegram sesli mesajı (OGG/Opus).
  * @returns {Promise<string>}
  */
 export async function transcribe({ apiKey, model, audio, fetchImpl, timeoutMs }) {
   const form = new FormData();
   form.append('file', new Blob([audio], { type: 'audio/ogg' }), 'ses.ogg');
   form.append('model', model);
-  form.append('language', 'tr');
   form.append('response_format', 'json');
   const data = await post('/audio/transcriptions', { apiKey, body: form, json: false, fetchImpl, timeoutMs });
   const text = typeof data?.text === 'string' ? data.text.trim() : '';
   if (!text) throw new AiError('AI_FAILED');
   return text.slice(0, 1000);
+}
+
+/**
+ * Metin → ses (sesli soruya sesli yanıt; 3.85.0). Telegram sesli mesajı için OGG / Opus döner. Metin kısaltılır
+ * (TTS_MAX_CHARS); ses tonu "instructions" ile verilir.
+ * @returns {Promise<Buffer>}
+ */
+export async function speech({ apiKey, model, voice, input, instructions, fetchImpl, timeoutMs }) {
+  const text = String(input ?? '').trim().slice(0, TTS_MAX_CHARS);
+  if (!text) throw new AiError('AI_FAILED');
+  return post('/audio/speech', { apiKey, fetchImpl, timeoutMs, binary: true, body: { model, voice, input: text, instructions, response_format: 'opus' } });
 }

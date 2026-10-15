@@ -19,13 +19,13 @@ export const isBotToken = (v) => typeof v === 'string' && /^\d{5,15}:[A-Za-z0-9_
  * @param {{ token: string, fetchImpl?: typeof fetch }} o
  */
 export function telegramClient({ token, fetchImpl = fetch }) {
-  async function call(method, body, timeoutMs = 15_000) {
+  async function call(method, body, timeoutMs = 15_000, form = null) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     let res;
     try {
       res = await fetchImpl(`${TG_BASE}/bot${token}/${method}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}), signal: ctl.signal, redirect: 'error',
+        method: 'POST', ...(form ? { body: form } : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) }), signal: ctl.signal, redirect: 'error',
       });
     } catch (e) {
       throw new TelegramError(e?.name === 'AbortError' ? 'TG_TIMEOUT' : 'TG_FAILED');
@@ -50,6 +50,14 @@ export function telegramClient({ token, fetchImpl = fetch }) {
     /** Düz metin (biçimlendirme yok — modelin metni yorumlanmaz); uzun metin parçalanır */
     async sendMessage(chatId, text) {
       for (const part of splitText(String(text ?? ''))) await call('sendMessage', { chat_id: chatId, text: part, disable_web_page_preview: true });
+    },
+    /** Sesli yanıt (OGG / Opus — Telegram sesli mesajı); boyut sınırı */
+    async sendVoice(chatId, audio) {
+      if (!audio?.length || audio.length > VOICE_MAX_BYTES) throw new TelegramError('TG_TOO_LARGE');
+      const form = new FormData();
+      form.append('chat_id', String(chatId));
+      form.append('voice', new Blob([audio], { type: 'audio/ogg' }), 'yanit.ogg');
+      return call('sendVoice', null, 60_000, form);
     },
     /** Sesli mesaj dosyası (boyut sınırı; adres günlüğe yazılmaz) */
     async downloadFile(fileId, maxBytes = VOICE_MAX_BYTES) {
