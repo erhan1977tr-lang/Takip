@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.87.1 — 15.10.2026
+
+- Mal kabulü ekranının veri tipleri derleme için tamamlandı (davranış değişmedi; karar 282'nin devamı).
+
 ## 3.87.0 — 15.10.2026
 
 Tedarikçi mal kabulü, otomatik stok artırma ve Telegram hitabı (karar 282). Veritabanına yalnızca ekleme yapıldı (iki yeni
