@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.85.1 — 15.10.2026
+
+- Telegram asistanı, yükleme günü aracı: plana girmeyen siparişte boş gün alanı yazılmaz (yalnızca araç çıktısı; 3.85.0'ın
+  devamı, karar 280).
+
 ## 3.85.0 — 15.10.2026
 
 Telegram asistanı geliştirmeleri (karar 280). Asistan yine kesinlikle salt okunur ve tek kullanıcılı; uygulama ekranları,
