@@ -372,6 +372,8 @@ export async function startRevision(db, { orderId, version }, actor) {
     if (!OPEN_STATUSES.includes(order.status)) return { ok: false, code: 'NOT_ALLOWED' };
     if (Number(version) !== order.version) return { ok: false, code: 'CONFLICT' };
     if (order.revisions.some((r) => !r.finalizedAt)) return { ok: false, code: 'HAS_DRAFT' };
+    // Mal kabulünden sonra yeni revizyon açılmaz (karar 282): kabul satırları kesin revizyonun satırlarına bağlıdır
+    if (await tx.supplierReceipt.count({ where: { orderId: order.id } })) return { ok: false, code: 'HAS_RECEIPTS' };
     const final = order.revisions[0];
     const rev = await tx.supplierOrderRevision.create({ data: { orderId: order.id, revision: final.revision + 1, orderDate: final.orderDate, note: final.note, createdById: actor.id } });
     if (final.lines.length) {
@@ -554,16 +556,27 @@ export async function orderableProducts(db) {
 // Beklenen tedarik ve hatırlatma (karar 183–184)
 // =====================================================================================================================
 
-/** Açık siparişlerin son kesin revizyonları (satırlarıyla) */
+/**
+ * Açık siparişlerin son kesin revizyonları (satırlarıyla). Mal kabulünden sonra (karar 282) satırın beklenen miktarı KALAN
+ * miktardır (sipariş edilen − teslim alınan): teslim alınan kısım artık stokta, beklenen tedarikte ikinci kez sayılmaz.
+ */
 async function openFinalRevisions(db) {
   const orders = await db.supplierOrder.findMany({
     where: { status: { in: OPEN_STATUSES } },
     select: {
       id: true, status: true,
-      revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { lines: { select: { productId: true, qty: true, unitCode: true } } } },
+      revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { lines: { select: { id: true, productId: true, qty: true, unitCode: true } } } },
     },
   });
-  return orders.map((o) => ({ status: o.status, lines: o.revisions[0]?.lines ?? [] }));
+  const ids = orders.flatMap((o) => (o.revisions[0]?.lines ?? []).map((l) => l.id));
+  const got = ids.length ? await db.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }) : [];
+  const received = new Map(got.map((g) => [g.orderLineId, g._sum.qty ?? 0]));
+  return orders.map((o) => ({
+    status: o.status,
+    lines: (o.revisions[0]?.lines ?? [])
+      .map((l) => ({ productId: l.productId, unitCode: l.unitCode, qty: Math.max(0, l.qty - (received.get(l.id) ?? 0)) }))
+      .filter((l) => l.qty > 0),
+  }));
 }
 
 /**

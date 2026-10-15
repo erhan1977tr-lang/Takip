@@ -1,9 +1,10 @@
-# TAKİP Telegram asistanı (3.84.0, karar 278; 3.85.0, karar 280)
+# TAKİP Telegram asistanı (3.84.0, karar 278; 3.85.0, karar 280; 3.87.0, karar 282)
 
 Türkçe ve Romence yazılı / sesli soruları gerçek TAKİP verisiyle yanıtlayan, **salt okunur** Telegram botu. Yazılı soruya
 yalnızca yazılı; sesli soruya yazılı (tam ayrıntı) + sesli (kısa özet, `gpt-4o-mini-tts`, ses `coral`) yanıt verir. Yanıt
-sorunun dilindedir; Türkçede "sahip" diye hitap eder ve "Başka bir emrin olur mu, sahip?" ile biter (Romence: "stăpâne",
-"Mai ai vreo poruncă, stăpâne?"). İşçi süreci (`worker`)
+sorunun dilindedir; iki dilde de kullanıcıya "Boss" diye hitap eder (3.87.0). Kapanış sorusu ("Başka bir emrin olur mu,
+Boss?" / Romence "Mai ai vreo solicitare, Boss?") yalnızca doğal düştüğünde kullanılır, her yanıta mekanik olarak eklenmez.
+İşçi süreci (`worker`)
 çalıştırır; sunucuda yeni port / webhook / gelen bağlantı yoktur (Telegram'a ve yapay zekâ API'sine yalnızca giden istek).
 
 ## Güvenlik

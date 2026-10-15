@@ -1243,6 +1243,7 @@ model ProfileProduct {
   purchaseCurrency String?
   purchaseUnit     String?
   supplierLines    SupplierOrderLine[]
+  receiptLines     SupplierReceiptLine[]
   prices     ProfilePriceItem[]
   stockMoves StockMovement[]
   calcItems  ProfileCalcItem[]
@@ -1514,12 +1515,16 @@ model StockMovement {
   kind        StockMoveKind
   orderId     String?
   order       Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  // Tedarikçi mal kabulü (3.87.0, karar 282): bu GIRIS hareketini yazan kabul (kabul silinmez — Restrict)
+  supplierReceiptId String?
+  supplierReceipt   SupplierReceipt? @relation(fields: [supplierReceiptId], references: [id], onDelete: Restrict)
   note        String?
   createdById String?
   createdAt   DateTime       @default(now())
 
   @@index([productId])
   @@index([orderId])
+  @@index([supplierReceiptId])
 }
 
 // ---------------------------------------------------------
@@ -1943,6 +1948,7 @@ model SupplierOrder {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   revisions    SupplierOrderRevision[]
+  receipts     SupplierReceipt[]
 
   @@index([supplierId, status])
   @@index([status, etaDate])
@@ -1965,6 +1971,7 @@ model SupplierOrderRevision {
   updatedAt     DateTime @updatedAt
   lines         SupplierOrderLine[]
   files         SupplierOrderFile[]
+  receipts      SupplierReceipt[]
 
   @@unique([orderId, revision])
 }
@@ -1984,6 +1991,7 @@ model SupplierOrderLine {
   priceSource String?  // CATALOG: ürünün alış fiyatı · MANUAL: yönetici girdi
   lineTotal   Decimal? @db.Decimal(14, 2)
   sortOrder   Int      @default(0)
+  receiptLines SupplierReceiptLine[]
 
   @@index([revisionId, sortOrder])
   @@index([productId])
@@ -2007,6 +2015,53 @@ model SupplierOrderFile {
 
   @@index([revisionId])
   @@index([scanStatus])
+}
+
+// Tedarikçi mal kabulü (3.87.0, karar 282): kesin revizyonun satırlarına karşı fiilen teslim alınan miktar. Her teslimat
+// ayrı kayıttır (sıra no siparişte tekil); satırlar sipariş satırının ve ürünün KOPYASIDIR (belge kopyadan üretilir). Kabul
+// ve satırları değişmez / silinmez (tetikleyici); stok GIRIS hareketi aynı işlemde yazılır (StockMovement.supplierReceiptId).
+// requestKey: tek kullanımlık form anahtarı — aynı istek ikinci kabul / ikinci stok girişi üretemez.
+model SupplierReceipt {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  revisionId  String
+  revision    SupplierOrderRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  seq         Int
+  receivedOn  DateTime @db.Date
+  reference   String?
+  note        String?
+  requestKey  String   @unique
+  complete    Boolean  @default(false)
+  createdById String?
+  createdAt   DateTime @default(now())
+  lines       SupplierReceiptLine[]
+  stockMoves  StockMovement[]
+
+  @@unique([orderId, seq])
+}
+
+model SupplierReceiptLine {
+  id           String   @id @default(cuid())
+  receiptId    String
+  receipt      SupplierReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  orderLineId  String
+  orderLine    SupplierOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  productId    String
+  product      ProfileProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  code         String
+  nameRo       String
+  description  String
+  color        String?
+  categoryCode String?
+  lengthM      Decimal? @db.Decimal(12, 3)
+  qty          Int
+  unitCode     String
+  sortOrder    Int      @default(0)
+
+  @@index([receiptId, sortOrder])
+  @@index([orderLineId])
+  @@index([productId])
 }
 
 // Tedarikçiye yapılan ödemeler (karar 182): yönetici elle girer; siparişlere bağlı değildir. Silinmez — gerekçeyle

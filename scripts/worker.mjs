@@ -37,6 +37,7 @@ import { pruneLoginEvents } from '../server/auth/login-log.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
 import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
 import { dispatchSupplierOrderEmails } from '../server/suppliers/dispatch.js';
+import { dispatchReceiptEmails } from '../server/suppliers/receipt-mail.js';
 import { remindSupplierEta } from '../server/suppliers/service.js';
 
 const once = process.argv.includes('--once');
@@ -107,6 +108,9 @@ async function profileTick() {
   // Tedarikçi sipariş e-postaları (Paket 6): yalnızca yöneticinin "Siparişi onayla / gönder"i ile kuyruğa giren işler
   const t = await dispatchSupplierOrderEmails(db, { transport: mail.transport, from: mail.from, now, log });
   if (t.sent || t.failed || t.retried) log('tedarikçi e-postası:', JSON.stringify(t));
+  // Mal kabulü depo e-postaları (3.87.0): kabulle aynı işlemde kuyruğa giren işler; alıcı başına en çok bir ileti
+  const rc = await dispatchReceiptEmails(db, { transport: mail.transport, from: mail.from, now, log });
+  if (rc.sent || rc.failed || rc.retried) log('mal kabulü e-postası:', JSON.stringify(rc));
   // Sipariş olaylarının bildirim e-postaları (işlem tamamlandıktan sonra, kuyruktan)
   if (getEnv().NOTIFY_EMAILS) {
     const n = await dispatchNotifications(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });

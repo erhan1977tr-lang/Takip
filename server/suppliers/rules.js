@@ -182,16 +182,20 @@ export const OPEN_STATUSES = ['GONDERIM_BEKLIYOR', 'GONDERILDI', 'GONDERIM_HATAS
 
 /**
  * Yöneticinin bu siparişte yapabilecekleri. hasDraft: düzenlenen (kesinleşmemiş) revizyon var mı; pendingJob: son kesin
- * revizyonun e-postası kuyrukta mı.
- * @param {{ status: string, hasDraft: boolean, pendingJob?: boolean }} o
+ * revizyonun e-postası kuyrukta mı; hasReceipts: mal kabulü yapıldı mı (3.87.0, karar 282 — kabulden sonra yeni revizyon
+ * açılmaz: kabul satırları kesin revizyonun satırlarına bağlıdır). receive: mal kabulü (taslak revizyon yokken).
+ * @param {{ status: string, hasDraft: boolean, pendingJob?: boolean, hasReceipts?: boolean }} o
  * @returns {string[]}
  */
-export function supplierOrderActions({ status, hasDraft, pendingJob = false }) {
+export function supplierOrderActions({ status, hasDraft, pendingJob = false, hasReceipts = false }) {
   if (status === 'TASLAK') return ['save_draft', 'files', 'approve_send', 'delete_draft'];
   if (!OPEN_STATUSES.includes(status)) return [];
   const a = ['set_eta', 'mark_received', 'cancel'];
   if (hasDraft) a.push('save_draft', 'files', 'approve_send', 'discard_revision');
-  else a.push('start_revision');
+  else {
+    a.push('receive');
+    if (!hasReceipts) a.push('start_revision');
+  }
   if (status === 'GONDERIM_HATASI' && !hasDraft && !pendingJob) a.push('resend');
   return a;
 }

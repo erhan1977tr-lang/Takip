@@ -20,6 +20,7 @@ import { MAIL_LOGO_CID, MAIL_LOGO_WIDTH, brandMessage, brandedHtml, isBranded, m
 import { readMailConfig } from '../server/mail/config.js';
 import { renderInviteEmail } from '../server/mail/templates/invite.js';
 import { renderWarehouseEmail } from '../server/mail/templates/warehouse.js';
+import { renderGoodsReceiptEmail } from '../server/mail/templates/goods-receipt.js';
 import { sendInviteEmail } from '../server/mail/sendInvite.js';
 import { renderNotification } from '../server/notifications/email.js';
 import { renderDocEmail } from '../server/documents/delivery.js';
@@ -263,7 +264,7 @@ test('her PDF üretici ortak başlığı kullanır (yeni üretici de kullanmak z
   // Paket 7: firma yükleme listesi (firm-loading.js) de ortak başlığı ve ortak altbilgiyi kullanır
   // Paket 8 (karar 196): teslimat raporu (delivery-report.js) aynı ortak başlık ve altbilgiyle
   // 3.83.0 (karar 277): bağımsız ticari teklifin müşteri PDF'i (commercial-offer.js)
-  assert.deepEqual(generators.sort(), ['commercial-offer.js', 'delivery-report.js', 'depot-form.js', 'firm-loading.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
+  assert.deepEqual(generators.sort(), ['commercial-offer.js', 'delivery-report.js', 'depot-form.js', 'firm-loading.js', 'goods-receipt.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
   for (const f of generators) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.match(text, /from '\.\/brand\.js'/, f);
@@ -288,6 +289,7 @@ const MAILS = () => ({
   'mali belge: proforma': renderDocEmail({ kind: 'PROFORMA', series: 'PRF', number: '101', orderNos: ['GLA68'], total: 605, currency: 'RON', firmName: 'Glass and More', attached: true, portalUrl: 'https://takip.example/belgeler' }),
   'mali belge: fatura': renderDocEmail({ kind: 'INVOICE', series: 'GKH', number: '812', orderNos: ['GLA68', 'GLA69'], total: 1210, currency: 'RON', firmName: 'Glass and More', attached: false, link: 'https://www.fgo.ro/facturi/GKH812.pdf' }),
   'depo (Comanda Depozit)': renderWarehouseEmail({ orderNo: 'GLAP12', firmName: 'Glass and More', pickupDate: new Date('2026-10-06T00:00:00Z'), phone: '+40 7', plate: 'B 1', items: [{ code: 'GK15', name: 'GARNITURA', unit: 'cutii', qty: 4 }], link: 'https://takip.example/depo/x', validDays: 14 }),
+  'depo (mal kabulü — INTRAREA MARFĂ)': renderGoodsReceiptEmail({ orderNo: 'TS-2026-001', supplierName: 'Profil Tedarik', seq: 1, receivedOn: new Date('2026-10-15T00:00:00Z'), reference: 'AVZ 12', complete: false, lines: [{ code: 'RM12-7016', name: 'PROFIL RM12', color: '7016', length: '6.000', qty: 40, unit: 'bare' }], totals: [{ qty: 40, unit: 'bare' }], fileName: 'Intrare-Marfa-TS-2026-001-1.pdf' }),
   'davet / doğrulama kodu (tr)': renderInviteEmail({ code: '482913', name: 'Ali', firmName: 'Ünsal Cam', language: 'tr', appUrl: 'https://takip.example', email: 'a@b.ro' }),
   'davet / doğrulama kodu (ro)': renderInviteEmail({ code: '482913', language: 'ro' }),
 });

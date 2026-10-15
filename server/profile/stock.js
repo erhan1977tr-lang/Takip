@@ -340,6 +340,32 @@ export async function returnOrderStock(tx, { orderId, orderNo, actorId }) {
 }
 
 /**
+ * Tedarikçi mal kabulünün stok girişi (3.87.0, karar 282) — kabul kaydıyla AYNI işlemin içinde, ürün kilitleri altında:
+ * kabul satırı başına bir GIRIS hareketi (+ fiilen teslim alınan adet, stok biriminde), kabule bağlı (supplierReceiptId).
+ * Bir kabul için yalnızca bir kez yazılır: kabulün zaten hareketi varsa hiçbir şey yazılmaz (çağıran da kabulü tek
+ * kullanımlık anahtar + sipariş kilidiyle bir kez oluşturur). Sipariş (Order) bağı yoktur: profil siparişi silme / iptal
+ * iadesi (karar 281) yalnızca siparişin kendi hareketlerine bakar, bu girişleri görmez.
+ * @param {any} tx
+ * @param {{ receiptId: string, note: string, lines: { productId: string, qty: number }[], actorId: string | null,
+ *   actor?: { id?: string | null, role?: string, ip?: string | null } | null, at?: Date }} p
+ * @returns {Promise<number>} yazılan hareket sayısı
+ */
+export async function receiveSupplierStock(tx, { receiptId, note, lines, actorId, actor = null, at = new Date() }) {
+  const rows = lines.filter((l) => l.productId && Number.isInteger(l.qty) && l.qty > 0 && l.qty <= MAX_STOCK_QTY);
+  if (!rows.length || rows.length !== lines.length) throw new Error('receiveSupplierStock: geçersiz satır');
+  const ids = rows.map((l) => l.productId);
+  await lockStock(tx, ids);
+  if (await tx.stockMovement.count({ where: { supplierReceiptId: receiptId } })) return 0;
+  const before = await stockLevels(tx, ids);
+  const text = clean(note).slice(0, 300) || null;
+  await tx.stockMovement.createMany({
+    data: rows.map((l) => ({ productId: l.productId, qty: l.qty, kind: 'GIRIS', supplierReceiptId: receiptId, note: text, createdById: actorId, createdAt: at })),
+  });
+  await recordCriticalStock(tx, { productIds: ids, before, actor, source: 'GIRIS' });
+  return rows.length;
+}
+
+/**
  * Siparişin stok hareketlerinden iade edilecek miktar (saf; karar 281): ürün başına NET hareket (çıkış −, iade +); net
  * düşüm (< 0) kadar iade edilir, net sıfır ya da artı ürün iade edilmez. Önceki iadeler (iptal) hesaba girer: aynı miktar
  * iki kez iade edilmez.
