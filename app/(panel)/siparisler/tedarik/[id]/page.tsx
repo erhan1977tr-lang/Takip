@@ -1,20 +1,23 @@
+import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
+import { userCan } from '@/lib/permissions';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { getEnv } from '@/lib/env';
 import { fmtBytes, fmtDate, fmtDateTime, fmtDec, fmtNum, isoDay } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { loadSupplierOrder, orderableProducts } from '@/server/suppliers/service.js';
+import { loadReceipts } from '@/server/suppliers/receipt.js';
 import { LIMITS, catalogPrice, etaCalendarWarning, etaReminderDue, orderUnitOf, showPrices, supplierEmail, supplierOrderActions } from '@/server/suppliers/rules.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
 import { dayKeyOf, localDay } from '@/server/profile/dates.js';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import {
-  cancelAction, deleteDraftAction, discardRevisionAction, etaAction, receivedAction, removeFileAction, resendAction, startRevisionAction,
+  cancelAction, deleteDraftAction, discardRevisionAction, etaAction, receiveGoodsAction, receivedAction, removeFileAction, resendAction, startRevisionAction,
   uploadFilesAction,
 } from '../actions';
 import { supplierErrorText } from '../labels';
@@ -23,7 +26,7 @@ import { SupplierOrderEditor, type EditorProduct } from './SupplierOrderEditor';
 
 export const dynamic = 'force-dynamic';
 
-const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'cancelled', 'files', 'fileRemoved'];
+const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'cancelled', 'files', 'fileRemoved'];
 const SEND_ERRORS = ['NO_EMAIL', 'FILE_NOT_CLEAN', 'FILE_MISSING', 'SMTP', 'UNKNOWN'];
 const SKIP = ['CANCELLED', 'SUPERSEDED', 'GONE', 'IPTAL', 'TESLIM_ALINDI'];
 const SCAN_TONE: Record<string, string> = { CLEAN: 'ok', SKIPPED: 'muted', PENDING: 'warn', INFECTED: 'danger' };
@@ -35,7 +38,7 @@ type JobPayload = { revision?: number; attempt?: number; manual?: boolean; to?: 
  * iptal ve geçmiş burada. Yalnızca SUPPLIER_MANAGE (yönetici).
  */
 export default async function SupplierOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
-  await requirePermission('SUPPLIER_MANAGE');
+  const admin = await requirePermission('SUPPLIER_MANAGE');
   const { t, m, locale } = await getT();
   const { id } = await params;
   const sp = await searchParams;
@@ -46,7 +49,11 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   const approver = final?.finalizedById ? await db.user.findUnique({ where: { id: final.finalizedById }, select: { name: true, email: true } }) : null;
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const pendingJob = jobs.some((j) => j.status === 'PENDING');
-  const actions = supplierOrderActions({ status: order.status, hasDraft: !!draft, pendingJob });
+  const rc = await loadReceipts(db, order.id);
+  const receipts = rc?.receipts ?? [];
+  const actions = supplierOrderActions({ status: order.status, hasDraft: !!draft, pendingJob, hasReceipts: receipts.length > 0 });
+  // Mal kabulü (karar 282): tedarik VE stok yetkisi (serviste de denetlenir)
+  const canReceive = actions.includes('receive') && userCan(admin, 'STOCK_MANAGE') && !!rc && rc.lines.some((l) => (l.remaining ?? 0) > 0 && l.compatible);
   const can = (a: string) => actions.includes(a);
   const email = supplierEmail(order.supplier.email);
   const target = { supplierId: order.supplierId, currency: order.currency };
@@ -181,6 +188,87 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
           {!finalPrices && <div className="alert alert-warn" style={{ margin: 12 }}>{t('supplier.order.editor.missingPrice')}</div>}
           {final.note && <div style={{ padding: '0 16px 12px' }}><b>{t('supplier.order.final.note')}</b><p style={{ whiteSpace: 'pre-line', margin: '4px 0 0' }}>{final.note}</p></div>}
           {final.files.length > 0 && <div style={{ padding: '0 16px 12px' }}>{final.files.map((f) => <FileItem key={f.id} f={f} />)}</div>}
+        </div>
+      )}
+
+      {canReceive && rc && (
+        <div className="card card-flush" id="mal-kabul">
+          <div className="card-head"><h2>{t('supplier.order.receipt.title')}</h2></div>
+          <p className="card-sub muted small">{t('supplier.order.receipt.intro')}</p>
+          <form action={receiveGoodsAction}>
+            <input type="hidden" name="orderId" value={order.id} />
+            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('supplier.order.receipt.col.code')}</th><th>{t('supplier.order.receipt.col.description')}</th>
+                    <th>{t('supplier.order.receipt.col.length')}</th><th>{t('supplier.order.receipt.col.unit')}</th>
+                    <th className="num">{t('supplier.order.receipt.col.ordered')}</th><th className="num">{t('supplier.order.receipt.col.received')}</th>
+                    <th className="num">{t('supplier.order.receipt.col.now')}</th><th className="num">{t('supplier.order.receipt.col.remaining')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rc.lines.map((l) => (
+                    <tr key={l.id} data-receipt-line={l.code}>
+                      <td className="mono">{l.code}</td>
+                      <td>{l.description}</td>
+                      <td className="nowrap">{l.length ? `${fmtDec(l.length, 3)} m` : '—'}</td>
+                      <td>{unitLabel(l.unitCode, locale)}</td>
+                      <td className="num" data-ordered>{l.ordered}</td>
+                      <td className="num" data-received>{l.received}</td>
+                      <td className="num">
+                        {!l.compatible ? <Badge tone="warn">{t('supplier.order.receipt.unitMismatch')}</Badge>
+                          : (l.remaining ?? 0) === 0 ? <Badge tone="ok">{t('supplier.order.receipt.done')}</Badge>
+                            : <input type="number" name={`q_${l.id}`} min={0} max={l.remaining} step={1} inputMode="numeric" style={{ width: 90 }} aria-label={`${t('supplier.order.receipt.col.now')} ${l.code}`} />}
+                      </td>
+                      <td className="num" data-remaining>{l.remaining}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 12, padding: '12px 16px', alignItems: 'flex-end' }}>
+              <div>
+                <label htmlFor="rc-date">{t('supplier.order.receipt.date')}</label>
+                <input id="rc-date" type="date" name="receivedOn" required defaultValue={today} max={today} />
+              </div>
+              <div>
+                <label htmlFor="rc-ref">{t('supplier.order.receipt.reference')}</label>
+                <input id="rc-ref" name="reference" maxLength={100} />
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <label htmlFor="rc-note">{t('supplier.order.receipt.note')}</label>
+                <input id="rc-note" name="note" maxLength={500} />
+              </div>
+              <ConfirmButton primary message={t('supplier.order.receipt.confirm')}>{t('supplier.order.receipt.submit')}</ConfirmButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {receipts.length > 0 && (
+        <div className="card card-flush" id="kabuller">
+          <div className="card-head"><h2>{t('supplier.order.receipt.listTitle')} <span className="badge">{receipts.length}</span></h2></div>
+          {receipts.map((r) => (
+            <div key={r.id} data-receipt={r.seq} style={{ padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <b>{t('supplier.order.receipt.item', { n: r.seq })}</b>
+                <span>{fmtDate(r.receivedOn)}</span>
+                {r.reference && <span className="mono small">{r.reference}</span>}
+                <Badge tone={r.complete ? 'ok' : 'info'}>{r.complete ? t('supplier.order.receipt.complete') : t('supplier.order.receipt.partial')}</Badge>
+                {r._count.stockMoves > 0 && <Badge tone="ok">{t('supplier.order.receipt.stock')}</Badge>}
+                <Badge tone={r.mail?.status === 'SENT' ? 'ok' : r.mail?.status === 'FAILED' ? 'danger' : r.mail ? 'info' : 'muted'}>
+                  {t(`supplier.order.receipt.mail.${r.mail?.status && ['PENDING', 'SENT', 'FAILED', 'SKIPPED'].includes(r.mail.status) ? r.mail.status : 'none'}` as MsgKey)}
+                </Badge>
+                <a className="btn" href={`/siparisler/tedarik/${order.id}/kabul/${r.id}`} target="_blank" rel="noopener" data-receipt-pdf>{t('supplier.order.receipt.pdf')}</a>
+              </div>
+              <ul className="small" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {r.lines.map((l) => <li key={l.id}><span className="mono">{l.code}</span> — {l.description}: <b>{l.qty}</b> {unitLabel(l.unitCode, locale)}</li>)}
+              </ul>
+              <div className="muted small">{fmtDateTime(r.createdAt)}{r.by && <> · {t('supplier.order.receipt.by', { who: r.by })}</>}{r.note && <> · {r.note}</>}</div>
+            </div>
+          ))}
         </div>
       )}
 

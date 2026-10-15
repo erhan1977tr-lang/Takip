@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLOSING, LIMITS, TEXT, TEXT_RO, VOICE_MARK, answer, assistantConfig, createAssistant, detectLang, isAllowed, splitVoice, systemPrompt, voiceInstructions } from '../server/assistant/bot.js';
+import { ADDRESS, CLOSING, LIMITS, TEXT, TEXT_RO, VOICE_MARK, answer, assistantConfig, createAssistant, detectLang, isAllowed, splitVoice, systemPrompt, voiceInstructions } from '../server/assistant/bot.js';
 import { TOOLS, ToolError, normalizeOrderNo, runTool, toolDefinitions, validateArgs } from '../server/assistant/tools.js';
 import { splitText, telegramClient } from '../server/assistant/telegram.js';
 import { TTS_MAX_CHARS, speech, transcribe } from '../server/assistant/ai.js';
@@ -273,20 +273,28 @@ test('3.85: dil algılama — Türkçe varsayılan; Romence harf ya da sözcük 
   assert.equal(TEXT_RO.failed.length > 0 && TEXT_RO.failed !== TEXT.failed, true);
 });
 
-test('3.85: sistem yönergesi — dil, hitap ve kapanış; 3 ondalık m²; bulunamadı ≠ veri eksik; ses ayracı yalnızca sesli soruda', () => {
+test('3.85 / 3.87: sistem yönergesi — dil, "Boss" hitabı ve doğal kapanış; 3 ondalık m²; bulunamadı ≠ veri eksik; ses ayracı yalnızca sesli soruda', () => {
   const p = systemPrompt('2026-10-15');
-  for (const s of ['Romence', CLOSING.tr, CLOSING.ro, '"sahip"', '3 ondalık', 'bulunamadi', 'veriEksik', 'bedelsiz telafi', 'sandikSayisi', 'SALT OKUNUR']) assert.ok(p.includes(s), s);
+  for (const s of ['Romence', CLOSING.tr, CLOSING.ro, '"Boss"', 'mekanik', '3 ondalık', 'bulunamadi', 'veriEksik', 'bedelsiz telafi', 'sandikSayisi', 'SALT OKUNUR']) assert.ok(p.includes(s), s);
+  // 3.87.0: eski hitaplar kaldırıldı; kapanışlar ürün sahibinin metni
+  assert.equal(ADDRESS, 'Boss');
+  assert.deepEqual({ ...CLOSING }, { tr: 'Başka bir emrin olur mu, Boss?', ro: 'Mai ai vreo solicitare, Boss?' });
+  for (const prompt of [p, systemPrompt('2026-10-15', { voice: true })]) {
+    for (const old of ['sahip', 'Sahip', 'stăpâne', 'poruncă']) assert.ok(!prompt.includes(old), old);
+  }
+  const src = fs.readFileSync(new URL('../server/assistant/bot.js', import.meta.url), 'utf8');
+  for (const old of ['sahip', 'stăpâne', 'poruncă']) assert.ok(!src.includes(old), `bot.js: ${old}`);
   assert.ok(!p.includes(VOICE_MARK), 'yazılı soruda ses ayracı istenmez');
   assert.ok(systemPrompt('2026-10-15', { voice: true }).includes(VOICE_MARK));
 });
 
-test('3.85: sesli yanıtın bölünmesi — yazılı tam metin, sesli kısa özet; ayraç yoksa metnin başı; uzun özet kapanışla kısaltılır', () => {
-  const r = splitVoice(`• ALE40: 10 cam, 12,343 m²\n• Yüklenen 6 cam\n${CLOSING.tr}\n${VOICE_MARK}\nSahip, ALE40'ta on cam var. ${CLOSING.tr}`, 'tr');
+test('3.85 / 3.87: sesli yanıtın bölünmesi — yazılı tam metin, sesli kısa özet; ayraç yoksa metnin başı; uzun özet son tam cümlede kesilir, kapanış mekanik eklenmez', () => {
+  const r = splitVoice(`• ALE40: 10 cam, 12,343 m²\n• Yüklenen 6 cam\n${CLOSING.tr}\n${VOICE_MARK}\nBoss, ALE40'ta on cam var. ${CLOSING.tr}`, 'tr');
   assert.ok(r.text.startsWith('• ALE40') && r.text.endsWith(CLOSING.tr) && !r.text.includes(VOICE_MARK));
-  assert.equal(r.speech, `Sahip, ALE40'ta on cam var. ${CLOSING.tr}`);
+  assert.equal(r.speech, `Boss, ALE40'ta on cam var. ${CLOSING.tr}`);
   assert.equal(splitVoice('Üretimde.').speech, 'Üretimde.');
   const long = splitVoice(`x\n${VOICE_MARK}\n${'Uzun bir cümle burada. '.repeat(80)}`, 'ro');
-  assert.ok(long.speech.length <= TTS_MAX_CHARS && long.speech.endsWith(CLOSING.ro));
+  assert.ok(long.speech.length <= TTS_MAX_CHARS && long.speech.endsWith('burada.') && !long.speech.includes(CLOSING.ro));
   assert.match(voiceInstructions('ro'), /Romanian/);
   assert.match(voiceInstructions('tr'), /Turkish/);
   assert.match(voiceInstructions('tr'), /feminine, warm, soft and gently flirtatious/);

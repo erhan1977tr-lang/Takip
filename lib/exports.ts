@@ -6,7 +6,7 @@ import { BRAND } from '../server/branding/index.js';
 import { XLSX_MIME } from '../server/files/xlsx.js';
 import { contentDisposition, exportFileName } from '../server/files/export-name.js';
 
-export type ExportName = 'loadingSummary' | 'firmLoading' | 'transportList' | 'offer' | 'offerReport' | 'priceTable' | 'glassCatalog' | 'profileCatalog' | 'profileStock' | 'commercialOffer' | 'commercialOfferInternal';
+export type ExportName = 'loadingSummary' | 'firmLoading' | 'transportList' | 'offer' | 'offerReport' | 'priceTable' | 'glassCatalog' | 'profileCatalog' | 'profileStock' | 'commercialOffer' | 'commercialOfferInternal' | 'goodsReceipt';
 
 /** Başlığın altındaki satır: "GKH Trading Invest SRL · <ek> · Oluşturma: 08.10.2026 14:30" */
 export function exportSubtitle(t: T, extra?: string | null): string {

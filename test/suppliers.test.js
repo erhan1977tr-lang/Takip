@@ -177,7 +177,9 @@ test('sipariş numarası: önerilen TS-<yıl>-<sıra>; yönetici değiştirebili
 
 test('işlem matrisi: taslak düzenlenir / onaylanır; açık sipariş tarih, teslim, iptal, revizyon; tekrar gönderim yalnızca hata + kuyruk boş', () => {
   assert.deepEqual(supplierOrderActions({ status: 'TASLAK', hasDraft: true }), ['save_draft', 'files', 'approve_send', 'delete_draft']);
-  assert.deepEqual(supplierOrderActions({ status: 'GONDERILDI', hasDraft: false }), ['set_eta', 'mark_received', 'cancel', 'start_revision']);
+  assert.deepEqual(supplierOrderActions({ status: 'GONDERILDI', hasDraft: false }), ['set_eta', 'mark_received', 'cancel', 'receive', 'start_revision']);
+  // Mal kabulünden sonra yeni revizyon yok (karar 282); taslak revizyon varken mal kabulü yok
+  assert.deepEqual(supplierOrderActions({ status: 'GONDERILDI', hasDraft: false, hasReceipts: true }), ['set_eta', 'mark_received', 'cancel', 'receive']);
   assert.deepEqual(supplierOrderActions({ status: 'GONDERILDI', hasDraft: true }), ['set_eta', 'mark_received', 'cancel', 'save_draft', 'files', 'approve_send', 'discard_revision']);
   assert.ok(supplierOrderActions({ status: 'GONDERIM_HATASI', hasDraft: false }).includes('resend'));
   assert.ok(!supplierOrderActions({ status: 'GONDERIM_HATASI', hasDraft: false, pendingJob: true }).includes('resend'));
@@ -425,13 +427,22 @@ test('tek gönderim yolu: e-posta işi yalnızca "onayla / gönder" ve açık "T
   for (const f of CODE.filter((x) => x.startsWith('app/'))) assert.ok(!/sendBrandedMail|dispatchSupplierOrderEmails/.test(read(f)), f);
 });
 
-test('stok: tedarik kodu stok hareketi yazmaz (sipariş, e-posta, tahmini tarih, teslim stoğu değiştirmez — karar 184)', () => {
+test('stok: tedarik kodu stok hareketi yazmaz — TEK istisna mal kabulü (receiveGoods → receiveSupplierStock; karar 184, 282)', () => {
   const files = CODE.filter((f) => f.startsWith('server/suppliers/') || f.startsWith('app/(panel)/siparisler/tedarik/') || f.startsWith('app/(panel)/admin/muhasebe/tedarikciler/') || f.startsWith('app/(panel)/admin/entegrasyonlar/tedarikciler/'));
   assert.ok(files.length >= 10, files.join(', '));
   for (const f of files) {
     const s = strip(read(f));
-    assert.ok(!/stockMovement|addStockMovement|deductOrderStock|returnOrderStock|applyStockImport/.test(s), `${f}: stok yazılmaz`);
+    assert.ok(!/stockMovement|addStockMovement|deductOrderStock|returnOrderStock|returnRemovedOrderStock|applyStockImport/.test(s), `${f}: stok yazılmaz`);
   }
+  // Mal kabulünün stok girişi yalnızca server/suppliers/receipt.js → receiveGoods içinden (sipariş, onay, gönderim, ETA,
+  // "kalanı beklemeden kapat" stoğu değiştirmez)
+  const users = CODE.filter((f) => !f.startsWith('server/profile/stock.js') && /receiveSupplierStock\(/.test(strip(read(f))));
+  assert.deepEqual(users, ['server/suppliers/receipt.js']);
+  const src = strip(read('server/suppliers/receipt.js'));
+  assert.equal((src.match(/receiveSupplierStock\(/g) ?? []).length, 1);
+  const body = src.slice(src.indexOf('export async function receiveGoods('), src.indexOf('\n}\n', src.indexOf('export async function receiveGoods(')));
+  assert.ok(body.includes('receiveSupplierStock('), 'yalnızca receiveGoods');
+  assert.ok(!/receiveSupplierStock|stockMovement/.test(strip(read('server/suppliers/service.js'))), 'service.js stok yazmaz');
 });
 
 test('sayfalar ve işlemler: her tedarik sayfası / işlemi önce SUPPLIER_MANAGE ister; düzenleyici para hesabını ortak modülden alır', () => {

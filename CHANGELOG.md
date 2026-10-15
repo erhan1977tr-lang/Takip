@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.87.1 — 15.10.2026
+
+- Mal kabulü ekranının veri tipleri derleme için tamamlandı (davranış değişmedi; karar 282'nin devamı).
+
+## 3.87.0 — 15.10.2026
+
+Tedarikçi mal kabulü, otomatik stok artırma ve Telegram hitabı (karar 282). Veritabanına yalnızca ekleme yapıldı (iki yeni
+tablo + stok hareketine boş bir sütun); mevcut stok geçmişi, siparişler ve 3.86.1 profil siparişi silme / stok iadesi değişmedi.
+
+- **Mal kabulü** (tedarikçi siparişi ekranı → "Mal kabulü"): tam ya da kısmi teslimat; her teslimat ayrı kayıt; sipariş
+  edilen, önceki teslim alınan, yeni teslim alınan ve kalan miktar görünür. Kalanı aşan miktar sunucuda reddedilir; aynı sipariş
+  farklı günlerde birden çok kez teslim alınabilir. İptal edilmiş, kapanmış, taslak ya da açık revizyonu olan siparişte kabul
+  yok. Yetki: Yönetici ve Yönetici Yardımcısı (mevcut tedarik + stok izinleri).
+- **Stok güvenliği:** yalnızca fiilen teslim alınan miktar stoğa eklenir (kabul başına izlenebilir GIRIS hareketi). Kabul,
+  stok hareketi, sipariş durumu ve depo e-postası işi tek veritabanı işleminde; hata olursa hepsi geri alınır. Çift tıklama /
+  tekrar / eşzamanlı istek ikinci kabul ya da ikinci stok girişi üretmez. Birim stok birimiyle aynı değilse satır stoğa
+  alınmaz (tahmini dönüşüm yok). Sipariş oluşturma ve gönderme stoğu değiştirmez; beklenen tedarik artık kalan miktardır.
+- **INTRAREA MARFĂ belgesi** (PDF, Romence, örnek depo formunun düzeni): GKH logosu, tedarikçi, tedarikçi sipariş no, kabul no
+  ve tarihi, irsaliye referansı, ürün kodu / adı, renk, profil uzunluğu, teslim alınan miktar ve birim, özet. Fiyat, maliyet,
+  kâr yok. Kabul kaydından her açılışta aynı içerikle yeniden üretilir.
+- **Depo e-postası:** kabulden sonra depo alıcılarına Romence bildirim, belge ekli; alıcı başına bir ileti, mükerrer yok; bir
+  alıcının hatası öbürünü engellemez; e-posta hatası stoğu geri almaz (kuyruk ve yeniden deneme).
+- "Teslim alındı" düğmesi "Kalanı beklemeden kapat (stok değişmez)" oldu; mal kabulü yapılmış siparişte yeni revizyon açılmaz.
+- **Telegram asistanı:** iki dilde "Boss" diye hitap eder; kapanış ("Başka bir emrin olur mu, Boss?" / "Mai ai vreo
+  solicitare, Boss?") yalnızca doğal düştüğünde. Güvenlik ve salt okunurluk değişmedi.
+
 ## 3.86.1 — 15.10.2026
 
 - Siparişi silme: cam siparişinin sonucu eskisiyle birebir aynı; stoğa geri eklenenler yalnızca profil siparişinde döner

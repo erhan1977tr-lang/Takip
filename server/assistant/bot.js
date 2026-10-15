@@ -29,8 +29,10 @@ export const DEFAULT_TTS_VOICE = 'coral';
 export const TTS_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
 /** Sesli yanıtta modelin yazılı yanıttan sonra koyduğu ayraç; ardından sesli okunacak kısa özet gelir (yazılı yanıta girmez) */
 export const VOICE_MARK = '<<SES>>';
-/** Kapanış cümlesi (Türkçe / Romence) */
-export const CLOSING = Object.freeze({ tr: 'Başka bir emrin olur mu, sahip?', ro: 'Mai ai vreo poruncă, stăpâne?' });
+/** Hitap (iki dilde aynı; 3.87.0) */
+export const ADDRESS = 'Boss';
+/** Kapanış sorusu (Türkçe / Romence) — her yanıta mekanik olarak eklenmez; yalnızca doğal olduğunda kullanılır */
+export const CLOSING = Object.freeze({ tr: 'Başka bir emrin olur mu, Boss?', ro: 'Mai ai vreo solicitare, Boss?' });
 
 /** Yapılandırma: üç değer de geçerliyse açık; değilse kapalı + sabit neden (değer yazılmaz). Uygulamayı / işçiyi durdurmaz. */
 export function assistantConfig(env) {
@@ -100,7 +102,7 @@ export function systemPrompt(today, { voice = false } = {}) {
   return [
     `Sen GKH Trading Invest'in TAKİP sipariş ve üretim sisteminin asistanısın. Bugün: ${today} (Europe/Bucharest).`,
     'DİL: Kullanıcı Türkçe sorduysa Türkçe, Romence sorduysa Romence yanıt ver (Romence: diakritiklerle, doğal dil).',
-    `ÜSLUP: Kadınsı, sıcak, yumuşak ve hafif flörtöz; saygılı ve kısa. Türkçede kullanıcıya "sahip" diye hitap et ve her yanıtı tam olarak "${CLOSING.tr}" cümlesiyle bitir. Romencede "stăpâne" diye hitap et ve her yanıtı tam olarak "${CLOSING.ro}" cümlesiyle bitir. Üslup verinin doğruluğunu asla değiştirmez.`,
+    `ÜSLUP: Kadınsı, sıcak, yumuşak ve hafif flörtöz; saygılı ve kısa. Türkçede de Romencede de kullanıcıya yalnızca "${ADDRESS}" diye hitap et (başka hitap kullanma). Kapanış sorusunu yalnızca doğal düştüğünde, yanıtın sonunda en çok bir kez kullan — Türkçe: "${CLOSING.tr}", Romence: "${CLOSING.ro}"; her yanıta mekanik olarak ekleme, kısa yanıtlarda ve art arda yanıtlarda tekrarlama, hitabı da her cümlede yineleme. Üslup verinin doğruluğunu asla değiştirmez.`,
     'Yalnızca verilen araçlardan gelen GERÇEK verilerle yanıt ver; veri yoksa ya da araç hata verdiyse bunu açıkça söyle, asla tahmin etme veya uydurma.',
     'Araç sonucu "bulunamadi" ise: o numarayla sipariş YOK de (varsa "benzerler"i öner; "kaldirilmis" ise silinmiş de). "veriEksik" ise: sipariş VAR ama o bilgi henüz girilmemiş de (ör. TEKLIF_TABLOSU_YOK: teklif tablosu açılmamış; SANDIK_GIRILMEMIS: sandık girilmemiş). "hata" ise: sorgu yapılamadı de. Bu üç durumu birbirine karıştırma.',
     'Sipariş numaralarını (ör. ALE40, GLA68, GLAP12, ABC124-T) araca kullanıcının yazdığı gibi ver; "ale 40" gibi yazımlar da geçerlidir.',
@@ -111,7 +113,7 @@ export function systemPrompt(today, { voice = false } = {}) {
     'Kısa, net, maddeli yaz; düz metin kullan (Markdown tablo yok). En çok 3000 karakter.',
     'Sipariş durumları: YENI=yeni, HAZIRLANIYOR=hazırlanıyor, URETIMDE=üretimde, YUKLENDI=yüklendi, ARSIVLENDI=arşivlendi, IPTAL=iptal. Teklif: HAZIRLANIYOR=satışta, YONETIMDE=yönetici onayında, GONDERILDI=müşteriye gönderildi.',
     '"Yarın", "bu hafta" gibi ifadeleri bugünün tarihine göre YYYY-AA-GG gününe çevirip araca ver.',
-    ...(voice ? [`SESLİ SORU: Önce bütün ayrıntılarıyla yazılı yanıtı yaz (kapanış cümlesiyle). Sonra ayrı bir satıra tam olarak ${VOICE_MARK} yaz ve ardından sesli okunacak, en çok 3 kısa cümlelik, konuşma dilinde bir ÖZET yaz (madde işareti, tablo, emoji yok; sayıları okunur biçimde), yine aynı hitap ve kapanış cümlesiyle bitir.`] : []),
+    ...(voice ? [`SESLİ SORU: Önce bütün ayrıntılarıyla yazılı yanıtı yaz (kapanış cümlesiyle). Sonra ayrı bir satıra tam olarak ${VOICE_MARK} yaz ve ardından sesli okunacak, en çok 3 kısa cümlelik, konuşma dilinde bir ÖZET yaz (madde işareti, tablo, emoji yok; sayıları okunur biçimde), aynı hitabı (${ADDRESS}) kullan; kapanış sorusunu yalnızca doğal düşüyorsa ekle.`] : []),
   ].join('\n');
 }
 
@@ -125,18 +127,17 @@ const errText = (e, lang) => {
  * yazılı metnin sadeleştirilmiş başıdır. Ses metninden madde işareti / emoji / fazla boşluk atılır; TTS_MAX_CHARS ile kısaltılır.
  * @returns {{ text: string, speech: string }}
  */
-export function splitVoice(raw, lang = 'tr') {
+export function splitVoice(raw, _lang = 'tr') {
   const s = String(raw ?? '');
   const i = s.indexOf(VOICE_MARK);
   const text = (i >= 0 ? s.slice(0, i) : s).trim();
   let spoken = i >= 0 ? s.slice(i + VOICE_MARK.length) : s;
   spoken = spoken.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, ' ').replace(/^[\s•\-*·]+/gm, '').replace(/\s+/g, ' ').trim();
   if (spoken.length > TTS_MAX_CHARS) {
-    const close = CLOSING[lang] ?? CLOSING.tr;
-    const room = TTS_MAX_CHARS - close.length - 2;
-    const cut = spoken.slice(0, room);
+    // Kısaltılan sesli özet son tam cümlede biter; kapanış sorusu mekanik olarak eklenmez
+    const cut = spoken.slice(0, TTS_MAX_CHARS);
     const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
-    spoken = `${(end > room / 3 ? cut.slice(0, end + 1) : cut).trim()} ${close}`;
+    spoken = (end > TTS_MAX_CHARS / 3 ? cut.slice(0, end + 1) : cut).trim();
   }
   return { text: text || s.replace(VOICE_MARK, '').trim(), speech: spoken };
 }

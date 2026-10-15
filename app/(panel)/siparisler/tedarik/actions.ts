@@ -17,6 +17,8 @@ import {
   approveAndSend, attachFiles, cancelOrder, createDraftOrder, deleteDraftOrder, discardRevision, fileQuota, markReceived, removeFile,
   resendOrder, saveDraft, setEta, startRevision,
 } from '@/server/suppliers/service.js';
+import { receiveGoods } from '@/server/suppliers/receipt.js';
+import { userCan } from '@/lib/permissions';
 
 const LIST = '/siparisler/tedarik';
 const page = (id: string) => `${LIST}/${encodeURIComponent(id)}`;
@@ -181,7 +183,27 @@ export async function etaAction(fd: FormData) {
   done(id, r.eta ? 'eta' : 'etaCleared', '#eta');
 }
 
-/** Mal geldi: sipariş kapanır. Stok DEĞİŞMEZ (giriş Profil Stoğu ekranından). */
+/**
+ * Mal kabulü (3.87.0, karar 282): bu teslimatta fiilen gelen adetler (q_<sipariş satırı id>), kabul tarihi, irsaliye
+ * referansı, not ve tek kullanımlık form anahtarı. Kabul, stok girişi ve depo e-postası işi tek işlemde (servis). Yetki:
+ * SUPPLIER_MANAGE + STOCK_MANAGE (burada ve serviste).
+ */
+export async function receiveGoodsAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const id = idOf(fd);
+  if (!userCan(admin, 'STOCK_MANAGE')) fail(id, 'FORBIDDEN', {}, '#mal-kabul');
+  const quantities: Record<string, string> = {};
+  for (const [k, v] of fd.entries()) {
+    if (k.startsWith('q_') && typeof v === 'string' && Object.keys(quantities).length < 300) quantities[k.slice(2)] = v;
+  }
+  const r = await receiveGoods(db, {
+    orderId: id, receivedOn: fd.get('receivedOn'), reference: fd.get('reference'), note: fd.get('note'), requestKey: fd.get('requestKey'), quantities,
+  }, await actorOf(admin), opts());
+  if (!r.ok) fail(id, `RECEIPT_${r.code}`, { name: 'line' in r ? r.line : undefined }, '#mal-kabul');
+  done(id, r.complete ? 'receivedAll' : 'receivedPart', '#kabuller');
+}
+
+/** Siparişi teslim alındı olarak KAPATIR (kalan beklenmez). Stok DEĞİŞMEZ — teslim alınan mal "Mal kabulü" ile girilir. */
 export async function receivedAction(fd: FormData) {
   const admin = await requirePermission('SUPPLIER_MANAGE');
   const id = idOf(fd);
