@@ -78,7 +78,7 @@ dbTest('ticari teklif: oluştur → taslak kaydet → kesinleştir → yeni sür
   let o = await db.commercialOffer.findUniqueOrThrow({ where: { id: c.id }, include: { versions: true } });
   assert.equal(o.status, 'TASLAK');
   assert.equal(o.total.toString(), '25884.36'); // 17137.96 + 8445.00 + 301.40
-  assert.equal(o.versions[0].cost.toString(), '21056'); // 13580 + 1700 + 6636 (GK15 maliyeti eksik)
+  assert.equal(o.versions[0].cost.toString(), '21916'); // 13580 + 1700 + 6636 (GK15 maliyeti eksik)
   // Taslak kaydı: eski ekran (editVersion) → CONFLICT; doğru ekran → kayıt
   assert.equal((await svc.saveDraft(db, { ...(await form()), offerId: c.id, editVersion: o.editVersion + 5 }, A())).code, 'CONFLICT');
   const s = await svc.saveDraft(db, { ...(await form({ firmName: 'Trademark Glass (rev)' })), offerId: c.id, editVersion: o.editVersion }, A());
