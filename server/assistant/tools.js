@@ -369,7 +369,7 @@ export const TOOLS = {
         gun: day, durum: confirmed ? 'ONAYLANDI' : 'PLANLANDI', anlam: confirmed ? 'Miktarlar fiilen yüklenen' : 'Miktarlar planlanan (yükleme henüz onaylanmadı)',
         toplam: glassSum(all, itemM2),
         firmalar: [...firms].map(([firma, siparisler]) => ({ firma, siparisler: siparisler.slice(0, 40) })).slice(0, 40),
-        planaGirmeyen: plan?.skipped?.length ? plan.skipped.slice(0, 30).map((s) => ({ no: s.orderNo, neden: s.reason, gun: s.day ?? undefined })) : undefined,
+        planaGirmeyen: plan?.skipped?.length ? plan.skipped.slice(0, 30).map((s) => ({ no: s.orderNo, neden: s.reason, ...(s.day ? { gun: s.day } : {}) })) : undefined,
         sandik: { sayi: ids.size, girilenNetKg: crates.some((c) => c.netAgirlik != null) ? Math.round(crates.reduce((t, c) => t + Number(c.netAgirlik ?? 0), 0)) : null },
       };
     },
