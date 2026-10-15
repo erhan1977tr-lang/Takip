@@ -319,7 +319,7 @@ dbTest('9) INTRAREA MARFĂ belgesi: yalnızca teslim alınan miktarlar; alış f
   const r = await receive(id, { 'RM12-7016': 20 }, { reference: 'AVZ-9' });
   const a = await buildReceiptPdf(db, r.receiptId);
   const text = pdfText(a.buf).join('\n');
-  for (const s of ['INTRAREA MARFĂ', 'Profil Tedarik', a.orderNo, 'AVZ-9', 'RM12-7016', 'Culoare: RAL 7016', 'Lungime: 6 m', '20 bare']) assert.ok(text.includes(s), s);
+  for (const s of ['INTRAREA MARFĂ', 'Profil Tedarik', a.orderNo, 'AVZ-9', 'RM12-7016', 'Culoare: RAL 7016', 'Lungime: 6 m', '20 bară']) assert.ok(text.includes(s), s);
   for (const s of ['12,3456', '12.3456', '246', '987', 'EUR', 'GK15']) assert.ok(!text.includes(s), s);
   const b = await buildReceiptPdf(db, r.receiptId);
   assert.deepEqual(pdfText(b.buf), pdfText(a.buf));

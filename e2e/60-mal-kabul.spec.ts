@@ -102,7 +102,7 @@ test('kısmi mal kabulü: önceki / yeni / kalan; yalnızca girilen miktar stoğ
       expect(sent).toHaveLength(1);
       expect(sent[0].subject).toBe(`GKH Trading Invest – Intrare marfă – ${orderNo} – recepția nr. 1 – ${SUP}`);
       expect(sent[0].attachments.map((a: { filename: string }) => a.filename)).toContain(`Intrare-Marfa-${orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1.pdf`);
-      expect(sent[0].text).toContain('6 bare');
+      expect(sent[0].text).toContain('6 bară');
       expect(sent[0].html).not.toContain('11,5');
       expect(sent[0].html).not.toContain('EUR');
     }
