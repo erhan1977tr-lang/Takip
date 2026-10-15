@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.84.1 — 15.10.2026
+
+Yedek saklama süreleri (karar 279). Yalnızca sunucu aracı (`deploy/takip.sh`); uygulama, veritabanı ve yedeğin kendisi değişmedi.
+
+- **Google Drive'daki (şifreli) yedekler 60 gün, yerel yedekler 14 gün** saklanır; iki süre birbirinden bağımsızdır
+  (`/opt/takip/.env`: `BACKUP_KEEP_DRIVE_DAYS`, `BACKUP_KEEP_LOCAL_DAYS`; 7–400 gün, geçersiz değer → varsayılan).
+- **Temizlik yalnızca tam ve doğrulanmış çiftleri siler:** gece yedeği bir çifti (veritabanı + dosyalar) yerelde / Drive'da
+  doğruladığında deftere yazar; eksik çift, doğrulanmamış çift, adlandırmaya uymayan dosya ve bugünün yedeği silinmez;
+  kendisinden yeni en az saklama günü kadar doğrulanmış çift yoksa hiçbir şey silinmez; Drive listesi alınamazsa Drive'da
+  silme yapılmaz. Mevcut yedekler yeniden adlandırılmaz, değiştirilmez.
+- `takip durum` ve `takip yedek-sifreleme` saklama sürelerini gösterir. Yeni test: `deploy/test/backup-retention.sh`.
+
 ## 3.84.0 — 15.10.2026
 
 TAKİP Telegram asistanı (karar 278). Mevcut ekranlar, iş akışları ve veriler değişmedi; veritabanı şeması değişmedi.

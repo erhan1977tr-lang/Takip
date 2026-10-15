@@ -73,7 +73,8 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 /opt/takip/github-token  GitHub okuma anahtarı (chmod 600; uygulamanın ortamına girmez)
 /opt/takip/backup-key.txt  yedek şifreleme anahtarı (chmod 600; yalnızca şifreleme açıldıysa; kopyası SUNUCU DIŞINDA saklanır)
 /opt/takip/src         uygulamanın kaynağı (git)
-/opt/takip/backups     her gün 03:00 (Romanya): db-YYYY-MM-DD_HHMMSS.dump + dosyalar-YYYY-MM-DD_HHMMSS.tgz, son 14 çift;
+/opt/takip/backups     her gün 03:00 (Romanya): db-YYYY-MM-DD_HHMMSS.dump + dosyalar-YYYY-MM-DD_HHMMSS.tgz, 14 gün
+                       (.env: BACKUP_KEEP_LOCAL_DAYS; Google Drive ayrı: BACKUP_KEEP_DRIVE_DAYS, 60 gün);
                        yayın öncesi yedekler db-YYYYMMDD-HHMMSS-once-<commit>.dump (14 gün)
 /opt/takip/logs        yayın ve derleme kayıtları
 /opt/takip/state       yayındaki commit, izlenen dal
@@ -84,7 +85,7 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 - Güvenlik duvarı (ufw): yalnızca SSH, 80 ve 443 açık. Veritabanı dışarıya kapalı.
 - fail2ban: SSH'ye art arda hatalı girişleri engeller. Sistem güvenlik güncellemeleri otomatik.
 - Önerilen: SSH anahtarıyla girişe geçip root şifre girişini kapatmak.
-- Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da da son 14 çift. Kayıt: `/opt/takip/logs/backup.log`.
+- Yedekler her gece Google Drive'a da kopyalanır (rclone, `gkhdrive:GKH_TAKIP_BACKUPS/{database,uploads}`; .env'de `BACKUP_REMOTE` ile değiştirilebilir), md5 ile doğrulanır; Drive'da 60 gün saklanır (yerel 14 gün; ikisi ayrı ayarlanır: `.env`'de `BACKUP_KEEP_DRIVE_DAYS` / `BACKUP_KEEP_LOCAL_DAYS`, 7–400 gün, geçersiz değer → varsayılan). Temizlik yalnızca tam ve doğrulanmış çiftleri siler (karar 279): eksik çift (yalnızca veritabanı ya da yalnızca dosyalar), o yerde doğrulanmamış çift, adlandırmaya uymayan dosya ve bugünün yedeği silinmez; kendisinden yeni en az saklama günü kadar doğrulanmış çift yoksa hiçbir şey silinmez; Drive listesi alınamazsa Drive'da silme yapılmaz. Kayıt: `/opt/takip/logs/backup.log`.
 - Veritabanı yedeği her gece geçici bir veritabanına geri yüklenerek denenir. .env, github-token, rclone ayarı ve yedek anahtarı yedeğe girmez.
 - Yerel yedekler yalnızca root'a açıktır: klasör `0700`, içinde oluşan her yedek dosyası (geçici dosyalar dahil) `0600`.
 - Uygulama ve arka plan işçisi root olmadan çalışır (kullanıcı `1001:1001`). Yüklenen dosyaların (`takip_uploads`) sahibi de

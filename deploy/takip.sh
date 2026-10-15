@@ -226,7 +226,8 @@ head_is() { # head_is SHA
 #   db-YYYY-MM-DD_HHMMSS.dump (pg_dump -Fc)  ·  dosyalar-YYYY-MM-DD_HHMMSS.tgz (yüklenen dosyalar)
 # Her ikisi yerelde doğrulanır (dump geçici bir veritabanına gerçekten geri yüklenir, arşiv okunur), sonra Google
 # Drive'a (rclone, BACKUP_REMOTE; varsayılan gkhdrive:GKH_TAKIP_BACKUPS) kopyalanır ve md5 ile doğrulanır.
-# Son 14 çift tutulur (yerel ve Drive; yalnızca bu adlandırmaya uyan dosyalar silinir). Yayından önce alınan
+# Saklama (karar 279): yerel 14 gün, Google Drive 60 gün — birbirinden bağımsız (.env: BACKUP_KEEP_LOCAL_DAYS /
+# BACKUP_KEEP_DRIVE_DAYS); yalnızca bu adlandırmaya uyan, TAM ve DOĞRULANMIŞ çiftler silinir. Yayından önce alınan
 # güvenlik yedekleri eski adla kalır (db-YYYYMMDD-HHMMSS-etiket). .env, github-token ve rclone ayarı yedeğe girmez.
 # İzinler: yedek klasörü 0700, içindeki her yedek dosyası (geçici / indirilen / şifreli ara dosya dahil) oluşturulduğu andan
 # itibaren 0600 — umask 077 yalnızca dosyayı oluşturan komutun çevresinde verilir (aracın geri kalanını etkilemez).
@@ -237,7 +238,14 @@ head_is() { # head_is SHA
 #   (yalnızca root okur, /opt/takip/backups 0700) açık kalır: canlı veritabanıyla aynı diskte, anahtarsız kullanılabilen
 #   güvenlik ağıdır. Anahtar: $BACKUP_KEY (0600) — yedeğe, Drive'a, git'e, günlüklere GİRMEZ; sahibi sunucu DIŞINDA saklar.
 #   Şifresiz eski Drive yedekleri bu aşamada silinmez (şifreleme açıkken Drive temizliği yalnızca .age dosyalarına bakar).
-BACKUP_KEEP=14
+BACKUP_KEEP_LOCAL_DEFAULT=14
+BACKUP_KEEP_DRIVE_DEFAULT=60
+BACKUP_KEEP_MIN=7
+BACKUP_KEEP_MAX=400
+# Doğrulanmış çift defterleri (karar 279): gece yedeği bir çifti (veritabanı + dosyalar) o yerde doğruladığında zaman damgasını
+# ekler. İlk satır "since ZAMAN": bu defterden önceki (eski sürümün aldığı) çiftler eski kurala göre doğrulanmış sayılır.
+LEDGER_LOCAL=$STATE/backup-verified-local
+LEDGER_DRIVE=$STATE/backup-verified-drive
 BACKUP_TZ=Europe/Bucharest
 BACKUP_KEY=$BASE/backup-key.txt
 ENC_STATE=$STATE/backup-encryption # etkin alıcı (age açık anahtarı); dosya varsa Drive'a yalnızca şifreli kopya gider
@@ -348,34 +356,94 @@ drive_copy() { # drive_copy DOSYA ALT_KLASÖR ETİKET [ALICI]
 
 DAILY_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)$'
 DAILY_AGE_RE='^(db|dosyalar)-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.(dump|tgz)\.age$'
-# En yeni BACKUP_KEEP TAM çift (db + dosyalar) kalır; onlardan eski, bu adlandırmaya uyan dosyalar silinir.
-# Bugünkü dosyalar ve adlandırmaya uymayan dosyalar asla silinmez. Tam çift sayısı BACKUP_KEEP'ten azsa hiçbir şey silinmez.
-# Şifreleme açıkken Drive'da yalnızca şifreli (.age) çiftler döndürülür: şifresiz eski Drive yedeklerine dokunulmaz.
+
+# keep_days yerel|uzak → saklama günü. .env: BACKUP_KEEP_LOCAL_DAYS (varsayılan 14) / BACKUP_KEEP_DRIVE_DAYS (varsayılan 60).
+# Boş ya da geçersiz (sayı değil, 7'den küçük, 400'den büyük) değer → varsayılan (temizlik asla daha sert olmaz).
+keep_days() {
+  local v d
+  if [ "$1" = yerel ]; then v=$(env_get BACKUP_KEEP_LOCAL_DAYS); d=$BACKUP_KEEP_LOCAL_DEFAULT
+  else v=$(env_get BACKUP_KEEP_DRIVE_DAYS); d=$BACKUP_KEEP_DRIVE_DEFAULT; fi
+  case $v in '' | *[!0-9]*) echo "$d"; return 0 ;; esac
+  [ ${#v} -le 4 ] || { echo "$d"; return 0; }
+  v=$((10#$v))
+  if [ "$v" -lt "$BACKUP_KEEP_MIN" ] || [ "$v" -gt "$BACKUP_KEEP_MAX" ]; then echo "$d"; else echo "$v"; fi
+}
+# keep_days_note yerel|uzak → .env'deki değer geçersizse kısa uyarı (yoksa boş)
+keep_days_note() {
+  local k v; if [ "$1" = yerel ]; then k=BACKUP_KEEP_LOCAL_DAYS; else k=BACKUP_KEEP_DRIVE_DAYS; fi
+  v=$(env_get "$k")
+  [ -n "$v" ] || return 0
+  [ "$(keep_days "$1")" = "$v" ] || echo "$k geçersiz ($BACKUP_KEEP_MIN–$BACKUP_KEEP_MAX gün olmalı) — varsayılan kullanılıyor"
+}
+
+# ledger_add DEFTER ZAMAN — doğrulanan çifti deftere yazar (defter yoksa "since ZAMAN" satırıyla açılır)
+ledger_add() {
+  if [ ! -s "$1" ]; then echo "since $2" >"$1"; fi
+  echo "$2" >>"$1"
+}
+# ledger_ok DEFTER ZAMAN — çift doğrulanmış mı: defterde var ya da defterin açılışından eski (eski sürümün kuralı:
+# çiftler yalnızca gece yedeği tamamen başarılıyken temizliğe girdi). Defter yoksa: hiçbir çift doğrulanmış sayılmaz.
+ledger_ok() {
+  local since
+  [ -s "$1" ] || return 1
+  since=$(sed -n '1s/^since //p' "$1")
+  grep -qxF "$2" "$1" && return 0
+  [ -n "$since" ] && [[ "$2" < "$since" ]]
+}
+
+# Eski çiftlerin temizliği (karar 279). Bir zaman damgasının dosyaları YALNIZCA şu koşulların hepsi tutunca silinir:
+#   1. çift TAMDIR (db-ZAMAN ve dosyalar-ZAMAN ikisi de var; adlandırmaya uymayan dosyaya hiç dokunulmaz),
+#   2. çift o yerde DOĞRULANMIŞTIR (ledger_ok) — eksik ya da doğrulanmamış çift ASLA silinmez, yalnızca günlükte sayılır,
+#   3. tarihi saklama süresinden eskidir (bugün − GÜN; bugünün dosyaları asla),
+#   4. kendisinden YENİ en az GÜN tane doğrulanmış tam çift vardır (yedekler uzun süre alınamasa da son çiftler kalır).
+# Drive listesi alınamazsa hiçbir şey silinmez. Şifreleme açıkken Drive'da yalnızca şifreli (.age) çiftlere bakılır.
 backup_retention() { # backup_retention yerel | backup_retention uzak [DESEN]
-  local today dbs ups cutoff f ts dir re=${2:-$DAILY_RE}
+  local where=$1 re=${2:-$DAILY_RE} days ledger today limit dbs ups pairs good anchor ts day f dir
+  local unverified=0 incomplete=0 note
+  days=$(keep_days "$where")
+  note=$(keep_days_note "$where"); [ -z "$note" ] || blog "⚠ yedek saklama: $note"
+  if [ "$where" = yerel ]; then ledger=$LEDGER_LOCAL; else ledger=$LEDGER_DRIVE; fi
   today=$(TZ=$BACKUP_TZ date +%F)
-  if [ "$1" = yerel ]; then
+  limit=$(TZ=$BACKUP_TZ date -d "$today -$days days" +%F) || return 0
+  if [ "$where" = yerel ]; then
     dbs=$(local_names | grep -E "$re" | grep '^db-' || true)
     ups=$(local_names | grep -E "$re" | grep '^dosyalar-' || true)
   else
-    dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>>"$LOGS/backup.log" | grep -E "$re" | grep '^db-' || true)
-    ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>>"$LOGS/backup.log" | grep -E "$re" | grep '^dosyalar-' || true)
-  fi
-  cutoff=$(comm -12 <(echo "$dbs" | sed -nE "s/$re/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$re/\2/p" | sort -u) |
-    sort -r | sed -n "${BACKUP_KEEP}p")
-  [ -n "$cutoff" ] || return 0
-  for f in $dbs $ups; do
-    ts=$(echo "$f" | sed -nE "s/$re/\2/p")
-    [ -n "$ts" ] || continue
-    case $ts in "$today"_*) continue ;; esac
-    [[ "$ts" < "$cutoff" ]] || continue
-    if [ "$1" = yerel ]; then
-      rm -f -- "${BACKUPS:?}/${f:?}" && blog "  eski yerel yedek silindi: $f"
-    else
-      case $f in db-*) dir=database ;; *) dir=uploads ;; esac
-      rclone deletefile "$(remote_root)/$dir/$f" >>"$LOGS/backup.log" 2>&1 && blog "  eski Drive yedeği silindi: $dir/$f"
+    if ! dbs=$(rclone lsf --files-only "$(remote_root)/database" 2>>"$LOGS/backup.log") ||
+      ! ups=$(rclone lsf --files-only "$(remote_root)/uploads" 2>>"$LOGS/backup.log"); then
+      blog "⚠ Google Drive listesi alınamadı — Drive temizliği atlandı (hiçbir şey silinmedi)"
+      return 0
     fi
-  done
+    dbs=$(echo "$dbs" | grep -E "$re" | grep '^db-' || true)
+    ups=$(echo "$ups" | grep -E "$re" | grep '^dosyalar-' || true)
+  fi
+  pairs=$(comm -12 <(echo "$dbs" | sed -nE "s/$re/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$re/\2/p" | sort -u))
+  # Eksik çiftler (yalnızca biri var): saklama süresinden eskiyse bile silinmez, sayılır
+  incomplete=$(comm -3 <(echo "$dbs" | sed -nE "s/$re/\2/p" | sort -u) <(echo "$ups" | sed -nE "s/$re/\2/p" | sort -u) |
+    tr -d '\t' | grep -c . || true)
+  good=''
+  for ts in $pairs; do ledger_ok "$ledger" "$ts" && good="$good$ts"$'\n'; done
+  anchor=$(echo "$good" | grep . | sort -r | sed -n "${days}p" || true)
+  if [ -n "$anchor" ]; then
+    for ts in $pairs; do
+      [[ "$ts" < "$anchor" ]] || continue
+      day=${ts%%_*}
+      case $day in "$today") continue ;; esac
+      [[ "$day" < "$limit" ]] || continue
+      if ! ledger_ok "$ledger" "$ts"; then unverified=$((unverified + 1)); continue; fi
+      for f in $(printf '%s\n%s\n' "$ups" "$dbs" | grep -E "^(db|dosyalar)-${ts}\." | grep -E "$re" || true); do
+        if [ "$where" = yerel ]; then
+          rm -f -- "${BACKUPS:?}/${f:?}" && blog "  eski yerel yedek silindi: $f"
+        else
+          case $f in db-*) dir=database ;; *) dir=uploads ;; esac
+          rclone deletefile "$(remote_root)/$dir/$f" >>"$LOGS/backup.log" 2>&1 && blog "  eski Drive yedeği silindi: $dir/$f"
+        fi
+      done
+    done
+  fi
+  if [ "$unverified" -gt 0 ] || [ "$incomplete" -gt 0 ]; then
+    blog "  $([ "$where" = yerel ] && echo yerel || echo 'Google Drive'): $incomplete eksik, $unverified doğrulanmamış çift korundu (silinmedi)"
+  fi
   return 0
 }
 
@@ -808,6 +876,7 @@ cmd_status() {
   df -h / | awk 'NR==2 { print "Disk     : " $3 " / " $2 " dolu (" $5 ")" }'
   say "Yedekler : $(find "$BACKUPS" -name 'db-*.dump' | wc -l) veritabanı yedeği, son: $(ls -1t "$BACKUPS"/db-*.dump 2>/dev/null | head -1 | xargs -r basename)"
   if [ -n "$(enc_recipient)" ]; then say "           Google Drive kopyası şifreli (takip yedek-sifreleme)"; else say "           Google Drive kopyası ŞİFRESİZ → takip yedek-sifreleme kur"; fi
+  say "           Saklama: yerel $(keep_days yerel) gün, Google Drive $(keep_days uzak) gün"
 }
 
 cmd_smtp() {
@@ -930,6 +999,10 @@ run_backup() {
     fi
   fi
 
+  # Doğrulanan çift deftere yazılır (karar 279): yerelde ikisi de doğrulandıysa yerel deftere; Drive'a ikisi de yüklenip
+  # md5 (şifreliyse ayrıca çözülerek) doğrulandıysa Drive defterine. Temizlik yalnızca deftere girmiş çiftleri siler.
+  if [ $ok_local = 1 ]; then ledger_add "$LEDGER_LOCAL" "$ts" || true; fi
+  if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then ledger_add "$LEDGER_DRIVE" "$ts" || true; fi
   # Eskiler yalnızca bu gece her şey tamamsa silinir (Drive'a gidemeyen günlerde yerel kopyalar korunur)
   if [ $ok_local = 1 ] && [ $ok_remote = 1 ]; then
     backup_retention yerel
@@ -1286,6 +1359,7 @@ enc_status() {
     say "                   Şifresiz eski yedekler kendiliğinden silinmez; ne yapılacağına siz karar verirsiniz."
   fi
   say "Yerel yedekler   : $BACKUPS (yalnızca root okur; şifresiz — sunucudaki canlı veriyle aynı korumada)"
+  say "Saklama          : yerel $(keep_days yerel) gün, Google Drive $(keep_days uzak) gün (yalnızca tam ve doğrulanmış çiftler silinir)"
 }
 
 enc_setup() { # enc_setup kur | yenile

@@ -29,7 +29,7 @@ belgesiz dosya kayboldu, bütün yedekler gitti" durumu kabul edilemez.
   5. Drive'dan **indirir, çözer**, arşivi okur ve dökümü geçici veritabanına geri yükler;
   6. ancak bunların hepsi başarılıysa şifrelemeyi açık işaretler (`/opt/takip/state/backup-encryption`).
   Herhangi bir adım başarısızsa yedek akışı eskisi gibi çalışmaya devam eder.
-- **Gece yedeği (açıkken):** aynı adımlar (2–4). Saklama: Drive'da son 14 **şifreli** çift; yerelde son 14 çift.
+- **Gece yedeği (açıkken):** aynı adımlar (2–4). Saklama (karar 279): Drive'da 60 gün **şifreli** çift; yerelde 14 gün (ayrı ayar, yalnızca tam ve doğrulanmış çiftler silinir).
 - **Şifresiz eski Drive yedekleri silinmez.** Şifreleme açıkken Drive temizliği yalnızca `.age` dosyalarına bakar.
   Ne yapılacağına ürün sahibi karar verir (`takip yedek-sifreleme` kaç şifresiz dosya kaldığını gösterir).
 - **Geri yükleme:** `takip restore TARİH` önce yerel çifti kullanır (değişmedi); yoksa Drive'dan — şifreliyse indirir,
