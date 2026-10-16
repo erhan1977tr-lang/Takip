@@ -3,8 +3,8 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, newOrder } fro
 
 // 3.90.0 — DWG kararının güvenli geri alınması (karar 285), gerçek sunucuda. İzole test siparişleri (bu dosyanın kendi
 // siparişleri); gerçek SMTP yok (e-posta yalnızca giden kuyrukta), FGO / Google çağrısı yok.
-//  - "Üretime almayı geri al": çizimci kendi "Üretime Hazır" kararını gerekçeyle geri alır → karar yeniden bekleniyor;
-//    eski kayıt "karar geri alındı" olarak geçmişte, dosya yerinde
+//  - "Üretime almayı geri al": YALNIZCA yönetici, yalnızca üretime girmemiş siparişte; çizimci (kararı veren) bölümü görmez →
+//    karar yeniden bekleniyor; eski kayıt "karar geri alındı" olarak geçmişte, dosya yerinde
 //  - "Çizim hatalı kararını geri al": müşterinin kırmızı uyarısı kalkar; müşteri satırı görür, gerekçeyi görmez
 //  - geri alma bölümü yalnızca çizim yetkisinde (çizimci, yönetici); satış ve müşteri görmez
 //  - Romence arayüz
@@ -21,7 +21,7 @@ async function prisma() {
   return new PrismaClient();
 }
 
-test('Üretime almayı geri al: gerekçe zorunlu, onay penceresi; karar yeniden bekleniyor; kayıt ve dosya korunur; satış / müşteri bölümü görmez', async ({ browser }) => {
+test('Üretime almayı geri al (yalnızca yönetici): gerekçe zorunlu, onay penceresi; karar yeniden bekleniyor; kayıt ve dosya korunur; çizimci / satış / müşteri bölümü görmez', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Geri al hazır', 'geri-al-hazir.dwg');
   const admin = await as(browser, ADMIN, ADMIN_PW);
@@ -31,8 +31,11 @@ test('Üretime almayı geri al: gerekçe zorunlu, onay penceresi; karar yeniden 
   await expect(drawer.locator('#dwg-geri-al')).toHaveCount(0); // karar verilmeden geri alınacak bir şey yok
   await drawer.locator('#dwg-karar').getByRole('button', { name: 'Üretime Hazır' }).click();
   await expect(drawer.locator('.alert-ok', { hasText: 'üretime hazır kabul edildi' })).toBeVisible();
+  // Kararı veren çizimci bile "Üretime almayı geri al"ı görmez (yalnızca yönetici)
+  await expect(drawer.locator('#dwg-geri-al')).toHaveCount(0);
 
-  const box = drawer.locator('#dwg-geri-al');
+  await admin.goto(`/siparisler/${id}`);
+  const box = admin.locator('#dwg-geri-al');
   await expect(box).toHaveAttribute('data-dwg-undo', 'READY');
   await expect(box).toHaveAttribute('data-undo-block', '');
   await expect(box.locator('[data-undo-decision]')).toContainText('Üretime Hazır');
@@ -41,10 +44,11 @@ test('Üretime almayı geri al: gerekçe zorunlu, onay penceresi; karar yeniden 
   await expect(box.locator('textarea[name=reason]')).toHaveAttribute('required', '');
   await box.locator('textarea[name=reason]').fill('Yanlış siparişte karar verildi');
   await box.getByRole('button', { name: 'Üretime almayı geri al' }).click();
-  await expect(drawer.locator('.alert-ok', { hasText: '“Üretime hazır” kararı geri alındı' })).toBeVisible();
-  // Karar yeniden bekleniyor; eski kayıt geçmişte "karar geri alındı" + gerekçe (iç ekip)
+  await expect(admin.locator('.alert-ok', { hasText: '“Üretime hazır” kararı geri alındı' })).toBeVisible();
+  await expect(admin.locator('#dwg-geri-al')).toHaveCount(0);
+  // Karar yeniden bekleniyor (çizimci); eski kayıt geçmişte "karar geri alındı" + gerekçe (iç ekip)
+  await drawer.goto(`/siparisler/${id}`);
   await expect(drawer.locator('#dwg-karar')).toContainText('kararınız bekleniyor');
-  await expect(drawer.locator('#dwg-geri-al')).toHaveCount(0);
   const old = drawer.locator('[data-dwg-status="GERI_CEKILDI"]');
   await expect(old).toContainText('karar geri alındı');
   await expect(old.locator('[data-undo-reason]')).toContainText('Yanlış siparişte karar verildi');

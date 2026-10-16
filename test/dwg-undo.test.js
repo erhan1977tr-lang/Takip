@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { dwgUndoState, ownerBlock, productionBlock, undoReason, UNDO_ACTIONS, UNDO_BLOCKS, UNDO_REASON_MAX } from '../server/orders/dwg-undo.js';
+import { crateLockKeys, dwgUndoState, ownerBlock, productionBlock, undoReason, PRODUCED_STATUSES, UNDO_ACTIONS, UNDO_BLOCKS, UNDO_REASON_MAX } from '../server/orders/dwg-undo.js';
+import { dayKey } from '../server/orders/loading.js';
+import { can, ROLES } from '../server/auth/permissions.js';
 import { availableActions, drawingFlags, EVENTS } from '../server/orders/rules.js';
 import { REQUIRES } from '../server/orders/transitions.js';
 import { STAFF_EVENT_POLICY } from '../server/orders/order-view.js';
@@ -18,9 +20,14 @@ const order = (o) => ({ status: 'HAZIRLANIYOR', onHold: false, removedAt: null, 
 
 test('dwgUndoState: üç karar ve geri dönülecek durum', () => {
   const ready = dwgUndoState(order({ drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] }));
-  assert.deepEqual([ready.kind, ready.variant, ready.production, ready.restoreTrack, ready.block], ['READY', 'RECORD', false, 'GEREKLI', null]);
-  const prod = dwgUndoState(order({ status: 'URETIMDE', drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] }));
-  assert.deepEqual([prod.kind, prod.production, prod.restoreStatus, prod.block], ['READY', true, 'HAZIRLANIYOR', null]);
+  assert.deepEqual([ready.kind, ready.variant, ready.restoreTrack, ready.block], ['READY', 'RECORD', 'GEREKLI', null]);
+  assert.equal('restoreStatus' in ready, false, 'geri alma siparişin durumunu hiç değiştirmez');
+  // Üretime girmiş sipariş: gerçek üretimin başlamadığı doğrulanamaz → her durumda engel (eksik kayıt "başlamadı" sayılmaz)
+  for (const status of PRODUCED_STATUSES) {
+    assert.equal(dwgUndoState(order({ status, drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_IN_PRODUCTION', status);
+    assert.equal(dwgUndoState(order({ status, onHold: true, drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_IN_PRODUCTION', `${status} beklemede`);
+  }
+  assert.equal(dwgUndoState(order({ actualShipDate: new Date(), drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_IN_PRODUCTION', 'gerçek yükleme tarihi');
   const faulty = dwgUndoState(order({ drawingTrack: 'DUZELTME_BEKLIYOR', drawings: [rec('REVIZYON_ISTENDI')] }));
   assert.deepEqual([faulty.kind, faulty.variant, faulty.restoreTrack, faulty.block], ['FAULTY', 'RECORD', 'GEREKLI', null]);
   const update = dwgUndoState(order({ drawingTrack: 'YAPILIYOR', drawings: [rec('YAPILIYOR')] }));
@@ -47,7 +54,6 @@ test('dwgUndoState: sonraki bağımlı işlem / kapanmış sipariş → engel ya
     assert.deepEqual([s.kind, s.block], ['UPDATE', 'UNDO_LATER_DRAWING'], st);
   }
   // Yüklendi / arşiv → üretim geri alınmaz; iptal / silinmiş / beklemede → kapalı
-  for (const status of ['YUKLENDI', 'ARSIVLENDI']) assert.equal(dwgUndoState(order({ status, drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_SHIPPED');
   assert.equal(dwgUndoState(order({ status: 'IPTAL', drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_CLOSED');
   assert.equal(dwgUndoState(order({ removedAt: new Date(), drawingTrack: 'DUZELTME_BEKLIYOR', drawings: [rec('REVIZYON_ISTENDI')] })).block, 'UNDO_CLOSED');
   assert.equal(dwgUndoState(order({ onHold: true, drawingTrack: 'ONAYLANDI', drawings: [rec('ONAYLANDI')] })).block, 'UNDO_ON_HOLD');
@@ -55,20 +61,30 @@ test('dwgUndoState: sonraki bağımlı işlem / kapanmış sipariş → engel ya
   assert.equal(dwgUndoState(order({ status: 'URETIMDE', drawingTrack: 'DUZELTME_BEKLIYOR', drawings: [rec('REVIZYON_ISTENDI')] })).block, 'UNDO_CLOSED');
 });
 
-test('productionBlock / ownerBlock: üretimden sonra kayıtlı adım ve yetki', () => {
-  assert.equal(productionBlock({ lock: [], crates: 0, compensations: 0 }), null);
-  assert.equal(productionBlock({ lock: [{ code: 'CONFIRMED_LOADING' }, { code: 'FGO_DOCUMENT' }], crates: 0, compensations: 0 }), 'UNDO_LOADED');
-  for (const code of ['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT']) assert.equal(productionBlock({ lock: [{ code }], crates: 0, compensations: 0 }), 'UNDO_DOCUMENTS');
-  assert.equal(productionBlock({ lock: [], crates: 1, compensations: 0 }), 'UNDO_CRATES');
-  assert.equal(productionBlock({ lock: [], crates: 0, compensations: 2 }), 'UNDO_COMPENSATION');
-  const prep = { production: false }, prod = { production: true };
+test('productionBlock / ownerBlock: üretime bağlı kayıt ve yetki; okunamayan sayı engeldir', () => {
+  const f = (x) => productionBlock({ productionEvents: 0, lock: [], crates: 0, compensations: 0, ...x });
+  assert.equal(f({}), null);
+  assert.equal(f({ productionEvents: 1 }), 'UNDO_IN_PRODUCTION', 'geçmişte üretim / yükleme olayı');
+  assert.equal(f({ lock: [{ code: 'CONFIRMED_LOADING' }, { code: 'FGO_DOCUMENT' }] }), 'UNDO_LOADED');
+  for (const code of ['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT']) assert.equal(f({ lock: [{ code }] }), 'UNDO_DOCUMENTS');
+  assert.equal(f({ crates: 1 }), 'UNDO_CRATES');
+  assert.equal(f({ compensations: 2 }), 'UNDO_COMPENSATION');
+  // Eksik veri güvenli tarafta: bilinmeyen sayı / okunamayan kilit "üretim başlamadı" sayılmaz
+  for (const bad of [{ productionEvents: undefined }, { crates: null }, { compensations: NaN }, { lock: undefined }, { productionEvents: -1 }]) assert.notEqual(f(bad), null, JSON.stringify(bad));
+  const ready = { kind: 'READY' };
+  // "Üretime almayı geri al" yalnızca yönetici: yardımcı, çizimci (kararı veren de olsa), satış, müşteri, denetimci → engel
+  assert.equal(ownerBlock(ready, { id: 'a', role: 'ADMIN' }, 'u1'), null);
+  for (const role of ['YONETICI_YARDIMCISI', 'CIZIM', 'SATIS', 'MUSTERI', 'DENETIMCI']) assert.equal(ownerBlock(ready, { id: 'u1', role }, 'u1'), 'UNDO_ADMIN_ONLY', role);
+  assert.deepEqual(ROLES.filter((r) => can(r, 'DRAWING_PRODUCTION_UNDO')), ['ADMIN']);
+  const prep = { kind: 'FAULTY' };
   assert.equal(ownerBlock(prep, { id: 'u1', role: 'CIZIM' }, 'u1'), null, 'kararı veren çizimci');
   assert.equal(ownerBlock(prep, { id: 'u2', role: 'CIZIM' }, 'u1'), 'UNDO_NOT_OWNER', 'başka çizimci');
   assert.equal(ownerBlock(prep, { id: 'u2', role: 'CIZIM' }, null), 'UNDO_NOT_OWNER');
   assert.equal(ownerBlock(prep, { id: 'a', role: 'ADMIN' }, 'u1'), null);
   assert.equal(ownerBlock(prep, { id: 'y', role: 'YONETICI_YARDIMCISI' }, 'u1'), null);
-  assert.equal(ownerBlock(prod, { id: 'u1', role: 'CIZIM' }, 'u1'), 'UNDO_PRODUCTION_ADMIN', 'üretimi yalnızca yönetici geri alır');
-  assert.equal(ownerBlock(prod, { id: 'a', role: 'ADMIN' }, 'u1'), null);
+  // Hatalı / güncelleme: değişmedi (kararı veren çizimci, yönetici, yardımcı)
+  assert.equal(ownerBlock({ kind: 'UPDATE' }, { id: 'u1', role: 'CIZIM' }, 'u1'), null);
+  assert.equal(ownerBlock({ kind: 'UPDATE' }, { id: 'y', role: 'YONETICI_YARDIMCISI' }, 'u1'), null);
 });
 
 test('undoReason: zorunlu, en çok 1000 karakter, boşluklar düzenlenir', () => {
@@ -83,13 +99,18 @@ test('availableActions: geri alma yalnızca çizim yetkisiyle; müşteri, satı�
   const base = { status: 'HAZIRLANIYOR', drawing: 'ONAYLANDI', offer: 'GONDERILDI' };
   const flags = drawingFlags({ status: 'HAZIRLANIYOR', drawingTrack: 'ONAYLANDI', onHold: false, drawings: [rec('ONAYLANDI')] });
   assert.equal(flags.dwgUndo, 'READY');
-  for (const role of ['CIZIM', 'ADMIN', 'YONETICI_YARDIMCISI']) assert.ok(availableActions({ role, ...base, ...flags }).includes('dwg_ready_undo'), role);
+  // "Üretime almayı geri al": yalnızca yönetici (yardımcı ve çizimci düğmeyi görmez; sunucu da reddeder)
+  assert.ok(availableActions({ role: 'ADMIN', ...base, ...flags }).includes('dwg_ready_undo'));
+  for (const role of ['CIZIM', 'YONETICI_YARDIMCISI']) assert.ok(!availableActions({ role, ...base, ...flags }).includes('dwg_ready_undo'), role);
+  // Hatalı / güncelleme geri alması çizimciye ve yardımcıya açık kalır (değişmedi)
+  const fFlags = drawingFlags({ status: 'HAZIRLANIYOR', drawingTrack: 'DUZELTME_BEKLIYOR', onHold: false, drawings: [rec('REVIZYON_ISTENDI')] });
+  for (const role of ['CIZIM', 'ADMIN', 'YONETICI_YARDIMCISI']) assert.ok(availableActions({ role, ...base, drawing: 'DUZELTME_BEKLIYOR', ...fFlags }).includes('dwg_faulty_undo'), role);
   for (const role of ['SATIS', 'MUSTERI', 'DENETIMCI']) assert.ok(!availableActions({ role, ...base, ...flags, canApprove: true }).some((a) => a.endsWith('_undo')), role);
   // Engelli durumda bayrak yok → düğme yok (sunucu ayrıca reddeder)
   assert.equal(drawingFlags({ status: 'YUKLENDI', drawingTrack: 'ONAYLANDI', onHold: false, drawings: [rec('ONAYLANDI')] }).dwgUndo, null);
-  // Üretimdeki sipariş: çizim yetkisi olanlara düğme (yalnızca yöneticinin işi sunucuda geçer)
   const prodFlags = drawingFlags({ status: 'URETIMDE', drawingTrack: 'ONAYLANDI', onHold: false, drawings: [rec('ONAYLANDI')] });
-  assert.ok(availableActions({ role: 'ADMIN', ...base, status: 'URETIMDE', ...prodFlags }).includes('dwg_ready_undo'));
+  assert.equal(prodFlags.dwgUndo, null, 'üretimdeki sipariş: kimseye düğme yok');
+  assert.ok(!availableActions({ role: 'ADMIN', ...base, status: 'URETIMDE', ...prodFlags }).includes('dwg_ready_undo'));
   for (const [kind, action] of Object.entries(UNDO_ACTIONS)) assert.deepEqual(REQUIRES[action], [action], kind);
 });
 
@@ -106,7 +127,7 @@ test('olaylar, metinler ve müşteri görünümü (TR / RO)', () => {
   }
   for (const d of [tr, ro]) {
     for (const b of UNDO_BLOCKS) assert.ok(d.dwg.undo.block[b], b);
-    assert.ok(d.ok.dwg_undo_READY_production && d.dwg.status.GERI_CEKILDI && d.errors.undoReason && d.errors.undoReasonLong);
+    assert.ok(d.dwg.status.GERI_CEKILDI && d.errors.undoReason && d.errors.undoReasonLong);
     assert.ok(d.dwg.undo.confirm.includes('{decision}') && d.dwg.undo.confirm.includes('{target}'));
   }
   // Geri alınan karar kaydının gerekçesi müşteriye gelmez; fabrika sürümünün geri çekme gerekçesi değişmedi (karar 146)
@@ -125,5 +146,13 @@ test('yapı: geri alma kayıt silmez; tek işlem gövdesi; bildirim kuralları',
   assert.ok(!/\.delete(Many)?\(/.test(body), 'geri alma hiçbir satırı silmez');
   assert.ok(!/fgo|loadingConfirmation|crate\.(create|update)/i.test(body.replace(/priceLock/g, '')), 'üretim / yükleme / belge kaydına dokunmaz');
   assert.match(body, /status: rec\.status/, 'koşullu güncelleme: aynı karar iki kez geri alınamaz');
-  assert.match(src, /dwg_ready_undo: \(order\) => \['loading-confirmation', `glass-billing:\$\{order\.id\}`\]/);
+  assert.match(src, /dwg_ready_undo: \(order\) => \['loading-confirmation', `glass-billing:\$\{order\.id\}`, \.\.\.crateLockKeys\(order, dayKey\)\]/);
+  // Geri alma siparişin durumunu (status) hiç yazmaz — üretim geri çevrilmez
+  assert.ok(!/status:/.test(body.replace(/status: rec\.status|status: DWG_RESUBMITTED|status: 'GERI_CEKILDI'|status: created\.status|status: h\.status|status: h\.order\.status/g, '')), 'dwgUndo sipariş durumu yazmaz');
+  // Sandık kilidi = sandık yazanların anahtarı (crates:<gün>)
+  const crates = fs.readFileSync(new URL('../server/loading/crates.js', import.meta.url), 'utf8');
+  assert.match(crates, /crates:\$\{day\}/);
+  assert.deepEqual(crateLockKeys({ estimatedShipDate: new Date('2026-11-02T00:00:00Z') }, dayKey), [`crates:${dayKey(new Date('2026-11-02T00:00:00Z'))}`]);
+  assert.deepEqual(crateLockKeys({ actualShipDate: new Date('2026-11-03T00:00:00Z'), estimatedShipDate: new Date('2026-11-02T00:00:00Z') }, dayKey), [`crates:${dayKey(new Date('2026-11-03T00:00:00Z'))}`]);
+  assert.deepEqual(crateLockKeys({}, dayKey), []);
 });

@@ -52,8 +52,9 @@ test('yetki: denetimci yalnızca okur (karar 8)', () => {
 
 test('yetki: yönetim yetkileri yalnızca yönetici; operasyonel yönetim yetkileri yönetici + Yönetici Yardımcısı (karar 219)', () => {
   // Kullanıcı / rol yönetimi (e-posta değiştirme, kullanıcı silme dahil), kritik / güvenlik ayarları, denetim ve giriş logları
-  for (const p of ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW']) assert.deepEqual(who(p), ['ADMIN'], p);
-  assert.deepEqual([...ADMIN_ONLY].sort(), ['AUDIT_VIEW', 'SETTINGS_MANAGE', 'USER_MANAGE']);
+  // + "Üretime almayı geri al" (3.90.0, karar 285): yalnızca yönetici — yardımcı ve çizimci yapamaz
+  for (const p of ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'DRAWING_PRODUCTION_UNDO']) assert.deepEqual(who(p), ['ADMIN'], p);
+  assert.deepEqual([...ADMIN_ONLY].sort(), ['AUDIT_VIEW', 'DRAWING_PRODUCTION_UNDO', 'SETTINGS_MANAGE', 'USER_MANAGE']);
   for (const p of ['CUSTOMER_MANAGE', 'CUSTOMER_DELETE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'OPS_SETTINGS_MANAGE', 'ACCOUNTING_MANAGE', 'LOADING_CONFIRM', 'SUPPLIER_MANAGE']) {
     assert.deepEqual(who(p), ['ADMIN', 'YONETICI_YARDIMCISI'], p);
   }

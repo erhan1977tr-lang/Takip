@@ -15,6 +15,8 @@ const { drawingsView } = await import('../../server/orders/drawing-access.js');
 const { dwgReview, lastProductionDrawing } = await import('../../server/orders/dwg-review.js');
 const { dwgUndoCheck } = await import('../../server/orders/dwg-undo.js');
 const { priceLock } = await import('../../server/orders/financial-lock.js');
+const { saveDayCrates } = await import('../../server/loading/crates.js');
+const { dayKey } = await import('../../server/orders/loading.js');
 const n = await import('../../server/notifications/inapp.js');
 const { NOTIFY_RULES } = await import('../../server/notifications/email.js');
 
@@ -93,7 +95,7 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('1 · Üretime almayı geri al (hazırlanırken): kayıt GERI_CEKILDI, aynı dosyalar için yeni karar kaydı, karar yeniden bekleniyor; geçmiş, denetim, bildirim', offline(async () => {
+dbTest('1 · Üretime almayı geri al (yalnızca yönetici, sipariş üretime girmemiş): kayıt GERI_CEKILDI, aynı dosyalar için yeni karar kaydı, karar yeniden bekleniyor; geçmiş, denetim, bildirim', offline(async () => {
   const o = await dwgOrder();
   await run(o.id, 'dwg_ready', 'drawer');
   const before = await orderOf(o.id);
@@ -101,8 +103,15 @@ dbTest('1 · Üretime almayı geri al (hazırlanırken): kayıt GERI_CEKILDI, ay
   assert.deepEqual([before.status, before.drawingTrack, rec.status], ['HAZIRLANIYOR', 'ONAYLANDI', 'ONAYLANDI']);
   assert.equal(drawingFlags(before).dwgUndo, 'READY');
 
-  const res = await undo(o.id, 'ready', 'drawer');
-  assert.deepEqual([res.result.undone, res.result.production], ['READY', false]);
+  // Kararı veren çizimci ve yönetici yardımcısı yapamaz: düğme yok, sunucu reddeder; hiçbir şey yazılmaz
+  const snap0 = await snapshot(o.id);
+  for (const who of ['drawer', 'assistant']) {
+    assert.equal(await dwgUndoCheck(db, before, actor(P[who]), { priceLock }), null, `${who}: ekranda yok`);
+    assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', who, { reason: 'x', drawingId: rec.id, expectedVersion: before.version })), 'NOT_ALLOWED', who);
+  }
+  assert.deepEqual(await snapshot(o.id), snap0);
+  const res = await undo(o.id, 'ready', 'admin');
+  assert.deepEqual(res.result.undone, 'READY');
   const after = await orderOf(o.id);
   assert.deepEqual([after.status, after.drawingTrack], ['HAZIRLANIYOR', 'GEREKLI']);
   assert.equal(after.drawings.length, 2, 'eski kayıt silinmedi; yeni kayıt eklendi');
@@ -116,9 +125,9 @@ dbTest('1 · Üretime almayı geri al (hazırlanırken): kayıt GERI_CEKILDI, ay
   assert.equal(lastProductionDrawing(after.drawings), null, 'geri alınan karar üretim çizimi sayılmaz');
   // Geçmiş: ters işlem satırı (gerekçe notta); denetim: kim, gerekçe, önceki ve yeni durum
   const ev = after.events.at(-1);
-  assert.deepEqual([ev.event, ev.note, ev.userId, ev.fromStatus, ev.toStatus], ['DWG_READY_UNDONE', 'Yanlışlıkla verildi', P.drawer.id, 'HAZIRLANIYOR', 'HAZIRLANIYOR']);
+  assert.deepEqual([ev.event, ev.note, ev.userId, ev.fromStatus, ev.toStatus], ['DWG_READY_UNDONE', 'Yanlışlıkla verildi', P.admin.id, 'HAZIRLANIYOR', 'HAZIRLANIYOR']);
   const audit = await db.auditLog.findFirstOrThrow({ where: { entityId: o.id, action: 'ORDER_TRANSITION', details: { path: ['action'], equals: 'dwg_ready_undo' } } });
-  assert.deepEqual([audit.userId, audit.actorRole, audit.details.undo, audit.details.reason, audit.details.drawingId], [P.drawer.id, 'CIZIM', 'READY', 'Yanlışlıkla verildi', rec.id]);
+  assert.deepEqual([audit.userId, audit.actorRole, audit.details.undo, audit.details.reason, audit.details.drawingId], [P.admin.id, 'ADMIN', 'READY', 'Yanlışlıkla verildi', rec.id]);
   assert.deepEqual(audit.details.before, { status: 'HAZIRLANIYOR', track: 'ONAYLANDI', record: { id: rec.id, version: 1, status: 'ONAYLANDI' } });
   assert.deepEqual([audit.details.after.status, audit.details.after.track, audit.details.after.record.id, audit.details.after.undoneRecordStatus], ['HAZIRLANIYOR', 'GEREKLI', fresh.id, 'GERI_CEKILDI']);
   assert.ok(audit.createdAt instanceof Date);
@@ -132,38 +141,41 @@ dbTest('1 · Üretime almayı geri al (hazırlanırken): kayıt GERI_CEKILDI, ay
   assert.deepEqual([again.drawingTrack, again.drawings.at(-1).status, again.drawings.length], ['ONAYLANDI', 'ONAYLANDI', 2]);
 }));
 
-dbTest('1b · Üretime almayı geri al (sipariş üretimde): yalnızca yönetici; sipariş Hazırlanıyor\'a döner, teklif müşteride kalır, yeniden karar → yeniden üretim', offline(async () => {
+dbTest('1b · Üretime girmiş sipariş: gerçek üretimin başlamadığı doğrulanamaz → yönetici dahil herkese reddedilir; sipariş ve kayıtlar aynen', offline(async () => {
   const o = await dwgOrder();
   await sendOffer(o.id);
   const r = await run(o.id, 'dwg_ready', 'drawer');
   assert.equal(r.result.produced, true);
-  assert.equal((await orderOf(o.id)).status, 'URETIMDE');
-  // Çizimci kararı veren olsa da üretimi geri alamaz (sunucu)
-  assert.equal(await codeOf(undo(o.id, 'ready', 'drawer')), 'UNDO_PRODUCTION_ADMIN');
-  const res = await undo(o.id, 'ready', 'admin');
-  assert.equal(res.result.production, true);
-  const after = await orderOf(o.id);
-  assert.deepEqual([after.status, after.drawingTrack, after.offers[0].status], ['HAZIRLANIYOR', 'GEREKLI', 'GONDERILDI']);
-  const ev = after.events.at(-1);
-  assert.deepEqual([ev.event, ev.fromStatus, ev.toStatus], ['DWG_READY_UNDONE', 'URETIMDE', 'HAZIRLANIYOR'], 'geçmiş: üretimden hazırlanıyor\'a ters işlem');
-  const audit = await db.auditLog.findFirstOrThrow({ where: { entityId: o.id, details: { path: ['action'], equals: 'dwg_ready_undo' } } });
-  assert.deepEqual([audit.details.before.status, audit.details.after.status], ['URETIMDE', 'HAZIRLANIYOR']);
-  // Yeniden "Üretime Hazır" → olağan kuralla yeniden üretim
-  const again = await run(o.id, 'dwg_ready', 'drawer');
-  assert.equal(again.result.produced, true);
-  assert.equal((await orderOf(o.id)).status, 'URETIMDE');
-  // Yardımcı yönetici de (aynı yetki) geri alabilir
-  await undo(o.id, 'ready', 'assistant');
-  assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR');
+  const cur = await orderOf(o.id);
+  assert.equal(cur.status, 'URETIMDE');
+  assert.equal(drawingFlags(cur).dwgUndo, null, 'düğme yok');
+  assert.equal((await dwgUndoCheck(db, cur, actor(P.admin), { priceLock })).block, 'UNDO_IN_PRODUCTION', 'yöneticiye neden gösterilir');
+  const snap = await snapshot(o.id);
+  for (const who of ['admin', 'assistant', 'drawer']) {
+    assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', who, { reason: 'x', drawingId: cur.drawings.at(-1).id, expectedVersion: cur.version })), 'NOT_ALLOWED', who);
+  }
+  assert.deepEqual(await snapshot(o.id), snap, 'üretim, kayıtlar ve geçmiş aynen');
+  // Hazırlanıyor durumunda olsa da geçmişte üretim / yükleme olayı olan sipariş: "üretim başlamadı" doğrulanamaz
+  const h = await dwgOrder();
+  await run(h.id, 'dwg_ready', 'drawer');
+  await db.orderEvent.create({ data: { orderId: h.id, event: 'PRODUCTION', fromStatus: 'HAZIRLANIYOR', toStatus: 'URETIMDE' } });
+  const hc = await orderOf(h.id);
+  assert.equal(hc.status, 'HAZIRLANIYOR');
+  assert.equal((await dwgUndoCheck(db, hc, actor(P.admin), { priceLock })).block, 'UNDO_IN_PRODUCTION');
+  const hs = await snapshot(h.id);
+  assert.equal(await codeOf(undo(h.id, 'ready', 'admin')), 'UNDO_IN_PRODUCTION');
+  assert.deepEqual(await snapshot(h.id), hs);
 }));
 
-dbTest('2 · Üretim başlamışsa reddedilir: sandık, mali belge, yüklendi — hiçbir şey yazılmaz', offline(async () => {
-  // Sandık girilmiş
+dbTest('2 · Üretime bağlı kayıt varsa reddedilir (sipariş hazırlanırken de): sandık, mali belge, telafi — hiçbir şey yazılmaz', offline(async () => {
+  // Sandık girilmiş (yükleme günü olan, üretime girmemiş sipariş)
   const a = await dwgOrder();
-  await sendOffer(a.id);
+  const day = new Date('2026-12-07T00:00:00Z');
+  await run(a.id, 'set_ship_date', 'sales', { date: day });
   await run(a.id, 'dwg_ready', 'drawer');
-  const crate = await db.crate.create({ data: { shipDay: new Date('2026-11-02'), customerId: firm.id, crateNo: 7 } });
-  await db.crateOrder.create({ data: { crateId: crate.id, orderId: a.id } });
+  const saved = await saveDayCrates(db, { day: dayKey(day), customerId: firm.id, actor: actor(P.sales), rows: [{ crateNo: 7, lengthMm: 2000, widthMm: 1000, heightMm: 800, netKg: 100, grossKg: 150, note: null, orderIds: [a.id] }] });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(await db.crateOrder.count({ where: { orderId: a.id } }), 1);
   let snap = await snapshot(a.id);
   assert.equal(await codeOf(undo(a.id, 'ready', 'admin')), 'UNDO_CRATES');
   assert.deepEqual(await snapshot(a.id), snap, 'reddedilen geri alma hiçbir şey yazmaz');
@@ -171,23 +183,56 @@ dbTest('2 · Üretim başlamışsa reddedilir: sandık, mali belge, yüklendi �
   assert.deepEqual([shown.kind, shown.block], ['READY', 'UNDO_CRATES'], 'ekran nedeni gösterir');
   // Mali belge (proforma)
   const b = await dwgOrder();
-  await sendOffer(b.id);
   await run(b.id, 'dwg_ready', 'drawer');
   await db.fgoDocument.create({ data: { orderId: b.id, kind: 'PROFORMA', series: 'PRF', number: `U${Date.now()}`, issuedAt: new Date() } });
   snap = await snapshot(b.id);
   assert.equal(await codeOf(undo(b.id, 'ready', 'admin')), 'UNDO_DOCUMENTS');
   assert.deepEqual(await snapshot(b.id), snap);
-  // Yüklendi olarak işaretlenmiş: geri alma yok (düğme de yok)
-  const c = await dwgOrder();
-  await sendOffer(c.id);
-  await run(c.id, 'dwg_ready', 'drawer');
-  await run(c.id, 'mark_shipped', 'sales');
-  const cur = await orderOf(c.id);
-  assert.equal(drawingFlags(cur).dwgUndo, null);
-  assert.equal((await dwgUndoCheck(db, cur, actor(P.admin), { priceLock })).block, 'UNDO_SHIPPED');
-  snap = await snapshot(c.id);
-  assert.equal(await codeOf(undo(c.id, 'ready', 'admin')), 'NOT_ALLOWED');
-  assert.deepEqual(await snapshot(c.id), snap);
+}));
+
+dbTest('2b · Sandık ve geri alma eşzamanlı: sandık kilidi (crates:<gün>) geri almayı bekletir; sandık işlendiyse geri alma reddedilir — denetim ile kayıt arasına sandık giremez', offline(async () => {
+  const o = await dwgOrder();
+  const day = new Date('2026-12-08T00:00:00Z');
+  await run(o.id, 'set_ship_date', 'sales', { date: day });
+  await run(o.id, 'dwg_ready', 'drawer');
+  // Sandık yazan işlem kilidi alır ve sandığı yazar, henüz işlemez (commit yok)
+  let locked, release;
+  const lockedP = new Promise((r) => { locked = r; });
+  const gate = new Promise((r) => { release = r; });
+  const crateTx = db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crates:${dayKey(day)}`}, 0))`;
+    const c = await tx.crate.create({ data: { shipDay: day, customerId: firm.id, crateNo: 21 } });
+    await tx.crateOrder.create({ data: { crateId: c.id, orderId: o.id } });
+    locked();
+    await gate;
+  }, { timeout: 30_000 });
+  await lockedP;
+  let settled = false;
+  const undoP = codeOf(undo(o.id, 'ready', 'admin')).finally(() => { settled = true; });
+  await new Promise((r) => setTimeout(r, 700));
+  assert.equal(settled, false, 'geri alma sandık kilidini bekliyor');
+  release();
+  await crateTx;
+  assert.equal(await undoP, 'UNDO_CRATES', 'kilit bırakılınca işlenmiş sandığı görür ve reddeder');
+  const cur = await orderOf(o.id);
+  assert.deepEqual([cur.status, cur.drawingTrack, cur.drawings.map((d) => d.status)], ['HAZIRLANIYOR', 'ONAYLANDI', ['ONAYLANDI']]);
+
+  // Gerçek eşzamanlı yarış (birçok tur): ya geri alma kazanır (sandık sonra yazılır) ya sandık kazanır (geri alma reddedilir);
+  // geri alma hiçbir zaman sandığı görmeden sandıkla birlikte işlenmez
+  for (let i = 0; i < 4; i++) {
+    const p = await dwgOrder();
+    const d = new Date(Date.UTC(2026, 11, 10 + i));
+    await run(p.id, 'set_ship_date', 'sales', { date: d });
+    await run(p.id, 'dwg_ready', 'drawer');
+    const [u, c] = await Promise.all([
+      codeOf(undo(p.id, 'ready', 'admin')),
+      saveDayCrates(db, { day: dayKey(d), customerId: firm.id, actor: actor(P.sales), rows: [{ crateNo: 30 + i, lengthMm: 2000, widthMm: 1000, heightMm: 800, netKg: 100, grossKg: 150, note: null, orderIds: [p.id] }] }),
+    ]);
+    assert.ok(u === 'OK' || u === 'UNDO_CRATES', u);
+    assert.equal(c.ok, true, JSON.stringify(c));
+    const audit = await db.auditLog.findFirst({ where: { entityId: p.id, details: { path: ['action'], equals: 'dwg_ready_undo' } } });
+    assert.equal(!!audit, u === 'OK');
+  }
 }));
 
 dbTest('3 · Çizim hatalı kararını geri al: hatalı kaydı ve açıklaması korunur; müşteri ve iç ekip aynı durumu görür; müşteriye bildirim', offline(async () => {
@@ -278,23 +323,30 @@ dbTest('6 · Sonraki sürüm varsa güncelleme geri alınmaz; önceki dosyalar v
   assert.deepEqual(await snapshot(o.id), snap, 'taslak dosyası, kayıt ve geçmiş aynen');
 }));
 
-dbTest('7-8 · Müşteri erişimi ve yetki: yalnızca kararı veren çizimci / yönetici; satış, denetimci, müşteri, başka firma, başka çizimci reddedilir', offline(async () => {
+dbTest('7-8 · Müşteri erişimi ve yetki: üretime almayı geri al yalnızca yönetici; hatalı / güncelleme kararı veren çizimci / yönetici; satış, denetimci, müşteri, başka firma, başka çizimci reddedilir', offline(async () => {
   const o = await dwgOrder();
   await run(o.id, 'dwg_ready', 'drawer');
   const cur = await orderOf(o.id);
   const rec = cur.drawings.at(-1);
   const payload = { reason: 'x', drawingId: rec.id, expectedVersion: cur.version };
-  for (const who of ['sales', 'inspector', 'cust']) assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', who, payload)), 'NOT_ALLOWED', who);
+  for (const who of ['sales', 'inspector', 'cust', 'drawer', 'assistant']) assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', who, payload)), 'NOT_ALLOWED', who);
   assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', 'other', payload)), 'NOT_FOUND');
-  // Başka çizimci (kararı vermeyen): ekran nedeni gösterir, sunucu reddeder
+  // Hatalı kararı: başka çizimci (kararı vermeyen) — ekran nedeni gösterir, sunucu reddeder (değişmedi)
+  const f = await dwgOrder();
+  await run(f.id, 'dwg_faulty', 'drawer', { note: 'Eksik' });
+  const fc = await orderOf(f.id);
+  const fp = { reason: 'x', drawingId: fc.drawings.at(-1).id, expectedVersion: fc.version };
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: true } });
-  assert.equal((await dwgUndoCheck(db, cur, actor(P.drawer2), { priceLock })).block, 'UNDO_NOT_OWNER');
-  assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', 'drawer2', payload)), 'UNDO_NOT_OWNER');
+  assert.equal((await dwgUndoCheck(db, fc, actor(P.drawer2), { priceLock })).block, 'UNDO_NOT_OWNER');
+  assert.equal(await codeOf(run(f.id, 'dwg_faulty_undo', 'drawer2', fp)), 'UNDO_NOT_OWNER');
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: false } });
+  for (const who of ['sales', 'inspector', 'cust']) assert.equal(await codeOf(run(f.id, 'dwg_faulty_undo', who, fp)), 'NOT_ALLOWED', who);
+  // Yönetici yardımcısı hatalı kararını geri alabilir (değişmedi)
+  assert.equal((await dwgUndoCheck(db, fc, actor(P.assistant), { priceLock })).block, null);
   // Müşteri / satış için ekran denetimi yok (çizim yetkisi yok)
   for (const who of ['cust', 'sales', 'inspector']) assert.equal(await dwgUndoCheck(db, cur, actor(P[who]), { priceLock }), null, who);
   // Müşterinin gördüğü sürümler: dosyası olmayan karar kayıtları; geri alma sonrası eski kayıt yalnızca satır
-  await run(o.id, 'dwg_ready_undo', 'drawer', payload);
+  await run(o.id, 'dwg_ready_undo', 'admin', payload);
   const cv = await seenDrawings('cust', o.id);
   assert.deepEqual(cv.map((d) => [d.version, d.status, d.withdrawReason ?? null, d.sourceFiles === null]), [[1, 'GERI_CEKILDI', null, true], [2, 'BEKLIYOR', null, false]]);
 }));
@@ -327,20 +379,19 @@ dbTest('9-10 · Tekrar ve eşzamanlılık: aynı karar iki kez geri alınamaz; e
   const p = await dwgOrder();
   await run(p.id, 'dwg_ready', 'drawer');
   const pc = await orderOf(p.id);
-  assert.equal(await codeOf(run(p.id, 'dwg_ready_undo', 'drawer', { reason: 'x', drawingId: 'baska-kayit', expectedVersion: pc.version })), 'STALE_DRAWING');
-  assert.equal(await codeOf(run(p.id, 'dwg_ready_undo', 'drawer', { reason: 'x', expectedVersion: pc.version })), 'STALE_DRAWING');
+  assert.equal(await codeOf(run(p.id, 'dwg_ready_undo', 'admin', { reason: 'x', drawingId: 'baska-kayit', expectedVersion: pc.version })), 'STALE_DRAWING');
+  assert.equal(await codeOf(run(p.id, 'dwg_ready_undo', 'admin', { reason: 'x', expectedVersion: pc.version })), 'STALE_DRAWING');
 }));
 
 dbTest('11-12 · İşlem ortasında hata → tam rollback; gerekçe zorunlu', offline(async () => {
   const o = await dwgOrder();
-  await sendOffer(o.id);
   await run(o.id, 'dwg_ready', 'drawer');
   const snap = await snapshot(o.id);
   // Gerekçe zorunlu / uzunluk
   assert.equal(await codeOf(undo(o.id, 'ready', 'admin', { reason: '   ' })), 'UNDO_REASON');
   assert.equal(await codeOf(undo(o.id, 'ready', 'admin', { reason: 'x'.repeat(1001) })), 'UNDO_REASON_LONG');
   assert.deepEqual(await snapshot(o.id), snap);
-  // Yeni karar kaydı yazılırken hata: eski kaydın durumu, sipariş durumu (üretim), geçmiş, denetim, kuyruk aynen
+  // Yeni karar kaydı yazılırken hata: eski kaydın durumu, çizim hattı, geçmiş, denetim, kuyruk aynen
   const wrap = (obj, override) => new Proxy(obj, { get(t, k) { if (Object.hasOwn(override, k)) return override[k]; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
   const failing = wrap(db, {
     $transaction: (fn, ...rest) => db.$transaction((tx) => fn(wrap(tx, { drawing: wrap(tx.drawing, { create: async () => { throw new Error('YAZMA_HATASI'); } }) })), ...rest),
@@ -349,8 +400,8 @@ dbTest('11-12 · İşlem ortasında hata → tam rollback; gerekçe zorunlu', of
   const st = await dwgUndoCheck(db, cur, actor(P.admin), { priceLock });
   assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', 'admin', { reason: 'Yanlış', drawingId: st.record.id, expectedVersion: cur.version }, failing)), 'YAZMA_HATASI');
   assert.deepEqual(await snapshot(o.id), snap, 'tam rollback');
-  assert.equal((await orderOf(o.id)).status, 'URETIMDE');
+  assert.equal((await orderOf(o.id)).drawingTrack, 'ONAYLANDI');
   // Hata yokken aynı istek çalışır
   await undo(o.id, 'ready', 'admin');
-  assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR');
+  assert.deepEqual([(await orderOf(o.id)).status, (await orderOf(o.id)).drawingTrack], ['HAZIRLANIYOR', 'GEREKLI']);
 }));

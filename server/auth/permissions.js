@@ -48,13 +48,14 @@ export const PERMISSIONS = {
   LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
   SUPPLIER_MANAGE: 'Tedarik ve satın alma: tedarikçiler, ürünlerin alış fiyatı, tedarikçi siparişleri (onay / gönderim), tahmini yükleme tarihi, tedarikçi ödemeleri ve hesapları (karar 179–184; yalnızca yönetici)',
   COMMERCIAL_OFFER_MANAGE: 'Bağımsız ticari teklif (karar 277): cam + profil / aksesuar teklifi hazırlar, iç maliyet / kâr / marjı görür, müşteri PDF\'ini ve iç Excel\'i indirir — sipariş, FGO, stok ile bağı yoktur (yönetici ve yönetici yardımcısı)',
+  DRAWING_PRODUCTION_UNDO: 'Müşterinin DWG/DXF çizimi için verilen "Üretime Hazır" kararını geri alır — yalnızca üretime hiç girmemiş siparişte (karar 285; yalnızca yönetici)',
   REPORT_VIEW: 'Yönetici raporları (karar 284): sipariş, cam, profil / stok, yükleme ve finans raporlarını görür ve Excel\'e aktarır — salt okunur; satış, maliyet, kâr ve tahsilat içerir (yönetici ve yönetici yardımcısı)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
 const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
 /** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. */
-export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW'];
+export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'DRAWING_PRODUCTION_UNDO'];
 
 const ADMIN_PERMISSIONS = Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p));
 

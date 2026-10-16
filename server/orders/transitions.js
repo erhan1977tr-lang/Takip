@@ -14,7 +14,7 @@ import { priceLock } from './financial-lock.js';
 import { priceChanges } from './price-changes.js';
 import { verifyReviewToken } from './review.js';
 import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
-import { dwgUndoCheck, undoReason } from './dwg-undo.js';
+import { crateLockKeys, dwgUndoCheck, undoReason } from './dwg-undo.js';
 import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
@@ -493,10 +493,11 @@ async function dwgDecide(h, decision) {
  * (dwgUndoCheck — sayfa da aynı denetimi gösterir). Ters işlemdir; hiçbir kayıt / dosya silinmez:
  *   - kararın kaydı GERI_CEKILDI olur (gerekçe + zaman; koşullu güncelleme — aynı karar iki kez geri alınamaz),
  *   - aynı dosyalar için yeni karar kaydı (v+1, BEKLIYOR) açılır → karar yeniden çizimcide (hatalı sonrası güncellemede
- *     kayıt değişmez, hat DUZELTME_BEKLIYOR'a döner),
- *   - "Üretime almayı geri al": sipariş üretimdeyse HAZIRLANIYOR'a döner; üretimden sonra kayıtlı adım (onaylı yükleme,
- *     belge, sandık, telafi) varsa reddedilir. Danışma kilitleri (ACTION_LOCKS) sürüm artışından önce alınır.
- * Kullanıcının ekranda gördüğü kayıt (drawingId) zorunludur: arada başka karar / kayıt oluştuysa STALE_DRAWING.
+ *     kayıt değişmez, hat DUZELTME_BEKLIYOR'a döner).
+ * Siparişin durumu (status) hiçbir zaman değişmez. "Üretime almayı geri al" yalnızca yöneticinin ve yalnızca üretime hiç
+ * girmemiş siparişte; mali kilit, sandık ve telafi denetimi danışma kilitleri (ACTION_LOCKS: yükleme onayı → belge →
+ * sandık günü) altında, sürüm artışından sonra aynı işlemde yapılır. Kullanıcının ekranda gördüğü kayıt (drawingId)
+ * zorunludur: arada başka karar / kayıt oluştuysa STALE_DRAWING.
  */
 async function dwgUndo(h, kind) {
   const reason = undoReason(h.payload.reason);
@@ -522,10 +523,10 @@ async function dwgUndo(h, kind) {
       },
     });
   }
-  await h.set({ drawingTrack: check.restoreTrack, drawingSince: h.now, ...(check.production ? { status: check.restoreStatus } : {}) });
+  await h.set({ drawingTrack: check.restoreTrack, drawingSince: h.now });
   h.event(`DWG_${kind}_UNDONE`, reason.text, { drawingId: created?.id ?? rec.id });
   h.sla = true;
-  h.result = { undone: kind, drawingId: created?.id ?? null, production: check.production };
+  h.result = { undone: kind, drawingId: created?.id ?? null };
   h.audit = {
     undo: kind, variant: check.variant, drawingId: rec.id, version: rec.version, reason: reason.text, before,
     after: { status: h.status, track: check.restoreTrack, record: created ? { id: created.id, version: created.version, status: created.status } : null, undoneRecordStatus: created ? 'GERI_CEKILDI' : rec.status },
@@ -963,8 +964,9 @@ const ACTIONS = {
  */
 const ACTION_LOCKS = {
   update_offer: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
-  // Üretime almayı geri alma: mali kilit denetimi ile kayıt arasına yükleme onayı / belge isteği giremez (aynı kilit sırası)
-  dwg_ready_undo: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  // Üretime almayı geri alma: mali kilit + sandık denetimi ile kayıt arasına yükleme onayı / belge isteği / sandık giremez.
+  // Sandık kilidi sandık yazanlarla aynı anahtar ve sıra (sandık günü → sipariş satırı) — server/orders/dwg-undo.js
+  dwg_ready_undo: (order) => ['loading-confirmation', `glass-billing:${order.id}`, ...crateLockKeys(order, dayKey)],
 };
 
 export const ORDER_ACTIONS = Object.keys(ACTIONS);

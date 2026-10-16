@@ -6,11 +6,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 ## 3.90.0 — 16.10.2026
 
-Çizim iş akışında yanlışlıkla verilen DWG/DXF kararları güvenle geri alınabilir (karar 285). Şema değişikliği yok.
+Çizim iş akışında yanlışlıkla verilen DWG/DXF kararları güvenle geri alınabilir (karar 285). Veritabanında yalnızca yetki
+listesine bir değer eklendi (`DRAWING_PRODUCTION_UNDO`); kayıt değişmedi.
 
-- **Üretime almayı geri al:** "Üretime Hazır" kararı (ve onunla gelen otomatik üretim) geri alınır; sipariş üretimdeyse
-  yalnızca yönetici ve yalnızca üretimden sonra kayıtlı adım (onaylı yükleme, mali belge / belge isteği, sandık, telafi)
-  yoksa — sipariş "Hazırlanıyor"a döner, teklif müşteride kalır.
+- **Üretime almayı geri al:** "Üretime Hazır" kararını YALNIZCA yönetici geri alır (yeni yetki `DRAWING_PRODUCTION_UNDO`;
+  yönetici yardımcısı ve çizimci yapamaz) ve yalnızca sipariş hiç üretime girmemişse. TAKİP'te gerçek üretimi gösteren ayrı
+  kayıt olmadığı için üretim durumu, geçmişte üretim / yükleme olayı ya da gerçek yükleme tarihi olan siparişte geri alma
+  reddedilir; onaylı yükleme, mali belge / belge isteği, sandık veya telafi varsa da reddedilir. Sipariş durumu hiç
+  değişmez. Sandık girişiyle aynı kilit kullanılır: denetim ile kayıt arasına sandık giremez.
 - **Çizim hatalı kararını geri al:** müşteri yanıt vermeden önce; müşterinin kırmızı uyarısı kalkar, müşteriye bildirim ve
   e-posta gider. Hatalı kaydı ve açıklaması geçmişte kalır.
 - **Çizim güncellemesini geri al:** çizimci yeni sürüm açmadan önce. Hatalı kararından sonra verilen güncelleme geri

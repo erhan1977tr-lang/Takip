@@ -11,10 +11,15 @@
 //   - aynı dosyalar için yeni bir karar kaydı (sürüm v+1, BEKLIYOR) açılır → karar yeniden çizimcinin "DXF/DWG" listesinde;
 //   - hatalı kararından sonraki güncellemenin geri alınmasında kayıt değişmez, yalnızca hat DUZELTME_BEKLIYOR'a döner;
 //   - geçmiş (OrderEvent) ve denetim kaydı (gerekçe, önceki / yeni durum) yazılır; dosyalar ve sürüm geçmişi korunur.
-// "Üretime almayı geri al": sipariş üretimdeyse (URETIMDE) yalnızca üretimden SONRA kayıtlı hiçbir adım yoksa — onaylı
-// yükleme, FGO belgesi / müşteri belgesi kapsamı / bekleyen belge isteği (mali kilit), girilmiş sandık, telafi — ve yalnızca
-// yönetici (ORDER_CANCEL) geri alabilir. Yüklendi / arşiv / iptal siparişte geri alınmaz. Geri alma, gerçekleşmiş hiçbir
-// üretim / yükleme / belge kaydına dokunmaz.
+// "Üretime almayı geri al" (3.90.0 düzeltmesi — ürün sahibi):
+//   - YALNIZCA yönetici (DRAWING_PRODUCTION_UNDO — ADMIN_ONLY; yönetici yardımcısı ve çizimci yapamaz);
+//   - yalnızca sipariş hiç üretime girmemişse: TAKİP'te gerçek üretimin başladığını / başlamadığını gösteren ayrı bir kayıt
+//     yoktur; üretim durumu (URETIMDE / YUKLENDI / ARSIVLENDI), geçmişte bir üretim / yükleme olayı ya da gerçek yükleme
+//     tarihi varsa "üretim başlamadı" doğrulanamaz → REDDEDİLİR (eksik kayıt "başlamadı" sayılmaz). Sipariş durumu hiçbir
+//     zaman geri alma ile değişmez;
+//   - üretime bağlı kayıt (onaylı yükleme, FGO belgesi / müşteri belgesi kapsamı / bekleyen belge isteği — mali kilit,
+//     girilmiş sandık, telafi) varsa reddedilir. Sandık yazanlarla aynı kilit (crates:<gün>) sürüm artışından ÖNCE alınır:
+//     denetim ile kayıt arasına sandık giremez.
 import { can } from '../auth/permissions.js';
 import { isCustomerDrawingRecord } from './dwg-review.js';
 
@@ -26,9 +31,14 @@ export const UNDO_KIND_OF = Object.freeze(Object.fromEntries(Object.entries(UNDO
 export const UNDO_REASON_MAX = 1000;
 /** Geri almayı engelleyen durumların kodları (ekranda ve hata iletisinde aynı metin: order.dwg.undo.block.<kod>) */
 export const UNDO_BLOCKS = Object.freeze([
-  'UNDO_CLOSED', 'UNDO_ON_HOLD', 'UNDO_SHIPPED', 'UNDO_LATER_DRAWING', 'UNDO_CUSTOMER_ANSWERED',
-  'UNDO_LOADED', 'UNDO_DOCUMENTS', 'UNDO_CRATES', 'UNDO_COMPENSATION', 'UNDO_PRODUCTION_ADMIN', 'UNDO_NOT_OWNER',
+  'UNDO_CLOSED', 'UNDO_ON_HOLD', 'UNDO_IN_PRODUCTION', 'UNDO_LATER_DRAWING', 'UNDO_CUSTOMER_ANSWERED',
+  'UNDO_LOADED', 'UNDO_DOCUMENTS', 'UNDO_CRATES', 'UNDO_COMPENSATION', 'UNDO_ADMIN_ONLY', 'UNDO_NOT_OWNER',
 ]);
+/** "Üretime almayı geri al" yetkisi (yalnızca yönetici) */
+export const PRODUCTION_UNDO_PERMISSION = 'DRAWING_PRODUCTION_UNDO';
+/** Üretime girmiş sayılan sipariş durumları ve olaylar: bunlar varsa üretimin başlamadığı doğrulanamaz */
+export const PRODUCED_STATUSES = Object.freeze(['URETIMDE', 'YUKLENDI', 'ARSIVLENDI']);
+export const PRODUCTION_EVENTS = Object.freeze(['PRODUCTION', 'SHIPPED', 'AUTO_SHIPPED', 'ARCHIVED', 'AUTO_ARCHIVED']);
 
 /**
  * Geri alma gerekçesi: zorunlu, tek metin (satırlar korunur), en çok UNDO_REASON_MAX karakter.
@@ -48,11 +58,11 @@ export function undoReason(v) {
  * Yalnızca SON müşteri çizimi kaydının kararı geri alınır; araya fabrika sürümü girdiyse (taslak dahil) güncelleme geri
  * alınamaz. Müşteri yanıt verdiyse (düzeltilmiş dosya → yeni kayıt; fabrikadan çizim istedi → hat GEREKLI) hatalı kararı
  * geri alınamaz.
- * @param {{ status: string, onHold?: boolean, removedAt?: Date | string | null, drawingTrack?: string | null,
+ * @param {{ status: string, onHold?: boolean, removedAt?: Date | string | null, actualShipDate?: Date | string | null, drawingTrack?: string | null,
  *   drawings?: { id: string, source?: string | null, status: string, version: number, decidedById?: string | null }[] }} o
  *   drawings: eskiden yeniye
  * @returns {null | { kind: 'READY' | 'FAULTY' | 'UPDATE', variant: 'RECORD' | 'AFTER_FAULTY', record: any,
- *   production: boolean, restoreTrack: string, restoreStatus: string, block: string | null }}
+ *   restoreTrack: string, block: string | null }}
  */
 export function dwgUndoState(o) {
   const ds = o?.drawings ?? [];
@@ -84,46 +94,58 @@ export function dwgUndoState(o) {
 
   /** @param {'READY' | 'FAULTY' | 'UPDATE'} k @param {'RECORD' | 'AFTER_FAULTY'} v @param {string | null} b */
   function state(k, v, b) {
-    const production = k === 'READY' && o.status === 'URETIMDE';
     let bl = b;
     if (!bl) {
       if (o.removedAt || o.status === 'IPTAL') bl = 'UNDO_CLOSED';
+      // Üretime girmiş sipariş: gerçek üretimin başlamadığı doğrulanamaz → üretime alma kararı geri alınamaz
+      else if (k === 'READY' && (PRODUCED_STATUSES.includes(o.status) || o.actualShipDate)) bl = 'UNDO_IN_PRODUCTION';
       else if (o.onHold) bl = 'UNDO_ON_HOLD';
-      else if (k === 'READY' && (o.status === 'YUKLENDI' || o.status === 'ARSIVLENDI')) bl = 'UNDO_SHIPPED';
-      else if (o.status !== 'HAZIRLANIYOR' && !production) bl = 'UNDO_CLOSED';
+      else if (o.status !== 'HAZIRLANIYOR') bl = 'UNDO_CLOSED';
     }
-    return {
-      kind: k, variant: v, record, production, block: bl,
-      restoreTrack: v === 'AFTER_FAULTY' ? 'DUZELTME_BEKLIYOR' : 'GEREKLI',
-      restoreStatus: 'HAZIRLANIYOR',
-    };
+    return { kind: k, variant: v, record, block: bl, restoreTrack: v === 'AFTER_FAULTY' ? 'DUZELTME_BEKLIYOR' : 'GEREKLI' };
   }
 }
 
 /**
- * Üretime alındıktan sonra kayda geçmiş ve geri alınamaz adımlar (mali kilit + sandık + telafi) → engel kodu ya da null.
- * @param {{ lock: { code: string }[], crates: number, compensations: number }} f
+ * "Üretime almayı geri al" için üretime bağlı kayıtlar → engel kodu ya da null. Eksik / bilinmeyen sayı engeldir (güvenli
+ * taraf): bir sayı okunamadıysa üretimin başlamadığı doğrulanmamış sayılır.
+ * @param {{ productionEvents: number, lock: { code: string }[], crates: number, compensations: number }} f
  */
 export function productionBlock(f) {
+  const n = (v) => (Number.isInteger(v) && v >= 0 ? v : Infinity);
+  if (!Array.isArray(f?.lock) || n(f.productionEvents) > 0) return 'UNDO_IN_PRODUCTION';
   if ((f.lock ?? []).some((r) => r.code === 'CONFIRMED_LOADING')) return 'UNDO_LOADED';
   if ((f.lock ?? []).length) return 'UNDO_DOCUMENTS';
-  if (f.crates > 0) return 'UNDO_CRATES';
-  if (f.compensations > 0) return 'UNDO_COMPENSATION';
+  if (n(f.crates) > 0) return 'UNDO_CRATES';
+  if (n(f.compensations) > 0) return 'UNDO_COMPENSATION';
   return null;
 }
 
 /**
- * Kararı geri almaya bu kullanıcı yetkili mi? Kararı veren çizimci (kayıt: decidedById; hatalı sonrası güncelleme: son
- * DWG_UPDATE olayının kullanıcısı) ya da yönetici (ORDER_CANCEL). Üretimdeki siparişi yalnızca yönetici geri alır.
- * @param {{ production: boolean }} st @param {{ id?: string | null, role: string }} actor @param {string | null} owner
+ * Kararı geri almaya bu kullanıcı yetkili mi?
+ *   READY ("Üretime almayı geri al"): YALNIZCA yönetici (DRAWING_PRODUCTION_UNDO — yardımcı ve çizimci yapamaz);
+ *   FAULTY / UPDATE: kararı veren çizimci (kayıt: decidedById; hatalı sonrası güncelleme: son DWG_UPDATE olayının
+ *   kullanıcısı) ya da yönetici / yardımcı (ORDER_CANCEL) — değişmedi.
+ * @param {{ kind: string }} st @param {{ id?: string | null, role: string }} actor @param {string | null} owner
  * @returns {string | null} engel kodu
  */
 export function ownerBlock(st, actor, owner) {
+  if (st.kind === 'READY') return can(actor.role, PRODUCTION_UNDO_PERMISSION) ? null : 'UNDO_ADMIN_ONLY';
   const admin = can(actor.role, 'ORDER_CANCEL');
-  if (st.production && !admin) return 'UNDO_PRODUCTION_ADMIN';
   if (admin) return null;
   return actor.id && owner && actor.id === owner ? null : 'UNDO_NOT_OWNER';
 }
+
+/**
+ * "Üretime almayı geri al"ın sandık kilidi: sandık yazanlarla (server/loading/crates.js — saveDayCrates, guest crate,
+ * setGuestHost) AYNI anahtar, siparişin yükleme günü. Sipariş satırı kilidinden (sürüm artışı) ÖNCE alınır — sandık
+ * yazanlarla aynı sıra. Yükleme günü yoksa siparişe sandık bağlanamaz (dayOrders), kilit gerekmez.
+ * @param {{ actualShipDate?: Date | null, estimatedShipDate?: Date | null }} order @param {(d: Date) => string} dayKey
+ */
+export const crateLockKeys = (order, dayKey) => {
+  const d = order.actualShipDate ?? order.estimatedShipDate;
+  return d ? [`crates:${dayKey(d)}`] : [];
+};
 
 /**
  * Sayfa ve işlem için TEK denetim: geri alınabilecek karar, sahibi ve (varsa) engeli. Veritabanından yalnızca okur.
@@ -138,6 +160,8 @@ export async function dwgUndoCheck(db, order, actor, { priceLock }) {
   const st = dwgUndoState(order);
   if (!st) return null;
   if (!can(actor.role, 'DRAWING_WORK')) return null;
+  // "Üretime almayı geri al" yönetici dışındakilere hiç gösterilmez (sunucu ayrıca reddeder)
+  if (st.kind === 'READY' && !can(actor.role, PRODUCTION_UNDO_PERMISSION)) return null;
   if (st.block) return { ...st, owner: null };
   let owner = st.record.decidedById ?? null;
   if (st.variant === 'AFTER_FAULTY') {
@@ -145,11 +169,12 @@ export async function dwgUndoCheck(db, order, actor, { priceLock }) {
     owner = ev?.userId ?? null;
   }
   let block = ownerBlock(st, actor, owner);
-  if (!block && st.production) {
+  if (!block && st.kind === 'READY') {
+    const productionEvents = await db.orderEvent.count({ where: { orderId: order.id, event: { in: [...PRODUCTION_EVENTS] } } });
     const lock = await priceLock(db, order.id);
     const crates = await db.crateOrder.count({ where: { orderId: order.id } });
     const compensations = await db.compensation.count({ where: { OR: [{ sourceOrderId: order.id }, { destOrderId: order.id }] } });
-    block = productionBlock({ lock, crates, compensations });
+    block = productionBlock({ productionEvents, lock, crates, compensations });
   }
   return { ...st, owner, block };
 }
