@@ -233,7 +233,7 @@ dbTest('raporlar: profil ve stok — birimler ayrı, giriş (mal kabulü / elle)
   assert.deepEqual(tbl(rep, 'receipts').map((x) => [x.receivedOn, x.code, x.color, x.lengthM, x.qty]), [['2026-10-07', 'RPT-FBL90-7016', 'RAL7016', 6, 20]]);
   // Hareketlerin toplamı stokla aynı (mükerrer sayım yok)
   const levels = await db.stockMovement.groupBy({ by: ['productId'], where: { productId: { in: [fbl.id, mc.id] } }, _sum: { qty: true } });
-  assert.deepEqual(levels.map((l) => l._sum.qty).sort(), [4, 14]);
+  assert.deepEqual(levels.map((l) => l._sum.qty).sort((a, b) => a - b), [4, 14]);
 }));
 
 dbTest('raporlar: finans — EUR / RON ayrı, Muhasebe motoruyla aynı satış / maliyet, eksik maliyette kâr yok, faturada çift sayım yok', offline(async () => {
