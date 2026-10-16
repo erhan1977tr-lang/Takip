@@ -17,10 +17,10 @@ const fn = (name) => {
   return m[1];
 };
 // Gerçek yayın yolu: "yalnızca test / belge değişti" kısa yolundan sonraki bölüm
-const whole = fn('do_deploy');
+const whole = fn('deploy_main');
 const deploy = whole.slice(whole.indexOf('# Caddyfile bu yayında değişiyor mu'));
 assert.ok(deploy.length > 1000 && deploy.length < whole.length);
-const at = (s) => { const i = deploy.indexOf(s); assert.ok(i >= 0, `do_deploy içinde yok: ${s}`); return i; };
+const at = (s) => { const i = deploy.indexOf(s); assert.ok(i >= 0, `deploy_main içinde yok: ${s}`); return i; };
 
 test('yayın: Caddyfile değiştiyse derleme ve veritabanı adımlarından ÖNCE çalışan Caddy ile doğrulanır', () => {
   // Doğrulama: dosya çalışan kapsayıcıya geçici yola kopyalanır, caddy validate çalışır; yayındaki ayara dokunulmaz
@@ -51,13 +51,18 @@ test('yayın: uygulama açıldıktan sonra site HTTPS üzerinden, Caddy içinden
   // Yayından önce yanıt veren site sonra vermiyorsa: başarısız + geri dönüş; önce de vermiyorduysa yalnızca uyarı
   assert.match(deploy, /if edge_ok; then edge_before=1; fi/);
   const failed = deploy.slice(at('elif [ "$edge_before" = 1 ]; then'), at('echo "$sha" >"$STATE/deployed"'));
-  assert.match(failed, /revert_release "\$sha" "\$prev" "\$prev_tag" "\$blog" "\$caddy_changed"[\s\S]*return 1\n\s+else\n\s+log "⚠/);
+  assert.match(failed, /deploy_failed "\$sha" "\$prev" "\$prev_tag" "\$blog" "\$caddy_changed" EDGE[\s\S]*return 1\n\s+else\n\s+log "⚠/);
+  // Geri dönüş yalnızca veritabanının migration durumu yayın öncesiyle AYNIYSA (karar 287): eski kod yeni şemayla çalışmaz
+  const df = fn('deploy_failed');
+  assert.ok(df.indexOf('if mig_unchanged_since "$sha"; then') >= 0 && df.indexOf('if mig_unchanged_since') < df.indexOf('revert_release'));
+  assert.equal((df.match(/revert_release /g) ?? []).length, 1);
   // Geri dönüş: önceki imaj + önceki kaynak + (Caddyfile değiştiyse) Caddy önceki dosyayla yeniden başlatılır
   const r = fn('revert_release');
   const steps = ['env_set APP_TAG "$prev_tag"', 'checkout --quiet --force "$prev"', 'compose up -d --remove-orphans', 'if [ "$caddy_changed" = 1 ]; then compose restart caddy', 'echo "$sha" >"$STATE/failed"'].map((s) => { const i = r.indexOf(s); assert.ok(i >= 0, s); return i; });
   assert.deepEqual(steps, [...steps].sort((a, b) => a - b));
-  // Uygulama açılmadığında da aynı geri dönüş kullanılır
-  assert.equal((deploy.match(/revert_release /g) ?? []).length, 2);
+  // Uygulama açılmadığında da aynı (koşullu) geri dönüş kullanılır
+  assert.equal((deploy.match(/deploy_failed "\$sha"/g) ?? []).length, 2);
+  assert.equal((deploy.match(/revert_release /g) ?? []).length, 0);
 });
 
 test('yayın kaydına Caddy günlüğü yazılmaz; gerçek yayın testi iş akışına bağlı', () => {

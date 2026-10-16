@@ -56,8 +56,14 @@ case "$1 ${2:-}" in
     case " $* " in
       *' run --rm tools '*) echo migration >>"$S/docker"; exit 1 ;;
       *' ps '*) exit 0 ;;
+      # yayın öncesi denetim (karar 287): veritabanı erişilebilir, yarım migration yok, uygulanmış migration listesi boş
+      *' exec '*'SELECT 1'*) echo 1; exit 0 ;;
+      *' exec '*'count(*)'*) echo 0; exit 0 ;;
+      *' exec '*) exit 0 ;;
       *) echo "compose $*" >>"$S/docker"; exit 0 ;;
     esac ;;
+  # derlenen imaj onaylanan commit'i taşır (GIT_SHA = etiketteki commit)
+  'image inspect') for a in "$@"; do case $a in takip:*) t=${a#takip:}; echo "GIT_SHA=${t%-tools}" ;; esac; done; exit 0 ;;
   *) exit 0 ;;
 esac
 SH
@@ -198,6 +204,36 @@ U=$X
 X=$(commit app/f.ts github-actions@github.com 'CI: kilit dosyası')
 reset; run "$U" fix/dal "$CI" completed success; run "$P" backend "$INST" completed success; tick; blocked "CI commit'i: üstün koşusu yalnızca çalışma dalında"
 reset; run "$U" backend "$CI" completed success; run "$P" backend "$INST" completed success; tick; allowed "CI commit'i: üstün backend koşusu başarılı"
+
+# 15. Demo ortamı testi (demo-env.yml, karar 287): demo yolları (sürüm numarası: package.json) değiştiyse backend'deki demo
+# testinin de başarıyla bitmesi ZORUNLU; başka daldaki demo koşusu sayılmaz. CI'nin kendi commit'i (kilit dosyası) yeni demo
+# koşusu gerektirmez (içeriğini üst commit'in koşusu üretmiş ve sınamıştır).
+DEMO=.github/workflows/demo-env.yml
+commit_pkg() { # commit_pkg SÜRÜM [YAZAR_EPOSTA] [KONU] [DOSYA] — demo yolunu değiştiren commit
+  if [ -n "${4:-}" ]; then date +%s%N >>"$WORK/$4"; else echo "{\"version\":\"$1\"}" >"$WORK/package.json"; fi
+  git -C "$WORK" add -A
+  if [ -n "${2:-}" ]; then git -C "$WORK" -c user.email="$2" commit -qm "${3:-sürüm}"; else git -C "$WORK" commit -qm "${3:-sürüm}"; fi
+  git -C "$WORK" push -q "$ORIGIN" HEAD:backend
+  git -C "$WORK" rev-parse HEAD
+}
+X=$(commit_pkg 9.9.10)
+base_runs() { run "$X" backend "$CI" completed success; run "$P" backend "$INST" completed success; }
+reset; base_runs; tick; blocked "sürüm değişti, demo testi koşusu yok"
+reset; base_runs; run "$X" fix/dal "$DEMO" completed success; tick; blocked "demo testi yalnızca çalışma dalında"
+reset; base_runs; run "$X" backend "$DEMO" in_progress ""; tick; blocked "demo testi sürüyor"
+reset; base_runs; run "$X" backend "$DEMO" completed failure; tick; blocked "demo testi başarısız" failed
+reset; base_runs; run "$X" backend "$DEMO" completed cancelled; tick; blocked "demo testi iptal edildi" failed
+reset; base_runs; run "$X" backend "$DEMO" completed success; tick; allowed "CI + kurulum + demo testi başarılı"
+grep -q "head_sha=$X&branch=backend&event=push" "$FAKE_STATE/api-calls" || fail "demo testi sorgusu"
+# CI commit'i (kilit dosyası) demo yolunu değiştirdi: üstteki insan commit'inin demo koşusu geçerli
+D=$X
+X=$(commit_pkg '' github-actions@github.com 'CI: package-lock.json' package-lock.json)
+reset; run "$D" backend "$CI" completed success; run "$P" backend "$INST" completed success; run "$D" backend "$DEMO" completed success
+tick; allowed "CI commit'i yalnızca kilit dosyasını değiştirdi → üst commit'in demo koşusu geçerli"
+# Yalnızca CI commit'i demo yolunu değiştirdiyse (taban: üst commit yayında) yeni demo koşusu gerekmez
+echo "$D" >"$STATE/deployed"
+reset; run "$D" backend "$CI" completed success; tick; allowed "taban sonrası demo yolunu yalnızca CI commit'i değiştirdi → demo koşusu gerekmez"
+echo "$B0" >"$STATE/deployed"
 
 # 14. Atlama değişkeni kayda geçer (zamanlayıcı vermez)
 reset; TAKIP_SKIP_CI_GATE=1 bash "$TAKIP" _otomatik >>"$ROOT/out" 2>&1 || true

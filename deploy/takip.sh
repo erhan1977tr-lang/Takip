@@ -17,11 +17,19 @@
 #   takip github                     GitHub erişim anahtarını (token) yenile
 #   takip antivirus                  antivirüs (ClamAV) çalışıyor ve test virüsünü yakalıyor mu
 #   takip kur [ADRES]                Banca Transilvania EUR satış kuru sunucudan okunabiliyor mu (FGO)
+#   takip surum-durum                yayındaki / son sağlıklı sürüm, imaj kimlikleri, geri dönüş adayı, yedek durumu (salt okunur)
+#   takip surum-dogrula              yayındaki sürümü sağlık denetiminden geçirip sağlıklı sürüm olarak kaydet
+#   takip rollback-durum             geri dönüş hedefi, imajları, ön değerlendirme, geçmiş (salt okunur)
+#   takip rollback-kontrol           geri dönüş güvenli mi: imajlar, migration listesi, Caddyfile, salt okunur yoklama (değiştirmez)
+#   takip rollback [--onay KISA_SHA] son sağlıklı sürüme dön — YALNIZCA uygulama + işçi; veritabanına dokunmaz (onay ister)
+#   takip rollback-modu [gozlem|otomatik]  yayın sonrası sağlık sorununda davranış (varsayılan: gözlem — yalnızca bildirir)
 #
 # Otomatik güncelleme (systemd: takip-deploy.timer, 2 dakikada bir → takip _otomatik):
 #   izlenen dalın GÜNCEL ucu, YALNIZCA o dalın kendi GitHub koşularında CI'dan (ve deploy/ vb. değiştiyse sunucu
 #   kurulum testinden) geçtiyse sunucuda derlenir (başka dalın sonucu sayılmaz; derleme sonrası uç ve kapı yeniden denetlenir),
-#   veritabanı yedeklenir, migration uygulanır ve yeni sürüm başlatılır. Açılmazsa önceki sürüme dönülür.
+#   veritabanı yedeklenir, migration uygulanır ve yeni sürüm başlatılır. Açılmazsa — migration uygulanmadıysa — önceki sürüme
+#   dönülür. Sonra tam sağlık denetimi: geçerse "son sağlıklı sürüm" kaydı yazılır; geçmezse gözlem kipinde yalnızca bildirilir
+#   (karar 287; docs/geri-donus.md).
 #   Testlerden geçmeyen commit hiç yayınlanmaz. Depo özel: GitHub'a /opt/takip/github-token ile bağlanılır.
 set -Eeuo pipefail
 
@@ -55,6 +63,10 @@ INSTALL_WORKFLOW_PATH=.github/workflows/deploy-test.yml
 # Sunucu kurulum testinin (deploy-test.yml) tetiklendiği yollar — o dosyadaki "paths" listesiyle AYNI olmalı
 # (test/deploy-gate.test.js karşılaştırır). Bu yollardan biri değiştiyse yayın kurulum testini de bekler.
 INSTALL_TEST_PATHS=(deploy Dockerfile .dockerignore app/surum .github/workflows/deploy-test.yml)
+# Demo ortamı testi (demo-env.yml) — tetiklendiği yollar o dosyadaki "paths" ile AYNI olmalı (test/deploy-gate.test.js). Bu yollardan
+# biri (sürüm numarası dahil: package.json) değiştiyse yayın, backend'deki demo testinin de başarıyla bitmesini bekler (karar 287).
+DEMO_WORKFLOW_PATH=.github/workflows/demo-env.yml
+DEMO_TEST_PATHS=(.devcontainer scripts/demo server/demo next.config.mjs package.json package-lock.json .github/workflows/demo-env.yml)
 VERBOSE=${VERBOSE:-0}
 
 mkdir -p "$STATE" "$LOGS"
@@ -168,26 +180,40 @@ ci_gate() { # ci_gate SHA DAL
   echo pending
 }
 
-# Sunucu kurulum testi (deploy-test.yml) yalnızca INSTALL_TEST_PATHS değişince çalışır. Yayın onu şu durumda bekler:
+# Yola bağlı iş akışları (sunucu kurulum testi: deploy-test.yml · demo ortamı: demo-env.yml) yalnızca kendi yolları değişince
+# çalışır. Yayın onları şu durumda bekler:
 #  · yayındaki commit (TABAN) bilinir ve TABAN..SHA aralığında bu yollar değiştiyse: değişikliği içeren EN YENİ commit
-#    (L) ile SHA arasındaki commit'lerden, izlenen dalda kurulum testi koşusu olan EN YENİSİ başarılı olmalı (koşu yoksa
-#    henüz oluşmamıştır → bekle); bu yollar değişmediyse kurulum testi gerekmez;
-#  · TABAN bilinmiyorsa (ilk kurulum): SHA ve önceki 20 commit'ten kurulum testi koşusu olan en yenisi başarılı olmalı.
-install_gate() { # install_gate SHA DAL [TABAN]
-  local sha=$1 b=$2 base=${3:-} last c s list
+#    (L) ile SHA arasındaki commit'lerden, izlenen dalda o iş akışının koşusu olan EN YENİSİ başarılı olmalı (koşu yoksa
+#    henüz oluşmamıştır → bekle); bu yollar değişmediyse test gerekmez. CI'nin kendi yazdığı commit'ler ("CI: …", GitHub
+#    Actions) iş akışı başlatmaz: onların değişikliği L sayılmaz (içeriğini üst commit'in koşusu üretmiş ve sınamıştır);
+#  · TABAN bilinmiyorsa (ilk kurulum): SHA ve önceki 20 commit'ten o iş akışının koşusu olan en yenisi başarılı olmalı.
+is_bot_commit() { # is_bot_commit SHA
+  local info email subject
+  info=$(git -C "$SRC" log -1 --format='%ae%x09%s' "$1" 2>/dev/null) || return 1
+  email=${info%%$'\t'*}; subject=${info#*$'\t'}
+  [[ $email == *github-actions* && $subject == CI:* ]]
+}
+paths_gate() { # paths_gate SHA DAL TABAN İŞ_AKIŞI_YOLU YOL…
+  local sha=$1 b=$2 base=$3 wf=$4 last='' c s list changed; shift 4
   if [ -n "$base" ] && git -C "$SRC" merge-base --is-ancestor "$base" "$sha" 2>/dev/null; then
     [ "$base" = "$sha" ] && { echo success; return; }
-    if git -C "$SRC" diff --quiet "$base" "$sha" -- "${INSTALL_TEST_PATHS[@]}" 2>/dev/null; then echo success; return; fi
-    last=$(git -C "$SRC" log -1 --first-parent --format=%H "$base..$sha" -- "${INSTALL_TEST_PATHS[@]}" 2>/dev/null) || { echo pending; return; }
+    if git -C "$SRC" diff --quiet "$base" "$sha" -- "$@" 2>/dev/null; then echo success; return; fi
+    changed=$(git -C "$SRC" log --first-parent --format=%H "$base..$sha" -- "$@" 2>/dev/null) || { echo pending; return; }
+    for c in $changed; do
+      if ! is_bot_commit "$c"; then last=$c; break; fi
+    done
     list=$(git -C "$SRC" rev-list --first-parent "$base..$sha" 2>/dev/null) || { echo pending; return; }
-    # Aralıkta yol değişikliği ancak birleştirme dışı bir yoldan geldiyse (L bulunamadı): en temkinli seçim — SHA'nın kendisi
-    [ -n "$last" ] || last=$sha
+    if [ -z "$last" ]; then
+      # Değişiklik yalnızca CI'nin kendi commit'lerinden geldiyse yeni koşu gerekmez; birleştirme dışı bir yoldan geldiyse
+      # (birinci üst zincirde değişiklik bulunamadı): en temkinli seçim — SHA'nın kendisi
+      if [ -n "$changed" ]; then echo success; return; fi
+      last=$sha
+    fi
   else
     list=$(git -C "$SRC" rev-list --first-parent -n 21 "$sha" 2>/dev/null) || { echo pending; return; }
-    last=''
   fi
   for c in $list; do
-    s=$(run_state "$c" "$INSTALL_WORKFLOW_PATH" "$b")
+    s=$(run_state "$c" "$wf" "$b")
     case $s in
       none) ;;
       *) echo "$s"; return ;;
@@ -196,8 +222,10 @@ install_gate() { # install_gate SHA DAL [TABAN]
   done
   echo pending
 }
+install_gate() { paths_gate "$1" "$2" "${3:-}" "$INSTALL_WORKFLOW_PATH" "${INSTALL_TEST_PATHS[@]}"; } # install_gate SHA DAL [TABAN]
+demo_gate() { paths_gate "$1" "$2" "${3:-}" "$DEMO_WORKFLOW_PATH" "${DEMO_TEST_PATHS[@]}"; }          # demo_gate SHA DAL [TABAN]
 
-# gate SHA [TABAN] — yayınlanabilir mi: izlenen daldaki CI VE (gerekiyorsa) sunucu kurulum testi başarılı.
+# gate SHA [TABAN] — yayınlanabilir mi: izlenen daldaki CI VE (gerekiyorsa) sunucu kurulum testi VE (gerekiyorsa) demo testi başarılı.
 # Sonuç: success | failure | pending. Biri failure ise failure; biri bekliyorsa / okunamıyorsa pending.
 gate() {
   local sha=$1 base=${2:-} b ci inst
@@ -211,7 +239,8 @@ gate() {
   ci=$(ci_gate "$sha" "$b")
   [ "$ci" = success ] || { echo "$ci"; return; }
   inst=$(install_gate "$sha" "$b" "$base")
-  echo "$inst"
+  [ "$inst" = success ] || { echo "$inst"; return; }
+  demo_gate "$sha" "$b" "$base"
 }
 
 # İzlenen dalın GitHub'daki güncel ucu hâlâ SHA mı (yayının son adımlarından önce; karar 276). Okunamazsa "hayır".
@@ -466,8 +495,8 @@ sync_backup_timer() {
   return 0
 }
 
-wait_healthy() { # wait_healthy SANİYE
-  local end=$((SECONDS + ${1:-180})) id s
+wait_healthy() { # wait_healthy SANİYE (TAKIP_HEALTHY_WAIT: yalnızca mantık testleri kısaltır)
+  local end=$((SECONDS + ${TAKIP_HEALTHY_WAIT:-${1:-180}})) id s
   while [ $SECONDS -lt $end ]; do
     id=$(compose ps -q app 2>/dev/null || true)
     s=$(docker inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || echo yok)
@@ -635,15 +664,721 @@ cmd_cache() {
   say "Yalnızca derleme önbelleği silinir; imajlara, kapsayıcılara, veritabanına, dosyalara ve yedeklere dokunulmaz. Şimdi denetlemek için: takip cache temizle"
 }
 
-# ---------- yayınlama ----------
-do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın güncel ucu yayınlanır (otomatik / elle güncelleme)
-  local sha=$1 prev=${2:-} only_head=${3:-} s ver f prev_tag
-  s=$(short "$sha"); ver=$(version_of "$sha")
-  # Kapıdan sonra dal ilerlediyse ESKİ commit yayınlanmaz (bir sonraki tur yeni ucu değerlendirir); çalışan sürüme dokunulmaz
-  if [ "$only_head" = uc ] && ! head_is "$sha"; then
-    log "⏸ $ver ($s) yayınlanmadı: '$(branch)' dalının ucu değişti ya da doğrulanamadı; çalışan sürüm aynen sürüyor."
+# ---------- yayın kaydı, yayın sağlığı ve güvenli geri dönüş (karar 287) ----------
+# Ayrıntı: docs/geri-donus.md (geri dönüş) · docs/felaket-kurtarma.md (felaket kurtarma — AYRI süreç) · ADR 0015.
+#
+# Son sağlıklı sürüm kaydı ($STATE/releases, yalnızca root): her yayın, sağlık denetiminin TAMAMINDAN geçince bir kayıt yazar
+#   <SHA>.kayit       sürüm, tam SHA, imaj etiketi, uygulama + araç/işçi imaj kimliği (sha256:…), yayın / doğrulama zamanı,
+#                     migration sayısı + son migration + listenin özeti, sağlık sonucu, kaynak (deploy | bootstrap | rollback)
+#   <SHA>.migrations  o anda veritabanında UYGULANMIŞ migration'lar (ad + PostgreSQL'deki checksum) — veritabanının kendisinden
+#   release-healthy / release-healthy-prev   son doğrulanmış sağlıklı sürüm ve ondan önceki (geri dönüş adayı)
+# Dosyalar geçici dosyaya yazılıp taşınarak (mv) güncellenir: kesintide yarım kayıt kalmaz. Başarısız / sağlıksız yayın
+# kayıt YAZMAZ ve göstergeleri değiştirmez. İmaj temizliği göstergelerdeki sürümlerin imajlarını hiçbir zaman silmez.
+#
+# Geri dönüş YALNIZCA uygulama + işçi imajını değiştirir (APP_TAG + compose up). Veritabanına dokunmaz: yedekten geri
+# yükleme, migration geri alma, veri silme YOKTUR. Güvenli sayılması için hepsi gerekir:
+#   · hedef sürümün doğrulanmış kaydı ve imajları var, imaj kimlikleri kayıttakiyle aynı;
+#   · veritabanındaki uygulanmış migration listesi (ad + checksum) hedefin SAĞLIKLI DOĞRULANDIĞI andaki listeyle BİREBİR
+#     aynı (hedeften sonra hiçbir migration uygulanmamış) ve yarım kalmış migration yok — dosya adına / sürüm numarasına
+#     bakılarak uyumluluk VARSAYILMAZ; kanıt veritabanının kendi kaydıdır;
+#   · hedefin araç imajındaki Prisma istemcisi bütün modelleri SALT OKUNUR işlemde okuyabiliyor (yoklama);
+#   · hedefin Caddyfile'ı (farklıysa) çalışan Caddy'nin sürümüyle geçerli.
+# Kip ($STATE/rollback-mode): "gozlem" (varsayılan) — yayın sonrası sağlık sorunu algılanır, kaydedilir, geri dönüşün güvenli
+# olup olmadığı hesaplanır ve yöneticiye e-posta gider; canlı servis KENDİLİĞİNDEN eski sürüme geçirilmez. "otomatik" yalnızca
+# sahibin açık onayıyla açılır (takip rollback-modu otomatik). Elle geri dönüş: takip rollback (aynı denetimler).
+REL=$STATE/releases
+REL_LOG=$LOGS/release.log
+REL_HEALTHY=$STATE/release-healthy
+REL_PREV=$STATE/release-healthy-prev
+REL_OP=$STATE/release-op
+REL_MODE=$STATE/rollback-mode
+REL_ADOPT=$STATE/release-adopt
+REL_MISMATCH=$STATE/release-mismatch
+REL_KEEP_RECORDS=10
+HEALTH_TRIES=${TAKIP_HEALTH_TRIES:-3}
+HEALTH_GAP=${TAKIP_HEALTH_GAP:-15}
+WORKER_MIN_UP=${TAKIP_WORKER_MIN_UP:-15}
+case $HEALTH_TRIES in '' | *[!0-9]* | 0) HEALTH_TRIES=3 ;; esac
+case $HEALTH_GAP in '' | *[!0-9]*) HEALTH_GAP=15 ;; esac
+case $WORKER_MIN_UP in '' | *[!0-9]*) WORKER_MIN_UP=15 ;; esac
+[ -d "$REL" ] || (umask 077 && mkdir -p "$REL")
+
+# İşlem geçmişi (salt eklenir): zaman, işlem, sürümler, sonuç kodları. Gizli değer, komut çıktısı, adres YAZILMAZ.
+rlog() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$REL_LOG"; }
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+rollback_mode() { if [ "$(cat "$REL_MODE" 2>/dev/null || true)" = otomatik ]; then echo otomatik; else echo gozlem; fi; }
+# Dosyayı geçici dosyaya yazıp taşır (kesintide ya eski ya yeni içerik kalır; yarım dosya kalmaz)
+atomic_write() { # atomic_write DOSYA < içerik
+  local t; t=$(mktemp "$1.XXXXXX")
+  cat >"$t"
+  chmod 600 "$t"
+  mv -f "$t" "$1"
+}
+is_sha() { [[ ${1:-} =~ ^[0-9a-f]{40}$ ]]; }
+read_ptr() { local v; v=$(head -n1 "$1" 2>/dev/null || true); if is_sha "$v"; then echo "$v"; fi; }
+rec_file() { echo "$REL/$1.kayit"; }
+rec_get() { # rec_get SHA ANAHTAR
+  is_sha "$1" || return 0
+  grep -E "^$2=" "$(rec_file "$1")" 2>/dev/null | head -n1 | cut -d= -f2- || true
+}
+rec_ok() { is_sha "${1:-}" && [ -s "$(rec_file "$1")" ] && [ -s "$REL/$1.migrations" ]; }
+image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+# İmaja derlemede gömülen commit (Dockerfile: ARG/ENV GIT_SHA) — yayınlanan commit ile onaylanan commit aynı mı
+image_git_sha() { docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null | sed -n 's/^GIT_SHA=//p' | head -n1 || true; }
+cid() { compose ps -q "$1" 2>/dev/null | head -n 1 || true; }
+
+# Veritabanında uygulanmış migration'lar: "ad checksum" satırları (sıralı). Okunamazsa 1.
+mig_state() {
+  local out
+  out=$(db_sql 'SELECT migration_name || '"' '"' || checksum FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name' takip 2>/dev/null) || return 1
+  printf '%s\n' "$out" | grep -E '^[A-Za-z0-9_.-]+ [0-9a-f]+$' | LC_ALL=C sort || true
+}
+# Yarım kalmış (başlamış, bitmemiş, geri alınmamış) migration sayısı; okunamazsa boş
+mig_failed() { db_sql 'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NULL AND rolled_back_at IS NULL' takip 2>/dev/null | tr -cd '0-9' || true; }
+# Commit'in kaynağındaki migration klasörleri (yalnızca yayın ÖNCESİ "bu yayın neler uygulayacak" bilgisi için)
+mig_tree() { git -C "$SRC" ls-tree -d --name-only "$1:prisma/migrations" 2>/dev/null | LC_ALL=C sort || true; }
+# mig_pending SHA → SHA'nın getirdiği, veritabanında henüz uygulanmamış migration adları
+mig_pending() {
+  local applied
+  applied=$(mig_state | cut -d' ' -f1) || return 1
+  LC_ALL=C comm -23 <(mig_tree "$1") <(printf '%s\n' "$applied" | LC_ALL=C sort) | grep . || true
+}
+
+# /surum yanıtı (sunucunun kendisi üzerinden HTTPS, Caddy içinden; DNS'e bağlı değil — APP_DOMAIN: takip.gkh.ro)
+surum_json() {
+  local domain; domain=$(env_get APP_DOMAIN)
+  [ -n "$domain" ] && command -v curl >/dev/null 2>&1 || return 1
+  curl -fsSk --max-time 10 --resolve "$domain:443:127.0.0.1" "https://$domain/surum" 2>/dev/null
+}
+
+# Salt okunur uygulama yoklaması: verilen etiketin ARAÇ imajındaki Prisma istemcisi, veritabanındaki bütün modelleri tek bir
+# READ ONLY işlemde okur (findFirst). Yazma yoktur (PostgreSQL işlemi salt okunur); veri ekrana / günlüğe yazılmaz — çıktı
+# yalnızca "PROBE_OK n" ya da "PROBE_FAIL MODEL KOD". Betik araca gömülüdür: yoklama, betiği içermeyen eski imajlarda da çalışır.
+PROBE_RESULT=''
+probe_tag() { # probe_tag ETİKET → 0 başarılı; PROBE_RESULT: son satır
+  local out
+  PROBE_RESULT=''
+  out=$(APP_TAG="$1" compose run --rm --no-deps -T tools node - 2>/dev/null <<'JS'
+const { PrismaClient, Prisma } = require('@prisma/client');
+(async () => {
+  const db = new PrismaClient();
+  let out = 'PROBE_FAIL CLIENT';
+  const code = (e) => String((e && e.code) || 'ERR').replace(/[^A-Z0-9_]/g, '').slice(0, 12) || 'ERR';
+  try {
+    const names = Object.values((Prisma && Prisma.ModelName) || {});
+    if (!names.length) out = 'PROBE_FAIL NO_MODELS';
+    else {
+      out = await db.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+        await tx.$executeRawUnsafe('SET LOCAL statement_timeout = 8000');
+        for (const n of names) {
+          const k = n.charAt(0).toLowerCase() + n.slice(1);
+          if (!tx[k] || typeof tx[k].findFirst !== 'function') return 'PROBE_FAIL ' + n + ' NO_DELEGATE';
+          try { await tx[k].findFirst({}); } catch (e) { return 'PROBE_FAIL ' + n + ' ' + code(e); }
+        }
+        return 'PROBE_OK ' + names.length;
+      }, { timeout: 120000, maxWait: 10000 });
+    }
+  } catch (e) {
+    out = 'PROBE_FAIL TX ' + code(e);
+  } finally {
+    await db.$disconnect().catch(() => {});
+  }
+  process.stdout.write(out.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 120) + '\n');
+  process.exit(out.startsWith('PROBE_OK') ? 0 : 1);
+})();
+JS
+) || true
+  PROBE_RESULT=$(printf '%s\n' "$out" | grep -E '^PROBE_(OK|FAIL)' | tail -n1 | tr -cd 'A-Za-z0-9_ ' | cut -c1-120 || true)
+  case $PROBE_RESULT in 'PROBE_OK '*) return 0 ;; esac
+  return 1
+}
+
+# health_once ETİKET SÜRÜM SİTE(1|0) [yoklama(1|0)] → sorun kodları (boş = sağlıklı)
+health_once() {
+  local tag=$1 ver=$2 edge=$3 probe=${4:-1} codes='' app w st started now out v b n
+  app=$(cid app)
+  if [ -z "$app" ] || [ "$(docker inspect -f '{{.State.Health.Status}}' "$app" 2>/dev/null || true)" != healthy ]; then codes="$codes APP_DOWN"; fi
+  if [ -z "$app" ] || [ "$(docker inspect -f '{{.Image}}' "$app" 2>/dev/null || true)" != "$(image_id "takip:$tag")" ]; then codes="$codes APP_IMAGE"; fi
+  w=$(cid worker)
+  st=$(docker inspect -f '{{.State.Status}}|{{.State.Restarting}}|{{.State.StartedAt}}' "$w" 2>/dev/null || true)
+  if [ -z "$w" ] || [ "${st%%|*}" != running ] || [ "$(echo "$st" | cut -d'|' -f2)" != false ]; then
+    codes="$codes WORKER_DOWN"
+  else
+    # Yeni başlamış işçi henüz "ayakta" sayılmaz (çöküp yeniden başlama döngüsü yakalansın)
+    started=$(date -d "$(echo "$st" | cut -d'|' -f3)" +%s 2>/dev/null || echo 0)
+    now=$(date +%s)
+    [ $((now - started)) -ge "$WORKER_MIN_UP" ] || codes="$codes WORKER_DOWN"
+  fi
+  if [ -z "$w" ] || [ "$(docker inspect -f '{{.Image}}' "$w" 2>/dev/null || true)" != "$(image_id "takip:$tag-tools")" ]; then codes="$codes WORKER_IMAGE"; fi
+  if [ "$(db_sql 'SELECT 1' takip 2>/dev/null || true)" != 1 ]; then
+    codes="$codes DB"
+  else
+    n=$(mig_failed)
+    [ "$n" = 0 ] || codes="$codes MIGRATION_FAILED"
+  fi
+  if [ "$edge" = 1 ]; then
+    if out=$(surum_json); then
+      v=$(jq -r '.version // ""' <<<"$out" 2>/dev/null || true)
+      b=$(jq -r '.build // ""' <<<"$out" 2>/dev/null || true)
+      if [ "$v" != "$ver" ] || [ "$b" != "$(short "$tag")" ]; then codes="$codes VERSION"; fi
+    else
+      codes="$codes EDGE"
+    fi
+  fi
+  if [ "$probe" = 1 ] && [ -z "$codes" ] && ! probe_tag "$tag"; then codes="$codes PROBE"; fi
+  echo "$codes" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true
+}
+# release_health ETİKET SÜRÜM SİTE → 0 sağlıklı. Geçici gecikmelere karşı sınırlı tekrar: HEALTH_TRIES tur, aralarında
+# HEALTH_GAP sn. HEALTH_CODES: son turun sorunları; HEALTH_NOTE: geçici sorun görüldüyse ilk turun kodları.
+HEALTH_CODES='' HEALTH_NOTE=''
+release_health() {
+  local tag=$1 ver=$2 edge=$3 i codes
+  HEALTH_CODES='' HEALTH_NOTE=''
+  for ((i = 1; i <= HEALTH_TRIES; i++)); do
+    codes=$(health_once "$tag" "$ver" "$edge")
+    if [ -z "$codes" ]; then HEALTH_CODES=''; return 0; fi
+    [ -n "$HEALTH_NOTE" ] || HEALTH_NOTE=$codes
+    log "  sağlık denetimi $i/$HEALTH_TRIES: $codes"
+    [ "$i" -lt "$HEALTH_TRIES" ] && sleep "$HEALTH_GAP"
+  done
+  HEALTH_CODES=$codes
+  return 1
+}
+
+# Kayıt: release_record SHA ETİKET KAYNAK SİTE_DENETİMİ — sağlık denetimi BAŞARILI olduktan sonra çağrılır.
+release_record() {
+  local sha=$1 tag=$2 src=$3 edge=$4 mig app tools ver h
+  app=$(image_id "takip:$tag"); tools=$(image_id "takip:$tag-tools")
+  [ -n "$app" ] && [ -n "$tools" ] || { log "⚠ sağlıklı sürüm kaydı yazılamadı: imaj kimliği okunamadı"; return 1; }
+  mig=$(mig_state) || { log "⚠ sağlıklı sürüm kaydı yazılamadı: migration listesi okunamadı"; return 1; }
+  ver=$(version_of "$sha")
+  # Yayın zamanı: yayında kaydedilirken yayının başladığı an; doğrulama / geri dönüş kaydında önceki değer korunur
+  local da; da=$(rec_get "$sha" deployed_at)
+  if [ "$src" = deploy ] || [ -z "$da" ]; then da=${REL_DEPLOYED_AT:-$(now_iso)}; fi
+  printf '%s\n' "$mig" | grep . | atomic_write "$REL/$sha.migrations" || true
+  [ -s "$REL/$sha.migrations" ] || { log "⚠ sağlıklı sürüm kaydı yazılamadı: migration listesi boş"; rm -f "$REL/$sha.migrations"; return 1; }
+  {
+    echo "sha=$sha"
+    echo "version=$ver"
+    echo "tag=$tag"
+    echo "app_image=$app"
+    echo "tools_image=$tools"
+    echo "deployed_at=$da"
+    echo "verified_at=$(now_iso)"
+    echo "migrations_count=$(grep -c . "$REL/$sha.migrations")"
+    echo "migrations_last=$(tail -n1 "$REL/$sha.migrations" | cut -d' ' -f1)"
+    echo "migrations_sha256=$(sha256sum "$REL/$sha.migrations" | cut -c1-64)"
+    echo "health=app,worker,images,db,migrations,probe$([ "$edge" = 1 ] && echo ',site' || true)"
+    echo "source=$src"
+  } | atomic_write "$(rec_file "$sha")"
+  # Göstergeler: yeni sağlıklı sürüm; önceki sağlıklı sürüm geri dönüş adayı olur (aynı imajı kullanıyorsa aday değişmez)
+  h=$(read_ptr "$REL_HEALTHY")
+  if [ "$src" = rollback ]; then
+    echo "$sha" | atomic_write "$REL_HEALTHY"
+    rm -f "$REL_PREV"
+  elif [ "$h" != "$sha" ]; then
+    if [ -n "$h" ] && [ "$(rec_get "$h" tag)" != "$tag" ]; then echo "$h" | atomic_write "$REL_PREV"; fi
+    echo "$sha" | atomic_write "$REL_HEALTHY"
+  fi
+  rm -f "$REL/pre-$sha.migrations"
+  rlog "SAGLIKLI_KAYIT $ver $(short "$sha") etiket=$(short "$tag") kaynak=$src uygulama=${app:7:12} isci=${tools:7:12} migration=$(grep -c . "$REL/$sha.migrations") yoklama=${PROBE_RESULT:-yok}"
+  release_prune_records
+}
+# Eski kayıtlar: göstergedeki / yayındaki sürümler ve en yeni REL_KEEP_RECORDS kayıt kalır; yalnızca bu klasördeki kendi dosyalarımız
+release_prune_records() {
+  local keep f s
+  keep=" $(read_ptr "$REL_HEALTHY") $(read_ptr "$REL_PREV") $(read_ptr "$STATE/deployed") "
+  # shellcheck disable=SC2012 # adlar sabit biçimlidir (SHA.kayit)
+  for f in $(ls -1t "$REL"/*.kayit 2>/dev/null | tail -n +$((REL_KEEP_RECORDS + 1))); do
+    s=$(basename "$f" .kayit)
+    is_sha "$s" || continue
+    case $keep in *" $s "*) continue ;; esac
+    rm -f "$REL/$s.kayit" "$REL/$s.migrations"
+  done
+}
+# İmaj temizliğinde korunacak etiketler: yayındaki, bir önceki (yayın sırasındaki), son sağlıklı ve geri dönüş adayı
+protected_tags() { # protected_tags [EK_ETİKET …]
+  local t s
+  for t in "$@" "$(env_get APP_TAG)" "$(rec_get "$(read_ptr "$REL_HEALTHY")" tag)" "$(rec_get "$(read_ptr "$REL_PREV")" tag)"; do
+    [ -n "$t" ] || continue
+    echo "$t"; echo "$t-tools"
+  done
+  s=$(read_ptr "$STATE/deployed"); [ -n "$s" ] && { echo "$s"; echo "$s-tools"; }
+  return 0
+}
+# Eski imajlar silinir; korunanlar asla (son sağlıklı sürüm ve geri dönüş adayı dahil)
+release_prune_images() { # release_prune_images [EK_ETİKET …]
+  local keep t
+  keep=" $(protected_tags "$@" | sort -u | xargs) "
+  for t in $(docker images takip --format '{{.Tag}}' 2>/dev/null || true); do
+    case $keep in *" $t "*) ;; *) docker rmi "takip:$t" >/dev/null 2>&1 || true ;; esac
+  done
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
+# Yarıda kalan işlem işareti: yayın / geri dönüş başlarken yazılır, bitince silinir. Sunucu işlem ortasında yeniden başlarsa
+# bir sonraki çalıştırma (kilit alındıktan sonra) bunu görür: release_recover.
+op_begin() { # op_begin TÜR KAYNAK HEDEF
+  { echo "op=$1"; echo "from=$2"; echo "to=$3"; echo "started=$(now_iso)"; echo "pid=$$"; } | atomic_write "$REL_OP"
+  rlog "BASLADI $1 $(short "${2:-yok}") → $(short "$3")"
+}
+op_end() { rm -f "$REL_OP"; }
+op_get() { grep -E "^$1=" "$REL_OP" 2>/dev/null | head -n1 | cut -d= -f2- || true; }
+
+# Geri dönüş hedefi: yayındaki sürüm doğrulanmış sağlıklı sürüm DEĞİLSE o sağlıklı sürüm; yayındaki zaten sağlıklıysa ondan
+# önceki sağlıklı sürüm (aday). Hiçbiri yoksa boş.
+rollback_target() {
+  local d h p
+  d=$(read_ptr "$STATE/deployed"); h=$(read_ptr "$REL_HEALTHY"); p=$(read_ptr "$REL_PREV")
+  if [ -n "$h" ] && [ "$h" != "$d" ] && [ "$(rec_get "$h" tag)" != "$(env_get APP_TAG)" ]; then echo "$h"
+  elif [ -n "$p" ] && [ "$p" != "$d" ]; then echo "$p"
+  fi
+}
+# rollback_verdict HEDEF [yoklama] → 0 güvenli. RB_CODES: engeller; RB_DETAIL: migration farkı (yalnızca adlar).
+RB_CODES='' RB_DETAIL=''
+rollback_verdict() {
+  local t=$1 probe=${2:-} tag cur d n cf vrc=0
+  RB_CODES='' RB_DETAIL=''
+  if ! rec_ok "$t"; then RB_CODES=NO_RECORD; return 1; fi
+  tag=$(rec_get "$t" tag)
+  if [ -z "$(image_id "takip:$tag")" ] || [ -z "$(image_id "takip:$tag-tools")" ]; then RB_CODES="$RB_CODES IMAGE_MISSING"
+  elif [ "$(image_id "takip:$tag")" != "$(rec_get "$t" app_image)" ] || [ "$(image_id "takip:$tag-tools")" != "$(rec_get "$t" tools_image)" ]; then RB_CODES="$RB_CODES IMAGE_CHANGED"
+  fi
+  if cur=$(mig_state); then
+    n=$(mig_failed)
+    [ "$n" = 0 ] || RB_CODES="$RB_CODES MIGRATION_FAILED"
+    if ! d=$(LC_ALL=C diff <(cat "$REL/$t.migrations") <(printf '%s\n' "$cur" | grep .)); then
+      RB_CODES="$RB_CODES MIGRATION_CHANGED"
+      # Yalnızca ad ve yön: + hedeften sonra uygulanmış · - hedefte olup şimdi olmayan (checksum farkı her iki satırda görünür)
+      RB_DETAIL=$(printf '%s\n' "$d" | sed -n -e 's/^> \([^ ]*\) .*/+\1/p' -e 's/^< \([^ ]*\) .*/-\1/p' | head -n 20 | xargs || true)
+    fi
+  else
+    RB_CODES="$RB_CODES DB"
+  fi
+  # Hedefin Caddyfile'ı yayındakinden farklıysa çalışan Caddy'nin sürümüyle doğrulanır
+  if ! git -C "$SRC" cat-file -e "$t^{commit}" 2>/dev/null; then
+    RB_CODES="$RB_CODES NO_SOURCE"
+  elif ! git -C "$SRC" diff --quiet HEAD "$t" -- deploy/Caddyfile 2>/dev/null; then
+    cf=$(mktemp)
+    git -C "$SRC" show "$t:deploy/Caddyfile" >"$cf" 2>/dev/null || true
+    caddy_validate "$cf" >/dev/null || vrc=$?
+    rm -f "$cf"
+    [ "$vrc" = 1 ] && RB_CODES="$RB_CODES CADDY_INVALID"
+  fi
+  if [ -z "$RB_CODES" ] && [ "$probe" = yoklama ] && ! probe_tag "$tag"; then RB_CODES="$RB_CODES PROBE"; fi
+  RB_CODES=$(echo "$RB_CODES" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true)
+  [ -z "$RB_CODES" ]
+}
+rb_code_text() {
+  case $1 in
+    NO_RECORD) echo 'hedefin doğrulanmış sağlıklı sürüm kaydı yok' ;;
+    NO_TARGET) echo 'geri dönülecek doğrulanmış sağlıklı sürüm yok' ;;
+    IMAGE_MISSING) echo 'hedefin uygulama / işçi imajı sunucuda yok' ;;
+    IMAGE_CHANGED) echo 'hedefin imaj kimliği kayıttakiyle aynı değil' ;;
+    MIGRATION_CHANGED) echo 'hedeften sonra veritabanına migration uygulanmış (eski kodla uyumluluk kanıtlanamıyor)' ;;
+    MIGRATION_FAILED) echo 'veritabanında yarım kalmış migration var' ;;
+    DB) echo 'veritabanına erişilemedi' ;;
+    NO_SOURCE) echo 'hedefin kaynağı (git) sunucuda yok' ;;
+    CADDY_INVALID) echo "hedefin Caddyfile'ı çalışan Caddy'de geçersiz" ;;
+    PROBE) echo "hedefin Prisma istemcisi veritabanını salt okunur okuyamadı" ;;
+    BUSY) echo 'başka bir yayın / geri dönüş / geri yükleme sürüyor' ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# Yönetici e-postası: mevcut güvenli alarm altyapısıyla (karar 249 / 275 — sabit metin, yalnızca kodlar) scripts/release-alert.mjs.
+# Betiği içeren ilk imaj kullanılır (yeni sürüm, yayındaki, son sağlıklı). Gönderilemezse yalnızca kayda yazılır.
+release_alert() { # release_alert TÜR KAYNAK_SÜRÜM HEDEF_SÜRÜM [KOD …]
+  local kind=$1 from=$2 to=$3 host t tag='' rc=0; shift 3
+  for t in "${ALERT_TAG:-}" "$(env_get APP_TAG)" "$(rec_get "$(read_ptr "$REL_HEALTHY")" tag)"; do
+    [ -n "$t" ] || continue
+    if git -C "$SRC" cat-file -e "$t:scripts/release-alert.mjs" 2>/dev/null && [ -n "$(image_id "takip:$t-tools")" ]; then tag=$t; break; fi
+  done
+  if [ -z "$tag" ]; then rlog "ALARM_GONDERILEMEDI $kind (betik içeren imaj yok) $*"; return 0; fi
+  host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9.-' | cut -c1-64)
+  APP_TAG="$tag" compose run --rm --no-deps -T tools node scripts/release-alert.mjs "$kind" --host "${host:-sunucu}" \
+    --from "$from" --to "$to" --mode "$(rollback_mode)" "$@" >/dev/null 2>&1 </dev/null || rc=$?
+  if [ "$rc" = 0 ]; then rlog "ALARM $kind gönderildi: $*"; else rlog "ALARM_GONDERILEMEDI $kind (çıkış $rc): $*"; fi
+  return 0
+}
+
+# Yayın öncesi denetim (derlemeden sonra, yedek ve migration'dan ÖNCE; hiçbir şeyi değiştirmez). 1 → yayın durdurulur.
+predeploy_checks() { # predeploy_checks SHA
+  local sha=$1 app w h n t age pend
+  app=$(cid app); w=$(cid worker)
+  log "  yayın öncesi: uygulama $(docker inspect -f '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$app" 2>/dev/null || echo yok), işçi $(docker inspect -f '{{.State.Status}}' "$w" 2>/dev/null || echo yok)"
+  compose up -d db >/dev/null 2>&1 || true
+  local i
+  for ((i = 1; i <= ${TAKIP_DB_TRIES:-6}; i++)); do [ "$(db_sql 'SELECT 1' takip 2>/dev/null || true)" = 1 ] && break; sleep "${TAKIP_DB_GAP:-5}"; done
+  if [ "$(db_sql 'SELECT 1' takip 2>/dev/null || true)" != 1 ]; then
+    log "✘ yayın öncesi: PostgreSQL'e erişilemiyor; yayınlanmadı (hiçbir şey değişmedi)."
+    return 1
+  fi
+  n=$(mig_failed)
+  if [ -n "$n" ] && [ "$n" != 0 ]; then
+    log "✘ yayın öncesi: veritabanında yarım kalmış migration var ($n); yayınlanmadı — elle inceleme gerekir."
+    return 1
+  fi
+  t=$(mtime "$STATE/backup-last-ok")
+  if [ -n "$t" ]; then
+    age=$(( ($(date +%s) - t) / 3600 ))
+    if [ "$age" -le 26 ]; then log "  yayın öncesi: son tam yedek (yerel + Drive) $age saat önce"; else log "⚠ yayın öncesi: son tam yedek $age saat önce (26 saatten eski); yayından hemen önce ayrıca veritabanı yedeği alınır"; fi
+  else
+    log "⚠ yayın öncesi: tam yedek kaydı yok; yayından hemen önce veritabanı yedeği alınır"
+  fi
+  h=$(read_ptr "$REL_HEALTHY")
+  if [ -n "$h" ]; then
+    if [ -n "$(image_id "takip:$(rec_get "$h" tag)")" ] && [ -n "$(image_id "takip:$(rec_get "$h" tag)-tools")" ]; then
+      log "  yayın öncesi: son sağlıklı sürüm $(rec_get "$h" version) ($(short "$h")) — imajları mevcut ve temizlikten korunuyor"
+    else
+      log "⚠ yayın öncesi: son sağlıklı sürümün ($(short "$h")) imajı sunucuda yok — bu sürüme geri dönülemez"
+    fi
+  else
+    log "  yayın öncesi: henüz doğrulanmış sağlıklı sürüm kaydı yok (ilk kayıt bu yayından / ilk denetimden sonra yazılır)"
+  fi
+  # Veritabanının şu anki migration durumu saklanır: yayın yarıda kalırsa / açılmazsa "migration uygulandı mı" bundan anlaşılır
+  mig_state | grep . | atomic_write "$REL/pre-$sha.migrations" || true
+  pend=$(mig_pending "$sha" | xargs || true)
+  if [ -z "$pend" ]; then
+    log "  yayın öncesi: yeni migration yok — sorun olursa önceki sürüme güvenli dönüş mümkün"
+  else
+    log "  yayın öncesi: bu yayın $(echo "$pend" | wc -w) migration uygular ($(echo "$pend" | cut -c1-300)) — yayından sonra önceki sürüme otomatik dönüş MÜMKÜN OLMAYACAK"
+  fi
+  rlog "ON_DENETIM $(version_of "$sha") $(short "$sha") migration=$(echo "$pend" | wc -w)"
+  return 0
+}
+# Yayın (veritabanı güncellemesinden sonra) açılmadıysa: veritabanının migration durumu yayın öncesiyle AYNIYSA önceki sürüme
+# dönülür (eski davranış, kanıtlanmış güvenli); farklıysa dönülmez — eski kod yeni şemayla çalıştırılmaz, elle müdahale gerekir.
+mig_unchanged_since() { # mig_unchanged_since SHA → 0: yayın öncesi durumla aynı
+  local cur
+  [ -f "$REL/pre-$1.migrations" ] || return 1
+  cur=$(mig_state) || return 1
+  [ "$(printf '%s\n' "$cur" | grep . || true)" = "$(cat "$REL/pre-$1.migrations")" ]
+}
+
+# Geri dönüşü uygular (kilit çağıranda). NASIL: elle | otomatik | devam (yarıda kalan geri dönüşü tamamlama).
+# Dönüş: 0 başarılı · 1 geri dönüldü ama sağlık denetimi geçmedi · 2 reddedildi (hiçbir şey değişmedi)
+do_rollback() { # do_rollback HEDEF NASIL
+  local t=$1 how=$2 d tag ver caddy_changed=0 t0=$SECONDS blog secs
+  d=$(read_ptr "$STATE/deployed")
+  tag=$(rec_get "$t" tag); ver=$(rec_get "$t" version)
+  if ! rollback_verdict "$t" yoklama; then
+    log "✘ geri dönüş ($how) REDDEDİLDİ → $ver ($(short "$t")): $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]} — hiçbir şey değişmedi"
+    rlog "GERI_DONUS_RED $how $(short "${d:-yok}") → $(short "$t") $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]}"
+    return 2
+  fi
+  if [ -n "$d" ] && ! git -C "$SRC" diff --quiet "$d" "$t" -- deploy/Caddyfile 2>/dev/null; then caddy_changed=1; fi
+  op_begin rollback "$d" "$t"
+  # Geri dönülen sürüm otomatik güncellemeyle yeniden yayınlanmasın (yeni commit gelince yayın normal sürer)
+  if [ -n "$d" ] && [ "$d" != "$t" ] && [ "$how" != devam ]; then echo "$d" >"$STATE/failed"; fi
+  blog="$LOGS/geri-donus-$(short "$t").log"
+  log "↩ $ver ($(short "$t")) sürümüne geri dönülüyor ($how; veritabanına dokunulmaz)…"
+  git -C "$SRC" checkout --quiet --force "$t"
+  env_set APP_TAG "$tag"
+  compose up -d --remove-orphans >>"$blog" 2>&1 || true
+  if [ "$caddy_changed" = 1 ]; then compose restart caddy >>"$blog" 2>&1 || true; fi
+  local edge=0
+  wait_healthy "${TAKIP_ROLLBACK_WAIT:-240}" || true
+  if wait_edge "${TAKIP_EDGE_WAIT:-90}" "$(short "$tag")"; then edge=1; fi
+  if release_health "$tag" "$ver" "$edge"; then
+    echo "$t" >"$STATE/deployed"
+    release_record "$t" "$tag" rollback "$edge" || true
+    op_end
+    secs=$((SECONDS - t0))
+    log "✔ geri dönüldü: $ver ($(short "$t")) yayında — sağlık denetimi geçti ($secs sn)"
+    rlog "GERI_DONUS_TAMAM $how $(short "${d:-yok}") → $(short "$t") sure=${secs}sn"
+    release_alert ROLLBACK_DONE "$(version_of "${d:-$t}")" "$ver"
     return 0
   fi
+  echo "$t" >"$STATE/deployed"
+  op_end
+  secs=$((SECONDS - t0))
+  log "✘ geri dönüldü ama $ver ($(short "$t")) sağlık denetiminden geçmedi: $HEALTH_CODES — ELLE MÜDAHALE gerekir (takip surum-durum)"
+  rlog "GERI_DONUS_SAGLIKSIZ $how $(short "${d:-yok}") → $(short "$t") $HEALTH_CODES sure=${secs}sn"
+  release_alert ROLLBACK_FAILED "$(version_of "${d:-$t}")" "$ver" $HEALTH_CODES
+  return 1
+}
+
+# Yayın sonrası sağlık sorunu (uygulama açıldı, Caddy yeni sürümü veriyor ama tam denetim geçmedi). Gözlem kipinde yalnızca
+# algılanır, kaydedilir, geri dönüşün güvenli olup olmadığı hesaplanır ve e-posta gider; otomatik kipte güvenliyse dönülür.
+post_deploy_unhealthy() { # post_deploy_unhealthy SHA
+  local sha=$1 ver t mode verdict
+  ver=$(version_of "$sha"); mode=$(rollback_mode)
+  echo "$sha" >"$STATE/deployed"
+  echo "$sha" >"$STATE/failed"
+  echo "$sha" >"$REL_ADOPT"
+  t=$(rollback_target)
+  if [ -z "$t" ]; then
+    verdict=NO_TARGET
+  elif rollback_verdict "$t" yoklama; then
+    verdict=SAFE
+  else
+    verdict=UNSAFE
+  fi
+  log "✘ $ver ($(short "$sha")) sağlık denetiminden GEÇMEDİ: $HEALTH_CODES — sağlıklı sürüm kaydı yazılmadı"
+  case $verdict in
+    SAFE) log "  geri dönüş hedefi $(rec_get "$t" version) ($(short "$t")): GÜVENLİ" ;;
+    UNSAFE) log "  geri dönüş hedefi $(rec_get "$t" version) ($(short "$t")): GÜVENLİ DEĞİL — $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]}" ;;
+    *) log "  geri dönülecek doğrulanmış sağlıklı sürüm yok" ;;
+  esac
+  rlog "YAYIN_SAGLIKSIZ $ver $(short "$sha") $HEALTH_CODES kip=$mode geri_donus=$verdict${t:+ hedef=$(short "$t")} ${RB_CODES}"
+  if [ "$mode" = otomatik ] && [ "$verdict" = SAFE ]; then
+    ALERT_TAG=$sha release_alert DEPLOY_UNHEALTHY "$ver" "$(rec_get "$t" version)" $HEALTH_CODES ROLLBACK_AUTO
+    do_rollback "$t" otomatik || true
+    return 0
+  fi
+  if [ "$mode" = gozlem ]; then
+    log "  GÖZLEM KİPİ: canlı servis kendiliğinden eski sürüme geçirilmedi. Değerlendirme: sudo takip rollback-kontrol · elle: sudo takip rollback"
+  else
+    log "  otomatik geri dönüş yapılamaz ($verdict): ELLE MÜDAHALE gerekir"
+  fi
+  # shellcheck disable=SC2086 # kodlar tek kelimeliktir
+  ALERT_TAG=$sha release_alert DEPLOY_UNHEALTHY "$ver" "$(rec_get "$t" version)" $HEALTH_CODES "ROLLBACK_$verdict" $RB_CODES
+}
+
+# Yarıda kalmış işlem (sunucu / süreç işlem ortasında durdu): kilit alındıktan sonra bir kez. Yayın → işaret silinir, olağan
+# akış aynı commit'i yeniden dener (yayın adımları yinelenebilir: derleme önbellekten, migration yeniden uygulanmaz).
+# Geri dönüş → aynı denetimlerden geçerse tamamlanır (veritabanına dokunmaz); geçmezse durur ve e-posta gider.
+REL_RECOVERED=0
+release_recover() {
+  [ -s "$REL_OP" ] || return 0
+  local op from to
+  REL_RECOVERED=1
+  op=$(op_get op); from=$(op_get from); to=$(op_get to)
+  log "⚠ yarıda kalmış işlem bulundu: $op $(short "${from:-yok}") → $(short "${to:-yok}") (başlangıç $(op_get started))"
+  rlog "YARIDA_KALDI $op $(short "${from:-yok}") → $(short "${to:-yok}")"
+  case $op in
+    rollback)
+      op_end
+      if is_sha "$to" && rec_ok "$to"; then
+        do_rollback "$to" devam || true
+      fi
+      ALERT_TAG='' release_alert INTERRUPTED "$(version_of "${from:-$to}")" "$(version_of "$to")" OP_ROLLBACK
+      ;;
+    *)
+      op_end
+      ALERT_TAG='' release_alert INTERRUPTED "$(version_of "${from:-$to}")" "$(version_of "$to")" OP_DEPLOY
+      ;;
+  esac
+}
+
+# Boşta (yeni sürüm yokken) denetim: yayındaki sürümün kaydı yoksa bir kez doğrulanır ve kaydedilir (3.92.0'ın ilk yayını aracın
+# ÖNCEKİ sürümüyle yapılır; kayıt ilk denetimde yazılır). Uygulama ile işçi farklı imajlarla çalışıyorsa e-posta (bir kez).
+release_idle() {
+  local d tag app w sig
+  d=$(read_ptr "$STATE/deployed"); tag=$(env_get APP_TAG)
+  [ -n "$d" ] && [ -n "$tag" ] || return 0
+  app=$(cid app); w=$(cid worker)
+  if [ -n "$app" ] && [ -n "$w" ]; then
+    sig="$(docker inspect -f '{{.Image}}' "$app" 2>/dev/null || true)|$(docker inspect -f '{{.Image}}' "$w" 2>/dev/null || true)"
+    if [ "${sig%%|*}" != "$(image_id "takip:$tag")" ] || [ "${sig#*|}" != "$(image_id "takip:$tag-tools")" ]; then
+      if [ "$(cat "$REL_MISMATCH" 2>/dev/null || true)" != "$sig" ]; then
+        echo "$sig" | atomic_write "$REL_MISMATCH"
+        log "⚠ uygulama / işçi imajları yayındaki sürümle ($(short "$tag")) uyuşmuyor — takip surum-durum"
+        rlog "UYUMSUZ uygulama=${sig:7:12} isci=$(echo "${sig#*|}" | cut -c8-19) beklenen=$(short "$tag")"
+        release_alert MISMATCH "$(version_of "$d")" "$(version_of "$d")" STACK_MISMATCH
+      fi
+      return 0
+    fi
+    rm -f "$REL_MISMATCH"
+  fi
+  if [ "$(read_ptr "$REL_HEALTHY")" = "$d" ] || [ "$(read_ptr "$REL_ADOPT")" = "$d" ] || [ "$(read_ptr "$STATE/failed")" = "$d" ]; then return 0; fi
+  echo "$d" | atomic_write "$REL_ADOPT"
+  local edge=0
+  if edge_ok; then edge=1; fi
+  if release_health "$tag" "$(version_of "$tag")" "$edge"; then
+    release_record "$d" "$tag" bootstrap "$edge" && log "✔ yayındaki sürüm $(version_of "$d") ($(short "$d")) doğrulandı ve sağlıklı sürüm olarak kaydedildi"
+  else
+    log "⚠ yayındaki sürüm $(version_of "$d") ($(short "$d")) doğrulanamadı: $HEALTH_CODES — kayıt yazılmadı (yeniden: sudo takip surum-dogrula)"
+    rlog "DOGRULANAMADI $(short "$d") $HEALTH_CODES"
+  fi
+}
+
+require_root() { [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip $1)."; return 1; }; }
+rel_line() { # rel_line ETİKET SHA
+  local s=$2
+  if ! rec_ok "$s"; then say "$1: —"; return 0; fi
+  say "$1: $(rec_get "$s" version) ($(short "$s")) — doğrulandı $(rec_get "$s" verified_at), kaynak: $(rec_get "$s" source)"
+  say "    uygulama imajı: $(rec_get "$s" app_image)"
+  say "    işçi/araç imajı: $(rec_get "$s" tools_image)"
+  say "    migration: $(rec_get "$s" migrations_count) (son: $(rec_get "$s" migrations_last))"
+}
+cmd_release_status() {
+  require_root surum-durum || return 1
+  local d tag app w out
+  d=$(read_ptr "$STATE/deployed"); tag=$(env_get APP_TAG)
+  say "Adres          : $(env_get APP_URL)"
+  if out=$(surum_json); then say "/surum         : $(jq -r '"\(.version) (\(.build))"' <<<"$out" 2>/dev/null || echo okunamadı)"; else say "/surum         : ⚠ yanıt yok (sunucu üzerinden HTTPS)"; fi
+  say "Yayında        : $([ -n "$d" ] && echo "$(version_of "$d") ($(short "$d"))" || echo —) · imaj etiketi: $(short "${tag:-—}")"
+  app=$(cid app); w=$(cid worker)
+  say "Uygulama       : $(docker inspect -f '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{end}} {{.Image}}' "$app" 2>/dev/null || echo yok)"
+  say "İşçi           : $(docker inspect -f '{{.State.Status}} {{.Image}}' "$w" 2>/dev/null || echo yok)"
+  if [ -n "$tag" ] && { [ "$(docker inspect -f '{{.Image}}' "$app" 2>/dev/null || true)" != "$(image_id "takip:$tag")" ] || [ "$(docker inspect -f '{{.Image}}' "$w" 2>/dev/null || true)" != "$(image_id "takip:$tag-tools")" ]; }; then
+    say "               ⚠ uygulama / işçi yayındaki imajla çalışmıyor"
+  fi
+  if [ -n "$d" ] && [ "$(read_ptr "$REL_HEALTHY")" != "$d" ]; then say "               ⚠ yayındaki sürüm doğrulanmış sağlıklı sürüm DEĞİL"; fi
+  [ -n "$(read_ptr "$STATE/failed")" ] && say "Başarısız      : $(version_of "$(read_ptr "$STATE/failed")") ($(short "$(read_ptr "$STATE/failed")")) — yeni commit gelene kadar yeniden yayınlanmaz"
+  [ -s "$REL_OP" ] && say "⚠ Süren / yarıda kalmış işlem: $(op_get op) $(short "$(op_get from)") → $(short "$(op_get to)") (başlangıç $(op_get started))"
+  say ""
+  rel_line "Son sağlıklı   " "$(read_ptr "$REL_HEALTHY")"
+  rel_line "Geri dönüş adayı" "$(read_ptr "$REL_PREV")"
+  say ""
+  say "Geri dönüş kipi: $(rollback_mode)$([ "$(rollback_mode)" = gozlem ] && echo ' (sorun algılanır ve bildirilir; canlı servis kendiliğinden eski sürüme geçirilmez)' || true)"
+  say "Yedek (salt okunur): son tam yedek (yerel + Drive): $(cat "$STATE/backup-last-ok" 2>/dev/null || echo 'kayıt yok') · son yedeğin sorunları: $([ -s "$STATE/backup-last-run" ] && cat "$STATE/backup-last-run" || echo yok)"
+  say "                     doğrulanmış son çift — yerel: $(tail -n1 "$LEDGER_LOCAL" 2>/dev/null | grep -v '^since' || echo —), Drive: $(tail -n1 "$LEDGER_DRIVE" 2>/dev/null | grep -v '^since' || echo —) · Drive kopyası $([ -n "$(enc_recipient)" ] && echo şifreli || echo ŞİFRESİZ)"
+  say ""
+  say "Son işlemler ($REL_LOG):"
+  tail -n 8 "$REL_LOG" 2>/dev/null | sed 's/^/  /' || true
+}
+cmd_rollback_status() {
+  require_root rollback-durum || return 1
+  local t
+  t=$(rollback_target)
+  say "Geri dönüş kipi : $(rollback_mode)"
+  if [ -z "$t" ]; then say "Hedef           : yok — $(rb_code_text NO_TARGET)"; else
+    say "Hedef           : $(rec_get "$t" version) ($(short "$t")), doğrulandı $(rec_get "$t" verified_at)"
+    say "  uygulama imajı: $(rec_get "$t" app_image) $([ -n "$(image_id "takip:$(rec_get "$t" tag)")" ] && echo '(mevcut)' || echo '(YOK)')"
+    say "  işçi imajı    : $(rec_get "$t" tools_image) $([ -n "$(image_id "takip:$(rec_get "$t" tag)-tools")" ] && echo '(mevcut)' || echo '(YOK)')"
+    if rollback_verdict "$t"; then say "Ön değerlendirme: güvenli görünüyor (tam denetim + yoklama: sudo takip rollback-kontrol)"
+    else say "Ön değerlendirme: GÜVENLİ DEĞİL — $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]}"; fi
+  fi
+  [ -s "$REL_OP" ] && say "⚠ Süren / yarıda kalmış işlem: $(op_get op) $(short "$(op_get from)") → $(short "$(op_get to)")"
+  say ""
+  say "Geçmiş:"
+  grep -E 'GERI_DONUS|YAYIN_|SAGLIKLI_KAYIT|YARIDA|KONTROL' "$REL_LOG" 2>/dev/null | tail -n 12 | sed 's/^/  /' || true
+}
+cmd_rollback_check() {
+  require_root rollback-kontrol || return 1
+  local t c busy=0
+  exec 7>"$STATE/deploy.lock"
+  if ! flock -n 7; then busy=1; else flock -u 7; fi
+  t=$(rollback_target)
+  if [ -z "$t" ]; then say "✘ $(rb_code_text NO_TARGET)."; rlog "KONTROL red NO_TARGET"; return 1; fi
+  say "Hedef: $(rec_get "$t" version) ($(short "$t")) · yayındaki: $(version_of "$(read_ptr "$STATE/deployed")") ($(short "$(read_ptr "$STATE/deployed")"))"
+  say "  uygulama imajı: $(rec_get "$t" app_image)"
+  say "  işçi imajı    : $(rec_get "$t" tools_image)"
+  say "Denetleniyor (imajlar, migration listesi, yarım migration, Caddyfile, salt okunur yoklama)…"
+  if rollback_verdict "$t" yoklama && [ "$busy" = 0 ]; then
+    say "✔ Geri dönüş GÜVENLİ: veritabanındaki migration listesi hedefin doğrulandığı andakiyle birebir aynı; imajlar mevcut; yoklama: $PROBE_RESULT"
+    say "  Uygulamak için: sudo takip rollback (onay ister) — veritabanına dokunulmaz."
+    rlog "KONTROL guvenli hedef=$(short "$t")"
+    return 0
+  fi
+  [ "$busy" = 1 ] && RB_CODES="$RB_CODES BUSY"
+  say "✘ Geri dönüş GÜVENLİ DEĞİL — reddedilir:"
+  for c in $RB_CODES; do say "  - $(rb_code_text "$c") [$c]"; done
+  [ -n "$RB_DETAIL" ] && say "  migration farkı: $RB_DETAIL"
+  say "  Veritabanı yedeğe döndürülmez, migration geri alınmaz. Seçenekler: düzeltme sürümü yayınlamak ya da docs/geri-donus.md."
+  rlog "KONTROL red hedef=$(short "$t") $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]}"
+  return 1
+}
+cmd_rollback() {
+  require_root rollback || return 1
+  local confirm='' t ans
+  if [ "${1:-}" = --onay ]; then confirm=${2:-}; fi
+  exec 9>"$STATE/deploy.lock"
+  if ! flock -n 9; then
+    say "✘ Bir yayın / geri dönüş / geri yükleme sürüyor; geri dönüş yapılmadı."
+    rlog "GERI_DONUS_RED elle BUSY"
+    return 1
+  fi
+  release_recover
+  if [ "$REL_RECOVERED" = 1 ]; then
+    say "Yarıda kalmış bir işlem bulundu ve ele alındı (ayrıntı: takip surum-durum). Yeni bir geri dönüş için komutu yeniden çalıştırın."
+    return 1
+  fi
+  t=$(rollback_target)
+  if [ -z "$t" ]; then say "✘ $(rb_code_text NO_TARGET); hiçbir şey değişmedi."; rlog "GERI_DONUS_RED elle NO_TARGET"; return 1; fi
+  if ! rollback_verdict "$t" yoklama; then
+    say "✘ Geri dönüş reddedildi ($(rec_get "$t" version), $(short "$t")) — hiçbir şey değişmedi:"
+    local c; for c in $RB_CODES; do say "  - $(rb_code_text "$c") [$c]"; done
+    [ -n "$RB_DETAIL" ] && say "  migration farkı: $RB_DETAIL"
+    rlog "GERI_DONUS_RED elle hedef=$(short "$t") $RB_CODES${RB_DETAIL:+ [$RB_DETAIL]}"
+    return 1
+  fi
+  say "Yayındaki : $(version_of "$(read_ptr "$STATE/deployed")") ($(short "$(read_ptr "$STATE/deployed")"))"
+  say "Hedef     : $(rec_get "$t" version) ($(short "$t")) — uygulama $(rec_get "$t" app_image), işçi $(rec_get "$t" tools_image)"
+  say "Veritabanına dokunulmaz (yedekten geri yükleme / migration geri alma yok). Yalnızca uygulama ve işçi eski imaja geçer."
+  if [ -z "$confirm" ]; then
+    if [ ! -t 0 ] && [ ! -e /dev/tty ]; then say "✘ Onay için terminal gerekir (ya da: takip rollback --onay KISA_SHA)."; return 1; fi
+    tty_read ans "Onaylamak için hedefin kısa SHA'sını yazın ($(short "$t")): "
+    confirm=$ans
+  fi
+  if [ "$confirm" != "$(short "$t")" ] && [ "$confirm" != "$t" ]; then say "Onaylanmadı; hiçbir şey değişmedi."; rlog "GERI_DONUS_VAZGECILDI hedef=$(short "$t")"; return 1; fi
+  do_rollback "$t" elle
+}
+cmd_release_verify() {
+  require_root surum-dogrula || return 1
+  exec 9>"$STATE/deploy.lock"
+  if ! flock -n 9; then say "✘ Bir yayın / geri dönüş sürüyor."; return 1; fi
+  local d tag edge=0
+  d=$(read_ptr "$STATE/deployed"); tag=$(env_get APP_TAG)
+  [ -n "$d" ] && [ -n "$tag" ] || { say "✘ Yayında sürüm yok."; return 1; }
+  if edge_ok; then edge=1; fi
+  if release_health "$tag" "$(version_of "$tag")" "$edge"; then
+    release_record "$d" "$tag" "$([ "$(read_ptr "$STATE/failed")" = "$d" ] && echo elle-dogrulama || echo bootstrap)" "$edge"
+    say "✔ $(version_of "$d") ($(short "$d")) sağlık denetiminden geçti ve sağlıklı sürüm olarak kaydedildi."
+  else
+    say "✘ Sağlık denetimi geçmedi: $HEALTH_CODES — kayıt yazılmadı."
+    return 1
+  fi
+}
+cmd_rollback_mode() {
+  require_root rollback-modu || return 1
+  case ${1:-} in
+    '') say "Geri dönüş kipi: $(rollback_mode)"; return 0 ;;
+    gozlem | otomatik)
+      echo "$1" | atomic_write "$REL_MODE"
+      rlog "KIP $1"
+      log "  geri dönüş kipi: $1"
+      say "Geri dönüş kipi: $1"
+      ;;
+    *) say 'Kullanım: takip rollback-modu [gozlem|otomatik]'; return 1 ;;
+  esac
+}
+
+# ---------- yayınlama ----------
+do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın güncel ucu yayınlanır (otomatik / elle güncelleme)
+  local sha=$1 prev=${2:-} only_head=${3:-} rc=0
+  # Kapıdan sonra dal ilerlediyse ESKİ commit yayınlanmaz (bir sonraki tur yeni ucu değerlendirir); çalışan sürüme dokunulmaz
+  if [ "$only_head" = uc ] && ! head_is "$sha"; then
+    log "⏸ $(version_of "$sha") ($(short "$sha")) yayınlanmadı: '$(branch)' dalının ucu değişti ya da doğrulanamadı; çalışan sürüm aynen sürüyor."
+    return 0
+  fi
+  # Yarıda kalan işlem işareti (karar 287): süreç / sunucu yayın ortasında durursa bir sonraki çalıştırma bunu görür
+  op_begin deploy "$prev" "$sha"
+  REL_DEPLOYED_AT=$(now_iso)
+  deploy_main "$sha" "$prev" "$only_head" || rc=$?
+  op_end
+  return "$rc"
+}
+
+# Yayın açılmadı (uygulama sağlıksız ya da site Caddy üzerinden yeni sürümü vermiyor). Veritabanının migration durumu yayın
+# öncesiyle AYNIYSA önceki sürüme dönülür (karar 142'deki davranış; eski kod aynı şemayla çalışır — kanıtlı güvenli). Migration
+# uygulandıysa eski kod yeni şemayla ÇALIŞTIRILMAZ: yeni sürüm yerinde kalır, yönetici e-postayla elle müdahaleye çağrılır.
+deploy_failed() { # deploy_failed SHA ÖNCEKİ_SHA ÖNCEKİ_ETİKET DERLEME_GÜNLÜĞÜ CADDY_DEĞİŞTİ KOD
+  local sha=$1 prev=$2 prev_tag=$3 blog=$4 caddy_changed=$5 code=$6 ver
+  ver=$(version_of "$sha")
+  if mig_unchanged_since "$sha"; then
+    revert_release "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed"
+    log "  migration uygulanmadığı için önceki sürüme dönüldü (veritabanı değişmedi)"
+    rlog "YAYIN_ACILMADI $ver $(short "$sha") $code onceki_surume_donuldu"
+    ALERT_TAG=$sha release_alert DEPLOY_FAILED "$ver" "$(version_of "${prev:-$sha}")" "$code" REVERTED
+    return 0
+  fi
+  echo "$sha" >"$STATE/failed"
+  echo "$sha" >"$STATE/deployed"
+  echo "$sha" >"$REL_ADOPT"
+  log "✘ $ver ($(short "$sha")): bu yayında migration uygulandı — eski kod yeni şemayla çalıştırılmaz, önceki sürüme OTOMATİK DÖNÜLMEDİ. ELLE MÜDAHALE gerekir: sudo takip surum-durum · docs/geri-donus.md"
+  rlog "YAYIN_ACILMADI $ver $(short "$sha") $code donulmedi=MIGRATION_CHANGED"
+  ALERT_TAG=$sha release_alert DEPLOY_FAILED "$ver" "$(version_of "${prev:-$sha}")" "$code" NOT_REVERTED MIGRATION_CHANGED
+  return 0
+}
+
+deploy_main() { # deploy_main SHA ÖNCEKİ_SHA [uc]
+  local sha=$1 prev=${2:-} only_head=${3:-} s ver f prev_tag tg edge=0
+  s=$(short "$sha"); ver=$(version_of "$sha")
   log "▶ $ver ($s) yayınlanıyor…"
 
   # Yalnızca test / belge değiştiyse uygulama yeniden derlenmez
@@ -653,6 +1388,15 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
     git -C "$SRC" checkout --quiet --force "$sha"
     echo "$sha" >"$STATE/deployed"
     log "✔ $ver ($s): yalnızca test/belge değişti, uygulama olduğu gibi çalışıyor."
+    # Çalışan imajlar aynı: yeni commit, sağlık denetiminden geçerse aynı imajlarla sağlıklı sürüm olarak kaydedilir
+    tg=$(env_get APP_TAG)
+    if edge_ok; then edge=1; fi
+    if [ -n "$tg" ] && release_health "$tg" "$(version_of "$tg")" "$edge"; then
+      release_record "$sha" "$tg" deploy "$edge" || true
+    else
+      echo "$sha" >"$REL_ADOPT"
+      log "⚠ çalışan sürüm sağlık denetiminden geçmedi: ${HEALTH_CODES:-imaj etiketi yok} — sağlıklı sürüm kaydı yazılmadı"
+    fi
     return 0
   fi
 
@@ -662,6 +1406,12 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
   if edge_ok; then edge_before=1; fi
 
   git -C "$SRC" checkout --quiet --force "$sha"
+  # Derlenen kaynak, kapının onayladığı commit'in ta kendisi mi (karar 287)
+  if [ "$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)" != "$sha" ]; then
+    [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+    log "✘ $ver ($s): kaynak onaylanan commit'e geçirilemedi; yayınlanmadı."
+    return 1
+  fi
   local blog="$LOGS/derleme-$s.log"
   # Yeni Caddyfile, derleme ve veritabanı adımlarından önce çalışan Caddy'nin sürümüyle doğrulanır
   if [ "$caddy_changed" = 1 ]; then
@@ -687,6 +1437,13 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
     cache_housekeeping || true
     return 1
   fi
+  # Derlenen imaj onaylanan commit'i taşıyor mu (imaja gömülen GIT_SHA)
+  if [ "$(image_git_sha "takip:$sha")" != "$sha" ]; then
+    [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+    echo "$sha" >"$STATE/failed"
+    log "✘ $ver ($s): derlenen imaj onaylanan commit'i taşımıyor; yayınlanmadı."
+    return 1
+  fi
 
   # Derleme uzun sürer: veritabanına / kapsayıcılara dokunmadan HEMEN ÖNCE dal ucu ve yayın kapısı yeniden denetlenir
   if [ "$only_head" = uc ]; then
@@ -699,6 +1456,11 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
       log "⏸ $ver ($s) yayınlanmadı: derleme sırasında $why; çalışan sürüm aynen sürüyor."
       return 0
     fi
+  fi
+  # Yayın öncesi denetim (karar 287): veritabanı erişimi, yarım migration, son yedek, geri dönüş adayı, migration planı
+  if ! predeploy_checks "$sha"; then
+    [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
+    return 1
   fi
   if ! f=$(backup_db "once-$s"); then
     [ -n "$prev" ] && git -C "$SRC" checkout --quiet --force "$prev"
@@ -717,6 +1479,14 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
     echo "$sha" >"$STATE/failed"
     log "✘ $ver ($s): veritabanı güncellemesi (migration) başarısız; önceki sürüm çalışmaya devam ediyor."
     log "  Ayrıntı: $blog · Güncelleme öncesi yedek: ${f:-yok}"
+    if mig_unchanged_since "$sha"; then
+      rlog "MIGRATION_BASARISIZ $ver $s veritabani_degismedi"
+      ALERT_TAG=$sha release_alert DEPLOY_FAILED "$ver" "$(version_of "${prev:-$sha}")" MIGRATION_ERROR REVERTED
+    else
+      log "⚠ veritabanının migration durumu yayın öncesinden farklı (migration kısmen uygulanmış olabilir) — ELLE İNCELEME gerekir: sudo takip surum-durum"
+      rlog "MIGRATION_BASARISIZ $ver $s veritabani_DEGISTI"
+      ALERT_TAG=$sha release_alert DEPLOY_FAILED "$ver" "$(version_of "${prev:-$sha}")" MIGRATION_ERROR MIGRATION_CHANGED
+    fi
     return 1
   fi
 
@@ -726,37 +1496,46 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
   fi
 
   if ! wait_healthy 240; then
-    log "✘ $ver ($s): yeni sürüm açılmadı; önceki sürüme dönülüyor. Ayrıntı: takip log"
-    revert_release "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed"
+    log "✘ $ver ($s): yeni sürüm açılmadı. Ayrıntı: takip log"
+    deploy_failed "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed" APP_DOWN
     return 1
   fi
 
   # Site HTTPS üzerinden, Caddy içinden YENİ sürüme ulaşıyor mu (Caddy yeni ayarla açıldı ve uygulamaya yönlendiriyor)
   if wait_edge "${TAKIP_EDGE_WAIT:-90}" "$s"; then
     log "  ön sunucu (Caddy): site HTTPS üzerinden yeni sürümü veriyor"
+    edge=1
   elif [ "$edge_before" = 1 ]; then
-    log "✘ $ver ($s): uygulama açıldı ama site HTTPS üzerinden (Caddy) yeni sürümü vermiyor; önceki sürüme dönülüyor. Caddy: $(caddy_state)"
-    revert_release "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed"
-    if wait_healthy 120 && wait_edge 60; then
-      log "  önceki sürüm yeniden yayında."
-    else
-      log "⚠ önceki sürüme dönüldü ama site HTTPS üzerinden hâlâ yanıt vermiyor. Denetleyin: takip durum · takip log"
+    log "✘ $ver ($s): uygulama açıldı ama site HTTPS üzerinden (Caddy) yeni sürümü vermiyor. Caddy: $(caddy_state)"
+    deploy_failed "$sha" "$prev" "$prev_tag" "$blog" "$caddy_changed" EDGE
+    if [ "$(read_ptr "$STATE/deployed")" != "$sha" ]; then
+      if wait_healthy 120 && wait_edge "${TAKIP_EDGE_WAIT:-60}"; then
+        log "  önceki sürüm yeniden yayında."
+      else
+        log "⚠ önceki sürüme dönüldü ama site HTTPS üzerinden hâlâ yanıt vermiyor. Denetleyin: takip durum · takip log"
+      fi
     fi
     return 1
   else
     log "⚠ site HTTPS üzerinden doğrulanamadı (yayından önce de yanıt vermiyordu); yayın sürdürüldü. Caddy: $(caddy_state)"
   fi
 
+  # Tam sağlık denetimi (karar 287): uygulama + işçi doğru imajla çalışıyor, veritabanı, yarım migration yok, /surum doğru
+  # sürüm ve commit, salt okunur Prisma yoklaması. Geçici gecikmeye karşı sınırlı tekrar.
+  if ! release_health "$sha" "$ver" "$edge"; then
+    post_deploy_unhealthy "$sha"
+    return 1
+  fi
+  [ -n "$HEALTH_NOTE" ] && log "  sağlık denetimi geçici sorunu aştı (ilk turda: $HEALTH_NOTE)"
+
   echo "$sha" >"$STATE/deployed"
   rm -f "$STATE/failed"
   log "✔ $ver ($s) yayında: $(env_get APP_URL)"
+  release_record "$sha" "$sha" deploy "$edge" || log "⚠ sağlıklı sürüm kaydı yazılamadı (yayın etkilenmedi)"
+  rlog "YAYIN_TAMAM $ver $s"
 
-  # Eski imajlar: yalnızca yayındaki ve bir önceki sürüm tutulur
-  local keep1=$sha keep2=$prev_tag t
-  for t in $(docker images takip --format '{{.Tag}}'); do
-    case $t in "$keep1" | "$keep1-tools" | "$keep2" | "$keep2-tools") ;; *) docker rmi "takip:$t" >/dev/null 2>&1 || true ;; esac
-  done
-  docker image prune -f >/dev/null 2>&1 || true
+  # Eski imajlar: yayındaki, bir önceki, son sağlıklı ve geri dönüş adayı TUTULUR (karar 287); diğerleri silinir
+  release_prune_images "$sha" "$prev_tag"
   # Derleme önbelleği sınırı aşmışsa kullanılmayan önbellek silinir; hata yayını bozmaz
   cache_housekeeping || log "⚠ derleme önbelleği denetimi tamamlanamadı (yayın etkilenmedi)"
   echo "$sha" >"$STATE/cache-checked"
@@ -765,6 +1544,7 @@ do_deploy() { # do_deploy SHA ÖNCEKİ_SHA [uc] — "uc": yalnızca dalın günc
 auto_deploy() {
   exec 9>"$STATE/deploy.lock"
   if ! flock -n 9; then info "Başka bir güncelleme sürüyor."; return 0; fi
+  release_recover || true
   local b head current g
   b=$(branch)
   if ! git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b" 2>"$STATE/fetch.err"; then
@@ -780,6 +1560,8 @@ auto_deploy() {
       cache_housekeeping || log "⚠ derleme önbelleği denetimi tamamlanamadı"
       echo "$head" >"$STATE/cache-checked"
     fi
+    # Yayındaki sürümün kaydı / uygulama-işçi uyumu (karar 287); hata yayını bozmaz
+    release_idle || true
     info "Güncel: $(version_of "$head") ($(short "$head"))."
     return 0
   fi
@@ -805,6 +1587,7 @@ auto_deploy() {
 first_deploy() {
   exec 9>"$STATE/deploy.lock"
   flock 9
+  release_recover || true
   local b sha g
   b=$(branch)
   git -C "$SRC" fetch --quiet --prune origin "+refs/heads/$b:refs/remotes/origin/$b"
@@ -877,6 +1660,8 @@ cmd_status() {
   say "Yedekler : $(find "$BACKUPS" -name 'db-*.dump' | wc -l) veritabanı yedeği, son: $(ls -1t "$BACKUPS"/db-*.dump 2>/dev/null | head -1 | xargs -r basename)"
   if [ -n "$(enc_recipient)" ]; then say "           Google Drive kopyası şifreli (takip yedek-sifreleme)"; else say "           Google Drive kopyası ŞİFRESİZ → takip yedek-sifreleme kur"; fi
   say "           Saklama: yerel $(keep_days yerel) gün, Google Drive $(keep_days uzak) gün"
+  local h; h=$(read_ptr "$REL_HEALTHY")
+  say "Sağlıklı : $(if [ -n "$h" ]; then echo "$(rec_get "$h" version) ($(short "$h"))"; else echo 'kayıt yok'; fi) · geri dönüş kipi: $(rollback_mode) — ayrıntı: takip surum-durum"
 }
 
 cmd_smtp() {
@@ -1474,12 +2259,18 @@ main() {
     restore-test | yedek-dene) cmd_restore_test "$@" ;;
     yedek-sifreleme | backup-encryption) cmd_backup_encryption "$@" ;;
     cache | onbellek) cmd_cache "$@" ;;
+    surum-durum | release-status) cmd_release_status ;;
+    surum-dogrula | release-verify) cmd_release_verify ;;
+    rollback-durum | geri-donus-durum) cmd_rollback_status ;;
+    rollback-kontrol | geri-donus-kontrol) cmd_rollback_check ;;
+    rollback | geri-don) cmd_rollback "$@" ;;
+    rollback-modu | geri-donus-kipi) cmd_rollback_mode "$@" ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
       if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
       ;;
     *)
-      sed -n '2,19p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
+      sed -n '2,25p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'
       return 1
       ;;
   esac

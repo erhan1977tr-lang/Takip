@@ -55,16 +55,29 @@ kurulum komutunu `| bash -s -- --domain takip.alanadiniz.ro` ile yeniden çalı�
 | `takip github` | GitHub erişim anahtarını yeniler (süresi dolunca `takip durum` bunu söyler) |
 | `takip antivirus` | Antivirüs çalışıyor mu, test virüsünü (EICAR) yakalıyor mu; bekleyen ve karantinadaki dosya sayısı |
 | `takip kur [ADRES]` | Banca Transilvania EUR satış kuru sunucudan okunabiliyor mu (FGO proforması için) |
+| `takip surum-durum` | Yayındaki / son sağlıklı sürüm, geri dönüş adayı, uygulama + işçi imaj kimlikleri, geri dönüş kipi, yedek durumu (salt okunur) — `docs/geri-donus.md` |
+| `takip rollback-durum` / `takip rollback-kontrol` | Geri dönüş hedefi ve ön değerlendirme / tam değerlendirme (imajlar, migration listesi, Caddyfile, salt okunur yoklama); hiçbir şey değiştirmez |
+| `takip rollback` | Son sağlıklı sürüme geri dön: YALNIZCA uygulama + işçi; veritabanına dokunmaz; migration uygulanmışsa reddeder; hedefin kısa SHA'sı yazılarak onay |
+| `takip surum-dogrula` | Yayındaki sürümü sağlık denetiminden geçirip sağlıklı sürüm olarak kaydet |
+| `takip rollback-modu [gozlem\|otomatik]` | Yayın sonrası sağlık sorununda davranış; varsayılan **gozlem** (yalnızca algılar ve bildirir) |
 
 ## Otomatik güncelleme nasıl çalışır
 
 - `takip-deploy.timer` 2 dakikada bir GitHub'daki dalın son commit'ine bakar.
-- Commit GitHub Actions'taki **CI** testlerinden (`build-test`) geçmediyse yayınlanmaz. CI'nin kendisinin yazdığı
+- Commit, izlenen dalın KENDİ GitHub koşularında **CI**'dan, yolları değiştiyse **sunucu kurulum testi** ve **demo ortamı
+  testinden** geçmediyse yayınlanmaz (başarısız / iptal / süren / okunamayan sonuç = yayın yok). CI'nin kendisinin yazdığı
   commit'ler (kilit dosyası, migration) bir önceki commit'in test sonucuyla değerlendirilir.
 - Yalnızca test/belge değiştiyse uygulama yeniden derlenmez.
-- Yayın sırası: sunucuda derleme → **veritabanı yedeği** → migration + temel veri → yeni sürüm → sağlık kontrolü.
-  Derleme ya da migration başarısızsa önceki sürüm çalışmaya devam eder; yeni sürüm açılmazsa önceki sürüme dönülür.
-- Kayıt: `/opt/takip/logs/deploy.log` (ayrıntı: `derleme-<commit>.log`). Yayındaki sürüm: `https://ADRES/surum`.
+- Yayın sırası: sunucuda derleme (kaynak ve imajdaki commit = onaylanan commit) → **yayın öncesi denetim** (PostgreSQL,
+  yarım migration, son yedek, geri dönüş adayı, bu yayının migration'ları) → **veritabanı yedeği** → migration + temel veri
+  → yeni sürüm → **tam sağlık denetimi** (uygulama, işçi, imajlar, veritabanı, `/surum` sürüm + commit, salt okunur
+  yoklama). Geçerse "son sağlıklı sürüm" kaydı yazılır (`/opt/takip/state/releases`, karar 287).
+  Derleme ya da migration başarısızsa önceki sürüm çalışmaya devam eder; yeni sürüm açılmazsa önceki sürüme YALNIZCA
+  migration uygulanmadıysa dönülür. Tam denetim geçmezse **gözlem kipinde** algılanır, kaydedilir ve yöneticiye e-posta
+  gider; canlı servis kendiliğinden eski sürüme geçirilmez (`docs/geri-donus.md`). Felaket kurtarma ayrı süreçtir
+  (`docs/felaket-kurtarma.md`).
+- Kayıt: `/opt/takip/logs/deploy.log` (ayrıntı: `derleme-<commit>.log`), yayın / geri dönüş işlem geçmişi:
+  `/opt/takip/logs/release.log`. Yayındaki sürüm: `https://ADRES/surum`.
 
 ## Dosyalar
 
