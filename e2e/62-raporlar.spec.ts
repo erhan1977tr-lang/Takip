@@ -56,6 +56,7 @@ test('yönetici: menüde Raporlar; beş sekme; aralık / esas tarih yazılı; Ex
 
   // Bu yıl, cam raporu
   await admin.locator('[data-report-tab="glass"]').click();
+  await expect(admin.locator('#rapor')).toHaveAttribute('data-report', 'glass');
   await admin.locator('#r-donem').selectOption('this_year');
   await admin.getByRole('button', { name: 'Göster' }).click();
   await expect(admin).toHaveURL(/tur=glass/);
