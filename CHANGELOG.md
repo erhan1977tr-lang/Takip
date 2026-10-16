@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.90.1 — 16.10.2026
+
+- "Üretime almayı geri al" sıkılaştırıldı (yayından önce, ürün sahibi): yalnızca yönetici (`DRAWING_PRODUCTION_UNDO`),
+  yalnızca hiç üretime girmemiş siparişte; üretim kaydı doğrulanamazsa ret; sandık girişiyle aynı kilit. Hatalı / güncelleme
+  geri alma değişmedi.
+
 ## 3.90.0 — 16.10.2026
 
 Çizim iş akışında yanlışlıkla verilen DWG/DXF kararları güvenle geri alınabilir (karar 285). Veritabanında yalnızca yetki
