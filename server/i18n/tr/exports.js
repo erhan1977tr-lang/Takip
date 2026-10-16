@@ -17,5 +17,6 @@ export default {
     commercialOffer: 'Ticari Teklif',
     commercialOfferInternal: 'Ticari Teklif İç',
     goodsReceipt: 'Mal Kabul',
+    report: 'Rapor',
   },
 };

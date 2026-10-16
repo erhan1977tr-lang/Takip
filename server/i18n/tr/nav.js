@@ -14,6 +14,9 @@ export default {
   commercialOffers: 'Ticari Teklif',
   commercialOfferNew: 'Teklif Oluştur',
   commercialOfferList: 'Teklifler',
+  // Yönetici raporları (karar 284)
+  reports: 'Raporlar',
+  reportList: 'Raporlar',
   accounting: 'Muhasebe',
   profileReceivables: 'Profil Tahsilat',
   glassReceivables: 'Cam Tahsilat',

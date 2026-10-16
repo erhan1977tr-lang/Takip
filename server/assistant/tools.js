@@ -18,6 +18,8 @@ import { effectiveItems, isGlassLine, loadConfirmation, previewLoading, shipDayD
 import { isCrateLine, offerLineTotals } from '../orders/rules.js';
 import { loadedOffer } from '../orders/loading.js';
 import { loadingParts } from '../orders/customer-offers.js';
+import { ASSISTANT_ACTOR, runReport } from '../reports/service.js';
+import { reportForAi } from '../reports/present.js';
 
 export const MAX_ROWS = 20;
 const ORDER_STATUSES = ['YENI', 'HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL'];
@@ -593,6 +595,39 @@ export const TOOLS = {
     async run(tx) {
       const rows = await supplierAccounts(tx);
       return { tedarikciler: rows.slice(0, 30) };
+    },
+  },
+
+  // ---------------------------------------------------------------- yönetici raporları (3.89.0, karar 284)
+  // Panelin (/admin/raporlar) ve Excel'in AYNI servisi: aynı filtre → aynı toplamlar. Model sayıları yeniden hesaplamaz;
+  // yanıtta 'aralik' (kullanılan tarih aralığı) ve 'esasTarih' yazılır. Hata kodu ≠ sıfır ≠ eksik veri.
+  rapor: {
+    desc: 'Yönetici raporu (panel ve Excel ile aynı hesap): tur = siparis (müşteri bazında sipariş sayıları, durum, sipariş / yüklenen / kalan m², aylık), cam (müşteri ve cam türü bazında adet / m², ticari ve bedelsiz telafi ayrı, kısmi yüklemeler), profil_stok (profil kodu / birim bazında miktar, stok / rezerve / kritik, stok giriş-çıkış-iade, tedarikçi siparişi ve mal kabulü), yukleme (yükleme günü bazında fiilen yüklenen ve planlanan, firma ve sipariş bazında, profil teslimleri), finans (cam satış / maliyet / kâr yükleme gününe göre, profil satışı, kesilen faturalar, elle kaydedilen tahsilat, güncel açık alacak; EUR ve RON ayrı). Dönem: donem ya da ay (YYYY-AA) ya da yil ya da baslangic + bitis; hiçbiri verilmezse bu ay. Sonuçtaki "aralik" yanıtta mutlaka belirtilir.',
+    fields: {
+      tur: { type: 'enum', values: ['siparis', 'cam', 'profil_stok', 'yukleme', 'finans'], desc: 'Rapor türü' },
+      donem: { type: 'enum', values: ['bu_ay', 'gecen_ay', 'bu_hafta', 'gecen_hafta', 'bu_yil', 'gecen_yil', 'son_3_ay', 'son_30_gun'], desc: 'Hazır dönem (Romanya saatine göre)' },
+      ay: { type: 'string', max: 7, pattern: /^\d{4}-\d{2}$/, desc: 'Ay: YYYY-AA (ör. 2026-09)' },
+      yil: { type: 'int', min: 2000, max: 2100, desc: 'Yıl' },
+      baslangic: { type: 'day', desc: 'Başlangıç günü (bitis ile birlikte)' },
+      bitis: { type: 'day', desc: 'Bitiş günü (baslangic ile birlikte)' },
+      firma: { type: 'string', max: 60, desc: 'Müşteri adı (parçası) ya da 3 harfli firma kodu' },
+      siparis_turu: { type: 'enum', values: ['cam', 'profil'], desc: 'Yalnızca cam ya da profil siparişleri' },
+      durum: { type: 'enum', values: ['YENI', 'HAZIRLANIYOR', 'URETIMDE', 'YUKLENDI', 'ARSIVLENDI'], desc: 'Sipariş durumu' },
+      urun: { type: 'string', max: 60, desc: 'Cam türü (adının parçası) ya da profil kodu (parçası)' },
+      yukleme: { type: 'enum', values: ['yuklendi', 'kismi', 'yuklenmedi'], desc: 'Yükleme durumu' },
+      satir: { type: 'int', min: 1, max: 15, desc: 'Tablo başına en çok kaç satır dönsün (varsayılan 8)' },
+    },
+    async run(tx, a, { tz, now }) {
+      if (!a.tur) throw new ToolError('INVALID_ARGS');
+      const KIND = { siparis: 'orders', cam: 'glass', profil_stok: 'profile', yukleme: 'loading', finans: 'finance' };
+      const PERIOD = { bu_ay: 'this_month', gecen_ay: 'last_month', bu_hafta: 'this_week', gecen_hafta: 'last_week', bu_yil: 'this_year', gecen_yil: 'last_year', son_3_ay: 'last_3_months', son_30_gun: 'last_30_days' };
+      const LOAD = { yuklendi: 'LOADED', kismi: 'PARTIAL', yuklenmedi: 'NOT_LOADED' };
+      const r = await runReport(tx, {
+        kind: KIND[a.tur], period: a.donem ? PERIOD[a.donem] : undefined, month: a.ay, year: a.yil, from: a.baslangic, to: a.bitis, customer: a.firma,
+        orderType: a.siparis_turu === 'cam' ? 'GLASS' : a.siparis_turu === 'profil' ? 'PROFILE' : 'ALL', status: a.durum, product: a.urun, loading: a.yukleme ? LOAD[a.yukleme] : 'ALL',
+      }, { actor: ASSISTANT_ACTOR, now, timeZone: tz });
+      if (!r.ok) return { hata: r.code, ...(r.errors ? { ayrinti: r.errors } : {}), ...(r.candidates ? { adaylar: r.candidates } : {}) };
+      return reportForAi(r.report, { rows: a.satir ?? 8 });
     },
   },
 };

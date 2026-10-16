@@ -91,6 +91,7 @@ enum PermissionKey {
   OPS_SETTINGS_MANAGE
   CUSTOMER_DELETE
   COMMERCIAL_OFFER_MANAGE
+  REPORT_VIEW
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
