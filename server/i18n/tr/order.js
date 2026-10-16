@@ -49,6 +49,7 @@ export default {
     dwg_factory_requested: 'Talebiniz alındı: çizimi fabrikamız hazırlayıp onayınıza sunacak.',
     // DWG kararının geri alınması (karar 285)
     dwg_undo_READY: '“Üretime hazır” kararı geri alındı. Karar yeniden bekleniyor; kayıtlar ve dosyalar korundu.',
+    dwg_undo_READY_production: '“Üretime hazır” kararı geri alındı ve sipariş üretimden çıkarılarak “Hazırlanıyor” durumuna döndü. Karar yeniden bekleniyor; kayıtlar ve dosyalar korundu.',
     dwg_undo_FAULTY: '“Çizim hatalı” kararı geri alındı ve müşteriye bildirildi. Karar yeniden bekleniyor; hatalı kaydı geçmişte duruyor.',
     dwg_undo_UPDATE: '“Çizimi güncelle” kararı geri alındı. Kayıtlar ve dosyalar korundu.',
   },
@@ -204,9 +205,10 @@ export default {
       targets: {
         PENDING: 'Müşterinin çizimi için karar yeniden bekleniyor (DXF/DWG listesi)',
         FAULTY_WAIT: 'Müşterinin düzeltmesi bekleniyor (“Çizim hatalı” kararı geçerli kalır)',
+        PRODUCTION: 'Sipariş üretimden çıkar ve “Hazırlanıyor” durumuna döner; karar yeniden bekleniyor',
       },
       notify: {
-        READY: 'Yalnızca sistem yöneticisi ve yalnızca sipariş hiç üretime girmemişse. İlgili satışçıya uygulama içi bildirim gider.',
+        READY: 'İlgili satışçıya uygulama içi bildirim gider.',
         FAULTY: 'Müşteriye bildirim ve e-posta gider (düzeltme istenmiyor).',
         UPDATE: 'Bildirim gönderilmez.',
       },
@@ -218,15 +220,14 @@ export default {
       block: {
         UNDO_CLOSED: 'sipariş kapalı ya da artık hazırlanmıyor.',
         UNDO_ON_HOLD: 'sipariş beklemede; önce beklemeden çıkarın.',
-        UNDO_IN_PRODUCTION: 'sipariş üretime alınmış (ya da üretim / yükleme kaydı var); gerçek üretimin başlamadığı doğrulanamadığı için “Üretime hazır” kararı geri alınamaz.',
+        UNDO_SHIPPED: 'sipariş yüklendi / arşivlendi.',
         UNDO_LATER_DRAWING: 'bu karardan sonra yeni çizim sürümü açıldı (taslak ya da gönderilmiş).',
         UNDO_CUSTOMER_ANSWERED: 'müşteri bu karara yanıt verdi (fabrikadan çizim istedi).',
         UNDO_LOADED: 'siparişin onaylı yüklemesi var.',
         UNDO_DOCUMENTS: 'siparişin mali belgesi / belge isteği var (proforma, avans, fatura ya da müşteri belgesi kapsamı).',
         UNDO_CRATES: 'sipariş için sandık girilmiş.',
         UNDO_COMPENSATION: 'siparişle ilgili telafi kaydı var.',
-        UNDO_ADMIN_ONLY: 'üretime alma kararını yalnızca sistem yöneticisi geri alabilir.',
-        UNDO_NOT_OWNER: 'kararı yalnızca kararı veren çizimci ya da sistem yöneticisi geri alabilir.',
+        UNDO_NOT_OWNER: 'kararı yalnızca kararı veren çizimci, sistem yöneticisi ya da yönetici yardımcısı geri alabilir.',
       },
     },
   },

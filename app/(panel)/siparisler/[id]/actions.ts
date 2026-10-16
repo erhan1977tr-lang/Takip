@@ -49,7 +49,7 @@ function done(id: string, ok: string): never {
  */
 async function act(
   user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {},
-): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
+): Promise<{ produced?: boolean; production?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
   try {
     const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
     await deliverInAppNow(res.outboxIds);
@@ -328,7 +328,7 @@ export async function dwgUndoAction(formData: FormData) {
   const id = orderIdOf(formData);
   const kind = String(formData.get('kind') ?? '');
   if (!Object.hasOwn(UNDO_ACTIONS, kind)) notFound();
-  await act(user, id, UNDO_ACTIONS[kind as keyof typeof UNDO_ACTIONS], {
+  const res = await act(user, id, UNDO_ACTIONS[kind as keyof typeof UNDO_ACTIONS], {
     reason: String(formData.get('reason') ?? '').slice(0, 4000),
     drawingId: String(formData.get('drawingId') ?? ''),
     expectedVersion: expectedVersion(formData),
@@ -336,7 +336,7 @@ export async function dwgUndoAction(formData: FormData) {
   revalidatePath('/siparisler');
   revalidatePath('/yuklemeler');
   revalidatePath(`/siparisler/${id}`);
-  redirect(back(id, `ok=dwg_undo_${kind}`) + '#cizim');
+  redirect(back(id, `ok=dwg_undo_${kind}${res?.production ? '_production' : ''}`) + '#cizim');
 }
 
 /**
