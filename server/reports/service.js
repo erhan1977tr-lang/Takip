@@ -333,21 +333,22 @@ async function profileReport(tx, f, ctx) {
   const rec = new Map(receiptMoves.map((r) => [r.productId, r._sum.qty ?? 0]));
   const mv = new Map();
   for (const r of moves) {
-    const m = mv.get(r.productId) ?? { GIRIS: 0, CIKIS: 0, SAYIM: 0, IADE: 0 };
+    const m = mv.get(r.productId) ?? { GIRIS: 0, CIKIS: 0, SAYIM: 0, IADE: 0, KABUL_DUZELTME: 0 };
     m[r.kind] = r._sum.qty ?? 0;
     mv.set(r.productId, m);
   }
+  // Mal kabulü düzeltmesi (karar 286) ayrı sütun (−): net = bütün türlerin toplamı (stok bakiyesiyle aynı kural)
   const moveRows = [];
   for (const p of shown) {
     const m = mv.get(p.id);
     if (!m) continue;
     const r = rec.get(p.id) ?? 0;
-    moveRows.push([p.code, p.nameTr, p.unitCode, r, m.GIRIS - r, m.CIKIS, m.IADE, m.SAYIM, m.GIRIS + m.CIKIS + m.IADE + m.SAYIM]);
+    moveRows.push([p.code, p.nameTr, p.unitCode, r, m.KABUL_DUZELTME, m.GIRIS - r, m.CIKIS, m.IADE, m.SAYIM, m.GIRIS + m.KABUL_DUZELTME + m.CIKIS + m.IADE + m.SAYIM]);
   }
   // Birimler toplanmaz: hareket toplamı birim başına
   const moveTotals = [...moveRows.reduce((acc, r) => {
-    const t = acc.get(r[2]) ?? [0, 0, 0, 0, 0, 0];
-    for (let i = 0; i < 6; i++) t[i] += Number(r[3 + i]);
+    const t = acc.get(r[2]) ?? [0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 7; i++) t[i] += Number(r[3 + i]);
     acc.set(r[2], t);
     return acc;
   }, new Map()).entries()].map(([u, t]) => ['', '', u, ...t]);
@@ -367,6 +368,7 @@ async function profileReport(tx, f, ctx) {
       orderNo: true, status: true, currency: true, supplier: { select: { name: true } },
       revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { revision: true, orderDate: true, lines: { select: { id: true, code: true, qty: true, unitCode: true, color: true, productId: true } } } },
       receipts: { select: { lines: { select: { orderLineId: true, qty: true } } } },
+      receiptCorrections: { select: { lines: { select: { orderLineId: true, qty: true } } } },
     },
     orderBy: { orderNo: 'asc' }, take: REPORT_LIMITS.supplierOrders + 1,
   }), REPORT_LIMITS.supplierOrders);
@@ -376,6 +378,8 @@ async function profileReport(tx, f, ctx) {
     if (!rev) continue;
     const received = new Map();
     for (const r of so.receipts) for (const l of r.lines) received.set(l.orderLineId, (received.get(l.orderLineId) ?? 0) + l.qty);
+    // Net teslim alınan = kabuller − kabul düzeltmeleri (karar 286)
+    for (const c of so.receiptCorrections) for (const l of c.lines) received.set(l.orderLineId, Math.max(0, (received.get(l.orderLineId) ?? 0) - l.qty));
     for (const l of rev.lines) {
       if (!want(l.code)) continue;
       const got = received.get(l.id) ?? 0;
@@ -387,7 +391,18 @@ async function profileReport(tx, f, ctx) {
     select: { code: true, color: true, lengthM: true, qty: true, unitCode: true, receipt: { select: { receivedOn: true, seq: true, order: { select: { orderNo: true, supplier: { select: { name: true } } } } } } },
     orderBy: [{ receipt: { receivedOn: 'asc' } }, { sortOrder: 'asc' }], take: REPORT_LIMITS.movements + 1,
   }), REPORT_LIMITS.movements);
-  const recRows = receipts.filter((l) => want(l.code)).map((l) => [new Date(l.receipt.receivedOn).toISOString().slice(0, 10), l.receipt.order.orderNo, l.receipt.order.supplier.name, l.code, l.color ?? null, l.lengthM == null ? null : Number(l.lengthM), l.unitCode, l.qty]);
+  const recRows = receipts.filter((l) => want(l.code)).map((l) => [new Date(l.receipt.receivedOn).toISOString().slice(0, 10), 'RECEIPT', l.receipt.order.orderNo, l.receipt.order.supplier.name, l.code, l.color ?? null, l.lengthM == null ? null : Number(l.lengthM), l.unitCode, l.qty]);
+  // Kabul düzeltmeleri (karar 286): düzeltmenin yapıldığı gün (uygulama saat diliminde), eksi miktar; orijinal kabul satırı değişmez
+  const fixes = await take(tx.supplierReceiptCorrectionLine.findMany({
+    where: { correction: { createdAt: instantRange(f, ctx.timeZone) } },
+    select: { code: true, color: true, lengthM: true, qty: true, unitCode: true, correction: { select: { createdAt: true, order: { select: { orderNo: true, supplier: { select: { name: true } } } } } } },
+    orderBy: [{ correction: { createdAt: 'asc' } }, { sortOrder: 'asc' }], take: REPORT_LIMITS.movements + 1,
+  }), REPORT_LIMITS.movements);
+  for (const l of fixes) {
+    if (!want(l.code)) continue;
+    recRows.push([localDay(l.correction.createdAt, ctx.timeZone), 'CORRECTION', l.correction.order.orderNo, l.correction.order.supplier.name, l.code, l.color ?? null, l.lengthM == null ? null : Number(l.lengthM), l.unitCode, -l.qty]);
+  }
+  recRows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   const unitSum = (rows, uIdx, qIdx) => [...rows.reduce((m, r) => m.set(r[uIdx], (m.get(r[uIdx]) ?? 0) + Number(r[qIdx])), new Map()).entries()];
   const prodRows = [...byProduct.values()].sort((a, b) => a.code.localeCompare(b.code)).map((p) => [p.code, p.name, p.unit, pack(p.productId), p.qty, p.orders.size]);
   const custRows = [...byCustomer.values()].sort((a, b) => a.name.localeCompare(b.name) || a.unit.localeCompare(b.unit)).map((c) => [c.name, c.unit, c.qty, c.orders.size]);
@@ -405,13 +420,13 @@ async function profileReport(tx, f, ctx) {
       table('byCustomerProfile', [['customer', 'text'], ['unit', 'text'], ['qty', 'int'], ['orders', 'int']], custRows),
       table('stock', [['code', 'text'], ['product', 'text'], ['unit', 'text'], ['packContent', 'text'], ['stock', 'int'], ['reserved', 'int'], ['available', 'int'], ['critical', 'int'], ['stockState', 'code', { dict: 'stock' }]],
         stockRows.sort((a, b) => (a[8] === 'OK') - (b[8] === 'OK') || String(a[0]).localeCompare(String(b[0]))), { basis: 'NOW' }),
-      table('movements', [['code', 'text'], ['product', 'text'], ['unit', 'text'], ['inReceipt', 'int'], ['inManual', 'int'], ['out', 'int'], ['returns', 'int'], ['count', 'int'], ['net', 'int']], moveRows,
+      table('movements', [['code', 'text'], ['product', 'text'], ['unit', 'text'], ['inReceipt', 'int'], ['receiptFix', 'int'], ['inManual', 'int'], ['out', 'int'], ['returns', 'int'], ['count', 'int'], ['net', 'int']], moveRows,
         { totals: moveTotals, basis: 'MOVEMENT_CREATED' }),
       table('supplierOrders', [['supplierOrderNo', 'text'], ['supplier', 'text'], ['orderDate', 'day'], ['status', 'code', { dict: 'supplierStatus' }], ['code', 'text'], ['color', 'text'], ['unit', 'text'], ['ordered', 'int'], ['received', 'int'], ['remaining', 'int']], soRows, { basis: 'SUPPLIER_FINALIZED' }),
-      table('receipts', [['receivedOn', 'day'], ['supplierOrderNo', 'text'], ['supplier', 'text'], ['code', 'text'], ['color', 'text'], ['lengthM', 'dec3'], ['unit', 'text'], ['qty', 'int']], recRows,
-        { totals: unitSum(recRows, 6, 7).map(([u, q]) => ['', '', '', '', '', null, u, q]), basis: 'RECEIVED_ON' }),
+      table('receipts', [['receivedOn', 'day'], ['entry', 'code', { dict: 'receiptEntry' }], ['supplierOrderNo', 'text'], ['supplier', 'text'], ['code', 'text'], ['color', 'text'], ['lengthM', 'dec3'], ['unit', 'text'], ['qty', 'int']], recRows,
+        { totals: unitSum(recRows, 7, 8).map(([u, q]) => ['', null, '', '', '', '', null, u, q]), basis: 'RECEIVED_ON' }),
     ],
-    notes: ['UNITS_SEPARATE', 'STOCK_NOW', 'MOVES_KIND', 'RAL_IN_CODE', ...(f.customerId || f.customer ? ['CUSTOMER_PROFILE_ONLY'] : [])],
+    notes: ['UNITS_SEPARATE', 'STOCK_NOW', 'MOVES_KIND', 'RECEIPT_CORRECTION', 'RAL_IN_CODE', ...(f.customerId || f.customer ? ['CUSTOMER_PROFILE_ONLY'] : [])],
   };
 }
 

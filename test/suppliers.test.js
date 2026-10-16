@@ -427,7 +427,7 @@ test('tek gönderim yolu: e-posta işi yalnızca "onayla / gönder" ve açık "T
   for (const f of CODE.filter((x) => x.startsWith('app/'))) assert.ok(!/sendBrandedMail|dispatchSupplierOrderEmails/.test(read(f)), f);
 });
 
-test('stok: tedarik kodu stok hareketi yazmaz — TEK istisna mal kabulü (receiveGoods → receiveSupplierStock; karar 184, 282)', () => {
+test('stok: tedarik kodu stok hareketi yazmaz — istisnalar mal kabulü ve düzeltmesi (receiveGoods → receiveSupplierStock, correctReceipt → reverseSupplierStock; karar 184, 282, 286)', () => {
   const files = CODE.filter((f) => f.startsWith('server/suppliers/') || f.startsWith('app/(panel)/siparisler/tedarik/') || f.startsWith('app/(panel)/admin/muhasebe/tedarikciler/') || f.startsWith('app/(panel)/admin/entegrasyonlar/tedarikciler/'));
   assert.ok(files.length >= 10, files.join(', '));
   for (const f of files) {
@@ -443,6 +443,12 @@ test('stok: tedarik kodu stok hareketi yazmaz — TEK istisna mal kabulü (recei
   const body = src.slice(src.indexOf('export async function receiveGoods('), src.indexOf('\n}\n', src.indexOf('export async function receiveGoods(')));
   assert.ok(body.includes('receiveSupplierStock('), 'yalnızca receiveGoods');
   assert.ok(!/receiveSupplierStock|stockMovement/.test(strip(read('server/suppliers/service.js'))), 'service.js stok yazmaz');
+  // Hatalı kabulün düzeltmesi (3.91.0, karar 286): ters stok hareketi yalnızca correctReceipt içinden
+  assert.deepEqual(CODE.filter((f) => !f.startsWith('server/profile/stock.js') && /reverseSupplierStock\(/.test(strip(read(f)))), ['server/suppliers/receipt.js']);
+  assert.equal((src.match(/reverseSupplierStock\(/g) ?? []).length, 1);
+  const fix = src.slice(src.indexOf('export async function correctReceipt('), src.indexOf('\n}\n', src.indexOf('export async function correctReceipt(')));
+  assert.ok(fix.includes('reverseSupplierStock('), 'yalnızca correctReceipt');
+  assert.ok(!/reverseSupplierStock|stockMovement/.test(strip(read('server/suppliers/service.js'))));
 });
 
 test('sayfalar ve işlemler: her tedarik sayfası / işlemi önce SUPPLIER_MANAGE ister; düzenleyici para hesabını ortak modülden alır', () => {

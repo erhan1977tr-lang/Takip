@@ -802,6 +802,10 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 .dwg-panel .sub-title { margin-top: 0; }
 /* DWG kararını geri alma (karar 285): nötr kutu — karar paneli değil, ikincil işlem */
 .dwg-panel.dwg-undo-panel { border-color: var(--border); border-left-color: var(--border-strong); background: var(--surface); }
+/* Mal kabulü düzeltmeleri (karar 286): düzeltme listesi uyarı tonunda, düzeltme formu nötr kutu */
+.receipt-fixes { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--warn-border); border-left: 3px solid var(--warn-accent); border-radius: var(--radius-sm); background: var(--warn-soft); }
+.receipt-fix-form { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.receipt-fix-form > summary { list-style: none; }
 .dwg-undo-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: var(--fs-meta); }
 .dwg-undo-facts dt { color: var(--muted); }
 .dwg-undo-facts dd { margin: 0; }

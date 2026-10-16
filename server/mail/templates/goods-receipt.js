@@ -16,10 +16,13 @@ const len = (s) => {
 /**
  * @param {{ orderNo: string, supplierName: string, seq: number, receivedOn: Date, reference: string | null, complete: boolean,
  *   lines: { code: string, name: string, color: string | null, length: string | null, qty: number, unit: string }[],
- *   totals: { qty: number, unit: string }[], fileName: string }} p
+ *   totals: { qty: number, unit: string }[], fileName: string, correction?: { seq: number, createdAt: Date, reason: string } }} p
+ *   correction: verilirse e-posta bir kabul DÜZELTMESİNİ bildirir (karar 286) — konu ve metin açıkça "corecție", orijinal
+ *   recepția nr. referansı, miktarlar stoktan düşülen adetlerdir.
  * @returns {{ subject: string, text: string, html: string }}
  */
 export function renderGoodsReceiptEmail(p) {
+  if (p.correction) return renderCorrectionEmail(p);
   const subject = `GKH Trading Invest – Intrare marfă – ${p.orderNo} – recepția nr. ${p.seq} – ${p.supplierName}`;
   const detail = (l) => [l.color ? `culoare ${l.color}` : '', l.length ? `lungime ${len(l.length)}` : ''].filter(Boolean).join(', ');
   const total = p.totals.map((t) => `${t.qty} ${t.unit}`).join(' + ');
@@ -58,6 +61,50 @@ ${rows}
 </table>
 <p><b>Total:</b> ${p.lines.length} poziții · ${esc(total)}</p>
 <p>${p.complete ? 'Comanda furnizor a fost recepționată integral.' : 'Recepție parțială: restul comenzii urmează.'}</p>
+<p style="color:#6b7280;font-size:12px">Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).</p>` });
+  return { subject, text, html };
+}
+
+/** Kabul düzeltmesinin depo e-postası (Romence). Orijinal kabulün e-postası değişmez; bu ayrı ve tek bir bildirimdir. */
+function renderCorrectionEmail(p) {
+  const c = /** @type {{ seq: number, createdAt: Date, reason: string }} */ (p.correction);
+  const subject = `GKH Trading Invest – CORECȚIE recepție – ${p.orderNo} – recepția nr. ${p.seq} – corecția nr. ${c.seq} – ${p.supplierName}`;
+  const detail = (l) => [l.color ? `culoare ${l.color}` : '', l.length ? `lungime ${len(l.length)}` : ''].filter(Boolean).join(', ');
+  const total = p.totals.map((t) => `-${t.qty} ${t.unit}`).join(' + ');
+  const text = [
+    'Bună ziua,',
+    '',
+    `Recepția nr. ${p.seq} din ${day(p.receivedOn)} (comanda furnizor ${p.orderNo}, furnizor ${p.supplierName}) a fost CORECTATĂ (corecția nr. ${c.seq}).`,
+    'Cantitățile de mai jos au fost scăzute din stoc. Recepția originală și documentul ei rămân neschimbate.',
+    `Documentul CORECȚIE RECEPȚIE este atașat în PDF (${p.fileName}).`,
+    '',
+    `Data corecției: ${day(c.createdAt)}`,
+    `Motiv: ${c.reason}`,
+    '',
+    'Cantități scăzute din stoc:',
+    ...p.lines.map((l) => `  - -${l.qty} ${l.unit} — ${l.name} (${l.code})${detail(l) ? ` — ${detail(l)}` : ''}`),
+    '',
+    `Total: ${p.lines.length} poziții · ${total}`,
+    '',
+    'Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).',
+  ].join('\n');
+  const rows = p.lines.map((l) => `<tr>
+<td style="border:1px solid #e5e7eb;font-family:monospace">${esc(l.code)}</td>
+<td style="border:1px solid #e5e7eb">${esc(l.name)}${detail(l) ? `<br><span style="color:#6b7280;font-size:12px">${esc(detail(l))}</span>` : ''}</td>
+<td style="border:1px solid #e5e7eb;text-align:right"><b>-${l.qty}</b></td>
+<td style="border:1px solid #e5e7eb">${esc(l.unit)}</td></tr>`).join('\n');
+  const html = brandedHtml({ lang: 'ro', title: subject, body: `<p style="margin:0 0 12px">Bună ziua,</p>
+<p><b>CORECȚIE:</b> recepția nr. <b>${p.seq}</b> din ${esc(day(p.receivedOn))} (comanda furnizor <b>${esc(p.orderNo)}</b>, furnizor <b>${esc(p.supplierName)}</b>) a fost corectată (corecția nr. <b>${c.seq}</b>). Cantitățile de mai jos au fost scăzute din stoc; recepția originală și documentul ei rămân neschimbate. Documentul <b>CORECȚIE RECEPȚIE</b> este atașat în PDF.</p>
+<table cellpadding="4" style="border-collapse:collapse">
+<tr><td style="color:#6b7280">Data corecției</td><td><b>${esc(day(c.createdAt))}</b></td></tr>
+<tr><td style="color:#6b7280">Motiv</td><td>${esc(c.reason)}</td></tr>
+</table>
+<p style="margin-top:14px"><b>Cantități scăzute din stoc</b></p>
+<table cellpadding="5" style="border-collapse:collapse;border:1px solid #e5e7eb">
+<tr style="background:#f3f4f6"><th style="border:1px solid #e5e7eb;text-align:left">Cod</th><th style="border:1px solid #e5e7eb;text-align:left">Produs</th><th style="border:1px solid #e5e7eb;text-align:right">Cantitate</th><th style="border:1px solid #e5e7eb;text-align:left">U.M.</th></tr>
+${rows}
+</table>
+<p><b>Total:</b> ${p.lines.length} poziții · ${esc(total)}</p>
 <p style="color:#6b7280;font-size:12px">Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL).</p>` });
   return { subject, text, html };
 }

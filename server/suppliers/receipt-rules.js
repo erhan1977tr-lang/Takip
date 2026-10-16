@@ -124,3 +124,90 @@ export function receiptSummary(lines) {
 export function receiptMailNotSent(err) {
   return !!err && (err.command === 'CONN' || Number.isInteger(err.responseCode));
 }
+
+// =====================================================================================================================
+// Hatalı mal kabulünün düzeltmesi (3.91.0, karar 286) — saf kurallar. Veritabanı tarafı receipt.js → correctReceipt.
+//
+// Orijinal kabul ve satırları değişmez; düzeltme ayrı kayıttır ve stoğa ters (−) hareket yazar. Bir kabul satırı için:
+//   düzeltilebilir = kabul edilen adet − o satırın önceki düzeltmeleri (hiç eksiye düşmez).
+// Siparişin satırı için net teslim alınan = kabullerin toplamı − düzeltmelerin toplamı; kalan bundan yeniden hesaplanır.
+// =====================================================================================================================
+
+export const CORRECTION_LIMITS = Object.freeze({ reason: 1000, qty: 1_000_000 });
+/** Kuyruk işi türü: düzeltmenin depo e-postası da mal kabulü e-postası işiyle AYNI türdedir (yükte correctionId) */
+export const CORRECTION_EMAIL_KEY = 'correctionId';
+
+/**
+ * Kabul satırlarının düzeltilebilir miktarı (saf)
+ * @param {{ id: string, qty: number }[]} receiptLines  @param {Map<string, number>} corrected  kabul satırı id → önceki düzeltmeler
+ * @returns {Map<string, { accepted: number, corrected: number, correctable: number }>}
+ */
+export function correctionBalance(receiptLines, corrected) {
+  const out = new Map();
+  for (const l of receiptLines) {
+    const c = Math.max(0, Number(corrected.get(l.id) ?? 0));
+    out.set(l.id, { accepted: l.qty, corrected: c, correctable: Math.max(0, l.qty - c) });
+  }
+  return out;
+}
+
+/**
+ * Düzeltme formu (saf; bakiye ve stok denetimi servistedir). quantities: kabul satırı id → düzeltilecek (stoktan düşülecek)
+ * adet (boş = 0). Gerekçe zorunlu.
+ * @param {{ requestKey?: unknown, reason?: unknown, expectedVersion?: unknown, quantities?: Record<string, unknown> }} v
+ * @returns {{ ok: true, requestKey: string, reason: string, expectedVersion: number, quantities: Map<string, number> }
+ *   | { ok: false, code: 'KEY' | 'REASON' | 'REASON_LONG' | 'VERSION' | 'QTY' | 'EMPTY', line?: string }}
+ */
+export function parseCorrection(v) {
+  const requestKey = String(v.requestKey ?? '').trim();
+  if (!KEY_RE.test(requestKey)) return { ok: false, code: 'KEY' };
+  const reason = multi(v.reason);
+  if (!reason) return { ok: false, code: 'REASON' };
+  if (reason.length > CORRECTION_LIMITS.reason) return { ok: false, code: 'REASON_LONG' };
+  const vs = String(v.expectedVersion ?? '').trim();
+  if (!/^\d{1,9}$/.test(vs)) return { ok: false, code: 'VERSION' };
+  const quantities = new Map();
+  for (const [id, raw] of Object.entries(v.quantities ?? {})) {
+    const s = String(raw ?? '').trim();
+    if (!s) continue;
+    if (!/^\d{1,7}$/.test(s) || Number(s) > CORRECTION_LIMITS.qty) return { ok: false, code: 'QTY', line: String(id) };
+    const n = Number(s);
+    if (n > 0) quantities.set(String(id), n);
+  }
+  if (!quantities.size) return { ok: false, code: 'EMPTY' };
+  return { ok: true, requestKey, reason, expectedVersion: Number(vs), quantities };
+}
+
+/**
+ * Düzeltmeden sonra sipariş yeniden açılır mı (saf). Yalnızca mal kabulüyle OTOMATİK kapanmış sipariş (son kabul siparişi
+ * tamamladı ve kapanış zamanı o kabulün zamanı) ve artık kalan miktar varsa açılır; elle kapatılmış ("Kalanı beklemeden
+ * kapat") ya da iptal edilmiş sipariş açılmaz — o kapatma yöneticinin kararıdır.
+ * Açılınca e-posta gönderim durumu DEĞİŞMEZ, siparişin kendi gönderim kaydından aynen okunur (3.91.0, ürün sahibi):
+ *   gerçek gönderim hatası kaydı (sendError) → GONDERIM_HATASI · gönderildi (sentAt) → GONDERILDI ·
+ *   ikisi de yok (hiç gönderilmedi) → GONDERIM_BEKLIYOR — gönderilmemiş olmak tek başına gönderim hatası DEĞİLDİR.
+ * Düzeltme tedarikçiye e-posta göndermez: yeniden açılırken kuyrukta kalmış, henüz alınmamış sipariş e-postası işi
+ * gönderilmez (servis onu "teslim alındı" diye kapatır — sipariş kapalıyken işçi de aynısını yapardı).
+ * @param {{ status: string, receivedAt?: Date | string | null, sentAt?: Date | string | null, sendError?: string | null }} order
+ * @param {{ complete: boolean, createdAt: Date | string }[]} receipts
+ * @param {boolean} stillComplete  düzeltmeden sonra bütün satırlar teslim alınmış mı
+ * @returns {null | string}  yeni durum ya da null (değişmez)
+ */
+export function reopenStatus(order, receipts, stillComplete) {
+  if (stillComplete || order?.status !== 'TESLIM_ALINDI' || !order.receivedAt) return null;
+  const closedAt = new Date(order.receivedAt).getTime();
+  const auto = (receipts ?? []).some((r) => r.complete && new Date(r.createdAt).getTime() === closedAt);
+  if (!auto) return null;
+  if (order.sendError) return 'GONDERIM_HATASI';
+  return order.sentAt ? 'GONDERILDI' : 'GONDERIM_BEKLIYOR';
+}
+
+/**
+ * Net teslim alınan (saf): kabul toplamları − düzeltme toplamları, satır başına (hiç eksiye düşmez)
+ * @param {{ orderLineId: string, _sum: { qty: number | null } }[]} rows  @param {{ orderLineId: string, _sum: { qty: number | null } }[]} fixes
+ * @returns {Map<string, number>}
+ */
+export function netReceived(rows, fixes) {
+  const out = new Map(rows.map((r) => [r.orderLineId, r._sum.qty ?? 0]));
+  for (const f of fixes) out.set(f.orderLineId, Math.max(0, (out.get(f.orderLineId) ?? 0) - (f._sum.qty ?? 0)));
+  return out;
+}

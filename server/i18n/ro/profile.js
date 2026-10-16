@@ -634,7 +634,7 @@ export default {
       submit: 'Încarcă',
     },
     history: 'Ultimele mișcări',
-    kind: { GIRIS: 'Intrare', CIKIS: 'Ieșire la depozit', SAYIM: 'Inventar', IADE: 'Retur anulare' },
+    kind: { GIRIS: 'Intrare', CIKIS: 'Ieșire la depozit', SAYIM: 'Inventar', IADE: 'Retur anulare', KABUL_DUZELTME: 'Corecție recepție' },
     colWhen: 'Când',
     colKind: 'Mișcare',
     colQty: 'Cantitate',

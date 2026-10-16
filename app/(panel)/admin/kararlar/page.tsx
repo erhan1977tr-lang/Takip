@@ -36,7 +36,7 @@ const financeHref = (type: string, orderId: string | null, d: Details) => {
   return `/admin/muhasebe/cam/proforma${c}#${type === 'FGO_UNCERTAIN' ? 'belirsiz' : 'partiler'}`;
 };
 const FINANCE_TYPES = ['FINANCE_REVIEW', 'DUPLICATE_RISK', 'FGO_UNCERTAIN'];
-const CRITICAL_SOURCES = ['GIRIS', 'SAYIM', 'CIKIS', 'THRESHOLD'];
+const CRITICAL_SOURCES = ['GIRIS', 'SAYIM', 'CIKIS', 'THRESHOLD', 'KABUL_DUZELTME'];
 const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
 const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED', 'FREE'];
 

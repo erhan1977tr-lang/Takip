@@ -154,7 +154,7 @@ export default {
     stockLine: '{code} {name}: necesar {qty} {unit} · disponibil {stock} · lipsă {missing}',
     // Stoc critic (decizia 177): o singură înregistrare deschisă pe produs
     criticalLine: '{code} {name} — stoc {stock} {unit}, prag critic {threshold} {unit}',
-    criticalSource: { GIRIS: 'intrare stoc', SAYIM: 'inventar', CIKIS: 'ieșire la depozit ({orderNo})', THRESHOLD: 'modificarea pragului' },
+    criticalSource: { GIRIS: 'intrare stoc', SAYIM: 'inventar', CIKIS: 'ieșire la depozit ({orderNo})', THRESHOLD: 'modificarea pragului', KABUL_DUZELTME: 'corecția recepției' },
     compOpen: 'Decide în comandă',
     kindGlass: 'Sticlă',
     resolve: 'Am văzut',

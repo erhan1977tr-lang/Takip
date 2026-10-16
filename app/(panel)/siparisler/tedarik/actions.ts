@@ -17,7 +17,7 @@ import {
   approveAndSend, attachFiles, cancelOrder, createDraftOrder, deleteDraftOrder, discardRevision, fileQuota, markReceived, removeFile,
   resendOrder, saveDraft, setEta, startRevision,
 } from '@/server/suppliers/service.js';
-import { receiveGoods } from '@/server/suppliers/receipt.js';
+import { correctReceipt, receiveGoods } from '@/server/suppliers/receipt.js';
 import { userCan } from '@/lib/permissions';
 
 const LIST = '/siparisler/tedarik';
@@ -201,6 +201,27 @@ export async function receiveGoodsAction(fd: FormData) {
   }, await actorOf(admin), opts());
   if (!r.ok) fail(id, `RECEIPT_${r.code}`, { name: 'line' in r ? r.line : undefined }, '#mal-kabul');
   done(id, r.complete ? 'receivedAll' : 'receivedPart', '#kabuller');
+}
+
+/**
+ * Hatalı mal kabulünün düzeltmesi (3.91.0, karar 286): kabul satırlarından düzeltilecek (stoktan düşülecek) adetler, zorunlu
+ * gerekçe, ekrandaki sipariş sürümü (eski ekran) ve tek kullanımlık form anahtarı (çift tıklama). Düzeltme, stok hareketi,
+ * yeniden açılma ve depo e-postası işi tek işlemde (servis). Yetki: SUPPLIER_MANAGE + STOCK_MANAGE (burada ve serviste).
+ */
+export async function correctReceiptAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const id = idOf(fd);
+  if (!userCan(admin, 'STOCK_MANAGE')) fail(id, 'CORRECTION_FORBIDDEN', {}, '#kabuller');
+  const quantities: Record<string, string> = {};
+  for (const [k, v] of fd.entries()) {
+    if (k.startsWith('c_') && typeof v === 'string' && Object.keys(quantities).length < 300) quantities[k.slice(2)] = v;
+  }
+  const r = await correctReceipt(db, {
+    orderId: id, receiptId: String(fd.get('receiptId') ?? ''), reason: fd.get('reason'), requestKey: fd.get('requestKey'),
+    expectedVersion: fd.get('v'), quantities,
+  }, await actorOf(admin));
+  if (!r.ok) fail(id, `CORRECTION_${r.code}`, { name: 'line' in r ? r.line : undefined }, '#kabuller');
+  done(id, r.reopened ? 'correctedReopened' : 'corrected', '#kabuller');
 }
 
 /** Siparişi teslim alındı olarak KAPATIR (kalan beklenmez). Stok DEĞİŞMEZ — teslim alınan mal "Mal kabulü" ile girilir. */
