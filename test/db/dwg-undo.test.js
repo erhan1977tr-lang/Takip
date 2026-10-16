@@ -249,7 +249,9 @@ dbTest('5 · Çizim güncellemesini geri al: kayıt GERI_CEKILDI + yeni karar ka
   let cur = await orderOf(a.id);
   assert.deepEqual([cur.drawingTrack, cur.drawings.map((d) => [d.version, d.status])], ['GEREKLI', [[1, 'GERI_CEKILDI'], [2, 'BEKLIYOR']]]);
   assert.equal(cur.drawings[0].id, rec.id);
-  assert.equal(await db.notificationOutbox.count({ where: { orderId: a.id, type: { contains: 'UNDONE' } } }), 0, 'güncellemenin bildirimi yoktu, geri almanın da yok');
+  // Güncellemenin bildirimi yoktu, geri almanın da yok: kuyruk satırı yazılır (her olay gibi) ama alıcı kuralı yok
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: a.id, type: 'ORDER_DWG_UPDATE_UNDONE' } }), 1);
+  assert.deepEqual([n.INAPP_RULES.ORDER_DWG_UPDATE_UNDONE, NOTIFY_RULES.ORDER_DWG_UPDATE_UNDONE], [undefined, undefined]);
   // Hatalı → güncelle → geri al: müşterinin düzeltmesi yeniden beklenir, kayıt (hatalı) değişmez
   const b = await dwgOrder();
   await run(b.id, 'dwg_faulty', 'drawer', { note: 'Eksik' });
@@ -269,7 +271,7 @@ dbTest('6 · Sonraki sürüm varsa güncelleme geri alınmaz; önceki dosyalar v
   await run(o.id, 'dwg_update', 'drawer');
   await run(o.id, 'upload_drawing', 'drawer', { files: [pdf('fabrika-v2.pdf')] });
   const cur = await orderOf(o.id);
-  assert.deepEqual(cur.drawings.map((d) => [d.version, d.source, d.status]), [[1, 'MUSTERI_DXF_DWG', 'YAPILIYOR'], [2, null, 'TASLAK']]);
+  assert.deepEqual(cur.drawings.map((d) => [d.version, d.source, d.status]), [[1, 'MUSTERI_DXF_DWG', 'YAPILIYOR'], [2, 'FABRIKA', 'TASLAK']]);
   assert.equal((await dwgUndoCheck(db, cur, actor(P.drawer), { priceLock })).block, 'UNDO_LATER_DRAWING');
   const snap = await snapshot(o.id);
   assert.equal(await codeOf(run(o.id, 'dwg_update_undo', 'drawer', { reason: 'x', drawingId: cur.drawings[0].id, expectedVersion: cur.version })), 'NOT_ALLOWED');
