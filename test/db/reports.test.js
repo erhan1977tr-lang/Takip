@@ -108,8 +108,10 @@ before(async () => {
   mc = await db.profileProduct.create({ data: { code: 'RPT-MC12', categoryId: cat.id, nameRo: 'Garnitură MC12', nameTr: 'MC12 conta', unitCode: 'CUTII', packContent: '27', packMeasure: 'M', criticalStock: 5 } });
   const sup = await db.supplier.create({ data: { name: 'Profil Tedarik', currency: 'EUR' } });
   const so = await db.supplierOrder.create({ data: { orderNo: 'TS-2026-001', supplierId: sup.id, currency: 'EUR', status: 'GONDERILDI', sentAt: new Date('2026-10-03T10:00:00Z') } });
-  const rev = await db.supplierOrderRevision.create({ data: { orderId: so.id, revision: 1, orderDate: new Date('2026-10-03T00:00:00Z'), finalizedAt: new Date('2026-10-03T10:00:00Z'), total: '300' } });
+  // Kesinleşmiş revizyona satır eklenemez (veritabanı tetikleyicisi): önce taslak satır, sonra kesinleştir
+  const rev = await db.supplierOrderRevision.create({ data: { orderId: so.id, revision: 1, orderDate: new Date('2026-10-03T00:00:00Z'), total: '300' } });
   const sol = await db.supplierOrderLine.create({ data: { revisionId: rev.id, productId: fbl.id, code: fbl.code, description: 'FBL90', color: 'RAL7016', qty: 30, unitCode: 'BARA', unitPrice: '10', lineTotal: '300' } });
+  await db.supplierOrderRevision.update({ where: { id: rev.id }, data: { finalizedAt: new Date('2026-10-03T10:00:00Z') } });
   const rec = await db.supplierReceipt.create({ data: { orderId: so.id, revisionId: rev.id, seq: 1, receivedOn: new Date('2026-10-07T00:00:00Z'), requestKey: 'rapor-test-kabul-1' } });
   await db.supplierReceiptLine.create({ data: { receiptId: rec.id, orderLineId: sol.id, productId: fbl.id, code: fbl.code, nameRo: 'Profil FBL90', description: 'FBL90', color: 'RAL7016', lengthM: '6', qty: 20, unitCode: 'BARA' } });
   const mv = (productId, qty, kind, extra = {}) => db.stockMovement.create({ data: { productId, qty, kind, createdAt: new Date('2026-10-07T10:00:00Z'), ...extra } });

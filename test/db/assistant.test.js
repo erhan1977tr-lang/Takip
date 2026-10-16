@@ -60,6 +60,7 @@ dbTest('asistan: her araç gerçek şemada hatasız çalışır ve hiçbir tablo
     yukleme_plani: { baslangic: '2026-10-15', bitis: '2026-10-20' }, stok_durumu: {}, alacaklar: {}, fatura_belgeleri: { firma: 'GLA' },
     faturalanmamis_yuklemeler: {}, tedarikci_hesaplari: {},
     siparis_camlari: { siparis_no: 'gla 68' }, yukleme_durumu: { siparis_no: 'GLA68' }, yukleme_gunu: { gun: '2026-10-16' }, sandiklar: { gun: '2026-10-16' },
+    rapor: { tur: 'finans', donem: 'bu_yil' },
   };
   assert.deepEqual(Object.keys(args).sort(), Object.keys(TOOLS).sort(), 'her araç denendi');
   const s0 = await snapshot();
