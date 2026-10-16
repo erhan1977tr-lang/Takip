@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.91.0 — 16.10.2026
+
+Yanlış kaydedilmiş tedarikçi mal kabulü artık düzeltilebilir (karar 286).
+
+- **Mal kabulünü düzelt:** yönetici ve yönetici yardımcısı, tedarikçi siparişinin "Mal kabulleri" bölümünde bir kabulün
+  satırlarını tamamen ya da kısmen geri alır (ör. 100 kabul edilmiş, gerçekte 80 gelmiş → 20 düzeltilir: stok 20 azalır,
+  net teslim alınan 80, kalan 20). Aynı kabule birden çok kısmi düzeltme yapılabilir; toplam, kabul edilen miktarı aşamaz.
+  Gerekçe ve onay zorunlu.
+- **Orijinal kabul silinmez ve değişmez:** kabul satırı, stok girişi, INTRAREA MARFĂ belgesi ve gönderilmiş e-postalar aynen
+  kalır. Her düzeltme ayrı kayıttır ve stoğa ayrı bir ters hareket ("Mal kabulü düzeltmesi") yazar.
+- **Güvenli:** stok eksiye düşürülemez (stok yetmiyorsa düzeltme reddedilir); çift tıklama ve tekrarlanan istek tek
+  düzeltme yazar; aynı anda yapılan ya da eski ekrandan gönderilen düzeltme reddedilir, hiçbir şey yazılmaz.
+- **Kalan miktar yeniden hesaplanır:** sonraki gerçek teslimat normal kabul edilir. Mal kabulüyle kendiliğinden "Teslim
+  alındı" olmuş sipariş, düzeltmeden sonra eksik kalırsa yeniden açılır (elle kapatılmış ya da iptal edilmiş sipariş açılmaz).
+- **Belge ve e-posta:** düzeltme için "CORECȚIE RECEPȚIE" belgesi (açıkça düzeltme, orijinal kabule referans) oluşur ve
+  depo alıcılarına bir kez e-postayla gider; orijinal kabulün e-postası yeniden gönderilmez.
+- **Geçmiş ve raporlar:** kullanıcı, zaman, ürün, miktar, önceki → yeni stok ve gerekçe geçmişte görünür. Profil / stok
+  raporu ve Telegram raporu net (düzeltilmiş) miktarı kullanır; düzeltmeler ayrı sütun / satır olarak gösterilir.
+- Veritabanı: yalnızca ekleyen bir göç (iki yeni tablo, stok hareketine boş bir alan, yeni hareket türü); mevcut kayıtlara
+  dokunulmaz.
+
 ## 3.90.2 — 16.10.2026
 
 - "Üretime almayı geri al" iş kuralı düzeltildi (ürün sahibi): kararı veren çizimci kendi "Üretime Hazır" kararını geri

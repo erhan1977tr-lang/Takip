@@ -639,7 +639,7 @@ export default {
       submit: 'Yükle',
     },
     history: 'Son hareketler',
-    kind: { GIRIS: 'Giriş', CIKIS: 'Depoya çıkış', SAYIM: 'Sayım', IADE: 'İptal iadesi' },
+    kind: { GIRIS: 'Giriş', CIKIS: 'Depoya çıkış', SAYIM: 'Sayım', IADE: 'İptal iadesi', KABUL_DUZELTME: 'Mal kabulü düzeltmesi' },
     colWhen: 'Ne zaman',
     colKind: 'Hareket',
     colQty: 'Adet',

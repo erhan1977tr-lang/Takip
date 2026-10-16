@@ -17,8 +17,8 @@ import { dayKeyOf, localDay } from '@/server/profile/dates.js';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import {
-  cancelAction, deleteDraftAction, discardRevisionAction, etaAction, receiveGoodsAction, receivedAction, removeFileAction, resendAction, startRevisionAction,
-  uploadFilesAction,
+  cancelAction, correctReceiptAction, deleteDraftAction, discardRevisionAction, etaAction, receiveGoodsAction, receivedAction, removeFileAction, resendAction,
+  startRevisionAction, uploadFilesAction,
 } from '../actions';
 import { supplierErrorText } from '../labels';
 import { SupplierStatusBadge } from '@/components/SupplierStatus';
@@ -27,7 +27,7 @@ import { PreviewFor } from '@/components/PreviewFor';
 
 export const dynamic = 'force-dynamic';
 
-const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'cancelled', 'files', 'fileRemoved'];
+const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'corrected', 'correctedReopened', 'cancelled', 'files', 'fileRemoved'];
 const SEND_ERRORS = ['NO_EMAIL', 'FILE_NOT_CLEAN', 'FILE_MISSING', 'SMTP', 'UNKNOWN'];
 const SKIP = ['CANCELLED', 'SUPERSEDED', 'GONE', 'IPTAL', 'TESLIM_ALINDI'];
 const SCAN_TONE: Record<string, string> = { CLEAN: 'ok', SKIPPED: 'muted', PENDING: 'warn', INFECTED: 'danger' };
@@ -55,6 +55,8 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   const actions = supplierOrderActions({ status: order.status, hasDraft: !!draft, pendingJob, hasReceipts: receipts.length > 0 });
   // Mal kabulü (karar 282): tedarik VE stok yetkisi (serviste de denetlenir)
   const canReceive = actions.includes('receive') && userCan(admin, 'STOCK_MANAGE') && !!rc && rc.lines.some((l) => (l.remaining ?? 0) > 0 && l.compatible);
+  // Mal kabulü düzeltmesi (karar 286): aynı iki yetki (serviste de denetlenir); kabulün düzeltilebilir satırı varsa form
+  const canCorrect = userCan(admin, 'STOCK_MANAGE');
   const can = (a: string) => actions.includes(a);
   const email = supplierEmail(order.supplier.email);
   const target = { supplierId: order.supplierId, currency: order.currency };
@@ -265,9 +267,86 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                 <a className="btn" href={`/siparisler/tedarik/${order.id}/kabul/${r.id}`} target="_blank" rel="noopener" data-receipt-pdf>{t('supplier.order.receipt.pdf')}</a>
               </div>
               <ul className="small" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {r.lines.map((l) => <li key={l.id}><span className="mono">{l.code}</span> — {l.description}: <b>{l.qty}</b> {unitLabel(l.unitCode, locale)}</li>)}
+                {r.lines.map((l) => (
+                  <li key={l.id} data-receipt-row={l.code} data-accepted={l.qty} data-corrected={l.corrected} data-net={l.net}>
+                    <span className="mono">{l.code}</span> — {l.description}: <b>{l.qty}</b> {unitLabel(l.unitCode, locale)}
+                    {l.corrected > 0 && <> · <Badge tone="warn">{t('supplier.order.receipt.corrected')}</Badge> {t('supplier.order.correction.net')}: <b>{l.net}</b> {unitLabel(l.unitCode, locale)} <span className="muted">(−{l.corrected})</span></>}
+                  </li>
+                ))}
               </ul>
               <div className="muted small">{fmtDateTime(r.createdAt)}{r.by && <> · {t('supplier.order.receipt.by', { who: r.by })}</>}{r.note && <> · {r.note}</>}</div>
+              {r.corrections.length > 0 && (
+                <div className="receipt-fixes" data-corrections={r.seq}>
+                  <b className="small">{t('supplier.order.correction.listTitle')}</b>
+                  {r.corrections.map((c) => (
+                    <div key={c.id} data-correction={c.seq} style={{ marginTop: 6 }}>
+                      <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                        <Badge tone="warn">{t('supplier.order.correction.item', { n: c.seq })}</Badge>
+                        <span className="small">{t('supplier.order.correction.ofReceipt', { n: r.seq })}</span>
+                        {c.reopened && <Badge tone="info">{t('supplier.order.correction.reopened')}</Badge>}
+                        <Badge tone={c.mail?.status === 'SENT' ? 'ok' : c.mail?.status === 'FAILED' ? 'danger' : c.mail ? 'info' : 'muted'}>
+                          {t(`supplier.order.receipt.mail.${c.mail?.status && ['PENDING', 'SENT', 'FAILED', 'SKIPPED'].includes(c.mail.status) ? c.mail.status : 'none'}` as MsgKey)}
+                        </Badge>
+                        <a className="btn" href={`/siparisler/tedarik/${order.id}/duzeltme/${c.id}`} target="_blank" rel="noopener" data-correction-pdf>{t('supplier.order.correction.pdf')}</a>
+                      </div>
+                      <ul className="small" style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                        {c.lines.map((l) => (
+                          <li key={l.id} data-correction-line={l.code}>
+                            {t('supplier.order.correction.line', { code: l.code, description: l.description, qty: l.qty, unit: unitLabel(l.unitCode, locale), before: l.stockBefore, after: l.stockAfter })}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="muted small" style={{ whiteSpace: 'pre-line' }} data-correction-reason>{c.reason}</div>
+                      <div className="muted small">{fmtDateTime(c.createdAt)}{c.by && <> · {t('supplier.order.correction.by', { who: c.by })}</>}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canCorrect && rc && r.lines.some((l) => l.correctable > 0) && (
+                <details className="receipt-fix-form" data-correct-receipt={r.seq}>
+                  <summary className="btn">{t('supplier.order.correction.title')}</summary>
+                  <p className="muted small">{t('supplier.order.correction.intro')}</p>
+                  <form action={correctReceiptAction}>
+                    <input type="hidden" name="orderId" value={order.id} />
+                    <input type="hidden" name="receiptId" value={r.id} />
+                    <input type="hidden" name="v" value={rc.version} />
+                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{t('supplier.order.correction.col.code')}</th><th>{t('supplier.order.correction.col.description')}</th><th>{t('supplier.order.correction.col.unit')}</th>
+                            <th className="num">{t('supplier.order.correction.col.accepted')}</th><th className="num">{t('supplier.order.correction.col.corrected')}</th>
+                            <th className="num">{t('supplier.order.correction.col.net')}</th><th className="num">{t('supplier.order.correction.col.now')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.lines.map((l) => (
+                            <tr key={l.id} data-correct-line={l.code}>
+                              <td className="mono">{l.code}</td>
+                              <td>{l.description}</td>
+                              <td>{unitLabel(l.unitCode, locale)}</td>
+                              <td className="num">{l.qty}</td>
+                              <td className="num">{l.corrected}</td>
+                              <td className="num">{l.net}</td>
+                              <td className="num">
+                                {l.correctable > 0
+                                  ? <input type="number" name={`c_${l.id}`} min={0} max={l.correctable} step={1} inputMode="numeric" style={{ width: 90 }} aria-label={`${t('supplier.order.correction.col.now')} ${l.code}`} />
+                                  : <span className="muted">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ padding: '8px 0' }}>
+                      <label htmlFor={`cr-reason-${r.id}`}>{t('supplier.order.correction.reason')}</label>
+                      <textarea id={`cr-reason-${r.id}`} name="reason" required maxLength={1000} rows={2} placeholder={t('supplier.order.correction.reasonPlaceholder')} />
+                    </div>
+                    <ConfirmButton outline danger message={t('supplier.order.correction.confirm')}>{t('supplier.order.correction.submit')}</ConfirmButton>
+                  </form>
+                </details>
+              )}
             </div>
           ))}
         </div>
@@ -400,6 +479,12 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               const d = (h.details && typeof h.details === 'object' && !Array.isArray(h.details) ? h.details : {}) as Record<string, unknown>;
               const extra = h.action === 'SUPPLIER_ORDER_ETA' ? `${d.before ? fmtDate(`${d.before}T12:00:00Z`) : '—'} → ${d.after ? fmtDate(`${d.after}T12:00:00Z`) : '—'}`
                 : h.action === 'SUPPLIER_ORDER_CANCELLED' ? String(d.reason ?? '')
+                  // Düzeltme (karar 286): kabul no, ürün, düzeltilen adet, önceki → yeni stok, gerekçe
+                  : h.action === 'SUPPLIER_RECEIPT_CORRECTED' ? [
+                    t('supplier.order.correction.ofReceipt', { n: String(d.receiptSeq ?? '') }),
+                    ...(Array.isArray(d.lines) ? d.lines : []).map((l: { code?: string; qty?: number; unitCode?: string; stockBefore?: number; stockAfter?: number }) => `${l.code ?? ''} −${l.qty ?? ''} ${l.unitCode ? unitLabel(l.unitCode, locale) : ''} (${l.stockBefore ?? ''} → ${l.stockAfter ?? ''})`),
+                    String(d.reason ?? ''),
+                  ].filter(Boolean).join(' · ')
                   : typeof d.revision === 'number' ? `${t('supplier.orders.col.revision')} ${d.revision}` : '';
               return (
                 <li key={h.id} data-history={h.action}>

@@ -14,6 +14,7 @@ import { parseDateOnly } from '../orders/rules.js';
 import { dayKeyOf, localDay } from '../profile/dates.js';
 import { notifyStaff } from '../notifications/inapp.js';
 import { parseAmount, CURRENCIES } from '../accounting/supplier.js';
+import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
   expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, suggestOrderNo, supplierBalances, supplierEmail,
@@ -569,8 +570,12 @@ async function openFinalRevisions(db) {
     },
   });
   const ids = orders.flatMap((o) => (o.revisions[0]?.lines ?? []).map((l) => l.id));
-  const got = ids.length ? await db.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }) : [];
-  const received = new Map(got.map((g) => [g.orderLineId, g._sum.qty ?? 0]));
+  // Net teslim alınan = kabuller − kabul düzeltmeleri (karar 286): düzeltilen miktar yeniden beklenir
+  const [got, fixed] = ids.length ? await Promise.all([
+    db.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+    db.supplierReceiptCorrectionLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+  ]) : [[], []];
+  const received = netReceived(got, fixed);
   return orders.map((o) => ({
     status: o.status,
     lines: (o.revisions[0]?.lines ?? [])

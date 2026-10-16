@@ -17,6 +17,7 @@ export default {
     commercialOffer: 'Ofertă',
     commercialOfferInternal: 'Ofertă Internă',
     goodsReceipt: 'Intrare Marfă',
+    goodsReceiptCorrection: 'Corecție Recepție',
     report: 'Raport',
   },
 };

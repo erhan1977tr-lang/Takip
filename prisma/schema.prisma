@@ -1246,6 +1246,7 @@ model ProfileProduct {
   purchaseUnit     String?
   supplierLines    SupplierOrderLine[]
   receiptLines     SupplierReceiptLine[]
+  receiptCorrectionLines SupplierReceiptCorrectionLine[]
   prices     ProfilePriceItem[]
   stockMoves StockMovement[]
   calcItems  ProfileCalcItem[]
@@ -1506,6 +1507,7 @@ enum StockMoveKind {
   CIKIS    // depoya giden sipariş (−)
   SAYIM    // sayım düzeltmesi (±)
   IADE     // iptal edilen siparişin geri alınan çıkışı (+)
+  KABUL_DUZELTME // hatalı tedarikçi mal kabulünün düzeltmesi (−; 3.91.0, karar 286 — kabul silinmez)
 }
 
 // Stok hareketleri: yalnızca eklenir (silinmez, düzeltilmez). Ürünün stoğu = hareketlerin toplamı.
@@ -1520,6 +1522,9 @@ model StockMovement {
   // Tedarikçi mal kabulü (3.87.0, karar 282): bu GIRIS hareketini yazan kabul (kabul silinmez — Restrict)
   supplierReceiptId String?
   supplierReceipt   SupplierReceipt? @relation(fields: [supplierReceiptId], references: [id], onDelete: Restrict)
+  // Mal kabulü düzeltmesi (3.91.0, karar 286): bu KABUL_DUZELTME hareketini yazan düzeltme (düzeltme silinmez — Restrict)
+  supplierCorrectionId String?
+  supplierCorrection   SupplierReceiptCorrection? @relation(fields: [supplierCorrectionId], references: [id], onDelete: Restrict)
   note        String?
   createdById String?
   createdAt   DateTime       @default(now())
@@ -1527,6 +1532,7 @@ model StockMovement {
   @@index([productId])
   @@index([orderId])
   @@index([supplierReceiptId])
+  @@index([supplierCorrectionId])
 }
 
 // ---------------------------------------------------------
@@ -1951,6 +1957,7 @@ model SupplierOrder {
   updatedAt    DateTime @updatedAt
   revisions    SupplierOrderRevision[]
   receipts     SupplierReceipt[]
+  receiptCorrections SupplierReceiptCorrection[]
 
   @@index([supplierId, status])
   @@index([status, etaDate])
@@ -1994,6 +2001,7 @@ model SupplierOrderLine {
   lineTotal   Decimal? @db.Decimal(14, 2)
   sortOrder   Int      @default(0)
   receiptLines SupplierReceiptLine[]
+  receiptCorrectionLines SupplierReceiptCorrectionLine[]
 
   @@index([revisionId, sortOrder])
   @@index([productId])
@@ -2039,6 +2047,7 @@ model SupplierReceipt {
   createdAt   DateTime @default(now())
   lines       SupplierReceiptLine[]
   stockMoves  StockMovement[]
+  corrections SupplierReceiptCorrection[]
 
   @@unique([orderId, seq])
 }
@@ -2060,8 +2069,60 @@ model SupplierReceiptLine {
   qty          Int
   unitCode     String
   sortOrder    Int      @default(0)
+  corrections  SupplierReceiptCorrectionLine[]
 
   @@index([receiptId, sortOrder])
+  @@index([orderLineId])
+  @@index([productId])
+}
+
+// Hatalı mal kabulünün düzeltmesi (3.91.0, karar 286): orijinal kabul ve satırları silinmez / değişmez; her düzeltme ayrı
+// bir kayıttır ve stoğa ters (−) KABUL_DUZELTME hareketi yazar. Bir kabul satırının düzeltmelerinin toplamı o satırın kabul
+// edilen adedini aşamaz (server/suppliers/receipt.js → correctReceipt). Satırlar kopyadır; önceki / yeni stok bakiyesi
+// düzeltme anında, ürün kilidi altında yazılır. Kayıt ve satırları değişmez (veritabanı tetikleyicisi).
+model SupplierReceiptCorrection {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  receiptId   String
+  receipt     SupplierReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  seq         Int      // siparişte düzeltme sırası
+  reason      String
+  requestKey  String   @unique
+  reopened    Boolean  @default(false) // düzeltme otomatik kapanmış siparişi yeniden açtı
+  createdById String?
+  createdAt   DateTime @default(now())
+  lines       SupplierReceiptCorrectionLine[]
+  stockMoves  StockMovement[]
+
+  @@unique([orderId, seq])
+  @@index([receiptId])
+}
+
+model SupplierReceiptCorrectionLine {
+  id            String   @id @default(cuid())
+  correctionId  String
+  correction    SupplierReceiptCorrection @relation(fields: [correctionId], references: [id], onDelete: Restrict)
+  receiptLineId String
+  receiptLine   SupplierReceiptLine @relation(fields: [receiptLineId], references: [id], onDelete: Restrict)
+  orderLineId   String
+  orderLine     SupplierOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  productId     String
+  product       ProfileProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  code          String
+  nameRo        String
+  description   String
+  color         String?
+  categoryCode  String?
+  lengthM       Decimal? @db.Decimal(12, 3)
+  qty           Int      // düzeltilen (stoktan düşülen) adet, > 0
+  unitCode      String
+  stockBefore   Int
+  stockAfter    Int
+  sortOrder     Int      @default(0)
+
+  @@index([correctionId, sortOrder])
+  @@index([receiptLineId])
   @@index([orderLineId])
   @@index([productId])
 }

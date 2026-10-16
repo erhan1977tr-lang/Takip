@@ -175,6 +175,11 @@ Numbers in tables use `.num` (right-aligned, tabular figures). Codes and file na
   (amber "your turn" box, `<h3 class="sub-title">`); its buttons sit in `.dwg-actions` (`DwgDecision`): "Üretime Hazır" =
   `ConfirmButton success`, "Çizimi Güncelle" = `ConfirmButton outline`, "Çizim Hatalı" = a `<details class="dwg-faulty">`
   whose summary is `.btn.btn-danger` and whose form holds the required note + `ConfirmButton danger outline`.
+- Supplier goods-receipt correction (3.91.0): under each receipt in `#kabuller`, the corrections are listed in
+  `.receipt-fixes` (amber box: "Düzeltme #n" badge, lines "−qty (stok önce → sonra)", reason, user, PDF link) and the
+  correction form is `<details class="receipt-fix-form">` (neutral box; summary = `.btn`; table of receipt lines with a
+  number input per correctable line, required reason textarea, `ConfirmButton outline danger`). The original receipt
+  line stays visible with its accepted quantity; a corrected line adds a "Düzeltildi" badge + net quantity.
 - Red marking: an order whose customer asked for a revision is `tr.row-alert` in every list (red row + red left edge; the
   "Revizyon istendi" badge carries the meaning) and the drawer's order page starts with `.alert.alert-error#revizyon`;
   the customer's faulty-drawing notice is `.alert.alert-error#cizim-hatali`, its answers live in the turn card `#duzeltme`.

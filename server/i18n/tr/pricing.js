@@ -157,7 +157,7 @@ export default {
     stockLine: '{code} {name}: gereken {qty} {unit} · mevcut {stock} · eksik {missing}',
     // Kritik stok (karar 177): ürün başına tek açık kayıt
     criticalLine: '{code} {name} — stok {stock} {unit}, kritik eşik {threshold} {unit}',
-    criticalSource: { GIRIS: 'stok girişi', SAYIM: 'sayım', CIKIS: 'depo çıkışı ({orderNo})', THRESHOLD: 'eşik değişikliği' },
+    criticalSource: { GIRIS: 'stok girişi', SAYIM: 'sayım', CIKIS: 'depo çıkışı ({orderNo})', THRESHOLD: 'eşik değişikliği', KABUL_DUZELTME: 'mal kabulü düzeltmesi' },
     kindGlass: 'Cam',
     resolve: 'Gördüm',
     resolved: 'Kapatıldı.',

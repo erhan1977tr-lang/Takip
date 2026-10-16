@@ -1,6 +1,7 @@
 // Profil stok takibi (Aşama 6; Paket 5 — karar 177). Stok = ürünün hareketlerinin toplamı; hareketler yalnızca eklenir
 // (StockMovement — silinmez, düzeltilmez).
 //   GIRIS: mal girişi (+) · CIKIS: depoya giden sipariş (−, kendiliğinden) · SAYIM: sayım düzeltmesi (±) · IADE: iptal (+)
+//   KABUL_DUZELTME: hatalı tedarikçi mal kabulünün düzeltmesi (−; stok eksiye düşürülmez — karar 286)
 // Stok yetmese de sipariş depoya gönderilir (ürün sahibinin kararı): yöneticiye uyarı gösterilir, işlem engellenmez; stok
 // eksiye düşebilir (politika değişmedi).
 //
@@ -363,6 +364,36 @@ export async function receiveSupplierStock(tx, { receiptId, note, lines, actorId
   });
   await recordCriticalStock(tx, { productIds: ids, before, actor, source: 'GIRIS' });
   return rows.length;
+}
+
+/**
+ * Hatalı mal kabulünün stok düzeltmesi (3.91.0, karar 286) — düzeltme kaydıyla AYNI işlemin içinde, ürün kilitleri altında:
+ * düzeltme satırı başına bir KABUL_DUZELTME hareketi (− düzeltilen adet), düzeltmeye bağlı (supplierCorrectionId). Orijinal
+ * GIRIS hareketi ve kabul değişmez. Stok EKSİYE DÜŞEMEZ: kilit altında okunan stok, aynı üründeki satırların toplamından
+ * azsa hiçbir hareket yazılmaz ve hata fırlatılır (işlemin tamamı geri alınır). Bir düzeltme için yalnızca bir kez yazılır.
+ * @param {any} tx
+ * @param {{ correctionId: string, note: string, lines: { productId: string, qty: number }[], actorId: string | null,
+ *   actor?: { id?: string | null, role?: string, ip?: string | null } | null, at?: Date }} p
+ * @returns {Promise<{ productId: string, before: number, after: number }[]>}
+ */
+export async function reverseSupplierStock(tx, { correctionId, note, lines, actorId, actor = null, at = new Date() }) {
+  const rows = lines.filter((l) => l.productId && Number.isInteger(l.qty) && l.qty > 0 && l.qty <= MAX_STOCK_QTY);
+  if (!rows.length || rows.length !== lines.length) throw new Error('reverseSupplierStock: geçersiz satır');
+  const ids = rows.map((l) => l.productId);
+  await lockStock(tx, ids);
+  if (await tx.stockMovement.count({ where: { supplierCorrectionId: correctionId } })) throw new Error('reverseSupplierStock: düzeltme zaten yazıldı');
+  const before = await stockLevels(tx, ids);
+  const need = new Map();
+  for (const l of rows) need.set(l.productId, (need.get(l.productId) ?? 0) + l.qty);
+  for (const [pid, q] of need) {
+    if ((before.get(pid) ?? 0) < q) throw Object.assign(new Error('reverseSupplierStock: yetersiz stok'), { code: 'INSUFFICIENT_STOCK', productId: pid });
+  }
+  const text = clean(note).slice(0, 300) || null;
+  await tx.stockMovement.createMany({
+    data: rows.map((l) => ({ productId: l.productId, qty: -l.qty, kind: 'KABUL_DUZELTME', supplierCorrectionId: correctionId, note: text, createdById: actorId, createdAt: at })),
+  });
+  await recordCriticalStock(tx, { productIds: ids, before, actor, source: 'KABUL_DUZELTME' });
+  return [...need].map(([productId, q]) => ({ productId, before: before.get(productId) ?? 0, after: (before.get(productId) ?? 0) - q }));
 }
 
 /**
