@@ -17,6 +17,7 @@
 // Ekranda görünen metinler burada DEĞİL, server/i18n/{tr,ro}/ sözlüklerindedir; buradaki işlevler kod döndürür.
 import { can } from '../auth/permissions.js';
 import { dwgReview } from './dwg-review.js';
+import { dwgUndoState, PRODUCTION_UNDO_PERMISSION, UNDO_ACTIONS } from './dwg-undo.js';
 
 
 // Rozet renkleri (metinleri: status.order / status.drawing / status.offer)
@@ -203,6 +204,10 @@ export const EVENTS = {
   DWG_UPDATE: { customer: true },
   DWG_RESUBMITTED: { customer: true },
   DWG_FACTORY_REQUESTED: { customer: true },
+  // DWG kararının geri alınması (karar 285): satır müşteriye görünür (karar kaydı gibi), gerekçe yalnızca iç ekibe
+  DWG_READY_UNDONE: { customer: true, note: false },
+  DWG_FAULTY_UNDONE: { customer: true, note: false },
+  DWG_UPDATE_UNDONE: { customer: true, note: false },
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
   OFFER_WITHDRAWN: { customer: false }, // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
@@ -547,18 +552,21 @@ export function fileProblem(name, size) {
 export function drawingFlags(o) {
   const last = o.drawings?.[o.drawings.length - 1];
   const dwgPending = o.status != null && Array.isArray(o.files) ? dwgReview({ status: o.status, drawingTrack: o.drawingTrack, onHold: o.onHold, files: o.files, drawings: o.drawings ?? [] }).pending : false;
-  return { draft: last?.status === 'TASLAK', assigned: !!o.assignedDrawerId, dwgPending };
+  // Geri alınabilecek DWG kararı (3.90.0, karar 285): engelsizse kararın türü; sahibi ve üretim sonrası adımlar işlemde denetlenir
+  const undo = o.status != null && Array.isArray(o.drawings) ? dwgUndoState(o) : null;
+  return { draft: last?.status === 'TASLAK', assigned: !!o.assignedDrawerId, dwgPending, dwgUndo: undo && !undo.block ? undo.kind : null };
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, orderType?: string|null}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null}} p
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
  *   dwgPending: müşterinin DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167 — drawingFlags)
+ *   dwgUndo: geri alınabilecek DWG kararı (READY | FAULTY | UPDATE — karar 285, drawingFlags) ya da null
  *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, orderType = null }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -611,6 +619,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   // düzeltmesi beklenirken de çizimci "Çizimi Güncelle" ile çizimi fabrikaya alabilir.
   if (drawer && preparing && dwgPending) a.push('dwg_ready', 'dwg_faulty', 'dwg_update');
   if (drawer && preparing && drawing === 'DUZELTME_BEKLIYOR') a.push('dwg_update');
+  // DWG kararının güvenli geri alınması (karar 285): hatalı / güncelleme — kararı veren çizimci ya da yönetici (sahiplik
+  // işlemde); "Üretime almayı geri al" YALNIZCA yönetici (DRAWING_PRODUCTION_UNDO). Engeller işlemde (server/orders/dwg-undo.js)
+  if (drawer && dwgUndo && Object.hasOwn(UNDO_ACTIONS, dwgUndo) && (dwgUndo !== 'READY' || can(role, PRODUCTION_UNDO_PERMISSION))) a.push(UNDO_ACTIONS[dwgUndo]);
   if (drawer && preparing && !dwgPending && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(drawing)) {
     a.push('upload_drawing');
     if (draft) a.push('send_drawing', 'remove_drawing_file');

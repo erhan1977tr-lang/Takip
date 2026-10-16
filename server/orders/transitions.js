@@ -14,6 +14,7 @@ import { priceLock } from './financial-lock.js';
 import { priceChanges } from './price-changes.js';
 import { verifyReviewToken } from './review.js';
 import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
+import { crateLockKeys, dwgUndoCheck, undoReason } from './dwg-undo.js';
 import { getEnv } from '../env.js';
 import { orderScope } from './scope.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
@@ -61,6 +62,10 @@ export const REQUIRES = {
   dwg_update: ['dwg_update'],
   dwg_resubmit: ['dwg_resubmit'],
   dwg_request_drawing: ['dwg_request_drawing'],
+  // DWG kararlarının güvenli geri alınması (karar 285)
+  dwg_ready_undo: ['dwg_ready_undo'],
+  dwg_faulty_undo: ['dwg_faulty_undo'],
+  dwg_update_undo: ['dwg_update_undo'],
   save_offer: ['edit_offer', 'approve_price'],
   submit_offer: ['submit_offer'],
   approve_offer: ['approve_price'],
@@ -483,6 +488,51 @@ async function dwgDecide(h, decision) {
   return { id: rec.id, version: rec.version, files };
 }
 
+/**
+ * DWG kararının geri alınması (karar 285) — üç geri almanın ortak gövdesi. Kural tek yerde: server/orders/dwg-undo.js
+ * (dwgUndoCheck — sayfa da aynı denetimi gösterir). Ters işlemdir; hiçbir kayıt / dosya silinmez:
+ *   - kararın kaydı GERI_CEKILDI olur (gerekçe + zaman; koşullu güncelleme — aynı karar iki kez geri alınamaz),
+ *   - aynı dosyalar için yeni karar kaydı (v+1, BEKLIYOR) açılır → karar yeniden çizimcide (hatalı sonrası güncellemede
+ *     kayıt değişmez, hat DUZELTME_BEKLIYOR'a döner).
+ * Siparişin durumu (status) hiçbir zaman değişmez. "Üretime almayı geri al" yalnızca yöneticinin ve yalnızca üretime hiç
+ * girmemiş siparişte; mali kilit, sandık ve telafi denetimi danışma kilitleri (ACTION_LOCKS: yükleme onayı → belge →
+ * sandık günü) altında, sürüm artışından sonra aynı işlemde yapılır. Kullanıcının ekranda gördüğü kayıt (drawingId)
+ * zorunludur: arada başka karar / kayıt oluştuysa STALE_DRAWING.
+ */
+async function dwgUndo(h, kind) {
+  const reason = undoReason(h.payload.reason);
+  if (!reason.ok) throw new WorkflowError(reason.code);
+  const check = await dwgUndoCheck(h.tx, h.order, h.actor, { priceLock });
+  if (!check || check.kind !== kind) throw new WorkflowError('NOT_ALLOWED');
+  if (check.block) throw new WorkflowError(check.block);
+  const rec = check.record;
+  if (!h.payload.drawingId || h.payload.drawingId !== rec.id) throw new WorkflowError('STALE_DRAWING');
+  const before = { status: h.order.status, track: h.order.drawingTrack, record: { id: rec.id, version: rec.version, status: rec.status } };
+  let created = null;
+  if (check.variant === 'RECORD') {
+    const r = await h.tx.drawing.updateMany({
+      where: { id: rec.id, orderId: h.order.id, source: DWG_SOURCE, status: rec.status },
+      data: { status: 'GERI_CEKILDI', withdrawnAt: h.now, withdrawReason: reason.text },
+    });
+    if (r.count !== 1) throw new WorkflowError('CONFLICT');
+    const last = h.order.drawings[h.order.drawings.length - 1];
+    created = await h.tx.drawing.create({
+      data: {
+        orderId: h.order.id, source: DWG_SOURCE, version: (last?.version ?? rec.version) + 1, status: DWG_RESUBMITTED,
+        uploadedById: rec.uploadedById, scanStatus: 'SKIPPED', sourceFiles: rec.sourceFiles ?? [],
+      },
+    });
+  }
+  await h.set({ drawingTrack: check.restoreTrack, drawingSince: h.now });
+  h.event(`DWG_${kind}_UNDONE`, reason.text, { drawingId: created?.id ?? rec.id });
+  h.sla = true;
+  h.result = { undone: kind, drawingId: created?.id ?? null };
+  h.audit = {
+    undo: kind, variant: check.variant, drawingId: rec.id, version: rec.version, reason: reason.text, before,
+    after: { status: h.status, track: check.restoreTrack, record: created ? { id: created.id, version: created.version, status: created.status } : null, undoneRecordStatus: created ? 'GERI_CEKILDI' : rec.status },
+  };
+}
+
 const ACTIONS = {
   /**
    * Fabrika PDF'lerini teklif tablosuna aktarır (karar 255). Kurallar server/orders/pdf-import/*: ön izleme aynı işlemde
@@ -820,6 +870,13 @@ const ACTIONS = {
     h.event('DWG_FACTORY_REQUESTED');
     h.sla = true;
   },
+  // ---------- DWG kararlarının güvenli geri alınması (karar 285) ----------
+  /** "Üretime almayı geri al": Üretime Hazır kararı (ve onunla gelen otomatik üretim) geri alınır */
+  dwg_ready_undo: (h) => dwgUndo(h, 'READY'),
+  /** "Çizim hatalı kararını geri al": müşteri yanıt vermeden önce */
+  dwg_faulty_undo: (h) => dwgUndo(h, 'FAULTY'),
+  /** "Çizim güncellemesini geri al": çizimci yeni sürüm açmadan önce */
+  dwg_update_undo: (h) => dwgUndo(h, 'UPDATE'),
   save_offer: (h) => offerEdit(h, 'save'),
   submit_offer: (h) => offerEdit(h, 'submit'),
   approve_offer: (h) => offerEdit(h, 'approve'),
@@ -907,6 +964,9 @@ const ACTIONS = {
  */
 const ACTION_LOCKS = {
   update_offer: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  // Üretime almayı geri alma: mali kilit + sandık denetimi ile kayıt arasına yükleme onayı / belge isteği / sandık giremez.
+  // Sandık kilidi sandık yazanlarla aynı anahtar ve sıra (sandık günü → sipariş satırı) — server/orders/dwg-undo.js
+  dwg_ready_undo: (order) => ['loading-confirmation', `glass-billing:${order.id}`, ...crateLockKeys(order, dayKey)],
 };
 
 export const ORDER_ACTIONS = Object.keys(ACTIONS);

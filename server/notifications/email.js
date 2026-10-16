@@ -36,6 +36,8 @@ export const NOTIFY_RULES = {
   // Müşterinin DWG/DXF çizimi (karar 167): "hatalı" kararı müşteriye (açıklama e-postaya yazılmaz — sipariş sayfasında
   // Romence çevirisiyle); müşterinin yanıtı (düzeltilmiş dosya / fabrika çizimi) çizimciye + ilgili satışçıya
   ORDER_DWG_FAULTY: () => ['customer'],
+  // Hatalı kararı geri alındı (karar 285): hatalı kararını e-postayla alan müşteriye tek e-posta (giden kuyruk, olay başına bir satır)
+  ORDER_DWG_FAULTY_UNDONE: () => ['customer'],
   ORDER_DWG_RESUBMITTED: () => ['drawer', 'orderSales'],
   ORDER_DWG_FACTORY_REQUESTED: () => ['drawer', 'orderSales'],
   ORDER_PROFILE_APPROVED: () => ['admin'],

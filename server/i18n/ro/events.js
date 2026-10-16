@@ -14,6 +14,10 @@ export default {
   DWG_UPDATE: { label: 'Desenul DWG/DXF al clientului este actualizat de fabrică', customer: 'Desenul dvs. este actualizat de fabrică' },
   DWG_RESUBMITTED: { label: 'Clientul a trimis fișierul de desen corectat', customer: 'Ați trimis fișierul de desen corectat' },
   DWG_FACTORY_REQUESTED: { label: 'Clientul a cerut un desen nou de la fabrică', customer: 'Ați cerut un desen nou de la fabrică' },
+  // Anularea deciziei pentru desenul DWG/DXF (decizia 285)
+  DWG_READY_UNDONE: { label: 'Decizia „gata de producție” a fost anulată — se așteaptă din nou decizia pentru desen', customer: 'Desenul dvs. este verificat din nou' },
+  DWG_FAULTY_UNDONE: { label: 'Decizia „desen cu erori” a fost anulată — se așteaptă din nou decizia pentru desen', customer: 'Nu mai sunt necesare corecturi; desenul dvs. este verificat din nou' },
+  DWG_UPDATE_UNDONE: { label: 'Decizia „actualizare desen” a fost anulată', customer: 'Desenul dvs. este verificat din nou' },
   DRAWING_APPROVED: { label: 'Desen aprobat de client', customer: 'Desen aprobat' },
   OFFER_SUBMITTED: { label: 'Ofertă trimisă la aprobarea administratorului' },
   OFFER_RETURNED: { label: 'Ofertă returnată la vânzări' },

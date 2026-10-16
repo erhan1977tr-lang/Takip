@@ -65,6 +65,9 @@ export const INAPP_RULES = {
   // "üretime hazır" ilgili satışçıya; müşterinin yanıtı (düzeltilmiş dosya / fabrika çizimi) çizimciye + ilgili satışçıya
   ORDER_DWG_FAULTY: { to: () => ['customer'], link: orderPart('cizim-hatali') },
   ORDER_DWG_READY: { to: () => ['orderSales'], link: orderPart('cizim') },
+  // DWG kararının geri alınması (karar 285): kararın bildirildiği taraf geri almayı da öğrenir (güncellemenin bildirimi yoktu)
+  ORDER_DWG_FAULTY_UNDONE: { to: () => ['customer'], link: orderPart('cizim') },
+  ORDER_DWG_READY_UNDONE: { to: () => ['orderSales'], link: orderPart('cizim') },
   ORDER_DWG_RESUBMITTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
   ORDER_DWG_FACTORY_REQUESTED: { to: () => ['drawer', 'orderSales'], link: orderPart('cizim') },
   // Teklif / ticari karar: satış teklifi yöneticiye; yönetici satışa geri gönderdi; teklif müşteride. Yöneticinin teklifi

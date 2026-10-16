@@ -47,6 +47,10 @@ export default {
     dwg_update: 'Veți actualiza desenul; fișierul clientului se păstrează. Încărcați desenul nou mai jos și trimiteți-l clientului prin „Verifică”.',
     dwg_resubmitted: 'Fișierul corectat a fost trimis echipei de desen.',
     dwg_factory_requested: 'Cererea a fost primită: desenul va fi pregătit de fabrica noastră și supus aprobării dvs.',
+    // Anularea deciziei pentru desenul DWG/DXF (decizia 285)
+    dwg_undo_READY: 'Decizia „gata de producție” a fost anulată. Se așteaptă din nou decizia; înregistrările și fișierele au fost păstrate.',
+    dwg_undo_FAULTY: 'Decizia „desen eronat” a fost anulată, iar clientul a fost anunțat. Se așteaptă din nou decizia; înregistrarea erorii rămâne în istoric.',
+    dwg_undo_UPDATE: 'Decizia „actualizează desenul” a fost anulată. Înregistrările și fișierele au fost păstrate.',
   },
   // Numele acțiunilor: rândul „Pasul următor” și butoanele cu același nume (cheie = codul acțiunii)
   steps: {
@@ -185,9 +189,46 @@ export default {
       ONAYLANDI: 'gata de producție',
       REVIZYON_ISTENDI: 'eronat',
       YAPILIYOR: 'actualizat de fabrică',
+      GERI_CEKILDI: 'decizie anulată',
     },
     faultyLabel: 'Desen eronat — explicație:',
     submitted: 'trimis {when}',
+    undoneLabel: 'Decizie anulată — motiv:',
+    undo: {
+      title: 'Anulează decizia',
+      intro: 'Puteți anula o decizie dată din greșeală. Anularea se înregistrează ca operație inversă: înregistrarea deciziei, fișierele și istoricul versiunilor nu se șterg.',
+      decision: 'Decizia de anulat',
+      target: 'Starea la care se revine',
+      by: 'v{v} · {who} · {when}',
+      kinds: { READY: 'Gata de producție', FAULTY: 'Desen eronat', UPDATE: 'Actualizează desenul' },
+      targets: {
+        PENDING: 'Se așteaptă din nou decizia pentru desenul clientului (lista DXF/DWG)',
+        FAULTY_WAIT: 'Se așteaptă corectura clientului (decizia „desen eronat” rămâne valabilă)',
+      },
+      notify: {
+        READY: 'Doar administratorul și doar dacă comanda nu a intrat niciodată în producție. Agentul de vânzări al comenzii primește o notificare în aplicație.',
+        FAULTY: 'Clientul primește o notificare și un e-mail (nu mai sunt necesare corecturi).',
+        UPDATE: 'Nu se trimite nicio notificare.',
+      },
+      reason: 'Motivul anulării (obligatoriu — îl vede doar echipa internă)',
+      reasonPlaceholder: 'ex. Decizia a fost dată pe comanda greșită',
+      submit: { READY: 'Anulează trecerea în producție', FAULTY: 'Anulează decizia „desen eronat”', UPDATE: 'Anulează actualizarea desenului' },
+      confirm: 'Decizia „{decision}” va fi anulată. Starea la care se revine: {target}. Înregistrările și fișierele nu se șterg. Sunteți sigur?',
+      blocked: 'Această decizie nu poate fi anulată:',
+      block: {
+        UNDO_CLOSED: 'comanda este închisă sau nu mai este în pregătire.',
+        UNDO_ON_HOLD: 'comanda este în așteptare; scoateți-o mai întâi din așteptare.',
+        UNDO_IN_PRODUCTION: 'comanda a fost trecută în producție (sau există o înregistrare de producție / încărcare); deoarece nu se poate verifica faptul că producția reală nu a început, decizia „gata de producție” nu poate fi anulată.',
+        UNDO_LATER_DRAWING: 'după această decizie a fost deschisă o versiune nouă a desenului (ciornă sau trimisă).',
+        UNDO_CUSTOMER_ANSWERED: 'clientul a răspuns la această decizie (a cerut desenul fabricii).',
+        UNDO_LOADED: 'comanda are o încărcare confirmată.',
+        UNDO_DOCUMENTS: 'comanda are un document financiar / o cerere de document (proformă, avans, factură sau document client).',
+        UNDO_CRATES: 'pentru comandă au fost introduse lăzi.',
+        UNDO_COMPENSATION: 'comanda are o înregistrare de compensare.',
+        UNDO_ADMIN_ONLY: 'decizia de trecere în producție poate fi anulată doar de administrator.',
+        UNDO_NOT_OWNER: 'decizia poate fi anulată doar de desenatorul care a dat-o sau de administrator.',
+      },
+    },
   },
   // Liniile desen / ofertă de sub bara de pași
   tracks: {
@@ -410,6 +451,8 @@ export default {
     dwgNoteLong: 'Explicația este prea lungă (cel mult 2000 de caractere).',
     dwgFile: 'Selectați cel puțin un fișier DWG sau DXF.',
     dwgInfected: 'Unul dintre fișierele verificate s-a dovedit infectat; acest desen nu poate fi acceptat pentru producție.',
+    undoReason: 'Motivul anulării este obligatoriu.',
+    undoReasonLong: 'Motivul anulării poate avea cel mult 1000 de caractere.',
     // Panoul administratorului (pachetul 4)
     crateFeeAdmin: 'Rândul de cost ambalaj al administratorului nu poate fi modificat de vânzări; oferta nu a fost salvată.',
     offerNotOwner: 'Această ofertă a fost trimisă administratorului de alt agent de vânzări; doar acesta o poate retrage.',

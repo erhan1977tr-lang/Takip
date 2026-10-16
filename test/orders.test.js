@@ -160,8 +160,8 @@ test('çizim ekibi', () => {
   assert.ok(has({ role: 'CIZIM', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
   assert.ok(!has({ role: 'SATIS', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
   assert.ok(!has({ role: 'MUSTERI', status: 'HAZIRLANIYOR', drawing: 'ONAY_BEKLIYOR' }, 'withdraw_drawing'));
-  assert.deepEqual(drawingFlags({ assignedDrawerId: 'u', drawings: [{ status: 'REVIZYON_ISTENDI' }, { status: 'TASLAK' }] }), { draft: true, assigned: true, dwgPending: false });
-  assert.deepEqual(drawingFlags({ assignedDrawerId: null, drawings: [] }), { draft: false, assigned: false, dwgPending: false });
+  assert.deepEqual(drawingFlags({ assignedDrawerId: 'u', drawings: [{ status: 'REVIZYON_ISTENDI' }, { status: 'TASLAK' }] }), { draft: true, assigned: true, dwgPending: false, dwgUndo: null });
+  assert.deepEqual(drawingFlags({ assignedDrawerId: null, drawings: [] }), { draft: false, assigned: false, dwgPending: false, dwgUndo: null });
   assert.ok(!has({ role: 'CIZIM', status: 'YENI' }, 'send_to_drawing'));
 });
 
