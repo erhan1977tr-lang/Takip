@@ -319,8 +319,8 @@ dbTest('9-10 · Tekrar ve eşzamanlılık: aynı karar iki kez geri alınamaz; e
   } else {
     assert.deepEqual(after.drawings.map((d) => d.status), ['GERI_CEKILDI', 'BEKLIYOR'], 'geri alma kazandı: tek yeni kayıt');
     assert.equal(await db.auditLog.count({ where: { entityId: o.id, details: { path: ['action'], equals: 'dwg_update_undo' } } }), 1);
-    // Tekrar istek (aynı form): eski sürüm → CONFLICT; güncel sürümle → artık geri alınacak karar yok
-    assert.equal(await codeOf(run(o.id, 'dwg_update_undo', 'drawer', payload)), 'CONFLICT');
+    // Tekrar istek (aynı form): durum denetimi sürüm denetiminden önce gelir → NOT_ALLOWED; güncel sürümle de karar yok
+    assert.equal(await codeOf(run(o.id, 'dwg_update_undo', 'drawer', payload)), 'NOT_ALLOWED');
     assert.equal(await codeOf(run(o.id, 'dwg_update_undo', 'drawer', { ...payload, expectedVersion: after.version })), 'NOT_ALLOWED');
   }
   // Ekrandaki kayıttan farklı kayıt → STALE_DRAWING
