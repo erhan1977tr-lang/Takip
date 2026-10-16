@@ -143,7 +143,7 @@ dbTest('1) kısmi düzeltme (100 kabul, gerçekte 80): stok 20 azalır, net 80, 
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'SUPPLIER_RECEIPT_CORRECTED', entityId: id } });
   assert.equal(audit.userId, U.admin.id);
   assert.deepEqual(audit.details.lines, [{ code: 'RM12-7016', productId: (await prod('RM12-7016')).id, qty: 20, unitCode: 'BARA', stockBefore: s0 + 100, stockAfter: s0 + 80 }]);
-  assert.deepEqual([audit.details.reason, audit.details.receiptSeq, audit.details.reopened], ['Avizde 100, gerçekte 80 adet geldi', 1, { from: 'TESLIM_ALINDI', to: 'GONDERILDI' }]);
+  assert.deepEqual([audit.details.reason, audit.details.receiptSeq, audit.details.reopened], ['Avizde 100, gerçekte 80 adet geldi', 1, { from: 'TESLIM_ALINDI', to: 'GONDERILDI', skippedSupplierJobs: 0 }]);
   const jobs = await db.notificationOutbox.findMany({ where: { type: RECEIPT_EMAIL, payload: { path: ['correctionId'], equals: c.correctionId } } });
   assert.equal(jobs.length, 1);
   assert.deepEqual([jobs[0].payload.correctionOf, jobs[0].payload.receiptId], [r.receiptId, undefined]);
@@ -282,7 +282,7 @@ dbTest('7) işlem ortasında hata (stok hareketinden sonra): her şey geri alın
   const before = await snap(id);
   const wrap = (tx) => new Proxy(tx, {
     get(t, k) {
-      if (k === 'notificationOutbox') return { create: async () => { throw new Error('test: kuyruk yazılamadı'); } };
+      if (k === 'notificationOutbox') return { updateMany: (...x) => t.notificationOutbox.updateMany(...x), create: async () => { throw new Error('test: kuyruk yazılamadı'); } };
       const v = t[k];
       return typeof v === 'function' ? v.bind(t) : v;
     },
