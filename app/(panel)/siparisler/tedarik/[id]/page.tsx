@@ -76,7 +76,8 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   const errText = supplierErrorText(t, m, sp.error, { row: sp.row, name: sp.name });
   const reason = SEND_ERRORS.includes(order.sendError ?? '') ? t(`supplier.order.sendError.${order.sendError}` as MsgKey) : t('supplier.order.sendError.SMTP');
   const info = order.status === 'TASLAK' ? t('supplier.order.statusInfo.TASLAK')
-    : order.status === 'GONDERIM_BEKLIYOR' ? t('supplier.order.statusInfo.GONDERIM_BEKLIYOR')
+    // Kuyrukta iş yoksa e-posta "gönderilmedi"dir, hata değil (mal kabulü düzeltmesiyle yeniden açılmış sipariş — karar 286)
+    : order.status === 'GONDERIM_BEKLIYOR' ? t(pendingJob ? 'supplier.order.statusInfo.GONDERIM_BEKLIYOR' : 'supplier.order.statusInfo.NOT_SENT')
       : order.status === 'GONDERILDI' ? t('supplier.order.statusInfo.GONDERILDI', { when: fmtDateTime(order.sentAt) })
         : order.status === 'GONDERIM_HATASI' ? t('supplier.order.statusInfo.GONDERIM_HATASI', { reason })
           : order.status === 'TESLIM_ALINDI' ? t('supplier.order.statusInfo.TESLIM_ALINDI', { when: fmtDateTime(order.receivedAt) })

@@ -19,6 +19,7 @@ resetEnvCache();
 const svc = await import('../../server/suppliers/service.js');
 const recv = await import('../../server/suppliers/receipt.js');
 const { buildCorrectionPdf, buildReceiptPdf, dispatchReceiptEmails } = await import('../../server/suppliers/receipt-mail.js');
+const { dispatchSupplierOrderEmails } = await import('../../server/suppliers/dispatch.js');
 const { RECEIPT_EMAIL } = await import('../../server/suppliers/receipt-rules.js');
 const { addStockMovement, stockLevels } = await import('../../server/profile/stock.js');
 const { saveWarehouseSettings } = await import('../../server/profile/warehouse.js');
@@ -307,13 +308,6 @@ dbTest('8) elle kapatılmış ya da iptal edilmiş sipariş yeniden açılmaz; d
   const fb = await correct(b, rb.receiptId, { GK15: 5 });
   assert.deepEqual([fb.ok, fb.reopened], [true, false]);
   assert.equal((await db.supplierOrder.findUniqueOrThrow({ where: { id: b } })).status, 'IPTAL');
-  // E-postası gönderilmemiş, otomatik kapanmış sipariş: GONDERIM_HATASI'na açılır (kendiliğinden e-posta gitmez)
-  const c = await sentOrder([['GK15', 3]], { sent: false });
-  const rc = await receive(c, { GK15: 3 });
-  assert.ok(rc.complete);
-  const fc = await correct(c, rc.receiptId, { GK15: 1 });
-  assert.ok(fc.reopened);
-  assert.equal((await db.supplierOrder.findUniqueOrThrow({ where: { id: c } })).status, 'GONDERIM_HATASI');
   // Değişmezlik
   await assert.rejects(db.supplierReceiptCorrection.update({ where: { id: fa.correctionId }, data: { reason: 'değiştir' } }), /immutable/);
   await assert.rejects(db.supplierReceiptCorrectionLine.deleteMany({ where: { correctionId: fa.correctionId } }), /immutable/);
@@ -382,4 +376,77 @@ dbTest('10) beklenen tedarik, profil raporu ve Telegram raporu düzeltilmiş net
   assert.deepEqual(so.satirlar.map((x) => [x.code, x.received, x.remaining]), [['RCF-FBL90', 80, 20]]);
   const mv = bot.tablolar.find((x) => x.ad === 'movements');
   assert.deepEqual(mv.satirlar.map((x) => [x.receiptFix, x.net]), [[-20, 80]]);
+}));
+
+dbTest('11) yeniden açılan siparişin e-posta gönderim durumu değişmez: gönderildi / gerçek hata / hiç gönderilmedi aynen; düzeltme tedarikçiye e-posta göndermez', offline(async () => {
+  // Tedarikçi sipariş e-postalarının işçisi: düzeltmeden sonra çalıştırılınca hiçbir ileti göndermemeli
+  const supplierMail = transport();
+  const sendSupplier = () => dispatchSupplierOrderEmails(db, { transport: supplierMail, from: 'takip@gkh.test', log: () => {} });
+  // Önceki testlerin kuyrukta kalmış sipariş e-postaları bu testin sayımına karışmasın
+  await db.notificationOutbox.updateMany({ where: { type: svc.SUPPLIER_EMAIL, status: 'PENDING' }, data: { status: 'SKIPPED', lastError: 'TEST' } });
+  const sendInfo = (id) => db.supplierOrder.findUniqueOrThrow({ where: { id }, select: { status: true, sentAt: true, sendError: true } });
+
+  // a) Gönderilmiş: GONDERILDI, sentAt aynen
+  const a = await sentOrder([['GK15', 4]]);
+  const ra = await receive(a, { GK15: 4 });
+  const sa = await sendInfo(a);
+  assert.ok((await correct(a, ra.receiptId, { GK15: 1 })).reopened);
+  assert.deepEqual(await sendInfo(a), { ...sa, status: 'GONDERILDI' });
+
+  // b) Gerçek gönderim hatası kaydı: GONDERIM_HATASI, hata kodu aynen
+  const b = await sentOrder([['GK15', 4]], { sent: false });
+  await db.notificationOutbox.updateMany({ where: svc.jobsWhere(b), data: { status: 'FAILED', lastError: 'SMTP', attempts: 1 } });
+  await db.supplierOrder.update({ where: { id: b }, data: { status: 'GONDERIM_HATASI', sendError: 'SMTP' } });
+  const rb = await receive(b, { GK15: 4 });
+  assert.ok(rb.complete);
+  assert.ok((await correct(b, rb.receiptId, { GK15: 2 })).reopened);
+  assert.deepEqual(await sendInfo(b), { status: 'GONDERIM_HATASI', sentAt: null, sendError: 'SMTP' });
+
+  // c) Hiç gönderilmedi (iş kuyrukta, işçi henüz çalışmadı): gönderim hatası DEĞİL → GONDERIM_BEKLIYOR; sentAt / sendError boş
+  const c = await sentOrder([['GK15', 3]], { sent: false });
+  const rc = await receive(c, { GK15: 3 });
+  assert.ok(rc.complete);
+  const job = await db.notificationOutbox.findFirstOrThrow({ where: { ...svc.jobsWhere(c), status: 'PENDING' } });
+  const fc = await correct(c, rc.receiptId, { GK15: 1 });
+  assert.ok(fc.reopened);
+  assert.deepEqual(await sendInfo(c), { status: 'GONDERIM_BEKLIYOR', sentAt: null, sendError: null });
+  // Kuyrukta kalmış sipariş e-postası düzeltme yüzünden gönderilmez ("teslim alındı" diye kapandı); yeni sipariş e-postası işi yazılmadı
+  assert.deepEqual(await db.notificationOutbox.findUniqueOrThrow({ where: { id: job.id }, select: { status: true, lastError: true } }), { status: 'SKIPPED', lastError: 'TESLIM_ALINDI' });
+  assert.equal(await db.notificationOutbox.count({ where: svc.jobsWhere(c) }), 1);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'SUPPLIER_RECEIPT_CORRECTED', entityId: c } });
+  assert.deepEqual(audit.details.reopened, { from: 'TESLIM_ALINDI', to: 'GONDERIM_BEKLIYOR', skippedSupplierJobs: 1 });
+
+  // Tedarikçi e-postası işçisi çalışır: düzeltmeler hiçbir tedarikçiye ileti göndermez
+  await sendSupplier();
+  assert.equal(supplierMail.sent.length, 0, 'tedarikçiye otomatik e-posta yok');
+  for (const id of [a, b, c]) assert.equal(await db.notificationOutbox.count({ where: { ...svc.jobsWhere(id), createdAt: { gte: (await db.supplierReceiptCorrection.findFirstOrThrow({ where: { orderId: id } })).createdAt } } }), 0, 'düzeltmeden sonra sipariş e-postası işi yok');
+  // Sonraki teslimat sipariş durumu kurallarını bozmaz: kalan gelince yeniden "Teslim alındı"
+  assert.ok((await receive(c, { GK15: 1 })).complete);
+  assert.equal((await sendInfo(c)).status, 'TESLIM_ALINDI');
+}));
+
+dbTest('12) gerekçe yalnızca düzeltme belgesinde ve depo personelinin e-postasında: alıcılar yalnızca depo alıcıları; müşteriye / tedarikçiye bildirim yok', offline(async () => {
+  await db.notificationOutbox.updateMany({ where: { type: RECEIPT_EMAIL, status: 'PENDING' }, data: { status: 'SKIPPED', lastError: 'TEST' } });
+  const id = await sentOrder([['MC12', 6]]);
+  const r = await receive(id, { MC12: 6 });
+  await dispatch(transport());
+  const outboxBefore = await db.notificationOutbox.count();
+  const notesBefore = await db.notification.count();
+  const reason = 'Gizli iç gerekçe: kutular ıslak geldi';
+  const fix = await correct(id, r.receiptId, { MC12: 2 }, { reason });
+  assert.ok(fix.ok);
+  // Yalnızca bir yeni kuyruk işi (depo e-postası); uygulama içi bildirim yok
+  assert.equal(await db.notificationOutbox.count(), outboxBefore + 1);
+  assert.equal(await db.notification.count(), notesBefore);
+  const t = transport();
+  await dispatch(t);
+  assert.deepEqual(t.sent.map((m) => m.to).sort(), RECIPIENTS, 'yalnızca depo alıcıları');
+  assert.ok(!t.sent.some((m) => /tedarik\.test|siparis@/.test(String(m.to))), 'tedarikçi adresi yok');
+  for (const m of t.sent) assert.ok(m.text.includes(`Motiv: ${reason}`) && m.html.includes('Gizli iç gerekçe'));
+  // Belgede de gerekçe var (belge yalnızca yetkili yoldan ve depo e-postasının ekinde)
+  const built = await buildCorrectionPdf(db, fix.correctionId);
+  assert.equal(built.correction.reason, reason);
+  // Müşteri kullanıcıları ve tedarikçi için hiçbir iş / bildirim yazılmadı
+  assert.equal(await db.notification.count({ where: { userId: U.cust.id } }), 0);
+  assert.equal(await db.notificationOutbox.count({ where: { type: svc.SUPPLIER_EMAIL, payload: { path: ['supplierOrderId'], equals: id }, createdAt: { gte: built.correction.createdAt } } }), 0);
 }));

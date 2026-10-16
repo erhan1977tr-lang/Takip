@@ -70,9 +70,12 @@ test('yeniden açılma: yalnızca mal kabulüyle OTOMATİK kapanmış ve artık 
   const at = new Date('2026-10-14T10:00:00Z');
   const auto = { status: 'TESLIM_ALINDI', receivedAt: at, sentAt: new Date('2026-10-01T00:00:00Z'), sendError: null };
   const receipts = [{ complete: false, createdAt: new Date('2026-10-10T00:00:00Z') }, { complete: true, createdAt: at }];
+  // E-posta gönderim durumu değişmez (ürün sahibi): gerçek hata → hata; gönderildi → gönderildi; hiç gönderilmedi → hata DEĞİL
   assert.equal(reopenStatus(auto, receipts, false), 'GONDERILDI');
   assert.equal(reopenStatus({ ...auto, sentAt: null, sendError: 'SMTP' }, receipts, false), 'GONDERIM_HATASI');
-  assert.equal(reopenStatus({ ...auto, sentAt: null, sendError: null }, receipts, false), 'GONDERIM_HATASI', 'bekleyen gönderim yok: kendiliğinden e-posta gitmez');
+  assert.equal(reopenStatus({ ...auto, sentAt: null, sendError: 'NO_EMAIL' }, receipts, false), 'GONDERIM_HATASI');
+  assert.equal(reopenStatus({ ...auto, sentAt: null, sendError: null }, receipts, false), 'GONDERIM_BEKLIYOR', 'gönderilmemiş olmak gönderim hatası değildir');
+  assert.equal(reopenStatus({ ...auto, sentAt: null }, receipts, false), 'GONDERIM_BEKLIYOR');
   assert.equal(reopenStatus(auto, receipts, true), null, 'hâlâ tamam');
   // Elle kapatıldı ("Kalanı beklemeden kapat"): kapanış zamanı bir kabulün zamanı değil
   assert.equal(reopenStatus({ ...auto, receivedAt: new Date('2026-10-15T00:00:00Z') }, receipts, false), null);
@@ -182,6 +185,16 @@ test('yapı: kilit → tekrar anahtarı → eski ekran → bakiye → stok kilid
   const page = read('app/(panel)/siparisler/tedarik/[id]/page.tsx');
   assert.match(page, /const canCorrect = userCan\(admin, 'STOCK_MANAGE'\)/);
   assert.match(page, /<input type="hidden" name="v" value=\{rc\.version\} \/>/);
+  // Tedarikçiye / müşteriye otomatik bildirim yok: düzeltme tedarikçi sipariş e-postası işi yazmaz, sipariş bildirimi
+  // kuyruğuna müşteri olayı yazmaz; yalnızca depo e-postası işi (alıcılar: Ayarlar → depo alıcıları) ve kuyrukta kalmış sipariş
+  // e-postasını gönderilmeden kapatma (skipQueuedOrderMail)
+  assert.ok(!/notifyStaff|enqueueOutbox|sendBrandedMail|SUPPLIER_ORDER_EMAIL|SUPPLIER_EMAIL\b/.test(body), 'yalnızca depo e-postası işi');
+  assert.equal((body.match(/notificationOutbox\.create\(/g) ?? []).length, 1);
+  assert.match(body, /type: RECEIPT_EMAIL, payload: \{ correctionId/);
+  assert.match(body, /reopen \? await skipQueuedOrderMail\(tx, order\.id\)/);
+  const mailSrc = strip(read('server/suppliers/receipt-mail.js'));
+  assert.match(mailSrc, /const \{ recipients \} = await getWarehouseSettings\(db\)/, 'alıcılar yalnızca depo alıcıları');
+  assert.ok(!/supplier\.email|customer|Customer/.test(mailSrc), 'tedarikçi / müşteri adresi okunmaz');
   // E-postayı yalnızca işçi gönderir (aynı işlev); düzeltme işi kabul işinden ayırt edilir
   const mail = strip(read('server/suppliers/receipt-mail.js'));
   assert.ok(mail.includes('payload.correctionId') && mail.indexOf('sending: to') < mail.indexOf('sendBrandedMail(transport'));

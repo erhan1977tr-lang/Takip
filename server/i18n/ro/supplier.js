@@ -170,6 +170,7 @@ export default {
     statusInfo: {
       TASLAK: 'Ciornă: nu a fost trimisă furnizorului. Salvarea ciornei nu trimite e-mail.',
       GONDERIM_BEKLIYOR: 'Comanda a fost aprobată; e-mailul este în coada de trimitere. Starea devine „Trimisă” doar după trimiterea efectivă.',
+      NOT_SENT: 'Comanda a fost aprobată; e-mailul către furnizor nu a fost trimis (nu există nicio trimitere în coadă). Aceasta nu este o eroare de trimitere; corecția recepției nu trimite e-mail furnizorului.',
       GONDERILDI: 'Comanda a fost trimisă furnizorului prin e-mail ({when}).',
       GONDERIM_HATASI: 'E-mailul nu a putut fi trimis: {reason}',
       TESLIM_ALINDI: 'Recepționată ({when}). În stoc au intrat doar cantitățile introduse la recepții.',

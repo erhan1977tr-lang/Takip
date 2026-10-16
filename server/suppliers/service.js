@@ -325,6 +325,18 @@ export async function approveAndSend(db, v, actor, opts = {}) {
 }
 
 /**
+ * Siparişin kuyrukta bekleyen, henüz alınmamış (deneme yok, hata yok) e-posta işlerini "teslim alındı" gerekçesiyle kapatır —
+ * sipariş TESLIM_ALINDI iken işçinin (dispatch.js) yapacağının aynısı. Mal kabulü düzeltmesi (karar 286) otomatik kapanmış
+ * siparişi yeniden açarken çağırır: düzeltme tedarikçiye e-posta göndermez. Gönderilmekte olan (kiralanmış) iş değişmez.
+ * @param {any} tx  @param {string} orderId
+ * @returns {Promise<number>}
+ */
+export async function skipQueuedOrderMail(tx, orderId) {
+  const r = await tx.notificationOutbox.updateMany({ where: { ...jobsWhere(orderId), status: 'PENDING', lastError: null, attempts: 0 }, data: { status: 'SKIPPED', lastError: 'TESLIM_ALINDI' } });
+  return r.count;
+}
+
+/**
  * "Tekrar gönder" — yalnızca gönderilemeyen (ya da sonucu belirsiz) son kesin revizyon için, yöneticinin AÇIK kararıyla.
  * Kuyrukta bekleyen iş varsa reddedilir (BUSY). İçerik aynıdır (kesin revizyon); alıcı güncel Ayarlar adresidir.
  */

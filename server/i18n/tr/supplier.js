@@ -170,6 +170,7 @@ export default {
     statusInfo: {
       TASLAK: 'Taslak: tedarikçiye gönderilmedi. Taslağı kaydetmek e-posta göndermez.',
       GONDERIM_BEKLIYOR: 'Sipariş onaylandı; e-posta gönderim kuyruğunda. Gerçekten gönderilince durum "Gönderildi" olur.',
+      NOT_SENT: 'Sipariş onaylandı; tedarikçiye e-posta gönderilmedi (kuyrukta bekleyen gönderim yok). Bu bir gönderim hatası değildir; mal kabulü düzeltmesi tedarikçiye e-posta göndermez.',
       GONDERILDI: 'Sipariş tedarikçiye e-postayla gönderildi ({when}).',
       GONDERIM_HATASI: 'E-posta gönderilemedi: {reason}',
       TESLIM_ALINDI: 'Teslim alındı ({when}). Stoğa yalnızca mal kabullerinde girilen miktarlar eklendi.',

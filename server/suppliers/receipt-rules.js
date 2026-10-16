@@ -182,9 +182,11 @@ export function parseCorrection(v) {
  * Düzeltmeden sonra sipariş yeniden açılır mı (saf). Yalnızca mal kabulüyle OTOMATİK kapanmış sipariş (son kabul siparişi
  * tamamladı ve kapanış zamanı o kabulün zamanı) ve artık kalan miktar varsa açılır; elle kapatılmış ("Kalanı beklemeden
  * kapat") ya da iptal edilmiş sipariş açılmaz — o kapatma yöneticinin kararıdır.
- * Açılınca dönülecek durum siparişin kendi gönderim kaydından okunur: e-posta gönderildiyse (sentAt) GONDERILDI, aksi hâlde
- * GONDERIM_HATASI (kapanırken kuyruktaki iş "teslim alındı" diye bırakılmıştır; bekleyen bir gönderim yoktur — yönetici
- * isterse "Tekrar gönder" ile gönderir, kendiliğinden e-posta gitmez).
+ * Açılınca e-posta gönderim durumu DEĞİŞMEZ, siparişin kendi gönderim kaydından aynen okunur (3.91.0, ürün sahibi):
+ *   gerçek gönderim hatası kaydı (sendError) → GONDERIM_HATASI · gönderildi (sentAt) → GONDERILDI ·
+ *   ikisi de yok (hiç gönderilmedi) → GONDERIM_BEKLIYOR — gönderilmemiş olmak tek başına gönderim hatası DEĞİLDİR.
+ * Düzeltme tedarikçiye e-posta göndermez: yeniden açılırken kuyrukta kalmış, henüz alınmamış sipariş e-postası işi
+ * gönderilmez (servis onu "teslim alındı" diye kapatır — sipariş kapalıyken işçi de aynısını yapardı).
  * @param {{ status: string, receivedAt?: Date | string | null, sentAt?: Date | string | null, sendError?: string | null }} order
  * @param {{ complete: boolean, createdAt: Date | string }[]} receipts
  * @param {boolean} stillComplete  düzeltmeden sonra bütün satırlar teslim alınmış mı
@@ -195,7 +197,8 @@ export function reopenStatus(order, receipts, stillComplete) {
   const closedAt = new Date(order.receivedAt).getTime();
   const auto = (receipts ?? []).some((r) => r.complete && new Date(r.createdAt).getTime() === closedAt);
   if (!auto) return null;
-  return order.sentAt ? 'GONDERILDI' : 'GONDERIM_HATASI';
+  if (order.sendError) return 'GONDERIM_HATASI';
+  return order.sentAt ? 'GONDERILDI' : 'GONDERIM_BEKLIYOR';
 }
 
 /**

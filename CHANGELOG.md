@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.91.1 — 16.10.2026
+
+Mal kabulü düzeltmesi — ürün sahibinin iki kararı (karar 286):
+
+- Düzeltme gerekçesi yalnızca CORECȚIE RECEPȚIE belgesinde ve depo personeline giden e-postada yer alır; müşteriye ya da
+  tedarikçiye hiçbir bildirim / e-posta gitmez.
+- Düzeltmeyle yeniden açılan tedarikçi siparişinin e-posta gönderim durumu değişmez: gönderilmişse "Gönderildi", gerçek
+  gönderim hatası varsa "Gönderim hatası", hiç gönderilmemişse "Gönderim bekliyor" (ekranda "e-posta gönderilmedi" — bu bir
+  hata değildir). Kuyrukta kalmış sipariş e-postası düzeltme yüzünden gönderilmez; tedarikçiye otomatik e-posta gitmez.
+
 ## 3.91.0 — 16.10.2026
 
 Yanlış kaydedilmiş tedarikçi mal kabulü artık düzeltilebilir (karar 286).

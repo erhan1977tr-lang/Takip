@@ -16,6 +16,7 @@
 // almaz).
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
+import { skipQueuedOrderMail } from './service.js';
 import { localDay } from '../profile/dates.js';
 import { lockStock, receiveSupplierStock, reverseSupplierStock, stockLevels } from '../profile/stock.js';
 import {
@@ -241,13 +242,17 @@ export async function correctReceipt(db, v, actor, opts = {}) {
       where: { id: order.id },
       data: { version: { increment: 1 }, ...(reopen ? { status: reopen, receivedAt: null } : {}) },
     });
+    // Tedarikçiye otomatik e-posta YOK: yeniden açılan siparişin kuyrukta kalmış, henüz alınmamış sipariş e-postası işi
+    // gönderilmez (sipariş kapalıyken işçinin yapacağı gibi "teslim alındı" diye kapanır); gönderim bilgileri (sentAt,
+    // sendError) değişmez
+    const skipped = reopen ? await skipQueuedOrderMail(tx, order.id) : 0;
     // Depo e-postası: düzeltmeyle AYNI işlemde tek iş (orijinal kabulün e-postası yeniden gönderilmez)
     await tx.notificationOutbox.create({ data: { type: RECEIPT_EMAIL, payload: { correctionId: correction.id, correctionOf: receipt.id, supplierOrderId: order.id, seq, receiptSeq: receipt.seq, sentTo: [], unknown: [] } } });
     await writeAudit(tx, {
       action: 'SUPPLIER_RECEIPT_CORRECTED', entityType: 'SupplierOrder', entityId: order.id, userId: actor.id,
       details: {
         orderNo: order.orderNo, seq, correctionId: correction.id, receiptId: receipt.id, receiptSeq: receipt.seq, reason: p.reason,
-        reopened: reopen ? { from: order.status, to: reopen } : null, stockMoves: moves,
+        reopened: reopen ? { from: order.status, to: reopen, skippedSupplierJobs: skipped } : null, stockMoves: moves,
         lines: rows.map(({ line, qty, before, after }) => ({ code: line.code, productId: line.productId, qty, unitCode: line.unitCode, stockBefore: before, stockAfter: after })),
       },
     }, actor);
