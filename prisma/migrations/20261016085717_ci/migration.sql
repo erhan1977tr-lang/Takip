@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "PermissionKey" ADD VALUE 'DRAWING_PRODUCTION_UNDO';
+
