@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.90.2 — 16.10.2026
+
+- "Üretime almayı geri al" iş kuralı düzeltildi (ürün sahibi): kararı veren çizimci kendi "Üretime Hazır" kararını geri
+  alabilir; yönetici ve yönetici yardımcısı da yapabilir (başka çizimci yapamaz). Gerekçe ve onay zorunlu; çizim yeniden
+  karar bekler, dosyalar / geçmiş / denetim korunur.
+- TAKİP'te ayrı bir "üretime başladı" süreci olmadığı için 3.90.1'deki fiilî üretim başlangıcı denetimi kaldırıldı:
+  sipariş otomatik olarak üretime geçmişse geri alma onu "Hazırlanıyor"a döndürür (teklif aynen kalır; karar yeniden
+  verilince olağan otomatik üretim kuralı çalışır).
+- Korumalar aynen: yüklendi / arşiv, onaylı yükleme, mali belge / belge isteği, sandık ve telafi varsa geri alma
+  reddedilir; sandık girişiyle aynı kilit. Hatalı / güncelleme geri alma değişmedi.
+
 ## 3.90.1 — 16.10.2026
 
 - "Üretime almayı geri al" sıkılaştırıldı (yayından önce, ürün sahibi): yalnızca yönetici (`DRAWING_PRODUCTION_UNDO`),

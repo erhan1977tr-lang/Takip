@@ -619,8 +619,8 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   // düzeltmesi beklenirken de çizimci "Çizimi Güncelle" ile çizimi fabrikaya alabilir.
   if (drawer && preparing && dwgPending) a.push('dwg_ready', 'dwg_faulty', 'dwg_update');
   if (drawer && preparing && drawing === 'DUZELTME_BEKLIYOR') a.push('dwg_update');
-  // DWG kararının güvenli geri alınması (karar 285): hatalı / güncelleme — kararı veren çizimci ya da yönetici (sahiplik
-  // işlemde); "Üretime almayı geri al" YALNIZCA yönetici (DRAWING_PRODUCTION_UNDO). Engeller işlemde (server/orders/dwg-undo.js)
+  // DWG kararının güvenli geri alınması (karar 285): kararı veren çizimci ya da yönetici / yardımcı (sahiplik işlemde);
+  // "Üretime almayı geri al" ayrıca DRAWING_PRODUCTION_UNDO (3.90.2). Engeller işlemde (server/orders/dwg-undo.js)
   if (drawer && dwgUndo && Object.hasOwn(UNDO_ACTIONS, dwgUndo) && (dwgUndo !== 'READY' || can(role, PRODUCTION_UNDO_PERMISSION))) a.push(UNDO_ACTIONS[dwgUndo]);
   if (drawer && preparing && !dwgPending && ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'].includes(drawing)) {
     a.push('upload_drawing');

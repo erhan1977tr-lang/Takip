@@ -1278,7 +1278,7 @@ function DwgUndo({ order, undo, t }: { order: OrderDetail; undo: UndoInfo; t: T 
   if (!undo) return null;
   const rec = undo.record as DrawingRow;
   const decision = t(`order.dwg.undo.kinds.${undo.kind}` as MsgKey);
-  const target = t(`order.dwg.undo.targets.${undo.variant === 'AFTER_FAULTY' ? 'FAULTY_WAIT' : 'PENDING'}` as MsgKey);
+  const target = t(`order.dwg.undo.targets.${undo.production ? 'PRODUCTION' : undo.variant === 'AFTER_FAULTY' ? 'FAULTY_WAIT' : 'PENDING'}` as MsgKey);
   return (
     <div className="dwg-panel dwg-undo-panel" id="dwg-geri-al" data-dwg-undo={undo.kind} data-undo-block={undo.block ?? ''}>
       <h3 className="sub-title">{t('order.dwg.undo.title')}</h3>

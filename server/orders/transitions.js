@@ -494,9 +494,10 @@ async function dwgDecide(h, decision) {
  *   - kararın kaydı GERI_CEKILDI olur (gerekçe + zaman; koşullu güncelleme — aynı karar iki kez geri alınamaz),
  *   - aynı dosyalar için yeni karar kaydı (v+1, BEKLIYOR) açılır → karar yeniden çizimcide (hatalı sonrası güncellemede
  *     kayıt değişmez, hat DUZELTME_BEKLIYOR'a döner).
- * Siparişin durumu (status) hiçbir zaman değişmez. "Üretime almayı geri al" yalnızca yöneticinin ve yalnızca üretime hiç
- * girmemiş siparişte; mali kilit, sandık ve telafi denetimi danışma kilitleri (ACTION_LOCKS: yükleme onayı → belge →
- * sandık günü) altında, sürüm artışından sonra aynı işlemde yapılır. Kullanıcının ekranda gördüğü kayıt (drawingId)
+ * "Üretime almayı geri al" (3.90.2): kararı veren çizimci, yönetici, yönetici yardımcısı; sipariş otomatik üretime
+ * geçmişse (URETIMDE) HAZIRLANIYOR'a döner (fiilî üretim kaydı aranmaz — TAKİP'te yoktur). Yüklendi / arşiv, onaylı
+ * yükleme, mali kilit, sandık ve telafi varsa reddedilir; bu denetim danışma kilitleri (ACTION_LOCKS: yükleme onayı →
+ * belge → sandık günü) altında, sürüm artışından sonra aynı işlemde yapılır. Kullanıcının ekranda gördüğü kayıt (drawingId)
  * zorunludur: arada başka karar / kayıt oluştuysa STALE_DRAWING.
  */
 async function dwgUndo(h, kind) {
@@ -523,10 +524,10 @@ async function dwgUndo(h, kind) {
       },
     });
   }
-  await h.set({ drawingTrack: check.restoreTrack, drawingSince: h.now });
+  await h.set({ drawingTrack: check.restoreTrack, drawingSince: h.now, ...(check.production ? { status: check.restoreStatus } : {}) });
   h.event(`DWG_${kind}_UNDONE`, reason.text, { drawingId: created?.id ?? rec.id });
   h.sla = true;
-  h.result = { undone: kind, drawingId: created?.id ?? null };
+  h.result = { undone: kind, drawingId: created?.id ?? null, production: check.production };
   h.audit = {
     undo: kind, variant: check.variant, drawingId: rec.id, version: rec.version, reason: reason.text, before,
     after: { status: h.status, track: check.restoreTrack, record: created ? { id: created.id, version: created.version, status: created.status } : null, undoneRecordStatus: created ? 'GERI_CEKILDI' : rec.status },

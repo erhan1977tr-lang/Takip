@@ -49,6 +49,7 @@ export default {
     dwg_factory_requested: 'Cererea a fost primită: desenul va fi pregătit de fabrica noastră și supus aprobării dvs.',
     // Anularea deciziei pentru desenul DWG/DXF (decizia 285)
     dwg_undo_READY: 'Decizia „gata de producție” a fost anulată. Se așteaptă din nou decizia; înregistrările și fișierele au fost păstrate.',
+    dwg_undo_READY_production: 'Decizia „gata de producție” a fost anulată, iar comanda a fost scoasă din producție și a revenit la „În pregătire”. Se așteaptă din nou decizia; înregistrările și fișierele au fost păstrate.',
     dwg_undo_FAULTY: 'Decizia „desen eronat” a fost anulată, iar clientul a fost anunțat. Se așteaptă din nou decizia; înregistrarea erorii rămâne în istoric.',
     dwg_undo_UPDATE: 'Decizia „actualizează desenul” a fost anulată. Înregistrările și fișierele au fost păstrate.',
   },
@@ -204,9 +205,10 @@ export default {
       targets: {
         PENDING: 'Se așteaptă din nou decizia pentru desenul clientului (lista DXF/DWG)',
         FAULTY_WAIT: 'Se așteaptă corectura clientului (decizia „desen eronat” rămâne valabilă)',
+        PRODUCTION: 'Comanda iese din producție și revine la „În pregătire”; se așteaptă din nou decizia',
       },
       notify: {
-        READY: 'Doar administratorul și doar dacă comanda nu a intrat niciodată în producție. Agentul de vânzări al comenzii primește o notificare în aplicație.',
+        READY: 'Agentul de vânzări al comenzii primește o notificare în aplicație.',
         FAULTY: 'Clientul primește o notificare și un e-mail (nu mai sunt necesare corecturi).',
         UPDATE: 'Nu se trimite nicio notificare.',
       },
@@ -218,15 +220,14 @@ export default {
       block: {
         UNDO_CLOSED: 'comanda este închisă sau nu mai este în pregătire.',
         UNDO_ON_HOLD: 'comanda este în așteptare; scoateți-o mai întâi din așteptare.',
-        UNDO_IN_PRODUCTION: 'comanda a fost trecută în producție (sau există o înregistrare de producție / încărcare); deoarece nu se poate verifica faptul că producția reală nu a început, decizia „gata de producție” nu poate fi anulată.',
+        UNDO_SHIPPED: 'comanda a fost încărcată / arhivată.',
         UNDO_LATER_DRAWING: 'după această decizie a fost deschisă o versiune nouă a desenului (ciornă sau trimisă).',
         UNDO_CUSTOMER_ANSWERED: 'clientul a răspuns la această decizie (a cerut desenul fabricii).',
         UNDO_LOADED: 'comanda are o încărcare confirmată.',
         UNDO_DOCUMENTS: 'comanda are un document financiar / o cerere de document (proformă, avans, factură sau document client).',
         UNDO_CRATES: 'pentru comandă au fost introduse lăzi.',
         UNDO_COMPENSATION: 'comanda are o înregistrare de compensare.',
-        UNDO_ADMIN_ONLY: 'decizia de trecere în producție poate fi anulată doar de administrator.',
-        UNDO_NOT_OWNER: 'decizia poate fi anulată doar de desenatorul care a dat-o sau de administrator.',
+        UNDO_NOT_OWNER: 'decizia poate fi anulată doar de desenatorul care a dat-o, de administrator sau de administratorul adjunct.',
       },
     },
   },

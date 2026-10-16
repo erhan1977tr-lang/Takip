@@ -48,14 +48,14 @@ export const PERMISSIONS = {
   LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
   SUPPLIER_MANAGE: 'Tedarik ve satın alma: tedarikçiler, ürünlerin alış fiyatı, tedarikçi siparişleri (onay / gönderim), tahmini yükleme tarihi, tedarikçi ödemeleri ve hesapları (karar 179–184; yalnızca yönetici)',
   COMMERCIAL_OFFER_MANAGE: 'Bağımsız ticari teklif (karar 277): cam + profil / aksesuar teklifi hazırlar, iç maliyet / kâr / marjı görür, müşteri PDF\'ini ve iç Excel\'i indirir — sipariş, FGO, stok ile bağı yoktur (yönetici ve yönetici yardımcısı)',
-  DRAWING_PRODUCTION_UNDO: 'Müşterinin DWG/DXF çizimi için verilen "Üretime Hazır" kararını geri alır — yalnızca üretime hiç girmemiş siparişte (karar 285; yalnızca yönetici)',
+  DRAWING_PRODUCTION_UNDO: 'Müşterinin DWG/DXF çizimi için verilen "Üretime Hazır" kararını geri alır — çizimci yalnızca kendi kararını; sipariş üretimdeyse "Hazırlanıyor"a döner; yüklendi / onaylı yükleme / mali belge / sandık / telafi varsa alınamaz (karar 285; yönetici, yönetici yardımcısı, çizimci)',
   REPORT_VIEW: 'Yönetici raporları (karar 284): sipariş, cam, profil / stok, yükleme ve finans raporlarını görür ve Excel\'e aktarır — salt okunur; satış, maliyet, kâr ve tahsilat içerir (yönetici ve yönetici yardımcısı)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
 const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
 /** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. */
-export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'DRAWING_PRODUCTION_UNDO'];
+export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW'];
 
 const ADMIN_PERMISSIONS = Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p));
 
@@ -66,7 +66,7 @@ export const ROLE_PERMISSIONS = {
     'ORDER_VIEW', 'ORDER_REVIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'OFFER_PREPARE', 'SHIPMENT_VIEW', 'CRATE_EDIT', 'TRANSPORT_LIST_VIEW',
     'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW',
   ],
-  CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
+  CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'DRAWING_PRODUCTION_UNDO', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
   MUSTERI: [
     'ORDER_VIEW', 'ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW',
     'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT', 'ACCOUNT_SETTINGS',
