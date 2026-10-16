@@ -115,7 +115,9 @@ git commit -qam "caddy testi C — yönlendirmeyi bozan Caddyfile"
 c=$(git rev-parse HEAD)
 if deploy; then echo "yönlendirmeyi bozan Caddyfile yayınlanmamalıydı"; false; fi
 log_from "$n" | grep -q 'yeni Caddyfile geçerli'
-log_from "$n" | grep -q 'site HTTPS üzerinden (Caddy) yeni sürümü vermiyor; önceki sürüme dönülüyor'
+log_from "$n" | grep -q 'site HTTPS üzerinden (Caddy) yeni sürümü vermiyor'
+# Bu yayında migration yok: önceki sürüme dönüş kanıtlı güvenli (karar 287)
+log_from "$n" | grep -q 'migration uygulanmadığı için önceki sürüme dönüldü'
 log_from "$n" | grep -q 'önceki sürüm yeniden yayında'
 [ "$(sudo cat "$STATE/failed")" = "$c" ]
 [ "$(sudo cat "$STATE/deployed")" = "$good" ]

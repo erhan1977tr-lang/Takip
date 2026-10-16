@@ -24,6 +24,16 @@ test('kurulum testi yolları deploy-test.yml "paths" listesiyle aynı', () => {
   assert.ok(fs.existsSync(new URL('../.github/workflows/ci.yml', import.meta.url)));
 });
 
+test('demo testi yolları demo-env.yml "paths" listesiyle aynı (karar 287)', () => {
+  const wf = read('.github/workflows/demo-env.yml');
+  const block = wf.slice(wf.indexOf('paths:'), wf.indexOf('workflow_dispatch'));
+  const paths = [...block.matchAll(/- '([^']+)'/g)].map((m) => m[1].replace(/\/\*\*$/, '')).sort();
+  const m = sh.match(/^DEMO_TEST_PATHS=\(([^)]*)\)$/m);
+  assert.ok(m, 'DEMO_TEST_PATHS');
+  assert.deepEqual(m[1].trim().split(/\s+/).sort(), paths);
+  assert.match(sh, /^DEMO_WORKFLOW_PATH=\.github\/workflows\/demo-env\.yml$/m);
+});
+
 test('koşu kimliği: commit + dal + push + iş akışı yolu + depo; en yeni koşu; yalnızca "success" başarı', () => {
   const r = fn('run_state');
   assert.ok(r.includes('/actions/runs?head_sha=$sha&branch=$b&event=push'), 'API sorgusu dal / olay süzer');
@@ -35,19 +45,24 @@ test('koşu kimliği: commit + dal + push + iş akışı yolu + depo; en yeni ko
   assert.ok(!/CI_WORKFLOW=CI/.test(sh));
 });
 
-test('kapı: CI VE kurulum testi; otomatik yayın yalnızca dal ucu; derleme sonrası uç + kapı yeniden denetlenir', () => {
+test('kapı: CI VE kurulum testi VE demo testi; otomatik yayın yalnızca dal ucu; derleme sonrası uç + kapı yeniden denetlenir', () => {
   const g = fn('gate');
   assert.ok(g.includes('ci=$(ci_gate "$sha" "$b")') && g.includes('inst=$(install_gate "$sha" "$b" "$base")'));
+  assert.ok(g.includes('demo_gate "$sha" "$b" "$base"'), 'demo testi de kapının parçası');
+  assert.ok(g.indexOf('install_gate') < g.indexOf('demo_gate'));
   const a = fn('auto_deploy');
   assert.ok(a.includes('g=$(gate "$head" "$current")'));
   assert.ok(a.includes('do_deploy "$head" "$current" uc'));
   assert.ok(/\*\) info .*return 0 ;;/.test(a), 'success dışı her sonuç: yayın yok');
-  const d = fn('do_deploy');
-  const first = d.indexOf('head_is "$sha"');
-  const second = d.indexOf('head_is "$sha"', first + 1);
-  assert.ok(first > 0 && first < d.indexOf('docker build'), 'derlemeden önce uç denetimi');
+  const w = fn('do_deploy');
+  assert.ok(w.indexOf('head_is "$sha"') > 0 && w.indexOf('head_is "$sha"') < w.indexOf('deploy_main'), 'derlemeden önce uç denetimi');
+  const d = fn('deploy_main');
+  const second = d.indexOf('head_is "$sha"');
   assert.ok(second > d.indexOf('docker build') && second < d.indexOf('backup_db'), 'migration / yedekten önce ikinci denetim');
   assert.ok(d.indexOf('[ "$(gate "$sha" "$prev")" != success ]') < d.indexOf('backup_db'));
+  // Derlenen kaynak ve imaj onaylanan commit'in kendisi (karar 287)
+  assert.ok(d.includes('rev-parse HEAD') && d.indexOf('rev-parse HEAD') < d.indexOf('docker build'));
+  assert.ok(d.includes('image_git_sha "takip:$sha"') && d.indexOf('image_git_sha') < d.indexOf('backup_db'));
   assert.ok(fn('first_deploy').includes('auto_deploy'), 'yayında sürüm varken ilk kurulum yolu da yalnızca dal ucu');
 });
 
@@ -56,5 +71,5 @@ test('kapı atlanamaz: zamanlayıcı servisi değişkeni vermez; atlama kayda ge
   assert.ok(fn('gate').includes('yayın kapısı ATLANDI'));
   const wf = read('.github/workflows/deploy-test.yml');
   assert.ok(wf.includes('bash deploy/test/deploy-gate.sh'));
-  assert.ok(wf.includes('deploy/test/deploy-gate.sh > shellcheck.log'));
+  assert.match(wf, /shellcheck [^\n]*deploy\/test\/deploy-gate\.sh /);
 });

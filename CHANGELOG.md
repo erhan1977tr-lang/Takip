@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.92.0 — 16.10.2026
+
+Güvenli geri dönüş, yayın sağlığı ve felaket kurtarma hazırlığı (karar 287; altyapı — uygulama ekranları değişmedi).
+
+- **Son sağlıklı sürüm kaydı:** her yayın, tam sağlık denetiminden geçince sunucuda kalıcı bir kayıt yazar: sürüm, tam commit,
+  uygulama ve işçi imajının Docker kimliği, yayın / doğrulama zamanı, veritabanında uygulanmış migration listesi (veritabanının
+  kendisinden), sağlık sonucu. Başarısız yayın bu kaydın üzerine yazmaz. Son sağlıklı sürümün ve geri dönüş adayının imajları
+  otomatik temizlikte silinmez.
+- **Daha sıkı yayın kapısı:** CI ve (gerektiğinde) sunucu kurulum testine ek olarak demo ortamı testi de backend'de başarılı
+  olmalı; derlenen kaynak ve imajdaki commit, testlerden geçen commit'in kendisi olmalı.
+- **Yayın öncesi denetim:** PostgreSQL erişimi, yarım kalmış migration, son yedek, geri dönüş adayı ve bu yayının uygulayacağı
+  migration'lar yayından önce denetlenir; "sorun olursa önceki sürüme dönülebilir mi" önceden kayda yazılır.
+- **Tam sağlık denetimi:** uygulama ve arka plan işçisi doğru imajla çalışıyor, veritabanı sağlıklı, yarım migration yok,
+  https://takip.gkh.ro/surum beklenen sürüm ve commit'i gösteriyor, uygulama veritabanını salt okunur okuyabiliyor; geçici
+  gecikmelere karşı üç tur. Gerçek sipariş, stok, e-posta ya da bildirim oluşturulmaz; yeni bir uç nokta açılmadı.
+- **Geri dönüş yalnızca güvenliyse:** veritabanındaki migration listesi hedef sürümün doğrulandığı andakiyle birebir aynı
+  olmalı; imajlar mevcut ve kimlikleri aynı olmalı. Veritabanı hiçbir zaman yedeğe döndürülmez, migration geri alınmaz.
+  Açılmayan yeni sürümde önceki sürüme artık yalnızca migration uygulanmadıysa dönülür.
+- **Gözlem kipi (varsayılan):** yayından sonra sağlık sorunu algılanır, kaydedilir, geri dönüşün güvenli olup olmadığı
+  hesaplanır ve yöneticiye e-posta gider; canlı servis kendiliğinden eski sürüme geçirilmez.
+- **Sunucu komutları (yalnızca root):** `takip surum-durum`, `takip rollback-durum`, `takip rollback-kontrol`,
+  `takip rollback` (onaylı), `takip surum-dogrula`, `takip rollback-modu`. Yayın, geri dönüş ve geri yükleme aynı kilidi
+  kullanır; işlem ortasında kesinti algılanır ve güvenle tamamlanır.
+- **Belgeler:** `docs/geri-donus.md` (geri dönüş), `docs/felaket-kurtarma.md` (felaket kurtarma ve tatbikat kontrol listesi),
+  ADR 0015.
+
 ## 3.91.1 — 16.10.2026
 
 Mal kabulü düzeltmesi — ürün sahibinin iki kararı (karar 286):

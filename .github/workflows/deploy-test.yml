@@ -10,7 +10,8 @@ name: Sunucu kurulumu
 # iletilmez — gerçek kurulumda ve sahte uygulamayla Caddy 2.6.4 → güncel sürümlerde bayt ölçümü) ve yayının Caddy'yi
 # doğrulaması (karar 142: Caddyfile önceden doğrulanır, yayından sonra site HTTPS üzerinden denetlenir, bozuk ayar yayını
 # başarısız kılar ve geri alınır), gerçek sunucu işareti (karar 151: Compose'daki sabit TAKIP_DEPLOYMENT'ı .env ezemez; işaret
-# varken DEMO_MODE / MAIL_OUTBOX_DIR / TRANSLATE_FAKE / COOKIE_SECURE=false yok sayılır, demo verisi betiği çalışmaz).
+# varken DEMO_MODE / MAIL_OUTBOX_DIR / TRANSLATE_FAKE / COOKIE_SECURE=false yok sayılır, demo verisi betiği çalışmaz), son sağlıklı
+# sürüm kaydı ve güvenli geri dönüş (karar 287: imaj kimlikleri, migration uyumluluğu, rollback; veritabanı değişmez).
 on:
   push:
     branches: ['**']
@@ -33,7 +34,7 @@ concurrency:
 jobs:
   install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 80
+    timeout-minutes: 100
     env:
       SITE: https://localhost
     steps:
@@ -44,7 +45,7 @@ jobs:
       - name: Betik denetimi (shellcheck)
         run: |
           # Bulgular not olarak da yayınlanır (günlük dosyası indirilemeyen ortamlar için)
-          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/backup-retention.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh deploy/test/cad-preview.sh deploy/test/deploy-gate.sh > shellcheck.log \
+          shellcheck -S warning -f gcc deploy/install.sh deploy/takip.sh deploy/test/cache-housekeeping.sh deploy/test/backup-permissions.sh deploy/test/backup-alert.sh deploy/test/backup-retention.sh deploy/test/worker-nonroot.sh deploy/test/body-limits.sh deploy/test/caddy-deploy.sh deploy/test/body-gate.sh deploy/test/body-gate-matrix.sh deploy/test/env-marker.sh deploy/test/cad-preview.sh deploy/test/deploy-gate.sh deploy/test/release-rollback.sh deploy/test/release-rollback-real.sh > shellcheck.log \
             || { cat shellcheck.log; echo "::error title=shellcheck::$(head -c 4000 shellcheck.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
       - name: Yayın kapısı — mantık testi (sahte GitHub API / docker, geçici git deposu; yalnızca backend'in kendi koşuları sayılır)
@@ -52,6 +53,9 @@ jobs:
 
       - name: Derleme önbelleği temizliği — mantık testi (sahte docker; gerçek hiçbir şey silinmez)
         run: bash deploy/test/cache-housekeeping.sh
+
+      - name: Yayın sağlığı, son sağlıklı sürüm kaydı ve güvenli geri dönüş — mantık testi (karar 287; sahte docker / curl; 16 senaryo + otomatik kip, kesinti, gizli değer)
+        run: sudo bash deploy/test/release-rollback.sh
 
       - name: Yerel yedek dosyalarının izinleri — mantık testi (sahte docker / rclone, gerçek age; sunucudaki hiçbir şeye dokunulmaz)
         run: |
@@ -118,6 +122,9 @@ jobs:
           # backend'de CI + sunucu kurulum testi başarılı → yayınlanabilir; yalnızca uygulama değişikliği → kurulum testi gerekmez
           [ "$(gate 6514a99f backend 9b438bcd)" = success ]
           [ "$(gate 9b438bcd backend 46bab823)" = success ]
+          # Demo ortamı testi de kapının parçası (karar 287): 3.90.1 sürüm commit'inde CI başarılı ama demo testi başarısız → yayın yok
+          [ "$(gate ca5826cd feat/3.90.0-cizim-geri-alma 'ca5826cd^')" = failure ]
+          [ "$(gate ba37d59c backend 62d207a9)" = success ]
           # Geçersiz anahtar: yayın yapılmaz ("pending"), hata kayda geçer
           [ "$(sudo env GITHUB_TOKEN=gecersiz takip _ci 1e117de backend 2>/dev/null)" = pending ]
           sudo grep -q 'GitHub anahtarı geçersiz' /opt/takip/logs/deploy.log
@@ -519,6 +526,9 @@ jobs:
           # Geri yüklemeden sonra yedek denemesi de geçer
           sudo takip restore-test "$day" > rt-son.log 2>&1 || { cat rt-son.log; exit 1; }
           grep -q '✔ Veritabanı geçici veritabanına yüklendi' rt-son.log
+
+      - name: Güvenli geri dönüş (karar 287) — gerçek yayın — sağlıklı sürüm kaydı, imaj kimlikleri, rollback-kontrol, takip rollback (veritabanı değişmez, süre ölçülür), migration'lı sürümde geri dönüş reddi
+        run: bash deploy/test/release-rollback-real.sh
 
       - name: Günlükler (hata varsa)
         if: failure()
