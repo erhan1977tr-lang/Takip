@@ -83,6 +83,7 @@ test('Çizim hatalı kararını geri al: müşterinin uyarısı kalkar, satır k
   await decide.locator('summary', { hasText: 'Çizim Hatalı' }).click();
   await decide.locator('textarea[name=note]').fill('Katman eksik');
   await decide.getByRole('button', { name: 'Hatalı olarak bildir' }).click();
+  await expect(drawer.locator('.alert-ok', { hasText: 'Çizim hatalı olarak işaretlendi ve müşteriye bildirildi.' })).toBeVisible();
   await cust.goto(`/siparisler/${id}`);
   await expect(cust.locator('#cizim-hatali')).toBeVisible();
 
