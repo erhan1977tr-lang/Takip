@@ -175,7 +175,7 @@ test('yapı: TAKİP\'in bütün Excel çıktıları ortak rapor yazıcısını, 
   assert.deepEqual(raw, [], 'Excel çıktıları ortak rapor yazıcısından');
   const reports = code.filter((f) => /\bwriteReportXlsx\(/.test(read(f)) && f !== path.join('server', 'files', 'xlsx-report.js')).sort();
   assert.deepEqual(reports, [
-    'app/(panel)/admin/fiyatlar/excel/route.ts', 'app/(panel)/admin/katalog/excel/route.ts', 'app/(panel)/admin/profil-katalogu/excel/route.ts',
+    'app/(panel)/admin/fiyatlar/excel/route.ts', 'app/(panel)/admin/katalog/excel/route.ts', 'app/(panel)/admin/profil-katalogu/excel/route.ts', 'app/(panel)/admin/raporlar/excel/route.ts',
     'app/(panel)/admin/stok/excel/route.ts', 'app/(panel)/admin/ticari-teklifler/[id]/excel/route.ts', 'app/(panel)/yuklemeler/dokum/route.ts', 'app/(panel)/yuklemeler/firma/route.ts', 'server/orders/offer-export.js',
   ].map((f) => f.split('/').join(path.sep)));
   // İndirme başlığı: elle "filename=" yazan yer yok (yalnızca yüklenen dosya — kullanıcının özgün dosya adı). FGO belgesinin PDF'i

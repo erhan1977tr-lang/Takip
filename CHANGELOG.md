@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.89.0 — 16.10.2026
+
+Yönetici raporları: panel, Excel ve Telegram asistanı aynı salt okunur hesap servisini kullanır (karar 284). Yeni yetki
+`REPORT_VIEW` (yönetici ve yönetici yardımcısı); veritabanında yalnızca yetki listesine bir değer eklendi, kayıt değişmedi.
+
+- **Raporlar / Rapoarte** menüsü (Muhasebe ile Satın Alma arasında): Siparişler, Cam, Profil ve stok, Yükleme, Finans.
+  Filtreler birlikte çalışır: dönem (bu ay, geçen ay, bu hafta, bu yıl, son 3 ay …), başlangıç / bitiş, ay, yıl, müşteri,
+  sipariş türü ve durumu, cam türü / profil kodu, yükleme durumu. Özet kartları, tablolar, sade çubuk grafikler; her raporda
+  tarih aralığı ve esas alınan tarih yazılı. Telefonda tek sütun.
+- **Doğruluk:** cam m² TAKİP'in teklif kuralıyla 3 ondalık; yüklenen = yalnızca onaylı (düzeltilmiş) miktar; bedelsiz
+  telafi ayrı sütunda ve satışa girmez; iptal / silinmiş sipariş yok; profil birimleri toplanmaz; stok hareketleri türüne
+  göre bir kez (mal kabulü girişi elle girişten ayrı, iade ayrı); EUR ve RON ayrı; proforma + avans + fatura çift sayılmaz;
+  maliyeti eksik siparişte kâr tahmin edilmez; teklif tablosu olmayan siparişin miktarı sıfır gösterilmez.
+- **Excel:** her rapor aynı filtrelerle Excel'e (logo, başlık, aralık, filtreler, AutoFilter, m² 3 ondalık, toplamlar,
+  Türkçe / Romence başlıklar); hücreler ekrandakiyle aynı.
+- **Telegram:** yeni `rapor` aracı aynı servisi salt okunur işlemde çağırır ("bu ay kaç m² cam siparişi", "geçen ay hangi
+  müşteriye kaç m² yükledik", "bu yıl satışlar", "son üç ayı karşılaştır" …, Türkçe / Romence). Dönemler Romanya saatiyle;
+  yanıtta tarih aralığı; sıfır / veri eksik / sorgu hatası ayrı; sesli soruda Coral sesli özet. Tek kullanıcı, özel sohbet
+  ve hız sınırları aynen.
+
 ## 3.88.3 — 15.10.2026
 
 - Önizleme istek sınırının kodu `PREVIEW_LIMIT` oldu (not çevirisinin `RATE_LIMIT` durumuyla karışmasın; ekranda metin aynı).

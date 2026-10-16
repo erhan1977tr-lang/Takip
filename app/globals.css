@@ -1310,3 +1310,26 @@ dialog.modal.preview-modal[open] { display: flex; flex-direction: column; }
   .preview-cad { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .preview-side { border-left: 0; border-top: 1px solid var(--border); max-height: 34vh; }
 }
+
+/* ---------- Yönetici raporları (3.89.0, karar 284) ---------- */
+/* Filtre formu: hesaplayıcının ızgarasıyla aynı düzen (sütun sayısı genişliğe göre azalır) */
+.report-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; }
+.report-filters .calc-field { display: flex; flex-direction: column; min-width: 0; }
+.report-filters label { margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.report-filters select, .report-filters input { width: 100%; min-width: 0; height: 38px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 1000px) { .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .report-filters { grid-template-columns: minmax(0, 1fr); } .report-actions .btn { flex: 1 1 100%; } }
+.report-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: var(--fs-sm); margin: 0 0 14px; }
+.stat .v.missing { font-size: var(--fs-value); color: var(--muted); }
+.stat .note { font-size: var(--fs-meta); color: var(--muted); margin-top: 4px; }
+/* Sade yatay çubuk grafiği: çubuğun genişliği değere oranlıdır (genişlik satır içi; renk belirteçten) */
+.report-bars { display: grid; gap: 6px; padding: 4px 20px 16px; }
+.report-bar { display: grid; grid-template-columns: minmax(80px, 28%) 1fr minmax(70px, auto); gap: 10px; align-items: center; font-size: var(--fs-sm); }
+.report-bar .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-bar .track { background: var(--surface-3); border-radius: var(--radius-pill); height: 10px; overflow: hidden; }
+.report-bar .fill { display: block; background: var(--primary); height: 100%; border-radius: var(--radius-pill); }
+.report-bar .val { text-align: right; font-variant-numeric: tabular-nums; }
+.report-notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: var(--fs-sm); }
+.report-notes li { margin-bottom: 4px; }
+tr.report-total td { font-weight: 700; background: var(--surface-2); }

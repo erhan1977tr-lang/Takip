@@ -702,3 +702,11 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
   drawn on the canvas; the layer swatch (`.preview-swatch`) is the only inline colour (data, not styling).
 - ≤ 760 px the window is full screen and the CAD side panel drops below the drawing.
 
+
+## Admin reports (3.89.0 — decision 284)
+
+`/admin/raporlar`: `.tabs` per report kind, the GET filter form `.report-filters` (4 columns → 2 at ≤ 1000 px → 1 at
+≤ 480 px; fields are `.calc-field`) + `.report-actions`, `.report-meta` (range, date basis, filters, generated), the shared
+`.stats.stats-money` cards (a missing value: `.stat-warn` + `.v.missing`, never 0), one `.card.card-flush` per table
+(`.table-wrap`, total rows `tr.report-total`), the simple bar chart `.report-bars` / `.report-bar` (`.track` + `.fill`; the
+fill width is the only inline style) and the notes list `.report-notes`. No chart mixes currencies.

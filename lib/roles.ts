@@ -15,7 +15,7 @@ export type NavItem =
   | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number }
   | { section: string; count?: number; countLabel?: string };
 
-// Ana bölüm sırası (karar 269; karar 277 Ticari Teklif'i Çizim Ekibi ile Muhasebe arasına ekler): Operasyon, Çizim Ekibi, Ticari Teklif, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
+// Ana bölüm sırası (karar 269; karar 277 Ticari Teklif'i Çizim Ekibi ile Muhasebe arasına, karar 284 Raporlar'ı Muhasebe ile Satın Alma arasına ekler): Operasyon, Çizim Ekibi, Ticari Teklif, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
 // Hesap Ayarları — her bölüm kendi alt menüleriyle, alt menülerin iç sırası değişmeden.
 const ADMIN_NAV: NavDef[] = [
   { section: 'nav.operations' },
@@ -36,6 +36,9 @@ const ADMIN_NAV: NavDef[] = [
   { href: '/admin/muhasebe/profil', key: 'nav.profileReceivables' },
   { href: '/admin/muhasebe/cam', key: 'nav.glassReceivables' },
   { href: '/admin/muhasebe/tedarikci', key: 'nav.supplier' },
+  // Yönetici raporları (3.89.0, karar 284): salt okunur — yalnızca REPORT_VIEW (yönetici ve yardımcısı)
+  { section: 'nav.reports' },
+  { href: '/admin/raporlar', key: 'nav.reportList' },
   // Satın alma (Paket 6, kararlar 179–184): profil / aksesuar tedarikçi siparişleri ve hesapları — yalnızca SUPPLIER_MANAGE
   { section: 'nav.purchasing' },
   { href: '/siparisler/tedarik', key: 'nav.supplierOrders' },

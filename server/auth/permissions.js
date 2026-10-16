@@ -48,6 +48,7 @@ export const PERMISSIONS = {
   LOADING_CONFIRM: 'Yükleme yönetimi: yükleme gününü onaylar (geri alınamaz), yüklenmeyen camı ileri güne aktarır, siparişi başka müşterinin sandığına yerleştirir',
   SUPPLIER_MANAGE: 'Tedarik ve satın alma: tedarikçiler, ürünlerin alış fiyatı, tedarikçi siparişleri (onay / gönderim), tahmini yükleme tarihi, tedarikçi ödemeleri ve hesapları (karar 179–184; yalnızca yönetici)',
   COMMERCIAL_OFFER_MANAGE: 'Bağımsız ticari teklif (karar 277): cam + profil / aksesuar teklifi hazırlar, iç maliyet / kâr / marjı görür, müşteri PDF\'ini ve iç Excel\'i indirir — sipariş, FGO, stok ile bağı yoktur (yönetici ve yönetici yardımcısı)',
+  REPORT_VIEW: 'Yönetici raporları (karar 284): sipariş, cam, profil / stok, yükleme ve finans raporlarını görür ve Excel\'e aktarır — salt okunur; satış, maliyet, kâr ve tahsilat içerir (yönetici ve yönetici yardımcısı)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
@@ -78,7 +79,7 @@ export const ROLE_PERMISSIONS = {
 /** Salt görüntüleme yetkileri; bunların dışındaki her yetki bir "işlem"dir. */
 export const READ_ONLY = new Set([
   'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
-  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT', 'STOCK_VIEW',
+  'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT', 'STOCK_VIEW', 'REPORT_VIEW',
 ]);
 
 /**

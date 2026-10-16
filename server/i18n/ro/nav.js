@@ -14,6 +14,9 @@ export default {
   commercialOffers: 'Ofertă comercială',
   commercialOfferNew: 'Creează ofertă',
   commercialOfferList: 'Oferte',
+  // Yönetici raporları (karar 284)
+  reports: 'Rapoarte',
+  reportList: 'Rapoarte',
   accounting: 'Contabilitate',
   profileReceivables: 'Încasări profile',
   glassReceivables: 'Încasări sticlă',
