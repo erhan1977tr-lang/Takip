@@ -233,7 +233,7 @@ fresh
 [ "$(rec "$V2" migrations_count)" = 1 ] && [ "$(rec "$V2" source)" = deploy ] && [ -n "$(rec "$V2" deployed_at)" ] && [ -n "$(rec "$V2" verified_at)" ] || fail "migration / zaman / kaynak"
 diff -q "$TAKIP_BASE/state/releases/$V2.migrations" <(LC_ALL=C sort "$FAKE_STATE/db.migrations") >/dev/null || fail "migration listesi veritabanından"
 [ "$(stat -c %a "$TAKIP_BASE/state/releases")" = 700 ] && [ "$(stat -c %a "$TAKIP_BASE/state/releases/$V2.kayit")" = 600 ] || fail "kayıt izinleri"
-rlog_has "SAGLIKLI_KAYIT 1.0.1" && rlog_has "YAYIN_TAMAM 1.0.1" && dlog | grep -q 'yayın öncesi: yeni migration yok' || fail "işlem kaydı / ön denetim"
+rlog_has "SAGLIKLI_KAYIT 1.0.1 .* yoklama=PROBE_OK 7" && rlog_has "YAYIN_TAMAM 1.0.1" && dlog | grep -q 'yayın öncesi: yeni migration yok' || fail "işlem kaydı / ön denetim"
 [ -f "$FAKE_STATE/img/$V1" ] && [ -f "$FAKE_STATE/img/$V1-tools" ] || fail "geri dönüş adayının imajı silindi"
 [ ! -e "$TAKIP_BASE/state/release-op" ] || fail "işlem işareti kaldı"
 ok "1. başarılı yayın: kayıt (sürüm, tam SHA, imaj kimlikleri, migration, zaman, sağlık), göstergeler, aday imajlar korundu"

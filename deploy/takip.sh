@@ -794,7 +794,9 @@ JS
   return 1
 }
 
-# health_once ETİKET SÜRÜM SİTE(1|0) [yoklama(1|0)] → sorun kodları (boş = sağlıklı)
+# health_once ETİKET SÜRÜM SİTE(1|0) [yoklama(1|0)] → HC: sorun kodları (boş = sağlıklı). Alt kabukta çağrılmaz
+# (yoklamanın sonucu PROBE_RESULT'a yazılır ve kayda geçer).
+HC=''
 health_once() {
   local tag=$1 ver=$2 edge=$3 probe=${4:-1} codes='' app w st started now out v b n
   app=$(cid app)
@@ -827,7 +829,7 @@ health_once() {
     fi
   fi
   if [ "$probe" = 1 ] && [ -z "$codes" ] && ! probe_tag "$tag"; then codes="$codes PROBE"; fi
-  echo "$codes" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true
+  HC=$(echo "$codes" | xargs -r -n1 2>/dev/null | sort -u | xargs -r || true)
 }
 # release_health ETİKET SÜRÜM SİTE → 0 sağlıklı. Geçici gecikmelere karşı sınırlı tekrar: HEALTH_TRIES tur, aralarında
 # HEALTH_GAP sn. HEALTH_CODES: son turun sorunları; HEALTH_NOTE: geçici sorun görüldüyse ilk turun kodları.
@@ -836,7 +838,8 @@ release_health() {
   local tag=$1 ver=$2 edge=$3 i codes
   HEALTH_CODES='' HEALTH_NOTE=''
   for ((i = 1; i <= HEALTH_TRIES; i++)); do
-    codes=$(health_once "$tag" "$ver" "$edge")
+    health_once "$tag" "$ver" "$edge"
+    codes=$HC
     if [ -z "$codes" ]; then HEALTH_CODES=''; return 0; fi
     [ -n "$HEALTH_NOTE" ] || HEALTH_NOTE=$codes
     log "  sağlık denetimi $i/$HEALTH_TRIES: $codes"
