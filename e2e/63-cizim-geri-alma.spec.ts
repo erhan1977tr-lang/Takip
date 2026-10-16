@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, SALES, TEAM_PW, as, newOrder } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, newOrder } from './helpers';
 
 // 3.90.0 — DWG kararının güvenli geri alınması (karar 285), gerçek sunucuda. İzole test siparişleri (bu dosyanın kendi
 // siparişleri); gerçek SMTP yok (e-posta yalnızca giden kuyrukta), FGO / Google çağrısı yok.
@@ -9,6 +9,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, SALES, TEAM_PW, as, newOrde
 //  - geri alma bölümü yalnızca çizim yetkisinde (çizimci, yönetici); satış ve müşteri görmez
 //  - Romence arayüz
 test.describe.configure({ mode: 'serial' });
+const SALES = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 
 async function toDrawing(admin: Page, id: string) {
   await admin.goto(`/siparisler/${id}`);
