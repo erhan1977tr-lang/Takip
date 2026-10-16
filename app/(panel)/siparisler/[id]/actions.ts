@@ -22,6 +22,7 @@ import { deliverInAppNow } from '@/lib/notifications';
 import { revisionNoteWithMarks } from '@/server/orders/revision-note.js';
 import { cleanAnnotationsLoose } from '@/server/orders/annotations.js';
 import { hasCustomerDrawingFile } from '@/server/orders/dwg-review.js';
+import { UNDO_ACTIONS } from '@/server/orders/dwg-undo.js';
 import { markSectionsSeen } from '@/server/notifications/order-alerts.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
@@ -48,7 +49,7 @@ function done(id: string, ok: string): never {
  */
 async function act(
   user: CurrentUser, orderId: string, action: string, payload: Record<string, unknown> = {},
-): Promise<{ produced?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
+): Promise<{ produced?: boolean; production?: boolean; drawingId?: string; version?: number; storageKey?: string; revisionId?: string } | null> {
   try {
     const res = await runOrderAction(db, { orderId, action, actor: await actorOf(user), payload });
     await deliverInAppNow(res.outboxIds);
@@ -314,6 +315,28 @@ export async function dwgUpdateAction(formData: FormData) {
   revalidatePath('/siparisler');
   revalidatePath(`/siparisler/${id}`);
   redirect(back(id, 'ok=dwg_update') + '#cizim-dosyalari');
+}
+
+/**
+ * DWG kararının güvenli geri alınması (3.90.0, karar 285): "Üretime almayı geri al" · "Çizim hatalı kararını geri al" ·
+ * "Çizim güncellemesini geri al". Gerekçe zorunlu; ekrandaki karar kaydı (drawingId) ve sipariş sürümü (v) gönderilir —
+ * arada başka işlem olduysa sunucu reddeder. Yetki, sahiplik, engeller ve kayıt tek yerde: server/orders/dwg-undo.js +
+ * transitions.js → dwgUndo.
+ */
+export async function dwgUndoAction(formData: FormData) {
+  const user = await requirePermission('DRAWING_WORK');
+  const id = orderIdOf(formData);
+  const kind = String(formData.get('kind') ?? '');
+  if (!Object.hasOwn(UNDO_ACTIONS, kind)) notFound();
+  const res = await act(user, id, UNDO_ACTIONS[kind as keyof typeof UNDO_ACTIONS], {
+    reason: String(formData.get('reason') ?? '').slice(0, 4000),
+    drawingId: String(formData.get('drawingId') ?? ''),
+    expectedVersion: expectedVersion(formData),
+  });
+  revalidatePath('/siparisler');
+  revalidatePath('/yuklemeler');
+  revalidatePath(`/siparisler/${id}`);
+  redirect(back(id, `ok=dwg_undo_${kind}${res?.production ? '_production' : ''}`) + '#cizim');
 }
 
 /**

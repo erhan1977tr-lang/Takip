@@ -52,8 +52,10 @@ import {
   withdrawDrawingAction, retryDrawingTranslationAction, dwgResubmitAction, dwgRequestDrawingAction, withdrawOfferAction,
 } from './actions';
 import { DwgDecision } from './DwgDecision';
+import { dwgUndoAction } from './actions';
 import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
+import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -172,6 +174,9 @@ export default async function OrderPage({
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
   const can = (a: string) => acts.includes(a);
+  // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
+  // Sunucu işlemde aynı denetimi kilit altında yeniden yapar (server/orders/dwg-undo.js → dwgUndoCheck)
+  const undo = userCan(user, 'DRAWING_WORK') ? await dwgUndoCheck(db, order, { id: user.id, role: user.appRole }, { priceLock }) : null;
   const sla = isCustomer ? null : slaInfo(order.slaDeadline);
   const stage = stageIndex(order.status);
   // Satış görünümü: teklif hazırlar ama müşteriye gönderemez (rol adına değil yetkiye bakılır)
@@ -428,7 +433,7 @@ export default async function OrderPage({
 
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
-      {drawerView && <DrawingReview order={order} user={user} can={can} t={t} />}
+      {drawerView && <DrawingReview order={order} user={user} can={can} undo={undo} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
       {notesCard}
 
@@ -544,7 +549,7 @@ export default async function OrderPage({
       )}
       {/* Teknik çizimler ve onay (karar 214): teklif tablosundan SONRA — Sipariş Bilgileri → Teklif Tablosu → Teknik Çizim ve
           Onaylar. Çizimi olmayan siparişte kart yok; çizim ekibinin kendi ekranı (dosyalar → çizim → onay) değişmedi. */}
-      {!drawerView && <Drawings order={order} user={user} can={can} t={t} />}
+      {!drawerView && <Drawings order={order} user={user} can={can} undo={undo} t={t} />}
       {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} blockedRef={compBlock.blocked ? compBlock.ref : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
       {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
@@ -1003,7 +1008,7 @@ function versionBadge(t: T, st: string): React.ReactNode {
 }
 
 /** Müşterinin DWG/DXF karar kaydının durumu → rozet rengi (karar 167; metni order.dwg.status.<durum>) */
-const DWG_TONE: Record<string, string> = { BEKLIYOR: 'badge-warn', ONAYLANDI: 'badge-ok', REVIZYON_ISTENDI: 'badge-danger', YAPILIYOR: 'badge-purple' };
+const DWG_TONE: Record<string, string> = { BEKLIYOR: 'badge-warn', ONAYLANDI: 'badge-ok', REVIZYON_ISTENDI: 'badge-danger', YAPILIYOR: 'badge-purple', GERI_CEKILDI: 'badge-muted' };
 
 /**
  * Çizim alanındaki çevrilemeyen notun "Çeviriyi yeniden dene" düğmesi (karar 168). Yalnızca iç ekibe ve yalnızca
@@ -1098,6 +1103,10 @@ function CustomerRecord({ order, d, user, t }: { order: OrderDetail; d: DrawingR
         </div>
       )}
       <RevisionNotes order={order} d={d} user={user} t={t} />
+      {/* Geri alınan karar (karar 285): gerekçe yalnızca iç ekibe gelir (müşteriye sanitizeOrder boşaltır) */}
+      {d.status === 'GERI_CEKILDI' && d.withdrawReason && (
+        <div className="note" data-undo-reason><b className="small">{t('order.dwg.undoneLabel')}</b> {d.withdrawReason}{d.withdrawnAt && <div className="meta">{fmtDateTime(d.withdrawnAt)}</div>}</div>
+      )}
     </div>
   );
 }
@@ -1258,6 +1267,51 @@ function DwgPanel({ order, can, t }: { order: OrderDetail; can: Can; t: T }) {
   return null;
 }
 
+type UndoInfo = Awaited<ReturnType<typeof dwgUndoCheck>>;
+
+/**
+ * DWG kararının güvenli geri alınması (karar 285): geri alınacak karar, dönülecek durum, bildirim, zorunlu gerekçe ve onay
+ * penceresi — ya da neden geri alınamadığı. Yalnızca çizim yetkisi olanlara (çizimci, yönetici). Görünmesi yetki değildir:
+ * sunucu sahipliği, engelleri ve sürümü işlemde yeniden denetler.
+ */
+function DwgUndo({ order, undo, t }: { order: OrderDetail; undo: UndoInfo; t: T }) {
+  if (!undo) return null;
+  const rec = undo.record as DrawingRow;
+  const decision = t(`order.dwg.undo.kinds.${undo.kind}` as MsgKey);
+  const target = t(`order.dwg.undo.targets.${undo.production ? 'PRODUCTION' : undo.variant === 'AFTER_FAULTY' ? 'FAULTY_WAIT' : 'PENDING'}` as MsgKey);
+  return (
+    <div className="dwg-panel dwg-undo-panel" id="dwg-geri-al" data-dwg-undo={undo.kind} data-undo-block={undo.block ?? ''}>
+      <h3 className="sub-title">{t('order.dwg.undo.title')}</h3>
+      <dl className="dwg-undo-facts">
+        <dt>{t('order.dwg.undo.decision')}</dt>
+        <dd data-undo-decision>
+          <b>{decision}</b>
+          {undo.variant === 'RECORD' && <span className="muted"> · {t('order.dwg.undo.by', { v: rec.version, who: rec.decidedBy ? personText(t, rec.decidedBy) : '—', when: fmtDateTime(rec.decidedAt ?? rec.createdAt) })}</span>}
+        </dd>
+        <dt>{t('order.dwg.undo.target')}</dt>
+        <dd data-undo-target>{target}</dd>
+      </dl>
+      {undo.block ? (
+        <div className="alert alert-warn" data-undo-blocked={undo.block}>{t('order.dwg.undo.blocked')} {t(`order.dwg.undo.block.${undo.block}` as MsgKey)}</div>
+      ) : (
+        <details className="dwg-faulty">
+          <summary className="btn btn-danger">{t(`order.dwg.undo.submit.${undo.kind}` as MsgKey)}</summary>
+          <form action={dwgUndoAction}>
+            <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="kind" value={undo.kind} />
+            <input type="hidden" name="drawingId" value={rec.id} />
+            <input type="hidden" name="v" value={order.version} />
+            <p className="small muted">{t('order.dwg.undo.intro')} {t(`order.dwg.undo.notify.${undo.kind}` as MsgKey)}</p>
+            <label htmlFor={`dwg-undo-${order.id}`} className="small">{t('order.dwg.undo.reason')}</label>
+            <textarea id={`dwg-undo-${order.id}`} name="reason" rows={3} required maxLength={UNDO_REASON_MAX} placeholder={t('order.dwg.undo.reasonPlaceholder')} />
+            <span><ConfirmButton danger outline message={t('order.dwg.undo.confirm', { decision, target })}>{t(`order.dwg.undo.submit.${undo.kind}` as MsgKey)}</ConfirmButton></span>
+          </form>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /** Sipariş çizim hattının bugünkü durumu (çizimcinin "Çizim onayı ve revizyon" bölümünün başı) */
 function DrawingState({ order, t }: { order: OrderDetail; t: T }) {
   if (order.drawingTrack === 'YOK') return null;
@@ -1301,12 +1355,13 @@ function VersionList({ order, user, can, t, part }: { order: OrderDetail; user: 
  * Teknik çizimler ve onay — tek kart (yönetici, satış, denetimci, müşteri). Çizim ekibinin ekranı aynı parçalarla iki
  * bölümdür: DrawingFiles ("Teknik çizim dosyaları") + DrawingReview ("Çizim onayı ve revizyon") — Paket 3.
  */
-function Drawings({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: Can; t: T }) {
+function Drawings({ order, user, can, undo, t }: { order: OrderDetail; user: CurrentUser; can: Can; undo: UndoInfo; t: T }) {
   if (order.drawingTrack === 'YOK' && order.drawings.length === 0) return null;
   return (
     <div className="card" id="cizim">
       <h2>{t('order.drawings.title')}</h2>
       <DwgPanel order={order} can={can} t={t} />
+      <DwgUndo order={order} undo={undo} t={t} />
       <DrawingUpload order={order} can={can} t={t} anchor="cizim-dosyalari" />
       <VersionList order={order} user={user} can={can} t={t} part="all" />
     </div>
@@ -1325,12 +1380,13 @@ function DrawingFiles({ order, user, can, t }: { order: OrderDetail; user: Curre
 }
 
 /** Çizimci: 3) Çizim onayı ve revizyon — durum, DWG/DXF kararı, onay / revizyon geçmişi (numaralı notlar), geri çekme */
-function DrawingReview({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: Can; t: T }) {
+function DrawingReview({ order, user, can, undo, t }: { order: OrderDetail; user: CurrentUser; can: Can; undo: UndoInfo; t: T }) {
   return (
     <div className="card" id="cizim">
       <h2>{t('order.drawings.reviewTitle')}</h2>
       <DrawingState order={order} t={t} />
       <DwgPanel order={order} can={can} t={t} />
+      <DwgUndo order={order} undo={undo} t={t} />
       <VersionList order={order} user={user} can={can} t={t} part="review" />
     </div>
   );

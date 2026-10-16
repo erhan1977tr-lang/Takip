@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.90.0 — 16.10.2026
+
+Çizim iş akışında yanlışlıkla verilen DWG/DXF kararları güvenle geri alınabilir (karar 285). Şema değişikliği yok.
+
+- **Üretime almayı geri al:** "Üretime Hazır" kararı (ve onunla gelen otomatik üretim) geri alınır; sipariş üretimdeyse
+  yalnızca yönetici ve yalnızca üretimden sonra kayıtlı adım (onaylı yükleme, mali belge / belge isteği, sandık, telafi)
+  yoksa — sipariş "Hazırlanıyor"a döner, teklif müşteride kalır.
+- **Çizim hatalı kararını geri al:** müşteri yanıt vermeden önce; müşterinin kırmızı uyarısı kalkar, müşteriye bildirim ve
+  e-posta gider. Hatalı kaydı ve açıklaması geçmişte kalır.
+- **Çizim güncellemesini geri al:** çizimci yeni sürüm açmadan önce. Hatalı kararından sonra verilen güncelleme geri
+  alınınca müşterinin düzeltmesi yeniden beklenir.
+- Ters işlem: kayıtlar ve dosyalar silinmez; eski karar "karar geri alındı" olarak durur, aynı dosyalar için karar yeniden
+  bekler. Gerekçe zorunlu (yalnızca iç ekip görür), onay penceresi, geri alınacak karar ve dönülecek durum ekranda;
+  geri alınamıyorsa nedeni yazılır. Yetki: kararı veren çizimci ya da yönetici; sunucu her istekte yeniden denetler
+  (sürüm kilidi, aynı karar iki kez geri alınamaz).
+
 ## 3.89.0 — 16.10.2026
 
 Yönetici raporları: panel, Excel ve Telegram asistanı aynı salt okunur hesap servisini kullanır (karar 284). Yeni yetki

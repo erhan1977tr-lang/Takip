@@ -800,6 +800,12 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
 /* Kararın kutusu: kararı bekleyen iş — sarı zemin ("sıra sizde"), çizim bölümünün başında */
 .dwg-panel { padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--warn-border); border-left: 3px solid var(--warn-accent); border-radius: var(--radius-sm); background: var(--warn-soft); }
 .dwg-panel .sub-title { margin-top: 0; }
+/* DWG kararını geri alma (karar 285): nötr kutu — karar paneli değil, ikincil işlem */
+.dwg-panel.dwg-undo-panel { border-color: var(--border); border-left-color: var(--border-strong); background: var(--surface); }
+.dwg-undo-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: var(--fs-meta); }
+.dwg-undo-facts dt { color: var(--muted); }
+.dwg-undo-facts dd { margin: 0; }
+@media (max-width: 480px) { .dwg-undo-facts { grid-template-columns: 1fr; } .dwg-undo-facts dd { margin-bottom: 6px; } }
 /* Listelerde revizyon istenen sipariş: satır kırmızı ve belirgin (Paket 3) — rozet metni anlamı taşır */
 tr.row-alert > td { background: var(--danger-soft); }
 tr.row-alert > td:first-child { box-shadow: inset 3px 0 0 var(--danger); }

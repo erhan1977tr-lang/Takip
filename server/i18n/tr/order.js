@@ -47,6 +47,11 @@ export default {
     dwg_update: 'Çizimi siz güncelleyeceksiniz; müşterinin dosyası korunur. Yeni çizimi aşağıya yükleyin, “Kontrol Et” ile müşteriye gönderin.',
     dwg_resubmitted: 'Düzeltilmiş dosyanız çizim ekibine iletildi.',
     dwg_factory_requested: 'Talebiniz alındı: çizimi fabrikamız hazırlayıp onayınıza sunacak.',
+    // DWG kararının geri alınması (karar 285)
+    dwg_undo_READY: '“Üretime hazır” kararı geri alındı. Karar yeniden bekleniyor; kayıtlar ve dosyalar korundu.',
+    dwg_undo_READY_production: '“Üretime hazır” kararı geri alındı ve sipariş üretimden çıkarılarak “Hazırlanıyor” durumuna döndü. Karar yeniden bekleniyor; kayıtlar ve dosyalar korundu.',
+    dwg_undo_FAULTY: '“Çizim hatalı” kararı geri alındı ve müşteriye bildirildi. Karar yeniden bekleniyor; hatalı kaydı geçmişte duruyor.',
+    dwg_undo_UPDATE: '“Çizimi güncelle” kararı geri alındı. Kayıtlar ve dosyalar korundu.',
   },
   // İşlem adları: "Sıradaki adım" satırı ve aynı adlı düğmeler (anahtar = işlem kodu)
   steps: {
@@ -185,9 +190,47 @@ export default {
       ONAYLANDI: 'üretime hazır',
       REVIZYON_ISTENDI: 'hatalı',
       YAPILIYOR: 'fabrika güncelliyor',
+      GERI_CEKILDI: 'karar geri alındı',
     },
     faultyLabel: 'Çizim hatalı — açıklama:',
     submitted: 'gönderildi {when}',
+    undoneLabel: 'Karar geri alındı — gerekçe:',
+    undo: {
+      title: 'Kararı geri al',
+      intro: 'Yanlışlıkla verilen kararı geri alabilirsiniz. Geri alma ters işlem olarak kaydedilir: karar kaydı, dosyalar ve sürüm geçmişi silinmez.',
+      decision: 'Geri alınacak karar',
+      target: 'Dönülecek durum',
+      by: 'v{v} · {who} · {when}',
+      kinds: { READY: 'Üretime Hazır', FAULTY: 'Çizim Hatalı', UPDATE: 'Çizimi Güncelle' },
+      targets: {
+        PENDING: 'Müşterinin çizimi için karar yeniden bekleniyor (DXF/DWG listesi)',
+        FAULTY_WAIT: 'Müşterinin düzeltmesi bekleniyor (“Çizim hatalı” kararı geçerli kalır)',
+        PRODUCTION: 'Sipariş üretimden çıkar ve “Hazırlanıyor” durumuna döner; karar yeniden bekleniyor',
+      },
+      notify: {
+        READY: 'İlgili satışçıya uygulama içi bildirim gider.',
+        FAULTY: 'Müşteriye bildirim ve e-posta gider (düzeltme istenmiyor).',
+        UPDATE: 'Bildirim gönderilmez.',
+      },
+      reason: 'Geri alma gerekçesi (zorunlu — yalnızca iç ekip görür)',
+      reasonPlaceholder: 'örn. Yanlış siparişte karar verildi',
+      submit: { READY: 'Üretime almayı geri al', FAULTY: 'Çizim hatalı kararını geri al', UPDATE: 'Çizim güncellemesini geri al' },
+      confirm: '“{decision}” kararı geri alınacak. Dönülecek durum: {target}. Kayıtlar ve dosyalar silinmez. Emin misiniz?',
+      blocked: 'Bu karar geri alınamaz:',
+      block: {
+        UNDO_CLOSED: 'sipariş kapalı ya da artık hazırlanmıyor.',
+        UNDO_ON_HOLD: 'sipariş beklemede; önce beklemeden çıkarın.',
+        UNDO_SHIPPED: 'sipariş yüklendi / arşivlendi.',
+        UNDO_LATER_DRAWING: 'bu karardan sonra yeni çizim sürümü açıldı (taslak ya da gönderilmiş).',
+        UNDO_CUSTOMER_ANSWERED: 'müşteri bu karara yanıt verdi (fabrikadan çizim istedi).',
+        UNDO_LOADED: 'siparişin onaylı yüklemesi var.',
+        UNDO_DOCUMENTS: 'siparişin mali belgesi / belge isteği var (proforma, avans, fatura ya da müşteri belgesi kapsamı).',
+        UNDO_CRATES: 'sipariş için sandık girilmiş.',
+        UNDO_COMPENSATION: 'siparişle ilgili telafi kaydı var.',
+        UNDO_PRODUCTION_ADMIN: 'sipariş üretimde; üretime almayı yalnızca sistem yöneticisi geri alabilir.',
+        UNDO_NOT_OWNER: 'kararı yalnızca kararı veren çizimci ya da sistem yöneticisi geri alabilir.',
+      },
+    },
   },
   // Adım çubuğunun altındaki çizim / teklif hatları
   tracks: {
@@ -410,6 +453,8 @@ export default {
     dwgNoteLong: 'Açıklama çok uzun (en fazla 2000 karakter).',
     dwgFile: 'En az bir DWG ya da DXF dosyası seçin.',
     dwgInfected: 'İncelenen dosyalardan biri virüslü çıktı; bu çizim üretime hazır kabul edilemez.',
+    undoReason: 'Geri alma gerekçesi zorunludur.',
+    undoReasonLong: 'Geri alma gerekçesi en çok 1000 karakter olabilir.',
     // Yönetici paneli (Paket 4)
     crateFeeAdmin: 'Yöneticinin sandık bedeli satırı satış tarafından değiştirilemez; teklif kaydedilmedi.',
     offerNotOwner: 'Bu teklifi yöneticiye başka bir satışçı gönderdi; yalnızca o geri alabilir.',

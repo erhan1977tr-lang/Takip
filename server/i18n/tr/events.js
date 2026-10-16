@@ -15,6 +15,10 @@ export default {
   DWG_UPDATE: { label: 'Müşterinin DWG/DXF çizimini fabrika güncelliyor', customer: 'Çiziminiz fabrikada güncelleniyor' },
   DWG_RESUBMITTED: { label: 'Müşteri düzeltilmiş çizim dosyası gönderdi', customer: 'Düzeltilmiş çizim dosyanızı gönderdiniz' },
   DWG_FACTORY_REQUESTED: { label: 'Müşteri fabrikadan yeni çizim istedi', customer: 'Fabrikadan yeni çizim istediniz' },
+  // DWG kararının geri alınması (karar 285)
+  DWG_READY_UNDONE: { label: '"Üretime hazır" kararı geri alındı — çizim kararı yeniden bekleniyor', customer: 'Çiziminiz yeniden inceleniyor' },
+  DWG_FAULTY_UNDONE: { label: '"Çizim hatalı" kararı geri alındı — çizim kararı yeniden bekleniyor', customer: 'Çiziminiz için düzeltme istenmiyor; çiziminiz yeniden inceleniyor' },
+  DWG_UPDATE_UNDONE: { label: '"Çizimi güncelle" kararı geri alındı', customer: 'Çiziminiz yeniden inceleniyor' },
   OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi' },
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi' },
   OFFER_WITHDRAWN: { label: 'Satış, yöneticiye gönderdiği teklifi geri aldı' },

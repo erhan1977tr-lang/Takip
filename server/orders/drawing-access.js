@@ -14,7 +14,8 @@
 //   İç dosyaları gören roller (FILE_INTERNAL_VIEW: yönetici, satış, çizim, denetimci): her sürüm, her dosya (değişmedi).
 //   Öteki roller (bugün yalnızca müşteri):
 //     TASLAK                                   → NONE : sürüm hiç gelmez (değişmedi)
-//     GERI_CEKILDI                             → ROW  : satır gelir, içerik gelmez
+//     GERI_CEKILDI                             → ROW  : satır gelir, içerik gelmez (geri alınan DWG kararının kaydında
+//                                                       geri alma gerekçesi de gelmez — karar 285)
 //     ONAY_BEKLIYOR, ONAYLANDI, REVIZYON_ISTENDI
 //     (+ eski kayıtlardaki BEKLIYOR, YAPILIYOR) → FULL : değişmedi
 //     tanınmayan durum                          → NONE : yeni bir durum eklenirse karar verilene kadar kapalıdır
@@ -76,7 +77,11 @@ export function drawingsView(role, drawings) {
   for (const d of drawings) {
     const access = drawingAccess(role, d.status);
     if (access === 'NONE') continue;
-    out.push(access === 'FULL' ? d : /** @type {T} */ ({ ...d, ...NO_CONTENT, files: [] }));
+    if (access === 'FULL') { out.push(d); continue; }
+    // Geri alınan DWG kararının kaydı (karar 285): gerekçe iç ekibin notudur — müşteriye gelmez (fabrika sürümünün geri
+    // çekme gerekçesi, karar 146, değişmedi: müşteriye görünür)
+    const undone = /** @type {any} */ (d).source === 'MUSTERI_DXF_DWG' ? { withdrawReason: null } : {};
+    out.push(/** @type {T} */ ({ ...d, ...NO_CONTENT, ...undone, files: [] }));
   }
   return out;
 }

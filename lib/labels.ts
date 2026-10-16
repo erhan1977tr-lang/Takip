@@ -99,6 +99,20 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DWG_NOTE_LONG: 'order.errors.dwgNoteLong',
   DWG_FILE: 'order.errors.dwgFile',
   DWG_INFECTED: 'order.errors.dwgInfected',
+  // DWG kararının geri alınması (karar 285): gerekçe + engel kodları (ekrandaki engel metniyle aynı)
+  UNDO_REASON: 'order.errors.undoReason',
+  UNDO_REASON_LONG: 'order.errors.undoReasonLong',
+  UNDO_CLOSED: 'order.dwg.undo.block.UNDO_CLOSED',
+  UNDO_ON_HOLD: 'order.dwg.undo.block.UNDO_ON_HOLD',
+  UNDO_SHIPPED: 'order.dwg.undo.block.UNDO_SHIPPED',
+  UNDO_LATER_DRAWING: 'order.dwg.undo.block.UNDO_LATER_DRAWING',
+  UNDO_CUSTOMER_ANSWERED: 'order.dwg.undo.block.UNDO_CUSTOMER_ANSWERED',
+  UNDO_LOADED: 'order.dwg.undo.block.UNDO_LOADED',
+  UNDO_DOCUMENTS: 'order.dwg.undo.block.UNDO_DOCUMENTS',
+  UNDO_CRATES: 'order.dwg.undo.block.UNDO_CRATES',
+  UNDO_COMPENSATION: 'order.dwg.undo.block.UNDO_COMPENSATION',
+  UNDO_PRODUCTION_ADMIN: 'order.dwg.undo.block.UNDO_PRODUCTION_ADMIN',
+  UNDO_NOT_OWNER: 'order.dwg.undo.block.UNDO_NOT_OWNER',
   // Yönetici paneli (Paket 4): sandık bedeli yalnızca yöneticinin; mali kilitli siparişte geçmiş fiyat değişmez
   CRATE_FEE_ADMIN: 'order.errors.crateFeeAdmin',
   // "Yöneticiye göndermeyi geri al" (karar 212): yalnızca teklifi gönderen satışçı
@@ -148,6 +162,10 @@ const WORKFLOW_ERRORS: Record<string, string> = {
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   // Eksik teslim bilgileri (karar 229): alan adları kullanıcının dilinde, sabit sırayla
   if (code === 'PICKUP_INFO_MISSING') return t(k('profile.errors.pickupInfoMissing'), { fields: pickupFieldsText(t, details?.fields) });
+  // DWG kararını geri almanın engeli (karar 285): "Bu karar geri alınamaz: <neden>" — ekrandaki metinle aynı
+  if (code.startsWith('UNDO_') && Object.hasOwn(WORKFLOW_ERRORS, code) && WORKFLOW_ERRORS[code].startsWith('order.dwg.undo.block.')) {
+    return `${t(k('order.dwg.undo.blocked'))} ${t(k(WORKFLOW_ERRORS[code]))}`;
+  }
   return t(k(WORKFLOW_ERRORS[code] ?? "order.errors.notAllowed"), details as TParams | undefined);
 }
 
