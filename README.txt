@@ -1,0 +1,2 @@
+Kaynak commit: 612abf33f7160911c5eed17f94739fffc8a77ee7
+Dal: backend
