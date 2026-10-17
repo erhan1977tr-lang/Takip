@@ -20,6 +20,7 @@ export default {
     MATCHED: 'Potrivit',
     MISMATCH: 'Nu se potrivește — necesită verificare',
   },
+  overpaid: 'Sumă în plus: {amount}. Factura de avans nu depășește totalul proformei; suma în plus este creanța clientului. Restituirea sau compensarea cu alt document se face prin decizie contabilă (TAKİP nu compensează automat).',
   review: {
     MISMATCH: 'Suma înregistrată manual ({manual}) diferă de încasarea afișată de FGO ({fgo}). Pentru avans se ia valoarea mai mare; verificați diferența în FGO.',
     OVERPAID: 'Plata depășește totalul proformei (plată în plus). Verificați în FGO; nu se consideră plată integrală și nu se emite document pentru diferență.',

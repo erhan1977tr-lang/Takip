@@ -108,22 +108,26 @@ export function basisOf(fgo, manual) {
  *   fgoPaid: FGO'nun proformada gösterdiği tahsilat (TVA dahil RON) · payments: zincirin elle kayıtları (geçersiz olanlar
  *   sayılmaz) · advanced: kesilmiş (ve kuyruktaki) avansların karşıladığı toplam
  * @returns {{ fgoPaid: number, manualRon: number, basis: number, advanced: number, advanceRequired: number,
- *   advanceBasis: 'FGO' | 'MANUAL' | 'FGO_MANUAL', match: string, review: string[], full: boolean | null }}
+ *   advanceBasis: 'FGO' | 'MANUAL' | 'FGO_MANUAL', match: string, review: string[], full: boolean | null, overpaid: number }}
  */
 export function paymentState({ fgoPaid, proformaTotal = null, payments = [], advanced }) {
   const fgo = maxC(toCents(fgoPaid), 0n);
   const manual = payments.filter((x) => !x.voidedAt).reduce((s, x) => s + toCents(x.ron), 0n);
   const adv = maxC(toCents(advanced), 0n);
   const basis = maxC(fgo, manual);
-  const required = basis > adv ? basis - adv : 0n;
   const match = paymentMatch(fgo, manual);
   const review = [];
   if (match === 'MISMATCH') review.push('MISMATCH');
   const total = proformaTotal == null ? null : toCents(proformaTotal);
-  if (total != null && total > 0n && basis > total) review.push('OVERPAID');
+  // Avans faturası proforma toplamını AŞAMAZ (DÜZELTME 10 M3, 3.98.0): avansın dayanağı min(tahsilat, proforma toplamı).
+  // Fazlası (overpaid) belge doğurmaz; müşteri alacağı olarak gösterilir ve muhasebe kararını bekler (otomatik mahsup yok).
+  const capped = total != null && total > 0n && basis > total ? total : basis;
+  const required = capped > adv ? capped - adv : 0n;
+  const over = total != null && total > 0n && basis > total ? basis - total : 0n;
+  if (over > 0n) review.push('OVERPAID');
   return {
     fgoPaid: centsNum(fgo), manualRon: centsNum(manual), basis: centsNum(basis), advanced: centsNum(adv), advanceRequired: centsNum(required),
-    advanceBasis: basisOf(fgo, manual), match, review, full: total == null || total <= 0n ? null : basis >= total,
+    advanceBasis: basisOf(fgo, manual), match, review, full: total == null || total <= 0n ? null : basis >= total, overpaid: centsNum(over),
   };
 }
 

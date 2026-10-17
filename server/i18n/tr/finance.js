@@ -20,6 +20,7 @@ export default {
     MATCHED: 'Eşleşti',
     MISMATCH: 'Uyuşmuyor — inceleme gerekli',
   },
+  overpaid: 'Fazla tutar: {amount}. Avans faturası proforma toplamını aşmaz; fazla tutar müşteri alacağıdır. İade ya da başka belgeye mahsup muhasebe kararıyla yapılır (TAKİP otomatik mahsup yapmaz).',
   review: {
     MISMATCH: "Elle kaydedilen ({manual}) ile FGO'nun gösterdiği tahsilat ({fgo}) farklı. Avansa büyük olan esas alınır; farkı FGO'da kontrol edin.",
     OVERPAID: "Ödeme proforma toplamını aşıyor (fazla ödeme). FGO'da kontrol edin; tam ödeme sayılmaz, fazla tutar için belge kesilmez.",

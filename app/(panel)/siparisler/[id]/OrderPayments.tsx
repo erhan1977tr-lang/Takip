@@ -83,6 +83,8 @@ export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
       {st?.review.map((code: string) => (
         <div key={code} className="alert alert-warn" data-finance-review={code}>
           {t(`finance.review.${code === 'OVERPAID' ? 'OVERPAID' : 'MISMATCH'}` as MsgKey, { fgo: fmtMoney(st.fgoPaid, 'RON'), manual: fmtMoney(st.manualRon, 'RON') })}
+          {/* Fazla ödeme tutarı (DÜZELTME 10 M3): avans proforma toplamını aşmaz; fazlası müşteri alacağıdır, muhasebe kararı bekler */}
+          {code === 'OVERPAID' && (st.overpaid ?? 0) > 0 && <div data-overpaid={st.overpaid}>{t('finance.overpaid', { amount: fmtMoney(st.overpaid, 'RON') })}</div>}
         </div>
       ))}
 

@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.98.1 — 17.10.2026
+
+DÜZELTME 10 — Aşama 2C (karar 294; güvenli kısım). Migration yok.
+
+- **Avans faturası proforma toplamını aşamaz (M3):** bir proformaya (sipariş, profil ya da müşteri proforması) proforma
+  toplamından fazla tahsilat görünse bile (FGO ya da elle kayıt) avans faturasının dayanağı en çok proforma toplamıdır.
+  Önceden fazla tutar da avanslanabiliyordu. Fazlası "Ödemeler ve avans" kartında tutarıyla "fazla ödeme — müşteri alacağı"
+  olarak görünür; bunun için belge kesilmez ve TAKİP otomatik mahsup yapmaz.
+- **Bekleyen (muhasebe ve FGO kararı):** fazla ödemenin aynı müşterinin başka belgelerine (cam ↔ profil, proforma ya da
+  nihai fatura) mahsubu, müşteri alacağı defteri, iade ve FGO'daki karşılığı. FGO API'si belge başına yalnızca toplam ve
+  ödenen tutarı verir (ödeme listesi / tarihi yok); FGO'ya tahsilat ekleme / silme uç noktaları var ama paket ve muhasebe
+  kaydı doğrulanmadı. Bu nedenle mahsup kayıtları canlıda etkinleştirilmedi.
+
 ## 3.97.4 — 18.10.2026
 
 - Tedarikçi veritabanı testleri M9'un denetim kaydına (`SUPPLIER_EMAILS_CHANGED`) ve alıcı başına gönderim işaretine
