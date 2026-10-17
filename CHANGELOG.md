@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.94.1 — 17.10.2026
+
+- Sipariş oluşturma hız sınırı olağan kullanımın çok üstüne alındı: kullanıcı başına saatte 200, firma başına saatte 300 ve
+  günde 1000 sipariş (karar 289). Amaç sınırsız toplu oluşturmayı ve bunun ürettiği e-posta selini durdurmak.
+
 ## 3.94.0 — 17.10.2026
 
 Güvenlik sertleştirme paketi (güvenlik denetimi 3.93.2; karar 289). Migration yok.
