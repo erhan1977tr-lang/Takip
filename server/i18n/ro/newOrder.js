@@ -92,6 +92,7 @@ export default {
     noFiles: 'Încărcați cel puțin un fișier al comenzii.',
     tooManyFiles: 'Puteți încărca cel mult 20 de fișiere odată.',
     oneGlass: 'Într-o comandă se poate alege un singur tip de sticlă.',
+    rateLimit: 'Au fost create prea multe comenzi într-un timp scurt. Vă rugăm să încercați puțin mai târziu; dacă este urgent, contactați-ne.',
     legacyDraft: 'Această ciornă conține mai multe tipuri de sticlă. Deschideți mai întâi ciorna și alegeți sticla păstrată pentru această comandă.',
     noGlass: 'Selectați cel puțin o combinație de sticlă.',
     glassGone: 'Una dintre sticlele selectate nu mai există în catalog; reîncărcați pagina și selectați din nou.',

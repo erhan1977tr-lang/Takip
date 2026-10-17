@@ -3,6 +3,7 @@
 // Kırık / telafi camı ve siparişi silme / geri yükleme (Aşama 9). Kurallar ve kayıt server/orders/compensation.js ile
 // server/orders/removal.js'tedir; burada yalnızca oturum, form okuma ve sonuç yönlendirmesi var. Yetki hem burada
 // (requirePermission) hem de servisin içinde denetlenir — düğmeyi gizlemek yetki değildir.
+import { signResult } from '@/server/security/signed-param.js';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -100,7 +101,9 @@ export async function removeOrderAction(formData: FormData) {
     revalidatePath('/', 'layout');
     // Kısa sonuç: stoğa geri eklenen ürünler (kod*adet*birim; sayfada yeniden doğrulanır)
     const back = (r.stockReturned ?? []).slice(0, 12).map((s) => `${s.code}*${s.qty}*${s.unit}`).join('|');
-    redirect(`/siparisler?silindi=${encodeURIComponent(r.orderNo)}${back ? `&iade=${encodeURIComponent(back)}` : ''}#silinen`);
+    // Sonuç bandı imzalıdır (karar 289): adrese elle yazılan "silindi" metni gösterilmez; imza bu kullanıcıya ve 10 dakikaya bağlı
+    const { sig, exp } = signResult({ secret, scope: 'removed', userId: user.id, values: [r.orderNo, back] });
+    redirect(`/siparisler?silindi=${encodeURIComponent(r.orderNo)}${back ? `&iade=${encodeURIComponent(back)}` : ''}&sig=${sig}&exp=${exp}#silinen`);
   }
   redirect(r.code === 'NOT_FOUND' || r.code === 'ALREADY_REMOVED' ? `/siparisler?silHata=${r.code}` : `/siparisler/${id}?silHata=${r.code}#sil`);
 }

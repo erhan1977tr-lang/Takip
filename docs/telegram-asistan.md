@@ -15,8 +15,30 @@ Boss?" / Romence "Mai ai vreo solicitare, Boss?") yalnızca doğal düştüğün
   çağırır; her araç PostgreSQL `READ ONLY` işleminde çalışır (yazma veritabanında reddedilir). Veri değiştirme, belge /
   fatura, FGO, e-posta, bildirim yok. Asistan veritabanına kayıt bile yazmaz.
 - Sınırlar: dakikada 8, günde 300 soru; soru başına en çok 4 model turu ve 8 araç çağrısı; metin 1000 karakter, ses 2 dakika.
-- Jeton ve anahtar yalnızca sunucudaki `/opt/takip/.env` dosyasında. Günlüğe yalnızca durum kodları yazılır (soru, yanıt,
-  kullanıcı kimliği, jeton, anahtar yazılmaz).
+- Jeton ve anahtar yalnızca sunucudaki `/opt/takip/.env` dosyasında; yalnızca **işçi** (worker) kapsayıcısı görür —
+  internete açık uygulama (`app`) ve araç (`tools`) kapsayıcılarında `deploy/docker-compose.yml` bunları boş değerle ezer
+  (karar 289). Günlüğe yalnızca durum kodları yazılır (soru, yanıt, kullanıcı kimliği, jeton, anahtar yazılmaz).
+
+## OpenAI'ye ne gider (karar 289 — veri en aza indirme)
+
+| Aşama | Gönderilen |
+|---|---|
+| Sesli soru | Ses kaydı (ses → metin: `gpt-4o-mini-transcribe`) |
+| Her soru | Sistem yönergesi, son 6 tur sohbet, Boss'un sorusu, araç tanımları |
+| Araç sonucu | Yalnızca sorunun gerektirdiği alanlar (sipariş no, firma adı, durum, tarihler, müşteri teklif tutarı, m², yükleme, stok, belge no / tutar, rapor toplamları) |
+| Sesli yanıt | Kısa sesli özet metni (metin → ses: `gpt-4o-mini-tts`) |
+
+**Varsayılan olarak GİTMEYENLER:** iç notlar ve müşteri notları, not yazarının adı (yalnızca "müşteri" / "GKH"), yetkili
+kişi / telefon / e-posta, fabrika tutarı (maliyet), rapordaki maliyet / kâr sütunları. Bunlar yalnızca **iki koşul birlikte**
+sağlanırsa gider: model ilgili bayrağı ister (`notlar`, `ic_notlar`, `iletisim`, `fabrika_tutari`, `maliyet`) **ve** Boss'un
+o anki sorusu (yazılı metin ya da sesli mesajın dökümü) o konuyu açıkça anar (`askedTopics`). İkinci koşulu sunucu denetler:
+bir sipariş başlığına / nota yazılmış talimat modeli kandırsa bile soru konuyu anmıyorsa veri gönderilmez ("kisitli").
+Araç sonuçlarındaki metinler sistem yönergesinde **güvenilmeyen veri** olarak tanımlıdır.
+
+**OpenAI veri saklama / veri işleme sözleşmesi: DOĞRULANAMADI.** Hesap ayarlarına bu çalışmadan erişim yok. Yönetici
+platform.openai.com üzerinden şunları kontrol edip belgelemeli: kuruluşun API veri saklama ayarı (varsayılan: API verisi
+eğitimde kullanılmaz, kötüye kullanım izleme için sınırlı süre saklanır; "Zero Data Retention" ayrıca onay ister) ve
+veri işleme sözleşmesinin (DPA) imzalanıp imzalanmadığı.
 
 ## Kurulum (bir kez)
 

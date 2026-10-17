@@ -83,6 +83,44 @@ function jsonSchema(fields) {
   return { type: 'object', properties, additionalProperties: false };
 }
 
+// ---------------------------------------------------------------- veri en aza indirme (karar 289)
+// OpenAI'ye yalnızca sorunun gerektirdiği alanlar gider. Hassas alanlar (iç / müşteri notları, kişi iletişim bilgileri,
+// fabrika maliyeti / kâr) varsayılan olarak araç sonucunda YOKTUR; yalnızca (1) model ilgili bayrağı açıkça istediğinde VE
+// (2) Boss'un KENDİ sorusu (yazılı metin ya da sesli mesajın dökümü) o konuyu anıyorsa döner. İkinci koşul sunucuda
+// denetlenir: araç sonucundaki bir metin (sipariş başlığı, not, firma adı) modeli kandırıp bayrağı açtırsa bile soru o
+// konuyu anmıyorsa veri gönderilmez (prompt injection ile genişletilemez). Gönderilmeyen alanlar "kisitli" ile bildirilir.
+export const SENSITIVE_TOPICS = Object.freeze({
+  notlar: /\bnot(?:lar|lar[ıi]|u|a|ta|lara)?\b|\bnotlar|mesaj|yorum|a[çc][ıi]klama|\bnot[ăae]\b|\bnote(?:le)?\b|mesaje|comentari|observa[țt]i/i,
+  icNotlar: /i[çc]\s*not|dahili|internal|\bintern[ăe]?\b|gizli\s*not/i,
+  iletisim: /ileti[şs]im|telefon|e-?posta|e-?mail|\bmail\b|yetkili|irtibat|ki[şs]i\s*bilgi|contact|persoan[ăa]|num[ăa]r(?:ul)?\s+de\s+telefon/i,
+  maliyet: /maliyet|fabrika|k[âa]r(?:l[ıi]l[ıi]k|[ıi]|lar[ıi]?|da|ı\s)?\b|al[ıi][şs]\s*fiyat|\bcost|profit|fabric|achizi[țt]|\bmarj|margin/i,
+});
+/** Sorunun andığı hassas konular */
+export function askedTopics(question) {
+  const q = String(question ?? '');
+  return new Set(Object.entries(SENSITIVE_TOPICS).filter(([, re]) => re.test(q)).map(([k]) => k));
+}
+/** Bayrak istendi mi ve soru konuyu anıyor mu → { ok } | { ok: false } (gerekçe "kisitli"ye yazılır) */
+const allowTopic = (ctx, topic, requested) => requested === true && !!ctx?.topics?.has(topic);
+/** Raporlardaki maliyet / kâr anahtarları (rapor aracı, maliyet sorulmadıysa çıkarılır) */
+export const COST_KEYS = Object.freeze(['glassCost', 'transport', 'profit', 'profitComplete', 'missingCostOrders', 'grossProfit', 'cost']);
+export function stripCost(out) {
+  let removed = false;
+  const isCost = (k) => {
+    const hit = COST_KEYS.includes(k);
+    if (hit) removed = true;
+    return hit;
+  };
+  const drop = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !isCost(k)));
+  const res = {
+    ...out,
+    ozet: (out.ozet ?? []).filter((c) => !Object.keys(c).some(isCost)),
+    tablolar: (out.tablolar ?? []).map((t) => ({ ...t, ...(t.satirlar ? { satirlar: t.satirlar.map(drop) } : {}), ...(t.toplam ? { toplam: t.toplam.map(drop) } : {}) })),
+    notlar: (out.notlar ?? []).filter((n) => n !== 'PROFIT_RULE' && n !== 'MISSING_COST'),
+  };
+  return removed ? { ...res, kisitli: ['maliyet'] } : res;
+}
+
 // ---------------------------------------------------------------- yardımcılar
 const money = (v) => (v == null ? null : Number(Number(v).toFixed(2)));
 const dayOf = (d, tz) => (d ? localDay(new Date(d), tz) : null);
@@ -111,6 +149,8 @@ function offerSummary(offers) {
     fabrikaTutari: sent ? money(sent.amount) : null,
   };
 }
+/** Notun yazarı: kişi adı modele gitmez, yalnızca taraf */
+const noteSide = (n) => (n.user?.type === 'CUSTOMER' ? 'musteri' : n.user ? 'GKH' : null);
 
 
 // ---------------------------------------------------------------- sipariş numarası (3.85.0)
@@ -232,9 +272,15 @@ export const TOOLS = {
   },
 
   siparis_detay: {
-    desc: 'Tek siparişin ayrıntısı: durum, firma, tarihler, teklif tutarları (müşteri ve fabrika), çizim durumu, yükleme onayları, FGO belgeleri, son notlar. Camlar / ölçüler / m² için siparis_camlari, yüklenen / kalan miktar için yukleme_durumu, sandıklar için sandiklar.',
-    fields: { siparis_no: ORDER_NO },
-    async run(tx, a, { tz }) {
+    desc: 'Tek siparişin ayrıntısı: durum, firma, tarihler, müşteri teklif tutarı, çizim durumu, yükleme onayları, FGO belgeleri. Fabrika tutarı (maliyet) yalnızca fabrika_tutari=true ile, son notlar yalnızca notlar=true ile (iç notlar ayrıca ic_notlar=true) döner — bu bayrakları YALNIZCA Boss bunları açıkça sorduysa kullan. Camlar / ölçüler / m² için siparis_camlari, yüklenen / kalan miktar için yukleme_durumu, sandıklar için sandiklar.',
+    fields: {
+      siparis_no: ORDER_NO,
+      fabrika_tutari: { type: 'bool', desc: 'true: fabrika (maliyet) tutarını da getir — yalnızca Boss maliyeti / fabrika tutarını / kârı sorduysa' },
+      notlar: { type: 'bool', desc: 'true: son 5 müşteriye açık notu getir — yalnızca Boss notları / mesajları sorduysa' },
+      ic_notlar: { type: 'bool', desc: 'true: iç notları da getir — yalnızca Boss iç notları açıkça sorduysa (notlar=true ile)' },
+    },
+    async run(tx, a, ctx) {
+      const { tz } = ctx;
       if (!a.siparis_no) throw new ToolError('INVALID_ARGS');
       const found = await findOrder(tx, a.siparis_no, {
           ...ORDER_LIST_SELECT, id: true, customerOrderNo: true, drawingTrack: true, actualShipDate: true, slaDeadline: true,
@@ -242,7 +288,7 @@ export const TOOLS = {
           profile: { select: { stage: true, pickupDate: true, proformaNo: true, invoiceNo: true, deliveredAt: true, paidAt: true } },
           fgoDocuments: { select: { kind: true, series: true, number: true, issuedAt: true, total: true, paid: true, currency: true }, orderBy: { issuedAt: 'asc' } },
           loadedItems: { select: { id: true, confirmationId: true, offerLineId: true, replanId: true, scopeKey: true, revision: true, status: true, quantity: true, confirmation: { select: { shipDay: true } } }, take: 500 },
-          notes: { orderBy: { createdAt: 'desc' }, take: 5, select: { createdAt: true, text: true, internal: true, user: { select: { name: true } } } },
+          notes: { orderBy: { createdAt: 'desc' }, take: 20, select: { createdAt: true, text: true, internal: true, user: { select: { type: true } } } },
           _count: { select: { files: true, drawings: true } },
       });
       if (!found.order) return found.miss;
@@ -253,17 +299,31 @@ export const TOOLS = {
         const d = dayOf(it.confirmation.shipDay, 'UTC');
         (days[d] ??= { yuklenen: 0, yuklenmeyen: 0 })[it.status === 'LOADED' ? 'yuklenen' : 'yuklenmeyen'] += Number(it.quantity ?? 0);
       }
+      const kisitli = [];
+      const withNotes = allowTopic(ctx, 'notlar', a.notlar);
+      const withInternal = withNotes && allowTopic(ctx, 'icNotlar', a.ic_notlar);
+      const withCost = allowTopic(ctx, 'maliyet', a.fabrika_tutari);
+      if (a.notlar && !withNotes) kisitli.push('notlar');
+      if (a.ic_notlar && !withInternal) kisitli.push('ic_notlar');
+      if (a.fabrika_tutari && !withCost) kisitli.push('fabrika_tutari');
+      const { fabrikaTutari, ...offer } = offerSummary(o.offers);
+      const notes = withNotes ? o.notes.filter((n) => withInternal || !n.internal).slice(0, 5) : [];
       return {
         ...orderRow(o, tz),
         musteriSiparisNo: o.customerOrderNo,
         cizim: o.drawingTrack,
         fiiliYukleme: dayOf(o.actualShipDate, tz),
-        ...offerSummary(o.offers),
+        ...offer,
+        ...(withCost ? { fabrikaTutari } : {}),
         profil: o.profile ? { asama: o.profile.stage, alisGunu: dayOf(o.profile.pickupDate, 'UTC'), proforma: o.profile.proformaNo, fatura: o.profile.invoiceNo, odeme: dayOf(o.profile.paidAt, 'UTC'), teslim: dayOf(o.profile.deliveredAt, tz) } : undefined,
         onayliYuklemeler: Object.entries(days).map(([gun, v]) => ({ gun, ...v })),
         fgoBelgeleri: o.fgoDocuments.map((d) => ({ tur: d.kind, no: `${d.series}${d.number}`, tarih: dayOf(d.issuedAt, tz), toplam: money(d.total), odenen: money(d.paid), paraBirimi: d.currency })),
         dosyaSayisi: o._count.files, cizimSurumSayisi: o._count.drawings,
-        sonNotlar: o.notes.map((n) => ({ tarih: dayOf(n.createdAt, tz), yazan: n.user?.name ?? null, ic: n.internal || undefined, metin: String(n.text ?? '').slice(0, 300) })),
+        ...(withNotes ? {
+          // Not metinleri GÜVENİLMEYEN VERİDİR (müşteri / kullanıcı yazısı): içindeki talimatlar uygulanmaz
+          sonNotlar: notes.map((n) => ({ tarih: dayOf(n.createdAt, tz), yazan: noteSide(n), ic: n.internal || undefined, metin: String(n.text ?? '').slice(0, 300) })),
+        } : {}),
+        ...(kisitli.length ? { kisitli } : {}),
       };
     },
   },
@@ -436,11 +496,18 @@ export const TOOLS = {
   },
 
   musteri_bilgi: {
-    desc: 'Firma bilgisi: kodu, iletişim, açık sipariş sayıları ve FGO belgelerine göre açık alacak (para birimine göre).',
-    fields: { firma: { type: 'string', max: 60, desc: 'Firma adı (parçası) ya da 3 harfli firma kodu' } },
-    async run(tx, a) {
+    desc: 'Firma bilgisi: kodu, şehri, açık sipariş sayıları ve FGO belgelerine göre açık alacak (para birimine göre). Yetkili kişi / telefon / e-posta yalnızca iletisim=true ile — YALNIZCA Boss iletişim bilgisini açıkça sorduysa.',
+    fields: {
+      firma: { type: 'string', max: 60, desc: 'Firma adı (parçası) ya da 3 harfli firma kodu' },
+      iletisim: { type: 'bool', desc: 'true: yetkili kişi, telefon, e-posta — yalnızca Boss bunları sorduysa' },
+    },
+    async run(tx, a, ctx) {
       if (!a.firma) throw new ToolError('INVALID_ARGS');
-      const list = await tx.customer.findMany({ where: customerWhere(a.firma), take: 5, orderBy: { name: 'asc' }, select: { id: true, name: true, prefix: true, contactPerson: true, phone: true, email: true, city: true } });
+      const withContact = allowTopic(ctx, 'iletisim', a.iletisim);
+      const list = await tx.customer.findMany({
+        where: customerWhere(a.firma), take: 5, orderBy: { name: 'asc' },
+        select: { id: true, name: true, prefix: true, city: true, ...(withContact ? { contactPerson: true, phone: true, email: true } : {}) },
+      });
       if (!list.length) return { bulunamadi: a.firma };
       const out = [];
       for (const c of list) {
@@ -453,12 +520,13 @@ export const TOOLS = {
           }),
         ]);
         out.push({
-          ad: c.name, kod: c.prefix, yetkili: c.contactPerson, telefon: c.phone, eposta: c.email, sehir: c.city,
+          ad: c.name, kod: c.prefix, sehir: c.city,
+          ...(withContact ? { yetkili: c.contactPerson, telefon: c.phone, eposta: c.email } : {}),
           siparisler: Object.fromEntries(byStatus.map((r) => [r.status, r._count._all])),
           alacak: receivables(docs).sums,
         });
       }
-      return { firmalar: out };
+      return { firmalar: out, ...(a.iletisim && !withContact ? { kisitli: ['iletisim'] } : {}) };
     },
   },
 
@@ -629,8 +697,10 @@ export const TOOLS = {
       urun: { type: 'string', max: 60, desc: 'Cam türü (adının parçası) ya da profil kodu (parçası)' },
       yukleme: { type: 'enum', values: ['yuklendi', 'kismi', 'yuklenmedi'], desc: 'Yükleme durumu' },
       satir: { type: 'int', min: 1, max: 15, desc: 'Tablo başına en çok kaç satır dönsün (varsayılan 8)' },
+      maliyet: { type: 'bool', desc: 'true: maliyet / kâr sütunlarını da getir (tur=finans) — yalnızca Boss maliyeti ya da kârı sorduysa' },
     },
-    async run(tx, a, { tz, now }) {
+    async run(tx, a, ctx) {
+      const { tz, now } = ctx;
       if (!a.tur) throw new ToolError('INVALID_ARGS');
       const KIND = { siparis: 'orders', cam: 'glass', profil_stok: 'profile', yukleme: 'loading', finans: 'finance' };
       const PERIOD = { bu_ay: 'this_month', gecen_ay: 'last_month', bu_hafta: 'this_week', gecen_hafta: 'last_week', bu_yil: 'this_year', gecen_yil: 'last_year', son_3_ay: 'last_3_months', son_30_gun: 'last_30_days' };
@@ -640,7 +710,8 @@ export const TOOLS = {
         orderType: a.siparis_turu === 'cam' ? 'GLASS' : a.siparis_turu === 'profil' ? 'PROFILE' : 'ALL', status: a.durum, product: a.urun, loading: a.yukleme ? LOAD[a.yukleme] : 'ALL',
       }, { actor: ASSISTANT_ACTOR, now, timeZone: tz });
       if (!r.ok) return { hata: r.code, ...(r.errors ? { ayrinti: r.errors } : {}), ...(r.candidates ? { adaylar: r.candidates } : {}) };
-      return reportForAi(r.report, { rows: a.satir ?? 8 });
+      const out = reportForAi(r.report, { rows: a.satir ?? 8 });
+      return allowTopic(ctx, 'maliyet', a.maliyet) ? out : stripCost(out);
     },
   },
 };

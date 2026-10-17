@@ -295,6 +295,14 @@ function settingsDb(initial = null) {
     orderFile: {
       findMany: async () => st.files.filter((f) => f.scanStatus === 'PENDING'),
       update: async ({ where, data }) => Object.assign(st.files.find((f) => f.id === where.id), data),
+      // Koşullu güncelleme (karar 289): durum koşulu da uygulanır
+      updateMany: async ({ where, data }) => {
+        const ok = (f) => f.id === where.id && (where.scanStatus === undefined
+          || (typeof where.scanStatus === 'string' ? f.scanStatus === where.scanStatus : f.scanStatus !== where.scanStatus.not));
+        const hits = st.files.filter(ok);
+        for (const f of hits) Object.assign(f, data);
+        return { count: hits.length };
+      },
     },
     drawingFile: { findMany: async () => [] }, drawing: { findMany: async () => [] }, orderDraftFile: { findMany: async () => [] },
     supplierOrderFile: { findMany: async () => [] }, offerImport: { findMany: async () => [] },

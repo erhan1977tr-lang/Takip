@@ -116,6 +116,69 @@ export async function requestCadPreview({ url, type, path, size, fetchImpl = fet
   }
 }
 
+/**
+ * CAD işi koruması (karar 289; güvenlik denetimi 3.93.2 Y-2) — tek hizmet yuvası bir kullanıcının dosyalarıyla
+ * doldurulamasın, aynı zararlı dosya tekrar tekrar dönüştürülmesin:
+ *  - olumsuz önbellek: belirleyici hatalar (dosyanın kendisinden kaynaklanan) anahtar = dosyanın kendisi için TTL süresince
+ *    hizmete gönderilmeden aynı kodla döner; geçici hatalar (meşgul / ulaşılamıyor) önbelleğe alınmaz;
+ *  - kullanıcı başına aynı anda TEK dönüştürme (ikincisi hemen BUSY);
+ *  - aynı dosyanın eşzamanlı istekleri tek dönüştürmeyi paylaşır;
+ *  - kullanıcı başına ayrı, düşük dönüştürme sınırı (önbellekten dönenler sayılmaz).
+ */
+export const CAD_GUARD = Object.freeze({ negativeTtlMs: 30 * 60_000, negativeEntries: 2000, convertLimit: 20, convertWindowMs: 5 * 60_000 });
+/** Dosyanın kendisinden kaynaklanan (tekrarı aynı sonucu veren) hatalar */
+export const CAD_DETERMINISTIC = Object.freeze(['TOO_COMPLEX', 'INVALID', 'CONVERT_FAILED', 'NOT_DXF', 'BINARY_DXF', 'TOO_LARGE', 'TIMEOUT']);
+
+/**
+ * @param {{ now?: () => number, limits?: Partial<typeof CAD_GUARD> }} [o]
+ */
+export function createCadGuard({ now = Date.now, limits = {} } = {}) {
+  const L = { ...CAD_GUARD, ...limits };
+  /** @type {Map<string, { code: string, until: number }>} */
+  const negative = new Map();
+  /** @type {Map<string, Promise<any>>} */
+  const inflight = new Map();
+  /** @type {Set<string>} */
+  const users = new Set();
+  const convertLimiter = createRateLimiter({ limit: L.convertLimit, windowMs: L.convertWindowMs });
+  return {
+    /**
+     * @param {{ key: string, userId: string, run: () => Promise<{ ok: true, json: string } | { ok: false, code: string }> }} o
+     */
+    async run({ key, userId, run }) {
+      const bad = negative.get(key);
+      if (bad) {
+        if (bad.until > now()) return { ok: false, code: bad.code, cached: true };
+        negative.delete(key);
+      }
+      const shared = inflight.get(key);
+      if (shared) return shared;
+      if (users.has(userId)) return { ok: false, code: 'BUSY' };
+      if (!convertLimiter.take(userId, now()).ok) return { ok: false, code: 'PREVIEW_LIMIT' };
+      users.add(userId);
+      const p = (async () => {
+        try {
+          const r = await run();
+          if (!r.ok && CAD_DETERMINISTIC.includes(r.code)) {
+            negative.delete(key);
+            negative.set(key, { code: r.code, until: now() + L.negativeTtlMs });
+            while (negative.size > L.negativeEntries) negative.delete(negative.keys().next().value);
+          }
+          return r;
+        } finally {
+          users.delete(userId);
+          inflight.delete(key);
+        }
+      })();
+      inflight.set(key, p);
+      return p;
+    },
+    negativeSize: () => negative.size,
+  };
+}
+
+export const cadGuard = createCadGuard();
+
 /** Önizleme istek sınırı (kullanıcı başına; PDF / resim / CAD birlikte) */
 export const PREVIEW_RATE = Object.freeze({ limit: 120, windowMs: 5 * 60_000 });
 export const previewLimiter = createRateLimiter(PREVIEW_RATE);

@@ -38,9 +38,10 @@ jobs:
     env:
       SITE: https://localhost
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Betik denetimi (shellcheck)
         run: |
@@ -112,9 +113,10 @@ jobs:
           gate() { sudo env GITHUB_TOKEN="$GH" takip _ci "$@"; }
           [ "$(gate 1e117de backend)" = success ]
           [ "$(gate 7c76031 backend)" = failure ]
-          # CI'nin yazdığı commit: üst commit'in AYNI daldaki koşusu geçerli
-          [ "$(gate d75ccda backend)" = failure ]
-          [ "$(gate cf140a5 backend 'cf140a5^')" = success ]
+          # "CI:" konulu, github-actions yazarlı commit (karar 289): istisna yok — kendi backend koşusu olmadığı için, üst
+          # commit'in koşusu ne olursa olsun yayınlanmaz (bekle)
+          [ "$(gate d75ccda backend)" = pending ]
+          [ "$(gate cf140a5 backend 'cf140a5^')" = pending ]
           # 3.82.3 olayı: ebf17a83 yalnızca çalışma dalında CI'dan geçti, backend'de koşusu yok → yayın yok (bekle)
           [ "$(gate ebf17a83 backend 9b438bcd)" = pending ]
           # Aynı commit kendi dalında: CI başarılı ama deploy/ değişti ve sunucu kurulum testi başarısız → başarısız

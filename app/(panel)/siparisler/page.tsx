@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { verifyResult } from '@/server/security/signed-param.js';
+import { getEnv } from '@/server/env.js';
 import type { OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requirePermission, type CurrentUser } from '@/lib/auth/session';
@@ -610,7 +612,7 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
           <InternalTable user={user} rows={rows} empty={t('orders.internal.sections.none')} />
         </Section>
       )}
-      {!teamPanel && userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} />}
+      {!teamPanel && userCan(user, 'ORDER_CANCEL') && <RemovedOrders sp={sp} userId={user.id} />}
     </>
   );
 }
@@ -669,8 +671,11 @@ async function DwgDrawings({ user, rows }: { user: CurrentUser; rows: Row[] }) {
  * Silinen siparişler (yalnızca yönetici; karar 110): olağan listelerde görünmezler (sipariş kapsamı silinmişleri dışlar).
  * Burada yalnızca geri yükleme için listelenir — ayrı bir "geri dönüşüm kutusu" ekranı yoktur.
  */
-async function RemovedOrders({ sp }: { sp: SP }) {
+async function RemovedOrders({ sp: raw, userId }: { sp: SP; userId: string }) {
   const { t, m } = await getT();
+  // "silindi" bandı yalnızca silme işleminin imzasıyla (bu kullanıcı, 10 dakika) gösterilir — karar 289
+  const removedOk = verifyResult({ secret: getEnv().AUTH_SECRET, scope: 'removed', userId, values: [String(raw.silindi ?? ''), String(raw.iade ?? '')], sig: raw.sig, exp: raw.exp });
+  const sp = removedOk ? raw : { ...raw, silindi: undefined, iade: undefined };
   const rows = await db.order.findMany({
     where: { removedAt: { not: null } },
     orderBy: { removedAt: 'desc' },

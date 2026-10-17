@@ -92,6 +92,7 @@ export default {
     noFiles: 'En az bir sipariş dosyası yükleyin.',
     tooManyFiles: 'Tek seferde en fazla 20 dosya yükleyebilirsiniz.',
     oneGlass: 'Bir siparişte yalnızca bir cam tipi seçilebilir.',
+    rateLimit: 'Kısa sürede çok fazla sipariş oluşturuldu. Lütfen biraz sonra tekrar deneyin; acil bir durumsa bizimle iletişime geçin.',
     legacyDraft: 'Bu taslakta birden çok cam tipi var. Önce taslağı açıp bu sipariş için tutulacak camı seçin.',
     noGlass: 'En az bir cam kombinasyonu seçin.',
     glassGone: 'Seçilen camlardan biri artık katalogda yok; sayfayı yenileyip tekrar seçin.',

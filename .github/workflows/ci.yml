@@ -5,8 +5,12 @@ on:
     branches: ['**']
   pull_request:
 
+# En az yetki (karar 289): test işi depoyu YALNIZCA OKUR — npm paketleri ve uygulama kodu yazma yetkili jeton varken
+# çalışmaz. Üretilen dosyaların (kilit dosyası, migration, IP aralıkları) ve ekran görüntülerinin depoya geri yazılması
+# ayrı "geri-yaz" işindedir: o iş npm / uygulama kodu çalıştırmaz, yalnızca izin verilen yolları kopyalar ve yalnızca
+# çalışma dallarında yazar — izlenen dala (backend) ve main'e CI hiçbir şey geri yazmaz.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,6 +20,10 @@ jobs:
   build-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      generated: ${{ steps.generated.outputs.generated }}
     services:
       postgres:
         image: postgres:17
@@ -44,14 +52,16 @@ jobs:
       # sürümü; aşağıda önbellekli derlenip başlatılır
       CAD_SERVICE_URL: http://127.0.0.1:3311
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Antivirüs (ClamAV) başlat — testler çalışırken ısınır
         run: |
           docker build -q -t takip-clamav deploy/clamav
           docker run -d --name clamav -p 3310:3310 takip-clamav
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -77,8 +87,16 @@ jobs:
         run: |
           # package.json'a yeni paket eklendiyse npm ci kilit dosyası uyuşmazlığıyla durur; o zaman npm install
           # kilit dosyasını günceller ve aşağıdaki adım onu depoya geri yazar.
+          # İzlenen dalda (backend) ve main'de kilit dosyası depodakiyle AYNEN kullanılır (geri yazma yok — karar 289).
           if [ -f package-lock.json ] && npm ci --no-audit --no-fund; then echo "npm ci tamam"
+          elif [ "$GITHUB_REF_NAME" = backend ] || [ "$GITHUB_REF_NAME" = main ]; then
+            echo "::error title=Kilit dosyası uyumsuz::package-lock.json package.json ile uyuşmuyor. Çalışma dalında CI'nin ürettiği kilit dosyasıyla birleştirin."; exit 1
           else scripts/ci-step.sh "npm install" npm install --no-audit --no-fund; fi
+
+      - name: Bağımlılık güvenlik taraması (npm audit)
+        # Üretim bağımlılıklarında KRİTİK açık → kırmızı; yüksek / geliştirme bağımlılıkları → uyarı. Kayıt sunucusuna
+        # ulaşılamazsa uyarı (tarama yapılamadı) — başarılı sayılmaz, sonuç uyarı olarak görünür.
+        run: node scripts/ci-audit.mjs
 
       - name: Ortam değişkenleri geçerli mi
         run: scripts/ci-step.sh "env:check" npm run env:check
@@ -100,7 +118,7 @@ jobs:
         run: scripts/ci-step.sh "prisma migrate deploy" npx prisma migrate deploy
 
       - name: Şema değiştiyse yeni migration üret (yalnızca çalışma dallarında)
-        if: github.ref != 'refs/heads/main'
+        if: github.ref_name != 'main' && github.ref_name != 'backend'
         run: |
           npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script > /tmp/diff.sql
           if grep -qvE '^\s*(--.*)?$' /tmp/diff.sql; then
@@ -113,16 +131,27 @@ jobs:
       - name: IP aralıkları (giriş sayfası dili; 30 günden eskiyse yenile)
         run: node scripts/geo/update-ranges.mjs --if-older-than=30 || echo "::warning title=IP aralıkları::RIPE verisi indirilemedi; mevcut veriyle devam ediliyor"
 
-      - name: Üretilen dosyaları depoya geri yaz
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+      - name: Üretilen dosyaları ayır (geri yazma ayrı işte)
+        id: generated
+        if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'backend'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898279+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json prisma/migrations server/geo/ranges.js
-          if ! git diff --cached --quiet; then
-            git commit -m "CI: package-lock.json, migration ve IP aralığı dosyaları"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
+          rm -rf "$RUNNER_TEMP/uretilen" && mkdir -p "$RUNNER_TEMP/uretilen"
+          git add -N prisma/migrations 2>/dev/null || true
+          list=$(git diff --name-only -- package-lock.json prisma/migrations server/geo/ranges.js)
+          [ -n "$list" ] || { echo "generated=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          printf '%s\n' "$list" | while IFS= read -r f; do
+            install -D -m 0644 "$f" "$RUNNER_TEMP/uretilen/$f"
+          done
+          printf '%s\n' "$list" > "$RUNNER_TEMP/uretilen/.liste"
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.generated.outputs.generated == 'true'
+        with:
+          name: uretilen-dosyalar
+          path: ${{ runner.temp }}/uretilen
+          include-hidden-files: true
+          retention-days: 1
 
       - name: Migration ile şema uyumlu mu
         run: scripts/ci-step.sh "migration drift" npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
@@ -173,7 +202,7 @@ jobs:
       # Örnek DWG'ler LibreDWG'nin kendi test dosyalarıdır (müşteri dosyası değil); uçtan uca test gerçek DWG'yi önizler.
       - name: GNU LibreDWG (önbellek)
         id: libredwg
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.libredwg
           key: libredwg-0.14-62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275-${{ runner.os }}-v1
@@ -255,16 +284,12 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3002/login && break; sleep 1; done
           scripts/ci-step.sh "sunucu kipi e2e" bash -c 'npx playwright test e2e/sunucu-kipi.spec.ts 2>&1 | tee sunucu-kipi-e2e.log; exit ${PIPESTATUS[0]}' || { tail -50 server-mode.log; exit 1; }
 
-      - name: Ekran görüntülerini ci-screenshots dalına yaz
-        if: always() && github.event_name == 'push'
-        run: |
-          [ -d .screens ] || exit 0
-          cd .screens
-          git init -q -b ci-screenshots
-          printf 'Kaynak commit: %s\nDal: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > README.txt
-          git add -A
-          git -c user.name="github-actions[bot]" -c user.email="41898279+github-actions[bot]@users.noreply.github.com" commit -qm "Ekran görüntüleri: ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-screenshots
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && github.event_name == 'push' && hashFiles('.screens/**') != ''
+        with:
+          name: ekran-goruntuleri
+          path: .screens
+          retention-days: 1
 
       - name: Test hata bağlamı (hata varsa)
         if: failure()
@@ -285,7 +310,7 @@ jobs:
       - name: Docker imajı derlenebiliyor mu
         run: scripts/ci-step.sh "docker build" docker build --target runner -t takip:ci .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: e2e-rapor
@@ -293,3 +318,66 @@ jobs:
             test-results/
             server.log
           retention-days: 7
+
+  # Geri yazma (karar 289): yazma yetkili jeton YALNIZCA bu iştedir. npm kurulumu, derleme, test ya da depodan gelen kod
+  # çalıştırılmaz; test işinin ürettiği dosyalar yalnızca izin verilen yollara (package-lock.json, server/geo/ranges.js,
+  # prisma/migrations/<zaman>_ci/migration.sql) kopyalanır. İzlenen dala (backend) ve main'e hiçbir şey yazılmaz; yalnızca
+  # ekran görüntüleri ayrı ci-screenshots dalına (her dalın koşusunda) yazılır.
+  geri-yaz:
+    needs: build-test
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.build-test.outputs.generated == 'true'
+        with:
+          name: uretilen-dosyalar
+          path: ${{ runner.temp }}/uretilen
+
+      - name: Üretilen dosyaları depoya geri yaz (yalnızca izin verilen yollar, yalnızca çalışma dallarında)
+        if: needs.build-test.outputs.generated == 'true' && github.ref_name != 'main' && github.ref_name != 'backend'
+        env:
+          DAL: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/uretilen"
+          while IFS= read -r f; do
+            if ! [[ $f == package-lock.json || $f == server/geo/ranges.js || $f =~ ^prisma/migrations/[0-9]{14}_ci/migration\.sql$ ]]; then
+              echo "::error title=İzin verilmeyen yol::$f"; exit 1
+            fi
+            [ -f "$src/$f" ] && [ ! -L "$src/$f" ] || { echo "::error title=Dosya yok::$f"; exit 1; }
+            install -D -m 0644 "$src/$f" "$f"
+          done < "$src/.liste"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898279+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json prisma/migrations server/geo/ranges.js
+          if ! git diff --cached --quiet; then
+            git commit -m "CI: package-lock.json, migration ve IP aralığı dosyaları"
+            git push origin "HEAD:refs/heads/${DAL}"
+          fi
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        id: ekran
+        continue-on-error: true
+        with:
+          name: ekran-goruntuleri
+          path: ${{ runner.temp }}/ekran
+
+      - name: Ekran görüntülerini ci-screenshots dalına yaz
+        if: steps.ekran.outcome == 'success'
+        env:
+          DAL: ${{ github.ref_name }}
+        run: |
+          cd "$RUNNER_TEMP/ekran"
+          git init -q -b ci-screenshots
+          printf 'Kaynak commit: %s\nDal: %s\n' "$GITHUB_SHA" "$DAL" > README.txt
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898279+github-actions[bot]@users.noreply.github.com" commit -qm "Ekran görüntüleri: ${GITHUB_SHA::7}"
+          git -c http.https://github.com/.extraheader="$(git -C "$GITHUB_WORKSPACE" config --get http.https://github.com/.extraheader)" push -qf "https://github.com/${{ github.repository }}.git" ci-screenshots

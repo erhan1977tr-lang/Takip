@@ -70,6 +70,8 @@ DEMO_TEST_PATHS=(.devcontainer scripts/demo server/demo next.config.mjs package.
 VERBOSE=${VERBOSE:-0}
 
 mkdir -p "$STATE" "$LOGS"
+# Günlükler yalnızca root ve grubuna açıktır (karar 289; önceden 0755)
+if [ "$(id -u)" = 0 ]; then chmod 0750 "$LOGS" 2>/dev/null || true; fi
 # Yedek klasörü yalnızca root'a açıktır (0700; kurulum da böyle açar). Yoksa bu izinle oluşturulur; var olan klasörün izni değiştirilmez.
 [ -d "$BACKUPS" ] || (umask 077 && mkdir -p "$BACKUPS")
 
@@ -161,54 +163,32 @@ run_state() {
 # ci_state SHA [DAL] — izlenen daldaki "CI" (ci.yml) koşusunun sonucu: success | failure | pending | none
 ci_state() { run_state "$1" "$CI_WORKFLOW_PATH" "${2:-$(branch)}"; }
 
-# CI'nin kendisinin yazdığı commit'ler (kilit dosyası, migration) CI başlatmaz; onların içeriğini bir önceki commit'in
-# — AYNI DALDAKİ — CI koşusu üretip test ettiği için o koşunun sonucu geçerlidir.
+# ci_gate SHA DAL — commit'in KENDİ backend koşusu (karar 289). Yazar adı / e-postası ve commit konusu taklit edilebildiği
+# için hiçbir commit'e istisna yoktur ("CI: …" konulu, github-actions yazarlı commit'ler dahil): koşusu olmayan commit
+# yayınlanmaz. CI, izlenen dala hiçbir şey geri yazmaz (ci.yml); oluşturulan dosyalar çalışma dallarında üretilir.
 ci_gate() { # ci_gate SHA DAL
-  local sha=$1 b=$2 s info email subject parents
-  for _ in 1 2 3 4 5; do
-    s=$(ci_state "$sha" "$b")
-    case $s in success | pending | failure) echo "$s"; return ;; esac
-    info=$(git -C "$SRC" log -1 --format='%ae%x09%s%x09%P' "$sha" 2>/dev/null) || { echo pending; return; }
-    email=${info%%$'\t'*}; info=${info#*$'\t'}; subject=${info%%$'\t'*}; parents=${info#*$'\t'}
-    if [[ $email == *github-actions* && $subject == CI:* && -n $parents ]]; then
-      sha=${parents%% *}
-      continue
-    fi
-    echo pending
-    return
-  done
-  echo pending
+  local s
+  s=$(ci_state "$1" "$2")
+  case $s in success | failure) echo "$s" ;; *) echo pending ;; esac
 }
 
 # Yola bağlı iş akışları (sunucu kurulum testi: deploy-test.yml · demo ortamı: demo-env.yml) yalnızca kendi yolları değişince
 # çalışır. Yayın onları şu durumda bekler:
 #  · yayındaki commit (TABAN) bilinir ve TABAN..SHA aralığında bu yollar değiştiyse: değişikliği içeren EN YENİ commit
 #    (L) ile SHA arasındaki commit'lerden, izlenen dalda o iş akışının koşusu olan EN YENİSİ başarılı olmalı (koşu yoksa
-#    henüz oluşmamıştır → bekle); bu yollar değişmediyse test gerekmez. CI'nin kendi yazdığı commit'ler ("CI: …", GitHub
-#    Actions) iş akışı başlatmaz: onların değişikliği L sayılmaz (içeriğini üst commit'in koşusu üretmiş ve sınamıştır);
+#    henüz oluşmamıştır → bekle); bu yollar değişmediyse test gerekmez. Hiçbir commit'e yazar / konu istisnası yoktur
+#    (karar 289): "CI: …" konulu commit'in değişikliği de L sayılır;
 #  · TABAN bilinmiyorsa (ilk kurulum): SHA ve önceki 20 commit'ten o iş akışının koşusu olan en yenisi başarılı olmalı.
-is_bot_commit() { # is_bot_commit SHA
-  local info email subject
-  info=$(git -C "$SRC" log -1 --format='%ae%x09%s' "$1" 2>/dev/null) || return 1
-  email=${info%%$'\t'*}; subject=${info#*$'\t'}
-  [[ $email == *github-actions* && $subject == CI:* ]]
-}
 paths_gate() { # paths_gate SHA DAL TABAN İŞ_AKIŞI_YOLU YOL…
   local sha=$1 b=$2 base=$3 wf=$4 last='' c s list changed; shift 4
   if [ -n "$base" ] && git -C "$SRC" merge-base --is-ancestor "$base" "$sha" 2>/dev/null; then
     [ "$base" = "$sha" ] && { echo success; return; }
     if git -C "$SRC" diff --quiet "$base" "$sha" -- "$@" 2>/dev/null; then echo success; return; fi
     changed=$(git -C "$SRC" log --first-parent --format=%H "$base..$sha" -- "$@" 2>/dev/null) || { echo pending; return; }
-    for c in $changed; do
-      if ! is_bot_commit "$c"; then last=$c; break; fi
-    done
+    last=${changed%%$'\n'*}
     list=$(git -C "$SRC" rev-list --first-parent "$base..$sha" 2>/dev/null) || { echo pending; return; }
-    if [ -z "$last" ]; then
-      # Değişiklik yalnızca CI'nin kendi commit'lerinden geldiyse yeni koşu gerekmez; birleştirme dışı bir yoldan geldiyse
-      # (birinci üst zincirde değişiklik bulunamadı): en temkinli seçim — SHA'nın kendisi
-      if [ -n "$changed" ]; then echo success; return; fi
-      last=$sha
-    fi
+    # Birinci üst zincirde değişiklik bulunamadıysa (birleştirme dışı bir yol): en temkinli seçim — SHA'nın kendisi
+    [ -n "$last" ] || last=$sha
   else
     list=$(git -C "$SRC" rev-list --first-parent -n 21 "$sha" 2>/dev/null) || { echo pending; return; }
   fi
@@ -2270,7 +2250,12 @@ main() {
     rollback-modu | geri-donus-kipi) cmd_rollback_mode "$@" ;;
     log | logs) compose logs --no-log-prefix --tail="${1:-200}" app ;;
     dal)
-      if [ -n "${1:-}" ]; then echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."; else branch; fi
+      # İzlenen dalı değiştirmek yalnızca root'a açıktır (karar 289): dal koruması yalnızca backend'dedir
+      if [ -n "${1:-}" ]; then
+        require_root dal || return 1
+        [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ && $1 != *..* ]] || { say "✘ Geçersiz dal adı."; return 1; }
+        echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."
+      else branch; fi
       ;;
     *)
       sed -n '2,25p' "$TAKIP_REEXEC" | sed 's/^# \{0,1\}//'

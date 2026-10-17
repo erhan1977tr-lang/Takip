@@ -94,3 +94,24 @@ export const PREVIEW_STATUS = Object.freeze({
 export function previewCode(code) {
   return typeof code === 'string' && Object.hasOwn(PREVIEW_STATUS, code) ? code : 'INVALID';
 }
+
+/** Tarayıcıda açılabilecek uzantılar → beklenen içerik (karar 289) */
+const INLINE_EXT = Object.freeze({ pdf: 'pdf', png: 'png', jpg: 'jpeg', jpeg: 'jpeg' });
+/**
+ * "?ac=1" (tarayıcıda aç) için içerik türü: uzantı PDF / PNG / JPG ise ve dosyanın İLK baytları bu türle başlıyorsa MIME,
+ * aksi hâlde null (dosya indirilir). Karışık (ör. başında HTML olan, ilerisinde %PDF- geçen) dosya satır içi sunulmaz.
+ * @param {string} name @param {Uint8Array} head
+ */
+export function inlineMime(name, head) {
+  const ext = previewExt(String(name ?? ''));
+  const want = Object.hasOwn(INLINE_EXT, ext) ? INLINE_EXT[ext] : null;
+  if (!want) return null;
+  return sniffContent(head) === want ? CONTENT[want].mime : null;
+}
+
+/** Bütün dosya yanıtlarının ortak güvenlik başlıkları (indirme, tarayıcıda açma, önizleme) — karar 289 */
+export const FILE_SECURITY_HEADERS = Object.freeze({
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+  'Cross-Origin-Resource-Policy': 'same-origin',
+});

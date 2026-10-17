@@ -1,9 +1,9 @@
 import { passwordIssue } from '../../server/auth/password-policy.js';
-import { hashPassword, verifyPassword } from '../../server/auth/password-hash.js';
+import { hashPassword, needsRehash, verifyPassword } from '../../server/auth/password-hash.js';
 
 // scrypt ile şifre özeti — tek uygulama server/auth/password-hash.js (biçim: scrypt$N$r$p$salt$hash). Sunucu komutu
 // (yönetici hesap kurtarma) da aynısını kullanır.
-export { hashPassword, verifyPassword };
+export { hashPassword, needsRehash, verifyPassword };
 
 // Kullanıcı yokken de aynı süreyi harcamak için (e-posta var mı yok mu anlaşılmasın).
 let dummyHash: Promise<string> | null = null;

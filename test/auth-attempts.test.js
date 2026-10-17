@@ -561,7 +561,7 @@ test('yapı: giriş ve kod ekranı yalnızca runAttempt\'i kullanır; "say → d
     assert.ok(i > call && i < end, `giriş: ${s} doğrulama işlevinin içinde`);
     assert.equal(login.indexOf(s, i + 1), -1, `giriş: ${s} bir kez`);
   }
-  assert.ok(login.indexOf('createSession(user.id)') > end && login.indexOf('if (attempt.locked)') > end);
+  assert.ok(login.indexOf('createSession(user.id') > end && login.indexOf('if (attempt.locked)') > end);
   // Kod ekranı: davet doğrulaması yalnızca runAttempt içinden; davet kaydı burada yazılmaz
   assert.ok(setup.includes("await runAttempt('CODE', email, ip, () => verifyInviteCode(db, { email, code, secret: authSecret() }));"));
   assert.equal((setup.match(/verifyInviteCode\(/g) ?? []).length, 1);

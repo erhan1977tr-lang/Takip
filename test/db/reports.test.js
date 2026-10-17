@@ -290,10 +290,14 @@ dbTest('raporlar: Excel ve Telegram panelle aynı sayıları verir; READ ONLY i�
     assert.ok(buf.length > 1000);
     // Telegram: aynı servis, READ ONLY işlem (readOnly) — özet değerleri panelin kartları
     const TUR = { orders: 'siparis', glass: 'cam', profile: 'profil_stok', loading: 'yukleme', finance: 'finans' };
-    const bot = await runTool(ro, 'rapor', JSON.stringify({ tur: TUR[kind], ay: '2026-10' }), { tz: TZ, now: NOW });
+    // Maliyet / kâr Boss açıkça sorunca gelir (karar 289): bayrak + soru konusu → panelle aynı özet
+    const bot = await runTool(ro, 'rapor', JSON.stringify({ tur: TUR[kind], ay: '2026-10', maliyet: true }), { tz: TZ, now: NOW, topics: new Set(['maliyet']) });
     assert.equal(bot.hata, undefined, kind);
     assert.deepEqual(bot.aralik, panel.range);
     assert.deepEqual(bot.ozet, reportForAi(panel).ozet, kind);
+    // Sorulmadıysa yalnızca maliyet / kâr kartları düşer; diğer kartlar panelle aynı
+    const plain = await runTool(ro, 'rapor', JSON.stringify({ tur: TUR[kind], ay: '2026-10' }), { tz: TZ, now: NOW });
+    assert.deepEqual(plain.ozet, reportForAi(panel).ozet.filter((c) => !Object.keys(c).includes('profit')), kind);
   }
   // Telegram: "bu ay" (Romanya saatiyle) ve hata / belirsizlik kodları
   const thisMonth = await runTool(ro, 'rapor', JSON.stringify({ tur: 'cam', donem: 'bu_ay' }), { tz: TZ, now: new Date('2026-10-31T22:30:00Z') }); // Bükreş'te 1 Kasım 00:30

@@ -29,3 +29,30 @@ export function verifyParams(secret, scope, values, sig) {
   const got = Buffer.from(sig);
   return want.length === got.length && crypto.timingSafeEqual(want, got);
 }
+
+/**
+ * Kullanıcıya ve süreye bağlı sonuç imzası (karar 289; güvenlik denetimi 3.93.2 Y-5): imza yalnızca işlemi yapan
+ * kullanıcıya ve kısa bir süre için geçerlidir — imzalı bir adres başka bir kullanıcıya gönderilip "sahte uyarı" olarak
+ * gösterilemez, eski bir adres sonsuza dek geçerli kalmaz.
+ */
+export const RESULT_TTL_MS = 10 * 60_000;
+
+/**
+ * @param {{ secret: string, scope: string, userId: string, values: string[], now?: number, ttlMs?: number }} o
+ * @returns {{ sig: string, exp: string }}
+ */
+export function signResult({ secret, scope, userId, values, now = Date.now(), ttlMs = RESULT_TTL_MS }) {
+  if (!userId) throw new Error('signResult: kullanıcı yok');
+  const exp = String(Math.floor((now + ttlMs) / 1000));
+  return { sig: signParams(secret, `${scope}\nu:${userId}\nexp:${exp}`, values), exp };
+}
+
+/**
+ * @param {{ secret: string, scope: string, userId: string | null | undefined, values: string[], sig: unknown, exp: unknown, now?: number, ttlMs?: number }} o
+ */
+export function verifyResult({ secret, scope, userId, values, sig, exp, now = Date.now(), ttlMs = RESULT_TTL_MS }) {
+  if (!userId || typeof exp !== 'string' || !/^\d{9,11}$/.test(exp)) return false;
+  const at = Number(exp) * 1000;
+  if (at < now || at > now + ttlMs + 60_000) return false;
+  return verifyParams(secret, `${scope}\nu:${userId}\nexp:${exp}`, values, sig);
+}

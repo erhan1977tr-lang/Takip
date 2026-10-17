@@ -112,7 +112,8 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
       const code = avErrorCode(r.error);
       // Dosya diskte yoksa bir daha denenmez; başka hata (clamd kapalı) → dur, sonra yeniden dene
       if (code === 'file-not-found') {
-        await db[it.model].update({ where: { id: it.id }, data: { scanStatus: 'SKIPPED', scannedAt: new Date() } });
+        // Koşullu (karar 289; NEW-GL-15): eşzamanlı başka bir tarama sonucu ezilmez
+        await db[it.model].updateMany({ where: { id: it.id, scanStatus: 'PENDING' }, data: { scanStatus: 'SKIPPED', scannedAt: new Date() } });
         out.missing++;
         continue;
       }
@@ -122,7 +123,8 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
     }
     out.scanned++;
     if (r.status === 'clean') {
-      await db[it.model].update({ where: { id: it.id }, data: { scanStatus: 'CLEAN', scannedAt: new Date() } });
+      // "Temiz" yalnızca hâlâ bekleyen dosyaya yazılır — eşzamanlı taramanın "virüslü" sonucunu asla ezmez
+      await db[it.model].updateMany({ where: { id: it.id, scanStatus: 'PENDING' }, data: { scanStatus: 'CLEAN', scannedAt: new Date() } });
       out.clean++;
       continue;
     }
@@ -131,7 +133,9 @@ export async function scanPending(db, settings, { limit = 25, scan = scanFile, l
     out.infected++;
     await quarantine(it.key);
     await db.$transaction(async (tx) => {
-      await tx[it.model].update({ where: { id: it.id }, data: { scanStatus: 'INFECTED', scanSignature: signature, scannedAt: new Date() } });
+      // "Virüslü" her sonucu ezer (güvenli taraf) ama aynı dosya iki kez kaydedilmez / bildirilmez
+      const hit = await tx[it.model].updateMany({ where: { id: it.id, scanStatus: { not: 'INFECTED' } }, data: { scanStatus: 'INFECTED', scanSignature: signature, scannedAt: new Date() } });
+      if (!hit.count) return;
       await writeAudit(tx, {
         action: 'FILE_INFECTED', entityType: ENTITY[it.model], entityId: it.id,
         details: { orderId: it.orderId, name: it.name, signature, when: 'arka plan taraması' },

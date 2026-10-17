@@ -3,6 +3,7 @@
 // dolu açılır (YONETIMDE); müşteri teklifi ancak yönetici "Müşteriye gönder" deyince görür.
 // Paket B (karar 229): firmaya bağlı etkin fiyat listesi varsa ve her ürünün fiyatı belliyse sipariş DOĞRUDAN ONAYLANDI
 // adımında açılır (yönetici teklifi ve müşteri onayı yok; fiyatların kopyası gönderilmiş teklif; FGO açıksa proforma).
+import { assertOrderRate } from '../orders/create-rate.js';
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
@@ -63,6 +64,8 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         if (prev && prev.order.customerId === firm.id) return { id: prev.order.id, orderNo: prev.order.orderNo, customerOrderNo: prev.order.customerOrderNo, bumped: false, shortage: 0, direct: prev.direct, duplicate: true };
         if (prev) throw new WorkflowError('NOT_ALLOWED');
       }
+      // Hız sınırı (karar 289): cam ve profil siparişleri birlikte, firma kilidi altında
+      await assertOrderRate(tx, { firmId: firm.id, userId: actor.id, now: at ?? new Date() });
       const type = await tx.orderType.findUnique({ where: { code: PROFILE_TYPE } });
       if (!type?.active) throw new WorkflowError('TYPE_INACTIVE');
       const no = await pickNumber(tx, { customerId: firm.id, orderTypeCode: PROFILE_TYPE, requestedNo, suggestedNo, format: type.numberFormat, code: firm.prefix });
