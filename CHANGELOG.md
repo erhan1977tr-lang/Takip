@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.2 — 17.10.2026
+
+- Sürüm sırası düzeltmesi (CI sürüm kuralı; önceki gönderim aynı sürümü taşıyordu). Davranış değişmedi.
+
 ## 3.97.1 — 17.10.2026
 
 - Aşama 2B iç düzeltmesi: tedarikçinin mevcut e-posta adresi yeni adres listesine birincil adres olarak taşındı (migration;
