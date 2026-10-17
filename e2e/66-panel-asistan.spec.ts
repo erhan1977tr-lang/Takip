@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Request } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, as } from './helpers';
 
 // Panel AI asistanı (3.95.0, karar 290):
 //  - yalnızca yönetici sağ altta düğmeyi görür; satış ve müşteri görmez; sunucu işlemi doğrudan çağrılsa da FORBIDDEN döner
@@ -18,6 +18,11 @@ const bodies: Body[] = [];
 let server: { close: () => Promise<void> } | null = null;
 let firm = { prefix: '', email: '' as string | null, name: '' };
 let order = { id: '', orderNo: '' };
+// Kendi satışçısı (başka testlerin giriş sayaçlarından bağımsız)
+const SALES = `asistan-satis-${Date.now().toString(36)}@e2e.test`;
+const SALES_PW = 'Satis2026asistan';
+const CUST_USER = `asistan-musteri-${Date.now().toString(36)}@e2e.test`;
+const CUST_USER_PW = 'Musteri2026asistan';
 
 async function prisma() {
   const { PrismaClient } = await import('@prisma/client');
@@ -68,6 +73,10 @@ test.beforeAll(async () => {
   firm = { prefix: user.customer!.prefix ?? '', email: user.customer!.email, name: user.customer!.name };
   const o = await db.order.findFirstOrThrow({ where: { customerId: user.customerId!, removedAt: null }, orderBy: { createdAt: 'asc' } });
   order = { id: o.id, orderNo: o.orderNo };
+  const { hashPassword } = await import('../server/auth/password-hash.js');
+  const factory = await db.customer.findFirstOrThrow({ where: { type: 'FACTORY' } });
+  await db.user.create({ data: { email: SALES, name: 'Asistan Satış', type: 'INTERNAL', appRole: 'SATIS', customerId: factory.id, passwordHash: await hashPassword(SALES_PW) } });
+  await db.user.create({ data: { email: CUST_USER, name: 'Asistan Müşteri', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: user.customerId!, passwordHash: await hashPassword(CUST_USER_PW) } });
   const { createPanelServer } = await import('../server/assistant/panel.js');
   // Gerçek kapı + gerçek salt okunur araçlar (test veritabanı); yalnızca model sahte. Uygulama ASSISTANT_PANEL_URL ile buraya gelir.
   const s = createPanelServer({ db, env: { OPENAI_API_KEY: 'sk-e2e_' + 'x'.repeat(30), AUTH_SECRET: process.env.AUTH_SECRET, APP_TIMEZONE: 'Europe/Bucharest' }, fetchImpl: fakeOpenAi(), host: '127.0.0.1' });
@@ -167,7 +176,7 @@ test('yönetici: sipariş sayfasında bağlam veritabanından; telefon genişli�
 test('satış ve müşteri: düğme yok; işlemi doğrudan çağırmak FORBIDDEN; başka köken işlenmez; modele istek gitmez', async ({ browser }) => {
   expect(captured).not.toBeNull();
   const n = bodies.length;
-  for (const [email, pw] of [[SALES, TEAM_PW], [CUSTOMER, CUST_PW]]) {
+  for (const [email, pw] of [[SALES, SALES_PW], [CUST_USER, CUST_USER_PW]]) {
     const page = await as(browser, email, pw);
     await page.goto('/siparisler');
     await expect(page.locator('[data-assistant-open]')).toHaveCount(0);
