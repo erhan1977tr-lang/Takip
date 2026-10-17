@@ -63,6 +63,10 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
   return no;
 }
 
+/** Form anahtarı biçimi ve geçerlilik süresi (karar 288 — D2) */
+const REQUEST_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const REQUEST_KEY_TTL_MS = 24 * 3_600_000;
+
 /**
  * @param {import('@prisma/client').PrismaClient} db
  * @param {object} p
@@ -76,13 +80,10 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
  * @param {string | null} [p.note]    "Ek bilgi": müşterinin görebildiği ilk not
  * @param {string | null} [p.draftId] taslaktan gönderiliyorsa: taslağın dosyaları siparişe geçer, taslak silinir
  * @param {string[]} [p.dropDraftFileIds]  taslakta olup müşterinin çıkardığı dosyalar (siparişe geçmez)
- * @returns {Promise<{ id: string, orderNo: string, customerOrderNo: string, bumped: boolean, dropped: { storageKey: string }[] }>}
+ * @param {string | null} [p.requestKey]  tek kullanımlık form anahtarı (karar 288 — D2)
+ * @returns {Promise<{ id: string, orderNo: string, customerOrderNo: string, bumped: boolean, dropped: { storageKey: string }[], duplicate?: boolean }>}
  *   dropped: işlemden sonra diskten silinecek dosyalar
  */
-/** Form anahtarı biçimi ve geçerlilik süresi (karar 288 — D2) */
-const REQUEST_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
-const REQUEST_KEY_TTL_MS = 24 * 3_600_000;
-
 export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [], requestKey = null }) {
   // Tek kullanımlık form anahtarı (3.93.0, karar 288 — D2): aynı form iki kez gönderilirse (çift tıklama / ağ tekrarı)
   // ikinci sipariş açılmaz, ilk sipariş döner. Şema değişmeden: anahtar sipariş oluşturma denetim kaydına yazılır ve firma
