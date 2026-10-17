@@ -86,7 +86,10 @@ test('yönetici: FGO ve elle kaynaklar ayrı; elle ödeme kaydı belge kesmez; a
   await expect(rows.first()).toContainText('617,25 RON');
   await expect(rows.first()).toContainText('Avans faturası kesilmedi');
   await expect(card.locator('[data-fin=manual]')).toContainText('617,25 RON');
-  await expect(card.locator('[data-fin=required]')).toContainText('617,25 RON');
+  // Avans proforma toplamını aşamaz (DÜZELTME 10 M3, 3.98.x): proforma 605,00 RON → avanslanacak 605,00 RON; fazla 12,25 RON
+  // belge doğurmaz, "fazla ödeme — müşteri alacağı" olarak görünür
+  await expect(card.locator('[data-fin=required]')).toContainText('605,00 RON');
+  await expect(card.locator('[data-finance-review="OVERPAID"] [data-overpaid]')).toContainText('12,25 RON');
   await expect(card.locator('[data-fin=match]')).toHaveAttribute('data-match', 'MANUAL_ONLY');
   // Finans / FGO kartı: avans düğmesi elle kayda dayanır (FGO kapalı: istek kuyruğa girmez)
   await expect(page.locator('#finans #avans-durumu')).toContainText('617,25');
