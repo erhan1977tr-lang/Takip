@@ -37,7 +37,7 @@ import { compensableLines, compensationBlock } from '@/server/orders/compensatio
 import { CompensationForm } from './CompensationForm';
 import { RemoveOrder } from './RemoveOrder';
 import { removalPreview } from '@/server/orders/removal.js';
-import { priceLock } from '@/server/orders/financial-lock.js';
+import { cancelLock, priceLock } from '@/server/orders/financial-lock.js';
 import { loadPriceChanges, type PriceChangeEntry } from '@/lib/price-history';
 import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
@@ -187,6 +187,8 @@ export default async function OrderPage({
   // Müşterideki teklifin fiyatı (yönetici — Paket 4): mali kilit (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği,
   // onaylı yükleme) varsa "Teklifi güncelle" yerine gerekçe gösterilir. Asıl denetim işlemde (update_offer), kilit altında.
   const lockedPrice = !editable && !!offer && can('update_offer') ? await priceLock(db, order.id) : [];
+  // İptal kilidi (karar 288 — Y1): mali / yükleme kaydı olan sipariş iptal edilmez; nedenler formun yerine gösterilir
+  const lockedCancel = can('cancel') ? await cancelLock(db, order.id) : [];
   const updating = !editable && !!offer && can('update_offer') && lockedPrice.length === 0 && sp.teklif === 'guncelle';
   const glasses = editable || updating
     ? await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }, { colorTr: 'asc' }] })
@@ -431,7 +433,7 @@ export default async function OrderPage({
       */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
-      {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} />}
+      {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} cancelReasons={lockedCancel} />}
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
       {drawerView && <DrawingReview order={order} user={user} can={can} undo={undo} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
@@ -552,7 +554,7 @@ export default async function OrderPage({
       {!drawerView && <Drawings order={order} user={user} can={can} undo={undo} t={t} />}
       {canComp && <Decisions order={order} user={user} comps={comps} createHref={compIds.size > 0 ? compHref('sec') : null} blockedRef={compBlock.blocked ? compBlock.ref : null} error={compForm ? null : compError} t={t} locale={locale} />}
       {/* Finans / FGO (yönetici): cam proforma → avans faturası → fatura; Muhasebe → Cam Tahsilat ile aynı kayıtlar */}
-      {userCan(user, 'OFFER_SEND') && <GlassFinance order={order} t={t} sp={sp} />}
+      {userCan(user, 'ACCOUNTING_MANAGE') && <GlassFinance order={order} t={t} sp={sp} />}
       {/* Ödemeler ve avans (Paket 10): FGO tahsilatı ve elle kayıtlar ayrı, belirsiz FGO belgesi kararı — yalnızca yönetici */}
       {userCan(user, 'ACCOUNTING_MANAGE') && (
         <OrderPayments
@@ -677,7 +679,7 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
   );
 }
 
-function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; t: T }) {
+function InternalActions({ order, user, can, acts, t, cancelReasons = [] }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; t: T; cancelReasons?: { code: string; ref?: string | null; kind?: string | null }[] }) {
   const hidden = <input type="hidden" name="id" value={order.id} />;
   const offerStatus = currentOffer(order)?.status ?? null;
   const steps = acts.filter(isStep).map((a) => t(`order.steps.${a}`));
@@ -733,11 +735,17 @@ function InternalActions({ order, user, can, acts, t }: { order: OrderDetail; us
           {can('cancel') && (
             <details style={{ marginTop: 14 }}>
               <summary className="small muted">{t('order.cancel.summary')}</summary>
-              <form action={cancelAction} className="row" style={{ marginTop: 8 }}>
-                {hidden}
-                <input name="note" type="text" required placeholder={t('order.cancel.reason')} style={{ flex: 1 }} />
-                <ConfirmButton danger solid message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
-              </form>
+              {cancelReasons.length > 0 ? (
+                <div className="alert alert-warn" data-cancel-locked style={{ marginTop: 8, marginBottom: 0 }}>
+                  <b>{t('order.cancel.locked')}</b> {cancelReasons.map((r) => lockReasonText(t, r)).join(' · ')}
+                </div>
+              ) : (
+                <form action={cancelAction} className="row" style={{ marginTop: 8 }}>
+                  {hidden}
+                  <input name="note" type="text" required placeholder={t('order.cancel.reason')} style={{ flex: 1 }} />
+                  <ConfirmButton danger solid message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
+                </form>
+              )}
             </details>
           )}
         </div>

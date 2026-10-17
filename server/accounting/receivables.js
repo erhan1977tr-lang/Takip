@@ -65,9 +65,14 @@ export function receivables(docs) {
     const invoice = list.find((d) => d.kind === 'INVOICE');
     // Sipariş başına birden çok avans faturası olabilir (karar 104): proformanın faturaya dönen kısmı hepsinin toplamıdır
     const advanced = round2(list.filter((d) => d.kind === 'ADVANCE').reduce((s, d) => s + Number(d.total ?? 0), 0));
+    // İptal edilmiş siparişin tahsilatsız, avanssız proforması borç değildir (3.93.0, karar 288 — profil iptali teslimden önce
+    // ve tahsilat yokken olur; FGO belgesi silinmez / değişmez, yalnızca alacak toplamına girmez)
+    const cancelled = list.some((d) => d.order?.status === 'IPTAL') && !invoice && advanced === 0;
     for (const d of list) {
       if (d.kind !== 'PROFORMA') {
         shares.set(d.id, own(d));
+      } else if (cancelled && !(Number(d.paid ?? 0) > 0)) {
+        shares.set(d.id, { debt: 0, rest: 0, replaced: false, cancelled: true });
       } else if (invoice) {
         shares.set(d.id, { debt: 0, rest: 0, replaced: true });
       } else if (d.total == null) {

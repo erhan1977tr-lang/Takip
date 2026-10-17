@@ -6,7 +6,8 @@ import { customerLabel, orderScope, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import type { Dict, MsgKey, T } from '@/lib/i18n';
-import { pickupFieldsText, profileCustomerText, profileStageText } from '@/lib/labels';
+import { lockReasonText, pickupFieldsText, profileCustomerText, profileStageText } from '@/lib/labels';
+import { cancelLock } from '@/server/orders/financial-lock.js';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { FxInfo } from '@/components/FxInfo';
@@ -131,6 +132,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
     ? order.profileItems.filter((i) => i.productId && ((levels.get(i.productId) ?? 0) < i.qty || alertProducts.has(i.productId)))
     : [];
   const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId) : null;
+  // İptal kilidi (karar 288 — Y2): tahsilat / avans / bekleyen FGO işi varken iptal formu yerine nedenler
+  const cancelReasons = can('cancel') ? await cancelLock(db, order.id) : [];
   const email = order.outbox.find((x) => x.type === 'WAREHOUSE_EMAIL');
   // FGO (Aşama 6b): bu siparişin son proforma/fatura işi
   const fgoJob = order.outbox.find((x) => x.type === 'FGO_PROFORMA' || x.type === 'FGO_INVOICE');
@@ -161,7 +164,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
 
       {ok && <div className="alert alert-ok">{ok}</div>}
       {/* Müşteri: stok uyarısı (karar 165, 177) — sipariş engellenmedi; yalnızca kendi siparişindeki eksik ürünler,
-          sipariş anındaki gereken / mevcut / eksik */}
+          yalnızca kendi gereken adedi ve "stok yetersiz" (karar 288: stok miktarı müşteriye gitmez) */}
       {isCustomer && stockAlert && (
         <div className="alert alert-warn" id="stok" data-stock-alert>
           <b>{t('profile.page.stock.customerTitle')}</b>{' '}
@@ -171,7 +174,6 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               <li key={i} data-stock-line={l.code}>
                 {t('profile.page.stock.customerLine', {
                   product: `${l.code} ${(locale === 'tr' ? l.nameTr : l.nameRo) ?? ''}`.trim(), needed: l.needed, unit: unitLabel(l.unitCode, locale),
-                  available: l.available, missing: l.missing,
                 })}
               </li>
             ))}
@@ -339,11 +341,17 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
             {can('cancel') && (
               <details>
                 <summary className="small muted" style={{ cursor: 'pointer' }}>{t('order.cancel.summary')}</summary>
-                <form action={cancelProfileAction} className="row" style={{ marginTop: 8 }}>
-                  {hidden}
-                  <input name="note" type="text" required placeholder={t('order.cancel.reason')} style={{ flex: 1 }} />
-                  <ConfirmButton danger message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
-                </form>
+                {cancelReasons.length > 0 ? (
+                  <div className="alert alert-warn" data-cancel-locked style={{ marginTop: 8, marginBottom: 0 }}>
+                    <b>{t('order.cancel.locked')}</b> {cancelReasons.map((r) => lockReasonText(t, r)).join(' · ')}
+                  </div>
+                ) : (
+                  <form action={cancelProfileAction} className="row" style={{ marginTop: 8 }}>
+                    {hidden}
+                    <input name="note" type="text" required placeholder={t('order.cancel.reason')} style={{ flex: 1 }} />
+                    <ConfirmButton danger message={t('order.cancel.confirm')}>{t('order.cancel.submit')}</ConfirmButton>
+                  </form>
+                )}
               </details>
             )}
           </div>

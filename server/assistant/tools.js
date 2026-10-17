@@ -181,8 +181,9 @@ export const TOOLS = {
         tx.profileOrder.groupBy({ by: ['stage'], where: { order: { removedAt: null, status: { not: 'IPTAL' } }, stage: { not: 'FATURALANDI' } }, _count: { _all: true } }),
         tx.offer.count({ where: { status: 'YONETIMDE', order: { removedAt: null, status: { not: 'IPTAL' } } } }),
         tx.adminAlert.count({ where: { resolvedAt: null } }),
+        // Planlanan yükleme: onay kalemi olmayan sipariş (yükleme planının kuralı — karar 288, D18)
         tx.order.findMany({
-          where: { removedAt: null, onHold: false, status: { in: ['HAZIRLANIYOR', 'URETIMDE'] }, estimatedShipDate: { gte: new Date(`${addDays(today, -1)}T00:00:00Z`), lt: new Date(`${addDays(today, 3)}T00:00:00Z`) } },
+          where: { removedAt: null, onHold: false, status: { in: ['HAZIRLANIYOR', 'URETIMDE'] }, loadedItems: { none: {} }, estimatedShipDate: { gte: new Date(`${addDays(today, -1)}T00:00:00Z`), lt: new Date(`${addDays(today, 3)}T00:00:00Z`) } },
           select: { estimatedShipDate: true },
         }),
       ]);
@@ -471,25 +472,35 @@ export const TOOLS = {
       const from = a.baslangic ?? localDay(now, tz);
       const to = a.bitis ?? from;
       if (to < from || Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) > 31 * 86_400_000) throw new ToolError('RANGE');
-      const [orders, confirmations] = await Promise.all([
+      // Yükleme planının kuralı (karar 288 — D18; lib/loading.ts ile aynı): onay kalemi olan sipariş tarihinden yeniden
+      // planlanmaz (yüklenmeyen kalanı yalnızca aktarımla gelir); aktarılan kalan (ACTIVE) kendi gününde ayrıca görünür
+      const [orders, confirmations, replans] = await Promise.all([
         tx.order.findMany({
-          where: { removedAt: null, onHold: false, status: { not: 'IPTAL' }, orderTypeCode: 'GLASS_ORDER', estimatedShipDate: { gte: new Date(`${addDays(from, -1)}T00:00:00Z`), lt: new Date(`${addDays(to, 2)}T00:00:00Z`) } },
+          where: {
+            removedAt: null, onHold: false, status: { not: 'IPTAL' }, orderTypeCode: 'GLASS_ORDER', loadedItems: { none: {} },
+            estimatedShipDate: { gte: new Date(`${addDays(from, -1)}T00:00:00Z`), lt: new Date(`${addDays(to, 2)}T00:00:00Z`) },
+          },
           select: { orderNo: true, status: true, title: true, estimatedShipDate: true, customer: { select: { name: true } } },
           orderBy: { orderNo: 'asc' }, take: 1000,
         }),
         tx.loadingConfirmation.findMany({ where: { shipDay: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } }, select: { shipDay: true } }),
+        tx.loadingReplan.findMany({
+          where: { status: 'ACTIVE', shipDay: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) }, order: { removedAt: null, onHold: false, status: { not: 'IPTAL' } } },
+          select: { shipDay: true, quantity: true, order: { select: { orderNo: true, status: true, title: true, customer: { select: { name: true } } } } },
+          take: 1000,
+        }),
       ]);
       const confirmed = new Set(confirmations.map((c) => dayOf(c.shipDay, 'UTC')));
       const days = new Map();
-      for (const o of orders) {
-        const d = dayOf(o.estimatedShipDate, tz);
-        if (d < from || d > to) continue;
+      const put = (d, firm, row) => {
+        if (d < from || d > to) return;
         if (!days.has(d)) days.set(d, new Map());
         const firms = days.get(d);
-        const f = o.customer?.name ?? '?';
-        if (!firms.has(f)) firms.set(f, []);
-        firms.get(f).push({ no: o.orderNo, durum: o.status, baslik: o.title ?? undefined });
-      }
+        if (!firms.has(firm)) firms.set(firm, []);
+        firms.get(firm).push(row);
+      };
+      for (const o of orders) put(dayOf(o.estimatedShipDate, tz), o.customer?.name ?? '?', { no: o.orderNo, durum: o.status, baslik: o.title ?? undefined });
+      for (const r of replans) put(dayOf(r.shipDay, 'UTC'), r.order.customer?.name ?? '?', { no: r.order.orderNo, durum: r.order.status, baslik: r.order.title ?? undefined, aktarilanKalanAdet: r.quantity });
       return {
         aralik: { from, to },
         gunler: [...days.keys()].sort().map((d) => ({
@@ -543,6 +554,8 @@ export const TOOLS = {
         out[k === 'GLASS_ORDER' ? 'cam' : 'profil'] = {
           toplamlar: sums,
           enCokKalan: [...byFirm].sort((x, y) => y[1] - x[1]).slice(0, 10).map(([key, kalan]) => ({ firma: key.split('|')[0], paraBirimi: key.split('|')[1], kalan: money(kalan) })),
+          // Belge listesi sınırı (en yeni 500): sınıra ulaşıldıysa toplam eksik olabilir — söylenir, tahmin edilmez (karar 288 — D19)
+          ...(docs.length >= 500 ? { eksikVeri: ['BELGE_SINIRI_500'] } : {}),
           not: docs.length >= 500 ? 'Yalnızca son 500 belge sayıldı' : undefined,
         };
       }

@@ -201,7 +201,7 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(o.status, 'ARSIVLENDI');
 });
 
-dbTest('profil: depoya gitmiş sipariş iptal edilince stok geri eklenir; bağlantı geçersiz olur', async () => {
+dbTest('profil: depoya gitmiş, ödenmemiş sipariş iptal edilince stok geri eklenir; bağlantı geçersiz olur; ödenmiş sipariş iptal edilmez (karar 288)', async () => {
   const { id } = await newProfileOrder([['AD45', 7]]);
   let o = await load(id);
   await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
@@ -222,16 +222,28 @@ dbTest('profil: depoya gitmiş sipariş iptal edilince stok geri eklenir; bağla
   assert.equal((await stockLevels(db, [ad.id])).get(ad.id), -7);
   assert.equal(await codeOf(run(id, 'cancel', 'admin')), 'CANCEL_REASON');
   assert.equal(await codeOf(run(id, 'cancel', 'cust', { note: 'x' })), 'NOT_ALLOWED');
-  await run(id, 'cancel', 'admin', { note: 'Müşteri vazgeçti' });
-  assert.equal((await stockLevels(db, [ad.id])).get(ad.id), 0);
-  o = await load(id);
-  assert.equal(o.status, 'IPTAL');
-  assert.equal(o.profile.depotTokenHash, null);
+  // Ödemesi alınmış (tahsilat gerçekleşmiş) sipariş iptal edilmez — mutabakat gerekir (karar 288); stok değişmez
+  assert.equal(await codeOf(run(id, 'cancel', 'admin', { note: 'Müşteri vazgeçti' })), 'CANCEL_LOCKED');
+  assert.equal((await stockLevels(db, [ad.id])).get(ad.id), -7);
+  // Ödenmemiş, depoya gitmiş sipariş: iptal edilir, stok geri eklenir, depo bağlantısı geçersiz, kuyruktaki e-posta gitmez
+  const { id: id2 } = await newProfileOrder([['AD45', 3]]);
+  let o2 = await load(id2);
+  await run(id2, 'send_profile_offer', 'admin', { lines: pricesOf(o2) });
+  o2 = await load(id2);
+  await run(id2, 'approve_profile_offer', 'cust', { offerId: o2.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 3 ABC' });
+  await run(id2, 'mark_proforma', 'admin');
+  await run(id2, 'send_to_warehouse', 'admin');
+  assert.equal((await stockLevels(db, [ad.id])).get(ad.id), -10);
+  await run(id2, 'cancel', 'admin', { note: 'Müşteri vazgeçti' });
+  assert.equal((await stockLevels(db, [ad.id])).get(ad.id), -7);
+  o2 = await load(id2);
+  assert.equal(o2.status, 'IPTAL');
+  assert.equal(o2.profile.depotTokenHash, null);
   // Kuyruktaki e-posta gönderilmez
   const mails = [];
   await dispatchWarehouseEmails(db, { transport: { sendMail: async (m) => { mails.push(m); return {}; } }, from: 'x', appUrl: 'y' });
-  assert.ok(!mails.some((m) => String(m.subject).includes(o.orderNo)), 'iptal edilen siparişin e-postası gitmez');
-  assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'WAREHOUSE_EMAIL' } })).status, 'SKIPPED');
+  assert.ok(!mails.some((m) => String(m.subject).includes(o2.orderNo)), 'iptal edilen siparişin e-postası gitmez');
+  assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id2, type: 'WAREHOUSE_EMAIL' } })).status, 'SKIPPED');
 });
 
 dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye uyarı', async () => {

@@ -1,6 +1,7 @@
 // Profil fiyatları (Aşama 6): katalogdaki liste fiyatı (EUR, TVA hariç) ya da müşterinin bağlı olduğu profil fiyat tablosu.
 // Yönetici teklifte her fiyatı değiştirebilir. Müşteriye gönderilen teklif, fiyatların o anki kopyasıdır (değişmez).
 import { writeAudit } from '../orders/journal.js';
+import { can } from '../auth/permissions.js';
 import { parsePrice } from './rules.js';
 
 export const PROFILE_CURRENCY = 'EUR';
@@ -38,9 +39,11 @@ export function validateTableName(v) {
 
 /**
  * Tablonun fiyatlarını kaydeder: yalnızca değişenler gelir (ürün id → fiyat; boş → fiyat kaldırılır, liste fiyatı geçerli olur).
- * @returns {Promise<{ ok: true, changed: number } | { ok: false, code: 'NOT_FOUND' | 'BAD_PRICE', productId?: string }>}
+ * @returns {Promise<{ ok: true, changed: number } | { ok: false, code: 'NOT_FOUND' | 'BAD_PRICE' | 'FORBIDDEN', productId?: string }>}
  */
 export async function saveTablePrices(db, tableId, changes, actor) {
+  // Servis içi yetki (karar 288 — D20): eylemdeki requirePermission'a ek
+  if (!actor || !can(actor.role, 'PRICE_TABLE_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   const parsed = {};
   for (const [pid, v] of Object.entries(changes)) {
     const p = parsePrice(v);

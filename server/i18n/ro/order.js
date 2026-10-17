@@ -135,6 +135,7 @@ export default {
     reason: 'Motivul anulării',
     confirm: 'Anulați comanda? Această operațiune este ireversibilă.',
     submit: 'Anulează',
+    locked: 'Nu poate fi anulată:',
   },
   // Cardul de acțiuni al clientului
   customer: {
@@ -461,6 +462,7 @@ export default {
     pdfImportStale: 'Previzualizarea s-a schimbat între timp (oferta, catalogul sau alt import). Reîmprospătați previzualizarea și încercați din nou.',
     pdfImportEmpty: 'Niciun PDF selectat pentru import.',
     priceLocked: 'Prețul nu poate fi modificat: comanda are înregistrări financiare sau de încărcare; prețul istoric nu se schimbă în aceste înregistrări.',
+    cancelLocked: 'Comanda nu poate fi anulată: există înregistrări financiare sau de încărcare; este necesară mai întâi reconcilierea.',
   },
   // Motivele blocării financiare / operaționale (pachetul 4 — modificarea prețului și ștergerea)
   lock: {
@@ -472,6 +474,7 @@ export default {
     PROFILE_FINANCE: 'Există proformă, plată sau factură',
     PROFILE_WAREHOUSE: 'Predată (marfa a ieșit din depozit)',
     MANUAL_PAYMENT: 'Există o plată introdusă manual',
+    PAYMENT: "Există o încasare (plată primită sau plată vizibilă în FGO)",
   },
   // Prețul ofertei trimise clientului este blocat (administrator — pachetul 4)
   priceLock: {

@@ -17,6 +17,16 @@ import { fgoActor, runProfileAction } from '../profile/transitions.js';
  * @param {string} [reason]  FGO'nun yanıtı
  */
 export async function removeDeletedDocument(db, row, reason = '') {
+  // Bir faturada düşülmüş avans faturası kaldırılmaz (3.93.0, karar 288 — D10): kayıt kalkarsa avans "düşülmemiş" görünür ve
+  // sonraki faturada İKİNCİ kez düşülür. FGO'da gerçekten silindiyse bu muhasebe düzeltmesidir (storno 7F-2) — yönetici
+  // karar verir; kayıt ve zincir olduğu gibi kalır, denetim kaydı yazılır.
+  if (row.kind === 'ADVANCE' && (await advanceOffsetIn(db, row))) {
+    await writeAudit(db, {
+      action: 'FGO_DOC_REMOVE_REFUSED', entityType: row.batchId ? 'BillingBatch' : 'Order', entityId: row.batchId ?? row.orderId, userId: null,
+      details: { docId: row.id, kind: row.kind, series: row.series, number: row.number, reason: 'ADVANCE_OFFSET', fgo: String(reason).slice(0, 200) },
+    }, { role: 'SYSTEM' });
+    return;
+  }
   if (row.batchId) return removeDeletedBatchDocument(db, row, reason);
   const order = await db.order.findUnique({ where: { id: row.orderId }, select: { id: true, status: true, orderTypeCode: true } });
   const details = { kind: row.kind, series: row.series, number: row.number, reason: String(reason).slice(0, 200) };
@@ -39,6 +49,16 @@ export async function removeDeletedDocument(db, row, reason = '') {
     if (order) await writeHistory(tx, { orderId: order.id, event: 'FGO_DOC_DELETED', from: order.status, to: order.status, actorId: null, note: `${row.series}${row.number}` });
     await writeAudit(tx, { action: 'FGO_DOC_REMOVED', entityType: 'Order', entityId: row.orderId, userId: null, details }, { role: 'SYSTEM' });
   });
+}
+
+/**
+ * Avans faturası geçerli (VOID olmayan) bir nihai faturada düşülmüş mü: sipariş avansı → satırın refDocId'si, müşteri avans
+ * partisi → satırın refBatchId'si (karar 101, 239).
+ * @param {any} db  @param {{ id: string, batchId?: string | null }} row
+ */
+async function advanceOffsetIn(db, row) {
+  const ref = row.batchId ? { refBatchId: row.batchId } : { refDocId: row.id };
+  return (await db.billingBatchLine.count({ where: { ...ref, batch: { kind: 'INVOICE', status: { not: 'VOID' } } } })) > 0;
 }
 
 /**

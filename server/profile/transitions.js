@@ -5,6 +5,7 @@ import { outboxEvent } from '../domain/outbox.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
+import { cancelLock } from '../orders/financial-lock.js';
 import { DEPOT_CALENDAR, DEPOT_TIME_ZONE, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
 import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, customerPickupOpen, missingPickup, missingPrices, optionalField, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
 import { calendarOverrides } from '../calendar/service.js';
@@ -478,9 +479,16 @@ const ACTIONS = {
     h.event('FGO_DOC_DELETED', no);
     h.audit = { kind: p.kind, series: p.series, number: p.number, reason: p.reason ?? null, fgo: true };
   },
-  /** Yalnızca yönetici; depoya gitmiş siparişin stok çıkışı geri alınır. Depo bağlantısı geçersiz olur. */
+  /**
+   * İptal (yalnızca yönetici — 3.93.0, karar 288, ürün sahibinin kuralı): teslimden önce. Proforma tek başına engel değildir;
+   * teslim, gerçekleşmiş tahsilat (ödeme alındı / FGO'da görünen ödeme / iptal edilmemiş elle ödeme), avans ya da fatura
+   * belgesi ve bekleyen FGO işi engeller (CANCEL_LOCKED + gerekçe; mutabakat gerekir). FGO belgelerine dokunulmaz. Depoya
+   * gitmiş siparişin stok çıkışı NET düşüm kadar, bir kez geri eklenir (ürün kilitleri altında). Depo bağlantısı geçersiz olur.
+   */
   async cancel(h) {
     if (!h.payload.note) throw new WorkflowError('CANCEL_REASON');
+    const reasons = await cancelLock(h.tx, h.order.id);
+    if (reasons.length) throw new WorkflowError('CANCEL_LOCKED', { reasons });
     let returned = 0;
     if (h.order.profile.stockDeducted) {
       returned = await returnOrderStock(h.tx, { orderId: h.order.id, orderNo: h.order.orderNo, actorId: h.actor.id ?? null });
@@ -505,7 +513,9 @@ export const PROFILE_ACTIONS = Object.keys(ACTIONS);
  */
 const stockLocks = (order) => stockLockKeys(order.profileItems.map((i) => i.productId));
 // update_pickup (karar 229): ödenmiş ama teslim bilgisi eksik sipariş, bilgi tamamlanınca depoya iletilir (stok çıkışı)
-export const PROFILE_LOCKS = { mark_paid: stockLocks, send_to_warehouse: stockLocks, cancel: stockLocks, update_pickup: stockLocks };
+// İptal (karar 288): stok kilitleri, sonra sipariş belge kilidi (elle ödeme / avans isteğiyle aynı — glass-billing). Sıra profil
+// siparişi silmeyle aynıdır (stok → … → glass-billing; server/orders/removal.js): ikisi aynı anda kilitlenmez.
+export const PROFILE_LOCKS = { mark_paid: stockLocks, send_to_warehouse: stockLocks, cancel: (order) => [...stockLocks(order), `glass-billing:${order.id}`], update_pickup: stockLocks };
 
 /**
  * Profil siparişi işlemi.

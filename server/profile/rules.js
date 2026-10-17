@@ -38,6 +38,8 @@ export const PICKUP_EDITABLE = ['ONAYLANDI', 'PROFORMA'];
 /** Depoya gitmeden önceki adımlar: "Ödeme alındı" siparişi hemen depoya gönderir, "Siparişi depoya gönder" ödemesiz gönderir */
 export const BEFORE_WAREHOUSE = ['ONAYLANDI', 'PROFORMA'];
 const CLOSED = ['ARSIVLENDI', 'IPTAL'];
+/** Teslim edilmiş adımlar: iptal yok (karar 288) */
+export const DELIVERED = ['TESLIM_EDILDI', 'FATURALANDI'];
 
 /**
  * @param {{ role: string, stage: string, status: string, canApprove?: boolean, paid?: boolean }} p
@@ -63,9 +65,13 @@ export function profileActions({ role, stage, status, canApprove = false, paid =
   }
   if (can(role, 'OFFER_APPROVE')) {
     if (stage === 'TEKLIF_GONDERILDI' && canApprove) a.push('approve_profile_offer');
-    if (PICKUP_EDITABLE.includes(stage)) a.push('update_pickup');
+    // Teslim bilgisini yalnızca onay yetkili müşteri kullanıcısı değiştirir (3.93.0, karar 288 — D15); onay yetkisi olmayan
+    // kullanıcı bilgiyi görür. Bilgi ödenmiş siparişi depoya iletebildiği için onayla aynı yetkidir.
+    if (PICKUP_EDITABLE.includes(stage) && canApprove) a.push('update_pickup');
   }
-  if (can(role, 'ORDER_CANCEL')) a.push('cancel');
+  // İptal yalnızca teslimden önce (karar 288 — Y2): teslim edilmiş / faturalanmış sipariş iptal edilmez (mal depodan çıktı;
+  // stok geri yazılmaz). Tahsilat, avans / fatura belgesi ve bekleyen FGO işi işlemin kendisinde denetlenir (CANCEL_LOCKED).
+  if (can(role, 'ORDER_CANCEL') && !DELIVERED.includes(stage)) a.push('cancel');
   // Profil siparişine müşteri dosya yüklemez (karar 161 — ürün ve adet formdadır); iç ekibin iç dosyası değişmedi.
   // Aynı kural cam kuralları üzerinden de uygulanır (server/orders/rules.js → availableActions, orderType).
   if (can(role, 'FILE_UPLOAD') && !can(role, 'DRAWING_APPROVE')) a.push('add_file');

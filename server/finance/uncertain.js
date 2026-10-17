@@ -13,7 +13,7 @@
 //   Hiçbir yol FGO'da belge silmez / iptal etmez.
 import { can } from '../auth/permissions.js';
 import { writeAudit, writeHistory } from '../orders/journal.js';
-import { FgoError, fgoDocumentAbsent, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, ronPrice } from '../integrations/fgo.js';
+import { FgoError, afterInvoiceIssued, fgoDocumentAbsent, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, ronPrice } from '../integrations/fgo.js';
 import { RECORD_TOLERANCE } from './payments.js';
 
 export const UNCERTAIN_MARK = '[BELIRSIZ]';
@@ -21,6 +21,35 @@ export const UNCERTAIN_MARK = '[BELIRSIZ]';
 export const PARKED_UNTIL = new Date('9999-12-31T00:00:00Z');
 export const UNCERTAIN_ALERT = 'FGO_UNCERTAIN';
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/**
+ * FGO belgeyi KESTİ (numara döndü) ama TAKİP kaydı yazılamadı (3.93.0, karar 288 — O4). Bu iş otomatik yeniden denenirse
+ * FGO'ya ikinci belge kesme isteği gider; FGO'nun IdExtern / VerificareDuplicat mükerrer engeli bu sistemde kanıtlanmış
+ * değildir — güvence varsayılmaz. İş belirsiz sayılır (beklemeye alınır) ve FGO'nun verdiği seri + numara saklanır: yönetici
+ * "FGO'daki belgeyi kaydet" ile aynı belgeyi (FGO'dan doğrulanarak) kaydeder. Mesaj sabit metindir (iç hata yazılmaz).
+ */
+export class EmittedNotRecorded extends Error {
+  /** @param {{ series: string, number: string }} doc */
+  constructor(doc) {
+    super(`FGO belgeyi kesti (${doc.series}${doc.number}) ama TAKİP kaydı yazılamadı; iş yeniden gönderilmedi — FGO'daki belgeyi kaydedin`);
+    this.issued = { series: String(doc.series), number: String(doc.number) };
+  }
+}
+
+/**
+ * Kesilen belgenin kaydı: hata olursa EmittedNotRecorded (iş yeniden FGO'ya gitmez, yönetici incelemesine düşer).
+ * @template T @param {{ series: string, number: string }} doc  @param {() => Promise<T>} fn  @returns {Promise<T>}
+ */
+export async function recordOrPark(doc, fn) {
+  try {
+    return await fn();
+  } catch {
+    throw new EmittedNotRecorded(doc);
+  }
+}
+
+/** İş belirsiz sonuçla beklemeye alınmalı mı: emitere sonucu belirsiz ya da belge kesildi ama kaydedilemedi */
+export const mustPark = (e, uncertainEmit) => e instanceof EmittedNotRecorded || uncertainEmit(e);
 
 /** İş beklemede mi (belirsiz sonuç, yöneticinin kararını bekliyor) */
 export const isParked = (job) => !!job && job.status === 'PENDING' && typeof job.lastError === 'string' && job.lastError.startsWith(UNCERTAIN_MARK);
@@ -53,17 +82,21 @@ export function expectedGross(lines, { rate, vatRate }) {
  *   customerId?: string | null, orderNo?: string | null, prepared: object, expected: { gross: number, tolerance: number },
  *   series: string, idExtern: string, error: string, now?: Date }} p
  */
-export async function parkUncertain(db, row, { target, kind, orderIds = [], batchId = null, customerId = null, orderNo = null, prepared, expected, series, idExtern, error, now = new Date() }) {
+export async function parkUncertain(db, row, { target, kind, orderIds = [], batchId = null, customerId = null, orderNo = null, prepared, expected, series, idExtern, error, now = new Date(), issued = null, sentNo = null }) {
   const attempt = row.attempts + 1;
   const msg = String(error ?? '').slice(0, 300);
-  const uncertain = { at: now.toISOString(), target, kind, attempt, error: msg, idExtern, series, expectedGross: expected.gross, tolerance: expected.tolerance, prepared };
+  // issued: FGO'nun verdiği seri + numara (belge kesildi, kayıt yazılamadı — O4); sentNo: gönderilen tek seferlik elle numara (D7)
+  const uncertain = {
+    at: now.toISOString(), target, kind, attempt, error: msg, idExtern, series, expectedGross: expected.gross, tolerance: expected.tolerance, prepared,
+    ...(issued ? { issued } : {}), ...(sentNo ? { sentNo: String(sentNo) } : {}),
+  };
   await db.$transaction(async (tx) => {
     await tx.notificationOutbox.update({
       where: { id: row.id },
       data: { availableAt: PARKED_UNTIL, lastError: `${UNCERTAIN_MARK} ${msg}`.slice(0, 500), payload: { ...(row.payload ?? {}), uncertain } },
     });
     await tx.adminAlert.createMany({
-      data: [{ type: UNCERTAIN_ALERT, orderId: orderIds[0] ?? null, dedupeKey: `fgo-uncertain:${row.id}:${attempt}`, details: { target, kind, jobId: row.id, idExtern, series, expectedGross: expected.gross, error: msg, orderNo, batchId, customerId } }],
+      data: [{ type: UNCERTAIN_ALERT, orderId: orderIds[0] ?? null, dedupeKey: `fgo-uncertain:${row.id}:${attempt}`, details: { target, kind, jobId: row.id, idExtern, series, expectedGross: expected.gross, error: msg, orderNo, batchId, customerId, ...(issued ? { issued } : {}) } }],
       skipDuplicates: true,
     });
     for (const orderId of orderIds) await writeHistory(tx, { orderId, event: 'FGO_UNCERTAIN', actorId: null, note: kind });
@@ -154,6 +187,9 @@ export async function resolveUncertainJob(db, { jobId, action, series = '', numb
     if (e instanceof FgoError) return { ok: false, code: 'UNVERIFIED' };
     throw e;
   }
+  // Tek seferlik elle fatura numarası bu belgeyle kullanıldı: bir daha gönderilmez (karar 87; 3.93.0, karar 288 — D7). İşçinin
+  // başarı yolundaki afterInvoiceIssued ile aynı işlev; numara FGO'nun verdiğinden farklıysa FGO_NUMBER uyarısı düşer.
+  if (u.sentNo) await afterInvoiceIssued(db, { sent: u.sentNo, issued: n, orderId: job.orderId ?? null }).catch(() => {});
   await db.fgoDocument.updateMany({ where: { series: s, number: n }, data: { total: st.total.toFixed(2), paid: st.paid == null ? null : st.paid.toFixed(2), checkedAt: now } });
   await db.$transaction(async (tx) => {
     await closeAlerts(tx);

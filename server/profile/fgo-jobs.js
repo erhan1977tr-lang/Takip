@@ -15,7 +15,7 @@ import { netOf } from '../glass/billing.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { PROFILE_ADVANCE, chainPayments, linkCoveredPayments, loadChain, orderPaymentState, orderProformaRef } from '../finance/service.js';
-import { expectedGross, parkUncertain } from '../finance/uncertain.js';
+import { EmittedNotRecorded, expectedGross, mustPark, parkUncertain, recordOrPark } from '../finance/uncertain.js';
 import { getEnv } from '../env.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxDocumentText, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
@@ -133,8 +133,16 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       const lines = documentLines(offer, order.orderNo);
       const kind = row.type === FGO_PROFORMA ? 'proforma' : 'invoice';
       if (kind === 'invoice') {
-        // Avans düşümü (karar 207): kesilmiş her avans faturasının TVA hariç tutarı eksi satır olarak (sırasıyla)
+        // Avans düşümü (karar 207): kesilmiş her avans faturasının TVA hariç tutarı eksi satır olarak (sırasıyla). Düşüm faturanın
+        // mal tutarını AŞAMAZ (3.93.0, karar 288 — O2; camdaki min(kalan, fatura) kuralıyla aynı ilke): fazla avans (fazla /
+        // yanlış tahsilat) varsa eksi ya da sıfırın altında fatura FGO'ya GİTMEZ — muhasebe mutabakatı gerekir (storno /
+        // iade 7F-2'dir, burada uydurulmaz). Kalıcı hata + yöneticiye gerekçeli uyarı.
+        const goodsGross = expectedGross(lines, { rate, vatRate: settings.vatRate }).gross;
         const advances = order.fgoDocuments.filter((d) => d.kind === 'ADVANCE').sort((a, b) => (a.seq ?? 1) - (b.seq ?? 1));
+        const advancedGross = advances.reduce((s, a) => s + Number(a.total ?? a.advanced ?? 0), 0);
+        if (advancedGross - goodsGross > 0.005) {
+          throw new Permanent(`Avans faturalarının toplamı (${advancedGross.toFixed(2)} RON) teslim faturasının tutarını (${goodsGross.toFixed(2)} RON) aşıyor; eksi fatura kesilmez. Fazla tahsilat için muhasebe mutabakatı gerekir.`);
+        }
         for (const a of advances) {
           const gross = Number(a.total ?? a.advanced ?? 0);
           lines.push({ code: '', name: `Stornare avans conform factură ${a.series}${a.number}`, unit: FGO_UM.adet, qty: -1, ron: netOf(gross, settings.vatRate), detail: orderDetail(order.orderNo) });
@@ -152,7 +160,7 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       const doc = await fgoEmit(settings, form, fetchImpl);
       // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır (kayıt yazılamasa bile numara yinelenmez)
       if (kind === 'invoice') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
-      await recordProfileIssued(db, { orderId: order.id, rowId: row.id, prepared, doc });
+      await recordOrPark(doc, () => recordProfileIssued(db, { orderId: order.id, rowId: row.id, prepared, doc }));
       done++;
       // Muhasebe: belgenin TVA dahil tutarı hemen okunur (olmazsa "FGO ile güncelle" sonra okur)
       try {
@@ -168,10 +176,12 @@ export async function dispatchFgoJobs(db, { now = new Date(), fetchImpl = fetch,
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);
       // Belge FGO'da kesilmiş olabilir (karar 209): yeniden denenmez — yönetici FGO'ya bakıp karar verir
-      if (uncertainEmit(e) && prepared && form) {
+      // Belge kesildi ama kaydedilemedi (karar 288 — O4): aynı yol, kesilen numara saklanır
+      if (mustPark(e, uncertainEmit) && prepared && form) {
         await parkUncertain(db, row, {
           target: 'PROFILE', kind: row.type, orderIds: [order.id], orderNo: order.orderNo, prepared, expected: expectedGross(lineList, { rate: prepared.rate, vatRate: settings.vatRate }),
           series: form.Serie, idExtern: form.IdExtern, error: msg, now,
+          issued: e instanceof EmittedNotRecorded ? e.issued : null, sentNo: e instanceof EmittedNotRecorded ? null : form.Numar ?? null,
         });
         log('FGO işi: sonuç belirsiz — yönetici incelemesine gönderildi', row.type, row.orderId);
         continue;
@@ -258,7 +268,8 @@ export async function dispatchProfileAdvanceJobs(db, { now = new Date(), fetchIm
       if (!(gross > 0)) throw new Permanent('Avansı kesilecek tahsilat yok');
       if (gross - st.advanceRequired > 0.005) throw new Permanent(`Ödemedeki tahsilat değişti: avansı kesilecek tutar ${st.advanceRequired.toFixed(2)} RON, istenen ${gross.toFixed(2)} RON`);
       const ref = `${chain.proforma.series}${chain.proforma.number}`;
-      lines = [{ code: '', name: `Avans marfă conform proformă ${ref}`, unit: FGO_UM.adet, qty: 1, ron: netOf(gross, settings.vatRate), detail: orderDetail(chain.order.orderNo) }];
+      // TVA dahil toplamla (PretTotal — karar 288, D8)
+      lines = [{ code: '', name: `Avans marfă conform proformă ${ref}`, unit: FGO_UM.adet, qty: 1, net: netOf(gross, settings.vatRate), gross, detail: orderDetail(chain.order.orderNo) }];
       const sentNo = await reserveInvoiceNumber(db, settings, { key, appUrl, fetchImpl });
       form = emitereForm({
         settings, key, kind: 'invoice', orderNo: chain.order.orderNo, appUrl, customer, lines, rate: 1,
@@ -267,7 +278,7 @@ export async function dispatchProfileAdvanceJobs(db, { now = new Date(), fetchIm
       prepared = { kind: 'ADVANCE', seq, advanceGross: gross, basis: row.payload?.basis ?? st.advanceBasis, fgoPaid: st.fgoPaid, manualRon: st.manualRon, advancedBefore: st.advanced, amount: ronTotal(lines, 1) };
       const doc = await fgoEmit(settings, form, fetchImpl);
       await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: chain.order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
-      await recordProfileAdvance(db, { orderId: chain.order.id, rowId: row.id, prepared, doc, now });
+      await recordOrPark(doc, () => recordProfileAdvance(db, { orderId: chain.order.id, rowId: row.id, prepared, doc, now }));
       done++;
       try {
         const s2 = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
@@ -278,10 +289,11 @@ export async function dispatchProfileAdvanceJobs(db, { now = new Date(), fetchIm
     } catch (e) {
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);
-      if (uncertainEmit(e) && prepared && form) {
+      if (mustPark(e, uncertainEmit) && prepared && form) {
         await parkUncertain(db, row, {
           target: 'PROFILE_ADVANCE', kind: 'ADVANCE', orderIds: [chain.order.id], orderNo: chain.order.orderNo, prepared, expected: expectedGross(lines, { rate: 1, vatRate: settings.vatRate }),
           series: form.Serie, idExtern: form.IdExtern, error: msg, now,
+          issued: e instanceof EmittedNotRecorded ? e.issued : null, sentNo: e instanceof EmittedNotRecorded ? null : form.Numar ?? null,
         });
         log('profil avans faturası: sonuç belirsiz — yönetici incelemesine gönderildi', row.orderId);
         continue;

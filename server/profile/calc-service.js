@@ -239,12 +239,25 @@ export async function loadCalcOptions(db) {
 }
 
 /**
+ * Hesap satırının stok notu: yetmiyorsa iç ekibe mevcut / eksik, müşteriye yalnızca { short: true }; yetiyorsa null.
+ * @param {number} qty  @param {number} level  @param {boolean} detail
+ */
+function stockNote(qty, level, detail) {
+  const available = Math.max(0, level);
+  if (available >= qty) return null;
+  return detail ? { available, missing: qty - available } : { short: true };
+}
+
+/**
  * Müşterinin korkuluk hesabı (karar 203): profil (zorunlu) + küpeşte (boş = yok) + renk + cam + metre → `calculateRailing`.
  * Başarılıysa yalnızca stoğu yetmeyen ürünler için gereken / mevcut / eksik (runCalc ile aynı kural). Yalnızca okur: kayıt,
  * stok hareketi, bildirim yazmaz.
+ * Müşteriye (varsayılan) stok miktarı gitmez (karar 288 — O3): stoğu yetmeyen satırda yalnızca { short: true }. İç ekip
+ * (ticari teklif — stockDetail) mevcut / eksik sayısını görür.
  * @param {{ profileId: unknown, handrailId?: unknown, color?: unknown, thicknessId?: unknown, meters: unknown }} input
+ * @param {{ stockDetail?: boolean }} [o]
  */
-export async function runRailingCalc(db, input) {
+export async function runRailingCalc(db, input, { stockDetail = false } = {}) {
   const handrailId = String(input.handrailId ?? '');
   const [profile, handrail, thicknesses] = await Promise.all([
     db.profileSystem.findFirst({ where: { id: String(input.profileId ?? ''), isActive: true }, include: CALC_INCLUDE }),
@@ -255,14 +268,7 @@ export async function runRailingCalc(db, input) {
   const res = calculateRailing({ profile, handrail, handrailWanted: !!handrailId }, input, thicknesses);
   if (!res.ok) return { ...res, systems };
   const levels = await stockLevels(db, res.lines.map((l) => l.productId));
-  return {
-    ...res,
-    systems,
-    lines: res.lines.map((l) => {
-      const available = Math.max(0, levels.get(l.productId) ?? 0);
-      return { ...l, stock: available < l.qty ? { available, missing: l.qty - available } : null };
-    }),
-  };
+  return { ...res, systems, lines: res.lines.map((l) => ({ ...l, stock: stockNote(l.qty, levels.get(l.productId) ?? 0, stockDetail) })) };
 }
 
 /**
@@ -270,8 +276,9 @@ export async function runRailingCalc(db, input) {
  * ürün için gereken / mevcut / eksik döner (müşterinin kendi siparişindeki eksik ürünler; genel stok listesi değil). Müşteriye
  * giden "mevcut" eksiye düşmez (0).
  * @param {{ systemId: unknown, color?: unknown, thicknessId?: unknown, meters: unknown }} input
+ * @param {{ stockDetail?: boolean }} [o]  müşteriye (varsayılan) yalnızca "yetersiz" işareti (karar 288)
  */
-export async function runCalc(db, input) {
+export async function runCalc(db, input, { stockDetail = false } = {}) {
   const [system, thicknesses] = await Promise.all([
     db.profileSystem.findFirst({ where: { id: String(input.systemId ?? ''), isActive: true }, include: CALC_INCLUDE }),
     db.profileGlassThickness.findMany(),
@@ -282,9 +289,6 @@ export async function runCalc(db, input) {
   return {
     ...res,
     system: { code: system?.code ?? '', nameTr: system?.nameTr ?? '', nameRo: system?.nameRo ?? '' },
-    lines: res.lines.map((l) => {
-      const available = Math.max(0, levels.get(l.productId) ?? 0);
-      return { ...l, stock: available < l.qty ? { available, missing: l.qty - available } : null };
-    }),
+    lines: res.lines.map((l) => ({ ...l, stock: stockNote(l.qty, levels.get(l.productId) ?? 0, stockDetail) })),
   };
 }

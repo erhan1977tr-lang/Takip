@@ -766,8 +766,10 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       await lock(tx, 'loading-confirmation');
       await lock(tx, `order-no:${head.customerId}`);
       await lockOrders(tx, [head.sourceOrderId, head.destOrderId]);
-      const comp = await tx.compensation.findUnique({ where: { id: head.id }, include: { sourceOrder: { select: { id: true, orderNo: true, status: true } } } });
+      const comp = await tx.compensation.findUnique({ where: { id: head.id }, include: { sourceOrder: { select: { id: true, orderNo: true, status: true, removedAt: true } } } });
       if (!comp || comp.status !== 'PENDING' || !comp.destOrderId) return fail('NOT_PENDING');
+      // Kaynak sipariş karardan sonra iptal edildi / silindiyse telafi onaylanmaz (3.93.0, karar 288 — D3); ret serbest
+      if (approve && (comp.sourceOrder?.status === 'IPTAL' || comp.sourceOrder?.removedAt)) return fail('ORDER_CANCELLED');
       // Onay telafiyi uygular: kaynak siparişin nihai faturası bu arada kesildiyse onaylanmaz (karar 256); ret her zaman serbest
       if (approve && (await finalInvoices(tx, [comp.sourceOrderId])).has(comp.sourceOrderId)) return fail('FINAL_INVOICE');
       const close = { decidedById: actor.id, decidedAt: now, decisionNote: text };

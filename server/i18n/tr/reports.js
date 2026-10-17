@@ -83,6 +83,7 @@ export default {
     PROFILE_NO_COST: 'Profil siparişlerinde alış maliyeti sipariş anında saklanmaz: profil kârı hesaplanmaz.',
     TRANSPORT_HIDDEN: 'Nakliye yükleme gününe girilir ve firmalara dağıtılmaz: müşteri filtresinde nakliye ve toplam kâr gösterilmez.',
     FILTER_IGNORED: 'Finans raporunda ürün ve yükleme durumu filtreleri uygulanmaz.',
+    STATUS_PARTIAL: 'Sipariş durumu filtresi yalnızca satış ve yükleme bölümlerine uygulanır; faturalanan, tahsilat ve alacak durumdan bağımsızdır.',
     DOC_TOTAL_MISSING: 'Tutarı FGO\'dan henüz okunmamış belgeler toplamlara girmedi.',
   },
   errors: {
@@ -90,6 +91,8 @@ export default {
     TOO_LARGE: 'Rapor çok büyük. Tarih aralığını ya da filtreleri daraltın (eksik toplam verilmez).',
     DAY_INVALID: 'Geçersiz tarih.', RANGE_INVALID: 'Başlangıç ve bitiş birlikte girilmeli; bitiş başlangıçtan önce olamaz.', RANGE_TOO_LONG: 'Aralık en çok iki yıl olabilir.',
     MONTH_INVALID: 'Geçersiz ay.', YEAR_INVALID: 'Geçersiz yıl.', PERIOD_INVALID: 'Geçersiz dönem.',
+    KIND_INVALID: 'Geçersiz rapor türü.', ORDER_TYPE_INVALID: 'Geçersiz sipariş tipi.', STATUS_INVALID: 'Geçersiz durum filtresi.', LOADING_INVALID: 'Geçersiz yükleme filtresi.',
+    CUSTOMER_INVALID: 'Geçersiz müşteri filtresi.', PRODUCT_INVALID: 'Geçersiz ürün filtresi (en çok 60 karakter).',
   },
   excel: { sheet: 'Özet', title: 'Rapor — {kind}', info: { report: 'Rapor', range: 'Tarih aralığı', basis: 'Esas alınan tarih', filters: 'Filtreler', generated: 'Oluşturma' }, cards: 'Özet değerler', none: 'yok' },
 };

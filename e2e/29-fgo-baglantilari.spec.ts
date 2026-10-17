@@ -45,13 +45,13 @@ test('cam siparişi belgeleri: FGO adresi tıklanabilir; FGO dışı adres bağl
       // FGO dışı adres: belge numarası yazılı, bağlantı yok, adresin izi yok
       for (const [id, ref] of [[bad, 'TST90001'], [trick, 'TST90004']] as const) {
         await page.goto(`/siparisler/${id}`);
-        await expect(page.getByText(ref).first(), `${who} ${ref}`).toBeVisible();
+        await expect(page.getByText(ref).filter({ visible: true }).first(), `${who} ${ref}`).toBeVisible();
         await noTrace(page, `${who} /siparisler (${ref})`);
         await expect(page.locator('a[href*="fgo.ro"]'), `${who} ${ref}`).toHaveCount(0);
       }
       // FGO adresi: bağlantı tıklanabilir, yeni sekmede, güvenli rel ile
       await page.goto(`/siparisler/${good}`);
-      await expect(page.getByText('TST90002').first(), who).toBeVisible();
+      await expect(page.getByText('TST90002').filter({ visible: true }).first(), who).toBeVisible();
       const link = page.locator(`a[href="${GOOD}"]`).first();
       await expect(link, who).toBeVisible();
       await expect(link).toHaveAttribute('target', '_blank');
@@ -59,14 +59,14 @@ test('cam siparişi belgeleri: FGO adresi tıklanabilir; FGO dışı adres bağl
     }
     // Muhasebe → Cam Tahsilat: üç belge de listede; yalnızca FGO adresli olan bağlantılı
     await admin.goto('/admin/muhasebe/cam');
-    for (const ref of ['TST90001', 'TST90002', 'TST90004']) await expect(admin.getByText(ref).first()).toBeVisible();
+    for (const ref of ['TST90001', 'TST90002', 'TST90004']) await expect(admin.getByText(ref).filter({ visible: true }).first()).toBeVisible();
     await noTrace(admin, 'Cam Tahsilat');
     await expect(admin.locator(`a[href="${GOOD}"]`)).toHaveCount(1);
     await expect(admin.getByRole('link', { name: 'TST90001' })).toHaveCount(0);
     await expect(admin.getByRole('link', { name: 'TST90004' })).toHaveCount(0);
     // Müşterinin belge dolabı: belgeler listede; "Vezi PDF" uygulamanın kendi yoludur (FGO adresi sayfada yok)
     await cust.goto('/belgeler');
-    await expect(cust.getByText('TST90001').first()).toBeVisible();
+    await expect(cust.getByText('TST90001').filter({ visible: true }).first()).toBeVisible();
     await noTrace(cust, '/belgeler');
     await expect(cust.locator('a[href*="fgo.ro"]')).toHaveCount(0);
     // PDF yolu: FGO dışı bağlantıya YÖNLENDİRMEZ (FGO kapalı → 503); sahiplik denetimi aynı
@@ -93,7 +93,7 @@ test('profil siparişi belgeleri (proformaLink / invoiceLink — yalnızca FGO i
       await db.profileOrder.update({ where: { orderId: p!.orderId }, data: { proformaLink: evil, invoiceLink: evil } });
       await admin.goto(`/siparisler/${p!.orderId}`);
       await expect(admin.locator('h1').first()).toBeVisible();
-      if (p!.proformaNo) await expect(admin.getByText(p!.proformaNo).first(), evil).toBeVisible();
+      if (p!.proformaNo) await expect(admin.getByText(p!.proformaNo).filter({ visible: true }).first(), evil).toBeVisible();
       await noTrace(admin, `profil (${evil})`);
       await expect(admin.locator('a[href*="fgo.ro"], a[href^="javascript:"]'), evil).toHaveCount(0);
       expect(await admin.content(), evil).not.toContain(evil);

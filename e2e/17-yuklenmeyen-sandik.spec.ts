@@ -342,7 +342,9 @@ test('özel durum: yönetici sipariş sayfasında FİRMAYI seçer (sandık / sip
   };
   const ux = await firmXlsx(page, uns.id);
   expect(ux.name).toContain(`filename="Yukleme-UNS-${DAY}.xlsx"`);
-  expect(ux.rows.find((r) => r[0] === 'UNS7701')?.slice(0, 7), 'sipariş · proje · cam · CNC · delik · m² · teklif (10 × 50)').toEqual(['UNS7701', 'Aktarım e2e 7701', 10, 0, 0, 10, 500]);
+  // Onaylı gün (karar 288 — D17): firma çıktısı da Yükleme Özeti gibi yalnızca YÜKLENEN miktardan — 10 camdan 8'i (8 × 50)
+  expect(ux.rows.find((r) => r[0] === 'UNS7701')?.slice(0, 7), 'sipariş · proje · cam · CNC · delik · m² · teklif (8 × 50)').toEqual(['UNS7701', 'Aktarım e2e 7701', 8, 0, 0, 8, 400]);
+  expect(ux.rows.flat(), 'planlanan tutar (10 × 50) firma çıktısında yok').not.toContain(500);
   expect(ux.rows.flat()).toContain('Teklif tutarı (EUR)');
   expect(ux.rows.flat(), 'fabrika satış tutarı (10 × 37) yok').not.toContain(370);
   expect(ux.rows.flat().some((c) => typeof c === 'string' && /fabrika/i.test(c))).toBe(false);

@@ -20,6 +20,7 @@ import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 import { SettingsTabs } from './SettingsTabs';
+import { verifyParams } from '@/server/security/signed-param.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,12 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const ops = userCan(user, 'OPS_SETTINGS_MANAGE');
   const { t } = await getT();
   const sp = await searchParams;
+  // Adresteki serbest metin yalnızca işlemin imzaladığı haliyle gösterilir (karar 288 — D14): imzasız / değiştirilmiş metin
+  // ("sahte uyarı") ekrana yazılmaz, yerine sabit metin
+  const resultScope = sp.ok ? `ok:${sp.ok}` : `error:${sp.error ?? ''}`;
+  const trusted = verifyParams(getEnv().AUTH_SECRET, resultScope, [sp.detail ?? '', sp.types ?? ''], sp.sig);
+  const detail = trusted ? (sp.detail ?? '') : '';
+  const types = trusted ? (sp.types ?? '') : '';
   // Gerçek sunucuda yok sayılan ayarların ADLARI — yalnızca bilinen sabit adlar (değer bu sayfaya hiç gelmez)
   const ignoredNames: string[] = full ? ignoredOnServer() : [];
   const envIgnored = SERVER_IGNORED.filter((name: string) => ignoredNames.includes(name));
@@ -124,14 +131,14 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {okMsg && <div className="alert alert-ok">{okMsg}</div>}
       {errMsg && <div className="alert alert-error">{errMsg}</div>}
       {sp.ok === 'warehouse' && <div className="alert alert-ok">{t('profile.settings.saved')}</div>}
-      {sp.error === 'warehouse' && <div className="alert alert-error">{t('profile.settings.bad', { list: sp.detail ?? '' })}</div>}
+      {sp.error === 'warehouse' && <div className="alert alert-error">{t('profile.settings.bad', { list: detail || '—' })}</div>}
 
       {/* FGO (fatura sistemi; Aşama 6b) — bağlantı ayarları kritik: yalnızca SETTINGS_MANAGE */}
       {full && (<>
       {sp.ok === 'fgo' && <div className="alert alert-ok">{t('admin.integrations.fgo.saved')}</div>}
-      {sp.error === 'fgo' && <div className="alert alert-error">{t('admin.integrations.fgo.bad', { what: sp.detail ?? '' })}</div>}
-      {sp.ok === 'fgoTest' && <div className="alert alert-ok">{t('admin.integrations.fgo.testOk', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
-      {sp.error === 'fgoTest' && <div className="alert alert-error">{t('admin.integrations.fgo.testFailed', { message: sp.detail ?? '' })}{sp.types ? <> · {t('admin.integrations.fgo.types', { list: sp.types })}</> : null}</div>}
+      {sp.error === 'fgo' && <div className="alert alert-error">{t('admin.integrations.fgo.bad', { what: detail || '—' })}</div>}
+      {sp.ok === 'fgoTest' && <div className="alert alert-ok">{t('admin.integrations.fgo.testOk', { message: detail || '—' })}{types ? <> · {t('admin.integrations.fgo.types', { list: types })}</> : null}</div>}
+      {sp.error === 'fgoTest' && <div className="alert alert-error">{t('admin.integrations.fgo.testFailed', { message: detail || '—' })}{types ? <> · {t('admin.integrations.fgo.types', { list: types })}</> : null}</div>}
       <form action={saveFgoAction} className="card" id="fgo">
         <h2>{t('admin.integrations.fgo.title')}</h2>
         <p className="muted small">{t('admin.integrations.fgo.intro')}</p>
@@ -215,11 +222,11 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       {full && (<>
       {sp.ok === 'translate' && <div className="alert alert-ok">{t('admin.integrations.translate.saved')}</div>}
       {sp.error === 'translate' && <div className="alert alert-error">{t(`admin.integrations.translate.bad.${trBad}` as MsgKey)}</div>}
-      {sp.ok === 'translateTest' && <div className="alert alert-ok">{t('admin.integrations.translate.testOk', { sample: sp.detail ?? '' })}</div>}
+      {sp.ok === 'translateTest' && <div className="alert alert-ok">{t('admin.integrations.translate.testOk', { sample: detail || '—' })}</div>}
       {sp.error === 'translateTest' && (
         <div className="alert alert-error">
           {t('admin.integrations.translate.testFailed', { reason: t(`order.notes.translation.reason.${trReason}` as MsgKey) })}
-          {sp.detail ? <> {t('admin.integrations.translate.testDetail', { detail: sp.detail.slice(0, 200) })}</> : null}
+          {detail ? <> {t('admin.integrations.translate.testDetail', { detail: detail.slice(0, 200) })}</> : null}
         </div>
       )}
       <form action={saveTranslateAction} className="card" id="ceviri">

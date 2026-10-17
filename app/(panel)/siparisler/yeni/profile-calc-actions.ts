@@ -20,10 +20,11 @@ export type CalcLine = {
   productId: string; code: string; name: string; unit: string; qty: number; need: string;
   /** renge göre seçilen üründe rengin adı (ör. "7016 MAT"); renksiz üründe (conta, poşet) boş */
   color: string;
-  stock: { needed: number; available: number; missing: number } | null;
+  stock: { needed: number } | null;
 };
 export type CalcResult = { ok: true; title: string; lines: CalcLine[] } | { ok: false; errors: string[] };
-export type StockCheckLine = { productId: string; code: string; name: string; unit: string; needed: number; available: number; missing: number };
+// Müşteriye stok miktarı gitmez (karar 288 — O3): yalnızca kendi gereken adedi; satırın varlığı "stok yetersiz" demektir
+export type StockCheckLine = { productId: string; code: string; name: string; unit: string; needed: number };
 
 /** İstemciden gelen değer: yalnızca kısa metin (başka tür / uzun metin boş sayılır) */
 const str = (v: unknown, max: number) => (typeof v === 'string' && v.length <= max ? v : '');
@@ -62,7 +63,7 @@ export async function calculateProfileAction(input: {
       return {
         productId: l.productId, code: l.code, name: localName(l, locale), unit, qty: l.qty, color: l.colored ? colorName : '',
         need: t('profile.calc.need', { need: fmtDec(l.need, 2), measure, content: fmtDec(l.content, 3), unit }),
-        stock: l.stock ? { needed: l.qty, available: l.stock.available, missing: l.stock.missing } : null,
+        stock: l.stock ? { needed: l.qty } : null,
       };
     }),
   };
@@ -86,7 +87,7 @@ export async function checkProfileStockAction(rows: unknown): Promise<{ ok: true
     ok: true,
     lines: lines.map((l) => ({
       productId: l.productId, code: l.code, name: localName(l, locale), unit: unitLabel(l.unitCode, locale),
-      needed: l.needed, available: l.available, missing: l.missing,
+      needed: l.needed,
     })),
   };
 }

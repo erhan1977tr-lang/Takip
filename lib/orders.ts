@@ -7,7 +7,7 @@ import { userCan } from './permissions';
 import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
 import { drawingTranslationsFor, notesFor } from '../server/notes/view.js';
-import { orderPeopleView } from '../server/orders/order-view.js';
+import { orderPeopleView, profileFxView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
 import { drawingsView } from '../server/orders/drawing-access.js';
 import { unreadCounts } from '../server/notes/unread.js';
@@ -166,8 +166,9 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   // Depo bağlantısının özeti hiçbir istemciye gitmez; e-posta kuyruğunu yalnızca yönetici görür.
   // FGO belge bağlantıları (yalnızca FGO işçisi yazar: factura/emitere yanıtındaki bağlantı) dış veridir: FGO'nun kendi
   // adresi değilse sayfaya hiç taşınmaz (karar 144 — pdfUrl); belge numarası ve tarihi yine gösterilir.
+  // Kur anlık görüntüsünün politikası / kâr payı / taban kuru yalnızca CUSTOMER_MANAGE'e (karar 288 — D12)
   const profile = order.profile
-    ? { ...order.profile, depotTokenHash: null, proformaLink: pdfUrl(order.profile.proformaLink), invoiceLink: pdfUrl(order.profile.invoiceLink) }
+    ? profileFxView(user.appRole, { ...order.profile, depotTokenHash: null, proformaLink: pdfUrl(order.profile.proformaLink), invoiceLink: pdfUrl(order.profile.invoiceLink) })
     : null;
   return orderPeopleView(user.appRole, {
     ...order,

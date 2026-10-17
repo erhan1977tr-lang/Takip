@@ -71,10 +71,14 @@ export const TEXT = Object.freeze({
 });
 /** Romence sabit metinler (soru Romence ise) */
 export const TEXT_RO = Object.freeze({
+  help: 'Asistentul TAKİP — doar oferă informații, nu modifică nicio înregistrare. Poți întreba în turcă sau în română.\nExemple:\n• Care este situația generală de azi?\n• Ce sticle are comanda ALE40 și câți m² în total?\n• Cât s-a încărcat din GLA68 și cât a rămas?\n• Încărcarea de mâine: firme, m², lăzi?\n• În ce lăzi este GLA68?\n• Ce produse sunt la stoc critic?\n• Cât sunt creanțele pentru sticlă, cine datorează cel mai mult?\n• Câți m² de sticlă am comandat luna aceasta? Cât am vândut anul acesta?\n• Compară vânzările din ultimele trei luni.\nDacă trimiți un mesaj vocal, îți trimit și un scurt rezumat vocal. /sifirla: resetează conversația.',
+  voiceTooLongBoth: 'Sesli mesaj çok uzun (en çok 2 dakika). / Mesajul vocal este prea lung (cel mult 2 minute).',
+  unsupportedBoth: 'Yalnızca yazılı ve sesli (Türkçe / Romence) soruları yanıtlayabilirim. / Pot răspunde doar la întrebări scrise și vocale (în turcă / română).',
   rate: 'Prea multe întrebări într-un timp scurt; te rog încearcă puțin mai târziu.',
   daily: 'S-a atins limita zilnică de întrebări; încearcă mâine.',
   tooLong: 'Întrebarea este prea lungă; te rog scurteaz-o (cel mult 1000 de caractere).',
   voiceTooLong: 'Mesajul vocal este prea lung (cel mult 2 minute).',
+  unsupported: 'Pot răspunde doar la întrebări scrise și vocale (în turcă / română).',
   voiceFailed: 'Nu am înțeles mesajul vocal; te rog încearcă din nou sau scrie.',
   aiAuth: 'Nu m-am putut conecta la serviciul de inteligență artificială (cheie). Administratorul trebuie să verifice setarea.',
   aiBusy: 'Serviciul de inteligență artificială este ocupat acum; te rog încearcă puțin mai târziu.',
@@ -116,7 +120,7 @@ export function systemPrompt(today, { voice = false } = {}) {
     'RAPORLAR (dönemsel toplamlar: "bu ay kaç m² cam siparişi", "geçen ay hangi müşteriye kaç m² yükledik", "bu yıl satışlar", "bu ay tahsilat", "müşteri bazında en yüksek satış", "kâr", "az olan stoklar", "bu hafta yüklemesi bekleyenler", "Eylül\'de hangi müşteriden kaç sipariş", "son üç ayı karşılaştır") için rapor aracını kullan; panel ve Excel ile aynı hesaptır. Sipariş alımı → tur=siparis ya da cam; yükleme → tur=yukleme; satış / kâr / fatura / tahsilat → tur=finans; profil ve stok → tur=profil_stok.',
     'RAPOR DÖNEMİ: "bu ay" → donem=bu_ay, "geçen ay" → gecen_ay, "bu hafta" → bu_hafta, "bu yıl" → bu_yil, "son üç ay" → son_3_ay (Romanya saatine göre). Yıl söylenmeyen ay adı ("Eylül", "septembrie") → bugünden sonra olmayan en yakın o ay (ay=YYYY-AA). Hangi dönemin kastedildiği gerçekten belirsizse (ör. "o ay", "geçen sezon") araç çağırmadan kısaca hangi dönemi kastettiğini sor.',
     'RAPOR YANITI: Yanıtta kullanılan tarih aralığını (aralik.from – aralik.to, GG.AA.YYYY) ve hangi tarihin esas alındığını mutlaka yaz. Sayıları rapor sonucundan AYNEN al: kendin toplama, çıkarma, ortalama ya da kur çevirisi yapma; EUR ve RON\'u ayrı söyle. Değer 0 ise "sıfır" de; değer yoksa ya da "eksikVeri" varsa "veri eksik" de ve nedenini söyle (ör. MISSING_COST: maliyet eksik, kâr hesaplanamaz); "hata" ise sorgu yapılamadı de — bu üçünü karıştırma. CUSTOMER_AMBIGUOUS ise "adaylar"dan hangisi olduğunu sor; TOO_LARGE ise aralığı daraltmasını iste. Büyük raporlarda yalnızca özeti ve en önemli 3–5 satırı yaz, bütün satırları sıralama ("satirSayisi" ile toplam kaç kayıt olduğunu söyle). Satış (teklif tutarı), faturalanan, tahsilat ve kâr ayrı kavramlardır; birbirinin yerine kullanma.',
-    ...(voice ? [`SESLİ SORU: Önce bütün ayrıntılarıyla yazılı yanıtı yaz (kapanış cümlesiyle). Sonra ayrı bir satıra tam olarak ${VOICE_MARK} yaz ve ardından sesli okunacak, en çok 3 kısa cümlelik, konuşma dilinde bir ÖZET yaz (madde işareti, tablo, emoji yok; sayıları okunur biçimde), aynı hitabı (${ADDRESS}) kullan; kapanış sorusunu yalnızca doğal düşüyorsa ekle. Seste sayıları anlaşılır oku: m² için "metrekare" (Romence "metri pătrați"), EUR için "euro", RON için "lei" de; çok basamaklı sayıları yuvarlamadan ama okunur yaz (ör. 1.250,40 euro); yalnızca en önemli 1–3 sayıyı söyle.`] : []),
+    ...(voice ? [`SESLİ SORU: Önce bütün ayrıntılarıyla yazılı yanıtı yaz (kapanış sorusu yalnızca doğal düşüyorsa, en çok bir kez). Sonra ayrı bir satıra tam olarak ${VOICE_MARK} yaz ve ardından sesli okunacak, en çok 3 kısa cümlelik, konuşma dilinde bir ÖZET yaz (madde işareti, tablo, emoji yok; sayıları okunur biçimde), aynı hitabı (${ADDRESS}) kullan; kapanış sorusunu yalnızca doğal düşüyorsa ekle. Seste sayıları anlaşılır oku: m² için "metrekare" (Romence "metri pătrați"), EUR için "euro", RON için "lei" de; çok basamaklı sayıları yuvarlamadan ama okunur yaz (ör. 1.250,40 euro); yalnızca en önemli 1–3 sayıyı söyle.`] : []),
   ].join('\n');
 }
 
@@ -203,15 +207,18 @@ export function createAssistant({ db, env, fetchImpl = fetch, log = () => {}, cl
     const now = clock();
     if (Number(msg.date) * 1000 < now.getTime() - LIMITS.staleMs) { stats.ignored++; return; } // yeniden başlatmadan önceki eski ileti
     let question = typeof msg.text === 'string' ? msg.text.trim() : '';
-    if (question === '/start' || question === '/yardim' || question === '/help') return reply(TEXT.help);
+    // Komutların dili bilinmez: yardım iki dilde (karar 288 — D19)
+    if (question === '/start' || question === '/yardim' || question === '/help' || question === '/ajutor') return reply(`${TEXT.help}\n\n${TEXT_RO.help}`);
     if (question === '/sifirla') { memory = { at: 0, turns: [] }; return reply(TEXT.reset); }
     const key = String(cfg.userId);
     let lang = detectLang(question);
-    if (!perDay.take(key).ok) return reply(textFor(lang, 'daily'));
+    // Önce dakika sınırı: dakika sınırına takılan ileti günlük hakkı tüketmez (karar 288 — D19)
     if (!perMinute.take(key).ok) return reply(textFor(lang, 'rate'));
+    if (!perDay.take(key).ok) return reply(textFor(lang, 'daily'));
     let heard = null;
     if (!question && msg.voice) {
-      if (Number(msg.voice.duration) > LIMITS.voiceSeconds) return reply(TEXT.voiceTooLong);
+      // Sesin dili henüz bilinmez: iki dilde (karar 288 — D19)
+      if (Number(msg.voice.duration) > LIMITS.voiceSeconds) return reply(TEXT_RO.voiceTooLongBoth);
       try {
         await tg.sendChatAction(cfg.userId, 'typing').catch(() => {});
         const audio = await tg.downloadFile(String(msg.voice.file_id ?? ''));
@@ -219,10 +226,10 @@ export function createAssistant({ db, env, fetchImpl = fetch, log = () => {}, cl
       } catch (e) {
         log('asistan: ses', e?.code ?? 'ERR');
         stats.failed++;
-        return reply(e instanceof AiError && e.code === 'AI_AUTH' ? TEXT.aiAuth : TEXT.voiceFailed);
+        return reply(e instanceof AiError && e.code === 'AI_AUTH' ? `${TEXT.aiAuth}\n${TEXT_RO.aiAuth}` : `${TEXT.voiceFailed}\n${TEXT_RO.voiceFailed}`);
       }
     }
-    if (!question) return reply(TEXT.unsupported);
+    if (!question) return reply(TEXT_RO.unsupportedBoth);
     if (heard) lang = detectLang(heard);
     if (question.length > LIMITS.textChars) return reply(textFor(lang, 'tooLong'));
     if (now.getTime() - memory.at > LIMITS.historyTtlMs) memory = { at: 0, turns: [] };

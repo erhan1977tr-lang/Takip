@@ -172,7 +172,7 @@ test('bot: yazılı soru → yanıt; /yardim; /sifirla; eski ileti yok sayılır
   await bot.handleUpdate(msg());
   assert.deepEqual(net.sent, ['Yanıt']);
   await bot.handleUpdate(msg({ text: '/yardim' }));
-  assert.equal(net.sent.at(-1), TEXT.help);
+  assert.equal(net.sent.at(-1), `${TEXT.help}\n\n${TEXT_RO.help}`, 'komutun dili bilinmez: yardım iki dilde (karar 288)');
   await bot.handleUpdate(msg({ text: '/sifirla' }));
   assert.equal(net.sent.at(-1), TEXT.reset);
   const before = net.sent.length;
@@ -197,9 +197,9 @@ test('bot: sesli mesaj → dosya indirilir → Türkçe metne çevrilir → yan�
   assert.equal(stt.body.get('language'), null, 'dil sabitlenmez: Türkçe ve Romence ses');
   assert.equal(stt.body.get('model'), 'gpt-4o-mini-transcribe');
   await bot.handleUpdate(msg({ text: undefined, voice: { file_id: 'F2', duration: 500 } }));
-  assert.equal(net.sent.at(-1), TEXT.voiceTooLong);
+  assert.equal(net.sent.at(-1), TEXT_RO.voiceTooLongBoth, 'sesin dili bilinmez: iki dilde (karar 288)');
   await bot.handleUpdate(msg({ text: undefined, photo: [{}] }));
-  assert.equal(net.sent.at(-1), TEXT.unsupported);
+  assert.equal(net.sent.at(-1), TEXT_RO.unsupportedBoth);
 });
 
 test('bot: AI hatası → sabit Türkçe metin; sağlayıcının ham hatası / anahtar kullanıcıya gitmez', async () => {

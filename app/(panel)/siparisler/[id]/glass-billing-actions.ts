@@ -16,7 +16,7 @@ const back = (id: string, q: string) => `/siparisler/${id}?${q}#finans`;
  * müşteride aynı tutar varsa formdaki onay kutusu (ack = eşleşmelerin anahtarı) işaretlenmeden istenmez (karar 208).
  */
 export async function glassDocumentAction(fd: FormData) {
-  const user = await requirePermission('OFFER_SEND');
+  const user = await requirePermission('ACCOUNTING_MANAGE');
   const id = String(fd.get('id') ?? '');
   const kind = String(fd.get('kind') ?? '');
   if (!['PROFORMA', 'ADVANCE', 'INVOICE'].includes(kind)) redirect(back(id, 'fgoError=NOT_ALLOWED'));

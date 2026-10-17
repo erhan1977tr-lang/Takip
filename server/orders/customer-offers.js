@@ -67,6 +67,7 @@ const dayCmp = (a, b) => (a === b ? 0 : a == null ? 1 : b == null ? -1 : a < b ?
  *   - Onaylı yüklemesi olan sipariş: satırın GEÇERLİ (effectiveItems — düzeltmeler uygulanmış) LOADED adetleri onay
  *     gününe; kalan adet etkin (ACTIVE) aktarımların günlerine (aktarılan adet kadar); hâlâ kalan → tarihsiz bölüm
  *     ("henüz planlanmadı"). İşlem satırları (CNC, delik, sandık) onayda tam adetle yüklendiği için ilk yüklemededir.
+ *   - Hiç yüklenmeyen sipariş (onayda yalnızca NOT_LOADED): kalan aktarımların gününe, gerisi tarihsiz (karar 288).
  *   - Onay kalemleri teklifin hiçbir satırına bağlanamıyorsa (beklenmez: onaylı yüklemeden sonra fiyat değişmez — karar 171)
  *     sipariş bölünmez, ilk onay gününde tek bölüm olarak gösterilir.
  * @param {{ actualShipDate?: Date | string | null, estimatedShipDate?: Date | string | null,
@@ -91,7 +92,11 @@ export function loadingParts(order, offer) {
     loaded.set(it.offerLineId, m);
   }
   const confirmedDays = [...new Set(items.map((it) => dayOfDate(it.confirmation.shipDay)))].sort();
-  if (!lines.some((l) => loaded.has(l.id))) return [{ day: confirmedDays[0] ?? planned, lines }];
+  // Onay kalemleri teklif satırlarına bağlanamıyorsa (yüklenen var ama teklifte yok) sipariş bölünmez. Hiç yüklenmeyen (yalnızca
+  // NOT_LOADED) siparişte ise kalan aşağıda aktarımlara / tarihsiz bölüme dağılır: geçmiş onay günü "planlanan" değildir
+  // (3.93.0, karar 288 — D18).
+  const anyLoaded = items.some((it) => it.status === 'LOADED' && it.quantity > 0);
+  if (anyLoaded && !lines.some((l) => loaded.has(l.id))) return [{ day: confirmedDays[0] ?? planned, lines }];
   const active = (order.replans ?? [])
     .filter((r) => r.status === 'ACTIVE' && r.quantity > 0)
     .map((r) => ({ lineId: r.sourceItem?.offerLineId ?? null, day: dayOfDate(r.shipDay), quantity: r.quantity }))

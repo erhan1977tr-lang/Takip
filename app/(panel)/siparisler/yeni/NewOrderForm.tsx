@@ -38,8 +38,8 @@ function applyFiles(el: HTMLInputElement | null, list: File[]) {
  * sürükle-bırak, birkaç seferde ekleme, listeden çıkarma.
  * m: sözlüğün newOrder.form parçası (sunucudaki sayfa, kullanıcının diline göre verir).
  */
-export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m }: {
-  catalog: GlassOption[]; suggestedNo: string; prefix: string; shipDate: string; draft?: DraftData; m: Dict['newOrder']['form'];
+export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m, requestKey }: {
+  catalog: GlassOption[]; suggestedNo: string; prefix: string; shipDate: string; draft?: DraftData; m: Dict['newOrder']['form']; requestKey: string;
 }) {
   const [state, action, pending] = useActionState<NewOrderState, FormData>(createOrderAction, {});
   const v = state.values;
@@ -73,6 +73,8 @@ export function NewOrderForm({ catalog, suggestedNo, prefix, shipDate, draft, m 
 
   return (
     <form action={action}>
+      {/* Tek kullanımlık form anahtarı (karar 288 — D2): form iki kez gönderilse de tek sipariş açılır */}
+      <input type="hidden" name="requestKey" value={requestKey} />
       {draft && <input type="hidden" name="draftId" value={draft.id} />}
       <div className="card">
         <h2>{m.info.title}</h2>

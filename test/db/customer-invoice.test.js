@@ -270,7 +270,8 @@ dbTest('müşteri proforması zinciri: yalnızca onaylanan kapsam faturalanır; 
   assert.deepEqual((await billing(d1)).customers[0].groups[0].problems, ['ADVANCE_PENDING']);
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: av.batchId }));
   const fa = fgo.calls[1];
-  assert.deepEqual([fa.Serie, fa['Continut[0][Denumire]'], fa['Continut[0][NrProduse]'], fa['Continut[0][PretUnitar]'], fa.IdExtern], ['GKH', 'Avans marfă conform proformă PRF301', '1', '495.87', `LOT-${av.batchId}`]);
+  // Avans TVA dahil toplamla (PretTotal — karar 288, D8): avans = tahsilat, kuruşu kuruşuna
+  assert.deepEqual([fa.Serie, fa['Continut[0][Denumire]'], fa['Continut[0][NrProduse]'], fa['Continut[0][PretTotal]'], fa['Continut[0][PretUnitar]'], fa.IdExtern], ['GKH', 'Avans marfă conform proformă PRF301', '1', '600.00', undefined, `LOT-${av.batchId}`]);
   const A = await batchOf(av.batchId);
   assert.deepEqual([A.kind, A.parentId, A.status, `${A.document.series}${A.document.number}`, A.orders.map((o) => o.activeKey)], ['ADVANCE', pr.batchId, 'ISSUED', 'GKH302', [null, null, null]]);
   await setPaid(fgo, A.document, 600);

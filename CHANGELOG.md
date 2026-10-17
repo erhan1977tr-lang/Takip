@@ -4,6 +4,57 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.93.2 — 17.10.2026
+
+- **Elle fatura numarası, düşülmüş avansa aitse** (karar 288 — D10 tamamlandı): TAKİP'te bir faturada düşülmüş avans
+  faturasının numarası "Sonraki fatura numarası" olarak girilirse kayıt kaldırılmaz ve FGO'ya belge isteği HİÇ gitmez
+  (önceden FGO faturayı kesebilir, TAKİP kaydedemezdi). İş açık hatayla durur; yönetici numarayı düzeltir. Otomatik numara
+  temizliği kaldırılamayan kayıtta durur, aynı numarayı tekrar sormaz.
+- Testler: müşteri korkuluk hesabında stok ayrıntısı beklentisi (O3) ve D15 testindeki alan adı düzeltildi.
+
+## 3.93.1 — 17.10.2026
+
+- Tip kontrolü düzeltmesi: yeni cam siparişindeki tek kullanımlık form anahtarının (karar 288 — D2) belge açıklaması işlev
+  tanımına yeniden bağlandı. Davranış değişmedi.
+
+## 3.93.0 — 17.10.2026
+
+3.92.0 sonrası regresyon denetiminin (claude/regresyon-denetimi-3.92.0) düzeltmeleri (karar 288). Migration yok.
+
+- **Cam siparişi iptali** artık FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği, onaylı yükleme ya da elle ödeme
+  varken yapılamaz; ekranda iptal formu yerine nedenler görünür. Kontrol, belge isteği ve yükleme onayıyla aynı kilitler
+  altında yapılır.
+- **Profil siparişi iptali** yalnızca teslimden önce. Proforma tek başına engel değildir; teslim, tahsilat (ödeme alındı,
+  FGO'da görünen ödeme, iptal edilmemiş elle ödeme), avans / fatura belgesi ve bekleyen FGO işi iptali engeller. İptal FGO
+  belgesine dokunmaz. Depoya gitmiş malın stoğu net düşüm kadar bir kez geri eklenir. İptal edilen siparişin tahsilatsız
+  proforması alacak toplamına borç olarak girmez.
+- **"Yüklendi"** onaylı yüklemesi olan siparişte sandıkları başka güne taşımaz, misafir yerleşimini silmez, iki firmaya
+  yanıltıcı sandık bildirimi göndermez; fiili yükleme günü onaylı gündür. Tahmini tarih değişikliği ve "Yüklendi" yükleme
+  onayıyla aynı kilidi kullanır.
+- **Profil teslim faturası:** avans faturalarının toplamı fatura tutarını aşarsa eksi fatura FGO'ya gönderilmez; iş gerekçeli
+  uyarıyla durur (muhasebe mutabakatı).
+- **FGO:** belge FGO'da kesildikten sonra TAKİP kaydı yazılamazsa iş yeniden gönderilmez; FGO'nun verdiği numarayla yönetici
+  incelemesine düşer. Avans faturaları TVA dahil toplamla gider (avans = tahsilat, kuruşu kuruşuna). Belirsiz belgenin
+  kaydı tek seferlik elle fatura numarasını da temizler. Başka faturada düşülmüş avans "FGO'da silindi" diye TAKİP'ten
+  kaldırılmaz. Cam belge isteği muhasebe yetkisiyle korunur.
+- **Mali belge e-postası:** sonucu belirsiz SMTP hatası ya da yarıda kalan gönderim otomatik tekrarlanmaz (mükerrer e-posta
+  yok); yalnızca bağlantının hiç kurulamadığı durumlar yeniden denenir.
+- **Müşteriye stok miktarı gitmez:** sipariş öncesi stok kontrolü, hesaplayıcı ve sipariş sayfası yalnızca kendi gereken
+  adedini ve "stok yetersiz" bilgisini gösterir.
+- **Tedarikçi siparişi:** kısmen teslim alınmış siparişin iptali yalnızca kalanı iptal eder; teslim alınan mal, stok
+  hareketleri, kabul belgeleri ve o malın borcu kalır (düzeltmelerle birlikte). Yeniden denemeyi bekleyen sipariş e-postası,
+  iptal / yeniden açılmada tedarikçiye gitmez.
+- **Stok ve katalog:** elle stok girişi eksi olamaz (düşüm sayımla); stok hareketi olan ürünün birimi değiştirilemez
+  (form ve Excel); katalog ve fiyat tablosu servisleri yetkiyi kendileri de denetler.
+- **Müşteri teslim bilgisi:** onay yetkisi olmayan müşteri kullanıcısı teslim bilgisini yalnızca görür (sunucu + ekran).
+- **Diğer:** cam sipariş formu iki kez gönderilse de tek sipariş açılır; iptal / silinmiş kaynak siparişte bekleyen telafi
+  onaylanmaz; profil kur anlık görüntüsünün politika / kâr payı alanları müşteriye ve denetimciye gitmez; Ayarlar sayfası
+  adresten gelen imzasız metni göstermez; müşteri Excel izni yalnızca kapsamdaki, silinmemiş siparişte değişir; onaylı
+  günde firma PDF / Excel / Özet yüklenen miktarları gösterir; hiç yüklenmeyen cam geçmiş günde "planlanan" görünmez
+  (rapor, müşteri, Telegram); rapor filtrelerindeki geçersiz değer hata verir.
+- **Telegram asistanı:** çok araçlı sorularda son turda OpenAI'ya geçersiz parametre gönderilmez; sesli yanıtta kapanış
+  zorunlu değil; yardım ve ses metinleri Romence de; dakika sınırına takılan ileti günlük hakkı tüketmez.
+
 ## 3.92.0 — 16.10.2026
 
 Güvenli geri dönüş, yayın sağlığı ve felaket kurtarma hazırlığı (karar 287; altyapı — uygulama ekranları değişmedi).

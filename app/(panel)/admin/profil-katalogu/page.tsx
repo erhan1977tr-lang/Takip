@@ -22,6 +22,8 @@ const MSG: Record<string, [string, MsgKey]> = {
   category: ['error', 'profile.catalog.msg.category'],
   image_infected: ['error', 'profile.catalog.msg.imageInfected'],
   import_failed: ['error', 'profile.catalog.msg.importFailed'],
+  // Stok hareketi olan ürünün birimi değişmez (karar 288 — D5): form ve Excel
+  unit_locked: ['error', 'profile.catalog.msg.unitLocked'],
   code: ['error', 'profile.catalog.problem.CODE'],
   name_ro: ['error', 'profile.catalog.problem.NAME_RO'],
   too_long: ['error', 'profile.catalog.problem.TOO_LONG'],

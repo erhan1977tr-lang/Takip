@@ -276,6 +276,11 @@ export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fet
       if (!notFound(e)) throw e; // ağ hatası: iş sonra yeniden denenir, numara uydurulmaz
       await removeDeletedDocument(db, row, e.message);
       await sleep(1100); // FGO saniyede bir istek kabul eder
+      // Kayıt kaldırılamadıysa (ör. bir faturada düşülmüş avans — karar 288) numara TAKİP'te dolu kalır: FGO'ya belge
+      // isteği gitmez (kesilen belge kaydedilemezdi), başka numara denenmez
+      if (await db.fgoDocument.findUnique({ where: { id: row.id }, select: { id: true } })) {
+        throw new FgoError(`Fatura numarası ${row.series}${row.number} TAKİP'te bir faturada düşülmüş avans faturasına ait; kayıt kaldırılmadı, başka numara denenmedi. Entegrasyonlar → "Sonraki fatura numarası" alanını düzeltin ya da boşaltın.`, { retry: false });
+      }
       return manual;
     }
     await sleep(1100);
@@ -294,6 +299,8 @@ export async function reserveInvoiceNumber(db, settings, { key, appUrl = '', fet
       if (!notFound(e)) break;
       await removeDeletedDocument(db, last, e.message);
       await sleep(1100);
+      // Kaldırılamayan kayıt (karar 288) aynı numarayı yeniden sorgulatmaz: temizlik burada durur
+      if (await db.fgoDocument.findUnique({ where: { id: last.id }, select: { id: true } })) break;
     }
   }
   return null;

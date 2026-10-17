@@ -55,7 +55,8 @@ test('müşteri: sipariş tipi seçer, profil ürünlerinin adetlerini girer', a
   // sipariş engellenmez — "Yine de gönder"
   const check = cust.locator('#stok-uyari');
   await expect(check).toContainText('Stok uyarısı');
-  await expect(check.locator('tr[data-stock-check-row="SPIGOTI"] td.num')).toHaveText(['20 adet', '0', '20']);
+  await expect(check.locator('tr[data-stock-check-row="SPIGOTI"] td.num')).toHaveText(['20 adet']);
+  await expect(check.locator('tr[data-stock-check-row="SPIGOTI"]')).toContainText('Stok yetersiz');
   await expect(check.locator('tr[data-stock-check-row="GK15"]')).toHaveCount(0); // stoğu yeten ürün listede yok
   await check.getByRole('button', { name: 'Yine de gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=profile_created/);
@@ -65,7 +66,8 @@ test('müşteri: sipariş tipi seçer, profil ürünlerinin adetlerini girer', a
   // anındaki gereken / mevcut / eksik değerini görür — genel stok listesi ve yöneticinin tablosu değil
   const warn = cust.locator('#stok.alert-warn');
   await expect(warn).toContainText('Stok uyarısı:');
-  await expect(warn.locator('[data-stock-line="SPIGOTI"]')).toContainText('gereken 20 adet, mevcut 0, eksik 20');
+  await expect(warn.locator('[data-stock-line="SPIGOTI"]')).toContainText('gereken 20 adet: stok yetersiz');
+  await expect(warn).not.toContainText(', eksik ');
   await expect(warn).not.toContainText('GK15'); // stoğu yeten ürün listede yok
   await expect(cust.locator('.page-head .badge', { hasText: 'Stok yetersiz' })).toBeVisible();
   await expect(cust.locator('table.stock-table')).toHaveCount(0);

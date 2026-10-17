@@ -16,9 +16,19 @@ import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
 import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting/uninvoiced.js';
 import { saveTranslateSettings, testTranslation } from '@/server/notes/translation.js';
+import { signParams } from '@/server/security/signed-param.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
+/**
+ * Serbest metin taşıyan sonuç adresi (karar 288 — D14): detail / types imzalanır; sayfa yalnızca imzası doğru metni gösterir.
+ * Kapsam: sonucun türü ("error:fgo", "ok:fgoTest" …).
+ */
+const signedBack = (q: Record<string, string>) => {
+  const scope = q.ok ? `ok:${q.ok}` : `error:${q.error ?? ''}`;
+  const sig = signParams(getEnv().AUTH_SECRET, scope, [q.detail ?? '', q.types ?? '']);
+  return back({ ...q, sig });
+};
 
 // Antivirüs (karar 150; güvenlik denetimi AUD-12): tarayıcının adresi ve portu buradan DEĞİŞTİRİLEMEZ — formdan okunmaz,
 // kaydedilmez; hedef yalnızca sunucu ayarındandır (server/files/antivirus.js → avTarget). İsteğe "host" / "port" alanı
@@ -65,7 +75,7 @@ export async function scanNowAction() {
 export async function saveWarehouseAction(formData: FormData) {
   const user = await requirePermission('OPS_SETTINGS_MANAGE');
   const r = parseRecipients(String(formData.get('recipients') ?? ''));
-  if (!r.ok) redirect(back({ error: 'warehouse', detail: r.bad.join(', ') }) + '#depo');
+  if (!r.ok) redirect(signedBack({ error: 'warehouse', detail: r.bad.join(', ') }) + '#depo');
   await saveWarehouseSettings(db, { recipients: r.recipients }, await actorOf(user));
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'warehouse' }) + '#depo');
@@ -81,11 +91,11 @@ export async function saveFgoAction(formData: FormData) {
     vatRate: formData.get('vatRate'), dailyLimit: formData.get('dailyLimit'),
     invoiceNext: formData.get('invoiceNext'),
   });
-  if (!res.ok) redirect(back({ error: 'fgo', detail: res.errors.join(', ') }) + '#fgo');
+  if (!res.ok) redirect(signedBack({ error: 'fgo', detail: res.errors.join(', ') }) + '#fgo');
   const key = String(formData.get('privateKey') ?? '');
   const clearKey = formData.get('clearKey') === 'on';
   const current = await getFgoSettings(db);
-  if (res.value.enabled && !key && !current.hasKey) redirect(back({ error: 'fgo', detail: 'KEY' }) + '#fgo');
+  if (res.value.enabled && !key && !current.hasKey) redirect(signedBack({ error: 'fgo', detail: 'KEY' }) + '#fgo');
   await saveFgoSettings(db, res.value, { key, clearKey, secret: getEnv().AUTH_SECRET }, await actorOf(user));
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'fgo' }) + '#fgo');
@@ -123,8 +133,8 @@ export async function saveTranslateAction(formData: FormData) {
 export async function testTranslateAction() {
   const user = await requirePermission('SETTINGS_MANAGE');
   const r = await testTranslation(db, { actor: await actorOf(user) });
-  if (r.ok) redirect(back({ ok: 'translateTest', detail: r.sample }) + '#ceviri');
-  redirect(back({ error: 'translateTest', code: r.code, detail: r.detail ?? '' }) + '#ceviri');
+  if (r.ok) redirect(signedBack({ ok: 'translateTest', detail: r.sample }) + '#ceviri');
+  redirect(signedBack({ error: 'translateTest', code: r.code, detail: r.detail ?? '' }) + '#ceviri');
 }
 
 /** FGO bağlantısını dener (kimlik + belge türleri). Hiçbir belge kesilmez. */
@@ -132,10 +142,10 @@ export async function testFgoAction() {
   const user = await requirePermission('SETTINGS_MANAGE');
   const s = await getFgoSettings(db);
   const key = fgoKey(s, getEnv().AUTH_SECRET);
-  if (!s.cui || !key) redirect(back({ error: 'fgoTest', detail: 'CUI / KEY' }) + '#fgo');
+  if (!s.cui || !key) redirect(signedBack({ error: 'fgoTest', detail: 'CUI / KEY' }) + '#fgo');
   const r = await fgoTest(s, key);
   await audit('FGO_TEST', 'IntegrationSetting', 'fgo', user.id, { ok: r.ok, env: s.env, types: r.types });
-  redirect(back({ [r.ok ? 'ok' : 'error']: 'fgoTest', detail: r.message.slice(0, 200), types: r.types.join(', ').slice(0, 300) }) + '#fgo');
+  redirect(signedBack({ [r.ok ? 'ok' : 'error']: 'fgoTest', detail: r.message.slice(0, 200), types: r.types.join(', ').slice(0, 300) }) + '#fgo');
 }
 
 /** Günün BT EUR satış kuru (elle): kur politikası BT olan müşterilerin bugünkü belgeleri bu kurla kesilir (karar 95, 98). */

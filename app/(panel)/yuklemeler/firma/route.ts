@@ -2,7 +2,7 @@ import { getCurrentUser } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
 import { db } from '@/lib/db';
-import { canFirmDocs, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
+import { canFirmDocs, confirmedDayRows, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
 import { fmtDate, fmtM2, fmtNum } from '@/lib/format';
 import { fxOfferNote } from '@/lib/fx-note';
 import { downloadHeaders, exportName, exportSubtitle } from '@/lib/exports';
@@ -32,7 +32,10 @@ export async function GET(req: Request) {
   if (!parseDateOnly(day)) return new Response(t('loading.transport.badDay'), { status: 400 });
   const data = await loadDay(user, day);
   const money = moneyView(user);
-  const entries = data.rows.map((o) => dayEntry(o, { customer: false, money }));
+  // Onaylı gün → YÜKLENEN miktarlar ve tutarlar (karar 288 — D17; "Yükleme Özeti" ile aynı kaynak: confirmedDayRows);
+  // onaysız gün → planlanan. Fiziksel sandıklar girilen kayıttır.
+  const rows = (await confirmedDayRows(user, day)) ?? data.rows;
+  const entries = rows.map((o) => dayEntry(o, { customer: false, money }));
   const firm = firmsOfDay(user, entries, data.crates, data.guests, data.hostNames).firms.find((f) => f.id === firmId);
   if (!firm) return new Response(t('common.fileNotFound'), { status: 404 });
 

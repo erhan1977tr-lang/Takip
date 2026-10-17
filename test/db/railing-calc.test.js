@@ -94,10 +94,14 @@ dbTest('müşterinin hesabı (karar 203–204): örnekler; seçenekler türüne 
   assert.deepEqual((await calc.runRailingCalc(db, { profileId: I.FBL90, handrailId: I.FBL115, color: 'RAL7016', thicknessId: I.G12, meters: '10' })).errors, [{ code: 'SYSTEM_INACTIVE' }]);
   assert.deepEqual((await calc.runRailingCalc(db, { profileId: I.FBL90, handrailId: 'yok', color: 'RAL7016', thicknessId: I.G12, meters: '10' })).errors, [{ code: 'SYSTEM_INACTIVE' }]);
   assert.deepEqual(await snap(), before, 'hesap yalnızca okur');
-  // Stok yetmeyen ürün: yalnızca o ürün için gereken / mevcut / eksik
+  // Stok yetmeyen ürün: müşteriye yalnızca "yetersiz" bilgisi (karar 288 — O3: mevcut / eksik sayıları gönderilmez);
+  // personel ayrıntıyı açıkça ister ({ stockDetail: true })
   await db.stockMovement.create({ data: { productId: (await db.profileProduct.findUniqueOrThrow({ where: { code: 'PANA-L90' } })).id, qty: 100, kind: 'GIRIS', note: 'test' } });
   const S = await calc.runRailingCalc(db, { profileId: I.FBL90, color: 'RAL7016', thicknessId: I.G12, meters: '12' });
-  assert.deepEqual(S.lines.map((l) => [l.code, l.qty, l.stock]), [['FBL90-7016', 2, { available: 0, missing: 2 }], ['PANA-L90', 2, null], ['PANA-90-12', 2, { available: 0, missing: 2 }]]);
+  assert.deepEqual(S.lines.map((l) => [l.code, l.qty, l.stock]), [['FBL90-7016', 2, { short: true }], ['PANA-L90', 2, null], ['PANA-90-12', 2, { short: true }]]);
+  assert.doesNotMatch(JSON.stringify(S), /available|missing/, 'müşteri yanıtında stok sayısı yok');
+  const SD = await calc.runRailingCalc(db, { profileId: I.FBL90, color: 'RAL7016', thicknessId: I.G12, meters: '12' }, { stockDetail: true });
+  assert.deepEqual(SD.lines.map((l) => [l.code, l.stock]), [['FBL90-7016', { available: 0, missing: 2 }], ['PANA-L90', null], ['PANA-90-12', { available: 0, missing: 2 }]]);
   // Forma aktarım: elle değiştirilen farklı adet ÖNCE gösterilir (sessizce silinmez); öbür ürünlere dokunulmaz
   const ID = Object.fromEntries(S.lines.map((l) => [l.code, l.productId]));
   const t = applyCalc({ [ID['FBL90-7016']]: '3', SPIGOT: '12' }, S.lines);

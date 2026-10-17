@@ -104,7 +104,11 @@ export default async function SupplierAccountsPage({ searchParams }: { searchPar
                     <tr key={o.id} data-account-order={o.orderNo} style={o.counts ? undefined : { opacity: 0.6 }}>
                       <td className="mono"><Link href={`/siparisler/tedarik/${o.id}`}>{o.orderNo}</Link></td>
                       <td>{o.orderDate ? fmtDate(o.orderDate) : '—'}</td>
-                      <td><SupplierStatusBadge status={o.status} />{!o.counts && <span className="muted small"> · {t('supplier.accounts.orders.notCounted')}</span>}</td>
+                      <td>
+                        <SupplierStatusBadge status={o.status} />{!o.counts && <span className="muted small"> · {t('supplier.accounts.orders.notCounted')}</span>}
+                        {/* Kısmen teslim alınıp kalanı iptal edilen sipariş (karar 288 — O6): borç = teslim alınan mal */}
+                        {o.partialCancel && <span className="muted small" data-partial-cancel> · {t('supplier.accounts.orders.partialCancel')}</span>}
+                      </td>
                       <td className="num">{o.revision ?? '—'}</td>
                       <td className="num nowrap">
                         {o.total != null ? `${fmtNum(o.total)} ${o.currency}` : '—'}

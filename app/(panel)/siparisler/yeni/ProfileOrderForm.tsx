@@ -213,7 +213,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
               <thead>
                 <tr>
                   <th>{m.stockCheck.colProduct}</th><th className="num">{m.stockCheck.colNeeded}</th>
-                  <th className="num">{m.stockCheck.colAvailable}</th><th className="num">{m.stockCheck.colMissing}</th>
+                  <th>{m.stockCheck.colStatus}</th>
                 </tr>
               </thead>
               <tbody>
@@ -221,8 +221,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
                   <tr key={l.productId} data-stock-check-row={l.code}>
                     <td><b>{l.name}</b> <span className="muted small mono">{l.code}</span></td>
                     <td className="num nowrap">{l.needed} <span className="muted small">{l.unit}</span></td>
-                    <td className="num">{l.available}</td>
-                    <td className="num text-danger"><b>{l.missing}</b></td>
+                    <td className="text-danger"><b>{m.stockCheck.short}</b></td>
                   </tr>
                 ))}
               </tbody>
