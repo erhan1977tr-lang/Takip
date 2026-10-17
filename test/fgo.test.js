@@ -72,8 +72,11 @@ function numberingDb(docs, settingValue = {}) {
     audits, alerts, setting,
     fgoDocument: {
       findMany: async ({ where }) => docs.filter((d) => d.series === where.series),
-      findUnique: async ({ where }) => docs.find((d) => d.series === where.series_number.series && d.number === where.series_number.number) ?? null,
+      findUnique: async ({ where }) => (where.id ? docs.find((d) => d.id === where.id)
+        : docs.find((d) => d.series === where.series_number.series && d.number === where.series_number.number)) ?? null,
     },
+    billingBatchLine: { count: async ({ where }) => (db.offsetDocIds ?? []).filter((id) => id === where.refDocId).length },
+    auditLog: { create: async ({ data }) => audits.push(data) },
     adminAlert: { create: async ({ data }) => alerts.push(data) },
     integrationSetting: {
       findUnique: async () => setting,
@@ -350,4 +353,24 @@ test('factura/print yalnızca bağlantı okur: seri + numara + hash; https olmay
   assert.deepEqual([seen[0][1].Serie, seen[0][1].Numar, seen[0][1].Hash], ['GKH', '7', fgoHash('123', 'K', '7')]);
   const http = async () => new Response(JSON.stringify({ Success: true, Factura: { Link: 'http://fgo.ro/x.pdf' } }));
   assert.equal(await fgoPrint(settings, 'K', { series: 'GKH', number: '7' }, http), null);
+});
+
+// 3.93.1 (karar 288 — D10): bir faturada düşülmüş avans faturası kaldırılamaz; numarası elle istenirse FGO'ya belge isteği
+// gitmez (kesilen belge kaydedilemezdi) ve başka numara denenmez. Otomatik temizlik aynı numarayı tekrar tekrar sormaz.
+test('fatura numarası: düşülmüş avansın numarası elle istenirse kesim durur; otomatik temizlik o kayıtta durur', async () => {
+  const docs = [
+    { id: 'd553', orderId: 'o1', kind: 'ADVANCE', series: 'GKH', number: '553' }, // FGO'da silinmiş görünüyor, faturada düşülmüş
+  ];
+  const db = numberingDb(docs);
+  db.offsetDocIds = ['d553'];
+  const f = statusFetch(['553']);
+  await assert.rejects(
+    reserveInvoiceNumber(db, { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: 553 }, { key: 'K', fetchImpl: f.fetchImpl, sleep: async () => {} }),
+    (e) => e.retry === false && /GKH553.*başka numara denenmedi/.test(e.message),
+  );
+  assert.deepEqual(docs.map((d) => d.number), ['553'], 'kayıt yerinde');
+  assert.ok(db.audits.some((a) => a.action === 'FGO_DOC_REMOVE_REFUSED'));
+  const g = statusFetch(['553']);
+  assert.equal(await reserveInvoiceNumber(db, { env: 'test', cui: '1', invoiceSeries: 'GKH', invoiceNext: null }, { key: 'K', fetchImpl: g.fetchImpl, sleep: async () => {} }), null);
+  assert.deepEqual(g.asked, ['553'], 'aynı numara bir kez soruldu');
 });

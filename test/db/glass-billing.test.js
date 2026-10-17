@@ -253,15 +253,28 @@ dbTest('fatura numarası: numarayı FGO verir ve dönen numara kaydedilir; elle 
   assert.equal(`${a.doc.series}${a.doc.number}`, 'GKH812');
   assert.equal(await setting(), null);
 
-  // 2) Elle numara 553: sistemde kayıtlı (ilk testteki avans faturası) ama FGO'da silinmiş → eski kayıt kaldırılır,
-  //    tam 553 istenir, fatura kesilince alan boşalır (554 olmaz)
+  // 2a) Elle numara 553: sistemde kayıtlı ve bir faturada (GKH554) DÜŞÜLMÜŞ avans faturası, FGO'da silinmiş görünüyor →
+  //     kayıt kaldırılmaz (karar 288 — D10: avans ikinci kez düşülmesin); FGO'ya belge isteği GİTMEZ, başka numara denenmez
   await fgoOn(0, { invoiceNext: 553 });
   const stale = await db.fgoDocument.findUnique({ where: { series_number: { series: 'GKH', number: '553' } } });
   assert.ok(stale, 'ilk testteki avans faturası GKH553 sistemde kayıtlı');
-  const b2 = await issue(72, fake({ gone: ['553'] }));
+  const b1 = await issue(72, fake({ gone: ['553'] }));
+  assert.deepEqual(b1.r, { done: 0, failed: 1 });
+  assert.equal(calls.length, 1, 'belge isteği gönderilmedi (kesilen belge kaydedilemezdi)');
+  assert.ok(await db.fgoDocument.findUnique({ where: { id: stale.id } }), 'düşülmüş avans kaydı yerinde');
+  assert.ok(await db.auditLog.findFirst({ where: { action: 'FGO_DOC_REMOVE_REFUSED', details: { path: ['docId'], equals: stale.id } } }));
+  const job2a = await db.notificationOutbox.findFirst({ where: { type: 'FGO_BATCH', payload: { path: ['batchId'], equals: b1.batchId } } });
+  assert.equal(job2a.status, 'FAILED');
+  assert.match(job2a.lastError, /GKH553.*başka numara denenmedi/);
+  assert.equal(await setting(), 553, 'numara alanda kalır; yönetici düzeltir');
+
+  // 2b) Elle numara 812: sistemde kayıtlı (1. adımdaki fatura) ama FGO'da silinmiş → eski kayıt kaldırılır,
+  //     tam 812 istenir, fatura kesilince alan boşalır (813 olmaz)
+  await fgoOn(0, { invoiceNext: 812 });
+  const b2 = await issue(77, fake({ gone: ['812'] }));
   assert.deepEqual(b2.r, { done: 1, failed: 0 });
-  assert.equal(calls[1].Numar, '553', 'tam girilen numara');
-  assert.equal(b2.doc.number, '553', 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
+  assert.equal(calls[1].Numar, '812', 'tam girilen numara');
+  assert.equal(b2.doc.number, '812', 'silinmiş eski kayıt kaldırıldı, numara yeni faturada');
   assert.ok(await db.auditLog.findFirst({ where: { action: 'FGO_DOC_REMOVED' } }));
   assert.equal(await setting(), null, 'elle numara tek seferlik: kendiliğinden +1 yapılmaz');
 

@@ -308,6 +308,6 @@ dbTest('D15: onay yetkisi olmayan müşteri kullanıcısı teslim bilgisini değ
   const id = await profileOrder([['GK15', 1]]);
   assert.equal(await codeOf(prun(id, 'update_pickup', 'viewer', { pickupDate: pickDay(), phone: '0700111222', plate: 'B 9 XYZ' })), 'NOT_ALLOWED');
   const p = await db.profileOrder.findUniqueOrThrow({ where: { orderId: id } });
-  assert.equal(p.plate, 'B 1 ABC');
+  assert.equal(p.vehiclePlate, 'B 1 ABC');
   assert.equal(await codeOf(prun(id, 'update_pickup', 'cust', { pickupDate: pickDay(), phone: '0700111222', plate: 'B 9 XYZ' })), 'OK');
 }));

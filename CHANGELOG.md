@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.93.2 — 17.10.2026
+
+- **Elle fatura numarası, düşülmüş avansa aitse** (karar 288 — D10 tamamlandı): TAKİP'te bir faturada düşülmüş avans
+  faturasının numarası "Sonraki fatura numarası" olarak girilirse kayıt kaldırılmaz ve FGO'ya belge isteği HİÇ gitmez
+  (önceden FGO faturayı kesebilir, TAKİP kaydedemezdi). İş açık hatayla durur; yönetici numarayı düzeltir. Otomatik numara
+  temizliği kaldırılamayan kayıtta durur, aynı numarayı tekrar sormaz.
+- Testler: müşteri korkuluk hesabında stok ayrıntısı beklentisi (O3) ve D15 testindeki alan adı düzeltildi.
+
 ## 3.93.1 — 17.10.2026
 
 - Tip kontrolü düzeltmesi: yeni cam siparişindeki tek kullanımlık form anahtarının (karar 288 — D2) belge açıklaması işlev
