@@ -22,6 +22,7 @@ export default {
     NOW: 'situația curentă (independent de interval)', MOVEMENT_CREATED: 'ziua înregistrării mișcării de stoc', SUPPLIER_FINALIZED: 'ziua aprobării comenzii către furnizor', RECEIVED_ON: 'ziua recepției',
   },
   tables: {
+    supplierBalances: 'Solduri furnizori (curente)',
     byCustomer: 'Comenzi pe client', byMonth: 'Comparație lunară', orders: 'Comenzi', byCustomerGlass: 'Pe client și tip de sticlă',
     partial: 'Încărcări parțiale', byProduct: 'Comenzi de profile pe produs', byCustomerProfile: 'Comenzi de profile pe client', stock: 'Stoc disponibil',
     movements: 'Mișcări de stoc', supplierOrders: 'Comenzi către furnizori', receipts: 'Recepții marfă', days: 'Zile de încărcare', byCustomerLoading: 'Încărcare pe client',
@@ -29,6 +30,7 @@ export default {
     financeByMonth: 'Rezumat financiar lunar', financeOrders: 'Vânzări pe comandă',
   },
   col: {
+    supplierOpening: 'Sold inițial', supplierDebt: 'Datorie comenzi', supplierPaid: 'Plătit', supplierBalance: 'Rest', missingPriceOrders: 'Comenzi cu preț lipsă',
     customer: 'Client', orders: 'Comenzi', glassOrders: 'Com. sticlă', profileOrders: 'Com. profile', completed: 'Finalizate', waiting: 'În așteptare',
     orderedM2: 'm² comandați', loadedM2: 'm² încărcați', remainingM2: 'm² rămași', noOfferTable: 'Fără tabel de ofertă', month: 'Lună', orderNo: 'Nr. comandă',
     type: 'Tip', created: 'Creată', status: 'Stare', loading: 'Încărcare', progress: 'Rezumat stare', plannedDay: 'Zi planificată', orderedPcs: 'Buc. comandate',

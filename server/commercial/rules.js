@@ -132,10 +132,13 @@ export function perMlContent(prod) {
   return c != null && c > 0n ? fromScaled(c, 3) : null;
 }
 /**
- * Profil ürününün önerilen satış ve iç maliyet birim fiyatı (yalnızca öneri — yönetici değiştirir): satış = katalog liste
- * fiyatı (EUR, satış birimi başına); maliyet = alış fiyatı yalnızca alış para birimi EUR ve alış birimi satış birimiyle aynıysa
- * (çevrim / tahmin yok). Metreyle fiyatlanan üründe birim başına fiyat ÷ içerik (€/ML, 4 ondalık yarım-yukarı).
- * @param {{ listPrice?: unknown, purchasePrice?: unknown, purchaseCurrency?: unknown, purchaseUnit?: unknown, unitCode?: unknown, packMeasure?: unknown, packContent?: unknown }} prod
+ * Profil / aksesuar ürününün önerilen satış ve iç maliyet birim fiyatı (yalnızca öneri — yönetici değiştirir): satış = katalog
+ * liste fiyatı (EUR, satış birimi başına). Maliyet (DÜZELTME 10 M6): önce GERÇEKLEŞEN stok maliyeti (mal kabullerinden, nakliye
+ * dahil ağırlıklı ortalama, EUR / stok birimi — stockCostEur); yoksa katalog alış fiyatı, yalnızca alış para birimi EUR ve alış
+ * birimi satış birimiyle aynıysa (çevrim / tahmin yok). İkisi ayrı değerlerdir ve ayrı döner. Metreyle fiyatlanan üründe birim
+ * başına fiyat ÷ içerik (€/ML, 4 ondalık yarım-yukarı).
+ * @param {{ listPrice?: unknown, purchasePrice?: unknown, purchaseCurrency?: unknown, purchaseUnit?: unknown, unitCode?: unknown, packMeasure?: unknown, packContent?: unknown, stockCostEur?: unknown }} prod
+ * @returns {{ price: string | null, cost: string | null, costSource: 'STOCK' | 'CATALOG' | null, stockCost: string | null, catalogCost: string | null }}
  */
 export function profileDefaults(prod) {
   const content = perMlContent(prod);
@@ -146,7 +149,9 @@ export function profileDefaults(prod) {
     return content ? fromScaled(divRound(n * 1000n, toScaled(content, 3)), 4, 2) : fromScaled(n, 4, 2);
   };
   const sameUnit = prod?.purchaseUnit == null || prod.purchaseUnit === '' || prod.purchaseUnit === prod.unitCode;
-  return { price: per(prod?.listPrice), cost: prod?.purchaseCurrency === 'EUR' && sameUnit ? per(prod?.purchasePrice) : null };
+  const catalogCost = prod?.purchaseCurrency === 'EUR' && sameUnit ? per(prod?.purchasePrice) : null;
+  const stockCost = per(prod?.stockCostEur);
+  return { price: per(prod?.listPrice), cost: stockCost ?? catalogCost, costSource: stockCost != null ? 'STOCK' : catalogCost != null ? 'CATALOG' : null, stockCost, catalogCost };
 }
 /** Metre → tam paket sayısı (yukarı yuvarlama, bir kez) */
 export function packsFor(meters, content) {
@@ -279,13 +284,17 @@ export function parseOffer(v, cat) {
     if (price === undefined) return { ok: false, code: 'PRICE', section: 'profile', index: i };
     const cost = price4(l?.cost, { required: false });
     if (cost === undefined) return { ok: false, code: 'COST', section: 'profile', index: i };
+    // Maliyetin kaynağı (M6) sunucuda: gerçekleşen stok maliyeti / katalog alış fiyatı / elle; o anki değerler sürüme kopyalanır
+    const def = profileDefaults(prod);
+    const same = (a) => a != null && cost != null && toScaled(a, 4) === toScaled(cost, 4);
+    const costSource = cost == null ? null : same(def.stockCost) ? 'STOCK' : same(def.catalogCost) ? 'CATALOG' : 'MANUAL';
     const description = clean(l?.description, LIMITS.desc + 1) || prod.nameRo;
     if (description.length > LIMITS.desc) return { ok: false, code: 'DESC', section: 'profile', index: i };
     profile.push({
       productId: prod.id, code: prod.code, nameTr: prod.nameTr, description, unitCode: prod.unitCode,
       category: prod.category?.nameRo ?? '', categoryTr: prod.category?.nameTr ?? '', categorySort: prod.category?.sortOrder ?? 0,
       categoryRank: commercialCategoryRank(prod.category),
-      perMl: !!content, content, meters, color: color || null, qty, price, cost,
+      perMl: !!content, content, meters, color: color || null, qty, price, cost, costSource, stockCost: def.stockCost, catalogCost: def.catalogCost,
     });
   }
   // Belgede profil satırları kategoriye göre gruplanır (örnek teklif: profil / ACCESORII / MÂNĂ CURENTĂ); sıra kararlı

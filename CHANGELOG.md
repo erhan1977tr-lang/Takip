@@ -4,6 +4,33 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.0 — 17.10.2026
+
+DÜZELTME 10 — Aşama 2B (karar 293). Migration: yeni tablolar (tedarikçi e-postaları, açılış bakiyesi, nakliye, nakliye
+dağıtımı), iki yeni boş sütun (ürün ve sipariş satırında tedarikçi kodu) ve mevcut tedarikçi adresinin birincil adres olarak
+taşınması (eklemeli; hiçbir veri silinmez).
+
+- **Tedarikçi başına 10 e-posta (M9):** Ayarlar → Tedarikçiler'de "+ E-posta ekle", düzenle, sil, etkin / pasif, birincil.
+  Mevcut adres birincil adres olarak taşındı. Sipariş e-postası bütün ETKİN adreslere gider — her alıcıya ayrı ileti
+  (alıcılar birbirini görmez), tek kayıt; her alıcının sonucu gönderim geçmişinde ve denetim kaydında görünür. Bir alıcıya
+  giden ileti ona bir daha gönderilmez; gönderim yarıda kalırsa o alıcı "belirsiz" sayılır. Bazı adreslere gidip bazılarına
+  gidemezse sipariş "Gönderilemedi (kısmi)" olur ve "Tekrar gönder" yalnızca almayan adreslere yollar.
+- **Tedarikçi ürün kodu (M5):** Profil Kataloğu → ürün → Alış bilgisi'nde "Tedarikçi ürün kodu". Tedarikçi sipariş
+  e-postasının Ürün Kodu sütununda yalnızca bu kod yazılır; GKH iç kodu ayrı kalır ve INTRARE MARFĂ belgesinde kullanılır.
+  Kod onay anında siparişe kopyalanır (eski siparişler değişmez). Kodu olmayan ürün varsa sipariş onaylanmaz / gönderilmez
+  (yanlış kodla sessiz gönderim yok). Stok yine iç ürün kimliğiyle yürür.
+- **Tedarikçi açılış bakiyesi (M2):** Tedarikçi Hesapları → tedarikçi → "Açılış bakiyesi": geçmişten devreden borç ya da
+  alacak, para birimi başına. Sipariş borcundan ve ödemelerden ayrı sütun; kalan = açılış + sipariş borcu − ödeme.
+  Silinmez / değişmez: gerekçeli iptal ya da karşı kayıt. Muhasebe ekranı, finans raporu (yeni "Tedarikçi bakiyeleri"
+  tablosu), Telegram ve panel asistanı aynı bakiye servisini kullanır.
+- **Nakliye ve gerçekleşen stok maliyeti (M6):** Satın Alma → "Nakliye Giderleri": taşıyıcı faturası (EUR ya da RON; RON
+  için fatura tarihindeki kur zorunlu, kayıtta sabit) seçilen mal kabullerinin ürünlerine gerçek teslim alınan miktara göre
+  birim başına eşit pay olarak dağıtılır (kuruşu kuruşuna; bir kez; aynı taşıyıcının aynı faturası iki kez girilemez).
+  Taşıyıcı borcu ürün tedarikçisinin borcuna eklenmez, ayrı izlenir (ödendi işareti, gerekçeli iptal). Ürünün gerçekleşen
+  stok maliyeti = mal kabullerinin alış fiyatı + nakliye payı, ağırlıklı ortalama (EUR; fiyatsız / EUR dışı kabul uydurulmaz).
+  Ticari teklif profil maliyeti önce bunu, yoksa katalog alış fiyatını önerir; ikisi ayrı görünür; kesinleşmiş teklif
+  değişmez. Katalog alış fiyatı ayrı kalır; tedarikçi sipariş fiyatı düzenlenebilir.
+
 ## 3.96.0 — 17.10.2026
 
 DÜZELTME 10 — Aşama 2A (karar 292). Migration yok.

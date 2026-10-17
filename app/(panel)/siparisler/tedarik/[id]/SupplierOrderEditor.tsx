@@ -14,6 +14,8 @@ export type EditorProduct = {
   /** Ürünün tanımlı tedarikçisi bu siparişinkinden başkaysa adı */
   otherSupplier: string | null;
   own: boolean;
+  /** Tedarikçinin ürün kodu (M5) — e-postada yalnızca bu yazılır; yoksa onay engellenir */
+  supplierCode: string | null;
 };
 export type EditorLine = { productId: string; description: string; color: string; qty: string; unitCode: string; unitPrice: string };
 type Row = EditorLine & { key: number };
@@ -44,6 +46,7 @@ export function SupplierOrderEditor(props: {
   const [orderDate, setOrderDate] = useState(props.orderDate);
   const [note, setNote] = useState(props.note);
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const noCode = rows.some((r) => { const p = byId.get(r.productId); return !!p && !p.supplierCode; });
 
   const payload = (list: EditorLine[]) => JSON.stringify(list.map((r) => ({
     productId: r.productId, description: r.description.trim(), color: r.color.trim(), qty: r.qty.trim(), unitCode: r.unitCode, unitPrice: r.unitPrice.trim(),
@@ -120,6 +123,9 @@ export function SupplierOrderEditor(props: {
                         {others.length > 0 && <optgroup label={m.editor.otherProducts}>{options(others)}</optgroup>}
                       </select>
                       {p?.otherSupplier && <div className="muted small">{interpolate(m.editor.otherSupplier, { name: p.otherSupplier })}</div>}
+                      {p && (p.supplierCode
+                        ? <div className="muted small" data-supplier-code={p.supplierCode}>{interpolate(m.editor.supplierCode, { code: p.supplierCode })}</div>
+                        : <div><span className="badge badge-warn" data-no-supplier-code>{m.editor.noSupplierCode}</span></div>)}
                     </td>
                     <td><input value={r.description} maxLength={200} className="text-input" placeholder={p?.nameTr ?? ''} onChange={(e) => update(r.key, { description: e.target.value })} aria-label={`${m.editor.col.description} ${n}`} /></td>
                     <td className="num">
@@ -177,8 +183,9 @@ export function SupplierOrderEditor(props: {
           <input type="hidden" name="orderId" value={props.orderId} />
           <input type="hidden" name="version" value={props.version} />
           {!props.email && <div className="alert alert-error" data-no-email>{m.emailMissing}</div>}
+          {noCode && <div className="alert alert-error" data-no-supplier-code-block>{m.editor.noSupplierCodeBlock}</div>}
           <div className="row">
-            {dirty || !props.email || rows.length === 0
+            {dirty || !props.email || rows.length === 0 || noCode
               ? <button type="button" className="btn btn-primary" disabled>{m.approve.button}</button>
               : <ConfirmButton primary message={interpolate(m.approve.confirm, { no: orderNo, email: props.email })}>{m.approve.button}</ConfirmButton>}
           </div>

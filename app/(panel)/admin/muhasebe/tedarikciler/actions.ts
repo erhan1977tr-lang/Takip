@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
 import { getEnv } from '@/lib/env';
-import { addPayment, voidPayment } from '@/server/suppliers/service.js';
+import { addOpening, addPayment, voidOpening, voidPayment } from '@/server/suppliers/service.js';
 
 const PATH = '/admin/muhasebe/tedarikciler';
 const back = (supplierId: string, q: string, hash = '') => `${PATH}?t=${encodeURIComponent(supplierId)}&${q}${hash}`;
@@ -31,4 +31,26 @@ export async function voidSupplierPaymentAction(fd: FormData) {
   if (!r.ok) redirect(back(supplierId, `error=${encodeURIComponent(r.code)}`, '#odemeler'));
   revalidatePath(PATH);
   redirect(back(supplierId, 'ok=voided', '#odemeler'));
+}
+
+/** Açılış bakiyesi (DÜZELTME 10 M2): tek seferlik form anahtarıyla bir kez yazılır */
+export async function addOpeningAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const supplierId = String(fd.get('supplierId') ?? '');
+  const r = await addOpening(db, {
+    supplierId, asOf: fd.get('asOf'), amount: fd.get('amount'), currency: fd.get('currency'), direction: String(fd.get('direction') ?? ''),
+    note: fd.get('note'), correctsId: fd.get('correctsId'), requestKey: fd.get('requestKey'),
+  }, await actorOf(admin), { timeZone: getEnv().APP_TIMEZONE });
+  if (!r.ok) redirect(back(supplierId, `error=${encodeURIComponent(r.code)}`, '#acilis'));
+  revalidatePath(PATH);
+  redirect(back(supplierId, `ok=${r.duplicate ? 'duplicate' : 'opening'}`, '#acilis'));
+}
+
+export async function voidOpeningAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const supplierId = String(fd.get('supplierId') ?? '');
+  const r = await voidOpening(db, { openingId: String(fd.get('openingId') ?? ''), reason: fd.get('reason') }, await actorOf(admin));
+  if (!r.ok) redirect(back(supplierId, `error=${encodeURIComponent(r.code)}`, '#acilis'));
+  revalidatePath(PATH);
+  redirect(back(supplierId, 'ok=openingVoided', '#acilis'));
 }

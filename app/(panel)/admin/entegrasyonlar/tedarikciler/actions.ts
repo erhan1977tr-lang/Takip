@@ -12,6 +12,16 @@ import { saveSupplier, setSupplierActive } from '@/server/suppliers/service.js';
 const PATH = '/admin/entegrasyonlar/tedarikciler';
 const back = (q: string) => `${PATH}?${q}`;
 
+/** Formun gizli "emails" alanı (JSON dizi); bozuksa boş dizi değil hata kodu üretsin diye geçersiz değer */
+function parseEmailsField(v: FormDataEntryValue | null): unknown {
+  try {
+    const x = JSON.parse(String(v ?? '[]'));
+    return Array.isArray(x) ? x.slice(0, 50) : 'BAD';
+  } catch {
+    return 'BAD';
+  }
+}
+
 export async function saveSupplierAction(fd: FormData) {
   const admin = await requirePermission('SUPPLIER_MANAGE');
   const id = String(fd.get('supplierId') ?? '') || null;
@@ -20,7 +30,7 @@ export async function saveSupplierAction(fd: FormData) {
     id,
     name: fd.get('name'),
     contactName: fd.get('contactName'),
-    email: fd.get('email'),
+    emails: parseEmailsField(fd.get('emails')),
     phone: fd.get('phone'),
     address: fd.get('address'),
     currency: fd.get('currency'),

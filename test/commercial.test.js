@@ -118,9 +118,10 @@ test('profil: metre → tam paket (hesaplayıcının yuvarlaması), metreyle fiy
   assert.equal(perMlContent({ packMeasure: 'M', packContent: null }), null);
   assert.equal(perMlContent({ packMeasure: 'M', packContent: '0' }), null);
   // Öneri: liste / alış fiyatı birim başına → €/ML; alış EUR değilse ya da birim farklıysa maliyet önerilmez
-  assert.deepEqual(profileDefaults({ listPrice: '168.90', purchasePrice: '132.72', purchaseCurrency: 'EUR', unitCode: 'BARA', packMeasure: 'M', packContent: '6' }), { price: '28.15', cost: '22.12' });
-  assert.deepEqual(profileDefaults({ listPrice: '2', purchasePrice: '1', purchaseCurrency: 'RON', unitCode: 'BUCATI' }), { price: '2.00', cost: null });
-  assert.deepEqual(profileDefaults({ listPrice: '2', purchasePrice: '1', purchaseCurrency: 'EUR', purchaseUnit: 'CUTII', unitCode: 'BUCATI' }), { price: '2.00', cost: null });
+  const pick = (d) => ({ price: d.price, cost: d.cost });
+  assert.deepEqual(pick(profileDefaults({ listPrice: '168.90', purchasePrice: '132.72', purchaseCurrency: 'EUR', unitCode: 'BARA', packMeasure: 'M', packContent: '6' })), { price: '28.15', cost: '22.12' });
+  assert.deepEqual(pick(profileDefaults({ listPrice: '2', purchasePrice: '1', purchaseCurrency: 'RON', unitCode: 'BUCATI' })), { price: '2.00', cost: null });
+  assert.deepEqual(pick(profileDefaults({ listPrice: '2', purchasePrice: '1', purchaseCurrency: 'EUR', purchaseUnit: 'CUTII', unitCode: 'BUCATI' })), { price: '2.00', cost: null });
 });
 
 test('doğrulama: hatalı girişler satır bilgisiyle reddedilir; ürün bilgisi katalogdan', () => {

@@ -671,7 +671,7 @@ export const TOOLS = {
   },
 
   tedarikci_hesaplari: {
-    desc: 'Tedarikçi hesapları: para birimine göre borç (kesin siparişler), ödenen ve kalan; fiyatı eksik sipariş sayısı.',
+    desc: 'Tedarikçi hesapları (muhasebe ekranıyla aynı bakiye servisi): para birimine göre açılış bakiyesi (devreden borç + / alacak −), sipariş borcu (kesin siparişler), ödenen ve kalan (= açılış + borç − ödenen); fiyatı eksik sipariş sayısı. Para birimleri toplanmaz.',
     fields: {},
     async run(tx) {
       const rows = await supplierAccounts(tx);

@@ -22,6 +22,7 @@ export default {
     NOW: 'güncel durum (tarih aralığından bağımsız)', MOVEMENT_CREATED: 'stok hareketinin kaydedildiği gün', SUPPLIER_FINALIZED: 'tedarikçi siparişinin onaylandığı gün', RECEIVED_ON: 'mal kabul günü',
   },
   tables: {
+    supplierBalances: 'Tedarikçi bakiyeleri (güncel)',
     byCustomer: 'Müşteri bazında siparişler', byMonth: 'Aylık karşılaştırma', orders: 'Siparişler', byCustomerGlass: 'Müşteri ve cam türü bazında',
     partial: 'Kısmi yüklemeler', byProduct: 'Ürün bazında profil siparişleri', byCustomerProfile: 'Müşteri bazında profil siparişleri', stock: 'Kullanılabilir stok',
     movements: 'Stok hareketleri', supplierOrders: 'Tedarikçi siparişleri', receipts: 'Mal kabulleri', days: 'Yükleme günleri', byCustomerLoading: 'Müşteri bazında yükleme',
@@ -29,6 +30,7 @@ export default {
     financeByMonth: 'Aylık finans özeti', financeOrders: 'Sipariş bazında satış',
   },
   col: {
+    supplierOpening: 'Açılış bakiyesi', supplierDebt: 'Sipariş borcu', supplierPaid: 'Ödenen', supplierBalance: 'Kalan', missingPriceOrders: 'Fiyatı eksik sipariş',
     customer: 'Müşteri', orders: 'Sipariş', glassOrders: 'Cam sip.', profileOrders: 'Profil sip.', completed: 'Tamamlanan', waiting: 'Bekleyen',
     orderedM2: 'Sipariş m²', loadedM2: 'Yüklenen m²', remainingM2: 'Kalan m²', noOfferTable: 'Teklif tablosu yok', month: 'Ay', orderNo: 'Sipariş no',
     type: 'Tür', created: 'Oluşturma', status: 'Durum', loading: 'Yükleme', progress: 'Durum özeti', plannedDay: 'Planlanan gün', orderedPcs: 'Sipariş adet',

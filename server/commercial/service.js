@@ -14,6 +14,7 @@ import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
 import { computeOffer, offerNoText, parseOffer, LIMITS, commercialCategoryRank } from './rules.js';
 import { glassCostTable } from './glass-cost.js';
+import { productStockCosts } from '../suppliers/costs.js';
 
 const FORBIDDEN = /** @type {const} */ ({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => can(actor?.role, 'COMMERCIAL_OFFER_MANAGE');
@@ -47,16 +48,17 @@ const plainProfile = (p) => ({
  * (eski satır bozulmasın); yeni satır pasif ürün seçemez.
  */
 async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }) {
-  const [glass, profile, customer, glassCosts] = await Promise.all([
+  const [glass, profile, customer, glassCosts, stock] = await Promise.all([
     tx.glassProduct.findMany({ where: { id: { in: ids(v?.glass) } } }),
     tx.profileProduct.findMany({ where: { id: { in: ids(v?.profile) } }, select: PROFILE_SELECT }),
     idOf(v?.customerId) ? tx.customer.findFirst({ where: { id: idOf(v.customerId), type: 'CUSTOMER' }, select: { id: true, name: true } }) : null,
     glassCostMap(tx, ids(v?.glass)),
+    ids(v?.profile).length ? productStockCosts(tx, ids(v?.profile)) : new Map(),
   ]);
   return {
     glassCosts,
     glassProducts: new Map(glass.filter((g) => g.isActive || keep.glass.has(g.id)).map((g) => [g.id, g])),
-    profileProducts: new Map(profile.filter((p) => p.isActive || keep.profile.has(p.id)).map((p) => [p.id, plainProfile(p)])),
+    profileProducts: new Map(profile.filter((p) => p.isActive || keep.profile.has(p.id)).map((p) => [p.id, { ...plainProfile(p), stockCostEur: stock.get(p.id)?.avgEur ?? null }])),
     customers: new Map(customer ? [[customer.id, customer]] : []),
   };
 }
@@ -331,12 +333,13 @@ export async function editorCatalog(db, actor) {
     db.customer.findMany({ where: { type: 'CUSTOMER' }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     glassCostTable(db),
   ]);
+  const stock = await productStockCosts(db, profile.map((p) => p.id));
   // Modülün kategori sırası (M1); kararlı sıralama: aynı kategoride katalog sırası korunur
   const ordered = profile.map((p, i) => ({ p, i })).sort((a, b) => commercialCategoryRank(a.p.category) - commercialCategoryRank(b.p.category) || a.i - b.i).map((x) => x.p);
   return {
     ok: /** @type {const} */ (true),
     glass: glass.map((g) => ({ ...g, listCost: costs.prices.get(g.id) ?? null })),
     glassCostTable: costs.table ? costs.table.name : null, glassCostReason: costs.reason,
-    profile: ordered.map(plainProfile), customers,
+    profile: ordered.map((p) => ({ ...plainProfile(p), stockCostEur: stock.get(p.id)?.avgEur ?? null })), customers,
   };
 }

@@ -18,6 +18,7 @@ import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
   expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances, supplierEmail,
+  activeRecipients, missingSupplierCodes, parseEmailList, parseOpening,
 } from './rules.js';
 
 export const SUPPLIER_EMAIL = 'SUPPLIER_ORDER_EMAIL';
@@ -50,24 +51,32 @@ export const WAITING_ORDER_MAIL = { status: 'PENDING', OR: [{ attempts: 0, lastE
 export async function listSuppliers(db) {
   return db.supplier.findMany({
     orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-    include: { _count: { select: { orders: true, payments: true, products: true } } },
+    include: { _count: { select: { orders: true, payments: true, products: true } }, emails: { orderBy: { sortOrder: 'asc' } } },
   });
 }
 
 /**
  * Tedarikçi ekler ya da düzenler. Ad (büyük / küçük harf fark etmeden) tekildir. Her değişiklik denetim kaydında.
- * @param {{ id?: string | null, name?: unknown, contactName?: unknown, email?: unknown, phone?: unknown, address?: unknown, currency?: unknown, isActive?: boolean }} v
- * @returns {Promise<{ ok: true, id: string } | { ok: false, code: string, errors?: string[] }>}
+ * E-posta adresleri (DÜZELTME 10 M9): emails listesi (en çok 10; parseEmailList). Eski çağrı biçimi (tek email) de kabul edilir.
+ * Supplier.email, birincil adresin kopyası olarak eşitlenir (eski sürümle uyum).
+ * @param {{ id?: string | null, name?: unknown, contactName?: unknown, email?: unknown, emails?: unknown, phone?: unknown, address?: unknown, currency?: unknown, isActive?: boolean }} v
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: string, errors?: string[], index?: number }>}
  */
 export async function saveSupplier(db, v, actor) {
   if (!allowed(actor)) return FORBIDDEN;
-  const parsed = parseSupplier(v);
+  if (v.emails !== undefined && !Array.isArray(v.emails)) return { ok: false, code: 'EMAIL' };
+  const emailRows = Array.isArray(v.emails) ? v.emails : v.email != null && String(v.email).trim() ? [{ email: v.email, isActive: true, isPrimary: true }] : v.emails === undefined && v.email === undefined ? null : [];
+  const list = emailRows == null ? null : parseEmailList(emailRows);
+  if (list && !list.ok) return { ok: false, code: list.code, ...(list.index != null ? { index: list.index } : {}) };
+  const primary = list?.ok ? list.value.find((e) => e.isPrimary)?.email ?? null : undefined;
+  const parsed = parseSupplier({ ...v, email: primary === undefined ? v.email : primary ?? '' });
   if (!parsed.ok) return { ok: false, code: parsed.errors[0], errors: parsed.errors };
   const value = parsed.value;
   return db.$transaction(async (tx) => {
     await lockKey(tx, 'suppliers');
     const all = await tx.supplier.findMany({ select: { id: true, name: true } });
     if (all.some((s) => s.id !== v.id && nameKey(s.name) === nameKey(value.name))) return { ok: false, code: 'EXISTS' };
+    let id;
     if (v.id) {
       const cur = await tx.supplier.findUnique({ where: { id: String(v.id) } });
       if (!cur) return { ok: false, code: 'NOT_FOUND' };
@@ -75,18 +84,53 @@ export async function saveSupplier(db, v, actor) {
       if (cur.currency !== value.currency && (await tx.supplierOrder.count({ where: { supplierId: cur.id } })) > 0) return { ok: false, code: 'CURRENCY_LOCKED' };
       const keys = /** @type {const} */ (['name', 'contactName', 'email', 'phone', 'address', 'currency', 'isActive']);
       const changed = keys.filter((k) => (cur[k] ?? null) !== (value[k] ?? null));
-      if (!changed.length) return { ok: true, id: cur.id };
-      await tx.supplier.update({ where: { id: cur.id }, data: value });
-      await writeAudit(tx, {
-        action: 'SUPPLIER_UPDATED', entityType: 'Supplier', entityId: cur.id, userId: actor.id,
-        details: { fields: changed, before: Object.fromEntries(changed.map((k) => [k, cur[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, value[k] ?? null])) },
-      }, actor);
-      return { ok: true, id: cur.id };
+      if (changed.length) {
+        await tx.supplier.update({ where: { id: cur.id }, data: value });
+        await writeAudit(tx, {
+          action: 'SUPPLIER_UPDATED', entityType: 'Supplier', entityId: cur.id, userId: actor.id,
+          details: { fields: changed, before: Object.fromEntries(changed.map((k) => [k, cur[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, value[k] ?? null])) },
+        }, actor);
+      }
+      id = cur.id;
+    } else {
+      const s = await tx.supplier.create({ data: value });
+      await writeAudit(tx, { action: 'SUPPLIER_CREATED', entityType: 'Supplier', entityId: s.id, userId: actor.id, details: { after: value } }, actor);
+      id = s.id;
     }
-    const s = await tx.supplier.create({ data: value });
-    await writeAudit(tx, { action: 'SUPPLIER_CREATED', entityType: 'Supplier', entityId: s.id, userId: actor.id, details: { after: value } }, actor);
-    return { ok: true, id: s.id };
+    if (list?.ok) await syncEmails(tx, id, list.value, actor);
+    return { ok: true, id };
   });
+}
+
+/**
+ * Tedarikçinin adres listesini verilen listeye eşitler (adres anahtarına göre: kalan güncellenir, çıkan silinir, yeni
+ * eklenir — adres değiştirmek = eskisini silip yenisini eklemek). Değişiklik varsa tek denetim kaydı (önce / sonra).
+ * @param {any} tx  @param {string} supplierId  @param {{ email: string, emailKey: string, isActive: boolean, isPrimary: boolean, sortOrder: number }[]} next
+ */
+async function syncEmails(tx, supplierId, next, actor) {
+  const cur = await tx.supplierEmail.findMany({ where: { supplierId }, orderBy: { sortOrder: 'asc' } });
+  const view = (rows) => rows.map((e) => ({ email: e.email, active: e.isActive, primary: e.isPrimary }));
+  const nextKeys = new Set(next.map((e) => e.emailKey));
+  const gone = cur.filter((e) => !nextKeys.has(e.emailKey));
+  if (gone.length) await tx.supplierEmail.deleteMany({ where: { id: { in: gone.map((e) => e.id) } } });
+  for (const e of next) {
+    const old = cur.find((c) => c.emailKey === e.emailKey);
+    if (!old) await tx.supplierEmail.create({ data: { supplierId, ...e } });
+    else if (old.email !== e.email || old.isActive !== e.isActive || old.isPrimary !== e.isPrimary || old.sortOrder !== e.sortOrder) {
+      await tx.supplierEmail.update({ where: { id: old.id }, data: { email: e.email, isActive: e.isActive, isPrimary: e.isPrimary, sortOrder: e.sortOrder } });
+    }
+  }
+  const before = view(cur);
+  const after = view(next);
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    await writeAudit(tx, { action: 'SUPPLIER_EMAILS_CHANGED', entityType: 'Supplier', entityId: supplierId, userId: actor.id, details: { before, after } }, actor);
+  }
+}
+
+/** Tedarikçinin sipariş e-postası alıcıları (etkin adresler; en çok 10) — onay ve işçi aynı kuralı kullanır */
+export async function recipientsOf(db, supplierId) {
+  const rows = await db.supplierEmail.findMany({ where: { supplierId }, select: { email: true, isActive: true, isPrimary: true, sortOrder: true } });
+  return activeRecipients(rows);
 }
 
 /** Etkin / pasif (tedarikçi silinmez — geçmişi korunur). Pasif tedarikçiye yeni sipariş açılmaz, onaylanmaz. */
@@ -109,7 +153,7 @@ export async function setSupplierActive(db, { id, active }, actor) {
 
 const PRODUCT_SELECT = {
   id: true, code: true, nameTr: true, nameRo: true, unitCode: true, isActive: true, category: { select: { isActive: true } },
-  supplierId: true, purchasePrice: true, purchaseCurrency: true, purchaseUnit: true,
+  supplierId: true, purchasePrice: true, purchaseCurrency: true, purchaseUnit: true, supplierCode: true,
 };
 
 /**
@@ -300,10 +344,18 @@ export async function approveAndSend(db, v, actor, opts = {}) {
     if (Number(v.version) !== order.version) return { ok: false, code: 'CONFLICT' };
     if (draft.lines.length === 0) return { ok: false, code: 'NO_LINES' };
     if (!order.supplier.isActive) return { ok: false, code: 'SUPPLIER_INACTIVE' };
-    const to = supplierEmail(order.supplier.email);
-    if (!to) return { ok: false, code: order.supplier.email ? 'BAD_EMAIL' : 'NO_EMAIL' };
+    const to = await recipientsOf(tx, order.supplierId);
+    if (!to.length) return { ok: false, code: 'NO_EMAIL' };
     const bad = draft.files.find((f) => !fileOk(f));
     if (bad) return { ok: false, code: bad.scanStatus === 'INFECTED' ? 'FILE_INFECTED' : 'FILE_NOT_CLEAN', detail: bad.name };
+    // Tedarikçi ürün kodu (DÜZELTME 10 M5): onay anında üründen kopyalanır; eksikse onay yok (yanlış kodla sessiz gönderim yok)
+    const prods = await tx.profileProduct.findMany({ where: { id: { in: [...new Set(draft.lines.map((l) => l.productId))] } }, select: { id: true, supplierCode: true } });
+    const codeOf = new Map(prods.map((p) => [p.id, String(p.supplierCode ?? '').trim() || null]));
+    const missing = missingSupplierCodes(draft.lines.map((l) => ({ code: l.code, supplierCode: codeOf.get(l.productId) })));
+    if (missing.length) return { ok: false, code: 'NO_SUPPLIER_CODE', detail: [...new Set(missing)].slice(0, 20).join(' ') };
+    for (const l of draft.lines) {
+      if ((l.supplierCode ?? null) !== codeOf.get(l.productId)) await tx.supplierOrderLine.update({ where: { id: l.id }, data: { supplierCode: codeOf.get(l.productId) } });
+    }
     const totals = orderTotals(draft.lines.map((l) => ({ qty: l.qty, unitPrice: l.unitPrice == null ? null : l.unitPrice.toString() })));
     const fin = await tx.supplierOrderRevision.updateMany({
       where: { id: draft.id, finalizedAt: null },
@@ -358,13 +410,20 @@ export async function resendOrder(db, { orderId }, actor) {
     const final = order.revisions[0];
     if (order.status !== 'GONDERIM_HATASI' || !final) return { ok: false, code: 'NOT_ALLOWED' };
     if (await tx.notificationOutbox.count({ where: { ...jobsWhere(order.id), status: 'PENDING' } })) return { ok: false, code: 'BUSY' };
-    const to = supplierEmail(order.supplier.email);
-    if (!to) return { ok: false, code: order.supplier.email ? 'BAD_EMAIL' : 'NO_EMAIL' };
+    const to = await recipientsOf(tx, order.supplierId);
+    if (!to.length) return { ok: false, code: 'NO_EMAIL' };
+    const finalLines = await tx.supplierOrderLine.findMany({ where: { revisionId: final.id }, select: { code: true, supplierCode: true } });
+    const missing = missingSupplierCodes(finalLines);
+    if (missing.length) return { ok: false, code: 'NO_SUPPLIER_CODE', detail: [...new Set(missing)].slice(0, 20).join(' ') };
     const bad = final.files.find((f) => !fileOk(f));
     if (bad) return { ok: false, code: bad.scanStatus === 'INFECTED' ? 'FILE_INFECTED' : 'FILE_NOT_CLEAN', detail: bad.name };
-    const attempt = (await tx.notificationOutbox.count({ where: { AND: [jobsWhere(order.id), { payload: { path: ['revisionId'], equals: final.id } }] } })) + 1;
+    const prev = await tx.notificationOutbox.findMany({ where: { AND: [jobsWhere(order.id), { payload: { path: ['revisionId'], equals: final.id } }] }, select: { payload: true } });
+    const attempt = prev.length + 1;
+    // Bu revizyonun e-postasını zaten ALMIŞ adresler yeniden gönderimde atlanır (aynı alıcıya ikinci ileti yok — M9)
+    const already = [...new Set(prev.flatMap((j) => (Array.isArray(/** @type {any} */ (j.payload)?.sentTo) ? /** @type {any} */ (j.payload).sentTo : [])).map((x) => String(x).toLowerCase()))];
+    if (to.every((a) => already.includes(a.toLowerCase()))) return { ok: false, code: 'ALREADY_SENT' };
     const job = await tx.notificationOutbox.create({
-      data: { type: SUPPLIER_EMAIL, orderId: null, payload: { supplierOrderId: order.id, revisionId: final.id, revision: final.revision, attempt, manual: true } },
+      data: { type: SUPPLIER_EMAIL, orderId: null, payload: { supplierOrderId: order.id, revisionId: final.id, revision: final.revision, attempt, manual: true, skip: already } },
     });
     await tx.supplierOrder.update({ where: { id: order.id }, data: { status: 'GONDERIM_BEKLIYOR', sendError: null, version: { increment: 1 } } });
     await writeAudit(tx, {
@@ -398,7 +457,7 @@ export async function startRevision(db, { orderId, version }, actor) {
     if (final.lines.length) {
       await tx.supplierOrderLine.createMany({
         data: final.lines.map((l) => ({
-          revisionId: rev.id, productId: l.productId, code: l.code, description: l.description, color: l.color, qty: l.qty, unitCode: l.unitCode,
+          revisionId: rev.id, productId: l.productId, code: l.code, supplierCode: l.supplierCode, description: l.description, color: l.color, qty: l.qty, unitCode: l.unitCode,
           unitPrice: l.unitPrice, priceSource: l.priceSource, lineTotal: l.lineTotal, sortOrder: l.sortOrder,
         })),
       });
@@ -561,7 +620,7 @@ export async function loadSupplierOrder(db, id) {
   const order = await db.supplierOrder.findUnique({
     where: { id: String(id ?? '') },
     include: {
-      supplier: true,
+      supplier: { include: { emails: { orderBy: { sortOrder: 'asc' } } } },
       revisions: { orderBy: { revision: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } }, files: { orderBy: { createdAt: 'asc' } } } },
     },
   });
@@ -720,6 +779,65 @@ export async function voidPayment(db, { paymentId, reason }, actor, opts = {}) {
   });
 }
 
+/**
+ * Açılış bakiyesi (DÜZELTME 10 M2): geçmiş dönemden devreden borç (DEBT, +) ya da alacak (CREDIT, −). Sipariş borcu ve
+ * ödemelerden ayrı kayıt; tek seferlik form anahtarı (çift gönderim tek kayıt); denetim kaydı. Düzeltme: iptal (gerekçeli)
+ * ya da karşı kayıt (correctsId — aynı tedarikçi ve para birimindeki iptal edilmemiş açılış kaydı).
+ * @param {{ supplierId: string, asOf: unknown, amount: unknown, currency: unknown, direction: unknown, note?: unknown, correctsId?: unknown, requestKey: unknown }} v
+ */
+export async function addOpening(db, v, actor, opts = {}) {
+  if (!allowed(actor)) return FORBIDDEN;
+  const now = opts.now ?? new Date();
+  const today = localDay(now, tzOf(opts));
+  const key = String(v.requestKey ?? '');
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(key)) return { ok: false, code: 'KEY' };
+  const date = parseDateOnly(String(v.asOf ?? ''));
+  if (!date || dayKeyOf(date) > today || dayKeyOf(date) < addDays(today, -3660)) return { ok: false, code: 'DATE' };
+  const parsed = parseOpening({ amount: v.amount, currency: v.currency, direction: v.direction, note: v.note });
+  if (!parsed.ok) return parsed;
+  const correctsId = String(v.correctsId ?? '').trim() || null;
+  return db.$transaction(async (tx) => {
+    const supplier = await tx.supplier.findUnique({ where: { id: String(v.supplierId ?? '') }, select: { id: true, name: true } });
+    if (!supplier) return { ok: false, code: 'NOT_FOUND' };
+    await lockKey(tx, `supplier-opening:${key}`);
+    const same = await tx.supplierOpeningBalance.findUnique({ where: { requestKey: key } });
+    if (same) return same.supplierId === supplier.id ? { ok: true, id: same.id, duplicate: true } : { ok: false, code: 'KEY' };
+    if (correctsId) {
+      const target = await tx.supplierOpeningBalance.findFirst({ where: { id: correctsId, supplierId: supplier.id, voidedAt: null } });
+      if (!target) return { ok: false, code: 'CORRECTS' };
+      if (target.currency !== parsed.value.currency) return { ok: false, code: 'CURRENCY' };
+    }
+    const row = await tx.supplierOpeningBalance.create({
+      data: { supplierId: supplier.id, asOf: date, amount: parsed.value.amount, currency: parsed.value.currency, note: parsed.value.note, correctsId, requestKey: key, createdById: actor.id },
+    });
+    await writeAudit(tx, {
+      action: 'SUPPLIER_OPENING_ADDED', entityType: 'SupplierOpeningBalance', entityId: row.id, userId: actor.id,
+      details: { supplierId: supplier.id, supplier: supplier.name, asOf: dayKeyOf(date), amount: parsed.value.amount, currency: parsed.value.currency, note: parsed.value.note, correctsId },
+    }, actor);
+    return { ok: true, id: row.id, duplicate: false };
+  });
+}
+
+/** Açılış kaydını gerekçeyle iptal eder (silinmez; hesapta "iptal" görünür, bakiyeye girmez) */
+export async function voidOpening(db, { openingId, reason }, actor, opts = {}) {
+  if (!allowed(actor)) return FORBIDDEN;
+  const now = opts.now ?? new Date();
+  const why = one(reason, LIMITS.reason);
+  if (!why) return { ok: false, code: 'REASON' };
+  if (why.length > LIMITS.reason) return { ok: false, code: 'TOO_LONG' };
+  return db.$transaction(async (tx) => {
+    const x = await tx.supplierOpeningBalance.findUnique({ where: { id: String(openingId ?? '') } });
+    if (!x) return { ok: false, code: 'NOT_FOUND' };
+    const r = await tx.supplierOpeningBalance.updateMany({ where: { id: x.id, voidedAt: null }, data: { voidedAt: now, voidedById: actor.id, voidReason: why } });
+    if (r.count !== 1) return { ok: false, code: 'ALREADY_VOID' };
+    await writeAudit(tx, {
+      action: 'SUPPLIER_OPENING_VOIDED', entityType: 'SupplierOpeningBalance', entityId: x.id, userId: actor.id,
+      details: { supplierId: x.supplierId, asOf: dayKeyOf(x.asOf), amount: x.amount.toString(), currency: x.currency, reason: why },
+    }, actor);
+    return { ok: true };
+  });
+}
+
 /** Siparişin hesaba giren tutarı: son kesin revizyonun toplamı (taslak borç doğurmaz) */
 const finalOf = (o) => o.revisions.find((r) => r.finalizedAt) ?? null;
 
@@ -754,7 +872,7 @@ const debtRow = (o, received) => {
  * @returns {Promise<{ supplier: { id: string, name: string, currency: string, isActive: boolean }, balances: ReturnType<typeof supplierBalances> }[]>}
  */
 export async function supplierAccounts(db) {
-  const [suppliers, orders, payments] = await Promise.all([
+  const [suppliers, orders, payments, openings] = await Promise.all([
     db.supplier.findMany({ orderBy: [{ isActive: 'desc' }, { name: 'asc' }], select: { id: true, name: true, currency: true, isActive: true } }),
     db.supplierOrder.findMany({
       // İptal edilmiş ama teslim alınmış malı olan siparişler de (karar 288 — O6): borç = teslim alınanın değeri
@@ -762,13 +880,16 @@ export async function supplierAccounts(db) {
       select: { id: true, supplierId: true, currency: true, status: true, revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { total: true, missingPrice: true, finalizedAt: true, lines: { select: { id: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { voidedAt: null }, select: { supplierId: true, currency: true, amount: true, voidedAt: true } }),
+    db.supplierOpeningBalance.findMany({ where: { voidedAt: null }, select: { supplierId: true, currency: true, amount: true, voidedAt: true } }),
   ]);
   const received = await cancelledReceived(db, orders);
+  const openingsOf = (id) => openings.filter((x) => x.supplierId === id).map((x) => ({ currency: x.currency, amount: x.amount.toString(), voidedAt: x.voidedAt }));
   return suppliers.map((s) => ({
     supplier: s,
     balances: supplierBalances(
       orders.filter((o) => o.supplierId === s.id).map((o) => debtRow(o, received)),
       payments.filter((p) => p.supplierId === s.id).map((p) => ({ currency: p.currency, amount: p.amount.toString(), voidedAt: p.voidedAt })),
+      openingsOf(s.id),
     ),
   }));
 }
@@ -781,13 +902,14 @@ export async function supplierAccounts(db) {
 export async function supplierAccount(db, supplierId) {
   const supplier = await db.supplier.findUnique({ where: { id: String(supplierId ?? '') } });
   if (!supplier) return null;
-  const [orders, payments] = await Promise.all([
+  const [orders, payments, openings] = await Promise.all([
     db.supplierOrder.findMany({
       where: { supplierId: supplier.id, status: { not: 'TASLAK' } },
       orderBy: { createdAt: 'desc' },
       include: { revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, include: { lines: { select: { id: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { supplierId: supplier.id }, orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }] }),
+    db.supplierOpeningBalance.findMany({ where: { supplierId: supplier.id }, orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }] }),
   ]);
   const received = await cancelledReceived(db, orders);
   const rows = orders.map((o) => {
@@ -808,8 +930,9 @@ export async function supplierAccount(db, supplierId) {
   const balances = supplierBalances(
     rows.map((r) => ({ currency: r.currency, status: r.status, total: r.total ?? '0', missingPrice: r.missingPrice, received: r.partialCancel })),
     payments.map((p) => ({ currency: p.currency, amount: p.amount.toString(), voidedAt: p.voidedAt })),
+    openings.map((x) => ({ currency: x.currency, amount: x.amount.toString(), voidedAt: x.voidedAt })),
   );
-  return { supplier, orders: rows, payments, balances };
+  return { supplier, orders: rows, payments, openings, balances };
 }
 
 export { orderUnitOf, catalogPrice };

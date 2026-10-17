@@ -45,6 +45,20 @@ export default {
     AMOUNT: 'Sumă invalidă (mai mare decât 0, cel mult 2 zecimale).',
     CURRENCY: 'Alegeți moneda.',
     ALREADY_VOID: 'Această plată este deja anulată.',
+    NO_SUPPLIER_CODE: 'Aceste produse nu au cod de furnizor: {name}. Completați-l în Catalog profile → produs → Informații de achiziție. Comanda nu a fost trimisă (nu se trimite cu cod greșit).',
+    ALREADY_SENT: 'Această revizie a fost deja trimisă tuturor adreselor active.',
+    EMAIL_DUPLICATE: 'Aceeași adresă de e-mail nu poate fi scrisă de două ori.',
+    EMAIL_LIMIT: 'Un furnizor poate avea cel mult 10 adrese de e-mail.',
+    DIRECTION: 'Alegeți datorie sau creanță.',
+    CORRECTS: 'Înregistrarea de sold inițial de corectat nu a fost găsită (poate a fost anulată).',
+    CARRIER: 'Scrieți numele transportatorului.',
+    FX_REQUIRED: 'Pentru transport în RON cursul de la data facturii (1 EUR = ? RON) este obligatoriu.',
+    FX_RATE: 'Curs invalid (între 1 și 20, cel mult 6 zecimale).',
+    RECEIPTS: 'Alegeți cel puțin o recepție pe care se distribuie transportul (cel mult 50).',
+    RECEIPT_GONE: 'Una dintre recepțiile alese nu a fost găsită.',
+    NO_QTY: 'Recepțiile alese nu au cantitate de distribuit (poate au fost corectate).',
+    ALREADY_PAID: 'Acest transport este deja marcat ca plătit.',
+    DUPLICATE_INVOICE: 'Această factură a acestui transportator este deja înregistrată (neanulată).',
     OTHER: 'Operațiunea nu a putut fi efectuată.',
     HAS_RECEIPTS: 'Comanda are deja recepții de marfă: nu se mai poate deschide o revizie nouă.',
     RECEIPT_FORBIDDEN: 'Recepția mărfii necesită drept de aprovizionare și de stoc.',
@@ -80,6 +94,7 @@ export default {
 
   // ---------- Setări → Furnizori (decizia 179) ----------
   settings: {
+    emails: { add: '+ Adaugă e-mail', remove: 'Șterge', active: 'Activ', primary: 'Principal', limit: 'Cel mult 10 adrese.', email: 'E-mail', empty: 'Nicio adresă.' },
     title: 'Furnizori',
     intro: 'Furnizori de profile, garnituri, plastice și accesorii. E-mailul comenzii către furnizor pleacă la adresa înregistrată aici; adresa se modifică doar din acest ecran. Furnizorul nu se șterge: se dezactivează, istoricul se păstrează.',
     add: 'Adaugă furnizor',
@@ -88,7 +103,7 @@ export default {
       name: 'Denumire firmă',
       contact: 'Persoană de contact',
       email: 'E-mail',
-      emailHint: 'E-mailul comenzii pleacă la această adresă. Dacă rămâne gol, nu se pot trimite comenzi acestui furnizor.',
+      emailHint: 'E-mailul comenzii pleacă separat la toate adresele ACTIVE (destinatarii nu se văd între ei). Cel mult 10 adrese. Fără adresă activă nu se pot trimite comenzi acestui furnizor.',
       phone: 'Telefon',
       address: 'Adresă',
       currency: 'Moneda',
@@ -182,8 +197,13 @@ export default {
       FILE_MISSING: 'un fișier atașat nu a fost găsit.',
       SMTP: 'serverul de e-mail nu a acceptat mesajul.',
       UNKNOWN: 'trimiterea s-a întrerupt; nu se știe dacă mesajul a plecat. Întrebați furnizorul sau retrimiteți cu „Trimite din nou”.',
+      PARTIAL: 'e-mailul a ajuns la unele adrese, la altele nu. „Retrimite” trimite doar adreselor care nu l-au primit.',
+      NO_SUPPLIER_CODE: 'unele produse nu au cod de furnizor. Completați-l în Catalog profile → produs → Informații de achiziție.',
     },
     editor: {
+      supplierCode: 'Cod furnizor: {code}',
+      noSupplierCode: 'Fără cod furnizor',
+      noSupplierCodeBlock: 'Unele produse nu au cod de furnizor. Completați-l în Catalog profile → produs → Informații de achiziție; fără cod comanda nu se trimite.',
       title: 'Ciornă — revizia {n}',
       revisionOf: 'Revizie nouă a unei comenzi trimise. După aprobare se retrimite furnizorului ca „Revizia {n}”; versiunea anterioară rămâne neschimbată.',
       orderNo: 'Nr. comandă',
@@ -299,6 +319,7 @@ export default {
       confirm: 'Comanda (revizia {n}) va fi retrimisă furnizorului. Încercarea anterioară poate să fi ajuns totuși. Sigur?',
     },
     emails: {
+      result: { SENT: 'trimis', UNKNOWN: 'incert', FAILED: 'netrimis', WAIT: 'în așteptare', SKIPPED: 'omis' },
       title: 'Trimiteri e-mail',
       col: { when: 'Ora', revision: 'Revizie', attempt: 'Încercare', to: 'Destinatar', status: 'Stare', note: 'Explicație' },
       status: { PENDING: 'În coadă', SENT: 'Trimis', FAILED: 'Netrimis', SKIPPED: 'Nu s-a trimis' },
@@ -358,10 +379,34 @@ export default {
   },
 
   // ---------- Conturi furnizori (decizia 182) ----------
+  transport: {
+    link: 'Cheltuieli de transport →',
+    title: 'Cheltuieli de transport',
+    intro: 'Facturile transportatorilor. Suma se distribuie pe produsele recepțiilor alese, cotă egală pe unitate după cantitatea reală primită, și intră în costul realizat al stocului (propunere de cost în oferta comercială). Datoria transportatorului nu se adaugă la datoria furnizorului de produse; se urmărește separat aici.',
+    carriers: 'Solduri transportatori',
+    add: 'Introduceți factura de transport',
+    list: 'Înregistrări de transport',
+    receipts: 'Recepții pe care se distribuie',
+    noReceipts: 'Nicio recepție în ultimele 400 de zile.',
+    none: 'Nicio înregistrare de transport.',
+    col: { carrier: 'Transportator', invoiceNo: 'Nr. factură', invoiceDate: 'Data facturii', amount: 'Sumă', fx: 'Curs (1 EUR = ? RON)', eur: 'Echivalent EUR', receivedOn: 'Data recepției', qty: 'Cantitate netă', linked: 'Transport legat', total: 'Total', paid: 'Plătit', open: 'Rest' },
+    fxHint: 'Doar pentru factura în RON și obligatoriu: cursul înregistrat la data facturii. Cursul și data rămân fixe în înregistrare.',
+    hint: 'Cotă = sumă ÷ cantitatea netă totală (bară, pungă, cutie, bucată — fiecare unitate de stoc o cotă). Distribuirea se face o singură dată și nu se modifică; dacă e greșită, anulați înregistrarea cu motiv și introduceți-o corect. Aceeași factură a aceluiași transportator nu poate fi introdusă de două ori.',
+    confirm: 'Se salvează transportul și se distribuie pe recepțiile alese? Distribuirea nu se mai modifică.',
+    submit: 'Salvează și distribuie',
+    linkedN: '{n} transport',
+    rate: 'curs {rate} ({day})',
+    lines: 'distribuit pe {n} linii',
+    unpaid: 'Neplătit',
+    paidOn: 'Plătit {day}',
+    markPaid: 'Marchează plătit',
+    voidConfirm: 'Anulați această înregistrare de transport? Nu se șterge; iese din cost și din datoria transportatorului.',
+    ok: { added: 'Transportul a fost salvat și distribuit.', duplicate: 'Această înregistrare exista deja; nu s-a scris a doua oară.', voided: 'Înregistrarea de transport a fost anulată.', paid: 'Marcat ca plătit.' },
+  },
   accounts: {
     title: 'Conturi furnizori',
     intro: 'Contul furnizorilor de profile și accesorii. Datoria = totalul comenzilor aprobate și trimise, neanulate; ciorna nu creează datorie. Plățile le introduce administratorul. Monedele nu se adună între ele, fiecare are rândul său. Contul fabricii de sticlă este în Contabilitate → Situație furnizor.',
-    col: { supplier: 'Furnizor', currency: 'Moneda', debt: 'Datorie totală', paid: 'Plăți totale', balance: 'Rest', orders: 'Comenzi', missing: 'Preț lipsă' },
+    col: { supplier: 'Furnizor', currency: 'Moneda', opening: 'Sold inițial', debt: 'Datorie totală', paid: 'Plăți totale', balance: 'Rest', orders: 'Comenzi', missing: 'Preț lipsă' },
     missingPrice: '{n} comenzi au rânduri fără preț: acea parte a datoriei nu este cunoscută (nu se inventează).',
     none: 'Fără mișcări',
     empty: 'Încă nu există furnizori.',
@@ -373,6 +418,15 @@ export default {
       notCounted: 'nu intră în datorie',
       partialCancel: 'restul anulat; doar marfa recepționată este datorată',
       empty: 'Nu există comenzi aprobate.',
+    },
+    opening: {
+      title: 'Sold inițial (datorie / creanță reportată)',
+      intro: 'Datorie sau creanță reportată din perioada anterioară. Se ține separat de datoria din comenzi și de plăți; monedele sunt separate. Înregistrarea nu se șterge și nu se modifică: dacă e greșită, anulați-o cu motiv sau introduceți o înregistrare de corecție.',
+      col: { date: 'Data', amount: 'Sumă (+ datorie / − creanță)' },
+      date: 'Data soldului', direction: 'Sens', debt: 'Datorie — datorăm furnizorului', credit: 'Creanță — furnizorul ne datorează',
+      amount: 'Sumă', correctsLabel: 'Înregistrare de corecție (pentru)', corrects: 'corecție',
+      hint: 'Chiar dacă formularul este trimis de două ori, înregistrarea se scrie o singură dată. Sold = inițial + datorie comenzi − plăți.',
+      submit: 'Adaugă sold inițial', voidConfirm: 'Anulați această înregistrare de sold inițial? Nu se șterge, iese din sold.',
     },
     payments: {
       title: 'Plăți',
@@ -395,7 +449,7 @@ export default {
       button: 'Anulează plata',
       confirm: 'Plata va fi anulată: nu se șterge, nu intră în sold. Confirmați?',
     },
-    ok: { paid: 'Plata a fost salvată.', duplicate: 'Această plată fusese deja înregistrată; nu s-a scris a doua oară.', voided: 'Plata a fost anulată.' },
+    ok: { paid: 'Plata a fost salvată.', duplicate: 'Această plată fusese deja înregistrată; nu s-a scris a doua oară.', voided: 'Plata a fost anulată.', opening: 'Soldul inițial a fost înregistrat.', openingVoided: 'Înregistrarea de sold inițial a fost anulată.' },
   },
 
   // ---------- Ecranul Stoc profile (doar SUPPLIER_MANAGE; decizia 184) ----------
@@ -408,6 +462,8 @@ export default {
 
   // ---------- Catalog profile → formularul produsului: date de achiziție (decizia 180) ----------
   catalog: {
+    supplierCode: 'Cod produs furnizor',
+    supplierCodeHint: 'În e-mailul de comandă către furnizor se scrie doar acest cod. Codul intern GKH ({code}) este separat; documentul INTRARE MARFĂ folosește codul intern. Dacă lipsește, comanda nu se aprobă.',
     title: 'Date de achiziție (aprovizionare)',
     intro: 'Doar administratorul le vede. Prețul de achiziție este separat de prețul de listă al clientului; apare automat în comanda către furnizor doar pentru același furnizor și aceeași monedă.',
     supplier: 'Furnizor',
@@ -423,6 +479,7 @@ export default {
     errors: {
       purchase_price: 'Preț de achiziție invalid: între 0 și 1.000.000, cel mult 4 zecimale.',
       purchase_currency: 'Dacă introduceți prețul de achiziție, alegeți și moneda.',
+      supplier_code: 'Codul produsului furnizorului poate avea cel mult 60 de caractere.',
       purchase_unit: 'Unitate de comandă invalidă.',
       supplier: 'Furnizorul ales nu există sau este inactiv.',
       forbidden: 'Datele de achiziție le poate modifica doar administratorul.',

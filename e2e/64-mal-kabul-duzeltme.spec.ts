@@ -56,6 +56,8 @@ test('hazırlık: tedarikçi, depo alıcıları (.test), onaylanmış sipariş (
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Bucharest' }).format(new Date());
     expect((await svc.saveDraft(db, { orderId, version: o.version, orderDate: today, note: '', lines: [{ productId: pid, qty: 100, unitPrice: '', color: '' }] }, actor, { timeZone: 'Europe/Bucharest' })).ok).toBe(true);
     o = await db.supplierOrder.findUniqueOrThrow({ where: { id: orderId } });
+    // Tedarikçi ürün kodu (DÜZELTME 10 M5): kodsuz sipariş onaylanmaz
+    for (const code of [CODE]) await db.profileProduct.updateMany({ where: { code, supplierCode: null }, data: { supplierCode: `TED-${code}` } });
     expect((await svc.approveAndSend(db, { orderId, version: o.version }, actor)).ok).toBe(true);
     orderNo = o.orderNo;
     worker(); // sipariş e-postası tedarikçiye gider (gerçek akış: mal, sipariş gönderildikten sonra gelir)

@@ -49,7 +49,7 @@ export async function saveProductAction(fd: FormData) {
   // Alış bilgisi (Paket 6, karar 180): yalnızca formda bölüm varsa (SUPPLIER_MANAGE); saveProduct yetkiyi ayrıca denetler.
   // Bölüm yoksa (gönderilmediyse) alış alanları değişmez.
   const pp = fd.get('purchase') === '1'
-    ? parsePurchase({ supplierId: fd.get('supplierId'), price: fd.get('purchasePrice'), currency: fd.get('purchaseCurrency'), unit: fd.get('purchaseUnit') })
+    ? parsePurchase({ supplierId: fd.get('supplierId'), price: fd.get('purchasePrice'), currency: fd.get('purchaseCurrency'), unit: fd.get('purchaseUnit'), supplierCode: fd.get('supplierCode') })
     : null;
   if (pp && !pp.ok) redirect(back(`error=${pp.code.toLowerCase()}${edit}#alis`));
   const r = await saveProduct(db, id, res.value, await actorOf(admin), pack.value, pp?.ok ? pp.value : undefined);

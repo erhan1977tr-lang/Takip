@@ -45,6 +45,7 @@ export default {
   purchasing: 'Satın Alma',
   supplierOrders: 'Tedarikçi Siparişleri',
   supplierAccounts: 'Tedarikçi Hesapları',
+  transportCosts: 'Nakliye Giderleri',
   myOrders: 'Siparişlerim',
   newOrder: 'Yeni Sipariş',
   myOffers: 'Tekliflerim',

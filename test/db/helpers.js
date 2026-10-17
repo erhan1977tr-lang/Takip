@@ -60,11 +60,16 @@ export async function closeDb() {
 }
 
 /** Tüm uygulama tablolarını boşaltır (migration kaydı hariç) ve temel veriyi (roller, sipariş tipleri) yeniden yükler. */
-/** @param {{ calcDefaults?: boolean }} [o]  calcDefaults: false → korkuluk hesaplayıcısının varsayılanları yazılmaz (karar 203) */
-export async function resetDb(db, { calcDefaults = true } = {}) {
+/**
+ * @param {{ calcDefaults?: boolean, supplierCodes?: boolean }} [o]  calcDefaults: false → korkuluk hesaplayıcısının
+ *   varsayılanları yazılmaz (karar 203). supplierCodes (varsayılan açık, DÜZELTME 10 M5): katalog ürünlerine test tedarikçi
+ *   kodu "TED-<kod>" yazılır — tedarikçi siparişi kodsuz onaylanmaz; kodsuz davranışı sınayan test kodu kendisi siler.
+ */
+export async function resetDb(db, { calcDefaults = true, supplierCodes = true } = {}) {
   await truncateAll(db);
   const { runBaseSeed } = await import('../../prisma/seed/base.mjs');
   await runBaseSeed(db, { log: () => {}, skip: calcDefaults ? [] : ['profile-calc-defaults'] });
+  if (supplierCodes) await db.$executeRawUnsafe(`UPDATE "ProfileProduct" SET "supplierCode" = 'TED-' || "code" WHERE "supplierCode" IS NULL`);
 }
 
 async function truncateAll(db) {

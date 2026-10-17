@@ -51,6 +51,8 @@ test('hazırlık: tedarikçi, depo alıcıları (.test) ve onaylanmış tedarik�
     expect(saved.ok).toBe(true);
     o = await db.supplierOrder.findUniqueOrThrow({ where: { id: orderId } });
     const stock = await level(db, 'RM12-7016');
+    // Tedarikçi ürün kodu (DÜZELTME 10 M5): kodsuz sipariş onaylanmaz
+    for (const code of ['RM12-7016', 'GK15']) await db.profileProduct.updateMany({ where: { code, supplierCode: null }, data: { supplierCode: `TED-${code}` } });
     expect((await svc.approveAndSend(db, { orderId, version: o.version }, actor)).ok).toBe(true);
     orderNo = o.orderNo;
     expect(await level(db, 'RM12-7016')).toBe(stock); // onay / gönderim stoğu değiştirmez

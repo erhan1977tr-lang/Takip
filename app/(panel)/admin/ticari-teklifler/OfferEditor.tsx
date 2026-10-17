@@ -15,6 +15,8 @@ export type EditorProfile = {
   /** metreyle fiyatlanan ürünün paket içeriği (m); yoksa null */
   content: string | null;
   price: string | null; cost: string | null;
+  /** M6: gerçekleşen stok maliyeti (nakliye dahil) ve katalog alış fiyatı — ayrı değerler; cost öneridir */
+  stockCost: string | null; catalogCost: string | null;
 };
 export type EditorCalc = {
   profiles: { id: string; label: string }[]; handrails: { id: string; label: string }[]; thicknesses: { id: string; label: string }[];
@@ -321,7 +323,22 @@ export function OfferEditor(props: {
                         </td>
                         <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setP(l.key, { price: ev.target.value })} aria-label={`${e.col.unitPrice} ${n}`} /></td>
                         <td className="num nowrap" data-amount>{money(c?.amount)}</td>
-                        <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.cost} onChange={(ev) => setP(l.key, { cost: ev.target.value })} aria-label={`${e.col.unitCost} ${n}`} /></td>
+                        <td className="num">
+                          <input className="price-input" inputMode="decimal" maxLength={14} value={l.cost} onChange={(ev) => setP(l.key, { cost: ev.target.value })} aria-label={`${e.col.unitCost} ${n}`} />
+                          {(() => {
+                            const p = pById.get(l.productId);
+                            if (!p) return null;
+                            const v = l.cost.trim();
+                            const src = v && p.stockCost != null && v === asInput(p.stockCost) ? 'stock' : v && p.catalogCost != null && v === asInput(p.catalogCost) ? 'catalog' : v ? 'manual' : 'none';
+                            return (
+                              <div className="hint" data-cost-source={src}>
+                                {p.stockCost != null && <div>{interpolate(e.stockCost, { v: nf(2, 4).format(Number(p.stockCost)) })}</div>}
+                                {p.catalogCost != null && <div>{interpolate(e.catalogCost, { v: nf(2, 4).format(Number(p.catalogCost)) })}</div>}
+                                {p.stockCost == null && p.catalogCost == null && <div>{e.noCost}</div>}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="num nowrap">{money(c?.costAmount)}</td>
                         <td className="num nowrap">{money(c?.profit)}</td>
                         <td>{!readOnly && <button type="button" className="btn btn-link danger" onClick={() => setD((x) => ({ ...x, profile: x.profile.filter((r) => r.key !== l.key) }))}>{e.remove}</button>}</td>
