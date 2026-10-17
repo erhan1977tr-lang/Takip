@@ -6,9 +6,11 @@
 import { WorkflowError } from '../domain/workflow.js';
 
 export const ORDER_RATE = Object.freeze({
-  userHour: 60, // bir kullanıcı / saat
-  firmHour: 120, // bir firma (bütün kullanıcıları) / saat
-  firmDay: 500, // bir firma / 24 saat
+  // Olağan kullanımın çok üstünde (müşteri başına günde birkaç sipariş); amaç sınırsız toplu oluşturmayı ve bunun
+  // ürettiği e-posta / bildirim selini durdurmak. Uçtan uca testler tek müşteriyle saatte ~80 sipariş açar.
+  userHour: 200, // bir kullanıcı / saat
+  firmHour: 300, // bir firma (bütün kullanıcıları) / saat
+  firmDay: 1000, // bir firma / 24 saat
 });
 const HOUR = 3_600_000;
 

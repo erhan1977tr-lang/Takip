@@ -19,7 +19,7 @@ Güvenlik sertleştirme paketi (güvenlik denetimi 3.93.2; karar 289). Migration
 - **Telegram asistanı:** OpenAI'ye varsayılan olarak iç / müşteri notları, kişi adları, iletişim bilgileri, fabrika tutarı
   ve rapordaki maliyet / kâr gitmez; yalnızca Boss bu soruda açıkça sorarsa (sunucu denetler). Araç verisi "güvenilmeyen
   veri" olarak tanımlandı. Telegram / OpenAI anahtarları yalnızca işçi kapsayıcısında.
-- **Sipariş oluşturma hız sınırı:** kullanıcı başına saatte 60, firma başına saatte 120 ve günde 500 sipariş (cam + profil);
+- **Sipariş oluşturma hız sınırı:** kullanıcı başına saatte 200, firma başına saatte 300 ve günde 1000 sipariş (cam + profil);
   sayım veritabanında, firma kilidi altında.
 - **Diğer:** Ayarlar sonuç iletileri ve "sipariş silindi" bandı kullanıcıya ve 10 dakikaya bağlı imzayla; "tarayıcıda aç"
   yalnızca dosya başı uzantıyla uyuşursa, bütün dosya yanıtlarında sandbox / CORP başlıkları; FGO isteği yönlendirme
