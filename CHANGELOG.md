@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.93.1 — 17.10.2026
+
+- Tip kontrolü düzeltmesi: yeni cam siparişindeki tek kullanımlık form anahtarının (karar 288 — D2) belge açıklaması işlev
+  tanımına yeniden bağlandı. Davranış değişmedi.
+
 ## 3.93.0 — 17.10.2026
 
 3.92.0 sonrası regresyon denetiminin (claude/regresyon-denetimi-3.92.0) düzeltmeleri (karar 288). Migration yok.
