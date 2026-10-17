@@ -122,7 +122,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(av.IdExtern, 'GLA68-A');
   assert.ok(!('Numar' in av), 'sistemde henüz fatura yok, ayarda başlangıç yok → FGO numaralandırır');
   assert.equal(av['Continut[0][Denumire]'], 'Avans marfă conform proformă PRF552');
-  assert.equal(av['Continut[0][PretUnitar]'], '500.00', '605 / 1,21');
+  assert.equal(av['Continut[0][PretTotal]'], '605.00', 'avans TVA dahil (karar 288 — D8)');
   assert.equal(av['Continut[0][NrProduse]'], '1');
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'INVOICE', actor: actor() }), { ok: false, code: 'NOT_ALLOWED' }, 'sipariş düzeyinde nihai fatura yok');
 

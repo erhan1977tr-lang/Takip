@@ -215,7 +215,8 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
           fxMarkupPercent: p.fxMarkupPercent, fxSourceDate: p.fxSourceDate, fxResolvedAt: p.fxResolvedAt, fxManual: p.fxManual,
           // Kaynak siparişler (izlenebilirlik); kapsam anahtarı proformada kalır
           orders: { create: orders.map((o) => ({ orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: o.loadingDay, sourceAmount: '0.00', activeKey: null })) },
-          lines: { create: [{ sortOrder: 0, name: `Avans marfă conform proformă ${st.ref}`, unit: 'buc', quantity: '1', ronUnit: net.toFixed(2), ronNet: net.toFixed(2), ronGross: gross.toFixed(2) }] },
+          // Avans TVA dahil toplamla gider (ronUnit yok → FGO'ya PretTotal; karar 288 — D8): avans = tahsilat, kuruşu kuruşuna
+          lines: { create: [{ sortOrder: 0, name: `Avans marfă conform proformă ${st.ref}`, unit: 'buc', quantity: '1', ronUnit: null, ronNet: net.toFixed(2), ronGross: gross.toFixed(2) }] },
         },
       });
       await tx.notificationOutbox.create({ data: { type: BATCH_FGO, payload: { batchId: batch.id } } });

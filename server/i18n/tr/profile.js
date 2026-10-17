@@ -83,8 +83,8 @@ export default {
       intro: 'Şu ürünlerde stok şu an yetersiz. Siparişiniz yine de gönderilebilir; yönetici mevcut ve beklenen stoğu değerlendirip size bilgi verir.',
       colProduct: 'Ürün',
       colNeeded: 'Gereken',
-      colAvailable: 'Mevcut',
-      colMissing: 'Eksik',
+      colStatus: 'Durum',
+      short: 'Stok yetersiz',
       send: 'Yine de gönder',
       back: 'Vazgeç',
       checking: 'Stok kontrol ediliyor…',
@@ -128,7 +128,7 @@ export default {
     colNeed: 'İhtiyaç',
     colQty: 'Miktar',
     need: '{need} {measure} ({content} {measure} / {unit})',
-    stockShort: 'Stok yetersiz: gereken {needed}, mevcut {available}, eksik {missing}',
+    stockShort: 'Stok yetersiz (gereken {needed})',
     apply: 'Forma aktar',
     clear: 'Sonucu kapat',
     applied: 'Hesaplanan miktarlar forma aktarıldı. Formdaki diğer ürünlere dokunulmadı; miktarları dilediğiniz gibi değiştirebilirsiniz.',
@@ -359,8 +359,8 @@ export default {
       customerTitle: 'Stok uyarısı:',
       customerText: 'siparişinizdeki bazı ürünlerin stoğu yetersiz. Siparişiniz alındı; yönetici mevcut ve beklenen stokları değerlendirip size bilgi verecek.',
       // Müşteri yalnızca KENDİ siparişindeki eksik ürünlerin gereken / mevcut / eksik değerini görür (karar 177)
-      customerLine: '{product} — gereken {needed} {unit}, mevcut {available}, eksik {missing}',
-      customerWhen: 'Sipariş anındaki stok.',
+      customerLine: '{product} — gereken {needed} {unit}: stok yetersiz',
+      customerWhen: 'Sipariş anındaki stok durumu.',
     },
     pricing: {
       title: 'Fiyatlandırma',
@@ -519,6 +519,7 @@ export default {
       imageInfected: 'Görsel virüs taramasından geçmedi.',
       imageSaved: 'Görsel kaydedildi.',
       importFailed: 'Yükleme kaydedilemedi. Excel dosyasını yeniden seçip önizleyin.',
+      unitLocked: 'Stok hareketi olan ürünün birimi değiştirilemez (geçmiş hareketler o birimle kayıtlı). Hiçbir değişiklik kaydedilmedi.',
     },
     problem: {
       CODE: 'kod geçersiz (harf, rakam, tire; en fazla 40)',

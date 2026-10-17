@@ -17,7 +17,7 @@ import { parseAmount, CURRENCIES } from '../accounting/supplier.js';
 import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
-  expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, suggestOrderNo, supplierBalances, supplierEmail,
+  expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances, supplierEmail,
 } from './rules.js';
 
 export const SUPPLIER_EMAIL = 'SUPPLIER_ORDER_EMAIL';
@@ -32,6 +32,12 @@ const tzOf = (o) => o?.timeZone ?? 'Europe/Bucharest';
 const fileOk = (f) => f.scanStatus === 'CLEAN' || f.scanStatus === 'SKIPPED';
 /** Sipariş için kuyruktaki e-posta işleri (yük alanındaki sipariş kimliğiyle) */
 export const jobsWhere = (orderId) => ({ type: SUPPLIER_EMAIL, payload: { path: ['supplierOrderId'], equals: orderId } });
+/**
+ * Henüz GÖNDERİLMEYEN (kapatılabilir) sipariş e-postası işleri (3.93.0, karar 288 — D4): hiç denenmemiş (attempts 0, hata yok)
+ * ya da SMTP bağlantı hatası yüzünden yeniden denemeyi bekleyen (hata yazılı — işçi sahiplenince hatayı temizler). Şu an
+ * gönderilmekte olan iş (kirada: hata boş, deneme > 0) kapatılmaz; işçi gönderimden önce siparişin durumuna bakar.
+ */
+export const WAITING_ORDER_MAIL = { status: 'PENDING', OR: [{ attempts: 0, lastError: null }, { lastError: { not: null } }] };
 
 // =====================================================================================================================
 // Tedarikçiler (Ayarlar → Tedarikçiler — karar 179)
@@ -332,7 +338,7 @@ export async function approveAndSend(db, v, actor, opts = {}) {
  * @returns {Promise<number>}
  */
 export async function skipQueuedOrderMail(tx, orderId) {
-  const r = await tx.notificationOutbox.updateMany({ where: { ...jobsWhere(orderId), status: 'PENDING', lastError: null, attempts: 0 }, data: { status: 'SKIPPED', lastError: 'TESLIM_ALINDI' } });
+  const r = await tx.notificationOutbox.updateMany({ where: { AND: [jobsWhere(orderId), WAITING_ORDER_MAIL] }, data: { status: 'SKIPPED', lastError: 'TESLIM_ALINDI' } });
   return r.count;
 }
 
@@ -503,11 +509,27 @@ export async function cancelOrder(db, { orderId, reason }, actor, opts = {}) {
     if (!order) return { ok: false, code: 'NOT_FOUND' };
     if (!OPEN_STATUSES.includes(order.status)) return { ok: false, code: 'NOT_ALLOWED' };
     if (order.revisions.length) await tx.supplierOrderRevision.deleteMany({ where: { id: { in: order.revisions.map((r) => r.id) } } });
-    // Henüz alınmamış (kirada olmayan) bekleyen işler kapanır; gönderilmekte olan iş varsa işçi iptali görüp yazmaz
-    await tx.notificationOutbox.updateMany({ where: { ...jobsWhere(order.id), status: 'PENDING', lastError: null, attempts: 0 }, data: { status: 'SKIPPED', lastError: 'CANCELLED' } });
+    // Henüz gönderilmeyen işler (yeniden denemeyi bekleyen dahil — D4) kapanır; gönderilmekte olan iş varsa işçi iptali görüp yazmaz
+    await tx.notificationOutbox.updateMany({ where: { AND: [jobsWhere(order.id), WAITING_ORDER_MAIL] }, data: { status: 'SKIPPED', lastError: 'CANCELLED' } });
+    // Kısmen teslim alınmış sipariş (3.93.0, karar 288 — O6): yalnızca KALAN iptal olur. Kabuller, stok hareketleri, kabul
+    // belgeleri ve teslim alınan malın borcu aynen kalır (borç = net teslim alınan × birim fiyat — supplierBalances); iptal
+    // kabul / stok / e-posta yazmaz.
+    const final = await tx.supplierOrderRevision.findFirst({ where: { orderId: order.id, finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, select: { lines: { select: { id: true, code: true, qty: true, unitPrice: true } } } });
+    const [got, fixed] = await Promise.all([
+      tx.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { receipt: { orderId: order.id } }, _sum: { qty: true } }),
+      tx.supplierReceiptCorrectionLine.groupBy({ by: ['orderLineId'], where: { correction: { orderId: order.id } }, _sum: { qty: true } }),
+    ]);
+    const net = netReceived(got, fixed);
+    const kept = receivedValue(final?.lines ?? [], net);
     await tx.supplierOrder.update({ where: { id: order.id }, data: { status: 'IPTAL', cancelledAt: now, cancelReason: why, version: { increment: 1 } } });
-    await writeAudit(tx, { action: 'SUPPLIER_ORDER_CANCELLED', entityType: 'SupplierOrder', entityId: order.id, userId: actor.id, details: { orderNo: order.orderNo, from: order.status, reason: why } }, actor);
-    return { ok: true };
+    await writeAudit(tx, {
+      action: 'SUPPLIER_ORDER_CANCELLED', entityType: 'SupplierOrder', entityId: order.id, userId: actor.id,
+      details: {
+        orderNo: order.orderNo, from: order.status, reason: why,
+        ...(kept.qty ? { partial: true, receivedTotal: kept.total, missingPrice: kept.missingPrice, lines: (final?.lines ?? []).map((l) => ({ code: l.code, ordered: l.qty, received: net.get(l.id) ?? 0, cancelled: Math.max(0, l.qty - (net.get(l.id) ?? 0)) })) } : {}),
+      },
+    }, actor);
+    return { ok: true, partial: kept.qty > 0 };
   });
 }
 
@@ -702,6 +724,31 @@ export async function voidPayment(db, { paymentId, reason }, actor, opts = {}) {
 const finalOf = (o) => o.revisions.find((r) => r.finalizedAt) ?? null;
 
 /**
+ * İptal edilmiş siparişlerin teslim alınan malının değeri (karar 288 — O6): sipariş → receivedValue. Net teslim alınan =
+ * kabuller − kabul düzeltmeleri (karar 286).
+ * @param {any} db  @param {{ id: string, status: string, revisions: { lines?: { id: string, unitPrice: unknown }[] }[] }[]} orders
+ */
+async function cancelledReceived(db, orders) {
+  const cancelled = orders.filter((o) => o.status === 'IPTAL');
+  const ids = cancelled.flatMap((o) => (o.revisions[0]?.lines ?? []).map((l) => l.id));
+  if (!ids.length) return new Map();
+  const [got, fixed] = await Promise.all([
+    db.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+    db.supplierReceiptCorrectionLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+  ]);
+  const net = netReceived(got, fixed);
+  return new Map(cancelled.map((o) => [o.id, receivedValue(o.revisions[0]?.lines ?? [], net)]));
+}
+/** Hesap satırı: açık / teslim alınmış sipariş → son kesin revizyonun toplamı; iptal → teslim alınanın değeri */
+const debtRow = (o, received) => {
+  if (o.status === 'IPTAL') {
+    const r = received.get(o.id);
+    return { currency: o.currency, status: o.status, total: r?.total ?? '0', missingPrice: r?.missingPrice ?? false, received: (r?.qty ?? 0) > 0 };
+  }
+  return { currency: o.currency, status: o.status, total: o.revisions[0]?.total?.toString() ?? '0', missingPrice: o.revisions[0]?.missingPrice ?? false };
+};
+
+/**
  * Hesaplar özeti: her tedarikçi için para birimi başına borç / ödeme / kalan (karar 182). Para birimleri toplanmaz.
  * @param {import('@prisma/client').PrismaClient} db
  * @returns {Promise<{ supplier: { id: string, name: string, currency: string, isActive: boolean }, balances: ReturnType<typeof supplierBalances> }[]>}
@@ -710,15 +757,17 @@ export async function supplierAccounts(db) {
   const [suppliers, orders, payments] = await Promise.all([
     db.supplier.findMany({ orderBy: [{ isActive: 'desc' }, { name: 'asc' }], select: { id: true, name: true, currency: true, isActive: true } }),
     db.supplierOrder.findMany({
-      where: { status: { in: DEBT_STATUSES } },
-      select: { supplierId: true, currency: true, status: true, revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { total: true, missingPrice: true, finalizedAt: true } } },
+      // İptal edilmiş ama teslim alınmış malı olan siparişler de (karar 288 — O6): borç = teslim alınanın değeri
+      where: { OR: [{ status: { in: DEBT_STATUSES } }, { status: 'IPTAL', receipts: { some: {} } }] },
+      select: { id: true, supplierId: true, currency: true, status: true, revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { total: true, missingPrice: true, finalizedAt: true, lines: { select: { id: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { voidedAt: null }, select: { supplierId: true, currency: true, amount: true, voidedAt: true } }),
   ]);
+  const received = await cancelledReceived(db, orders);
   return suppliers.map((s) => ({
     supplier: s,
     balances: supplierBalances(
-      orders.filter((o) => o.supplierId === s.id).map((o) => ({ currency: o.currency, status: o.status, total: o.revisions[0]?.total?.toString() ?? '0', missingPrice: o.revisions[0]?.missingPrice ?? false })),
+      orders.filter((o) => o.supplierId === s.id).map((o) => debtRow(o, received)),
       payments.filter((p) => p.supplierId === s.id).map((p) => ({ currency: p.currency, amount: p.amount.toString(), voidedAt: p.voidedAt })),
     ),
   }));
@@ -736,19 +785,28 @@ export async function supplierAccount(db, supplierId) {
     db.supplierOrder.findMany({
       where: { supplierId: supplier.id, status: { not: 'TASLAK' } },
       orderBy: { createdAt: 'desc' },
-      include: { revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1 } },
+      include: { revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, include: { lines: { select: { id: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { supplierId: supplier.id }, orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }] }),
   ]);
+  const received = await cancelledReceived(db, orders);
   const rows = orders.map((o) => {
     const f = finalOf(o);
+    const r = o.status === 'IPTAL' ? received.get(o.id) : null;
+    // İptal + teslim alınan mal (karar 288 — O6): yalnızca teslim alınanın değeri sayılır (kalan iptal)
+    if (r && r.qty > 0) {
+      return {
+        id: o.id, orderNo: o.orderNo, status: o.status, currency: o.currency, orderDate: f?.orderDate ?? null, revision: f?.revision ?? null,
+        total: r.total, missingPrice: r.missingPrice, counts: true, partialCancel: true, orderedTotal: f?.total?.toString() ?? null,
+      };
+    }
     return {
       id: o.id, orderNo: o.orderNo, status: o.status, currency: o.currency, orderDate: f?.orderDate ?? null, revision: f?.revision ?? null,
-      total: f?.total?.toString() ?? null, missingPrice: f?.missingPrice ?? false, counts: DEBT_STATUSES.includes(o.status),
+      total: f?.total?.toString() ?? null, missingPrice: f?.missingPrice ?? false, counts: DEBT_STATUSES.includes(o.status), partialCancel: false, orderedTotal: null,
     };
   });
   const balances = supplierBalances(
-    rows.map((r) => ({ currency: r.currency, status: r.status, total: r.total ?? '0', missingPrice: r.missingPrice })),
+    rows.map((r) => ({ currency: r.currency, status: r.status, total: r.total ?? '0', missingPrice: r.missingPrice, received: r.partialCancel })),
     payments.map((p) => ({ currency: p.currency, amount: p.amount.toString(), voidedAt: p.voidedAt })),
   );
   return { supplier, orders: rows, payments, balances };

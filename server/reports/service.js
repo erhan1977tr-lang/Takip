@@ -756,6 +756,8 @@ async function financeReport(tx, f, ctx) {
     ],
     notes: ['SALES_BASIS', 'PROFIT_RULE', 'INVOICE_RULE', 'COLLECTION_RULE', 'OPEN_NOW', 'CURRENCY_SEPARATE', ...(anyMissing ? ['MISSING_COST'] : []), ...(profileOn ? ['PROFILE_NO_COST'] : []),
       ...(ctx.customer ? ['TRANSPORT_HIDDEN'] : []), ...(f.product || f.loading !== 'ALL' ? ['FILTER_IGNORED'] : []),
+      // Durum filtresi satış / yükleme bölümüne uygulanır; FGO belgeleri ve tahsilatlar durumdan bağımsızdır (karar 288 — D19)
+      ...(f.status ? ['STATUS_PARTIAL'] : []),
       ...(currencies.some((c) => cur.get(c).docMissing) ? ['DOC_TOTAL_MISSING'] : [])],
   };
 }

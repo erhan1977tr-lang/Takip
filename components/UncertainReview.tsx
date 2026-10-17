@@ -2,7 +2,7 @@ import type { MsgKey, T } from '@/lib/i18n';
 import { fmtDateTime, fmtMoney } from '@/lib/format';
 import { ConfirmButton } from '@/components/ConfirmButton';
 
-type Uncertain = { at?: string; kind?: string; error?: string; idExtern?: string; series?: string; expectedGross?: number };
+type Uncertain = { at?: string; kind?: string; error?: string; idExtern?: string; series?: string; expectedGross?: number; issued?: { series?: string; number?: string } };
 type Job = { id: string; payload: unknown };
 const UNC_ERRORS = ['NOT_UNCERTAIN', 'CONFIRM', 'BAD_NUMBER', 'SERIES', 'EXISTS_IN_TAKIP', 'FGO_DISABLED', 'NO_KEY', 'NOT_IN_FGO', 'UNVERIFIED', 'TOTAL_MISMATCH', 'FORBIDDEN', 'NOT_ALLOWED'];
 const KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE', 'FGO_PROFORMA', 'FGO_INVOICE'];
@@ -39,6 +39,10 @@ export function UncertainReview({ jobs, t, action, hidden, sp }: {
             <p className="small muted">
               {t('finance.uncertain.expected', { amount: fmtMoney(u.expectedGross ?? 0, 'RON'), series: u.series ?? '—' })} · {t('finance.uncertain.at', { date: fmtDateTime(u.at) })}
             </p>
+            {/* FGO belgeyi kesti, kayıt yazılamadı (karar 288 — O4): FGO'nun verdiği numara (yine FGO'dan doğrulanarak kaydedilir) */}
+            {u.issued?.series && u.issued?.number && (
+              <p className="small" data-uncertain-issued>{t('finance.uncertain.issued', { ref: `${u.issued.series}${u.issued.number}` })}</p>
+            )}
             <div className="grid-2">
               <form action={action} data-uncertain-record>
                 {hidden}
@@ -49,7 +53,7 @@ export function UncertainReview({ jobs, t, action, hidden, sp }: {
                   <label htmlFor={`unc-s-${j.id}`} style={{ margin: 0 }}>{t('finance.uncertain.series')}</label>
                   <input id={`unc-s-${j.id}`} name="series" required maxLength={12} defaultValue={u.series ?? ''} style={{ width: 90 }} />
                   <label htmlFor={`unc-n-${j.id}`} style={{ margin: 0 }}>{t('finance.uncertain.number')}</label>
-                  <input id={`unc-n-${j.id}`} name="number" required maxLength={20} style={{ width: 120 }} />
+                  <input id={`unc-n-${j.id}`} name="number" required maxLength={20} defaultValue={u.issued?.number ?? ''} style={{ width: 120 }} />
                 </div>
                 <div className="row" style={{ marginTop: 8 }}>
                   <ConfirmButton primary message={t('finance.uncertain.recordConfirm')}>{t('finance.uncertain.record')}</ConfirmButton>

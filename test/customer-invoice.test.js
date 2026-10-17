@@ -82,17 +82,17 @@ test('sipariş başına zincir ve müşteri zinciri birbirine karışmaz; para b
   assert.deepEqual(r.sums, { RON: { total: 1200, paid: 50, rest: 1150 }, EUR: { total: 90, paid: 0, rest: 90 } });
 });
 
-test('parti satırları FGO\'ya kayıttaki gibi gider: proforma kaynak fiyatla, fatura TVA dahil toplamla, avans ve düşüm RON birim fiyatla', () => {
+test('parti satırları FGO\'ya kayıttaki gibi gider: proforma kaynak fiyatla, fatura ve avans TVA dahil toplamla (karar 288 — D8), düşüm RON birim fiyatla', () => {
   const lines = batchFgoLines({ lines: [
     { name: 'Comanda A1 — Sticlă', unit: 'mp', quantity: '2', unitPrice: '50.00', ronUnit: null, ronNet: null, ronGross: null },
     { name: 'Comanda A1 — Sticlă', unit: 'mp', quantity: '2', unitPrice: null, ronUnit: null, ronNet: '600.00', ronGross: '726.00' },
-    { name: 'Avans marfă conform proformă PRF1', unit: 'buc', quantity: '1', unitPrice: null, ronUnit: '495.87', ronNet: '495.87', ronGross: '600.00' },
+    { name: 'Avans marfă conform proformă PRF1', unit: 'buc', quantity: '1', unitPrice: null, ronUnit: null, ronNet: '495.87', ronGross: '600.00' },
     { name: 'Stornare avans conform factură GKH2', unit: 'buc', quantity: '-1', unitPrice: null, ronUnit: '495.87', ronNet: '-495.87', ronGross: '600.00' },
   ] });
   assert.deepEqual(lines, [
     { code: '', name: 'Comanda A1 — Sticlă', unit: 'mp', qty: 2, eur: 50 },
     { code: '', name: 'Comanda A1 — Sticlă', unit: 'mp', qty: 2, net: 600, gross: 726 },
-    { code: '', name: 'Avans marfă conform proformă PRF1', unit: 'buc', qty: 1, ron: 495.87 },
+    { code: '', name: 'Avans marfă conform proformă PRF1', unit: 'buc', qty: 1, net: 495.87, gross: 600 },
     { code: '', name: 'Stornare avans conform factură GKH2', unit: 'buc', qty: -1, ron: 495.87 },
   ]);
 });

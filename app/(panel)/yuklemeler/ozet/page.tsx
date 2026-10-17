@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey, type T } from '@/lib/i18n';
 import { userCan } from '@/lib/permissions';
-import { canFirmDocs, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
+import { canFirmDocs, confirmedDayRows, customerPriceOf, dayEntry, firmsOfDay, loadDay, moneyView } from '@/lib/loading';
 import { fmtDate, fmtM2, fmtMoney, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { parseDateOnly } from '@/server/orders/rules.js';
@@ -36,10 +36,12 @@ export default async function FirmSummaryPage({ searchParams }: { searchParams: 
   const back = day ? `/yuklemeler?gun=${day}` : '/yuklemeler';
   if (!canFirmDocs(user)) redirect(back);
   const data = day ? await loadDay(user, day) : null;
+  // Onaylı gün → yüklenen miktarlar (karar 288 — D17; firma PDF / Excel ve "Yükleme Özeti" ile aynı kaynak)
+  const confirmedRows = day ? await confirmedDayRows(user, day) : null;
   // Özetin finansal içeriği yalnızca yöneticide; tutarlar firma tablosuna da yalnızca yöneticide girer
   const admin = userCan(user, 'OFFER_SEND');
   const money = admin ? moneyView(user) : { sales: false, offer: false };
-  const sum = data ? firmsOfDay(user, data.rows.map((o) => dayEntry(o, { customer: false, money })), data.crates, data.guests, data.hostNames) : null;
+  const sum = data ? firmsOfDay(user, (confirmedRows ?? data.rows).map((o) => dayEntry(o, { customer: false, money })), data.crates, data.guests, data.hostNames) : null;
   const firm = sum?.firms.find((f) => f.id === sp.firma);
   if (!day || !firm || !sum) {
     return (

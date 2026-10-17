@@ -9,7 +9,7 @@ import { type CurrentUser, requirePermission, requireUser } from '@/lib/auth/ses
 import { userCan } from '@/lib/permissions';
 import { getT, type Dict, type T } from '@/lib/i18n';
 import { fileProblemText, lockReasonText, offerProblemTexts, workflowErrorText } from '@/lib/labels';
-import { loadOrder } from '@/lib/orders';
+import { loadOrder, orderScope } from '@/lib/orders';
 import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
 import { filesFrom, resolveKey } from '@/lib/storage';
@@ -581,7 +581,8 @@ export async function setCustomerExcelAction(formData: FormData) {
   const user = await requirePermission('OFFER_SEND');
   const id = orderIdOf(formData);
   const allow = String(formData.get('allow')) === '1';
-  const order = await db.order.findFirst({ where: { id, orderTypeCode: 'GLASS_ORDER' }, select: { id: true, customerExcel: true } });
+  // Yalnızca yöneticinin kapsamındaki, silinmemiş sipariş (karar 288 — D13)
+  const order = await db.order.findFirst({ where: { id, orderTypeCode: 'GLASS_ORDER', removedAt: null, ...orderScope(user) }, select: { id: true, customerExcel: true } });
   if (!order) notFound();
   if (order.customerExcel !== allow) {
     await db.order.update({ where: { id }, data: { customerExcel: allow } });

@@ -136,12 +136,14 @@ export async function recordStockShortage(tx, { orderId, orderNo, items, actor, 
 // ---------- müşterinin gördüğü stok bilgisi (karar 177) ----------
 
 /**
- * Müşteriye giden satır: gereken, mevcut, eksik. "Mevcut" eksiye düşmez (0): iç bakiye (eksi stok) müşteriye gitmez.
+ * Müşteriye giden satır: kendi gereken adedi + "stok yetersiz" işareti (karar 177, 288). Stok miktarı yazılmaz.
  * @param {number} needed  @param {number} stock
+ * @returns {{ needed: number, short: boolean }}
  */
 export function customerStockLine(needed, stock) {
-  const available = Math.max(0, Math.trunc(Number(stock) || 0));
-  return { needed, available, missing: Math.max(0, needed - available) };
+  // Müşteriye gerçek stok miktarı gitmez (3.93.0, karar 288 — O3): yalnızca kendi gereken adedi ve "yetersiz" işareti.
+  // "Mevcut / eksik" sayıları, yüksek adet yazılarak bütün ürünlerin stoğunu öğrenmeye yarıyordu.
+  return { needed, short: needed > Math.max(0, Math.trunc(Number(stock) || 0)) };
 }
 
 /**
@@ -162,13 +164,13 @@ export async function customerShortages(db, lines) {
     const p = byId.get(l.productId);
     if (!p) return [];
     const s = customerStockLine(l.qty, levels.get(p.id) ?? 0);
-    return s.missing > 0 ? [{ productId: p.id, code: p.code, nameTr: p.nameTr, nameRo: p.nameRo, unitCode: p.unitCode, ...s }] : [];
+    return s.short ? [{ productId: p.id, code: p.code, nameTr: p.nameTr, nameRo: p.nameRo, unitCode: p.unitCode, ...s }] : [];
   });
 }
 
 /**
- * Sipariş sayfasında müşterinin gördüğü yetersizlik (karar 177): "Önemli kararlar" kaydındaki sipariş anı değerleri,
- * yalnızca kendi siparişindeki eksik ürünler; mevcut eksiye düşmez.
+ * Sipariş sayfasında müşterinin gördüğü yetersizlik (karar 177, 288): "Önemli kararlar" kaydındaki, kendi siparişindeki eksik
+ * ürünler — yalnızca kendi gereken adedi; o anki stok / eksik miktarı müşteriye gitmez.
  * @param {{ code?: string, nameTr?: string, nameRo?: string, unitCode?: string, qty?: number, stock?: number }[]} alertLines
  */
 export function customerShortageView(alertLines) {
@@ -289,7 +291,9 @@ export async function setCriticalStock(db, { productId, threshold }, actor) {
  */
 export async function addStockMovement(db, m, actor) {
   if (!can(actor?.role, 'STOCK_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
-  if (!Number.isInteger(m.qty) || Math.abs(m.qty) > MAX_STOCK_QTY || (m.kind === 'GIRIS' && m.qty === 0) || (m.kind === 'SAYIM' && m.qty < 0)) {
+  // Elle giriş yalnızca pozitif (3.93.0, karar 288 — D6): stok düşümü ayrı, yetkili ve denetlenen işlemdir (sayım); Excel
+  // girişiyle aynı kural. Mevcut hareketlere dokunulmaz.
+  if (!Number.isInteger(m.qty) || Math.abs(m.qty) > MAX_STOCK_QTY || (m.kind === 'GIRIS' && m.qty <= 0) || (m.kind === 'SAYIM' && m.qty < 0) || !['GIRIS', 'SAYIM'].includes(m.kind)) {
     return { ok: false, code: 'BAD_QTY' };
   }
   return db.$transaction(async (tx) => {
@@ -332,12 +336,14 @@ export async function deductOrderStock(tx, { orderId, orderNo, items, actorId, a
 
 /** İptal edilen (depoya gitmiş) siparişin çıkışlarını geri alır (ürün kilitleri altında). */
 export async function returnOrderStock(tx, { orderId, orderNo, actorId }) {
-  const out = await tx.stockMovement.findMany({ where: { orderId, kind: 'CIKIS' } });
-  if (!out.length) return 0;
-  await lockStock(tx, out.map((m) => m.productId));
-  const data = out.map((m) => ({ productId: m.productId, qty: -m.qty, kind: 'IADE', orderId, note: orderNo, createdById: actorId }));
-  await tx.stockMovement.createMany({ data });
-  return data.length;
+  // Net düşüm (3.93.0, karar 288): siparişin bütün hareketlerinin toplamı — daha önce geri eklenmiş miktar ikinci kez eklenmez
+  const first = await tx.stockMovement.findMany({ where: { orderId }, select: { productId: true } });
+  if (!first.length) return 0;
+  await lockStock(tx, first.map((m) => m.productId));
+  const back = stockToReturn(await tx.stockMovement.findMany({ where: { orderId }, select: { productId: true, qty: true } }));
+  if (!back.length) return 0;
+  await tx.stockMovement.createMany({ data: back.map((r) => ({ productId: r.productId, qty: r.qty, kind: 'IADE', orderId, note: orderNo, createdById: actorId })) });
+  return back.length;
 }
 
 /**

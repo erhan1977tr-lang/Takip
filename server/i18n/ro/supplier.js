@@ -371,6 +371,7 @@ export default {
       title: 'Comenzi',
       col: { no: 'Nr. comandă', date: 'Data comenzii', status: 'Stare', revision: 'Revizie', total: 'Sumă' },
       notCounted: 'nu intră în datorie',
+      partialCancel: 'restul anulat; doar marfa recepționată este datorată',
       empty: 'Nu există comenzi aprobate.',
     },
     payments: {

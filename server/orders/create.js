@@ -79,7 +79,15 @@ export async function pickNumber(tx, { customerId, orderTypeCode, requestedNo, s
  * @returns {Promise<{ id: string, orderNo: string, customerOrderNo: string, bumped: boolean, dropped: { storageKey: string }[] }>}
  *   dropped: işlemden sonra diskten silinecek dosyalar
  */
-export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [] }) {
+/** Form anahtarı biçimi ve geçerlilik süresi (karar 288 — D2) */
+const REQUEST_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const REQUEST_KEY_TTL_MS = 24 * 3_600_000;
+
+export async function createGlassOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, files = [], note = null, draftId = null, dropDraftFileIds = [], requestKey = null }) {
+  // Tek kullanımlık form anahtarı (3.93.0, karar 288 — D2): aynı form iki kez gönderilirse (çift tıklama / ağ tekrarı)
+  // ikinci sipariş açılmaz, ilk sipariş döner. Şema değişmeden: anahtar sipariş oluşturma denetim kaydına yazılır ve firma
+  // kilidi altında (numara kilidiyle aynı) aranır. Biçimi bozuk anahtar yok sayılır (eski davranış).
+  const key = typeof requestKey === 'string' && REQUEST_KEY_RE.test(requestKey) ? requestKey : null;
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
   requestedNumbers(requestedNo, suggestedNo, firm.prefix);
   // Müşterinin yeni cam siparişi tam olarak bir cam tipi içerir (formdan bağımsız, sunucu kuralı). Yalnızca yeni
@@ -89,6 +97,14 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
   return db.$transaction(async (tx) => {
     // Aynı firmanın sipariş oluşturmaları sıraya girer (işlem bitince kilit kendiliğinden kalkar)
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`order-no:${firm.id}`}, 0))`;
+    if (key) {
+      const prev = await tx.auditLog.findFirst({
+        where: { action: 'ORDER_CREATE', userId: actor.id, createdAt: { gte: new Date(Date.now() - REQUEST_KEY_TTL_MS) }, details: { path: ['requestKey'], equals: key } },
+        select: { entityId: true },
+      });
+      const first = prev ? await tx.order.findUnique({ where: { id: prev.entityId }, select: { id: true, orderNo: true, customerOrderNo: true, customerId: true } }) : null;
+      if (first && first.customerId === firm.id) return { id: first.id, orderNo: first.orderNo, customerOrderNo: first.customerOrderNo, bumped: false, dropped: [], duplicate: true };
+    }
 
     const no = await pickNumber(tx, { customerId: firm.id, orderTypeCode: 'GLASS_ORDER', requestedNo, suggestedNo, format: '{CODE}{SEQ}', code: firm.prefix });
     const orderNo = formatOrderNo(firm.prefix, no);
@@ -126,7 +142,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     await writeHistory(tx, { orderId: order.id, event: 'CREATED', from: null, to: 'YENI', actorId: actor.id });
     await writeAudit(tx, {
       action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
-      details: { orderNo, files: allFiles.length, ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
+      details: { orderNo, files: allFiles.length, ...(key ? { requestKey: key } : {}), ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
     }, actor);
     await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, actorId: actor.id } }));
     return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== parseCustomerOrderNo(requestedNo, firm.prefix), dropped };

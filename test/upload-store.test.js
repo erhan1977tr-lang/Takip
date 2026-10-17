@@ -447,7 +447,8 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   const newOrder = read('app/(panel)/siparisler/yeni/actions.ts');
   const create = newOrder.slice(0, newOrder.indexOf('function draftErrorText'));
   assert.ok(create.indexOf('const actor = await actorOf(user);') > 0 && create.indexOf('const actor = await actorOf(user);') < create.indexOf('await storeFiles('), 'saklama ile kayıt arasında hata verebilecek adım yok');
-  assert.equal((create.match(/await discardFiles\(stored\.stored\);/g) ?? []).length, 2);
+  // taslak hatası + sipariş hatası + aynı formun ikinci gönderimi (karar 288 — D2: ilk sipariş döner, bu isteğin dosyaları silinir)
+  assert.equal((create.match(/await discardFiles\(stored\.stored\);/g) ?? []).length, 3);
   const orderActions = read('app/(panel)/siparisler/[id]/actions.ts');
   assert.equal((orderActions.match(/\} catch \(e\) \{\s*await discardFiles\(stored\.stored\);\s*throw e;\s*\}/g) ?? []).length, 3, 'çizim yükleme + dosya ekleme + müşterinin düzeltilmiş DWG/DXF dosyası (karar 167)');
   // Müşterinin düzeltilmiş dosyası: yetki / durum dosyalar saklanmadan ÖNCE denetlenir; kayıt olmazsa dosyalar silinir

@@ -135,6 +135,7 @@ export default {
     reason: 'İptal nedeni',
     confirm: 'Sipariş iptal edilsin mi? Bu işlem geri alınamaz.',
     submit: 'İptal et',
+    locked: 'İptal edilemez:',
   },
   // Müşterinin işlem kartı
   customer: {
@@ -461,6 +462,7 @@ export default {
     pdfImportStale: 'Ön izleme bu arada değişti (teklif, katalog ya da başka bir aktarım). Ön izlemeyi yenileyip yeniden deneyin.',
     pdfImportEmpty: 'Aktarılacak PDF seçilmedi.',
     priceLocked: 'Fiyat değiştirilemez: siparişin mali ya da yükleme kaydı var; geçmiş fiyat bu kayıtlarda değişmez.',
+    cancelLocked: 'Sipariş iptal edilemez: mali ya da yükleme kaydı var; önce mutabakat gerekir.',
   },
   // Mali / operasyonel kilit nedenleri (Paket 4 — fiyat değişikliği ve silme; server/orders/financial-lock.js)
   lock: {
@@ -472,6 +474,7 @@ export default {
     PROFILE_FINANCE: 'Proforma, ödeme ya da fatura kaydı var',
     PROFILE_WAREHOUSE: 'Teslim edildi (mal depodan çıktı)',
     MANUAL_PAYMENT: 'Elle girilmiş ödeme kaydı var',
+    PAYMENT: "Tahsilat var (ödeme alındı ya da FGO'da ödeme görünüyor)",
   },
   // Müşterideki teklifin fiyatı kilitli (yönetici — Paket 4)
   priceLock: {

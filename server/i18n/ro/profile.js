@@ -81,8 +81,8 @@ export default {
       intro: 'Stocul acestor produse este momentan insuficient. Comanda poate fi trimisă oricum; administratorul va evalua stocul existent și cel așteptat și vă va informa.',
       colProduct: 'Produs',
       colNeeded: 'Necesar',
-      colAvailable: 'Disponibil',
-      colMissing: 'Lipsă',
+      colStatus: 'Stare',
+      short: 'Stoc insuficient',
       send: 'Trimite oricum',
       back: 'Renunță',
       checking: 'Se verifică stocul…',
@@ -126,7 +126,7 @@ export default {
     colNeed: 'Necesar',
     colQty: 'Cantitate',
     need: '{need} {measure} ({content} {measure} / {unit})',
-    stockShort: 'Stoc insuficient: necesar {needed}, disponibil {available}, lipsă {missing}',
+    stockShort: 'Stoc insuficient (necesar {needed})',
     apply: 'Transferă în formular',
     clear: 'Închide rezultatul',
     applied: 'Cantitățile calculate au fost transferate în formular. Celelalte produse din formular nu au fost modificate; puteți schimba cantitățile după dorință.',
@@ -357,8 +357,8 @@ export default {
       customerTitle: 'Atenție la stoc:',
       customerText: 'stocul unor produse din comanda dvs. este insuficient. Comanda a fost primită; administratorul va evalua stocul existent și cel așteptat și vă va informa.',
       // Clientul vede necesarul / disponibilul / lipsa doar pentru produsele lipsă din PROPRIA comandă (decizia 177)
-      customerLine: '{product} — necesar {needed} {unit}, disponibil {available}, lipsă {missing}',
-      customerWhen: 'Stocul din momentul comenzii.',
+      customerLine: '{product} — necesar {needed} {unit}: stoc insuficient',
+      customerWhen: 'Starea stocului din momentul comenzii.',
     },
     pricing: {
       title: 'Stabilire preț',
@@ -516,6 +516,7 @@ export default {
       imageInfected: 'Imaginea nu a trecut scanarea antivirus.',
       imageSaved: 'Imaginea a fost salvată.',
       importFailed: 'Încărcarea nu a putut fi salvată. Selectați din nou fișierul Excel și previzualizați.',
+      unitLocked: 'Unitatea unui produs cu mișcări de stoc nu poate fi schimbată (mișcările anterioare sunt înregistrate în acea unitate). Nicio modificare nu a fost salvată.',
     },
     problem: {
       CODE: 'cod invalid (litere, cifre, cratimă; maxim 40)',

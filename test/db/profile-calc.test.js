@@ -170,8 +170,11 @@ dbTest('hesap (karar 175–176): bar boyu girilmeden hesap yok (eksik adıyla); 
   await db.stockMovement.create({ data: { productId: mc16.id, qty: -4, kind: 'SAYIM', note: 'test: eksi bakiye' } });
   r = await calc.runCalc(db, { systemId: sys.id, color: 'RAL7016', thicknessId: t12.id, meters: '30' });
   assert.ok(r.ok);
-  assert.deepEqual(r.lines.map((l) => [l.code, l.qty, l.stock]), [['MR23-7016', 5, { available: 0, missing: 5 }], ['MC12', 2, null]]);
+  // Müşteriye stok miktarı gitmez (karar 288): yalnızca "yetersiz" işareti; iç ekip (stockDetail) mevcut / eksik görür
+  assert.deepEqual(r.lines.map((l) => [l.code, l.qty, l.stock]), [['MR23-7016', 5, { short: true }], ['MC12', 2, null]]);
   r = await calc.runCalc(db, { systemId: sys.id, color: 'ELOXAT', thicknessId: t16.id, meters: '30' });
+  assert.deepEqual(r.lines.map((l) => [l.code, l.qty, l.stock]), [['MR23-ELX', 5, { short: true }], ['MC16', 1, { short: true }]]);
+  r = await calc.runCalc(db, { systemId: sys.id, color: 'ELOXAT', thicknessId: t16.id, meters: '30' }, { stockDetail: true });
   assert.deepEqual(r.lines.map((l) => [l.code, l.qty, l.stock]), [['MR23-ELX', 5, { available: 0, missing: 5 }], ['MC16', 1, { available: 0, missing: 1 }]]);
   assert.equal(await levelOf(mr7016), 0, 'hesap stoğa yazmaz');
   // Pasif sistem hesaplanmaz; müşterinin seçenek listesinde yok
@@ -220,8 +223,8 @@ dbTest('form → sipariş (karar 175, 177): aktarılan ve müşterinin değişti
   const before = [await db.adminAlert.count(), await db.auditLog.count(), await db.stockMovement.count()];
   const shortList = await stock.customerShortages(db, read.lines);
   assert.ok(shortList.length >= 1 && shortList.every((l) => read.lines.some((x) => x.productId === l.productId)));
-  assert.ok(shortList.every((l) => l.available >= 0 && l.missing === l.needed - l.available && l.missing > 0));
-  assert.equal(shortList.find((l) => l.code === 'MC16')?.available, 0, 'eksi bakiye müşteriye 0');
+  assert.ok(shortList.every((l) => l.short === true && !('available' in l) && !('missing' in l)), 'müşteriye stok miktarı gitmez (karar 288)');
+  assert.ok(shortList.some((l) => l.code === 'MC16'), 'eksi bakiyeli ürün "yetersiz"');
   assert.deepEqual([await db.adminAlert.count(), await db.auditLog.count(), await db.stockMovement.count()], before);
   // Sipariş: hesaplanan + değiştirilen + elle eklenen adetler aynen
   const products = await db.profileProduct.findMany({ where: { id: { in: read.lines.map((l) => l.productId) } }, include: { category: true } });
@@ -248,7 +251,7 @@ dbTest('kritik eşik (karar 177): eşik ürünü kritik yapınca TEK kayıt; kri
   assert.equal(open.length, 1);
   assert.deepEqual([open[0].details.level, open[0].details.threshold, open[0].details.cause, open[0].details.code, open[0].orderId], [5, 5, 'SAYIM', 'AD45', null]);
   await setStock(ad, 3);
-  await stock.addStockMovement(db, { productId: ad.id, kind: 'GIRIS', qty: -1 }, A);
+  await setStock(ad, 2); // sayımla düşüş (elle eksi giriş yok — karar 288)
   assert.equal((await allCritical(ad)).length, 1, 'zaten kritikti: yeni kayıt yok');
   assert.equal(await resolveAlert(db, open[0].id, A), true);
   await setStock(ad, 1);
@@ -277,22 +280,23 @@ dbTest('kritik eşik (karar 177): eşik ürünü kritik yapınca TEK kayıt; kri
   await stock.setCriticalStock(db, { productId: ad.id, threshold: '' }, A);
 }));
 
-dbTest('kritik eşik: aynı ürüne eşzamanlı 8 hareket — eşiğin altına inen tam bir tanesi tek kayıt açar (ürün kilidi)', offline(async () => {
+dbTest('kritik eşik: aynı ürüne eşzamanlı 8 sayım — eşiğin altına inen hareketler TEK kayıt açar (ürün kilidi); önce / sonra zinciri kesintisiz', offline(async () => {
   const A = act(U.admin);
   const p = await prod('PANA-90-12');
   await setStock(p, 40);
   await stock.setCriticalStock(db, { productId: p.id, threshold: '20' }, A);
-  // 8 × (−4): 40 → 8; 20'nin altına ilk inen hareket kaydı açar, öbürleri açmaz
-  const res = await Promise.all(Array.from({ length: 8 }, () => stock.addStockMovement(db, { productId: p.id, kind: 'GIRIS', qty: -4 }, A)));
-  assert.ok(res.every((r) => r.ok));
-  assert.equal(await levelOf(p), 8);
+  // 8 eşzamanlı sayım (36, 32 … 8): sıraları kilide göre; eşiğin altına inen ilk hareket kaydı açar, ötekiler açmaz (açık kayıt var)
+  // (Düşüm yalnızca sayımla — elle eksi giriş yok, karar 288)
+  const counts = [36, 32, 28, 24, 20, 16, 12, 8];
+  const res = await Promise.all(counts.map((qty) => stock.addStockMovement(db, { productId: p.id, kind: 'SAYIM', qty }, A)));
+  assert.ok(res.every((r) => r.ok || r.code === 'NO_CHANGE'));
   const alerts = await allCritical(p);
   assert.equal(alerts.length, 1);
-  assert.equal(alerts[0].details.level, 20, 'eşiğe inen hareketin anındaki stok');
-  // Her hareketin denetimdeki "önce / sonra"sı sıralı ve kesintisiz (kayıp güncelleme yok)
-  const moves = (await db.auditLog.findMany({ where: { action: 'STOCK_MOVEMENT', entityId: p.id, details: { path: ['kind'], equals: 'GIRIS' } } }))
-    .map((a) => [a.details.before, a.details.after]).sort((x, y) => y[0] - x[0]);
-  assert.deepEqual(moves.slice(-8), [[40, 36], [36, 32], [32, 28], [28, 24], [24, 20], [20, 16], [16, 12], [12, 8]]);
+  // Her hareketin denetimdeki "önce / sonra"sı kesintisiz: bir hareketin "önce"si öncekinin "sonra"sıdır (kayıp güncelleme yok)
+  const moves = (await db.auditLog.findMany({ where: { action: 'STOCK_MOVEMENT', entityId: p.id, details: { path: ['kind'], equals: 'SAYIM' } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }))
+    .map((a) => [a.details.before, a.details.after]).slice(-res.filter((r) => r.ok).length);
+  for (let i = 1; i < moves.length; i++) assert.equal(moves[i][0], moves[i - 1][1], JSON.stringify(moves));
+  assert.equal(await levelOf(p), moves.at(-1)[1]);
   await resolveAlert(db, alerts[0].id, A);
   await stock.setCriticalStock(db, { productId: p.id, threshold: '' }, A);
 }));

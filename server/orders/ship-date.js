@@ -9,3 +9,17 @@
 export async function shipDateLocked(db, orderId) {
   return (await db.loadingConfirmationItem.count({ where: { orderId } })) > 0;
 }
+
+/**
+ * Siparişin onaylı yükleme günü (3.93.0, karar 288 — O1): yüklenen (LOADED) kalemi olan en son onay günü; yalnızca yüklenmedi
+ * kalemi varsa en son onay günü; onay yoksa null. "Yüklendi" bu güne yazılır ve onaylı günün sandıkları taşınmaz.
+ * @param {any} db  @param {string} orderId
+ * @returns {Promise<Date | null>}
+ */
+export async function confirmedShipDay(db, orderId) {
+  const pick = (status) => db.loadingConfirmationItem.findFirst({
+    where: { orderId, ...(status ? { status } : {}) }, orderBy: { confirmation: { shipDay: 'desc' } }, select: { confirmation: { select: { shipDay: true } } },
+  });
+  const it = (await pick('LOADED')) ?? (await pick(null));
+  return it?.confirmation.shipDay ?? null;
+}

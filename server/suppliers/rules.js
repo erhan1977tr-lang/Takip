@@ -266,7 +266,8 @@ export function etaCalendarWarning(etaDay, overrides = null) {
  * Tedarikçi hesabı (karar 182), para birimi başına: borç = kesinleşmiş ve iptal edilmemiş siparişlerin (son kesin
  * revizyon) toplamı; ödeme = iptal edilmemiş ödemeler; kalan = borç − ödeme. Para birimleri birbirine eklenmez; fiyatı
  * eksik sipariş sayısı ayrıca verilir (borcun o kısmı bilinmiyor — uydurulmaz).
- * @param {{ currency: string, status: string, total: unknown, missingPrice?: boolean }[]} orders
+ * İptal edilmiş, kısmen teslim alınmış sipariş: borç = net teslim alınan × birim fiyat (receivedValue; karar 288).
+ * @param {{ currency: string, status: string, total: unknown, missingPrice?: boolean, received?: boolean }[]} orders
  * @param {{ currency: string, amount: unknown, voidedAt?: Date | string | null }[]} payments
  * @returns {Record<string, { debt: string, paid: string, balance: string, orders: number, missingPrice: number }>}
  */
@@ -278,7 +279,9 @@ export function supplierBalances(orders, payments) {
     return /** @type {{ debt: bigint, paid: bigint, orders: number, missingPrice: number }} */ (by.get(c));
   };
   for (const o of orders) {
-    if (!DEBT_STATUSES.includes(o.status)) continue;
+    // İptal edilmiş sipariş yalnızca teslim alınan malın borcuyla sayılır (3.93.0, karar 288 — O6): çağıran total olarak NET
+    // teslim alınanın değerini ve received: true verir; kabulsüz iptal borç doğurmaz
+    if (!DEBT_STATUSES.includes(o.status) && !(o.status === 'IPTAL' && o.received)) continue;
     const b = of(o.currency);
     b.debt += cents(o.total ?? '0');
     b.orders++;
@@ -291,6 +294,26 @@ export function supplierBalances(orders, payments) {
   return Object.fromEntries([...by.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([c, b]) => [c, {
     debt: money(b.debt), paid: money(b.paid), balance: money(b.debt - b.paid), orders: b.orders, missingPrice: b.missingPrice,
   }]));
+}
+
+/**
+ * Teslim alınan malın değeri (saf — karar 288, O6): satır başına net teslim alınan adet × birim fiyat (tek yuvarlama —
+ * lineTotal), toplam. Fiyatı olmayan satırda teslim alınan varsa missingPrice (borcun o kısmı bilinmez, uydurulmaz).
+ * @param {{ id: string, unitPrice: unknown }[]} lines  son kesin revizyonun satırları
+ * @param {Map<string, number>} received  satır → net teslim alınan (kabuller − düzeltmeler)
+ * @returns {{ total: string, qty: number, missingPrice: boolean }}
+ */
+export function receivedValue(lines, received) {
+  let c = 0n, qty = 0, missingPrice = false;
+  for (const l of lines) {
+    const q = Math.max(0, Math.trunc(Number(received.get(l.id) ?? 0)));
+    if (!q) continue;
+    qty += q;
+    const t = lineTotal(q, l.unitPrice == null ? null : String(l.unitPrice));
+    if (t == null) { missingPrice = true; continue; }
+    c += cents(t);
+  }
+  return { total: money(c), qty, missingPrice };
 }
 
 /**

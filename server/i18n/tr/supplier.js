@@ -372,6 +372,7 @@ export default {
       title: 'Siparişler',
       col: { no: 'Sipariş No', date: 'Sipariş tarihi', status: 'Durum', revision: 'Revizyon', total: 'Tutar' },
       notCounted: 'borca girmez',
+      partialCancel: 'kalanı iptal; yalnızca teslim alınan mal borçta',
       empty: 'Onaylanmış sipariş yok.',
     },
     payments: {

@@ -94,7 +94,8 @@ const clean = (v, max) => {
 /**
  * Filtreleri ayrıştırır. Öncelik: başlangıç / bitiş günü → ay → yıl → hazır dönem → bu ay (varsayılan).
  * Hata kodları (errors): RANGE_INVALID (bitiş < başlangıç ya da tek uç), RANGE_TOO_LONG, DAY_INVALID, MONTH_INVALID,
- * YEAR_INVALID, PERIOD_INVALID. Hatalı alan yok sayılmaz: rapor hesaplanmaz, kullanıcıya söylenir.
+ * YEAR_INVALID, PERIOD_INVALID, KIND_INVALID, ORDER_TYPE_INVALID, STATUS_INVALID, LOADING_INVALID, CUSTOMER_INVALID,
+ * PRODUCT_INVALID (karar 288). Hatalı alan yok sayılmaz: rapor hesaplanmaz, kullanıcıya söylenir.
  * @param {Record<string, unknown>} input
  *   { kind, period, from, to, month, year, customerId, customer (metin — Telegram), orderType, status, product, loading }
  * @param {{ now: Date, timeZone: string }} ctx
@@ -134,13 +135,31 @@ export function parseReportFilters(input, { now, timeZone }) {
     errors.push('RANGE_TOO_LONG');
     range = null;
   }
-  const orderType = ORDER_TYPES.includes(/** @type {string} */ (i.orderType)) ? /** @type {string} */ (i.orderType) : 'ALL';
-  const status = REPORT_STATUSES.includes(/** @type {string} */ (i.status)) ? /** @type {string} */ (i.status) : '';
-  const loading = LOADING_STATES.includes(/** @type {string} */ (i.loading)) ? /** @type {string} */ (i.loading) : 'ALL';
-  const customerId = /^[a-z0-9]{8,40}$/i.test(String(i.customerId ?? '')) ? String(i.customerId) : '';
+  // Geçersiz filtre sessizce yok sayılmaz (3.93.0, karar 288 — D16): yazılmış ama tanınmayan değer hata verir; aksi hâlde
+  // "tüm firmalar / tüm durumlar" raporu üretilir ve kullanıcı filtrelenmiş sandığı yanlış rakamı görür. Boş = varsayılan.
+  const given = (v) => v != null && String(v).trim() !== '';
+  const pickOf = (v, list, dflt, code) => {
+    if (!given(v)) return dflt;
+    if (list.includes(String(v))) return String(v);
+    errors.push(code);
+    return dflt;
+  };
+  if (given(i.kind) && !REPORT_KINDS.includes(String(i.kind))) errors.push('KIND_INVALID');
+  const orderType = pickOf(i.orderType, ORDER_TYPES, 'ALL', 'ORDER_TYPE_INVALID');
+  const status = pickOf(i.status, REPORT_STATUSES, '', 'STATUS_INVALID');
+  const loading = pickOf(i.loading, LOADING_STATES, 'ALL', 'LOADING_INVALID');
+  let customerId = '';
+  if (given(i.customerId)) {
+    if (/^[a-z0-9]{8,40}$/i.test(String(i.customerId))) customerId = String(i.customerId);
+    else errors.push('CUSTOMER_INVALID');
+  }
+  const customer = customerId ? '' : clean(i.customer, 60);
+  if (!customerId && given(i.customer) && !customer) errors.push('CUSTOMER_INVALID');
+  const product = clean(i.product, 60);
+  if (given(i.product) && !product) errors.push('PRODUCT_INVALID');
   return {
     kind, period, from: range?.from ?? null, to: range?.to ?? null, month: period === 'month' ? month : '', year: period === 'year' ? year : '',
-    customerId, customer: customerId ? '' : clean(i.customer, 60), orderType, status, product: clean(i.product, 60), loading, errors,
+    customerId, customer, orderType, status, product, loading, errors,
   };
 }
 

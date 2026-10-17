@@ -164,6 +164,7 @@ export async function confirmProductImportAction(fd: FormData) {
     items.push(v.value);
   }
   const s = await applyProductImport(db, items, await actorOf(admin));
+  if (!s.ok) redirect(back(`error=${s.code === 'UNIT_LOCKED' ? 'unit_locked' : 'forbidden'}`));
   revalidatePath(PATH);
   redirect(back(`ok=imported&c=${s.created}&u=${s.updated}`));
 }

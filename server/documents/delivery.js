@@ -194,6 +194,19 @@ class Permanent extends Error {}
  * @param {any} db
  * @param {{ transport: any, from: string, appUrl?: string, now?: Date, fetchImpl?: typeof fetch, secret?: string, timeZone?: string, log?: Function }} ctx
  */
+/**
+ * SMTP hatası iletinin sunucuya HİÇ verilmediğini mi gösteriyor (güvenle yeniden denenir): bağlantı aşaması (command CONN /
+ * ad çözülemedi / bağlantı reddedildi) ya da sunucunun açık ret kodu (4xx / 5xx yanıt — ileti kabul edilmedi). Diğer her
+ * hata (yanıt beklerken kopma, zaman aşımı) belirsizdir.
+ * @param {any} err
+ */
+export function docMailNotSent(err) {
+  if (!err) return false;
+  if (err.command === 'CONN') return true;
+  if (['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EDNS'].includes(err.code)) return true;
+  return Number.isInteger(Number(err.responseCode)) && Number(err.responseCode) >= 400;
+}
+
 export async function dispatchDocEmails(db, { transport, from, appUrl, now = new Date(), fetchImpl = fetch, secret, timeZone, log = () => {} }) {
   if (!transport) return { sent: 0, failed: 0, skipped: 0 };
   const rows = await db.notificationOutbox.findMany({ where: { type: DOC_EMAIL, status: 'PENDING', availableAt: { lte: now } }, orderBy: { createdAt: 'asc' }, take: 10 });
@@ -209,6 +222,13 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
     const attempt = row.attempts + 1;
     const payload = obj(row.payload);
     const close = (why) => db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: why } });
+    // Önceki deneme gönderim sırasında yarıda kaldı (gönderim işareti var, SENT yazılmadı — 3.93.0, karar 288, D11): e-posta
+    // gitmiş olabilir; otomatik yeniden GÖNDERİLMEZ. Yönetici gerekirse "Tekrar gönder" der (karar 37 — açık, ayrı iş).
+    if (payload.sendingAt) {
+      await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', lastError: 'UNKNOWN: önceki gönderim yarıda kaldı; e-posta gitmiş olabilir (otomatik yeniden gönderilmedi)' } });
+      failed++;
+      continue;
+    }
     try {
       const doc = await db.fgoDocument.findUnique({
         where: { id: String(payload.docId ?? '') },
@@ -250,10 +270,28 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
         kind: doc.kind, series: doc.series, number: doc.number, issuedAt: doc.issuedAt, orderNos: orders.map((o) => o.orderNo), total: doc.total, currency: doc.currency,
         firmName: customer.name, attached: pdf.ok, portalUrl: appUrl ? `${appUrl}/belgeler` : null, link: pdf.ok ? null : pdf.link, timeZone,
       });
-      await sendBrandedMail(transport, {
-        from, to, subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro',
-        ...(pdf.ok ? { attachments: [{ filename: `${doc.series}${doc.number}.pdf`, content: pdf.bytes, contentType: 'application/pdf' }] } : {}),
-      });
+      // Gönderim işareti: bundan sonra yarıda kalan iş otomatik yeniden gönderilmez (D11 — tedarikçi e-postasıyla aynı kural)
+      await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...payload, sendingAt: new Date().toISOString() } } });
+      try {
+        await sendBrandedMail(transport, {
+          from, to, subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro',
+          ...(pdf.ok ? { attachments: [{ filename: `${doc.series}${doc.number}.pdf`, content: pdf.bytes, contentType: 'application/pdf' }] } : {}),
+        });
+      } catch (err) {
+        // İleti sunucuya hiç verilmediyse (bağlantı kurulamadı / sunucu reddetti) güvenle yeniden denenir; aksi hâlde sonuç
+        // belirsizdir (ileti kabul edilmiş olabilir) — yeniden gönderilmez
+        const notSent = docMailNotSent(err);
+        await db.notificationOutbox.update({
+          where: { id: row.id },
+          data: notSent && attempt < DOC_EMAIL_MAX_ATTEMPTS
+            ? { payload: { ...payload, sendingAt: null }, lastError: `SMTP: bağlantı kurulamadı`, availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000) }
+            : { status: 'FAILED', payload: { ...payload, sendingAt: null }, lastError: notSent ? 'SMTP: gönderilemedi' : 'UNKNOWN: SMTP sonucu belirsiz; e-posta gitmiş olabilir (otomatik yeniden gönderilmedi)' },
+        });
+        failed++;
+        log('belge e-postası gönderilemedi', row.orderId, notSent ? 'SMTP' : 'UNKNOWN');
+        continue;
+      }
+      // Gönderildi: SENT kaydı yazılamasa bile (veritabanı hatası) iş yeniden gönderilmez — işaret durur
       await db.$transaction(async (tx) => {
         await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null, payload: { ...payload, to, attached: pdf.ok } } });
         // Geçmiş notunda yalnızca belge no: alıcı adresi (müşterinin fatura e-postası) iş kuyruğundaki kayıtta durur (payload.to);

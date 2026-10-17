@@ -27,7 +27,7 @@ import { offerLineTotals, pieceStartArea } from '../orders/rules.js';
 import { can } from '../auth/permissions.js';
 import { ofProforma, paymentState, toCents, centsText } from '../finance/payments.js';
 import { advanceRisk, financeLock, linkCoveredPayments, orderProformaRef, recordDuplicateAck } from '../finance/service.js';
-import { expectedGross, parkUncertain } from '../finance/uncertain.js';
+import { EmittedNotRecorded, expectedGross, mustPark, parkUncertain, recordOrPark } from '../finance/uncertain.js';
 import { getEnv } from '../env.js';
 import { parseManualRate } from '../fx/bt.js';
 import { bnrRate } from '../fx/bnr.js';
@@ -352,7 +352,8 @@ export function billingState({ status, loaded, docs, pending = [], hasOffer, inB
  * @returns {Promise<{ ok: true } | { ok: false, code: string, matches?: any[], ackKey?: string }>}
  */
 export async function requestGlassDocument(db, { orderId, kind, actor, now = new Date(), manualRate = null, ack = null }) {
-  if (!actor || !can(actor.role, 'OFFER_SEND')) return { ok: false, code: 'FORBIDDEN' };
+  // Mali belge isteği muhasebe yetkisidir (karar 288 — D9; avans / elle ödeme ile aynı yetki)
+  if (!actor || !can(actor.role, 'ACCOUNTING_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   // Elle kur (isteğe bağlı): yalnızca kurun bu belgeyle belirleneceği durumda anlamlıdır; belgede MANUAL diye saklanır
   const manual = manualRate == null || manualRate === '' ? null : parseManualRate(manualRate);
   if (manualRate != null && manualRate !== '' && manual == null) return { ok: false, code: 'BAD_RATE' };
@@ -517,7 +518,8 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
         advanceGross = row.payload?.amount != null ? round2(Number(row.payload.amount)) : chain.advanceRequired;
         if (!(advanceGross > 0)) throw new Permanent('Avansı kesilecek tahsilat yok');
         if (advanceGross - chain.advanceRequired > EPS) throw new Permanent(`Ödemedeki tahsilat değişti: avansı kesilecek tutar ${chain.advanceRequired.toFixed(2)} RON, istenen ${advanceGross.toFixed(2)} RON`);
-        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, ron: netOf(advanceGross, settings.vatRate) }];
+        // TVA dahil toplamla (PretTotal — karar 288, D8): avans faturası tahsilata kuruşu kuruşuna eşit
+        lines = [{ code: '', name: `Avans marfă conform proformă ${proforma.series}${proforma.number}`, unit: FGO_UM.adet, qty: 1, net: netOf(advanceGross, settings.vatRate), gross: advanceGross }];
       } else {
         // Romence ad: satırda yoksa katalogdaki camın Romence adı ve rengi
         const ids = offer.lines.filter((l) => !l.descriptionRo && l.glassProductId).map((l) => l.glassProductId);
@@ -562,7 +564,7 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır — kayıt yazılamasa bile aynı numara sonraki
       // faturaya bir daha gönderilmez (tek seferlik; karar 87)
       if (kind !== 'PROFORMA') await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: order.id }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
-      await recordGlassIssued(db, { orderId: order.id, rowId: row.id, prepared, doc, now });
+      await recordOrPark(doc, () => recordGlassIssued(db, { orderId: order.id, rowId: row.id, prepared, doc, now }));
       done++;
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
@@ -577,10 +579,12 @@ export async function dispatchGlassJobs(db, { now = new Date(), fetchImpl = fetc
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);
       // Belge FGO'da kesilmiş olabilir (karar 209): körlemesine yeniden denenmez — iş bekletilir, yönetici FGO'ya bakıp karar verir
-      if (uncertainEmit(e) && prepared && form) {
+      // Belge kesildi ama kaydedilemedi (karar 288 — O4): aynı yol — yeniden FGO'ya gidilmez, kesilen numara saklanır
+      if (mustPark(e, uncertainEmit) && prepared && form) {
         await parkUncertain(db, row, {
           target: 'GLASS', kind, orderIds: [order.id], orderNo: order.orderNo, prepared, expected: expectedGross(lineList, { rate: prepared.rate, vatRate }),
           series: form.Serie, idExtern: form.IdExtern, error: msg, now,
+          issued: e instanceof EmittedNotRecorded ? e.issued : null, sentNo: e instanceof EmittedNotRecorded ? null : form.Numar ?? null,
         });
         log('cam FGO belgesi: sonuç belirsiz — yönetici incelemesine gönderildi', kind, row.orderId);
         continue;

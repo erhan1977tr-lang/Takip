@@ -154,7 +154,8 @@ test('kayıt: "Yüklendi" yalnızca kişinin düğmesiyle yazılır; arşiv mevc
   const src = fs.readFileSync(new URL('../server/orders/transitions.js', import.meta.url), 'utf8');
   // YUKLENDI yazan TEK yer satışın "Yüklendi" düğmesidir (mark_shipped)
   assert.deepEqual(src.match(/status: 'YUKLENDI'/g), ["status: 'YUKLENDI'"]);
-  assert.match(src, /async mark_shipped\(h\) \{\s+await h\.set\(\{ status: 'YUKLENDI', actualShipDate: h\.now \}\);/);
+  // Onaylı yüklemesi olan siparişte fiili gün onaylı yükleme günü, sandık taşınmaz (karar 288 — O1)
+  assert.match(src, /async mark_shipped\(h\) \{\s+const confirmed = await confirmedShipDay\(h\.tx, h\.order\.id\);\s+await h\.set\(\{ status: 'YUKLENDI', actualShipDate: confirmed \?\? h\.now \}\);/);
   const body = src.slice(src.indexOf('async auto_archive(h)'), src.indexOf('async auto_ship_revert(h)'));
   assert.match(body, /archiveCheck\(h\.tx, h\.order, \{ today: h\.payload\.today, now: h\.now \}\)/);
   assert.match(body, /if \(!r\.ok\) throw new WorkflowError\(r\.code\);/);

@@ -437,7 +437,7 @@ dbTest('profil siparişi: elle ödeme → isteğe bağlı avans faturası (camla
   const [adv] = await advances({ id });
   assert.deepEqual([adv.seq, adv.advanced.toString(), adv.basis], [1, '100', 'MANUAL']);
   const af = fgo.calls.at(-1);
-  assert.deepEqual([af.Serie, af.IdExtern, af['Continut[0][Denumire]'], af['Continut[0][PretUnitar]']], ['GKH', `${orderNo}-A`, `Avans marfă conform proformă ${ref(pf)}`, '82.64']);
+  assert.deepEqual([af.Serie, af.IdExtern, af['Continut[0][Denumire]'], af['Continut[0][PretTotal]']], ['GKH', `${orderNo}-A`, `Avans marfă conform proformă ${ref(pf)}`, '100.00']);
   assert.equal((await db.manualPayment.findUnique({ where: { id: p1.id } })).advanceDocId, adv.id);
   assert.equal(await db.notificationOutbox.count({ where: { type: d.DOC_EMAIL, payload: { path: ['docId'], equals: adv.id } } }), 1);
 

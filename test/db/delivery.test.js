@@ -219,10 +219,12 @@ dbTest('depo: stok yetersizliği siparişi engellemez; depoya gönderim çift st
   const o = await load(id);
   assert.equal(o.profile.stage, 'DEPODA');
   assert.ok(o.profile.pickupDate, 'teslim günü stoktan bağımsız verildi');
-  await run(id, 'cancel', 'admin', { note: 'test' });
-  assert.equal(await codeOf(run(id, 'cancel', 'admin', { note: 'test' })), 'NOT_ALLOWED');
-  assert.equal(await db.stockMovement.count({ where: { orderId: id, kind: 'IADE' } }), 1);
-  assert.equal(await db.stockMovement.count({ where: { productId: pana.id, orderId: id } }), 2);
+  // İptal bir kez geri ekler (yarışta ödeme kazandıysa sipariş tahsilatlı — iptal edilmez, karar 288: ayrı siparişle)
+  const { id: c } = await depotOrder([['PANA-90-16', 5]]);
+  await run(c, 'cancel', 'admin', { note: 'test' });
+  assert.equal(await codeOf(run(c, 'cancel', 'admin', { note: 'test' })), 'NOT_ALLOWED');
+  assert.equal(await db.stockMovement.count({ where: { orderId: c, kind: 'IADE' } }), 1);
+  assert.equal(await db.stockMovement.count({ where: { productId: pana.id, orderId: c } }), 2);
 }));
 
 dbTest('teslim onayı: bir kez işlenir (eşzamanlı ikinci onay reddedilir); yeni stok hareketi yok; FGO açıkken fatura işi BİR kez (mevcut kural)', offline(async () => {

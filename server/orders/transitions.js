@@ -10,7 +10,7 @@ import { can } from '../auth/permissions.js';
 import { cleanAnnotations } from './annotations.js';
 import { revisionNoteWithMarks } from './revision-note.js';
 import { assignPieceBases, atOfferPrice, availableActions, drawingFlags, isCrateText, isViewable, offerProblems, offerTotals, sharedOpsGlasses, shouldAutoProduce, slaDeadline } from './rules.js';
-import { priceLock } from './financial-lock.js';
+import { cancelLock, priceLock } from './financial-lock.js';
 import { priceChanges } from './price-changes.js';
 import { verifyReviewToken } from './review.js';
 import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
@@ -22,7 +22,7 @@ import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForC
 import { recordPriceOverrides } from '../pricing/alerts.js';
 import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
-import { shipDateLocked } from './ship-date.js';
+import { confirmedShipDay, shipDateLocked } from './ship-date.js';
 import { applyImports } from './pdf-import/service.js';
 
 export { WorkflowError };
@@ -625,9 +625,16 @@ const ACTIONS = {
     await followCrates(h, h.order.actualShipDate ?? d);
     h.event('SHIP_DATE', dayText(d));
   },
+  /**
+   * "Yüklendi" (kişi). Onaylı yüklemesi olan siparişte (3.93.0, karar 288 — O1) fiili gün onaylı yükleme günüdür ve sandıklar
+   * TAŞINMAZ: onaylı günün sandık / misafir yerleşimi, nakliye ve ağırlık kayıtları o günün gerçeğidir; iki firmaya "sandık
+   * kaldırıldı" bildirimi gitmez. Onay yoksa eskisi gibi bugün + sandıklar yeni güne (karar 27).
+   */
   async mark_shipped(h) {
-    await h.set({ status: 'YUKLENDI', actualShipDate: h.now });
-    await followCrates(h, h.now);
+    const confirmed = await confirmedShipDay(h.tx, h.order.id);
+    await h.set({ status: 'YUKLENDI', actualShipDate: confirmed ?? h.now });
+    if (confirmed) h.audit = { confirmedDay: dayKey(confirmed), cratesKept: true };
+    else await followCrates(h, h.now);
     h.event('SHIPPED');
   },
   /**
@@ -661,8 +668,15 @@ const ACTIONS = {
     await h.set({ status: 'ARSIVLENDI' });
     h.event('ARCHIVED');
   },
+  /**
+   * İptal (yönetici). Mali / yükleme kilidi (3.93.0, karar 288 — Y1): silmeyle aynı nedenler — FGO belgesi, müşteri belgesi
+   * kapsamı, bekleyen belge işi, onaylı yükleme, elle ödeme — varken iptal edilmez (CANCEL_LOCKED + gerekçe). Denetim, belge
+   * isteği / yükleme onayıyla aynı danışma kilitleri altında (ACTION_LOCKS), sürüm artışıyla aynı işlemde yapılır.
+   */
   async cancel(h) {
     if (!h.payload.note) throw new WorkflowError('CANCEL_REASON');
+    const reasons = await cancelLock(h.tx, h.order.id);
+    if (reasons.length) throw new WorkflowError('CANCEL_LOCKED', { reasons });
     await h.set({ status: 'IPTAL' });
     h.event('CANCELLED', h.payload.note);
     h.sla = true;
@@ -965,6 +979,12 @@ const ACTIONS = {
  */
 const ACTION_LOCKS = {
   update_offer: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  // İptal (karar 288 — Y1): belge isteği, elle ödeme, müşteri belgesi ve yükleme onayıyla aynı kilitler, aynı sıra
+  cancel: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  // Tahmini yükleme tarihi / "Yüklendi" (karar 288 — D1): yükleme onayıyla aynı kilit — "onay kalemi varsa tarih değişmez" ve
+  // "onaylı günün sandıkları taşınmaz" kuralı yarışta delinmez
+  set_ship_date: () => ['loading-confirmation'],
+  mark_shipped: () => ['loading-confirmation'],
   // Üretime almayı geri alma: mali kilit + sandık denetimi ile kayıt arasına yükleme onayı / belge isteği / sandık giremez.
   // Sandık kilidi sandık yazanlarla aynı anahtar ve sıra (sandık günü → sipariş satırı) — server/orders/dwg-undo.js
   dwg_ready_undo: (order) => ['loading-confirmation', `glass-billing:${order.id}`, ...crateLockKeys(order, dayKey)],

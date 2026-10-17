@@ -258,6 +258,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       <NewOrderForm
         key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
         catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(glassLoadingDate(new Date(), getEnv().APP_TIMEZONE))} draft={draft} m={m.newOrder.form}
+        requestKey={randomUUID()}
       />
       {draftRow && (
         <form action={deleteDraftAction} className="row end">

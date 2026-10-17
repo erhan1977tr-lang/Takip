@@ -104,13 +104,17 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
 
   let orderId: string;
   let dropped: { storageKey: string }[] = [];
+  let duplicate = false;
   try {
     const created = await createGlassOrder(db, {
       actor, firm: { id: firm.id, prefix: firm.prefix, camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket },
       title, requestedNo: no!, suggestedNo, items, files: stored.stored, note: note || null, draftId, dropDraftFileIds: removed,
+      requestKey: String(formData.get('requestKey') ?? '').slice(0, 64) || null,
     });
     orderId = created.id;
     dropped = created.dropped;
+    // Aynı form ikinci kez geldi (karar 288 — D2): ilk sipariş açılır; bu isteğin dosyaları siparişe eklenmez, silinir
+    duplicate = !!(created as { duplicate?: boolean }).duplicate;
   } catch (err) {
     await discardFiles(stored.stored);
     if (err instanceof WorkflowError) {
@@ -120,6 +124,10 @@ export async function createOrderAction(_prev: NewOrderState, formData: FormData
     return fail(t('newOrder.errors.saveFailed'));
   }
   await discardFiles(dropped);
+  if (duplicate) {
+    await discardFiles(stored.stored);
+    redirect(`/siparisler/${orderId}?ok=created`);
+  }
   // İlk mesaj (karar 225): sipariş kaydedildikten SONRA bir kez Türkçeye çevrilir; çeviri hatası siparişi etkilemez
   if (note) await firstNoteTranslation(orderId, actor);
   redirect(`/siparisler/${orderId}?ok=created`);

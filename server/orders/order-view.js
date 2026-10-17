@@ -155,3 +155,17 @@ export function orderPeopleView(role, order) {
   if (Array.isArray(o.events)) o = { ...o, events: eventsFor(role, o.events) };
   return /** @type {O} */ (o);
 }
+
+/**
+ * Profil siparişinin kur anlık görüntüsü (3.93.0, karar 288 — D12): kur politikası, kâr payı yüzdesi, taban kur, elle kur
+ * işareti ve kaynak tarihleri yalnızca müşteri yönetimi yetkisine (CUSTOMER_MANAGE) gider. Müşteri ve denetimci yalnızca
+ * uygulanan kuru, günü ve kaynağı alır (karar 99: kâr payı müşteriye hiçbir yerde gösterilmez) — ekranda çizilmese de veri
+ * sunucuda süzülür.
+ * @template {Record<string, unknown> | null} P
+ * @param {string} role  @param {P} profile
+ * @returns {P}
+ */
+export function profileFxView(role, profile) {
+  if (!profile || can(role, 'CUSTOMER_MANAGE')) return profile;
+  return { ...profile, fxPolicy: null, fxMarkupPercent: null, fxBaseRate: null, fxManual: null, fxSourceDate: null, fxResolvedAt: null };
+}

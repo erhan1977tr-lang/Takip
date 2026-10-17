@@ -9,7 +9,7 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as }
 //  - müşteri: cam + renk + profil + küpeşte + toplam metre → profil ve küpeşte birlikte; sonuç formdaki adetlere aktarılır,
 //    elle değiştirilebilir; yeniden hesapta üzerine yazılacak adetler önce gösterilir (Vazgeç / Evet); adetli aksesuar elle;
 //    Romence panelde Romence, tablet / mobilde taşma yok
-//  - gönderimden önce stok uyarısı (engellemez); siparişte müşterinin kendi eksik ürünleri gereken / mevcut / eksik ile
+//  - gönderimden önce stok uyarısı (engellemez); siparişte müşterinin kendi eksik ürünleri, gereken adet + "stok yetersiz" (karar 288: stok miktarı gitmez)
 //  - yönetici: kritik eşik (tek "Önemli kararlar" kaydı), "Rezerve" sütunu (onaylı, depoya gitmemiş); denetimci salt okunur;
 //    satış / çizim / müşteri genel stoğu göremez
 test.describe.configure({ mode: 'serial' });
@@ -147,7 +147,8 @@ test('müşteri: beş alan (cam, renk, profil, küpeşte, metre) — FBL90 + MR2
   await calc.locator('#calc-meters').fill('30');
   await calc.getByRole('button', { name: 'Hesapla' }).click();
   await expect(row('MR23-7016').locator('[data-calc-qty]')).toHaveText('5');
-  await expect(row('MR23-7016').locator('[data-calc-stock]')).toHaveText('Stok yetersiz: gereken 5, mevcut 0, eksik 5');
+  // Müşteriye stok miktarı gitmez (karar 288 — O3): yalnızca kendi gereken adedi ve "stok yetersiz"
+  await expect(row('MR23-7016').locator('[data-calc-stock]')).toHaveText('Stok yetersiz (gereken 5)');
   await calc.getByRole('button', { name: 'Forma aktar' }).click();
   await expect(calc.locator('[data-calc-applied]')).toBeVisible();
   for (const [code, q] of [['FBL90-7016', '5'], ['PANA-L90', '5'], ['PANA-90-16', '5'], ['MR23-7016', '5'], ['MC16', '1']]) await expect(formQty(cust, code), code).toHaveValue(q);
@@ -196,13 +197,15 @@ test('müşteri: beş alan (cam, renk, profil, küpeşte, metre) — FBL90 + MR2
   await cust.fill('#title', 'Metraj hesabı');
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   const check = cust.locator('#stok-uyari');
-  await expect(check.locator('tr[data-stock-check-row="MR23-7016"] td.num')).toHaveText(['7 boy', '0', '7']);
+  await expect(check.locator('tr[data-stock-check-row="MR23-7016"] td.num')).toHaveText(['7 boy']);
+  await expect(check.locator('tr[data-stock-check-row="MR23-7016"]')).toContainText('Stok yetersiz');
   await expect(check.locator('tr[data-stock-check-row]')).toHaveCount(3); // MR23-7016, MC16, SPIGOTI (stoğu yok / eksi)
   await check.getByRole('button', { name: 'Yine de gönder' }).click();
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=profile_created/);
   orderUrl = new URL(cust.url()).pathname;
   const warn = cust.locator('#stok.alert-warn');
-  await expect(warn.locator('[data-stock-line="MR23-7016"]')).toContainText('gereken 7 boy, mevcut 0, eksik 7');
+  await expect(warn.locator('[data-stock-line="MR23-7016"]')).toContainText('gereken 7 boy: stok yetersiz');
+  await expect(warn).not.toContainText(', eksik ');
   await expect(warn.locator('[data-stock-line]')).toHaveCount(3);
   await cust.context().close();
 

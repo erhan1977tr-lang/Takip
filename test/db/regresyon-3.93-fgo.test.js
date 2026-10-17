@@ -184,8 +184,8 @@ dbTest('D7: belirsiz avans faturası FGO\'dan doğrulanıp kaydedilince elle gir
   const o = await order(c);
   await proforma(o);
   assert.equal((await pay(o, '10')).ok, true);
-  await settings({ invoiceNext: '9777' });
-  assert.equal((await getFgoSettings(db)).invoiceNext, '9777');
+  await settings({ invoiceNext: 9777 });
+  assert.equal((await getFgoSettings(db)).invoiceNext, 9777);
   assert.deepEqual(await request(o, 'ADVANCE'), { ok: true });
   assert.deepEqual(await inMode('lost', () => dispatch(o)), { done: 0, failed: 1 });
   const job = await db.notificationOutbox.findFirstOrThrow({ where: { orderId: o.id, type: 'FGO_GLASS', payload: { path: ['kind'], equals: 'ADVANCE' } } });

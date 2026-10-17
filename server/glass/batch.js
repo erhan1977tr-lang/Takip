@@ -37,7 +37,7 @@ import { GLASS_FGO, glassDocText, proformaAmount, proformaFgoLines, proformaLine
 import { queueDocEmail } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { linkCoveredPayments } from '../finance/service.js';
-import { expectedGross, parkUncertain } from '../finance/uncertain.js';
+import { EmittedNotRecorded, expectedGross, mustPark, parkUncertain, recordOrPark } from '../finance/uncertain.js';
 import { sortByOrderNo } from '../orders/order-number.js';
 
 export const BATCH_FGO = 'FGO_BATCH';
@@ -501,7 +501,7 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       const doc = await fgoEmit(settings, form, fetchImpl);
       // Elle numara FGO'da kullanıldı: alan belge kaydından ÖNCE boşaltılır (kayıt yazılamasa bile numara yinelenmez)
       if (!proforma) await afterInvoiceIssued(db, { sent: sentNo, issued: doc.number, orderId: null }).catch((e) => log('fatura numarası ayarı güncellenemedi', e?.message));
-      const created = await recordBatchIssued(db, { batchId: batch.id, rowId: row.id, doc, now });
+      const created = await recordOrPark(doc, () => recordBatchIssued(db, { batchId: batch.id, rowId: row.id, doc, now }));
       done++;
       try {
         const st = await fgoStatus(settings, key, { series: doc.series, number: doc.number, appUrl }, fetchImpl);
@@ -513,10 +513,12 @@ export async function dispatchBatchJobs(db, { now = new Date(), fetchImpl = fetc
       failed++;
       const msg = String(e?.message ?? e).slice(0, 500);
       // Belge FGO'da kesilmiş olabilir (karar 209): yeniden denenmez — parti kuyrukta (PENDING) tutulur, yönetici FGO'ya bakıp karar verir
-      if (uncertainEmit(e) && prepared && form && batchRow) {
+      // Belge kesildi ama kaydedilemedi (karar 288 — O4): aynı yol, kesilen numara saklanır
+      if (mustPark(e, uncertainEmit) && prepared && form && batchRow) {
         await parkUncertain(db, row, {
           target: 'BATCH', kind: batchRow.kind, orderIds: [], batchId, customerId: batchRow.customerId, prepared,
           expected: expectedGross(fgoLines, { rate: Number(batchRow.fxRate), vatRate: settings.vatRate }), series: form.Serie, idExtern: form.IdExtern, error: msg, now,
+          issued: e instanceof EmittedNotRecorded ? e.issued : null, sentNo: e instanceof EmittedNotRecorded ? null : form.Numar ?? null,
         });
         await db.billingBatch.updateMany({ where: { id: batchId, status: 'PENDING' }, data: { lastError: `[BELIRSIZ] ${msg}`.slice(0, 500) } });
         log('müşteri belgesi: sonuç belirsiz — yönetici incelemesine gönderildi', batchId);

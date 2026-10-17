@@ -69,7 +69,9 @@ test('profil akışı: kim hangi adımda ne yapar; satış ve çizim hiçbir şe
   assert.ok(!a('ADMIN', 'TEKLIF_GONDERILDI').includes('approve_profile_offer'), 'yönetici müşteri adına onaylayamaz');
   assert.ok(a('MUSTERI', 'TEKLIF_GONDERILDI', { canApprove: true }).includes('approve_profile_offer'));
   assert.ok(!a('MUSTERI', 'TEKLIF_GONDERILDI', { canApprove: false }).includes('approve_profile_offer'));
-  assert.ok(a('MUSTERI', 'PROFORMA').includes('update_pickup'));
+  // Teslim bilgisini yalnızca onay yetkili müşteri kullanıcısı değiştirir; yetkisiz kullanıcı görür (karar 288 — D15)
+  assert.ok(a('MUSTERI', 'PROFORMA', { canApprove: true }).includes('update_pickup'));
+  assert.ok(!a('MUSTERI', 'PROFORMA', { canApprove: false }).includes('update_pickup'));
   // Ödeme alındı (hemen depoya) ya da ödemesiz "Siparişi depoya gönder"; depodaki ödenmemiş siparişe ödeme sonradan girilir
   assert.ok(a('ADMIN', 'ONAYLANDI').includes('mark_paid') && a('ADMIN', 'ONAYLANDI').includes('send_to_warehouse'));
   assert.ok(a('ADMIN', 'PROFORMA').includes('send_to_warehouse'));

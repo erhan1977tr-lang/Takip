@@ -61,6 +61,11 @@ const lines = (form) => Object.keys(form).filter((k) => /^Continut\[\d+\]\[Denum
   const i = k.match(/\[(\d+)\]/)[1];
   return [form[k], form[`Continut[${i}][NrProduse]`], form[`Continut[${i}][PretUnitar]`] ?? null];
 });
+/** Avans faturası satırı: TVA dahil toplamla gider (PretTotal — karar 288, D8: avans = tahsilat, kuruşu kuruşuna) */
+const advLines = (form) => Object.keys(form).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => {
+  const i = k.match(/\[(\d+)\]/)[1];
+  return [form[k], form[`Continut[${i}][NrProduse]`], form[`Continut[${i}][PretTotal]`] ?? null, form[`Continut[${i}][PretUnitar]`] ?? null];
+});
 /** Müşteri FGO'da proformayı öder → durum eşitlemesi (elle "FGO ile Güncelle" ile aynı yol) tahsilatı kayda yazar */
 async function fgoPays(fgo, ref, paid) {
   fgo.state.get(ref).paid = paid;
@@ -166,7 +171,7 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   assert.equal(runs.reduce((n, r) => n + r.done, 0), 1);
   assert.equal(fgo.calls.length, 2);
   const a1 = fgo.calls[1];
-  assert.deepEqual([a1.Serie, a1.IdExtern, lines(a1)], ['GKH', `${o.orderNo}-A`, [[`Avans marfă conform proformă ${pf}`, '1', '247.93']]], '300 / 1,21');
+  assert.deepEqual([a1.Serie, a1.IdExtern, advLines(a1)], ['GKH', `${o.orderNo}-A`, [[`Avans marfă conform proformă ${pf}`, '1', '300.00', null]]], '300 TVA dahil');
   let docs = await docsOf(o.id);
   assert.deepEqual(docs.map((d) => [d.kind, d.seq, d.advanced?.toString() ?? null]), [['PROFORMA', 1, null], ['ADVANCE', 1, '300']]);
   // Tahsilatın tamamının avansı kesildi: nihai fatura kesilebilir; yeni avans istenemez (1 banlık yuvarlama farkı avans doğurmaz)
@@ -189,7 +194,7 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   assert.equal(fgo.calls.length, 2, 'belge kesilmedi');
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id, now: new Date(Date.now() + 10 * 60_000) })), { done: 1, failed: 0 });
   const a2 = fgo.calls[2];
-  assert.deepEqual([a2.IdExtern, lines(a2)], [`${o.orderNo}-A2`, [[`Avans marfă conform proformă ${pf}`, '1', '352.07']]], '426 / 1,21; ikinci avansın IdExtern\'i sıralı');
+  assert.deepEqual([a2.IdExtern, advLines(a2)], [`${o.orderNo}-A2`, [[`Avans marfă conform proformă ${pf}`, '1', '426.00', null]]], '426 TVA dahil; ikinci avansın IdExtern\'i sıralı');
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id, now: new Date(Date.now() + 60 * 60_000) })), { done: 0, failed: 0 }, 'iş bitti: yeniden kesilmez');
   docs = await docsOf(o.id);
   assert.deepEqual(docs.map((d) => [d.kind, d.seq, d.advanced?.toString() ?? null]), [['PROFORMA', 1, null], ['ADVANCE', 1, '300'], ['ADVANCE', 2, '426']]);
@@ -236,7 +241,7 @@ dbTest('avans yüklemeden ÖNCE de kesilir; ödemenin tek kaynağı FGO: elle gi
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'ADVANCE', actor: actor(), amount: 5 }), { ok: true });
   assert.equal((await jobs(o, 'ADVANCE'))[0].payload.amount, 726);
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 1, failed: 0 });
-  assert.deepEqual(lines(fgo.calls[1]), [[`Avans marfă conform proformă ${pf}`, '1', '600.00']], '726 / 1,21 — elle kayıttaki 500 değil');
+  assert.deepEqual(advLines(fgo.calls[1]), [[`Avans marfă conform proformă ${pf}`, '1', '726.00', null]], '726 TVA dahil — elle kayıttaki 500 değil');
   st = await stateOf(o, false);
   assert.deepEqual([st.actions, st.wait, st.advanced], [[], 'final_from_loading', 726]);
   assert.deepEqual(await request(o, 'INVOICE'), { ok: false, code: 'NOT_ALLOWED' }, 'sipariş düzeyinde nihai fatura yok');

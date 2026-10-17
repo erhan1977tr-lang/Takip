@@ -291,12 +291,12 @@ test('stok: kritik eşik kuralı — yeni kritik dönemde tek uyarı; zaten krit
   assert.ok(ALERT_TYPES.includes('STOCK_CRITICAL') && ALERT_TYPES.includes('STOCK_SHORTAGE'));
 });
 
-test('stok: müşteriye giden değerler — yalnızca gereken / mevcut / eksik; mevcut eksiye düşmez (iç bakiye gitmez)', () => {
-  assert.deepEqual(customerStockLine(10, 4), { needed: 10, available: 4, missing: 6 });
-  assert.deepEqual(customerStockLine(10, -7), { needed: 10, available: 0, missing: 10 });
-  assert.deepEqual(customerStockLine(3, 9), { needed: 3, available: 9, missing: 0 });
+test('stok: müşteriye giden değerler — yalnızca kendi gereken adedi ve "stok yetersiz"; stok miktarı gitmez (karar 288)', () => {
+  assert.deepEqual(customerStockLine(10, 4), { needed: 10, short: true });
+  assert.deepEqual(customerStockLine(10, -7), { needed: 10, short: true });
+  assert.deepEqual(customerStockLine(3, 9), { needed: 3, short: false });
   const view = customerShortageView([{ productId: 'p1', code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', qty: 5, stock: -3, missing: 8 }]);
-  assert.deepEqual(view, [{ code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', needed: 5, available: 0, missing: 5 }]);
+  assert.deepEqual(view, [{ code: 'GK15', nameTr: 'Conta', nameRo: 'Garnitură', unitCode: 'CUTII', needed: 5, short: true }]);
   assert.equal('productId' in view[0], false, 'iç kimlik müşteriye gitmez');
 });
 
@@ -304,8 +304,11 @@ test('stok: kilit anahtarları tekrarsız ve SIRALI (her yazan aynı sırayla ki
   assert.deepEqual(stockLockKeys(['b', 'a', null, 'b', undefined, 'c']), ['stock:a', 'stock:b', 'stock:c']);
   // update_pickup (Paket B — karar 229): ödenmiş, bilgisi eksik sipariş bilgi tamamlanınca depoya iletilir (stok çıkışı)
   assert.deepEqual(Object.keys(PROFILE_LOCKS).sort(), ['cancel', 'mark_paid', 'send_to_warehouse', 'update_pickup']);
-  const order = { profileItems: [{ productId: 'z' }, { productId: null }, { productId: 'a' }] };
-  for (const fn of Object.values(PROFILE_LOCKS)) assert.deepEqual(fn(order), ['stock:a', 'stock:z']);
+  const order = { id: 'o1', profileItems: [{ productId: 'z' }, { productId: null }, { productId: 'a' }] };
+  for (const [k, fn] of Object.entries(PROFILE_LOCKS)) {
+    // İptal (karar 288): stok kilitleri, sonra sipariş belge kilidi (silmeyle aynı sıra)
+    assert.deepEqual(fn(order), k === 'cancel' ? ['stock:a', 'stock:z', 'glass-billing:o1'] : ['stock:a', 'stock:z'], k);
+  }
 });
 
 test('yetki: stok ve hesaplayıcı servisleri yetkiyi kendileri de denetler — yetkisiz rol veritabanına hiç dokunmaz', async () => {

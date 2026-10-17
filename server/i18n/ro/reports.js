@@ -83,6 +83,7 @@ export default {
     PROFILE_NO_COST: 'La comenzile de profile costul de achiziție nu se păstrează la comandă: profitul profilelor nu se calculează.',
     TRANSPORT_HIDDEN: 'Transportul se introduce pe ziua încărcării și nu se împarte pe clienți: la filtrul de client transportul și profitul total nu se afișează.',
     FILTER_IGNORED: 'În raportul financiar filtrele de produs și stare încărcare nu se aplică.',
+    STATUS_PARTIAL: 'Filtrul de stare se aplică doar secțiunilor de vânzări și încărcare; facturarea, încasările și creanțele nu depind de stare.',
     DOC_TOTAL_MISSING: 'Documentele a căror sumă nu a fost încă citită din FGO nu intră în totaluri.',
   },
   errors: {
@@ -90,6 +91,8 @@ export default {
     TOO_LARGE: 'Raportul este prea mare. Restrângeți intervalul sau filtrele (nu se dau totaluri incomplete).',
     DAY_INVALID: 'Dată invalidă.', RANGE_INVALID: 'Data de început și de sfârșit trebuie date împreună; sfârșitul nu poate fi înaintea începutului.', RANGE_TOO_LONG: 'Intervalul poate fi de cel mult doi ani.',
     MONTH_INVALID: 'Lună invalidă.', YEAR_INVALID: 'An invalid.', PERIOD_INVALID: 'Perioadă invalidă.',
+    KIND_INVALID: 'Tip de raport invalid.', ORDER_TYPE_INVALID: 'Tip de comandă invalid.', STATUS_INVALID: 'Filtru de stare invalid.', LOADING_INVALID: 'Filtru de încărcare invalid.',
+    CUSTOMER_INVALID: 'Filtru de client invalid.', PRODUCT_INVALID: 'Filtru de produs invalid (cel mult 60 de caractere).',
   },
   excel: { sheet: 'Rezumat', title: 'Raport — {kind}', info: { report: 'Raport', range: 'Interval', basis: 'Data de referință', filters: 'Filtre', generated: 'Generat' }, cards: 'Valori sintetice', none: 'niciunul' },
 };

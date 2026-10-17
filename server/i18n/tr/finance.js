@@ -107,6 +107,7 @@ export default {
     title: 'Sonucu belirsiz FGO belgesi',
     lead: "FGO'ya gönderilen {kind} isteğinin yanıtı alınamadı ({error}). Belge FGO'da kesilmiş olabilir; bu yüzden körlemesine yeniden gönderilmedi. FGO'da {ref} kimliğiyle (IdExtern) arayın.",
     expected: 'Beklenen toplam (TVA dahil): {amount} · seri {series}',
+    issued: "FGO bu belgeyi {ref} numarasıyla kesti, ancak TAKİP kaydı yazılamadı. Belge yeniden gönderilmedi; FGO'da kontrol edip kaydedin.",
     at: 'Zaman: {date}',
     recordTitle: "FGO'da belge VAR",
     series: 'Seri',

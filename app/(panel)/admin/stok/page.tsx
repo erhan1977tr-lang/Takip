@@ -89,7 +89,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               </div>
               <div>
                 <label htmlFor="st-q">{t('profile.stock.move.qty')}</label>
-                <input id="st-q" name="qty" required inputMode="numeric" pattern="-?[0-9]+" />
+                <input id="st-q" name="qty" required inputMode="numeric" pattern="[0-9]+" />
               </div>
             </div>
             <label htmlFor="st-n">{t('profile.stock.move.note')}</label>

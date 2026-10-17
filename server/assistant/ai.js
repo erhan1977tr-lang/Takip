@@ -49,14 +49,25 @@ async function post(path, { apiKey, body, json = true, binary = false, fetchImpl
 }
 
 /**
+ * Sohbet isteğinin gövdesi (3.93.0, karar 288 — O5). OpenAI sözleşmesi: tool_choice ve parallel_tool_calls YALNIZCA araç
+ * listesi (tools, boş olmayan) verildiğinde gönderilebilir; aksi hâlde API 400 döner ("… is only allowed when 'tools' are
+ * specified"). Son model turunda araç verilmez (bot.js) — o turda iki alan da gönderilmez.
+ * @param {{ model: string, messages: any[], tools?: any[] }} p
+ */
+export function chatBody({ model, messages, tools }) {
+  const withTools = Array.isArray(tools) && tools.length > 0;
+  return {
+    model, messages, temperature: 0.1, max_completion_tokens: MAX_OUTPUT_TOKENS,
+    ...(withTools ? { tools, tool_choice: 'auto', parallel_tool_calls: true } : {}),
+  };
+}
+
+/**
  * Sohbet tamamlama (araçlarla). Dönen: modelin mesajı { content, tool_calls } ve kullanım.
  * @returns {Promise<{ message: { role: 'assistant', content: string | null, tool_calls?: any[] }, usage: any }>}
  */
 export async function chat({ apiKey, model, messages, tools, fetchImpl, timeoutMs }) {
-  const data = await post('/chat/completions', {
-    apiKey, fetchImpl, timeoutMs,
-    body: { model, messages, tools, tool_choice: 'auto', temperature: 0.1, max_completion_tokens: MAX_OUTPUT_TOKENS, parallel_tool_calls: true },
-  });
+  const data = await post('/chat/completions', { apiKey, fetchImpl, timeoutMs, body: chatBody({ model, messages, tools }) });
   const message = data?.choices?.[0]?.message;
   if (!message || typeof message !== 'object') throw new AiError('AI_FAILED');
   return { message: { role: 'assistant', content: typeof message.content === 'string' ? message.content : null, ...(Array.isArray(message.tool_calls) && message.tool_calls.length ? { tool_calls: message.tool_calls } : {}) }, usage: data.usage ?? null };

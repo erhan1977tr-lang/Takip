@@ -121,6 +121,7 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   PDF_IMPORT_STALE: 'order.errors.pdfImportStale',
   PDF_IMPORT_EMPTY: 'order.errors.pdfImportEmpty',
   PRICE_LOCKED: 'order.errors.priceLocked',
+  CANCEL_LOCKED: 'order.errors.cancelLocked',
   NO_FIRM: 'newOrder.errors.noFirm',
   BAD_NUMBER: 'newOrder.errors.badNumber',
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
@@ -161,6 +162,12 @@ const WORKFLOW_ERRORS: Record<string, string> = {
 export function workflowErrorText(t: T, code: string, details?: Record<string, unknown>): string {
   // Eksik teslim bilgileri (karar 229): alan adları kullanıcının dilinde, sabit sırayla
   if (code === 'PICKUP_INFO_MISSING') return t(k('profile.errors.pickupInfoMissing'), { fields: pickupFieldsText(t, details?.fields) });
+  // İptal kilidi (karar 288): "İptal edilemez: <nedenler>" — sayfadaki metinle aynı
+  if (code === 'CANCEL_LOCKED') {
+    const raw = details?.reasons;
+    const reasons = Array.isArray(raw) ? (raw as { code: string; ref?: string | null; kind?: string | null }[]) : [];
+    return [t(k('order.cancel.locked')), ...reasons.map((r) => lockReasonText(t, r))].join(' ');
+  }
   // DWG kararını geri almanın engeli (karar 285): "Bu karar geri alınamaz: <neden>" — ekrandaki metinle aynı
   if (code.startsWith('UNDO_') && Object.hasOwn(WORKFLOW_ERRORS, code) && WORKFLOW_ERRORS[code].startsWith('order.dwg.undo.block.')) {
     return `${t(k('order.dwg.undo.blocked'))} ${t(k(WORKFLOW_ERRORS[code]))}`;
@@ -181,7 +188,7 @@ export function pickupFieldsText(t: T, fields: unknown): string {
 export function lockReasonText(t: T, r: { code: string; ref?: string | null; kind?: string | null }): string {
   const kind = r.kind && ['PROFORMA', 'ADVANCE', 'INVOICE'].includes(r.kind) ? t(k(`accounting.receivables.kind.${r.kind}`)) : '';
   const ref = typeof r.ref === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(r.ref) ? r.ref.split('-').reverse().join('.') : r.ref.slice(0, 40)) : '';
-  const code = ['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT', 'CONFIRMED_LOADING', 'SHIPPED', 'PROFILE_FINANCE', 'PROFILE_WAREHOUSE'].includes(r.code) ? r.code : 'FGO_DOCUMENT';
+  const code = ['FGO_DOCUMENT', 'BILLING_BATCH', 'PENDING_DOCUMENT', 'CONFIRMED_LOADING', 'SHIPPED', 'PROFILE_FINANCE', 'PROFILE_WAREHOUSE', 'MANUAL_PAYMENT', 'PAYMENT'].includes(r.code) ? r.code : 'FGO_DOCUMENT';
   const text = t(k(`order.lock.${code}`), { kind });
   return ref ? `${text} (${ref})` : text;
 }

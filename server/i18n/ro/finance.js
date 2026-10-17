@@ -107,6 +107,7 @@ export default {
     title: 'Document FGO cu rezultat incert',
     lead: 'Nu s-a primit răspuns la cererea de {kind} trimisă la FGO ({error}). Documentul poate fi deja emis în FGO; de aceea nu a fost retrimis automat. Căutați în FGO după identificatorul {ref} (IdExtern).',
     expected: 'Total așteptat (cu TVA): {amount} · seria {series}',
+    issued: "FGO a emis acest document cu numărul {ref}, dar înregistrarea în TAKİP nu a putut fi scrisă. Documentul nu a fost retrimis; verificați în FGO și înregistrați-l.",
     at: 'Ora: {date}',
     recordTitle: 'Documentul EXISTĂ în FGO',
     series: 'Serie',

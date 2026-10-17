@@ -81,6 +81,22 @@ const purchaseOf = (p) => ({
   purchaseCurrency: p.purchaseCurrency ?? null, purchaseUnit: p.purchaseUnit ?? null,
 });
 const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('profile-catalog', 0))`;
+/**
+ * Servis içi yetki (3.93.0, karar 288 — D20): eylemlerdeki requirePermission'a ek olarak; yetkisiz çağrı hiçbir şey yazmaz.
+ * @param {any} actor
+ */
+const allowed = (actor) => !!actor && can(actor.role, 'CATALOG_MANAGE');
+const FORBIDDEN = /** @type {const} */ ({ ok: false, code: 'FORBIDDEN' });
+/**
+ * Stok hareketi olan ürünlerin kodları (D5): birim, hareketlerin ölçüsüdür — hareketten sonra değişirse eski hareketler yeni
+ * birimle toplanır (veri bütünlüğü bozulur). Bu ürünlerde birim değişmez.
+ * @param {any} tx  @param {string[]} ids
+ */
+async function movedIds(tx, ids) {
+  if (!ids.length) return new Set();
+  const rows = await tx.stockMovement.groupBy({ by: ['productId'], where: { productId: { in: ids } } });
+  return new Set(rows.map((r) => r.productId));
+}
 
 /**
  * Ürün ekler ya da düzenler. Düzenlemede kod değişmez.
@@ -94,9 +110,10 @@ const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextende
  * fiyatından tamamen ayrıdır. Yeni seçilen tedarikçi etkin olmalı (mevcut pasif tedarikçi korunabilir).
  * @param {{ packContent: string | null, packMeasure: 'M' | 'BUC' | null }} [pack]
  * @param {{ supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null }} [purchase]
- * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' | 'FORBIDDEN' | 'SUPPLIER' }>}
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' | 'FORBIDDEN' | 'SUPPLIER' | 'UNIT_LOCKED' }>}
  */
 export async function saveProduct(db, id, value, actor, pack = undefined, purchase = undefined) {
+  if (!allowed(actor)) return FORBIDDEN; // CATALOG_MANAGE
   if (purchase && !can(actor?.role, 'SUPPLIER_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
   return db.$transaction(async (tx) => {
     await lock(tx);
@@ -115,6 +132,7 @@ export async function saveProduct(db, id, value, actor, pack = undefined, purcha
     }
     if (id) {
       if (!cur) return { ok: false, code: 'NOT_FOUND' };
+      if (value.unitCode !== cur.unitCode && (await movedIds(tx, [cur.id])).has(cur.id)) return { ok: false, code: 'UNIT_LOCKED' };
       const before = { ...plain(cur), ...(pack ? packOf(cur) : {}), ...(purchase ? purchaseOf(cur) : {}) };
       const after = { ...value, code: cur.code, ...(pack ? packOf(pack) : {}), ...(purchase ? purchaseOf(purchase) : {}) };
       const changes = [...COMPARE, ...(pack ? PACK_FIELDS : []), ...(purchase ? PURCHASE_FIELDS : [])].filter((f) => before[f] !== after[f]);
@@ -146,6 +164,7 @@ async function nextSort(tx, categoryId) {
  * @param {'toggle' | 'up' | 'down'} intent
  */
 export async function changeProduct(db, id, intent, actor) {
+  if (!allowed(actor)) return false; // CATALOG_MANAGE
   return db.$transaction(async (tx) => {
     await lock(tx);
     const p = await tx.profileProduct.findUnique({ where: { id } });
@@ -172,9 +191,10 @@ export async function changeProduct(db, id, intent, actor) {
 
 /**
  * Kategori ekler ya da düzenler (kod değişmez).
- * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' }>}
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'FORBIDDEN' }>}
  */
 export async function saveCategory(db, id, value, actor) {
+  if (!allowed(actor)) return FORBIDDEN; // CATALOG_MANAGE
   return db.$transaction(async (tx) => {
     await lock(tx);
     if (id) {
@@ -200,9 +220,10 @@ export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 /**
  * Ürün görselini değiştirir: yeni görsel yeni kayıttır (eskisi, onu gösteren siparişler için kalır). null → görsel kaldırılır.
  * @param {{ data: Buffer, mime: string, size: number, checksum: string, name?: string | null } | null} image  içeriği doğrulanmış görsel
- * @returns {Promise<{ ok: true, imageId: string | null } | { ok: false, code: 'NOT_FOUND' }>}
+ * @returns {Promise<{ ok: true, imageId: string | null } | { ok: false, code: 'NOT_FOUND' | 'FORBIDDEN' }>}
  */
 export async function setProductImage(db, id, image, actor) {
+  if (!allowed(actor)) return FORBIDDEN; // CATALOG_MANAGE
   return db.$transaction(async (tx) => {
     const p = await tx.profileProduct.findUnique({ where: { id } });
     if (!p) return { ok: false, code: 'NOT_FOUND' };
@@ -277,11 +298,22 @@ export function planProductImport(existing, categoryCodes, items) {
   return { create, update, unchanged, badCategory };
 }
 
-/** Önizlenen ürünleri kaydeder (plan kayıt anında yeniden hesaplanır). Dosyadaki sıra, kategori içindeki sıra olur. */
+/**
+ * Önizlenen ürünleri kaydeder (plan kayıt anında yeniden hesaplanır). Dosyadaki sıra, kategori içindeki sıra olur.
+ * @returns {Promise<{ ok: true, created: number, updated: number, unchanged: number, skipped: number }
+ *   | { ok: false, code: 'FORBIDDEN' } | { ok: false, code: 'UNIT_LOCKED', codes: string[] }>}
+ */
 export async function applyProductImport(db, items, actor) {
+  if (!allowed(actor)) return FORBIDDEN; // CATALOG_MANAGE
   return db.$transaction(async (tx) => {
     await lock(tx);
     const existing = await tx.profileProduct.findMany({ include: { category: true } });
+    // Birimi değişen, stok hareketi olan ürün varsa hiçbir şey yazılmaz (D5): hangi kodlar olduğu söylenir
+    const byCodeNow = new Map(existing.map((p) => [p.code, p]));
+    const unitChanged = items.map((v) => byCodeNow.get(v.code)).filter((cur, i) => cur && cur.unitCode !== items[i].unitCode);
+    const moved = await movedIds(tx, unitChanged.map((p) => p.id));
+    const locked = unitChanged.filter((p) => moved.has(p.id)).map((p) => p.code).sort();
+    if (locked.length) return { ok: false, code: 'UNIT_LOCKED', codes: locked };
     const categories = await tx.profileCategory.findMany();
     const catId = new Map(categories.map((c) => [c.code, c.id]));
     const plan = planProductImport(existing, [...catId.keys()], items);
@@ -300,7 +332,7 @@ export async function applyProductImport(db, items, actor) {
       if (cur) await tx.profileProduct.update({ where: { id: cur.id }, data });
       else await tx.profileProduct.create({ data: { ...data, code: v.code } });
     }
-    const summary = { created: plan.create.length, updated: plan.update.length, unchanged: plan.unchanged, skipped: plan.badCategory.length };
+    const summary = { ok: true, created: plan.create.length, updated: plan.update.length, unchanged: plan.unchanged, skipped: plan.badCategory.length };
     await writeAudit(tx, {
       action: 'PROFILE_CATALOG_IMPORT', entityType: 'ProfileProduct', entityId: 'catalog', userId: actor.id,
       details: {
