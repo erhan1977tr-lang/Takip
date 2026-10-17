@@ -93,21 +93,24 @@ n=0 seq=0
 run() { # run SHA DAL YOL DURUM SONUÇ [OLAY] [DEPO]
   seq=$((seq + 1))
   jq -cn --arg s "$1" --arg b "$2" --arg p "$3" --arg st "$4" --arg co "$5" --arg e "${6:-push}" --arg r "${7:-gkh/Takip}" --argjson n "$seq" \
-    '{ name: (if ($p | endswith("deploy-test.yml")) then "Sunucu kurulumu" else "CI" end), head_sha: $s, head_branch: $b, path: $p, status: $st, conclusion: (if $co == "" then null else $co end), event: $e,
+    '{ id: (1000 + $n), run_attempt: 1, name: (if ($p | endswith("deploy-test.yml")) then "Sunucu kurulumu" else "CI" end), head_sha: $s, head_branch: $b, path: $p, status: $st, conclusion: (if $co == "" then null else $co end), event: $e,
        run_number: $n, created_at: ("2026-10-14T18:00:" + (($n + 10) | tostring) + "Z"),
        repository: { full_name: $r }, head_repository: { full_name: $r } }' >>"$FAKE_STATE/runs.jsonl"
 }
-reset() { : >"$FAKE_STATE/runs.jsonl"; rm -f "$FAKE_STATE"/{docker,api-calls,api-down,api-500,api-garbage,on-api,on-build} "$STATE/failed"; : >"$TAKIP_BASE/logs/deploy.log" 2>/dev/null || true; }
+reset() { : >"$FAKE_STATE/runs.jsonl"; rm -f "$FAKE_STATE"/{docker,api-calls,api-down,api-500,api-garbage,on-api,on-build} "$STATE/failed" "$STATE/gate-failed"; : >"$TAKIP_BASE/logs/deploy.log" 2>/dev/null || true; }
 tick() { bash "$TAKIP" _otomatik >>"$ROOT/out" 2>&1 || true; }
 deployed_attempt() { grep -qx migration "$FAKE_STATE/docker" 2>/dev/null; }
 built() { grep -qx build "$FAKE_STATE/docker" 2>/dev/null; }
 fail() { echo "✘ $*"; echo "--- deploy.log"; cat "$TAKIP_BASE/logs/deploy.log" 2>/dev/null || true; echo "--- docker"; cat "$FAKE_STATE/docker" 2>/dev/null || true; echo "--- runs"; cat "$FAKE_STATE/runs.jsonl"; exit 1; }
 ok() { n=$((n + 1)); echo "✔ $*"; }
-blocked() { # blocked AÇIKLAMA [failed] — yayın denemesi YOK; "failed" verilirse commit başarısız işaretlenmeli, yoksa işaretlenmemeli
+blocked() { # blocked AÇIKLAMA [failed] — yayın denemesi YOK. "failed": testten geçmedi kaydı ($STATE/gate-failed) olmalı.
+  # Testten geçmeyen commit hiçbir durumda $STATE/failed'a (yayın başarısızlığı) yazılmaz (karar 291): yeniden çalıştırılan
+  # koşu başarılı olursa aynı commit yayınlanabilmeli.
   if built || deployed_attempt; then fail "$1: yayın denendi"; fi
   [ "$(cat "$STATE/deployed")" = "$B0" ] || fail "$1: yayındaki sürüm değişti"
-  if [ "${2:-}" = failed ]; then [ "$(cat "$STATE/failed" 2>/dev/null)" = "$X" ] || fail "$1: başarısız işaretlenmedi"
-  else [ ! -e "$STATE/failed" ] || fail "$1: yanlışlıkla başarısız işaretlendi"; fi
+  [ ! -e "$STATE/failed" ] || fail "$1: testten geçmeyen commit yayın başarısızlığı olarak işaretlendi (yeniden çalıştırmada yayınlanamaz)"
+  if [ "${2:-}" = failed ]; then [ "$(cat "$STATE/gate-failed" 2>/dev/null)" = "$X" ] || fail "$1: testten geçmedi kaydı yok"
+  else [ ! -e "$STATE/gate-failed" ] || fail "$1: yanlışlıkla testten geçmedi işaretlendi"; fi
   ok "$1 → yayın yok"
 }
 allowed() { deployed_attempt || fail "$1: yayın yapılmadı"; ok "$1 → yayına geçti (migration adımına ulaştı)"; }
@@ -126,7 +129,7 @@ reset; run "$X" fix/dal "$CI" completed success; run "$X" backend "$CI" in_progr
 tick; blocked "backend CI sürüyor"
 reset; run "$X" backend "$CI" queued ""; tick; blocked "backend CI sırada"
 
-# 3. backend CI başarısız / iptal / zaman aşımı → YAYIN YOK, commit başarısız işaretlenir (yeni commit gelene dek)
+# 3. backend CI başarısız / iptal / zaman aşımı → YAYIN YOK; "testten geçmedi" kaydı (yeniden çalıştırma başarılı olursa yayınlanır — 16)
 for co in failure cancelled timed_out skipped neutral action_required; do
   reset; run "$X" fix/dal "$CI" completed success; run "$X" backend "$CI" completed "$co"
   tick; blocked "backend CI: $co" failed
@@ -241,6 +244,53 @@ if built || deployed_attempt; then fail "taban sonrası 'CI:' commit'i demo yolu
 ok "taban sonrası demo yolunu yalnızca 'CI:' commit'i değiştirdi → yine demo koşusu gerekir → yayın yok"
 reset; run "$X" backend "$CI" completed success; run "$X" backend "$DEMO" completed success; tick; allowed "kendi demo koşusu başarılı"
 echo "$B0" >"$STATE/deployed"
+
+# 16. Yeniden çalıştırılan koşu (re-run, karar 291): GitHub aynı koşuyu (id, created_at, run_number aynı) yeni denemeyle
+# günceller; liste en son denemenin durum / sonucunu döndürür. İlk deneme başarısız → yayın yok, "testten geçmedi" kaydı;
+# yeniden çalıştırma sürüyor → bekle; yeniden çalıştırma başarılı → AYNI commit yayınlanır. Yeniden çalıştırma da başarısız
+# olursa yayın yok. Yanlış commit / dal / PR'daki başarılı yeniden çalıştırma, API hatası sayılmaz. Gerçek yayın başarısızlığı
+# ($STATE/failed) ise başarılı koşuya rağmen yeni commit gelene dek korunur.
+rerun() { # rerun SHA YOL DURUM SONUÇ [DAL] — aynı koşunun yeni denemesi (kayıt yerinde güncellenir, yeni koşu eklenmez)
+  local tmp=$FAKE_STATE/runs.tmp
+  jq -c --arg s "$1" --arg p "$2" --arg st "$3" --arg co "$4" --arg b "${5:-backend}" \
+    'if .head_sha == $s and .path == $p and .head_branch == $b and .event == "push"
+     then .run_attempt += 1 | .status = $st | .conclusion = (if $co == "" then null else $co end) else . end' \
+    "$FAKE_STATE/runs.jsonl" >"$tmp" && mv "$tmp" "$FAKE_STATE/runs.jsonl"
+}
+X=$(commit app/r.ts)
+# Kurulum ve demo testleri bu commit'te başarılı (yalnızca CI yeniden çalıştırılıyor)
+reset; run "$X" backend "$INST" completed success; run "$X" backend "$DEMO" completed success; run "$X" backend "$CI" completed failure
+tick; blocked "ilk deneme başarısız" failed
+tick; tick; blocked "ilk deneme başarısız — sonraki turlar da yayın yapmaz" failed
+[ "$(grep -c 'testlerden geçmedi' "$TAKIP_BASE/logs/deploy.log")" = 1 ] || fail "testten geçmedi kaydı her turda tekrarlandı"
+ok "testten geçmedi kaydı bir kez yazılır"
+rerun "$X" "$CI" in_progress ""; tick; blocked "yeniden çalıştırma sürüyor" failed
+rerun "$X" "$CI" queued ""; tick; blocked "yeniden çalıştırma sırada" failed
+rerun "$X" "$CI" completed failure; tick; blocked "yeniden çalıştırma da başarısız" failed
+rerun "$X" "$CI" completed cancelled; tick; blocked "yeniden çalıştırma iptal" failed
+# Yalnızca başka yerlerde başarılı yeniden çalıştırma: yanlış dal, PR, başka commit → sayılmaz
+run "$X" fix/dal "$CI" completed success; run "$X" backend "$CI" completed success pull_request
+P2=$(git -C "$WORK" rev-parse HEAD~1); run "$P2" backend "$CI" completed success
+tick; blocked "başarılı koşu yalnızca çalışma dalında / PR'da / başka commit'te" failed
+# API hatası: başarı sayılmaz, kayıt korunur
+rerun "$X" "$CI" completed success; touch "$FAKE_STATE/api-500"; tick; rm -f "$FAKE_STATE/api-500"
+if built || deployed_attempt; then fail "API hatasında yayın denendi"; fi
+[ "$(cat "$STATE/gate-failed" 2>/dev/null)" = "$X" ] || fail "API hatasında testten geçmedi kaydı silindi"
+touch "$FAKE_STATE/api-down"; tick; rm -f "$FAKE_STATE/api-down"
+if built || deployed_attempt; then fail "API erişilemezken yayın denendi"; fi
+ok "API hatası / erişilemezlik → yayın yok (başarı sayılmaz)"
+grep -q '"run_attempt":[2-9]' "$FAKE_STATE/runs.jsonl" || fail "yeniden çalıştırma denemesi"
+tick; allowed "ilk deneme başarısız, yeniden çalıştırma başarılı → aynı commit yayına geçti"
+[ ! -e "$STATE/gate-failed" ] || fail "başarılı kapıdan sonra testten geçmedi kaydı kaldı"
+ok "başarılı kapıdan sonra testten geçmedi kaydı temizlendi"
+# Gerçek yayın başarısızlığı (sahte migration başarısız → do_deploy $STATE/failed yazdı): başarılı koşu olsa da yeniden denenmez
+[ "$(cat "$STATE/failed" 2>/dev/null)" = "$X" ] || fail "yayın başarısızlığı işaretlenmedi"
+rm -f "$FAKE_STATE/docker"; tick
+if built || deployed_attempt; then fail "yayın başarısızlığından sonra aynı commit yeniden denendi"; fi
+ok "yayın başarısızlığı (state/failed) korunur: aynı commit yeniden denenmez"
+# Kapı hiç testten geçmeyen kaydını $STATE/failed'a yazmaz (yapı)
+grep -q 'echo "$head" >"$STATE/failed"' "$TAKIP" && fail "auto_deploy kapı başarısızlığını yayın başarısızlığı olarak yazıyor"
+ok "auto_deploy kapı sonucunu \$STATE/failed'a yazmıyor"
 
 # 14. Atlama değişkeni kayda geçer (zamanlayıcı vermez)
 reset; TAKIP_SKIP_CI_GATE=1 bash "$TAKIP" _otomatik >>"$ROOT/out" 2>&1 || true

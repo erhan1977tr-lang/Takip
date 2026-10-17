@@ -40,7 +40,9 @@ hiçbir zaman silmez. İşlem geçmişi: `/opt/takip/logs/release.log` (yalnızc
    modelleri tek bir `READ ONLY` işlemde okur (yazma yok, veri günlüğe yazılmaz). Yeni uç nokta açılmadı.
 6. Geçerse kayıt yazılır. Geçmezse **gözlem kipinde**: algılanır, kaydedilir, son sağlıklı sürüme dönüşün güvenli olup
    olmadığı hesaplanır, yöneticiye e-posta gider — **canlı servis kendiliğinden eski sürüme geçirilmez**; commit "başarısız"
-   işaretlenir (yeni commit gelene kadar yeniden yayınlanmaz).
+   işaretlenir (yeni commit gelene kadar yeniden yayınlanmaz). Bu işaret (`state/failed`) yalnızca YAYIN denemesinin
+   başarısızlığıdır: testlerden (CI / sunucu kurulumu / demo) geçmeyen commit buraya yazılmaz; GitHub'da testler yeniden
+   çalıştırılıp en son deneme başarılı olursa aynı commit yayınlanır (karar 291; kayıt `state/gate-failed`).
 
 ## 3. Geri dönüş ne zaman güvenlidir (hepsi gerekir)
 

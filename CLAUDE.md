@@ -1048,6 +1048,8 @@ Decided by the product owner on 2026-09-29. Details and rationale: `docs/decisio
     - Inside `server/assistant/` a structural test treats `.create( / .update( / .delete(` as DB writes: use `forget()` (panel-protocol.js) for in-memory collections and keep HMAC in `server/security/hmac.js`.
     - Tests: `test/assistant-panel.test.js`, `test/assistant.test.js` (Telegram unchanged), `test/permissions.test.js`, `e2e/66-panel-asistan.spec.ts` (real worker gate + real read-only tools in the test process on 127.0.0.1:3331, fake model only; never a real OpenAI request).
 
+160. **Gate failure ≠ deploy failure (3.95.1, decisions.md #291).** `auto_deploy` re-evaluates `gate()` on every tick; a `failure` from the gate is recorded ONLY in `$STATE/gate-failed` (log once, status line) and NEVER in `$STATE/failed`, so a GitHub re-run whose LATEST attempt is `success` deploys the same commit (`run_state` reads the run's current status / conclusion = latest attempt; failed / running / missing / unreadable → no deploy). `$STATE/failed` stays the marker of a real deploy failure (build, migration, health, rollback) and still blocks that SHA until a new commit. Never write a gate result to `$STATE/failed` again and never loosen the gate for this. Tests: `deploy/test/deploy-gate.sh` (scenario 16), `test/deploy-gate.test.js`.
+
 ## Repository conventions
 - Stack: Next.js 15 (App Router, server actions) + Prisma 6 + PostgreSQL 17, Node ≥ 20.9. Pure domain rules live in `server/**/*.js` (plain ESM, unit-tested with `node --test`); Next-bound code in `lib/`, `app/`.
 - UI strings only via `server/i18n/{tr,ro}/*.js` — never hard-code visible text. Both locales must have the same keys (enforced by `test/i18n.test.js`).

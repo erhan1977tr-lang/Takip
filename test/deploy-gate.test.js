@@ -73,3 +73,19 @@ test('kapı atlanamaz: zamanlayıcı servisi değişkeni vermez; atlama kayda ge
   assert.ok(wf.includes('bash deploy/test/deploy-gate.sh'));
   assert.match(wf, /shellcheck [^\n]*deploy\/test\/deploy-gate\.sh /);
 });
+
+test('testten geçmeyen commit yayın başarısızlığı sayılmaz; yeniden çalıştırma başarılıysa aynı commit yayınlanır (karar 291)', () => {
+  const a = fn('auto_deploy');
+  const fail = a.slice(a.indexOf('    failure)'), a.indexOf('    *) info'));
+  assert.ok(!fail.includes('$STATE/failed'), 'kapı başarısızlığı $STATE/failed\'a yazılmaz');
+  assert.ok(fail.includes('"$STATE/gate-failed"'), 'kapı başarısızlığı ayrı kayıtta');
+  assert.ok(a.includes('success) rm -f "$STATE/gate-failed"'), 'başarılı kapı kaydı temizler');
+  // Gerçek yayın başarısızlığı (do_deploy / sağlık / geri dönüş) yine yeni commit gelene dek korunur
+  assert.ok(a.indexOf('"$(cat "$STATE/failed"') < a.indexOf('g=$(gate "$head" "$current")'));
+  assert.ok(fn('do_deploy').length > 0);
+  // Koşunun EN SON denemesi değerlendirilir: GitHub listesi aynı koşuyu son denemeyle döndürür; yalnızca success başarı
+  assert.ok(fn('run_state').includes('if [ "$st" != completed ]; then echo pending'));
+  const t = read('deploy/test/deploy-gate.sh');
+  for (const s of ['ilk deneme başarısız', 'yeniden çalıştırma sürüyor', 'yeniden çalıştırma da başarısız', 'yeniden çalıştırma başarılı', 'API hatası', 'çalışma dalında / PR\'da / başka commit\'te'])
+    assert.ok(t.includes(s), `davranış testi: ${s}`);
+});
