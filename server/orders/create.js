@@ -13,6 +13,7 @@ import { isLegacyMultiGlass } from './drafts.js';
 import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { parseCustomerOrderNo } from './order-number.js';
+import { assertOrderRate } from './create-rate.js';
 
 /**
  * Firmanın bu tipteki bir sonraki sipariş numarası: yalnızca rakamdan oluşan ETKİN numaraların en büyüğü + 1 (metin —
@@ -106,6 +107,8 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
       const first = prev ? await tx.order.findUnique({ where: { id: prev.entityId }, select: { id: true, orderNo: true, customerOrderNo: true, customerId: true } }) : null;
       if (first && first.customerId === firm.id) return { id: first.id, orderNo: first.orderNo, customerOrderNo: first.customerOrderNo, bumped: false, dropped: [], duplicate: true };
     }
+    // Hız sınırı (karar 289): firma kilidi altında, veritabanındaki siparişlerden sayılır
+    await assertOrderRate(tx, { firmId: firm.id, userId: actor.id });
 
     const no = await pickNumber(tx, { customerId: firm.id, orderTypeCode: 'GLASS_ORDER', requestedNo, suggestedNo, format: '{CODE}{SEQ}', code: firm.prefix });
     const orderNo = formatOrderNo(firm.prefix, no);

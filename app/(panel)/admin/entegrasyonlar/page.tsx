@@ -20,7 +20,7 @@ import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 import { SettingsTabs } from './SettingsTabs';
-import { verifyParams } from '@/server/security/signed-param.js';
+import { verifyResult } from '@/server/security/signed-param.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +47,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   // Adresteki serbest metin yalnızca işlemin imzaladığı haliyle gösterilir (karar 288 — D14): imzasız / değiştirilmiş metin
   // ("sahte uyarı") ekrana yazılmaz, yerine sabit metin
   const resultScope = sp.ok ? `ok:${sp.ok}` : `error:${sp.error ?? ''}`;
-  const trusted = verifyParams(getEnv().AUTH_SECRET, resultScope, [sp.detail ?? '', sp.types ?? ''], sp.sig);
+  // İmza bu kullanıcıya ve kısa süreye bağlıdır (karar 289)
+  const trusted = verifyResult({ secret: getEnv().AUTH_SECRET, scope: resultScope, userId: user.id, values: [sp.detail ?? '', sp.types ?? ''], sig: sp.sig, exp: sp.exp });
   const detail = trusted ? (sp.detail ?? '') : '';
   const types = trusted ? (sp.types ?? '') : '';
   // Gerçek sunucuda yok sayılan ayarların ADLARI — yalnızca bilinen sabit adlar (değer bu sayfaya hiç gelmez)

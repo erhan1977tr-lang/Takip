@@ -199,11 +199,13 @@ built || fail "derleme beklenirdi"
 if deployed_attempt; then fail "kapı bozulduğu hâlde migration'a geçildi"; fi
 ok "derleme sırasında backend CI yeniden çalıştı → migration yok"
 
-# 13. CI'nin kendi yazdığı "CI:" commit'i: üst commit'in AYNI DALDAKİ koşusu geçerli; başka dalınki değil
+# 13. "CI:" konulu, github-actions yazarlı commit (karar 289): yazar ve konu taklit edilebilir → istisna YOK. Koşusu olmayan
+# böyle bir commit, üst commit'in koşusu başarılı olsa da yayınlanmaz; yalnızca KENDİ backend koşusu başarılıysa yayınlanır.
 U=$X
-X=$(commit app/f.ts github-actions@github.com 'CI: kilit dosyası')
+X=$(commit app/f.ts github-actions@github.com 'CI: kilit dosyası [skip ci]')
 reset; run "$U" fix/dal "$CI" completed success; run "$P" backend "$INST" completed success; tick; blocked "CI commit'i: üstün koşusu yalnızca çalışma dalında"
-reset; run "$U" backend "$CI" completed success; run "$P" backend "$INST" completed success; tick; allowed "CI commit'i: üstün backend koşusu başarılı"
+reset; run "$U" backend "$CI" completed success; run "$P" backend "$INST" completed success; tick; blocked "taklit CI commit'i: üstün backend koşusu başarılı ama kendi koşusu yok"
+reset; run "$X" backend "$CI" completed success; run "$P" backend "$INST" completed success; tick; allowed "CI commit'inin kendi backend koşusu başarılı"
 
 # 15. Demo ortamı testi (demo-env.yml, karar 287): demo yolları (sürüm numarası: package.json) değiştiyse backend'deki demo
 # testinin de başarıyla bitmesi ZORUNLU; başka daldaki demo koşusu sayılmaz. CI'nin kendi commit'i (kilit dosyası) yeni demo
@@ -225,14 +227,19 @@ reset; base_runs; run "$X" backend "$DEMO" completed failure; tick; blocked "dem
 reset; base_runs; run "$X" backend "$DEMO" completed cancelled; tick; blocked "demo testi iptal edildi" failed
 reset; base_runs; run "$X" backend "$DEMO" completed success; tick; allowed "CI + kurulum + demo testi başarılı"
 grep -q "head_sha=$X&branch=backend&event=push" "$FAKE_STATE/api-calls" || fail "demo testi sorgusu"
-# CI commit'i (kilit dosyası) demo yolunu değiştirdi: üstteki insan commit'inin demo koşusu geçerli
+# Taklit "CI:" commit'i demo yolunu değiştirdi (karar 289): üst commit'in demo koşusu YETMEZ; değişikliği içeren commit'in
+# ya da sonrakinin kendi demo koşusu gerekir
 D=$X
-X=$(commit_pkg '' github-actions@github.com 'CI: package-lock.json' package-lock.json)
-reset; run "$D" backend "$CI" completed success; run "$P" backend "$INST" completed success; run "$D" backend "$DEMO" completed success
-tick; allowed "CI commit'i yalnızca kilit dosyasını değiştirdi → üst commit'in demo koşusu geçerli"
-# Yalnızca CI commit'i demo yolunu değiştirdiyse (taban: üst commit yayında) yeni demo koşusu gerekmez
+X=$(commit_pkg '' github-actions@github.com 'CI: package-lock.json [skip ci]' package-lock.json)
+reset; run "$X" backend "$CI" completed success; run "$P" backend "$INST" completed success; run "$D" backend "$DEMO" completed success
+tick; blocked "taklit CI commit'i demo yolunu değiştirdi → üst commit'in demo koşusu sayılmaz"
+reset; run "$X" backend "$CI" completed success; run "$P" backend "$INST" completed success; run "$X" backend "$DEMO" completed success
+tick; allowed "demo yolunu değiştiren commit'in kendi demo koşusu başarılı"
 echo "$D" >"$STATE/deployed"
-reset; run "$D" backend "$CI" completed success; tick; allowed "taban sonrası demo yolunu yalnızca CI commit'i değiştirdi → demo koşusu gerekmez"
+reset; run "$X" backend "$CI" completed success; tick
+if built || deployed_attempt; then fail "taban sonrası 'CI:' commit'i demo yolunu değiştirdi: yayın denendi"; fi
+ok "taban sonrası demo yolunu yalnızca 'CI:' commit'i değiştirdi → yine demo koşusu gerekir → yayın yok"
+reset; run "$X" backend "$CI" completed success; run "$X" backend "$DEMO" completed success; tick; allowed "kendi demo koşusu başarılı"
 echo "$B0" >"$STATE/deployed"
 
 # 14. Atlama değişkeni kayda geçer (zamanlayıcı vermez)

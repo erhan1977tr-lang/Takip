@@ -54,7 +54,8 @@ export function validateFgoSettings(raw) {
     invoiceSeries: String(raw.invoiceSeries ?? '').trim().toUpperCase(),
     proformaType: String(raw.proformaType ?? '').trim(),
     invoiceType: String(raw.invoiceType ?? '').trim() || 'Factura',
-    vatRate: Number(String(raw.vatRate ?? '').replace(',', '.')),
+    // Boş KDV alanı %0 SAYILMAZ (karar 289; NEW-GL-05): boş / sayı olmayan değer hata; %0 yalnızca açıkça "0" yazılırsa
+    vatRate: String(raw.vatRate ?? '').trim() === '' ? Number.NaN : Number(String(raw.vatRate).trim().replace(',', '.')),
     dailyLimit: raw.dailyLimit == null || String(raw.dailyLimit).trim() === '' ? 3 : Number(raw.dailyLimit),
     invoiceNext: raw.invoiceNext == null || String(raw.invoiceNext).trim() === '' ? null : Number(String(raw.invoiceNext).trim()),
   };
@@ -356,12 +357,18 @@ export function requestNotSent(e) {
 async function post(settings, path, form, fetchImpl) {
   let res;
   try {
+    // Yönlendirme İZLENMEZ (karar 289; güvenlik denetimi 3.50.15 açık maddesi): 307 / 308 kimlik bilgili formu başka bir
+    // adrese yeniden gönderirdi. Yönlendirme yanıtı hata sayılır; belge kesen istekte sonuç belirsizdir (iş durur, yönetici inceler).
     res = await fetchImpl(`${FGO_URLS[settings.env] ?? FGO_URLS.test}${path}`, {
-      method: 'POST', body: new URLSearchParams(form), signal: AbortSignal.timeout(20_000),
+      method: 'POST', body: new URLSearchParams(form), signal: AbortSignal.timeout(20_000), redirect: 'manual',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     });
   } catch (e) {
     throw new FgoError(`FGO'ya ulaşılamadı: ${String(e?.message ?? e).slice(0, 200)}`, { retry: true, uncertain: !requestNotSent(e) });
+  }
+  if ((res.status >= 300 && res.status < 400) || res.type === 'opaqueredirect') {
+    await res.body?.cancel?.().catch(() => {});
+    throw new FgoError(`FGO yönlendirme yanıtı verdi (HTTP ${res.status}); yönlendirme izlenmedi`, { retry: false, uncertain: true });
   }
   const body = await res.text();
   let json;

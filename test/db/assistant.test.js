@@ -74,7 +74,19 @@ dbTest('asistan: her araç gerçek şemada hatasız çalışır ve hiçbir tablo
   assert.equal(out.genel_ozet.yarinPlanlananYukleme, 1);
   assert.equal(out.siparis_ara.siparisler[0].no, 'GLA68');
   assert.equal(out.siparis_detay.musteriTeklifi.tutar, 1000);
-  assert.equal(out.siparis_detay.fabrikaTutari, 800);
+  // Veri en aza indirme (karar 289): fabrika tutarı, notlar ve iletişim varsayılan olarak modele gitmez
+  assert.equal(out.siparis_detay.fabrikaTutari, undefined);
+  assert.equal(out.siparis_detay.sonNotlar, undefined);
+  assert.equal(out.musteri_bilgi.firmalar[0].yetkili, undefined);
+  const costCtx = { ...CTX, topics: new Set(['maliyet', 'iletisim']) };
+  assert.equal((await runTool(ro, 'siparis_detay', '{"siparis_no":"GLA68","fabrika_tutari":true}', costCtx)).fabrikaTutari, 800);
+  assert.deepEqual((await runTool(ro, 'siparis_detay', '{"siparis_no":"GLA68","fabrika_tutari":true}', CTX)).kisitli, ['fabrika_tutari']);
+  assert.equal((await runTool(ro, 'musteri_bilgi', '{"firma":"glass","iletisim":true}', costCtx)).firmalar[0].yetkili, 'Ana');
+  const fin = await runTool(ro, 'rapor', '{"tur":"finans","donem":"bu_yil"}', CTX);
+  assert.ok(!JSON.stringify(fin).match(/"(glassCost|grossProfit|profit|cost)"/), 'maliyet sorulmadı → maliyet / kâr yok');
+  const finCost = await runTool(ro, 'rapor', '{"tur":"finans","donem":"bu_yil","maliyet":true}', costCtx);
+  assert.equal(finCost.kisitli, undefined);
+  assert.equal(finCost.hata, undefined);
   assert.equal(out.siparis_detay.fgoBelgeleri[0].no, 'PRF501');
   assert.equal(out.musteri_bilgi.firmalar[0].kod, 'GLA');
   assert.equal(out.musteri_bilgi.firmalar[0].alacak.RON.rest, 4000);

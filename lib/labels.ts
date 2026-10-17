@@ -127,6 +127,7 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   DUPLICATE_NUMBER: 'newOrder.errors.duplicate',
   NO_GLASS: 'newOrder.errors.noGlass',
   ONE_GLASS: 'newOrder.errors.oneGlass',
+  ORDER_RATE_LIMIT: 'newOrder.errors.rateLimit',
   DRAFT_LEGACY_GLASS: 'newOrder.errors.legacyDraft',
   // Profil siparişi (Aşama 6)
   BAD_PRICE: 'profile.errors.badPrice',

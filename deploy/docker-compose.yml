@@ -42,6 +42,11 @@ services:
       CLAMAV_HOST: clamav
       # DWG / DXF önizleme hizmeti (karar 283; aşağıdaki "cad" servisi) — iç ağ adresi
       CAD_SERVICE_URL: http://cad:3311
+      # Telegram asistanı anahtarları YALNIZCA işçidedir (karar 289): .env'den gelse de burada boş değerle ezilir —
+      # internete açık uygulama ve araç kapsayıcıları bu sırları görmez. Değişkeni değiştirmeyin, kaldırmayın.
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_ALLOWED_USER_ID: ""
+      OPENAI_API_KEY: ""
     volumes:
       - uploads:/data/uploads
     # default: veritabanı, antivirüs, Caddy · cad: YALNIZCA önizleme hizmetine giden iç ağ
@@ -168,6 +173,11 @@ services:
       TAKIP_DEPLOYMENT: server
       DATABASE_URL: postgresql://takip:${POSTGRES_PASSWORD}@db:5432/takip?schema=public
       CLAMAV_HOST: clamav
+      # Telegram asistanı anahtarları YALNIZCA işçidedir (karar 289): .env'den gelse de burada boş değerle ezilir —
+      # internete açık uygulama ve araç kapsayıcıları bu sırları görmez. Değişkeni değiştirmeyin, kaldırmayın.
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_ALLOWED_USER_ID: ""
+      OPENAI_API_KEY: ""
     depends_on:
       db:
         condition: service_healthy

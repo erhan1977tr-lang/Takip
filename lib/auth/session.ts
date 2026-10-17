@@ -16,12 +16,30 @@ function hashToken(token: string): string {
 }
 
 /** Yalnızca Server Action veya Route Handler içinden çağrılır (çerez yazar). */
-export async function createSession(userId: string): Promise<void> {
+/**
+ * Oturum açar. expectHash verilirse (şifreyle giriş): kullanıcı satırı kilitlenir (FOR UPDATE) ve şifre özeti hâlâ
+ * doğrulanan özetse, hesap etkin ve silinmemişse oturum yazılır; değilse (doğrulama sürerken şifre sıfırlandı / hesap
+ * kapatıldı — NEW-GL-13, karar 289) hiçbir şey yazılmaz ve false döner. Şifre sıfırlama satırı güncelledikten sonra
+ * oturumları sildiği için iki sıralamada da sıfırlamadan sonra açık oturum kalmaz.
+ */
+export async function createSession(userId: string, opts: { expectHash?: string } = {}): Promise<boolean> {
   const token = crypto.randomBytes(32).toString('base64url');
   // Mutlak ömür 30 gün; ayrıca 30 dakika etkinlik olmayan oturum geçersizdir (server/auth/session-policy.js)
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   const userAgent = (await headers()).get('user-agent')?.slice(0, 250) ?? null;
-  await db.session.create({ data: { userId, tokenHash: hashToken(token), expiresAt, userAgent } });
+  const data = { userId, tokenHash: hashToken(token), expiresAt, userAgent };
+  if (opts.expectHash !== undefined) {
+    const ok = await db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ passwordHash: string | null; isActive: boolean; deletedAt: Date | null }[]>`SELECT "passwordHash", "isActive", "deletedAt" FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const u = rows[0];
+      if (!u || !u.isActive || u.deletedAt || u.passwordHash !== opts.expectHash) return false;
+      await tx.session.create({ data });
+      return true;
+    });
+    if (!ok) return false;
+  } else {
+    await db.session.create({ data });
+  }
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -29,6 +47,7 @@ export async function createSession(userId: string): Promise<void> {
     path: '/',
     expires: expiresAt,
   });
+  return true;
 }
 
 export async function destroySession(): Promise<void> {

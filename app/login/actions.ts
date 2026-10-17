@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import { burnPasswordCheck, verifyPassword } from '@/lib/auth/password';
+import { burnPasswordCheck, hashPassword, needsRehash, verifyPassword } from '@/lib/auth/password';
 import { createSession } from '@/lib/auth/session';
 import { setLocaleCookie } from '@/lib/i18n';
 import { audit } from '@/lib/audit';
@@ -49,7 +49,13 @@ export async function loginAction(formData: FormData) {
   }
   const user = attempt.outcome.user;
 
-  await createSession(user.id);
+  // Doğrulama sürerken şifre sıfırlandıysa / hesap kapatıldıysa oturum açılmaz (karar 289; NEW-GL-13)
+  if (!(await createSession(user.id, { expectHash: user.passwordHash ?? '' }))) redirect(`${back}&error=invalid`);
+  // Eski parametreli şifre özeti girişte güncel parametreyle yenilenir (karar 289; AUD-14) — yalnızca özet değişmediyse
+  if (user.passwordHash && needsRehash(user.passwordHash)) {
+    const fresh = await hashPassword(password);
+    await db.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash }, data: { passwordHash: fresh } });
+  }
   // Giriş ekranı hangi dildeyse panel de o dille devam eder; kullanıcının dili e-postalar için de saklanır
   // Müşteri "sabit dil" seçtiyse (Ayarlar) panel her girişte o dille açılır
   const loginLang = isLocale(user.fixedLanguage) ? user.fixedLanguage : lang;

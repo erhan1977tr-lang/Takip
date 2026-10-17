@@ -4,7 +4,8 @@
 // ölçülendirmeler (ölçünün kendi bloğu), yazılar, katı dolgular. Gösterilemeyen öğeler SESSİZCE atılmaz: tür ve adetleriyle
 // `notes` içinde döner (notes.unsupported: hiç çizilmeyen; notes.partial: kısmen çizilen; notes.paperSpace: kağıt alanı).
 //
-// Kaynak sınırları (CAD_LIMITS): metin boyutu, çıktı öğe / köşe / yazı sayısı, blok iç içeliği ve dizi hücresi. Sınır
+// Kaynak sınırları (CAD_LIMITS): metin boyutu, çıktı öğe / köşe / yazı sayısı, blok iç içeliği, dizi hücresi ve blok
+// genişletme iş bütçesi; açılar sweepOf ile kapalı biçimde hesaplanır (döngü yok). Sınır
 // aşılırsa CadError('TOO_COMPLEX') — çizim kırpılıp eksik gösterilmez. Bozuk girdi CadError('INVALID'); ikili DXF
 // CadError('BINARY_DXF'); DXF olmayan girdi CadError('NOT_DXF').
 import { aciColor, trueColor } from './aci.js';
@@ -18,6 +19,9 @@ export const CAD_LIMITS = Object.freeze({
   arrayCells: 10_000,
   textChars: 2_000,
   blockEntities: 3_000_000,
+  // Blok genişletme iş bütçesi (karar 289): blok içinde ziyaret edilen öğe sayısı. Çıktı üretmeyen iç içe bloklar
+  // (FAN^DERİNLİK) çıktı sınırlarına hiç takılmadığı için ayrıca sayılır.
+  work: 5_000_000,
 });
 
 export class CadError extends Error {
@@ -32,6 +36,18 @@ const UNITS = { 0: null, 1: 'in', 2: 'ft', 3: 'mi', 4: 'mm', 5: 'cm', 6: 'm', 7:
 const DEG = Math.PI / 180;
 const TAU = Math.PI * 2;
 /** Bu türler çizilmez ama "eksik" de sayılmaz: görüntüde karşılığı yoktur */
+/**
+ * Yay açıklığı (karar 289): eski `while (a1 <= a0) a1 += TAU` ile AYNI sonuç, döngüsüz. Çok büyük açılarda (1e17)
+ * eski döngü sonlanmıyordu; sonlu olmayan değer → INVALID.
+ */
+export function sweepOf(a0, a1) {
+  if (!Number.isFinite(a0) || !Number.isFinite(a1)) throw new CadError('INVALID');
+  const d = a1 - a0;
+  if (!Number.isFinite(d)) throw new CadError('INVALID');
+  if (d > 0) return d;
+  const r = -d % TAU;
+  return r === 0 ? TAU : TAU - r;
+}
 const SILENT = new Set(['VIEWPORT', 'SEQEND', 'ENDBLK', 'ATTDEF']);
 const UNSUPPORTED_TEXT = new Set(['MULTILEADER', 'MLEADER']);
 
@@ -213,6 +229,8 @@ class Out {
     /** [katman, renk|null, x, y] */
     this.points = [];
     this.vertices = 0;
+    /** blok genişletmede ziyaret edilen öğe sayısı (CAD_LIMITS.work) */
+    this.work = 0;
     this.box = [Infinity, Infinity, -Infinity, -Infinity];
     this.notes = { unsupported: /** @type {Record<string, number>} */ ({}), partial: /** @type {Record<string, number>} */ ({}), paperSpace: 0 };
   }
@@ -700,9 +718,7 @@ function drawEntity(o, r, m, parent, blocks, stack, inBlock) {
       if (type === 'CIRCLE') arcPoints(mm, num(r, 10), num(r, 20), rad, 0, TAU, pts);
       else {
         const a0 = num(r, 50) * DEG;
-        let a1 = num(r, 51) * DEG;
-        while (a1 <= a0) a1 += TAU;
-        arcPoints(mm, num(r, 10), num(r, 20), rad, a0, a1 - a0, pts);
+        arcPoints(mm, num(r, 10), num(r, 20), rad, a0, sweepOf(a0, num(r, 51) * DEG), pts);
       }
       o.path(ctx, [pts], { closed: type === 'CIRCLE' });
       return;
@@ -714,8 +730,7 @@ function drawEntity(o, r, m, parent, blocks, stack, inBlock) {
       const ratio = num(r, 40, 1);
       const minor = cross(n, maj).map((v) => v * ratio);
       const t0 = num(r, 41, 0);
-      let t1 = num(r, 42, TAU);
-      while (t1 <= t0) t1 += TAU;
+      const t1 = t0 + sweepOf(t0, num(r, 42, TAU));
       const steps = Math.max(8, Math.min(720, Math.ceil(((t1 - t0) / TAU) * 128)));
       const pts = [];
       for (let k = 0; k <= steps; k++) {
@@ -999,6 +1014,8 @@ function expandBlock(o, b, m, ctx, blocks, stack, name) {
     return;
   }
   if (stack.length >= CAD_LIMITS.insertDepth) throw new CadError('TOO_COMPLEX');
+  o.work += b.entities.length + 1;
+  if (o.work > CAD_LIMITS.work) throw new CadError('TOO_COMPLEX');
   const next = [...stack, name];
   for (const e of b.entities) {
     if (int(e, 67, 0) === 1) continue;
@@ -1066,9 +1083,8 @@ function drawHatch(o, r, m, ctx) {
             const cy = at(20);
             const rad = at(40);
             const a0 = at(50) * DEG;
-            let a1 = at(51) * DEG;
+            const a1 = a0 + sweepOf(a0, at(51) * DEG);
             const ccw = Math.trunc(at(73)) !== 0;
-            while (a1 <= a0) a1 += TAU;
             // Saat yönündeki kenarın açıları DXF'te eksi yönde saklanır: nokta açısı = −t
             const tmp = [];
             arcPoints(mm, cx, cy, rad, ccw ? a0 : -a0, ccw ? a1 - a0 : -(a1 - a0), tmp);
@@ -1080,9 +1096,8 @@ function drawHatch(o, r, m, ctx) {
             const my = at(21);
             const ratio = at(40);
             const a0 = at(50) * DEG;
-            let a1 = at(51) * DEG;
+            const a1 = a0 + sweepOf(a0, at(51) * DEG);
             const ccw = Math.trunc(at(73)) !== 0;
-            while (a1 <= a0) a1 += TAU;
             const steps = Math.max(8, Math.min(720, Math.ceil(((a1 - a0) / TAU) * 128)));
             const tmp = [];
             for (let s = 0; s <= steps; s++) {

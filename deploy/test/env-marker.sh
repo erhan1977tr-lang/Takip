@@ -104,6 +104,17 @@ for line in 'TAKIP_DEPLOYMENT=' 'TAKIP_DEPLOYMENT=test' 'TAKIP_DEPLOYMENT=0' 'TA
 done
 restore_env
 
+# ---------- 1b. Asistan sırları yalnızca işçide (karar 289): .env'de olsalar da app / tools boş görür ----------
+# Yalnızca Compose'un çözdüğü yapılandırma okunur; kapsayıcı başlatılmaz (Telegram / OpenAI'ye istek gitmez).
+printf '%s\n' 'TELEGRAM_BOT_TOKEN=sahte-jeton-env-marker' 'TELEGRAM_ALLOWED_USER_ID=12345' 'OPENAI_API_KEY=sahte-anahtar-env-marker' | sudo tee -a "$ENV_FILE" >/dev/null
+secret() { compose --profile tools config --format json | jq -r --arg s "$1" --arg k "$2" '.services[$s].environment[$k] // "YOK"'; }
+for k in TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USER_ID OPENAI_API_KEY; do
+  for s in app tools; do [ "$(secret "$s" "$k")" = "" ]; done
+  [ "$(secret worker "$k")" != "" ] && [ "$(secret worker "$k")" != YOK ]
+done
+note "asistan sırları: .env'de dolu; app ve tools boş, yalnızca worker görür"
+restore_env
+
 # ---------- 2. Sunucuya kopyalanmış demo / test .env'i ----------
 before=$(state)
 printf '%s\n' 'TAKIP_DEPLOYMENT=demo' 'DEMO_MODE=1' "MAIL_OUTBOX_DIR=$OUTBOX" 'TRANSLATE_FAKE=1' 'COOKIE_SECURE=false' 'NODE_ENV=development' | sudo tee -a "$ENV_FILE" >/dev/null

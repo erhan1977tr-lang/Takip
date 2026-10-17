@@ -12,8 +12,8 @@ import { renderDeliveryReport, reportLimiter } from '@/server/delivery/service.j
 import { signedDocServable, signedDocWhere } from '@/server/delivery/rules.js';
 import { contentDisposition } from '@/server/files/export-name.js';
 import { getEnv } from '@/server/env.js';
-import { PREVIEW_ROUTE_KINDS, PREVIEW_STATUS, SNIFF_BYTES, previewDecision } from '@/server/files/preview.js';
-import { cadCache, cadCacheKey, previewLimiter, requestCadPreview } from '@/server/files/cad-preview.js';
+import { FILE_SECURITY_HEADERS, PREVIEW_ROUTE_KINDS, PREVIEW_STATUS, SNIFF_BYTES, inlineMime, previewDecision } from '@/server/files/preview.js';
+import { cadCache, cadCacheKey, cadGuard, previewLimiter, requestCadPreview } from '@/server/files/cad-preview.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,19 +93,26 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   // Dosya erişimi denetim kaydına yazılır (CLAUDE.md "Audit": file access)
   await audit('FILE_DOWNLOAD', entity, id, user.id, { ...owner, name: file.name });
   const ascii = file.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
-  // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir.
-  const ext = file.name.toLowerCase().split('.').pop() ?? '';
-  const INLINE: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
-  const inline = new URL(req.url).searchParams.get('ac') === '1' && ext in INLINE;
+  // ?ac=1 → PDF ve görseller tarayıcıda açılır; diğer türler her zaman indirilir. İçerik türü dosyanın İLK baytlarından
+  // doğrulanır (karar 289): uzantısıyla başlamayan dosya (ör. PDF/HTML karışığı) tarayıcıda açılmaz, indirilir.
+  let mime: string | null = null;
+  if (new URL(req.url).searchParams.get('ac') === '1') {
+    const head = Buffer.alloc(SNIFF_BYTES);
+    try {
+      const fd = fs.openSync(full, 'r');
+      try { mime = inlineMime(file.name, head.subarray(0, fs.readSync(fd, head, 0, SNIFF_BYTES, 0))); } finally { fs.closeSync(fd); }
+    } catch { mime = null; }
+  }
+  const inline = mime !== null;
   const stream = Readable.toWeb(fs.createReadStream(full)) as unknown as ReadableStream;
   return new Response(stream, {
     headers: {
-      'Content-Type': inline ? INLINE[ext] : 'application/octet-stream',
+      ...FILE_SECURITY_HEADERS,
+      'Content-Type': mime ?? 'application/octet-stream',
       'Content-Length': String(stat.size),
       'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
       // Teslimat fotoğrafı değişmez: sayfadaki küçük görsel her yenilemede yeniden indirilmesin (yalnızca bu tarayıcı, 1 saat)
       'Cache-Control': kind === 'teslimat' && inline ? 'private, max-age=3600' : 'private, no-store',
-      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
@@ -160,7 +167,11 @@ async function previewResponse({ onizle, full, stat, file, userId, entity, id, o
   const key = cadCacheKey({ storageKey: file.storageKey, size: stat.size, mtimeMs: stat.mtimeMs });
   let json = cadCache.get(key);
   if (!json) {
-    const r = await requestCadPreview({ url: getEnv().CAD_SERVICE_URL, type: d.content as 'dwg' | 'dxf', path: full, size: stat.size });
+    // Olumsuz önbellek, kullanıcı başına tek dönüştürme, aynı dosyada ortak iş (karar 289)
+    const r = await cadGuard.run({
+      key, userId,
+      run: () => requestCadPreview({ url: getEnv().CAD_SERVICE_URL, type: d.content as 'dwg' | 'dxf', path: full, size: stat.size }),
+    });
     if (!r.ok) return previewFail(r.code);
     json = r.json;
     cadCache.set(key, json);

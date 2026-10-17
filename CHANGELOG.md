@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.94.0 — 17.10.2026
+
+Güvenlik sertleştirme paketi (güvenlik denetimi 3.93.2; karar 289). Migration yok.
+
+- **Yayın zinciri:** yayın kapısında "CI:" konulu / github-actions yazarlı commit istisnası kaldırıldı — yazar ve konu
+  taklit edilebildiği için her commit'in KENDİ backend koşusu gerekir. CI izlenen dala (backend) ve main'e hiçbir şey geri
+  yazmaz; test işi depoyu yalnızca okur, jeton diske bırakılmaz; kilit dosyası / migration geri yazması npm çalıştırmayan
+  ayrı işte ve yalnızca çalışma dallarında. Bütün GitHub Actions eylemleri tam commit SHA'sıyla sabitlendi; CI'da
+  bağımlılık taraması (üretimde kritik açık → kırmızı). `takip dal` yalnızca root; günlük klasörü 0750.
+- **CAD önizleme:** çok büyük açılı yay / elips / tarama sonsuz döngüye girmez; iç içe blok genişletmesine iş bütçesi;
+  zararlı dosyanın hatası 30 dakika önbellekte (hizmete tekrar gitmez); kullanıcı başına aynı anda tek dönüştürme ve ayrı
+  dönüştürme sınırı; aynı dosyanın eşzamanlı istekleri tek dönüştürmeyi paylaşır.
+- **Telegram asistanı:** OpenAI'ye varsayılan olarak iç / müşteri notları, kişi adları, iletişim bilgileri, fabrika tutarı
+  ve rapordaki maliyet / kâr gitmez; yalnızca Boss bu soruda açıkça sorarsa (sunucu denetler). Araç verisi "güvenilmeyen
+  veri" olarak tanımlandı. Telegram / OpenAI anahtarları yalnızca işçi kapsayıcısında.
+- **Sipariş oluşturma hız sınırı:** kullanıcı başına saatte 60, firma başına saatte 120 ve günde 500 sipariş (cam + profil);
+  sayım veritabanında, firma kilidi altında.
+- **Diğer:** Ayarlar sonuç iletileri ve "sipariş silindi" bandı kullanıcıya ve 10 dakikaya bağlı imzayla; "tarayıcıda aç"
+  yalnızca dosya başı uzantıyla uyuşursa, bütün dosya yanıtlarında sandbox / CORP başlıkları; FGO isteği yönlendirme
+  izlemez; boş KDV %0 sayılmaz; şifre özeti maliyeti artırıldı (eski özetler geçerli, girişte yenilenir); şifre doğrulanırken
+  sıfırlanırsa oturum açılmaz; arka plan taramasının sonucu eşzamanlı başka sonucu ezmez.
+
 ## 3.93.2 — 17.10.2026
 
 - **Elle fatura numarası, düşülmüş avansa aitse** (karar 288 — D10 tamamlandı): TAKİP'te bir faturada düşülmüş avans
