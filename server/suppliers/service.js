@@ -17,7 +17,7 @@ import { parseAmount, CURRENCIES } from '../accounting/supplier.js';
 import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
-  expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances, supplierEmail,
+  expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances,
   activeRecipients, missingSupplierCodes, parseEmailList, parseOpening,
 } from './rules.js';
 

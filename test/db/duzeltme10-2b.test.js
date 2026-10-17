@@ -246,3 +246,20 @@ dbTest('M6: nakliye — kısmi kabul + düzeltme sonrası gerçek miktar, birim 
   // Yetki
   assert.equal((await costs.createTransport(db, { ...base, invoiceNo: 'X', amount: '1', currency: 'EUR', requestKey: key() }, act(U.sales))).code, 'FORBIDDEN');
 }));
+
+dbTest('M9 migration: mevcut tek adres birincil + etkin olarak taşınır; ikinci çalıştırma kayıt eklemez; boş / listesi olan atlanır', offline(async () => {
+  const dir = fs.readdirSync(path.resolve('prisma/migrations')).find((d) => d.endsWith('_supplier_email_backfill'));
+  assert.ok(dir, 'migration klasörü');
+  const sql = fs.readFileSync(path.resolve('prisma/migrations', dir, 'migration.sql'), 'utf8');
+  const old = await db.supplier.create({ data: { name: 'D10 Eski Adres', email: ' Eski@D10.test ', currency: 'EUR' } });
+  const none = await db.supplier.create({ data: { name: 'D10 Adressiz', email: null, currency: 'EUR' } });
+  const listed = await supplier('D10 Listeli', [{ email: 'liste@d10.test' }]);
+  await db.supplier.update({ where: { id: listed.id }, data: { email: 'baska@d10.test' } });
+  await db.$executeRawUnsafe(sql);
+  await db.$executeRawUnsafe(sql);
+  const rows = await db.supplierEmail.findMany({ where: { supplierId: old.id } });
+  assert.deepEqual(rows.map((e) => [e.email, e.emailKey, e.isPrimary, e.isActive]), [['Eski@D10.test', 'eski@d10.test', true, true]]);
+  assert.equal(await db.supplierEmail.count({ where: { supplierId: none.id } }), 0);
+  assert.deepEqual((await db.supplierEmail.findMany({ where: { supplierId: listed.id } })).map((e) => e.email), ['liste@d10.test']);
+  assert.deepEqual(await svc.recipientsOf(db, old.id), ['Eski@D10.test']);
+}));
