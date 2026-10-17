@@ -50,12 +50,14 @@ export const PERMISSIONS = {
   COMMERCIAL_OFFER_MANAGE: 'Bağımsız ticari teklif (karar 277): cam + profil / aksesuar teklifi hazırlar, iç maliyet / kâr / marjı görür, müşteri PDF\'ini ve iç Excel\'i indirir — sipariş, FGO, stok ile bağı yoktur (yönetici ve yönetici yardımcısı)',
   DRAWING_PRODUCTION_UNDO: 'Müşterinin DWG/DXF çizimi için verilen "Üretime Hazır" kararını geri alır — çizimci yalnızca kendi kararını; sipariş üretimdeyse "Hazırlanıyor"a döner; yüklendi / onaylı yükleme / mali belge / sandık / telafi varsa alınamaz (karar 285; yönetici, yönetici yardımcısı, çizimci)',
   REPORT_VIEW: 'Yönetici raporları (karar 284): sipariş, cam, profil / stok, yükleme ve finans raporlarını görür ve Excel\'e aktarır — salt okunur; satış, maliyet, kâr ve tahsilat içerir (yönetici ve yönetici yardımcısı)',
+  ASSISTANT_PANEL: 'Panel AI asistanı (karar 290): yönetici panelinde TAKİP verisi hakkında soru sorar — salt okunur, Telegram asistanıyla aynı araçlar ve veri en aza indirme kuralları (yalnızca yönetici)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
 const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
-/** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. */
-export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW'];
+/** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. Panel AI asistanı ilk aşamada
+ * yalnızca yöneticidedir (karar 290) — başka role açmak ayrı bir karardır. */
+export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ASSISTANT_PANEL'];
 
 const ADMIN_PERMISSIONS = Object.keys(PERMISSIONS).filter((p) => !CUSTOMER_ONLY.includes(p));
 
@@ -81,6 +83,7 @@ export const ROLE_PERMISSIONS = {
 export const READ_ONLY = new Set([
   'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
   'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT', 'STOCK_VIEW', 'REPORT_VIEW',
+  'ASSISTANT_PANEL',
 ]);
 
 /**

@@ -42,6 +42,9 @@ services:
       CLAMAV_HOST: clamav
       # DWG / DXF önizleme hizmeti (karar 283; aşağıdaki "cad" servisi) — iç ağ adresi
       CAD_SERVICE_URL: http://cad:3311
+      # Panel AI asistanı (karar 290): soru, oturum + yetki denetiminden sonra imzalanıp işçinin İÇ portuna gider
+      # (işçide "ports" yok — dışarı yayımlanmaz); OpenAI anahtarı yalnızca işçidedir.
+      ASSISTANT_PANEL_URL: http://worker:3331
       # Telegram asistanı anahtarları YALNIZCA işçidedir (karar 289): .env'den gelse de burada boş değerle ezilir —
       # internete açık uygulama ve araç kapsayıcıları bu sırları görmez. Değişkeni değiştirmeyin, kaldırmayın.
       TELEGRAM_BOT_TOKEN: ""

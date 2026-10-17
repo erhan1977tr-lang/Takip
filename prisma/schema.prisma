@@ -93,6 +93,7 @@ enum PermissionKey {
   COMMERCIAL_OFFER_MANAGE
   REPORT_VIEW
   DRAWING_PRODUCTION_UNDO
+  ASSISTANT_PANEL
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı

@@ -715,3 +715,11 @@ customer new-order forms (3.32.0); accounting (3.33.0). Still to do, page by pag
 `.stats.stats-money` cards (a missing value: `.stat-warn` + `.v.missing`, never 0), one `.card.card-flush` per table
 (`.table-wrap`, total rows `tr.report-total`), the simple bar chart `.report-bars` / `.report-bar` (`.track` + `.fill`; the
 fill width is the only inline style) and the notes list `.report-notes`. No chart mixes currencies.
+
+## Admin panel AI assistant (3.95.0, decision 290)
+
+- `.asst-fab` (bottom-right pill button, z 44 — below the transient `.notif-toast`), `.asst-panel` (popup 420 px; `.asst-full`
+  = inset 16 px; ≤ 640 px always full screen), `.asst-head` / `.asst-list` / `.asst-form`.
+- Messages: `.asst-user` (primary-soft), `.asst-bot` (surface), `.asst-error` (danger-soft); answer tables `.asst-table`
+  inside `.asst-table-wrap` (horizontal scroll only inside the bubble); order numbers `.asst-order` (internal link).
+- Model text is rendered only as React text nodes from `parseAnswer` (no HTML). Hidden in print.

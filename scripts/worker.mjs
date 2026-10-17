@@ -30,6 +30,7 @@ import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
 import { getEnv, startupEnv } from '../server/env.js';
 import { createAssistant } from '../server/assistant/bot.js';
+import { createPanelServer } from '../server/assistant/panel.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
 import { dispatchInApp } from '../server/notifications/inapp.js';
 import { pruneSessions } from '../server/auth/session-policy.js';
@@ -221,6 +222,24 @@ if (!once) {
   }
 }
 
+// Panel AI asistanı (karar 290): yalnızca iç ağda, yalnızca uygulamanın imzaladığı istekler. Telegram botundan bağımsız
+// açılır (yalnızca OPENAI_API_KEY + AUTH_SECRET gerekir); aynı salt okunur yanıtlayıcı ve araçlar. --once ile çalışmaz.
+let panel = null;
+if (!once) {
+  const p = createPanelServer({ db, env, log });
+  if (p.enabled) {
+    try {
+      await p.listen();
+      panel = p;
+      log('panel asistanı: açık');
+    } catch (e) {
+      log('panel asistanı: dinlenemedi', e?.code ?? 'ERR');
+    }
+  } else if (p.reason !== 'NOT_CONFIGURED') {
+    log('panel asistanı kapalı:', p.reason);
+  }
+}
+
 while (!stopping) {
   try {
     await inAppTick();
@@ -279,5 +298,6 @@ while (!stopping) {
 // Asistan döngüsünün bitmesi en çok 30 sn beklenir; zamanlayıcı süreci açık tutmaz (--once hemen çıkar)
 assistantStop.abort();
 await Promise.race([assistantRun, new Promise((r) => setTimeout(r, 30_000).unref())]);
+if (panel) await Promise.race([panel.close(), new Promise((r) => setTimeout(r, 5_000).unref())]);
 await db.$disconnect();
 log('işçi durdu');

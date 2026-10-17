@@ -40,6 +40,27 @@ platform.openai.com üzerinden şunları kontrol edip belgelemeli: kuruluşun AP
 eğitimde kullanılmaz, kötüye kullanım izleme için sınırlı süre saklanır; "Zero Data Retention" ayrıca onay ister) ve
 veri işleme sözleşmesinin (DPA) imzalanıp imzalanmadığı.
 
+## Yönetici paneli asistanı (3.95.0, karar 290)
+
+Aynı asistan yönetici panelinde de çalışır: sağ altta **Asistan** düğmesi. İkinci bir AI sistemi değildir — aynı
+yanıtlayıcı, aynı salt okunur araçlar, aynı model ve aynı "veri en az" kuralı; yalnızca üslup yansızdır ve yanıtta basit
+tablo kullanılabilir.
+
+- **Kim kullanır:** yalnızca **Yönetici (ADMIN)** — `ASSISTANT_PANEL` yetkisi. Yönetici yardımcısı, satış, çizim,
+  denetimci ve müşteri düğmeyi görmez; sunucu işlemi ve işçi ayrıca reddeder.
+- **Kurulum:** ek bir şey gerekmez. `.env` içinde `OPENAI_API_KEY` geçerliyse işçi iç portta (3331) panel kapısını açar;
+  uygulamanın iç adresi `docker-compose.yml`'de sabittir (`ASSISTANT_PANEL_URL: http://worker:3331`). Telegram ayarları
+  olmasa da panel asistanı çalışır. Anahtar yine yalnızca işçidedir; port dışarı açılmaz.
+- **Güvenlik:** uygulama soruyu oturum ve yetki denetiminden sonra imzalar (AUTH_SECRET'tan türetilmiş amaca özgü anahtar,
+  60 saniyelik pencere, tek kullanımlık nonce). İşçi kullanıcıyı her soruda veritabanında yeniden denetler. Sipariş
+  sayfasında açılırsa yalnızca sipariş kimliği gider; sipariş numarası işçide veritabanından okunur.
+- **Sınırlar:** kullanıcı başına dakikada 10, günde 200 soru, günlük token bütçesi (400 000), aynı anda tek soru; yanıt en
+  çok 100 saniye beklenir. Sayfa açmak / yenilemek AI isteği yapmaz.
+- **Saklama:** sohbet yalnızca tarayıcı sekmesinde (sekme kapanınca silinir) ve işçinin belleğinde 20 dakika tutulur;
+  veritabanına ya da denetim kaydına yazılmaz. "Yeni sohbet" ikisini de siler.
+- **Günlük:** işçi günlüğüne yalnızca `panel asistanı: açık`, `panel asistanı: yanıt <araçlar> tokens=<n>`,
+  `panel asistanı: hata <KOD>` yazılır — soru, yanıt, kullanıcı kimliği yazılmaz.
+
 ## Kurulum (bir kez)
 
 1. **Bot jetonu:** Telegram'da `@BotFather` → `/newbot` → ad ve kullanıcı adı → verilen jetonu kopyalayın.

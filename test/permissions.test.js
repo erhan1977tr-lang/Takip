@@ -52,8 +52,9 @@ test('yetki: denetimci yalnızca okur (karar 8)', () => {
 
 test('yetki: yönetim yetkileri yalnızca yönetici; operasyonel yönetim yetkileri yönetici + Yönetici Yardımcısı (karar 219)', () => {
   // Kullanıcı / rol yönetimi (e-posta değiştirme, kullanıcı silme dahil), kritik / güvenlik ayarları, denetim ve giriş logları
-  for (const p of ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW']) assert.deepEqual(who(p), ['ADMIN'], p);
-  assert.deepEqual([...ADMIN_ONLY].sort(), ['AUDIT_VIEW', 'SETTINGS_MANAGE', 'USER_MANAGE']);
+  // Panel AI asistanı (3.95.0, karar 290): ilk aşamada yalnızca yönetici
+  for (const p of ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ASSISTANT_PANEL']) assert.deepEqual(who(p), ['ADMIN'], p);
+  assert.deepEqual([...ADMIN_ONLY].sort(), ['ASSISTANT_PANEL', 'AUDIT_VIEW', 'SETTINGS_MANAGE', 'USER_MANAGE']);
   // "Üretime almayı geri al" (3.90.2, karar 285): yönetici, yardımcı ve çizimci (çizimci yalnızca kendi kararını — işlemde)
   assert.deepEqual(who('DRAWING_PRODUCTION_UNDO'), ['ADMIN', 'CIZIM', 'YONETICI_YARDIMCISI']);
   for (const p of ['CUSTOMER_MANAGE', 'CUSTOMER_DELETE', 'CATALOG_MANAGE', 'PRICE_TABLE_MANAGE', 'ALERT_VIEW', 'STOCK_MANAGE', 'OPS_SETTINGS_MANAGE', 'ACCOUNTING_MANAGE', 'LOADING_CONFIRM', 'SUPPLIER_MANAGE']) {
