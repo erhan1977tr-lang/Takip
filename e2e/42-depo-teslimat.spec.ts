@@ -288,7 +288,9 @@ test('erişim: müşteri kendi raporunu ve fotoğraflarını açar (teslimden so
   const thumb = cust.locator('#teslimat .photo-tile').first().locator('[data-photo-open]');
   expect(await thumb.locator('img').evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
   await thumb.click();
-  await expect(cust.locator('[data-preview-image]')).toHaveAttribute('data-preview-image', /^\d+x\d+$/);
+  // Önizleme penceresi (resim ailesi, yakınlaştırma araçlarıyla) aynı yetkili adresten açılır; sahte JPEG çözülemediği için
+  // görüntünün kendisi burada çizilmez (gerçek resim önizlemesi e2e/61-onizleme.spec.ts'te sınanır)
+  await expect(cust.locator('[data-preview-modal="image"]')).toBeVisible();
   await cust.locator('[data-preview-close]').click();
   await expect(cust.locator('[data-preview-modal]')).toHaveCount(0);
   await expect(cust.locator('#teslimat [data-report="2"]')).toContainText('Güncel rapor');
