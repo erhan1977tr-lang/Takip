@@ -11,6 +11,7 @@ import { dayKeyOf, localDay } from '../profile/dates.js';
 import { addDays } from './rules.js';
 import { allocateTransport, carrierBalances, parseTransport, stockCosts } from './stock-cost.js';
 
+/** @typedef {import('@prisma/client').PrismaClient | import('@prisma/client').Prisma.TransactionClient} Db */
 const FORBIDDEN = /** @type {const} */ ({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => can(actor?.role, 'SUPPLIER_MANAGE');
 const lockKey = (tx, key) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
@@ -21,6 +22,7 @@ const one = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').
 /**
  * Seçilebilecek mal kabulleri (son 400 gün): sipariş no, tedarikçi, tarih, satır sayısı, net teslim alınan toplam miktar ve
  * daha önce bağlandığı (iptal edilmemiş) nakliye sayısı. Yalnızca okur.
+ * @param {Db} db  @param {any} actor  @param {{ now?: Date, timeZone?: string }} [opts]
  */
 export async function transportReceiptOptions(db, actor, opts = {}) {
   if (!allowed(actor)) return FORBIDDEN;
@@ -129,7 +131,10 @@ export async function markTransportPaid(db, { transportId, paidOn }, actor, opts
   });
 }
 
-/** Nakliye kayıtları (son 300) + taşıyıcı bakiyeleri (taşıyıcı + para birimi başına; ürün tedarikçisinden ayrı) */
+/**
+ * Nakliye kayıtları (son 300) + taşıyıcı bakiyeleri (taşıyıcı + para birimi başına; ürün tedarikçisinden ayrı)
+ * @param {Db} db  @param {any} actor
+ */
 export async function listTransports(db, actor) {
   if (!allowed(actor)) return FORBIDDEN;
   const rows = await db.transportCost.findMany({
@@ -142,7 +147,7 @@ export async function listTransports(db, actor) {
 
 /**
  * Ürünlerin gerçekleşen stok maliyeti (EUR / stok birimi, nakliye dahil ağırlıklı ortalama). Yalnızca okur.
- * @param {any} db  @param {string[] | null} productIds  null = bütün ürünler
+ * @param {Db} db  @param {string[] | null} productIds  null = bütün ürünler
  * @returns {Promise<Map<string, { avgEur: string | null, qty: number, valueEur: string, transportEur: string, missingQty: number }>>}
  */
 export async function productStockCosts(db, productIds = null) {

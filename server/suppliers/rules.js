@@ -149,6 +149,7 @@ export const orderUnitOf = (product) => (product.purchaseUnit && UNIT_CODES.incl
 /**
  * Ürünün alış bilgisi (Profil Kataloğu → ürün formu; yalnızca SUPPLIER_MANAGE). Fiyat girildiyse para birimi zorunlu.
  * Hata kodları: PURCHASE_PRICE, PURCHASE_CURRENCY, PURCHASE_UNIT, SUPPLIER_CODE.
+ * @param {{ supplierId: unknown, price: unknown, currency: unknown, unit: unknown, supplierCode?: unknown }} p
  * @returns {{ ok: true, value: { supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null, supplierCode: string | null } } | { ok: false, code: string }}
  */
 export function parsePurchase({ supplierId, price, currency, unit, supplierCode = undefined }) {
