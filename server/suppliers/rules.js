@@ -275,6 +275,30 @@ export function definitelyNotSent(err) {
   return !!err && err.command === 'CONN';
 }
 
+/**
+ * Sunucu iletiyi açıkça REDDETTİ mi (4xx / 5xx yanıt kodu, bağlantı aşaması dışında): ileti teslim alınmadı, sonuç belirsiz
+ * değildir. Otomatik yeniden denenmez (kalıcı ret olabilir); yönetici "Tekrar gönder" ile o alıcıya yeniden gönderebilir.
+ * Yanıt kodu olmayan hata (kopma, zaman aşımı) belirsiz sayılır.
+ * @param {any} err
+ */
+export function refusedMail(err) {
+  const code = Number(err?.responseCode);
+  return !!err && err.command !== 'CONN' && Number.isInteger(code) && code >= 400 && code < 600;
+}
+
+/**
+ * Onay öncesi alıcı denetimi: etkin adres yoksa NO_EMAIL; etkin adreslerden biri geçersizse (form dışı / eski veri)
+ * BAD_EMAIL — geçersiz adres sessizce atlanıp eksik listeye gönderilmez.
+ * @param {{ email: string, isActive: boolean }[]} emails
+ * @returns {'NO_EMAIL' | 'BAD_EMAIL' | null}
+ */
+export function recipientProblem(emails) {
+  const active = (emails ?? []).filter((e) => e.isActive);
+  if (!active.length) return 'NO_EMAIL';
+  if (active.some((e) => !supplierEmail(e.email))) return 'BAD_EMAIL';
+  return null;
+}
+
 // ---------- tahmini yükleme tarihi ----------
 
 /**

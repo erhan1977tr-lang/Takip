@@ -119,13 +119,15 @@ export async function saveProduct(db, id, value, actor, pack = undefined, purcha
     await lock(tx);
     const category = await tx.profileCategory.findUnique({ where: { code: value.categoryCode } });
     if (!category) return { ok: false, code: 'CATEGORY' };
+    const cur = id ? await tx.profileProduct.findUnique({ where: { id }, include: { category: true } }) : null;
+    // Tedarikçi ürün kodu verilmediyse (eski çağıranlar) mevcut kod korunur — sessizce silinmez
+    if (purchase && purchase.supplierCode === undefined) purchase = { ...purchase, supplierCode: cur?.supplierCode ?? null };
     const data = {
       categoryId: category.id, nameRo: value.nameRo, nameTr: value.nameTr, unitCode: value.unitCode,
       listPrice: value.listPrice == null ? null : value.listPrice.toFixed(2), isActive: value.isActive,
       ...(pack ? { packContent: pack.packContent, packMeasure: pack.packMeasure } : {}),
       ...(purchase ? { supplierId: purchase.supplierId, purchasePrice: purchase.purchasePrice, purchaseCurrency: purchase.purchaseCurrency, purchaseUnit: purchase.purchaseUnit, supplierCode: purchase.supplierCode ?? null } : {}),
     };
-    const cur = id ? await tx.profileProduct.findUnique({ where: { id }, include: { category: true } }) : null;
     if (purchase?.supplierId && purchase.supplierId !== cur?.supplierId) {
       const sup = await tx.supplier.findUnique({ where: { id: purchase.supplierId }, select: { isActive: true } });
       if (!sup?.isActive) return { ok: false, code: 'SUPPLIER' };

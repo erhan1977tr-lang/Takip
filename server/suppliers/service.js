@@ -18,7 +18,7 @@ import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
   expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances,
-  activeRecipients, missingSupplierCodes, parseEmailList, parseOpening,
+  activeRecipients, missingSupplierCodes, recipientProblem, parseEmailList, parseOpening,
 } from './rules.js';
 
 export const SUPPLIER_EMAIL = 'SUPPLIER_ORDER_EMAIL';
@@ -344,8 +344,10 @@ export async function approveAndSend(db, v, actor, opts = {}) {
     if (Number(v.version) !== order.version) return { ok: false, code: 'CONFLICT' };
     if (draft.lines.length === 0) return { ok: false, code: 'NO_LINES' };
     if (!order.supplier.isActive) return { ok: false, code: 'SUPPLIER_INACTIVE' };
-    const to = await recipientsOf(tx, order.supplierId);
-    if (!to.length) return { ok: false, code: 'NO_EMAIL' };
+    const mailRows = await tx.supplierEmail.findMany({ where: { supplierId: order.supplierId }, select: { email: true, isActive: true, isPrimary: true, sortOrder: true } });
+    const mailProblem = recipientProblem(mailRows);
+    if (mailProblem) return { ok: false, code: mailProblem };
+    const to = activeRecipients(mailRows);
     const bad = draft.files.find((f) => !fileOk(f));
     if (bad) return { ok: false, code: bad.scanStatus === 'INFECTED' ? 'FILE_INFECTED' : 'FILE_NOT_CLEAN', detail: bad.name };
     // Tedarikçi ürün kodu (DÜZELTME 10 M5): onay anında üründen kopyalanır; eksikse onay yok (yanlış kodla sessiz gönderim yok)

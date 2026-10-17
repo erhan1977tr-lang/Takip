@@ -352,7 +352,7 @@ dbTest('9) belge ve depo e-postası: düzeltme belgesi açıkça düzeltme, orij
 
 dbTest('10) beklenen tedarik, profil raporu ve Telegram raporu düzeltilmiş net miktarı kullanır; stok = hareketlerin toplamı', offline(async () => {
   const p = await db.profileCategory.findFirstOrThrow();
-  const fb = await db.profileProduct.create({ data: { code: 'RCF-FBL90', categoryId: p.id, nameRo: 'Profil RCF', nameTr: 'RCF profil', unitCode: 'BARA', packContent: '6', packMeasure: 'M' } });
+  const fb = await db.profileProduct.create({ data: { code: 'RCF-FBL90', categoryId: p.id, nameRo: 'Profil RCF', nameTr: 'RCF profil', unitCode: 'BARA', packContent: '6', packMeasure: 'M', supplierCode: 'TED-RCF-FBL90' } });
   const id = await sentOrder([['RCF-FBL90', 100]]);
   const r = await receive(id, { 'RCF-FBL90': 100 });
   const exp0 = (await svc.expectedSupplyMap(db)).get(fb.id);

@@ -18,7 +18,7 @@ import { sendBrandedMail } from '../mail/send.js';
 import { renderSupplierOrderEmail } from '../mail/templates/supplier-order.js';
 import { notifyStaff } from '../notifications/inapp.js';
 import { unitLabel } from '../profile/catalog.js';
-import { definitelyNotSent, missingSupplierCodes, OPEN_STATUSES, showPrices } from './rules.js';
+import { definitelyNotSent, missingSupplierCodes, OPEN_STATUSES, refusedMail, showPrices } from './rules.js';
 import { SUPPLIER_EMAIL, recipientsOf } from './service.js';
 
 /** İşlem kirası: bir gönderim (ekler dahil) en kötü birkaç dakika sürer */
@@ -80,6 +80,9 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
     const orderId = String(payload.supplierOrderId ?? '');
     const sentTo = list(payload.sentTo).map(norm);
     const unknown = list(payload.unknown).map(norm);
+    // Sunucunun açıkça reddettiği alıcılar (adres → kod): ileti teslim alınmadı; otomatik yeniden denenmez
+    const refused = /** @type {Record<string, string>} */ ({});
+    for (const [k, v] of Object.entries(obj(payload.refused))) if (typeof v === 'string') refused[norm(k)] = v.slice(0, 20);
     // Eski biçim (3.96 ve öncesi): tek alıcıya gönderim yarıda kaldı → belirsiz
     const legacyHalf = payload.sendingAt && !payload.recipients;
     if (typeof payload.sending === 'string' && payload.sending && !sentTo.includes(norm(payload.sending)) && !unknown.includes(norm(payload.sending))) unknown.push(norm(payload.sending));
@@ -144,7 +147,7 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
         orderNo: o.orderNo, supplierName: o.supplier.name, orderDate: r.orderDate, revision: r.revision, currency: o.currency,
         lines, showPrices: prices, total: prices && r.total != null ? r.total.toString() : null, note: r.note, attachments: r.files.map((f) => f.name),
       });
-      const todo = recipients.filter((a) => !sentTo.includes(a) && !unknown.includes(a));
+      const todo = recipients.filter((a) => !sentTo.includes(a) && !unknown.includes(a) && !Object.hasOwn(refused, a));
       const failedNow = [];
       const codes = {};
       for (const to of todo) {
@@ -157,6 +160,7 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
           const err = /** @type {any} */ (e);
           codes[to] = err?.responseCode ? `SMTP ${String(err.responseCode).slice(0, 3)}` : 'SMTP';
           if (definitelyNotSent(err)) failedNow.push(to);
+          else if (refusedMail(err)) refused[to] = codes[to];
           else unknown.push(to);
           log('tedarikçi e-postası bir alıcıya gönderilemedi', o.orderNo);
         }
@@ -165,18 +169,26 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
         // İleti o alıcılara hiç ulaşmadı: yalnızca onlar için güvenle yeniden denenir
         await db.notificationOutbox.update({
           where: { id: row.id },
-          data: { lastError: 'SMTP_CONN', availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000), payload: { ...payload, recipients, sentTo, unknown, sending: null } },
+          data: { lastError: 'SMTP_CONN', availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000), payload: { ...payload, recipients, sentTo, unknown, refused, sending: null } },
         });
         out.retried++;
         log('tedarikçi e-postası: sunucuya bağlanılamadı, yeniden denenecek', o.orderNo);
         continue;
       }
-      const failed = [...failedNow, ...unknown.filter((a) => !failedNow.includes(a))];
-      const results = recipients.map((a) => ({ to: a, result: sentTo.includes(a) ? 'SENT' : unknown.includes(a) ? 'UNKNOWN' : failedNow.includes(a) ? (codes[a] ?? 'SMTP') : 'SKIPPED' }));
+      const refusedTo = Object.keys(refused).filter((a) => recipients.includes(a));
+      const failed = [...new Set([...failedNow, ...refusedTo, ...unknown])];
+      const results = recipients.map((a) => ({
+        to: a,
+        result: sentTo.includes(a) ? 'SENT' : unknown.includes(a) ? 'UNKNOWN' : Object.hasOwn(refused, a) ? refused[a] : failedNow.includes(a) ? (codes[a] ?? 'SMTP') : 'SKIPPED',
+      }));
       const allSent = failed.length === 0;
-      const code = allSent ? null : sentTo.length ? 'PARTIAL' : unknown.length && !failedNow.length ? 'UNKNOWN' : 'SMTP';
-      await finish(db, row, { ...payload, recipients, sentTo, unknown, failed: failedNow, sending: null, sendingAt: null }, {
-        jobStatus: allSent ? 'SENT' : 'FAILED', lastError: code, orderStatus: allSent ? 'GONDERILDI' : 'GONDERIM_HATASI', sendError: code,
+      const hardFail = failedNow.length + refusedTo.length > 0;
+      const code = allSent ? null : sentTo.length ? 'PARTIAL' : hardFail ? 'SMTP' : 'UNKNOWN';
+      // İşin son hatası: tek bir sunucu kodu varsa o (ör. "SMTP 550"), yoksa özet kod
+      const detail = [...new Set(failed.map((a) => (Object.hasOwn(refused, a) ? refused[a] : unknown.includes(a) ? 'UNKNOWN' : codes[a] ?? 'SMTP')))];
+      const lastError = allSent ? null : code === 'SMTP' && detail.length === 1 ? detail[0] : code;
+      await finish(db, row, { ...payload, recipients, sentTo, unknown, refused, failed: [...new Set([...failedNow, ...refusedTo])], sending: null, sendingAt: null }, {
+        jobStatus: allSent ? 'SENT' : 'FAILED', lastError, orderStatus: allSent ? 'GONDERILDI' : 'GONDERIM_HATASI', sendError: code,
         sentAt: sentTo.length ? new Date() : null,
         extra: { attachments: attachments.length, prices },
         audit: {

@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.3 — 18.10.2026
+
+DÜZELTME 10 Aşama 2B düzeltmeleri (CI veritabanı testleri):
+
+- Tedarikçi e-postası: sunucunun açıkça reddettiği alıcı (4xx / 5xx yanıt) artık "belirsiz" değil, "reddedildi" (ör. SMTP 550)
+  sayılır; otomatik yeniden gönderilmez, "Tekrar gönder" ile yalnızca almayan adreslere gider. Yanıt kodu olmayan hatalar
+  belirsiz kalır.
+- Onay: etkin ama geçersiz bir tedarikçi adresi (form dışı eski veri) sessizce atlanmaz — gönderim `BAD_EMAIL` ile durur.
+- Profil kataloğu: tedarikçi ürün kodu verilmeyen kayıt çağrısında mevcut kod korunur (sessizce silinmez).
+- Testler yeni alanlara (açılış bakiyesi, alıcı listesi, tedarikçi kodu) uyarlandı.
+
 ## 3.97.2 — 17.10.2026
 
 - Sürüm sırası düzeltmesi (CI sürüm kuralı; önceki gönderim aynı sürümü taşıyordu). Davranış değişmedi.

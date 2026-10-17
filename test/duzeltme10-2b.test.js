@@ -169,3 +169,17 @@ test('M6: taşıyıcı bakiyesi ürün tedarikçisinden ayrı; iptal sayılmaz; 
   const src = read('server/suppliers/costs.js');
   assert.doesNotMatch(src, /stockMovement|supplierPayment|supplierOrder\.update/);
 });
+
+test('M9: sunucu reddi (4xx / 5xx) belirsiz değil, bağlantı hatası değil; etkin geçersiz adres onayı durdurur', async () => {
+  const { refusedMail, recipientProblem, definitelyNotSent } = await import('../server/suppliers/rules.js');
+  assert.equal(refusedMail({ responseCode: 550, command: 'RCPT TO' }), true);
+  assert.equal(refusedMail({ responseCode: 451, command: 'DATA' }), true);
+  assert.equal(refusedMail({ responseCode: 550, command: 'CONN' }), false, 'bağlantı aşaması: yeniden denenir');
+  assert.equal(refusedMail({ code: 'ETIMEDOUT' }), false, 'yanıt kodu yok: belirsiz');
+  assert.equal(refusedMail({ responseCode: 250 }), false);
+  assert.equal(definitelyNotSent({ responseCode: 550, command: 'RCPT TO' }), false);
+  assert.equal(recipientProblem([]), 'NO_EMAIL');
+  assert.equal(recipientProblem([{ email: 'a@b.test', isActive: false }]), 'NO_EMAIL');
+  assert.equal(recipientProblem([{ email: 'a@b.test', isActive: true }, { email: 'bozuk adres', isActive: true }]), 'BAD_EMAIL');
+  assert.equal(recipientProblem([{ email: 'a@b.test', isActive: true }, { email: 'bozuk adres', isActive: false }]), null);
+});
