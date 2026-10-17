@@ -146,6 +146,9 @@ export const ENV_VARS = {
   ASSISTANT_STT_MODEL: { group: 'assistant', desc: 'Sesli mesaj → metin modeli (boşsa gpt-4o-mini-transcribe)' },
   ASSISTANT_TTS_MODEL: { group: 'assistant', desc: 'Sesli soruya sesli yanıt modeli (boşsa gpt-4o-mini-tts)' },
   ASSISTANT_TTS_VOICE: { group: 'assistant', desc: 'Sesli yanıtın sesi (boşsa coral)' },
+  // Panel AI asistanı (karar 290): uygulama soruyu imzalayıp işçinin İÇ adresine iletir; anahtar işçide kalır.
+  ASSISTANT_PANEL_URL: { group: 'assistant', parse: parseUrl(['http:']), desc: 'Panel asistanının işçideki iç adresi (sunucuda docker compose verir: http://worker:3331); boşsa panel asistanı kapalı' },
+  ASSISTANT_PANEL_PORT: { group: 'assistant', parse: parseInt10(1024, 65535), default: 3331, desc: 'İşçinin panel asistanı için dinlediği iç port (dışarı yayımlanmaz)' },
 
   // --- demo / test ---
   DEMO_MODE: {

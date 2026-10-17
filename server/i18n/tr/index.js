@@ -35,5 +35,6 @@ import finance from './finance.js';
 import loginLog from './loginLog.js';
 import commercial from './commercial.js';
 import reports from './reports.js';
+import assistant from './assistant.js';
 
-export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, notifications, settings, fx, compensation, documents, supplier, exports: exportFiles, calendar, delivery, finance, loginLog, commercial, reports };
+export default { common, lang, roles, nav, status, events, offerProblems, files, errorView, auth, order, offer, orders, newOrder, offers, loading, demo, admin, pricing, profile, accounting, glassBilling, notify, notifications, settings, fx, compensation, documents, supplier, exports: exportFiles, calendar, delivery, finance, loginLog, commercial, reports, assistant };

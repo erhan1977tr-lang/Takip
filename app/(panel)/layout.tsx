@@ -14,6 +14,7 @@ import { AutoRefresh } from '@/components/AutoRefresh';
 import { SessionActivity } from '@/components/SessionActivity';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { PreviewProvider } from '@/components/FilePreview';
+import { AssistantChat } from '@/components/AssistantChat';
 import { loadFeed } from '@/lib/notifications';
 import { db } from '@/lib/db';
 import { unreadTotal } from '@/server/notes/unread.js';
@@ -103,6 +104,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         <AutoRefresh />
         {/* 30 dakika etkinlik olmayan oturum kapanır (karar 135): gerçek etkinliği bildirir; yenilemeler uzatmaz */}
         <SessionActivity remainingMs={await sessionRemainingMs()} />
+        {/* Panel AI asistanı (karar 290): yalnızca ASSISTANT_PANEL (ilk aşamada yalnızca yönetici). Sayfa açılışında istek yapmaz. */}
+        {userCan(user, 'ASSISTANT_PANEL') && <AssistantChat storageKey={`takip-asistan:${user.id}`} texts={m.assistant} />}
       </div>
     </div>
   );

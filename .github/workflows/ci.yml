@@ -51,6 +51,9 @@ jobs:
       # DWG / DXF önizleme hizmeti (karar 283): sunucudakiyle aynı kod (server/cad/service.mjs) ve aynı sabit LibreDWG
       # sürümü; aşağıda önbellekli derlenip başlatılır
       CAD_SERVICE_URL: http://127.0.0.1:3311
+      # Panel AI asistanı (karar 290): uygulama imzalı soruyu buraya iletir. e2e/66-panel-asistan.spec.ts gerçek işçi kapısını
+      # (server/assistant/panel.js) bu adreste test sürecinde açar; model sahte — OpenAI'ye hiçbir istek gitmez.
+      ASSISTANT_PANEL_URL: http://127.0.0.1:3331
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

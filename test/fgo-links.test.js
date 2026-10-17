@@ -524,9 +524,10 @@ test('yapı: FGO\'nun verdiği adrese istek gönderen TEK yer downloadFgoPdf; ba
   const server = walk('server', /\.js$/).concat(walk('lib', /\.tsx?$/), walk('app', /\.tsx?$/), walk('scripts', /\.m?js$/));
   // Telegram asistanı (karar 278) sabit Telegram / AI adreslerine gider ve yönlendirmeyi HİÇ izlemez (redirect: 'error')
   // CAD önizleme istemcisi (karar 283) yalnızca sunucu ortamındaki iç hizmet adresine gider, yönlendirme izlemez
-  const assistant = ['server/assistant/ai.js', 'server/assistant/telegram.js', 'server/files/cad-preview.js'];
+  // Panel asistanı istemcisi (karar 290) yalnızca işçinin iç adresine gider, yönlendirme izlemez
+  const assistant = ['server/assistant/ai.js', 'server/assistant/panel-client.js', 'server/assistant/telegram.js', 'server/files/cad-preview.js'];
   // FGO API istemcisi (karar 289): yönlendirmeyi izlemez (redirect: 'manual' + 3xx hata)
-  assert.deepEqual(server.filter((f) => /redirect:\s*['"]/.test(noComments(read(f)))), [...assistant.slice(0, 2), 'server/documents/fgo-pdf.js', assistant[2], 'server/integrations/fgo.js']);
+  assert.deepEqual(server.filter((f) => /redirect:\s*['"]/.test(noComments(read(f)))), [...assistant.slice(0, 3), 'server/documents/fgo-pdf.js', assistant[3], 'server/integrations/fgo.js']);
   assert.deepEqual([...noComments(read('server/integrations/fgo.js')).matchAll(/redirect:\s*'(\w+)'/g)].map((m) => m[1]), ['manual']);
   for (const f of assistant) assert.deepEqual([...new Set([...noComments(read(f)).matchAll(/redirect:\s*'(\w+)'/g)].map((m) => m[1]))], ['error'], f);
   const del = noComments(read('server/documents/delivery.js'));

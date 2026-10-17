@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.95.0 — 17.10.2026
+
+Yönetici paneline AI asistanı (karar 290). Migration: yalnızca yeni yetki değeri `ASSISTANT_PANEL` (eklemeli).
+
+- **Panel asistanı:** sağ altta "Asistan" düğmesi → açılır sohbet penceresi (tam ekran seçeneği; telefonda tam ekran).
+  Türkçe ve Romence. Siparişler, camlar, yüklemeler, sandıklar, stok, tedarik, faturalar, alacaklar ve raporlar hakkında
+  Telegram asistanının yanıtlayabildiği her soru — aynı yanıtlayıcı, aynı salt okunur araçlar, aynı model. Yanıtta okunur
+  tablolar ve tıklanabilir sipariş numaraları; yükleniyor / zaman aşımı / hata durumları. Sipariş sayfasında açılırsa o
+  sipariş bağlam olarak kullanılır (sipariş no'su sunucuda veritabanından okunur; yetki kaynağı değildir).
+- **Yalnızca yönetici:** yeni yetki `ASSISTANT_PANEL` ilk aşamada yalnızca ADMIN rolünde (yönetici yardımcısı dahil başka
+  hiçbir rolde yok). Düğme yalnızca bu yetkide çizilir; sunucu işlemi oturumu ve yetkiyi denetler; işçi kullanıcıyı her
+  soruda veritabanında YENİDEN denetler (etkin, silinmemiş, iç kullanıcı, yetki).
+- **Anahtar uygulamaya taşınmadı:** OpenAI anahtarı yine yalnızca işçide. Uygulama soruyu imzalayıp (HMAC, AUTH_SECRET'tan
+  amaca özgü anahtar, ±60 sn, tek kullanımlık nonce) işçinin iç portuna (3331, dışarı yayımlanmaz) iletir.
+- **Veri en az:** notlar, iletişim bilgileri, fabrika maliyeti ve kâr yalnızca kullanıcı bu soruda açıkça isterse modele
+  gider (Telegram ile aynı kural, sunucuda). Yanıt güvenilmeyen metindir: HTML / script çalıştırılmaz, bağlantı adresleri
+  metinden alınmaz (yalnızca sipariş numarasından sabit iç yol).
+- **Maliyet / kötüye kullanım:** kullanıcı başına dakikada 10, günde 200 soru, günlük token bütçesi, aynı anda tek soru;
+  sayfa açılışı ve yenileme AI isteği yapmaz. Sohbet yalnızca tarayıcı sekmesinde (sessionStorage) ve işçi belleğinde kısa
+  süreli tutulur; veritabanına yazılmaz.
+- Telegram asistanının davranışı ve yönergesi değişmedi.
+
 ## 3.94.1 — 17.10.2026
 
 - Sipariş oluşturma hız sınırı olağan kullanımın çok üstüne alındı: kullanıcı başına saatte 200, firma başına saatte 300 ve
