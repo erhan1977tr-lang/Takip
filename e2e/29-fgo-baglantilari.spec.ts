@@ -45,7 +45,7 @@ test('cam siparişi belgeleri: FGO adresi tıklanabilir; FGO dışı adres bağl
       // FGO dışı adres: belge numarası yazılı, bağlantı yok, adresin izi yok
       for (const [id, ref] of [[bad, 'TST90001'], [trick, 'TST90004']] as const) {
         await page.goto(`/siparisler/${id}`);
-        await expect(page.getByText(ref).first(), `${who} ${ref}`).toBeVisible();
+        await expect(page.getByText(ref).filter({ visible: true }).first(), `${who} ${ref}`).toBeVisible();
         await noTrace(page, `${who} /siparisler (${ref})`);
         await expect(page.locator('a[href*="fgo.ro"]'), `${who} ${ref}`).toHaveCount(0);
       }

@@ -68,8 +68,10 @@ test('D14: Ayarlar sayfası adresteki imzasız serbest metni göstermez (sahte u
   const page = await as(browser, ADMIN, ADMIN_PW);
   const fake = 'SAHTE-UYARI-Lutfen-sifrenizi-sahte.example-adresine-girin';
   for (const qs of [`error=fgo&detail=${fake}`, `ok=fgoTest&detail=${fake}&types=${fake}`, `error=fgoTest&detail=${fake}`, `error=warehouse&detail=${fake}`]) {
-    const res = await page.request.get(`/admin/entegrasyonlar?${qs}`);
-    expect(res.status()).toBe(200);
-    expect(await res.text(), qs).not.toContain(fake);
+    // Ham HTML adresin kendisini (Next.js yönlendirme verisi) taşır; ölçüt ekranda GÖSTERİLEN metindir
+    const res = await page.goto(`/admin/entegrasyonlar?${qs}`);
+    expect(res?.status()).toBe(200);
+    await expect(page.locator('main h1').first()).toBeVisible();
+    expect(await page.locator('body').innerText(), qs).not.toContain(fake);
   }
 });
