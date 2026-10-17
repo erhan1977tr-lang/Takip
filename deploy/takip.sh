@@ -1202,6 +1202,7 @@ cmd_release_status() {
   fi
   if [ -n "$d" ] && [ "$(read_ptr "$REL_HEALTHY")" != "$d" ]; then say "               ⚠ yayındaki sürüm doğrulanmış sağlıklı sürüm DEĞİL"; fi
   [ -n "$(read_ptr "$STATE/failed")" ] && say "Başarısız      : $(version_of "$(read_ptr "$STATE/failed")") ($(short "$(read_ptr "$STATE/failed")")) — yeni commit gelene kadar yeniden yayınlanmaz"
+  [ -n "$(read_ptr "$STATE/gate-failed")" ] && say "Testten geçmedi: $(version_of "$(read_ptr "$STATE/gate-failed")") ($(short "$(read_ptr "$STATE/gate-failed")")) — testler yeniden çalıştırılıp geçerse yayınlanır"
   [ -s "$REL_OP" ] && say "⚠ Süren / yarıda kalmış işlem: $(op_get op) $(short "$(op_get from)") → $(short "$(op_get to)") (başlangıç $(op_get started))"
   say ""
   rel_line "Son sağlıklı   " "$(read_ptr "$REL_HEALTHY")"
@@ -1548,17 +1549,26 @@ auto_deploy() {
     info "Güncel: $(version_of "$head") ($(short "$head"))."
     return 0
   fi
+  # $STATE/failed = YAYIN denemesi başarısız olan commit (derleme, sağlık, geri dönüş): yeni commit gelene kadar denenmez
   if [ "$head" = "$(cat "$STATE/failed" 2>/dev/null || true)" ]; then
     info "$(short "$head") daha önce yayınlanamadı; yeni bir güncelleme bekleniyor."
     return 0
   fi
+  # Kapı her turda YENİDEN değerlendirilir (karar 291): GitHub'da yeniden çalıştırılan (re-run) koşu aynı koşu kimliğini
+  # korur ve en son denemenin sonucunu taşır. Testten geçmeyen commit $STATE/failed'a YAZILMAZ — yazılsaydı başarılı bir
+  # yeniden çalıştırma sonrasında da hiç yayınlanmazdı. Kapı yalnızca en son denemesi "success" olan koşuyu kabul eder;
+  # başarısız / süren / eksik / okunamayan koşu yayın yapmaz. $STATE/gate-failed yalnızca kaydın tekrarlanmaması içindir.
   g=$(gate "$head" "$current")
   [ -f "$STATE/last_error" ] && grep -q 'GitHub' "$STATE/last_error" && [ "$g" != pending ] && clear_error
   case $g in
-    success) ;;
+    success) rm -f "$STATE/gate-failed" ;;
     failure)
-      echo "$head" >"$STATE/failed"
-      log "✘ $(version_of "$head") ($(short "$head")) '$(branch)' dalındaki testlerden geçmedi; yayınlanmadı."
+      if [ "$(cat "$STATE/gate-failed" 2>/dev/null || true)" != "$head" ]; then
+        echo "$head" >"$STATE/gate-failed"
+        log "✘ $(version_of "$head") ($(short "$head")) '$(branch)' dalındaki testlerden geçmedi; yayınlanmadı (testler yeniden çalıştırılıp geçerse yayınlanır)."
+      else
+        info "$(short "$head") '$(branch)' dalındaki testlerden geçmedi; yeniden çalıştırma ya da yeni commit bekleniyor."
+      fi
       return 0
       ;;
     *) info "$(short "$head") için '$(branch)' dalındaki testler (CI / sunucu kurulumu) bekleniyor; bitince yayınlanacak."; return 0 ;;
@@ -2254,7 +2264,7 @@ main() {
       if [ -n "${1:-}" ]; then
         require_root dal || return 1
         [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ && $1 != *..* ]] || { say "✘ Geçersiz dal adı."; return 1; }
-        echo "$1" >"$STATE/branch"; rm -f "$STATE/failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."
+        echo "$1" >"$STATE/branch"; rm -f "$STATE/failed" "$STATE/gate-failed"; say "Otomatik güncelleme artık '$1' dalını izliyor."
       else branch; fi
       ;;
     *)

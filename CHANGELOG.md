@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.95.1 — 17.10.2026
+
+- **Otomatik yayın kapısı (karar 291):** GitHub'da ilk denemesi başarısız olup yeniden çalıştırılan (re-run) ve başarılı
+  biten testler artık sayılıyor. Önceden testten geçmeyen commit "yayın başarısız" (`state/failed`) olarak işaretleniyor ve
+  testler yeniden çalıştırılıp geçse bile yeni commit gelene kadar hiç yayınlanmıyordu (3.95.0 böyle takıldı). Kapı her turda
+  yeniden değerlendirilir ve koşunun EN SON denemesinin sonucunu kullanır; başarısız, süren, eksik ya da okunamayan test yine
+  yayın yapmaz. Testten geçmedi kaydı ayrı (`state/gate-failed`) ve bir kez yazılır; gerçek yayın başarısızlığı (derleme,
+  sağlık, geri dönüş) eskisi gibi yeni commit gelene kadar korunur. `takip surum-durum` iki durumu ayrı gösterir.
+
 ## 3.95.0 — 17.10.2026
 
 Yönetici paneline AI asistanı (karar 290). Migration: yalnızca yeni yetki değeri `ASSISTANT_PANEL` (eklemeli).
