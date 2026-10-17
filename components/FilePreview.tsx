@@ -43,3 +43,22 @@ export function PreviewButton({ href, name, family }: { href: string; name: stri
     </>
   );
 }
+
+/**
+ * Fotoğraf küçük resmi (DÜZELTME 10 M4): görsel KIRPILMADAN (en-boy oranı korunur) gösterilir; tıklanınca aynı önizleme
+ * penceresi (yakınlaştırma + kaydırma, fare ve dokunmatik) açılır. Küçük resmin kaynağı ve önizleme isteği dosyanın kendi
+ * yetkili adresidir (/dosya/…); erişim sunucuda denetlenir. Metinler yoksa (sağlayıcı dışında) bağlantı olarak yeni sekmede açar.
+ */
+export function PhotoThumb({ href, name, alt, label }: { href: string; name: string; alt: string; label: string }) {
+  const text = useContext(Ctx);
+  const [open, setOpen] = useState(false);
+  // eslint-disable-next-line @next/next/no-img-element
+  const img = <img src={`${href}?ac=1`} alt={alt} loading="lazy" />;
+  if (!text) return <a className="photo-thumb" href={`${href}?ac=1`} target="_blank" rel="noopener noreferrer" aria-label={label}>{img}</a>;
+  return (
+    <>
+      <button type="button" className="photo-thumb" aria-label={label} data-photo-open onClick={() => setOpen(true)}>{img}</button>
+      {open && <Viewer href={href} name={name} family="image" text={text} onClose={() => setOpen(false)} />}
+    </>
+  );
+}

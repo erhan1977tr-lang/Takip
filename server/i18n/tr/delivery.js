@@ -38,6 +38,7 @@ export default {
     },
     by: { DEPOT_LINK: 'depo', ADMIN: 'GKH' },
     scanning: 'taranıyor',
+    original: 'Özgün dosya',
     open: 'Aç',
     alt: 'Teslimat fotoğrafı {n}',
   },

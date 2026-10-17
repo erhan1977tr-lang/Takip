@@ -46,6 +46,11 @@ export default {
       product: 'Produs', code: 'Cod', color: 'Culoare', meters: 'Metri', quantity: 'Cantitate', unit: 'U.M.', unitPrice: 'Vânzare € / U.M.', unitCost: 'Cost € / U.M.',
     },
     extraCost: 'Transport + vamă sticlă (EUR, total)',
+    listCostFrom: 'Listă: {v} €/m²',
+    listCostManual: 'Modificat manual · listă {v} €/m²',
+    listCostNone: 'Fără preț în listă',
+    costTableOk: 'Costul sticlei este propus din lista de achiziție de la fabrică „{name}” (nu este preț de vânzare; se poate modifica, modificarea este înregistrată).',
+    costTableMissing: 'Lista de achiziție „GKH Trakya 2026” nu a fost găsită (activă, EUR, unică): costul sticlei nu este propus, se introduce manual.',
     extraCostHint: 'Se adaugă la costul intern; nu apare în documentul clientului.',
     calc: {
       title: 'Calculator profile',

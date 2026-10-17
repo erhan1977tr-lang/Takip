@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.96.0 — 17.10.2026
+
+DÜZELTME 10 — Aşama 2A (karar 292). Migration yok.
+
+- **Ticari teklif — yeni sekme (M1):** teklif listesindeki numara, PDF, Excel ve sürüm bağlantıları yeni sekmede açılır.
+- **Ticari teklif — kategori sırası (M1):** yalnızca bu modülde profil ürünleri Alüminyum profiller → Contalar → Plastikler →
+  Aksesuarlar sırasıyla listelenir (düzenleyicideki ürün listesi ve yeni müşteri PDF'i). Müşteri profil sipariş formunun sırası
+  değişmedi. Kesinleşmiş eski teklifler kayıtlı sıralarıyla çizilir (belgeleri değişmez).
+- **Teslimat fotoğrafları (M4):** müşteri panelindeki küçük resimler artık kırpılmaz (en-boy oranı korunur); tıklayınca
+  yakınlaştırma ve kaydırma yapılabilen önizleme açılır (fare, dokunmatik). "Özgün dosya" bağlantısı dosyayı yeni sekmede açar.
+  Dosya erişim kuralı değişmedi (aynı yetkili adres).
+- **Ticari teklif — cam maliyeti (M7):** cam türü seçilince "GKH Trakya 2026" fabrika alış listesindeki €/m² fiyatı maliyet
+  alanına önerilir (satış fiyatı değildir). Yönetici değiştirebilir; listeden farklı maliyet satırda "elle değiştirildi" olarak
+  görünür ve teklif kaydının denetim satırına yazılır. Listede fiyatı olmayan camda değer uydurulmaz; liste bulunamazsa uyarı
+  gösterilir. Liste fiyatı sürüme kopyalanır — kesinleşmiş teklifin maliyeti sonradan değişmez. Sipariş teklif editörünün
+  fiyatlandırması değişmedi; maliyet yalnızca ticari teklif yetkisi olan yönetici ekranlarında ve iç Excel'de görünür.
+
 ## 3.95.1 — 17.10.2026
 
 - **Otomatik yayın kapısı (karar 291):** GitHub'da ilk denemesi başarısız olup yeniden çalıştırılan (re-run) ve başarılı

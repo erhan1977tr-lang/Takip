@@ -45,6 +45,33 @@ export const GKH_CONTACT = Object.freeze({
 /** Belgedeki geçerlilik cümlesi (koşulların ilki) */
 export const validityText = (days) => `Oferta este valabilă ${days} zile lucrătoare.`;
 
+/**
+ * Ticari teklif modülüne özgü profil kategori sırası (DÜZELTME 10 M1, 3.96.0): Alüminyum profiller → Contalar → Plastikler →
+ * Aksesuarlar. Kategori KODUYLA eşleşir; listede olmayan kategori arkadan, kendi katalog sırasıyla gelir. Müşteri profil
+ * sipariş formu kendi katalog sırasını (ProfileCategory.sortOrder) kullanmaya devam eder — bu sıra yalnızca bu modüldedir.
+ */
+export const COMMERCIAL_CATEGORY_ORDER = Object.freeze(['PROFILE_ALUMINIU', 'GARNITURI', 'PLASTICE', 'ACCESORII']);
+/** Kategori → modül sırası (0…3; bilinmeyen: 100 + katalog sırası) */
+export function commercialCategoryRank(category) {
+  const i = COMMERCIAL_CATEGORY_ORDER.indexOf(String(category?.code ?? ''));
+  if (i >= 0) return i;
+  const s = Number(category?.sortOrder ?? 0);
+  return 100 + (Number.isFinite(s) ? s : 0);
+}
+/**
+ * Veri biçimi: 2 = profil satırları categoryRank ile sıralanır (3.96.0). Daha önce kaydedilmiş (özellikle kesinleşmiş) sürümler
+ * bu alanı taşımaz ve eski sırayla (categorySort) çizilir — kesinleşmiş belge değişmez.
+ */
+export const CATEGORY_ORDER_VERSION = 2;
+
+/**
+ * Ticari teklifte cam maliyetinin otomatik önerildiği fabrika alış listesi (DÜZELTME 10 M7, 3.96.0): mevcut fiyat tablosu
+ * (PriceTable, tür SALES = fabrika alış fiyatı) bu ADLA eşleşir — büyük / küçük harf ve boşluk farkı yok sayılır. Bulunamaz,
+ * birden çok eşleşir, etkin değil ya da EUR değilse öneri YOKTUR (değer uydurulmaz).
+ */
+export const GLASS_COST_TABLE_NAME = 'GKH Trakya 2026';
+export const tableNameKey = (s) => String(s ?? '').normalize('NFC').toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+
 /** Teklif numarası ekranda / belgede 4 hane: 496 → "0496" */
 export const offerNoText = (n) => String(n).padStart(4, '0');
 
@@ -223,7 +250,11 @@ export function parseOffer(v, cat) {
     const catalogText = [prod.nameRo, prod.colorRo].map((s) => String(s ?? '').trim()).filter(Boolean).join(', ');
     const description = clean(l?.description, LIMITS.desc + 1) || catalogText;
     if (description.length > LIMITS.desc) return { ok: false, code: 'DESC', section: 'glass', index: i };
-    glass.push({ productId: prod.id, catalogTr: [prod.nameTr, prod.colorTr].filter(Boolean).join(' — '), description, en, boy, qty, price, cost });
+    // Fabrika alış listesinin (GLASS_COST_TABLE_NAME) o andaki fiyatı sunucuda okunur ve sürüme kopyalanır; yöneticinin girdiği
+    // maliyet bundan farklıysa satır "MANUAL" işaretlenir (denetim kaydına da yazılır). Liste fiyatı yoksa kaynak boş kalır.
+    const listCost = cat.glassCosts?.get(prod.id) ?? null;
+    const costSource = cost == null ? null : listCost != null && toScaled(listCost, 4) === toScaled(cost, 4) ? 'LIST' : listCost != null ? 'MANUAL' : null;
+    glass.push({ productId: prod.id, catalogTr: [prod.nameTr, prod.colorTr].filter(Boolean).join(' — '), description, en, boy, qty, price, cost, listCost, costSource });
   }
   const profile = [];
   for (const [i, l] of p.entries()) {
@@ -253,13 +284,14 @@ export function parseOffer(v, cat) {
     profile.push({
       productId: prod.id, code: prod.code, nameTr: prod.nameTr, description, unitCode: prod.unitCode,
       category: prod.category?.nameRo ?? '', categoryTr: prod.category?.nameTr ?? '', categorySort: prod.category?.sortOrder ?? 0,
+      categoryRank: commercialCategoryRank(prod.category),
       perMl: !!content, content, meters, color: color || null, qty, price, cost,
     });
   }
   // Belgede profil satırları kategoriye göre gruplanır (örnek teklif: profil / ACCESORII / MÂNĂ CURENTĂ); sıra kararlı
   return {
     ok: true,
-    data: { date, firmName, customerId: customer?.id ?? null, validityDays, terms, note, glassExtraCost, glass, profile },
+    data: { date, firmName, customerId: customer?.id ?? null, validityDays, terms, note, glassExtraCost, glass, profile, categoryOrder: CATEGORY_ORDER_VERSION },
   };
 }
 
@@ -278,12 +310,14 @@ export function unitText(code, locale = 'ro') {
  */
 export function customerView({ no, version, data, draft }) {
   const c = computeOffer(data);
-  // Profil satırları kategoriye göre (kategori sırası, sonra girildiği sıra)
+  // Profil satırları kategoriye göre (kategori sırası, sonra girildiği sıra). Yeni biçim (3.96.0) modül sırasını (categoryRank)
+  // kullanır; eski sürümler kayıtlı oldukları sırayla çizilir.
+  const rank = data?.categoryOrder === CATEGORY_ORDER_VERSION ? (l) => l.categoryRank ?? 1000 : (l) => l.categorySort ?? 0;
   const groups = [];
   const byCat = new Map();
   c.profile
     .map((l, i) => ({ l, i }))
-    .sort((a, b) => (a.l.categorySort ?? 0) - (b.l.categorySort ?? 0) || a.i - b.i)
+    .sort((a, b) => rank(a.l) - rank(b.l) || a.i - b.i)
     .forEach(({ l }) => {
       const key = l.category || '';
       if (!byCat.has(key)) { const gr = { title: key, rows: [] }; byCat.set(key, gr); groups.push(gr); }

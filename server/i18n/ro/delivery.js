@@ -38,6 +38,7 @@ export default {
     },
     by: { DEPOT_LINK: 'depozit', ADMIN: 'GKH' },
     scanning: 'în scanare',
+    original: 'Fișierul original',
     open: 'Deschide',
     alt: 'Fotografie de livrare {n}',
   },

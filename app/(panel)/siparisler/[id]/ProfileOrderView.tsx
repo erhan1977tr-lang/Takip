@@ -29,6 +29,7 @@ import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import { PreviewFor } from '@/components/PreviewFor';
+import { PhotoThumb } from '@/components/FilePreview';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, deliveryPhotoAction, deliveryReportAction, invoicedAction, paidAction,
   profilePricesAction, proformaAction, resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
@@ -558,14 +559,12 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                 <div className="photo-grid" data-delivery-photos>
                   {docs.photos.map((ph, i) => (
                     <figure key={ph.id} className="photo-tile" data-photo={ph.id}>
-                      <a href={`/dosya/teslimat/${ph.id}?ac=1`} target="_blank" rel="noopener" aria-label={`${t('delivery.photos.open')} — ${ph.name}`}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/dosya/teslimat/${ph.id}?ac=1`} alt={t('delivery.photos.alt', { n: i + 1 })} loading="lazy" />
-                      </a>
+                      <PhotoThumb href={`/dosya/teslimat/${ph.id}`} name={ph.name} alt={t('delivery.photos.alt', { n: i + 1 })}
+                        label={`${t('delivery.photos.open')} — ${ph.name}`} />
                       <figcaption className="small muted">
                         {fmtDateTime(ph.createdAt)} · {ph.by ?? t(`delivery.photos.by.${ph.via === 'DEPOT_LINK' ? 'DEPOT_LINK' : 'ADMIN'}`)}
                         {ph.scanStatus === 'PENDING' ? ` · ${t('delivery.photos.scanning')}` : ''}
-                        <div><PreviewFor href={`/dosya/teslimat/${ph.id}`} name={ph.name} scanStatus={ph.scanStatus} /></div>
+                        <div><a href={`/dosya/teslimat/${ph.id}?ac=1`} target="_blank" rel="noopener noreferrer" data-photo-original>{t('delivery.photos.original')}</a></div>
                       </figcaption>
                     </figure>
                   ))}

@@ -18,6 +18,7 @@ export async function editorProps(actor: { id: string; role: string }, t: T, loc
     id: g.id,
     label: locale === 'tr' ? [g.nameTr, g.colorTr].filter(Boolean).join(' — ') : [g.nameRo || g.nameTr, g.colorRo || g.colorTr].filter(Boolean).join(' — '),
     descRo: [g.nameRo, g.colorRo].map((s) => String(s ?? '').trim()).filter(Boolean).join(', '),
+    listCost: g.listCost,
   }));
   const profile: EditorProfile[] = cat.profile.map((p) => {
     const def = profileDefaults(p);
@@ -32,7 +33,7 @@ export async function editorProps(actor: { id: string; role: string }, t: T, loc
     thicknesses: opts.thicknesses.map((x) => ({ id: x.id, label: x.label ?? `${x.mm} mm` })),
     colors: PROFILE_COLORS.map((c) => ({ value: c, label: t(`profile.calc.colors.${c}` as MsgKey) })),
   };
-  return { glass, profile, customers: cat.customers, calc };
+  return { glass, profile, customers: cat.customers, calc, costTable: { name: cat.glassCostTable, reason: cat.glassCostReason } };
 }
 
 type Stored = Record<string, unknown>;
