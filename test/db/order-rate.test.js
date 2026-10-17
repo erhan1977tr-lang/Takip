@@ -19,7 +19,8 @@ const create = async (u, f, i, requestKey = null) => {
 let seq = 0;
 async function seedOrders(u, f, n, at = new Date()) {
   for (let i = 0; i < n; i++) {
-    const no = String(800000 + seq++);
+    // Tireli numara (karar 259): önerilen sıradaki numara (yalnızca rakamlı numaralardan) bu kayıtlarla çakışmaz
+    const no = `9-${seq++}`;
     await db.order.create({ data: { orderNo: `${f.prefix}${no}`, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', customerId: f.id, createdById: u.id, title: 'eski', createdAt: at } });
   }
 }
