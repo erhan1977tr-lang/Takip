@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.98.2 — 18.10.2026
+
+- O2 regresyon testi 3.98.1'in avans sınırına uyarlandı: avans artık proforma toplamıyla sınırlı kesilir (doğrulanır); "avans
+  toplamı fatura tutarını aşarsa eksi fatura FGO'ya gitmez" koruması 3.98.1 öncesi kesilmiş sınırsız bir avans (eski veri)
+  ile sınanmaya devam eder. Uygulama davranışı değişmedi.
+
 ## 3.98.1 — 17.10.2026
 
 DÜZELTME 10 — Aşama 2C (karar 294; güvenli kısım). Migration yok.
