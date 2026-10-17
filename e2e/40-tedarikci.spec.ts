@@ -321,7 +321,8 @@ test('hesap: borç onaylanan siparişten (fiyatsız kısım ayrıca); ödeme bir
   await expect(admin.locator('#bakiye tr[data-balance="EUR"]')).toContainText('23,00');
   // Aynı form (aynı anahtar) iki kez gelirse tek ödeme
   const url = new URL(admin.url());
-  const field = await actionField(admin, url.pathname + url.search, 'name="requestKey"');
+  // Ödeme formu (açılış bakiyesi formunda da requestKey var — DÜZELTME 10 M2): formu kimliğiyle seç
+  const field = await actionField(admin, url.pathname + url.search, 'id="odeme"');
   const key = await admin.locator('#odeme input[name="requestKey"]').inputValue();
   const supplierId = await admin.locator('#odeme input[name="supplierId"]').inputValue();
   const body = { [field!]: '', supplierId, requestKey: key, paidOn: day(0), amount: '5', currency: 'USD', note: 'çift' };
