@@ -114,7 +114,8 @@ dbTest('tedarikçi: ekle / düzenle / pasif (silinmez); ad tekil (Türkçe I); p
   assert.deepEqual(await svc.createDraftOrder(db, { supplierId: r.id }, A(), { now: NOW, timeZone: TZ }), { ok: false, code: 'SUPPLIER_INACTIVE' });
   assert.ok((await svc.setSupplierActive(db, { id: r.id, active: true }, A())).ok);
   assert.deepEqual((await db.auditLog.findMany({ where: { entityId: r.id }, orderBy: { createdAt: 'asc' } })).map((a) => a.action),
-    ['SUPPLIER_CREATED', 'SUPPLIER_UPDATED', 'SUPPLIER_DEACTIVATED', 'SUPPLIER_ACTIVATED']);
+    // M9 (3.97.0): adres listesi değişikliği ayrı denetim kaydıdır (ilk kayıt ve e-posta düzenlemesi)
+    ['SUPPLIER_CREATED', 'SUPPLIER_EMAILS_CHANGED', 'SUPPLIER_UPDATED', 'SUPPLIER_EMAILS_CHANGED', 'SUPPLIER_DEACTIVATED', 'SUPPLIER_ACTIVATED']);
   // Para birimi: siparişi olan tedarikçide değişmez
   const c = await svc.createDraftOrder(db, { supplierId: r.id }, A(), { now: NOW, timeZone: TZ });
   assert.ok(c.ok);
@@ -305,7 +306,8 @@ dbTest('işçi: hata → "Gönderilemedi" (asla "Gönderildi" değil) + yönetic
   let now = new Date();
   assert.equal((await dispatch(conn, now)).retried, 1);
   let [j] = await jobs(id2);
-  assert.deepEqual([j.status, j.lastError, j.payload.sendingAt], ['PENDING', 'SMTP_CONN', null]);
+  // Alıcı başına "gönderiliyor" işareti (M9) temizlenmiş: yeniden deneme yarıda kalmış sayılmaz
+  assert.deepEqual([j.status, j.lastError, j.payload.sending], ['PENDING', 'SMTP_CONN', null]);
   assert.ok(j.availableAt > now);
   assert.equal((await loadOrder(id2)).status, 'GONDERIM_BEKLIYOR');
   assert.equal((await dispatch(conn, now)).retried, 0, 'bekleme süresi dolmadan denenmez');

@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.4 — 18.10.2026
+
+- Tedarikçi veritabanı testleri M9'un denetim kaydına (`SUPPLIER_EMAILS_CHANGED`) ve alıcı başına gönderim işaretine
+  (`sending`) uyarlandı. Uygulama davranışı değişmedi.
+
 ## 3.97.3 — 18.10.2026
 
 DÜZELTME 10 Aşama 2B düzeltmeleri (CI veritabanı testleri):
