@@ -52,8 +52,8 @@ export default async function CommercialOfferPage({ params, searchParams }: {
           <p className="muted">{offer.firmName} · {t('commercial.versions.version')} {offer.currentVersion}</p>
         </div>
         <div className="row">
-          <a className="btn" href={`${base}/pdf`} data-pdf>{t('commercial.actions.pdf')}</a>
-          <a className="btn" href={`${base}/excel`} data-excel>{t('commercial.actions.excel')}</a>
+          <a className="btn" href={`${base}/pdf`} data-pdf target="_blank" rel="noopener noreferrer">{t('commercial.actions.pdf')}</a>
+          <a className="btn" href={`${base}/excel`} data-excel target="_blank" rel="noopener noreferrer">{t('commercial.actions.excel')}</a>
           <Link className="btn btn-link" href="/admin/ticari-teklifler">{t('commercial.title.list')}</Link>
         </div>
       </div>
@@ -133,8 +133,8 @@ export default async function CommercialOfferPage({ params, searchParams }: {
                   <td className="num nowrap">{fmtMoney(v.total.toString())}</td>
                   <td className="num nowrap">{fmtMoney(v.cost.toString())}</td>
                   <td className="nowrap">
-                    <a href={`${base}/pdf?v=${v.version}`}>{t('commercial.actions.pdf')}</a>{' · '}
-                    <a href={`${base}/excel?v=${v.version}`}>{t('commercial.actions.excel')}</a>
+                    <a href={`${base}/pdf?v=${v.version}`} target="_blank" rel="noopener noreferrer">{t('commercial.actions.pdf')}</a>{' · '}
+                    <a href={`${base}/excel?v=${v.version}`} target="_blank" rel="noopener noreferrer">{t('commercial.actions.excel')}</a>
                   </td>
                 </tr>
               ))}

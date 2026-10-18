@@ -284,6 +284,15 @@ test('erişim: müşteri kendi raporunu ve fotoğraflarını açar (teslimden so
   await cust.goto(`/siparisler/${orderId}`);
   await expect(cust.locator('#teslim')).toContainText('Teslim edildi');
   await expect(cust.locator('#teslimat .photo-tile')).toHaveCount(4);
+  // DÜZELTME 10 M4: küçük resim kırpılmaz; tıklayınca yakınlaştırılabilir önizleme açılır
+  const thumb = cust.locator('#teslimat .photo-tile').first().locator('[data-photo-open]');
+  expect(await thumb.locator('img').evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
+  await thumb.click();
+  // Önizleme penceresi (resim ailesi, yakınlaştırma araçlarıyla) aynı yetkili adresten açılır; sahte JPEG çözülemediği için
+  // görüntünün kendisi burada çizilmez (gerçek resim önizlemesi e2e/61-onizleme.spec.ts'te sınanır)
+  await expect(cust.locator('[data-preview-modal="image"]')).toBeVisible();
+  await cust.locator('[data-preview-close]').click();
+  await expect(cust.locator('[data-preview-modal]')).toHaveCount(0);
   await expect(cust.locator('#teslimat [data-report="2"]')).toContainText('Güncel rapor');
   await expect(cust.locator('#teslimat [data-report="1"]')).toBeVisible();
   await expect(cust.locator('#teslimat')).not.toContainText('E2E Yönetici'); // müşteriye iç ekipten kişi adı gitmez

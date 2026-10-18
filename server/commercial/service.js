@@ -12,7 +12,8 @@
 // PDF'leri ve iç Excel'leri aynen kalır. Eşzamanlı düzenleme: editVersion (iyimser kilit) → CONFLICT.
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
-import { computeOffer, offerNoText, parseOffer, LIMITS } from './rules.js';
+import { computeOffer, offerNoText, parseOffer, LIMITS, commercialCategoryRank } from './rules.js';
+import { glassCostTable } from './glass-cost.js';
 
 const FORBIDDEN = /** @type {const} */ ({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => can(actor?.role, 'COMMERCIAL_OFFER_MANAGE');
@@ -30,7 +31,7 @@ const CANCELLABLE = ['TASLAK', 'HAZIR'];
 export const PROFILE_SELECT = {
   id: true, code: true, nameRo: true, nameTr: true, unitCode: true, isActive: true, packMeasure: true, packContent: true,
   listPrice: true, purchasePrice: true, purchaseCurrency: true, purchaseUnit: true, sortOrder: true,
-  category: { select: { nameRo: true, nameTr: true, sortOrder: true } },
+  category: { select: { code: true, nameRo: true, nameTr: true, sortOrder: true } },
 };
 /** Prisma Decimal → metin (saf kuralların girdisi) */
 const plainProfile = (p) => ({
@@ -46,17 +47,27 @@ const plainProfile = (p) => ({
  * (eski satır bozulmasın); yeni satır pasif ürün seçemez.
  */
 async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }) {
-  const [glass, profile, customer] = await Promise.all([
+  const [glass, profile, customer, glassCosts] = await Promise.all([
     tx.glassProduct.findMany({ where: { id: { in: ids(v?.glass) } } }),
     tx.profileProduct.findMany({ where: { id: { in: ids(v?.profile) } }, select: PROFILE_SELECT }),
     idOf(v?.customerId) ? tx.customer.findFirst({ where: { id: idOf(v.customerId), type: 'CUSTOMER' }, select: { id: true, name: true } }) : null,
+    glassCostMap(tx, ids(v?.glass)),
   ]);
   return {
+    glassCosts,
     glassProducts: new Map(glass.filter((g) => g.isActive || keep.glass.has(g.id)).map((g) => [g.id, g])),
     profileProducts: new Map(profile.filter((p) => p.isActive || keep.profile.has(p.id)).map((p) => [p.id, plainProfile(p)])),
     customers: new Map(customer ? [[customer.id, customer]] : []),
   };
 }
+
+const glassCostMap = async (tx, productIds) => (productIds.length ? (await glassCostTable(tx, productIds)).prices : new Map());
+
+/** Yöneticinin listeden farklı girdiği cam maliyetleri (denetim kaydı için; en çok 50) */
+const costOverrides = (data) => (data?.glass ?? [])
+  .map((l, i) => ({ row: i + 1, productId: l.productId, listCost: l.listCost, cost: l.cost, source: l.costSource }))
+  .filter((x) => x.source === 'MANUAL')
+  .slice(0, 50);
 
 const keepOf = (data) => ({
   glass: new Set((data?.glass ?? []).map((l) => l.productId)),
@@ -115,7 +126,7 @@ export async function createOffer(db, v, actor) {
     });
     await writeAudit(tx, {
       action: 'COMMERCIAL_OFFER_CREATED', entityType: 'CommercialOffer', entityId: offer.id, userId: actor.id,
-      details: { no: offerNoText(num.no), version: 1, firm: parsed.data.firmName, glass: parsed.data.glass.length, profile: parsed.data.profile.length, total: s.total },
+      details: { no: offerNoText(num.no), version: 1, firm: parsed.data.firmName, glass: parsed.data.glass.length, profile: parsed.data.profile.length, total: s.total, costOverrides: costOverrides(parsed.data) },
     }, actor);
     return { ok: true, id: offer.id, no: num.no };
   });
@@ -156,7 +167,7 @@ export async function saveDraft(db, v, actor) {
     if (bump.count !== 1) return { ok: false, code: 'CONFLICT' };
     await writeAudit(tx, {
       action: 'COMMERCIAL_OFFER_SAVED', entityType: 'CommercialOffer', entityId: offer.id, userId: actor.id,
-      details: { no: offerNoText(no), version: draft.version, firm: parsed.data.firmName, glass: parsed.data.glass.length, profile: parsed.data.profile.length, total: s.total, ...(no !== offer.no ? { noBefore: offerNoText(offer.no) } : {}) },
+      details: { no: offerNoText(no), version: draft.version, firm: parsed.data.firmName, glass: parsed.data.glass.length, profile: parsed.data.profile.length, total: s.total, costOverrides: costOverrides(parsed.data), ...(no !== offer.no ? { noBefore: offerNoText(offer.no) } : {}) },
     }, actor);
     return { ok: true, editVersion: offer.editVersion + 1 };
   });
@@ -314,10 +325,18 @@ export async function offerVersion(db, { id, version }, actor) {
  */
 export async function editorCatalog(db, actor) {
   if (!allowed(actor)) return FORBIDDEN;
-  const [glass, profile, customers] = await Promise.all([
+  const [glass, profile, customers, costs] = await Promise.all([
     db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }], select: { id: true, nameTr: true, colorTr: true, nameRo: true, colorRo: true } }),
     db.profileProduct.findMany({ where: { isActive: true }, orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { code: 'asc' }], select: PROFILE_SELECT }),
     db.customer.findMany({ where: { type: 'CUSTOMER' }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    glassCostTable(db),
   ]);
-  return { ok: /** @type {const} */ (true), glass, profile: profile.map(plainProfile), customers };
+  // Modülün kategori sırası (M1); kararlı sıralama: aynı kategoride katalog sırası korunur
+  const ordered = profile.map((p, i) => ({ p, i })).sort((a, b) => commercialCategoryRank(a.p.category) - commercialCategoryRank(b.p.category) || a.i - b.i).map((x) => x.p);
+  return {
+    ok: /** @type {const} */ (true),
+    glass: glass.map((g) => ({ ...g, listCost: costs.prices.get(g.id) ?? null })),
+    glassCostTable: costs.table ? costs.table.name : null, glassCostReason: costs.reason,
+    profile: ordered.map(plainProfile), customers,
+  };
 }

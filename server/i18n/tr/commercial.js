@@ -46,6 +46,11 @@ export default {
       product: 'Ürün', code: 'Kod', color: 'Renk', meters: 'Metre', quantity: 'Miktar', unit: 'Birim', unitPrice: 'Satış € / birim', unitCost: 'Maliyet € / birim',
     },
     extraCost: 'Cam nakliye + gümrük (EUR, toplam)',
+    listCostFrom: 'Liste: {v} €/m²',
+    listCostManual: 'Elle değiştirildi · liste {v} €/m²',
+    listCostNone: 'Listede fiyat yok',
+    costTableOk: 'Cam maliyeti "{name}" fabrika alış listesinden önerilir (satış fiyatı değildir; değiştirilebilir, değişiklik kayda geçer).',
+    costTableMissing: '"GKH Trakya 2026" fabrika alış listesi bulunamadı (etkin, EUR, tek): cam maliyeti önerilmez, elle girilir.',
     extraCostHint: 'İç maliyete eklenir; müşteri belgesinde yer almaz.',
     calc: {
       title: 'Profil hesaplayıcısı',

@@ -62,7 +62,7 @@ export default async function CommercialOffersPage({ searchParams }: { searchPar
               <tbody>
                 {rows.map((o) => (
                   <tr key={o.id} data-commercial-offer={offerNoText(o.no)}>
-                    <td className="mono"><Link href={`/admin/ticari-teklifler/${o.id}`}>{offerNoText(o.no)}</Link></td>
+                    <td className="mono"><a href={`/admin/ticari-teklifler/${o.id}`} target="_blank" rel="noopener noreferrer" data-offer-link>{offerNoText(o.no)}</a></td>
                     <td className="nowrap">{o.date ? fmtDate(`${o.date}T12:00:00Z`) : '—'}</td>
                     <td>{o.firmName}</td>
                     <td>

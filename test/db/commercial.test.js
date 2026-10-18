@@ -183,3 +183,37 @@ dbTest('ticari teklif: profil miktarları mevcut hesaplayıcıdan (yalnızca met
   assert.equal(v.data.profile[0].qty, profile.qty);
   assert.equal(await db.stockMovement.count(), moves);
 }));
+
+dbTest('DÜZELTME 10: kategori sırası (Alüminyum → Conta → …) ve "GKH Trakya 2026" cam maliyeti — elle değişiklik denetimde; kesin sürüm sabit', offline(async () => {
+  const table = await db.priceTable.create({ data: { name: 'GKH Trakya 2026', kind: 'SALES', currency: 'EUR', items: { create: [{ glassProductId: glass.id, unitPrice: '41.50' }] } } });
+  try {
+    const cat = await svc.editorCatalog(db, A());
+    assert.equal(cat.glassCostTable, 'GKH Trakya 2026');
+    assert.equal(cat.glass.find((g) => g.id === glass.id)?.listCost, '41.5');
+    // Düzenleyicideki profil ürünleri modül sırasıyla: önce PROFILE_ALUMINIU, sonra GARNITURI, PLASTICE, ACCESORII
+    const order = ['PROFILE_ALUMINIU', 'GARNITURI', 'PLASTICE', 'ACCESORII'];
+    const seen = [...new Set(cat.profile.map((p) => p.category?.code))].filter((c) => order.includes(c));
+    assert.deepEqual(seen, order.filter((c) => seen.includes(c)));
+    const [fbl, gk] = await Promise.all([prod('FBL115-7016'), prod('GK15')]);
+    const f = await form({
+      glass: [{ productId: glass.id, en: '1000', boy: '1000', qty: '10', price: '60', cost: '41.50' }, { productId: glass.id, en: '1000', boy: '1000', qty: '10', price: '60', cost: '44' }],
+      profile: [{ productId: gk.id, meters: '100', price: '1' }, { productId: fbl.id, meters: '60', price: '20' }],
+    });
+    const c = await svc.createOffer(db, f, A());
+    assert.equal(c.ok, true, JSON.stringify(c));
+    const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'COMMERCIAL_OFFER_CREATED', entityId: c.id } });
+    assert.deepEqual(/** @type {any} */ (audit.details).costOverrides.map((x) => [x.row, x.listCost, x.cost]), [[2, '41.5', '44']]);
+    const o = await db.commercialOffer.findUniqueOrThrow({ where: { id: c.id } });
+    assert.equal((await svc.issueOffer(db, { offerId: c.id, editVersion: o.editVersion }, A())).ok, true);
+    const v1 = await svc.offerVersion(db, { id: c.id, version: 1 }, A());
+    const pdf1 = customerView({ no: v1.no, version: 1, data: v1.data, draft: false });
+    assert.deepEqual(pdf1.profileGroups.map((g) => g.rows[0].code), ['FBL115-7016', 'GK15']);
+    // Liste fiyatı sonradan değişir → kesin sürümün kopyası ve belgesi aynı kalır
+    await db.priceTableItem.updateMany({ where: { tableId: table.id }, data: { unitPrice: '99' } });
+    const again = await svc.offerVersion(db, { id: c.id, version: 1 }, A());
+    assert.deepEqual(again.data.glass.map((l) => [l.listCost, l.cost, l.costSource]), [['41.5', '41.5', 'LIST'], ['41.5', '44', 'MANUAL']]);
+    assert.deepEqual(customerView({ no: again.no, version: 1, data: again.data, draft: false }), pdf1);
+  } finally {
+    await db.priceTable.delete({ where: { id: table.id } });
+  }
+}));

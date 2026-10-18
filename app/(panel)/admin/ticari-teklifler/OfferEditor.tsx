@@ -7,7 +7,9 @@ import { interpolate } from '@/server/i18n/interpolate.js';
 import { PROFILE_COLORS, billQuantity, previewOffer } from '@/server/commercial/rules.js';
 import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferAction } from './actions';
 
-export type EditorGlass = { id: string; label: string; descRo: string };
+/** listCost: GKH Trakya 2026 fabrika alış listesindeki €/m² (yoksa null — uydurulmaz) */
+export type EditorGlass = { id: string; label: string; descRo: string; listCost: string | null };
+export type EditorCostTable = { name: string | null; reason: string | null };
 export type EditorProfile = {
   id: string; code: string; label: string; nameRo: string; category: string; unit: string;
   /** metreyle fiyatlanan ürünün paket içeriği (m); yoksa null */
@@ -36,7 +38,7 @@ const asInput = (v: string | null | undefined) => (v ?? '').replace('.', ',');
 export function OfferEditor(props: {
   m: Dict['commercial']; locale: 'tr' | 'ro'; mode: 'new' | 'edit'; offerId?: string; editVersion?: number; version?: number;
   noEditable: boolean; readOnly: boolean; data: EditorData; glass: EditorGlass[]; profile: EditorProfile[];
-  customers: { id: string; name: string }[]; calc: EditorCalc; errorSection?: string | null; errorRow?: number | null;
+  customers: { id: string; name: string }[]; calc: EditorCalc; costTable: EditorCostTable; errorSection?: string | null; errorRow?: number | null;
 }) {
   const { m, glass: glassCat, profile: profileCat, readOnly } = props;
   const e = m.editor;
@@ -71,8 +73,16 @@ export function OfferEditor(props: {
     ...x,
     glass: x.glass.map((l) => {
       if (l.key !== key) return l;
-      const prev = gById.get(l.productId)?.descRo ?? '';
-      return { ...l, productId: id, description: !l.description || l.description === prev ? gById.get(id)?.descRo ?? '' : l.description };
+      const prev = gById.get(l.productId);
+      const next = gById.get(id);
+      // Maliyet: boşsa ya da önceki camın liste fiyatıysa yeni camın liste fiyatı (yoksa boş — değer uydurulmaz); elle girilmiş
+      // farklı maliyet korunur.
+      const autoCost = !l.cost.trim() || (prev?.listCost != null && l.cost === asInput(prev.listCost));
+      return {
+        ...l, productId: id,
+        description: !l.description || l.description === (prev?.descRo ?? '') ? next?.descRo ?? '' : l.description,
+        cost: autoCost ? asInput(next?.listCost) : l.cost,
+      };
     }),
   }));
   const pickProfile = (key: number, id: string) => {
@@ -150,6 +160,9 @@ export function OfferEditor(props: {
 
           <div className="card" id="cam">
             <h2>{e.glass}</h2>
+            {props.costTable.name
+              ? <p className="hint" data-cost-table="ok">{interpolate(e.costTableOk, { name: props.costTable.name })}</p>
+              : <div className="alert alert-warn" data-cost-table={props.costTable.reason ?? 'MISSING'}>{e.costTableMissing}</div>}
             <div className="table-wrap">
               <table className="commercial-lines" data-section="glass">
                 <thead>
@@ -180,7 +193,16 @@ export function OfferEditor(props: {
                         <td className="num nowrap" data-m2>{area(c?.m2)}</td>
                         <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setG(l.key, { price: ev.target.value })} aria-label={`${e.col.price} ${n}`} /></td>
                         <td className="num nowrap" data-amount>{money(c?.amount)}</td>
-                        <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.cost} onChange={(ev) => setG(l.key, { cost: ev.target.value })} aria-label={`${e.col.cost} ${n}`} /></td>
+                        <td className="num">
+                          <input className="price-input" inputMode="decimal" maxLength={14} value={l.cost} onChange={(ev) => setG(l.key, { cost: ev.target.value })} aria-label={`${e.col.cost} ${n}`} />
+                          {(() => {
+                            const lc = gById.get(l.productId)?.listCost ?? null;
+                            if (!l.productId) return null;
+                            if (lc == null) return <div className="hint" data-list-cost="none">{e.listCostNone}</div>;
+                            const manual = !!l.cost.trim() && l.cost.trim() !== asInput(lc);
+                            return <div className="hint" data-list-cost={manual ? 'manual' : 'list'}>{interpolate(manual ? e.listCostManual : e.listCostFrom, { v: nf(2, 4).format(Number(lc)) })}</div>;
+                          })()}
+                        </td>
                         <td className="num nowrap">{money(c?.costAmount)}</td>
                         <td className="num nowrap">{money(c?.profit)}</td>
                         <td>{!readOnly && <button type="button" className="btn btn-link danger" onClick={() => setD((x) => ({ ...x, glass: x.glass.filter((r) => r.key !== l.key) }))}>{e.remove}</button>}</td>
