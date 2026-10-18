@@ -17,9 +17,12 @@ import { dayKeyOf, localDay } from '@/server/profile/dates.js';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
 import { UNITS } from '@/prisma/seed/data/units.js';
 import {
-  cancelAction, correctReceiptAction, deleteDraftAction, discardRevisionAction, etaAction, receiveGoodsAction, receivedAction, removeFileAction, resendAction,
-  startRevisionAction, uploadFilesAction,
+  addTransportAction, cancelAction, correctReceiptAction, deleteDraftAction, discardRevisionAction, etaAction, paidTransportAction, receiveGoodsAction, receivedAction,
+  removeFileAction, resendAction, startRevisionAction, uploadFilesAction, voidTransportAction,
 } from '../actions';
+import { listTransports, transportReceiptOptions } from '@/server/suppliers/costs.js';
+import { TRANSPORT_CURRENCIES } from '@/server/suppliers/stock-cost.js';
+import { actorOf } from '@/lib/actor';
 import { supplierErrorText } from '../labels';
 import { SupplierStatusBadge } from '@/components/SupplierStatus';
 import { SupplierOrderEditor, type EditorProduct } from './SupplierOrderEditor';
@@ -27,7 +30,7 @@ import { PreviewFor } from '@/components/PreviewFor';
 
 export const dynamic = 'force-dynamic';
 
-const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'corrected', 'correctedReopened', 'cancelled', 'files', 'fileRemoved'];
+const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'corrected', 'correctedReopened', 'cancelled', 'files', 'fileRemoved', 'transportAdded', 'transportDuplicate', 'transportVoided', 'transportPaid'];
 const SEND_ERRORS = ['NO_EMAIL', 'FILE_NOT_CLEAN', 'FILE_MISSING', 'SMTP', 'UNKNOWN', 'PARTIAL', 'NO_SUPPLIER_CODE'];
 const SKIP = ['CANCELLED', 'SUPERSEDED', 'GONE', 'IPTAL', 'TESLIM_ALINDI'];
 const SCAN_TONE: Record<string, string> = { CLEAN: 'ok', SKIPPED: 'muted', PENDING: 'warn', INFECTED: 'danger' };
@@ -61,6 +64,13 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   const pendingJob = jobs.some((j) => j.status === 'PENDING');
   const rc = await loadReceipts(db, order.id);
   const receipts = rc?.receipts ?? [];
+  // Nakliye (3.97.6): yalnızca bu siparişin mal kabullerine bağlanır — kayıt + dağıtım server/suppliers/costs.js
+  const actor = await actorOf(admin);
+  const [trList, trOpts] = receipts.length > 0
+    ? await Promise.all([listTransports(db, actor, { orderId: order.id }), transportReceiptOptions(db, actor, order.id)])
+    : [null, null];
+  const transports = trList?.ok ? trList.rows : [];
+  const trReceipts = trOpts?.ok ? trOpts.receipts : [];
   const actions = supplierOrderActions({ status: order.status, hasDraft: !!draft, pendingJob, hasReceipts: receipts.length > 0 });
   // Mal kabulü (karar 282): tedarik VE stok yetkisi (serviste de denetlenir)
   const canReceive = actions.includes('receive') && userCan(admin, 'STOCK_MANAGE') && !!rc && rc.lines.some((l) => (l.remaining ?? 0) > 0 && l.compatible);
@@ -361,6 +371,104 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {receipts.length > 0 && (
+        <div className="card card-flush" id="transport">
+          <div className="card-head"><h2>{t('supplier.transport.title')} <span className="badge">{transports.length}</span></h2></div>
+          <p className="muted small" style={{ padding: '0 16px' }}>{t('supplier.transport.intro')}</p>
+          {transports.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('supplier.transport.col.invoiceDate')}</th><th>{t('supplier.transport.col.carrier')}</th><th>{t('supplier.transport.col.invoiceNo')}</th>
+                    <th className="num">{t('supplier.transport.col.amount')}</th><th className="num">{t('supplier.transport.col.eur')}</th><th>{t('supplier.transport.receipts')}</th>
+                    <th>{t('supplier.accounts.payments.col.status')}</th><th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {transports.map((x) => (
+                    <tr key={x.id} data-transport={x.invoiceNo ?? x.id} style={x.voidedAt ? { opacity: 0.6 } : undefined}>
+                      <td>{fmtDate(x.invoiceDate)}</td><td data-carrier={x.carrierName}>{x.carrierName}</td><td className="mono">{x.invoiceNo ?? '—'}</td>
+                      <td className="num nowrap">{fmtNum(x.amount.toString())} {x.currency}{x.fxRate && <div className="muted small">{t('supplier.transport.rate', { rate: x.fxRate.toString(), day: x.fxDate ? fmtDate(x.fxDate) : '—' })}</div>}</td>
+                      <td className="num nowrap" data-eur>{fmtNum(x.amountEur.toString())} EUR</td>
+                      <td className="small">{x.receipts.map((r) => <div key={r.receipt.id}>{r.receipt.order.orderNo} · #{r.receipt.seq}</div>)}<span className="muted">{t('supplier.transport.lines', { n: x._count.allocations })}</span></td>
+                      <td>
+                        {x.voidedAt ? <span className="small">{t('supplier.accounts.payments.voided', { reason: x.voidReason ?? '' })}</span>
+                          : x.paidOn ? <Badge tone="ok">{t('supplier.transport.paidOn', { day: fmtDate(x.paidOn) })}</Badge> : <Badge tone="warn">{t('supplier.transport.unpaid')}</Badge>}
+                      </td>
+                      <td className="actions">
+                        {!x.voidedAt && !x.paidOn && (
+                          <form action={paidTransportAction} className="row">
+                            <input type="hidden" name="orderId" value={order.id} />
+                            <input type="hidden" name="transportId" value={x.id} />
+                            <input type="date" name="paidOn" required max={today} defaultValue={today} aria-label={t('supplier.transport.markPaid')} />
+                            <button className="btn">{t('supplier.transport.markPaid')}</button>
+                          </form>
+                        )}
+                        {!x.voidedAt && (
+                          <form action={voidTransportAction} className="row">
+                            <input type="hidden" name="orderId" value={order.id} />
+                            <input type="hidden" name="transportId" value={x.id} />
+                            <input name="reason" required maxLength={500} placeholder={t('supplier.accounts.void.reason')} aria-label={t('supplier.accounts.void.reason')} />
+                            <ConfirmButton danger message={t('supplier.transport.voidConfirm')}>{t('supplier.accounts.void.button')}</ConfirmButton>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <details style={{ padding: '10px 16px' }} data-transport-add>
+            <summary className="btn btn-primary">{t('supplier.transport.add')}</summary>
+            <form action={addTransportAction} style={{ marginTop: 10 }}>
+              <input type="hidden" name="orderId" value={order.id} />
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <div className="grid-3">
+                <div><label htmlFor="tr-carrier">{t('supplier.transport.col.carrier')}</label><input id="tr-carrier" name="carrierName" required maxLength={120} /></div>
+                <div><label htmlFor="tr-no">{t('supplier.transport.col.invoiceNo')}</label><input id="tr-no" name="invoiceNo" maxLength={60} /></div>
+                <div><label htmlFor="tr-date">{t('supplier.transport.col.invoiceDate')}</label><input id="tr-date" name="invoiceDate" type="date" required max={today} defaultValue={today} /></div>
+                <div><label htmlFor="tr-amount">{t('supplier.transport.col.amount')}</label><input id="tr-amount" name="amount" required inputMode="decimal" maxLength={16} /></div>
+                <div>
+                  <label htmlFor="tr-cur">{t('supplier.accounts.col.currency')}</label>
+                  <select id="tr-cur" name="currency" defaultValue="EUR">{TRANSPORT_CURRENCIES.map((c: string) => <option key={c} value={c}>{c}</option>)}</select>
+                </div>
+                <div>
+                  <label htmlFor="tr-fx">{t('supplier.transport.col.fx')}</label>
+                  <input id="tr-fx" name="fxRate" inputMode="decimal" maxLength={12} />
+                  <div className="hint">{t('supplier.transport.fxHint')}</div>
+                </div>
+              </div>
+              <label htmlFor="tr-note">{t('supplier.accounts.pay.note')}</label>
+              <input id="tr-note" name="note" maxLength={500} />
+              <fieldset className="fieldset-plain" style={{ marginTop: 10 }}>
+                <legend className="label">{t('supplier.transport.receipts')}</legend>
+                {trReceipts.length === 0 ? <div className="empty">{t('supplier.transport.noReceipts')}</div> : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th /><th>{t('supplier.transport.col.receivedOn')}</th><th>{t('supplier.accounts.orders.col.no')}</th><th className="num">{t('supplier.transport.col.qty')}</th><th>{t('supplier.transport.col.linked')}</th></tr></thead>
+                      <tbody>
+                        {trReceipts.map((r) => (
+                          <tr key={r.id} data-receipt-option={`${r.orderNo}-${r.seq}`}>
+                            <td><input type="checkbox" name="receiptId" value={r.id} defaultChecked={trReceipts.length === 1} aria-label={`${r.orderNo} #${r.seq}`} /></td>
+                            <td>{r.receivedOn}</td><td className="mono">{r.orderNo} · #{r.seq}</td>
+                            <td className="num">{r.qty}</td>
+                            <td>{r.transports > 0 ? <Badge tone="info">{t('supplier.transport.linkedN', { n: r.transports })}</Badge> : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </fieldset>
+              <div className="hint">{t('supplier.transport.hint')}</div>
+              <div className="row" style={{ marginTop: 10 }}><ConfirmButton primary message={t('supplier.transport.confirm')}>{t('supplier.transport.submit')}</ConfirmButton></div>
+            </form>
+          </details>
         </div>
       )}
 

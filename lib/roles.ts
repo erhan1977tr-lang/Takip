@@ -43,8 +43,6 @@ const ADMIN_NAV: NavDef[] = [
   { section: 'nav.purchasing' },
   { href: '/siparisler/tedarik', key: 'nav.supplierOrders' },
   { href: '/admin/muhasebe/tedarikciler', key: 'nav.supplierAccounts' },
-  // Nakliye giderleri (DÜZELTME 10 M6): taşıyıcı faturası + stok maliyetine dağıtım — yalnızca SUPPLIER_MANAGE
-  { href: '/admin/muhasebe/nakliye', key: 'nav.transportCosts' },
   // Profil siparişleri (Yönetici Paneli Paketi 1, karar 216): profil tabloları ve profil tanımları tek bölümde. Bölüm adının
   // yanında yeni profil siparişi sayacı (fiyat bekleyen — server/orders/queues.js → newProfileCount; telefonda bağlantıda)
   { section: 'nav.profileOrders', count: 'profileNew' },

@@ -299,7 +299,7 @@ export default {
       ORDER_ON_HOLD: 'aktarılan kalanın siparişi beklemede',
     },
     outside: 'Bu güne planlı ama onaylı yüklemede olmayan siparişler (yüklenmiş sayılmaz; başka bir yükleme gününe alın):',
-    noCost: 'Dikkat: {n} satırın fabrika maliyeti kayıtlı değil. Onaydan sonra maliyet bu kayıtta düzeltilemez — önce Muhasebe → Tedarikçi Hesap Durumu → "Eksik maliyetler" bölümünden girin.',
+    noCost: 'Dikkat: {n} satırın fabrika maliyeti kayıtlı değil. Onaydan sonra maliyet bu kayıtta düzeltilemez — önce Muhasebe → Cam Fabrika Hesap Durumu → "Eksik maliyetler" bölümünden girin.',
     noCostLink: 'Eksik maliyetleri gir',
     noCostDone: '{n} satır maliyetsiz onaylandı (maliyet eksik).',
     errors: {

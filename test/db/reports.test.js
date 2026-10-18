@@ -239,7 +239,7 @@ dbTest('raporlar: profil ve stok — birimler ayrı, giriş (mal kabulü / elle)
 dbTest('raporlar: finans — EUR / RON ayrı, Muhasebe motoruyla aynı satış / maliyet, eksik maliyette kâr yok, faturada çift sayım yok', offline(async () => {
   const rep = (await report({ kind: 'finance', month: '2026-10' })).report;
   const sum = Object.fromEntries(tbl(rep, 'financeSummary').map((x) => [x.currency, x]));
-  // Muhasebe → Tedarikçi Hesap Durumu'nun motoru (supplierData) aynı günler için aynı satış / maliyeti verir
+  // Muhasebe → Cam Fabrika Hesap Durumu'nun motoru (supplierData) aynı günler için aynı satış / maliyeti verir
   const acc = await supplierData(db, new Date('2026-10-31T00:00:00Z'));
   const days = acc.days.filter((d) => d.day >= '2026-10-01' && d.day <= '2026-10-31');
   const engine = (cur, key) => Math.round(days.reduce((s, d) => s + (d.byCur[cur]?.[key] ?? 0), 0) * 100) / 100;

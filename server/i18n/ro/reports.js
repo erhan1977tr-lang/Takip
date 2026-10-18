@@ -75,7 +75,7 @@ export default {
     RAL_IN_CODE: 'Culoarea profilului (RAL / eloxat) nu are câmp separat; face parte din codul produsului. Culoarea și lungimea introduse la recepție apar în tabelul recepțiilor.',
     CUSTOMER_PROFILE_ONLY: 'Filtrul de client se aplică doar comenzilor de profile; stocul, mișcările și aprovizionarea nu depind de client.',
     OUTSIDE_CONFIRMATION: 'Comenzile planificate într-o zi confirmată, dar care nu au intrat în confirmarea acelei zile, nu au fost socotite ({n}).',
-    SALES_BASIS: 'Vânzarea și costul sticlei sunt pe ziua încărcării (aceeași regulă ca Contabilitate → Situația furnizorului): în zi confirmată încărcat efectiv, în zi neconfirmată planificat.',
+    SALES_BASIS: 'Vânzarea și costul sticlei sunt pe ziua încărcării (aceeași regulă ca Contabilitate → Situație fabrică sticlă): în zi confirmată încărcat efectiv, în zi neconfirmată planificat.',
     PROFIT_RULE: 'Profit = vânzare − cost − transport. Dacă există comenzi fără cost, profitul total nu este dat; profitul comenzilor cu cost complet apare separat.',
     INVOICE_RULE: 'Facturat = facturi de avans + facturi finale (factura finală scade avansul cu rând negativ). Proforma este informativă și nu se adună.',
     COLLECTION_RULE: 'Încasat = plăți înregistrate manual cu ziua plății în interval. FGO nu dă data plății; suma plătită din FGO apare la creanțe deschise.',

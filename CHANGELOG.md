@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.6 — 18.10.2026
+
+- Satın Alma → **Nakliye Giderleri** menüsü ve ayrı ekranı kaldırıldı. Nakliye artık yalnızca tedarikçi siparişinin sayfasında
+  **Transport ekle** ile girilir: seçilebilen mal kabulleri yalnızca o siparişinkilerdir; kayıt, dağıtım, ödendi işareti ve iptal
+  aynı hesaplama altyapısıyla (birim başına eşit pay, RON için girilen kur, stok maliyeti) çalışır. Taşıyıcı bakiyeleri Tedarikçi
+  Hesapları ekranında salt okunur görünür.
+- Muhasebe → **Tedarikçi Hesap Durumu** adı **Cam Fabrika Hesap Durumu** oldu (cam fabrikası hesabı; hesaplama değişmedi).
+  Profil tedarikçilerinin açılış bakiyesi ve hesap durumu Satın Alma → Tedarikçi Hesapları'nda kalır. Migration yok.
+
 ## 3.97.5 — 18.10.2026
 
 - Ticari teklif → Cam: **Maliyet €/m²** yeniden otomatik doluyor. Kök neden: öneri adı tam "GKH Trakya 2026" olan tabloyu

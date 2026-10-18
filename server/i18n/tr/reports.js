@@ -75,7 +75,7 @@ export default {
     RAL_IN_CODE: 'Profil renginin (RAL / eloksal) ayrı alanı yoktur; ürün kodunun parçasıdır. Mal kabulünde girilen renk ve uzunluk kabul tablosundadır.',
     CUSTOMER_PROFILE_ONLY: 'Müşteri filtresi yalnızca profil siparişlerine uygulanır; stok, hareketler ve tedarik firmadan bağımsızdır.',
     OUTSIDE_CONFIRMATION: 'Onaylı bir güne planlı ama o günün onayına girmeyen siparişler sayılmadı ({n}).',
-    SALES_BASIS: 'Cam satışı ve maliyeti yükleme gününe göredir (Muhasebe → Tedarikçi Hesap Durumu ile aynı kural): onaylı günde fiilen yüklenen, onaysız günde planlanan.',
+    SALES_BASIS: 'Cam satışı ve maliyeti yükleme gününe göredir (Muhasebe → Cam Fabrika Hesap Durumu ile aynı kural): onaylı günde fiilen yüklenen, onaysız günde planlanan.',
     PROFIT_RULE: 'Kâr = satış − maliyet − nakliye. Maliyeti eksik sipariş varsa toplam kâr verilmez; maliyeti tam siparişlerin kârı ayrıca gösterilir.',
     INVOICE_RULE: 'Faturalanan = avans faturaları + nihai faturalar (nihai fatura avansı eksi satırla düşer). Proforma bilgi içindir, toplama eklenmez.',
     COLLECTION_RULE: 'Tahsilat = ödeme günü aralıkta olan elle kayıtlı ödemeler. FGO ödeme tarihini vermez; FGO\'da görünen ödenen tutar açık alacak bölümündedir.',

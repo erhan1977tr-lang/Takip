@@ -385,7 +385,7 @@ test('yetki: SUPPLIER_MANAGE yalnızca yönetici; diğer roller (denetimci dahil
   }
   // Nakliye ve stok maliyeti (DÜZELTME 10 M6): server/suppliers/costs.js — aynı kural
   const costCalls = {
-    transportReceiptOptions: (a) => costs.transportReceiptOptions(db, a),
+    transportReceiptOptions: (a) => costs.transportReceiptOptions(db, a, 'o'),
     createTransport: (a) => costs.createTransport(db, { carrierName: 'X', invoiceDate: '2026-10-01', amount: '1', currency: 'EUR', receiptIds: ['r'.repeat(10)], requestKey: 'k'.repeat(20) }, a),
     voidTransport: (a) => costs.voidTransport(db, { transportId: 't', reason: 'x' }, a),
     markTransportPaid: (a) => costs.markTransportPaid(db, { transportId: 't', paidOn: '2026-10-01' }, a),

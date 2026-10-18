@@ -328,7 +328,7 @@ export default {
     },
   },
   supplier: {
-    title: "Tedarikçi Hesap Durumu",
+    title: "Cam Fabrika Hesap Durumu",
     intro: "Yükleme kârlılığı ve fabrika cari hesabı. Para birimleri ayrı gösterilir, birbirine eklenmez.",
     emptySummary: "Henüz yüklenmiş cam siparişi ya da ödeme yok.",
     summaryTitle: "Özet",
