@@ -20,6 +20,7 @@ import { isCrateLine, offerLineTotals } from '../orders/rules.js';
 import { dayKey, loadedOffer } from '../orders/loading.js';
 import { loadingParts } from '../orders/customer-offers.js';
 import { confirmedLine, orderLine } from '../accounting/supplier.js';
+import { supplierAccounts } from '../suppliers/service.js';
 import { receivables } from '../accounting/receivables.js';
 import { reservedLevels, stockLevels } from '../profile/stock.js';
 import { dateRange, instantRange, monthOf, parseReportFilters, shiftDay } from './filters.js';
@@ -742,6 +743,11 @@ async function financeReport(tx, f, ctx) {
     .map((m) => [m.month, m.currency, fromCents(m.sale), fromCents(m.cost), m.profitMissing ? null : fromCents(m.profit), fromCents(m.profileSale), fromCents(m.invoiced), fromCents(m.collected)]);
   orderRows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : String(a[2]).localeCompare(String(b[2]))));
   const anyMissing = currencies.some((c) => cur.get(c).missingOrders > 0);
+  // Tedarikçi bakiyeleri (DÜZELTME 10 M2): GÜNCEL durum, muhasebe ekranının TEK bakiye servisinden (supplierAccounts —
+  // açılış + sipariş borcu − ödeme; para birimleri ayrı). Firma filtresinde gösterilmez (müşteriyle ilgisi yok).
+  const supRows = ctx.customer ? [] : (await supplierAccounts(tx)).flatMap(({ supplier, balances }) => Object.entries(balances).map(([c, b]) => [
+    supplier.name, c, b.opening, b.debt, b.paid, b.balance, b.missingPrice,
+  ]));
   return {
     basis: 'FINANCE',
     cards,
@@ -753,6 +759,7 @@ async function financeReport(tx, f, ctx) {
       table('financeByMonth', [['month', 'month'], ['currency', 'currency'], ['glassSale', 'money'], ['glassCost', 'money'], ['grossProfit', 'money'], ['profileSale', 'money'], ['invoiced', 'money'], ['collected', 'money']], monthRows,
         { chart: { label: 0, value: 2 } }),
       table('financeOrders', [['day', 'day'], ['dayState', 'code', { dict: 'dayState' }], ['orderNo', 'text'], ['customer', 'text'], ['currency', 'currency'], ['sale', 'money'], ['cost', 'money'], ['grossProfit', 'money'], ['note', 'note']], orderRows),
+      ...(ctx.customer ? [] : [table('supplierBalances', [['supplier', 'text'], ['currency', 'currency'], ['supplierOpening', 'money'], ['supplierDebt', 'money'], ['supplierPaid', 'money'], ['supplierBalance', 'money'], ['missingPriceOrders', 'int']], supRows, { basis: 'NOW' })]),
     ],
     notes: ['SALES_BASIS', 'PROFIT_RULE', 'INVOICE_RULE', 'COLLECTION_RULE', 'OPEN_NOW', 'CURRENCY_SEPARATE', ...(anyMissing ? ['MISSING_COST'] : []), ...(profileOn ? ['PROFILE_NO_COST'] : []),
       ...(ctx.customer ? ['TRANSPORT_HIDDEN'] : []), ...(f.product || f.loading !== 'ALL' ? ['FILTER_IGNORED'] : []),

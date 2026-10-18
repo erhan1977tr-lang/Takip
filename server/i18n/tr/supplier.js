@@ -45,6 +45,20 @@ export default {
     AMOUNT: 'Tutar geçersiz (0’dan büyük, en çok 2 ondalık).',
     CURRENCY: 'Para birimini seçin.',
     ALREADY_VOID: 'Bu ödeme zaten iptal edilmiş.',
+    NO_SUPPLIER_CODE: 'Şu ürünlerin tedarikçi kodu yok: {name}. Profil Kataloğu → ürün → Alış bilgisinden girin. Sipariş gönderilmedi (yanlış kodla gönderim yapılmaz).',
+    ALREADY_SENT: 'Bu revizyon bütün etkin adreslere zaten gönderildi.',
+    EMAIL_DUPLICATE: 'Aynı e-posta adresi iki kez yazılamaz.',
+    EMAIL_LIMIT: 'Bir tedarikçi için en çok 10 e-posta adresi olabilir.',
+    DIRECTION: 'Borç ya da alacak seçin.',
+    CORRECTS: 'Düzeltilecek açılış kaydı bulunamadı (iptal edilmiş olabilir).',
+    CARRIER: 'Taşıyıcı adını yazın.',
+    FX_REQUIRED: 'RON nakliyede fatura tarihindeki kur (1 EUR = ? RON) zorunlu.',
+    FX_RATE: 'Kur geçersiz (1 ile 20 arası, en çok 6 ondalık).',
+    RECEIPTS: 'Nakliyenin dağıtılacağı en az bir mal kabulü seçin (en çok 50).',
+    RECEIPT_GONE: 'Seçilen mal kabullerinden biri bulunamadı.',
+    NO_QTY: 'Seçilen mal kabullerinde dağıtılacak miktar yok (hepsi düzeltilmiş olabilir).',
+    ALREADY_PAID: 'Bu nakliye zaten ödendi olarak işaretli.',
+    DUPLICATE_INVOICE: 'Bu taşıyıcının bu fatura numarası zaten kayıtlı (iptal edilmemiş).',
     OTHER: 'İşlem yapılamadı.',
     HAS_RECEIPTS: 'Mal kabulü yapılmış siparişte yeni revizyon açılamaz.',
     RECEIPT_FORBIDDEN: 'Mal kabulü için tedarik ve stok yetkisi gerekir.',
@@ -80,6 +94,7 @@ export default {
 
   // ---------- Ayarlar → Tedarikçiler (karar 179) ----------
   settings: {
+    emails: { add: '+ E-posta ekle', remove: 'Sil', active: 'Etkin', primary: 'Birincil', limit: 'En çok 10 adres.', email: 'E-posta', empty: 'Adres yok.' },
     title: 'Tedarikçiler',
     intro: 'Profil, conta, plastik ve aksesuar tedarikçileri. Tedarikçi siparişinin e-postası burada kayıtlı adrese gider; adres yalnızca bu ekrandan değiştirilir. Tedarikçi silinmez: pasif yapılır, geçmişi korunur.',
     add: 'Tedarikçi ekle',
@@ -88,7 +103,7 @@ export default {
       name: 'Firma adı',
       contact: 'İletişim kişisi',
       email: 'E-posta',
-      emailHint: 'Sipariş e-postası bu adrese gider. Boş bırakılırsa bu tedarikçiye sipariş gönderilemez.',
+      emailHint: 'Sipariş e-postası bütün ETKİN adreslere ayrı ayrı gider (alıcılar birbirini görmez). En çok 10 adres. Etkin adres yoksa bu tedarikçiye sipariş gönderilemez.',
       phone: 'Telefon',
       address: 'Adres',
       currency: 'Para birimi',
@@ -182,8 +197,13 @@ export default {
       FILE_MISSING: 'bir ek dosyası bulunamadı.',
       SMTP: 'e-posta sunucusu iletiyi kabul etmedi.',
       UNKNOWN: 'gönderim yarıda kaldı; iletinin gidip gitmediği bilinmiyor. Tedarikçiye sorun ya da "Tekrar gönder" ile yeniden yollayın.',
+      PARTIAL: 'e-posta bazı adreslere gitti, bazılarına gidemedi. "Tekrar gönder" yalnızca almayan adreslere yollar.',
+      NO_SUPPLIER_CODE: 'bazı ürünlerin tedarikçi kodu yok. Profil Kataloğu → ürün → Alış bilgisinden girin.',
     },
     editor: {
+      supplierCode: 'Tedarikçi kodu: {code}',
+      noSupplierCode: 'Tedarikçi kodu yok',
+      noSupplierCodeBlock: 'Bazı ürünlerin tedarikçi kodu yok. Profil Kataloğu → ürün → Alış bilgisinden girin; kod olmadan sipariş gönderilmez.',
       title: 'Taslak — revizyon {n}',
       revisionOf: 'Gönderilmiş siparişin yeni revizyonu. Onaylayınca tedarikçiye "Revizyon {n}" olarak yeniden gönderilir; önceki sürüm değişmeden kalır.',
       orderNo: 'Sipariş No',
@@ -300,6 +320,7 @@ export default {
       confirm: 'Sipariş (revizyon {n}) tedarikçiye yeniden gönderilecek. Önceki deneme gerçekte ulaşmış olabilir. Emin misiniz?',
     },
     emails: {
+      result: { SENT: 'gönderildi', UNKNOWN: 'belirsiz', FAILED: 'gönderilemedi', WAIT: 'bekliyor', SKIPPED: 'atlandı' },
       title: 'E-posta gönderimleri',
       col: { when: 'Zaman', revision: 'Revizyon', attempt: 'Deneme', to: 'Alıcı', status: 'Durum', note: 'Açıklama' },
       status: { PENDING: 'Kuyrukta', SENT: 'Gönderildi', FAILED: 'Gönderilemedi', SKIPPED: 'Gönderilmedi' },
@@ -359,10 +380,34 @@ export default {
   },
 
   // ---------- Tedarikçi Hesapları (karar 182) ----------
+  transport: {
+    link: 'Nakliye giderleri →',
+    title: 'Nakliye giderleri',
+    intro: 'Taşıyıcı faturaları. Tutar, seçilen mal kabullerinin ürünlerine gerçek teslim alınan miktara göre birim başına eşit pay olarak dağıtılır ve ürünlerin gerçekleşen stok maliyetine (ticari teklifte maliyet önerisi) girer. Taşıyıcının borcu ürün tedarikçisinin borcuna eklenmez; burada ayrı izlenir.',
+    carriers: 'Taşıyıcı bakiyeleri',
+    add: 'Nakliye faturası gir',
+    list: 'Nakliye kayıtları',
+    receipts: 'Dağıtılacak mal kabulleri',
+    noReceipts: 'Son 400 günde mal kabulü yok.',
+    none: 'Nakliye kaydı yok.',
+    col: { carrier: 'Taşıyıcı', invoiceNo: 'Fatura no', invoiceDate: 'Fatura tarihi', amount: 'Tutar', fx: 'Kur (1 EUR = ? RON)', eur: 'EUR karşılığı', receivedOn: 'Kabul tarihi', qty: 'Net miktar', linked: 'Bağlı nakliye', total: 'Toplam', paid: 'Ödenen', open: 'Kalan' },
+    fxHint: 'Yalnızca RON faturada ve zorunlu: fatura tarihindeki kayıtlı kur. Kur ve tarih kayıtta sabit kalır.',
+    hint: 'Pay = tutar ÷ toplam net miktar (bar, poşet, kutu, adet — her stok birimi bir pay). Dağıtım bir kez yapılır ve değişmez; yanlışsa kaydı gerekçeyle iptal edip doğrusunu girin. Aynı taşıyıcının aynı fatura numarası ikinci kez girilemez.',
+    confirm: 'Nakliye kaydedilip seçilen mal kabullerine dağıtılsın mı? Dağıtım sonradan değişmez.',
+    submit: 'Kaydet ve dağıt',
+    linkedN: '{n} nakliye',
+    rate: 'kur {rate} ({day})',
+    lines: '{n} satıra dağıtıldı',
+    unpaid: 'Ödenmedi',
+    paidOn: 'Ödendi {day}',
+    markPaid: 'Ödendi işaretle',
+    voidConfirm: 'Bu nakliye kaydı iptal edilsin mi? Kayıt silinmez; maliyetten ve taşıyıcı borcundan çıkar.',
+    ok: { added: 'Nakliye kaydedildi ve dağıtıldı.', duplicate: 'Bu kayıt zaten kaydedilmişti; ikinci kez yazılmadı.', voided: 'Nakliye kaydı iptal edildi.', paid: 'Ödendi olarak işaretlendi.' },
+  },
   accounts: {
     title: 'Tedarikçi Hesapları',
     intro: 'Profil ve aksesuar tedarikçilerinin hesabı. Borç = onaylanıp gönderilmiş, iptal edilmemiş siparişlerin toplamı; taslak borç oluşturmaz. Ödemeleri yönetici elle girer. Para birimleri birbirine eklenmez, her biri ayrı satırdır. Cam fabrikasının hesabı Muhasebe → Tedarikçi Hesap Durumu ekranındadır.',
-    col: { supplier: 'Tedarikçi', currency: 'Para birimi', debt: 'Toplam borç', paid: 'Toplam ödeme', balance: 'Kalan', orders: 'Sipariş', missing: 'Fiyatı eksik' },
+    col: { supplier: 'Tedarikçi', currency: 'Para birimi', opening: 'Açılış bakiyesi', debt: 'Sipariş borcu', paid: 'Toplam ödeme', balance: 'Kalan', orders: 'Sipariş', missing: 'Fiyatı eksik' },
     missingPrice: '{n} siparişte fiyatı olmayan satır var: borcun o kısmı bilinmiyor (uydurulmaz).',
     none: 'Hareket yok',
     empty: 'Henüz tedarikçi yok.',
@@ -374,6 +419,15 @@ export default {
       notCounted: 'borca girmez',
       partialCancel: 'kalanı iptal; yalnızca teslim alınan mal borçta',
       empty: 'Onaylanmış sipariş yok.',
+    },
+    opening: {
+      title: 'Açılış bakiyesi (devreden borç / alacak)',
+      intro: 'Geçmiş dönemden devreden borç ya da alacak. Sipariş borcundan ve ödemelerden ayrı tutulur; para birimleri ayrıdır. Kayıt silinmez ve değiştirilmez: yanlışsa gerekçeyle iptal edin ya da karşı kayıt girin.',
+      col: { date: 'Tarih', amount: 'Tutar (+ borç / − alacak)' },
+      date: 'Bakiye tarihi', direction: 'Yön', debt: 'Borç — biz tedarikçiye borçluyuz', credit: 'Alacak — tedarikçi bize borçlu',
+      amount: 'Tutar', correctsLabel: 'Karşı kayıt (düzelttiği kayıt)', corrects: 'karşı kayıt',
+      hint: 'Aynı form iki kez gönderilse de kayıt bir kez yazılır. Kalan = açılış + sipariş borcu − ödeme.',
+      submit: 'Açılış kaydını ekle', voidConfirm: 'Bu açılış kaydı iptal edilsin mi? Kayıt silinmez, bakiyeden çıkar.',
     },
     payments: {
       title: 'Ödemeler',
@@ -396,7 +450,7 @@ export default {
       button: 'Ödemeyi iptal et',
       confirm: 'Ödeme iptal edilecek: silinmez, bakiyeye girmez. Onaylıyor musunuz?',
     },
-    ok: { paid: 'Ödeme kaydedildi.', duplicate: 'Bu ödeme zaten kaydedilmişti; ikinci kez yazılmadı.', voided: 'Ödeme iptal edildi.' },
+    ok: { paid: 'Ödeme kaydedildi.', duplicate: 'Bu kayıt zaten kaydedilmişti; ikinci kez yazılmadı.', voided: 'Ödeme iptal edildi.', opening: 'Açılış bakiyesi kaydedildi.', openingVoided: 'Açılış kaydı iptal edildi.' },
   },
 
   // ---------- Profil Stoğu ekranı (yalnızca SUPPLIER_MANAGE; karar 184) ----------
@@ -409,6 +463,8 @@ export default {
 
   // ---------- Profil Kataloğu → ürün formu: alış bilgisi (karar 180) ----------
   catalog: {
+    supplierCode: 'Tedarikçi ürün kodu',
+    supplierCodeHint: 'Tedarikçi sipariş e-postasında yalnızca bu kod yazılır. GKH iç kodu ({code}) ayrıdır; INTRARE MARFĂ belgesinde iç kod kullanılır. Boşsa sipariş onaylanmaz.',
     title: 'Alış bilgisi (tedarik)',
     intro: 'Yalnızca yönetici görür. Alış fiyatı müşterinin liste fiyatından ayrıdır; tedarikçi siparişine yalnızca aynı tedarikçi ve aynı para biriminde kendiliğinden gelir.',
     supplier: 'Tedarikçi',
@@ -424,6 +480,7 @@ export default {
     errors: {
       purchase_price: 'Alış fiyatı geçersiz: 0 ile 1.000.000 arası, en çok 4 ondalık.',
       purchase_currency: 'Alış fiyatı girildiyse para birimi de seçilmeli.',
+      supplier_code: 'Tedarikçi ürün kodu en çok 60 karakter olabilir.',
       purchase_unit: 'Sipariş birimi geçersiz.',
       supplier: 'Seçilen tedarikçi yok ya da pasif.',
       forbidden: 'Alış bilgisini yalnızca yönetici değiştirebilir.',

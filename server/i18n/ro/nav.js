@@ -37,6 +37,7 @@ export default {
   purchasing: 'Achiziții',
   supplierOrders: 'Comenzi către furnizori',
   supplierAccounts: 'Conturi furnizori',
+  transportCosts: 'Cheltuieli transport',
   catalog: 'Catalog sticlă',
   prices: 'Liste de prețuri',
   customerPrices: 'Prețuri clienți',

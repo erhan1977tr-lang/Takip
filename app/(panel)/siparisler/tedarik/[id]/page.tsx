@@ -11,7 +11,7 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { loadSupplierOrder, orderableProducts } from '@/server/suppliers/service.js';
 import { loadReceipts } from '@/server/suppliers/receipt.js';
-import { LIMITS, catalogPrice, etaCalendarWarning, etaReminderDue, orderUnitOf, showPrices, supplierEmail, supplierOrderActions } from '@/server/suppliers/rules.js';
+import { LIMITS, catalogPrice, etaCalendarWarning, etaReminderDue, orderUnitOf, activeRecipients, showPrices, supplierOrderActions } from '@/server/suppliers/rules.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
 import { dayKeyOf, localDay } from '@/server/profile/dates.js';
 import { localName, unitLabel } from '@/server/profile/catalog.js';
@@ -28,10 +28,19 @@ import { PreviewFor } from '@/components/PreviewFor';
 export const dynamic = 'force-dynamic';
 
 const OK = ['created', 'saved', 'approved', 'resent', 'revision', 'discarded', 'eta', 'etaCleared', 'received', 'receivedPart', 'receivedAll', 'corrected', 'correctedReopened', 'cancelled', 'files', 'fileRemoved'];
-const SEND_ERRORS = ['NO_EMAIL', 'FILE_NOT_CLEAN', 'FILE_MISSING', 'SMTP', 'UNKNOWN'];
+const SEND_ERRORS = ['NO_EMAIL', 'FILE_NOT_CLEAN', 'FILE_MISSING', 'SMTP', 'UNKNOWN', 'PARTIAL', 'NO_SUPPLIER_CODE'];
 const SKIP = ['CANCELLED', 'SUPERSEDED', 'GONE', 'IPTAL', 'TESLIM_ALINDI'];
 const SCAN_TONE: Record<string, string> = { CLEAN: 'ok', SKIPPED: 'muted', PENDING: 'warn', INFECTED: 'danger' };
-type JobPayload = { revision?: number; attempt?: number; manual?: boolean; to?: string | null };
+type JobPayload = {
+  revision?: number; attempt?: number; manual?: boolean; to?: string | null;
+  recipients?: string[]; sentTo?: string[]; unknown?: string[]; failed?: string[];
+};
+/** İşin alıcıları ve her birinin sonucu (DÜZELTME 10 M9; eski işlerde tek "to") */
+const jobRecipients = (p: JobPayload) => {
+  const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  const list = arr(p.recipients).length ? arr(p.recipients) : typeof p.to === 'string' ? [p.to] : [];
+  return list.map((to) => ({ to, result: arr(p.sentTo).includes(to) || (p.to === to && !p.recipients) ? 'SENT' : arr(p.unknown).includes(to) ? 'UNKNOWN' : arr(p.failed).includes(to) ? 'FAILED' : 'WAIT' }));
+};
 
 /**
  * Tedarikçi siparişi (Paket 6, kararlar 181–184). Taslak düzenlenir; tedarikçiye yalnızca "Siparişi onayla / gönder" ile
@@ -58,12 +67,14 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   // Mal kabulü düzeltmesi (karar 286): aynı iki yetki (serviste de denetlenir); kabulün düzeltilebilir satırı varsa form
   const canCorrect = userCan(admin, 'STOCK_MANAGE');
   const can = (a: string) => actions.includes(a);
-  const email = supplierEmail(order.supplier.email);
+  const recipients = activeRecipients(order.supplier.emails);
+  const email = recipients.length ? recipients.join(', ') : null;
   const target = { supplierId: order.supplierId, currency: order.currency };
   const editorProducts: EditorProduct[] = products.map((p) => ({
     id: p.id, code: p.code, label: localName(p, locale), nameTr: p.nameTr || p.nameRo, orderUnit: orderUnitOf(p),
     catalogPrice: catalogPrice(p, target), own: p.supplierId === order.supplierId,
     otherSupplier: p.supplierId && p.supplierId !== order.supplierId ? p.supplier?.name ?? null : null,
+    supplierCode: p.supplierCode ?? null,
   }));
   const units = UNITS.map((u) => ({ code: u.code, label: unitLabel(u.code, locale) }));
   const etaDay = order.etaDate ? dayKeyOf(order.etaDate) : null;
@@ -100,7 +111,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
           <div><dt>{t('supplier.order.supplier')}</dt><dd><b>{order.supplier.name}</b>{!order.supplier.isActive && <> <Badge tone="muted">{t('supplier.settings.inactive')}</Badge></>}</dd></div>
           <div>
             <dt>{t('supplier.order.email')}</dt>
-            <dd data-supplier-email>{email ? <span className="mono">{email}</span> : <><Badge tone="danger">{t('supplier.settings.noEmail')}</Badge> <Link href="/admin/entegrasyonlar/tedarikciler">{t('supplier.order.settingsLink')}</Link></>}</dd>
+            <dd data-supplier-email>{email ? recipients.map((a) => <div key={a} className="mono">{a}</div>) : <><Badge tone="danger">{t('supplier.settings.noEmail')}</Badge> <Link href="/admin/entegrasyonlar/tedarikciler">{t('supplier.order.settingsLink')}</Link></>}</dd>
           </div>
           <div><dt>{t('supplier.order.currency')}</dt><dd>{order.currency}</dd></div>
           <div><dt>{t('supplier.order.created')}</dt><dd>{fmtDateTime(order.createdAt)}</dd></div>
@@ -458,7 +469,11 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                       <td className="nowrap small">{fmtDateTime(j.sentAt ?? j.createdAt)}</td>
                       <td className="num">{p.revision ?? '—'}</td>
                       <td className="num">{p.attempt ?? 1}{p.manual && <span className="muted small"> ({t('supplier.order.emails.manual')})</span>}</td>
-                      <td className="mono small">{typeof p.to === 'string' ? p.to : '—'}</td>
+                      <td className="mono small" data-recipients>
+                        {jobRecipients(p).length === 0 ? '—' : jobRecipients(p).map((x) => (
+                          <div key={x.to} data-recipient={x.result}>{x.to}{j.status !== 'PENDING' && <span className="muted"> · {t(`supplier.order.emails.result.${x.result}` as MsgKey)}</span>}</div>
+                        ))}
+                      </td>
                       <td><Badge tone={j.status === 'SENT' ? 'ok' : j.status === 'FAILED' ? 'danger' : j.status === 'PENDING' ? 'info' : 'muted'}>{t(`supplier.order.emails.status.${j.status}` as MsgKey)}</Badge></td>
                       <td className="small">{note}</td>
                     </tr>

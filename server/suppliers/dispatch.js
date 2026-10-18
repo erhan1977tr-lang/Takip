@@ -18,8 +18,8 @@ import { sendBrandedMail } from '../mail/send.js';
 import { renderSupplierOrderEmail } from '../mail/templates/supplier-order.js';
 import { notifyStaff } from '../notifications/inapp.js';
 import { unitLabel } from '../profile/catalog.js';
-import { definitelyNotSent, OPEN_STATUSES, showPrices, supplierEmail } from './rules.js';
-import { SUPPLIER_EMAIL } from './service.js';
+import { definitelyNotSent, missingSupplierCodes, OPEN_STATUSES, refusedMail, showPrices } from './rules.js';
+import { SUPPLIER_EMAIL, recipientsOf } from './service.js';
 
 /** İşlem kirası: bir gönderim (ekler dahil) en kötü birkaç dakika sürer */
 export const SUPPLIER_EMAIL_LEASE_MS = 10 * 60_000;
@@ -28,6 +28,8 @@ export const SUPPLIER_EMAIL_MAX_ATTEMPTS = 3;
 const backoffMinutes = (attempt) => [2, 10, 30][Math.min(attempt - 1, 2)];
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const fileOk = (f) => f.scanStatus === 'CLEAN' || f.scanStatus === 'SKIPPED';
+const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+const norm = (a) => String(a).trim().toLowerCase();
 
 /**
  * İşi kapatır ve siparişin durumunu yazar (yalnızca iş siparişin SON kesin revizyonuna aitse ve sipariş hâlâ açıksa —
@@ -54,6 +56,14 @@ async function finish(db, row, payload, { jobStatus, orderStatus = null, sendErr
 
 /**
  * Kuyruktaki tedarikçi sipariş e-postalarını gönderir.
+ *
+ * Birden çok alıcı (DÜZELTME 10 M9): tedarikçinin ETKİN adresleri (en çok 10) gönderim anında çözülür ve işe yazılır; her
+ * alıcıya AYRI ileti gider (alıcılar birbirinin adresini görmez). Tek iş = tek mantıksal bildirim; her alıcının sonucu işte
+ * tutulur (sentTo / unknown / failed) ve denetim kaydına yazılır. Alıcı başına "en çok bir kez": göndermeden önce o alıcı için
+ * "gönderiliyor" işareti (sending) yazılır; işçi gönderim sırasında çökerse o alıcı BELİRSİZ sayılır ve otomatik yeniden
+ * gönderilmez. Bağlantı hatası (ileti kesinlikle gitmedi) yalnızca o alıcı için yeniden denenir; gönderilmiş alıcıya ikinci
+ * ileti gitmez. Sonuç: hepsi gönderildi → GONDERILDI; biri bile başarısız / belirsiz → GONDERIM_HATASI (PARTIAL: en az biri
+ * aldı). Yöneticinin "Tekrar gönder"i yalnızca ALMAMIŞ adreslere gider.
  * @param {any} db
  * @param {{ transport: { sendMail: (m: object) => Promise<any> } | null, from: string, now?: Date, log?: Function }} ctx
  *   transport null (SMTP ayarlı değil): hiçbir şey yapılmaz; iş kuyrukta bekler, sipariş "Gönderim bekliyor" kalır.
@@ -68,9 +78,16 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
     const attempt = row.attempts + 1;
     const payload = obj(row.payload);
     const orderId = String(payload.supplierOrderId ?? '');
+    const sentTo = list(payload.sentTo).map(norm);
+    const unknown = list(payload.unknown).map(norm);
+    // Sunucunun açıkça reddettiği alıcılar (adres → kod): ileti teslim alınmadı; otomatik yeniden denenmez
+    const refused = /** @type {Record<string, string>} */ ({});
+    for (const [k, v] of Object.entries(obj(payload.refused))) if (typeof v === 'string') refused[norm(k)] = v.slice(0, 20);
+    // Eski biçim (3.96 ve öncesi): tek alıcıya gönderim yarıda kaldı → belirsiz
+    const legacyHalf = payload.sendingAt && !payload.recipients;
+    if (typeof payload.sending === 'string' && payload.sending && !sentTo.includes(norm(payload.sending)) && !unknown.includes(norm(payload.sending))) unknown.push(norm(payload.sending));
     try {
-      // Önceki deneme gönderim sırasında yarıda kaldı (işçi çöktü): ileti gitmiş olabilir → yeniden GÖNDERİLMEZ
-      if (payload.sendingAt) {
+      if (legacyHalf) {
         await finish(db, row, payload, {
           jobStatus: 'FAILED', lastError: 'UNKNOWN', orderStatus: 'GONDERIM_HATASI', sendError: 'UNKNOWN',
           audit: { action: 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: orderId, details: { revision: payload.revision ?? null, attempt, code: 'UNKNOWN', jobId: row.id } },
@@ -96,17 +113,20 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
       }
       const o = /** @type {NonNullable<typeof order>} */ (order);
       const r = /** @type {NonNullable<typeof rev>} */ (rev);
-      // Alıcı GÖNDERİM ANINDA Ayarlar'daki adresten çözülür (yalnızca orası değiştirir)
-      const to = supplierEmail(o.supplier.email);
-      if (!to) {
-        await finish(db, row, payload, {
-          jobStatus: 'FAILED', lastError: 'NO_EMAIL', orderStatus: 'GONDERIM_HATASI', sendError: 'NO_EMAIL',
-          audit: { action: 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: o.id, details: { orderNo: o.orderNo, revision: r.revision, attempt, code: 'NO_EMAIL', jobId: row.id } },
+      // Alıcılar: ilk alışta Ayarlar'daki ETKİN adreslerden çözülür ve işe yazılır (yeniden denemede aynı liste)
+      const skip = list(payload.skip).map(norm);
+      const recipients = Array.isArray(payload.recipients) ? list(payload.recipients).map(norm) : (await recipientsOf(db, o.supplierId)).map(norm).filter((a) => !skip.includes(a));
+      const fail = async (code, extra = {}) => {
+        await finish(db, row, { ...payload, recipients, sentTo, unknown }, {
+          jobStatus: 'FAILED', lastError: code, orderStatus: 'GONDERIM_HATASI', sendError: code,
+          audit: { action: 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: o.id, details: { orderNo: o.orderNo, revision: r.revision, attempt, code, jobId: row.id, ...extra } },
         });
         out.failed++;
-        await notifyFailed(db, row, o.id, 'NO_EMAIL', o.orderNo);
-        continue;
-      }
+        await notifyFailed(db, row, o.id, code, o.orderNo);
+      };
+      if (!recipients.length) { await fail('NO_EMAIL'); continue; }
+      // Tedarikçi ürün kodu (M5): eksik satır varsa gönderilmez (eski revizyon yeniden gönderilirken de)
+      if (missingSupplierCodes(r.lines).length) { await fail('NO_SUPPLIER_CODE'); continue; }
       // Ekler: yalnızca temiz (ya da antivirüs kapalıyken taranmamış) dosyalar; diskte olmalı
       const attachments = [];
       let fileProblem = null;
@@ -117,17 +137,9 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
         if (!content) { fileProblem = 'FILE_MISSING'; break; }
         attachments.push({ filename: f.name, content, contentType: f.mime ?? 'application/octet-stream' });
       }
-      if (fileProblem) {
-        await finish(db, row, payload, {
-          jobStatus: 'FAILED', lastError: fileProblem, orderStatus: 'GONDERIM_HATASI', sendError: fileProblem,
-          audit: { action: 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: o.id, details: { orderNo: o.orderNo, revision: r.revision, attempt, code: fileProblem, jobId: row.id } },
-        });
-        out.failed++;
-        await notifyFailed(db, row, o.id, fileProblem, o.orderNo);
-        continue;
-      }
+      if (fileProblem) { await fail(fileProblem); continue; }
       const lines = r.lines.map((l) => ({
-        code: l.code, description: l.description, color: l.color, qty: l.qty, unit: unitLabel(l.unitCode, 'tr'),
+        code: /** @type {string} */ (l.supplierCode), description: l.description, color: l.color, qty: l.qty, unit: unitLabel(l.unitCode, 'tr'),
         unitPrice: l.unitPrice == null ? null : l.unitPrice.toString(), lineTotal: l.lineTotal == null ? null : l.lineTotal.toString(),
       }));
       const prices = showPrices(lines);
@@ -135,46 +147,60 @@ export async function dispatchSupplierOrderEmails(db, { transport, from, now = n
         orderNo: o.orderNo, supplierName: o.supplier.name, orderDate: r.orderDate, revision: r.revision, currency: o.currency,
         lines, showPrices: prices, total: prices && r.total != null ? r.total.toString() : null, note: r.note, attachments: r.files.map((f) => f.name),
       });
-      // "Gönderiliyor" işareti: bundan sonra yarıda kalan iş asla otomatik yeniden gönderilmez
-      const sendingAt = new Date();
-      await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...payload, sendingAt: sendingAt.toISOString() } } });
-      let info;
-      try {
-        info = await sendBrandedMail(transport, { from, to, subject: mail.subject, text: mail.text, html: mail.html, lang: 'tr', attachments });
-      } catch (e) {
-        const err = /** @type {any} */ (e);
-        const code = err?.responseCode ? `SMTP ${String(err.responseCode).slice(0, 3)}` : 'SMTP';
-        if (definitelyNotSent(err) && attempt < SUPPLIER_EMAIL_MAX_ATTEMPTS) {
-          // İleti sunucuya hiç ulaşmadı: güvenle yeniden denenir (işaret kaldırılır)
-          await db.notificationOutbox.update({
-            where: { id: row.id },
-            data: { lastError: 'SMTP_CONN', availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000), payload: { ...payload, sendingAt: null } },
-          });
-          out.retried++;
-          log('tedarikçi e-postası: sunucuya bağlanılamadı, yeniden denenecek', o.orderNo);
-          continue;
+      const todo = recipients.filter((a) => !sentTo.includes(a) && !unknown.includes(a) && !Object.hasOwn(refused, a));
+      const failedNow = [];
+      const codes = {};
+      for (const to of todo) {
+        // "Gönderiliyor" işareti: bu alıcı için gönderim yarıda kalırsa bir daha otomatik gönderilmez
+        await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...payload, recipients, sentTo, unknown, sending: to } } });
+        try {
+          await sendBrandedMail(transport, { from, to, subject: mail.subject, text: mail.text, html: mail.html, lang: 'tr', attachments });
+          sentTo.push(to);
+        } catch (e) {
+          const err = /** @type {any} */ (e);
+          codes[to] = err?.responseCode ? `SMTP ${String(err.responseCode).slice(0, 3)}` : 'SMTP';
+          if (definitelyNotSent(err)) failedNow.push(to);
+          else if (refusedMail(err)) refused[to] = codes[to];
+          else unknown.push(to);
+          log('tedarikçi e-postası bir alıcıya gönderilemedi', o.orderNo);
         }
-        await finish(db, row, { ...payload, sendingAt: sendingAt.toISOString() }, {
-          jobStatus: 'FAILED', lastError: code, orderStatus: 'GONDERIM_HATASI', sendError: 'SMTP',
-          audit: { action: 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: o.id, details: { orderNo: o.orderNo, revision: r.revision, attempt, code, jobId: row.id } },
+      }
+      if (failedNow.length && attempt < SUPPLIER_EMAIL_MAX_ATTEMPTS) {
+        // İleti o alıcılara hiç ulaşmadı: yalnızca onlar için güvenle yeniden denenir
+        await db.notificationOutbox.update({
+          where: { id: row.id },
+          data: { lastError: 'SMTP_CONN', availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000), payload: { ...payload, recipients, sentTo, unknown, refused, sending: null } },
         });
-        out.failed++;
-        await notifyFailed(db, row, o.id, 'SMTP', o.orderNo);
-        log('tedarikçi e-postası gönderilemedi', o.orderNo, code);
+        out.retried++;
+        log('tedarikçi e-postası: sunucuya bağlanılamadı, yeniden denenecek', o.orderNo);
         continue;
       }
-      await finish(db, row, { ...payload, sendingAt: sendingAt.toISOString() }, {
-        jobStatus: 'SENT', orderStatus: 'GONDERILDI', sendError: null, sentAt: new Date(),
-        extra: { to, messageId: info?.messageId ?? null, attachments: attachments.length, prices },
+      const refusedTo = Object.keys(refused).filter((a) => recipients.includes(a));
+      const failed = [...new Set([...failedNow, ...refusedTo, ...unknown])];
+      const results = recipients.map((a) => ({
+        to: a,
+        result: sentTo.includes(a) ? 'SENT' : unknown.includes(a) ? 'UNKNOWN' : Object.hasOwn(refused, a) ? refused[a] : failedNow.includes(a) ? (codes[a] ?? 'SMTP') : 'SKIPPED',
+      }));
+      const allSent = failed.length === 0;
+      const hardFail = failedNow.length + refusedTo.length > 0;
+      const code = allSent ? null : sentTo.length ? 'PARTIAL' : hardFail ? 'SMTP' : 'UNKNOWN';
+      // İşin son hatası: tek bir sunucu kodu varsa o (ör. "SMTP 550"), yoksa özet kod
+      const detail = [...new Set(failed.map((a) => (Object.hasOwn(refused, a) ? refused[a] : unknown.includes(a) ? 'UNKNOWN' : codes[a] ?? 'SMTP')))];
+      const lastError = allSent ? null : code === 'SMTP' && detail.length === 1 ? detail[0] : code;
+      await finish(db, row, { ...payload, recipients, sentTo, unknown, refused, failed: [...new Set([...failedNow, ...refusedTo])], sending: null, sendingAt: null }, {
+        jobStatus: allSent ? 'SENT' : 'FAILED', lastError, orderStatus: allSent ? 'GONDERILDI' : 'GONDERIM_HATASI', sendError: code,
+        sentAt: sentTo.length ? new Date() : null,
+        extra: { attachments: attachments.length, prices },
         audit: {
-          action: 'SUPPLIER_ORDER_EMAIL_SENT', entityType: 'SupplierOrder', entityId: o.id,
-          details: { orderNo: o.orderNo, revision: r.revision, attempt, to, attachments: attachments.length, prices, jobId: row.id },
+          action: allSent ? 'SUPPLIER_ORDER_EMAIL_SENT' : 'SUPPLIER_ORDER_EMAIL_FAILED', entityType: 'SupplierOrder', entityId: o.id,
+          details: { orderNo: o.orderNo, revision: r.revision, attempt, recipients: results, attachments: attachments.length, prices, jobId: row.id, ...(code ? { code } : {}) },
         },
       });
-      out.sent++;
+      if (allSent) out.sent++;
+      else { out.failed++; await notifyFailed(db, row, o.id, code, o.orderNo); }
     } catch (e) {
-      // Beklenmeyen hata (veritabanı vb.): iş "gönderiliyor" işaretliyse bir sonraki alışta belirsiz sayılır; değilse
-      // kira dolunca yeniden denenir (ileti gönderilmedi)
+      // Beklenmeyen hata (veritabanı vb.): kira dolunca yeniden denenir; gönderilmiş alıcılar yükte durur, yarıda kalan
+      // alıcı bir sonraki alışta belirsiz sayılır
       log('tedarikçi e-postası işlenemedi', orderId, String(/** @type {any} */ (e)?.message ?? e).slice(0, 200));
     }
   }

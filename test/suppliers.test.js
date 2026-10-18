@@ -14,6 +14,7 @@ import * as money from '../server/suppliers/money.js';
 import { SUPPLIER_EMAIL_TEXT, renderSupplierOrderEmail } from '../server/mail/templates/supplier-order.js';
 import { MAIL_LOGO_CID, sendBrandedMail } from '../server/mail/send.js';
 import * as service from '../server/suppliers/service.js';
+import * as costs from '../server/suppliers/costs.js';
 import { can } from '../server/auth/permissions.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,9 +124,12 @@ test('kayıtlı alış fiyatı siparişe yalnızca aynı tedarikçi VE aynı par
 
 test('alış bilgisi formu: fiyat girildiyse para birimi zorunlu; birim listeden; boş = tanımsız', () => {
   assert.deepEqual(parsePurchase({ supplierId: 's1', price: '12,5', currency: 'eur', unit: '' }),
-    { ok: true, value: { supplierId: 's1', purchasePrice: '12.5', purchaseCurrency: 'EUR', purchaseUnit: null } });
+    { ok: true, value: { supplierId: 's1', purchasePrice: '12.5', purchaseCurrency: 'EUR', purchaseUnit: null, supplierCode: null } });
   assert.deepEqual(parsePurchase({ supplierId: '', price: '', currency: '', unit: '' }),
-    { ok: true, value: { supplierId: null, purchasePrice: null, purchaseCurrency: null, purchaseUnit: null } });
+    { ok: true, value: { supplierId: null, purchasePrice: null, purchaseCurrency: null, purchaseUnit: null, supplierCode: null } });
+  // Tedarikçi ürün kodu (DÜZELTME 10 M5): kırpılır, en çok 60
+  assert.equal(parsePurchase({ supplierId: 's1', price: '', currency: '', unit: '', supplierCode: '  AB-12/3 ' }).value?.supplierCode, 'AB-12/3');
+  assert.deepEqual(parsePurchase({ supplierId: 's1', price: '', currency: '', unit: '', supplierCode: 'x'.repeat(61) }), { ok: false, code: 'SUPPLIER_CODE' });
   assert.deepEqual(parsePurchase({ supplierId: 's1', price: '5', currency: '', unit: '' }), { ok: false, code: 'PURCHASE_CURRENCY' });
   assert.deepEqual(parsePurchase({ supplierId: 's1', price: '-5', currency: 'EUR', unit: '' }), { ok: false, code: 'PURCHASE_PRICE' });
   assert.deepEqual(parsePurchase({ supplierId: 's1', price: '5', currency: 'GBP', unit: '' }), { ok: false, code: 'PURCHASE_CURRENCY' });
@@ -235,9 +239,9 @@ test('hesap: para birimi başına borç / ödeme / kalan; taslak ve iptal borç 
     { currency: 'RON', amount: '7' },
   ]);
   assert.deepEqual(b, {
-    EUR: { debt: '101.30', paid: '30.05', balance: '71.25', orders: 3, missingPrice: 1 },
-    RON: { debt: '0.00', paid: '7.00', balance: '-7.00', orders: 0, missingPrice: 0 },
-    USD: { debt: '10.00', paid: '0.00', balance: '10.00', orders: 1, missingPrice: 0 },
+    EUR: { opening: '0.00', debt: '101.30', paid: '30.05', balance: '71.25', orders: 3, missingPrice: 1 },
+    RON: { opening: '0.00', debt: '0.00', paid: '7.00', balance: '-7.00', orders: 0, missingPrice: 0 },
+    USD: { opening: '0.00', debt: '10.00', paid: '0.00', balance: '10.00', orders: 1, missingPrice: 0 },
   });
   assert.deepEqual(supplierBalances([], []), {});
 });
@@ -371,11 +375,31 @@ test('yetki: SUPPLIER_MANAGE yalnızca yönetici; diğer roller (denetimci dahil
     cancelOrder: (a) => service.cancelOrder(db, { orderId: 'o', reason: 'x' }, a),
     addPayment: (a) => service.addPayment(db, { supplierId: 's', paidOn: '2026-10-01', amount: '1', currency: 'EUR', requestKey: 'k'.repeat(20) }, a),
     voidPayment: (a) => service.voidPayment(db, { paymentId: 'p', reason: 'x' }, a),
+    addOpening: (a) => service.addOpening(db, { supplierId: 's', asOf: '2026-10-01', amount: '1', currency: 'EUR', direction: 'DEBT', requestKey: 'k'.repeat(20) }, a),
+    voidOpening: (a) => service.voidOpening(db, { openingId: 'o', reason: 'x' }, a),
   };
   for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI', undefined]) {
     for (const [name, fn] of Object.entries(calls)) {
       assert.deepEqual(await fn(role ? { id: 'u', role } : null), { ok: false, code: 'FORBIDDEN' }, `${role} ${name}`);
     }
+  }
+  // Nakliye ve stok maliyeti (DÜZELTME 10 M6): server/suppliers/costs.js — aynı kural
+  const costCalls = {
+    transportReceiptOptions: (a) => costs.transportReceiptOptions(db, a),
+    createTransport: (a) => costs.createTransport(db, { carrierName: 'X', invoiceDate: '2026-10-01', amount: '1', currency: 'EUR', receiptIds: ['r'.repeat(10)], requestKey: 'k'.repeat(20) }, a),
+    voidTransport: (a) => costs.voidTransport(db, { transportId: 't', reason: 'x' }, a),
+    markTransportPaid: (a) => costs.markTransportPaid(db, { transportId: 't', paidOn: '2026-10-01' }, a),
+    listTransports: (a) => costs.listTransports(db, a),
+  };
+  for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI', undefined]) {
+    for (const [name, fn] of Object.entries(costCalls)) assert.deepEqual(await fn(role ? { id: 'u', role } : null), { ok: false, code: 'FORBIDDEN' }, `${role} ${name}`);
+  }
+  const csrc = strip(read('server/suppliers/costs.js'));
+  const cexp = [...csrc.matchAll(/export async function (\w+)\(db, [^)]*actor/g)].map((x) => x[1]).sort();
+  assert.deepEqual(cexp, Object.keys(costCalls).sort());
+  for (const name of cexp) {
+    const body = csrc.slice(csrc.indexOf(`export async function ${name}(`));
+    assert.equal(body.slice(body.indexOf(') {\n') + 4).trim().split('\n')[0], 'if (!allowed(actor)) return FORBIDDEN;', `${name}: ilk satır yetki denetimi`);
   }
   assert.deepEqual(touched, []);
   // Değiştiren her dışa açık servis işlevi bu listededir (yeni işlev yetki denetimiyle eklenir)
@@ -422,7 +446,8 @@ test('tek gönderim yolu: e-posta işi yalnızca "onayla / gönder" ve açık "T
   // İşçi işi atomik sahiplenir (claimFgoJob) ve "gönderiliyor" işaretini göndermeden ÖNCE yazar
   const d = strip(read('server/suppliers/dispatch.js'));
   assert.ok(d.indexOf('claimFgoJob(db, row') > 0);
-  assert.ok(d.indexOf('sendingAt: sendingAt.toISOString()') < d.indexOf('sendBrandedMail(transport'), 'işaret gönderimden önce');
+  // Alıcı başına "gönderiliyor" işareti gönderimden ÖNCE yazılır (DÜZELTME 10 M9: her alıcıya ayrı ileti)
+  assert.ok(d.indexOf('sending: to } } })') > 0 && d.indexOf('sending: to } } })') < d.indexOf('sendBrandedMail(transport'), 'işaret gönderimden önce');
   // Sayfa / işlem dosyalarında doğrudan gönderim yok
   for (const f of CODE.filter((x) => x.startsWith('app/'))) assert.ok(!/sendBrandedMail|dispatchSupplierOrderEmails/.test(read(f)), f);
 });

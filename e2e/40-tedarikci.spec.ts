@@ -74,7 +74,7 @@ test('yönetici: menüde "Ayarlar" ve "Satın Alma"; Ayarlar → Tedarikçiler �
   await admin.locator('#tedarikci').getByRole('button', { name: 'Tedarikçi ekle' }).click();
   await expect(admin.getByText('Tedarikçi eklendi.')).toBeVisible();
   const row = admin.locator(`tr[data-supplier="${SUP}"]`);
-  await expect(row.locator('[data-email]')).toHaveText(SUP_MAIL);
+  await expect(row.locator('[data-email]')).toContainText(SUP_MAIL);
   await expect(row).toContainText('Etkin');
   // E-postasız tedarikçi: uyarı (sipariş gönderilemez)
   await admin.fill('#sp-name', NOMAIL);
@@ -118,6 +118,8 @@ test('yönetici: ürünün alış bilgisi (Profil Kataloğu) — tedarikçi, al�
   await admin.selectOption('#pc-supplier', supValue!);
   await admin.fill('#pc-pprice', '2,75');
   await admin.selectOption('#pc-pcur', 'EUR');
+  // Tedarikçi ürün kodu (DÜZELTME 10 M5): e-postada yalnızca bu kod yazılır; GKH iç kodu (MC12) ayrı kalır
+  await admin.fill('#pc-scode', 'TED-MC-12X');
   await admin.locator('#urun').getByRole('button', { name: 'Kaydet' }).click();
   await expect(admin.getByText('Kaydedildi.')).toBeVisible();
   await expect(admin.locator('[data-purchase="MC12"]')).toContainText('2,75 EUR');
@@ -128,6 +130,7 @@ test('yönetici: ürünün alış bilgisi (Profil Kataloğu) — tedarikçi, al�
 test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır işaretli; taslak e-posta göndermez; "Siparişi onayla / gönder" → işçi TEK Türkçe e-posta (fiyat sütunsuz, ekli, logolu)', async ({ browser }) => {
   const db = await prisma();
   const stockBefore = await db.stockMovement.count();
+  expect((await db.profileProduct.findUniqueOrThrow({ where: { code: 'MC12' } })).supplierCode).toBe('TED-MC-12X');
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto('/admin/stok');
   await expect(admin.locator('th', { hasText: 'Beklenen' })).toBeVisible();
@@ -160,6 +163,9 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   await expect(line2.locator('[data-no-price]')).toHaveText('Fiyat yok');
   await expect(admin.locator('[data-missing-price]')).toBeVisible();
   await expect(admin.locator('[data-grand-total]')).toHaveText('33,00 EUR');
+  // MC16'nın tedarikçi kodu yok (M5): satırda uyarı; kod girilince (katalogda) onay açılır
+  await expect(line2.locator('[data-no-supplier-code]')).toBeVisible();
+  await expect(line1.locator('[data-supplier-code="TED-MC-12X"]')).toBeVisible();
   // Kaydedilmemiş değişiklik varken onay kapalı
   await expect(admin.locator('[data-unsaved]')).toBeVisible();
   await expect(admin.getByRole('button', { name: 'Siparişi onayla / gönder' })).toBeDisabled();
@@ -177,6 +183,11 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   expect(mails(SUP_MAIL)).toHaveLength(0);
   expect(await db.notificationOutbox.count({ where: { type: 'SUPPLIER_ORDER_EMAIL' } })).toBe(0);
 
+  // Kodsuz ürün varken onay kapalı ve sunucu da reddeder; kod katalogda girilince açılır
+  await expect(admin.locator('[data-no-supplier-code-block]')).toBeVisible();
+  await expect(admin.getByRole('button', { name: 'Siparişi onayla / gönder' })).toBeDisabled();
+  await db.profileProduct.update({ where: { code: 'MC16' }, data: { supplierCode: 'TED-MC-16X' } });
+  await admin.reload();
   await admin.getByRole('button', { name: 'Siparişi onayla / gönder' }).click(); // onay penceresi kabul edilir
   await expect(admin.getByText('Sipariş onaylandı ve e-posta gönderim kuyruğuna yazıldı.')).toBeVisible();
   await expect(admin.locator('[data-supplier-status="GONDERIM_BEKLIYOR"]')).toBeVisible();
@@ -201,6 +212,10 @@ test('stok satırından taslak: kayıtlı alış fiyatı gelir, fiyatsız satır
   const thead = /<thead>([\s\S]*?)<\/thead>/.exec(m.html)?.[1] ?? '';
   expect([...thead.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1])).toEqual(['Ürün Kodu', 'Açıklama', 'Miktar', 'Birim']);
   expect(m.html).not.toContain('Renk/RAL');
+  // Ürün kodu sütununda YALNIZCA tedarikçinin kodu (M5); GKH iç kodu yazılmaz
+  expect(m.html).toContain('TED-MC-12X');
+  expect(m.html).toContain('TED-MC-16X');
+  expect(m.html).not.toMatch(/>MC1[26]</);
   expect(m.html).not.toContain('Birim Fiyat');
   expect(m.html).not.toContain('Genel Toplam');
   expect(m.text).toContain('Siparişimizin tarafınıza ulaştığını ve tahmini yükleme tarihini teyit etmenizi rica ederiz.');
@@ -306,7 +321,8 @@ test('hesap: borç onaylanan siparişten (fiyatsız kısım ayrıca); ödeme bir
   await expect(admin.locator('#bakiye tr[data-balance="EUR"]')).toContainText('23,00');
   // Aynı form (aynı anahtar) iki kez gelirse tek ödeme
   const url = new URL(admin.url());
-  const field = await actionField(admin, url.pathname + url.search, 'name="requestKey"');
+  // Ödeme formu (açılış bakiyesi formunda da requestKey var — DÜZELTME 10 M2): formu kimliğiyle seç
+  const field = await actionField(admin, url.pathname + url.search, 'id="odeme"');
   const key = await admin.locator('#odeme input[name="requestKey"]').inputValue();
   const supplierId = await admin.locator('#odeme input[name="supplierId"]').inputValue();
   const body = { [field!]: '', supplierId, requestKey: key, paidOn: day(0), amount: '5', currency: 'USD', note: 'çift' };

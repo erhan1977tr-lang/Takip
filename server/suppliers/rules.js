@@ -40,6 +40,61 @@ export function supplierEmail(v) {
   return s.length <= LIMITS.email && EMAIL_RE.test(s) ? s : null;
 }
 
+/** Tedarikçi başına en çok kaç e-posta adresi (DÜZELTME 10 M9) */
+export const MAX_SUPPLIER_EMAILS = 10;
+/** Adresin tekillik anahtarı (büyük / küçük harf farkı yok) */
+export const emailKeyOf = (v) => String(v ?? '').trim().toLowerCase();
+
+/**
+ * Tedarikçinin e-posta listesi (Ayarlar → Tedarikçiler; DÜZELTME 10 M9). En çok 10 adres; her biri geçerli tek adres;
+ * aynı adres (büyük / küçük harf farkı yok) iki kez olamaz. Birincil adres etkin olmalı: işaretli birincil yoksa ya da
+ * pasifse ilk etkin adres birincil olur; etkin adres yoksa birincil yoktur (gönderim engellenir). Boş satırlar atılır.
+ * Hata kodları: EMAIL (index), EMAIL_DUPLICATE (index), EMAIL_LIMIT.
+ * @param {unknown} rows  [{ email, isActive?, isPrimary? }]
+ * @returns {{ ok: true, value: { email: string, emailKey: string, isActive: boolean, isPrimary: boolean, sortOrder: number }[] } | { ok: false, code: string, index?: number }}
+ */
+export function parseEmailList(rows) {
+  if (!Array.isArray(rows)) return { ok: false, code: 'EMAIL' };
+  const out = [];
+  const seen = new Set();
+  for (const [index, r] of rows.entries()) {
+    const raw = String(/** @type {any} */ (r)?.email ?? '').trim();
+    if (!raw) continue;
+    const email = supplierEmail(raw);
+    if (!email) return { ok: false, code: 'EMAIL', index };
+    const emailKey = emailKeyOf(email);
+    if (seen.has(emailKey)) return { ok: false, code: 'EMAIL_DUPLICATE', index };
+    seen.add(emailKey);
+    const isActive = /** @type {any} */ (r)?.isActive !== false;
+    out.push({ email, emailKey, isActive, isPrimary: isActive && /** @type {any} */ (r)?.isPrimary === true, sortOrder: out.length });
+  }
+  if (out.length > MAX_SUPPLIER_EMAILS) return { ok: false, code: 'EMAIL_LIMIT' };
+  const firstPrimary = out.findIndex((e) => e.isPrimary);
+  const primary = firstPrimary >= 0 ? firstPrimary : out.findIndex((e) => e.isActive);
+  out.forEach((e, i) => { e.isPrimary = i === primary; });
+  return { ok: true, value: out };
+}
+
+/**
+ * Sipariş e-postasının alıcıları (gönderim anında): etkin ve geçerli adresler, birincil önce, en çok 10, tekil.
+ * @param {{ email: string, isActive: boolean, isPrimary?: boolean, sortOrder?: number }[]} emails
+ * @returns {string[]}
+ */
+export function activeRecipients(emails) {
+  const sorted = [...(emails ?? [])].sort((a, b) => Number(!!b.isPrimary) - Number(!!a.isPrimary) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const out = [];
+  const seen = new Set();
+  for (const e of sorted) {
+    if (!e.isActive) continue;
+    const v = supplierEmail(e.email);
+    if (!v || seen.has(emailKeyOf(v))) continue;
+    seen.add(emailKeyOf(v));
+    out.push(v);
+    if (out.length >= MAX_SUPPLIER_EMAILS) break;
+  }
+  return out;
+}
+
 /**
  * Tedarikçi formu (Ayarlar → Tedarikçiler). E-posta boş bırakılabilir (gönderim o zaman engellenir — karar 179);
  * girildiyse geçerli olmalı. Hata kodları: NAME, TOO_LONG, EMAIL, CURRENCY.
@@ -93,10 +148,11 @@ export const orderUnitOf = (product) => (product.purchaseUnit && UNIT_CODES.incl
 
 /**
  * Ürünün alış bilgisi (Profil Kataloğu → ürün formu; yalnızca SUPPLIER_MANAGE). Fiyat girildiyse para birimi zorunlu.
- * Hata kodları: PURCHASE_PRICE, PURCHASE_CURRENCY, PURCHASE_UNIT.
- * @returns {{ ok: true, value: { supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null } } | { ok: false, code: string }}
+ * Hata kodları: PURCHASE_PRICE, PURCHASE_CURRENCY, PURCHASE_UNIT, SUPPLIER_CODE.
+ * @param {{ supplierId: unknown, price: unknown, currency: unknown, unit: unknown, supplierCode?: unknown }} p
+ * @returns {{ ok: true, value: { supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null, supplierCode: string | null } } | { ok: false, code: string }}
  */
-export function parsePurchase({ supplierId, price, currency, unit }) {
+export function parsePurchase({ supplierId, price, currency, unit, supplierCode = undefined }) {
   const p = parsePrice(price);
   if (!p.ok) return { ok: false, code: 'PURCHASE_PRICE' };
   const cur = String(currency ?? '').trim().toUpperCase() || null;
@@ -104,7 +160,10 @@ export function parsePurchase({ supplierId, price, currency, unit }) {
   if (p.value != null && !cur) return { ok: false, code: 'PURCHASE_CURRENCY' };
   const u = String(unit ?? '').trim().toUpperCase() || null;
   if (u && !UNIT_CODES.includes(u)) return { ok: false, code: 'PURCHASE_UNIT' };
-  return { ok: true, value: { supplierId: String(supplierId ?? '').trim() || null, purchasePrice: p.value, purchaseCurrency: cur, purchaseUnit: u } };
+  // Tedarikçinin ürün kodu (DÜZELTME 10 M5): serbest metin, en çok 60 karakter, kontrol karakteri yok; boş = yok
+  const sc = one(supplierCode);
+  if (sc.length > 60) return { ok: false, code: 'SUPPLIER_CODE' };
+  return { ok: true, value: { supplierId: String(supplierId ?? '').trim() || null, purchasePrice: p.value, purchaseCurrency: cur, purchaseUnit: u, supplierCode: sc || null } };
 }
 
 // ---------- sipariş numarası ----------
@@ -216,6 +275,30 @@ export function definitelyNotSent(err) {
   return !!err && err.command === 'CONN';
 }
 
+/**
+ * Sunucu iletiyi açıkça REDDETTİ mi (4xx / 5xx yanıt kodu, bağlantı aşaması dışında): ileti teslim alınmadı, sonuç belirsiz
+ * değildir. Otomatik yeniden denenmez (kalıcı ret olabilir); yönetici "Tekrar gönder" ile o alıcıya yeniden gönderebilir.
+ * Yanıt kodu olmayan hata (kopma, zaman aşımı) belirsiz sayılır.
+ * @param {any} err
+ */
+export function refusedMail(err) {
+  const code = Number(err?.responseCode);
+  return !!err && err.command !== 'CONN' && Number.isInteger(code) && code >= 400 && code < 600;
+}
+
+/**
+ * Onay öncesi alıcı denetimi: etkin adres yoksa NO_EMAIL; etkin adreslerden biri geçersizse (form dışı / eski veri)
+ * BAD_EMAIL — geçersiz adres sessizce atlanıp eksik listeye gönderilmez.
+ * @param {{ email: string, isActive: boolean }[]} emails
+ * @returns {'NO_EMAIL' | 'BAD_EMAIL' | null}
+ */
+export function recipientProblem(emails) {
+  const active = (emails ?? []).filter((e) => e.isActive);
+  if (!active.length) return 'NO_EMAIL';
+  if (active.some((e) => !supplierEmail(e.email))) return 'BAD_EMAIL';
+  return null;
+}
+
 // ---------- tahmini yükleme tarihi ----------
 
 /**
@@ -264,19 +347,23 @@ export function etaCalendarWarning(etaDay, overrides = null) {
 
 /**
  * Tedarikçi hesabı (karar 182), para birimi başına: borç = kesinleşmiş ve iptal edilmemiş siparişlerin (son kesin
- * revizyon) toplamı; ödeme = iptal edilmemiş ödemeler; kalan = borç − ödeme. Para birimleri birbirine eklenmez; fiyatı
- * eksik sipariş sayısı ayrıca verilir (borcun o kısmı bilinmiyor — uydurulmaz).
+ * revizyon) toplamı; ödeme = iptal edilmemiş ödemeler; kalan = açılış + borç − ödeme. Para birimleri birbirine eklenmez;
+ * fiyatı eksik sipariş sayısı ayrıca verilir (borcun o kısmı bilinmiyor — uydurulmaz).
  * İptal edilmiş, kısmen teslim alınmış sipariş: borç = net teslim alınan × birim fiyat (receivedValue; karar 288).
+ * Açılış bakiyesi (DÜZELTME 10 M2): geçmiş dönemden devreden borç (+) / alacak (−); sipariş borcundan ve ödemelerden AYRI
+ * alanda (opening) tutulur, iptal edilmiş kayıt sayılmaz. TEK bakiye kuralı: muhasebe ekranı, tedarikçi hesabı, rapor ve
+ * asistanlar bunu (server/suppliers/service.js → supplierAccounts / supplierAccount) kullanır.
  * @param {{ currency: string, status: string, total: unknown, missingPrice?: boolean, received?: boolean }[]} orders
  * @param {{ currency: string, amount: unknown, voidedAt?: Date | string | null }[]} payments
- * @returns {Record<string, { debt: string, paid: string, balance: string, orders: number, missingPrice: number }>}
+ * @param {{ currency: string, amount: unknown, voidedAt?: Date | string | null }[]} [openings]
+ * @returns {Record<string, { opening: string, debt: string, paid: string, balance: string, orders: number, missingPrice: number }>}
  */
-export function supplierBalances(orders, payments) {
-  /** @type {Map<string, { debt: bigint, paid: bigint, orders: number, missingPrice: number }>} */
+export function supplierBalances(orders, payments, openings = []) {
+  /** @type {Map<string, { opening: bigint, debt: bigint, paid: bigint, orders: number, missingPrice: number }>} */
   const by = new Map();
   const of = (c) => {
-    if (!by.has(c)) by.set(c, { debt: 0n, paid: 0n, orders: 0, missingPrice: 0 });
-    return /** @type {{ debt: bigint, paid: bigint, orders: number, missingPrice: number }} */ (by.get(c));
+    if (!by.has(c)) by.set(c, { opening: 0n, debt: 0n, paid: 0n, orders: 0, missingPrice: 0 });
+    return /** @type {{ opening: bigint, debt: bigint, paid: bigint, orders: number, missingPrice: number }} */ (by.get(c));
   };
   for (const o of orders) {
     // İptal edilmiş sipariş yalnızca teslim alınan malın borcuyla sayılır (3.93.0, karar 288 — O6): çağıran total olarak NET
@@ -291,10 +378,40 @@ export function supplierBalances(orders, payments) {
     if (p.voidedAt) continue;
     of(p.currency).paid += cents(p.amount);
   }
+  for (const x of openings) {
+    if (x.voidedAt) continue;
+    of(x.currency).opening += signedCents(x.amount);
+  }
   return Object.fromEntries([...by.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([c, b]) => [c, {
-    debt: money(b.debt), paid: money(b.paid), balance: money(b.debt - b.paid), orders: b.orders, missingPrice: b.missingPrice,
+    opening: money(b.opening), debt: money(b.debt), paid: money(b.paid), balance: money(b.opening + b.debt - b.paid), orders: b.orders, missingPrice: b.missingPrice,
   }]));
 }
+
+/** İşaretli tutar → sent (açılış bakiyesi eksi olabilir) */
+export function signedCents(v) {
+  const s = String(v ?? '0').trim();
+  return s.startsWith('-') ? -cents(s.slice(1)) : cents(s);
+}
+
+/**
+ * Açılış bakiyesi formu (M2): tarih, tutar (işaretli, 0 değil, en çok 2 ondalık, mutlak değer ≤ 100.000.000), para birimi,
+ * yön (DEBT: biz tedarikçiye borçluyuz → +; CREDIT: tedarikçi bize borçlu → −), not. Hata: DATE, AMOUNT, CURRENCY, TOO_LONG.
+ * @returns {{ ok: true, value: { amount: string, currency: string, note: string | null } } | { ok: false, code: string }}
+ */
+export function parseOpening({ amount, currency, direction, note }) {
+  const a = String(amount ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^\d{1,9}(\.\d{1,2})?$/.test(a) || Number(a) <= 0 || Number(a) > 100_000_000) return { ok: false, code: 'AMOUNT' };
+  const cur = String(currency ?? '').trim().toUpperCase();
+  if (!SUPPLIER_CURRENCIES.includes(cur)) return { ok: false, code: 'CURRENCY' };
+  if (direction !== 'DEBT' && direction !== 'CREDIT') return { ok: false, code: 'DIRECTION' };
+  const n = String(note ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (n.length > LIMITS.paymentNote) return { ok: false, code: 'TOO_LONG' };
+  const fixed = money(cents(a));
+  return { ok: true, value: { amount: direction === 'CREDIT' ? `-${fixed}` : fixed, currency: cur, note: n || null } };
+}
+
+/** Tedarikçi kodu eksik satırlar (M5): e-postaya yanlış kod gitmesin diye onay / gönderim engellenir */
+export const missingSupplierCodes = (lines) => (lines ?? []).filter((l) => !String(l.supplierCode ?? '').trim()).map((l) => String(l.code ?? ''));
 
 /**
  * Teslim alınan malın değeri (saf — karar 288, O6): satır başına net teslim alınan adet × birim fiyat (tek yuvarlama —

@@ -103,7 +103,7 @@ dbTest('tedarikçi: ekle / düzenle / pasif (silinmez); ad tekil (Türkçe I); p
   const r = await svc.saveSupplier(db, { name: 'Işık Profil', contactName: 'Ayşe', email: 'siparis@isik.test', phone: '+90 212 000', address: 'İstanbul', currency: 'EUR' }, A());
   assert.ok(r.ok);
   assert.deepEqual(await svc.saveSupplier(db, { name: 'IŞIK PROFİL', email: '', currency: 'EUR' }, A()), { ok: false, code: 'EXISTS' });
-  assert.deepEqual(await svc.saveSupplier(db, { name: 'Yeni', email: 'a@b.test, c@d.test', currency: 'EUR' }, A()), { ok: false, code: 'EMAIL', errors: ['EMAIL'] });
+  assert.deepEqual(await svc.saveSupplier(db, { name: 'Yeni', email: 'a@b.test, c@d.test', currency: 'EUR' }, A()), { ok: false, code: 'EMAIL', index: 0 });
   // Düzenleme: e-posta yalnızca burada değişir; değişen alanlar denetim kaydında önce / sonra
   assert.deepEqual(await svc.saveSupplier(db, { id: r.id, name: 'Işık Profil', contactName: 'Ayşe', email: 'yeni@isik.test', phone: '+90 212 000', address: 'İstanbul', currency: 'EUR', isActive: true }, A()), { ok: true, id: r.id });
   const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'SUPPLIER_UPDATED', entityId: r.id } });
@@ -114,7 +114,8 @@ dbTest('tedarikçi: ekle / düzenle / pasif (silinmez); ad tekil (Türkçe I); p
   assert.deepEqual(await svc.createDraftOrder(db, { supplierId: r.id }, A(), { now: NOW, timeZone: TZ }), { ok: false, code: 'SUPPLIER_INACTIVE' });
   assert.ok((await svc.setSupplierActive(db, { id: r.id, active: true }, A())).ok);
   assert.deepEqual((await db.auditLog.findMany({ where: { entityId: r.id }, orderBy: { createdAt: 'asc' } })).map((a) => a.action),
-    ['SUPPLIER_CREATED', 'SUPPLIER_UPDATED', 'SUPPLIER_DEACTIVATED', 'SUPPLIER_ACTIVATED']);
+    // M9 (3.97.0): adres listesi değişikliği ayrı denetim kaydıdır (ilk kayıt ve e-posta düzenlemesi)
+    ['SUPPLIER_CREATED', 'SUPPLIER_EMAILS_CHANGED', 'SUPPLIER_UPDATED', 'SUPPLIER_EMAILS_CHANGED', 'SUPPLIER_DEACTIVATED', 'SUPPLIER_ACTIVATED']);
   // Para birimi: siparişi olan tedarikçide değişmez
   const c = await svc.createDraftOrder(db, { supplierId: r.id }, A(), { now: NOW, timeZone: TZ });
   assert.ok(c.ok);
@@ -209,7 +210,8 @@ dbTest('onay / gönder: tek iş; çift tıklama ve eşzamanlı istekler ikinci i
   const noMail = await supplier('Adressiz', { email: '' });
   const id2 = await draft(noMail, [{ code: 'MC12', qty: '1' }]);
   assert.deepEqual(await approve(id2), { ok: false, code: 'NO_EMAIL' });
-  await db.supplier.update({ where: { id: noMail.id }, data: { email: 'bozuk adres' } }); // form dışı (eski veri)
+  // Form dışı (eski veri): etkin ama geçersiz adres → sessizce atlanmaz, gönderim engellenir
+  await db.supplierEmail.create({ data: { supplierId: noMail.id, email: 'bozuk adres', emailKey: 'bozuk adres', isActive: true, isPrimary: true } });
   assert.deepEqual(await approve(id2), { ok: false, code: 'BAD_EMAIL' });
   const o2 = await loadOrder(id2);
   assert.deepEqual([o2.status, o2.revisions[0].finalizedAt, (await jobs(id2)).length], ['TASLAK', null, 0]);
@@ -252,7 +254,7 @@ dbTest('işçi: başarılı gönderim → "Gönderildi"; tek e-posta (Türkçe k
   assert.equal(o.status, 'GONDERILDI');
   assert.ok(o.sentAt);
   const [job] = await jobs(id);
-  assert.deepEqual([job.status, job.payload.to, job.payload.attachments, job.payload.prices], ['SENT', sup.email, 1, true]);
+  assert.deepEqual([job.status, job.payload.sentTo, job.payload.attachments, job.payload.prices], ['SENT', [sup.email], 1, true]);
   assert.ok(await db.auditLog.findFirst({ where: { action: 'SUPPLIER_ORDER_EMAIL_SENT', entityId: id } }));
   // İkinci tur: iş kapalı → gönderim yok
   const again = await dispatch(t);
@@ -304,7 +306,8 @@ dbTest('işçi: hata → "Gönderilemedi" (asla "Gönderildi" değil) + yönetic
   let now = new Date();
   assert.equal((await dispatch(conn, now)).retried, 1);
   let [j] = await jobs(id2);
-  assert.deepEqual([j.status, j.lastError, j.payload.sendingAt], ['PENDING', 'SMTP_CONN', null]);
+  // Alıcı başına "gönderiliyor" işareti (M9) temizlenmiş: yeniden deneme yarıda kalmış sayılmaz
+  assert.deepEqual([j.status, j.lastError, j.payload.sending], ['PENDING', 'SMTP_CONN', null]);
   assert.ok(j.availableAt > now);
   assert.equal((await loadOrder(id2)).status, 'GONDERIM_BEKLIYOR');
   assert.equal((await dispatch(conn, now)).retried, 0, 'bekleme süresi dolmadan denenmez');
@@ -352,7 +355,7 @@ dbTest('revizyon: gönderilmiş sipariş değişmez; yeni revizyon ayrı onaylan
   // Revizyon 1 olduğu gibi duruyor
   assert.deepEqual(o.revisions.map((x) => [x.revision, x.lines.map((l) => `${l.code}×${l.qty}`).join(','), !!x.finalizedAt]), [[1, 'MC12×5', true], [2, 'MC16×7', true]]);
   // Hesaba son kesin revizyon girer (çift sayılmaz)
-  assert.deepEqual((await svc.supplierAccount(db, sup.id)).balances.EUR, { debt: '7.00', paid: '0.00', balance: '7.00', orders: 1, missingPrice: 0 });
+  assert.deepEqual((await svc.supplierAccount(db, sup.id)).balances.EUR, { opening: '0.00', debt: '7.00', paid: '0.00', balance: '7.00', orders: 1, missingPrice: 0 });
 }));
 
 dbTest('tahmini yükleme tarihi: yalnızca yönetici; 2 gün önce yöneticiye bir kez; tarih değişince yeni tarihe göre; başka role ve müşteriye gitmez; cam siparişine dokunmaz', offline(async () => {
@@ -424,8 +427,8 @@ dbTest('hesap: borç onaylanınca doğar (taslak değil), iptal düşer; ödeme 
   }
   const acc = await svc.supplierAccount(db, sup.id);
   assert.deepEqual(acc.balances, {
-    EUR: { debt: '165.00', paid: '50.00', balance: '115.00', orders: 2, missingPrice: 1 },
-    USD: { debt: '0.00', paid: '10.00', balance: '-10.00', orders: 0, missingPrice: 0 },
+    EUR: { opening: '0.00', debt: '165.00', paid: '50.00', balance: '115.00', orders: 2, missingPrice: 1 },
+    USD: { opening: '0.00', debt: '0.00', paid: '10.00', balance: '-10.00', orders: 0, missingPrice: 0 },
   });
   assert.deepEqual(acc.orders.map((o) => [o.status, o.counts]).sort(), [['GONDERIM_BEKLIYOR', true], ['GONDERIM_BEKLIYOR', true], ['IPTAL', false]].sort());
   assert.ok(!acc.orders.some((o) => o.id === id2), 'taslak hesapta yok');

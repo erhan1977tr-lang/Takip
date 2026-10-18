@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT, type MsgKey } from '@/lib/i18n';
 import { Badge } from '@/components/StatusBadge';
 import { listSuppliers } from '@/server/suppliers/service.js';
-import { SUPPLIER_CURRENCIES, supplierEmail } from '@/server/suppliers/rules.js';
+import { MAX_SUPPLIER_EMAILS, SUPPLIER_CURRENCIES, activeRecipients } from '@/server/suppliers/rules.js';
+import { SupplierEmails } from './SupplierEmails';
 import { SettingsTabs } from '../SettingsTabs';
 import { saveSupplierAction, toggleSupplierAction } from './actions';
 
@@ -16,6 +17,7 @@ const OK: Record<string, MsgKey> = {
 // Formun kendi hataları (parseSupplier) önce, sonra servisin genel kodları
 const ERR: Record<string, MsgKey> = {
   NAME: 'supplier.settings.errors.NAME', TOO_LONG: 'supplier.settings.errors.TOO_LONG', EMAIL: 'supplier.settings.errors.EMAIL',
+  EMAIL_DUPLICATE: 'supplier.errors.EMAIL_DUPLICATE', EMAIL_LIMIT: 'supplier.errors.EMAIL_LIMIT',
   CURRENCY: 'supplier.settings.errors.CURRENCY', EXISTS: 'supplier.settings.errors.EXISTS', CURRENCY_LOCKED: 'supplier.settings.errors.CURRENCY_LOCKED',
   NOT_FOUND: 'supplier.errors.NOT_FOUND', FORBIDDEN: 'supplier.errors.FORBIDDEN',
 };
@@ -31,7 +33,8 @@ export default async function SuppliersSettingsPage({ searchParams }: { searchPa
   const sp = await searchParams;
   const suppliers = await listSuppliers(db);
   const editing = sp.duzenle ? suppliers.find((s) => s.id === sp.duzenle) ?? null : null;
-  const noEmail = suppliers.filter((s) => s.isActive && !supplierEmail(s.email)).length;
+  const sendTo = (s: (typeof suppliers)[number]) => activeRecipients(s.emails);
+  const noEmail = suppliers.filter((s) => s.isActive && sendTo(s).length === 0).length;
   const okText = sp.ok && Object.hasOwn(OK, sp.ok) ? t(OK[sp.ok]) : null;
   const errText = sp.error ? t(Object.hasOwn(ERR, sp.error) ? ERR[sp.error] : 'supplier.errors.OTHER') : null;
 
@@ -59,11 +62,6 @@ export default async function SuppliersSettingsPage({ searchParams }: { searchPa
             <input id="sp-contact" name="contactName" maxLength={120} defaultValue={editing?.contactName ?? ''} />
           </div>
           <div>
-            <label htmlFor="sp-email">{t('supplier.settings.field.email')}</label>
-            <input id="sp-email" name="email" type="email" maxLength={200} defaultValue={editing?.email ?? ''} autoComplete="off" />
-            <div className="hint">{t('supplier.settings.field.emailHint')}</div>
-          </div>
-          <div>
             <label htmlFor="sp-phone">{t('supplier.settings.field.phone')} <span className="muted small">({t('supplier.settings.field.optional')})</span></label>
             <input id="sp-phone" name="phone" maxLength={40} defaultValue={editing?.phone ?? ''} />
           </div>
@@ -78,6 +76,17 @@ export default async function SuppliersSettingsPage({ searchParams }: { searchPa
             <label htmlFor="sp-address">{t('supplier.settings.field.address')} <span className="muted small">({t('supplier.settings.field.optional')})</span></label>
             <textarea id="sp-address" name="address" rows={2} maxLength={400} defaultValue={editing?.address ?? ''} />
           </div>
+        </div>
+        <div style={{ marginTop: 10 }} id="eposta">
+          <SupplierEmails
+            max={MAX_SUPPLIER_EMAILS}
+            initial={editing ? (editing.emails.length ? editing.emails : editing.email ? [{ email: editing.email, isActive: true, isPrimary: true }] : []).map((e) => ({ email: e.email, isActive: e.isActive, isPrimary: e.isPrimary })) : []}
+            text={{
+              title: t('supplier.settings.field.email'), hint: t('supplier.settings.field.emailHint'), add: t('supplier.settings.emails.add'), remove: t('supplier.settings.emails.remove'),
+              active: t('supplier.settings.emails.active'), primary: t('supplier.settings.emails.primary'), limit: t('supplier.settings.emails.limit'),
+              email: t('supplier.settings.emails.email'), empty: t('supplier.settings.emails.empty'),
+            }}
+          />
         </div>
         {editing && (
           <label className="check" style={{ marginTop: 10 }}>
@@ -108,7 +117,14 @@ export default async function SuppliersSettingsPage({ searchParams }: { searchPa
                   <tr key={s.id} id={`t-${s.id}`} data-supplier={s.name} style={s.isActive ? undefined : { opacity: 0.6 }}>
                     <td><b>{s.name}</b>{s.address && <div className="muted small" style={{ whiteSpace: 'pre-line' }}>{s.address}</div>}</td>
                     <td>{s.contactName ?? '—'}</td>
-                    <td data-email>{supplierEmail(s.email) ? <span className="mono">{s.email}</span> : <Badge tone="warn">{t('supplier.settings.noEmail')}</Badge>}</td>
+                    <td data-email>
+                      {s.emails.length === 0 ? <Badge tone="warn">{t('supplier.settings.noEmail')}</Badge> : s.emails.map((e) => (
+                        <div key={e.id} className="mono small" data-email-active={e.isActive ? '1' : '0'} style={e.isActive ? undefined : { opacity: 0.6 }}>
+                          {e.email}{e.isPrimary && <span className="muted"> · {t('supplier.settings.emails.primary')}</span>}{!e.isActive && <span className="muted"> · {t('supplier.settings.inactive')}</span>}
+                        </div>
+                      ))}
+                      {s.emails.length > 0 && sendTo(s).length === 0 && <Badge tone="warn">{t('supplier.settings.noEmail')}</Badge>}
+                    </td>
                     <td>{s.phone ?? '—'}</td>
                     <td>{s.currency}</td>
                     <td className="num">{s._count.products}</td>

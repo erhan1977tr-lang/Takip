@@ -24,7 +24,7 @@ export async function editorProps(actor: { id: string; role: string }, t: T, loc
     const def = profileDefaults(p);
     return {
       id: p.id, code: p.code, label: localName(p, locale), nameRo: p.nameRo || p.nameTr, category: p.category ? localName(p.category, locale) : '',
-      unit: unitLabel(p.unitCode, locale), content: perMlContent(p), price: def.price, cost: def.cost,
+      unit: unitLabel(p.unitCode, locale), content: perMlContent(p), price: def.price, cost: def.cost, stockCost: def.stockCost, catalogCost: def.catalogCost,
     };
   });
   const sys = (s: { id: string; code: string; nameTr: string; nameRo: string }) => ({ id: s.id, label: `${s.code} — ${localName(s, locale)}` });

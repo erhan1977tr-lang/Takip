@@ -74,11 +74,11 @@ const PACK_FIELDS = ['packContent', 'packMeasure'];
 const packOf = (p) => ({ packContent: p.packContent == null ? null : String(Number(p.packContent.toString())), packMeasure: p.packMeasure ?? null });
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]));
 // Alış bilgisi (Paket 6, karar 180): tedarikçi, alış fiyatı, alış para birimi, sipariş birimi — yalnızca SUPPLIER_MANAGE
-const PURCHASE_FIELDS = ['supplierId', 'purchasePrice', 'purchaseCurrency', 'purchaseUnit'];
+const PURCHASE_FIELDS = ['supplierId', 'purchasePrice', 'purchaseCurrency', 'purchaseUnit', 'supplierCode'];
 /** Alış bilgisi karşılaştırma için düz değer ("12.5"; boş → null) */
 const purchaseOf = (p) => ({
   supplierId: p.supplierId ?? null, purchasePrice: p.purchasePrice == null ? null : String(Number(p.purchasePrice.toString())),
-  purchaseCurrency: p.purchaseCurrency ?? null, purchaseUnit: p.purchaseUnit ?? null,
+  purchaseCurrency: p.purchaseCurrency ?? null, purchaseUnit: p.purchaseUnit ?? null, supplierCode: p.supplierCode ?? null,
 });
 const lock = (tx) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('profile-catalog', 0))`;
 /**
@@ -109,7 +109,7 @@ async function movedIds(tx, ids) {
  * birimi, sipariş birimi (server/suppliers/rules.js → parsePurchase). Verilmezse bu alanlar değişmez; müşterinin liste
  * fiyatından tamamen ayrıdır. Yeni seçilen tedarikçi etkin olmalı (mevcut pasif tedarikçi korunabilir).
  * @param {{ packContent: string | null, packMeasure: 'M' | 'BUC' | null }} [pack]
- * @param {{ supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null }} [purchase]
+ * @param {{ supplierId: string | null, purchasePrice: string | null, purchaseCurrency: string | null, purchaseUnit: string | null, supplierCode?: string | null }} [purchase]
  * @returns {Promise<{ ok: true, id: string } | { ok: false, code: 'EXISTS' | 'NOT_FOUND' | 'CATEGORY' | 'FORBIDDEN' | 'SUPPLIER' | 'UNIT_LOCKED' }>}
  */
 export async function saveProduct(db, id, value, actor, pack = undefined, purchase = undefined) {
@@ -119,13 +119,15 @@ export async function saveProduct(db, id, value, actor, pack = undefined, purcha
     await lock(tx);
     const category = await tx.profileCategory.findUnique({ where: { code: value.categoryCode } });
     if (!category) return { ok: false, code: 'CATEGORY' };
+    const cur = id ? await tx.profileProduct.findUnique({ where: { id }, include: { category: true } }) : null;
+    // Tedarikçi ürün kodu verilmediyse (eski çağıranlar) mevcut kod korunur — sessizce silinmez
+    if (purchase && purchase.supplierCode === undefined) purchase = { ...purchase, supplierCode: cur?.supplierCode ?? null };
     const data = {
       categoryId: category.id, nameRo: value.nameRo, nameTr: value.nameTr, unitCode: value.unitCode,
       listPrice: value.listPrice == null ? null : value.listPrice.toFixed(2), isActive: value.isActive,
       ...(pack ? { packContent: pack.packContent, packMeasure: pack.packMeasure } : {}),
-      ...(purchase ? { supplierId: purchase.supplierId, purchasePrice: purchase.purchasePrice, purchaseCurrency: purchase.purchaseCurrency, purchaseUnit: purchase.purchaseUnit } : {}),
+      ...(purchase ? { supplierId: purchase.supplierId, purchasePrice: purchase.purchasePrice, purchaseCurrency: purchase.purchaseCurrency, purchaseUnit: purchase.purchaseUnit, supplierCode: purchase.supplierCode ?? null } : {}),
     };
-    const cur = id ? await tx.profileProduct.findUnique({ where: { id }, include: { category: true } }) : null;
     if (purchase?.supplierId && purchase.supplierId !== cur?.supplierId) {
       const sup = await tx.supplier.findUnique({ where: { id: purchase.supplierId }, select: { isActive: true } });
       if (!sup?.isActive) return { ok: false, code: 'SUPPLIER' };

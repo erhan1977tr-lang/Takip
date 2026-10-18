@@ -36,6 +36,7 @@ const MSG: Record<string, [string, MsgKey]> = {
   purchase_price: ['error', 'supplier.catalog.errors.purchase_price'],
   purchase_currency: ['error', 'supplier.catalog.errors.purchase_currency'],
   purchase_unit: ['error', 'supplier.catalog.errors.purchase_unit'],
+  supplier_code: ['error', 'supplier.catalog.errors.supplier_code'],
   supplier: ['error', 'supplier.catalog.errors.supplier'],
   forbidden: ['error', 'supplier.catalog.errors.forbidden'],
 };
@@ -168,6 +169,11 @@ export default async function ProfileCatalogPage({ searchParams }: { searchParam
                       {UNITS.map((u) => <option key={u.code} value={u.code}>{u.code} — {u.name[locale]}</option>)}
                     </select>
                     <div className="hint">{t('supplier.catalog.unitHint')}</div>
+                  </div>
+                  <div>
+                    <label htmlFor="pc-scode">{t('supplier.catalog.supplierCode')}</label>
+                    <input id="pc-scode" name="supplierCode" maxLength={60} defaultValue={editing?.supplierCode ?? ''} autoComplete="off" />
+                    <div className="hint">{t('supplier.catalog.supplierCodeHint', { code: editing?.code ?? '—' })}</div>
                   </div>
                 </div>
               </div>

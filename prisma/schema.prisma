@@ -1245,9 +1245,13 @@ model ProfileProduct {
   purchasePrice    Decimal?  @db.Decimal(12, 4)
   purchaseCurrency String?
   purchaseUnit     String?
+  // Tedarikçinin kendi ürün kodu (DÜZELTME 10 M5): tedarikçi sipariş e-postasında YALNIZCA bu yazılır; GKH iç kodu (code)
+  // ayrıdır ve INTRARE MARFĂ belgesinde kullanılır. Boşsa sipariş onaylanmaz (yanlış kodla sessiz gönderim yok).
+  supplierCode     String?
   supplierLines    SupplierOrderLine[]
   receiptLines     SupplierReceiptLine[]
   receiptCorrectionLines SupplierReceiptCorrectionLine[]
+  transportAllocations TransportAllocation[]
   prices     ProfilePriceItem[]
   stockMoves StockMovement[]
   calcItems  ProfileCalcItem[]
@@ -1921,6 +1925,8 @@ model Supplier {
   products    ProfileProduct[]
   orders      SupplierOrder[]
   payments    SupplierPayment[]
+  emails      SupplierEmail[]
+  openings    SupplierOpeningBalance[]
 
   @@index([isActive, name])
 }
@@ -1993,6 +1999,8 @@ model SupplierOrderLine {
   productId   String
   product     ProfileProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
   code        String   // ürün kodu (kopya)
+  // Tedarikçinin ürün kodu (M5): onay anında üründen kopyalanır; kesin revizyonda değişmez. Eski satırlarda boş.
+  supplierCode String?
   description String   // açıklama (Türkçe adın kopyası; yönetici değiştirebilir)
   color       String?  // Renk / RAL (serbest metin)
   qty         Int
@@ -2049,6 +2057,7 @@ model SupplierReceipt {
   lines       SupplierReceiptLine[]
   stockMoves  StockMovement[]
   corrections SupplierReceiptCorrection[]
+  transports  TransportCostReceipt[]
 
   @@unique([orderId, seq])
 }
@@ -2071,6 +2080,7 @@ model SupplierReceiptLine {
   unitCode     String
   sortOrder    Int      @default(0)
   corrections  SupplierReceiptCorrectionLine[]
+  transportAllocations TransportAllocation[]
 
   @@index([receiptId, sortOrder])
   @@index([orderLineId])
@@ -2252,4 +2262,100 @@ model CommercialOfferVersion {
   updatedAt   DateTime        @updatedAt
 
   @@unique([offerId, version])
+}
+
+// Tedarikçi e-posta adresleri (DÜZELTME 10 M9, 3.97.0): tedarikçi başına en çok 10 farklı adres. Sipariş e-postası bütün ETKİN
+// adreslere gider (her alıcıya ayrı ileti — alıcılar birbirini görmez). Supplier.email eski sürümle uyum için birincil adresin
+// kopyasıdır (yalnızca servis eşitler).
+model SupplierEmail {
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  email      String
+  emailKey   String   // küçük harfli biçim — aynı tedarikçide tekil
+  isPrimary  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([supplierId, emailKey])
+  @@index([supplierId, sortOrder])
+}
+
+// Tedarikçi açılış bakiyesi (DÜZELTME 10 M2, 3.97.0): geçmiş dönemden devreden borç (+, biz tedarikçiye) ya da alacak (−).
+// Sipariş borcundan ve ödemelerden AYRI tutulur; para birimleri ayrı. Silinmez / değişmez: düzeltme iptal (gerekçeli) ya da
+// karşı kayıtla (correctsId) yapılır.
+model SupplierOpeningBalance {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  asOf        DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String
+  note        String?
+  correctsId  String?
+  requestKey  String   @unique
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([supplierId, asOf])
+}
+
+// Nakliye gideri (DÜZELTME 10 M6, 3.97.0): taşıyıcının faturası — ürün tedarikçisinin borcundan AYRI izlenir; tutarı bağlı mal
+// kabullerinin ürünlerine gerçek miktara göre birim başına eşit pay olarak dağıtılır (TransportAllocation, bir kez, değişmez)
+// ve ürünün gerçekleşen stok maliyetine girer. RON tutar fatura tarihindeki KAYITLI kurla (yönetici girer) EUR'ya çevrilir;
+// kur ve tarih kayıtta sabittir.
+model TransportCost {
+  id          String   @id @default(cuid())
+  carrierName String
+  invoiceNo   String?
+  invoiceDate DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String   // EUR | RON
+  fxRate      Decimal? @db.Decimal(12, 6) // 1 EUR = fxRate RON (yalnızca RON)
+  fxDate      DateTime? @db.Date
+  amountEur   Decimal  @db.Decimal(14, 2)
+  note        String?
+  requestKey  String   @unique
+  paidOn      DateTime? @db.Date
+  paidById    String?
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  receipts    TransportCostReceipt[]
+  allocations TransportAllocation[]
+
+  @@index([invoiceDate])
+  @@index([carrierName])
+}
+
+model TransportCostReceipt {
+  transportId String
+  transport   TransportCost   @relation(fields: [transportId], references: [id], onDelete: Restrict)
+  receiptId   String
+  receipt     SupplierReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+
+  @@id([transportId, receiptId])
+  @@index([receiptId])
+}
+
+model TransportAllocation {
+  id            String   @id @default(cuid())
+  transportId   String
+  transport     TransportCost       @relation(fields: [transportId], references: [id], onDelete: Restrict)
+  receiptLineId String
+  receiptLine   SupplierReceiptLine @relation(fields: [receiptLineId], references: [id], onDelete: Restrict)
+  productId     String
+  product       ProfileProduct      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  qty           Int
+  amountEur     Decimal  @db.Decimal(14, 4)
+
+  @@unique([transportId, receiptLineId])
+  @@index([productId])
 }

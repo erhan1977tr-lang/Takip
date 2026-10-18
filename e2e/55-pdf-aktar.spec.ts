@@ -124,7 +124,10 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
     await p.goto(orderUrl);
     const html = await p.content();
     expect(html).not.toContain('/dosya/fabrika/');
-    expect(html).not.toContain('97001');
+    // Fabrika numarası tek başına bir sayı olarak geçmemeli; sayfadaki rastgele karma / kimlik dizgilerinin
+    // içindeki tesadüfi "97001" (Next derleme karmaları her derlemede değişir) sızıntı değildir.
+    expect(html).not.toMatch(/(?<![0-9A-Za-z])97001(?![0-9A-Za-z])/);
+    expect(await p.locator('body').innerText()).not.toContain('97001');
   }
 
   // Satış satırı düzenleyip kaydeder ve teklifi ELLE yöneticiye gönderir (mevcut düğme)

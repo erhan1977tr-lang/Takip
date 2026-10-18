@@ -331,7 +331,8 @@ dbTest('raporlar: büyük rapor — sorgu sayısı sipariş sayısından bağım
     const started = Date.now();
     const r = await runReport(counting, { kind, month: '2026-10' }, { actor: act(admin), now: NOW, timeZone: TZ });
     assert.equal(r.ok, true, kind);
-    assert.ok(calls <= 15, `${kind}: ${calls} sorgu`);
+    // finans: + tedarikçi bakiyeleri (DÜZELTME 10 M2, sabit 4–5 sorgu)
+    assert.ok(calls <= (kind === 'finance' ? 21 : 15), `${kind}: ${calls} sorgu`);
     assert.ok(Date.now() - started < 15_000, `${kind}: süre`);
   }
   const g = (await report({ kind: 'glass', month: '2026-10' })).report;
