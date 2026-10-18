@@ -64,14 +64,6 @@ export function commercialCategoryRank(category) {
  */
 export const CATEGORY_ORDER_VERSION = 2;
 
-/**
- * Ticari teklifte cam maliyetinin otomatik önerildiği fabrika alış listesi (DÜZELTME 10 M7, 3.96.0): mevcut fiyat tablosu
- * (PriceTable, tür SALES = fabrika alış fiyatı) bu ADLA eşleşir — büyük / küçük harf ve boşluk farkı yok sayılır. Bulunamaz,
- * birden çok eşleşir, etkin değil ya da EUR değilse öneri YOKTUR (değer uydurulmaz).
- */
-export const GLASS_COST_TABLE_NAME = 'GKH Trakya 2026';
-export const tableNameKey = (s) => String(s ?? '').normalize('NFC').toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
-
 /** Teklif numarası ekranda / belgede 4 hane: 496 → "0496" */
 export const offerNoText = (n) => String(n).padStart(4, '0');
 
@@ -255,7 +247,7 @@ export function parseOffer(v, cat) {
     const catalogText = [prod.nameRo, prod.colorRo].map((s) => String(s ?? '').trim()).filter(Boolean).join(', ');
     const description = clean(l?.description, LIMITS.desc + 1) || catalogText;
     if (description.length > LIMITS.desc) return { ok: false, code: 'DESC', section: 'glass', index: i };
-    // Fabrika alış listesinin (GLASS_COST_TABLE_NAME) o andaki fiyatı sunucuda okunur ve sürüme kopyalanır; yöneticinin girdiği
+    // Teklifi hazırlayanın fiyat tablosundaki (Tanımlar → Fiyat Tabloları, server/commercial/glass-cost.js) o andaki fiyat sunucuda okunur ve sürüme kopyalanır; yöneticinin girdiği
     // maliyet bundan farklıysa satır "MANUAL" işaretlenir (denetim kaydına da yazılır). Liste fiyatı yoksa kaynak boş kalır.
     const listCost = cat.glassCosts?.get(prod.id) ?? null;
     const costSource = cost == null ? null : listCost != null && toScaled(listCost, 4) === toScaled(cost, 4) ? 'LIST' : listCost != null ? 'MANUAL' : null;
