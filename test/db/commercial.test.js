@@ -9,6 +9,8 @@ import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
 const svc = await import('../../server/commercial/service.js');
 const { customerView, computeOffer } = await import('../../server/commercial/rules.js');
 const { runRailingCalc, loadCalcOptions } = await import('../../server/profile/calc-service.js');
+const { assignTable } = await import('../../server/pricing/tables.js');
+const { can } = await import('../../server/auth/permissions.js');
 
 let db, factory, firm, glass;
 const U = {};
@@ -184,11 +186,14 @@ dbTest('ticari teklif: profil miktarları mevcut hesaplayıcıdan (yalnızca met
   assert.equal(await db.stockMovement.count(), moves);
 }));
 
-dbTest('DÜZELTME 10: kategori sırası (Alüminyum → Conta → …) ve "GKH Trakya 2026" cam maliyeti — elle değişiklik denetimde; kesin sürüm sabit', offline(async () => {
-  const table = await db.priceTable.create({ data: { name: 'GKH Trakya 2026', kind: 'SALES', currency: 'EUR', items: { create: [{ glassProductId: glass.id, unitPrice: '41.50' }] } } });
+dbTest('DÜZELTME 10: kategori sırası (Alüminyum → Conta → …) ve atanmış fiyat tablosundan cam maliyeti — elle değişiklik denetimde; kesin sürüm sabit', offline(async () => {
+  // Gerçek tablo adı "GKH - Trakya 2026"; ad aranmaz — tablo mevcut atama sistemiyle (Fiyat Tabloları → kullanıcıya ata) seçilir
+  const table = await db.priceTable.create({ data: { name: 'GKH - Trakya 2026', kind: 'SALES', currency: 'EUR', items: { create: [{ glassProductId: glass.id, unitPrice: '41.50' }] } } });
   try {
+    const assigned = await assignTable(db, U.admin.id, table.id, A(), (role) => can(role, 'OFFER_PREPARE'));
+    assert.equal(assigned.ok, true);
     const cat = await svc.editorCatalog(db, A());
-    assert.equal(cat.glassCostTable, 'GKH Trakya 2026');
+    assert.equal(cat.glassCostTable, 'GKH - Trakya 2026');
     assert.equal(cat.glass.find((g) => g.id === glass.id)?.listCost, '41.5');
     // Düzenleyicideki profil ürünleri modül sırasıyla: önce PROFILE_ALUMINIU, sonra GARNITURI, PLASTICE, ACCESORII
     const order = ['PROFILE_ALUMINIU', 'GARNITURI', 'PLASTICE', 'ACCESORII'];

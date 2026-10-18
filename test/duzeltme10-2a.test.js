@@ -1,11 +1,11 @@
 // DÜZELTME 10 — Aşama 2A (3.96.0): M1 ticari teklif kategori sırası + yeni sekme bağlantıları, M4 teslimat fotoğrafı küçük
-// resmi (kırpma yok, yakınlaştırılabilir önizleme), M7 ticari teklifte "GKH Trakya 2026" cam alış maliyeti önerisi.
+// resmi (kırpma yok, yakınlaştırılabilir önizleme), M7 ticari teklifte cam maliyeti önerisi (3.97.5: atanmış fiyat tablosundan).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  COMMERCIAL_CATEGORY_ORDER, CATEGORY_ORDER_VERSION, GLASS_COST_TABLE_NAME, commercialCategoryRank, customerView, parseOffer, tableNameKey,
+  COMMERCIAL_CATEGORY_ORDER, CATEGORY_ORDER_VERSION, commercialCategoryRank, customerView, parseOffer,
 } from '../server/commercial/rules.js';
 import { glassCostTable } from '../server/commercial/glass-cost.js';
 
@@ -83,24 +83,28 @@ test('M7: liste maliyeti sunucuda kopyalanır; elle farklı maliyet MANUAL; list
   for (const k of ['listCost', 'costSource', '41.5', 'MANUAL']) assert.ok(!json.includes(k), k);
 });
 
-test('M7: maliyet listesi adla, tek, etkin, EUR, SALES tablo; aksi hâlde öneri yok', async () => {
-  assert.equal(GLASS_COST_TABLE_NAME, 'GKH Trakya 2026');
-  assert.equal(tableNameKey('  gkh   TRAKYA 2026 '), tableNameKey('GKH Trakya 2026'));
-  const fake = (tables, items = []) => ({
-    priceTable: { findMany: async ({ where }) => tables.filter((t) => t.kind === where.kind) },
+test('M7: cam maliyeti kullanıcıya atanmış etkin SALES tablosundan (yoksa varsayılan); ad aranmaz; EUR değilse öneri yok', async () => {
+  const fake = (tables, items = [], user = { priceTableId: null }) => ({
+    user: { findUnique: async () => user },
+    priceTable: { findMany: async ({ where }) => tables.filter((t) => t.kind === where.kind && (where.isActive === undefined || t.isActive === where.isActive)) },
     priceTableItem: { findMany: async ({ where }) => items.filter((i) => i.tableId === where.tableId && (!where.glassProductId || where.glassProductId.in.includes(i.glassProductId))) },
   });
   const dec = (s) => ({ toString: () => s, valueOf: () => Number(s) });
-  const T = { id: 't1', name: 'GKH Trakya 2026', kind: 'SALES', isActive: true, currency: 'EUR' };
-  const items = [{ tableId: 't1', glassProductId: 'g1', unitPrice: dec('41.50') }, { tableId: 't1', glassProductId: 'g2', unitPrice: dec('0') }];
-  const ok = await glassCostTable(fake([T], items));
-  assert.equal(ok.table.name, 'GKH Trakya 2026');
+  const T = { id: 't1', name: 'GKH - Trakya 2026', kind: 'SALES', isActive: true, isDefault: false, currency: 'EUR' };
+  const D = { id: 't0', name: 'Varsayılan', kind: 'SALES', isActive: true, isDefault: true, currency: 'EUR' };
+  const items = [{ tableId: 't1', glassProductId: 'g1', unitPrice: dec('41.50') }, { tableId: 't1', glassProductId: 'g2', unitPrice: dec('0') }, { tableId: 't0', glassProductId: 'g1', unitPrice: dec('30') }];
+  // Atanmış tablo (adı "GKH - Trakya 2026" — tire ve boşluk fark etmez, ad hiç aranmaz)
+  const ok = await glassCostTable(fake([T, D], items, { priceTableId: 't1' }), 'u1');
+  assert.equal(ok.table.name, 'GKH - Trakya 2026');
   assert.deepEqual([...ok.prices], [['g1', '41.50']]); // 0 fiyat "fiyat yok" sayılır
-  assert.equal((await glassCostTable(fake([]))).reason, 'MISSING');
-  assert.equal((await glassCostTable(fake([T, { ...T, id: 't2', name: 'gkh trakya 2026' }]))).reason, 'AMBIGUOUS');
-  assert.equal((await glassCostTable(fake([{ ...T, isActive: false }]))).reason, 'INACTIVE');
-  assert.equal((await glassCostTable(fake([{ ...T, currency: 'TRY' }]))).reason, 'CURRENCY');
-  assert.equal((await glassCostTable(fake([{ ...T, kind: 'CUSTOMER' }]))).reason, 'MISSING');
+  // Atama yok → etkin varsayılan tablo (satışçının teklif satırlarını dolduran kuralın aynısı)
+  assert.equal((await glassCostTable(fake([T, D], items), 'u1')).table.name, 'Varsayılan');
+  // Atanmış tablo pasif → varsayılan; o da yoksa öneri yok
+  assert.equal((await glassCostTable(fake([{ ...T, isActive: false }, D], items, { priceTableId: 't1' }), 'u1')).table.id, 't0');
+  assert.equal((await glassCostTable(fake([T], items), 'u1')).reason, 'MISSING');
+  assert.equal((await glassCostTable(fake([]), 'u1')).reason, 'MISSING');
+  assert.equal((await glassCostTable(fake([{ ...T, currency: 'TRY' }], [], { priceTableId: 't1' }), 'u1')).reason, 'CURRENCY');
+  assert.equal((await glassCostTable(fake([{ ...T, kind: 'CUSTOMER' }], [], { priceTableId: 't1' }), 'u1')).reason, 'MISSING');
 });
 
 test('M7: yalnızca ticari teklif modülü kullanır; sipariş teklif editörü fiyatlaması değişmez', () => {
@@ -113,7 +117,7 @@ test('M7: yalnızca ticari teklif modülü kullanır; sipariş teklif editörü 
     }
   };
   for (const d of ['app', 'lib', 'server', 'components']) walk(d);
-  assert.deepEqual(users.sort(), ['app/(panel)/admin/ticari-teklifler/editor-data.ts', 'server/commercial/glass-cost.js', 'server/commercial/rules.js', 'server/commercial/service.js']);
+  assert.deepEqual(users.sort(), ['app/(panel)/admin/ticari-teklifler/editor-data.ts', 'server/commercial/glass-cost.js', 'server/commercial/service.js']);
 });
 
 test('M4: teslimat fotoğrafı küçük resmi kırpılmaz; tıklayınca aynı yetkili adresle önizleme açılır', () => {

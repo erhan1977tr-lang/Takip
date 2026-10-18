@@ -52,8 +52,8 @@ export default {
     listCostFrom: 'Listă: {v} €/m²',
     listCostManual: 'Modificat manual · listă {v} €/m²',
     listCostNone: 'Fără preț în listă',
-    costTableOk: 'Costul sticlei este propus din lista de achiziție de la fabrică „{name}” (nu este preț de vânzare; se poate modifica, modificarea este înregistrată).',
-    costTableMissing: 'Lista de achiziție „GKH Trakya 2026” nu a fost găsită (activă, EUR, unică): costul sticlei nu este propus, se introduce manual.',
+    costTableOk: 'Costul sticlei este propus din tabelul de prețuri „{name}” atribuit dvs. (Definiții → Tabele de prețuri; se poate modifica, modificarea este înregistrată).',
+    costTableMissing: 'Nu aveți atribuit un tabel de prețuri activ în EUR (Definiții → Tabele de prețuri → atribuire sau tabel implicit): costul sticlei nu este propus, se introduce manual.',
     extraCostHint: 'Se adaugă la costul intern; nu apare în documentul clientului.',
     calc: {
       title: 'Calculator profile',

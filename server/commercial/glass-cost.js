@@ -1,18 +1,20 @@
-// Ticari teklif cam maliyeti önerisi (DÜZELTME 10 M7, 3.96.0) — yalnızca OKUR. Çağıran: server/commercial/service.js
-// (yetki denetimi orada; bu modül tek başına bir sayfa / eylemden çağrılmaz — test denetler).
-import { GLASS_COST_TABLE_NAME, tableNameKey } from './rules.js';
+// Ticari teklif cam maliyeti önerisi (DÜZELTME 10 M7; 3.97.5 — tablo seçimi mevcut atama sistemiyle) — yalnızca OKUR.
+// Çağıran: server/commercial/service.js (yetki denetimi orada; bu modül tek başına bir sayfa / eylemden çağrılmaz — test denetler).
+import { resolveTable } from '../pricing/tables.js';
 
 /**
- * Fabrika alış listesi (GLASS_COST_TABLE_NAME — DÜZELTME 10 M7): adı eşleşen TEK etkin, EUR, SALES fiyat tablosu.
- * Yalnızca okunur. Tablo yok / belirsiz → { table: null }. Fiyatlar metin (4 ondalık biçim değil, Decimal'in kendi yazımı).
- * @param {any} tx  @param {string[] | null} productIds  null = bütün kalemler
+ * Cam maliyeti fiyat tablosu = teklifi hazırlayan kullanıcının Tanımlar → Fiyat Tabloları'ndaki tablosu: kendisine atanmış etkin
+ * SALES tablosu, yoksa etkin varsayılan tablo (`resolveTable` — satışçının teklif satırlarını dolduran kuralın aynısı; adla arama
+ * YOK). Tablo EUR değilse öneri yok. Yalnızca okunur. Fiyatlar metin (Decimal'in kendi yazımı); 0 fiyat = fiyat yok.
+ * @param {any} tx  @param {string | null | undefined} userId  @param {string[] | null} productIds  null = bütün kalemler
  */
-export async function glassCostTable(tx, productIds = null) {
-  const tables = await tx.priceTable.findMany({ where: { kind: 'SALES' }, select: { id: true, name: true, isActive: true, currency: true } });
-  const named = tables.filter((x) => tableNameKey(x.name) === tableNameKey(GLASS_COST_TABLE_NAME));
-  if (named.length !== 1) return { table: null, reason: named.length ? 'AMBIGUOUS' : 'MISSING', prices: new Map() };
-  const t = named[0];
-  if (!t.isActive) return { table: null, reason: 'INACTIVE', prices: new Map() };
+export async function glassCostTable(tx, userId, productIds = null) {
+  const [user, tables] = await Promise.all([
+    userId ? tx.user.findUnique({ where: { id: userId }, select: { priceTableId: true } }) : null,
+    tx.priceTable.findMany({ where: { kind: 'SALES', isActive: true }, select: { id: true, name: true, isActive: true, isDefault: true, currency: true } }),
+  ]);
+  const t = resolveTable(user ?? { priceTableId: null }, tables);
+  if (!t) return { table: null, reason: 'MISSING', prices: new Map() };
   if (t.currency !== 'EUR') return { table: null, reason: 'CURRENCY', prices: new Map() };
   const items = await tx.priceTableItem.findMany({
     where: { tableId: t.id, ...(productIds ? { glassProductId: { in: productIds } } : {}) },

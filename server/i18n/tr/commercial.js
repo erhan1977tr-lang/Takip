@@ -52,8 +52,8 @@ export default {
     listCostFrom: 'Liste: {v} €/m²',
     listCostManual: 'Elle değiştirildi · liste {v} €/m²',
     listCostNone: 'Listede fiyat yok',
-    costTableOk: 'Cam maliyeti "{name}" fabrika alış listesinden önerilir (satış fiyatı değildir; değiştirilebilir, değişiklik kayda geçer).',
-    costTableMissing: '"GKH Trakya 2026" fabrika alış listesi bulunamadı (etkin, EUR, tek): cam maliyeti önerilmez, elle girilir.',
+    costTableOk: 'Cam maliyeti size atanmış "{name}" fiyat tablosundan önerilir (Tanımlar → Fiyat Tabloları; değiştirilebilir, değişiklik kayda geçer).',
+    costTableMissing: 'Size atanmış etkin bir EUR fiyat tablosu yok (Tanımlar → Fiyat Tabloları → atama ya da varsayılan tablo): cam maliyeti önerilmez, elle girilir.',
     extraCostHint: 'İç maliyete eklenir; müşteri belgesinde yer almaz.',
     calc: {
       title: 'Profil hesaplayıcısı',

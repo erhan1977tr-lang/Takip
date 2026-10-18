@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.97.5 — 18.10.2026
+
+- Ticari teklif → Cam: **Maliyet €/m²** yeniden otomatik doluyor. Kök neden: öneri adı tam "GKH Trakya 2026" olan tabloyu
+  arıyordu; canlıdaki tablonun adı "GKH - Trakya 2026" olduğu için hiç eşleşmiyor ve maliyet boş kalıyordu. Artık ad aranmaz:
+  teklifi hazırlayan kullanıcıya Tanımlar → Fiyat Tabloları'nda (mevcut satışçı atama sistemi) atanmış etkin EUR tablo, yoksa
+  etkin varsayılan tablo kullanılır — satışçının teklif satırlarını dolduran kuralın aynısı. Cam nakliye + gümrük ve hesaplamalar
+  değişmedi; mevcut fiyatlar, atamalar ve kayıtlar değişmedi; migration yok.
+
 ## 3.97.4 — 18.10.2026
 
 - Tedarikçi veritabanı testleri M9'un denetim kaydına (`SUPPLIER_EMAILS_CHANGED`) ve alıcı başına gönderim işaretine

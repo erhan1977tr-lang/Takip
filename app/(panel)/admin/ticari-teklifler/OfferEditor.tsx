@@ -7,7 +7,7 @@ import { interpolate } from '@/server/i18n/interpolate.js';
 import { PROFILE_COLORS, billQuantity, previewOffer } from '@/server/commercial/rules.js';
 import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferAction } from './actions';
 
-/** listCost: GKH Trakya 2026 fabrika alış listesindeki €/m² (yoksa null — uydurulmaz) */
+/** listCost: kullanıcıya atanmış fiyat tablosundaki €/m² (Tanımlar → Fiyat Tabloları; yoksa null — uydurulmaz) */
 export type EditorGlass = { id: string; label: string; descRo: string; listCost: string | null };
 export type EditorCostTable = { name: string | null; reason: string | null };
 export type EditorProfile = {

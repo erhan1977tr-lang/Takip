@@ -47,12 +47,12 @@ const plainProfile = (p) => ({
  * Doğrulama için katalog: yalnızca formdaki ürünler. Pasif ürün YALNIZCA bu teklifin kayıtlı taslağında zaten varsa kabul edilir
  * (eski satır bozulmasın); yeni satır pasif ürün seçemez.
  */
-async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }) {
+async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }, userId = null) {
   const [glass, profile, customer, glassCosts, stock] = await Promise.all([
     tx.glassProduct.findMany({ where: { id: { in: ids(v?.glass) } } }),
     tx.profileProduct.findMany({ where: { id: { in: ids(v?.profile) } }, select: PROFILE_SELECT }),
     idOf(v?.customerId) ? tx.customer.findFirst({ where: { id: idOf(v.customerId), type: 'CUSTOMER' }, select: { id: true, name: true } }) : null,
-    glassCostMap(tx, ids(v?.glass)),
+    glassCostMap(tx, userId, ids(v?.glass)),
     ids(v?.profile).length ? productStockCosts(tx, ids(v?.profile)) : new Map(),
   ]);
   return {
@@ -63,7 +63,7 @@ async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }
   };
 }
 
-const glassCostMap = async (tx, productIds) => (productIds.length ? (await glassCostTable(tx, productIds)).prices : new Map());
+const glassCostMap = async (tx, userId, productIds) => (productIds.length ? (await glassCostTable(tx, userId, productIds)).prices : new Map());
 
 /** Yöneticinin listeden farklı girdiği cam maliyetleri (denetim kaydı için; en çok 50) */
 const costOverrides = (data) => (data?.glass ?? [])
@@ -115,7 +115,7 @@ export async function suggestNo(db, actor) {
 export async function createOffer(db, v, actor) {
   if (!allowed(actor)) return FORBIDDEN;
   return db.$transaction(async (tx) => {
-    const parsed = parseOffer(v, await catalogFor(tx, v));
+    const parsed = parseOffer(v, await catalogFor(tx, v, undefined, actor.id));
     if (!parsed.ok) return parsed;
     const num = await pickNo(tx, v?.no);
     if (!num.ok) return num;
@@ -149,7 +149,7 @@ export async function saveDraft(db, v, actor) {
     const draft = offer.versions.find((x) => x.version === offer.currentVersion);
     if (offer.status !== 'TASLAK' || !draft || draft.issuedAt) return { ok: false, code: 'NOT_DRAFT' };
     if (Number(v?.editVersion) !== offer.editVersion) return { ok: false, code: 'CONFLICT' };
-    const parsed = parseOffer(v, await catalogFor(tx, v, keepOf(draft.data)));
+    const parsed = parseOffer(v, await catalogFor(tx, v, keepOf(draft.data), actor.id));
     if (!parsed.ok) return parsed;
     let no = offer.no;
     const everIssued = offer.versions.some((x) => x.issuedAt);
@@ -331,7 +331,7 @@ export async function editorCatalog(db, actor) {
     db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }], select: { id: true, nameTr: true, colorTr: true, nameRo: true, colorRo: true } }),
     db.profileProduct.findMany({ where: { isActive: true }, orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { code: 'asc' }], select: PROFILE_SELECT }),
     db.customer.findMany({ where: { type: 'CUSTOMER' }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-    glassCostTable(db),
+    glassCostTable(db, actor.id),
   ]);
   const stock = await productStockCosts(db, profile.map((p) => p.id));
   // Modülün kategori sırası (M1); kararlı sıralama: aynı kategoride katalog sırası korunur
