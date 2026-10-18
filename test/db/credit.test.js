@@ -139,6 +139,8 @@ dbTest('müşteri bazında defter: cam + profil zincirleri, fazla ödeme yalnız
 }));
 
 dbTest('mahsup: açık onay, sınırlar, başka müşteri, çift gönderim tek kayıt; FGO / kuyruk / mevcut kayıtlar değişmez; avans dayanağına girmez', offline(async () => {
+  // Başka müşterinin siparişi sahte FGO'dan proforma alır — çağrı sayımı bundan SONRA başlar
+  const foreign = await glass(other);
   const calls = fgo.calls.length;
   const before = await fingerprint(C.id);
   const src = `order:${A.order.id}`;
@@ -147,7 +149,6 @@ dbTest('mahsup: açık onay, sınırlar, başka müşteri, çift gönderim tek k
   assert.equal((await offset(C, src, D.order.id, '105.01')).code, 'OVER_TARGET');
   assert.equal((await offset(C, src, A.order.id, '1')).code, 'SAME_CHAIN');
   assert.equal((await offset(C, `order:${D.order.id}`, B.order.id, '1')).code, 'OVER_SOURCE', 'fazla ödemesi olmayan zincir kaynak olamaz');
-  const foreign = await glass(other);
   assert.equal((await offset(C, src, foreign.order.id, '1')).code, 'TARGET_GONE');
   assert.equal((await offset(other, src, foreign.order.id, '1')).code, 'SOURCE_GONE', 'başka müşterinin fazla ödemesi kullanılamaz');
   for (const role of ['SATIS', 'CIZIM', 'DENETIMCI', 'MUSTERI', null]) {
