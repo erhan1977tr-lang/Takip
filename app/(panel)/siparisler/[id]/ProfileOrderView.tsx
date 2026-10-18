@@ -363,7 +363,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
           FGO belgesi kararı — yalnızca yönetici (ACCOUNTING_MANAGE) */}
       {userCan(user, 'ACCOUNTING_MANAGE') && (
         <OrderPayments
-          orderId={order.id} t={t} m={m.finance} sp={sp} profile
+          orderId={order.id} viewer={{ id: user.id, role: user.appRole }} t={t} m={m.finance} sp={sp} profile
           total={sent ? { amount: profileTotals(sent.lines).amount, currency: sent.currency } : null}
         />
       )}

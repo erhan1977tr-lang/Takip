@@ -558,7 +558,7 @@ export default async function OrderPage({
       {/* Ödemeler ve avans (Paket 10): FGO tahsilatı ve elle kayıtlar ayrı, belirsiz FGO belgesi kararı — yalnızca yönetici */}
       {userCan(user, 'ACCOUNTING_MANAGE') && (
         <OrderPayments
-          orderId={order.id} t={t} m={m.finance} sp={sp} profile={false}
+          orderId={order.id} viewer={{ id: user.id, role: user.appRole }} t={t} m={m.finance} sp={sp} profile={false}
           total={order.price && sent ? { amount: Number(order.price.amount), currency: sent.currency } : null}
         />
       )}

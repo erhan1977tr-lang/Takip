@@ -4,6 +4,20 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.98.4 — 18.10.2026
+
+- DÜZELTME 10 Aşama 2C — fazla ödeme. **Avans faturası proforma toplamını aşamaz** (sipariş başına cam zinciri, profil ve müşteri
+  proforması aynı kuraldan): tahsilat proforma toplamını aşarsa avans proforma toplamıyla sınırlanır, fazlası sipariş finans
+  kartında "fazla ödeme" olarak görünür ve belge doğurmaz.
+- Yeni **Muhasebe → Müşteri Bakiyeleri** (yalnızca muhasebe yetkisi): müşterinin cam ve profil siparişlerindeki bütün ödeme
+  zincirleri; toplam tahsilat, fazla ödeme, etkin mahsup ve kullanılabilir bakiye; zincir başına proforma, FGO / elle tahsilat,
+  avanslanan, fazla, çıkan / gelen mahsup, açık tutar.
+- **TAKİP içi mahsup kaydı:** yönetici fazla ödemeyi aynı müşterinin FGO proforması kesilmiş başka bir siparişine açık onayla
+  ayırır (kaynağın kalan fazlası ve hedefin açık tutarı kadar). Mahsup FGO'da tahsilat / fatura / iade DEĞİLDİR: FGO'ya ve
+  ANAF'a hiçbir istek gitmez, avans faturası doğurmaz, mevcut ödeme ve belge kayıtları değişmez. Kayıt silinmez; gerekçeyle
+  geri alınır ya da muhasebeci FGO'ya işledikten sonra "FGO'ya işlendi" olarak kapatılır (bundan sonra iki kez sayılmaz).
+  Her işlem denetim kaydında. Sipariş finans kartında çıkan / gelen mahsup görünür.
+
 ## 3.97.6 — 18.10.2026
 
 - Satın Alma → **Nakliye Giderleri** menüsü ve ayrı ekranı kaldırıldı. Nakliye artık yalnızca tedarikçi siparişinin sayfasında

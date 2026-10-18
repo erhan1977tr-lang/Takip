@@ -20,6 +20,7 @@ export default {
   accounting: 'Contabilitate',
   profileReceivables: 'Încasări profile',
   glassReceivables: 'Încasări sticlă',
+  customerCredit: 'Solduri clienți',
   supplier: 'Situație fabrică sticlă',
   people: 'Persoane',
   definitions: 'Definiții',

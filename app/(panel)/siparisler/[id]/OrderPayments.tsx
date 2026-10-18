@@ -10,6 +10,7 @@ import { DuplicateAck } from '@/components/DuplicateAck';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import { UncertainReview } from '@/components/UncertainReview';
 import { orderFinanceView } from '@/server/finance/view.js';
+import { orderOffsets, sumRon } from '@/server/finance/credit-service.js';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/server/env.js';
 import { ManualPaymentForm } from './ManualPaymentForm';
@@ -33,12 +34,14 @@ type AdvanceRow = { id: string; ref: string | null; at: Date; amount: number; ba
  * Finans / FGO kartındadır; profil siparişinin avans faturası burada istenir. Sonucu belirsiz FGO işi #belirsiz kutusunda.
  * Sipariş toplamı teklifin para biriminde, ödemeler ve belgeler RON — birbirine eklenmez.
  */
-export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
-  orderId: string; t: T; m: Dict['finance']; sp: Record<string, string | undefined>;
+export async function OrderPayments({ orderId, viewer, t, m, sp, total, profile }: {
+  orderId: string; viewer: { id: string; role: string }; t: T; m: Dict['finance']; sp: Record<string, string | undefined>;
   total: { amount: number; currency: string } | null; profile: boolean;
 }) {
   const v = await orderFinanceView(db, orderId);
   if (!v) return null;
+  // TAKİP içi mahsup (DÜZELTME 10 Aşama 2C, karar 295): yalnızca bilgi — avans dayanağına girmez, FGO tahsilatı değildir
+  const offs = await orderOffsets(db, orderId, viewer);
   const st = v.state;
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const rate = v.chain.currency === 'EUR' ? rateText(v.chain.rate) : null;
@@ -83,6 +86,8 @@ export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
       {st?.review.map((code: string) => (
         <div key={code} className="alert alert-warn" data-finance-review={code}>
           {t(`finance.review.${code === 'OVERPAID' ? 'OVERPAID' : 'MISMATCH'}` as MsgKey, { fgo: fmtMoney(st.fgoPaid, 'RON'), manual: fmtMoney(st.manualRon, 'RON') })}
+          {/* Fazla ödeme tutarı (DÜZELTME 10 M3): avans proforma toplamını aşmaz; fazlası müşteri alacağıdır, muhasebe kararı bekler */}
+          {code === 'OVERPAID' && (st.overpaid ?? 0) > 0 && <div data-overpaid={st.overpaid}>{t('finance.overpaid', { amount: fmtMoney(st.overpaid, 'RON') })}</div>}
         </div>
       ))}
 
@@ -194,6 +199,26 @@ export async function OrderPayments({ orderId, t, m, sp, total, profile }: {
       {v.chain.proforma && !cancelled
         ? <ManualPaymentForm orderId={orderId} requestKey={randomUUID()} today={today} currencies={currencies} rate={rate} m={m} />
         : !cancelled && <p className="hint" data-payment-noproforma>{t('finance.form.noProforma')}</p>}
+
+      {offs.ok && (offs.out.length > 0 || offs.in.length > 0) && (
+        <div className="stack" data-credit-offsets>
+          <h3>{t('finance.credit.card.title')}</h3>
+          <p className="hint">{t('finance.credit.card.note')}</p>
+          {([['out', offs.out], ['in', offs.in]] as const).filter(([, rows]) => rows.length > 0).map(([dir, rows]) => (
+            <div key={dir} data-credit-dir={dir}>
+              <b className="small">{t(`finance.credit.card.${dir}` as MsgKey)}: {fmtMoney(sumRon(rows.filter((r) => r.status === 'ACTIVE')), 'RON')}</b>
+              <ul className="small">
+                {rows.map((r) => (
+                  <li key={r.id} data-credit-offset={r.status}>
+                    {fmtMoney(Number(r.amountRon), 'RON')} · {dir === 'out' ? `${r.targetRef} · ${r.targetOrder.orderNo}` : `${r.sourceRef} · ${r.sourceOrder.orderNo}`} · <Badge tone={r.status === 'ACTIVE' ? 'info' : r.status === 'FGO_RECORDED' ? 'ok' : 'muted'}>{t(`finance.credit.status.${r.status}` as MsgKey)}</Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {offs.customerId && <p className="small"><Link href={`/admin/muhasebe/bakiye?c=${offs.customerId}`}>{t('finance.credit.card.open')}</Link></p>}
+        </div>
+      )}
 
       <UncertainReview jobs={v.parked} t={t} action={resolveUncertainAction} hidden={hiddenOrder} sp={sp} />
     </div>
