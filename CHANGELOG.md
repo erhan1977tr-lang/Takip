@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.99.4 — 18.10.2026
+## 3.99.5 — 18.10.2026
 
 DÜZELTME 10 — Aşama 2D (karar 296; operasyonel kısım). Migration: yeni yetki değeri, iade ve bloke stok tabloları, stok
 hareketinde iade bağı (eklemeli) + iade / bloke stok kayıtlarını koruyan tetikleyiciler.
