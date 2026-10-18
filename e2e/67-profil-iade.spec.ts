@@ -113,6 +113,10 @@ test('depo bağlantısı: sağlam stoğa, hasarlı bloke stoğa; bağlantı bir 
     const page = await ctx.newPage();
     page.on('dialog', (d) => d.accept());
     await page.goto(`/depo-iade/${token}`);
+    // Depo bağlantısı: eksik teslim kuralı yazılı; fiyat / tutar / FGO / bakiye yok
+    await expect(page.getByText('Eksik gelen miktar stoğa girmez')).toBeVisible();
+    const body = await page.locator('body').innerText();
+    for (const s of ['EUR', 'RON', 'FGO', 'Bakiye', 'Satış fiyatı', 'Tutar']) expect(body.includes(s), s).toBe(false);
     const line = page.locator('form label', { hasText: 'Hasarlı' }).locator('input');
     await line.fill('1');
     await page.locator('form label', { hasText: 'Sağlam' }).locator('input').fill('1');
@@ -134,6 +138,7 @@ test('depo bağlantısı: sağlam stoğa, hasarlı bloke stoğa; bağlantı bir 
     await expect(item).toHaveAttribute('data-return-status', 'TESLIM_ALINDI');
     await expect(item.locator('[data-good]')).toHaveText('1');
     await expect(item.locator('[data-damaged]')).toHaveText('1');
+    await expect(item.locator('[data-missing]')).toHaveText('0');
     await admin.context().close();
   } finally {
     await db.$disconnect();

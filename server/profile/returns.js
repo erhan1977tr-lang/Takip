@@ -14,7 +14,7 @@ import { parseDateOnly } from '../orders/rules.js';
 import { dayKeyOf, localDay } from './dates.js';
 import { hashToken } from './warehouse.js';
 import { receiveReturnStock } from './stock.js';
-import { RETURNABLE_STAGES, RETURN_LIMITS, customerPaid, parseReturnReceipt, parseReturnRequest, returnableLines } from './returns-rules.js';
+import { RETURNABLE_STAGES, RETURN_LIMITS, countedReturns, customerPaid, parseReturnReceipt, parseReturnRequest, returnableLines } from './returns-rules.js';
 
 export const RETURN_EMAIL = 'PROFILE_RETURN_EMAIL';
 export const RETURN_LINK_DAYS = 30;
@@ -45,7 +45,7 @@ async function context(tx, orderId) {
     ? await tx.offer.findUnique({ where: { id: order.profile.approvedOfferId }, select: { currency: true, lines: { orderBy: { sortOrder: 'asc' }, select: { id: true, kind: true, profileProductId: true, adet: true, offerPrice: true, unitCode: true, description: true } } } })
     : null;
   const manual = await tx.manualPayment.count({ where: { orderId: order.id, voidedAt: null } });
-  const prior = order.profileReturns.filter((r) => r.status !== 'IPTAL').flatMap((r) => r.lines.map((l) => ({ offerLineId: l.offerLineId, qty: l.qty })));
+  const prior = countedReturns(order.profileReturns);
   const lines = returnableLines(offer?.lines ?? [], prior);
   const ids = lines.map((l) => l.productId);
   const products = ids.length ? await tx.profileProduct.findMany({ where: { id: { in: ids } }, select: { id: true, code: true, nameRo: true, nameTr: true, unitCode: true } }) : [];

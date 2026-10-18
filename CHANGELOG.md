@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.99.6 — 18.10.2026
+
+- 2D depo iade onayı son kural (ürün sahibi): depo bağlantısında, yönetici iade kartında ve "teslim alındı" e-postasında
+  **eksik gelen miktar** ayrıca gösterilir; eksik miktar stoğa girmez. Teslim alınmış bir iade artık yalnızca gerçekten gelen
+  miktarla (sağlam + hasarlı) "iade edilmiş" sayılır — eksik kısım daha sonra gelirse yönetici yalnızca o kadarını yeni bir
+  iadeyle açabilir; aynı mal iki kez sayılmaz. Açık iade beklenen miktarla sayılmaya devam eder.
+
 ## 3.99.5 — 18.10.2026
 
 DÜZELTME 10 — Aşama 2D (karar 296; operasyonel kısım). Migration: yeni yetki değeri, iade ve bloke stok tabloları, stok

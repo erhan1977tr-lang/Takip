@@ -213,3 +213,57 @@ dbTest('iade kayıtları değişmez (tetikleyici): silinmez, açılış verisi /
   await denied(db.blockedStockMovement.delete({ where: { id: b.id } }));
   assert.equal((await db.profileReturnLine.findUniqueOrThrow({ where: { id: line.id } })).goodQty, 1);
 }));
+
+dbTest('iade: eksik teslim (2D son kural) — gelmeyen miktar stoğa girmez, yalnızca eksik kısım yeniden iade edilebilir; bağlantı tekrar kullanılamaz; iptal bağlantıyı kapatır; e-postada müşteri, sipariş, iade no, kod, ad, miktar, eksik', offline(async () => {
+  await dispatch(transport()); // önceki testlerin işleri
+  const id = await deliveredOrder([['AD45', 5]]);
+  const L = await lineIds(id);
+  const order = await db.order.findUniqueOrThrow({ where: { id } });
+  const r1 = await ret.createReturn(db, { orderId: id, reason: 'fazla', quantities: { [L.AD45]: '5' }, requestKey: key() }, A());
+  assert.ok(r1.ok);
+  // Açık iade beklenen miktarla sayılır: ikinci iade açılamaz
+  assert.equal((await ret.createReturn(db, { orderId: id, reason: 'x', quantities: { [L.AD45]: '1' }, requestKey: key() }, A())).code, 'OVER_RETURNABLE');
+  const t = transport();
+  await dispatch(t);
+  const mail = t.sent[0];
+  for (const s of [order.orderNo, 'İade Cam', `retur nr. ${r1.seq}`, 'AD45', '5 ']) assert.ok(mail.text.includes(s), s);
+  const link = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
+  assert.ok(link && link.length >= 32, 'tahmin edilemez bağlantı');
+  const lid = (await db.profileReturnLine.findFirstOrThrow({ where: { returnId: r1.id } })).id;
+  const before = await level('AD45');
+  // Depo: 2 sağlam + 1 hasarlı geldi, 2 eksik
+  assert.ok((await ret.confirmReturnByToken(db, { token: link, quantities: { [lid]: { good: '2', damaged: '1' } } })).ok);
+  const after = await level('AD45');
+  assert.deepEqual([after.stock - before.stock, after.blocked - before.blocked], [2, 1], 'eksik 2 stoğa girmez');
+  // Aynı bağlantı tekrar: ikinci hareket yok
+  assert.equal((await ret.confirmReturnByToken(db, { token: link, quantities: { [lid]: { good: '2', damaged: '0' } } })).code, 'INVALID');
+  assert.deepEqual([await db.stockMovement.count({ where: { profileReturnId: r1.id } }), await db.blockedStockMovement.count({ where: { profileReturnId: r1.id } })], [1, 1]);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'PROFILE_RETURN_RECEIVED', entityId: id }, orderBy: { createdAt: 'desc' } });
+  assert.deepEqual(audit.details.lines.map((l) => [l.good, l.damaged, l.missing]), [[2, 1, 2]]);
+  // Teslim alınan iade gelen miktarla sayılır → yalnızca eksik 2 yeniden iade edilebilir
+  const ov = await ret.returnOverview(db, id, A());
+  assert.deepEqual([ov.lines[0].returned, ov.lines[0].remaining], [3, 2]);
+  assert.equal((await ret.createReturn(db, { orderId: id, reason: 'kalan', quantities: { [L.AD45]: '3' }, requestKey: key() }, A())).code, 'OVER_RETURNABLE');
+  const r2 = await ret.createReturn(db, { orderId: id, reason: 'kalan geldi', quantities: { [L.AD45]: '2' }, requestKey: key() }, A());
+  assert.ok(r2.ok);
+  // "Teslim alındı" e-postası eksik miktarı gösterir
+  const t2 = transport();
+  await dispatch(t2);
+  const received = t2.sent.find((m) => /Retur recepționat/.test(m.subject));
+  assert.match(received.text, /bună: 2, deteriorată: 1, lipsă: 2/);
+  const opened2 = t2.sent.find((m) => /Retur deschis/.test(m.subject) && m.text.includes(`retur nr. ${r2.seq}`));
+  const link2 = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(opened2.text)?.[1];
+  assert.ok(await ret.findDepotReturn(db, link2));
+  // İptal → bağlantı geçersiz, stok hiç değişmedi
+  assert.ok((await ret.cancelReturn(db, { returnId: r2.id, reason: 'gelmeyecek' }, A())).ok);
+  assert.equal(await ret.findDepotReturn(db, link2), null);
+  const l2 = (await db.profileReturnLine.findFirstOrThrow({ where: { returnId: r2.id } })).id;
+  assert.equal((await ret.confirmReturnByToken(db, { token: link2, quantities: { [l2]: { good: '2', damaged: '0' } } })).code, 'INVALID');
+  assert.deepEqual(await level('AD45'), after);
+  // Süresi dolan bağlantı geçersiz
+  const r3 = await ret.createReturn(db, { orderId: id, reason: 'son', quantities: { [L.AD45]: '1' }, requestKey: key() }, A());
+  const t3 = transport();
+  await dispatch(t3);
+  const link3 = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(t3.sent.find((m) => m.text.includes(`retur nr. ${r3.seq}`)).text)?.[1];
+  assert.equal(await ret.findDepotReturn(db, link3, new Date(Date.now() + (ret.RETURN_LINK_DAYS + 1) * 86_400_000)), null);
+}));

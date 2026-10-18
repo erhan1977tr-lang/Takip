@@ -11,6 +11,7 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { unitLabel } from '@/server/profile/catalog.js';
 import { returnOverview } from '@/server/profile/returns.js';
+import { missingQty } from '@/server/profile/returns-rules.js';
 import { cancelReturnAction, createReturnAction, receiveReturnAction, refundDoneAction } from './return-actions';
 
 const TONE = { ACIK: 'warn', TESLIM_ALINDI: 'ok', IPTAL: 'muted' } as const;
@@ -46,7 +47,7 @@ export async function ProfileReturns({ orderId, user, t, locale, today, sp }: {
               <thead>
                 <tr>
                   <th>{t('returns.col.product')}</th><th className="num">{t('returns.col.qty')}</th><th>{t('returns.col.unit')}</th><th className="num">{t('returns.col.price')}</th><th className="num">{t('returns.col.total')}</th>
-                  {r.status === 'TESLIM_ALINDI' && <><th className="num">{t('returns.col.good')}</th><th className="num">{t('returns.col.damaged')}</th></>}
+                  {r.status === 'TESLIM_ALINDI' && <><th className="num">{t('returns.col.good')}</th><th className="num">{t('returns.col.damaged')}</th><th className="num">{t('returns.col.missing')}</th></>}
                 </tr>
               </thead>
               <tbody>
@@ -55,7 +56,7 @@ export async function ProfileReturns({ orderId, user, t, locale, today, sp }: {
                     <td><span className="mono">{l.code}</span> {locale === 'tr' ? l.nameTr : l.nameRo}</td>
                     <td className="num">{l.qty}</td><td>{unitLabel(l.unitCode, locale)}</td>
                     <td className="num">{fmtNum(l.unitPrice.toString())}</td><td className="num">{fmtNum(l.lineTotal.toString())}</td>
-                    {r.status === 'TESLIM_ALINDI' && <><td className="num" data-good>{l.goodQty ?? 0}</td><td className="num" data-damaged>{l.damagedQty ?? 0}</td></>}
+                    {r.status === 'TESLIM_ALINDI' && <><td className="num" data-good>{l.goodQty ?? 0}</td><td className="num" data-damaged>{l.damagedQty ?? 0}</td><td className="num" data-missing>{missingQty(l) ?? 0}</td></>}
                   </tr>
                 ))}
               </tbody>
@@ -90,7 +91,7 @@ export async function ProfileReturns({ orderId, user, t, locale, today, sp }: {
                 </div>
                 <label htmlFor={`rn-${r.id}`} className="small">{t('returns.note')}</label>
                 <input id={`rn-${r.id}`} name="note" maxLength={1000} />
-                <div className="hint">{t('returns.receiveHint')}</div>
+                <div className="hint">{t('returns.receiveHint')} {t('returns.missingHint')}</div>
                 <div className="row" style={{ marginTop: 8 }}><ConfirmButton primary message={t('returns.receiveConfirm')}>{t('returns.receive')}</ConfirmButton></div>
               </form>
               <form action={cancelReturnAction} className="row" style={{ marginTop: 8 }}>

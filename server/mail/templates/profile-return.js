@@ -17,7 +17,8 @@ export function renderProfileReturnEmail(p) {
   const opened = p.notice === 'OPENED';
   const subject = `GKH Trading Invest – ${opened ? 'Retur deschis' : 'Retur recepționat'} – ${p.orderNo} – retur nr. ${p.seq}`;
   const status = opened ? 'Retur deschis — marfa urmează să fie predată la depozit.' : 'Marfa returnată a fost recepționată la depozit.';
-  const row = (l) => opened ? `${l.qty} ${l.unit}` : `${l.qty} ${l.unit} (bună: ${l.good ?? 0}, deteriorată: ${l.damaged ?? 0})`;
+  const miss = (l) => Math.max(0, l.qty - (l.good ?? 0) - (l.damaged ?? 0));
+  const row = (l) => opened ? `${l.qty} ${l.unit}` : `${l.qty} ${l.unit} (bună: ${l.good ?? 0}, deteriorată: ${l.damaged ?? 0}, lipsă: ${miss(l)})`;
   const text = [
     'Bună ziua,',
     '',
@@ -36,8 +37,8 @@ export function renderProfileReturnEmail(p) {
 <td style="border:1px solid #e5e7eb">${esc(l.name)}</td>
 <td style="border:1px solid #e5e7eb;text-align:right"><b>${l.qty}</b></td>
 <td style="border:1px solid #e5e7eb">${esc(l.unit)}</td>
-${opened ? '' : `<td style="border:1px solid #e5e7eb;text-align:right">${l.good ?? 0}</td><td style="border:1px solid #e5e7eb;text-align:right">${l.damaged ?? 0}</td>`}</tr>`).join('\n');
-  const head = `<tr style="background:#f3f4f6"><th style="border:1px solid #e5e7eb;text-align:left">Cod</th><th style="border:1px solid #e5e7eb;text-align:left">Produs</th><th style="border:1px solid #e5e7eb;text-align:right">Cantitate</th><th style="border:1px solid #e5e7eb;text-align:left">U.M.</th>${opened ? '' : '<th style="border:1px solid #e5e7eb;text-align:right">Bună</th><th style="border:1px solid #e5e7eb;text-align:right">Deteriorată</th>'}</tr>`;
+${opened ? '' : `<td style="border:1px solid #e5e7eb;text-align:right">${l.good ?? 0}</td><td style="border:1px solid #e5e7eb;text-align:right">${l.damaged ?? 0}</td><td style="border:1px solid #e5e7eb;text-align:right">${miss(l)}</td>`}</tr>`).join('\n');
+  const head = `<tr style="background:#f3f4f6"><th style="border:1px solid #e5e7eb;text-align:left">Cod</th><th style="border:1px solid #e5e7eb;text-align:left">Produs</th><th style="border:1px solid #e5e7eb;text-align:right">Cantitate</th><th style="border:1px solid #e5e7eb;text-align:left">U.M.</th>${opened ? '' : '<th style="border:1px solid #e5e7eb;text-align:right">Bună</th><th style="border:1px solid #e5e7eb;text-align:right">Deteriorată</th><th style="border:1px solid #e5e7eb;text-align:right">Lipsă</th>'}</tr>`;
   const html = brandedHtml({ lang: 'ro', title: subject, body: `<p style="margin:0 0 12px">Bună ziua,</p>
 <p><b>${esc(status)}</b></p>
 <table cellpadding="4" style="border-collapse:collapse">

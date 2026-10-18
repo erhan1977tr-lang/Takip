@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { customerPaid, parseReturnReceipt, parseReturnRequest, returnableLines } from '../server/profile/returns-rules.js';
+import { countedReturns, customerPaid, missingQty, parseReturnReceipt, parseReturnRequest, returnableLines } from '../server/profile/returns-rules.js';
 import { can, ROLES } from '../server/auth/permissions.js';
 import { renderProfileReturnEmail } from '../server/mail/templates/profile-return.js';
 
@@ -73,4 +73,19 @@ test('depo e-postası: Romence, ürün / miktar / gerekçe / durum; fiyat ve tut
   const r = renderProfileReturnEmail({ notice: 'RECEIVED', orderNo: 'IADP1', seq: 1, firmName: 'Firma', reason: 'kırık', lines });
   assert.match(r.text, /bună: 1, deteriorată: 1/);
   assert.doesNotMatch(r.text + r.html, /depo-iade|EUR|RON|preț/i);
+});
+
+test('iade sayımı: iptal sayılmaz, açık iade beklenen miktarla, teslim alınan iade yalnızca gelen (sağlam + hasarlı) miktarla; eksik ayrı', () => {
+  const rs = [
+    { status: 'IPTAL', lines: [{ offerLineId: 'l1', qty: 9 }] },
+    { status: 'ACIK', lines: [{ offerLineId: 'l1', qty: 2 }] },
+    { status: 'TESLIM_ALINDI', lines: [{ offerLineId: 'l1', qty: 5, goodQty: 2, damagedQty: 1 }] },
+  ];
+  assert.deepEqual(countedReturns(rs), [{ offerLineId: 'l1', qty: 2 }, { offerLineId: 'l1', qty: 3 }]);
+  assert.equal(returnableLines(OFFER, countedReturns(rs))[0].remaining, 5);
+  assert.equal(missingQty({ qty: 5, goodQty: 2, damagedQty: 1 }), 2);
+  assert.equal(missingQty({ qty: 5, goodQty: null, damagedQty: null }), null);
+  const m = renderProfileReturnEmail({ notice: 'RECEIVED', orderNo: 'IADP3', seq: 2, firmName: 'Firma', reason: 'x', lines: [{ code: 'AD45', name: 'Adeziv', qty: 5, unit: 'cutii', good: 2, damaged: 1 }] });
+  assert.match(m.text, /bună: 2, deteriorată: 1, lipsă: 2/);
+  assert.match(m.html, /Lipsă/);
 });

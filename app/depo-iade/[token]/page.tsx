@@ -47,7 +47,7 @@ export default async function DepotReturnPage({ params, searchParams }: { params
         </tbody></table>
         <label htmlFor="dr-note">{t('returns.depot.note')}</label>
         <input id="dr-note" name="note" maxLength={1000} />
-        <div className="hint">{t('returns.receiveHint')}</div>
+        <div className="hint">{t('returns.receiveHint')} {t('returns.missingHint')}</div>
         <div style={{ marginTop: 12 }}><ConfirmButton primary message={t('returns.receiveConfirm')}>{t('returns.depot.submit')}</ConfirmButton></div>
       </form>
     </AuthCard>

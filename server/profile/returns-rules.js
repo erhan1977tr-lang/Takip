@@ -94,5 +94,22 @@ export function parseReturnReceipt(lines, input) {
   return { ok: true, lines: out };
 }
 
+/**
+ * İade edilmiş sayılan miktar (DÜZELTME 10 2D — ürün sahibi): iptal edilen iade hiç sayılmaz; açık iade beklenen miktarla
+ * sayılır (aynı mal iki kez açılamaz); depoda teslim alınmış iade YALNIZCA gerçekten gelen miktarla (sağlam + hasarlı) sayılır —
+ * eksik gelen kısım yeniden iade edilebilir hâle gelir, böylece tekrar teslimde çift sayım olmaz, gelmeyen mal hiç sayılmaz.
+ * @param {{ status: string, lines: { offerLineId: string, qty: number, goodQty?: number | null, damagedQty?: number | null }[] }[]} returns
+ * @returns {{ offerLineId: string, qty: number }[]}
+ */
+export function countedReturns(returns) {
+  return returns.filter((r) => r.status !== 'IPTAL').flatMap((r) => r.lines.map((l) => ({
+    offerLineId: l.offerLineId,
+    qty: r.status === 'TESLIM_ALINDI' ? (l.goodQty ?? 0) + (l.damagedQty ?? 0) : l.qty,
+  })));
+}
+
+/** Eksik gelen miktar (teslim alınmış iade satırı): beklenen − sağlam − hasarlı; teslim alınmamışsa null */
+export const missingQty = (l) => (l.goodQty == null && l.damagedQty == null ? null : Math.max(0, l.qty - (l.goodQty ?? 0) - (l.damagedQty ?? 0)));
+
 /** Müşteri ödeme yapmış mı: ödeme günü işaretli, FGO'da ödenen > 0 ya da geçerli elle ödeme kaydı */
 export const customerPaid = ({ paidAt, fgoPaid, manualPayments }) => !!paidAt || Number(fgoPaid ?? 0) > 0 || (manualPayments ?? 0) > 0;
