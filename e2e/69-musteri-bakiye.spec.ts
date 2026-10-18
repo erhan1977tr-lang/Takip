@@ -11,7 +11,7 @@ test.describe.configure({ mode: 'serial' });
 
 const SALES = 'fiyat-satis@e2e.test';
 const INSPECTOR = 'denetim@e2e.test';
-const URL = '/admin/muhasebe/bakiye';
+const PAGE = '/admin/muhasebe/bakiye';
 let customerId = '';
 let sourceId = '';
 let targetId = '';
@@ -60,7 +60,7 @@ test('yönetici: müşteri bazında bakiye; TAKİP içi mahsup açık onayla; FG
     const docsBefore = JSON.stringify(await db.fgoDocument.findMany({ where: { orderId: { in: [sourceId, targetId] } }, orderBy: { id: 'asc' } }));
     const outboxBefore = await db.notificationOutbox.count();
     const page = await as(browser, ADMIN, ADMIN_PW);
-    await page.goto(URL);
+    await page.goto(PAGE);
     await expect(page.locator('.sidebar').getByRole('link', { name: 'Müşteri Bakiyeleri' })).toBeVisible();
     const row = page.locator('[data-credit-customer="BKY"]');
     await expect(row.locator('[data-available]')).toContainText('195,00 RON');
@@ -98,7 +98,7 @@ test('yönetici: müşteri bazında bakiye; TAKİP içi mahsup açık onayla; FG
     await expect(page.locator('#odemeler [data-credit-dir="out"]')).toContainText(targetRef);
 
     // Geri alma: gerekçe + onay; kayıt silinmez
-    await page.goto(`${URL}?c=${customerId}`);
+    await page.goto(`${PAGE}?c=${customerId}`);
     const offsetRow = page.locator('[data-offset-status="ACTIVE"]');
     const rev = offsetRow.locator('[data-close="REVERSED"]');
     await rev.locator('input[name="reason"]').fill('yanlış tutar');
@@ -131,7 +131,7 @@ test('yönetici: müşteri bazında bakiye; TAKİP içi mahsup açık onayla; FG
     expect([declared.fgoRef, declared.closedById !== null]).toEqual(['PRF 96902 / incasare 1', true]);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${URL}?c=${customerId}`);
+    await page.goto(`${PAGE}?c=${customerId}`);
     await noOverflow(page, 'müşteri bakiyesi');
     await page.context().close();
   } finally {
@@ -143,7 +143,7 @@ test('yetkisiz roller: sayfa ve veri yok; taklit form gönderimi mahsup oluştur
   const db = await prisma();
   try {
     const admin = await as(browser, ADMIN, ADMIN_PW);
-    const html = await (await admin.request.get(`${URL}?c=${customerId}`)).text();
+    const html = await (await admin.request.get(`${PAGE}?c=${customerId}`)).text();
     const form = html.split('<form').find((chunk) => chunk.includes('name="sourceChain"'));
     const field = form ? /\$ACTION_ID_[0-9a-f]+/.exec(form)?.[0] : null;
     expect(field, 'mahsup formunun sunucu işlemi alanı').toBeTruthy();
@@ -151,13 +151,13 @@ test('yetkisiz roller: sayfa ve veri yok; taklit form gönderimi mahsup oluştur
     const before = await db.creditOffset.count();
     for (const [email, pw] of [[SALES, TEAM_PW], [INSPECTOR, INSPECTOR_PW], [CUSTOMER, CUST_PW]]) {
       const p = await as(browser, email, pw);
-      await p.goto(`${URL}?c=${customerId}`);
+      await p.goto(`${PAGE}?c=${customerId}`);
       await expect(p, email).not.toHaveURL(/\/admin\/muhasebe\/bakiye/);
-      const body = await (await p.request.get(`${URL}?c=${customerId}`)).text();
+      const body = await (await p.request.get(`${PAGE}?c=${customerId}`)).text();
       for (const s of [sourceRef, targetRef, 'Bakiye E2E SRL', '195,00']) expect(body.includes(s), `${email} → ${s}`).toBe(false);
       await expect(p.locator('.sidebar').getByRole('link', { name: 'Müşteri Bakiyeleri' })).toHaveCount(0);
       const origin = new URL(p.url()).origin;
-      await p.request.post(`${URL}?c=${customerId}`, {
+      await p.request.post(`${PAGE}?c=${customerId}`, {
         multipart: { [field!]: '', customerId, sourceChain: `order:${sourceId}`, targetOrderId: targetId, amount: '10', note: 'taklit', confirm: 'on', requestKey: `taklit${Date.now()}x${email.length}` },
         headers: { origin },
       });
