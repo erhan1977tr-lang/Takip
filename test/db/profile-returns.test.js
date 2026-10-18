@@ -192,3 +192,24 @@ dbTest('iade: müşteri ödediyse mali karşılık zorunlu (niyet); gerçek iade
   assert.equal((await db.profileReturn.findUniqueOrThrow({ where: { id: r.id } })).receivedVia, 'ADMIN');
   assert.equal(await db.notificationOutbox.count({ where: { type: { startsWith: 'FGO' }, orderId: id, createdAt: { gte: row.createdAt } } }), 0, 'FGO işi yazılmadı');
 }));
+
+dbTest('iade kayıtları değişmez (tetikleyici): silinmez, açılış verisi / teslim miktarı / bloke stok düzenlenmez, kapanış bir kez', offline(async () => {
+  const id = await deliveredOrder([['MC12', 2]]);
+  const L = await lineIds(id);
+  const r = await ret.createReturn(db, { orderId: id, reason: 'koruma', quantities: { [L.MC12]: '2' }, requestKey: key() }, A());
+  assert.ok(r.ok);
+  const denied = (p) => assert.rejects(p, /immutable|once|only|append-only|closing|depot link|needs/);
+  await denied(db.profileReturn.update({ where: { id: r.id }, data: { amount: '1' } }));
+  await denied(db.profileReturn.delete({ where: { id: r.id } }));
+  const line = await db.profileReturnLine.findFirstOrThrow({ where: { returnId: r.id } });
+  await denied(db.profileReturnLine.update({ where: { id: line.id }, data: { qty: 1 } }));
+  await denied(db.profileReturn.update({ where: { id: r.id }, data: { status: 'TESLIM_ALINDI' } }));
+  assert.ok((await ret.confirmReturnReceipt(db, { returnId: r.id, quantities: { [line.id]: { good: '1', damaged: '1' } } }, A())).ok);
+  await denied(db.profileReturnLine.update({ where: { id: line.id }, data: { goodQty: 2, damagedQty: 0 } }));
+  await denied(db.profileReturn.update({ where: { id: r.id }, data: { status: 'IPTAL', cancelledAt: new Date(), cancelReason: 'x' } }));
+  await denied(db.profileReturn.update({ where: { id: r.id }, data: { receivedNote: 'değişti' } }));
+  const b = await db.blockedStockMovement.findFirstOrThrow({ where: { profileReturnId: r.id } });
+  await denied(db.blockedStockMovement.update({ where: { id: b.id }, data: { qty: 5 } }));
+  await denied(db.blockedStockMovement.delete({ where: { id: b.id } }));
+  assert.equal((await db.profileReturnLine.findUniqueOrThrow({ where: { id: line.id } })).goodQty, 1);
+}));
