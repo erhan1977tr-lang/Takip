@@ -226,7 +226,7 @@ dbTest('iade: eksik teslim (2D son kural) — gelmeyen miktar stoğa girmez, yal
   const t = transport();
   await dispatch(t);
   const mail = t.sent[0];
-  for (const s of [order.orderNo, 'İade Cam', `retur nr. ${r1.seq}`, 'AD45', '5 ']) assert.ok(mail.text.includes(s), s);
+  for (const s of [order.orderNo, 'İade Cam', `retur nr. ${r1.seq}`, 'AD45', '5 ']) assert.ok(`${mail.subject}\n${mail.text}`.includes(s), s);
   const link = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
   assert.ok(link && link.length >= 32, 'tahmin edilemez bağlantı');
   const lid = (await db.profileReturnLine.findFirstOrThrow({ where: { returnId: r1.id } })).id;
@@ -251,7 +251,7 @@ dbTest('iade: eksik teslim (2D son kural) — gelmeyen miktar stoğa girmez, yal
   await dispatch(t2);
   const received = t2.sent.find((m) => /Retur recepționat/.test(m.subject));
   assert.match(received.text, /bună: 2, deteriorată: 1, lipsă: 2/);
-  const opened2 = t2.sent.find((m) => /Retur deschis/.test(m.subject) && m.text.includes(`retur nr. ${r2.seq}`));
+  const opened2 = t2.sent.find((m) => /Retur deschis/.test(m.subject) && m.subject.includes(`retur nr. ${r2.seq}`));
   const link2 = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(opened2.text)?.[1];
   assert.ok(await ret.findDepotReturn(db, link2));
   // İptal → bağlantı geçersiz, stok hiç değişmedi
@@ -264,6 +264,6 @@ dbTest('iade: eksik teslim (2D son kural) — gelmeyen miktar stoğa girmez, yal
   const r3 = await ret.createReturn(db, { orderId: id, reason: 'son', quantities: { [L.AD45]: '1' }, requestKey: key() }, A());
   const t3 = transport();
   await dispatch(t3);
-  const link3 = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(t3.sent.find((m) => m.text.includes(`retur nr. ${r3.seq}`)).text)?.[1];
+  const link3 = /https:\/\/takip\.test\/depo-iade\/([A-Za-z0-9_-]+)/.exec(t3.sent.find((m) => m.subject.includes(`retur nr. ${r3.seq}`)).text)?.[1];
   assert.equal(await ret.findDepotReturn(db, link3, new Date(Date.now() + (ret.RETURN_LINK_DAYS + 1) * 86_400_000)), null);
 }));
