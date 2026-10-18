@@ -192,7 +192,7 @@ export default {
       reverseDialog: 'Mahsup geri alınsın mı? Kayıt silinmez; bakiyeden çıkar. FGO\'ya işlendiyse orada da geri alınmalıdır.',
       fgoDialog: "Mahsup FGO'ya işlendi olarak kapatılsın mı? Bundan sonra FGO rakamlarında sayılır ve TAKİP'te geri alınamaz.",
     },
-    ok: { created: 'Mahsup kaydı oluşturuldu (TAKİP içi; FGO\'ya hiçbir şey gönderilmedi).', duplicate: 'Bu form zaten kaydedilmişti; ikinci kez yazılmadı.', REVERSED: 'Mahsup geri alındı.', FGO_RECORDED: "Mahsup FGO'ya işlendi olarak kapatıldı." },
+    ok: { created: 'Mahsup kaydı oluşturuldu (TAKİP içi; FGO\'ya hiçbir şey gönderilmedi).', duplicate: 'Bu form zaten kaydedilmişti; ikinci kez yazılmadı.', REVERSED: 'Mahsup geri alındı.', FGO_RECORDED: "Mahsup, FGO'ya işlendiği yönündeki manuel beyan ile kapatıldı (TAKİP FGO'yu kontrol etmedi)." },
     errors: {
       FORBIDDEN: 'Bu işlem için yetkiniz yok.', KEY: 'Form geçersiz; sayfayı yenileyip yeniden deneyin.', CONFIRM_REQUIRED: 'Onay kutusunu işaretleyin.',
       AMOUNT: 'Tutar geçersiz (0\'dan büyük, en çok 2 ondalık).', NOTE: 'Gerekçe / not zorunlu.', REASON: 'Gerekçe zorunlu.', TOO_LONG: 'Metin çok uzun.',

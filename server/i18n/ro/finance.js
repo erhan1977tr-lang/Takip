@@ -192,7 +192,7 @@ export default {
       reverseDialog: 'Se anulează compensarea? Înregistrarea nu se șterge; iese din sold. Dacă a fost înregistrată în FGO, trebuie anulată și acolo.',
       fgoDialog: 'Se închide compensarea ca înregistrată în FGO? De acum se regăsește în cifrele FGO și nu mai poate fi anulată în TAKİP.',
     },
-    ok: { created: 'Compensarea a fost creată (internă TAKİP; nu s-a trimis nimic în FGO).', duplicate: 'Acest formular a fost deja salvat; nu s-a scris a doua oară.', REVERSED: 'Compensarea a fost anulată.', FGO_RECORDED: 'Compensarea a fost închisă ca înregistrată în FGO.' },
+    ok: { created: 'Compensarea a fost creată (internă TAKİP; nu s-a trimis nimic în FGO).', duplicate: 'Acest formular a fost deja salvat; nu s-a scris a doua oară.', REVERSED: 'Compensarea a fost anulată.', FGO_RECORDED: 'Compensarea a fost închisă pe baza declarației manuale că a fost înregistrată în FGO (TAKİP nu a verificat FGO).' },
     errors: {
       FORBIDDEN: 'Nu aveți drept pentru această operațiune.', KEY: 'Formular invalid; reîncărcați pagina și încercați din nou.', CONFIRM_REQUIRED: 'Bifați caseta de confirmare.',
       AMOUNT: 'Sumă invalidă (mai mare de 0, cel mult 2 zecimale).', NOTE: 'Motivul / nota este obligatoriu.', REASON: 'Motivul este obligatoriu.', TOO_LONG: 'Text prea lung.',
