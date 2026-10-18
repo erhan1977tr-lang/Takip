@@ -1,4 +1,4 @@
-// Muhasebe → Tedarikçi Hesap Durumu.
+// Muhasebe → Cam Fabrika Hesap Durumu.
 //   A) Yükleme kârlılığı (yükleme = yükleme günü; Yüklemeler sekmesiyle aynı gruplama):
 //        kâr = cam satış − cam alış/maliyet − nakliye (yönetici elle girer, LoadingCost)
 //   B) Fabrika cari hesabı: borç = toplam cam alış/maliyet − fabrikaya yapılan ödemeler (FactoryPayment).

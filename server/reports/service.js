@@ -8,7 +8,7 @@
 //   - cam m²: offerLineTotals (kayıtlı parça m², ayrılmış cam — karar 114, 261), 3 ondalık, binde bir tamsayıyla toplanır;
 //   - yükleme bölümleri: loadingParts + effectiveItems (onaylı yüklemenin GEÇERLİ kalemleri; yalnızca LOADED fiilen yüklenmiş
 //     sayılır, kalan etkin aktarımın gününde planlıdır, ikisi de yoksa "planlanmamış kalan");
-//   - satış / maliyet: Muhasebe → Tedarikçi Hesap Durumu'nun motoru (orderLine, confirmedLine, lineTotals → glassTotals);
+//   - satış / maliyet: Muhasebe → Cam Fabrika Hesap Durumu'nun motoru (orderLine, confirmedLine, lineTotals → glassTotals);
 //   - alacak: receivables (proforma + avans + nihai fatura aynı borcu iki kez saymaz — karar 88, 101);
 //   - stok: StockMovement (yalnızca eklenen hareketler; tür bazında bir kez sayılır), stockLevels, reservedLevels.
 // Yazma yok: yalnızca findMany / findUnique / findFirst / count / groupBy. Kaldırılmış (removedAt) ve İPTAL siparişler hiçbir

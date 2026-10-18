@@ -212,37 +212,44 @@ dbTest('M6: nakliye — kısmi kabul + düzeltme sonrası gerçek miktar, birim 
   const r2 = await receive(o2.id, { MC12: 10 });
   const debtBefore = (await svc.supplierAccount(db, s.id)).balances.EUR.balance;
   const movesBefore = await db.stockMovement.count();
+  // Nakliye bir tedarikçi siparişinin sayfasından girilir (3.97.6): başka siparişin kabulü bağlanamaz
+  const base = { orderId: o1.id, carrierName: 'Trans SRL', invoiceNo: 'TR-1', invoiceDate: TODAY, receiptIds: [r1] };
+  assert.equal((await costs.createTransport(db, { ...base, receiptIds: [r1, r2], amount: '1', currency: 'EUR', requestKey: key() }, A(), { timeZone: TZ })).code, 'RECEIPT_GONE');
+  const opts = await costs.transportReceiptOptions(db, A(), o1.id);
+  assert.deepEqual(opts.receipts.map((r) => [r.id, r.qty]), [[r1, 30]]);
   // RON kur yoksa reddedilir
-  const base = { carrierName: 'Trans SRL', invoiceNo: 'TR-1', invoiceDate: TODAY, receiptIds: [r1, r2] };
-  assert.equal((await costs.createTransport(db, { ...base, amount: '400', currency: 'RON', requestKey: key() }, A(), { timeZone: TZ })).code, 'FX_REQUIRED');
-  // 400 RON / 5 = 80 EUR; toplam miktar 10 + 20 + 10 = 40 → birim başına 2 EUR
+  assert.equal((await costs.createTransport(db, { ...base, amount: '300', currency: 'RON', requestKey: key() }, A(), { timeZone: TZ })).code, 'FX_REQUIRED');
+  // 300 RON / 5 = 60 EUR; toplam miktar 10 + 20 = 30 → birim başına 2 EUR
   const k = key();
-  const t = await costs.createTransport(db, { ...base, amount: '400', currency: 'RON', fxRate: '5', requestKey: k }, A(), { timeZone: TZ });
+  const t = await costs.createTransport(db, { ...base, amount: '300', currency: 'RON', fxRate: '5', requestKey: k }, A(), { timeZone: TZ });
   assert.ok(t.ok, JSON.stringify(t));
-  assert.equal((await costs.createTransport(db, { ...base, amount: '400', currency: 'RON', fxRate: '5', requestKey: k }, A(), { timeZone: TZ })).duplicate, true);
+  assert.equal((await costs.createTransport(db, { ...base, amount: '300', currency: 'RON', fxRate: '5', requestKey: k }, A(), { timeZone: TZ })).duplicate, true);
   assert.equal((await costs.createTransport(db, { ...base, carrierName: ' trans  srl ', amount: '1', currency: 'EUR', requestKey: key() }, A(), { timeZone: TZ })).code, 'DUPLICATE_INVOICE');
   const row = await db.transportCost.findUniqueOrThrow({ where: { id: t.id }, include: { allocations: true } });
-  assert.deepEqual([row.amountEur.toString(), row.fxRate.toString(), row.currency], ['80', '5', 'RON']);
-  assert.equal(row.allocations.reduce((n, a) => n + Number(a.amountEur), 0).toFixed(4), '80.0000');
+  assert.deepEqual([row.amountEur.toString(), row.fxRate.toString(), row.currency], ['60', '5', 'RON']);
+  assert.equal(row.allocations.reduce((n, a) => n + Number(a.amountEur), 0).toFixed(4), '60.0000');
   assert.ok(row.allocations.every((a) => Number(a.amountEur) / a.qty === 2));
+  // Sipariş sayfasının listesi: yalnızca o siparişe bağlı kayıtlar
+  assert.deepEqual((await costs.listTransports(db, A(), { orderId: o1.id })).rows.map((x) => x.id), [t.id]);
+  assert.deepEqual((await costs.listTransports(db, A(), { orderId: o2.id })).rows, []);
   // Stok hareketi ve tedarikçi borcu değişmedi
   assert.equal(await db.stockMovement.count(), movesBefore);
   assert.equal((await svc.supplierAccount(db, s.id)).balances.EUR.balance, debtBefore);
-  // Stok maliyeti: MC12 = (10×2 + 10×4 + 20×2) / 20 = 5; GK15 = (20×3 + 20×2) / 20 = 5
+  // Stok maliyeti: MC12 = (10×2 + 10×4 + 10×2) / 20 = 4; GK15 = (20×3 + 20×2) / 20 = 5
   const c = await costs.productStockCosts(db, [(await prod('MC12')).id, (await prod('GK15')).id]);
-  assert.equal(c.get((await prod('MC12')).id).avgEur, '5.00');
+  assert.equal(c.get((await prod('MC12')).id).avgEur, '4.00');
   assert.equal(c.get((await prod('GK15')).id).avgEur, '5.00');
   // Ticari teklif düzenleyicisi gerçekleşen stok maliyetini önerir (katalog alış fiyatından ayrı)
   const cat = await commercial.editorCatalog(db, A());
   const mc = cat.profile.find((p) => p.code === 'MC12');
-  assert.equal(mc.stockCostEur, '5.00');
+  assert.equal(mc.stockCostEur, '4.00');
   // İptal: maliyetten çıkar; taşıyıcı borcundan çıkar
   assert.ok((await costs.voidTransport(db, { transportId: t.id, reason: 'yanlış fatura' }, A())).ok);
   assert.equal((await costs.productStockCosts(db, [(await prod('MC12')).id])).get((await prod('MC12')).id).avgEur, '3.00');
   const list = await costs.listTransports(db, A());
   assert.equal(list.carriers.length, 0);
   // Aynı fatura iptalden sonra yeniden girilebilir
-  assert.ok((await costs.createTransport(db, { ...base, amount: '80', currency: 'EUR', requestKey: key() }, A(), { timeZone: TZ })).ok);
+  assert.ok((await costs.createTransport(db, { ...base, amount: '60', currency: 'EUR', requestKey: key() }, A(), { timeZone: TZ })).ok);
   // Yetki
   assert.equal((await costs.createTransport(db, { ...base, invoiceNo: 'X', amount: '1', currency: 'EUR', requestKey: key() }, act(U.sales))).code, 'FORBIDDEN');
 }));

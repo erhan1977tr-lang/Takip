@@ -298,7 +298,7 @@ export default {
       ORDER_ON_HOLD: 'comanda restului replanificat este în așteptare',
     },
     outside: 'Comenzi planificate în această zi, dar care nu sunt în încărcarea confirmată (nu sunt considerate încărcate; mutați-le în altă zi de încărcare):',
-    noCost: 'Atenție: {n} rânduri nu au costul de fabrică înregistrat. După confirmare costul nu mai poate fi corectat în această înregistrare — introduceți-l mai întâi la Contabilitate → Situație furnizor → „Costuri lipsă”.',
+    noCost: 'Atenție: {n} rânduri nu au costul de fabrică înregistrat. După confirmare costul nu mai poate fi corectat în această înregistrare — introduceți-l mai întâi la Contabilitate → Situație fabrică sticlă → „Costuri lipsă”.',
     noCostLink: 'Introduceți costurile lipsă',
     noCostDone: '{n} rânduri au fost confirmate fără cost (cost incomplet).',
     errors: {

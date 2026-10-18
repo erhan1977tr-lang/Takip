@@ -20,15 +20,14 @@ const carrierKey = (v) => String(v ?? '').normalize('NFC').toLocaleLowerCase('tr
 const one = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max + 1);
 
 /**
- * Seçilebilecek mal kabulleri (son 400 gün): sipariş no, tedarikçi, tarih, satır sayısı, net teslim alınan toplam miktar ve
- * daha önce bağlandığı (iptal edilmemiş) nakliye sayısı. Yalnızca okur.
- * @param {Db} db  @param {any} actor  @param {{ now?: Date, timeZone?: string }} [opts]
+ * Bir tedarikçi siparişinin nakliyeye bağlanabilecek mal kabulleri (3.97.6: nakliye yalnızca sipariş sayfasından — "Transport
+ * ekle"): tarih, satır sayısı, net teslim alınan toplam miktar ve daha önce bağlandığı (iptal edilmemiş) nakliye sayısı.
+ * Yalnızca okur. @param {Db} db  @param {any} actor  @param {string} orderId
  */
-export async function transportReceiptOptions(db, actor, opts = {}) {
+export async function transportReceiptOptions(db, actor, orderId) {
   if (!allowed(actor)) return FORBIDDEN;
-  const today = localDay(opts.now ?? new Date(), tzOf(opts));
   const rows = await db.supplierReceipt.findMany({
-    where: { receivedOn: { gte: new Date(`${addDays(today, -400)}T00:00:00.000Z`) } },
+    where: { orderId: String(orderId ?? '') },
     orderBy: [{ receivedOn: 'desc' }, { createdAt: 'desc' }], take: 300,
     select: {
       id: true, seq: true, receivedOn: true, reference: true,
@@ -48,8 +47,9 @@ export async function transportReceiptOptions(db, actor, opts = {}) {
 
 /**
  * Nakliye faturası kaydı + dağıtım (tek işlem). Aynı taşıyıcının aynı fatura numarası (iptal edilmemiş) ikinci kez
- * girilemez (DUPLICATE_INVOICE); aynı form iki kez gönderilirse ilk kayıt döner (duplicate).
- * @param {{ carrierName: unknown, invoiceNo?: unknown, invoiceDate: unknown, amount: unknown, currency: unknown, fxRate?: unknown, note?: unknown, receiptIds: unknown, requestKey: unknown }} v
+ * girilemez (DUPLICATE_INVOICE); aynı form iki kez gönderilirse ilk kayıt döner (duplicate). Seçilen kabullerin hepsi
+ * `orderId` siparişine ait olmalıdır (değilse RECEIPT_GONE) — nakliye bir tedarikçi siparişinin sayfasından girilir.
+ * @param {{ orderId: unknown, carrierName: unknown, invoiceNo?: unknown, invoiceDate: unknown, amount: unknown, currency: unknown, fxRate?: unknown, note?: unknown, receiptIds: unknown, requestKey: unknown }} v
  */
 export async function createTransport(db, v, actor, opts = {}) {
   if (!allowed(actor)) return FORBIDDEN;
@@ -70,7 +70,7 @@ export async function createTransport(db, v, actor, opts = {}) {
       if (others.some((o) => carrierKey(o.carrierName) === carrierKey(t.carrierName))) return { ok: false, code: 'DUPLICATE_INVOICE' };
     }
     const receipts = await tx.supplierReceipt.findMany({
-      where: { id: { in: t.receiptIds } },
+      where: { id: { in: t.receiptIds }, orderId: String(v.orderId ?? '') },
       select: { id: true, lines: { orderBy: { sortOrder: 'asc' }, select: { id: true, productId: true, qty: true, corrections: { select: { qty: true } } } } },
     });
     if (receipts.length !== t.receiptIds.length) return { ok: false, code: 'RECEIPT_GONE' };
@@ -132,12 +132,14 @@ export async function markTransportPaid(db, { transportId, paidOn }, actor, opts
 }
 
 /**
- * Nakliye kayıtları (son 300) + taşıyıcı bakiyeleri (taşıyıcı + para birimi başına; ürün tedarikçisinden ayrı)
- * @param {Db} db  @param {any} actor
+ * Nakliye kayıtları (son 300; `orderId` verilirse yalnızca o tedarikçi siparişinin kabullerine bağlı olanlar) + taşıyıcı
+ * bakiyeleri (taşıyıcı + para birimi başına, bütün kayıtlardan; ürün tedarikçisinden ayrı)
+ * @param {Db} db  @param {any} actor  @param {{ orderId?: string }} [filter]
  */
-export async function listTransports(db, actor) {
+export async function listTransports(db, actor, filter = {}) {
   if (!allowed(actor)) return FORBIDDEN;
   const rows = await db.transportCost.findMany({
+    where: filter.orderId ? { receipts: { some: { receipt: { orderId: filter.orderId } } } } : {},
     orderBy: [{ invoiceDate: 'desc' }, { createdAt: 'desc' }], take: 300,
     include: { receipts: { select: { receipt: { select: { id: true, seq: true, order: { select: { id: true, orderNo: true } } } } } }, _count: { select: { allocations: true } } },
   });

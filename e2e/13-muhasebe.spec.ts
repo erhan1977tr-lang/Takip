@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, TEAM_PW, as, login, INSPECTOR_PW } from './helpers';
 
-// Muhasebe (karar 51, 87–90): Profil Tahsilat, Cam Tahsilat, Tedarikçi Hesap Durumu yalnızca yönetici.
+// Muhasebe (karar 51, 87–90): Profil Tahsilat, Cam Tahsilat, Cam Fabrika Hesap Durumu yalnızca yönetici.
 //  - Kalan toplamında aynı borç iki kez sayılmaz (proforma + avans + fatura).
 //  - Yükleme kârı: satış (yönetici fiyatı) − maliyet (satış fiyatı) − transport; maliyeti eksik satır sessizce 0 sayılmaz.
 //  - Yetkisiz roller sayfalara adresle de giremez; sunucu işlemlerini (form gönderimini taklit ederek) de çalıştıramaz.
@@ -90,7 +90,7 @@ test('veri: FGO belgeleri, yüklenmiş sipariş, transport ve fabrika ödemesi',
 
 test('yönetici: Cam Tahsilat — aynı borç iki kez sayılmaz; süzgeç; FGO ile Güncelle', async ({ page }) => {
   await login(page, ADMIN, ADMIN_PW);
-  for (const name of ['Profil Tahsilat', 'Cam Tahsilat', 'Tedarikçi Hesap Durumu']) await expect(page.locator('.sidebar').getByRole('link', { name })).toBeVisible();
+  for (const name of ['Profil Tahsilat', 'Cam Tahsilat', 'Cam Fabrika Hesap Durumu']) await expect(page.locator('.sidebar').getByRole('link', { name })).toBeVisible();
 
   await page.goto('/admin/muhasebe/cam');
   await expect(page.getByRole('heading', { name: 'Cam Tahsilat' })).toBeVisible();
@@ -129,10 +129,10 @@ test('yönetici: Cam Tahsilat — aynı borç iki kez sayılmaz; süzgeç; FGO i
   await shot(page, '51-profil-tahsilat');
 });
 
-test('yönetici: Tedarikçi Hesap Durumu — yükleme kârı, eksik maliyet uyarısı, transport ve fabrika ödemesi', async ({ page }) => {
+test('yönetici: Cam Fabrika Hesap Durumu — yükleme kârı, eksik maliyet uyarısı, transport ve fabrika ödemesi', async ({ page }) => {
   await login(page, ADMIN, ADMIN_PW);
   await page.goto(SUPPLIER);
-  await expect(page.getByRole('heading', { name: 'Tedarikçi Hesap Durumu' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cam Fabrika Hesap Durumu' })).toBeVisible();
   // Yükleme satırı: satış 1045 − maliyet 610 − transport 150 = 285
   const row = page.locator('#yuklemeler tr', { hasText: dmy(LOADED) });
   await expect(row).toContainText('10,000 m²');
@@ -174,7 +174,7 @@ test('yetkisiz roller muhasebe sayfalarına adresle de giremez; menüde de yok',
   const users: [string, string][] = [[CUSTOMER, CUST_PW], [SALES2, TEAM_PW], [DRAWER, TEAM_PW], [INSPECTOR, INSPECTOR_PW]];
   for (const [email, pw] of users) {
     const p = await as(browser, email, pw);
-    for (const name of ['Profil Tahsilat', 'Cam Tahsilat', 'Tedarikçi Hesap Durumu']) await expect(p.locator('.sidebar').getByRole('link', { name }), email).toHaveCount(0);
+    for (const name of ['Profil Tahsilat', 'Cam Tahsilat', 'Cam Fabrika Hesap Durumu']) await expect(p.locator('.sidebar').getByRole('link', { name }), email).toHaveCount(0);
     for (const url of PAGES) {
       await p.goto(url);
       await expect(p, `${email} ${url}`).toHaveURL(/\/siparisler$/);

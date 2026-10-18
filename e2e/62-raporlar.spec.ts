@@ -45,7 +45,7 @@ test('yönetici: menüde Raporlar; beş sekme; aralık / esas tarih yazılı; Ex
   const side = admin.locator('.sidebar');
   const texts = await side.locator('a, .nav-section').allInnerTexts();
   const at = (s: string) => texts.findIndex((x) => x.trim().startsWith(s));
-  expect(at('Raporlar')).toBeGreaterThan(at('Tedarikçi Hesap Durumu'));
+  expect(at('Raporlar')).toBeGreaterThan(at('Cam Fabrika Hesap Durumu'));
   expect(at('Raporlar')).toBeLessThan(at('Tedarikçi Siparişleri'));
   await side.getByRole('link', { name: 'Raporlar' }).click();
   await expect(admin).toHaveURL(/\/admin\/raporlar/);

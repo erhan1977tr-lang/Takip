@@ -228,7 +228,7 @@ test('menü (karar 269, 277, 284): yöneticinin ana bölüm sırası — Operasy
     'nav.commercialOffers': ['/admin/ticari-teklifler/yeni', '/admin/ticari-teklifler'],
     'nav.accounting': ['/admin/muhasebe/profil', '/admin/muhasebe/cam', '/admin/muhasebe/tedarikci'],
     'nav.reports': ['/admin/raporlar'],
-    'nav.purchasing': ['/siparisler/tedarik', '/admin/muhasebe/tedarikciler', '/admin/muhasebe/nakliye'],
+    'nav.purchasing': ['/siparisler/tedarik', '/admin/muhasebe/tedarikciler'],
     'nav.profileOrders': ['/siparisler?view=profil', '/admin/profil-katalogu', '/admin/profil-katalogu/hesaplama', '/admin/profil-fiyatlari', '/admin/stok'],
     'nav.people': ['/admin/users', '/admin/firms'],
     'nav.definitions': ['/admin/katalog', '/admin/fiyatlar', '/admin/musteri-fiyatlari', '/admin/entegrasyonlar'],

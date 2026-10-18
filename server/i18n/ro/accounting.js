@@ -328,7 +328,7 @@ export default {
     },
   },
   supplier: {
-    title: "Situație furnizor",
+    title: "Situație fabrică sticlă",
     intro: "Profitabilitatea încărcărilor și contul curent cu fabrica. Monedele sunt afișate separat și nu se adună între ele.",
     emptySummary: "Nu există încă comenzi de sticlă încărcate sau plăți.",
     summaryTitle: "Sumar",

@@ -18,6 +18,7 @@ import {
   resendOrder, saveDraft, setEta, startRevision,
 } from '@/server/suppliers/service.js';
 import { correctReceipt, receiveGoods } from '@/server/suppliers/receipt.js';
+import { createTransport, markTransportPaid, voidTransport } from '@/server/suppliers/costs.js';
 import { userCan } from '@/lib/permissions';
 
 const LIST = '/siparisler/tedarik';
@@ -239,4 +240,34 @@ export async function cancelAction(fd: FormData) {
   const r = await cancelOrder(db, { orderId: id, reason: fd.get('reason') }, await actorOf(admin));
   if (!r.ok) fail(id, r.code, {}, '#iptal');
   done(id, 'cancelled');
+}
+
+// ---------- nakliye (Transport ekle — 3.97.6) ----------
+// Nakliye yalnızca tedarikçi siparişinin sayfasından girilir; kayıt + dağıtım, iptal ve ödendi işareti server/suppliers/costs.js'te
+// (SUPPLIER_MANAGE — burada ve serviste). Seçilen kabullerin bu siparişe ait olduğunu servis denetler (RECEIPT_GONE).
+export async function addTransportAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const id = idOf(fd);
+  const r = await createTransport(db, {
+    orderId: id, carrierName: fd.get('carrierName'), invoiceNo: fd.get('invoiceNo'), invoiceDate: fd.get('invoiceDate'), amount: fd.get('amount'),
+    currency: fd.get('currency'), fxRate: fd.get('fxRate'), note: fd.get('note'), receiptIds: fd.getAll('receiptId').map(String), requestKey: fd.get('requestKey'),
+  }, await actorOf(admin), opts());
+  if (!r.ok) fail(id, r.code, {}, '#transport');
+  done(id, r.duplicate ? 'transportDuplicate' : 'transportAdded', '#transport');
+}
+
+export async function voidTransportAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const id = idOf(fd);
+  const r = await voidTransport(db, { transportId: String(fd.get('transportId') ?? ''), reason: fd.get('reason') }, await actorOf(admin));
+  if (!r.ok) fail(id, r.code, {}, '#transport');
+  done(id, 'transportVoided', '#transport');
+}
+
+export async function paidTransportAction(fd: FormData) {
+  const admin = await requirePermission('SUPPLIER_MANAGE');
+  const id = idOf(fd);
+  const r = await markTransportPaid(db, { transportId: String(fd.get('transportId') ?? ''), paidOn: fd.get('paidOn') }, await actorOf(admin), opts());
+  if (!r.ok) fail(id, r.code, {}, '#transport');
+  done(id, 'transportPaid', '#transport');
 }

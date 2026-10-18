@@ -3,7 +3,8 @@ import { ADMIN, ADMIN_PW, as } from './helpers';
 
 // DÜZELTME 10 M2 + M6 (3.97.x, karar 293) gerçek sunucuda:
 //  - açılış bakiyesi: tedarikçi hesabında ayrı satır; sipariş borcuna eklenmez, kalanı değiştirir; iptal edilen kayıt bakiyeden çıkar
-//  - nakliye: RON fatura + girilen kur → EUR; seçilen mal kabulüne gerçek teslim alınan ADETE göre dağıtılır (toplam kuruşu kuruşuna),
+//  - nakliye (3.97.6: yalnızca tedarikçi siparişinin sayfasında "Transport ekle"; ayrı Nakliye Giderleri ekranı yok):
+//    RON fatura + girilen kur → EUR; seçilen mal kabulüne gerçek teslim alınan ADETE göre dağıtılır (toplam kuruşu kuruşuna),
 //    taşıyıcının borcu ayrı izlenir, tedarikçinin borcuna eklenmez; stok miktarı değişmez
 // Tedarikçi siparişi ve mal kabulü test sürecinde servislerle hazırlanır (işçi çalıştırılmaz → e-posta yok).
 test.describe.configure({ mode: 'serial' });
@@ -12,6 +13,7 @@ const SUP = 'E2E Nakliye Tedarik';
 const CARRIER = 'E2E Taşıyıcı SRL';
 let supplierId = '';
 let receiptLabel = '';
+let orderId = '';
 
 async function prisma() {
   const { PrismaClient } = await import('@prisma/client');
@@ -35,7 +37,7 @@ test('hazırlık: tedarikçi, onaylı sipariş ve mal kabulü (MC12 × 3, MC16 �
     expect(s.ok).toBe(true);
     supplierId = (s as { id: string }).id;
     const c = await svc.createDraftOrder(db, { supplierId }, actor, tz);
-    const orderId = (c as { id: string }).id;
+    orderId = (c as { id: string }).id;
     const ids = await Promise.all(['MC12', 'MC16'].map(async (code) => (await db.profileProduct.findUniqueOrThrow({ where: { code } })).id));
     let o = await db.supplierOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect((await svc.saveDraft(db, { orderId, version: o.version, orderDate: today, note: '', lines: [{ productId: ids[0], qty: 3, unitPrice: '2' }, { productId: ids[1], qty: 7, unitPrice: '3' }] }, actor, tz)).ok).toBe(true);
@@ -76,17 +78,27 @@ test('nakliye: RON + kur → EUR, adete göre dağıtım (toplam tam), taşıyı
   try {
     const stock = [await level(db, 'MC12'), await level(db, 'MC16')];
     const admin = await as(browser, ADMIN, ADMIN_PW);
-    await admin.goto('/admin/muhasebe/nakliye');
-    const form = admin.locator('#yeni');
-    await form.locator('#tr-carrier').fill(CARRIER);
-    await form.locator('#tr-no').fill('NK-E2E-1');
-    await form.locator('#tr-amount').fill('100');
-    await form.locator('#tr-cur').selectOption('RON');
-    await form.locator('#tr-fx').fill('5');
-    await form.locator(`[data-receipt-option="${receiptLabel}"] input[type="checkbox"]`).check();
-    await form.getByRole('button', { name: 'Kaydet ve dağıt' }).click();
+    // Ayrı ekran ve menü yok
+    await admin.goto('/siparisler/tedarik');
+    await expect(admin.locator('.sidebar').getByRole('link', { name: 'Nakliye Giderleri' })).toHaveCount(0);
+    await expect(admin.locator('.sidebar').getByRole('link', { name: 'Cam Fabrika Hesap Durumu' })).toBeVisible();
+    expect((await admin.request.get('/admin/muhasebe/nakliye')).status()).toBe(404);
+    await admin.goto(`/siparisler/tedarik/${orderId}`);
+    const card = admin.locator('#transport');
+    await card.locator('summary', { hasText: 'Transport ekle' }).click();
+    await card.locator('#tr-carrier').fill(CARRIER);
+    await card.locator('#tr-no').fill('NK-E2E-1');
+    await card.locator('#tr-amount').fill('100');
+    await card.locator('#tr-cur').selectOption('RON');
+    await card.locator('#tr-fx').fill('5');
+    await card.locator(`[data-receipt-option="${receiptLabel}"] input[type="checkbox"]`).check();
+    await card.getByRole('button', { name: 'Kaydet ve dağıt' }).click();
     await expect(admin.getByText('Nakliye kaydedildi ve dağıtıldı.')).toBeVisible();
-    await expect(admin.locator(`[data-carrier="${CARRIER}"]`)).toContainText('100');
+    await expect(admin.locator('#transport [data-transport="NK-E2E-1"]')).toContainText('100');
+    await expect(admin.locator('#transport [data-transport="NK-E2E-1"] [data-eur]')).toContainText('20');
+    // Taşıyıcı bakiyesi Tedarikçi Hesapları özetinde ayrı (salt okunur)
+    await admin.goto('/admin/muhasebe/tedarikciler');
+    await expect(admin.locator(`#tasiyicilar [data-carrier="${CARRIER}"]`)).toContainText('100');
     const tc = await db.transportCost.findFirstOrThrow({ where: { carrierName: CARRIER }, include: { allocations: { include: { product: true } } } });
     const by = Object.fromEntries(tc.allocations.map((a) => [a.product.code, [a.qty, Number(a.amountEur)]]));
     // 100 RON / 5 = 20 EUR; 10 adet → adet başına 2 EUR: MC12 3 adet = 6, MC16 7 adet = 14
