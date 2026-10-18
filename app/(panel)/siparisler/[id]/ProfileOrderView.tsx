@@ -30,6 +30,7 @@ import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import { PreviewFor } from '@/components/PreviewFor';
 import { PhotoThumb } from '@/components/FilePreview';
+import { ProfileReturns } from './ProfileReturns';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, deliveryPhotoAction, deliveryReportAction, invoicedAction, paidAction,
   profilePricesAction, proformaAction, resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
@@ -596,6 +597,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
               )}
             </div>
           )}
+          {/* Profil iadesi (DÜZELTME 10 M8): yalnızca yönetici (PROFILE_RETURN_MANAGE) */}
+          {userCan(user, 'PROFILE_RETURN_MANAGE') && <ProfileReturns orderId={order.id} user={user} t={t} locale={locale} today={isoDay(depotToday())} sp={sp} />}
           {files}
           {notes}
           {history}

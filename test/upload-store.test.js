@@ -434,7 +434,7 @@ test('yapı: bütün yükleme yolları storeFiles → storeUploads üzerinden; t
   // Müşteri (yeni sipariş / taslak), ekip (çizim, dosya ekleme, teslim belgesi, katalog görseli, tedarikçi siparişinin teknik
   // eki — Paket 6) ve depo bağlantısı
   assert.deepEqual(hits.storeFiles.sort(), [
-    'app/(panel)/admin/profil-katalogu/actions.ts', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/pdf-import-actions.ts', 'app/(panel)/siparisler/[id]/profile-actions.ts',
+    'app/(panel)/admin/profil-katalogu/actions.ts', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/pdf-import-actions.ts', 'app/(panel)/siparisler/[id]/profile-actions.ts', 'app/(panel)/siparisler/[id]/return-actions.ts',
     'app/(panel)/siparisler/tedarik/actions.ts', 'app/(panel)/siparisler/yeni/actions.ts', 'app/depo/[token]/actions.ts', 'lib/uploads.ts',
   ]);
   // Tedarikçi siparişinin eki: işlem yapan bilgisi ve sınır denetimi dosyalar saklanmadan ÖNCE; kayıt olmazsa (hata ya da

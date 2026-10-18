@@ -608,6 +608,8 @@ export default {
     colProduct: 'Ürün',
     colUnit: 'Birim',
     colStock: 'Stok',
+    colBlocked: 'Bloke',
+    colBlockedHint: 'Hasarlı iade malı: kullanılabilir stoğa ve rezerveye girmez',
     colReserved: 'Rezerve',
     colReservedHint: 'onaylı, depoya gitmemiş',
     colThreshold: 'Kritik eşik',
