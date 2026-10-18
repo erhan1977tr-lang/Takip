@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.98.5 — 18.10.2026
+## 3.98.6 — 18.10.2026
 
 - DÜZELTME 10 Aşama 2C — fazla ödeme. **Avans faturası proforma toplamını aşamaz** (sipariş başına cam zinciri, profil ve müşteri
   proforması aynı kuraldan): tahsilat proforma toplamını aşarsa avans proforma toplamıyla sınırlanır, fazlası sipariş finans

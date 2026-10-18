@@ -70,12 +70,13 @@ async function customerChains(db, customerId) {
   return { ok: true, chains: [...byKey.values()] };
 }
 
-const offsetSelect = {
+const offsetSelect = /** @type {const} */ ({
   id: true, sourceChain: true, sourceOrderId: true, sourceRef: true, targetChain: true, targetOrderId: true, targetRef: true, amountRon: true, note: true, status: true,
   createdAt: true, closedAt: true, closeReason: true, fgoRef: true,
   createdBy: { select: { name: true } }, closedBy: { select: { name: true } },
   sourceOrder: { select: { orderNo: true } }, targetOrder: { select: { orderNo: true } },
-};
+});
+/** @typedef {import('@prisma/client').Prisma.CreditOffsetGetPayload<{ select: typeof offsetSelect }>} OffsetRow */
 
 /**
  * Müşteri bakiyesi ekranı: zincirler, mahsup kayıtları (hepsi, geri alınanlar dahil — geçmiş), toplamlar, inceleme kodları.
@@ -87,7 +88,7 @@ export async function customerCredit(db, customerId, actor) {
   if (!customer || customer.type !== 'CUSTOMER') return { ok: false, code: 'NOT_FOUND' };
   const ch = await customerChains(db, customer.id);
   if (!ch.ok) return ch;
-  const offsets = await db.creditOffset.findMany({ where: { customerId: customer.id }, orderBy: { createdAt: 'desc' }, select: offsetSelect });
+  const offsets = /** @type {OffsetRow[]} */ (await db.creditOffset.findMany({ where: { customerId: customer.id }, orderBy: { createdAt: 'desc' }, select: offsetSelect }));
   const ledger = creditLedger(ch.chains, offsets);
   return { ok: /** @type {const} */ (true), customer, ...ledger, offsets };
 }
@@ -202,7 +203,7 @@ export async function orderOffsets(db, orderId, actor) {
   if (!allowed(actor)) return FORBIDDEN;
   const chain = await loadChain(db, orderId);
   if (!chain) return { ok: /** @type {const} */ (true), key: null, customerId: null, out: [], in: [] };
-  const rows = await db.creditOffset.findMany({ where: { OR: [{ sourceChain: chain.key }, { targetChain: chain.key }] }, orderBy: { createdAt: 'desc' }, select: offsetSelect });
+  const rows = /** @type {OffsetRow[]} */ (await db.creditOffset.findMany({ where: { OR: [{ sourceChain: chain.key }, { targetChain: chain.key }] }, orderBy: { createdAt: 'desc' }, select: offsetSelect }));
   return { ok: /** @type {const} */ (true), key: chain.key, customerId: chain.order.customerId, out: rows.filter((r) => r.sourceChain === chain.key), in: rows.filter((r) => r.targetChain === chain.key) };
 }
 
