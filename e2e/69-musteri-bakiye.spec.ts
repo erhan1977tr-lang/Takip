@@ -154,7 +154,8 @@ test('yetkisiz roller: sayfa ve veri yok; taklit form gönderimi mahsup oluştur
       await p.goto(`${PAGE}?c=${customerId}`);
       await expect(p, email).not.toHaveURL(/\/admin\/muhasebe\/bakiye/);
       const body = await (await p.request.get(`${PAGE}?c=${customerId}`)).text();
-      for (const s of [sourceRef, targetRef, 'Bakiye E2E SRL', '195,00']) expect(body.includes(s), `${email} → ${s}`).toBe(false);
+      // Bakiye ekranının verisi yok (firma adı burada ölçüt değildir: denetimci sipariş listesinde tam firma adını görür — karar 11)
+      for (const s of [sourceRef, targetRef, '195,00', 'data-credit-customer', 'mahsup-formu']) expect(body.includes(s), `${email} → ${s}`).toBe(false);
       await expect(p.locator('.sidebar').getByRole('link', { name: 'Müşteri Bakiyeleri' })).toHaveCount(0);
       const origin = new URL(p.url()).origin;
       await p.request.post(`${PAGE}?c=${customerId}`, {
