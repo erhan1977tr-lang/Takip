@@ -124,10 +124,15 @@ dbTest('O2: profil teslim faturası — avans toplamı fatura tutarını aşarsa
   o = await load();
   await runProfileAction(db, { orderId: id, action: 'approve_profile_offer', actor: custActor, payload: { offerId: o.offers[0].id, pickupDate: earliestPickup({ now: new Date(Date.now() + 5 * 60_000) }), phone: '0723000000', plate: 'B 1 FAV' } });
   assert.deepEqual(await dispatchFgoJobs(db, ctx()), { done: 1, failed: 0 });
-  // Proforma 302,50 RON; yanlış / fazla elle ödeme 80 EUR = 400 RON → avans faturası 400 RON (karar 207: fazla tahsilat incelemeye düşer)
+  // Proforma 302,50 RON; yanlış / fazla elle ödeme 80 EUR = 400 RON. 3.98.4'ten beri (karar 295) avans proforma toplamını
+  // aşamaz: avans faturası 302,50 RON kesilir, fazlası belge doğurmaz.
   assert.equal((await pay({ id }, '80')).ok, true);
   assert.equal((await f.requestProfileAdvance(db, { orderId: id, actor: actor() })).ok, true);
   assert.deepEqual(await dispatchProfileAdvanceJobs(db, ctx()), { done: 1, failed: 0 });
+  const adv = await db.fgoDocument.findFirstOrThrow({ where: { orderId: id, kind: 'ADVANCE' } });
+  assert.equal(Number(adv.advanced), 302.5, 'avans proforma toplamıyla sınırlı');
+  // Koruma hâlâ gerekli: 3.98.0 öncesi kesilmiş (sınırsız) bir avans faturası — eski veri — fatura tutarını aşabilir
+  await db.fgoDocument.update({ where: { id: adv.id }, data: { advanced: '400.00', total: '400.00' } });
   await runProfileAction(db, { orderId: id, action: 'mark_paid', actor: actor(), payload: { paidDate: dayDate(today()) } });
   await runProfileAction(db, { orderId: id, action: 'mark_delivered', actor: actor() });
   const calls = fgo.calls.length;

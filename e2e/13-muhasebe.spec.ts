@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'serial' });
 
 const SALES2 = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.test 05'te kilitleniyor)
 const INSPECTOR = 'denetim@e2e.test'; // 05'te açıldı
-const PAGES = ['/admin/muhasebe/profil', '/admin/muhasebe/cam', '/admin/muhasebe/tedarikci'];
+const PAGES = ['/admin/muhasebe/profil', '/admin/muhasebe/cam', '/admin/muhasebe/bakiye', '/admin/muhasebe/tedarikci'];
 const SUPPLIER = '/admin/muhasebe/tedarikci';
 // Yalnızca muhasebe ekranlarında görünen veriler: yetkisiz yanıtta hiçbiri bulunmamalı
 const SECRETS = ['GKH77003', 'PRF77001', 'E2E-ODEME', 'E2E TIR'];

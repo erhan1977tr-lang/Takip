@@ -185,6 +185,8 @@ model User {
   billingBatches     BillingBatch[] @relation("BillingBatchCreatedBy")
   manualPayments     ManualPayment[] @relation("ManualPaymentCreatedBy")
   manualPaymentsVoided ManualPayment[] @relation("ManualPaymentVoidedBy")
+  creditOffsets        CreditOffset[]  @relation("CreditOffsetCreatedBy")
+  creditOffsetsClosed  CreditOffset[]  @relation("CreditOffsetClosedBy")
   ordersRemoved      Order[]        @relation("OrderRemovedBy")
   compensationsCreated Compensation[] @relation("CompensationCreatedBy")
   compensationsDecided Compensation[] @relation("CompensationDecidedBy")
@@ -305,6 +307,7 @@ model Customer {
   billingBatches BillingBatch[]
   compensations Compensation[]
   manualPayments ManualPayment[]
+  creditOffsets  CreditOffset[]
   commercialOffers CommercialOffer[]
   // Müşteriye özel fiyat tablosu (yönetim kopyasında müşteri fiyatları buradan gelir)
   priceTableId  String?
@@ -415,6 +418,8 @@ model Order {
   outbox            NotificationOutbox[]
   fgoDocuments      FgoDocument[]
   manualPayments    ManualPayment[]
+  creditOffsetsOut  CreditOffset[] @relation("CreditOffsetSource")
+  creditOffsetsIn   CreditOffset[] @relation("CreditOffsetTarget")
   billingBatchOrders BillingBatchOrder[]
   glassBilling      GlassBilling?
   profile           ProfileOrder?        // yalnızca profil siparişinde
@@ -2208,6 +2213,46 @@ model ManualPayment {
   @@index([orderId])
   @@index([customerId, paidOn])
   @@index([batchId])
+}
+
+// Müşteri fazla ödemesinin TAKİP İÇİ mahsup kaydı (DÜZELTME 10 Aşama 2C, karar 295). FGO'da tahsilat, belge ya da iade
+// DEĞİLDİR ve avans faturası dayanağına girmez (aynı para iki kez sayılmaz). Kaynak: fazla ödemesi olan ödeme zinciri
+// ("order:<id>" | "batch:<id>"), hedef: aynı müşterinin FGO proforması kesilmiş başka zinciri. Silinmez, tutarı değişmez;
+// bir kez REVERSED (gerekçeyle geri alındı) ya da FGO_RECORDED (muhasebeci FGO'ya işledi — artık FGO rakamlarında) olur.
+model CreditOffset {
+  id            String             @id @default(cuid())
+  customerId    String
+  customer      Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sourceChain   String
+  sourceOrderId String
+  sourceOrder   Order              @relation("CreditOffsetSource", fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  sourceRef     String             // kaynak proforma (seri + numara) — kayıt anındaki
+  targetChain   String
+  targetOrderId String
+  targetOrder   Order              @relation("CreditOffsetTarget", fields: [targetOrderId], references: [id], onDelete: Restrict)
+  targetRef     String             // hedef proforma (seri + numara) — kayıt anındaki
+  amountRon     Decimal            @db.Decimal(14, 2)
+  note          String
+  requestKey    String             @unique
+  status        CreditOffsetStatus @default(ACTIVE)
+  createdById   String
+  createdBy     User               @relation("CreditOffsetCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime           @default(now())
+  closedAt      DateTime?
+  closedById    String?
+  closedBy      User?              @relation("CreditOffsetClosedBy", fields: [closedById], references: [id])
+  closeReason   String?
+  fgoRef        String?            // FGO_RECORDED: muhasebecinin beyan ettiği FGO belge / tahsilat referansı (TAKİP doğrulamaz)
+
+  @@index([customerId, createdAt])
+  @@index([sourceChain])
+  @@index([targetChain])
+}
+
+enum CreditOffsetStatus {
+  ACTIVE
+  REVERSED
+  FGO_RECORDED
 }
 
 // ---------------------------------------------------------

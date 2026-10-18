@@ -20,6 +20,7 @@ export default {
   accounting: 'Muhasebe',
   profileReceivables: 'Profil Tahsilat',
   glassReceivables: 'Cam Tahsilat',
+  customerCredit: 'Müşteri Bakiyeleri',
   supplier: 'Cam Fabrika Hesap Durumu',
   people: 'Kişiler',
   definitions: 'Tanımlar',

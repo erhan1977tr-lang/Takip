@@ -544,3 +544,33 @@ dbTest('yetki ve gizlilik: yönetici dışındaki roller ödeme kaydedemez / ge�
   assert.equal(await customerDocument(db, { docId: pf.id, customerId: stranger.id }), null);
   assert.equal((await customerDocument(db, { docId: pf.id, customerId: owner.id })).id, pf.id);
 }));
+
+dbTest('DÜZELTME 10 M3: fazla ödeme — avans faturası proforma toplamını AŞMAZ; fazlası müşteri alacağı olarak görünür, belge doğurmaz', offline(async () => {
+  const c = await customer('Fazla Ödeme SRL', 'FZO', { regCom: 'J40/9/2020' });
+  const cust = await db.user.create({ data: { email: 'cust@fzo.test', name: 'Müşteri', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: c.id, canApprove: true } });
+  const custActor = { id: cust.id, role: 'MUSTERI', canApprove: true, customerId: c.id, ip: '127.0.0.1' };
+  const products = await db.profileProduct.findMany({ where: { code: 'GK15' }, include: { category: true } });
+  const items = profileOrderItems([{ productId: products[0].id, qty: 4 }], products);
+  const next = await suggestNextNo(db, c.id, 'PROFILE_ORDER');
+  const { id } = await createProfileOrder(db, { actor: custActor, firm: c, title: null, requestedNo: next, suggestedNo: next, items: items.items });
+  const load = () => db.order.findUniqueOrThrow({ where: { id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: true } } } });
+  let o = await load();
+  await runProfileAction(db, { orderId: id, action: 'send_profile_offer', actor: actor(), payload: { lines: o.offers[0].lines.map((l) => ({ id: l.id, offerPrice: '12.5' })) } });
+  o = await load();
+  await runProfileAction(db, { orderId: id, action: 'approve_profile_offer', actor: custActor, payload: { offerId: o.offers[0].id, pickupDate: earliestPickup({ now: new Date(Date.now() + 5 * 60_000) }), phone: '0723000000', plate: 'B 1 FZO' } });
+  assert.deepEqual(await dispatchFgoJobs(db, ctx()), { done: 1, failed: 0 });
+  const pf = await db.fgoDocument.findFirst({ where: { orderId: id, kind: 'PROFORMA' } });
+  assert.equal(pf.total.toString(), '302.5');
+  // 70 EUR × 5 = 350 RON > 302,50 RON proforma
+  assert.equal((await pay({ id }, '70')).ok, true);
+  let v = await orderFinanceView(db, id);
+  assert.deepEqual([v.state.advanceRequired, v.state.overpaid, v.state.review], [302.5, 47.5, ['OVERPAID']]);
+  assert.equal((await f.requestProfileAdvance(db, { orderId: id, actor: actor() })).ok, true);
+  assert.deepEqual(await dispatchProfileAdvanceJobs(db, ctx()), { done: 1, failed: 0 });
+  const [adv] = await advances({ id });
+  assert.equal(adv.advanced.toString(), '302.5', 'avans = proforma toplamı (fazlası değil)');
+  assert.equal(fgo.calls.at(-1)['Continut[0][PretTotal]'], '302.50');
+  v = await orderFinanceView(db, id);
+  assert.deepEqual([v.state.advanceRequired, v.state.overpaid], [0, 47.5]);
+  assert.deepEqual(await f.requestProfileAdvance(db, { orderId: id, actor: actor() }), { ok: false, code: 'NOTHING_TO_ADVANCE' }, 'fazlası için ikinci avans yok');
+}));

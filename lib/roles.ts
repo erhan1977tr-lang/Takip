@@ -35,6 +35,8 @@ const ADMIN_NAV: NavDef[] = [
   { section: 'nav.accounting' },
   { href: '/admin/muhasebe/profil', key: 'nav.profileReceivables' },
   { href: '/admin/muhasebe/cam', key: 'nav.glassReceivables' },
+  // Müşteri fazla ödemesi ve TAKİP içi mahsup (DÜZELTME 10 Aşama 2C, karar 295) — yalnızca ACCOUNTING_MANAGE
+  { href: '/admin/muhasebe/bakiye', key: 'nav.customerCredit' },
   { href: '/admin/muhasebe/tedarikci', key: 'nav.supplier' },
   // Yönetici raporları (3.89.0, karar 284): salt okunur — yalnızca REPORT_VIEW (yönetici ve yardımcısı)
   { section: 'nav.reports' },

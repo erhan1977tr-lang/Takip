@@ -69,6 +69,24 @@ test('kısmi, birden çok, fazla ve uyuşmayan ödeme: tam ödeme sayılmaz, far
   // Fazla ödeme: proforma toplamını aşan → inceleme; "tam ödeme" fazla tutar için belge doğurmaz
   st = paymentState({ fgoPaid: '1300', proformaTotal: '1210', payments: [], advanced: 0 });
   assert.deepEqual([st.review, st.full], [['OVERPAID'], true]);
+  // DÜZELTME 10 M3: avans proforma toplamını AŞMAZ; fazlası (90) ayrı gösterilir, belge doğurmaz
+  assert.deepEqual([st.advanceRequired, st.overpaid], [1210, 90]);
+  st = paymentState({ fgoPaid: '1300', proformaTotal: '1210', payments: [{ ron: '1500' }], advanced: '1210' });
+  assert.deepEqual([st.advanceRequired, st.overpaid, st.basis], [0, 290, 1500]);
+  st = paymentState({ fgoPaid: '1300', proformaTotal: '1210', payments: [], advanced: '600' });
+  assert.equal(st.advanceRequired, 610);
+  // Toplamı bilinmeyen proforma: sınır yok (eski davranış), fazla ödeme hesaplanmaz
+  st = paymentState({ fgoPaid: '1300', proformaTotal: null, payments: [], advanced: 0 });
+  assert.deepEqual([st.advanceRequired, st.overpaid], [1300, 0]);
+  // Rastgele: avans hiçbir zaman proforma toplamı − kesilen avansı aşmaz; fazla + avanslanabilir = tahsilat
+  let seed = 3;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  for (let i = 0; i < 1000; i++) {
+    const total = 1 + rnd(100000), fgo = rnd(150000), manual = rnd(150000), adv = rnd(total + 1);
+    const x = paymentState({ fgoPaid: String(fgo / 100), proformaTotal: String(total / 100), payments: [{ ron: String(manual / 100) }], advanced: String(adv / 100) });
+    assert.ok(Math.round(x.advanceRequired * 100) + adv <= Math.max(total, adv), `tur ${i}`);
+    assert.equal(Math.round(x.overpaid * 100), Math.max(0, Math.max(fgo, manual) - total), `tur ${i}`);
+  }
   assert.equal(paymentMatch(0n, 0n), 'NONE');
   assert.equal(basisOf(100n, 100n), 'FGO_MANUAL');
   assert.equal(basisOf(0n, 0n), 'FGO');
