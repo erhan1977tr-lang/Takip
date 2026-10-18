@@ -20,6 +20,7 @@ CREATE TABLE "CreditOffset" (
     "closedAt" TIMESTAMP(3),
     "closedById" TEXT,
     "closeReason" TEXT,
+    "fgoRef" TEXT,
 
     CONSTRAINT "CreditOffset_pkey" PRIMARY KEY ("id")
 );

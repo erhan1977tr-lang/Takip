@@ -37,13 +37,23 @@ export function parseOffset({ amount, note, confirm }) {
   return { ok: true, value: { cents, note: n } };
 }
 
-/** Geri alma / FGO'ya işlendi gerekçesi: zorunlu, açık onay */
-export function parseClose({ reason, confirm }) {
+export const FGO_REF_MAX = 60;
+
+/**
+ * Kapatma formu: gerekçe zorunlu + açık onay. FGO_RECORDED = muhasebecinin MANUEL beyanı: FGO belge / tahsilat referansı
+ * zorunlu (en çok 60, harf / rakam / boşluk / - / . /), TAKİP bu referansı FGO'da doğrulamaz. REVERSED'da referans alınmaz.
+ * @param {{ reason: unknown, confirm: unknown, fgoRef?: unknown }} v  @param {'REVERSED' | 'FGO_RECORDED'} mode
+ */
+export function parseClose({ reason, confirm, fgoRef }, mode = 'REVERSED') {
   if (confirm !== true && confirm !== 'on' && confirm !== '1' && confirm !== 'true') return { ok: false, code: 'CONFIRM_REQUIRED' };
   const r = clean(reason, OFFSET_REASON_MAX);
   if (!r) return { ok: false, code: 'REASON' };
   if (r.length > OFFSET_REASON_MAX) return { ok: false, code: 'TOO_LONG' };
-  return { ok: true, value: { reason: r } };
+  if (mode !== 'FGO_RECORDED') return { ok: true, value: { reason: r, fgoRef: null } };
+  const ref = clean(fgoRef, FGO_REF_MAX);
+  if (!ref) return { ok: false, code: 'FGO_REF' };
+  if (ref.length > FGO_REF_MAX || !/^[\p{L}\p{N}][\p{L}\p{N} ./-]*$/u.test(ref)) return { ok: false, code: 'FGO_REF' };
+  return { ok: true, value: { reason: r, fgoRef: ref } };
 }
 
 /**

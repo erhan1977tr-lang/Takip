@@ -167,14 +167,14 @@ export default {
     },
     totals: { paid: 'Toplam tahsilat', overpaid: 'Toplam fazla ödeme', offset: 'Etkin mahsup', available: 'Kullanılabilir bakiye', cancelledPaid: 'İptal edilmiş siparişlere tahsilat (incelemede, bakiyeye girmez)' },
     cancelled: 'iptal / kaldırılmış',
-    status: { ACTIVE: 'Etkin', REVERSED: 'Geri alındı', FGO_RECORDED: "FGO'ya işlendi" },
+    status: { ACTIVE: 'Etkin', REVERSED: 'Geri alındı', FGO_RECORDED: "FGO'ya işlendi (muhasebe beyanı)" },
     review: {
       CANCELLED_PAID: "İptal edilmiş / kaldırılmış siparişin proformasına tahsilat var ({chain}). Bakiyeye otomatik eklenmez; FGO'da kontrol edin.",
       OFFSET_EXCEEDS_SOURCE: 'Çıkan mahsup kaynağın fazla ödemesini aşıyor ({chain}) — kaynakta ödeme sonradan azalmış olabilir. Mahsubu gözden geçirin.',
       OFFSET_EXCEEDS_TARGET: 'Gelen mahsup hedefin açık tutarını aşıyor ({chain}) — hedefe sonradan ödeme gelmiş olabilir. Mahsubu gözden geçirin.',
       OFFSET_CHAIN_GONE: 'Bir mahsubun kaynağı ya da hedefi artık bu müşterinin geçerli zincirlerinde yok (proforma FGO\'da silinmiş olabilir). Mahsubu gözden geçirin.',
     },
-    offsets: { title: 'Mahsup kayıtları (geçmiş dahil)', none: 'Mahsup kaydı yok.', closed: '{status}: {reason} ({who}, {when})' },
+    offsets: { title: 'Mahsup kayıtları (geçmiş dahil)', none: 'Mahsup kaydı yok.', closed: '{status}: {reason} ({who}, {when})', fgoRef: 'Beyan edilen FGO referansı: {ref} (TAKİP doğrulamadı)' },
     form: {
       title: 'Mahsup kaydı oluştur',
       hint: 'Kaynak: kalan fazla ödemesi olan zincir. Hedef: aynı müşterinin FGO proforması kesilmiş, iptal edilmemiş başka bir zinciri (açık tutarı kadar). Tutar kaynağın kalan fazlasını ve hedefin açık tutarını aşamaz.',
@@ -184,7 +184,10 @@ export default {
       none: 'Mahsup için uygun kaynak ya da hedef yok.',
     },
     close: {
-      reverse: 'Geri al', fgo: "FGO'ya işlendi", reason: 'Gerekçe',
+      reverse: 'Geri al', fgo: "FGO'ya işlendi olarak beyan et", reason: 'Gerekçe',
+      fgoRef: 'FGO belge / tahsilat referansı', fgoSubmit: 'Beyanı kaydet',
+      fgoHint: "Yalnızca manuel muhasebe beyanıdır: muhasebeci mahsubu FGO'ya kendisi işledikten sonra kullanılır. TAKİP FGO'ya hiçbir şey göndermez ve referansı FGO'da doğrulamaz; referans, gerekçe ve beyan eden kullanıcı kaydedilir.",
+      fgoConfirm: "Bu mahsubu FGO'ya kendim / muhasebe olarak işlediğimizi beyan ediyorum.",
       confirm: 'Bu işlemi onaylıyorum.',
       reverseDialog: 'Mahsup geri alınsın mı? Kayıt silinmez; bakiyeden çıkar. FGO\'ya işlendiyse orada da geri alınmalıdır.',
       fgoDialog: "Mahsup FGO'ya işlendi olarak kapatılsın mı? Bundan sonra FGO rakamlarında sayılır ve TAKİP'te geri alınamaz.",
@@ -197,7 +200,7 @@ export default {
       OVER_SOURCE: 'Tutar kaynağın kalan fazla ödemesini aşıyor.', TARGET_GONE: 'Hedef sipariş bulunamadı ya da bu müşterinin değil.',
       TARGET_CANCELLED: 'İptal edilmiş / kaldırılmış sipariş hedef olamaz.', TARGET_NO_PROFORMA: "Hedef siparişin FGO proforması yok.",
       OVER_TARGET: 'Tutar hedefin açık tutarını aşıyor.', NOT_FOUND: 'Kayıt bulunamadı.', ALREADY_CLOSED: 'Bu mahsup zaten kapatılmış.',
-      ALREADY_FGO: "Bu mahsup FGO'ya işlendi; TAKİP'te geri alınamaz.", TOO_LARGE: 'Hesaplanacak zincir sayısı sınırı aşıyor.', MODE: 'İşlem geçersiz.', OTHER: 'İşlem yapılamadı.',
+      ALREADY_FGO: "Bu mahsup FGO'ya işlendi olarak beyan edildi; TAKİP'te geri alınamaz.", FGO_REF: 'FGO referansı zorunlu (en çok 60 karakter; harf, rakam, boşluk, - . /).', TOO_LARGE: 'Hesaplanacak zincir sayısı sınırı aşıyor.', MODE: 'İşlem geçersiz.', OTHER: 'İşlem yapılamadı.',
     },
     card: {
       title: 'Mahsup (TAKİP içi)', out: 'Bu zincirin fazla ödemesinden çıkan', in: 'Bu zincire gelen',

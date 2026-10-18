@@ -100,13 +100,35 @@ test('yönetici: müşteri bazında bakiye; TAKİP içi mahsup açık onayla; FG
     // Geri alma: gerekçe + onay; kayıt silinmez
     await page.goto(`${URL}?c=${customerId}`);
     const offsetRow = page.locator('[data-offset-status="ACTIVE"]');
-    await offsetRow.locator('input[name="reason"]').fill('yanlış tutar');
-    await offsetRow.locator('input[name="confirm"]').check();
-    await offsetRow.getByRole('button', { name: 'Geri al' }).click();
+    const rev = offsetRow.locator('[data-close="REVERSED"]');
+    await rev.locator('input[name="reason"]').fill('yanlış tutar');
+    await rev.locator('input[name="confirm"]').check();
+    await rev.getByRole('button', { name: 'Geri al' }).click();
     await expect(page.getByText('Mahsup geri alındı.')).toBeVisible();
     await expect(page.locator('[data-offset-status="REVERSED"]')).toHaveCount(1);
     await expect(page.locator('[data-total="available"]')).toContainText('195,00 RON');
     expect(await db.creditOffset.count({ where: { customerId } })).toBe(1);
+
+    // İkinci mahsup → "FGO'ya işlendi" yalnızca manuel muhasebe beyanı: referans + gerekçe + onay; FGO'ya istek yok
+    await form.locator('#of-amount').fill('30');
+    await form.locator('#of-note').fill('ikinci mahsup');
+    await form.locator('input[name="confirm"]').check();
+    await form.getByRole('button', { name: 'Mahsubu kaydet' }).click();
+    await expect(page.locator('[data-offset-status="ACTIVE"]')).toHaveCount(1);
+    const decl = page.locator('[data-offset-status="ACTIVE"] [data-close="FGO_RECORDED"]');
+    await decl.locator('summary').click();
+    await decl.locator('input[name="fgoRef"]').fill('PRF 96902 / incasare 1');
+    await decl.locator('input[name="reason"]').fill('muhasebe FGO\'ya işledi');
+    await decl.locator('input[name="confirm"]').check();
+    await decl.getByRole('button', { name: 'Beyanı kaydet' }).click();
+    await expect(page.getByText('manuel beyan')).toBeVisible();
+    await expect(page.locator('[data-fgo-ref="PRF 96902 / incasare 1"]')).toBeVisible();
+    // Beyan edilen kayıt artık mahsup sayılmaz (FGO rakamları güncellenince yansır); geri alınamaz
+    await expect(page.locator('[data-total="offset"]')).toContainText('0,00 RON');
+    expect(JSON.stringify(await db.fgoDocument.findMany({ where: { orderId: { in: [sourceId, targetId] } }, orderBy: { id: 'asc' } }))).toBe(docsBefore);
+    expect(await db.notificationOutbox.count()).toBe(outboxBefore);
+    const declared = await db.creditOffset.findFirstOrThrow({ where: { customerId, status: 'FGO_RECORDED' } });
+    expect([declared.fgoRef, declared.closedById !== null]).toEqual(['PRF 96902 / incasare 1', true]);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${URL}?c=${customerId}`);

@@ -87,7 +87,11 @@ test('form: açık onay zorunlu, tutar > 0 en çok 2 ondalık, gerekçe zorunlu'
   assert.deepEqual(ok, { ok: true, value: { cents: 123450n, note: 'GLA68 fazlası GLA70e' } });
   assert.equal(parseClose({ reason: 'x' }).code, 'CONFIRM_REQUIRED');
   assert.equal(parseClose({ reason: ' ', confirm: 'on' }).code, 'REASON');
-  assert.deepEqual(parseClose({ reason: 'yanlış hedef', confirm: 'on' }), { ok: true, value: { reason: 'yanlış hedef' } });
+  assert.deepEqual(parseClose({ reason: 'yanlış hedef', confirm: 'on' }), { ok: true, value: { reason: 'yanlış hedef', fgoRef: null } });
+  assert.deepEqual(parseClose({ reason: 'r', confirm: 'on', fgoRef: 'PRF9' }, 'REVERSED'), { ok: true, value: { reason: 'r', fgoRef: null } }, 'geri almada referans alınmaz');
+  // FGO'ya işlendi = manuel beyan: referans zorunlu ve sade
+  for (const bad of [undefined, '', '  ', '<b>x</b>', 'a'.repeat(61), '-PRF']) assert.equal(parseClose({ reason: 'r', confirm: 'on', fgoRef: bad }, 'FGO_RECORDED').code, 'FGO_REF', String(bad));
+  assert.deepEqual(parseClose({ reason: 'r', confirm: 'on', fgoRef: ' PRF 512 / incasare 7 ' }, 'FGO_RECORDED'), { ok: true, value: { reason: 'r', fgoRef: 'PRF 512 / incasare 7' } });
 });
 
 test('rastgele: kullanılabilir bakiye hiçbir zaman fazla ödemelerin toplamını aşmaz; geçerli mahsuplar sonrası her zincir ≥ 0', () => {

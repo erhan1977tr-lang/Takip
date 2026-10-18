@@ -2242,6 +2242,7 @@ model CreditOffset {
   closedById    String?
   closedBy      User?              @relation("CreditOffsetClosedBy", fields: [closedById], references: [id])
   closeReason   String?
+  fgoRef        String?            // FGO_RECORDED: muhasebecinin beyan ettiği FGO belge / tahsilat referansı (TAKİP doğrulamaz)
 
   @@index([customerId, createdAt])
   @@index([sourceChain])

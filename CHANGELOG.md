@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.98.4 — 18.10.2026
+## 3.98.5 — 18.10.2026
 
 - DÜZELTME 10 Aşama 2C — fazla ödeme. **Avans faturası proforma toplamını aşamaz** (sipariş başına cam zinciri, profil ve müşteri
   proforması aynı kuraldan): tahsilat proforma toplamını aşarsa avans proforma toplamıyla sınırlanır, fazlası sipariş finans
@@ -15,8 +15,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 - **TAKİP içi mahsup kaydı:** yönetici fazla ödemeyi aynı müşterinin FGO proforması kesilmiş başka bir siparişine açık onayla
   ayırır (kaynağın kalan fazlası ve hedefin açık tutarı kadar). Mahsup FGO'da tahsilat / fatura / iade DEĞİLDİR: FGO'ya ve
   ANAF'a hiçbir istek gitmez, avans faturası doğurmaz, mevcut ödeme ve belge kayıtları değişmez. Kayıt silinmez; gerekçeyle
-  geri alınır ya da muhasebeci FGO'ya işledikten sonra "FGO'ya işlendi" olarak kapatılır (bundan sonra iki kez sayılmaz).
-  Her işlem denetim kaydında. Sipariş finans kartında çıkan / gelen mahsup görünür.
+  geri alınır ya da muhasebeci FGO'ya işledikten sonra "FGO'ya işlendi" olarak beyan edilir. Bu yalnızca **manuel muhasebe
+  beyanıdır**: FGO belge / tahsilat referansı zorunludur, beyan eden kullanıcı kaydedilir, TAKİP FGO'ya bir şey göndermez ve
+  referansı doğrulamaz; beyan edilen kayıt bundan sonra mahsup olarak iki kez sayılmaz ve TAKİP'te geri alınamaz. Kayıtlar
+  veritabanında değiştirilemez / silinemez (tetikleyici). Her işlem denetim kaydında. İki migration (tablo + koruma). Sipariş finans kartında çıkan / gelen mahsup görünür.
 
 ## 3.97.6 — 18.10.2026
 

@@ -27,11 +27,10 @@ export async function createOffsetAction(fd: FormData) {
 export async function closeOffsetAction(fd: FormData) {
   const admin = await requirePermission('ACCOUNTING_MANAGE');
   const customerId = String(fd.get('customerId') ?? '');
-  // İki düğme aynı alan adını taşır (ConfirmButton); tıklanan düğme kendi alanını doldurur, diğeri boş kalır
-  const picked = fd.getAll('mode').map(String).find(Boolean) ?? '';
+  const picked = String(fd.get('mode') ?? '');
   if (picked !== 'FGO_RECORDED' && picked !== 'REVERSED') redirect(back(customerId, 'error=MODE', '#mahsuplar'));
   const mode = picked as 'FGO_RECORDED' | 'REVERSED';
-  const r = await closeOffset(db, { offsetId: String(fd.get('offsetId') ?? ''), mode, reason: fd.get('reason'), confirm: fd.get('confirm') }, await actorOf(admin));
+  const r = await closeOffset(db, { offsetId: String(fd.get('offsetId') ?? ''), mode, reason: fd.get('reason'), confirm: fd.get('confirm'), fgoRef: fd.get('fgoRef') }, await actorOf(admin));
   if (!r.ok) redirect(back(customerId, `error=${encodeURIComponent(r.code)}`, '#mahsuplar'));
   revalidatePath(PATH);
   redirect(back(customerId, `ok=${mode}`, '#mahsuplar'));

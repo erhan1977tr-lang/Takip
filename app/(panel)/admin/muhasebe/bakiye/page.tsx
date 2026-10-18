@@ -31,7 +31,7 @@ export default async function CustomerCreditPage({ searchParams }: { searchParam
 
   if (!sp.c) {
     const list = await creditCustomers(db, actor);
-    if (!list.ok) return <div className="alert alert-error">{t('finance.credit.errors.FORBIDDEN')}</div>;
+    if (!list.ok || !('rows' in list)) return <div className="alert alert-error">{t('finance.credit.errors.FORBIDDEN')}</div>;
     return (
       <>
         <div className="page-head">
@@ -73,11 +73,11 @@ export default async function CustomerCreditPage({ searchParams }: { searchParam
   }
 
   const v = await customerCredit(db, sp.c, actor);
-  if (!v.ok) {
+  if (!v.ok || !('rows' in v)) {
     return (
       <>
         <p><Link href="/admin/muhasebe/bakiye">{t('finance.credit.back')}</Link></p>
-        <div className="alert alert-error">{t(Object.hasOwn(m.finance.credit.errors, v.code) ? (`finance.credit.errors.${v.code}` as MsgKey) : 'finance.credit.errors.OTHER')}</div>
+        <div className="alert alert-error">{t('code' in v && v.code && Object.hasOwn(m.finance.credit.errors, v.code) ? (`finance.credit.errors.${v.code}` as MsgKey) : 'finance.credit.errors.OTHER')}</div>
       </>
     );
   }
@@ -190,19 +190,33 @@ export default async function CustomerCreditPage({ searchParams }: { searchParam
                     <td>
                       <Badge tone={TONE[o.status] ?? 'muted'}>{t(`finance.credit.status.${o.status}` as MsgKey)}</Badge>
                       {o.status !== 'ACTIVE' && <div className="muted small">{t('finance.credit.offsets.closed', { status: t(`finance.credit.status.${o.status}` as MsgKey), reason: o.closeReason ?? '', who: o.closedBy?.name ?? '', when: o.closedAt ? fmtDateTime(o.closedAt) : '' })}</div>}
+                      {o.status === 'FGO_RECORDED' && o.fgoRef && <div className="small" data-fgo-ref={o.fgoRef}>{t('finance.credit.offsets.fgoRef', { ref: o.fgoRef })}</div>}
                     </td>
                     <td className="actions">
                       {o.status === 'ACTIVE' && (
-                        <form action={closeOffsetAction} className="stack">
-                          <input type="hidden" name="customerId" value={v.customer.id} />
-                          <input type="hidden" name="offsetId" value={o.id} />
-                          <input name="reason" required maxLength={500} placeholder={t('finance.credit.close.reason')} aria-label={t('finance.credit.close.reason')} />
-                          <label className="check small"><input type="checkbox" name="confirm" required /> {t('finance.credit.close.confirm')}</label>
-                          <div className="row">
-                            <ConfirmButton outline name="mode" value="FGO_RECORDED" message={t('finance.credit.close.fgoDialog')}>{t('finance.credit.close.fgo')}</ConfirmButton>
-                            <ConfirmButton danger outline name="mode" value="REVERSED" message={t('finance.credit.close.reverseDialog')}>{t('finance.credit.close.reverse')}</ConfirmButton>
-                          </div>
-                        </form>
+                        <div className="stack">
+                          <form action={closeOffsetAction} className="stack" data-close="REVERSED">
+                            <input type="hidden" name="customerId" value={v.customer.id} />
+                            <input type="hidden" name="offsetId" value={o.id} />
+                            <input type="hidden" name="mode" value="REVERSED" />
+                            <input name="reason" required maxLength={500} placeholder={t('finance.credit.close.reason')} aria-label={t('finance.credit.close.reason')} />
+                            <label className="check small"><input type="checkbox" name="confirm" required /> {t('finance.credit.close.confirm')}</label>
+                            <div className="row"><ConfirmButton danger outline message={t('finance.credit.close.reverseDialog')}>{t('finance.credit.close.reverse')}</ConfirmButton></div>
+                          </form>
+                          <details data-close="FGO_RECORDED">
+                            <summary className="btn">{t('finance.credit.close.fgo')}</summary>
+                            <form action={closeOffsetAction} className="stack">
+                              <p className="hint">{t('finance.credit.close.fgoHint')}</p>
+                              <input type="hidden" name="customerId" value={v.customer.id} />
+                              <input type="hidden" name="offsetId" value={o.id} />
+                              <input type="hidden" name="mode" value="FGO_RECORDED" />
+                              <input name="fgoRef" required maxLength={60} placeholder={t('finance.credit.close.fgoRef')} aria-label={t('finance.credit.close.fgoRef')} />
+                              <input name="reason" required maxLength={500} placeholder={t('finance.credit.close.reason')} aria-label={t('finance.credit.close.reason')} />
+                              <label className="check small"><input type="checkbox" name="confirm" required /> {t('finance.credit.close.fgoConfirm')}</label>
+                              <div className="row"><ConfirmButton outline message={t('finance.credit.close.fgoDialog')}>{t('finance.credit.close.fgoSubmit')}</ConfirmButton></div>
+                            </form>
+                          </details>
+                        </div>
                       )}
                     </td>
                   </tr>

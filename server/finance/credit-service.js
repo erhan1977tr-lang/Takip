@@ -72,7 +72,7 @@ async function customerChains(db, customerId) {
 
 const offsetSelect = {
   id: true, sourceChain: true, sourceOrderId: true, sourceRef: true, targetChain: true, targetOrderId: true, targetRef: true, amountRon: true, note: true, status: true,
-  createdAt: true, closedAt: true, closeReason: true,
+  createdAt: true, closedAt: true, closeReason: true, fgoRef: true,
   createdBy: { select: { name: true } }, closedBy: { select: { name: true } },
   sourceOrder: { select: { orderNo: true } }, targetOrder: { select: { orderNo: true } },
 };
@@ -171,12 +171,12 @@ export async function createOffset(db, v, actor) {
 /**
  * Mahsubu kapatır (kural 6): REVERSED = TAKİP'te geri alındı · FGO_RECORDED = muhasebeci FGO'ya işledi (bundan sonra FGO
  * rakamlarında; mahsup olarak sayılmaz, TAKİP'te geri alınamaz). Yalnızca ACTIVE kayıt; bir kez; gerekçe + açık onay.
- * @param {any} db  @param {{ offsetId: string, mode: 'REVERSED' | 'FGO_RECORDED', reason: unknown, confirm: unknown }} v  @param {any} actor
+ * @param {any} db  @param {{ offsetId: string, mode: 'REVERSED' | 'FGO_RECORDED', reason: unknown, confirm: unknown, fgoRef?: unknown }} v  @param {any} actor
  */
 export async function closeOffset(db, v, actor, { now = new Date() } = {}) {
   if (!allowed(actor)) return FORBIDDEN;
   if (v.mode !== 'REVERSED' && v.mode !== 'FGO_RECORDED') return { ok: false, code: 'MODE' };
-  const parsed = parseClose(v);
+  const parsed = parseClose(v, v.mode);
   if (!parsed.ok) return parsed;
   const head = await db.creditOffset.findUnique({ where: { id: String(v.offsetId ?? '') }, select: { customerId: true } });
   if (!head) return { ok: false, code: 'NOT_FOUND' };
@@ -184,11 +184,11 @@ export async function closeOffset(db, v, actor, { now = new Date() } = {}) {
     await financeLock(tx, head.customerId);
     const x = await tx.creditOffset.findUnique({ where: { id: String(v.offsetId) } });
     if (!x) return { ok: false, code: 'NOT_FOUND' };
-    const r = await tx.creditOffset.updateMany({ where: { id: x.id, status: 'ACTIVE' }, data: { status: v.mode, closedAt: now, closedById: actor.id, closeReason: parsed.value.reason } });
+    const r = await tx.creditOffset.updateMany({ where: { id: x.id, status: 'ACTIVE' }, data: { status: v.mode, closedAt: now, closedById: actor.id, closeReason: parsed.value.reason, fgoRef: parsed.value.fgoRef } });
     if (r.count !== 1) return { ok: false, code: x.status === 'FGO_RECORDED' ? 'ALREADY_FGO' : 'ALREADY_CLOSED' };
     await writeAudit(tx, {
       action: v.mode === 'REVERSED' ? 'CREDIT_OFFSET_REVERSED' : 'CREDIT_OFFSET_FGO_RECORDED', entityType: 'CreditOffset', entityId: x.id, userId: actor.id,
-      details: { customerId: x.customerId, amountRon: x.amountRon.toString(), sourceChain: x.sourceChain, sourceRef: x.sourceRef, targetChain: x.targetChain, targetRef: x.targetRef, reason: parsed.value.reason, fgo: false },
+      details: { customerId: x.customerId, amountRon: x.amountRon.toString(), sourceChain: x.sourceChain, sourceRef: x.sourceRef, targetChain: x.targetChain, targetRef: x.targetRef, reason: parsed.value.reason, fgoRef: parsed.value.fgoRef, declaredOnly: v.mode === 'FGO_RECORDED', fgo: false },
     }, actor);
     return { ok: true };
   });

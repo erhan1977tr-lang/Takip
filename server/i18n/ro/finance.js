@@ -167,14 +167,14 @@ export default {
     },
     totals: { paid: 'Total încasat', overpaid: 'Total plăți în plus', offset: 'Compensări active', available: 'Sold disponibil', cancelledPaid: 'Încasări pe comenzi anulate (în verificare, nu intră în sold)' },
     cancelled: 'anulată / eliminată',
-    status: { ACTIVE: 'Activă', REVERSED: 'Anulată', FGO_RECORDED: 'Înregistrată în FGO' },
+    status: { ACTIVE: 'Activă', REVERSED: 'Anulată', FGO_RECORDED: 'Înregistrată în FGO (declarație contabilă)' },
     review: {
       CANCELLED_PAID: 'Există încasare pe proforma unei comenzi anulate / eliminate ({chain}). Nu se adaugă automat la sold; verificați în FGO.',
       OFFSET_EXCEEDS_SOURCE: 'Compensarea ieșită depășește plata în plus a sursei ({chain}) — plata sursei poate să fi scăzut ulterior. Verificați compensarea.',
       OFFSET_EXCEEDS_TARGET: 'Compensarea intrată depășește suma deschisă a destinației ({chain}) — destinația poate să fi primit ulterior o plată. Verificați compensarea.',
       OFFSET_CHAIN_GONE: 'Sursa sau destinația unei compensări nu mai este printre lanțurile valabile ale clientului (proforma poate să fi fost ștearsă în FGO). Verificați compensarea.',
     },
-    offsets: { title: 'Compensări (inclusiv istoric)', none: 'Nicio compensare.', closed: '{status}: {reason} ({who}, {when})' },
+    offsets: { title: 'Compensări (inclusiv istoric)', none: 'Nicio compensare.', closed: '{status}: {reason} ({who}, {when})', fgoRef: 'Referință FGO declarată: {ref} (neverificată de TAKİP)' },
     form: {
       title: 'Creează compensare',
       hint: 'Sursă: lanț cu rest de plată în plus. Destinație: alt lanț al aceluiași client, neanulat, cu proformă FGO emisă (până la suma deschisă). Suma nu poate depăși restul plății în plus al sursei și suma deschisă a destinației.',
@@ -184,7 +184,10 @@ export default {
       none: 'Nu există sursă sau destinație potrivită pentru compensare.',
     },
     close: {
-      reverse: 'Anulează', fgo: 'Înregistrată în FGO', reason: 'Motiv',
+      reverse: 'Anulează', fgo: 'Declară ca înregistrată în FGO', reason: 'Motiv',
+      fgoRef: 'Referință document / încasare FGO', fgoSubmit: 'Salvează declarația',
+      fgoHint: 'Este doar o declarație contabilă manuală: se folosește după ce contabilul a înregistrat compensarea în FGO. TAKİP nu trimite nimic în FGO și nu verifică referința în FGO; se salvează referința, motivul și utilizatorul care declară.',
+      fgoConfirm: 'Declar că această compensare a fost înregistrată de noi / de contabilitate în FGO.',
       confirm: 'Confirm această operațiune.',
       reverseDialog: 'Se anulează compensarea? Înregistrarea nu se șterge; iese din sold. Dacă a fost înregistrată în FGO, trebuie anulată și acolo.',
       fgoDialog: 'Se închide compensarea ca înregistrată în FGO? De acum se regăsește în cifrele FGO și nu mai poate fi anulată în TAKİP.',
@@ -197,7 +200,7 @@ export default {
       OVER_SOURCE: 'Suma depășește restul plății în plus al sursei.', TARGET_GONE: 'Comanda destinație nu a fost găsită sau nu aparține acestui client.',
       TARGET_CANCELLED: 'O comandă anulată / eliminată nu poate fi destinație.', TARGET_NO_PROFORMA: 'Comanda destinație nu are proformă FGO.',
       OVER_TARGET: 'Suma depășește suma deschisă a destinației.', NOT_FOUND: 'Înregistrarea nu a fost găsită.', ALREADY_CLOSED: 'Această compensare este deja închisă.',
-      ALREADY_FGO: 'Această compensare a fost înregistrată în FGO; nu poate fi anulată în TAKİP.', TOO_LARGE: 'Numărul de lanțuri depășește limita.', MODE: 'Operațiune invalidă.', OTHER: 'Operațiunea nu a putut fi efectuată.',
+      ALREADY_FGO: 'Această compensare a fost declarată ca înregistrată în FGO; nu poate fi anulată în TAKİP.', FGO_REF: 'Referința FGO este obligatorie (cel mult 60 de caractere; litere, cifre, spațiu, - . /).', TOO_LARGE: 'Numărul de lanțuri depășește limita.', MODE: 'Operațiune invalidă.', OTHER: 'Operațiunea nu a putut fi efectuată.',
     },
     card: {
       title: 'Compensare (internă TAKİP)', out: 'Ieșit din plata în plus a acestui lanț', in: 'Intrat în acest lanț',

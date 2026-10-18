@@ -204,7 +204,15 @@ dbTest('geri alma ve "FGO\'ya işlendi": yalnızca etkin kayıt, bir kez, gerek�
   assert.deepEqual(await close(x.id, 'REVERSED', { actor: { id: admin.id, role: 'SATIS' } }), { ok: false, code: 'FORBIDDEN' });
   const twice = await Promise.all([close(x.id, 'REVERSED'), close(x.id, 'REVERSED')]);
   assert.deepEqual(twice.map((r) => (r.ok ? 'OK' : r.code)).sort(), ['ALREADY_CLOSED', 'OK']);
-  assert.deepEqual(await close(y.id, 'FGO_RECORDED', { reason: 'FGO incasare 18.10' }), { ok: true });
+  // "FGO'ya işlendi" yalnızca manuel muhasebe beyanı: referans zorunlu, beyan eden kullanıcı kaydedilir
+  assert.equal((await close(y.id, 'FGO_RECORDED', { reason: 'FGO incasare 18.10' })).code, 'FGO_REF');
+  assert.equal((await close(y.id, 'FGO_RECORDED', { reason: 'x', fgoRef: '<script>' })).code, 'FGO_REF');
+  const callsBefore = fgo.calls.length;
+  assert.deepEqual(await close(y.id, 'FGO_RECORDED', { reason: 'FGO incasare 18.10', fgoRef: 'PRF 512 / incasare 7' }), { ok: true });
+  assert.equal(fgo.calls.length, callsBefore, 'beyan FGO\'ya istek göndermez');
+  const yRow = await db.creditOffset.findUniqueOrThrow({ where: { id: y.id } });
+  assert.deepEqual([yRow.status, yRow.fgoRef, yRow.closedById], ['FGO_RECORDED', 'PRF 512 / incasare 7', admin.id]);
+  assert.equal((await db.creditOffset.findUniqueOrThrow({ where: { id: x.id } })).fgoRef, null, 'geri almada referans yok');
   assert.equal((await close(y.id, 'REVERSED')).code, 'ALREADY_FGO');
   const v = await cs.customerCredit(db, C.id, actor());
   // x (120) geri alındı → kaynağa döndü; y (75) FGO'ya işlendi → artık mahsup sayılmaz (FGO rakamları güncellenince yansır)
@@ -214,6 +222,8 @@ dbTest('geri alma ve "FGO\'ya işlendi": yalnızca etkin kayıt, bir kez, gerek�
   const audits = await db.auditLog.findMany({ where: { entityId: { in: [x.id, y.id] }, action: { in: ['CREDIT_OFFSET_REVERSED', 'CREDIT_OFFSET_FGO_RECORDED'] } } });
   assert.deepEqual(audits.map((a) => a.action).sort(), ['CREDIT_OFFSET_FGO_RECORDED', 'CREDIT_OFFSET_REVERSED']);
   assert.ok(audits.every((a) => a.details.fgo === false && a.details.reason));
+  const fgoAudit = audits.find((a) => a.action === 'CREDIT_OFFSET_FGO_RECORDED');
+  assert.deepEqual([fgoAudit.details.fgoRef, fgoAudit.details.declaredOnly, fgoAudit.userId], ['PRF 512 / incasare 7', true, admin.id]);
 }));
 
 dbTest('iptal edilmiş sipariş: kaynağı bakiyeye girmez, hedef olamaz', offline(async () => {
@@ -228,4 +238,21 @@ dbTest('iptal edilmiş sipariş: kaynağı bakiyeye girmez, hedef olamaz', offli
   assert.ok(v.review.some((r) => r.code === 'CANCELLED_PAID'));
   assert.equal((await offset(C, `order:${A.order.id}`, E.order.id, '1')).code, 'TARGET_CANCELLED');
   assert.equal((await offset(C, `order:${E.order.id}`, D.order.id, '1')).code, 'SOURCE_CANCELLED');
+}));
+
+dbTest('veritabanı tetikleyicisi: mahsup kaydı silinemez, tutarı / hedefi değişemez, kapalı kayıt yeniden açılamaz', offline(async () => {
+  const x = await offset(C, `order:${A.order.id}`, D.order.id, '5');
+  assert.equal(x.ok, true);
+  const denied = async (fn, what) => {
+    await assert.rejects(fn, (e) => /CreditOffset is immutable/.test(String(e?.message ?? e)), what);
+  };
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { amountRon: '500' } }), 'tutar');
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { targetChain: `order:${B.order.id}`, targetOrderId: B.order.id } }), 'hedef');
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { status: 'REVERSED' } }), 'gerekçesiz kapatma');
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { status: 'FGO_RECORDED', closedAt: new Date(), closedById: admin.id, closeReason: 'r' } }), 'referanssız FGO beyanı');
+  await denied(() => db.creditOffset.delete({ where: { id: x.id } }), 'silme');
+  assert.deepEqual(await cs.closeOffset(db, { offsetId: x.id, mode: 'REVERSED', reason: 'deneme', confirm: 'on' }, actor()), { ok: true });
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { status: 'ACTIVE', closedAt: null, closedById: null, closeReason: null } }), 'yeniden açma');
+  await denied(() => db.creditOffset.update({ where: { id: x.id }, data: { status: 'FGO_RECORDED', fgoRef: 'X' } }), 'ikinci kapatma');
+  assert.equal((await db.creditOffset.findUniqueOrThrow({ where: { id: x.id } })).amountRon.toString(), '5');
 }));
