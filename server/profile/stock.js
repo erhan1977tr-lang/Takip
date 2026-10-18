@@ -403,6 +403,33 @@ export async function reverseSupplierStock(tx, { correctionId, note, lines, acto
 }
 
 /**
+ * Profil iadesinin depo teslimi (DÜZELTME 10 M8) — iade kaydının teslim işleminin İÇİNDE, ürün kilitleri altında: sağlam
+ * miktar kullanılabilir stoğa (IADE, +, iadeye ve siparişe bağlı), hasarlı miktar BLOKE stoğa (BlockedStockMovement, +).
+ * Bir iade için yalnızca bir kez: iadenin hareketi varsa hiçbir şey yazılmaz. İade kaydının açılması stoğu DEĞİŞTİRMEZ.
+ * @param {any} tx
+ * @param {{ returnId: string, orderId: string, note: string, lines: { productId: string, good: number, damaged: number }[], actorId: string | null }} p
+ * @returns {Promise<{ good: number, damaged: number }>}  yazılan hareket sayıları
+ */
+export async function receiveReturnStock(tx, { returnId, orderId, note, lines, actorId }) {
+  const rows = lines.filter((l) => l.productId && Number.isInteger(l.good) && Number.isInteger(l.damaged) && l.good >= 0 && l.damaged >= 0 && l.good + l.damaged <= MAX_STOCK_QTY);
+  if (rows.length !== lines.length) throw new Error('receiveReturnStock: geçersiz satır');
+  await lockStock(tx, rows.map((l) => l.productId));
+  const [g, b] = await Promise.all([tx.stockMovement.count({ where: { profileReturnId: returnId } }), tx.blockedStockMovement.count({ where: { profileReturnId: returnId } })]);
+  if (g || b) return { good: 0, damaged: 0 };
+  const good = rows.filter((l) => l.good > 0).map((l) => ({ productId: l.productId, qty: l.good, kind: /** @type {const} */ ('IADE'), orderId, profileReturnId: returnId, note, createdById: actorId }));
+  const damaged = rows.filter((l) => l.damaged > 0).map((l) => ({ productId: l.productId, qty: l.damaged, kind: 'IADE_HASARLI', profileReturnId: returnId, note, createdById: actorId }));
+  if (good.length) await tx.stockMovement.createMany({ data: good });
+  if (damaged.length) await tx.blockedStockMovement.createMany({ data: damaged });
+  return { good: good.length, damaged: damaged.length };
+}
+
+/** Bloke stok (hasarlı iade malı): ürün → toplam. Kullanılabilir stoğa ve rezerveye girmez. */
+export async function blockedLevels(db, productIds = null) {
+  const rows = await db.blockedStockMovement.groupBy({ by: ['productId'], where: productIds ? { productId: { in: productIds } } : {}, _sum: { qty: true } });
+  return new Map(rows.map((r) => [r.productId, r._sum.qty ?? 0]));
+}
+
+/**
  * Siparişin stok hareketlerinden iade edilecek miktar (saf; karar 281): ürün başına NET hareket (çıkış −, iade +); net
  * düşüm (< 0) kadar iade edilir, net sıfır ya da artı ürün iade edilmez. Önceki iadeler (iptal) hesaba girer: aynı miktar
  * iki kez iade edilmez.

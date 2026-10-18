@@ -610,8 +610,9 @@ test('yapı: deneme kaydını ve davet deneme sayısını yazan başka uygulama 
   });
   const files = walk('app', /\.tsx?$/).concat(walk('lib', /\.tsx?$/), walk('components', /\.tsx?$/), walk('server', /\.js$/), walk('scripts', /\.m?js$/));
   const using = (re) => files.filter((f) => re.test(strip(read(f)))).sort();
-  // AuthFailure yazanlar: deneme servisi; eski kayıt temizliği (işçi); depo bağlantısı sayacı (kendi türü — karar 148 kapsamı dışı)
-  assert.deepEqual(using(/authFailure\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(/), [path.join('app', 'depo', '[token]', 'actions.ts'), path.join('server', 'auth', 'attempts.js'), path.join('server', 'auth', 'session-policy.js')]);
+  // AuthFailure yazanlar: deneme servisi; eski kayıt temizliği (işçi); depo bağlantısı sayacı (kendi türü — karar 148 kapsamı dışı;
+  // profil iadesinin depo bağlantısı aynı DEPOT sayacını kullanır — DÜZELTME 10 M8)
+  assert.deepEqual(using(/authFailure\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(/), [path.join('app', 'depo-iade', '[token]', 'actions.ts'), path.join('app', 'depo', '[token]', 'actions.ts'), path.join('server', 'auth', 'attempts.js'), path.join('server', 'auth', 'session-policy.js')]);
   assert.equal(/authFailure\.(create|update|updateMany|upsert)\(/.test(strip(read('server/auth/session-policy.js'))), false, 'temizlik yalnızca siler');
   // Davetin deneme sayısı yalnızca koşullu hak alma / geri verme ile değişir
   const inviteWriters = using(/userInvite\.(create|update|updateMany|upsert)\(/);

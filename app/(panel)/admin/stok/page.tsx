@@ -6,7 +6,7 @@ import { getT, type MsgKey } from '@/lib/i18n';
 import { fmtDateTime } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { UNITS } from '@/prisma/seed/data/units.js';
-import { reservedLevels, stockLevels, stockRowStatus } from '@/server/profile/stock.js';
+import { blockedLevels, reservedLevels, stockLevels, stockRowStatus } from '@/server/profile/stock.js';
 import { expectedSupplyMap } from '@/server/suppliers/service.js';
 import { stockImportAction, stockMoveAction, stockThresholdAction } from './actions';
 
@@ -34,7 +34,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const supply = userCan(user, 'SUPPLIER_MANAGE');
   const { t, locale } = await getT();
   const sp = await searchParams;
-  const [products, levels, reserved, moves, expected] = await Promise.all([
+  const [products, levels, reserved, moves, expected, blocked] = await Promise.all([
     db.profileProduct.findMany({ orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }], include: { category: true } }),
     stockLevels(db),
     reservedLevels(db),
@@ -43,6 +43,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       include: { product: { select: { code: true } }, order: { select: { id: true, orderNo: true } } },
     }),
     supply ? expectedSupplyMap(db) : Promise.resolve(null),
+    // Bloke stok (DÜZELTME 10 M8): hasarlı iade malı — kullanılabilir stoğa girmez, ayrı sütun
+    blockedLevels(db),
   ]);
   const users = await db.user.findMany({ where: { id: { in: [...new Set(moves.map((m) => m.createdById).filter((x): x is string => !!x))] } }, select: { id: true, name: true, email: true } });
   const who = new Map(users.map((u) => [u.id, u.name || u.email]));
@@ -121,6 +123,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <th>{t('profile.stock.colCode')}</th><th>{t('profile.stock.colProduct')}</th><th>{t('profile.stock.colUnit')}</th>
                 <th className="num">{t('profile.stock.colStock')}</th>
                 <th className="num" title={t('profile.stock.colReservedHint')}>{t('profile.stock.colReserved')}</th>
+                <th className="num" title={t('profile.stock.colBlockedHint')}>{t('profile.stock.colBlocked')}</th>
                 <th className="num">{t('profile.stock.colThreshold')}</th><th>{t('profile.stock.colStatus')}</th>
                 {supply && <th className="num" title={t('supplier.stock.colExpectedHint')}>{t('supplier.stock.colExpected')}</th>}
                 {supply && <th />}
@@ -139,6 +142,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                     <td className="muted">{unit(p.unitCode)}</td>
                     <td className={`num${st < 0 ? ' stock-neg' : ''}`}><b>{st}</b>{st < 0 && <div className="small">{t('profile.stock.negative')}</div>}</td>
                     <td className="num muted" data-reserved>{res || '—'}</td>
+                    <td className="num muted" data-blocked>{blocked.get(p.id) || '—'}</td>
                     <td className="num" data-threshold>
                       {manage ? (
                         <form action={stockThresholdAction} className="threshold-form">

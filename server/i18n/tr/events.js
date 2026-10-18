@@ -102,4 +102,8 @@ export default {
   // Depo ve teslimat (Paket 8)
   DELIVERY_DATE_CHANGED: { label: 'Teslim günü değiştirildi (yönetici)', customer: 'Tahmini teslim gününüz değişti' },
   DELIVERY_REPORT: { label: 'Teslimat raporu oluşturuldu', customer: 'Teslimat raporu hazır' },
+  // Profil iadesi (DÜZELTME 10 M8)
+  PROFILE_RETURN_OPENED: { label: 'İade açıldı', customer: 'İade kaydınız açıldı' },
+  PROFILE_RETURN_RECEIVED: { label: 'İade malı depoda teslim alındı', customer: 'İade ettiğiniz mal teslim alındı' },
+  PROFILE_RETURN_CANCELLED: { label: 'İade iptal edildi', customer: 'İade kaydı iptal edildi' },
 };

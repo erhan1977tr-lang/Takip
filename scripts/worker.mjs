@@ -39,6 +39,7 @@ import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoic
 import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
 import { dispatchSupplierOrderEmails } from '../server/suppliers/dispatch.js';
 import { dispatchReceiptEmails } from '../server/suppliers/receipt-mail.js';
+import { dispatchReturnEmails } from '../server/profile/returns-mail.js';
 import { remindSupplierEta } from '../server/suppliers/service.js';
 
 const once = process.argv.includes('--once');
@@ -112,6 +113,9 @@ async function profileTick() {
   // Mal kabulü depo e-postaları (3.87.0): kabulle aynı işlemde kuyruğa giren işler; alıcı başına en çok bir ileti
   const rc = await dispatchReceiptEmails(db, { transport: mail.transport, from: mail.from, now, log });
   if (rc.sent || rc.failed || rc.retried) log('mal kabulü e-postası:', JSON.stringify(rc));
+  // Profil iadesi depo e-postaları (DÜZELTME 10 M8): açılış ve depo teslimi; alıcı başına en çok bir ileti
+  const rt = await dispatchReturnEmails(db, { transport: mail.transport, from: mail.from, appUrl: mail.appUrl, now, log });
+  if (rt.sent || rt.failed || rt.retried) log('iade e-postası:', JSON.stringify(rt));
   // Sipariş olaylarının bildirim e-postaları (işlem tamamlandıktan sonra, kuyruktan)
   if (getEnv().NOTIFY_EMAILS) {
     const n = await dispatchNotifications(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });

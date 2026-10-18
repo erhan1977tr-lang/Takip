@@ -603,6 +603,8 @@ export default {
     colProduct: 'Produs',
     colUnit: 'U.M.',
     colStock: 'Stoc',
+    colBlocked: 'Blocat',
+    colBlockedHint: 'Marfă returnată deteriorată: nu intră în stocul disponibil și nici în rezervare',
     colReserved: 'Rezervat',
     colReservedHint: 'aprobat, netrimis la depozit',
     colThreshold: 'Prag critic',

@@ -101,4 +101,8 @@ export default {
   // Depozit și livrare (Pachetul 8)
   DELIVERY_DATE_CHANGED: { label: 'Data de livrare a fost modificată (administrator)', customer: 'Data estimată de livrare s-a schimbat' },
   DELIVERY_REPORT: { label: 'Raportul de livrare a fost creat', customer: 'Raportul de livrare este disponibil' },
+  // Retur profile (DÜZELTME 10 M8)
+  PROFILE_RETURN_OPENED: { label: 'Retur deschis', customer: 'Returul dumneavoastră a fost înregistrat' },
+  PROFILE_RETURN_RECEIVED: { label: 'Marfa returnată a fost recepționată în depozit', customer: 'Marfa returnată a fost recepționată' },
+  PROFILE_RETURN_CANCELLED: { label: 'Retur anulat', customer: 'Returul a fost anulat' },
 };

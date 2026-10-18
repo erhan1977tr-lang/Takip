@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 3.99.3 — 18.10.2026
+
+DÜZELTME 10 — Aşama 2D (karar 296; operasyonel kısım). Migration: yeni yetki değeri, iade ve bloke stok tabloları, stok
+hareketinde iade bağı (eklemeli) + iade / bloke stok kayıtlarını koruyan tetikleyiciler.
+
+- **Profil iadesi:** teslim edilmiş (faturadan önce ya da sonra) profil siparişinde yalnızca yönetici kısmi ya da tam iade
+  açar: satır başına iade adedi (iade edilebilir = teslim edilen − önceki iadeler; aynı mal iki kez iade edilemez), zorunlu
+  gerekçe, isteğe bağlı not ve fotoğraf. Fiyat = onaylı teklifteki satış fiyatı, kur = siparişin kuru (kopya). İade kaydı
+  stoğu değiştirmez.
+- **Depo:** iade açılınca depo alıcılarına bildirim gider; e-postadaki tek kullanımlık bağlantıyla depo fiziksel teslimi
+  onaylar (sağlam / hasarlı). Sağlam miktar kullanılabilir stoğa, hasarlı miktar yeni "Bloke" stoğa girer (Profil Stoğu'nda
+  ayrı sütun; rezerveye ve kullanılabilir stoğa girmez). Teslim bir kez kaydedilir. Yönetici teslimi panelden de onaylayabilir.
+  Açık iade gerekçeyle iptal edilebilir.
+- **Mali karşılık:** müşteri ödeme yaptıysa yönetici "para iadesi" ya da "başka borca mahsup" seçer — yalnızca niyet kaydıdır;
+  gerçek para iadesi ayrıca tarih + referansla işaretlenir. Mahsup muhasebe kararını bekler.
+- **Bekleyen (FGO ve muhasebe doğrulaması):** FGO storno / düzeltme belgesi, kısmi storno, proforma güncelleme / iptal, avans
+  düzeltmesi, e-Factura, TVA / kur ve iade / mahsup muhasebesi. TAKİP FGO'ya hiçbir belge göndermez; iade kartında
+  "FGO düzeltme belgesi: doğrulama bekliyor" yazar.
+
 ## 3.98.8 — 18.10.2026
 
 - DÜZELTME 10 Aşama 2C — fazla ödeme. **Avans faturası proforma toplamını aşamaz** (sipariş başına cam zinciri, profil ve müşteri
