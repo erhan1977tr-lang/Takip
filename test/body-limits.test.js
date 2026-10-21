@@ -132,6 +132,8 @@ test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli s�
     'app/(panel)/siparisler/[id]/pdf-import-actions.ts': { pages: ['/siparisler/cmabc123'], file: PDF_IMPORT_LIMITS.maxBytes, request: PDF_IMPORT_LIMITS.maxBytes * MAX_PDFS },
     // Profil iadesinin isteğe bağlı fotoğrafları (DÜZELTME 10 M8): sipariş sayfasında → yükleme kademesi (gövde kapısı: oturum)
     'app/(panel)/siparisler/[id]/return-actions.ts': { pages: ['/siparisler/cmabc123'], file: 20 * MiB, request: 5 * 20 * MiB },
+    // Ticari teklif → Cam: Excel'den aktarma (4.1.0): dosya en çok 1,5 MB → varsayılan 2 MB kademesine sığar (vekil değişmedi)
+    'app/(panel)/admin/ticari-teklifler/actions.ts': { pages: ['/admin/ticari-teklifler/yeni', '/admin/ticari-teklifler/cmabc123'], file: 1.5 * MiB, request: 1.5 * MiB },
   };
   // Depoda dosya okuyan başka işlem dosyası yok: yenisi eklenirse sayfası Caddyfile'da tanımlanmadan bu test geçmez
   const found = [];

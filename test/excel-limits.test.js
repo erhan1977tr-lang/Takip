@@ -709,8 +709,12 @@ test('yapı: Excel okuyan her işlem önce boyuta bakar; yükleme yolu Excel / Z
   for (const d of ['app', 'lib', 'server', 'components', 'scripts']) if (fs.existsSync(path.join(ROOT, d))) walk(d);
   assert.deepEqual(callers.sort(), [
     'app/(panel)/admin/fiyatlar/actions.ts', 'app/(panel)/admin/katalog/actions.ts', 'app/(panel)/admin/profil-katalogu/actions.ts',
-    'app/(panel)/admin/stok/actions.ts', 'server/files/xls.js', 'server/files/xlsx.js', 'server/files/zip.js', 'server/orders/excel-file.js',
+    'app/(panel)/admin/stok/actions.ts', 'server/commercial/excel-read.js', 'server/files/xls.js', 'server/files/xlsx.js', 'server/files/zip.js',
+    'server/orders/excel-file.js',
   ]);
+  // Ticari teklif Excel aktarımı (4.1.0): 1,5 MB denetimi ayrıştırmadan önce (işlemde dosya okunmadan önce de — test/commercial-excel.test.js)
+  const commercial = read('server/commercial/excel-read.js');
+  assert.ok(commercial.indexOf('buf.length > COMMERCIAL_IMPORT_MAX_BYTES') < commercial.indexOf('parse(buf)'), 'ticari: boyut denetimi ayrıştırmadan önce');
   // Dosya yükleme / indirme / tarama yolu bu okuyucuları içe aktarmaz: yükleme, çizim, PDF ve katalog görselleri etkilenmez
   for (const f of ['server/files/store.js', 'server/files/limits.js', 'server/files/signature.js', 'server/files/antivirus.js', 'lib/uploads.ts', 'lib/storage.ts']) {
     assert.doesNotMatch(read(f), /files\/(zip|xlsx|xls)\.js/, f);

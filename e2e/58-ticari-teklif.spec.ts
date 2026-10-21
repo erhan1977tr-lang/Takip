@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import zlib from 'node:zlib';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, reportSheet } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, GLASS, TEAM_PW, as, reportSheet } from './helpers';
 import { FONTS } from '../server/pdf/fonts.js';
+import { writeXlsx } from '../server/files/xlsx.js';
 
 // Bağımsız yönetici ticari teklifi (3.83.0, karar 277):
 //  - menü: "Teklif Oluştur" ve "Teklifler" Çizim Ekibi ile Muhasebe arasında
@@ -215,6 +216,116 @@ test('4.0.0: cam bölümünde CNC / delik (adet camdan bağımsız) ve sandık p
   // İç Excel: işlem ve sandık satırları, maliyet ve kâr
   const flat = (await reportSheet(Buffer.from(await (await admin.request.get(`${url}/excel`)).body()), 1)).flat();
   for (const v of [420, 150, 90, 240, 180, 'Delik', 'Sandık parası', 570]) expect(flat).toContain(v);
+  expect(await others()).toEqual(before);
+  await admin.context().close();
+});
+
+test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eşleştirme / varsayılan / elle seçim, mevcut CNC ve sandık korunur, satış fiyatı boş, tekrar uyarısı, kayıt ve çıktılar', async ({ browser }) => {
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  const before = await others();
+  await admin.goto('/admin/ticari-teklifler/yeni');
+  await admin.fill('#co-firm', 'E2E Excel Aktarım');
+  // Mevcut satırlar: 1 cam (+ CNC) ve sandık parası — aktarımda aynen kalmalı
+  await admin.getByRole('button', { name: '+ Cam ekle' }).click();
+  const g = admin.locator('[data-glass-line="1"]');
+  const gv = await g.locator('select option', { hasText: '66.3 Temper Lamine Cam' }).first().getAttribute('value');
+  await g.locator('select').selectOption(gv!);
+  await g.getByLabel('En (mm) 1').fill('1000');
+  await g.getByLabel('Boy (mm) 1').fill('970');
+  await g.getByLabel('Adet 1').fill('2');
+  await g.getByLabel('Satış €/m² 1').fill('60');
+  await g.locator('[data-add-op="CNC"]').click();
+  const cnc = admin.locator('tr[data-op-line="CNC"][data-parent="1"]');
+  await cnc.getByLabel('CNC Adet 1').fill('5');
+  await cnc.getByLabel('CNC € / adet 1').fill('4');
+  await admin.locator('[data-add-crate]').click();
+  await admin.locator('tr[data-crate-line]').getByLabel('Sandık parası € / adet 2').fill('45');
+
+  // Hatalı dosyalar: desteklenmeyen tür ve 1,5 MB üstü — anlaşılır hata, satır eklenmez
+  await admin.locator('[data-excel-import]').click();
+  const dialog = admin.locator('[data-excel-dialog]');
+  await dialog.locator('[data-excel-file]').setInputFiles({ name: 'olculer.csv', mimeType: 'text/csv', buffer: Buffer.from('En;Boy\n1;2') });
+  await expect(dialog.locator('[data-excel-error]')).toContainText('.xls ve .xlsx');
+  await dialog.locator('[data-excel-file]').setInputFiles({ name: 'buyuk.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.alloc(Math.ceil(1.6 * 1024 * 1024), 1) });
+  await expect(dialog.locator('[data-excel-error]')).toContainText('1,5 MB');
+  await dialog.locator('[data-excel-file]').setInputFiles({ name: 'bozuk.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from('PK\u0003\u0004bozuk') });
+  await expect(dialog.locator('[data-excel-error]')).toContainText('okunamadı');
+
+  // Gerçek .xlsx: Türkçe büyük harfle yazılmış cam (eşleşir), boş cam (varsayılan), bilinmeyen cam (elle), geçersiz ölçü
+  const xlsx = writeXlsx({ sheetName: 'Ölçüler', rows: [
+    ['Cam tipi', 'En', 'Boy', 'Adet'],
+    [GLASS.toLocaleUpperCase('tr-TR'), 1000, 970, 2],
+    ['', '1.200', '850,5', 1],
+    ['Bilinmeyen cam', 500, 500, 1],
+    ['', 0, 500, 1],
+  ] });
+  const file = { name: 'olculer.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: xlsx };
+  await dialog.locator('[data-excel-file]').setInputFiles(file);
+  await expect(dialog.locator('#cx-width')).toBeVisible();
+  await dialog.locator('#cx-glass').selectOption('0');
+  await dialog.locator('#cx-width').selectOption('1');
+  await dialog.locator('#cx-height').selectOption('2');
+  await dialog.locator('#cx-qty').selectOption('3');
+  await expect(dialog.getByLabel('İlk satır başlık (aktarılmaz)')).toBeChecked();
+  await expect(dialog.locator('[data-stat="ready"]')).toHaveText('1 satır aktarılacak');
+  await expect(dialog.locator('[data-stat="invalid"]')).toHaveText('1 geçersiz satır');
+  await expect(dialog.locator('[data-stat="needsGlass"]')).toHaveText('2 satırda cam tipi belirlenmedi');
+  await expect(dialog.locator('[data-excel-row="2"]')).toHaveAttribute('data-glass-status', 'MATCH');
+  await expect(dialog.locator('[data-excel-row="3"]')).toHaveAttribute('data-glass-status', 'MISSING');
+  await expect(dialog.locator('[data-excel-row="4"]')).toHaveAttribute('data-glass-status', 'NONE');
+  await expect(dialog.locator('[data-excel-row="5"]')).toContainText('en geçersiz');
+  // Varsayılan yalnızca boş hücreye uygulanır; bilinmeyen cam varsayılana geçmez → elle seçilir
+  await dialog.locator('#cx-default').selectOption(gv!);
+  await expect(dialog.locator('[data-excel-row="3"]')).toHaveAttribute('data-glass-status', 'DEFAULT');
+  await expect(dialog.locator('[data-excel-row="4"]')).toHaveAttribute('data-glass-status', 'NONE');
+  await dialog.locator('[data-excel-pick="4"]').selectOption(gv!);
+  await expect(dialog.locator('[data-stat="ready"]')).toHaveText('3 satır aktarılacak');
+  // Satır 2, tablodaki 1. satırla aynı (cam, ölçü, adet) → uyarı + onay olmadan aktarılmaz
+  await expect(dialog.locator('[data-excel-duplicate]')).toBeVisible();
+  await expect(dialog.locator('[data-excel-apply]')).toBeDisabled();
+  await dialog.locator('[data-excel-confirm]').check();
+  await dialog.locator('[data-excel-apply]').click();
+  await expect(admin.locator('[data-excel-applied]')).toContainText('3 satır eklendi');
+
+  // Sona eklendi; mevcut cam, CNC ve sandık aynen; satış fiyatı boş
+  await expect(admin.locator('[data-glass-line]')).toHaveCount(5);
+  await expect(admin.locator('tr[data-crate-line][data-glass-line="2"]')).toHaveCount(1);
+  await expect(admin.locator('tr[data-op-line="CNC"][data-parent="1"]')).toHaveCount(1);
+  for (const n of [3, 4, 5]) {
+    const row = admin.locator(`[data-glass-line="${n}"]`);
+    await expect(row.getByLabel(`Satış €/m² ${n}`)).toHaveValue('');
+    await expect(row.locator('select').first()).toHaveValue(gv!);
+  }
+  await expect(admin.locator('[data-glass-line="4"]').getByLabel('En (mm) 4')).toHaveValue('1200');
+  await expect(admin.locator('[data-glass-line="4"]').getByLabel('Boy (mm) 4')).toHaveValue('851');
+  await expect(admin.locator('[data-glass-line="4"] [data-m2]')).toHaveText('1,021');
+
+  // Aynı dosya tekrar: uyarı; vazgeçilir
+  await admin.locator('[data-excel-import]').click();
+  await dialog.locator('[data-excel-file]').setInputFiles(file);
+  await dialog.locator('#cx-width').selectOption('1');
+  await dialog.locator('#cx-height').selectOption('2');
+  await dialog.locator('#cx-qty').selectOption('3');
+  await expect(dialog.locator('[data-excel-duplicate]')).toContainText('daha önce aktarıldı');
+  await expect(dialog.locator('[data-excel-apply]')).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Vazgeç' }).click();
+  await expect(admin.locator('[data-glass-line]')).toHaveCount(5);
+
+  // Satış fiyatlarını yönetici girer → kaydet → yeniden aç
+  for (const n of [3, 4, 5]) await admin.locator(`[data-glass-line="${n}"]`).getByLabel(`Satış €/m² ${n}`).fill('60');
+  // m²: 2 × 0,970 + 2 × 0,970 + 1,021 + 0,250 = 5,151; nakliye payı yalnızca camdan
+  await expect(admin.locator('[data-total="glassM2"]')).toHaveText('5,151');
+  await admin.locator('[data-save]').click();
+  await expect(admin).toHaveURL(/\/admin\/ticari-teklifler\/[a-z0-9]+\?ok=created/);
+  const url = new URL(admin.url()).pathname;
+  await admin.goto(url);
+  await expect(admin.locator('[data-glass-line]')).toHaveCount(5);
+  await expect(admin.locator('[data-total="glassM2"]')).toHaveText('5,151');
+  await expect(admin.locator('tr[data-op-line="CNC"]')).toHaveCount(1);
+  const text = pdfText(Buffer.from(await (await admin.request.get(`${url}/pdf`)).body()));
+  for (const s of ['1200  x  851', '500  x  500', 'CNC', 'Ambalaj (ladă)', '5.151']) expect(text).toContain(s);
+  const flat = (await reportSheet(Buffer.from(await (await admin.request.get(`${url}/excel`)).body()), 1)).flat();
+  expect(flat).toContain(1200);
   expect(await others()).toEqual(before);
   await admin.context().close();
 });

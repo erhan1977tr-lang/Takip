@@ -19,6 +19,7 @@ export async function editorProps(actor: { id: string; role: string }, t: T, loc
     label: locale === 'tr' ? [g.nameTr, g.colorTr].filter(Boolean).join(' — ') : [g.nameRo || g.nameTr, g.colorRo || g.colorTr].filter(Boolean).join(' — '),
     descRo: [g.nameRo, g.colorRo].map((s) => String(s ?? '').trim()).filter(Boolean).join(', '),
     listCost: g.listCost,
+    match: { nameTr: g.nameTr ?? '', colorTr: g.colorTr ?? '', nameRo: g.nameRo ?? '', colorRo: g.colorRo ?? '' },
   }));
   const profile: EditorProfile[] = cat.profile.map((p) => {
     const def = profileDefaults(p);

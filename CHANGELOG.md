@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.1.0 — 21.10.2026
+
+Ticari teklif (Teklif Oluştur → Cam): **Excel'den Aktar** (karar 298). Yalnızca ticari teklif modülü; satış ekibinin Excel
+aktarımı, sipariş akışı, yetkiler, veritabanı şeması (migration yok), Caddy ve yayın altyapısı değişmedi.
+
+- Dosya bilgisayardan seçilir (.xls / .xlsx, en çok 1,5 MB); sunucuda bellekte okunur, **saklanmaz**. Yetki
+  (`COMMERCIAL_OFFER_MANAGE`) ve boyut, dosya okunmadan önce denetlenir; okuma ve ön izleme sınırları satış aktarımıyla aynı
+  kod (1000 satır × 30 sütun, metin sınırları). Bozuk / desteklenmeyen / büyük dosya anlaşılır mesajla reddedilir.
+- Ön izleme: Cam tipi (isteğe bağlı), En, Boy, Adet sütunları; ilk satır başlık seçeneği; satır başına sonuç ve neden;
+  aktarılacak / geçersiz / camı belirlenmemiş satır sayıları.
+- Cam eşleştirme: yalnızca tek ve kesin eşleşme (Türkçe ad + renk, Romence ad + renk, ekran etiketi; büyük / küçük harf,
+  Türkçe İ/ı ve boşluk farkı yok sayılır). Boş hücre → seçilen varsayılan cam. Eşleşmeyen ya da birden fazla cama uyan satır
+  varsayılana geçmez, otomatik seçilmez — elle seçilir; seçilmezse aktarılmaz. Benzer ad / tahmin yok.
+- Ölçü ve adet: satış aktarımının sayı okuma ve yuvarlama kuralı; ticari sınırlar en / boy 1–10000 mm, adet 1–100000.
+  Cam bölümü 100 satırı aşacaksa hiçbir satır eklenmez, kalan yer gösterilir.
+- Aktarım: satırlar tablonun sonuna eklenir; mevcut satırlar, CNC / Delik ve Sandık parası aynen kalır, Excel'den bunlar
+  oluşturulmaz. Açıklama ve maliyet elle cam seçmedeki gibi (maliyet: atanmış fiyat tablosu, yoksa boş + uyarı); **satış fiyatı
+  doldurulmaz**. Aynı dosyanın ya da tabloda aynı olan satırların tekrar aktarımı uyarı + onay ister. Kalıcı kayıt "Taslağı
+  kaydet" ile.
+
 ## 4.0.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam): **CNC, delik ve sandık parası** (karar 297). Yalnızca ticari teklif modülü; satış

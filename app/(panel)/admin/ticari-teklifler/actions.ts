@@ -7,12 +7,14 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
-import { getT } from '@/lib/i18n';
+import { getT, type MsgKey } from '@/lib/i18n';
 import { calcErrorText } from '@/lib/profile-calc';
 import { runRailingCalc } from '@/server/profile/calc-service.js';
 import { createOffer, issueOffer, newRevision, saveDraft, setOfferStatus } from '@/server/commercial/service.js';
 import { fromScaled, packsFor, perMlContent, toScaled } from '@/server/commercial/rules.js';
 import { profileCalcLimits } from '@/server/profile/limits.js';
+import { COMMERCIAL_IMPORT_MAX_BYTES } from '@/server/commercial/excel-import.js';
+import { excelName, readCommercialExcel } from '@/server/commercial/excel-read.js';
 
 const LIST = '/admin/ticari-teklifler';
 const page = (id: string) => `${LIST}/${encodeURIComponent(id)}`;
@@ -129,4 +131,23 @@ export async function calcOfferProfileAction(input: {
       return { productId: l.productId, meters, qty: content ? null : l.qty, color: l.colored && (color === 'RAL7016' || color === 'ELOXAT') ? color : '' };
     }),
   };
+}
+
+export type ExcelReadResult = { ok: true; rows: string[][]; fingerprint: string; name: string } | { ok: false; error: string };
+/**
+ * Cam bölümüne Excel'den aktarma (4.1.0, karar 298) — dosyanın OKUNMASI: yalnızca ön izleme satırları döner; dosya saklanmaz,
+ * teklif yazılmaz (satırlar düzenleyiciye eklenir, kayıt yönetici "Kaydet"e basınca). Sıra: yetki → dosya türü ve boyutu (dosya
+ * belleğe alınmadan) → okuma (server/commercial/excel-read.js: mevcut okuyucular + ön izleme sınırları).
+ */
+export async function readCommercialExcelAction(fd: FormData): Promise<ExcelReadResult> {
+  await requirePermission(PERM);
+  const { t } = await getT();
+  const err = (code: string): ExcelReadResult => ({ ok: false, error: t(`commercial.import.errors.${code}` as MsgKey) });
+  const file = fd.get('file');
+  if (!(file instanceof File) || file.size === 0) return err('EMPTY');
+  if (!excelName(file.name)) return err('TYPE');
+  if (file.size > COMMERCIAL_IMPORT_MAX_BYTES) return err('TOO_BIG');
+  const res = readCommercialExcel(Buffer.from(await file.arrayBuffer()));
+  if (!res.ok) return err(res.error);
+  return { ok: true, rows: res.rows, fingerprint: res.fingerprint, name: file.name.slice(0, 120) };
 }
