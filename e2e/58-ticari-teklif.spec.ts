@@ -298,7 +298,6 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   }
   await expect(admin.locator('[data-glass-line="4"]').getByLabel('En (mm) 4')).toHaveValue('1200');
   await expect(admin.locator('[data-glass-line="4"]').getByLabel('Boy (mm) 4')).toHaveValue('851');
-  await expect(admin.locator('[data-glass-line="4"] [data-m2]')).toHaveText('1,021');
 
   // Aynı dosya tekrar: uyarı; vazgeçilir
   await admin.locator('[data-excel-import]').click();
@@ -313,6 +312,8 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
 
   // Satış fiyatlarını yönetici girer → kaydet → yeniden aç
   for (const n of [3, 4, 5]) await admin.locator(`[data-glass-line="${n}"]`).getByLabel(`Satış €/m² ${n}`).fill('60');
+  // m² satır fiyatı girilince gösterilir (düzenleyicinin mevcut kuralı — fiyatsız satır toplama katılmaz)
+  await expect(admin.locator('[data-glass-line="4"] [data-m2]')).toHaveText('1,021');
   // m²: 2 × 0,970 + 2 × 0,970 + 1,021 + 0,250 = 5,151; nakliye payı yalnızca camdan
   await expect(admin.locator('[data-total="glassM2"]')).toHaveText('5,151');
   await admin.locator('[data-save]').click();
