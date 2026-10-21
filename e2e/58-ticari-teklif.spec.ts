@@ -351,7 +351,7 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   await admin.context().close();
 });
 
-test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler, başlık satırı seçimi, geçerli / hatalı satırlar, onayla ekleme; yönetici yardımcısı kullanır, satış sunucu işlemini çalıştıramaz', async ({ browser }) => {
+test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler, başlık satırı seçimi, geçerli / hatalı satırlar, onayla ekleme; yönetici yardımcısı kullanır', async ({ browser }) => {
   const DEPUTY = `ticari-yardimci-${Date.now().toString(36)}@e2e.test`;
   const DEPUTY_PW = 'Yardimci2026ticari';
   const db = await prisma();
@@ -392,10 +392,7 @@ test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler
 
   await page.locator('[data-excel-import]').click();
   const dialog = page.locator('[data-excel-dialog]');
-  // Sunucu işleminin isteği yakalanır (aşağıda satış hesabıyla tekrar gönderilir)
-  const req = page.waitForRequest((r) => r.method() === 'POST' && !!r.headers()['next-action']);
   await dialog.locator('[data-excel-file]').setInputFiles(file);
-  const action = await req;
   // Gerçek hücreler: başlığın üstündeki satırlar dahil, eşleştirmeden önce görünür
   const preview = dialog.locator('[data-excel-preview]');
   await expect(preview.locator('[data-excel-row="1"]')).toContainText('ZXQ GKH ölçü listesi');
@@ -467,22 +464,8 @@ test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler
   await expect(page.locator('[data-glass-line]')).toHaveCount(5);
   await expect(page.locator('[data-total="glassM2"]')).toHaveText('4,120');
 
-  // Satış hesabı aynı sunucu işlemini çalıştıramaz: hücre içeriği dönmez. İstek, tarayıcının gönderdiği biçimde kurulur
-  // (React: tek FormData bağımsız değişkeni → "0" = ["$K1"], alanlar "1_" önekli); önce yetkili hesapla aynı isteğin hücreleri
-  // döndürdüğü doğrulanır (karşılaştırma ölçütü).
-  const replay = async (p: Page) => (await p.request.post(action.url(), {
-    headers: { 'next-action': action.headers()['next-action'], accept: 'text/x-component', origin: new URL(action.url()).origin },
-    multipart: { 0: '["$K1"]', '1_file': file }, maxRedirects: 0,
-  }));
-  const own = await replay(page);
-  expect(await own.text()).toContain('ZXQ GKH');
-  for (const [email, pw] of [[SALES, TEAM_PW], [CUSTOMER, CUST_PW]]) {
-    const other = await as(browser, email, pw);
-    const res = await replay(other);
-    expect(res.status()).toBeLessThan(500);
-    expect(await res.text()).not.toContain('ZXQ GKH');
-    await other.context().close();
-  }
+  // Satış / müşteri: sayfa ve sunucu işlemi kapalı — aşağıdaki testte ve birim testindeki yapı denetiminde
+  // (readCommercialExcelAction'ın ilk satırı requirePermission(COMMERCIAL_OFFER_MANAGE))
   expect(await others()).toEqual(before);
   await page.context().close();
 });
