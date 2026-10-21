@@ -12,7 +12,7 @@ import {
 import { excelName, readCommercialExcel } from '../server/commercial/excel-read.js';
 import { writeXlsx } from '../server/files/xlsx.js';
 import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '../server/orders/excel-import.js';
-import { previewOffer } from '../server/commercial/rules.js';
+import { computeOffer, glassLineM2, previewOffer } from '../server/commercial/rules.js';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -164,4 +164,26 @@ test('yapı: işlem önce yetki ister, boyutu dosyayı okumadan denetler, dosyay
   assert.match(editor, /description: g\?\.descRo \?\? '', en: String\(r\.en\), boy: String\(r\.boy\), qty: String\(r\.qty\), price: '', cost: asInput\(g\?\.listCost\), ops: \[\]/);
   // Metinler iki dilde
   for (const loc of ['tr', 'ro']) assert.match(read(`server/i18n/${loc}/commercial.js`), /TOO_BIG: '[^']*1,5 MB[^']*'/);
+});
+
+test('satır m²: fiyattan / maliyetten bağımsız, fiyatlı satırda computeOffer ile aynı; ölçü / adet değişince yeniden hesaplanır', () => {
+  const base = { productId: 'g1', en: '1200', boy: '851', qty: '2' };
+  assert.equal(glassLineM2({ ...base, price: '', cost: '' }), '2.042'); // fiyat ve maliyet boş
+  assert.equal(glassLineM2({ ...base, price: '60', cost: '41,5' }), '2.042');
+  assert.equal(glassLineM2({ ...base, qty: '3' }), '3.063');
+  assert.equal(glassLineM2({ ...base, en: '1000', boy: '970', qty: '1' }), '0.970');
+  assert.equal(glassLineM2({ ...base, en: '333', boy: '333', qty: '1' }), '0.111'); // parça 3 ondalık, yarım-yukarı (0.110889)
+  for (const bad of [{ productId: '' }, { en: '' }, { en: '0' }, { boy: '10001' }, { qty: '0' }, { qty: '1,5' }, { qty: '100001' }]) {
+    assert.equal(glassLineM2({ ...base, ...bad }), null, JSON.stringify(bad));
+  }
+  // Fiyatlı satırda düzenleyicinin gösterdiği değer = computeOffer'ın değeri (rastgele 2000 satır)
+  let seed = 5;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return 1 + (seed % n); };
+  for (let k = 0; k < 2000; k++) {
+    const l = { productId: 'g1', en: rnd(10000), boy: rnd(10000), qty: rnd(500), price: '1', cost: null };
+    assert.equal(glassLineM2(l), computeOffer({ glass: [l], profile: [] }).glass[0].m2);
+  }
+  // Toplamlar değişmedi: fiyatsız satır toplam m²'ye ve tutara katılmaz (önizleme kuralı aynı)
+  const pv = previewOffer({ glass: [{ ...base, price: '' }, { ...base, price: '60' }], profile: [] }, () => null);
+  assert.deepEqual([pv.glass[0], pv.totals.glassM2, pv.invalid], [null, '2.042', 1]);
 });

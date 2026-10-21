@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useTransition } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { PROFILE_COLORS, billQuantity, previewOffer } from '@/server/commercial/rules.js';
+import { PROFILE_COLORS, billQuantity, glassLineM2, previewOffer } from '@/server/commercial/rules.js';
 import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferAction } from './actions';
 import { ExcelImport, type ImportedGlassRow } from './ExcelImport';
 
@@ -264,7 +264,7 @@ export function OfferEditor(props: {
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={5} value={l.en} onChange={(ev) => setG(l.key, { en: ev.target.value })} aria-label={`${e.col.en} ${n}`} /></td>
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={5} value={l.boy} onChange={(ev) => setG(l.key, { boy: ev.target.value })} aria-label={`${e.col.boy} ${n}`} /></td>
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={6} value={l.qty} onChange={(ev) => setG(l.key, { qty: ev.target.value })} aria-label={`${e.col.qty} ${n}`} /></td>
-                        <td className="num nowrap" data-m2>{area(c?.m2)}</td>
+                        <td className="num nowrap" data-m2>{area(glassLineM2(l))}</td>
                         <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setG(l.key, { price: ev.target.value })} aria-label={`${e.col.price} ${n}`} /></td>
                         <td className="num nowrap" data-amount>{money(c?.amount)}</td>
                         <td className="num">

@@ -233,7 +233,18 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   await g.getByLabel('En (mm) 1').fill('1000');
   await g.getByLabel('Boy (mm) 1').fill('970');
   await g.getByLabel('Adet 1').fill('2');
+  // m² fiyattan bağımsız: fiyat girilmeden görünür, ölçü / adet değişince anında yeniden hesaplanır (en × boy × adet / 10⁶)
+  await expect(g.getByLabel('Satış €/m² 1')).toHaveValue('');
+  await expect(g.locator('[data-m2]')).toHaveText('1,940');
+  await g.getByLabel('Adet 1').fill('3');
+  await expect(g.locator('[data-m2]')).toHaveText('2,910');
+  await g.getByLabel('Boy (mm) 1').fill('1001');
+  await expect(g.locator('[data-m2]')).toHaveText('3,003');
+  await g.getByLabel('Boy (mm) 1').fill('970');
+  await g.getByLabel('Adet 1').fill('2');
+  await expect(g.locator('[data-m2]')).toHaveText('1,940');
   await g.getByLabel('Satış €/m² 1').fill('60');
+  await expect(g.locator('[data-m2]')).toHaveText('1,940');
   await g.locator('[data-add-op="CNC"]').click();
   const cnc = admin.locator('tr[data-op-line="CNC"][data-parent="1"]');
   await cnc.getByLabel('CNC Adet 1').fill('5');
@@ -298,6 +309,9 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   }
   await expect(admin.locator('[data-glass-line="4"]').getByLabel('En (mm) 4')).toHaveValue('1200');
   await expect(admin.locator('[data-glass-line="4"]').getByLabel('Boy (mm) 4')).toHaveValue('851');
+  // Aktarılan satırın m²'si satış fiyatı boşken de görünür (1200 × 851 = 1,021 m²; 500 × 500 = 0,250 m²)
+  await expect(admin.locator('[data-glass-line="4"] [data-m2]')).toHaveText('1,021');
+  await expect(admin.locator('[data-glass-line="5"] [data-m2]')).toHaveText('0,250');
 
   // Aynı dosya tekrar: uyarı; vazgeçilir
   await admin.locator('[data-excel-import]').click();
@@ -312,7 +326,7 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
 
   // Satış fiyatlarını yönetici girer → kaydet → yeniden aç
   for (const n of [3, 4, 5]) await admin.locator(`[data-glass-line="${n}"]`).getByLabel(`Satış €/m² ${n}`).fill('60');
-  // m² satır fiyatı girilince gösterilir (düzenleyicinin mevcut kuralı — fiyatsız satır toplama katılmaz)
+  // Fiyat girildikten sonra m² aynı
   await expect(admin.locator('[data-glass-line="4"] [data-m2]')).toHaveText('1,021');
   // m²: 2 × 0,970 + 2 × 0,970 + 1,021 + 0,250 = 5,151; nakliye payı yalnızca camdan
   await expect(admin.locator('[data-total="glassM2"]')).toHaveText('5,151');

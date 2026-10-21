@@ -23,6 +23,10 @@ aktarımı, sipariş akışı, yetkiler, veritabanı şeması (migration yok), C
   oluşturulmaz. Açıklama ve maliyet elle cam seçmedeki gibi (maliyet: atanmış fiyat tablosu, yoksa boş + uyarı); **satış fiyatı
   doldurulmaz**. Aynı dosyanın ya da tabloda aynı olan satırların tekrar aktarımı uyarı + onay ister. Kalıcı kayıt "Taslağı
   kaydet" ile.
+- Düzeltme (3.83.0'dan beri): cam satırının m²'si yalnızca satış fiyatı girildiğinde görünüyordu ("—"). m² artık cam tipi,
+  En, Boy ve Adet girilince fiyat ve maliyetten bağımsız gösterilir ve ölçü / adet değişince anında yeniden hesaplanır
+  (`glassLineM2`: en × boy parça başına 3 ondalık, × adet — `computeOffer` ile aynı kural). Toplamlar değişmedi: fiyatı
+  girilmemiş satır yine toplam m²'ye ve tutara katılmaz.
 
 ## 4.0.0 — 21.10.2026
 
