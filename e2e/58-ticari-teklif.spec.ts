@@ -467,10 +467,12 @@ test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler
   await expect(page.locator('[data-glass-line]')).toHaveCount(5);
   await expect(page.locator('[data-total="glassM2"]')).toHaveText('4,120');
 
-  // Satış hesabı aynı sunucu işlemini (aynı istek) çalıştıramaz: hücre içeriği dönmez
+  // Satış hesabı aynı sunucu işlemini çalıştıramaz: hücre içeriği dönmez. İstek, tarayıcının gönderdiği biçimde kurulur
+  // (React: tek FormData bağımsız değişkeni → "0" = ["$K1"], alanlar "1_" önekli); önce yetkili hesapla aynı isteğin hücreleri
+  // döndürdüğü doğrulanır (karşılaştırma ölçütü).
   const replay = async (p: Page) => (await p.request.post(action.url(), {
-    headers: { 'next-action': action.headers()['next-action'], 'content-type': action.headers()['content-type'], accept: 'text/x-component', origin: new URL(action.url()).origin },
-    data: action.postDataBuffer()!, maxRedirects: 0,
+    headers: { 'next-action': action.headers()['next-action'], accept: 'text/x-component', origin: new URL(action.url()).origin },
+    multipart: { 0: '["$K1"]', '1_file': file }, maxRedirects: 0,
   }));
   const own = await replay(page);
   expect(await own.text()).toContain('ZXQ GKH');
