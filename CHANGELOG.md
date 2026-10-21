@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.0 — 21.10.2026
+
+Ticari teklif (Teklif Oluştur → Cam → **Excel'den Aktar**): ön izleme satış panelindeki Excel aktarımıyla aynı düzende
+(karar 299). Yalnızca ticari teklif modülü; satış ekibinin aktarımının davranışı, yetkiler, veritabanı şeması (migration
+yok), Caddy ve yayın altyapısı değişmedi.
+
+- Dosya yüklenince **gerçek hücreler** tablo olarak görünür (satır no + A, B, C … sütunları) — satış penceresiyle aynı ortak
+  tablo bileşeni (`components/ExcelGrid.tsx`; satış penceresinin çıktısı aynen).
+- **Başlık satırı seçimi** (ilk 20 satır): seçilen satır ve üstündeki not / firma satırları aktarılmaz; ölçü ve adet
+  sütunları seçilince başlık satırı önerilir, her zaman değiştirilebilir. Sütun seçimlerinde başlık satırının değerleri görünür.
+- Cam tipi, En, Boy, Adet sütunları seçilir; satırlar **aktarılacak / hatalı / cam bekleyen / başlık** olarak işaretlenir,
+  tek tıkla süzülür; hatalı satırların listesi ve nedenleri görünür; okunan ölçü ve adet satırda yazılı.
+- **Onay adımı:** "Teklif tablosuna aktar" önce özet gösterir (eklenecek, eklenmeyecek hatalı / camsız satır sayıları);
+  satırlar yalnızca **"Onayla ve ekle"** ile tablonun sonuna eklenir. Mevcut cam, CNC / Delik ve sandık satırları, fiyat,
+  maliyet önerisi ve m² kuralları değişmedi.
+
 ## 4.1.1 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam), düzeltme — 3.83.0'dan beri: Cam satırının m²'si yalnızca satış fiyatı girildiğinde görünüyordu ("—"). m² artık cam tipi,

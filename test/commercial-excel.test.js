@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  COMMERCIAL_IMPORT_MAX_BYTES, duplicateRows, glassIndex, glassKey, importCapacity, importRows, looksLikeHeaderRow, matchGlass,
+  COMMERCIAL_IMPORT_MAX_BYTES, duplicateRows, glassIndex, glassKey, guessHeaderRow, HEADER_ROW_CHOICES, headerRowOf, importCapacity, importRows,
+  looksLikeHeaderRow, matchGlass,
 } from '../server/commercial/excel-import.js';
 import { excelName, readCommercialExcel } from '../server/commercial/excel-read.js';
 import { writeXlsx } from '../server/files/xlsx.js';
-import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS } from '../server/orders/excel-import.js';
+import { IMPORT_MAX_COLS, IMPORT_MAX_ROWS, validateImportRows } from '../server/orders/excel-import.js';
 import { computeOffer, glassLineM2, previewOffer } from '../server/commercial/rules.js';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
@@ -155,7 +156,7 @@ test('yapı: işlem önce yetki ister, boyutu dosyayı okumadan denetler, dosyay
   // Tarayıcı modülü sunucuya özgü bir şey içe aktarmaz
   const pure = read('server/commercial/excel-import.js');
   assert.doesNotMatch(pure, /node:|excel-file|xlsx\.js|xls\.js|prisma/);
-  assert.match(pure, /import \{ looksLikeHeader, validateImportRows \} from '\.\.\/orders\/excel-import\.js';/);
+  assert.match(pure, /import \{ cellNumber, looksLikeHeader, validateImportRows \} from '\.\.\/orders\/excel-import\.js';/);
   // Satış ekibinin Excel aktarımı: düzenleyicisi ve işlemi yeni modülü kullanmaz
   assert.doesNotMatch(read('app/(panel)/siparisler/[id]/ExcelImport.tsx'), /commercial/);
   assert.doesNotMatch(read('app/(panel)/siparisler/[id]/actions.ts'), /commercial\/excel/);
@@ -186,4 +187,68 @@ test('satır m²: fiyattan / maliyetten bağımsız, fiyatlı satırda computeOf
   // Toplamlar değişmedi: fiyatsız satır toplam m²'ye ve tutara katılmaz (önizleme kuralı aynı)
   const pv = previewOffer({ glass: [{ ...base, price: '' }, { ...base, price: '60' }], profile: [] }, () => null);
   assert.deepEqual([pv.glass[0], pv.totals.glassM2, pv.invalid], [null, '2.042', 1]);
+});
+
+// 4.2.0: ön izleme satış aktarımıyla aynı düzende — başlık satırı seçimi, gerçek hücre tablosu (ortak bileşen), onay adımı
+const TITLED = [
+  ['GKH Trading — ölçü listesi', '', '', ''],
+  ['Proje: Villa', '', '', ''],
+  [],
+  ['Cam', 'Genişlik', 'Yükseklik', 'Adet'],
+  ['8.8.2 temperli lamine şeffaf', '1200', '851', '2'],
+  ['', '1000', '500', '1'],
+  ['', 'x', '500', '1'],
+];
+const TMAP = { glass: 0, width: 1, height: 2, qty: 3 };
+
+test('başlık satırı: seçilen satır ve üstündekiler aktarılmaz, satır numaraları dosyadaki gibi; skipHeader ile aynı sonuç', () => {
+  const r = importRows(TITLED, TMAP, { headerRow: 3, index: INDEX, valid: VALID, defaultId: 'g2' });
+  assert.deepEqual(r.rows.map((x) => x.line), [5, 6, 7]);
+  assert.deepEqual(r.rows.map((x) => [x.glass, x.glassStatus, x.ok]), [['g1', 'MATCH', true], ['g2', 'DEFAULT', true], ['g2', 'DEFAULT', false]]);
+  assert.deepEqual(r.rows[2].errors, ['width']);
+  assert.deepEqual([r.ready, r.invalid, r.needsGlass], [2, 1, 0]);
+  // Başlık seçilmezse üstteki metin satırları hatalı satır olarak görünür (sessizce atılmaz)
+  const none = importRows(TITLED, TMAP, { headerRow: -1, index: INDEX, valid: VALID });
+  assert.deepEqual(none.rows.map((x) => x.line), [1, 2, 4, 5, 6, 7]);
+  assert.equal(none.rows.find((x) => x.line === 4).errors.length, 3);
+  // headerRow 0 = eski "ilk satır başlık" kuralı; verilmezse skipHeader geçerli
+  for (const skipHeader of [true, false]) {
+    assert.deepEqual(importRows(ROWS, MAP, { headerRow: skipHeader ? 0 : -1, index: INDEX, valid: VALID }), importRows(ROWS, MAP, { skipHeader, index: INDEX, valid: VALID }));
+  }
+  // Ölçü / adet doğrulaması satış aktarımının kuralıyla aynı (başlık sonrası satırlar)
+  const sales = validateImportRows(TITLED.map((x, i) => (i <= 3 ? [] : x)), TMAP);
+  assert.deepEqual(r.rows.map((x) => [x.line, x.en, x.boy, x.qty]), sales.rows.map((x) => [x.line, x.en, x.boy, x.adet]));
+});
+
+test('başlık satırı önerisi: üstte not satırları olsa da ilk başlık bulunur; bulunamazsa satış kuralı; geçersiz seçim → yok', () => {
+  assert.equal(guessHeaderRow(TITLED, TMAP), 3);
+  assert.equal(guessHeaderRow(ROWS, MAP), 0);
+  assert.equal(guessHeaderRow([['1', '2', '3', '4'], ['5', '6', '7', '8']], TMAP), -1);
+  // Yalnızca ilk 20 satır aranır
+  const deep = [...Array.from({ length: HEADER_ROW_CHOICES + 2 }, () => ['not']), ['c', 'En', 'Boy', 'Adet'], ['', '1', '2', '3']];
+  assert.equal(guessHeaderRow(deep, TMAP), -1);
+  assert.equal(headerRowOf('3', 7), 3);
+  for (const bad of ['-2', '7', '1.5', 'x', '', null, ' ']) assert.equal(headerRowOf(bad, 7), -1, String(bad));
+  assert.equal(headerRowOf(String(HEADER_ROW_CHOICES - 1), 50), HEADER_ROW_CHOICES - 1);
+  assert.equal(headerRowOf(String(HEADER_ROW_CHOICES), 50), -1);
+});
+
+test('yapı: iki Excel penceresi aynı ön izleme tablosunu kullanır; satış davranışı (sütunlar, başlık kutusu, aktarım) değişmedi', () => {
+  const grid = read('components/ExcelGrid.tsx');
+  assert.doesNotMatch(grid, /'use server'|commercial|actions/);
+  const sales = read('app/(panel)/siparisler/[id]/ExcelImport.tsx');
+  assert.match(sales, /from '@\/components\/ExcelGrid'/);
+  assert.match(sales, /<ExcelGrid rows=\{rows\} cols=\{cols\} picked=\{\[map\.width, map\.height, map\.qty\]\}/);
+  assert.match(sales, /validateImportRows\(rows, map, \{ skipHeader \}\)/);
+  assert.match(sales, /readOfferExcelAction\(orderId, id\)/);
+  assert.match(sales, /\(\['width', 'height', 'qty'\] as const\)/);
+  assert.doesNotMatch(sales, /headerRow|guessHeaderRow|commercial/);
+  const com = read('app/(panel)/admin/ticari-teklifler/ExcelImport.tsx');
+  assert.match(com, /from '@\/components\/ExcelGrid'/);
+  assert.match(com, /\(\['glass', 'width', 'height', 'qty'\] as const\)/);
+  // Onay: "aktar" önce özet açar; düzenleyiciye yalnızca onay düğmesi ekler
+  assert.match(com, /onClick=\{\(\) => setStep\('confirm'\)\} data-excel-apply/);
+  assert.match(com, /onClick=\{commit\} data-excel-commit/);
+  assert.equal((com.match(/onImport\(/g) ?? []).length, 1);
+  assert.match(com, /const commit = \(\) => \{\n\s*if \(!canApply \|\| !data\) return;\n\s*onImport\(ready, data\.fingerprint\);/);
 });

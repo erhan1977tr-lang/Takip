@@ -13,7 +13,7 @@
 //     Türkçe ad + renk, Romence ad + renk, ekrandaki etiket); eşleşmezse ya da birden fazla cama uyarsa varsayılana GEÇİLMEZ,
 //     otomatik seçim YAPILMAZ — kullanıcı elle seçer; seçmezse satır aktarılmaz;
 //   - benzer ad, kısmi metin, tahmin YOK.
-import { looksLikeHeader, validateImportRows } from '../orders/excel-import.js';
+import { cellNumber, looksLikeHeader, validateImportRows } from '../orders/excel-import.js';
 import { LIMITS } from './rules.js';
 
 /** Ticari teklife aktarılacak Excel dosyasının en büyük boyutu: 1,5 MB (vekilin genel 2 MB istek sınırının içinde) */
@@ -72,17 +72,56 @@ export function matchGlass(cell, index) {
 /** Başlık satırı tahmini: seçilen ölçü / adet sütunlarından biri sayı değilse (satış aktarımının kuralı) */
 export const looksLikeHeaderRow = (rows, map) => looksLikeHeader(rows, map);
 
+/** Başlık satırı olarak seçilebilecek satırlar: dosyanın ilk 20 satırı (4.2.0) */
+export const HEADER_ROW_CHOICES = 20;
+
+/**
+ * Seçilen başlık satırı (0 tabanlı; -1 = başlık yok). Geçersiz değer → -1.
+ * @param {unknown} v  @param {number} rowCount
+ */
+export function headerRowOf(v, rowCount) {
+  if (v == null || String(v).trim() === '') return -1;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n < Math.min(HEADER_ROW_CHOICES, rowCount) ? n : -1;
+}
+
+/**
+ * Başlık satırı önerisi (4.2.0): ilk 20 satırda, seçilen ölçü / adet sütunlarından birinde sayı olmayan metin taşıyan ve hemen
+ * altındaki dolu satırın bu sütunları sayı olan İLK satır (başlığın üstünde firma adı / not satırları olabilir). Bulunamazsa
+ * satış aktarımının kuralı: ilk satır başlık gibiyse 0, değilse -1. Yalnızca öneri — kullanıcı her zaman değiştirebilir.
+ * @param {string[][]} rows  @param {{ width: number, height: number, qty: number }} map
+ */
+export function guessHeaderRow(rows, map) {
+  const cols = [map.width, map.height, map.qty];
+  const blank = (v) => v == null || String(v).trim() === '';
+  const textual = (r) => !!r && cols.some((c) => !blank(r[c]) && Number.isNaN(cellNumber(r[c])));
+  const numeric = (r) => !!r && cols.every((c) => !blank(r[c]) && !Number.isNaN(cellNumber(r[c])));
+  const last = Math.min(HEADER_ROW_CHOICES, rows.length);
+  for (let i = 0; i < last; i++) {
+    if (!textual(rows[i])) continue;
+    let j = i + 1;
+    while (j < rows.length && (!rows[j] || rows[j].every(blank))) j++;
+    if (numeric(rows[j])) return i;
+  }
+  return looksLikeHeader(rows, map) ? 0 : -1;
+}
+
 /**
  * Ön izleme satırlarını doğrular ve camını çözer.
  * @param {string[][]} rows  sunucunun döndürdüğü ön izleme penceresi
  * @param {{ glass: number, width: number, height: number, qty: number }} map  sütun indeksleri (glass -1 = sütun yok)
- * @param {{ skipHeader?: boolean, index: Map<string, Set<string>>, defaultId?: string, picks?: Record<number, string>, valid?: Set<string> }} o
+ * @param {{ skipHeader?: boolean, headerRow?: number, index: Map<string, Set<string>>, defaultId?: string, picks?: Record<number, string>, valid?: Set<string> }} o
  *   picks: satır numarası (Excel, 1 tabanlı) → elle seçilen cam; valid: seçilebilir (etkin) cam kimlikleri
+ *   headerRow (4.2.0): başlık satırı (0 tabanlı; -1 = yok). O satır ve ÜSTÜNDEKİ satırlar aktarılmaz (başlık / not satırları);
+ *   verilmezse skipHeader (ilk satır başlık) kuralı geçerlidir. Satır numaraları dosyadaki gibi kalır.
  * @returns {{ rows: { line: number, glassText: string, glass: string | null, glassStatus: 'MATCH' | 'DEFAULT' | 'PICKED' | 'NONE' | 'AMBIGUOUS' | 'MISSING',
  *   en: number | null, boy: number | null, qty: number | null, errors: string[], ok: boolean }[], ready: number, invalid: number, needsGlass: number }}
  */
-export function importRows(rows, map, { skipHeader = false, index, defaultId = '', picks = {}, valid = null }) {
-  const base = validateImportRows(rows, { width: map.width, height: map.height, qty: map.qty }, { skipHeader });
+export function importRows(rows, map, { skipHeader = false, headerRow, index, defaultId = '', picks = {}, valid = null }) {
+  const head = headerRow === undefined ? (skipHeader ? 0 : -1) : headerRow;
+  // Başlık ve üstündeki satırlar boş satıra çevrilir: doğrulama (satış kuralı) boş satırı atlar, satır numaraları değişmez
+  const body = head >= 0 ? rows.map((r, i) => (i <= head ? [] : r)) : rows;
+  const base = validateImportRows(body, { width: map.width, height: map.height, qty: map.qty });
   const usable = (id) => !!id && (!valid || valid.has(id));
   const out = base.rows.map((r) => {
     const errors = [...r.errors];

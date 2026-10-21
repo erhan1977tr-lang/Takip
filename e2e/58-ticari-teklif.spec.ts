@@ -277,7 +277,9 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   await dialog.locator('#cx-width').selectOption('1');
   await dialog.locator('#cx-height').selectOption('2');
   await dialog.locator('#cx-qty').selectOption('3');
-  await expect(dialog.getByLabel('İlk satır başlık (aktarılmaz)')).toBeChecked();
+  // Başlık satırı önerisi: ilk satır (ölçü sütunları metin) — 4.2.0'dan beri seçilebilir satır
+  await expect(dialog.locator('#cx-header')).toHaveValue('0');
+  await expect(dialog.locator('[data-excel-row="1"]')).toHaveAttribute('data-excel-state', 'header');
   await expect(dialog.locator('[data-stat="ready"]')).toHaveText('1 satır aktarılacak');
   await expect(dialog.locator('[data-stat="invalid"]')).toHaveText('1 geçersiz satır');
   await expect(dialog.locator('[data-stat="needsGlass"]')).toHaveText('2 satırda cam tipi belirlenmedi');
@@ -296,6 +298,10 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   await expect(dialog.locator('[data-excel-apply]')).toBeDisabled();
   await dialog.locator('[data-excel-confirm]').check();
   await dialog.locator('[data-excel-apply]').click();
+  // 4.2.0: önce özet; düzenleyiciye yalnızca onayla eklenir
+  await expect(dialog.locator('[data-excel-summary]')).toContainText('3 satır teklif tablosuna eklenecek');
+  await expect(admin.locator('[data-glass-line]')).toHaveCount(2);
+  await dialog.locator('[data-excel-commit]').click();
   await expect(admin.locator('[data-excel-applied]')).toContainText('3 satır eklendi');
 
   // Sona eklendi; mevcut cam, CNC ve sandık aynen; satış fiyatı boş
@@ -343,6 +349,140 @@ test('4.1.0: cam bölümüne Excel\'den aktarma — sütun eşleştirme, cam eş
   expect(flat).toContain(1200);
   expect(await others()).toEqual(before);
   await admin.context().close();
+});
+
+test('4.2.0: Excel ön izlemesi satış ekranı düzeninde — gerçek hücreler, başlık satırı seçimi, geçerli / hatalı satırlar, onayla ekleme; yönetici yardımcısı kullanır, satış sunucu işlemini çalıştıramaz', async ({ browser }) => {
+  const DEPUTY = `ticari-yardimci-${Date.now().toString(36)}@e2e.test`;
+  const DEPUTY_PW = 'Yardimci2026ticari';
+  const db = await prisma();
+  try {
+    const { hashPassword } = await import('../server/auth/password-hash.js');
+    const factory = await db.customer.findFirstOrThrow({ where: { type: 'FACTORY' } });
+    await db.user.create({ data: { email: DEPUTY, name: 'Ticari Yardımcı', type: 'INTERNAL', appRole: 'YONETICI_YARDIMCISI', customerId: factory.id, passwordHash: await hashPassword(DEPUTY_PW) } });
+  } finally {
+    await db.$disconnect();
+  }
+  const before = await others();
+  // Başlığın üstünde firma / proje satırları; başlık 4. satırda; bir hatalı ve bir camı bilinmeyen satır
+  const xlsx = writeXlsx({ sheetName: 'Liste', rows: [
+    ['ZXQ GKH ölçü listesi', '', '', ''],
+    ['Proje: Villa Deniz', '', '', ''],
+    ['', '', '', ''],
+    ['Tip', 'Genişlik', 'Yükseklik', 'Bucăți'],
+    [GLASS, 1500, 700, 2],
+    ['', 900, 600, 1],
+    ['Bilinmeyen cam', 800, 600, 1],
+    ['', 'yok', 600, 1],
+  ] });
+  const file = { name: 'liste.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: xlsx };
+
+  const page = await as(browser, DEPUTY, DEPUTY_PW);
+  await page.goto('/admin/ticari-teklifler/yeni');
+  await page.fill('#co-firm', 'E2E Ön İzleme');
+  await page.getByRole('button', { name: '+ Cam ekle' }).click();
+  const first = page.locator('[data-glass-line="1"]');
+  const gv = await first.locator('select option', { hasText: '66.3 Temper Lamine Cam' }).first().getAttribute('value');
+  await first.locator('select').selectOption(gv!);
+  await first.getByLabel('En (mm) 1').fill('1000');
+  await first.getByLabel('Boy (mm) 1').fill('1000');
+  await first.getByLabel('Adet 1').fill('1');
+  await first.locator('[data-add-op="DELIK"]').click();
+  await page.locator('tr[data-op-line="DELIK"][data-parent="1"]').getByLabel('Delik Adet 1').fill('4');
+  await page.locator('[data-add-crate]').click();
+
+  await page.locator('[data-excel-import]').click();
+  const dialog = page.locator('[data-excel-dialog]');
+  // Sunucu işleminin isteği yakalanır (aşağıda satış hesabıyla tekrar gönderilir)
+  const req = page.waitForRequest((r) => r.method() === 'POST' && !!r.headers()['next-action']);
+  await dialog.locator('[data-excel-file]').setInputFiles(file);
+  const action = await req;
+  // Gerçek hücreler: başlığın üstündeki satırlar dahil, eşleştirmeden önce görünür
+  const preview = dialog.locator('[data-excel-preview]');
+  await expect(preview.locator('[data-excel-row="1"]')).toContainText('ZXQ GKH ölçü listesi');
+  await expect(preview.locator('[data-excel-row="4"]')).toContainText('Genişlik');
+  await expect(preview.locator('thead')).toContainText('A');
+  await expect(dialog.locator('[data-excel-hint]')).toBeVisible();
+  await expect(dialog.locator('[data-excel-apply]')).toBeDisabled();
+  // Sütun seçimleri; başlık satırı önerisi 4. satır (üstteki not satırları başlık sayılmaz)
+  await dialog.locator('#cx-glass').selectOption('0');
+  await dialog.locator('#cx-width').selectOption('1');
+  await dialog.locator('#cx-height').selectOption('2');
+  await dialog.locator('#cx-qty').selectOption('3');
+  await expect(dialog.locator('#cx-header')).toHaveValue('3');
+  await expect(dialog.locator('#cx-width option:checked')).toHaveText('B — Genişlik');
+  for (const n of [1, 2]) await expect(preview.locator(`[data-excel-row="${n}"]`)).toHaveAttribute('data-excel-state', 'skipped');
+  await expect(preview.locator('[data-excel-row="4"]')).toHaveAttribute('data-excel-state', 'header');
+  await expect(preview.locator('[data-excel-row="5"]')).toHaveAttribute('data-excel-state', 'ok');
+  await expect(preview.locator('[data-excel-row="5"]')).toContainText('1500 × 700 mm · 2 adet');
+  await expect(preview.locator('[data-excel-row="7"]')).toHaveAttribute('data-excel-state', 'glass');
+  await expect(preview.locator('[data-excel-row="8"]')).toHaveAttribute('data-excel-state', 'invalid');
+  await expect(preview.locator('[data-excel-row="8"]')).toHaveClass(/row-invalid/);
+  await expect(dialog.locator('[data-stat="ready"]')).toHaveText('1 satır aktarılacak');
+  await expect(dialog.locator('[data-stat="invalid"]')).toHaveText('1 geçersiz satır');
+  await expect(dialog.locator('[data-stat="needsGlass"]')).toHaveText('2 satırda cam tipi belirlenmedi');
+  await expect(dialog.locator('[data-excel-invalid-list]')).toContainText('8: en geçersiz');
+  // Süzgeç: yalnızca hatalı satırlar / yalnızca aktarılacaklar
+  await dialog.locator('[data-excel-filter="invalid"]').check({ force: true });
+  await expect(preview.locator('tbody tr')).toHaveCount(1);
+  await expect(preview.locator('tbody tr')).toHaveAttribute('data-excel-row', '8');
+  await dialog.locator('[data-excel-filter="ok"]').check({ force: true });
+  await expect(preview.locator('tbody tr')).toHaveCount(1);
+  await dialog.locator('[data-excel-filter="all"]').check({ force: true });
+  for (const n of [1, 4, 5, 8]) await expect(preview.locator(`[data-excel-row="${n}"]`)).toBeVisible();
+  // Başlık elle değiştirilebilir: 1. satır seçilirse 2–4 hatalı / camsız satır olur; geri alınır
+  await dialog.locator('#cx-header').selectOption('0');
+  await expect(preview.locator('[data-excel-row="4"]')).toHaveAttribute('data-excel-state', 'invalid');
+  await dialog.locator('#cx-header').selectOption('3');
+  await expect(dialog.locator('[data-stat="ready"]')).toHaveText('1 satır aktarılacak');
+  // Varsayılan cam + elle seçim → 3 satır; hatalı satır eklenmez
+  await dialog.locator('#cx-default').selectOption(gv!);
+  await dialog.locator('[data-excel-pick="7"]').selectOption(gv!);
+  await expect(dialog.locator('[data-stat="ready"]')).toHaveText('3 satır aktarılacak');
+  // Onay adımı: özet + geri dönülebilir; onaylanmadan tabloya hiçbir şey eklenmez
+  await dialog.locator('[data-excel-apply]').click();
+  const summary = dialog.locator('[data-excel-summary]');
+  await expect(summary).toContainText('3 satır teklif tablosuna eklenecek');
+  await expect(summary).toContainText('1 hatalı satır eklenmeyecek');
+  await expect(page.locator('[data-glass-line]')).toHaveCount(2);
+  await dialog.locator('[data-excel-back]').click();
+  await expect(summary).toHaveCount(0);
+  await dialog.locator('[data-excel-apply]').click();
+  await dialog.locator('[data-excel-commit]').click();
+  await expect(page.locator('[data-excel-applied]')).toContainText('3 satır eklendi');
+  // Mevcut cam, delik ve sandık aynen; eklenen satırların satış fiyatı boş, m² görünür
+  await expect(page.locator('[data-glass-line]')).toHaveCount(5);
+  await expect(page.locator('tr[data-op-line="DELIK"][data-parent="1"]')).toHaveCount(1);
+  await expect(page.locator('tr[data-crate-line][data-glass-line="2"]')).toHaveCount(1);
+  await expect(page.locator('[data-glass-line="3"]').getByLabel('En (mm) 3')).toHaveValue('1500');
+  await expect(page.locator('[data-glass-line="3"] [data-m2]')).toHaveText('2,100');
+  await expect(page.locator('[data-glass-line="4"] [data-m2]')).toHaveText('0,540');
+  for (const n of [3, 4, 5]) await expect(page.locator(`[data-glass-line="${n}"]`).getByLabel(`Satış €/m² ${n}`)).toHaveValue('');
+  for (const n of [1, 3, 4, 5]) await page.locator(`[data-glass-line="${n}"]`).getByLabel(`Satış €/m² ${n}`).fill('50');
+  await page.locator('tr[data-op-line="DELIK"][data-parent="1"]').getByLabel('Delik € / adet 1').fill('3');
+  await page.locator('tr[data-crate-line]').getByLabel('Sandık parası € / adet 2').fill('40');
+  // m²: 1,000 + 2,100 + 0,540 + 0,480 = 4,120; cam 206,00 + delik 12,00 + sandık 40,00
+  await expect(page.locator('[data-total="glassM2"]')).toHaveText('4,120');
+  await page.locator('[data-save]').click();
+  await expect(page).toHaveURL(/\/admin\/ticari-teklifler\/[a-z0-9]+\?ok=created/);
+  await expect(page.locator('[data-glass-line]')).toHaveCount(5);
+  await expect(page.locator('[data-total="glassM2"]')).toHaveText('4,120');
+
+  // Satış hesabı aynı sunucu işlemini (aynı istek) çalıştıramaz: hücre içeriği dönmez
+  const replay = async (p: Page) => (await p.request.post(action.url(), {
+    headers: { 'next-action': action.headers()['next-action'], 'content-type': action.headers()['content-type'], accept: 'text/x-component', origin: new URL(action.url()).origin },
+    data: action.postDataBuffer()!, maxRedirects: 0,
+  }));
+  const own = await replay(page);
+  expect(await own.text()).toContain('ZXQ GKH');
+  for (const [email, pw] of [[SALES, TEAM_PW], [CUSTOMER, CUST_PW]]) {
+    const other = await as(browser, email, pw);
+    const res = await replay(other);
+    expect(res.status()).toBeLessThan(500);
+    expect(await res.text()).not.toContain('ZXQ GKH');
+    await other.context().close();
+  }
+  expect(await others()).toEqual(before);
+  await page.context().close();
 });
 
 test('satış ve müşteri: sayfalar, PDF / Excel ve sunucu işlemi kapalı (teklif oluşmaz)', async ({ browser }) => {
