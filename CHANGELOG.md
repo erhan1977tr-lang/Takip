@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.1.1 — 21.10.2026
+
+Ticari teklif (Teklif Oluştur → Cam), düzeltme — 3.83.0'dan beri: Cam satırının m²'si yalnızca satış fiyatı girildiğinde görünüyordu ("—"). m² artık cam tipi,
+  En, Boy ve Adet girilince fiyat ve maliyetten bağımsız gösterilir ve ölçü / adet değişince anında yeniden hesaplanır
+  (`glassLineM2`: en × boy parça başına 3 ondalık, × adet — `computeOffer` ile aynı kural). Toplamlar değişmedi: fiyatı
+  girilmemiş satır yine toplam m²'ye ve tutara katılmaz.
+
 ## 4.1.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam): **Excel'den Aktar** (karar 298). Yalnızca ticari teklif modülü; satış ekibinin Excel
@@ -23,11 +30,6 @@ aktarımı, sipariş akışı, yetkiler, veritabanı şeması (migration yok), C
   oluşturulmaz. Açıklama ve maliyet elle cam seçmedeki gibi (maliyet: atanmış fiyat tablosu, yoksa boş + uyarı); **satış fiyatı
   doldurulmaz**. Aynı dosyanın ya da tabloda aynı olan satırların tekrar aktarımı uyarı + onay ister. Kalıcı kayıt "Taslağı
   kaydet" ile.
-- Düzeltme (3.83.0'dan beri): cam satırının m²'si yalnızca satış fiyatı girildiğinde görünüyordu ("—"). m² artık cam tipi,
-  En, Boy ve Adet girilince fiyat ve maliyetten bağımsız gösterilir ve ölçü / adet değişince anında yeniden hesaplanır
-  (`glassLineM2`: en × boy parça başına 3 ondalık, × adet — `computeOffer` ile aynı kural). Toplamlar değişmedi: fiyatı
-  girilmemiş satır yine toplam m²'ye ve tutara katılmaz.
-
 ## 4.0.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam): **CNC, delik ve sandık parası** (karar 297). Yalnızca ticari teklif modülü; satış
