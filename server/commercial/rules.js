@@ -437,6 +437,19 @@ export function billQuantity(l, content) {
 }
 
 /**
+ * Cam satırının m²'si — fiyattan, maliyetten ve tekliften BAĞIMSIZ (4.1.0): cam seçili, en / boy (1–10000 mm) ve adet
+ * (1–100000) geçerliyse computeOffer'ın aynı kuralı (parça m² = en × boy 3 ondalık, × adet); değilse null. Düzenleyici satırın
+ * m² hücresini bununla gösterir: fiyat girilmeden de görünür. Toplamlar değişmez (fiyatsız satır toplama katılmaz).
+ * @param {{ productId?: unknown, en?: unknown, boy?: unknown, qty?: unknown }} l
+ * @returns {string | null}  "1.021"
+ */
+export function glassLineM2(l) {
+  const en = int(l?.en, 1, LIMITS.mm), boy = int(l?.boy, 1, LIMITS.mm), qty = int(l?.qty, 1, LIMITS.qty);
+  if (!l?.productId || en == null || boy == null || qty == null) return null;
+  return fromScaled(pieceMilli(en, boy) * BigInt(qty), 3, 3);
+}
+
+/**
  * Düzenleyicinin canlı ara hesabı (tarayıcı): eksik / hatalı satır toplama KATILMAZ ve `null` döner; geçerli satırlar
  * computeOffer'dan (sunucuyla aynı kural). Kayıt her zaman sunucuda parseOffer ile yeniden doğrulanır.
  * @param {{ glass: any[], profile: any[], glassExtraCost?: string }} v

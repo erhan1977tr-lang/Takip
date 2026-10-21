@@ -4,11 +4,16 @@ import { useMemo, useRef, useState, useTransition } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { interpolate } from '@/server/i18n/interpolate.js';
-import { PROFILE_COLORS, billQuantity, previewOffer } from '@/server/commercial/rules.js';
+import { PROFILE_COLORS, billQuantity, glassLineM2, previewOffer } from '@/server/commercial/rules.js';
 import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferAction } from './actions';
+import { ExcelImport, type ImportedGlassRow } from './ExcelImport';
 
 /** listCost: kullanıcıya atanmış fiyat tablosundaki €/m² (Tanımlar → Fiyat Tabloları; yoksa null — uydurulmaz) */
-export type EditorGlass = { id: string; label: string; descRo: string; listCost: string | null };
+/** match: katalog adları (Excel'den aktarmada cam tipi eşleştirmesi — server/commercial/excel-import.js) */
+export type EditorGlass = {
+  id: string; label: string; descRo: string; listCost: string | null;
+  match: { nameTr: string; colorTr: string; nameRo: string; colorRo: string };
+};
 /** ops: aynı tablonun CNC / delik adet fiyatı (işlem maliyeti önerisi; yoksa null) */
 export type EditorCostTable = { name: string | null; reason: string | null; ops?: { CNC: string | null; DELIK: string | null } | null };
 export type EditorProfile = {
@@ -100,6 +105,21 @@ export function OfferEditor(props: {
   const pickProfile = (key: number, id: string) => {
     const p = pById.get(id);
     setP(key, { productId: id, description: p?.nameRo ?? '', color: '', meters: '', qty: '', price: asInput(p?.price), cost: asInput(p?.cost) });
+  };
+  // Excel'den aktarılan satırlar (4.1.0): sona eklenir; açıklama ve maliyet elle cam seçmedeki gibi (Romence ad, atanmış fiyat
+  // tablosundaki €/m² — yoksa boş); satış fiyatı DOLDURULMAZ. Kalıcı kayıt "Taslağı kaydet" ile (sunucu yeniden doğrular).
+  const [importedFiles, setImportedFiles] = useState<string[]>([]);
+  const [importMsg, setImportMsg] = useState('');
+  const importGlass = (rows: ImportedGlassRow[], fingerprint: string) => {
+    setD((x) => ({
+      ...x,
+      glass: [...x.glass, ...rows.map((r) => {
+        const g = gById.get(r.productId);
+        return { key: ++seq.current, productId: r.productId, description: g?.descRo ?? '', en: String(r.en), boy: String(r.boy), qty: String(r.qty), price: '', cost: asInput(g?.listCost), ops: [] };
+      })],
+    }));
+    setImportedFiles((f) => (f.includes(fingerprint) ? f : [...f, fingerprint]));
+    setImportMsg(interpolate(m.import.applied, { n: rows.length }));
   };
   const addGlass = () => setD((x) => ({ ...x, glass: [...x.glass, { key: ++seq.current, productId: '', description: '', en: '', boy: '', qty: '', price: '', cost: '', ops: [] }] }));
   // Sandık parası: yalnızca bu düğmeyle eklenen ayrı, numaralı kalem (adet + birim satış fiyatı; maliyet kuralla 0)
@@ -244,7 +264,7 @@ export function OfferEditor(props: {
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={5} value={l.en} onChange={(ev) => setG(l.key, { en: ev.target.value })} aria-label={`${e.col.en} ${n}`} /></td>
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={5} value={l.boy} onChange={(ev) => setG(l.key, { boy: ev.target.value })} aria-label={`${e.col.boy} ${n}`} /></td>
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={6} value={l.qty} onChange={(ev) => setG(l.key, { qty: ev.target.value })} aria-label={`${e.col.qty} ${n}`} /></td>
-                        <td className="num nowrap" data-m2>{area(c?.m2)}</td>
+                        <td className="num nowrap" data-m2>{area(glassLineM2(l))}</td>
                         <td className="num"><input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setG(l.key, { price: ev.target.value })} aria-label={`${e.col.price} ${n}`} /></td>
                         <td className="num nowrap" data-amount>{money(c?.amount)}</td>
                         <td className="num">
@@ -301,8 +321,10 @@ export function OfferEditor(props: {
               <div className="row" style={{ marginTop: 8 }}>
                 <button type="button" className="btn" onClick={addGlass} disabled={d.glass.length >= 100}>{e.addGlass}</button>
                 <button type="button" className="btn" data-add-crate onClick={addCrate} disabled={d.glass.length >= 100}>{e.addCrate}</button>
+                <ExcelImport m={m.import} glass={glassCat} existing={d.glass} imported={importedFiles} onImport={importGlass} />
               </div>
             )}
+            {importMsg && <div className="alert alert-ok" role="status" data-excel-applied style={{ marginTop: 8 }}>{importMsg}</div>}
             {d.glass.some((l) => l.ops.length > 0) && <p className="hint" data-op-hint>{e.opHint}</p>}
             <div className="grid-3" style={{ marginTop: 12 }}>
               <div>
