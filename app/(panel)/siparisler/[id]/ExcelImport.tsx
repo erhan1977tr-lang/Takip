@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { Dict } from '@/lib/i18n';
 import { interpolate } from '@/server/i18n/interpolate.js';
 import { looksLikeHeader, validateImportRows } from '@/server/orders/excel-import.js';
+import { ExcelGrid, excelColName as colName, excelCols } from '@/components/ExcelGrid';
 import { readOfferExcelAction } from './actions';
 
 /**
@@ -26,12 +27,11 @@ export function ExcelImport({ orderId, files, glass, onImport, m }: {
   const [map, setMap] = useState({ width: -1, height: -1, qty: -1 });
   const [skipHeader, setSkipHeader] = useState(true);
 
-  const cols = useMemo(() => Math.max(0, ...(rows ?? []).slice(0, 50).map((r) => r.length)), [rows]);
+  const cols = useMemo(() => excelCols(rows), [rows]);
   const mapped = map.width >= 0 && map.height >= 0 && map.qty >= 0;
   const result = useMemo(() => (rows && mapped ? validateImportRows(rows, map, { skipHeader }) : null), [rows, map, skipHeader, mapped]);
   const bad = useMemo(() => new Map((result?.rows ?? []).filter((r) => r.errors.length).map((r) => [r.line, r.errors])), [result]);
   const invalidList = useMemo(() => [...bad.entries()], [bad]);
-  const colName = (i: number) => String.fromCharCode(65 + (i % 26)) + (i >= 26 ? String(Math.floor(i / 26)) : '');
 
   const load = async (id: string) => {
     setLoading(true); setError(''); setRows(null);
@@ -101,25 +101,8 @@ export function ExcelImport({ orderId, files, glass, onImport, m }: {
                 {invalidList.length > 40 ? ' …' : ''}
               </p>
             )}
-            <div className="import-preview">
-              <table>
-                <thead><tr><th>#</th>{Array.from({ length: cols }, (_, i) => <th key={i}>{colName(i)}</th>)}<th /></tr></thead>
-                <tbody>
-                  {rows.slice(0, 200).map((r, i) => {
-                    const errs = bad.get(i + 1);
-                    return (
-                      <tr key={i} className={errs ? 'row-invalid' : undefined}>
-                        <td className="muted">{i + 1}</td>
-                        {Array.from({ length: cols }, (_, c) => (
-                          <td key={c} className={c === map.width || c === map.height || c === map.qty ? 'col-picked' : undefined}>{r[c] ?? ''}</td>
-                        ))}
-                        <td className="small text-danger">{errs ? errs.map((e) => m.errors[e]).join(', ') : ''}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ExcelGrid rows={rows} cols={cols} picked={[map.width, map.height, map.qty]} invalid={(line) => bad.has(line)}
+              trailing={(line) => { const errs = bad.get(line); return <td className="small text-danger">{errs ? errs.map((e) => m.errors[e]).join(', ') : ''}</td>; }} />
             {rows.length > 200 && <p className="muted small">{interpolate(m.more, { n: rows.length - 200 })}</p>}
           </>
         )}

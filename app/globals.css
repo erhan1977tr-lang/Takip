@@ -902,6 +902,12 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .import-preview tr.row-invalid > td { background: var(--danger-soft); }
 .import-preview td.col-picked { font-weight: 600; background: var(--primary-soft); }
 .import-preview tr.row-invalid > td.col-picked { background: var(--danger-soft); }
+.import-preview tr.row-header > td { background: var(--surface-3); font-weight: 600; }
+.import-preview tr.row-skipped > td { color: var(--faint); }
+.import-preview td.import-result { min-width: 200px; }
+.import-preview td.import-result select { margin-top: 4px; min-width: 180px; }
+.import-confirm { border: 1px solid var(--primary-border); background: var(--primary-soft); border-radius: var(--radius-sm); padding: var(--sp-3); margin-top: var(--sp-3); }
+.import-confirm ul { margin: 6px 0 0; padding-left: 18px; }
 .import-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 8px; }
 /* Fabrika PDF'i aktarımı (karar 255): PDF başına bölüm, başlık bilgileri, satırlar ve denetimler */
 .pdf-import-file { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); margin: var(--sp-3) 0; }
