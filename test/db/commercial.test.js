@@ -223,7 +223,7 @@ dbTest('DÜZELTME 10: kategori sırası (Alüminyum → Conta → …) ve atanm�
   }
 }));
 
-dbTest('3.100.0: cam bölümünde CNC / delik / sandık parası — maliyet önerisi tablodan, kayıt, yeniden açma, kesin sürüm sabit; başka tabloya yazılmaz', offline(async () => {
+dbTest('4.0.0: cam bölümünde CNC / delik / sandık parası — maliyet önerisi tablodan, kayıt, yeniden açma, kesin sürüm sabit; başka tabloya yazılmaz', offline(async () => {
   const table = await db.priceTable.create({ data: { name: 'İşlem tablosu', kind: 'SALES', currency: 'EUR', cncPrice: '3.00', holePrice: '0.80', items: { create: [{ glassProductId: glass.id, unitPrice: '41.50' }] } } });
   try {
     assert.equal((await assignTable(db, U.admin.id, table.id, A(), (role) => can(role, 'OFFER_PREPARE'))).ok, true);

@@ -287,7 +287,7 @@ test('önizleme: eksik / hatalı satır toplama katılmaz; geçerli satırlar su
   assert.equal(pv.totals.missingCost, 1);
 });
 
-// ---------------------------------------------------------------- 3.100.0 (karar 297): cam bölümünde CNC, delik, sandık parası
+// ---------------------------------------------------------------- 4.0.0 (karar 297): cam bölümünde CNC, delik, sandık parası
 // Örnek: 66 cam (aynı cam satırı) + altında 80 CNC ve 100 delik (adet camdan bağımsız) + 2 sandık parası
 const OPS_SAMPLE = {
   ...SAMPLE,

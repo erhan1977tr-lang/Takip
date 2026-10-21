@@ -153,7 +153,7 @@ test('kesinleştir → sürüm değişmez; kabul yalnızca kayıt (sipariş aç�
   await admin.context().close();
 });
 
-test('3.100.0: cam bölümünde CNC / delik (adet camdan bağımsız) ve sandık parası — canlı toplam, kayıt, yeniden açma, PDF ve iç Excel', async ({ browser }) => {
+test('4.0.0: cam bölümünde CNC / delik (adet camdan bağımsız) ve sandık parası — canlı toplam, kayıt, yeniden açma, PDF ve iç Excel', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   const before = await others();
   await admin.goto('/admin/ticari-teklifler/yeni');

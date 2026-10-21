@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 3.100.0 — 21.10.2026
+## 4.0.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam): **CNC, delik ve sandık parası** (karar 297). Yalnızca ticari teklif modülü; satış
 ekibinin teklif tablosu, sipariş akışı, yetkiler ve veritabanı şeması değişmedi (migration yok).

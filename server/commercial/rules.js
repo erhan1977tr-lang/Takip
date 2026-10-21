@@ -24,7 +24,7 @@ export const LIMITS = Object.freeze({
 });
 export const PROFILE_COLORS = Object.freeze(['RAL7016', 'ELOXAT']);
 /**
- * Cam bölümünün ek kalemleri (3.100.0, karar 297 — referans: satış ekibinin teklif tablosu, karar 113 / 211 / 214):
+ * Cam bölümünün ek kalemleri (4.0.0, karar 297 — referans: satış ekibinin teklif tablosu, karar 113 / 211 / 214):
  *   - CNC / DELIK: cam satırının ALTINDAKİ işlem (satırın `ops` dizisi); numarasız, ölçüsüz, birimi adet. Adedi camın
  *     adedinden BAĞIMSIZDIR (sınır / denetim yok — cam bölünmez); tutar = kendi adedi × birim satış fiyatı, bir kez 2 ondalık.
  *     Maliyet isteğe bağlı (öneri: kullanıcının fiyat tablosundaki CNC / delik fiyatı).

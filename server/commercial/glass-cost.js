@@ -6,7 +6,7 @@ import { resolveTable } from '../pricing/tables.js';
  * Cam maliyeti fiyat tablosu = teklifi hazırlayan kullanıcının Tanımlar → Fiyat Tabloları'ndaki tablosu: kendisine atanmış etkin
  * SALES tablosu, yoksa etkin varsayılan tablo (`resolveTable` — satışçının teklif satırlarını dolduran kuralın aynısı; adla arama
  * YOK). Tablo EUR değilse öneri yok. Yalnızca okunur. Fiyatlar metin (Decimal'in kendi yazımı); 0 fiyat = fiyat yok.
- * `ops`: tablonun CNC ve delik adet fiyatı (cam işlemlerinin maliyet önerisi, 3.100.0); yoksa null.
+ * `ops`: tablonun CNC ve delik adet fiyatı (cam işlemlerinin maliyet önerisi, 4.0.0); yoksa null.
  * @param {any} tx  @param {string | null | undefined} userId  @param {string[] | null} productIds  null = bütün kalemler
  */
 export async function glassCostTable(tx, userId, productIds = null) {
