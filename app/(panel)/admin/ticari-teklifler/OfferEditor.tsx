@@ -9,7 +9,8 @@ import { calcOfferProfileAction, createOfferAction, issueOfferAction, saveOfferA
 
 /** listCost: kullanıcıya atanmış fiyat tablosundaki €/m² (Tanımlar → Fiyat Tabloları; yoksa null — uydurulmaz) */
 export type EditorGlass = { id: string; label: string; descRo: string; listCost: string | null };
-export type EditorCostTable = { name: string | null; reason: string | null };
+/** ops: aynı tablonun CNC / delik adet fiyatı (işlem maliyeti önerisi; yoksa null) */
+export type EditorCostTable = { name: string | null; reason: string | null; ops?: { CNC: string | null; DELIK: string | null } | null };
 export type EditorProfile = {
   id: string; code: string; label: string; nameRo: string; category: string; unit: string;
   /** metreyle fiyatlanan ürünün paket içeriği (m); yoksa null */
@@ -26,7 +27,11 @@ export type EditorData = {
   no: string; date: string; customerId: string; firmName: string; validityDays: string; terms: string; note: string; glassExtraCost: string;
   glass: GlassLine[]; profile: ProfileLine[];
 };
-type GlassLine = { productId: string; description: string; en: string; boy: string; qty: string; price: string; cost: string };
+type OpKind = 'CNC' | 'DELIK';
+type OpLine = { kind: OpKind; description: string; qty: string; price: string; cost: string };
+/** kind 'SANDIK': sandık parası kalemi (ürün / ölçü yok, maliyet 0); yoksa cam satırı. ops: camın altındaki CNC / delik */
+type GlassLine = { kind?: 'SANDIK'; productId: string; description: string; en: string; boy: string; qty: string; price: string; cost: string; ops: OpLine[] };
+type KeyedGlass = Omit<GlassLine, 'ops'> & { key: number; ops: Keyed<OpLine>[] };
 type ProfileLine = { productId: string; description: string; color: string; meters: string; qty: string; price: string; cost: string };
 type Keyed<T> = T & { key: number };
 
@@ -47,7 +52,7 @@ export function OfferEditor(props: {
   const seq = useRef(1000);
   const [d, setD] = useState(() => ({
     ...props.data,
-    glass: props.data.glass.map((l, i) => ({ ...l, key: i })) as Keyed<GlassLine>[],
+    glass: props.data.glass.map((l, i) => ({ ...l, key: i, ops: (l.ops ?? []).map((o, j) => ({ ...o, key: 10_000 + i * 100 + j })) })) as KeyedGlass[],
     profile: props.data.profile.map((l, i) => ({ ...l, key: 500 + i })) as Keyed<ProfileLine>[],
   }));
   const gById = useMemo(() => new Map(glassCat.map((g) => [g.id, g])), [glassCat]);
@@ -59,7 +64,12 @@ export function OfferEditor(props: {
   const payloadObj = {
     no: d.no.trim(), date: d.date, customerId: d.customerId, firmName: d.firmName.trim(), validityDays: d.validityDays.trim(),
     terms: d.terms.split('\n').map((s) => s.trim()).filter(Boolean), note: d.note.trim(), glassExtraCost: d.glassExtraCost.trim(),
-    glass: d.glass.map((l) => ({ productId: l.productId, description: l.description, en: l.en, boy: l.boy, qty: l.qty, price: l.price, cost: l.cost })),
+    glass: d.glass.map((l) => (l.kind === 'SANDIK'
+      ? { kind: 'SANDIK', qty: l.qty, price: l.price }
+      : {
+        productId: l.productId, description: l.description, en: l.en, boy: l.boy, qty: l.qty, price: l.price, cost: l.cost,
+        ...(l.ops.length ? { ops: l.ops.map((o) => ({ kind: o.kind, description: o.description, qty: o.qty, price: o.price, cost: o.cost })) } : {}),
+      })),
     profile: d.profile.map((l) => ({ productId: l.productId, description: l.description, color: l.color, meters: l.meters, qty: l.qty, price: l.price, cost: l.cost })),
   };
   const payload = JSON.stringify(payloadObj);
@@ -69,7 +79,7 @@ export function OfferEditor(props: {
   const T = pv.totals;
 
   const set = (patch: Partial<Omit<EditorData, 'glass' | 'profile'>>) => setD((x) => ({ ...x, ...patch }));
-  const setG = (key: number, patch: Partial<GlassLine>) => setD((x) => ({ ...x, glass: x.glass.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
+  const setG = (key: number, patch: Partial<Omit<GlassLine, 'ops'>>) => setD((x) => ({ ...x, glass: x.glass.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const setP = (key: number, patch: Partial<ProfileLine>) => setD((x) => ({ ...x, profile: x.profile.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
   const pickGlass = (key: number, id: string) => setD((x) => ({
     ...x,
@@ -91,7 +101,20 @@ export function OfferEditor(props: {
     const p = pById.get(id);
     setP(key, { productId: id, description: p?.nameRo ?? '', color: '', meters: '', qty: '', price: asInput(p?.price), cost: asInput(p?.cost) });
   };
-  const addGlass = () => setD((x) => ({ ...x, glass: [...x.glass, { key: ++seq.current, productId: '', description: '', en: '', boy: '', qty: '', price: '', cost: '' }] }));
+  const addGlass = () => setD((x) => ({ ...x, glass: [...x.glass, { key: ++seq.current, productId: '', description: '', en: '', boy: '', qty: '', price: '', cost: '', ops: [] }] }));
+  // Sandık parası: yalnızca bu düğmeyle eklenen ayrı, numaralı kalem (adet + birim satış fiyatı; maliyet kuralla 0)
+  const addCrate = () => setD((x) => ({ ...x, glass: [...x.glass, { key: ++seq.current, kind: 'SANDIK' as const, productId: '', description: '', en: '', boy: '', qty: '1', price: '', cost: '', ops: [] }] }));
+  // CNC / delik: cam satırının altına; adet camdan bağımsız (cam bölünmez); maliyet önerisi fiyat tablosunun CNC / delik fiyatı
+  const opCost = (kind: OpKind) => props.costTable.ops?.[kind] ?? null;
+  const addOp = (key: number, kind: OpKind) => setD((x) => ({
+    ...x,
+    glass: x.glass.map((l) => (l.key === key ? { ...l, ops: [...l.ops, { key: ++seq.current, kind, description: '', qty: '1', price: '', cost: asInput(opCost(kind)) }] } : l)),
+  }));
+  const setOp = (key: number, opKey: number, patch: Partial<OpLine>) => setD((x) => ({
+    ...x,
+    glass: x.glass.map((l) => (l.key === key ? { ...l, ops: l.ops.map((o) => (o.key === opKey ? { ...o, ...patch } : o)) } : l)),
+  }));
+  const removeOp = (key: number, opKey: number) => setD((x) => ({ ...x, glass: x.glass.map((l) => (l.key === key ? { ...l, ops: l.ops.filter((o) => o.key !== opKey) } : l)) }));
   const addProfile = () => setD((x) => ({ ...x, profile: [...x.profile, { key: ++seq.current, productId: '', description: '', color: '', meters: '', qty: '', price: '', cost: '' }] }));
 
   // ---- Profil hesaplayıcısı (mevcut kural; yalnızca okur): sonuç satırları tabloya eklenir
@@ -179,7 +202,30 @@ export function OfferEditor(props: {
                   {d.glass.map((l, i) => {
                     const c = pv.glass[i];
                     const n = i + 1;
-                    return (
+                    const remove = !readOnly && <button type="button" className="btn btn-link danger" onClick={() => setD((x) => ({ ...x, glass: x.glass.filter((r) => r.key !== l.key) }))}>{e.remove}</button>;
+                    if (l.kind === 'SANDIK') {
+                      // Sandık parası: ayrı, numaralı kalem — ölçü ve m² yok, maliyet 0 € (sabit)
+                      return (
+                        <tr key={l.key} data-glass-line={n} data-crate-line className={bad('glass', i) ? 'row-alert' : undefined}>
+                          <td className="muted">{n}</td>
+                          <td><span className="badge badge-info">{e.crate}</span></td>
+                          <td className="muted">{e.crate}</td>
+                          <td /><td />
+                          <td className="num"><input className="qty-input" inputMode="numeric" maxLength={6} value={l.qty} onChange={(ev) => setG(l.key, { qty: ev.target.value })} aria-label={`${e.crate} ${e.col.qty} ${n}`} /></td>
+                          <td />
+                          <td className="num">
+                            <input className="price-input" inputMode="decimal" maxLength={14} value={l.price} onChange={(ev) => setG(l.key, { price: ev.target.value })} aria-label={`${e.crate} ${e.perPiece} ${n}`} />
+                            <div className="hint">{e.perPiece}</div>
+                          </td>
+                          <td className="num nowrap" data-amount>{money(c?.amount)}</td>
+                          <td className="num"><div className="hint" data-crate-cost>{e.crateCost}</div></td>
+                          <td className="num nowrap">{money(c?.costAmount)}</td>
+                          <td className="num nowrap">{money(c?.profit)}</td>
+                          <td>{remove}</td>
+                        </tr>
+                      );
+                    }
+                    return [
                       <tr key={l.key} data-glass-line={n} className={bad('glass', i) ? 'row-alert' : undefined}>
                         <td className="muted">{n}</td>
                         <td>
@@ -187,6 +233,12 @@ export function OfferEditor(props: {
                             <option value="" disabled>{e.pickGlass}</option>
                             {glassCat.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
                           </select>
+                          {!readOnly && (
+                            <div className="row">
+                              <button type="button" className="btn btn-link" data-add-op="CNC" onClick={() => addOp(l.key, 'CNC')} disabled={l.ops.length >= 20}>{e.addCnc}</button>
+                              <button type="button" className="btn btn-link" data-add-op="DELIK" onClick={() => addOp(l.key, 'DELIK')} disabled={l.ops.length >= 20}>{e.addHole}</button>
+                            </div>
+                          )}
                         </td>
                         <td><input className="text-input" maxLength={200} value={l.description} onChange={(ev) => setG(l.key, { description: ev.target.value })} aria-label={`${e.col.description} ${n}`} /></td>
                         <td className="num"><input className="qty-input" inputMode="numeric" maxLength={5} value={l.en} onChange={(ev) => setG(l.key, { en: ev.target.value })} aria-label={`${e.col.en} ${n}`} /></td>
@@ -207,14 +259,51 @@ export function OfferEditor(props: {
                         </td>
                         <td className="num nowrap">{money(c?.costAmount)}</td>
                         <td className="num nowrap">{money(c?.profit)}</td>
-                        <td>{!readOnly && <button type="button" className="btn btn-link danger" onClick={() => setD((x) => ({ ...x, glass: x.glass.filter((r) => r.key !== l.key) }))}>{e.remove}</button>}</td>
-                      </tr>
-                    );
+                        <td>{remove}</td>
+                      </tr>,
+                      // CNC / delik: camın altında, numarasız; adet camdan bağımsız; m² yok
+                      ...l.ops.map((o, j) => {
+                        const oc = c?.ops?.[j];
+                        const kind = e.op[o.kind];
+                        const lc = opCost(o.kind);
+                        const manual = !!o.cost.trim() && lc != null && o.cost.trim() !== asInput(lc);
+                        return (
+                          <tr key={o.key} className="sub-line" data-op-line={o.kind} data-parent={n}>
+                            <td />
+                            <td><span className="badge badge-info">{kind}</span></td>
+                            <td><input className="text-input" maxLength={200} value={o.description} placeholder={interpolate(e.opDescPlaceholder, { kind })} onChange={(ev) => setOp(l.key, o.key, { description: ev.target.value })} aria-label={`${kind} ${e.col.description} ${n}`} /></td>
+                            <td /><td />
+                            <td className="num"><input className="qty-input" inputMode="numeric" maxLength={6} value={o.qty} onChange={(ev) => setOp(l.key, o.key, { qty: ev.target.value })} aria-label={`${kind} ${e.col.qty} ${n}`} /></td>
+                            <td />
+                            <td className="num">
+                              <input className="price-input" inputMode="decimal" maxLength={14} value={o.price} onChange={(ev) => setOp(l.key, o.key, { price: ev.target.value })} aria-label={`${kind} ${e.perPiece} ${n}`} />
+                              <div className="hint">{e.perPiece}</div>
+                            </td>
+                            <td className="num nowrap" data-amount>{money(oc?.amount)}</td>
+                            <td className="num">
+                              <input className="price-input" inputMode="decimal" maxLength={14} value={o.cost} onChange={(ev) => setOp(l.key, o.key, { cost: ev.target.value })} aria-label={`${kind} ${e.col.unitCost} ${n}`} />
+                              {lc == null
+                                ? <div className="hint" data-list-cost="none">{interpolate(e.opListCostNone, { kind })}</div>
+                                : <div className="hint" data-list-cost={manual ? 'manual' : 'list'}>{interpolate(manual ? e.opListCostManual : e.opListCost, { v: nf(2, 4).format(Number(lc)) })}</div>}
+                            </td>
+                            <td className="num nowrap">{money(oc?.costAmount)}</td>
+                            <td className="num nowrap">{money(oc?.profit)}</td>
+                            <td>{!readOnly && <button type="button" className="btn btn-link danger" onClick={() => removeOp(l.key, o.key)}>{e.remove}</button>}</td>
+                          </tr>
+                        );
+                      }),
+                    ];
                   })}
                 </tbody>
               </table>
             </div>
-            {!readOnly && <button type="button" className="btn" onClick={addGlass} style={{ marginTop: 8 }} disabled={d.glass.length >= 100}>{e.addGlass}</button>}
+            {!readOnly && (
+              <div className="row" style={{ marginTop: 8 }}>
+                <button type="button" className="btn" onClick={addGlass} disabled={d.glass.length >= 100}>{e.addGlass}</button>
+                <button type="button" className="btn" data-add-crate onClick={addCrate} disabled={d.glass.length >= 100}>{e.addCrate}</button>
+              </div>
+            )}
+            {d.glass.some((l) => l.ops.length > 0) && <p className="hint" data-op-hint>{e.opHint}</p>}
             <div className="grid-3" style={{ marginTop: 12 }}>
               <div>
                 <label htmlFor="co-extra">{e.extraCost}</label>
@@ -374,6 +463,16 @@ export function OfferEditor(props: {
             <tbody>
               <tr><td>{e.totals.glassM2}</td><td className="num" data-total="glassM2">{area(T.glassM2)}</td></tr>
               <tr><td>{e.totals.glass}</td><td className="num" data-total="glass">{money(T.glass)}</td></tr>
+              {Number(T.ops) > 0 && <tr><td>{e.totals.ops}</td><td className="num" data-total="ops">{money(T.ops)}</td></tr>}
+              {Number(T.crate) > 0 && <tr><td>{e.totals.crate}</td><td className="num" data-total="crate">{money(T.crate)}</td></tr>}
+              {(T.cnc > 0 || T.holes > 0 || T.crates > 0) && (
+                <tr>
+                  <td>{e.totals.counts}</td>
+                  <td className="num" data-total="counts">
+                    {[interpolate(e.totals.countGlass, { n: T.glassQty }), T.cnc ? interpolate(e.totals.countCnc, { n: T.cnc }) : '', T.holes ? interpolate(e.totals.countHoles, { n: T.holes }) : '', T.crates ? interpolate(e.totals.countCrates, { n: T.crates }) : ''].filter(Boolean).join(' · ')}
+                  </td>
+                </tr>
+              )}
               <tr><td>{e.totals.profile}</td><td className="num" data-total="profile">{money(T.profile)}</td></tr>
               <tr><td><strong>{e.totals.total}</strong></td><td className="num" data-total="total"><strong>{money(T.total)}</strong></td></tr>
               <tr><td>{e.totals.extra}</td><td className="num">{money(T.extraCost)}</td></tr>

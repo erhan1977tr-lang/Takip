@@ -1,7 +1,7 @@
 // Bağımsız ticari teklifin İÇ Excel'i (3.83.0, karar 277): satış + iç maliyet + kâr + marj. Yalnızca yönetici ve yönetici
 // yardımcısı indirir (rota COMMERCIAL_OFFER_MANAGE ister). Hesap computeOffer'dan (tek kural) — burada formül yok.
 // Müşteri belgesi (PDF) bu veriyi KULLANMAZ: o yalnızca customerView'dan üretilir.
-import { computeOffer, offerNoText, unitText, COLOR_TEXT } from './rules.js';
+import { computeOffer, offerNoText, unitText, COLOR_TEXT, CRATE_KIND } from './rules.js';
 
 const num = (v) => (v == null || v === '' ? null : Number(v));
 
@@ -46,9 +46,12 @@ export function internalSheets(o, t, x) {
     { header: k('profit'), width: 14, type: /** @type {const} */ ('money'), unit: 'EUR' },
   ];
   const T = c.totals;
+  const hasExtras = c.glass.some((l) => l.kind === CRATE_KIND || l.ops?.length);
   const r = (s) => t(`commercial.excel.rows.${s}`);
   const summary = [
     [r('glassSale'), num(T.glass)],
+    // Cam bölümünün içinden (cam satışına dahil) — yalnızca varsa (eski tekliflerin dökümü değişmez)
+    ...(hasExtras ? [[r('ops'), num(T.ops)], [r('crate'), num(T.crate)]] : []),
     [r('glassCost'), num(T.glassCost)],
     [r('extra'), num(T.extraCost)],
     [r('profileSale'), num(T.profile)],
@@ -78,7 +81,7 @@ export function internalSheets(o, t, x) {
       {
         title: t('commercial.excel.glass'),
         columns: glassCols,
-        rows: c.glass.map((l, i) => [i + 1, l.description, l.catalogTr ?? '', l.en, l.boy, l.qty, num(l.m2), num(l.price), num(l.amount), num(l.cost), num(l.costAmount), num(l.profit)]),
+        rows: glassRows(c.glass, t),
         totals: c.glass.length ? [['', '', '', '', '', null, num(T.glassM2), null, num(T.glass), null, num(T.glassCost), null]] : undefined,
         empty: t('commercial.editor.empty'),
       },
@@ -98,6 +101,29 @@ export function internalSheets(o, t, x) {
         rows: summary,
       },
     ],
-    notes: [t('commercial.excel.notes')],
+    notes: [t('commercial.excel.notes'), ...(hasExtras ? [t('commercial.excel.opsNote')] : [])],
   }];
+}
+
+/**
+ * Cam bloğunun satırları: cam satırı numaralı (eskisiyle aynı), altındaki CNC / delik numarasız (m² boş, fiyat € / adet),
+ * sandık parası numaralı ayrı kalem (maliyet 0). Numara yalnızca cam ve sandık satırlarında ilerler.
+ * @param {any[]} glass  computeOffer(...).glass  @param {(key: string, params?: Record<string, unknown>) => string} t
+ */
+function glassRows(glass, t) {
+  const rows = [];
+  let n = 0;
+  for (const l of glass) {
+    n += 1;
+    if (l.kind === CRATE_KIND) {
+      rows.push([n, t('commercial.editor.crate'), '', null, null, l.qty, null, num(l.price), num(l.amount), 0, num(l.costAmount), num(l.profit)]);
+      continue;
+    }
+    rows.push([n, l.description, l.catalogTr ?? '', l.en, l.boy, l.qty, num(l.m2), num(l.price), num(l.amount), num(l.cost), num(l.costAmount), num(l.profit)]);
+    for (const o of l.ops ?? []) {
+      const label = t(`commercial.editor.op.${o.kind}`);
+      rows.push(['', o.description ? `${label} – ${o.description}` : label, '', null, null, o.qty, null, num(o.price), num(o.amount), num(o.cost), num(o.costAmount), num(o.profit)]);
+    }
+  }
+  return rows;
 }

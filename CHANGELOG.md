@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.0.0 — 21.10.2026
+
+Ticari teklif (Teklif Oluştur → Cam): **CNC, delik ve sandık parası** (karar 297). Yalnızca ticari teklif modülü; satış
+ekibinin teklif tablosu, sipariş akışı, yetkiler ve veritabanı şeması değişmedi (migration yok).
+
+- **CNC / Delik:** cam satırının altında "+CNC" / "+Delik"; numarasız alt satır (açıklama isteğe bağlı, adet, € / adet satış
+  fiyatı, isteğe bağlı maliyet). Adet camın adedinden tamamen bağımsızdır — cam bölünmez, sınır / denetim yok (ör. 66 cam
+  için 80 CNC, 100 delik). Tutar = kendi adedi × birim fiyat (bir kez 2 ondalık; satış tablosuyla aynı sonuç). Maliyet
+  önerisi kullanıcının fiyat tablosundaki CNC / delik fiyatı (cam maliyetiyle aynı tablo); satış fiyatını yönetici girer.
+- **Sandık parası:** yalnızca "+ Sandık parası" ile eklenen ayrı, numaralı kalem; adet ve birim satış fiyatı düzenlenir;
+  maliyeti kuralla 0 € ("maliyet eksik" sayılmaz).
+- Üç kalem cam adedini, m² toplamını ve nakliye + gümrük payını değiştirmez; tutarları cam bölümü toplamına ve genel
+  toplama bir kez eklenir. Toplamlar kartında işlem / sandık tutarı ve adetler.
+- Müşteri PDF'i: CNC / delik camın altında numarasız ("CNC", "Găuri", BUC), sandık parası numaralı ayrı kalem
+  ("Ambalaj (ladă)"); maliyet / kâr yok. İç Excel: işlem ve sandık satırları maliyet ve kârıyla; özet ve not yalnızca
+  bu kalemler varsa.
+- Eski teklifler (bu alanları taşımayan sürümler) aynen: hesap, müşteri görünümü, PDF (bayt bayt) ve iç Excel değişmez.
+
 ## 3.99.6 — 18.10.2026
 
 - 2D depo iade onayı son kural (ürün sahibi): depo bağlantısında, yönetici iade kartında ve "teslim alındı" e-postasında

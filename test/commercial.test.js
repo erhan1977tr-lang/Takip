@@ -8,7 +8,7 @@ import zlib from 'node:zlib';
 import { can, ROLE_PERMISSIONS, ROLES } from '../server/auth/permissions.js';
 import {
   DEFAULT_TERMS, GKH_CONTACT, computeOffer, customerView, offerNoText, packsFor, parseOffer, perMlContent, pieceMilli, previewOffer,
-  profileDefaults, validityText, fromScaled, billQuantity,
+  profileDefaults, validityText, fromScaled, billQuantity, CRATE_TEXT,
 } from '../server/commercial/rules.js';
 import { internalSheets } from '../server/commercial/export.js';
 import { commercialOfferPdf } from '../server/pdf/commercial-offer.js';
@@ -285,4 +285,134 @@ test('önizleme: eksik / hatalı satır toplama katılmaz; geçerli satırlar su
   assert.equal(pv.glass[0].amount, '17137.96');
   assert.equal(pv.totals.total, '25582.96');
   assert.equal(pv.totals.missingCost, 1);
+});
+
+// ---------------------------------------------------------------- 4.0.0 (karar 297): cam bölümünde CNC, delik, sandık parası
+// Örnek: 66 cam (aynı cam satırı) + altında 80 CNC ve 100 delik (adet camdan bağımsız) + 2 sandık parası
+const OPS_SAMPLE = {
+  ...SAMPLE,
+  glass: [
+    { ...SAMPLE.glass[0], qty: '66', ops: [{ kind: 'CNC', qty: '80', price: '5,25', cost: '3' }, { kind: 'DELIK', description: 'Ø 12', qty: '100', price: '1.5', cost: '' }] },
+    { kind: 'SANDIK', qty: '2', price: '45', cost: '99' },
+  ],
+};
+const opsParsed = (v = OPS_SAMPLE, cat = { ...CAT, opCosts: { CNC: '3', DELIK: null } }) => {
+  const r = parseOffer(v, cat);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  return r.data;
+};
+
+test('cam işlemleri: CNC / delik kendi adedi × birim fiyat; cam adedi, m² ve nakliye + gümrük payı değişmez; sandık maliyeti 0', () => {
+  const base = computeOffer(parseOffer({ ...SAMPLE, glass: [{ ...SAMPLE.glass[0], qty: '66' }] }, CAT).data);
+  const c = computeOffer(opsParsed());
+  // Cam satırı aynen (66 × 0.970 m² = 64.020 m²)
+  assert.deepEqual([c.glass[0].m2, c.glass[0].amount, c.glass[0].costAmount], [base.glass[0].m2, base.glass[0].amount, base.glass[0].costAmount]);
+  assert.equal(c.totals.glassM2, base.totals.glassM2);
+  assert.equal(c.totals.extraPerM2, base.totals.extraPerM2);
+  assert.equal(c.totals.glassQty, 66);
+  // 80 CNC > 66 cam: kısıt yok
+  assert.deepEqual(c.glass[0].ops.map((o) => [o.kind, o.qty, o.amount, o.costAmount, o.profit]), [['CNC', 80, '420.00', '240.00', '180.00'], ['DELIK', 100, '150.00', null, null]]);
+  assert.deepEqual([c.glass[1].kind, c.glass[1].amount, c.glass[1].costAmount, c.glass[1].profit], ['SANDIK', '90.00', '0.00', '90.00']);
+  assert.deepEqual([c.totals.cnc, c.totals.holes, c.totals.crates, c.totals.ops, c.totals.crate], [80, 100, 2, '570.00', '90.00']);
+  // Cam bölümü toplamı ve genel toplam: üç kalem bir kez eklenir
+  const plus = (a, b) => (Math.round(Number(a) * 100) + Math.round(Number(b) * 100)) / 100;
+  assert.equal(Number(c.totals.glass), plus(base.totals.glass, '660'));
+  assert.equal(Number(c.totals.total), plus(base.totals.total, '660'));
+  // Maliyet: CNC 240 eklenir, sandık 0; maliyeti girilmemiş delik "maliyet eksik" sayılır (sandık sayılmaz)
+  assert.equal(Number(c.totals.cost), plus(base.totals.cost, '240'));
+  assert.equal(c.totals.missingCost, base.totals.missingCost + 1);
+  assert.equal(Number(c.totals.costedSale), plus(base.totals.costedSale, '510'));
+});
+
+test('cam işlemleri: tutar kuralı satış ekibinin teklif tablosuyla aynı (adet × fiyat, bir kez 2 ondalık) — rastgele 2000 satır', () => {
+  let seed = 11;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return 1 + (seed % n); };
+  for (let k = 0; k < 2000; k++) {
+    const qty = rnd(500), price = `${rnd(300)}.${String(rnd(100) - 1).padStart(2, '0')}`;
+    const kind = rnd(2) === 1 ? 'CNC' : 'DELIK';
+    const c = computeOffer({ glass: [{ productId: 'g1', en: 1000, boy: 1000, qty: 1, price: '1', cost: null, ops: [{ kind, qty, price, cost: null }] }], profile: [] });
+    assert.equal(Number(c.glass[0].ops[0].amount), offerLineTotals({ kind, adet: qty, unit: 'adet', unitPrice: price }).amount, `${qty} × ${price}`);
+  }
+});
+
+test('cam işlemleri: doğrulama (tür, adet, fiyat, maliyet, açıklama, sınır), sandık maliyeti hep 0, maliyet kaynağı', () => {
+  const bad = (glass, code) => {
+    const r = parseOffer({ ...SAMPLE, glass }, CAT);
+    assert.equal(r.ok, false, code);
+    assert.equal(r.code, code);
+  };
+  const g = SAMPLE.glass[0];
+  bad([{ ...g, ops: [{ kind: 'LAZER', qty: '1', price: '1' }] }], 'OPS');
+  bad([{ ...g, ops: 'x' }], 'OPS');
+  bad([{ kind: 'BASKA', qty: '1', price: '1' }], 'OPS');
+  bad([{ ...g, ops: [{ kind: 'CNC', qty: '0', price: '1' }] }], 'QTY');
+  bad([{ ...g, ops: [{ kind: 'CNC', qty: '1,5', price: '1' }] }], 'QTY');
+  bad([{ ...g, ops: [{ kind: 'CNC', qty: '1', price: '' }] }], 'PRICE');
+  bad([{ ...g, ops: [{ kind: 'DELIK', qty: '1', price: '1', cost: '-1' }] }], 'COST');
+  bad([{ ...g, ops: [{ kind: 'DELIK', qty: '1', price: '1', description: 'x'.repeat(201) }] }], 'DESC');
+  bad([{ ...g, ops: Array(21).fill({ kind: 'CNC', qty: '1', price: '1' }) }], 'TOO_MANY');
+  bad([{ kind: 'SANDIK', qty: '', price: '10' }], 'QTY');
+  bad([{ kind: 'SANDIK', qty: '1', price: '' }], 'PRICE');
+  const d = opsParsed();
+  // Sandık parası: ürün / ölçü yok, maliyet formdan ne gelirse gelsin 0
+  assert.deepEqual(d.glass[1], { kind: 'SANDIK', qty: 2, price: '45', cost: '0' });
+  // Maliyet kaynağı: tablodaki CNC fiyatıyla aynı → LIST; tabloda delik fiyatı yok ve maliyet boş → null
+  assert.deepEqual(d.glass[0].ops.map((o) => [o.kind, o.description, o.cost, o.listCost, o.costSource]), [['CNC', '', '3', '3', 'LIST'], ['DELIK', 'Ø 12', null, null, null]]);
+  const manual = opsParsed({ ...OPS_SAMPLE, glass: [{ ...OPS_SAMPLE.glass[0], ops: [{ kind: 'CNC', qty: '1', price: '9', cost: '4' }] }] });
+  assert.equal(manual.glass[0].ops[0].costSource, 'MANUAL');
+  // İşlemsiz cam satırı eski biçimde kalır (ops / kind alanı yok)
+  const plain = parseOffer(SAMPLE, CAT).data.glass[0];
+  assert.ok(!('ops' in plain) && !('kind' in plain));
+});
+
+test('cam işlemleri: müşteri görünümü ve PDF — CNC / delik camın altında numarasız, sandık numaralı; maliyet / kâr yok', () => {
+  const v = customerView({ no: 497, version: 1, data: opsParsed(), draft: false });
+  const json = JSON.stringify(v);
+  for (const key of ['cost', 'Cost', 'profit', 'listCost', 'costSource', 'productId']) assert.ok(!json.includes(`"${key}`), key);
+  assert.deepEqual(v.glass[0].ops, [{ kind: 'CNC', description: '', qty: 80, price: '5.25', amount: '420.00' }, { kind: 'DELIK', description: 'Ø 12', qty: 100, price: '1.5', amount: '150.00' }]);
+  assert.deepEqual(v.glass[1], { crate: true, description: CRATE_TEXT, qty: 2, price: '45', amount: '90.00' });
+  assert.equal(CRATE_TEXT, 'Ambalaj (ladă)');
+  assert.deepEqual(Object.keys(v.totals), ['glassM2', 'glass', 'profile', 'total']);
+  const parts = pdfText(commercialOfferPdf(v, ro.commercial.pdf, GKH_CONTACT));
+  const text = parts.join('\n');
+  for (const s of ['CNC', 'Găuri – Ø 12', 'Ambalaj (ladă)', 'BUC', '420.00 €', '150.00 €', '90.00 €', '64.020']) assert.ok(text.includes(s), s);
+  // Sıra: cam (1) → CNC → Găuri → sandık (2). Numara hücresi açıklamadan hemen önce yazılır: işlem satırında numara yok
+  const at = (s) => parts.indexOf(s);
+  assert.ok(at('1000  x  970') < at('CNC') && at('CNC') < at('Găuri – Ø 12') && at('Găuri – Ø 12') < at('Ambalaj (ladă)'));
+  assert.equal(parts[at('Ambalaj (ladă)') - 1], '2');
+  assert.match(parts[at('CNC') - 1], /€$/);
+  assert.match(parts[at('Găuri – Ø 12') - 1], /€$/);
+  for (const secret of ['240.00', 'Cost', 'Profit']) assert.ok(!text.includes(secret), secret);
+});
+
+test('cam işlemleri: iç Excel — işlem satırları numarasız, sandık numaralı; maliyet / kâr; not yalnızca ek kalem varsa', () => {
+  const t = (key, params) => translate('tr', key, params);
+  const [sheet] = internalSheets({ no: 497, version: 1, status: 'TASLAK', draft: true, data: opsParsed() }, t, { statusText: 'Taslak', locale: 'tr' });
+  const rows = sheet.blocks[0].rows;
+  assert.deepEqual(rows.map((r) => [r[0], r[1], r[5], r[6], r[8], r[9], r[10], r[11]]), [
+    [1, OPS_SAMPLE.glass[0].description, 66, 64.02, Number(computeOffer(opsParsed()).glass[0].amount), 50, 3201, Number(computeOffer(opsParsed()).glass[0].profit)],
+    ['', 'CNC', 80, null, 420, 3, 240, 180],
+    ['', 'Delik – Ø 12', 100, null, 150, null, null, null],
+    [2, 'Sandık parası', 2, null, 90, 0, 0, 90],
+  ]);
+  assert.ok(sheet.notes.includes(t('commercial.excel.opsNote')));
+  const summary = Object.fromEntries(sheet.blocks[2].rows);
+  assert.equal(summary[t('commercial.excel.rows.ops')], 570);
+  assert.equal(summary[t('commercial.excel.rows.crate')], 90);
+  // Eski teklif (ek kalem yok): not ve özet satırları eskisi gibi
+  const [old] = internalSheets({ no: 496, version: 1, status: 'TASLAK', draft: true, data: parsed() }, t, { statusText: 'Taslak', locale: 'tr' });
+  assert.equal(old.notes.length, 1);
+  assert.equal(old.blocks[2].rows.length, 10);
+  const buf = writeReportXlsx({ sheets: [sheet], logo: null });
+  assert.ok(readXlsx(buf).rows.flat().includes('Delik – Ø 12'));
+});
+
+test('cam işlemleri: önizleme — eksik işlem cam satırını toplamdan çıkarır; geçerli satırlar sunucu kuralıyla', () => {
+  const pv = previewOffer({ glassExtraCost: '', glass: [OPS_SAMPLE.glass[0], OPS_SAMPLE.glass[1], { ...OPS_SAMPLE.glass[0], ops: [{ kind: 'CNC', qty: '', price: '1' }] }], profile: [] }, () => null);
+  assert.equal(pv.invalid, 1);
+  assert.equal(pv.glass[2], null);
+  assert.equal(pv.glass[0].ops[1].amount, '150.00');
+  assert.equal(pv.glass[1].amount, '90.00');
+  const c = computeOffer(opsParsed({ ...OPS_SAMPLE, glassExtraCost: '' }));
+  assert.equal(pv.totals.total, c.totals.glass);
 });
