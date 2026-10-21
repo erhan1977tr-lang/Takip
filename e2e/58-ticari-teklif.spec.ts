@@ -153,6 +153,72 @@ test('kesinleştir → sürüm değişmez; kabul yalnızca kayıt (sipariş aç�
   await admin.context().close();
 });
 
+test('3.100.0: cam bölümünde CNC / delik (adet camdan bağımsız) ve sandık parası — canlı toplam, kayıt, yeniden açma, PDF ve iç Excel', async ({ browser }) => {
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  const before = await others();
+  await admin.goto('/admin/ticari-teklifler/yeni');
+  await admin.fill('#co-firm', 'E2E İşlemli Cam');
+  await admin.getByRole('button', { name: '+ Cam ekle' }).click();
+  const g = admin.locator('[data-glass-line="1"]');
+  const gv = await g.locator('select option', { hasText: '66.3 Temper Lamine Cam' }).first().getAttribute('value');
+  await g.locator('select').selectOption(gv!);
+  await g.getByLabel('En (mm) 1').fill('1000');
+  await g.getByLabel('Boy (mm) 1').fill('970');
+  await g.getByLabel('Adet 1').fill('66');
+  await g.getByLabel('Satış €/m² 1').fill('63,10');
+  await g.getByLabel('Maliyet €/m² 1').fill('50');
+  // 66 cam altında 80 CNC ve 100 delik: kısıt yok, cam bölünmez
+  await g.locator('[data-add-op="CNC"]').click();
+  await g.locator('[data-add-op="DELIK"]').click();
+  const cnc = admin.locator('tr[data-op-line="CNC"][data-parent="1"]');
+  const hole = admin.locator('tr[data-op-line="DELIK"][data-parent="1"]');
+  await cnc.getByLabel('CNC Adet 1').fill('80');
+  await cnc.getByLabel('CNC € / adet 1').fill('5,25');
+  await cnc.getByLabel('CNC Maliyet € / birim 1').fill('3');
+  await hole.getByLabel('Delik Adet 1').fill('100');
+  await hole.getByLabel('Delik € / adet 1').fill('1,5');
+  await hole.getByLabel('Delik Maliyet € / birim 1').fill('1');
+  await expect(cnc.locator('[data-amount]')).toHaveText('420,00 €');
+  await expect(hole.locator('[data-amount]')).toHaveText('150,00 €');
+  // Sandık parası: yalnızca düğmeyle; ayrı, numaralı kalem; maliyet 0 € (sabit)
+  await expect(admin.locator('[data-crate-line]')).toHaveCount(0);
+  await admin.locator('[data-add-crate]').click();
+  const crate = admin.locator('tr[data-crate-line][data-glass-line="2"]');
+  await crate.getByLabel('Sandık parası Adet 2').fill('2');
+  await crate.getByLabel('Sandık parası € / adet 2').fill('45');
+  await expect(crate.locator('[data-amount]')).toHaveText('90,00 €');
+  await expect(crate.locator('[data-crate-cost]')).toBeVisible();
+  // Cam adedi ve m² değişmez: 66 × 0,970 = 64,020 m² → 4.039,66 €; cam bölümü + 660 €
+  await expect(g.locator('[data-m2]')).toHaveText('64,020');
+  await expect(g.locator('[data-amount]')).toHaveText('4.039,66 €');
+  await expect(admin.locator('[data-total="glassM2"]')).toHaveText('64,020');
+  await expect(admin.locator('[data-total="glass"]')).toHaveText('4.699,66 €');
+  await expect(admin.locator('[data-total="ops"]')).toHaveText('570,00 €');
+  await expect(admin.locator('[data-total="crate"]')).toHaveText('90,00 €');
+  await expect(admin.locator('[data-total="counts"]')).toHaveText('66 cam · 80 CNC · 100 delik · 2 sandık');
+  // Maliyet: 64,02 × 50 = 3.201,00 + 240 + 100 + sandık 0
+  await expect(admin.locator('[data-total="cost"]')).toHaveText('3.541,00 €');
+  await admin.locator('[data-save]').click();
+  await expect(admin).toHaveURL(/\/admin\/ticari-teklifler\/[a-z0-9]+\?ok=created/);
+  const url = new URL(admin.url()).pathname;
+  // Yeniden açma: satırlar ve toplamlar aynı
+  await admin.goto(url);
+  await expect(admin.locator('tr[data-op-line="CNC"] input').nth(1)).toHaveValue('80');
+  await expect(admin.locator('tr[data-op-line="DELIK"] input').nth(1)).toHaveValue('100');
+  await expect(admin.locator('[data-crate-line] [data-amount]')).toHaveText('90,00 €');
+  await expect(admin.locator('[data-total="glass"]')).toHaveText('4.699,66 €');
+  await expect(admin.locator('[data-unsaved]')).toHaveCount(0);
+  // Müşteri PDF: işlemler camın altında, sandık ayrı kalem; maliyet yok
+  const text = pdfText(Buffer.from(await (await admin.request.get(`${url}/pdf`)).body()));
+  for (const s of ['CNC', 'Găuri', 'Ambalaj (ladă)', 'BUC', '420.00 €', '150.00 €', '90.00 €', '64.020', '4,699.66 €']) expect(text).toContain(s);
+  for (const s of ['3,541', '240.00', 'Cost', 'Profit']) expect(text).not.toContain(s);
+  // İç Excel: işlem ve sandık satırları, maliyet ve kâr
+  const flat = (await reportSheet(Buffer.from(await (await admin.request.get(`${url}/excel`)).body()), 1)).flat();
+  for (const v of [420, 150, 90, 240, 180, 'Delik', 'Sandık parası', 570]) expect(flat).toContain(v);
+  expect(await others()).toEqual(before);
+  await admin.context().close();
+});
+
 test('satış ve müşteri: sayfalar, PDF / Excel ve sunucu işlemi kapalı (teklif oluşmaz)', async ({ browser }) => {
   const admin = await as(browser, ADMIN, ADMIN_PW);
   const html = await (await admin.request.get('/admin/ticari-teklifler/yeni')).text();

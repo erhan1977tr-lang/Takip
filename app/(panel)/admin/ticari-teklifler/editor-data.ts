@@ -33,7 +33,7 @@ export async function editorProps(actor: { id: string; role: string }, t: T, loc
     thicknesses: opts.thicknesses.map((x) => ({ id: x.id, label: x.label ?? `${x.mm} mm` })),
     colors: PROFILE_COLORS.map((c) => ({ value: c, label: t(`profile.calc.colors.${c}` as MsgKey) })),
   };
-  return { glass, profile, customers: cat.customers, calc, costTable: { name: cat.glassCostTable, reason: cat.glassCostReason } };
+  return { glass, profile, customers: cat.customers, calc, costTable: { name: cat.glassCostTable, reason: cat.glassCostReason, ops: cat.opCosts ?? null } };
 }
 
 type Stored = Record<string, unknown>;
@@ -47,7 +47,12 @@ export function editorData(no: number | null, raw: unknown): EditorData {
     no: no == null ? '' : String(no), date: str(d.date), customerId: str(d.customerId), firmName: str(d.firmName),
     validityDays: str(d.validityDays ?? DEFAULT_VALIDITY_DAYS), terms: (Array.isArray(d.terms) ? d.terms : []).map(str).join('\n'),
     note: str(d.note), glassExtraCost: input(d.glassExtraCost),
-    glass: rows(d.glass).map((l) => ({ productId: str(l.productId), description: str(l.description), en: str(l.en), boy: str(l.boy), qty: str(l.qty), price: input(l.price), cost: input(l.cost) })),
+    // Sandık parası (kind SANDIK) ve cam satırının işlemleri (ops: CNC / delik) — eski satırlarda yok (işlemsiz cam)
+    glass: rows(d.glass).map((l) => ({
+      ...(l.kind === 'SANDIK' ? { kind: 'SANDIK' as const } : {}),
+      productId: str(l.productId), description: str(l.description), en: str(l.en), boy: str(l.boy), qty: str(l.qty), price: input(l.price), cost: l.kind === 'SANDIK' ? '' : input(l.cost),
+      ops: rows(l.ops).map((o) => ({ kind: o.kind === 'DELIK' ? 'DELIK' as const : 'CNC' as const, description: str(o.description), qty: str(o.qty), price: input(o.price), cost: input(o.cost) })),
+    })),
     profile: rows(d.profile).map((l) => ({
       productId: str(l.productId), description: str(l.description), color: str(l.color), meters: l.perMl ? input(l.meters) : '', qty: l.perMl ? '' : str(l.qty),
       price: input(l.price), cost: input(l.cost),

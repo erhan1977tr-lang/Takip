@@ -39,7 +39,7 @@ const colsOf = (W) => {
 
 /**
  * @param {ReturnType<typeof import('../commercial/rules.js').customerView>} v
- * @param {Record<string, string>} t  Romence metinler (commercial.pdf.* — route çevirir)
+ * @param {Record<string, any>} t  Romence metinler (commercial.pdf.* — route çevirir)
  * @param {{ address: string, phone: string, web: readonly string[], email: string }} contact
  * @returns {Buffer}
  */
@@ -95,20 +95,31 @@ export function commercialOfferPdf(v, t, contact) {
     const C = colsOf(GW);
     const glassHead = () => header(C, [['n', '#', 'left'], ['desc', t.desc, 'left'], ['dim', t.dimension, 'center'], ['qty', t.quantity], ['m2', t.surface], ['um', t.um, 'center'], ['price', t.pricePerM2], ['amount', t.amountNoVat]]);
     glassHead();
-    v.glass.forEach((r, i) => {
-      const lines = wrapText(r.description, 8, C.desc.w - 6).slice(0, 3);
+    // Cam satırı numaralı; altındaki CNC / delik numarasız (ölçüsüz, m² yok, birim BUC); sandık parası numaralı ayrı kalem
+    const row = (n, text, r, { dims = null, m2 = null, um, indent = 0 }) => {
+      const lines = wrapText(text, 8, C.desc.w - 6 - indent).slice(0, 3);
       const h = Math.max(ROW, 6 + lines.length * 10);
       if (ensure(h)) glassHead();
-      cell(C, 'n', i + 1, { align: 'left' });
-      lines.forEach((ln, j) => page.text(C.desc.x + 3, y + 12 + j * 10, ln, { size: 8 }));
-      page.text(C.dim.x, y + 12, `${r.en}  x  ${r.boy}`, { size: 8, align: 'center', width: C.dim.w });
+      if (n != null) cell(C, 'n', n, { align: 'left' });
+      lines.forEach((ln, j) => page.text(C.desc.x + 3 + indent, y + 12 + j * 10, ln, { size: 8 }));
+      if (dims) page.text(C.dim.x, y + 12, dims, { size: 8, align: 'center', width: C.dim.w });
       cell(C, 'qty', qty(r.qty));
-      cell(C, 'm2', fmt(r.m2, 3));
-      page.text(C.um.x, y + 12, 'MP', { size: 8, align: 'center', width: C.um.w });
+      if (m2 != null) cell(C, 'm2', fmt(m2, 3));
+      page.text(C.um.x, y + 12, um, { size: 8, align: 'center', width: C.um.w });
       cell(C, 'price', price(r.price));
       cell(C, 'amount', money(r.amount), { bold: true });
       y += h;
       rule();
+    };
+    let n = 0;
+    v.glass.forEach((r) => {
+      n += 1;
+      if (r.crate) { row(n, r.description, r, { um: t.piece }); return; }
+      row(n, r.description, r, { dims: `${r.en}  x  ${r.boy}`, m2: r.m2, um: 'MP' });
+      for (const o of r.ops ?? []) {
+        const label = t.ops[o.kind] ?? o.kind;
+        row(null, o.description ? `${label} – ${o.description}` : label, o, { um: t.piece, indent: 10 });
+      }
     });
     subtotal(t.glassTotal, v.totals.glass, `${fmt(v.totals.glassM2, 3)} mp`);
     y += 6;

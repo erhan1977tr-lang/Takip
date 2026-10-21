@@ -222,3 +222,52 @@ dbTest('DÜZELTME 10: kategori sırası (Alüminyum → Conta → …) ve atanm�
     await db.priceTable.delete({ where: { id: table.id } });
   }
 }));
+
+dbTest('3.100.0: cam bölümünde CNC / delik / sandık parası — maliyet önerisi tablodan, kayıt, yeniden açma, kesin sürüm sabit; başka tabloya yazılmaz', offline(async () => {
+  const table = await db.priceTable.create({ data: { name: 'İşlem tablosu', kind: 'SALES', currency: 'EUR', cncPrice: '3.00', holePrice: '0.80', items: { create: [{ glassProductId: glass.id, unitPrice: '41.50' }] } } });
+  try {
+    assert.equal((await assignTable(db, U.admin.id, table.id, A(), (role) => can(role, 'OFFER_PREPARE'))).ok, true);
+    const cat = await svc.editorCatalog(db, A());
+    assert.deepEqual(cat.opCosts, { CNC: '3', DELIK: '0.8' });
+    const other = await counts();
+    // 66 cam + 80 CNC + 100 delik (adet camdan bağımsız) + 2 sandık
+    const f = await form({
+      glassExtraCost: '1700', profile: [],
+      glass: [
+        { productId: glass.id, en: '1000', boy: '970', qty: '66', price: '63.10', cost: '41.50',
+          ops: [{ kind: 'CNC', qty: '80', price: '5.25', cost: '3' }, { kind: 'DELIK', description: 'Ø 12', qty: '100', price: '1.50', cost: '1' }] },
+        { kind: 'SANDIK', qty: '2', price: '45', cost: '12' },
+      ],
+    });
+    const c = await svc.createOffer(db, f, A());
+    assert.equal(c.ok, true, JSON.stringify(c));
+    let o = await db.commercialOffer.findUniqueOrThrow({ where: { id: c.id }, include: { versions: true } });
+    // Cam 64.02 m² × 63.10 = 4039.66 + 420 + 150 + 90
+    assert.equal(o.total.toString(), '4699.66');
+    // Maliyet: cam 64.02 × 41.50 = 2656.83 + CNC 240 + delik 100 + sandık 0 + nakliye 1700
+    assert.equal(o.versions[0].cost.toString(), '4696.83');
+    const stored = /** @type {any} */ (o.versions[0].data);
+    assert.deepEqual(stored.glass[1], { kind: 'SANDIK', qty: 2, price: '45', cost: '0' });
+    assert.deepEqual(stored.glass[0].ops.map((x) => [x.kind, x.qty, x.listCost, x.costSource]), [['CNC', 80, '3', 'LIST'], ['DELIK', 100, '0.8', 'MANUAL']]);
+    const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'COMMERCIAL_OFFER_CREATED', entityId: c.id } });
+    assert.deepEqual(/** @type {any} */ (audit.details).costOverrides.map((x) => [x.row, x.op ?? null, x.cost]), [[1, 'DELIK', '1']]);
+    // Yeniden açma: kayıtlı veri aynen döner; taslak tekrar kaydedilince toplamlar aynı
+    const v1 = await svc.offerVersion(db, { id: c.id, version: 1 }, A());
+    assert.equal(computeOffer(v1.data).totals.glassM2, '64.020');
+    const s = await svc.saveDraft(db, { ...v1.data, glass: v1.data.glass, offerId: c.id, editVersion: o.editVersion }, A());
+    assert.ok(s.ok, JSON.stringify(s));
+    o = await db.commercialOffer.findUniqueOrThrow({ where: { id: c.id } });
+    assert.equal(o.total.toString(), '4699.66');
+    assert.equal((await svc.issueOffer(db, { offerId: c.id, editVersion: o.editVersion }, A())).ok, true);
+    const view = customerView({ no: o.no, version: 1, data: (await svc.offerVersion(db, { id: c.id, version: 1 }, A())).data, draft: false });
+    assert.doesNotMatch(JSON.stringify(view), /cost|profit|listCost/);
+    // Tablonun CNC / delik fiyatı sonradan değişir → kesin sürüm aynı
+    await db.priceTable.update({ where: { id: table.id }, data: { cncPrice: '9', holePrice: '9' } });
+    const again = await svc.offerVersion(db, { id: c.id, version: 1 }, A());
+    assert.deepEqual(again.data.glass[0].ops.map((x) => [x.listCost, x.cost]), [['3', '3'], ['0.8', '1']]);
+    assert.deepEqual(await counts(), other, 'sipariş / teklif / FGO / stok / bildirim tablolarına yazılmadı');
+  } finally {
+    await db.user.update({ where: { id: U.admin.id }, data: { priceTableId: null } });
+    await db.priceTable.delete({ where: { id: table.id } });
+  }
+}));

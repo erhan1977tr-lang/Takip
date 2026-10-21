@@ -13,15 +13,31 @@
 // (örnek teklif dosyasındaki gibi). Maliyeti girilmemiş satırın maliyeti UYDURULMAZ: "maliyet eksik" sayılır ve kâr /
 // marj "eksik" işaretlenir. Maliyet, kâr ve marj YALNIZCA iç görünümdedir; müşteri belgesi customerView'dan üretilir.
 import { UNITS } from '../../prisma/seed/data/units.js';
+import { CRATE_LINE } from '../orders/rules.js';
 
 export const OFFER_STATUSES = Object.freeze(['TASLAK', 'HAZIR', 'KABUL', 'RED', 'IPTAL']);
 /** Sonuç işaretlenebilen durumlar (kabul / ret yalnızca kayıt: sipariş, belge, e-posta YOK) */
 export const OUTCOME_STATUSES = Object.freeze(['KABUL', 'RED']);
 export const LIMITS = Object.freeze({
-  glass: 100, profile: 200, terms: 20, termChars: 300, desc: 200, firm: 160, note: 1000,
+  glass: 100, profile: 200, ops: 20, terms: 20, termChars: 300, desc: 200, firm: 160, note: 1000,
   mm: 10_000, qty: 100_000, price: 1_000_000, extra: 10_000_000, validity: 365, number: 999_999,
 });
 export const PROFILE_COLORS = Object.freeze(['RAL7016', 'ELOXAT']);
+/**
+ * Cam bölümünün ek kalemleri (3.100.0, karar 297 — referans: satış ekibinin teklif tablosu, karar 113 / 211 / 214):
+ *   - CNC / DELIK: cam satırının ALTINDAKİ işlem (satırın `ops` dizisi); numarasız, ölçüsüz, birimi adet. Adedi camın
+ *     adedinden BAĞIMSIZDIR (sınır / denetim yok — cam bölünmez); tutar = kendi adedi × birim satış fiyatı, bir kez 2 ondalık.
+ *     Maliyet isteğe bağlı (öneri: kullanıcının fiyat tablosundaki CNC / delik fiyatı).
+ *   - SANDIK (sandık parası): cam bölümünde ayrı, NUMARALI kalem (`kind: 'SANDIK'`); yalnızca "+ Sandık parası" ile eklenir.
+ *     Adet ve birim satış fiyatı girilir; maliyeti kuralla 0 € (referanstaki yönetici sandık bedeli gibi — "maliyet eksik" sayılmaz).
+ * Hiçbiri cam adedini, m² toplamını ve nakliye + gümrük payını (m² başına) değiştirmez; tutarları cam bölümünün toplamına ve
+ * genel toplama bir kez eklenir. `kind` / `ops` taşımayan (eski) satırlar bugünkü gibi cam satırıdır.
+ */
+export const OP_KINDS = Object.freeze(['CNC', 'DELIK']);
+export const CRATE_KIND = 'SANDIK';
+/** Müşteri belgesindeki sandık kaleminin adı (belge Romence; satış tablosuyla aynı ad — server/orders/rules.js → CRATE_LINE) */
+export const CRATE_TEXT = CRATE_LINE.ro;
+const isCrate = (l) => l?.kind === CRATE_KIND;
 /** Müşteri belgesindeki renk yazımı (örnek teklif: "RAL7016") */
 export const COLOR_TEXT = Object.freeze({ RAL7016: 'RAL7016', ELOXAT: 'Eloxat' });
 export const DEFAULT_VALIDITY_DAYS = 5;
@@ -111,6 +127,11 @@ const clean = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' '
 export const pieceMilli = (en, boy) => divRound(BigInt(en) * BigInt(boy), 1000n);
 /** m² (10⁻³) × €/m² (10⁻⁴) → sent (10⁻²), bir kez yarım-yukarı */
 const areaAmount = (milli, p) => divRound(milli * toScaled(p, 4), 100_000n);
+/**
+ * Miktar (10⁻³) × birim fiyat (10⁻⁴) → sent (10⁻²), bir kez yarım-yukarı — profil satırı, cam işlemi (CNC / delik) ve sandık
+ * kalemi aynı kuralı kullanır (adetli kalem: miktar = adet × 1000).
+ */
+const qtyAmount = areaAmount;
 
 /**
  * Profil / aksesuar ürünü metreyle mi fiyatlanır: paket ölçüsü metre (M) ve paket içeriği tanımlı (profil çubuğu 6 m, conta
@@ -159,21 +180,40 @@ export function packsFor(meters, content) {
  */
 export function computeOffer(d) {
   let glassM2 = 0n, glassSale = 0n, glassCost = 0n, profileSale = 0n, profileCost = 0n, costedSale = 0n, missing = 0;
+  let opsSale = 0n, crateSale = 0n, glassQty = 0, cnc = 0, holes = 0, crates = 0;
   const glass = (d.glass ?? []).map((l) => {
+    if (isCrate(l)) {
+      // Sandık parası: adet × birim fiyat; maliyet kuralla 0 € (maliyeti "girilmiş" sayılır)
+      const sale = qtyAmount(BigInt(l.qty) * 1000n, l.price);
+      glassSale += sale; crateSale += sale; costedSale += sale; crates += l.qty;
+      return { ...l, amount: fromScaled(sale, 2, 2), costAmount: '0.00', profit: fromScaled(sale, 2, 2) };
+    }
     const piece = pieceMilli(l.en, l.boy);
     const m2 = piece * BigInt(l.qty);
     const sale = areaAmount(m2, l.price);
     const cost = l.cost == null ? null : areaAmount(m2, l.cost);
-    glassM2 += m2; glassSale += sale;
+    glassM2 += m2; glassSale += sale; glassQty += l.qty;
     if (cost == null) missing++; else { glassCost += cost; costedSale += sale; }
-    return { ...l, pieceM2: fromScaled(piece, 3, 3), m2: fromScaled(m2, 3, 3), amount: fromScaled(sale, 2, 2),
+    const out = { ...l, pieceM2: fromScaled(piece, 3, 3), m2: fromScaled(m2, 3, 3), amount: fromScaled(sale, 2, 2),
       costAmount: cost == null ? null : fromScaled(cost, 2, 2), profit: cost == null ? null : fromScaled(sale - cost, 2, 2) };
+    if (!Array.isArray(l.ops) || !l.ops.length) return out;
+    // CNC / delik: kendi adedi × birim fiyat (camın adedinden bağımsız); m²'ye girmez
+    out.ops = l.ops.map((o) => {
+      const milli = BigInt(o.qty) * 1000n;
+      const s = qtyAmount(milli, o.price);
+      const c = o.cost == null ? null : qtyAmount(milli, o.cost);
+      glassSale += s; opsSale += s;
+      if (o.kind === 'CNC') cnc += o.qty; else holes += o.qty;
+      if (c == null) missing++; else { glassCost += c; costedSale += s; }
+      return { ...o, amount: fromScaled(s, 2, 2), costAmount: c == null ? null : fromScaled(c, 2, 2), profit: c == null ? null : fromScaled(s - c, 2, 2) };
+    });
+    return out;
   });
   const profile = (d.profile ?? []).map((l) => {
     // Metre ile fiyatlanan ürün (profil çubuğu, conta kutusu): faturalanan miktar = tam paket × paket içeriği (ML)
     const billMilli = l.perMl ? BigInt(l.qty) * toScaled(l.content, 3) : BigInt(l.qty) * 1000n;
-    const sale = divRound(billMilli * toScaled(l.price, 4), 100_000n);
-    const cost = l.cost == null ? null : divRound(billMilli * toScaled(l.cost, 4), 100_000n);
+    const sale = qtyAmount(billMilli, l.price);
+    const cost = l.cost == null ? null : qtyAmount(billMilli, l.cost);
     profileSale += sale;
     if (cost == null) missing++; else { profileCost += cost; costedSale += sale; }
     return { ...l, billQty: fromScaled(billMilli, 3), amount: fromScaled(sale, 2, 2), costAmount: cost == null ? null : fromScaled(cost, 2, 2),
@@ -195,6 +235,8 @@ export function computeOffer(d) {
       glassM2: fromScaled(glassM2, 3, 3), glass: s2(glassSale), profile: s2(profileSale), total: s2(total),
       glassCost: s2(glassCost), profileCost: s2(profileCost), extraCost: s2(extra), extraPerM2,
       cost: s2(cost), costedSale: s2(costedSale), profit: s2(profit), margin, missingCost: missing,
+      // Cam bölümünün içinden (glass toplamına dahil): işlemler ve sandık parası; adetler (cam, CNC, delik, sandık)
+      ops: s2(opsSale), crate: s2(crateSale), glassQty, cnc, holes, crates,
     },
   };
 }
@@ -234,6 +276,17 @@ export function parseOffer(v, cat) {
   if (g.length > LIMITS.glass || p.length > LIMITS.profile) return { ok: false, code: 'TOO_MANY' };
   const glass = [];
   for (const [i, l] of g.entries()) {
+    const kind = l?.kind == null || l.kind === '' ? 'CAM' : String(l.kind);
+    if (kind === CRATE_KIND) {
+      // Sandık parası: ad sabit (belgede CRATE_TEXT), maliyet kuralla 0
+      const qty = int(l?.qty, 1, LIMITS.qty);
+      if (qty == null) return { ok: false, code: 'QTY', section: 'glass', index: i };
+      const price = price4(l?.price, { required: true });
+      if (price === undefined) return { ok: false, code: 'PRICE', section: 'glass', index: i };
+      glass.push({ kind: CRATE_KIND, qty, price, cost: '0' });
+      continue;
+    }
+    if (kind !== 'CAM') return { ok: false, code: 'OPS', section: 'glass', index: i };
     const prod = cat.glassProducts.get(String(l?.productId ?? ''));
     if (!prod) return { ok: false, code: 'GLASS_PRODUCT', section: 'glass', index: i };
     const en = int(l?.en, 1, LIMITS.mm), boy = int(l?.boy, 1, LIMITS.mm);
@@ -251,7 +304,27 @@ export function parseOffer(v, cat) {
     // maliyet bundan farklıysa satır "MANUAL" işaretlenir (denetim kaydına da yazılır). Liste fiyatı yoksa kaynak boş kalır.
     const listCost = cat.glassCosts?.get(prod.id) ?? null;
     const costSource = cost == null ? null : listCost != null && toScaled(listCost, 4) === toScaled(cost, 4) ? 'LIST' : listCost != null ? 'MANUAL' : null;
-    glass.push({ productId: prod.id, catalogTr: [prod.nameTr, prod.colorTr].filter(Boolean).join(' — '), description, en, boy, qty, price, cost, listCost, costSource });
+    // CNC / delik (cam satırının altındaki işlemler): adet camdan bağımsız; maliyet önerisi fiyat tablosunun CNC / delik fiyatı
+    const rawOps = l?.ops == null ? [] : l.ops;
+    if (!Array.isArray(rawOps)) return { ok: false, code: 'OPS', section: 'glass', index: i };
+    if (rawOps.length > LIMITS.ops) return { ok: false, code: 'TOO_MANY' };
+    const ops = [];
+    for (const o of rawOps) {
+      const ok = String(o?.kind ?? '');
+      if (!OP_KINDS.includes(ok)) return { ok: false, code: 'OPS', section: 'glass', index: i };
+      const oq = int(o?.qty, 1, LIMITS.qty);
+      if (oq == null) return { ok: false, code: 'QTY', section: 'glass', index: i };
+      const op = price4(o?.price, { required: true });
+      if (op === undefined) return { ok: false, code: 'PRICE', section: 'glass', index: i };
+      const oc = price4(o?.cost, { required: false });
+      if (oc === undefined) return { ok: false, code: 'COST', section: 'glass', index: i };
+      const od = clean(o?.description, LIMITS.desc + 1);
+      if (od.length > LIMITS.desc) return { ok: false, code: 'DESC', section: 'glass', index: i };
+      const olc = cat.opCosts?.[ok] ?? null;
+      const osrc = oc == null ? null : olc != null && toScaled(olc, 4) === toScaled(oc, 4) ? 'LIST' : olc != null ? 'MANUAL' : null;
+      ops.push({ kind: ok, description: od, qty: oq, price: op, cost: oc, listCost: olc, costSource: osrc });
+    }
+    glass.push({ productId: prod.id, catalogTr: [prod.nameTr, prod.colorTr].filter(Boolean).join(' — '), description, en, boy, qty, price, cost, listCost, costSource, ...(ops.length ? { ops } : {}) });
   }
   const profile = [];
   for (const [i, l] of p.entries()) {
@@ -329,7 +402,12 @@ export function customerView({ no, version, data, draft }) {
     });
   return {
     no: offerNoText(no), version, draft, date: data.date, firmName: data.firmName,
-    glass: c.glass.map((l) => ({ description: l.description, en: l.en, boy: l.boy, qty: l.qty, m2: l.m2, price: l.price, amount: l.amount })),
+    glass: c.glass.map((l) => (isCrate(l)
+      ? { crate: true, description: CRATE_TEXT, qty: l.qty, price: l.price, amount: l.amount }
+      : {
+        description: l.description, en: l.en, boy: l.boy, qty: l.qty, m2: l.m2, price: l.price, amount: l.amount,
+        ...(l.ops ? { ops: l.ops.map((o) => ({ kind: o.kind, description: o.description, qty: o.qty, price: o.price, amount: o.amount })) } : {}),
+      })),
     profileGroups: groups,
     totals: { glassM2: c.totals.glassM2, glass: c.totals.glass, profile: c.totals.profile, total: c.totals.total },
     terms: [validityText(data.validityDays), ...data.terms],
@@ -366,10 +444,20 @@ export function billQuantity(l, content) {
  */
 export function previewOffer(v, contentOf) {
   const glass = (v.glass ?? []).map((l) => {
-    const en = int(l?.en, 1, LIMITS.mm), boy = int(l?.boy, 1, LIMITS.mm), qty = int(l?.qty, 1, LIMITS.qty);
-    const price = price4(l?.price, { required: true }), cost = price4(l?.cost, { required: false });
+    const qty = int(l?.qty, 1, LIMITS.qty);
+    const price = price4(l?.price, { required: true });
+    if (isCrate(l)) return qty == null || price == null ? null : { kind: CRATE_KIND, qty, price, cost: '0' };
+    const en = int(l?.en, 1, LIMITS.mm), boy = int(l?.boy, 1, LIMITS.mm);
+    const cost = price4(l?.cost, { required: false });
     if (!l?.productId || en == null || boy == null || qty == null || price == null || cost === undefined) return null;
-    return { en, boy, qty, price, cost };
+    // İşlemlerden biri eksik / hatalıysa cam satırı (işlemleriyle) toplama katılmaz — sunucu da satırı reddeder
+    const ops = [];
+    for (const o of Array.isArray(l?.ops) ? l.ops : []) {
+      const oq = int(o?.qty, 1, LIMITS.qty), op = price4(o?.price, { required: true }), oc = price4(o?.cost, { required: false });
+      if (!OP_KINDS.includes(String(o?.kind)) || oq == null || op == null || oc === undefined) return null;
+      ops.push({ kind: String(o.kind), qty: oq, price: op, cost: oc });
+    }
+    return { en, boy, qty, price, cost, ...(ops.length ? { ops } : {}) };
   });
   const profile = (v.profile ?? []).map((l) => {
     if (!l?.productId) return null;

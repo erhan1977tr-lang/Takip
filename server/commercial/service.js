@@ -48,31 +48,36 @@ const plainProfile = (p) => ({
  * (eski satır bozulmasın); yeni satır pasif ürün seçemez.
  */
 async function catalogFor(tx, v, keep = { glass: new Set(), profile: new Set() }, userId = null) {
-  const [glass, profile, customer, glassCosts, stock] = await Promise.all([
+  const [glass, profile, customer, costs, stock] = await Promise.all([
     tx.glassProduct.findMany({ where: { id: { in: ids(v?.glass) } } }),
     tx.profileProduct.findMany({ where: { id: { in: ids(v?.profile) } }, select: PROFILE_SELECT }),
     idOf(v?.customerId) ? tx.customer.findFirst({ where: { id: idOf(v.customerId), type: 'CUSTOMER' }, select: { id: true, name: true } }) : null,
-    glassCostMap(tx, userId, ids(v?.glass)),
+    glassCosts(tx, userId, ids(v?.glass)),
     ids(v?.profile).length ? productStockCosts(tx, ids(v?.profile)) : new Map(),
   ]);
   return {
-    glassCosts,
+    glassCosts: costs.prices,
+    opCosts: costs.ops,
     glassProducts: new Map(glass.filter((g) => g.isActive || keep.glass.has(g.id)).map((g) => [g.id, g])),
     profileProducts: new Map(profile.filter((p) => p.isActive || keep.profile.has(p.id)).map((p) => [p.id, { ...plainProfile(p), stockCostEur: stock.get(p.id)?.avgEur ?? null }])),
     customers: new Map(customer ? [[customer.id, customer]] : []),
   };
 }
 
-const glassCostMap = async (tx, userId, productIds) => (productIds.length ? (await glassCostTable(tx, userId, productIds)).prices : new Map());
+/** Cam ve cam işlemi (CNC / delik) maliyet önerileri; camsız formda sorgu yok (işlem yalnızca cam satırının altında olur) */
+const glassCosts = async (tx, userId, productIds) => (productIds.length ? glassCostTable(tx, userId, productIds) : { prices: new Map(), ops: null });
 
-/** Yöneticinin listeden farklı girdiği cam maliyetleri (denetim kaydı için; en çok 50) */
+/** Yöneticinin listeden farklı girdiği cam ve cam işlemi maliyetleri (denetim kaydı için; en çok 50) */
 const costOverrides = (data) => (data?.glass ?? [])
-  .map((l, i) => ({ row: i + 1, productId: l.productId, listCost: l.listCost, cost: l.cost, source: l.costSource }))
+  .flatMap((l, i) => [
+    { row: i + 1, productId: l.productId, listCost: l.listCost, cost: l.cost, source: l.costSource },
+    ...(l.ops ?? []).map((o) => ({ row: i + 1, op: o.kind, listCost: o.listCost, cost: o.cost, source: o.costSource })),
+  ])
   .filter((x) => x.source === 'MANUAL')
   .slice(0, 50);
 
 const keepOf = (data) => ({
-  glass: new Set((data?.glass ?? []).map((l) => l.productId)),
+  glass: new Set((data?.glass ?? []).map((l) => l.productId).filter(Boolean)),
   profile: new Set((data?.profile ?? []).map((l) => l.productId)),
 });
 
@@ -339,7 +344,7 @@ export async function editorCatalog(db, actor) {
   return {
     ok: /** @type {const} */ (true),
     glass: glass.map((g) => ({ ...g, listCost: costs.prices.get(g.id) ?? null })),
-    glassCostTable: costs.table ? costs.table.name : null, glassCostReason: costs.reason,
+    glassCostTable: costs.table ? costs.table.name : null, glassCostReason: costs.reason, opCosts: costs.ops,
     profile: ordered.map((p) => ({ ...plainProfile(p), stockCostEur: stock.get(p.id)?.avgEur ?? null })), customers,
   };
 }
