@@ -61,6 +61,7 @@ import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { amounts, autoProduction, lineData, refreshSla } from './transitions.js';
 import { effectiveItems, isGlassLine, itemKey, shipDayDate } from '../loading/confirmation.js';
 import { compensatedByScope } from '../loading/compensated.js';
+import { actorScope } from './scope.js';
 import { coverageOf } from '../glass/batch.js';
 import { sortByOrderNo } from './order-number.js';
 
@@ -519,7 +520,8 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
   if (isNew && !parseDateOnly(dest.day)) return fail('BAD_DAY');
   // Yeni telafi siparişi yalnızca GELECEK bir yükleme gününe açılır
   if (isNew && !(dest.day > today)) return fail('NOT_FUTURE');
-  const head = await db.order.findUnique({ where: { id: String(orderId ?? '') }, select: { id: true, customerId: true } });
+  // Kaynak, aktörün kapsamında olmalı (karar 300: satış yalnızca kendi siparişinde telafi açar)
+  const head = await db.order.findFirst({ where: { id: String(orderId ?? ''), ...actorScope(actor) }, select: { id: true, customerId: true } });
   if (!head) return fail('NOT_FOUND');
 
   let notice = null;

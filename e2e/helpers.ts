@@ -348,3 +348,20 @@ export async function setShipDate(page: Page, day: string): Promise<string> {
 export function summaryLines(rows: (string | number | null)[][], orderNo: string): (string | number | null)[][] {
   return rows.filter((r) => r?.[0] === orderNo);
 }
+
+/**
+ * Siparişi bir satışçıya bağlar (karar 300 — test düzeni). Uçtan uca testlerin çoğu tek ekip varsayımıyla yazıldı: CI'daki
+ * test tetikleyicisi sahibi boş siparişi İLK satışçıya (satis@e2e.test) verir; kendi satışçısını açan testler siparişini
+ * buradan ona bağlar. Çizimci siparişte kalır. Yalnızca veri düzeni: uygulama kuralı sipariş sayfasının "Sorumlu satışçı" kartı.
+ */
+export async function assignOrderTo(orderIdOrUrl: string, email: string) {
+  const id = /([a-z0-9]{8,})(?:\?.*)?$/.exec(orderIdOrUrl)![1];
+  const { PrismaClient } = await import('@prisma/client');
+  const db = new PrismaClient();
+  try {
+    const u = await db.user.findUniqueOrThrow({ where: { email } });
+    await db.order.update({ where: { id }, data: { salesUserId: u.id, salesAssignedVia: 'MANUAL', salesAssignedAt: new Date() } });
+  } finally {
+    await db.$disconnect();
+  }
+}

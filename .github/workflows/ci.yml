@@ -234,6 +234,11 @@ jobs:
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3311/health && exit 0; sleep 1; done
           cat cad.log; exit 1
 
+      - name: Tek ekip test tetikleyicileri (karar 300 — yalnızca test veritabanı)
+        # Satışçı / çizimci ayrımından önce yazılmış uçtan uca testler siparişleri doğrudan veritabanına yazar; tetikleyiciler
+        # sahibi boş cam siparişini ilk satışçıya (+ çizimcisine) verir (scripts/test/single-team.mjs). Gerçek migration değildir.
+        run: scripts/ci-step.sh "single-team" node scripts/test/single-team.mjs
+
       - name: Sunucuyu başlat
         run: |
           # Üretimdeki gibi standalone çıktı ile çalıştır

@@ -56,7 +56,7 @@ test('veri: bu dosyaya özel müşteri ve satış kullanıcısı, cam siparişi'
   const used = (await db.order.findMany({ where: { customerId: writer.customerId! }, select: { customerOrderNo: true } })).map((r) => Number(r.customerOrderNo)).filter(Number.isFinite);
   const no = Math.max(9000, Math.max(0, ...used) + 1);
   const o = await db.order.create({
-    data: { orderNo: `${writer.customer!.prefix}${no}`, customerOrderNo: String(no), title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'HAZIRLANIYOR' },
+    data: { orderNo: `${writer.customer!.prefix}${no}`, customerOrderNo: String(no), title: TITLE, orderTypeCode: 'GLASS_ORDER', customerId: writer.customerId!, createdById: writer.id, status: 'HAZIRLANIYOR', salesUserId: (await db.user.findUniqueOrThrow({ where: { email: STAFF } })).id },
   });
   orderId = o.id;
   orderNo = o.orderNo;

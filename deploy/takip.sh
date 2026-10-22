@@ -6,6 +6,8 @@
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
 #   takip yonetici E-POSTA "AD"     YENİ yönetici hesabı aç → tek kullanımlık kod (var olan hesabın rolü / şifresi değişmez)
 #   takip yonetici-kurtar E-POSTA    VAR OLAN yönetici hesabına acil erişim: yeni şifre (gizli girilir), oturumlar kapanır
+#   takip satis-bagla E-POSTA [--cizimci E-POSTA] [--uygula]   geçmiş cam siparişlerini / sandıkları / fabrika ödemelerini açıkça
+#                                   verilen satış hesabına bağlar (karar 300). --uygula olmadan yalnızca önizleme.
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
 #   takip yedek-kontrol [durum]      yedek bekçisi: sorun / 26 saattir başarılı yedek yoksa e-posta alarmı (saatte bir kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
@@ -1705,6 +1707,32 @@ cmd_admin_recover() {
   compose run --rm -e TAKIP_OPERATOR="${op:-unknown}" tools node scripts/admin-recover.mjs "$1"
 }
 
+# Geçmiş verinin satış hesabına bağlanması (karar 300): hedef açıkça verilir; önce önizleme. Kurallar:
+# server/orders/sales-link.js (tek işlem; para birimi başına toplamlar değişirse geri alınır).
+cmd_sales_link() {
+  [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip satis-bagla …)."; return 1; }
+  local target=${1:-} drawer="" apply=""
+  if [ -z "$target" ] || [ "${target#-}" != "$target" ]; then
+    say 'Kullanım: takip satis-bagla SATIS-E-POSTA [--cizimci CIZIM-E-POSTA] [--uygula]'
+    return 1
+  fi
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --cizimci) drawer=${2:-}; shift 2 ;;
+      --uygula) apply=--apply; shift ;;
+      *) say "✘ Bilinmeyen seçenek: $1"; return 1 ;;
+    esac
+  done
+  local op=${SUDO_USER:-$(logname 2>/dev/null || id -un)}
+  op=$(printf '%s' "$op" | tr -cd 'A-Za-z0-9._@-' | cut -c1-64)
+  if [ -n "$drawer" ]; then
+    compose run --rm -e SUDO_USER="${op:-unknown}" tools node scripts/sales-link.mjs --target "$target" --drawer "$drawer" $apply
+  else
+    compose run --rm -e SUDO_USER="${op:-unknown}" tools node scripts/sales-link.mjs --target "$target" $apply
+  fi
+}
+
 cmd_github() {
   say "GitHub erişim anahtarı (fine-grained token): yalnızca Takip deposu; izinler: Contents → Read-only, Actions → Read-only."
   say "Oluşturmak için: github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens."
@@ -2246,6 +2274,7 @@ main() {
     smtp) cmd_smtp ;;
     yonetici | admin) cmd_admin "$@" ;;
     yonetici-kurtar | admin-recover) cmd_admin_recover "$@" ;;
+    satis-bagla | sales-link) cmd_sales_link "$@" ;;
     yedek | backup) cmd_backup ;;
     yedek-kontrol | backup-check) cmd_backup_check "$@" ;;
     restore | geri-yukle) cmd_restore "$@" ;;

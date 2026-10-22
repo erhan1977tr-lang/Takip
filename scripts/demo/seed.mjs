@@ -153,6 +153,9 @@ async function main(db) {
     });
   }
   const { ADMIN: admin, SATIS: sales, CIZIM: drawer, MUSTERI: cust } = users;
+  // Satış ekibi (karar 300): demo satışçısının varsayılan çizimcisi demo çizimcisi; yeni demo siparişleri otomatik ona
+  await db.user.update({ where: { id: sales.id }, data: { defaultDrawerId: drawer.id } });
+  await db.glassRoutingRule.create({ data: { mode: 'AUTO', targetUserId: sales.id, startsAt: new Date(), note: 'DEMO', createdById: admin.id } });
 
   // Cam kataloğu: Türkçe ad, Romence ad, ağırlık (kg/m²)
   const GLASSES = [
@@ -196,7 +199,8 @@ async function main(db) {
       data: {
         orderNo: `${DEMO_FIRM.prefix}${o.no}`, customerOrderNo: String(o.no), title: o.title, customerId: firm.id, createdById: cust.id,
         status, drawingTrack: drawing, drawingSince, camEtiket: firm.camEtiket, sandikEtiket: firm.sandikEtiket,
-        assignedDrawerId: o.drawer ? drawer.id : null, revisionCount: o.revisions ?? 0,
+        // Demo siparişleri demo satışçısının (karar 300): çizimci kopyası; sahip geçmiş bağlantısı gibi
+        salesUserId: sales.id, salesAssignedVia: 'MIGRATION', assignedDrawerId: drawer.id, revisionCount: o.revisions ?? 0,
         slaDeadline: slaDeadline({
           status, createdAt, drawing, drawingSince,
           offer: o.offer?.status ?? null, offerSince: o.offer ? ago(o.offer.since) : null,

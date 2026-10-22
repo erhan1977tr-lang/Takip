@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, createUser, firstLogin, login, outboxCodeFor, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, assignOrderTo, createUser, firstLogin, login, outboxCodeFor, sampleFile } from './helpers';
 
 // 05'te satis@e2e.test bilerek kilitlendi; bu testin kendi satışçısı var
 const SALES = 'fiyat-satis@e2e.test';
@@ -56,6 +56,7 @@ test('satış: liste fiyatı dolu gelir; değiştirip gönderince yönetici uyar
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
   const orderUrl = new URL(cust.url()).pathname;
   await cust.context().close();
+  await assignOrderTo(orderUrl, SALES);
 
   const sales = await as(browser, SALES, TEAM_PW);
   await sales.goto(orderUrl);

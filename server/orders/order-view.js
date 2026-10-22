@@ -167,7 +167,7 @@ export function orderPeopleView(role, order) {
   /** @type {Record<string, any>} */
   let o = mapKeys(order, ['createdBy'], person);
   // Müşteri iç ekibin kimliğini hiçbir alanda almaz (karar 300): siparişin sorumlu satışçısı, çizimcisi ve atamayı yapan
-  if (customer) for (const key of ['assignedDrawer', 'salesUser', 'salesAssignedBy']) if (key in o) o = { ...o, [key]: null };
+  if (customer) for (const key of ['assignedDrawer', 'salesUser', 'salesAssignedBy', 'assignedDrawerId', 'salesUserId', 'salesAssignedById', 'routingRuleId']) if (key in o) o = { ...o, [key]: null };
   if (Array.isArray(o.files)) o.files = o.files.map((f) => mapKeys(f, ['uploadedBy'], person));
   if (Array.isArray(o.drawings)) o.drawings = o.drawings.map((d) => mapKeys(d, ['uploadedBy', 'sentBy', 'decidedBy'], person));
   if (Array.isArray(o.notes)) o.notes = o.notes.map((n) => mapKeys(n, ['user'], person));

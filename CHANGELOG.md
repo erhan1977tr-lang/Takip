@@ -22,6 +22,15 @@ kendi siparişlerini görür ve işler.
   satırın camını / ölçüsünü / adedini / m²'sini değiştirirse o satırın yönetici müşteri fiyatı geçersizleşir.
 - **Müşteri görünümü:** iç ekip kişileri müşteriye ad / e-posta olmadan "GKH · rol" olarak; çizim dosyaları müşteriye
   nötr adla (`<sipariş no>-cizim-v<n>.<uzantı>`).
+- **Yükleme:** sandık satışçınındır (gün + firma + satışçı bölümü; satış yalnızca kendi bölümünü kaydeder, yönetici
+  bölümü seçer); aynı müşterinin farklı satışçılardaki siparişleri aynı sandığa bağlanmaz; misafir yük ekip ayrımını
+  aşmaz; nakliye listesi satışçı → etiket grupları → satışçı ara toplamı → genel toplam.
+- **Cam Fabrika Hesap Durumu:** maliyet sorumlu satışçının hesabına, ödeme girişte seçilen hesaba (zorunlu); yönetici
+  ödemenin hesabını değiştirir (aynı kayıt, genel toplam değişmez, denetim); borçlu / avanslı toplamlar ayrı.
+- **Kullanıcılar:** satışçıya varsayılan çizimci; "Kişi bilgileri" (ad, telefon, birim — hesap kalıcı). **Ayarlar → Satış
+  Yönlendirme** sekmesi. **Telafi:** kaynağın satışçı / çizimcisi `-T` siparişine kopyalanır; var olan hedef aynı satışçının olmalı.
+- **Geçmiş veri:** `takip satis-bagla E-POSTA [--cizimci E-POSTA] [--uygula]` — açık hedef hesap, önce önizleme;
+  toplamlar değişmez. Canlıda ÇALIŞTIRILMADI.
 
 ## 4.2.0 — 21.10.2026
 

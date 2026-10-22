@@ -4,7 +4,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import {
-  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, createUser, firmOf, firstLogin, openFirm, outboxCodeFor, reportSheet, sampleFile,
+  ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, INSPECTOR_PW, TEAM_PW, as, assignOrderTo, createUser, firmOf, firstLogin, openFirm, outboxCodeFor, reportSheet, sampleFile,
 } from './helpers';
 
 // Yönetici Paneli Düzeltme Paketi 1 (3.63.0, kararlar 215–218):
@@ -84,6 +84,7 @@ test('veri: aynı yükleme gününde Ünsal\'ın iki siparişi (biri iki sandık
   const admin = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
   const u = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER }, include: { customer: true } });
   const b = await db.user.findUniqueOrThrow({ where: { email: BETA }, include: { customer: true } });
+  const sales2 = await db.user.findUniqueOrThrow({ where: { email: SALES2 } });
   uns = { id: u.customer!.id, name: u.customer!.name };
   beta = { id: b.customer!.id, name: b.customer!.name };
   type Line = { description: string; adet: number; unit: string; kind: string; unitPrice: string; offerPrice: string; enMm?: number; boyMm?: number; crateFee?: boolean; descriptionRo?: string };
@@ -92,7 +93,7 @@ test('veri: aynı yükleme gününde Ünsal\'ın iki siparişi (biri iki sandık
     const created = await db.order.create({
       data: {
         orderNo: `${c.prefix}${no}`, customerOrderNo: String(no), title: `Yönetici paketi ${no}`, orderTypeCode: 'GLASS_ORDER', customerId: c.id, createdById: admin.id, status: 'URETIMDE',
-        estimatedShipDate: new Date(`${DAY}T12:00:00Z`), guestHostId: o.guestHostId ?? null,
+        estimatedShipDate: new Date(`${DAY}T12:00:00Z`), guestHostId: o.guestHostId ?? null, salesUserId: sales2.id,
         offers: { create: { status: 'GONDERILDI', currency: o.currency ?? 'EUR', amount: o.amount, offerAmount: o.offer, createdById: admin.id, sentAt: new Date(),
           lines: { create: lines.map((l, i) => ({ sortOrder: i, ...l })) } } },
       },
@@ -374,6 +375,7 @@ test('yöneticinin e-postaları: yeni sipariş; satış fabrika fiyatını deği
   await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/);
   const orderId = /\/siparisler\/([a-z0-9]+)/.exec(cust.url())![1];
   await cust.context().close();
+  await assignOrderTo(orderId, SALES2);
   const { orderNo } = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { orderNo: true } });
   worker();
   const created = mailsTo(ADMIN).filter((m) => m.subject === subj(orderNo, 'notify.newOrder'));
