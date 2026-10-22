@@ -20,7 +20,14 @@ export async function GET(req: Request) {
   const day = new URL(req.url).searchParams.get('gun') ?? '';
   if (!parseDateOnly(day)) return new Response(t('loading.transport.badDay'), { status: 400 });
   // Misafir yükün firma adı görene göre (satışa maskeli — karar 7); ağırlık ve gruplar değişmez
-  const list = await transportList(db, day, { label: (name: string) => customerLabel(user, name) });
+  // Satışçı bölümleri (karar 300): satış yalnızca kendi bölümünü alır (sunucuda süzülür); yönetici / denetimci tamamını
+  const sales = user.appRole === 'SATIS';
+  const names = new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL', ...(sales ? { id: user.id } : {}) }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]));
+  const list = await transportList(db, day, {
+    label: (name: string) => customerLabel(user, name),
+    salesUserId: sales ? user.id : undefined,
+    teamName: (id: string | null) => (id ? names.get(id) ?? '—' : t('loading.transport.noTeam')),
+  });
   const pdf = transportListPdf({
     day, list,
     text: {
@@ -29,6 +36,7 @@ export async function GET(req: Request) {
       subtotal: t('loading.transport.subtotal', { n: '{n}' }), crateCount: t('loading.transport.crateCount'), totalKg: t('loading.transport.totalKg'),
       missing: t('loading.transport.missing'), noPrice: t('loading.transport.noPrice'), empty: t('loading.transport.empty'),
       guest: t('loading.transport.guest'), waiting: t('loading.transport.waiting'),
+      teamSubtotal: t('loading.transport.teamSubtotal', { name: '{name}', n: '{n}', kg: '{kg}' }), grandTotal: t('loading.transport.grandTotal'),
     },
   });
   // Dosya adı panel dilinde (Paket 7): "Nakliye-Listesi-2026-10-08.pdf" / "Lista-Transport-2026-10-08.pdf"

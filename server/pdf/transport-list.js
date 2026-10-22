@@ -4,6 +4,8 @@
 // sütununda yazılır.
 // Her sayfanın başlığında, sağ üstte resmî GKH logosu (ortak başlık — server/pdf/brand.js; karar 129).
 // Fiyat yok. Metinler kullanıcının dilinde (server/i18n/*/loading.js → transport).
+// Satış ekipleri (karar 300): liste bölümlüyse (list.sections) her satışçı için başlık → etiket grupları ve sandıklar →
+// satışçının ara toplamı (sandık adedi + ağırlık) ve o bölümün eksik / bekleyen siparişleri; en altta genel toplam.
 import { PdfDoc, fitText } from './pdf.js';
 import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
 
@@ -18,7 +20,9 @@ const fmtKg = (v) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, 
 /**
  * @param {{ day: string, list: ReturnType<typeof import('../loading/transport.js').buildTransportList>,
  *   text: { title: string, day: string, colNo: string, colDims: string, colKg: string, colNote: string, subtotal: string,
- *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string, guest: string, waiting: string }, company?: string }} p
+ *   crateCount: string, totalKg: string, missing: string, noPrice: string, empty: string, guest: string, waiting: string,
+ *   teamSubtotal?: string, grandTotal?: string }, company?: string }} p
+ *   text.teamSubtotal: "{name}: {n} sandık · {kg} kg" (satışçı ara toplamı) · text.grandTotal: genel toplam başlığı
  *   text.subtotal: "{n} sandık · ara toplam"; company: logonun yanında yazan firma adı — verilmezse resmî ad (BRAND.company)
  * @returns {Buffer}
  */
@@ -56,7 +60,7 @@ export function transportListPdf({ day, list, text, company = BRAND.company }) {
 
   newPage(true);
   const x = xs();
-  list.groups.forEach((g, gi) => {
+  const drawGroups = (groups) => groups.forEach((g, gi) => {
     ensure(ROW * 2);
     if (gi > 0) page.line(M, y, page.width - M, y, 1.2, 0);
     page.text(x.no + 6, y + 15, g.code, { size: 11, bold: true, color: BLUE });
@@ -83,15 +87,50 @@ export function transportListPdf({ day, list, text, company = BRAND.company }) {
       page.line(M, y, page.width - M, y, 0.4, 0.85);
     }
   });
+  const drawNotes = (part) => {
+    if (part.missing.length) {
+      ensure(20);
+      page.text(M, y + 6, fitText(`${text.missing}: ${part.missing.join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
+      y += 18;
+    }
+    if (part.waiting?.length) {
+      ensure(20);
+      page.text(M, y + 6, fitText(`${text.waiting}: ${part.waiting.map((w) => `${w.orderNo} → ${w.host}`).join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
+      y += 18;
+    }
+  };
+  const sections = Array.isArray(list.sections) ? list.sections : null;
+  if (sections) {
+    sections.forEach((sec) => {
+      // Satışçı başlığı → grupları → satışçı ara toplamı (karar 300)
+      ensure(ROW * 3);
+      page.rect(M, y, W(), ROW, { fill: 0.9, stroke: false });
+      page.text(M + 6, y + 15, fitText(sec.name || '—', 11, W() - 12, true), { size: 11, bold: true });
+      y += ROW;
+      drawGroups(sec.groups);
+      ensure(ROW);
+      const sub = (text.teamSubtotal ?? '{name}: {n} · {kg} kg').replace('{name}', sec.name || '—').replace('{n}', String(sec.crateCount)).replace('{kg}', fmtKg(sec.totalKg));
+      page.text(M, y + 15, fitText(sub, 10, W(), true), { size: 10, bold: true, color: BLUE, align: 'right', width: W() });
+      y += ROW;
+      drawNotes(sec);
+      y += 6;
+    });
+  } else {
+    drawGroups(list.groups);
+  }
   if (!list.groups.length) {
     page.text(M, y + 20, text.empty, { size: 10, color: GREY });
     y += 30;
   }
 
-  // Toplamlar (sağda)
+  // Toplamlar (sağda) — bölümlü listede genel toplam (bütün satışçılar)
   ensure(70);
   y += 18;
   const tx = page.width - M - 190;
+  if (sections && text.grandTotal) {
+    page.text(tx + 12, y, text.grandTotal, { size: 9, bold: true });
+    y += 8;
+  }
   page.text(tx + 12, y + 10, text.crateCount, { size: 9, color: GREY });
   page.text(tx, y + 10, String(list.crateCount), { size: 10, align: 'right', width: 190 });
   y += 16;
@@ -99,15 +138,7 @@ export function transportListPdf({ day, list, text, company = BRAND.company }) {
   page.text(tx + 12, y + 16, text.totalKg, { size: 11, bold: true, color: BLUE });
   page.text(tx, y + 16, `${fmtKg(list.totalKg)} kg`, { size: 11, bold: true, align: 'right', width: 190 });
   y += 34;
-  if (list.missing.length) {
-    ensure(20);
-    page.text(M, y + 6, fitText(`${text.missing}: ${list.missing.join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
-    y += 18;
-  }
-  if (list.waiting?.length) {
-    ensure(20);
-    page.text(M, y + 6, fitText(`${text.waiting}: ${list.waiting.map((w) => `${w.orderNo} → ${w.host}`).join(', ')}`, 9.5, W(), true), { size: 9.5, bold: true, color: BLUE });
-  }
+  if (!sections) drawNotes(list);
 
   finishPages(doc, { note: `${company} · ${text.noPrice}`, margin: M }); // ortak altbilgi
   return doc.toBuffer();

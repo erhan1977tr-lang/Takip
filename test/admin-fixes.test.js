@@ -261,7 +261,8 @@ test('menü (karar 216): yöneticinin "Profil Siparişleri" bölümü sayaçlı;
 });
 
 test('"Sıra bende" (karar 217): yöneticide dört tablo bu sırayla; satışınki değişmedi; öteki tablolar başka ekranlarda', () => {
-  assert.deepEqual(ADMIN_QUEUES, ['newOrders', 'offersToPrepare', 'sla', 'profilePricing']);
+  // Karar 300: atama bekleyen cam siparişleri en üstte (yalnızca yönetici)
+  assert.deepEqual(ADMIN_QUEUES, ['unassigned', 'newOrders', 'offersToPrepare', 'sla', 'profilePricing']);
   assert.deepEqual(SALES_QUEUES, ['newOrders', 'sla']);
   const page = src('app/(panel)/siparisler/page.tsx');
   // Profil tabloları ayrı sorgudan (sayaçla aynı kapsam) ve "Profil siparişleri" sekmesinde

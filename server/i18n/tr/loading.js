@@ -74,6 +74,9 @@ export default {
     guest: 'Misafir yük',
     // Yönetici ev sahibi firmayı seçti, sandık henüz seçilmedi: "sipariş → firma kodu"
     waiting: 'Özel durum — sandık seçimi bekliyor',
+    teamSubtotal: '{name} — ara toplam: {n} sandık · {kg} kg',
+    grandTotal: 'Genel toplam (bütün satışçılar)',
+    noTeam: 'Sorumlu satışçısı olmayan siparişler',
     badDay: 'Geçerli bir yükleme günü seçin.',
   },
   tabs: {
@@ -232,6 +235,7 @@ export default {
       saved: 'Sandıklar kaydedildi.',
       grossHint: 'Brüt boşsa net + {tare} kg dara sayılır.',
       readOnly: 'Sandıkları satış ve yönetici girer.',
+      noTeam: 'Sorumlu satışçısı olmayan siparişler',
       err: {
         NO: '{row}. satır: sandık numarası 1–999 arası tam sayı olmalı.',
         DUPLICATE_NO: '{row}. satır: aynı sandık numarası iki kez yazıldı.',
@@ -247,6 +251,8 @@ export default {
         HAS_GUESTS: 'Sandık {list} içinde başka müşterinin siparişi (misafir yük) var: silinemez ve numarası değiştirilemez. Önce misafir yükün sandık seçimini kaldırın.',
         GUEST_ORDER: 'Misafir sipariş (başka firmanın sandıklarıyla giden) bu firmanın sandığına konamaz.',
         GUEST_ONLY: 'Bu firmanın bu günkü siparişlerinin tamamı başka firmanın sandıklarıyla gidiyor; yeni sandık açılamaz.',
+        TEAM_REQUIRED: 'Bu firmanın bu gün birden çok satışçının siparişi var: sandıkları satışçı bölümünden kaydedin.',
+        TEAM_FORBIDDEN: 'Yalnızca kendi siparişlerinizin sandıklarını kaydedebilirsiniz.',
       },
     },
     cols: {
@@ -465,6 +471,7 @@ export default {
       OWN_CRATE: 'Bu sandık siparişin kendi müşterisinin; sandık formundan seçin.',
       NO_HOST: 'Yönetici bu sipariş için hedef firma seçmemiş.',
       NOT_HOST_CRATE: 'Bu sandık, yöneticinin seçtiği hedef firmanın sandığı değil.',
+      OTHER_TEAM: 'Bu sandık siparişin satışçısının sandığı değil: misafir yük yalnızca aynı satışçının sandığına konabilir.',
       ALREADY_ASSIGNED: 'Sipariş zaten bu sandıkta.',
     },
   },

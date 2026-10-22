@@ -73,6 +73,9 @@ export default {
     guest: 'Încărcătură suplimentară',
     // Administratorul a ales firma-gazdă, lada nu a fost încă aleasă: "comanda → codul firmei"
     waiting: 'Situație specială — se așteaptă alegerea lăzii',
+    teamSubtotal: '{name} — subtotal: {n} lăzi · {kg} kg',
+    grandTotal: 'Total general (toți agenții de vânzări)',
+    noTeam: 'Comenzi fără agent de vânzări responsabil',
     badDay: 'Alegeți o zi de încărcare validă.',
   },
   tabs: {
@@ -231,6 +234,7 @@ export default {
       saved: 'Lăzile au fost salvate.',
       grossHint: 'Dacă brutul lipsește, se consideră net + {tare} kg tara.',
       readOnly: 'Lăzile sunt introduse de vânzări și de administrator.',
+      noTeam: 'Comenzi fără agent de vânzări responsabil',
       err: {
         NO: 'Rândul {row}: numărul lăzii trebuie să fie un număr întreg între 1 și 999.',
         DUPLICATE_NO: 'Rândul {row}: același număr de ladă a fost scris de două ori.',
@@ -246,6 +250,8 @@ export default {
         HAS_GUESTS: 'Lada {list} conține comanda altui client (încărcătură suplimentară): nu poate fi ștearsă și numărul nu poate fi schimbat. Eliminați mai întâi alegerea lăzii pentru încărcătura suplimentară.',
         GUEST_ORDER: 'O comandă care pleacă în lăzile altei firme (încărcătură suplimentară) nu poate fi pusă în lada acestei firme.',
         GUEST_ONLY: 'Toate comenzile acestei firme din această zi pleacă în lăzile altei firme; nu se poate deschide o ladă nouă.',
+        TEAM_REQUIRED: 'Această firmă are în această zi comenzi de la mai mulți agenți de vânzări: salvați lăzile din secțiunea agentului.',
+        TEAM_FORBIDDEN: 'Puteți salva doar lăzile comenzilor proprii.',
       },
     },
     cols: {
@@ -464,6 +470,7 @@ export default {
       OWN_CRATE: 'Această ladă aparține clientului comenzii; alegeți-o din formularul de lăzi.',
       NO_HOST: 'Administratorul nu a ales o firmă-gazdă pentru această comandă.',
       NOT_HOST_CRATE: 'Această ladă nu aparține firmei-gazdă alese de administrator.',
+      OTHER_TEAM: 'Această ladă nu este a agentului de vânzări al comenzii: încărcătura suplimentară poate fi pusă doar în lada aceluiași agent.',
       ALREADY_ASSIGNED: 'Comanda este deja în această ladă.',
     },
   },

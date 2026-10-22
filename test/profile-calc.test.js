@@ -346,7 +346,7 @@ test('seed: ürün sahibinin kesin paket içerikleri (GK15 137, AD45 24, MC12 27
   assert.match(step, /applyRailingDefaults\(db\)/);
   assert.match(step, /packContent: null, packMeasure: null/, 'yalnızca boş içeriğe yazar');
   assert.match(step, /PACK_SEED_ACTION/);
-  assert.match(read('prisma/seed/base.mjs'), /profileCatalogStep, profileCalcStep, profileCalcDefaultsStep\]/, 'katalogdan ve paket içeriklerinden sonra çalışır');
+  assert.match(read('prisma/seed/base.mjs'), /profileCatalogStep, profileCalcStep, profileCalcDefaultsStep(, salesRoutingStep)?\]/, 'katalogdan ve paket içeriklerinden sonra çalışır');
 });
 
 test('yapı: stoğa yazan her yol ürün kilidini alır; stok sayfası denetimciye salt okunur; müşteri işlemi genel stok okumaz', () => {

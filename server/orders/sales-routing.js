@@ -17,6 +17,9 @@
 //
 // Saf kurallar (tarayıcı + test) dosyanın başında; veritabanı işlevleri sonda.
 
+import { can } from '../auth/permissions.js';
+import { writeAudit } from './journal.js';
+
 export const ROUTING_MODES = ['MANUAL', 'AUTO'];
 export const ROUTING_TIMEZONE = 'Europe/Bucharest';
 /** Bağlama işareti (geçmiş verinin açık hedef hesapla bağlandığı) — IntegrationSetting anahtarı */
@@ -26,7 +29,6 @@ export const RULE_PAST_SLACK_MS = 5 * 60_000;
 /** En çok bir yıl sonrası */
 export const RULE_FUTURE_MAX_MS = 400 * 86_400_000;
 
-const pad = (n) => String(n).padStart(2, '0');
 
 /** Verilen anın `timeZone`'daki yerel tarih-saati: { day: 'YYYY-MM-DD', time: 'HH:mm' } */
 export function localParts(at, timeZone = ROUTING_TIMEZONE) {
@@ -174,10 +176,11 @@ export async function routeNewOrder(tx, { now, orderNo = null }) {
 const FORBIDDEN = Object.freeze({ ok: false, code: 'FORBIDDEN' });
 
 /**
- * Yönlendirme kuralı yazar (yalnızca ekler). Yetki: SETTINGS_MANAGE (yalnızca yönetici). Geçmiş veri bağlanmadan yazılmaz.
- * @param {any} db  @param {{ input: object, actor: { id: string, role: string }, now?: Date, can: (role: string, p: string) => boolean, audit: Function }} p
+ * Yönlendirme kuralı yazar (yalnızca ekler). Yetki: SETTINGS_MANAGE (yalnızca yönetici) — ilk deyim, veritabanına
+ * gitmeden. Geçmiş veri bağlanmadan yazılmaz. Kural yalnızca İLERİYE etkilidir: var olan siparişlere dokunulmaz.
+ * @param {any} db  @param {{ input: object, actor: { id: string, role: string, ip?: string | null }, now?: Date }} p
  */
-export async function saveRoutingRule(db, { input, actor, now = new Date(), can, audit }) {
+export async function saveRoutingRule(db, { input, actor, now = new Date() }) {
   if (!actor?.id || !can(actor.role, 'SETTINGS_MANAGE')) return FORBIDDEN;
   const parsed = parseRoutingRule(input, { now });
   if (!parsed.ok) return parsed;
@@ -190,8 +193,37 @@ export async function saveRoutingRule(db, { input, actor, now = new Date(), can,
       if (!validSales(target)) return { ok: false, code: 'TARGET' };
     }
     const row = await tx.glassRoutingRule.create({ data: { ...rule, createdById: actor.id } });
-    await audit(tx, { action: 'ROUTING_RULE_CREATED', entityType: 'GlassRoutingRule', entityId: row.id, userId: actor.id, details: { mode: row.mode, targetUserId: row.targetUserId, startsAt: row.startsAt.toISOString() } }, actor);
+    await writeAudit(tx, {
+      action: 'ROUTING_RULE_CREATED', entityType: 'GlassRoutingRule', entityId: row.id, userId: actor.id,
+      details: { mode: row.mode, targetUserId: row.targetUserId, startsAt: row.startsAt.toISOString(), note: row.note },
+    }, actor);
     return { ok: true, id: row.id };
+  });
+}
+
+/**
+ * Satışçının varsayılan çizimcisi (karar 300). Yetki: USER_MANAGE (yönetici) — ilk deyim. Yalnızca sonraki atamaları
+ * etkiler: var olan siparişlerin assignedDrawerId alanı DEĞİŞMEZ. drawerId boş = eşleşme kaldırılır.
+ * @param {any} db  @param {{ salesUserId: string, drawerId: string | null, actor: { id: string, role: string, ip?: string | null } }} p
+ * @returns {Promise<{ ok: true, changed: boolean } | { ok: false, code: 'FORBIDDEN' | 'SALES' | 'DRAWER' }>}
+ */
+export async function setDefaultDrawer(db, { salesUserId, drawerId, actor }) {
+  if (!actor?.id || !can(actor.role, 'USER_MANAGE')) return FORBIDDEN;
+  return db.$transaction(async (tx) => {
+    const sales = typeof salesUserId === 'string' && salesUserId ? await tx.user.findUnique({ where: { id: salesUserId }, select: USER_FIELDS }) : null;
+    if (!validSales(sales)) return { ok: false, code: 'SALES' };
+    const drawer = drawerId ? await tx.user.findUnique({ where: { id: drawerId }, select: USER_FIELDS }) : null;
+    if (drawerId && !validDrawer(drawer)) return { ok: false, code: 'DRAWER' };
+    const next = drawer?.id ?? null;
+    if ((sales.defaultDrawerId ?? null) === next) return { ok: true, changed: false };
+    // Koşullu yazım: arada başka biri değiştirdiyse üzerine yazılmaz
+    const r = await tx.user.updateMany({ where: { id: sales.id, defaultDrawerId: sales.defaultDrawerId ?? null }, data: { defaultDrawerId: next } });
+    if (r.count !== 1) return { ok: false, code: 'SALES' };
+    await writeAudit(tx, {
+      action: 'SALES_DEFAULT_DRAWER', entityType: 'User', entityId: sales.id, userId: actor.id,
+      details: { before: sales.defaultDrawerId ?? null, after: next },
+    }, actor);
+    return { ok: true, changed: true };
   });
 }
 

@@ -86,7 +86,7 @@ export default {
     destBlocked: '{order} — {date} · {reason}',
     destReason: {
       NO_OFFER: 'teklifi henüz açılmamış', CURRENCY: 'para birimi farklı', FINAL_INVOICE: 'nihai fatura kesilmiş', LOADED: 'yükleme onaylanmış',
-      ON_HOLD: 'beklemede', CLOSED: 'kapalı', NOT_FUTURE: 'yükleme günü geçmiş', SAME_ORDER: 'kaynak sipariş', OTHER_CUSTOMER: 'başka müşteri', NOT_GLASS: 'cam siparişi değil',
+      ON_HOLD: 'beklemede', CLOSED: 'kapalı', NOT_FUTURE: 'yükleme günü geçmiş', SAME_ORDER: 'kaynak sipariş', OTHER_SALES: 'başka satışçının siparişi', OTHER_CUSTOMER: 'başka müşteri', NOT_GLASS: 'cam siparişi değil',
     },
     destNew: 'Yeni telafi siparişi oluştur',
     destNewHint: 'Sipariş numarası kaynak siparişten türer ({no}).',
@@ -165,6 +165,7 @@ export default {
     FINAL_INVOICE: 'Bu sipariş için nihai fatura (factură finală) kesildi: telafi camı açılamaz.',
     DEST_NOT_FOUND: 'Hedef sipariş bulunamadı.',
     DEST_SAME_ORDER: 'Telafi camı kaynak siparişin kendisine eklenemez.',
+    DEST_OTHER_SALES: 'Telafi camı yalnızca aynı satışçının siparişine eklenir (ekipler birleştirilmez).',
     DEST_OTHER_CUSTOMER: 'Telafi camı yalnızca aynı müşterinin siparişine eklenir.',
     DEST_NOT_GLASS: 'Hedef bir cam siparişi olmalı.',
     DEST_CLOSED: 'Hedef sipariş kapalı (yüklenmiş, arşivlenmiş, iptal ya da silinmiş).',

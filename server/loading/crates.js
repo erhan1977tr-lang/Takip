@@ -15,6 +15,12 @@
 //      yerleşim "sandık seçimi bekliyor" durumundadır; hiçbir sandık kendiliğinden atanmaz.
 //   Sandık seçilince / değişince / kalkınca her iki firmanın müşteri kullanıcılarına bildirim olayı yazılır
 //   (GUEST_CRATE_ASSIGNED / GUEST_CRATE_REMOVED → server/notifications/inapp.js).
+//
+// Satış ekipleri (4.3.0, karar 300): sandık bir satışçının (Crate.salesUserId) sandığıdır ve yalnızca AYNI satışçının
+// siparişlerini taşır. Bir firmanın bir günlük sandıkları satışçıya göre ayrı bölümlerdir (gün + firma + satışçı); sandık
+// numarası günde yine tektir (bütün firmalar ve ekipler arasında). Aynı müşterinin farklı satışçılardaki siparişleri aynı
+// sandığa otomatik bağlanmaz; misafir yük de yalnızca aynı satışçının siparişini taşıyan ev sahibi firmaya / sandığa
+// konabilir. Satışçı yalnızca kendi bölümünü kaydeder. Boş satışçı = geçiş öncesi eski kayıt: kaydeden bölüm onu sahiplenir.
 import { can } from '../auth/permissions.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { CRATE_MAX_KG, CRATE_TARE_KG, dayKey } from '../orders/loading.js';
@@ -110,15 +116,18 @@ export const dayDate = (day) => new Date(`${day}T00:00:00Z`);
 
 /**
  * Müşterinin o gün yüklenecek siparişleri (iptal hariç): o güne planlı siparişler + yüklenmeyen kalanı o güne aktarılmış
- * siparişler (LoadingReplan — vazgeçilenler hariç).
+ * siparişler (LoadingReplan — vazgeçilenler hariç). team (karar 300): verilirse yalnızca o satışçının siparişleri.
+ * @param {any} tx  @param {string} customerId  @param {string} day  @param {string | null} [team]
  */
-export async function dayOrders(tx, customerId, day) {
+export async function dayOrders(tx, customerId, day, team) {
   const d = dayDate(day);
-  const select = { id: true, orderNo: true, status: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true };
+  const select = { id: true, orderNo: true, status: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true, salesUserId: true };
+  // team verilirse yalnızca o satışçının siparişleri (null = sorumlusu olmayanlar); verilmezse firmanın hepsi
+  const teamWhere = team === undefined ? {} : { salesUserId: team };
   const [list, replanned] = await Promise.all([
     tx.order.findMany({
       where: {
-        customerId, status: { not: 'IPTAL' },
+        customerId, status: { not: 'IPTAL' }, ...teamWhere,
         OR: [
           { actualShipDate: { gte: new Date(d.getTime() - 86_400_000), lt: new Date(d.getTime() + 2 * 86_400_000) } },
           { actualShipDate: null, estimatedShipDate: { gte: new Date(d.getTime() - 86_400_000), lt: new Date(d.getTime() + 2 * 86_400_000) } },
@@ -126,7 +135,7 @@ export async function dayOrders(tx, customerId, day) {
       },
       select,
     }),
-    tx.order.findMany({ where: { customerId, status: { not: 'IPTAL' }, replans: { some: { shipDay: d, status: { not: 'CANCELLED' } } } }, select }),
+    tx.order.findMany({ where: { customerId, status: { not: 'IPTAL' }, ...teamWhere, replans: { some: { shipDay: d, status: { not: 'CANCELLED' } } } }, select }),
   ]);
   const own = list.filter((o) => dayKey(o.actualShipDate ?? o.estimatedShipDate) === day);
   return [...own, ...replanned.filter((o) => !own.some((x) => x.id === o.id))];
@@ -167,6 +176,27 @@ export async function guestOrdersOn(tx, customerId, day, orders) {
 }
 
 /**
+ * Sandık bölümünün satışçısı (karar 300, saf). Satış kendi bölümünden başkasını kaydedemez. Verilmemişse (servis / eski
+ * çağrı) firmanın o günkü siparişleri tek satışçıdaysa o (ya da hiç satışçı yoksa null); birden çoksa TEAM_REQUIRED.
+ * @param {{ role?: string, id?: string }} actor  @param {string | null | undefined} requested  @param {{ salesUserId?: string | null }[]} orders
+ * @returns {{ ok: true, team: string | null } | { ok: false, code: 'TEAM_REQUIRED' | 'TEAM_FORBIDDEN' }}
+ */
+export function crateTeam(actor, requested, orders) {
+  const sales = actor?.role === 'SATIS';
+  if (sales) {
+    if (requested !== undefined && requested !== null && requested !== actor.id) return { ok: false, code: 'TEAM_FORBIDDEN' };
+    return { ok: true, team: actor.id ?? '__none__' };
+  }
+  if (requested !== undefined) return { ok: true, team: requested || null };
+  const teams = [...new Set(orders.map((o) => o.salesUserId ?? null))];
+  if (teams.length > 1) return { ok: false, code: 'TEAM_REQUIRED' };
+  return { ok: true, team: teams[0] ?? null };
+}
+
+/** Bölümün sandıkları: o satışçının + geçiş öncesi satışçısız eski sandıklar (kaydeden bölüm sahiplenir) */
+export const teamCrateWhere = (team) => (team ? { OR: [{ salesUserId: team }, { salesUserId: null }] } : { salesUserId: null });
+
+/**
  * Bir müşterinin bir günlük sandıklarını kaydeder (hepsi birden; eksik satır silinir).
  * Sandık numarası o gün başka müşteride kullanılıyorsa kaydedilmez. Siparişler o müşterinin o günkü siparişleri olmalı.
  * Denetim kaydına önce/sonra, ilgili siparişlerin geçmişine "sandıklar güncellendi" yazılır.
@@ -181,15 +211,22 @@ export async function guestOrdersOn(tx, customerId, day, orders) {
  * misafir olmayan siparişleri); yeni sandık bu firmanın o günkü misafir OLMAYAN bütün siparişlerine bağlanır. Başka
  * firmanın / başka günün siparişi bağlanmaz; geçmiş kayıtlar yeniden bağlanmaz. links verilmezse (servis / test çağrısı)
  * satırın orderIds'i eski kurala göre doğrulanır.
- * @param {{ day: string, customerId: string, rows: CrateInput[], actor: any, links?: 'auto' | 'explicit' }} args
- * @returns {Promise<{ ok: true, count: number } | { ok: false, code: 'NO_ORDERS' | 'NUMBER_TAKEN' | 'BAD_ORDER' | 'HAS_GUESTS' | 'GUEST_ORDER' | 'GUEST_ONLY', numbers?: number[] }>}
+ * Satış ekibi (karar 300): kaydedilen bölüm = gün + firma + satışçı (crateTeam): yalnızca o satışçının siparişleri bağlanır,
+ * başka satışçının sandıklarına dokunulmaz. Satış yalnızca kendi bölümünü kaydeder (TEAM_FORBIDDEN); yönetici bölümü
+ * seçer (birden çok satışçı varken seçilmezse TEAM_REQUIRED).
+ * @param {{ day: string, customerId: string, rows: CrateInput[], actor: any, links?: 'auto' | 'explicit', team?: string | null }} args
+ * @returns {Promise<{ ok: true, count: number } | { ok: false, code: 'NO_ORDERS' | 'NUMBER_TAKEN' | 'BAD_ORDER' | 'HAS_GUESTS' | 'GUEST_ORDER' | 'GUEST_ONLY' | 'TEAM_REQUIRED' | 'TEAM_FORBIDDEN', numbers?: number[] }>}
  */
-export async function saveDayCrates(db, { day, customerId, rows: input, actor, links = 'explicit' }) {
+export async function saveDayCrates(db, { day, customerId, rows: input, actor, links = 'explicit', team: requested }) {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crates:${day}`}, 0))`;
-    const orders = await dayOrders(tx, customerId, day);
+    const resolved = crateTeam(actor, requested, await dayOrders(tx, customerId, day));
+    if (!resolved.ok) return { ok: false, code: resolved.code };
+    const { team } = resolved;
+    const orders = await dayOrders(tx, customerId, day, team);
+    const part = { shipDay: dayDate(day), customerId, ...teamCrateWhere(team) };
     const stored = await tx.crate.findMany({
-      where: { shipDay: dayDate(day), customerId }, include: { orders: { include: { order: { select: { customerId: true } } } } }, orderBy: { crateNo: 'asc' },
+      where: part, include: { orders: { include: { order: { select: { customerId: true } } } } }, orderBy: { crateNo: 'asc' },
     });
     // Başka müşterinin siparişi (fiziksel yerleşim) bu formun konusu değildir: ayrı tutulur ve korunur
     const guests = new Map(stored.map((c) => [c.crateNo, c.orders.filter((x) => x.order.customerId !== customerId).map((x) => x.orderId)]).filter(([, ids]) => ids.length));
@@ -207,18 +244,20 @@ export async function saveDayCrates(db, { day, customerId, rows: input, actor, l
     const kept = new Set(rows.map((r) => r.crateNo));
     const orphaned = [...guests.keys()].filter((no) => !kept.has(no));
     if (orphaned.length) return { ok: false, code: 'HAS_GUESTS', numbers: orphaned };
-    const others = await tx.crate.findMany({ where: { shipDay: dayDate(day), NOT: { customerId } }, select: { crateNo: true } });
+    // Numara günde tektir: bu bölüm dışındaki bütün sandıklar (başka firmalar ve aynı firmanın başka satışçıları)
+    const mine = new Set(stored.map((c) => c.id));
+    const others = (await tx.crate.findMany({ where: { shipDay: dayDate(day) }, select: { id: true, crateNo: true } })).filter((c) => !mine.has(c.id));
     const taken = new Set(others.map((c) => c.crateNo));
     const clash = rows.map((r) => r.crateNo).filter((n) => taken.has(n));
     if (clash.length) return { ok: false, code: 'NUMBER_TAKEN', numbers: clash };
 
-    await tx.crate.deleteMany({ where: { shipDay: dayDate(day), customerId } });
+    await tx.crate.deleteMany({ where: { id: { in: [...mine] } } });
     for (const r of rows) {
       // Tek siparişli günde sandık o siparişindir (sipariş misafir değilse). Otomatik bağda bağlar autoLinkRows'tan gelir.
       const orderIds = r.orderIds.length || links === 'auto' ? r.orderIds : orders.length === 1 && ownOrders.length === 1 ? [ownOrders[0].id] : [];
       await tx.crate.create({
         data: {
-          shipDay: dayDate(day), customerId, crateNo: r.crateNo, lengthMm: r.lengthMm, widthMm: r.widthMm, heightMm: r.heightMm,
+          shipDay: dayDate(day), customerId, salesUserId: team, crateNo: r.crateNo, lengthMm: r.lengthMm, widthMm: r.widthMm, heightMm: r.heightMm,
           netAgirlik: r.netKg, brutAgirlik: r.grossKg, note: r.note, updatedById: actor.id,
           orders: { create: [...orderIds, ...(guests.get(r.crateNo) ?? [])].map((orderId) => ({ orderId })) },
         },
@@ -231,7 +270,7 @@ export async function saveDayCrates(db, { day, customerId, rows: input, actor, l
     });
     await writeAudit(tx, {
       action: 'CRATES_SAVE', entityType: 'Customer', entityId: customerId, userId: actor.id,
-      details: { day, before: before.map(brief), after: rows.map(brief), ...(links === 'auto' ? { links: 'auto' } : {}) },
+      details: { day, team, before: before.map(brief), after: rows.map(brief), ...(links === 'auto' ? { links: 'auto' } : {}) },
     }, actor);
     for (const o of orders) {
       await writeHistory(tx, { orderId: o.id, event: 'CRATES', from: o.status, to: o.status, actorId: actor.id, note: String(rows.length) });
@@ -275,13 +314,15 @@ export async function moveOrderCrates(tx, { orderId, customerId, fromDay, toDay,
   const none = { moved: [], unlinked: [] };
   if (!fromDay || !toDay || fromDay === toDay) return none;
   const hosted = await tx.crateOrder.findMany({ where: { orderId, crate: { shipDay: dayDate(fromDay), NOT: { customerId } } }, include: { crate: { select: { id: true, crateNo: true, customerId: true } } } });
-  const crates = await tx.crate.findMany({ where: { shipDay: dayDate(fromDay), customerId }, include: { orders: true }, orderBy: { crateNo: 'asc' } });
   // Özel durum (karar 124): ev sahibi firmanın yeni günde yüklemesi yoksa ilişki geçersizdir → kaldırılır (denetim kaydıyla).
   // Yüklemesi varsa ilişki durur; eski günün sandık seçimi aşağıda kalkar ve yeni günde yeniden "sandık seçimi bekliyor" olur.
-  const guest = await tx.order.findUnique({ where: { id: orderId }, select: { guestHostId: true, orderNo: true, status: true } });
+  const guest = await tx.order.findUnique({ where: { id: orderId }, select: { guestHostId: true, orderNo: true, status: true, salesUserId: true } });
+  // Yalnızca siparişin satışçısının bölümü (karar 300): başka satışçının sandıkları taşınmaz
+  const team = guest?.salesUserId ?? null;
+  const crates = await tx.crate.findMany({ where: { shipDay: dayDate(fromDay), customerId, ...teamCrateWhere(team) }, include: { orders: true }, orderBy: { crateNo: 'asc' } });
   if (guest?.guestHostId) {
     const days = await loadingDays(tx, orderId, toDay);
-    if (!(await firmsLoadingOn(tx, days, customerId)).some((f) => f.id === guest.guestHostId)) {
+    if (!(await firmsLoadingOn(tx, days, customerId, team)).some((f) => f.id === guest.guestHostId)) {
       await tx.order.update({ where: { id: orderId }, data: { guestHostId: null } });
       await writeHistory(tx, { orderId, event: 'GUEST_HOST_REMOVED', from: guest.status, to: guest.status, actorId: actor.id, note: dmy(toDay) });
       await writeAudit(tx, {
@@ -304,7 +345,7 @@ export async function moveOrderCrates(tx, { orderId, customerId, fromDay, toDay,
     }, actor);
   }
   if (crates.length === 0) return { ...none, guestUnlinked: hosted.map((h) => h.crate.crateNo) };
-  const remaining = (await dayOrders(tx, customerId, fromDay)).filter((o) => o.id !== orderId);
+  const remaining = (await dayOrders(tx, customerId, fromDay, team)).filter((o) => o.id !== orderId);
   const toMove = [];
   const unlink = [];
   for (const c of crates) {
@@ -358,9 +399,11 @@ async function loadingDays(tx, orderId, ownDay) {
  * Verilen günlerde yüklemesi olan MÜŞTERİ firmaları (cam siparişi; iptal / silinmiş / beklemedeki hariç): o güne planlı ya
  * da yüklenmeyen kalanı o güne aktarılmış siparişi olan firmalar. Her firma bir kez; ada göre sıralı.
  * @param {any} tx  @param {string[]} days  @param {string} exceptCustomerId  siparişin kendi firması listede olmaz
+ * @param {string | null} [team]  verilirse (karar 300) yalnızca o satışçının siparişiyle yüklenen firmalar — misafir yük
+ *   ekip ayrımını aşmaz
  * @returns {Promise<{ id: string, name: string }[]>}
  */
-export async function firmsLoadingOn(tx, days, exceptCustomerId) {
+export async function firmsLoadingOn(tx, days, exceptCustomerId, team) {
   const out = new Map();
   for (const day of days) {
     const d = dayDate(day);
@@ -369,6 +412,7 @@ export async function firmsLoadingOn(tx, days, exceptCustomerId) {
     const rows = await tx.order.findMany({
       where: {
         orderTypeCode: 'GLASS_ORDER', status: { not: 'IPTAL' }, onHold: false, customerId: { not: exceptCustomerId }, customer: { type: 'CUSTOMER' },
+        ...(team === undefined ? {} : { salesUserId: team }),
         OR: [{ actualShipDate: window }, { actualShipDate: null, estimatedShipDate: window }, { replans: { some: active } }],
       },
       select: { actualShipDate: true, estimatedShipDate: true, customer: { select: { id: true, name: true } }, replans: { where: active, select: { id: true } } },
@@ -385,13 +429,13 @@ export async function firmsLoadingOn(tx, days, exceptCustomerId) {
  * Sipariş sayfasındaki "Özel durum" seçimi (yönetici): siparişin yüklendiği gün(ler) ve o gün(ler)de yüklemesi olan
  * BAŞKA firmalar. Sipariş / sandık listesi dönmez — yönetici yalnızca firma seçer.
  * @param {any} db
- * @param {{ id: string, customerId: string, actualShipDate?: Date | null, estimatedShipDate?: Date | null }} order
+ * @param {{ id: string, customerId: string, salesUserId?: string | null, actualShipDate?: Date | null, estimatedShipDate?: Date | null }} order
  * @returns {Promise<{ days: string[], hosts: { id: string, name: string }[] }>}
  */
 export async function guestHostOptions(db, order) {
   const own = order.actualShipDate ?? order.estimatedShipDate;
   const days = await loadingDays(db, order.id, own ? dayKey(own) : null);
-  return { days, hosts: await firmsLoadingOn(db, days, order.customerId) };
+  return { days, hosts: await firmsLoadingOn(db, days, order.customerId, order.salesUserId ?? null) };
 }
 
 /** Siparişin başka firmaların sandıklarındaki bütün yerleşimlerini kaldırır (geçmiş, denetim ve bildirim olayıyla). İşlem içinde. */
@@ -428,7 +472,7 @@ export async function setGuestHost(db, { orderId, hostId, actor }) {
   if (!can(actor?.role, 'LOADING_CONFIRM')) return { ok: false, code: 'FORBIDDEN' };
   const host = hostId ? String(hostId) : null;
   return db.$transaction(async (tx) => {
-    const select = { id: true, orderNo: true, customerId: true, status: true, orderTypeCode: true, removedAt: true, guestHostId: true, actualShipDate: true, estimatedShipDate: true };
+    const select = { id: true, orderNo: true, customerId: true, status: true, orderTypeCode: true, removedAt: true, guestHostId: true, actualShipDate: true, estimatedShipDate: true, salesUserId: true };
     const found = await tx.order.findUnique({ where: { id: String(orderId ?? '') }, select });
     if (!found || found.orderTypeCode !== 'GLASS_ORDER' || found.removedAt) return { ok: false, code: 'NOT_FOUND' };
     const own = found.actualShipDate ?? found.estimatedShipDate;
@@ -440,7 +484,8 @@ export async function setGuestHost(db, { orderId, hostId, actor }) {
     if (host) {
       if (days.length === 0) return { ok: false, code: 'NO_LOADING_DAY' };
       if (host === order.customerId) return { ok: false, code: 'OWN_FIRM' };
-      if (!(await firmsLoadingOn(tx, days, order.customerId)).some((f) => f.id === host)) return { ok: false, code: 'NOT_SAME_LOADING' };
+      // Ev sahibi aynı gün AYNI satışçının siparişiyle yüklenmeli (karar 300)
+      if (!(await firmsLoadingOn(tx, days, order.customerId, order.salesUserId ?? null)).some((f) => f.id === host)) return { ok: false, code: 'NOT_SAME_LOADING' };
     }
     if ((order.guestHostId ?? null) === host) return { ok: true, changed: false, hostId: host };
     const removedCrates = await dropGuestLinks(tx, order, actor, host ? 'HOST_CHANGED' : 'HOST_REMOVED');
@@ -477,7 +522,8 @@ export async function setGuestHost(db, { orderId, hostId, actor }) {
  *   NOT_HOST_CRATE   — sandık, yöneticinin seçtiği firmanın sandığı değil
  * @param {any} db
  * @param {{ day: string, orderId: string, crateId: string, actor: { id: string, role: string, ip?: string | null } }} p
- * @returns {Promise<{ ok: true, crateNo: number } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'ORDER_CANCELLED' | 'NOT_SAME_LOADING' | 'OWN_CRATE' | 'NO_HOST' | 'NOT_HOST_CRATE' | 'ALREADY_ASSIGNED' }>}
+ *   OTHER_TEAM       — sandık siparişin satışçısının sandığı değil (karar 300)
+ * @returns {Promise<{ ok: true, crateNo: number } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'ORDER_CANCELLED' | 'NOT_SAME_LOADING' | 'OWN_CRATE' | 'NO_HOST' | 'NOT_HOST_CRATE' | 'OTHER_TEAM' | 'ALREADY_ASSIGNED' }>}
  */
 export async function assignGuestCrate(db, { day, orderId, crateId, actor }) {
   if (!can(actor?.role, 'CRATE_EDIT')) return { ok: false, code: 'FORBIDDEN' };
@@ -485,10 +531,12 @@ export async function assignGuestCrate(db, { day, orderId, crateId, actor }) {
     return await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crates:${day}`}, 0))`;
       const [order, crate] = await Promise.all([
-        tx.order.findUnique({ where: { id: String(orderId ?? '') }, select: { id: true, orderNo: true, customerId: true, status: true, orderTypeCode: true, guestHostId: true, actualShipDate: true, estimatedShipDate: true } }),
-        tx.crate.findUnique({ where: { id: String(crateId ?? '') }, select: { id: true, crateNo: true, customerId: true, shipDay: true } }),
+        tx.order.findUnique({ where: { id: String(orderId ?? '') }, select: { id: true, orderNo: true, customerId: true, status: true, orderTypeCode: true, guestHostId: true, actualShipDate: true, estimatedShipDate: true, salesUserId: true, removedAt: true } }),
+        tx.crate.findUnique({ where: { id: String(crateId ?? '') }, select: { id: true, crateNo: true, customerId: true, shipDay: true, salesUserId: true } }),
       ]);
-      if (!order || order.orderTypeCode !== 'GLASS_ORDER' || !crate || !crate.customerId || !crate.shipDay) return { ok: false, code: 'NOT_FOUND' };
+      if (!order || order.orderTypeCode !== 'GLASS_ORDER' || order.removedAt || !crate || !crate.customerId || !crate.shipDay) return { ok: false, code: 'NOT_FOUND' };
+      // Satış yalnızca kendi siparişini yerleştirir (karar 300; başkasınınki yokmuş gibi)
+      if (actor.role === 'SATIS' && order.salesUserId !== actor.id) return { ok: false, code: 'NOT_FOUND' };
       if (order.status === 'IPTAL') return { ok: false, code: 'ORDER_CANCELLED' };
       // Aynı yükleme: sandık o günün sandığı VE siparişin o gün yüklemesi var
       if (isoDay(crate.shipDay) !== day || !(await orderLoadsOn(tx, order, day))) return { ok: false, code: 'NOT_SAME_LOADING' };
@@ -496,6 +544,8 @@ export async function assignGuestCrate(db, { day, orderId, crateId, actor }) {
       // Firma kararı yöneticinindir: seçilmemişse ya da sandık başka firmanınsa kabul edilmez (sahte istek dahil)
       if (!order.guestHostId) return { ok: false, code: 'NO_HOST' };
       if (crate.customerId !== order.guestHostId) return { ok: false, code: 'NOT_HOST_CRATE' };
+      // Sandık siparişin satışçısının sandığı olmalı (karar 300): misafir yük ekip ayrımını aşmaz
+      if (!order.salesUserId || crate.salesUserId !== order.salesUserId) return { ok: false, code: 'OTHER_TEAM' };
       const previous = await tx.crateOrder.findMany({
         where: { orderId: order.id, crate: { shipDay: dayDate(day), NOT: { customerId: order.customerId } } }, include: { crate: { select: { crateNo: true } } },
       });
@@ -532,8 +582,9 @@ export async function removeGuestCrate(db, { orderId, crateId, actor }) {
   return db.$transaction(async (tx) => {
     const link = await tx.crateOrder.findUnique({
       where: { crateId_orderId: { crateId: String(crateId ?? ''), orderId: String(orderId ?? '') } },
-      include: { crate: { select: { crateNo: true, customerId: true, shipDay: true } }, order: { select: { orderNo: true, customerId: true, status: true, guestHostId: true } } },
+      include: { crate: { select: { crateNo: true, customerId: true, shipDay: true } }, order: { select: { orderNo: true, customerId: true, status: true, guestHostId: true, salesUserId: true } } },
     });
+    if (link && !admin && actor.role === 'SATIS' && link.order.salesUserId !== actor.id) return { ok: false, code: 'NOT_FOUND' };
     // Yalnızca başka müşterinin sandığındaki yerleşim (kendi sandığı sandık formundan yönetilir)
     if (!link || link.crate.customerId === link.order.customerId) return { ok: false, code: 'NOT_FOUND' };
     if (!admin && link.order.guestHostId !== link.crate.customerId) return { ok: false, code: 'FORBIDDEN' };

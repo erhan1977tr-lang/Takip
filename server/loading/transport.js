@@ -2,6 +2,8 @@
 // FİZİKSEL SANDIK ETİKETİNE göre gruplu (karar 253; müşteri adına göre değil). Yalnızca mevcut kayıtlardan okunur — Crate (Yüklemeler sekmesinde girilen sandıklar)
 // ve o gün yüklenecek CAM siparişleri (gün = Order.actualShipDate ?? estimatedShipDate; satış/yönetici tarihi
 // değiştirdiyse yeni gün). Ayrı nakliye kaydı tutulmaz. Fiyat bilgisi yoktur.
+// Satış ekipleri (4.3.0, karar 300): liste SATIŞÇIYA göre bölümlüdür — satışçı → sandık etiketi grupları ve sandıklar →
+// satışçının sandık adedi / ağırlık ara toplamı; en altta genel toplam. Satış yalnızca kendi bölümünü alır (veri süzülür).
 import { CRATE_TARE_KG, dayKey } from '../orders/loading.js';
 import { dayDate } from './crates.js';
 import { sortByOrderNo } from '../orders/order-number.js';
@@ -96,17 +98,40 @@ export function buildTransportList(crates, orders, { label = (name) => name } = 
 }
 
 /**
+ * Saf: satışçı bölümleri (karar 300). Sandık ve sipariş, satışçısına (salesUserId; boş = sorumlusu olmayan / eski kayıt)
+ * göre ayrılır; her bölüm kendi içinde buildTransportList kuralıyla (etiket grupları, eksik sandık, bekleyen misafir yük).
+ * Sandık aynı satışçının siparişlerini taşıdığından bölümler kesişmez; her sandık bir kez sayılır. Bölümler satışçı adına
+ * göre (sorumlusuz en sonda); genel toplam bütün bölümlerin toplamıdır (tek liste üzerinden — aynı kural).
+ * @param {Parameters<typeof buildTransportList>[0]} crates  @param {Parameters<typeof buildTransportList>[1]} orders
+ * @param {{ label?: (name: string) => string, teamName?: (id: string | null) => string }} [o]
+ */
+export function buildTransportSections(crates, orders, { label = (name) => name, teamName = (id) => id ?? '' } = {}) {
+  const teamOf = (x) => x.salesUserId ?? null;
+  const ids = [...new Set([...crates.filter((c) => c.customerId).map(teamOf), ...orders.map(teamOf)])];
+  const sections = ids.map((id) => ({
+    team: id, name: teamName(id),
+    ...buildTransportList(crates.filter((c) => teamOf(c) === id), orders.filter((o) => teamOf(o) === id), { label }),
+  })).sort((a, b) => (a.team == null) - (b.team == null) || a.name.localeCompare(b.name));
+  const all = buildTransportList(crates, orders, { label });
+  return { ...all, sections, crateCount: sections.reduce((n, x) => n + x.crateCount, 0), totalKg: Math.round(sections.reduce((n, x) => n + x.totalKg, 0) * 100) / 100 };
+}
+
+/**
  * Veritabanından: günün sandıkları (firması olan) ve o gün yüklenecek CAM siparişleri (iptal ve beklemedekiler hariç —
  * Yüklemeler sayfasıyla aynı kural).
  * @param {string} day "YYYY-MM-DD"
- * @param {{ label?: (name: string) => string }} [o]  label: firma adının görene göre yazımı (satışa maskeli)
+ * @param {{ label?: (name: string) => string, salesUserId?: string, teamName?: (id: string | null) => string }} [o]
+ *   label: firma adının görene göre yazımı (satışa maskeli) · salesUserId: yalnızca bu satışçının sandık ve siparişleri ·
+ *   teamName: verilirse liste satışçı bölümleriyle döner (buildTransportSections)
  */
-export async function transportList(db, day, { label = (name) => name } = {}) {
+export async function transportList(db, day, { label = (name) => name, salesUserId = undefined, teamName = undefined } = {}) {
   const d = dayDate(day);
+  // Satış (karar 300): yalnızca kendi sandıkları ve siparişleri
+  const team = salesUserId === undefined ? {} : { salesUserId: salesUserId || '__none__' };
   const window = { gte: new Date(d.getTime() - 86_400_000), lt: new Date(d.getTime() + 2 * 86_400_000) };
   const [crates, orders, replanned] = await Promise.all([
     db.crate.findMany({
-      where: { shipDay: d, customerId: { not: null } },
+      where: { shipDay: d, customerId: { not: null }, ...team },
       include: {
         customer: { select: { prefix: true, name: true, sandikEtiket: true } },
         // İptal edilmiş / kaldırılmış siparişin sandık bağı listeye girmez (AUD-15, P7)
@@ -115,18 +140,20 @@ export async function transportList(db, day, { label = (name) => name } = {}) {
     }),
     db.order.findMany({
       where: {
-        orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' },
+        orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, removedAt: null, ...team,
         OR: [{ actualShipDate: window }, { actualShipDate: null, estimatedShipDate: window }],
       },
-      select: { orderNo: true, customerId: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true, guestHost: { select: { prefix: true, name: true } } },
+      select: { orderNo: true, customerId: true, salesUserId: true, actualShipDate: true, estimatedShipDate: true, guestHostId: true, guestHost: { select: { prefix: true, name: true } } },
       orderBy: [{ customerId: 'asc' }, { orderNo: 'asc' }],
     }).then((rows) => sortByOrderNo(rows, (o) => o.orderNo, (o) => o.customerId)),
     // Yüklenmeyen kalanı bu güne aktarılmış siparişler de o günün yükündedir (karar 102)
     db.order.findMany({
-      where: { orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, replans: { some: { shipDay: d, status: { not: 'CANCELLED' } } } },
-      select: { orderNo: true, customerId: true, guestHostId: true, guestHost: { select: { prefix: true, name: true } } },
+      where: { orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, removedAt: null, ...team, replans: { some: { shipDay: d, status: { not: 'CANCELLED' } } } },
+      select: { orderNo: true, customerId: true, salesUserId: true, guestHostId: true, guestHost: { select: { prefix: true, name: true } } },
     }),
   ]);
   const own = orders.filter((o) => dayKey(o.actualShipDate ?? o.estimatedShipDate) === day);
-  return buildTransportList(crates, [...own, ...replanned.filter((o) => !own.some((x) => x.orderNo === o.orderNo)).map((o) => ({ ...o, replan: true }))], { label });
+  const list = [...own, ...replanned.filter((o) => !own.some((x) => x.orderNo === o.orderNo)).map((o) => ({ ...o, replan: true }))];
+  if (!teamName) return buildTransportList(crates, list, { label });
+  return buildTransportSections(crates, list, { label, teamName });
 }

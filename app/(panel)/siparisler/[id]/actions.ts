@@ -135,6 +135,20 @@ export async function holdAction(formData: FormData) {
   done(id, hold ? 'held' : res?.produced ? 'unheld_production' : 'unheld');
 }
 
+/**
+ * Sorumlu satışçı ataması / başka satışçıya yönlendirme (karar 300): yalnızca ORDER_ASSIGN (yönetici, yönetici
+ * yardımcısı). Hedefin geçerliliği, engeller (teklif ilk kez gönderildi, çizim / maliyet süreci başladı …) ve sürüm
+ * işlemde denetlenir; sayfanın sürümü olmadan çalışmaz.
+ */
+export async function assignSalesAction(formData: FormData) {
+  const user = await requirePermission('ORDER_ASSIGN');
+  const id = orderIdOf(formData);
+  const salesUserId = String(formData.get('salesUserId') ?? '').trim().slice(0, 64);
+  const version = await requiredVersion(formData, id);
+  await act(user, id, 'assign_sales', { salesUserId, expectedVersion: version });
+  done(id, 'sales_assigned');
+}
+
 export async function setShipDateAction(formData: FormData) {
   const user = await requirePermission('ORDER_VIEW');
   const id = orderIdOf(formData);

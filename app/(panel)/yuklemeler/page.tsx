@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { db } from '@/lib/db';
 import { type CurrentUser, requirePermission } from '@/lib/auth/session';
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
 import { rich } from '@/lib/rich';
@@ -258,9 +259,14 @@ async function DayList({ user, days, href, selected, isCustomer }: { user: Curre
   );
 }
 
-const GUEST_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'ORDER_CANCELLED', 'NOT_SAME_LOADING', 'OWN_CRATE', 'NO_HOST', 'NOT_HOST_CRATE', 'ALREADY_ASSIGNED'];
+const GUEST_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'ORDER_CANCELLED', 'NOT_SAME_LOADING', 'OWN_CRATE', 'NO_HOST', 'NOT_HOST_CRATE', 'OTHER_TEAM', 'ALREADY_ASSIGNED'];
 
 async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { user: CurrentUser; day: string; sum: DayFirms; crates: CrateRow[]; money: MoneyView; isCustomer: boolean; sp: SP }) {
+  // Satışçı bölümlerinin adları (karar 300): sandıkları düzenleyen ve satış olmayan rol (yönetici) — satış yalnızca kendi
+  // bölümünü görür. Ad iç ekip bilgisidir; müşteriye hiç gitmez.
+  const teamNames = userCan(user, 'CRATE_EDIT') && user.appRole !== 'SATIS'
+    ? new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL' }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]))
+    : null;
   const { t, m, intl } = await getT();
   const { count } = counter(m, intl);
   const { firms, total } = sum;
@@ -311,7 +317,7 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
           </p>
           {isCustomer
             ? <CustomerDay firm={firms[0]} money={money} t={t} />
-            : <FirmTable user={user} day={day} sum={sum} dayCrates={crates} money={money} sp={sp} t={t} m={m} />}
+            : <FirmTable user={user} day={day} sum={sum} dayCrates={crates} money={money} sp={sp} teamNames={teamNames} t={t} m={m} />}
           {relations && <CrateRelationsView rel={relations} t={t} />}
         </>
       )}
@@ -331,7 +337,7 @@ type FirmCol = (typeof FIRM_COLS)[number] | 'factory' | 'offer';
  * (dar masaüstü, telefon) her firma etiketli bir kart olur — sayfa ve tablo yatay kaymaz (app/globals.css → .firm-wrap).
  * Sağdaki işlemler: belge yetkisi olan rolde PDF | Excel | Özet | Sandık; satışta yalnızca Sandık.
  */
-function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: CurrentUser; day: string; sum: DayFirms; dayCrates: CrateRow[]; money: MoneyView; sp: SP; t: T; m: Dict }) {
+function FirmTable({ user, day, sum, dayCrates, money, sp, teamNames, t, m }: { user: CurrentUser; day: string; sum: DayFirms; dayCrates: CrateRow[]; money: MoneyView; sp: SP; teamNames: Map<string, string> | null; t: T; m: Dict }) {
   const { firms, total } = sum;
   const cols = 10 + (money.sales ? 1 : 0) + (money.offer ? 1 : 0);
   const canEdit = userCan(user, 'CRATE_EDIT');
@@ -406,7 +412,7 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, t, m }: { user: Curre
                 </>
               )}
               orders={<FirmOrders firm={f} money={money} t={t} />}
-              crates={<FirmCrates user={user} firm={f} day={day} dayCrates={dayCrates} rowOf={rowOf} canEdit={canEdit} canPlace={canPlace} t={t} m={m} />}
+              crates={<FirmCrates user={user} firm={f} day={day} dayCrates={dayCrates} rowOf={rowOf} canEdit={canEdit} canPlace={canPlace} teamNames={teamNames} t={t} m={m} />}
             />
           );
         })}
@@ -516,8 +522,10 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
  * firmanın sandığına konamaz ve firmanın misafir olmayan siparişi yoksa "+ Sandık ekle" kapalıdır (sunucu da reddeder —
  * server/loading/crates.js → saveDayCrates). Ev sahibinin sandık listesinde misafir camın sipariş / cam bilgisi görünür.
  */
-function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m }: {
-  user: CurrentUser; firm: DayFirm; day: string; dayCrates: CrateRow[]; rowOf: Map<string, Row>; canEdit: boolean; canPlace: boolean; t: T; m: Dict;
+function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, teamNames, t, m }: {
+  user: CurrentUser; firm: DayFirm; day: string; dayCrates: CrateRow[]; rowOf: Map<string, Row>; canEdit: boolean; canPlace: boolean;
+  /** Satışçı adları (karar 300 — yalnızca yönetici; satış yalnızca kendi bölümünü görür) */
+  teamNames: Map<string, string> | null; t: T; m: Dict;
 }) {
   const own = [...new Map(firm.rows.filter((r) => !r.guest).map((r) => [r.entry.orderId, { id: r.entry.orderId, orderNo: r.entry.orderNo }])).values()];
   const away = firm.rows.filter((r) => r.guest);
@@ -532,6 +540,14 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m
   // Taşınan cam (tahmini ağırlığın sandıklara bölünmesi için): bu firmanın taşıdığı kendi siparişleri + misafir yük
   const carriedKg = [...rowOf.values()].filter((r) => r.carrierId === firm.id).reduce((s, r) => s + r.entry.load.netKg, 0);
   const others = dayCrates.filter((c) => c.customer && c.customer.id !== firm.id).map((c) => ({ no: c.crateNo, label: customerLabel(user, c.customer!.name) }));
+  // Satışçı bölümleri (karar 300): sandık yalnızca aynı satışçının siparişlerini taşır. Satış yalnızca kendi bölümünü görür
+  // (veri sunucuda süzülmüş); yönetici firmanın o günkü her satışçısı için ayrı bölüm. Satışçısız eski sandıklar ilk bölümde.
+  const teamOf = new Map(firm.rows.filter((r) => !r.guest).map((r) => [r.entry.orderId, r.entry.o.salesUserId ?? null]));
+  const teamIdsAll = [...new Set([...teamOf.values(), ...firm.crateList.map((c) => c.salesUserId ?? null).filter((x) => x != null)])];
+  const teamList = (teamIdsAll.length ? teamIdsAll : [teamNames ? null : user.id]).map((id, i) => ({
+    id: teamNames ? id : user.id, name: id ? teamNames?.get(id) ?? '—' : t('loading.day.crates.noTeam'), legacy: i === 0,
+  }));
+  const teams = teamNames ? teamList : teamList.slice(0, 1);
   return (
     <div className="firm-crates-box" data-owner={firm.id}>
       {/* Misafir sipariş: bu firmanın sandığı açılmaz; cam ev sahibi firmanın sandığıyla gider (ad role göre maskeli) */}
@@ -556,24 +572,34 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, t, m
           </form>
         );
       })}
-      {canEdit ? (
-        <CrateEditor
-          day={day}
-          customerId={firm.id}
-          orders={own}
-          initial={firm.crateList.map((c) => ({
-            crateNo: String(c.crateNo), lengthMm: c.lengthMm?.toString() ?? '', widthMm: c.widthMm?.toString() ?? '', heightMm: c.heightMm?.toString() ?? '',
-            netKg: c.netAgirlik?.toString() ?? '', grossKg: c.brutAgirlik?.toString() ?? '', note: c.note ?? '',
-            orderIds: (c.orderIds ?? []).filter((id) => ownIds.has(id)), guests: guestsOf(c.id),
-          }))}
-          locked={locked}
-          dayUsed={others}
-          glassKg={carriedKg}
-          tare={CRATE_TARE_KG}
-          updated={last ? t('loading.day.crates.updated', { when: fmtDateTime(last.updatedAt), who: last.updatedBy?.name ?? '—' }) : null}
-          m={m.loading.day.crates}
-        />
-      ) : firm.crateList.length > 0 ? (
+      {canEdit ? teams.map((team) => {
+        const teamOrders = own.filter((o) => teamOf.get(o.id) === team.id);
+        const teamCrates = firm.crateList.filter((c) => (c.salesUserId ?? null) === team.id || (c.salesUserId == null && team.legacy));
+        const teamIds = new Set(teamCrates.map((c) => c.id));
+        // Numara günde tektir: başka firmaların ve bu firmanın başka satışçılarının sandıkları da dolu sayılır
+        const used = [...others, ...firm.crateList.filter((c) => !teamIds.has(c.id)).map((c) => ({ no: c.crateNo, label: firm.name }))];
+        return (
+          <CrateEditor
+            key={team.id ?? 'none'}
+            day={day}
+            customerId={firm.id}
+            orders={teamOrders}
+            initial={teamCrates.map((c) => ({
+              crateNo: String(c.crateNo), lengthMm: c.lengthMm?.toString() ?? '', widthMm: c.widthMm?.toString() ?? '', heightMm: c.heightMm?.toString() ?? '',
+              netKg: c.netAgirlik?.toString() ?? '', grossKg: c.brutAgirlik?.toString() ?? '', note: c.note ?? '',
+              orderIds: (c.orderIds ?? []).filter((id) => ownIds.has(id)), guests: guestsOf(c.id),
+            }))}
+            locked={locked || (teamOrders.length === 0 && teamCrates.length === 0)}
+            dayUsed={used}
+            glassKg={teams.length > 1 ? 0 : carriedKg}
+            tare={CRATE_TARE_KG}
+            updated={last ? t('loading.day.crates.updated', { when: fmtDateTime(last.updatedAt), who: last.updatedBy?.name ?? '—' }) : null}
+            team={teamNames ? team.id : undefined}
+            teamName={teams.length > 1 ? team.name : null}
+            m={m.loading.day.crates}
+          />
+        );
+      }) : firm.crateList.length > 0 ? (
         <CrateList crates={firm.crateList} contents={(c) => [...(c.orderIds ?? []).filter((id) => rowOf.get(id)?.entry.customerId === firm.id).map((id) => rowOf.get(id)!.entry.orderNo), ...guestsOf(c.id)]} t={t} note />
       ) : <p className="muted small">{locked ? t('loading.firm.lockedNote') : t('loading.day.crates.readOnly')}</p>}
       {/* Ev sahibi (karar 124): bu firmanın sandıklarıyla gidecek başka firma siparişleri. Sandığı satış (CRATE_EDIT) seçer. */}

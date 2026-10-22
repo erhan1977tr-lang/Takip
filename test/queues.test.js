@@ -8,7 +8,7 @@ const h = (n) => new Date(NOW + n * 3_600_000);
 let seq = 0;
 const row = (o = {}) => ({
   id: `o${++seq}`, orderTypeCode: 'GLASS_ORDER', status: 'HAZIRLANIYOR', onHold: false, drawingTrack: 'YOK',
-  slaDeadline: h(48), offers: [], drawings: [], events: [], ...o,
+  slaDeadline: h(48), offers: [], drawings: [], events: [], salesUserId: 's1', ...o,
 });
 const ids = (qs, key) => qs.find((q) => q.key === key)?.rows.map((r) => r.id) ?? null;
 const keys = (qs) => qs.map((q) => q.key);
@@ -56,13 +56,20 @@ test('teklifler, satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Tek
   assert.equal(listed.size, g.reduce((n, x) => n + x.rows.length, 0));
 });
 
-test('kuyruk: yönetici (karar 217) — yalnızca dört tablo: yeni siparişler, teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler', () => {
+test('kuyruk: yönetici (karar 217, 300) — atama bekleyenler, yeni siparişler, teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler', () => {
   const profilNew = row({ orderTypeCode: 'PROFILE_ORDER', status: 'YENI', profile: { stage: 'FIYAT_BEKLIYOR' } });
   const profilSent = row({ orderTypeCode: 'PROFILE_ORDER', status: 'HAZIRLANIYOR', profile: { stage: 'TEKLIF_GONDERILDI' } });
   const profilCancelled = row({ orderTypeCode: 'PROFILE_ORDER', status: 'IPTAL', profile: { stage: 'FIYAT_BEKLIYOR' } });
   const q = queuesFor([...all, profilNew, profilSent, profilCancelled], { review: true, send: true, drawing: true, userId: 'yonetici' }, NOW);
-  assert.deepEqual(keys(q), ['newOrders', 'offersToPrepare', 'sla', 'profilePricing']);
+  // Atama bekleyenler (karar 300) en üstte: sorumlu satışçısı olmayan açık cam siparişleri
+  assert.deepEqual(keys(q), ['unassigned', 'newOrders', 'offersToPrepare', 'sla', 'profilePricing']);
   assert.deepEqual(keys(q), ADMIN_QUEUES);
+  const owned = all.filter((o) => o.salesUserId).map((o) => o.id);
+  assert.ok(!ids(q, 'unassigned').some((id) => owned.includes(id)), 'sahibi olan sipariş atama beklemez');
+  const free = row({ status: 'YENI', salesUserId: null });
+  const closed = row({ status: 'ARSIVLENDI', salesUserId: null });
+  const q2 = queuesFor([free, closed, profilNew], { review: true, send: true, drawing: true, userId: 'yonetici' }, NOW);
+  assert.deepEqual(ids(q2, 'unassigned'), [free.id], 'yalnızca açık cam siparişi; profil ve kapanmış değil');
   assert.deepEqual(ids(q, 'newOrders'), [rows.yeni.id]);
   assert.deepEqual(ids(q, 'offersToPrepare').sort(), [rows.teklifYok.id, rows.teklifSatista.id].sort());
   assert.deepEqual(ids(q, 'sla'), [rows.yeni.id]);

@@ -10,6 +10,7 @@ import { issueInvite, sendEmailChangeCode } from '@/lib/invite';
 import { getT } from '@/lib/i18n';
 import { actorOf } from '@/lib/actor';
 import { applyEmailChange, checkEmailChange, deleteUser } from '@/server/users/lifecycle.js';
+import { setDefaultDrawer } from '@/server/orders/sales-routing.js';
 
 export type UserFormState = { error?: string; ok?: string; warn?: string; values?: Record<string, string> };
 
@@ -164,4 +165,38 @@ export async function deleteUserAction(formData: FormData) {
   if (!r.ok) redirect(`/admin/users?error=${errOf(r.code)}${r.code === 'CONFIRM_REQUIRED' ? `&sil=${encodeURIComponent(id)}` : ''}`);
   revalidatePath('/admin/users');
   redirect(`/admin/users?ok=deleted&email=${encodeURIComponent((r as { email: string }).email)}`);
+}
+
+/**
+ * Satışçının varsayılan çizimcisi (karar 300). Yalnızca sonraki atamaları etkiler; var olan siparişlerin çizimcisi
+ * değişmez. Doğrulama ve denetim kaydı serviste (server/orders/sales-routing.js → setDefaultDrawer).
+ */
+export async function setDefaultDrawerAction(formData: FormData) {
+  const admin = await requirePermission('USER_MANAGE');
+  const salesUserId = String(formData.get('id') ?? '');
+  const drawerId = String(formData.get('drawerId') ?? '') || null;
+  const r = await setDefaultDrawer(db, { salesUserId, drawerId, actor: await actorOf(admin) });
+  revalidatePath('/admin/users');
+  if (!r.ok) redirect(`/admin/users?error=${r.code === 'FORBIDDEN' ? 'forbidden' : 'drawer'}`);
+  redirect('/admin/users?ok=drawer');
+}
+
+/**
+ * Kalıcı hesabın kişi bilgileri (karar 300): ad, telefon, birim. Hesap kimliği, siparişler, fiyat tablosu, çizimci
+ * eşleşmesi ve muhasebe geçmişi değişmez; geçmiş kayıtlar yeniden yazılmaz. Yönetici hesabı ve kişinin kendisi bu
+ * ekrandan değiştirilmez (e-posta değişikliğiyle aynı kural). Denetim: önce / sonra.
+ */
+export async function updatePersonAction(formData: FormData) {
+  const admin = await requirePermission('USER_MANAGE');
+  const user = await targetUser(formData, admin.id);
+  if (user.appRole === 'ADMIN') redirect('/admin/users?error=protected');
+  const v = (k: string) => String(formData.get(k) ?? '').trim();
+  const next = { name: v('name').slice(0, 120), phone: v('phone').slice(0, 40) || null, unit: v('unit').slice(0, 120) || null };
+  if (!next.name) redirect(`/admin/users?eposta=${user.id}&error=person#kisi-bilgileri`);
+  const before = { name: user.name, phone: user.phone, unit: user.unit };
+  const r = await db.user.updateMany({ where: { id: user.id, deletedAt: null }, data: next });
+  if (r.count !== 1) redirect('/admin/users?error=notfound');
+  await audit('USER_PROFILE_UPDATE', 'User', user.id, admin.id, { before, after: next });
+  revalidatePath('/admin/users');
+  redirect(`/admin/users?ok=person&email=${encodeURIComponent(user.email)}`);
 }

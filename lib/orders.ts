@@ -111,6 +111,9 @@ export const orderDetailInclude = {
   notes: { orderBy: { createdAt: 'asc' }, include: { user: { select: PERSON } } },
   events: { orderBy: { createdAt: 'desc' }, include: { user: { select: PERSON } } },
   assignedDrawer: { select: PERSON },
+  // Sorumlu satışçı ve atamayı yapan (karar 300) — müşteriye hiç gitmez (orderPeopleView)
+  salesUser: { select: PERSON },
+  salesAssignedBy: { select: PERSON },
   createdBy: { select: PERSON },
   // Profil siparişi (Aşama 6)
   profile: true,

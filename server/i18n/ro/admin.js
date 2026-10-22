@@ -11,6 +11,8 @@ export default {
       deactivated: 'Contul {email} a fost dezactivat; sesiunile deschise au fost închise.',
       emailChanged: 'Adresa de e-mail a fost schimbată în {email}. Toate sesiunile utilizatorului au fost închise; pe noua adresă a fost trimis un cod de setare a parolei, de unică folosință și cu valabilitate limitată.',
       deleted: 'Utilizatorul {email} a fost șters. Datele de identitate au fost eliminate; notele și istoricul rămân ca „Utilizator șters”.',
+      drawer: 'Desenatorul implicit al agentului a fost salvat. Desenatorul comenzilor existente nu s-a schimbat; se folosește doar la atribuirile următoare.',
+      person: 'Datele persoanei {email} au fost actualizate. Contul, comenzile și istoricul au rămas aceleași.',
     },
     // ?error= kodu
     error: {
@@ -26,6 +28,8 @@ export default {
       stale: 'Utilizatorul s-a schimbat între timp; reîncărcați pagina și încercați din nou.',
       confirm: 'Pentru confirmare, scrieți exact adresa de e-mail a utilizatorului.',
       mailChange: 'E-mailul către noua adresă nu a putut fi trimis; nu s-a modificat nimic. Verificați setările SMTP și încercați din nou.',
+      drawer: 'Desenatorul implicit nu a putut fi salvat: utilizatorul trebuie să fie agent de vânzări activ, iar persoana aleasă desenator activ.',
+      person: 'Numele nu poate fi gol.',
     },
     listTitle: 'Utilizatori înregistrați ({n})',
     col: {
@@ -55,6 +59,21 @@ export default {
     changeEmail: 'Schimbă e-mailul',
     delete: 'Șterge',
     deletedName: 'Utilizator șters',
+    team: {
+      defaultDrawer: 'Desenator implicit',
+      none: '— niciunul —',
+      save: 'Salvează',
+      hint: 'Devine desenatorul comenzilor nou atribuite; comenzile existente nu se schimbă.',
+    },
+    editPerson: 'Date persoană',
+    person: {
+      title: 'Date persoană: {name}',
+      intro: 'Contul este permanent: identitatea, comenzile, tabelul de prețuri, asocierea cu desenatorul și istoricul contabil rămân neschimbate. Înregistrările istorice nu se modifică. Dacă s-a schimbat persoana, schimbați și adresa de e-mail mai jos (sesiunile se închid, parola se resetează).',
+      name: 'Nume și prenume',
+      phone: 'Telefon',
+      unit: 'Unitate',
+      submit: 'Salvează datele persoanei',
+    },
     emailChange: {
       title: 'Schimbă adresa de e-mail: {name}',
       current: 'Adresa actuală: {email}',

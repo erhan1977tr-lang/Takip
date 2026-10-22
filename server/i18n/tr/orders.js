@@ -98,6 +98,7 @@ export default {
       decisions: 'Karar',
     },
     sections: {
+      unassigned: { title: 'Atama bekleyen siparişler — sorumlu satışçı seçilmedi', empty: 'Atama bekleyen sipariş yok.' },
       newOrders: { title: 'Yeni siparişler — karar bekliyor', empty: 'Karar bekleyen sipariş yok.' },
       offersToPrepare: { title: 'Teklif hazırlanacaklar', empty: 'Hazırlanacak teklif yok.' },
       priceApproval: { title: 'Fiyat onayı bekleyen teklifler', empty: 'Onay bekleyen teklif yok.' },

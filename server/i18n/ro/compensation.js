@@ -82,7 +82,7 @@ export default {
     destBlocked: '{order} — {date} · {reason}',
     destReason: {
       NO_OFFER: 'oferta nu este încă deschisă', CURRENCY: 'altă monedă', FINAL_INVOICE: 'are factură finală emisă', LOADED: 'încărcare confirmată',
-      ON_HOLD: 'în așteptare', CLOSED: 'închisă', NOT_FUTURE: 'ziua de încărcare a trecut', SAME_ORDER: 'comanda sursă', OTHER_CUSTOMER: 'alt client', NOT_GLASS: 'nu este comandă de sticlă',
+      ON_HOLD: 'în așteptare', CLOSED: 'închisă', NOT_FUTURE: 'ziua de încărcare a trecut', SAME_ORDER: 'comanda sursă', OTHER_SALES: 'comanda altui agent de vânzări', OTHER_CUSTOMER: 'alt client', NOT_GLASS: 'nu este comandă de sticlă',
     },
     destNew: 'Creează o comandă nouă de înlocuire',
     destNewHint: 'Numărul comenzii derivă din comanda sursă ({no}).',
@@ -161,6 +161,7 @@ export default {
     FINAL_INVOICE: 'Pentru această comandă a fost emisă factura finală: nu se poate crea sticlă de înlocuire.',
     DEST_NOT_FOUND: 'Comanda de destinație nu a fost găsită.',
     DEST_SAME_ORDER: 'Sticla de înlocuire nu poate fi adăugată la comanda sursă.',
+    DEST_OTHER_SALES: 'Sticla de înlocuire se adaugă doar la o comandă a aceluiași agent de vânzări (echipele nu se combină).',
     DEST_OTHER_CUSTOMER: 'Sticla de înlocuire se adaugă doar la o comandă a aceluiași client.',
     DEST_NOT_GLASS: 'Destinația trebuie să fie o comandă de sticlă.',
     DEST_CLOSED: 'Comanda de destinație este închisă (încărcată, arhivată, anulată sau ștearsă).',

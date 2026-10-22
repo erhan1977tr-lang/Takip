@@ -25,6 +25,7 @@ import { dayKey, orderLoad } from '../orders/loading.js';
 import { missingCost } from '../orders/rules.js';
 import { effectiveItems, itemAsLine, lineTotals } from '../loading/confirmation.js';
 import { ACTION_REQUIRED, orderImpacts } from '../glass/invoice-batch.js';
+import { accountSummary } from './factory-accounts.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 // m² toplamları 3 ondalık (karar 261): eski 2 ondalıklı değerlerde sonuç aynıdır
@@ -64,14 +65,14 @@ export function orderLine(o) {
   // Gün: Yüklemeler sayfasıyla aynı (Romanya günü) — yükleme onayı da aynı günle eşleşir
   return {
     orderId: o.id, orderNo: o.orderNo, day: dayKey(d), currency: sent.currency, m2: load.metraj, sale: t.sale, cost: t.cost,
-    noCost: noCostLines.length, noCostLines, confirmed: false,
+    noCost: noCostLines.length, noCostLines, confirmed: false, salesUserId: o.salesUserId ?? null,
   };
 }
 
 /**
  * Onaylı yüklemedeki bir siparişin muhasebe satırı: yalnızca fiilen yüklenen (LOADED) kalemlerin onay anındaki kopyası.
  * Hiç yüklenen kalemi yoksa null.
- * @param {{ orderId: string, orderNo: string, day: string, items: object[] }} g
+ * @param {{ orderId: string, orderNo: string, day: string, items: object[], salesUserId?: string | null }} g
  */
 export function confirmedLine(g) {
   const loaded = g.items.filter((i) => i.status === 'LOADED');
@@ -79,7 +80,7 @@ export function confirmedLine(g) {
   const t = lineTotals(loaded.map(itemAsLine));
   return {
     orderId: g.orderId, orderNo: g.orderNo, day: g.day, currency: loaded[0].currency, m2: round3(loaded.reduce((s, i) => s + Number(i.m2), 0)),
-    sale: t.sale, cost: t.cost, noCost: t.noCost, noCostLines: [], confirmed: true,
+    sale: t.sale, cost: t.cost, noCost: t.noCost, noCostLines: [], confirmed: true, salesUserId: g.salesUserId ?? null,
   };
 }
 
@@ -199,14 +200,15 @@ export async function supplierData(db, endOfToday) {
     db.factoryPayment.findMany({ orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }] }),
     db.loadingConfirmation.findMany({
       orderBy: { shipDay: 'desc' },
-      include: { items: { orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }], include: { order: { select: { orderNo: true } } } } },
+      include: { items: { orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }], include: { order: { select: { orderNo: true, salesUserId: true } } } } },
     }),
   ]);
   const confirmations = confirmed.map((c) => {
     const byOrder = new Map();
     // Geçerli durum: düzeltilmiş kapsamda son düzeltmenin kalemleri (eski satırlar sayılmaz — çift sayım olmaz)
     for (const it of effectiveItems(c.items)) {
-      const g = byOrder.get(it.orderId) ?? { orderId: it.orderId, orderNo: it.order.orderNo, items: [] };
+      // Hesap = siparişin sorumlu satışçısı (karar 300): telafi siparişi kaynağın satışçısını taşır
+      const g = byOrder.get(it.orderId) ?? { orderId: it.orderId, orderNo: it.order.orderNo, salesUserId: it.order.salesUserId ?? null, items: [] };
       g.items.push(it);
       byOrder.set(it.orderId, g);
     }
@@ -224,5 +226,6 @@ export async function supplierData(db, endOfToday) {
   // Maliyeti girilebilecek satırlar: yalnızca henüz onaylı yüklemeye girmemiş siparişlerin eksik maliyetleri
   const missing = merged.lines.filter((l) => !l.confirmed && l.noCostLines.length > 0)
     .map((l) => ({ orderId: l.orderId, orderNo: l.orderNo, day: l.day, currency: l.currency, lines: l.noCostLines }));
-  return { days, costs, payments, summary: supplierSummary(days, payments), missing };
+  // Satışçı hesapları (karar 300): aynı satırlar ve ödemeler — toplamlar genel özetle aynı (formül değişmedi)
+  return { days, costs, payments, summary: supplierSummary(days, payments), missing, accounts: accountSummary(merged.lines, payments) };
 }

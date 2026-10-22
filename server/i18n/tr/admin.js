@@ -11,6 +11,8 @@ export default {
       deactivated: '{email} hesabı pasifleştirildi; açık oturumları kapatıldı.',
       emailChanged: 'E-posta adresi {email} olarak değiştirildi. Kullanıcının bütün oturumları kapatıldı; yeni adrese tek kullanımlık, süreli bir şifre belirleme kodu gönderildi.',
       deleted: '{email} kullanıcısı silindi. Kimlik bilgileri kaldırıldı; yazdığı notlar ve geçmiş kayıtlar "Silinmiş kullanıcı" olarak kalır.',
+      drawer: 'Satışçının varsayılan çizimcisi kaydedildi. Var olan siparişlerin çizimcisi değişmedi; yalnızca sonraki atamalarda kullanılır.',
+      person: '{email} kişi bilgileri güncellendi. Hesap, siparişler ve geçmiş kayıtlar aynı kaldı.',
     },
     // ?error= kodu
     error: {
@@ -26,6 +28,8 @@ export default {
       stale: 'Kullanıcı bu arada değişti; sayfayı yenileyip yeniden deneyin.',
       confirm: 'Onay için kullanıcının e-posta adresini aynen yazın.',
       mailChange: 'Yeni adrese e-posta gönderilemedi; hiçbir değişiklik yapılmadı. SMTP ayarlarını kontrol edip yeniden deneyin.',
+      drawer: 'Varsayılan çizimci kaydedilemedi: kullanıcı etkin bir satışçı ve seçilen kişi etkin bir çizimci olmalı.',
+      person: 'Ad boş olamaz.',
     },
     listTitle: 'Kayıtlı kullanıcılar ({n})',
     col: {
@@ -55,6 +59,23 @@ export default {
     changeEmail: 'E-postayı değiştir',
     delete: 'Sil',
     deletedName: 'Silinmiş kullanıcı',
+    // Satışçı–çizimci eşleşmesi (karar 300): satış satırında
+    team: {
+      defaultDrawer: 'Varsayılan çizimci',
+      none: '— yok —',
+      save: 'Kaydet',
+      hint: 'Yeni atanan siparişlerin çizimcisi olur; var olan siparişler değişmez.',
+    },
+    editPerson: 'Kişi bilgileri',
+    // Kalıcı hesap (karar 300): personel değişince aynı hesabın kişi bilgileri değiştirilir
+    person: {
+      title: 'Kişi bilgileri: {name}',
+      intro: 'Hesap kalıcıdır: kimlik, siparişler, fiyat tablosu, çizimci eşleşmesi ve muhasebe geçmişi aynen kalır. Geçmiş işlem kayıtları değişmez. Personel değiştiyse e-posta adresini de aşağıdan değiştirin (oturumlar kapanır, şifre sıfırlanır).',
+      name: 'Ad soyad',
+      phone: 'Telefon',
+      unit: 'Birim',
+      submit: 'Kişi bilgilerini kaydet',
+    },
     // E-posta değişikliği kartı (?eposta=<id>) — karar 222
     emailChange: {
       title: 'E-posta adresini değiştir: {name}',

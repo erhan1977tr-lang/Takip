@@ -12,6 +12,7 @@ import { writeAudit } from '@/server/orders/journal.js';
 import { refreshDocuments, removeDocumentDeletedInFgo } from '@/server/accounting/receivables.js';
 import { CURRENCIES, parseAmount } from '@/server/accounting/supplier.js';
 import { correctMissingCost } from '@/server/accounting/cost-correction.js';
+import { addFactoryPayment, changePaymentAccount } from '@/server/accounting/factory-accounts.js';
 import { resendDocEmail } from '@/server/documents/delivery.js';
 
 const RECEIVABLE_PATH = { PROFILE_ORDER: '/admin/muhasebe/profil', GLASS_ORDER: '/admin/muhasebe/cam' } as const;
@@ -93,20 +94,35 @@ export async function deleteTransportAction(fd: FormData) {
   redirect(`${SUPPLIER}?ok=deleted#yuklemeler`);
 }
 
-/** Fabrikaya ödeme (yüklemeye bağlı değil) */
+/**
+ * Fabrikaya ödeme (yüklemeye bağlı değil), girişte seçilen satışçı hesabına (karar 300). Hesap zorunludur; kural ve
+ * denetim kaydı server/accounting/factory-accounts.js'te.
+ */
 export async function addPaymentAction(fd: FormData) {
   const user = await requirePermission('ACCOUNTING_MANAGE');
   const day = parseDateOnly(String(fd.get('paidOn') ?? ''));
   const amount = parseAmount(fd.get('amount'));
   const cur = currency(fd);
   if (!day || amount == null || !cur) redirect(`${SUPPLIER}?error=payment#cari`);
-  const actor = await actorOf(user);
-  await db.$transaction(async (tx) => {
-    const p = await tx.factoryPayment.create({ data: { paidOn: day, amount: amount.toFixed(2), currency: cur, note: note(fd), createdById: user.id } });
-    await writeAudit(tx, { action: 'FACTORY_PAYMENT_ADD', entityType: 'FactoryPayment', entityId: p.id, userId: user.id, details: { paidOn: String(fd.get('paidOn')), amount, currency: cur } }, actor);
-  });
+  const r = await addFactoryPayment(db, { paidOn: day, amount, currency: cur, note: note(fd), salesUserId: String(fd.get('salesUserId') ?? ''), actor: await actorOf(user) });
+  if (!r.ok) redirect(`${SUPPLIER}?error=${r.code === 'ACCOUNT' ? 'account' : 'payment'}#cari`);
   revalidatePath(SUPPLIER);
   redirect(`${SUPPLIER}?ok=payment#cari`);
+}
+
+/**
+ * Ödemenin satışçı hesabını değiştirir (karar 300): aynı kayıt, tutar / tarih / para birimi değişmez; A'dan düşer, B'ye
+ * eklenir. Ekranın gördüğü hesap (expected) değiştiyse yazılmaz. Kural ve denetim server/accounting/factory-accounts.js'te.
+ */
+export async function changePaymentAccountAction(fd: FormData) {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const r = await changePaymentAccount(db, {
+    paymentId: String(fd.get('id') ?? ''), salesUserId: String(fd.get('salesUserId') ?? ''),
+    expected: String(fd.get('expected') ?? '') || null, actor: await actorOf(user),
+  });
+  revalidatePath(SUPPLIER);
+  if (!r.ok) redirect(`${SUPPLIER}?error=${r.code === 'STALE' ? 'stale' : r.code === 'ACCOUNT' ? 'account' : 'payment'}#odemeler`);
+  redirect(`${SUPPLIER}?ok=${r.changed ? 'account' : 'unchanged'}#odemeler`);
 }
 
 export async function deletePaymentAction(fd: FormData) {

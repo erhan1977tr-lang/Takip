@@ -9,7 +9,7 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { CURRENCIES, supplierData } from '@/server/accounting/supplier.js';
 import { localDay } from '@/server/profile/dates.js';
-import { addPaymentAction, addTransportAction, correctCostAction, deletePaymentAction, deleteTransportAction } from '../actions';
+import { addPaymentAction, addTransportAction, changePaymentAccountAction, correctCostAction, deletePaymentAction, deleteTransportAction } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,13 +20,17 @@ type OrderRef = { orderId: string; orderNo: string };
 type Day = { day: string; orders: number; m2: number; byCur: Record<string, Amounts>; noCost: OrderRef[]; confirmed: boolean; outside: OrderRef[]; accounting: (OrderRef & { code: string; ref: string | null })[] };
 type MissingLine = { lineId: string; description: string; kind: string; unit: string; adet: number; offerPrice: number };
 type Missing = { orderId: string; orderNo: string; day: string; currency: string; lines: MissingLine[] };
-type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }>; missing: Missing[] };
+type AccountCell = { cost: number; paid: number; balance: number; orders: number; payments: number };
+type Accounts = { accounts: { account: string | null; byCur: Record<string, AccountCell> }[]; overview: Record<string, { cost: number; paid: number; balance: number; debt: number; advance: number }> };
+type Data = { days: Day[]; costs: LoadingCost[]; payments: FactoryPayment[]; summary: Record<string, Amounts & { paid: number; balance: number }>; missing: Missing[]; accounts: Accounts };
 
 const OK: Record<string, MsgKey> = {
   transport: 'accounting.supplier.ok.transport', payment: 'accounting.supplier.ok.payment', deleted: 'accounting.supplier.ok.deleted', cost: 'accounting.supplier.cost.ok',
+  account: 'accounting.supplier.ok.account', unchanged: 'accounting.supplier.ok.unchanged',
 };
 const ERR: Record<string, MsgKey> = {
   transport: 'accounting.supplier.errors.transport', payment: 'accounting.supplier.errors.payment',
+  account: 'accounting.supplier.errors.account', stale: 'accounting.supplier.errors.stale',
   costBAD_COST: 'accounting.supplier.cost.errors.BAD_COST', costCOST_EXISTS: 'accounting.supplier.cost.errors.COST_EXISTS',
   costCONFIRMED: 'accounting.supplier.cost.errors.CONFIRMED', cost: 'accounting.supplier.cost.errors.OTHER',
 };
@@ -39,8 +43,20 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   const today = localDay(new Date(), getEnv().APP_TIMEZONE);
   const end = new Date(`${today}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 1);
-  const { days, costs, payments, summary, missing } = (await supplierData(db, end)) as Data;
+  const { days, costs, payments, summary, missing, accounts } = (await supplierData(db, end)) as Data;
   const curs = Object.keys(summary).sort();
+  // Satışçı hesapları (karar 300): kalıcı satış hesapları (pasif dahil; silinmiş hariç) — ödeme girişinde ve hesap değişikliğinde
+  const salesAccounts = await db.user.findMany({
+    where: { appRole: 'SATIS', type: 'INTERNAL', deletedAt: null }, orderBy: [{ name: 'asc' }, { email: 'asc' }], select: { id: true, name: true, email: true },
+  });
+  const accountName = (id: string | null) => (id ? (() => { const u = salesAccounts.find((x) => x.id === id); return u ? u.name || u.email : '—'; })() : t('accounting.supplier.factory.noAccount'));
+  const accountRows = [...accounts.accounts].sort((a, b) => (a.account == null ? 1 : 0) - (b.account == null ? 1 : 0) || accountName(a.account).localeCompare(accountName(b.account)));
+  const AccountSelect = ({ id, current }: { id: string; current?: string | null }) => (
+    <select id={id} name="salesUserId" required defaultValue={current ?? ''} aria-label={t('accounting.supplier.factory.account')}>
+      <option value="" disabled>{t('accounting.supplier.factory.pickAccount')}</option>
+      {salesAccounts.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+    </select>
+  );
   // Tablolarda para birimi kendi sütununda: tutar yalın yazılır; eksi tutar kırmızı
   const signed = (v: number) => <span className={v < 0 ? 'text-danger' : undefined}>{fmtNum(v)}</span>;
   const costsOf = (day: string) => costs.filter((c) => c.shipDay.toISOString().slice(0, 10) === day);
@@ -239,9 +255,62 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
           })}
         </div>
       )}
+      {/* Satışçı hesapları (karar 300): para birimi başına borçlu ve avanslı toplamlar ayrı; hesap bazında maliyet / ödeme / bakiye */}
+      {curs.length > 0 && (
+        <div className="stats stats-money" data-accounts-overview>
+          {Object.keys(accounts.overview).sort().flatMap((c) => {
+            const o = accounts.overview[c];
+            return [
+              <div className="stat stat-warn" key={`d-${c}`} data-overview-debt={c}>
+                <div className="k">{t('accounting.supplier.factory.debt', { cur: c })}</div>
+                <div className="v">{fmtNum(o.debt)}</div>
+                <div className="muted small">{t('accounting.supplier.factory.overviewLine', { net: fmtNum(o.balance), cost: fmtNum(o.cost), paid: fmtNum(o.paid) })}</div>
+              </div>,
+              <div className="stat stat-ok" key={`a-${c}`} data-overview-advance={c}>
+                <div className="k">{t('accounting.supplier.factory.advance', { cur: c })}</div>
+                <div className="v">{fmtNum(o.advance)}</div>
+              </div>,
+            ];
+          })}
+        </div>
+      )}
+      <div className="card card-flush" id="hesaplar">
+        <div className="card-head"><h2>{t('accounting.supplier.factory.accountsTitle')}</h2></div>
+        <p className="muted small section-sub">{t('accounting.supplier.factory.accountsIntro')}</p>
+        {accountRows.length === 0 ? <div className="empty">{t('accounting.supplier.factory.empty')}</div> : (
+          <div className="table-wrap">
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>{t('accounting.supplier.factory.account')}</th>
+                  <th>{t('accounting.supplier.sum.currency')}</th>
+                  <th className="num">{t('accounting.supplier.factory.cost')}</th>
+                  <th className="num">{t('accounting.supplier.factory.paid')}</th>
+                  <th className="num">{t('accounting.supplier.factory.net')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accountRows.flatMap((a) => Object.keys(a.byCur).sort().map((c) => {
+                  const v = a.byCur[c];
+                  return (
+                    <tr key={`${a.account ?? 'none'}-${c}`} data-account={a.account ?? 'none'} data-currency={c}>
+                      <td>{accountName(a.account)}</td>
+                      <td>{c}</td>
+                      <td className="num">{fmtNum(v.cost)}</td>
+                      <td className="num">{fmtNum(v.paid)}</td>
+                      <td className="num" data-account-balance><b>{signed(v.balance)}</b></td>
+                    </tr>
+                  );
+                }))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       <div className="card">
         <h3 className="sub-title acc-form-title">{t('accounting.supplier.factory.addTitle')}</h3>
         <form action={addPaymentAction} className="acc-form">
+          <AccountSelect id="fp-account" />
           <label htmlFor="fp-day">{t('accounting.supplier.date')}</label>
           <input id="fp-day" name="paidOn" type="date" required defaultValue={isoDay(new Date(`${today}T12:00:00Z`))} />
           <input className="c-amount" name="amount" inputMode="decimal" required placeholder={t('accounting.supplier.amount')} aria-label={t('accounting.supplier.amount')} />
@@ -250,7 +319,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
           <button className="btn btn-primary">{t('accounting.supplier.factory.add')}</button>
         </form>
       </div>
-      <div className="card card-flush">
+      <div className="card card-flush" id="odemeler">
         <div className="card-head"><h2>{t('accounting.supplier.factory.payments')} <span className="badge">{payments.length}</span></h2></div>
         {payments.length === 0 ? <div className="empty">{t('accounting.supplier.factory.empty')}</div> : (
           <div className="table-wrap">
@@ -260,6 +329,7 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                   <th>{t('accounting.supplier.date')}</th>
                   <th className="num">{t('accounting.supplier.amount')}</th>
                   <th>{t('accounting.supplier.sum.currency')}</th>
+                  <th>{t('accounting.supplier.factory.account')}</th>
                   <th>{t('accounting.supplier.note')}</th>
                   <th />
                 </tr>
@@ -270,6 +340,15 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
                     <td className="nowrap">{fmtDate(p.paidOn)}</td>
                     <td className="num"><b>{fmtNum(p.amount.toString())}</b></td>
                     <td>{p.currency}</td>
+                    <td data-payment-account={p.salesUserId ?? 'none'}>
+                      {/* Hesap değişikliği (karar 300): aynı kayıt; ödeme eski hesaptan düşer, yeni hesaba eklenir */}
+                      <form action={changePaymentAccountAction} className="row">
+                        <input type="hidden" name="id" value={p.id} />
+                        <input type="hidden" name="expected" value={p.salesUserId ?? ''} />
+                        <AccountSelect id={`fp-acc-${p.id}`} current={p.salesUserId} />
+                        <ConfirmButton message={t('accounting.supplier.factory.changeConfirm')}>{t('accounting.supplier.factory.changeAccount')}</ConfirmButton>
+                      </form>
+                    </td>
                     <td>{p.note ?? ''}</td>
                     <td className="actions">
                       <form action={deletePaymentAction}>

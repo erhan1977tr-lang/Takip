@@ -34,7 +34,11 @@ export async function saveDayCratesAction(_prev: CratesState, formData: FormData
     return { error: v.errors.slice(0, 5).map((e) => t(`loading.day.crates.err.${e.code}` as MsgKey, { row: e.row })).join(' ') };
   }
   // Sipariş seçimi formdan gelmez (karar 234): yeni sandık firmanın o günkü kendi siparişlerine, kayıtlı sandık bağlarını korur
-  const r = await saveDayCrates(db, { day, customerId, rows: v.rows, actor: await actorOf(user), links: 'auto' });
+  // Satışçı bölümü (karar 300): yöneticinin formu bölümün satışçısını taşır (boş = sorumlusu olmayan siparişler); satış
+  // yalnızca kendi bölümünü kaydeder — servis satışçı için alanı yok sayıp kendisini kullanır
+  const teamRaw = formData.get('team');
+  const team = teamRaw === null ? undefined : /^[a-z0-9]{8,40}$/.test(String(teamRaw)) ? String(teamRaw) : null;
+  const r = await saveDayCrates(db, { day, customerId, rows: v.rows, actor: await actorOf(user), links: 'auto', team });
   if (!r.ok) return { error: t(`loading.day.crates.err.${r.code}` as MsgKey, { list: (r.numbers ?? []).join(', ') }) };
   revalidatePath('/yuklemeler');
   return { ok: t('loading.day.crates.saved'), savedAt: Date.now() };

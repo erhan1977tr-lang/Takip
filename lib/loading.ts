@@ -176,8 +176,11 @@ export type CrateRow = Prisma.CrateGetPayload<{ include: typeof crateInclude }>;
  * [from, to) aralığındaki yükleme günlerinin sandıkları. Müşteri yalnızca kendi firmasının sandıklarını görür.
  */
 export async function cratesBetween(user: CurrentUser, from: Date, to: Date): Promise<CrateRow[]> {
-  // Müşteri: yalnızca kendi firması; iç ekip: tüm firmalar (eski düzenden kalmış, firması olmayan sandıklar hariç)
-  const scope = user.appRole === 'MUSTERI' ? { customerId: user.customerId ?? '__none__' } : { customerId: { not: null } };
+  // Müşteri: yalnızca kendi firması; satış (karar 300): yalnızca kendi bölümünün sandıkları; diğer iç roller: tüm firmalar
+  // (eski düzenden kalmış, firması olmayan sandıklar hariç)
+  const scope = user.appRole === 'MUSTERI' ? { customerId: user.customerId ?? '__none__' }
+    : user.appRole === 'SATIS' ? { customerId: { not: null }, salesUserId: user.id || '__none__' }
+    : { customerId: { not: null } };
   return db.crate.findMany({
     where: { ...scope, shipDay: { gte: from, lt: to } },
     // Müşteri, sandığındaki başka müşteriye ait (misafir) siparişin kimliğini almaz (SEC-17)
@@ -200,11 +203,13 @@ export type GuestLink = {
 };
 export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date): Promise<GuestLink[]> {
   const customer = user.appRole === 'MUSTERI';
+  const sales = user.appRole === 'SATIS';
   const links = await db.crateOrder.findMany({
     where: {
-      crate: { shipDay: { gte: from, lt: to }, customerId: { not: null } },
-      // İptal edilmiş / kaldırılmış sipariş misafir yük olarak gösterilmez (AUD-15, P7)
-      order: { status: { not: 'IPTAL' }, removedAt: null, ...(customer ? { customerId: user.customerId ?? '__none__' } : {}) },
+      crate: { shipDay: { gte: from, lt: to }, customerId: { not: null }, ...(sales ? { salesUserId: user.id || '__none__' } : {}) },
+      // İptal edilmiş / kaldırılmış sipariş misafir yük olarak gösterilmez (AUD-15, P7). Satış (karar 300): yalnızca kendi
+      // siparişleri ve kendi sandıkları
+      order: { status: { not: 'IPTAL' }, removedAt: null, ...(customer ? { customerId: user.customerId ?? '__none__' } : {}), ...(sales ? { salesUserId: user.id || '__none__' } : {}) },
     },
     select: {
       orderId: true, order: { select: { orderNo: true, customerId: true, guestHostId: true, customer: { select: { name: true } } } },

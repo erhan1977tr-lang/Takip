@@ -114,7 +114,7 @@ export async function loadCompensationForm(order: OrderDetail, user: CurrentUser
   const [state, links, destinations, root] = await Promise.all([
     sourceState(db, order.id),
     notLoadedLinks(db, order.id),
-    compensationDestinations(db, { source: { id: order.id, customerId: order.customerId, currency: sent.currency } }),
+    compensationDestinations(db, { source: { id: order.id, customerId: order.customerId, currency: sent.currency, salesUserId: order.salesUserId ?? null } }),
     order.compOfId ? db.order.findUnique({ where: { id: order.compOfId }, select: { orderNo: true, customerOrderNo: true } }) : null,
   ]);
   // Bir sonraki telafi siparişi numarası (bilgi; kesin numara kayıt anında kilit altında verilir)

@@ -42,6 +42,10 @@ export function CrateEditor(props: {
   glassKg: number;
   tare: number;
   updated: string | null;
+  /** Satışçı bölümü (karar 300 — yönetici formu): verilirse kaydedilen bölümün satışçısı (null = sorumlusu olmayan siparişler) */
+  team?: string | null;
+  /** Bölüm başlığındaki satışçı adı (birden çok satışçı varken) */
+  teamName?: string | null;
   m: Dict['loading']['day']['crates'];
 }) {
   const { m } = props;
@@ -99,9 +103,10 @@ export function CrateEditor(props: {
     <form action={action} className="crate-editor">
       <input type="hidden" name="day" value={props.day} />
       <input type="hidden" name="customerId" value={props.customerId} />
+      {props.team !== undefined && <input type="hidden" name="team" value={props.team ?? ''} />}
       <input type="hidden" name="rows" value={payload} />
       <div className="section-head">
-        <h3>{m.title}</h3>
+        <h3>{m.title}{props.teamName ? ` — ${props.teamName}` : ''}</h3>
         {props.updated && <span className="badge badge-info">{props.updated}</span>}
       </div>
       <p className="muted small crate-intro">

@@ -97,6 +97,7 @@ export default {
       decisions: 'Decizie',
     },
     sections: {
+      unassigned: { title: 'Comenzi care așteaptă atribuire — agent de vânzări neales', empty: 'Nicio comandă nu așteaptă atribuire.' },
       newOrders: { title: 'Comenzi noi — așteaptă decizia', empty: 'Nicio comandă nu așteaptă decizia.' },
       offersToPrepare: { title: 'Oferte de pregătit', empty: 'Nu există oferte de pregătit.' },
       priceApproval: { title: 'Oferte care așteaptă aprobarea prețului', empty: 'Nicio ofertă nu așteaptă aprobarea.' },

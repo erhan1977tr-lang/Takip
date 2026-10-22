@@ -56,6 +56,8 @@ import { dwgUndoAction } from './actions';
 import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
+import { reassignBlocks, reassignFacts, routingLinked } from '@/server/orders/sales-routing.js';
+import { SalesAssign, type SalesOption } from './SalesAssign';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -174,6 +176,24 @@ export default async function OrderPage({
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
   const can = (a: string) => acts.includes(a);
+  // Sorumlu satışçı kartı (karar 300): yalnızca atama yetkisi (ORDER_ASSIGN) ve cam siparişi. Engeller bilgi içindir —
+  // işlem aynı kuralı kilit altında yeniden uygular (assign_sales)
+  const assignCard = can('assign_sales') ? await (async () => {
+    const [linked, sales] = await Promise.all([
+      routingLinked(db),
+      db.user.findMany({
+        where: { appRole: 'SATIS', type: 'INTERNAL', isActive: true, deletedAt: null },
+        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+        select: { id: true, name: true, email: true, defaultDrawer: { select: { name: true, email: true, isActive: true, deletedAt: true } } },
+      }),
+    ]);
+    const options: SalesOption[] = sales.map((u) => ({
+      id: u.id, name: u.name || u.email,
+      drawer: u.defaultDrawer && u.defaultDrawer.isActive && !u.defaultDrawer.deletedAt ? u.defaultDrawer.name || u.defaultDrawer.email : null,
+    }));
+    const blocks = order.salesUserId ? reassignBlocks(await reassignFacts(db, order)) : [];
+    return { linked, options, blocks };
+  })() : null;
   // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
   // Sunucu işlemde aynı denetimi kilit altında yeniden yapar (server/orders/dwg-undo.js → dwgUndoCheck)
   const undo = userCan(user, 'DRAWING_WORK') ? await dwgUndoCheck(db, order, { id: user.id, role: user.appRole }, { priceLock }) : null;
@@ -436,6 +456,14 @@ export default async function OrderPage({
       {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} cancelReasons={lockedCancel} />}
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
       {drawerView && <DrawingReview order={order} user={user} can={can} undo={undo} t={t} />}
+      {assignCard && (
+        <SalesAssign
+          orderId={order.id} version={order.version} t={t} ownerId={order.salesUserId}
+          owner={order.salesUser ? order.salesUser.name || order.salesUser.email : null}
+          drawer={order.assignedDrawer ? order.assignedDrawer.name || order.assignedDrawer.email : null}
+          via={order.salesAssignedVia} options={assignCard.options} blocks={assignCard.blocks} linked={assignCard.linked}
+        />
+      )}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
       {notesCard}
 
@@ -448,6 +476,8 @@ export default async function OrderPage({
           !isCustomer && { label: t('order.info.customer'), value: customerLabel(user, order.customer.name) },
           { label: t('order.info.drawing'), value: order.status === 'YENI' ? (isCustomer ? '—' : t('order.info.drawingPending')) : order.drawingTrack === 'YOK' ? t('order.info.drawingNotNeeded') : t('order.info.drawingNeeded') },
           order.drawingTrack !== 'YOK' && { label: t('order.info.revisions'), value: t('order.info.revisionRounds', { n: order.revisionCount }) },
+          // Sorumlu satışçı (karar 300): iç roller görür; müşteriye hiç gitmez (sunucu alanı boşaltır)
+          !!order.salesUser && !isCustomer && { label: t('team.assign.owner'), value: order.salesUser.name || order.salesUser.email },
           !!order.assignedDrawer && !isCustomer && { label: t('order.info.drawer'), value: order.assignedDrawer.name || order.assignedDrawer.email },
           { label: t('order.info.orderDate'), value: fmtDate(order.createdAt) },
           {

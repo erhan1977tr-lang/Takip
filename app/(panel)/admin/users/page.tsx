@@ -6,7 +6,7 @@ import { roleText } from '@/lib/labels';
 import { CreateUserForm } from './UserForm';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import Link from 'next/link';
-import { changeEmailAction, deleteUserAction, resetPasswordAction, sendInviteAction, toggleActiveAction } from './actions';
+import { changeEmailAction, deleteUserAction, resetPasswordAction, sendInviteAction, setDefaultDrawerAction, toggleActiveAction, updatePersonAction } from './actions';
 import { actorOf } from '@/lib/actor';
 import { userDeletionPreview } from '@/server/users/lifecycle.js';
 
@@ -18,6 +18,8 @@ const OK: Record<string, MsgKey> = {
   deactivated: 'admin.users.ok.deactivated',
   emailChanged: 'admin.users.ok.emailChanged',
   deleted: 'admin.users.ok.deleted',
+  drawer: 'admin.users.ok.drawer',
+  person: 'admin.users.ok.person',
 };
 const ERR: Record<string, MsgKey> = {
   mail: 'admin.users.error.mail',
@@ -32,6 +34,8 @@ const ERR: Record<string, MsgKey> = {
   stale: 'admin.users.error.stale',
   confirm: 'admin.users.error.confirm',
   mailChange: 'admin.users.error.mailChange',
+  drawer: 'admin.users.error.drawer',
+  person: 'admin.users.error.person',
 };
 
 export default async function UsersPage({
@@ -57,6 +61,8 @@ export default async function UsersPage({
   // Yönetici rolündeki hesap ve kişinin kendisi korunur (sunucu da reddeder): işlem bağlantıları gösterilmez
   const manageable = (u: { id: string; appRole: string }) => u.id !== me.id && u.appRole !== 'ADMIN';
   const statuses = await Promise.all(users.map((u) => inviteStatus(u.id, !!u.passwordHash)));
+  // Satışçının varsayılan çizimcisi seçenekleri (karar 300): etkin iç ekip çizimcileri
+  const drawers = users.filter((u) => u.appRole === 'CIZIM' && u.type === 'INTERNAL' && u.isActive);
 
   return (
     <>
@@ -67,6 +73,30 @@ export default async function UsersPage({
       {okKey && <div className="alert alert-ok">{t(okKey, { email: sp.email ?? '' })}</div>}
       {errKey && <div className="alert alert-error">{t(errKey)}</div>}
 
+      {editTarget && (
+        <form action={updatePersonAction} className="card" id="kisi-bilgileri" data-person-edit={editTarget.id}>
+          <h2>{t('admin.users.person.title', { name: editTarget.name || editTarget.email })}</h2>
+          <p className="muted small">{t('admin.users.person.intro')}</p>
+          <input type="hidden" name="id" value={editTarget.id} />
+          <div className="grid-3">
+            <div>
+              <label htmlFor="kisi-ad">{t('admin.users.person.name')}</label>
+              <input id="kisi-ad" name="name" type="text" required maxLength={120} defaultValue={editTarget.name} />
+            </div>
+            <div>
+              <label htmlFor="kisi-tel">{t('admin.users.person.phone')}</label>
+              <input id="kisi-tel" name="phone" type="text" maxLength={40} defaultValue={editTarget.phone ?? ''} />
+            </div>
+            <div>
+              <label htmlFor="kisi-birim">{t('admin.users.person.unit')}</label>
+              <input id="kisi-birim" name="unit" type="text" maxLength={120} defaultValue={editTarget.unit ?? ''} />
+            </div>
+          </div>
+          <div className="row end" style={{ marginTop: 12 }}>
+            <button type="submit" className="btn btn-primary">{t('admin.users.person.submit')}</button>
+          </div>
+        </form>
+      )}
       {editTarget && (
         <form action={changeEmailAction} className="card" id="eposta-degistir" data-email-change={editTarget.id}>
           <h2>{t('admin.users.emailChange.title', { name: editTarget.name || editTarget.email })}</h2>
@@ -121,6 +151,17 @@ export default async function UsersPage({
                     <td>
                       {roleText(t, u.appRole)}
                       {u.appRole === 'MUSTERI' && u.canApprove && <> <span className="badge badge-info">{t('admin.users.canApprove')}</span></>}
+                      {u.appRole === 'SATIS' && u.isActive && (
+                        <form action={setDefaultDrawerAction} className="row" data-default-drawer={u.id} style={{ marginTop: 6 }}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <label className="sr-only" htmlFor={`cizimci-${u.id}`}>{t('admin.users.team.defaultDrawer')}</label>
+                          <select id={`cizimci-${u.id}`} name="drawerId" defaultValue={u.defaultDrawerId ?? ''} title={t('admin.users.team.hint')}>
+                            <option value="">{t('admin.users.team.defaultDrawer')}: {t('admin.users.team.none')}</option>
+                            {drawers.map((d) => <option key={d.id} value={d.id}>{t('admin.users.team.defaultDrawer')}: {d.name || d.email}</option>)}
+                          </select>
+                          <button type="submit" className="btn btn-link">{t('admin.users.team.save')}</button>
+                        </form>
+                      )}
                     </td>
                     <td className="muted">{u.unit ?? '—'}</td>
                     <td>
@@ -153,6 +194,7 @@ export default async function UsersPage({
                           </form>
                           {manageable(u) && (
                             <>
+                              <Link href={`/admin/users?eposta=${u.id}#kisi-bilgileri`} className="btn btn-link" data-action="edit-person">{t('admin.users.editPerson')}</Link>
                               <Link href={`/admin/users?eposta=${u.id}#eposta-degistir`} className="btn btn-link" data-action="change-email">{t('admin.users.changeEmail')}</Link>
                               <Link href={`/admin/users?sil=${u.id}#kullanici-sil`} className="btn btn-link danger" data-action="delete-user">{t('admin.users.delete')}</Link>
                             </>

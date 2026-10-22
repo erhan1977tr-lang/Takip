@@ -19,7 +19,9 @@ export const SALES_QUEUES = ['newOrders', 'sla'];
  * Siparişleri" bölümünde (profileQueues), beklemedekiler "Tüm aktif siparişler"de. Bir sipariş birden çok tabloda olabilir
  * (ör. yeni ve SLA riskli). Satışın ve çizim ekibinin bölümleri değişmez.
  */
-export const ADMIN_QUEUES = ['newOrders', 'offersToPrepare', 'sla', 'profilePricing'];
+// unassigned (karar 300): sorumlu satışçısı olmayan açık cam siparişleri — yalnızca yönetici görür ve atar; satış /
+// çizim ekibine görev düşmez
+export const ADMIN_QUEUES = ['unassigned', 'newOrders', 'offersToPrepare', 'sla', 'profilePricing'];
 /**
  * Yeni profil siparişi (karar 216): müşteri gönderdi, yöneticinin fiyatını bekliyor (FIYAT_BEKLIYOR). Kapanmış (iptal,
  * arşiv / faturalandı) sipariş sayılmaz. "Profil Siparişleri" bölümünün sayacı (newProfileWhere — sunucuda, kullanıcının
@@ -43,7 +45,7 @@ export function newProfileCount(db, user) {
 }
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
-/** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null,
+/** @typedef {{ orderTypeCode: string, status: string, onHold: boolean, drawingTrack: string, slaDeadline: Date | null, assignedDrawerId?: string | null, salesUserId?: string | null,
  *   offers: { status: string, sentAt?: Date | null }[], drawings: { version: number, status: string, source?: string | null, createdAt: Date, sentAt?: Date | null, decidedAt?: Date | null }[],
  *   events: { createdAt: Date }[] }} QueueRow */
 
@@ -122,6 +124,7 @@ function buildQueues(rows, can, now, profiles) {
     out.push({ key: 'offersToPrepare', rows: prep.filter((o) => { const s = latestOfferStatus(o); return s === null || s === 'HAZIRLANIYOR'; }) });
   }
   if (can.send) {
+    out.push({ key: 'unassigned', rows: glass.filter((o) => !o.salesUserId && !['YUKLENDI', 'ARSIVLENDI', 'IPTAL'].includes(o.status)) });
     out.push({ key: 'priceApproval', rows: prep.filter((o) => latestOfferStatus(o) === 'YONETIMDE') });
     out.push({ key: 'offerCheck', rows: active.filter(needsOfferCheck) });
   }

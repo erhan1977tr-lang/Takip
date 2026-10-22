@@ -234,13 +234,16 @@ export function reducedSourceLines(lines, lineId, quantity) {
  * yüklemeden girer — server/glass/invoice-batch.js).
  * @param {any} o  sipariş (offers en yeniden eskiye)
  * @param {{ sourceOrderId: string, customerId: string, currency: string, today: string, day: string | null, locked: boolean, finalInvoice?: string | null }} c
- *   locked: yükleme günü onaylanmış ya da siparişin bir onayda kalemi var · finalInvoice: kesilmiş nihai faturanın numarası
- * @returns {{ ok: true, via: 'DRAFT' | 'SENT' } | { ok: false, reason: 'SAME_ORDER' | 'OTHER_CUSTOMER' | 'NOT_GLASS' | 'CLOSED' | 'ON_HOLD' | 'NOT_FUTURE' | 'LOADED' | 'NO_OFFER' | 'CURRENCY' | 'FINAL_INVOICE' }}
+ *   locked: yükleme günü onaylanmış ya da siparişin bir onayda kalemi var · finalInvoice: kesilmiş nihai faturanın numarası ·
+ *   salesUserId: verilirse (karar 300) hedefin sorumlu satışçısı kaynağınkiyle aynı olmalı
+ * @returns {{ ok: true, via: 'DRAFT' | 'SENT' } | { ok: false, reason: 'SAME_ORDER' | 'OTHER_CUSTOMER' | 'OTHER_SALES' | 'NOT_GLASS' | 'CLOSED' | 'ON_HOLD' | 'NOT_FUTURE' | 'LOADED' | 'NO_OFFER' | 'CURRENCY' | 'FINAL_INVOICE' }}
  */
-export function destinationCheck(o, { sourceOrderId, customerId, currency, today, day, locked, finalInvoice = null }) {
+export function destinationCheck(o, { sourceOrderId, customerId, currency, today, day, locked, finalInvoice = null, salesUserId }) {
   const no = (reason) => ({ ok: false, reason });
   if (o.id === sourceOrderId) return no('SAME_ORDER');
   if (o.customerId !== customerId) return no('OTHER_CUSTOMER');
+  // Ekipler birleştirilmez (karar 300): hedef, kaynağın sorumlu satışçısının siparişi olmalı
+  if (salesUserId !== undefined && (o.salesUserId ?? null) !== (salesUserId ?? null)) return no('OTHER_SALES');
   if (o.orderTypeCode !== 'GLASS_ORDER') return no('NOT_GLASS');
   if (o.removedAt || !OPEN_STATUSES.includes(o.status)) return no('CLOSED');
   if (o.onHold) return no('ON_HOLD');
@@ -322,7 +325,7 @@ async function destFacts(db, orders) {
 const checkWith = (o, facts, src, today) => {
   const day = loadingDay(o);
   return destinationCheck(o, {
-    sourceOrderId: src.id, customerId: src.customerId, currency: src.currency, today, day,
+    sourceOrderId: src.id, customerId: src.customerId, currency: src.currency, today, day, salesUserId: src.salesUserId ?? null,
     locked: (day != null && facts.confirmedDays.has(day)) || facts.inConfirmation.has(o.id),
     finalInvoice: facts.finalInvoices.get(o.id) ?? null,
   });
@@ -348,7 +351,7 @@ export async function sourceState(db, orderId) {
  * Hedef seçimi için: aynı müşterinin İLERİ tarihli açık cam siparişleri, sipariş numarası ve yükleme günüyle.
  * Uygun olmayanlar nedeniyle birlikte döner (ekranda seçilemez gösterilir). via: SENT + satış + farklı fiyat → yönetici onayı bekler.
  * @param {any} db
- * @param {{ source: { id: string, customerId: string, currency: string }, now?: Date }} p
+ * @param {{ source: { id: string, customerId: string, currency: string, salesUserId?: string | null }, now?: Date }} p
  * @returns {Promise<{ id: string, orderNo: string, day: string, via: 'DRAFT' | 'SENT' | null, reason: string | null }[]>}
  */
 export async function compensationDestinations(db, { source, now = new Date() }) {
@@ -607,6 +610,9 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
           data: {
             orderNo: compOrderNo(root.orderNo, seq), customerOrderNo: root.customerOrderNo, compSeq: seq, compOfId: root.id, orderTypeCode: 'GLASS_ORDER',
             title: src.title, customerId: src.customerId, createdById: actor.id,
+            // Telafi kaynağın ekibini taşır (karar 300): sorumlu satışçı ve çizimci kaynaktan kopyalanır
+            salesUserId: src.salesUserId ?? null, assignedDrawerId: src.assignedDrawerId ?? null,
+            salesAssignedAt: src.salesUserId ? now : null, salesAssignedVia: src.salesUserId ? 'MANUAL' : null,
             // Çizim gerekmiyor (aynı cam yeniden üretilir; gerekirse satış / yönetici çizime gönderir)
             status: 'HAZIRLANIYOR', drawingTrack: 'YOK', estimatedShipDate: shipDate,
             camEtiket: src.camEtiket ?? null, sandikEtiket: src.sandikEtiket ?? null,
