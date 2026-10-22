@@ -1,10 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, SALES, TEAM_PW, as, createUser, firstLogin, newOrder, outboxCodeFor } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, createUser, firstLogin, newOrder, outboxCodeFor } from './helpers';
 
 // Satışçı–çizimci ayrımı (4.3.0, karar 300): yönlendirme ayarı, varsayılan çizimci, atama kartı, ekip ayrımı
 // (liste / sayfa / sandık / nakliye), fabrika hesapları ve ödeme hesabı değişikliği — gerçek sunucuda, gerçek yetkilerle.
 test.describe.configure({ mode: 'serial' });
 
+// A ekibinin satışçısı: takımın satışçısı (08'de açılır). satis@e2e.test 05'te bilerek kilitlenir; kilit 15 dakika sürer
+// ve kısa bir koşuda bu teste kadar açılmamış olabilir.
+const SALES = 'fiyat-satis@e2e.test';
+const SALES_NAME = 'Fiyat Satışçı';
 const SALES_B = 'ekip-b-satis@e2e.test';
 const DRAWER_B = 'ekip-b-cizim@e2e.test';
 let orderId = '';
@@ -37,7 +41,7 @@ test('ayarlar: varsayılan çizimci (Kullanıcılar) ve yönlendirme kuralı (Ay
   await formB.getByRole('button', { name: 'Kaydet' }).click();
   await expect(admin.getByText('Satışçının varsayılan çizimcisi kaydedildi.')).toBeVisible();
   await expect(admin.locator(`form[data-default-drawer="${b.id}"] select`)).toHaveValue(dB.id);
-  // Yönlendirme: boş kurulum bağlı sayılır; kural AUTO → satis@e2e.test (mevcut kullanım korunur)
+  // Yönlendirme: boş kurulum bağlı sayılır; kural AUTO → A ekibinin satışçısı (mevcut kullanım korunur)
   await admin.goto('/admin/entegrasyonlar/yonlendirme');
   await expect(admin.locator('#yonlendirme')).toHaveAttribute('data-routing-linked', '1');
   await admin.selectOption('#rt-mode', 'AUTO');
@@ -45,7 +49,7 @@ test('ayarlar: varsayılan çizimci (Kullanıcılar) ve yönlendirme kuralı (Ay
   await admin.getByRole('button', { name: 'Kuralı kaydet' }).click();
   await expect(admin.getByText('Yönlendirme kuralı kaydedildi.')).toBeVisible();
   await expect(admin.locator('[data-routing-current]')).toHaveAttribute('data-routing-current', 'AUTO');
-  await expect(admin.locator('[data-routing-current]')).toContainText('Otomatik: Satış Kişi');
+  await expect(admin.locator('[data-routing-current]')).toContainText(`Otomatik: ${SALES_NAME}`);
   // Satış ekipleri tablosu: satışçı → varsayılan çizimci
   await expect(admin.locator(`[data-team-row="${b.id}"]`)).toContainText('Ekip B Çizim');
   // Geçmişte başlayan kural reddedilir
@@ -71,15 +75,15 @@ test('yeni sipariş kuralla satışçıya ve çizimcisine; atamasız sipariş ya
   await db0.$disconnect();
   // Müşteri iç ekip kimliğini görmez
   const custHtml = await cust.content();
-  expect(custHtml).not.toContain('Satış Kişi');
-  expect(custHtml).not.toContain('satis@e2e.test');
+  expect(custHtml).not.toContain(SALES_NAME);
+  expect(custHtml).not.toContain(SALES);
   expect(custHtml).not.toContain('Sorumlu satışçı');
   await cust.context().close();
 
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto(`/siparisler/${orderId}`);
   await expect(admin.locator('#sorumlu')).toHaveAttribute('data-sales-assign', 'assigned');
-  await expect(admin.locator('[data-sales-owner]')).toHaveText('Satış Kişi');
+  await expect(admin.locator('[data-sales-owner]')).toHaveText(SALES_NAME);
   await expect(admin.locator('[data-sales-drawer]')).toHaveText('Çizim Kişi');
   // Satış A görür, satış B göremez (404)
   const salesA = await as(browser, SALES, TEAM_PW);
@@ -116,7 +120,7 @@ test('yeni sipariş kuralla satışçıya ve çizimcisine; atamasız sipariş ya
   await admin.selectOption('#sorumlu-satis', ids.a);
   await admin.getByRole('button', { name: 'Başka satışçıya yönlendir' }).click();
   await expect(admin.getByText('Sorumlu satışçı kaydedildi.')).toBeVisible();
-  await expect(admin.locator('[data-sales-owner]')).toHaveText('Satış Kişi');
+  await expect(admin.locator('[data-sales-owner]')).toHaveText(SALES_NAME);
   await expect(salesB.goto(`/siparisler/${orderId}`).then((x) => x!.status())).resolves.toBe(404);
   await salesA.goto(`/siparisler/${orderId}`);
   await salesA.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
