@@ -119,6 +119,7 @@ export function buildTransportSections(crates, orders, { label = (name) => name,
 /**
  * Veritabanından: günün sandıkları (firması olan) ve o gün yüklenecek CAM siparişleri (iptal ve beklemedekiler hariç —
  * Yüklemeler sayfasıyla aynı kural).
+ * @param {any} db
  * @param {string} day "YYYY-MM-DD"
  * @param {{ label?: (name: string) => string, salesUserId?: string, teamName?: (id: string | null) => string }} [o]
  *   label: firma adının görene göre yazımı (satışa maskeli) · salesUserId: yalnızca bu satışçının sandık ve siparişleri ·
