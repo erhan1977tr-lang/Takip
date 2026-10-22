@@ -35,6 +35,8 @@ const F: Record<string, { id: string; name: string; storageKey: string; mark: st
 const V: Record<string, string> = {};
 /** anahtar → sipariş kimliği */
 const O: Record<string, string> = {};
+/** Sipariş numaraları (müşterinin gördüğü nötr çizim dosyası adı: <sipariş no>-cizim-v<sürüm> — karar 300) */
+const ON: Record<string, string> = {};
 const ALL_MARKS: string[] = [];
 const INTERNAL_NOTE = `İÇ NOT ${RUN}`;
 const WITHDRAWN_NOTE = `GERİ ÇEKİLEN NOT ${RUN}`;
@@ -89,6 +91,7 @@ test('veri: iki firma, bütün sürüm durumları, eski düzen, kaldırılmış 
       },
     });
     O[key] = o.id;
+    ON[key] = o.orderNo;
     return o.id;
   };
   const sent = new Date(Date.now() - 3_600_000);
@@ -389,8 +392,10 @@ test('sipariş sayfası ve görüntüleyici: başka firma göremez; müşteriye 
   // Müşterinin sipariş sayfasının HAM yanıtı (HTML + sunucu bileşeni verisi): taslak ve geri çekilen sürümün dosyaları,
   // kimlikleri, müşteri notu, iç not, iç dosya ve saklama anahtarları yok; açık sürümün dosyası var
   const raw = await (await get('custA', `/siparisler/${O.A}`)).text();
-  expect(raw).toContain(F.a3pdf.name);
-  expect(raw).toContain(F.a1pdf.name);
+  // Açık sürümlerin dosyaları nötr adla gelir; iç dosya adı müşteriye hiç gitmez (karar 300)
+  expect(raw).toContain(`${ON.A}-cizim-v3`);
+  expect(raw).toContain(`${ON.A}-cizim-v1`);
+  for (const k of ['a3pdf', 'a1pdf']) expect(raw, k).not.toContain(F[k].name);
   for (const k of ['a2pdf', 'a2png', 'a4pdf']) {
     expect(raw, k).not.toContain(F[k].name);
     expect(raw, k).not.toContain(F[k].id);

@@ -191,7 +191,7 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   expect((await cust.request.get(v1Viewer)).status()).toBe(404);
   expect(await custDownloads()).toBe(v1Urls.length);
   await cust.goto(`/siparisler/${id}`);
-  await expect(cust.locator('.drawing-version', { hasText: 'v2' }).locator('.file-row', { hasText: 'dus-v2.pdf' })).toBeVisible();
+  await expect(cust.locator('.drawing-version', { hasText: 'v2' }).locator('.file-row', { hasText: /-cizim-v2\.pdf/ })).toBeVisible(); // nötr ad (karar 300)
   await expect(cust.locator('.drawing-version', { hasText: 'geri çekildi' }).locator('.file-row')).toHaveCount(0);
   const rawAfter = await (await cust.request.get(`/siparisler/${id}`)).text();
   expect(rawAfter).toContain('dus-v2.pdf');

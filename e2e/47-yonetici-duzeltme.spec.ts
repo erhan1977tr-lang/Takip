@@ -340,11 +340,11 @@ test('"Profil Siparişleri" bölümü: kırmızı sayaç = fiyat bekleyen profil
   await db.$disconnect();
 });
 
-test('"Sıra bende": yöneticide yalnızca dört tablo — yeni siparişler, teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler; satışınki değişmedi', async ({ browser }) => {
+test('"Sıra bende": yöneticide beş tablo — atama bekleyenler (karar 300), yeni siparişler, teklif hazırlanacaklar, SLA riski / gecikenler, profil fiyat bekleyenler; satışınki değişmedi', async ({ browser }) => {
   const titles = async (page: Page) => (await page.locator('main .card-flush > .card-head h2').allInnerTexts()).map((s) => s.replace(/\s*\d+$/, '').trim());
   const admin = await as(browser, ADMIN, ADMIN_PW);
   await admin.goto('/siparisler');
-  expect(await titles(admin)).toEqual(['Yeni siparişler — karar bekliyor', 'Teklif hazırlanacaklar', 'SLA riski / gecikenler', 'Profil — fiyat bekleyenler']);
+  expect(await titles(admin)).toEqual(['Atama bekleyen siparişler — sorumlu satışçı seçilmedi', 'Yeni siparişler — karar bekliyor', 'Teklif hazırlanacaklar', 'SLA riski / gecikenler', 'Profil — fiyat bekleyenler']);
   // Profil siparişleri sekmesi; Çizim Paneli değişmedi
   await expect(admin.locator('.tabs [data-tab=profil]')).toHaveText('Profil siparişleri');
   await admin.goto('/siparisler?panel=cizim');
