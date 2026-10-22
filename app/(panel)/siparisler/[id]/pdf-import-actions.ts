@@ -128,6 +128,8 @@ export async function applyFactoryPdfAction(input: { orderId: string; version: n
   const imports = (Array.isArray(input?.imports) ? input.imports : []).slice(0, MAX_PDFS)
     .map((i) => ({ id: String(i?.id ?? ''), fingerprint: String(i?.fingerprint ?? '').slice(0, 64) })).filter((i) => ID.test(i.id));
   if (!imports.length) return { ok: false, error: t('offer.pdf.nothing') };
+  // Sayfanın sipariş sürümü zorunlu (karar 300 — P0): sürümsüz istek arada yapılan değişikliğin üzerine yazamaz
+  if (!Number.isInteger(input?.version) || Number(input.version) < 0) return { ok: false, error: workflowErrorText(t, 'CONFLICT') };
   try {
     const res = await runOrderAction(db, {
       orderId, action: 'import_offer_pdf', actor: await actorOf(user),

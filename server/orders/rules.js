@@ -210,7 +210,8 @@ export const EVENTS = {
   DWG_UPDATE_UNDONE: { customer: true, note: false },
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
-  OFFER_WITHDRAWN: { customer: false }, // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
+  OFFER_WITHDRAWN: { customer: false },
+  SALES_ASSIGNED: { customer: false }, // yönetici sorumlu satışçıyı atadı / yönlendirdi (karar 300) // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
   OFFER_PDF_IMPORTED: { customer: false }, // fabrika PDF'i teklif tablosuna aktarıldı (karar 255)
   OFFER_SENT: { customer: true },
   OFFER_REVISED: { customer: false },
@@ -592,6 +593,10 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     if (!closed && can(role, 'FILE_UPLOAD') && orderType !== 'PROFILE_ORDER') a.push('add_file');
     return a;
   }
+
+  // Sorumlu satışçı (karar 300): yönetici atar / başka satışçıya yönlendirir — beklemede de. Yönlendirme sınırı (teklif ilk
+  // kez gönderilmeden, çizim / maliyet başlamadan) işlemin kendisinde: server/orders/sales-routing.js → reassignBlocks.
+  if (can(role, 'ORDER_ASSIGN') && !closed && orderType === 'GLASS_ORDER') a.push('assign_sales');
 
   if (onHold) {
     if (sales) a.push('unhold');

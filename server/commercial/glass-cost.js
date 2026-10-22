@@ -14,7 +14,7 @@ export async function glassCostTable(tx, userId, productIds = null) {
     userId ? tx.user.findUnique({ where: { id: userId }, select: { priceTableId: true } }) : null,
     tx.priceTable.findMany({ where: { kind: 'SALES', isActive: true }, select: { id: true, name: true, isActive: true, isDefault: true, currency: true, cncPrice: true, holePrice: true } }),
   ]);
-  const t = resolveTable(user ?? { priceTableId: null }, tables);
+  const t = resolveTable(user ?? { priceTableId: null }, tables, { fallback: true });
   if (!t) return { table: null, reason: 'MISSING', prices: new Map(), ops: NO_OPS };
   if (t.currency !== 'EUR') return { table: null, reason: 'CURRENCY', prices: new Map(), ops: NO_OPS };
   const items = await tx.priceTableItem.findMany({

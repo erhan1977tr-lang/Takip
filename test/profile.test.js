@@ -225,8 +225,12 @@ test('depo e-postası: Romence konu ve bağlantı; alıcı listesi', () => {
 
 test('kapsam: satış ve çizim profil siparişlerini hiç görmez', () => {
   // Silinmiş sipariş (removedAt) hiçbir role görünmez (karar 110)
-  assert.deepEqual(orderScope({ appRole: 'SATIS' }), { removedAt: null, orderType: { usesSales: true } });
-  assert.deepEqual(orderScope({ appRole: 'CIZIM' }), { removedAt: null, drawingTrack: { not: 'YOK' }, orderType: { usesDrawing: true } });
+  // Karar 300: satışçı yalnızca kendi (sorumlu olduğu) siparişlerini, çizimci yalnızca kendisine atanmışları görür;
+  // kimliksiz kullanıcı hiçbir siparişe eşleşmez
+  assert.deepEqual(orderScope({ id: 's1', appRole: 'SATIS' }), { removedAt: null, orderType: { usesSales: true }, salesUserId: 's1' });
+  assert.deepEqual(orderScope({ appRole: 'SATIS' }), { removedAt: null, orderType: { usesSales: true }, salesUserId: '__none__' });
+  assert.deepEqual(orderScope({ id: 'd1', appRole: 'CIZIM' }), { removedAt: null, drawingTrack: { not: 'YOK' }, orderType: { usesDrawing: true }, assignedDrawerId: 'd1' });
+  assert.deepEqual(orderScope({ appRole: 'CIZIM' }), { removedAt: null, drawingTrack: { not: 'YOK' }, orderType: { usesDrawing: true }, assignedDrawerId: '__none__' });
   assert.deepEqual(orderScope({ appRole: 'DENETIMCI' }), { removedAt: null });
   assert.deepEqual(orderScope({ appRole: 'ADMIN' }), { removedAt: null });
   assert.deepEqual(orderScope({ appRole: 'MUSTERI', customerId: 'c1' }), { removedAt: null, customerId: 'c1' });

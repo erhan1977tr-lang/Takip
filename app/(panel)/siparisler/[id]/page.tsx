@@ -218,7 +218,7 @@ export default async function OrderPage({
   let pricing: EditorPricing | null = null;
   if ((editable || updating) && offer && userCan(user, 'OFFER_PREPARE')) {
     const p = offer.priceTableId ? await loadPricing(db, offer.priceTableId)
-      : !userCan(user, 'OFFER_SEND') ? await pricingForUser(db, user.id) : null;
+      : !userCan(user, 'OFFER_SEND') ? await pricingForUser(db, order.salesUserId) : null;
     if (p && p.currency === offer.currency) {
       const glass: Record<string, number> = {};
       for (const g of glasses) {

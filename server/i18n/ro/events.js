@@ -19,6 +19,7 @@ export default {
   DWG_FAULTY_UNDONE: { label: 'Decizia „desen cu erori” a fost anulată — se așteaptă din nou decizia pentru desen', customer: 'Nu mai sunt necesare corecturi; desenul dvs. este verificat din nou' },
   DWG_UPDATE_UNDONE: { label: 'Decizia „actualizare desen” a fost anulată', customer: 'Desenul dvs. este verificat din nou' },
   DRAWING_APPROVED: { label: 'Desen aprobat de client', customer: 'Desen aprobat' },
+  SALES_ASSIGNED: { label: 'Comanda a fost atribuită agentului de vânzări responsabil' },
   OFFER_SUBMITTED: { label: 'Ofertă trimisă la aprobarea administratorului' },
   OFFER_RETURNED: { label: 'Ofertă returnată la vânzări' },
   OFFER_WITHDRAWN: { label: 'Vânzările au retras oferta trimisă administratorului' },

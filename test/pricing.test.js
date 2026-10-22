@@ -80,12 +80,16 @@ test('fiyat Excel: indirilen dosya aynen geri okunur (pasif cam listelenmez)', (
   assert.equal(back.blank, 1);
 });
 
-test('fiyat: satışçının tablosu — kendi etkin tablosu, yoksa varsayılan', () => {
+test('fiyat: satışçının tablosu — yalnızca kendi etkin tablosu; varsayılana düşme yalnızca ticari teklif önerisinde (karar 300)', () => {
   const tables = [{ id: 'd', isActive: true, isDefault: true }, { id: 'x', isActive: true, isDefault: false }, { id: 'p', isActive: false, isDefault: false }];
   assert.equal(resolveTable({ priceTableId: 'x' }, tables)?.id, 'x');
-  assert.equal(resolveTable({ priceTableId: null }, tables)?.id, 'd');
-  assert.equal(resolveTable({ priceTableId: 'p' }, tables)?.id, 'd', 'pasif tablo yerine varsayılan');
-  assert.equal(resolveTable({ priceTableId: null }, [{ id: 'x', isActive: true, isDefault: false }]), null);
+  assert.equal(resolveTable({ priceTableId: null }, tables), null, 'atama yok → tablo yok');
+  assert.equal(resolveTable({ priceTableId: 'p' }, tables), null, 'pasif tablo → tablo yok (varsayılana düşmez)');
+  // Ticari teklif (bağımsız modül) eski davranışını korur
+  assert.equal(resolveTable({ priceTableId: null }, tables, { fallback: true })?.id, 'd');
+  assert.equal(resolveTable({ priceTableId: 'p' }, tables, { fallback: true })?.id, 'd');
+  assert.equal(resolveTable({ priceTableId: 'x' }, tables, { fallback: true })?.id, 'x');
+  assert.equal(resolveTable({ priceTableId: null }, [{ id: 'x', isActive: true, isDefault: false }], { fallback: true }), null);
 });
 
 const g1 = byKey.get('10 MM TEMPER CAM|BRONZ');

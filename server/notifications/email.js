@@ -26,7 +26,10 @@ import { customerMailLang, snapshotLang } from './lang.js';
  * kullanıcıya kendiliğinden gider: yöneticiye e-posta yok. Rutin yönetici e-postası yoktur.
  */
 export const NOTIFY_RULES = {
-  ORDER_CREATED: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales', 'admin']),
+  // Cam siparişi (karar 300): yalnızca SORUMLU satışçı (atama bekleyen siparişte kimse) + yönetici — satış ekibine değil
+  ORDER_CREATED: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['orderSales', 'admin']),
+  // Yönetici siparişi satışçıya atadı / başka satışçıya yönlendirdi (karar 300): yeni sorumlu satışçı
+  ORDER_SALES_ASSIGNED: () => ['orderSales'],
   ORDER_PRICE_OVERRIDE: () => ['admin'],
   ORDER_OFFER_WITHDRAWN: () => ['admin'],
   ORDER_COMPENSATION_PRICE: () => ['admin'],
@@ -100,13 +103,13 @@ export async function recipientsFor(db, type, order, { lang: snapshot = null, ac
         ? await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, OR: [{ emailNotifications: false }, { isActive: false }] }, select: { id: true } })
         : null;
       if (isEmail(firm) && !blocked) add(firm, lang, null);
-    } else if (a === 'drawer' && order.assignedDrawer) {
-      if (order.assignedDrawer.isActive !== false) add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
+    } else if (a === 'drawer') {
+      // Yalnızca siparişe atanmış çizimci; atanmamışsa kimse — bütün çizimcilere düşme yok (karar 300)
+      if (order.assignedDrawer && order.assignedDrawer.isActive !== false) add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
     } else if (a === 'orderSales') {
-      // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa (siparişi yönetici yönlendirdiyse) satış ekibi. Yönetici değil.
+      // Yalnızca siparişin sorumlu satışçısı; atama yoksa kimse — satış ekibine düşme yok (karar 300). Yönetici değil.
       const known = (order.salesUsers ?? []).filter((u) => u.isActive !== false && ROLE_SETS.sales.includes(u.appRole));
-      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales }, isActive: true }, select: { email: true, language: true, appRole: true } });
-      for (const u of users) add(u.email, u.language, u.appRole);
+      for (const u of known) add(u.email, u.language, u.appRole);
     } else if (a === 'admin') {
       const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS.admin }, isActive: true }, select: { id: true, email: true, language: true, appRole: true } });
       for (const u of users) if (!actorId || u.id !== actorId) add(u.email, u.language, u.appRole);
@@ -121,16 +124,12 @@ export async function recipientsFor(db, type, order, { lang: snapshot = null, ac
 const STAFF = { id: true, email: true, language: true, appRole: true, isActive: true };
 
 /**
- * Siparişle ilgilenen satışçı (ayrı bir "satışçı" alanı yok; mevcut kayıtlardan bulunur): siparişi çizim ekibine
- * gönderen satış kullanıcısı (OrderEvent SENT_TO_DRAWING), yoksa teklifi hazırlayan satış kullanıcısı (Offer.createdBy).
- * Yönetici bu işleri yaptıysa satışçı bilinmez → boş liste (recipientsFor satış ekibine gönderir).
+ * Siparişin sorumlu satışçısı (Order.salesUserId — karar 300). Atama yoksa boş liste: bildirim hiçbir satışçıya gitmez
+ * (eski "olaylardan türet, bulunamazsa satış ekibi" kuralı kaldırıldı).
  */
 export async function orderSalesUsers(db, orderId) {
-  const sales = { appRole: { in: ROLE_SETS.sales } };
-  const sent = await db.orderEvent.findFirst({ where: { orderId, event: 'SENT_TO_DRAWING', user: sales }, orderBy: { createdAt: 'desc' }, select: { user: { select: STAFF } } });
-  if (sent?.user) return [sent.user];
-  const offer = await db.offer.findFirst({ where: { orderId, createdBy: sales }, orderBy: { createdAt: 'desc' }, select: { createdBy: { select: STAFF } } });
-  return offer?.createdBy ? [offer.createdBy] : [];
+  const o = await db.order.findUnique({ where: { id: orderId }, select: { salesUser: { select: STAFF } } });
+  return o?.salesUser ? [o.salesUser] : [];
 }
 
 /**

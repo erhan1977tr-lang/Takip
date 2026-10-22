@@ -157,7 +157,7 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   // Çizim: sürümlerin role göre görünümü TEK kuraldan (server/orders/drawing-access.js, karar 146) — müşteri taslak sürümü
   // hiç görmez; geri çekilen sürümün satırını (durum, tarih, gerekçe) görür ama dosyalarını ve müşteri notunu almaz.
   // Dosya adresi ve çizim görüntüleyicisi de aynı kuralı kullanır. İç not yalnızca iç ekibe gider.
-  let drawings = drawingsView(user.appRole, order.drawings);
+  let drawings = drawingsView(user.appRole, order.drawings, { orderNo: order.orderNo });
   if (!userCan(user, 'NOTE_INTERNAL_VIEW')) drawings = drawings.map((d) => ({ ...d, noteInternal: null }));
   // Revizyon notunun (karar 163) ve sürümün müşteri notunun (karar 168) çevirisi sipariş notuyla aynı kuraldan
   // (server/notes/view.js — sağlayıcıyı yüklemez): müşteri yalnızca kendisi için yapılmış (Romence) tamamlanmış çeviriyi

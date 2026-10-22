@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   ORDER_CREATE: 'Yeni sipariş verir',
   ORDER_REVIEW: 'Satış kararları: çizime gönderme, bekletme, yükleme tarihi, sandık, yüklendi, arşiv',
   ORDER_CANCEL: 'Siparişi iptal eder; siparişi siler (olağan ekranlardan kaldırır) ve geri yükler',
+  ORDER_ASSIGN: 'Cam siparişinin sorumlu satışçısını seçer; teklif ilk kez yöneticiye gönderilmeden ve çizim / maliyet süreci başlamadan başka satışçıya yönlendirir (karar 300; yönetici ve yönetici yardımcısı)',
   DRAWING_WORK: 'Çizim başlatır ve çizim sürümü yükler',
   DRAWING_APPROVE: 'Çizimi onaylar ya da revizyon ister (müşteri; ikisi için de ayrıca onay yetkisi gerekir)',
   OFFER_VIEW: 'Teklifleri görür',

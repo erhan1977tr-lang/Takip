@@ -11,7 +11,7 @@
 //   günlüğe ya da denetim kaydına yazılmaz; ekranda yalnızca "kayıtlı" olduğu görünür.
 import { can } from '../auth/permissions.js';
 import { STALE_PENDING_MS, canRetryTranslation, translationTarget } from './view.js';
-import { orderScope } from '../orders/scope.js';
+import { actorScope } from '../orders/scope.js';
 import { enqueueOutbox, writeAudit } from '../orders/journal.js';
 import { NOTE_EVENT } from './unread.js';
 import { getEnv } from '../env.js';
@@ -162,7 +162,7 @@ export async function addNote(db, { orderId, actor, text, internal = false, requ
   if (!body) return { ok: false, code: 'EMPTY' };
   // Not hızı: denetim ve sayım tek adımdır, veritabanına gidilmeden yapılır
   if (!limits.note(actor, now.getTime())) return { ok: false, code: 'RATE_LIMIT' };
-  const order = await db.order.findFirst({ where: { id: String(orderId ?? ''), ...orderScope({ appRole: actor.role, customerId: actor.customerId }) }, select: { id: true } });
+  const order = await db.order.findFirst({ where: { id: String(orderId ?? ''), ...actorScope(actor) }, select: { id: true } });
   if (!order) return { ok: false, code: 'NOT_FOUND' };
   // İç not yalnızca iç notları görebilen rol tarafından yazılabilir; iç not çevrilmez
   const isInternal = !!internal && can(actor.role, 'NOTE_INTERNAL_VIEW');
@@ -234,7 +234,7 @@ export async function addNote(db, { orderId, actor, text, internal = false, requ
 export async function retryNoteTranslation(db, { noteId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
   if (!canRetryTranslation(actor?.role)) return { ok: false, code: 'FORBIDDEN' };
   const note = await db.orderNote.findFirst({
-    where: { id: String(noteId ?? ''), orderId: String(orderId ?? ''), order: orderScope({ appRole: actor.role, customerId: actor.customerId }) },
+    where: { id: String(noteId ?? ''), orderId: String(orderId ?? ''), order: actorScope(actor) },
   });
   if (!note) return { ok: false, code: 'NOT_FOUND' };
   const settings = await readSettings(db);
@@ -277,7 +277,7 @@ export async function translateRevision(db, { revisionId, orderId, actor, now = 
   const revision = await db.drawingRevision.findFirst({
     where: {
       id: String(revisionId ?? ''), requestedById: String(actor.id ?? ''), translationStatus: null,
-      drawing: { orderId: String(orderId ?? ''), order: orderScope({ appRole: actor.role, customerId: actor.customerId }) },
+      drawing: { orderId: String(orderId ?? ''), order: actorScope(actor) },
     },
     select: { id: true, comment: true },
   });
@@ -328,7 +328,7 @@ export async function translateOrderNote(db, { orderId, actor, now = new Date(),
   const note = await db.orderNote.findFirst({
     where: {
       orderId: String(orderId ?? ''), userId: String(actor.id ?? ''), internal: false, translationStatus: null,
-      order: orderScope({ appRole: actor.role, customerId: actor.customerId }),
+      order: actorScope(actor),
     },
     orderBy: { createdAt: 'asc' },
     select: { id: true, text: true },
@@ -377,7 +377,7 @@ export async function translateDrawingNote(db, { drawingId, orderId, actor, now 
   const drawing = await db.drawing.findFirst({
     where: {
       id: String(drawingId ?? ''), orderId: String(orderId ?? ''), sentById: String(actor.id ?? ''), source: 'FABRIKA', status: 'ONAY_BEKLIYOR',
-      noteCustomer: { not: null }, translationStatus: null, order: orderScope({ appRole: actor.role, customerId: actor.customerId }),
+      noteCustomer: { not: null }, translationStatus: null, order: actorScope(actor),
     },
     select: { id: true, noteCustomer: true },
   });
@@ -421,7 +421,7 @@ export async function translateDrawingNote(db, { drawingId, orderId, actor, now 
 export async function retryDrawingTranslation(db, { target, id, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
   if (!canRetryTranslation(actor?.role)) return { ok: false, code: 'FORBIDDEN' };
   if (target !== 'revision' && target !== 'drawing') return { ok: false, code: 'NOT_FOUND' };
-  const scope = orderScope({ appRole: actor.role, customerId: actor.customerId });
+  const scope = actorScope(actor);
   const row = target === 'revision'
     ? await db.drawingRevision.findFirst({
       where: { id: String(id ?? ''), drawing: { orderId: String(orderId ?? ''), order: scope } },

@@ -128,7 +128,9 @@ test('metin: sipariş olayı mevcut olay metninden; müşteriye firma / iç bilg
 
 test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgili satışçı; profil satışa gitmez; muhasebe olayları yalnızca muhasebe yetkisine', () => {
   const glass = { orderTypeCode: 'GLASS_ORDER' }, profile = { orderTypeCode: 'PROFILE_ORDER' };
-  assert.deepEqual(INAPP_RULES.ORDER_CREATED.to(glass), ['sales', 'admin']);
+  // Yeni cam siparişi: sorumlu satışçı (karar 300) — satış ekibinin tamamına değil
+  assert.deepEqual(INAPP_RULES.ORDER_CREATED.to(glass), ['orderSales', 'admin']);
+  assert.deepEqual(INAPP_RULES.ORDER_SALES_ASSIGNED.to(glass), ['orderSales']);
   assert.deepEqual(INAPP_RULES.ORDER_CREATED.to(profile), ['admin'], 'profil siparişi satışa bildirilmez');
   for (const t of ['ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED']) assert.deepEqual(INAPP_RULES[t].to(glass), ['drawer', 'orderSales'], `${t}: yöneticiye / müşteriye değil`);
   assert.deepEqual(INAPP_RULES.ORDER_SENT_TO_DRAWING.to(glass), ['drawer']);
@@ -153,7 +155,7 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   for (const t of Object.keys(NOTIFY_RULES)) assert.ok(INAPP_TYPES.includes(t) || ownInApp.includes(t), t);
   assert.equal(INAPP_RULES.ORDER_COMPENSATION_PRICE, undefined, 'telafi başına ikinci zil bildirimi yok');
   // Yöneticinin e-postaları (karar 218): yeni sipariş (cam: satış + yönetici), fabrika fiyatı değişikliği, geri alma, telafi fiyatı
-  assert.deepEqual(NOTIFY_RULES.ORDER_CREATED(glass), ['sales', 'admin']);
+  assert.deepEqual(NOTIFY_RULES.ORDER_CREATED(glass), ['orderSales', 'admin']);
   assert.deepEqual(NOTIFY_RULES.ORDER_CREATED(profile), ['admin']);
   for (const t of ['ORDER_PRICE_OVERRIDE', 'ORDER_OFFER_WITHDRAWN', 'ORDER_COMPENSATION_PRICE']) assert.deepEqual(NOTIFY_RULES[t](glass), ['admin'], t);
   // Geri alma: yöneticinin zili güncel — aynı siparişin okunmamış "yöneticiye gönderildi" bildirimi okunmuş sayılır

@@ -50,19 +50,24 @@ const fakeDb = (rows = []) => {
   };
 };
 
-test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-postası; yeni cam siparişi → satış; çizim → çizim ekibi', async () => {
+test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-postası; yeni cam siparişi → sorumlu satışçı; çizim → atanmış çizimci', async () => {
   const db = fakeDb();
   assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test', 'office@glass.test']);
-  // Yeni cam siparişi satışa VE yöneticiye (karar 218); pasif yönetici hesabına gitmez
-  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', order)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test']);
+  // Yeni cam siparişi sorumlu satışçıya VE yöneticiye (karar 218, 300); atamasız sipariş yalnızca yöneticiye — satış
+  // ekibinin tamamına düşülmez; pasif yönetici hesabına gitmez
+  const owned = { ...order, salesUsers: [{ email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS', isActive: true }] };
+  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', owned)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test']);
+  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', order)).map((r) => r.email), ['admin@gkh.test'], 'atamasız: yalnızca yönetici');
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', { ...order, orderTypeCode: 'PROFILE_ORDER' })).map((r) => r.email), ['admin@gkh.test'], 'profil satışa gitmez');
-  assert.deepEqual((await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', order)).map((r) => r.email), ['cizim@gkh.test']);
+  assert.deepEqual(await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', order), [], 'atanmış çizimci yoksa çizim ekibine düşülmez');
+  assert.deepEqual((await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', { ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } })).map((r) => r.email), ['ali@gkh.test']);
+  assert.deepEqual((await recipientsFor(db, 'ORDER_SALES_ASSIGNED', owned)).map((r) => r.email), ['satis@gkh.test']);
   const assigned = { ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } };
   // Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84)
   const withSales = { ...assigned, salesUsers: [{ email: 'selin@gkh.test', language: 'ro', appRole: 'SATIS' }] };
   for (const type of ['ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED']) {
     assert.deepEqual((await recipientsFor(db, type, withSales)).map((r) => r.email), ['ali@gkh.test', 'selin@gkh.test'], type);
-    assert.deepEqual((await recipientsFor(db, type, assigned)).map((r) => r.email), ['ali@gkh.test', 'satis@gkh.test'], `${type}: satışçı bilinmiyorsa satış ekibi`);
+    assert.deepEqual((await recipientsFor(db, type, assigned)).map((r) => r.email), ['ali@gkh.test'], `${type}: sorumlu satışçı yoksa satış ekibine düşülmez`);
     const adminAsSales = { ...assigned, salesUsers: [{ email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN' }] };
     assert.ok(!(await recipientsFor(db, type, adminAsSales)).some((r) => r.email === 'admin@gkh.test'), `${type}: yöneticiye gitmez`);
   }
@@ -104,14 +109,15 @@ test('revizyon e-postası: müşterinin notu ve sürüm metin olarak yazılır (
   assert.ok(!a.text.includes('Revizyon notu') && !a.text.includes('Kenar'));
 });
 
-test('revizyon e-postası gönderimi: ilgili satışçı sipariş kayıtlarından bulunur; not olayın anındaki talepten gelir', async () => {
+test('revizyon e-postası gönderimi: ilgili satışçı siparişin sorumlu satışçısıdır (karar 300); not olayın anındaki talepten gelir', async () => {
   const t0 = new Date('2026-10-01T10:00:00Z');
   const db = fakeDb([]);
   await dispatchNotifications(db, { transport: { sendMail: async () => {} }, from: 'x', appUrl: 'https://takip.test', now: t0 });
   db.rows.push({ id: 'r1', type: 'ORDER_REVISION_REQUESTED', orderId: 'o1', status: 'PENDING', attempts: 0, availableAt: t0, createdAt: new Date(t0.getTime() + 1000), payload: {} });
   const asked = [];
-  db.order.findUnique = async () => ({ ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } });
-  db.orderEvent = { findFirst: async (q) => { asked.push(q.where); return { user: { email: 'selin@gkh.test', language: 'tr', appRole: 'SATIS' } }; } };
+  db.order.findUnique = async () => ({ ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' }, salesUser: { email: 'selin@gkh.test', language: 'tr', appRole: 'SATIS', isActive: true } });
+  // Sorumlu satışçı olay geçmişinden TAHMİN edilmez (karar 300): olay sorgusu yapılmaz
+  db.orderEvent = { findFirst: async () => { throw new Error('olay geçmişi sorgulanmamalı'); } };
   db.offer = { findFirst: async () => null };
   db.drawingRevision = { findFirst: async (q) => { asked.push(q.where); return { comment: 'Delik yeri yanlış', drawing: { version: 1 } }; } };
   const mails = [];
@@ -121,9 +127,7 @@ test('revizyon e-postası gönderimi: ilgili satışçı sipariş kayıtlarında
   // Ortak GKH başlığı (karar 129): bildirim e-postası logoyla gider — alıcılar ve metin aynen
   assert.ok(mails.every((m) => m.html.includes('<img src="cid:gkh-logo@takip"') && m.attachments.length === 1 && m.attachments[0].cid === 'gkh-logo@takip' && !('lang' in m)));
   assert.ok(mails.every((m) => m.text.includes('Revizyon notu: Delik yeri yanlış') && m.text.includes('GLA68')));
-  assert.equal(asked[0].event, 'SENT_TO_DRAWING');
-  assert.deepEqual(asked[0].user.appRole.in, ['SATIS'], 'yalnızca satış rolü aranır');
-  assert.ok(asked[1].createdAt.lte instanceof Date && asked[1].drawing.orderId === 'o1');
+  assert.ok(asked[0].createdAt.lte instanceof Date && asked[0].drawing.orderId === 'o1');
 });
 
 test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata yeniden denenir, gönderilen alıcıya tekrar gitmez', async () => {
@@ -154,7 +158,7 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
 
 test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip bildirimleri etkilenmez; sabit dil kullanılır', async () => {
   const db = fakeDb();
-  const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
+  const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false }, salesUsers: [{ email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS', isActive: true }] };
   assert.deepEqual(await recipientsFor(db, 'ORDER_OFFER_SENT', off), [], 'siparişi açan kapattı: ne kendisine ne firma adresine');
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test'], 'iç ekip bildirimi sürer');
   optedOut.push('office@glass.test');

@@ -1,0 +1,43 @@
+// Responsabilitate comandă pe agent de vânzări – desenator (4.3.0, decizia 300): atribuire, rutare, erori și blocaje.
+export default {
+  // Persoana din echipa internă văzută de client: fără nume, etichetă neutră de rol
+  staffLabel: 'GKH · {role}',
+  errors: {
+    NO_DRAWER: 'Comanda nu are desenator: setați un desenator implicit pentru agentul de vânzări responsabil (ecranul Utilizatori), apoi reîncercați.',
+    SALES_UNASSIGNED: 'Comanda nu are agent de vânzări responsabil. Administratorul trebuie mai întâi să o atribuie unui agent.',
+    SALES_TARGET: 'Utilizatorul ales nu este un agent de vânzări activ.',
+    SALES_SAME: 'Comanda este deja la acest agent de vânzări.',
+    NOT_LINKED: 'Comenzile existente nu au fost încă legate de un cont de vânzări; atribuirea și rutarea se deschid după legare.',
+    REASSIGN_BLOCKED: 'Comanda nu poate fi redirecționată către alt agent de vânzări:',
+  },
+  block: {
+    NOT_GLASS: 'se redirecționează doar comenzile de sticlă',
+    CLOSED: 'comanda este închisă sau ștearsă',
+    SUBMITTED: 'oferta a fost deja trimisă administratorului (retragerea nu resetează limita)',
+    DRAWING: 'lucrul la desen a început',
+    PDF_IMPORT: 'a fost importat PDF-ul fabricii (există informații de cost)',
+    CRATES: 'este legată de o ladă',
+    LOADED: 'are înregistrare în confirmarea încărcării',
+    DOCUMENTS: 'are document financiar sau plată înregistrată',
+    COMPENSATION: 'are înregistrare de compensare',
+    INTERNAL_NOTES: 'există o notă internă a echipei anterioare (să nu fie vizibilă altei echipe)',
+    INTERNAL_FILES: 'există un fișier intern al echipei anterioare (să nu fie vizibil altei echipe)',
+  },
+  assign: {
+    title: 'Agent de vânzări responsabil',
+    unassigned: 'Așteaptă atribuire — comanda este doar la administrator; echipele de vânzări și desen nu primesc sarcini, acces sau notificări.',
+    owner: 'Agent de vânzări',
+    drawer: 'Desenator',
+    noDrawer: 'fără desenator',
+    via: { AUTO: 'rutare automată', MANUAL: 'atribuire de administrator', REASSIGN: 'redirecționare de administrator', MIGRATION: 'legarea datelor existente' },
+    pick: 'Alegeți agentul de vânzări',
+    submitAssign: 'Atribuie agentului',
+    submitReassign: 'Redirecționează către alt agent',
+    confirmAssign: 'Comanda va fi atribuită agentului {name}; desenatorul va fi {drawer}. Continuați?',
+    confirmReassign: 'Comanda va fi redirecționată către {name}: accesul echipei anterioare se închide, desenatorul devine {drawer}, prețurile de vânzare din ciornă se recompletează din tabelul noului agent. Continuați?',
+    reassignClosed: 'Nu poate fi redirecționată către alt agent:',
+    noSales: 'Nu există agenți de vânzări activi.',
+    notLinked: 'Atribuirea se deschide după ce comenzile existente sunt legate de un cont de vânzări.',
+    ok: 'Agentul de vânzări responsabil a fost salvat.',
+  },
+};

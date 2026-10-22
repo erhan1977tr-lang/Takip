@@ -138,7 +138,7 @@ test('yapı: sandık sahipliği sunucuda; geri alma tek işlemde (gönderen, dur
   assert.match(page, /can\('withdraw_offer'\) && !!user\.id && offerSubmitter\(order\.events\) === user\.id/);
   assert.match(page, /<form action=\{withdrawOfferAction\}/);
   const act = src('app/(panel)/siparisler/[id]/actions.ts');
-  assert.match(act, /act\(user, id, 'withdraw_offer', \{ expectedVersion: expectedVersion\(formData\) \}\)/);
+  assert.match(act, /act\(user, id, 'withdraw_offer', \{ expectedVersion: await requiredVersion\(formData, id\) \}\)/, 'sürüm zorunlu (karar 300)');
   // Satışın gördüğü teklif: yöneticinin sandık bedeli satışa hiç gitmez (değişmedi)
   assert.match(src('lib/orders.ts'), /o\.lines\.filter\(\(l\) => !l\.crateFee\)\.map\(\(l\) => \(\{ \.\.\.l, offerPrice: null \}\)\)/);
   // ↑ / ↓: düzenlenebilir ve salt okunur teklif tablosu aynı bileşen, aynı hedef

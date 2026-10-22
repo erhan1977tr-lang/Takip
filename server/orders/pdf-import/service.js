@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import { can } from '../../auth/permissions.js';
 import { glassLabel } from '../../catalog/glass.js';
 import { availableActions, drawingFlags, isCrateText } from '../rules.js';
-import { orderScope } from '../scope.js';
+import { actorScope } from '../scope.js';
 import { WorkflowError } from '../../domain/workflow.js';
 import { buildLines } from './lines.js';
 import { parseFactoryOrder } from './parse.js';
@@ -32,7 +32,7 @@ const allowed = (actor) => !!actor && can(actor.role, 'OFFER_PREPARE');
 /** @returns {Promise<{ ok: true, order: any, offer: any } | { ok: false, code: string }>} */
 async function loadTarget(db, { orderId, actor }) {
   const order = await db.order.findFirst({
-    where: { id: String(orderId ?? ''), orderTypeCode: 'GLASS_ORDER', ...orderScope({ appRole: actor.role, customerId: actor.customerId ?? null }) },
+    where: { id: String(orderId ?? ''), orderTypeCode: 'GLASS_ORDER', ...actorScope(actor) },
     include: {
       items: true,
       customer: { select: { prefix: true } },

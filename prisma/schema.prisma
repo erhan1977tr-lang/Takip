@@ -95,6 +95,7 @@ enum PermissionKey {
   DRAWING_PRODUCTION_UNDO
   ASSISTANT_PANEL
   PROFILE_RETURN_MANAGE
+  ORDER_ASSIGN
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
@@ -167,6 +168,17 @@ model User {
   // Satışçının fiyat tablosu (Aşama 3b): tek tablo; boşsa varsayılan tablo kullanılır
   priceTableId       String?
   priceTable         PriceTable?    @relation(fields: [priceTableId], references: [id], onDelete: SetNull)
+  // Satışçı–çizimci sorumluluğu (4.3.0, karar 300): satışçının varsayılan çizimcisi. Sipariş satışçıya atanınca
+  // siparişin assignedDrawerId alanına KOPYALANIR; eşleşmenin sonradan değişmesi eski siparişleri değiştirmez.
+  defaultDrawerId    String?
+  defaultDrawer      User?          @relation("SalesDefaultDrawer", fields: [defaultDrawerId], references: [id], onDelete: Restrict)
+  defaultDrawerOf    User[]         @relation("SalesDefaultDrawer")
+  ordersOwned        Order[]        @relation("OrderSalesOwner")
+  ordersAssignedBy   Order[]        @relation("OrderSalesAssignedBy")
+  routingRules       GlassRoutingRule[] @relation("GlassRoutingTarget")
+  routingRulesSet    GlassRoutingRule[] @relation("GlassRoutingCreatedBy")
+  cratesOwned        Crate[]        @relation("CrateSalesOwner")
+  factoryPayments    FactoryPayment[] @relation("FactoryPaymentAccount")
   alertsCreated      AdminAlert[]   @relation("AlertCreatedBy")
   cratesUpdated      Crate[]        @relation("CrateUpdatedBy")
   alertsResolved     AdminAlert[]   @relation("AlertResolvedBy")
@@ -389,6 +401,18 @@ model Order {
   assignedDrawerId  String?
   assignedDrawer    User?       @relation("OrderAssignedDrawer", fields: [assignedDrawerId], references: [id])
 
+  // Sorumlu satışçı (4.3.0, karar 300) — yalnızca cam siparişi. Satışçı yalnızca kendi siparişlerini, çizimci yalnızca
+  // kendisine atananları görür (server/orders/scope.js). Boş = atama bekliyor: yalnızca yönetici görür.
+  // Atama: yönlendirme kuralıyla (AUTO) ya da yöneticinin seçimiyle (MANUAL); geçmiş verinin bağlanması MIGRATION.
+  salesUserId       String?
+  salesUser         User?       @relation("OrderSalesOwner", fields: [salesUserId], references: [id], onDelete: Restrict)
+  salesAssignedAt   DateTime?
+  salesAssignedVia  String?     // AUTO | MANUAL | REASSIGN | MIGRATION
+  salesAssignedById String?
+  salesAssignedBy   User?       @relation("OrderSalesAssignedBy", fields: [salesAssignedById], references: [id], onDelete: SetNull)
+  routingRuleId     String?
+  routingRule       GlassRoutingRule? @relation(fields: [routingRuleId], references: [id], onDelete: Restrict)
+
   slaDeadline       DateTime?   // "15.0 sa kaldı" / "38.1 sa gecikme" hesaplanır
   estimatedShipDate DateTime?   // Tahmini Yükleme
   actualShipDate    DateTime?
@@ -467,6 +491,8 @@ model Order {
   @@index([customerId])
   @@index([estimatedShipDate])
   @@index([guestHostId])
+  @@index([salesUserId])
+  @@index([assignedDrawerId])
 }
 
 // Taslak sipariş: müşteri formu yarım bırakıp sonra devam eder. Sipariş değildir — numarası, SLA'sı, geçmişi yoktur,
@@ -1053,6 +1079,10 @@ model Crate {
   updatedAt   DateTime  @default(now()) @updatedAt
   updatedById String?
   updatedBy   User?     @relation("CrateUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  // Sandığın satışçısı (4.3.0, karar 300): sandık yalnızca aynı satışçının siparişlerini taşır; nakliye listesi satışçıya
+  // göre bölünür. Boş = eski kayıt (geçmiş veri bağlanınca dolar).
+  salesUserId String?
+  salesUser   User?     @relation("CrateSalesOwner", fields: [salesUserId], references: [id], onDelete: Restrict)
 
   @@index([shipDay, customerId])
 }
@@ -1914,8 +1944,31 @@ model FactoryPayment {
   note        String?
   createdById String?
   createdAt   DateTime @default(now())
+  // Satışçı hesabı (4.3.0, karar 300): ödeme girişinde seçilir; yanlış hesaba girilmişse yönetici aynı kaydın hesabını
+  // değiştirir (tutar değişmez, denetim kaydıyla). Boş = eski kayıt (geçmiş veri bağlanınca dolar).
+  salesUserId String?
+  salesUser   User?    @relation("FactoryPaymentAccount", fields: [salesUserId], references: [id], onDelete: Restrict)
 
   @@index([paidOn])
+  @@index([salesUserId])
+}
+
+// Cam siparişi yönlendirme kuralı (4.3.0, karar 300) — yalnızca eklenir; geçerli kural = başlangıcı en geç olan ve
+// siparişin oluşturulduğu andan önce başlamış kural. MANUAL: yeni siparişi yönetici atar. AUTO: hedef satışçıya otomatik.
+// Kural değişikliği geçmiş atamaları ve önceden oluşmuş atamasız siparişleri değiştirmez.
+model GlassRoutingRule {
+  id           String   @id @default(cuid())
+  mode         String   // MANUAL | AUTO
+  targetUserId String?
+  targetUser   User?    @relation("GlassRoutingTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  startsAt     DateTime
+  note         String?
+  createdById  String
+  createdBy    User     @relation("GlassRoutingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+  orders       Order[]
+
+  @@index([startsAt])
 }
 
 // ---------------------------------------------------------

@@ -16,9 +16,10 @@ import { verifyReviewToken } from './review.js';
 import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, hasCustomerDrawingFile, isCustomerDrawingRecord, sourceFilesSnapshot } from './dwg-review.js';
 import { crateLockKeys, dwgUndoCheck, undoReason } from './dwg-undo.js';
 import { getEnv } from '../env.js';
-import { orderScope } from './scope.js';
+import { actorScope } from './scope.js';
+import { drawerOf, reassignBlocks, reassignFacts, routingLinked, validSales } from './sales-routing.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
-import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForCustomer, pricingForUser } from '../pricing/tables.js';
+import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForCustomer, pricingForUser, tablePrice } from '../pricing/tables.js';
 import { recordPriceOverrides } from '../pricing/alerts.js';
 import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
@@ -75,7 +76,12 @@ export const REQUIRES = {
   check_offer: ['update_offer'],
   // Fabrika PDF'i aktarımı (karar 255): teklif tablosunu düzenleyebilen (satış taslağı / yöneticinin fiyat onayı)
   import_offer_pdf: ['edit_offer', 'approve_price'],
+  // Sorumlu satışçı (karar 300): yönetici / yönetici yardımcısı (ORDER_ASSIGN)
+  assign_sales: ['assign_sales'],
 };
+
+/** Sorumlu satışçısı olmayan cam siparişinde çalışmayan işlemler: önce yönetici atar (karar 300) */
+const NEEDS_OWNER = new Set(['send_to_drawing', 'no_drawing']);
 
 /** Cam siparişi akışı: bir işlemin geçerli olup olmadığı tüm hatların (çizim, teklif, bekleme) durumuna bakar. */
 export const glassWorkflow = {
@@ -94,6 +100,7 @@ export const glassWorkflow = {
     const need = REQUIRES[action];
     if (!need) return { ok: false, code: 'UNKNOWN_ACTION' };
     const o = ctx.order;
+    if (NEEDS_OWNER.has(action) && !o.salesUserId) return { ok: false, code: 'SALES_UNASSIGNED' };
     const acts = availableActions({
       role: actor.role, status: o.status, onHold: o.onHold, canApprove: !!actor.canApprove,
       drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o), orderType,
@@ -111,8 +118,10 @@ export async function refreshSla(tx, orderId) {
     include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   const offer = o.offers[0];
-  const deadline = slaDeadline({
-    status: o.status, onHold: o.onHold, createdAt: o.createdAt,
+  // Cam siparişinde inceleme SLA'sı atamada başlar; atama bekleyen siparişte SLA işlemez (karar 300)
+  const unassigned = o.orderTypeCode === 'GLASS_ORDER' && !o.salesUserId;
+  const deadline = unassigned ? null : slaDeadline({
+    status: o.status, onHold: o.onHold, createdAt: o.salesAssignedAt ?? o.createdAt,
     drawing: o.drawingTrack, drawingSince: o.drawingSince,
     offer: offer?.status ?? null, offerSince: offer?.statusSince ?? null,
   });
@@ -139,13 +148,14 @@ export async function autoProduction(tx, orderId) {
  * Satışçının ilk teklif taslağı: siparişin camları, satışçının fiyat tablosundaki liste fiyatlarıyla (karar 26).
  * Tablo yoksa fiyatlar boş gelir, satışçı elle girer.
  */
-async function ensureOfferDraft(tx, order, userId) {
+async function ensureOfferDraft(tx, order, actorId) {
   if (order.offers.length) return;
-  const pricing = await pricingForUser(tx, userId);
+  // Fiyatlar siparişin SORUMLU satışçısının tablosundan (karar 300) — işlemi yönetici yapsa da; varsayılan tabloya düşme yok
+  const pricing = await pricingForUser(tx, order.salesUserId);
   const src = order.items.length ? order.items : [{ glassName: '', camAdedi: 1 }];
   await tx.offer.create({
     data: {
-      orderId: order.id, createdById: userId,
+      orderId: order.id, createdById: actorId,
       ...(pricing ? { priceTableId: pricing.id, currency: pricing.currency } : {}),
       lines: { create: prefillLines(src, pricing) },
     },
@@ -160,7 +170,8 @@ async function completeLines(h, offer, lines) {
   const { tx, order, actor } = h;
   let pricing = await loadPricing(tx, offer.priceTableId);
   if (!pricing && can(actor.role, 'OFFER_PREPARE') && !can(actor.role, 'OFFER_SEND')) {
-    const own = await pricingForUser(tx, actor.id);
+    // Siparişin sorumlu satışçısının tablosu (karar 300) — kaydeden kendisidir (satış yalnızca kendi siparişini görür)
+    const own = await pricingForUser(tx, order.salesUserId);
     if (own && own.currency === offer.currency) {
       pricing = own;
       await tx.offer.update({ where: { id: offer.id }, data: { priceTableId: own.id } });
@@ -228,6 +239,33 @@ const priceNum = (v) => (v == null || v === '' ? null : Number(v));
  * @param {object[]} lines  completeLines() sonucu; satırın `id`'si varsa mevcut satırdır
  * @param {object[]} existing  mevcut satırlar (id → satır)
  */
+/**
+ * Satırın müşteri fiyatını geçersiz kılan değişiklik (saf): cam (ürün / açıklama), en, boy, parça m², birim, satır türü
+ * (CAM / CNC / DELİK), şekilli. Adet ve Poz fiyatı geçersiz kılmaz. Alanı göndermeyen eski istemcide (undefined) o alan
+ * değişmemiş sayılır.
+ */
+export function lineIdentityChanged(old, l) {
+  const num = (v) => (v == null || v === '' ? null : Number(v));
+  const diff = (a, b) => b !== undefined && a !== b;
+  // Cam: katalog camı varsa onun kimliği; yoksa (serbest satır) açıklama metni
+  const glassChanged = (old.glassProductId || l.glassProductId)
+    ? diff(old.glassProductId ?? null, l.glassProductId === undefined ? undefined : l.glassProductId ?? null)
+    : diff(String(old.description ?? '').trim(), l.description === undefined ? undefined : String(l.description ?? '').trim());
+  // Parça m²: tarayıcı toplam ÷ adet gönderir — kayan nokta gürültüsü değişiklik sayılmaz (AREA_EPS ile aynı tolerans)
+  const pm = (v) => (v === '' || v == null ? null : Number(v));
+  const pieceChanged = l.pieceM2 !== undefined && (() => {
+    const a = pm(old.pieceM2), b = pm(l.pieceM2);
+    return a === null || b === null ? a !== b : Math.abs(a - b) > 0.0005;
+  })();
+  return glassChanged
+    || diff(num(old.enMm), l.enMm === undefined ? undefined : num(l.enMm))
+    || diff(num(old.boyMm), l.boyMm === undefined ? undefined : num(l.boyMm))
+    || pieceChanged
+    || diff(old.unit ?? 'm2', l.unit === undefined ? undefined : l.unit ?? 'm2')
+    || diff(old.kind ?? 'CAM', l.kind === undefined ? undefined : l.kind ?? 'CAM')
+    || diff(!!old.shaped, l.shaped === undefined ? undefined : !!l.shaped);
+}
+
 function mergePrices(lines, existing, admin) {
   const byId = new Map(existing.map((l) => [l.id, l]));
   const sameGlass = (a, b) => (a.kind ?? 'CAM') === 'CAM' && (b.kind ?? 'CAM') === 'CAM' && String(a.description) === String(b.description)
@@ -245,10 +283,14 @@ function mergePrices(lines, existing, admin) {
     // Yöneticinin sandık bedeli (karar 257): fabrika maliyeti kuralla 0 EUR — kayda gerçekten 0 yazılır (yeni satırda,
     // kayıtta ve teklifin yeni sürümünde); "maliyet eksik" sayılmaz (rules.js → missingCost). Müşteri fiyatı ayrı girilir.
     const crateCost = admin && l.crateFee;
+    // Bayat yönetici fiyatı (karar 300 — P0): satış bir satırın camını / ölçüsünü / parça m²'sini / birimini / türünü /
+    // şeklini değiştirdiyse o satır için önceden girilmiş müşteri fiyatı GEÇERSİZDİR (başka içerik için verilmişti) —
+    // boşalır, yönetici yeniden girer. Adet, Poz, açıklama dışı değişiklikler fiyatı korur. Diğer satırlara dokunulmaz.
+    const stale = !admin && own && lineIdentityChanged(own, l);
     return {
       ...l,
       unitPrice: crateCost ? 0 : admin ? (old ? old.unitPrice : (l.listPrice ?? 0)) : keepCost ? old.unitPrice : l.unitPrice,
-      offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : old ? priceNum(old.offerPrice) : null,
+      offerPrice: admin && l.offerPrice !== undefined ? priceNum(l.offerPrice) : stale ? null : old ? priceNum(old.offerPrice) : null,
       compensationId: old?.compensationId ?? null,
       // Fabrika PDF'i kaynağı (karar 255): kayıtlı satırdan (ya da ayrılan camın kaynağından) taşınır; formdan gelen yok sayılır
       importId: old?.importId ?? null,
@@ -572,10 +614,51 @@ const ACTIONS = {
     };
     h.result = { imported: r.added.length, pdfs: ids.length };
   },
+  /**
+   * Sorumlu satışçı (karar 300): atama bekleyen siparişe satışçı atar (MANUAL) ya da siparişi başka satışçıya yönlendirir
+   * (REASSIGN — yalnızca teklif İLK KEZ yöneticiye gönderilmeden ve çizim / yükleme / maliyet başlamadan; geri çekme sınırı
+   * sıfırlamaz). Atomik: sahip, onun varsayılan çizimcisi, atama kaydı ve SLA aynı işlemde; eski ekibin erişimi kapsamla
+   * kendiliğinden kapanır. Eski satışçının taslak fiyatları yeni hesapta KULLANILMAZ: taslak teklifin satış fiyatları yeni
+   * satışçının tablosundan yeniden doldurulur (tablo yoksa boş), eski değerler denetim kaydında saklanır.
+   */
+  async assign_sales(h) {
+    const targetId = typeof h.payload.salesUserId === 'string' ? h.payload.salesUserId : '';
+    if (!(await routingLinked(h.tx))) throw new WorkflowError('NOT_LINKED');
+    const target = targetId ? await h.tx.user.findUnique({ where: { id: targetId }, select: { id: true, type: true, appRole: true, isActive: true, deletedAt: true } }) : null;
+    if (!validSales(target)) throw new WorkflowError('SALES_TARGET');
+    const prev = h.order.salesUserId ?? null;
+    if (prev === target.id) throw new WorkflowError('SALES_SAME');
+    if (prev) {
+      const reasons = reassignBlocks(await reassignFacts(h.tx, h.order));
+      if (reasons.length) throw new WorkflowError('REASSIGN_BLOCKED', { reasons });
+    }
+    const drawerId = await drawerOf(h.tx, target.id);
+    let priceReset = null;
+    const draft = latestOffer(h.order);
+    if (prev && draft && draft.status === 'HAZIRLANIYOR') {
+      const pricing = await pricingForUser(h.tx, target.id);
+      const lines = await h.tx.offerLine.findMany({ where: { offerId: draft.id }, orderBy: { sortOrder: 'asc' } });
+      priceReset = { offerId: draft.id, table: pricing?.id ?? null, lines: lines.map((l) => ({ id: l.id, unitPrice: String(l.unitPrice), listPrice: l.listPrice == null ? null : String(l.listPrice) })) };
+      const same = !pricing || pricing.currency === draft.currency;
+      for (const l of lines) {
+        const list = same ? tablePrice(pricing, l.kind ?? 'CAM', l.glassProductId) : null;
+        await h.tx.offerLine.update({ where: { id: l.id }, data: { unitPrice: list ?? 0, listPrice: list } });
+      }
+      await h.tx.offer.update({ where: { id: draft.id }, data: { priceTableId: same ? pricing?.id ?? null : null } });
+    }
+    await h.set({
+      salesUserId: target.id, assignedDrawerId: drawerId, salesAssignedAt: h.now, salesAssignedVia: prev ? 'REASSIGN' : 'MANUAL',
+      salesAssignedById: h.actor.id ?? null, routingRuleId: null,
+    });
+    h.event('SALES_ASSIGNED');
+    h.sla = true;
+    h.audit = { salesFrom: prev, salesTo: target.id, drawerFrom: h.order.assignedDrawerId ?? null, drawerTo: drawerId, via: prev ? 'REASSIGN' : 'MANUAL', priceReset };
+  },
   async send_to_drawing(h) {
-    // Tek etkin çizimci varsa iş kendiliğinden ona atanır (ürün sahibinin kararı); birden çoksa çizimci üstlenir.
-    const drawers = await h.tx.user.findMany({ where: { appRole: 'CIZIM', isActive: true }, select: { id: true }, take: 2 });
-    const assignedDrawerId = h.order.assignedDrawerId ?? (drawers.length === 1 ? drawers[0].id : null);
+    // Çizimci = siparişin ekibinin çizimcisi (4.3.0, karar 300): atamada kopyalanan; boşsa sorumlu satışçının ŞU ANKİ
+    // varsayılan çizimcisi. Hiçbiri yoksa çizim işi kimseye açılmaz → işlem reddedilir (bütün çizimcilere düşme yok).
+    const assignedDrawerId = h.order.assignedDrawerId ?? await drawerOf(h.tx, h.order.salesUserId);
+    if (!assignedDrawerId) throw new WorkflowError('NO_DRAWER');
     await h.set({ status: 'HAZIRLANIYOR', drawingTrack: 'GEREKLI', drawingSince: h.now, assignedDrawerId });
     await ensureOfferDraft(h.tx, h.order, h.actor.id);
     h.event('SENT_TO_DRAWING');
@@ -588,12 +671,13 @@ const ACTIONS = {
     h.sla = true;
   },
   async undo_drawing(h) {
-    await h.set({ status: 'YENI', drawingTrack: 'YOK', drawingSince: null, assignedDrawerId: null });
+    // Çizimci siparişin ekibinin çizimcisidir (karar 300): geri almada değişmez
+    await h.set({ status: 'YENI', drawingTrack: 'YOK', drawingSince: null });
     h.event('UNDO_DRAWING');
     h.sla = true;
   },
   async undo_no_drawing(h) {
-    await h.set({ status: 'YENI', drawingTrack: 'YOK', drawingSince: null, assignedDrawerId: null });
+    await h.set({ status: 'YENI', drawingTrack: 'YOK', drawingSince: null });
     h.event('UNDO_NO_DRAWING');
     h.sla = true;
   },
@@ -682,7 +766,8 @@ const ACTIONS = {
     h.sla = true;
   },
   async start_drawing(h) {
-    await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId: h.actor.id });
+    // İşlemi yapan (yönetici de olabilir) siparişin çizimcisi olmaz — atanmış çizimci değişmez (karar 300)
+    await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now });
     h.event('DRAWING_STARTED');
     h.sla = true;
   },
@@ -713,9 +798,9 @@ const ACTIONS = {
         scanStatus: f.scanStatus ?? 'SKIPPED', scanSignature: f.scanSignature ?? null, scannedAt: f.scannedAt ?? null, uploadedById: h.actor.id,
       })),
     });
-    // İlk yükleme çizimi başlatır ve (atanmamışsa) çizimciye atar
+    // İlk yükleme çizimi başlatır (atanmış çizimci değişmez — karar 300)
     if (h.order.drawingTrack === 'GEREKLI') {
-      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now });
       h.sla = true;
     }
     h.event('DRAWING_DRAFT', `v${drawing.version} · ${files.map((f) => f.name).join(', ')}`);
@@ -808,7 +893,7 @@ const ACTIONS = {
   /** Üretime Hazır: müşteri onayı beklenmez; çizim hattı onaylı → "Müşteriden onaylı çizimler" (koşullar tamamsa üretim) */
   async dwg_ready(h) {
     const rec = await dwgDecide(h, 'READY');
-    await h.set({ drawingTrack: 'ONAYLANDI', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+    await h.set({ drawingTrack: 'ONAYLANDI', drawingSince: h.now });
     h.event('DWG_READY', `v${rec.version}`, { drawingId: rec.id });
     h.sla = true;
     h.auto = true;
@@ -824,7 +909,7 @@ const ACTIONS = {
     if (!note.ok) throw new WorkflowError(note.code);
     const rec = await dwgDecide(h, 'FAULTY');
     const revision = await h.tx.drawingRevision.create({ data: { drawingId: rec.id, kind: 'HATALI', requestedById: h.actor.id, comment: note.text } });
-    await h.set({ drawingTrack: 'DUZELTME_BEKLIYOR', drawingSince: h.now, assignedDrawerId: h.order.assignedDrawerId ?? h.actor.id });
+    await h.set({ drawingTrack: 'DUZELTME_BEKLIYOR', drawingSince: h.now });
     h.event('DWG_FAULTY', note.text, { drawingId: rec.id });
     h.sla = true;
     h.result = { drawingId: rec.id, revisionId: revision.id };
@@ -835,14 +920,13 @@ const ACTIONS = {
    * hazırlar. Müşterinin düzeltmesi beklenirken de verilebilir (hatalı kararı ve açıklaması geçmişte kalır).
    */
   async dwg_update(h) {
-    const assignedDrawerId = h.order.assignedDrawerId ?? h.actor.id;
     if (h.order.drawingTrack === 'DUZELTME_BEKLIYOR') {
-      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId });
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now });
       h.event('DWG_UPDATE');
       h.audit = { decision: 'UPDATE', after: 'FAULTY' };
     } else {
       const rec = await dwgDecide(h, 'UPDATE');
-      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now, assignedDrawerId });
+      await h.set({ drawingTrack: 'YAPILIYOR', drawingSince: h.now });
       h.event('DWG_UPDATE', `v${rec.version}`, { drawingId: rec.id });
       h.audit = { decision: 'UPDATE', drawingId: rec.id, version: rec.version, files: rec.files };
     }
@@ -1014,7 +1098,7 @@ async function glassFinish(h, entries) {
 export async function executeAction(db, { workflow, actions, include, finish = null, locks = {}, orderId, action, actor, payload = {} }) {
   const def = actions[action];
   if (!def) throw new WorkflowError('UNKNOWN_ACTION');
-  const scope = actor.system ? {} : orderScope({ appRole: actor.role, customerId: actor.customerId ?? null });
+  const scope = actor.system ? {} : actorScope(actor);
   /** @type {string[]} */
   const outboxIds = [];
   const res = await transitionOrder({

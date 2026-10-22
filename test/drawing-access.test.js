@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CUSTOMER_HIDDEN_STATUSES, CUSTOMER_OPEN_STATUSES, CUSTOMER_ROW_ONLY_STATUSES,
-  drawingAccess, drawingFileWhere, drawingsView, findDrawingFile,
+  drawingAccess, drawingFileWhere, drawingsView, findDrawingFile, neutralDrawingName,
 } from '../server/orders/drawing-access.js';
 import { ROLES, can } from '../server/auth/permissions.js';
 
@@ -156,7 +156,7 @@ function fakeDb(drawings) {
         calls.push(['drawingFile', where]);
         for (const d of drawings) {
           const f = d.files.find((x) => x.id === where.id);
-          if (f && okDrawing(d, { ...where.drawing, id: undefined })) return { ...f, drawing: { orderId: d.orderId } };
+          if (f && okDrawing(d, { ...where.drawing, id: undefined })) return { ...f, drawing: { orderId: d.orderId, version: d.version, order: { orderNo: 'GLA1' }, files: d.files.map((x) => ({ id: x.id })) } };
         }
         return null;
       },
@@ -165,7 +165,7 @@ function fakeDb(drawings) {
       async findFirst({ where, include }) {
         calls.push(['drawing', where]);
         const d = drawings.find((x) => okDrawing(x, where));
-        return d ? { ...d, files: d.files.slice(0, include.files.take) } : null;
+        return d ? { ...d, order: { orderNo: 'GLA1' }, files: d.files.slice(0, include.files.take) } : null;
       },
     },
   };
@@ -175,11 +175,12 @@ test('dosya adresi (/dosya/cizim/<kimlik>): müşteri geri çekilen ve taslak s�
   const rows = VERSIONS().map((d) => ({ ...d, customerId: 'A' }));
   const scope = { removedAt: null, customerId: 'A' };
   const get = (role, id, sc = scope) => findDrawingFile(fakeDb(rows), { id, scope: sc, role });
-  // Müşteri: açık sürümler — dosya kimliği ve eski sürüm kimliği
-  assert.deepEqual(await get('MUSTERI', 'f5a'), { storageKey: '2026/10/f5a', name: 'cizim-v5.pdf', mime: 'application/pdf', scanStatus: 'CLEAN', orderId: 'o1' });
-  assert.equal((await get('MUSTERI', 'f4b')).name, 'cizim-v4.dxf');
-  assert.equal((await get('MUSTERI', 'f1a')).name, 'cizim-v1.pdf');
-  assert.equal((await get('MUSTERI', 'd5')).name, 'cizim-v5.pdf', 'eski bağlantı: sürümün ilk dosyası');
+  // Müşteri: açık sürümler — dosya kimliği ve eski sürüm kimliği. Ad NÖTR (karar 300): sipariş no + sürüm (+ sıra) +
+  // uzantı; çizimcinin verdiği özgün ad müşteriye gitmez
+  assert.deepEqual(await get('MUSTERI', 'f5a'), { storageKey: '2026/10/f5a', name: 'GLA1-cizim-v5.pdf', mime: 'application/pdf', scanStatus: 'CLEAN', orderId: 'o1' });
+  assert.equal((await get('MUSTERI', 'f4b')).name, 'GLA1-cizim-v4-2.dxf');
+  assert.equal((await get('MUSTERI', 'f1a')).name, 'GLA1-cizim-v1.pdf');
+  assert.equal((await get('MUSTERI', 'd5')).name, 'GLA1-cizim-v5.pdf', 'eski bağlantı: sürümün ilk dosyası');
   // Müşteri: geri çekilen ve taslak — hiçbir kimlikle
   for (const id of ['f2a', 'f2b', 'd2', 'd3', 'f6a', 'f6b', 'd6', 'yok']) assert.equal(await get('MUSTERI', id), null, id);
   // Başka firmanın kapsamı: açık sürüm bile bulunmaz
@@ -204,7 +205,7 @@ test('dosya adresi (/dosya/cizim/<kimlik>): müşteri geri çekilen ve taslak s�
 
 test('tek kural, üç kullanıcı: sipariş verisi, dosya adresi ve görüntüleyici ortak işlevleri kullanır; durum karşılaştırması başka yerde yazılmaz', () => {
   const orders = strip(read('lib/orders.ts'));
-  assert.ok(orders.includes('drawingsView(user.appRole, order.drawings)'), 'sanitizeOrder → drawingsView');
+  assert.ok(orders.includes('drawingsView(user.appRole, order.drawings, { orderNo: order.orderNo })'), 'sanitizeOrder → drawingsView');
   assert.equal(/status\s*[!=]==\s*'(TASLAK|GERI_CEKILDI)'/.test(orders), false, 'sanitizeOrder içinde elle durum süzgeci yok');
 
   const route = strip(read('app/dosya/[kind]/[id]/route.ts'));
@@ -242,4 +243,16 @@ test('tek kural, üç kullanıcı: sipariş verisi, dosya adresi ve görüntüle
   const finders = files.filter((f) => f !== path.join('server', 'orders', 'drawing-access.js'))
     .filter((f) => /drawingFile\.find(First|Unique)\(/.test(strip(read(f))));
   assert.deepEqual(finders, []);
+});
+
+test('nötr çizim dosya adı (karar 300): müşteri listesinde ve indirmede sipariş no + sürüm; iç roller özgün adı görür', () => {
+  assert.equal(neutralDrawingName('GLA68', 3, 'Trakya_Ahmet çizim.PDF'), 'GLA68-cizim-v3.pdf');
+  assert.equal(neutralDrawingName('GLA68', 3, 'plan.dwg', 1), 'GLA68-cizim-v3-2.dwg');
+  assert.equal(neutralDrawingName('GLA68-T', 1, 'adsiz'), 'GLA68-T-cizim-v1');
+  const input = VERSIONS();
+  const out = drawingsView('MUSTERI', input, { orderNo: 'GLA1' });
+  const v5 = out.find((d) => d.version === 5);
+  assert.deepEqual(v5.files.map((f) => f.name), ['GLA1-cizim-v5.pdf', 'GLA1-cizim-v5-2.dxf']);
+  assert.equal(JSON.stringify(out).includes('"cizim-v5.pdf"'), false);
+  for (const role of INTERNAL) assert.deepEqual(drawingsView(role, input, { orderNo: 'GLA1' }).find((d) => d.version === 5).files.map((f) => f.name), ['cizim-v5.pdf', 'cizim-v5.dxf'], role);
 });

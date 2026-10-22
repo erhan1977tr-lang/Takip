@@ -151,13 +151,17 @@ export function priceSheetRows(table, glasses, prices) {
 // ---------------- Tablonun seçimi ----------------
 
 /**
- * Kullanıcının kullandığı tablo: kendi etkin tablosu, yoksa etkin varsayılan tablo, o da yoksa null.
+ * Kullanıcının kullandığı tablo: kendi etkin tablosu; yoksa null. Sipariş teklifleri varsayılan tabloya DÜŞMEZ (4.3.0,
+ * karar 300): satışçının tablosu yoksa liste fiyatı gelmez, fiyatlar elle girilir. `fallback: true` yalnızca bağımsız ticari
+ * teklifin maliyet önerisi içindir (davranışı değişmedi): kendi tablosu yoksa etkin varsayılan tablo.
  * @param {{ priceTableId?: string | null }} user
  * @param {{ id: string, isActive: boolean, isDefault: boolean }[]} tables
+ * @param {{ fallback?: boolean }} [o]
  */
-export function resolveTable(user, tables) {
+export function resolveTable(user, tables, { fallback = false } = {}) {
   const own = user.priceTableId ? tables.find((t) => t.id === user.priceTableId && t.isActive) : null;
-  return own ?? tables.find((t) => t.isDefault && t.isActive) ?? null;
+  if (own) return own;
+  return fallback ? tables.find((t) => t.isDefault && t.isActive) ?? null : null;
 }
 
 /**
@@ -174,8 +178,9 @@ export async function loadPricing(db, tableId) {
   };
 }
 
-/** Kullanıcının tablosunun fiyat bilgisi (ya da null). */
+/** Kullanıcının (siparişte: sorumlu satışçının) tablosunun fiyat bilgisi (ya da null — varsayılana düşmez, karar 300). */
 export async function pricingForUser(db, userId) {
+  if (!userId) return null;
   const [user, tables] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { priceTableId: true } }),
     db.priceTable.findMany({ where: { isActive: true, kind: 'SALES' }, select: { id: true, isActive: true, isDefault: true } }),
@@ -187,7 +192,7 @@ export async function pricingForUser(db, userId) {
 // ---------------- Teklif satırları ----------------
 
 /** Liste fiyatı (varsa) */
-function tablePrice(pricing, kind, glassProductId) {
+export function tablePrice(pricing, kind, glassProductId) {
   if (!pricing) return null;
   if (kind === 'DELIK') return pricing.holePrice;
   if (kind === 'CNC') return pricing.cncPrice;

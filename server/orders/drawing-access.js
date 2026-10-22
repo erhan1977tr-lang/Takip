@@ -64,20 +64,37 @@ const NO_CONTENT = Object.freeze({
 });
 
 /**
+ * Müşteriye verilen nötr çizim dosya adı (karar 300): "<SiparişNo>-cizim-v<sürüm>[-<sıra>].<uzantı>" — çizimcinin verdiği
+ * özgün ad (fabrika / kişi adı taşıyabilir) müşteriye hiç gitmez; içeride özgün ad ve dosya korunur. İçerik değiştirilmez.
+ * @param {string} orderNo  @param {number} version  @param {string | null | undefined} original  @param {number} [index] 0 tabanlı
+ */
+export function neutralDrawingName(orderNo, version, original, index = 0) {
+  const m = /\.([A-Za-z0-9]{1,10})$/.exec(String(original ?? ''));
+  const ext = m ? `.${m[1].toLowerCase()}` : '';
+  const no = String(orderNo ?? '').replace(/[^A-Za-z0-9-]/g, '') || 'cizim';
+  return `${no}-cizim-v${Number(version) || 0}${index > 0 ? `-${index + 1}` : ''}${ext}`;
+}
+
+/**
  * Sürüm listesinin role göre görünümü: görülmeyen sürümler çıkar; yalnızca satırı görülen sürümün içeriği boşaltılır
  * (dosya listesi boş, müşteri notu ve eski dosya alanları null). Durum, sürüm no, tarihler ve geri çekme gerekçesi kalır.
  * Girdi değiştirilmez.
  * @template {{ status: string }} T
  * @param {string | null | undefined} role
  * @param {T[]} drawings
+ * @param {{ orderNo?: string | null }} [o]  orderNo: müşteri görünümünde dosya adları nötr ada çevrilir (karar 300)
  * @returns {T[]}
  */
-export function drawingsView(role, drawings) {
+export function drawingsView(role, drawings, { orderNo = null } = {}) {
   const out = [];
+  const neutral = !seesAll(role) && !!orderNo;
+  const rename = (d) => (neutral && Array.isArray(d.files)
+    ? { ...d, ...('fileName' in d && d.fileName ? { fileName: neutralDrawingName(orderNo, d.version, d.fileName) } : {}), files: d.files.map((f, i) => ({ ...f, name: neutralDrawingName(orderNo, d.version, f.name, i) })) }
+    : d);
   for (const d of drawings) {
     const access = drawingAccess(role, d.status);
     if (access === 'NONE') continue;
-    if (access === 'FULL') { out.push(d); continue; }
+    if (access === 'FULL') { out.push(rename(d)); continue; }
     // Geri alınan DWG kararının kaydı (karar 285): gerekçe iç ekibin notudur — müşteriye gelmez (fabrika sürümünün geri
     // çekme gerekçesi, karar 146, değişmedi: müşteriye görünür)
     const undone = /** @type {any} */ (d).source === 'MUSTERI_DXF_DWG' ? { withdrawReason: null } : {};
@@ -96,13 +113,22 @@ export function drawingsView(role, drawings) {
  */
 export async function findDrawingFile(db, { id, scope, role }) {
   const drawing = { order: scope, ...drawingFileWhere(role) };
-  const f = await db.drawingFile.findFirst({ where: { id, drawing }, include: { drawing: { select: { orderId: true } } } });
-  if (f) return { storageKey: f.storageKey, name: f.name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.drawing.orderId };
+  // Müşteriye nötr dosya adı (karar 300): sipariş no + sürüm (+ sürümdeki sırası); içeride özgün ad
+  const neutral = !seesAll(role);
+  const f = await db.drawingFile.findFirst({
+    where: { id, drawing },
+    include: { drawing: { select: { orderId: true, version: true, order: { select: { orderNo: true } }, files: { select: { id: true }, orderBy: { createdAt: 'asc' } } } } },
+  });
+  if (f) {
+    const name = neutral ? neutralDrawingName(f.drawing.order.orderNo, f.drawing.version, f.name, Math.max(0, f.drawing.files.findIndex((x) => x.id === f.id))) : f.name;
+    return { storageKey: f.storageKey, name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.drawing.orderId };
+  }
   // Eski bağlantılar: /dosya/cizim/<sürüm kimliği>
-  const d = await db.drawing.findFirst({ where: { id, ...drawing }, include: { files: { orderBy: { createdAt: 'asc' }, take: 1 } } });
+  const d = await db.drawing.findFirst({ where: { id, ...drawing }, include: { files: { orderBy: { createdAt: 'asc' }, take: 1 }, order: { select: { orderNo: true } } } });
   if (!d) return null;
   const first = d.files[0];
-  if (first) return { storageKey: first.storageKey, name: first.name, mime: first.mime, scanStatus: first.scanStatus, orderId: d.orderId };
-  if (d.fileUrl) return { storageKey: d.fileUrl, name: d.fileName || `cizim-v${d.version}`, mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
+  const named = (n) => (neutral ? neutralDrawingName(d.order.orderNo, d.version, n) : n);
+  if (first) return { storageKey: first.storageKey, name: named(first.name), mime: first.mime, scanStatus: first.scanStatus, orderId: d.orderId };
+  if (d.fileUrl) return { storageKey: d.fileUrl, name: named(d.fileName || `cizim-v${d.version}`), mime: d.mime, scanStatus: d.scanStatus, orderId: d.orderId };
   return null;
 }

@@ -17,13 +17,16 @@ let tables = {};
 
 const actor = (u) => ({ id: u.id, role: u.appRole, canApprove: u.canApprove, customerId: u.customerId, ip: '127.0.0.1' });
 const run = (orderId, action, who, payload = {}) => runOrderAction(db, { orderId, action, actor: actor(people[who]), payload });
-const newOrder = async () => {
+// Sorumlu satışçı (karar 300): tek ekip varsayılanı ilk satışçıdır; başka satışçının siparişi açıkça ona verilir
+const newOrder = async (owner = 'sales') => {
   const next = await suggestNextNo(db, firm.id);
-  return createGlassOrder(db, {
+  const o = await createGlassOrder(db, {
     actor: actor(people.cust), firm, title: 'Fiyat', requestedNo: next, suggestedNo: next,
     items: [{ glassProductId: glass.id, glassName: '10 MM TEMPER CAM — BRONZ', glassNameRo: 'STICLĂ 10 MM — BRONZ', glassWeightKgM2: 25, camAdedi: 2 }],
     files: [{ storageKey: `2026/09/f${next}.pdf`, name: 'f.pdf', size: 10, mime: 'application/pdf', checksum: 'x', scanStatus: 'CLEAN' }],
   });
+  if (owner !== 'sales') await db.order.update({ where: { id: o.id }, data: { salesUserId: people[owner].id } });
+  return o;
 };
 const lineOf = (l) => ({
   description: l.description, poz: l.poz, enMm: l.enMm ?? 1000, boyMm: l.boyMm ?? 1000, adet: l.adet, unit: l.unit,
@@ -34,7 +37,8 @@ const offerOf = (orderId) => db.offer.findFirst({ where: { orderId }, orderBy: {
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) return;
   db = await getDb();
-  await resetDb(db);
+  // Varsayılan tabloya düşme yok (karar 300): bu dosya satışçı tablosunu açıkça atar
+  await resetDb(db, { defaultTable: false });
   const factory = await db.customer.create({ data: { name: 'GKH', type: 'FACTORY' } });
   firm = await db.customer.create({ data: { name: 'Fiyat Test', prefix: 'FIY' } });
   const mk = (key, appRole, customerId) =>
@@ -70,8 +74,11 @@ dbTest('fiyat tablosu: ilk tablo varsayılan olur; aynı ad reddedilir; varsayı
   assert.equal(audit.actorRole, 'ADMIN');
 });
 
-dbTest('fiyat tablosu: satışçı kendi tablosunu, ataması yoksa varsayılanı kullanır', async () => {
+dbTest('fiyat tablosu: satışçı yalnızca kendisine atanmış tabloyu kullanır; ataması yoksa varsayılana DÜŞMEZ (karar 300)', async () => {
   const canPrepare = (role) => can(role, 'OFFER_PREPARE');
+  assert.equal(await pricingForUser(db, people.sales.id), null, 'atama yok → tablo yok (varsayılan "GKH 2026" kullanılmaz)');
+  assert.equal(await pricingForUser(db, null), null, 'sorumlu satışçısı olmayan sipariş fiyatlanmaz');
+  assert.deepEqual(await assignTable(db, people.sales.id, tables.std, admin(), canPrepare), { ok: true });
   assert.deepEqual(await assignTable(db, people.sales2.id, tables.special, admin(), canPrepare), { ok: true });
   assert.deepEqual(await assignTable(db, people.drawer.id, tables.special, admin(), canPrepare), { ok: false, code: 'NOT_FOUND' }, 'çizimci teklif hazırlamaz');
   assert.equal((await pricingForUser(db, people.sales.id)).id, tables.std);
@@ -135,7 +142,7 @@ dbTest('fiyat tablosu: teklifte kullanılan tablo silinemez, para birimi değiş
   assert.deepEqual(await changeTable(db, tables.std, 'delete', admin()), { ok: false, code: 'IN_USE' });
   assert.deepEqual(await saveTable(db, tables.std, { name: 'GKH 2026', currency: 'RON', holePrice: 3, cncPrice: 12 }, admin()), { ok: false, code: 'CURRENCY_LOCKED' });
 
-  const o = await newOrder();
+  const o = await newOrder('sales2');
   await run(o.id, 'no_drawing', 'sales2');
   const before = await offerOf(o.id);
   assert.equal(Number(before.lines[0].listPrice), 26);

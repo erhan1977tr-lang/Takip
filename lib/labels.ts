@@ -18,8 +18,10 @@ export const roleText = (t: T, role: string) => t(k(`roles.${role}`));
  * Kişinin ekrandaki adı. Görenin rolüne göre maskelenmiş kişide (server/orders/order-view.js → personView: ad ve e-posta
  * boş) yalnızca rolü yazılır — e-postaya düşülmez, çünkü maskelenmiş nesnede e-posta hiç yoktur.
  */
-export const personText = (t: T, u: { name?: string | null; email?: string | null; appRole?: string | null }) =>
-  u.name || u.email || (u.appRole ? roleText(t, u.appRole) : '—');
+export const personText = (t: T, u: { name?: string | null; email?: string | null; appRole?: string | null; masked?: boolean | null }) =>
+  // Müşterinin gördüğü iç ekip kişisi (karar 300): nötr rol etiketi — "GKH · Satış"
+  u.masked ? t(k('team.staffLabel'), { role: u.appRole ? roleText(t, u.appRole) : '—' })
+    : u.name || u.email || (u.appRole ? roleText(t, u.appRole) : '—');
 export const profileStageText = (t: T, stage: string) => t(k(`profile.stage.${stage}`));
 
 /** Profil siparişinde müşterinin gördüğü durum (server/profile/rules.js → profileCustomerSummary). */
@@ -64,6 +66,8 @@ export function eventNoteText(t: T, event: string, note: string | null | undefin
 }
 
 /** İş akışı hatası (WorkflowError.code) → metin. */
+/** Yönlendirme engel kodları (server/orders/sales-routing.js → reassignBlocks) — metni olanlar */
+const TEAM_BLOCKS = ['NOT_GLASS', 'CLOSED', 'SUBMITTED', 'DRAWING', 'PDF_IMPORT', 'CRATES', 'LOADED', 'DOCUMENTS', 'COMPENSATION', 'INTERNAL_NOTES', 'INTERNAL_FILES'];
 const WORKFLOW_ERRORS: Record<string, string> = {
   NOT_ALLOWED: 'order.errors.notAllowed',
   UNKNOWN_ACTION: 'order.errors.notAllowed',
@@ -71,6 +75,12 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   NOT_FOUND: 'order.errors.notAllowed',
   CONFLICT: 'order.errors.conflict',
   STALE_DRAWING: 'order.errors.staleDrawing',
+  // Satışçı–çizimci sorumluluğu (karar 300)
+  NO_DRAWER: 'team.errors.NO_DRAWER',
+  SALES_UNASSIGNED: 'team.errors.SALES_UNASSIGNED',
+  SALES_TARGET: 'team.errors.SALES_TARGET',
+  SALES_SAME: 'team.errors.SALES_SAME',
+  NOT_LINKED: 'team.errors.NOT_LINKED',
   OFFER_NOT_FOUND: 'order.errors.offerNotFound',
   INVALID_DATE: 'order.errors.invalidDate',
   SHIP_DATE_LOCKED: 'order.errors.shipDateLocked',
@@ -168,6 +178,12 @@ export function workflowErrorText(t: T, code: string, details?: Record<string, u
     const raw = details?.reasons;
     const reasons = Array.isArray(raw) ? (raw as { code: string; ref?: string | null; kind?: string | null }[]) : [];
     return [t(k('order.cancel.locked')), ...reasons.map((r) => lockReasonText(t, r))].join(' ');
+  }
+  // Başka satışçıya yönlendirmenin engelleri (karar 300): "yönlendirilemez: <nedenler>"
+  if (code === 'REASSIGN_BLOCKED') {
+    const raw = details?.reasons;
+    const reasons = Array.isArray(raw) ? raw.filter((r): r is string => typeof r === 'string' && TEAM_BLOCKS.includes(r)) : [];
+    return [t(k('team.errors.REASSIGN_BLOCKED')), reasons.map((r) => t(k(`team.block.${r}`))).join(', ')].join(' ');
   }
   // DWG kararını geri almanın engeli (karar 285): "Bu karar geri alınamaz: <neden>" — ekrandaki metinle aynı
   if (code.startsWith('UNDO_') && Object.hasOwn(WORKFLOW_ERRORS, code) && WORKFLOW_ERRORS[code].startsWith('order.dwg.undo.block.')) {

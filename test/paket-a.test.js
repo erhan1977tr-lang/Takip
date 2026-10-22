@@ -138,9 +138,10 @@ test('müşteri silme engelleri (karar 221): resmî belge izi, değiştirilemez 
 test('bildirimler (karar 220): güvenlik kitlesi yalnızca USER_MANAGE; pasif kullanıcı e-posta kitlelerinde yok', () => {
   const email = strip(read('server/notifications/email.js'));
   assert.match(email, /if \(mine && creator\.isActive !== false\) add\(creator\.email, lang, null\);/);
-  assert.match(email, /if \(order\.assignedDrawer\.isActive !== false\) add\(/);
+  assert.match(email, /if \(order\.assignedDrawer && order\.assignedDrawer\.isActive !== false\) add\(/);
   assert.match(email, /u\.isActive !== false && ROLE_SETS\.sales\.includes\(u\.appRole\)/);
-  assert.equal((email.match(/appRole: \{ in: ROLE_SETS\.(sales|admin) \}, isActive: true/g) ?? []).length, 2);
+  // Karar 300: sorumlu satışçı / atanmış çizimci yoksa satış ekibine düşme kalktı — tek toplu sorgu yöneticininki
+  assert.equal((email.match(/appRole: \{ in: ROLE_SETS\.(sales|admin) \}, isActive: true/g) ?? []).length, 1);
   assert.match(email, /appRole: \{ in: ROLE_SETS\[a\] \?\? \[\] \}, isActive: true/);
   assert.match(email, /assignedDrawer: \{ select: \{ email: true, language: true, appRole: true, isActive: true \} \}/);
   assert.match(strip(read('server/auth/lock-events.js')), /audience: 'security'/);

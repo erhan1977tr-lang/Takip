@@ -4,6 +4,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.0 — 22.10.2026 (yayın adayı — geliştiriliyor)
+
+Satışçı–çizimci ayrımı (karar 300). Cam siparişlerinde tek sorumlu satışçı ve atanmış çizimci; satış ve çizim yalnızca
+kendi siparişlerini görür ve işler.
+
+- **Sorumluluk:** `Order.salesUserId` (+ atama zamanı / yolu / kuralı); satışçının varsayılan çizimcisi (`User.defaultDrawerId`)
+  atamada `assignedDrawerId`'ye kopyalanır, eşleşme değişince eski siparişler değişmez. Kapsam sunucuda: satış
+  `salesUserId = kendisi`, çizim `assignedDrawerId = kendisi` (liste, arama, ayrıntı, dosya, görüntüleyici, işlemler,
+  bildirimler). Atamasız siparişe satış / çizim erişimi ve bildirimi yok; yönetici işlem yapınca sahip değişmez.
+- **Yönlendirme:** yönetici seçer (A) ya da belirli tarih / saatten (Europe/Bucharest) itibaren seçilen satışçıya
+  otomatik (B) — `GlassRoutingRule`. Yönetici siparişi, teklif İLK KEZ yöneticiye gönderilmeden ve bağlı süreç
+  başlamadan başka satışçıya yönlendirebilir (`assign_sales`, atomik; eski taslak fiyatlar yeni satışçının tablosuyla
+  sıfırlanır, eski fiyatlar denetim kaydında).
+- **Fiyat:** satışçı yalnızca kendisine atanmış satış tablosunu kullanır (varsayılan tabloya düşme kaldırıldı); teklif
+  fiyatları siparişin sorumlu satışçısının tablosundan gelir. Teklif işlemleri sürüm numarasız kabul edilmez; satışçı
+  satırın camını / ölçüsünü / adedini / m²'sini değiştirirse o satırın yönetici müşteri fiyatı geçersizleşir.
+- **Müşteri görünümü:** iç ekip kişileri müşteriye ad / e-posta olmadan "GKH · rol" olarak; çizim dosyaları müşteriye
+  nötr adla (`<sipariş no>-cizim-v<n>.<uzantı>`).
+
 ## 4.2.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam → **Excel'den Aktar**): ön izleme satış panelindeki Excel aktarımıyla aynı düzende

@@ -33,6 +33,19 @@ const expectedVersion = (formData: FormData) => {
   const v = formData.get('v');
   return v === null || v === '' ? undefined : Number(v);
 };
+/**
+ * Teklif işlemleri (kaydet, yöneticiye gönder, onayla, geri gönder, güncelle, geri çek) sayfanın sipariş sürümü OLMADAN
+ * çalışmaz (karar 300 — P0): sürümsüz bir istek başkasının (yönetici / satış) arada yaptığı değişikliğin üzerine yazamaz.
+ * Eksik ya da bozuk sürüm → "aynı anda değiştirildi" (CONFLICT). Sürüm iş akışında Order.version ile denetlenir.
+ */
+const requiredVersion = async (formData: FormData, id: string) => {
+  const v = expectedVersion(formData);
+  if (v === undefined || !Number.isInteger(v) || v < 0) {
+    const { t } = await getT();
+    redirect(err(id, workflowErrorText(t, 'CONFLICT')));
+  }
+  return v;
+};
 
 function done(id: string, ok: string): never {
   revalidatePath('/siparisler');
@@ -549,8 +562,9 @@ export async function saveOfferAction(formData: FormData) {
   const returnNote = String(formData.get('returnNote') ?? '').trim().slice(0, 1000);
   const note = String(formData.get('updateNote') ?? '').trim().slice(0, 1000);
 
+  const version = await requiredVersion(formData, id);
   const res = await act(user, id, action, {
-    lines, amount, returnNote, note, labels: labels(formData), expectedVersion: expectedVersion(formData),
+    lines, amount, returnNote, note, labels: labels(formData), expectedVersion: version,
   });
   if (intent === 'update') done(id, 'offer_updated');
   done(id, intent === 'save' ? 'offer_saved' : res?.produced ? `offer_${intent}_production` : `offer_${intent}`);
@@ -564,7 +578,7 @@ export async function saveOfferAction(formData: FormData) {
 export async function withdrawOfferAction(formData: FormData) {
   const user = await requirePermission('OFFER_PREPARE');
   const id = orderIdOf(formData);
-  await act(user, id, 'withdraw_offer', { expectedVersion: expectedVersion(formData) });
+  await act(user, id, 'withdraw_offer', { expectedVersion: await requiredVersion(formData, id) });
   done(id, 'offer_withdrawn');
 }
 

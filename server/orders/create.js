@@ -14,6 +14,7 @@ import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { parseCustomerOrderNo } from './order-number.js';
 import { assertOrderRate } from './create-rate.js';
+import { routeNewOrder } from './sales-routing.js';
 
 /**
  * Firmanın bu tipteki bir sonraki sipariş numarası: yalnızca rakamdan oluşan ETKİN numaraların en büyüğü + 1 (metin —
@@ -127,10 +128,14 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     }
     const allFiles = [...draftFiles, ...files];
     if (allFiles.length === 0) throw new WorkflowError('NO_FILES');
+    // Sorumlu satışçı (karar 300): geçerli yönlendirme kuralı AUTO ise hedef satışçı + onun çizimcisi; değilse atama bekler
+    // (yalnızca yönetici görür). İnceleme SLA'sı atamada başlar — satışın etkileyemediği bekleme satış SLA'sını yakmaz.
+    const owner = await routeNewOrder(tx, { now, orderNo });
     const order = await tx.order.create({
       data: {
         orderNo, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', title, customerId: firm.id, createdById: actor.id,
-        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
+        ...(owner ?? {}),
+        status: 'YENI', slaDeadline: owner ? slaDeadline({ status: 'YENI', createdAt: now }) : null, estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
         camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null,
         items: { create: items },
         files: {
@@ -146,7 +151,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     await writeHistory(tx, { orderId: order.id, event: 'CREATED', from: null, to: 'YENI', actorId: actor.id });
     await writeAudit(tx, {
       action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
-      details: { orderNo, files: allFiles.length, ...(key ? { requestKey: key } : {}), ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
+      details: { orderNo, files: allFiles.length, salesUserId: owner?.salesUserId ?? null, routingRuleId: owner?.routingRuleId ?? null, ...(key ? { requestKey: key } : {}), ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
     }, actor);
     await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, actorId: actor.id } }));
     return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== parseCustomerOrderNo(requestedNo, firm.prefix), dropped };

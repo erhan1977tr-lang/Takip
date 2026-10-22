@@ -47,12 +47,15 @@ const dayLink = (hash = '') => (_o, p) => `/yuklemeler?gun=${p.day}${hash}`;
 
 /**
  * Olay → alıcı kümeleri ve bağlantı. customer: siparişin firmasının kullanıcıları · drawer: atanmış çizimci ·
- * orderSales: siparişle ilgilenen satışçı (bilinmiyorsa satış ekibi) · admin / sales / accounting / loading: yetkiye göre.
+ * orderSales: siparişin sorumlu satışçısı (atama yoksa kimse — karar 300) · admin / accounting / loading: yetkiye göre.
  * Yalnızca dikkat / işlem gerektiren olaylar; her alan değişikliği bildirim üretmez.
  */
 export const INAPP_RULES = {
   // Yeni sipariş: cam → satış + yönetici; profil → yalnızca yönetici (profil satışa uğramaz)
-  ORDER_CREATED: { to: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['sales', 'admin']) },
+  // Yeni sipariş: cam → SORUMLU satışçı (atama bekleyen siparişte kimse — karar 300) + yönetici; profil → yalnızca yönetici
+  ORDER_CREATED: { to: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['orderSales', 'admin']) },
+  // Yönetici siparişi satışçıya atadı / başka satışçıya yönlendirdi (karar 300): yeni sorumlu satışçı
+  ORDER_SALES_ASSIGNED: { to: () => ['orderSales'] },
   // Çizim: atama ve müşteri kararı yalnızca atanmış çizimciye + ilgili satışçıya (yöneticiye değil — karar 84)
   ORDER_SENT_TO_DRAWING: { to: () => ['drawer'] },
   // Müşteriye yeni çizim: bağlantı siparişteki kırmızı "yeni çizim onayınızı bekliyor" bilgilendirmesine (karar 162, 166)
@@ -135,10 +138,9 @@ export async function recipientsOf(db, audiences, order, { actorId = null } = {}
       if (!order?.assignedDrawerId) continue;
       add(await db.user.findFirst({ where: { id: order.assignedDrawerId, isActive: true }, select: USER }), 'staff');
     } else if (a === 'orderSales') {
-      // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa satış ekibi (e-posta kuralıyla aynı). Yönetici değil.
+      // Yalnızca siparişin sorumlu satışçısı; atama yoksa kimse — satış ekibine düşme yok (karar 300). Yönetici değil.
       const known = order?.id ? (await orderSalesUsers(db, order.id)).filter((u) => u.isActive && AUDIENCE_ROLES.sales.includes(u.appRole)) : [];
-      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: AUDIENCE_ROLES.sales }, isActive: true }, select: USER });
-      for (const u of users) add(u, 'staff');
+      for (const u of known) add(u, 'staff');
     } else {
       const users = await db.user.findMany({ where: { appRole: { in: AUDIENCE_ROLES[a] ?? [] }, isActive: true }, select: USER });
       for (const u of users) add(u, 'staff');

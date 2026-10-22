@@ -43,6 +43,21 @@ export function personView(role, u) {
   return /** @type {U} */ ({ ...out, ...MASKED_PERSON });
 }
 
+/**
+ * Müşterinin gördüğü iç ekip kişisi (karar 300): ad ve e-posta hiç dönmez; yalnızca nötr rol etiketi ("GKH · Satış")
+ * için rol kalır (masked). Müşteri kişileri (kendisi ve firmasının kullanıcıları) olduğu gibi kalır.
+ * @template {Record<string, unknown>} U
+ * @param {U | null | undefined} u
+ * @returns {U | null | undefined}
+ */
+export function staffView(u) {
+  if (!u || isCustomerPerson(u)) return u;
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const k of Object.keys(u)) out[k] = null;
+  return /** @type {U} */ ({ ...out, name: null, email: '', appRole: typeof u.appRole === 'string' ? u.appRole : null, type: 'INTERNAL', masked: true });
+}
+
 // ---------- olay geçmişi ----------
 const ALL = null; // siparişi gören her iç rol
 const ACCOUNTING = 'ACCOUNTING_MANAGE';
@@ -69,7 +84,7 @@ export const STAFF_EVENT_POLICY = {
   DWG_READY: OPEN, DWG_FAULTY: OPEN, DWG_UPDATE: OPEN, DWG_RESUBMITTED: OPEN, DWG_FACTORY_REQUESTED: OPEN,
   DWG_READY_UNDONE: OPEN, DWG_FAULTY_UNDONE: OPEN, DWG_UPDATE_UNDONE: OPEN,
   OFFER_SENT: OPEN, OFFER_CHECKED: OPEN, PRODUCTION: OPEN, SHIPPED: OPEN, AUTO_SHIPPED: OPEN, AUTO_SHIP_REVERTED: OPEN, ARCHIVED: OPEN, AUTO_ARCHIVED: OPEN,
-  CANCELLED: OPEN, HOLD: OPEN, UNHOLD: OPEN,
+  CANCELLED: OPEN, HOLD: OPEN, UNHOLD: OPEN, SALES_ASSIGNED: OPEN,
   CRATES: OPEN, SHIP_DATE: OPEN, REMOVED: OPEN, RESTORED: OPEN,
   GUEST_HOST: OPEN, GUEST_HOST_REMOVED: OPEN, GUEST_CRATE: OPEN, GUEST_CRATE_REMOVED: OPEN,
   LOADING_CONFIRMED: OPEN, LOADING_PARTIAL: OPEN, LOADING_NOT_LOADED: OPEN, LOADING_CORRECTED: OPEN, REPLAN_NOT_LOADED: OPEN, REPLAN_CANCELLED: OPEN,
@@ -147,9 +162,12 @@ function mapKeys(obj, keys, fn) {
  * @returns {O}
  */
 export function orderPeopleView(role, order) {
-  const person = (u) => personView(role, u);
+  const customer = customerView(role);
+  const person = (u) => (customer ? staffView(u) : personView(role, u));
   /** @type {Record<string, any>} */
   let o = mapKeys(order, ['createdBy'], person);
+  // Müşteri iç ekibin kimliğini hiçbir alanda almaz (karar 300): siparişin sorumlu satışçısı, çizimcisi ve atamayı yapan
+  if (customer) for (const key of ['assignedDrawer', 'salesUser', 'salesAssignedBy']) if (key in o) o = { ...o, [key]: null };
   if (Array.isArray(o.files)) o.files = o.files.map((f) => mapKeys(f, ['uploadedBy'], person));
   if (Array.isArray(o.drawings)) o.drawings = o.drawings.map((d) => mapKeys(d, ['uploadedBy', 'sentBy', 'decidedBy'], person));
   if (Array.isArray(o.notes)) o.notes = o.notes.map((n) => mapKeys(n, ['user'], person));
