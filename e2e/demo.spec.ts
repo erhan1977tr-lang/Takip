@@ -38,10 +38,10 @@ const shot = async (page: Page, name: string) => {
 
 test('yönetici: teklif kontrolü, fiyat onayı ve demo posta kutusuyla yeni kullanıcı', async ({ browser }) => {
   const admin = await as(browser, 'yonetici@ornek.test');
-  // Yöneticinin "Sıra bende"si yalnızca dört tablodur (karar 217): fiyat onayı bekleyen teklif Teklifler sayfasında, teklif
+  // Yöneticinin "Sıra bende"si beş tablodur (karar 217 + karar 300: başta atama bekleyenler): fiyat onayı bekleyen teklif Teklifler sayfasında, teklif
   // kontrolü (gönderimden sonra gelen revize çizim) sipariş sayfasında
   const sections = (await admin.locator('main .card-flush > .card-head h2').allTextContents()).map((x) => x.replace(/\s*\d+\s*$/, '').trim());
-  expect(sections).toEqual(['Yeni siparişler — karar bekliyor', 'Teklif hazırlanacaklar', 'SLA riski / gecikenler', 'Profil — fiyat bekleyenler']);
+  expect(sections).toEqual(['Atama bekleyen siparişler — sorumlu satışçı seçilmedi', 'Yeni siparişler — karar bekliyor', 'Teklif hazırlanacaklar', 'SLA riski / gecikenler', 'Profil — fiyat bekleyenler']);
   await shot(admin, '01-yonetici-siparisler');
   await admin.goto('/teklifler');
   await expect(admin.locator('[data-group=YONETIMDE]').getByRole('link', { name: 'ORN105' })).toBeVisible();
