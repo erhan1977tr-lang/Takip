@@ -161,7 +161,7 @@ dbTest('okunmamış sayaç: başkasının mesajı sayılır, kendi mesajı sayı
   // Gelecek bir an yazılamaz (şimdiye kısılır); okunduktan sonra 0
   await un.markNotesRead(db, { user: V.sales, orderId: o.id, upTo: new Date(Date.now() + 86_400_000).toISOString() });
   assert.ok((await db.orderNoteRead.findUniqueOrThrow({ where: { userId_orderId: { userId: V.sales.id, orderId: o.id } } })).lastReadAt.getTime() <= Date.now());
-  assert.deepEqual(await counts(V.sales), { [other.id]: 1 });
+  assert.deepEqual(await counts(V.sales), {}, 'başka satışçının siparişi (other) kapsam dışı (karar 300)');
   assert.ok((await db.notification.findMany({ where: { userId: V.sales.id, orderId: o.id, type: un.NOTE_EVENT } })).every((x) => x.isRead));
   // Silinmiş sipariş hiçbir sayaca girmez
   await db.order.update({ where: { id: other.id }, data: { removedAt: new Date() } });

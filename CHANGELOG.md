@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.8 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Veritabanı testi: okunmamış sayaç beklentisi kapsam kuralına göre güncellendi (başka satışçının siparişi sayılmaz).
+
 ## 4.3.7 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Veritabanı testleri: okunmamış mesaj sayacı liste satırlarında da sipariş kapsamını uygular (`unreadCounts` → `orderScope`;
