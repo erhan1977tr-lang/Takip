@@ -125,6 +125,8 @@ dbTest('okunmamış sayaç: başkasının mesajı sayılır, kendi mesajı sayı
   for (const [k, u] of Object.entries(V)) names.set(u.id, `v.${k}`);
   await new Promise((r) => setTimeout(r, 20));
   const o = await order(C, { drawer: V.drawer, by: V.c1 });
+  // Siparişin sorumlu satışçısı bu testin satışçısı (karar 300: satış yalnızca kendi siparişine yazar / bildirim alır)
+  await db.order.update({ where: { id: o.id }, data: { salesUserId: V.sales.id } });
   const other = await order(D, { by: V.d1 });
   const t0 = Date.now();
   await say(V.c1, o, 'm1');
@@ -134,7 +136,7 @@ dbTest('okunmamış sayaç: başkasının mesajı sayılır, kendi mesajı sayı
   const counts = async (u) => Object.fromEntries(await un.unreadCounts(db, u, [o.id, other.id]));
   assert.deepEqual(await counts(V.c1), { [o.id]: 1 }, 'c1: satışın mesajı (kendi mesajı ve iç not değil)');
   assert.deepEqual(await counts(V.c2), { [o.id]: 2 }, 'c2: c1 ve satışın mesajı');
-  assert.deepEqual(await counts(V.sales), { [o.id]: 2, [other.id]: 1 }, 'satış: müşteri mesajı + iç not');
+  assert.deepEqual(await counts(V.sales), { [o.id]: 2 }, 'satış: müşteri mesajı + iç not; başka satışçının siparişi (other) kapsam dışı (karar 300)');
   assert.deepEqual(await counts(V.insp), { [o.id]: 3, [other.id]: 1 });
   // Toplam (sol menü): yalnızca kapsamdaki siparişler — müşteri başka firmanın siparişini hiç saymaz
   assert.deepEqual(await un.unreadTotal(db, V.c1), { total: 1, orders: 1 });
@@ -149,7 +151,7 @@ dbTest('okunmamış sayaç: başkasının mesajı sayılır, kendi mesajı sayı
   await new Promise((r) => setTimeout(r, 15));
   await say(V.c1, o, 'm2 — sayfa açıldıktan sonra');
   assert.deepEqual(await un.markNotesRead(db, { user: V.sales, orderId: o.id, upTo: shown.toISOString() }), { ok: true, changed: true });
-  assert.deepEqual(await counts(V.sales), { [o.id]: 1, [other.id]: 1 });
+  assert.deepEqual(await counts(V.sales), { [o.id]: 1 });
   const salesBell = await db.notification.findMany({ where: { userId: V.sales.id, orderId: o.id, type: un.NOTE_EVENT }, orderBy: { createdAt: 'asc' } });
   assert.deepEqual(salesBell.map((x) => x.isRead), [true, false], 'zilde yalnızca okunan mesajın bildirimi okundu');
   // Geri gitmez: eski bir an (başka sekme) okunma anını geri almaz

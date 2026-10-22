@@ -124,7 +124,8 @@ dbTest('yönlendirme: boş veritabanı bağlı sayılır; kural yoksa yeni sipar
   assert.equal(await visible('drawerA', o2.id), false, 'çizim hattı açılmadan çizimci siparişi görmez (DRAWING_SCOPE); çizimci yine de kopyalandı');
   assert.deepEqual((await orderSalesUsers(db, o2.id)).map((u) => u.id), [U.salesA.id]);
   // Gelecekteki kural şimdi etkisiz; MANUAL kural yeni siparişleri atamasız bırakır
-  const future = await saveRoutingRule(db, { input: { mode: 'AUTO', targetUserId: U.salesB.id, startsAt: '2030-01-01T09:00' }, actor: act(U.admin) });
+  const futureDay = dayOf(30);
+  const future = await saveRoutingRule(db, { input: { mode: 'AUTO', targetUserId: U.salesB.id, startsAt: `${futureDay}T09:00` }, actor: act(U.admin) });
   assert.ok(future.ok);
   const st = await routingState(db);
   assert.deepEqual([st.current.id, st.upcoming.map((r) => r.id)], [rule.id, [future.id]]);
@@ -138,7 +139,6 @@ dbTest('yönlendirme: boş veritabanı bağlı sayılır; kural yoksa yeni sipar
   assert.equal(await db.adminAlert.count({ where: { type: 'ROUTING_TARGET_INVALID', dedupeKey: `routing-invalid:${bad.id}` } }), 1);
   await db.user.update({ where: { id: U.salesC.id }, data: { isActive: true } });
   await db.glassRoutingRule.delete({ where: { id: bad.id } });
-  await db.order.deleteMany({ where: { id: o4.id } });
   // Bağlama işareti yokken kural ve atama kapalı
   const link = await db.integrationSetting.findUnique({ where: { key: LINK_SETTING } });
   await db.integrationSetting.delete({ where: { key: LINK_SETTING } });
@@ -150,7 +150,7 @@ dbTest('yönlendirme: boş veritabanı bağlı sayılır; kural yoksa yeni sipar
 dbTest('yönetici ataması ve yönlendirmesi: atomik; çizimci kopyalanır; taslak fiyatlar yeni tabloyla sıfırlanır; ilk gönderimden sonra kapalı; geri çekme sıfırlamaz; yönetici işlem yapınca sahip değişmez', offline(async () => {
   const o = await newOrder('Yönlendirme');
   await db.order.update({ where: { id: o.id }, data: { salesUserId: null, assignedDrawerId: null, routingRuleId: null, salesAssignedVia: null } });
-  assert.equal(await codeOf(run(o.id, 'assign_sales', 'salesA', { salesUserId: U.salesA.id })), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(o.id, 'assign_sales', 'salesA', { salesUserId: U.salesA.id })), 'NOT_FOUND', 'satış atamasız siparişi görmez; atama yetkisi de yok');
   assert.equal(await codeOf(run(o.id, 'assign_sales', 'admin', { salesUserId: U.drawerA.id })), 'SALES_TARGET');
   await run(o.id, 'assign_sales', 'admin', { salesUserId: U.salesA.id });
   let r = await full(o.id);
@@ -195,23 +195,29 @@ dbTest('yönetici ataması ve yönlendirmesi: atomik; çizimci kopyalanır; tasl
   await setDefaultDrawer(db, { salesUserId: U.salesB.id, drawerId: U.drawerB.id, actor: act(U.admin) });
 }));
 
-dbTest('fiyat: satışçının tablosu yoksa varsayılana düşmez; teklif sürümsüz işlem reddedilmez (servis) ama satır kimliği değişince müşteri fiyatı düşer', offline(async () => {
+dbTest('fiyat: satışçının tablosu yoksa varsayılana düşmez; satır kimliği değişince yöneticinin müşteri fiyatı düşer; eski sürümle işlem reddedilir', offline(async () => {
   assert.equal(await pricingForUser(db, U.salesC.id), null);
   const o = await newOrder('Sürüm');
   await db.order.update({ where: { id: o.id }, data: { salesUserId: U.salesB.id, assignedDrawerId: U.drawerB.id, salesAssignedVia: 'MANUAL' } });
   await run(o.id, 'no_drawing', 'salesB');
-  await sendOffer(o.id, 'salesB', '60.00');
   let r = await full(o.id);
-  assert.deepEqual([r.offers[0].status, Number(r.offers[0].lines[0].offerPrice)], ['GONDERILDI', 60]);
-  // Yönetici geri gönderir; satış ölçüyü değiştirir → o satırın eski müşteri fiyatı geçersiz (null)
+  assert.deepEqual([r.offers[0].priceTableId, Number(r.offers[0].lines[0].listPrice)], [tables.b, 35], 'fiyat siparişin sorumlu satışçısının tablosundan');
+  await run(o.id, 'submit_offer', 'salesB', { lines: r.offers[0].lines.map((l) => form(l)), expectedVersion: r.version });
+  r = await full(o.id);
+  // Yönetici müşteri fiyatını yazıp satışa geri gönderir (taslak müşteri fiyatı saklanır)
   await run(o.id, 'return_offer', 'admin', { lines: r.offers[0].lines.map((l) => form(l, { offerPrice: '60.00' })), returnNote: 'ölçü', expectedVersion: r.version });
   r = await full(o.id);
-  await run(o.id, 'save_offer', 'salesB', { lines: r.offers[0].lines.map((l) => form(l, { enMm: 1200 })), expectedVersion: r.version });
-  r = await full(o.id);
-  assert.equal(r.offers[0].lines[0].offerPrice, null, 'satır kimliği değişti: yönetici fiyatı düştü');
+  assert.equal(Number(r.offers[0].lines[0].offerPrice), 60);
+  // Satış yalnızca fiyatı değiştirirse müşteri fiyatı kalır
   await run(o.id, 'save_offer', 'salesB', { lines: r.offers[0].lines.map((l) => form(l, { unitPrice: '41.00' })), expectedVersion: r.version });
+  r = await full(o.id);
+  assert.equal(Number(r.offers[0].lines[0].offerPrice), 60);
+  // Ölçü değişince o satırın yönetici fiyatı geçersizleşir
+  await run(o.id, 'save_offer', 'salesB', { lines: r.offers[0].lines.map((l) => form(l, { enMm: 1200 })), expectedVersion: r.version });
+  const after = await full(o.id);
+  assert.equal(after.offers[0].lines[0].offerPrice, null, 'satır kimliği değişti: yönetici fiyatı düştü');
   // Eski sürümle işlem reddedilir
-  assert.equal(await codeOf(run(o.id, 'save_offer', 'salesB', { lines: r.offers[0].lines.map((l) => form(l)), expectedVersion: r.version })), 'CONFLICT');
+  assert.equal(await codeOf(run(o.id, 'save_offer', 'salesB', { lines: after.offers[0].lines.map((l) => form(l)), expectedVersion: r.version })), 'CONFLICT');
 }));
 
 dbTest('iki ekip + aynı müşteri + ortak yükleme günü: liste / dosya / not / çizim ayrımı; bildirimler doğru ekibe; sandıklar ekip başına; misafir yük ekip aşmaz; nakliye bölümleri', offline(async () => {
@@ -230,7 +236,7 @@ dbTest('iki ekip + aynı müşteri + ortak yükleme günü: liste / dosya / not 
   assert.equal(await visible('drawerB', oa.id), false);
   assert.equal(await codeOf(run(oa.id, 'start_drawing', 'drawerB')), 'NOT_FOUND');
   await run(oa.id, 'start_drawing', 'drawerA');
-  const dr = await db.drawing.create({ data: { orderId: oa.id, version: 1, status: 'ONAY_BEKLIYOR', uploadedById: U.drawerA.id, sentAt: new Date(), files: { create: [{ storageKey: '2026/10/d1.pdf', fileName: 'ali-cizim.pdf', mime: 'application/pdf', size: 10, checksum: 'y', scanStatus: 'CLEAN', uploadedById: U.drawerA.id }] } }, include: { files: true } });
+  const dr = await db.drawing.create({ data: { orderId: oa.id, version: 1, status: 'ONAY_BEKLIYOR', uploadedById: U.drawerA.id, sentAt: new Date(), files: { create: [{ storageKey: '2026/10/d1.pdf', name: 'ali-cizim.pdf', mime: 'application/pdf', size: 10, checksum: 'y', scanStatus: 'CLEAN', uploadedById: U.drawerA.id }] } }, include: { files: true } });
   const fid = dr.files[0].id;
   assert.ok(await findDrawingFile(db, { id: fid, scope: orderScope(U.drawerA), role: 'CIZIM' }));
   assert.equal(await findDrawingFile(db, { id: fid, scope: orderScope(U.drawerB), role: 'CIZIM' }), null, 'başka ekibin çizimcisi dosyayı alamaz');

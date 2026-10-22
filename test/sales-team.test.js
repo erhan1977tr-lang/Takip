@@ -107,6 +107,9 @@ test('satır kimliği değişince yöneticinin eski müşteri fiyatı geçersizl
   assert.equal(lineIdentityChanged(old, { shaped: true }), true);
   assert.equal(lineIdentityChanged({ ...old, glassProductId: null }, { description: 'Başka cam' }), true, 'katalog camı yoksa açıklama kimliktir');
   assert.equal(lineIdentityChanged(old, { unitPrice: '99' }), false, 'satış fiyatı kimlik değil');
+  // İşlem satırı (CNC / DELİK) ve adetli satır: ölçü kimlik değil (form boş ölçüye varsayılan yazabilir)
+  assert.equal(lineIdentityChanged({ kind: 'CNC', description: '', enMm: null, boyMm: null, unit: 'adet', adet: 1 }, { kind: 'CNC', description: '', enMm: 1000, boyMm: 1000, unit: 'adet' }), false);
+  assert.equal(lineIdentityChanged({ kind: 'CNC', description: '', unit: 'adet' }, { kind: 'DELIK' }), true);
   // mergePrices: satışın kimlik değişikliği müşteri fiyatını boşaltır (yapı)
   const tr = read('server/orders/transitions.js');
   assert.match(tr, /const stale = !admin && own && lineIdentityChanged\(own, l\)/);

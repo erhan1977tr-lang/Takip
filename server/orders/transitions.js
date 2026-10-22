@@ -257,10 +257,13 @@ export function lineIdentityChanged(old, l) {
     const a = pm(old.pieceM2), b = pm(l.pieceM2);
     return a === null || b === null ? a !== b : Math.abs(a - b) > 0.0005;
   })();
+  // Ölçü ve parça m² yalnızca m² satırında kimliktir (işlem / adetli satırda ölçü yoktur; formun yazdığı boş / varsayılan
+  // değer değişiklik sayılmaz)
+  const m2 = (old.kind ?? 'CAM') === 'CAM' && (old.unit ?? 'm2') === 'm2';
   return glassChanged
-    || diff(num(old.enMm), l.enMm === undefined ? undefined : num(l.enMm))
-    || diff(num(old.boyMm), l.boyMm === undefined ? undefined : num(l.boyMm))
-    || pieceChanged
+    || (m2 && diff(num(old.enMm), l.enMm === undefined ? undefined : num(l.enMm)))
+    || (m2 && diff(num(old.boyMm), l.boyMm === undefined ? undefined : num(l.boyMm)))
+    || (m2 && pieceChanged)
     || diff(old.unit ?? 'm2', l.unit === undefined ? undefined : l.unit ?? 'm2')
     || diff(old.kind ?? 'CAM', l.kind === undefined ? undefined : l.kind ?? 'CAM')
     || diff(!!old.shaped, l.shaped === undefined ? undefined : !!l.shaped);

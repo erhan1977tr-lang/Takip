@@ -454,8 +454,9 @@ dbTest('çizim içeriğine erişim (karar 146, AUD-8): müşteri geri çekilen s
 
   // Gönderildi (ONAY_BEKLIYOR, değişmedi): müşteri dosyaları ve notu görür — dosya kimliği ve eski sürüm kimliğiyle
   await send(o.id);
-  assert.deepEqual(await names('cust', [f1, f2]), ['cizim-q1.pdf', 'cizim-q2.dxf']);
-  assert.ok((await get('cust', d1)).name.startsWith('cizim-q'), 'eski bağlantı: sürümün ilk dosyası');
+  // Müşteriye nötr ad (karar 300): sipariş no + sürüm (+ sıra), özgün ad değil
+  assert.deepEqual(await names('cust', [f1, f2]), [`${o.orderNo}-cizim-v1.pdf`, `${o.orderNo}-cizim-v1-2.dxf`]);
+  assert.ok((await get('cust', d1)).name.startsWith(`${o.orderNo}-cizim-v1`), 'eski bağlantı: sürümün ilk dosyası');
   assert.deepEqual((await view('cust', o.id)).map((d) => [d.status, d.files.length, d.noteCustomer]), [['ONAY_BEKLIYOR', 2, 'v1 müşteri notu']]);
   assert.deepEqual(await names('other', [f1, f2, d1]), [null, null, null], 'başka firmanın müşterisi hiçbir zaman');
 
