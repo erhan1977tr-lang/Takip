@@ -15,7 +15,13 @@
  * Çok ekipli testler resetDb(db, { singleTeam: false }) ile çağırır: tetikleyiciler kaldırılır, sahip / çizimci açıkça
  * verilir. Uygulama kodu bu tetikleyicilere asla güvenmez (gerçek migration'larda yoktur).
  */
-export async function setSingleTeam(db, on, { defaultTable = on } = {}) {
+export async function setSingleTeam(db, on, { defaultTable = on, preferSales = null } = {}) {
+  // preferSales: uçtan uca test takımının "tek satışçısı" (e2e: 05'te satis@e2e.test bilerek kilitlenir, 08'den sonra
+  // fiyat-satis@e2e.test çalışır). Hesap varsa ve etkinse sahibi odur; yoksa ilk etkin satışçı (eski davranış).
+  const prefer = typeof preferSales === 'string' && /^[a-z0-9._@-]{3,120}$/i.test(preferSales) ? preferSales : null;
+  const firstSales = prefer
+    ? `ORDER BY (u.email = '${prefer}') DESC, u."createdAt", u.id LIMIT 1`
+    : 'ORDER BY u."createdAt", u.id LIMIT 1';
   await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_default_table ON "PriceTable"`);
   await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_user_table ON "User"`);
   if (defaultTable) {
@@ -48,7 +54,7 @@ export async function setSingleTeam(db, on, { defaultTable = on } = {}) {
     BEGIN
       IF NEW."orderTypeCode" = 'GLASS_ORDER' AND NEW."salesUserId" IS NULL THEN
         SELECT u.id INTO NEW."salesUserId" FROM "User" u
-          WHERE u."appRole" = 'SATIS' AND u."isActive" AND u."deletedAt" IS NULL ORDER BY u."createdAt", u.id LIMIT 1;
+          WHERE u."appRole" = 'SATIS' AND u."isActive" AND u."deletedAt" IS NULL ${firstSales};
         IF NEW."salesUserId" IS NOT NULL THEN
           NEW."salesAssignedAt" := COALESCE(NEW."salesAssignedAt", NEW."createdAt");
           NEW."salesAssignedVia" := COALESCE(NEW."salesAssignedVia", 'AUTO');
@@ -66,7 +72,7 @@ export async function setSingleTeam(db, on, { defaultTable = on } = {}) {
     BEGIN
       IF NEW."salesUserId" IS NULL THEN
         SELECT u.id INTO NEW."salesUserId" FROM "User" u
-          WHERE u."appRole" = 'SATIS' AND u."isActive" AND u."deletedAt" IS NULL ORDER BY u."createdAt", u.id LIMIT 1;
+          WHERE u."appRole" = 'SATIS' AND u."isActive" AND u."deletedAt" IS NULL ${firstSales};
       END IF;
       RETURN NEW;
     END $$`);
@@ -108,7 +114,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const { PrismaClient } = await import('@prisma/client');
   const db = new PrismaClient();
   try {
-    await setSingleTeam(db, process.argv.includes('--off') ? false : true);
+    const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] ?? null : null; };
+    const on = !process.argv.includes('--off');
+    await setSingleTeam(db, on, { defaultTable: on && !process.argv.includes('--no-default-table'), preferSales: arg('--prefer-sales') });
     console.log(`single-team: tetikleyiciler ${process.argv.includes('--off') ? 'kaldırıldı' : 'kuruldu'}.`);
   } finally {
     await db.$disconnect();

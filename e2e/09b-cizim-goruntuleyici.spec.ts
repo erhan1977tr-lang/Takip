@@ -94,6 +94,13 @@ const SALES2 = 'fiyat-satis@e2e.test'; // 08'de açılan satışçı (satis@e2e.
 test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyon notu (işaretleme yok); eski işaretler iç ekipte; görüntüleyiciden onay; onaylanmış çizimler', async ({ browser }) => {
   const cust = await as(browser, CUSTOMER, CUST_PW);
   const id = await newOrder(cust, 'Görüntüleyici', 'plan.pdf');
+  // Müşteri çizim dosyasının iç adını görmez (karar 300): "<sipariş no>-cizim-v<sürüm>[-sıra].<uzantı>"
+  const { PrismaClient: OrderDb } = await import('@prisma/client');
+  const odb = new OrderDb();
+  const orderNo = (await odb.order.findUniqueOrThrow({ where: { id }, select: { orderNo: true } })).orderNo;
+  await odb.$disconnect();
+  const CUST_V1 = `${orderNo}-cizim-v1.pdf`;
+  const CUST_V2 = `${orderNo}-cizim-v2.pdf`;
   const admin = await as(browser, ADMIN, ADMIN_PW);
   // Aynı firmada onay yetkisi olmayan müşteri kullanıcısı
   await createUser(admin, { email: VIEWER, name: 'İzleyici Kişi', role: 'Müşteri', firm: 'Ünsal Cam' });
@@ -230,13 +237,13 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await cust.getByRole('link', { name: 'Aç ve incele' }).first().click();
   await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
   await expect(cust.locator('.viewer-side')).toHaveCount(0); // boş "İşaretler" bölümü yok
-  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await cust.locator('.viewer-bar select').selectOption({ label: CUST_V1 });
   await expect.poll(() => cust.locator('.viewer-page canvas').evaluate(inked)).toBe(true);
   await shot(cust, '22-musteri-cizim-karar');
   await shot(cust, '22-musteri-cizim-karar', true);
   await cust.locator('.viewer-decide').getByRole('link', { name: 'Revizyon iste' }).click();
   await expect(cust).toHaveURL(/revizyon=1$/);
-  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await cust.locator('.viewer-bar select').selectOption({ label: CUST_V1 });
   await expect.poll(() => cust.locator('.viewer-page canvas').evaluate(inked)).toBe(true);
   // Müşteri revizyon ekranında çizim üzerine işaret araçları (Paket B — karar 227): İğne, Dikdörtgen, Serbest, Metin
   for (const tool of ['İğne', 'Dikdörtgen', 'Serbest', 'Metin']) await expect(cust.getByRole('button', { name: tool, exact: true })).toBeVisible();
@@ -264,7 +271,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(cust.locator('.ann-rect')).toHaveCount(1);
   // Taslak sayfa yenilenince kaybolmaz (bu tarayıcıda, bu sürüm için)
   await cust.reload();
-  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await cust.locator('.viewer-bar select').selectOption({ label: CUST_V1 });
   await expect(cust.locator('.ann-pin')).toHaveCount(1);
   await expect(cust.locator('.ann-rect')).toHaveCount(1);
   await expect(cust.getByLabel('#1 işaretinin açıklaması', { exact: true })).toHaveValue('Bu köşe 5 mm');
@@ -302,7 +309,7 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   // Sayfa yenilense de silinen son numara (#4) yeniden verilmez: sayaç taslakla saklanır (karar 244)
   await cust.reload();
-  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await cust.locator('.viewer-bar select').selectOption({ label: CUST_V1 });
   await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   await expect(cust.getByLabel('#3 işaretinin açıklaması', { exact: true })).toHaveValue('Sağ alt köşe');
   await cust.getByRole('button', { name: 'İğne', exact: true }).click();
@@ -379,15 +386,15 @@ test('çizim görüntüleyici: kontrol et → gönder; numaralı maddeli revizyo
   // Onay kesindir: artık ne onay ne revizyon işlemi var (sipariş sayfasında da görüntüleyicide de)
   await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toHaveCount(0);
   await expect(cust.getByRole('link', { name: 'Revizyon iste' })).toHaveCount(0);
-  const v1 = cust.locator('.drawing-version', { hasText: 'plan-v1.pdf' });
+  const v1 = cust.locator('.drawing-version', { hasText: CUST_V1 });
   await expect(v1).toContainText('revizyon istendi');
   await expect(v1.locator('ol.revision-list li')).toHaveText(['Bu ölçü 1100 olmalı', 'Bu kenar yuvarlatılsın', '2 delik Ø12', '#1: Bu köşe 5 mm', '#3: Sağ alt köşe']);
   await expect(v1.getByRole('link', { name: /işaret\)/ })).toHaveCount(0); // işaret bağlantısı yalnızca iç ekipte
   await expect(v1.locator('.file-row')).toHaveCount(4); // v1'in dosyaları (teknik ek dahil) aynen duruyor
-  await expect(cust.locator('.drawing-version', { hasText: 'plan-v2.pdf' })).toContainText('onaylandı');
+  await expect(cust.locator('.drawing-version', { hasText: CUST_V2 })).toContainText('onaylandı');
   await cust.goto(`${viewerUrl}?revizyon=1`); // eski sürüm için revizyon ekranı açılmaz
   await expect(cust.locator('textarea[name=item]')).toHaveCount(0);
-  await cust.locator('.viewer-bar select').selectOption({ label: 'plan-v1.pdf' });
+  await cust.locator('.viewer-bar select').selectOption({ label: CUST_V1 });
   // Eski sürüm salt görüntülenir: müşteri kendi talebinin işaretlerini görür (karar 227), değiştiremez
   await expect(cust.locator('.ann-pin')).toHaveText(['1', '3']);
   await expect(cust.locator('.viewer-side')).toContainText('Bu köşe 5 mm');

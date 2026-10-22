@@ -150,6 +150,8 @@ test('yönetici: Cam Fabrika Hesap Durumu — yükleme kârı, eksik maliyet uya
 
   // Yeni fabrika ödemesi
   const payForm = page.locator('form.acc-form', { has: page.locator('#fp-day') });
+  // Ödeme hangi satış hesabına yapıldı (karar 300): girişte zorunlu seçim
+  await payForm.locator('#fp-account').selectOption({ index: 1 });
   await payForm.locator('[name=amount]').fill('250,50');
   await payForm.locator('[name=note]').fill('E2E-ODEME-2');
   await page.getByRole('button', { name: 'Ödeme ekle' }).click();
@@ -203,7 +205,9 @@ test('taklit istek: müşteri ve satış muhasebe / FGO işlemlerini form gönde
   // Sunucu işlemlerinin alanları yöneticinin sayfasından (yetkisiz kullanıcı bunları bir yerden öğrenmiş sayılır)
   const payField = await actionField(admin, SUPPLIER, 'id="fp-day"');
   const docField = await actionField(admin, newUrl, 'value="PROFORMA"');
-  const payment = (who: string) => ({ paidOn: '2026-09-21', amount: '777.77', currency: 'EUR', note: `TAKLIT-${who}` });
+  // Ödemenin satış hesabı (karar 300): yönetici oturumundaki karşı kontrolün geçerli bir hesabı olsun
+  const account = (await db.user.findFirstOrThrow({ where: { email: SALES2 } })).id;
+  const payment = (who: string) => ({ paidOn: '2026-09-21', amount: '777.77', currency: 'EUR', salesUserId: account, note: `TAKLIT-${who}` });
   const payments = (who: string) => db.factoryPayment.count({ where: { note: `TAKLIT-${who}` } });
   const fgoRequests = () => db.notificationOutbox.count({ where: { orderId: newOrderId, type: 'FGO_GLASS' } });
 

@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.9 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Uçtan uca test düzeni (karar 300 sonrası ilk tam e2e koşusu):
+- Test tetikleyicisi (`scripts/test/single-team.mjs`): `--prefer-sales` ile e2e takımının satışçısı (fiyat-satis@e2e.test —
+  05'te satis@e2e.test bilerek kilitlenir) siparişin sahibi olur; `--no-default-table` ile fiyat tablosu ataması uygulamadaki
+  gibi açıktır (08'deki "Bu tabloya ata" adımı). Gerçek sistem davranışı değişmedi.
+- Testler yeni kurallara göre: müşteride çizim dosyası nötr adla (`<sipariş no>-cizim-v<sürüm>`), fabrika ödemesinde satış
+  hesabı seçimi zorunlu.
+- Çizim dosyalarının sırası kesin (`createdAt`, sonra `id`): müşterinin nötr dosya adındaki sıra numarası liste, indirme ve
+  görüntüleyicide aynı.
+- CI: Playwright hatalarının kısa özeti (test, hata satırları, testteki satır) not olarak yayınlanır.
+
 ## 4.3.8 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Veritabanı testi: okunmamış sayaç beklentisi kapsam kuralına göre güncellendi (başka satışçının siparişi sayılmaz).

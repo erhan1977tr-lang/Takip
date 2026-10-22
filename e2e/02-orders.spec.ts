@@ -155,7 +155,9 @@ test('çizim yolu: çizim ve teklif paralel; müşterideki teklifi yönetici gü
   await expect(cust.getByText('Ölçüler sahadan alındı')).toBeVisible();
   await expect(cust.getByText('iç: müşteri telefonda onay verdi')).toHaveCount(0); // iç not müşteriye gitmez
   await expect(cust.getByText('Onayınız bekleniyor').first()).toBeVisible();
-  const href = await cust.locator('.file-row', { hasText: 'korkuluk-v1.dxf' }).locator('a[href^="/dosya/cizim/"]').first().getAttribute('href');
+  // Müşteri iç dosya adını görmez (karar 300): çizim dosyası "<sipariş no>-cizim-v<sürüm>[-sıra].<uzantı>"
+  await expect(cust.locator('.file-row', { hasText: 'korkuluk-v1' })).toHaveCount(0);
+  const href = await cust.locator('.file-row', { hasText: /UNS2-cizim-v1(-\d+)?\.dxf/ }).locator('a[href^="/dosya/cizim/"]').first().getAttribute('href');
   ids.drawing = href!.split('/').pop();
   const dl = await cust.request.get(href!);
   expect(dl.status()).toBe(200);

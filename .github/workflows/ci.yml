@@ -236,8 +236,10 @@ jobs:
 
       - name: Tek ekip test tetikleyicileri (karar 300 — yalnızca test veritabanı)
         # Satışçı / çizimci ayrımından önce yazılmış uçtan uca testler siparişleri doğrudan veritabanına yazar; tetikleyiciler
-        # sahibi boş cam siparişini ilk satışçıya (+ çizimcisine) verir (scripts/test/single-team.mjs). Gerçek migration değildir.
-        run: scripts/ci-step.sh "single-team" node scripts/test/single-team.mjs
+        # sahibi boş cam siparişini takımın satışçısına (+ çizimcisine) verir (scripts/test/single-team.mjs). Gerçek migration değildir.
+        # Takımın satışçısı fiyat-satis@e2e.test (08'de açılır; 05'te satis@e2e.test bilerek kilitlenir) — yoksa ilk satışçı.
+        # Fiyat tablosu ataması uygulamadaki gibi açıktır (varsayılan tabloya düşme yok — karar 300).
+        run: scripts/ci-step.sh "single-team" node scripts/test/single-team.mjs --no-default-table --prefer-sales fiyat-satis@e2e.test
 
       - name: Sunucuyu başlat
         run: |

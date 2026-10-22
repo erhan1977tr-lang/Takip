@@ -91,7 +91,10 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(drawer.getByText('Çizim müşterinin onayına gönderildi.')).toBeVisible();
   await cust.goto(`/siparisler/${id}`);
   await expect(cust.getByRole('button', { name: 'Bu çizimi onayla' })).toBeVisible();
-  await expect(cust.locator('.file-row', { hasText: 'dus-v1.dxf' })).toBeVisible();
+  // Müşteri iç dosya adını görmez (karar 300): "<sipariş no>-cizim-v1[-sıra].<uzantı>"
+  const custV1 = cust.locator('.drawing-version', { has: cust.locator('.file-row', { hasText: /-cizim-v1(-\d+)?\.dxf/ }) });
+  await expect(custV1).toBeVisible();
+  await expect(cust.locator('.file-row', { hasText: 'dus-v1' })).toHaveCount(0);
 
   // Gönderilmiş sürüm (değişmedi): müşteri notu görür; dosyayı dosya kimliğiyle, eski sürüm kimliğiyle ve "aç" (?ac=1)
   // adresiyle alır; görüntüleyici açılır. Her erişim indirme kaydına yazılır.
@@ -102,7 +105,7 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   const v1Urls = [...v1.files.flatMap((f) => [`/dosya/cizim/${f.id}`, `/dosya/cizim/${f.id}?ac=1`]), `/dosya/cizim/${v1.id}`, `/dosya/cizim/${v1.id}?ac=1`];
   const custUser = await db.user.findUniqueOrThrow({ where: { email: CUSTOMER } });
   const custDownloads = () => db.auditLog.count({ where: { action: 'FILE_DOWNLOAD', userId: custUser.id, entityId: { in: [...v1.files.map((f) => f.id), v1.id] } } });
-  await expect(cust.locator('.drawing-version', { hasText: 'dus-v1.dxf' })).toContainText(NOTE);
+  await expect(custV1).toContainText(NOTE);
   expect(await custDownloads()).toBe(0);
   for (const url of v1Urls) {
     const res = await cust.request.get(url);

@@ -117,14 +117,14 @@ export async function findDrawingFile(db, { id, scope, role }) {
   const neutral = !seesAll(role);
   const f = await db.drawingFile.findFirst({
     where: { id, drawing },
-    include: { drawing: { select: { orderId: true, version: true, order: { select: { orderNo: true } }, files: { select: { id: true }, orderBy: { createdAt: 'asc' } } } } },
+    include: { drawing: { select: { orderId: true, version: true, order: { select: { orderNo: true } }, files: { select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } } } },
   });
   if (f) {
     const name = neutral ? neutralDrawingName(f.drawing.order.orderNo, f.drawing.version, f.name, Math.max(0, f.drawing.files.findIndex((x) => x.id === f.id))) : f.name;
     return { storageKey: f.storageKey, name, mime: f.mime, scanStatus: f.scanStatus, orderId: f.drawing.orderId };
   }
   // Eski bağlantılar: /dosya/cizim/<sürüm kimliği>
-  const d = await db.drawing.findFirst({ where: { id, ...drawing }, include: { files: { orderBy: { createdAt: 'asc' }, take: 1 }, order: { select: { orderNo: true } } } });
+  const d = await db.drawing.findFirst({ where: { id, ...drawing }, include: { files: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1 }, order: { select: { orderNo: true } } } });
   if (!d) return null;
   const first = d.files[0];
   const named = (n) => (neutral ? neutralDrawingName(d.order.orderNo, d.version, n) : n);

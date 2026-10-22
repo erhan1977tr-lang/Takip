@@ -141,11 +141,13 @@ test('fabrika hesapları: ödeme girişinde hesap seçilir; hesap değişince A 
   const b = await db.user.findUniqueOrThrow({ where: { email: SALES_B } });
   const totalBefore = Number((await db.factoryPayment.aggregate({ where: { currency: 'EUR' }, _sum: { amount: true } }))._sum.amount ?? 0);
   await db.$disconnect();
-  await admin.selectOption('#fp-account', a.id);
-  await admin.fill('[name=amount]', '123.45');
-  await admin.selectOption('#fp-cur', 'EUR');
-  await admin.fill('[name=note]', 'ekip testi');
-  await admin.getByRole('button', { name: 'Ödeme ekle' }).click();
+  // Sayfada transport formlarının da tutar / not alanı var: fabrika ödeme formuna daraltılır
+  const payForm = admin.locator('form.acc-form', { has: admin.locator('#fp-account') });
+  await payForm.locator('#fp-account').selectOption(a.id);
+  await payForm.locator('[name=amount]').fill('123.45');
+  await payForm.locator('#fp-cur').selectOption('EUR');
+  await payForm.locator('[name=note]').fill('ekip testi');
+  await payForm.getByRole('button', { name: 'Ödeme ekle' }).click();
   await expect(admin.getByText('Ödeme eklendi.')).toBeVisible();
   const row = admin.locator('#odemeler tbody tr').filter({ hasText: 'ekip testi' });
   await expect(row.locator('[data-payment-account]')).toHaveAttribute('data-payment-account', a.id);

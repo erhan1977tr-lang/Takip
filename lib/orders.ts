@@ -100,7 +100,8 @@ export const orderDetailInclude = {
     include: {
       uploadedBy: { select: PERSON },
       revisions: { orderBy: { createdAt: 'asc' } },
-      files: { orderBy: { createdAt: 'asc' } },
+      // Sıra kesin (aynı anda eklenen dosyalar): müşterinin nötr dosya adındaki sıra numarası buna dayanır (karar 300)
+      files: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
       sentBy: { select: { name: true, appRole: true, type: true } },
       decidedBy: { select: { name: true, appRole: true, type: true } },
     },
