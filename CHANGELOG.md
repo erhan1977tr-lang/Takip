@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.13 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Demo uçtan uca testi: yöneticinin "Sıra bende"sinde "Atama bekleyen siparişler" tablosu (karar 300). Kod değişmedi.
+
 ## 4.3.12 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Uçtan uca test 70: A ekibinin satışçısı takımın satışçısı (fiyat-satis@e2e.test). satis@e2e.test 05'te bilerek kilitlenir;
