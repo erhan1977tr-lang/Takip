@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.1 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket — CI sürüm kuralı gereği her itme numara artırır)
+
+Yayın ve geri dönüş yöntemi: `docs/satis-ekibi-yayin-ve-geri-donus.md`.
+
 ## 4.3.0 — 22.10.2026 (yayın adayı — geliştiriliyor)
 
 Satışçı–çizimci ayrımı (karar 300). Cam siparişlerinde tek sorumlu satışçı ve atanmış çizimci; satış ve çizim yalnızca
