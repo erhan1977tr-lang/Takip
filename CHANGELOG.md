@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.11 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Uçtan uca test 09: müşterinin ham sayfa yanıtında v2 dosyası nötr adla beklenir; iç dosya adının olmadığı da denetlenir.
+Kod değişmedi.
+
 ## 4.3.10 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Uçtan uca test beklentileri karar 300'e göre: müşteride çizim dosyasının nötr adı (09, 51 — iç dosya adının müşterinin

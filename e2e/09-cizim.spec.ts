@@ -194,7 +194,9 @@ test('çizim: taslak → onaylı gönderim → geri çekme → yeni sürüm', as
   await expect(cust.locator('.drawing-version', { hasText: 'v2' }).locator('.file-row', { hasText: /-cizim-v2\.pdf/ })).toBeVisible(); // nötr ad (karar 300)
   await expect(cust.locator('.drawing-version', { hasText: 'geri çekildi' }).locator('.file-row')).toHaveCount(0);
   const rawAfter = await (await cust.request.get(`/siparisler/${id}`)).text();
-  expect(rawAfter).toContain('dus-v2.pdf');
+  // Açık v2 nötr adla gelir; iç dosya adı müşterinin ham yanıtında da yok (karar 300)
+  expect(rawAfter).toMatch(/-cizim-v2\.pdf/);
+  expect(rawAfter).not.toContain('dus-v2.pdf');
   for (const leak of leaks) expect(rawAfter, leak).not.toContain(leak);
 
   await cust.goto(`/siparisler/${id}`);
