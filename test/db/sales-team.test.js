@@ -43,7 +43,6 @@ const newOrder = async (title) => {
   });
 };
 const full = (id) => db.order.findUniqueOrThrow({ where: { id }, include: { offers: { orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } }, salesUser: true, assignedDrawer: true } });
-const glassLine = (extra = {}) => ({ description: 'Cam', poz: null, enMm: 1000, boyMm: 1000, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false, glassProductId: glass.id, ...extra });
 // Ön doldurulmuş satırın ölçüsü yoktur: form 1000 × 1000 yazar (2 adet = 2 m²)
 const form = (l, extra = {}) => ({ id: l.id, description: l.description, poz: l.poz, enMm: l.enMm ?? 1000, boyMm: l.boyMm ?? 1000, adet: l.adet, unit: l.unit, kind: l.kind, free: l.free, glassProductId: l.glassProductId, unitPrice: Number(l.unitPrice).toFixed(2), ...extra });
 const visible = (who, orderId) => db.order.findFirst({ where: { id: orderId, ...orderScope(U[who]) }, select: { id: true } }).then((r) => !!r);

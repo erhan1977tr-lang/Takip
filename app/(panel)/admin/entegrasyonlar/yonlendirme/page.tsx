@@ -10,7 +10,11 @@ export const dynamic = 'force-dynamic';
 
 const ERR = ['FORBIDDEN', 'MODE', 'TARGET', 'TIME', 'PAST', 'FAR', 'NOT_LINKED'];
 
-type Rule = Awaited<ReturnType<typeof routingState>>['rules'][number];
+type Rule = {
+  id: string; mode: string; startsAt: Date; note: string | null;
+  targetUser: { id: string; name: string; email: string; isActive: boolean } | null;
+  createdBy: { name: string; email: string } | null;
+};
 
 function modeText(t: T, r: Rule) {
   if (r.mode !== 'AUTO') return t('team.routing.mode.MANUAL');
@@ -30,7 +34,7 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
   const { t, intl } = await getT();
   const sp = await searchParams;
   const now = new Date();
-  const [state, link, sales] = await Promise.all([
+  const [raw, link, sales] = await Promise.all([
     routingState(db, now),
     db.integrationSetting.findUnique({ where: { key: LINK_SETTING } }),
     db.user.findMany({
@@ -43,6 +47,7 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
       },
     }),
   ]);
+  const state = raw as unknown as { rules: Rule[]; linked: boolean; current: Rule | null; upcoming: Rule[] };
   const fmt = (d: Date) => new Intl.DateTimeFormat(intl, { dateStyle: 'short', timeStyle: 'short', timeZone: ROUTING_TIMEZONE }).format(d);
   const linkedAt = (link?.value as unknown as { linkedAt?: string } | null)?.linkedAt;
   const errText = sp.error ? t(`team.routing.errors.${ERR.includes(sp.error) ? sp.error : 'MODE'}` as MsgKey) : null;
