@@ -59,17 +59,28 @@ export function accountsMatchSummary(snap) {
 }
 
 /**
+ * E-postayla hesap: büyük / küçük harf farkı gözetilmez; aynı adresin iki yazımı varsa (belirsiz) hesap seçilmez.
+ * @param {any} db  @param {unknown} email  @param {{ include?: object }} [o]
+ */
+async function userByEmail(db, email, { include } = {}) {
+  const e = String(email ?? '').trim();
+  if (!e) return null;
+  const rows = await db.user.findMany({ where: { email: { equals: e, mode: 'insensitive' } }, ...(include ? { include } : {}), take: 2 });
+  return rows.length === 1 ? rows[0] : null;
+}
+
+/**
  * Ön kontrol / önizleme — hiçbir şey yazmaz.
  * @param {any} db  @param {{ targetEmail: string, drawerEmail?: string | null }} p
  */
 export async function previewLink(db, { targetEmail, drawerEmail = null }) {
   const problems = [];
   const ambiguities = [];
-  const target = await db.user.findUnique({ where: { email: String(targetEmail ?? '').trim().toLowerCase() }, include: { defaultDrawer: true } });
+  const target = await userByEmail(db, targetEmail, { include: { defaultDrawer: true } });
   if (!validSales(target)) problems.push('TARGET_NOT_SALES');
   let drawer = null;
   if (drawerEmail) {
-    drawer = await db.user.findUnique({ where: { email: String(drawerEmail).trim().toLowerCase() } });
+    drawer = await userByEmail(db, drawerEmail);
     if (!validDrawer(drawer)) problems.push('DRAWER_NOT_DRAWER');
   } else if (target && !validDrawer(target.defaultDrawer)) {
     problems.push('NO_DRAWER');

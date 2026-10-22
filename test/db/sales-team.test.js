@@ -235,7 +235,7 @@ dbTest('iki ekip + aynı müşteri + ortak yükleme günü: liste / dosya / not 
   assert.equal(await visible('drawerA', oa.id), true);
   assert.equal(await visible('drawerB', oa.id), false);
   assert.equal(await codeOf(run(oa.id, 'start_drawing', 'drawerB')), 'NOT_FOUND');
-  await run(oa.id, 'start_drawing', 'drawerA');
+  // Atanmış çizimci "işi al"maz (start_drawing yalnızca atamasız iş için): doğrudan sürüm yükler
   const dr = await db.drawing.create({ data: { orderId: oa.id, version: 1, status: 'ONAY_BEKLIYOR', uploadedById: U.drawerA.id, sentAt: new Date(), files: { create: [{ storageKey: '2026/10/d1.pdf', name: 'ali-cizim.pdf', mime: 'application/pdf', size: 10, checksum: 'y', scanStatus: 'CLEAN', uploadedById: U.drawerA.id }] } }, include: { files: true } });
   const fid = dr.files[0].id;
   assert.ok(await findDrawingFile(db, { id: fid, scope: orderScope(U.drawerA), role: 'CIZIM' }));
@@ -405,7 +405,7 @@ dbTest('tek ekip regresyonu: tek ekip varsayılanlı veritabanında (resetDb) si
   const cust = await db.user.create({ data: { email: 'm@tek.test', name: 'm', type: 'CUSTOMER', appRole: 'MUSTERI', customerId: c.id, canApprove: true } });
   assert.equal((await db.user.findUnique({ where: { id: sales.id } })).defaultDrawerId, drawer.id, 'tek ekip tetikleyicisi: çizimci sonradan eklenince eşleşir');
   const next = await suggestNextNo(db, c.id);
-  const o = await createGlassOrder(db, { actor: act(cust), firm: c, title: 'tek', requestedNo: next, suggestedNo: next, items: [{ glassName: 'x', camAdedi: 1 }], files: [] });
+  const o = await createGlassOrder(db, { actor: act(cust), firm: c, title: 'tek', requestedNo: next, suggestedNo: next, items: [{ glassName: 'x', camAdedi: 1 }], files: [{ storageKey: '2026/10/tek.pdf', name: 'tek.pdf', size: 10, mime: 'application/pdf', checksum: 'x', scanStatus: 'CLEAN' }] });
   const r = await db.order.findUniqueOrThrow({ where: { id: o.id } });
   assert.deepEqual([r.salesUserId, r.assignedDrawerId], [sales.id, drawer.id]);
   await runOrderAction(db, { orderId: o.id, action: 'send_to_drawing', actor: act(sales), payload: {} });

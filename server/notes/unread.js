@@ -63,6 +63,9 @@ export async function unreadCounts(db, user, orderIds, { now = new Date() } = {}
   const ids = [...new Set((orderIds ?? []).filter(isId))];
   const out = new Map();
   if (!user?.id || !ids.length) return out;
+  // Kapsam (karar 300): yalnızca kullanıcının görebildiği siparişler sayılır — satış kendi, çizimci atanmış siparişi.
+  const scoped = (await db.order.findMany({ where: { id: { in: ids }, ...orderScope(user) }, select: { id: true } })).map((o) => o.id);
+  if (!scoped.length) return out;
   const since = unreadSince(user, now);
   const internal = seesInternal(user);
   const firm = user.appRole === 'MUSTERI' ? String(user.customerId ?? '__none__') : null;
@@ -71,7 +74,7 @@ export async function unreadCounts(db, user, orderIds, { now = new Date() } = {}
     FROM "OrderNote" n
     JOIN "Order" o ON o."id" = n."orderId"
     LEFT JOIN "OrderNoteRead" r ON r."orderId" = n."orderId" AND r."userId" = ${user.id}
-    WHERE n."orderId" = ANY(${ids}::text[])
+    WHERE n."orderId" = ANY(${scoped}::text[])
       AND o."removedAt" IS NULL
       AND (${firm}::text IS NULL OR o."customerId" = ${firm})
       AND n."userId" <> ${user.id}

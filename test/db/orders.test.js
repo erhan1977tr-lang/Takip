@@ -484,19 +484,19 @@ dbTest('çizim içeriğine erişim (karar 146, AUD-8): müşteri geri çekilen s
   const g1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v2.result.drawingId } })).id;
   assert.deepEqual(await names('cust', [g1, v2.result.drawingId]), [null, null]);
   await send(o.id);
-  assert.deepEqual(await names('cust', [g1, v2.result.drawingId, f1, f2, d1]), ['cizim-q3.pdf', 'cizim-q3.pdf', null, null, null]);
+  assert.deepEqual(await names('cust', [g1, v2.result.drawingId, f1, f2, d1]), [`${o.orderNo}-cizim-v2.pdf`, `${o.orderNo}-cizim-v2.pdf`, null, null, null]);
   assert.deepEqual((await view('cust', o.id)).map((d) => [d.version, d.status, d.files.length, d.noteCustomer]),
     [[1, 'GERI_CEKILDI', 0, null], [2, 'ONAY_BEKLIYOR', 1, 'v2 müşteri notu']]);
   // Revizyon istenen sürüm (değişmedi): açık kalır; yeni taslak kapalı
   await run(o.id, 'request_revision', 'cust', { comment: 'Düzeltin', drawingId: v2.result.drawingId });
-  assert.deepEqual(await names('cust', [g1, f1]), ['cizim-q3.pdf', null]);
+  assert.deepEqual(await names('cust', [g1, f1]), [`${o.orderNo}-cizim-v2.pdf`, null]);
   const v3 = await run(o.id, 'upload_drawing', 'drawer', { files: [fileMeta('q4')] });
   const h1 = (await db.drawingFile.findFirstOrThrow({ where: { drawingId: v3.result.drawingId } })).id;
   assert.deepEqual(await names('cust', [h1]), [null]);
   // Onaylanan sürüm (değişmedi): açık
   await send(o.id);
   await run(o.id, 'approve_drawing', 'cust', { drawingId: v3.result.drawingId });
-  assert.deepEqual(await names('cust', [h1, g1, f1, f2, d1]), ['cizim-q4.pdf', 'cizim-q3.pdf', null, null, null]);
+  assert.deepEqual(await names('cust', [h1, g1, f1, f2, d1]), [`${o.orderNo}-cizim-v3.pdf`, `${o.orderNo}-cizim-v2.pdf`, null, null, null]);
   assert.deepEqual((await view('cust', o.id)).map((d) => [d.version, d.status, d.files.length]),
     [[1, 'GERI_CEKILDI', 0], [2, 'REVIZYON_ISTENDI', 1], [3, 'ONAYLANDI', 1]]);
 });

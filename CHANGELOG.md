@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.7 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Veritabanı testleri: okunmamış mesaj sayacı liste satırlarında da sipariş kapsamını uygular (`unreadCounts` → `orderScope`;
+satış başka satışçının siparişini saymaz); `satis-bagla` e-postayı büyük / küçük harf gözetmeden bulur (iki yazım → belirsiz,
+hesap seçilmez); test düzeltmeleri (nötr çizim adı, atanmış çizimci "işi al"maz, tek ekip testi dosyalı sipariş).
+
 ## 4.3.6 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket — CI sürüm kuralı gereği her itme numara artırır)
 
 CI düzeltmeleri (lint, tip).
