@@ -15,11 +15,24 @@
 // (SALES_LINK_APPLIED) + bir audit satırı sayımlarla.
 // Toplam koruması: para birimi başına maliyet / ödeme / bakiye ve kayıt sayıları bağlamadan önce ve sonra aynı olmalı
 // (checkTotals) — değişirse işlem geri alınır (hata). Belirsiz / çelişkili kayıtlar raporlanır (ambiguities), yazılmaz.
+// 4.3.15:
+//   - İşlem süresi (K-1): YALNIZCA bu işlem için Prisma etkileşimli işlem sınırı LINK_TX (120 sn; varsayılan 5 sn bütün
+//     yüklenmiş siparişlerin toplam denetimine yetmeyebilir). PostgreSQL tarafı işlemin içinde SET LOCAL ile ondan KISA tutulur
+//     (statement_timeout 110 sn, lock_timeout 15 sn) — sunucu, istemci işlemi bıraktıktan sonra çalışmaya devam etmez. Süre
+//     aşılırsa işlem bütünüyle geri alınır (kısmi yazım yok). Diğer işlemlerin sınırları değişmez.
+//   - Güncelleme tarihleri (K-2): sipariş ve sandık bağlaması updatedAt'e DOKUNMAZ (Prisma updateMany @updatedAt'i şimdiye
+//     çekerdi: müşterinin Teklifler sırası, sandık "son güncelleme" bilgisi bozulurdu) — aynı koşullarla düz SQL UPDATE.
+//   - Süre ölçümü: sonuç ve denetim kaydı timing { previewMs, applyMs, totalMs } taşır; komut çıktısında yazılır.
 import { LINK_SETTING, validDrawer, validSales } from './sales-routing.js';
 import { writeAudit } from './journal.js';
 import { supplierData } from '../accounting/supplier.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** Bağlama işleminin Prisma etkileşimli işlem sınırları (yalnızca applyLink — K-1) */
+export const LINK_TX = Object.freeze({ timeout: 120_000, maxWait: 10_000 });
+/** PostgreSQL işlem içi sınırlar: istemci sınırından KISA (sunucu, işlem bırakıldıktan sonra çalışmaz) */
+export const LINK_PG = Object.freeze({ statementTimeoutMs: 110_000, lockTimeoutMs: 15_000 });
 
 /**
  * Para birimi başına toplam maliyet / ödeme / bakiye (genel özet) ve kayıt sayıları — bağlama öncesi / sonrası karşılaştırma.
@@ -119,24 +132,30 @@ export async function previewLink(db, { targetEmail, drawerEmail = null }) {
  * Uygular — tek işlemde; toplamlar değişirse geri alınır. Önce previewLink çağrılmış ve ok olmalı.
  * @param {any} db  @param {{ targetEmail: string, drawerEmail?: string | null, operator?: string, now?: Date }} p
  */
-export async function applyLink(db, { targetEmail, drawerEmail = null, operator = 'ssh', now = new Date() }) {
+export async function applyLink(db, { targetEmail, drawerEmail = null, operator = 'ssh', now = new Date(), clock = () => Date.now(), txOptions = LINK_TX, pg = LINK_PG, hooks = {} }) {
+  const t0 = clock();
   const pre = await previewLink(db, { targetEmail, drawerEmail });
-  if (!pre.ok) return { ok: false, code: pre.problems[0], preview: pre };
+  const t1 = clock();
+  if (!pre.ok) return { ok: false, code: pre.problems[0], preview: pre, timing: { previewMs: t1 - t0, applyMs: 0, totalMs: t1 - t0 } };
   const actor = { id: null, role: 'SYSTEM', ip: null };
   const result = await db.$transaction(async (tx) => {
+    // PostgreSQL sınırları yalnızca bu işlemde (SET LOCAL) — sayı tamsayıya zorlanır, metin girmez
+    await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${Math.max(1, Math.trunc(Number(pg.statementTimeoutMs)))}`);
+    await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = ${Math.max(1, Math.trunc(Number(pg.lockTimeoutMs)))}`);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'glass-routing'}, 0))`;
     if ((await tx.integrationSetting.findUnique({ where: { key: LINK_SETTING } }))?.value?.linkedAt) return { ok: false, code: 'ALREADY_LINKED' };
     const target = pre.target.id;
     const drawer = pre.drawer?.id ?? null;
-    const orders = await tx.order.updateMany({
-      where: { orderTypeCode: 'GLASS_ORDER', salesUserId: null },
-      data: { salesUserId: target, salesAssignedVia: 'MIGRATION' },
-    });
+    // Düz SQL: updatedAt korunur (K-2). Koşullar eski updateMany'lerle aynı.
+    const orders = { count: await tx.$executeRaw`UPDATE "Order" SET "salesUserId" = ${target}, "salesAssignedVia" = 'MIGRATION'
+      WHERE "orderTypeCode" = 'GLASS_ORDER' AND "salesUserId" IS NULL` };
     const drawers = drawer
-      ? await tx.order.updateMany({ where: { orderTypeCode: 'GLASS_ORDER', salesUserId: target, assignedDrawerId: null }, data: { assignedDrawerId: drawer } })
+      ? { count: await tx.$executeRaw`UPDATE "Order" SET "assignedDrawerId" = ${drawer}
+          WHERE "orderTypeCode" = 'GLASS_ORDER' AND "salesUserId" = ${target} AND "assignedDrawerId" IS NULL` }
       : { count: 0 };
-    const crates = await tx.crate.updateMany({ where: { salesUserId: null }, data: { salesUserId: target } });
+    const crates = { count: await tx.$executeRaw`UPDATE "Crate" SET "salesUserId" = ${target} WHERE "salesUserId" IS NULL` };
     const payments = await tx.factoryPayment.updateMany({ where: { salesUserId: null }, data: { salesUserId: target } });
+    if (hooks.afterWrites) await hooks.afterWrites(tx);
     if (pre.plan.setDefaultDrawer && drawer) await tx.user.update({ where: { id: target }, data: { defaultDrawerId: drawer } });
     // Varsayılan yönlendirme: mevcut kullanım korunur — yeni siparişler mevcut (hedef) satışçıya
     const rule = await tx.glassRoutingRule.create({ data: { mode: 'AUTO', targetUserId: target, startsAt: now, note: 'MIGRATION', createdById: target } });
@@ -146,14 +165,18 @@ export async function applyLink(db, { targetEmail, drawerEmail = null, operator 
       update: { value: { linkedAt: now.toISOString(), via: 'SCRIPT', targetUserId: target, operator } },
     });
     const counts = { orders: orders.count, drawers: drawers.count, crates: crates.count, payments: payments.count, rule: rule.id };
-    await writeAudit(tx, {
-      action: 'SALES_LINK_APPLIED', entityType: 'User', entityId: target, userId: null,
-      details: { targetUserId: target, drawerId: drawer, operator, counts, before: pre.before.perCur },
-    }, actor);
     const after = await totalsSnapshot(tx);
     if (!sameTotals(pre.before, after)) throw new Error('TOTALS_CHANGED');
     if (!accountsMatchSummary(after)) throw new Error('ACCOUNTS_MISMATCH');
+    // Denetim kaydı en sonda: süre işlemin bu noktasına kadar ölçülür (işlemin kendisiyle birlikte yazılır ya da hiç yazılmaz)
+    const inTxMs = clock() - t1;
+    await writeAudit(tx, {
+      action: 'SALES_LINK_APPLIED', entityType: 'User', entityId: target, userId: null,
+      details: { targetUserId: target, drawerId: drawer, operator, counts, before: pre.before.perCur, timing: { previewMs: t1 - t0, inTxMs } },
+    }, actor);
     return { ok: true, counts, before: pre.before, after };
-  });
+  }, txOptions);
+  const t2 = clock();
+  result.timing = { previewMs: t1 - t0, applyMs: t2 - t1, totalMs: t2 - t0, limitMs: txOptions.timeout };
   return result;
 }

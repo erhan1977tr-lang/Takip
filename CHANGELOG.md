@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.15 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Geçmiş veri bağlaması (`takip satis-bagla`) yayın öncesi düzeltmeleri — yalnızca bu komutu etkiler.
+
+- **İşlem süresi:** bağlama işlemi 5 sn'lik varsayılan yerine 120 sn sınırla çalışır (yalnızca bu işlem); PostgreSQL deyim
+  ve kilit bekleme sınırları işlemin içinde, ondan kısa (110 sn / 15 sn). Süre aşımı ya da herhangi bir hata → hiçbir şey
+  yazılmaz. Süre komut çıktısında ve denetim kaydında raporlanır.
+- **Güncelleme tarihleri korunur:** siparişlerin ve sandıkların satışçıya bağlanması `updatedAt` değerlerini değiştirmez —
+  müşterinin Teklifler sırası ve sandıkların "son güncelleme" bilgisi aynı kalır.
+- Veritabanı testleri: tek satışçılı geçmişin bağlanması (updatedAt, Teklifler sırası, toplamlar, ticari kayıtlar, çizimci ve
+  fiyat tablosu ilişkileri, profil siparişi, yetki ayrımı, yeni siparişin otomatik ataması), 5 sn'yi aşan işlem, kısmi yazım
+  olmaması (süre aşımı / hata / PostgreSQL zaman aşımı), eşzamanlı ve ikinci çalıştırmanın engellenmesi.
+
 ## 4.3.14 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 4.3.13'ün demo testi değişikliği commit'e girmemişti; yöneticinin "Sıra bende" beklentisine "Atama bekleyen siparişler" tablosu eklendi. Kod değişmedi.

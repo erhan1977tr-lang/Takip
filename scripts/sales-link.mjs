@@ -4,7 +4,7 @@
 // Hedef hesap açıkça verilir; tahmin edilmez. Çıktı: plan, belirsizlikler, para birimi başına toplamlar (önce / sonra).
 import { PrismaClient } from '@prisma/client';
 import os from 'node:os';
-import { applyLink, previewLink } from '../server/orders/sales-link.js';
+import { LINK_TX, applyLink, previewLink } from '../server/orders/sales-link.js';
 
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? '' : null; };
@@ -35,16 +35,27 @@ try {
     console.log('Önizleme tamam — hiçbir şey yazılmadı. Uygulamak için --apply ekleyin.');
     process.exit(0);
   }
-  const r = await applyLink(db, { targetEmail: target, drawerEmail: drawer, operator: `${process.env.SUDO_USER ?? os.userInfo().username}@${os.hostname()}` });
+  const started = Date.now();
+  let r;
+  try {
+    r = await applyLink(db, { targetEmail: target, drawerEmail: drawer, operator: `${process.env.SUDO_USER ?? os.userInfo().username}@${os.hostname()}` });
+  } catch (e) {
+    console.error(`Süre: ${Date.now() - started} ms (işlem sınırı ${LINK_TX.timeout} ms)`);
+    throw e;
+  }
+  const tm = r.timing ? ` — önizleme ${r.timing.previewMs} ms, işlem ${r.timing.applyMs} ms, toplam ${r.timing.totalMs} ms (işlem sınırı ${r.timing.limitMs} ms)` : '';
   if (!r.ok) {
-    console.log('UYGULANMADI:', r.code);
+    console.log('UYGULANMADI:', r.code, tm);
     process.exit(1);
   }
   console.log('Uygulandı:', JSON.stringify(r.counts));
   console.log('Toplamlar (sonra):', JSON.stringify(r.after));
   console.log('Toplamlar değişmedi: EVET');
+  console.log(`Süre:${tm}`);
 } catch (e) {
-  console.error('HATA:', e?.message ?? e, '— işlem geri alındı, hiçbir şey değişmedi.');
+  // Prisma işlem süresi aşımı (P2028) ya da PostgreSQL zaman aşımı: işlem bütünüyle geri alınır
+  const timeout = e?.code === 'P2028' || /statement timeout|lock timeout|Transaction already closed|expired transaction/i.test(String(e?.message ?? ''));
+  console.error(timeout ? 'HATA: ZAMAN AŞIMI' : 'HATA:', e?.message ?? e, '— işlem geri alındı, hiçbir şey değişmedi.');
   process.exit(1);
 } finally {
   await db.$disconnect();
