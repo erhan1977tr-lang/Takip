@@ -6,12 +6,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 ## 4.3.16 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
-Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.27 (yalnızca bu iki paket; kilit dosyası CI'da yeniden
-üretilir). 15.5.27 üç Next.js danışmasını kapatır — CVE-2026-94543 (GHSA-4jqv-mc3x-m676: kendi sunucusunda barındırılan, Pages
-Router + SSG / ISR sayfalarında önbellek zehirlenmesi), CVE-2026-94484 (GHSA-mcj8-r9mp-w47p: kök catch-all + SSG / ISR) ve
-GHSA-f87g-xv8r-7p7x (App Router metadata görsel yollarında `dynamicParams` atlatması). TAKİP yalnızca App Router kullanıyor;
-Pages Router, SSG / ISR ve kök catch-all sayfa yok — açık burada sömürülebilir görünmüyordu, ama `npm audit` bunu kritik
-saydığı için CI (karar 289) kırmızıydı. Denetim kuralı değişmedi. Uygulama kodu değişmedi.
+Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.28 (yalnızca bu iki paket; kilit dosyası CI'da yeniden
+üretilir). Kapanan Next.js danışmaları:
+- CVE-2026-96889 (GHSA-2464-fhr4-w9xw, kritik): görüntü optimizasyonunda SVG ile kimliksiz uzaktan kod çalıştırma — kaynağı
+  sharp; TAKİP'in kilit dosyasında sharp zaten 0.35.5 (geliştiricinin önerdiği geçici çözüm), ama `npm audit` Next sürüm aralığına
+  bakar (≤ 15.5.27 etkilenir, 15.5.28 düzeltir).
+- CVE-2026-94543 (GHSA-4jqv-mc3x-m676) ve CVE-2026-94484 (GHSA-mcj8-r9mp-w47p): SSG / ISR önbellek zehirlenmesi; TAKİP yalnızca
+  App Router kullanır (Pages Router, SSG / ISR, kök catch-all sayfa yok) — sömürülebilir görünmüyordu.
+- GHSA-f87g-xv8r-7p7x: App Router metadata görsel yollarında `dynamicParams` atlatması.
+
+`npm audit` CI'da kritik saydığı için (karar 289) CI kırmızıydı; denetim kuralı değişmedi, istisna eklenmedi. Uygulama kodu
+değişmedi. (İlk deneme 15.5.27 idi; CVE-2026-96889 yüzünden yetmedi.)
 
 ## 4.3.15 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
