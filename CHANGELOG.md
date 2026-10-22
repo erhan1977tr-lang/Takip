@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.16 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
+
+Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.27 (yalnızca bu iki paket; kilit dosyası CI'da yeniden
+üretilir). 15.5.27 üç Next.js danışmasını kapatır — CVE-2026-94543 (GHSA-4jqv-mc3x-m676: kendi sunucusunda barındırılan, Pages
+Router + SSG / ISR sayfalarında önbellek zehirlenmesi), CVE-2026-94484 (GHSA-mcj8-r9mp-w47p: kök catch-all + SSG / ISR) ve
+GHSA-f87g-xv8r-7p7x (App Router metadata görsel yollarında `dynamicParams` atlatması). TAKİP yalnızca App Router kullanıyor;
+Pages Router, SSG / ISR ve kök catch-all sayfa yok — açık burada sömürülebilir görünmüyordu, ama `npm audit` bunu kritik
+saydığı için CI (karar 289) kırmızıydı. Denetim kuralı değişmedi. Uygulama kodu değişmedi.
+
 ## 4.3.15 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Geçmiş veri bağlaması (`takip satis-bagla`) yayın öncesi düzeltmeleri — yalnızca bu komutu etkiler.
