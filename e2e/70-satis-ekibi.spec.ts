@@ -85,7 +85,7 @@ test('yeni sipariş kuralla satışçıya ve çizimcisine; atamasız sipariş ya
   const salesA = await as(browser, SALES, TEAM_PW);
   await salesA.goto(`/siparisler/${orderId}`);
   await expect(salesA.locator('#bilgiler')).toBeVisible();
-  await expect(salesA.locator('#sorumlu')).toHaveCount(0, 'atama kartı satışta yok');
+  await expect(salesA.locator('#sorumlu')).toHaveCount(0);
   const salesB = await as(browser, SALES_B, TEAM_PW);
   const rb = await salesB.goto(`/siparisler/${orderId}`);
   expect(rb!.status()).toBe(404);

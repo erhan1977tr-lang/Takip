@@ -124,7 +124,7 @@ export function buildTransportSections(crates, orders, { label = (name) => name,
  *   label: firma adının görene göre yazımı (satışa maskeli) · salesUserId: yalnızca bu satışçının sandık ve siparişleri ·
  *   teamName: verilirse liste satışçı bölümleriyle döner (buildTransportSections)
  */
-export async function transportList(db, day, { label = (name) => name, salesUserId = undefined, teamName = undefined } = {}) {
+export async function transportList(db, day, { label = (name) => name, salesUserId, teamName } = {}) {
   const d = dayDate(day);
   // Satış (karar 300): yalnızca kendi sandıkları ve siparişleri
   const team = salesUserId === undefined ? {} : { salesUserId: salesUserId || '__none__' };
