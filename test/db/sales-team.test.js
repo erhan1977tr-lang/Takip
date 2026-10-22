@@ -97,7 +97,7 @@ dbTest('yönlendirme: boş veritabanı bağlı sayılır; kural yoksa yeni sipar
   assert.equal(await routingLinked(db), true, 'boş veritabanı: seed işareti');
   const o1 = await newOrder('Atamasız');
   const r1 = await full(o1.id);
-  assert.deepEqual([r1.salesUserId, r1.assignedDrawerId, r1.slaDeadline], [null, null, null], 'kural yok: sahip yok, SLA yok');
+  assert.deepEqual([r1.salesUserId, r1.assignedDrawerId, r1.slaDeadline instanceof Date], [null, null, true], 'kural yok: sahip yok; SLA açılıştan işler');
   assert.equal(await visible('salesA', o1.id), false);
   assert.equal(await visible('salesB', o1.id), false);
   assert.equal(await visible('drawerA', o1.id), false);

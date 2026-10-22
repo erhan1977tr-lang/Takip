@@ -121,7 +121,7 @@ dbTest('dağıtım: her olay yalnızca ilgili alıcılara; çizim kararları ata
   const first = await n.dispatchInApp(db);
   assert.equal(first.events, 8);
 
-  assert.deepEqual(await receivers('ORDER_CREATED', o.id), ['admin', 'admin2', 'sales1', 'sales2'], 'yeni cam siparişi: satış + yönetici');
+  assert.deepEqual(await receivers('ORDER_CREATED', o.id), ['admin', 'admin2', 'sales1'], 'yeni cam siparişi: sorumlu satışçı + yönetici (karar 300: satış ekibinin tamamına değil)');
   assert.deepEqual(await receivers('ORDER_SENT_TO_DRAWING', o.id), ['drawer'], 'yalnızca atanmış çizimci');
   assert.deepEqual(await receivers('ORDER_DRAWING_UPLOADED', o.id), ['a1', 'a2'], 'firmanın etkin kullanıcıları; pasif ve başka firma yok');
   assert.deepEqual(await receivers('ORDER_REVISION_REQUESTED', o.id), ['drawer', 'sales1'], 'atanmış çizimci + ilgili satışçı; yönetici / öbür satışçı / öbür çizimci yok');

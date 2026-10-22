@@ -93,7 +93,7 @@ test('yeni sipariş kuralla satışçıya ve çizimcisine; atamasız sipariş ya
   await expect(salesB.locator('body')).not.toContainText(orderNo);
   // Atamasız duruma al (veri): satış A da göremez; yönetici kuyruğunda "Atama bekleyen"; kart atama ister
   const db = await prisma();
-  await db.order.update({ where: { id: orderId }, data: { salesUserId: null, assignedDrawerId: null, salesAssignedVia: null, routingRuleId: null, slaDeadline: null } });
+  await db.order.update({ where: { id: orderId }, data: { salesUserId: null, assignedDrawerId: null, salesAssignedVia: null, routingRuleId: null } });
   await db.$disconnect();
   const ra = await salesA.goto(`/siparisler/${orderId}`);
   expect(ra!.status()).toBe(404);

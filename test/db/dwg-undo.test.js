@@ -71,7 +71,7 @@ async function snapshot(id) {
 }
 async function seenDrawings(who, orderId) {
   const u = P[who];
-  const o = await db.order.findFirst({ where: { id: orderId, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { orderBy: { version: 'asc' }, include: { revisions: true } } } });
+  const o = await db.order.findFirst({ where: { id: orderId, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { orderBy: { version: 'asc' }, include: { revisions: true } } } });
   return o ? drawingsView(u.appRole, o.drawings) : null;
 }
 
@@ -107,7 +107,7 @@ dbTest('1 · Üretime almayı geri al (kararı veren çizimci): kayıt GERI_CEKI
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: true } });
   const snap0 = await snapshot(o.id);
   assert.equal((await dwgUndoCheck(db, before, actor(P.drawer2), { priceLock })).block, 'UNDO_NOT_OWNER');
-  assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', 'drawer2', { reason: 'x', drawingId: rec.id, expectedVersion: before.version })), 'UNDO_NOT_OWNER');
+  assert.equal(await codeOf(run(o.id, 'dwg_ready_undo', 'drawer2', { reason: 'x', drawingId: rec.id, expectedVersion: before.version })), 'NOT_FOUND', 'başka çizimci siparişi hiç görmez (karar 300)');
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: false } });
   assert.deepEqual(await snapshot(o.id), snap0, 'reddedilen geri alma hiçbir şey yazmaz');
   // Onay ve gerekçe zorunlu (gerekçesiz istek reddedilir)
@@ -363,7 +363,7 @@ dbTest('7-8 · Müşteri erişimi ve yetki: üç geri alma kararı veren çizimc
   const fp = { reason: 'x', drawingId: fc.drawings.at(-1).id, expectedVersion: fc.version };
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: true } });
   assert.equal((await dwgUndoCheck(db, fc, actor(P.drawer2), { priceLock })).block, 'UNDO_NOT_OWNER');
-  assert.equal(await codeOf(run(f.id, 'dwg_faulty_undo', 'drawer2', fp)), 'UNDO_NOT_OWNER');
+  assert.equal(await codeOf(run(f.id, 'dwg_faulty_undo', 'drawer2', fp)), 'NOT_FOUND', 'başka çizimci siparişi hiç görmez (karar 300)');
   await db.user.update({ where: { id: P.drawer2.id }, data: { isActive: false } });
   for (const who of ['sales', 'inspector', 'cust']) assert.equal(await codeOf(run(f.id, 'dwg_faulty_undo', who, fp)), 'NOT_ALLOWED', who);
   // Yönetici yardımcısı hatalı kararını geri alabilir (değişmedi)

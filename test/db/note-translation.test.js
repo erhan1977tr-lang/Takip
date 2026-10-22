@@ -42,7 +42,7 @@ async function enable(enabled = true) {
  * notesFor. Sipariş kullanıcının kapsamında değilse null (sayfa 404).
  */
 async function seen(u, order) {
-  const o = await db.order.findFirst({ where: { id: order.id, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) }, include: { notes: true } });
+  const o = await db.order.findFirst({ where: { id: order.id, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) }, include: { notes: true } });
   return o ? tr.notesFor(u.appRole, o.notes) : null;
 }
 const seenNote = async (u, order, id) => (await seen(u, order))?.find((n) => n.id === id) ?? null;
@@ -834,7 +834,7 @@ const translateRev = (u, o, revisionId, p, extra = {}) =>
   tr.translateRevision(db, { revisionId, orderId: o.id, actor: act(u), translator: p.fn, secret: SECRET, limits: createNoteLimits(), ...extra });
 /** Kullanıcının sipariş sayfasında gördüğü talepler — lib/orders.ts ile aynı kurallar (kapsam + drawingRevisionsFor) */
 async function seenRevisions(u, o) {
-  const row = await db.order.findFirst({ where: { id: o.id, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { include: { revisions: true } } } });
+  const row = await db.order.findFirst({ where: { id: o.id, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { include: { revisions: true } } } });
   return row ? drawingRevisionsFor(u.appRole, row.drawings).flatMap((d) => d.revisions) : null;
 }
 

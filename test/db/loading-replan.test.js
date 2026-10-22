@@ -17,8 +17,9 @@ const inv = await import('../../server/glass/invoice-batch.js');
 
 const SECRET = 'r'.repeat(40);
 const TZ = 'Europe/Bucharest';
-let db, admin, seq = 500;
-const actor = (role = 'ADMIN') => ({ id: admin.id, role, ip: '127.0.0.1' });
+let db, admin, salesUser, seq = 500;
+// Satış rolü gerçek satış hesabıyla (karar 300): satış yalnızca kendi (tek ekip tetikleyicisinin verdiği) siparişlerini işler
+const actor = (role = 'ADMIN') => ({ id: role === 'SATIS' ? salesUser.id : admin.id, role, ip: '127.0.0.1' });
 const OTHERS = ['SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI'];
 const dayOf = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const at = (key) => new Date(`${key}T12:00:00Z`);
@@ -92,6 +93,7 @@ before(async () => {
   await resetDb(db);
   const factory = await db.customer.create({ data: { name: 'GKH', type: 'FACTORY' } });
   admin = await db.user.create({ data: { email: 'admin@replan.test', name: 'Yönetici', type: 'INTERNAL', appRole: 'ADMIN', customerId: factory.id } });
+  salesUser = await db.user.create({ data: { email: 'satis@replan.test', name: 'Satış', type: 'INTERNAL', appRole: 'SATIS', customerId: factory.id } });
   await saveFgoSettings(db, { enabled: true, dailyLimit: 0, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 }, { key: 'K', secret: SECRET }, actor());
 });
 after(closeDb);
@@ -328,7 +330,7 @@ dbTest('başka müşterinin sandığı: yalnızca fiziksel yerleşim — sipari�
   const a9 = await glassOrder(A, dayOf(-11), [glassLine(1)]); // başka günün siparişi
   const b1 = await glassOrder(B, X, [glassLine(3)]);
   const idle = await firm('Crate Idle C SRL', 'CRC'); // hiç yüklemesi yok
-  const sales = { id: admin.id, role: 'SATIS', ip: '127.0.0.1' };
+  const sales = actor('SATIS');
   const row15 = { crateNo: 15, lengthMm: 2400, widthMm: 1600, heightMm: 900, netKg: 190, grossKg: 260, note: null, orderIds: [b1.id] };
   assert.deepEqual(await cr.saveDayCrates(db, { day: X, customerId: B.id, rows: [row15], actor: sales }), { ok: true, count: 1 });
   const b9 = await glassOrder(B, dayOf(-11), [glassLine(1)]);
@@ -498,7 +500,7 @@ dbTest('aktarılan kalan da aynı günün başka müşteri sandığına konabili
   const hostOrder = await glassOrder(B, F, [glassLine(1)]);
   assert.equal((await confirm(D, [{ key: lineKey(a), quantity: 2, reason: 'BROKEN' }])).ok, true);
   const [row] = await rp.notLoadedOfDay(db, D);
-  const sales = { id: admin.id, role: 'SATIS', ip: '127.0.0.1' };
+  const sales = actor('SATIS');
   const one = { crateNo: 3, lengthMm: null, widthMm: null, heightMm: null, netKg: null, grossKg: null, note: null, orderIds: [] };
   await cr.saveDayCrates(db, { day: F, customerId: B.id, rows: [one], actor: sales });
   const crate = await db.crate.findFirstOrThrow({ where: { shipDay: date(F), customerId: B.id } });

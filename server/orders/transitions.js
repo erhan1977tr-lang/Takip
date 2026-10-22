@@ -118,10 +118,10 @@ export async function refreshSla(tx, orderId) {
     include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   const offer = o.offers[0];
-  // Cam siparişinde inceleme SLA'sı atamada başlar; atama bekleyen siparişte SLA işlemez (karar 300)
-  const unassigned = o.orderTypeCode === 'GLASS_ORDER' && !o.salesUserId;
-  const deadline = unassigned ? null : slaDeadline({
-    status: o.status, onHold: o.onHold, createdAt: o.salesAssignedAt ?? o.createdAt,
+  // SLA siparişin açılışından işler (karar 300: atama bekleyen sipariş de yöneticinin SLA listesine girer — atama beklerken
+  // süre durmaz; satış için inceleme süresi yöneticinin atamasıyla kısalmış olabilir)
+  const deadline = slaDeadline({
+    status: o.status, onHold: o.onHold, createdAt: o.createdAt,
     drawing: o.drawingTrack, drawingSince: o.drawingSince,
     offer: offer?.status ?? null, offerSince: offer?.statusSince ?? null,
   });

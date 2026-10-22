@@ -647,6 +647,6 @@ dbTest('stok yetersizliği (karar 165): müşterinin siparişi ENGELLENMEZ; yetm
   assert.equal(await db.adminAlert.count({ where: { orderId: short.id, type: 'STOCK_SHORTAGE', resolvedAt: null } }), 0);
   // Satış ve çizim profil siparişini hiç görmez (uyarı dahil): kapsam dışı
   for (const who of ['sales', 'drawer']) {
-    assert.equal(await db.order.count({ where: { id: short.id, ...orderScope({ appRole: people[who].appRole, customerId: people[who].customerId }) } }), 0, who);
+    assert.equal(await db.order.count({ where: { id: short.id, ...orderScope({ id: people[who].id, appRole: people[who].appRole, customerId: people[who].customerId }) } }), 0, who);
   }
 });

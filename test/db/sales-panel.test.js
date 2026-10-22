@@ -132,7 +132,7 @@ dbTest('geri alma: yalnızca gönderen satışçı, yönetici göndermeden; tekl
   assert.ok((await priceQueue()).includes(o.id), 'yöneticinin fiyat onayı kuyruğunda');
 
   // Çapraz yetki: başka satışçı, yönetici, çizim, denetimci, müşteri geri alamaz
-  assert.equal(await codeOf(run(o.id, 'withdraw_offer', 'sales2')), 'OFFER_NOT_OWNER');
+  assert.equal(await codeOf(run(o.id, 'withdraw_offer', 'sales2')), 'NOT_FOUND', 'başka satışçı siparişi hiç görmez (karar 300)');
   assert.equal(await codeOf(run(o.id, 'withdraw_offer', 'admin')), 'NOT_ALLOWED');
   // Çizim ekibi çizimsiz siparişi kapsamında hiç görmez (NOT_FOUND); denetimci görür ama işlem yapamaz
   for (const who of ['drawer', 'inspector', 'cust']) assert.ok(['NOT_ALLOWED', 'NOT_FOUND'].includes(await codeOf(run(o.id, 'withdraw_offer', who))), who);

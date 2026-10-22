@@ -326,7 +326,7 @@ async function destFacts(db, orders) {
 const checkWith = (o, facts, src, today) => {
   const day = loadingDay(o);
   return destinationCheck(o, {
-    sourceOrderId: src.id, customerId: src.customerId, currency: src.currency, today, day, salesUserId: src.salesUserId ?? null,
+    sourceOrderId: src.id, customerId: src.customerId, currency: src.currency, today, day, salesUserId: src.salesUserId,
     locked: (day != null && facts.confirmedDays.has(day)) || facts.inConfirmation.has(o.id),
     finalInvoice: facts.finalInvoices.get(o.id) ?? null,
   });
@@ -560,7 +560,7 @@ export async function createCompensation(db, { orderId, lineId, quantity, mode, 
       const decision = priceDecision({ admin, mode, price, line: group.line });
       if (!decision.ok) return decision;
       const lines = compensationLines({ line: group.line, subs: group.subs, quantity: qty, decision });
-      const source = { id: src.id, customerId: src.customerId, currency: sent.currency };
+      const source = { id: src.id, customerId: src.customerId, currency: sent.currency, salesUserId: src.salesUserId ?? null };
 
       // Kaynak adedi (karar 157, 256): BEDELSİZ telafide hiç değişmez (ayrı ek üretim — nedeni FREE); bedelli telafide temiz
       // siparişte düşer. Kaynakta hiç cam kalmayacaksa (bedelli) telafi açılmaz.
@@ -800,7 +800,8 @@ export async function decideCompensation(db, { id, approve, price = null, free =
       const group = offer ? compensableLines(offer.lines).find((g) => g.line.id === comp.sourceLineId) : null;
       if (!group) return fail('BAD_LINE');
       if (ambiguousOps(group)) return fail('AMBIGUOUS_OPS');
-      const d = await loadDestination(tx, comp.destOrderId, { id: comp.sourceOrderId, customerId: comp.customerId, currency: comp.currency }, today);
+      const srcOwner = await tx.order.findUnique({ where: { id: comp.sourceOrderId }, select: { salesUserId: true } });
+      const d = await loadDestination(tx, comp.destOrderId, { id: comp.sourceOrderId, customerId: comp.customerId, currency: comp.currency, salesUserId: srcOwner?.salesUserId ?? null }, today);
       if (!d.ok) return d;
       if (d.via !== 'SENT') return fail('DEST_NO_OFFER');
       // Müşteri fiyatı: yönetici girdiyse o; yoksa kayıtlı karar (eski "aynı fiyat" kararında kaynağın müşteri fiyatı)

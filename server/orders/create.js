@@ -135,7 +135,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
       data: {
         orderNo, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', title, customerId: firm.id, createdById: actor.id,
         ...(owner ?? {}),
-        status: 'YENI', slaDeadline: owner ? slaDeadline({ status: 'YENI', createdAt: now }) : null, estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
+        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
         camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null,
         items: { create: items },
         files: {

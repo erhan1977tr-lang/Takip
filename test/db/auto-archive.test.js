@@ -202,7 +202,7 @@ dbTest('önce onarım, sonra arşiv: yalnızca fiziksel yüklemesi kanıtlı ve 
   assert.deepEqual(await custView('auto'), []);
   assert.deepEqual(await custView('autoLoaded'), ['AUTO_ARCHIVED']);
   // Sipariş her rolün kapsamında kalır (yalnızca sekmesi değişir)
-  for (const u of [U.admin, U.sales, U.custA]) assert.equal(await db.order.count({ where: { id: O.loaded.id, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) } }), 1, u.appRole);
+  for (const u of [U.admin, U.sales, U.custA]) assert.equal(await db.order.count({ where: { id: O.loaded.id, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) } }), 1, u.appRole);
 
   // Yinelenen tur hiçbir şeyi çoğaltmaz
   assert.deepEqual(await repairAutoShipped(db), { reverted: 0, skipped: 0 });

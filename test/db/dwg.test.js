@@ -66,7 +66,7 @@ const translation = (r) => [r.translation, r.translationLang, r.translationStatu
 /** Kullanıcının sipariş sayfasında gördüğü çizim verisi: kapsam + sürüm erişimi + çeviri görünümü (lib/orders.ts ile aynı kurallar) */
 async function seenDrawings(who, orderId) {
   const u = P[who];
-  const o = await db.order.findFirst({ where: { id: orderId, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { orderBy: { version: 'asc' }, include: { revisions: true } } } });
+  const o = await db.order.findFirst({ where: { id: orderId, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) }, include: { drawings: { orderBy: { version: 'asc' }, include: { revisions: true } } } });
   return o ? drawingTranslationsFor(u.appRole, drawingsView(u.appRole, o.drawings)) : null;
 }
 

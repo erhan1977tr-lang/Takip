@@ -78,7 +78,7 @@ const formLines = (lines, withOffer) => lines.map((l) => ({
   unitPrice: l.free ? '0.00' : Number(l.unitPrice).toFixed(2),
   ...(withOffer ? { offerPrice: l.free ? '0.00' : l.offerPrice == null ? null : Number(l.offerPrice).toFixed(2) } : {}),
 }));
-const visibleTo = (u, id) => db.order.count({ where: { id, ...orderScope({ appRole: u.appRole, customerId: u.customerId }) } });
+const visibleTo = (u, id) => db.order.count({ where: { id, ...orderScope({ id: u.id, appRole: u.appRole, customerId: u.customerId }) } });
 
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) return;

@@ -39,7 +39,7 @@ const run = (orderId, action, who, payload = {}) => runProfileAction(db, { order
 const pickDay = () => earliestPickup({ now: new Date(Date.now() + 5 * 60_000) });
 const D = (key) => new Date(`${key}T12:00:00.000Z`);
 const load = (id) => db.order.findUniqueOrThrow({ where: { id }, include: { profile: true, offers: { orderBy: { createdAt: 'desc' }, include: { lines: true } } } });
-const scopeOf = (who) => orderScope({ appRole: people[who].appRole, customerId: people[who].customerId });
+const scopeOf = (who) => orderScope({ id: people[who].id, appRole: people[who].appRole, customerId: people[who].customerId });
 // PDF metni (gömülü yazı tipinin glif kodlarından geri çevrilir)
 const REVERSE = Object.fromEntries(['Regular', 'Bold'].map((k) => [k, new Map(FONTS[k].map.map(([cp, gid]) => [gid, cp]))]));
 function textOf(pdf) {

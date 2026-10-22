@@ -38,6 +38,7 @@ export async function setSingleTeam(db, on, { defaultTable = on } = {}) {
       END $$`);
     await db.$executeRawUnsafe(`CREATE TRIGGER takip_test_default_table AFTER INSERT OR UPDATE ON "PriceTable" FOR EACH ROW EXECUTE FUNCTION takip_test_default_table()`);
   }
+  await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_crate_owner ON "Crate"`);
   await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_order_owner ON "Order"`);
   await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_sales_drawer ON "User"`);
   await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS takip_test_drawer_join ON "User"`);
@@ -59,6 +60,17 @@ export async function setSingleTeam(db, on, { defaultTable = on } = {}) {
       RETURN NEW;
     END $$`);
   await db.$executeRawUnsafe(`CREATE TRIGGER takip_test_order_owner BEFORE INSERT ON "Order" FOR EACH ROW EXECUTE FUNCTION takip_test_order_owner()`);
+  // Doğrudan yazılan sandık (eski testler): ilk satışçının bölümü
+  await db.$executeRawUnsafe(`
+    CREATE OR REPLACE FUNCTION takip_test_crate_owner() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW."salesUserId" IS NULL THEN
+        SELECT u.id INTO NEW."salesUserId" FROM "User" u
+          WHERE u."appRole" = 'SATIS' AND u."isActive" AND u."deletedAt" IS NULL ORDER BY u."createdAt", u.id LIMIT 1;
+      END IF;
+      RETURN NEW;
+    END $$`);
+  await db.$executeRawUnsafe(`CREATE TRIGGER takip_test_crate_owner BEFORE INSERT ON "Crate" FOR EACH ROW EXECUTE FUNCTION takip_test_crate_owner()`);
   await db.$executeRawUnsafe(`
     CREATE OR REPLACE FUNCTION takip_test_sales_drawer() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
