@@ -17,6 +17,8 @@ Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.28 (yalnızca
 
 `npm audit` CI'da kritik saydığı için (karar 289) CI kırmızıydı; denetim kuralı değişmedi, istisna eklenmedi. Uygulama kodu
 değişmedi. (İlk deneme 15.5.27 idi; CVE-2026-96889 yüzünden yetmedi.)
+Kilit dosyasında yalnızca `next`, `eslint-config-next`, `@next/env`, `@next/eslint-plugin-next` ve `@next/swc-*` 15.5.28'e geçti
+(13 kayıt; başka bağımlılık değişmedi).
 
 ## 4.3.15 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
