@@ -4,6 +4,41 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.19 — 23.10.2026 (geliştirme; 4.3.0 ile aynı paket — canlıda değil)
+
+**Fabrika Ekipleri (karar 304).** 1 cam fabrikası = 1 satışçı hesabı + 1 çizimci hesabı. Ayarlar → **Fabrika Ekipleri**
+(yalnızca yönetici): ekip adı, satışçı, çizimci, fiyat tablosu (alış), finansal hesap bağlantısı (Muhasebe → Cam Fabrika Hesap
+Durumu), aktif / pasif. Yeni küçük tablo `FactoryTeam` yalnızca ekibin ADINI ve AKTİFLİĞİNİ tutar; çizimci, fiyat tablosu ve
+finansal hesap var olan alanlardır (satışçının varsayılan çizimcisi, fiyat tablosu ataması, satışçı hesabı) — ikinci bir
+eşleştirme yok. Var olan kullanıcılar seçilir; yeni kullanıcı Kullanıcılar ekranında açılır (davet / şifre kuralları aynı).
+- Aktif ekipler arasında satışçı, çizimci ve fiyat tablosu tekil; Kullanıcılar (varsayılan çizimci) ve Fiyat Tabloları (atama)
+  ekranları da aynı kuralı uygular. Var olan bağlantılar otomatik değiştirilmez.
+- Pasif ekip: geçmiş siparişler ve kullanıcı hesapları değişmez; pasif ekibe yeni yönlendirme kuralı yazılamaz, elle atama
+  yapılamaz. Şu anki otomatik kural pasif ekibi gösteriyorsa yeni siparişler atama bekler, "Önemli kararlar"a uyarı düşer ve
+  Fabrika Ekipleri / Satış Yönlendirme ekranlarında açık hata görünür.
+- Nakliye listesi: satışçı bölümlerinin başlığı ekip adı (ekibi yoksa satışçı adı). Sütunlar, müşteri grupları, misafir yük
+  notları, ara toplamlar ve genel toplam aynı.
+- Cam Fabrika Hesap Durumu ve yükleme günündeki sandık bölümleri hesap adının önünde ekip adını gösterir.
+
+**Bağımsız çizimci değiştirme kaldırıldı (karar 303 geri alındı).** Sipariş sayfasında çizimci formu ve `assign_drawer` işlemi
+yok. Çizimci yalnızca satışçıyla birlikte değişir: satışçı değişince yeni satışçının varsayılan çizimcisi atanır (tek işlem).
+Sorumlu kartı: "Sorumlu satışçı: X · Değiştir" (değiştirme formu kapalı başlar) ve "Sorumlu çizimci: Y".
+
+**İlk satışçı ataması (sahipsiz eski sipariş).** Çizimci artık her zaman satışçının varsayılan çizimcisi (4.3.18'deki "var olan
+çizimci korunur" davranışı kaldırıldı). Siparişin başka bir çizimcide çizim geçmişi varsa (çizim / DWG kaydı ya da başlamış çizim
+hattı) atama yapılmaz ve nedeni gösterilir (`DRAWER_HISTORY`): çizim kayıtları başka ekibe taşınmaz. `takip satis-bagla` var
+olan çizimciyi değiştirmez; satışçının varsayılanından farklı olanları önizlemede uyarı olarak listeler.
+
+**Satış ekibinin ortak görüntülemesi kaldırıldı (karar 301 geri alındı).** Aynı çizimciye bağlı satışçılar artık birbirinin
+siparişini görmez; erişim her yerde sorumlu satışçı / atanmış çizimci kapsamında (sunucu tarafı).
+
+**Canlı eşleşme raporu.** `deploy/canliya-gecis/ekip-eslesmeleri.sql` — salt okunur (READ ONLY + ROLLBACK): satışçı → çizimci →
+fiyat tablosu, paylaşılan çizimci / tablo, satışçıya göre sipariş sayıları, çizimci farkları, ödeme / sandık sayıları,
+yönlendirme kuralları. Şifre, e-posta, tutar, müşteri adı yok. Canlıda çalıştırılmadı.
+
+**Migration.** Tek yeni tablo (`FactoryTeam`); var olan tablo / alan / veri değişmez. 4.3.18'e geri dönüşte migration listesi
+farklı olduğundan otomatik güvenli geri dönüş (karar 287) uygulanmaz — bkz. `docs/satis-ekibi-yayin-ve-geri-donus.md`.
+
 ## 4.3.18 — 23.10.2026 (geliştirme; 4.3.0 ile aynı paket — canlıda değil)
 
 **Geçmiş verinin bağlanması — D-1 (karar 302).** `takip satis-bagla` geçmişi artık TEK bir satış hesabına bağlamaz: sorumlusu
