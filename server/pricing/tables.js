@@ -406,7 +406,7 @@ export async function savePrices(db, tableId, changes, actor, extra = {}, source
 /**
  * Satışçıyı tabloya atar (tableId null → atama kaldırılır, varsayılan kullanılır).
  * Yalnızca teklif hazırlayabilen iç kullanıcılar atanabilir.
- * @returns {Promise<{ ok: true } | { ok: false, code: 'NOT_FOUND' }>}
+ * @returns {Promise<{ ok: true } | { ok: false, code: 'NOT_FOUND' | 'TABLE_IN_TEAM' }>}
  */
 export async function assignTable(db, userId, tableId, actor, canPrepare) {
   return db.$transaction(async (tx) => {

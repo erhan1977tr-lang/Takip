@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.20 — 23.10.2026 (geliştirme; 4.3.0 ile aynı paket — canlıda değil)
+
+Yalnızca tip açıklaması: fiyat tablosu atamasının dönüş türüne `TABLE_IN_TEAM` eklendi (4.3.19 tip denetimi). Davranış aynı.
+
 ## 4.3.19 — 23.10.2026 (geliştirme; 4.3.0 ile aynı paket — canlıda değil)
 
 **Fabrika Ekipleri (karar 304).** 1 cam fabrikası = 1 satışçı hesabı + 1 çizimci hesabı. Ayarlar → **Fabrika Ekipleri**
