@@ -18,25 +18,33 @@ atama bekler. Bu, tasarım gereğidir (atamasız siparişe ekip erişimi açılm
 ## Canlıya alma sırası (bakım penceresi)
 
 1. **Ön hazırlık (pencere öncesi):** CI (backend), kurulum testi ve demo testi yeşil; imajlar hazır (karar 287 — gate).
-   Ürün sahibi canlıdaki **mevcut satış hesabının e-postasını** ve **mevcut çizimci hesabının e-postasını** yazılı verir
-   (betik tahmin etmez).
+   Ürün sahibi Kullanıcılar ekranında satışçıların **varsayılan çizimcilerini** doğrular (ortak görüntüleme — karar 301 —
+   ve çizimcisi boş geçmiş siparişlerin çizimcisi buna göre belirlenir).
 2. **Tam yedek (çift):** `sudo takip yedek` → veritabanı + dosyalar çifti (yerel + Drive). Bu çift geri dönüşün dayanağıdır.
    Otomatik yayın ayrıca yalnızca veritabanı dökümü alır (`db-<zaman>-once-<sha>.dump`); dosya yedeği olmadan çift sayılmaz.
 3. **Yayın:** `backend`'e birleştirme (merge commit) → otomatik yayın (`takip guncelle`). Yayın sonrası sağlık denetimi ve
    `/surum` karar 287'deki gibi.
-4. **Bağlama — önizleme (yazmaz):**
-   `sudo takip satis-bagla SATIS-E-POSTA --cizimci CIZIM-E-POSTA`
-   Çıktı: hedef hesap, çizimci, plan (sahipsiz sipariş / sandık / ödeme sayısı), para birimi başına maliyet / ödeme / bakiye,
-   **belirsiz kayıtlar** (başka satış hesapları, zaten sahipli siparişler, başka çizimciye atanmış siparişler, birden çok
-   çizimci). Belirsiz kayıt varsa ürün sahibiyle görülür; betik hiçbir şeyi kendiliğinden çözmez.
-5. **Bağlama — uygulama:** aynı komut `--uygula` ile. Tek işlem; para birimi başına toplamlar ya da kayıt sayıları değişirse
-   işlem **geri alınır** ("TOTALS_CHANGED" / "ACCOUNTS_MISMATCH"). Sonuç: sahipsiz siparişler → hedef (MIGRATION), çizimcisiz
-   olanlara hedefin çizimcisi; sandıklar ve fabrika ödemeleri → hedef; bağlama işareti; **AUTO → hedef** kuralı (yeni
-   siparişler mevcut satışçıya — mevcut kullanım korunur). Görev, bildirim, durum değişikliği, dış servis çağrısı yok.
-6. **Doğrulama (mevcut tek hesapla):** satış hesabı eski siparişlerini ve yeni bir siparişi görür; çizimci atanmış işleri;
-   müşteri sayfası ekip kimliği göstermez; Muhasebe → Cam Fabrika Hesap Durumu'nda hesap satırı = genel toplam (tek hesap);
-   `Ayarlar → Satış Yönlendirme` "Otomatik: <satışçı>".
-7. **İkinci ekip** ayrı talimatla: kullanıcı açılır, varsayılan çizimci seçilir, kural ya da sipariş başına atama.
+4. **Bağlama — önizleme (yazmaz; 4.3.17 D-1, karar 302):**
+   `sudo takip satis-bagla [--odeme SATIS-E-POSTA]`
+   Çıktı: tarihsel satışçıya göre **dağılım** (satışçı başına sipariş sayısı), **sahipsiz kalacak siparişler** (iz yok /
+   birden çok satışçı / satışçı pasif — numara ve aday hesaplarla), çizimcisi atanacak sipariş sayısı, sandık planı (bağlanacak
+   / eski kayıt kalacak: boş, karışık, belirsiz), fabrika ödemeleri, para birimi başına toplamlar ve **ONAY KODU**.
+   Hesabı boş fabrika ödemesi varsa `--odeme E-POSTA` olmadan engel (ödeme hesabı tahmin edilmez).
+   Sahipsiz siparişler için ürün sahibinin kararı ya komuta eklenir (`--ata GLA68=satis@... ` — her karar ayrı `--ata`) ya da
+   bağlamadan sonra panelde "Satışçıya ata" ile verilir (yalnızca açık siparişler; kapanmış siparişler yalnızca `--ata` ile).
+   Karar eklendiğinde onay kodu değişir: önizleme aynı seçeneklerle yeniden çalıştırılır.
+5. **Bağlama — uygulama (yalnızca onaylanmış dağılım):** aynı seçenekler + `--uygula --onay <ONAY KODU>`. İşlemin içinde dağılım
+   yeniden hesaplanır; önizlemeden sonra bir sipariş / olay / sandık / ödeme / karar değiştiyse `APPROVAL_MISMATCH` — hiçbir
+   şey yazılmaz, önizleme yeniden yapılır. Tek işlem; toplamlar ya da kayıt sayıları değişirse geri alınır ("TOTALS_CHANGED" /
+   "ACCOUNTS_MISMATCH"). Sonuç: siparişler tarihsel / kararlaştırılan satışçıya (MIGRATION), çizimcisi boş olanlara o satışçının
+   varsayılan çizimcisi (var olan çizimci değişmez), tek sahipli sandıklar, fabrika ödemeleri kararlaştırılan hesaba, bağlama
+   işareti. **Otomatik yönlendirme kuralı yazılmaz**: yeni siparişlerde sorumlu satışçıyı yönetici seçer (MANUAL — karar 302).
+   Görev, bildirim, durum değişikliği, dış servis çağrısı yok.
+6. **Doğrulama:** her satışçı kendi tarihsel siparişlerini, aynı çizimciye bağlı ekip arkadaşının siparişlerini yalnızca
+   görüntüleme olarak görür ("Sıra bende" yalnızca kendi işi); sahipsiz kalanlar yöneticinin "Atama bekleyen" tablosunda;
+   müşteri sayfası ekip kimliği göstermez; Muhasebe → Cam Fabrika Hesap Durumu'nda satışçı hesaplarının toplamı = genel toplam;
+   `Ayarlar → Satış Yönlendirme` "Kural yok — yeni siparişler atama bekler".
+7. **Otomatik yönlendirme** gerekirse ayrı kararla: Ayarlar → Satış Yönlendirme'den yönetici yazar.
 
 ## Geri dönüş
 
@@ -76,8 +84,9 @@ eski koda dönüş bu nedenle iş kuralı olarak **kabul edilemez**; geri dönü
   **reddedildiğini** doğrular — bu adayda geçerli olan davranış budur.
 - `takip restore` yolu kurulum testlerinde (`deploy/test/backup-*.sh`, `restore-test`) prova edilir; 4.3.0'a özgü bir
   prova eklenmedi.
-- Bağlama betiği: veritabanı testinde (`test/db/sales-team.test.js`) önizleme / uygulama / toplam koruması / ikinci
-  uygulama reddi sentetik veriyle doğrulanır. **Canlıda çalıştırılmadı.**
+- Bağlama betiği: veritabanı testlerinde (`test/db/sales-link.test.js`, `test/db/sales-team.test.js`) tarihsel dağılım,
+  sahipsiz kalanlar, onay kodu (yanlış / eski kod → hiçbir şey yazılmaz), toplam koruması, `updatedAt` koruması, süre sınırları
+  ve ikinci uygulama reddi sentetik veriyle doğrulanır. **Canlıda çalıştırılmadı.**
 
 **Yayın engeli olarak bildirilir:** tek komutla, veri kaybı olmadan ve araç kuralına uyan bir geri dönüş yöntemi 4.3.0
 için **yoktur**. Güvenli yol, bakım penceresinde alınan tam çift + `takip restore` (veri kaybı penceresi = yayın ile
