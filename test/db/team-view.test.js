@@ -128,7 +128,7 @@ dbTest('ekip arkadaşının siparişi: not, telafi, sandık kaydı, misafir sand
   await addNote(db, { orderId: O.hamza.id, actor: act(U.cust), text: 'müşteri mesajı', requestKey: `tv-note-${'n'.repeat(16)}` });
   const mv = await viewer('murat');
   assert.equal((await unreadCounts(db, mv, [O.hamza.id, O.murat.id])).get(O.hamza.id) ?? 0, 0);
-  assert.equal(await unreadTotal(db, mv), 0);
+  assert.equal((await unreadTotal(db, mv)).total, 0);
   assert.equal((await orderAlertCounts(db, mv, [O.hamza.id])).get(O.hamza.id) ?? 0, 0);
   assert.deepEqual(await markNotesRead(db, { user: mv, orderId: O.hamza.id }), { ok: false, code: 'NOT_FOUND' });
   assert.equal((await markOrderSeen(db, { user: mv, orderId: O.hamza.id })).ok, false);
