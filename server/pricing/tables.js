@@ -10,6 +10,7 @@
 import { writeAudit } from '../orders/journal.js';
 import { CRATE_LINE } from '../orders/rules.js';
 import { clean, glassKey, glassLabel, parseNumber } from '../catalog/glass.js';
+import { lockTeams, teamActive, teamConflicts } from '../teams/state.js';
 
 export const CURRENCIES = ['EUR', 'RON', 'TRY', 'USD'];
 export const MAX_PRICE = 1_000_000;
@@ -412,6 +413,12 @@ export async function assignTable(db, userId, tableId, actor, canPrepare) {
     const u = await tx.user.findUnique({ where: { id: userId } });
     if (!u || u.type !== 'INTERNAL' || !canPrepare(u.appRole)) return { ok: false, code: 'NOT_FOUND' };
     if (tableId && !(await tx.priceTable.findFirst({ where: { id: tableId, kind: 'SALES' } }))) return { ok: false, code: 'NOT_FOUND' };
+    // Aktif fabrika ekipleri arasında fiyat tablosu tekil (4.3.19, karar 304): yalnızca yeni atamada, satışçının ekibi
+    // aktifse denetlenir; var olan bağlantılar değişmez
+    await lockTeams(tx);
+    if (tableId && tableId !== u.priceTableId && (await teamActive(tx, u.id)) && (await teamConflicts(tx, { salesUserId: u.id, priceTableId: tableId })).length) {
+      return { ok: false, code: 'TABLE_IN_TEAM' };
+    }
     await tx.user.update({ where: { id: userId }, data: { priceTableId: tableId } });
     await writeAudit(tx, {
       action: 'PRICE_TABLE_ASSIGN', entityType: 'User', entityId: userId, userId: actor.id,

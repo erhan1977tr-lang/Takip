@@ -51,6 +51,10 @@ try {
   console.log(`SAHİPSİZ KALACAK (yönetici kararı gerekir — panelde "Satışçıya ata" ya da --assign): ${s.unresolved.length}`);
   for (const u of s.unresolved) console.log(`  - ${u.orderNo} [${u.status}${u.removed ? ', silinmiş' : ''}] ${REASON[u.reason] ?? u.reason}${u.candidates.length ? `: ${u.candidates.join(', ')}` : ''}`);
   console.log(`Çizimcisi boş olup satışçının varsayılan çizimcisi atanacak sipariş: ${s.drawersToSet}`);
+  if (s.drawerMismatch.length) {
+    console.log(`UYARI — çizimcisi satışçının varsayılan çizimcisinden farklı (değiştirilmez; gerekirse --assign ile doğru satışçıya verin): ${s.drawerMismatch.length}`);
+    for (const d of s.drawerMismatch) console.log(`  - ${d.orderNo} → ${d.owner}`);
+  }
   if (s.ownersWithoutDrawer.length) console.log(`  Varsayılan çizimcisi olmayan satışçılar (siparişleri çizimcisiz kalır): ${s.ownersWithoutDrawer.join(', ')}`);
   console.log(`Sandık: ${s.crates.total} sahipsiz, ${s.crates.linked} bağlanacak, ${s.crates.kept.length} eski kayıt olarak kalacak`);
   for (const c of s.crates.kept) console.log(`  - #${c.crateNo} ${c.day ?? '—'}: ${({ EMPTY: 'boş', MIXED: 'farklı satışçıların siparişleri', UNRESOLVED: 'sahipsiz sipariş içeriyor' })[c.reason] ?? c.reason}`);

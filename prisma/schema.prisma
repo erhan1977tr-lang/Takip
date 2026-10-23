@@ -177,6 +177,7 @@ model User {
   ordersAssignedBy   Order[]        @relation("OrderSalesAssignedBy")
   routingRules       GlassRoutingRule[] @relation("GlassRoutingTarget")
   routingRulesSet    GlassRoutingRule[] @relation("GlassRoutingCreatedBy")
+  factoryTeam        FactoryTeam?   @relation("FactoryTeamSales")
   cratesOwned        Crate[]        @relation("CrateSalesOwner")
   factoryPayments    FactoryPayment[] @relation("FactoryPaymentAccount")
   alertsCreated      AdminAlert[]   @relation("AlertCreatedBy")
@@ -1969,6 +1970,21 @@ model GlassRoutingRule {
   orders       Order[]
 
   @@index([startsAt])
+}
+
+// Fabrika ekibi (4.3.19, karar 304): bir cam fabrikasını temsil eden satışçı hesabının ADI ve aktifliği. İkinci bir
+// eşleştirme yoktur: çizimci = satışçının User.defaultDrawerId'si, alış fiyat tablosu = User.priceTableId, finansal hesap =
+// satışçı hesabı (FactoryPayment.salesUserId). Satışçı bir kez bağlanır (değişmez); pasif ekip geçmiş siparişleri ve
+// kullanıcı hesaplarını değiştirmez, yalnızca yeni yönlendirme / atamayı engeller. Müşteriye hiçbir alanı gitmez.
+model FactoryTeam {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  salesUserId String   @unique
+  salesUser   User     @relation("FactoryTeamSales", fields: [salesUserId], references: [id], onDelete: Restrict)
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 }
 
 // ---------------------------------------------------------

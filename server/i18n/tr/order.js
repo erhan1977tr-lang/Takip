@@ -13,7 +13,6 @@ export default {
     unheld: 'Sipariş beklemeden çıkarıldı.',
     unheld_production: 'Sipariş beklemeden çıkarıldı ve koşullar tamam olduğu için otomatik olarak üretime alındı.',
     sales_assigned: 'Sorumlu satışçı kaydedildi.',
-    drawer_assigned: 'Çizimci değiştirildi (çizim sürümleri ve müşteri onayları korundu).',
     ship_date: 'Tahmini yükleme tarihi güncellendi.',
     shipped: 'Sipariş yüklendi olarak işaretlendi.',
     archived: 'Sipariş arşivlendi.',

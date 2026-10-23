@@ -10,7 +10,7 @@ import { ImportPrices } from './ImportPrices';
 import { PricesEditor } from './PricesEditor';
 
 const OK = new Set(['created', 'saved', 'imported', 'assigned', 'deleted']);
-const ERR = new Set(['exists', 'not_found', 'currency_locked', 'is_default', 'inactive', 'in_use', 'invalid', 'import_failed']);
+const ERR = new Set(['table_in_team', 'exists', 'not_found', 'currency_locked', 'is_default', 'inactive', 'in_use', 'invalid', 'import_failed']);
 
 /**
  * Fiyat tabloları: tablolar, seçili tablonun fiyatları (ekranda ya da Excel ile) ve atamalar.

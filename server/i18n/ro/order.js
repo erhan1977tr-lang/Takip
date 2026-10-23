@@ -13,7 +13,6 @@ export default {
     unheld: 'Comanda a fost scoasă din așteptare.',
     unheld_production: 'Comanda a fost scoasă din așteptare și, deoarece condițiile sunt îndeplinite, a fost trecută automat în producție.',
     sales_assigned: 'Agentul de vânzări responsabil a fost salvat.',
-    drawer_assigned: 'Desenatorul a fost schimbat (versiunile desenului și aprobările clientului s-au păstrat).',
     ship_date: 'Data estimată de încărcare a fost actualizată.',
     shipped: 'Comanda a fost marcată ca încărcată.',
     archived: 'Comanda a fost arhivată.',

@@ -47,6 +47,7 @@ export default {
     deleted: 'Tablo silindi.',
     exists: 'Bu adla bir tablo zaten var.',
     not_found: 'Kayıt bulunamadı.',
+    table_in_team: 'Bu fiyat tablosu başka bir aktif fabrika ekibinin satışçısına bağlı. Bir tablo yalnızca bir aktif ekipte kullanılabilir (Ayarlar → Fabrika Ekipleri).',
     currency_locked: 'Bu tablo tekliflerde kullanıldı; para birimi değiştirilemez.',
     is_default: 'Varsayılan tablo pasif yapılamaz ve silinemez. Önce başka bir tabloyu varsayılan yapın.',
     inactive: 'Pasif tablo varsayılan yapılamaz.',

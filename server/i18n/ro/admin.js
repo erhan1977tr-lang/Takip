@@ -29,6 +29,7 @@ export default {
       confirm: 'Pentru confirmare, scrieți exact adresa de e-mail a utilizatorului.',
       mailChange: 'E-mailul către noua adresă nu a putut fi trimis; nu s-a modificat nimic. Verificați setările SMTP și încercați din nou.',
       drawer: 'Desenatorul implicit nu a putut fi salvat: utilizatorul trebuie să fie agent de vânzări activ, iar persoana aleasă desenator activ.',
+      drawerInTeam: 'Acest desenator aparține deja altei echipe de fabrică active. Un desenator poate fi doar într-o echipă activă (Setări → Echipe de fabrică).',
       person: 'Numele nu poate fi gol.',
     },
     listTitle: 'Utilizatori înregistrați ({n})',

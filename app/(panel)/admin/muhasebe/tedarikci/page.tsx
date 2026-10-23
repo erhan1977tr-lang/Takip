@@ -47,14 +47,14 @@ export default async function SupplierPage({ searchParams }: { searchParams: Pro
   const curs = Object.keys(summary).sort();
   // Satışçı hesapları (karar 300): kalıcı satış hesapları (pasif dahil; silinmiş hariç) — ödeme girişinde ve hesap değişikliğinde
   const salesAccounts = await db.user.findMany({
-    where: { appRole: 'SATIS', type: 'INTERNAL', deletedAt: null }, orderBy: [{ name: 'asc' }, { email: 'asc' }], select: { id: true, name: true, email: true },
+    where: { appRole: 'SATIS', type: 'INTERNAL', deletedAt: null }, orderBy: [{ name: 'asc' }, { email: 'asc' }], select: { id: true, name: true, email: true, factoryTeam: { select: { name: true } } },
   });
-  const accountName = (id: string | null) => (id ? (() => { const u = salesAccounts.find((x) => x.id === id); return u ? u.name || u.email : '—'; })() : t('accounting.supplier.factory.noAccount'));
+  const accountName = (id: string | null) => (id ? (() => { const u = salesAccounts.find((x) => x.id === id); return u ? `${u.factoryTeam ? `${u.factoryTeam.name} · ` : ''}${u.name || u.email}` : '—'; })() : t('accounting.supplier.factory.noAccount'));
   const accountRows = [...accounts.accounts].sort((a, b) => (a.account == null ? 1 : 0) - (b.account == null ? 1 : 0) || accountName(a.account).localeCompare(accountName(b.account)));
   const AccountSelect = ({ id, current }: { id: string; current?: string | null }) => (
     <select id={id} name="salesUserId" required defaultValue={current ?? ''} aria-label={t('accounting.supplier.factory.account')}>
       <option value="" disabled>{t('accounting.supplier.factory.pickAccount')}</option>
-      {salesAccounts.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+      {salesAccounts.map((u) => <option key={u.id} value={u.id}>{u.factoryTeam ? `${u.factoryTeam.name} · ` : ''}{u.name || u.email}</option>)}
     </select>
   );
   // Tablolarda para birimi kendi sütununda: tutar yalın yazılır; eksi tutar kırmızı

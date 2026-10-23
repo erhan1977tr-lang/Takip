@@ -56,7 +56,6 @@ export const INAPP_RULES = {
   ORDER_CREATED: { to: (o) => (o.orderTypeCode === 'PROFILE_ORDER' ? ['admin'] : ['orderSales', 'admin']) },
   // Yönetici siparişi satışçıya atadı / başka satışçıya yönlendirdi (karar 300): yeni sorumlu satışçı
   ORDER_SALES_ASSIGNED: { to: () => ['orderSales'] },
-  ORDER_DRAWER_ASSIGNED: { to: () => ['drawer'] },
   // Çizim: atama ve müşteri kararı yalnızca atanmış çizimciye + ilgili satışçıya (yöneticiye değil — karar 84)
   ORDER_SENT_TO_DRAWING: { to: () => ['drawer'] },
   // Müşteriye yeni çizim: bağlantı siparişteki kırmızı "yeni çizim onayınızı bekliyor" bilgilendirmesine (karar 162, 166)

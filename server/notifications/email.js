@@ -31,7 +31,6 @@ export const NOTIFY_RULES = {
   // Yönetici siparişi satışçıya atadı / başka satışçıya yönlendirdi (karar 300): yeni sorumlu satışçı
   ORDER_SALES_ASSIGNED: () => ['orderSales'],
   // Yönetici çizimciyi değiştirdi (karar 303): yeni çizimci (eski çizimcinin erişimi kapanır)
-  ORDER_DRAWER_ASSIGNED: () => ['drawer'],
   ORDER_PRICE_OVERRIDE: () => ['admin'],
   ORDER_OFFER_WITHDRAWN: () => ['admin'],
   ORDER_COMPENSATION_PRICE: () => ['admin'],

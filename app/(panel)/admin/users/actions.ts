@@ -177,7 +177,7 @@ export async function setDefaultDrawerAction(formData: FormData) {
   const drawerId = String(formData.get('drawerId') ?? '') || null;
   const r = await setDefaultDrawer(db, { salesUserId, drawerId, actor: await actorOf(admin) });
   revalidatePath('/admin/users');
-  if (!r.ok) redirect(`/admin/users?error=${r.code === 'FORBIDDEN' ? 'forbidden' : 'drawer'}`);
+  if (!r.ok) redirect(`/admin/users?error=${r.code === 'FORBIDDEN' ? 'forbidden' : r.code === 'DRAWER_IN_TEAM' ? 'drawerInTeam' : 'drawer'}`);
   redirect('/admin/users?ok=drawer');
 }
 

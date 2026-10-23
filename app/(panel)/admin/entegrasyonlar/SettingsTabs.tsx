@@ -9,7 +9,7 @@ import type { CurrentUser } from '@/lib/auth/session';
  * Tedarikçiler (SUPPLIER_MANAGE), Çalışma Takvimleri (OPS_SETTINGS_MANAGE) ve Giriş Logları (AUDIT_VIEW — yalnızca yönetici).
  * Sekme yalnızca görünüm kolaylığıdır — her sayfa kendi yetkisini ayrıca denetler.
  */
-export async function SettingsTabs({ user, active }: { user: CurrentUser; active: 'integrations' | 'suppliers' | 'calendars' | 'routing' | 'logins' }) {
+export async function SettingsTabs({ user, active }: { user: CurrentUser; active: 'integrations' | 'suppliers' | 'calendars' | 'routing' | 'teams' | 'logins' }) {
   const { t } = await getT();
   const tabs = [
     { key: 'integrations', href: '/admin/entegrasyonlar', label: t('supplier.settingsTabs.integrations'), show: userCan(user, 'SETTINGS_MANAGE') || userCan(user, 'OPS_SETTINGS_MANAGE') },
@@ -17,6 +17,8 @@ export async function SettingsTabs({ user, active }: { user: CurrentUser; active
     { key: 'calendars', href: '/admin/entegrasyonlar/takvimler', label: t('calendar.title'), show: userCan(user, 'OPS_SETTINGS_MANAGE') },
     // Satış yönlendirmesi (karar 300): yalnızca yönetici (SETTINGS_MANAGE)
     { key: 'routing', href: '/admin/entegrasyonlar/yonlendirme', label: t('team.routing.tab'), show: userCan(user, 'SETTINGS_MANAGE') },
+    // Fabrika Ekipleri (karar 304): kullanıcı + fiyat tablosu yönetimi (yönetici)
+    { key: 'teams', href: '/admin/entegrasyonlar/ekipler', label: t('team.factory.tab'), show: userCan(user, 'USER_MANAGE') && userCan(user, 'PRICE_TABLE_MANAGE') },
     { key: 'logins', href: '/admin/entegrasyonlar/giris-loglari', label: t('loginLog.title'), show: userCan(user, 'AUDIT_VIEW') },
   ].filter((x) => x.show);
   return (

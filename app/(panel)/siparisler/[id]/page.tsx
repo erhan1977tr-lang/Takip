@@ -179,25 +179,21 @@ export default async function OrderPage({
   // Sorumlu satışçı kartı (karar 300): yalnızca atama yetkisi (ORDER_ASSIGN) ve cam siparişi. Engeller bilgi içindir —
   // işlem aynı kuralı kilit altında yeniden uygular (assign_sales)
   const assignCard = can('assign_sales') ? await (async () => {
-    const [linked, sales, drawers] = await Promise.all([
+    const [linked, sales] = await Promise.all([
       routingLinked(db),
       db.user.findMany({
-        where: { appRole: 'SATIS', type: 'INTERNAL', isActive: true, deletedAt: null },
+        // Fabrika ekibi pasif satışçılar seçilemez (karar 304) — işlem de reddeder (TEAM_INACTIVE)
+        where: { appRole: 'SATIS', type: 'INTERNAL', isActive: true, deletedAt: null, OR: [{ factoryTeam: null }, { factoryTeam: { isActive: true } }] },
         orderBy: [{ name: 'asc' }, { email: 'asc' }],
-        select: { id: true, name: true, email: true, defaultDrawer: { select: { name: true, email: true, isActive: true, deletedAt: true } } },
+        select: { id: true, name: true, email: true, factoryTeam: { select: { name: true } }, defaultDrawer: { select: { name: true, email: true, isActive: true, deletedAt: true } } },
       }),
-      // Çizimci değiştirme (karar 303): etkin iç ekip çizimcileri
-      can('assign_drawer') ? db.user.findMany({
-        where: { appRole: 'CIZIM', type: 'INTERNAL', isActive: true, deletedAt: null },
-        orderBy: [{ name: 'asc' }, { email: 'asc' }], select: { id: true, name: true, email: true },
-      }) : Promise.resolve([]),
     ]);
     const options: SalesOption[] = sales.map((u) => ({
-      id: u.id, name: u.name || u.email,
+      id: u.id, name: u.name || u.email, team: u.factoryTeam?.name ?? null,
       drawer: u.defaultDrawer && u.defaultDrawer.isActive && !u.defaultDrawer.deletedAt ? u.defaultDrawer.name || u.defaultDrawer.email : null,
     }));
     const blocks = order.salesUserId ? reassignBlocks(await reassignFacts(db, order)) : [];
-    return { linked, options, blocks, drawers: drawers.map((d) => ({ id: d.id, name: d.name || d.email })) };
+    return { linked, options, blocks };
   })() : null;
   // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
   // Sunucu işlemde aynı denetimi kilit altında yeniden yapar (server/orders/dwg-undo.js → dwgUndoCheck)
@@ -467,7 +463,6 @@ export default async function OrderPage({
           owner={order.salesUser ? order.salesUser.name || order.salesUser.email : null}
           drawer={order.assignedDrawer ? order.assignedDrawer.name || order.assignedDrawer.email : null}
           via={order.salesAssignedVia} options={assignCard.options} blocks={assignCard.blocks} linked={assignCard.linked}
-          drawerId={order.assignedDrawerId} drawers={assignCard.drawers} canDrawer={can('assign_drawer')}
         />
       )}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}

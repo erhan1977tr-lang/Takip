@@ -183,6 +183,9 @@ async function buildPlan(db, { decisions = [], paymentEmail = null }) {
       id: o.id, orderNo: o.orderNo, status: o.status, removed: !!o.removedAt, reason: r.reason, candidates: r.candidates, sources: r.sources,
       ownerId, via, drawerToSet: ownerId && !o.assignedDrawerId ? drawerOf(ownerId) : null,
       keepsDrawer: !!o.assignedDrawerId, noDrawer: !!ownerId && !o.assignedDrawerId && !drawerOf(ownerId),
+      // Bilgi (karar 304): var olan çizimci satışçının varsayılan çizimcisinden farklı — DEĞİŞTİRİLMEZ (çizim geçmişi
+      // başka ekibe taşınmaz); yönetici önizlemede görür ve gerekirse siparişi doğru satışçıya --assign ile verir
+      drawerMismatch: !!ownerId && !!o.assignedDrawerId && o.assignedDrawerId !== drawerOf(ownerId),
     };
   });
   const finalOwner = new Map(planned.map((o) => [o.id, o.ownerId]));
@@ -223,6 +226,7 @@ async function buildPlan(db, { decisions = [], paymentEmail = null }) {
       decisions: planned.filter((o) => o.via === 'DECISION' || o.via === 'DECISION_OVERRIDE').map((o) => ({ orderNo: o.orderNo, owner: label(o.ownerId), override: o.via === 'DECISION_OVERRIDE' })),
       drawersToSet: planned.filter((o) => o.drawerToSet).length,
       ownersWithoutDrawer: [...new Set(planned.filter((o) => o.noDrawer).map((o) => label(o.ownerId)))],
+      drawerMismatch: planned.filter((o) => o.drawerMismatch).map((o) => ({ orderNo: o.orderNo, owner: label(o.ownerId) })),
       crates: { total: plannedCrates.length, linked: plannedCrates.filter((c) => c.ownerId).length, kept: plannedCrates.filter((c) => !c.ownerId).map((c) => ({ crateNo: c.crateNo, day: c.day, reason: c.reason })) },
       payments: { count: paymentCount, owner: plan.payments.ownerId ? label(plan.payments.ownerId) : null },
     },

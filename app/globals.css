@@ -323,6 +323,14 @@ html[data-sidebar=collapsed] .content { max-width: none; }
 .timeline .price-changes li { padding: 0 0 2px; }
 .timeline .price-changes li::before { content: none; }
 /* Sipariş bilgileri (eski GKH TAKIP düzeni): alt alta satırlar, solda gri etiket, sağda değer */
+/* Sorumlu satışçı kartı (karar 304): "Sorumlu satışçı: Murat · Değiştir" — değiştirme formu kapalı başlar */
+.owner-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 4px 0; }
+.sales-change > summary { list-style: none; color: var(--primary); font-weight: 600; }
+.sales-change > summary::-webkit-details-marker { display: none; }
+.sales-change > summary .when-open, .sales-change[open] > summary .when-closed { display: none; }
+.sales-change[open] > summary .when-open { display: inline; }
+.sales-change[open] { flex-basis: 100%; }
+.sales-change[open] > form { margin-top: 8px; }
 .order-info { margin: 0; border-top: 1px solid var(--border); }
 .order-info > div { display: grid; grid-template-columns: minmax(170px, 38%) 1fr; border-bottom: 1px solid var(--border); }
 .order-info dt { background: var(--surface-2); color: var(--text-2); font-size: var(--fs-meta); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 13px 14px; }

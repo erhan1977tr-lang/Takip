@@ -598,9 +598,6 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   // Sorumlu satışçı (karar 300): yönetici atar / başka satışçıya yönlendirir — beklemede de. Yönlendirme sınırı (teklif ilk
   // kez gönderilmeden, çizim / maliyet başlamadan) işlemin kendisinde: server/orders/sales-routing.js → reassignBlocks.
   if (can(role, 'ORDER_ASSIGN') && !closed && orderType === 'GLASS_ORDER') a.push('assign_sales');
-  // Çizimci değiştirme (4.3.17 D-3, karar 303): yönetici / yönetici yardımcısı; yalnızca siparişin çizimcisi değişir —
-  // çizim sürümleri, dosyaları ve müşteri onayları olduğu gibi kalır (server/orders/transitions.js → assign_drawer)
-  if (can(role, 'ORDER_ASSIGN') && !closed && orderType === 'GLASS_ORDER') a.push('assign_drawer');
 
   if (onHold) {
     if (sales) a.push('unhold');

@@ -19,6 +19,7 @@
 
 import { can } from '../auth/permissions.js';
 import { writeAudit } from './journal.js';
+import { lockTeams, teamActive, teamConflicts, teamInactive } from '../teams/state.js';
 
 export const ROUTING_MODES = ['MANUAL', 'AUTO'];
 export const ROUTING_TIMEZONE = 'Europe/Bucharest';
@@ -130,6 +131,20 @@ export function reassignBlocks(f) {
   return out;
 }
 
+/**
+ * İlk satışçı atamasında çizimci (4.3.19, karar 304): sipariş daima satışçının varsayılan çizimcisine gider. Siparişin
+ * zaten bir çizimcisi varsa ve onda çizim geçmişi (sürüm, müşteri onayı / revizyonu, DWG kaydı ya da başlamış çizim işi)
+ * bulunuyorsa, farklı bir çizimciye geçmek bu kayıtları başka ekibe taşırdı → atama engellenir. Geçmiş yoksa ya da
+ * çizimci aynıysa engel yok.
+ * @param {{ drawings: number, drawingTrack: string }} facts  reassignFacts sonucu
+ * @param {string | null} currentDrawerId  siparişin şu anki çizimcisi
+ * @param {string | null} nextDrawerId  yeni satışçının varsayılan çizimcisi
+ */
+export function firstAssignDrawerBlock(facts, currentDrawerId, nextDrawerId) {
+  if (!currentDrawerId || currentDrawerId === nextDrawerId) return false;
+  return facts.drawings > 0 || !['YOK', 'GEREKLI'].includes(facts.drawingTrack);
+}
+
 // ---------------- Veritabanı ----------------
 
 const ROUTING_LOCK = 'glass-routing';
@@ -161,12 +176,14 @@ export async function routeNewOrder(tx, { now, orderNo = null }) {
   const rule = ruleAt(rules, now);
   if (!rule || rule.mode !== 'AUTO') return null;
   const target = rule.targetUserId ? await tx.user.findUnique({ where: { id: rule.targetUserId }, select: USER_FIELDS }) : null;
-  if (!validSales(target)) {
+  // Ekibi pasif satışçıya yönlendirme yok (4.3.19, karar 304): geçersiz hedefle aynı — sipariş atama bekler
+  const reason = !validSales(target) ? 'TARGET' : (await teamInactive(tx, target.id)) ? 'TEAM_INACTIVE' : null;
+  if (reason) {
     // Sessiz atama yok: sipariş atama bekler, yönetici "Önemli kararlar"da görür (kural başına tek uyarı)
     await tx.adminAlert.upsert({
       where: { dedupeKey: `routing-invalid:${rule.id}` },
       update: {},
-      create: { type: 'ROUTING_TARGET_INVALID', details: { ruleId: rule.id, orderNo }, dedupeKey: `routing-invalid:${rule.id}` },
+      create: { type: 'ROUTING_TARGET_INVALID', details: { ruleId: rule.id, orderNo, reason }, dedupeKey: `routing-invalid:${rule.id}` },
     });
     return null;
   }
@@ -191,6 +208,7 @@ export async function saveRoutingRule(db, { input, actor, now = new Date() }) {
     if (rule.targetUserId) {
       const target = await tx.user.findUnique({ where: { id: rule.targetUserId }, select: USER_FIELDS });
       if (!validSales(target)) return { ok: false, code: 'TARGET' };
+      if (await teamInactive(tx, target.id)) return { ok: false, code: 'TEAM_INACTIVE' };
     }
     const row = await tx.glassRoutingRule.create({ data: { ...rule, createdById: actor.id } });
     await writeAudit(tx, {
@@ -205,7 +223,7 @@ export async function saveRoutingRule(db, { input, actor, now = new Date() }) {
  * Satışçının varsayılan çizimcisi (karar 300). Yetki: USER_MANAGE (yönetici) — ilk deyim. Yalnızca sonraki atamaları
  * etkiler: var olan siparişlerin assignedDrawerId alanı DEĞİŞMEZ. drawerId boş = eşleşme kaldırılır.
  * @param {any} db  @param {{ salesUserId: string, drawerId: string | null, actor: { id: string, role: string, ip?: string | null } }} p
- * @returns {Promise<{ ok: true, changed: boolean } | { ok: false, code: 'FORBIDDEN' | 'SALES' | 'DRAWER' }>}
+ * @returns {Promise<{ ok: true, changed: boolean } | { ok: false, code: 'FORBIDDEN' | 'SALES' | 'DRAWER' | 'DRAWER_IN_TEAM' }>}
  */
 export async function setDefaultDrawer(db, { salesUserId, drawerId, actor }) {
   if (!actor?.id || !can(actor.role, 'USER_MANAGE')) return FORBIDDEN;
@@ -216,6 +234,11 @@ export async function setDefaultDrawer(db, { salesUserId, drawerId, actor }) {
     if (drawerId && !validDrawer(drawer)) return { ok: false, code: 'DRAWER' };
     const next = drawer?.id ?? null;
     if ((sales.defaultDrawerId ?? null) === next) return { ok: true, changed: false };
+    // Aktif fabrika ekipleri arasında çizimci tekil (karar 304): yalnızca satışçının ekibi aktifse denetlenir
+    await lockTeams(tx);
+    if (next && (await teamActive(tx, sales.id)) && (await teamConflicts(tx, { salesUserId: sales.id, drawerId: next })).length) {
+      return { ok: false, code: 'DRAWER_IN_TEAM' };
+    }
     // Koşullu yazım: arada başka biri değiştirdiyse üzerine yazılmaz
     const r = await tx.user.updateMany({ where: { id: sales.id, defaultDrawerId: sales.defaultDrawerId ?? null }, data: { defaultDrawerId: next } });
     if (r.count !== 1) return { ok: false, code: 'SALES' };

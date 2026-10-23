@@ -183,7 +183,7 @@ export async function assignTableAction(formData: FormData) {
   const remove = formData.get('intent') === 'unassign';
   const r = await assignTable(db, userId, remove ? null : tableId, await actorOf(admin), (role: string) => can(role, 'OFFER_PREPARE'));
   refresh();
-  redirect(back(formData, tableId, r.ok ? 'ok=assigned' : 'error=not_found'));
+  redirect(back(formData, tableId, r.ok ? 'ok=assigned' : r.code === 'TABLE_IN_TEAM' ? 'error=table_in_team' : 'error=not_found'));
 }
 
 /** Müşteri firmasını müşteri fiyat tablosuna bağla ya da bağlantıyı kaldır (karar 32). */

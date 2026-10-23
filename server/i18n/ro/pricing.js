@@ -47,6 +47,7 @@ export default {
     deleted: 'Lista a fost ștearsă.',
     exists: 'Există deja o listă cu această denumire.',
     not_found: 'Înregistrarea nu a fost găsită.',
+    table_in_team: 'Acest tabel de prețuri este legat de agentul altei echipe de fabrică active. Un tabel poate fi folosit doar într-o echipă activă (Setări → Echipe de fabrică).',
     currency_locked: 'Această listă a fost folosită în oferte; moneda nu mai poate fi schimbată.',
     is_default: 'Lista implicită nu poate fi dezactivată sau ștearsă. Setați mai întâi altă listă ca implicită.',
     inactive: 'O listă inactivă nu poate fi implicită.',

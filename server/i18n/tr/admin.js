@@ -29,6 +29,7 @@ export default {
       confirm: 'Onay için kullanıcının e-posta adresini aynen yazın.',
       mailChange: 'Yeni adrese e-posta gönderilemedi; hiçbir değişiklik yapılmadı. SMTP ayarlarını kontrol edip yeniden deneyin.',
       drawer: 'Varsayılan çizimci kaydedilemedi: kullanıcı etkin bir satışçı ve seçilen kişi etkin bir çizimci olmalı.',
+      drawerInTeam: 'Bu çizimci başka bir aktif fabrika ekibine bağlı. Bir çizimci yalnızca bir aktif ekipte olabilir (Ayarlar → Fabrika Ekipleri).',
       person: 'Ad boş olamaz.',
     },
     listTitle: 'Kayıtlı kullanıcılar ({n})',

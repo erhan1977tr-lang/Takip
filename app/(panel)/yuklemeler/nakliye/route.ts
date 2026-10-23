@@ -22,7 +22,11 @@ export async function GET(req: Request) {
   // Misafir yükün firma adı görene göre (satışa maskeli — karar 7); ağırlık ve gruplar değişmez
   // Satışçı bölümleri (karar 300): satış yalnızca kendi bölümünü alır (sunucuda süzülür); yönetici / denetimci tamamını
   const sales = user.appRole === 'SATIS';
-  const names = new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL', ...(sales ? { id: user.id } : {}) }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]));
+  // Bölüm başlığı: fabrika ekibinin adı (karar 304), ekibi yoksa satışçının adı. Müşteri bu listeye erişemez.
+  const names = new Map((await db.user.findMany({
+    where: { appRole: 'SATIS', type: 'INTERNAL', ...(sales ? { id: user.id } : {}) },
+    select: { id: true, name: true, email: true, factoryTeam: { select: { name: true } } },
+  })).map((u) => [u.id, u.factoryTeam?.name ?? (u.name || u.email)]));
   const list = await transportList(db, day, {
     label: (name: string) => customerLabel(user, name),
     salesUserId: sales ? user.id : undefined,

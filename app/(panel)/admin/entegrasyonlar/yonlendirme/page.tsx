@@ -8,7 +8,7 @@ import { saveRoutingRuleAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
-const ERR = ['FORBIDDEN', 'MODE', 'TARGET', 'TIME', 'PAST', 'FAR', 'NOT_LINKED'];
+const ERR = ['FORBIDDEN', 'MODE', 'TARGET', 'TIME', 'PAST', 'FAR', 'NOT_LINKED', 'TEAM_INACTIVE'];
 
 type Rule = {
   id: string; mode: string; startsAt: Date; note: string | null;
@@ -44,9 +44,12 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
         id: true, name: true, email: true,
         defaultDrawer: { select: { name: true, email: true, isActive: true } },
         priceTable: { select: { name: true, isActive: true } },
+        factoryTeam: { select: { name: true, isActive: true } },
       },
     }),
   ]);
+  // Fabrika ekibi pasif satışçılar (karar 304): yeni kurala hedef olamaz; şu anki kural onu gösteriyorsa açık uyarı
+  const inactiveTeam = new Set(sales.filter((s) => s.factoryTeam && !s.factoryTeam.isActive).map((s) => s.id));
   const state = raw as unknown as { rules: Rule[]; linked: boolean; current: Rule | null; upcoming: Rule[] };
   const fmt = (d: Date) => new Intl.DateTimeFormat(intl, { dateStyle: 'short', timeStyle: 'short', timeZone: ROUTING_TIMEZONE }).format(d);
   const linkedAt = (link?.value as unknown as { linkedAt?: string } | null)?.linkedAt;
@@ -67,6 +70,9 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
         {!state.linked
           ? <div className="alert alert-warn" data-routing-not-linked>{t('team.routing.notLinked')}</div>
           : linkedAt && <p className="muted small">{t('team.routing.linkedAt', { at: fmt(new Date(linkedAt)) })}</p>}
+        {state.current?.mode === 'AUTO' && state.current.targetUser && inactiveTeam.has(state.current.targetUser.id) && (
+          <div className="alert alert-error" role="alert" data-routing-team-inactive>{t('team.routing.teamInactiveNow')}</div>
+        )}
         <p data-routing-current={state.current ? state.current.mode : 'NONE'}>
           {state.current ? <><b>{modeText(t, state.current)}</b> · {fmt(state.current.startsAt)}</> : t('team.routing.noRule')}
         </p>
@@ -87,7 +93,7 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
               <label htmlFor="rt-target">{t('team.routing.target')}</label>
               <select id="rt-target" name="targetUserId" defaultValue="">
                 <option value="">—</option>
-                {sales.map((s) => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
+                {sales.filter((s) => !inactiveTeam.has(s.id)).map((s) => <option key={s.id} value={s.id}>{s.factoryTeam ? `${s.factoryTeam.name} · ` : ''}{s.name || s.email}</option>)}
               </select>
             </div>
             <div>
@@ -113,7 +119,7 @@ export default async function RoutingPage({ searchParams }: { searchParams: Prom
             <tbody>
               {sales.map((s) => (
                 <tr key={s.id} data-team-row={s.id}>
-                  <td>{s.name || s.email}</td>
+                  <td>{s.factoryTeam && <><b>{s.factoryTeam.name}</b>{!s.factoryTeam.isActive && <> <span className="badge badge-muted">{t('team.factory.inactive')}</span></>} · </>}{s.name || s.email}</td>
                   <td>{s.defaultDrawer && s.defaultDrawer.isActive ? s.defaultDrawer.name || s.defaultDrawer.email : <span className="muted">{t('team.assign.noDrawer')}</span>}</td>
                   <td>{s.priceTable && s.priceTable.isActive ? s.priceTable.name : <span className="muted">{t('team.routing.noTable')}</span>}</td>
                 </tr>

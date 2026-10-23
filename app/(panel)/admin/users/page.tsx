@@ -35,6 +35,7 @@ const ERR: Record<string, MsgKey> = {
   confirm: 'admin.users.error.confirm',
   mailChange: 'admin.users.error.mailChange',
   drawer: 'admin.users.error.drawer',
+  drawerInTeam: 'admin.users.error.drawerInTeam',
   person: 'admin.users.error.person',
 };
 
