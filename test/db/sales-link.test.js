@@ -216,7 +216,8 @@ dbTest('D-1 bağlama: tarihsel satışçılar, açık karar, updatedAt ve Teklif
 
   // İkinci çalıştırma reddedilir
   const snap = await untouched();
-  assert.deepEqual((await previewLink(db, LINK)).problems.map((p) => p.code), ['ALREADY_LINKED']);
+  // (TSF5 artık sahipli: karar listesi boş verilir)
+  assert.deepEqual((await previewLink(db, {})).problems.map((p) => p.code), ['ALREADY_LINKED']);
   const again = await applyLink(db, { ...LINK, approval: '000000000000' });
   assert.deepEqual([again.ok, again.code], [false, 'ALREADY_LINKED']);
   assert.equal(await untouched(), snap);

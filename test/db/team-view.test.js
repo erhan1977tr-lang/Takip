@@ -117,7 +117,7 @@ dbTest('ekip arkadaşının siparişi: not, telafi, sandık kaydı, misafir sand
   assert.deepEqual([comp.ok, comp.code], [false, 'NOT_FOUND']);
   // Sandık: başka satışçının bölümüne kayıt yok
   const day = dayOf(10);
-  const row = { crateNo: '7', lengthMm: '1000', widthMm: '500', heightMm: '800', netKg: '', grossKg: '', note: '' };
+  const row = { crateNo: 7, lengthMm: 1000, widthMm: 500, heightMm: 800, netKg: 100, grossKg: 150, note: null, orderIds: [] };
   assert.deepEqual(await saveDayCrates(db, { day, customerId: firm.id, rows: [row], actor: act(U.murat), links: 'auto', team: U.hamza.id }), { ok: false, code: 'TEAM_FORBIDDEN' });
   const own = await saveDayCrates(db, { day, customerId: firm.id, rows: [row], actor: act(U.hamza), links: 'auto' });
   assert.ok(own.ok, JSON.stringify(own));
