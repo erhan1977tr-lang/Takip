@@ -117,6 +117,10 @@ test('yeni sipariş kuralla satışçıya ve çizimcisine; atamasız sipariş ya
   await expect(salesA.goto(`/siparisler/${orderId}`).then((x) => x!.status())).resolves.toBe(404);
   // B'den A'ya yönlendirme (teklif henüz gönderilmedi): izinli; sonra B teklifi gönderince kapanır
   await admin.goto(`/siparisler/${orderId}`);
+  // Değiştirme formu kapalı başlar (karar 304): "Değiştir"e basınca açılır; bağımsız çizimci formu yok
+  await expect(admin.locator('#sorumlu-satis')).toBeHidden();
+  await expect(admin.locator('[data-drawer-assign]')).toHaveCount(0);
+  await admin.locator('[data-sales-change] > summary').click();
   await admin.selectOption('#sorumlu-satis', ids.a);
   await admin.getByRole('button', { name: 'Başka satışçıya yönlendir' }).click();
   await expect(admin.getByText('Sorumlu satışçı kaydedildi.')).toBeVisible();
