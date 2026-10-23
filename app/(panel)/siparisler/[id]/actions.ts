@@ -149,6 +149,20 @@ export async function assignSalesAction(formData: FormData) {
   done(id, 'sales_assigned');
 }
 
+/**
+ * Çizimci değiştirme (4.3.17 D-3, karar 303): yalnızca ORDER_ASSIGN (yönetici, yönetici yardımcısı); sayfanın sürümü
+ * olmadan çalışmaz. Hedefin geçerliliği işlemde denetlenir; çizim sürümleri ve müşteri onayları değişmez.
+ */
+export async function assignDrawerAction(formData: FormData) {
+  const user = await requirePermission('ORDER_ASSIGN');
+  const id = orderIdOf(formData);
+  const drawerId = String(formData.get('drawerId') ?? '').trim().slice(0, 64);
+  const reason = String(formData.get('reason') ?? '').slice(0, 500);
+  const version = await requiredVersion(formData, id);
+  await act(user, id, 'assign_drawer', { drawerId, reason, expectedVersion: version });
+  done(id, 'drawer_assigned');
+}
+
 export async function setShipDateAction(formData: FormData) {
   const user = await requirePermission('ORDER_VIEW');
   const id = orderIdOf(formData);

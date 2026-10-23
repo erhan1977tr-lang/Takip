@@ -20,6 +20,7 @@ export default {
   DWG_FAULTY_UNDONE: { label: '"Çizim hatalı" kararı geri alındı — çizim kararı yeniden bekleniyor', customer: 'Çiziminiz için düzeltme istenmiyor; çiziminiz yeniden inceleniyor' },
   DWG_UPDATE_UNDONE: { label: '"Çizimi güncelle" kararı geri alındı', customer: 'Çiziminiz yeniden inceleniyor' },
   SALES_ASSIGNED: { label: 'Sipariş sorumlu satışçıya atandı' },
+  DRAWER_ASSIGNED: { label: 'Siparişin çizimcisi değiştirildi' },
   OFFER_SUBMITTED: { label: 'Teklif yönetici onayına gönderildi' },
   OFFER_RETURNED: { label: 'Teklif satışa geri gönderildi' },
   OFFER_WITHDRAWN: { label: 'Satış, yöneticiye gönderdiği teklifi geri aldı' },

@@ -346,7 +346,7 @@ dbTest('fabrika ödemeleri: hesap zorunlu; hesap değişikliği aynı kayıt, A 
   // Eski "sil" davranışı korunur (sadece servis dışı; burada satır sayısı)
 }));
 
-dbTest('geçmiş veri bağlama: açık hedef; önizleme yazmaz; uygulama toplamları değiştirmez; işaret ve varsayılan kural; ikinci uygulama reddedilir', offline(async () => {
+dbTest('geçmiş veri bağlama (D-1): tarihsel satışçıya; izsiz sipariş sahipsiz kalır; önizleme yazmaz; onay koduyla uygulama toplamları değiştirmez; kural yazılmaz; ikinci uygulama reddedilir', offline(async () => {
   // Tek ekip geçmişini taklit: satışçısız siparişler, sandık, ödeme; işaret kaldırılır
   await db.integrationSetting.delete({ where: { key: LINK_SETTING } });
   const legacyDay = dayOf(-40);
@@ -355,44 +355,36 @@ dbTest('geçmiş veri bağlama: açık hedef; önizleme yazmaz; uygulama toplaml
   for (const o of [l1, l2]) {
     await db.order.update({ where: { id: o.id }, data: { salesUserId: null, assignedDrawerId: null, routingRuleId: null, salesAssignedVia: null, estimatedShipDate: new Date(`${legacyDay}T12:00:00Z`) } });
   }
+  // l1'i C çizime göndermiş (tarihsel iz); l2'nin izi yok
+  await db.orderEvent.create({ data: { orderId: l1.id, event: 'SENT_TO_DRAWING', userId: U.salesC.id } });
   await db.crate.create({ data: { shipDay: new Date(`${legacyDay}T00:00:00Z`), customerId: firm.id, crateNo: 9, netAgirlik: 10, brutAgirlik: 20, orders: { create: [{ orderId: l1.id }] } } });
   await db.factoryPayment.create({ data: { paidOn: new Date(), amount: '7', currency: 'EUR', createdById: U.admin.id } });
   await db.user.update({ where: { id: U.salesC.id }, data: { defaultDrawerId: null } });
+  const rulesBefore = await db.glassRoutingRule.count();
   const snap = await totalsSnapshot(db);
-  const nullOrders = await db.order.count({ where: { orderTypeCode: 'GLASS_ORDER', salesUserId: null } });
-  assert.ok(nullOrders >= 2);
-  // Hedef hesap tahmin edilmez: verilmeyen / geçersiz hedef engeldir
-  const pr0 = await previewLink(db, { targetEmail: 'yok@team.test' });
-  assert.deepEqual([pr0.ok, pr0.problems.includes('TARGET_NOT_SALES')], [false, true]);
-  const prNoDrawer = await previewLink(db, { targetEmail: 'salesC@team.test' });
-  assert.ok(prNoDrawer.problems.includes('NO_DRAWER'), 'varsayılan çizimcisi olmayan hedef: çizimci açıkça verilmeli');
-  const pre = await previewLink(db, { targetEmail: 'salesC@team.test', drawerEmail: 'drawerA@team.test' });
+  // Ödeme hesabı tahmin edilmez: karar yoksa engel
+  assert.ok((await previewLink(db, {})).problems.some((p) => p.code === 'PAYMENTS_NEED_DECISION'));
+  const pre = await previewLink(db, { paymentEmail: 'salesC@team.test' });
   assert.ok(pre.ok, JSON.stringify(pre.problems));
-  assert.deepEqual([pre.plan.orders, pre.plan.crates, pre.plan.payments, pre.plan.setDefaultDrawer], [nullOrders, 1, 1, true]);
-  assert.ok(pre.ambiguities.some((a) => a.code === 'OTHER_SALES_ACCOUNTS'), 'başka satış hesapları raporlanır');
-  assert.ok(pre.ambiguities.some((a) => a.code === 'ALREADY_OWNED_ORDERS'));
+  assert.ok(pre.summary.unresolved.some((u) => u.reason === 'UNKNOWN'), 'izsiz sipariş sahipsiz kalır');
+  assert.ok(pre.summary.ownersWithoutDrawer.includes('salesC@team.test'), 'varsayılan çizimcisi olmayan satışçı raporlanır');
   assert.equal(await routingLinked(db), false, 'önizleme hiçbir şey yazmadı');
-  assert.equal((await full(l1.id)).salesUserId, null);
   const outboxBefore = await db.notificationOutbox.count();
   const eventsBefore = await db.orderEvent.count();
-  const r = await applyLink(db, { targetEmail: 'salesC@team.test', drawerEmail: 'drawerA@team.test', operator: 'test' });
+  const r = await applyLink(db, { paymentEmail: 'salesC@team.test', approval: pre.approval, operator: 'test' });
   assert.ok(r.ok, JSON.stringify(r));
-  assert.deepEqual([r.counts.orders, r.counts.crates, r.counts.payments, r.counts.drawers], [nullOrders, 1, 1, nullOrders]);
   assert.ok(sameTotals(snap, r.after) && accountsMatchSummary(r.after), 'para birimi başına toplamlar ve sayımlar değişmedi');
   const l1a = await full(l1.id);
-  assert.deepEqual([l1a.salesUserId, l1a.assignedDrawerId, l1a.salesAssignedVia, l1a.salesAssignedAt], [U.salesC.id, U.drawerA.id, 'MIGRATION', null]);
+  assert.deepEqual([l1a.salesUserId, l1a.assignedDrawerId, l1a.salesAssignedVia, l1a.salesAssignedAt], [U.salesC.id, null, 'MIGRATION', null]);
+  assert.equal((await full(l2.id)).salesUserId, null, 'izsiz sipariş kimseye verilmedi (yönetici kararı)');
   assert.equal((await db.crate.findFirst({ where: { crateNo: 9 } })).salesUserId, U.salesC.id);
   assert.equal(await db.factoryPayment.count({ where: { salesUserId: null } }), 0);
-  assert.equal((await db.user.findUnique({ where: { id: U.salesC.id } })).defaultDrawerId, U.drawerA.id);
   assert.equal(await routingLinked(db), true);
-  assert.equal((await routingState(db)).current.targetUserId, U.salesC.id, 'ilk etkinleştirme: yeni siparişler mevcut satışçıya');
+  assert.equal(await db.glassRoutingRule.count(), rulesBefore, 'bağlama kural yazmaz');
   assert.deepEqual([await db.notificationOutbox.count(), await db.orderEvent.count()], [outboxBefore, eventsBefore], 'bildirim / olay üretmez');
   assert.equal(await db.auditLog.count({ where: { action: 'SALES_LINK_APPLIED' } }), 1);
-  const again = await applyLink(db, { targetEmail: 'salesC@team.test', drawerEmail: 'drawerA@team.test' });
+  const again = await applyLink(db, { paymentEmail: 'salesC@team.test', approval: pre.approval });
   assert.deepEqual([again.ok, again.code], [false, 'ALREADY_LINKED']);
-  // Bağlamadan sonra yeni sipariş otomatik C'ye
-  const n = await newOrder('Bağlama sonrası');
-  assert.equal((await full(n.id)).salesUserId, U.salesC.id);
 }));
 
 dbTest('tek ekip regresyonu: tek ekip varsayılanlı veritabanında (resetDb) sipariş akışı eskisi gibi — sahip ilk satışçı, çizimci ilk çizimci, bildirimler aynı', offline(async () => {

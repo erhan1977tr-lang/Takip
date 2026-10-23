@@ -1,28 +1,32 @@
-// Geçmiş verinin açık hedef hesaba bağlanması (4.3.0, karar 300 — bölüm 7). Sunucu komutu (scripts/sales-link.mjs)
-// tarafından çağrılır; HTTP yolu yoktur.
+// Geçmiş verinin satışçılara bağlanması (4.3.0, karar 300 — bölüm 7; 4.3.17 D-1, karar 302). Sunucu komutu
+// (scripts/sales-link.mjs) tarafından çağrılır; HTTP yolu yoktur.
 //
-// Hedef hesap (satışçı) ve varsayılan çizimci KULLANICI TARAFINDAN AÇIKÇA verilir — kullanıcı sayısından ya da son işlemden
-// tahmin edilmez. Önce kontrol / önizleme (previewLink: hiçbir şey yazmaz), sonra uygulama (applyLink). Bağlama:
-//   - sorumlu satışçısı boş CAM siparişleri → hedef (salesAssignedVia = MIGRATION; salesAssignedAt yazılmaz — tarihsel kayıt);
-//     çizimcisi boş olanlara hedefin çizimcisi (yalnızca çizim hattı açık / çalışan siparişlerde; YOK olanlara da — eski
-//     siparişlerde alan bilgi amaçlıdır);
-//   - satışçısı boş sandıklar (Crate) → hedef;
-//   - hesabı boş fabrika ödemeleri (FactoryPayment) → hedef;
-//   - hedefin varsayılan çizimcisi boşsa verilen çizimci;
-//   - bağlama işareti (IntegrationSetting 'sales-routing'.linkedAt) + varsayılan otomatik yönlendirme kuralı (AUTO → hedef,
-//     başlangıç = şimdi): ilk etkinleştirmede mevcut kullanım korunur (yeni siparişler mevcut satışçıya).
+// 4.3.17 (D-1): geçmiş TEK bir hedef hesaba bağlanmaz. Sorumlusu boş her CAM siparişinin TARİHSEL satışçısı kendi kaydından
+// bulunur: siparişi çizime gönderen / çizimsiz devam ettiren ya da teklifini yöneticiye gönderen satış kullanıcısı (OrderEvent
+// SENT_TO_DRAWING / NO_DRAWING / OFFER_SUBMITTED) ve teklifi hazırlayan satış kullanıcısı (Offer.createdBy). Bu kaynaklar TEK
+// bir satışçıyı gösteriyorsa ve o satışçı etkinse sipariş ona bağlanır. Belirlenemeyen (iz yok), çelişkili (birden çok
+// satışçı) ya da sahibi pasif / silinmiş siparişler OTOMATİK olarak kimseye verilmez: yönetici kararı gerekir — komutta açık
+// karar (--ata SIPARIS=E-POSTA) ya da bağlamadan sonra panelde "Satışçıya ata". Bir siparişin ticari sahipliğini değiştiren
+// bağlama yalnızca kullanıcının ONAYLADIĞI dağılımla çalışır: önizleme dağılımın parmak izini (onay kodu) verir; uygulama aynı
+// kodu ister ve işlemin içinde dağılımı yeniden hesaplar — bir sipariş, sandık, ödeme ya da karar değiştiyse hiçbir şey yazılmaz.
+//   - sipariş → tarihsel (ya da yöneticinin karar verdiği) satışçı (salesAssignedVia = MIGRATION; salesAssignedAt yazılmaz);
+//     çizimcisi boş olanlara o satışçının geçerli varsayılan çizimcisi (var olan çizimci DEĞİŞMEZ);
+//   - satışçısı boş sandık → içindeki siparişlerin hepsi aynı satışçıya bağlanıyorsa o satışçı; karışık / belirsiz / boş sandık
+//     değişmez (raporlanır — eski kayıt olarak kalır);
+//   - hesabı boş fabrika ödemesi → yalnızca açık kararla (--odeme E-POSTA); varsa ve karar yoksa bağlama yapılmaz;
+//   - bağlama işareti (IntegrationSetting 'sales-routing'.linkedAt). Otomatik yönlendirme kuralı YAZILMAZ: ilk durum
+//     "yönetici seçer" (MANUAL — kural yok; karar 302); yönetici kuralı Ayarlar → Satış Yönlendirme'den yazar.
 // Üretmez: görev, bildirim (outbox), durum değişikliği, SLA değişikliği, dış servis çağrısı. Tek denetim kaydı
-// (SALES_LINK_APPLIED) + bir audit satırı sayımlarla.
+// (SALES_LINK_APPLIED) sayımlar, dağılım ve onay koduyla.
 // Toplam koruması: para birimi başına maliyet / ödeme / bakiye ve kayıt sayıları bağlamadan önce ve sonra aynı olmalı
-// (checkTotals) — değişirse işlem geri alınır (hata). Belirsiz / çelişkili kayıtlar raporlanır (ambiguities), yazılmaz.
+// (checkTotals) — değişirse işlem geri alınır (hata).
 // 4.3.15:
-//   - İşlem süresi (K-1): YALNIZCA bu işlem için Prisma etkileşimli işlem sınırı LINK_TX (120 sn; varsayılan 5 sn bütün
-//     yüklenmiş siparişlerin toplam denetimine yetmeyebilir). PostgreSQL tarafı işlemin içinde SET LOCAL ile ondan KISA tutulur
-//     (statement_timeout 110 sn, lock_timeout 15 sn) — sunucu, istemci işlemi bıraktıktan sonra çalışmaya devam etmez. Süre
-//     aşılırsa işlem bütünüyle geri alınır (kısmi yazım yok). Diğer işlemlerin sınırları değişmez.
-//   - Güncelleme tarihleri (K-2): sipariş ve sandık bağlaması updatedAt'e DOKUNMAZ (Prisma updateMany @updatedAt'i şimdiye
-//     çekerdi: müşterinin Teklifler sırası, sandık "son güncelleme" bilgisi bozulurdu) — aynı koşullarla düz SQL UPDATE.
+//   - İşlem süresi (K-1): YALNIZCA bu işlem için Prisma etkileşimli işlem sınırı LINK_TX (120 sn). PostgreSQL tarafı işlemin
+//     içinde SET LOCAL ile ondan KISA tutulur (statement_timeout 110 sn, lock_timeout 15 sn). Süre aşılırsa işlem bütünüyle
+//     geri alınır (kısmi yazım yok). Diğer işlemlerin sınırları değişmez.
+//   - Güncelleme tarihleri (K-2): sipariş ve sandık bağlaması updatedAt'e DOKUNMAZ — düz SQL UPDATE.
 //   - Süre ölçümü: sonuç ve denetim kaydı timing { previewMs, applyMs, totalMs } taşır; komut çıktısında yazılır.
+import crypto from 'node:crypto';
 import { LINK_SETTING, validDrawer, validSales } from './sales-routing.js';
 import { writeAudit } from './journal.js';
 import { supplierData } from '../accounting/supplier.js';
@@ -82,61 +86,176 @@ async function userByEmail(db, email, { include } = {}) {
   return rows.length === 1 ? rows[0] : null;
 }
 
+/** Tarihsel satışçının kaynakları: satış kullanıcısının yazdığı inceleme / gönderim olayları ve teklif kaydı */
+export const OWNER_EVENTS = Object.freeze(['SENT_TO_DRAWING', 'NO_DRAWING', 'OFFER_SUBMITTED']);
+
 /**
- * Ön kontrol / önizleme — hiçbir şey yazmaz.
- * @param {any} db  @param {{ targetEmail: string, drawerEmail?: string | null }} p
+ * Saf: bir siparişin tarihsel satışçısı. Kaynaklar TEK bir satış kullanıcısını gösteriyorsa ve o kullanıcı etkin bir satışçıysa
+ * o; aksi hâlde sahip YOK (yönetici kararı): UNKNOWN (iz yok), CONFLICT (birden çok satışçı), INACTIVE_OWNER (pasif / silinmiş).
+ * @param {{ userId: string, source: string }[]} candidates  @param {Map<string, any>} salesById
+ * @returns {{ ownerId: string | null, reason: 'HISTORY' | 'UNKNOWN' | 'CONFLICT' | 'INACTIVE_OWNER', candidates: string[], sources: string[] }}
  */
-export async function previewLink(db, { targetEmail, drawerEmail = null }) {
+export function resolveOwner(candidates, salesById) {
+  const ids = [...new Set(candidates.map((c) => c.userId))].sort();
+  const sources = [...new Set(candidates.map((c) => c.source))].sort();
+  if (ids.length === 0) return { ownerId: null, reason: 'UNKNOWN', candidates: [], sources };
+  if (ids.length > 1) return { ownerId: null, reason: 'CONFLICT', candidates: ids, sources };
+  if (!validSales(salesById.get(ids[0]))) return { ownerId: null, reason: 'INACTIVE_OWNER', candidates: ids, sources };
+  return { ownerId: ids[0], reason: 'HISTORY', candidates: ids, sources };
+}
+
+/**
+ * Saf: komut satırındaki yönetici kararları ("GLA68=satis@firma.com"). Biçim hatası → null.
+ * @param {string[]} list  @returns {{ orderNo: string, email: string }[] | null}
+ */
+export function parseDecisions(list = []) {
+  const out = [];
+  for (const raw of list) {
+    const m = /^\s*([A-Za-z0-9][A-Za-z0-9-]{0,40})\s*=\s*([^\s=]{3,254})\s*$/.exec(String(raw ?? ''));
+    if (!m) return null;
+    out.push({ orderNo: m[1].toUpperCase(), email: m[2] });
+  }
+  return out;
+}
+
+/**
+ * Saf: dağılımın onay kodu (parmak izi). Sipariş → sahip / atanacak çizimci, sandık → sahip, ödeme → hesap, sahipsiz kalanlar.
+ * Aynı veride aynı kod; tek bir kayıt değişirse farklı kod.
+ */
+export function approvalCode(plan) {
+  const body = JSON.stringify({
+    o: plan.orders.map((o) => [o.id, o.ownerId ?? '', o.drawerToSet ?? '', o.via ?? '']).sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+    c: plan.crates.map((c) => [c.id, c.ownerId ?? '']).sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+    p: [plan.payments.count, plan.payments.ownerId ?? ''],
+  });
+  return crypto.createHash('sha256').update(body).digest('hex').slice(0, 12).toUpperCase();
+}
+
+/**
+ * Dağılım planı — hiçbir şey yazmaz (işlemin içinde de aynı fonksiyon çalışır).
+ * @param {any} db  @param {{ decisions?: { orderNo: string, email: string }[], paymentEmail?: string | null }} p
+ */
+async function buildPlan(db, { decisions = [], paymentEmail = null }) {
   const problems = [];
-  const ambiguities = [];
-  const target = await userByEmail(db, targetEmail, { include: { defaultDrawer: true } });
-  if (!validSales(target)) problems.push('TARGET_NOT_SALES');
-  let drawer = null;
-  if (drawerEmail) {
-    drawer = await userByEmail(db, drawerEmail);
-    if (!validDrawer(drawer)) problems.push('DRAWER_NOT_DRAWER');
-  } else if (target && !validDrawer(target.defaultDrawer)) {
-    problems.push('NO_DRAWER');
+  const orders = await db.order.findMany({
+    where: { orderTypeCode: 'GLASS_ORDER', salesUserId: null },
+    select: { id: true, orderNo: true, status: true, removedAt: true, assignedDrawerId: true },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  const ids = orders.map((o) => o.id);
+  const [events, offers] = ids.length ? await Promise.all([
+    db.orderEvent.findMany({ where: { orderId: { in: ids }, event: { in: [...OWNER_EVENTS] }, user: { appRole: 'SATIS', type: 'INTERNAL' } }, select: { orderId: true, userId: true, event: true } }),
+    db.offer.findMany({ where: { orderId: { in: ids }, createdBy: { appRole: 'SATIS', type: 'INTERNAL' } }, select: { orderId: true, createdById: true } }),
+  ]) : [[], []];
+  const sales = await db.user.findMany({
+    where: { appRole: 'SATIS', type: 'INTERNAL' },
+    select: { id: true, email: true, name: true, appRole: true, type: true, isActive: true, deletedAt: true, defaultDrawer: { select: { id: true, email: true, appRole: true, type: true, isActive: true, deletedAt: true } } },
+  });
+  const salesById = new Map(sales.map((u) => [u.id, u]));
+  const cand = new Map(ids.map((id) => [id, []]));
+  for (const e of events) if (e.userId) cand.get(e.orderId).push({ userId: e.userId, source: e.event });
+  for (const f of offers) if (f.createdById) cand.get(f.orderId).push({ userId: f.createdById, source: 'OFFER_CREATED' });
+
+  // Yönetici kararları: yalnızca bu bağlamaya giren (sorumlusu boş) siparişler; hedef etkin satışçı olmalı
+  const byNo = new Map();
+  for (const o of orders) byNo.set(o.orderNo.toUpperCase(), [...(byNo.get(o.orderNo.toUpperCase()) ?? []), o]);
+  const decided = new Map();
+  for (const d of decisions) {
+    const hits = byNo.get(d.orderNo) ?? [];
+    const u = await userByEmail(db, d.email);
+    if (hits.length === 0) problems.push({ code: 'DECISION_UNKNOWN_ORDER', detail: d.orderNo });
+    else if (hits.length > 1) problems.push({ code: 'DECISION_AMBIGUOUS_ORDER', detail: d.orderNo });
+    else if (!validSales(u)) problems.push({ code: 'DECISION_NOT_SALES', detail: `${d.orderNo}=${d.email}` });
+    else if (decided.has(hits[0].id) && decided.get(hits[0].id) !== u.id) problems.push({ code: 'DECISION_TWICE', detail: d.orderNo });
+    else decided.set(hits[0].id, u.id);
   }
-  const linked = await db.integrationSetting.findUnique({ where: { key: LINK_SETTING } });
-  if (linked?.value?.linkedAt) problems.push('ALREADY_LINKED');
-  const [orders, owned, crates, payments, otherSales, otherDrawers] = await Promise.all([
-    db.order.count({ where: { orderTypeCode: 'GLASS_ORDER', salesUserId: null } }),
-    db.order.count({ where: { orderTypeCode: 'GLASS_ORDER', salesUserId: { not: null } } }),
-    db.crate.count({ where: { salesUserId: null } }),
-    db.factoryPayment.count({ where: { salesUserId: null } }),
-    db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL', deletedAt: null, ...(target ? { id: { not: target.id } } : {}) }, select: { email: true, isActive: true } }),
-    db.user.findMany({ where: { appRole: 'CIZIM', type: 'INTERNAL', deletedAt: null, isActive: true }, select: { id: true, email: true } }),
-  ]);
-  // Belirsizlikler: başka satışçı hesapları (hangisinin geçmişi? — kullanıcı hedefi zaten açıkça verdi, ama raporlanır),
-  // sahibi olan ama çizimcisi hedefin çizimcisinden farklı siparişler, birden çok çizimci
-  if (otherSales.length) ambiguities.push({ code: 'OTHER_SALES_ACCOUNTS', detail: otherSales.map((u) => `${u.email}${u.isActive ? '' : ' (pasif)'}`) });
-  if (owned) ambiguities.push({ code: 'ALREADY_OWNED_ORDERS', detail: [String(owned)] });
-  const drawerId = drawer?.id ?? target?.defaultDrawer?.id ?? null;
-  if (otherDrawers.length > 1) ambiguities.push({ code: 'MULTIPLE_DRAWERS', detail: otherDrawers.map((u) => u.email) });
-  if (drawerId) {
-    const foreign = await db.order.count({ where: { orderTypeCode: 'GLASS_ORDER', salesUserId: null, assignedDrawerId: { not: null, notIn: [drawerId] } } });
-    if (foreign) ambiguities.push({ code: 'ORDERS_WITH_OTHER_DRAWER', detail: [String(foreign)] });
+
+  const drawerOf = (ownerId) => {
+    const d = salesById.get(ownerId)?.defaultDrawer;
+    return validDrawer(d) ? d.id : null;
+  };
+  const planned = orders.map((o) => {
+    const r = resolveOwner(cand.get(o.id), salesById);
+    const decision = decided.get(o.id) ?? null;
+    const ownerId = decision ?? r.ownerId;
+    const via = decision ? (r.ownerId && r.ownerId !== decision ? 'DECISION_OVERRIDE' : 'DECISION') : r.ownerId ? 'HISTORY' : null;
+    return {
+      id: o.id, orderNo: o.orderNo, status: o.status, removed: !!o.removedAt, reason: r.reason, candidates: r.candidates, sources: r.sources,
+      ownerId, via, drawerToSet: ownerId && !o.assignedDrawerId ? drawerOf(ownerId) : null,
+      keepsDrawer: !!o.assignedDrawerId, noDrawer: !!ownerId && !o.assignedDrawerId && !drawerOf(ownerId),
+    };
+  });
+  const finalOwner = new Map(planned.map((o) => [o.id, o.ownerId]));
+
+  // Sandıklar: yalnızca içindeki BÜTÜN siparişler aynı satışçıya bağlanıyorsa (zaten sahibi olan siparişler kendi sahibiyle)
+  const crates = await db.crate.findMany({
+    where: { salesUserId: null },
+    select: { id: true, crateNo: true, shipDay: true, orders: { select: { order: { select: { id: true, salesUserId: true } } } } },
+    orderBy: [{ shipDay: 'asc' }, { crateNo: 'asc' }],
+  });
+  const plannedCrates = crates.map((c) => {
+    const owners = c.orders.map((x) => (finalOwner.has(x.order.id) ? finalOwner.get(x.order.id) : x.order.salesUserId));
+    const set = [...new Set(owners)];
+    const reason = owners.length === 0 ? 'EMPTY' : owners.some((x) => !x) ? 'UNRESOLVED' : set.length > 1 ? 'MIXED' : 'SINGLE';
+    return { id: c.id, crateNo: c.crateNo, day: c.shipDay ? c.shipDay.toISOString().slice(0, 10) : null, ownerId: reason === 'SINGLE' ? set[0] : null, reason };
+  });
+
+  // Fabrika ödemeleri: yalnızca açık kararla
+  const paymentCount = await db.factoryPayment.count({ where: { salesUserId: null } });
+  let paymentOwner = null;
+  if (paymentEmail) {
+    const u = await userByEmail(db, paymentEmail);
+    if (!validSales(u)) problems.push({ code: 'PAYMENT_OWNER_NOT_SALES', detail: paymentEmail });
+    else paymentOwner = u.id;
   }
-  const before = await totalsSnapshot(db);
+  if (paymentCount > 0 && !paymentOwner && !problems.some((x) => x.code === 'PAYMENT_OWNER_NOT_SALES')) problems.push({ code: 'PAYMENTS_NEED_DECISION', detail: String(paymentCount) });
+
+  const plan = { orders: planned, crates: plannedCrates, payments: { count: paymentCount, ownerId: paymentCount > 0 ? paymentOwner : null } };
+  const label = (id) => { const u = salesById.get(id); return u ? `${u.email}${validSales(u) ? '' : ' (pasif)'}` : id; };
+  const byOwner = {};
+  for (const o of planned) if (o.ownerId) byOwner[o.ownerId] = (byOwner[o.ownerId] ?? 0) + 1;
   return {
-    ok: problems.length === 0, problems, ambiguities,
-    target: target ? { id: target.id, email: target.email, name: target.name } : null,
-    drawer: drawerId ? { id: drawerId, email: drawer?.email ?? target?.defaultDrawer?.email ?? '' } : null,
-    plan: { orders, crates, payments, setDefaultDrawer: !!target && !target.defaultDrawerId && !!drawerId },
-    before,
+    problems, plan, approval: approvalCode(plan),
+    summary: {
+      orders: planned.length,
+      byOwner: Object.entries(byOwner).map(([id, n]) => ({ id, email: label(id), orders: n, drawer: salesById.get(id)?.defaultDrawer && validDrawer(salesById.get(id).defaultDrawer) ? salesById.get(id).defaultDrawer.email : null })),
+      unresolved: planned.filter((o) => !o.ownerId).map((o) => ({ orderNo: o.orderNo, status: o.status, removed: o.removed, reason: o.reason, candidates: o.candidates.map(label) })),
+      decisions: planned.filter((o) => o.via === 'DECISION' || o.via === 'DECISION_OVERRIDE').map((o) => ({ orderNo: o.orderNo, owner: label(o.ownerId), override: o.via === 'DECISION_OVERRIDE' })),
+      drawersToSet: planned.filter((o) => o.drawerToSet).length,
+      ownersWithoutDrawer: [...new Set(planned.filter((o) => o.noDrawer).map((o) => label(o.ownerId)))],
+      crates: { total: plannedCrates.length, linked: plannedCrates.filter((c) => c.ownerId).length, kept: plannedCrates.filter((c) => !c.ownerId).map((c) => ({ crateNo: c.crateNo, day: c.day, reason: c.reason })) },
+      payments: { count: paymentCount, owner: plan.payments.ownerId ? label(plan.payments.ownerId) : null },
+    },
   };
 }
 
 /**
- * Uygular — tek işlemde; toplamlar değişirse geri alınır. Önce previewLink çağrılmış ve ok olmalı.
- * @param {any} db  @param {{ targetEmail: string, drawerEmail?: string | null, operator?: string, now?: Date }} p
+ * Ön kontrol / önizleme — hiçbir şey yazmaz. Dağılımı ve onay kodunu döndürür.
+ * @param {any} db  @param {{ decisions?: { orderNo: string, email: string }[], paymentEmail?: string | null }} [p]
  */
-export async function applyLink(db, { targetEmail, drawerEmail = null, operator = 'ssh', now = new Date(), clock = () => Date.now(), txOptions = LINK_TX, pg = LINK_PG, hooks = {} }) {
+export async function previewLink(db, { decisions = [], paymentEmail = null } = {}) {
+  const linked = await db.integrationSetting.findUnique({ where: { key: LINK_SETTING } });
+  const built = await buildPlan(db, { decisions, paymentEmail });
+  const problems = [...(linked?.value?.linkedAt ? [{ code: 'ALREADY_LINKED', detail: '' }] : []), ...built.problems];
+  const before = await totalsSnapshot(db);
+  return { ok: problems.length === 0, problems, approval: built.approval, plan: built.plan, summary: built.summary, before };
+}
+
+/**
+ * Uygular — yalnızca ONAYLANMIŞ dağılımla (approval = önizlemenin onay kodu), tek işlemde; toplamlar değişirse geri alınır.
+ * @param {any} db
+ * @param {{ approval: string, decisions?: { orderNo: string, email: string }[], paymentEmail?: string | null, operator?: string, now?: Date,
+ *   clock?: () => number, txOptions?: object, pg?: object, hooks?: { afterWrites?: (tx: any) => Promise<void> } }} p
+ */
+export async function applyLink(db, { approval, decisions = [], paymentEmail = null, operator = 'ssh', now = new Date(), clock = () => Date.now(), txOptions = LINK_TX, pg = LINK_PG, hooks = {} }) {
   const t0 = clock();
-  const pre = await previewLink(db, { targetEmail, drawerEmail });
+  const code = String(approval ?? '').trim().toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(code)) return { ok: false, code: 'APPROVAL_REQUIRED', timing: { previewMs: 0, applyMs: 0, totalMs: 0 } };
+  const pre = await previewLink(db, { decisions, paymentEmail });
   const t1 = clock();
-  if (!pre.ok) return { ok: false, code: pre.problems[0], preview: pre, timing: { previewMs: t1 - t0, applyMs: 0, totalMs: t1 - t0 } };
+  const early = (c) => ({ ok: false, code: c, preview: pre, timing: { previewMs: t1 - t0, applyMs: 0, totalMs: t1 - t0 } });
+  if (!pre.ok) return early(pre.problems[0].code);
+  if (pre.approval !== code) return early('APPROVAL_MISMATCH');
   const actor = { id: null, role: 'SYSTEM', ip: null };
   const result = await db.$transaction(async (tx) => {
     // PostgreSQL sınırları yalnızca bu işlemde (SET LOCAL) — sayı tamsayıya zorlanır, metin girmez
@@ -144,37 +263,64 @@ export async function applyLink(db, { targetEmail, drawerEmail = null, operator 
     await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = ${Math.max(1, Math.trunc(Number(pg.lockTimeoutMs)))}`);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'glass-routing'}, 0))`;
     if ((await tx.integrationSetting.findUnique({ where: { key: LINK_SETTING } }))?.value?.linkedAt) return { ok: false, code: 'ALREADY_LINKED' };
-    const target = pre.target.id;
-    const drawer = pre.drawer?.id ?? null;
-    // Düz SQL: updatedAt korunur (K-2). Koşullar eski updateMany'lerle aynı.
-    const orders = { count: await tx.$executeRaw`UPDATE "Order" SET "salesUserId" = ${target}, "salesAssignedVia" = 'MIGRATION'
-      WHERE "orderTypeCode" = 'GLASS_ORDER' AND "salesUserId" IS NULL` };
-    const drawers = drawer
-      ? { count: await tx.$executeRaw`UPDATE "Order" SET "assignedDrawerId" = ${drawer}
-          WHERE "orderTypeCode" = 'GLASS_ORDER' AND "salesUserId" = ${target} AND "assignedDrawerId" IS NULL` }
-      : { count: 0 };
-    const crates = { count: await tx.$executeRaw`UPDATE "Crate" SET "salesUserId" = ${target} WHERE "salesUserId" IS NULL` };
-    const payments = await tx.factoryPayment.updateMany({ where: { salesUserId: null }, data: { salesUserId: target } });
+    // Onaylanan dağılım işlemin içinde yeniden hesaplanır: önizlemeden sonra değişen kayıt varsa hiçbir şey yazılmaz
+    const built = await buildPlan(tx, { decisions, paymentEmail });
+    if (built.problems.length) return { ok: false, code: built.problems[0].code };
+    if (built.approval !== code) return { ok: false, code: 'APPROVAL_MISMATCH' };
+    const { plan } = built;
+    const group = (rows, key) => {
+      const m = new Map();
+      for (const r of rows) if (r[key]) m.set(r[key], [...(m.get(r[key]) ?? []), r.id]);
+      return m;
+    };
+    // Düz SQL: updatedAt korunur (K-2). Her grup tam sayıda satır güncellemeli (aksi hâlde geri alınır).
+    let orders = 0;
+    for (const [owner, ids] of group(plan.orders, 'ownerId')) {
+      const n = await tx.$executeRaw`UPDATE "Order" SET "salesUserId" = ${owner}, "salesAssignedVia" = 'MIGRATION'
+        WHERE id = ANY(${ids}) AND "orderTypeCode" = 'GLASS_ORDER' AND "salesUserId" IS NULL`;
+      if (n !== ids.length) throw new Error('ORDERS_CHANGED');
+      orders += n;
+    }
+    let drawers = 0;
+    for (const [drawer, ids] of group(plan.orders, 'drawerToSet')) {
+      const n = await tx.$executeRaw`UPDATE "Order" SET "assignedDrawerId" = ${drawer} WHERE id = ANY(${ids}) AND "assignedDrawerId" IS NULL`;
+      if (n !== ids.length) throw new Error('ORDERS_CHANGED');
+      drawers += n;
+    }
+    let crates = 0;
+    for (const [owner, ids] of group(plan.crates, 'ownerId')) {
+      const n = await tx.$executeRaw`UPDATE "Crate" SET "salesUserId" = ${owner} WHERE id = ANY(${ids}) AND "salesUserId" IS NULL`;
+      if (n !== ids.length) throw new Error('CRATES_CHANGED');
+      crates += n;
+    }
+    const payments = plan.payments.count > 0
+      ? (await tx.factoryPayment.updateMany({ where: { salesUserId: null }, data: { salesUserId: plan.payments.ownerId } })).count
+      : 0;
+    if (payments !== plan.payments.count) throw new Error('PAYMENTS_CHANGED');
     if (hooks.afterWrites) await hooks.afterWrites(tx);
-    if (pre.plan.setDefaultDrawer && drawer) await tx.user.update({ where: { id: target }, data: { defaultDrawerId: drawer } });
-    // Varsayılan yönlendirme: mevcut kullanım korunur — yeni siparişler mevcut (hedef) satışçıya
-    const rule = await tx.glassRoutingRule.create({ data: { mode: 'AUTO', targetUserId: target, startsAt: now, note: 'MIGRATION', createdById: target } });
+    const byOwner = Object.fromEntries([...group(plan.orders, 'ownerId')].map(([id, ids]) => [id, ids.length]));
+    const unresolved = plan.orders.filter((o) => !o.ownerId).length;
+    // Otomatik yönlendirme kuralı YAZILMAZ: ilk durum "yönetici seçer" (karar 302)
     await tx.integrationSetting.upsert({
       where: { key: LINK_SETTING },
-      create: { key: LINK_SETTING, value: { linkedAt: now.toISOString(), via: 'SCRIPT', targetUserId: target, operator } },
-      update: { value: { linkedAt: now.toISOString(), via: 'SCRIPT', targetUserId: target, operator } },
+      create: { key: LINK_SETTING, value: { linkedAt: now.toISOString(), via: 'SCRIPT', operator, approval: code, byOwner, unresolved } },
+      update: { value: { linkedAt: now.toISOString(), via: 'SCRIPT', operator, approval: code, byOwner, unresolved } },
     });
-    const counts = { orders: orders.count, drawers: drawers.count, crates: crates.count, payments: payments.count, rule: rule.id };
+    const counts = { orders, drawers, crates, payments, unresolved, cratesKept: plan.crates.length - crates, decisions: plan.orders.filter((o) => o.via?.startsWith('DECISION')).length };
     const after = await totalsSnapshot(tx);
     if (!sameTotals(pre.before, after)) throw new Error('TOTALS_CHANGED');
     if (!accountsMatchSummary(after)) throw new Error('ACCOUNTS_MISMATCH');
     // Denetim kaydı en sonda: süre işlemin bu noktasına kadar ölçülür (işlemin kendisiyle birlikte yazılır ya da hiç yazılmaz)
     const inTxMs = clock() - t1;
     await writeAudit(tx, {
-      action: 'SALES_LINK_APPLIED', entityType: 'User', entityId: target, userId: null,
-      details: { targetUserId: target, drawerId: drawer, operator, counts, before: pre.before.perCur, timing: { previewMs: t1 - t0, inTxMs } },
+      action: 'SALES_LINK_APPLIED', entityType: 'IntegrationSetting', entityId: LINK_SETTING, userId: null,
+      details: {
+        operator, approval: code, counts, byOwner, paymentOwner: plan.payments.ownerId,
+        decisions: plan.orders.filter((o) => o.via?.startsWith('DECISION')).map((o) => ({ orderId: o.id, ownerId: o.ownerId, override: o.via === 'DECISION_OVERRIDE' })),
+        before: pre.before.perCur, timing: { previewMs: t1 - t0, inTxMs },
+      },
     }, actor);
-    return { ok: true, counts, before: pre.before, after };
+    return { ok: true, counts, byOwner, before: pre.before, after };
   }, txOptions);
   const t2 = clock();
   result.timing = { previewMs: t1 - t0, applyMs: t2 - t1, totalMs: t2 - t0, limitMs: txOptions.timeout };

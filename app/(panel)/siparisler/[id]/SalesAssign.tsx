@@ -3,17 +3,21 @@
 // buradaki engel listesi yalnızca bilgi içindir (aynı kural: server/orders/sales-routing.js → reassignBlocks).
 import { ConfirmButton } from '@/components/ConfirmButton';
 import type { MsgKey, T } from '@/lib/i18n';
-import { assignSalesAction } from './actions';
+import { assignDrawerAction, assignSalesAction } from './actions';
 
 export type SalesOption = { id: string; name: string; drawer: string | null };
+export type DrawerOption = { id: string; name: string };
 
 export function SalesAssign({
-  orderId, version, ownerId, owner, drawer, via, options, blocks, linked, t,
+  orderId, version, ownerId, owner, drawer, drawerId = null, drawers = [], canDrawer = false, via, options, blocks, linked, t,
 }: {
   orderId: string; version: number;
   ownerId: string | null; owner: string | null; drawer: string | null; via: string | null;
+  /** Çizimci değiştirme (karar 303): siparişin şu anki çizimcisi ve seçilebilecek etkin çizimciler */
+  drawerId?: string | null; drawers?: DrawerOption[]; canDrawer?: boolean;
   options: SalesOption[]; blocks: string[]; linked: boolean; t: T;
 }) {
+  const drawerChoices = drawers.filter((d) => d.id !== drawerId);
   const assigned = !!owner;
   const choices = options.filter((o) => o.id !== ownerId);
   const viaText = via && ['AUTO', 'MANUAL', 'REASSIGN', 'MIGRATION'].includes(via) ? t(`team.assign.via.${via}` as MsgKey) : null;
@@ -51,6 +55,28 @@ export function SalesAssign({
             {t(assigned ? 'team.assign.submitReassign' : 'team.assign.submitAssign')}
           </ConfirmButton>
         </form>
+      )}
+      {/* Çizimci değiştirme (karar 303): yalnızca çizimci alanı değişir; sürümler, dosyalar ve müşteri onayları korunur */}
+      {canDrawer && (
+        <div className="drawer-assign" id="cizimci" data-drawer-assign>
+          <h3 className="sub-title">{t('team.drawer.title')}</h3>
+          {!assigned && <dl className="order-info"><div><dt>{t('team.assign.drawer')}</dt><dd data-drawer-current>{drawer ?? t('team.assign.noDrawer')}</dd></div></dl>}
+          <p className="hint">{t('team.drawer.keeps')}</p>
+          {drawerChoices.length === 0 ? <p className="muted">{t('team.drawer.none')}</p> : (
+            <form action={assignDrawerAction} className="row">
+              <input type="hidden" name="id" value={orderId} />
+              <input type="hidden" name="v" value={version} />
+              <label className="sr-only" htmlFor="cizimci-sec">{t('team.drawer.pick')}</label>
+              <select id="cizimci-sec" name="drawerId" required defaultValue="">
+                <option value="" disabled>{t('team.drawer.pick')}</option>
+                {drawerChoices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="cizimci-gerekce">{t('team.drawer.reason')}</label>
+              <input id="cizimci-gerekce" name="reason" type="text" maxLength={500} placeholder={t('team.drawer.reason')} />
+              <ConfirmButton message={t('team.drawer.confirm')}>{t('team.drawer.submit')}</ConfirmButton>
+            </form>
+          )}
+        </div>
       )}
     </div>
   );

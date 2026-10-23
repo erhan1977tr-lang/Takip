@@ -173,3 +173,45 @@ dbTest('varsayılan çizimci değişince ekip bir sonraki istekte değişir; çi
   assert.equal(await sees('murat', O.murat.id), true, 'kendi siparişi her zaman');
   await db.user.update({ where: { id: U.meltem.id }, data: { isActive: true } });
 }));
+
+dbTest('D-3 çizimci değiştirme: yalnızca yönetici; çizim sürümleri, dosyaları ve müşteri onayları değişmez; eski çizimcinin erişimi kapanır, yeni çizimci görür ve bildirim alır', offline(async () => {
+  const o = await orderOf('murat', 'meltem', 'Çizimci değişimi');
+  await db.order.update({ where: { id: o.id }, data: { status: 'HAZIRLANIYOR', drawingTrack: 'ONAYLANDI' } });
+  const v1 = await db.drawing.create({ data: { orderId: o.id, version: 1, status: 'ONAYLANDI', uploadedById: U.meltem.id, sentAt: new Date(), decidedAt: new Date(), decidedById: U.cust.id } });
+  await db.drawingFile.create({ data: { drawingId: v1.id, storageKey: '2026/10/tv-v1.pdf', name: 'v1.pdf', size: 10, mime: 'application/pdf', checksum: 'v1', scanStatus: 'CLEAN', uploadedById: U.meltem.id } });
+  await db.drawingRevision.create({ data: { drawingId: v1.id, comment: '1. kenar', requestedById: U.cust.id } });
+  const v2 = await db.drawing.create({ data: { orderId: o.id, version: 2, status: 'TASLAK', uploadedById: U.meltem.id } });
+  const snapshot = async () => JSON.stringify(await db.drawing.findMany({ where: { orderId: o.id }, orderBy: { version: 'asc' }, include: { files: true, revisions: true } }));
+  const drawingsBefore = await snapshot();
+  const v = async () => (await db.order.findUniqueOrThrow({ where: { id: o.id } })).version;
+
+  // Satış, çizimci ve denetimci değiştiremez
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.murat), payload: { drawerId: U.erhan.id, expectedVersion: await v() } })), 'NOT_ALLOWED');
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.meltem), payload: { drawerId: U.erhan.id, expectedVersion: await v() } })), 'NOT_ALLOWED');
+  // Geçersiz hedef / aynı çizimci
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.pasif.id, expectedVersion: await v() } })), 'DRAWER_TARGET');
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.murat.id, expectedVersion: await v() } })), 'DRAWER_TARGET');
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.meltem.id, expectedVersion: await v() } })), 'DRAWER_SAME');
+  // Eski sürümle (başkası arada değiştirdi) → CONFLICT
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.erhan.id, expectedVersion: (await v()) - 1 } })), 'CONFLICT');
+
+  const res = await runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.erhan.id, reason: 'izin', expectedVersion: await v() } });
+  assert.ok(res);
+  const after = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+  assert.deepEqual([after.assignedDrawerId, after.salesUserId, after.status, after.drawingTrack], [U.erhan.id, U.murat.id, 'HAZIRLANIYOR', 'ONAYLANDI']);
+  assert.equal(await snapshot(), drawingsBefore, 'sürümler, dosyalar, onay / revizyon kayıtları değişmedi');
+  assert.equal(await db.drawing.count({ where: { id: v2.id, status: 'TASLAK' } }), 1, 'taslak korunur');
+  // Erişim: eski çizimci göremez, yeni çizimci görür; satışçının varsayılan çizimcisi değişmez
+  assert.equal(!!(await db.order.findFirst({ where: { id: o.id, ...orderScope(U.meltem) } })), false);
+  assert.equal(!!(await db.order.findFirst({ where: { id: o.id, ...orderScope(U.erhan) } })), true);
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: U.murat.id } })).defaultDrawerId, U.meltem.id);
+  // Geçmiş, denetim ve bildirim
+  assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'DRAWER_ASSIGNED', userId: U.admin.id } }), 1);
+  const audit = await db.auditLog.findFirst({ where: { entityId: o.id, action: 'ORDER_TRANSITION', details: { path: ['action'], equals: 'assign_drawer' } } });
+  assert.ok(audit, 'denetim kaydı');
+  assert.deepEqual([audit.details.drawerFrom, audit.details.drawerTo, audit.details.reason, audit.details.drawings, audit.details.drafts, audit.details.approved], [U.meltem.id, U.erhan.id, 'izin', 2, 1, 1]);
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_DRAWER_ASSIGNED' } }), 1);
+  // Kapanmış siparişte değiştirilemez
+  await db.order.update({ where: { id: o.id }, data: { status: 'ARSIVLENDI' } });
+  assert.equal(await codeOf(runOrderAction(db, { orderId: o.id, action: 'assign_drawer', actor: act(U.admin), payload: { drawerId: U.meltem.id, expectedVersion: await v() } })), 'NOT_ALLOWED');
+}));

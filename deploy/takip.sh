@@ -6,8 +6,8 @@
 #   takip smtp                       e-posta (SMTP) ayarlarını gir ve deneme e-postası gönder
 #   takip yonetici E-POSTA "AD"     YENİ yönetici hesabı aç → tek kullanımlık kod (var olan hesabın rolü / şifresi değişmez)
 #   takip yonetici-kurtar E-POSTA    VAR OLAN yönetici hesabına acil erişim: yeni şifre (gizli girilir), oturumlar kapanır
-#   takip satis-bagla E-POSTA [--cizimci E-POSTA] [--uygula]   geçmiş cam siparişlerini / sandıkları / fabrika ödemelerini açıkça
-#                                   verilen satış hesabına bağlar (karar 300). --uygula olmadan yalnızca önizleme.
+#   takip satis-bagla [--ata NO=E-POSTA] [--odeme E-POSTA] [--uygula --onay KOD]   geçmiş cam siparişlerini / sandıkları / fabrika ödemelerini
+#                                   tarihsel satışçılarına dağıtır (karar 302): önizleme onay kodu verir; --uygula yalnızca o kodla.
 #   takip yedek                      veritabanı + dosya yedeği, Google Drive'a kopya (her gün 03:00'te kendiliğinden)
 #   takip yedek-kontrol [durum]      yedek bekçisi: sorun / 26 saattir başarılı yedek yoksa e-posta alarmı (saatte bir kendiliğinden)
 #   takip restore TARİH|yesterday    o günün yedeğine geri dön (önce güvenlik yedeği; onay ister)
@@ -1707,30 +1707,30 @@ cmd_admin_recover() {
   compose run --rm -e TAKIP_OPERATOR="${op:-unknown}" tools node scripts/admin-recover.mjs "$1"
 }
 
-# Geçmiş verinin satış hesabına bağlanması (karar 300): hedef açıkça verilir; önce önizleme. Kurallar:
-# server/orders/sales-link.js (tek işlem; para birimi başına toplamlar değişirse geri alınır).
+# Geçmiş verinin satışçılara bağlanması (karar 300; 4.3.17 D-1 — karar 302): tarihsel satışçıya göre dağılım, önce önizleme
+# (onay kodu), uygulama yalnızca onaylanan kodla. Kurallar: server/orders/sales-link.js (tek işlem; toplamlar değişirse geri alınır).
 cmd_sales_link() {
   [ "$(id -u)" = 0 ] || { say "✘ Bu komut root olarak çalıştırılmalı (sudo takip satis-bagla …)."; return 1; }
-  local target=${1:-} drawer="" apply=""
-  if [ -z "$target" ] || [ "${target#-}" != "$target" ]; then
-    say 'Kullanım: takip satis-bagla SATIS-E-POSTA [--cizimci CIZIM-E-POSTA] [--uygula]'
-    return 1
-  fi
-  shift
+  # 4.3.17 (D-1, karar 302): geçmiş tek hesaba bağlanmaz — tarihsel satışçıya göre dağılım; önizleme onay kodu verir,
+  # uygulama yalnızca o kodla (onaylanmış dağılım) çalışır. Sahibi belirlenemeyen sipariş kimseye otomatik verilmez.
+  local -a pass=()
+  local apply=0 code=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --cizimci) drawer=${2:-}; shift 2 ;;
-      --uygula) apply=--apply; shift ;;
-      *) say "✘ Bilinmeyen seçenek: $1"; return 1 ;;
+      --ata) [ -n "${2:-}" ] || { say "✘ --ata SIPARIS=E-POSTA"; return 1; }; pass+=(--assign "$2"); shift 2 ;;
+      --odeme) [ -n "${2:-}" ] || { say "✘ --odeme E-POSTA"; return 1; }; pass+=(--payments "$2"); shift 2 ;;
+      --onay) [ -n "${2:-}" ] || { say "✘ --onay ONAY-KODU"; return 1; }; code=$2; shift 2 ;;
+      --uygula) apply=1; shift ;;
+      *) say 'Kullanım: takip satis-bagla [--ata SIPARIS=E-POSTA …] [--odeme E-POSTA] [--uygula --onay ONAY-KODU]'; return 1 ;;
     esac
   done
+  if [ "$apply" = 1 ]; then
+    [ -n "$code" ] || { say "✘ --uygula için önizlemenin onay kodu gerekir: --onay ONAY-KODU"; return 1; }
+    pass+=(--apply --approve "$code")
+  fi
   local op=${SUDO_USER:-$(logname 2>/dev/null || id -un)}
   op=$(printf '%s' "$op" | tr -cd 'A-Za-z0-9._@-' | cut -c1-64)
-  if [ -n "$drawer" ]; then
-    compose run --rm -e SUDO_USER="${op:-unknown}" tools node scripts/sales-link.mjs --target "$target" --drawer "$drawer" $apply
-  else
-    compose run --rm -e SUDO_USER="${op:-unknown}" tools node scripts/sales-link.mjs --target "$target" $apply
-  fi
+  compose run --rm -e SUDO_USER="${op:-unknown}" tools node scripts/sales-link.mjs "${pass[@]}"
 }
 
 cmd_github() {

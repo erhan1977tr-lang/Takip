@@ -14,6 +14,8 @@ export default {
     SALES_UNASSIGNED: 'Bu siparişin sorumlu satışçısı yok. Önce yönetici siparişi bir satışçıya atamalıdır.',
     SALES_TARGET: 'Seçilen kullanıcı etkin bir satışçı değil.',
     SALES_SAME: 'Sipariş zaten bu satışçıda.',
+    DRAWER_TARGET: 'Seçilen kullanıcı etkin bir çizimci değil.',
+    DRAWER_SAME: 'Sipariş zaten bu çizimcide.',
     NOT_LINKED: 'Geçmiş siparişler henüz bir satış hesabına bağlanmadı; atama ve yönlendirme bağlama işleminden sonra açılır.',
     REASSIGN_BLOCKED: 'Sipariş başka satışçıya yönlendirilemez:',
   },
@@ -49,6 +51,17 @@ export default {
     noSales: 'Etkin satışçı yok.',
     notLinked: 'Atama, geçmiş siparişler bir satış hesabına bağlandıktan sonra açılır.',
     ok: 'Sorumlu satışçı kaydedildi.',
+  },
+  // Çizimci değiştirme (karar 303): yalnızca siparişin çizimcisi değişir; çizim sürümleri ve müşteri onayları korunur
+  drawer: {
+    title: 'Çizimciyi değiştir',
+    pick: 'Çizimci seçin',
+    reason: 'Gerekçe (isteğe bağlı)',
+    submit: 'Çizimciyi değiştir',
+    confirm: 'Siparişin çizimcisi değiştirilecek: önceki çizimcinin erişimi kapanır, yeni çizimci bildirim alır. Çizim sürümleri, dosyaları ve müşteri onayları olduğu gibi kalır; satışçının varsayılan çizimcisi değişmez. Devam edilsin mi?',
+    keeps: 'Çizim sürümleri, dosyaları ve müşteri onayları korunur.',
+    none: 'Başka etkin çizimci yok.',
+    ok: 'Çizimci değiştirildi.',
   },
   // Ayarlar → Satış Yönlendirme (karar 300)
   routing: {

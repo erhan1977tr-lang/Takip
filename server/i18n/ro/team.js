@@ -14,6 +14,8 @@ export default {
     SALES_UNASSIGNED: 'Comanda nu are agent de vânzări responsabil. Administratorul trebuie mai întâi să o atribuie unui agent.',
     SALES_TARGET: 'Utilizatorul ales nu este un agent de vânzări activ.',
     SALES_SAME: 'Comanda este deja la acest agent de vânzări.',
+    DRAWER_TARGET: 'Utilizatorul ales nu este un desenator activ.',
+    DRAWER_SAME: 'Comanda este deja la acest desenator.',
     NOT_LINKED: 'Comenzile existente nu au fost încă legate de un cont de vânzări; atribuirea și rutarea se deschid după legare.',
     REASSIGN_BLOCKED: 'Comanda nu poate fi redirecționată către alt agent de vânzări:',
   },
@@ -48,6 +50,17 @@ export default {
     noSales: 'Nu există agenți de vânzări activi.',
     notLinked: 'Atribuirea se deschide după ce comenzile existente sunt legate de un cont de vânzări.',
     ok: 'Agentul de vânzări responsabil a fost salvat.',
+  },
+  // Schimbarea desenatorului (decizia 303): se schimbă doar desenatorul comenzii; versiunile și aprobările clientului rămân
+  drawer: {
+    title: 'Schimbă desenatorul',
+    pick: 'Alegeți desenatorul',
+    reason: 'Motiv (opțional)',
+    submit: 'Schimbă desenatorul',
+    confirm: 'Desenatorul comenzii va fi schimbat: accesul desenatorului anterior se închide, noul desenator primește o notificare. Versiunile desenului, fișierele și aprobările clientului rămân neschimbate; desenatorul implicit al agentului nu se schimbă. Continuați?',
+    keeps: 'Versiunile desenului, fișierele și aprobările clientului se păstrează.',
+    none: 'Nu există alt desenator activ.',
+    ok: 'Desenatorul a fost schimbat.',
   },
   routing: {
     tab: 'Rutare vânzări',

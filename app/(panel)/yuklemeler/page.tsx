@@ -343,7 +343,7 @@ type FirmCol = (typeof FIRM_COLS)[number] | 'factory' | 'offer';
  * (dar masaüstü, telefon) her firma etiketli bir kart olur — sayfa ve tablo yatay kaymaz (app/globals.css → .firm-wrap).
  * Sağdaki işlemler: belge yetkisi olan rolde PDF | Excel | Özet | Sandık; satışta yalnızca Sandık.
  */
-function FirmTable({ user, day, sum, dayCrates, money, sp, teamNames, t, m }: { user: CurrentUser; day: string; sum: DayFirms; dayCrates: CrateRow[]; money: MoneyView; sp: SP; teamNames: Map<string, string> | null; t: T; m: Dict }) {
+function FirmTable({ user, day, sum, dayCrates, money, sp, teamNames, mateNames, t, m }: { user: CurrentUser; day: string; sum: DayFirms; dayCrates: CrateRow[]; money: MoneyView; sp: SP; teamNames: Map<string, string> | null; mateNames: Map<string, string>; t: T; m: Dict }) {
   const { firms, total } = sum;
   const cols = 10 + (money.sales ? 1 : 0) + (money.offer ? 1 : 0);
   const canEdit = userCan(user, 'CRATE_EDIT');

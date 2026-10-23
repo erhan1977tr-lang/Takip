@@ -17,7 +17,7 @@ import { DWG_DECISION_STATUS, DWG_RESUBMITTED, DWG_SOURCE, dwgNote, dwgReview, h
 import { crateLockKeys, dwgUndoCheck, undoReason } from './dwg-undo.js';
 import { getEnv } from '../env.js';
 import { actorScope } from './scope.js';
-import { drawerOf, reassignBlocks, reassignFacts, routingLinked, validSales } from './sales-routing.js';
+import { drawerOf, reassignBlocks, reassignFacts, routingLinked, validDrawer, validSales } from './sales-routing.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { enrichLines, loadPricing, prefillLines, prefillOfferPrices, pricingForCustomer, pricingForUser, tablePrice } from '../pricing/tables.js';
 import { recordPriceOverrides } from '../pricing/alerts.js';
@@ -78,6 +78,8 @@ export const REQUIRES = {
   import_offer_pdf: ['edit_offer', 'approve_price'],
   // Sorumlu satışçı (karar 300): yönetici / yönetici yardımcısı (ORDER_ASSIGN)
   assign_sales: ['assign_sales'],
+  // Çizimci değiştirme (4.3.17 D-3, karar 303): yönetici / yönetici yardımcısı (ORDER_ASSIGN)
+  assign_drawer: ['assign_drawer'],
 };
 
 /** Sorumlu satışçısı olmayan cam siparişinde çalışmayan işlemler: önce yönetici atar (karar 300) */
@@ -635,7 +637,9 @@ const ACTIONS = {
       const reasons = reassignBlocks(await reassignFacts(h.tx, h.order));
       if (reasons.length) throw new WorkflowError('REASSIGN_BLOCKED', { reasons });
     }
-    const drawerId = await drawerOf(h.tx, target.id);
+    // Çizimci: yönlendirmede yeni satışçının varsayılan çizimcisi; İLK atamada siparişin zaten bir çizimcisi varsa (geçmiş
+    // siparişte çizim sürümleri / onaylar onunla) o korunur (4.3.17, karar 302) — çizimci değişikliği ayrı işlemdir (assign_drawer)
+    const drawerId = !prev && h.order.assignedDrawerId ? h.order.assignedDrawerId : await drawerOf(h.tx, target.id);
     let priceReset = null;
     const draft = latestOffer(h.order);
     if (prev && draft && draft.status === 'HAZIRLANIYOR') {
@@ -656,6 +660,29 @@ const ACTIONS = {
     h.event('SALES_ASSIGNED');
     h.sla = true;
     h.audit = { salesFrom: prev, salesTo: target.id, drawerFrom: h.order.assignedDrawerId ?? null, drawerTo: drawerId, via: prev ? 'REASSIGN' : 'MANUAL', priceReset };
+  },
+  /**
+   * Çizimci değiştirme (4.3.17 D-3, karar 303): yalnızca Order.assignedDrawerId değişir. Çizim sürümleri, sürüm dosyaları,
+   * müşteri onay / revizyon kayıtları, taslaklar ve SLA olduğu gibi kalır (kimse silinmez, yeniden yazılmaz); eski çizimcinin
+   * erişimi kapsamdan kendiliğinden kalkar (orderScope: assignedDrawerId), yeni çizimci bildirim alır. Satışçının varsayılan
+   * çizimcisi değişmez. Gerekçe isteğe bağlı, yalnızca denetim kaydında.
+   */
+  async assign_drawer(h) {
+    const targetId = typeof h.payload.drawerId === 'string' ? h.payload.drawerId : '';
+    const target = targetId ? await h.tx.user.findUnique({ where: { id: targetId }, select: { id: true, type: true, appRole: true, isActive: true, deletedAt: true } }) : null;
+    if (!validDrawer(target)) throw new WorkflowError('DRAWER_TARGET');
+    const prev = h.order.assignedDrawerId ?? null;
+    if (prev === target.id) throw new WorkflowError('DRAWER_SAME');
+    const reason = typeof h.payload.reason === 'string' ? h.payload.reason.trim().slice(0, 500) : '';
+    const drawings = await h.tx.drawing.findMany({ where: { orderId: h.order.id }, select: { id: true, status: true, version: true } });
+    await h.set({ assignedDrawerId: target.id });
+    h.event('DRAWER_ASSIGNED');
+    h.audit = {
+      drawerFrom: prev, drawerTo: target.id, reason: reason || null,
+      // Korunan çizim kayıtları (sayılar): hiçbiri değişmez
+      drawings: drawings.length, drafts: drawings.filter((d) => d.status === 'TASLAK').length,
+      approved: drawings.filter((d) => d.status === 'ONAYLANDI').length,
+    };
   },
   async send_to_drawing(h) {
     // Çizimci = siparişin ekibinin çizimcisi (4.3.0, karar 300): atamada kopyalanan; boşsa sorumlu satışçının ŞU ANKİ

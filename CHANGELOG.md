@@ -21,6 +21,24 @@ pasif / silinmiş satışçı yalnızca kendi siparişlerini görür.
   siparişleri. Ticari sahiplik, satışçı bazlı hesaplar ve sandık kayıt kuralları değişmedi; ekip arkadaşının sandık bölümü
   yükleme gününde salt okunur listelenir.
 
+**Geçmiş verinin bağlanması — D-1 (karar 302).** `takip satis-bagla` geçmişi artık TEK bir satış hesabına bağlamaz: sorumlusu
+boş her cam siparişi kendi kaydından bulunan TARİHSEL satışçısına (siparişi çizime gönderen / çizimsiz devam ettiren / teklifini
+yöneticiye gönderen ya da teklifi hazırlayan satış kullanıcısı) dağıtılır. İzi olmayan, iki satışçıyı gösteren ya da sahibi
+pasif / silinmiş sipariş otomatik olarak kimseye verilmez: yönetici karar verir (komutta `--ata SIPARIS=E-POSTA` ya da
+bağlamadan sonra panelde "Satışçıya ata"). Önizleme dağılımı, sahipsiz kalanları, sandık ve ödeme planını ve bir ONAY KODU
+gösterir; `--uygula` yalnızca `--onay <KOD>` ile ve dağılım önizlemedekiyle aynıysa çalışır (değiştiyse hiçbir şey yazılmaz).
+Sandık yalnızca içindeki bütün siparişler aynı satışçıya gidiyorsa bağlanır (karışık / belirsiz sandık eski kayıt olarak kalır);
+hesabı boş fabrika ödemesi yalnızca açık kararla (`--odeme E-POSTA`). Siparişin var olan çizimcisi korunur; boşsa sahibinin
+geçerli varsayılan çizimcisi. Bağlama otomatik yönlendirme kuralı YAZMAZ: ilk durum "yönetici seçer" (yeni siparişlerde sorumlu
+satışçıyı yönetici atar). Tek işlem, toplam koruması, `updatedAt` koruması ve süre sınırları (4.3.15) aynı.
+Yöneticinin geçmiş siparişe ilk ataması siparişin var olan çizimcisini değiştirmez.
+
+**Çizimci değiştirme — D-3 (karar 303).** Yönetici / yönetici yardımcısı sipariş sayfasındaki "Sorumlu satışçı" kartından
+siparişin çizimcisini değiştirebilir (`assign_drawer`; onay, isteğe bağlı gerekçe, sayfa sürümü zorunlu). Yalnızca
+`Order.assignedDrawerId` değişir: çizim sürümleri, dosyaları, taslaklar, müşteri onay / revizyon kayıtları ve SLA olduğu gibi
+kalır; satışçının varsayılan çizimcisi değişmez. Eski çizimcinin erişimi kapanır, yeni çizimci uygulama içi bildirim ve e-posta
+alır; geçmiş (`DRAWER_ASSIGNED`) ve denetim kaydı (önceki / yeni çizimci, gerekçe, korunan sürüm sayıları) yazılır.
+
 ## 4.3.16 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.28 (yalnızca bu iki paket; kilit dosyası CI'da yeniden

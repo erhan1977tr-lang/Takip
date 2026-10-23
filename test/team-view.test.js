@@ -105,3 +105,47 @@ test('yapı: orderViewScope / loadOrderView / salesView yalnızca izinli okuma d
   // Ekip oturumda her istekte okunur
   assert.match(read('lib/auth/session.ts'), /loadSalesTeam\(db, user\)/);
 });
+
+// ---- D-1: geçmişin tarihsel satışçıya dağıtılması (karar 302) — saf kurallar ----
+import { approvalCode, parseDecisions, resolveOwner } from '../server/orders/sales-link.js';
+
+test('D-1 tarihsel satışçı: tek etkin satışçı → o; iz yok / çelişki / pasif sahip → yönetici kararı (kimseye verilmez)', () => {
+  const sales = new Map([
+    ['M', { id: 'M', appRole: 'SATIS', type: 'INTERNAL', isActive: true }],
+    ['H', { id: 'H', appRole: 'SATIS', type: 'INTERNAL', isActive: true }],
+    ['P', { id: 'P', appRole: 'SATIS', type: 'INTERNAL', isActive: false }],
+  ]);
+  assert.deepEqual(resolveOwner([{ userId: 'M', source: 'OFFER_CREATED' }, { userId: 'M', source: 'SENT_TO_DRAWING' }], sales),
+    { ownerId: 'M', reason: 'HISTORY', candidates: ['M'], sources: ['OFFER_CREATED', 'SENT_TO_DRAWING'] });
+  assert.equal(resolveOwner([], sales).reason, 'UNKNOWN');
+  assert.equal(resolveOwner([], sales).ownerId, null);
+  assert.deepEqual(resolveOwner([{ userId: 'M', source: 'OFFER_CREATED' }, { userId: 'H', source: 'SENT_TO_DRAWING' }], sales).reason, 'CONFLICT');
+  assert.equal(resolveOwner([{ userId: 'P', source: 'OFFER_CREATED' }], sales).reason, 'INACTIVE_OWNER');
+  assert.equal(resolveOwner([{ userId: 'X', source: 'OFFER_CREATED' }], sales).reason, 'INACTIVE_OWNER', 'bilinmeyen hesap');
+});
+
+test('D-1 karar biçimi ve onay kodu: hatalı karar reddedilir; aynı dağılım aynı kod, tek fark farklı kod', () => {
+  assert.deepEqual(parseDecisions(['gla68=satis@firma.com', ' TSF5 = h@x.ro ']), [{ orderNo: 'GLA68', email: 'satis@firma.com' }, { orderNo: 'TSF5', email: 'h@x.ro' }]);
+  assert.equal(parseDecisions(['GLA68']), null);
+  assert.equal(parseDecisions(['GLA68=a=b']), null);
+  assert.equal(parseDecisions(['GLA 68=a@b.c']), null);
+  assert.deepEqual(parseDecisions([]), []);
+  const plan = { orders: [{ id: 'a', ownerId: 'M', drawerToSet: 'D', via: 'HISTORY' }, { id: 'b', ownerId: null, drawerToSet: null, via: null }], crates: [{ id: 'c', ownerId: 'M' }], payments: { count: 0, ownerId: null } };
+  const code = approvalCode(plan);
+  assert.match(code, /^[0-9A-F]{12}$/);
+  assert.equal(approvalCode({ ...plan, orders: [...plan.orders].reverse() }), code, 'sıra koda etki etmez');
+  assert.notEqual(approvalCode({ ...plan, orders: [plan.orders[0], { ...plan.orders[1], ownerId: 'H', via: 'DECISION' }] }), code);
+  assert.notEqual(approvalCode({ ...plan, crates: [{ id: 'c', ownerId: null }] }), code);
+  assert.notEqual(approvalCode({ ...plan, payments: { count: 1, ownerId: 'M' } }), code);
+});
+
+test('D-1 yapı: bağlama otomatik yönlendirme kuralı yazmaz; uygulama onay kodu ister; komut onay kodunu iletir', () => {
+  const link = read('server/orders/sales-link.js');
+  assert.doesNotMatch(link, /glassRoutingRule\.create/, 'ilk durum: yönetici seçer (MANUAL — kural yok)');
+  assert.match(link, /if \(built\.approval !== code\) return \{ ok: false, code: 'APPROVAL_MISMATCH' \}/);
+  assert.match(link, /APPROVAL_REQUIRED/);
+  const sh = read('deploy/takip.sh');
+  assert.match(sh, /--uygula için önizlemenin onay kodu gerekir/);
+  assert.match(sh, /pass\+=\(--apply --approve "\$code"\)/);
+  assert.match(read('scripts/sales-link.mjs'), /apply && !approve/);
+});

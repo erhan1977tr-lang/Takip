@@ -80,6 +80,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   SALES_UNASSIGNED: 'team.errors.SALES_UNASSIGNED',
   SALES_TARGET: 'team.errors.SALES_TARGET',
   SALES_SAME: 'team.errors.SALES_SAME',
+  DRAWER_TARGET: 'team.errors.DRAWER_TARGET',
+  DRAWER_SAME: 'team.errors.DRAWER_SAME',
   NOT_LINKED: 'team.errors.NOT_LINKED',
   OFFER_NOT_FOUND: 'order.errors.offerNotFound',
   INVALID_DATE: 'order.errors.invalidDate',

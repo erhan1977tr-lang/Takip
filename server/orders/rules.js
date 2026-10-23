@@ -211,6 +211,7 @@ export const EVENTS = {
   OFFER_SUBMITTED: { customer: false },
   OFFER_RETURNED: { customer: false },
   OFFER_WITHDRAWN: { customer: false },
+  DRAWER_ASSIGNED: { customer: false }, // yönetici siparişin çizimcisini değiştirdi (karar 303)
   SALES_ASSIGNED: { customer: false }, // yönetici sorumlu satışçıyı atadı / yönlendirdi (karar 300) // satış, yöneticiye gönderdiği teklifi geri aldı (karar 212)
   OFFER_PDF_IMPORTED: { customer: false }, // fabrika PDF'i teklif tablosuna aktarıldı (karar 255)
   OFFER_SENT: { customer: true },
@@ -597,6 +598,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   // Sorumlu satışçı (karar 300): yönetici atar / başka satışçıya yönlendirir — beklemede de. Yönlendirme sınırı (teklif ilk
   // kez gönderilmeden, çizim / maliyet başlamadan) işlemin kendisinde: server/orders/sales-routing.js → reassignBlocks.
   if (can(role, 'ORDER_ASSIGN') && !closed && orderType === 'GLASS_ORDER') a.push('assign_sales');
+  // Çizimci değiştirme (4.3.17 D-3, karar 303): yönetici / yönetici yardımcısı; yalnızca siparişin çizimcisi değişir —
+  // çizim sürümleri, dosyaları ve müşteri onayları olduğu gibi kalır (server/orders/transitions.js → assign_drawer)
+  if (can(role, 'ORDER_ASSIGN') && !closed && orderType === 'GLASS_ORDER') a.push('assign_drawer');
 
   if (onHold) {
     if (sales) a.push('unhold');
