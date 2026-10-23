@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
-import { loadOrderView } from '@/lib/orders';
+import { loadOrder } from '@/lib/orders';
 import { fmtDateTime } from '@/lib/format';
 import { RevisionNote } from '@/components/RevisionNote';
 import { DrawingViewer, type Annotation, type ViewerText } from '@/components/DrawingViewer';
@@ -30,23 +30,21 @@ export const dynamic = 'force-dynamic';
 //     STALE_DRAWING ile reddeder); yetkisiz kullanıcı yalnızca inceler.
 //   - iç ekip: revizyon talebini (numaralı not + saklanan Türkçe çevirisi, karar 163) görür; talebin işaretleri sürümü
 //     görebilen herkese salt okunur gösterilir (?rev=<talep>); müşteri kendi talebini yalnızca özgün dilinde görür
-// Sipariş loadOrderView ile yüklenir (görüntüleme kapsamı — karar 301): firma kapsamı ve role göre temizlik sunucuda (başka firmanın siparişi → 404,
+// Sipariş loadOrder ile yüklenir: firma kapsamı ve role göre temizlik sunucuda (başka firmanın siparişi → 404,
 // müşteriye taslak sürüm gelmez; geri çekilen sürümün içeriği gelmez). Dosyalar /dosya/cizim/<id> adresinden, aynı kuralla gelir.
 export default async function DrawingPage({ params, searchParams }: { params: Promise<{ id: string; drawingId: string }>; searchParams: Promise<{ revizyon?: string; rev?: string }> }) {
   const user = await requirePermission('ORDER_VIEW');
   const { id, drawingId } = await params;
   const sp = await searchParams;
   const { t } = await getT();
-  // Görüntüleme kapsamı (karar 301): satış ekibi arkadaşının siparişindeki çizim de açılır — yalnızca görüntüleme
-  // (işlem listesi boş, okundu işareti yazılmaz). Gönderme / onay / revizyon her zaman sunucuda yeniden denetlenir.
-  const { order, viewOnly } = await loadOrderView(id, user);
+  const order = await loadOrder(id, user);
   const d = order.drawings.find((x) => x.id === drawingId);
   // Sürümün içeriğini görebilen açar (tek kural: server/orders/drawing-access.js, karar 146): müşteriye taslak sürüm hiç
   // gelmez; geri çekilen sürümün satırı gelir ama içeriği kapalıdır → bu ekran da "bulunamadı" der. Müşterinin DWG/DXF
   // çiziminin karar kaydı (karar 167) bir çizim sürümü değildir: görüntülenecek dosyası yoktur (dosyalar sipariş dosyalarıdır).
   if (!d || isCustomerDrawingRecord(d) || drawingAccess(user.appRole, d.status) !== 'FULL') notFound();
   const latest = order.drawings[order.drawings.length - 1];
-  const acts = viewOnly ? [] : availableActions({
+  const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
@@ -82,7 +80,7 @@ export default async function DrawingPage({ params, searchParams }: { params: Pr
   return (
     <>
       {/* Çizim ekranda görüldü → bu kullanıcının bu siparişteki çizim uyarıları okundu (karar 228; yalnızca çizim bölümü) */}
-      {files.length > 0 && !viewOnly && <OrderSeen orderId={order.id} upTo={new Date().toISOString()} mark={markOrderSeenAction} only={['cizim']} />}
+      {files.length > 0 && <OrderSeen orderId={order.id} upTo={new Date().toISOString()} mark={markOrderSeenAction} only={['cizim']} />}
       <div className="page-head">
         <p className="small"><Link href={back}>← {order.orderNo}</Link></p>
         <h1>{revising ? t('order.viewer.titleRevision') : t('order.viewer.title')}</h1>

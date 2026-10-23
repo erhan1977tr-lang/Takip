@@ -24,25 +24,5 @@ export function orderScope(user) {
   return live;
 }
 
-/**
- * GÖRÜNTÜLEME kapsamı (4.3.17, karar 301) — yalnızca OKUMA yolları kullanır (sipariş sayfası, çizim görüntüleyici, "Tüm aktif
- * siparişler" listesi ve arama, dosya indirme / önizleme, teklif dışa aktarımı, yükleme / sandık / nakliye okumaları; yapı
- * testi çağıranları listeler). Satış: ekibinin (aynı geçerli varsayılan çizimciye bağlı satışçılar — server/orders/sales-team.js)
- * siparişleri; ekip bilgisi yoksa yalnızca kendisi. Diğer bütün roller: orderScope ile BİREBİR aynı.
- * Yazma, görev listesi, bildirim ve sayaçlar bunu KULLANMAZ: orderScope / actorScope (sorumlu satışçı = kendisi).
- * @param {{ id?: string | null, appRole: string, customerId?: string | null, salesTeam?: string[] | null }} user
- */
-export function orderViewScope(user) {
-  if (user.appRole !== 'SATIS') return orderScope(user);
-  const own = user.id || NONE;
-  const team = Array.isArray(user.salesTeam) && user.salesTeam.includes(own) ? user.salesTeam.filter((x) => typeof x === 'string' && x) : [own];
-  return { removedAt: null, orderType: { usesSales: true }, salesUserId: { in: team } };
-}
-
-/** Sipariş, bakan satışçı için yalnızca GÖRÜNTÜLEME midir (ekip arkadaşının siparişi)? Diğer rollerde hiçbir zaman. */
-export function teamViewOnly(user, order) {
-  return user?.appRole === 'SATIS' && !!order && order.salesUserId !== user.id;
-}
-
 /** İş akışı / servis aktörü ({ id, role, customerId }) için aynı kapsam */
 export const actorScope = (actor) => orderScope({ id: actor?.id ?? null, appRole: actor?.role, customerId: actor?.customerId ?? null });

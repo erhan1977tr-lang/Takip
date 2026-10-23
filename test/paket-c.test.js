@@ -118,7 +118,7 @@ test('yükleme özeti (karar 233, düzeltme): onaylı günde BÜTÜN bölümler 
   const lib = read('lib/loading.ts');
   const fn = lib.slice(lib.indexOf('export async function confirmedDayRows'));
   assert.ok(fn.includes("const loaded = effectiveItems(items).filter((it: (typeof items)[number]) => it.status === 'LOADED');"));
-  assert.ok(fn.includes("where: { confirmationId: conf.id, order: orderViewScope(user) }"), 'kapsam');
+  assert.ok(fn.includes("where: { confirmationId: conf.id, order: orderScope(user) }"), 'kapsam');
   assert.ok(fn.includes('adet: it.quantity,'), 'adet = yüklenen');
   assert.ok(fn.includes('cost += Number(it.costAmount);') && fn.includes('sale += Number(it.saleAmount);'), 'tutar = onay kaydı');
   assert.ok(fn.includes('crateFee: it.offerLine?.crateFee ?? false,'), 'yöneticinin sandık bedeli satışa süzülür');

@@ -4,7 +4,7 @@ import { db } from './db';
 import type { CurrentUser } from './auth/session';
 import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
-import { DRAWING_SCOPE, orderScope as scopeFor, orderViewScope as viewScopeFor, teamViewOnly } from '../server/orders/scope.js';
+import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
 import { drawingTranslationsFor, notesFor } from '../server/notes/view.js';
 import { orderPeopleView, profileFxView } from '../server/orders/order-view.js';
@@ -16,13 +16,6 @@ import { orderAlertCounts } from '../server/notifications/order-alerts.js';
 /** Müşteri yalnızca kendi firmasının siparişlerini görür; çizim ekibi yalnızca çizimli siparişleri; diğerleri hepsini. */
 export function orderScope(user: CurrentUser): Prisma.OrderWhereInput {
   return scopeFor(user) as Prisma.OrderWhereInput;
-}
-/**
- * GÖRÜNTÜLEME kapsamı (karar 301): satış ekibi (aynı geçerli varsayılan çizimciye bağlı satışçılar) birbirinin siparişini
- * GÖRÜR. Yalnızca okuma yolları kullanır; yazma, görev listesi, bildirim ve sayaçlar orderScope ile kalır.
- */
-export function orderViewScope(user: CurrentUser): Prisma.OrderWhereInput {
-  return viewScopeFor(user) as Prisma.OrderWhereInput;
 }
 /** Çizim ekibinin gördüğü siparişler — yöneticinin "Çizim Paneli" de aynı kapsamı kullanır (orderScope'a EK koşul). */
 export const drawingScope = DRAWING_SCOPE as Prisma.OrderWhereInput;
@@ -138,19 +131,6 @@ export async function loadOrder(id: string, user: CurrentUser): Promise<OrderDet
   const order = await db.order.findFirst({ where: { id, ...orderScope(user) }, include: orderDetailInclude });
   if (!order) notFound();
   return sanitizeOrder(user, order);
-}
-
-/**
- * Sipariş sayfası / çizim görüntüleyici için GÖRÜNTÜLEME yüklemesi (karar 301): ekip arkadaşının siparişi de açılır ve
- * viewOnly = true döner — sayfa hiçbir işlem, düzenleyici, not / dosya formu göstermez. Yazma yetkisi bundan doğmaz: her işlem
- * loadOrder / actorScope (sorumlu satışçı = kendisi) ile yeniden denetlenir. Server action'lar BUNU KULLANMAZ.
- */
-export async function loadOrderView(id: string, user: CurrentUser): Promise<{ order: OrderDetail; viewOnly: boolean; owner: string | null }> {
-  const order = await db.order.findFirst({ where: { id, ...orderViewScope(user) }, include: orderDetailInclude });
-  if (!order) notFound();
-  const viewOnly = teamViewOnly(user, order);
-  const owner = viewOnly && order.salesUser ? order.salesUser.name || order.salesUser.email : null;
-  return { order: sanitizeOrder(user, order), viewOnly, owner };
 }
 
 const ZERO = new Prisma.Decimal(0);

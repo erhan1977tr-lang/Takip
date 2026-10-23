@@ -224,11 +224,11 @@ test('yapı: bağlama ve yönlendirme servisleri HTTP yolundan çağrılmaz; tek
   const email = read('server/notifications/email.js');
   assert.doesNotMatch(email, /appRole: \{ in: ROLE_SETS\.sales \}/);
   assert.match(email, /ORDER_SALES_ASSIGNED: \(\) => \['orderSales'\]/);
-  // Yükleme: satış kendi sandıkları / misafir yükleri + ekip görüntülemesi (karar 301 — yalnızca okuma; kayıt crateTeam ile kendi bölümü)
+  // Yükleme: satış yalnızca kendi sandıkları / misafir yükleri
   const loading = read('lib/loading.ts');
-  assert.match(loading, /user\.appRole === 'SATIS' \? \{ customerId: \{ not: null \}, salesUserId: salesView\(user\) \}/);
-  // Nakliye: satış kendi bölümü + ekip bölümleri (görüntüleme)
-  assert.match(read('app/(panel)/yuklemeler/nakliye/route.ts'), /const team = sales \? salesView\(user\)\.in : undefined/);
+  assert.match(loading, /user\.appRole === 'SATIS' \? \{ customerId: \{ not: null \}, salesUserId: user\.id \|\| '__none__' \}/);
+  // Nakliye: satış kendi bölümü
+  assert.match(read('app/(panel)/yuklemeler/nakliye/route.ts'), /salesUserId: sales \? user\.id : undefined/);
   // Muhasebe: ödeme hesabı serviste; hesap değişikliği yalnızca servis
   const acc = read('app/(panel)/admin/muhasebe/actions.ts');
   assert.doesNotMatch(acc, /factoryPayment\.create\(/, 'ödeme yalnızca addFactoryPayment ile');

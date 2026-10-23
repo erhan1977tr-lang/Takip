@@ -3,7 +3,6 @@ import { getCurrentUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
 import { customerLabel } from '@/lib/orders';
-import { salesView } from '@/lib/loading';
 import { parseDateOnly } from '@/server/orders/rules.js';
 import { transportList } from '@/server/loading/transport.js';
 import { transportListPdf } from '@/server/pdf/transport-list.js';
@@ -21,14 +20,12 @@ export async function GET(req: Request) {
   const day = new URL(req.url).searchParams.get('gun') ?? '';
   if (!parseDateOnly(day)) return new Response(t('loading.transport.badDay'), { status: 400 });
   // Misafir yükün firma adı görene göre (satışa maskeli — karar 7); ağırlık ve gruplar değişmez
-  // Satışçı bölümleri (karar 300): satış kendi bölümünü ve ekip görüntülemesinde (karar 301) aynı geçerli varsayılan
-  // çizimciye bağlı ekip arkadaşlarının bölümlerini alır (sunucuda süzülür); yönetici / denetimci tamamını
+  // Satışçı bölümleri (karar 300): satış yalnızca kendi bölümünü alır (sunucuda süzülür); yönetici / denetimci tamamını
   const sales = user.appRole === 'SATIS';
-  const team = sales ? salesView(user).in : undefined;
-  const names = new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL', ...(team ? { id: { in: team } } : {}) }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]));
+  const names = new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL', ...(sales ? { id: user.id } : {}) }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]));
   const list = await transportList(db, day, {
     label: (name: string) => customerLabel(user, name),
-    salesUserId: team,
+    salesUserId: sales ? user.id : undefined,
     teamName: (id: string | null) => (id ? names.get(id) ?? '—' : t('loading.transport.noTeam')),
   });
   const pdf = transportListPdf({

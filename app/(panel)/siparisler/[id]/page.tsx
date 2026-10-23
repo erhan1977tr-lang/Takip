@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requirePermission, type CurrentUser } from '@/lib/auth/session';
-import { currentOffer, customerLabel, loadOrderView, sentOffer, type OrderDetail } from '@/lib/orders';
+import { currentOffer, customerLabel, loadOrder, sentOffer, type OrderDetail } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { fmtBytes, fmtDate, fmtDateTime, fmtM2, fmtMoney, fmtNum, isoDay } from '@/lib/format';
 import { getT, type Dict, type MsgKey, type T } from '@/lib/i18n';
@@ -60,11 +60,6 @@ import { reassignBlocks, reassignFacts, routingLinked } from '@/server/orders/sa
 import { SalesAssign, type SalesOption } from './SalesAssign';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
-// Ekip görüntülemesi (karar 301): bu istekte yalnızca görüntüleyen kullanıcı nesnesi. Çeviriyi yeniden dene gibi alt bölüm
-// formları bu kümeye bakar (istek başına yeni kullanıcı nesnesi — kayıt istekler arasında taşınmaz).
-const viewOnlyUsers = new WeakSet<object>();
-const readOnlyFor = (user: CurrentUser) => viewOnlyUsers.has(user);
-
 function okText(m: Dict, code: string | undefined): string | null {
   const ok = m.order.ok;
   return code && Object.hasOwn(ok, code) ? ok[code as keyof typeof ok] : null;
@@ -135,15 +130,11 @@ export default async function OrderPage({
       );
     }
   }
-  // Görüntüleme kapsamı (karar 301): satış ekibi arkadaşının siparişi de açılır, ama yalnızca GÖRÜNTÜLEME (viewOnly) —
-  // hiçbir işlem, düzenleyici ya da form gösterilmez; her işlem sunucuda sorumlu satışçı kapsamıyla yeniden denetlenir.
-  const { order, viewOnly, owner } = await loadOrderView(id, user);
-  if (viewOnly) viewOnlyUsers.add(user);
+  const order = await loadOrder(id, user);
   const isCustomer = user.appRole === 'MUSTERI';
-  // Okunmamış mesaj eşiği (karar 199): sayfa açılmadan önceki okunma anı — yeni mesajlar işaretlenir, sonra okundu olur.
-  // Ekip görüntülemesinde okunmamış / okundu kavramı yok (sayaçlar yalnızca sorumlu satışçının — karar 301)
-  const noteSince = viewOnly ? new Date() : await unreadThreshold(db, user, order.id);
-  const notesCard = <Notes order={order} user={user} t={t} since={noteSince} readOnly={viewOnly} />;
+  // Okunmamış mesaj eşiği (karar 199): sayfa açılmadan önceki okunma anı — yeni mesajlar işaretlenir, sonra okundu olur
+  const noteSince = await unreadThreshold(db, user, order.id);
+  const notesCard = <Notes order={order} user={user} t={t} since={noteSince} />;
   // "Siparişi sil" (yalnızca yönetici — ORDER_CANCEL): sayfanın en altında, iki aşamalı onay (karar 110; Paket 4). Önizleme
   // (sipariş no, sonuç ve engeller) sunucuda, silmeyle aynı kuraldan (server/orders/removal.js → removalPreview)
   const removeErrors = m.compensation.remove.errors;
@@ -180,8 +171,7 @@ export default async function OrderPage({
     : [];
   const offer = currentOffer(order);
   const sent = sentOffer(order);
-  // Ekip görüntülemesinde (karar 301) işlem listesi boştur: düğmeler, teklif düzenleyici, telafi, tarih düzenleme, atama yok
-  const acts = viewOnly ? [] : availableActions({
+  const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
   });
@@ -309,7 +299,7 @@ export default async function OrderPage({
   const priceChanges = await loadPriceChanges(order.id, user);
   const ok = okText(m, sp.ok);
   // Kırık / telafi camı (karar 108): satış ve yönetici (OFFER_PREPARE). Giriş, müşteriye gönderilmiş teklifin cam satırı.
-  const canComp = !isCustomer && !viewOnly && userCan(user, 'OFFER_PREPARE');
+  const canComp = !isCustomer && userCan(user, 'OFFER_PREPARE');
   const comps = canComp ? await loadCompensations(order.id, user) : [];
   // Mali engel (karar 256): yalnızca kesilmiş nihai fatura telafiyi kapatır — proforma / avans / bekleyen istek kapatmaz.
   // Düğmeler gizlenir ve neden yazılır; sunucu aynı kuralı createCompensation içinde yeniden uygular.
@@ -376,12 +366,6 @@ export default async function OrderPage({
         {sla && <span className={sla.over ? 'sla-over' : sla.risk ? 'sla-risk' : 'sla-ok'}>● {slaText(t, sla)}</span>}
       </div>
 
-      {/* Ekip görüntülemesi (karar 301): aynı çizimciye bağlı satışçının siparişi — yalnızca görüntüleme */}
-      {viewOnly && (
-        <div className="alert alert-info" data-team-view>
-          <b>{t('team.view.title')}</b> {t('team.view.text', { owner: owner ?? '—' })}
-        </div>
-      )}
       {ok && <div className="alert alert-ok">{ok}</div>}
       {compOk && <div className="alert alert-ok">{compOk}</div>}
       {compSource && <div className={`alert ${compSource.warn ? 'alert-warn' : 'alert-info'}`} data-comp-source={sp.kaynak}>{compSource.text}</div>}
@@ -1099,7 +1083,7 @@ function VersionNotes({ order, d, user, t }: { order: OrderDetail; d: DrawingRow
           <b className="small">{t('order.drawings.noteCustomer')}</b>
           <RevisionNote
             r={{ comment: d.noteCustomer, translation: d.translation, translationLang: d.translationLang, translationStatus: d.translationStatus, translationError: d.translationError, translationAt: d.translationAt }}
-            role={user.appRole} t={t} retry={readOnlyFor(user) ? undefined : <RetryTranslation orderId={order.id} target="drawing" id={d.id} t={t} />}
+            role={user.appRole} t={t} retry={<RetryTranslation orderId={order.id} target="drawing" id={d.id} t={t} />}
           />
         </div>
       )}
@@ -1123,7 +1107,7 @@ function RevisionNotes({ order, d, user, t }: { order: OrderDetail; d: DrawingRo
         return (
           <div key={r.id} className="note" data-revision={r.id} data-revision-kind={r.kind}>
             <b className="small">{t(faulty ? 'order.dwg.faultyLabel' : 'order.drawings.revisionRequest')}</b>
-            <RevisionNote r={r} role={user.appRole} t={t} retry={readOnlyFor(user) ? undefined : <RetryTranslation orderId={order.id} target="revision" id={r.id} t={t} />} />
+            <RevisionNote r={r} role={user.appRole} t={t} retry={<RetryTranslation orderId={order.id} target="revision" id={r.id} t={t} />} />
             <div className="meta">
               {fmtDateTime(r.createdAt)}
               {marks > 0 && <> · <Link href={`/siparisler/${order.id}/cizim/${d.id}?rev=${r.id}`}>{t('order.drawings.marks', { n: marks })}</Link></>}
@@ -1506,15 +1490,14 @@ function Files({ order, user, canAdd, t }: { order: OrderDetail; user: CurrentUs
   );
 }
 
-function Notes({ order, user, t, since, readOnly = false }: { order: OrderDetail; user: CurrentUser; t: T; since: Date; readOnly?: boolean }) {
+function Notes({ order, user, t, since }: { order: OrderDetail; user: CurrentUser; t: T; since: Date }) {
   const isCustomer = user.appRole === 'MUSTERI';
   // İç notlar müşteriye hiç yüklenmez; çeviri alanları da role göre sunucuda temizlenmiştir (sanitizeOrder → notesFor):
   // denetimciye çeviri alanı hiç gelmez (notu yalnızca özgün dilinde görür), müşteriye yalnızca tamamlanmış Romence çeviri.
   const notes = order.notes;
   // Çeviri durumu (bekliyor / yapılamadı) ve "yeniden dene" yalnızca çeviriyle çalışan iç ekibe (yönetici, satış, çizim)
   const staff = canRetryTranslation(user.appRole);
-  // Ekip görüntülemesinde (karar 301) not yazılmaz, çeviri yeniden istenmez, okundu işareti yazılmaz
-  const canRetry = staff && !readOnly;
+  const canRetry = staff;
   const now = new Date();
   // Okunmamış: başkasının yazdığı, okunma anından sonraki (gösterilen notlar zaten role göre süzülmüş — liste sayacıyla aynı kural)
   const unread = notes.filter((n) => isUnreadNote(n, user, since)).length;
@@ -1524,7 +1507,7 @@ function Notes({ order, user, t, since, readOnly = false }: { order: OrderDetail
   return (
     <div className="card" id="notlar">
       {/* Bölüm / mesaj görüldü → yalnızca bu kullanıcının o bölümdeki uyarıları okundu (karar 228; tarayıcıda, çizimden sonra) */}
-      {!readOnly && <OrderSeen orderId={order.id} upTo={now.toISOString()} mark={markOrderSeenAction} />}
+      <OrderSeen orderId={order.id} upTo={now.toISOString()} mark={markOrderSeenAction} />
       <h2>
         {t('order.notes.title')}
         {unread > 0 && <span className="msg-count" data-unread-notes={unread} title={t('order.notes.unread', { n: unread })} aria-hidden="true">{countText(unread)}</span>}
@@ -1572,7 +1555,7 @@ function Notes({ order, user, t, since, readOnly = false }: { order: OrderDetail
         );
       })}
       </div>}
-      {!readOnly && userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
+      {userCan(user, 'NOTE_ADD') && <form action={addNoteAction} style={{ marginTop: 10 }}>
         <input type="hidden" name="id" value={order.id} />
         {/* Tek kullanımlık anahtar (karar 199): çift tıklama / yeniden gönderim ikinci mesajı yazmaz */}
         <input type="hidden" name="requestKey" value={randomUUID()} />

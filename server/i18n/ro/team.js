@@ -2,13 +2,6 @@
 export default {
   // Persoana din echipa internă văzută de client: fără nume, etichetă neutră de rol
   staffLabel: 'GKH · {role}',
-  // Vizualizare în echipă (decizia 301): agenții legați de același desenator implicit valid văd comenzile celorlalți
-  view: {
-    title: 'Doar vizualizare.',
-    text: 'Această comandă aparține colegului dumneavoastră (agent responsabil: {owner}). O puteți vedea deoarece sunteți legați de același desenator; nu puteți efectua acțiuni și nu puteți adăuga note sau fișiere.',
-    rowBadge: 'Vizualizare · responsabil: {owner}',
-    readOnly: 'doar vizualizare',
-  },
   errors: {
     NO_DRAWER: 'Comanda nu are desenator: setați un desenator implicit pentru agentul de vânzări responsabil (ecranul Utilizatori), apoi reîncercați.',
     SALES_UNASSIGNED: 'Comanda nu are agent de vânzări responsabil. Administratorul trebuie mai întâi să o atribuie unui agent.',

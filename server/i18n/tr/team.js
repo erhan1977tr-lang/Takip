@@ -2,13 +2,6 @@
 export default {
   // Müşterinin gördüğü iç ekip kişisi: ad yok, nötr rol etiketi
   staffLabel: 'GKH · {role}',
-  // Ekip görüntülemesi (karar 301): aynı geçerli varsayılan çizimciye bağlı satışçılar birbirinin siparişini GÖRÜR
-  view: {
-    title: 'Yalnızca görüntüleme.',
-    text: 'Bu sipariş ekip arkadaşınızın (sorumlu satışçı: {owner}). Aynı çizimciye bağlı olduğunuz için görüntüleyebilirsiniz; işlem yapamaz, not ya da dosya ekleyemezsiniz.',
-    rowBadge: 'Görüntüleme · sorumlu: {owner}',
-    readOnly: 'yalnızca görüntüleme',
-  },
   errors: {
     NO_DRAWER: 'Bu siparişin çizimcisi yok: sorumlu satışçıya Kullanıcılar ekranında varsayılan çizimci tanımlayın, sonra yeniden deneyin.',
     SALES_UNASSIGNED: 'Bu siparişin sorumlu satışçısı yok. Önce yönetici siparişi bir satışçıya atamalıdır.',
