@@ -132,9 +132,11 @@ dbTest('3–7: yeni sipariş doğru satışçı + çizimciye; satışçı deği�
   await run(o.id, 'send_to_drawing', 'hamza');
   assert.equal(await visible('erhan', o.id), true);
   assert.equal(await visible('meltem', o.id), false, 'diğer ekibin çizimcisi erişemez');
-  // Çizim başladıktan sonra satışçı (ve dolayısıyla çizimci) değişemez — çizimler korunur
+  // Çizim başladıktan sonra (çizim kaydı var) satışçı — ve dolayısıyla çizimci — değişemez; çizimler korunur
+  await db.drawing.create({ data: { orderId: o.id, version: 1, status: 'TASLAK', uploadedById: U.erhan.id } });
   assert.equal(await codeOf(run(o.id, 'assign_sales', 'admin', { salesUserId: U.murat.id, expectedVersion: await version(o.id) })), 'REASSIGN_BLOCKED');
-  await db.glassRoutingRule.deleteMany({});
+  // Otomatik yönlendirmeyi kapat (kurallar yalnızca eklenir; siparişler kurala bağlı olduğundan silinmez)
+  assert.ok((await saveRoutingRule(db, { input: { mode: 'MANUAL' }, actor: act(U.admin) })).ok);
 }));
 
 dbTest('ilk atama: çizimci satışçının varsayılanı; başka çizimcide çizim geçmişi varsa atama engellenir, kayıtlar değişmez', offline(async () => {
@@ -187,7 +189,8 @@ dbTest('pasif ekip: geçmiş ve hesaplar değişmez; yeni yönlendirme / atama e
   await setTeamActive(db, { id: t3.id, active: false, actor: act(U.admin) });
   assert.deepEqual(await setTeamActive(db, { id: T.gw, active: true, actor: act(U.admin) }), { ok: true, changed: true, routingWarning: false });
   assert.equal(await db.auditLog.count({ where: { action: 'FACTORY_TEAM_DEACTIVATED' } }), 2);
-  await db.glassRoutingRule.deleteMany({});
+  // Otomatik yönlendirmeyi kapat (kurallar yalnızca eklenir; siparişler kurala bağlı olduğundan silinmez)
+  assert.ok((await saveRoutingRule(db, { input: { mode: 'MANUAL' }, actor: act(U.admin) })).ok);
 }));
 
 dbTest('10: nakliye listesi bölüm başlığı ekip adı; ekip ara toplamları ve genel toplam; finansal hesaplar ayrı', offline(async () => {
