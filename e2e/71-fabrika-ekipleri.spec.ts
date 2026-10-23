@@ -65,7 +65,6 @@ test('yönetici iki fabrika ekibi kurar; çizimci çakışması reddedilir; pasi
 
 test('sipariş sayfası: "Sorumlu satışçı · Değiştir" formu kapalı; pasif ekip seçilemez; bağımsız çizimci formu yok; müşteri ekibi görmez', async ({ browser }) => {
   const db = await prisma();
-  const a = await db.user.findUniqueOrThrow({ where: { email: SALES } });
   const b = await db.user.findUniqueOrThrow({ where: { email: SALES_B } });
   // Yönlendirilebilir (teklif gönderilmemiş, çizim yok) A siparişi
   const c0 = await as(browser, CUSTOMER, CUST_PW);
