@@ -5,7 +5,7 @@ import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
 import { lineKindText } from '@/lib/labels';
 import { fmtDate, fmtM2 } from '@/lib/format';
-import { currentOffer, orderDetailInclude, orderScope, sanitizeOrder, sentOffer } from '@/lib/orders';
+import { currentOffer, orderDetailInclude, orderViewScope, sanitizeOrder, sentOffer } from '@/lib/orders';
 import { audit } from '@/lib/audit';
 import { canExportOffer, offerExportData, offerXlsx } from '@/server/orders/offer-export.js';
 import { offerPdf } from '@/server/pdf/offer.js';
@@ -25,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!user) return new Response(t('common.fileLoginRequired'), { status: 401 });
   const { id } = await ctx.params;
   const format = new URL(req.url).searchParams.get('format') === 'xlsx' ? 'xlsx' : 'pdf';
-  const raw = await db.order.findFirst({ where: { id, orderTypeCode: 'GLASS_ORDER', ...orderScope(user) }, include: orderDetailInclude });
+  const raw = await db.order.findFirst({ where: { id, orderTypeCode: 'GLASS_ORDER', ...orderViewScope(user) }, include: orderDetailInclude });
   if (!raw) return new Response(t('common.fileNotFound'), { status: 404 });
   const isAdmin = userCan(user, 'OFFER_SEND');
   const isSales = !isAdmin && userCan(user, 'OFFER_PREPARE');

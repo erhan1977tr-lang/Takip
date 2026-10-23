@@ -8,6 +8,7 @@ import { secureCookies } from '../env';
 import { homeFor } from '../roles';
 import { userCan, type Permission } from '../permissions';
 import { SESSION_TTL_MS, liveSession, recordActivity } from '../../server/auth/session-policy.js';
+import { loadSalesTeam } from '../../server/orders/sales-team.js';
 
 const COOKIE = 'takip_session';
 
@@ -77,7 +78,10 @@ const loadSession = cache(async () => {
   const { passwordHash: _passwordHash, customer, ...user } = live.session.user as User & { customer: Customer | null };
   // (alan listesi: server/orders/customer-view.js → INTERNAL_CUSTOMER_FIELDS)
   const firm = customer ? { ...customer, fxMarkupPercent: null, priceTableId: null, profilePriceTableId: null, groupName: null } : null;
-  return { user: { ...user, customer: firm }, remainingMs: live.remainingMs, idle: false };
+  // Satış ekibi (karar 301): yalnızca GÖRÜNTÜLEME kapsamı için (server/orders/scope.js → orderViewScope); her istekte okunur,
+  // böylece yöneticinin varsayılan çizimci değişikliği bir sonraki sayfada geçerlidir. Satış dışı rollerde null.
+  const salesTeam: string[] | null = await loadSalesTeam(db, user);
+  return { user: { ...user, customer: firm, salesTeam }, remainingMs: live.remainingMs, idle: false };
 });
 
 export async function getCurrentUser() {

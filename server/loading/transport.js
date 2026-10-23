@@ -121,14 +121,17 @@ export function buildTransportSections(crates, orders, { label = (name) => name,
  * Yüklemeler sayfasıyla aynı kural).
  * @param {any} db
  * @param {string} day "YYYY-MM-DD"
- * @param {{ label?: (name: string) => string, salesUserId?: string, teamName?: (id: string | null) => string }} [o]
- *   label: firma adının görene göre yazımı (satışa maskeli) · salesUserId: yalnızca bu satışçının sandık ve siparişleri ·
+ * @param {{ label?: (name: string) => string, salesUserId?: string | string[], teamName?: (id: string | null) => string }} [o]
+ *   label: firma adının görene göre yazımı (satışa maskeli) · salesUserId: yalnızca bu satışçının (dizi: bu satışçıların —
+ *   satış ekibinin görüntülemesi, karar 301) sandık ve siparişleri ·
  *   teamName: verilirse liste satışçı bölümleriyle döner (buildTransportSections)
  */
 export async function transportList(db, day, { label = (name) => name, salesUserId, teamName } = {}) {
   const d = dayDate(day);
-  // Satış (karar 300): yalnızca kendi sandıkları ve siparişleri
-  const team = salesUserId === undefined ? {} : { salesUserId: salesUserId || '__none__' };
+  // Satış (karar 300): yalnızca kendi sandıkları ve siparişleri; ekip görüntülemesinde (karar 301) ekibinkiler — her bölüm ayrı
+  const team = salesUserId === undefined ? {}
+    : Array.isArray(salesUserId) ? { salesUserId: { in: salesUserId.length ? salesUserId : ['__none__'] } }
+    : { salesUserId: salesUserId || '__none__' };
   const window = { gte: new Date(d.getTime() - 86_400_000), lt: new Date(d.getTime() + 2 * 86_400_000) };
   const [crates, orders, replanned] = await Promise.all([
     db.crate.findMany({

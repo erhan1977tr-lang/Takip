@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/session';
-import { orderScope } from '@/lib/orders';
+import { orderViewScope } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
 import { audit } from '@/lib/audit';
 import { resolveKey } from '@/lib/storage';
@@ -29,7 +29,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string; i
   if (!user) return new Response(t('common.fileLoginRequired'), { status: 401 });
   if (!userCan(user, 'ORDER_VIEW')) return new Response(t('common.fileNotFound'), { status: 404 });
   const { kind, id } = await ctx.params;
-  const scope = orderScope(user);
+  // Görüntüleme kapsamı (karar 301): satış ekibi arkadaşının sipariş / çizim dosyasını da indirir ve önizler (yalnızca okuma;
+  // FILE_DOWNLOAD / FILE_PREVIEW denetim kaydı görenin kimliğiyle). Diğer rollerde orderScope ile aynıdır.
+  const scope = orderViewScope(user);
 
   // Profil ürün görseli (katalog görseli; giriş yapmış herkese). Görsel kayıtları değişmez → önbelleğe alınabilir.
   if (kind === 'urun') {
@@ -188,7 +190,7 @@ async function previewResponse({ onizle, full, stat, file, userId, entity, id, o
  * dilinde üretilir (süreli bağlantı yok); kullanıcı başına istek sınırı vardır. Müşteriye iç ekipten kişi adı yazılmaz.
  */
 async function deliveryReportResponse({ id, userId, scope, locale, staff, t }: {
-  id: string; userId: string; scope: ReturnType<typeof orderScope>; locale: 'tr' | 'ro'; staff: boolean; t: Awaited<ReturnType<typeof getT>>['t'];
+  id: string; userId: string; scope: ReturnType<typeof orderViewScope>; locale: 'tr' | 'ro'; staff: boolean; t: Awaited<ReturnType<typeof getT>>['t'];
 }) {
   const gate = reportLimiter.take(userId);
   if (!gate.ok) {

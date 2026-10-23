@@ -1,7 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { db } from './db';
 import type { CurrentUser } from './auth/session';
-import { customerLabel, orderScope, sanitizeRows } from './orders';
+import { customerLabel, orderViewScope, sanitizeRows } from './orders';
+import { orderViewScope as viewScopeOf } from '../server/orders/scope.js';
 import { userCan, type Permission } from './permissions';
 import { dayKey, loadedOffer, orderLoad } from '../server/orders/loading.js';
 import { effectiveItems } from '../server/loading/confirmation.js';
@@ -42,7 +43,7 @@ const hideHost = <R extends { guestHostId: string | null }>(user: CurrentUser, r
 export async function ordersShippingBetween(user: CurrentUser, from: Date, to: Date): Promise<LoadRow[]> {
   return hideHost(user, sanitizeRows(user, await db.order.findMany({
     where: {
-      ...orderScope(user),
+      ...orderViewScope(user),
       orderTypeCode: 'GLASS_ORDER', // profil siparişleri depodan alınır; yükleme takvimine girmez
       onHold: false,
       status: { not: 'IPTAL' },
@@ -75,7 +76,7 @@ export async function replanRowsBetween(user: CurrentUser, from: Date, to: Date)
   const replans = await db.loadingReplan.findMany({
     where: {
       status: { not: 'CANCELLED' }, shipDay: { gte: from, lt: to },
-      order: { ...orderScope(user), orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' } },
+      order: { ...orderViewScope(user), orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' } },
     },
     include: { sourceItem: true, order: { include: loadInclude } },
     orderBy: [{ customerId: 'asc' }, { createdAt: 'asc' }],
@@ -175,11 +176,20 @@ export type CrateRow = Prisma.CrateGetPayload<{ include: typeof crateInclude }>;
 /**
  * [from, to) aralığındaki yükleme günlerinin sandıkları. Müşteri yalnızca kendi firmasının sandıklarını görür.
  */
+/**
+ * Satışın GÖRDÜĞÜ satışçı bölümleri (karar 301): ekibin (aynı geçerli varsayılan çizimciye bağlı satışçılar) sandıkları ve
+ * siparişleri — yalnızca görüntüleme. Kayıt her zaman yalnızca kendi bölümü (server/loading/crates.js → crateTeam).
+ * Tek kaynak: görüntüleme kapsamının satışçı koşulu (server/orders/scope.js → orderViewScope).
+ */
+export function salesView(user: CurrentUser): { in: string[] } {
+  return (viewScopeOf(user) as { salesUserId: { in: string[] } }).salesUserId;
+}
+
 export async function cratesBetween(user: CurrentUser, from: Date, to: Date): Promise<CrateRow[]> {
   // Müşteri: yalnızca kendi firması; satış (karar 300): yalnızca kendi bölümünün sandıkları; diğer iç roller: tüm firmalar
   // (eski düzenden kalmış, firması olmayan sandıklar hariç)
   const scope = user.appRole === 'MUSTERI' ? { customerId: user.customerId ?? '__none__' }
-    : user.appRole === 'SATIS' ? { customerId: { not: null }, salesUserId: user.id || '__none__' }
+    : user.appRole === 'SATIS' ? { customerId: { not: null }, salesUserId: salesView(user) }
     : { customerId: { not: null } };
   return db.crate.findMany({
     where: { ...scope, shipDay: { gte: from, lt: to } },
@@ -206,10 +216,10 @@ export async function guestCratesBetween(user: CurrentUser, from: Date, to: Date
   const sales = user.appRole === 'SATIS';
   const links = await db.crateOrder.findMany({
     where: {
-      crate: { shipDay: { gte: from, lt: to }, customerId: { not: null }, ...(sales ? { salesUserId: user.id || '__none__' } : {}) },
+      crate: { shipDay: { gte: from, lt: to }, customerId: { not: null }, ...(sales ? { salesUserId: salesView(user) } : {}) },
       // İptal edilmiş / kaldırılmış sipariş misafir yük olarak gösterilmez (AUD-15, P7). Satış (karar 300): yalnızca kendi
       // siparişleri ve kendi sandıkları
-      order: { status: { not: 'IPTAL' }, removedAt: null, ...(customer ? { customerId: user.customerId ?? '__none__' } : {}), ...(sales ? { salesUserId: user.id || '__none__' } : {}) },
+      order: { status: { not: 'IPTAL' }, removedAt: null, ...(customer ? { customerId: user.customerId ?? '__none__' } : {}), ...(sales ? { salesUserId: salesView(user) } : {}) },
     },
     select: {
       orderId: true, order: { select: { orderNo: true, customerId: true, guestHostId: true, customer: { select: { name: true } } } },
@@ -359,7 +369,7 @@ export async function confirmedDayRows(user: CurrentUser, day: string): Promise<
   const conf = await db.loadingConfirmation.findUnique({ where: { shipDay: new Date(`${day}T00:00:00Z`) }, select: { id: true } });
   if (!conf) return null;
   const items = await db.loadingConfirmationItem.findMany({
-    where: { confirmationId: conf.id, order: orderScope(user) },
+    where: { confirmationId: conf.id, order: orderViewScope(user) },
     orderBy: [{ orderId: 'asc' }, { sortOrder: 'asc' }, { revision: 'asc' }],
     include: { offerLine: { select: { crateFee: true } }, replan: { select: { fromDay: true } } },
   });
@@ -367,7 +377,7 @@ export async function confirmedDayRows(user: CurrentUser, day: string): Promise<
   const byOrder = new Map<string, (typeof items)[number][]>();
   for (const it of loaded) byOrder.set(it.orderId, [...(byOrder.get(it.orderId) ?? []), it]);
   if (byOrder.size === 0) return [];
-  const orders = await db.order.findMany({ where: { id: { in: [...byOrder.keys()] }, ...orderScope(user) }, include: loadInclude });
+  const orders = await db.order.findMany({ where: { id: { in: [...byOrder.keys()] }, ...orderViewScope(user) }, include: loadInclude });
   const rows: LoadRow[] = orders.map((o) => {
     const list = byOrder.get(o.id) ?? [];
     const base = o.offers.find((x) => x.status === 'GONDERILDI') ?? o.offers[0];

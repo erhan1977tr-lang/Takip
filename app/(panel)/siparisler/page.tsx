@@ -7,7 +7,7 @@ import { requirePermission, type CurrentUser } from '@/lib/auth/session';
 import { getT, type Dict, type MsgKey } from '@/lib/i18n';
 import { customerSummaryText, profileCustomerText, profileStageText, slaText } from '@/lib/labels';
 import { rich } from '@/lib/rich';
-import { customerLabel, drawingScope, orderAlertsFor, orderScope, sanitizeRows, unreadNotesFor } from '@/lib/orders';
+import { customerLabel, drawingScope, orderAlertsFor, orderScope, orderViewScope, sanitizeRows, unreadNotesFor } from '@/lib/orders';
 import { OrderAlert } from '@/components/OrderAlert';
 import { MsgCount } from '@/components/MsgCount';
 import { LiveSearch } from '@/components/LiveSearch';
@@ -388,6 +388,11 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
   const unread = await unreadNotesFor(user, rows.map((o) => o.id));
   // Okunmamış sipariş uyarıları (karar 224): kullanıcıya özel; sipariş açılınca yalnızca onun uyarıları okunur
   const alerts = await orderAlertsFor(user, rows.map((o) => o.id));
+  // Ekip görüntülemesi (karar 301): satışçının listesinde ekip arkadaşının siparişi "Görüntüleme · sorumlu: X" ile işaretlenir
+  const mateIds = user.appRole === 'SATIS' ? [...new Set(rows.map((o) => o.salesUserId).filter((x): x is string => !!x && x !== user.id))] : [];
+  const mates = new Map(mateIds.length
+    ? (await db.user.findMany({ where: { id: { in: mateIds } }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email])
+    : []);
   const groups = new Map<string, Row[]>();
   for (const o of rows) {
     const k = group ? t('orders.internal.shipGroup', { date: fmtDate(o.estimatedShipDate) }) : '';
@@ -412,6 +417,7 @@ async function InternalTable({ user, rows, empty, group = true }: { user: Curren
                     <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
                     <OrderAlert n={alerts.get(o.id)} label={t('orders.alerts.unread', { n: alerts.get(o.id) ?? 0 })} href={`/siparisler/${o.id}`} />
                     {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}
+                    {o.salesUserId && mates.has(o.salesUserId) && <> <Badge tone="muted">{t('team.view.rowBadge', { owner: mates.get(o.salesUserId)! })}</Badge></>}
                     {stockShort.has(o.id) && <> <Badge tone="danger">{t('profile.page.stock.mark')}</Badge></>}
                     {/* Revizyon istendi: satır kırmızı, rozet belirgin; DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167) */}
                     {revisionAsked(o) && <> <Badge tone="danger">{t('orders.internal.revisionRow')}</Badge></>}
@@ -484,9 +490,12 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     const qs = p.toString();
     return `/siparisler${qs ? `?${qs}` : ''}${hash}`;
   };
+  // Kapsam (karar 301): "Sıra bende" yalnızca kullanıcının kendi işi (orderScope — satış: sorumlusu olduğu siparişler);
+  // "Tüm aktif siparişler", arşiv ve onlardaki arama görüntüleme kapsamıyla (satış ekibi: aynı geçerli varsayılan çizimciye
+  // bağlı satışçıların siparişleri — yalnızca görüntüleme). Diğer rollerde iki kapsam aynıdır.
   const rows: Row[] = profileView ? [] : sanitizeRows(user, await db.order.findMany({
     where: {
-      ...orderScope(user),
+      ...(view === 'work' ? orderScope(user) : orderViewScope(user)),
       ...(teamPanel ? drawingScope : {}),
       ...searchWhere(sp.q),
       status: view === 'archive' ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },

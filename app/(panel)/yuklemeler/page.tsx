@@ -267,6 +267,12 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
   const teamNames = userCan(user, 'CRATE_EDIT') && user.appRole !== 'SATIS'
     ? new Map((await db.user.findMany({ where: { appRole: 'SATIS', type: 'INTERNAL' }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email]))
     : null;
+  // Ekip görüntülemesi (karar 301): satışçı, aynı geçerli varsayılan çizimciye bağlı ekip arkadaşlarının sandıklarını salt okunur
+  // görür (kayıt yine yalnızca kendi bölümü — server/loading/crates.js → crateTeam)
+  const mateIds = user.appRole === 'SATIS' ? (user.salesTeam ?? []).filter((x) => x !== user.id) : [];
+  const mateNames = new Map(mateIds.length
+    ? (await db.user.findMany({ where: { id: { in: mateIds } }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u.name || u.email])
+    : []);
   const { t, m, intl } = await getT();
   const { count } = counter(m, intl);
   const { firms, total } = sum;
@@ -317,7 +323,7 @@ async function DayDetail({ user, day, sum, crates, money, isCustomer, sp }: { us
           </p>
           {isCustomer
             ? <CustomerDay firm={firms[0]} money={money} t={t} />
-            : <FirmTable user={user} day={day} sum={sum} dayCrates={crates} money={money} sp={sp} teamNames={teamNames} t={t} m={m} />}
+            : <FirmTable user={user} day={day} sum={sum} dayCrates={crates} money={money} sp={sp} teamNames={teamNames} mateNames={mateNames} t={t} m={m} />}
           {relations && <CrateRelationsView rel={relations} t={t} />}
         </>
       )}
@@ -412,7 +418,7 @@ function FirmTable({ user, day, sum, dayCrates, money, sp, teamNames, t, m }: { 
                 </>
               )}
               orders={<FirmOrders firm={f} money={money} t={t} />}
-              crates={<FirmCrates user={user} firm={f} day={day} dayCrates={dayCrates} rowOf={rowOf} canEdit={canEdit} canPlace={canPlace} teamNames={teamNames} t={t} m={m} />}
+              crates={<FirmCrates user={user} firm={f} day={day} dayCrates={dayCrates} rowOf={rowOf} canEdit={canEdit} canPlace={canPlace} teamNames={teamNames} mateNames={mateNames} t={t} m={m} />}
             />
           );
         })}
@@ -522,11 +528,15 @@ function FirmOrders({ firm, money, t }: { firm: DayFirm; money: MoneyView; t: T 
  * firmanın sandığına konamaz ve firmanın misafir olmayan siparişi yoksa "+ Sandık ekle" kapalıdır (sunucu da reddeder —
  * server/loading/crates.js → saveDayCrates). Ev sahibinin sandık listesinde misafir camın sipariş / cam bilgisi görünür.
  */
-function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, teamNames, t, m }: {
+function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, teamNames, mateNames = new Map(), t, m }: {
   user: CurrentUser; firm: DayFirm; day: string; dayCrates: CrateRow[]; rowOf: Map<string, Row>; canEdit: boolean; canPlace: boolean;
-  /** Satışçı adları (karar 300 — yalnızca yönetici; satış yalnızca kendi bölümünü görür) */
-  teamNames: Map<string, string> | null; t: T; m: Dict;
+  /** Satışçı adları (karar 300 — yalnızca yönetici; satış yalnızca kendi bölümünü düzenler) */
+  teamNames: Map<string, string> | null;
+  /** Satış: ekip arkadaşlarının adları (karar 301) — bölümleri salt okunur gösterilir */
+  mateNames?: Map<string, string>; t: T; m: Dict;
 }) {
+  // Satışçı başka satışçının misafir yükü için sandık seçemez (sunucu da reddeder): yalnızca sorumlusu olduğu sipariş
+  const ownGuest = (orderId: string) => user.appRole !== 'SATIS' || rowOf.get(orderId)?.entry.o.salesUserId === user.id;
   const own = [...new Map(firm.rows.filter((r) => !r.guest).map((r) => [r.entry.orderId, { id: r.entry.orderId, orderNo: r.entry.orderNo }])).values()];
   const away = firm.rows.filter((r) => r.guest);
   const locked = firm.rows.length > 0 && own.length === 0;
@@ -538,7 +548,8 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, team
   const guestsOf = (crateId: string) => firm.guestsIn.filter((g) => g.crateId === crateId).map((g) => guestText(g.orderId)).filter(Boolean);
   const last = [...firm.crateList].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
   // Taşınan cam (tahmini ağırlığın sandıklara bölünmesi için): bu firmanın taşıdığı kendi siparişleri + misafir yük
-  const carriedKg = [...rowOf.values()].filter((r) => r.carrierId === firm.id).reduce((s, r) => s + r.entry.load.netKg, 0);
+  // Satış: yalnızca kendi bölümünün camı (ekip arkadaşının siparişleri yalnızca görüntülenir — karar 301)
+  const carriedKg = [...rowOf.values()].filter((r) => r.carrierId === firm.id && ownGuest(r.entry.orderId)).reduce((s, r) => s + r.entry.load.netKg, 0);
   const others = dayCrates.filter((c) => c.customer && c.customer.id !== firm.id).map((c) => ({ no: c.crateNo, label: customerLabel(user, c.customer!.name) }));
   // Satışçı bölümleri (karar 300): sandık yalnızca aynı satışçının siparişlerini taşır. Satış yalnızca kendi bölümünü görür
   // (veri sunucuda süzülmüş); yönetici firmanın o günkü her satışçısı için ayrı bölüm. Satışçısız eski sandıklar ilk bölümde.
@@ -602,6 +613,17 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, team
       }) : firm.crateList.length > 0 ? (
         <CrateList crates={firm.crateList} contents={(c) => [...(c.orderIds ?? []).filter((id) => rowOf.get(id)?.entry.customerId === firm.id).map((id) => rowOf.get(id)!.entry.orderNo), ...guestsOf(c.id)]} t={t} note />
       ) : <p className="muted small">{locked ? t('loading.firm.lockedNote') : t('loading.day.crates.readOnly')}</p>}
+      {/* Ekip arkadaşlarının sandıkları (karar 301): yalnızca görüntüleme — düzenleme yok */}
+      {canEdit && user.appRole === 'SATIS' && [...mateNames.entries()].map(([mateId, name]) => {
+        const list = firm.crateList.filter((c) => c.salesUserId === mateId);
+        if (list.length === 0) return null;
+        return (
+          <div key={mateId} className="team-view-crates" data-team-crates={mateId}>
+            <p className="small"><b>{name}</b> <span className="badge badge-muted">{t('team.view.readOnly')}</span></p>
+            <CrateList crates={list} contents={(c) => (c.orderIds ?? []).filter((id) => rowOf.get(id)?.entry.customerId === firm.id).map((id) => rowOf.get(id)!.entry.orderNo)} t={t} note />
+          </div>
+        );
+      })}
       {/* Ev sahibi (karar 124): bu firmanın sandıklarıyla gidecek başka firma siparişleri. Sandığı satış (CRATE_EDIT) seçer. */}
       {firm.guestsIn.length > 0 && (
         <div className="guest-box" data-owner={firm.id}>
@@ -609,7 +631,7 @@ function FirmCrates({ user, firm, day, dayCrates, rowOf, canEdit, canPlace, team
           {firm.guestsIn.map((x) => (
             <form key={`in-${x.orderId}-${x.crateId ?? ''}`} action={guestCrateAction} className="row small guest-line guest-in" data-order={x.orderId}>
               <span><Link className="order-no" href={`/siparisler/${x.orderId}`}>{x.orderNo}</Link> · {x.ownerName}{rowOf.get(x.orderId) && <span className="muted"> · {t('loading.firm.guestGlass', { glass: rowOf.get(x.orderId)!.entry.load.camAdet, m2: fmtM2(rowOf.get(x.orderId)!.entry.load.metraj) })}</span>}</span>
-              {canEdit && x.byHost ? (
+              {canEdit && x.byHost && ownGuest(x.orderId) ? (
                 firm.crateList.length > 0 ? (
                   <>
                     <input type="hidden" name="day" value={day} />

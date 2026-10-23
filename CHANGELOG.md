@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.17 — 23.10.2026 (geliştirme; 4.3.0 ile aynı paket — canlıda değil)
+
+**Satış ekibinin ortak görüntülemesi (karar 301).** Aynı GEÇERLİ (etkin, silinmemiş iç ekip çizimcisi) varsayılan çizimciye
+bağlı etkin satışçılar birbirlerinin cam siparişlerini, fabrika maliyetlerini (satış fiyatları), teklif bilgilerini, iç not ve
+dosyalarını, yüklemelerini ve sandıklarını **görür; değiştiremez**. Yeni tablo / alan yok: ekip var olan
+`User.defaultDrawerId`'den her istekte türetilir (`server/orders/sales-team.js`). Varsayılan çizimcisi olmayan ya da çizimcisi
+pasif / silinmiş satışçı yalnızca kendi siparişlerini görür.
+- Görüntüleme kapsamı `orderViewScope` yalnızca okuma yollarında: sipariş sayfası ve çizim görüntüleyici (`loadOrderView`),
+  "Tüm aktif siparişler" / arşiv ve aramaları, dosya indirme / önizleme, teklif PDF / Excel, yükleme günü / sandıklar / nakliye
+  listesi. Yazma kapsamı (`orderScope` / `actorScope`) DEĞİŞMEDİ: her işlem, not, dosya, telafi, PDF aktarımı, sandık kaydı
+  yalnızca sorumlu satışçıya açık; ekip arkadaşının siparişindeki doğrudan istek sunucuda reddedilir.
+- Ekip arkadaşının siparişi sayfada "Yalnızca görüntüleme" bilgisiyle açılır: işlem düğmesi, teklif düzenleyici, not / dosya
+  formu, telafi, tarih düzenleme, çeviriyi yeniden dene yok; okundu işareti yazılmaz. Listede "Görüntüleme · sorumlu: X" rozeti.
+- "Sıra bende", Teklifler görev listeleri, bildirimler ve okunmamış mesaj / uyarı sayaçları yalnızca sorumlu satışçının kendi
+  siparişleri. Ticari sahiplik, satışçı bazlı hesaplar ve sandık kayıt kuralları değişmedi; ekip arkadaşının sandık bölümü
+  yükleme gününde salt okunur listelenir.
+
 ## 4.3.16 — 22.10.2026 (yayın adayı; 4.3.0 ile aynı paket)
 
 Güvenlik yaması: `next` ve `eslint-config-next` 15.5.26 → 15.5.28 (yalnızca bu iki paket; kilit dosyası CI'da yeniden
