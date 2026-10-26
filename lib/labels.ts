@@ -72,7 +72,7 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   CONFLICT: 'order.errors.conflict',
   STALE_DRAWING: 'order.errors.staleDrawing',
   // Müşteri üretim onayı (4.2.1)
-  STALE_OFFER: 'order.errors.staleOffer',
+  OFFER_VERSION_STALE: 'order.errors.staleOffer',
   APPROVAL_DECIDED: 'order.errors.approvalDecided',
   CHANGE_NOTE_REQUIRED: 'order.errors.changeNoteRequired',
   CHANGE_NOTE_TOO_LONG: 'order.errors.changeNoteTooLong',

@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.3 — 26.10.2026
+
+Üretim onayı (4.2.1) düzeltmesi: eski teklif sürümü hata kodu `OFFER_VERSION_STALE` olarak ayrıldı (profil siparişinin
+`STALE_OFFER` mesajıyla çakışıyordu; tip kontrolü). Profil siparişinin mesajı değişmedi.
+
 ## 4.2.2 — 26.10.2026
 
 Güvenlik yaması: Next.js 15.5.26 → 15.5.28 (`next`, `eslint-config-next`). CI'nin bağımlılık taraması 15.5.26 için kritik

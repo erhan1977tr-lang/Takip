@@ -1002,7 +1002,7 @@ const ACTIONS = {
   async approve_production(h) {
     const { tx, order, actor, payload, now } = h;
     const offer = latestOffer(order);
-    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('STALE_OFFER');
+    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
     if (approvalOf(order) !== 'PENDING') throw new WorkflowError('APPROVAL_DECIDED');
     const r = await tx.offer.updateMany({
       where: { id: offer.id, status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null },
@@ -1031,7 +1031,7 @@ const ACTIONS = {
     const note = changeNote(payload.note);
     if (!note.ok) throw new WorkflowError(note.code);
     const offer = latestOffer(order);
-    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('STALE_OFFER');
+    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
     if (approvalOf(order) !== 'PENDING') throw new WorkflowError('APPROVAL_DECIDED');
     const locked = await priceLock(tx, order.id);
     if (locked.length) throw new WorkflowError('PRICE_LOCKED', { reasons: locked });

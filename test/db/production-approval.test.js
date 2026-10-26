@@ -136,7 +136,7 @@ dbTest('onaysız üretime geçmez; onay → olağan kural (üretim), kayıt: zam
   assert.equal(await codeOf(run(o.id, 'approve_production', 'custNoRight', { offerId: sent.id })), 'NOT_ALLOWED');
   assert.equal(await codeOf(run(o.id, 'approve_production', 'otherCust', { offerId: sent.id })), 'NOT_FOUND');
   // Ekranda görülen sürüm değil / sipariş sürümü eski
-  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: 'baska' })), 'STALE_OFFER');
+  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: 'baska' })), 'OFFER_VERSION_STALE');
   assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: sent.id, expectedVersion: order.version - 1 })), 'CONFLICT');
   assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR');
 
@@ -245,7 +245,7 @@ dbTest('ölçü değişikliği: açıklama zorunlu; sürüm korunur ve onaylanam
   assert.equal(v2.approvalDueAt.toISOString(), approvalDeadline(v2.sentAt).due.toISOString());
   assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR', 'yeni sürüm yeniden onay bekler');
   // Eski sürüm onaylanamaz; yeni sürüm onaylanır
-  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: v1.id })), 'STALE_OFFER');
+  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: v1.id })), 'OFFER_VERSION_STALE');
   await run(o.id, 'approve_production', 'cust', { offerId: v2.id });
   assert.equal((await orderOf(o.id)).status, 'URETIMDE');
   assert.equal((await db.offer.findUnique({ where: { id: v1.id } })).approvedAt, null, 'eski sürüm onaysız kalır');
@@ -267,7 +267,7 @@ dbTest('yöneticinin "teklifi güncelle"si hazırlıkta yeni sürüm açar → y
   await run(o.id, 'hold', 'sales');
   await run(o.id, 'unhold', 'sales');
   assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR', 'v2 onaylanmadı');
-  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: v1.id })), 'STALE_OFFER');
+  assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: v1.id })), 'OFFER_VERSION_STALE');
   await run(o.id, 'approve_production', 'cust', { offerId: v2.id });
   assert.equal((await orderOf(o.id)).status, 'URETIMDE');
 }));
