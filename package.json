@@ -1,6 +1,6 @@
 {
   "name": "takip",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "private": true,
   "type": "module",
   "description": "Takip — sipariş ve üretim portalı",
@@ -24,7 +24,7 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",
     "@prisma/client": "6.19.3",
-    "next": "15.5.26",
+    "next": "15.5.28",
     "nodemailer": "^6.10.0",
     "pdfjs-dist": "4.10.38",
     "react": "^19.1.0",
@@ -38,7 +38,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.20.0",
-    "eslint-config-next": "15.5.26",
+    "eslint-config-next": "15.5.28",
     "prisma": "6.19.3",
     "typescript": "~5.9.0"
   },

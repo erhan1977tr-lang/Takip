@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.2 — 26.10.2026
+
+Güvenlik yaması: Next.js 15.5.26 → 15.5.28 (`next`, `eslint-config-next`). CI'nin bağımlılık taraması 15.5.26 için kritik
+açık bildiriyor (CVE-2026-94543 — Pages Router SSG / ISR önbellek zehirlenmesi; 15.5.27'de düzeltildi). TAKİP App Router
+kullanır; uygulama davranışı değişmez. Bu sürüm olmadan CI'nin geri kalan adımları (lint, testler) çalışmıyor.
+
 ## 4.2.1 — 26.10.2026
 
 **Müşteri üretim onayı** (karar 305) — canlıdaki 4.2.0'ın üzerine, Fabrika Ekip Yönetimi (4.3.x) değişikliklerinden bağımsız.
