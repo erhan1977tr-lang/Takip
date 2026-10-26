@@ -290,7 +290,8 @@ dbTest('süre dolunca yöneticiye BİR KEZ bildirim; müşteri onay hakkını ka
   assert.deepEqual(rows.map((r) => r.userId).sort(), [people.admin.id, people.assistant.id].sort());
   assert.ok((await db.offer.findUnique({ where: { id: sent.id } })).approvalOverdueAt instanceof Date);
   assert.equal((await orderOf(o.id)).estimatedShipDate?.toISOString(), ship);
-  // Müşteri süre dolduktan sonra da onaylar
+  // Müşteri süre dolduktan sonra da onaylar (gerçek saat son tarihten sonra olsun diye son tarih geçmişe çekilir)
+  await db.offer.update({ where: { id: sent.id }, data: { approvalDueAt: new Date(Date.now() - 3_600_000) } });
   await run(o.id, 'approve_production', 'cust', { offerId: sent.id });
   assert.equal((await orderOf(o.id)).status, 'URETIMDE');
   const audit = await db.auditLog.findFirst({ where: { action: 'ORDER_TRANSITION', entityId: o.id, details: { path: ['action'], equals: 'approve_production' } } });
@@ -324,7 +325,7 @@ dbTest('proforma onaydan ÖNCE de istenir ve kesilir; siparişi üretime geçirm
   } finally {
     globalThis.fetch = real;
   }
-  assert.equal(calls.length, 1);
+  assert.equal(calls.filter((u) => u.endsWith('/factura/emitere')).length, 1, 'tek proforma kesimi (sahte FGO)');
   assert.equal(await db.fgoDocument.count({ where: { orderId: o.id, kind: 'PROFORMA' } }), 1);
   assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR', 'proforma üretime geçirmez');
   // Mali kayıt (proforma) varken yeni fiyat müşteriye gidemez: değişiklik talebi alınmaz (mevcut mali kilit kuralı)
