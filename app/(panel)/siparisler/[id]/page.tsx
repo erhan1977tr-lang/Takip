@@ -56,6 +56,8 @@ import { dwgUndoAction } from './actions';
 import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
+import { approvalDueText, approvalOverdue, approvalState, CHANGE_NOTE_MAX } from '@/server/orders/production-approval.js';
+import { approveProductionAction, requestOfferChangeAction } from './approval-actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -169,9 +171,13 @@ export default async function OrderPage({
     : [];
   const offer = currentOffer(order);
   const sent = sentOffer(order);
+  // Müşteri üretim onayı (4.2.1): işlemler en son sürüme göre (müşteri yalnızca gönderilmiş sürümleri alır — değişiklik
+  // istediği sürüm CHANGE_REQUESTED görünür); ekrandaki bilgi müşteriye gönderilmiş son sürümden
+  const approval = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: offer ?? null });
+  const approvalShown = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: sent ?? null });
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
-    drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
+    drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode, approval,
   });
   const can = (a: string) => acts.includes(a);
   // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
@@ -330,7 +336,7 @@ export default async function OrderPage({
           <div className="row">
             <span className="mono muted">{order.orderNo}</span>
             {isCustomer
-              ? <CustomerBadge status={order.status} drawing={order.drawingTrack} offer={sent ? 'GONDERILDI' : null} />
+              ? <CustomerBadge status={order.status} drawing={order.drawingTrack} offer={sent ? 'GONDERILDI' : null} approval={approvalShown} />
               : <OrderBadge status={order.status} onHold={order.onHold} />}
             {/* Çizim ekibi: adım çubuğu ve "sıra kimde" kartları yerine küçük durum rozetleri (karar 84) */}
             {drawerView && order.drawingTrack !== 'YOK' && <DrawingBadge track={order.drawingTrack} />}
@@ -433,7 +439,7 @@ export default async function OrderPage({
       */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
-      {isCustomer ? <CustomerActions order={order} user={user} can={can} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} t={t} cancelReasons={lockedCancel} />}
+      {isCustomer ? <CustomerActions order={order} user={user} can={can} approval={approvalShown} sent={sent} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} approval={approval} t={t} cancelReasons={lockedCancel} />}
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
       {drawerView && <DrawingReview order={order} user={user} can={can} undo={undo} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
@@ -528,6 +534,8 @@ export default async function OrderPage({
         />
       )}
 
+      {/* Müşteri üretim onayı (4.2.1) — iç ekip: onay durumu, son tarih, değişiklik talebinin notu (teklif tablosunun üstünde) */}
+      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo offer={sent} state={approvalShown} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} salesExport={!userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
           compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} compTag={compTagText} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
@@ -624,8 +632,8 @@ function History({ order, isCustomer, t, priceChanges = [] }: { order: OrderDeta
 }
 
 // ---------------- işlem kartları ----------------
-function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; t: T }) {
-  const s = customerSummaryText(t, { status: order.status, drawing: order.drawingTrack, offer: sentOffer(order) ? 'GONDERILDI' : null });
+function CustomerActions({ order, user, can, approval, sent, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; approval: string; sent?: OrderDetail['offers'][number]; t: T }) {
+  const s = customerSummaryText(t, { status: order.status, drawing: order.drawingTrack, offer: sentOffer(order) ? 'GONDERILDI' : null, approval });
   const latest = order.drawings[order.drawings.length - 1];
   // Müşteri ekranda gördüğü sürüme karar verir; bu arada yeni sürüm yüklendiyse işlem reddedilir
   const hidden = <><input type="hidden" name="id" value={order.id} />{latest && <input type="hidden" name="drawingId" value={latest.id} />}</>;
@@ -633,9 +641,12 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
   // Çizim hatalı bulundu (karar 167): düzeltilmiş dosya gönder (en az bir DWG / DXF) ya da fabrikadan çizim iste. İkisi de
   // onay yetkisi ister (çizim kararı); yetkisiz kullanıcı yalnızca görür. Asıl denetim sunucu işlemlerinde.
   const correction = order.drawingTrack === 'DUZELTME_BEKLIYOR' && order.status === 'HAZIRLANIYOR';
+  // Müşteri üretim onayı (4.2.1): en son gönderilen sürüm onay bekliyor
+  const approvalPending = approval === 'PENDING' && !!sent;
   return (
-    <div className={`card ${waiting || correction ? 'turn' : ''}`} id={correction ? 'duzeltme' : undefined}>
+    <div className={`card ${waiting || correction || approvalPending ? 'turn' : ''}`} id={correction ? 'duzeltme' : approvalPending ? 'uretim-onayi' : undefined}>
       <h2 style={{ marginBottom: 4 }}>{s.next}</h2>
+      {sent && approval !== 'NONE' && <CustomerApproval order={order} user={user} can={can} offer={sent} state={approval} t={t} />}
       {correction && !user.canApprove && <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.customer.correctionNoRight')}</div>}
       {correction && can('dwg_resubmit') && (
         <form action={dwgResubmitAction} className="drawing-upload" style={{ marginTop: 10 }}>
@@ -674,17 +685,95 @@ function CustomerActions({ order, user, can, t }: { order: OrderDetail; user: Cu
           {can('request_revision') && <Link className="btn" href={`/siparisler/${order.id}/cizim/${latest.id}?revizyon=1`}>{t('order.steps.request_revision')}</Link>}
         </div>
       )}
-      {!waiting && !correction && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
+      {!waiting && !correction && approval === 'NONE' && <p className="muted small">{t('order.customer.nothingToDo')}</p>}
     </div>
   );
 }
 
-function InternalActions({ order, user, can, acts, t, cancelReasons = [] }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; t: T; cancelReasons?: { code: string; ref?: string | null; kind?: string | null }[] }) {
+/**
+ * Müşteri üretim onayı (4.2.1): son tarih ve iki işlem — "Üretime alınmasını onaylıyorum" (ikinci doğrulama penceresi) ve
+ * "Ölçülerde değişiklik var" (zorunlu açıklama). Sürüm kimliği formla gider: işlem yalnızca ekranda görülen, en son
+ * gönderilmiş sürüme uygulanır (server/orders/transitions.js → approve_production / request_offer_change).
+ */
+function CustomerApproval({ order, user, can, offer, state, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; offer: OrderDetail['offers'][number]; state: string; t: T }) {
+  const n = order.offers.length - order.offers.findIndex((o) => o.id === offer.id);
+  const due = approvalDueText(offer.approvalDueAt);
+  const hidden = <><input type="hidden" name="id" value={order.id} /><input type="hidden" name="offerId" value={offer.id} /><input type="hidden" name="v" value={order.version} /></>;
+  if (state === 'APPROVED') return <div className="alert alert-ok" data-approval-state="APPROVED">{t('order.approval.approvedAt', { date: fmtDateTime(offer.approvedAt) })}</div>;
+  if (state === 'CHANGE_REQUESTED') {
+    return (
+      <div className="alert alert-info" data-approval-state="CHANGE_REQUESTED">
+        {t('order.approval.changeRequestedAt', { date: fmtDateTime(offer.changeRequestedAt) })}
+        {offer.changeNote && <div className="note" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}><b className="small">{t('order.approval.yourNote')}</b> {offer.changeNote}</div>}
+      </div>
+    );
+  }
+  return (
+    <div data-approval-state="PENDING">
+      <div className="alert alert-error" role="status">
+        <b>{t('order.approval.pendingTitle')}</b> {t('order.approval.pendingText')}
+        <div style={{ marginTop: 6 }} data-approval-due={offer.approvalDueAt ? new Date(offer.approvalDueAt).toISOString() : ''}>
+          <b>{due ? t('order.approval.deadline', { due }) : t('order.approval.noDeadline')}</b>
+        </div>
+        <div className="small" style={{ marginTop: 4 }}>{approvalOverdue(offer) ? t('order.approval.overdue') : t('order.approval.delayNote')}</div>
+      </div>
+      {!user.canApprove && <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.approval.noRight')}</div>}
+      <div className="row" style={{ marginTop: 12, gap: 8, alignItems: 'flex-start' }}>
+        <a className="btn" href="#teklif">{t('offer.view.titleCustomer')}</a>
+        {can('approve_production') && (
+          <form action={approveProductionAction}>
+            {hidden}
+            <ConfirmButton success message={t('order.approval.approveConfirm', { n })}>{t('order.approval.approve')}</ConfirmButton>
+          </form>
+        )}
+      </div>
+      {can('request_offer_change') && (
+        <details className="approval-change" style={{ marginTop: 12 }}>
+          <summary className="btn">{t('order.approval.change')}</summary>
+          <form action={requestOfferChangeAction} style={{ marginTop: 10 }}>
+            {hidden}
+            <label htmlFor="degisiklik-notu">{t('order.approval.changeLabel')}</label>
+            <textarea id="degisiklik-notu" name="note" rows={4} required maxLength={CHANGE_NOTE_MAX} />
+            <div className="hint">{t('order.approval.changeHint')}</div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <ConfirmButton outline message={t('order.approval.changeConfirm')}>{t('order.approval.changeSubmit')}</ConfirmButton>
+            </div>
+          </form>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** İç ekip: müşteri üretim onayının durumu (4.2.1) — salt bilgi; karar müşterinindir */
+function ApprovalInfo({ offer, state, versions, t }: { offer: OrderDetail['offers'][number]; state: string; versions: number; t: T }) {
+  if (state === 'APPROVED') return <div className="alert alert-ok" id="uretim-onayi" data-approval-state="APPROVED">{t('order.approval.staffApproved', { date: fmtDateTime(offer.approvedAt), n: versions })}</div>;
+  if (state === 'CHANGE_REQUESTED') {
+    return (
+      <div className="alert alert-warn" id="uretim-onayi" data-approval-state="CHANGE_REQUESTED">
+        <b>{t('order.approval.staffChange', { n: versions, date: fmtDateTime(offer.changeRequestedAt) })}</b>
+        {offer.changeNote && <div className="note" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }} data-change-note>{offer.changeNote}</div>}
+        <div className="small" style={{ marginTop: 6 }}>{t('order.approval.staffChangeNext')}</div>
+      </div>
+    );
+  }
+  const due = approvalDueText(offer.approvalDueAt);
+  const over = approvalOverdue(offer);
+  return (
+    <div className={`alert ${over ? 'alert-error' : 'alert-info'}`} id="uretim-onayi" data-approval-state="PENDING">
+      <b>{t('order.approval.staffPending', { n: versions })}</b>{' '}
+      {due ? t('order.approval.staffDeadline', { due }) : t('order.approval.staffNoDeadline')}
+      {over && <> <span className="badge badge-danger">{t('order.approval.staffOverdue')}</span></>}
+    </div>
+  );
+}
+
+function InternalActions({ order, user, can, acts, approval = 'NONE', t, cancelReasons = [] }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; approval?: string; t: T; cancelReasons?: { code: string; ref?: string | null; kind?: string | null }[] }) {
   const hidden = <input type="hidden" name="id" value={order.id} />;
   const offerStatus = currentOffer(order)?.status ?? null;
   const steps = acts.filter(isStep).map((a) => t(`order.steps.${a}`));
   const blockers = order.status === 'HAZIRLANIYOR' && !order.onHold && userCan(user, 'ORDER_REVIEW')
-    ? productionBlockers({ status: order.status, drawing: order.drawingTrack, offer: offerStatus })
+    ? productionBlockers({ status: order.status, drawing: order.drawingTrack, offer: offerStatus, approval })
     : [];
   const buttons: React.ReactNode[] = [];
   const btn = (key: string, action: (fd: FormData) => Promise<void>, label: string, extra?: React.ReactNode, confirm?: string) =>

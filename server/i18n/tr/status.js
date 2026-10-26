@@ -30,6 +30,9 @@ export default {
     drawing: { label: 'Çizim hazırlanıyor', next: 'Çizim hazırlanıyor' },
     correction: { label: 'Çizimde düzeltme gerekiyor', next: 'Düzeltilmiş dosya gönderin ya da fabrikadan çizim isteyin' },
     offerReady: { label: 'Teklifiniz hazır', next: 'Üretim planlanıyor' },
+    productionApproval: { label: 'Üretim onayı gereklidir', next: 'Teklifi kontrol edip üretim onayınızı verin' },
+    changeRequested: { label: 'Değişiklik talebiniz inceleniyor', next: 'Güncellenmiş teklif hazırlanıyor' },
+    productionApproved: { label: 'Üretim onayınız alındı', next: 'Üretim planlanıyor' },
     preparing: { label: 'Hazırlanıyor', next: 'Teklif hazırlanıyor' },
     production: { label: 'Onaylandı, üretimde', next: 'Üretimde' },
     shipped: { label: 'Yüklendi', next: 'Tamamlandı' },
@@ -52,6 +55,7 @@ export default {
     drawing_correction: 'Müşterinin çizim düzeltmesi bekleniyor',
     offer_at_admin: 'Teklif yönetici onayında',
     offer_not_sent: 'Teklif henüz müşteriye gönderilmedi',
+    offer_not_approved: 'Müşterinin üretim onayı bekleniyor',
   },
   sla: {
     left: '{h} sa kaldı',

@@ -345,6 +345,16 @@ export default {
       fake: "MOD DE TEST: furnizorul fals de traducere este activ (TRANSLATE_FAKE=1). Notele nu sunt traduse cu adevărat și nu se trimit cereri la Google. Această setare nu trebuie să existe pe serverul real.",
     },
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
+    // Aprobarea producției de către client (4.2.1)
+    productionApproval: {
+      title: "Aprobarea producției de către client",
+      intro: "Când este activă, pentru comenzile de sticlă create de acum înainte, după ce administratorul trimite oferta clientului, comanda intră în producție numai după aprobarea clientului „Aprob intrarea în producție” (termen: 2 zile lucrătoare în România).",
+      enabled: "Solicită aprobarea clientului pentru producție la comenzile noi",
+      on: "Activă — comenzile noi sunt incluse",
+      off: "Inactivă — regula veche (intrare în producție când oferta ajunge la client)",
+      hint: "Această setare stabilește doar comenzile create DE ACUM înainte. Comenzile existente nu se modifică; la dezactivare, comenzile deja incluse continuă să ceară aprobarea. Regulile proformei și ale altor documente nu se modifică.",
+      saved: "Setarea aprobării producției a fost salvată.",
+    },
     accounting: {
       title: "Avertizare comenzi nefacturate după încărcare",
       days: "Număr de zile după înregistrarea „Încărcare efectuată”",

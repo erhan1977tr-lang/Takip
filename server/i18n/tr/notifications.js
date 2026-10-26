@@ -19,6 +19,12 @@ export default {
   soundOff: 'Kapalı',
   soundHint: 'Yalnızca sesi açar / kapatır; zil, açılır bildirim ve e-postalar etkilenmez.',
   order: 'Sipariş {orderNo}',
+  // Müşteri üretim onayı (4.2.1): teklif gönderildi ve onay bekleniyor (müşterinin zili)
+  productionApproval: {
+    customer: 'Üretim onayınız bekleniyor',
+    due: 'son onay: {due} (Romanya saati)',
+    noDue: 'son onay tarihi belirlenemedi',
+  },
   types: {
     LOADING_NOT_LOADED: { title: 'Yüklenmeyen cam: yeniden planlama gerekli' },
     LOADING_REPLANNED: { title: 'Yüklenmeyen cam ileri yüklemeye aktarıldı', customer: 'Yüklenmeyen camınız yeni yükleme gününe aktarıldı' },
@@ -46,6 +52,8 @@ export default {
     AUTH_LOCKED: { title: 'Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi' },
     // Tedarik ve satın alma (Paket 6) — yalnızca yöneticiye
     SUPPLIER_ETA: { title: 'Tedarikçi siparişi: tahmini yükleme 2 gün içinde' },
+    // Müşteri üretim onayı (4.2.1): süre doldu, onay yok — yöneticiye, sürüm başına bir kez
+    PRODUCTION_APPROVAL_OVERDUE: { title: 'Üretim onayı gecikti: müşteri teklifi henüz onaylamadı' },
     SUPPLIER_EMAIL_FAILED: { title: 'Tedarikçi sipariş e-postası gönderilemedi' },
     // Sipariş mesajı (Paket 9, karar 199): mesajın metni bildirime girmez
     ORDER_NOTE_ADDED: { title: 'Siparişte yeni mesaj', customer: 'Siparişinizde yeni mesaj var' },
@@ -76,6 +84,7 @@ export default {
     DOC_INVOICE: 'belge {ref}',
     AUTH_LOCKED: '{user}',
     SUPPLIER_ETA: '{ref} · {supplier} · tahmini yükleme {date}',
+    PRODUCTION_APPROVAL_OVERDUE: 'son onay günü {date}',
     SUPPLIER_EMAIL_FAILED: '{ref}',
   },
 };

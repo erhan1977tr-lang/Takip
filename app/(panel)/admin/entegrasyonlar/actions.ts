@@ -17,6 +17,7 @@ import { getEnv } from '@/lib/env';
 import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting/uninvoiced.js';
 import { saveTranslateSettings, testTranslation } from '@/server/notes/translation.js';
 import { signResult } from '@/server/security/signed-param.js';
+import { saveApprovalSetting } from '@/server/orders/production-approval-service.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -111,6 +112,17 @@ export async function saveAccountingAction(formData: FormData) {
   revalidatePath('/admin/entegrasyonlar');
   revalidatePath('/admin/muhasebe/cam');
   redirect(back({ ok: 'accounting' }) + '#muhasebe');
+}
+
+/**
+ * Müşteri üretim onayı (4.2.1): aç / kapat. Yalnızca bundan sonra oluşturulan müşteri cam siparişlerini belirler;
+ * mevcut siparişlere geriye dönük hiçbir şey yazılmaz. Servis yetkiyi ayrıca denetler (SETTINGS_MANAGE).
+ */
+export async function saveProductionApprovalAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  await saveApprovalSetting(db, { enabled: formData.get('enabled') === 'on', actor: await actorOf(user) });
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'productionApproval' }) + '#uretim-onayi');
 }
 
 /**

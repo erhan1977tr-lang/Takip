@@ -7,6 +7,8 @@ export default {
   // İşlem sonrası bildirim (?ok=<kod>)
   ok: {
     created: 'Siparişiniz alındı. Satış ekibi inceleyip size dönecek.',
+    production_approved: 'Üretim onayınız alındı. Teşekkürler.',
+    offer_change_requested: 'Değişiklik talebiniz iletildi. Güncellenmiş teklif hazırlanınca size gönderilecek.',
     to_drawing: 'Sipariş çizim ekibine yönlendirildi. Teklifi de şimdi hazırlayabilirsiniz.',
     to_offer: 'Çizim gerekmiyor olarak işaretlendi. Teklif tablosunu doldurup yöneticiye gönderin.',
     held: 'Sipariş beklemeye alındı.',
@@ -407,6 +409,36 @@ export default {
       },
     },
   },
+  // Müşteri üretim onayı (4.2.1) — server/orders/production-approval.js
+  approval: {
+    title: 'Üretim onayı',
+    pendingTitle: 'Üretim onayınız bekleniyor',
+    pendingText: 'Lütfen aşağıdaki teklifteki cam türlerini, ölçüleri, adetleri ve fiyatları kontrol edin. Siparişinizin üretime alınması için onayınız zorunludur.',
+    deadline: 'Son onay tarihi: {due} (Romanya saati)',
+    noDeadline: 'Son onay tarihi belirlenemedi. Lütfen GKH ile iletişime geçin.',
+    overdue: 'Onay süresi doldu. Onay vermeye devam edebilirsiniz; gecikme planlanan yükleme tarihini etkileyebilir.',
+    delayNote: 'Onayın gecikmesi planlanan yükleme tarihini etkileyebilir.',
+    approve: 'ÜRETİME ALINMASINI ONAYLIYORUM',
+    approveConfirm: 'Teklif (sürüm {n}): cam türlerini, ölçüleri, adetleri ve fiyatları kontrol ettiniz mi? Onayınızla siparişiniz üretime alınabilir. Onaylıyor musunuz?',
+    change: 'ÖLÇÜLERDE DEĞİŞİKLİK VAR',
+    changeLabel: 'Değişiklik açıklaması (zorunlu)',
+    changeHint: 'Ölçüleri ve fiyatları siz değiştiremezsiniz: satış ekibi açıklamanıza göre düzeltip yeni teklif gönderir; yeni teklif yeniden onayınızı ister.',
+    changeSubmit: 'Değişiklik talebini gönder',
+    changeConfirm: 'Değişiklik talebiniz satış ekibine iletilecek; bu teklif sürümü artık onaylanamayacak. Gönderilsin mi?',
+    noRight: 'Üretim onayı vermek için yetkiniz yok; firmanızın onay yetkili kullanıcısı onaylayabilir.',
+    approvedAt: 'Üretim onayınız alındı: {date}',
+    changeRequestedAt: 'Değişiklik talebiniz iletildi ({date}). Güncellenmiş teklif hazırlanıyor; hazır olunca yeniden onayınız istenecek.',
+    yourNote: 'Açıklamanız',
+    // İç ekip görünümü
+    staffPending: 'Müşterinin üretim onayı bekleniyor (teklif sürümü {n}).',
+    staffDeadline: 'Son onay tarihi: {due} (Romanya saati)',
+    staffNoDeadline: 'Son onay tarihi hesaplanamadı: Romanya tatil verisi eksik (Ayarlar → Çalışma Takvimleri). Müşteri yine de onaylayabilir.',
+    staffOverdue: 'Süre doldu',
+    staffApproved: 'Müşteri üretim onayı verdi: {date} (teklif sürümü {n}).',
+    staffChange: 'Müşteri teklif sürümü {n} için değişiklik istedi ({date}):',
+    staffChangeNext: 'Satış teklifi düzeltip yöneticiye gönderir; yönetici kontrol edip müşteriye gönderdiğinde yeni sürüm yeniden onay ister.',
+    listBadge: 'Onay gerekli',
+  },
   // Sunucu işlemlerinin hata mesajları (?error=...)
   errors: {
     notAllowed: 'Bu işlem şu anda yapılamaz (sipariş durumu değişmiş olabilir). Sayfayı yenileyin.',
@@ -462,6 +494,11 @@ export default {
     pdfImportStale: 'Ön izleme bu arada değişti (teklif, katalog ya da başka bir aktarım). Ön izlemeyi yenileyip yeniden deneyin.',
     pdfImportEmpty: 'Aktarılacak PDF seçilmedi.',
     priceLocked: 'Fiyat değiştirilemez: siparişin mali ya da yükleme kaydı var; geçmiş fiyat bu kayıtlarda değişmez.',
+    // Müşteri üretim onayı (4.2.1)
+    staleOffer: 'Bu arada teklifin yeni bir sürümü gönderildi ya da teklif değişti. Lütfen güncel teklifi inceleyin.',
+    approvalDecided: 'Bu teklif sürümü için karar zaten verildi (onay ya da değişiklik talebi). Sayfayı yenileyin.',
+    changeNoteRequired: 'Değişiklik talebi için açıklama zorunludur: neyin değişmesi gerektiğini yazın.',
+    changeNoteTooLong: 'Açıklama çok uzun (en fazla 2000 karakter).',
     cancelLocked: 'Sipariş iptal edilemez: mali ya da yükleme kaydı var; önce mutabakat gerekir.',
   },
   // Mali / operasyonel kilit nedenleri (Paket 4 — fiyat değişikliği ve silme; server/orders/financial-lock.js)

@@ -14,6 +14,13 @@ export default {
   footer: 'Bu e-posta Takip portalı (GKH Trading Invest SRL) tarafından otomatik gönderildi. Bağlantıyı açmak için giriş yapmanız gerekir.',
   // Yöneticinin e-postaları (Yönetici Paneli Paketi 1, karar 218): olayın açıklaması — tutar yazılmaz
   description: 'Açıklama',
+  // Müşteri üretim onayı (4.2.1): teklif gönderildi / güncellendi e-postası (müşterinin dilinde)
+  approval: {
+    deadline: 'Son onay tarihi',
+    roTime: 'Romanya saati',
+    noDeadline: 'Belirlenemedi — lütfen GKH ile iletişime geçin',
+    text: 'Lütfen teklifteki cam türlerini, ölçüleri, adetleri ve fiyatları kontrol edin. Siparişinizin üretime alınması için onayınız zorunludur. Onay süresi teklifin gönderilmesinden itibaren 2 iş günüdür (yukarıdaki son onay tarihi). Onayın gecikmesi planlanan yükleme tarihini etkileyebilir. Onaylamak ya da ölçülerde değişiklik bildirmek için siparişi açın.',
+  },
   admin: {
     priceOverride: 'Satış fabrika fiyatını değiştirdi',
     // {n}: fabrika fiyat tablosundaki fiyattan farklı satır sayısı

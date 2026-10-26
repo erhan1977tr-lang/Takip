@@ -14,6 +14,7 @@ import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 import { customerMailLang, snapshotLang } from './lang.js';
+import { approvalDueText } from '../orders/production-approval.js';
 
 /**
  * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
@@ -160,6 +161,10 @@ const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, da
  */
 export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null, payload = null }) {
   const t = (k, params) => translate(recipient.locale, k, params);
+  // Müşteri üretim onayı (4.2.1): yalnızca müşteriye giden "teklif gönderildi / güncellendi" e-postasında, olay onay
+  // bekleyen bir sürümü taşıyorsa (kuyruk verisi payload.approval — gönderim anında yazılır)
+  const approval = !recipient.role && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED')
+    && payload?.approval && typeof payload.approval === 'object' ? payload.approval : null;
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
   const admin = adminText(type, payload, t);
   const what = recipient.role
@@ -179,9 +184,11 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.note ? [[t('notify.revisionNote'), String(revision.note).slice(0, 2000)]] : []),
     // Yöneticinin e-postalarında olayın açıklaması (tutar yazılmaz — ayrıntı sipariş sayfasında ve "Önemli kararlar"da)
     ...(recipient.role && admin?.detail ? [[t('notify.description'), admin.detail]] : []),
+    // Müşteri üretim onayı (4.2.1): son onay tarihi (Romanya saati; hesaplanamadıysa açıkça belirtilir)
+    ...(approval ? [[t('notify.approval.deadline'), approvalDueText(approval.due) ? `${approvalDueText(approval.due)} (${t('notify.approval.roTime')})` : t('notify.approval.noDeadline')]] : []),
   ];
   const subject = `${order.orderNo} — ${what}`;
-  const extra = DELIVERY_DAY_TYPES.includes(type) ? t('notify.deliveryNote') : null;
+  const extra = DELIVERY_DAY_TYPES.includes(type) ? t('notify.deliveryNote') : approval ? t('notify.approval.text') : null;
   const text = [...rows.map(([k, v]) => `${k}: ${v}`), ...(extra ? ['', extra] : []), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
   // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
   const html = brandedHtml({ lang: recipient.locale, title: subject, body: `<p style="margin:0 0 12px"><b>${esc(what)}</b></p>

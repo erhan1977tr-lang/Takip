@@ -19,6 +19,12 @@ export default {
   soundOff: 'Dezactivat',
   soundHint: 'Activează / dezactivează doar sunetul; clopoțelul, notificările pop-up și e-mailurile nu sunt afectate.',
   order: 'Comanda {orderNo}',
+  // Aprobarea producției de către client (4.2.1): oferta a fost trimisă și se așteaptă aprobarea (clopoțelul clientului)
+  productionApproval: {
+    customer: 'Se așteaptă aprobarea dvs. pentru producție',
+    due: 'termen de aprobare: {due} (ora României)',
+    noDue: 'termenul de aprobare nu a putut fi stabilit',
+  },
   types: {
     LOADING_NOT_LOADED: { title: 'Sticlă neîncărcată: este necesară replanificarea' },
     LOADING_REPLANNED: { title: 'Sticla neîncărcată a fost replanificată', customer: 'Sticla neîncărcată a fost replanificată la o nouă zi de încărcare' },
@@ -46,6 +52,8 @@ export default {
     AUTH_LOCKED: { title: 'Securitate: autentificarea unui cont a fost blocată după prea multe încercări greșite' },
     // Aprovizionare (Pachetul 6) — doar administratorului
     SUPPLIER_ETA: { title: 'Comandă furnizor: încărcare estimată în 2 zile' },
+    // Aprobarea producției (4.2.1): termen depășit, fără aprobare — către administrator, o singură dată pe versiune
+    PRODUCTION_APPROVAL_OVERDUE: { title: 'Aprobarea producției întârzie: clientul nu a aprobat încă oferta' },
     SUPPLIER_EMAIL_FAILED: { title: 'E-mailul comenzii către furnizor nu a putut fi trimis' },
     // Mesaj la comandă (Pachetul 9, decizia 199): textul mesajului nu intră în notificare
     ORDER_NOTE_ADDED: { title: 'Mesaj nou la comandă', customer: 'Aveți un mesaj nou la comandă' },
@@ -76,6 +84,7 @@ export default {
     DOC_INVOICE: 'document {ref}',
     AUTH_LOCKED: '{user}',
     SUPPLIER_ETA: '{ref} · {supplier} · încărcare estimată {date}',
+    PRODUCTION_APPROVAL_OVERDUE: 'termen de aprobare {date}',
     SUPPLIER_EMAIL_FAILED: '{ref}',
   },
 };

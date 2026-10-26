@@ -348,6 +348,16 @@ export default {
       fake: "TEST MODU: sahte çeviri sağlayıcısı açık (TRANSLATE_FAKE=1). Notlar gerçekten çevrilmiyor ve Google'a istek gitmiyor. Gerçek sunucuda bu ayar bulunmamalı.",
     },
     // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
+    // Müşteri üretim onayı (4.2.1)
+    productionApproval: {
+      title: "Müşteri üretim onayı",
+      intro: "Açıkken, bundan sonra oluşturulan müşteri cam siparişlerinde yönetici teklifi müşteriye gönderdiğinde sipariş üretime geçmeden önce müşterinin \"Üretime alınmasını onaylıyorum\" onayı beklenir (süre: 2 Romanya iş günü).",
+      enabled: "Yeni siparişlerde müşteri üretim onayı iste",
+      on: "Açık — yeni siparişler kapsamda",
+      off: "Kapalı — eski kural (teklif müşteriye gidince üretime geçiş)",
+      hint: "Bu anahtar yalnızca bundan SONRA oluşturulan siparişleri belirler. Mevcut siparişler değişmez; kapatıldığında da daha önce kapsama girmiş siparişler onay istemeye devam eder. Proforma ve diğer belge kuralları değişmez.",
+      saved: "Üretim onayı ayarı kaydedildi.",
+    },
     accounting: {
       title: "Fatura edilmemiş sipariş uyarısı",
       days: "\"Yükleme yapıldı\" kaydından sonra gün sayısı",

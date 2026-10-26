@@ -35,8 +35,8 @@ export async function OfferBadge({ status }: { status: string | null | undefined
 }
 
 /** Müşterinin gördüğü tek rozet. */
-export async function CustomerBadge({ status, drawing, offer }: { status: string; drawing: string; offer: string | null }) {
+export async function CustomerBadge({ status, drawing, offer, approval }: { status: string; drawing: string; offer: string | null; approval?: string }) {
   const { t } = await getT();
-  const s = customerSummaryText(t, { status, drawing, offer });
+  const s = customerSummaryText(t, { status, drawing, offer, approval });
   return <Badge tone={s.tone}>{s.label}</Badge>;
 }

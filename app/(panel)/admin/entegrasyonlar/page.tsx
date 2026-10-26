@@ -7,7 +7,7 @@ import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
 import { AV_ERRORS, safeSignature } from '@/server/files/clamav.js';
 import {
-  saveAccountingAction, saveAntivirusAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
+  saveAccountingAction, saveAntivirusAction, saveProductionApprovalAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
   testAntivirusAction, testFgoAction, testTranslateAction,
 } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
@@ -17,6 +17,7 @@ import { getEnv } from '@/lib/env';
 import { SERVER_IGNORED, ignoredOnServer } from '@/server/env.js';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
+import { getApprovalSetting } from '@/server/orders/production-approval-service.js';
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 import { SettingsTabs } from './SettingsTabs';
@@ -85,6 +86,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   // Fatura numarasını FGO verir; burada yalnızca yöneticinin (varsa) tek seferlik elle numarası gösterilir
   const nextInvoice = manualInvoiceNumber(fgo);
   const accounting = await getAccountingSettings(db);
+  // Müşteri üretim onayı (4.2.1): yalnızca bundan sonra oluşturulan müşteri cam siparişlerini kapsar
+  const approval = full ? await getApprovalSetting(db) : null;
   // Not çevirisi (karar 127): anahtarın kendisi buraya hiç gelmez — yalnızca kayıtlı olup olmadığı
   const [noteTr, trFailed] = await Promise.all([getTranslateSettings(db), failedTranslations(db)]);
   const trBad = ['KEY', 'KEY_FORMAT', 'FORBIDDEN'].includes(sp.detail ?? '') ? sp.detail : 'KEY_FORMAT';
@@ -216,6 +219,22 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <button className="btn btn-primary">{t('common.save')}</button>
         </div>
         <div className="hint">{t('admin.integrations.accounting.hint', { max: UNINVOICED_MAX_DAYS })}</div>
+      </form>
+      </>)}
+
+      {/* Müşteri üretim onayı (4.2.1): iş akışı anahtarı — yalnızca SETTINGS_MANAGE. Açık / kapalı yalnızca YENİ siparişleri
+          belirler; mevcut siparişler değişmez (geriye dönük hiçbir şey yazılmaz). */}
+      {full && approval && (<>
+      {sp.ok === 'productionApproval' && <div className="alert alert-ok">{t('admin.integrations.productionApproval.saved')}</div>}
+      <form action={saveProductionApprovalAction} className="card" id="uretim-onayi">
+        <h2>{t('admin.integrations.productionApproval.title')}</h2>
+        <p className="muted small">{t('admin.integrations.productionApproval.intro')}</p>
+        <label className="check"><input type="checkbox" name="enabled" defaultChecked={approval.enabled} data-production-approval-enabled /> {t('admin.integrations.productionApproval.enabled')}</label>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn btn-primary">{t('common.save')}</button>
+          <span className="muted small" data-production-approval-state={approval.enabled ? 'on' : 'off'}>{approval.enabled ? t('admin.integrations.productionApproval.on') : t('admin.integrations.productionApproval.off')}</span>
+        </div>
+        <div className="hint">{t('admin.integrations.productionApproval.hint')}</div>
       </form>
       </>)}
 

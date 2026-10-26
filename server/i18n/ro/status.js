@@ -30,6 +30,9 @@ export default {
     drawing: { label: 'Desen în pregătire', next: 'Se pregătește desenul' },
     correction: { label: 'Desenul necesită corecturi', next: 'Trimiteți fișierul corectat sau cereți desenul fabricii' },
     offerReady: { label: 'Oferta dvs. este gata', next: 'Se planifică producția' },
+    productionApproval: { label: 'Este necesară aprobarea pentru producție', next: 'Verificați oferta și aprobați intrarea în producție' },
+    changeRequested: { label: 'Solicitarea dvs. de modificare este analizată', next: 'Se pregătește oferta actualizată' },
+    productionApproved: { label: 'Aprobarea dvs. pentru producție a fost primită', next: 'Se planifică producția' },
     preparing: { label: 'În pregătire', next: 'Se pregătește oferta' },
     production: { label: 'Aprobată, în producție', next: 'În producție' },
     shipped: { label: 'Încărcată', next: 'Finalizată' },
@@ -52,6 +55,7 @@ export default {
     drawing_correction: 'Se așteaptă corectura desenului de la client',
     offer_at_admin: 'Oferta este la aprobarea administratorului',
     offer_not_sent: 'Oferta nu a fost încă trimisă clientului',
+    offer_not_approved: 'Se așteaptă aprobarea clientului pentru producție',
   },
   sla: {
     left: '{h} h rămase',

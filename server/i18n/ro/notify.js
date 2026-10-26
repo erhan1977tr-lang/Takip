@@ -14,6 +14,13 @@ export default {
   footer: 'Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL). Pentru a deschide linkul trebuie să vă autentificați.',
   // E-mailurile administratorului (Pachetul 1 al panoului de administrare, decizia 218): descrierea evenimentului — fără sume
   description: 'Descriere',
+  // Aprobarea producției de către client (4.2.1): e-mailul „oferta a fost trimisă / actualizată” (în limba clientului)
+  approval: {
+    deadline: 'Termen de aprobare',
+    roTime: 'ora României',
+    noDeadline: 'Nu a putut fi stabilit — vă rugăm să contactați GKH',
+    text: 'Vă rugăm să verificați tipurile de sticlă, dimensiunile, cantitățile și prețurile din ofertă. Aprobarea dvs. este obligatorie pentru intrarea comenzii în producție. Termenul de aprobare este de 2 zile lucrătoare de la trimiterea ofertei (termenul de mai sus). Întârzierea aprobării poate afecta data de încărcare planificată. Deschideți comanda pentru a aproba sau pentru a semnala modificări de dimensiuni.',
+  },
   admin: {
     priceOverride: 'Vânzările au modificat prețul fabricii',
     // {n}: numărul de rânduri cu preț diferit de tabelul de prețuri al fabricii
