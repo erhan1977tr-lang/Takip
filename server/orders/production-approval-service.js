@@ -4,7 +4,7 @@ import { can } from '../auth/permissions.js';
 import { notifyStaff } from '../notifications/inapp.js';
 import { localClock } from '../calendar/rules.js';
 import { writeAudit } from './journal.js';
-import { APPROVAL_SETTING_KEY, APPROVAL_TIME_ZONE, approvalSettingOn } from './production-approval.js';
+import { APPROVAL_SETTING_KEY, APPROVAL_STATUSES, APPROVAL_TIME_ZONE, approvalCutoff, approvalSettingOn } from './production-approval.js';
 
 const FORBIDDEN = Object.freeze({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => !!actor && can(actor.role, 'SETTINGS_MANAGE');
@@ -15,30 +15,33 @@ const REMIND_BATCH = 200;
 /** Bu kadar eski son tarih artık taranmaz (bildirim zaten süre dolduktan sonraki ilk turda gider) */
 const REMIND_LOOKBACK_MS = 30 * 86_400_000;
 
-/** Özellik anahtarı (yalnızca okunur): { enabled, since } */
+/** Özellik anahtarı (yalnızca okunur): { enabled, cutoff, since } */
 export async function getApprovalSetting(db) {
   const row = await db.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
   const v = row?.value && typeof row.value === 'object' && !Array.isArray(row.value) ? row.value : {};
-  return { enabled: approvalSettingOn(v), since: typeof v.since === 'string' ? v.since : null };
+  return { enabled: approvalSettingOn(v), cutoff: approvalCutoff(v), since: typeof v.since === 'string' ? v.since : null };
 }
 
 /**
- * Özellik anahtarını değiştirir (SETTINGS_MANAGE). Yalnızca BUNDAN SONRA oluşturulan siparişlerin kapsamını belirler:
- * mevcut siparişlerin bayrağı ve teklifleri değişmez (açarken de kapatırken de geriye dönük hiçbir şey yazılmaz).
- * @param {any} db  @param {{ enabled: boolean, actor: { id: string, role: string, ip?: string | null } }} p
+ * Özellik anahtarını ve kesim gününü değiştirir (SETTINGS_MANAGE). Yalnızca BUNDAN SONRA oluşturulan siparişlerin kapsamını
+ * belirler (açık + tahmini yükleme ≥ kesim): mevcut siparişlerin bayrağı ve teklifleri değişmez — mevcut siparişler yalnızca
+ * açık onaylı geçiş işlemiyle kapsama alınır (production-approval-enroll.js). Kapatınca geriye dönük hiçbir şey yazılmaz.
+ * @param {any} db  @param {{ enabled: boolean, cutoff?: string | null, actor: { id: string, role: string, ip?: string | null } }} p
  */
-export async function saveApprovalSetting(db, { enabled, actor }) {
+export async function saveApprovalSetting(db, { enabled, cutoff = null, actor }) {
   if (!allowed(actor)) return FORBIDDEN;
   const on = enabled === true;
+  if (cutoff != null && cutoff !== '' && approvalCutoff({ cutoff }) !== cutoff) return { ok: false, code: 'BAD_CUTOFF' };
   return db.$transaction(async (tx) => {
     const row = await tx.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
-    const before = approvalSettingOn(row?.value);
-    if (before === on) return { ok: true, changed: false };
-    const value = { enabled: on, since: new Date().toISOString() };
+    const before = { enabled: approvalSettingOn(row?.value), cutoff: approvalCutoff(row?.value) };
+    const after = { enabled: on, cutoff: cutoff || before.cutoff };
+    if (before.enabled === after.enabled && before.cutoff === after.cutoff) return { ok: true, changed: false };
+    const value = { ...after, since: new Date().toISOString() };
     await tx.integrationSetting.upsert({ where: { key: APPROVAL_SETTING_KEY }, create: { key: APPROVAL_SETTING_KEY, value }, update: { value } });
     await writeAudit(tx, {
       action: 'PRODUCTION_APPROVAL_SETTING', entityType: 'IntegrationSetting', entityId: APPROVAL_SETTING_KEY,
-      userId: actor.id ?? null, details: { before, after: on },
+      userId: actor.id ?? null, details: { before: before.enabled, after: on, cutoffBefore: before.cutoff, cutoff: after.cutoff },
     }, actor);
     return { ok: true, changed: true };
   });
@@ -56,7 +59,7 @@ export async function remindApprovalOverdue(db, { now = new Date(), log = () => 
     where: {
       status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null, approvalOverdueAt: null,
       approvalDueAt: { lte: now, gte: new Date(now.getTime() - REMIND_LOOKBACK_MS) },
-      order: { productionApprovalRequired: true, status: 'HAZIRLANIYOR', removedAt: null },
+      order: { productionApprovalRequired: true, status: { in: [...APPROVAL_STATUSES] }, removedAt: null },
     },
     orderBy: { approvalDueAt: 'asc' },
     take: REMIND_BATCH,

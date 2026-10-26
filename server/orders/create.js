@@ -14,7 +14,8 @@ import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { parseCustomerOrderNo } from './order-number.js';
 import { assertOrderRate } from './create-rate.js';
-import { APPROVAL_SETTING_KEY, approvalSettingOn } from './production-approval.js';
+import { APPROVAL_SETTING_KEY, approvalCutoff, approvalSettingOn, inApprovalScope } from './production-approval.js';
+import { dayKey } from './loading.js';
 
 /**
  * Firmanın bu tipteki bir sonraki sipariş numarası: yalnızca rakamdan oluşan ETKİN numaraların en büyüğü + 1 (metin —
@@ -128,14 +129,16 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     }
     const allFiles = [...draftFiles, ...files];
     if (allFiles.length === 0) throw new WorkflowError('NO_FILES');
-    // Müşteri üretim onayı (4.2.1): özellik açıksa bu sipariş kapsama girer (yalnızca yeni siparişler; ayar sonradan
-    // değişse de siparişin kuralı değişmez). Ayar yoksa / kapalıysa eski kural.
+    // Müşteri üretim onayı (4.2.1, karar 305): ayar açık ve tahmini yükleme günü kesim günü (06.11.2026) ya da sonrasıysa
+    // sipariş kapsama girer (bir kez yazılır; ayar sonradan değişse de siparişin kuralı değişmez). Aksi halde eski kural.
     const approvalSetting = await tx.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
-    const productionApprovalRequired = approvalSettingOn(approvalSetting?.value);
+    const estimatedShipDate = glassLoadingDate(now, getEnv().APP_TIMEZONE);
+    const productionApprovalRequired = approvalSettingOn(approvalSetting?.value)
+      && inApprovalScope(dayKey(estimatedShipDate), approvalCutoff(approvalSetting?.value));
     const order = await tx.order.create({
       data: {
         orderNo, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', title, customerId: firm.id, createdById: actor.id,
-        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
+        status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate,
         camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null, productionApprovalRequired,
         items: { create: items },
         files: {

@@ -437,6 +437,7 @@ export default {
     staffApproved: 'Müşteri üretim onayı verdi: {date} (teklif sürümü {n}).',
     staffChange: 'Müşteri teklif sürümü {n} için değişiklik istedi ({date}):',
     staffChangeNext: 'Satış teklifi düzeltip yöneticiye gönderir; yönetici kontrol edip müşteriye gönderdiğinde yeni sürüm yeniden onay ister.',
+    staffChangeNextProduction: 'Sipariş üretimde: teklifi yönetici "Teklifi güncelle" ile düzeltip müşteriye gönderir (satış üretimdeki siparişin teklifini düzenleyemez); yeni sürüm yeniden onay ister. Sipariş durumu değişmez.',
     listBadge: 'Onay gerekli',
   },
   // Sunucu işlemlerinin hata mesajları (?error=...)

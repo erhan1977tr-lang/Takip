@@ -535,7 +535,7 @@ export default async function OrderPage({
       )}
 
       {/* Müşteri üretim onayı (4.2.1) — iç ekip: onay durumu, son tarih, değişiklik talebinin notu (teklif tablosunun üstünde) */}
-      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo offer={sent} state={approvalShown} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
+      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo offer={sent} state={approvalShown} status={order.status} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} salesExport={!userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
           compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} compTag={compTagText} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
@@ -746,14 +746,14 @@ function CustomerApproval({ order, user, can, offer, state, t }: { order: OrderD
 }
 
 /** İç ekip: müşteri üretim onayının durumu (4.2.1) — salt bilgi; karar müşterinindir */
-function ApprovalInfo({ offer, state, versions, t }: { offer: OrderDetail['offers'][number]; state: string; versions: number; t: T }) {
+function ApprovalInfo({ offer, state, status, versions, t }: { offer: OrderDetail['offers'][number]; state: string; status: string; versions: number; t: T }) {
   if (state === 'APPROVED') return <div className="alert alert-ok" id="uretim-onayi" data-approval-state="APPROVED">{t('order.approval.staffApproved', { date: fmtDateTime(offer.approvedAt), n: versions })}</div>;
   if (state === 'CHANGE_REQUESTED') {
     return (
       <div className="alert alert-warn" id="uretim-onayi" data-approval-state="CHANGE_REQUESTED">
         <b>{t('order.approval.staffChange', { n: versions, date: fmtDateTime(offer.changeRequestedAt) })}</b>
         {offer.changeNote && <div className="note" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }} data-change-note>{offer.changeNote}</div>}
-        <div className="small" style={{ marginTop: 6 }}>{t('order.approval.staffChangeNext')}</div>
+        <div className="small" style={{ marginTop: 6 }}>{status === 'URETIMDE' ? t('order.approval.staffChangeNextProduction') : t('order.approval.staffChangeNext')}</div>
       </div>
     );
   }

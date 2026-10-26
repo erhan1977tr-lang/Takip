@@ -398,8 +398,9 @@ model Order {
 
   revisionCount     Int         @default(0)
   isEscalated       Boolean     @default(false)
-  // Müşteri üretim onayı (4.2.1): özellik açıkken oluşturulan müşteri cam siparişi → müşteriye gönderilen her teklif
-  // sürümü üretimden önce müşterinin onayını bekler. Oluşturulurken bir kez yazılır; eski siparişler false (eski kural).
+  // Müşteri üretim onayı (4.2.1, karar 305): planlanan yükleme tarihi kesim günü (06.11.2026) ya da sonrası olan cam
+  // siparişi → müşteriye gönderilen her teklif sürümü müşterinin onayını bekler. Yeni siparişte oluşturulurken, mevcut
+  // siparişte açık onaylı geçiş işleminde bir kez yazılır; kesimden önceki siparişler false (eski kural).
   productionApprovalRequired Boolean @default(false)
 
   items             OrderItem[]
@@ -684,6 +685,7 @@ model Offer {
 
   // Müşteri üretim onayı (4.2.1 — server/orders/production-approval.js). Yalnızca kapsamdaki siparişin hazırlıkta
   // gönderilen sürümünde dolar. approvalDueAt: gönderimden itibaren 2 Romanya iş günü (tatil verisi yoksa boş).
+  approvalRequestedAt    DateTime? // onay talebinin müşteriye gönderildiği an (gönderim ya da mevcut sipariş için geçiş anı)
   approvalDueAt          DateTime?
   approvalOverdueAt      DateTime? // yöneticiye gecikme bildirimi gönderildi (sürüm başına bir kez)
   approvedAt             DateTime?

@@ -28,6 +28,7 @@ export default {
   OFFER_UPDATED: { label: 'Teklif yönetici tarafından güncellendi', customer: 'Teklifiniz güncellendi' },
   OFFER_CHECKED: { label: 'Yönetici teklifi yeni çizime göre kontrol etti, değişiklik yok' },
   PRODUCTION_APPROVED: { label: 'Müşteri üretime alınmasını onayladı', customer: 'Üretime alınmasını onayladınız' },
+  PRODUCTION_APPROVAL_REQUESTED: { label: 'Müşteriden üretim onayı istendi (mevcut teklif)', customer: 'Üretim onayınız istendi' },
   OFFER_CHANGE_REQUESTED: { label: 'Müşteri teklifte değişiklik istedi (ölçüler)', customer: 'Teklifte değişiklik istediniz' },
   UNDO_DRAWING: { label: 'Çizime gönderme geri alındı', customer: 'Sipariş yeniden inceleniyor' },
   UNDO_NO_DRAWING: { label: 'Teklife gönderme geri alındı' },

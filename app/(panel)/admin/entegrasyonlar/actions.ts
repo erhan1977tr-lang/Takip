@@ -120,7 +120,8 @@ export async function saveAccountingAction(formData: FormData) {
  */
 export async function saveProductionApprovalAction(formData: FormData) {
   const user = await requirePermission('SETTINGS_MANAGE');
-  await saveApprovalSetting(db, { enabled: formData.get('enabled') === 'on', actor: await actorOf(user) });
+  const r = await saveApprovalSetting(db, { enabled: formData.get('enabled') === 'on', cutoff: String(formData.get('cutoff') ?? ''), actor: await actorOf(user) });
+  if (!r.ok) redirect(back({ error: 'productionApproval' }) + '#uretim-onayi');
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'productionApproval' }) + '#uretim-onayi');
 }

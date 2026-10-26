@@ -348,11 +348,13 @@ export default {
     // Aprobarea producției de către client (4.2.1)
     productionApproval: {
       title: "Aprobarea producției de către client",
-      intro: "Când este activă, pentru comenzile de sticlă create de acum înainte, după ce administratorul trimite oferta clientului, comanda intră în producție numai după aprobarea clientului „Aprob intrarea în producție” (termen: 2 zile lucrătoare în România).",
-      enabled: "Solicită aprobarea clientului pentru producție la comenzile noi",
-      on: "Activă — comenzile noi sunt incluse",
+      intro: "Când este activă, pentru comenzile de sticlă cu data de încărcare planificată în ziua limită sau după, fiecare versiune a ofertei trimise clientului așteaptă aprobarea clientului „Aprob intrarea în producție” (termen: 2 zile lucrătoare în România). Comanda în pregătire nu intră în producție fără aprobare; starea comenzii aflate în producție nu se modifică, aprobarea este urmărită separat.",
+      enabled: "Solicită aprobarea clientului pentru producție",
+      cutoff: "Ziua limită (încărcare planificată în această zi sau după)",
+      badCutoff: "Ziua limită nu este validă; alegeți o zi în formatul AAAA-LL-ZZ.",
+      on: "Activă — comenzile noi cu încărcare de la ziua limită sunt incluse",
       off: "Inactivă — regula veche (intrare în producție când oferta ajunge la client)",
-      hint: "Această setare stabilește doar comenzile create DE ACUM înainte. Comenzile existente nu se modifică; la dezactivare, comenzile deja incluse continuă să ceară aprobarea. Regulile proformei și ale altor documente nu se modifică.",
+      hint: "Setarea stabilește comenzile noi (o singură dată, la creare). Comenzile EXISTENTE nu se modifică prin acest buton: sunt incluse pe server printr-o operațiune de tranziție cu previzualizare și cod de confirmare. La dezactivare, comenzile deja incluse continuă să ceară aprobarea. Regulile proformei și ale altor documente nu se modifică.",
       saved: "Setarea aprobării producției a fost salvată.",
     },
     accounting: {

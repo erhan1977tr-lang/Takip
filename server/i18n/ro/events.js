@@ -28,6 +28,7 @@ export default {
   OFFER_UPDATED: { label: 'Ofertă actualizată de administrator', customer: 'Oferta dvs. a fost actualizată' },
   OFFER_CHECKED: { label: 'Administratorul a verificat oferta față de noul desen, fără modificări' },
   PRODUCTION_APPROVED: { label: 'Clientul a aprobat intrarea în producție', customer: 'Ați aprobat intrarea în producție' },
+  PRODUCTION_APPROVAL_REQUESTED: { label: 'S-a solicitat clientului aprobarea producției (oferta actuală)', customer: 'Vi s-a solicitat aprobarea pentru producție' },
   OFFER_CHANGE_REQUESTED: { label: 'Clientul a cerut modificări în ofertă (dimensiuni)', customer: 'Ați cerut modificări în ofertă' },
   UNDO_DRAWING: { label: 'Trimiterea la desen a fost anulată', customer: 'Comanda este din nou în analiză' },
   UNDO_NO_DRAWING: { label: 'Trimiterea la ofertă a fost anulată' },

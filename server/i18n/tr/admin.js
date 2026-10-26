@@ -351,11 +351,13 @@ export default {
     // Müşteri üretim onayı (4.2.1)
     productionApproval: {
       title: "Müşteri üretim onayı",
-      intro: "Açıkken, bundan sonra oluşturulan müşteri cam siparişlerinde yönetici teklifi müşteriye gönderdiğinde sipariş üretime geçmeden önce müşterinin \"Üretime alınmasını onaylıyorum\" onayı beklenir (süre: 2 Romanya iş günü).",
-      enabled: "Yeni siparişlerde müşteri üretim onayı iste",
-      on: "Açık — yeni siparişler kapsamda",
+      intro: "Açıkken, planlanan yükleme tarihi kesim günü ya da sonrası olan cam siparişlerinde müşteriye gönderilen her teklif sürümü müşterinin \"Üretime alınmasını onaylıyorum\" onayını bekler (süre: 2 Romanya iş günü). Hazırlıktaki sipariş onaysız üretime geçmez; üretimdeki siparişin durumu değişmez, onay ayrıca izlenir.",
+      enabled: "Müşteri üretim onayı iste",
+      cutoff: "Kesim günü (planlanan yükleme bu gün ya da sonrası)",
+      badCutoff: "Kesim günü geçersiz; YYYY-AA-GG biçiminde bir gün seçin.",
+      on: "Açık — kesim gününden itibaren yüklenecek yeni siparişler kapsamda",
       off: "Kapalı — eski kural (teklif müşteriye gidince üretime geçiş)",
-      hint: "Bu anahtar yalnızca bundan SONRA oluşturulan siparişleri belirler. Mevcut siparişler değişmez; kapatıldığında da daha önce kapsama girmiş siparişler onay istemeye devam eder. Proforma ve diğer belge kuralları değişmez.",
+      hint: "Anahtar yeni siparişleri belirler (oluşturulurken bir kez). MEVCUT siparişler bu düğmeyle değişmez: sunucuda ön izlemeli, onay kodlu geçiş işlemiyle kapsama alınır. Kapatıldığında daha önce kapsama girmiş siparişler onay istemeye devam eder. Proforma ve diğer belge kuralları değişmez.",
       saved: "Üretim onayı ayarı kaydedildi.",
     },
     accounting: {

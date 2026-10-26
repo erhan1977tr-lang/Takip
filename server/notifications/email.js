@@ -45,6 +45,8 @@ export const NOTIFY_RULES = {
   ORDER_DRAWING_UPLOADED: () => ['customer'],
   ORDER_OFFER_SENT: () => ['customer'],
   ORDER_OFFER_UPDATED: () => ['customer'],
+  // Müşteri üretim onayı (karar 305): mevcut siparişin geçişte açılan onay talebi — müşteriye (onay metni + son tarih)
+  ORDER_PRODUCTION_APPROVAL_REQUESTED: () => ['customer'],
   ORDER_PROFILE_OFFER_SENT: () => ['customer'],
   ORDER_PROFORMA: () => ['customer'],
   ORDER_INVOICED: () => ['customer'],
@@ -163,7 +165,7 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
   const t = (k, params) => translate(recipient.locale, k, params);
   // Müşteri üretim onayı (4.2.1): yalnızca müşteriye giden "teklif gönderildi / güncellendi" e-postasında, olay onay
   // bekleyen bir sürümü taşıyorsa (kuyruk verisi payload.approval — gönderim anında yazılır)
-  const approval = !recipient.role && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED')
+  const approval = !recipient.role && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')
     && payload?.approval && typeof payload.approval === 'object' ? payload.approval : null;
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
   const admin = adminText(type, payload, t);

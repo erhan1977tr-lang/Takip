@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  APPROVAL_BUSINESS_DAYS, approvalDeadline, approvalDueText, approvalOnSend, approvalOverdue, approvalSettingOn, approvalState, changeNote, localToInstant,
+  APPROVAL_BUSINESS_DAYS, APPROVAL_CUTOFF_DEFAULT, approvalCutoff, inApprovalScope, approvalDeadline, approvalDueText, approvalOnSend, approvalOverdue, approvalSettingOn, approvalState, changeNote, localToInstant,
 } from '../server/orders/production-approval.js';
 import { availableActions, customerSummary, productionBlockers, shouldAutoProduce, EVENTS } from '../server/orders/rules.js';
 import { STAFF_EVENT_POLICY } from '../server/orders/order-view.js';
@@ -13,6 +13,7 @@ import { renderNotification } from '../server/notifications/email.js';
 import { INAPP_RULES, renderInApp } from '../server/notifications/inapp.js';
 import { ALERT_SECTIONS } from '../server/notifications/order-alerts.js';
 import { translate } from '../server/i18n/index.js';
+import { enrollCategory } from '../server/orders/production-approval-enroll.js';
 
 const due = (iso) => approvalDeadline(new Date(iso));
 const iso = (r) => r.due?.toISOString() ?? null;
@@ -67,7 +68,7 @@ test('süre: tatil verisi olmayan yıl sessizce hesaplanmaz', () => {
   assert.deepEqual(approvalDeadline('bozuk'), { due: null, noData: false, day: null });
   // Gönderimde: bayraklı sipariş + veri yok → alan boş, olay "son tarih yok"
   const s = approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR' }, new Date('2027-12-30T10:00:00Z'));
-  assert.deepEqual(s, { data: { approvalDueAt: null }, event: { approval: { due: null } }, noData: true });
+  assert.deepEqual(s, { data: { approvalRequestedAt: new Date('2027-12-30T10:00:00Z'), approvalDueAt: null }, event: { approval: { due: null } }, noData: true });
 });
 
 test('süre: depo takviminin elle kapatılan günleri sayılmaz (yalnızca resmî kural)', () => {
@@ -80,8 +81,11 @@ test('gönderimde onay: yalnızca bayraklı ve hazırlıktaki sipariş', () => {
   const now = new Date('2026-10-26T08:30:00Z');
   assert.deepEqual(approvalOnSend({ productionApprovalRequired: false, status: 'HAZIRLANIYOR' }, now), { data: null, event: null, noData: false });
   assert.deepEqual(approvalOnSend({ status: 'HAZIRLANIYOR' }, now), { data: null, event: null, noData: false });
-  assert.deepEqual(approvalOnSend({ productionApprovalRequired: true, status: 'URETIMDE' }, now), { data: null, event: null, noData: false });
+  for (const st of ['YENI', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.deepEqual(approvalOnSend({ productionApprovalRequired: true, status: st }, now), { data: null, event: null, noData: false }, st);
+  // Üretimdeki siparişte de (kapsam kararı 26.10.2026) yeni sürüm onay ister; talep anı = gönderim anı
+  assert.equal(approvalOnSend({ productionApprovalRequired: true, status: 'URETIMDE' }, now).data.approvalDueAt.toISOString(), '2026-10-28T08:30:00.000Z');
   const r = approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR' }, now);
+  assert.equal(r.data.approvalRequestedAt, now);
   assert.equal(r.data.approvalDueAt.toISOString(), '2026-10-28T08:30:00.000Z');
   assert.equal(r.event.approval.due, '2026-10-28T08:30:00.000Z');
 });
@@ -89,7 +93,8 @@ test('gönderimde onay: yalnızca bayraklı ve hazırlıktaki sipariş', () => {
 test('onay durumu', () => {
   const sent = { status: 'GONDERILDI' };
   assert.equal(approvalState({ required: false, status: 'HAZIRLANIYOR', offer: sent }), 'NONE');
-  assert.equal(approvalState({ required: true, status: 'URETIMDE', offer: sent }), 'NONE');
+  assert.equal(approvalState({ required: true, status: 'URETIMDE', offer: sent }), 'PENDING', 'üretimdeki sipariş de onay ister');
+  for (const st of ['YENI', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.equal(approvalState({ required: true, status: st, offer: sent }), 'NONE', st);
   assert.equal(approvalState({ required: true, status: 'HAZIRLANIYOR', offer: null }), 'NONE');
   assert.equal(approvalState({ required: true, status: 'HAZIRLANIYOR', offer: { status: 'HAZIRLANIYOR' } }), 'NONE');
   assert.equal(approvalState({ required: true, status: 'HAZIRLANIYOR', offer: sent }), 'PENDING');
@@ -126,7 +131,8 @@ test('müşteri işlemleri: onay yetkisi + bekleyen onay; diğer rollerde yok', 
   for (const a of ['NONE', 'APPROVED', 'CHANGE_REQUESTED']) assert.equal(cust({ approval: a }).includes('approve_production'), false, a);
   assert.equal(cust({}).includes('approve_production'), false, 'verilmezse eski davranış');
   assert.equal(availableActions({ role: 'MUSTERI', canApprove: false, ...p, approval: 'PENDING' }).includes('approve_production'), false);
-  assert.equal(cust({ approval: 'PENDING', status: 'URETIMDE' }).includes('approve_production'), false);
+  assert.equal(cust({ approval: 'PENDING', status: 'URETIMDE' }).includes('approve_production'), true, 'üretimdeki siparişte de');
+  assert.equal(cust({ approval: 'PENDING', status: 'YUKLENDI' }).includes('approve_production'), false);
   assert.equal(cust({ approval: 'PENDING', orderType: 'PROFILE_ORDER' }).includes('approve_production'), false);
   for (const role of ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS', 'CIZIM', 'DENETIMCI']) {
     const a = availableActions({ role, canApprove: true, ...p, approval: 'PENDING' });
@@ -145,6 +151,10 @@ test('müşterinin gördüğü durum: "Üretim onayı gereklidir"', () => {
   assert.equal(customerSummary({ ...p, approval: 'PENDING' }).key, 'productionApproval');
   assert.equal(customerSummary({ ...p, approval: 'CHANGE_REQUESTED' }).key, 'changeRequested');
   assert.equal(customerSummary({ ...p, approval: 'APPROVED' }).key, 'productionApproved');
+  assert.equal(customerSummary({ ...p, status: 'URETIMDE', approval: 'PENDING' }).key, 'productionApproval');
+  assert.equal(customerSummary({ ...p, status: 'URETIMDE', approval: 'CHANGE_REQUESTED' }).key, 'changeRequested');
+  assert.equal(customerSummary({ ...p, status: 'URETIMDE', approval: 'APPROVED' }).key, 'production');
+  assert.equal(customerSummary({ ...p, status: 'URETIMDE' }).key, 'production', 'eski davranış');
   // Çizim onayı önce gelir
   assert.equal(customerSummary({ ...p, drawing: 'ONAY_BEKLIYOR', approval: 'PENDING' }).key, 'awaitingApproval');
   assert.equal(translate('tr', 'status.customer.productionApproval.label'), 'Üretim onayı gereklidir');
@@ -236,4 +246,46 @@ test('yapı: onay yalnızca iş akışı servisinden yazılır; proforma / muhas
   for (const p of ['server/glass/billing.js', 'server/glass/batch.js', 'server/glass/invoice-batch.js', 'server/orders/financial-lock.js', 'server/integrations/fgo.js', 'server/loading/crates.js', 'server/loading/confirmation.js', 'server/accounting/receivables.js']) {
     assert.doesNotMatch(read(p), /production-approval|approvalState|approvedAt|productionApprovalRequired/, p);
   }
+});
+
+test('kapsam: planlanan yükleme günü ≥ kesim günü (varsayılan 06.11.2026)', () => {
+  assert.equal(APPROVAL_CUTOFF_DEFAULT, '2026-11-06');
+  assert.equal(approvalCutoff(null), '2026-11-06');
+  assert.equal(approvalCutoff({ enabled: true, cutoff: '2026-12-01' }), '2026-12-01');
+  for (const bad of ['2026-13-01', '06.11.2026', '', 5, null]) assert.equal(approvalCutoff({ cutoff: bad }), '2026-11-06', String(bad));
+  assert.equal(inApprovalScope('2026-11-06', '2026-11-06'), true);
+  assert.equal(inApprovalScope('2027-01-02', '2026-11-06'), true);
+  assert.equal(inApprovalScope('2026-11-05', '2026-11-06'), false);
+  assert.equal(inApprovalScope(null, '2026-11-06'), false);
+});
+
+test('geçiş kategorisi: yüklenmiş / faturalı / telafi asla yazılmaz; güncel teklif müşterideyse talep', () => {
+  const sent = { status: 'GONDERILDI' };
+  const f = { loaded: false, finalInvoiced: false };
+  assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [sent] }, f), 'REQUEST');
+  assert.equal(enrollCategory({ status: 'URETIMDE', offers: [sent] }, f), 'REQUEST');
+  assert.equal(enrollCategory({ status: 'URETIMDE', offers: [sent] }, { ...f, loaded: true }), 'LOADED', 'kısmi yükleme dahil');
+  assert.equal(enrollCategory({ status: 'YUKLENDI', offers: [sent] }, f), 'LOADED');
+  assert.equal(enrollCategory({ status: 'URETIMDE', offers: [sent] }, { ...f, finalInvoiced: true }), 'FINAL_INVOICED');
+  assert.equal(enrollCategory({ status: 'URETIMDE', compOfId: 'x', offers: [sent] }, f), 'COMPENSATION');
+  assert.equal(enrollCategory({ status: 'URETIMDE', offers: [] }, f), 'NO_OFFER');
+  assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [{ status: 'HAZIRLANIYOR' }, sent] }, f), 'DRAFT_OPEN');
+  assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [{ status: 'YONETIMDE' }] }, f), 'FLAG_ONLY');
+  assert.equal(enrollCategory({ status: 'YENI', offers: [] }, f), 'FLAG_ONLY');
+  assert.equal(enrollCategory({ status: 'YENI', productionApprovalRequired: true, offers: [] }, f), 'ALREADY');
+  assert.equal(enrollCategory({ status: 'URETIMDE', productionApprovalRequired: true, offers: [{ ...sent, approvalRequestedAt: new Date() }] }, f), 'ALREADY', 'ikinci talep yok');
+  assert.equal(enrollCategory({ status: 'URETIMDE', productionApprovalRequired: true, offers: [{ ...sent, approvedAt: new Date() }] }, f), 'ALREADY');
+});
+
+test('geçiş: HTTP yolu yok — yalnızca sunucu betiği çağırır', () => {
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+      const p = `${dir}/${e.name}`;
+      if (e.isDirectory()) { walk(p); continue; }
+      if (/\.(js|mjs|ts|tsx)$/.test(e.name) && fs.readFileSync(new URL(`../${p}`, import.meta.url), 'utf8').match(/from\s+['"][^'"]*production-approval-enroll/)) hits.push(p);
+    }
+  };
+  for (const d of ['app', 'lib', 'components', 'server', 'scripts']) walk(d);
+  assert.deepEqual(hits.sort(), ['scripts/production-approval-enroll.mjs']);
 });

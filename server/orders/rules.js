@@ -70,7 +70,12 @@ export function customerSummary({ status, drawing = 'YOK', offer = null, approva
     if (offer === 'GONDERILDI') return { key: 'offerReady', tone: 'ok' };
     return { key: 'preparing', tone: 'info' };
   }
-  if (status === 'URETIMDE') return { key: 'production', tone: 'info' };
+  if (status === 'URETIMDE') {
+    // Müşteri üretim onayı (karar 305): üretimdeki siparişte de onay istenir — "Üretim onayı gereklidir"
+    if (approval === 'PENDING') return { key: 'productionApproval', tone: 'danger' };
+    if (approval === 'CHANGE_REQUESTED') return { key: 'changeRequested', tone: 'info' };
+    return { key: 'production', tone: 'info' };
+  }
   if (status === 'YUKLENDI') return { key: 'shipped', tone: 'ok' };
   if (status === 'ARSIVLENDI') return { key: 'archived', tone: 'muted' };
   return { key: 'cancelled', tone: 'muted' };
@@ -225,6 +230,7 @@ export const EVENTS = {
   OFFER_CHECKED: { customer: false },
   // Müşteri üretim onayı (4.2.1): müşterinin onayı ve değişiklik talebi (not = müşterinin kendi açıklaması)
   PRODUCTION_APPROVED: { customer: true },
+  PRODUCTION_APPROVAL_REQUESTED: { customer: true }, // mevcut siparişin geçişte açılan onay talebi (karar 305)
   OFFER_CHANGE_REQUESTED: { customer: true, note: true },
   UNDO_DRAWING: { customer: true },
   UNDO_NO_DRAWING: { customer: false },
@@ -600,7 +606,8 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     if (preparing && drawing === 'DUZELTME_BEKLIYOR' && canApprove) a.push('dwg_resubmit', 'dwg_request_drawing');
     // Müşteri üretim onayı (4.2.1): en son gönderilen teklif sürümünü onayla ya da değişiklik iste. Teklif onayı yetkisi
     // (OFFER_APPROVE) + kullanıcının onay hakkı (canApprove); sürüm ve tekrar denetimi işlemin kendisinde.
-    if (preparing && approval === 'PENDING' && canApprove && can(role, 'OFFER_APPROVE') && orderType !== 'PROFILE_ORDER') a.push('approve_production', 'request_offer_change');
+    // Kapsam kararı (26.10.2026): üretimdeki (URETIMDE) siparişte de onay istenir — durum değişmez, onay ayrı izlenir.
+    if ((preparing || status === 'URETIMDE') && approval === 'PENDING' && canApprove && can(role, 'OFFER_APPROVE') && orderType !== 'PROFILE_ORDER') a.push('approve_production', 'request_offer_change');
     // Profil siparişinde müşteri dosya yüklemez (karar 161): ürün ve adet formdadır; ekranda yükleme alanı yok, sunucu da
     // (addFilesAction → bu liste) reddeder. İç ekibin profil siparişine iç dosya eklemesi değişmedi.
     if (!closed && can(role, 'FILE_UPLOAD') && orderType !== 'PROFILE_ORDER') a.push('add_file');

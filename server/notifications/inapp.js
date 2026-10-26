@@ -87,6 +87,8 @@ export const INAPP_RULES = {
   // Müşteri üretim onayı (4.2.1): müşterinin onayı ve "ölçülerde değişiklik var" talebi → yöneticiye + siparişin satışçısına
   // (orderSales: siparişi çizime gönderen / teklifi hazırlayan satış kullanıcısı; bilinmiyorsa satış ekibi). E-posta yok.
   ORDER_PRODUCTION_APPROVED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
+  // Mevcut siparişin geçişte açılan onay talebi (karar 305): yalnızca müşteriye, onay kartına
+  ORDER_PRODUCTION_APPROVAL_REQUESTED: { to: () => ['customer'], link: orderPart('uretim-onayi') },
   ORDER_OFFER_CHANGE_REQUESTED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
   ORDER_PROFORMA: { to: () => ['customer'] },
@@ -169,7 +171,7 @@ export function renderInApp(locale, n) {
   const type = n.type ?? '';
   let title = n.message || type;
   // Müşteri üretim onayı (4.2.1): teklif gönderildi / güncellendi ve onay bekleniyor → "Üretim onayınız bekleniyor" + son tarih
-  if (customer && p.approval && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED')) {
+  if (customer && p.approval && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')) {
     const order = p.orderNo ? t('notifications.order', { orderNo: p.orderNo }) : '';
     const due = typeof p.due === 'string' && p.due ? t('notifications.productionApproval.due', { due: p.due }) : t('notifications.productionApproval.noDue');
     return { title: t('notifications.productionApproval.customer'), body: [order, due].filter(Boolean).join(' · ') };

@@ -226,10 +226,15 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           belirler; mevcut siparişler değişmez (geriye dönük hiçbir şey yazılmaz). */}
       {full && approval && (<>
       {sp.ok === 'productionApproval' && <div className="alert alert-ok">{t('admin.integrations.productionApproval.saved')}</div>}
+      {sp.error === 'productionApproval' && <div className="alert alert-error">{t('admin.integrations.productionApproval.badCutoff')}</div>}
       <form action={saveProductionApprovalAction} className="card" id="uretim-onayi">
         <h2>{t('admin.integrations.productionApproval.title')}</h2>
         <p className="muted small">{t('admin.integrations.productionApproval.intro')}</p>
         <label className="check"><input type="checkbox" name="enabled" defaultChecked={approval.enabled} data-production-approval-enabled /> {t('admin.integrations.productionApproval.enabled')}</label>
+        <div className="row" style={{ marginTop: 10 }}>
+          <label htmlFor="uretim-onayi-kesim" style={{ margin: 0 }}>{t('admin.integrations.productionApproval.cutoff')}</label>
+          <input id="uretim-onayi-kesim" name="cutoff" type="date" required defaultValue={approval.cutoff} style={{ width: 170 }} />
+        </div>
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn btn-primary">{t('common.save')}</button>
           <span className="muted small" data-production-approval-state={approval.enabled ? 'on' : 'off'}>{approval.enabled ? t('admin.integrations.productionApproval.on') : t('admin.integrations.productionApproval.off')}</span>

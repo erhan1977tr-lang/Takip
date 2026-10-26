@@ -1,13 +1,17 @@
 // Müşteri üretim onayı (4.2.1) — saf kurallar (veritabanı yok; sayfa, iş akışı ve işçi aynı kuralları kullanır).
 //
-//   Kapsam: özellik açıkken (IntegrationSetting 'production-approval') oluşturulan müşteri cam siparişleri
-//   (Order.productionApprovalRequired). Eski siparişler ve telafi (-T) siparişleri bayraksızdır → eski kural aynen.
-//   Bayraklı sipariş HAZIRLANIYOR'dayken müşteriye gönderilen her teklif sürümü müşterinin "Üretime alınmasını
-//   onaylıyorum" onayını bekler (Offer.approvedAt). Onay yalnızca EN SON gönderilen sürüme verilir; eski sürüm onaylanamaz.
-//   "Ölçülerde değişiklik var" → sürüm değişiklik istendi olarak işaretlenir (Offer.changeRequestedAt + not), satışa yeni
-//   taslak açılır; mevcut satış → yönetici → müşteriye gönder akışı yeni sürümü üretir, o sürüm de yeniden onay ister.
-//   Ana sipariş durumları değişmez; yalnızca otomatik üretime geçişe bir koşul eklenir (productionBlockers →
-//   'offer_not_approved').
+//   Kapsam (karar 305, ürün sahibinin 26.10.2026 kararı): PLANLANAN YÜKLEME TARİHİ kesim gününde (varsayılan 06.11.2026)
+//   ya da sonrasında olan cam siparişleri — durumu HAZIRLANIYOR ya da URETIMDE olsun. Kapsam siparişin bayrağıdır
+//   (Order.productionApprovalRequired): yeni sipariş oluşturulurken (ayar açık + tahmini yükleme ≥ kesim) ya da mevcut
+//   siparişler için açık onaylı geçiş işleminde (production-approval-enroll.js) bir kez yazılır. Kesimden önceki
+//   siparişler, profil siparişleri ve telafi (-T) siparişleri bayraksızdır → eski davranış aynen.
+//   Bayraklı siparişte müşteriye gönderilen her teklif sürümü müşterinin "Üretime alınmasını onaylıyorum" onayını bekler
+//   (Offer.approvedAt). Onay yalnızca EN SON gönderilen sürüme verilir; eski sürüm onaylanamaz. Onay durumu ana sipariş
+//   durumundan AYRIDIR: HAZIRLANIYOR siparişte otomatik üretime geçişe bir koşul eklenir (productionBlockers →
+//   'offer_not_approved'); URETIMDE siparişte durum değişmez, yalnızca onay istenir ve izlenir.
+//   "Ölçülerde değişiklik var" → sürüm değişiklik istendi olarak işaretlenir (Offer.changeRequestedAt + not). HAZIRLANIYOR
+//   siparişte satışa yeni taslak açılır (satış → yönetici → gönder); URETIMDE siparişte mevcut sistemde satış teklif
+//   düzenleyemez — yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir. Yeni sürüm yeniden onay ister.
 //
 //   Süre: gönderim anından itibaren 2 Romanya iş günü (Europe/Bucharest; cumartesi, pazar ve Romanya resmî tatilleri
 //   hariç — depo takviminin elle kapatılan günleri SAYILMAZ). Son tarih = gönderim gününden sonraki 2. iş gününün aynı
@@ -21,6 +25,10 @@ export const APPROVAL_BUSINESS_DAYS = 2;
 /** Süre hesabının takvimi: Romanya resmî tatilleri + Europe/Bucharest (yöneticinin depo kararları kullanılmaz) */
 export const APPROVAL_CALENDAR = 'RO_DEPOT';
 export const APPROVAL_TIME_ZONE = CALENDARS[APPROVAL_CALENDAR].timeZone;
+/** Kapsamın varsayılan kesim günü: planlanan yükleme tarihi bu gün ya da sonrası olan siparişler (ürün sahibi) */
+export const APPROVAL_CUTOFF_DEFAULT = '2026-11-06';
+/** Onay isteğinin geçerli olduğu sipariş durumları (yüklenmiş / arşiv / iptal siparişte onay istenmez) */
+export const APPROVAL_STATUSES = Object.freeze(['HAZIRLANIYOR', 'URETIMDE']);
 /** Değişiklik talebi notu: zorunlu, en fazla bu kadar karakter */
 export const CHANGE_NOTE_MAX = 2000;
 
@@ -76,7 +84,7 @@ export function approvalDeadline(sentAt) {
  * @returns {'NONE' | 'PENDING' | 'APPROVED' | 'CHANGE_REQUESTED'}
  */
 export function approvalState({ required, status, offer }) {
-  if (!required || status !== 'HAZIRLANIYOR' || !offer || offer.status !== 'GONDERILDI') return 'NONE';
+  if (!required || !APPROVAL_STATUSES.includes(status) || !offer || offer.status !== 'GONDERILDI') return 'NONE';
   if (offer.approvedAt) return 'APPROVED';
   if (offer.changeRequestedAt) return 'CHANGE_REQUESTED';
   return 'PENDING';
@@ -102,20 +110,35 @@ export function changeNote(value) {
 }
 
 /**
- * Bayraklı sipariş hazırlıktayken gönderilen sürümün onay alanları + olay verisi (e-posta ve bildirim son tarihi yazar).
- * Bayraksız siparişte ya da hazırlık dışında boş döner (eski davranış).
+ * Bayraklı siparişe (HAZIRLANIYOR / URETIMDE) gönderilen sürümün onay alanları + olay verisi (e-posta ve bildirim son
+ * tarihi yazar). Onay talebinin anı = gönderim anı; süre o andan başlar. Bayraksız siparişte ya da başka durumda boş döner
+ * (eski davranış).
  * @param {{ productionApprovalRequired?: boolean | null, status: string }} order  @param {Date} now
- * @returns {{ data: { approvalDueAt: Date | null } | null, event: { approval: { due: string | null } } | null, noData: boolean }}
+ * @returns {{ data: { approvalRequestedAt: Date, approvalDueAt: Date | null } | null, event: { approval: { due: string | null } } | null, noData: boolean }}
  */
 export function approvalOnSend(order, now) {
-  if (!order?.productionApprovalRequired || order.status !== 'HAZIRLANIYOR') return { data: null, event: null, noData: false };
+  if (!order?.productionApprovalRequired || !APPROVAL_STATUSES.includes(order.status)) return { data: null, event: null, noData: false };
   const d = approvalDeadline(now);
-  return { data: { approvalDueAt: d.due }, event: { approval: { due: d.due ? d.due.toISOString() : null } }, noData: d.noData };
+  return { data: { approvalRequestedAt: now, approvalDueAt: d.due }, event: { approval: { due: d.due ? d.due.toISOString() : null } }, noData: d.noData };
 }
 
 /** Ayarın değeri (eksik / bozuk = kapalı) */
 export function approvalSettingOn(value) {
   return !!(value && typeof value === 'object' && !Array.isArray(value) && value.enabled === true);
+}
+
+/** Ayardaki kesim günü (geçersiz / yoksa varsayılan) */
+export function approvalCutoff(value) {
+  const c = value && typeof value === 'object' && !Array.isArray(value) ? value.cutoff : null;
+  return typeof c === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c) && !Number.isNaN(Date.parse(`${c}T12:00:00Z`)) ? c : APPROVAL_CUTOFF_DEFAULT;
+}
+
+/**
+ * Sipariş kapsamda mı: planlanan yükleme günü (yerel gün, "YYYY-MM-DD") kesim günü ya da sonrası. Gün yoksa hayır.
+ * @param {string | null | undefined} shipDay  @param {string} cutoff
+ */
+export function inApprovalScope(shipDay, cutoff) {
+  return typeof shipDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(shipDay) && shipDay >= cutoff;
 }
 
 /**

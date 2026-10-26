@@ -438,6 +438,7 @@ export default {
     staffApproved: 'Clientul a aprobat producția: {date} (versiunea ofertei {n}).',
     staffChange: 'Clientul a cerut modificări pentru versiunea ofertei {n} ({date}):',
     staffChangeNext: 'Vânzările corectează oferta și o trimit administratorului; când administratorul o verifică și o trimite clientului, noua versiune cere din nou aprobarea.',
+    staffChangeNextProduction: 'Comanda este în producție: administratorul corectează oferta cu „Actualizează oferta” și o trimite clientului (vânzările nu pot edita oferta unei comenzi în producție); noua versiune cere din nou aprobarea. Starea comenzii nu se modifică.',
     listBadge: 'Aprobare necesară',
   },
   errors: {

@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.4 — 26.10.2026
+
+**Müşteri üretim onayı — kapsam kararı** (ürün sahibi, 26.10.2026; karar 305 güncellendi): "yalnızca yeni siparişler" kuralı
+kaldırıldı. Kapsam = **planlanan yükleme tarihi 06.11.2026 ve sonrası** olan cam siparişleri, durumu HAZIRLANIYOR ya da
+URETIMDE olsun (teklif gönderilince otomatik üretime geçiş müşteri onayı sayılmaz).
+
+- Yeni sipariş: ayar açık ve tahmini yükleme günü ≥ kesim günü ise oluşturulurken kapsama girer (kesim günü ayarda;
+  varsayılan 2026-11-06).
+- **Mevcut siparişler: güvenli geçiş** (`scripts/production-approval-enroll.mjs`, yalnızca sunucuda, HTTP yolu yok):
+  önce salt okunur ön izleme (etkilenen siparişler, durumları, kategori: talep / yalnızca bayrak / yüklenmiş — kısmi dahil —
+  / nihai faturalı / telafi / teklifsiz) ve onay kodu; uygulama yalnızca o kodla, tek işlemde, sipariş sürümü kilidiyle.
+  Yüklenmiş, kısmi yüklenmiş, nihai faturalı, telafi ve güncel teklifi müşteride olmayan üretim siparişleri DOKUNULMADAN
+  raporlanır. Aynı siparişe ikinci talep açılmaz. Onay süresi eski gönderim tarihinden değil, talebin müşteriye gönderildiği
+  andan başlar (`Offer.approvalRequestedAt`). İsteğe bağlı bildirimsiz prova.
+- Canlı veritabanında çalıştırılabilecek salt okunur kapsam raporu: `deploy/canliya-gecis/uretim-onayi-kapsam.sql` (4.2.0
+  şemasıyla çalışır).
+- Üretimdeki siparişte onay durumu ayrıdır: sipariş durumu, yükleme tarihi, sandık, proforma ve muhasebe değişmez; müşteri
+  güncel teklifi onaylar ya da ölçü değişikliği ister. Mevcut sistemde satış üretimdeki siparişin teklifini düzenleyemez —
+  değişiklik talebinde taslak açılmaz, yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir (aynı mali kilit); yeni
+  sürüm yeniden onay ister. Mali kaydı olan siparişte değişiklik talebi alınmaz (mevcut kural), onay verilebilir.
+
 ## 4.2.3 — 26.10.2026
 
 Üretim onayı (4.2.1) düzeltmesi: eski teklif sürümü hata kodu `OFFER_VERSION_STALE` olarak ayrıldı (profil siparişinin

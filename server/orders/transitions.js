@@ -1040,18 +1040,25 @@ const ACTIONS = {
       data: { changeRequestedAt: now, changeRequestedById: actor.id, changeNote: note.note },
     });
     if (r.count !== 1) throw new WorkflowError('APPROVAL_DECIDED');
-    const { amount, offerAmount } = amounts(offer.lines);
-    const draft = await tx.offer.create({
-      data: {
-        orderId: order.id, createdById: actor.id, currency: offer.currency, amount, offerAmount, priceTableId: offer.priceTableId ?? null,
-        status: 'HAZIRLANIYOR', statusSince: now,
-        lines: { create: offer.lines.map((l, i) => lineData(l, i)) },
-      },
-    });
+    // HAZIRLANIYOR: satışa yeni taslak (mevcut satış → yönetici → gönder akışı). URETIMDE: mevcut sistemde satış üretimdeki
+    // siparişin teklifini düzenleyemez — taslak açılmaz; yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir
+    // (update_offer; aynı mali kilit). Sipariş durumu hiçbir durumda değişmez.
+    let draftId = null;
+    if (order.status === 'HAZIRLANIYOR') {
+      const { amount, offerAmount } = amounts(offer.lines);
+      const draft = await tx.offer.create({
+        data: {
+          orderId: order.id, createdById: actor.id, currency: offer.currency, amount, offerAmount, priceTableId: offer.priceTableId ?? null,
+          status: 'HAZIRLANIYOR', statusSince: now,
+          lines: { create: offer.lines.map((l, i) => lineData(l, i)) },
+        },
+      });
+      draftId = draft.id;
+    }
     const revision = revisionOf(order, offer);
     h.event('OFFER_CHANGE_REQUESTED', note.note, { offerId: offer.id, revision });
     h.sla = true;
-    h.audit = { offerId: offer.id, revision, draftId: draft.id, customerId: order.customerId, requestedById: actor.id };
+    h.audit = { offerId: offer.id, revision, draftId, path: draftId ? 'SALES_DRAFT' : 'ADMIN_UPDATE', customerId: order.customerId, requestedById: actor.id };
   },
   async check_offer(h) {
     h.event('OFFER_CHECKED', h.order.drawings.length ? `v${h.order.drawings.length}` : null);

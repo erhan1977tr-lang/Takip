@@ -18,7 +18,7 @@ const statements = (file) => fs.readFileSync(new URL(`../../deploy/canliya-gecis
   .split('\n').filter((l) => !/^\s*(--|\\echo)/.test(l)).join('\n')
   .split(/;\s*\n/).map((s) => s.trim()).filter((s) => s && !/^(BEGIN|ROLLBACK)\b/i.test(s));
 
-for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql']) {
+for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsam.sql']) {
   dbTest(`${file}: her sorgu salt okunur işlemde hatasız çalışır; yazma / DDL yok`, offline(async () => {
     const text = fs.readFileSync(new URL(`../../deploy/canliya-gecis/${file}`, import.meta.url), 'utf8').replace(/--.*$/gm, '');
     assert.ok(!/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY)\b/i.test(text.replace(/'[^']*'/g, "''")), 'yalnızca SELECT');
@@ -27,7 +27,7 @@ for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql']) {
     const list = statements(file);
     assert.ok(list.length >= 4);
     for (const sql of list) {
-      assert.match(sql, /^SELECT\b/i, sql.slice(0, 60));
+      assert.match(sql, /^(SELECT|WITH)\b/i, sql.slice(0, 60));
       await db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
         await tx.$queryRawUnsafe(sql);
