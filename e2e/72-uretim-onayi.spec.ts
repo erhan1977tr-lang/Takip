@@ -40,6 +40,8 @@ async function prepareAndSend(browser: import('@playwright/test').Browser, order
   await admin.goto(`/siparisler/${orderId}`);
   await admin.getByLabel('Müşteri fiyatı').first().fill('50');
   await admin.getByRole('button', { name: 'Fiyatı onayla ve müşteriye gönder' }).click();
+  // İşlemin bitmesi beklenir (ayar açıkken "üretime alındı" cümlesi yok; kapalıyken var — ikisi de bu başlangıçla)
+  await expect(admin.getByText(/^Fiyat onaylandı; teklif müşterinin panelinde\./)).toBeVisible();
   return { sales, admin };
 }
 
