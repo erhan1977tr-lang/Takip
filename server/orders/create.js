@@ -14,6 +14,7 @@ import { getEnv } from '../env.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { parseCustomerOrderNo } from './order-number.js';
 import { assertOrderRate } from './create-rate.js';
+import { APPROVAL_SETTING_KEY, approvalSettingOn } from './production-approval.js';
 
 /**
  * Firmanın bu tipteki bir sonraki sipariş numarası: yalnızca rakamdan oluşan ETKİN numaraların en büyüğü + 1 (metin —
@@ -127,11 +128,15 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     }
     const allFiles = [...draftFiles, ...files];
     if (allFiles.length === 0) throw new WorkflowError('NO_FILES');
+    // Müşteri üretim onayı (4.2.1): özellik açıksa bu sipariş kapsama girer (yalnızca yeni siparişler; ayar sonradan
+    // değişse de siparişin kuralı değişmez). Ayar yoksa / kapalıysa eski kural.
+    const approvalSetting = await tx.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
+    const productionApprovalRequired = approvalSettingOn(approvalSetting?.value);
     const order = await tx.order.create({
       data: {
         orderNo, customerOrderNo: no, orderTypeCode: 'GLASS_ORDER', title, customerId: firm.id, createdById: actor.id,
         status: 'YENI', slaDeadline: slaDeadline({ status: 'YENI', createdAt: now }), estimatedShipDate: glassLoadingDate(now, getEnv().APP_TIMEZONE),
-        camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null,
+        camEtiket: firm.camEtiket ?? null, sandikEtiket: firm.sandikEtiket ?? null, productionApprovalRequired,
         items: { create: items },
         files: {
           create: allFiles.map((f) => ({
@@ -146,7 +151,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     await writeHistory(tx, { orderId: order.id, event: 'CREATED', from: null, to: 'YENI', actorId: actor.id });
     await writeAudit(tx, {
       action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
-      details: { orderNo, files: allFiles.length, ...(key ? { requestKey: key } : {}), ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
+      details: { orderNo, files: allFiles.length, ...(productionApprovalRequired ? { productionApproval: true } : {}), ...(key ? { requestKey: key } : {}), ...(draftId ? { fromDraft: true } : {}), ...(no !== parseCustomerOrderNo(requestedNo, firm.prefix) ? { requestedNo: parseCustomerOrderNo(requestedNo, firm.prefix), assignedNo: no } : {}) },
     }, actor);
     await enqueueOutbox(tx, outboxEvent('ORDER_CREATED', { orderId: order.id, payload: { orderNo, actorId: actor.id } }));
     return { id: order.id, orderNo, customerOrderNo: no, bumped: no !== parseCustomerOrderNo(requestedNo, firm.prefix), dropped };

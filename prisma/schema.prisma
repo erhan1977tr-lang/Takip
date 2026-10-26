@@ -156,6 +156,9 @@ model User {
   ordersCreated      Order[]        @relation("OrderCreatedBy")
   ordersAssignedDraw Order[]        @relation("OrderAssignedDrawer")
   offersCreated      Offer[]        @relation("OfferCreatedBy")
+  // Müşteri üretim onayı (4.2.1): onaylayan / değişiklik isteyen müşteri kullanıcısı
+  offersApproved     Offer[]        @relation("OfferApprovedBy")
+  offersChangeAsked  Offer[]        @relation("OfferChangeRequestedBy")
   pricesSet          Price[]        @relation("PriceSetBy")
   drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
   drawingsSent       Drawing[]      @relation("DrawingSentBy")
@@ -395,6 +398,9 @@ model Order {
 
   revisionCount     Int         @default(0)
   isEscalated       Boolean     @default(false)
+  // Müşteri üretim onayı (4.2.1): özellik açıkken oluşturulan müşteri cam siparişi → müşteriye gönderilen her teklif
+  // sürümü üretimden önce müşterinin onayını bekler. Oluşturulurken bir kez yazılır; eski siparişler false (eski kural).
+  productionApprovalRequired Boolean @default(false)
 
   items             OrderItem[]
   offers            Offer[]
@@ -675,6 +681,18 @@ model Offer {
   createdBy   User        @relation("OfferCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  // Müşteri üretim onayı (4.2.1 — server/orders/production-approval.js). Yalnızca kapsamdaki siparişin hazırlıkta
+  // gönderilen sürümünde dolar. approvalDueAt: gönderimden itibaren 2 Romanya iş günü (tatil verisi yoksa boş).
+  approvalDueAt          DateTime?
+  approvalOverdueAt      DateTime? // yöneticiye gecikme bildirimi gönderildi (sürüm başına bir kez)
+  approvedAt             DateTime?
+  approvedById           String?
+  approvedBy             User?     @relation("OfferApprovedBy", fields: [approvedById], references: [id])
+  changeRequestedAt      DateTime?
+  changeRequestedById    String?
+  changeRequestedBy      User?     @relation("OfferChangeRequestedBy", fields: [changeRequestedById], references: [id])
+  changeNote             String?
 
   @@index([orderId])
   // Satır fiyatlarının geldiği fiyat tablosu (teklif açılırken satışçının tablosu)

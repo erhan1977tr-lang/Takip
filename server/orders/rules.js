@@ -52,17 +52,21 @@ export const ACTIVE_DRAWING = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
 /**
  * Müşterinin gördüğü tek satırlık durum (metni: status.customer.<key>.label / .next).
- * @param {{status: string, drawing?: string, offer?: string|null}} p
+ * @param {{status: string, drawing?: string, offer?: string|null, approval?: string}} p  approval: production-approval.js → approvalState
  * @returns {{key: string, tone: string}}
  */
-export function customerSummary({ status, drawing = 'YOK', offer = null }) {
+export function customerSummary({ status, drawing = 'YOK', offer = null, approval = 'NONE' }) {
   if (status === 'YENI') return { key: 'reviewing', tone: 'muted' };
   if (status === 'HAZIRLANIYOR') {
     if (drawing === 'ONAY_BEKLIYOR') return { key: 'awaitingApproval', tone: 'warn' };
     if (drawing === 'REVIZYON_ISTENDI') return { key: 'revision', tone: 'danger' };
     // Çizimci müşterinin DWG/DXF çizimini hatalı buldu: sıra müşteride (düzeltilmiş dosya ya da fabrika çizimi — karar 167)
     if (drawing === 'DUZELTME_BEKLIYOR') return { key: 'correction', tone: 'danger' };
+    // Müşteri üretim onayı (4.2.1 — server/orders/production-approval.js): teklif müşteride, onayı bekleniyor
+    if (approval === 'PENDING') return { key: 'productionApproval', tone: 'danger' };
+    if (approval === 'CHANGE_REQUESTED') return { key: 'changeRequested', tone: 'info' };
     if (drawing === 'GEREKLI' || drawing === 'YAPILIYOR') return { key: 'drawing', tone: 'purple' };
+    if (approval === 'APPROVED') return { key: 'productionApproved', tone: 'ok' };
     if (offer === 'GONDERILDI') return { key: 'offerReady', tone: 'ok' };
     return { key: 'preparing', tone: 'info' };
   }
@@ -74,26 +78,29 @@ export function customerSummary({ status, drawing = 'YOK', offer = null }) {
 
 /**
  * Otomatik üretime geçmek için eksik kalanlar (boş dizi = koşullar tamam). Metni: status.blockers.<kod>.
- * @param {{status: string, drawing?: string, offer?: string|null}} p
+ * @param {{status: string, drawing?: string, offer?: string|null, approval?: string}} p  approval: production-approval.js → approvalState
  * @returns {string[]}
  */
-export function productionBlockers({ status, drawing = 'YOK', offer = null }) {
+export function productionBlockers({ status, drawing = 'YOK', offer = null, approval = 'NONE' }) {
   if (status !== 'HAZIRLANIYOR') return ['not_preparing'];
   const b = [];
   if (drawing === 'ONAY_BEKLIYOR') b.push('drawing_at_customer');
   else if (drawing === 'DUZELTME_BEKLIYOR') b.push('drawing_correction');
   else if (drawing !== 'YOK' && drawing !== 'ONAYLANDI') b.push('drawing_not_done');
   if (offer !== 'GONDERILDI') b.push(offer === 'YONETIMDE' ? 'offer_at_admin' : 'offer_not_sent');
+  // Müşteri üretim onayı (4.2.1): yalnızca kapsamdaki (bayraklı) siparişte, en son gönderilen sürüm onaylanmadıysa.
+  // approval verilmezse ('NONE') eski kural aynen geçerlidir.
+  else if (approval === 'PENDING' || approval === 'CHANGE_REQUESTED') b.push('offer_not_approved');
   return b;
 }
 
 /**
  * Sipariş şimdi otomatik olarak üretime geçmeli mi?
- * @param {{status: string, onHold?: boolean, drawing?: string, offer?: string|null}} p
+ * @param {{status: string, onHold?: boolean, drawing?: string, offer?: string|null, approval?: string}} p
  * @returns {boolean}
  */
-export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', offer = null }) {
-  return !onHold && productionBlockers({ status, drawing, offer }).length === 0;
+export function shouldAutoProduce({ status, onHold = false, drawing = 'YOK', offer = null, approval = 'NONE' }) {
+  return !onHold && productionBlockers({ status, drawing, offer, approval }).length === 0;
 }
 
 /**
@@ -216,6 +223,9 @@ export const EVENTS = {
   OFFER_REVISED: { customer: false },
   OFFER_UPDATED: { customer: true },
   OFFER_CHECKED: { customer: false },
+  // Müşteri üretim onayı (4.2.1): müşterinin onayı ve değişiklik talebi (not = müşterinin kendi açıklaması)
+  PRODUCTION_APPROVED: { customer: true },
+  OFFER_CHANGE_REQUESTED: { customer: true, note: true },
   UNDO_DRAWING: { customer: true },
   UNDO_NO_DRAWING: { customer: false },
   PRODUCTION: { customer: true },
@@ -562,7 +572,8 @@ export function drawingFlags(o) {
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null, approval?: string}} p
+ *   approval: müşteri üretim onayı durumu (production-approval.js → approvalState; verilmezse 'NONE' — eski kural)
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
  *   dwgPending: müşterinin DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167 — drawingFlags)
@@ -570,7 +581,7 @@ export function drawingFlags(o) {
  *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null, approval = 'NONE' }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -587,6 +598,9 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
     // Çizimci müşterinin DWG/DXF çizimini hatalı buldu (karar 167): düzeltilmiş dosya gönder ya da fabrikadan çizim iste.
     // Çizim kararı olduğu için onay ve revizyonla AYNI yetkiyi ister (onay yetkisi olmayan kullanıcı yalnızca görür).
     if (preparing && drawing === 'DUZELTME_BEKLIYOR' && canApprove) a.push('dwg_resubmit', 'dwg_request_drawing');
+    // Müşteri üretim onayı (4.2.1): en son gönderilen teklif sürümünü onayla ya da değişiklik iste. Teklif onayı yetkisi
+    // (OFFER_APPROVE) + kullanıcının onay hakkı (canApprove); sürüm ve tekrar denetimi işlemin kendisinde.
+    if (preparing && approval === 'PENDING' && canApprove && can(role, 'OFFER_APPROVE') && orderType !== 'PROFILE_ORDER') a.push('approve_production', 'request_offer_change');
     // Profil siparişinde müşteri dosya yüklemez (karar 161): ürün ve adet formdadır; ekranda yükleme alanı yok, sunucu da
     // (addFilesAction → bu liste) reddeder. İç ekibin profil siparişine iç dosya eklemesi değişmedi.
     if (!closed && can(role, 'FILE_UPLOAD') && orderType !== 'PROFILE_ORDER') a.push('add_file');

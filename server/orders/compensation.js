@@ -63,6 +63,7 @@ import { effectiveItems, isGlassLine, itemKey, shipDayDate } from '../loading/co
 import { compensatedByScope } from '../loading/compensated.js';
 import { coverageOf } from '../glass/batch.js';
 import { sortByOrderNo } from './order-number.js';
+import { approvalOnSend } from './production-approval.js';
 
 export const COMP_MODES = ['NORMAL', 'FREE', 'CUSTOM'];
 const OPEN_STATUSES = ['YENI', 'HAZIRLANIYOR', 'URETIMDE'];
@@ -437,10 +438,12 @@ async function appendToDraft(tx, { dest, lines, compensationId }) {
 async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
   await bumpVersion(tx, order);
   const { amount, offerAmount } = amounts(lines);
+  // Müşteri üretim onayı (4.2.1): kapsamdaki sipariş hazırlıktaysa yeni sürüm de müşteri onayı bekler (update_offer ile aynı kural)
+  const approval = approvalOnSend(order, now);
   const created = await tx.offer.create({
     data: {
       orderId: order.id, createdById: actor.id, currency: prev.currency, amount, offerAmount, priceTableId: prev.priceTableId ?? null,
-      status: 'GONDERILDI', statusSince: now, sentAt: now,
+      status: 'GONDERILDI', statusSince: now, sentAt: now, ...(approval.data ?? {}),
       lines: { create: lines.map((l, i) => lineData(l, i)) },
     },
   });
@@ -451,7 +454,7 @@ async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
   });
   // Müşteri teklifin güncellendiğini görür (olağan olay; notta tutar yok)
   await writeHistory(tx, { orderId: order.id, event: 'OFFER_UPDATED', from: order.status, to: order.status, actorId: actor.id, note: null });
-  await enqueueOutbox(tx, { type: 'ORDER_OFFER_UPDATED', orderId: order.id, payload: { from: order.status, to: order.status, actorId: actor.id } });
+  await enqueueOutbox(tx, { type: 'ORDER_OFFER_UPDATED', orderId: order.id, payload: { ...(approval.event ?? {}), from: order.status, to: order.status, actorId: actor.id } });
   return created.id;
 }
 
