@@ -211,7 +211,8 @@ dbTest('O3: müşterinin stok ön kontrolü ve korkuluk hesabı gerçek stok mik
   assert.equal(lines.length, 1);
   assert.equal(lines[0].short, true);
   for (const k of ['available', 'missing', 'stock']) assert.ok(!(k in lines[0]), k);
-  assert.ok(!JSON.stringify(lines).includes('37'), 'stok miktarı yanıtta yok');
+  // Kayıt kimliği (cuid) rastgele / sayaca bağlı "37" içerebilir: yalnızca kimlik dışındaki alanlara bakılır
+  assert.ok(!JSON.stringify(lines.map(({ productId: _id, ...rest }) => rest)).includes('37'), 'stok miktarı yanıtta yok');
   // Korkuluk hesabı (müşteri): stok bilgisi yalnızca "yetersiz" işareti
   const sys = await db.profileSystem.findFirst({ where: { isActive: true, kind: 'PROFILE' } });
   const t = await db.profileGlassThickness.findFirst();
