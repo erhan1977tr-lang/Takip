@@ -4,6 +4,33 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.1 — 26.10.2026
+
+**Müşteri üretim onayı** (karar 305) — canlıdaki 4.2.0'ın üzerine, Fabrika Ekip Yönetimi (4.3.x) değişikliklerinden bağımsız.
+Özellik anahtarı varsayılan **kapalı**: kapalıyken davranış 4.2.0 ile aynıdır. (Sürüm numarası yeni özellik olmasına rağmen
+üçüncü haneden artırıldı: askıdaki 4.3.x hattıyla karışmasın.)
+
+- Ayarlar → Entegrasyonlar → **Müşteri üretim onayı** (yalnızca yönetici, `SETTINGS_MANAGE`, denetim kaydı). Anahtar yalnızca
+  BUNDAN SONRA oluşturulan müşteri cam siparişlerini kapsama alır (`Order.productionApprovalRequired`); mevcut siparişler,
+  telafi (-T) siparişleri ve profil siparişleri değişmez; kapatınca geriye dönük hiçbir şey yazılmaz.
+- Kapsamdaki sipariş hazırlıktayken yöneticinin müşteriye gönderdiği her teklif sürümü müşterinin onayını bekler: otomatik
+  üretime geçiş kuralına tek koşul eklendi (`offer_not_approved`); ana sipariş durumları değişmedi.
+- Müşteri: **ÜRETİME ALINMASINI ONAYLIYORUM** (ikinci doğrulama penceresi; onay zamanı, onaylayan kullanıcı, firma ve teklif
+  sürümü kaydedilir; yalnızca en son gönderilen sürüm; mükerrer / eşzamanlı onay engellenir) ve **ÖLÇÜLERDE DEĞİŞİKLİK VAR**
+  (zorunlu açıklama; müşteri ölçü / fiyat değiştiremez; sürüm korunur ve onaylanamaz; satışa yeni taslak açılır → mevcut
+  satış → yönetici → müşteriye gönder akışı; yeni sürüm yeniden onay ister).
+- Süre: gönderimden itibaren **2 Romanya iş günü** (Europe/Bucharest, gönderim saati; cumartesi, pazar ve Romanya resmî
+  tatilleri — değişken tarihliler dahil — sayılmaz; depo takviminin elle kapatılan günleri sayılmaz). Tatil verisi olmayan
+  yılda süre hesaplanmaz, ekranda ve e-postada açıkça "belirlenemedi" yazar. Her yeni sürümde süre yeniden başlar. Süre
+  dolunca yöneticiye bir kez uygulama içi bildirim; müşteri onay hakkını kaybetmez; yükleme tarihi değişmez.
+- Bildirimler mevcut altyapıdan: müşterinin e-postası (müşterinin dilinde) kontrol, zorunlu onay, 2 iş günü, kesin son tarih
+  ve yükleme tarihine etkisi; zil "Üretim onayınız bekleniyor"; sipariş listesinde "Onay gerekli"; durum "Üretim onayı
+  gereklidir"; onay ve değişiklik talebi yöneticiye ve siparişin satışçısına (uygulama içi).
+- Proforma ve mali belge kuralları değişmedi: proforma onaydan önce de sonra da kesilebilir, onayın yerine geçmez, siparişi
+  üretime geçirmez. Mali kaydı olan siparişte (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği, onaylı yükleme)
+  değişiklik talebi ve talepten sonra yeni sürümün gönderimi, "teklifi güncelle" ile aynı mevcut mali kilide tabidir.
+- Migration: `Order.productionApprovalRequired` (varsayılan false) ve `Offer` onay alanları (hepsi boş başlar).
+
 ## 4.2.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam → **Excel'den Aktar**): ön izleme satış panelindeki Excel aktarımıyla aynı düzende
