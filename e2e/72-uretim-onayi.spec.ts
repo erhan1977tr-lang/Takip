@@ -206,8 +206,9 @@ test('onaysız yükleme engeli: "Yüklendi" yerine engel; yalnızca yönetici ge
   // Geçişin yaptığı gibi: üretimdeki sipariş kapsama alınır, güncel sürüme onay talebi açılır. Kesim günü bu test için
   // geçmişe alınır (yükleme günü bugünden önce olmalı — gelecekteki gün onaylanamaz)
   const db = await prisma();
-  const past = new Date(Date.now() - 3 * 86_400_000);
-  const day = past.toISOString().slice(0, 10);
+  // Onaylanmamış, başka testlerin kullanmadığı geçmiş bir yükleme günü (kesim günü bu test için 2026-01-01)
+  const day = '2026-03-17';
+  expect(await db.loadingConfirmation.count({ where: { shipDay: new Date(`${day}T00:00:00.000Z`) } })).toBe(0);
   const offer = await db.offer.findFirst({ where: { orderId: id }, orderBy: { createdAt: 'desc' } });
   await db.order.update({ where: { id }, data: { productionApprovalRequired: true, estimatedShipDate: new Date(`${day}T10:00:00Z`) } });
   await db.offer.update({ where: { id: offer!.id }, data: { approvalRequestedAt: new Date() } });
