@@ -1,4 +1,4 @@
-# Müşteri üretim onayı — canlıya geçiş (4.2.8)
+# Müşteri üretim onayı — canlıya geçiş (4.2.9)
 
 Hedef: 28.10.2026 Çarşamba (yedek: 29.10.2026 Perşembe). Canlı: 4.2.0 (`backend`). Yeni sürüm: `claude/uretim-onayi`.
 Karar: 305, 305b, 305c (`docs/decisions.md`), CLAUDE.md madde 168.
@@ -16,7 +16,7 @@ ro() { dc exec -T -e PGOPTIONS='-c default_transaction_read_only=on -c statement
 onay() { dc run --rm --no-deps -T -e SUDO_USER="${SUDO_USER:-$USER}" tools node scripts/production-approval-enroll.mjs "$@"; }
 ```
 
-`ro` her sorguyu READ ONLY oturumda çalıştırır. `onay` (kapsama alma betiği) yalnızca Aşama 2'de, 4.2.8 yayındayken
+`ro` her sorguyu READ ONLY oturumda çalıştırır. `onay` (kapsama alma betiği) yalnızca Aşama 2'de, 4.2.9 yayındayken
 kullanılır; `--uygula` vermeden yalnızca ön izleme yapar (salt okunur işlem).
 
 ## Aşama 0 — hazırlık (salt okunur; canlıya etkisi yok)
@@ -24,7 +24,7 @@ kullanılır; `--uygula` vermeden yalnızca ön izleme yapar (salt okunur işlem
 SQL dosyaları henüz `backend`'de olmadığı için dalın sabit commit'inden alınır:
 
 ```sh
-C=<son commit SHA>   # nihai raporda verilir
+C=e8b43a4fc45fb354df538f15b0efe86d16cbb173   # testlerden geçmiş dal commit'i (SQL dosyaları bu commit'ten beri değişmedi)
 for f in uretim-onayi-kapsam.sql uretim-onayi-bildirim-sagligi.sql; do
   curl -fsSL "https://raw.githubusercontent.com/erhan1977tr-lang/Takip/$C/deploy/canliya-gecis/$f" -o "/root/$f"
 done
@@ -61,8 +61,8 @@ gibi işlemlerle çakışmayan bir saat seçin (öneri: sabah erken).
    (`/opt/takip/backups/db-…-once-<sha>.dump`) → 3 migration → temel seed (rol yetkileri) → yeni uygulama + işçi →
    sağlık denetimi → "son sağlıklı sürüm" kaydı.
 5. Doğrulama (salt okunur):
-   - `takip durum` → 4.2.8, birleştirme commit'i, son yayın başarılı; `takip surum-durum` → sağlıklı kayıt 4.2.8.
-   - `curl -s https://takip.gkh.ro/surum` → 4.2.8.
+   - `takip durum` → 4.2.9, birleştirme commit'i, son yayın başarılı; `takip surum-durum` → sağlıklı kayıt 4.2.9.
+   - `curl -s https://takip.gkh.ro/surum` → 4.2.9.
    - `ro < /opt/takip/src/deploy/canliya-gecis/uretim-onayi-asama-kontrol.sql` → 1: `ayar_satiri` 0 (KAPALI);
      2: 0 satır; 3: hepsi 0; 4: `ORDER_PRODUCTION_APPROVAL_*` satırı yok.
    - `takip log 200` → hata yok.
@@ -129,12 +129,12 @@ başlatır. Kapanmadan önce iletilmiş ama hatırlatması henüz gitmemiş bir 
 
 ## Müdahale planı (veri kaybı olmadan)
 
-Migration'lar yalnızca EKLEME yapar (boş olabilen sütunlar, varsayılanı `false` olan bir bayrak, bir yetki değeri, bir
+Migration'lar yalnızca EKLEME yapar (boş olabilen sütunlar, varsayılanı `false` olan bir bayrak, bir yetki değeri, üç
 yabancı anahtar); mevcut satır değişmez, veri silinmez. Yayın aracı migration sonrası otomatik geri dönmez ve
 `takip rollback` migration listesi değiştiği için reddeder (karar 287 — bilinçli).
 
 1. **Özellikle ilgili sorun** → acil durdurma (yukarıda). Veri değişmez; 4.2.0 iş akışı geri gelir.
-2. **4.2.8'in başka bir yerinde hata** → düzeltme ileri: dalda düzeltme commit'i → CI + kurulum testi → yeni PR →
+2. **4.2.9'un başka bir yerinde hata** → düzeltme ileri: dalda düzeltme commit'i → CI + kurulum testi → yeni PR →
    birleştirme → otomatik yayın. Bu sürede özellik kapalı tutulur.
 3. **Uygulama açılmıyorsa** → yayın aracı migration öncesi aşamada önceki sürüme döner; migration sonrası açılmazsa
    (`failed` + alarm) `takip log`, `takip rollback-kontrol` ile incelenir, düzeltme ileri yapılır.
