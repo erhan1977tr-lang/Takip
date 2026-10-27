@@ -18,7 +18,8 @@ export async function approvalGateSetting(db) {
 
 /**
  * Verilen yükleme gününde engellenen siparişler: [{ orderId, orderNo, reason }] (reason: NOT_SENT | PENDING | CHANGE_REQUESTED).
- * @param {any} db  @param {{ day: string, orderIds: string[], setting?: { enabled: boolean, cutoff: string } }} p
+ * @param {any} db  @param {{ day: string, orderIds: string[], setting?: { enabled: boolean, cutoff: string } | null }} p
+ * @returns {Promise<{ orderId: string, orderNo: string, reason: string }[]>}
  */
 export async function loadingApprovalBlocks(db, { day, orderIds, setting = null }) {
   const ids = [...new Set(orderIds.filter(Boolean))];
