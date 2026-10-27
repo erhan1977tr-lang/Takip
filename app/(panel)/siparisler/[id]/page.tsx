@@ -59,7 +59,7 @@ import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
 import { approvalDueText, approvalFlags, approvalOverdue, approvalState, CHANGE_NOTE_MAX, OVERRIDE_REASON_MAX } from '@/server/orders/production-approval.js';
 import { customerRevision, revisionStage } from '@/server/orders/offer-revision.js';
 import { approvalGateSetting, loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
-import { approveProductionAction, openRevisionDraftAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction, retryOfferTranslationAction } from './approval-actions';
+import { approveProductionAction, openRevisionDraftAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction, retryOfferTranslationAction, translateOfferNoteAction } from './approval-actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -792,6 +792,14 @@ function ApprovalInfo({ order, user, can, offer, state, status, versions, revisi
         <b>{t('order.approval.staffChange', { n: versions, date: fmtDateTime(offer.changeRequestedAt) })}</b>
         {offer.changeNote && <div className="note" style={{ marginTop: 6 }} data-change-note><RevisionNote r={{ ...offer, comment: offer.changeNote }} role={user.appRole} t={t} retry={retry} plain /></div>}
         <div className="small" style={{ marginTop: 6 }}>{t(next)}</div>
+        {/* Taslağı 4.2.10'dan önce açılmış, notu hiç çevrilmemiş eski talep: teklif hazırlayan iç ekip bir kez çevirtir */}
+        {revision && revision.stage !== 'NO_DRAFT' && offer.changeNote && !offer.translationStatus && userCan(user, 'OFFER_PREPARE') && (
+          <form action={translateOfferNoteAction} style={{ marginTop: 8 }}>
+            <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="offerId" value={offer.id} />
+            <button className="btn btn-link" data-translate-change-note>{t('order.revision.translate')}</button>
+          </form>
+        )}
         {can('open_revision_draft') && (
           <form action={openRevisionDraftAction} style={{ marginTop: 8 }}>
             <input type="hidden" name="id" value={order.id} />

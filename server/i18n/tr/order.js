@@ -421,6 +421,7 @@ export default {
     noDraft: 'Bu talep için revizyon taslağı henüz açılmadı. "Revizyon taslağını aç" ile müşteriye gönderilmiş sürümün satırlarından taslak açılır; talep kaydı değişmez.',
     open: 'Revizyon taslağını aç',
     openConfirm: 'Sürüm {n} satırlarından revizyon taslağı açılsın mı? Müşterinin talebi ve gönderilmiş sürüm değişmez.',
+    translate: 'Notu Türkçeye çevir',
   },
   approval: {
     title: 'Üretim onayı',

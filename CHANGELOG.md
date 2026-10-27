@@ -24,7 +24,9 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 - Bildirim: talep ilgili satışçıya uygulama içi bildirim **ve e-posta** (not + Türkçe çeviri; mevcut altyapı, mükerrersiz).
 - Eski talepler (ALE81 gibi — 4.2.10'dan önce üretimdeki siparişte alınmış, taslağı açılmamış): satış / yönetici için tek
   seferlik **"Revizyon taslağını aç"**; talep kaydı değişmez, çift tıklamada tek taslak, denetim kaydı; not bu sırada bir kez
-  çevrilir. Canlı veriye betikle yazılmaz.
+  çevrilir. Taslağı 4.2.10'dan önce açılmış eski talebin hiç çevrilmemiş notu için satış / yönetici "Notu Türkçeye çevir"
+  ile bir kez çevirtir. Canlı veriye betikle yazılmaz. Canlı kontrol: `deploy/canliya-gecis/teklif-revizyon-kontrol.sql`
+  (salt okunur).
 - Açık revizyonu olan siparişte telafi, kaynak / hedef teklife yeni sürüm açmaz.
 - Veritabanı: `Offer` tablosuna talep notunun çevirisi için beş boş olabilen alan (mevcut satırlar değişmez).
 

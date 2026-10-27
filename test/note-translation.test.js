@@ -309,7 +309,11 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
   assert.ok(approval.startsWith("'use server'"));
   const runFn = approval.slice(approval.indexOf('async function run('), approval.indexOf('export async function approveProductionAction('));
   assert.ok(runFn.indexOf('await runOrderAction(') >= 0 && runFn.indexOf('await runOrderAction(') < runFn.indexOf('await translateChangeNote('), 'çeviri işlem kaydedildikten sonra');
-  assert.equal((approval.match(/await translateOfferChange\(/g) ?? []).length, 1);
+  // translateChangeNote (işlemden sonra) + translateOfferNoteAction (taslağı 4.2.10'dan önce açılmış eski talebin notu — iç
+  // ekibin açık isteği, bir kez)
+  assert.equal((approval.match(/await translateOfferChange\(/g) ?? []).length, 2);
+  const explicit = approval.slice(approval.indexOf('export async function translateOfferNoteAction('), approval.indexOf('export async function retryOfferTranslationAction('));
+  assert.ok(explicit.indexOf("requirePermission('OFFER_PREPARE')") >= 0 && explicit.indexOf("requirePermission('OFFER_PREPARE')") < explicit.indexOf('await translateOfferChange('), 'açık istek, yetkiden sonra');
   assert.equal((approval.match(/await retryOfferChangeTranslation\(/g) ?? []).length, 1);
   // Yalnızca talep ve eski talep için taslak açma çevirir (öteki üretim onayı işlemleri çevirmez)
   assert.equal((approval.match(/'uretim-onayi', true\)|'teklif', true\)/g) ?? []).length, 2);

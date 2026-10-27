@@ -421,6 +421,7 @@ export default {
     noDraft: 'Pentru această cerere nu s-a deschis încă o ciornă de revizie. „Deschide ciorna de revizie” creează ciorna din rândurile versiunii trimise clientului; cererea nu se modifică.',
     open: 'Deschide ciorna de revizie',
     openConfirm: 'Deschideți ciorna de revizie din rândurile versiunii {n}? Cererea clientului și versiunea trimisă nu se modifică.',
+    translate: 'Tradu nota în turcă',
   },
   approval: {
     title: 'Aprobarea producției',

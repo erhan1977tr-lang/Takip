@@ -15,6 +15,7 @@ import { deliverInAppNow } from '@/lib/notifications';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 import { retryOfferChangeTranslation, translateOfferChange } from '@/server/notes/translation.js';
 import { loadOrder } from '@/lib/orders';
+import { customerRevision } from '@/server/orders/offer-revision.js';
 
 const back = (id: string, q: string) => `/siparisler/${id}?${q}`;
 const versionOf = (formData: FormData) => {
@@ -85,6 +86,27 @@ export async function openRevisionDraftAction(formData: FormData) {
 }
 
 /**
+ * Açık revizyonun hiç çevrilmemiş talep notunu (4.2.10'dan önce alınmış, taslağı o zaman açılmış talep — açılış anı olmadığı için
+ * kendiliğinden çevrilmemiş) bir kez Türkçeye çevirir — yalnızca teklif hazırlayan iç ekip, açık istekle (ürün sahibinin
+ * kararı: eski açık revizyon notları bir kez çevrilir). Kural ve tek seferlik sahiplenme translateOfferChange'te; çevrilmiş /
+ * denenmiş not yeniden çevrilmez.
+ */
+export async function translateOfferNoteAction(formData: FormData) {
+  const user = await requirePermission('OFFER_PREPARE');
+  const order = await loadOrder(String(formData.get('id') ?? ''), user);
+  const { t } = await getT();
+  const offerId = String(formData.get('offerId') ?? '').slice(0, 64);
+  const rev = customerRevision(order);
+  if (!rev || rev.sent.id !== offerId) redirect(back(order.id, `error=${encodeURIComponent(t('order.errors.notAllowed'))}`) + '#uretim-onayi');
+  const r = await translateOfferChange(db, { offerId, orderId: order.id, actor: await actorOf(user) });
+  revalidatePath(`/siparisler/${order.id}`);
+  if (!r.ok) redirect(back(order.id, `error=${encodeURIComponent(t('order.errors.notAllowed'))}`) + '#uretim-onayi');
+  if (r.translation === null) redirect(back(order.id, `error=${encodeURIComponent(t('order.notes.translation.disabled'))}`) + '#uretim-onayi');
+  if (r.translation === 'FAILED') redirect(back(order.id, `error=${encodeURIComponent(t('order.notes.translation.retryFailed'))}`) + '#uretim-onayi');
+  redirect(back(order.id, 'ok=note_translated') + '#uretim-onayi');
+}
+
+/**
  * Müşterinin değişiklik talebi notunun çevrilemeyen çevirisini bir kez daha ister — yalnızca teklif hazırlayan iç ekip, açık
  * istekle (kural server/notes/translation.js → retryOfferChangeTranslation: yalnızca başarısız / yarıda kalmış çeviri).
  */
@@ -95,11 +117,11 @@ export async function retryOfferTranslationAction(formData: FormData) {
   const r = await retryOfferChangeTranslation(db, { offerId: String(formData.get('offerId') ?? '').slice(0, 64), orderId: order.id, actor: await actorOf(user) });
   if (!r.ok) {
     const msg = t(r.code === 'DISABLED' ? 'order.notes.translation.disabled' : r.code === 'RATE_LIMIT' ? 'order.notes.translation.retryLimit' : 'order.errors.notAllowed');
-    redirect(back(order.id, `error=${encodeURIComponent(msg)}`) + '#teklif');
+    redirect(back(order.id, `error=${encodeURIComponent(msg)}`) + '#uretim-onayi');
   }
   revalidatePath(`/siparisler/${order.id}`);
-  if (r.translation === 'FAILED') redirect(back(order.id, `error=${encodeURIComponent(t('order.notes.translation.retryFailed'))}`) + '#teklif');
-  redirect(back(order.id, 'ok=note_translated') + '#teklif');
+  if (r.translation === 'FAILED') redirect(back(order.id, `error=${encodeURIComponent(t('order.notes.translation.retryFailed'))}`) + '#uretim-onayi');
+  redirect(back(order.id, 'ok=note_translated') + '#uretim-onayi');
 }
 
 /** Onaysız yükleme istisnası — yalnızca yönetici (LOADING_APPROVAL_OVERRIDE); gerekçe zorunlu (sunucuda denetlenir) */
