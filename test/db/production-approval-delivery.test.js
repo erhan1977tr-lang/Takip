@@ -138,28 +138,38 @@ dbTest('iletilemeyen talep: süre başlamaz, hata kaydı + yöneticiye bir bildi
   const offer = await sendOffer(o.id);
   failing.add('cust@po.test');
   failing.add('firma@po.test');
-  let now = new Date('2026-11-09T08:00:00Z');
-  for (let i = 0; i < 8; i++) {
-    await dispatchNotifications(db, { ...mailOpts, now });
-    now = new Date(now.getTime() + 3 * 3_600_000);
+  let x;
+  try {
+    let now = new Date('2026-11-09T08:00:00Z');
+    for (let i = 0; i < 8; i++) {
+      await dispatchNotifications(db, { ...mailOpts, now });
+      now = new Date(now.getTime() + 3 * 3_600_000);
+    }
+    const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
+    assert.equal(row.status, 'FAILED', 'kayıt altında (son hata kuyrukta)');
+    x = await db.offer.findUnique({ where: { id: offer.id } });
+    assert.equal(x.approvalDeliveredAt, null);
+    assert.equal(x.approvalDueAt, null, 'iletilmeyen talepte süre YOK');
+    assert.equal(x.approvalDeliveryError, 'EMAIL_FAILED');
+    assert.ok(x.approvalDeliveryFailedAt instanceof Date);
+    const alerts = await db.notification.findMany({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: o.id } });
+    assert.deepEqual(alerts.map((n) => n.userId).sort(), [people.admin.id, people.assistant.id].sort(), 'yönetici + yardımcı, bir kez');
+    // Yeniden gönderim: satış / çizimci / müşteri yapamaz; yönetici yapar; kuyrukta bekleyen varken ikincisi reddedilir
+    for (const who of ['sales', 'cust', 'inspector']) assert.ok(['NOT_ALLOWED', 'NOT_FOUND'].includes(await codeOf(run(o.id, 'resend_approval_request', who, { offerId: offer.id }))), who);
+    await run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id });
+    // Yeni talep kuyrukta: yeniden gönderim görünmez (yeni talep, hata yok) ve işlem reddedilir
+    assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'NOT_ALLOWED');
+    // Talep bir saatten eski görünse de kuyrukta bekleyen gönderim varken ikinci gönderim yazılmaz
+    await db.offer.update({ where: { id: offer.id }, data: { approvalRequestedAt: new Date(Date.now() - 2 * 3_600_000) } });
+    assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'APPROVAL_SEND_QUEUED');
+    x = await db.offer.findUnique({ where: { id: offer.id } });
+    assert.equal(x.approvalDeliveryError, null);
+    assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED', status: 'PENDING' } }), 1);
+  } finally {
+    failing.clear();
   }
-  const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
-  assert.equal(row.status, 'FAILED', 'kayıt altında (son hata kuyrukta)');
-  let x = await db.offer.findUnique({ where: { id: offer.id } });
-  assert.equal(x.approvalDeliveredAt, null);
-  assert.equal(x.approvalDueAt, null, 'iletilmeyen talepte süre YOK');
-  assert.equal(x.approvalDeliveryError, 'EMAIL_FAILED');
-  assert.ok(x.approvalDeliveryFailedAt instanceof Date);
-  const alerts = await db.notification.findMany({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: o.id } });
-  assert.deepEqual(alerts.map((n) => n.userId).sort(), [people.admin.id, people.assistant.id].sort(), 'yönetici + yardımcı, bir kez');
-  // Yeniden gönderim: satış / çizimci / müşteri yapamaz; yönetici yapar; kuyrukta bekleyen varken ikincisi reddedilir
-  for (const who of ['sales', 'cust', 'inspector']) assert.ok(['NOT_ALLOWED', 'NOT_FOUND'].includes(await codeOf(run(o.id, 'resend_approval_request', who, { offerId: offer.id }))), who);
-  await run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id });
-  assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'APPROVAL_SEND_QUEUED');
-  x = await db.offer.findUnique({ where: { id: offer.id } });
-  assert.equal(x.approvalDeliveryError, null);
-  assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED', status: 'PENDING' } }), 1);
-  failing.clear();
+  const o2 = await db.offer.findUnique({ where: { id: offer.id } });
+  assert.equal(o2.approvalDeliveredAt, null);
   const at = new Date('2026-11-12T09:00:00Z');
   await dispatchNotifications(db, { ...mailOpts, now: at });
   x = await db.offer.findUnique({ where: { id: offer.id } });
