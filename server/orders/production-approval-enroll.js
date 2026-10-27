@@ -4,10 +4,12 @@
 // URETIMDE olsa da müşteri onayına alınır. Ana sipariş durumu, teklif sürümleri, fiyatlar, ölçüler, çizimler, yükleme
 // tarihi, sandık, proforma ve muhasebe kayıtları DEĞİŞMEZ; yalnızca:
 //   - Order.productionApprovalRequired = true (kapsam bayrağı)
-//   - müşteriye gönderilmiş GÜNCEL sürümde onay talebi: Offer.approvalRequestedAt = geçiş anı, approvalDueAt = o andan
-//     itibaren 2 Romanya iş günü (süre eski gönderim tarihinden değil, talebin müşteriye gönderildiği andan başlar)
-//   - siparişin geçmişine PRODUCTION_APPROVAL_REQUESTED, denetim kaydı, müşteriye olağan bildirim (e-posta + zil; isteğe
-//     bağlı olarak kapatılabilir)
+//   - müşteriye gönderilmiş GÜNCEL sürümde onay talebi: Offer.approvalRequestedAt = geçiş anı. Daha önceki teklif gönderimi
+//     onay sayılmaz. Süre (2 Romanya iş günü) burada BAŞLAMAZ: talep müşteriye iletildiğinde başlar (4.2.5 —
+//     production-approval-delivery.js); iletilmeyen talepte süre yoktur
+//   - siparişin geçmişine PRODUCTION_APPROVAL_REQUESTED, denetim kaydı, müşteriye olağan bildirim (e-posta + zil). Bildirim
+//     ayrı ve kontrollü başlatılabilir: --bildirimsiz ile geçiş, sonra planNotify / applyNotify (tümü ya da seçilen
+//     siparişler; aynı ön izleme + onay kodu kuralı, kuyrukta bekleyen talebe ikinci bildirim yazılmaz)
 //
 // İki adım, HTTP yolu yok (yalnızca sunucuda betik: scripts/production-approval-enroll.mjs):
 //   planEnrollment  → salt okunur ön izleme: her siparişin kategorisi ve nedeni + onay kodu (ön izlemenin parmak izi)
@@ -16,19 +18,20 @@
 //                     kapsamda" sayar). Sipariş sürümü artırılır: geçiş sırasında siparişte yapılan bir işlem çakışmayı yakalar.
 // Kategoriler (yalnızca REQUEST ve FLAG_ONLY yazılır; diğerleri raporlanır ve DOKUNULMAZ):
 //   REQUEST     HAZIRLANIYOR / URETIMDE, güncel sürüm müşteriye gönderilmiş, onay talebi yok → bayrak + talep
-//   FLAG_ONLY   YENI / HAZIRLANIYOR, müşteriye gönderilmiş güncel teklif henüz yok → yalnızca bayrak (onay, teklif
-//               müşteriye gönderildiğinde olağan kuralla istenir; e-posta yok)
+//   FLAG_ONLY   YENI / HAZIRLANIYOR, güncel teklif henüz müşteride değil (daha önce gönderilmiş bir sürümden sonra yeni
+//               sürüm hazırlanıyor olsa da) → yalnızca bayrak (onay, teklif müşteriye gönderildiğinde olağan kuralla
+//               istenir; e-posta yok)
 //   ALREADY     zaten kapsamda (bayrak + güncel sürümde talep / onay) → atlanır
 //   LOADED      yüklendi (YUKLENDI) ya da herhangi bir yükleme onayı kalemi var (kısmi / çoklu yükleme dahil) → dokunulmaz
 //   FINAL_INVOICED  nihai fatura kesilmiş (siparişin FGO faturası ya da kesilmiş müşteri faturası kapsamı) → dokunulmaz
 //   COMPENSATION    telafi (-T) siparişi (iç üretim kararı) → dokunulmaz
 //   NO_OFFER    URETIMDE ama müşteriye gönderilmiş güncel teklif yok (beklenmeyen eski kayıt) → dokunulmaz
-//   DRAFT_OPEN  güncel sürüm müşteride değil ama daha önce gönderilmiş sürüm var (yeni sürüm hazırlanıyor) → dokunulmaz
 import crypto from 'node:crypto';
 import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
 import { dayKey } from './loading.js';
-import { APPROVAL_STATUSES, approvalDeadline, inApprovalScope } from './production-approval.js';
+import { APPROVAL_STATUSES, inApprovalScope } from './production-approval.js';
+import { APPROVAL_REQUEST_TYPES } from './production-approval-delivery.js';
 
 export const ENROLL_EVENT = 'PRODUCTION_APPROVAL_REQUESTED';
 export const ENROLL_WRITES = Object.freeze(['REQUEST', 'FLAG_ONLY']);
@@ -48,13 +51,11 @@ export function enrollCategory(o, { loaded, finalInvoiced }) {
   if (finalInvoiced) return 'FINAL_INVOICED';
   if (o.compOfId) return 'COMPENSATION';
   const latest = o.offers[0] ?? null;
-  const sentBefore = o.offers.slice(1).some((x) => x.status === 'GONDERILDI');
   if (latest?.status === 'GONDERILDI' && APPROVAL_STATUSES.includes(o.status)) {
     if (o.productionApprovalRequired && (latest.approvalRequestedAt || latest.approvedAt)) return 'ALREADY';
     return 'REQUEST';
   }
   if (o.status === 'URETIMDE') return 'NO_OFFER';
-  if (sentBefore) return 'DRAFT_OPEN';
   if (o.status === 'YENI' || o.status === 'HAZIRLANIYOR') return o.productionApprovalRequired ? 'ALREADY' : 'FLAG_ONLY';
   return 'NO_OFFER';
 }
@@ -116,7 +117,8 @@ export function approvalCodeOf(cutoff, rows) {
  * Planı uygular (tek işlem). Onay kodu ön izlemeninkiyle aynı olmalı (işlem içinde yeniden hesaplanır).
  * @param {any} db
  * @param {{ cutoff: string, code: string, operator: string, notify?: boolean, now?: Date }} p
- *   notify: false → müşteriye e-posta / zil kuyruğa yazılmaz (prova); talep ve süre yine yazılır
+ *   notify: false → müşteriye e-posta / zil kuyruğa yazılmaz; talep yazılır, süre BAŞLAMAZ (iletim yok) — bildirim sonra
+ *   applyNotify ile kontrollü başlatılır
  * @returns {Promise<{ ok: true, requested: number, flagged: number, skipped: Record<string, number>, ids: string[] } | { ok: false, code: string, expected?: string }>}
  */
 export async function applyEnrollment(db, { cutoff, code, operator, notify = true, now = new Date() }) {
@@ -126,7 +128,6 @@ export async function applyEnrollment(db, { cutoff, code, operator, notify = tru
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${LOCK}, 0))`;
     const plan = await planEnrollment(tx, { cutoff });
     if (plan.code !== code) return { ok: false, code: 'APPROVAL_MISMATCH', expected: plan.code };
-    const due = approvalDeadline(now);
     let requested = 0;
     let flagged = 0;
     const ids = [];
@@ -143,14 +144,14 @@ export async function applyEnrollment(db, { cutoff, code, operator, notify = tru
       // Aynı sürüme ikinci talep açılmaz (koşullu); karar verilmiş sürüm atlanmaz — planda ALREADY olurdu
       const set = await tx.offer.updateMany({
         where: { id: r.offerId, orderId: r.id, status: 'GONDERILDI', approvalRequestedAt: null, approvedAt: null, changeRequestedAt: null },
-        data: { approvalRequestedAt: now, approvalDueAt: due.due },
+        data: { approvalRequestedAt: now },
       });
       if (set.count !== 1) throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT', orderNo: r.orderNo });
       requested++;
       await writeHistory(tx, { orderId: r.id, event: ENROLL_EVENT, from: r.status, to: r.status, actorId: null });
       if (notify) {
         await enqueueOutbox(tx, outboxEvent(`ORDER_${ENROLL_EVENT}`, {
-          orderId: r.id, payload: { approval: { due: due.due ? due.due.toISOString() : null }, from: r.status, to: r.status, actorId: null },
+          orderId: r.id, payload: { approval: { offerId: r.offerId }, from: r.status, to: r.status, actorId: null },
         }));
       }
     }
@@ -159,11 +160,81 @@ export async function applyEnrollment(db, { cutoff, code, operator, notify = tru
     await writeAudit(tx, {
       action: 'PRODUCTION_APPROVAL_ENROLL', entityType: 'Order', entityId: null, userId: null,
       details: {
-        cutoff, code, operator: op, via: 'SERVER_CLI', notify, requested, flagged, skipped, dueAt: due.due ? due.due.toISOString() : null,
-        dueUnknown: due.noData, orders: ids,
+        cutoff, code, operator: op, via: 'SERVER_CLI', notify, requested, flagged, skipped, orders: ids,
       },
     }, { role: 'SYSTEM' });
     return { ok: true, requested, flagged, skipped, ids };
+  }, TX).catch((e) => {
+    if (e?.code === 'CONFLICT') return { ok: false, code: 'CONFLICT' };
+    throw e;
+  });
+}
+
+/**
+ * Bildirimin kontrollü başlatılması — ön izleme (salt okunur): onay talebi açılmış, müşteriye İLETİLMEMİŞ, karara
+ * bağlanmamış güncel sürümler; kuyrukta bekleyen gönderimi olan sürüm listelenmez (ikinci bildirim yazılmaz).
+ * orderNos verilirse yalnızca o siparişler (pilot müşteriyle kademeli başlatma).
+ * @param {any} db  @param {{ orderNos?: string[] | null }} [p]
+ */
+export async function planNotify(db, { orderNos = null } = {}) {
+  const orders = await db.order.findMany({
+    where: {
+      orderTypeCode: 'GLASS_ORDER', removedAt: null, productionApprovalRequired: true, status: { in: [...APPROVAL_STATUSES] },
+      ...(orderNos?.length ? { orderNo: { in: orderNos } } : {}),
+    },
+    orderBy: { orderNo: 'asc' },
+    select: {
+      id: true, orderNo: true, status: true, version: true,
+      offers: { orderBy: { createdAt: 'desc' }, take: 1, select: { ...OFFER_SELECT, approvalDeliveredAt: true, approvalDeliveryError: true } },
+    },
+  });
+  const open = orders.filter((o) => {
+    const x = o.offers[0];
+    return x?.status === 'GONDERILDI' && x.approvalRequestedAt && !x.approvalDeliveredAt && !x.approvedAt && !x.changeRequestedAt;
+  });
+  const queued = open.length ? await db.notificationOutbox.findMany({
+    where: { orderId: { in: open.map((o) => o.id) }, status: 'PENDING', type: { in: [...APPROVAL_REQUEST_TYPES] } },
+    select: { orderId: true, payload: true },
+  }) : [];
+  const busy = new Set(queued.map((q) => `${q.orderId}:${q.payload?.approval?.offerId ?? ''}`));
+  const rows = open.filter((o) => !busy.has(`${o.id}:${o.offers[0].id}`)).map((o) => ({
+    id: o.id, orderNo: o.orderNo, status: o.status, version: o.version, offerId: o.offers[0].id, error: o.offers[0].approvalDeliveryError ?? null,
+  }));
+  const missing = orderNos?.length ? orderNos.filter((n) => !rows.some((r) => r.orderNo === n)) : [];
+  const basis = rows.map((r) => `${r.id}:${r.offerId}:${r.version}`).sort().join('|');
+  return { rows, missing, code: crypto.createHash('sha256').update(`NOTIFY|${basis}`).digest('hex').slice(0, 10).toUpperCase() };
+}
+
+/**
+ * Bildirimi başlatır (tek işlem, aynı danışma kilidi): her sürüm için ORDER_PRODUCTION_APPROVAL_REQUESTED kuyruğa yazılır
+ * (e-posta + zil); süre iletimde başlar. Onay kodu ön izlemeninkiyle aynı olmalı. Koşullu: sürüm bu arada iletildiyse /
+ * karara bağlandıysa / sipariş değiştiyse hiçbir şey yazılmaz (CONFLICT).
+ * @param {any} db  @param {{ code: string, operator: string, orderNos?: string[] | null, now?: Date }} p
+ */
+export async function applyNotify(db, { code, operator, orderNos = null, now = new Date() }) {
+  if (typeof code !== 'string' || !/^[0-9A-F]{10}$/.test(code)) return { ok: false, code: 'CODE_REQUIRED' };
+  const op = String(operator ?? '').slice(0, 64) || 'bilinmiyor';
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${LOCK}, 0))`;
+    const plan = await planNotify(tx, { orderNos });
+    if (plan.code !== code) return { ok: false, code: 'APPROVAL_MISMATCH', expected: plan.code };
+    for (const r of plan.rows) {
+      const bumped = await tx.order.updateMany({ where: { id: r.id, version: r.version }, data: { version: { increment: 1 } } });
+      if (bumped.count !== 1) throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
+      const w = await tx.offer.updateMany({
+        where: { id: r.offerId, status: 'GONDERILDI', approvalDeliveredAt: null, approvedAt: null, changeRequestedAt: null },
+        data: { approvalDeliveryError: null, approvalDeliveryFailedAt: null },
+      });
+      if (w.count !== 1) throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
+      await enqueueOutbox(tx, outboxEvent(`ORDER_${ENROLL_EVENT}`, {
+        orderId: r.id, payload: { approval: { offerId: r.offerId }, from: r.status, to: r.status, actorId: null },
+      }));
+    }
+    await writeAudit(tx, {
+      action: 'PRODUCTION_APPROVAL_NOTIFY', entityType: 'Order', entityId: null, userId: null,
+      details: { code, operator: op, via: 'SERVER_CLI', at: now.toISOString(), queued: plan.rows.length, orders: plan.rows.map((r) => r.id), filter: orderNos ?? null },
+    }, { role: 'SYSTEM' });
+    return { ok: true, queued: plan.rows.length, missing: plan.missing };
   }, TX).catch((e) => {
     if (e?.code === 'CONFLICT') return { ok: false, code: 'CONFLICT' };
     throw e;

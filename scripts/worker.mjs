@@ -38,7 +38,7 @@ import { pruneLoginEvents } from '../server/auth/login-log.js';
 import { REMIND_EVERY_MS, remindUninvoiced } from '../server/accounting/uninvoiced.js';
 import { AUTO_ARCHIVE_EVERY_MS, autoArchiveOrders, repairAutoShipped } from '../server/orders/auto-archive.js';
 import { dispatchSupplierOrderEmails } from '../server/suppliers/dispatch.js';
-import { APPROVAL_REMIND_EVERY_MS, remindApprovalOverdue } from '../server/orders/production-approval-service.js';
+import { APPROVAL_REMIND_EVERY_MS, remindApprovalCustomers, remindApprovalOverdue } from '../server/orders/production-approval-service.js';
 import { dispatchReceiptEmails } from '../server/suppliers/receipt-mail.js';
 import { dispatchReturnEmails } from '../server/profile/returns-mail.js';
 import { remindSupplierEta } from '../server/suppliers/service.js';
@@ -184,7 +184,7 @@ async function autoArchiveTick() {
 }
 
 // Saatte bir (4.2.1): müşteri üretim onayının süresi doldu, hâlâ onay yok → yöneticiye uygulama içi bildirim, sürüm başına bir
-// kez. Yalnızca veritabanı; müşterinin onay hakkı, yükleme tarihi ve sipariş durumu değişmez.
+// kez; müşteriye tek hatırlatma (4.2.5). Yalnızca veritabanı; müşterinin onay hakkı, yükleme tarihi ve sipariş durumu değişmez.
 let approvalRemindedAt = 0;
 async function approvalTick() {
   if (once) return; // --once (testler): kural test/db/production-approval.test.js'te doğrudan denenir
@@ -192,6 +192,9 @@ async function approvalTick() {
   approvalRemindedAt = Date.now();
   const r = await remindApprovalOverdue(db, { now: new Date(), log });
   if (r.notified) log('üretim onayı gecikmesi:', JSON.stringify(r));
+  // 4.2.5: onay bekleyen müşteriye tek hatırlatma (iletimden 1 iş günü sonra; e-posta + zil olağan kuyruktan)
+  const c = await remindApprovalCustomers(db, { now: new Date(), log });
+  if (c.reminded) log('üretim onayı hatırlatması:', JSON.stringify(c));
 }
 
 // Saatte bir (Paket 10, karar 208): elle ödeme kaydı olan zincirlerde FGO ile elle kayıt uyuşmazlığı, fazla ödeme, FGO'nun

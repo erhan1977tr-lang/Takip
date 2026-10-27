@@ -232,6 +232,8 @@ export const EVENTS = {
   PRODUCTION_APPROVED: { customer: true },
   PRODUCTION_APPROVAL_REQUESTED: { customer: true }, // mevcut siparişin geçişte açılan onay talebi (karar 305)
   OFFER_CHANGE_REQUESTED: { customer: true, note: true },
+  PRODUCTION_APPROVAL_REMINDER: { customer: true }, // onay bekleyen müşteriye tek hatırlatma (4.2.5)
+  LOADING_APPROVAL_OVERRIDE: { customer: false, note: true }, // yöneticinin onaysız yükleme istisnası (4.2.5) — iç kayıt
   UNDO_DRAWING: { customer: true },
   UNDO_NO_DRAWING: { customer: false },
   PRODUCTION: { customer: true },
@@ -587,7 +589,7 @@ export function drawingFlags(o) {
  *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null, approval = 'NONE' }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null, approval = 'NONE', loadingOverride = false, approvalResend = false }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -654,6 +656,11 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
   if (drawer && preparing && drawing === 'ONAY_BEKLIYOR') a.push('withdraw_drawing');
 
   if (sales && status === 'URETIMDE') a.push('mark_shipped');
+  // Müşteri üretim onayı (4.2.5): onaysız yükleme istisnası yalnızca yöneticide (LOADING_APPROVAL_OVERRIDE; gerekçe zorunlu,
+  // müşteri onayı yerine geçmez) — loadingOverride: kapsamdaki sipariş, istisna yok, güncel sürüm onaylanmadı
+  // (production-approval.js → approvalFlags). İletilemeyen onay talebini yönetici yeniden gönderir (aynı sürüm, yeni süre yok).
+  if (loadingOverride && !closed && can(role, 'LOADING_APPROVAL_OVERRIDE')) a.push('override_loading_approval');
+  if (approvalResend && !closed && admin) a.push('resend_approval_request');
   if (sales && status === 'YUKLENDI') a.push('archive');
   if (sales && !closed) a.push('hold', 'set_ship_date');
   if (can(role, 'ORDER_CANCEL') && !closed) a.push('cancel');

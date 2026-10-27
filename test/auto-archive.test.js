@@ -155,7 +155,11 @@ test('kayıt: "Yüklendi" yalnızca kişinin düğmesiyle yazılır; arşiv mevc
   // YUKLENDI yazan TEK yer satışın "Yüklendi" düğmesidir (mark_shipped)
   assert.deepEqual(src.match(/status: 'YUKLENDI'/g), ["status: 'YUKLENDI'"]);
   // Onaylı yüklemesi olan siparişte fiili gün onaylı yükleme günü, sandık taşınmaz (karar 288 — O1)
-  assert.match(src, /async mark_shipped\(h\) \{\s+const confirmed = await confirmedShipDay\(h\.tx, h\.order\.id\);\s+await h\.set\(\{ status: 'YUKLENDI', actualShipDate: confirmed \?\? h\.now \}\);/);
+  // 4.2.5: onaylı yüklemesi olmayan siparişte "Yüklendi"den önce onaysız yükleme engeli (production-approval / loading-approval)
+  const ship = src.slice(src.indexOf('async mark_shipped(h)'), src.indexOf('async auto_archive(h)'));
+  assert.match(ship, /^async mark_shipped\(h\) \{\s+const confirmed = await confirmedShipDay\(h\.tx, h\.order\.id\);/);
+  assert.match(ship, /if \(!confirmed\) \{\s+const blocked = await loadingApprovalBlocks\(h\.tx, \{ day: dayKey\(h\.order\.estimatedShipDate \?\? h\.now\), orderIds: \[h\.order\.id\] \}\);\s+if \(blocked\.length\) throw new WorkflowError\('LOADING_APPROVAL_REQUIRED'/);
+  assert.match(ship, /\}\s+await h\.set\(\{ status: 'YUKLENDI', actualShipDate: confirmed \?\? h\.now \}\);/);
   const body = src.slice(src.indexOf('async auto_archive(h)'), src.indexOf('async auto_ship_revert(h)'));
   assert.match(body, /archiveCheck\(h\.tx, h\.order, \{ today: h\.payload\.today, now: h\.now \}\)/);
   assert.match(body, /if \(!r\.ok\) throw new WorkflowError\(r\.code\);/);

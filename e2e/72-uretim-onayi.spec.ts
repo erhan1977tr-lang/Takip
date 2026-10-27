@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, fillOffer, newOrder } from './helpers';
 
 // Müşteri üretim onayı (4.2.1, karar 305):
@@ -6,7 +7,10 @@ import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, TEAM_PW, as, fillOffer, newOrder } 
 //  - yönetici teklifi gönderince sipariş üretime geçmez; müşteri panelinde zil, "Onay gerekli", "Üretim onayı gereklidir",
 //    son onay tarihi ve iki işlem; "Üretime alınmasını onaylıyorum" (ikinci doğrulama) → üretim; iç ekip durumu görür
 //  - "Ölçülerde değişiklik var": zorunlu açıklama → satışa yeni taslak; satış düzeltir, yönetici gönderir, yeniden onay
-// FGO / e-posta / Google'a istek yapılmaz. Sondaki adım ayarı yeniden kapatır (sonraki testler eski davranışla çalışır).
+//  - 4.2.5: süre talep müşteriye İLETİLİNCE başlar (işçinin e-posta turu; e-postalar MAIL_OUTBOX_DIR'e yazılır);
+//    onaysız yükleme engeli ("Yüklendi" düğmesi yerine engel kartı, "Yükleme yapıldı" engelli siparişleri listeler) ve
+//    yalnızca yöneticinin gerekçeli istisnası
+// FGO / gerçek SMTP / Google'a istek yapılmaz. Sondaki adım ayarı yeniden kapatır (sonraki testler eski davranışla çalışır).
 test.describe.configure({ mode: 'serial' });
 
 const SALES = 'fiyat-satis@e2e.test';
@@ -45,6 +49,21 @@ async function prepareAndSend(browser: import('@playwright/test').Browser, order
   return { sales, admin };
 }
 
+/** İşçinin turu (e-posta + zil) talep müşteriye iletilene kadar — kuyrukta önceki testlerin olayları olabilir */
+async function deliver(offerId: string) {
+  const db = await prisma();
+  try {
+    for (let i = 0; i < 15; i++) {
+      execFileSync('node', ['scripts/worker.mjs', '--once'], { env: process.env, stdio: 'inherit' });
+      const o = await db.offer.findUnique({ where: { id: offerId } });
+      if (o?.approvalDeliveredAt) return o;
+    }
+    throw new Error('onay talebi iletilmedi');
+  } finally {
+    await db.$disconnect();
+  }
+}
+
 test.afterAll(async () => {
   // Güvenlik: başka testler eski davranışla çalışsın
   const db = await prisma();
@@ -71,9 +90,10 @@ test('ayar açıkken: onay beklenir; müşteri paneli uyarıları; onay → üre
   const id = await newOrder(cust, 'Onay açık', 'onay-acik.pdf');
   const { admin: a, sales } = await prepareAndSend(browser, id);
   await expect(a.getByText('Fiyat onaylandı; teklif müşterinin panelinde.', { exact: true })).toBeVisible();
-  // Yönetici: üretime geçmedi; engel ve onay durumu görünür
+  // Yönetici: üretime geçmedi; onay durumu görünür — talep henüz iletilmedi, süre başlamadı (4.2.5)
   await expect(a.locator('#uretim-onayi[data-approval-state="PENDING"]')).toContainText('Müşterinin üretim onayı bekleniyor');
-  await expect(a.locator('#uretim-onayi')).toContainText('Son onay tarihi:');
+  await expect(a.locator('#uretim-onayi')).toHaveAttribute('data-approval-delivery', 'WAITING');
+  await expect(a.locator('#uretim-onayi')).toContainText('Talep müşteriye henüz iletilmedi — süre başlamadı.');
 
   // Müşteri: liste, durum, zil, son tarih, iki işlem
   await cust.goto('/siparisler');
@@ -85,14 +105,26 @@ test('ayar açıkken: onay beklenir; müşteri paneli uyarıları; onay → üre
   expect(order?.productionApprovalRequired).toBe(true);
   expect(order?.status).toBe('HAZIRLANIYOR');
   const sent = order!.offers[0];
-  expect(sent.approvalDueAt).not.toBeNull();
+  expect(sent.approvalRequestedAt).not.toBeNull();
+  expect(sent.approvalDueAt).toBeNull();
   const bell = await db.notification.findFirst({ where: { orderId: id, type: 'ORDER_OFFER_SENT', user: { email: CUSTOMER } } });
-  // Zil metni okuyanın dilinde sunucuda üretilir (renderInApp): bildirim onay işaretini ve son tarihi taşır
+  // Zil metni okuyanın dilinde sunucuda üretilir (renderInApp): onay işareti var, son tarih yok (iletimde belirlenir)
   expect((bell?.params as { approval?: number; due?: string }).approval).toBe(1);
-  expect((bell?.params as { approval?: number; due?: string }).due).toMatch(/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+  expect((bell?.params as { approval?: number; due?: string }).due).toBeUndefined();
   const ev = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'ORDER_OFFER_SENT' } });
-  expect((ev?.payload as { approval?: { due?: string } }).approval?.due).toBe(sent.approvalDueAt!.toISOString());
+  expect((ev?.payload as { approval?: { offerId?: string } }).approval?.offerId).toBe(sent.id);
   await db.$disconnect();
+  // Müşteri: iletilmeden önce son tarih yok
+  await cust.goto(`/siparisler/${id}`);
+  await expect(cust.locator('#uretim-onayi [data-approval-due]')).toContainText('talep size e-postayla iletildiği anda başlar');
+  // İşçi e-postayı gönderir → iletim anı + son tarih (2 Romanya iş günü)
+  const delivered = await deliver(sent.id);
+  expect(delivered.approvalDeliveryChannel).toBe('EMAIL');
+  expect(delivered.approvalDueAt).not.toBeNull();
+  await a.goto(`/siparisler/${id}`);
+  await expect(a.locator('#uretim-onayi')).toHaveAttribute('data-approval-delivery', 'DELIVERED');
+  await expect(a.locator('#uretim-onayi')).toContainText('Son onay tarihi:');
+  await expect(a.locator('#uretim-onayi')).toContainText('Müşteriye iletildi:');
 
   await cust.goto(`/siparisler/${id}`);
   const card = cust.locator('#uretim-onayi');
@@ -162,5 +194,63 @@ test('ölçülerde değişiklik var: açıklama zorunlu; satış düzeltir, yön
   await db.$disconnect();
 
   // Ayar yeniden kapatılır (sonraki testler eski davranışla)
+  await setApproval(admin, false);
+});
+
+test('onaysız yükleme engeli: "Yüklendi" yerine engel; yalnızca yönetici gerekçeli istisna verir; yükleme günü engelli siparişi listeler', async ({ browser }) => {
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await setApproval(admin, false);
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  const id = await newOrder(cust, 'Onay yükleme engeli', 'onay-yukleme.pdf');
+  const { sales } = await prepareAndSend(browser, id);
+  // Geçişin yaptığı gibi: üretimdeki sipariş kapsama alınır, güncel sürüme onay talebi açılır. Kesim günü bu test için
+  // geçmişe alınır (yükleme günü bugünden önce olmalı — gelecekteki gün onaylanamaz)
+  const db = await prisma();
+  const past = new Date(Date.now() - 3 * 86_400_000);
+  const day = past.toISOString().slice(0, 10);
+  const offer = await db.offer.findFirst({ where: { orderId: id }, orderBy: { createdAt: 'desc' } });
+  await db.order.update({ where: { id }, data: { productionApprovalRequired: true, estimatedShipDate: new Date(`${day}T10:00:00Z`) } });
+  await db.offer.update({ where: { id: offer!.id }, data: { approvalRequestedAt: new Date() } });
+  await db.integrationSetting.update({ where: { key: 'production-approval' }, data: { value: { enabled: true, cutoff: '2026-01-01' } } });
+  expect((await db.order.findUnique({ where: { id } }))?.status).toBe('URETIMDE');
+  await db.$disconnect();
+
+  // Satış: "Yüklendi" yok, engel kartı var, istisna formu yok
+  await sales.goto(`/siparisler/${id}`);
+  await expect(sales.locator('#yukleme-izni[data-loading-blocked]')).toContainText('Yükleme engelli: müşterinin üretim onayı yok.');
+  await expect(sales.getByRole('button', { name: 'Yüklendi olarak işaretle', exact: true })).toHaveCount(0);
+  await expect(sales.getByText('Onaysız yükleme istisnası (yalnızca yönetici)')).toHaveCount(0);
+
+  // Yükleme günü: engelli sipariş listelenir, "Yükleme yapıldı" düğmesi yok
+  await admin.goto(`/yuklemeler?gun=${day}#onay`);
+  const blocked = admin.locator('[data-approval-blocked]');
+  await expect(blocked).toBeVisible();
+  const orderNo = await (async () => { const d = await prisma(); const o = await d.order.findUnique({ where: { id } }); await d.$disconnect(); return o!.orderNo; })();
+  await expect(blocked).toContainText(orderNo);
+  await expect(blocked).toContainText('müşteri onayı bekleniyor');
+  await expect(admin.locator('#onay').getByRole('button', { name: 'Yükleme yapıldı' })).toHaveCount(0);
+
+  // Yönetici: gerekçeli istisna (müşteri onayı sayılmaz)
+  await admin.goto(`/siparisler/${id}`);
+  const gate = admin.locator('#yukleme-izni');
+  await gate.getByText('Onaysız yükleme istisnası (yalnızca yönetici)').click();
+  await gate.locator('#istisna-gerekce').fill('Müşteri telefonla onay verdi; yazılı onay bekleniyor');
+  await gate.getByRole('button', { name: 'İstisnai yükleme izni ver' }).click();
+  await expect(admin.getByText('Yükleme istisnası kaydedildi. Müşteri onayı olarak sayılmaz; denetim kaydına yazıldı.')).toBeVisible();
+  await expect(admin.locator('#yukleme-izni[data-loading-override]')).toContainText('Müşteri telefonla onay verdi');
+  // Müşteri istisnayı görmez; onay kartı hâlâ onay bekler
+  await cust.goto(`/siparisler/${id}`);
+  await expect(cust.locator('#yukleme-izni')).toHaveCount(0);
+  await expect(cust.locator('#uretim-onayi [data-approval-state="PENDING"]')).toBeVisible();
+  // Satış artık "Yüklendi" yapabilir
+  await sales.goto(`/siparisler/${id}`);
+  await expect(sales.getByRole('button', { name: 'Yüklendi olarak işaretle', exact: true })).toBeVisible();
+  const d2 = await prisma();
+  const o2 = await d2.order.findUnique({ where: { id }, include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } } });
+  expect(o2?.loadingOverrideReason).toBe('Müşteri telefonla onay verdi; yazılı onay bekleniyor');
+  expect(o2?.offers[0].approvedAt).toBeNull();
+  const audit = await d2.auditLog.findFirst({ where: { action: 'ORDER_TRANSITION', entityId: id, details: { path: ['action'], equals: 'override_loading_approval' } } });
+  expect(audit).not.toBeNull();
+  await d2.$disconnect();
   await setApproval(admin, false);
 });

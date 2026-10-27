@@ -1,21 +1,27 @@
 // Müşteri üretim onayı (4.2.1) — saf kurallar (veritabanı yok; sayfa, iş akışı ve işçi aynı kuralları kullanır).
 //
-//   Kapsam (karar 305, ürün sahibinin 26.10.2026 kararı): PLANLANAN YÜKLEME TARİHİ kesim gününde (varsayılan 06.11.2026)
+//   Kapsam (karar 305, ürün sahibinin 26–27.10.2026 kararları): PLANLANAN YÜKLEME TARİHİ kesim gününde (varsayılan 06.11.2026)
 //   ya da sonrasında olan cam siparişleri — durumu HAZIRLANIYOR ya da URETIMDE olsun. Kapsam siparişin bayrağıdır
 //   (Order.productionApprovalRequired): yeni sipariş oluşturulurken (ayar açık + tahmini yükleme ≥ kesim) ya da mevcut
 //   siparişler için açık onaylı geçiş işleminde (production-approval-enroll.js) bir kez yazılır. Kesimden önceki
 //   siparişler, profil siparişleri ve telafi (-T) siparişleri bayraksızdır → eski davranış aynen.
 //   Bayraklı siparişte müşteriye gönderilen her teklif sürümü müşterinin "Üretime alınmasını onaylıyorum" onayını bekler
-//   (Offer.approvedAt). Onay yalnızca EN SON gönderilen sürüme verilir; eski sürüm onaylanamaz. Onay durumu ana sipariş
-//   durumundan AYRIDIR: HAZIRLANIYOR siparişte otomatik üretime geçişe bir koşul eklenir (productionBlockers →
-//   'offer_not_approved'); URETIMDE siparişte durum değişmez, yalnızca onay istenir ve izlenir.
+//   (Offer.approvedAt). Onay yalnızca EN SON gönderilen sürüme verilir; eski sürüm onaylanamaz. Daha önceki teklif
+//   gönderimi onay sayılmaz. Onay durumu ana sipariş durumundan AYRIDIR: HAZIRLANIYOR siparişte otomatik üretime geçişe
+//   bir koşul eklenir (productionBlockers → 'offer_not_approved'); URETIMDE siparişte durum değişmez.
 //   "Ölçülerde değişiklik var" → sürüm değişiklik istendi olarak işaretlenir (Offer.changeRequestedAt + not). HAZIRLANIYOR
-//   siparişte satışa yeni taslak açılır (satış → yönetici → gönder); URETIMDE siparişte mevcut sistemde satış teklif
-//   düzenleyemez — yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir. Yeni sürüm yeniden onay ister.
+//   siparişte satışa yeni taslak açılır (satış → yönetici → gönder); URETIMDE siparişte yönetici mevcut "Teklifi güncelle"
+//   ile yeni sürümü gönderir (satışın yetkisi genişletilmedi). Yeni sürüm yeniden onay ister.
 //
-//   Süre: gönderim anından itibaren 2 Romanya iş günü (Europe/Bucharest; cumartesi, pazar ve Romanya resmî tatilleri
-//   hariç — depo takviminin elle kapatılan günleri SAYILMAZ). Son tarih = gönderim gününden sonraki 2. iş gününün aynı
-//   yerel saati (dakika). Aradaki bir günün tatil verisi yoksa süre HESAPLANMAZ (null) — tahmin edilmez.
+//   Süre (4.2.5): talebin müşteriye GERÇEKTEN iletildiği andan itibaren 2 Romanya iş günü — e-posta posta sunucusuna
+//   kabul edildiğinde (müşteriye e-posta gidemiyorsa uygulama içi bildirim yazıldığında). İletilemeyen talepte süre
+//   başlamaz (production-approval-delivery.js). Europe/Bucharest; cumartesi, pazar ve Romanya resmî tatilleri hariç —
+//   depo takviminin elle kapatılan günleri SAYILMAZ. Son tarih = iletim gününden sonraki 2. iş gününün aynı yerel saati.
+//   Aradaki bir günün tatil verisi yoksa süre HESAPLANMAZ (null) — tahmin edilmez. Müşteriye bir hatırlatma (1 iş günü sonra).
+//
+//   Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin yükleme günü kesim günü ya da sonrasıysa ve güncel sürüm müşteri
+//   tarafından onaylanmadıysa yükleme ("Yükleme yapıldı", "Yüklendi") sunucuda reddedilir; yalnızca yönetici gerekçeyle
+//   istisna verebilir (loadingApprovalBlock). Kesimden önceki yükleme günleri (30.10.2026) etkilenmez.
 import { addDaysKey, CALENDARS, dayStatus, localClock } from '../calendar/rules.js';
 
 /** Ayar anahtarı (IntegrationSetting.key) */
@@ -58,19 +64,34 @@ export function localToInstant(day, minutes, timeZone) {
  * @returns {{ due: Date | null, noData: boolean, day: string | null }}  noData: aradaki bir yılın tatil verisi yok → süre yok
  */
 export function approvalDeadline(sentAt) {
+  return businessDeadline(sentAt, APPROVAL_BUSINESS_DAYS);
+}
+
+/** Müşteriye tek hatırlatma: iletimden 1 Romanya iş günü sonra (aynı yerel saat) */
+export const APPROVAL_REMINDER_BUSINESS_DAYS = 1;
+export function approvalReminderAt(deliveredAt) {
+  return businessDeadline(deliveredAt, APPROVAL_REMINDER_BUSINESS_DAYS);
+}
+
+/**
+ * Andan itibaren n Romanya iş günü sonrası, aynı yerel saat (approvalDeadline ile aynı kural).
+ * @param {Date | string} sentAt  @param {number} days
+ * @returns {{ due: Date | null, noData: boolean, day: string | null }}
+ */
+export function businessDeadline(sentAt, days) {
   const at = new Date(sentAt);
   if (Number.isNaN(at.getTime())) return { due: null, noData: false, day: null };
   const local = localClock(at, APPROVAL_TIME_ZONE);
   let day = local.day;
   let counted = 0;
-  for (let i = 0; i < 60 && counted < APPROVAL_BUSINESS_DAYS; i++) {
+  for (let i = 0; i < 60 && counted < days; i++) {
     day = addDaysKey(day, 1);
     // Yalnızca resmî kural: hafta sonu + Romanya resmî tatili (elle verilen depo kararları geçirilmez)
     const s = dayStatus(APPROVAL_CALENDAR, day, null);
     if (s.noData) return { due: null, noData: true, day: null };
     if (s.open) counted++;
   }
-  if (counted < APPROVAL_BUSINESS_DAYS) return { due: null, noData: false, day: null };
+  if (counted < days) return { due: null, noData: false, day: null };
   return { due: localToInstant(day, local.minutes, APPROVAL_TIME_ZONE), noData: false, day };
 }
 
@@ -110,16 +131,62 @@ export function changeNote(value) {
 }
 
 /**
- * Bayraklı siparişe (HAZIRLANIYOR / URETIMDE) gönderilen sürümün onay alanları + olay verisi (e-posta ve bildirim son
- * tarihi yazar). Onay talebinin anı = gönderim anı; süre o andan başlar. Bayraksız siparişte ya da başka durumda boş döner
- * (eski davranış).
- * @param {{ productionApprovalRequired?: boolean | null, status: string }} order  @param {Date} now
- * @returns {{ data: { approvalRequestedAt: Date, approvalDueAt: Date | null } | null, event: { approval: { due: string | null } } | null, noData: boolean }}
+ * Bayraklı siparişe (HAZIRLANIYOR / URETIMDE) gönderilen sürümün onay alanları + olay verisi. Talep anı = gönderim anı;
+ * SÜRE BURADA BAŞLAMAZ (4.2.5): son tarih, talep müşteriye iletildiğinde yazılır (production-approval-delivery.js). Olay
+ * verisi yalnızca sürümün kimliğini taşır (e-posta ve bildirim son tarihi iletim anında hesaplar). Bayraksız siparişte ya da
+ * başka durumda boş döner (eski davranış).
+ * @param {{ productionApprovalRequired?: boolean | null, status: string }} order  @param {Date} now  @param {string} offerId
+ * @returns {{ data: { approvalRequestedAt: Date } | null, event: { approval: { offerId: string } } | null }}
  */
-export function approvalOnSend(order, now) {
-  if (!order?.productionApprovalRequired || !APPROVAL_STATUSES.includes(order.status)) return { data: null, event: null, noData: false };
-  const d = approvalDeadline(now);
-  return { data: { approvalRequestedAt: now, approvalDueAt: d.due }, event: { approval: { due: d.due ? d.due.toISOString() : null } }, noData: d.noData };
+export function approvalOnSend(order, now, offerId) {
+  if (!order?.productionApprovalRequired || !APPROVAL_STATUSES.includes(order.status)) return { data: null, event: null };
+  return { data: { approvalRequestedAt: now }, event: { approval: { offerId } } };
+}
+
+/**
+ * Onaysız yükleme engeli (4.2.5, ürün sahibinin 27.10.2026 kararı). Yalnızca ayar açıkken; bayraklı siparişte, yükleme günü
+ * kesim günü ya da sonrasıysa ve yöneticinin istisnası yoksa: güncel (en son) teklif sürümü müşteriye gönderilmiş VE müşteri
+ * tarafından onaylanmış olmalı. Daha önce onaylanmış bir sürümden sonra yeni sürüm gönderildiyse yeni sürümün onayı gerekir.
+ * Engel yoksa null; varsa neden kodu.
+ * @param {{ enabled: boolean, cutoff: string, day: string | null, order: { productionApprovalRequired?: boolean | null, loadingOverrideAt?: Date | string | null }, offer?: { status: string, approvedAt?: Date | string | null, changeRequestedAt?: Date | string | null } | null }} p
+ * @returns {null | 'NOT_SENT' | 'PENDING' | 'CHANGE_REQUESTED'}
+ */
+export function loadingApprovalBlock({ enabled, cutoff, day, order, offer }) {
+  if (!enabled || !order?.productionApprovalRequired || order.loadingOverrideAt) return null;
+  if (!inApprovalScope(day, cutoff)) return null;
+  if (!offer || offer.status !== 'GONDERILDI') return 'NOT_SENT';
+  if (offer.approvedAt) return null;
+  return offer.changeRequestedAt ? 'CHANGE_REQUESTED' : 'PENDING';
+}
+
+/** Yönetici iletilemeyen talebi şu kadar süre sonra yeniden gönderebilir (kuyruk hâlâ deniyor olabilir) */
+export const APPROVAL_RESEND_AFTER_MS = 60 * 60_000;
+
+/**
+ * Siparişin üretim onayı işlemleri için bayraklar (availableActions): loadingOverride — kapsamdaki sipariş, yöneticinin
+ * istisnası yok, güncel sürüm müşteri tarafından onaylanmadı; approvalResend — güncel sürümün talebi iletilmedi ve iletim
+ * hatası kaydedildi ya da talep bir saatten eski (bekleyen gönderim işlem içinde ayrıca denetlenir).
+ * @param {{ productionApprovalRequired?: boolean | null, loadingOverrideAt?: any, status: string, offers?: any[] }} order  @param {Date} [now]
+ */
+export function approvalFlags(order, now = new Date()) {
+  const offer = order?.offers?.[0] ?? null;
+  const flagged = !!order?.productionApprovalRequired && APPROVAL_STATUSES.includes(order?.status);
+  const approved = offer?.status === 'GONDERILDI' && !!offer.approvedAt;
+  const pending = offer?.status === 'GONDERILDI' && !offer.approvedAt && !offer.changeRequestedAt && !!offer.approvalRequestedAt;
+  const stale = pending && new Date(offer.approvalRequestedAt).getTime() <= now.getTime() - APPROVAL_RESEND_AFTER_MS;
+  return {
+    loadingOverride: flagged && !order.loadingOverrideAt && !approved,
+    approvalResend: flagged && pending && !offer.approvalDeliveredAt && (!!offer.approvalDeliveryError || stale),
+  };
+}
+
+/** İstisna gerekçesi: zorunlu, tek satır, en fazla bu kadar karakter */
+export const OVERRIDE_REASON_MAX = 1000;
+export function overrideReason(value) {
+  const r = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!r) return { ok: false, code: 'OVERRIDE_REASON_REQUIRED' };
+  if (r.length > OVERRIDE_REASON_MAX) return { ok: false, code: 'OVERRIDE_REASON_TOO_LONG' };
+  return { ok: true, reason: r };
 }
 
 /** Ayarın değeri (eksik / bozuk = kapalı) */

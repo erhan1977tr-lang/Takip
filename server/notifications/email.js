@@ -14,7 +14,10 @@ import { maskName } from '../orders/rules.js';
 import { translate } from '../i18n/index.js';
 import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 import { customerMailLang, snapshotLang } from './lang.js';
-import { approvalDueText } from '../orders/production-approval.js';
+import { approvalDeadline, approvalDueText } from '../orders/production-approval.js';
+import {
+  APPROVAL_REQUEST_TYPES, approvalForMail, approvalOfferId, inAppDeliveredAt, markDelivered, markUndelivered,
+} from '../orders/production-approval-delivery.js';
 
 /**
  * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
@@ -47,6 +50,8 @@ export const NOTIFY_RULES = {
   ORDER_OFFER_UPDATED: () => ['customer'],
   // Müşteri üretim onayı (karar 305): mevcut siparişin geçişte açılan onay talebi — müşteriye (onay metni + son tarih)
   ORDER_PRODUCTION_APPROVAL_REQUESTED: () => ['customer'],
+  // Onay bekleyen müşteriye tek hatırlatma (4.2.5): iletimden 1 Romanya iş günü sonra, sürüm başına bir kez
+  ORDER_PRODUCTION_APPROVAL_REMINDER: () => ['customer'],
   ORDER_PROFILE_OFFER_SENT: () => ['customer'],
   ORDER_PROFORMA: () => ['customer'],
   ORDER_INVOICED: () => ['customer'],
@@ -165,7 +170,7 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
   const t = (k, params) => translate(recipient.locale, k, params);
   // Müşteri üretim onayı (4.2.1): yalnızca müşteriye giden "teklif gönderildi / güncellendi" e-postasında, olay onay
   // bekleyen bir sürümü taşıyorsa (kuyruk verisi payload.approval — gönderim anında yazılır)
-  const approval = !recipient.role && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')
+  const approval = !recipient.role && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || type === 'ORDER_PRODUCTION_APPROVAL_REMINDER')
     && payload?.approval && typeof payload.approval === 'object' ? payload.approval : null;
   const event = type === 'ORDER_CREATED' ? 'CREATED' : type.replace(/^ORDER_/, '');
   const admin = adminText(type, payload, t);
@@ -267,21 +272,41 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
       const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null }) : [];
+      // Müşteri üretim onayı talebi (4.2.5): süre talep müşteriye iletilince başlar (production-approval-delivery.js)
+      const apId = order ? approvalOfferId(row.type, payload) : null;
+      const ap = apId ? await approvalForMail(db, apId, now) : null;
+      const isRequest = !!ap && APPROVAL_REQUEST_TYPES.includes(row.type);
       if (!order || recipients.length === 0) {
+        if (isRequest && !ap.delivered && ap.open) {
+          // E-posta gidemiyor (tercih / adres): müşterinin uygulama içi bildirimi iletimdir; henüz yazılmadıysa beklenir
+          const at = await inAppDeliveredAt(db, { outboxId: row.id, customerId: order.customerId });
+          if (!at && !row.inAppAt && attempt < NOTIFY_MAX_ATTEMPTS) {
+            await db.notificationOutbox.update({ where: { id: row.id }, data: { availableAt: new Date(now.getTime() + 60_000) } });
+            continue;
+          }
+          if (at) await markDelivered(db, { offerId: apId, at, due: approvalDeadline(at).due, channel: 'IN_APP' });
+          else await markUndelivered(db, { offerId: apId, orderId: order.id, code: 'NO_RECIPIENT', outboxId: row.id, now });
+        }
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: order ? 'alıcı yok' : 'sipariş yok' } });
         skipped++;
         continue;
       }
+      const mailPayload = ap ? { ...payload, approval: { ...payload.approval, due: ap.due ? new Date(ap.due).toISOString() : null } } : payload;
       let error = null;
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;
         try {
-          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload });
+          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload: mailPayload });
           await sendBrandedMail(transport, { from, to: r.email, subject: mail.subject, text: mail.text, html: mail.html, lang: r.locale });
           done.add(r.email.toLowerCase());
         } catch (e) {
           error = `${r.email}: ${String(e?.message ?? e)}`.slice(0, 300);
         }
+      }
+      // En az bir müşteri adresine kabul edildi → iletim (bir kez); e-postadaki son tarih aynı andan hesaplandı
+      if (isRequest && !ap.delivered && done.size > 0) await markDelivered(db, { offerId: apId, at: now, due: ap.due, channel: 'EMAIL' });
+      if (isRequest && !ap.delivered && done.size === 0 && error && attempt >= NOTIFY_MAX_ATTEMPTS) {
+        await markUndelivered(db, { offerId: apId, orderId: order.id, code: 'EMAIL_FAILED', outboxId: row.id, now });
       }
       const sentTo = [...done];
       if (!error) {
@@ -299,6 +324,9 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
     } catch (e) {
       failed++;
       const msg = String(e?.message ?? e).slice(0, 300);
+      // Onay talebi bütün denemelerden sonra iletilemedi: süre başlamaz, yöneticiye bildirilir (ilk iletim olduysa değişmez)
+      const apId = row.orderId && attempt >= NOTIFY_MAX_ATTEMPTS && APPROVAL_REQUEST_TYPES.includes(row.type) ? approvalOfferId(row.type, payload) : null;
+      if (apId) await markUndelivered(db, { offerId: apId, orderId: row.orderId, code: 'EMAIL_FAILED', outboxId: row.id, now }).catch(() => false);
       await db.notificationOutbox.update({
         where: { id: row.id },
         data: { lastError: msg, ...(attempt >= NOTIFY_MAX_ATTEMPTS ? { status: 'FAILED' } : { availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000) }) },

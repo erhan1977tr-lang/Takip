@@ -56,8 +56,10 @@ import { dwgUndoAction } from './actions';
 import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
-import { approvalDueText, approvalOverdue, approvalState, CHANGE_NOTE_MAX } from '@/server/orders/production-approval.js';
-import { approveProductionAction, requestOfferChangeAction } from './approval-actions';
+import { approvalDueText, approvalFlags, approvalOverdue, approvalState, CHANGE_NOTE_MAX, OVERRIDE_REASON_MAX } from '@/server/orders/production-approval.js';
+import { loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
+import { dayKey as localDayKey } from '@/server/orders/loading.js';
+import { approveProductionAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction } from './approval-actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -178,8 +180,13 @@ export default async function OrderPage({
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode, approval,
+    ...approvalFlags(order),
   });
   const can = (a: string) => acts.includes(a);
+  // Onaysız yükleme engeli (4.2.5): iç ekip için — sunucu "Yükleme yapıldı" ve "Yüklendi"de aynı kuralla reddeder
+  const loadingBlock = !isCustomer && order.productionApprovalRequired
+    ? (await loadingApprovalBlocks(db, { day: localDayKey(order.estimatedShipDate ?? new Date()), orderIds: [order.id] }))[0] ?? null
+    : null;
   // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
   // Sunucu işlemde aynı denetimi kilit altında yeniden yapar (server/orders/dwg-undo.js → dwgUndoCheck)
   const undo = userCan(user, 'DRAWING_WORK') ? await dwgUndoCheck(db, order, { id: user.id, role: user.appRole }, { priceLock }) : null;
@@ -439,7 +446,7 @@ export default async function OrderPage({
       */}
       {drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
 
-      {isCustomer ? <CustomerActions order={order} user={user} can={can} approval={approvalShown} sent={sent} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} approval={approval} t={t} cancelReasons={lockedCancel} />}
+      {isCustomer ? <CustomerActions order={order} user={user} can={can} approval={approvalShown} sent={sent} t={t} /> : !drawerView && <InternalActions order={order} user={user} can={can} acts={acts} approval={approval} t={t} cancelReasons={lockedCancel} shipBlocked={!!loadingBlock} />}
       {drawerView && <DrawingFiles order={order} user={user} can={can} t={t} />}
       {drawerView && <DrawingReview order={order} user={user} can={can} undo={undo} t={t} />}
       {!drawerView && <Files order={order} user={user} canAdd={can('add_file')} t={t} />}
@@ -535,7 +542,8 @@ export default async function OrderPage({
       )}
 
       {/* Müşteri üretim onayı (4.2.1) — iç ekip: onay durumu, son tarih, değişiklik talebinin notu (teklif tablosunun üstünde) */}
-      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo offer={sent} state={approvalShown} status={order.status} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
+      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo order={order} can={can} offer={sent} state={approvalShown} status={order.status} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
+      {!isCustomer && !drawerView && order.productionApprovalRequired && (loadingBlock || order.loadingOverrideAt) && <LoadingGate order={order} can={can} blocked={!!loadingBlock} t={t} />}
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} salesExport={!userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
           compIds={shownOffer.id === sent?.id ? compIds : undefined} compHref={compHref} compTag={compTagText} priceLocked={lockedPrice.map((r) => lockReasonText(t, r))}
@@ -712,9 +720,11 @@ function CustomerApproval({ order, user, can, offer, state, t }: { order: OrderD
     <div data-approval-state="PENDING">
       <div className="alert alert-error" role="status">
         <b>{t('order.approval.pendingTitle')}</b> {t('order.approval.pendingText')}
-        <div style={{ marginTop: 6 }} data-approval-due={offer.approvalDueAt ? new Date(offer.approvalDueAt).toISOString() : ''}>
-          <b>{due ? t('order.approval.deadline', { due }) : t('order.approval.noDeadline')}</b>
-        </div>
+        {offer.approvalDeliveredAt ? (
+          <div style={{ marginTop: 6 }} data-approval-due={offer.approvalDueAt ? new Date(offer.approvalDueAt).toISOString() : ''}>
+            <b>{due ? t('order.approval.deadline', { due }) : t('order.approval.noDeadline')}</b>
+          </div>
+        ) : <div style={{ marginTop: 6 }} data-approval-due="">{t('order.approval.notDeliveredCustomer')}</div>}
         <div className="small" style={{ marginTop: 4 }}>{approvalOverdue(offer) ? t('order.approval.overdue') : t('order.approval.delayNote')}</div>
       </div>
       {!user.canApprove && <div className="alert alert-warn" style={{ marginTop: 8 }}>{t('order.approval.noRight')}</div>}
@@ -746,7 +756,7 @@ function CustomerApproval({ order, user, can, offer, state, t }: { order: OrderD
 }
 
 /** İç ekip: müşteri üretim onayının durumu (4.2.1) — salt bilgi; karar müşterinindir */
-function ApprovalInfo({ offer, state, status, versions, t }: { offer: OrderDetail['offers'][number]; state: string; status: string; versions: number; t: T }) {
+function ApprovalInfo({ order, can, offer, state, status, versions, t }: { order: OrderDetail; can: (a: string) => boolean; offer: OrderDetail['offers'][number]; state: string; status: string; versions: number; t: T }) {
   if (state === 'APPROVED') return <div className="alert alert-ok" id="uretim-onayi" data-approval-state="APPROVED">{t('order.approval.staffApproved', { date: fmtDateTime(offer.approvedAt), n: versions })}</div>;
   if (state === 'CHANGE_REQUESTED') {
     return (
@@ -759,16 +769,69 @@ function ApprovalInfo({ offer, state, status, versions, t }: { offer: OrderDetai
   }
   const due = approvalDueText(offer.approvalDueAt);
   const over = approvalOverdue(offer);
+  const error = offer.approvalDeliveryError;
+  // 4.2.5: süre talep müşteriye iletildiğinde başlar — iletilmediyse son tarih yerine iletim durumu gösterilir
   return (
-    <div className={`alert ${over ? 'alert-error' : 'alert-info'}`} id="uretim-onayi" data-approval-state="PENDING">
+    <div className={`alert ${over || error ? 'alert-error' : 'alert-info'}`} id="uretim-onayi" data-approval-state="PENDING" data-approval-delivery={offer.approvalDeliveredAt ? 'DELIVERED' : error ?? 'WAITING'}>
       <b>{t('order.approval.staffPending', { n: versions })}</b>{' '}
-      {due ? t('order.approval.staffDeadline', { due }) : t('order.approval.staffNoDeadline')}
-      {over && <> <span className="badge badge-danger">{t('order.approval.staffOverdue')}</span></>}
+      {offer.approvalDeliveredAt ? (
+        <>
+          {due ? t('order.approval.staffDeadline', { due }) : t('order.approval.staffNoDeadline')}
+          {over && <> <span className="badge badge-danger">{t('order.approval.staffOverdue')}</span></>}
+          <div className="small" style={{ marginTop: 4 }}>
+            {t('order.approval.staffDelivered', { date: fmtDateTime(offer.approvalDeliveredAt), channel: t(`order.approval.channel.${offer.approvalDeliveryChannel === 'IN_APP' ? 'IN_APP' : 'EMAIL'}`) })}
+            {offer.approvalReminderAt && <> {t('order.approval.staffReminder', { date: fmtDateTime(offer.approvalReminderAt) })}</>}
+          </div>
+        </>
+      ) : error ? t('order.approval.staffDeliveryFailed', { reason: t(`order.approval.deliveryError.${error === 'NO_RECIPIENT' ? 'NO_RECIPIENT' : 'EMAIL_FAILED'}`) }) : t('order.approval.staffNotDelivered')}
+      {can('resend_approval_request') && (
+        <form action={resendApprovalRequestAction} style={{ marginTop: 8 }}>
+          <input type="hidden" name="id" value={order.id} />
+          <input type="hidden" name="offerId" value={offer.id} />
+          <input type="hidden" name="v" value={order.version} />
+          <ConfirmButton message={t('order.approval.resendConfirm')}>{t('order.approval.resend')}</ConfirmButton>
+        </form>
+      )}
     </div>
   );
 }
 
-function InternalActions({ order, user, can, acts, approval = 'NONE', t, cancelReasons = [] }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; approval?: string; t: T; cancelReasons?: { code: string; ref?: string | null; kind?: string | null }[] }) {
+/**
+ * Onaysız yükleme engeli ve yöneticinin istisnası (4.2.5) — iç ekip. Engel sunucuda uygulanır (server/orders/loading-approval.js);
+ * istisna yalnızca yönetici (LOADING_APPROVAL_OVERRIDE), gerekçe zorunlu, müşteri onayı sayılmaz.
+ */
+function LoadingGate({ order, can, blocked, t }: { order: OrderDetail; can: (a: string) => boolean; blocked: boolean; t: T }) {
+  if (order.loadingOverrideAt) {
+    return (
+      <div className="alert alert-warn" id="yukleme-izni" data-loading-override>
+        {t('order.approval.overrideGiven', { date: fmtDateTime(order.loadingOverrideAt), by: order.loadingOverrideBy?.name ?? '—', reason: order.loadingOverrideReason ?? '—' })}
+      </div>
+    );
+  }
+  if (!blocked) return null;
+  return (
+    <div className="alert alert-error" id="yukleme-izni" data-loading-blocked>
+      <b>{t('order.approval.loadingBlocked')}</b>
+      {can('override_loading_approval') && (
+        <details className="approval-change" style={{ marginTop: 10 }}>
+          <summary className="btn">{t('order.approval.overrideTitle')}</summary>
+          <form action={overrideLoadingApprovalAction} style={{ marginTop: 10 }}>
+            <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="v" value={order.version} />
+            <p className="small">{t('order.approval.overrideText')}</p>
+            <label htmlFor="istisna-gerekce">{t('order.approval.overrideReason')}</label>
+            <textarea id="istisna-gerekce" name="reason" rows={3} required maxLength={OVERRIDE_REASON_MAX} />
+            <div className="row" style={{ marginTop: 8 }}>
+              <ConfirmButton message={t('order.approval.overrideConfirm')}>{t('order.approval.overrideSubmit')}</ConfirmButton>
+            </div>
+          </form>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function InternalActions({ order, user, can, acts, approval = 'NONE', t, cancelReasons = [], shipBlocked = false }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; acts: string[]; approval?: string; t: T; cancelReasons?: { code: string; ref?: string | null; kind?: string | null }[]; shipBlocked?: boolean }) {
   const hidden = <input type="hidden" name="id" value={order.id} />;
   const offerStatus = currentOffer(order)?.status ?? null;
   const steps = acts.filter(isStep).map((a) => t(`order.steps.${a}`));
@@ -786,7 +849,8 @@ function InternalActions({ order, user, can, acts, approval = 'NONE', t, cancelR
 
   if (can('send_to_drawing')) btn('d', sendToDrawingAction, t('order.steps.send_to_drawing'));
   if (can('no_drawing')) btn('o', noDrawingAction, t('order.steps.no_drawing'));
-  if (can('mark_shipped')) btn('ms', markShippedAction, t('order.steps.mark_shipped'));
+  // Onaysız yükleme engeli (4.2.5): düğme yerine engel kartı (#yukleme-izni); sunucu ayrıca reddeder
+  if (can('mark_shipped') && !shipBlocked) btn('ms', markShippedAction, t('order.steps.mark_shipped'));
   if (can('archive')) btn('ar', archiveAction, t('order.steps.archive'));
   const undo = (key: string, action: (fd: FormData) => Promise<void>, label: string, message: string) =>
     buttons.push(<form key={key} action={action}>{hidden}<ConfirmButton message={message}>{label}</ConfirmButton></form>);

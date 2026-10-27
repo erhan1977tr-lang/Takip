@@ -19,7 +19,7 @@ export default {
     deadline: 'Termen de aprobare',
     roTime: 'ora României',
     noDeadline: 'Nu a putut fi stabilit — vă rugăm să contactați GKH',
-    text: 'Vă rugăm să verificați tipurile de sticlă, dimensiunile, cantitățile și prețurile din ofertă. Aprobarea dvs. este obligatorie pentru intrarea comenzii în producție. Termenul de aprobare este de 2 zile lucrătoare de la trimiterea ofertei (termenul de mai sus). Întârzierea aprobării poate afecta data de încărcare planificată. Deschideți comanda pentru a aproba sau pentru a semnala modificări de dimensiuni.',
+    text: 'Vă rugăm să verificați tipurile de sticlă, dimensiunile, cantitățile și prețurile din ofertă. Aprobarea dvs. este obligatorie pentru intrarea comenzii în producție. Termenul de aprobare este de 2 zile lucrătoare (România) de la transmiterea acestei notificări (termenul de mai sus). Întârzierea aprobării poate afecta data de încărcare planificată. Deschideți comanda pentru a aproba sau pentru a semnala modificări de dimensiuni.',
   },
   admin: {
     priceOverride: 'Vânzările au modificat prețul fabricii',

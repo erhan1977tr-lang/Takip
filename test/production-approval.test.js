@@ -6,7 +6,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   APPROVAL_BUSINESS_DAYS, APPROVAL_CUTOFF_DEFAULT, approvalCutoff, inApprovalScope, approvalDeadline, approvalDueText, approvalOnSend, approvalOverdue, approvalSettingOn, approvalState, changeNote, localToInstant,
+  approvalFlags, approvalReminderAt, loadingApprovalBlock, overrideReason, APPROVAL_RESEND_AFTER_MS,
 } from '../server/orders/production-approval.js';
+import { approvalOfferId, APPROVAL_REQUEST_TYPES, APPROVAL_REMINDER_TYPE } from '../server/orders/production-approval-delivery.js';
+import { NOTIFY_RULES } from '../server/notifications/email.js';
+import { can } from '../server/auth/permissions.js';
 import { availableActions, customerSummary, productionBlockers, shouldAutoProduce, EVENTS } from '../server/orders/rules.js';
 import { STAFF_EVENT_POLICY } from '../server/orders/order-view.js';
 import { renderNotification } from '../server/notifications/email.js';
@@ -66,9 +70,9 @@ test('süre: tatil verisi olmayan yıl sessizce hesaplanmaz', () => {
   assert.deepEqual([due('2028-03-01T10:00:00Z').due, due('2028-03-01T10:00:00Z').noData], [null, true]);
   // Geçersiz an
   assert.deepEqual(approvalDeadline('bozuk'), { due: null, noData: false, day: null });
-  // Gönderimde: bayraklı sipariş + veri yok → alan boş, olay "son tarih yok"
-  const s = approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR' }, new Date('2027-12-30T10:00:00Z'));
-  assert.deepEqual(s, { data: { approvalRequestedAt: new Date('2027-12-30T10:00:00Z'), approvalDueAt: null }, event: { approval: { due: null } }, noData: true });
+  // 4.2.5: gönderimde süre hiç yazılmaz (iletimde hesaplanır) — veri olmayan yılda da yalnızca talep anı
+  const s = approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR' }, new Date('2027-12-30T10:00:00Z'), 'off1');
+  assert.deepEqual(s, { data: { approvalRequestedAt: new Date('2027-12-30T10:00:00Z') }, event: { approval: { offerId: 'off1' } } });
 });
 
 test('süre: depo takviminin elle kapatılan günleri sayılmaz (yalnızca resmî kural)', () => {
@@ -79,15 +83,15 @@ test('süre: depo takviminin elle kapatılan günleri sayılmaz (yalnızca resm�
 
 test('gönderimde onay: yalnızca bayraklı ve hazırlıktaki sipariş', () => {
   const now = new Date('2026-10-26T08:30:00Z');
-  assert.deepEqual(approvalOnSend({ productionApprovalRequired: false, status: 'HAZIRLANIYOR' }, now), { data: null, event: null, noData: false });
-  assert.deepEqual(approvalOnSend({ status: 'HAZIRLANIYOR' }, now), { data: null, event: null, noData: false });
-  for (const st of ['YENI', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.deepEqual(approvalOnSend({ productionApprovalRequired: true, status: st }, now), { data: null, event: null, noData: false }, st);
-  // Üretimdeki siparişte de (kapsam kararı 26.10.2026) yeni sürüm onay ister; talep anı = gönderim anı
-  assert.equal(approvalOnSend({ productionApprovalRequired: true, status: 'URETIMDE' }, now).data.approvalDueAt.toISOString(), '2026-10-28T08:30:00.000Z');
-  const r = approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR' }, now);
-  assert.equal(r.data.approvalRequestedAt, now);
-  assert.equal(r.data.approvalDueAt.toISOString(), '2026-10-28T08:30:00.000Z');
-  assert.equal(r.event.approval.due, '2026-10-28T08:30:00.000Z');
+  assert.deepEqual(approvalOnSend({ productionApprovalRequired: false, status: 'HAZIRLANIYOR' }, now, 'x'), { data: null, event: null });
+  assert.deepEqual(approvalOnSend({ status: 'HAZIRLANIYOR' }, now, 'x'), { data: null, event: null });
+  for (const st of ['YENI', 'YUKLENDI', 'ARSIVLENDI', 'IPTAL']) assert.deepEqual(approvalOnSend({ productionApprovalRequired: true, status: st }, now, 'x'), { data: null, event: null }, st);
+  // Üretimdeki siparişte de (kapsam kararı 26.10.2026) yeni sürüm onay ister; talep anı = gönderim anı. Süre gönderimde
+  // BAŞLAMAZ (4.2.5): son tarih yok, olay yalnızca sürümün kimliğini taşır
+  for (const status of ['HAZIRLANIYOR', 'URETIMDE']) {
+    const r = approvalOnSend({ productionApprovalRequired: true, status }, now, 'off1');
+    assert.deepEqual(r, { data: { approvalRequestedAt: now }, event: { approval: { offerId: 'off1' } } }, status);
+  }
 });
 
 test('onay durumu', () => {
@@ -207,7 +211,8 @@ test('e-posta: müşterinin dilinde zorunlu onay metni ve kesin son tarih; iç e
   assert.match(ro.html, /28\.10\.2026 10:30/);
   const tr = renderNotification({ ...base, type: 'ORDER_OFFER_UPDATED', recipient: { locale: 'tr', role: null }, payload });
   assert.match(tr.text, /Son onay tarihi: 28\.10\.2026 10:30 \(Romanya saati\)/);
-  assert.match(tr.text, /2 iş günüdür/);
+  assert.match(tr.text, /2 Romanya iş günüdür/);
+  assert.match(tr.text, /iletilmesinden itibaren/, 'süre bildirimin iletildiği andan');
   const none = renderNotification({ ...base, type: 'ORDER_OFFER_SENT', recipient: { locale: 'ro', role: null }, payload: { approval: { due: null } } });
   assert.match(none.text, /Nu a putut fi stabilit/);
   const plain = renderNotification({ ...base, type: 'ORDER_OFFER_SENT', recipient: { locale: 'ro', role: null }, payload: {} });
@@ -246,6 +251,8 @@ test('yapı: onay yalnızca iş akışı servisinden yazılır; proforma / muhas
   for (const p of ['server/glass/billing.js', 'server/glass/batch.js', 'server/glass/invoice-batch.js', 'server/orders/financial-lock.js', 'server/integrations/fgo.js', 'server/loading/crates.js', 'server/loading/confirmation.js', 'server/accounting/receivables.js']) {
     assert.doesNotMatch(read(p), /production-approval|approvalState|approvedAt|productionApprovalRequired/, p);
   }
+  // Yükleme onayı yalnızca ortak engeli çağırır (4.2.5): kural tek yerde (loading-approval.js → loadingApprovalBlock)
+  assert.match(read('server/loading/confirmation.js'), /const blocked = await loadingApprovalBlocks\(tx, \{ day, orderIds: base\.orders\.map\(\(o\) => o\.orderId\) \}\);\s+if \(blocked\.length\) return \{ ok: false, code: 'APPROVAL_REQUIRED', blocked \};/);
 });
 
 test('kapsam: planlanan yükleme günü ≥ kesim günü (varsayılan 06.11.2026)', () => {
@@ -269,7 +276,8 @@ test('geçiş kategorisi: yüklenmiş / faturalı / telafi asla yazılmaz; günc
   assert.equal(enrollCategory({ status: 'URETIMDE', offers: [sent] }, { ...f, finalInvoiced: true }), 'FINAL_INVOICED');
   assert.equal(enrollCategory({ status: 'URETIMDE', compOfId: 'x', offers: [sent] }, f), 'COMPENSATION');
   assert.equal(enrollCategory({ status: 'URETIMDE', offers: [] }, f), 'NO_OFFER');
-  assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [{ status: 'HAZIRLANIYOR' }, sent] }, f), 'DRAFT_OPEN');
+  // Güncel teklif henüz müşteride değil (yeni sürüm hazırlanıyor): kapsam işareti — onay yeni sürüm gönderilince (27.10.2026)
+  assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [{ status: 'HAZIRLANIYOR' }, sent] }, f), 'FLAG_ONLY');
   assert.equal(enrollCategory({ status: 'HAZIRLANIYOR', offers: [{ status: 'YONETIMDE' }] }, f), 'FLAG_ONLY');
   assert.equal(enrollCategory({ status: 'YENI', offers: [] }, f), 'FLAG_ONLY');
   assert.equal(enrollCategory({ status: 'YENI', productionApprovalRequired: true, offers: [] }, f), 'ALREADY');
@@ -288,4 +296,100 @@ test('geçiş: HTTP yolu yok — yalnızca sunucu betiği çağırır', () => {
   };
   for (const d of ['app', 'lib', 'components', 'server', 'scripts']) walk(d);
   assert.deepEqual(hits.sort(), ['scripts/production-approval-enroll.mjs']);
+});
+
+// ---------- 4.2.5: teslime bağlı süre, hatırlatma, onaysız yükleme engeli, yönetici istisnası ----------
+
+test('hatırlatma: iletimden 1 Romanya iş günü sonra (aynı yerel saat)', () => {
+  // Pazartesi 09.11.2026 10:30 → salı 10.11 10:30
+  assert.equal(approvalReminderAt(new Date('2026-11-09T08:30:00Z')).due.toISOString(), '2026-11-10T08:30:00.000Z');
+  // Cuma → pazartesi; 30.11 / 01.12 tatil → 02.12
+  assert.equal(approvalReminderAt(new Date('2026-11-06T09:00:00Z')).day, '2026-11-09');
+  assert.equal(approvalReminderAt(new Date('2026-11-27T09:00:00Z')).day, '2026-12-02');
+  assert.equal(approvalReminderAt(new Date('2027-12-31T09:00:00Z')).due, null, 'veri yoksa tahmin edilmez');
+});
+
+test('yükleme engeli: 30.10.2026 serbest, 06.11.2026 ve sonrası onaysız engelli (ayar açık, bayraklı sipariş)', () => {
+  const on = { enabled: true, cutoff: '2026-11-06' };
+  const order = { productionApprovalRequired: true, loadingOverrideAt: null };
+  const pending = { status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null };
+  // 1. 30.10.2026 yüklemesi onaysız yapılabilir
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-10-30', order, offer: pending }), null);
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-05', order, offer: pending }), null);
+  // 2. 06.11.2026 yüklemesi onaysız yapılamaz
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: pending }), 'PENDING');
+  assert.equal(loadingApprovalBlock({ ...on, day: '2027-01-15', order, offer: pending }), 'PENDING');
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { ...pending, changeRequestedAt: new Date() } }), 'CHANGE_REQUESTED');
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { status: 'HAZIRLANIYOR' } }), 'NOT_SENT', 'yeni sürüm hazırlanıyor');
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: null }), 'NOT_SENT');
+  // Onaylı güncel sürüm → serbest
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { ...pending, approvedAt: new Date() } }), null);
+  // 3. Yönetici istisnası → serbest (müşteri onayı yerine geçmez: teklif alanlarına dokunulmaz — kural yalnızca siparişe bakar)
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order: { ...order, loadingOverrideAt: new Date() }, offer: pending }), null);
+  // Ayar kapalı / bayraksız sipariş → 4.2.0 davranışı
+  assert.equal(loadingApprovalBlock({ enabled: false, cutoff: '2026-11-06', day: '2026-11-06', order, offer: pending }), null);
+  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order: { productionApprovalRequired: false }, offer: pending }), null);
+  // Gün yoksa engel uygulanmaz (çağıran gün verir: onay günü ya da planlanan gün / bugün)
+  assert.equal(loadingApprovalBlock({ ...on, day: null, order, offer: pending }), null);
+});
+
+test('istisna ve yeniden gönderim: yalnızca yönetici istisna verir; gerekçe zorunlu', () => {
+  // 4. Yönetici dışındaki roller istisna veremez (yardımcı dahil — ADMIN_ONLY)
+  for (const r of ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI']) assert.equal(can(r, 'LOADING_APPROVAL_OVERRIDE'), r === 'ADMIN', r);
+  const p = { status: 'URETIMDE', drawing: 'YOK', offer: 'GONDERILDI', orderType: 'GLASS_ORDER', loadingOverride: true };
+  for (const role of ['ADMIN', 'YONETICI_YARDIMCISI', 'SATIS', 'CIZIM', 'MUSTERI', 'DENETIMCI']) {
+    assert.equal(availableActions({ role, canApprove: true, ...p }).includes('override_loading_approval'), role === 'ADMIN', role);
+  }
+  assert.equal(availableActions({ role: 'ADMIN', ...p, loadingOverride: false }).includes('override_loading_approval'), false);
+  assert.equal(availableActions({ role: 'ADMIN', ...p, status: 'ARSIVLENDI' }).includes('override_loading_approval'), false);
+  assert.equal(availableActions({ role: 'ADMIN', ...p, approvalResend: true }).includes('resend_approval_request'), true);
+  assert.equal(availableActions({ role: 'YONETICI_YARDIMCISI', ...p, approvalResend: true }).includes('resend_approval_request'), true);
+  assert.equal(availableActions({ role: 'SATIS', ...p, approvalResend: true }).includes('resend_approval_request'), false);
+  assert.deepEqual(overrideReason(''), { ok: false, code: 'OVERRIDE_REASON_REQUIRED' });
+  assert.deepEqual(overrideReason('  \n '), { ok: false, code: 'OVERRIDE_REASON_REQUIRED' });
+  assert.deepEqual(overrideReason('x'.repeat(1001)), { ok: false, code: 'OVERRIDE_REASON_TOO_LONG' });
+  assert.deepEqual(overrideReason(' Müşteri\n telefonla onay verdi '), { ok: true, reason: 'Müşteri telefonla onay verdi' });
+});
+
+test('bayraklar: istisna ve yeniden gönderim ne zaman açılır', () => {
+  const now = new Date('2026-11-09T12:00:00Z');
+  const o = (offer, extra = {}) => ({ productionApprovalRequired: true, status: 'URETIMDE', loadingOverrideAt: null, offers: [offer], ...extra });
+  const pending = { status: 'GONDERILDI', approvalRequestedAt: new Date('2026-11-09T11:30:00Z') };
+  assert.deepEqual(approvalFlags(o(pending), now), { loadingOverride: true, approvalResend: false }, 'kuyruk hâlâ deniyor olabilir');
+  assert.equal(approvalFlags(o({ ...pending, approvalDeliveryError: 'EMAIL_FAILED' }), now).approvalResend, true);
+  assert.equal(approvalFlags(o({ ...pending, approvalRequestedAt: new Date(now.getTime() - APPROVAL_RESEND_AFTER_MS) }), now).approvalResend, true, 'bir saatten eski iletilmemiş talep');
+  assert.equal(approvalFlags(o({ ...pending, approvalDeliveryError: 'EMAIL_FAILED', approvalDeliveredAt: now }), now).approvalResend, false, 'iletilmiş');
+  assert.deepEqual(approvalFlags(o({ ...pending, approvedAt: now }), now), { loadingOverride: false, approvalResend: false }, 'onaylı');
+  assert.equal(approvalFlags(o(pending, { loadingOverrideAt: now }), now).loadingOverride, false, 'istisna bir kez');
+  assert.deepEqual(approvalFlags(o(pending, { productionApprovalRequired: false }), now), { loadingOverride: false, approvalResend: false });
+  assert.deepEqual(approvalFlags(o(pending, { status: 'YUKLENDI' }), now), { loadingOverride: false, approvalResend: false });
+});
+
+test('iletim: onay taşıyan olaylar, sürüm kimliği doğrulanır; hatırlatma müşteriye e-posta + zil', () => {
+  assert.deepEqual([...APPROVAL_REQUEST_TYPES].sort(), ['ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED', 'ORDER_PRODUCTION_APPROVAL_REQUESTED']);
+  assert.equal(approvalOfferId('ORDER_OFFER_SENT', { approval: { offerId: 'clxyz12345abc' } }), 'clxyz12345abc');
+  assert.equal(approvalOfferId(APPROVAL_REMINDER_TYPE, { approval: { offerId: 'clxyz12345abc' } }), 'clxyz12345abc');
+  assert.equal(approvalOfferId('ORDER_SHIP_DATE', { approval: { offerId: 'clxyz12345abc' } }), null);
+  for (const bad of [null, {}, { approval: null }, { approval: { offerId: '../x' } }, { approval: { offerId: 5 } }, { approval: { due: 'x' } }]) assert.equal(approvalOfferId('ORDER_OFFER_SENT', bad), null);
+  assert.deepEqual(NOTIFY_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER({}), ['customer']);
+  assert.deepEqual(INAPP_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER.to(), ['customer']);
+  assert.ok(ALERT_SECTIONS.teklif.includes('ORDER_PRODUCTION_APPROVAL_REMINDER'));
+  assert.deepEqual(EVENTS.PRODUCTION_APPROVAL_REMINDER, { customer: true });
+  assert.deepEqual(EVENTS.LOADING_APPROVAL_OVERRIDE, { customer: false, note: true }, 'istisna müşteriye görünmez');
+  for (const l of ['tr', 'ro']) {
+    for (const k of ['events.PRODUCTION_APPROVAL_REMINDER.customer', 'events.LOADING_APPROVAL_OVERRIDE.label', 'notifications.productionApproval.reminder', 'notifications.types.PRODUCTION_APPROVAL_UNDELIVERED.title', 'loading.confirm.errors.APPROVAL_REQUIRED', 'order.errors.loadingApprovalRequired']) {
+      assert.notEqual(translate(l, k), k, `${l} ${k}`);
+    }
+  }
+  // Talep bildirimi son tarih taşımaz (süre iletimde başlar); hatırlatma saklanan son tarihi yazar
+  const req = renderInApp('tr', { type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED', params: { aud: 'customer', orderNo: 'GLA68', approval: 1 } });
+  assert.equal(req.title, 'Üretim onayınız bekleniyor');
+  assert.doesNotMatch(req.body, /son onay|belirlenemedi/);
+  const rem = renderInApp('ro', { type: APPROVAL_REMINDER_TYPE, params: { aud: 'customer', orderNo: 'GLA68', approval: 1, due: '11.11.2026 10:30' } });
+  assert.match(rem.title, /Memento/);
+  assert.match(rem.body, /11\.11\.2026 10:30/);
+  const order = { id: 'o1', orderNo: 'GLA68', customer: { name: 'Glass and More' } };
+  const mail = renderNotification({ order, createdAt: new Date('2026-11-10T08:30:00Z'), appUrl: 'https://t', timeZone: 'Europe/Bucharest', type: APPROVAL_REMINDER_TYPE, recipient: { locale: 'tr', role: null }, payload: { approval: { offerId: 'x', due: '2026-11-11T08:30:00.000Z' } } });
+  assert.match(mail.subject, /Hatırlatma/);
+  assert.match(mail.text, /Son onay tarihi: 11\.11\.2026 10:30/);
 });

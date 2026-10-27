@@ -27,6 +27,7 @@ import { dayKey } from '../orders/loading.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { glassTotals } from '../glass/billing.js';
 import { sortByOrderNo } from '../orders/order-number.js';
+import { loadingApprovalBlocks } from '../orders/loading-approval.js';
 
 /**
  * @typedef {{ orderId: string, orderNo: string, title: string | null, customerId: string, customerName: string, currency: string, offerId?: string, items: any[], replanFrom?: string[] }} ConfirmOrder
@@ -450,7 +451,7 @@ export async function loadConfirmation(db, day) {
  * Aynı gün ikinci kez onaylanamaz: işlem kilidi + benzersiz yükleme günü (aynı anda gelen iki istekten biri reddedilir).
  * @param {any} db
  * @param {{ day: string, key: string, note?: string | null, notLoaded?: NotLoadedInput[], actor: { id: string, role: string, ip?: string | null }, now?: Date }} p
- * @returns {Promise<{ ok: true, id: string, orders: number, items: number, notLoaded: number } | { ok: false, code: 'FORBIDDEN' | 'BAD_DAY' | 'FUTURE_DAY' | 'ALREADY_CONFIRMED' | 'NOTHING_TO_CONFIRM' | 'STALE_PREVIEW' | 'BAD_EXCEPTION' | 'BAD_QUANTITY' | 'BAD_REASON' | 'NOTE_REQUIRED' }>}
+ * @returns {Promise<{ ok: true, id: string, orders: number, items: number, notLoaded: number } | { ok: false, code: 'FORBIDDEN' | 'BAD_DAY' | 'FUTURE_DAY' | 'ALREADY_CONFIRMED' | 'NOTHING_TO_CONFIRM' | 'STALE_PREVIEW' | 'BAD_EXCEPTION' | 'BAD_QUANTITY' | 'BAD_REASON' | 'NOTE_REQUIRED' } | { ok: false, code: 'APPROVAL_REQUIRED', blocked: { orderId: string, orderNo: string, reason: string }[] }>}
  */
 export async function confirmLoading(db, { day, key, note = null, notLoaded = [], actor, now = new Date() }) {
   if (!can(actor?.role, 'LOADING_CONFIRM')) return { ok: false, code: 'FORBIDDEN' };
@@ -465,6 +466,10 @@ export async function confirmLoading(db, { day, key, note = null, notLoaded = []
       const base = await previewLoading(tx, day);
       if (base.items.length === 0) return { ok: false, code: 'NOTHING_TO_CONFIRM' };
       if (base.key !== key) return { ok: false, code: 'STALE_PREVIEW' };
+      // Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin müşteri üretim onayı ya da yöneticinin istisnası yoksa gün
+      // onaylanmaz (kesim gününden önceki yükleme günleri etkilenmez; ayar kapalıyken engel yok)
+      const blocked = await loadingApprovalBlocks(tx, { day, orderIds: base.orders.map((o) => o.orderId) });
+      if (blocked.length) return { ok: false, code: 'APPROVAL_REQUIRED', blocked };
       const split = applyNotLoaded(base.orders, notLoaded);
       if (!split.ok) return split;
       const plan = { ...base, orders: split.orders, items: split.items };

@@ -89,6 +89,8 @@ export const INAPP_RULES = {
   ORDER_PRODUCTION_APPROVED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
   // Mevcut siparişin geçişte açılan onay talebi (karar 305): yalnızca müşteriye, onay kartına
   ORDER_PRODUCTION_APPROVAL_REQUESTED: { to: () => ['customer'], link: orderPart('uretim-onayi') },
+  // Onay bekleyen müşteriye tek hatırlatma (4.2.5; production-approval-service.js → remindApprovalCustomers)
+  ORDER_PRODUCTION_APPROVAL_REMINDER: { to: () => ['customer'], link: orderPart('uretim-onayi') },
   ORDER_OFFER_CHANGE_REQUESTED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
   ORDER_PROFORMA: { to: () => ['customer'] },
@@ -171,10 +173,13 @@ export function renderInApp(locale, n) {
   const type = n.type ?? '';
   let title = n.message || type;
   // Müşteri üretim onayı (4.2.1): teklif gönderildi / güncellendi ve onay bekleniyor → "Üretim onayınız bekleniyor" + son tarih
-  if (customer && p.approval && (type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')) {
+  // 4.2.5: talep bildiriminde son tarih yoktur (süre talep iletildiğinde başlar — e-postada ve sipariş sayfasında yazar);
+  // hatırlatmada saklanan son tarih yazılır
+  const reminder = type === 'ORDER_PRODUCTION_APPROVAL_REMINDER';
+  if (customer && p.approval && (reminder || type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')) {
     const order = p.orderNo ? t('notifications.order', { orderNo: p.orderNo }) : '';
-    const due = typeof p.due === 'string' && p.due ? t('notifications.productionApproval.due', { due: p.due }) : t('notifications.productionApproval.noDue');
-    return { title: t('notifications.productionApproval.customer'), body: [order, due].filter(Boolean).join(' · ') };
+    const due = typeof p.due !== 'string' ? '' : p.due ? t('notifications.productionApproval.due', { due: p.due }) : t('notifications.productionApproval.noDue');
+    return { title: t(reminder ? 'notifications.productionApproval.reminder' : 'notifications.productionApproval.customer'), body: [order, due].filter(Boolean).join(' · ') };
   }
   const own = `notifications.types.${type}.${customer ? 'customer' : 'title'}`;
   if (type && has(own)) title = t(own);
@@ -250,7 +255,8 @@ async function fanOut(db, row) {
     ...(payload.qty != null ? { qty: Number(payload.qty) } : {}),
     ...(payload.ref ? { ref: String(payload.ref) } : {}),
     // Müşteri üretim onayı (4.2.1): onay bekleyen sürüm (son tarih Romanya saatiyle; hesaplanamadıysa boş)
-    ...(payload.approval && typeof payload.approval === 'object' ? { approval: 1, due: approvalDueText(payload.approval.due) ?? '' } : {}),
+    ...(payload.approval && typeof payload.approval === 'object'
+      ? { approval: 1, ...('due' in payload.approval ? { due: approvalDueText(payload.approval.due) ?? '' } : {}) } : {}),
   };
   return createNotifications(db, {
     key: `outbox:${row.id}`, type: row.type, users, orderId: order.id, orderNo: order.orderNo, firmName: order.customer?.name ?? null,

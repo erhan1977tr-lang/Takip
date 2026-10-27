@@ -9,6 +9,7 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { dayKey } from '@/server/orders/loading.js';
 import { isGlassLine, itemKey, loadConfirmation, loadedDays, previewLoading, summarize } from '@/server/loading/confirmation.js';
+import { loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
 import { NOT_LOADED_REASONS, notLoadedOfDay } from '@/server/loading/replan.js';
 import { planCorrection, unpackCorrection } from '@/server/loading/correction.js';
 import { cancelReplanAction, confirmLoadingAction, correctLoadingAction, previewCorrectionAction, replanAction } from './actions';
@@ -21,7 +22,7 @@ type CustomerRow = { customerId: string; name: string; orders: OrderRow[]; adet:
 type Summary = { customers: CustomerRow[]; totals: { orders: number; adet: number; m2: number; items: number; byCur: Money; noCost: number } };
 type Skipped = { orderId: string; orderNo: string; reason: 'NO_SENT_OFFER' | 'ALREADY_CONFIRMED' | 'ORDER_CANCELLED' | 'ORDER_ON_HOLD'; day?: string };
 
-const ERRORS = ['FORBIDDEN', 'BAD_DAY', 'FUTURE_DAY', 'ALREADY_CONFIRMED', 'NOTHING_TO_CONFIRM', 'STALE_PREVIEW', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED'];
+const ERRORS = ['FORBIDDEN', 'BAD_DAY', 'FUTURE_DAY', 'ALREADY_CONFIRMED', 'NOTHING_TO_CONFIRM', 'STALE_PREVIEW', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED', 'APPROVAL_REQUIRED'];
 const REPLAN_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'NOT_FUTURE', 'NOT_FOUND', 'NOT_ALLOWED', 'BAD_QUANTITY', 'NO_REMAINDER', 'ORDER_CANCELLED', 'ORDER_ON_HOLD', 'DAY_CONFIRMED', 'ALREADY_LOADED', 'ALREADY_PLANNED'];
 const CORRECT_ERRORS = ['FORBIDDEN', 'BAD_DAY', 'REASON_REQUIRED', 'NOT_CONFIRMED', 'BAD_EXCEPTION', 'BAD_QUANTITY', 'BAD_REASON', 'NOTE_REQUIRED', 'NO_CHANGE', 'DOWNSTREAM_CONFLICT', 'QUEUED_BILLING', 'FAILED_BILLING', 'STALE_PREVIEW'];
 /** Onay kalemi (geçerli durum) — düzeltme formu için */
@@ -374,6 +375,8 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
   const plan = await previewLoading(db, day);
   const s = summarize(plan.orders, nameOf) as Summary;
   const skipped = plan.skipped as Skipped[];
+  // Onaysız yükleme engeli (4.2.5): sunucu da aynı kuralla reddeder (confirmLoading); burada yalnızca gösterilir
+  const blocked = await loadingApprovalBlocks(db, { day, orderIds: plan.orders.map((o) => o.orderId) });
   return (
     <div className="card" id="onay">
       <div className="section-head">
@@ -393,6 +396,17 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
           ))}
         </div>
       )}
+      {blocked.length > 0 && (
+        <div className="alert alert-error" data-approval-blocked>
+          {t('loading.confirm.approvalBlocked')}{' '}
+          {blocked.map((x, i) => (
+            <span key={x.orderId}>
+              {i > 0 && ' · '}
+              <Link href={`/siparisler/${x.orderId}#yukleme-izni`}>{x.orderNo}</Link> ({t(`loading.confirm.approvalReason.${x.reason}` as MsgKey)})
+            </span>
+          ))}
+        </div>
+      )}
       {plan.items.length === 0 ? <p className="muted">{t('loading.confirm.nothing')}</p> : (
         <>
           {money && s.totals.noCost > 0 && (
@@ -404,7 +418,7 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
           {table(s)}
           {/* "Yükleme yapıldı" (Paket 7, karar 189): önizlemedeki kalemler YÜKLENDİ olarak kaydedilir. Ayrı "yüklenmeyen cam"
               girişi yoktur — yüklenmeyen cam onaydan sonra "Düzelt" ile kaydedilir (karar 105) ve ileri güne aktarılır. */}
-          <form action={confirmLoadingAction}>
+          {blocked.length === 0 && <form action={confirmLoadingAction}>
             <input type="hidden" name="day" value={day} />
             <input type="hidden" name="key" value={plan.key} />
             <div className="tool-bar confirm-bar">
@@ -417,7 +431,7 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
                 </ConfirmButton>
               </div>
             </div>
-          </form>
+          </form>}
         </>
       )}
     </div>

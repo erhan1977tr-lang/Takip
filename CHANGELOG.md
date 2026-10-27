@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.5 — 27.10.2026
+
+**Müşteri üretim onayı — son kullanıcı kararları** (ürün sahibi, 27.10.2026; karar 305b):
+
+- **Süre talep müşteriye iletildiğinde başlar:** gönderimde / geçişte son tarih yazılmaz. E-posta işçisi talebi en az bir
+  müşteri adresine ilettiği anda 2 Romanya iş günlük süre başlar ve e-postada aynı son tarih yazar; müşteri e-posta almıyorsa
+  (tercih / adres yok) uygulama içi bildirim iletimdir. İletilemeyen talepte süre başlamaz, hata kaydedilir ve yöneticiye
+  bildirilir; yönetici sipariş sayfasından talebi yeniden gönderir (kuyrukta bekleyen varken ikinci gönderim yok).
+- **Hatırlatma:** onay bekleyen müşteriye iletimden 1 iş günü sonra tek hatırlatma (e-posta + zil), sürüm başına bir kez.
+- **Onaysız yükleme engeli (sunucuda):** kapsamdaki siparişte yükleme günü 06.11.2026 ve sonrasıysa, müşteri güncel teklifi
+  onaylamadan "Yükleme yapıldı" (gün onaylanmaz, engelli siparişler listelenir) ve "Yüklendi" yapılamaz. 30.10.2026
+  yüklemeleri etkilenmez. Ayar kapalıyken engel yoktur.
+- **Yönetici istisnası:** yalnızca Yönetici (yeni yetki `LOADING_APPROVAL_OVERRIDE`, yönetici yardımcısında yok) sipariş
+  sayfasında gerekçe yazarak istisnai yükleme izni verir; kullanıcı, zaman, sipariş ve gerekçe denetim kaydına yazılır;
+  müşteri onayı olarak kaydedilmez, müşteriye görünmez.
+- **Geçiş:** güncel teklifi henüz müşteride olmayan (yeni sürüm hazırlanan) hazırlık siparişleri de kapsam işareti alır.
+  Bildirim kontrollü başlatılabilir: `--bildirimsiz` geçiş + `--bildirim [--siparis …]` (ön izleme + onay kodu).
+- Migration (yalnızca ekleme): `Order.loadingOverrideAt / loadingOverrideById / loadingOverrideReason`,
+  `Offer.approvalDeliveredAt / approvalDeliveryChannel / approvalDeliveryFailedAt / approvalDeliveryError /
+  approvalReminderAt`, `PermissionKey.LOADING_APPROVAL_OVERRIDE`.
+- Proforma, FGO / ANAF, mali kilit, satışçı yetkileri ve sipariş durumları değişmedi.
+
 ## 4.2.4 — 26.10.2026
 
 **Müşteri üretim onayı — kapsam kararı** (ürün sahibi, 26.10.2026; karar 305 güncellendi): "yalnızca yeni siparişler" kuralı

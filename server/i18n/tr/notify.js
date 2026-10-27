@@ -19,7 +19,7 @@ export default {
     deadline: 'Son onay tarihi',
     roTime: 'Romanya saati',
     noDeadline: 'Belirlenemedi — lütfen GKH ile iletişime geçin',
-    text: 'Lütfen teklifteki cam türlerini, ölçüleri, adetleri ve fiyatları kontrol edin. Siparişinizin üretime alınması için onayınız zorunludur. Onay süresi teklifin gönderilmesinden itibaren 2 iş günüdür (yukarıdaki son onay tarihi). Onayın gecikmesi planlanan yükleme tarihini etkileyebilir. Onaylamak ya da ölçülerde değişiklik bildirmek için siparişi açın.',
+    text: 'Lütfen teklifteki cam türlerini, ölçüleri, adetleri ve fiyatları kontrol edin. Siparişinizin üretime alınması için onayınız zorunludur. Onay süresi bu bildirimin size iletilmesinden itibaren 2 Romanya iş günüdür (yukarıdaki son onay tarihi). Onayın gecikmesi planlanan yükleme tarihini etkileyebilir. Onaylamak ya da ölçülerde değişiklik bildirmek için siparişi açın.',
   },
   admin: {
     priceOverride: 'Satış fabrika fiyatını değiştirdi',

@@ -171,10 +171,12 @@ test('müşteri bildirimleri (karar 166): müşteriye yalnızca kendi siparişin
   // ORDER_DWG_FAULTY_UNDONE (3.90.0, karar 285): hatalı kararı geri alındı — hatalı kararını alan müşteri düzeltme gerekmediğini öğrenir
   assert.deepEqual(toCustomer, [
     'LOADING_REPLANNED', 'ORDER_DELIVERY_DATE_CHANGED', 'ORDER_DRAWING_UPLOADED', 'ORDER_DWG_FAULTY', 'ORDER_DWG_FAULTY_UNDONE', 'ORDER_INVOICED', 'ORDER_NOTE_ADDED', 'ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED',
-    'ORDER_PICKUP_MOVED', 'ORDER_PRODUCTION_APPROVAL_REQUESTED', 'ORDER_PROFILE_OFFER_SENT', 'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
+    'ORDER_PICKUP_MOVED', 'ORDER_PRODUCTION_APPROVAL_REMINDER', 'ORDER_PRODUCTION_APPROVAL_REQUESTED', 'ORDER_PROFILE_OFFER_SENT', 'ORDER_PROFORMA', 'ORDER_SHIPPED', 'ORDER_SHIP_DATE',
   ]);
   // ORDER_PRODUCTION_APPROVAL_REQUESTED (karar 305): mevcut siparişin geçişte açılan üretim onayı talebi — müşterinin onay kartına
   assert.equal(INAPP_RULES.ORDER_PRODUCTION_APPROVAL_REQUESTED.link(glass, {}), '/siparisler/o1#uretim-onayi');
+  // ORDER_PRODUCTION_APPROVAL_REMINDER (4.2.5): onay bekleyen müşteriye tek hatırlatma — aynı onay kartına
+  assert.equal(INAPP_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER.link(glass, {}), '/siparisler/o1#uretim-onayi');
   assert.equal(INAPP_RULES.ORDER_DELIVERY_DATE_CHANGED.link(profile, {}), '/siparisler/o2#teslim');
   assert.equal(INAPP_RULES.ORDER_PICKUP_MOVED.link(profile, {}), '/siparisler/o2#teslim');
   // Müşterinin yanıtı ve çizimcinin öbür kararları iç olaydır (çizimci / ilgili satışçı)

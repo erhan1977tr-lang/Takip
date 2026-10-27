@@ -123,10 +123,11 @@ dbTest('onaysız üretime geçmez; onay → olağan kural (üretim), kayıt: zam
   let order = await orderOf(o.id);
   assert.equal(order.status, 'HAZIRLANIYOR');
   assert.equal(order.drawingTrack, 'YOK');
-  // Son tarih: gönderim anından 2 Romanya iş günü (tek kural)
-  assert.equal(sent.approvalDueAt.toISOString(), approvalDeadline(sent.sentAt).due.toISOString());
+  // 4.2.5: süre gönderimde başlamaz — talep müşteriye iletilince (test/db/production-approval-delivery.test.js)
+  assert.ok(sent.approvalRequestedAt instanceof Date);
+  assert.equal(sent.approvalDueAt, null);
   const ev = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
-  assert.equal(ev.payload.approval.due, sent.approvalDueAt.toISOString());
+  assert.deepEqual(ev.payload.approval, { offerId: sent.id });
   assert.ok(['ro', 'tr'].includes(ev.payload.lang));
   const shipBefore = order.estimatedShipDate?.toISOString();
 
@@ -169,7 +170,7 @@ dbTest('onaysız üretime geçmez; onay → olağan kural (üretim), kayıt: zam
   await dispatchInAppFor(db, [ev.id]);
   const custN = await db.notification.findFirst({ where: { userId: people.cust.id, dedupeKey: `outbox:${ev.id}` } });
   assert.equal(custN.params.approval, 1);
-  assert.match(custN.params.due, /^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+  assert.equal('due' in custN.params, false, 'son tarih iletimde belirlenir (bildirim yazılırken yok)');
 }));
 
 dbTest('eşzamanlı iki onay: yalnızca biri yazılır', offline(async () => {
@@ -241,8 +242,8 @@ dbTest('ölçü değişikliği: açıklama zorunlu; sürüm korunur ve onaylanam
   await run(o.id, 'approve_offer', 'admin', { lines: adminForm(pending.lines, '55') });
   const v2 = await latest(o.id);
   assert.equal(v2.status, 'GONDERILDI');
-  assert.ok(v2.approvalDueAt instanceof Date, 'yeni sürüm için yeni süre');
-  assert.equal(v2.approvalDueAt.toISOString(), approvalDeadline(v2.sentAt).due.toISOString());
+  assert.ok(v2.approvalRequestedAt instanceof Date, 'yeni sürüm için yeni talep');
+  assert.equal(v2.approvalDueAt, null, 'yeni süre yeni talep iletildiğinde başlar');
   assert.equal((await orderOf(o.id)).status, 'HAZIRLANIYOR', 'yeni sürüm yeniden onay bekler');
   // Eski sürüm onaylanamaz; yeni sürüm onaylanır
   assert.equal(await codeOf(run(o.id, 'approve_production', 'cust', { offerId: v1.id })), 'OFFER_VERSION_STALE');
@@ -260,9 +261,9 @@ dbTest('yöneticinin "teklifi güncelle"si hazırlıkta yeni sürüm açar → y
   const v2 = await latest(o.id);
   assert.notEqual(v2.id, v1.id);
   assert.equal(v2.approvedAt, null);
-  assert.ok(v2.approvalDueAt instanceof Date);
+  assert.ok(v2.approvalRequestedAt instanceof Date);
   const ev = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_UPDATED' } });
-  assert.equal(ev.payload.approval.due, v2.approvalDueAt.toISOString());
+  assert.deepEqual(ev.payload.approval, { offerId: v2.id });
   await db.order.update({ where: { id: o.id }, data: { drawingTrack: 'ONAYLANDI' } });
   await run(o.id, 'hold', 'sales');
   await run(o.id, 'unhold', 'sales');
@@ -275,7 +276,11 @@ dbTest('yöneticinin "teklifi güncelle"si hazırlıkta yeni sürüm açar → y
 dbTest('süre dolunca yöneticiye BİR KEZ bildirim; müşteri onay hakkını kaybetmez; yükleme tarihi değişmez', offline(async () => {
   await setApproval(true);
   const o = await newOrder('Gecikme');
-  const sent = await sendOffer(o.id);
+  const sent0 = await sendOffer(o.id);
+  // Talep müşteriye iletildi (iletim e-posta işçisinde yazılır — burada iletim anı doğrudan, aynı kuralla)
+  const deliveredAt = new Date();
+  await db.offer.update({ where: { id: sent0.id }, data: { approvalDeliveredAt: deliveredAt, approvalDeliveryChannel: 'EMAIL', approvalDueAt: approvalDeadline(deliveredAt).due } });
+  const sent = await db.offer.findUnique({ where: { id: sent0.id } });
   const ship = (await orderOf(o.id)).estimatedShipDate?.toISOString();
   const now = new Date(sent.approvalDueAt.getTime() + 60_000);
   const mine = () => db.notification.findMany({ where: { type: 'PRODUCTION_APPROVAL_OVERDUE', orderId: o.id } });

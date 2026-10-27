@@ -68,7 +68,7 @@ export const STAFF_EVENT_POLICY = {
   // müşterinin DWG/DXF çizimi (karar 167): çizim hattının olayları, satırı ve notu siparişi gören her iç role
   DWG_READY: OPEN, DWG_FAULTY: OPEN, DWG_UPDATE: OPEN, DWG_RESUBMITTED: OPEN, DWG_FACTORY_REQUESTED: OPEN,
   DWG_READY_UNDONE: OPEN, DWG_FAULTY_UNDONE: OPEN, DWG_UPDATE_UNDONE: OPEN,
-  OFFER_SENT: OPEN, OFFER_CHECKED: OPEN, PRODUCTION_APPROVED: OPEN, OFFER_CHANGE_REQUESTED: OPEN, PRODUCTION_APPROVAL_REQUESTED: OPEN, PRODUCTION: OPEN, SHIPPED: OPEN, AUTO_SHIPPED: OPEN, AUTO_SHIP_REVERTED: OPEN, ARCHIVED: OPEN, AUTO_ARCHIVED: OPEN,
+  OFFER_SENT: OPEN, OFFER_CHECKED: OPEN, PRODUCTION_APPROVED: OPEN, OFFER_CHANGE_REQUESTED: OPEN, PRODUCTION_APPROVAL_REQUESTED: OPEN, PRODUCTION_APPROVAL_REMINDER: OPEN, LOADING_APPROVAL_OVERRIDE: OPEN, PRODUCTION: OPEN, SHIPPED: OPEN, AUTO_SHIPPED: OPEN, AUTO_SHIP_REVERTED: OPEN, ARCHIVED: OPEN, AUTO_ARCHIVED: OPEN,
   CANCELLED: OPEN, HOLD: OPEN, UNHOLD: OPEN,
   CRATES: OPEN, SHIP_DATE: OPEN, REMOVED: OPEN, RESTORED: OPEN,
   GUEST_HOST: OPEN, GUEST_HOST_REMOVED: OPEN, GUEST_CRATE: OPEN, GUEST_CRATE_REMOVED: OPEN,
@@ -154,6 +154,10 @@ export function orderPeopleView(role, order) {
   if (Array.isArray(o.drawings)) o.drawings = o.drawings.map((d) => mapKeys(d, ['uploadedBy', 'sentBy', 'decidedBy'], person));
   if (Array.isArray(o.notes)) o.notes = o.notes.map((n) => mapKeys(n, ['user'], person));
   if (Array.isArray(o.events)) o = { ...o, events: eventsFor(role, o.events) };
+  // Onaysız yükleme istisnası (4.2.5) iç kayıttır: müşteriye kim / ne zaman / gerekçe gitmez; iç ekipte veren kişi iç kullanıcıdır
+  if (customerView(role)) {
+    o = { ...o, ...('loadingOverrideAt' in o ? { loadingOverrideAt: null, loadingOverrideById: null, loadingOverrideReason: null } : {}), ...('loadingOverrideBy' in o ? { loadingOverrideBy: null } : {}) };
+  } else if ('loadingOverrideBy' in o) o = mapKeys(o, ['loadingOverrideBy'], person);
   // Müşteri üretim onayı (4.2.1): onaylayan / değişiklik isteyen müşteri kullanıcısının kimliği hiçbir istemciye gitmez
   // (ekran yalnızca zamanı ve notu gösterir); not, e-posta adresi görmeyen role maskeli (olay notuyla aynı kural)
   if (Array.isArray(o.offers)) {
@@ -161,7 +165,11 @@ export function orderPeopleView(role, order) {
     o = {
       ...o,
       offers: o.offers.map((x) => ('approvedById' in x || 'changeRequestedById' in x || 'changeNote' in x
-        ? { ...x, approvedById: null, changeRequestedById: null, changeNote: masked && typeof x.changeNote === 'string' ? x.changeNote.replace(EMAIL, '***') : x.changeNote ?? null }
+        ? {
+          ...x, approvedById: null, changeRequestedById: null, changeNote: masked && typeof x.changeNote === 'string' ? x.changeNote.replace(EMAIL, '***') : x.changeNote ?? null,
+          // İletim hatası iç bilgidir (4.2.5): müşteri yalnızca iletim anını ve son tarihi görür
+          ...(customerView(role) ? { approvalDeliveryError: null, approvalDeliveryFailedAt: null, approvalDeliveryChannel: null } : {}),
+        }
         : x)),
     };
   }

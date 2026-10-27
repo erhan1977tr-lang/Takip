@@ -3,8 +3,9 @@
 import { can } from '../auth/permissions.js';
 import { notifyStaff } from '../notifications/inapp.js';
 import { localClock } from '../calendar/rules.js';
-import { writeAudit } from './journal.js';
-import { APPROVAL_SETTING_KEY, APPROVAL_STATUSES, APPROVAL_TIME_ZONE, approvalCutoff, approvalSettingOn } from './production-approval.js';
+import { enqueueOutbox, writeAudit, writeHistory } from './journal.js';
+import { APPROVAL_REMINDER_TYPE } from './production-approval-delivery.js';
+import { APPROVAL_SETTING_KEY, APPROVAL_STATUSES, APPROVAL_TIME_ZONE, approvalCutoff, approvalReminderAt, approvalSettingOn } from './production-approval.js';
 
 const FORBIDDEN = Object.freeze({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => !!actor && can(actor.role, 'SETTINGS_MANAGE');
@@ -55,6 +56,7 @@ export async function saveApprovalSetting(db, { enabled, cutoff = null, actor })
  * @returns {Promise<{ checked: number, notified: number }>}
  */
 export async function remindApprovalOverdue(db, { now = new Date(), log = () => {} } = {}) {
+  if (!(await getApprovalSetting(db)).enabled) return { checked: 0, notified: 0 };
   const rows = await db.offer.findMany({
     where: {
       status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null, approvalOverdueAt: null,
@@ -84,4 +86,51 @@ export async function remindApprovalOverdue(db, { now = new Date(), log = () => 
     }
   }
   return { checked: rows.length, notified };
+}
+
+/**
+ * Onay bekleyen müşteriye TEK hatırlatma (4.2.5): talep müşteriye iletildikten 1 Romanya iş günü sonra, hâlâ onay ya da
+ * değişiklik talebi yoksa. Sürüm başına bir kez (approvalReminderAt koşullu yazılır; olay aynı işlemde kuyruğa → e-posta +
+ * zil, müşterinin tercihine göre). Yalnızca siparişin EN SON sürümü; iletilmemiş talep hatırlatılmaz (süre başlamadı).
+ * Ayar kapalıyken hatırlatma yok.
+ * @param {any} db  @param {{ now?: Date, log?: Function }} [o]
+ * @returns {Promise<{ checked: number, reminded: number }>}
+ */
+export async function remindApprovalCustomers(db, { now = new Date(), log = () => {} } = {}) {
+  if (!(await getApprovalSetting(db)).enabled) return { checked: 0, reminded: 0 };
+  const rows = await db.offer.findMany({
+    where: {
+      status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null, approvalReminderAt: null,
+      approvalDeliveredAt: { lte: now, gte: new Date(now.getTime() - REMIND_LOOKBACK_MS) },
+      order: { productionApprovalRequired: true, status: { in: [...APPROVAL_STATUSES] }, removedAt: null, onHold: false },
+    },
+    orderBy: { approvalDeliveredAt: 'asc' },
+    take: REMIND_BATCH,
+    select: {
+      id: true, orderId: true, approvalDeliveredAt: true, approvalDueAt: true,
+      order: { select: { status: true, offers: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } } } },
+    },
+  });
+  let reminded = 0;
+  for (const r of rows) {
+    if (r.order.offers[0]?.id !== r.id) continue; // daha yeni sürüm var
+    const at = approvalReminderAt(r.approvalDeliveredAt).due;
+    if (!at || at.getTime() > now.getTime()) continue; // henüz zamanı değil ya da tatil verisi yok (tahmin edilmez)
+    try {
+      const done = await db.$transaction(async (tx) => {
+        const claimed = await tx.offer.updateMany({ where: { id: r.id, approvalReminderAt: null, approvedAt: null, changeRequestedAt: null, status: 'GONDERILDI' }, data: { approvalReminderAt: now } });
+        if (claimed.count !== 1) return false;
+        await writeHistory(tx, { orderId: r.orderId, event: 'PRODUCTION_APPROVAL_REMINDER', from: r.order.status, to: r.order.status, actorId: null });
+        await enqueueOutbox(tx, {
+          type: APPROVAL_REMINDER_TYPE, orderId: r.orderId,
+          payload: { approval: { offerId: r.id, due: r.approvalDueAt ? new Date(r.approvalDueAt).toISOString() : null }, from: r.order.status, to: r.order.status, actorId: null },
+        });
+        return true;
+      });
+      if (done) reminded++;
+    } catch (e) {
+      log('üretim onayı hatırlatması yazılamadı', r.orderId, String(e?.message ?? e).slice(0, 200));
+    }
+  }
+  return { checked: rows.length, reminded };
 }

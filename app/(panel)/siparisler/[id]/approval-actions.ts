@@ -1,8 +1,9 @@
 'use server';
 
-// Müşteri üretim onayı (4.2.1): "Üretime alınmasını onaylıyorum" ve "Ölçülerde değişiklik var". Kurallar ve kayıt
-// server/orders/transitions.js'te (approve_production / request_offer_change — rol, onay hakkı, sürüm, tekrar ve mali kilit
-// denetimi işlemin kendisinde); burada yalnızca oturum, form okuma ve kullanıcıya gösterilecek mesaj var.
+// Müşteri üretim onayı (4.2.1): "Üretime alınmasını onaylıyorum" ve "Ölçülerde değişiklik var"; 4.2.5: yöneticinin
+// onaysız yükleme istisnası ve iletilemeyen talebin yeniden gönderimi. Kurallar ve kayıt server/orders/transitions.js'te
+// (rol / yetki, onay hakkı, sürüm, tekrar ve mali kilit denetimi işlemin kendisinde); burada yalnızca oturum, form okuma ve
+// kullanıcıya gösterilecek mesaj var. Yetki ayrıca burada da istenir (düğmenin görünmemesi yetki değildir).
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -19,8 +20,11 @@ const versionOf = (formData: FormData) => {
   return v === null || v === '' ? undefined : Number(v);
 };
 
-async function run(formData: FormData, action: 'approve_production' | 'request_offer_change', ok: string, extra: Record<string, unknown> = {}) {
-  const user = await requirePermission('ORDER_VIEW');
+type Action = 'approve_production' | 'request_offer_change' | 'override_loading_approval' | 'resend_approval_request';
+type Perm = 'ORDER_VIEW' | 'LOADING_APPROVAL_OVERRIDE' | 'OFFER_SEND';
+
+async function run(formData: FormData, action: Action, ok: string, extra: Record<string, unknown> = {}, perm: Perm = 'ORDER_VIEW', anchor = 'uretim-onayi') {
+  const user = await requirePermission(perm);
   const id = String(formData.get('id') ?? '');
   try {
     const res = await runOrderAction(db, {
@@ -36,7 +40,7 @@ async function run(formData: FormData, action: 'approve_production' | 'request_o
       const msg = e.code === 'PRICE_LOCKED'
         ? [t('order.errors.priceLocked'), ...(reasons ?? []).map((r) => lockReasonText(t, r))].join(' · ')
         : workflowErrorText(t, e.code, e.details as Record<string, unknown>);
-      redirect(back(id, `error=${encodeURIComponent(msg)}`) + '#uretim-onayi');
+      redirect(back(id, `error=${encodeURIComponent(msg)}`) + `#${anchor}`);
     }
     throw e;
   }
@@ -53,4 +57,14 @@ export async function approveProductionAction(formData: FormData) {
 /** "Ölçülerde değişiklik var" — açıklama zorunlu (sunucuda denetlenir) */
 export async function requestOfferChangeAction(formData: FormData) {
   await run(formData, 'request_offer_change', 'offer_change_requested', { note: String(formData.get('note') ?? '') });
+}
+
+/** Onaysız yükleme istisnası — yalnızca yönetici (LOADING_APPROVAL_OVERRIDE); gerekçe zorunlu (sunucuda denetlenir) */
+export async function overrideLoadingApprovalAction(formData: FormData) {
+  await run(formData, 'override_loading_approval', 'loading_override', { reason: String(formData.get('reason') ?? '') }, 'LOADING_APPROVAL_OVERRIDE', 'yukleme-izni');
+}
+
+/** İletilemeyen onay talebini yeniden gönder (aynı sürüm; süre iletimde başlar) — yönetici (OFFER_SEND) */
+export async function resendApprovalRequestAction(formData: FormData) {
+  await run(formData, 'resend_approval_request', 'approval_resent', {}, 'OFFER_SEND');
 }

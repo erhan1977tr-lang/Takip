@@ -438,12 +438,12 @@ async function appendToDraft(tx, { dest, lines, compensationId }) {
 async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
   await bumpVersion(tx, order);
   const { amount, offerAmount } = amounts(lines);
-  // Müşteri üretim onayı (4.2.1): kapsamdaki sipariş hazırlıktaysa yeni sürüm de müşteri onayı bekler (update_offer ile aynı kural)
-  const approval = approvalOnSend(order, now);
+  // Müşteri üretim onayı (4.2.1): kapsamdaki sipariş hazırlıktaysa yeni sürüm de müşteri onayı bekler (update_offer ile aynı kural); süre talep iletilince başlar
+  const approvalData = approvalOnSend(order, now, null).data;
   const created = await tx.offer.create({
     data: {
       orderId: order.id, createdById: actor.id, currency: prev.currency, amount, offerAmount, priceTableId: prev.priceTableId ?? null,
-      status: 'GONDERILDI', statusSince: now, sentAt: now, ...(approval.data ?? {}),
+      status: 'GONDERILDI', statusSince: now, sentAt: now, ...(approvalData ?? {}),
       lines: { create: lines.map((l, i) => lineData(l, i)) },
     },
   });
@@ -454,6 +454,7 @@ async function writeSentVersion(tx, { order, prev, lines, actor, now }) {
   });
   // Müşteri teklifin güncellendiğini görür (olağan olay; notta tutar yok)
   await writeHistory(tx, { orderId: order.id, event: 'OFFER_UPDATED', from: order.status, to: order.status, actorId: actor.id, note: null });
+  const approval = approvalOnSend(order, now, created.id);
   await enqueueOutbox(tx, { type: 'ORDER_OFFER_UPDATED', orderId: order.id, payload: { ...(approval.event ?? {}), from: order.status, to: order.status, actorId: actor.id } });
   return created.id;
 }

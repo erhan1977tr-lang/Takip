@@ -24,6 +24,7 @@ export default {
     customer: 'Üretim onayınız bekleniyor',
     due: 'son onay: {due} (Romanya saati)',
     noDue: 'son onay tarihi belirlenemedi',
+    reminder: 'Hatırlatma: üretim onayınız bekleniyor',
   },
   types: {
     LOADING_NOT_LOADED: { title: 'Yüklenmeyen cam: yeniden planlama gerekli' },
@@ -54,6 +55,7 @@ export default {
     SUPPLIER_ETA: { title: 'Tedarikçi siparişi: tahmini yükleme 2 gün içinde' },
     // Müşteri üretim onayı (4.2.1): süre doldu, onay yok — yöneticiye, sürüm başına bir kez
     PRODUCTION_APPROVAL_OVERDUE: { title: 'Üretim onayı gecikti: müşteri teklifi henüz onaylamadı' },
+    PRODUCTION_APPROVAL_UNDELIVERED: { title: 'Üretim onayı talebi müşteriye iletilemedi — süre başlamadı' },
     SUPPLIER_EMAIL_FAILED: { title: 'Tedarikçi sipariş e-postası gönderilemedi' },
     // Sipariş mesajı (Paket 9, karar 199): mesajın metni bildirime girmez
     ORDER_NOTE_ADDED: { title: 'Siparişte yeni mesaj', customer: 'Siparişinizde yeni mesaj var' },
@@ -85,6 +87,7 @@ export default {
     AUTH_LOCKED: '{user}',
     SUPPLIER_ETA: '{ref} · {supplier} · tahmini yükleme {date}',
     PRODUCTION_APPROVAL_OVERDUE: 'son onay günü {date}',
+    PRODUCTION_APPROVAL_UNDELIVERED: 'sipariş sayfasından yeniden gönderin',
     SUPPLIER_EMAIL_FAILED: '{ref}',
   },
 };

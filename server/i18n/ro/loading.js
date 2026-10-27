@@ -297,6 +297,12 @@ export default {
       ORDER_CANCELLED: 'comanda restului replanificat este anulată',
       ORDER_ON_HOLD: 'comanda restului replanificat este în așteptare',
     },
+    approvalBlocked: 'Comenzi fără aprobarea clientului pentru producție — ziua nu poate fi confirmată (încărcare din 06.11.2026). Așteptați aprobarea clientului sau administratorul acordă o excepție motivată în pagina comenzii:',
+    approvalReason: {
+      NOT_SENT: 'oferta actuală nu a fost trimisă clientului',
+      PENDING: 'se așteaptă aprobarea clientului',
+      CHANGE_REQUESTED: 'clientul a cerut modificări',
+    },
     outside: 'Comenzi planificate în această zi, dar care nu sunt în încărcarea confirmată (nu sunt considerate încărcate; mutați-le în altă zi de încărcare):',
     noCost: 'Atenție: {n} rânduri nu au costul de fabrică înregistrat. După confirmare costul nu mai poate fi corectat în această înregistrare — introduceți-l mai întâi la Contabilitate → Situație fabrică sticlă → „Costuri lipsă”.',
     noCostLink: 'Introduceți costurile lipsă',
@@ -312,6 +318,7 @@ export default {
       BAD_QUANTITY: 'Cantitatea neîncărcată nu poate depăși cantitatea planificată a poziției.',
       BAD_REASON: 'Alegeți un motiv pentru fiecare sticlă neîncărcată.',
       NOTE_REQUIRED: 'Pentru „Alt motiv” scrieți o explicație.',
+      APPROVAL_REQUIRED: 'În această zi există comenzi fără aprobarea clientului pentru producție; ziua nu a fost confirmată. Verificați lista.',
     },
   },
   // Replanificarea sticlei neîncărcate (decizia 102)

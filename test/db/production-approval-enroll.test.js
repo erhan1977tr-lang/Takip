@@ -7,8 +7,7 @@ import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
-import { applyEnrollment, planEnrollment } from '../../server/orders/production-approval-enroll.js';
-import { approvalDeadline } from '../../server/orders/production-approval.js';
+import { applyEnrollment, applyNotify, planEnrollment, planNotify } from '../../server/orders/production-approval-enroll.js';
 import { saveApprovalSetting } from '../../server/orders/production-approval-service.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { snapshotLine } from '../../server/loading/confirmation.js';
@@ -70,6 +69,9 @@ before(async () => {
   await order('prodOnHold', { extra: { onHold: true } });
   await order('newNoOffer', { status: 'YENI', offer: null }); // yalnızca bayrak
   await order('prepDraft', { status: 'HAZIRLANIYOR', offer: 'YONETIMDE' }); // yalnızca bayrak
+  // Önceden gönderilmiş sürümden sonra yeni sürüm hazırlanıyor: güncel teklif müşteride değil → yalnızca bayrak (27.10.2026)
+  const nd = await order('prepNewDraft', { status: 'HAZIRLANIYOR' });
+  await db.offer.create({ data: { orderId: nd.id, status: 'HAZIRLANIYOR', currency: 'EUR', amount: '60.00', createdById: sales.id, createdAt: new Date(Date.now() + 1000) } });
   await order('loaded', { status: 'YUKLENDI' });
   const partial = await order('partial');
   await confirmPart(partial, '2026-10-20');
@@ -91,7 +93,7 @@ dbTest('ön izleme: kategoriler, kesim günü, kısmi yükleme; salt okunur; SQL
   });
   const expected = {
     prodSent: 'REQUEST', prepSent: 'REQUEST', prodProforma: 'REQUEST', prodOnHold: 'REQUEST', onCutoff: 'REQUEST',
-    newNoOffer: 'FLAG_ONLY', prepDraft: 'FLAG_ONLY', loaded: 'LOADED', partial: 'LOADED', invoiced: 'FINAL_INVOICED', comp: 'COMPENSATION',
+    newNoOffer: 'FLAG_ONLY', prepDraft: 'FLAG_ONLY', prepNewDraft: 'FLAG_ONLY', loaded: 'LOADED', partial: 'LOADED', invoiced: 'FINAL_INVOICED', comp: 'COMPENSATION',
     before: null, compRoot: null,
   };
   for (const [k, v] of Object.entries(expected)) assert.equal(categoryOf(plan, k), v, k);
@@ -132,20 +134,23 @@ dbTest('uygulama: yanlış kod / ayar sonrası değişiklik hiçbir şey yazmaz;
   const res = await applyEnrollment(db, { cutoff: '2026-11-06', code: plan.code, operator: 'test', now });
   assert.equal(res.ok, true);
   assert.equal(res.requested, 5);
-  assert.equal(res.flagged, 2);
+  assert.equal(res.flagged, 3);
   assert.deepEqual(res.skipped, { COMPENSATION: 1, FINAL_INVOICED: 1, LOADED: 2 });
 
-  const due = approvalDeadline(now).due;
+  // 5. Önceden teklif gönderilmiş sipariş için yeni müşteri onayı istenir (eski gönderim onay sayılmaz)
+  // 6. Üretimdeki sipariş kapsam dışında kalmaz (prodSent, prodProforma, prodOnHold, onCutoff: URETIMDE)
   for (const k of ['prodSent', 'prepSent', 'prodProforma', 'prodOnHold', 'onCutoff']) {
     const o = await db.order.findUnique({ where: { id: ids[k] }, include: { offers: true } });
     assert.equal(o.productionApprovalRequired, true, k);
-    assert.equal(o.offers[0].approvalRequestedAt.toISOString(), now.toISOString(), `${k}: süre geçiş anından`);
-    assert.equal(o.offers[0].approvalDueAt?.toISOString(), due?.toISOString(), k);
+    assert.equal(o.offers[0].approvalRequestedAt.toISOString(), now.toISOString(), `${k}: talep geçiş anında`);
+    assert.equal(o.offers[0].approvedAt, null, `${k}: eski gönderim onay sayılmaz`);
+    // 7. Süre geçişte BAŞLAMAZ: talep müşteriye iletildiğinde (e-posta işçisi) başlar
+    assert.equal(o.offers[0].approvalDueAt, null, k);
     assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'PRODUCTION_APPROVAL_REQUESTED' } }), 1, k);
     const ev = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED' } });
-    assert.equal(ev.payload.approval.due, due ? due.toISOString() : null, k);
+    assert.deepEqual(ev.payload.approval, { offerId: o.offers[0].id }, k);
   }
-  for (const k of ['newNoOffer', 'prepDraft']) {
+  for (const k of ['newNoOffer', 'prepDraft', 'prepNewDraft']) {
     assert.equal((await db.order.findUnique({ where: { id: ids[k] } })).productionApprovalRequired, true, k);
     assert.equal(await db.orderEvent.count({ where: { orderId: ids[k], event: 'PRODUCTION_APPROVAL_REQUESTED' } }), 0, `${k}: müşteriye bir şey sorulmadı`);
   }
@@ -160,7 +165,7 @@ dbTest('uygulama: yanlış kod / ayar sonrası değişiklik hiçbir şey yazmaz;
   assert.equal(await db.loadingConfirmationItem.count(), 1, 'yükleme kayıtlarına dokunulmadı');
   const audit = await db.auditLog.findFirst({ where: { action: 'PRODUCTION_APPROVAL_ENROLL' } });
   assert.equal(audit.details.requested, 5);
-  assert.equal(audit.details.orders.length, 7);
+  assert.equal(audit.details.orders.length, 8);
 
   // İkinci çalıştırma: hepsi "zaten kapsamda"; yeni talep / bildirim yok
   const again = await planEnrollment(db, { cutoff: '2026-11-06' });
@@ -188,7 +193,8 @@ dbTest('üretimdeki sipariş: onay durumu değiştirmez; değişiklik talebinde 
   ord = await db.order.findUnique({ where: { id: o }, include: { offers: { orderBy: { createdAt: 'asc' } } } });
   assert.equal(ord.status, 'URETIMDE');
   const v2 = ord.offers.at(-1);
-  assert.ok(v2.approvalRequestedAt && v2.approvalDueAt, 'yeni sürüm için yeni talep ve süre');
+  assert.ok(v2.approvalRequestedAt, 'yeni sürüm için yeni talep');
+  assert.equal(v2.approvalDueAt, null, 'süre yeni talep iletildiğinde başlar');
   assert.equal(await codeOf(run(o, 'approve_production', cust, { offerId: sent.id })), 'OFFER_VERSION_STALE');
   await run(o, 'approve_production', cust, { offerId: v2.id });
   ord = await db.order.findUnique({ where: { id: o }, include: { offers: { orderBy: { createdAt: 'asc' } } } });
@@ -214,7 +220,7 @@ dbTest('üretimdeki sipariş: onay durumu değiştirmez; değişiklik talebinde 
   assert.equal((await db.order.findUnique({ where: { id: h } })).status, 'URETIMDE');
 }));
 
-dbTest('bildirimsiz prova: talep ve süre yazılır, müşteriye bildirim kuyruğa yazılmaz', offline(async () => {
+dbTest('bildirimsiz geçiş + kontrollü bildirim: talep yazılır, süre başlamaz; ön izleme + kodla tümü / seçilen siparişler; ikinci bildirim yok', offline(async () => {
   const o = await order('silent', { ship: '2026-12-01' });
   const plan = await planEnrollment(db, { cutoff: '2026-11-06' });
   assert.equal(plan.rows.find((r) => r.id === o.id).category, 'REQUEST');
@@ -222,6 +228,28 @@ dbTest('bildirimsiz prova: talep ve süre yazılır, müşteriye bildirim kuyru�
   assert.equal(res.requested, 1);
   assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id } }), 0);
   assert.ok((await db.offer.findFirst({ where: { orderId: o.id } })).approvalRequestedAt);
+  assert.equal((await db.offer.findFirst({ where: { orderId: o.id } })).approvalDueAt, null, 'iletilmeyen talepte süre yok');
   const audit = await db.auditLog.findFirst({ where: { action: 'PRODUCTION_APPROVAL_ENROLL' }, orderBy: { createdAt: 'desc' } });
   assert.equal(audit.details.notify, false);
+
+  const o2 = await order('silent2', { ship: '2026-12-02' });
+  const plan2 = await planEnrollment(db, { cutoff: '2026-11-06' });
+  await applyEnrollment(db, { cutoff: '2026-11-06', code: plan2.code, operator: 'test', notify: false });
+  // Bildirim ön izlemesi: yalnızca iletilmemiş + kuyrukta bekleyen gönderimi olmayan talepler
+  let np = await planNotify(db, { orderNos: [(await db.order.findUnique({ where: { id: o.id } })).orderNo, 'YOK99'] });
+  assert.deepEqual(np.rows.map((r) => r.id), [o.id], 'yalnızca seçilen sipariş');
+  assert.deepEqual(np.missing, ['YOK99']);
+  assert.deepEqual(await applyNotify(db, { code: 'ABCDEF1234', operator: 't', orderNos: [np.rows[0].orderNo] }), { ok: false, code: 'APPROVAL_MISMATCH', expected: np.code });
+  const r1 = await applyNotify(db, { code: np.code, operator: 'test', orderNos: [np.rows[0].orderNo] });
+  assert.deepEqual([r1.ok, r1.queued], [true, 1]);
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED' } }), 1);
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: o2.id } }), 0, 'seçilmeyen siparişe bildirim yok');
+  // Aynı talep kuyruktayken ikinci bildirim yok (tümü ön izlemesinde yalnızca o2)
+  np = await planNotify(db);
+  assert.deepEqual(np.rows.map((r) => r.id), [o2.id]);
+  const r2 = await applyNotify(db, { code: np.code, operator: 'test' });
+  assert.deepEqual([r2.ok, r2.queued], [true, 1]);
+  assert.equal((await planNotify(db)).rows.length, 0, 'hepsi kuyrukta');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED' } }), 1, 'mükerrer yok');
+  assert.ok(await db.auditLog.findFirst({ where: { action: 'PRODUCTION_APPROVAL_NOTIFY' } }));
 }));
