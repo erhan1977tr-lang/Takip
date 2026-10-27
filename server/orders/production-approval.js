@@ -176,7 +176,7 @@ export const APPROVAL_RESEND_AFTER_MS = 60 * 60_000;
  * Siparişin üretim onayı işlemleri için bayraklar (availableActions): loadingOverride — kapsamdaki sipariş, yöneticinin
  * istisnası yok, güncel sürüm müşteri tarafından onaylanmadı; approvalResend — güncel sürümün talebi iletilmedi ve iletim
  * hatası kaydedildi ya da talep bir saatten eski (bekleyen gönderim işlem içinde ayrıca denetlenir).
- * @param {{ productionApprovalRequired?: boolean | null, loadingOverrideAt?: any, status: string, offers?: any[] }} order  @param {Date} [now]
+ * @param {{ productionApprovalRequired?: boolean | null, loadingOverrideAt?: any, status: string, offers?: any[], approvalEnabled?: boolean }} order  @param {Date} [now]
  */
 export function approvalFlags(order, now = new Date()) {
   const offers = order?.offers ?? [];
