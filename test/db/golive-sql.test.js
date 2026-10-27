@@ -18,7 +18,7 @@ const statements = (file) => fs.readFileSync(new URL(`../../deploy/canliya-gecis
   .split('\n').filter((l) => !/^\s*(--|\\echo)/.test(l)).join('\n')
   .split(/;\s*\n/).map((s) => s.trim()).filter((s) => s && !/^(BEGIN|ROLLBACK)\b/i.test(s));
 
-for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsam.sql']) {
+for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsam.sql', 'uretim-onayi-bildirim-sagligi.sql', 'uretim-onayi-asama-kontrol.sql']) {
   dbTest(`${file}: her sorgu salt okunur işlemde hatasız çalışır; yazma / DDL yok`, offline(async () => {
     const text = fs.readFileSync(new URL(`../../deploy/canliya-gecis/${file}`, import.meta.url), 'utf8').replace(/--.*$/gm, '');
     assert.ok(!/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY)\b/i.test(text.replace(/'[^']*'/g, "''")), 'yalnızca SELECT');
@@ -33,5 +33,15 @@ for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsa
         await tx.$queryRawUnsafe(sql);
       });
     }
+  }));
+}
+
+// Aşama 1'den (yeni sürüm + migration) ÖNCE canlıdaki 4.2.0 şemasında çalıştırılacak betikler üretim onayının yeni
+// sütunlarını kullanmaz (4.2.1–4.2.8 migration'ları: Order / Offer onay alanları).
+const NEW_COLUMNS = /productionApprovalRequired|loadingOverride|approval(RequestedAt|DueAt|OverdueAt|DeliveredAt|DeliveryChannel|DeliveryFailedAt|DeliveryError|ReminderAt)|approvedAt|approvedById|changeRequested|changeNote/;
+for (const file of ['uretim-onayi-kapsam.sql', 'uretim-onayi-bildirim-sagligi.sql']) {
+  dbTest(`${file}: 4.2.0 şemasıyla çalışır (üretim onayının yeni sütunlarını kullanmaz)`, offline(async () => {
+    const text = fs.readFileSync(new URL(`../../deploy/canliya-gecis/${file}`, import.meta.url), 'utf8').replace(/--.*$/gm, '');
+    assert.ok(!NEW_COLUMNS.test(text), 'yeni sütun kullanılmamalı');
   }));
 }
