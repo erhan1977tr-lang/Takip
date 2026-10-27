@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.6 — 27.10.2026
+
+4.2.5 düzeltmesi: "Yükleme yapıldı" kartındaki onaysız yükleme listesinin türü (tip kontrolü). Davranış değişmedi.
+
 ## 4.2.5 — 27.10.2026
 
 **Müşteri üretim onayı — son kullanıcı kararları** (ürün sahibi, 27.10.2026; karar 305b):
