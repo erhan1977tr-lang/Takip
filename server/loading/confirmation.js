@@ -466,9 +466,9 @@ export async function confirmLoading(db, { day, key, note = null, notLoaded = []
       const base = await previewLoading(tx, day);
       if (base.items.length === 0) return { ok: false, code: 'NOTHING_TO_CONFIRM' };
       if (base.key !== key) return { ok: false, code: 'STALE_PREVIEW' };
-      // Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin müşteri üretim onayı ya da yöneticinin istisnası yoksa gün
-      // onaylanmaz (kesim gününden önceki yükleme günleri etkilenmez; ayar kapalıyken engel yok)
-      const blocked = await loadingApprovalBlocks(tx, { day, orderIds: base.orders.map((o) => o.orderId) });
+      // Onaysız yükleme engeli (4.2.5 / 4.2.6): kapsamdaki (bayraklı) siparişin müşteri üretim onayı ya da yöneticinin istisnası
+      // yoksa gün onaylanmaz — kural güne değil bayrağa bakar (tarih değiştirerek aşılamaz; ayar kapalıyken engel yok)
+      const blocked = await loadingApprovalBlocks(tx, { orderIds: base.orders.map((o) => o.orderId) });
       if (blocked.length) return { ok: false, code: 'APPROVAL_REQUIRED', blocked };
       const split = applyNotLoaded(base.orders, notLoaded);
       if (!split.ok) return split;

@@ -100,18 +100,23 @@ dbTest('ayar kapalı: davranış değişmez — teklif müşteriye gidince üret
   assert.equal(ev.payload.approval, undefined);
 }));
 
-dbTest('eski siparişler: ayar açıldıktan sonra da onay istemez; ayar kapatılınca kapsamdaki sipariş onay istemeye devam eder', offline(async () => {
+dbTest('eski siparişler: ayar açıldıktan sonra da onay istemez; ayar KAPATILINCA kapsamdaki sipariş de 4.2.0 kuralıyla çalışır (acil durdurma, 4.2.6)', offline(async () => {
   await setApproval(false);
   const old = await newOrder('Eski');
   await setApproval(true);
   const flagged = await newOrder('Yeni');
-  await setApproval(false);
+  const flagged2 = await newOrder('Yeni 2');
   assert.equal((await orderOf(old.id)).productionApprovalRequired, false);
   assert.equal((await orderOf(flagged.id)).productionApprovalRequired, true);
+  await sendOffer(flagged2.id);
+  assert.equal((await orderOf(flagged2.id)).status, 'HAZIRLANIYOR', 'ayar açıkken kapsamdaki sipariş onay bekler');
+  await setApproval(false);
   await sendOffer(old.id);
   assert.equal((await orderOf(old.id)).status, 'URETIMDE', 'eski sipariş eski kuralla');
-  await sendOffer(flagged.id);
-  assert.equal((await orderOf(flagged.id)).status, 'HAZIRLANIYOR', 'kapsamdaki sipariş onay bekler');
+  const sentFlagged = await sendOffer(flagged.id);
+  assert.equal((await orderOf(flagged.id)).status, 'URETIMDE', 'ayar kapalı: kapsamdaki sipariş de onaysız üretime geçer');
+  assert.equal(sentFlagged.approvalRequestedAt, null, 'ayar kapalı: onay talebi açılmaz');
+  assert.equal((await orderOf(flagged.id)).productionApprovalRequired, true, 'kapsam bayrağı silinmez');
   const audit = await db.auditLog.findFirst({ where: { action: 'ORDER_CREATE', entityId: flagged.id } });
   assert.equal(audit.details.productionApproval, true);
 }));

@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.7 — 27.10.2026
+
+**Müşteri üretim onayı — kesin kararlar** (ürün sahibi, 27.10.2026; karar 305c):
+
+- **Tam acil durdurma anahtarı:** ayar kapatılınca 4.2.0 iş akışı geri gelir — onay zorunluluğu, onaysız üretime geçiş
+  engeli, onaysız yükleme engeli, yeni onay talepleri ve hatırlatmalar uygulanmaz; müşteri onay kartı ve "Onay gerekli"
+  rozeti görünmez; kuyrukta kalmış talep / hatırlatma e-postası ve zili gönderilmez, teklif e-postası onay metni olmadan
+  gider. Bekleyen sipariş bir sonraki işlemde olağan kuralla üretime geçer (toplu durum değişikliği yok). Verilmiş onaylar,
+  kapsam bayrakları ve denetim kayıtları silinmez; ayar yeniden açıldığında kendiliğinden talep / bildirim yazılmaz
+  (yönetici yeniden gönderir ya da kontrollü bildirim betiği).
+- **Yükleme tarihi değişikliği onay sürecinin dışında:** onay teklif sürümüne bağlıdır; tarih öne / ileri alınınca onay
+  geçerli kalır, yeni sürüm, talep, süre ya da hatırlatma oluşmaz. **Onaysız yükleme engeli kapsam bayrağına bağlıdır, güne
+  değil:** kapsamdaki sipariş tarihi kesim gününden önceye çekilse de onaysız yüklenemez. 30.10.2026 siparişleri kesimden
+  önce planlandığı için kapsam dışıdır.
+- **Gönderilmemiş taslak onayı bozmaz:** yükleme engeli müşteriye gönderilmiş son sürüme bakar; müşteriye yeni sürüm
+  gönderilince yeniden onay istenir.
+
 ## 4.2.6 — 27.10.2026
 
 4.2.5 düzeltmesi: "Yükleme yapıldı" kartındaki onaysız yükleme listesinin türü (tip kontrolü). Davranış değişmedi.

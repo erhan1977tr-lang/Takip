@@ -28,6 +28,7 @@ import { canSeeOfferReport, loadOfferReport, offerReportRange } from '@/lib/cust
 import { ReportGroup } from '@/components/ReportGroup';
 import { PreviewFor } from '@/components/PreviewFor';
 import { approvalState } from '@/server/orders/production-approval.js';
+import { approvalGateSetting } from '@/server/orders/loading-approval.js';
 
 const listInclude = {
   customer: { select: { name: true } },
@@ -70,7 +71,8 @@ const factoryDrawings = (o: Row) => o.drawings.filter((d) => !isCustomerDrawingR
 const revisionAsked = (o: Row) => o.status === 'HAZIRLANIYOR' && o.drawingTrack === 'REVIZYON_ISTENDI' && !o.onHold;
 const sentOf = (o: Row) => (o.offers.some((x) => x.status === 'GONDERILDI') ? 'GONDERILDI' : null);
 /** Müşteri üretim onayı (4.2.1): müşteriye gönderilmiş son sürüme göre (server/orders/production-approval.js) */
-const approvalOfRow = (o: Row) => approvalState({ required: o.productionApprovalRequired, status: o.status, offer: o.offers.find((x) => x.status === 'GONDERILDI') ?? null });
+// Acil durdurma anahtarı (4.2.6): özellik kapalıyken onay rozeti / durumu yok (ayar sayfada bir kez okunur)
+const approvalOfRow = (o: Row, enabled: boolean) => approvalState({ required: o.productionApprovalRequired, status: o.status, offer: o.offers.find((x) => x.status === 'GONDERILDI') ?? null, enabled });
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requirePermission('ORDER_VIEW');
   const sp = await searchParams;
@@ -115,6 +117,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
   // onaylı yüklemeyle EKSİKSİZ yüklenmiş siparişler; yüklenmemiş, gecikmiş ve kalanı olan sipariş Active'de. Active tahmini
   // yükleme gününe göre artan. Kapsam (firma izolasyonu) yine orderScope.
   const bucket = archive ? 'archive' : 'active';
+  const approvalOn = (await approvalGateSetting(db)).enabled;
   const found = await db.order.findMany({
     where: { AND: [orderScope(user), searchWhere(sp.q), customerStatusWhere(bucket) as Prisma.OrderWhereInput] },
     include: listInclude,
@@ -231,7 +234,7 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                           <Link className="order-no" href={`/siparisler/${o.id}`}>{o.orderNo}</Link>
                           <MsgCount n={unread.get(o.id)} label={t('order.notes.unread', { n: unread.get(o.id) ?? 0 })} href={`/siparisler/${o.id}#notlar`} />
                           <OrderAlert n={alerts.get(o.id)} text={t('orders.alerts.customer')} label={t('orders.alerts.unread', { n: alerts.get(o.id) ?? 0 })} href={`/siparisler/${o.id}`} />
-                          {!o.profile && approvalOfRow(o) === 'PENDING' && <> <Link href={`/siparisler/${o.id}#uretim-onayi`} className="badge badge-danger" data-approval-needed>{t('order.approval.listBadge')}</Link></>}
+                          {!o.profile && approvalOfRow(o, approvalOn) === 'PENDING' && <> <Link href={`/siparisler/${o.id}#uretim-onayi`} className="badge badge-danger" data-approval-needed>{t('order.approval.listBadge')}</Link></>}
                           {o.profile && <> <Badge tone="purple">{t('profile.type')}</Badge></>}<div className="muted small">{o.title}</div>
                         </td>
                         {o.profile ? (() => {
@@ -239,8 +242,8 @@ async function CustomerOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
                           return <><td><Badge tone={s.tone}>{s.label}</Badge></td><td className="hide-sm">{s.next}</td></>;
                         })() : (
                           <>
-                            <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer={sentOf(o)} approval={approvalOfRow(o)} /></td>
-                            <td className="hide-sm">{customerSummaryText(t, { status: o.status, drawing: o.drawingTrack, offer: sentOf(o), approval: approvalOfRow(o) }).next}</td>
+                            <td><CustomerBadge status={o.status} drawing={o.drawingTrack} offer={sentOf(o)} approval={approvalOfRow(o, approvalOn)} /></td>
+                            <td className="hide-sm">{customerSummaryText(t, { status: o.status, drawing: o.drawingTrack, offer: sentOf(o), approval: approvalOfRow(o, approvalOn) }).next}</td>
                           </>
                         )}
                         <td>{fmtDate(o.profile ? o.profile.pickupDate : o.actualShipDate ?? o.estimatedShipDate)}</td>

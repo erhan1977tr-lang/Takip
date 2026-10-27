@@ -19,6 +19,7 @@ import { orderSalesUsers } from './email.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { GUEST_ASSIGNED, GUEST_REMOVED } from '../loading/crates.js';
 import { approvalDueText } from '../orders/production-approval.js';
+import { approvalGateSetting } from '../orders/loading-approval.js';
 
 const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
 /** Alıcı kümeleri → roller (yetkiden türetilir) */
@@ -238,7 +239,14 @@ async function fanOut(db, row) {
   const order = row.orderId ? await db.order.findUnique({ where: { id: row.orderId }, select: ORDER }) : null;
   // Silinmiş siparişin (karar 110) kuyrukta kalmış olayı bildirime dönüşmez
   if (!rule || !order || order.removedAt) return 0;
-  const payload = obj(row.payload);
+  let payload = obj(row.payload);
+  // Müşteri üretim onayı ayarı kapalıyken (acil durdurma anahtarı, 4.2.6): onay talebi / hatırlatma bildirimi yazılmaz; teklif
+  // bildirimi onay bilgisi olmadan (4.2.0 metni) yazılır
+  if (payload.approval && typeof payload.approval === 'object' && !(await approvalGateSetting(db)).enabled) {
+    if (row.type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || row.type === 'ORDER_PRODUCTION_APPROVAL_REMINDER') return 0;
+    payload = { ...payload };
+    delete payload.approval;
+  }
   const users = await recipientsOf(db, rule.to(order, payload), order, { actorId: rule.includeActor ? null : payload.actorId ?? null });
   // Bu olayın geçersiz kıldığı önceki bildirimler (ör. geri alınan teklifin "yöneticiye gönderildi"si): aynı siparişin,
   // bu alıcıların okunmamış satırları okunmuş sayılır. Olaylar sırayla dağıtıldığından sonraki yeni gönderim etkilenmez.

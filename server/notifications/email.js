@@ -16,8 +16,9 @@ import { brandedHtml, sendBrandedMail } from '../mail/send.js';
 import { customerMailLang, snapshotLang } from './lang.js';
 import { approvalDeadline, approvalDueText } from '../orders/production-approval.js';
 import {
-  APPROVAL_REQUEST_TYPES, approvalForMail, approvalOfferId, inAppDeliveredAt, markDelivered, markUndelivered,
+  APPROVAL_REMINDER_TYPE, APPROVAL_REQUEST_TYPES, approvalForMail, approvalOfferId, inAppDeliveredAt, markDelivered, markUndelivered,
 } from '../orders/production-approval-delivery.js';
+import { approvalGateSetting } from '../orders/loading-approval.js';
 
 /**
  * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
@@ -246,6 +247,9 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
     take: 20,
   });
   let sent = 0, failed = 0, skipped = old.count;
+  // Müşteri üretim onayı ayarı (acil durdurma anahtarı, 4.2.6): kapalıyken onay talebi / hatırlatma e-postası gitmez, teklif
+  // e-postası onay metni olmadan (4.2.0 metni) gider, iletim yazılmaz
+  const approvalOn = rows.length ? (await approvalGateSetting(db)).enabled : false;
   for (const row of rows) {
     const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
     if (claimed.count === 0) continue;
@@ -272,8 +276,13 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
       const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null }) : [];
+      if (!approvalOn && (row.type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || row.type === APPROVAL_REMINDER_TYPE)) {
+        await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'üretim onayı kapalı' } });
+        skipped++;
+        continue;
+      }
       // Müşteri üretim onayı talebi (4.2.5): süre talep müşteriye iletilince başlar (production-approval-delivery.js)
-      const apId = order ? approvalOfferId(row.type, payload) : null;
+      const apId = order && approvalOn ? approvalOfferId(row.type, payload) : null;
       const ap = apId ? await approvalForMail(db, apId, now) : null;
       const isRequest = !!ap && APPROVAL_REQUEST_TYPES.includes(row.type);
       if (!order || recipients.length === 0) {
@@ -291,7 +300,9 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
         skipped++;
         continue;
       }
-      const mailPayload = ap ? { ...payload, approval: { ...payload.approval, due: ap.due ? new Date(ap.due).toISOString() : null } } : payload;
+      const plainPayload = { ...payload };
+      delete plainPayload.approval;
+      const mailPayload = ap ? { ...payload, approval: { ...payload.approval, due: ap.due ? new Date(ap.due).toISOString() : null } } : approvalOn ? payload : plainPayload;
       let error = null;
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;

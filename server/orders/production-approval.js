@@ -19,9 +19,14 @@
 //   depo takviminin elle kapatılan günleri SAYILMAZ. Son tarih = iletim gününden sonraki 2. iş gününün aynı yerel saati.
 //   Aradaki bir günün tatil verisi yoksa süre HESAPLANMAZ (null) — tahmin edilmez. Müşteriye bir hatırlatma (1 iş günü sonra).
 //
-//   Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin yükleme günü kesim günü ya da sonrasıysa ve güncel sürüm müşteri
+//   Onaysız yükleme engeli (4.2.5 / 4.2.6): kapsamdaki (bayraklı) siparişte müşteriye gönderilmiş son sürüm müşteri
 //   tarafından onaylanmadıysa yükleme ("Yükleme yapıldı", "Yüklendi") sunucuda reddedilir; yalnızca yönetici gerekçeyle
-//   istisna verebilir (loadingApprovalBlock). Kesimden önceki yükleme günleri (30.10.2026) etkilenmez.
+//   istisna verebilir (loadingApprovalBlock). Kural güne değil bayrağa bakar: yükleme tarihi değiştirilerek aşılamaz;
+//   kesimden önce planlanmış (30.10.2026) siparişler bayraksızdır. Yükleme tarihi değişikliği onayı bozmaz (sürüm değildir).
+//
+//   Acil durdurma anahtarı (4.2.6): ayar kapalıyken onay zorunluluğu, üretime geçiş ve yükleme engelleri, yeni talepler ve
+//   hatırlatmalar YOKTUR (approvalState(enabled: false) → NONE) — 4.2.0 iş akışı. Kayıtlar silinmez; yeniden açılınca
+//   kendiliğinden talep yazılmaz.
 import { addDaysKey, CALENDARS, dayStatus, localClock } from '../calendar/rules.js';
 
 /** Ayar anahtarı (IntegrationSetting.key) */
@@ -101,11 +106,13 @@ export function businessDeadline(sentAt, days) {
  *   PENDING: en son gönderilen sürüm müşterinin onayını bekliyor
  *   APPROVED: en son gönderilen sürüm onaylandı
  *   CHANGE_REQUESTED: müşteri bu sürümde değişiklik istedi (yeni sürüm hazırlanıyor)
- * @param {{ required?: boolean | null, status: string, offer?: { status: string, approvedAt?: Date | string | null, changeRequestedAt?: Date | string | null } | null }} p
+ * enabled: özellik ayarı (acil durdurma anahtarı — 4.2.6, ürün sahibinin 27.10.2026 kararı). false → NONE: onay zorunluluğu,
+ * üretime geçiş engeli, müşteri işlemleri ve ekrandaki onay bilgisi kalkar; kayıtlar (onaylar, talepler) silinmez.
+ * @param {{ required?: boolean | null, status: string, offer?: { status: string, approvedAt?: Date | string | null, changeRequestedAt?: Date | string | null } | null, enabled?: boolean }} p
  * @returns {'NONE' | 'PENDING' | 'APPROVED' | 'CHANGE_REQUESTED'}
  */
-export function approvalState({ required, status, offer }) {
-  if (!required || !APPROVAL_STATUSES.includes(status) || !offer || offer.status !== 'GONDERILDI') return 'NONE';
+export function approvalState({ required, status, offer, enabled = true }) {
+  if (enabled === false || !required || !APPROVAL_STATUSES.includes(status) || !offer || offer.status !== 'GONDERILDI') return 'NONE';
   if (offer.approvedAt) return 'APPROVED';
   if (offer.changeRequestedAt) return 'CHANGE_REQUESTED';
   return 'PENDING';
@@ -139,21 +146,24 @@ export function changeNote(value) {
  * @returns {{ data: { approvalRequestedAt: Date } | null, event: { approval: { offerId: string } } | null }}
  */
 export function approvalOnSend(order, now, offerId) {
-  if (!order?.productionApprovalRequired || !APPROVAL_STATUSES.includes(order.status)) return { data: null, event: null };
+  // Acil durdurma (4.2.6): özellik kapalıyken yeni onay talebi açılmaz (order.approvalEnabled — siparişi yükleyen yazar)
+  if (!order?.productionApprovalRequired || order.approvalEnabled === false || !APPROVAL_STATUSES.includes(order.status)) return { data: null, event: null };
   return { data: { approvalRequestedAt: now }, event: { approval: { offerId } } };
 }
 
 /**
- * Onaysız yükleme engeli (4.2.5, ürün sahibinin 27.10.2026 kararı). Yalnızca ayar açıkken; bayraklı siparişte, yükleme günü
- * kesim günü ya da sonrasıysa ve yöneticinin istisnası yoksa: güncel (en son) teklif sürümü müşteriye gönderilmiş VE müşteri
- * tarafından onaylanmış olmalı. Daha önce onaylanmış bir sürümden sonra yeni sürüm gönderildiyse yeni sürümün onayı gerekir.
- * Engel yoksa null; varsa neden kodu.
- * @param {{ enabled: boolean, cutoff: string, day: string | null, order: { productionApprovalRequired?: boolean | null, loadingOverrideAt?: Date | string | null }, offer?: { status: string, approvedAt?: Date | string | null, changeRequestedAt?: Date | string | null } | null }} p
+ * Onaysız yükleme engeli (4.2.5; 4.2.6 — ürün sahibinin 27.10.2026 kesin kararı). Yalnızca ayar açıkken. Kapsam siparişin
+ * BAYRAĞIDIR, yükleme günü değil: kapsama alınmış (planlanan yükleme ≥ kesim günü iken bayrak yazılmış) sipariş, yükleme
+ * tarihi sonradan kesim gününden önceye çekilse de onaysız yüklenemez (tarih değiştirerek engel aşılamaz). Kesimden önce
+ * planlanmış siparişler (30.10.2026) bayraksızdır → hiç etkilenmez. Yöneticinin istisnası yoksa: müşteriye gönderilmiş SON
+ * sürüm müşteri tarafından onaylanmış olmalı. Gönderilmemiş taslak onayı bozmaz (yalnızca gönderilmiş sürüme bakılır);
+ * onaydan sonra yeni sürüm gönderildiyse onun onayı gerekir. Yükleme tarihi değişikliği teklif sürümü değildir → onayı bozmaz.
+ * @param {{ enabled: boolean, order: { productionApprovalRequired?: boolean | null, loadingOverrideAt?: Date | string | null }, offer?: { status: string, approvedAt?: Date | string | null, changeRequestedAt?: Date | string | null } | null }} p
+ *   offer: siparişin müşteriye gönderilmiş SON sürümü (yoksa null)
  * @returns {null | 'NOT_SENT' | 'PENDING' | 'CHANGE_REQUESTED'}
  */
-export function loadingApprovalBlock({ enabled, cutoff, day, order, offer }) {
+export function loadingApprovalBlock({ enabled, order, offer }) {
   if (!enabled || !order?.productionApprovalRequired || order.loadingOverrideAt) return null;
-  if (!inApprovalScope(day, cutoff)) return null;
   if (!offer || offer.status !== 'GONDERILDI') return 'NOT_SENT';
   if (offer.approvedAt) return null;
   return offer.changeRequestedAt ? 'CHANGE_REQUESTED' : 'PENDING';
@@ -169,14 +179,18 @@ export const APPROVAL_RESEND_AFTER_MS = 60 * 60_000;
  * @param {{ productionApprovalRequired?: boolean | null, loadingOverrideAt?: any, status: string, offers?: any[] }} order  @param {Date} [now]
  */
 export function approvalFlags(order, now = new Date()) {
-  const offer = order?.offers?.[0] ?? null;
-  const flagged = !!order?.productionApprovalRequired && APPROVAL_STATUSES.includes(order?.status);
-  const approved = offer?.status === 'GONDERILDI' && !!offer.approvedAt;
-  const pending = offer?.status === 'GONDERILDI' && !offer.approvedAt && !offer.changeRequestedAt && !!offer.approvalRequestedAt;
-  const stale = pending && new Date(offer.approvalRequestedAt).getTime() <= now.getTime() - APPROVAL_RESEND_AFTER_MS;
+  const offers = order?.offers ?? [];
+  const latest = offers[0] ?? null;
+  // Yükleme için müşteriye gönderilmiş SON sürüm (taslak onayı bozmaz); yeniden gönderim yalnızca güncel sürüm müşterideyken
+  const sent = offers.find((o) => o.status === 'GONDERILDI') ?? null;
+  const flagged = !!order?.productionApprovalRequired && order?.approvalEnabled !== false && APPROVAL_STATUSES.includes(order?.status);
+  const approved = !!sent?.approvedAt;
+  const pending = latest?.status === 'GONDERILDI' && !latest.approvedAt && !latest.changeRequestedAt;
+  // Talep kaydı yoksa (özellik kapalıyken gönderilmiş sürüm) ya da bir saatten eskiyse / iletim hatası varsa yeniden gönderilebilir
+  const stale = pending && (!latest.approvalRequestedAt || new Date(latest.approvalRequestedAt).getTime() <= now.getTime() - APPROVAL_RESEND_AFTER_MS);
   return {
     loadingOverride: flagged && !order.loadingOverrideAt && !approved,
-    approvalResend: flagged && pending && !offer.approvalDeliveredAt && (!!offer.approvalDeliveryError || stale),
+    approvalResend: flagged && pending && !latest.approvalDeliveredAt && (!!latest.approvalDeliveryError || stale),
   };
 }
 

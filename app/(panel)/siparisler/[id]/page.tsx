@@ -57,8 +57,7 @@ import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
 import { approvalDueText, approvalFlags, approvalOverdue, approvalState, CHANGE_NOTE_MAX, OVERRIDE_REASON_MAX } from '@/server/orders/production-approval.js';
-import { loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
-import { dayKey as localDayKey } from '@/server/orders/loading.js';
+import { approvalGateSetting, loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
 import { approveProductionAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction } from './approval-actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
@@ -175,17 +174,20 @@ export default async function OrderPage({
   const sent = sentOffer(order);
   // Müşteri üretim onayı (4.2.1): işlemler en son sürüme göre (müşteri yalnızca gönderilmiş sürümleri alır — değişiklik
   // istediği sürüm CHANGE_REQUESTED görünür); ekrandaki bilgi müşteriye gönderilmiş son sürümden
-  const approval = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: offer ?? null });
-  const approvalShown = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: sent ?? null });
+  // Acil durdurma anahtarı (4.2.6): özellik kapalıyken onay bilgisi, müşteri işlemleri ve engeller yok (4.2.0 davranışı)
+  const approvalSetting = order.productionApprovalRequired ? await approvalGateSetting(db) : { enabled: false, cutoff: '' };
+  const approvalOn = approvalSetting.enabled;
+  const approval = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: offer ?? null, enabled: approvalOn });
+  const approvalShown = approvalState({ required: order.productionApprovalRequired, status: order.status, offer: sent ?? null, enabled: approvalOn });
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode, approval,
-    ...approvalFlags(order),
+    ...approvalFlags({ ...order, approvalEnabled: approvalOn }),
   });
   const can = (a: string) => acts.includes(a);
   // Onaysız yükleme engeli (4.2.5): iç ekip için — sunucu "Yükleme yapıldı" ve "Yüklendi"de aynı kuralla reddeder
-  const loadingBlock = !isCustomer && order.productionApprovalRequired
-    ? (await loadingApprovalBlocks(db, { day: localDayKey(order.estimatedShipDate ?? new Date()), orderIds: [order.id] }))[0] ?? null
+  const loadingBlock = !isCustomer && order.productionApprovalRequired && approvalOn
+    ? (await loadingApprovalBlocks(db, { orderIds: [order.id], setting: approvalSetting }))[0] ?? null
     : null;
   // DWG kararının geri alınması (karar 285): çizim yetkisi olanlara (çizimci, yönetici) karar + dönülecek durum ya da engel.
   // Sunucu işlemde aynı denetimi kilit altında yeniden yapar (server/orders/dwg-undo.js → dwgUndoCheck)

@@ -26,7 +26,7 @@ import { confirmedShipDay, shipDateLocked } from './ship-date.js';
 import { applyImports } from './pdf-import/service.js';
 import { approvalFlags, approvalOnSend, approvalState, changeNote, overrideReason } from './production-approval.js';
 import { APPROVAL_REQUEST_TYPES } from './production-approval-delivery.js';
-import { loadingApprovalBlocks } from './loading-approval.js';
+import { approvalGateSetting, loadingApprovalBlocks } from './loading-approval.js';
 
 export { WorkflowError };
 
@@ -39,8 +39,11 @@ const INCLUDE = {
 };
 
 const latestOffer = (o) => o.offers[0] ?? null;
-/** Müşteri üretim onayı durumu (4.2.1): siparişin bayrağı + en son teklif sürümü (production-approval.js → approvalState) */
-const approvalOf = (o) => approvalState({ required: o.productionApprovalRequired, status: o.status, offer: latestOffer(o) });
+/**
+ * Müşteri üretim onayı durumu (4.2.1): siparişin bayrağı + en son teklif sürümü (production-approval.js → approvalState).
+ * o.approvalEnabled: özellik ayarı — siparişi yükleyen (executeAction → loadOrder) yazar; kapalıyken NONE (acil durdurma, 4.2.6).
+ */
+const approvalOf = (o) => approvalState({ required: o.productionApprovalRequired, status: o.status, offer: latestOffer(o), enabled: o.approvalEnabled === true });
 
 /** İşlem → izin veren iş akışı eylemleri (server/orders/rules.js → availableActions) */
 export const REQUIRES = {
@@ -140,8 +143,10 @@ export async function autoProduction(tx, orderId) {
     where: { id: orderId },
     include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
-  // Müşteri üretim onayı (4.2.1): kapsamdaki siparişte en son gönderilen sürüm onaylanmadıysa üretime geçilmez
-  const approval = approvalState({ required: o.productionApprovalRequired, status: o.status, offer: o.offers[0] ?? null });
+  // Müşteri üretim onayı (4.2.1): kapsamdaki siparişte en son gönderilen sürüm onaylanmadıysa üretime geçilmez. Özellik
+  // kapalıyken (acil durdurma, 4.2.6) bu koşul yoktur — 4.2.0 kuralı
+  const enabled = o.productionApprovalRequired ? (await approvalGateSetting(tx)).enabled : false;
+  const approval = approvalState({ required: o.productionApprovalRequired, status: o.status, offer: o.offers[0] ?? null, enabled });
   if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null, approval })) return null;
   await tx.order.update({ where: { id: orderId }, data: { status: 'URETIMDE', slaDeadline: null } });
   // Not bir koddur; ekranda events.PRODUCTION.<kod> olarak çevrilir
@@ -662,11 +667,11 @@ const ACTIONS = {
    */
   async mark_shipped(h) {
     const confirmed = await confirmedShipDay(h.tx, h.order.id);
-    // Onaysız yükleme engeli (4.2.5): onaylı yüklemesi olmayan kapsamdaki sipariş, planlanan yükleme günü (yoksa bugün) kesim
-    // günü ya da sonrasıysa müşteri üretim onayı ya da yöneticinin istisnası olmadan "Yüklendi" yapılamaz. Onaylı yüklemede
-    // engel zaten "Yükleme yapıldı"da uygulandı.
+    // Onaysız yükleme engeli (4.2.5 / 4.2.6): onaylı yüklemesi olmayan kapsamdaki (bayraklı) sipariş, müşteri üretim onayı ya
+    // da yöneticinin istisnası olmadan "Yüklendi" yapılamaz — yükleme tarihi değiştirilerek aşılamaz. Onaylı yüklemede engel
+    // zaten "Yükleme yapıldı"da uygulandı.
     if (!confirmed) {
-      const blocked = await loadingApprovalBlocks(h.tx, { day: dayKey(h.order.estimatedShipDate ?? h.now), orderIds: [h.order.id] });
+      const blocked = await loadingApprovalBlocks(h.tx, { orderIds: [h.order.id] });
       if (blocked.length) throw new WorkflowError('LOADING_APPROVAL_REQUIRED', { reason: blocked[0].reason });
     }
     await h.set({ status: 'YUKLENDI', actualShipDate: confirmed ?? h.now });
@@ -1180,7 +1185,10 @@ export async function executeAction(db, { workflow, actions, include, finish = n
     deps: {
       async loadOrder(tx, id) {
         const o = await tx.order.findFirst({ where: { id, ...scope }, include });
-        return o && { ...o, orderType: o.orderTypeCode };
+        if (!o) return null;
+        // Müşteri üretim onayı ayarı (acil durdurma anahtarı, 4.2.6): yalnızca kapsamdaki siparişte okunur
+        const approvalEnabled = o.productionApprovalRequired ? (await approvalGateSetting(tx)).enabled : false;
+        return { ...o, orderType: o.orderTypeCode, approvalEnabled };
       },
       async apply(tx, order) {
         if (payload.expectedVersion != null && Number(payload.expectedVersion) !== order.version) return null;

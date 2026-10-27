@@ -376,7 +376,7 @@ export async function LoadingConfirm({ user, day, planned, sp }: {
   const s = summarize(plan.orders, nameOf) as Summary;
   const skipped = plan.skipped as Skipped[];
   // Onaysız yükleme engeli (4.2.5): sunucu da aynı kuralla reddeder (confirmLoading); burada yalnızca gösterilir
-  const blocked: { orderId: string; orderNo: string; reason: string }[] = await loadingApprovalBlocks(db, { day, orderIds: plan.orders.map((o: { orderId: string }) => o.orderId) });
+  const blocked: { orderId: string; orderNo: string; reason: string }[] = await loadingApprovalBlocks(db, { orderIds: plan.orders.map((o: { orderId: string }) => o.orderId) });
   return (
     <div className="card" id="onay">
       <div className="section-head">

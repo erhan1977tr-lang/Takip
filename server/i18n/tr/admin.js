@@ -351,13 +351,13 @@ export default {
     // Müşteri üretim onayı (4.2.1)
     productionApproval: {
       title: "Müşteri üretim onayı",
-      intro: "Açıkken, planlanan yükleme tarihi kesim günü ya da sonrası olan cam siparişlerinde müşteriye gönderilen her teklif sürümü müşterinin \"Üretime alınmasını onaylıyorum\" onayını bekler (süre: talep müşteriye iletildiği andan itibaren 2 Romanya iş günü; bir hatırlatma). Hazırlıktaki sipariş onaysız üretime geçmez; üretimdeki siparişin durumu değişmez, onay ayrıca izlenir. Kesim günü ve sonrasındaki yüklemelerde onaysız sipariş yüklenemez — yalnızca yönetici sipariş sayfasında gerekçeli istisna verir.",
+      intro: "Açıkken, planlanan yükleme tarihi kesim günü ya da sonrası olan cam siparişlerinde müşteriye gönderilen her teklif sürümü müşterinin \"Üretime alınmasını onaylıyorum\" onayını bekler (süre: talep müşteriye iletildiği andan itibaren 2 Romanya iş günü; bir hatırlatma). Hazırlıktaki sipariş onaysız üretime geçmez; üretimdeki siparişin durumu değişmez, onay ayrıca izlenir. Kapsamdaki sipariş onaysız yüklenemez (yükleme tarihi değiştirilse de) — yalnızca yönetici sipariş sayfasında gerekçeli istisna verir. Yükleme tarihi değişikliği onayı bozmaz.",
       enabled: "Müşteri üretim onayı iste",
       cutoff: "Kesim günü (planlanan yükleme bu gün ya da sonrası)",
       badCutoff: "Kesim günü geçersiz; YYYY-AA-GG biçiminde bir gün seçin.",
       on: "Açık — kesim gününden itibaren yüklenecek yeni siparişler kapsamda",
       off: "Kapalı — eski kural (teklif müşteriye gidince üretime geçiş)",
-      hint: "Anahtar yeni siparişleri belirler (oluşturulurken bir kez). MEVCUT siparişler bu düğmeyle değişmez: sunucuda ön izlemeli, onay kodlu geçiş işlemiyle kapsama alınır. Kapatıldığında onaysız yükleme engeli, hatırlatma ve gecikme bildirimleri durur (4.2.0 yükleme davranışı); daha önce kapsama girmiş siparişler onay istemeye devam eder. Proforma ve diğer belge kuralları değişmez.",
+      hint: "Anahtar yeni siparişleri belirler (oluşturulurken bir kez). MEVCUT siparişler bu düğmeyle değişmez: sunucuda ön izlemeli, onay kodlu geçiş işlemiyle kapsama alınır. ACİL DURDURMA: kapatıldığında 4.2.0 iş akışı geri gelir — onay zorunluluğu, onaysız üretime geçiş ve yükleme engelleri, yeni onay talepleri ve hatırlatmalar durur; bekleyen sipariş bir sonraki işlemde olağan kuralla üretime geçer. Verilmiş onaylar ve denetim kayıtları silinmez; yeniden açıldığında kendiliğinden talep yazılmaz. Proforma ve diğer belge kuralları değişmez.",
       saved: "Üretim onayı ayarı kaydedildi.",
     },
     accounting: {

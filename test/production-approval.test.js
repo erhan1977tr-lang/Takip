@@ -252,7 +252,7 @@ test('yapı: onay yalnızca iş akışı servisinden yazılır; proforma / muhas
     assert.doesNotMatch(read(p), /production-approval|approvalState|approvedAt|productionApprovalRequired/, p);
   }
   // Yükleme onayı yalnızca ortak engeli çağırır (4.2.5): kural tek yerde (loading-approval.js → loadingApprovalBlock)
-  assert.match(read('server/loading/confirmation.js'), /const blocked = await loadingApprovalBlocks\(tx, \{ day, orderIds: base\.orders\.map\(\(o\) => o\.orderId\) \}\);\s+if \(blocked\.length\) return \{ ok: false, code: 'APPROVAL_REQUIRED', blocked \};/);
+  assert.match(read('server/loading/confirmation.js'), /const blocked = await loadingApprovalBlocks\(tx, \{ orderIds: base\.orders\.map\(\(o\) => o\.orderId\) \}\);\s+if \(blocked\.length\) return \{ ok: false, code: 'APPROVAL_REQUIRED', blocked \};/);
 });
 
 test('kapsam: planlanan yükleme günü ≥ kesim günü (varsayılan 06.11.2026)', () => {
@@ -309,28 +309,50 @@ test('hatırlatma: iletimden 1 Romanya iş günü sonra (aynı yerel saat)', () 
   assert.equal(approvalReminderAt(new Date('2027-12-31T09:00:00Z')).due, null, 'veri yoksa tahmin edilmez');
 });
 
-test('yükleme engeli: 30.10.2026 serbest, 06.11.2026 ve sonrası onaysız engelli (ayar açık, bayraklı sipariş)', () => {
-  const on = { enabled: true, cutoff: '2026-11-06' };
+test('yükleme engeli: kapsam bayrağa bağlı (tarih değişikliği engeli kaldırmaz); 30.10.2026 bayraksız; gönderilmiş son sürüm', () => {
   const order = { productionApprovalRequired: true, loadingOverrideAt: null };
   const pending = { status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null };
-  // 1. 30.10.2026 yüklemesi onaysız yapılabilir
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-10-30', order, offer: pending }), null);
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-05', order, offer: pending }), null);
-  // 2. 06.11.2026 yüklemesi onaysız yapılamaz
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: pending }), 'PENDING');
-  assert.equal(loadingApprovalBlock({ ...on, day: '2027-01-15', order, offer: pending }), 'PENDING');
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { ...pending, changeRequestedAt: new Date() } }), 'CHANGE_REQUESTED');
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { status: 'HAZIRLANIYOR' } }), 'NOT_SENT', 'yeni sürüm hazırlanıyor');
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: null }), 'NOT_SENT');
-  // Onaylı güncel sürüm → serbest
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order, offer: { ...pending, approvedAt: new Date() } }), null);
-  // 3. Yönetici istisnası → serbest (müşteri onayı yerine geçmez: teklif alanlarına dokunulmaz — kural yalnızca siparişe bakar)
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order: { ...order, loadingOverrideAt: new Date() }, offer: pending }), null);
-  // Ayar kapalı / bayraksız sipariş → 4.2.0 davranışı
-  assert.equal(loadingApprovalBlock({ enabled: false, cutoff: '2026-11-06', day: '2026-11-06', order, offer: pending }), null);
-  assert.equal(loadingApprovalBlock({ ...on, day: '2026-11-06', order: { productionApprovalRequired: false }, offer: pending }), null);
-  // Gün yoksa engel uygulanmaz (çağıran gün verir: onay günü ya da planlanan gün / bugün)
-  assert.equal(loadingApprovalBlock({ ...on, day: null, order, offer: pending }), null);
+  // 2. kapsamdaki sipariş onaysız yüklenemez — gün bilgisi kurala hiç girmez (5. tarih değiştirerek aşılamaz)
+  assert.equal(loadingApprovalBlock({ enabled: true, order, offer: pending }), 'PENDING');
+  assert.equal(loadingApprovalBlock({ enabled: true, day: '2026-10-30', cutoff: '2026-11-06', order, offer: pending }), 'PENDING', 'gün kurala girmez');
+  assert.equal(loadingApprovalBlock({ enabled: true, order, offer: { ...pending, changeRequestedAt: new Date() } }), 'CHANGE_REQUESTED');
+  assert.equal(loadingApprovalBlock({ enabled: true, order, offer: null }), 'NOT_SENT', 'müşteriye gönderilmiş sürüm yok');
+  // 1. 30.10.2026 siparişleri bayraksızdır → engel yok
+  assert.equal(loadingApprovalBlock({ enabled: true, order: { productionApprovalRequired: false }, offer: pending }), null);
+  // Onaylı son gönderilmiş sürüm → serbest
+  assert.equal(loadingApprovalBlock({ enabled: true, order, offer: { ...pending, approvedAt: new Date() } }), null);
+  // 6. Yönetici istisnası → serbest (müşteri onayı yerine geçmez: kural teklif alanlarına yazmaz)
+  assert.equal(loadingApprovalBlock({ enabled: true, order: { ...order, loadingOverrideAt: new Date() }, offer: pending }), null);
+  // 8. Ayar kapalı → 4.2.0 davranışı
+  assert.equal(loadingApprovalBlock({ enabled: false, order, offer: pending }), null);
+  const src = fs.readFileSync(new URL('../server/orders/loading-approval.js', import.meta.url), 'utf8');
+  assert.match(src, /offers: \{ where: \{ status: 'GONDERILDI' \}, orderBy: \{ createdAt: 'desc' \}, take: 1/, '11. gönderilmemiş taslak onayı bozmaz');
+});
+
+test('acil durdurma anahtarı: kapalıyken onay durumu yok, yeni talep açılmaz, istisna / yeniden gönderim yok', () => {
+  const sent = { status: 'GONDERILDI' };
+  for (const status of ['HAZIRLANIYOR', 'URETIMDE']) {
+    assert.equal(approvalState({ required: true, status, offer: sent, enabled: false }), 'NONE', status);
+    assert.equal(approvalState({ required: true, status, offer: sent, enabled: true }), 'PENDING', status);
+  }
+  const base = { status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'GONDERILDI' };
+  assert.equal(shouldAutoProduce({ ...base, approval: approvalState({ required: true, status: 'HAZIRLANIYOR', offer: sent, enabled: false }) }), true, '4.2.0: teklif müşterideyse üretime geçer');
+  assert.deepEqual(approvalOnSend({ productionApprovalRequired: true, status: 'HAZIRLANIYOR', approvalEnabled: false }, new Date(), 'x'), { data: null, event: null });
+  const o = { productionApprovalRequired: true, status: 'URETIMDE', loadingOverrideAt: null, offers: [{ status: 'GONDERILDI', approvalRequestedAt: new Date(0) }] };
+  assert.deepEqual(approvalFlags({ ...o, approvalEnabled: false }), { loadingOverride: false, approvalResend: false });
+  assert.deepEqual(approvalFlags(o), { loadingOverride: true, approvalResend: true });
+  // Özellik kapalıyken gönderilmiş sürüm (talep kaydı yok): yeniden açılınca yönetici talebi gönderebilir — kendiliğinden yazılmaz
+  assert.equal(approvalFlags({ ...o, offers: [{ status: 'GONDERILDI' }] }).approvalResend, true);
+  // Müşteri işlemleri NONE durumunda yok
+  const acts = availableActions({ role: 'MUSTERI', canApprove: true, status: 'HAZIRLANIYOR', drawing: 'YOK', offer: 'GONDERILDI', orderType: 'GLASS_ORDER', approval: 'NONE' });
+  assert.equal(acts.includes('approve_production'), false);
+});
+
+test('taslak onayı bozmaz: onaylı gönderilmiş sürümden sonra taslak varken yükleme istisnası gerekmez', () => {
+  const approved = { status: 'GONDERILDI', approvedAt: new Date('2026-11-01T10:00:00Z') };
+  const o = { productionApprovalRequired: true, status: 'HAZIRLANIYOR', loadingOverrideAt: null, offers: [{ status: 'HAZIRLANIYOR' }, approved] };
+  assert.equal(approvalFlags(o).loadingOverride, false);
+  assert.equal(loadingApprovalBlock({ enabled: true, order: o, offer: approved }), null);
 });
 
 test('istisna ve yeniden gönderim: yalnızca yönetici istisna verir; gerekçe zorunlu', () => {

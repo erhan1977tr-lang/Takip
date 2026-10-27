@@ -299,7 +299,7 @@ export default {
       ORDER_ON_HOLD: 'aktarılan kalanın siparişi beklemede',
     },
     // Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin müşteri üretim onayı ya da yöneticinin istisnası yok
-    approvalBlocked: 'Müşteri üretim onayı olmayan siparişler — bu gün onaylanamaz (yükleme 06.11.2026 ve sonrası). Müşterinin onayını bekleyin ya da sipariş sayfasında yönetici gerekçeli istisna versin:',
+    approvalBlocked: 'Müşteri üretim onayı olmayan siparişler — bu gün onaylanamaz (kapsamdaki sipariş; yükleme tarihi değişse de). Müşterinin onayını bekleyin ya da sipariş sayfasında yönetici gerekçeli istisna versin:',
     approvalReason: {
       NOT_SENT: 'güncel teklif müşteriye gönderilmedi',
       PENDING: 'müşteri onayı bekleniyor',

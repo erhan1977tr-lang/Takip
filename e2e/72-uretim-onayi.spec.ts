@@ -253,5 +253,11 @@ test('onaysız yükleme engeli: "Yüklendi" yerine engel; yalnızca yönetici ge
   const audit = await d2.auditLog.findFirst({ where: { action: 'ORDER_TRANSITION', entityId: id, details: { path: ['action'], equals: 'override_loading_approval' } } });
   expect(audit).not.toBeNull();
   await d2.$disconnect();
+  // Acil durdurma anahtarı (4.2.6): ayar kapalıyken müşteri onay kartı ve "Onay gerekli" rozeti kaybolur (4.2.0 ekranı)
   await setApproval(admin, false);
+  await cust.goto(`/siparisler/${id}`);
+  await expect(cust.locator('[data-approval-state]')).toHaveCount(0);
+  await expect(cust.getByRole('button', { name: 'ÜRETİME ALINMASINI ONAYLIYORUM' })).toHaveCount(0);
+  await cust.goto('/siparisler');
+  await expect(cust.locator('tr', { hasText: 'Onay yükleme engeli' }).locator('[data-approval-needed]')).toHaveCount(0);
 });

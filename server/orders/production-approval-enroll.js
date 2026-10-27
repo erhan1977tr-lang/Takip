@@ -190,7 +190,8 @@ export async function planNotify(db, { orderNos = null } = {}) {
   });
   const open = orders.filter((o) => {
     const x = o.offers[0];
-    return x?.status === 'GONDERILDI' && x.approvalRequestedAt && !x.approvalDeliveredAt && !x.approvedAt && !x.changeRequestedAt;
+    // Talep kaydı olmayan güncel sürüm de (özellik kapalıyken gönderilmiş — acil durdurma, 4.2.6) bildirime alınır
+    return x?.status === 'GONDERILDI' && !x.approvalDeliveredAt && !x.approvedAt && !x.changeRequestedAt;
   });
   const queued = open.length ? await db.notificationOutbox.findMany({
     where: { orderId: { in: open.map((o) => o.id) }, status: 'PENDING', type: { in: [...APPROVAL_REQUEST_TYPES] } },
@@ -199,6 +200,7 @@ export async function planNotify(db, { orderNos = null } = {}) {
   const busy = new Set(queued.map((q) => `${q.orderId}:${q.payload?.approval?.offerId ?? ''}`));
   const rows = open.filter((o) => !busy.has(`${o.id}:${o.offers[0].id}`)).map((o) => ({
     id: o.id, orderNo: o.orderNo, status: o.status, version: o.version, offerId: o.offers[0].id, error: o.offers[0].approvalDeliveryError ?? null,
+    requested: !!o.offers[0].approvalRequestedAt,
   }));
   const missing = orderNos?.length ? orderNos.filter((n) => !rows.some((r) => r.orderNo === n)) : [];
   const basis = rows.map((r) => `${r.id}:${r.offerId}:${r.version}`).sort().join('|');
@@ -223,7 +225,7 @@ export async function applyNotify(db, { code, operator, orderNos = null, now = n
       if (bumped.count !== 1) throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
       const w = await tx.offer.updateMany({
         where: { id: r.offerId, status: 'GONDERILDI', approvalDeliveredAt: null, approvedAt: null, changeRequestedAt: null },
-        data: { approvalDeliveryError: null, approvalDeliveryFailedAt: null },
+        data: { approvalDeliveryError: null, approvalDeliveryFailedAt: null, ...(r.requested ? {} : { approvalRequestedAt: now }) },
       });
       if (w.count !== 1) throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
       await enqueueOutbox(tx, outboxEvent(`ORDER_${ENROLL_EVENT}`, {

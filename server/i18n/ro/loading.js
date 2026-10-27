@@ -297,7 +297,7 @@ export default {
       ORDER_CANCELLED: 'comanda restului replanificat este anulată',
       ORDER_ON_HOLD: 'comanda restului replanificat este în așteptare',
     },
-    approvalBlocked: 'Comenzi fără aprobarea clientului pentru producție — ziua nu poate fi confirmată (încărcare din 06.11.2026). Așteptați aprobarea clientului sau administratorul acordă o excepție motivată în pagina comenzii:',
+    approvalBlocked: 'Comenzi fără aprobarea clientului pentru producție — ziua nu poate fi confirmată (comandă inclusă; chiar dacă data de încărcare se schimbă). Așteptați aprobarea clientului sau administratorul acordă o excepție motivată în pagina comenzii:',
     approvalReason: {
       NOT_SENT: 'oferta actuală nu a fost trimisă clientului',
       PENDING: 'se așteaptă aprobarea clientului',
