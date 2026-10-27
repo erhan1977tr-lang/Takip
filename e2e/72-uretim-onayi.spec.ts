@@ -173,7 +173,8 @@ test('ölçülerde değişiklik var: açıklama zorunlu; satış düzeltir, yön
 
   // Satış: müşterinin notunu görür, tabloyu düzeltip yöneticiye gönderir (müşteriye doğrudan gönderemez)
   await sales.goto(`/siparisler/${id}`);
-  await expect(sales.locator('#uretim-onayi[data-approval-state="CHANGE_REQUESTED"] [data-change-note]')).toHaveText('1. satırın boyu 2100 mm olmalı');
+  // Özgün not (4.2.10: not çevirisi açıksa altında saklanan Türkçe çevirisi de görünür — önceki testlerin ayarına bağlı)
+  await expect(sales.locator('#uretim-onayi[data-approval-state="CHANGE_REQUESTED"] [data-change-note] .revision-note > .pre')).toHaveText('1. satırın boyu 2100 mm olmalı');
   await sales.getByLabel('Boy', { exact: true }).first().fill('2100');
   // Müşteri revizyonu taslağında gönder düğmesinin adı (4.2.10, karar 306): "Yönetici Onayına Gönder" — işlem aynı (submit_offer)
   await sales.getByRole('button', { name: 'Yönetici Onayına Gönder' }).click();
