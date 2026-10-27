@@ -582,7 +582,7 @@ export function drawingFlags(o) {
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null, approval?: string}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null, approval?: string, loadingOverride?: boolean, approvalResend?: boolean, revision?: string|null}} p
  *   approval: müşteri üretim onayı durumu (production-approval.js → approvalState; verilmezse 'NONE' — eski kural)
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
