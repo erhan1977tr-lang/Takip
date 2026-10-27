@@ -79,4 +79,17 @@ FROM "Order" o LEFT JOIN s ON s."orderId" = o.id
 WHERE o."productionApprovalRequired" AND o."removedAt" IS NULL
 ORDER BY yukleme, o."orderNo";
 
+\echo '=== 7. Acil durdurmadan sonra: üretime geçmek için yalnızca müşteri onayını beklemiş HAZIRLANIYOR siparişleri (her biri: Beklemeye Al → Beklemeden çıkar)'
+\echo '    Koşul 4.2.0 kuralı: bekletmede değil, çizim onaylı / gereksiz, EN SON teklif sürümü müşteride (taslak varsa listede yok)'
+WITH l AS (
+  SELECT DISTINCT ON (f."orderId") f."orderId", f.status::text AS son_teklif
+  FROM "Offer" f ORDER BY f."orderId", f."createdAt" DESC
+)
+SELECT o."orderNo" AS siparis, o."drawingTrack"::text AS cizim,
+       ((COALESCE(o."actualShipDate", o."estimatedShipDate") AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Bucharest')::date AS yukleme
+FROM "Order" o JOIN l ON l."orderId" = o.id
+WHERE o."productionApprovalRequired" AND o."removedAt" IS NULL AND o.status::text = 'HAZIRLANIYOR' AND NOT o."onHold"
+  AND o."drawingTrack"::text IN ('YOK', 'ONAYLANDI') AND l.son_teklif = 'GONDERILDI'
+ORDER BY yukleme, o."orderNo";
+
 ROLLBACK;

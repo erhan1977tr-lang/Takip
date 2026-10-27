@@ -335,8 +335,9 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
     } catch (e) {
       failed++;
       const msg = String(e?.message ?? e).slice(0, 300);
-      // Onay talebi bütün denemelerden sonra iletilemedi: süre başlamaz, yöneticiye bildirilir (ilk iletim olduysa değişmez)
-      const apId = row.orderId && attempt >= NOTIFY_MAX_ATTEMPTS && APPROVAL_REQUEST_TYPES.includes(row.type) ? approvalOfferId(row.type, payload) : null;
+      // Onay talebi bütün denemelerden sonra iletilemedi: süre başlamaz, yöneticiye bildirilir (ilk iletim olduysa değişmez).
+      // Ayar kapalıyken (acil durdurma) onay kaydına hiçbir şey yazılmaz — diğer iletim yazımlarıyla aynı koşul (4.2.9)
+      const apId = approvalOn && row.orderId && attempt >= NOTIFY_MAX_ATTEMPTS && APPROVAL_REQUEST_TYPES.includes(row.type) ? approvalOfferId(row.type, payload) : null;
       if (apId) await markUndelivered(db, { offerId: apId, orderId: row.orderId, code: 'EMAIL_FAILED', outboxId: row.id, now }).catch(() => false);
       await db.notificationOutbox.update({
         where: { id: row.id },

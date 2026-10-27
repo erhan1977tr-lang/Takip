@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.9 — 27.10.2026
+
+Müşteri üretim onayı — acil durdurma anahtarı tamamlandı (bağımsız inceleme bulgusu): ayar kapalıyken e-posta işçisinin
+hata yolu da onay kaydına yazmaz (iletim hatası / yöneticiye "iletilemedi" bildirimi yok); diğer iletim yazımlarıyla aynı
+koşul. Canlıya geçiş belgesi: acil durdurmadan sonra yalnızca müşteri onayını beklemiş hazırlık siparişleri aşama kontrolü
+raporunda listelenir; her biri "Beklemeye Al" → "Beklemeden çıkar" ile olağan kurala göre üretime geçer (toplu durum
+değişikliği yok).
+
 ## 4.2.8 — 27.10.2026
 
 4.2.7 düzeltmesi: üretim onayı bayrak hesabının parametre türüne ayar durumu eklendi (tip kontrolü). Davranış değişmedi.

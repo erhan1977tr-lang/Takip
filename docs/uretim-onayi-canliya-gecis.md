@@ -112,9 +112,15 @@ ayarı okur):
 - Onay zorunluluğu, onaysız üretime geçiş engeli ve onaysız yükleme engeli kalkar (4.2.0 iş akışı).
 - Yeni onay talebi, hatırlatma ve gecikme bildirimi yazılmaz / gönderilmez; kuyrukta kalmış talep / hatırlatma e-postası
   ve zili ATLANIR; teklif e-postası onay metni olmadan gider.
-- Bekleyen hazırlık siparişi bir sonraki işlemde (ör. teklif güncelleme, bekletme / devam) olağan kuralla üretime geçer;
-  toplu durum değişikliği yapılmaz.
-- Verilmiş onaylar, kapsam bayrakları, istisnalar ve denetim kayıtları silinmez.
+- Toplu durum değişikliği yapılmaz. Yalnızca müşteri onayını beklediği için HAZIRLANIYOR'da kalmış siparişler (çizim
+  onaylı / gereksiz, teklif müşteride) kendiliğinden üretime geçmez — 4.2.0'da üretime geçiren tetikleyiciler (teklifin
+  gönderilmesi, çizim onayı, beklemeden çıkarma) zaten geçmiştir. Bunlar aşama kontrolünün **7. bölümünde** listelenir; her biri için
+  sipariş sayfasında **"Beklemeye Al" → "Beklemeden çıkar"** yapılır: ikincisi olağan kuralla üretime geçirir (müşteriye "üretimde"
+  bildirimi 4.2.0'daki gibi gider; bekletme / devam müşteriye görünmez). "Teklifi güncelle" üretime geçirmez.
+- Müşterinin değişiklik talebiyle açılmış, henüz gönderilmemiş taslak sürüm kapalıyken de durur: satış → yönetici →
+  müşteriye gönderim yolu izlenir (gönderimde sipariş üretime geçer).
+- Verilmiş onaylar, kapsam bayrakları, istisnalar ve denetim kayıtları silinmez; açıkken yazılmış zil bildirimleri
+  (ör. "Üretim onayınız bekleniyor") müşterinin listesinde geçmiş kayıt olarak kalır.
 
 Yeniden açınca kendiliğinden talep / bildirim yazılmaz. Kapalıyken müşteriye gönderilmiş sürümler onay bekler hâle gelir:
 talepleri yönetici sipariş sayfasından ("Onay talebini yeniden gönder") ya da `onay --bildirim` ile, sürüm başına bir kez

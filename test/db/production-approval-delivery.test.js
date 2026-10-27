@@ -12,7 +12,7 @@ import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { approvalDeadline, approvalDueText } from '../../server/orders/production-approval.js';
 import { remindApprovalCustomers, saveApprovalSetting } from '../../server/orders/production-approval-service.js';
-import { dispatchNotifications } from '../../server/notifications/email.js';
+import { dispatchNotifications, NOTIFY_MAX_ATTEMPTS } from '../../server/notifications/email.js';
 import { dispatchInApp, dispatchInAppFor } from '../../server/notifications/inapp.js';
 import { confirmLoading, previewLoading } from '../../server/loading/confirmation.js';
 
@@ -463,4 +463,47 @@ dbTest('ACİL DURDURMA: kapalıyken 4.2.0 iş akışı (onay, üretim ve yüklem
   await run(fresh.id, 'resend_approval_request', 'admin', { offerId: fOffer.id });
   assert.equal(await codeOf(run(fresh.id, 'resend_approval_request', 'admin', { offerId: fOffer.id })), 'NOT_ALLOWED', 'ikinci talep yok');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: fresh.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED' } }), 1);
+}));
+
+// İşçinin sipariş okuması hata verir (hata yolu: alıcı döngüsünün dışı). Yalnızca e-posta işçisinin sorgusu bozulur
+// (include ile); yönetici bildiriminin okuması (select) çalışır.
+const brokenOrderRead = (base) => new Proxy(base, {
+  get(t, k) {
+    if (k !== 'order') return Reflect.get(t, k);
+    return new Proxy(t.order, {
+      get: (o, m) => (m === 'findUnique'
+        ? async (args) => { if (args?.include?.createdBy) throw new Error('geçici veritabanı hatası'); return o.findUnique(args); }
+        : Reflect.get(o, m)),
+    });
+  },
+});
+async function lastAttemptFails(orderId) {
+  const row = await db.notificationOutbox.findFirst({ where: { orderId, type: 'ORDER_OFFER_SENT' } });
+  await db.notificationOutbox.updateMany({ where: { status: 'PENDING', NOT: { id: row.id } }, data: { availableAt: new Date('2100-01-01T00:00:00Z') } });
+  await db.notificationOutbox.update({ where: { id: row.id }, data: { attempts: NOTIFY_MAX_ATTEMPTS - 1, availableAt: new Date(Date.now() - 1000) } });
+  const r = await dispatchNotifications(brokenOrderRead(db), { ...mailOpts, now: new Date() });
+  assert.equal(r.failed, 1);
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: row.id } })).status, 'FAILED');
+}
+
+dbTest('ACİL DURDURMA: kapalıyken e-posta işçisinin hata yolu da onay kaydına yazmaz (iletim hatası / yönetici bildirimi yok)', offline(async () => {
+  // Açıkken gönderilmiş, onay talepli teklif e-postası kuyrukta; ayar kapatıldı; son denemede işçi hata verir
+  await setApproval(true);
+  const a = await newOrder('Durdurma hata yolu', '2027-03-05');
+  const aOffer = await sendOffer(a.id);
+  await setApproval(false);
+  await lastAttemptFails(a.id);
+  const x = await db.offer.findUnique({ where: { id: aOffer.id } });
+  assert.equal(x.approvalDeliveryError, null, 'kapalıyken iletim hatası yazılmaz');
+  assert.equal(x.approvalDeliveryFailedAt, null);
+  assert.equal(await db.notification.count({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: a.id } }), 0, 'yönetici bildirimi yok');
+
+  // Karşılaştırma: açıkken aynı yol iletim hatasını yazar (yol gerçekten denendi)
+  await setApproval(true);
+  const b = await newOrder('Açık hata yolu', '2027-03-05');
+  const bOffer = await sendOffer(b.id);
+  await lastAttemptFails(b.id);
+  const y = await db.offer.findUnique({ where: { id: bOffer.id } });
+  assert.equal(y.approvalDeliveryError, 'EMAIL_FAILED');
+  assert.equal(y.approvalDeliveredAt, null, 'iletilmeyen talepte süre yok');
 }));
