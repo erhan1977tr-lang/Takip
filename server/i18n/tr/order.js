@@ -9,6 +9,7 @@ export default {
     created: 'Siparişiniz alındı. Satış ekibi inceleyip size dönecek.',
     production_approved: 'Üretim onayınız alındı. Teşekkürler.',
     offer_change_requested: 'Değişiklik talebiniz iletildi. Güncellenmiş teklif hazırlanınca size gönderilecek.',
+    revision_draft_opened: 'Revizyon taslağı açıldı. Teklifi düzeltip “Yönetici Onayına Gönder” ile yöneticiye gönderin.',
     loading_override: 'Yükleme istisnası kaydedildi. Müşteri onayı olarak sayılmaz; denetim kaydına yazıldı.',
     approval_resent: 'Onay talebi yeniden gönderim kuyruğuna alındı. Süre, talep müşteriye iletildiğinde başlar.',
     to_drawing: 'Sipariş çizim ekibine yönlendirildi. Teklifi de şimdi hazırlayabilirsiniz.',
@@ -412,6 +413,15 @@ export default {
     },
   },
   // Müşteri üretim onayı (4.2.1) — server/orders/production-approval.js
+  // Müşteri teklif revizyonu (4.2.10, karar 306): satış ve yönetici ekranları
+  revision: {
+    // Ürün sahibinin metni (değiştirmeyin): yalnızca bilgi — hiçbir işlemi engellemez, sipariş durumunu değiştirmez
+    productionWarning: 'Sipariş üretimde. Teklif revizyonu fabrika üretimini veya çizimleri otomatik değiştirmez.',
+    atAdmin: 'Revizyon taslağı yöneticinin onayında; yönetici kontrol edip müşteriye gönderdiğinde yeni sürüm yeniden onay ister.',
+    noDraft: 'Bu talep için revizyon taslağı henüz açılmadı. "Revizyon taslağını aç" ile müşteriye gönderilmiş sürümün satırlarından taslak açılır; talep kaydı değişmez.',
+    open: 'Revizyon taslağını aç',
+    openConfirm: 'Sürüm {n} satırlarından revizyon taslağı açılsın mı? Müşterinin talebi ve gönderilmiş sürüm değişmez.',
+  },
   approval: {
     title: 'Üretim onayı',
     pendingTitle: 'Üretim onayınız bekleniyor',
@@ -439,7 +449,7 @@ export default {
     staffApproved: 'Müşteri üretim onayı verdi: {date} (teklif sürümü {n}).',
     staffChange: 'Müşteri teklif sürümü {n} için değişiklik istedi ({date}):',
     staffChangeNext: 'Satış teklifi düzeltip yöneticiye gönderir; yönetici kontrol edip müşteriye gönderdiğinde yeni sürüm yeniden onay ister.',
-    staffChangeNextProduction: 'Sipariş üretimde: teklifi yönetici "Teklifi güncelle" ile düzeltip müşteriye gönderir (satış üretimdeki siparişin teklifini düzenleyemez); yeni sürüm yeniden onay ister. Sipariş durumu değişmez.',
+    staffChangeNextProduction: 'Sipariş üretimde: satış revizyon taslağını düzeltip "Yönetici Onayına Gönder" ile yöneticiye gönderir; yönetici kontrol edip müşteriye gönderdiğinde yeni sürüm yeniden onay ister. Sipariş durumu değişmez.',
     listBadge: 'Onay gerekli',
     // 4.2.5: süre talep müşteriye iletildiğinde başlar; hatırlatma; yükleme engeli ve yöneticinin istisnası
     notDeliveredCustomer: 'Lütfen teklifi kontrol edip onaylayın. Onay süresi (2 iş günü) talep size e-postayla iletildiği anda başlar.',

@@ -147,7 +147,7 @@ export default {
     compToPrice: 'îl stabilește administratorul',
     compSource: 'Cantitate rămasă în comanda sursă: {before} → {after}',
     compSourceKept: 'Cantitatea sursă neschimbată ({reason}) — înlocuirea este producție suplimentară',
-    compSourceReason: { LOADED: 'încărcare confirmată', BILLING: 'are document', CLOSED: 'comandă închisă', FREE: 'înlocuire gratuită — cantitatea sursă nu se schimbă' },
+    compSourceReason: { LOADED: 'încărcare confirmată', BILLING: 'are document', CLOSED: 'comandă închisă', FREE: 'înlocuire gratuită — cantitatea sursă nu se schimbă', REVISION: 'revizuire de ofertă cerută de client' },
     compSourcePending: 'Cantitatea sursă scade la aprobare',
     compTier: { CUSTOMER: 'preț client', SALES: 'preț de vânzare' },
     // Stoc insuficient (decizia 165): necesar / disponibil / lipsă la momentul comenzii

@@ -9,6 +9,7 @@ export default {
     created: 'Comanda dvs. a fost primită. Echipa de vânzări o va analiza și vă va răspunde.',
     production_approved: 'Aprobarea dvs. pentru producție a fost primită. Vă mulțumim.',
     offer_change_requested: 'Solicitarea dvs. de modificare a fost transmisă. Veți primi oferta actualizată când este gata.',
+    revision_draft_opened: 'Ciorna de revizie a fost deschisă. Corectați oferta și trimiteți-o administratorului cu „Trimite la aprobarea administratorului”.',
     loading_override: 'Excepția de încărcare a fost înregistrată. Nu este considerată aprobarea clientului; a fost trecută în jurnalul de audit.',
     approval_resent: 'Solicitarea de aprobare a fost pusă din nou la trimis. Termenul începe când solicitarea ajunge la client.',
     to_drawing: 'Comanda a fost trimisă echipei de desen. Puteți pregăti deja și oferta.',
@@ -413,6 +414,14 @@ export default {
   },
   // Mesajele de eroare ale acțiunilor de pe server (?error=...)
   // Aprobarea producției de către client (4.2.1) — server/orders/production-approval.js
+  // Revizuirea ofertei cerută de client (4.2.10, decizia 306): ecranele vânzărilor și administratorului
+  revision: {
+    productionWarning: 'Comanda este în producție. Revizuirea ofertei nu modifică automat producția din fabrică sau desenele.',
+    atAdmin: 'Ciorna de revizie este la aprobarea administratorului; când administratorul o verifică și o trimite clientului, noua versiune cere din nou aprobarea.',
+    noDraft: 'Pentru această cerere nu s-a deschis încă o ciornă de revizie. „Deschide ciorna de revizie” creează ciorna din rândurile versiunii trimise clientului; cererea nu se modifică.',
+    open: 'Deschide ciorna de revizie',
+    openConfirm: 'Deschideți ciorna de revizie din rândurile versiunii {n}? Cererea clientului și versiunea trimisă nu se modifică.',
+  },
   approval: {
     title: 'Aprobarea producției',
     pendingTitle: 'Se așteaptă aprobarea dvs. pentru producție',
@@ -440,7 +449,7 @@ export default {
     staffApproved: 'Clientul a aprobat producția: {date} (versiunea ofertei {n}).',
     staffChange: 'Clientul a cerut modificări pentru versiunea ofertei {n} ({date}):',
     staffChangeNext: 'Vânzările corectează oferta și o trimit administratorului; când administratorul o verifică și o trimite clientului, noua versiune cere din nou aprobarea.',
-    staffChangeNextProduction: 'Comanda este în producție: administratorul corectează oferta cu „Actualizează oferta” și o trimite clientului (vânzările nu pot edita oferta unei comenzi în producție); noua versiune cere din nou aprobarea. Starea comenzii nu se modifică.',
+    staffChangeNextProduction: 'Comanda este în producție: vânzările corectează ciorna de revizie și o trimit administratorului cu „Trimite la aprobarea administratorului”; când administratorul o verifică și o trimite clientului, noua versiune cere din nou aprobarea. Starea comenzii nu se modifică.',
     listBadge: 'Aprobare necesară',
     notDeliveredCustomer: 'Vă rugăm să verificați oferta și să o aprobați. Termenul de aprobare (2 zile lucrătoare) începe în momentul în care solicitarea vă este transmisă prin e-mail.',
     staffNotDelivered: 'Solicitarea nu a ajuns încă la client — termenul nu a început.',

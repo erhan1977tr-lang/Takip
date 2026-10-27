@@ -16,6 +16,7 @@ import { filesFrom, resolveKey } from '@/lib/storage';
 import { readOfferExcel } from '@/server/orders/excel-file.js';
 import { discardFiles, storeFiles, type StoredUpload } from '@/lib/uploads';
 import { atOfferPrice, availableActions, drawingFlags, fileProblem, isSplitKey, offerProblems, offerTotals, parseDateOnly } from '@/server/orders/rules.js';
+import { revisionStage } from '@/server/orders/offer-revision.js';
 import { runOrderAction, WorkflowError } from '@/server/orders/transitions.js';
 import { addNote, retryDrawingTranslation, retryNoteTranslation, translateDrawingNote, translateRevision } from '@/server/notes/translation.js';
 import { deliverInAppNow } from '@/lib/notifications';
@@ -76,6 +77,7 @@ async function ensureAllowed(user: CurrentUser, orderId: string, action: string)
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: order.offers[0]?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
+    revision: revisionStage(order),
   });
   if (!acts.includes(action)) {
     const { t } = await getT();

@@ -74,6 +74,8 @@ export function OfferEditor(props: {
   pdfImports?: { id: string; name: string; factoryNo: string | null; applied: boolean }[];
   /** Satış: kayıtlı teklif tablosunu kendi fiyatıyla PDF / Excel indirme (teklif/route.ts — sunucuda yetki, müşteri fiyatı yok; karar 267) */
   salesExport?: boolean;
+  /** Müşteri revizyonu taslağı (4.2.10, karar 306): satışın gönder düğmesinin adı "Yönetici Onayına Gönder" (işlem aynı: submit_offer) */
+  revision?: boolean;
 }) {
   const { m, common, lineKind } = props;
   const [lines, setLines] = useState<Line[]>(() =>
@@ -498,7 +500,7 @@ export function OfferEditor(props: {
             <button type="submit" onClick={intent('approve')} className="btn btn-success" disabled={problems.length > 0}>{m.editor.approveAndSend}</button>
           </>
         ) : (
-          <button type="submit" onClick={intent('submit')} className="btn btn-primary" disabled={problems.length > 0}>{m.editor.submit}</button>
+          <button type="submit" onClick={intent('submit')} className="btn btn-primary" disabled={problems.length > 0} data-revision-submit={props.revision ? '' : undefined}>{props.revision ? m.editor.submitRevision : m.editor.submit}</button>
         )}
       </div>
       <p className="muted small" style={{ marginTop: 8 }}>

@@ -6,8 +6,8 @@ import { canSeeCustomerName, maskName } from '../server/orders/rules.js';
 import { userCan } from './permissions';
 import { DRAWING_SCOPE, orderScope as scopeFor } from '../server/orders/scope.js';
 import { customerView } from '../server/orders/customer-view.js';
-import { drawingTranslationsFor, notesFor } from '../server/notes/view.js';
-import { orderPeopleView, profileFxView } from '../server/orders/order-view.js';
+import { drawingTranslationsFor, notesFor, offersChangeFor } from '../server/notes/view.js';
+import { offerPeopleView, orderPeopleView, profileFxView } from '../server/orders/order-view.js';
 import { pdfUrl } from '../server/documents/fgo-pdf.js';
 import { drawingsView } from '../server/orders/drawing-access.js';
 import { unreadCounts } from '../server/notes/unread.js';
@@ -79,7 +79,9 @@ export function sanitizeRows<R extends { customer: { name: string }; price?: unk
     if ('price' in r && !priceOk) out.price = null as R['price'];
     if (r.offers) {
       const visible = !offersOk ? [] : drafts ? r.offers : r.offers.filter((o) => o.status === 'GONDERILDI');
-      out.offers = visible.map((o) => ('amount' in o ? offerPrices(view, o as OfferLike & typeof o) : o)) as R['offers'];
+      // Üretim onayı alanları (kim onayladı / istedi, iletim hatası) ve değişiklik talebi notunun çevirisi (4.2.10) sipariş
+      // ayrıntısıyla aynı kuraldan: server/orders/order-view.js → offerPeopleView, server/notes/view.js → offersChangeFor
+      out.offers = offersChangeFor(user.appRole, visible.map((o) => offerPeopleView(user.appRole, 'amount' in o ? offerPrices(view, o as OfferLike & typeof o) : o))) as R['offers'];
     }
     return out;
   });
@@ -156,6 +158,9 @@ export function sanitizeOrder(user: CurrentUser, order: OrderDetail): OrderDetai
   // İki kademeli fiyat (karar 4)
   const view = priceView(user);
   offers = offers.map((o) => offerPrices(view, o));
+  // Müşterinin değişiklik talebi notunun Türkçe çevirisi (4.2.10) not çevirisinin kuralıyla (server/notes/view.js): iç ekip
+  // özgün + Türkçe, müşteri ve denetimci yalnızca özgün. Bu okuma yolu çeviri isteği yapmaz.
+  offers = offersChangeFor(user.appRole, offers);
   // Çizim: sürümlerin role göre görünümü TEK kuraldan (server/orders/drawing-access.js, karar 146) — müşteri taslak sürümü
   // hiç görmez; geri çekilen sürümün satırını (durum, tarih, gerekçe) görür ama dosyalarını ve müşteri notunu almaz.
   // Dosya adresi ve çizim görüntüleyicisi de aynı kuralı kullanır. İç not yalnızca iç ekibe gider.

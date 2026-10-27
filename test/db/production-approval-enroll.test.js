@@ -2,7 +2,7 @@
 // ön izleme salt okunur; kategoriler (talep / yalnızca bayrak / yüklenmiş / kısmi yüklenmiş / nihai faturalı / telafi /
 // kesim öncesi); SQL kapsam raporu aynı sonucu verir; yanlış / eski onay kodu hiçbir şey yazmaz; uygulama durum, teklif,
 // fiyat, yükleme tarihi, proforma ve yükleme kayıtlarına dokunmaz; süre geçiş anından başlar; ikinci çalıştırma ikinci talep
-// açmaz; üretimdeki (URETIMDE) siparişte onay ve değişiklik talebi (yönetici "Teklifi güncelle" yolu). Ağ isteği yok.
+// açmaz; üretimdeki (URETIMDE) siparişte onay ve değişiklik talebi (4.2.10: satışa revizyon taslağı → yönetici). Ağ isteği yok.
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -177,22 +177,30 @@ dbTest('uygulama: yanlış kod / ayar sonrası değişiklik hiçbir şey yazmaz;
   for (const k of ['prodSent', 'prepSent']) assert.equal(await db.orderEvent.count({ where: { orderId: ids[k], event: 'PRODUCTION_APPROVAL_REQUESTED' } }), 1);
 }));
 
-dbTest('üretimdeki sipariş: onay durumu değiştirmez; değişiklik talebinde taslak açılmaz, yönetici "Teklifi güncelle" ile yeni sürüm gönderir, yeniden onay', offline(async () => {
+dbTest('üretimdeki sipariş: onay durumu değiştirmez; değişiklik talebinde satışa revizyon taslağı açılır (4.2.10), satış düzeltip yöneticiye gönderir, yönetici müşteriye gönderir, yeniden onay', offline(async () => {
   const o = ids.prodSent;
   const sent = (await db.offer.findMany({ where: { orderId: o } }))[0];
   // Değişiklik talebi (proforma yok → mali kilit yok)
   await run(o, 'request_offer_change', cust, { offerId: sent.id, note: '2. cam 1200 mm olmalı' });
-  let ord = await db.order.findUnique({ where: { id: o }, include: { offers: { orderBy: { createdAt: 'asc' } } } });
+  let ord = await db.order.findUnique({ where: { id: o }, include: { offers: { orderBy: { createdAt: 'asc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
   assert.equal(ord.status, 'URETIMDE', 'durum değişmez');
-  assert.equal(ord.offers.length, 1, 'üretimde taslak açılmaz');
+  // 4.2.10 (karar 306): üretimdeki siparişte de gönderilmiş sürümün satırlarından satışa revizyon taslağı açılır
+  assert.equal(ord.offers.length, 2);
   assert.ok(ord.offers[0].changeRequestedAt);
+  assert.equal(ord.offers[1].status, 'HAZIRLANIYOR');
   assert.equal(await codeOf(run(o, 'approve_production', cust, { offerId: sent.id })), 'NOT_ALLOWED');
-  // Yönetici mevcut "Teklifi güncelle" ile yeni sürüm → yeniden onay; durum yine URETIMDE
-  const lines = ord.offers[0].lines ?? (await db.offerLine.findMany({ where: { offerId: sent.id } }));
-  await run(o, 'update_offer', admin, { lines: lines.map((l) => ({ id: l.id, description: l.description, poz: l.poz, enMm: 1200, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, free: l.free, unitPrice: Number(l.unitPrice).toFixed(2), offerPrice: '50' })) });
+  // Taslak açıkken "Teklifi güncelle" yok (son sürüm taslak): satış → yönetici akışı
+  const draft = ord.offers[1];
+  const asForm = (l, extra = {}) => ({ id: l.id, description: l.description, poz: l.poz, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, free: l.free, unitPrice: Number(l.unitPrice).toFixed(2), ...extra });
+  assert.equal(await codeOf(run(o, 'update_offer', admin, { lines: draft.lines.map((l) => asForm(l, { offerPrice: '50' })) })), 'NOT_ALLOWED');
+  await run(o, 'submit_offer', sales, { lines: draft.lines.map((l) => asForm(l, { enMm: 1200 })) });
+  const pending = await db.offer.findUnique({ where: { id: draft.id }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+  assert.equal(pending.status, 'YONETIMDE');
+  await run(o, 'approve_offer', admin, { lines: pending.lines.map((l) => asForm(l, { offerPrice: '50' })) });
   ord = await db.order.findUnique({ where: { id: o }, include: { offers: { orderBy: { createdAt: 'asc' } } } });
   assert.equal(ord.status, 'URETIMDE');
   const v2 = ord.offers.at(-1);
+  assert.equal(v2.status, 'GONDERILDI');
   assert.ok(v2.approvalRequestedAt, 'yeni sürüm için yeni talep');
   assert.equal(v2.approvalDueAt, null, 'süre yeni talep iletildiğinde başlar');
   assert.equal(await codeOf(run(o, 'approve_production', cust, { offerId: sent.id })), 'OFFER_VERSION_STALE');

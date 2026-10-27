@@ -18,7 +18,7 @@ import { AssistantChat } from '@/components/AssistantChat';
 import { loadFeed } from '@/lib/notifications';
 import { db } from '@/lib/db';
 import { unreadTotal } from '@/server/notes/unread.js';
-import { newProfileCount } from '@/server/orders/queues.js';
+import { newProfileCount, offerRevisionCount } from '@/server/orders/queues.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,9 +36,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const messages = await unreadTotal(db, user);
   const ordersHref = '/siparisler';
   // Bölüm sayaçları (karar 216): yalnızca menüsünde o sayaç olan rolde, kullanıcının kapsamında sunucuda sayılır
-  const wants = (c: NavCount) => defs.some((d) => ('section' in d ? d.count === c : d.mobileCount === c));
-  const counts: Record<NavCount, number> = { profileNew: wants('profileNew') ? await newProfileCount(db, user) : 0 };
-  const COUNT_LABEL: Record<NavCount, MsgKey> = { profileNew: 'nav.profileNew' };
+  const wants = (c: NavCount) => defs.some((d) => ('section' in d ? d.count === c : d.mobileCount === c || d.linkCount === c));
+  const counts: Record<NavCount, number> = {
+    profileNew: wants('profileNew') ? await newProfileCount(db, user) : 0,
+    // Satış (4.2.10, karar 306): müşteri revizyonu bekleyen teklifler — "Teklifler" bağlantısında
+    offerRevisions: wants('offerRevisions') ? await offerRevisionCount(db, user) : 0,
+  };
+  const COUNT_LABEL: Record<NavCount, MsgKey> = { profileNew: 'nav.profileNew', offerRevisions: 'nav.offerRevisions' };
   const countLabel = (c: NavCount, n: number) => t(COUNT_LABEL[c], { n });
   const nav: NavItem[] = defs.map((d): NavItem => {
     if ('section' in d) {
@@ -48,6 +52,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
     const item: Extract<NavItem, { href: string }> = d.href === ordersHref && messages.total > 0
       ? { href: d.href, label: t(d.key), count: messages.total, countLabel: t('order.notes.unread', { n: messages.total }) }
       : { href: d.href, label: t(d.key) };
+    const link = d.linkCount ? counts[d.linkCount] : 0;
+    if (d.linkCount && link > 0) return { ...item, linkCount: link, countLabel: countLabel(d.linkCount, link) };
     const mobile = d.mobileCount ? counts[d.mobileCount] : 0;
     return d.mobileCount && mobile > 0 ? { ...item, mobileCount: mobile, countLabel: countLabel(d.mobileCount, mobile) } : item;
   });

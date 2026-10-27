@@ -27,6 +27,7 @@ import { applyImports } from './pdf-import/service.js';
 import { approvalFlags, approvalOnSend, approvalState, changeNote, overrideReason } from './production-approval.js';
 import { APPROVAL_REQUEST_TYPES } from './production-approval-delivery.js';
 import { approvalGateSetting, loadingApprovalBlocks } from './loading-approval.js';
+import { customerRevision, revisionStage } from './offer-revision.js';
 
 export { WorkflowError };
 
@@ -86,6 +87,8 @@ export const REQUIRES = {
   // Müşteri üretim onayı (4.2.1): en son gönderilen teklif sürümünü onayla / değişiklik iste
   approve_production: ['approve_production'],
   request_offer_change: ['request_offer_change'],
+  // Müşteri teklif revizyonu (4.2.10): 4.2.10 öncesinde taslağı açılmamış müşteri talebi için tek seferlik taslak
+  open_revision_draft: ['open_revision_draft'],
   // Onaysız yükleme engeli (4.2.5): yöneticinin gerekçeli istisnası; iletilemeyen onay talebinin yeniden gönderimi
   override_loading_approval: ['override_loading_approval'],
   resend_approval_request: ['resend_approval_request'],
@@ -111,7 +114,7 @@ export const glassWorkflow = {
     const acts = availableActions({
       role: actor.role, status: o.status, onHold: o.onHold, canApprove: !!actor.canApprove,
       drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o), orderType, approval: approvalOf(o),
-      ...approvalFlags(o, ctx.now ?? new Date()),
+      ...approvalFlags(o, ctx.now ?? new Date()), revision: revisionStage(o),
     });
     return need.some((a) => acts.includes(a)) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
   },
@@ -491,6 +494,23 @@ async function offerEdit(h, intent) {
 const resent = (order) => order.offers.slice(1).some((o) => o.status === 'GONDERILDI');
 /** Teklifin sürüm numarası: siparişin o sürüme kadar açılmış teklif sayısı (offers en yeniden eskiye sıralı) */
 const revisionOf = (order, offer) => order.offers.length - order.offers.findIndex((o) => o.id === offer.id);
+
+/**
+ * Müşteri revizyonunun taslağı (4.2.10): talepli gönderilmiş sürümün satırlarından satışa yeni bir sürüm (HAZIRLANIYOR). Tek
+ * yer: request_offer_change ve open_revision_draft. Gönderilmiş sürüm değişmez; müşteri taslağı görmez (yalnızca gönderilmiş
+ * sürümler müşteriye gider). @returns {Promise<string>} taslağın kimliği
+ */
+async function openRevisionDraft(tx, { order, offer, actorId, now }) {
+  const { amount, offerAmount } = amounts(offer.lines);
+  const draft = await tx.offer.create({
+    data: {
+      orderId: order.id, createdById: actorId, currency: offer.currency, amount, offerAmount, priceTableId: offer.priceTableId ?? null,
+      status: 'HAZIRLANIYOR', statusSince: now,
+      lines: { create: offer.lines.map((l, i) => lineData(l, i)) },
+    },
+  });
+  return draft.id;
+}
 
 /**
  * Müşterinin DWG/DXF çizimi için çizimci kararını kaydeder (karar 167) — üç kararın ortak gövdesi. Kural tek yerde:
@@ -1041,9 +1061,12 @@ const ACTIONS = {
   /**
    * Müşteri üretim onayı (4.2.1): "Ölçülerde değişiklik var". Açıklama zorunlu; müşteri ölçü ya da fiyat değiştiremez.
    * Gönderilen sürüm değişmez (değişiklik istendi olarak işaretlenir — onaylanamaz); onun satırlarından satışa yeni bir
-   * taslak sürüm açılır → olağan akış: satış düzeltir, yöneticiye gönderir, yönetici kontrol edip müşteriye gönderir, yeni
-   * sürüm yeniden onay ister. Siparişin mali kilidi varsa (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği,
-   * onaylı yükleme — update_offer ile aynı kural ve kilitler) yeni fiyat müşteriye gidemeyeceğinden talep alınmaz.
+   * taslak sürüm açılır → olağan akış: satış düzeltir, "Yönetici Onayına Gönder", yönetici kontrol edip müşteriye gönderir, yeni
+   * sürüm yeniden onay ister. 4.2.10 (karar 306): taslak siparişin durumundan bağımsız açılır — üretimdeki (URETIMDE) siparişte
+   * de; satış yalnızca bu açık revizyonun taslağını düzenleyebilir (rules.js → availableActions, offer-revision.js). Sipariş
+   * durumu, üretim kayıtları ve çizimler değişmez. Siparişin mali kilidi varsa (FGO belgesi, müşteri belgesi kapsamı, bekleyen
+   * belge isteği, onaylı yükleme — update_offer ile aynı kural ve kilitler) yeni fiyat müşteriye gidemeyeceğinden talep alınmaz.
+   * Not bir kez Türkçeye çevrilir (işlem tamamlandıktan SONRA, sunucu işleminden — translateOfferChange).
    */
   async request_offer_change(h) {
     const { tx, order, actor, payload, now } = h;
@@ -1059,25 +1082,37 @@ const ACTIONS = {
       data: { changeRequestedAt: now, changeRequestedById: actor.id, changeNote: note.note },
     });
     if (r.count !== 1) throw new WorkflowError('APPROVAL_DECIDED');
-    // HAZIRLANIYOR: satışa yeni taslak (mevcut satış → yönetici → gönder akışı). URETIMDE: mevcut sistemde satış üretimdeki
-    // siparişin teklifini düzenleyemez — taslak açılmaz; yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir
-    // (update_offer; aynı mali kilit). Sipariş durumu hiçbir durumda değişmez.
-    let draftId = null;
-    if (order.status === 'HAZIRLANIYOR') {
-      const { amount, offerAmount } = amounts(offer.lines);
-      const draft = await tx.offer.create({
-        data: {
-          orderId: order.id, createdById: actor.id, currency: offer.currency, amount, offerAmount, priceTableId: offer.priceTableId ?? null,
-          status: 'HAZIRLANIYOR', statusSince: now,
-          lines: { create: offer.lines.map((l, i) => lineData(l, i)) },
-        },
-      });
-      draftId = draft.id;
-    }
+    const draftId = await openRevisionDraft(tx, { order, offer, actorId: actor.id, now });
     const revision = revisionOf(order, offer);
     h.event('OFFER_CHANGE_REQUESTED', note.note, { offerId: offer.id, revision });
     h.sla = true;
-    h.audit = { offerId: offer.id, revision, draftId, path: draftId ? 'SALES_DRAFT' : 'ADMIN_UPDATE', customerId: order.customerId, requestedById: actor.id };
+    h.result = { ...(h.result ?? {}), offerId: offer.id, draftId };
+    h.audit = { offerId: offer.id, revision, draftId, path: 'SALES_DRAFT', status: order.status, customerId: order.customerId, requestedById: actor.id };
+  },
+  /**
+   * Müşteri teklif revizyonu (4.2.10, karar 306): 4.2.10 öncesinde üretimdeki siparişte alınmış, taslağı hiç açılmamış müşteri
+   * talebi (ör. ALE81) için TEK SEFERLİK revizyon taslağı. Satış / yönetici (OFFER_PREPARE). Talep kaydına (changeRequestedAt,
+   * not, talep eden) dokunmaz; taslak, request_offer_change'in açtığı taslağın aynısıdır (talepli gönderilmiş sürümün satırları).
+   * Mükerrer taslak açılmaz: yalnızca açık revizyonun aşaması NO_DRAFT iken (en son sürüm talepli gönderilmiş sürümse) ve
+   * sipariş sürüm kilidiyle (aynı anda ikinci istek ya da çift tıklama → NOT_ALLOWED / CONFLICT). Mali kilit varsa açılmaz
+   * (yeni fiyat müşteriye gidemez — talepteki kural). Eski talebin notu işlemden SONRA bir kez çevrilir (sunucu işlemi).
+   */
+  async open_revision_draft(h) {
+    const { tx, order, actor, payload, now } = h;
+    const rev = customerRevision(order);
+    const offer = latestOffer(order);
+    if (!rev || rev.stage !== 'NO_DRAFT' || !offer || offer.id !== rev.sent.id || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
+    const locked = await priceLock(tx, order.id);
+    if (locked.length) throw new WorkflowError('PRICE_LOCKED', { reasons: locked });
+    const draftId = await openRevisionDraft(tx, { order, offer, actorId: actor.id, now });
+    const revision = revisionOf(order, offer);
+    h.event('OFFER_REVISION_OPENED', null, { offerId: offer.id, revision });
+    h.sla = true;
+    h.result = { ...(h.result ?? {}), offerId: offer.id, draftId };
+    h.audit = {
+      offerId: offer.id, revision, draftId, status: order.status, legacy: true,
+      changeRequestedAt: offer.changeRequestedAt ? new Date(offer.changeRequestedAt).toISOString() : null,
+    };
   },
   /**
    * Onaysız yükleme istisnası (4.2.5): yalnızca yönetici (LOADING_APPROVAL_OVERRIDE), gerekçe zorunlu. Siparişe bir kez yazılır
@@ -1137,6 +1172,7 @@ const ACTION_LOCKS = {
   // mali kilidi aynı kilitler altında denetler. İlk gönderimde (öncesinde gönderilmiş sürüm yok) kilit alınmaz — eski davranış.
   approve_offer: (order) => (resent(order) ? ['loading-confirmation', `glass-billing:${order.id}`] : []),
   request_offer_change: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  open_revision_draft: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
   // İptal (karar 288 — Y1): belge isteği, elle ödeme, müşteri belgesi ve yükleme onayıyla aynı kilitler, aynı sıra
   cancel: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
   // Tahmini yükleme tarihi / "Yüklendi" (karar 288 — D1): yükleme onayıyla aynı kilit — "onay kalemi varsa tarih değişmez" ve

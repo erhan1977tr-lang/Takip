@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.10 — 27.10.2026
+
+**Müşteri teklif revizyonu** (ürün sahibi, 27.10.2026; karar 306):
+
+- Müşterinin "Ölçülerde değişiklik var" talebi artık **üretimdeki (URETIMDE)** siparişte de satışa revizyon taslağı açar
+  (sipariş durumu, üretim kayıtları ve çizimler değişmez). Akış mevcut teklif akışıdır: satış düzeltir ve **"Yönetici Onayına
+  Gönder"**ir → yönetici geri gönderir ya da onaylayıp müşteriye gönderir → yeni sürüm 4.2.9 kuralıyla yeniden onay ister;
+  müşteri yeniden değişiklik isterse döngü sürer. Eski sürümler, notlar, onaylar ve denetim kayıtları silinmez.
+- Üretimdeki siparişte satış teklifi yalnızca açık müşteri revizyonunun taslağında düzenleyebilir; öteki kısıtlar aynen.
+- Satış paneli: Teklifler sayfasının başında **"Müşteri Revizyon Bekleyen Teklifler"** (sipariş, maskeli müşteri adı, talep
+  tarihi, notun özgün metni + Türkçe çevirisi, sürüm, "Aç ve düzenle") ve menüde "Teklifler" sayacı. Yöneticiye gönderilince
+  listeden çıkar, yönetici geri gönderince döner.
+- Üretimdeki siparişte satış ve yönetici ekranında bilgi uyarısı: "Sipariş üretimde. Teklif revizyonu fabrika üretimini veya
+  çizimleri otomatik değiştirmez." (hiçbir işlemi engellemez).
+- Talep notu (Romence) bir kez otomatik Türkçeye çevrilir ve saklanır; özgün metin ve çeviri birlikte görünür (satış,
+  yönetici). Yenileme çeviri yapmaz; çeviri başarısızsa not durur, "Çeviriyi yeniden dene". Müşteri ve denetimci yalnızca
+  özgün notu görür.
+- Bildirim: talep ilgili satışçıya uygulama içi bildirim **ve e-posta** (not + Türkçe çeviri; mevcut altyapı, mükerrersiz).
+- Eski talepler (ALE81 gibi — 4.2.10'dan önce üretimdeki siparişte alınmış, taslağı açılmamış): satış / yönetici için tek
+  seferlik **"Revizyon taslağını aç"**; talep kaydı değişmez, çift tıklamada tek taslak, denetim kaydı; not bu sırada bir kez
+  çevrilir. Canlı veriye betikle yazılmaz.
+- Açık revizyonu olan siparişte telafi, kaynak / hedef teklife yeni sürüm açmaz.
+- Veritabanı: `Offer` tablosuna talep notunun çevirisi için beş boş olabilen alan (mevcut satırlar değişmez).
+
 ## 4.2.9 — 27.10.2026
 
 Müşteri üretim onayı — acil durdurma anahtarı tamamlandı (bağımsız inceleme bulgusu): ayar kapalıyken e-posta işçisinin

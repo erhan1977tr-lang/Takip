@@ -68,7 +68,7 @@ export const STAFF_EVENT_POLICY = {
   // müşterinin DWG/DXF çizimi (karar 167): çizim hattının olayları, satırı ve notu siparişi gören her iç role
   DWG_READY: OPEN, DWG_FAULTY: OPEN, DWG_UPDATE: OPEN, DWG_RESUBMITTED: OPEN, DWG_FACTORY_REQUESTED: OPEN,
   DWG_READY_UNDONE: OPEN, DWG_FAULTY_UNDONE: OPEN, DWG_UPDATE_UNDONE: OPEN,
-  OFFER_SENT: OPEN, OFFER_CHECKED: OPEN, PRODUCTION_APPROVED: OPEN, OFFER_CHANGE_REQUESTED: OPEN, PRODUCTION_APPROVAL_REQUESTED: OPEN, PRODUCTION_APPROVAL_REMINDER: OPEN, LOADING_APPROVAL_OVERRIDE: OPEN, PRODUCTION: OPEN, SHIPPED: OPEN, AUTO_SHIPPED: OPEN, AUTO_SHIP_REVERTED: OPEN, ARCHIVED: OPEN, AUTO_ARCHIVED: OPEN,
+  OFFER_SENT: OPEN, OFFER_CHECKED: OPEN, PRODUCTION_APPROVED: OPEN, OFFER_CHANGE_REQUESTED: OPEN, OFFER_REVISION_OPENED: OPEN, PRODUCTION_APPROVAL_REQUESTED: OPEN, PRODUCTION_APPROVAL_REMINDER: OPEN, LOADING_APPROVAL_OVERRIDE: OPEN, PRODUCTION: OPEN, SHIPPED: OPEN, AUTO_SHIPPED: OPEN, AUTO_SHIP_REVERTED: OPEN, ARCHIVED: OPEN, AUTO_ARCHIVED: OPEN,
   CANCELLED: OPEN, HOLD: OPEN, UNHOLD: OPEN,
   CRATES: OPEN, SHIP_DATE: OPEN, REMOVED: OPEN, RESTORED: OPEN,
   GUEST_HOST: OPEN, GUEST_HOST_REMOVED: OPEN, GUEST_CRATE: OPEN, GUEST_CRATE_REMOVED: OPEN,
@@ -158,22 +158,28 @@ export function orderPeopleView(role, order) {
   if (customerView(role)) {
     o = { ...o, ...('loadingOverrideAt' in o ? { loadingOverrideAt: null, loadingOverrideById: null, loadingOverrideReason: null } : {}), ...('loadingOverrideBy' in o ? { loadingOverrideBy: null } : {}) };
   } else if ('loadingOverrideBy' in o) o = mapKeys(o, ['loadingOverrideBy'], person);
-  // Müşteri üretim onayı (4.2.1): onaylayan / değişiklik isteyen müşteri kullanıcısının kimliği hiçbir istemciye gitmez
-  // (ekran yalnızca zamanı ve notu gösterir); not, e-posta adresi görmeyen role maskeli (olay notuyla aynı kural)
-  if (Array.isArray(o.offers)) {
-    const masked = !can(role, 'CUSTOMER_NAME_VIEW') && !customerView(role);
-    o = {
-      ...o,
-      offers: o.offers.map((x) => ('approvedById' in x || 'changeRequestedById' in x || 'changeNote' in x
-        ? {
-          ...x, approvedById: null, changeRequestedById: null, changeNote: masked && typeof x.changeNote === 'string' ? x.changeNote.replace(EMAIL, '***') : x.changeNote ?? null,
-          // İletim hatası iç bilgidir (4.2.5): müşteri yalnızca iletim anını ve son tarihi görür
-          ...(customerView(role) ? { approvalDeliveryError: null, approvalDeliveryFailedAt: null, approvalDeliveryChannel: null } : {}),
-        }
-        : x)),
-    };
-  }
+  if (Array.isArray(o.offers)) o = { ...o, offers: o.offers.map((x) => offerPeopleView(role, x)) };
   return /** @type {O} */ (o);
+}
+
+/**
+ * Teklif sürümündeki müşteri üretim onayı alanları (4.2.1) — sipariş ayrıntısı (orderPeopleView) ve listeler (lib/orders.ts →
+ * sanitizeRows; satışın "Müşteri Revizyon Bekleyen Teklifler" listesi — 4.2.10) aynı kuraldan geçer: onaylayan / değişiklik
+ * isteyen müşteri kullanıcısının kimliği hiçbir istemciye gitmez (ekran yalnızca zamanı ve notu gösterir); not, e-posta adresi
+ * görmeyen role maskeli (olay notuyla aynı kural); iletim hatası iç bilgidir (4.2.5: müşteri yalnızca iletim anını ve son
+ * tarihi görür). Onay alanı seçilmemiş teklif olduğu gibi döner. Girdi değiştirilmez.
+ * @template {Record<string, any>} X
+ * @param {string | null | undefined} role
+ * @param {X} x
+ * @returns {X}
+ */
+export function offerPeopleView(role, x) {
+  if (!x || typeof x !== 'object' || !('approvedById' in x || 'changeRequestedById' in x || 'changeNote' in x)) return x;
+  const masked = !can(role, 'CUSTOMER_NAME_VIEW') && !customerView(role);
+  return /** @type {X} */ ({
+    ...x, approvedById: null, changeRequestedById: null, changeNote: masked && typeof x.changeNote === 'string' ? x.changeNote.replace(EMAIL, '***') : x.changeNote ?? null,
+    ...(customerView(role) ? { approvalDeliveryError: null, approvalDeliveryFailedAt: null, approvalDeliveryChannel: null } : {}),
+  });
 }
 
 /**

@@ -22,7 +22,7 @@ export default {
   internal: {
     title: 'Teklifler',
     intro: 'Hazırlanan, yönetimde bekleyen ve müşteriye gönderilmiş teklifler.',
-    introSales: 'Fiyatınızı bekleyen teklifler ve teklif tablosu henüz açılmamış siparişler.',
+    introSales: 'Müşterinin revizyon istediği teklifler, fiyatınızı bekleyen teklifler ve teklif tablosu henüz açılmamış siparişler.',
     cols: {
       offer: 'Teklif',
       customer: 'Müşteri',
@@ -34,12 +34,28 @@ export default {
       offerAmount: 'Müşteri tutarı',
     },
   },
+  // Satışın "Müşteri Revizyon Bekleyen Teklifler" listesi (4.2.10, karar 306)
+  revision: {
+    cols: {
+      requested: 'Talep tarihi',
+      note: 'Müşterinin notu',
+      version: 'Sürüm',
+      draft: 'Revizyon',
+    },
+    versionOf: 'Sürüm {n}',
+    stage: {
+      SALES: 'Taslak satışta',
+      NO_DRAFT: 'Taslak açılmadı',
+    },
+    open: 'Aç ve düzenle',
+  },
   // Son teklifin durumuna göre gruplar (HAZIRLANIYOR · YONETIMDE · GONDERILDI)
   groups: {
     sales: { title: 'Satışta hazırlananlar', empty: 'Hazırlanan teklif yok.' },
     admin: { title: 'Yönetici onayında', empty: 'Onay bekleyen teklif yok.' },
     customer: { title: 'Müşteride', empty: 'Müşteriye gönderilmiş aktif teklif yok.' },
-    // Satışın sayfası (karar 155): yalnızca bu iki liste
+    // Satışın sayfası (karar 155; 4.2.10 — karar 306): bu üç liste
+    customerRevision: { title: 'Müşteri Revizyon Bekleyen Teklifler', empty: 'Müşteri revizyonu bekleyen teklif yok.' },
     awaitingPrice: { title: 'Fiyatımı bekleyenler', empty: 'Fiyatınızı bekleyen teklif yok.' },
     notOpened: { title: 'Teklif tablosu açılmamış siparişler', empty: 'Teklif tablosu açılmamış sipariş yok.' },
   },

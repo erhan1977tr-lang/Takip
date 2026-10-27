@@ -175,7 +175,8 @@ test('ölçülerde değişiklik var: açıklama zorunlu; satış düzeltir, yön
   await sales.goto(`/siparisler/${id}`);
   await expect(sales.locator('#uretim-onayi[data-approval-state="CHANGE_REQUESTED"] [data-change-note]')).toHaveText('1. satırın boyu 2100 mm olmalı');
   await sales.getByLabel('Boy', { exact: true }).first().fill('2100');
-  await sales.getByRole('button', { name: 'Teklifi yöneticiye gönder' }).click();
+  // Müşteri revizyonu taslağında gönder düğmesinin adı (4.2.10, karar 306): "Yönetici Onayına Gönder" — işlem aynı (submit_offer)
+  await sales.getByRole('button', { name: 'Yönetici Onayına Gönder' }).click();
   await expect(sales.getByText('Teklif sistem yöneticisinin onayına gönderildi.')).toBeVisible();
   await admin.goto(`/siparisler/${id}`);
   await admin.getByLabel('Müşteri fiyatı').first().fill('50');

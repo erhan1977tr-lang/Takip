@@ -87,6 +87,7 @@ export default {
     destReason: {
       NO_OFFER: 'teklifi henüz açılmamış', CURRENCY: 'para birimi farklı', FINAL_INVOICE: 'nihai fatura kesilmiş', LOADED: 'yükleme onaylanmış',
       ON_HOLD: 'beklemede', CLOSED: 'kapalı', NOT_FUTURE: 'yükleme günü geçmiş', SAME_ORDER: 'kaynak sipariş', OTHER_CUSTOMER: 'başka müşteri', NOT_GLASS: 'cam siparişi değil',
+      REVISION_OPEN: 'müşteri revizyonu açık',
     },
     destNew: 'Yeni telafi siparişi oluştur',
     destNewHint: 'Sipariş numarası kaynak siparişten türer ({no}).',
@@ -109,6 +110,7 @@ export default {
       LOADED: 'Kaynak siparişin yüklemesi onaylanmış: adedi düşürülmez; telafi ek üretim olarak açılır.',
       BILLING: 'Kaynak siparişin belgesi var (proforma / fatura ya da bekleyen belge isteği): adedi düşürülmez; telafi ek üretim olarak açılır.',
       CLOSED: 'Kaynak sipariş kapalı (yüklendi / arşivlendi): adedi düşürülmez; telafi ek üretim olarak açılır.',
+      REVISION: 'Kaynak siparişte müşterinin teklif revizyonu açık: adedi düşürülmez (paralel teklif sürümü açılmaz); telafi ek üretim olarak açılır.',
     },
     sumDest: 'Hedef',
     sumDestNew: 'Yeni telafi siparişi',
@@ -134,6 +136,7 @@ export default {
       LOADED: 'Kaynak siparişin yüklemesi onaylandığı için adedi değişmedi; telafi ek üretim olarak açıldı.',
       BILLING: 'Kaynak siparişin belgesi olduğu için adedi değişmedi; telafi ek üretim olarak açıldı.',
       CLOSED: 'Kaynak sipariş kapalı olduğu için adedi değişmedi; telafi ek üretim olarak açıldı.',
+      REVISION: 'Kaynak siparişte müşterinin teklif revizyonu açık olduğu için adedi değişmedi; telafi ek üretim olarak açıldı.',
       FREE: 'Bedelsiz telafi: kaynak siparişin adedi değişmedi; telafi ayrı ek üretim olarak açıldı.',
       CHANGED: 'Kaynak siparişin teklifi karardan sonra değiştiği için adedi kendiliğinden düşürülmedi; gerekiyorsa kaynak teklifi güncelleyin.',
       PENDING: 'Kaynak siparişin adedi, yönetici kararı onayladığında düşer.',
@@ -174,6 +177,7 @@ export default {
     DEST_NO_OFFER: 'Hedef siparişin teklifi bu işleme uygun değil.',
     DEST_CURRENCY: 'Hedef siparişin para birimi farklı.',
     DEST_FINAL_INVOICE: 'Hedef siparişin nihai faturası (factură finală) kesildi; yeni telafi siparişi oluşturun.',
+    DEST_REVISION_OPEN: 'Hedef siparişte müşterinin teklif revizyonu açık; revizyon tamamlanınca ekleyin ya da yeni telafi siparişi oluşturun.',
   },
   // Siparişi sil / geri yükle (yalnızca yönetici)
   remove: {

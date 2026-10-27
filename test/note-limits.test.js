@@ -447,7 +447,18 @@ test('sınırlar tek yerde, sunucuda: notu yazan tek kod addNote; sıra — hak 
   // retryNoteTranslation, translateRevision — revizyon notu müşterinin aynı çeviri hakkını kullanır, karar 163 —,
   // translateDrawingNote ve retryDrawingTranslation — çizim alanının notları, karar 168)
   // + translateOrderNote (siparişin ilk mesajı — karar 225): müşterinin aynı çeviri hakkı, sahiplenmeden önce
-  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 6);
+  // + translateOfferChange / retryOfferChangeTranslation (müşterinin teklif değişiklik talebi notu — 4.2.10, karar 306):
+  // talebi yazan müşterinin aynı çeviri hakkı / iç ekibin yeniden deneme hakkı, ikisi de sahiplenmeden önce
+  assert.equal((svc.match(/limits = noteLimits/g) ?? []).length, 8);
+  const offerNote = svc.slice(svc.indexOf('export async function translateOfferChange('), svc.indexOf('export async function retryOfferChangeTranslation('));
+  assert.ok(offerNote.indexOf('translateReady(settings)') < offerNote.indexOf('limits.translation(actor, now.getTime())'));
+  assert.ok(offerNote.indexOf('limits.translation(actor, now.getTime())') < offerNote.indexOf("translationStatus: 'PENDING'"));
+  const offerRetry = svc.slice(svc.indexOf('export async function retryOfferChangeTranslation('), svc.indexOf('export async function retryDrawingTranslation('));
+  assert.ok(offerRetry.indexOf('translateReady(settings)') < offerRetry.indexOf('limits.retry(actor, now.getTime())'));
+  assert.ok(offerRetry.indexOf('limits.retry(actor, now.getTime())') < offerRetry.indexOf('db.offer.updateMany('));
+  const approvalActions = strip(read('app/(panel)/siparisler/[id]/approval-actions.ts'));
+  assert.equal(/limits\s*:|createNoteLimits|note-?limits|notes\/limits/i.test(approvalActions), false);
+  assert.ok(approvalActions.includes("r.code === 'RATE_LIMIT' ? 'order.notes.translation.retryLimit'"));
   const first = svc.slice(svc.indexOf('export async function translateOrderNote('), svc.indexOf('export async function translateDrawingNote('));
   assert.ok(first.indexOf('translateReady(settings)') < first.indexOf('limits.translation(actor, now.getTime())'));
   assert.ok(first.indexOf('limits.translation(actor, now.getTime())') < first.indexOf("translationStatus: 'PENDING'"));

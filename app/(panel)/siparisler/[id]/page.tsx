@@ -57,8 +57,9 @@ import { PreviewFor } from '@/components/PreviewFor';
 import { dwgReview, isCustomerDrawingRecord, lastProductionDrawing, sourceFilesOf } from '@/server/orders/dwg-review.js';
 import { dwgUndoCheck, UNDO_REASON_MAX } from '@/server/orders/dwg-undo.js';
 import { approvalDueText, approvalFlags, approvalOverdue, approvalState, CHANGE_NOTE_MAX, OVERRIDE_REASON_MAX } from '@/server/orders/production-approval.js';
+import { customerRevision, revisionStage } from '@/server/orders/offer-revision.js';
 import { approvalGateSetting, loadingApprovalBlocks } from '@/server/orders/loading-approval.js';
-import { approveProductionAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction } from './approval-actions';
+import { approveProductionAction, openRevisionDraftAction, overrideLoadingApprovalAction, requestOfferChangeAction, resendApprovalRequestAction, retryOfferTranslationAction } from './approval-actions';
 
 /** İşlem sonrası bildirim (?ok=<kod>, metni: order.ok.<kod>); bilinmeyen kodda null. */
 function okText(m: Dict, code: string | undefined): string | null {
@@ -182,9 +183,12 @@ export default async function OrderPage({
   const acts = availableActions({
     role: user.appRole, status: order.status, onHold: order.onHold, canApprove: user.canApprove,
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode, approval,
-    ...approvalFlags({ ...order, approvalEnabled: approvalOn }),
+    ...approvalFlags({ ...order, approvalEnabled: approvalOn }), revision: revisionStage(order),
   });
   const can = (a: string) => acts.includes(a);
+  // Açık müşteri teklif revizyonu (4.2.10, karar 306): veriden (server/orders/offer-revision.js). İç ekipte teklif hazırlayan
+  // ya da gönderen (satış, yönetici) görür; müşteri ve denetimci taslağı almaz (sanitizeOrder).
+  const revision = !isCustomer && (userCan(user, 'OFFER_PREPARE') || userCan(user, 'OFFER_SEND')) ? customerRevision(order) : null;
   // Onaysız yükleme engeli (4.2.5): iç ekip için — sunucu "Yükleme yapıldı" ve "Yüklendi"de aynı kuralla reddeder
   const loadingBlock = !isCustomer && order.productionApprovalRequired && approvalOn
     ? (await loadingApprovalBlocks(db, { orderIds: [order.id], setting: approvalSetting }))[0] ?? null
@@ -501,6 +505,11 @@ export default async function OrderPage({
         )}
       </OrderInfo>
 
+      {/* Üretimdeki siparişte teklif revizyonu (4.2.10, karar 306): uyarı satışa ve yöneticiye; hiçbir şeyi engellemez, durumu
+          değiştirmez — fabrika üretimi ve çizimler kendiliğinden değişmez */}
+      {revision && order.status === 'URETIMDE' && (
+        <div className="alert alert-warn" role="note" data-revision-production-warning>{t('order.revision.productionWarning')}</div>
+      )}
       {(editable || updating) && offer && (
         <OfferEditor
           // Sipariş sürümü her işlemde artar: işlemden (kayıt, PDF aktarımı…) sonra düzenleyici kayıtlı satırlarla yeniden kurulur.
@@ -540,11 +549,13 @@ export default async function OrderPage({
           original={order.items.map((it) => ({ description: itemGlassName(it, locale) ?? '', adet: String(Math.max(1, it.camAdedi || 1)) }))}
           pdfImports={pdfImports}
           salesExport={!updating && !can('approve_price') && !userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
+          // Müşteri revizyonu taslağı (4.2.10): satışın gönder düğmesi "Yönetici Onayına Gönder" — akış aynı (submit_offer)
+          revision={!updating && revision?.stage === 'SALES' && revision.draft?.id === offer.id}
         />
       )}
 
       {/* Müşteri üretim onayı (4.2.1) — iç ekip: onay durumu, son tarih, değişiklik talebinin notu (teklif tablosunun üstünde) */}
-      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo order={order} can={can} offer={sent} state={approvalShown} status={order.status} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} t={t} />}
+      {!isCustomer && sent && approvalShown !== 'NONE' && userCan(user, 'OFFER_VIEW') && <ApprovalInfo order={order} user={user} can={can} offer={sent} state={approvalShown} status={order.status} versions={order.offers.length - order.offers.findIndex((o) => o.id === sent.id)} revision={revision} t={t} />}
       {!isCustomer && !drawerView && order.productionApprovalRequired && (loadingBlock || order.loadingOverrideAt) && <LoadingGate order={order} can={can} blocked={!!loadingBlock} t={t} />}
       {shownOffer && (
         <OfferView order={order} offer={shownOffer} isCustomer={isCustomer} finalPrice={finalPrice} versions={sentVersions} updateHref={can('update_offer') && lockedPrice.length === 0 ? updateHref : undefined} t={t} locale={locale} admin={userCan(user, 'OFFER_SEND')} canExport={userCan(user, 'OFFER_EXPORT') || userCan(user, 'OFFER_SEND')} salesExport={!userCan(user, 'OFFER_SEND') && userCan(user, 'OFFER_PREPARE')}
@@ -757,15 +768,38 @@ function CustomerApproval({ order, user, can, offer, state, t }: { order: OrderD
   );
 }
 
-/** İç ekip: müşteri üretim onayının durumu (4.2.1) — salt bilgi; karar müşterinindir */
-function ApprovalInfo({ order, can, offer, state, status, versions, t }: { order: OrderDetail; can: (a: string) => boolean; offer: OrderDetail['offers'][number]; state: string; status: string; versions: number; t: T }) {
+/**
+ * İç ekip: müşteri üretim onayının durumu (4.2.1) — salt bilgi; karar müşterinindir. Değişiklik talebinde müşterinin notu
+ * saklanan Türkçe çevirisiyle (4.2.10 — çeviri sunucuda role göre temizlenmiş: denetimci yalnızca özgün notu alır), çeviri
+ * başarısızsa teklif hazırlayan iç ekibe "Çeviriyi yeniden dene"; eski talebin taslağı açılmamışsa (ör. ALE81) "Revizyon
+ * taslağını aç" (open_revision_draft — yetki ve koşul sunucuda).
+ */
+function ApprovalInfo({ order, user, can, offer, state, status, versions, revision, t }: { order: OrderDetail; user: CurrentUser; can: (a: string) => boolean; offer: OrderDetail['offers'][number]; state: string; status: string; versions: number; revision: ReturnType<typeof customerRevision>; t: T }) {
   if (state === 'APPROVED') return <div className="alert alert-ok" id="uretim-onayi" data-approval-state="APPROVED">{t('order.approval.staffApproved', { date: fmtDateTime(offer.approvedAt), n: versions })}</div>;
   if (state === 'CHANGE_REQUESTED') {
+    const retry = userCan(user, 'OFFER_PREPARE') ? (
+      <form action={retryOfferTranslationAction}>
+        <input type="hidden" name="id" value={order.id} />
+        <input type="hidden" name="offerId" value={offer.id} />
+        <button className="btn btn-link">{t('order.notes.translation.retry')}</button>
+      </form>
+    ) : undefined;
+    const next = revision?.stage === 'ADMIN' ? 'order.revision.atAdmin'
+      : revision?.stage === 'NO_DRAFT' ? 'order.revision.noDraft'
+        : status === 'URETIMDE' ? 'order.approval.staffChangeNextProduction' : 'order.approval.staffChangeNext';
     return (
-      <div className="alert alert-warn" id="uretim-onayi" data-approval-state="CHANGE_REQUESTED">
+      <div className="alert alert-warn" id="uretim-onayi" data-approval-state="CHANGE_REQUESTED" data-revision-stage={revision?.stage ?? ''}>
         <b>{t('order.approval.staffChange', { n: versions, date: fmtDateTime(offer.changeRequestedAt) })}</b>
-        {offer.changeNote && <div className="note" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }} data-change-note>{offer.changeNote}</div>}
-        <div className="small" style={{ marginTop: 6 }}>{status === 'URETIMDE' ? t('order.approval.staffChangeNextProduction') : t('order.approval.staffChangeNext')}</div>
+        {offer.changeNote && <div className="note" style={{ marginTop: 6 }} data-change-note><RevisionNote r={{ ...offer, comment: offer.changeNote }} role={user.appRole} t={t} retry={retry} plain /></div>}
+        <div className="small" style={{ marginTop: 6 }}>{t(next)}</div>
+        {can('open_revision_draft') && (
+          <form action={openRevisionDraftAction} style={{ marginTop: 8 }}>
+            <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="offerId" value={offer.id} />
+            <input type="hidden" name="v" value={order.version} />
+            <ConfirmButton message={t('order.revision.openConfirm', { n: versions })}>{t('order.revision.open')}</ConfirmButton>
+          </form>
+        )}
       </div>
     );
   }

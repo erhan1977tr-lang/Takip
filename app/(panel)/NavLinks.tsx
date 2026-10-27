@@ -37,12 +37,14 @@ export function NavLinks({ items, variant }: { items: NavItem[]; variant: 'side'
     // Telefonda bölüm adı yok: bölüm sayacı bölümün bağlantısında (mobileCount)
     const section = variant === 'mobile' ? it.mobileCount ?? 0 : 0;
     return (
-      <Link key={it.href} href={it.href} className={active ? 'active' : undefined} title={it.count || section ? it.countLabel : undefined}>
+      <Link key={it.href} href={it.href} className={active ? 'active' : undefined} title={it.count || section || it.linkCount ? it.countLabel : undefined}>
         {it.label}
         {/* Okunmamış sipariş mesajları (karar 199) — sayı sunucuda hesaplanır; bağlantının adı değişmez (açıklama title'da) */}
         {it.count ? <span className="msg-count" data-nav-unread={it.count} aria-hidden="true">{num(it.count)}</span> : null}
         {/* Bölüm sayacı telefonda (karar 216): bağlantının adı değişmez — açıklama title'da (karar 199 ile aynı) */}
         {section ? <span className="msg-count" data-nav-count={section} aria-hidden="true">{num(section)}</span> : null}
+        {/* Bağlantı sayacı (4.2.10 — satışta bekleyen müşteri teklif revizyonları): yan menüde ve telefonda; açıklama title'da */}
+        {it.linkCount ? <span className="msg-count" data-nav-count={it.linkCount} data-nav-link-count={it.linkCount} aria-hidden="true">{num(it.linkCount)}</span> : null}
       </Link>
     );
   });

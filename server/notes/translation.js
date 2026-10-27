@@ -20,12 +20,13 @@ import { TranslateError, translatorFor } from './provider.js';
 import { TRANSLATION_RATE_LIMITED, noteLimits } from './limits.js';
 
 // Saf kurallar (yön, görünürlük, durum) server/notes/view.js'tedir: sipariş sayfası yalnızca onu yükler — sağlayıcıya
-// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki altı işlevden çağrılır: addNote (yeni not), retryNoteTranslation
+// (Google) giden kod bu dosyadadır ve yalnızca aşağıdaki işlevlerden çağrılır: addNote (yeni not), retryNoteTranslation
 // (iç ekibin açık isteği), translateRevision (yeni revizyon notu: müşterinin talebi — karar 163 — ya da çizimcinin "hatalı"
-// açıklaması — karar 168), translateDrawingNote (müşteriye gönderilen çizim sürümünün notu — karar 168),
-// retryDrawingTranslation (revizyon / sürüm notunda iç ekibin açık "yeniden dene" isteği — karar 168), testTranslation
-// (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
-export { STALE_PENDING_MS, canRetryTranslation, drawingNoteView, noteView, notesFor, revisionView, translationState, translationTarget } from './view.js';
+// açıklaması — karar 168), translateOrderNote (siparişin ilk mesajı — karar 225), translateDrawingNote (müşteriye gönderilen
+// çizim sürümünün notu — karar 168), retryDrawingTranslation (revizyon / sürüm notunda iç ekibin açık "yeniden dene" isteği
+// — karar 168), translateOfferChange (müşterinin teklif değişiklik talebi notu — 4.2.10, karar 306), retryOfferChangeTranslation
+// (o notta iç ekibin açık "yeniden dene" isteği), testTranslation (yöneticinin "Bağlantıyı dene" düğmesi; not okumaz).
+export { STALE_PENDING_MS, canRetryTranslation, drawingNoteView, noteView, notesFor, offerChangeView, revisionView, translationState, translationTarget } from './view.js';
 
 export const TRANSLATE_KEY = 'translate';
 const SECRET_PURPOSE = 'translate-key';
@@ -94,8 +95,11 @@ export async function saveTranslateSettings(db, { enabled }, { key = '', clearKe
 // ---------- çeviri ----------
 const norm = (s) => String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 
-/** Çevirinin yazıldığı tablolar: sipariş notu, revizyon notu (karar 163, 168), çizim sürümünün müşteri notu (karar 168) */
-const TABLES = Object.freeze(['orderNote', 'drawingRevision', 'drawing']);
+/**
+ * Çevirinin yazıldığı tablolar: sipariş notu, revizyon notu (karar 163, 168), çizim sürümünün müşteri notu (karar 168),
+ * teklif sürümünün müşteri değişiklik talebi notu (Offer.changeNote — 4.2.10, karar 306)
+ */
+const TABLES = Object.freeze(['orderNote', 'drawingRevision', 'drawing', 'offer']);
 
 /**
  * "Sürüyor" durumundaki notu çevirir ve sonucu yazar. HİÇBİR ZAMAN hata fırlatmaz (not zaten kayıtlıdır).
@@ -401,6 +405,106 @@ export async function translateDrawingNote(db, { drawingId, orderId, actor, now 
   const status = await runTranslation(db, { id: drawing.id, text: drawing.noteCustomer, translationLang: target }, {
     settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'drawing',
   });
+  return { ok: true, translation: status };
+}
+
+/**
+ * Teklif değişiklik talebinin notu (Offer.changeNote) her zaman MÜŞTERİNİN yazdığı nottur ("Ölçülerde değişiklik var" —
+ * request_offer_change yalnızca müşterinin işlemidir): çeviri yönü yazanın rolünden → Türkçe (karar 127).
+ */
+const OFFER_CHANGE_TARGET = translationTarget('MUSTERI');
+
+/**
+ * Müşterinin teklif değişiklik talebi notunu (Offer.changeNote) BİR KEZ Türkçeye çevirir ve talepli sürümün satırına yazar
+ * (4.2.10, karar 306 — ürün sahibinin kararı: "Romence revizyon notları otomatik Türkçeye çevrilsin; ALE81 dahil eski açık
+ * revizyon notları, revizyon taslağı açılırken bir kez çevrilsin"). İki çağıran, ikisi de İŞLEM KAYDEDİLDİKTEN SONRA:
+ *   - talebi yazan müşteri: request_offer_change'ten hemen sonra (yalnızca kendi talebi — changeRequestedById)
+ *   - satış / yönetici (OFFER_PREPARE): eski talep için "Revizyon taslağını aç"tan (open_revision_draft) hemen sonra —
+ *     4.2.10'dan önce alınmış, hiç çevrilmemiş not (karar 128'e ürün sahibinin açık istisnası; sayfa açılışı yine çevirmez)
+ * Kural sipariş notuyla aynıdır: özgün not değişmez, sonuç aynı satıra yazılır; sahiplenme tek koşullu güncellemedir
+ * (translationStatus boş) — iki istek / yeniden gönderim aynı notu iki kez çevirmez; çeviri hatası talebi / taslağı bozmaz
+ * (FAILED + güvenli kod; iç ekip "yeniden dene" ile ister). Kapsam dışı sipariş / başkasının talebi: NOT_FOUND.
+ * Görünürlük (server/notes/view.js → offerChangeView): yönetici, yardımcısı ve satış özgün + Türkçe; müşteri ve denetimci
+ * yalnızca özgün.
+ * @param {any} db
+ * @param {{ offerId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null }, now?: Date,
+ *   translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' | null } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_ALLOWED' }>}
+ */
+export async function translateOfferChange(db, { offerId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  const author = actor?.role === 'MUSTERI';
+  if (!author && !can(actor?.role, 'OFFER_PREPARE')) return { ok: false, code: 'FORBIDDEN' };
+  const offer = await db.offer.findFirst({
+    where: {
+      id: String(offerId ?? ''), orderId: String(orderId ?? ''), status: 'GONDERILDI', changeRequestedAt: { not: null }, changeNote: { not: null },
+      translationStatus: null, ...(author ? { changeRequestedById: String(actor.id ?? '') } : {}),
+      order: orderScope({ appRole: actor.role, customerId: actor.customerId }),
+    },
+    select: { id: true, changeNote: true },
+  });
+  if (!offer?.changeNote?.trim()) return { ok: false, code: 'NOT_FOUND' };
+  let settings = null;
+  try {
+    settings = await readSettings(db);
+  } catch {
+    settings = null; // ayar okunamadıysa not çevirisiz kalır (talep zaten kayıtlıdır)
+  }
+  // Çeviri kapalı / anahtarsız: nota çeviri alanı yazılmaz (sipariş notundaki gibi)
+  if (!translateReady(settings)) return { ok: true, translation: null };
+  // Çeviri hakkı (sağlayıcı çağrısı) sahiplenmeden önce tek adımda alınır; hak yoksa sağlayıcı çağrılmaz
+  if (!limits.translation(actor, now.getTime())) {
+    await db.offer.updateMany({
+      where: { id: offer.id, translationStatus: null },
+      data: { translationLang: OFFER_CHANGE_TARGET, translationStatus: 'FAILED', translationError: TRANSLATION_RATE_LIMITED, translationAt: now },
+    });
+    return { ok: true, translation: 'FAILED' };
+  }
+  const claimed = await db.offer.updateMany({
+    where: { id: offer.id, translationStatus: null },
+    data: { translationLang: OFFER_CHANGE_TARGET, translationStatus: 'PENDING', translationAt: now },
+  });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: offer.id, text: offer.changeNote, translationLang: OFFER_CHANGE_TARGET }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'offer',
+  });
+  return { ok: true, translation: status };
+}
+
+/**
+ * Teklif değişiklik talebi notunun çevrilemeyen (ya da yarıda kalan) çevirisini BİR KEZ daha ister (4.2.10) — yalnızca
+ * teklif hazırlayan iç ekip (satış, yönetici, yardımcısı), açıkça istediğinde. Sipariş notundaki "yeniden dene" ile aynı kural:
+ * yalnızca çevirisi denenmiş ve BAŞARISIZ (ya da yarıda kalmış "sürüyor") not; tamamlanmış çeviri yeniden yapılmaz; iki istek
+ * aynı anda gelirse yalnızca biri sahiplenir; "yeniden dene" hakkı doluysa RATE_LIMIT (not sahiplenilmez, sağlayıcı
+ * çağrılmaz). Denetim kaydı: OFFER_TRANSLATION_RETRY.
+ * @param {any} db
+ * @param {{ offerId: string, orderId: string, actor: { id: string, role: string, customerId?: string | null, ip?: string | null },
+ *   now?: Date, translator?: Function, secret?: string, limits?: ReturnType<typeof import('./limits.js').createNoteLimits> }} o
+ * @returns {Promise<{ ok: true, translation: 'DONE' | 'SAME' | 'FAILED' } | { ok: false, code: 'FORBIDDEN' | 'NOT_FOUND' | 'DISABLED' | 'RATE_LIMIT' | 'NOT_ALLOWED' }>}
+ */
+export async function retryOfferChangeTranslation(db, { offerId, orderId, actor, now = new Date(), translator = undefined, secret = undefined, limits = noteLimits }) {
+  if (!canRetryTranslation(actor?.role) || !can(actor?.role, 'OFFER_PREPARE')) return { ok: false, code: 'FORBIDDEN' };
+  const row = await db.offer.findFirst({
+    where: { id: String(offerId ?? ''), orderId: String(orderId ?? ''), changeNote: { not: null }, order: orderScope({ appRole: actor.role, customerId: actor.customerId }) },
+    select: { id: true, changeNote: true, translationLang: true, translationStatus: true, translationError: true },
+  });
+  if (!row?.changeNote?.trim()) return { ok: false, code: 'NOT_FOUND' };
+  const settings = await readSettings(db);
+  if (!translateReady(settings)) return { ok: false, code: 'DISABLED' };
+  // Sağlayıcı çağrısı hakkı, not sahiplenilmeden ÖNCE tek adımda alınır: hak yoksa nota dokunulmaz
+  if (!limits.retry(actor, now.getTime())) return { ok: false, code: 'RATE_LIMIT' };
+  const stale = new Date(now.getTime() - STALE_PENDING_MS);
+  const claimed = await db.offer.updateMany({
+    where: { id: row.id, translationLang: { not: null }, OR: [{ translationStatus: 'FAILED' }, { translationStatus: 'PENDING', translationAt: { lt: stale } }] },
+    data: { translationStatus: 'PENDING', translationError: null, translationAt: now },
+  });
+  if (claimed.count !== 1) return { ok: false, code: 'NOT_ALLOWED' };
+  const status = await runTranslation(db, { id: row.id, text: row.changeNote, translationLang: row.translationLang }, {
+    settings, secret: secret ?? getEnv().AUTH_SECRET, translator: translator ?? translatorFor(), now, table: 'offer',
+  });
+  await writeAudit(db, {
+    action: 'OFFER_TRANSLATION_RETRY', entityType: 'Offer', entityId: row.id, userId: actor.id,
+    details: { orderId: String(orderId), lang: row.translationLang, before: row.translationStatus, beforeError: row.translationError, result: status },
+  }, actor).catch(() => {});
   return { ok: true, translation: status };
 }
 
