@@ -345,6 +345,18 @@ export default {
       fake: "MOD DE TEST: furnizorul fals de traducere este activ (TRANSLATE_FAKE=1). Notele nu sunt traduse cu adevărat și nu se trimit cereri la Google. Această setare nu trebuie să existe pe serverul real.",
     },
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
+    // Aprobarea producției de către client (4.2.1)
+    productionApproval: {
+      title: "Aprobarea producției de către client",
+      intro: "Când este activă, pentru comenzile de sticlă cu data de încărcare planificată în ziua limită sau după, fiecare versiune a ofertei trimise clientului așteaptă aprobarea clientului „Aprob intrarea în producție” (termen: 2 zile lucrătoare în România de la transmiterea solicitării către client; un memento). Comanda în pregătire nu intră în producție fără aprobare; starea comenzii aflate în producție nu se modifică, aprobarea este urmărită separat. Comanda inclusă nu poate fi încărcată fără aprobare (nici dacă data de încărcare se schimbă) — doar administratorul acordă o excepție motivată în pagina comenzii. Schimbarea datei de încărcare nu anulează aprobarea.",
+      enabled: "Solicită aprobarea clientului pentru producție",
+      cutoff: "Ziua limită (încărcare planificată în această zi sau după)",
+      badCutoff: "Ziua limită nu este validă; alegeți o zi în formatul AAAA-LL-ZZ.",
+      on: "Activă — comenzile noi cu încărcare de la ziua limită sunt incluse",
+      off: "Inactivă — regula veche (intrare în producție când oferta ajunge la client)",
+      hint: "Setarea stabilește comenzile noi (o singură dată, la creare). Comenzile EXISTENTE nu se modifică prin acest buton: sunt incluse pe server printr-o operațiune de tranziție cu previzualizare și cod de confirmare. OPRIRE DE URGENȚĂ: la dezactivare revine fluxul din 4.2.0 — obligația de aprobare, blocarea intrării în producție și a încărcării, solicitările noi și mementourile se opresc; comanda în așteptare intră în producție la următoarea operațiune, după regula obișnuită. Aprobările date și jurnalul de audit nu se șterg; la reactivare nu se creează automat solicitări. Regulile proformei și ale altor documente nu se modifică.",
+      saved: "Setarea aprobării producției a fost salvată.",
+    },
     accounting: {
       title: "Avertizare comenzi nefacturate după încărcare",
       days: "Număr de zile după înregistrarea „Încărcare efectuată”",

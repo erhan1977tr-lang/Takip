@@ -18,6 +18,8 @@ import { translate } from '../i18n/index.js';
 import { orderSalesUsers } from './email.js';
 import { DOC_EMAIL } from '../documents/delivery.js';
 import { GUEST_ASSIGNED, GUEST_REMOVED } from '../loading/crates.js';
+import { approvalDueText } from '../orders/production-approval.js';
+import { approvalGateSetting } from '../orders/loading-approval.js';
 
 const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
 /** Alıcı kümeleri → roller (yetkiden türetilir) */
@@ -83,6 +85,14 @@ export const INAPP_RULES = {
   ORDER_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_OFFER_UPDATED: { to: () => ['customer'], link: orderPart('teklif') },
   ORDER_PROFILE_OFFER_SENT: { to: () => ['customer'], link: orderPart('teklif') },
+  // Müşteri üretim onayı (4.2.1): müşterinin onayı ve "ölçülerde değişiklik var" talebi → yöneticiye + siparişin satışçısına
+  // (orderSales: siparişi çizime gönderen / teklifi hazırlayan satış kullanıcısı; bilinmiyorsa satış ekibi). E-posta yok.
+  ORDER_PRODUCTION_APPROVED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
+  // Mevcut siparişin geçişte açılan onay talebi (karar 305): yalnızca müşteriye, onay kartına
+  ORDER_PRODUCTION_APPROVAL_REQUESTED: { to: () => ['customer'], link: orderPart('uretim-onayi') },
+  // Onay bekleyen müşteriye tek hatırlatma (4.2.5; production-approval-service.js → remindApprovalCustomers)
+  ORDER_PRODUCTION_APPROVAL_REMINDER: { to: () => ['customer'], link: orderPart('uretim-onayi') },
+  ORDER_OFFER_CHANGE_REQUESTED: { to: () => ['admin', 'orderSales'], link: orderPart('teklif') },
   ORDER_PROFILE_APPROVED: { to: () => ['admin'] },
   ORDER_PROFORMA: { to: () => ['customer'] },
   ORDER_INVOICED: { to: () => ['customer'] },
@@ -112,6 +122,7 @@ export const DOC_NOTICE = { PROFORMA: 'DOC_PROFORMA', ADVANCE: 'DOC_ADVANCE', IN
 
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const dmy = (day) => (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}/.test(day) ? day.slice(0, 10).split('-').reverse().join('.') : '');
+
 const USER = { id: true, appRole: true };
 
 /**
@@ -162,6 +173,15 @@ export function renderInApp(locale, n) {
   const customer = p.aud === 'customer';
   const type = n.type ?? '';
   let title = n.message || type;
+  // Müşteri üretim onayı (4.2.1): teklif gönderildi / güncellendi ve onay bekleniyor → "Üretim onayınız bekleniyor" + son tarih
+  // 4.2.5: talep bildiriminde son tarih yoktur (süre talep iletildiğinde başlar — e-postada ve sipariş sayfasında yazar);
+  // hatırlatmada saklanan son tarih yazılır
+  const reminder = type === 'ORDER_PRODUCTION_APPROVAL_REMINDER';
+  if (customer && p.approval && (reminder || type === 'ORDER_OFFER_SENT' || type === 'ORDER_OFFER_UPDATED' || type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED')) {
+    const order = p.orderNo ? t('notifications.order', { orderNo: p.orderNo }) : '';
+    const due = typeof p.due !== 'string' ? '' : p.due ? t('notifications.productionApproval.due', { due: p.due }) : t('notifications.productionApproval.noDue');
+    return { title: t(reminder ? 'notifications.productionApproval.reminder' : 'notifications.productionApproval.customer'), body: [order, due].filter(Boolean).join(' · ') };
+  }
   const own = `notifications.types.${type}.${customer ? 'customer' : 'title'}`;
   if (type && has(own)) title = t(own);
   else if (type && has(`notifications.types.${type}.title`)) title = t(`notifications.types.${type}.title`);
@@ -219,7 +239,14 @@ async function fanOut(db, row) {
   const order = row.orderId ? await db.order.findUnique({ where: { id: row.orderId }, select: ORDER }) : null;
   // Silinmiş siparişin (karar 110) kuyrukta kalmış olayı bildirime dönüşmez
   if (!rule || !order || order.removedAt) return 0;
-  const payload = obj(row.payload);
+  let payload = obj(row.payload);
+  // Müşteri üretim onayı ayarı kapalıyken (acil durdurma anahtarı, 4.2.6): onay talebi / hatırlatma bildirimi yazılmaz; teklif
+  // bildirimi onay bilgisi olmadan (4.2.0 metni) yazılır
+  if (payload.approval && typeof payload.approval === 'object' && !(await approvalGateSetting(db)).enabled) {
+    if (row.type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || row.type === 'ORDER_PRODUCTION_APPROVAL_REMINDER') return 0;
+    payload = { ...payload };
+    delete payload.approval;
+  }
   const users = await recipientsOf(db, rule.to(order, payload), order, { actorId: rule.includeActor ? null : payload.actorId ?? null });
   // Bu olayın geçersiz kıldığı önceki bildirimler (ör. geri alınan teklifin "yöneticiye gönderildi"si): aynı siparişin,
   // bu alıcıların okunmamış satırları okunmuş sayılır. Olaylar sırayla dağıtıldığından sonraki yeni gönderim etkilenmez.
@@ -235,6 +262,9 @@ async function fanOut(db, row) {
     ...(payload.from && /^\d{4}-/.test(String(payload.from)) ? { from: String(payload.from) } : {}),
     ...(payload.qty != null ? { qty: Number(payload.qty) } : {}),
     ...(payload.ref ? { ref: String(payload.ref) } : {}),
+    // Müşteri üretim onayı (4.2.1): onay bekleyen sürüm (son tarih Romanya saatiyle; hesaplanamadıysa boş)
+    ...(payload.approval && typeof payload.approval === 'object'
+      ? { approval: 1, ...('due' in payload.approval ? { due: approvalDueText(payload.approval.due) ?? '' } : {}) } : {}),
   };
   return createNotifications(db, {
     key: `outbox:${row.id}`, type: row.type, users, orderId: order.id, orderNo: order.orderNo, firmName: order.customer?.name ?? null,

@@ -24,6 +24,9 @@ import { moveOrderCrates } from '../loading/crates.js';
 import { dayKey } from './loading.js';
 import { confirmedShipDay, shipDateLocked } from './ship-date.js';
 import { applyImports } from './pdf-import/service.js';
+import { approvalFlags, approvalOnSend, approvalState, changeNote, overrideReason } from './production-approval.js';
+import { APPROVAL_REQUEST_TYPES } from './production-approval-delivery.js';
+import { approvalGateSetting, loadingApprovalBlocks } from './loading-approval.js';
 
 export { WorkflowError };
 
@@ -36,6 +39,11 @@ const INCLUDE = {
 };
 
 const latestOffer = (o) => o.offers[0] ?? null;
+/**
+ * Müşteri üretim onayı durumu (4.2.1): siparişin bayrağı + en son teklif sürümü (production-approval.js → approvalState).
+ * o.approvalEnabled: özellik ayarı — siparişi yükleyen (executeAction → loadOrder) yazar; kapalıyken NONE (acil durdurma, 4.2.6).
+ */
+const approvalOf = (o) => approvalState({ required: o.productionApprovalRequired, status: o.status, offer: latestOffer(o), enabled: o.approvalEnabled === true });
 
 /** İşlem → izin veren iş akışı eylemleri (server/orders/rules.js → availableActions) */
 export const REQUIRES = {
@@ -75,6 +83,12 @@ export const REQUIRES = {
   check_offer: ['update_offer'],
   // Fabrika PDF'i aktarımı (karar 255): teklif tablosunu düzenleyebilen (satış taslağı / yöneticinin fiyat onayı)
   import_offer_pdf: ['edit_offer', 'approve_price'],
+  // Müşteri üretim onayı (4.2.1): en son gönderilen teklif sürümünü onayla / değişiklik iste
+  approve_production: ['approve_production'],
+  request_offer_change: ['request_offer_change'],
+  // Onaysız yükleme engeli (4.2.5): yöneticinin gerekçeli istisnası; iletilemeyen onay talebinin yeniden gönderimi
+  override_loading_approval: ['override_loading_approval'],
+  resend_approval_request: ['resend_approval_request'],
 };
 
 /** Cam siparişi akışı: bir işlemin geçerli olup olmadığı tüm hatların (çizim, teklif, bekleme) durumuna bakar. */
@@ -96,7 +110,8 @@ export const glassWorkflow = {
     const o = ctx.order;
     const acts = availableActions({
       role: actor.role, status: o.status, onHold: o.onHold, canApprove: !!actor.canApprove,
-      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o), orderType,
+      drawing: o.drawingTrack, offer: latestOffer(o)?.status ?? null, ...drawingFlags(o), orderType, approval: approvalOf(o),
+      ...approvalFlags(o, ctx.now ?? new Date()),
     });
     return need.some((a) => acts.includes(a)) ? { ok: true, to: null } : { ok: false, code: 'NOT_ALLOWED' };
   },
@@ -128,7 +143,11 @@ export async function autoProduction(tx, orderId) {
     where: { id: orderId },
     include: { offers: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
-  if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null })) return null;
+  // Müşteri üretim onayı (4.2.1): kapsamdaki siparişte en son gönderilen sürüm onaylanmadıysa üretime geçilmez. Özellik
+  // kapalıyken (acil durdurma, 4.2.6) bu koşul yoktur — 4.2.0 kuralı
+  const enabled = o.productionApprovalRequired ? (await approvalGateSetting(tx)).enabled : false;
+  const approval = approvalState({ required: o.productionApprovalRequired, status: o.status, offer: o.offers[0] ?? null, enabled });
+  if (!shouldAutoProduce({ status: o.status, onHold: o.onHold, drawing: o.drawingTrack, offer: o.offers[0]?.status ?? null, approval })) return null;
   await tx.order.update({ where: { id: orderId }, data: { status: 'URETIMDE', slaDeadline: null } });
   // Not bir koddur; ekranda events.PRODUCTION.<kod> olarak çevrilir
   return { event: 'PRODUCTION', from: o.status, to: 'URETIMDE', note: o.drawingTrack === 'YOK' ? 'no_drawing' : 'drawing_approved' };
@@ -395,6 +414,13 @@ async function offerEdit(h, intent) {
   const offer = latestOffer(order);
   if (!offer) throw new WorkflowError('OFFER_NOT_FOUND');
   const admin = can(actor.role, 'OFFER_SEND');
+  // Müşterinin değişiklik talebiyle açılan yeni sürüm (4.2.1): siparişin daha önce müşteriye gönderilmiş sürümü var — yeni
+  // fiyatın müşteriye gitmesi müşterideki teklifin güncellenmesidir; update_offer ile aynı mali kilit, aynı danışma
+  // kilitleri altında (ACTION_LOCKS.approve_offer). Önceden gönderilmiş sürümü olmayan siparişte eski davranış aynen.
+  if (intent === 'approve' && resent(order)) {
+    const locked = await priceLock(tx, order.id);
+    if (locked.length) throw new WorkflowError('PRICE_LOCKED', { reasons: locked });
+  }
   requireOwnedOps(payload.lines);
   // Sandık bedeli yalnızca yöneticinindir (Paket 4): satışın kaydı yöneticinin sandık satırını korur, yenisini açamaz
   const input = admin ? { lines: adminInput(payload.lines, offer.lines), kept: [] } : salesInput(payload.lines, offer.lines);
@@ -430,14 +456,17 @@ async function offerEdit(h, intent) {
     if (ov.changed) h.outbox.push(outboxEvent('ORDER_PRICE_OVERRIDE', { orderId: order.id, payload: { actorId: actor.id ?? null, alertId: ov.alertId, qty: ov.count } }));
   } else if (intent === 'approve') {
     requireOfferPrices(saved);
-    await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now, offerAmount } });
+    // Müşteri üretim onayı (4.2.1): kapsamdaki siparişte gönderilen sürüm onay bekler; süre talep müşteriye iletilince başlar
+    const approval = approvalOnSend(order, now, offer.id);
+    await tx.offer.update({ where: { id: offer.id }, data: { status: 'GONDERILDI', statusSince: now, sentAt: now, offerAmount, ...(approval.data ?? {}) } });
     await tx.price.upsert({
       where: { orderId: order.id },
       create: { orderId: order.id, amount: offerAmount, setById: actor.id },
       update: { amount: offerAmount, setById: actor.id, setAt: now },
     });
     // Olay notunda tutar yok: geçmişi satış da görür, müşteri fiyatını görmemeli (tutarlar denetim kaydında)
-    h.event('OFFER_SENT');
+    h.event('OFFER_SENT', null, approval.event ?? undefined);
+    if (approval.event) h.approval = true;
     h.auto = true;
     h.compensationPrices = await recordCompensationPrices(tx, saved);
   } else if (intent === 'return') {
@@ -454,8 +483,14 @@ async function offerEdit(h, intent) {
     offerId: offer.id, intent, amount, ...(admin || intent === 'submit' ? { offerAmount } : {}), lines: saved.length, ...(h.overrides ? { priceOverrides: h.overrides } : {}),
     ...(priceChange ? { priceChange } : {}),
     ...(h.compensationPrices?.length ? { compensationPrices: h.compensationPrices } : {}),
+    ...(h.approval ? { approvalRequested: true } : {}),
   };
 }
+
+/** Siparişin en son sürümünden önce müşteriye gönderilmiş bir sürümü var mı (değişiklik talebinden sonra yeniden gönderim) */
+const resent = (order) => order.offers.slice(1).some((o) => o.status === 'GONDERILDI');
+/** Teklifin sürüm numarası: siparişin o sürüme kadar açılmış teklif sayısı (offers en yeniden eskiye sıralı) */
+const revisionOf = (order, offer) => order.offers.length - order.offers.findIndex((o) => o.id === offer.id);
 
 /**
  * Müşterinin DWG/DXF çizimi için çizimci kararını kaydeder (karar 167) — üç kararın ortak gövdesi. Kural tek yerde:
@@ -632,6 +667,13 @@ const ACTIONS = {
    */
   async mark_shipped(h) {
     const confirmed = await confirmedShipDay(h.tx, h.order.id);
+    // Onaysız yükleme engeli (4.2.5 / 4.2.6): onaylı yüklemesi olmayan kapsamdaki (bayraklı) sipariş, müşteri üretim onayı ya
+    // da yöneticinin istisnası olmadan "Yüklendi" yapılamaz — yükleme tarihi değiştirilerek aşılamaz. Onaylı yüklemede engel
+    // zaten "Yükleme yapıldı"da uygulandı.
+    if (!confirmed) {
+      const blocked = await loadingApprovalBlocks(h.tx, { orderIds: [h.order.id] });
+      if (blocked.length) throw new WorkflowError('LOADING_APPROVAL_REQUIRED', { reason: blocked[0].reason });
+    }
     await h.set({ status: 'YUKLENDI', actualShipDate: confirmed ?? h.now });
     if (confirmed) h.audit = { confirmedDay: dayKey(confirmed), cratesKept: true };
     else await followCrates(h, h.now);
@@ -941,14 +983,17 @@ const ACTIONS = {
     const lines = assignPieceBases(mergePrices(await completeLines(h, prev, adminInput(payload.lines, prev.lines)), prev.lines, true));
     requireOfferPrices(lines);
     const { amount, offerAmount } = amounts(lines);
+    // Müşteri üretim onayı (4.2.1): kapsamdaki siparişte yeni sürüm yeniden onay bekler; süre yeni talep iletilince başlar
+    const approvalData = approvalOnSend(order, now, null).data;
     // Müşteriye gitmiş teklif değişmez: yeni sürüm açılır ve hemen müşteriye gönderilmiş sayılır
     const created = await tx.offer.create({
       data: {
         orderId: order.id, createdById: actor.id, currency: prev.currency, amount, offerAmount, priceTableId: prev.priceTableId ?? null,
-        status: 'GONDERILDI', statusSince: now, sentAt: now,
+        status: 'GONDERILDI', statusSince: now, sentAt: now, ...(approvalData ?? {}),
         lines: { create: lines.map((l, i) => lineData(l, i)) },
       },
     });
+    const approval = approvalOnSend(order, now, created.id);
     await tx.price.upsert({
       where: { orderId: order.id },
       create: { orderId: order.id, amount: offerAmount, setById: actor.id },
@@ -957,14 +1002,123 @@ const ACTIONS = {
     if (payload.labels) await h.set(payload.labels);
     const from = prev.offerAmount != null ? Number(prev.offerAmount).toFixed(2) : Number(prev.amount).toFixed(2);
     // Olay notu yalnızca yöneticinin açıklaması (tutarlar denetim kaydında; satış müşteri fiyatını görmez)
-    h.event('OFFER_UPDATED', payload.note || null);
+    h.event('OFFER_UPDATED', payload.note || null, approval.event ?? undefined);
     const compensationPrices = await recordCompensationPrices(tx, lines);
     // Satır satır eski → yeni müşteri fiyatı, yeni sürümün numarasıyla (Paket 4)
     const priceChange = await recordPriceChange(h, { offerId: created.id, intent: 'update', sent: true, currency: prev.currency, before: prev.lines, after: lines });
     h.audit = {
       offerId: created.id, from, offerAmount, amount, lines: lines.length, ...(compensationPrices.length ? { compensationPrices } : {}),
       ...(priceChange ? { priceChange } : {}),
+      ...(approval.event ? { approvalRequested: true } : {}),
     };
+  },
+  /**
+   * Müşteri üretim onayı (4.2.1): "Üretime alınmasını onaylıyorum". Yalnızca en son gönderilen ve henüz karara bağlanmamış
+   * sürüm (ekranda görülen sürüm — offerId) onaylanır; eski sürüm onaylanamaz. Koşullu güncelleme: aynı sürüm ikinci kez
+   * onaylanamaz (çift tıklama / iki sekme). Onay zamanı, onaylayan müşteri kullanıcısı ve sürüm kaydedilir; diğer üretim
+   * koşulları da tamamsa sipariş olağan kuralla otomatik üretime geçer (glassFinish → autoProduction).
+   */
+  async approve_production(h) {
+    const { tx, order, actor, payload, now } = h;
+    const offer = latestOffer(order);
+    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
+    if (approvalOf(order) !== 'PENDING') throw new WorkflowError('APPROVAL_DECIDED');
+    const r = await tx.offer.updateMany({
+      where: { id: offer.id, status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null },
+      data: { approvedAt: now, approvedById: actor.id },
+    });
+    if (r.count !== 1) throw new WorkflowError('APPROVAL_DECIDED');
+    const revision = revisionOf(order, offer);
+    h.event('PRODUCTION_APPROVED', null, { offerId: offer.id, revision });
+    h.auto = true;
+    h.sla = true;
+    h.audit = {
+      offerId: offer.id, revision, approvedAt: now.toISOString(), customerId: order.customerId, approvedById: actor.id,
+      dueAt: offer.approvalDueAt ? new Date(offer.approvalDueAt).toISOString() : null,
+      late: !!offer.approvalDueAt && new Date(offer.approvalDueAt).getTime() <= now.getTime(),
+    };
+  },
+  /**
+   * Müşteri üretim onayı (4.2.1): "Ölçülerde değişiklik var". Açıklama zorunlu; müşteri ölçü ya da fiyat değiştiremez.
+   * Gönderilen sürüm değişmez (değişiklik istendi olarak işaretlenir — onaylanamaz); onun satırlarından satışa yeni bir
+   * taslak sürüm açılır → olağan akış: satış düzeltir, yöneticiye gönderir, yönetici kontrol edip müşteriye gönderir, yeni
+   * sürüm yeniden onay ister. Siparişin mali kilidi varsa (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği,
+   * onaylı yükleme — update_offer ile aynı kural ve kilitler) yeni fiyat müşteriye gidemeyeceğinden talep alınmaz.
+   */
+  async request_offer_change(h) {
+    const { tx, order, actor, payload, now } = h;
+    const note = changeNote(payload.note);
+    if (!note.ok) throw new WorkflowError(note.code);
+    const offer = latestOffer(order);
+    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
+    if (approvalOf(order) !== 'PENDING') throw new WorkflowError('APPROVAL_DECIDED');
+    const locked = await priceLock(tx, order.id);
+    if (locked.length) throw new WorkflowError('PRICE_LOCKED', { reasons: locked });
+    const r = await tx.offer.updateMany({
+      where: { id: offer.id, status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null },
+      data: { changeRequestedAt: now, changeRequestedById: actor.id, changeNote: note.note },
+    });
+    if (r.count !== 1) throw new WorkflowError('APPROVAL_DECIDED');
+    // HAZIRLANIYOR: satışa yeni taslak (mevcut satış → yönetici → gönder akışı). URETIMDE: mevcut sistemde satış üretimdeki
+    // siparişin teklifini düzenleyemez — taslak açılmaz; yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir
+    // (update_offer; aynı mali kilit). Sipariş durumu hiçbir durumda değişmez.
+    let draftId = null;
+    if (order.status === 'HAZIRLANIYOR') {
+      const { amount, offerAmount } = amounts(offer.lines);
+      const draft = await tx.offer.create({
+        data: {
+          orderId: order.id, createdById: actor.id, currency: offer.currency, amount, offerAmount, priceTableId: offer.priceTableId ?? null,
+          status: 'HAZIRLANIYOR', statusSince: now,
+          lines: { create: offer.lines.map((l, i) => lineData(l, i)) },
+        },
+      });
+      draftId = draft.id;
+    }
+    const revision = revisionOf(order, offer);
+    h.event('OFFER_CHANGE_REQUESTED', note.note, { offerId: offer.id, revision });
+    h.sla = true;
+    h.audit = { offerId: offer.id, revision, draftId, path: draftId ? 'SALES_DRAFT' : 'ADMIN_UPDATE', customerId: order.customerId, requestedById: actor.id };
+  },
+  /**
+   * Onaysız yükleme istisnası (4.2.5): yalnızca yönetici (LOADING_APPROVAL_OVERRIDE), gerekçe zorunlu. Siparişe bir kez yazılır
+   * (koşullu); müşteri onayı DEĞİLDİR — teklifin onay alanları değişmez, müşteri yine onaylayabilir. Kim, ne zaman, hangi
+   * sipariş ve gerekçe: sipariş alanları + iç geçmiş + denetim kaydı. Sipariş durumu, yükleme tarihi ve sandıklar değişmez.
+   */
+  async override_loading_approval(h) {
+    const { tx, order, actor, payload, now } = h;
+    const r = overrideReason(payload.reason);
+    if (!r.ok) throw new WorkflowError(r.code);
+    const offer = latestOffer(order);
+    const w = await tx.order.updateMany({
+      where: { id: order.id, loadingOverrideAt: null, productionApprovalRequired: true },
+      data: { loadingOverrideAt: now, loadingOverrideById: actor.id, loadingOverrideReason: r.reason },
+    });
+    if (w.count !== 1) throw new WorkflowError('NOT_ALLOWED');
+    h.event('LOADING_APPROVAL_OVERRIDE', r.reason);
+    h.audit = {
+      reason: r.reason, overrideAt: now.toISOString(), offerId: offer?.id ?? null, offerStatus: offer?.status ?? null,
+      approval: approvalOf(order), customerApproval: false,
+    };
+  },
+  /**
+   * İletilemeyen onay talebinin yeniden gönderimi (4.2.5; yönetici — OFFER_SEND). Aynı sürüm; süre yeniden iletim anında
+   * başlar (production-approval-delivery.js). Bekleyen bir gönderim varsa reddedilir (mükerrer talep / e-posta yok).
+   */
+  async resend_approval_request(h) {
+    const { tx, order, payload, now } = h;
+    const offer = latestOffer(order);
+    if (!offer || offer.status !== 'GONDERILDI' || String(payload.offerId ?? '') !== offer.id) throw new WorkflowError('OFFER_VERSION_STALE');
+    const queued = await tx.notificationOutbox.count({
+      where: { orderId: order.id, status: 'PENDING', type: { in: [...APPROVAL_REQUEST_TYPES] }, payload: { path: ['approval', 'offerId'], equals: offer.id } },
+    });
+    if (queued) throw new WorkflowError('APPROVAL_SEND_QUEUED');
+    const w = await tx.offer.updateMany({
+      where: { id: offer.id, status: 'GONDERILDI', approvedAt: null, changeRequestedAt: null, approvalDeliveredAt: null },
+      data: { approvalRequestedAt: now, approvalDeliveryError: null, approvalDeliveryFailedAt: null },
+    });
+    if (w.count !== 1) throw new WorkflowError('APPROVAL_DECIDED');
+    h.event('PRODUCTION_APPROVAL_REQUESTED', null, { approval: { offerId: offer.id } });
+    h.audit = { offerId: offer.id, resend: true, previousError: offer.approvalDeliveryError ?? null };
   },
   async check_offer(h) {
     h.event('OFFER_CHECKED', h.order.drawings.length ? `v${h.order.drawings.length}` : null);
@@ -979,6 +1133,10 @@ const ACTIONS = {
  */
 const ACTION_LOCKS = {
   update_offer: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
+  // Müşteri üretim onayı (4.2.1): değişiklik talebi ve talepten sonra yeni sürümün müşteriye gönderimi update_offer ile aynı
+  // mali kilidi aynı kilitler altında denetler. İlk gönderimde (öncesinde gönderilmiş sürüm yok) kilit alınmaz — eski davranış.
+  approve_offer: (order) => (resent(order) ? ['loading-confirmation', `glass-billing:${order.id}`] : []),
+  request_offer_change: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
   // İptal (karar 288 — Y1): belge isteği, elle ödeme, müşteri belgesi ve yükleme onayıyla aynı kilitler, aynı sıra
   cancel: (order) => ['loading-confirmation', `glass-billing:${order.id}`],
   // Tahmini yükleme tarihi / "Yüklendi" (karar 288 — D1): yükleme onayıyla aynı kilit — "onay kalemi varsa tarih değişmez" ve
@@ -1027,7 +1185,10 @@ export async function executeAction(db, { workflow, actions, include, finish = n
     deps: {
       async loadOrder(tx, id) {
         const o = await tx.order.findFirst({ where: { id, ...scope }, include });
-        return o && { ...o, orderType: o.orderTypeCode };
+        if (!o) return null;
+        // Müşteri üretim onayı ayarı (acil durdurma anahtarı, 4.2.6): yalnızca kapsamdaki siparişte okunur
+        const approvalEnabled = o.productionApprovalRequired ? (await approvalGateSetting(tx)).enabled : false;
+        return { ...o, orderType: o.orderTypeCode, approvalEnabled };
       },
       async apply(tx, order) {
         if (payload.expectedVersion != null && Number(payload.expectedVersion) !== order.version) return null;

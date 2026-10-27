@@ -4,6 +4,120 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.9 — 27.10.2026
+
+Müşteri üretim onayı — acil durdurma anahtarı tamamlandı (bağımsız inceleme bulgusu): ayar kapalıyken e-posta işçisinin
+hata yolu da onay kaydına yazmaz (iletim hatası / yöneticiye "iletilemedi" bildirimi yok); diğer iletim yazımlarıyla aynı
+koşul. Canlıya geçiş belgesi: acil durdurmadan sonra yalnızca müşteri onayını beklemiş hazırlık siparişleri aşama kontrolü
+raporunda listelenir; her biri "Beklemeye Al" → "Beklemeden çıkar" ile olağan kurala göre üretime geçer (toplu durum
+değişikliği yok).
+
+## 4.2.8 — 27.10.2026
+
+4.2.7 düzeltmesi: üretim onayı bayrak hesabının parametre türüne ayar durumu eklendi (tip kontrolü). Davranış değişmedi.
+
+## 4.2.7 — 27.10.2026
+
+**Müşteri üretim onayı — kesin kararlar** (ürün sahibi, 27.10.2026; karar 305c):
+
+- **Tam acil durdurma anahtarı:** ayar kapatılınca 4.2.0 iş akışı geri gelir — onay zorunluluğu, onaysız üretime geçiş
+  engeli, onaysız yükleme engeli, yeni onay talepleri ve hatırlatmalar uygulanmaz; müşteri onay kartı ve "Onay gerekli"
+  rozeti görünmez; kuyrukta kalmış talep / hatırlatma e-postası ve zili gönderilmez, teklif e-postası onay metni olmadan
+  gider. Bekleyen sipariş bir sonraki işlemde olağan kuralla üretime geçer (toplu durum değişikliği yok). Verilmiş onaylar,
+  kapsam bayrakları ve denetim kayıtları silinmez; ayar yeniden açıldığında kendiliğinden talep / bildirim yazılmaz
+  (yönetici yeniden gönderir ya da kontrollü bildirim betiği).
+- **Yükleme tarihi değişikliği onay sürecinin dışında:** onay teklif sürümüne bağlıdır; tarih öne / ileri alınınca onay
+  geçerli kalır, yeni sürüm, talep, süre ya da hatırlatma oluşmaz. **Onaysız yükleme engeli kapsam bayrağına bağlıdır, güne
+  değil:** kapsamdaki sipariş tarihi kesim gününden önceye çekilse de onaysız yüklenemez. 30.10.2026 siparişleri kesimden
+  önce planlandığı için kapsam dışıdır.
+- **Gönderilmemiş taslak onayı bozmaz:** yükleme engeli müşteriye gönderilmiş son sürüme bakar; müşteriye yeni sürüm
+  gönderilince yeniden onay istenir.
+
+## 4.2.6 — 27.10.2026
+
+4.2.5 düzeltmesi: "Yükleme yapıldı" kartındaki onaysız yükleme listesinin türü (tip kontrolü). Davranış değişmedi.
+
+## 4.2.5 — 27.10.2026
+
+**Müşteri üretim onayı — son kullanıcı kararları** (ürün sahibi, 27.10.2026; karar 305b):
+
+- **Süre talep müşteriye iletildiğinde başlar:** gönderimde / geçişte son tarih yazılmaz. E-posta işçisi talebi en az bir
+  müşteri adresine ilettiği anda 2 Romanya iş günlük süre başlar ve e-postada aynı son tarih yazar; müşteri e-posta almıyorsa
+  (tercih / adres yok) uygulama içi bildirim iletimdir. İletilemeyen talepte süre başlamaz, hata kaydedilir ve yöneticiye
+  bildirilir; yönetici sipariş sayfasından talebi yeniden gönderir (kuyrukta bekleyen varken ikinci gönderim yok).
+- **Hatırlatma:** onay bekleyen müşteriye iletimden 1 iş günü sonra tek hatırlatma (e-posta + zil), sürüm başına bir kez.
+- **Onaysız yükleme engeli (sunucuda):** kapsamdaki siparişte yükleme günü 06.11.2026 ve sonrasıysa, müşteri güncel teklifi
+  onaylamadan "Yükleme yapıldı" (gün onaylanmaz, engelli siparişler listelenir) ve "Yüklendi" yapılamaz. 30.10.2026
+  yüklemeleri etkilenmez. Ayar kapalıyken engel yoktur.
+- **Yönetici istisnası:** yalnızca Yönetici (yeni yetki `LOADING_APPROVAL_OVERRIDE`, yönetici yardımcısında yok) sipariş
+  sayfasında gerekçe yazarak istisnai yükleme izni verir; kullanıcı, zaman, sipariş ve gerekçe denetim kaydına yazılır;
+  müşteri onayı olarak kaydedilmez, müşteriye görünmez.
+- **Geçiş:** güncel teklifi henüz müşteride olmayan (yeni sürüm hazırlanan) hazırlık siparişleri de kapsam işareti alır.
+  Bildirim kontrollü başlatılabilir: `--bildirimsiz` geçiş + `--bildirim [--siparis …]` (ön izleme + onay kodu).
+- Migration (yalnızca ekleme): `Order.loadingOverrideAt / loadingOverrideById / loadingOverrideReason`,
+  `Offer.approvalDeliveredAt / approvalDeliveryChannel / approvalDeliveryFailedAt / approvalDeliveryError /
+  approvalReminderAt`, `PermissionKey.LOADING_APPROVAL_OVERRIDE`.
+- Proforma, FGO / ANAF, mali kilit, satışçı yetkileri ve sipariş durumları değişmedi.
+
+## 4.2.4 — 26.10.2026
+
+**Müşteri üretim onayı — kapsam kararı** (ürün sahibi, 26.10.2026; karar 305 güncellendi): "yalnızca yeni siparişler" kuralı
+kaldırıldı. Kapsam = **planlanan yükleme tarihi 06.11.2026 ve sonrası** olan cam siparişleri, durumu HAZIRLANIYOR ya da
+URETIMDE olsun (teklif gönderilince otomatik üretime geçiş müşteri onayı sayılmaz).
+
+- Yeni sipariş: ayar açık ve tahmini yükleme günü ≥ kesim günü ise oluşturulurken kapsama girer (kesim günü ayarda;
+  varsayılan 2026-11-06).
+- **Mevcut siparişler: güvenli geçiş** (`scripts/production-approval-enroll.mjs`, yalnızca sunucuda, HTTP yolu yok):
+  önce salt okunur ön izleme (etkilenen siparişler, durumları, kategori: talep / yalnızca bayrak / yüklenmiş — kısmi dahil —
+  / nihai faturalı / telafi / teklifsiz) ve onay kodu; uygulama yalnızca o kodla, tek işlemde, sipariş sürümü kilidiyle.
+  Yüklenmiş, kısmi yüklenmiş, nihai faturalı, telafi ve güncel teklifi müşteride olmayan üretim siparişleri DOKUNULMADAN
+  raporlanır. Aynı siparişe ikinci talep açılmaz. Onay süresi eski gönderim tarihinden değil, talebin müşteriye gönderildiği
+  andan başlar (`Offer.approvalRequestedAt`). İsteğe bağlı bildirimsiz prova.
+- Canlı veritabanında çalıştırılabilecek salt okunur kapsam raporu: `deploy/canliya-gecis/uretim-onayi-kapsam.sql` (4.2.0
+  şemasıyla çalışır).
+- Üretimdeki siparişte onay durumu ayrıdır: sipariş durumu, yükleme tarihi, sandık, proforma ve muhasebe değişmez; müşteri
+  güncel teklifi onaylar ya da ölçü değişikliği ister. Mevcut sistemde satış üretimdeki siparişin teklifini düzenleyemez —
+  değişiklik talebinde taslak açılmaz, yönetici mevcut "Teklifi güncelle" ile yeni sürümü gönderir (aynı mali kilit); yeni
+  sürüm yeniden onay ister. Mali kaydı olan siparişte değişiklik talebi alınmaz (mevcut kural), onay verilebilir.
+
+## 4.2.3 — 26.10.2026
+
+Üretim onayı (4.2.1) düzeltmesi: eski teklif sürümü hata kodu `OFFER_VERSION_STALE` olarak ayrıldı (profil siparişinin
+`STALE_OFFER` mesajıyla çakışıyordu; tip kontrolü). Profil siparişinin mesajı değişmedi.
+
+## 4.2.2 — 26.10.2026
+
+Güvenlik yaması: Next.js 15.5.26 → 15.5.28 (`next`, `eslint-config-next`). CI'nin bağımlılık taraması 15.5.26 için kritik
+açık bildiriyor (CVE-2026-94543 — Pages Router SSG / ISR önbellek zehirlenmesi; 15.5.27'de düzeltildi). TAKİP App Router
+kullanır; uygulama davranışı değişmez. Bu sürüm olmadan CI'nin geri kalan adımları (lint, testler) çalışmıyor.
+
+## 4.2.1 — 26.10.2026
+
+**Müşteri üretim onayı** (karar 305) — canlıdaki 4.2.0'ın üzerine, Fabrika Ekip Yönetimi (4.3.x) değişikliklerinden bağımsız.
+Özellik anahtarı varsayılan **kapalı**: kapalıyken davranış 4.2.0 ile aynıdır. (Sürüm numarası yeni özellik olmasına rağmen
+üçüncü haneden artırıldı: askıdaki 4.3.x hattıyla karışmasın.)
+
+- Ayarlar → Entegrasyonlar → **Müşteri üretim onayı** (yalnızca yönetici, `SETTINGS_MANAGE`, denetim kaydı). Anahtar yalnızca
+  BUNDAN SONRA oluşturulan müşteri cam siparişlerini kapsama alır (`Order.productionApprovalRequired`); mevcut siparişler,
+  telafi (-T) siparişleri ve profil siparişleri değişmez; kapatınca geriye dönük hiçbir şey yazılmaz.
+- Kapsamdaki sipariş hazırlıktayken yöneticinin müşteriye gönderdiği her teklif sürümü müşterinin onayını bekler: otomatik
+  üretime geçiş kuralına tek koşul eklendi (`offer_not_approved`); ana sipariş durumları değişmedi.
+- Müşteri: **ÜRETİME ALINMASINI ONAYLIYORUM** (ikinci doğrulama penceresi; onay zamanı, onaylayan kullanıcı, firma ve teklif
+  sürümü kaydedilir; yalnızca en son gönderilen sürüm; mükerrer / eşzamanlı onay engellenir) ve **ÖLÇÜLERDE DEĞİŞİKLİK VAR**
+  (zorunlu açıklama; müşteri ölçü / fiyat değiştiremez; sürüm korunur ve onaylanamaz; satışa yeni taslak açılır → mevcut
+  satış → yönetici → müşteriye gönder akışı; yeni sürüm yeniden onay ister).
+- Süre: gönderimden itibaren **2 Romanya iş günü** (Europe/Bucharest, gönderim saati; cumartesi, pazar ve Romanya resmî
+  tatilleri — değişken tarihliler dahil — sayılmaz; depo takviminin elle kapatılan günleri sayılmaz). Tatil verisi olmayan
+  yılda süre hesaplanmaz, ekranda ve e-postada açıkça "belirlenemedi" yazar. Her yeni sürümde süre yeniden başlar. Süre
+  dolunca yöneticiye bir kez uygulama içi bildirim; müşteri onay hakkını kaybetmez; yükleme tarihi değişmez.
+- Bildirimler mevcut altyapıdan: müşterinin e-postası (müşterinin dilinde) kontrol, zorunlu onay, 2 iş günü, kesin son tarih
+  ve yükleme tarihine etkisi; zil "Üretim onayınız bekleniyor"; sipariş listesinde "Onay gerekli"; durum "Üretim onayı
+  gereklidir"; onay ve değişiklik talebi yöneticiye ve siparişin satışçısına (uygulama içi).
+- Proforma ve mali belge kuralları değişmedi: proforma onaydan önce de sonra da kesilebilir, onayın yerine geçmez, siparişi
+  üretime geçirmez. Mali kaydı olan siparişte (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge isteği, onaylı yükleme)
+  değişiklik talebi ve talepten sonra yeni sürümün gönderimi, "teklifi güncelle" ile aynı mevcut mali kilide tabidir.
+- Migration: `Order.productionApprovalRequired` (varsayılan false) ve `Offer` onay alanları (hepsi boş başlar).
+
 ## 4.2.0 — 21.10.2026
 
 Ticari teklif (Teklif Oluştur → Cam → **Excel'den Aktar**): ön izleme satış panelindeki Excel aktarımıyla aynı düzende

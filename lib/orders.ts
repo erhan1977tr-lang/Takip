@@ -112,6 +112,8 @@ export const orderDetailInclude = {
   events: { orderBy: { createdAt: 'desc' }, include: { user: { select: PERSON } } },
   assignedDrawer: { select: PERSON },
   createdBy: { select: PERSON },
+  // Onaysız yükleme istisnasını veren yönetici (4.2.5) — müşteriye hiç gitmez (order-view.js → orderPeopleView)
+  loadingOverrideBy: { select: PERSON },
   // Profil siparişi (Aşama 6)
   profile: true,
   profileItems: { orderBy: { sortOrder: 'asc' } },

@@ -1,0 +1,509 @@
+// Müşteri üretim onayı 4.2.5 (ürün sahibinin 27.10.2026 kararları) — veritabanıyla:
+//   - süre talep müşteriye GERÇEKTEN iletildiğinde başlar (e-posta kabul edildi; e-posta gidemiyorsa uygulama içi bildirim)
+//   - iletilemeyen talepte süre başlamaz, hata kaydedilir, yöneticiye bildirilir; yönetici yeniden gönderir (mükerrer yok)
+//   - müşteriye tek hatırlatma (1 iş günü sonra), tekrarlanmaz
+//   - onaysız yükleme engeli: "Yükleme yapıldı" ve "Yüklendi" sunucuda; 30.10.2026 serbest, 06.11.2026 ve sonrası engelli;
+//     yalnızca yönetici gerekçeli istisna verir (müşteri onayı sayılmaz, denetim kaydı); ayar kapalıyken engel yok
+// SMTP sahte (bellek içi taşıyıcı); FGO / ağ yok (offline).
+import { after, before } from 'node:test';
+import assert from 'node:assert/strict';
+import { closeDb, dbTest, getDb, offline, resetDb } from './helpers.js';
+import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
+import { runOrderAction } from '../../server/orders/transitions.js';
+import { approvalDeadline, approvalDueText } from '../../server/orders/production-approval.js';
+import { remindApprovalCustomers, saveApprovalSetting } from '../../server/orders/production-approval-service.js';
+import { dispatchNotifications, NOTIFY_MAX_ATTEMPTS } from '../../server/notifications/email.js';
+import { dispatchInApp, dispatchInAppFor } from '../../server/notifications/inapp.js';
+import { confirmLoading, previewLoading } from '../../server/loading/confirmation.js';
+
+let db;
+let firm;
+const people = {};
+const actor = (u) => ({ id: u.id, role: u.appRole, canApprove: u.canApprove, customerId: u.customerId, ip: '127.0.0.1' });
+const run = (orderId, action, who, payload = {}) => runOrderAction(db, { orderId, action, actor: actor(people[who]), payload });
+const codeOf = async (p) => p.then(() => 'OK', (e) => e.code ?? e.message);
+const setApproval = (enabled) => saveApprovalSetting(db, { enabled, actor: actor(people.admin) });
+
+// Sahte SMTP: gönderilenler burada; failing kümesindeki adrese her seferinde hata
+const sent = [];
+const failing = new Set();
+const transport = {
+  sendMail: async (m) => {
+    if (failing.has(m.to)) throw Object.assign(new Error('SMTP 550 reddedildi'), { responseCode: 550 });
+    sent.push(m);
+    return { messageId: `m${sent.length}` };
+  },
+};
+const mailOpts = { transport, from: 'takip@po.test', appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest' };
+const mailsTo = (email) => sent.filter((m) => m.to === email);
+
+let fileNo = 0;
+/**
+ * Sipariş: yükleme günü ve kapsam bayrağı açıkça yazılır (oluşturmadaki tahmini gün testin günüyle çakışmasın —
+ * yükleme günü testleri kendi günlerini kullanır). Varsayılan: uzak bir gün + bayraklı.
+ */
+const newOrder = async (title, ship = '2027-02-05', flagged = true) => {
+  const next = await suggestNextNo(db, firm.id);
+  fileNo += 1;
+  const o = await createGlassOrder(db, {
+    actor: actor(people.cust), firm, title, requestedNo: next, suggestedNo: next,
+    items: [{ glassName: '8mm Temperli', camAdedi: 2 }],
+    files: [{ storageKey: `2026/10/po-${fileNo}.pdf`, name: `po-${fileNo}.pdf`, size: 10, mime: 'application/pdf', checksum: 'x', scanStatus: 'CLEAN' }],
+  });
+  await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: new Date(`${ship}T10:00:00Z`), productionApprovalRequired: flagged } });
+  return o;
+};
+const glass = () => ({ description: 'Cam', poz: null, enMm: 1000, boyMm: 500, adet: 2, unit: 'm2', unitPrice: '40.00', kind: 'CAM', free: false });
+const latest = (orderId) => db.offer.findFirst({ where: { orderId }, orderBy: { createdAt: 'desc' }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+const adminForm = (lines, price = '50') => lines.map((l) => ({
+  id: l.id, description: l.description, poz: l.poz, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, kind: l.kind, free: l.free,
+  unitPrice: Number(l.unitPrice).toFixed(2), crateFee: l.crateFee, offerPrice: price,
+}));
+const orderOf = (id) => db.order.findUnique({ where: { id } });
+async function sendOffer(orderId) {
+  await run(orderId, 'no_drawing', 'sales');
+  await run(orderId, 'submit_offer', 'sales', { lines: [glass()] });
+  await run(orderId, 'approve_offer', 'admin', { lines: adminForm((await latest(orderId)).lines) });
+  return latest(orderId);
+}
+/**
+ * Üretimdeki mevcut sipariş (ayar kapalıyken üretime geçmiş). flagged: geçişin yazdığı kapsam + talep. 30.10.2026 siparişleri
+ * kesimden önce planlandığı için kapsama hiç alınmaz (flagged: false).
+ */
+async function producingFlagged(title, ship, flagged = true) {
+  await setApproval(false);
+  const o = await newOrder(title, ship, false);
+  const offer = await sendOffer(o.id);
+  assert.equal((await orderOf(o.id)).status, 'URETIMDE');
+  if (flagged) {
+    await db.order.update({ where: { id: o.id }, data: { productionApprovalRequired: true } });
+    await db.offer.update({ where: { id: offer.id }, data: { approvalRequestedAt: new Date() } });
+  }
+  await setApproval(true);
+  return { order: o, offer };
+}
+const shipTo = (orderId, day, who = 'sales') => run(orderId, 'set_ship_date', who, { date: new Date(`${day}T10:00:00Z`) });
+const approvalRows = (orderId) => db.notificationOutbox.count({ where: { orderId, type: { in: ['ORDER_PRODUCTION_APPROVAL_REQUESTED', 'ORDER_PRODUCTION_APPROVAL_REMINDER'] } } });
+
+before(async () => {
+  if (!process.env.TEST_DATABASE_URL) return;
+  db = await getDb();
+  await resetDb(db);
+  const factory = await db.customer.create({ data: { name: 'GKH', type: 'FACTORY' } });
+  firm = await db.customer.create({ data: { name: 'Pilot Onay Cam SRL', prefix: 'POC', email: 'firma@po.test' } });
+  const mk = (key, appRole, customerId, extra = {}) =>
+    db.user.create({ data: { email: `${key}@po.test`, name: key, type: appRole === 'MUSTERI' ? 'CUSTOMER' : 'INTERNAL', appRole, customerId, language: 'ro', ...extra } })
+      .then((u) => { people[key] = u; });
+  await mk('admin', 'ADMIN', factory.id);
+  await mk('assistant', 'YONETICI_YARDIMCISI', factory.id);
+  await mk('sales', 'SATIS', factory.id);
+  await mk('drawer', 'CIZIM', factory.id);
+  await mk('inspector', 'DENETIMCI', factory.id);
+  await mk('cust', 'MUSTERI', firm.id, { canApprove: true });
+  // E-posta bildirimleri bu testte en baştan başlamış sayılır (önceki olaylar atlanmaz)
+  await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: { at: new Date(0).toISOString() } }, update: { value: { at: new Date(0).toISOString() } } });
+});
+after(closeDb);
+
+// 7. İki iş günlük süre doğru başlar · 8. e-posta ve uygulama içi bildirim çalışır
+dbTest('süre e-posta müşteriye iletildiği anda başlar (gönderimde değil); e-postada aynı son tarih; zil bildirimi', offline(async () => {
+  await setApproval(true);
+  const o = await newOrder('İletim e-posta');
+  const offer = await sendOffer(o.id);
+  assert.ok(offer.approvalRequestedAt instanceof Date, 'talep yazıldı');
+  assert.equal(offer.approvalDueAt, null, 'gönderimde süre başlamaz');
+  assert.equal(offer.approvalDeliveredAt, null);
+  const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
+  assert.deepEqual(row.payload.approval, { offerId: offer.id });
+  // Uygulama içi: müşteriye "Üretim onayınız bekleniyor" (son tarih yazılmaz — e-postada / sipariş sayfasında)
+  await dispatchInAppFor(db, [row.id]);
+  const bell = await db.notification.findFirst({ where: { userId: people.cust.id, dedupeKey: `outbox:${row.id}` } });
+  assert.equal(bell.params.approval, 1);
+  assert.equal('due' in bell.params, false);
+  // İşçinin e-posta turu: pazartesi 09.11.2026 10:30 (Romanya) → son tarih çarşamba 11.11.2026 10:30
+  const at = new Date('2026-11-09T08:30:00Z');
+  sent.length = 0;
+  await dispatchNotifications(db, { ...mailOpts, now: at });
+  const after1 = await db.offer.findUnique({ where: { id: offer.id } });
+  assert.equal(after1.approvalDeliveredAt.toISOString(), at.toISOString());
+  assert.equal(after1.approvalDeliveryChannel, 'EMAIL');
+  assert.equal(after1.approvalDueAt.toISOString(), approvalDeadline(at).due.toISOString());
+  assert.equal(after1.approvalDueAt.toISOString(), '2026-11-11T08:30:00.000Z');
+  const mail = mailsTo('cust@po.test').find((m) => m.subject.startsWith(o.orderNo));
+  assert.ok(mail, 'müşteriye e-posta');
+  assert.match(mail.text, /11\.11\.2026 10:30/, 'e-postadaki son tarih kaydedilen son tarih');
+  assert.match(mail.text, /2 zile lucrătoare/, 'müşterinin dilinde (Romence)');
+  assert.ok(mailsTo('firma@po.test').length >= 1, 'firmanın adresine de');
+  // İletim bir kez: daha sonraki tur değiştirmez
+  await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-10T08:30:00Z') });
+  assert.equal((await db.offer.findUnique({ where: { id: offer.id } })).approvalDeliveredAt.toISOString(), at.toISOString());
+}));
+
+dbTest('iletilemeyen talep: süre başlamaz, hata kaydı + yöneticiye bir bildirim; yeniden gönderim (yalnızca yönetici, mükerrer yok) → iletimde süre', offline(async () => {
+  await setApproval(true);
+  const o = await newOrder('İletilemeyen');
+  const offer = await sendOffer(o.id);
+  failing.add('cust@po.test');
+  failing.add('firma@po.test');
+  let x;
+  try {
+    let now = new Date('2026-11-09T08:00:00Z');
+    for (let i = 0; i < 8; i++) {
+      await dispatchNotifications(db, { ...mailOpts, now });
+      now = new Date(now.getTime() + 3 * 3_600_000);
+    }
+    const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
+    assert.equal(row.status, 'FAILED', 'kayıt altında (son hata kuyrukta)');
+    x = await db.offer.findUnique({ where: { id: offer.id } });
+    assert.equal(x.approvalDeliveredAt, null);
+    assert.equal(x.approvalDueAt, null, 'iletilmeyen talepte süre YOK');
+    assert.equal(x.approvalDeliveryError, 'EMAIL_FAILED');
+    assert.ok(x.approvalDeliveryFailedAt instanceof Date);
+    const alerts = await db.notification.findMany({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: o.id } });
+    assert.deepEqual(alerts.map((n) => n.userId).sort(), [people.admin.id, people.assistant.id].sort(), 'yönetici + yardımcı, bir kez');
+    // Yeniden gönderim: satış / çizimci / müşteri yapamaz; yönetici yapar; kuyrukta bekleyen varken ikincisi reddedilir
+    for (const who of ['sales', 'cust', 'inspector']) assert.ok(['NOT_ALLOWED', 'NOT_FOUND'].includes(await codeOf(run(o.id, 'resend_approval_request', who, { offerId: offer.id }))), who);
+    await run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id });
+    // Yeni talep kuyrukta: yeniden gönderim görünmez (yeni talep, hata yok) ve işlem reddedilir
+    assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'NOT_ALLOWED');
+    // Talep bir saatten eski görünse de kuyrukta bekleyen gönderim varken ikinci gönderim yazılmaz
+    await db.offer.update({ where: { id: offer.id }, data: { approvalRequestedAt: new Date(Date.now() - 2 * 3_600_000) } });
+    assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'APPROVAL_SEND_QUEUED');
+    x = await db.offer.findUnique({ where: { id: offer.id } });
+    assert.equal(x.approvalDeliveryError, null);
+    assert.equal(await db.notificationOutbox.count({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED', status: 'PENDING' } }), 1);
+  } finally {
+    failing.clear();
+  }
+  const o2 = await db.offer.findUnique({ where: { id: offer.id } });
+  assert.equal(o2.approvalDeliveredAt, null);
+  const at = new Date('2026-11-12T09:00:00Z');
+  await dispatchNotifications(db, { ...mailOpts, now: at });
+  x = await db.offer.findUnique({ where: { id: offer.id } });
+  assert.equal(x.approvalDeliveredAt.toISOString(), at.toISOString());
+  assert.equal(x.approvalDueAt.toISOString(), approvalDeadline(at).due.toISOString());
+  // İletildikten sonra yeniden gönderim yok
+  assert.equal(await codeOf(run(o.id, 'resend_approval_request', 'admin', { offerId: offer.id })), 'NOT_ALLOWED');
+}));
+
+dbTest('müşteri e-posta almıyorsa (tercih) uygulama içi bildirim iletimdir; hiçbir yoldan ulaşılamıyorsa süre başlamaz', offline(async () => {
+  await setApproval(true);
+  await db.customer.update({ where: { id: firm.id }, data: { email: null } });
+  await db.user.update({ where: { id: people.cust.id }, data: { emailNotifications: false } });
+  try {
+    const o = await newOrder('Zil');
+    const offer = await sendOffer(o.id);
+    const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
+    await dispatchInApp(db, { now: new Date() });
+    const bell = await db.notification.findFirst({ where: { userId: people.cust.id, dedupeKey: `outbox:${row.id}` } });
+    await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-09T08:30:00Z') });
+    const x = await db.offer.findUnique({ where: { id: offer.id } });
+    assert.equal(x.approvalDeliveryChannel, 'IN_APP');
+    assert.equal(x.approvalDeliveredAt.toISOString(), bell.createdAt.toISOString());
+    assert.equal(x.approvalDueAt.toISOString(), approvalDeadline(bell.createdAt).due?.toISOString());
+    assert.equal(mailsTo('cust@po.test').filter((m) => m.subject.startsWith(o.orderNo)).length, 0, 'tercih: e-posta yok');
+
+    // Etkin müşteri kullanıcısı da yok: iletilemez → süre yok, yönetici bilgilenir
+    const o2 = await newOrder('Ulaşılamayan');
+    const offer2 = await sendOffer(o2.id);
+    await db.user.update({ where: { id: people.cust.id }, data: { isActive: false } });
+    await dispatchInApp(db, { now: new Date() });
+    await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-09T08:30:00Z') });
+    const y = await db.offer.findUnique({ where: { id: offer2.id } });
+    assert.equal(y.approvalDeliveredAt, null);
+    assert.equal(y.approvalDueAt, null);
+    assert.equal(y.approvalDeliveryError, 'NO_RECIPIENT');
+    assert.equal(await db.notification.count({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: o2.id } }), 2);
+  } finally {
+    await db.customer.update({ where: { id: firm.id }, data: { email: 'firma@po.test' } });
+    await db.user.update({ where: { id: people.cust.id }, data: { emailNotifications: true, isActive: true } });
+  }
+}));
+
+dbTest('hatırlatma: iletimden 1 iş günü sonra müşteriye BİR KEZ (e-posta + zil); onaylanmış / iletilmemiş talebe yok', offline(async () => {
+  await setApproval(true);
+  const o = await newOrder('Hatırlatma');
+  const offer = await sendOffer(o.id);
+  const notYet = await newOrder('Henüz iletilmedi');
+  await sendOffer(notYet.id);
+  const at = new Date('2026-11-09T08:30:00Z');
+  await db.notificationOutbox.updateMany({ where: { orderId: notYet.id }, data: { status: 'SKIPPED' } });
+  await dispatchNotifications(db, { ...mailOpts, now: at });
+  const reminders = (id) => db.notificationOutbox.count({ where: { orderId: id, type: 'ORDER_PRODUCTION_APPROVAL_REMINDER' } });
+  await remindApprovalCustomers(db, { now: new Date('2026-11-10T08:29:00Z') });
+  assert.equal(await reminders(o.id), 0, 'zamanı gelmedi');
+  await remindApprovalCustomers(db, { now: new Date('2026-11-10T08:30:00Z') });
+  await remindApprovalCustomers(db, { now: new Date('2026-11-10T12:00:00Z') });
+  assert.equal(await reminders(o.id), 1, 'bir kez');
+  assert.equal(await reminders(notYet.id), 0, 'iletilmemiş talep hatırlatılmaz');
+  assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'PRODUCTION_APPROVAL_REMINDER' } }), 1);
+  sent.length = 0;
+  await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-10T08:31:00Z') });
+  const mail = mailsTo('cust@po.test').find((m) => m.subject.startsWith(o.orderNo));
+  assert.match(mail.subject, /Memento/);
+  assert.match(mail.text, new RegExp(approvalDueText(approvalDeadline(at).due).replace(/\./g, '\\.')));
+  const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_PRODUCTION_APPROVAL_REMINDER' } });
+  await dispatchInAppFor(db, [row.id]);
+  assert.equal(await db.notification.count({ where: { userId: people.cust.id, dedupeKey: `outbox:${row.id}` } }), 1);
+  // İletim değişmedi
+  assert.equal((await db.offer.findUnique({ where: { id: offer.id } })).approvalDeliveredAt.toISOString(), at.toISOString());
+  // Onaylandıktan sonra bir sonraki sürüm yok → yeni hatırlatma yok
+  await run(o.id, 'approve_production', 'cust', { offerId: offer.id });
+  await remindApprovalCustomers(db, { now: new Date('2026-11-20T08:30:00Z') });
+  assert.equal(await reminders(o.id), 1);
+}));
+
+// 1. 30.10.2026 serbest · 2. 06.11.2026 engelli · 3. yönetici gerekçeli istisna · 4. başka roller istisna veremez
+dbTest('"Yükleme yapıldı": 30.10.2026 onaysız yapılır; 06.11.2026 onaysız yapılamaz; yöneticinin gerekçeli istisnasıyla yapılır', offline(async () => {
+  const early = await producingFlagged('Erken yükleme', '2026-10-30', false);
+  const late = await producingFlagged('Geç yükleme', '2026-11-06');
+  const now = new Date('2026-11-07T12:00:00Z');
+  // 1. 30.10.2026: kesimden önce planlanmış sipariş kapsam dışı → engel yok
+  const p1 = await previewLoading(db, '2026-10-30');
+  assert.ok(p1.orders.some((x) => x.orderId === early.order.id));
+  const r1 = await confirmLoading(db, { day: '2026-10-30', key: p1.key, actor: actor(people.admin), now });
+  assert.equal(r1.ok, true, JSON.stringify(r1));
+  // 2. 06.11.2026: müşteri onayı yok → hiçbir şey yazılmaz
+  const p2 = await previewLoading(db, '2026-11-06');
+  const r2 = await confirmLoading(db, { day: '2026-11-06', key: p2.key, actor: actor(people.admin), now });
+  assert.equal(r2.ok, false);
+  assert.equal(r2.code, 'APPROVAL_REQUIRED');
+  assert.deepEqual(r2.blocked.map((b) => [b.orderNo, b.reason]), [[(await orderOf(late.order.id)).orderNo, 'PENDING']]);
+  assert.equal(await db.loadingConfirmation.count({ where: { shipDay: new Date('2026-11-06T00:00:00.000Z') } }), 0);
+  // 4. Yönetici dışındaki roller istisna veremez (yönetici yardımcısı dahil)
+  for (const who of ['assistant', 'sales', 'drawer', 'inspector', 'cust']) {
+    assert.ok(['NOT_ALLOWED', 'NOT_FOUND'].includes(await codeOf(run(late.order.id, 'override_loading_approval', who, { reason: 'acil' }))), who);
+  }
+  // 3. Yönetici: gerekçe zorunlu; istisna müşteri onayı değildir; denetim kaydı (kullanıcı, zaman, sipariş, gerekçe)
+  assert.equal(await codeOf(run(late.order.id, 'override_loading_approval', 'admin', { reason: '  ' })), 'OVERRIDE_REASON_REQUIRED');
+  await run(late.order.id, 'override_loading_approval', 'admin', { reason: 'Müşteri telefonla onayladı, yazılı onay gelecek' });
+  const ord = await orderOf(late.order.id);
+  assert.equal(ord.loadingOverrideById, people.admin.id);
+  assert.ok(ord.loadingOverrideAt instanceof Date);
+  assert.equal(ord.loadingOverrideReason, 'Müşteri telefonla onayladı, yazılı onay gelecek');
+  assert.equal(ord.status, 'URETIMDE', 'sipariş durumu değişmez');
+  const off = await db.offer.findUnique({ where: { id: late.offer.id } });
+  assert.equal(off.approvedAt, null, 'istisna müşteri onayı olarak kaydedilmez');
+  assert.equal(off.approvedById, null);
+  const audit = await db.auditLog.findFirst({ where: { action: 'ORDER_TRANSITION', entityId: late.order.id, details: { path: ['action'], equals: 'override_loading_approval' } } });
+  assert.ok(audit);
+  assert.equal(audit.userId, people.admin.id);
+  assert.match(JSON.stringify(audit.details), /Müşteri telefonla onayladı/);
+  assert.match(JSON.stringify(audit.details), /"customerApproval":false/);
+  const ev = await db.orderEvent.findFirst({ where: { orderId: late.order.id, event: 'LOADING_APPROVAL_OVERRIDE' } });
+  assert.equal(ev.userId, people.admin.id);
+  assert.equal(ev.note, 'Müşteri telefonla onayladı, yazılı onay gelecek');
+  // İstisna bir kez
+  assert.equal(await codeOf(run(late.order.id, 'override_loading_approval', 'admin', { reason: 'tekrar' })), 'NOT_ALLOWED');
+  const p3 = await previewLoading(db, '2026-11-06');
+  const r3 = await confirmLoading(db, { day: '2026-11-06', key: p3.key, actor: actor(people.admin), now });
+  assert.equal(r3.ok, true, JSON.stringify(r3));
+  // Müşteri hâlâ onaylayabilir (onay hakkı kaybolmaz)
+  assert.equal((await db.offer.findUnique({ where: { id: late.offer.id } })).approvedAt, null);
+}));
+
+dbTest('"Yükleme yapıldı": müşteri onayı gelince engel kalkar; ayar kapalıyken engel yok (4.2.0 davranışı); bayraksız sipariş etkilenmez', offline(async () => {
+  const a = await producingFlagged('Onaylanacak', '2026-11-13');
+  const now = new Date('2026-11-14T12:00:00Z');
+  let p = await previewLoading(db, '2026-11-13');
+  assert.equal((await confirmLoading(db, { day: '2026-11-13', key: p.key, actor: actor(people.admin), now })).code, 'APPROVAL_REQUIRED');
+  await run(a.order.id, 'approve_production', 'cust', { offerId: a.offer.id });
+  p = await previewLoading(db, '2026-11-13');
+  assert.equal((await confirmLoading(db, { day: '2026-11-13', key: p.key, actor: actor(people.admin), now })).ok, true);
+
+  const b = await producingFlagged('Ayar kapalı', '2026-11-20');
+  await setApproval(false);
+  p = await previewLoading(db, '2026-11-20');
+  assert.equal((await confirmLoading(db, { day: '2026-11-20', key: p.key, actor: actor(people.admin), now: new Date('2026-11-21T12:00:00Z') })).ok, true, 'ayar kapalı → engel yok');
+  assert.equal((await db.offer.findUnique({ where: { id: b.offer.id } })).approvedAt, null);
+  await setApproval(true);
+  const plain = await newOrder('Bayraksız', '2026-11-27', false);
+  await sendOffer(plain.id);
+  assert.equal((await orderOf(plain.id)).productionApprovalRequired, false);
+  p = await previewLoading(db, '2026-11-27');
+  assert.equal((await confirmLoading(db, { day: '2026-11-27', key: p.key, actor: actor(people.admin), now: new Date('2026-11-28T12:00:00Z') })).ok, true);
+}));
+
+dbTest('"Yüklendi" (satış): onaysız kapsamdaki sipariş reddedilir; 30.10.2026 siparişi ve onaylı / istisnalı sipariş yüklenir', offline(async () => {
+  const blocked = await producingFlagged('Yüklendi engel', '2026-12-04');
+  assert.equal(await codeOf(run(blocked.order.id, 'mark_shipped', 'sales')), 'LOADING_APPROVAL_REQUIRED');
+  assert.equal((await orderOf(blocked.order.id)).status, 'URETIMDE', 'hiçbir şey yazılmadı');
+  await run(blocked.order.id, 'approve_production', 'cust', { offerId: blocked.offer.id });
+  await run(blocked.order.id, 'mark_shipped', 'sales');
+  assert.equal((await orderOf(blocked.order.id)).status, 'YUKLENDI');
+
+  const early = await producingFlagged('Yüklendi 30.10', '2026-10-30', false);
+  await run(early.order.id, 'mark_shipped', 'sales');
+  assert.equal((await orderOf(early.order.id)).status, 'YUKLENDI', '30.10.2026 etkilenmez');
+
+  const excepted = await producingFlagged('Yüklendi istisna', '2026-12-11');
+  await run(excepted.order.id, 'override_loading_approval', 'admin', { reason: 'Kamyon bekliyor; müşteri yazılı onay verecek' });
+  await run(excepted.order.id, 'mark_shipped', 'sales');
+  assert.equal((await orderOf(excepted.order.id)).status, 'YUKLENDI');
+  assert.equal((await db.offer.findUnique({ where: { id: excepted.offer.id } })).approvedAt, null, 'istisna onay değildir');
+}));
+
+// 3. onay sonrası yükleme tarihi değişir, onay geçerli · 4. yeni onay talebi yok · 5. onaysız sipariş tarih değiştirerek engeli aşamaz
+dbTest('yükleme tarihi değişikliği onay sürecinin dışında: onay geçerli kalır, yeni talep / hatırlatma / sürüm yok; onaysız sipariş tarihle engeli aşamaz', offline(async () => {
+  const a = await producingFlagged('Tarih onaylı', '2026-12-18');
+  await run(a.order.id, 'approve_production', 'cust', { offerId: a.offer.id });
+  const before = await db.offer.findUnique({ where: { id: a.offer.id } });
+  const offers0 = await db.offer.count({ where: { orderId: a.order.id } });
+  const rows0 = await approvalRows(a.order.id);
+  await shipTo(a.order.id, '2027-01-08'); // ertelendi
+  await shipTo(a.order.id, '2026-12-14'); // öne çekildi
+  await shipTo(a.order.id, '2026-10-28'); // kesimden önceye çekildi
+  const after = await db.offer.findUnique({ where: { id: a.offer.id } });
+  assert.equal(after.approvedAt.toISOString(), before.approvedAt.toISOString(), 'onay geçerli');
+  assert.equal(after.approvalRequestedAt?.toISOString(), before.approvalRequestedAt?.toISOString(), 'talep anı değişmedi');
+  assert.equal(after.approvalDueAt?.toISOString() ?? null, before.approvalDueAt?.toISOString() ?? null, 'süre yeniden başlamadı');
+  assert.equal(after.approvalReminderAt, null);
+  assert.equal(await db.offer.count({ where: { orderId: a.order.id } }), offers0, 'yeni teklif sürümü yok');
+  assert.equal(await approvalRows(a.order.id), rows0, 'yeni onay talebi / hatırlatma yok');
+  assert.equal(await db.orderEvent.count({ where: { orderId: a.order.id, event: { in: ['PRODUCTION_APPROVAL_REQUESTED', 'PRODUCTION_APPROVAL_REMINDER'] } } }), 0);
+  assert.equal((await orderOf(a.order.id)).productionApprovalRequired, true, 'kapsam değişmez');
+  // Onay geçerli → yeni günde yüklenir
+  const p = await previewLoading(db, '2026-10-28');
+  assert.ok(p.orders.some((x) => x.orderId === a.order.id));
+  const r = await confirmLoading(db, { day: '2026-10-28', key: p.key, actor: actor(people.admin), now: new Date('2026-10-31T12:00:00Z') });
+  assert.equal(r.ok, true, JSON.stringify(r));
+
+  // 5. Onaysız kapsamdaki sipariş kesim gününden önceye çekilse de engel kalkmaz ("Yükleme yapıldı" ve "Yüklendi")
+  const b = await producingFlagged('Tarih onaysız', '2026-12-18');
+  await shipTo(b.order.id, '2026-10-29');
+  const p2 = await previewLoading(db, '2026-10-29');
+  const r2 = await confirmLoading(db, { day: '2026-10-29', key: p2.key, actor: actor(people.admin), now: new Date('2026-10-31T12:00:00Z') });
+  assert.equal(r2.code, 'APPROVAL_REQUIRED');
+  assert.deepEqual(r2.blocked.map((x) => x.orderId), [b.order.id]);
+  assert.equal(await codeOf(run(b.order.id, 'mark_shipped', 'sales')), 'LOADING_APPROVAL_REQUIRED');
+  assert.equal(await approvalRows(b.order.id), 0, 'tarih değişikliği talep yazmaz');
+}));
+
+// 11. Henüz gönderilmemiş taslak değişiklik mevcut onayı bozmaz · 10. yeni sürüm gönderilince yeniden onay
+dbTest('gönderilmemiş taslak onayı bozmaz; müşteriye yeni sürüm gönderilince yeniden onay istenir ve yükleme engellenir', offline(async () => {
+  const a = await producingFlagged('Taslak', '2026-12-25');
+  await run(a.order.id, 'approve_production', 'cust', { offerId: a.offer.id });
+  // Onaylı gönderilmiş sürümden sonra müşteriye gönderilmemiş taslak sürüm
+  await db.offer.create({ data: { orderId: a.order.id, status: 'HAZIRLANIYOR', currency: 'EUR', amount: '60.00', createdById: people.sales.id, createdAt: new Date(Date.now() + 1000) } });
+  assert.equal(await codeOf(run(a.order.id, 'mark_shipped', 'sales')), 'OK', 'taslak onayı bozmaz');
+  assert.equal((await orderOf(a.order.id)).status, 'YUKLENDI');
+
+  const b = await producingFlagged('Yeni sürüm', '2027-01-15');
+  await run(b.order.id, 'approve_production', 'cust', { offerId: b.offer.id });
+  const lines = (await latest(b.order.id)).lines;
+  await run(b.order.id, 'update_offer', 'admin', { lines: adminForm(lines, '58') });
+  const v2 = await latest(b.order.id);
+  assert.notEqual(v2.id, b.offer.id);
+  assert.ok(v2.approvalRequestedAt, 'yeni sürüm için yeni talep');
+  assert.equal(v2.approvedAt, null);
+  assert.equal(await codeOf(run(b.order.id, 'mark_shipped', 'sales')), 'LOADING_APPROVAL_REQUIRED', 'yeni sürüm onaylanmadan yüklenemez');
+  await run(b.order.id, 'approve_production', 'cust', { offerId: v2.id });
+  await run(b.order.id, 'mark_shipped', 'sales');
+  assert.equal((await orderOf(b.order.id)).status, 'YUKLENDI');
+}));
+
+// 8. özellik kapatılınca 4.2.0 davranışı · 9. yeniden açılınca mükerrer bildirim yok
+dbTest('ACİL DURDURMA: kapalıyken 4.2.0 iş akışı (onay, üretim ve yükleme engeli, talep, hatırlatma yok); kayıtlar silinmez; açılınca kendiliğinden talep yok', offline(async () => {
+  await setApproval(true);
+  // Kapsamdaki hazırlık siparişi müşteri onayı bekliyor; bir başkası onaylanmış
+  const waiting = await newOrder('Durdurma bekleyen', '2027-02-12');
+  const wOffer = await sendOffer(waiting.id);
+  assert.equal((await orderOf(waiting.id)).status, 'HAZIRLANIYOR');
+  const approved = await newOrder('Durdurma onaylı', '2027-02-12');
+  const aOffer = await sendOffer(approved.id);
+  await run(approved.id, 'approve_production', 'cust', { offerId: aOffer.id });
+  await dispatchNotifications(db, { ...mailOpts, now: new Date('2027-02-01T08:00:00Z') });
+  // Kuyrukta bekleyen bir talep (geçişin açtığı) — kapalıyken gitmemeli
+  const queued = await db.notificationOutbox.create({ data: { type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED', orderId: waiting.id, payload: { approval: { offerId: wOffer.id }, lang: 'ro' } } });
+  const audits0 = await db.auditLog.count();
+
+  await setApproval(false);
+  // Müşteri onay işlemi yok; satış / yönetici için engel yok
+  assert.equal(await codeOf(run(waiting.id, 'approve_production', 'cust', { offerId: wOffer.id })), 'NOT_ALLOWED');
+  // Bekleyen sipariş bir sonraki işlemde olağan kuralla üretime geçer (toplu durum değişikliği yok)
+  assert.equal((await orderOf(waiting.id)).status, 'HAZIRLANIYOR', 'anahtar kendiliğinden durum değiştirmez');
+  await run(waiting.id, 'hold', 'sales');
+  await run(waiting.id, 'unhold', 'sales');
+  assert.equal((await orderOf(waiting.id)).status, 'URETIMDE', '4.2.0: onay şartı yok');
+  // Yükleme engeli yok
+  await run(waiting.id, 'mark_shipped', 'sales');
+  assert.equal((await orderOf(waiting.id)).status, 'YUKLENDI');
+  // Kapsamdaki siparişe yeni teklif → doğrudan üretim; talep yazılmaz; e-posta onay metni olmadan
+  const fresh = await newOrder('Durdurma yeni teklif', '2027-02-19');
+  const fOffer = await sendOffer(fresh.id);
+  assert.equal((await orderOf(fresh.id)).status, 'URETIMDE');
+  assert.equal(fOffer.approvalRequestedAt, null);
+  const fRow = await db.notificationOutbox.findFirst({ where: { orderId: fresh.id, type: 'ORDER_OFFER_SENT' } });
+  assert.equal(fRow.payload.approval, undefined);
+  sent.length = 0;
+  await dispatchNotifications(db, { ...mailOpts, now: new Date('2027-02-02T08:00:00Z') });
+  const fMail = mailsTo('cust@po.test').find((m) => m.subject.startsWith(fresh.orderNo));
+  assert.ok(fMail);
+  assert.doesNotMatch(fMail.text, /Termen de aprobare/, 'onay metni yok');
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: queued.id } })).status, 'SKIPPED', 'kapalıyken talep e-postası gitmez');
+  await dispatchInApp(db, { now: new Date() });
+  assert.equal(await db.notification.count({ where: { dedupeKey: `outbox:${queued.id}` } }), 0, 'kapalıyken talep zili yok');
+  // Hatırlatma / gecikme yok
+  assert.deepEqual(await remindApprovalCustomers(db, { now: new Date('2027-03-01T08:00:00Z') }), { checked: 0, reminded: 0 });
+  // Kayıtlar silinmedi
+  assert.ok((await db.offer.findUnique({ where: { id: aOffer.id } })).approvedAt, 'verilmiş onay duruyor');
+  assert.equal((await orderOf(approved.id)).productionApprovalRequired, true, 'kapsam bayrağı duruyor');
+  assert.ok(await db.auditLog.count() >= audits0, 'denetim kayıtları silinmedi');
+
+  // 9. Yeniden açılınca kendiliğinden hiçbir talep / bildirim yazılmaz
+  const outbox0 = await db.notificationOutbox.count();
+  await setApproval(true);
+  await dispatchNotifications(db, { ...mailOpts, now: new Date('2027-02-03T08:00:00Z') });
+  await dispatchInApp(db, { now: new Date() });
+  assert.equal(await db.notificationOutbox.count(), outbox0, 'açılınca kuyruğa yeni olay yok');
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: queued.id } })).status, 'SKIPPED', 'atlanan talep yeniden gönderilmez');
+  // Kapalıyken gönderilmiş sürüm artık onay bekler; talep yalnızca yöneticinin açık işlemiyle (bir kez) gider
+  const fs = await db.offer.findUnique({ where: { id: fOffer.id } });
+  assert.equal(fs.approvalRequestedAt, null);
+  await run(fresh.id, 'resend_approval_request', 'admin', { offerId: fOffer.id });
+  assert.equal(await codeOf(run(fresh.id, 'resend_approval_request', 'admin', { offerId: fOffer.id })), 'NOT_ALLOWED', 'ikinci talep yok');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: fresh.id, type: 'ORDER_PRODUCTION_APPROVAL_REQUESTED' } }), 1);
+}));
+
+// İşçinin sipariş okuması hata verir (hata yolu: alıcı döngüsünün dışı). Yalnızca e-posta işçisinin sorgusu bozulur
+// (include ile); yönetici bildiriminin okuması (select) çalışır.
+const brokenOrderRead = (base) => new Proxy(base, {
+  get(t, k) {
+    if (k !== 'order') return Reflect.get(t, k);
+    return new Proxy(t.order, {
+      get: (o, m) => (m === 'findUnique'
+        ? async (args) => { if (args?.include?.createdBy) throw new Error('geçici veritabanı hatası'); return o.findUnique(args); }
+        : Reflect.get(o, m)),
+    });
+  },
+});
+async function lastAttemptFails(orderId) {
+  const row = await db.notificationOutbox.findFirst({ where: { orderId, type: 'ORDER_OFFER_SENT' } });
+  await db.notificationOutbox.updateMany({ where: { status: 'PENDING', NOT: { id: row.id } }, data: { availableAt: new Date('2100-01-01T00:00:00Z') } });
+  await db.notificationOutbox.update({ where: { id: row.id }, data: { attempts: NOTIFY_MAX_ATTEMPTS - 1, availableAt: new Date(Date.now() - 1000) } });
+  const r = await dispatchNotifications(brokenOrderRead(db), { ...mailOpts, now: new Date() });
+  assert.equal(r.failed, 1);
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: row.id } })).status, 'FAILED');
+}
+
+dbTest('ACİL DURDURMA: kapalıyken e-posta işçisinin hata yolu da onay kaydına yazmaz (iletim hatası / yönetici bildirimi yok)', offline(async () => {
+  // Açıkken gönderilmiş, onay talepli teklif e-postası kuyrukta; ayar kapatıldı; son denemede işçi hata verir
+  await setApproval(true);
+  const a = await newOrder('Durdurma hata yolu', '2027-03-05');
+  const aOffer = await sendOffer(a.id);
+  await setApproval(false);
+  await lastAttemptFails(a.id);
+  const x = await db.offer.findUnique({ where: { id: aOffer.id } });
+  assert.equal(x.approvalDeliveryError, null, 'kapalıyken iletim hatası yazılmaz');
+  assert.equal(x.approvalDeliveryFailedAt, null);
+  assert.equal(await db.notification.count({ where: { type: 'PRODUCTION_APPROVAL_UNDELIVERED', orderId: a.id } }), 0, 'yönetici bildirimi yok');
+
+  // Karşılaştırma: açıkken aynı yol iletim hatasını yazar (yol gerçekten denendi)
+  await setApproval(true);
+  const b = await newOrder('Açık hata yolu', '2027-03-05');
+  const bOffer = await sendOffer(b.id);
+  await lastAttemptFails(b.id);
+  const y = await db.offer.findUnique({ where: { id: bOffer.id } });
+  assert.equal(y.approvalDeliveryError, 'EMAIL_FAILED');
+  assert.equal(y.approvalDeliveredAt, null, 'iletilmeyen talepte süre yok');
+}));

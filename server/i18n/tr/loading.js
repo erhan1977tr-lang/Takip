@@ -298,6 +298,13 @@ export default {
       ORDER_CANCELLED: 'aktarılan kalanın siparişi iptal',
       ORDER_ON_HOLD: 'aktarılan kalanın siparişi beklemede',
     },
+    // Onaysız yükleme engeli (4.2.5): kapsamdaki siparişin müşteri üretim onayı ya da yöneticinin istisnası yok
+    approvalBlocked: 'Müşteri üretim onayı olmayan siparişler — bu gün onaylanamaz (kapsamdaki sipariş; yükleme tarihi değişse de). Müşterinin onayını bekleyin ya da sipariş sayfasında yönetici gerekçeli istisna versin:',
+    approvalReason: {
+      NOT_SENT: 'güncel teklif müşteriye gönderilmedi',
+      PENDING: 'müşteri onayı bekleniyor',
+      CHANGE_REQUESTED: 'müşteri değişiklik istedi',
+    },
     outside: 'Bu güne planlı ama onaylı yüklemede olmayan siparişler (yüklenmiş sayılmaz; başka bir yükleme gününe alın):',
     noCost: 'Dikkat: {n} satırın fabrika maliyeti kayıtlı değil. Onaydan sonra maliyet bu kayıtta düzeltilemez — önce Muhasebe → Cam Fabrika Hesap Durumu → "Eksik maliyetler" bölümünden girin.',
     noCostLink: 'Eksik maliyetleri gir',
@@ -313,6 +320,7 @@ export default {
       BAD_QUANTITY: 'Yüklenmeyen adet, satırın planlanan adedinden fazla olamaz.',
       BAD_REASON: 'Yüklenmeyen her cam için bir neden seçin.',
       NOTE_REQUIRED: '"Diğer" nedeni için açıklama yazın.',
+      APPROVAL_REQUIRED: 'Bu günde müşteri üretim onayı olmayan sipariş var; gün onaylanmadı. Listeyi kontrol edin.',
     },
   },
   // Yüklenmeyen camın ileri güne aktarılması (karar 102)

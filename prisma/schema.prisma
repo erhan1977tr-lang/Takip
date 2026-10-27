@@ -95,6 +95,7 @@ enum PermissionKey {
   DRAWING_PRODUCTION_UNDO
   ASSISTANT_PANEL
   PROFILE_RETURN_MANAGE
+  LOADING_APPROVAL_OVERRIDE
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
@@ -156,6 +157,10 @@ model User {
   ordersCreated      Order[]        @relation("OrderCreatedBy")
   ordersAssignedDraw Order[]        @relation("OrderAssignedDrawer")
   offersCreated      Offer[]        @relation("OfferCreatedBy")
+  // Müşteri üretim onayı (4.2.1): onaylayan / değişiklik isteyen müşteri kullanıcısı
+  offersApproved     Offer[]        @relation("OfferApprovedBy")
+  offersChangeAsked  Offer[]        @relation("OfferChangeRequestedBy")
+  loadingOverrides   Order[]        @relation("OrderLoadingOverrideBy")
   pricesSet          Price[]        @relation("PriceSetBy")
   drawingsUploaded   Drawing[]      @relation("DrawingUploadedBy")
   drawingsSent       Drawing[]      @relation("DrawingSentBy")
@@ -395,6 +400,16 @@ model Order {
 
   revisionCount     Int         @default(0)
   isEscalated       Boolean     @default(false)
+  // Müşteri üretim onayı (4.2.1, karar 305): planlanan yükleme tarihi kesim günü (06.11.2026) ya da sonrası olan cam
+  // siparişi → müşteriye gönderilen her teklif sürümü müşterinin onayını bekler. Yeni siparişte oluşturulurken, mevcut
+  // siparişte açık onaylı geçiş işleminde bir kez yazılır; kesimden önceki siparişler false (eski kural).
+  productionApprovalRequired Boolean @default(false)
+  // Onaysız yükleme engeli (4.2.5): müşteri onayı olmadan yüklemeye yalnızca yöneticinin gerekçeli istisnası izin verir.
+  // İstisna müşteri onayı DEĞİLDİR (teklifin onay alanları değişmez); bir kez yazılır, denetim kaydına girer.
+  loadingOverrideAt     DateTime?
+  loadingOverrideById   String?
+  loadingOverrideBy     User?     @relation("OrderLoadingOverrideBy", fields: [loadingOverrideById], references: [id])
+  loadingOverrideReason String?
 
   items             OrderItem[]
   offers            Offer[]
@@ -675,6 +690,28 @@ model Offer {
   createdBy   User        @relation("OfferCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  // Müşteri üretim onayı (4.2.1 — server/orders/production-approval.js). Yalnızca kapsamdaki siparişe gönderilen
+  // sürümde dolar. approvalDueAt: talep müşteriye İLETİLDİĞİ andan itibaren 2 Romanya iş günü (4.2.5; iletilmemiş talepte ve
+  // tatil verisi yoksa boş).
+  approvalRequestedAt    DateTime? // onay talebinin açıldığı an (gönderim, mevcut sipariş için geçiş ya da yeniden gönderim)
+  approvalDueAt          DateTime?
+  approvalOverdueAt      DateTime? // yöneticiye gecikme bildirimi gönderildi (sürüm başına bir kez)
+  approvedAt             DateTime?
+  approvedById           String?
+  approvedBy             User?     @relation("OfferApprovedBy", fields: [approvedById], references: [id])
+  changeRequestedAt      DateTime?
+  changeRequestedById    String?
+  changeRequestedBy      User?     @relation("OfferChangeRequestedBy", fields: [changeRequestedById], references: [id])
+  changeNote             String?
+  // Teslim (4.2.5): süre talebin müşteriye GERÇEKTEN iletildiği andan başlar — e-posta posta sunucusuna kabul edildiğinde
+  // (müşteriye e-posta gidemiyorsa — tercih / adres yok — uygulama içi bildirim yazıldığında). İletilemezse süre başlamaz:
+  // hata kodu yazılır, yöneticiye bildirilir. approvalReminderAt: müşteriye tek hatırlatma gönderildi.
+  approvalDeliveredAt     DateTime?
+  approvalDeliveryChannel String?   // EMAIL | IN_APP
+  approvalDeliveryFailedAt DateTime?
+  approvalDeliveryError   String?   // EMAIL_FAILED | NO_RECIPIENT
+  approvalReminderAt      DateTime?
 
   @@index([orderId])
   // Satır fiyatlarının geldiği fiyat tablosu (teklif açılırken satışçının tablosu)

@@ -29,7 +29,7 @@ export function profileCustomerText(t: T, p: { status: string; stage: string | n
 }
 
 /** Müşterinin gördüğü tek satırlık durum: rozet metni, sıradaki adım ve renk. */
-export function customerSummaryText(t: T, p: { status: string; drawing?: string; offer?: string | null }) {
+export function customerSummaryText(t: T, p: { status: string; drawing?: string; offer?: string | null; approval?: string }) {
   const s = customerSummary(p);
   return { tone: s.tone, label: t(k(`status.customer.${s.key}.label`)), next: t(k(`status.customer.${s.key}.next`)) };
 }
@@ -71,6 +71,15 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   NOT_FOUND: 'order.errors.notAllowed',
   CONFLICT: 'order.errors.conflict',
   STALE_DRAWING: 'order.errors.staleDrawing',
+  // Müşteri üretim onayı (4.2.1)
+  OFFER_VERSION_STALE: 'order.errors.staleOffer',
+  APPROVAL_DECIDED: 'order.errors.approvalDecided',
+  CHANGE_NOTE_REQUIRED: 'order.errors.changeNoteRequired',
+  CHANGE_NOTE_TOO_LONG: 'order.errors.changeNoteTooLong',
+  LOADING_APPROVAL_REQUIRED: 'order.errors.loadingApprovalRequired',
+  OVERRIDE_REASON_REQUIRED: 'order.errors.overrideReasonRequired',
+  OVERRIDE_REASON_TOO_LONG: 'order.errors.overrideReasonTooLong',
+  APPROVAL_SEND_QUEUED: 'order.errors.approvalSendQueued',
   OFFER_NOT_FOUND: 'order.errors.offerNotFound',
   INVALID_DATE: 'order.errors.invalidDate',
   SHIP_DATE_LOCKED: 'order.errors.shipDateLocked',
