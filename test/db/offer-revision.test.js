@@ -375,11 +375,13 @@ dbTest('bildirim: talep ilgili satışçıya uygulama içi + e-posta (not ve Tü
 dbTest('özellik kapalı: yeni talep yok; açılmış revizyon taslağı akış içinde tamamlanır (kilitlenmez), yeni onay talebi açılmaz', offline(async () => {
   await setApproval(true);
   const { o, v2 } = await inProductionPending('Kapalı revizyon');
+  // Onay bekleyen ikinci sipariş (ayar açıkken hazırlanır — kapalıyken müşteri onayı istenmez, kurulum yapılamaz)
+  const other2 = await inProductionPending('Kapalı yeni');
   await run(o.id, 'request_offer_change', 'cust', { offerId: v2.id, note: 'ölçü' });
   await setApproval(false);
   // Kapalıyken müşteri yeni talep / onay işlemi yapamaz
-  const other2 = await inProductionPending('Kapalı yeni');
   assert.equal(await codeOf(run(other2.o.id, 'request_offer_change', 'cust', { offerId: other2.v2.id, note: 'x' })), 'NOT_ALLOWED');
+  assert.equal(await codeOf(run(other2.o.id, 'approve_production', 'cust', { offerId: other2.v2.id })), 'NOT_ALLOWED');
   // Açık taslak tamamlanır: satış gönderir, yönetici gönderir; onay talebi açılmaz, engel yok (4.2.0 davranışı)
   await run(o.id, 'submit_offer', 'sales', { lines: (await latest(o.id)).lines.map((l) => form(l, { enMm: 1100 })) });
   await run(o.id, 'approve_offer', 'admin', { lines: adminForm((await latest(o.id)).lines) });
