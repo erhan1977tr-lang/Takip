@@ -81,12 +81,16 @@ test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-post
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', { ...order, orderTypeCode: 'PROFILE_ORDER' })).map((r) => r.email), ['admin@gkh.test'], 'profil satışa gitmez');
   assert.deepEqual((await recipientsFor(db, 'ORDER_SENT_TO_DRAWING', order)).map((r) => r.email), ['cizim@gkh.test']);
   const assigned = { ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } };
-  // Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84)
+  // Müşterinin çizim onayı: atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84)
   const withSales = { ...assigned, salesUsers: [{ email: 'selin@gkh.test', language: 'ro', appRole: 'SATIS' }] };
+  const adminAsSales = { ...assigned, salesUsers: [{ email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN' }] };
+  assert.deepEqual((await recipientsFor(db, 'ORDER_DRAWING_APPROVED', withSales)).map((r) => r.email), ['ali@gkh.test', 'selin@gkh.test']);
+  assert.deepEqual((await recipientsFor(db, 'ORDER_DRAWING_APPROVED', assigned)).map((r) => r.email), ['ali@gkh.test', 'satis@gkh.test'], 'satışçı bilinmiyorsa satış ekibi');
+  // Müşterinin revizyon talebi (4.2.11): atanmış çizimci + BÜTÜN etkin satış ekibi — ilgili satışçı aranmaz; yöneticiye gitmez
+  for (const o of [withSales, assigned, adminAsSales]) {
+    assert.deepEqual((await recipientsFor(db, 'ORDER_REVISION_REQUESTED', o)).map((r) => r.email), ['ali@gkh.test', 'satis@gkh.test']);
+  }
   for (const type of ['ORDER_REVISION_REQUESTED', 'ORDER_DRAWING_APPROVED']) {
-    assert.deepEqual((await recipientsFor(db, type, withSales)).map((r) => r.email), ['ali@gkh.test', 'selin@gkh.test'], type);
-    assert.deepEqual((await recipientsFor(db, type, assigned)).map((r) => r.email), ['ali@gkh.test', 'satis@gkh.test'], `${type}: satışçı bilinmiyorsa satış ekibi`);
-    const adminAsSales = { ...assigned, salesUsers: [{ email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN' }] };
     assert.ok(!(await recipientsFor(db, type, adminAsSales)).some((r) => r.email === 'admin@gkh.test'), `${type}: yöneticiye gitmez`);
   }
   assert.deepEqual((await recipientsFor(db, 'ORDER_REVISION_REQUESTED', withSales)).map((r) => r.role), ['CIZIM', 'SATIS']);
@@ -127,26 +131,28 @@ test('revizyon e-postası: müşterinin notu ve sürüm metin olarak yazılır (
   assert.ok(!a.text.includes('Revizyon notu') && !a.text.includes('Kenar'));
 });
 
-test('revizyon e-postası gönderimi: ilgili satışçı sipariş kayıtlarından bulunur; not olayın anındaki talepten gelir', async () => {
+test('revizyon e-postası gönderimi (4.2.11): atanmış çizimci + bütün satış ekibi; ilgili satışçı aranmaz; not olayın anındaki talepten gelir', async () => {
   const t0 = new Date('2026-10-01T10:00:00Z');
   const db = fakeDb([]);
   await dispatchNotifications(db, { transport: { sendMail: async () => {} }, from: 'x', appUrl: 'https://takip.test', now: t0 });
   db.rows.push({ id: 'r1', type: 'ORDER_REVISION_REQUESTED', orderId: 'o1', status: 'PENDING', attempts: 0, availableAt: t0, createdAt: new Date(t0.getTime() + 1000), payload: {} });
   const asked = [];
   db.order.findUnique = async () => ({ ...order, assignedDrawer: { email: 'ali@gkh.test', language: 'tr', appRole: 'CIZIM' } });
-  db.orderEvent = { findFirst: async (q) => { asked.push(q.where); return { user: { email: 'selin@gkh.test', language: 'tr', appRole: 'SATIS' } }; } };
+  db.orderEvent = { findFirst: async (q) => { asked.push(['orderEvent', q.where]); return { user: { email: 'selin@gkh.test', language: 'tr', appRole: 'SATIS' } }; } };
   db.offer = { findFirst: async () => null };
-  db.drawingRevision = { findFirst: async (q) => { asked.push(q.where); return { comment: 'Delik yeri yanlış', drawing: { version: 1 } }; } };
+  db.drawingRevision = { findFirst: async (q) => { asked.push(['revision', q.where]); return { comment: 'Delik yeri yanlış', drawing: { version: 1 } }; } };
   const mails = [];
-  const r = await dispatchNotifications(db, { transport: { sendMail: async (m) => mails.push(m) }, from: 'x', appUrl: 'https://takip.test', now: new Date(t0.getTime() + 2000) });
-  assert.equal(r.sent, 1);
-  assert.deepEqual(mails.map((m) => m.to), ['ali@gkh.test', 'selin@gkh.test'], 'atanmış çizimci + ilgili satışçı; yönetici yok');
+  await withUsers([person('u-satis2', 'satis2@gkh.test', 'SATIS', { language: 'ro' })], async () => {
+    const r = await dispatchNotifications(db, { transport: { sendMail: async (m) => mails.push(m) }, from: 'x', appUrl: 'https://takip.test', now: new Date(t0.getTime() + 2000) });
+    assert.equal(r.sent, 1);
+  });
+  assert.deepEqual(mails.map((m) => m.to), ['ali@gkh.test', 'satis@gkh.test', 'satis2@gkh.test'], 'atanmış çizimci + bütün etkin satış ekibi; yönetici yok');
   // Ortak GKH başlığı (karar 129): bildirim e-postası logoyla gider — alıcılar ve metin aynen
   assert.ok(mails.every((m) => m.html.includes('<img src="cid:gkh-logo@takip"') && m.attachments.length === 1 && m.attachments[0].cid === 'gkh-logo@takip' && !('lang' in m)));
-  assert.ok(mails.every((m) => m.text.includes('Revizyon notu: Delik yeri yanlış') && m.text.includes('GLA68')));
-  assert.equal(asked[0].event, 'SENT_TO_DRAWING');
-  assert.deepEqual(asked[0].user.appRole.in, ['SATIS'], 'yalnızca satış rolü aranır');
-  assert.ok(asked[1].createdAt.lte instanceof Date && asked[1].drawing.orderId === 'o1');
+  assert.ok(mails.slice(0, 2).every((m) => m.text.includes('Revizyon notu: Delik yeri yanlış') && m.text.includes('GLA68')));
+  assert.match(mails[2].text, /Nota de revizie: Delik yeri yanlış/, 'satışçının kendi dili');
+  assert.deepEqual(asked.map(([k]) => k), ['revision'], 'ilgili satışçı (SENT_TO_DRAWING) aranmaz');
+  assert.ok(asked[0][1].createdAt.lte instanceof Date && asked[0][1].drawing.orderId === 'o1');
 });
 
 test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata yeniden denenir, gönderilen alıcıya tekrar gitmez', async () => {
@@ -175,27 +181,30 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
   assert.deepEqual(senders, ['GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>']);
 });
 
-test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip etkilenmez; firma adresi yalnızca bu firmanın hesabıysa (4.2.11); sabit dil', async () => {
+test('bildirim tercihi (4.2.11): siparişi açanın tercihi yalnızca kendisini etkiler; firmanın diğer kullanıcıları ve firma adresi alır; iç ekip etkilenmez; dil', async () => {
   const db = fakeDb();
-  const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
-  assert.deepEqual(await recipientsFor(db, 'ORDER_OFFER_SENT', off), [], 'siparişi açan kapattı: ne kendisine ne firma adresine');
-  assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test'], 'iç ekip bildirimi sürer');
-  // Firma adresi bildirimi kapatmış bir kullanıcının adresiyse (büyük / küçük harf farkı sayılmaz) firma adresi diye kullanılmaz
-  await withUsers([person('u-office', 'Office@Glass.test', 'MUSTERI', { emailNotifications: false })], async () => {
-    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
-  });
-  // Firma adresi başka firmanın (ya da iç ekibin) etkin kullanıcısının giriş adresiyse firma adresi diye kullanılmaz (4.2.11)
-  for (const owner of [person('u-baska', 'office@glass.test', 'MUSTERI', { customerId: 'c2' }), person('u-ic', 'office@glass.test', 'SATIS')]) {
-    await withUsers([owner], async () => {
-      assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], owner.id);
+  const ana = users.find((u) => u.id === 'u-ana');
+  await withUsers([person('u-mihai', 'mihai@glass.test', 'MUSTERI', { language: 'ro' })], async () => {
+    ana.emailNotifications = false;
+    try {
+      assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['mihai@glass.test', 'office@glass.test'], 'siparişi açan kapattı: yalnızca kendisi çıkar');
+      assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', order)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test'], 'iç ekip bildirimi sürer');
+    } finally {
+      ana.emailNotifications = true;
+    }
+    // Firma adresi bildirimi kapatmış bir kullanıcının adresiyse (büyük / küçük harf farkı sayılmaz) firma adresi diye kullanılmaz
+    await withUsers([person('u-office', 'Office@Glass.test', 'MUSTERI', { emailNotifications: false })], async () => {
+      assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test', 'mihai@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
     });
-  }
-  // Firma adresi bu firmanın etkin, tercihi açık kullanıcısının adresiyse kullanılır (tekil)
-  await withUsers([person('u-office2', 'office@glass.test', 'MUSTERI')], async () => {
-    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test', 'office@glass.test']);
+    // Dil (karar 200): siparişi açan ve firma adresi olayın dili (sabit dil / payload.lang); firmanın diğer kullanıcısı kendi dili
+    const fixed = { ...order, createdBy: { ...order.createdBy, language: 'ro', fixedLanguage: 'tr' } };
+    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', fixed)).map((r) => [r.email, r.locale]), [['ana@glass.test', 'tr'], ['mihai@glass.test', 'ro'], ['office@glass.test', 'tr']]);
+    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order, { lang: 'tr' })).map((r) => r.locale), ['tr', 'ro', 'tr'], 'olayın saklanan dili');
+    // Teklif / onay dışındaki müşteri olayları eski kuralla: siparişi açan + firma adresi; siparişi açan kapattıysa hiçbiri
+    assert.deepEqual((await recipientsFor(db, 'ORDER_SHIP_DATE', order)).map((r) => r.email), ['ana@glass.test', 'office@glass.test']);
+    const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
+    assert.deepEqual(await recipientsFor(db, 'ORDER_SHIP_DATE', off), [], 'eski kural: ne kendisine ne firma adresine');
   });
-  const fixed = { ...order, createdBy: { ...order.createdBy, language: 'ro', fixedLanguage: 'tr' } };
-  assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', fixed)).map((r) => r.locale), ['tr', 'tr']);
 });
 
 test('yöneticinin e-postaları (karar 218): yeni sipariş, fabrika fiyatı değişikliği, geri alma, telafi fiyatı; işlemi yapan yöneticiye ve pasif hesaba gitmez; tutar yazılmaz', async () => {

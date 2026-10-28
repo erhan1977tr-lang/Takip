@@ -138,7 +138,8 @@ test('alıcı kuralları: çizim kararları yalnızca atanmış çizimci + ilgil
   // e-posta (Paket 4). Satışın öbür olayları değişmedi: geri gönderilen teklif, revizyon, onay.
   for (const t of ['ORDER_OFFER_SENT', 'ORDER_OFFER_UPDATED']) {
     assert.deepEqual(INAPP_RULES[t].to(glass), ['customer'], `${t}: zil yalnızca müşteriye`);
-    assert.deepEqual(NOTIFY_RULES[t](glass), ['customer'], `${t}: e-posta yalnızca müşteriye`);
+    // 4.2.11: müşteri tarafında firmanın bütün etkin, e-postası açık kullanıcıları + firma adresi (customerFirm)
+    assert.deepEqual(NOTIFY_RULES[t](glass), ['customerFirm'], `${t}: e-posta yalnızca müşteriye`);
   }
   assert.deepEqual(INAPP_RULES.ORDER_OFFER_RETURNED.to(glass), ['orderSales'], 'geri gönderilen teklif satışa bildirilir');
   assert.deepEqual([INAPP_RULES.ACCOUNTING_ACTION.to(glass), INAPP_RULES.ACCOUNTING_ACTION.includeActor], [['accounting'], true]);

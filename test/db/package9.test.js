@@ -185,7 +185,9 @@ dbTest('müşteri e-posta dili olay anında saklanır (karar 200): kullanıcı s
   const tr = renderNotification({ type: 'ORDER_OFFER_SENT', order: full, createdAt: ev.createdAt, recipient: { email: U.a1.email, locale: 'tr', role: null }, appUrl: opts.appUrl, timeZone: opts.timeZone });
   const ro = renderNotification({ type: 'ORDER_OFFER_SENT', order: full, createdAt: ev.createdAt, recipient: { email: U.a1.email, locale: 'ro', role: null }, appUrl: opts.appUrl, timeZone: opts.timeZone });
   assert.notEqual(tr.subject, ro.subject);
-  assert.deepEqual(sent.map((m) => [m.to, m.subject]), [[U.a1.email, tr.subject], ['firma@gla.test', tr.subject]]);
+  // 4.2.11: firmanın bütün etkin, e-postası açık kullanıcıları (pasif A3 ve başka firmanın B1 hariç) + firma adresi; siparişi
+  // açan ve firma adresi olayın diliyle, A2 kendi diliyle (tr)
+  assert.deepEqual(sent.map((m) => [m.to, m.subject]), [[U.a1.email, tr.subject], [U.a2.email, tr.subject], ['firma@gla.test', tr.subject]]);
   // Otomatik (sabit dil yok): kullanıcının algılanan / son giriş dili; yoksa Romence
   await db.user.update({ where: { id: U.a1.id }, data: { fixedLanguage: null, language: 'tr' } });
   const ev2 = await db.$transaction((tx) => enqueueOutbox(tx, { type: 'ORDER_SHIP_DATE', orderId: o.id, payload: {} }));

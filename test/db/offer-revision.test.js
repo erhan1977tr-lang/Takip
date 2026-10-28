@@ -332,7 +332,7 @@ dbTest('not çevirisi: müşteri talebi bir kez Türkçeye; yeniden çevrilmez; 
   assert.equal(none.calls.length, 0);
 }));
 
-dbTest('bildirim: talep ilgili satışçıya uygulama içi + e-posta (not ve Türkçe çeviri), yöneticiye uygulama içi; e-posta gecikmeli ve bir kez; mükerrer yok', offline(async () => {
+dbTest('bildirim: talep ilgili satışçıya uygulama içi, BÜTÜN satış ekibine e-posta (4.2.11; not ve Türkçe çeviri), yöneticiye uygulama içi; e-posta gecikmeli ve alıcı başına bir kez; mükerrer yok', offline(async () => {
   await setApproval(true);
   const sentMails = [];
   const transport = { sendMail: async (m) => { sentMails.push(m); return { messageId: `m${sentMails.length}` }; } };
@@ -360,8 +360,8 @@ dbTest('bildirim: talep ilgili satışçıya uygulama içi + e-posta (not ve Tü
   const later = new Date(ev.createdAt.getTime() + CHANGE_MAIL_DELAY_MS + 1000);
   for (let i = 0; i < 5; i++) await dispatchNotifications(db, { ...opts, now: later });
   const mine = sentMails.slice(before).filter((m) => String(m.text).includes(o.orderNo) && /Lățimea 1200 mm/.test(String(m.text)));
-  assert.equal(sentMails.length - before, 1, 'talep için tek e-posta');
-  assert.deepEqual(mine.map((m) => m.to), [people.sales.email], 'yalnızca ilgili satışçıya; yöneticiye e-posta yok');
+  assert.equal(sentMails.length - before, 2, 'talep için satış kullanıcısı başına tek e-posta');
+  assert.deepEqual(mine.map((m) => m.to).sort(), [people.sales.email, people.sales2.email].sort(), 'bütün etkin satış ekibine (4.2.11); yöneticiye e-posta yok');
   const text = String(mine[0].text);
   assert.match(text, /Müşterinin notu: Lățimea 1200 mm, sunați la \*\*\*/);
   assert.match(text, /Türkçe çeviri \(otomatik\): \[tr\] Lățimea 1200 mm, sunați la \*\*\*/);

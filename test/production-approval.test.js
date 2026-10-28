@@ -393,7 +393,7 @@ test('iletim: onay taşıyan olaylar, sürüm kimliği doğrulanır; hatırlatma
   assert.equal(approvalOfferId(APPROVAL_REMINDER_TYPE, { approval: { offerId: 'clxyz12345abc' } }), 'clxyz12345abc');
   assert.equal(approvalOfferId('ORDER_SHIP_DATE', { approval: { offerId: 'clxyz12345abc' } }), null);
   for (const bad of [null, {}, { approval: null }, { approval: { offerId: '../x' } }, { approval: { offerId: 5 } }, { approval: { due: 'x' } }]) assert.equal(approvalOfferId('ORDER_OFFER_SENT', bad), null);
-  assert.deepEqual(NOTIFY_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER({}), ['customer']);
+  assert.deepEqual(NOTIFY_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER({}), ['customerFirm'], 'müşteri firmasının etkin kullanıcıları + firma adresi (4.2.11)');
   assert.deepEqual(INAPP_RULES.ORDER_PRODUCTION_APPROVAL_REMINDER.to(), ['customer']);
   assert.ok(ALERT_SECTIONS.teklif.includes('ORDER_PRODUCTION_APPROVAL_REMINDER'));
   assert.deepEqual(EVENTS.PRODUCTION_APPROVAL_REMINDER, { customer: true });

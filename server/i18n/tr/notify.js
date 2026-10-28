@@ -4,6 +4,8 @@ export default {
   customer: 'Firma',
   action: 'İşlem',
   date: 'Tarih',
+  // Müşteri üretim onayı (4.2.11): satışa giden e-postanın tarih satırı = onayın anı
+  approvedAt: 'Onay tarihi ve saati',
   shipDate: 'Tahmini yükleme tarihi',
   deliveryDay: 'Tahmini teslim (alış) günü',
   deliveryNote: 'Bu tarih tahminidir: depo çalışma günlerine ve 12:00 kuralına göre hesaplanır, stok durumu hesaba katılmaz.',

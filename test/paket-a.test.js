@@ -137,8 +137,10 @@ test('müşteri silme engelleri (karar 221): resmî belge izi, değiştirilemez 
 
 test('bildirimler (karar 220): güvenlik kitlesi yalnızca USER_MANAGE; pasif kullanıcı e-posta kitlelerinde yok', () => {
   const email = strip(read('server/notifications/email.js'));
-  // Müşteri kitlesi: siparişi açan yalnızca etkinse (firma adresi izolasyonu 4.2.11 — customerRecipients)
+  // Müşteri kitlesi: siparişi açan yalnızca etkinse (eski kural — öbür müşteri olayları); teklif ve üretim onayı olaylarında
+  // (4.2.11) yalnızca siparişin firmasının etkin, silinmemiş, e-postası açık müşteri kullanıcıları
   assert.match(email, /out = creator && creator\.isActive !== false \? \[\{ email: creator\.email, locale: eventLang \}\] : \[\];/);
+  assert.match(email, /where: \{ customerId: order\.customerId, type: 'CUSTOMER', appRole: 'MUSTERI', isActive: true, deletedAt: null, emailNotifications: true, \.\.\.opened \}/);
   assert.match(email, /if \(order\.assignedDrawer\.isActive !== false\) add\(/);
   assert.match(email, /u\.isActive !== false && ROLE_SETS\.sales\.includes\(u\.appRole\)/);
   assert.equal((email.match(/appRole: \{ in: ROLE_SETS\.(sales|admin) \}, isActive: true/g) ?? []).length, 2);
