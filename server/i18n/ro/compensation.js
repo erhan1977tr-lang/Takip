@@ -83,6 +83,7 @@ export default {
     destReason: {
       NO_OFFER: 'oferta nu este încă deschisă', CURRENCY: 'altă monedă', FINAL_INVOICE: 'are factură finală emisă', LOADED: 'încărcare confirmată',
       ON_HOLD: 'în așteptare', CLOSED: 'închisă', NOT_FUTURE: 'ziua de încărcare a trecut', SAME_ORDER: 'comanda sursă', OTHER_CUSTOMER: 'alt client', NOT_GLASS: 'nu este comandă de sticlă',
+      REVISION_OPEN: 'revizuire de ofertă deschisă',
     },
     destNew: 'Creează o comandă nouă de înlocuire',
     destNewHint: 'Numărul comenzii derivă din comanda sursă ({no}).',
@@ -105,6 +106,7 @@ export default {
       LOADED: 'Încărcarea comenzii sursă este confirmată: cantitatea nu scade; înlocuirea se deschide ca producție suplimentară.',
       BILLING: 'Comanda sursă are document (proformă / factură sau cerere de document în așteptare): cantitatea nu scade; înlocuirea se deschide ca producție suplimentară.',
       CLOSED: 'Comanda sursă este închisă (încărcată / arhivată): cantitatea nu scade; înlocuirea se deschide ca producție suplimentară.',
+      REVISION: 'Comanda sursă are o revizuire de ofertă cerută de client: cantitatea nu scade (nu se deschide o versiune paralelă a ofertei); înlocuirea se deschide ca producție suplimentară.',
     },
     sumDest: 'Destinație',
     sumDestNew: 'Comandă nouă de înlocuire',
@@ -130,6 +132,7 @@ export default {
       LOADED: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece încărcarea ei este confirmată; înlocuirea a fost deschisă ca producție suplimentară.',
       BILLING: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece are document; înlocuirea a fost deschisă ca producție suplimentară.',
       CLOSED: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece comanda este închisă; înlocuirea a fost deschisă ca producție suplimentară.',
+      REVISION: 'Cantitatea din comanda sursă nu s-a schimbat, deoarece clientul a cerut o revizuire a ofertei; înlocuirea a fost deschisă ca producție suplimentară.',
       FREE: 'Înlocuire gratuită: cantitatea din comanda sursă nu s-a schimbat; înlocuirea a fost deschisă ca producție suplimentară separată.',
       CHANGED: 'Cantitatea din comanda sursă nu a fost redusă automat, deoarece oferta ei s-a schimbat după decizie; dacă este necesar, actualizați oferta sursă.',
       PENDING: 'Cantitatea din comanda sursă scade când administratorul aprobă decizia.',
@@ -170,6 +173,7 @@ export default {
     DEST_NO_OFFER: 'Oferta comenzii de destinație nu este potrivită pentru această operațiune.',
     DEST_CURRENCY: 'Comanda de destinație are altă monedă.',
     DEST_FINAL_INVOICE: 'Comanda de destinație are factura finală emisă; creați o comandă nouă de înlocuire.',
+    DEST_REVISION_OPEN: 'Comanda de destinație are o revizuire de ofertă cerută de client; adăugați după finalizarea revizuirii sau creați o comandă nouă de înlocuire.',
   },
   remove: {
     cancel: 'Renunță',

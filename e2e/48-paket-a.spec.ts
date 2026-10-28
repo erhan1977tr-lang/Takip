@@ -168,10 +168,13 @@ test('müşteri silme (Yönetici Yardımcısı): yalnızca o firmanın kayıtlar
       await db.notification.create({ data: { userId: admin.id, message: 'x', type: 'ORDER_CREATED', orderId: o.id } });
       return { f, u, o };
     };
-    const letters = (n: number) => String.fromCharCode(65 + (n % 26));
+    // Firma kodu tam 3 harf A–Z (veritabanı CHECK kısıtı). Zaman damgası >> ile kaydırılmaz: JavaScript >> sayıyı önce 32 bitlik
+    // işaretli tamsayıya çevirir; Date.now()'ın alt 32 biti 2^31'in üstündeyken (ör. 28.10.2026 00:55 – 21.11.2026 21:25 UTC)
+    // sonuç negatif olur ve harf dışı karakter üretir ("QQ+"). Bölme + Math.floor her zaman 0–25 verir.
+    const letters = (n: number) => String.fromCharCode(65 + (Math.floor(n) % 26));
     const seed = Date.now();
-    const t1 = await mkFirm(TEST_FIRM, `Q${letters(seed)}${letters(seed >> 5)}`);
-    const t2 = await mkFirm(DOC_FIRM, `Z${letters(seed >> 3)}${letters(seed >> 7)}`);
+    const t1 = await mkFirm(TEST_FIRM, `Q${letters(seed)}${letters(seed / 32)}`);
+    const t2 = await mkFirm(DOC_FIRM, `Z${letters(seed / 8)}${letters(seed / 128)}`);
     await db.fgoDocument.create({ data: { orderId: t2.o.id, kind: 'PROFORMA', series: 'PRF', number: `E2E${RUN}`, issuedAt: new Date() } });
     const others = await db.order.count({ where: { customerId: { notIn: [t1.f.id, t2.f.id] } } });
 

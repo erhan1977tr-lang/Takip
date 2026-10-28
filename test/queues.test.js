@@ -42,11 +42,12 @@ test('kuyruk: satış (karar 155) — "Sıra bende"de yalnızca yeni siparişler
   assert.deepEqual(keys(queuesFor(all, { review: false, send: false, drawing: true }, NOW)), ['drawingJobs', 'atCustomer', 'approvedDrawings', 'sla', 'held']);
 });
 
-test('teklifler, satış (karar 155): yalnızca "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler"', () => {
+test('teklifler, satış (karar 155; 4.2.10): "Müşteri Revizyon Bekleyen Teklifler", "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler"', () => {
   const undone = row({ status: 'YENI', offers: [{ status: 'HAZIRLANIYOR' }] }); // karar geri alındı: taslak duruyor, tablo açık değil
   const closed = ['YUKLENDI', 'ARSIVLENDI', 'IPTAL'].map((status) => row({ status, offers: [{ status: 'HAZIRLANIYOR' }] }));
   const g = salesOfferGroups([...all, undone, ...closed]);
-  assert.deepEqual(keys(g), ['awaitingPrice', 'notOpened']);
+  assert.deepEqual(keys(g), ['customerRevision', 'awaitingPrice', 'notOpened']);
+  assert.deepEqual(ids(g, 'customerRevision'), [], 'müşteri revizyonu yok');
   assert.deepEqual(ids(g, 'awaitingPrice'), [rows.teklifSatista.id], 'yalnızca teklifi satışta olan (tablosu açık) sipariş');
   assert.deepEqual(ids(g, 'notOpened'), [rows.yeni.id, rows.teklifYok.id, rows.beklemede.id, undone.id], 'karar bekleyen ve teklifsiz siparişler');
   // Yönetici onayındaki ve müşterideki teklifler, profil siparişleri ve kapanmış siparişler iki listede de yok
@@ -221,4 +222,25 @@ test('kuyruk (karar 269): müşterinin revizyon talebi başka çizimciye (ya da 
   assert.ok(ids(drawer, 'sla').includes(rev.id), 'SLA riski / gecikenler bölümünde kalır');
   assert.deepEqual(ids(drawer, 'myDrawings'), [], 'atama değişmez: başkasının işi "Benim çizimlerim"e girmez');
   assert.equal(rev.assignedDrawerId, 'yonetici');
+});
+
+test('teklifler, satış (4.2.10, karar 306): müşteri revizyonu bekleyenler — taslak satışta ya da açılmamış; yöneticide değil; listede bir kez', () => {
+  const req = h(-2);
+  const sent = (o = {}) => ({ status: 'GONDERILDI', sentAt: h(-5), changeRequestedAt: req, ...o });
+  const flagged = (o) => row({ productionApprovalRequired: true, ...o });
+  const salesDraft = flagged({ offers: [{ status: 'HAZIRLANIYOR' }, sent()] });
+  const productionDraft = flagged({ status: 'URETIMDE', offers: [{ status: 'HAZIRLANIYOR' }, sent()] });
+  const legacy = flagged({ status: 'URETIMDE', offers: [sent(), { status: 'GONDERILDI', sentAt: h(-50) }] }); // ALE81 gibi: taslak yok
+  const atAdmin = flagged({ status: 'URETIMDE', offers: [{ status: 'YONETIMDE' }, sent()] });
+  const resent = flagged({ status: 'URETIMDE', offers: [sent({ changeRequestedAt: null }), sent()] }); // yeni sürüm gönderildi: kapandı
+  const unflagged = row({ offers: [{ status: 'HAZIRLANIYOR' }, sent()] }); // kapsam dışı: olağan taslak
+  const closed = flagged({ status: 'YUKLENDI', offers: [{ status: 'HAZIRLANIYOR' }, sent()] });
+  const profile = flagged({ orderTypeCode: 'PROFILE_ORDER', offers: [{ status: 'HAZIRLANIYOR' }, sent()] });
+  const g = salesOfferGroups([salesDraft, productionDraft, legacy, atAdmin, resent, unflagged, closed, profile]);
+  assert.deepEqual(ids(g, 'customerRevision'), [salesDraft.id, productionDraft.id, legacy.id]);
+  // Revizyon taslağı "Fiyatımı bekleyenler"de yeniden görünmez; kapsam dışı olağan taslak orada kalır
+  assert.deepEqual(ids(g, 'awaitingPrice'), [unflagged.id]);
+  const listed = g.flatMap((x) => x.rows.map((r) => r.id));
+  assert.equal(new Set(listed).size, listed.length, 'bir sipariş tek listede');
+  for (const r of [atAdmin, resent, closed, profile]) assert.equal(listed.includes(r.id), false, r.id);
 });

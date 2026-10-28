@@ -90,7 +90,7 @@ export type CompFormData = {
    * Kaynak adedi (karar 157): reducible → telafi açılınca ana siparişte kalan adet düşer. Değilse neden (sipariş kapalı /
    * yüklemesi onaylanmış / belgesi var): telafi ek üretim olarak açılır, kaynak teklif değişmez. Kesin karar kayıt anında.
    */
-  source: { reducible: boolean; reason: 'CLOSED' | 'LOADED' | 'BILLING' | null };
+  source: { reducible: boolean; reason: 'CLOSED' | 'LOADED' | 'BILLING' | 'REVISION' | null };
   lines: CompFormLine[];
   destinations: { id: string; orderNo: string; day: string; via: 'DRAFT' | 'SENT' | null; reason: string | null }[];
 };

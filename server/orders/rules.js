@@ -232,6 +232,8 @@ export const EVENTS = {
   PRODUCTION_APPROVED: { customer: true },
   PRODUCTION_APPROVAL_REQUESTED: { customer: true }, // mevcut siparişin geçişte açılan onay talebi (karar 305)
   OFFER_CHANGE_REQUESTED: { customer: true, note: true },
+  // 4.2.10: eski müşteri talebinin revizyon taslağı açıldı (satış / yönetici) — iç kayıt
+  OFFER_REVISION_OPENED: { customer: false },
   PRODUCTION_APPROVAL_REMINDER: { customer: true }, // onay bekleyen müşteriye tek hatırlatma (4.2.5)
   LOADING_APPROVAL_OVERRIDE: { customer: false, note: true }, // yöneticinin onaysız yükleme istisnası (4.2.5) — iç kayıt
   UNDO_DRAWING: { customer: true },
@@ -580,16 +582,17 @@ export function drawingFlags(o) {
 }
 
 /**
- * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null, approval?: string}} p
+ * @param {{role: string, status: string, onHold?: boolean, canApprove?: boolean, drawing?: string, offer?: string|null, draft?: boolean, assigned?: boolean, dwgPending?: boolean, dwgUndo?: string|null, orderType?: string|null, approval?: string, loadingOverride?: boolean, approvalResend?: boolean, revision?: string|null}} p
  *   approval: müşteri üretim onayı durumu (production-approval.js → approvalState; verilmezse 'NONE' — eski kural)
  *   offer: son teklifin durumu (HAZIRLANIYOR | YONETIMDE | GONDERILDI) ya da null
  *   draft: müşteriye gönderilmemiş (TASLAK) çizim sürümü var · assigned: çizim bir çizimciye atanmış
  *   dwgPending: müşterinin DWG/DXF çizimi için çizimci kararı bekleniyor (karar 167 — drawingFlags)
  *   dwgUndo: geri alınabilecek DWG kararı (READY | FAULTY | UPDATE — karar 285, drawingFlags) ya da null
  *   orderType: siparişin tipi (GLASS_ORDER | PROFILE_ORDER); verilmezse cam siparişi kuralları
+ *   revision: açık müşteri teklif revizyonunun aşaması (NO_DRAFT | SALES | ADMIN — offer-revision.js → revisionStage) ya da null
  * @returns {string[]} yapılabilecek işlemler
  */
-export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null, approval = 'NONE', loadingOverride = false, approvalResend = false }) {
+export function availableActions({ role, status, onHold = false, canApprove = false, drawing = 'YOK', offer = null, draft = false, assigned = false, dwgPending = false, dwgUndo = null, orderType = null, approval = 'NONE', loadingOverride = false, approvalResend = false, revision = null }) {
   const a = [];
   // Rol adına değil yetkiye bakılır (server/auth/permissions.js). Denetimci hiçbir yetkiye sahip değil → boş liste.
   const sales = can(role, 'ORDER_REVIEW');
@@ -623,14 +626,20 @@ export function availableActions({ role, status, onHold = false, canApprove = fa
 
   // Teklif henüz satışta (yöneticiye gönderilmedi). Gönderildikten sonra satış hiçbir değişiklik yapamaz.
   const offerAtSales = offer === null || offer === 'HAZIRLANIYOR';
+  // Müşteri teklif revizyonu (4.2.10, karar 306): üretimdeki (URETIMDE) siparişte teklif YALNIZCA açık müşteri revizyonunun
+  // taslağında satış → yönetici akışıyla düzenlenir (sipariş durumu değişmez). Öteki üretimdeki siparişlerin kısıtı aynen kalır.
+  const revisionDraft = status === 'URETIMDE' && (revision === 'SALES' || revision === 'ADMIN');
+  const offerStage = preparing || revisionDraft;
 
   if (sales && status === 'YENI') a.push('send_to_drawing', 'no_drawing');
   if (preparing && drawing === 'YOK' && (admin || (sales && offerAtSales))) a.push('send_to_drawing');
-  if (offerWriter && preparing && offerAtSales) a.push('edit_offer', 'submit_offer');
-  if (admin && preparing && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
+  if (offerWriter && offerStage && offerAtSales) a.push('edit_offer', 'submit_offer');
+  if (admin && offerStage && offer === 'YONETIMDE') a.push('approve_price', 'return_offer');
   // Satış, yöneticiye gönderdiği teklifi yönetici fiyatlandırıp müşteriye göndermeden geri alabilir (karar 212). Teklifi
   // gönderenin kendisi olması ve aynı anda yöneticinin işlemi işlemin kendisinde denetlenir (transitions.js → withdraw_offer).
-  if (offerWriter && !admin && preparing && offer === 'YONETIMDE') a.push('withdraw_offer');
+  if (offerWriter && !admin && offerStage && offer === 'YONETIMDE') a.push('withdraw_offer');
+  // 4.2.10 öncesinde üretimdeki siparişte alınmış, taslağı açılmamış müşteri talebi (ör. ALE81): tek seferlik taslak açma
+  if (offerWriter && revision === 'NO_DRAFT' && (preparing || status === 'URETIMDE')) a.push('open_revision_draft');
   // Müşterideki teklifi yalnızca yönetici günceller (yeni sürüm — eski sürüm kalır): hazırlanırken, üretimde ve yüklendi
   // olarak işaretlenmiş siparişte (Paket 4: "her zaman"). Mali kilit (FGO belgesi, müşteri belgesi kapsamı, bekleyen belge
   // isteği, onaylı yükleme) işlemin kendisinde denetlenir: server/orders/financial-lock.js → update_offer.

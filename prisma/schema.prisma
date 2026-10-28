@@ -704,6 +704,14 @@ model Offer {
   changeRequestedById    String?
   changeRequestedBy      User?     @relation("OfferChangeRequestedBy", fields: [changeRequestedById], references: [id])
   changeNote             String?
+  // Değişiklik talebi notunun otomatik çevirisi (4.2.10, karar 306): not her zaman müşterinindir → Türkçe; not çevirisiyle aynı
+  // kural ve alanlar (server/notes/translation.js → translateOfferChange; görünürlük server/notes/view.js → offerChangeView).
+  // Talep kaydedildikten sonra bir kez yazılır; sayfa açılışı çevirmez. Boş: çeviri uygulanmadı (çeviri kapalı / talep yok).
+  translation            String?
+  translationLang        String?
+  translationStatus      NoteTranslationStatus?
+  translationError       String?
+  translationAt          DateTime?
   // Teslim (4.2.5): süre talebin müşteriye GERÇEKTEN iletildiği andan başlar — e-posta posta sunucusuna kabul edildiğinde
   // (müşteriye e-posta gidemiyorsa — tercih / adres yok — uygulama içi bildirim yazıldığında). İletilemezse süre başlamaz:
   // hata kodu yazılır, yöneticiye bildirilir. approvalReminderAt: müşteriye tek hatırlatma gönderildi.

@@ -242,6 +242,8 @@ export default {
     returnToSales: 'Returnează la vânzări',
     approveAndSend: 'Aprobă prețul și trimite oferta clientului',
     submit: 'Trimite oferta administratorului',
+    // Müşteri revizyonu taslağında satışın gönder düğmesi (4.2.10, karar 306 — ürün sahibinin metni)
+    submitRevision: 'Trimite la aprobarea administratorului',
     footUpdate: 'După trimiterea către client, oferta poate fi modificată doar de administrator.',
     footAdmin: 'După aprobare, oferta apare în panoul clientului.',
     listPrice: 'Listă: {p}',

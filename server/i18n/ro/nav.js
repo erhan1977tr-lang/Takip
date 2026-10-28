@@ -6,6 +6,7 @@ export default {
   profileOrderList: 'Comenzi de profile',
   // {n}: comenzi noi de profile care așteaptă prețul administratorului
   profileNew: '{n} comenzi noi de profile așteaptă prețul',
+  offerRevisions: '{n} oferte așteaptă revizuirea cerută de client',
   drawingTeam: 'Echipa de desen',
   drawingPanel: 'Panou desen',
   // Lista echipei de desen „Desene primite ca DXF/DWG” (decizia 167)

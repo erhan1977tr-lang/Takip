@@ -292,15 +292,36 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
   // Sağlayıcı çeviri servisinde yalnızca altı yerde seçilir (addNote, retryNoteTranslation, translateRevision,
   // translateDrawingNote, retryDrawingTranslation, testTranslation) ve yalnızca runTranslation / testTranslation içinde çağrılır
   const svc = APP.find((s) => s.file === 'server/notes/translation.js').text;
-  // + translateOrderNote (siparişin ilk mesajı — karar 225)
-  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 7);
+  // + translateOrderNote (siparişin ilk mesajı — karar 225) + translateOfferChange / retryOfferChangeTranslation (müşterinin
+  // teklif değişiklik talebi notu — 4.2.10, karar 306)
+  assert.equal((svc.match(/translatorFor\(\)/g) ?? []).length, 9);
   assert.equal((svc.match(/await translator\(|await \(translator \?\? translatorFor\(\)\)\(/g) ?? []).length, 2);
   assert.equal((svc.match(/await runTranslation\(db, note, /g) ?? []).length, 2, 'not çevirisi: runTranslation yalnızca addNote ve retryNoteTranslation içinden');
-  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 6, '+ translateRevision (karar 163), translateOrderNote (karar 225), translateDrawingNote ve retryDrawingTranslation (karar 168) — başka çağıran yok');
+  assert.equal((svc.match(/await runTranslation\(/g) ?? []).length, 8, '+ translateRevision (karar 163), translateOrderNote (karar 225), translateDrawingNote ve retryDrawingTranslation (karar 168), translateOfferChange ve retryOfferChangeTranslation (karar 306) — başka çağıran yok');
   // Bu işlevleri çağıran dosyalar: yalnızca iki "use server" işlem dosyası (form gönderimiyle çalışır; GET / çizimle değil)
   assert.deepEqual(filesWith(/\b(addNote|retryNoteTranslation|translateRevision|translateDrawingNote|retryDrawingTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/actions.ts']);
   // Siparişin ilk mesajı (karar 225): yalnızca Yeni Sipariş sunucu işleminden, sipariş KAYDEDİLDİKTEN sonra, bir kez
   assert.deepEqual(filesWith(/\btranslateOrderNote\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/yeni/actions.ts']);
+  // Teklif değişiklik talebi notu (4.2.10, karar 306): yalnızca üretim onayı sunucu işlem dosyasından — talep / eski talep için
+  // taslak açma işlemi KAYDEDİLDİKTEN sonra (runOrderAction'dan sonra) ve açık "yeniden dene" ile
+  assert.deepEqual(filesWith(/\b(translateOfferChange|retryOfferChangeTranslation)\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/siparisler/[id]/approval-actions.ts']);
+  const approval = APP.find((s) => s.file === 'app/(panel)/siparisler/[id]/approval-actions.ts').text;
+  assert.ok(approval.startsWith("'use server'"));
+  const runFn = approval.slice(approval.indexOf('async function run('), approval.indexOf('export async function approveProductionAction('));
+  assert.ok(runFn.indexOf('await runOrderAction(') >= 0 && runFn.indexOf('await runOrderAction(') < runFn.indexOf('await translateChangeNote('), 'çeviri işlem kaydedildikten sonra');
+  // translateChangeNote (işlemden sonra) + translateOfferNoteAction (taslağı 4.2.10'dan önce açılmış eski talebin notu — iç
+  // ekibin açık isteği, bir kez)
+  assert.equal((approval.match(/await translateOfferChange\(/g) ?? []).length, 2);
+  const explicit = approval.slice(approval.indexOf('export async function translateOfferNoteAction('), approval.indexOf('export async function retryOfferTranslationAction('));
+  assert.ok(explicit.indexOf("requirePermission('OFFER_PREPARE')") >= 0 && explicit.indexOf("requirePermission('OFFER_PREPARE')") < explicit.indexOf('await translateOfferChange('), 'açık istek, yetkiden sonra');
+  assert.equal((approval.match(/await retryOfferChangeTranslation\(/g) ?? []).length, 1);
+  // Yalnızca talep ve eski talep için taslak açma çevirir (öteki üretim onayı işlemleri çevirmez)
+  assert.equal((approval.match(/'uretim-onayi', true\)|'teklif', true\)/g) ?? []).length, 2);
+  const offerFn = svc.slice(svc.indexOf('export async function translateOfferChange('), svc.indexOf('export async function retryOfferChangeTranslation('));
+  assert.match(offerFn, /translationStatus: null, \.\.\.\(author \? \{ changeRequestedById: String\(actor\.id \?\? ''\) \} : \{\}\)/);
+  assert.match(offerFn, /updateMany\(\{\s*where: \{ id: offer\.id, translationStatus: null \}/);
+  assert.ok(offerFn.indexOf('limits.translation(actor, now.getTime())') < offerFn.indexOf("translationStatus: 'PENDING'"), 'hak sahiplenmeden önce');
+  assert.ok(offerFn.indexOf('translateReady(settings)') < offerFn.indexOf('limits.translation('), 'kapalıyken hak harcanmaz');
   const newOrder = APP.find((s) => s.file === 'app/(panel)/siparisler/yeni/actions.ts').text;
   assert.ok(newOrder.startsWith("'use server'"));
   assert.ok(newOrder.indexOf('await createGlassOrder(') < newOrder.indexOf('await firstNoteTranslation(orderId, actor);'));
@@ -330,11 +351,11 @@ test('çeviri isteyen işlevler yalnızca iki sunucu işleminden çağrılır: y
   assert.equal((action.match(/retryDrawingTranslation\(/g) ?? []).length, 1);
   assert.ok(action.slice(action.indexOf('export async function retryDrawingTranslationAction(')).indexOf('await retryDrawingTranslation(') > 0);
   assert.deepEqual(filesWith(/\btestTranslation\s*\(/).filter((f) => f !== 'server/notes/translation.js'), ['app/(panel)/admin/entegrasyonlar/actions.ts']);
-  for (const file of ['app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/admin/entegrasyonlar/actions.ts']) {
+  for (const file of ['app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/approval-actions.ts', 'app/(panel)/admin/entegrasyonlar/actions.ts']) {
     assert.ok(APP.find((s) => s.file === file).text.startsWith("'use server'"), `${file}: sunucu işlemi`);
   }
   // Çeviri servisini içe aktaranlar: iki işlem dosyası + Entegrasyonlar sayfası (yalnızca ayar okur: getTranslateSettings, failedTranslations)
-  assert.deepEqual(filesWith(/notes\/translation(\.js)?['"]/), ['app/(panel)/admin/entegrasyonlar/actions.ts', 'app/(panel)/admin/entegrasyonlar/page.tsx', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/yeni/actions.ts']);
+  assert.deepEqual(filesWith(/notes\/translation(\.js)?['"]/), ['app/(panel)/admin/entegrasyonlar/actions.ts', 'app/(panel)/admin/entegrasyonlar/page.tsx', 'app/(panel)/siparisler/[id]/actions.ts', 'app/(panel)/siparisler/[id]/approval-actions.ts', 'app/(panel)/siparisler/yeni/actions.ts']);
   const settingsPage = APP.find((s) => s.file === 'app/(panel)/admin/entegrasyonlar/page.tsx').text;
   assert.match(settingsPage, /import \{ failedTranslations, getTranslateSettings \} from '@\/server\/notes\/translation\.js';/);
   // İşçi (scripts/worker.mjs) ve onun kullandığı sunucu kodu not çevirisini hiç yüklemez: işçi çeviri yapamaz, yeniden deneyemez

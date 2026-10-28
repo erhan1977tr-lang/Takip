@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { can } from '../../auth/permissions.js';
 import { glassLabel } from '../../catalog/glass.js';
 import { availableActions, drawingFlags, isCrateText } from '../rules.js';
+import { revisionStage, REVISION_OFFER_SELECT } from '../offer-revision.js';
 import { orderScope } from '../scope.js';
 import { WorkflowError } from '../../domain/workflow.js';
 import { buildLines } from './lines.js';
@@ -43,9 +44,12 @@ async function loadTarget(db, { orderId, actor }) {
   });
   if (!order) return { ok: false, code: 'NOT_FOUND' };
   const offer = order.offers[0] ?? null;
+  // Müşteri teklif revizyonu (4.2.10): üretimdeki siparişte yalnızca açık revizyonun taslağı düzenlenir — aşama bütün sürümlerden
+  const versions = await db.offer.findMany({ where: { orderId: order.id }, orderBy: { createdAt: 'desc' }, select: REVISION_OFFER_SELECT });
   const acts = availableActions({
     role: actor.role, status: order.status, onHold: order.onHold, canApprove: !!actor.canApprove,
     drawing: order.drawingTrack, offer: offer?.status ?? null, ...drawingFlags(order), orderType: order.orderTypeCode,
+    revision: revisionStage({ ...order, offers: versions }),
   });
   if (!offer || !(acts.includes('edit_offer') || acts.includes('approve_price'))) return { ok: false, code: 'NOT_EDITABLE' };
   return { ok: true, order, offer };

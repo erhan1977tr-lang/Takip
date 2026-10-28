@@ -38,6 +38,9 @@ export const NOTIFY_RULES = {
   ORDER_SENT_TO_DRAWING: () => ['drawer'],
   ORDER_REVISION_REQUESTED: () => ['drawer', 'orderSales'],
   ORDER_DRAWING_APPROVED: () => ['drawer', 'orderSales'],
+  // Müşterinin teklif değişiklik talebi (4.2.10, karar 306 — ürün sahibinin kararı): ilgili satışçıya e-posta (uygulama içi
+  // bildirim zaten yönetici + ilgili satışçı); müşterinin notu ve (hazırsa) saklanan Türkçe çevirisi e-postaya yazılır
+  ORDER_OFFER_CHANGE_REQUESTED: () => ['orderSales'],
   // Müşterinin DWG/DXF çizimi (karar 167): "hatalı" kararı müşteriye (açıklama e-postaya yazılmaz — sipariş sayfasında
   // Romence çevirisiyle); müşterinin yanıtı (düzeltilmiş dosya / fabrika çizimi) çizimciye + ilgili satışçıya
   ORDER_DWG_FAULTY: () => ['customer'],
@@ -155,6 +158,24 @@ export async function revisionOf(db, orderId, at) {
   return r ? { note: r.comment, version: r.drawing?.version ?? null } : null;
 }
 
+/**
+ * Teklif değişiklik talebinin e-postadaki bilgisi (4.2.10): müşterinin notu, saklanan Türkçe çevirisi (yalnızca tamamlanmışsa —
+ * çeviri talep kaydedildikten hemen sonra sunucu işleminde yapılır; e-posta bu yüzden olaydan CHANGE_MAIL_DELAY_MS sonra
+ * gönderilir) ve sürüm numarası (olayın kuyruk verisi). İşçi çeviri YAPMAZ, yalnızca okur.
+ * @returns {Promise<{ note: string, translation: string | null, version: number | null } | null>}
+ */
+export async function offerChangeOf(db, orderId, payload) {
+  const offerId = typeof payload?.offerId === 'string' ? payload.offerId : null;
+  if (!offerId) return null;
+  const o = await db.offer.findFirst({ where: { id: offerId, orderId }, select: { changeNote: true, translation: true, translationLang: true, translationStatus: true } });
+  if (!o?.changeNote) return null;
+  const version = Number.isInteger(Number(payload?.revision)) && Number(payload.revision) > 0 ? Number(payload.revision) : null;
+  return { note: o.changeNote, translation: o.translationStatus === 'DONE' && o.translationLang === 'tr' && o.translation ? o.translation : null, version };
+}
+/** Değişiklik talebi e-postası olaydan bu kadar sonra gönderilir: notun çevirisi (sunucu işleminde, en çok ~6 sn) yetişsin */
+export const CHANGE_MAIL_DELAY_MS = 45_000;
+const MAIL_EMAIL = /[^\s@<>()[\]{},;:"']+@[^\s@<>()[\]{},;:"']+\.[^\s@<>()[\]{},;:"']+/g;
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmtDay = (d, timeZone) => (d ? new Intl.DateTimeFormat('ro-RO', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(d)) : '—');
 const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -167,7 +188,7 @@ const fmtTime = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, da
  * @param {{ type: string, order: any, createdAt: Date, recipient: { locale: 'ro' | 'tr', role: string | null }, appUrl: string, timeZone: string,
  *   revision?: { note: string, version: number | null } | null }} p
  */
-export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null, payload = null }) {
+export function renderNotification({ type, order, createdAt, recipient, appUrl, timeZone, revision = null, payload = null, change = null }) {
   const t = (k, params) => translate(recipient.locale, k, params);
   // Müşteri üretim onayı (4.2.1): yalnızca müşteriye giden "teklif gönderildi / güncellendi" e-postasında, olay onay
   // bekleyen bir sürümü taşıyorsa (kuyruk verisi payload.approval — gönderim anında yazılır)
@@ -190,6 +211,11 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
     ...(DELIVERY_DAY_TYPES.includes(type) && isDay(payload?.day) ? [[t('notify.deliveryDay'), dmyOf(payload.day)]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.version ? [[t('notify.drawingVersion'), `v${revision.version}`]] : []),
     ...(type === 'ORDER_REVISION_REQUESTED' && revision?.note ? [[t('notify.revisionNote'), String(revision.note).slice(0, 2000)]] : []),
+    // Müşterinin teklif değişiklik talebi (4.2.10): sürüm, not (e-posta adresi görmeyen role adresler maskeli — sipariş
+    // sayfasındaki kural) ve Türkçe çeviri (yalnızca Türkçe okuyan alıcıya, tamamlanmışsa)
+    ...(type === 'ORDER_OFFER_CHANGE_REQUESTED' && change?.version ? [[t('notify.offerVersion'), `v${change.version}`]] : []),
+    ...(type === 'ORDER_OFFER_CHANGE_REQUESTED' && change?.note ? [[t('notify.changeNote'), maskMail(recipient.role, change.note)]] : []),
+    ...(type === 'ORDER_OFFER_CHANGE_REQUESTED' && change?.translation && recipient.locale === 'tr' ? [[t('notify.changeTranslation'), maskMail(recipient.role, change.translation)]] : []),
     // Yöneticinin e-postalarında olayın açıklaması (tutar yazılmaz — ayrıntı sipariş sayfasında ve "Önemli kararlar"da)
     ...(recipient.role && admin?.detail ? [[t('notify.description'), admin.detail]] : []),
     // Müşteri üretim onayı (4.2.1): son onay tarihi (Romanya saati; hesaplanamadıysa açıkça belirtilir)
@@ -205,6 +231,12 @@ ${extra ? `<p style="color:#6b7280;margin:12px 0 0">${esc(extra)}</p>` : ''}
 <p style="margin-top:16px"><a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">${esc(t('notify.open'))}</a></p>
 <p style="color:#6b7280;font-size:12px;margin-bottom:0">${esc(t('notify.footer'))}</p>` });
   return { subject, text, html };
+}
+
+/** Not metni (en çok 2000 karakter): firma adı maskeli role e-posta adresleri de maskeli (server/orders/order-view.js ile aynı) */
+function maskMail(role, text) {
+  const v = String(text ?? '').slice(0, 2000);
+  return role && !can(role, 'CUSTOMER_NAME_VIEW') ? v.replace(MAIL_EMAIL, '***') : v;
 }
 
 /**
@@ -251,6 +283,8 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
   // e-postası onay metni olmadan (4.2.0 metni) gider, iletim yazılmaz
   const approvalOn = rows.length ? (await approvalGateSetting(db)).enabled : false;
   for (const row of rows) {
+    // Değişiklik talebi (4.2.10): notun çevirisi yetişsin diye ilk deneme olaydan CHANGE_MAIL_DELAY_MS sonra (satıra dokunulmaz)
+    if (row.type === 'ORDER_OFFER_CHANGE_REQUESTED' && row.attempts === 0 && now.getTime() - new Date(row.createdAt).getTime() < CHANGE_MAIL_DELAY_MS) continue;
     const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
     if (claimed.count === 0) continue;
     const attempt = row.attempts + 1;
@@ -275,6 +309,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       const audiences = order ? NOTIFY_RULES[row.type]?.(order) ?? [] : [];
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
+      const change = order && row.type === 'ORDER_OFFER_CHANGE_REQUESTED' ? await offerChangeOf(db, order.id, payload) : null;
       const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null }) : [];
       if (!approvalOn && (row.type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || row.type === APPROVAL_REMINDER_TYPE)) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'üretim onayı kapalı' } });
@@ -307,7 +342,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;
         try {
-          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload: mailPayload });
+          const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload: mailPayload, change });
           await sendBrandedMail(transport, { from, to: r.email, subject: mail.subject, text: mail.text, html: mail.html, lang: r.locale });
           done.add(r.email.toLowerCase());
         } catch (e) {

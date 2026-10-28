@@ -5,6 +5,7 @@
 import { offerNeedsCheck } from './rules.js';
 import { dwgReview, lastProductionDrawing } from './dwg-review.js';
 import { orderScope } from './scope.js';
+import { awaitingSalesRevision, revisionCandidateWhere, REVISION_OFFER_SELECT } from './offer-revision.js';
 
 export const SLA_RISK_HOURS = 6;
 /**
@@ -40,6 +41,23 @@ export const newProfileWhere = () => ({ orderTypeCode: 'PROFILE_ORDER', status: 
  */
 export function newProfileCount(db, user) {
   return db.order.count({ where: { ...orderScope(user), ...newProfileWhere() } });
+}
+/**
+ * Satış menüsünde "Teklifler" bağlantısının sayacı (4.2.10, karar 306): kullanıcının kapsamındaki (orderScope) müşteri revizyonu
+ * bekleyen teklifler — "Müşteri Revizyon Bekleyen Teklifler" listesiyle AYNI kural (offer-revision.js → awaitingSalesRevision),
+ * sunucuda. Veritabanı ön süzgeci (revisionCandidateWhere) yalnızca değişiklik istenmiş gönderilmiş sürümü olan kapsamdaki cam
+ * siparişlerini getirir; kesin karar sürümlerin sırasıyla verilir.
+ * @param {any} db  Prisma istemcisi
+ * @param {{ appRole: string, customerId?: string | null }} user
+ * @returns {Promise<number>}
+ */
+export async function offerRevisionCount(db, user) {
+  const rows = await db.order.findMany({
+    where: { ...orderScope(user), ...revisionCandidateWhere() },
+    select: { status: true, orderTypeCode: true, productionApprovalRequired: true, offers: { orderBy: { createdAt: 'desc' }, select: REVISION_OFFER_SELECT } },
+    take: 500,
+  });
+  return rows.filter(awaitingSalesRevision).length;
 }
 const DRAWING_WORK = ['GEREKLI', 'YAPILIYOR', 'REVIZYON_ISTENDI'];
 
@@ -159,20 +177,27 @@ function buildQueues(rows, can, now, profiles) {
 }
 
 /**
- * Satışın Teklifler sayfası (karar 155) — yalnızca iki liste, yalnızca cam siparişleri:
- *   awaitingPrice — "Fiyatımı bekleyenler": teklif tablosu açılmış ve teklif hâlâ satışta (HAZIRLANIYOR)
- *   notOpened     — "Teklif tablosu açılmamış siparişler": henüz karar verilmemiş (YENI) ya da teklifi hiç olmayan sipariş
+ * Satışın Teklifler sayfası (karar 155; 4.2.10 — karar 306) — yalnızca cam siparişleri, üç liste, bu sırayla:
+ *   customerRevision — "Müşteri Revizyon Bekleyen Teklifler": müşteri gönderilmiş son sürümde değişiklik istedi ve revizyon
+ *                      satışta (taslak HAZIRLANIYOR — yöneticiden geri gönderilen dahil — ya da eski talebin taslağı henüz
+ *                      açılmamış); üretimdeki (URETIMDE) sipariş de girer. Yöneticiye gönderilince listeden çıkar.
+ *                      Tek kural: offer-revision.js → awaitingSalesRevision (menü sayacıyla aynı).
+ *   awaitingPrice    — "Fiyatımı bekleyenler": teklif tablosu açılmış ve teklif hâlâ satışta (HAZIRLANIYOR); revizyon
+ *                      taslağı burada yeniden listelenmez
+ *   notOpened        — "Teklif tablosu açılmamış siparişler": henüz karar verilmemiş (YENI) ya da teklifi hiç olmayan sipariş
  * Yönetici onayındaki ve müşterideki teklifler satışın bu sayfasında listelenmez. Kapanmış (yüklenmiş / arşiv / iptal)
  * siparişler çağıranın sorgusunda elenir; burada da sayılmaz.
- * @template {{ orderTypeCode: string, status: string, offers: { status: string }[] }} R
+ * @template {{ orderTypeCode: string, status: string, productionApprovalRequired?: boolean | null, offers: { status: string, changeRequestedAt?: Date | string | null }[] }} R
  * @param {R[]} rows
- * @returns {{ key: 'awaitingPrice' | 'notOpened', rows: R[] }[]}
+ * @returns {{ key: 'customerRevision' | 'awaitingPrice' | 'notOpened', rows: R[] }[]}
  */
 export function salesOfferGroups(rows) {
   const open = rows.filter((o) => o.orderTypeCode === 'GLASS_ORDER' && !['YUKLENDI', 'ARSIVLENDI', 'IPTAL'].includes(o.status));
   const notOpened = (o) => o.status === 'YENI' || latestOfferStatus(o) === null;
+  const revision = open.filter(awaitingSalesRevision);
   return [
-    { key: 'awaitingPrice', rows: open.filter((o) => !notOpened(o) && latestOfferStatus(o) === 'HAZIRLANIYOR') },
+    { key: 'customerRevision', rows: revision },
+    { key: 'awaitingPrice', rows: open.filter((o) => !notOpened(o) && latestOfferStatus(o) === 'HAZIRLANIYOR' && !revision.includes(o)) },
     { key: 'notOpened', rows: open.filter(notOpened) },
   ];
 }

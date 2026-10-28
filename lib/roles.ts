@@ -3,16 +3,20 @@ import type { MsgKey } from './i18n';
 
 // Rol adları sözlükte: roles.<ROL> (lib/labels.ts → roleText)
 
-/** Sunucuda sayılan menü sayaçları (panel düzeni hesaplar): profileNew — yöneticinin fiyatını bekleyen yeni profil siparişi */
-export type NavCount = 'profileNew';
+/**
+ * Sunucuda sayılan menü sayaçları (panel düzeni hesaplar): profileNew — yöneticinin fiyatını bekleyen yeni profil siparişi;
+ * offerRevisions — satışta bekleyen müşteri teklif revizyonları (4.2.10, karar 306 — server/orders/queues.js → offerRevisionCount)
+ */
+export type NavCount = 'profileNew' | 'offerRevisions';
 /**
  * Menü tanımı (metinler sözlük anahtarı; panel düzeni çevirir). Bölüm sayacı (count) yan menüde bölüm adının yanında; telefonda
- * bölüm adı çizilmediği için aynı sayaç bölümün bağlantısında (mobileCount) görünür.
+ * bölüm adı çizilmediği için aynı sayaç bölümün bağlantısında (mobileCount) görünür. Bağlantı sayacı (linkCount) yan menüde ve
+ * telefonda bağlantının kendisinde görünür.
  */
-export type NavDef = { href: string; key: MsgKey; mobileCount?: NavCount } | { section: MsgKey; count?: NavCount };
+export type NavDef = { href: string; key: MsgKey; mobileCount?: NavCount; linkCount?: NavCount } | { section: MsgKey; count?: NavCount };
 /** Çevrilmiş menü öğesi (NavLinks bileşenine giden) */
 export type NavItem =
-  | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number }
+  | { href: string; label: string; count?: number; countLabel?: string; mobileCount?: number; linkCount?: number }
   | { section: string; count?: number; countLabel?: string };
 
 // Ana bölüm sırası (karar 269; karar 277 Ticari Teklif'i Çizim Ekibi ile Muhasebe arasına, karar 284 Raporlar'ı Muhasebe ile Satın Alma arasına ekler): Operasyon, Çizim Ekibi, Ticari Teklif, Muhasebe, Satın Alma, Profil Siparişleri, Kişiler, Tanımlar,
@@ -76,7 +80,8 @@ export const NAV: Record<AppRole, NavDef[]> = {
   SATIS: [
     { section: 'nav.operations' },
     { href: '/siparisler', key: 'nav.orders' },
-    { href: '/teklifler', key: 'nav.offers' },
+    // Müşteri revizyonu bekleyen teklif sayısı (4.2.10, karar 306): "Müşteri Revizyon Bekleyen Teklifler" listesiyle aynı kural
+    { href: '/teklifler', key: 'nav.offers', linkCount: 'offerRevisions' },
     { href: '/yuklemeler', key: 'nav.loadings' },
     { section: 'nav.account' },
     { href: '/ayarlar', key: 'nav.mySettings' },

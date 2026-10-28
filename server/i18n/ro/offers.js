@@ -22,7 +22,7 @@ export default {
   internal: {
     title: 'Oferte',
     intro: 'Oferte în pregătire, în așteptarea aprobării administratorului și trimise clienților.',
-    introSales: 'Ofertele care așteaptă prețul dvs. și comenzile al căror tabel de ofertă nu a fost încă deschis.',
+    introSales: 'Ofertele pentru care clientul a cerut revizuire, ofertele care așteaptă prețul dvs. și comenzile al căror tabel de ofertă nu a fost încă deschis.',
     cols: {
       offer: 'Ofertă',
       customer: 'Client',
@@ -34,12 +34,28 @@ export default {
       offerAmount: 'Valoare client',
     },
   },
+  // Lista vânzărilor „Oferte în așteptarea revizuirii cerute de client” (4.2.10, decizia 306)
+  revision: {
+    cols: {
+      requested: 'Data cererii',
+      note: 'Nota clientului',
+      version: 'Versiune',
+      draft: 'Revizie',
+    },
+    versionOf: 'Versiunea {n}',
+    stage: {
+      SALES: 'Ciornă la vânzări',
+      NO_DRAFT: 'Ciorna nu a fost deschisă',
+    },
+    open: 'Deschide și editează',
+  },
   // Grupate după starea ultimei oferte (HAZIRLANIYOR · YONETIMDE · GONDERILDI)
   groups: {
     sales: { title: 'În pregătire la vânzări', empty: 'Nu există oferte în pregătire.' },
     admin: { title: 'La aprobarea administratorului', empty: 'Nicio ofertă nu așteaptă aprobarea.' },
     customer: { title: 'La client', empty: 'Nu există oferte active trimise clienților.' },
-    // Satışın sayfası (karar 155): yalnızca bu iki liste
+    // Satışın sayfası (karar 155; 4.2.10 — karar 306): bu üç liste
+    customerRevision: { title: 'Oferte în așteptarea revizuirii cerute de client', empty: 'Nicio ofertă nu așteaptă revizuirea cerută de client.' },
     awaitingPrice: { title: 'Așteaptă prețul meu', empty: 'Nicio ofertă nu așteaptă prețul dvs.' },
     notOpened: { title: 'Comenzi fără tabel de ofertă deschis', empty: 'Nu există comenzi fără tabel de ofertă deschis.' },
   },

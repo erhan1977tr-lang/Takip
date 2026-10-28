@@ -2,14 +2,16 @@ import Link from 'next/link';
 import type { OfferStatus, OrderStatus, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { type CurrentUser, requirePermission } from '@/lib/auth/session';
-import { getT, type MsgKey } from '@/lib/i18n';
+import { getT, type MsgKey, type T } from '@/lib/i18n';
 import { customerLabel, orderScope, sanitizeRows } from '@/lib/orders';
 import { userCan } from '@/lib/permissions';
-import { fmtDate, fmtMoney } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtMoney } from '@/lib/format';
 import { Badge, CustomerBadge, OfferBadge, OrderBadge } from '@/components/StatusBadge';
 import { profileCustomerText, profileStageText } from '@/lib/labels';
 import { CLOSED } from '@/server/orders/rules.js';
 import { adminOfferGroups, salesOfferGroups } from '@/server/orders/queues.js';
+import { customerRevision } from '@/server/orders/offer-revision.js';
+import { RevisionNote } from '@/components/RevisionNote';
 
 const include = {
   customer: { select: { name: true } },
@@ -112,6 +114,7 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
       </div>
       {groups.map((g) => {
         const rows = g.rows;
+        if (g.key === 'customerRevision') return <RevisionGroup key={g.key} user={user} rows={rows} title={t(g.title)} empty={t(g.empty)} t={t} />;
         return (
           <div key={g.key} className="card card-flush" data-group={g.key}>
             <div className="card-head"><h2>{t(g.title)} <span className="badge">{rows.length}</span></h2></div>
@@ -149,5 +152,50 @@ async function InternalOffers({ user }: { user: CurrentUser }) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * Satışın "Müşteri Revizyon Bekleyen Teklifler" listesi (4.2.10, karar 306): müşterinin değişiklik istediği gönderilmiş sürüm,
+ * talep tarihi, müşterinin notu (özgün + saklanan Türkçe çevirisi — sunucuda role göre temizlenmiş: lib/orders.ts →
+ * sanitizeRows → server/notes/view.js) ve revizyonun aşaması. Müşteri adı satışa maskeli (karar 7 — sunucuda). Liste ve menü
+ * sayacı tek kuraldan (server/orders/offer-revision.js → awaitingSalesRevision); bu bileşen yalnızca çizer, çeviri yapmaz.
+ */
+function RevisionGroup({ user, rows, title, empty, t }: { user: CurrentUser; rows: Row[]; title: string; empty: string; t: T }) {
+  return (
+    <div className="card card-flush" data-group="customerRevision">
+      <div className="card-head"><h2>{title} <span className="badge">{rows.length}</span></h2></div>
+      {rows.length === 0 ? <div className="empty">{empty}</div> : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('offers.internal.cols.offer')}</th><th>{t('offers.internal.cols.customer')}</th><th>{t('offers.internal.cols.orderStatus')}</th>
+                <th>{t('offers.revision.cols.requested')}</th><th>{t('offers.revision.cols.note')}</th><th>{t('offers.revision.cols.version')}</th><th>{t('offers.revision.cols.draft')}</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((o) => {
+                const rev = customerRevision(o);
+                if (!rev) return null;
+                const sent = rev.sent as Row['offers'][number];
+                return (
+                  <tr key={o.id} data-revision-row={o.orderNo} data-revision-stage={rev.stage}>
+                    <td><Link className="order-no" href={`/siparisler/${o.id}#teklif`}>{o.orderNo}</Link><div className="muted small">{o.title}</div></td>
+                    <td className="mono">{customerLabel(user, o.customer.name)}</td>
+                    <td><OrderBadge status={o.status} onHold={o.onHold} /></td>
+                    <td>{fmtDateTime(sent.changeRequestedAt)}</td>
+                    <td>{sent.changeNote ? <RevisionNote r={{ ...sent, comment: sent.changeNote }} role={user.appRole} t={t} plain /> : <span className="muted">—</span>}</td>
+                    <td>{t('offers.revision.versionOf', { n: rev.version })}</td>
+                    <td><Badge tone={rev.stage === 'SALES' ? 'warn' : 'danger'}>{t(`offers.revision.stage.${rev.stage === 'SALES' ? 'SALES' : 'NO_DRAFT'}`)}</Badge></td>
+                    <td className="actions"><Link href={`/siparisler/${o.id}#teklif`} className="btn btn-primary">{t('offers.revision.open')}</Link></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

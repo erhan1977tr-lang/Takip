@@ -79,11 +79,12 @@ test('teklif: satış fiyatı ↔ müşteri fiyatı; kim neyi görür', async ({
   const list = await (await sales.request.get('/teklifler')).text();
   expect(list).not.toContain('135,00');
 
-  // Satışın Teklifler sayfası (fonksiyonel paket 1): yalnızca iki liste — "Fiyatımı bekleyenler" ve "Teklif tablosu
-  // açılmamış siparişler". Yönetici onayındaki ve müşterideki teklifler (bu siparişinki dahil) burada listelenmez.
+  // Satışın Teklifler sayfası (fonksiyonel paket 1; 4.2.10 — karar 306): "Müşteri Revizyon Bekleyen Teklifler" (en üstte),
+  // "Fiyatımı bekleyenler" ve "Teklif tablosu açılmamış siparişler". Yönetici onayındaki ve müşterideki teklifler (bu
+  // siparişinki dahil) burada listelenmez.
   const heads = async (p: typeof sales) => (await p.locator('main .card-head h2').allTextContents()).map((x) => x.replace(/\s*\d+\s*$/, '').trim());
   await sales.goto('/teklifler');
-  expect(await heads(sales)).toEqual(['Fiyatımı bekleyenler', 'Teklif tablosu açılmamış siparişler']);
+  expect(await heads(sales)).toEqual(['Müşteri Revizyon Bekleyen Teklifler', 'Fiyatımı bekleyenler', 'Teklif tablosu açılmamış siparişler']);
   await expect(sales.locator('main tr', { hasText: 'İki fiyat' })).toHaveCount(0);
   // Yöneticinin sayfası değişmedi: son teklifin durumuna göre üç grup; müşterideki teklif orada
   await admin.goto('/teklifler');

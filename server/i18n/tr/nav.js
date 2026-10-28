@@ -6,6 +6,7 @@ export default {
   profileOrderList: 'Profil siparişleri',
   // {n}: yöneticinin fiyatını bekleyen yeni profil siparişi
   profileNew: '{n} yeni profil siparişi fiyat bekliyor',
+  offerRevisions: '{n} teklif müşteri revizyonu bekliyor',
   drawingTeam: 'Çizim Ekibi',
   drawingPanel: 'Çizim Paneli',
   // Çizim ekibinin "DXF/DWG olarak gelen çizimler" listesi (karar 167)

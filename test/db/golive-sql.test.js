@@ -18,7 +18,7 @@ const statements = (file) => fs.readFileSync(new URL(`../../deploy/canliya-gecis
   .split('\n').filter((l) => !/^\s*(--|\\echo)/.test(l)).join('\n')
   .split(/;\s*\n/).map((s) => s.trim()).filter((s) => s && !/^(BEGIN|ROLLBACK)\b/i.test(s));
 
-for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsam.sql', 'uretim-onayi-bildirim-sagligi.sql', 'uretim-onayi-asama-kontrol.sql']) {
+for (const file of ['p7-onkontrol.sql', 'p7-geri-donus.sql', 'uretim-onayi-kapsam.sql', 'uretim-onayi-bildirim-sagligi.sql', 'uretim-onayi-asama-kontrol.sql', 'teklif-revizyon-kontrol.sql']) {
   dbTest(`${file}: her sorgu salt okunur işlemde hatasız çalışır; yazma / DDL yok`, offline(async () => {
     const text = fs.readFileSync(new URL(`../../deploy/canliya-gecis/${file}`, import.meta.url), 'utf8').replace(/--.*$/gm, '');
     assert.ok(!/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY)\b/i.test(text.replace(/'[^']*'/g, "''")), 'yalnızca SELECT');
@@ -45,3 +45,9 @@ for (const file of ['uretim-onayi-kapsam.sql', 'uretim-onayi-bildirim-sagligi.sq
     assert.ok(!NEW_COLUMNS.test(text), 'yeni sütun kullanılmamalı');
   }));
 }
+
+// Teklif revizyonu kontrolü (4.2.10) geçişten ÖNCE canlıdaki 4.2.9 şemasında da çalışır: 4.2.10'un çeviri sütunlarını kullanmaz
+dbTest('teklif-revizyon-kontrol.sql: 4.2.9 şemasıyla çalışır (Offer çeviri sütunlarını kullanmaz)', offline(async () => {
+  const text = fs.readFileSync(new URL('../../deploy/canliya-gecis/teklif-revizyon-kontrol.sql', import.meta.url), 'utf8').replace(/--.*$/gm, '');
+  assert.ok(!/\btranslation/i.test(text), 'yeni sütun kullanılmamalı');
+}));

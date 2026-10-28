@@ -16,6 +16,11 @@ function NumberedText({ text }: { text: string }) {
   return <ol className="revision-list">{items.map((x, i) => <li key={i}>{x}</li>)}</ol>;
 }
 
+/** Serbest metin (satır sonları korunur) */
+function PlainText({ text }: { text: string }) {
+  return <div className="pre">{text}</div>;
+}
+
 /**
  * Çizim alanındaki not ve saklanan çevirisi — müşterinin revizyon notu (karar 163), çizimcinin "çizim hatalı" açıklaması ve
  * sürümün müşteri notu (karar 168). Sipariş sayfası ve çizim ekranı aynı bileşeni kullanır. Veri sunucuda role göre
@@ -23,9 +28,12 @@ function NumberedText({ text }: { text: string }) {
  * çevirisini ve çeviri durumunu alır (kendi tarafının notunda yalnızca süren / başarısız durumu), müşteri yalnızca kendisi
  * için yapılmış Romence çeviriyi, denetimci yalnızca özgün notu.
  * Bu bileşen çeviri YAPMAZ: yalnızca not yazılırken saklanan sonucu gösterir. retry: başarısız çeviride iç ekibe gösterilen
- * "Çeviriyi yeniden dene" formu (verilmezse yalnızca durum yazılır).
+ * "Çeviriyi yeniden dene" formu (verilmezse yalnızca durum yazılır). Müşterinin teklif değişiklik talebi notu (4.2.10) da
+ * aynı bileşenle, serbest metin olarak (plain) gösterilir.
  */
-export function RevisionNote({ r, role, t, retry }: { r: Revision; role: string; t: T; retry?: React.ReactNode }) {
+export function RevisionNote({ r, role, t, retry, plain = false }: { r: Revision; role: string; t: T; retry?: React.ReactNode; plain?: boolean }) {
+  // plain: serbest metin (müşterinin teklif değişiklik talebi notu — 4.2.10): numaralı liste olarak ayrıştırılmaz
+  const Text = plain ? PlainText : NumberedText;
   const st = translationState({ internal: false, ...r });
   const lang = r.translationLang === 'tr' || r.translationLang === 'ro' ? r.translationLang : null;
   const translated = st?.state === 'done' && lang && r.translation ? r.translation : null;
@@ -34,12 +42,12 @@ export function RevisionNote({ r, role, t, retry }: { r: Revision; role: string;
   return (
     <div className="revision-note">
       {translated && <div className="note-label">{t('order.notes.original')}</div>}
-      <NumberedText text={r.comment} />
+      <Text text={r.comment} />
       {translated && lang && (
         <div className="note-translation" lang={lang} data-translation={lang}>
           {/* Etiket çevirinin dilindedir (arayüz dilinden bağımsız) — sipariş notlarındakiyle aynı metin */}
           <div className="note-label">{translate(lang, 'order.notes.translatedLabel')}</div>
-          <NumberedText text={translated} />
+          <Text text={translated} />
         </div>
       )}
       {staff && st?.state === 'pending' && <div className="note-translation note-state">{t('order.notes.translation.pending')}</div>}

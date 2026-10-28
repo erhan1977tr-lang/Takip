@@ -245,6 +245,8 @@ export default {
     returnToSales: 'Satışa geri gönder',
     approveAndSend: 'Fiyatı onayla ve müşteriye gönder',
     submit: 'Teklifi yöneticiye gönder',
+    // Müşteri revizyonu taslağında satışın gönder düğmesi (4.2.10, karar 306 — ürün sahibinin metni)
+    submitRevision: 'Yönetici Onayına Gönder',
     footUpdate: 'Teklif müşteriye gönderildikten sonra yalnızca sistem yöneticisi değiştirebilir.',
     footAdmin: 'Onayladığınızda teklif müşterinin panelinde görünür.',
     listPrice: 'Liste: {p}',

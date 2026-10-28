@@ -65,6 +65,7 @@ import { coverageOf } from '../glass/batch.js';
 import { sortByOrderNo } from './order-number.js';
 import { approvalOnSend } from './production-approval.js';
 import { approvalGateSetting } from './loading-approval.js';
+import { customerRevision, REVISION_OFFER_SELECT } from './offer-revision.js';
 
 export const COMP_MODES = ['NORMAL', 'FREE', 'CUSTOM'];
 const OPEN_STATUSES = ['YENI', 'HAZIRLANIYOR', 'URETIMDE'];
@@ -193,15 +194,17 @@ export function compensationLines({ line, subs = [], quantity, decision }) {
 
 /**
  * Kaynak siparişin adedi düşürülebilir mi (karar 157)? Yalnızca TEMİZ siparişte: açık (hazırlanıyor / üretimde), hiçbir
- * onaylı yüklemede kalemi yok, belge kapsamı yok. Aksi hâlde kaynak teklif değişmez (telafi ek üretimdir).
- * @param {{ status: string }} order
+ * onaylı yüklemede kalemi yok, belge kapsamı yok, müşterinin açık teklif revizyonu yok (4.2.10 — revizyon taslağının yanında
+ * paralel bir gönderilmiş sürüm açılmaz; offer-revision.js). Aksi hâlde kaynak teklif değişmez (telafi ek üretimdir).
+ * @param {{ status: string, productionApprovalRequired?: boolean | null, orderTypeCode?: string | null, offers?: any[] }} order
  * @param {{ inConfirmation: boolean, coverage: unknown }} facts
- * @returns {{ ok: true } | { ok: false, reason: 'CLOSED' | 'LOADED' | 'BILLING' }}
+ * @returns {{ ok: true } | { ok: false, reason: 'CLOSED' | 'LOADED' | 'BILLING' | 'REVISION' }}
  */
 export function sourceReducible(order, { inConfirmation, coverage }) {
   if (!REDUCIBLE_STATUSES.includes(order.status)) return { ok: false, reason: 'CLOSED' };
   if (inConfirmation) return { ok: false, reason: 'LOADED' };
   if (coverage) return { ok: false, reason: 'BILLING' };
+  if (customerRevision(order)) return { ok: false, reason: 'REVISION' };
   return { ok: true };
 }
 
@@ -254,6 +257,8 @@ export function destinationCheck(o, { sourceOrderId, customerId, currency, today
   if (!offer || (offer.status === 'GONDERILDI' && offer.offerAmount == null)) return no('NO_OFFER');
   if (offer.currency !== currency) return no('CURRENCY');
   if (finalInvoice) return no('FINAL_INVOICE');
+  // Müşterinin açık teklif revizyonu (4.2.10): revizyon taslağının yanında ikinci bir sürüm / satır eklenmez
+  if (customerRevision(o)) return no('REVISION_OPEN');
   return { ok: true, via: offer.status === 'GONDERILDI' ? 'SENT' : 'DRAFT' };
 }
 
@@ -339,10 +344,17 @@ const reducibleNow = async (db, src) => {
  * Telafi formu için: bu siparişten telafi açılırsa kaynak adedi düşer mi (ekrandaki bilgi / uyarı)? Kesin karar kayıt
  * anında, kilit altında yeniden verilir.
  * @param {any} db  @param {string} orderId
- * @returns {Promise<{ ok: true } | { ok: false, reason: 'CLOSED' | 'LOADED' | 'BILLING' }>}
+ * @returns {Promise<{ ok: true } | { ok: false, reason: 'CLOSED' | 'LOADED' | 'BILLING' | 'REVISION' }>}
  */
 export async function sourceState(db, orderId) {
-  const src = await db.order.findUnique({ where: { id: orderId }, select: { id: true, status: true, actualShipDate: true, estimatedShipDate: true, fgoDocuments: DEST_INCLUDE.fgoDocuments, billingBatchOrders: DEST_INCLUDE.billingBatchOrders } });
+  const src = await db.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true, status: true, actualShipDate: true, estimatedShipDate: true, productionApprovalRequired: true, orderTypeCode: true,
+      offers: { orderBy: { createdAt: 'desc' }, select: REVISION_OFFER_SELECT },
+      fgoDocuments: DEST_INCLUDE.fgoDocuments, billingBatchOrders: DEST_INCLUDE.billingBatchOrders,
+    },
+  });
   return src ? reducibleNow(db, src) : { ok: false, reason: 'CLOSED' };
 }
 

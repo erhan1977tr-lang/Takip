@@ -38,7 +38,7 @@ const financeHref = (type: string, orderId: string | null, d: Details) => {
 const FINANCE_TYPES = ['FINANCE_REVIEW', 'DUPLICATE_RISK', 'FGO_UNCERTAIN'];
 const CRITICAL_SOURCES = ['GIRIS', 'SAYIM', 'CIKIS', 'THRESHOLD', 'KABUL_DUZELTME'];
 const COMP_MODES = ['FREE', 'NORMAL', 'CUSTOM'];
-const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED', 'FREE'];
+const SOURCE_REASONS = ['LOADED', 'BILLING', 'CLOSED', 'FREE', 'REVISION'];
 
 // Önemli kararlar: bir insan kararı bekleyen durumlar (şimdilik: satışçı liste fiyatını değiştirdi).
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {

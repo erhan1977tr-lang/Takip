@@ -158,3 +158,30 @@ export function drawingNoteView(role, d) {
 export function drawingTranslationsFor(role, drawings) {
   return drawingRevisionsFor(role, drawings).map((d) => drawingNoteView(role, d));
 }
+
+/**
+ * Teklif sürümündeki müşteri değişiklik talebi notunun (Offer.changeNote — 4.2.10, karar 306) çeviri alanları, görenin
+ * rolüne göre — revizyon notunun kuralıyla AYNI (revisionView; not her zaman müşterinindir, çeviri Türkçe): yönetici,
+ * yardımcısı, satış (ve not çevirisiyle çalışan öteki iç ekip) Türkçe çeviriyi, durumu ve güvenli hata kodunu alır; müşteri
+ * kendi notunu yalnızca özgün dilinde görür (Türkçesi gitmez); denetimci çeviri alanı almaz. Notun kendisi (changeNote) bu
+ * işlevle değişmez; çeviri alanı seçilmemiş teklif olduğu gibi döner. Girdi değiştirilmez.
+ * @template {{ translation?: string | null, translationLang?: string | null, translationStatus?: string | null, translationError?: string | null, translationAt?: Date | null }} O
+ * @param {string | null | undefined} role
+ * @param {O} o
+ * @returns {O}
+ */
+export function offerChangeView(role, o) {
+  if (!o || typeof o !== 'object' || !('translationStatus' in o)) return o;
+  return revisionView(role, o);
+}
+
+/**
+ * Sipariş verisindeki teklif sürümlerine offerChangeView (lib/orders.ts → sanitizeOrder; satışın revizyon listesi).
+ * @template O
+ * @param {string | null | undefined} role
+ * @param {O[]} offers
+ * @returns {O[]}
+ */
+export function offersChangeFor(role, offers) {
+  return offers.map((o) => /** @type {any} */ (offerChangeView(role, /** @type {any} */ (o))));
+}
