@@ -4,6 +4,32 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.11 — 28.10.2026
+
+**E-posta bildirimleri ve fabrika PDF aktarımı düzeltmeleri** (ürün sahibi, 28.10.2026; karar 307):
+
+- **Satış ekibi:** yeni cam siparişi, müşterinin çizim revizyonu, teklif değişiklik talebi ve **üretim onayı** e-postası bütün
+  etkin satış kullanıcılarına gider (eskiden revizyon ve değişiklik talebi yalnızca ilgili satışçıya, üretim onayı hiç e-posta
+  değildi). Pasif / silinmiş hesap ve olaydan sonra açılan hesap almaz; aynı adrese bir olay için tek e-posta. Satış zaten
+  bütün cam siparişlerini görür: e-posta hiçbir erişimi genişletmez (firma adı maskeli, bağlantı giriş ister). Yönetici ve
+  yardımcısının uygulama içi bildirimleri ile çizimciye giden bildirimler değişmedi.
+- **Üretim onayı e-postası** (satışa): sipariş no, maskeli firma, onay tarihi ve saati, teklif sürümü, sipariş bağlantısı.
+  4.2.10'dan kalan (yalnızca uygulama içi bildirim için yazılmış) eski onay kayıtları **e-postaya dönüşmez** ve dokunulmaz —
+  geçmiş bildirimler toplu gönderilmez.
+- **Müşteri e-postaları — teklif gönderildi / güncellendi, üretim onayı talebi ve hatırlatması:** siparişin firmasının bütün
+  etkin, e-postası açık kullanıcılarına + firma adresine; siparişi açanın e-posta tercihi artık yalnızca kendisini etkiler.
+  Öbür müşteri olayları (çizim / DWG kararları, yükleme ve teslim günü, profil teklifi, proforma / fatura bildirimi) eski
+  kuralla (siparişi açan + firma adresi) — firma geneline alınmaları ürün sahibinin kararını bekler. Bütün müşteri
+  olaylarında: başka firmanın kullanıcısına hiçbir koşulda gitmez; firma adresi başka firmanın / iç ekibin ya da pasif /
+  tercihi kapalı bir hesabın giriş adresiyse kullanılmaz. Hatırlatma zamanlaması değişmedi.
+- Gönderim ilerlemesi alıcı başına hemen yazılır: işçi yarıda kalsa da aynı adrese ikinci e-posta gitmez; SMTP geçici
+  hatasında yalnızca hata veren alıcı yeniden denenir.
+- **Fabrika PDF aktarımı:** noktalı ondalık biçimde basılmış GlassWorld formları (ALE106, ALE107: `4.983` · `68.00 €` ·
+  `481.64`) artık okunur — satırlar, ölçüler, adet, m², birim fiyat, toplam satırı ve Ara Toplam. Biçim belge başına bir
+  kez belirlenir; iki biçim bir aradaysa PDF aktarılmaz. Türkçe biçimli PDF'ler (yönetici aktarımı) aynen. Aynı PDF
+  yeniden yüklenince okuma da yenilenir (önceki başarısız okuma kalıcı olmaz).
+- Migration yok.
+
 ## 4.2.10 — 27.10.2026
 
 **Müşteri teklif revizyonu** (ürün sahibi, 27.10.2026; karar 306):
