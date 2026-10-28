@@ -86,7 +86,8 @@ const fileLock = (tx, orderId, checksum) => tx.$executeRaw`SELECT pg_advisory_xa
  * okunamayan PDF de kaydedilir (sabit hata koduyla — ön izleme gösterir). Özgün PDF KALICI SAKLANMAZ: kayıt dosya
  * anahtarı olmadan yazılır ve okunan HER dosya `discard` listesinde döner (çağıran diskten siler). Aynı dosya bu siparişte
  * zaten kayıtlıysa kayıt seçimi reusableImport'ta (karar 263): aktarılmamış ya da satırları teklifte duran kayıt yeniden
- * kullanılır (taramanın sonucu güncellenir); önceki aktarımın satırları tamamen silindiyse yeni kayıt açılır.
+ * kullanılır (aktarılmamış kayıtta taramanın ve okumanın sonucu güncellenir — 4.2.11); önceki aktarımın satırları tamamen
+ * silindiyse yeni kayıt açılır.
  * @param {any} db
  * @param {{ actor: any, orderId: string, stored: { storageKey: string, name: string, size: number, mime?: string | null, checksum: string, scanStatus: string, scannedAt?: Date | null }[], readFile: (storageKey: string) => Promise<Uint8Array>, extract?: typeof extractTextItems }} p
  * @returns {Promise<{ ok: true, ids: string[], discard: { storageKey: string }[] } | { ok: false, code: string }>}
@@ -115,8 +116,15 @@ export async function recordUploads(db, { actor, orderId, stored, readFile, extr
       await fileLock(tx, t.order.id, f.checksum);
       const reuse = await reusableImport(tx, t.order.id, f.checksum, liveImportIds);
       if (reuse) {
-        // Aynı dosyanın yeni taraması: aktarılmamış kayıtta tarama sonucu güncellenir (önceki "taranamadı" kalıcı olmaz)
-        if (reuse.status !== 'APPLIED') await tx.offerImport.update({ where: { id: reuse.id }, data: { scanStatus: f.scanStatus, scannedAt: f.scannedAt ?? null } });
+        // Aynı dosyanın yeni taraması ve yeni okuması: aktarılmamış kayıtta tarama sonucu (önceki "taranamadı" kalıcı olmaz) ve
+        // ayrıştırma sonucu güncellenir (4.2.11 — okuyucu düzeldiyse önceki başarısız okuma kalıcı olmaz; ör. noktalı ondalık
+        // biçimli PDF yeniden yüklenince satırları okunur). Okuma bu kez başarısızsa hata kodu yazılır (ön izleme okunamadı der).
+        if (reuse.status !== 'APPLIED') {
+          await tx.offerImport.update({
+            where: { id: reuse.id },
+            data: { scanStatus: f.scanStatus, scannedAt: f.scannedAt ?? null, parseError, factoryOrderNo: parsed?.header.factoryNo ?? null, ...(parsed ? { parsed } : {}) },
+          });
+        }
         return reuse.id;
       }
       const row = await tx.offerImport.create({

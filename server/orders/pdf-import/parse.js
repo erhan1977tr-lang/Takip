@@ -9,36 +9,71 @@
 //   Sonrası  : "CAM / ÜRÜN GRUP BİLGİLERİ" aynı kalemlerin özetidir; satır olarak OKUNMAZ. Toplamlar: Ara Toplam (KDV hariç —
 //              fabrika alış toplamının tek esası), KDV ve Genel Toplam (yalnızca bilgi; hiçbir hesapta kullanılmaz).
 //   Para     : "TL", "€" ve "€ Kur" etiketleri fabrika çıktısının hatasıdır — bütün tutarlar EUR kabul edilir, dönüşüm yok.
+//   Sayılar  : (4.2.11) GlassWorld sayıları çıktıyı alan iş istasyonunun bölge ayarıyla basar: Türkçe biçim (binlik ".", ondalık
+//              ",": 1.183,44 · 4,594 · 0,0 — 4.2.10'a kadar tanınan TEK biçim, kuralı değişmedi) ya da noktalı ondalık (ondalık ".",
+//              binlik "," ya da hiç: 1,183.44 / 1183.44 · 4.594 · 0.0 — ALE106 / ALE107 böyledir). Biçim BELGE BAŞINA bir kez,
+//              tablo / "Toplam :" / Ara Toplam satırlarının hangi biçimle TAM okunduğundan belirlenir (numberFormatOf); iki biçim
+//              aynı belgede görülürse belge reddedilir (NUMBER_FORMAT_MIXED). Tek bir sayı asla tek başına tahmin edilmez ("1.661"
+//              Türkçe biçimde binlik ayırıcılı tam sayı, noktalı biçimde 1,661'dir).
 //
 // Belirsiz / tanınmayan hiçbir şey sessizce kabul edilmez: sorun kodu (problems) üretilir; ön izleme gösterir, aktarma engellenir.
 
-const NUM = String.raw`\d{1,3}(?:\.\d{3})*`;
-const MONEY = String.raw`${NUM},\d{2}`;
-const DEC3 = String.raw`${NUM},\d{3}`;
-const DISC = String.raw`\d{1,3}(?:,\d{1,2})?`;
 const CUR = String.raw`(?:TL|TRY|€|EUR|EURO)?`;
 
-/** Cam satırının sayısal kuyruğu: en boy adet m² topM² fiyat [para] isk tutar [Poz] */
-const GLASS_TAIL = new RegExp(String.raw`(?:^|\s)(\d{2,5})\s+(\d{2,5})\s+(\d{1,5})\s+(${DEC3})\s+(${DEC3})\s+(${MONEY})\s*${CUR}\s+(${DISC})\s+(${MONEY})(?:\s+(.+))?$`, 'u');
-/** İşlem satırı: ad [birim] miktar topMiktar fiyat [para] isk tutar */
-const OP_LINE = new RegExp(String.raw`^(\D.*?)\s+(?:(ADET|AD|MT|MTUL|M2|M)\s+)?(${DEC3})\s+(${DEC3})\s+(${MONEY})\s*${CUR}\s+(${DISC})\s+(${MONEY})$`, 'u');
-const TOTAL_LINE = new RegExp(String.raw`^Toplam\s*:\s*(\d{1,5})\s+(${DEC3})\s+(${MONEY})(?:\s*${CUR})?$`, 'u');
+/** Sayı biçimleri: tam sayı kısmı (binlik ayırıcısıyla), ondalık ayırıcı (RegExp kaynağı) ve binlik ayırıcı */
+const FORMAT_PARTS = Object.freeze({
+  // Türkçe biçim (4.2.10'a kadar tek biçim — DEĞİŞMEDİ): 1.183,44
+  comma: { num: String.raw`\d{1,3}(?:\.\d{3})*`, dec: ',', thousands: /\./g },
+  // Noktalı ondalık (4.2.11): 1,183.44 ya da 1183.44
+  dot: { num: String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)`, dec: String.raw`\.`, thousands: /,/g },
+});
+/** @typedef {'comma' | 'dot'} NumberFormat */
+export const NUMBER_FORMATS = Object.freeze(/** @type {NumberFormat[]} */ (Object.keys(FORMAT_PARTS)));
 
-/** "1.183,44" → 118344 (kuruş) */
-export function moneyCents(s) {
-  const m = new RegExp(`^(${NUM}),(\\d{2})$`).exec(String(s ?? '').trim());
-  if (!m) return null;
-  return Number(m[1].replace(/\./g, '')) * 100 + Number(m[2]);
+function patternsOf({ num, dec, thousands }) {
+  const MONEY = String.raw`${num}${dec}\d{2}`;
+  const DEC3 = String.raw`${num}${dec}\d{3}`;
+  const DISC = String.raw`\d{1,3}(?:${dec}\d{1,2})?`;
+  /** Tablodan sonraki etiketli tutar (büyük harfe çevrilmiş satırda): "ARA TOPLAM : 481.64", "KDV TUTARI 20,00 : 86,70". Tutar
+   *  bir rakamla devam edemez: öteki biçimin binlik ayırıcılı tutarı ("2,566.00") bu biçimde kısmen ("2,56") okunmaz. */
+  const labelled = (label) => new RegExp(`${label}\\s*(?:\\d{1,2}${dec}\\d{2}\\s*)?:\\s*(${MONEY})(?!\\d)`);
+  return {
+    thousands,
+    money: new RegExp(`^(${num})${dec}(\\d{2})$`),
+    dec3: new RegExp(`^(${num})${dec}(\\d{3})$`),
+    disc: new RegExp(`^(\\d{1,3})(?:${dec}(\\d{1,2}))?$`),
+    /** Cam satırının sayısal kuyruğu: en boy adet m² topM² fiyat [para] isk tutar [Poz] */
+    glassTail: new RegExp(String.raw`(?:^|\s)(\d{2,5})\s+(\d{2,5})\s+(\d{1,5})\s+(${DEC3})\s+(${DEC3})\s+(${MONEY})\s*${CUR}\s+(${DISC})\s+(${MONEY})(?:\s+(.+))?$`, 'u'),
+    /** İşlem satırı: ad [birim] miktar topMiktar fiyat [para] isk tutar */
+    opLine: new RegExp(String.raw`^(\D.*?)\s+(?:(ADET|AD|MT|MTUL|M2|M)\s+)?(${DEC3})\s+(${DEC3})\s+(${MONEY})\s*${CUR}\s+(${DISC})\s+(${MONEY})$`, 'u'),
+    totalLine: new RegExp(String.raw`^Toplam\s*:\s*(\d{1,5})\s+(${DEC3})\s+(${MONEY})(?:\s*${CUR})?$`, 'u'),
+    labelled,
+    ara: labelled('ARA TOPLAM'),
+    /** Satırda tutar var mı (açıklama satırı ayrımı): Türkçe biçimde eski kural aynen; noktalıda yalnızca ayrı duran tutar
+     *  ("DR+1.14+8" gibi açıklamaya yapışık PVB kalınlığı tutar sayılmaz) */
+    hasMoney: dec === ',' ? /\d,\d{2}/ : new RegExp(String.raw`(?:^|\s)${num}${dec}\d{2}(?=\s|$)`),
+  };
 }
-/** "4,594" → 4594 (binde bir) */
-export function milli(s) {
-  const m = new RegExp(`^(${NUM}),(\\d{3})$`).exec(String(s ?? '').trim());
+const PATTERNS = Object.freeze({ comma: patternsOf(FORMAT_PARTS.comma), dot: patternsOf(FORMAT_PARTS.dot) });
+const fmtOf = (format) => PATTERNS[format === 'dot' ? 'dot' : 'comma'];
+
+/** "1.183,44" → 118344 (kuruş); noktalı biçimde "1,183.44" / "1183.44" → 118344 */
+export function moneyCents(s, format = 'comma') {
+  const p = fmtOf(format);
+  const m = p.money.exec(String(s ?? '').trim());
   if (!m) return null;
-  return Number(m[1].replace(/\./g, '')) * 1000 + Number(m[2]);
+  return Number(m[1].replace(p.thousands, '')) * 100 + Number(m[2]);
 }
-/** "12,5" → 1250 (yüzde × 100) */
-export function discountBp(s) {
-  const m = /^(\d{1,3})(?:,(\d{1,2}))?$/.exec(String(s ?? '').trim());
+/** "4,594" → 4594 (binde bir); noktalı biçimde "4.594" → 4594 */
+export function milli(s, format = 'comma') {
+  const p = fmtOf(format);
+  const m = p.dec3.exec(String(s ?? '').trim());
+  if (!m) return null;
+  return Number(m[1].replace(p.thousands, '')) * 1000 + Number(m[2]);
+}
+/** "12,5" → 1250 (yüzde × 100); noktalı biçimde "12.5" → 1250 */
+export function discountBp(s, format = 'comma') {
+  const m = fmtOf(format).disc.exec(String(s ?? '').trim());
   if (!m) return null;
   const bp = Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
   return bp <= 10000 ? bp : null;
@@ -62,8 +97,30 @@ const PAGE_HEADER = [/SIPARIS FORMU/, /^SIPARIS NO\b/, /^MUSTERI ADI\b/, /^PROJE
 const isPageHeader = (t) => { const f = folded(t); return PAGE_HEADER.some((r) => r.test(f)); };
 
 /** Açıklama devamı olabilecek metin: harf içerir, tutar / ölçü dizisi içermez, yalnızca güvenli karakterler */
-const isDescContinuation = (t) => /\p{L}/u.test(t) && !/\d,\d{2}/.test(t) && !/\d{2,5}\s+\d{2,5}\s+\d/.test(t)
+const isDescContinuation = (t, p) => /\p{L}/u.test(t) && !p.hasMoney.test(t) && !/\d{2,5}\s+\d{2,5}\s+\d/.test(t)
   && /^[\p{L}\d\s.,+\-()]+$/u.test(t) && !/^TOPLAM\b/.test(folded(t));
+
+/**
+ * Belgenin sayı biçimi (4.2.11): sütun başlığından sonraki satırlardan hangileri hangi biçimle YAPI OLARAK tam okunuyor — cam
+ * satırı, işlem satırı, "Toplam :" satırı, "Ara Toplam :". Bir satır iki biçimle birden okunamaz (her yapı biçime özgü ondalık
+ * sayı taşır). İki biçim de görüldüyse 'mixed' (belge reddedilir); hiçbiri görülmediyse 'comma' (eski davranış — sorunlar
+ * eskisi gibi raporlanır).
+ * @param {{ text: string }[]} lines
+ * @returns {NumberFormat | 'mixed'}
+ */
+export function numberFormatOf(lines) {
+  const hits = { comma: 0, dot: 0 };
+  for (const l of lines ?? []) {
+    const t = String(l?.text ?? '');
+    const f = folded(t);
+    for (const k of NUMBER_FORMATS) {
+      const p = PATTERNS[k];
+      if (p.glassTail.test(t) || p.opLine.test(t) || p.totalLine.test(t) || p.ara.test(f)) hits[k] += 1;
+    }
+  }
+  if (hits.comma && hits.dot) return 'mixed';
+  return hits.dot ? 'dot' : 'comma';
+}
 
 const dateOf = (text, label) => {
   const m = new RegExp(`${label}\\s*:\\s*(\\d{2})[-./](\\d{2})[-./](\\d{4})`).exec(folded(text));
@@ -106,6 +163,14 @@ export function parseFactoryOrder(lines) {
   }
   if (!header.project) problems.push({ code: 'PROJECT_MISSING' });
 
+  // ---- Sayı biçimi (4.2.11): belge başına bir kez; iki biçim birlikte → red (hiçbir sayı tahminle okunmaz) ----
+  const numberFormat = numberFormatOf(list.slice(headerStart + 1));
+  if (numberFormat === 'mixed') return { header, rows, totals, problems: [...problems, { code: 'NUMBER_FORMAT_MIXED' }], numberFormat: null };
+  const P = PATTERNS[numberFormat];
+  const money = (s) => moneyCents(s, numberFormat);
+  const thousandths = (s) => milli(s, numberFormat);
+  const discount = (s) => discountBp(s, numberFormat);
+
   // ---- Tablo ----
   let state = 'rows';
   let pending = null; // S.No + açıklaması okunmuş, sayıları bekleyen cam satırı
@@ -116,16 +181,16 @@ export function parseFactoryOrder(lines) {
     const t = l.text;
     if (isColumnHeader(t) || isPageHeader(t)) continue;
     if (isGroupSection(t)) { problems.push({ code: 'TABLE_END_MISSING', line: l.n }); state = 'post'; i--; break; }
-    const tot = TOTAL_LINE.exec(t);
+    const tot = P.totalLine.exec(t);
     if (/^Toplam\s*:/u.test(t)) {
       if (pending) problems.push({ code: 'ROW_INCOMPLETE', line: pending.line, text: pending.description });
       pending = null;
-      if (tot) { totals.count = Number(tot[1]); totals.totalM2 = milli(tot[2]); totals.tableSum = moneyCents(tot[3]); }
+      if (tot) { totals.count = Number(tot[1]); totals.totalM2 = thousandths(tot[2]); totals.tableSum = money(tot[3]); }
       else problems.push({ code: 'TOTAL_LINE_UNREADABLE', line: l.n, text: t });
       state = 'post';
       break;
     }
-    const g = GLASS_TAIL.exec(t);
+    const g = P.glassTail.exec(t);
     if (g) {
       const before = t.slice(0, g.index).trim();
       let sno = null; let description = null;
@@ -139,28 +204,28 @@ export function parseFactoryOrder(lines) {
       pending = null;
       rows.push({
         line: l.n, sno, description: description.replace(/\s+\.$/, '').trim(),
-        en: Number(g[1]), boy: Number(g[2]), adet: Number(g[3]), m2: milli(g[4]), totalM2: milli(g[5]),
-        unitPrice: moneyCents(g[6]), discount: discountBp(g[7]), amount: moneyCents(g[8]), poz: (g[9] ?? '').trim() || null, ops: [],
+        en: Number(g[1]), boy: Number(g[2]), adet: Number(g[3]), m2: thousandths(g[4]), totalM2: thousandths(g[5]),
+        unitPrice: money(g[6]), discount: discount(g[7]), amount: money(g[8]), poz: (g[9] ?? '').trim() || null, ops: [],
       });
       afterGlass = true;
       continue;
     }
-    const op = OP_LINE.exec(t);
+    const op = P.opLine.exec(t);
     if (op) {
       const row = rows[rows.length - 1];
       if (!row || pending) { problems.push({ code: 'OP_WITHOUT_GLASS', line: l.n, text: t }); continue; }
       row.ops.push({
-        line: l.n, name: op[1].trim(), unit: op[2] ?? null, qty: milli(op[3]), totalQty: milli(op[4]),
-        unitPrice: moneyCents(op[5]), discount: discountBp(op[6]), amount: moneyCents(op[7]),
+        line: l.n, name: op[1].trim(), unit: op[2] ?? null, qty: thousandths(op[3]), totalQty: thousandths(op[4]),
+        unitPrice: money(op[5]), discount: discount(op[6]), amount: money(op[7]),
       });
       afterGlass = false;
       continue;
     }
     // S.No + cam adı (sayıları sonraki satırda): ad bir kalınlık ("6 mm") ya da "CAM" sözcüğünü taşır ("66.3 TEMPER LAMİNE CAM")
-    const desc = /^(\d{1,4})\s+(\d{1,2}(?:[.,]\d+)?\s*mm\b.*)$/iu.exec(t) ?? (/^(\d{1,4})\s+(\d.*)$/u.test(t) && /\bCAM\b/.test(folded(t)) && !/\d,\d{2}/.test(t) ? /^(\d{1,4})\s+(\d.*)$/u.exec(t) : null);
+    const desc = /^(\d{1,4})\s+(\d{1,2}(?:[.,]\d+)?\s*mm\b.*)$/iu.exec(t) ?? (/^(\d{1,4})\s+(\d.*)$/u.test(t) && /\bCAM\b/.test(folded(t)) && !P.hasMoney.test(t) ? /^(\d{1,4})\s+(\d.*)$/u.exec(t) : null);
     // Cam satırının açıklama devamı (sayıların ALTINDA kalan ikinci satır, ör. "REFLEKTE FÜME + ŞEFFAF" — karar 262):
     // yalnızca harf / rakam / + - . ( ) taşıyan, tutar içermeyen, yeni bir sıra numarasıyla başlamayan metin
-    if (!desc && afterGlass && rows.length && !pending && isDescContinuation(t)) {
+    if (!desc && afterGlass && rows.length && !pending && isDescContinuation(t, P)) {
       const row = rows[rows.length - 1];
       row.description = `${row.description} ${t}`.replace(/\s+/g, ' ').trim();
       continue;
@@ -172,7 +237,7 @@ export function parseFactoryOrder(lines) {
       continue;
     }
     // Uzun cam adının devamı (sayısız metin) — yalnızca sayıları beklenen satırda
-    if (pending && !/\d+,\d{2}/.test(t)) { pending.description = `${pending.description} ${t}`.trim(); continue; }
+    if (pending && !P.hasMoney.test(t)) { pending.description = `${pending.description} ${t}`.trim(); continue; }
     problems.push({ code: 'UNRECOGNIZED_LINE', line: l.n, text: t });
   }
   if (state === 'rows') { problems.push({ code: 'TABLE_END_MISSING' }); if (pending) problems.push({ code: 'ROW_INCOMPLETE', line: pending.line, text: pending.description }); }
@@ -182,7 +247,7 @@ export function parseFactoryOrder(lines) {
   for (; i < list.length; i++) {
     const t = list[i].text;
     const f = folded(t);
-    const val = (label) => { const m = new RegExp(`${label}\\s*(?:\\d{1,2},\\d{2}\\s*)?:\\s*(${MONEY})`).exec(f); return m ? moneyCents(m[1]) : null; };
+    const val = (label) => { const m = P.labelled(label).exec(f); return m ? money(m[1]) : null; };
     const ara = val('ARA TOPLAM');
     if (ara != null) subtotals.push(ara);
     totals.grossSum ??= val('TOPLAM TUTAR');
@@ -207,7 +272,7 @@ export function parseFactoryOrder(lines) {
   });
   if (totals.count != null && rows.length && totals.count !== rows.reduce((s, r) => s + r.adet, 0)) problems.push({ code: 'COUNT_MISMATCH' });
   if (totals.totalM2 != null && rows.length && totals.totalM2 !== rows.reduce((s, r) => s + (r.totalM2 ?? 0), 0)) problems.push({ code: 'AREA_TOTAL_MISMATCH' });
-  return { header, rows, totals, problems };
+  return { header, rows, totals, problems, numberFormat };
 }
 
 /**

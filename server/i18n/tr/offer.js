@@ -130,6 +130,7 @@ export default {
       TABLE_END_MISSING: 'Sipariş tablosunun sonu (“Toplam :”) bulunamadı.',
       ROW_INCOMPLETE: 'Bir cam satırının ölçü / fiyat bilgisi eksik ({text}).',
       TOTAL_LINE_UNREADABLE: 'Tablo toplam satırı okunamadı.',
+      NUMBER_FORMAT_MIXED: 'PDF’te iki farklı sayı biçimi bir arada (virgüllü ve noktalı ondalık); tutarlar güvenle okunamaz. Aktarılmaz.',
       UNRECOGNIZED_LINE: 'Tanınmayan satır{text}.',
       OP_WITHOUT_GLASS: 'Bir işlem satırı bir cama bağlanamadı.',
       SUBTOTAL_MISSING: 'Ara Toplam (KDV hariç) bulunamadı.',

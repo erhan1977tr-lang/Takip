@@ -127,6 +127,7 @@ export default {
       TABLE_END_MISSING: 'Sfârșitul tabelului comenzii („Toplam :”) nu a fost găsit.',
       ROW_INCOMPLETE: 'Un rând de sticlă nu are dimensiuni / preț ({text}).',
       TOTAL_LINE_UNREADABLE: 'Rândul total al tabelului nu s-a putut citi.',
+      NUMBER_FORMAT_MIXED: 'PDF-ul conține două formate numerice diferite (zecimale cu virgulă și cu punct); sumele nu pot fi citite sigur. Nu se importă.',
       UNRECOGNIZED_LINE: 'Rând nerecunoscut{text}.',
       OP_WITHOUT_GLASS: 'O operație nu a putut fi legată de o sticlă.',
       SUBTOTAL_MISSING: 'Subtotalul (fără TVA) nu a fost găsit.',
