@@ -5,13 +5,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildLines } from '../server/orders/pdf-import/lines.js';
-import { checkSubtotal, discountBp, expectedAmount, milli, moneyCents, parseFactoryOrder } from '../server/orders/pdf-import/parse.js';
+import { checkSubtotal, discountBp, expectedAmount, milli, moneyCents, numberFormatOf, parseFactoryOrder } from '../server/orders/pdf-import/parse.js';
 import { catalogGlassSignature, factoryGlassSignature, glassCandidates, orderGlassVerdict } from '../server/orders/pdf-import/glass.js';
 import { buildImportPlan, opKindOf, projectCheck, projectRefs } from '../server/orders/pdf-import/plan.js';
 import { extractTextItems, PDF_IMPORT_LIMITS } from '../server/orders/pdf-import/extract.js';
 import { PdfDoc } from '../server/pdf/pdf.js';
 
-import { DESC_BRONZE, DESC_TENTESOL, DESC_UC, FORM_CNC, form } from './fixtures/factory-pdf.js';
+import { DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
 
 // ---------------------------------------------------------------- satırlar
 test('satır kurma: aynı sayfada yakın taban çizgileri tek satır, soldan sağa; sayfa sırası korunur; boş parça atılır', () => {
@@ -335,6 +335,137 @@ needPdfjs('pdf.js: PDF olmayan / çok büyük / metinsiz dosya sabit kodla redde
   const broken = new TextEncoder().encode('%PDF-1.7\nbozuk içerik');
   assert.equal((await extractTextItems(broken)).ok, false);
   assert.deepEqual(await extractTextItems(syntheticPdf(['a']), { limits: { ...PDF_IMPORT_LIMITS, maxPages: 0 } }), { ok: false, error: 'TOO_MANY_PAGES' });
+});
+
+// ---------------------------------------------------------------- 4.2.11: noktalı ondalık biçim (ALE106 / ALE107)
+const noDot = (d) => d.replace(/\s+\.$/, '');
+const rowsOf = (p) => p.rows.map((r) => [r.sno, r.description, r.en, r.boy, r.adet, r.m2, r.totalM2, r.unitPrice, r.discount, r.amount, r.poz, r.ops.length]);
+const G8 = { id: 'g-8', nameTr: '8 mm Temperli', colorTr: 'Şeffaf', nameRo: 'Sticlă securizată 8 mm', colorRo: 'Transparent', label: '8 mm Temperli Şeffaf' };
+
+test('noktalı ondalık (4.2.11) — ALE106 eşdeğeri: üç cam satırı, uzun cam adı, ölçü / adet / m² / birim fiyat / tutar, toplam satırı ve Ara Toplam okunur; grup özeti satır olmaz', () => {
+  const p = parseFactoryOrder(DOT_FORM_3);
+  assert.deepEqual(p.problems, []);
+  assert.equal(p.numberFormat, 'dot');
+  assert.deepEqual(p.header, { factoryNo: '91106', orderDate: '2026-10-28', deliveryDate: '2026-11-13', project: 'ABC 106' });
+  assert.deepEqual(rowsOf(p), [
+    [1, noDot(DESC_UC_838), 1582, 1050, 3, 1661, 4983, 5000, 0, 24915, null, 0],
+    [2, noDot(DESC_UC_838), 1002, 1050, 1, 1052, 1052, 5000, 0, 5260, null, 0],
+    [3, noDot(DESC_UC_838), 998, 1050, 1, 1048, 1048, 5000, 0, 5240, null, 0],
+  ]);
+  // 5 adet, 7.083 m², 354.15 (KDV hariç) — KDV ve Genel Toplam yalnızca bilgi
+  assert.deepEqual(p.totals, { count: 5, totalM2: 7083, tableSum: 35415, subtotal: 35415, grossSum: 35415, discount: 0, vat: 7083, grandTotal: 42498 });
+  assert.deepEqual(checkSubtotal(p), { pdfSum: 35415, subtotal: 35415, ok: true });
+});
+
+test('noktalı ondalık — ALE107 eşdeğeri: tek cam satırı ve toplamlar', () => {
+  const p = parseFactoryOrder(DOT_FORM_1);
+  assert.deepEqual(p.problems, []);
+  assert.equal(p.numberFormat, 'dot');
+  assert.deepEqual(p.header, { factoryNo: '91107', orderDate: '2026-10-28', deliveryDate: '2026-11-13', project: 'ABC 107' });
+  assert.deepEqual(rowsOf(p), [[1, noDot(DESC_DUZ_8), 2215, 1015, 1, 2248, 2248, 2000, 0, 4496, null, 0]]);
+  assert.deepEqual(p.totals, { count: 1, totalM2: 2248, tableSum: 4496, subtotal: 4496, grossSum: 4496, discount: 0, vat: 899, grandTotal: 5395 });
+});
+
+test('noktalı ondalık — plan: satırlar teklif tablosuna (alış fiyatı satış fiyatında, müşteri fiyatı boş, PDF m²si aynen, Poz yoksa fabrika no); A ve B denetimi kuruşu kuruşuna; tek / çok satır', () => {
+  const catalog = [...CATALOG.filter((g) => g.isActive !== false), G8];
+  const p3 = buildImportPlan({ parsed: parseFactoryOrder(DOT_FORM_3), importKey: 'cimp000000000000000000106', order: { prefix: 'ABC', customerOrderNo: '106', glass: CATALOG[3] }, catalog });
+  assert.deepEqual(p3.blocking, []);
+  assert.deepEqual(p3.warnings.map((w) => w.code), ['POZ_FALLBACK']);
+  assert.equal(p3.header.projectCode, 'ABC 106');
+  assert.deepEqual(p3.lines.map((l) => [l.kind, l.glassProductId, l.poz, l.enMm, l.boyMm, l.adet, l.unit, l.unitPrice, l.offerPrice, l.pieceM2, l.sourceRow]), [
+    ['CAM', 'g-uc', '91106', 1582, 1050, 3, 'm2', '50.00', null, '1.661', 1],
+    ['CAM', 'g-uc', '91106', 1002, 1050, 1, 'm2', '50.00', null, '1.052', 2],
+    ['CAM', 'g-uc', '91106', 998, 1050, 1, 'm2', '50.00', null, '1.048', 3],
+  ]);
+  assert.deepEqual(p3.checks.a, { pdfSum: 35415, subtotal: 35415, ok: true, diff: 0 });
+  assert.deepEqual(p3.checks.b, { takipTotal: 35415, pdfSum: 35415, subtotal: 35415, diff: 0, explained: true });
+  assert.equal(p3.lines.length, 3, 'grup özeti satır olarak eklenmez (mükerrer satır yok)');
+  const p1 = buildImportPlan({ parsed: parseFactoryOrder(DOT_FORM_1), importKey: 'cimp000000000000000000107', order: { prefix: 'ABC', customerOrderNo: '107', glass: G8 }, catalog });
+  assert.deepEqual(p1.blocking, []);
+  assert.deepEqual(p1.lines.map((l) => [l.glassProductId, l.enMm, l.boyMm, l.adet, l.unitPrice, l.offerPrice, l.pieceM2]), [['g-8', 2215, 1015, 1, '20.00', null, '2.248']]);
+  assert.deepEqual(p1.checks.b, { takipTotal: 4496, pdfSum: 4496, subtotal: 4496, diff: 0, explained: true });
+  // Başka projenin / müşterinin PDF'i noktalı biçimde de aktarılmaz
+  assert.ok(buildImportPlan({ parsed: parseFactoryOrder(DOT_FORM_1), importKey: 'k', order: { prefix: 'ABC', customerOrderNo: '106', glass: G8 }, catalog }).blocking.some((b) => b.code === 'WRONG_PROJECT'));
+  assert.ok(buildImportPlan({ parsed: parseFactoryOrder(DOT_FORM_1), importKey: 'k', order: { prefix: 'XYZ', customerOrderNo: '107', glass: G8 }, catalog }).blocking.some((b) => b.code === 'WRONG_CUSTOMER'));
+});
+
+test('noktalı ondalık — binlik ayırıcılı / ayırıcısız tutar (1,332.00 · 1080.00), iki satırlık cam adı, iskonto, işlem satırı, farklı cam türleri ve ölçüleri', () => {
+  const p = parseFactoryOrder(dotForm({
+    no: '91110', project: 'ABC 110',
+    rows: [
+      `1 ${DESC_BRONZE} 3000 2000 4 6.000 24.000 55.50 € 0.0 1,332.00 POZ-1`,
+      '2 66.3 TEMPER LAMİNE CAM', 'REFLEKTE FÜME + ŞEFFAF 2400 1500 3 3.600 10.800 100.00 € 0.0 1080.00 POZ-2',
+      `3 ${DESC_UC_838} 1000 1000 2 1.000 2.000 80.00 € 10.0 144.00 POZ-3`, 'CNC İŞLEMİ ADET 2.000 2.000 5.00 € 0.0 10.00',
+    ],
+    total: '9 36.800 2,566.00', sub: '2,566.00', vat: '513.20', grand: '3,079.20',
+  }));
+  assert.deepEqual(p.problems, []);
+  assert.deepEqual(rowsOf(p), [
+    [1, noDot(DESC_BRONZE), 3000, 2000, 4, 6000, 24000, 5550, 0, 133200, 'POZ-1', 0],
+    [2, '66.3 TEMPER LAMİNE CAM REFLEKTE FÜME + ŞEFFAF', 2400, 1500, 3, 3600, 10800, 10000, 0, 108000, 'POZ-2', 0],
+    [3, noDot(DESC_UC_838), 1000, 1000, 2, 1000, 2000, 8000, 1000, 14400, 'POZ-3', 1],
+  ]);
+  assert.deepEqual(p.rows[2].ops[0], { line: p.rows[2].ops[0].line, name: 'CNC İŞLEMİ', unit: 'ADET', qty: 2000, totalQty: 2000, unitPrice: 500, discount: 0, amount: 1000 });
+  assert.deepEqual(p.totals, { count: 9, totalM2: 36800, tableSum: 256600, subtotal: 256600, grossSum: 256600, discount: 0, vat: 51320, grandTotal: 307920 });
+  assert.equal(checkSubtotal(p).ok, true);
+});
+
+test('noktalı ondalık — bozuk / şüpheli PDF güvenle reddedilir: iki sayı biçimi bir arada, tutar ölçü × fiyatı tutmuyor, toplam satırı okunamıyor; hiçbir satır sessizce kabul edilmez', () => {
+  const ok = `1 ${DESC_UC_838} 1000 1000 1 1.000 1.000 50.00 € 0.0 50.00`;
+  // Virgüllü satır + noktalı satır aynı belgede: hiçbir sayı tahminle okunmaz
+  const mixed = parseFactoryOrder(dotForm({ rows: [ok, `2 ${DESC_UC_838} 1000 1000 1 1,000 1,000 50,00 TL 0,0 50,00`], total: '2 2.000 100.00', sub: '100.00', grand: '120.00' }));
+  assert.deepEqual([mixed.problems.map((x) => x.code), mixed.rows, mixed.numberFormat], [['NUMBER_FORMAT_MIXED'], [], null]);
+  const plan = buildImportPlan({ parsed: mixed, importKey: 'k', order: { prefix: 'ABC', customerOrderNo: '106', glass: CATALOG[3] }, catalog: CATALOG });
+  assert.deepEqual(plan.blocking.map((b) => b.code).sort(), ['NO_ROWS', 'NUMBER_FORMAT_MIXED']);
+  assert.equal(plan.lines.length, 0);
+  // Satır tutarı m² × fiyatı tutmuyor
+  const bad = parseFactoryOrder(dotForm({ rows: [`1 ${DESC_UC_838} 1000 1000 1 1.000 1.000 50.00 € 0.0 55.00`], total: '1 1.000 55.00', sub: '55.00', grand: '66.00' }));
+  assert.ok(bad.problems.some((x) => x.code === 'ROW_AMOUNT_MISMATCH'));
+  // Toplam satırı okunamıyor (biçim bozuk) → sorun; Ara Toplam yoksa → sorun
+  const noTotal = parseFactoryOrder(dotForm({ rows: [ok], total: '1 1.0 50.00', sub: '50.00', grand: '60.00' }));
+  assert.ok(noTotal.problems.some((x) => x.code === 'TOTAL_LINE_UNREADABLE'));
+  assert.ok(parseFactoryOrder(DOT_FORM_1.filter((l) => !/Ara Toplam/.test(l.text))).problems.some((x) => x.code === 'SUBTOTAL_MISSING'));
+  // Satırlarla tutmayan tablo toplamları
+  const counts = parseFactoryOrder(dotForm({ rows: [ok], total: '2 1.500 50.00', sub: '50.00', grand: '60.00' }));
+  assert.deepEqual(counts.problems.map((x) => x.code).sort(), ['AREA_TOTAL_MISMATCH', 'COUNT_MISMATCH']);
+});
+
+test('noktalı ondalık — çok sayfalı form: ikinci sayfadaki başlık ve sütun başlığı tekrarı satır sayılmaz', () => {
+  const p = parseFactoryOrder(dotForm({
+    rows: [`1 ${DESC_UC_838} 1582 1050 3 1.661 4.983 50.00 € 0.0 249.15`],
+    page2: ['SİPARİŞ FORMU', 'Trakya Cam ve Alm', 'Sipariş No : 91106 121.001', 'S.No Cam Adı / Cinsi En x Boy Adet M2 Top. M2 Birim Fiyat İsk. Tutar Poz',
+      `2 ${DESC_UC_838} 1002 1050 1 1.052 1.052 50.00 € 0.0 52.60`],
+    total: '4 6.035 301.75', sub: '301.75', grand: '362.10',
+  }));
+  assert.deepEqual(p.problems, []);
+  assert.equal(p.rows.length, 2);
+});
+
+test('sayı biçimi kararı: belge başına bir kez; Türkçe biçim (yönetici aktarımı, 4.2.10 PDF\'leri) aynen; dönüştürücüler biçime göre; tek sayı tahmin edilmez', () => {
+  assert.equal(parseFactoryOrder(FORM_CNC).numberFormat, 'comma');
+  assert.equal(numberFormatOf(FORM_CNC), 'comma');
+  assert.equal(numberFormatOf(DOT_FORM_3), 'dot');
+  assert.equal(numberFormatOf([{ text: 'Bambaşka bir belge' }]), 'comma', 'yapı satırı yoksa eski davranış');
+  // Koşullar metnindeki "0,30m2" yapı satırı değil: noktalı belge noktalı kalır
+  assert.ok(DOT_FORM_3.some((l) => /0,30m2/.test(l.text)));
+  assert.deepEqual(
+    [moneyCents('1,183.44', 'dot'), moneyCents('1183.44', 'dot'), moneyCents('1.183,44', 'dot'), milli('4.594', 'dot'), milli('1,234.567', 'dot'), milli('4,594', 'dot'), discountBp('12.5', 'dot'), discountBp('0.0', 'dot'), discountBp('12,5', 'dot')],
+    [118344, 118344, null, 4594, 1234567, null, 1250, 0, null],
+  );
+  // Aynı dizgiler Türkçe biçimde: "4.594" binlik ayırıcılı bir tutar değildir (ondalık yok) → okunmaz
+  assert.deepEqual([moneyCents('1,183.44'), milli('4.594'), discountBp('0.0'), moneyCents('1.183,44'), milli('4,594')], [null, null, null, 118344, 4594]);
+});
+
+needPdfjs('pdf.js: noktalı ondalık biçimli sentetik fabrika formu → satırlar → ayrıştırma (uçtan uca, ağ yok)', async () => {
+  const lines = DOT_FORM_3.map((l) => l.text.replace(/ (\d{3,5} \d{3,5} \d )/, ' | $1'));
+  const ex = await extractTextItems(syntheticPdf(lines));
+  assert.equal(ex.ok, true, JSON.stringify(ex));
+  const p = parseFactoryOrder(buildLines(ex.items));
+  assert.deepEqual(p.problems, []);
+  assert.equal(p.numberFormat, 'dot');
+  assert.equal(p.header.factoryNo, '91106');
+  assert.deepEqual(p.rows.map((r) => [r.en, r.boy, r.adet, r.totalM2, r.unitPrice, r.amount]), [[1582, 1050, 3, 4983, 5000, 24915], [1002, 1050, 1, 1052, 5000, 5260], [998, 1050, 1, 1048, 5000, 5240]]);
+  assert.equal(checkSubtotal(p).ok, true);
 });
 
 // ---------------------------------------------------------------- yapı (yetki ve gizlilik)

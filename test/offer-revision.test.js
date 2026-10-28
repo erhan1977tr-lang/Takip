@@ -110,9 +110,9 @@ test('görünürlük: değişiklik notunun Türkçe çevirisi iç ekibe; müşte
   assert.equal(offerPeopleView('MUSTERI', o).changeNote, o.changeNote);
 });
 
-test('e-posta (4.2.10): talep yalnızca ilgili satışçıya; sürüm, not ve (Türkçe okuyana) Türkçe çeviri; satışa e-posta adresi ve firma maskeli', async () => {
+test('e-posta (4.2.10 → 4.2.11): talep bütün satış ekibine; sürüm, not ve (Türkçe okuyana) Türkçe çeviri; satışa e-posta adresi ve firma maskeli', async () => {
   const { NOTIFY_RULES, renderNotification } = await import('../server/notifications/email.js');
-  assert.deepEqual(NOTIFY_RULES.ORDER_OFFER_CHANGE_REQUESTED({}), ['orderSales']);
+  assert.deepEqual(NOTIFY_RULES.ORDER_OFFER_CHANGE_REQUESTED({}), ['sales']);
   const order = { id: 'o1', orderNo: 'ALE81', customer: { name: 'Alegrad Sticla' } };
   const change = { note: 'Lățimea 1200 mm — ofis@ale.test', translation: '[tr] Genişlik 1200 mm — ofis@ale.test', version: 3 };
   const mail = (recipient, c = change) => renderNotification({ type: 'ORDER_OFFER_CHANGE_REQUESTED', order, createdAt: at, recipient, appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest', change: c });

@@ -77,12 +77,13 @@ dbTest('bildirim (karar 220): Yönetici Yardımcısı operasyonel e-postayı al�
   const to = new Set(sent.filter((m) => m.subject.startsWith(o.orderNo)).map((m) => m.to));
   for (const k of ['admin', 'admin2', 'yy', 'sales']) assert.ok(to.has(U[k].email), k);
   for (const k of ['yyOff', 'salesOff', 'inspector', 'drawer']) assert.equal(to.has(U[k].email), false, k);
-  // Müşteri kitlesi: siparişi açan kullanıcı pasifse ona gitmez (firmanın kendi adresi kullanıcı değildir)
+  // Müşteri kitlesi: siparişi açan kullanıcı pasifse ona gitmez; firmanın öbür etkin kullanıcısı (4.2.11) ve firmanın kendi
+  // adresi (kullanıcı değildir) alır; başka firmanın kullanıcısı (custB) hiçbir zaman
   const order = await db.order.findUniqueOrThrow({ where: { id: o.id }, include: { customer: true, createdBy: true } });
   await db.user.update({ where: { id: U.custA.id }, data: { isActive: false } });
   const creator = await db.user.findUniqueOrThrow({ where: { id: U.custA.id } });
   const r = await recipientsFor(db, 'ORDER_OFFER_SENT', { ...order, createdBy: creator });
-  assert.deepEqual(r.map((x) => x.email), ['firma@alfa.test']);
+  assert.deepEqual(r.map((x) => x.email), [U.custA2.email, 'firma@alfa.test']);
   // Atanmış çizimci pasifse çizimci kitlesi boş
   const drawerOff = { ...U.drawer, isActive: false };
   assert.deepEqual(await recipientsFor(db, 'ORDER_REVISION_REQUESTED', { ...order, assignedDrawer: drawerOff, salesUsers: [] }).then((x) => x.filter((y) => y.email === U.drawer.email)), []);

@@ -1,6 +1,6 @@
 // Sipariş kayıtlarının yazıcıları: geçmiş (OrderEvent), denetim (AuditLog), bildirim kuyruğu (NotificationOutbox).
 // Hepsi çağıranın veritabanı işlemi (tx) içinde çalışır; işlem geri alınırsa hiçbiri kalmaz.
-import { NOTIFY_RULES } from '../notifications/email.js';
+import { NOTIFY_RULES, STAMPED_MAIL_TYPES } from '../notifications/email.js';
 import { customerMailLang } from '../notifications/lang.js';
 
 /** @param {{ orderId: string, event: string, from?: string | null, to?: string | null, actorId?: string | null, note?: string | null }} e */
@@ -29,6 +29,8 @@ export function writeAudit(tx, entry, actor = {}) {
 /**
  * Kuyruğa olay yazar. E-posta giden sipariş olaylarında müşterinin e-posta dili olay anında belirlenip olaya yazılır
  * (payload.lang — karar 200, server/notifications/lang.js): işçi dili sonradan değiştirmez.
+ * E-posta kuralı sonradan eklenen türlerde (STAMPED_MAIL_TYPES — 4.2.11: üretim onayı) olay damgalanır (payload.emailRule):
+ * e-posta dağıtıcısı yalnızca damgalı satırı e-postaya çevirir; kuraldan önce yazılmış eski satırlar hiçbir zaman e-posta olmaz.
  * @param {{ type: string, orderId?: string | null, payload?: object }} ev
  */
 export async function enqueueOutbox(tx, ev) {
@@ -38,5 +40,6 @@ export async function enqueueOutbox(tx, ev) {
     const creator = order?.createdBy && order.createdBy.customerId === order.customerId ? order.createdBy : null;
     payload = { ...(payload ?? {}), lang: customerMailLang(creator) };
   }
+  if (STAMPED_MAIL_TYPES.includes(ev.type)) payload = { ...(payload ?? {}), emailRule: true };
   return tx.notificationOutbox.create({ data: { type: ev.type, orderId: ev.orderId ?? null, payload } });
 }

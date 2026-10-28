@@ -4,6 +4,8 @@ export default {
   customer: 'Firmă',
   action: 'Operație',
   date: 'Data',
+  // Aprobarea producției de către client (4.2.11): rândul de dată al e-mailului către vânzări = momentul aprobării
+  approvedAt: 'Data și ora aprobării',
   revisionNote: 'Nota de revizie',
   drawingVersion: 'Versiunea desenului',
   offerVersion: 'Versiunea ofertei',
