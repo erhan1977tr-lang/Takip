@@ -21,7 +21,8 @@ import {
 import { approvalGateSetting } from '../orders/loading-approval.js';
 
 /**
- * customer: siparişi açan müşteri kullanıcısı + firmanın e-postası · sales / admin / drawer: iç ekip ·
+ * customer: siparişi açan müşteri kullanıcısı + firmanın genel adresi (firma adresi izolasyonu 4.2.11 — customerRecipients) ·
+ * sales / admin / drawer: iç ekip ·
  * orderSales: siparişle ilgilenen satışçı (order.salesUsers — bkz. orderSalesUsers).
  * Müşterinin çizim kararı (revizyon / onay): atanmış çizimci + ilgili satışçı; yöneticiye gitmez (karar 84).
  * Yöneticinin e-postaları (Yönetici Paneli Paketi 1, karar 218) yalnızca şu olaylarda: müşterinin yeni siparişi (cam ve
@@ -82,15 +83,20 @@ const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.tes
 const loc = (l) => (l === 'tr' ? 'tr' : 'ro');
 
 /**
- * Olayın alıcıları: [{ email, locale, role }] (e-postaya göre tekil). role: firma adı maskesi için (müşteride null).
+ * Olayın alıcıları: [{ email, locale, role }] (e-postaya göre tekil — aynı adrese bir olay için tek e-posta). role: firma adı
+ * maskesi için (müşteride null).
  * lang: olay yazılırken belirlenen müşteri e-posta dili (payload.lang — karar 200); yoksa (eski olay) bugünkü kural.
  * actorId: işlemi yapan — yönetici kümesinde kendisine kendi işlemi e-postalanmaz (karar 218).
- * Pasif kullanıcıya operasyonel e-posta GİTMEZ (Paket A, karar 220): bütün kitlelerde — sipariş sahibi müşteri kullanıcısı,
- * atanmış çizimci, ilgili satışçı / satış ekibi, yönetici ve diğer roller — yalnızca etkin hesaplar (uygulama içi bildirimle
- * aynı kural). Firmanın kendi e-posta adresi bir kullanıcı değildir; o adres pasif bir hesabın adresiyse yine gönderilmez.
- * @param {any} db @param {string} type @param {any} order @param {{ lang?: 'ro' | 'tr' | null, actorId?: string | null }} [o]
+ * at: olayın anı (kuyruk satırının createdAt'i) — satış kullanıcılarından yalnızca o anda VAR OLAN hesaplar alır (4.2.11):
+ * gecikmeli ya da yeniden denenen bir olay sonradan açılmış hesaba geçmiş bildirim olarak gitmez.
+ * Pasif kullanıcıya operasyonel e-posta GİTMEZ (Paket A, karar 220): bütün kitlelerde — sipariş sahibi müşteri kullanıcısı, atanmış
+ * çizimci, ilgili satışçı / satış ekibi, yönetici ve diğer roller — yalnızca etkin, silinmemiş hesaplar (uygulama içi bildirimle
+ * aynı kural). Satıştan geçmeyen sipariş tipinde (orderType.usesSales = false — profil) satış kitlesi boştur: satış, göremediği
+ * siparişin e-postasını almaz (orderScope ile aynı sınır).
+ * @param {any} db @param {string} type @param {any} order
+ * @param {{ lang?: 'ro' | 'tr' | null, actorId?: string | null, at?: Date | string | null }} [o]
  */
-export async function recipientsFor(db, type, order, { lang: snapshot = null, actorId = null } = {}) {
+export async function recipientsFor(db, type, order, { lang: snapshot = null, actorId = null, at = null } = {}) {
   const audiences = NOTIFY_RULES[type]?.(order) ?? [];
   const out = new Map();
   const add = (email, locale, role) => {
@@ -98,36 +104,68 @@ export async function recipientsFor(db, type, order, { lang: snapshot = null, ac
     const k = email.trim().toLowerCase();
     if (!out.has(k)) out.set(k, { email: email.trim(), locale: loc(locale), role });
   };
+  const opened = at ? { createdAt: { lte: new Date(at) } } : {};
+  const salesSees = order?.orderType?.usesSales !== false;
   for (const a of audiences) {
     if (a === 'customer') {
-      // Müşterinin ayarı (Ayarlar → E-posta bildirimleri): siparişi açan kullanıcı kapattıysa bu siparişin müşteri
-      // bildirimleri gönderilmez; bildirimi kapatmış başka bir kullanıcının adresine de gönderilmez.
-      const creator = order.createdBy;
-      const mine = creator && creator.customerId === order.customerId;
-      if (mine && creator.emailNotifications === false) continue;
-      const lang = snapshot ?? customerMailLang(creator);
-      if (mine && creator.isActive !== false) add(creator.email, lang, null);
-      const firm = order.customer?.email;
-      const blocked = isEmail(firm)
-        ? await db.user.findFirst({ where: { email: { equals: firm.trim(), mode: 'insensitive' }, OR: [{ emailNotifications: false }, { isActive: false }] }, select: { id: true } })
-        : null;
-      if (isEmail(firm) && !blocked) add(firm, lang, null);
+      for (const r of await customerRecipients(db, order, { snapshot })) add(r.email, r.locale, null);
     } else if (a === 'drawer' && order.assignedDrawer) {
       if (order.assignedDrawer.isActive !== false) add(order.assignedDrawer.email, order.assignedDrawer.language, order.assignedDrawer.appRole);
     } else if (a === 'orderSales') {
+      if (!salesSees) continue;
       // İlgili satışçı biliniyorsa yalnızca o; bilinmiyorsa (siparişi yönetici yönlendirdiyse) satış ekibi. Yönetici değil.
       const known = (order.salesUsers ?? []).filter((u) => u.isActive !== false && ROLE_SETS.sales.includes(u.appRole));
-      const users = known.length ? known : await db.user.findMany({ where: { appRole: { in: ROLE_SETS.sales }, isActive: true }, select: { email: true, language: true, appRole: true } });
+      const users = known.length ? known : await db.user.findMany({
+        where: { appRole: { in: ROLE_SETS.sales }, isActive: true, deletedAt: null, ...opened },
+        select: { email: true, language: true, appRole: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
       for (const u of users) add(u.email, u.language, u.appRole);
     } else if (a === 'admin') {
       const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS.admin }, isActive: true }, select: { id: true, email: true, language: true, appRole: true } });
       for (const u of users) if (!actorId || u.id !== actorId) add(u.email, u.language, u.appRole);
     } else {
-      const users = await db.user.findMany({ where: { appRole: { in: ROLE_SETS[a] ?? [] }, isActive: true }, select: { email: true, language: true, appRole: true } });
+      if (a === 'sales' && !salesSees) continue;
+      const users = await db.user.findMany({
+        where: { appRole: { in: ROLE_SETS[a] ?? [] }, isActive: true, deletedAt: null, ...opened },
+        select: { email: true, language: true, appRole: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
       for (const u of users) add(u.email, u.language, u.appRole);
     }
   }
   return [...out.values()];
+}
+
+/**
+ * Müşteri kitlesinin e-posta alıcıları (kural aynen — siparişi açan + firma adresi; firma adresi izolasyonu 4.2.11). Firma
+ * yalnızca siparişin kendi firmasıdır (order.customerId — gönderim anındaki kayıt): başka firmanın kullanıcısı hiçbir koşulda
+ * alıcı olmaz.
+ *   - siparişi açan müşteri kullanıcısı (aynı firmada, etkin); siparişi açan e-postayı kapattıysa bu siparişin müşteri
+ *     e-postası gitmez (firma adresi dahil).
+ *   - firmanın genel adresi (Customer.email): adres bir giriş hesabının adresiyse yalnızca bu firmanın etkin, silinmemiş,
+ *     e-posta bildirimi açık müşteri hesabıysa kullanılır (o zaman tekilleşir). Başka firmanın ya da iç ekibin hesabının
+ *     adresine, pasif / silinmiş / tercihi kapalı hesabın adresine "firma adresi" diye gönderilmez (4.2.11 — eski denetim
+ *     yalnızca pasif / tercihi kapalı hesaba bakıyordu, hesabın firmasına değil).
+ * Dil: olayın dili (payload.lang — karar 200; yoksa siparişi açanın bugünkü kuralı).
+ * @param {any} db @param {any} order @param {{ snapshot?: 'ro' | 'tr' | null }} [o]
+ * @returns {Promise<{ email: string, locale: 'ro' | 'tr' }[]>}
+ */
+async function customerRecipients(db, order, { snapshot = null } = {}) {
+  if (!order?.customerId) return [];
+  const creator = order.createdBy && order.createdBy.customerId === order.customerId ? order.createdBy : null;
+  const eventLang = loc(snapshot ?? customerMailLang(creator));
+  if (creator && creator.emailNotifications === false) return [];
+  /** @type {{ email: string, locale: 'ro' | 'tr' }[]} */
+  const out = creator && creator.isActive !== false ? [{ email: creator.email, locale: eventLang }] : [];
+  const firm = order.customer?.email;
+  if (isEmail(firm)) {
+    const owners = await db.user.findMany({
+      where: { email: { equals: firm.trim(), mode: 'insensitive' } },
+      select: { customerId: true, type: true, isActive: true, deletedAt: true, emailNotifications: true },
+    });
+    const ours = owners.every((u) => u.customerId === order.customerId && u.type === 'CUSTOMER' && u.isActive === true && !u.deletedAt && u.emailNotifications !== false);
+    if (ours) out.push({ email: firm.trim(), locale: eventLang });
+  }
+  return out;
 }
 
 const STAFF = { id: true, email: true, language: true, appRole: true, isActive: true };
@@ -297,6 +335,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
           customer: { select: { name: true, email: true } },
           createdBy: { select: { email: true, language: true, fixedLanguage: true, emailNotifications: true, customerId: true, isActive: true } },
           assignedDrawer: { select: { email: true, language: true, appRole: true, isActive: true } },
+          orderType: { select: { usesSales: true } },
         },
       }) : null;
       // Belge FGO'da kesildiyse müşteriye belge e-postası gider (PDF ekiyle); aynı olay için ikinci e-posta gönderilmez
@@ -310,7 +349,7 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       if (order && audiences.includes('orderSales')) order.salesUsers = await orderSalesUsers(db, order.id);
       const revision = order && row.type === 'ORDER_REVISION_REQUESTED' ? await revisionOf(db, order.id, row.createdAt) : null;
       const change = order && row.type === 'ORDER_OFFER_CHANGE_REQUESTED' ? await offerChangeOf(db, order.id, payload) : null;
-      const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null }) : [];
+      const recipients = order ? await recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null, at: row.createdAt }) : [];
       if (!approvalOn && (row.type === 'ORDER_PRODUCTION_APPROVAL_REQUESTED' || row.type === APPROVAL_REMINDER_TYPE)) {
         await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'üretim onayı kapalı' } });
         skipped++;
@@ -341,13 +380,18 @@ export async function dispatchNotifications(db, { transport, from, appUrl, timeZ
       let error = null;
       for (const r of recipients) {
         if (done.has(r.email.toLowerCase())) continue;
+        let accepted = false;
         try {
           const mail = renderNotification({ type: row.type, order, createdAt: row.createdAt, recipient: r, appUrl, timeZone, revision, payload: mailPayload, change });
           await sendBrandedMail(transport, { from, to: r.email, subject: mail.subject, text: mail.text, html: mail.html, lang: r.locale });
           done.add(r.email.toLowerCase());
+          accepted = true;
         } catch (e) {
           error = `${r.email}: ${String(e?.message ?? e)}`.slice(0, 300);
         }
+        // Alıcı başına ilerleme hemen yazılır (4.2.11 — kitleler büyüdü): işçi turun ortasında durursa ya da sonraki bir adım
+        // hata verirse yeniden denemede kabul edilmiş adrese ikinci e-posta gitmez. Yazılamazsa tur sonundaki kayıt dener.
+        if (accepted) await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...payload, sentTo: [...done] } } }).catch(() => {});
       }
       // En az bir müşteri adresine kabul edildi → iletim (bir kez); e-postadaki son tarih aynı andan hesaplandı
       if (isRequest && !ap.delivered && done.size > 0) await markDelivered(db, { offerId: apId, at: now, due: ap.due, channel: 'EMAIL' });

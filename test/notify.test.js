@@ -4,26 +4,48 @@ import assert from 'node:assert/strict';
 import { dispatchNotifications, recipientsFor, renderNotification } from '../server/notifications/email.js';
 
 const order = {
-  id: 'o1', orderNo: 'GLA68', orderTypeCode: 'GLASS_ORDER', customerId: 'c1', estimatedShipDate: new Date('2026-10-23T12:00:00Z'), actualShipDate: null,
+  id: 'o1', orderNo: 'GLA68', orderTypeCode: 'GLASS_ORDER', customerId: 'c1', createdById: 'u-ana', estimatedShipDate: new Date('2026-10-23T12:00:00Z'), actualShipDate: null,
   customer: { name: 'Glass and More', email: 'office@glass.test' },
   createdBy: { email: 'ana@glass.test', language: 'ro', customerId: 'c1' },
   assignedDrawer: null,
 };
+const OLD = new Date('2026-01-01T00:00:00Z');
+const person = (id, email, appRole, extra = {}) => ({
+  id, email, appRole, language: 'tr', fixedLanguage: null, isActive: true, deletedAt: null, emailNotifications: true, createdAt: OLD,
+  type: appRole === 'MUSTERI' ? 'CUSTOMER' : 'INTERNAL', customerId: appRole === 'MUSTERI' ? 'c1' : 'f0', ...extra,
+});
 const users = [
-  { id: 'u-admin', email: 'admin@gkh.test', language: 'tr', appRole: 'ADMIN', isActive: true },
-  { id: 'u-satis', email: 'satis@gkh.test', language: 'tr', appRole: 'SATIS', isActive: true },
-  { id: 'u-cizim', email: 'cizim@gkh.test', language: 'tr', appRole: 'CIZIM', isActive: true },
+  person('u-admin', 'admin@gkh.test', 'ADMIN'),
+  person('u-satis', 'satis@gkh.test', 'SATIS'),
+  person('u-cizim', 'cizim@gkh.test', 'CIZIM'),
   // Pasif yönetici hesabı (karar 218): yöneticinin e-postaları yalnızca etkin hesaplara
-  { id: 'u-eski', email: 'eski-yonetici@gkh.test', language: 'ro', appRole: 'ADMIN', isActive: false },
+  person('u-eski', 'eski-yonetici@gkh.test', 'ADMIN', { language: 'ro', isActive: false }),
+  // Siparişi açan müşteri kullanıcısı (firma c1)
+  person('u-ana', 'ana@glass.test', 'MUSTERI', { language: 'ro' }),
 ];
-const optedOut = [];
+/** Prisma'nın burada kullanılan where alt kümesi: eşitlik, { in }, { lte }, { lt }, { equals, mode: 'insensitive' }, OR, JSON path */
+const matches = (row, where = {}) => Object.entries(where).every(([k, v]) => {
+  if (k === 'OR') return v.some((w) => matches(row, w));
+  if (k === 'payload' && v?.path) return row.payload?.[v.path[0]] === v.equals;
+  const x = row[k];
+  if (v && typeof v === 'object' && !(v instanceof Date)) {
+    if ('in' in v) return v.in.includes(x);
+    if ('equals' in v) return v.mode === 'insensitive' ? String(x ?? '').toLowerCase() === String(v.equals).toLowerCase() : x === v.equals;
+    if ('lte' in v) return x <= v.lte;
+    if ('lt' in v) return x < v.lt;
+    if ('not' in v) return x !== v.not;
+    return false;
+  }
+  return v === null ? x == null : x === v;
+});
+const sorted = (list) => [...list].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 const fakeDb = (rows = []) => {
   const settings = new Map();
   return {
     rows,
     user: {
-      findMany: async ({ where }) => users.filter((u) => where.appRole.in.includes(u.appRole) && (where.isActive === undefined || u.isActive === where.isActive)),
-      findFirst: async ({ where }) => optedOut.find((e) => e === where.email.equals.toLowerCase()) ?? null,
+      findMany: async ({ where }) => sorted(users.filter((u) => matches(u, where))),
+      findFirst: async ({ where }) => sorted(users.filter((u) => matches(u, where)))[0] ?? null,
     },
     order: { findUnique: async () => order },
     integrationSetting: {
@@ -34,20 +56,21 @@ const fakeDb = (rows = []) => {
       updateMany: async ({ where, data }) => {
         let n = 0;
         for (const r of rows) {
-          if (where.id && r.id !== where.id) continue;
-          if (where.status && r.status !== where.status) continue;
-          if (where.attempts != null && r.attempts !== where.attempts) continue;
-          if (where.createdAt?.lt && !(r.createdAt < where.createdAt.lt)) continue;
-          if (where.type?.in && !where.type.in.includes(r.type)) continue;
+          if (!matches(r, where)) continue;
           if (data.attempts?.increment) r.attempts += 1; else Object.assign(r, data);
           n++;
         }
         return { count: n };
       },
-      findMany: async ({ where }) => rows.filter((r) => where.type.in.includes(r.type) && r.status === 'PENDING' && r.availableAt <= where.availableAt.lte),
+      findMany: async ({ where }) => rows.filter((r) => matches(r, where)),
       update: async ({ where, data }) => Object.assign(rows.find((r) => r.id === where.id), data),
     },
   };
+};
+/** Testin geçici kullanıcıları: test sonunda kaldırılır */
+const withUsers = async (extra, fn) => {
+  users.push(...extra);
+  try { return await fn(); } finally { for (const u of extra) users.splice(users.indexOf(u), 1); }
 };
 
 test('bildirim alıcıları: müşteri olayı → siparişi açan + firma e-postası; yeni cam siparişi → satış; çizim → çizim ekibi', async () => {
@@ -152,14 +175,25 @@ test('bildirim gönderimi: ilk çalıştırmadan önceki olaylar atlanır; hata 
   assert.deepEqual(senders, ['GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>', 'GKH Trading Invest SRL <n@gkh.test>']);
 });
 
-test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip bildirimleri etkilenmez; sabit dil kullanılır', async () => {
+test('bildirim tercihi: müşteri kapattıysa o siparişin müşteri bildirimi gitmez; iç ekip etkilenmez; firma adresi yalnızca bu firmanın hesabıysa (4.2.11); sabit dil', async () => {
   const db = fakeDb();
   const off = { ...order, createdBy: { ...order.createdBy, emailNotifications: false } };
   assert.deepEqual(await recipientsFor(db, 'ORDER_OFFER_SENT', off), [], 'siparişi açan kapattı: ne kendisine ne firma adresine');
   assert.deepEqual((await recipientsFor(db, 'ORDER_CREATED', off)).map((r) => r.email), ['satis@gkh.test', 'admin@gkh.test'], 'iç ekip bildirimi sürer');
-  optedOut.push('office@glass.test');
-  assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
-  optedOut.length = 0;
+  // Firma adresi bildirimi kapatmış bir kullanıcının adresiyse (büyük / küçük harf farkı sayılmaz) firma adresi diye kullanılmaz
+  await withUsers([person('u-office', 'Office@Glass.test', 'MUSTERI', { emailNotifications: false })], async () => {
+    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], 'bildirimi kapatmış kullanıcının adresi atlanır');
+  });
+  // Firma adresi başka firmanın (ya da iç ekibin) etkin kullanıcısının giriş adresiyse firma adresi diye kullanılmaz (4.2.11)
+  for (const owner of [person('u-baska', 'office@glass.test', 'MUSTERI', { customerId: 'c2' }), person('u-ic', 'office@glass.test', 'SATIS')]) {
+    await withUsers([owner], async () => {
+      assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test'], owner.id);
+    });
+  }
+  // Firma adresi bu firmanın etkin, tercihi açık kullanıcısının adresiyse kullanılır (tekil)
+  await withUsers([person('u-office2', 'office@glass.test', 'MUSTERI')], async () => {
+    assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', order)).map((r) => r.email), ['ana@glass.test', 'office@glass.test']);
+  });
   const fixed = { ...order, createdBy: { ...order.createdBy, language: 'ro', fixedLanguage: 'tr' } };
   assert.deepEqual((await recipientsFor(db, 'ORDER_OFFER_SENT', fixed)).map((r) => r.locale), ['tr', 'tr']);
 });

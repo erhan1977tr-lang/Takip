@@ -53,8 +53,11 @@ test('e-posta dili olay yazılırken saklanır: e-posta giden sipariş olayına 
   // Gönderim tarafı olaydaki dili kullanır (eski olayda kural gönderim anında)
   const email = strip(read('server/notifications/email.js'));
   // (karar 218: aynı çağrı işlemi yapanı da verir — yöneticiye kendi işlemi e-postalanmaz)
-  assert.ok(email.includes("recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null })"));
-  assert.ok(email.includes('const lang = snapshot ?? customerMailLang(creator);'));
+  // (4.2.11: aynı çağrı olayın anını da verir — olaydan sonra açılan hesap geçmiş bildirimi almaz)
+  assert.ok(email.includes("recipientsFor(db, row.type, order, { lang: snapshotLang(payload), actorId: typeof payload.actorId === 'string' ? payload.actorId : null, at: row.createdAt })"));
+  // Siparişi açan ve firma adresi olayın diliyle; siparişi iç ekip açtıysa onun dili kullanılmaz (enqueueOutbox ile aynı kural)
+  assert.ok(email.includes('const creator = order.createdBy && order.createdBy.customerId === order.customerId ? order.createdBy : null;'));
+  assert.ok(email.includes('const eventLang = loc(snapshot ?? customerMailLang(creator));'));
 });
 
 test('tedarikçi sipariş e-postası her zaman Türkçedir (karar 181) — dil tercihi şablona girmez', () => {
