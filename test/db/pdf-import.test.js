@@ -12,7 +12,7 @@ import { scanPending } from '../../server/files/antivirus.js';
 import { checkUpload, UPLOAD_LIMITS } from '../../server/files/limits.js';
 import { removeOrphanFiles } from '../../server/customers/deletion.js';
 import { eventsFor } from '../../server/orders/order-view.js';
-import { DESC_BRONZE, DESC_NORMAL, DESC_SHAPED, DESC_TENTESOL, FORM_CNC, form, itemsOf, shapedForm } from '../fixtures/factory-pdf.js';
+import { DESC_BRONZE, DESC_NORMAL, DESC_SHAPED, DESC_TENTESOL, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form, itemsOf, shapedForm } from '../fixtures/factory-pdf.js';
 import { offerTotals } from '../../server/orders/rules.js';
 
 let db;
@@ -66,6 +66,9 @@ before(async () => {
   other = await db.customer.create({ data: { name: 'Baska Firma SRL', prefix: 'XYZ', email: 'office@xyz-pdf.test' } });
   g.ref = await db.glassProduct.create({ data: { nameTr: '6.3.6 Temperli Lamine', colorTr: 'Füme Reflekte-Şeffaf', nameRo: 'Sticlă 6.3.6.', colorRo: 'Gri reflectiv-Transparent', weightKgM2: 30 } });
   g.brz = await db.glassProduct.create({ data: { nameTr: '6.3.6 Temperli Lamine', colorTr: 'Bronz-Şeffaf', nameRo: 'Sticlă 6.3.6.', colorRo: 'Bronz-Transparent', weightKgM2: 30 } });
+  // 4.2.11: noktalı ondalık biçimli PDF'lerin (ALE106 / ALE107 eşdeğeri) camları
+  g.uc838 = await db.glassProduct.create({ data: { nameTr: '8.3.8 Temperli Lamine', colorTr: 'Ultra Clear', nameRo: 'STICLĂ SECURIZATĂ LAMINATĂ 8.3.8.', colorRo: 'Extra clar', weightKgM2: 40 } });
+  g.duz8 = await db.glassProduct.create({ data: { nameTr: '8 mm Temperli', colorTr: 'Şeffaf', nameRo: 'Sticlă securizată 8 mm', colorRo: 'Transparent', weightKgM2: 20 } });
   const table = await db.priceTable.create({ data: { name: 'Satış 2026', currency: 'EUR', isDefault: true, cncPrice: 6, holePrice: 3, items: { create: [{ glassProductId: g.ref.id, unitPrice: 95 }] } } });
   const mk = (key, appRole, customerId, extra = {}) =>
     db.user.create({ data: { email: `${key}@pdf.test`, name: key, type: appRole === 'MUSTERI' ? 'CUSTOMER' : 'INTERNAL', appRole, customerId, ...extra } })
@@ -388,4 +391,74 @@ dbTest('metraj ve şekilli cam (karar 261, 262): PDF’in 3 ondalıklı m²si ve
   assert.deepEqual(offer.lines.filter((l) => l.importId).map((l) => l.shaped), [true, false]);
   assert.deepEqual(stamp(offer.lines), before, 'fiyat, POZ, ölçü, adet, metraj ve kaynak değişmez');
   assert.deepEqual([offerTotalsOf(offer).metraj, String(offer.amount)], [5.772, '577.2']);
+}));
+
+// ---------- 4.2.11: noktalı ondalık sayı biçimi (ALE106 / ALE107 — satış panelinde aktarılamıyordu) ----------
+dbTest('noktalı ondalık biçimli PDF (4.2.11 — ALE106 / ALE107 eşdeğeri): satış ön izler ve aktarır (üç satır); yönetici fiyat onayında aktarır (tek satır); alış fiyatı satış fiyatında, müşteri fiyatı boş; grup özeti satır olmaz', offline(async () => {
+  const o = await newOrder(106, firm, g.uc838);
+  const up = await upload('sales', o.id, [pdf(DOT_FORM_3)]);
+  assert.equal(up.ok, true);
+  const p = await preview('sales', o.id, up.ids);
+  assert.deepEqual(p.imports.map((i) => [i.factoryNo, i.blocking, i.warnings.map((w) => w.code)]), [['91106', [], ['POZ_FALLBACK']]]);
+  assert.deepEqual(p.imports[0].plan.checks.a, { pdfSum: 35415, subtotal: 35415, ok: true, diff: 0 });
+  assert.deepEqual(p.imports[0].plan.checks.b, { takipTotal: 35415, pdfSum: 35415, subtotal: 35415, diff: 0, explained: true });
+  assert.equal(p.imports[0].plan.lineCount, 3, 'grup özeti satır olarak eklenmez');
+  await apply('sales', o.id, await versionOf(o.id), fp(p), { dropEmpty: p.empty.map((e) => e.id) });
+  const offer = await latest(o.id);
+  assert.equal(offer.status, 'HAZIRLANIYOR', 'yöneticiye gönderilmedi');
+  assert.deepEqual(offer.lines.map((l) => [l.kind, l.glassProductId, l.poz, l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice, Number(l.pieceM2), l.sourceRow, !!l.importId]), [
+    ['CAM', g.uc838.id, '91106', 1582, 1050, 3, '50', null, 1.661, 1, true],
+    ['CAM', g.uc838.id, '91106', 1002, 1050, 1, '50', null, 1.052, 2, true],
+    ['CAM', g.uc838.id, '91106', 998, 1050, 1, '50', null, 1.048, 3, true],
+  ]);
+  assert.deepEqual([String(offer.amount), offerTotalsOf(offer).metraj], ['354.15', 7.083], 'PDF ile aynı: 7,083 m² ve 354,15');
+  const imp = await db.offerImport.findUniqueOrThrow({ where: { id: up.ids[0] } });
+  assert.deepEqual([imp.parsed.numberFormat, imp.parsed.rows.length, imp.parsed.totals.subtotal, imp.storageKey], ['dot', 3, 35415, null]);
+
+  // Yönetici aktarımı (fiyat onayında): tek satır; satış fiyatı (alış) PDF'ten, müşteri fiyatı boş — yöneticinin işlevi değişmedi
+  const o2 = await newOrder(107, firm, g.duz8);
+  await run(o2.id, 'save_offer', 'sales', { lines: [{ description: 'Cam', enMm: 1000, boyMm: 1000, adet: 1, unit: 'm2', unitPrice: '20.00', kind: 'CAM', free: false }] });
+  await run(o2.id, 'submit_offer', 'sales', { lines: (await latest(o2.id)).lines.map((l) => ({ id: l.id, description: l.description, enMm: l.enMm, boyMm: l.boyMm, adet: l.adet, unit: l.unit, unitPrice: Number(l.unitPrice).toFixed(2), kind: l.kind, free: l.free })) });
+  assert.equal((await importTarget(db, { orderId: o2.id, actor: actor(people.sales) })).code, 'NOT_EDITABLE');
+  const up2 = await upload('admin', o2.id, [pdf(DOT_FORM_1)]);
+  const pa = await preview('admin', o2.id, up2.ids);
+  assert.deepEqual(pa.imports.map((i) => [i.factoryNo, i.blocking]), [['91107', []]]);
+  await apply('admin', o2.id, await versionOf(o2.id), fp(pa));
+  const offer2 = await latest(o2.id);
+  assert.equal(offer2.status, 'YONETIMDE');
+  assert.deepEqual(offer2.lines.filter((l) => l.importId).map((l) => [l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice, Number(l.pieceM2), l.glassProductId]), [[2215, 1015, 1, '20', null, 2.248, g.duz8.id]]);
+}));
+
+dbTest('yeniden yükleme (4.2.11): aynı PDF aktarılmamış kayda yeniden yüklenince okuma yenilenir (eski başarısız okuma kalmaz); okunamazsa hata yazılır; aktarılmış kaydın okumasına dokunulmaz', offline(async () => {
+  const o = await newOrder(108, firm, g.uc838);
+  const good = dotForm({ no: '91108', project: 'ABC 108', rows: [`1 ${DESC_UC_838} 1582 1050 3 1.661 4.983 50.00 € 0.0 249.15`], total: '3 4.983 249.15', sub: '249.15', grand: '298.98' });
+  const first = await upload('sales', o.id, [pdf(good, 'reparse-sum')]);
+  // 4.2.10'un okuyucusunun aynı dosyadan ürettiği sonuç (noktalı ondalık okunamıyordu): satırsız kayıt
+  const old = { header: { factoryNo: '91108', orderDate: '2026-10-28', deliveryDate: '2026-11-13', project: 'ABC 108' }, rows: [],
+    totals: { count: null, totalM2: null, tableSum: null, subtotal: null, grossSum: null, discount: null, vat: null, grandTotal: null },
+    problems: [{ code: 'ROW_INCOMPLETE', line: 12 }, { code: 'TOTAL_LINE_UNREADABLE', line: 13 }, { code: 'SUBTOTAL_MISSING' }, { code: 'NO_ROWS' }] };
+  await db.offerImport.update({ where: { id: first.ids[0] }, data: { parsed: old } });
+  assert.deepEqual((await preview('sales', o.id, first.ids)).imports[0].blocking.map((b) => b.code), ['ROW_INCOMPLETE', 'TOTAL_LINE_UNREADABLE', 'SUBTOTAL_MISSING', 'NO_ROWS']);
+  // Aynı dosya yeniden yüklenir: aynı kayıt (karar 263), okuma güncel okuyucuyla yenilenir
+  const again = await upload('sales', o.id, [pdf(good, 'reparse-sum')]);
+  assert.deepEqual(again.ids, first.ids);
+  const row = await db.offerImport.findUniqueOrThrow({ where: { id: first.ids[0] } });
+  assert.deepEqual([row.parsed.numberFormat, row.parsed.rows.length, row.parseError, row.factoryOrderNo, row.storageKey], ['dot', 1, null, '91108', null]);
+  const fresh = await preview('sales', o.id, again.ids);
+  assert.deepEqual(fresh.imports[0].blocking, []);
+  // Okuma bu kez başarısız (dosya okunamadı): aktarılmamış kayıtta hata kodu — ön izleme "okunamadı" der, aktarılamaz
+  const o2 = await newOrder(109, firm, g.uc838);
+  const two = await upload('sales', o2.id, [pdf(good, 'reparse-2')]);
+  await upload('sales', o2.id, [{ ...pdf([], 'reparse-2'), storageKey: 'yok/okunamaz.pdf' }]);
+  assert.equal((await db.offerImport.findUniqueOrThrow({ where: { id: two.ids[0] } })).parseError, 'UNREADABLE');
+  assert.deepEqual((await preview('sales', o2.id, two.ids)).imports[0].blocking.map((b) => b.code), ['PDF_UNREADABLE']);
+  // Aktarılmış kayıt: yeniden yükleme okumasını değiştirmez (satırları teklifte duruyor — "zaten aktarıldı")
+  await apply('sales', o.id, await versionOf(o.id), fp(fresh), { dropEmpty: fresh.empty.map((e) => e.id) });
+  const applied = JSON.stringify((await db.offerImport.findUniqueOrThrow({ where: { id: first.ids[0] } })).parsed);
+  const changed = dotForm({ no: '91108', project: 'ABC 108', rows: [`1 ${DESC_UC_838} 1000 1000 1 1.000 1.000 50.00 € 0.0 50.00`], total: '1 1.000 50.00', sub: '50.00', grand: '60.00' });
+  const third = await upload('sales', o.id, [pdf(changed, 'reparse-sum')]);
+  assert.deepEqual(third.ids, first.ids);
+  assert.equal(JSON.stringify((await db.offerImport.findUniqueOrThrow({ where: { id: first.ids[0] } })).parsed), applied);
+  assert.ok((await preview('sales', o.id, third.ids)).imports[0].blocking.some((b) => b.code === 'ALREADY_IMPORTED'));
+  assert.equal((await latest(o.id)).lines.filter((l) => l.importId).length, 1, 'mükerrer satır yok');
 }));

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
 import { PdfDoc } from '../server/pdf/pdf.js';
 import { readXlsx } from '../server/files/xlsx.js';
-import { form } from '../test/fixtures/factory-pdf.js';
+import { dotForm, form } from '../test/fixtures/factory-pdf.js';
 
 // Fabrika PDF'i aktarımı (karar 255) — gerçek sunucuda, gerçek ClamAV ile: satış birden çok fabrika PDF'ini yükler, ön izler,
 // yanlış projeyi dışarıda bırakıp onaylar; satırlar (Poz, ölçü, adet, alış fiyatı) teklif tablosuna gelir, müşteri fiyatı
@@ -162,4 +162,61 @@ test('PDF’den aktar: çoklu PDF, ön izleme, yanlış proje engeli, mükerrer 
   await expect(sales.locator('#teklif a[href$="format=xlsx"]')).toBeVisible();
   expect((await sales.request.get(`${orderUrl}/teklif?format=xlsx`)).status()).toBe(200);
   for (const p of [cust, insp, drawer, sales]) await p.context().close();
+});
+
+// 4.2.11: noktalı ondalık biçimli fabrika formu (ALE106 / ALE107 bu biçimde basılmıştı — 4.983 · 50.00 € · 0.0 · 354.15) satış
+// panelinde okunur: üç satır (3 + 1 + 1 adet), A / B denetimi tutar, Poz yoksa fabrika numarası (uyarı), grup özeti satır olmaz.
+// PDF SENTETİKTİR (TAKİP'in PDF yazıcısı; gerçek müşteri / fiyat yok — ölçüler ALE106'nın geometrisi).
+test('PDF’den aktar (4.2.11): noktalı ondalık biçimli fabrika formu satış panelinde okunur ve aktarılır', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
+  await cust.fill('#title', 'PDF aktarma noktalı ondalık');
+  await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS_LABEL });
+  await cust.setInputFiles('#files', sampleFile('cizim-pdf-noktali.pdf'));
+  await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
+  await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/, { timeout: 45_000 });
+  const orderUrl = new URL(cust.url()).pathname;
+  const orderNo = (await cust.locator('.page-head .mono').first().textContent())!.trim();
+  const [, code, no] = /^([A-Z]{3})(\d+)$/.exec(orderNo)!;
+  const dot = factoryPdf(dotForm({
+    no: '97106', project: `${code} ${no}`,
+    rows: [
+      `1 ${GLASS_PDF} . 1582 1050 3 1.661 4.983 50.00 € 0.0 249.15`,
+      `2 ${GLASS_PDF} . 1002 1050 1 1.052 1.052 50.00 € 0.0 52.60`,
+      `3 ${GLASS_PDF} . 998 1050 1 1.048 1.048 50.00 € 0.0 52.40`,
+    ],
+    total: '5 7.083 354.15', group: [`1 ${GLASS_PDF} . 5 7.083 283.33 50.00 € 50.00 0.0 354.15 Ö`],
+    sub: '354.15', vat: '70.83', grand: '424.98',
+  }));
+
+  const sales = await as(browser, SALES, TEAM_PW);
+  await sales.goto(orderUrl);
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await expect(sales.getByLabel('Açıklama').first()).toHaveValue(GLASS_LABEL);
+  await sales.getByRole('button', { name: "PDF'den Aktar" }).click();
+  const dlg = sales.locator('dialog.pdf-import[open]');
+  await expect(dlg).toBeVisible();
+  await sales.setInputFiles('#pdf-files', [file('fabrika-noktali.pdf', dot)]);
+  await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
+  const one = dlg.locator('[data-pdf-file="97106"]');
+  await expect(one).toBeVisible({ timeout: 60_000 });
+  await expect(one.locator('[data-pdf-blocking]')).toHaveCount(0);
+  await expect(one.locator('[data-factory-no]')).toHaveText('97106');
+  await expect(one.locator('[data-project]')).toHaveText(`${code} ${no}`);
+  await expect(one.locator('[data-check="a"]')).toContainText('tutuyor');
+  await expect(one.locator('[data-check="b"]')).toHaveAttribute('data-diff', '0');
+  await expect(one.locator('[data-code="POZ_FALLBACK"]')).toBeVisible();
+  await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeEnabled();
+  await dlg.getByRole('button', { name: 'Teklif tablosuna aktar' }).click();
+  await expect(sales).toHaveURL(/ok=pdf_imported/, { timeout: 45_000 });
+  const values = (label: string) => sales.getByLabel(label, { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(await values('En')).toEqual(['1582', '1002', '998']);
+  expect(await values('Boy')).toEqual(['1050', '1050', '1050']);
+  expect(await values('Adet')).toEqual(['3', '1', '1']);
+  expect(await values('Birim fiyat')).toEqual(['50.00', '50.00', '50.00']);
+  expect(await values('Poz')).toEqual(['97106', '97106', '97106']);
+  // Teklif satışta kaldı (yöneticiye kendiliğinden gitmedi)
+  await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
+  for (const p of [cust, sales]) await p.context().close();
 });
