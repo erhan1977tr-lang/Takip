@@ -436,7 +436,9 @@ dbTest('ACİL DURDURMA: kapalıyken 4.2.0 iş akışı (onay, üretim ve yüklem
   const fRow = await db.notificationOutbox.findFirst({ where: { orderId: fresh.id, type: 'ORDER_OFFER_SENT' } });
   assert.equal(fRow.payload.approval, undefined);
   sent.length = 0;
-  await dispatchNotifications(db, { ...mailOpts, now: new Date('2027-02-02T08:00:00Z') });
+  // İşçinin turları (tur başına en eski 20 satır): kuyrukta önceki testlerin olayları da var — 4.2.11'den beri müşterinin üretim
+  // onayı da e-posta olayıdır, bu yüzden tek tur bu siparişin satırına ulaşmayabilir
+  for (let i = 0; i < 10; i++) await dispatchNotifications(db, { ...mailOpts, now: new Date('2027-02-02T08:00:00Z') });
   const fMail = mailsTo('cust@po.test').find((m) => m.subject.startsWith(fresh.orderNo));
   assert.ok(fMail);
   assert.doesNotMatch(fMail.text, /Termen de aprobare/, 'onay metni yok');
