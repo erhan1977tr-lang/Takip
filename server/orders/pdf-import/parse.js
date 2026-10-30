@@ -148,10 +148,19 @@ export function parseFactoryOrder(lines) {
   if (headerStart < 0) return { header, rows, totals, problems: [{ code: 'NOT_FACTORY_FORM' }] };
   const head = list.slice(0, headerStart);
   const buyerIdx = head.findIndex((l) => /^MUSTERI ADI\b/.test(folded(l.text)));
-  const noCandidates = new Set();
-  for (const l of (buyerIdx >= 0 ? head.slice(0, buyerIdx + 1) : head)) {
-    // Tarih / saat / telefon taşıyan satırlar numara adayı değildir; büyük sipariş numarası noktasız 4–8 hanedir
-    for (const tok of l.text.split(/\s+/)) if (/^\d{4,8}$/.test(tok)) noCandidates.add(tok);
+  // 4.2.12: önce "Sipariş No :" etiketinin HEMEN ardındaki numara (arada yalnızca 121.001 gibi noktalı form değeri olabilir).
+  // Aynı satırdaki öbür sayılar aday sayılmaz (ALE 80 / ALE 93). Birden çok etiket farklı numara verirse belirsizlik korunur.
+  const labelled = new Set();
+  for (const l of head) {
+    for (const m of folded(l.text).matchAll(/SIPARIS NO\s*:\s*((?:\d+[.,]\d+\s+)*)(\d{4,8})(?![\d.,])/g)) labelled.add(m[2]);
+  }
+  const noCandidates = new Set(labelled);
+  // Etiketin yanında numara yoksa (büyük yazı ayrı satıra düşmüş olabilir) eski kural: başlıktaki noktasız 4–8 haneli sayılar
+  if (!labelled.size) {
+    for (const l of (buyerIdx >= 0 ? head.slice(0, buyerIdx + 1) : head)) {
+      // Tarih / saat / telefon taşıyan satırlar numara adayı değildir; büyük sipariş numarası noktasız 4–8 hanedir
+      for (const tok of l.text.split(/\s+/)) if (/^\d{4,8}$/.test(tok)) noCandidates.add(tok);
+    }
   }
   if (noCandidates.size === 1) header.factoryNo = [...noCandidates][0];
   else problems.push({ code: noCandidates.size ? 'FACTORY_NO_AMBIGUOUS' : 'FACTORY_NO_MISSING' });
