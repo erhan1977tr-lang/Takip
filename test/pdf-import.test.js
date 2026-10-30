@@ -11,7 +11,7 @@ import { buildImportPlan, opKindOf, projectCheck, projectRefs } from '../server/
 import { extractTextItems, PDF_IMPORT_LIMITS } from '../server/orders/pdf-import/extract.js';
 import { PdfDoc } from '../server/pdf/pdf.js';
 
-import { DESC_ADE, DOT_FORM_ADE, dotFormExtraNo, DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
+import { DOT_FORM_ADE, dotFormExtraNo, DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
 
 // ---------------------------------------------------------------- satırlar
 test('satır kurma: aynı sayfada yakın taban çizgileri tek satır, soldan sağa; sayfa sırası korunur; boş parça atılır', () => {
