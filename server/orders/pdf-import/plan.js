@@ -18,7 +18,7 @@
 //                     düzeltme ya da ek ücret yazılmaz.
 import { assignPieceBases, offerLineTotals } from '../rules.js';
 import { checkSubtotal, expectedAmount } from './parse.js';
-import { factoryGlassSignature, fold, glassCandidates, orderGlassVerdict } from './glass.js';
+import { catalogGlassSignature, factoryGlassSignature, fold, glassCandidates, orderGlassVerdict } from './glass.js';
 
 /**
  * Firma kodu (3 harf) + proje numarası çiftleri: "musterix ABC 40" → [{ code: 'ABC', no: '40' }], "ABC 40-1" → '40-1'.
@@ -82,7 +82,7 @@ export const opKey = (name) => fold(name).replace(/\s+/g, ' ').trim();
  * @param {ReturnType<import('./parse.js').parseFactoryOrder>} p.parsed
  * @param {string} p.importKey   satırların ayrılmış cam grubu anahtarı için (içe aktarma kaydının kimliği)
  * @param {{ prefix: string, customerOrderNo: string | number, glass: { id?: string | null, nameTr?: string | null, colorTr?: string | null, nameRo?: string | null, colorRo?: string | null } | null }} p.order
- * @param {{ id: string, nameTr: string, colorTr?: string, nameRo?: string, colorRo?: string, isActive?: boolean, label: string }[]} p.catalog  etkin camlar (label: Türkçe ad — teklif satırının açıklaması)
+ * @param {{ id: string, nameTr: string, colorTr?: string, nameRo?: string, colorRo?: string, isActive?: boolean, label: string }[]} p.catalog  bütün katalog — etkin + pasif (label: Türkçe ad — teklif satırının açıklaması)
  * @param {{ glass?: Record<string, string>, ops?: Record<string, string> }} [p.choices]
  */
 export function buildImportPlan({ parsed, importKey, order, catalog, choices = {} }) {
@@ -108,20 +108,26 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     const sig = factoryGlassSignature(r.description);
     const verdict = orderGlassVerdict(sig, order.glass);
     const cand = glassCandidates(sig, active);
-    const pool = sig.code && cand.sameCode.length ? cand.sameCode : active.map((g) => g.id);
+    // Elle seçim (4.2.12): katalogdaki BÜTÜN camlar (etkin + pasif); aynı kodlu etkin adaylar başta. Otomatik eşleşme yalnızca
+    // etkin camlarla (değişmedi). Seçilen camın kodu fabrika camının koduyla çelişirse aktarım durur (eski aday sınırının yerine).
+    const pool = [...new Set([...cand.sameCode, ...catalog.map((g) => g.id)])];
     let selected = null;
     let auto = false;
     if (verdict === 'MATCH' && order.glass?.id && byId.get(order.glass.id)?.isActive !== false && byId.has(order.glass.id)) { selected = order.glass.id; auto = true; }
     else if (cand.exact.length === 1) { selected = cand.exact[0]; auto = true; }
     const chosen = choices.glass?.[key];
-    if (chosen && pool.includes(chosen)) { selected = chosen; auto = false; }
+    if (chosen && pool.includes(chosen)) {
+      selected = chosen; auto = false;
+      const picked = catalogGlassSignature(byId.get(chosen));
+      if (sig.code && picked.code && picked.code !== sig.code) blocking.push({ code: 'GLASS_CHOICE_CODE_MISMATCH', description: r.description, factoryCode: sig.code, chosenCode: picked.code });
+    }
     if (verdict === 'MISMATCH') blocking.push({ code: 'GLASS_ORDER_MISMATCH', description: r.description, factoryCode: sig.code });
     else if (verdict === 'UNKNOWN') warnings.push({ code: 'ORDER_GLASS_UNVERIFIED', description: r.description });
     if (!sig.ok) warnings.push({ code: sig.problem === 'PVB_NOT_MULTIPLE' ? 'PVB_NOT_MULTIPLE' : 'GLASS_CODE_UNKNOWN', description: r.description, pvb: sig.pvb?.mm ?? null });
     if (!selected) blocking.push({ code: 'NEEDS_GLASS_CHOICE', description: r.description });
     glassChoices.set(key, {
       key, description: r.description, code: sig.code, colours: sig.colours, auto, selected,
-      candidates: pool.map((id) => ({ id, label: byId.get(id)?.label ?? id })),
+      candidates: pool.map((id) => ({ id, label: byId.get(id)?.label ?? id, inactive: byId.get(id)?.isActive === false })),
     });
   }
 

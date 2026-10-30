@@ -73,12 +73,17 @@ export function factoryGlassSignature(description) {
   const drilled = /\bDELIKLI\b/.test(f);
   // "ŞEKİLLİ + CNC OYUK" gibi boşluklu "+" kuyruğu cam cinsine ait değildir (işlem satırı da üretmez)
   const body = raw.replace(/\s\+\s.*$/u, '').trim();
-  const lam = /^(\d{1,2}(?:[.,]\d{1,2})?)\s*mm\s+(.+?)\+\s*(\d{1,2}[.,]\d{1,2})\s*([^+]*?)\+\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*mm\s+(.+)$/iu.exec(body);
+  // PVB bir ya da birden çok parça olabilir (4.2.12 — ADE 15: "+0.38 Opak+0.76 Şeffaf+" = 1,14 mm): kalınlıklar toplanır,
+  // her parçanın sözcükleri PVB sözcüğü olarak değerlendirilir (eskiden ilk parça birinci kata karışıyor, kod 6.2.6 çıkıyordu)
+  const lam = /^(\d{1,2}(?:[.,]\d{1,2})?)\s*mm\s+([^+]+?)((?:\+\s*\d{1,2}[.,]\d{1,2}\s*[^+]*?)+)\+\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*mm\s+(.+)$/iu.exec(body);
   const base = { colours: [], unknown: [], tempered: false, shaped, drilled, pvb: null };
   if (lam) {
-    const t1 = mmOf(lam[1]); const pvbMm = mmOf(lam[3]); const t2 = mmOf(lam[5]);
-    const p1 = plyFeatures(lam[2]); const p2 = plyFeatures(lam[6]);
-    const pv = fold(lam[4]).replace(/[^A-Z ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const parts = lam[3].split('+').map((s) => s.trim()).filter(Boolean).map((s) => /^(\d{1,2}[.,]\d{1,2})\s*(.*)$/u.exec(s));
+    const mms = parts.map((p) => (p ? mmOf(p[1]) : null));
+    const t1 = mmOf(lam[1]); const t2 = mmOf(lam[4]);
+    const pvbMm = mms.some((x) => x == null) ? null : mms.reduce((a, b) => a + b, 0);
+    const p1 = plyFeatures(lam[2]); const p2 = plyFeatures(lam[5]);
+    const pv = parts.flatMap((p) => fold(p?.[2] ?? '').replace(/[^A-Z ]+/g, ' ').trim().split(/\s+/).filter(Boolean));
     const colours = new Set([...p1.colours, ...p2.colours]);
     const unknown = [...p1.unknown, ...p2.unknown];
     for (const w of pv) {
@@ -87,7 +92,8 @@ export function factoryGlassSignature(description) {
     const tempered = p1.tempered && p2.tempered;
     // Her kat bir renk taşımalı (Düz = şeffaf); rengi yazmayan kat tahmin edilmez
     if (!p1.colours.size || !p2.colours.size) unknown.push('PLY_COLOUR');
-    const pvb = { mm: lam[3].replace('.', ','), layers: null };
+    // Tek parçada yazıldığı gibi (eski davranış), çok parçada toplam
+    const pvb = { mm: parts.length === 1 || pvbMm == null ? String(parts[0]?.[1] ?? '').replace('.', ',') : mmText(pvbMm), layers: null };
     if (t1 == null || t2 == null || pvbMm == null) return { ...base, ok: false, code: null, colours: [...colours].sort(), unknown, tempered, pvb, problem: 'THICKNESS' };
     if (pvbMm % 38 !== 0 || pvbMm === 0) return { ...base, ok: false, code: null, colours: [...colours].sort(), unknown, tempered, pvb, problem: 'PVB_NOT_MULTIPLE' };
     pvb.layers = pvbMm / 38;

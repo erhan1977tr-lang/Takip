@@ -462,3 +462,39 @@ dbTest('yeniden yükleme (4.2.11): aynı PDF aktarılmamış kayda yeniden yükl
   assert.ok((await preview('sales', o.id, third.ids)).imports[0].blocking.some((b) => b.code === 'ALREADY_IMPORTED'));
   assert.equal((await latest(o.id)).lines.filter((l) => l.importId).length, 1, 'mükerrer satır yok');
 }));
+
+dbTest('elle cam seçimi (4.2.12 — ADE 15 eşdeğeri): ön izlemede bütün katalog, pasif cam işaretli; pasif cam seçilip aktarılır, cam pasif kalır; başka kodlu cam seçilirse aktarım durur; müşterinin yeni sipariş kataloğu değişmez', offline(async () => {
+  // Kodu adından çıkmayan sipariş camı (eşleşme doğrulanamaz → uyarı) ve katalogda PASİF bir 6.3.6 füme-opak cam
+  const gen = await db.glassProduct.create({ data: { nameTr: 'Lamine Cam (özel)', colorTr: 'Karışık', nameRo: 'Sticlă laminată', colorRo: 'Mixt', weightKgM2: 30 } });
+  const opak = await db.glassProduct.create({ data: { nameTr: '6.3.6 Temperli Lamine', colorTr: 'Füme-Opak-Şeffaf', nameRo: 'Sticlă 6.3.6.', colorRo: 'Gri-Opac-Transparent', weightKgM2: 30, isActive: false } });
+  const DESC_ADE = '6 mm Temperli Füme Cam DR+0.38 Opak+0.76 Şeffaf+6 mm Temperli Düz Cam DR';
+  const o = await newOrder(115, firm, gen);
+  const lines = form({ no: '91115', project: 'ABC 115', rows: [`1 ${DESC_ADE} 1000 1000 2 1,000 2,000 50,00 TL 0,0 100,00`, `2 ${DESC_ADE} 500 1000 1 0,500 0,500 50,00 TL 0,0 25,00`], total: '3 2,500 125,00', sub: '125,00', grand: '150,00' });
+  const up = await upload('sales', o.id, [pdf(lines)]);
+  const p = await preview('sales', o.id, up.ids);
+  const imp = p.imports[0];
+  assert.equal(imp.factoryNo, '91115');
+  assert.ok(imp.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'), 'otomatik eşleşme yalnızca etkin camlarla');
+  const choice = imp.plan.glassChoices[0];
+  const all = await db.glassProduct.findMany({ select: { id: true, isActive: true } });
+  assert.deepEqual(choice.candidates.map((c) => c.id).sort(), all.map((x) => x.id).sort(), 'bütün katalog (etkin + pasif)');
+  assert.deepEqual(choice.candidates.filter((c) => c.inactive).map((c) => c.id), all.filter((x) => !x.isActive).map((x) => x.id));
+  assert.match(choice.candidates.find((c) => c.id === opak.id).search, /Opak/);
+  // Başka kodlu cam (8.3.8) seçilirse aktarım durur
+  const wrong = await preview('sales', o.id, up.ids, { glass: { [choice.key]: g.uc838.id } });
+  assert.ok(wrong.imports[0].blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH'));
+  assert.equal(await codeOf(apply('sales', o.id, await versionOf(o.id), fp(wrong), { choices: { glass: { [choice.key]: g.uc838.id } } })), 'PDF_IMPORT_BLOCKED');
+  // Doğru (pasif) cam: satırlar, ölçüler, adetler, m² ve alış fiyatı PDF'teki gibi
+  const ok = await preview('sales', o.id, up.ids, { glass: { [choice.key]: opak.id } });
+  assert.deepEqual(ok.imports[0].blocking, []);
+  await apply('sales', o.id, await versionOf(o.id), fp(ok), { choices: { glass: { [choice.key]: opak.id } }, dropEmpty: ok.empty.map((e) => e.id) });
+  const offer = await latest(o.id);
+  assert.deepEqual(offer.lines.filter((l) => l.importId).map((l) => [l.glassProductId, l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice, Number(l.pieceM2)]), [
+    [opak.id, 1000, 1000, 2, '50', null, 1], [opak.id, 500, 1000, 1, '50', null, 0.5],
+  ]);
+  assert.equal(String(offer.amount), '125');
+  assert.equal((await db.glassProduct.findUniqueOrThrow({ where: { id: opak.id } })).isActive, false, 'seçim camı etkinleştirmez');
+  // Müşterinin yeni sipariş seçimi yalnızca etkin camları kabul eder (değişmedi)
+  const { glassOrderItems } = await import('../../server/catalog/glass.js');
+  assert.deepEqual(glassOrderItems([{ id: opak.id, qty: 1 }], [opak]), { ok: false, code: 'GLASS_GONE' });
+}));

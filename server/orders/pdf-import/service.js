@@ -159,11 +159,15 @@ const fingerprintOf = (imp, plan) => crypto.createHash('sha256')
 export async function buildPreview(db, { order, offer, importIds, choices = {}, locale = 'tr' }) {
   const ids = [...new Set((importIds ?? []).map(String))].slice(0, MAX_PDFS * 3);
   const imports = await db.offerImport.findMany({ where: { id: { in: ids }, orderId: order.id }, orderBy: { createdAt: 'asc' } });
-  const glasses = await db.glassProduct.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { nameTr: 'asc' }] });
+  // Bütün katalog (4.2.12): elle seçimde pasif camlar da ("(Pasif)" işaretiyle) gösterilir; otomatik eşleşme yalnızca etkin
+  // camlarla (plan.js). Seçmek camın durumunu değiştirmez; müşterinin sipariş ekranları ayrı sorguyla yalnızca etkinleri görür.
+  const glasses = await db.glassProduct.findMany({ orderBy: [{ isActive: 'desc' }, { sortOrder: 'asc' }, { nameTr: 'asc' }] });
   const catalog = glasses.map((g) => ({ ...g, label: glassLabel(g, 'tr'), display: glassLabel(g, locale) }));
   const it = order.items.find((x) => x.glassProductId) ?? null;
   const orderGlass = it ? (glasses.find((g) => g.id === it.glassProductId) ?? { id: it.glassProductId, nameTr: it.glassName, nameRo: it.glassNameRo, isActive: false }) : null;
   const display = new Map(catalog.map((g) => [g.id, g.display]));
+  // Elle seçim aramasında: Türkçe + Romence ad ve renk
+  const searchText = new Map(glasses.map((g) => [g.id, [g.nameTr, g.colorTr, g.nameRo, g.colorRo].filter(Boolean).join(' ')]));
 
   const factoryNos = imports.map((i) => i.factoryOrderNo).filter(Boolean);
   // Bu siparişte satırları teklifte duran aktarımlar ve başka siparişlere aktarılmış aynı fabrika numaraları
@@ -211,7 +215,7 @@ export async function buildPreview(db, { order, offer, importIds, choices = {}, 
       blocking: unique(blocking), warnings: unique(warnings),
       plan: plan && {
         header: plan.header, rows: plan.rows, checks: plan.checks,
-        glassChoices: plan.glassChoices.map((g) => ({ ...g, candidates: g.candidates.map((c) => ({ id: c.id, label: display.get(c.id) ?? c.label })), selectedLabel: g.selected ? display.get(g.selected) ?? null : null })),
+        glassChoices: plan.glassChoices.map((g) => ({ ...g, candidates: g.candidates.map((c) => ({ id: c.id, label: display.get(c.id) ?? c.label, inactive: !!c.inactive, search: searchText.get(c.id) ?? '' })), selectedLabel: g.selected ? display.get(g.selected) ?? null : null })),
         opChoices: plan.opChoices, lineCount: plan.lines.length,
       },
       lines: plan?.lines ?? [],

@@ -13,6 +13,13 @@ const money = (cents: number | null | undefined) => (cents == null ? '—' : new
 const area = (milli: number | null | undefined) => (milli == null ? '—' : new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(milli / 1000));
 const pct = (bp: number | null | undefined) => (bp == null ? '—' : new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(bp / 100));
 const day = (d: string | null) => (d ? d.split('-').reverse().join('.') : '—');
+/** Cam araması: büyük / küçük harf ve Türkçe / Romence harf farkı gözetmez; bütün sözcükler geçmeli */
+const fold = (s: string) => s.toLocaleUpperCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/İ/g, 'I').replace(/[ŞȘ]/g, 'S').replace(/Ğ/g, 'G').replace(/Ü/g, 'U').replace(/Ö/g, 'O').replace(/Ç/g, 'C').replace(/[ȚŢ]/g, 'T').replace(/[ĂÂ]/g, 'A').replace(/Î/g, 'I');
+const matches = (c: { label: string; search: string }, q: string | undefined) => {
+  const words = fold(q ?? '').split(/\s+/).filter(Boolean);
+  const hay = fold(`${c.label} ${c.search}`);
+  return words.every((w) => hay.includes(w));
+};
 
 /**
  * "PDF'den Aktar" (karar 255): fabrika sipariş PDF'leri → ön izleme → onay → teklif tablosu. Bütün hesap ve denetim
@@ -35,6 +42,7 @@ export function PdfImport({ orderId, dirty, previous, m }: {
   const [excluded, setExcluded] = useState<Record<string, boolean>>({});
   const [choices, setChoices] = useState<{ glass: Record<string, string>; ops: Record<string, string> }>({ glass: {}, ops: {} });
   const [drop, setDrop] = useState<Record<string, boolean>>({});
+  const [search, setSearch] = useState<Record<string, string>>({});
 
   const included = useMemo(() => ids.filter((id) => !excluded[id]), [ids, excluded]);
   const shown = preview?.imports ?? [];
@@ -169,9 +177,14 @@ export function PdfImport({ orderId, dirty, previous, m }: {
                 {imp.plan.glassChoices.filter((g) => !g.auto || !g.selected).map((g) => (
                   <div className="field" key={g.key}>
                     <label>{m.pickGlass}: <span className="muted">{g.description}</span>{g.code ? ` · ${interpolate(m.code, { code: g.code })}` : ''}</label>
+                    {/* 4.2.12: bütün katalog (pasifler işaretli); arama ad / renk / kod üzerinde, seçili cam her zaman listede kalır */}
+                    <input type="search" placeholder={m.glassSearch} aria-label={m.glassSearch} data-glass-search value={search[g.key] ?? ''}
+                      onChange={(e) => setSearch((s) => ({ ...s, [g.key]: e.target.value }))} style={{ marginBottom: 4 }} />
                     <select value={choices.glass[g.key] ?? g.selected ?? ''} data-pick-glass onChange={(e) => void choose('glass', g.key, e.target.value)}>
                       <option value="">—</option>
-                      {g.candidates.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                      {g.candidates.filter((c) => matches(c, search[g.key]) || c.id === (choices.glass[g.key] ?? g.selected)).map((c) => (
+                        <option key={c.id} value={c.id} data-inactive={c.inactive ? '' : undefined}>{c.inactive ? `${c.label} ${m.glassInactive}` : c.label}</option>
+                      ))}
                     </select>
                   </div>
                 ))}

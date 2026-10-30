@@ -11,7 +11,7 @@ import { buildImportPlan, opKindOf, projectCheck, projectRefs } from '../server/
 import { extractTextItems, PDF_IMPORT_LIMITS } from '../server/orders/pdf-import/extract.js';
 import { PdfDoc } from '../server/pdf/pdf.js';
 
-import { DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
+import { DOT_FORM_ADE, dotFormExtraNo, DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
 
 // ---------------------------------------------------------------- satırlar
 test('satır kurma: aynı sayfada yakın taban çizgileri tek satır, soldan sağa; sayfa sırası korunur; boş parça atılır', () => {
@@ -36,8 +36,23 @@ test('başlık: fabrika sipariş no = büyük numara (121.001 DEĞİL), tarihler
   // Numara aynı satırda olmayabilir (büyük yazı): ayrı satırda da bulunur
   const alone = parseFactoryOrder(form({ no: '', rows: FORM_CNC.slice(7, 13).map((l) => l.text), total: '2 4,235 433,50', sub: '433,50', grand: '520,20', extraHead: [] }).map((l, i) => (i === 0 ? { ...l, text: '90002' } : l)));
   assert.equal(alone.header.factoryNo, '90002');
-  const two = parseFactoryOrder(form({ no: '90001 90003', rows: FORM_CNC.slice(7, 13).map((l) => l.text), total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
-  assert.ok(two.problems.some((x) => x.code === 'FACTORY_NO_AMBIGUOUS'));
+  // 4.2.12 (ALE 80 / ALE 93): "Sipariş No :" etiketinin HEMEN ardındaki numara alınır; aynı satırdaki ve başlıktaki öbür
+  // sayılar aday değildir
+  const rows = FORM_CNC.slice(7, 13).map((l) => l.text);
+  const after = parseFactoryOrder(form({ no: '81110 4567', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20', extraHead: ['Bayi Kodu : 12345 Plaka 34567'] }));
+  assert.equal(after.header.factoryNo, '81110');
+  assert.ok(!after.problems.some((x) => x.code.startsWith('FACTORY_NO')));
+  // İki ayrı "Sipariş No :" alanı farklı numara veriyorsa belirsizlik korunur; aynı numarayı veriyorsa sorun yok
+  const twoLabels = parseFactoryOrder(form({ no: '90001', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20', extraHead: ['Sipariş No : 90003'] }));
+  assert.ok(twoLabels.problems.some((x) => x.code === 'FACTORY_NO_AMBIGUOUS'));
+  assert.equal(twoLabels.header.factoryNo, null);
+  const sameTwice = parseFactoryOrder(form({ no: '90001', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20', extraHead: ['Sipariş No : 90001'] }));
+  assert.equal(sameTwice.header.factoryNo, '90001');
+  // Etiketin yanında numara yoksa eski kural: başlıkta birden çok aday → belirsiz; hiç yok → bulunamadı (engel korunur)
+  const noLabelTwo = parseFactoryOrder(form({ no: '', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }).map((l, i) => (i === 0 ? { ...l, text: '90001 90003' } : l)));
+  assert.ok(noLabelTwo.problems.some((x) => x.code === 'FACTORY_NO_AMBIGUOUS'));
+  const none = parseFactoryOrder(form({ no: '', rows, total: '2 4,235 433,50', sub: '433,50', grand: '520,20' }));
+  assert.ok(none.problems.some((x) => x.code === 'FACTORY_NO_MISSING'));
 });
 
 test('tablo: cam satırı (alt alta ve tek satırda), işlem satırı kendinden önceki cama bağlı, TL etiketi yok sayılır; grup özeti satır olmaz', () => {
@@ -272,9 +287,35 @@ test('cam: siparişin camıyla belirgin uyuşmazlık durdurur; sipariş camı do
   const key = amb.glassChoices[0].key;
   const picked = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'g-brz2' } } });
   assert.deepEqual([picked.blocking, picked.lines[0].glassProductId], [[], 'g-brz2']);
-  // Aday olmayan kimlik (başka kodlu cam) seçilemez
+  // Başka kodlu cam menüde var (4.2.12: bütün katalog) ama seçilirse aktarım durur (eski aday sınırının yerine)
   const foreign = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'g-uc' } } });
-  assert.ok(foreign.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'));
+  assert.ok(foreign.blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH' && b.factoryCode === '6.3.6' && b.chosenCode === '8.3.8'));
+  // Katalogda olmayan kimlik yok sayılır: seçim hâlâ gerekli
+  const missing = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'yok' } } });
+  assert.ok(missing.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'));
+});
+
+test('elle cam seçimi (4.2.12): menüde bütün katalog — etkin ve pasif (işaretli); aynı kodlu etkinler başta; pasif cam seçilebilir ama otomatik seçilmez', () => {
+  const lines = form({ rows: [`1 ${DESC_BRONZE} 740 800 1 0,592 0,592 49,00 TL 0,0 29,01 ABC 40`], total: '1 0,592 29,01', sub: '29,01', grand: '34,81' });
+  const twin = [...CATALOG, { ...CATALOG[1], id: 'g-brz2', label: '6.3.6 Bronz (2)' }];
+  const amb = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin });
+  const g = amb.glassChoices[0];
+  assert.deepEqual(g.candidates.map((c) => c.id).sort(), twin.map((x) => x.id).sort(), 'bütün katalog');
+  assert.deepEqual(g.candidates.slice(0, 3).map((c) => c.id), ['g-ref', 'g-brz', 'g-brz2'], 'aynı kodlu etkin adaylar başta');
+  assert.deepEqual(g.candidates.filter((c) => c.inactive).map((c) => c.id), ['g-old']);
+  const old = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [g.key]: 'g-old' } } });
+  assert.deepEqual([old.blocking, old.lines[0].glassProductId], [[], 'g-old']);
+  assert.equal(twin.find((x) => x.id === 'g-old').isActive, false, 'seçim katalog kaydını değiştirmez');
+});
+
+test('ADE 15 camı (4.2.12): birden çok parçalı PVB toplanır — 0.38 Opak + 0.76 Şeffaf = 1,14 → 6.3.6, opak PVB rengi', () => {
+  const sig = factoryGlassSignature('6 mm Temperli Füme Cam DR+0.38 Opak+0.76 Şeffaf+6 mm Temperli Düz Cam DR');
+  assert.deepEqual([sig.ok, sig.code, sig.colours, sig.unknown, sig.pvb], [true, '6.3.6', ['CLEAR', 'GREY', 'PVB_OPAQUE'], [], { mm: '1,14', layers: 3 }]);
+  // Tek parçalı PVB eskisi gibi (metin yazıldığı gibi)
+  assert.deepEqual(factoryGlassSignature(DESC_BRONZE).pvb, { mm: '1,14', layers: 3 });
+  assert.equal(factoryGlassSignature('6 mm Temperli Düz Cam DR+0.50 Şeffaf+6 mm Temperli Düz Cam DR').problem, 'PVB_NOT_MULTIPLE');
+  const opak = { id: 'g-opak', nameTr: '6.3.6 Temperli Lamine', colorTr: 'Füme-Opak-Şeffaf', label: '6.3.6 Füme Opak' };
+  assert.deepEqual(glassCandidates(sig, [...CATALOG, opak]), { exact: ['g-opak'], sameCode: ['g-ref', 'g-brz', 'g-opak'] });
 });
 
 test('Poz: PDF satırının kendi Poz değeri aynen yazılır (3.79.1 — 3.79.0 öncesi davranış); aynı Poz birden çok satırda olabilir; Poz yoksa fabrika sipariş no yazılır ve uyarı verilir', () => {
@@ -516,3 +557,31 @@ test('yapı: aktarma yöneticiye göndermez, müşteri fiyatı yazmaz; teklif sa
   // Aktarmadan (ve her işlemden) sonra düzenleyici kayıtlı satırlarla yeniden kurulur: eski istemci durumu satırların yerine geçmez
   assert.match(read('app/(panel)/siparisler/[id]/page.tsx'), /<OfferEditor\s+\/\/[^\n]*\n[^\n]*\n\s+key=\{`\$\{offer\.id\}:\$\{order\.version\}`\}/);
 });
+
+test('4.2.12 gerçek düzen: ALE 80 / ALE 93 (Sipariş No satırından sonra başka bir sayı) ve ADE 15 eşdeğeri — numara, satırlar, toplamlar; elle cam seçimi', () => {
+  const extra = parseFactoryOrder(dotFormExtraNo({ no: '91110', project: 'ABC 80', rows: [`1 ${DESC_DUZ_8} 2215 1015 1 2.248 2.248 20.00 € 0.0 44.96`], total: '1 2.248 44.96', sub: '44.96', vat: '8.99', grand: '53.95' }));
+  assert.deepEqual([extra.header.factoryNo, extra.problems], ['91110', []]);
+  const ade = parseFactoryOrder(DOT_FORM_ADE);
+  assert.deepEqual([ade.header.factoryNo, ade.problems, ade.rows.length, ade.rows.reduce((a, r) => a + r.adet, 0), ade.totals.totalM2, ade.totals.subtotal], ['91112', [], 6, 9, 15839, 79195]);
+  const C = [
+    { id: 'g-662', nameTr: '66.2 TEMPER LAMİNE CAM, OPAK PVB', colorTr: 'ŞEFFAF', nameRo: 'STICLĂ SECURIZATĂ LAMINATĂ 6.2.6., PVB OPAQUE', colorRo: 'TRANSPARENT', label: '66.2 opak' },
+    { id: 'g-663', nameTr: '66.3 TEMPER LAMİNE CAM, OPAK PVB', colorTr: 'FÜME + ŞEFFAF', nameRo: 'STICLĂ SECURIZATĂ LAMINATĂ 6.3.6., PVB OPAQUE', colorRo: 'GRI+TRANSPARENT', label: '66.3 opak', isActive: false },
+  ];
+  const order = (glass) => ({ prefix: 'ABC', customerOrderNo: '15', glass });
+  const first = buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[1]), catalog: C });
+  assert.ok(first.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'), 'pasif cam otomatik seçilmez');
+  assert.deepEqual(first.glassChoices[0].code, '6.3.6');
+  const key = first.glassChoices[0].key;
+  const picked = buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[1]), catalog: C, choices: { glass: { [key]: 'g-663' } } });
+  assert.deepEqual(picked.blocking, []);
+  const cam = picked.lines.filter((l) => l.kind === 'CAM');
+  assert.deepEqual(cam.map((l) => [l.glassProductId, l.enMm, l.boyMm, l.adet, l.pieceM2, l.unitPrice, l.offerPrice]), [
+    ['g-663', 1350, 1000, 1, '1.350', '50.00', null], ['g-663', 2000, 1100, 1, '2.200', '50.00', null], ['g-663', 1320, 1000, 1, '1.320', '50.00', null],
+    ['g-663', 1494, 1100, 3, '1.643', '50.00', null], ['g-663', 2000, 1100, 1, '2.200', '50.00', null], ['g-663', 1745, 1100, 2, '1.920', '50.00', null],
+  ]);
+  assert.deepEqual(picked.checks.a, { pdfSum: 79195, subtotal: 79195, ok: true, diff: 0 });
+  // Siparişin camı 66.2 (0,76 PVB) ise PDF'teki 1,14 PVB ile uyuşmaz: engel korunur; 6.2.6 cam elle seçilirse de durur
+  assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[0]), catalog: C }).blocking.some((b) => b.code === 'GLASS_ORDER_MISMATCH'));
+  assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(null), catalog: C, choices: { glass: { [key]: 'g-662' } } }).blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH'));
+});
+
