@@ -35,7 +35,7 @@ export type PdfImportPreview = {
         ops: { name: string; kind: string | null; qty: number | null; perPiece: number | null; unitPrice: number; discount: number; netUnit: number | null; amount: number }[];
       }[];
       checks: { a: { pdfSum: number; subtotal: number | null; ok: boolean; diff: number | null }; b: { takipTotal: number; pdfSum: number; subtotal: number | null; diff: number; explained: boolean }; vat: number | null; grandTotal: number | null };
-      glassChoices: { key: string; description: string; code: string | null; auto: boolean; selected: string | null; selectedLabel: string | null; candidates: { id: string; label: string }[] }[];
+      glassChoices: { key: string; description: string; code: string | null; auto: boolean; selected: string | null; selectedLabel: string | null; candidates: { id: string; label: string; inactive: boolean; search: string }[] }[];
       opChoices: { key: string; name: string; auto: boolean; kind: string | null }[];
       lineCount: number;
     };
