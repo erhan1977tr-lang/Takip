@@ -134,3 +134,23 @@ export const DOT_FORM_1 = dotForm({
   group: [`1 ${DESC_DUZ_8} 1 2.248 44.96 20.00 € 20.00 0.0 44.96 Ö`],
   sub: '44.96', vat: '8.99', grand: '53.95',
 });
+
+// ---------------------------------------------------------------------------------------------------------------- 4.2.12
+// ALE 80 / ALE 93 düzeni: "Sipariş No : 81110 121.001" satırından sonra başka bir 5 haneli sayı ayrı satırda, "Teslim Tarihi"
+// ile aynı satırda (pdf.js'in gerçek PDF'ten çıkardığı düzen). Numara ve proje SENTETİK.
+export const dotFormExtraNo = (opts) => dotForm(opts).map((l) => (l.text.startsWith('Teslim Tarihi') ? { ...l, text: `98910 ${l.text}` } : l));
+
+// ADE 15 eşdeğeri: iki parçalı PVB'li cam, 6 satır (1+1+1+3+1+2 = 9 adet, 15.839 m² — ADE 15'in geometrisi); fiyat SENTETİK (50.00)
+export const DESC_ADE = '6 mm Temperli Füme Cam DR+0.38 Opak+0.76 Şeffaf+6 mm Temperli Düz Cam DR .';
+export const DOT_FORM_ADE = dotForm({
+  no: '91112', project: 'ABC 15',
+  rows: [
+    `1 ${DESC_ADE} 1350 1000 1 1.350 1.350 50.00 € 0.0 67.50`,
+    `2 ${DESC_ADE} 2000 1100 1 2.200 2.200 50.00 € 0.0 110.00`,
+    `3 ${DESC_ADE} 1320 1000 1 1.320 1.320 50.00 € 0.0 66.00`,
+    `4 ${DESC_ADE} 1494 1100 3 1.643 4.929 50.00 € 0.0 246.45`,
+    `5 ${DESC_ADE} 2000 1100 1 2.200 2.200 50.00 € 0.0 110.00`,
+    `6 ${DESC_ADE} 1745 1100 2 1.920 3.840 50.00 € 0.0 192.00`,
+  ],
+  total: '9 15.839 791.95', sub: '791.95', vat: '158.39', grand: '950.34',
+});

@@ -11,7 +11,7 @@ import { buildImportPlan, opKindOf, projectCheck, projectRefs } from '../server/
 import { extractTextItems, PDF_IMPORT_LIMITS } from '../server/orders/pdf-import/extract.js';
 import { PdfDoc } from '../server/pdf/pdf.js';
 
-import { DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
+import { DESC_ADE, DOT_FORM_ADE, dotFormExtraNo, DESC_BRONZE, DESC_DUZ_8, DESC_TENTESOL, DESC_UC, DESC_UC_838, DOT_FORM_1, DOT_FORM_3, FORM_CNC, dotForm, form } from './fixtures/factory-pdf.js';
 
 // ---------------------------------------------------------------- satırlar
 test('satır kurma: aynı sayfada yakın taban çizgileri tek satır, soldan sağa; sayfa sırası korunur; boş parça atılır', () => {
@@ -557,3 +557,31 @@ test('yapı: aktarma yöneticiye göndermez, müşteri fiyatı yazmaz; teklif sa
   // Aktarmadan (ve her işlemden) sonra düzenleyici kayıtlı satırlarla yeniden kurulur: eski istemci durumu satırların yerine geçmez
   assert.match(read('app/(panel)/siparisler/[id]/page.tsx'), /<OfferEditor\s+\/\/[^\n]*\n[^\n]*\n\s+key=\{`\$\{offer\.id\}:\$\{order\.version\}`\}/);
 });
+
+test('4.2.12 gerçek düzen: ALE 80 / ALE 93 (Sipariş No satırından sonra başka bir sayı) ve ADE 15 eşdeğeri — numara, satırlar, toplamlar; elle cam seçimi', () => {
+  const extra = parseFactoryOrder(dotFormExtraNo({ no: '91110', project: 'ABC 80', rows: [`1 ${DESC_DUZ_8} 2215 1015 1 2.248 2.248 20.00 € 0.0 44.96`], total: '1 2.248 44.96', sub: '44.96', vat: '8.99', grand: '53.95' }));
+  assert.deepEqual([extra.header.factoryNo, extra.problems], ['91110', []]);
+  const ade = parseFactoryOrder(DOT_FORM_ADE);
+  assert.deepEqual([ade.header.factoryNo, ade.problems, ade.rows.length, ade.rows.reduce((a, r) => a + r.adet, 0), ade.totals.totalM2, ade.totals.subtotal], ['91112', [], 6, 9, 15839, 79195]);
+  const C = [
+    { id: 'g-662', nameTr: '66.2 TEMPER LAMİNE CAM, OPAK PVB', colorTr: 'ŞEFFAF', nameRo: 'STICLĂ SECURIZATĂ LAMINATĂ 6.2.6., PVB OPAQUE', colorRo: 'TRANSPARENT', label: '66.2 opak' },
+    { id: 'g-663', nameTr: '66.3 TEMPER LAMİNE CAM, OPAK PVB', colorTr: 'FÜME + ŞEFFAF', nameRo: 'STICLĂ SECURIZATĂ LAMINATĂ 6.3.6., PVB OPAQUE', colorRo: 'GRI+TRANSPARENT', label: '66.3 opak', isActive: false },
+  ];
+  const order = (glass) => ({ prefix: 'ABC', customerOrderNo: '15', glass });
+  const first = buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[1]), catalog: C });
+  assert.ok(first.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'), 'pasif cam otomatik seçilmez');
+  assert.deepEqual(first.glassChoices[0].code, '6.3.6');
+  const key = first.glassChoices[0].key;
+  const picked = buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[1]), catalog: C, choices: { glass: { [key]: 'g-663' } } });
+  assert.deepEqual(picked.blocking, []);
+  const cam = picked.lines.filter((l) => l.kind === 'CAM');
+  assert.deepEqual(cam.map((l) => [l.glassProductId, l.enMm, l.boyMm, l.adet, l.pieceM2, l.unitPrice, l.offerPrice]), [
+    ['g-663', 1350, 1000, 1, '1.350', '50.00', null], ['g-663', 2000, 1100, 1, '2.200', '50.00', null], ['g-663', 1320, 1000, 1, '1.320', '50.00', null],
+    ['g-663', 1494, 1100, 3, '1.643', '50.00', null], ['g-663', 2000, 1100, 1, '2.200', '50.00', null], ['g-663', 1745, 1100, 2, '1.920', '50.00', null],
+  ]);
+  assert.deepEqual(picked.checks.a, { pdfSum: 79195, subtotal: 79195, ok: true, diff: 0 });
+  // Siparişin camı 66.2 (0,76 PVB) ise PDF'teki 1,14 PVB ile uyuşmaz: engel korunur; 6.2.6 cam elle seçilirse de durur
+  assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[0]), catalog: C }).blocking.some((b) => b.code === 'GLASS_ORDER_MISMATCH'));
+  assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(null), catalog: C, choices: { glass: { [key]: 'g-662' } } }).blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH'));
+});
+

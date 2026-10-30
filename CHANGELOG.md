@@ -4,6 +4,19 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.12 — 30.10.2026
+
+**GlassWorld PDF aktarımı düzeltmeleri** (ürün sahibi, 30.10.2026; karar 308):
+
+- **Fabrika sipariş numarası:** `Sipariş No :` etiketinin hemen ardındaki numara alınır (`121.001` gibi form değeri atlanır).
+  ALE 80 / ALE 93'te bir sonraki satırdaki ikinci sayı yüzünden çıkan "Fabrika sipariş numarası belirsiz" hatası giderildi.
+  İki ayrı `Sipariş No :` alanı farklı numara verirse belirsizlik, numara yoksa "bulunamadı" engeli korunur.
+- **Çok parçalı PVB:** `+0.38 Opak+0.76 Şeffaf+` gibi PVB parçaları toplanır (1,14 mm → 6.3.6) ve opak PVB tanınır
+  (ADE 15'te kod 6.2.6 okunuyordu).
+- **Elle cam seçimi:** menüde cam kataloğunun tamamı; pasif camlar "(Pasif)" etiketli, aynı kodlu etkin camlar başta, ad /
+  renk araması. Otomatik eşleşme yalnızca etkin camlarla; siparişin camıyla uyuşmazlık engeli aynen; kodu PDF camıyla
+  çelişen seçim aktarımı durdurur. Pasif cam seçmek camı etkinleştirmez; müşteri ekranları değişmedi. Migration yok.
+
 ## 4.2.11 — 28.10.2026
 
 **E-posta bildirimleri ve fabrika PDF aktarımı düzeltmeleri** (ürün sahibi, 28.10.2026; karar 307):
