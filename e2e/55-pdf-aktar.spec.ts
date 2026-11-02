@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
+import { ADMIN, ADMIN_PW, CUSTOMER, CUST_PW, DRAWER, INSPECTOR_PW, TEAM_PW, as, sampleFile } from './helpers';
 import { PdfDoc } from '../server/pdf/pdf.js';
 import { readXlsx } from '../server/files/xlsx.js';
 import { dotForm, form } from '../test/fixtures/factory-pdf.js';
@@ -219,4 +219,78 @@ test('PDF’den aktar (4.2.11): noktalı ondalık biçimli fabrika formu satış
   // Teklif satışta kaldı (yöneticiye kendiliğinden gitmedi)
   await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
   for (const p of [cust, sales]) await p.context().close();
+});
+
+test('PDF’den aktar (4.2.13 / 4.2.14 — ALE 79 / ALE 101): siparişin camıyla uyuşmayan PDF camı — seçim yoksa engel; satışçı bütün katalogdan açıkça seçer, kırmızı uyarı + "Emin misiniz?" onayıyla seçilen camla aktarılır; yönetici Önemli kararlar’da görür', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const cust = await as(browser, CUSTOMER, CUST_PW);
+  await cust.goto('/siparisler/yeni?tip=GLASS_ORDER');
+  await cust.fill('#title', 'PDF aktarma farklı cam');
+  await cust.getByLabel('Cam', { exact: true }).selectOption({ label: GLASS_LABEL }); // sipariş camı: bronz
+  await cust.setInputFiles('#files', sampleFile('cizim-pdf-noktali.pdf'));
+  await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
+  await expect(cust).toHaveURL(/\/siparisler\/[a-z0-9]+\?ok=created/, { timeout: 45_000 });
+  const orderUrl = new URL(cust.url()).pathname;
+  const orderNo = (await cust.locator('.page-head .mono').first().textContent())!.trim();
+  const [, code, no] = /^([A-Z]{3})(\d+)$/.exec(orderNo)!;
+  // PDF camı füme: katalogda tek eşleşme (otomatik) ama siparişin camından farklı
+  const PDF_FUME = '10 mm Temperli Füme Cam DR';
+  const pdfDoc = factoryPdf(form({
+    no: '97107', project: `${code} ${no}`,
+    rows: [`1 ${PDF_FUME} 1000 1000 2 1,000 2,000 50,00 TL 0,0 100,00`],
+    total: '2 2,000 100,00', sub: '100,00', grand: '120,00',
+  }));
+
+  const sales = await as(browser, SALES, TEAM_PW);
+  await sales.goto(orderUrl);
+  await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
+  await sales.getByRole('button', { name: "PDF'den Aktar" }).click();
+  const dlg = sales.locator('dialog.pdf-import[open]');
+  await sales.setInputFiles('#pdf-files', [file('fabrika-fume.pdf', pdfDoc)]);
+  await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
+  const one = dlg.locator('[data-pdf-file="97107"]');
+  await expect(one).toBeVisible({ timeout: 60_000 });
+  // Seçim yokken: engel (kırmızı), aktarma kapalı, seçim kutusu boş ve bütün katalog listede
+  await expect(one.locator('[data-pdf-blocking] [data-code="GLASS_ORDER_MISMATCH"]')).toBeVisible();
+  await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
+  const pick = one.locator('[data-pick-glass]');
+  await expect(pick).toHaveValue('');
+  await expect(pick.locator('option', { hasText: '10 MM TEMPER CAM — FÜME' })).toHaveCount(1);
+  await expect(pick.locator('option', { hasText: '10 MM TEMPER CAM — ŞEFFAF' })).toHaveCount(1);
+  // Satışçı açıkça seçer: engel kalkar, kırmızı "Cam cinsleri aynı değil" uyarısı, aktarma açılır
+  await pick.selectOption({ label: '10 MM TEMPER CAM — FÜME' });
+  await expect(one.locator('[data-pdf-blocking]')).toHaveCount(0, { timeout: 30_000 });
+  await expect(one.locator('[data-pdf-override] [data-code="GLASS_ORDER_OVERRIDE"]')).toBeVisible();
+  await expect(one.locator('[data-pdf-override]')).toContainText('Cam cinsleri aynı değil');
+  const applyBtn = dlg.getByRole('button', { name: 'Teklif tablosuna aktar' });
+  await expect(applyBtn).toBeEnabled();
+  // "Emin misiniz?" — Vazgeç aktarmaz; Devam et aktarır
+  await applyBtn.click();
+  const confirm = dlg.locator('[data-pdf-confirm-override]');
+  await expect(confirm).toContainText('Cam cinsleri aynı değil');
+  await expect(applyBtn).toBeDisabled();
+  await confirm.getByRole('button', { name: 'Vazgeç' }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(sales).not.toHaveURL(/ok=pdf_imported/);
+  await applyBtn.click();
+  await dlg.locator('[data-pdf-confirm-override]').getByRole('button', { name: 'Devam et' }).click();
+  await expect(sales).toHaveURL(/ok=pdf_imported/, { timeout: 45_000 });
+  const values = (label: string) => sales.getByLabel(label, { exact: true }).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(await values('Açıklama')).toEqual(['10 MM TEMPER CAM — FÜME']); // seçilen cam; siparişin (bronz) boş satırı kaldırıldı
+  expect(await values('En')).toEqual(['1000']);
+  expect(await values('Adet')).toEqual(['2']);
+  expect(await values('Birim fiyat')).toEqual(['50.00']);
+  await expect(sales.locator('#teklif h2 .badge')).toHaveText('satışta hazırlanıyor');
+
+  // Yönetici: Önemli kararlar'da kayıt (fabrika no, PDF camı → seçilen cam); fiyat yok
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  await admin.goto('/admin/kararlar');
+  const alert = admin.locator('li[data-pdf-glass]').filter({ hasText: '97107' });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText(PDF_FUME);
+  await expect(alert).toContainText('10 MM TEMPER CAM — FÜME');
+  await expect(alert).toContainText('siparişin camından da farklı');
+  await expect(admin.getByText('PDF aktarımı: satışçı PDF’tekinden farklı bir cam seçti').first()).toBeVisible();
+  expect(await alert.textContent()).not.toMatch(/50,00|100,00/);
+  for (const p of [cust, sales, admin]) await p.context().close();
 });

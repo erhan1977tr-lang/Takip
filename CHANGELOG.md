@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.14 — 02.11.2026
+
+**PDF aktarımı: uyuşmayan camda seçim kutusu ve "Emin misiniz?" onayı** (ürün sahibi, 02.11.2026; karar 310; ALE 79) — yalnızca ekran:
+
+- PDF'teki cam siparişin camıyla uyuşmadığında, katalogda otomatik eşleşme bulunsa bile **cam seçim kutusu gösterilir**
+  (boş başlar; bütün katalog + arama). Seçim yapılmadan engel ve kırmızı uyarı aynen sürer.
+- Satışçı açıkça cam seçince uyuşmazlık **kırmızı "Cam cinsleri aynı değil"** kutusunda kalır (öbür uyarılar sarı),
+  "Teklif tablosuna aktar" açılır; tıklanınca **"Cam cinsleri aynı değil… Emin misiniz?"** paneli çıkar — "Vazgeç" aktarmaz,
+  "Devam et" seçilen camla aktarır (4.2.13'ün sunucu kuralı ve yöneticiye Önemli kararlar kaydı değişmedi).
+- Sunucu, hesap, fiyat, mükerrer / parmak izi kontrolleri, DB: değişmedi. Migration yok. Yeni e2e: `e2e/55-pdf-aktar.spec.ts` (3. test).
+
 ## 4.2.13 — 02.11.2026
 
 **GlassWorld PDF aktarımı: satışçının açık cam seçimi aktarımı durdurmaz** (ürün sahibi, 02.11.2026; karar 309; ALE 101):
