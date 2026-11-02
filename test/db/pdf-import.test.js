@@ -480,10 +480,12 @@ dbTest('elle cam seçimi (4.2.12 — ADE 15 eşdeğeri): ön izlemede bütün ka
   assert.deepEqual(choice.candidates.map((c) => c.id).sort(), all.map((x) => x.id).sort(), 'bütün katalog (etkin + pasif)');
   assert.deepEqual(choice.candidates.filter((c) => c.inactive).map((c) => c.id), all.filter((x) => !x.isActive).map((x) => x.id));
   assert.match(choice.candidates.find((c) => c.id === opak.id).search, /Opak/);
-  // Başka kodlu cam (8.3.8) seçilirse aktarım durur
+  // Başka kodlu cam (8.3.8) AÇIKÇA seçilirse (4.2.13) aktarım durmaz: uyarı görünür, engel yok; parmak izi seçimi içerir
   const wrong = await preview('sales', o.id, up.ids, { glass: { [choice.key]: g.uc838.id } });
-  assert.ok(wrong.imports[0].blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH'));
-  assert.equal(await codeOf(apply('sales', o.id, await versionOf(o.id), fp(wrong), { choices: { glass: { [choice.key]: g.uc838.id } } })), 'PDF_IMPORT_BLOCKED');
+  assert.deepEqual(wrong.imports[0].blocking, []);
+  assert.ok(wrong.imports[0].warnings.some((w) => w.code === 'GLASS_CHOICE_OVERRIDE' && w.chosenCode === '8.3.8'));
+  assert.notDeepEqual(fp(wrong), fp(p));
+  assert.equal(await db.adminAlert.count({ where: { orderId: o.id, type: 'PDF_GLASS_OVERRIDE' } }), 0, 'ön izleme kayıt yazmaz');
   // Doğru (pasif) cam: satırlar, ölçüler, adetler, m² ve alış fiyatı PDF'teki gibi
   const ok = await preview('sales', o.id, up.ids, { glass: { [choice.key]: opak.id } });
   assert.deepEqual(ok.imports[0].blocking, []);
@@ -497,4 +499,31 @@ dbTest('elle cam seçimi (4.2.12 — ADE 15 eşdeğeri): ön izlemede bütün ka
   // Müşterinin yeni sipariş seçimi yalnızca etkin camları kabul eder (değişmedi)
   const { glassOrderItems } = await import('../../server/catalog/glass.js');
   assert.deepEqual(glassOrderItems([{ id: opak.id, qty: 1 }], [opak]), { ok: false, code: 'GLASS_GONE' });
+}));
+
+dbTest('satışçının farklı cam seçimi (4.2.13 — ALE 101): PDF camı siparişin camıyla ve seçilen camın koduyla uyuşmasa da açık seçimle aktarılır; yöneticiye PDF_GLASS_OVERRIDE kaydı (tek kayıt, fiyat yok); seçim yoksa engel aynen', offline(async () => {
+  // Sipariş camı 6.3.6 füme reflekte; PDF'te 8+1.14+8 (8.3.8) — ALE 101 durumu
+  const o = await newOrder(116, firm, g.ref);
+  const DESC_838 = '8 mm Temperli Düz Cam DR+1.14+8 mm Temperli Düz Cam DR ŞEKİLLİ+DELİKLİ';
+  const lines = form({ no: '91116', project: 'ABC 116', rows: [`1 ${DESC_838} 2794 1080 1 3,018 3,018 55,80 TL 0,0 168,40`], total: '1 3,018 168,40', sub: '168,40', grand: '202,08' });
+  const up = await upload('sales', o.id, [pdf(lines)]);
+  const p = await preview('sales', o.id, up.ids);
+  assert.ok(p.imports[0].blocking.some((b) => b.code === 'GLASS_ORDER_MISMATCH'), 'seçim yokken engel korunur');
+  assert.equal(await codeOf(apply('sales', o.id, await versionOf(o.id), fp(p))), 'PDF_IMPORT_BLOCKED');
+  const key = p.imports[0].plan.glassChoices[0].key;
+  // Satışçı listeden başka bir cam (6.3.6 bronz — kodu da farklı) seçer: engel yok, iki uyarı, aktarım seçilen camla
+  const pick = { glass: { [key]: g.brz.id } };
+  const ok = await preview('sales', o.id, up.ids, pick);
+  assert.deepEqual(ok.imports[0].blocking, []);
+  assert.deepEqual(ok.imports[0].warnings.map((w) => w.code).filter((c) => c.endsWith('_OVERRIDE')).sort(), ['GLASS_CHOICE_OVERRIDE', 'GLASS_ORDER_OVERRIDE']);
+  await apply('sales', o.id, await versionOf(o.id), fp(ok), { choices: pick, dropEmpty: ok.empty.map((e) => e.id) });
+  const offer = await latest(o.id);
+  assert.deepEqual(offer.lines.filter((l) => l.importId).map((l) => [l.glassProductId, l.enMm, l.boyMm, l.adet, String(l.unitPrice), l.offerPrice]), [[g.brz.id, 2794, 1080, 1, '55.8', null]]);
+  const alerts = await db.adminAlert.findMany({ where: { orderId: o.id, type: 'PDF_GLASS_OVERRIDE' } });
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].offerId, offer.id);
+  assert.equal(alerts[0].resolvedAt, null);
+  const d = alerts[0].details;
+  assert.deepEqual(d.pdfGlass.map((x) => [x.factoryNo, x.factoryCode, x.chosenCode, x.codeMismatch, x.orderMismatch]), [['91116', '8.3.8', '6.3.6', true, true]]);
+  assert.ok(!JSON.stringify(d).includes('55.8') && !JSON.stringify(d).includes('168'), 'kayıtta fiyat / tutar yok');
 }));

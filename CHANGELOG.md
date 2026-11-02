@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.13 — 02.11.2026
+
+**GlassWorld PDF aktarımı: satışçının açık cam seçimi aktarımı durdurmaz** (ürün sahibi, 02.11.2026; karar 309; ALE 101):
+
+- PDF'teki cam siparişin camıyla ya da seçilen camın koduyla uyuşmadığında **seçim yapılmamışsa** engeller aynen
+  (`GLASS_ORDER_MISMATCH`; otomatik eşleşme ve ADE 15 kontrolü değişmedi).
+- Satışçı listeden **açıkça** bir cam seçtiğinde iki uyuşmazlık uyarıya döner (`GLASS_CHOICE_OVERRIDE`, `GLASS_ORDER_OVERRIDE`),
+  "Teklife aktar" açılır ve satırlar seçilen camla aktarılır (ölçü, adet, m², alış fiyatı PDF'teki gibi).
+- Aktarımla birlikte yöneticiye **Önemli kararlar** uyarısı yazılır (`PDF_GLASS_OVERRIDE`: fabrika no, PDF camı / kodu,
+  seçilen cam / kodu, siparişin camından da farklı mı; fiyat / tutar yok). Denetim kaydında aynı bilgi.
+- Başka hiçbir kural değişmedi: fiyatlar, mükerrer / parmak izi / tarama kontrolleri, pasif cam, müşteri ekranları. Migration yok.
+
 ## 4.2.12 — 30.10.2026
 
 **GlassWorld PDF aktarımı düzeltmeleri** (ürün sahibi, 30.10.2026; karar 308):

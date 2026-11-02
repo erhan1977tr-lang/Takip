@@ -151,6 +151,8 @@ export default {
       GLASS_CODE_UNKNOWN: 'Cam adından kalınlık / PVB kodu çıkarılamadı ({description}).',
       NEEDS_GLASS_CHOICE: 'Cam cinsini seçin: {description}.',
       GLASS_CHOICE_CODE_MISMATCH: 'Seçilen cam ({chosenCode}) PDF’teki camın koduyla ({factoryCode}) uyuşmuyor: {description}. Aktarılmaz.',
+      GLASS_CHOICE_OVERRIDE: 'Seçilen cam ({chosenCode}) PDF’teki camın kodundan ({factoryCode}) farklı: {description}. Seçilen camla aktarılır; yöneticiye Önemli kararlar uyarısı yazılır.',
+      GLASS_ORDER_OVERRIDE: 'PDF’teki cam ({description}) siparişin camıyla uyuşmuyor; seçtiğiniz camla aktarılır ve yöneticiye Önemli kararlar uyarısı yazılır.',
       NEEDS_OP_CHOICE: 'İşlem türü tanınmadı, seçin: {name}.',
       OP_UNIT_UNSUPPORTED: '{row}. satırın “{name}” işleminin birimi ({unit}) desteklenmiyor (yalnızca ADET).',
       OP_QTY_FRACTION: '{row}. satırın “{name}” işleminin miktarı tam sayı değil.',
