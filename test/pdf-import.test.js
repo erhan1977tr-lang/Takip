@@ -287,9 +287,20 @@ test('cam: siparişin camıyla belirgin uyuşmazlık durdurur; sipariş camı do
   const key = amb.glassChoices[0].key;
   const picked = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'g-brz2' } } });
   assert.deepEqual([picked.blocking, picked.lines[0].glassProductId], [[], 'g-brz2']);
-  // Başka kodlu cam menüde var (4.2.12: bütün katalog) ama seçilirse aktarım durur (eski aday sınırının yerine)
+  // Başka kodlu cam menüde var (4.2.12: bütün katalog); AÇIKÇA seçilirse aktarım durmaz (4.2.13): uyarı + yönetici kaydı, seçilen camla aktarılır
   const foreign = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'g-uc' } } });
-  assert.ok(foreign.blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH' && b.factoryCode === '6.3.6' && b.chosenCode === '8.3.8'));
+  assert.deepEqual(foreign.blocking, []);
+  assert.ok(foreign.warnings.some((w) => w.code === 'GLASS_CHOICE_OVERRIDE' && w.factoryCode === '6.3.6' && w.chosenCode === '8.3.8'));
+  assert.equal(foreign.lines[0].glassProductId, 'g-uc');
+  assert.deepEqual(foreign.glassChoices[0].override, { factoryCode: '6.3.6', chosenCode: '8.3.8', chosenLabel: CATALOG.find((g) => g.id === 'g-uc').label, codeMismatch: true, orderMismatch: false });
+  // Siparişin camıyla uyuşmazlık: seçim YOKSA engel aynen; açık seçimle uyarıya döner ve kayıt siparişi de farklı diye işaretler
+  const mismatchKey = plan(lines).glassChoices[0].key;
+  const overOrder = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: ORDER, catalog: CATALOG, choices: { glass: { [mismatchKey]: 'g-brz' } } });
+  assert.deepEqual(overOrder.blocking, []);
+  assert.ok(overOrder.warnings.some((w) => w.code === 'GLASS_ORDER_OVERRIDE'));
+  assert.deepEqual([overOrder.glassChoices[0].override?.orderMismatch, overOrder.glassChoices[0].override?.codeMismatch], [true, false]);
+  // Seçim PDF camıyla ve siparişle uyumluysa kayıt yok
+  assert.equal(picked.glassChoices[0].override, null);
   // Katalogda olmayan kimlik yok sayılır: seçim hâlâ gerekli
   const missing = buildImportPlan({ parsed: parseFactoryOrder(lines), importKey: 'k', order: { ...ORDER, glass: null }, catalog: twin, choices: { glass: { [key]: 'yok' } } });
   assert.ok(missing.blocking.some((b) => b.code === 'NEEDS_GLASS_CHOICE'));
@@ -580,8 +591,12 @@ test('4.2.12 gerçek düzen: ALE 80 / ALE 93 (Sipariş No satırından sonra ba�
     ['g-663', 1494, 1100, 3, '1.643', '50.00', null], ['g-663', 2000, 1100, 1, '2.200', '50.00', null], ['g-663', 1745, 1100, 2, '1.920', '50.00', null],
   ]);
   assert.deepEqual(picked.checks.a, { pdfSum: 79195, subtotal: 79195, ok: true, diff: 0 });
-  // Siparişin camı 66.2 (0,76 PVB) ise PDF'teki 1,14 PVB ile uyuşmaz: engel korunur; 6.2.6 cam elle seçilirse de durur
+  // Siparişin camı 66.2 (0,76 PVB) ise PDF'teki 1,14 PVB ile uyuşmaz: seçim yoksa engel korunur (ADE 15 kontrolü);
+  // 6.2.6 cam AÇIKÇA seçilirse (4.2.13) durmaz — uyarı + yönetici kaydı, seçilen camla aktarılır
   assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(C[0]), catalog: C }).blocking.some((b) => b.code === 'GLASS_ORDER_MISMATCH'));
-  assert.ok(buildImportPlan({ parsed: ade, importKey: 'k', order: order(null), catalog: C, choices: { glass: { [key]: 'g-662' } } }).blocking.some((b) => b.code === 'GLASS_CHOICE_CODE_MISMATCH'));
+  const over = buildImportPlan({ parsed: ade, importKey: 'k', order: order(null), catalog: C, choices: { glass: { [key]: 'g-662' } } });
+  assert.deepEqual(over.blocking, []);
+  assert.ok(over.warnings.some((w) => w.code === 'GLASS_CHOICE_OVERRIDE' && w.chosenCode === '6.2.6'));
+  assert.ok(over.lines.filter((l) => l.kind === 'CAM').every((l) => l.glassProductId === 'g-662'));
 });
 

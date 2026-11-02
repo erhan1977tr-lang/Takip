@@ -616,8 +616,22 @@ const ACTIONS = {
     const nos = r.preview.imports.map((p) => p.factoryNo).filter(Boolean);
     // Geçmiş notunda yalnızca fabrika sipariş numaraları (tutar yok); satırı ve notu yalnızca teklif hazırlayanlar görür
     h.event('OFFER_PDF_IMPORTED', nos.join(', ') || null);
+    // 4.2.13: satışçı PDF'teki camdan / siparişin camından farklı bir cam seçtiyse yöneticiye "Önemli kararlar" uyarısı (fiyat yok)
+    const overrides = r.preview.imports.flatMap((p) => (p.plan?.glassChoices ?? []).filter((g) => g.override).map((g) => ({
+      importId: p.id, factoryNo: p.factoryNo ?? null, description: g.description, factoryCode: g.override.factoryCode, chosenCode: g.override.chosenCode,
+      chosenLabel: g.override.chosenLabel, codeMismatch: g.override.codeMismatch, orderMismatch: g.override.orderMismatch,
+    })));
+    if (overrides.length) {
+      await h.tx.adminAlert.create({
+        data: {
+          type: 'PDF_GLASS_OVERRIDE', orderId: h.order.id, offerId: r.offer.id, createdById: h.actor.id ?? null,
+          dedupeKey: `pdf-glass:${overrides.map((o) => o.importId).sort().join(',')}`,
+          details: { pdfGlass: overrides.map(({ importId: _i, ...o }) => o) },
+        },
+      });
+    }
     h.audit = {
-      offerId: r.offer.id, lines: r.added.length, dropped: r.drop.length, amount,
+      offerId: r.offer.id, lines: r.added.length, dropped: r.drop.length, amount, glassOverrides: overrides,
       pdfImport: r.preview.imports.map((p) => ({
         importId: p.id, factoryNo: p.factoryNo, lines: p.lines.length,
         // Ara Toplam (fabrika KDV hariç alış toplamı) aynen; satır toplamı ve fark ayrı (karar 266) — kuruş

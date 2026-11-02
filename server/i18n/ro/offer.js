@@ -148,6 +148,8 @@ export default {
       GLASS_CODE_UNKNOWN: 'Din denumirea sticlei nu s-a putut stabili codul grosime / PVB ({description}).',
       NEEDS_GLASS_CHOICE: 'Alegeți tipul de sticlă: {description}.',
       GLASS_CHOICE_CODE_MISMATCH: 'Sticla aleasă ({chosenCode}) nu corespunde codului sticlei din PDF ({factoryCode}): {description}. Nu se importă.',
+      GLASS_CHOICE_OVERRIDE: 'Sticla aleasă ({chosenCode}) diferă de codul sticlei din PDF ({factoryCode}): {description}. Se importă cu sticla aleasă; administratorul primește o avertizare în Decizii importante.',
+      GLASS_ORDER_OVERRIDE: 'Sticla din PDF ({description}) nu corespunde cu sticla comenzii; se importă cu sticla aleasă și administratorul primește o avertizare în Decizii importante.',
       NEEDS_OP_CHOICE: 'Tipul operației nu a fost recunoscut, alegeți: {name}.',
       OP_UNIT_UNSUPPORTED: 'Rândul {row}: unitatea operației „{name}” ({unit}) nu este acceptată (doar ADET).',
       OP_QTY_FRACTION: 'Rândul {row}: cantitatea operației „{name}” nu este un număr întreg.',

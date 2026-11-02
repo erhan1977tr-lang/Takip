@@ -116,17 +116,26 @@ export function buildImportPlan({ parsed, importKey, order, catalog, choices = {
     if (verdict === 'MATCH' && order.glass?.id && byId.get(order.glass.id)?.isActive !== false && byId.has(order.glass.id)) { selected = order.glass.id; auto = true; }
     else if (cand.exact.length === 1) { selected = cand.exact[0]; auto = true; }
     const chosen = choices.glass?.[key];
-    if (chosen && pool.includes(chosen)) {
+    // 4.2.13 (ürün sahibi): satışçı listeden AÇIKÇA bir cam seçtiyse kod / sipariş camı uyuşmazlığı aktarımı durdurmaz —
+    // uyarıya döner, seçilen camla aktarılır ve yöneticiye "Önemli kararlar" uyarısı yazılır (`override`). Seçim yoksa engeller aynen.
+    const explicit = Boolean(chosen && pool.includes(chosen));
+    /** @type {null | { factoryCode: string | null, chosenCode: string | null, chosenLabel: string, codeMismatch: boolean, orderMismatch: boolean }} */
+    let override = null;
+    if (explicit) {
       selected = chosen; auto = false;
       const picked = catalogGlassSignature(byId.get(chosen));
-      if (sig.code && picked.code && picked.code !== sig.code) blocking.push({ code: 'GLASS_CHOICE_CODE_MISMATCH', description: r.description, factoryCode: sig.code, chosenCode: picked.code });
+      const codeMismatch = Boolean(sig.code && picked.code && picked.code !== sig.code);
+      const orderMismatch = verdict === 'MISMATCH';
+      if (codeMismatch) warnings.push({ code: 'GLASS_CHOICE_OVERRIDE', description: r.description, factoryCode: sig.code, chosenCode: picked.code });
+      if (orderMismatch) warnings.push({ code: 'GLASS_ORDER_OVERRIDE', description: r.description, factoryCode: sig.code });
+      if (codeMismatch || orderMismatch) override = { factoryCode: sig.code ?? null, chosenCode: picked.code ?? null, chosenLabel: byId.get(chosen)?.label ?? chosen, codeMismatch, orderMismatch };
     }
-    if (verdict === 'MISMATCH') blocking.push({ code: 'GLASS_ORDER_MISMATCH', description: r.description, factoryCode: sig.code });
+    if (verdict === 'MISMATCH' && !explicit) blocking.push({ code: 'GLASS_ORDER_MISMATCH', description: r.description, factoryCode: sig.code });
     else if (verdict === 'UNKNOWN') warnings.push({ code: 'ORDER_GLASS_UNVERIFIED', description: r.description });
     if (!sig.ok) warnings.push({ code: sig.problem === 'PVB_NOT_MULTIPLE' ? 'PVB_NOT_MULTIPLE' : 'GLASS_CODE_UNKNOWN', description: r.description, pvb: sig.pvb?.mm ?? null });
     if (!selected) blocking.push({ code: 'NEEDS_GLASS_CHOICE', description: r.description });
     glassChoices.set(key, {
-      key, description: r.description, code: sig.code, colours: sig.colours, auto, selected,
+      key, description: r.description, code: sig.code, colours: sig.colours, auto, selected, override,
       candidates: pool.map((id) => ({ id, label: byId.get(id)?.label ?? id, inactive: byId.get(id)?.isActive === false })),
     });
   }

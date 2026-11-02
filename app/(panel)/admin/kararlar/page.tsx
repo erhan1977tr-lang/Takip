@@ -25,6 +25,8 @@ type Details = {
    * FGO_UNCERTAIN (kind, idExtern, expectedGross); müşteri proforması zincirinde sipariş yok → customerId */
   proforma?: string | null; fgoPaid?: number; manualRon?: number; subject?: string; amountRon?: number;
   matches?: { ref?: string | null; orderNo?: string | null; kind?: string }[]; kind?: string; idExtern?: string; expectedGross?: number; customerId?: string | null;
+  /** PDF aktarımında satışçının seçtiği cam (4.2.13): PDF camı / kodu, seçilen cam / kodu */
+  pdfGlass?: { factoryNo?: string | null; description?: string; factoryCode?: string | null; chosenCode?: string | null; chosenLabel?: string; codeMismatch?: boolean; orderMismatch?: boolean }[];
 };
 const FINANCE_CODES = ['MISMATCH', 'OVERPAID', 'MANUAL_UNVERIFIED', 'FGO_PAID_CANCELLED'];
 const UNC_KINDS = ['PROFORMA', 'ADVANCE', 'INVOICE', 'FGO_PROFORMA', 'FGO_INVOICE'];
@@ -107,6 +109,13 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                 code: l.code ?? '', name: (locale === 'tr' ? l.nameTr : l.nameRo) ?? '', qty: l.qty ?? 0, unit: unitLabel(l.unitCode ?? '', locale),
                 stock: l.stock ?? 0, missing: l.missing ?? 0,
               })}
+            </li>
+          ))}
+          {/* PDF aktarımında satışçının seçtiği cam PDF'teki / siparişin camından farklı (4.2.13) */}
+          {(Array.isArray(d.pdfGlass) ? d.pdfGlass : []).map((g, i) => (
+            <li key={`g${i}`} data-pdf-glass={g.chosenCode ?? ''}>
+              {t('pricing.alerts.pdfGlassLine', { factoryNo: g.factoryNo ?? '—', pdf: g.description ?? '', pdfCode: g.factoryCode ?? '—', chosen: g.chosenLabel ?? '', chosenCode: g.chosenCode ?? '—' })}
+              {g.orderMismatch && <span className="muted"> · {t('pricing.alerts.pdfGlassOrder')}</span>}
             </li>
           ))}
           {d.compensationId && (
