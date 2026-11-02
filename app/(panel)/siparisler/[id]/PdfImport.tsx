@@ -43,10 +43,14 @@ export function PdfImport({ orderId, dirty, previous, m }: {
   const [choices, setChoices] = useState<{ glass: Record<string, string>; ops: Record<string, string> }>({ glass: {}, ops: {} });
   const [drop, setDrop] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState<Record<string, string>>({});
+  // 4.2.14: seçilen cam PDF'teki / siparişin camından farklıysa aktarmadan önce satışçı "Emin misiniz?" ile onaylar (yalnızca ekran)
+  const [confirmOverride, setConfirmOverride] = useState(false);
 
   const included = useMemo(() => ids.filter((id) => !excluded[id]), [ids, excluded]);
   const shown = preview?.imports ?? [];
   const blocked = shown.some((i) => i.blocking.length > 0);
+  const isOverride = (p: Problem) => p.code === 'GLASS_CHOICE_OVERRIDE' || p.code === 'GLASS_ORDER_OVERRIDE';
+  const overrides = shown.some((i) => i.warnings.some(isOverride));
   const lineCount = shown.reduce((n, i) => n + (i.plan?.lineCount ?? 0), 0);
 
   const refresh = async (nextIds: string[], nextChoices = choices) => {
@@ -56,6 +60,7 @@ export function PdfImport({ orderId, dirty, previous, m }: {
     setBusy('');
     if (!res.ok) { setError(res.error); return; }
     setPreview(res);
+    setConfirmOverride(false);
     setDrop((d) => Object.fromEntries(res.empty.map((e) => [e.id, d[e.id] ?? true])));
   };
 
@@ -166,21 +171,29 @@ export function PdfImport({ orderId, dirty, previous, m }: {
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{imp.blocking.map((p, i) => <li key={i} data-code={p.code}>{text(p)}</li>)}</ul>
               </div>
             )}
-            {imp.warnings.length > 0 && (
+            {imp.warnings.some(isOverride) && (
+              <div className="alert alert-error" data-pdf-override>
+                <b>{m.overrideTitle}</b>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{imp.warnings.filter(isOverride).map((p, i) => <li key={i} data-code={p.code}>{text(p)}</li>)}</ul>
+              </div>
+            )}
+            {imp.warnings.some((p) => !isOverride(p)) && (
               <div className="alert alert-warn" data-pdf-warnings>
                 <b>{m.warnings}</b>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{imp.warnings.map((p, i) => <li key={i} data-code={p.code}>{text(p)}</li>)}</ul>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{imp.warnings.filter((p) => !isOverride(p)).map((p, i) => <li key={i} data-code={p.code}>{text(p)}</li>)}</ul>
               </div>
             )}
             {imp.plan && (
               <>
-                {imp.plan.glassChoices.filter((g) => !g.auto || !g.selected).map((g) => (
+                {/* 4.2.14: siparişin camıyla uyuşmazlıkta (GLASS_ORDER_MISMATCH) otomatik eşleşse de seçim kutusu gösterilir — satışçı
+                    bütün katalogdan AÇIKÇA seçer (boş başlar); sunucu açık seçimle aktarır ve yöneticiye kayıt yazar (4.2.13) */}
+                {imp.plan.glassChoices.filter((g) => !g.auto || !g.selected || imp.blocking.some((b) => b.code === 'GLASS_ORDER_MISMATCH' && b.description === g.description)).map((g) => (
                   <div className="field" key={g.key}>
                     <label>{m.pickGlass}: <span className="muted">{g.description}</span>{g.code ? ` · ${interpolate(m.code, { code: g.code })}` : ''}</label>
                     {/* 4.2.12: bütün katalog (pasifler işaretli); arama ad / renk / kod üzerinde, seçili cam her zaman listede kalır */}
                     <input type="search" placeholder={m.glassSearch} aria-label={m.glassSearch} data-glass-search value={search[g.key] ?? ''}
                       onChange={(e) => setSearch((s) => ({ ...s, [g.key]: e.target.value }))} style={{ marginBottom: 4 }} />
-                    <select value={choices.glass[g.key] ?? g.selected ?? ''} data-pick-glass onChange={(e) => void choose('glass', g.key, e.target.value)}>
+                    <select value={choices.glass[g.key] ?? (g.auto ? '' : g.selected ?? '')} data-pick-glass onChange={(e) => void choose('glass', g.key, e.target.value)}>
                       <option value="">—</option>
                       {g.candidates.filter((c) => matches(c, search[g.key]) || c.id === (choices.glass[g.key] ?? g.selected)).map((c) => (
                         <option key={c.id} value={c.id} data-inactive={c.inactive ? '' : undefined}>{c.inactive ? `${c.label} ${m.glassInactive}` : c.label}</option>
@@ -242,10 +255,21 @@ export function PdfImport({ orderId, dirty, previous, m }: {
           </div>
         )}
 
+        {confirmOverride && overrides && !blocked && (
+          <div className="alert alert-error" role="alertdialog" data-pdf-confirm-override style={{ marginTop: 12 }}>
+            <b>{m.confirmOverride}</b>
+            <div className="row end" style={{ marginTop: 8 }}>
+              <button type="button" className="btn" data-pdf-confirm-no onClick={() => setConfirmOverride(false)}>{m.confirmNo}</button>
+              <button type="button" className="btn btn-primary" data-pdf-confirm-yes disabled={!!busy} onClick={() => void apply()}>{busy === 'apply' ? m.applying : m.confirmYes}</button>
+            </div>
+          </div>
+        )}
         <div className="row end" style={{ marginTop: 12 }}>
           {preview && lineCount > 0 && !blocked && <span className="muted small" data-pdf-linecount>{interpolate(m.lines, { n: lineCount })}</span>}
           <button type="button" className="btn" onClick={() => dialog.current?.close()}>{m.cancel}</button>
-          <button type="button" className="btn btn-primary" data-pdf-apply disabled={!preview || !shown.length || blocked || dirty || !!busy} onClick={() => void apply()}>
+          {/* Cam cinsleri aynı değilse önce onay paneli (sunucu kuralı değişmez: açık seçim + yönetici kaydı) */}
+          <button type="button" className="btn btn-primary" data-pdf-apply disabled={!preview || !shown.length || blocked || dirty || !!busy || confirmOverride}
+            onClick={() => (overrides ? setConfirmOverride(true) : void apply())}>
             {busy === 'apply' ? m.applying : m.apply}
           </button>
         </div>
