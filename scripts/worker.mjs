@@ -19,7 +19,7 @@
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
 import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antivirus.js';
-import { dispatchWarehouseEmails } from '../server/profile/warehouse.js';
+import { dispatchDeliveredEmails, dispatchWarehouseEmails } from '../server/profile/warehouse.js';
 import { dispatchFgoJobs, dispatchProfileAdvanceJobs } from '../server/profile/fgo-jobs.js';
 import { financeReviewTick as reviewFinance } from '../server/finance/service.js';
 import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
@@ -108,6 +108,9 @@ async function profileTick() {
   if (e.sent || e.failed) log('belge e-postası:', JSON.stringify(e));
   const r = await dispatchWarehouseEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
   if (r.sent || r.failed) log('depo e-postası:', JSON.stringify(r));
+  // Depo teslim onayı bildirimi (4.2.15): depo bağlantısından onaylanan teslimle aynı işlemde kuyruğa giren işler
+  const d = await dispatchDeliveredEmails(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
+  if (d.sent || d.failed) log('teslim onayı bildirimi:', JSON.stringify(d));
   // Tedarikçi sipariş e-postaları (Paket 6): yalnızca yöneticinin "Siparişi onayla / gönder"i ile kuyruğa giren işler
   const t = await dispatchSupplierOrderEmails(db, { transport: mail.transport, from: mail.from, now, log });
   if (t.sent || t.failed || t.retried) log('tedarikçi e-postası:', JSON.stringify(t));

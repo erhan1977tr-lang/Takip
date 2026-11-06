@@ -16,7 +16,7 @@ const { createProfileOrder } = await import('../../server/profile/create.js');
 const { profileOrderItems } = await import('../../server/profile/rules.js');
 const { runProfileAction, depotActor } = await import('../../server/profile/transitions.js');
 const { runOrderAction } = await import('../../server/orders/transitions.js');
-const { dispatchWarehouseEmails, findDepotOrder, hashToken } = await import('../../server/profile/warehouse.js');
+const { dispatchDeliveredEmails, dispatchWarehouseEmails, findDepotOrder, hashToken } = await import('../../server/profile/warehouse.js');
 const { stockLevels, addStockMovement } = await import('../../server/profile/stock.js');
 const { dayDate, depotOpen, depotReadyDay, earliestPickup, localDay } = await import('../../server/profile/dates.js');
 // Müşterinin seçebileceği alış günü (Paket 8, karar 194: sipariş şimdi depoya iletilse; 12:00 kuralı). Birkaç dakika ileriden
@@ -195,6 +195,30 @@ dbTest('profil: tam akış — onay, proforma, ödeme, depo (stok, e-posta, PDF,
   assert.equal(o.profile.stage, 'TESLIM_EDILDI');
   assert.equal(o.profile.deliveredVia, 'DEPOT_LINK');
   assert.equal(await db.orderFile.count({ where: { orderId: id, source: 'DEPOT_LINK' } }), 1);
+  // 4.2.15 (karar 311): depo onayıyla aynı işlemde TEK bildirim kuyruğa; işçi depo alıcılarına GKH düzeninde gönderir
+  const dq = await db.notificationOutbox.findMany({ where: { orderId: id, type: 'WAREHOUSE_DELIVERED_EMAIL' } });
+  assert.deepEqual(dq.map((r) => [r.status, r.payload.orderNo, typeof r.payload.deliveredAt]), [['PENDING', orderNo, 'string']]);
+  const dsent = [];
+  const dt = { sendMail: async (m) => { dsent.push(m); return { messageId: 'd1' }; } };
+  assert.deepEqual(await dispatchDeliveredEmails(db, { transport: dt, from: 'info@gkh.ro' }), { sent: 1, failed: 0 });
+  assert.equal(dsent.length, 1);
+  assert.equal(dsent[0].to, 'adrian@partnertrans.ro, enis@gkh.ro', 'Ayarlar’daki depo alıcıları');
+  assert.equal(dsent[0].from, 'GKH Trading Invest SRL <info@gkh.ro>');
+  assert.match(dsent[0].subject, new RegExp(`^Predare confirmată — comanda ${orderNo} — `));
+  assert.ok(dsent[0].text.includes(`comanda ${orderNo}`) && dsent[0].text.includes('SPIGOTI') && dsent[0].text.includes('imza.pdf'));
+  assert.ok(dsent[0].html.includes('<img src="cid:gkh-logo@takip"'), 'GKH logolu düzen');
+  assert.deepEqual(dsent[0].attachments.map((a) => a.cid), ['gkh-logo@takip'], 'yalnızca satır içi logo; PDF eki yok');
+  assert.ok(!dsent[0].subject.includes('TEST') && !dsent[0].html.includes('E-MAIL DE TEST'));
+  assert.equal((await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'WAREHOUSE_DELIVERED_EMAIL' } })).status, 'SENT');
+  assert.equal(await db.orderEvent.count({ where: { orderId: id, event: 'DELIVERED_EMAILED' } }), 1);
+  // Mükerrer: ikinci tur hiçbir şey göndermez; aynı sipariş için elle eklenen ikinci satır SKIPPED
+  assert.deepEqual(await dispatchDeliveredEmails(db, { transport: dt, from: 'info@gkh.ro' }), { sent: 0, failed: 0 });
+  await db.notificationOutbox.create({ data: { type: 'WAREHOUSE_DELIVERED_EMAIL', orderId: id, payload: { orderNo }, status: 'PENDING' } });
+  assert.deepEqual(await dispatchDeliveredEmails(db, { transport: dt, from: 'info@gkh.ro' }), { sent: 0, failed: 0 });
+  assert.equal(dsent.length, 1, 'aynı teslim için ikinci e-posta yok');
+  assert.deepEqual((await db.notificationOutbox.findMany({ where: { orderId: id, type: 'WAREHOUSE_DELIVERED_EMAIL' }, orderBy: { createdAt: 'asc' } })).map((r) => [r.status, r.lastError]), [['SENT', null], ['SKIPPED', 'already sent']]);
+  // SMTP yoksa hiçbir şey olmaz
+  assert.deepEqual(await dispatchDeliveredEmails(db, { transport: null, from: 'x' }), { sent: 0, failed: 0, skipped: 'no_smtp' });
   await run(id, 'mark_invoiced', 'admin', { invoiceNo: 'F-9' });
   o = await load(id);
   assert.equal(o.profile.stage, 'FATURALANDI');
@@ -267,6 +291,46 @@ dbTest('profil: e-posta gönderilemezse yeniden denenir; 8. denemede yöneticiye
   // Yeniden gönder: yeni kuyruk kaydı
   await run(id, 'resend_warehouse', 'admin');
   assert.equal(await db.notificationOutbox.count({ where: { orderId: id, type: 'WAREHOUSE_EMAIL', status: 'PENDING' } }), 1);
+});
+
+dbTest('teslim onayı bildirimi (4.2.15): gönderim hatası teslimi / stoğu / siparişi etkilemez, yeniden denenir, 8. denemede FAILED + yönetici uyarısı; yöneticinin elle onayı bildirim kuyruğa yazmaz', async () => {
+  const { id } = await newProfileOrder([['SPIGOTI', 2]]);
+  let o = await load(id);
+  await run(id, 'send_profile_offer', 'admin', { lines: pricesOf(o) });
+  o = await load(id);
+  await run(id, 'approve_profile_offer', 'cust', { offerId: o.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 3 ABC' });
+  await run(id, 'mark_proforma', 'admin');
+  await run(id, 'mark_paid', 'admin', { paidDate: today() });
+  const doc = { storageKey: '2026/11/imza-2.pdf', name: 'imza-2.pdf', size: 10, mime: 'application/pdf', checksum: 'c', scanStatus: 'CLEAN' };
+  await runProfileAction(db, { orderId: id, action: 'mark_delivered', actor: depotActor('1.2.3.4'), payload: { files: [doc] } });
+  const before = await load(id);
+  const moves = await db.stockMovement.count({ where: { orderId: id } });
+  const failing = { sendMail: async () => { throw new Error('SMTP down'); } };
+  let now = new Date();
+  for (let i = 0; i < 8; i++) {
+    const r = await dispatchDeliveredEmails(db, { transport: failing, from: 'x', now });
+    assert.deepEqual(r, { sent: 0, failed: 1 });
+    now = new Date(now.getTime() + 24 * 3_600_000);
+  }
+  const row = await db.notificationOutbox.findFirst({ where: { orderId: id, type: 'WAREHOUSE_DELIVERED_EMAIL' } });
+  assert.deepEqual([row.status, row.attempts], ['FAILED', 8]);
+  assert.equal((await db.adminAlert.findFirst({ where: { orderId: id, type: 'WAREHOUSE_EMAIL_FAILED' } })).details.kind, 'DELIVERED');
+  assert.equal(await db.orderEvent.count({ where: { orderId: id, event: 'DELIVERED_EMAIL_FAILED' } }), 1);
+  const after = await load(id);
+  assert.deepEqual([after.profile.stage, after.profile.deliveredVia, String(after.profile.deliveredAt), after.status], [before.profile.stage, before.profile.deliveredVia, String(before.profile.deliveredAt), before.status], 'teslim kaydı değişmez');
+  assert.equal(await db.stockMovement.count({ where: { orderId: id } }), moves, 'stoğa dokunulmaz');
+  assert.deepEqual(await dispatchDeliveredEmails(db, { transport: failing, from: 'x', now }), { sent: 0, failed: 0 }, 'FAILED satır bir daha denenmez');
+  // Yönetici elle "teslim edildi" derse (depo bağlantısı değil): bildirim yok
+  const { id: id2 } = await newProfileOrder([['SPIGOTI', 1]]);
+  let o2 = await load(id2);
+  await run(id2, 'send_profile_offer', 'admin', { lines: pricesOf(o2) });
+  o2 = await load(id2);
+  await run(id2, 'approve_profile_offer', 'cust', { offerId: o2.offers[0].id, pickupDate: pickDay(), phone: '0723000000', plate: 'B 3 ABC' });
+  await run(id2, 'mark_proforma', 'admin');
+  await run(id2, 'mark_paid', 'admin', { paidDate: today() });
+  await run(id2, 'mark_delivered', 'admin');
+  assert.equal((await load(id2)).profile.stage, 'TESLIM_EDILDI');
+  assert.equal(await db.notificationOutbox.count({ where: { orderId: id2, type: 'WAREHOUSE_DELIVERED_EMAIL' } }), 0);
 });
 
 // ---------- FGO (Aşama 6b) ----------

@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.15 — 06.11.2026
+
+**Profil siparişi: depo teslim onayı bildirimi** (ürün sahibi, 06.11.2026; karar 311):
+
+- Depo, depo bağlantısından teslimi onayladığında (Confirmare → `mark_delivered`, aktör DEPOT) aynı işlemde bir bildirim işi
+  kuyruğa yazılır (`WAREHOUSE_DELIVERED_EMAIL`); işçi Ayarlar → Entegrasyonlar'daki **depo e-postası alıcılarına** (aynı liste)
+  GKH logolu Romence e-posta gönderir: sipariş no, müşteri (firma, kişi, telefon, plaka), teslim anı (Romanya saati), planlanan
+  alış günü, teslim edilen ürünler (miktar, birim, ad, kod), deponun yüklediği belgeler. Fiyat / tutar yok, ek yok.
+- Mükerrer yok: `mark_delivered` yalnızca bir kez çalışır (DEPODA → TESLIM_EDILDI); satır atomik üstlenilir; aynı siparişin
+  SENT bildirimi varsa yeni satır `SKIPPED`. Gönderim hatası teslimi / stoğu / siparişi etkilemez: artan aralıkla yeniden
+  denenir, 8. denemede `FAILED` + geçmiş olayı + yönetici uyarısı (`WAREHOUSE_EMAIL_FAILED`, `details.kind = DELIVERED`).
+- Geçmiş teslimler için satır yazılmaz (geriye dönük gönderim yok). Yöneticinin elle "teslim edildi" işlemi bildirim üretmez.
+- Değişmeyenler: profil siparişi akışı, depo e-postası, stok, muhasebe, FGO, öbür bildirimler. Migration yok.
+- Testler: `test/delivered-mail.test.js`; `test/db/profile.test.js` (kuyruk, gönderim, mükerrer, SMTP yok, hata / yeniden deneme).
+
 ## 4.2.14 — 02.11.2026
 
 **PDF aktarımı: uyuşmayan camda seçim kutusu ve "Emin misiniz?" onayı** (ürün sahibi, 02.11.2026; karar 310; ALE 79) — yalnızca ekran:

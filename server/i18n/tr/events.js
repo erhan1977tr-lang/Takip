@@ -61,6 +61,8 @@ export default {
   WAREHOUSE_SENT: { label: 'Sipariş depoya gönderildi, stoktan düşüldü', customer: 'Siparişiniz depoya iletildi', auto: 'otomatik (ödeme teyidiyle)' },
   WAREHOUSE_RESENT: { label: 'Depo e-postası yeniden gönderilecek' },
   WAREHOUSE_EMAILED: { label: 'Depo e-postası gönderildi' },
+  DELIVERED_EMAILED: { label: 'Teslim onayı bildirimi gönderildi' },
+  DELIVERED_EMAIL_FAILED: { label: 'Teslim onayı bildirimi gönderilemedi' },
   FGO_DOC_REQUESTED: {
     label: "FGO belgesi istendi",
   },

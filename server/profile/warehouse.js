@@ -10,10 +10,11 @@ import { writeAudit, writeHistory } from '../orders/journal.js';
 import { resolveKey, storeGenerated } from '../files/store.js';
 import { depotFormPdf } from '../pdf/depot-form.js';
 import { renderWarehouseEmail } from '../mail/templates/warehouse.js';
+import { renderDeliveredEmail } from '../mail/templates/delivered.js';
 import { sendBrandedMail } from '../mail/send.js';
 import { unitLabel } from './catalog.js';
 import { dayDate, localDay } from './dates.js';
-import { WAREHOUSE_EMAIL } from './transitions.js';
+import { DELIVERED_EMAIL, WAREHOUSE_EMAIL } from './transitions.js';
 
 export const WAREHOUSE_KEY = 'profile.warehouse';
 export const DEFAULT_RECIPIENTS = ['adrian@partnertrans.ro', 'enis@gkh.ro'];
@@ -201,6 +202,84 @@ export async function dispatchWarehouseEmails(db, { transport, from, appUrl, now
         });
       }
       log('depo e-postası gönderilemedi', row.orderId, msg);
+    }
+  }
+  return { sent, failed };
+}
+
+// ---------- depo teslim onayı bildirimi (4.2.15, karar 311) ----------
+/**
+ * Depo bağlantısından onaylanan teslimlerin bildirimini depo alıcılarına gönderir. Kuyruk satırı `mark_delivered` ile aynı
+ * işlemde yazılır (yalnızca depo onayı; geçmiş teslimler için satır yoktur → geriye dönük gönderim olmaz). Gönderim hatası
+ * teslimi, stoğu ya da siparişi etkilemez: satır artan aralıklarla yeniden denenir, 8. denemede FAILED + yönetici uyarısı.
+ * Mükerrer koruması: satır atomik üstlenilir; aynı siparişin daha önce SENT olmuş bir bildirimi varsa yeni satır SKIPPED.
+ * @param {{ transport: { sendMail: (m: object) => Promise<any> } | null, from: string, now?: Date, timeZone?: string, log?: Function }} ctx
+ */
+export async function dispatchDeliveredEmails(db, { transport, from, now = new Date(), timeZone = 'Europe/Bucharest', log = () => {} }) {
+  if (!transport) return { sent: 0, failed: 0, skipped: 'no_smtp' };
+  const rows = await db.notificationOutbox.findMany({
+    where: { type: DELIVERED_EMAIL, status: 'PENDING', availableAt: { lte: now } },
+    orderBy: { createdAt: 'asc' },
+    take: 10,
+  });
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    const claimed = await db.notificationOutbox.updateMany({ where: { id: row.id, status: 'PENDING', attempts: row.attempts }, data: { attempts: { increment: 1 } } });
+    if (claimed.count === 0) continue;
+    const attempt = row.attempts + 1;
+    try {
+      const order = row.orderId ? await db.order.findUnique({
+        where: { id: row.orderId },
+        include: {
+          profile: true, customer: { select: { name: true, contactPerson: true } },
+          profileItems: { orderBy: { sortOrder: 'asc' } },
+          files: { where: { source: 'DEPOT_LINK' }, orderBy: { createdAt: 'asc' }, select: { name: true } },
+        },
+      }) : null;
+      // Teslim edilmemiş / iptal edilmiş sipariş: gönderilmez
+      if (!order || order.status === 'IPTAL' || !order.profile?.deliveredAt || !['TESLIM_EDILDI', 'FATURALANDI'].includes(order.profile.stage)) {
+        await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'order not delivered' } });
+        continue;
+      }
+      // Aynı teslim için ikinci bildirim yok
+      const already = await db.notificationOutbox.count({ where: { orderId: order.id, type: DELIVERED_EMAIL, status: 'SENT', id: { not: row.id } } });
+      if (already > 0) {
+        await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'already sent' } });
+        continue;
+      }
+      const settings = await getWarehouseSettings(db);
+      const mail = renderDeliveredEmail({
+        orderNo: order.orderNo, firmName: order.customer.name, contactPerson: order.customer.contactPerson,
+        phone: order.profile.contactPhone, plate: order.profile.vehiclePlate, pickupDate: order.profile.pickupDate,
+        deliveredAt: order.profile.deliveredAt, timeZone,
+        items: order.profileItems.map((i) => ({ code: i.code, name: i.nameRo, unit: unitLabel(i.unitCode, 'ro'), qty: i.qty })),
+        documents: order.files.map((f) => f.name),
+      });
+      const info = await sendBrandedMail(transport, { from, to: settings.recipients.join(', '), subject: mail.subject, text: mail.text, html: mail.html, lang: 'ro' });
+      await db.$transaction(async (tx) => {
+        await tx.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
+        await writeHistory(tx, { orderId: order.id, event: 'DELIVERED_EMAILED', from: order.status, to: order.status, actorId: null, note: settings.recipients.join(', ') });
+        await writeAudit(tx, {
+          action: 'DELIVERED_EMAIL_SENT', entityType: 'Order', entityId: order.id, userId: null,
+          details: { recipients: settings.recipients, messageId: info?.messageId ?? null, attempt },
+        }, { role: 'SYSTEM' });
+      });
+      sent++;
+    } catch (e) {
+      failed++;
+      const msg = String(e?.message ?? e).slice(0, 500);
+      const final = attempt >= MAX_ATTEMPTS;
+      await db.notificationOutbox.update({
+        where: { id: row.id },
+        data: { lastError: msg, ...(final ? { status: 'FAILED' } : { availableAt: new Date(now.getTime() + backoffMinutes(attempt) * 60_000) }) },
+      });
+      if (final && row.orderId) {
+        await db.$transaction(async (tx) => {
+          await writeHistory(tx, { orderId: row.orderId, event: 'DELIVERED_EMAIL_FAILED', actorId: null, note: msg.slice(0, 200) });
+          await tx.adminAlert.create({ data: { type: 'WAREHOUSE_EMAIL_FAILED', orderId: row.orderId, details: { kind: 'DELIVERED', error: msg.slice(0, 300), attempts: attempt } } });
+        });
+      }
+      log('teslim onayı bildirimi gönderilemedi', row.orderId, msg);
     }
   }
   return { sent, failed };

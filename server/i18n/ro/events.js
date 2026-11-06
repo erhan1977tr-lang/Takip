@@ -61,6 +61,8 @@ export default {
   WAREHOUSE_SENT: { label: 'Comanda a fost trimisă la depozit și scăzută din stoc', customer: 'Comanda dvs. a fost transmisă depozitului', auto: 'automat (la confirmarea plății)' },
   WAREHOUSE_RESENT: { label: 'E-mailul pentru depozit va fi retrimis' },
   WAREHOUSE_EMAILED: { label: 'E-mailul pentru depozit a fost trimis' },
+  DELIVERED_EMAILED: { label: 'Notificarea de predare a fost trimisă' },
+  DELIVERED_EMAIL_FAILED: { label: 'Notificarea de predare nu a putut fi trimisă' },
   FGO_DOC_REQUESTED: {
     label: "Document FGO solicitat",
   },
