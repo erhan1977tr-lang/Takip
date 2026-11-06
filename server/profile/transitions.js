@@ -25,6 +25,8 @@ const INCLUDE = {
 
 /** Depo e-postası kuyruk olayı (server/profile/warehouse.js gönderir) */
 export const WAREHOUSE_EMAIL = 'WAREHOUSE_EMAIL';
+/** Depo teslim onayı bildirimi (4.2.15): depo bağlantısından onaylanan teslim → depo alıcılarına e-posta (server/profile/warehouse.js) */
+export const DELIVERED_EMAIL = 'WAREHOUSE_DELIVERED_EMAIL';
 /** FGO kuyruk olayları (server/profile/fgo-jobs.js keser): proforma (onayda) ve fatura (teslimde) */
 export const FGO_PROFORMA = 'FGO_PROFORMA';
 export const FGO_INVOICE = 'FGO_INVOICE';
@@ -435,6 +437,8 @@ const ACTIONS = {
     }
     await setStage(h, 'TESLIM_EDILDI', { deliveredAt: h.now, deliveredVia: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN' });
     h.event('DELIVERED', h.actor.depot ? 'depot' : null);
+    // 4.2.15: depo bağlantısından onaylanan teslim → aynı işlemde bildirim kuyruğa (işçi gönderir; hata teslimi etkilemez)
+    if (h.actor.depot) h.outbox.push(outboxEvent(DELIVERED_EMAIL, { orderId: h.order.id, payload: { orderNo: h.order.orderNo, deliveredAt: h.now.toISOString() } }));
     // FGO açıksa fatura kendiliğinden kesilir (proformanın kuruyla)
     const fgo = await queueFgo(h, FGO_INVOICE);
     h.audit = { via: h.actor.depot ? 'DEPOT_LINK' : 'ADMIN', files: files.map((f) => ({ name: f.name, checksum: f.checksum ?? null })), fgo };
