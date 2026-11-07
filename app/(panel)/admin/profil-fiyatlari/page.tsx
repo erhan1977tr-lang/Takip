@@ -26,7 +26,7 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
   const table = sp.tablo ? await db.profilePriceTable.findUnique({ where: { id: sp.tablo }, include: { items: true } }) : null;
   const [products, firms] = table ? await Promise.all([
     db.profileProduct.findMany({ where: { isActive: true }, orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }], include: { category: true } }),
-    db.customer.findMany({ where: { type: 'CUSTOMER' }, orderBy: { name: 'asc' }, include: { profilePriceTable: { select: { id: true, name: true } } } }),
+    db.customer.findMany({ where: { type: 'CUSTOMER' }, orderBy: { name: 'asc' }, include: { profilePriceTable: { select: { id: true, name: true } }, profilePriceTables: { select: { id: true, name: true }, orderBy: { name: 'asc' } } } }),
   ]) : [[], []];
   const price = new Map((table?.items ?? []).map((i) => [i.productId, Number(i.unitPrice)]));
   const code = sp.ok ?? sp.error ?? '';
@@ -116,21 +116,33 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
             {firms.length === 0 ? <div className="empty">{t('profile.prices.noFirms')}</div> : (
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>{t('profile.prices.colFirm')}</th><th>{t('profile.prices.colTable')}</th><th /></tr></thead>
+                  <thead><tr><th>{t('profile.prices.colFirm')}</th><th>{t('profile.prices.colTable')}</th><th>{t('profile.prices.colExtra')}</th><th /></tr></thead>
                   <tbody>
                     {firms.map((f) => {
+                      // Varsayılan katalog + ek kataloglar (4.2.17, karar 312): bir firmaya birden fazla katalog bağlanabilir
                       const mine = f.profilePriceTableId === table.id;
+                      const extras = f.profilePriceTables.filter((x) => x.id !== f.profilePriceTableId);
+                      const extra = extras.some((x) => x.id === table.id);
+                      const linked = mine || extra;
+                      const act = (intent: string, label: string, cls: string) => (
+                        <form action={assignProfileTableAction} style={{ display: 'inline' }}>
+                          <input type="hidden" name="tableId" value={table.id} />
+                          <input type="hidden" name="customerId" value={f.id} />
+                          <input type="hidden" name="intent" value={intent} />
+                          <button className={cls} data-assign={intent}>{label}</button>
+                        </form>
+                      );
                       return (
-                        <tr key={f.id} className={mine ? 'picked' : undefined}>
+                        <tr key={f.id} className={linked ? 'picked' : undefined} data-firm-row={f.prefix}>
                           <td>{f.name} <span className="muted small mono">{f.prefix}</span></td>
-                          <td>{f.profilePriceTable?.name ?? <span className="muted">{t('profile.prices.listOnly')}</span>}</td>
+                          <td data-default-table>{f.profilePriceTable?.name ?? <span className="muted">{t('profile.prices.listOnly')}</span>}</td>
+                          <td data-extra-tables>{extras.length ? extras.map((x) => x.name).join(', ') : <span className="muted">—</span>}</td>
                           <td className="actions">
-                            <form action={assignProfileTableAction}>
-                              <input type="hidden" name="tableId" value={table.id} />
-                              <input type="hidden" name="customerId" value={f.id} />
-                              <input type="hidden" name="intent" value={mine ? 'unassign' : 'assign'} />
-                              <button className={mine ? 'btn btn-link danger' : 'btn'}>{mine ? t('profile.prices.unassign') : t('profile.prices.assign')}</button>
-                            </form>
+                            {mine && act('unassign', t('profile.prices.unassign'), 'btn btn-link danger')}
+                            {extra && <>{act('assign', t('profile.prices.makeDefault'), 'btn btn-link')} {act('unassign', t('profile.prices.unassignExtra'), 'btn btn-link danger')}</>}
+                            {!linked && (f.profilePriceTableId
+                              ? <>{act('extra', t('profile.prices.assignExtra'), 'btn')} {act('assign', t('profile.prices.makeDefault'), 'btn btn-link')}</>
+                              : act('assign', t('profile.prices.assign'), 'btn'))}
                           </td>
                         </tr>
                       );

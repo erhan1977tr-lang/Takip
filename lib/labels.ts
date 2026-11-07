@@ -154,6 +154,8 @@ const WORKFLOW_ERRORS: Record<string, string> = {
   BAD_PLATE: 'profile.errors.badPlate',
   PICKUP_LOCKED: 'profile.errors.pickupLocked',
   PICKUP_MISSING: 'profile.errors.pickupMissing',
+  BAD_PRICE_TABLE: 'profile.errors.badPriceTable',
+  PRICES_CHANGED: 'profile.errors.pricesChanged',
   PICKUP_INFO_MISSING: 'profile.errors.pickupInfoMissing',
   PICKUP_DEADLINE: 'profile.errors.pickupDeadline',
   PAID_IN_FUTURE: 'profile.errors.paidInFuture',

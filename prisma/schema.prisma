@@ -321,6 +321,8 @@ model Customer {
   // Müşteriye özel profil fiyatları (Aşama 6): yoksa katalogdaki liste fiyatı
   profilePriceTableId String?
   profilePriceTable   ProfilePriceTable? @relation(fields: [profilePriceTableId], references: [id], onDelete: SetNull)
+  // Ek profil fiyat katalogları (4.2.17, karar 312): varsayılan (profilePriceTableId) dışında müşterinin seçebildiği kataloglar
+  profilePriceTables  ProfilePriceTable[] @relation("CustomerProfileCatalogs")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -1409,7 +1411,8 @@ model ProfilePriceTable {
   name      String   @unique
   isActive  Boolean  @default(true)
   items     ProfilePriceItem[]
-  customers Customer[]
+  customers Customer[]        // varsayılan katalog olarak bağlı firmalar
+  extraCustomers Customer[]   @relation("CustomerProfileCatalogs") // ek katalog olarak bağlı firmalar (4.2.17)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 }
@@ -1473,6 +1476,9 @@ model ProfileOrder {
   direct           Boolean      @default(false)
   // Formun tek seferlik anahtarı: aynı gönderim (çift tıklama, yeniden deneme) ikinci sipariş / proforma açmaz
   requestKey       String?      @unique
+  // Siparişte seçilen profil fiyat kataloğu (4.2.17, karar 312): anlık görüntü — FK yok, katalog silinse / değişse de kalır
+  priceTableId     String?
+  priceTableName   String?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @default(now()) @updatedAt
 
