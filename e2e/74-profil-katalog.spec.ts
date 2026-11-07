@@ -32,7 +32,8 @@ test('veri: iki firma, iki katalog (GK15: 137 / 125 EUR; SPIGOTI yalnızca ilkin
     const firm = await db.customer.create({ data: { name: FIRM, prefix } });
     const firm2 = await db.customer.create({ data: { name: FIRM2, prefix: free[1] } });
     const gk = await db.profileProduct.findUniqueOrThrow({ where: { code: 'GK15' } });
-    const sp = await db.profileProduct.findUniqueOrThrow({ where: { code: 'SPIGOTI' } });
+    // SPIGOTI tohumda liste fiyatsızdır: "katalogda olmayan ürün liste fiyatına döner" kuralı için geçici liste fiyatı (sonda geri alınır)
+    const sp = await db.profileProduct.update({ where: { code: 'SPIGOTI' }, data: { listPrice: '3.25' } });
     const t1 = await db.profilePriceTable.create({ data: { name: T1, items: { create: [{ productId: gk.id, unitPrice: '137.00' }, { productId: sp.id, unitPrice: '3.00' }] } } });
     await db.profilePriceTable.create({ data: { name: T2, items: { create: [{ productId: gk.id, unitPrice: '125.00' }] } } });
     await db.customer.update({ where: { id: firm.id }, data: { profilePriceTableId: t1.id } });
@@ -158,6 +159,9 @@ test('tek kataloglu diğer müşteri: seçim kutusu yok, başka firmanın katalo
     await expect(page.getByText('Seçilen fiyat kataloğu firmanıza tanımlı değil')).toBeVisible({ timeout: 2000 });
   }).toPass();
   const db2 = await prisma();
-  try { expect(await db2.order.count({ where: { customer: { name: FIRM2 } } })).toBe(before); } finally { await db2.$disconnect(); }
+  try {
+    expect(await db2.order.count({ where: { customer: { name: FIRM2 } } })).toBe(before);
+    await db2.profileProduct.update({ where: { code: 'SPIGOTI' }, data: { listPrice: null } }); // tohum durumu geri
+  } finally { await db2.$disconnect(); }
   await page.context().close();
 });
