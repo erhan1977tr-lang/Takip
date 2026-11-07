@@ -16,7 +16,11 @@ export type ProfileDraft = { id: string; title: string; no: string | null; note:
 
 const picked = (q: string | undefined) => /^\d+$/.test(q ?? '') && Number(q) > 0;
 /** Fiyat listesiyle doğrudan sipariş (Paket B — karar 229): firmaya bağlı listenin adı, en erken alış günü, ürün fiyatları */
-export type ProfileDirect = { table: string; minPickup: string; prices: Record<string, number | null> };
+export type ProfileDirect = {
+  table: string; minPickup: string; prices: Record<string, number | null>; fingerprint: string;
+  /** Firmanın katalogları (4.2.16): ≥ 2 ise form üstünde "Fiyat Kataloğu" seçimi; seçim anında fiyat / toplam yenilenmeden değişir */
+  tables: { id: string; name: string; isDefault: boolean; prices: Record<string, number | null>; fingerprint: string }[];
+};
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 /** Satır tutarı kuruş olarak (yalnızca gösterim; asıl tutar sunucuda — profileTotals) */
 const cents = (price: number, qty: number) => Math.round(price * 100) * qty;
@@ -42,6 +46,10 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   // Gönderim öncesi stok uyarısı
   const [shortage, setShortage] = useState<StockCheckLine[] | null>(null);
   const [checking, setChecking] = useState(false);
+  // Fiyat kataloğu seçimi (4.2.16): başlangıç = hata sonrası korunan seçim, yoksa varsayılan katalog
+  const tables = direct?.tables ?? [];
+  const [tableId, setTableId] = useState<string>(() => (v?.priceTableId && tables.some((t) => t.id === v.priceTableId) ? v.priceTableId : tables.find((t) => t.isDefault)?.id ?? tables[0]?.id ?? ''));
+  const catalog = tables.find((t) => t.id === tableId) ?? null;
   const formRef = useRef<HTMLFormElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
   const skipCheck = useRef(false);
@@ -49,7 +57,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   const selected = Object.values(qty).filter(picked).length;
   // Doğrudan sipariş: seçili her ürünün fiyatı listede varsa (yoksa sipariş olağan akışa gider — sunucu da aynı kuralla karar verir)
   const pickedIds = Object.keys(qty).filter((id) => picked(qty[id]));
-  const priceOf = (id: string) => direct?.prices[id] ?? null;
+  const priceOf = (id: string) => (catalog ? catalog.prices[id] : direct?.prices[id]) ?? null;
   const unpriced = !!direct && pickedIds.some((id) => priceOf(id) == null);
   const directNow = !!direct && !unpriced;
   const totalCents = direct ? pickedIds.reduce((sum, id) => sum + (priceOf(id) != null ? cents(priceOf(id)!, Number(qty[id])) : 0), 0) : 0;
@@ -94,7 +102,22 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
         <div className="card turn" id="dogrudan" data-direct-order>
           <h2>{m.direct.title}</h2>
           <p className="muted small">{m.direct.intro}</p>
-          {direct.table && <p className="small"><b>{interpolate(m.direct.table, { name: direct.table })}</b></p>}
+          {tables.length >= 2 ? (
+            <div className="field" data-price-catalog>
+              <label htmlFor="dg-catalog">{m.direct.catalog}</label>
+              <select id="dg-catalog" name="priceTableId" value={tableId} onChange={(e) => setTableId(e.target.value)}>
+                {tables.map((tb) => <option key={tb.id} value={tb.id}>{tb.name}{tb.isDefault ? ` — ${m.direct.catalogDefault}` : ''}</option>)}
+              </select>
+              <div className="hint">{m.direct.catalogHint}</div>
+            </div>
+          ) : (
+            <>
+              {catalog && <input type="hidden" name="priceTableId" value={catalog.id} />}
+              {direct.table && <p className="small"><b>{interpolate(m.direct.table, { name: catalog?.name ?? direct.table })}</b></p>}
+            </>
+          )}
+          {/* Gösterilen fiyatların parmak izi: sunucu güncel fiyatlarla karşılaştırır, uyuşmazsa sipariş açılmaz (PRICES_CHANGED) */}
+          <input type="hidden" name="priceFingerprint" value={catalog?.fingerprint ?? direct.fingerprint} />
           <div className="grid-3">
             <div>
               <label htmlFor="dg-date">{m.direct.date}{directNow ? ' *' : ''}</label>

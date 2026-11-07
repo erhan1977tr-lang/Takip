@@ -19,7 +19,7 @@ import { readProfileDraftItems } from '@/server/profile/drafts.js';
 import { loadCalcOptions } from '@/server/profile/calc-service.js';
 import { fmtDec } from '@/lib/format';
 import { randomUUID } from 'node:crypto';
-import { profilePricesFor } from '@/server/profile/pricing.js';
+import { priceFingerprint, profilePricesFor } from '@/server/profile/pricing.js';
 import { DEPOT_CALENDAR, earliestPickup } from '@/server/profile/dates.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
 
@@ -108,9 +108,16 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       const now = new Date();
       try { minPickup = earliestPickup({ now, overrides: await calendarOverrides(db, DEPOT_CALENDAR, { now }) }).toISOString().slice(0, 10); } catch { minPickup = ''; }
     }
+    // Birden fazla katalog (4.2.16, karar 312): yalnızca bu firmanın kataloglarının fiyatları gelir (seçim anında yenilenmeden
+    // fiyat / toplam değişsin diye); her katalog için parmak izi — gönderimde sunucu güncel fiyatlarla karşılaştırır
     const direct = pricing.direct ? {
       table: pricing.tableName ?? '', minPickup,
       prices: Object.fromEntries(items.map((p) => [p.id, pricing.price(p)])) as Record<string, number | null>,
+      fingerprint: priceFingerprint(pricing.tableId, items, pricing.price),
+      tables: await Promise.all(pricing.tables.map(async (tb) => {
+        const p = tb.id === pricing.tableId ? pricing : await profilePricesFor(db, firm.id, { tableId: tb.id });
+        return { id: tb.id, name: tb.name, isDefault: tb.isDefault, prices: Object.fromEntries(items.map((x) => [x.id, p.price(x)])) as Record<string, number | null>, fingerprint: priceFingerprint(tb.id, items, p.price) };
+      })),
     } : null;
     const pdraft: ProfileDraft | undefined = draftRow ? {
       id: draftRow.id, title: draftRow.title ?? '', note: draftRow.note ?? '',

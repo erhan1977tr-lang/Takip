@@ -4,6 +4,26 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.16 — 07.11.2026
+
+**Profil siparişi: çoklu fiyat kataloğu seçimi** (ürün sahibi, 07.11.2026; karar 312):
+
+- Yönetici → Profil Fiyatları: bir firmaya **varsayılan** katalog (mevcut bağlantı, aynen korunur) + **ek kataloglar**
+  bağlanabilir ("Ek katalog olarak bağla", "Varsayılan yap", "Ek bağlantıyı kaldır"). Varsayılan değişince eski varsayılan
+  ek katalog olarak kalır; varsayılan kaldırılınca ilk ek katalog varsayılan olur. Fiyatlar ve diğer firmalar değişmez.
+- Müşteri profil sipariş formu: firmanın 2+ etkin kataloğu varsa üstte **Fiyat Kataloğu** seçimi (varsayılan seçili);
+  katalog değişince ürün fiyatları, satır tutarları ve toplam **sayfa yenilenmeden** değişir; adetler, hesaplayıcı
+  sonuçları ve not korunur; katalogda olmayan ürün liste fiyatına döner. Tek kataloglu müşteride görünüm aynen.
+- Sunucu: seçilen katalog firmanın kataloglarından değilse `BAD_PRICE_TABLE`; formda gösterilen fiyatların parmak izi
+  güncel fiyatlarla uyuşmuyorsa sipariş açılmaz (`PRICES_CHANGED`). Fiyatlar her zaman sunucudan; tarayıcıdan fiyat alınmaz.
+- Sipariş: seçilen katalog `ProfileOrder.priceTableId / priceTableName` olarak kaydedilir; satır fiyatları teklif kopyasında
+  sabit (proforma o kopyadan); katalog sonradan değişse / silinse geçmiş sipariş etkilenmez. Yönetici fiyat yenilerken
+  siparişin kataloğu kullanılır.
+- Migration (yalnızca ekleme, geriye uyumlu): `_CustomerProfileCatalogs` ilişki tablosu + `ProfileOrder.priceTableId`,
+  `priceTableName` (boş). Mevcut veriler ve bağlantılar değişmez.
+- Değişmeyenler: proforma / ödeme / depo / stok / FGO / bildirim akışları, cam siparişleri, teklif modülü.
+- Testler: `test/db/profile-catalogs.test.js`, `e2e/74-profil-katalog.spec.ts`.
+
 ## 4.2.15 — 06.11.2026
 
 **Profil siparişi: depo teslim onayı bildirimi** (ürün sahibi, 06.11.2026; karar 311):

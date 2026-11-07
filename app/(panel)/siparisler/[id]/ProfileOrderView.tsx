@@ -133,7 +133,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   const short = stockViewer && !p?.stockDeducted
     ? order.profileItems.filter((i) => i.productId && ((levels.get(i.productId) ?? 0) < i.qty || alertProducts.has(i.productId)))
     : [];
-  const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId) : null;
+  // Yöneticinin teklif fiyatlarını yenilerken kaynağı: siparişte seçilen katalog (4.2.16); firmadan kaldırıldıysa varsayılan
+  const source = editing && can('save_profile_prices') ? await profilePricesFor(db, order.customerId, { tableId: p?.priceTableId ?? null }) : null;
   // İptal kilidi (karar 288 — Y2): tahsilat / avans / bekleyen FGO işi varken iptal formu yerine nedenler
   const cancelReasons = can('cancel') ? await cancelLock(db, order.id) : [];
   const email = order.outbox.find((x) => x.type === 'WAREHOUSE_EMAIL');

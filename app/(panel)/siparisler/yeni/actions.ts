@@ -185,7 +185,7 @@ export async function keepDraftGlassAction(formData: FormData) {
 // ---------------- Profil siparişi (Aşama 6) ----------------
 export type ProfileOrderState = {
   error?: string;
-  values?: { title: string; no: string; note: string; qty: Record<string, string>; pickupDate?: string; phone?: string; plate?: string };
+  values?: { title: string; no: string; note: string; qty: Record<string, string>; pickupDate?: string; phone?: string; plate?: string; priceTableId?: string };
 };
 
 /** Profil siparişi: yalnızca adedi > 0 olan ürünler siparişe girer. Taslak da buradan kaydedilir. */
@@ -206,6 +206,7 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
   const values = {
     title, no: noRaw, note, qty,
     pickupDate: String(formData.get('pickupDate') ?? '').slice(0, 10), phone: String(formData.get('phone') ?? '').slice(0, 60), plate: String(formData.get('plate') ?? '').slice(0, 80),
+    priceTableId: String(formData.get('priceTableId') ?? '').slice(0, 40),
   };
   const fail = (error: string) => ({ error, values });
 
@@ -250,13 +251,16 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     plate: String(formData.get('plate') ?? '').slice(0, 80),
   };
   const requestKey = String(formData.get('requestKey') ?? '').slice(0, 64) || null;
+  // Katalog seçimi + fiyat parmak izi (4.2.16): yalnızca kimlikler gider; fiyatlar sunucuda yeniden hesaplanır
+  const priceTableId = values.priceTableId || null;
+  const priceFingerprint = String(formData.get('priceFingerprint') ?? '').slice(0, 64) || null;
   let orderId: string;
   let direct = false;
   let duplicate = false;
   try {
     const created = await createProfileOrder(db, {
       actor, firm: { id: firm.id, prefix: firm.prefix }, title: title || null, requestedNo: no, suggestedNo, items: items.items, note: note || null, draftId,
-      pickup, requestKey,
+      pickup, requestKey, priceTableId, priceFingerprint,
     });
     orderId = created.id;
     direct = created.direct;

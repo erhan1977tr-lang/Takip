@@ -10,7 +10,7 @@ import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { formatTypedNo, pickNumber, requestedNumbers } from '../orders/create.js';
 import { slaDeadline } from '../orders/rules.js';
 import { PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, optionalField, orderStatusFor, profileTotals } from './rules.js';
-import { PROFILE_CURRENCY, profilePricesFor } from './pricing.js';
+import { PROFILE_CURRENCY, priceFingerprint, profilePricesFor } from './pricing.js';
 import { recordStockShortage } from './stock.js';
 import { DEPOT_CALENDAR, dayDate, dayKeyOf, pickupProblem } from './dates.js';
 import { calendarOverrides } from '../calendar/service.js';
@@ -49,8 +49,10 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
  *   items: profileOrderItems() sonucu
  *   pickup / requestKey: Paket B (karar 229) — fiyat listesiyle doğrudan siparişte alış günü (zorunlu), telefon ve plaka
  *   (isteğe bağlı); formun tek seferlik anahtarı (aynı anahtar ikinci sipariş açmaz, ilk siparişi döndürür)
+ *   priceTableId / priceFingerprint (4.2.16, karar 312): müşterinin seçtiği fiyat kataloğu (firmanın kataloglarından olmalı →
+ *   BAD_PRICE_TABLE) ve formda gösterilen fiyatların parmak izi (güncel fiyatlarla uyuşmazsa sipariş açılmaz → PRICES_CHANGED)
  */
-export async function createProfileOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, note = null, draftId = null, pickup = null, requestKey = null, now: at = null }) {
+export async function createProfileOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, note = null, draftId = null, pickup = null, requestKey = null, priceTableId = null, priceFingerprint: expectedFingerprint = null, now: at = null }) {
   if (!firm?.prefix) throw new WorkflowError('NO_FIRM');
   const asked = requestedNumbers(requestedNo, suggestedNo, firm.prefix).requested;
   if (!items.length) throw new WorkflowError('NO_ITEMS');
@@ -77,7 +79,13 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
       }
       const now = at ?? new Date();
       const products = await tx.profileProduct.findMany({ where: { id: { in: items.map((i) => i.productId).filter(Boolean) } } });
-      const pricing = await profilePricesFor(tx, firm.id);
+      // Katalog seçimi (4.2.16): yalnızca firmanın kendi katalogları; fiyatlar her zaman sunucudan (tarayıcıdan fiyat alınmaz)
+      const pricing = await profilePricesFor(tx, firm.id, { tableId: priceTableId });
+      if (priceTableId && !pricing.tables.some((t) => t.id === priceTableId)) throw new WorkflowError('BAD_PRICE_TABLE');
+      if (expectedFingerprint) {
+        const shown = await tx.profileProduct.findMany({ where: { isActive: true }, select: { id: true, listPrice: true } });
+        if (priceFingerprint(pricing.tableId, shown, pricing.price) !== expectedFingerprint) throw new WorkflowError('PRICES_CHANGED');
+      }
       const lines = profileOfferLines(items, pricing.price, new Map(products.map((p) => [p.id, p])));
       // Doğrudan sipariş (karar 229): bağlı etkin fiyat listesi + her satırın fiyatı belli. Değilse olağan akış.
       const direct = pricing.direct && missingPrices(lines).length === 0;
@@ -104,6 +112,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
           profile: {
             create: {
               stage, stageSince: now, direct, requestKey: key,
+              priceTableId: pricing.tableId, priceTableName: pricing.tableName,
               ...(direct ? { ...info, approvedAt: now, approvedById: actor.id } : {}),
             },
           },
@@ -135,7 +144,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
       await writeAudit(tx, {
         action: 'ORDER_CREATE', entityType: 'Order', entityId: order.id, userId: actor.id,
         details: {
-          orderNo, type: PROFILE_TYPE, items: items.length, priceTable: pricing.tableName,
+          orderNo, type: PROFILE_TYPE, items: items.length, priceTable: pricing.tableName, priceTableId: pricing.tableId,
           ...(direct ? { direct: true, offerAmount: amount, pickupDate: dayKeyOf(info.pickupDate), fgo } : {}),
           ...(draftId ? { fromDraft: true } : {}), ...(no !== asked ? { requestedNo: asked, assignedNo: no } : {}),
         },

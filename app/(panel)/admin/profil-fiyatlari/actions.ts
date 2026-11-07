@@ -7,7 +7,7 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
 import { audit } from '@/lib/audit';
-import { saveTablePrices, validateTableName } from '@/server/profile/pricing.js';
+import { assignProfileTable, saveTablePrices, validateTableName } from '@/server/profile/pricing.js';
 
 const PATH = '/admin/profil-fiyatlari';
 const back = (tableId: string | null, q: string) => `${PATH}?${tableId ? `tablo=${encodeURIComponent(tableId)}&` : ''}${q}`;
@@ -58,19 +58,14 @@ export async function saveProfileTablePricesAction(fd: FormData) {
   redirect(back(id, `ok=prices&n=${r.changed}`));
 }
 
-/** Firmayı tabloya bağla ya da bağlantıyı kaldır */
+/** Firmayı tabloya bağla (varsayılan / ek katalog) ya da bağlantıyı kaldır — kural ve denetim kaydı serviste (4.2.16, karar 312) */
 export async function assignProfileTableAction(fd: FormData) {
   const admin = await requirePermission('PRICE_TABLE_MANAGE');
   const id = String(fd.get('tableId') ?? '');
   const customerId = String(fd.get('customerId') ?? '');
-  const remove = fd.get('intent') === 'unassign';
-  const firm = await db.customer.findFirst({ where: { id: customerId, type: 'CUSTOMER' } });
-  const table = await db.profilePriceTable.findUnique({ where: { id } });
-  if (!firm || !table) redirect(back(id || null, 'error=not_found'));
-  const before = firm.profilePriceTableId;
-  const after = remove ? (before === id ? null : before) : id;
-  await db.customer.update({ where: { id: firm.id }, data: { profilePriceTableId: after } });
-  await audit('PROFILE_PRICE_TABLE_ASSIGN', 'Customer', firm.id, admin.id, { before, after });
+  const intent = String(fd.get('intent') ?? 'assign');
+  const r = await assignProfileTable(db, { customerId, tableId: id, intent, actor: await actorOf(admin) });
+  if (!r.ok) redirect(back(id || null, 'error=not_found'));
   revalidatePath(PATH);
   redirect(back(id, 'ok=assigned#firmalar'));
 }
