@@ -134,45 +134,44 @@ test('müşteri: katalog seçimi — fiyat, tutar ve toplam yenilenmeden değiş
   await page.context().close();
 });
 
-test('tek kataloglu diğer müşteri: seçim kutusu yok, başka firmanın kataloğu görünmez; sahte katalog kimliği reddedilir', async ({ browser }) => {
-  const page = await as(browser, OTHER, TEAM_PW);
+test('seçili katalog gönderimden önce firmadan kaldırılırsa sunucu reddeder (BAD_PRICE_TABLE), sipariş açılmaz; tek kataloglu diğer müşteri: seçim kutusu yok, başka firmanın kataloğu görünmez', async ({ browser }) => {
+  // Sunucu kuralı: fiyat ve katalog yetkisi her zaman sunucuda (tarayıcıdan gelen kimliğe / fiyata güvenilmez). Gerçek kullanıcı
+  // yolu: müşteri MTM'yi seçer; o sırada yönetici MTM'yi firmadan kaldırır; gönderim BAD_PRICE_TABLE ile reddedilir.
+  const page = await as(browser, CUST, TEAM_PW);
   await page.goto('/siparisler/yeni?tip=PROFILE_ORDER');
-  await expect(page.locator('#dogrudan')).toContainText(T1);
-  await expect(page.locator('#dg-catalog')).toHaveCount(0);
-  const html = await page.content();
-  expect(html).not.toContain(T2);
-  // Formdaki gizli katalog kimliğini başka firmanın (MTM) kimliğiyle değiştirip gönder → sunucu reddeder, sipariş açılmaz
-  const db = await prisma();
-  let t2Id = '';
-  let before = 0;
-  try {
-    t2Id = (await db.profilePriceTable.findUniqueOrThrow({ where: { name: T2 } })).id;
-    before = await db.order.count({ where: { customer: { name: FIRM2 } } });
-  } finally { await db.$disconnect(); }
+  const select = page.locator('#dg-catalog');
+  const t2Id = (await select.locator('option').nth(1).getAttribute('value'))!;
+  await select.selectOption(t2Id);
   const gkRow = page.locator('tr', { has: page.locator('.mono', { hasText: 'GK15' }) }).first();
   await gkRow.locator('input[name=p_qty]').fill('1');
-  // Formdaki gizli katalog kimliği React'in denetimindedir (ekranda değiştirilse yeniden çizimde geri gelir); gerçek saldırı
-  // yolu HTTP gövdesidir: sunucu eylemine giden çok parçalı gövdede kimlik başka firmanın kataloğuyla değiştirilir
-  let tampered = 0;
-  await page.route((u) => u.pathname === '/siparisler/yeni', async (route) => {
-    const req = route.request();
-    const body = req.method() === 'POST' ? req.postData() : null;
-    if (body && body.includes('name="priceTableId"')) {
-      tampered++;
-      await route.continue({ postData: body.replace(/(name="priceTableId"\r\n\r\n)[^\r\n]*/, `$1${t2Id}`) });
-    } else await route.continue();
-  });
+  await expect(gkRow.locator('td[data-price]')).toHaveAttribute('data-price', '125');
+  const db = await prisma();
+  let before = 0;
+  try {
+    before = await db.order.count({ where: { customer: { name: FIRM } } });
+    await db.customer.update({ where: { name: FIRM }, data: { profilePriceTables: { set: [] } } }); // yönetici MTM'yi kaldırdı
+  } finally { await db.$disconnect(); }
   await page.locator('.submit-bar').getByRole('button', { name: 'Siparişi gönder' }).click();
   const anyway = page.getByRole('button', { name: 'Yine de gönder' });
   await expect(async () => {
     if (await anyway.isVisible()) await anyway.click();
     await expect(page.getByText('Seçilen fiyat kataloğu firmanıza tanımlı değil')).toBeVisible({ timeout: 2000 });
   }).toPass();
-  expect(tampered).toBeGreaterThan(0);
+  expect(page.url()).toContain('/siparisler/yeni'); // sipariş sayfasına gidilmedi
+  await expect(gkRow.locator('input[name=p_qty]')).toHaveValue('1'); // girdiler korunur
   const db2 = await prisma();
   try {
-    expect(await db2.order.count({ where: { customer: { name: FIRM2 } } })).toBe(before);
+    expect(await db2.order.count({ where: { customer: { name: FIRM } } })).toBe(before);
     await db2.profileProduct.update({ where: { code: 'SPIGOTI' }, data: { listPrice: null } }); // tohum durumu geri
   } finally { await db2.$disconnect(); }
   await page.context().close();
+
+  // Tek kataloglu diğer müşteri: seçim kutusu yok; ATICO'nun ek kataloğu (MTM) hiçbir yerde görünmez
+  const other = await as(browser, OTHER, TEAM_PW);
+  await other.goto('/siparisler/yeni?tip=PROFILE_ORDER');
+  await expect(other.locator('#dogrudan')).toContainText(T1);
+  await expect(other.locator('#dg-catalog')).toHaveCount(0);
+  await expect(other.locator('input[name=priceTableId]')).toHaveCount(1);
+  expect(await other.content()).not.toContain(T2);
+  await other.context().close();
 });
