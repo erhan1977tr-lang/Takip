@@ -119,7 +119,7 @@ export default async function ProfilePricesPage({ searchParams }: { searchParams
                   <thead><tr><th>{t('profile.prices.colFirm')}</th><th>{t('profile.prices.colTable')}</th><th>{t('profile.prices.colExtra')}</th><th /></tr></thead>
                   <tbody>
                     {firms.map((f) => {
-                      // Varsayılan katalog + ek kataloglar (4.2.16, karar 312): bir firmaya birden fazla katalog bağlanabilir
+                      // Varsayılan katalog + ek kataloglar (4.2.17, karar 312): bir firmaya birden fazla katalog bağlanabilir
                       const mine = f.profilePriceTableId === table.id;
                       const extras = f.profilePriceTables.filter((x) => x.id !== f.profilePriceTableId);
                       const extra = extras.some((x) => x.id === table.id);

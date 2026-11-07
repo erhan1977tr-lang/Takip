@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { ADMIN, ADMIN_PW, TEAM_PW, as, createUser, firstLogin, outboxCodeFor } from './helpers';
 
-// Çoklu profil fiyat kataloğu (4.2.16, karar 312), gerçek sunucuda. FGO e2e veritabanında KAPALIDIR.
+// Çoklu profil fiyat kataloğu (4.2.17, karar 312), gerçek sunucuda. FGO e2e veritabanında KAPALIDIR.
 //  - yönetici: bir firmaya ikinci katalog "ek katalog olarak" bağlanır; varsayılan korunur
 //  - müşteri: formun üstünde "Fiyat Kataloğu" seçimi (varsayılan seçili); seçim değişince fiyat, satır tutarı ve toplam
 //    SAYFA YENİLENMEDEN değişir; adetler ve not korunur; sipariş seçilen katalogdaki fiyatlarla açılır, katalog siparişe yazılır

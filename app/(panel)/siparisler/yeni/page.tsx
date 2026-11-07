@@ -108,7 +108,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       const now = new Date();
       try { minPickup = earliestPickup({ now, overrides: await calendarOverrides(db, DEPOT_CALENDAR, { now }) }).toISOString().slice(0, 10); } catch { minPickup = ''; }
     }
-    // Birden fazla katalog (4.2.16, karar 312): yalnızca bu firmanın kataloglarının fiyatları gelir (seçim anında yenilenmeden
+    // Birden fazla katalog (4.2.17, karar 312): yalnızca bu firmanın kataloglarının fiyatları gelir (seçim anında yenilenmeden
     // fiyat / toplam değişsin diye); her katalog için parmak izi — gönderimde sunucu güncel fiyatlarla karşılaştırır
     const direct = pricing.direct ? {
       table: pricing.tableName ?? '', minPickup,

@@ -18,7 +18,7 @@ const picked = (q: string | undefined) => /^\d+$/.test(q ?? '') && Number(q) > 0
 /** Fiyat listesiyle doğrudan sipariş (Paket B — karar 229): firmaya bağlı listenin adı, en erken alış günü, ürün fiyatları */
 export type ProfileDirect = {
   table: string; minPickup: string; prices: Record<string, number | null>; fingerprint: string;
-  /** Firmanın katalogları (4.2.16): ≥ 2 ise form üstünde "Fiyat Kataloğu" seçimi; seçim anında fiyat / toplam yenilenmeden değişir */
+  /** Firmanın katalogları (4.2.17): ≥ 2 ise form üstünde "Fiyat Kataloğu" seçimi; seçim anında fiyat / toplam yenilenmeden değişir */
   tables: { id: string; name: string; isDefault: boolean; prices: Record<string, number | null>; fingerprint: string }[];
 };
 const money = (v: number) => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
@@ -46,7 +46,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
   // Gönderim öncesi stok uyarısı
   const [shortage, setShortage] = useState<StockCheckLine[] | null>(null);
   const [checking, setChecking] = useState(false);
-  // Fiyat kataloğu seçimi (4.2.16): başlangıç = hata sonrası korunan seçim, yoksa varsayılan katalog
+  // Fiyat kataloğu seçimi (4.2.17): başlangıç = hata sonrası korunan seçim, yoksa varsayılan katalog
   const tables = direct?.tables ?? [];
   const [tableId, setTableId] = useState<string>(() => (v?.priceTableId && tables.some((t) => t.id === v.priceTableId) ? v.priceTableId : tables.find((t) => t.isDefault)?.id ?? tables[0]?.id ?? ''));
   const catalog = tables.find((t) => t.id === tableId) ?? null;

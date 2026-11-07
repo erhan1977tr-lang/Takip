@@ -50,7 +50,7 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
  *   items: profileOrderItems() sonucu
  *   pickup / requestKey: Paket B (karar 229) — fiyat listesiyle doğrudan siparişte alış günü (zorunlu), telefon ve plaka
  *   (isteğe bağlı); formun tek seferlik anahtarı (aynı anahtar ikinci sipariş açmaz, ilk siparişi döndürür)
- *   priceTableId / priceFingerprint (4.2.16, karar 312): müşterinin seçtiği fiyat kataloğu (firmanın kataloglarından olmalı →
+ *   priceTableId / priceFingerprint (4.2.17, karar 312): müşterinin seçtiği fiyat kataloğu (firmanın kataloglarından olmalı →
  *   BAD_PRICE_TABLE) ve formda gösterilen fiyatların parmak izi (güncel fiyatlarla uyuşmazsa sipariş açılmaz → PRICES_CHANGED)
  */
 export async function createProfileOrder(db, { actor, firm, title, requestedNo, suggestedNo = null, items, note = null, draftId = null, pickup = null, requestKey = null, priceTableId = null, priceFingerprint: expectedFingerprint = null, now: at = null }) {
@@ -80,7 +80,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
       }
       const now = at ?? new Date();
       const products = await tx.profileProduct.findMany({ where: { id: { in: items.map((i) => i.productId).filter(Boolean) } } });
-      // Katalog seçimi (4.2.16): yalnızca firmanın kendi katalogları; fiyatlar her zaman sunucudan (tarayıcıdan fiyat alınmaz)
+      // Katalog seçimi (4.2.17): yalnızca firmanın kendi katalogları; fiyatlar her zaman sunucudan (tarayıcıdan fiyat alınmaz)
       const pricing = await profilePricesFor(tx, firm.id, { tableId: priceTableId });
       if (priceTableId && !pricing.tables.some((t) => t.id === priceTableId)) throw new WorkflowError('BAD_PRICE_TABLE');
       if (expectedFingerprint) {

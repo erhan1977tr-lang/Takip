@@ -251,7 +251,7 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     plate: String(formData.get('plate') ?? '').slice(0, 80),
   };
   const requestKey = String(formData.get('requestKey') ?? '').slice(0, 64) || null;
-  // Katalog seçimi + fiyat parmak izi (4.2.16): yalnızca kimlikler gider; fiyatlar sunucuda yeniden hesaplanır
+  // Katalog seçimi + fiyat parmak izi (4.2.17): yalnızca kimlikler gider; fiyatlar sunucuda yeniden hesaplanır
   const priceTableId = values.priceTableId || null;
   const priceFingerprint = String(formData.get('priceFingerprint') ?? '').slice(0, 64) || null;
   let orderId: string;

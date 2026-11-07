@@ -1,4 +1,4 @@
-// Çoklu profil fiyat kataloğu (4.2.16, karar 312): katalog listesi, seçimle fiyat, yetki, parmak izi, sipariş / proforma tutarlılığı,
+// Çoklu profil fiyat kataloğu (4.2.17, karar 312): katalog listesi, seçimle fiyat, yetki, parmak izi, sipariş / proforma tutarlılığı,
 // sonradan değişen fiyat, taslak, yönetici bağlantı kuralı. Gerçek PostgreSQL; ağ yok, FGO yok, e-posta yok.
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';

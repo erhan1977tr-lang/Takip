@@ -8,7 +8,7 @@ import { parsePrice } from './rules.js';
 export const PROFILE_CURRENCY = 'EUR';
 
 /**
- * Firmanın profil fiyat katalogları (4.2.16, karar 312): varsayılan (`Customer.profilePriceTableId`) önce, sonra ek kataloglar
+ * Firmanın profil fiyat katalogları (4.2.17, karar 312): varsayılan (`Customer.profilePriceTableId`) önce, sonra ek kataloglar
  * (`profilePriceTables`, ada göre). Yalnızca ETKİN tablolar; her tablo bir kez. Başka firmanın kataloğu hiç dönmez.
  * @returns {Promise<{ id: string, name: string, isDefault: boolean, items: { productId: string, unitPrice: unknown }[] }[]>}
  */
@@ -33,7 +33,7 @@ export async function profileCatalogsFor(db, customerId) {
  * Firmanın profil fiyatları: ürün id → fiyat ve fiyatın kaynağı.
  * direct (Paket B — karar 229): firmaya bağlı ETKİN bir fiyat tablosu var → müşteri fiyatları görür ve doğrudan sipariş verir
  * (pasif / bağlı olmayan tablo → olağan teklif akışı). Fiyat kuralı aynıdır: tablo fiyatı, yoksa katalog liste fiyatı.
- * tableId (4.2.16): müşterinin seçtiği katalog — firmanın kataloglarından biri değilse / verilmediyse varsayılan kullanılır
+ * tableId (4.2.17): müşterinin seçtiği katalog — firmanın kataloglarından biri değilse / verilmediyse varsayılan kullanılır
  * (seçimin yetkisi `createProfileOrder`'da ayrıca denetlenir: BAD_PRICE_TABLE).
  * @param {{ tableId?: string | null }} [opts]
  * @returns {Promise<{ tableId: string | null, tableName: string | null, direct: boolean, tables: { id: string, name: string, isDefault: boolean }[],
@@ -54,7 +54,7 @@ export async function profilePricesFor(db, customerId, opts = {}) {
 }
 
 /**
- * Fiyat parmak izi (4.2.16): formda gösterilen fiyatların özeti — katalog id + ürün id → fiyat (sıralı). Sipariş gönderilirken
+ * Fiyat parmak izi (4.2.17): formda gösterilen fiyatların özeti — katalog id + ürün id → fiyat (sıralı). Sipariş gönderilirken
  * sunucu güncel fiyatlardan aynı özeti üretir; farklıysa sipariş AÇILMAZ (`PRICES_CHANGED`), form güncel fiyatlarla yenilenir.
  * @param {string | null} tableId
  * @param {{ id: string, listPrice: unknown }[]} products  gösterilen ürünler
@@ -66,7 +66,7 @@ export function priceFingerprint(tableId, products, price) {
 }
 
 /**
- * Katalog bağlantısı (yönetici — Profil Fiyatları sayfası; 4.2.16):
+ * Katalog bağlantısı (yönetici — Profil Fiyatları sayfası; 4.2.17):
  *  - `assign`: tablo firmanın VARSAYILAN kataloğu olur; önceki varsayılan EK katalog olarak kalır (bağlantı kaybolmaz)
  *  - `extra`: tablo firmanın ek kataloğu olur (firmanın varsayılanı yoksa varsayılan olur)
  *  - `unassign`: bağlantı kaldırılır; varsayılan kaldırılıyorsa ilk ek katalog (ada göre) varsayılan olur

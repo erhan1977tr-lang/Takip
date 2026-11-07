@@ -58,7 +58,7 @@ export async function saveProfileTablePricesAction(fd: FormData) {
   redirect(back(id, `ok=prices&n=${r.changed}`));
 }
 
-/** Firmayı tabloya bağla (varsayılan / ek katalog) ya da bağlantıyı kaldır — kural ve denetim kaydı serviste (4.2.16, karar 312) */
+/** Firmayı tabloya bağla (varsayılan / ek katalog) ya da bağlantıyı kaldır — kural ve denetim kaydı serviste (4.2.17, karar 312) */
 export async function assignProfileTableAction(fd: FormData) {
   const admin = await requirePermission('PRICE_TABLE_MANAGE');
   const id = String(fd.get('tableId') ?? '');

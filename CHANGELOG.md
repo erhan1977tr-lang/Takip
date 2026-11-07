@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 4.2.16 — 07.11.2026
+## 4.2.17 — 07.11.2026
 
 **Profil siparişi: çoklu fiyat kataloğu seçimi** (ürün sahibi, 07.11.2026; karar 312):
 
