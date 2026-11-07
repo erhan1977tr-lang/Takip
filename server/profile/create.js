@@ -45,7 +45,8 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
  * @param {import('@prisma/client').PrismaClient} db
  * @param {{ actor: { id: string, role: string, ip?: string | null }, firm: { id: string, prefix: string }, title: string | null,
  *   requestedNo: string | number, suggestedNo: string | number | null, items: object[], note?: string | null, draftId?: string | null,
- *   pickup?: { pickupDate?: unknown, phone?: unknown, plate?: unknown } | null, requestKey?: string | null, now?: Date }} p
+ *   pickup?: { pickupDate?: unknown, phone?: unknown, plate?: unknown } | null, requestKey?: string | null,
+ *   priceTableId?: string | null, priceFingerprint?: string | null, now?: Date }} p
  *   items: profileOrderItems() sonucu
  *   pickup / requestKey: Paket B (karar 229) — fiyat listesiyle doğrudan siparişte alış günü (zorunlu), telefon ve plaka
  *   (isteğe bağlı); formun tek seferlik anahtarı (aynı anahtar ikinci sipariş açmaz, ilk siparişi döndürür)

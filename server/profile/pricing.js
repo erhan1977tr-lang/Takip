@@ -35,10 +35,12 @@ export async function profileCatalogsFor(db, customerId) {
  * (pasif / bağlı olmayan tablo → olağan teklif akışı). Fiyat kuralı aynıdır: tablo fiyatı, yoksa katalog liste fiyatı.
  * tableId (4.2.16): müşterinin seçtiği katalog — firmanın kataloglarından biri değilse / verilmediyse varsayılan kullanılır
  * (seçimin yetkisi `createProfileOrder`'da ayrıca denetlenir: BAD_PRICE_TABLE).
+ * @param {{ tableId?: string | null }} [opts]
  * @returns {Promise<{ tableId: string | null, tableName: string | null, direct: boolean, tables: { id: string, name: string, isDefault: boolean }[],
  *   price: (product: { id: string, listPrice: unknown }) => number | null }>}
  */
-export async function profilePricesFor(db, customerId, { tableId = null } = {}) {
+export async function profilePricesFor(db, customerId, opts = {}) {
+  const tableId = opts?.tableId ?? null;
   const tables = await profileCatalogsFor(db, customerId);
   const table = (tableId && tables.find((t) => t.id === tableId)) || tables[0] || null;
   const custom = new Map((table?.items ?? []).map((i) => [i.productId, Number(i.unitPrice)]));
