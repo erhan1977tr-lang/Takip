@@ -151,13 +151,24 @@ test('tek kataloglu diğer müşteri: seçim kutusu yok, başka firmanın katalo
   } finally { await db.$disconnect(); }
   const gkRow = page.locator('tr', { has: page.locator('.mono', { hasText: 'GK15' }) }).first();
   await gkRow.locator('input[name=p_qty]').fill('1');
-  await page.evaluate((id) => { const el = document.querySelector('input[name=priceTableId]') as HTMLInputElement; el.value = id; }, t2Id);
+  // Formdaki gizli katalog kimliği React'in denetimindedir (ekranda değiştirilse yeniden çizimde geri gelir); gerçek saldırı
+  // yolu HTTP gövdesidir: sunucu eylemine giden çok parçalı gövdede kimlik başka firmanın kataloğuyla değiştirilir
+  let tampered = 0;
+  await page.route((u) => u.pathname === '/siparisler/yeni', async (route) => {
+    const req = route.request();
+    const body = req.method() === 'POST' ? req.postData() : null;
+    if (body && body.includes('name="priceTableId"')) {
+      tampered++;
+      await route.continue({ postData: body.replace(/(name="priceTableId"\r\n\r\n)[^\r\n]*/, `$1${t2Id}`) });
+    } else await route.continue();
+  });
   await page.locator('.submit-bar').getByRole('button', { name: 'Siparişi gönder' }).click();
   const anyway = page.getByRole('button', { name: 'Yine de gönder' });
   await expect(async () => {
     if (await anyway.isVisible()) await anyway.click();
     await expect(page.getByText('Seçilen fiyat kataloğu firmanıza tanımlı değil')).toBeVisible({ timeout: 2000 });
   }).toPass();
+  expect(tampered).toBeGreaterThan(0);
   const db2 = await prisma();
   try {
     expect(await db2.order.count({ where: { customer: { name: FIRM2 } } })).toBe(before);
