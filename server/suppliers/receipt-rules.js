@@ -1,8 +1,8 @@
 // Tedarikçi siparişi mal kabulü — saf kurallar (3.87.0, karar 282). Veritabanı tarafı server/suppliers/receipt.js.
 //
 // Bir siparişin satırı için: sipariş edilen = son KESİN revizyondaki adet; önceki teslim alınan = o satıra yazılmış bütün
-// kabullerin toplamı; kalan = sipariş edilen − teslim alınan (hiç eksiye düşmez). Yeni kabul her satırda en çok kalan kadar
-// olabilir; toplamı sipariş edileni asla geçemez.
+// kabullerin toplamı; kalan = sipariş edilen − teslim alınan (hiç eksiye düşmez). 4.2.19'dan (karar 318) beri yeni kabul
+// kalandan FAZLA olabilir (tedarikçi fazla gönderdiyse gelen adet stoğa girer); kalan yine 0'da durur.
 //
 // Birim: stok ürünün SATIŞ biriminde (ProfileProduct.unitCode) tutulur. Sipariş satırının birimi stok birimiyle aynı değilse o
 // satır mal kabulüne alınmaz (UNIT_MISMATCH) — sistemde birimler arasında tanımlı / doğrulanmış bir dönüşüm yoktur, tahmini

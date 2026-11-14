@@ -83,6 +83,117 @@ export function allocateTransport(amountEur, lines) {
   return { ok: true, rows: base.map((b) => ({ receiptLineId: b.l.receiptLineId, productId: b.l.productId, qty: b.l.qty, amountEur: fromScaled(b.share, 4, 4) })) };
 }
 
+// ---------- ürün başına nakliye (4.2.19, karar 319) ----------
+//
+// "Transport ekle"de gönderilen siparişin ürünleri (son kesin revizyonun satırları) listelenir ve her ürün için ayrı nakliye
+// tutarı girilir (o ürünün TOPLAM nakliyesi, faturanın para biriminde). Fatura tutarı = girilen tutarların toplamı. RON fatura
+// toplamı kayıtlı kurla bir kez EUR'ya çevrilir (yukarıdaki kural) ve ürünlere girilen RON tutarları oranında, en büyük kalan
+// yöntemiyle 10⁻⁴ EUR hassasiyetle bölünür (toplam kuruşu kuruşuna). Her ürünün EUR payı o ürünün mal kabul satırlarına NET
+// teslim alınan adede göre birim başına eşit dağılır (aynı en büyük kalan). Dağıtım nakliye kaydıyla aynı işlemde yazılır.
+
+export const TRANSPORT_LINE_LIMIT = 200;
+
+/**
+ * Toplamı ağırlıklara göre böler (en büyük kalan; eşitlikte sıra). Sonuçların toplamı = total.
+ * @param {bigint} total  @param {bigint[]} weights  (≥ 0, toplamı > 0)
+ * @returns {bigint[]}
+ */
+export function splitByWeight(total, weights) {
+  const sum = weights.reduce((n, w) => n + w, 0n);
+  if (sum <= 0n) return weights.map(() => 0n);
+  const base = weights.map((w) => ({ share: (total * w) / sum, rem: (total * w) % sum }));
+  let left = total - base.reduce((n, b) => n + b.share, 0n);
+  const order = base.map((b, i) => ({ b, i })).filter((x) => weights[x.i] > 0n)
+    .sort((x, y) => (y.b.rem > x.b.rem ? 1 : y.b.rem < x.b.rem ? -1 : x.i - y.i));
+  for (const { b } of order) {
+    if (left <= 0n) break;
+    b.share += 1n;
+    left -= 1n;
+  }
+  return base.map((b) => b.share);
+}
+
+/**
+ * Ürün başına nakliye formu. Hata kodları: CARRIER, TOO_LONG, LINES, LINE_AMOUNT, AMOUNT, CURRENCY, FX_REQUIRED, FX_RATE.
+ * @param {{ carrierName?: unknown, invoiceNo?: unknown, currency?: unknown, fxRate?: unknown, note?: unknown, lineAmounts?: Record<string, unknown> }} raw
+ *   lineAmounts: sipariş satırı id → o ürünün nakliye tutarı (boş = yok)
+ * @returns {{ ok: true, value: { carrierName: string, invoiceNo: string | null, amount: string, currency: string, fxRate: string | null, amountEur: string, note: string | null,
+ *   lines: { orderLineId: string, amount: string, eur4: bigint }[] } } | { ok: false, code: string, line?: string }}
+ */
+export function parseTransportLines(raw) {
+  const carrierName = one(raw.carrierName);
+  if (!carrierName) return { ok: false, code: 'CARRIER' };
+  const invoiceNo = one(raw.invoiceNo) || null;
+  const note = one(raw.note) || null;
+  if (carrierName.length > TRANSPORT_LIMITS.carrier || (invoiceNo?.length ?? 0) > TRANSPORT_LIMITS.invoiceNo || (note?.length ?? 0) > TRANSPORT_LIMITS.note) return { ok: false, code: 'TOO_LONG' };
+  const lines = [];
+  for (const [id, v] of Object.entries(raw.lineAmounts ?? {})) {
+    const str = String(v ?? '').trim().replace(',', '.');
+    if (!str) continue;
+    const key = String(id ?? '').trim();
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) return { ok: false, code: 'LINES' };
+    const a = toScaled(str, 2);
+    if (a == null || a > BigInt(TRANSPORT_LIMITS.amountMax) * 100n) return { ok: false, code: 'LINE_AMOUNT', line: key };
+    if (a === 0n) continue;
+    lines.push({ orderLineId: key, cents: a });
+  }
+  if (!lines.length || lines.length > TRANSPORT_LINE_LIMIT) return { ok: false, code: 'LINES' };
+  const total = lines.reduce((n, l) => n + l.cents, 0n);
+  if (total <= 0n || total > BigInt(TRANSPORT_LIMITS.amountMax) * 100n) return { ok: false, code: 'AMOUNT' };
+  const currency = String(raw.currency ?? '').trim().toUpperCase();
+  if (!TRANSPORT_CURRENCIES.includes(currency)) return { ok: false, code: 'CURRENCY' };
+  let fxRate = null;
+  let eur = total;
+  if (currency === 'RON') {
+    const rs = String(raw.fxRate ?? '').trim().replace(',', '.');
+    if (!rs) return { ok: false, code: 'FX_REQUIRED' };
+    const r = toScaled(rs, 6);
+    if (r == null || r < BigInt(TRANSPORT_LIMITS.rateMin) * 1_000_000n || r > BigInt(TRANSPORT_LIMITS.rateMax) * 1_000_000n) return { ok: false, code: 'FX_RATE' };
+    fxRate = fromScaled(r, 6);
+    eur = ronToEurCents(total, r);
+  }
+  // Ürünlerin EUR payları (10⁻⁴): EUR faturada girilen tutar; RON faturada çevrilmiş toplam RON tutarları oranında
+  const shares = currency === 'EUR' ? lines.map((l) => l.cents * 100n) : splitByWeight(eur * 100n, lines.map((l) => l.cents));
+  return {
+    ok: true,
+    value: {
+      carrierName, invoiceNo, amount: money(total), currency, fxRate, amountEur: money(eur), note,
+      lines: lines.map((l, i) => ({ orderLineId: l.orderLineId, amount: money(l.cents), eur4: shares[i] })),
+    },
+  };
+}
+
+/**
+ * Bir ürünün EUR payını (10⁻⁴) mal kabul satırlarına net teslim alınan adede göre böler (birim başına eşit, en büyük kalan).
+ * @param {bigint} eur4  @param {{ receiptLineId: string, productId: string, qty: number }[]} lines  net > 0 olanlar
+ * @returns {{ ok: true, rows: { receiptLineId: string, productId: string, qty: number, amountEur: string }[] } | { ok: false, code: 'NO_QTY' }}
+ */
+export function allocateLine(eur4, lines) {
+  const usable = lines.filter((l) => Number.isInteger(l.qty) && l.qty > 0);
+  if (!usable.length) return { ok: false, code: 'NO_QTY' };
+  const shares = splitByWeight(eur4, usable.map((l) => BigInt(l.qty)));
+  return { ok: true, rows: usable.map((l, i) => ({ receiptLineId: l.receiptLineId, productId: l.productId, qty: l.qty, amountEur: fromScaled(shares[i], 4, 4) })) };
+}
+
+/**
+ * Bir nakliye kaydının ürün kırılımı (sipariş sayfasındaki liste — 4.2.19, karar 319): ürün kodu başına net adet ve EUR payı
+ * (payların toplamı, gösterim için yarım-yukarı 2 ondalığa yuvarlanır). Yalnızca gösterim; maliyet hesabı payları olduğu gibi kullanır.
+ * @param {{ qty: number, amountEur: unknown, product?: { code: string } | null }[]} allocations
+ * @returns {{ code: string, qty: number, eur: string }[]}
+ */
+export function transportProducts(allocations) {
+  /** @type {Map<string, { code: string, qty: number, eur4: bigint }>} */
+  const by = new Map();
+  for (const a of allocations ?? []) {
+    const code = a.product?.code ?? '—';
+    const e = by.get(code) ?? { code, qty: 0, eur4: 0n };
+    e.qty += Math.max(0, Math.trunc(Number(a.qty) || 0));
+    e.eur4 += toScaled(String(a.amountEur ?? '0'), 4) ?? 0n;
+    by.set(code, e);
+  }
+  return [...by.values()].map((e) => ({ code: e.code, qty: e.qty, eur: fromScaled((e.eur4 + 50n) / 100n, 2, 2) }));
+}
+
 /**
  * Ürünlerin gerçekleşen stok maliyeti (ağırlıklı ortalama, EUR / stok birimi, nakliye dahil).
  * @param {{ productId: string, netQty: number, unitPrice: unknown, currency: string }[]} lines  teslim alınan satırlar (net = kabul − düzeltme)

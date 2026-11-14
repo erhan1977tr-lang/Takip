@@ -8,8 +8,8 @@ import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
 import { parseDateOnly } from '../orders/rules.js';
 import { dayKeyOf, localDay } from '../profile/dates.js';
-import { addDays } from './rules.js';
-import { allocateTransport, carrierBalances, parseTransport, stockCosts } from './stock-cost.js';
+import { addDays, fromScaled } from './rules.js';
+import { allocateLine, allocateTransport, carrierBalances, parseTransport, parseTransportLines, stockCosts } from './stock-cost.js';
 
 /** @typedef {import('@prisma/client').PrismaClient | import('@prisma/client').Prisma.TransactionClient} Db */
 const FORBIDDEN = /** @type {const} */ ({ ok: false, code: 'FORBIDDEN' });
@@ -49,7 +49,9 @@ export async function transportReceiptOptions(db, actor, orderId) {
  * Nakliye faturası kaydı + dağıtım (tek işlem). Aynı taşıyıcının aynı fatura numarası (iptal edilmemiş) ikinci kez
  * girilemez (DUPLICATE_INVOICE); aynı form iki kez gönderilirse ilk kayıt döner (duplicate). Seçilen kabullerin hepsi
  * `orderId` siparişine ait olmalıdır (değilse RECEIPT_GONE) — nakliye bir tedarikçi siparişinin sayfasından girilir.
- * @param {{ orderId: unknown, carrierName: unknown, invoiceNo?: unknown, invoiceDate: unknown, amount: unknown, currency: unknown, fxRate?: unknown, note?: unknown, receiptIds: unknown, requestKey: unknown }} v
+ * Ürün başına mod (4.2.19, karar 319): `lineAmounts` = { sipariş satırı id → tutar } verilirse fatura tutarı bu tutarların
+ * toplamıdır; her ürünün tutarı o ürünün teslim alınan (net) miktarına dağıtılır (`amount` / `receiptIds` kullanılmaz).
+ * @param {{ orderId: unknown, carrierName: unknown, invoiceNo?: unknown, invoiceDate: unknown, amount?: unknown, currency: unknown, fxRate?: unknown, note?: unknown, receiptIds?: unknown, lineAmounts?: Record<string, unknown>, requestKey: unknown }} v
  */
 export async function createTransport(db, v, actor, opts = {}) {
   if (!allowed(actor)) return FORBIDDEN;
@@ -58,6 +60,8 @@ export async function createTransport(db, v, actor, opts = {}) {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(key)) return { ok: false, code: 'KEY' };
   const date = parseDateOnly(String(v.invoiceDate ?? ''));
   if (!date || dayKeyOf(date) > today || dayKeyOf(date) < addDays(today, -3660)) return { ok: false, code: 'DATE' };
+  // Ürün başına tutar (4.2.19, karar 319): sipariş sayfasındaki "Transport ekle" formu bu yolu kullanır
+  if (v.lineAmounts && typeof v.lineAmounts === 'object') return createProductTransport(db, v, actor, { key, date });
   const parsed = parseTransport(v);
   if (!parsed.ok) return parsed;
   const t = parsed.value;
@@ -96,6 +100,69 @@ export async function createTransport(db, v, actor, opts = {}) {
       },
     }, actor);
     return { ok: true, id: row.id, duplicate: false, allocations: alloc.rows.length };
+  });
+}
+
+/**
+ * Ürün başına nakliye (4.2.19, karar 319): gönderilen siparişin (son kesin revizyon) her ürünü için ayrı tutar; fatura tutarı =
+ * tutarların toplamı. Her ürünün EUR payı o ürünün bu siparişteki mal kabul satırlarına net teslim alınan adede göre birim başına
+ * eşit dağılır (stok maliyetine girer — productStockCosts). Stok hareketi yazılmaz; tedarikçi borcuna eklenmez. Aynı form iki kez
+ * gönderilirse ilk kayıt döner; aynı taşıyıcının aynı fatura numarası (iptal edilmemiş) ikinci kez girilemez.
+ * Hata: satır siparişte yok (BAD_LINE), ürün henüz teslim alınmamış (NO_QTY, line = ürün kodu).
+ * @param {{ orderId: unknown, lineAmounts: Record<string, unknown>, carrierName: unknown, invoiceNo?: unknown, currency: unknown, fxRate?: unknown, note?: unknown }} v
+ */
+async function createProductTransport(db, v, actor, { key, date }) {
+  const parsed = parseTransportLines(v);
+  if (!parsed.ok) return parsed;
+  const t = parsed.value;
+  const orderId = String(v.orderId ?? '');
+  return db.$transaction(async (tx) => {
+    await lockKey(tx, 'transport-cost');
+    const same = await tx.transportCost.findUnique({ where: { requestKey: key } });
+    if (same) return { ok: true, id: same.id, duplicate: true };
+    if (t.invoiceNo) {
+      const others = await tx.transportCost.findMany({ where: { voidedAt: null, invoiceNo: { equals: t.invoiceNo, mode: 'insensitive' } }, select: { carrierName: true } });
+      if (others.some((o) => carrierKey(o.carrierName) === carrierKey(t.carrierName))) return { ok: false, code: 'DUPLICATE_INVOICE' };
+    }
+    const final = await tx.supplierOrderRevision.findFirst({
+      where: { orderId, finalizedAt: { not: null } }, orderBy: { revision: 'desc' },
+      select: { lines: { select: { id: true, code: true } } },
+    });
+    const byLine = new Map((final?.lines ?? []).map((l) => [l.id, l]));
+    const receiptLines = await tx.supplierReceiptLine.findMany({
+      where: { receipt: { orderId }, orderLineId: { in: t.lines.map((l) => l.orderLineId) } },
+      orderBy: [{ receipt: { seq: 'asc' } }, { sortOrder: 'asc' }],
+      select: { id: true, receiptId: true, orderLineId: true, productId: true, qty: true, corrections: { select: { qty: true } } },
+    });
+    const rows = [];
+    const audit = [];
+    for (const l of t.lines) {
+      const line = byLine.get(l.orderLineId);
+      if (!line) return { ok: false, code: 'BAD_LINE' };
+      const own = receiptLines.filter((r) => r.orderLineId === l.orderLineId)
+        .map((r) => ({ receiptLineId: r.id, productId: r.productId, qty: Math.max(0, r.qty - r.corrections.reduce((n, c) => n + c.qty, 0)) }));
+      const alloc = allocateLine(l.eur4, own);
+      if (!alloc.ok) return { ok: false, code: 'NO_QTY', line: line.code };
+      rows.push(...alloc.rows);
+      audit.push({ code: line.code, amount: l.amount, amountEur: fromScaled(l.eur4, 4, 4), qty: alloc.rows.reduce((n, a) => n + a.qty, 0) });
+    }
+    const receiptIds = [...new Set(rows.map((r) => /** @type {any} */ (receiptLines.find((x) => x.id === r.receiptLineId)).receiptId))];
+    const row = await tx.transportCost.create({
+      data: {
+        carrierName: t.carrierName, invoiceNo: t.invoiceNo, invoiceDate: date, amount: t.amount, currency: t.currency,
+        fxRate: t.fxRate, fxDate: t.currency === 'RON' ? date : null, amountEur: t.amountEur, note: t.note, requestKey: key, createdById: actor.id,
+        receipts: { create: receiptIds.map((receiptId) => ({ receiptId })) },
+        allocations: { create: rows.map((a) => ({ receiptLineId: a.receiptLineId, productId: a.productId, qty: a.qty, amountEur: a.amountEur })) },
+      },
+    });
+    await writeAudit(tx, {
+      action: 'TRANSPORT_COST_ADDED', entityType: 'TransportCost', entityId: row.id, userId: actor.id,
+      details: {
+        mode: 'PRODUCT', orderId, carrier: t.carrierName, invoiceNo: t.invoiceNo, invoiceDate: dayKeyOf(date), amount: t.amount, currency: t.currency, fxRate: t.fxRate, amountEur: t.amountEur,
+        receipts: receiptIds, products: audit, lines: rows.length, qty: rows.reduce((n, a) => n + a.qty, 0),
+      },
+    }, actor);
+    return { ok: true, id: row.id, duplicate: false, allocations: rows.length };
   });
 }
 
@@ -141,7 +208,11 @@ export async function listTransports(db, actor, filter = {}) {
   const rows = await db.transportCost.findMany({
     where: filter.orderId ? { receipts: { some: { receipt: { orderId: filter.orderId } } } } : {},
     orderBy: [{ invoiceDate: 'desc' }, { createdAt: 'desc' }], take: 300,
-    include: { receipts: { select: { receipt: { select: { id: true, seq: true, order: { select: { id: true, orderNo: true } } } } } }, _count: { select: { allocations: true } } },
+    include: {
+      receipts: { select: { receipt: { select: { id: true, seq: true, order: { select: { id: true, orderNo: true } } } } } }, _count: { select: { allocations: true } },
+      // Ürün başına dağıtılan nakliye (4.2.19, karar 319 — sipariş sayfasında ürün kırılımı)
+      allocations: { select: { amountEur: true, qty: true, product: { select: { code: true } } } },
+    },
   });
   const all = await db.transportCost.findMany({ select: { carrierName: true, currency: true, amount: true, paidOn: true, voidedAt: true } });
   return { ok: /** @type {const} */ (true), rows, carriers: carrierBalances(all.map((r) => ({ ...r, amount: r.amount.toString() }))) };

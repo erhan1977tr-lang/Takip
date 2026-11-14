@@ -1,6 +1,6 @@
-// Yükleme özeti — fabrika fiyatlı dökümde birim fiyat = Tutar / Metraj (karar 313; ürün sahibinin örneği ALE100):
-// yöneticinin "Döküm (Fabrika)" sayfası ve satışın "Döküm"ü. Guard: müşteri fiyatlı döküm (yönetici, denetimci), tutar,
-// metraj, toplamlar ve bedelsiz satır değişmez.
+// Yükleme özeti — birim fiyat = Tutar / Metraj (karar 313; ürün sahibinin örneği ALE100): yöneticinin "Döküm (Fabrika)"
+// sayfası, satışın "Döküm"ü ve (4.2.19, karar 317) yöneticinin müşteri fiyatlı "Döküm"ü. Guard: denetimcinin müşteri fiyatlı
+// dökümü, tutar, metraj, toplamlar ve bedelsiz satır değişmez.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -41,16 +41,25 @@ test('fabrika dökümü: birim fiyat = tutar / metraj (CNC / delik birim fiyata 
   for (const r of amt) if (r[6] > 0 && r[8] > 0) assert.equal(r[7], Math.round((r[8] / r[6]) * 100) / 100, `${r[0]}: birim fiyat × metraj ≈ tutar`);
 });
 
-test('müşteri fiyatlı döküm (varsayılan) değişmez: camın ağırlıklı ortalaması', () => {
+test('müşteri fiyatlı döküm, varsayılan (denetimci): camın ağırlıklı ortalaması', () => {
   const rows = detailRows(buildLoadingSummary(ORDERS, { priceOf: (l) => l.offerPrice }), TEXT);
   const ale = rows.find((r) => r[0] === 'ALE100');
   assert.equal(ale[7], 83.2);
 });
 
-test('yapı: Yükleme Özeti — yöneticinin fabrika sayfası ve satışın dökümü tutar / metraj; müşteri fiyatlı döküm ortalama', () => {
+test('yöneticinin müşteri fiyatlı dökümü (karar 317): birim fiyat = tutar / metraj; tutar ve toplam aynı', () => {
+  const customer = (unitPrice) => buildLoadingSummary(ORDERS, { priceOf: (l) => l.offerPrice, unitPrice });
+  const ale = detailRows(customer('amount'), TEXT).find((r) => r[0] === 'ALE100');
+  // 3,02 m² × 83,20 = 251,26 + 2 × 2,50 + 4 × 2,50 = 266,26 → 266,26 / 3,02 = 88,17
+  assert.deepEqual(ale.slice(6, 9), [3.02, 88.17, 266.26]);
+  assert.deepEqual(customer('amount').totals, customer(undefined).totals);
+});
+
+test('yapı: Yükleme Özeti — yöneticinin iki döküm sayfası ve satışın dökümü tutar / metraj; denetimcinin dökümü ortalama', () => {
   const route = fs.readFileSync(new URL('../app/(panel)/yuklemeler/dokum/route.ts', import.meta.url), 'utf8');
   assert.ok(route.includes("const finalPrice = admin || userCan(user, 'PRICE_FINAL_VIEW');"));
   assert.ok(route.includes('const factoryOnly = !finalPrice;'), 'satış: müşteri fiyatını görmeyen rol');
-  assert.ok(route.includes("buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice), unitPrice: factoryOnly ? 'amount' : 'average' })"));
+  assert.ok(route.includes('const amountPrice = admin || factoryOnly;'), 'yönetici (müşteri fiyatlı Döküm — karar 317) ve satış; denetimci değil');
+  assert.ok(route.includes("buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice), unitPrice: amountPrice ? 'amount' : 'average' })"));
   assert.ok(route.includes("lines: buildLoadingSummary(orders, { priceOf: (l) => l.unitPrice, unitPrice: 'amount' })"), 'yöneticinin Döküm (Fabrika) sayfası');
 });

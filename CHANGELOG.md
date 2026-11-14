@@ -4,6 +4,29 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.19 — 14.11.2026
+
+**Üç düzeltme** (ürün sahibi, 14.11.2026; karar 317–319):
+
+- **Yöneticinin müşteri fiyatlı "Döküm" sayfasında da birim fiyat = Tutar / Metraj** (karar 317): Yükleme Özeti Excel'inde
+  yöneticinin (ve yönetici yardımcısının) iki döküm sayfası artık aynı kuralla — camın CNC / delik bedeli birim fiyata
+  yansır (ör. 190 / 3 m² = 63,33). Tutar, metraj, toplamlar, firma özeti ve denetimcinin dökümü değişmez.
+- **Mal kabulünde siparişten fazla adet** (karar 318): yönetici ve yönetici yardımcısı (bugün mal kabulü yapabilenler)
+  sipariş edilenden fazla adet girebilir; gelen adetin tamamı stoğa girer, sipariş kapanır, ekranda "Siparişten fazla: +n"
+  görünür. Tedarikçi borcu güncel (teslim alınan) adetle hesaplanır: sipariş toplamı + fazla adetin satır fiyatıyla tutarı;
+  Tedarikçi Hesapları'nda sipariş satırında not (fazla adet, sipariş tutarı). Kapanmış siparişe yeni kabul yazılmaz
+  (değişmedi); eksik teslim, iptal ve düzeltme kuralları aynı (düzeltme net adeti azaltırsa borç da azalır).
+- **Transport ekle: ürün başına nakliye tutarı** (karar 319): tedarikçi siparişinin sayfasında gönderilen siparişin ürünleri
+  listelenir, her ürüne ayrı tutar girilir; fatura tutarı bu tutarların toplamıdır (formda canlı gösterilir). RON fatura
+  kayıtlı kurla bir kez EUR'ya çevrilir ve ürünlere RON tutarları oranında bölünür (toplam kuruşu kuruşuna). Ürünün payı
+  o ürünün net teslim alınan adedine birim başına eşit dağılır ve gerçekleşen stok maliyetine (ticari teklifte maliyet
+  önerisi) girer. Nakliye listesinde ürün kırılımı. Taşıyıcının borcu ürün tedarikçisinin borcuna eklenmez; Tedarikçi
+  Hesapları ekranındaki taşıyıcı bakiyeleri bölümü kaldırıldı. Eski (mal kabulü seçilerek girilmiş) nakliye kayıtları,
+  iptal ve "ödendi" işaretleri aynen.
+- Migration yok. Testler: `test/supplier-over-transport.test.js`, `test/loading-summary-unit-price.test.js`,
+  `test/db/goods-receipt.test.js`, `test/db/duzeltme10-2b.test.js`, `e2e/41-yukleme-firma.spec.ts`,
+  `e2e/68-nakliye-acilis.spec.ts`.
+
 ## 4.2.18 — 14.11.2026
 
 **Dört düzeltme** (ürün sahibi, 14.11.2026; karar 313–316):

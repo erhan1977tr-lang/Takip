@@ -158,22 +158,30 @@ dbTest('2) çoklu kısmi teslimat (farklı günler): her teslimat ayrı kayıt; 
   assert.deepEqual(recs.map((r) => r.receivedOn.toISOString().slice(0, 10)), [day(2), day(1), TODAY]);
 }));
 
-dbTest('3) kalanı aşan miktar reddedilir; hiçbir şey yazılmaz (kabul, stok, e-posta işi, sürüm)', offline(async () => {
-  const id = await sentOrder([['RM16-7016', 100], ['GK15', 10]]);
+dbTest('3) siparişten fazla teslimat (4.2.19, karar 318): kabul edilir, fazla adet stoğa girer, sipariş kapanır; tedarikçi borcu güncel adetle', offline(async () => {
+  const id = await sentOrder([['RM16-7016', 100, null, '10'], ['GK15', 10, null, '5']]);
   assert.ok((await receive(id, { 'RM16-7016': 30 })).ok);
   const s = await level('RM16-7016');
-  const before = await counts(id);
-  const v = (await db.supplierOrder.findUniqueOrThrow({ where: { id } })).version;
-  const r = await receive(id, { 'RM16-7016': 71, GK15: 1 });
-  assert.deepEqual(r, { ok: false, code: 'OVER_REMAINING', line: 'RM16-7016', remaining: 70 });
-  assert.deepEqual(await counts(id), before);
-  assert.equal(await level('RM16-7016'), s);
-  assert.equal((await db.supplierOrder.findUniqueOrThrow({ where: { id } })).version, v);
-  // Tam kalan kabul edilir
-  assert.ok((await receive(id, { 'RM16-7016': 70 })).ok);
+  const r = await receive(id, { 'RM16-7016': 75, GK15: 10 });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.complete, true);
+  assert.deepEqual(r.over, [{ code: 'RM16-7016', qty: 75, over: 5, ordered: 100, unitCode: (await linesOf(id))['RM16-7016'].unitCode }]);
+  assert.equal(await level('RM16-7016'), s + 75, 'fazla adet de stoğa girer');
+  assert.equal((await db.supplierOrder.findUniqueOrThrow({ where: { id } })).status, 'TESLIM_ALINDI');
+  const view = await recv.loadReceipts(db, id);
+  assert.deepEqual(view.lines.map((l) => [l.code, l.ordered, l.received, l.remaining]), [['RM16-7016', 100, 105, 0], ['GK15', 10, 10, 0]]);
+  // Borç: sipariş 100 × 10 + 10 × 5 = 1050; fazla 5 × 10 = 50 → 1100 (güncel adetlerle)
+  const acc = await svc.supplierAccount(db, sup.id);
+  const row = acc.orders.find((o) => o.id === id);
+  assert.deepEqual([Number(row.total), Number(row.orderedTotal), row.overQty], [1100, 1050, 5]);
+  const sum = (await svc.supplierAccounts(db)).find((x) => x.supplier.id === sup.id);
+  assert.ok(Number(sum.balances.EUR.debt) >= 1100, JSON.stringify(sum.balances));
+  // Kapanan siparişe yeni kabul yok
+  assert.equal((await receive(id, { GK15: 1 })).code, 'NOT_ALLOWED');
   // Boş kabul, geçersiz miktar, gelecek tarih
-  assert.equal((await receive(id, { GK15: 0 })).code, 'EMPTY');
-  assert.equal((await receive(id, { GK15: 1 }, { receivedOn: '2999-01-01' })).code, 'DATE_FUTURE');
+  const id2 = await sentOrder([['GK15', 10]]);
+  assert.equal((await receive(id2, { GK15: 0 })).code, 'EMPTY');
+  assert.equal((await receive(id2, { GK15: 1 }, { receivedOn: '2999-01-01' })).code, 'DATE_FUTURE');
 }));
 
 dbTest('4) aynı isteğin tekrarı (çift tıklama / yeniden gönderilen form): ilk kabul döner, ikinci kabul ve ikinci stok girişi yok', offline(async () => {
@@ -196,20 +204,17 @@ dbTest('4) aynı isteğin tekrarı (çift tıklama / yeniden gönderilen form): 
   assert.deepEqual(await receive(other, { 'RM12-ELX': 1 }, { requestKey: k }), { ok: false, code: 'CONFLICT' });
 }));
 
-dbTest('5) eşzamanlı iki farklı kabul: toplam sipariş edileni asla geçmez — biri kabul edilir, öbürü kalanı aşar', offline(async () => {
+dbTest('5) eşzamanlı kabuller sırayla işlenir (sipariş kilidi): siparişi dolduran kabulden sonrası reddedilir; stok = kabul edilenlerin toplamı', offline(async () => {
   const id = await sentOrder([['MR23-7016', 100]]);
   const s = await level('MR23-7016');
-  const res = await Promise.all([receive(id, { 'MR23-7016': 60 }), receive(id, { 'MR23-7016': 60 })]);
-  assert.equal(res.filter((r) => r.ok).length, 1, JSON.stringify(res));
-  assert.equal(res.find((r) => !r.ok).code, 'OVER_REMAINING');
-  assert.equal(res.find((r) => !r.ok).remaining, 40);
-  assert.equal(await level('MR23-7016'), s + 60);
-  // Kalanı tam dolduran iki eşzamanlı kabul (40 + 40): yine yalnızca biri
-  const res2 = await Promise.all([receive(id, { 'MR23-7016': 40 }), receive(id, { 'MR23-7016': 40 })]);
-  assert.equal(res2.filter((r) => r.ok).length, 1);
-  assert.equal(await level('MR23-7016'), s + 100);
+  const res = await Promise.all([receive(id, { 'MR23-7016': 60 }), receive(id, { 'MR23-7016': 60 }), receive(id, { 'MR23-7016': 60 })]);
+  // 60 (kalan 40) → 60 (fazla 20, sipariş kapanır) → üçüncü: kapanmış siparişe kabul yok
+  assert.equal(res.filter((r) => r.ok).length, 2, JSON.stringify(res));
+  assert.deepEqual(res.filter((r) => !r.ok).map((r) => r.code), ['NOT_ALLOWED']);
+  assert.equal(await level('MR23-7016'), s + 120);
   const got = await db.supplierReceiptLine.aggregate({ where: { receipt: { orderId: id } }, _sum: { qty: true } });
-  assert.equal(got._sum.qty, 100);
+  assert.equal(got._sum.qty, 120);
+  assert.equal((await db.supplierOrder.findUniqueOrThrow({ where: { id } })).status, 'TESLIM_ALINDI');
   assert.deepEqual(await counts(id), { receipts: 2, lines: 2, moves: 2, jobs: 2 });
 }));
 

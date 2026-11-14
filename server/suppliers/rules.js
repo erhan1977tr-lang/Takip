@@ -350,6 +350,7 @@ export function etaCalendarWarning(etaDay, overrides = null) {
  * revizyon) toplamı; ödeme = iptal edilmemiş ödemeler; kalan = açılış + borç − ödeme. Para birimleri birbirine eklenmez;
  * fiyatı eksik sipariş sayısı ayrıca verilir (borcun o kısmı bilinmiyor — uydurulmaz).
  * İptal edilmiş, kısmen teslim alınmış sipariş: borç = net teslim alınan × birim fiyat (receivedValue; karar 288).
+ * Sipariş edilenden fazla teslim alınan sipariş (karar 318): çağıran total olarak sipariş toplamı + fazlanın değerini verir (overValue).
  * Açılış bakiyesi (DÜZELTME 10 M2): geçmiş dönemden devreden borç (+) / alacak (−); sipariş borcundan ve ödemelerden AYRI
  * alanda (opening) tutulur, iptal edilmiş kayıt sayılmaz. TEK bakiye kuralı: muhasebe ekranı, tedarikçi hesabı, rapor ve
  * asistanlar bunu (server/suppliers/service.js → supplierAccounts / supplierAccount) kullanır.
@@ -431,6 +432,31 @@ export function receivedValue(lines, received) {
     c += cents(t);
   }
   return { total: money(c), qty, missingPrice };
+}
+
+/**
+ * Sipariş edilenden FAZLA teslim alınan malın ek borcu (saf — 4.2.19, karar 318). Tedarikçi borcu güncel (teslim alınan) adetler
+ * üzerinden: satırın net teslim alınanı sipariş edileni aşıyorsa ek tutar = lineTotal(net) − lineTotal(sipariş edilen) (aynı tek
+ * yuvarlama kuralı). Fazla teslimat yoksa 0 → borç sipariş toplamıyla aynı kalır (eski davranış). Fiyatsız satır eklenmez (o
+ * satır zaten "fiyat eksik" sayılır — uydurulmaz).
+ * @param {{ id: string, qty: number, unitPrice: unknown }[]} lines  son kesin revizyonun satırları
+ * @param {Map<string, number>} received  satır → net teslim alınan (kabuller − düzeltmeler)
+ * @returns {{ total: string, qty: number }}  ek tutar ve fazla adet
+ */
+export function overValue(lines, received) {
+  let c = 0n, qty = 0;
+  for (const l of lines) {
+    const ordered = Math.max(0, Math.trunc(Number(l.qty) || 0));
+    const got = Math.max(0, Math.trunc(Number(received.get(l.id) ?? 0)));
+    if (got <= ordered) continue;
+    qty += got - ordered;
+    const price = l.unitPrice == null ? null : String(l.unitPrice);
+    const a = lineTotal(got, price);
+    const b = lineTotal(ordered, price);
+    if (a == null || b == null) continue;
+    c += cents(a) - cents(b);
+  }
+  return { total: money(c), qty };
 }
 
 /**

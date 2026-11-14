@@ -52,10 +52,11 @@ export async function GET(req: Request) {
   // fiyatı offerPrice). Yöneticinin iki döküm sayfası ayrı fiyat türüyle, aynı satırlardan.
   const admin = userCan(user, 'OFFER_SEND');
   const finalPrice = admin || userCan(user, 'PRICE_FINAL_VIEW');
-  // Fabrika fiyatlı döküm (karar 313): birim fiyat = tutar / metraj (cama ait CNC / delik dahil) — yöneticinin "Döküm (Fabrika)"
-  // sayfası ve satışın (fabrika fiyatını gören rol) "Döküm"ü. Müşteri fiyatlı döküm (yönetici, denetimci) değişmez.
+  // Birim fiyat = tutar / metraj (cama ait CNC / delik dahil): yöneticinin iki döküm sayfası (müşteri fiyatlı "Döküm" — karar 317 —
+  // ve "Döküm (Fabrika)" — karar 313) ve satışın (fabrika fiyatını gören rol) "Döküm"ü. Denetimcinin müşteri fiyatlı dökümü değişmez.
   const factoryOnly = !finalPrice;
-  const lines = buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice), unitPrice: factoryOnly ? 'amount' : 'average' });
+  const amountPrice = admin || factoryOnly;
+  const lines = buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice), unitPrice: amountPrice ? 'amount' : 'average' });
   const details = [{ sheetName: t('loading.summary.sheetLines'), title: `${t('loading.summary.linesTitle')} · ${dmy(day)} · ${tag}`, lines }];
   if (admin) {
     details.push({
@@ -81,7 +82,7 @@ export async function GET(req: Request) {
       [t('loading.summary.ops'), t('loading.summary.opsIncluded')],
       [t('loading.summary.price'), admin ? t('loading.summary.priceBoth') : finalPrice ? t('loading.summary.priceFinal') : t('loading.summary.priceSales')],
       [t('loading.summary.currency'), Object.keys(lines.totals).join(', ') || '—'],
-      [t('loading.summary.avgPrice'), admin ? t('loading.summary.avgPriceNoteBoth') : factoryOnly ? t('loading.summary.avgPriceNoteAmount') : t('loading.summary.avgPriceNote')],
+      [t('loading.summary.avgPrice'), amountPrice ? t('loading.summary.avgPriceNoteAmount') : t('loading.summary.avgPriceNote')],
     ],
     firms, total: { ...total, name: t('loading.summary.total') }, guests, details, money,
     text: {
