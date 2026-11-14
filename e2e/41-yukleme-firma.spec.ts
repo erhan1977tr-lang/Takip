@@ -332,8 +332,8 @@ test('satış: firma adları her yerde ilk 3 karakter + 10 yıldız (tablo, alt 
   expect(await sheetNames(sum.buf), 'satış: tek döküm sayfası').toEqual(['Firmalar', 'Döküm']);
   const lines = await reportSheet(sum.buf, 2);
   for (const n of [uns.name, beta.name]) expect(JSON.stringify([sum.rows, lines]), `özet Excel: ${n}`).not.toContain(n);
-  // Döküm: müşteri adı maskeli, fiyat fabrika fiyatı
-  expect(summaryLines(lines, 'UNS8601')).toEqual([['UNS8601', mask(uns.name), 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 37, 129, 'EUR']]);
+  // Döküm: müşteri adı maskeli, fiyat fabrika fiyatı; birim fiyat = Tutar / Metraj (karar 313): 129 / 3 = 43
+  expect(summaryLines(lines, 'UNS8601')).toEqual([['UNS8601', mask(uns.name), 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 43, 129, 'EUR']]);
   // Excel'in belge özellikleri (docProps) de tam adı taşımaz
   const { openZip } = await import('../server/files/zip.js');
   const zip = openZip(sum.buf);
