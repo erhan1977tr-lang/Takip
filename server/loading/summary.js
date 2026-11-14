@@ -12,6 +12,9 @@
 // (server/glass/billing.js → glassTotals): cam + o cama ait CNC / delik / diğer kalemler (sandık parası dahil) — birleştirme
 // tutarı değiştirmez (her satırın parçaları aynen toplanır). Birim fiyat = camın AĞIRLIKLI ortalaması Σ(m² × fiyat) / Σm²
 // (yalnızca cam satırları; işlemler tutardadır, birim fiyatta değil).
+//   Fabrika fiyatlı döküm (yöneticinin "Döküm (Fabrika)" sayfası ve satışın "Döküm"ü — ürün sahibi, 14.11.2026; karar 313):
+//   birim fiyat = TUTAR / METRAJ (unitPrice: 'amount'), böylece cama ait CNC / delik bedeli birim fiyata da girer. Tutar ve
+//   metraj aynen kalır; müşteri fiyatlı döküm (yönetici, denetimci) değişmez.
 // Bedelsiz telafi (karar 231): fiziksel olarak yüklenir — ayrı satır, fiyat ve tutar 0 (faturalanmaz, satış değildir).
 // Kaynak: onaylı gün → yalnızca etkin YÜKLENDİ kalemleri (effectiveItems + itemAsLine; çağıran verir); onaysız gün →
 // planlanan teklif miktarları (açıkça "planlanan" yazılır).
@@ -32,11 +35,12 @@ const zero = () => ({ adet: 0, m2: 0, total: 0 });
 
 /**
  * Bir siparişin döküm satırları (aynı ad tek satır; bedelsiz cam ayrı satır, tutarı 0).
+ * unitPrice: 'average' (varsayılan) → camın ağırlıklı ortalaması; 'amount' → tutar / metraj (fabrika fiyatlı döküm, karar 313).
  * @param {object[]} lines  teklif satırı biçiminde
- * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string }} o
+ * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string, unitPrice?: 'average' | 'amount' }} o
  * @returns {{ name: string, adet: number, m2: number, price: number, total: number, free: boolean }[]}
  */
-export function orderSummaryRows(lines, { priceOf, nameOf = (l) => l.description }) {
+export function orderSummaryRows(lines, { priceOf, nameOf = (l) => l.description, unitPrice = 'average' }) {
   const name = (l) => String(nameOf(l) ?? '').trim();
   // Ağırlıklı ortalama cam fiyatı: Σ(m² × fiyat) / Σm² — yalnızca fiyatlı, bedelsiz olmayan m² cam satırları
   const weight = new Map();
@@ -51,7 +55,10 @@ export function orderSummaryRows(lines, { priceOf, nameOf = (l) => l.description
   }
   const paid = glassTotals({ lines }, { nameOf: name, priceOf }).map((g) => {
     const w = weight.get(g.name);
-    return { name: g.name, adet: g.adet, m2: g.qty, price: w && w.m2 > 0 ? round2(w.value / w.m2) : g.price, total: g.total, free: false };
+    const average = w && w.m2 > 0 ? round2(w.value / w.m2) : g.price;
+    // Tutar / metraj (karar 313): metrajı olmayan satırda (ör. yalnızca adetli kalem) eski değer kalır
+    const price = unitPrice === 'amount' && g.qty > 0 ? round2(g.total / g.qty) : average;
+    return { name: g.name, adet: g.adet, m2: g.qty, price, total: g.total, free: false };
   });
   // Bedelsiz cam (telafi): fiziksel yük — satır görünür, tutar 0
   const free = new Map();
@@ -70,14 +77,14 @@ export function orderSummaryRows(lines, { priceOf, nameOf = (l) => l.description
 /**
  * Döküm: müşteri → sipariş; sipariş ara toplamı, müşteri toplamı ve genel toplam para birimi başına.
  * @param {{ orderNo: string, title: string | null, currency: string, customer: { id: string, name: string }, lines: object[] }[]} orders
- * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string }} o
+ * @param {{ priceOf: (l: any) => unknown, nameOf?: (l: any) => string, unitPrice?: 'average' | 'amount' }} o
  */
-export function buildLoadingSummary(orders, { priceOf, nameOf }) {
+export function buildLoadingSummary(orders, { priceOf, nameOf, unitPrice }) {
   const byCustomer = new Map();
   let offerLines = 0;
   for (const o of orders) {
     offerLines += o.lines.length;
-    const rows = orderSummaryRows(o.lines, { priceOf, nameOf });
+    const rows = orderSummaryRows(o.lines, { priceOf, nameOf, unitPrice });
     if (rows.length === 0) continue;
     const c = byCustomer.get(o.customer.id) ?? { id: o.customer.id, name: o.customer.name, orders: [], totals: {} };
     const subtotal = rows.reduce(add, zero());

@@ -6,6 +6,7 @@
 // tablosunu PDF ve Excel olarak, tabloda gördüğü fiyatla (satış fiyatı = unitPrice, rolüne göre temizlenmiş veriden)
 // indirir; müşteri fiyatı ve yöneticinin sandık satırı satışa hiç gelmez. Kontrol sunucuda (route) yapılır: canExportOffer.
 import { offerLineTotals } from './rules.js';
+import { lineDisplayName } from './op-names.js';
 import { writeReportXlsx } from '../files/xlsx-report.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -42,8 +43,12 @@ export function offerExportData({ lines, price, locale, kindLabel, tagOf = () =>
     const unitPrice = l.free ? 0 : p == null || p === '' ? null : Number(p);
     const tot = offerLineTotals({ ...l, unitPrice: String(unitPrice ?? 0) });
     const label = sub ? kindLabel(l.kind) : '';
-    const own = locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
-    const extra = sub && (own === label || own === l.kind || own === 'Delik' || own === 'CNC') ? '' : (own ?? '');
+    // Romence belgede CNC / delik adı sözlükle (karar 315 — op-names.js); cam satırı eskisi gibi descriptionRo. Yalnızca türün
+    // adı yazılmış alt satır (ör. "Delik", "CNC") eskisi gibi boş kalır — çeviriden önceki özgün metne de bakılır.
+    const own = lineDisplayName(l, locale);
+    const bare = (v) => v === label || v === l.kind || v === 'Delik' || v === 'CNC';
+    const translated = !l.descriptionRo && own !== (l.description ?? '');
+    const extra = sub && (bare(own) || (translated && bare(l.description))) ? '' : (own ?? '');
     const desc = sub ? [label, extra].filter(Boolean).join(' – ') : shapedLabel && l.shaped ? `${extra} (${shapedLabel})` : extra;
     const m2 = !sub && l.unit === 'm2' ? tot.metraj : null;
     if (m2) metraj = round3(metraj + m2);

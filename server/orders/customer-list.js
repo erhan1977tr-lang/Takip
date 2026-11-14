@@ -10,7 +10,10 @@
 //   Sıra: Active tahmini yükleme gününe göre ARTAN (profil siparişinde teslim günü; tarihsiz sipariş sonda), aynı günde yeni
 //   olan önce; arşiv tersine (en yeni üstte).
 // Görünürlük değişmez: liste sorgusu yine orderScope ile (müşteri yalnızca kendi firmasının siparişlerini görür).
+//   Tarih kuralı (ürün sahibi, 14.11.2026; karar 316 — server/orders/ship-window.js): tahmini yükleme gününün üzerinden 4 gün
+//   geçen üretimdeki / yüklenmiş cam siparişi de arşiv bölümündedir (yalnızca liste görünümü; durum değişmez).
 import { loadingEvidence, loadingProof } from './auto-archive.js';
+import { notShipWindowWhere, shipWindowPassed, shipWindowWhere } from './ship-window.js';
 
 /** Durumuyla kapanmış sipariş (her tür) */
 export const CUSTOMER_CLOSED = ['ARSIVLENDI', 'IPTAL'];
@@ -30,13 +33,15 @@ export function fullyLoaded(order, ev) {
 }
 
 /**
- * Siparişin müşteri listesindeki bölümü (saf).
- * @param {{ orderTypeCode: string, status: string, onHold: boolean, removedAt?: Date | null }} order
+ * Siparişin müşteri listesindeki bölümü (saf). `now` verilirse tarih kuralı da uygulanır (karar 316).
+ * @param {{ orderTypeCode: string, status: string, onHold: boolean, removedAt?: Date | null, estimatedShipDate?: Date | null }} order
  * @param {import('./auto-archive.js').Evidence | undefined} ev
+ * @param {Date} [now]
  * @returns {'active' | 'archive'}
  */
-export function customerBucket(order, ev) {
+export function customerBucket(order, ev, now) {
   if (CUSTOMER_CLOSED.includes(order.status)) return 'archive';
+  if (now && shipWindowPassed(order, now)) return 'archive';
   return fullyLoaded(order, ev) ? 'archive' : 'active';
 }
 
@@ -65,14 +70,17 @@ export function customerOrderCompare(bucket) {
 /**
  * Veritabanı sorgusunun durum koşulu: Active sekmesi kapanmamış siparişleri, arşiv sekmesi kapanmış siparişler ile onaylı
  * yükleme kaydı olan açık cam siparişlerini getirir. Son ayrım partitionCustomerOrders'tadır (kayıtlara bakar).
+ * Tarih kuralı (karar 316): tahmini günü 4 gün geçmiş üretimdeki / yüklenmiş cam siparişi Active'de değil, arşivde.
  * @param {'active' | 'archive'} bucket
+ * @param {Date} [now]
  */
-export function customerStatusWhere(bucket) {
-  if (bucket === 'active') return { status: { notIn: CUSTOMER_CLOSED } };
+export function customerStatusWhere(bucket, now = new Date()) {
+  if (bucket === 'active') return { AND: [{ status: { notIn: CUSTOMER_CLOSED } }, notShipWindowWhere(now)] };
   return {
     OR: [
       { status: { in: CUSTOMER_CLOSED } },
       { orderTypeCode: 'GLASS_ORDER', status: { in: LOADABLE }, loadedItems: { some: {} } },
+      shipWindowWhere(now),
     ],
   };
 }
@@ -84,11 +92,11 @@ export function customerStatusWhere(bucket) {
  * @param {any} db  @param {T[]} orders  @param {'active' | 'archive'} bucket
  * @returns {Promise<T[]>}
  */
-export async function partitionCustomerOrders(db, orders, bucket) {
+export async function partitionCustomerOrders(db, orders, bucket, { now = new Date() } = {}) {
   const candidates = orders.filter((o) => o.orderTypeCode === 'GLASS_ORDER' && LOADABLE.includes(o.status)).map((o) => o.id);
   const withItems = candidates.length
     ? new Set((await db.loadingConfirmationItem.findMany({ where: { orderId: { in: candidates } }, select: { orderId: true }, distinct: ['orderId'] })).map((r) => r.orderId))
     : new Set();
   const evidence = await loadingEvidence(db, [...withItems]);
-  return orders.filter((o) => customerBucket(o, evidence.get(o.id)) === bucket).sort(customerOrderCompare(bucket));
+  return orders.filter((o) => customerBucket(o, evidence.get(o.id), now) === bucket).sort(customerOrderCompare(bucket));
 }

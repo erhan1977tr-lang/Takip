@@ -3,7 +3,8 @@ import { ADMIN, CUSTOMER, CUST_PW, as } from './helpers';
 
 // P5 — müşteri sipariş listesi (karar 243), gerçek sunucu:
 //  - "Încărcate și arhivă" / "Yüklenen ve arşiv": yalnızca onaylı yüklemeyle EKSİKSİZ yüklenmiş (ve kapanmış) siparişler
-//  - Active: tarihi geçmiş yüklenmemiş sipariş, kısmen yüklenmiş (kalanı olan) sipariş, onaysız "Yüklendi"
+//  - Active: tarihi geçmiş yüklenmemiş sipariş, kısmen yüklenmiş (kalanı olan) sipariş, onaysız "Yüklendi" — tahmini günün
+//    üzerinden henüz 4 gün geçmediyse; 4 gün geçen üretimdeki / yüklenmiş sipariş arşivde (karar 316, geçmiş siparişler dahil)
 //  - Active tahmini yükleme gününe göre artan
 //  - başka firmanın siparişi hiçbir bölümde yok
 // Yükleme onayı kayıtları doğrudan veritabanına yazılır (onay ekranı kendi testlerinde); FGO'ya gidilmez.
@@ -51,12 +52,14 @@ test('veri: Ünsal için gecikmiş / kısmi / eksiksiz yüklenmiş / onaysız "Y
       });
     };
     const c = cust.customer!;
-    await make(c, 9501, at(-400)); // tarihi çok geçmiş, yüklenmemiş → Active'in en üstüne
-    const partial = await make(c, 9502, at(-399));
+    await make(c, 9501, at(-3)); // tarihi 3 gün geçmiş, yüklenmemiş → Active'in en üstüne (4 gün dolmadı)
+    const partial = await make(c, 9502, at(-2));
     await confirm(partial, 2);
     const full = await make(c, 9503, at(-398));
     await confirm(full, 3);
-    await make(c, 9504, at(-397), 'YUKLENDI'); // yalnızca "Yüklendi" düğmesi
+    await make(c, 9504, at(-1), 'YUKLENDI'); // yalnızca "Yüklendi" düğmesi
+    await make(c, 9506, at(-400)); // tahmini günü çok geçmiş, yüklenmemiş → tarih kuralıyla arşiv (karar 316)
+    await make(c, 9507, at(-5), 'YUKLENDI'); // 5 gün geçmiş, onaysız "Yüklendi" → arşiv (karar 316)
     const foreign = await make(foreignFirm, 9505, at(-396));
     await confirm(foreign, 3);
   } finally {
@@ -64,7 +67,7 @@ test('veri: Ünsal için gecikmiş / kısmi / eksiksiz yüklenmiş / onaysız "Y
   }
 });
 
-test('müşteri: eksiksiz yüklenen arşivde; gecikmiş, kısmi ve onaysız "Yüklendi" Active\'de, tarihe göre artan; başka firma yok', async ({ browser }) => {
+test('müşteri: eksiksiz yüklenen ve tahmini günü 4 gün geçen arşivde; yakın tarihli gecikmiş, kısmi ve onaysız "Yüklendi" Active\'de, tarihe göre artan; başka firma yok', async ({ browser }) => {
   const page = await as(browser, CUSTOMER, CUST_PW);
   // Sipariş satırlarının bağlantıları, sayfadaki sırayla (taslak / teklif / bölüm bağlantıları hariç; # kısmı atılır)
   const order = async () => page.locator('main a[href^="/siparisler/"]').evaluateAll((els) => [...new Set(els
@@ -75,12 +78,14 @@ test('müşteri: eksiksiz yüklenen arşivde; gecikmiş, kısmi ve onaysız "Yü
   const pos = (no: string) => active.indexOf(`/siparisler/${ids[no]}`);
   for (const no of ['UNS9501', 'UNS9502', 'UNS9504']) expect(pos(no), `${no} Active'de`).toBeGreaterThanOrEqual(0);
   expect(pos('UNS9503'), 'eksiksiz yüklenen Active\'de değil').toBe(-1);
+  for (const no of ['UNS9506', 'UNS9507']) expect(pos(no), `${no}: tahmini günü 4 gün geçti, Active'de değil`).toBe(-1);
   // Tahmini yükleme gününe göre artan: 9501 (en eski, gecikmiş) < 9502 < 9504
   expect(pos('UNS9501')).toBeLessThan(pos('UNS9502'));
   expect(pos('UNS9502')).toBeLessThan(pos('UNS9504'));
   await page.goto('/siparisler?view=archive');
   const archive = await order();
   expect(archive).toContain(`/siparisler/${ids.UNS9503}`);
+  for (const no of ['UNS9506', 'UNS9507']) expect(archive, `${no} arşivde`).toContain(`/siparisler/${ids[no]}`);
   for (const no of ['UNS9501', 'UNS9502', 'UNS9504']) expect(archive, `${no} arşivde değil`).not.toContain(`/siparisler/${ids[no]}`);
   // Başka firmanın siparişi (ve adı) hiçbir bölümde / sayfa verisinde yok
   for (const url of ['/siparisler', '/siparisler?view=archive']) {

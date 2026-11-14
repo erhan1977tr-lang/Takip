@@ -39,6 +39,8 @@ import { RemoveOrder } from './RemoveOrder';
 import { removalPreview } from '@/server/orders/removal.js';
 import { cancelLock, priceLock } from '@/server/orders/financial-lock.js';
 import { loadPriceChanges, type PriceChangeEntry } from '@/lib/price-history';
+import { historyInline } from '@/server/orders/history-placement.js';
+import { lineDisplayName } from '@/server/orders/op-names.js';
 import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
 import { guestHostOptions } from '@/server/loading/crates.js';
@@ -164,7 +166,7 @@ export default async function OrderPage({
         order={order} user={user} sp={sp} t={t} m={m} locale={locale}
         files={fileCard}
         notes={notesCard}
-        history={<>{removalBox}<History order={order} isCustomer={isCustomer} t={t} /></>}
+        history={<><History order={order} isCustomer={isCustomer} t={t} inline={historyInline(user.appRole)} />{removalBox}</>}
       />
     );
   }
@@ -594,13 +596,15 @@ export default async function OrderPage({
       {/* "Sandıklar" satış ve yönetici görünümünde gösterilmez (Paket 4): sandıklar Yüklemeler sekmesinde girilir ve orada
           görünür; kayıtlar ve işlevler değişmedi */}
       {!isCustomer && !salesView && !drawerView && !userCan(user, 'OFFER_SEND') && order.status !== 'YENI' && <Crates order={order} t={t} />}
+      <History order={order} isCustomer={isCustomer} t={t} priceChanges={priceChanges} inline={historyInline(user.appRole)} />
       {removalBox}
-      <History order={order} isCustomer={isCustomer} t={t} priceChanges={priceChanges} />
     </>
   );
 }
 
-function History({ order, isCustomer, t, priceChanges = [] }: { order: OrderDetail; isCustomer: boolean; t: T; priceChanges?: PriceChangeEntry[] }) {
+// inline: "Hareketler" sayfanın içinde kart olarak (yönetici, yönetici yardımcısı — server/orders/history-placement.js,
+// karar 314); diğer rollerde sol menünün altında (eski yer)
+function History({ order, isCustomer, t, priceChanges = [], inline = false }: { order: OrderDetail; isCustomer: boolean; t: T; priceChanges?: PriceChangeEntry[]; inline?: boolean }) {
   // Sol menünün altında (eski düzen); veri bu sayfanın yüklediği siparişten gelir. Yöneticide müşteri fiyatı değişiklikleri
   // (denetim kaydından — Paket 4) olaylarla tarih sırasında birlikte gösterilir; başka role hiç gelmez (lib/price-history.ts).
   type Item = { at: Date; key: string; node: React.ReactNode };
@@ -644,6 +648,14 @@ function History({ order, isCustomer, t, priceChanges = [] }: { order: OrderDeta
     });
   }
   items.sort((a, b) => b.at.getTime() - a.at.getTime());
+  if (inline) {
+    return (
+      <div className="card" id="hareketler" data-history="inline">
+        <h2>{t('order.history')}</h2>
+        <ul className="timeline">{items.map((i) => i.node)}</ul>
+      </div>
+    );
+  }
   return (
     <SidebarPortal>
       <div className="nav-section">{t('order.history')}</div>
@@ -1005,8 +1017,9 @@ function OfferView({ order, offer, isCustomer, finalPrice, versions, updateHref,
                 const salesCrate = admin && isSalesCrate(l);
                 if (!sub) n += 1;
                 const kindLabel = sub ? lineKindText(t, l.kind) : '';
+                // Romence ekranda CNC / delik adı sözlükle (karar 315 — server/orders/op-names.js); cam satırı eskisi gibi
                 const desc = sub && (l.description === kindLabel || l.description === LEGACY_SUB_DESC[l.kind]) ? ''
-                  : locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description;
+                  : lineDisplayName(l, locale);
                 return (
                   <tr key={l.id} className={sub ? 'sub-line' : undefined}>
                     <td className="muted">{sub ? '' : n}</td>

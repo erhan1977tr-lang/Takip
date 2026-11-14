@@ -44,6 +44,9 @@ export default {
     statePlanned: 'PLANIFICAT — încărcarea nu este confirmată; cantități din ofertă / plan',
     avgPrice: 'Preț unitar',
     avgPriceNote: 'Media ponderată a sticlei Σ(m² × preț) / Σm²; CNC / găuri / ladă incluse în valoare',
+    // Detaliu cu preț fabrică (decizia 313): preț unitar = valoare / metraj
+    avgPriceNoteAmount: 'Valoare / Metraj (CNC / găuri / ladă incluse în prețul unitar)',
+    avgPriceNoteBoth: 'Detaliu: media ponderată a sticlei Σ(m² × preț) / Σm² · Detaliu (Fabrică): Valoare / Metraj (CNC / găuri incluse)',
     free: 'gratuit (înlocuire)',
     dayLine: 'Ziua încărcării: {date}',
     firmsTitle: 'REZUMAT PE FIRME',

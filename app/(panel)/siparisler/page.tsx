@@ -18,6 +18,7 @@ import { PROFILE_STAGE_TONE } from '@/server/profile/rules.js';
 import { STOCK_SHORTAGE_ALERT } from '@/server/profile/stock.js';
 import { CLOSED, slaInfo } from '@/server/orders/rules.js';
 import { customerStatusWhere, partitionCustomerOrders } from '@/server/orders/customer-list.js';
+import { notShipWindowWhere, shipWindowWhere } from '@/server/orders/ship-window.js';
 import { approvedDrawingList, dwgDrawingGroups, latestOfferStatus, profileQueues, queuesFor } from '@/server/orders/queues.js';
 import { dwgReview, isCustomerDrawingRecord } from '@/server/orders/dwg-review.js';
 import { DwgDecision } from './[id]/DwgDecision';
@@ -491,12 +492,22 @@ async function InternalOrders({ user, sp }: { user: CurrentUser; sp: SP }) {
     const qs = p.toString();
     return `/siparisler${qs ? `?${qs}` : ''}${hash}`;
   };
+  // Tarih kuralı (karar 316 — server/orders/ship-window.js): tahmini yükleme gününün üzerinden 4 gün geçen üretimdeki cam
+  // siparişi "Tüm aktif siparişler"den çıkar, "Yüklenen ve arşiv"de görünür (yalnızca liste; durum değişmez). "Sıra bende"
+  // kuyrukları ve çizim paneli (work / dwg) bu kuraldan etkilenmez. Roller: satış, yönetici, yönetici yardımcısı, denetimci
+  // (müşteri: CustomerOrders); çizim ekibinin listesi ve yöneticinin Çizim Paneli eskisi gibi.
+  const listNow = new Date();
+  const shipRule = !teamPanel && user.appRole !== 'CIZIM';
   const rows: Row[] = profileView ? [] : sanitizeRows(user, await db.order.findMany({
     where: {
       ...orderScope(user),
       ...(teamPanel ? drawingScope : {}),
       ...searchWhere(sp.q),
-      status: view === 'archive' ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] },
+      ...(view === 'archive' && shipRule
+        ? { AND: [{ OR: [{ status: { in: CLOSED as OrderStatus[] } }, shipWindowWhere(listNow) as Prisma.OrderWhereInput] }] }
+        : view === 'all' && shipRule
+          ? { AND: [{ status: { notIn: CLOSED as OrderStatus[] } }, notShipWindowWhere(listNow) as Prisma.OrderWhereInput] }
+          : { status: view === 'archive' ? { in: CLOSED as OrderStatus[] } : { notIn: CLOSED as OrderStatus[] } }),
     },
     include: listInclude,
     orderBy: [{ estimatedShipDate: view === 'archive' ? 'desc' : 'asc' }, { createdAt: 'asc' }],

@@ -51,12 +51,16 @@ export async function GET(req: Request) {
   // fiyatını, satış fabrika fiyatını unitPrice'ta görür (onaylı günde de aynı: onay kopyasının maliyeti unitPrice, müşteri
   // fiyatı offerPrice). Yöneticinin iki döküm sayfası ayrı fiyat türüyle, aynı satırlardan.
   const admin = userCan(user, 'OFFER_SEND');
-  const lines = buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice) });
+  const finalPrice = admin || userCan(user, 'PRICE_FINAL_VIEW');
+  // Fabrika fiyatlı döküm (karar 313): birim fiyat = tutar / metraj (cama ait CNC / delik dahil) — yöneticinin "Döküm (Fabrika)"
+  // sayfası ve satışın (fabrika fiyatını gören rol) "Döküm"ü. Müşteri fiyatlı döküm (yönetici, denetimci) değişmez.
+  const factoryOnly = !finalPrice;
+  const lines = buildLoadingSummary(orders, { priceOf: (l) => (admin ? l.offerPrice : l.unitPrice), unitPrice: factoryOnly ? 'amount' : 'average' });
   const details = [{ sheetName: t('loading.summary.sheetLines'), title: `${t('loading.summary.linesTitle')} · ${dmy(day)} · ${tag}`, lines }];
   if (admin) {
     details.push({
       sheetName: t('loading.summary.sheetLinesFactory'), title: `${t('loading.summary.linesTitleFactory')} · ${dmy(day)} · ${tag}`,
-      lines: buildLoadingSummary(orders, { priceOf: (l) => l.unitPrice }),
+      lines: buildLoadingSummary(orders, { priceOf: (l) => l.unitPrice, unitPrice: 'amount' }),
     });
   }
   // Misafir yük (fiziksel sandık ilişkisi): ticari sahip ve sandığın sahibi ayrı sütunlarda — adlar role göre maskeli
@@ -64,7 +68,6 @@ export async function GET(req: Request) {
     orderNo: r.entry.orderNo, owner: f.name, host: r.guest!.hostName,
     crate: r.guest!.crateNo != null ? `#${r.guest!.crateNo}` : t('loading.summary.guestWaiting'),
   })));
-  const finalPrice = userCan(user, 'OFFER_SEND') || userCan(user, 'PRICE_FINAL_VIEW');
   const sheets = loadingSummarySheets({
     subtitle: exportSubtitle(t, t('loading.summary.dayLine', { date: dmy(day) })),
     stats: [
@@ -78,7 +81,7 @@ export async function GET(req: Request) {
       [t('loading.summary.ops'), t('loading.summary.opsIncluded')],
       [t('loading.summary.price'), admin ? t('loading.summary.priceBoth') : finalPrice ? t('loading.summary.priceFinal') : t('loading.summary.priceSales')],
       [t('loading.summary.currency'), Object.keys(lines.totals).join(', ') || '—'],
-      [t('loading.summary.avgPrice'), t('loading.summary.avgPriceNote')],
+      [t('loading.summary.avgPrice'), admin ? t('loading.summary.avgPriceNoteBoth') : factoryOnly ? t('loading.summary.avgPriceNoteAmount') : t('loading.summary.avgPriceNote')],
     ],
     firms, total: { ...total, name: t('loading.summary.total') }, guests, details, money,
     text: {

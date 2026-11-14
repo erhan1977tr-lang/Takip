@@ -53,11 +53,11 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('müşteri listesi: arşivde yalnızca kapanmış ve onaylı eksiksiz yüklenmiş; gecikmiş / kısmi / yalnızca "Yüklendi" Active; Active tarihe göre artan; başka firma yok', offline(async () => {
-  const late = await order(firm, 1, { ship: at(-10) }); // tarihi geçmiş, yüklenmemiş
+dbTest('müşteri listesi: arşivde kapanmış, onaylı eksiksiz yüklenmiş ve tahmini günü 4 gün geçmiş (karar 316); yakın tarihli gecikmiş / kısmi / yalnızca "Yüklendi" Active; Active tarihe göre artan; başka firma yok', offline(async () => {
+  const late = await order(firm, 1, { ship: at(-10) }); // tarihi 10 gün geçmiş, yüklenmemiş → tarih kuralıyla arşiv (karar 316)
   const soon = await order(firm, 2, { ship: at(3) });
   const later = await order(firm, 3, { ship: at(20) });
-  const partial = await order(firm, 4, { ship: at(-5) });
+  const partial = await order(firm, 4, { ship: at(-5) }); // 5 gün geçmiş → arşiv (karar 316)
   await confirm(partial, 2); // 3'ün 2'si yüklendi, 1 kırık (açık kalan)
   const full = await order(firm, 5, { ship: at(-7) });
   await confirm(full, 3);
@@ -69,13 +69,22 @@ dbTest('müşteri listesi: arşivde yalnızca kapanmış ve onaylı eksiksiz yü
   const foreign = await order(other, 1, { ship: at(1) });
   await confirm(foreign, 3);
   const noDate = await order(firm, 10, { ship: null });
+  const recent = await order(firm, 11, { ship: at(-1) }); // 1 gün geçmiş, yüklenmemiş → Active (4 gün dolmadı)
+  const held = await order(firm, 12, { ship: at(-30) });
+  await db.order.update({ where: { id: held.id }, data: { onHold: true } }); // beklemede → tarih kuralı yok
+  const preparing = await order(firm, 13, { status: 'HAZIRLANIYOR', ship: at(-30) }); // iş akışı bekliyor → Active
 
-  assert.deepEqual(await list(firm, 'active'), [late, partial, shippedOnly, soon, later, noDate].map((o) => o.orderNo), 'gün artan; gecikmiş üstte; tarihsiz sonda');
-  assert.deepEqual(new Set(await list(firm, 'archive')), new Set([full.orderNo, fullShipped.orderNo, 'LST8', 'LST9']));
+  assert.deepEqual(await list(firm, 'active'), [held, preparing, shippedOnly, recent, soon, later, noDate].map((o) => o.orderNo), 'gün artan; gecikmiş üstte; tarihsiz sonda');
+  assert.deepEqual(new Set(await list(firm, 'archive')), new Set([full.orderNo, fullShipped.orderNo, 'LST8', 'LST9', late.orderNo, partial.orderNo]));
   // Firma izolasyonu: başka firmanın (eksiksiz yüklenmiş) siparişi hiçbir bölümde yok
   for (const b of ['active', 'archive']) assert.ok(!(await list(firm, b)).includes(foreign.orderNo), b);
   assert.deepEqual(await list(other, 'archive'), [foreign.orderNo]);
   // Durumlar değişmedi (liste yalnızca okur)
   const st = await db.order.findMany({ where: { id: { in: [late.id, partial.id, full.id, shippedOnly.id] } }, select: { orderNo: true, status: true }, orderBy: { orderNo: 'asc' } });
   assert.deepEqual(st.map((o) => o.status), ['URETIMDE', 'URETIMDE', 'URETIMDE', 'YUKLENDI']);
+  // Tarih kuralı yalnızca liste görünümü: arşive geçen siparişin durumu, onay kaydı ve olayları değişmedi
+  const lateNow = await db.order.findUnique({ where: { id: late.id }, include: { events: true } });
+  assert.equal(lateNow.status, 'URETIMDE');
+  assert.equal(lateNow.events.length, 0);
+  assert.equal(await db.loadingConfirmationItem.count({ where: { orderId: late.id } }), 0);
 }));
