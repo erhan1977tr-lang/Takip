@@ -157,7 +157,8 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   expect(offerLines.find((r) => r[0] === 'SİPARİŞ NO')).toEqual(['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR', 'Para birimi']);
   expect(summaryLines(offerLines, 'UNS8601'), 'CNC / delik camın tutarında; aynı cam sipariş içinde tek kalem').toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 50, 190, 'EUR']]);
   expect(summaryLines(offerLines, 'BET8604')).toEqual([['BET8604', beta.name, 'Firma tablosu 8604', 'Temper', 4, 'm²', 2, 200, 400, 'RON']]);
-  expect(summaryLines(factoryLines, 'UNS8601')).toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 37, 129, 'EUR']]);
+  // Fabrika dökümünde birim fiyat = Tutar / Metraj (karar 313): 129 / 3 m² = 43 — camın CNC / delik bedeli dahil (cam fiyatı 37)
+  expect(summaryLines(factoryLines, 'UNS8601')).toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 43, 129, 'EUR']]);
   expect(summaryLines(factoryLines, 'BET8604')).toEqual([['BET8604', beta.name, 'Firma tablosu 8604', 'Temper', 4, 'm²', 2, 150, 300, 'RON']]);
   // Toplam para birimi başına (birimler toplanmaz), tablonun altında
   const totals = (rows: Rows) => rows.filter((r) => r[3] === 'TOPLAM').map((r) => [r[4], r[6], r[8], r[9]]);
