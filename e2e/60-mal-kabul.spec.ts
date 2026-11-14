@@ -77,6 +77,9 @@ test('kısmi mal kabulü: önceki / yeni / kalan; yalnızca girilen miktar stoğ
     await expect(box).not.toContainText('11,5'); // alış fiyatı mal kabulünde yok
     await rm.locator('input[type="number"]').fill('6');
     await box.locator('#rc-ref').fill('AVZ-E2E-1');
+    // 4.2.20 (karar 320): palet / kutu sayısı INTRAREA MARFĂ formuna yazılır
+    await box.locator('#rc-pallets').fill('2');
+    await box.locator('#rc-boxes').fill('5');
     await box.getByRole('button', { name: 'Mal kabulünü kaydet' }).click();
     await expect(admin).toHaveURL(/ok=receivedPart/);
     await expect(admin.getByText('Mal kabulü kaydedildi: miktarlar stoğa eklendi')).toBeVisible();
@@ -87,12 +90,15 @@ test('kısmi mal kabulü: önceki / yeni / kalan; yalnızca girilen miktar stoğ
     await expect(item).toContainText('AVZ-E2E-1');
     await expect(item).toContainText('Kısmi teslimat');
     await expect(item).toContainText('Stoğa eklendi');
-    // INTRAREA MARFĂ belgesi (yeniden indirilebilir)
+    await expect(item).toContainText('Palet: 2 · Kutu: 5');
+    await expect(item.locator('[data-receipt-doc]')).toHaveText(`${orderNo}-1`);
+    // INTRAREA MARFĂ belgesi (yeniden indirilebilir); dosya adı Romence, e-posta ekiyle aynı
     const href = await item.locator('[data-receipt-pdf]').getAttribute('href');
     for (let i = 0; i < 2; i++) {
       const res = await admin.request.get(href!);
       expect(res.status()).toBe(200);
       expect(res.headers()['content-type']).toBe('application/pdf');
+      expect(res.headers()['content-disposition']).toContain(`filename="Intrare-Marfa-${orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1.pdf"`);
       expect((await res.body()).subarray(0, 5).toString()).toBe('%PDF-');
     }
     // İşçi: depo alıcılarına alıcı başına tek e-posta (PDF ekli); tekrar çalışınca ikinci ileti yok
@@ -104,6 +110,10 @@ test('kısmi mal kabulü: önceki / yeni / kalan; yalnızca girilen miktar stoğ
       expect(sent[0].subject).toBe(`GKH Trading Invest – Intrare marfă – ${orderNo} – recepția nr. 1 – ${SUP}`);
       expect(sent[0].attachments.map((a: { filename: string }) => a.filename)).toContain(`Intrare-Marfa-${orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1.pdf`);
       expect(sent[0].text).toContain('6 bară');
+      expect(sent[0].text).toContain(`INTRAREA MARFĂ nr. ${orderNo}-1`);
+      expect(sent[0].text).toContain('Paleți: 2');
+      expect(sent[0].text).toContain('Cutii: 5');
+      expect(sent[0].text).toContain('Greutate totală: 7,2 kg'); // RM12: 6 bare × 1,2 kg
       expect(sent[0].html).not.toContain('11,5');
       expect(sent[0].html).not.toContain('EUR');
     }

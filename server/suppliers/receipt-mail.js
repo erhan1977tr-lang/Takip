@@ -1,6 +1,7 @@
 // Mal kabulünün belgesi ve depo e-postası (3.87.0, karar 282).
 //
-// Belge (INTRAREA MARFĂ, server/pdf/goods-receipt.js) her istekte kabulün KOPYASINDAN üretilir (kabul ve satırları değişmez —
+// Belge (INTRAREA MARFĂ formu, server/pdf/intrare-marfa.js — 4.2.20, karar 320: ürün sahibinin Excel şablonu, teslim alınan
+// adetler + otomatik ağırlık + palet / kutu) her istekte kabulün KOPYASINDAN üretilir (kabul ve satırları değişmez —
 // tetikleyici): yeniden indirmek aynı içeriği verir. Fiyat / maliyet okunmaz ve belgeye girmez.
 //
 // Depo e-postası: kuyruk (NotificationOutbox, tür SUPPLIER_RECEIPT_EMAIL) — iş kabulle AYNI işlemde yazılır, burada işçi
@@ -12,18 +13,19 @@
 //   - kesin gitmeyen (bağlanılamadı ya da sunucu açık kodla reddetti) alıcı sonraki turda yeniden denenir; bir alıcının hatası
 //     öbürlerini engellemez. En çok MAX_ATTEMPTS tur; sonra iş "Gönderilemedi" (FAILED) kalır, kabul ekranında görünür.
 //
-// Kabul düzeltmesi (3.91.0, karar 286): düzeltme kendi belgesini (CORECȚIE RECEPȚIE — açıkça düzeltme olarak işaretli,
-// orijinal recepția nr.'ya referans verir) ve kendi TEK işini alır (aynı tür, yükte correctionId). Orijinal kabulün belgesi
+// Kabul düzeltmesi (3.91.0, karar 286; belge 4.2.20, karar 320): düzeltme kendi belgesini (aynı INTRAREA MARFĂ formu, güncel
+// net adetlerle, "<önceki belge no> REV.n — CORECȚIE") ve kendi TEK işini alır (aynı tür, yükte correctionId). Orijinal kabulün belgesi
 // ve e-postası değişmez, yeniden gönderilmez; düzeltme e-postası da yukarıdaki alıcı başına "bir kez" kuralıyla gider.
 import { writeAudit } from '../orders/journal.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { sendBrandedMail } from '../mail/send.js';
 import { renderGoodsReceiptEmail } from '../mail/templates/goods-receipt.js';
-import { goodsReceiptPdf } from '../pdf/goods-receipt.js';
+import { intrareMarfaPdf } from '../pdf/intrare-marfa.js';
 import { unitLabel } from '../profile/catalog.js';
 import { getWarehouseSettings } from '../profile/warehouse.js';
 import { exportFileName } from '../files/export-name.js';
 import { RECEIPT_EMAIL, receiptMailNotSent, receiptSummary } from './receipt-rules.js';
+import { fmtKg, imChanges, imDocNo, intrareMarfaData } from './intrare-marfa.js';
 
 export const RECEIPT_EMAIL_LEASE_MS = 10 * 60_000;
 export const RECEIPT_EMAIL_MAX_ATTEMPTS = 8;
@@ -32,70 +34,93 @@ const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
 const norm = (s) => String(s).trim().toLowerCase();
 
-/** Belgenin dosya adı (e-posta eki; Romence belge) */
+/**
+ * Belgenin dosya adı (e-posta eki ve indirme; Romence — 4.2.20, karar 320): "Intrare-Marfa-<sipariş no>-<kabul no>.pdf"
+ * @param {string} orderNo  @param {number} seq
+ */
 export const receiptFileName = (orderNo, seq) => exportFileName('Intrare Marfa', [orderNo, String(seq)], 'pdf');
-/** Düzeltme belgesinin dosya adı: kabul no + düzeltme no */
-export const correctionFileName = (orderNo, receiptSeq, seq) => exportFileName('Corectie Receptie', [orderNo, String(receiptSeq), String(seq)], 'pdf');
+/**
+ * Düzeltme belgesinin dosya adı: önceki Intrare Marfă belgesinin adı + "-REV.<n>" (n = o kabulün kaçıncı düzeltmesi)
+ * @param {string} orderNo  @param {number} receiptSeq  @param {number} rev
+ */
+export const correctionFileName = (orderNo, receiptSeq, rev) => receiptFileName(orderNo, receiptSeq).replace(/\.pdf$/, `-REV.${Math.max(1, Math.trunc(Number(rev) || 1))}.pdf`);
+
+const imLine = (l) => ({ code: l.code, name: l.nameRo, qty: l.qty, unit: unitLabel(l.unitCode, 'ro') });
 
 /**
- * Kabulün belgesi: kopyadan Romence PDF. Görseller katalogdaki güncel ürün görselidir (yalnızca süs; miktar, kod, ad, renk,
- * uzunluk kopyadandır).
+ * Kabulün belgesi: kopyadan INTRAREA MARFĂ formu (Romence PDF, ürün sahibinin şablonu — server/pdf/intrare-marfa.js). Teslim
+ * alınan adetler forma yazılır, ağırlıklar şablonun katsayılarıyla hesaplanır; palet / kutu kabulde girilen sayılardır.
  * @param {any} db  @param {string} receiptId
- * @returns {Promise<{ buf: Buffer, receipt: any, orderNo: string, supplierName: string } | null>}
+ * @returns {Promise<{ buf: Buffer, receipt: any, orderNo: string, supplierName: string, docNo: string, name: string, totalGrams: number } | null>}
  */
 export async function buildReceiptPdf(db, receiptId) {
   const receipt = await db.supplierReceipt.findUnique({
     where: { id: String(receiptId ?? '') },
     include: {
-      lines: { orderBy: { sortOrder: 'asc' }, include: { product: { select: { image: { select: { data: true } } } } } },
+      lines: { orderBy: { sortOrder: 'asc' } },
       order: { select: { id: true, orderNo: true, supplier: { select: { name: true } } } },
     },
   });
   if (!receipt) return null;
-  const categories = await db.profileCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { code: true, nameRo: true } });
-  const summary = receiptSummary(receipt.lines);
-  const buf = goodsReceiptPdf({
-    orderNo: receipt.order.orderNo, supplierName: receipt.order.supplier.name, seq: receipt.seq, receivedOn: receipt.receivedOn,
-    reference: receipt.reference, note: receipt.note, complete: receipt.complete,
-    categories: categories.map((c) => ({ code: c.code, name: c.nameRo })),
-    lines: receipt.lines.map((l) => ({
-      code: l.code, name: l.nameRo, color: l.color, length: l.lengthM == null ? null : l.lengthM.toString(), qty: l.qty,
-      unit: unitLabel(l.unitCode, 'ro'), categoryCode: l.categoryCode, image: l.product?.image ? Buffer.from(l.product.image.data) : null,
-    })),
-    totals: summary.byUnit.map((u) => ({ qty: u.qty, unit: unitLabel(u.unitCode, 'ro') })),
+  const orderNo = receipt.order.orderNo;
+  const supplierName = receipt.order.supplier.name;
+  const docNo = imDocNo(orderNo, receipt.seq);
+  const lines = receipt.lines.map(imLine);
+  const buf = intrareMarfaPdf({
+    docNo, orderNo, supplierName, receivedOn: receipt.receivedOn, reference: receipt.reference,
+    pallets: receipt.pallets ?? null, boxes: receipt.boxes ?? null, lines,
   });
-  return { buf, receipt, orderNo: receipt.order.orderNo, supplierName: receipt.order.supplier.name };
+  return { buf, receipt, orderNo, supplierName, docNo, name: receiptFileName(orderNo, receipt.seq), totalGrams: intrareMarfaData(lines).totalGrams };
 }
 
 /**
- * Düzeltmenin belgesi: düzeltmenin KOPYASINDAN Romence PDF (her istekte aynı içerik). Miktarlar stoktan düşülen adetlerdir.
+ * Düzeltmenin belgesi (REV.n): aynı INTRAREA MARFĂ formu, kabulün bu düzeltme dahil GÜNCEL (net) adetleriyle; başlıkta
+ * "REV.n — CORECȚIE", önceki belgeye (aynı kabulün bir önceki hâli) referans, gerekçe ve değişen satırlar. n = düzeltmenin o
+ * kabuldeki sırası (düzeltmeler eklenir, silinmez: numara değişmez). Kabul, düzeltme ve satırları kopyadır — her istekte aynı içerik.
  * @param {any} db  @param {string} correctionId
- * @returns {Promise<{ buf: Buffer, correction: any, receipt: any, orderNo: string, supplierName: string } | null>}
+ * @returns {Promise<{ buf: Buffer, correction: any, receipt: any, orderNo: string, supplierName: string, rev: number, docNo: string, baseDocNo: string, name: string, totalGrams: number } | null>}
  */
 export async function buildCorrectionPdf(db, correctionId) {
   const correction = await db.supplierReceiptCorrection.findUnique({
     where: { id: String(correctionId ?? '') },
     include: {
-      lines: { orderBy: { sortOrder: 'asc' }, include: { product: { select: { image: { select: { data: true } } } } } },
-      receipt: { select: { id: true, seq: true, receivedOn: true, reference: true } },
+      lines: { orderBy: { sortOrder: 'asc' } },
+      receipt: { select: { id: true, seq: true, receivedOn: true, reference: true, pallets: true, boxes: true, lines: { orderBy: { sortOrder: 'asc' } } } },
       order: { select: { id: true, orderNo: true, supplier: { select: { name: true } } } },
     },
   });
   if (!correction) return null;
-  const categories = await db.profileCategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { code: true, nameRo: true } });
-  const summary = receiptSummary(correction.lines);
-  const buf = goodsReceiptPdf({
-    orderNo: correction.order.orderNo, supplierName: correction.order.supplier.name, seq: correction.receipt.seq, receivedOn: correction.receipt.receivedOn,
-    reference: correction.receipt.reference, note: null, complete: false,
-    correction: { seq: correction.seq, createdAt: correction.createdAt, reason: correction.reason },
-    categories: categories.map((c) => ({ code: c.code, name: c.nameRo })),
-    lines: correction.lines.map((l) => ({
-      code: l.code, name: l.nameRo, color: l.color, length: l.lengthM == null ? null : l.lengthM.toString(), qty: l.qty,
-      unit: unitLabel(l.unitCode, 'ro'), categoryCode: l.categoryCode, image: l.product?.image ? Buffer.from(l.product.image.data) : null,
-    })),
-    totals: summary.byUnit.map((u) => ({ qty: u.qty, unit: unitLabel(u.unitCode, 'ro') })),
+  const upTo = await db.supplierReceiptCorrection.findMany({
+    where: { receiptId: correction.receiptId, seq: { lte: correction.seq } }, orderBy: { seq: 'asc' },
+    select: { id: true, lines: { select: { receiptLineId: true, qty: true } } },
   });
-  return { buf, correction, receipt: correction.receipt, orderNo: correction.order.orderNo, supplierName: correction.order.supplier.name };
+  const rev = upTo.length;
+  const fixedBy = (list) => {
+    const m = new Map();
+    for (const c of list) for (const l of c.lines) m.set(l.receiptLineId, (m.get(l.receiptLineId) ?? 0) + l.qty);
+    return m;
+  };
+  const netOf = (fixed) => correction.receipt.lines.map((l) => ({ ...imLine(l), qty: Math.max(0, l.qty - (fixed.get(l.id) ?? 0)) }));
+  const after = netOf(fixedBy(upTo));
+  const before = netOf(fixedBy(upTo.filter((c) => c.id !== correction.id)));
+  const units = new Map(after.map((l) => [l.code, l.unit]));
+  const orderNo = correction.order.orderNo;
+  const supplierName = correction.order.supplier.name;
+  const seq = correction.receipt.seq;
+  const docNo = imDocNo(orderNo, seq, rev);
+  const baseDocNo = imDocNo(orderNo, seq, rev - 1);
+  const buf = intrareMarfaPdf({
+    docNo, orderNo, supplierName, receivedOn: correction.receipt.receivedOn, reference: correction.receipt.reference,
+    pallets: correction.receipt.pallets ?? null, boxes: correction.receipt.boxes ?? null, lines: after.filter((l) => l.qty > 0),
+    revision: {
+      no: rev, createdAt: correction.createdAt, reason: correction.reason, baseDocNo,
+      changes: imChanges(before, after).map((c) => ({ ...c, unit: units.get(c.code) ?? '' })),
+    },
+  });
+  return {
+    buf, correction, receipt: correction.receipt, orderNo, supplierName, rev, docNo, baseDocNo,
+    name: correctionFileName(orderNo, seq, rev), totalGrams: intrareMarfaData(after).totalGrams,
+  };
 }
 
 /**
@@ -107,11 +132,12 @@ async function jobDocument(db, payload) {
     const built = await buildCorrectionPdf(db, String(payload.correctionId));
     if (!built) return null;
     const c = built.correction;
-    const name = correctionFileName(built.orderNo, built.receipt.seq, c.seq);
+    const name = built.name;
     const summary = receiptSummary(c.lines);
     const mail = renderGoodsReceiptEmail({
       orderNo: built.orderNo, supplierName: built.supplierName, seq: built.receipt.seq, receivedOn: built.receipt.receivedOn, reference: built.receipt.reference, complete: false,
       correction: { seq: c.seq, createdAt: c.createdAt, reason: c.reason },
+      doc: { no: built.docNo, base: built.baseDocNo, pallets: built.receipt.pallets ?? null, boxes: built.receipt.boxes ?? null, weight: fmtKg(built.totalGrams) },
       lines: c.lines.map((l) => ({ code: l.code, name: l.nameRo, color: l.color, length: l.lengthM == null ? null : l.lengthM.toString(), qty: l.qty, unit: unitLabel(l.unitCode, 'ro') })),
       totals: summary.byUnit.map((u) => ({ qty: u.qty, unit: unitLabel(u.unitCode, 'ro') })), fileName: name,
     });
@@ -120,10 +146,11 @@ async function jobDocument(db, payload) {
   const built = await buildReceiptPdf(db, String(payload.receiptId ?? ''));
   if (!built) return null;
   const r = built.receipt;
-  const name = receiptFileName(built.orderNo, r.seq);
+  const name = built.name;
   const summary = receiptSummary(r.lines);
   const mail = renderGoodsReceiptEmail({
     orderNo: built.orderNo, supplierName: built.supplierName, seq: r.seq, receivedOn: r.receivedOn, reference: r.reference, complete: r.complete,
+    doc: { no: built.docNo, pallets: r.pallets ?? null, boxes: r.boxes ?? null, weight: fmtKg(built.totalGrams) },
     lines: r.lines.map((l) => ({ code: l.code, name: l.nameRo, color: l.color, length: l.lengthM == null ? null : l.lengthM.toString(), qty: l.qty, unit: unitLabel(l.unitCode, 'ro') })),
     totals: summary.byUnit.map((u) => ({ qty: u.qty, unit: unitLabel(u.unitCode, 'ro') })), fileName: name,
   });

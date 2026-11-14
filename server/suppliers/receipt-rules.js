@@ -8,6 +8,8 @@
 // satır mal kabulüne alınmaz (UNIT_MISMATCH) — sistemde birimler arasında tanımlı / doğrulanmış bir dönüşüm yoktur, tahmini
 // dönüşüm yapılmaz (paket içeriği bir birim dönüşümü değildir: kutudaki conta metresi, barın boyu).
 
+import { parseCount } from './intrare-marfa.js';
+
 /** Mal kabulü yapılabilen sipariş durumları (açık siparişler — taslak, iptal, teslim alındı değil) */
 export const RECEIVABLE_STATUSES = Object.freeze(['GONDERIM_BEKLIYOR', 'GONDERILDI', 'GONDERIM_HATASI']);
 export const RECEIPT_LIMITS = Object.freeze({ reference: 100, note: 500, pastDays: 366, qty: 1_000_000 });
@@ -88,6 +90,11 @@ export function parseReceipt(v, { today }) {
   if (reference.length > RECEIPT_LIMITS.reference) return { ok: false, code: 'REFERENCE' };
   const note = multi(v.note);
   if (note.length > RECEIPT_LIMITS.note) return { ok: false, code: 'NOTE' };
+  // INTRAREA MARFĂ formunun PALETI / CUTII alanları (4.2.20, karar 320): boş = girilmedi; 0 … 99 999 tam sayı
+  const pallets = parseCount(v.pallets);
+  if (pallets === undefined) return { ok: false, code: 'PALLETS' };
+  const boxes = parseCount(v.boxes);
+  if (boxes === undefined) return { ok: false, code: 'BOXES' };
   const quantities = new Map();
   for (const [id, raw] of Object.entries(v.quantities ?? {})) {
     const s = String(raw ?? '').trim();
@@ -97,7 +104,7 @@ export function parseReceipt(v, { today }) {
     if (n > 0) quantities.set(String(id), n);
   }
   if (!quantities.size) return { ok: false, code: 'EMPTY' };
-  return { ok: true, receivedOn, reference: reference || null, note: note || null, requestKey, quantities };
+  return { ok: true, receivedOn, reference: reference || null, note: note || null, pallets, boxes, requestKey, quantities };
 }
 
 /**

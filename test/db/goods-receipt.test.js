@@ -62,10 +62,10 @@ async function linesOf(id) {
   return Object.fromEntries(rev.lines.map((l) => [l.code, l]));
 }
 /** Mal kabulü: q = { kod: adet } */
-async function receive(id, q, { who = 'admin', requestKey = key(), receivedOn = TODAY, reference = null, dbx = db } = {}) {
+async function receive(id, q, { who = 'admin', requestKey = key(), receivedOn = TODAY, reference = null, pallets = null, boxes = null, dbx = db } = {}) {
   const lines = await linesOf(id);
   const quantities = Object.fromEntries(Object.entries(q).map(([code, n]) => [lines[code].id, String(n)]));
-  return recv.receiveGoods(dbx, { orderId: id, receivedOn, reference, requestKey, quantities }, act(U[who]), { timeZone: TZ });
+  return recv.receiveGoods(dbx, { orderId: id, receivedOn, reference, pallets, boxes, requestKey, quantities }, act(U[who]), { timeZone: TZ });
 }
 const level = async (code) => (await stockLevels(db, [(await prod(code)).id])).get((await prod(code)).id) ?? 0;
 const receiptJobs = (orderId) => db.notificationOutbox.findMany({ where: { type: RECEIPT_EMAIL, payload: { path: ['supplierOrderId'], equals: orderId } }, orderBy: { createdAt: 'asc' } });
@@ -319,13 +319,20 @@ function pdfText(pdf) {
   return out;
 }
 
-dbTest('9) INTRAREA MARFĂ belgesi: yalnızca teslim alınan miktarlar; alış fiyatı / tutar / para birimi yok; yeniden üretilince aynı', offline(async () => {
+dbTest('9) INTRAREA MARFĂ belgesi (4.2.20 formu): yalnızca teslim alınan miktarlar + ağırlık, palet / kutu; alış fiyatı / tutar / para birimi yok; yeniden üretilince aynı', offline(async () => {
   const id = await sentOrder([['RM12-7016', 50, null, '12.3456'], ['GK15', 9, null, '987.65']]);
-  const r = await receive(id, { 'RM12-7016': 20 }, { reference: 'AVZ-9' });
+  const r = await receive(id, { 'RM12-7016': 20 }, { reference: 'AVZ-9', pallets: '3', boxes: '' });
+  const row = await db.supplierReceipt.findUniqueOrThrow({ where: { id: r.receiptId } });
+  assert.deepEqual([row.pallets, row.boxes], [3, null]);
   const a = await buildReceiptPdf(db, r.receiptId);
-  const text = pdfText(a.buf).join('\n');
-  for (const s of ['INTRAREA MARFĂ', 'Profil Tedarik', a.orderNo, 'AVZ-9', 'RM12-7016', 'Culoare: RAL 7016', 'Lungime: 6 m', '20 bară']) assert.ok(text.includes(s), s);
-  for (const s of ['12,3456', '12.3456', '246', '987', 'EUR', 'GK15']) assert.ok(!text.includes(s), s);
+  assert.equal(a.docNo, `${a.orderNo}-1`);
+  assert.equal(a.name, `Intrare-Marfa-${a.orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1.pdf`);
+  const items = pdfText(a.buf);
+  const text = items.join('\n');
+  for (const s of ['INTRAREA MARFĂ', 'Profil Tedarik', a.docNo, a.orderNo, 'AVZ-9', 'PALETI :', 'RM12 - 7016 (CEL MAI INGUST, FARA GARNITURA)', 'TOTAL GREUTATE :', '24 kg']) assert.ok(text.includes(s), s);
+  for (const v of ['3', '20', '24']) assert.ok(items.includes(v), v);
+  for (const s of ['12,3456', '12.3456', '246', '987', 'EUR']) assert.ok(!text.includes(s), s);
+  assert.ok(!items.includes('9'), 'teslim alınmayan GK15 adedi yazılmaz');
   const b = await buildReceiptPdf(db, r.receiptId);
   assert.deepEqual(pdfText(b.buf), pdfText(a.buf));
   assert.equal(await buildReceiptPdf(db, 'yok'), null);

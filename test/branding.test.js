@@ -264,7 +264,8 @@ test('her PDF üretici ortak başlığı kullanır (yeni üretici de kullanmak z
   // Paket 7: firma yükleme listesi (firm-loading.js) de ortak başlığı ve ortak altbilgiyi kullanır
   // Paket 8 (karar 196): teslimat raporu (delivery-report.js) aynı ortak başlık ve altbilgiyle
   // 3.83.0 (karar 277): bağımsız ticari teklifin müşteri PDF'i (commercial-offer.js)
-  assert.deepEqual(generators.sort(), ['commercial-offer.js', 'delivery-report.js', 'depot-form.js', 'firm-loading.js', 'goods-receipt.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
+  // 4.2.20 (karar 320): INTRAREA MARFĂ formu (intrare-marfa.js) eski mal kabulü belgesinin (goods-receipt.js) yerini aldı
+  assert.deepEqual(generators.sort(), ['commercial-offer.js', 'delivery-report.js', 'depot-form.js', 'firm-loading.js', 'intrare-marfa.js', 'offer-summary.js', 'offer.js', 'transport-list.js']);
   for (const f of generators) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.match(text, /from '\.\/brand\.js'/, f);

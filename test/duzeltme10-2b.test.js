@@ -58,7 +58,7 @@ test('M5: tedarikçi kodu eksik satırlar bulunur; e-postada yalnızca tedarikç
   const d = read('server/suppliers/dispatch.js');
   assert.match(d, /code: \/\*\* @type \{string\} \*\/ \(l\.supplierCode\)/);
   assert.match(d, /missingSupplierCodes\(r\.lines\)\.length\) \{ await fail\('NO_SUPPLIER_CODE'\)/);
-  assert.doesNotMatch(read('server/pdf/goods-receipt.js'), /supplierCode/);
+  assert.doesNotMatch(read('server/pdf/intrare-marfa.js'), /supplierCode/);
   assert.doesNotMatch(read('server/suppliers/receipt-mail.js'), /supplierCode/);
   // Onayda üründen kopyalanır; eksikse onay yok
   const svc = read('server/suppliers/service.js');

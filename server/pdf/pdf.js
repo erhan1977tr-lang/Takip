@@ -273,15 +273,21 @@ export class PdfDoc {
       line(x1, y1, x2, y2, width = 0.5, gray = 0) {
         ops.push(`${n(gray)} G ${n(width)} w ${n(x1)} ${n(Y(y1))} m ${n(x2)} ${n(Y(y2))} l S 0 G`);
       },
-      /** @param {{ stroke?: boolean, fill?: number | null, width?: number }} [o]  fill: gri tonu (0 siyah … 1 beyaz) */
+      /**
+       * @param {{ stroke?: boolean, fill?: number | null, rgb?: number[] | null, width?: number }} [o]  fill: gri tonu (0 siyah … 1 beyaz);
+       *   rgb: renkli dolgu [r, g, b] (0 … 1; INTRAREA MARFĂ formu — 4.2.20). Verilmezse çıktı eskisiyle bayt bayt aynıdır.
+       */
       rect(x, y, w, h, o = {}) {
         const stroke = o.stroke !== false;
-        const fill = o.fill ?? null;
+        const rgb = Array.isArray(o.rgb) && o.rgb.length === 3 ? o.rgb : null;
+        const fill = rgb ? null : o.fill ?? null;
+        const filled = rgb != null || fill != null;
         const parts = [];
-        if (fill != null) parts.push(`${n(fill)} g`);
+        if (rgb) parts.push(`${rgb.map((c) => n(c)).join(' ')} rg`);
+        else if (fill != null) parts.push(`${n(fill)} g`);
         parts.push(`${n(o.width ?? 0.5)} w ${n(x)} ${n(Y(y + h))} ${n(w)} ${n(h)} re`);
-        parts.push(fill != null && stroke ? 'B' : fill != null ? 'f' : 'S');
-        if (fill != null) parts.push('0 g');
+        parts.push(filled && stroke ? 'B' : filled ? 'f' : 'S');
+        if (filled) parts.push('0 g');
         ops.push(parts.join(' '));
       },
       /**

@@ -4,15 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import zlib from 'node:zlib';
 import { can } from '../server/auth/permissions.js';
 import {
   RECEIVABLE_STATUSES, fullyReceived, parseReceipt, profileLength, receiptBalance, receiptMailNotSent, receiptSummary, unitCompatible,
 } from '../server/suppliers/receipt-rules.js';
 import { receiveGoods } from '../server/suppliers/receipt.js';
-import { goodsReceiptPdf } from '../server/pdf/goods-receipt.js';
 import { renderGoodsReceiptEmail } from '../server/mail/templates/goods-receipt.js';
-import { FONTS } from '../server/pdf/fonts.js';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
@@ -76,24 +73,6 @@ test('yetki: mal kabulü SUPPLIER_MANAGE + STOCK_MANAGE (yönetici, yönetici ya
   assert.deepEqual(touched, []);
 });
 
-/** PDF içerik akışlarındaki metinler (test/commercial.test.js ile aynı okuyucu) */
-const REVERSE = Object.fromEntries(['Regular', 'Bold'].map((k) => [k, new Map(FONTS[k].map.map(([cp, gid]) => [gid, cp]))]));
-function pdfText(pdf) {
-  const out = [];
-  const re = /<< \/Length (\d+) \/Filter \/FlateDecode >>\nstream\n/g;
-  const s = pdf.toString('latin1');
-  for (let m; (m = re.exec(s));) {
-    const start = m.index + m[0].length;
-    let ops;
-    try { ops = zlib.inflateSync(pdf.subarray(start, start + Number(m[1]))).toString('latin1'); } catch { continue; }
-    for (const t of ops.matchAll(/\/(F1|F2) [\d.]+ Tf [\d.-]+ [\d.-]+ Td <([0-9a-f]*)> Tj/g)) {
-      const map = REVERSE[t[1] === 'F2' ? 'Bold' : 'Regular'];
-      out.push((t[2].match(/.{4}/g) ?? []).map((h) => String.fromCodePoint(map.get(parseInt(h, 16)) ?? 63)).join(''));
-    }
-  }
-  return out;
-}
-
 const DOC = {
   orderNo: 'TS-2026-007', supplierName: 'Alüminyum Tedarik', seq: 2, receivedOn: new Date('2026-10-14T00:00:00Z'), reference: 'AVIZ 4411', note: 'Paleti: 2', complete: false,
   categories: [{ code: 'GARNITURI', name: 'Garnituri' }, { code: 'PROFILE', name: 'Profile aluminiu' }],
@@ -104,28 +83,13 @@ const DOC = {
   totals: [{ qty: 161, unit: 'bare' }, { qty: 13, unit: 'cutii' }],
 };
 
-test('INTRAREA MARFĂ belgesi: Romence başlık, tedarikçi, sipariş no, kabul no / tarihi, referans, kod, renk, uzunluk, miktar + birim, özet; fiyat / maliyet yok', () => {
-  const pdf = goodsReceiptPdf(DOC);
-  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
-  const text = pdfText(pdf).join('\n');
-  for (const s of ['INTRAREA MARFĂ', 'Alüminyum Tedarik', 'TS-2026-007', '14.10.2026', 'AVIZ 4411', 'RM12-7016 — Profil RM12 7016', 'Culoare: RAL 7016', 'Lungime: 6 m', '161 bare', '13 cutii', 'TOTAL RECEPȚIONAT: 2 poziții', '161 bare + 13 cutii', 'GARNITURI', 'PROFILE ALUMINIU', 'Recepție parțială']) {
-    assert.ok(text.includes(s), s);
-  }
-  // Fiyat, tutar, maliyet, kâr, para birimi yazılmaz (veri de verilmez — ama belge metninde de iz yok)
-  for (const s of ['EUR', 'RON', 'Preț', 'Pret', 'Valoare', 'Total valoare', 'Cost', 'Profit', 'fiyat', 'maliyet']) assert.ok(!text.includes(s), s);
-  // Uzunluk: yalnızca ondalık sıfırlar atılır (60 m "6 m" olmaz)
-  const long = pdfText(goodsReceiptPdf({ ...DOC, lines: [{ ...DOC.lines[0], length: '60' }, { ...DOC.lines[0], code: 'X2', length: '6.500' }] })).join('\n');
-  assert.ok(long.includes('Lungime: 60 m') && long.includes('Lungime: 6,5 m'));
-  // Kategorisi bilinmeyen satır "ALTE PRODUSE" altında; boş kategori başlığı yazılmaz
-  const other = pdfText(goodsReceiptPdf({ ...DOC, categories: [], lines: [DOC.lines[1]], totals: [{ qty: 13, unit: 'cutii' }] })).join('\n');
-  assert.ok(other.includes('ALTE PRODUSE') && !other.includes('PROFILE ALUMINIU'));
-});
+// INTRAREA MARFĂ belgesinin kendisi (4.2.20'den beri ürün sahibinin formu, karar 320): test/intrare-marfa.test.js
 
 test('belge üreticisi kopyadan çalışır: fiyat alanı kabul satırına hiç girmez (şema + üretici + e-posta)', () => {
   const schema = read('prisma/schema.prisma');
   const model = schema.slice(schema.indexOf('model SupplierReceiptLine {'), schema.indexOf('}', schema.indexOf('model SupplierReceiptLine {')));
   assert.ok(!/price|Price|amount|total|cost/i.test(model.replace(/\/\/.*$/gm, '')), 'kabul satırında fiyat / tutar alanı yok');
-  for (const f of ['server/suppliers/receipt-mail.js', 'server/pdf/goods-receipt.js', 'server/mail/templates/goods-receipt.js']) {
+  for (const f of ['server/suppliers/receipt-mail.js', 'server/pdf/intrare-marfa.js', 'server/suppliers/intrare-marfa.js', 'server/mail/templates/goods-receipt.js']) {
     assert.ok(!/unitPrice|lineTotal|purchasePrice|listPrice|\.total\b/.test(strip(read(f))), `${f}: fiyat okunmaz`);
   }
 });

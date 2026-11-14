@@ -2114,6 +2114,8 @@ model SupplierReceipt {
   receivedOn  DateTime @db.Date
   reference   String?
   note        String?
+  pallets     Int?     // INTRAREA MARFĂ "PALETI" (4.2.20, karar 320; boş = girilmedi)
+  boxes       Int?     // INTRAREA MARFĂ "CUTII"
   requestKey  String   @unique
   complete    Boolean  @default(false)
   createdById String?

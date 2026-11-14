@@ -166,8 +166,17 @@ dbTest('2) tam geri alma ve birden çok kısmi düzeltme: toplam kabulü asla a�
   const s0 = [await level('GK15'), await level('MC12')];
   const r = await receive(id, { GK15: 30, MC12: 10 });
   assert.ok(r.ok && !r.complete);
-  assert.ok((await correct(id, r.receiptId, { GK15: 10 })).ok);
-  assert.ok((await correct(id, r.receiptId, { GK15: 15, MC12: 4 })).ok);
+  const c1 = await correct(id, r.receiptId, { GK15: 10 });
+  assert.ok(c1.ok);
+  const c2 = await correct(id, r.receiptId, { GK15: 15, MC12: 4 });
+  assert.ok(c2.ok);
+  // 4.2.20 (karar 320): her düzeltme o kabulün bir sonraki REV'i; belge o düzeltmeye kadarki net adetleri yazar (sonraki
+  // düzeltme önceki REV belgesini değiştirmez). GK15 / MC12: 10 kg / kutu.
+  const b1 = await buildCorrectionPdf(db, c1.correctionId);
+  const b2 = await buildCorrectionPdf(db, c2.correctionId);
+  assert.deepEqual([b1.rev, b1.docNo, b1.baseDocNo, b1.totalGrams], [1, `${b1.orderNo}-1 REV.1`, `${b1.orderNo}-1`, (20 + 10) * 10000]);
+  assert.deepEqual([b2.rev, b2.docNo, b2.baseDocNo, b2.totalGrams], [2, `${b2.orderNo}-1 REV.2`, `${b2.orderNo}-1 REV.1`, (5 + 6) * 10000]);
+  assert.match(b2.name, /-1-REV\.2\.pdf$/);
   const before = await snap(id);
   assert.deepEqual(await correct(id, r.receiptId, { GK15: 6 }), { ok: false, code: 'OVER_CORRECTABLE', line: 'GK15', correctable: 5 });
   assert.deepEqual(await correct(id, r.receiptId, { GK15: 5, MC12: 7 }), { ok: false, code: 'OVER_CORRECTABLE', line: 'MC12', correctable: 6 });
@@ -326,14 +335,17 @@ dbTest('9) belge ve depo e-postası: düzeltme belgesi açıkça düzeltme, orij
   const built = await buildCorrectionPdf(db, fix.correctionId);
   assert.equal(built.buf.subarray(0, 5).toString(), '%PDF-');
   assert.equal(built.receipt.id, r.receiptId);
+  // 4.2.20 (karar 320): aynı INTRAREA MARFĂ formunun REV.1 hâli — güncel net adet (12 − 2 = 10), önceki belge no
+  assert.deepEqual([built.rev, built.docNo, built.baseDocNo], [1, `${built.orderNo}-1 REV.1`, `${built.orderNo}-1`]);
+  assert.equal(built.totalGrams, 10 * 10000);
   const t2 = transport();
   const out = await dispatch(t2);
   assert.equal(out.sent, 1);
   assert.equal(t2.sent.length, RECIPIENTS.length);
   for (const m of t2.sent) {
-    assert.match(m.subject, /CORECȚIE recepție – .* – recepția nr\. 1 – corecția nr\. 1 – Profil Tedarik$/);
-    assert.ok(m.text.includes('-2 ') && m.text.includes('Motiv: İki kutu hasarlı geldi'));
-    assert.match(m.attachments[0].filename, /^Corectie-Receptie-.+-1-1\.pdf$/);
+    assert.equal(m.subject, `GKH Trading Invest – CORECȚIE – Intrare marfă ${built.orderNo}-1 REV.1 – Profil Tedarik`);
+    assert.ok(m.text.includes('-2 ') && m.text.includes('Motiv: İki kutu hasarlı geldi') && m.text.includes('Greutate totală după corecție: 100 kg'));
+    assert.equal(m.attachments[0].filename, `Intrare-Marfa-${built.orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1-REV.1.pdf`);
     assert.ok(!/EUR|RON|Preț/.test(m.text));
   }
   assert.deepEqual(t2.sent.map((m) => m.to).sort(), RECIPIENTS);

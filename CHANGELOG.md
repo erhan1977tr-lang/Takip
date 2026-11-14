@@ -4,6 +4,27 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.20 — 15.11.2026
+
+**INTRAREA MARFĂ formu** (ürün sahibi, 14.11.2026; karar 320):
+
+- **Mal kabulünde Palet / Kutu** (`SupplierReceipt.pallets` / `boxes`, isteğe bağlı, 0–99 999): mal kabulü formunun altında
+  "Palet sayısı" ve "Kutu sayısı" kutucukları; girilen sayılar INTRAREA MARFĂ formunun PALETI / CUTII alanlarına işlenir.
+  Kabul kaydı değişmez kalır (palet / kutu yalnızca kayıt anında yazılır).
+- **Depo giriş belgesi = ürün sahibinin Excel şablonu, PDF** (`server/pdf/intrare-marfa.js`, kurallar
+  `server/suppliers/intrare-marfa.js`): şablonun bütün bölümleri ve satırları (görseller, ürünler) her zaman yazılır,
+  miktar sütununa mal kabulündeki adetler, ağırlık = şablondaki katsayı × adet, en altta TOTAL GREUTATE (Excel'deki
+  hesaplamaların aynısı; CAPACE için ağırlık yok). Şablonda olmayan ürünler "ALTE PRODUSE" bölümünde, ağırlıksız.
+  Fiyat / maliyet yok. Romence; dosya adı Romence (`Intrare-Marfa-<sipariş>-<n>.pdf`), e-postada ve indirmede aynı.
+- **E-posta:** mal kabulünde PDF ekli Romence e-posta Ayarlar → "Profil siparişi — depo e-postası" listesine otomatik
+  gider (alıcılar ve gönderim kuralları değişmedi). **Mal kabulü düzeltmesinde** aynı form güncel (net) adetlerle, önceki
+  belge numarasının **REV.n** adıyla ("CORECȚIE", gerekçe ve değişen satırlar) üretilir ve depoya gönderilir
+  (`Intrare-Marfa-<sipariş>-<n>-REV.<k>.pdf`; konu "CORECȚIE – Intrare marfă … REV.k"). REV numarası o kabulün düzeltme sırasıdır.
+- Eski belge üreticisi `server/pdf/goods-receipt.js` kaldırıldı. Stok, borç, kabul / düzeltme kuralları ve izinler değişmedi.
+- Migration: `20261114213332_supplier_receipt_pallets` (iki boş sütun + CHECK; ekleme). Testler: `test/intrare-marfa.test.js`,
+  `test/goods-receipt.test.js`, `test/receipt-correction.test.js`, `test/db/goods-receipt.test.js`,
+  `test/db/receipt-correction.test.js`, `e2e/60-mal-kabul.spec.ts`, `e2e/64-mal-kabul-duzeltme.spec.ts`.
+
 ## 4.2.19 — 14.11.2026
 
 **Üç düzeltme** (ürün sahibi, 14.11.2026; karar 317–319):

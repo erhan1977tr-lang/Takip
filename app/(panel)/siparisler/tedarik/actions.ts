@@ -198,7 +198,8 @@ export async function receiveGoodsAction(fd: FormData) {
     if (k.startsWith('q_') && typeof v === 'string' && Object.keys(quantities).length < 300) quantities[k.slice(2)] = v;
   }
   const r = await receiveGoods(db, {
-    orderId: id, receivedOn: fd.get('receivedOn'), reference: fd.get('reference'), note: fd.get('note'), requestKey: fd.get('requestKey'), quantities,
+    orderId: id, receivedOn: fd.get('receivedOn'), reference: fd.get('reference'), note: fd.get('note'), pallets: fd.get('pallets'), boxes: fd.get('boxes'),
+    requestKey: fd.get('requestKey'), quantities,
   }, await actorOf(admin), opts());
   if (!r.ok) fail(id, `RECEIPT_${r.code}`, { name: 'line' in r ? r.line : undefined }, '#mal-kabul');
   done(id, r.complete ? 'receivedAll' : 'receivedPart', '#kabuller');
