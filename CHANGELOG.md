@@ -4,6 +4,28 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.18 — 14.11.2026
+
+**Dört düzeltme** (ürün sahibi, 14.11.2026; karar 313–316):
+
+- **Müşteri panelinde CNC / delik işlem adları Romence** (karar 315): Romence ekranda teklif tablosu, teklif PDF / Excel,
+  Tekliflerim ve yükleme dökümlerinde "Kose Yuvarlama" → "Rotunjire colțuri", "CNC KÜÇÜK DELİK" → "Gaură mică CNC" vb.
+  Yalnızca gösterim: kayıtlı açıklama, Türkçe ekran, teklif düzenleyicisi, tutarlar ve FGO değişmez. Sözlük
+  `server/orders/op-names.js`; tanınmayan bir kelime içeren ad yarım çevrilmez, özgün metin görünür (yeni ad sözlüğe eklenir).
+- **Yükleme Özeti: fabrika fiyatlı dökümde birim fiyat = Tutar / Metraj** (karar 313): yöneticinin "Döküm (Fabrika)"
+  sayfası ve satışın "Döküm"ü. Cama ait CNC / delik bedeli artık birim fiyata da yansır (ör. ALE100). Tutar, metraj,
+  toplamlar ve müşteri fiyatlı döküm (yönetici "Döküm", denetimci) değişmez.
+- **"Tüm aktif siparişler" kısaldı** (karar 316): tahmini yükleme gününün üzerinden 4 gün geçen üretimdeki / yüklenmiş cam
+  siparişi müşteri, satış, yönetici, yönetici yardımcısı ve denetimci listelerinde "Yüklenen ve arşiv" bölümüne geçer —
+  geçmiş siparişler dahil. Yalnızca liste görünümü: durum, yükleme onayı, fatura, sandık, otomatik arşiv, "Sıra bende"
+  kuyrukları, çizim ekibinin listesi ve profil siparişleri değişmez. Çizim / teklif bekleyen (yeni, hazırlanıyor) ve
+  beklemedeki sipariş aktif listede kalır.
+- **Yönetici ve yönetici yardımcısında "Hareketler" görünür** (karar 314): sipariş sayfasının içinde ayrı kart
+  (`#hareketler`); uzun sol menünün altında sıfır yüksekliğe sıkışıp görünmüyordu. Diğer rollerde yeri değişmedi.
+- Migration yok. Testler: `test/op-names.test.js`, `test/loading-summary-unit-price.test.js`, `test/ship-window.test.js`,
+  `test/history-placement.test.js`, `test/customer-list.test.js`, `test/db/customer-list.test.js`,
+  `e2e/53-musteri-liste.spec.ts`, `e2e/75-dort-duzeltme.spec.ts`.
+
 ## 4.2.17 — 07.11.2026
 
 **Profil siparişi: çoklu fiyat kataloğu seçimi** (ürün sahibi, 07.11.2026; karar 312):

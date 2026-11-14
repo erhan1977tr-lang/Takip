@@ -45,6 +45,9 @@ export default {
     statePlanned: 'PLANLANAN — yükleme onayı yok; miktarlar teklif / plandan',
     avgPrice: 'Birim fiyat',
     avgPriceNote: 'Camın ağırlıklı ortalaması Σ(m² × fiyat) / Σm²; CNC / delik / sandık tutarda',
+    // Fabrika fiyatlı döküm (karar 313): birim fiyat = tutar / metraj
+    avgPriceNoteAmount: 'Tutar / Metraj (CNC / delik / sandık birim fiyata dahil)',
+    avgPriceNoteBoth: 'Döküm: camın ağırlıklı ortalaması Σ(m² × fiyat) / Σm² · Döküm (Fabrika): Tutar / Metraj (CNC / delik dahil)',
     free: 'bedelsiz (telafi)',
     dayLine: 'Yükleme günü: {date}',
     firmsTitle: 'FİRMA BAZLI ÖZET',
