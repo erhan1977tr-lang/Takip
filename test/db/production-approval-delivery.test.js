@@ -35,6 +35,13 @@ const transport = {
   },
 };
 const mailOpts = { transport, from: 'takip@po.test', appUrl: 'https://takip.test', timeZone: 'Europe/Bucharest' };
+// Sabit saatli işçi turu: testler gerçek takvim gününden bağımsız olsun diye (sabit "now" geçmişte kalınca satır seçilmiyordu —
+// 4.2.18). O tura kadar kuyruğa girmiş sayılan, henüz hiç denenmemiş satırlar turun saatinde hazırdır; yeniden deneme
+// bekleyenlerin (attempts > 0) bekleme süresine dokunulmaz. Üretim kodu değişmez.
+const dispatchAt = async (now) => {
+  await db.notificationOutbox.updateMany({ where: { status: 'PENDING', attempts: 0, availableAt: { gt: now } }, data: { availableAt: now } });
+  return dispatchNotifications(db, { ...mailOpts, now });
+};
 const mailsTo = (email) => sent.filter((m) => m.to === email);
 
 let fileNo = 0;
@@ -123,7 +130,7 @@ dbTest('süre e-posta müşteriye iletildiği anda başlar (gönderimde değil);
   // İşçinin e-posta turu: pazartesi 09.11.2026 10:30 (Romanya) → son tarih çarşamba 11.11.2026 10:30
   const at = new Date('2026-11-09T08:30:00Z');
   sent.length = 0;
-  await dispatchNotifications(db, { ...mailOpts, now: at });
+  await dispatchAt(at);
   const after1 = await db.offer.findUnique({ where: { id: offer.id } });
   assert.equal(after1.approvalDeliveredAt.toISOString(), at.toISOString());
   assert.equal(after1.approvalDeliveryChannel, 'EMAIL');
@@ -135,7 +142,7 @@ dbTest('süre e-posta müşteriye iletildiği anda başlar (gönderimde değil);
   assert.match(mail.text, /2 zile lucrătoare/, 'müşterinin dilinde (Romence)');
   assert.ok(mailsTo('firma@po.test').length >= 1, 'firmanın adresine de');
   // İletim bir kez: daha sonraki tur değiştirmez
-  await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-10T08:30:00Z') });
+  await dispatchAt(new Date('2026-11-10T08:30:00Z'));
   assert.equal((await db.offer.findUnique({ where: { id: offer.id } })).approvalDeliveredAt.toISOString(), at.toISOString());
 }));
 
@@ -149,7 +156,7 @@ dbTest('iletilemeyen talep: süre başlamaz, hata kaydı + yöneticiye bir bildi
   try {
     let now = new Date('2026-11-09T08:00:00Z');
     for (let i = 0; i < 8; i++) {
-      await dispatchNotifications(db, { ...mailOpts, now });
+      await dispatchAt(now);
       now = new Date(now.getTime() + 3 * 3_600_000);
     }
     const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
@@ -178,7 +185,7 @@ dbTest('iletilemeyen talep: süre başlamaz, hata kaydı + yöneticiye bir bildi
   const o2 = await db.offer.findUnique({ where: { id: offer.id } });
   assert.equal(o2.approvalDeliveredAt, null);
   const at = new Date('2026-11-12T09:00:00Z');
-  await dispatchNotifications(db, { ...mailOpts, now: at });
+  await dispatchAt(at);
   x = await db.offer.findUnique({ where: { id: offer.id } });
   assert.equal(x.approvalDeliveredAt.toISOString(), at.toISOString());
   assert.equal(x.approvalDueAt.toISOString(), approvalDeadline(at).due.toISOString());
@@ -196,7 +203,7 @@ dbTest('müşteri e-posta almıyorsa (tercih) uygulama içi bildirim iletimdir; 
     const row = await db.notificationOutbox.findFirst({ where: { orderId: o.id, type: 'ORDER_OFFER_SENT' } });
     await dispatchInApp(db, { now: new Date() });
     const bell = await db.notification.findFirst({ where: { userId: people.cust.id, dedupeKey: `outbox:${row.id}` } });
-    await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-09T08:30:00Z') });
+    await dispatchAt(new Date('2026-11-09T08:30:00Z'));
     const x = await db.offer.findUnique({ where: { id: offer.id } });
     assert.equal(x.approvalDeliveryChannel, 'IN_APP');
     assert.equal(x.approvalDeliveredAt.toISOString(), bell.createdAt.toISOString());
@@ -208,7 +215,7 @@ dbTest('müşteri e-posta almıyorsa (tercih) uygulama içi bildirim iletimdir; 
     const offer2 = await sendOffer(o2.id);
     await db.user.update({ where: { id: people.cust.id }, data: { isActive: false } });
     await dispatchInApp(db, { now: new Date() });
-    await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-09T08:30:00Z') });
+    await dispatchAt(new Date('2026-11-09T08:30:00Z'));
     const y = await db.offer.findUnique({ where: { id: offer2.id } });
     assert.equal(y.approvalDeliveredAt, null);
     assert.equal(y.approvalDueAt, null);
@@ -228,7 +235,7 @@ dbTest('hatırlatma: iletimden 1 iş günü sonra müşteriye BİR KEZ (e-posta 
   await sendOffer(notYet.id);
   const at = new Date('2026-11-09T08:30:00Z');
   await db.notificationOutbox.updateMany({ where: { orderId: notYet.id }, data: { status: 'SKIPPED' } });
-  await dispatchNotifications(db, { ...mailOpts, now: at });
+  await dispatchAt(at);
   const reminders = (id) => db.notificationOutbox.count({ where: { orderId: id, type: 'ORDER_PRODUCTION_APPROVAL_REMINDER' } });
   await remindApprovalCustomers(db, { now: new Date('2026-11-10T08:29:00Z') });
   assert.equal(await reminders(o.id), 0, 'zamanı gelmedi');
@@ -238,7 +245,7 @@ dbTest('hatırlatma: iletimden 1 iş günü sonra müşteriye BİR KEZ (e-posta 
   assert.equal(await reminders(notYet.id), 0, 'iletilmemiş talep hatırlatılmaz');
   assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'PRODUCTION_APPROVAL_REMINDER' } }), 1);
   sent.length = 0;
-  await dispatchNotifications(db, { ...mailOpts, now: new Date('2026-11-10T08:31:00Z') });
+  await dispatchAt(new Date('2026-11-10T08:31:00Z'));
   const mail = mailsTo('cust@po.test').find((m) => m.subject.startsWith(o.orderNo));
   assert.match(mail.subject, /Memento/);
   assert.match(mail.text, new RegExp(approvalDueText(approvalDeadline(at).due).replace(/\./g, '\\.')));

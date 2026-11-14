@@ -22,6 +22,9 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   beklemedeki sipariş aktif listede kalır.
 - **Yönetici ve yönetici yardımcısında "Hareketler" görünür** (karar 314): sipariş sayfasının içinde ayrı kart
   (`#hareketler`); uzun sol menünün altında sıfır yüksekliğe sıkışıp görünmüyordu. Diğer rollerde yeri değişmedi.
+- Tarihe bağlı iki eski veritabanı testi takvim ilerleyince bozulmuştu (canlıdaki 4.2.17'de de aynı; uygulama kodu değil):
+  `test/db/orders.test.js` sabit 04.12.2026 yerine hesaplanan günden bir hafta sonrasını, `test/db/production-approval-delivery.test.js`
+  sabit saatli işçi turunda henüz denenmemiş satırları o saatte hazır sayar (`dispatchAt`). Üretim kodu değişmedi.
 - Migration yok. Testler: `test/op-names.test.js`, `test/loading-summary-unit-price.test.js`, `test/ship-window.test.js`,
   `test/history-placement.test.js`, `test/customer-list.test.js`, `test/db/customer-list.test.js`,
   `e2e/53-musteri-liste.spec.ts`, `e2e/75-dort-duzeltme.spec.ts`.

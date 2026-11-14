@@ -107,7 +107,8 @@ dbTest('yeni cam siparişi: tahmini yükleme günü mevcut tek hesaptan (glassLo
   assert.equal(saved.estimatedShipDate.getUTCDay(), 5, 'Cuma');
   // Satış / yönetici sonradan değiştirir: tek kayıt (Order.estimatedShipDate) güncellenir, geçmişe yazılır
   await run(o.id, 'send_to_drawing', 'sales');
-  const moved = new Date('2026-12-04T12:00:00Z');
+  // Hesaplanan günden bir hafta sonra (sabit bir tarih, hesaplanan güne denk gelince SHIP_DATE_UNCHANGED olurdu — 4.2.18)
+  const moved = new Date(saved.estimatedShipDate.getTime() + 7 * 86_400_000);
   await run(o.id, 'set_ship_date', 'sales', { date: moved });
   assert.equal((await db.order.findUniqueOrThrow({ where: { id: o.id } })).estimatedShipDate.toISOString(), moved.toISOString());
   assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'SHIP_DATE' } }), 1);
@@ -184,9 +185,12 @@ dbTest('geçiş: aynı anda iki karar → yalnızca biri işlenir; eski sürüml
   assert.equal([a, b].filter((r) => r === 'OK').length, 1, `${a} / ${b}`);
   assert.ok([a, b].some((r) => r === 'CONFLICT' || r === 'NOT_ALLOWED'), `${a} / ${b}`);
   assert.equal(await db.orderEvent.count({ where: { orderId: o.id, event: 'NO_DRAWING' } }), 1);
-  const version = (await db.order.findUniqueOrThrow({ where: { id: o.id } })).version;
-  assert.equal(await codeOf(run(o.id, 'set_ship_date', 'sales', { date: new Date('2026-12-04T12:00:00Z'), expectedVersion: version - 1 })), 'CONFLICT');
-  assert.equal(await codeOf(run(o.id, 'set_ship_date', 'sales', { date: new Date('2026-12-04T12:00:00Z'), expectedVersion: version })), 'OK');
+  const cur = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+  const version = cur.version;
+  // Tahmini günden farklı bir gün (sabit tarih hesaplanan güne denk gelebilirdi — 4.2.18)
+  const other = new Date(cur.estimatedShipDate.getTime() + 7 * 86_400_000);
+  assert.equal(await codeOf(run(o.id, 'set_ship_date', 'sales', { date: other, expectedVersion: version - 1 })), 'CONFLICT');
+  assert.equal(await codeOf(run(o.id, 'set_ship_date', 'sales', { date: other, expectedVersion: version })), 'OK');
 });
 
 dbTest('geçiş: teklif yolu → yönetici gönderir → otomatik üretim (iki geçmiş kaydı)', async () => {
