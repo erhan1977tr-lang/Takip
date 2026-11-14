@@ -9,7 +9,7 @@ import zlib from 'node:zlib';
 import { can } from '../server/auth/permissions.js';
 import { correctionBalance, netReceived, parseCorrection, receiptBalance, reopenStatus } from '../server/suppliers/receipt-rules.js';
 import { correctReceipt } from '../server/suppliers/receipt.js';
-import { goodsReceiptPdf } from '../server/pdf/goods-receipt.js';
+import { intrareMarfaPdf } from '../server/pdf/intrare-marfa.js';
 import { renderGoodsReceiptEmail } from '../server/mail/templates/goods-receipt.js';
 import { FONTS } from '../server/pdf/fonts.js';
 import tr from '../server/i18n/tr/supplier.js';
@@ -122,18 +122,28 @@ const DOC = {
 };
 const FIX = { seq: 1, createdAt: new Date('2026-10-16T09:00:00Z'), reason: 'Avizde 100, gerçekte 80' };
 
-test('düzeltme belgesi: açıkça CORECȚIE, orijinal recepția nr. ve tarihi, gerekçe, eksi miktar; fiyat yok; orijinal belge aynı kalır', () => {
-  const text = pdfText(goodsReceiptPdf({ ...DOC, correction: FIX })).join('\n');
-  for (const s of ['CORECȚIE RECEPȚIE — INTRAREA MARFĂ', 'CORECȚIA NR. :', 'LA RECEPȚIA NR. :', 'RECEPȚIA ORIGINALĂ :', 'nr. 2 din 14.10.2026 · AVIZ 4411', 'MOTIV: Avizde 100, gerçekte 80', '16.10.2026', '-20 bare', 'CANTITATE SCĂZUTĂ', 'TOTAL CORECTAT (SCĂZUT DIN STOC): 1 poziții', 'Documentul original al recepției rămâne neschimbat.']) {
+test('düzeltme belgesi (4.2.20, karar 320): INTRAREA MARFĂ formunun REV.n hâli — güncel net adetler, CORECȚIE, önceki belge no, gerekçe; fiyat yok', () => {
+  const text = pdfText(intrareMarfaPdf({
+    docNo: 'TS-2026-007-2 REV.1', orderNo: 'TS-2026-007', supplierName: 'Alüminyum Tedarik', receivedOn: DOC.receivedOn, reference: 'AVIZ 4411', pallets: 1, boxes: null,
+    lines: [{ code: 'RM12-7016', name: 'Profil RM12 7016', qty: 80, unit: 'bare' }],
+    revision: { no: 1, createdAt: FIX.createdAt, reason: FIX.reason, baseDocNo: 'TS-2026-007-2', changes: [{ code: 'RM12-7016', from: 100, to: 80, unit: 'bare' }] },
+  })).join('\n');
+  for (const s of ['INTRAREA MARFĂ — REV.1', 'CORECȚIE la TS-2026-007-2', 'TS-2026-007-2 REV.1', 'MOTIV: Avizde 100, gerçekte 80', 'RM12-7016: 100 -> 80 bare', '16.10.2026', '96 kg']) {
     assert.ok(text.includes(s), s);
   }
   for (const s of ['EUR', 'RON', 'Preț', 'Cost']) assert.ok(!text.includes(s), s);
-  // Orijinal kabul belgesi: düzeltme verilmediğinde eskisi gibi (düzeltme izi yok)
-  const original = pdfText(goodsReceiptPdf(DOC)).join('\n');
-  assert.ok(original.includes('INTRAREA MARFĂ') && original.includes('TOTAL RECEPȚIONAT') && !original.includes('CORECȚIE') && original.includes('20 bare'));
 });
 
-test('düzeltme e-postası: konu ve metin açıkça CORECȚIE, orijinal kabule referans, eksi miktar, ek adı; fiyat yok; ortak GKH düzeni', () => {
+test('düzeltme e-postası (4.2.20): konu "CORECȚIE – Intrare marfă <önceki belge no> REV.n", ek adı REV.n, palet / kutu / ağırlık; fiyat yok', () => {
+  const doc = { no: 'TS-2026-007-2 REV.1', base: 'TS-2026-007-2', pallets: 1, boxes: null, weight: '96' };
+  const m = renderGoodsReceiptEmail({ ...DOC, correction: FIX, doc, fileName: 'Intrare-Marfa-TS-2026-007-2-REV.1.pdf' });
+  assert.equal(m.subject, 'GKH Trading Invest – CORECȚIE – Intrare marfă TS-2026-007-2 REV.1 – Alüminyum Tedarik');
+  for (const s of ['Intrarea marfă nr. TS-2026-007-2 (recepția nr. 2 din 14.10.2026', 'a fost CORECTATĂ.', 'INTRAREA MARFĂ nr. TS-2026-007-2 REV.1 (CORECȚIE la TS-2026-007-2', 'Intrare-Marfa-TS-2026-007-2-REV.1.pdf', 'Paleți: 1', 'Cutii: —', 'Greutate totală după corecție: 96 kg', '-20 bare — Profil RM12 7016 (RM12-7016)', 'Motiv: Avizde 100, gerçekte 80']) assert.ok(m.text.includes(s), s);
+  for (const s of ['EUR', 'RON', 'preț', 'Preț']) assert.ok(!m.text.includes(s) && !m.html.includes(s), s);
+  assert.ok(m.html.includes('TS-2026-007-2 REV.1') && m.html.includes('96 kg'));
+});
+
+test('düzeltme e-postası (belge bilgisi verilmeyen eski biçim): konu ve metin açıkça CORECȚIE, orijinal kabule referans, eksi miktar, ek adı; fiyat yok; ortak GKH düzeni', () => {
   const m = renderGoodsReceiptEmail({ ...DOC, correction: FIX, fileName: 'Corectie-Receptie-TS-2026-007-2-1.pdf' });
   assert.equal(m.subject, 'GKH Trading Invest – CORECȚIE recepție – TS-2026-007 – recepția nr. 2 – corecția nr. 1 – Alüminyum Tedarik');
   for (const s of ['a fost CORECTATĂ (corecția nr. 1)', 'Recepția originală și documentul ei rămân neschimbate', '-20 bare — Profil RM12 7016 (RM12-7016)', 'Motiv: Avizde 100, gerçekte 80', 'Corectie-Receptie-TS-2026-007-2-1.pdf']) assert.ok(m.text.includes(s), s);

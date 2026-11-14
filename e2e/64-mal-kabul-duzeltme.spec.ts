@@ -118,6 +118,7 @@ test('kısmi düzeltme (100 → 80): gerekçe + onay; stok −20, net 80, kalan 
     const moves = await db.stockMovement.findMany({ where: { OR: [{ supplierReceiptId: receiptId }, { supplierCorrection: { receiptId } }] }, orderBy: { createdAt: 'asc' } });
     expect(moves.map((m) => [m.kind, m.qty])).toEqual([['GIRIS', 100], ['KABUL_DUZELTME', -20]]);
     // Düzeltme belgesi (PDF) — yeniden indirilebilir; orijinal belge de açılır
+    await expect(fix.locator('[data-correction-doc]')).toHaveText(`${orderNo}-1 REV.1`);
     const href = await fix.locator('[data-correction-pdf]').getAttribute('href');
     for (const h of [href!, `/siparisler/tedarik/${orderId}/kabul/${receiptId}`]) {
       const res = await admin.request.get(h);
@@ -139,8 +140,9 @@ test('depo e-postası: düzeltme alıcı başına bir kez, açıkça CORECȚIE; 
     expect(sent).toHaveLength(2);
     expect(sent.filter((m) => /Intrare marfă/.test(m.subject))).toHaveLength(1);
     const fix = sent.find((m) => /CORECȚIE/.test(m.subject));
-    expect(fix.subject).toBe(`GKH Trading Invest – CORECȚIE recepție – ${orderNo} – recepția nr. 1 – corecția nr. 1 – ${SUP}`);
-    expect(fix.attachments.map((a: { filename: string }) => a.filename)).toContain(`Corectie-Receptie-${orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1-1.pdf`);
+    // 4.2.20 (karar 320): önceki Intrare Marfă belgesinin numarası + REV.1, CORECȚIE adıyla
+    expect(fix.subject).toBe(`GKH Trading Invest – CORECȚIE – Intrare marfă ${orderNo}-1 REV.1 – ${SUP}`);
+    expect(fix.attachments.map((a: { filename: string }) => a.filename)).toContain(`Intrare-Marfa-${orderNo.replace(/[^A-Za-z0-9_]+/g, '-')}-1-REV.1.pdf`);
     expect(fix.text).toContain('Motiv: Avizde 100 yazıyor, gerçekte 80 bar geldi');
     expect(fix.html).not.toContain('EUR');
   }

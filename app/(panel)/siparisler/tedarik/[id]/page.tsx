@@ -11,6 +11,7 @@ import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { loadSupplierOrder, orderableProducts } from '@/server/suppliers/service.js';
 import { loadReceipts } from '@/server/suppliers/receipt.js';
+import { imDocNo } from '@/server/suppliers/intrare-marfa.js';
 import { LIMITS, catalogPrice, etaCalendarWarning, etaReminderDue, orderUnitOf, activeRecipients, showPrices, supplierOrderActions } from '@/server/suppliers/rules.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
 import { dayKeyOf, localDay } from '@/server/profile/dates.js';
@@ -272,6 +273,17 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                 <label htmlFor="rc-note">{t('supplier.order.receipt.note')}</label>
                 <input id="rc-note" name="note" maxLength={500} />
               </div>
+            </div>
+            <div className="row" data-receipt-packing style={{ flexWrap: 'wrap', gap: 12, padding: '0 16px 12px', alignItems: 'flex-end' }}>
+              <div>
+                <label htmlFor="rc-pallets">{t('supplier.order.receipt.pallets')}</label>
+                <input id="rc-pallets" type="number" name="pallets" min={0} max={99999} step={1} inputMode="numeric" style={{ width: 110 }} />
+              </div>
+              <div>
+                <label htmlFor="rc-boxes">{t('supplier.order.receipt.boxes')}</label>
+                <input id="rc-boxes" type="number" name="boxes" min={0} max={99999} step={1} inputMode="numeric" style={{ width: 110 }} />
+              </div>
+              <p className="muted small" style={{ flex: 1, minWidth: 200, margin: 0 }}>{t('supplier.order.receipt.packingHint')}</p>
               <ConfirmButton primary message={t('supplier.order.receipt.confirm')}>{t('supplier.order.receipt.submit')}</ConfirmButton>
             </div>
           </form>
@@ -285,8 +297,14 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
             <div key={r.id} data-receipt={r.seq} style={{ padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
               <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                 <b>{t('supplier.order.receipt.item', { n: r.seq })}</b>
+                <span className="mono small" data-receipt-doc>{imDocNo(order.orderNo, r.seq)}</span>
                 <span>{fmtDate(r.receivedOn)}</span>
                 {r.reference && <span className="mono small">{r.reference}</span>}
+                {(r.pallets != null || r.boxes != null) && (
+                  <span className="small" data-receipt-pallets={r.pallets ?? ''} data-receipt-boxes={r.boxes ?? ''}>
+                    {t('supplier.order.receipt.packing', { pallets: r.pallets ?? '—', boxes: r.boxes ?? '—' })}
+                  </span>
+                )}
                 <Badge tone={r.complete ? 'ok' : 'info'}>{r.complete ? t('supplier.order.receipt.complete') : t('supplier.order.receipt.partial')}</Badge>
                 {r._count.stockMoves > 0 && <Badge tone="ok">{t('supplier.order.receipt.stock')}</Badge>}
                 <Badge tone={r.mail?.status === 'SENT' ? 'ok' : r.mail?.status === 'FAILED' ? 'danger' : r.mail ? 'info' : 'muted'}>
@@ -306,10 +324,11 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               {r.corrections.length > 0 && (
                 <div className="receipt-fixes" data-corrections={r.seq}>
                   <b className="small">{t('supplier.order.correction.listTitle')}</b>
-                  {r.corrections.map((c) => (
+                  {r.corrections.map((c, ci) => (
                     <div key={c.id} data-correction={c.seq} style={{ marginTop: 6 }}>
                       <div className="row" style={{ flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                         <Badge tone="warn">{t('supplier.order.correction.item', { n: c.seq })}</Badge>
+                        <span className="mono small" data-correction-doc>{imDocNo(order.orderNo, r.seq, ci + 1)}</span>
                         <span className="small">{t('supplier.order.correction.ofReceipt', { n: r.seq })}</span>
                         {c.reopened && <Badge tone="info">{t('supplier.order.correction.reopened')}</Badge>}
                         <Badge tone={c.mail?.status === 'SENT' ? 'ok' : c.mail?.status === 'FAILED' ? 'danger' : c.mail ? 'info' : 'muted'}>

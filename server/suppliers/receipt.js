@@ -48,7 +48,7 @@ export async function receivedByLine(tx, orderId) {
 /**
  * Mal kabulü (tam ya da kısmi teslimat).
  * @param {any} db
- * @param {{ orderId: string, receivedOn: unknown, reference?: unknown, note?: unknown, requestKey: unknown, quantities: Record<string, unknown> }} v
+ * @param {{ orderId: string, receivedOn: unknown, reference?: unknown, note?: unknown, pallets?: unknown, boxes?: unknown, requestKey: unknown, quantities: Record<string, unknown> }} v
  *   quantities: kesin revizyonun satır id'si → bu teslimatta gelen adet (stok biriminde)
  * @param {{ id: string, role: string, ip?: string | null }} actor
  * @param {{ now?: Date, timeZone?: string }} [opts]
@@ -111,7 +111,7 @@ export async function receiveGoods(db, v, actor, opts = {}) {
     const receipt = await tx.supplierReceipt.create({
       data: {
         orderId: order.id, revisionId: final.id, seq, receivedOn: new Date(`${p.receivedOn}T00:00:00.000Z`), reference: p.reference, note: p.note,
-        requestKey: p.requestKey, complete, createdById: actor.id, createdAt: now,
+        pallets: p.pallets, boxes: p.boxes, requestKey: p.requestKey, complete, createdById: actor.id, createdAt: now,
         lines: {
           create: picked.map(({ line, qty }, i) => ({
             orderLineId: line.id, productId: line.productId, code: line.code, nameRo: line.product.nameRo || line.description, description: line.description,
@@ -133,7 +133,7 @@ export async function receiveGoods(db, v, actor, opts = {}) {
     await writeAudit(tx, {
       action: 'SUPPLIER_GOODS_RECEIVED', entityType: 'SupplierOrder', entityId: order.id, userId: actor.id,
       details: {
-        orderNo: order.orderNo, seq, receiptId: receipt.id, receivedOn: p.receivedOn, reference: p.reference, complete, stockMoves: moves,
+        orderNo: order.orderNo, seq, receiptId: receipt.id, receivedOn: p.receivedOn, reference: p.reference, pallets: p.pallets, boxes: p.boxes, complete, stockMoves: moves,
         lines: picked.map(({ line, qty }) => ({ code: line.code, qty, unitCode: line.unitCode })),
         over,
       },
@@ -284,7 +284,7 @@ export async function correctReceipt(db, v, actor, opts = {}) {
  * @typedef {{ status: string, sentTo: number, lastError: string | null }} MailView
  * @typedef {{ id: string, seq: number, reason: string, reopened: boolean, createdAt: Date, by: string | null, mail: MailView | null,
  *   lines: { id: string, receiptLineId: string, code: string, description: string, qty: number, unitCode: string, stockBefore: number, stockAfter: number }[] }} CorrectionView
- * @typedef {{ id: string, seq: number, receivedOn: Date, reference: string | null, note: string | null, complete: boolean, createdAt: Date,
+ * @typedef {{ id: string, seq: number, receivedOn: Date, reference: string | null, note: string | null, pallets: number | null, boxes: number | null, complete: boolean, createdAt: Date,
  *   lines: { id: string, code: string, description: string, qty: number, unitCode: string, corrected: number, net: number, correctable: number }[],
  *   _count: { stockMoves: number }, by: string | null, mail: MailView | null, corrections: CorrectionView[] }} ReceiptView
  * Kabul satırında: qty = orijinal kabul (değişmez), corrected = düzeltmelerin toplamı, net = qty − corrected, correctable = net.
