@@ -155,7 +155,8 @@ test('yönetici: firma başına tek satır; açılınca alt siparişler; ana sat
   expect(await sheetNames(sum.buf)).toEqual(['Firmalar', 'Döküm', 'Döküm (Fabrika)']);
   const [offerLines, factoryLines] = [await reportSheet(sum.buf, 2), await reportSheet(sum.buf, 3)];
   expect(offerLines.find((r) => r[0] === 'SİPARİŞ NO')).toEqual(['SİPARİŞ NO', 'MÜŞTERİ', 'PROJE', 'AÇIKLAMA', 'ADET', 'BİRİM', 'METRAJ', 'BİRİM FİYAT', 'TUTAR', 'Para birimi']);
-  expect(summaryLines(offerLines, 'UNS8601'), 'CNC / delik camın tutarında; aynı cam sipariş içinde tek kalem').toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 50, 190, 'EUR']]);
+  // Yöneticinin müşteri fiyatlı dökümünde de birim fiyat = Tutar / Metraj (karar 317): 190 / 3 m² = 63,33 (cam fiyatı 50)
+  expect(summaryLines(offerLines, 'UNS8601'), 'CNC / delik camın tutarında; aynı cam sipariş içinde tek kalem').toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 63.33, 190, 'EUR']]);
   expect(summaryLines(offerLines, 'BET8604')).toEqual([['BET8604', beta.name, 'Firma tablosu 8604', 'Temper', 4, 'm²', 2, 200, 400, 'RON']]);
   // Fabrika dökümünde birim fiyat = Tutar / Metraj (karar 313): 129 / 3 m² = 43 — camın CNC / delik bedeli dahil (cam fiyatı 37)
   expect(summaryLines(factoryLines, 'UNS8601')).toEqual([['UNS8601', uns.name, 'Firma tablosu 8601', 'Temper', 3, 'm²', 3, 43, 129, 'EUR']]);

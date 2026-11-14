@@ -17,8 +17,8 @@ import { parseAmount, CURRENCIES } from '../accounting/supplier.js';
 import { netReceived } from './receipt-rules.js';
 import {
   DEBT_STATUSES, FILE_LIMITS, LIMITS, OPEN_STATUSES, addDays, catalogPrice, cleanOrderNo, etaReminderDue, etaReminderKey,
-  expectedSupply, nameKey, orderTotals, orderUnitOf, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances,
-  activeRecipients, missingSupplierCodes, recipientProblem, parseEmailList, parseOpening,
+  expectedSupply, nameKey, orderTotals, orderUnitOf, overValue, parseLines, parseSupplier, receivedValue, suggestOrderNo, supplierBalances,
+  activeRecipients, missingSupplierCodes, recipientProblem, parseEmailList, parseOpening, cents, money,
 } from './rules.js';
 
 export const SUPPLIER_EMAIL = 'SUPPLIER_ORDER_EMAIL';
@@ -859,13 +859,32 @@ async function cancelledReceived(db, orders) {
   const net = netReceived(got, fixed);
   return new Map(cancelled.map((o) => [o.id, receivedValue(o.revisions[0]?.lines ?? [], net)]));
 }
-/** Hesap satırı: açık / teslim alınmış sipariş → son kesin revizyonun toplamı; iptal → teslim alınanın değeri */
-const debtRow = (o, received) => {
+/**
+ * Sipariş edilenden fazla teslim alınan malın ek borcu (4.2.19, karar 318): iptal edilmemiş sipariş → overValue (fazla yoksa
+ * 0). Net teslim alınan = kabuller − kabul düzeltmeleri (karar 286).
+ * @param {any} db  @param {{ id: string, status: string, revisions: { lines?: { id: string, qty: number, unitPrice: unknown }[] }[] }[]} orders
+ * @returns {Promise<Map<string, { total: string, qty: number }>>}
+ */
+async function overReceived(db, orders) {
+  const open = orders.filter((o) => o.status !== 'IPTAL');
+  const ids = open.flatMap((o) => (o.revisions[0]?.lines ?? []).map((l) => l.id));
+  if (!ids.length) return new Map();
+  const [got, fixed] = await Promise.all([
+    db.supplierReceiptLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+    db.supplierReceiptCorrectionLine.groupBy({ by: ['orderLineId'], where: { orderLineId: { in: ids } }, _sum: { qty: true } }),
+  ]);
+  const net = netReceived(got, fixed);
+  return new Map(open.map((o) => [o.id, overValue(o.revisions[0]?.lines ?? [], net)]));
+}
+/** Sipariş toplamı + fazla teslimatın değeri (karar 318; fazla yoksa sipariş toplamının kendisi) */
+const withOver = (total, over) => (over && over.qty > 0 ? money(cents(total ?? '0') + cents(over.total)) : total);
+/** Hesap satırı: açık / teslim alınmış sipariş → son kesin revizyonun toplamı (+ fazla teslimat, karar 318); iptal → teslim alınanın değeri */
+const debtRow = (o, received, over) => {
   if (o.status === 'IPTAL') {
     const r = received.get(o.id);
     return { currency: o.currency, status: o.status, total: r?.total ?? '0', missingPrice: r?.missingPrice ?? false, received: (r?.qty ?? 0) > 0 };
   }
-  return { currency: o.currency, status: o.status, total: o.revisions[0]?.total?.toString() ?? '0', missingPrice: o.revisions[0]?.missingPrice ?? false };
+  return { currency: o.currency, status: o.status, total: withOver(o.revisions[0]?.total?.toString() ?? '0', over.get(o.id)), missingPrice: o.revisions[0]?.missingPrice ?? false };
 };
 
 /**
@@ -879,17 +898,17 @@ export async function supplierAccounts(db) {
     db.supplierOrder.findMany({
       // İptal edilmiş ama teslim alınmış malı olan siparişler de (karar 288 — O6): borç = teslim alınanın değeri
       where: { OR: [{ status: { in: DEBT_STATUSES } }, { status: 'IPTAL', receipts: { some: {} } }] },
-      select: { id: true, supplierId: true, currency: true, status: true, revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { total: true, missingPrice: true, finalizedAt: true, lines: { select: { id: true, unitPrice: true } } } } },
+      select: { id: true, supplierId: true, currency: true, status: true, revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, select: { total: true, missingPrice: true, finalizedAt: true, lines: { select: { id: true, qty: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { voidedAt: null }, select: { supplierId: true, currency: true, amount: true, voidedAt: true } }),
     db.supplierOpeningBalance.findMany({ where: { voidedAt: null }, select: { supplierId: true, currency: true, amount: true, voidedAt: true } }),
   ]);
-  const received = await cancelledReceived(db, orders);
+  const [received, over] = await Promise.all([cancelledReceived(db, orders), overReceived(db, orders)]);
   const openingsOf = (id) => openings.filter((x) => x.supplierId === id).map((x) => ({ currency: x.currency, amount: x.amount.toString(), voidedAt: x.voidedAt }));
   return suppliers.map((s) => ({
     supplier: s,
     balances: supplierBalances(
-      orders.filter((o) => o.supplierId === s.id).map((o) => debtRow(o, received)),
+      orders.filter((o) => o.supplierId === s.id).map((o) => debtRow(o, received, over)),
       payments.filter((p) => p.supplierId === s.id).map((p) => ({ currency: p.currency, amount: p.amount.toString(), voidedAt: p.voidedAt })),
       openingsOf(s.id),
     ),
@@ -908,12 +927,12 @@ export async function supplierAccount(db, supplierId) {
     db.supplierOrder.findMany({
       where: { supplierId: supplier.id, status: { not: 'TASLAK' } },
       orderBy: { createdAt: 'desc' },
-      include: { revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, include: { lines: { select: { id: true, unitPrice: true } } } } },
+      include: { revisions: { where: { finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, take: 1, include: { lines: { select: { id: true, qty: true, unitPrice: true } } } } },
     }),
     db.supplierPayment.findMany({ where: { supplierId: supplier.id }, orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }] }),
     db.supplierOpeningBalance.findMany({ where: { supplierId: supplier.id }, orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }] }),
   ]);
-  const received = await cancelledReceived(db, orders);
+  const [received, over] = await Promise.all([cancelledReceived(db, orders), overReceived(db, orders)]);
   const rows = orders.map((o) => {
     const f = finalOf(o);
     const r = o.status === 'IPTAL' ? received.get(o.id) : null;
@@ -921,12 +940,16 @@ export async function supplierAccount(db, supplierId) {
     if (r && r.qty > 0) {
       return {
         id: o.id, orderNo: o.orderNo, status: o.status, currency: o.currency, orderDate: f?.orderDate ?? null, revision: f?.revision ?? null,
-        total: r.total, missingPrice: r.missingPrice, counts: true, partialCancel: true, orderedTotal: f?.total?.toString() ?? null,
+        total: r.total, missingPrice: r.missingPrice, counts: true, partialCancel: true, orderedTotal: f?.total?.toString() ?? null, overQty: 0,
       };
     }
+    // Sipariş edilenden fazla teslim alınan (karar 318): borç = sipariş toplamı + fazlanın değeri; sipariş toplamı ayrıca (orderedTotal)
+    const x = DEBT_STATUSES.includes(o.status) ? over.get(o.id) : null;
+    const extra = x && x.qty > 0 ? x : null;
     return {
       id: o.id, orderNo: o.orderNo, status: o.status, currency: o.currency, orderDate: f?.orderDate ?? null, revision: f?.revision ?? null,
-      total: f?.total?.toString() ?? null, missingPrice: f?.missingPrice ?? false, counts: DEBT_STATUSES.includes(o.status), partialCancel: false, orderedTotal: null,
+      total: extra ? withOver(f?.total?.toString() ?? '0', extra) : f?.total?.toString() ?? null, missingPrice: f?.missingPrice ?? false, counts: DEBT_STATUSES.includes(o.status), partialCancel: false,
+      orderedTotal: extra ? f?.total?.toString() ?? null : null, overQty: extra?.qty ?? 0,
     };
   });
   const balances = supplierBalances(

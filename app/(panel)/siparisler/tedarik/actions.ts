@@ -245,14 +245,25 @@ export async function cancelAction(fd: FormData) {
 // ---------- nakliye (Transport ekle — 3.97.6) ----------
 // Nakliye yalnızca tedarikçi siparişinin sayfasından girilir; kayıt + dağıtım, iptal ve ödendi işareti server/suppliers/costs.js'te
 // (SUPPLIER_MANAGE — burada ve serviste). Seçilen kabullerin bu siparişe ait olduğunu servis denetler (RECEIPT_GONE).
+/**
+ * Nakliye (4.2.19, karar 319): gönderilen siparişin ürünleri listelenir, her ürün için ayrı nakliye tutarı (t_<sipariş satırı id>);
+ * fatura tutarı = tutarların toplamı. Kayıt + dağıtım tek işlemde (servis, server/suppliers/costs.js).
+ */
 export async function addTransportAction(fd: FormData) {
   const admin = await requirePermission('SUPPLIER_MANAGE');
   const id = idOf(fd);
+  const lineAmounts: Record<string, string> = {};
+  for (const [k, v] of fd.entries()) {
+    if (k.startsWith('t_') && typeof v === 'string' && Object.keys(lineAmounts).length < 300) lineAmounts[k.slice(2)] = v;
+  }
   const r = await createTransport(db, {
-    orderId: id, carrierName: fd.get('carrierName'), invoiceNo: fd.get('invoiceNo'), invoiceDate: fd.get('invoiceDate'), amount: fd.get('amount'),
-    currency: fd.get('currency'), fxRate: fd.get('fxRate'), note: fd.get('note'), receiptIds: fd.getAll('receiptId').map(String), requestKey: fd.get('requestKey'),
+    orderId: id, carrierName: fd.get('carrierName'), invoiceNo: fd.get('invoiceNo'), invoiceDate: fd.get('invoiceDate'),
+    currency: fd.get('currency'), fxRate: fd.get('fxRate'), note: fd.get('note'), lineAmounts, requestKey: fd.get('requestKey'),
   }, await actorOf(admin), opts());
-  if (!r.ok) fail(id, r.code, {}, '#transport');
+  if (!r.ok) {
+    const code = ['LINES', 'LINE_AMOUNT', 'BAD_LINE', 'NO_QTY'].includes(r.code) ? `TRANSPORT_${r.code}` : r.code;
+    fail(id, code, { name: 'line' in r && typeof r.line === 'string' ? r.line : undefined }, '#transport');
+  }
   done(id, r.duplicate ? 'transportDuplicate' : 'transportAdded', '#transport');
 }
 

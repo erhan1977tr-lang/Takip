@@ -20,13 +20,14 @@ import {
   addTransportAction, cancelAction, correctReceiptAction, deleteDraftAction, discardRevisionAction, etaAction, paidTransportAction, receiveGoodsAction, receivedAction,
   removeFileAction, resendAction, startRevisionAction, uploadFilesAction, voidTransportAction,
 } from '../actions';
-import { listTransports, transportReceiptOptions } from '@/server/suppliers/costs.js';
-import { TRANSPORT_CURRENCIES } from '@/server/suppliers/stock-cost.js';
+import { listTransports } from '@/server/suppliers/costs.js';
+import { TRANSPORT_CURRENCIES, transportProducts } from '@/server/suppliers/stock-cost.js';
 import { actorOf } from '@/lib/actor';
 import { supplierErrorText } from '../labels';
 import { SupplierStatusBadge } from '@/components/SupplierStatus';
 import { SupplierOrderEditor, type EditorProduct } from './SupplierOrderEditor';
 import { PreviewFor } from '@/components/PreviewFor';
+import { TransportTotal } from './TransportTotal';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,13 +65,11 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
   const pendingJob = jobs.some((j) => j.status === 'PENDING');
   const rc = await loadReceipts(db, order.id);
   const receipts = rc?.receipts ?? [];
-  // Nakliye (3.97.6): yalnızca bu siparişin mal kabullerine bağlanır — kayıt + dağıtım server/suppliers/costs.js
+  // Nakliye (4.2.19, karar 319): gönderilen siparişin ürünleri, ürün başına tutar — kayıt + dağıtım server/suppliers/costs.js
   const actor = await actorOf(admin);
-  const [trList, trOpts] = receipts.length > 0
-    ? await Promise.all([listTransports(db, actor, { orderId: order.id }), transportReceiptOptions(db, actor, order.id)])
-    : [null, null];
+  const trList = receipts.length > 0 ? await listTransports(db, actor, { orderId: order.id }) : null;
   const transports = trList?.ok ? trList.rows : [];
-  const trReceipts = trOpts?.ok ? trOpts.receipts : [];
+  const trLines = rc?.lines ?? [];
   const actions = supplierOrderActions({ status: order.status, hasDraft: !!draft, pendingJob, hasReceipts: receipts.length > 0 });
   // Mal kabulü (karar 282): tedarik VE stok yetkisi (serviste de denetlenir)
   const canReceive = actions.includes('receive') && userCan(admin, 'STOCK_MANAGE') && !!rc && rc.lines.some((l) => (l.remaining ?? 0) > 0 && l.compatible);
@@ -241,11 +240,18 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                       <td className="nowrap">{l.length ? `${fmtDec(l.length, 3)} m` : '—'}</td>
                       <td>{unitLabel(l.unitCode, locale)}</td>
                       <td className="num" data-ordered>{l.ordered}</td>
-                      <td className="num" data-received>{l.received}</td>
+                      <td className="num" data-received>
+                        {l.received}
+                        {/* Sipariş edilenden fazla teslim alınan (4.2.19, karar 318) */}
+                        {l.received > l.ordered && <div data-over={l.received - l.ordered}><Badge tone="info">{t('supplier.order.receipt.over', { n: l.received - l.ordered })}</Badge></div>}
+                      </td>
                       <td className="num">
+                        {/* Kalandan fazla adet girilebilir (karar 318): üst sınır yok; tamamlanmış satıra da fazla teslimat yazılabilir */}
                         {!l.compatible ? <Badge tone="warn">{t('supplier.order.receipt.unitMismatch')}</Badge>
-                          : (l.remaining ?? 0) === 0 ? <Badge tone="ok">{t('supplier.order.receipt.done')}</Badge>
-                            : <input type="number" name={`q_${l.id}`} min={0} max={l.remaining} step={1} inputMode="numeric" style={{ width: 90 }} aria-label={`${t('supplier.order.receipt.col.now')} ${l.code}`} />}
+                          : <>
+                            <input type="number" name={`q_${l.id}`} min={0} max={1000000} step={1} inputMode="numeric" style={{ width: 90 }} aria-label={`${t('supplier.order.receipt.col.now')} ${l.code}`} />
+                            {(l.remaining ?? 0) === 0 && <div><Badge tone="ok">{t('supplier.order.receipt.done')}</Badge></div>}
+                          </>}
                       </td>
                       <td className="num" data-remaining>{l.remaining}</td>
                     </tr>
@@ -384,7 +390,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                 <thead>
                   <tr>
                     <th>{t('supplier.transport.col.invoiceDate')}</th><th>{t('supplier.transport.col.carrier')}</th><th>{t('supplier.transport.col.invoiceNo')}</th>
-                    <th className="num">{t('supplier.transport.col.amount')}</th><th className="num">{t('supplier.transport.col.eur')}</th><th>{t('supplier.transport.receipts')}</th>
+                    <th className="num">{t('supplier.transport.col.amount')}</th><th className="num">{t('supplier.transport.col.eur')}</th><th>{t('supplier.transport.col.products')}</th>
                     <th>{t('supplier.accounts.payments.col.status')}</th><th />
                   </tr>
                 </thead>
@@ -394,7 +400,7 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                       <td>{fmtDate(x.invoiceDate)}</td><td data-carrier={x.carrierName}>{x.carrierName}</td><td className="mono">{x.invoiceNo ?? '—'}</td>
                       <td className="num nowrap">{fmtNum(x.amount.toString())} {x.currency}{x.fxRate && <div className="muted small">{t('supplier.transport.rate', { rate: x.fxRate.toString(), day: x.fxDate ? fmtDate(x.fxDate) : '—' })}</div>}</td>
                       <td className="num nowrap" data-eur>{fmtNum(x.amountEur.toString())} EUR</td>
-                      <td className="small">{x.receipts.map((r) => <div key={r.receipt.id}>{r.receipt.order.orderNo} · #{r.receipt.seq}</div>)}<span className="muted">{t('supplier.transport.lines', { n: x._count.allocations })}</span></td>
+                      <td className="small" data-transport-products>{transportProducts(x.allocations).map((a) => <div key={a.code} data-transport-product={a.code}><span className="mono">{a.code}</span>: {fmtNum(a.eur)} EUR <span className="muted">({a.qty})</span></div>)}</td>
                       <td>
                         {x.voidedAt ? <span className="small">{t('supplier.accounts.payments.voided', { reason: x.voidReason ?? '' })}</span>
                           : x.paidOn ? <Badge tone="ok">{t('supplier.transport.paidOn', { day: fmtDate(x.paidOn) })}</Badge> : <Badge tone="warn">{t('supplier.transport.unpaid')}</Badge>}
@@ -432,7 +438,6 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
                 <div><label htmlFor="tr-carrier">{t('supplier.transport.col.carrier')}</label><input id="tr-carrier" name="carrierName" required maxLength={120} /></div>
                 <div><label htmlFor="tr-no">{t('supplier.transport.col.invoiceNo')}</label><input id="tr-no" name="invoiceNo" maxLength={60} /></div>
                 <div><label htmlFor="tr-date">{t('supplier.transport.col.invoiceDate')}</label><input id="tr-date" name="invoiceDate" type="date" required max={today} defaultValue={today} /></div>
-                <div><label htmlFor="tr-amount">{t('supplier.transport.col.amount')}</label><input id="tr-amount" name="amount" required inputMode="decimal" maxLength={16} /></div>
                 <div>
                   <label htmlFor="tr-cur">{t('supplier.accounts.col.currency')}</label>
                   <select id="tr-cur" name="currency" defaultValue="EUR">{TRANSPORT_CURRENCIES.map((c: string) => <option key={c} value={c}>{c}</option>)}</select>
@@ -445,25 +450,35 @@ export default async function SupplierOrderPage({ params, searchParams }: { para
               </div>
               <label htmlFor="tr-note">{t('supplier.accounts.pay.note')}</label>
               <input id="tr-note" name="note" maxLength={500} />
-              <fieldset className="fieldset-plain" style={{ marginTop: 10 }}>
-                <legend className="label">{t('supplier.transport.receipts')}</legend>
-                {trReceipts.length === 0 ? <div className="empty">{t('supplier.transport.noReceipts')}</div> : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th /><th>{t('supplier.transport.col.receivedOn')}</th><th>{t('supplier.accounts.orders.col.no')}</th><th className="num">{t('supplier.transport.col.qty')}</th><th>{t('supplier.transport.col.linked')}</th></tr></thead>
-                      <tbody>
-                        {trReceipts.map((r) => (
-                          <tr key={r.id} data-receipt-option={`${r.orderNo}-${r.seq}`}>
-                            <td><input type="checkbox" name="receiptId" value={r.id} defaultChecked={trReceipts.length === 1} aria-label={`${r.orderNo} #${r.seq}`} /></td>
-                            <td>{r.receivedOn}</td><td className="mono">{r.orderNo} · #{r.seq}</td>
-                            <td className="num">{r.qty}</td>
-                            <td>{r.transports > 0 ? <Badge tone="info">{t('supplier.transport.linkedN', { n: r.transports })}</Badge> : '—'}</td>
+              <fieldset className="fieldset-plain" style={{ marginTop: 10 }} data-transport-lines>
+                <legend className="label">{t('supplier.transport.products')}</legend>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t('supplier.transport.col.code')}</th><th>{t('supplier.transport.col.product')}</th><th>{t('supplier.transport.col.unit')}</th>
+                        <th className="num">{t('supplier.transport.col.ordered')}</th><th className="num">{t('supplier.transport.col.received')}</th><th className="num">{t('supplier.transport.col.lineAmount')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trLines.map((l) => {
+                        const got = l.received ?? 0;
+                        return (
+                          <tr key={l.id} data-transport-line={l.code}>
+                            <td className="mono">{l.code}</td><td>{l.description}</td><td>{unitLabel(l.unitCode, locale)}</td>
+                            <td className="num">{l.qty}</td>
+                            <td className="num">{got > 0 ? got : <span className="muted small">{t('supplier.transport.notReceived')}</span>}</td>
+                            <td className="num">
+                              <input name={`t_${l.id}`} data-tr-amount inputMode="decimal" maxLength={16} disabled={got <= 0} style={{ width: 110 }}
+                                aria-label={`${l.code} — ${t('supplier.transport.col.lineAmount')}`} />
+                            </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <TransportTotal label={t('supplier.transport.total')} />
               </fieldset>
               <div className="hint">{t('supplier.transport.hint')}</div>
               <div className="row" style={{ marginTop: 10 }}><ConfirmButton primary message={t('supplier.transport.confirm')}>{t('supplier.transport.submit')}</ConfirmButton></div>

@@ -11,9 +11,9 @@
 // Eşzamanlılık ve tekrar: `supplier-order:<id>` danışma kilidi (sipariş ekranındaki öbür işlemlerle aynı) alınır, sonra
 // tek kullanımlık form anahtarına (requestKey) bakılır — çift tıklama / yeniden gönderilen form / eşzamanlı aynı istek ilk
 // kabulü döndürür, ikinci kabul ve ikinci stok girişi oluşmaz (veritabanında requestKey benzersiz: son güvence). Farklı iki
-// kabul aynı anda gelirse ikincisi kilidi bekler ve kalan miktarı ilkinden SONRAKİ hâliyle okur (READ COMMITTED) — toplam
-// hiçbir zaman sipariş edileni geçemez. Kilit sırası: sipariş → ürün stok kilitleri (başka hiçbir akış bu ikisini ters sırada
-// almaz).
+// kabul aynı anda gelirse ikincisi kilidi bekler ve kalan miktarı ilkinden SONRAKİ hâliyle okur (READ COMMITTED). Sipariş
+// edilenden fazla teslimat (4.2.19, karar 318) kabul edilir; ilk kabulle tamamlanıp kapanan siparişe ikinci kabul yazılmaz
+// (NOT_ALLOWED). Kilit sırası: sipariş → ürün stok kilitleri (başka hiçbir akış bu ikisini ters sırada almaz).
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
 import { skipQueuedOrderMail } from './service.js';
@@ -52,8 +52,8 @@ export async function receivedByLine(tx, orderId) {
  *   quantities: kesin revizyonun satır id'si → bu teslimatta gelen adet (stok biriminde)
  * @param {{ id: string, role: string, ip?: string | null }} actor
  * @param {{ now?: Date, timeZone?: string }} [opts]
- * @returns {Promise<{ ok: true, receiptId: string, seq: number, complete: boolean, duplicate?: true }
- *   | { ok: false, code: string, line?: string, remaining?: number, status?: string }>}
+ * @returns {Promise<{ ok: true, receiptId: string, seq: number, complete: boolean, duplicate?: true, over?: { code: string, qty: number, over: number, ordered: number, unitCode: string }[] }
+ *   | { ok: false, code: string, line?: string, status?: string }>}
  */
 export async function receiveGoods(db, v, actor, opts = {}) {
   if (!allowed(actor)) return FORBIDDEN;
@@ -93,18 +93,21 @@ export async function receiveGoods(db, v, actor, opts = {}) {
       const line = byId.get(lineId);
       if (!line) return { ok: false, code: 'BAD_LINE' };
       if (!unitCompatible(line, line.product)) return { ok: false, code: 'UNIT_MISMATCH', line: line.code };
+      // Sipariş edilenden fazla teslimat kabul edilir (4.2.19, karar 318): gelen adet olduğu gibi stoğa girer; kalan hiç eksiye
+      // düşmez. Fazla kısım sonuçta ve denetim kaydında ayrıca yazılır (over). Tedarikçi borcu güncel (teslim alınan) adetle
+      // hesaplanır (service.js → overReceived / overValue).
       const b = /** @type {{ remaining: number }} */ (balance.get(lineId));
-      if (qty > b.remaining) return { ok: false, code: 'OVER_REMAINING', line: line.code, remaining: b.remaining };
-      picked.push({ line, qty });
+      picked.push({ line, qty, over: Math.max(0, qty - b.remaining) });
     }
     picked.sort((a, b) => a.line.sortOrder - b.line.sortOrder);
     const last = await tx.supplierReceipt.findFirst({ where: { orderId: order.id }, orderBy: { seq: 'desc' }, select: { seq: true } });
     const seq = (last?.seq ?? 0) + 1;
     for (const { line, qty } of picked) {
       const b = /** @type {{ received: number, remaining: number }} */ (balance.get(line.id));
-      balance.set(line.id, { ordered: line.qty, received: b.received + qty, remaining: b.remaining - qty });
+      balance.set(line.id, { ordered: line.qty, received: b.received + qty, remaining: Math.max(0, b.remaining - qty) });
     }
     const complete = fullyReceived(balance);
+    const over = picked.filter((x) => x.over > 0).map(({ line, qty, over: n }) => ({ code: line.code, qty, over: n, ordered: line.qty, unitCode: line.unitCode }));
     const receipt = await tx.supplierReceipt.create({
       data: {
         orderId: order.id, revisionId: final.id, seq, receivedOn: new Date(`${p.receivedOn}T00:00:00.000Z`), reference: p.reference, note: p.note,
@@ -132,9 +135,10 @@ export async function receiveGoods(db, v, actor, opts = {}) {
       details: {
         orderNo: order.orderNo, seq, receiptId: receipt.id, receivedOn: p.receivedOn, reference: p.reference, complete, stockMoves: moves,
         lines: picked.map(({ line, qty }) => ({ code: line.code, qty, unitCode: line.unitCode })),
+        over,
       },
     }, actor);
-    return { ok: true, receiptId: receipt.id, seq, complete };
+    return { ok: true, receiptId: receipt.id, seq, complete, over };
   });
   try {
     return await run();

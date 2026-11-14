@@ -8,8 +8,6 @@ import { fmtDate, fmtDateTime, fmtNum } from '@/lib/format';
 import { Badge } from '@/components/StatusBadge';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { supplierAccount, supplierAccounts } from '@/server/suppliers/service.js';
-import { listTransports } from '@/server/suppliers/costs.js';
-import { actorOf } from '@/lib/actor';
 import { SUPPLIER_CURRENCIES } from '@/server/suppliers/rules.js';
 import { localDay } from '@/server/profile/dates.js';
 import { SupplierStatusBadge } from '@/components/SupplierStatus';
@@ -29,7 +27,7 @@ const OK: Record<string, MsgKey> = {
  * (Muhasebe → Cam Fabrika Hesap Durumu) ayrıdır. Yalnızca SUPPLIER_MANAGE (yönetici).
  */
 export default async function SupplierAccountsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const admin = await requirePermission('SUPPLIER_MANAGE');
+  await requirePermission('SUPPLIER_MANAGE');
   const { t, m } = await getT();
   const sp = await searchParams;
   const okText = sp.ok && Object.hasOwn(OK, sp.ok) ? t(OK[sp.ok]) : null;
@@ -117,6 +115,8 @@ export default async function SupplierAccountsPage({ searchParams }: { searchPar
                       <td className="num">{o.revision ?? '—'}</td>
                       <td className="num nowrap">
                         {o.total != null ? `${fmtNum(o.total)} ${o.currency}` : '—'}
+                        {/* Sipariş edilenden fazla teslim alınan (karar 318): borç güncel adetlerle; sipariş toplamı ayrıca */}
+                        {o.overQty > 0 && o.orderedTotal != null && <div className="muted small" data-over-debt={o.overQty}>{t('supplier.accounts.orders.over', { n: o.overQty, total: `${fmtNum(o.orderedTotal)} ${o.currency}` })}</div>}
                         {o.missingPrice && <div><Badge tone="warn">{t('supplier.orders.missingPrice')}</Badge></div>}
                       </td>
                     </tr>
@@ -258,9 +258,7 @@ export default async function SupplierAccountsPage({ searchParams }: { searchPar
 
   // ---------- özet ----------
   const accounts = await supplierAccounts(db);
-  // Taşıyıcı bakiyeleri (salt okunur): nakliye kayıtları tedarikçi siparişinin sayfasından girilir (3.97.6)
-  const tr = await listTransports(db, await actorOf(admin));
-  const carriers = tr.ok ? tr.carriers : [];
+  // Taşıyıcı bakiyeleri bu ekranda gösterilmez (4.2.19, karar 319): nakliye tedarikçi siparişinin sayfasında, borcu tedarikçiye eklenmez
   return (
     <>
       <div className="page-head">
@@ -279,25 +277,6 @@ export default async function SupplierAccountsPage({ searchParams }: { searchPar
                     <td><b>{supplier.name}</b> <span className="muted small">{supplier.currency}</span></td>
                     <td><BalanceRows balances={balances as Record<string, Balance>} /></td>
                     <td className="actions"><Link className="btn" href={`/admin/muhasebe/tedarikciler?t=${supplier.id}`}>{t('supplier.accounts.open')}</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      <div className="card card-flush" id="tasiyicilar">
-        <div className="card-head"><h2>{t('supplier.transport.carriers')}</h2></div>
-        <p className="muted small" style={{ padding: '0 16px' }}>{t('supplier.transport.carriersIntro')}</p>
-        {carriers.length === 0 ? <div className="empty">{t('supplier.transport.none')}</div> : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>{t('supplier.transport.col.carrier')}</th><th>{t('supplier.accounts.col.currency')}</th><th className="num">{t('supplier.transport.col.total')}</th><th className="num">{t('supplier.transport.col.paid')}</th><th className="num">{t('supplier.transport.col.open')}</th></tr></thead>
-              <tbody>
-                {carriers.map((c) => (
-                  <tr key={`${c.carrier}|${c.currency}`} data-carrier={c.carrier}>
-                    <td><b>{c.carrier}</b> <span className="muted small">({c.count})</span></td><td>{c.currency}</td>
-                    <td className="num">{fmtNum(c.total)}</td><td className="num">{fmtNum(c.paid)}</td><td className="num"><b>{fmtNum(c.open)}</b></td>
                   </tr>
                 ))}
               </tbody>

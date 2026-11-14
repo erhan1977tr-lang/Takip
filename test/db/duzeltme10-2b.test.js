@@ -254,6 +254,64 @@ dbTest('M6: nakliye — kısmi kabul + düzeltme sonrası gerçek miktar, birim 
   assert.equal((await costs.createTransport(db, { ...base, invoiceNo: 'X', amount: '1', currency: 'EUR', requestKey: key() }, act(U.sales))).code, 'FORBIDDEN');
 }));
 
+dbTest('4.2.19 (karar 319): ürün başına nakliye — her ürüne ayrı tutar, fatura = toplam, ürünün payı kendi kabul satırlarına net adetle; RON bir kez çevrilir; stok ve tedarikçi borcu değişmez', offline(async () => {
+  const s = await supplier('D10 Urun Nakliye', [{ email: 'un@d10.test' }]);
+  const o = await sentOrder(s, [['MC12', 10, '2'], ['GK15', 30, '3'], ['MC16', 5, '1']]);
+  assert.ok((await o.approve()).ok);
+  const ra = await receive(o.id, { MC12: 6, GK15: 20 });
+  const rb = await receive(o.id, { MC12: 4 });
+  const rev = await db.supplierOrderRevision.findFirstOrThrow({ where: { orderId: o.id, finalizedAt: { not: null } }, orderBy: { revision: 'desc' }, include: { lines: true } });
+  const L = Object.fromEntries(rev.lines.map((l) => [l.code, l.id]));
+  const other = await sentOrder(s, [['AD45', 3, '1']]);
+  assert.ok((await other.approve()).ok);
+  const otherLine = (await db.supplierOrderRevision.findFirstOrThrow({ where: { orderId: other.id, finalizedAt: { not: null } }, include: { lines: true } })).lines[0].id;
+  const debtBefore = (await svc.supplierAccount(db, s.id)).balances.EUR.balance;
+  const movesBefore = await db.stockMovement.count();
+  const base = { orderId: o.id, carrierName: 'Urun Trans', invoiceNo: 'UT-1', invoiceDate: TODAY, currency: 'EUR' };
+  // Hatalar: başka siparişin satırı, henüz teslim alınmamış ürün, tutar yok
+  assert.equal((await costs.createTransport(db, { ...base, lineAmounts: { [otherLine]: '5' }, requestKey: key() }, A(), { timeZone: TZ })).code, 'BAD_LINE');
+  assert.deepEqual(await costs.createTransport(db, { ...base, lineAmounts: { [L.MC16]: '5' }, requestKey: key() }, A(), { timeZone: TZ }), { ok: false, code: 'NO_QTY', line: 'MC16' });
+  assert.equal((await costs.createTransport(db, { ...base, lineAmounts: { [L.MC12]: '', [L.GK15]: '0' }, requestKey: key() }, A(), { timeZone: TZ })).code, 'LINES');
+  assert.equal(await db.transportCost.count({ where: { carrierName: 'Urun Trans' } }), 0, 'hatalı form kayıt yazmaz');
+  // MC12: 30 EUR → 10 adet (6 + 4, iki kabul) → 3 EUR / adet; GK15: 10 EUR → 20 adet → 0,5 EUR / adet
+  const k = key();
+  const t = await costs.createTransport(db, { ...base, lineAmounts: { [L.MC12]: '30', [L.GK15]: '10', [L.MC16]: '' }, requestKey: k }, A(), { timeZone: TZ });
+  assert.ok(t.ok, JSON.stringify(t));
+  assert.equal((await costs.createTransport(db, { ...base, lineAmounts: { [L.MC12]: '30' }, requestKey: k }, A(), { timeZone: TZ })).duplicate, true);
+  assert.equal((await costs.createTransport(db, { ...base, lineAmounts: { [L.MC12]: '1' }, requestKey: key() }, A(), { timeZone: TZ })).code, 'DUPLICATE_INVOICE');
+  const row = await db.transportCost.findUniqueOrThrow({ where: { id: t.id }, include: { allocations: { include: { product: true, receiptLine: true } }, receipts: true } });
+  assert.deepEqual([row.amount.toString(), row.amountEur.toString(), row.currency], ['40', '40', 'EUR']);
+  assert.deepEqual(row.receipts.map((r) => r.receiptId).sort(), [ra, rb].sort());
+  const per = (code) => row.allocations.filter((a) => a.product.code === code);
+  assert.deepEqual(per('MC12').map((a) => [a.receiptLine.receiptId, a.qty, Number(a.amountEur)]).sort(), [[ra, 6, 18], [rb, 4, 12]].sort());
+  assert.deepEqual(per('GK15').map((a) => [a.qty, Number(a.amountEur)]), [[20, 10]]);
+  assert.equal(per('MC16').length, 0);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { action: 'TRANSPORT_COST_ADDED', entityId: t.id } });
+  assert.equal(audit.details.mode, 'PRODUCT');
+  assert.deepEqual(audit.details.products.map((p) => [p.code, p.amount, p.qty]), [['MC12', '30.00', 10], ['GK15', '10.00', 20]]);
+  // Sipariş sayfasının ürün kırılımı
+  const listed = (await costs.listTransports(db, A(), { orderId: o.id })).rows.find((x) => x.id === t.id);
+  const { transportProducts } = await import('../../server/suppliers/stock-cost.js');
+  assert.deepEqual(transportProducts(listed.allocations), [{ code: 'MC12', qty: 10, eur: '30.00' }, { code: 'GK15', qty: 20, eur: '10.00' }]);
+  // Stok maliyeti: MC12 = 2 + 3 = 5; GK15 = 3 + 0,5 = 3,5
+  const c = await costs.productStockCosts(db, [(await prod('MC12')).id, (await prod('GK15')).id]);
+  const mc = c.get((await prod('MC12')).id);
+  const gk = c.get((await prod('GK15')).id);
+  assert.ok(mc && gk);
+  // RON: 200 RON / 4 = 50 EUR; MC12 150 RON → 37,5 EUR, GK15 50 RON → 12,5 EUR (toplam tam)
+  const r = await costs.createTransport(db, { ...base, invoiceNo: 'UT-2', currency: 'RON', fxRate: '4', lineAmounts: { [L.MC12]: '150', [L.GK15]: '50' }, requestKey: key() }, A(), { timeZone: TZ });
+  assert.ok(r.ok, JSON.stringify(r));
+  const ron = await db.transportCost.findUniqueOrThrow({ where: { id: r.id }, include: { allocations: { include: { product: true } } } });
+  assert.deepEqual([ron.amount.toString(), ron.amountEur.toString(), ron.fxRate.toString()], ['200', '50', '4']);
+  assert.equal(ron.allocations.reduce((n, a) => n + Number(a.amountEur), 0).toFixed(4), '50.0000');
+  assert.equal(ron.allocations.filter((a) => a.product.code === 'MC12').reduce((n, a) => n + Number(a.amountEur), 0).toFixed(4), '37.5000');
+  // Stok hareketi yok; tedarikçi borcu değişmez (taşıyıcının borcu eklenmez)
+  assert.equal(await db.stockMovement.count(), movesBefore);
+  assert.equal((await svc.supplierAccount(db, s.id)).balances.EUR.balance, debtBefore);
+  // Yetki
+  assert.equal((await costs.createTransport(db, { ...base, invoiceNo: 'UT-3', lineAmounts: { [L.MC12]: '1' }, requestKey: key() }, act(U.sales), { timeZone: TZ })).code, 'FORBIDDEN');
+}));
+
 dbTest('M9 migration: mevcut tek adres birincil + etkin olarak taşınır; ikinci çalıştırma kayıt eklemez; boş / listesi olan atlanır', offline(async () => {
   const dir = fs.readdirSync(path.resolve('prisma/migrations')).find((d) => d.endsWith('_supplier_email_backfill'));
   assert.ok(dir, 'migration klasörü');

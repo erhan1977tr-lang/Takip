@@ -3,16 +3,16 @@ import { ADMIN, ADMIN_PW, as } from './helpers';
 
 // DÜZELTME 10 M2 + M6 (3.97.x, karar 293) gerçek sunucuda:
 //  - açılış bakiyesi: tedarikçi hesabında ayrı satır; sipariş borcuna eklenmez, kalanı değiştirir; iptal edilen kayıt bakiyeden çıkar
-//  - nakliye (3.97.6: yalnızca tedarikçi siparişinin sayfasında "Transport ekle"; ayrı Nakliye Giderleri ekranı yok):
-//    RON fatura + girilen kur → EUR; seçilen mal kabulüne gerçek teslim alınan ADETE göre dağıtılır (toplam kuruşu kuruşuna),
-//    taşıyıcının borcu ayrı izlenir, tedarikçinin borcuna eklenmez; stok miktarı değişmez
+//  - nakliye (3.97.6: yalnızca tedarikçi siparişinin sayfasında "Transport ekle"; ayrı Nakliye Giderleri ekranı yok;
+//    4.2.19, karar 319: siparişin ürünleri listelenir, her ürüne ayrı tutar; fatura tutarı = toplam): RON fatura + girilen kur
+//    → EUR, ürün payı o ürünün net teslim alınan ADEDİNE dağıtılır (toplam kuruşu kuruşuna); tedarikçinin borcuna eklenmez,
+//    taşıyıcı bakiyeleri Tedarikçi Hesapları ekranında gösterilmez; stok miktarı değişmez
 // Tedarikçi siparişi ve mal kabulü test sürecinde servislerle hazırlanır (işçi çalıştırılmaz → e-posta yok).
 test.describe.configure({ mode: 'serial' });
 
 const SUP = 'E2E Nakliye Tedarik';
 const CARRIER = 'E2E Taşıyıcı SRL';
 let supplierId = '';
-let receiptLabel = '';
 let orderId = '';
 
 async function prisma() {
@@ -48,7 +48,6 @@ test('hazırlık: tedarikçi, onaylı sipariş ve mal kabulü (MC12 × 3, MC16 �
     const q = Object.fromEntries(rev.lines.map((l) => [l.id, l.qty]));
     const r = await receiveGoods(db, { orderId, receivedOn: today, requestKey: `e2e-nakliye-${Date.now()}`, quantities: q }, actor, tz);
     expect(r.ok).toBe(true);
-    receiptLabel = `${o.orderNo}-${(r as { seq: number }).seq}`;
     // İşçi çalıştırılmaz: kuyruktaki e-posta işleri bu testte gönderilmez
   } finally {
     await db.$disconnect();
@@ -73,7 +72,7 @@ test('açılış bakiyesi: ayrı satır, kalanı değiştirir, sipariş borcu de
   await admin.context().close();
 });
 
-test('nakliye: RON + kur → EUR, adete göre dağıtım (toplam tam), taşıyıcı borcu ayrı, stok değişmez', async ({ browser }) => {
+test('nakliye: ürün başına tutar, RON + kur → EUR, adete göre dağıtım (toplam tam), taşıyıcı bölümü yok, stok değişmez', async ({ browser }) => {
   const db = await prisma();
   try {
     const stock = [await level(db, 'MC12'), await level(db, 'MC16')];
@@ -88,28 +87,72 @@ test('nakliye: RON + kur → EUR, adete göre dağıtım (toplam tam), taşıyı
     await card.locator('summary', { hasText: 'Transport ekle' }).click();
     await card.locator('#tr-carrier').fill(CARRIER);
     await card.locator('#tr-no').fill('NK-E2E-1');
-    await card.locator('#tr-amount').fill('100');
     await card.locator('#tr-cur').selectOption('RON');
     await card.locator('#tr-fx').fill('5');
-    await card.locator(`[data-receipt-option="${receiptLabel}"] input[type="checkbox"]`).check();
+    // Siparişin ürünleri listelenir; mal kabulü seçimi ve tek tutar alanı yok
+    await expect(card.locator('[data-transport-line]')).toHaveCount(2);
+    await expect(card.locator('#tr-amount')).toHaveCount(0);
+    await card.locator('[data-transport-line="MC12"] input[data-tr-amount]').fill('30');
+    await card.locator('[data-transport-line="MC16"] input[data-tr-amount]').fill('70');
+    await expect(card.locator('[data-transport-total]')).toHaveAttribute('data-transport-total', '100.00');
+    await expect(card.locator('[data-transport-total]')).toContainText('RON');
     await card.getByRole('button', { name: 'Kaydet ve dağıt' }).click();
     await expect(admin.getByText('Nakliye kaydedildi ve dağıtıldı.')).toBeVisible();
-    await expect(admin.locator('#transport [data-transport="NK-E2E-1"]')).toContainText('100');
-    await expect(admin.locator('#transport [data-transport="NK-E2E-1"] [data-eur]')).toContainText('20');
-    // Taşıyıcı bakiyesi Tedarikçi Hesapları özetinde ayrı (salt okunur)
-    await admin.goto('/admin/muhasebe/tedarikciler');
-    await expect(admin.locator(`#tasiyicilar [data-carrier="${CARRIER}"]`)).toContainText('100');
+    const listed = admin.locator('#transport [data-transport="NK-E2E-1"]');
+    await expect(listed).toContainText('100');
+    await expect(listed.locator('[data-eur]')).toContainText('20');
+    await expect(listed.locator('[data-transport-product="MC12"]')).toContainText('6');
+    await expect(listed.locator('[data-transport-product="MC16"]')).toContainText('14');
     const tc = await db.transportCost.findFirstOrThrow({ where: { carrierName: CARRIER }, include: { allocations: { include: { product: true } } } });
     const by = Object.fromEntries(tc.allocations.map((a) => [a.product.code, [a.qty, Number(a.amountEur)]]));
-    // 100 RON / 5 = 20 EUR; 10 adet → adet başına 2 EUR: MC12 3 adet = 6, MC16 7 adet = 14
+    // 100 RON / 5 = 20 EUR; MC12 30 RON → 6 EUR (3 adet → 2 / adet), MC16 70 RON → 14 EUR (7 adet → 2 / adet)
     expect(by).toEqual({ MC12: [3, 6], MC16: [7, 14] });
     expect(tc.allocations.reduce((s, a) => s + Number(a.amountEur), 0)).toBe(20);
     expect([await level(db, 'MC12'), await level(db, 'MC16')]).toEqual(stock);
-    // Tedarikçi hesabına taşıyıcı borcu eklenmez
+    // Taşıyıcı bakiyeleri Tedarikçi Hesapları ekranında gösterilmez; tedarikçi hesabına taşıyıcı borcu eklenmez
+    await admin.goto('/admin/muhasebe/tedarikciler');
+    await expect(admin.locator('#tasiyicilar')).toHaveCount(0);
+    await expect(admin.locator('main')).not.toContainText(CARRIER);
     await admin.goto(`/admin/muhasebe/tedarikciler?t=${supplierId}`);
     await expect(admin.locator('main')).not.toContainText(CARRIER);
     await admin.context().close();
   } finally {
     await db.$disconnect();
+  }
+});
+
+test('siparişten fazla mal kabulü (4.2.19, karar 318): fazla adet stoğa girer, ekranda gösterilir; tedarikçi borcu güncel adetle', async ({ browser }) => {
+  const db = await prisma();
+  const admin = await as(browser, ADMIN, ADMIN_PW);
+  try {
+    const svc = await import('../server/suppliers/service.js');
+    const user = await db.user.findUniqueOrThrow({ where: { email: ADMIN } });
+    const actor = { id: user.id, role: user.appRole, ip: '127.0.0.1' };
+    const tz = { timeZone: 'Europe/Bucharest' };
+    const today = new Intl.DateTimeFormat('en-CA', tz).format(new Date());
+    const c = await svc.createDraftOrder(db, { supplierId }, actor, tz);
+    const id = (c as { id: string }).id;
+    const ids = await Promise.all(['MC12', 'MC16'].map(async (code) => (await db.profileProduct.findUniqueOrThrow({ where: { code } })).id));
+    let o = await db.supplierOrder.findUniqueOrThrow({ where: { id } });
+    expect((await svc.saveDraft(db, { orderId: id, version: o.version, orderDate: today, note: '', lines: [{ productId: ids[0], qty: 2, unitPrice: '2' }, { productId: ids[1], qty: 5, unitPrice: '3' }] }, actor, tz)).ok).toBe(true);
+    o = await db.supplierOrder.findUniqueOrThrow({ where: { id } });
+    expect((await svc.approveAndSend(db, { orderId: id, version: o.version }, actor)).ok).toBe(true);
+    const before = await level(db, 'MC12');
+    await admin.goto(`/siparisler/tedarik/${id}`);
+    const box = admin.locator('#mal-kabul');
+    await box.locator('tr[data-receipt-line="MC12"] input[type="number"]').fill('5');
+    await box.locator('tr[data-receipt-line="MC16"] input[type="number"]').fill('1');
+    await box.getByRole('button', { name: 'Mal kabulünü kaydet' }).click();
+    await expect(admin).toHaveURL(/ok=receivedPart/);
+    await expect(admin.locator('#mal-kabul tr[data-receipt-line="MC12"] [data-over="3"]')).toBeVisible();
+    expect(await level(db, 'MC12')).toBe(before + 5);
+    // Borç: MC12 5 × 2 + MC16 5 × 3 = 25 (sipariş tutarı 19; fazla 3 × 2 = 6)
+    await admin.goto(`/admin/muhasebe/tedarikciler?t=${supplierId}`);
+    const row = admin.locator('tr', { has: admin.locator(`a[href="/siparisler/tedarik/${id}"]`) });
+    await expect(row.locator('[data-over-debt="3"]')).toContainText('19');
+    await expect(row).toContainText('25');
+  } finally {
+    await db.$disconnect();
+    await admin.context().close();
   }
 });
