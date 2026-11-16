@@ -11,7 +11,8 @@ import { NOTE_EVENT } from '../server/notes/unread.js';
  */
 export type FeedItem = { id: string; title: string; body: string; link: string | null; isRead: boolean; createdAt: string; readOnView: boolean };
 export type Feed = { unread: number; items: FeedItem[] };
-export const FEED_SIZE = 20;
+/** Zil listesinde gösterilen en yeni bildirim sayısı (4.2.21, karar 321: 20 → 50; liste kendi içinde kayar) */
+export const FEED_SIZE = 50;
 
 /**
  * Kullanıcının bildirim akışı: okunmamış sayısı + en yeni bildirimler. Yalnızca kendi satırları (userId) — başka

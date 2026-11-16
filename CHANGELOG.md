@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.21 — 16.11.2026
+
+**Bildirim zili 50 bildirim gösterir** (ürün sahibi, 16.11.2026; karar 321):
+
+- Her paneldeki sağ üst bildirim zilinin listesi artık en yeni **50** bildirimi gösterir (önceden 20; `FEED_SIZE`,
+  `lib/notifications.ts`). Liste panel içinde kayar. Rozet (okunmamış sayısı, 99'dan fazlası "99+"), okundu işaretleme,
+  ses, açılır bildirim ve 60 sn'lik yenileme değişmedi.
+
 ## 4.2.20 — 15.11.2026
 
 **INTRAREA MARFĂ formu** (ürün sahibi, 14.11.2026; karar 320):

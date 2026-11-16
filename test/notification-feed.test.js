@@ -259,3 +259,12 @@ test('ses varlığı: uygulamanın kendi dosyası, kısa WAV', () => {
   assert.ok(seconds > 0.1 && seconds < 0.5, `kısa ses: ${seconds} sn`);
   assert.ok(b.length < 20_000);
 });
+
+test('zil listesi en yeni 50 bildirimi gösterir (4.2.21, karar 321); liste panel içinde kayar', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../lib/notifications.ts', import.meta.url), 'utf8');
+  assert.match(src, /export const FEED_SIZE = 50;/);
+  assert.match(src, /take: FEED_SIZE/);
+  const css = fs.readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  assert.match(css, /\.notif-list \{[^}]*overflow-y: auto/);
+});
