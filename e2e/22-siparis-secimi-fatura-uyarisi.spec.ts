@@ -292,7 +292,7 @@ test('fatura: seçim fatura grubu başınadır; yalnızca seçilen siparişlerin
   expect(fgo.names(sent)).toEqual(['Sticla 10 mm', 'Sticla 10 mm']);
   // Karar 322: her cam kaleminin açıklamasında (Descriere — "detalii articol") kendi siparişi
   expect([sent['Continut[0][Descriere]'], sent['Continut[1][Descriere]']]).toEqual(['Comanda SCM51', 'Comanda SCM52']);
-  expect([sent['Continut[0][NrProduse]'], sent['Continut[1][NrProduse]'], sent['Continut[1][PretTotal]']], 'SCM52: yalnızca yüklenen 8 adet').toEqual(['2', '8', '2468.40']);
+  expect([sent['Continut[0][NrProduse]'], sent['Continut[1][NrProduse]'], sent['Continut[1][PretTotal]'], sent['Continut[1][PretUnitar]']], 'SCM52: yalnızca yüklenen 8 adet; birim fiyat 2 hane (karar 323): 8 × 255,00 × 1,21 = 2468,40').toEqual(['2', '8', undefined, '255.00']);
   for (const no of ['SCM53', 'SCM54', 'SCM55']) expect(JSON.stringify(sent), `${no} faturada yok`).not.toContain(no);
   expect(`${doc.series}${doc.number}`).toBe('GKH990201');
 

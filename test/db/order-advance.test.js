@@ -212,11 +212,11 @@ dbTest('ödenmiş proforma + yüklenmiş + avans yok: çıkmaz kalktı — avans
   const fin = await finalInvoice(day, o, fgo);
   assert.equal(fin.form.IdExtern, `LOT-${fin.batchId}`);
   assert.deepEqual(lines(fin.form), [
-    ['Securizat', '2', null], // cam satırı TVA dahil toplamla gider (PretTotal); sipariş numarası yok (karar 252)
+    ['Securizat', '2', '300.00'], // cam satırı 2 haneli birim fiyatla gider (PretUnitar, karar 323); sipariş numarası yok (karar 252)
     [`Stornare avans conform factură ${adv1.series}${adv1.number}`, '-1', '247.93'],
     [`Stornare avans conform factură ${adv2.series}${adv2.number}`, '-1', '352.07'],
   ]);
-  assert.equal(fin.form['Continut[0][PretTotal]'], '726.00');
+  assert.deepEqual([fin.form['Continut[0][PretTotal]'], fin.form['Continut[0][PretUnitar]']], [undefined, '300.00'], '2 × 300,00 × 1,21 = 726,00');
   assert.deepEqual(fin.grp.storno.map((x) => x.gross), [300, 426], 'her avans bir kez, kendi tutarıyla');
   assert.equal(await groupOf(day, o), null, 'aynı yükleme ikinci kez faturalanmaz');
   const mineAll = async () => (await listDocuments(db, 'GLASS_ORDER')).filter((d) => d.orderId === o.id || d.batch?.chainOrderId === o.id);

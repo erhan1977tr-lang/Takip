@@ -7,7 +7,7 @@ import { fetchBtEurSell, parseBtRate, parseManualRate } from '../server/fx/bt.js
 import { FGO_UM, FGO_UM_MAX, FgoError, fgoUnit, validUm, afterInvoiceIssued, emitereForm, fgoEmit, fgoHash, grossOf, manualInvoiceNumber, missingBilling, reserveInvoiceNumber, ronPrice, ronTotal, validateFgoSettings } from '../server/integrations/fgo.js';
 import { profileActions } from '../server/profile/rules.js';
 import { documentLines } from '../server/profile/fgo-jobs.js';
-import { proformaLines, invoiceLines } from '../server/glass/billing.js';
+import { glassDocLines, invoiceLines } from '../server/glass/billing.js';
 import { UNITS } from '../prisma/seed/data/units.js';
 
 const SECRET = 'x'.repeat(40);
@@ -293,7 +293,8 @@ test('FGO ölçü birimi (UM): tek eşleme, en çok 5 karakter; geçersiz birim 
     { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 2, offerPrice: '10' },
     { kind: 'DIGER', unit: 'adet', description: 'Sandık parası', descriptionRo: 'Ambalaj (ladă)', adet: 1, offerPrice: '30' },
   ] };
-  assert.deepEqual(proformaLines(offer).map((l) => l.unit), ['mp', 'buc', 'buc']);
+  // Proforma faturanın düzeninde (karar 323): CNC ve sandık camın tutarında
+  assert.deepEqual(glassDocLines(offer, 5, 21).map((l) => l.unit), ['mp']);
   assert.deepEqual(invoiceLines(offer, 5, 21).map((l) => l.unit), ['mp']);
 
   // Gönderimden önce doğrulama: boş ya da 5 karakterden uzun birim → kalıcı hata (yeniden denenmez), kırpılmaz

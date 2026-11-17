@@ -626,18 +626,18 @@ dbTest('olağan akış: bedelsiz telafi siparişi yüklenir; kârlılıkta satı
   assert.deepEqual(sent.offers[0].lines.map(lineRow), [['CAM', 1, '30', '0', true, true], ['CNC', 1, '5', '0', true, true], ['DELIK', 2, '2', '0', true, true]]);
   // Müşteri proforması önizlemesi (FGO'ya gidecek satırların hesabı — hiçbir şey yazmaz, FGO'ya istek atmaz), N1 günü:
   //   · bedelsiz telafi siparişleri belgeye GİRMEZ (yazılacak satırı yok)
-  //   · aynı fiyatlı telafide taşınan işlemler kaynaktaki fiyatlarıyla belgeye girer (karar 251; proformada ayrı satır)
+  //   · aynı fiyatlı telafide taşınan işlemler kaynaktaki fiyatlarıyla belgeye girer (karar 251; karar 323: camın satırında)
   const pa = await b.previewBatch(db, { customerId: A.id, days: [N1], bnrImpl: bnr });
   const inc = (no) => pa.included.find((x) => x.orderNo === no);
   const exc = (no) => pa.excluded.find((x) => x.orderNo === no);
   assert.deepEqual([inc('ABC124-T'), exc('ABC124-T').reason], [undefined, 'NO_PRICES'], 'bedelsiz telafi (işlemli) proformaya girmez');
   assert.deepEqual([inc('ABC124-T6'), exc('ABC124-T6').reason], [undefined, 'NO_PRICES'], 'bedelsiz telafi proformaya girmez');
   assert.deepEqual(inc('ABC124-T3').lines.map((l) => [l.name, l.qty, l.price, l.amount]), [
-    ['Comanda ABC124-T3 — Sticlă laminată 44.2', 2, 66.96, 133.92], ['Comanda ABC124-T3 — Prelucrare CNC', 1, 8, 8], ['Comanda ABC124-T3 — Gaură', 2, 3, 6],
+    ['Comanda ABC124-T3 — Sticlă laminată 44.2', 2, 73.96, 147.92],
   ]);
   assert.deepEqual([inc('ABC124-T3').subtotal, exc('ABC124-T3')], [147.92, undefined]);
   // Satışın farklı fiyatı (satış kademesi): müşteri belgesi müşteri fiyatıyla — yönetici sonradan 60'a güncelledi; işlemler kaynak fiyatıyla
-  assert.deepEqual(inc('ABC124-T4').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 60, 120], [1, 8, 8], [2, 3, 6]]);
+  assert.deepEqual(inc('ABC124-T4').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 67, 134]]);
   // Kaynakta müşteri fiyatı olmayan telafiyi yönetici fiyat onayında fiyatlandırdı (55)
   assert.deepEqual(inc('ABC126-T').lines.map((l) => [l.qty, l.price, l.amount]), [[2, 55, 110]]);
   // Yöneticinin farklı fiyatı (50) doğrudan müşteride: belgeye girer

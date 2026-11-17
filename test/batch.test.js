@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activeKeyOf, batchFgoLines, batchText, cleanDays, coverageOf, planOrder } from '../server/glass/batch.js';
-import { billingState, proformaLines } from '../server/glass/billing.js';
+import { billingState, glassDocLines } from '../server/glass/billing.js';
 
 const offer = (over = {}) => ({
   id: 'of1', status: 'GONDERILDI', currency: 'EUR',
@@ -16,18 +16,16 @@ const offer = (over = {}) => ({
 });
 const order = (over = {}) => ({ id: 'o1', orderNo: 'ABC001', title: 'Ușă', status: 'URETIMDE', onHold: false, offers: [offer()], fgoDocuments: [], billingBatchOrders: [], ...over });
 
-test('sipariş planı: satırlar sipariş proformasıyla aynı kuraldan; açıklama kaynak sipariş numarasıyla başlar; fabrika maliyeti yok', () => {
+test('sipariş planı: satırlar faturanın düzeninde (karar 323 — CNC ve sandık camın tutarına eklenir); açıklama kaynak sipariş numarasıyla başlar; fabrika maliyeti yok', () => {
   const p = planOrder(order(), { day: '2026-10-16' });
   assert.equal(p.reason, null);
   assert.deepEqual(p.lines.map(({ name, unit, qty, price, amount }) => ({ name, unit, qty, price, amount })), [
-    { name: 'Comanda ABC001 — Sticlă securizată 10 mm', unit: 'mp', qty: 3, price: 50, amount: 150 },
-    { name: 'Comanda ABC001 — Prelucrare CNC', unit: 'buc', qty: 3, price: 10, amount: 30 },
-    { name: 'Comanda ABC001 — Taxă ladă', unit: 'buc', qty: 1, price: 25, amount: 25 },
+    { name: 'Comanda ABC001 — Sticlă securizată 10 mm', unit: 'mp', qty: 3, price: 68.33, amount: 205 },
   ]);
   assert.equal(p.subtotal, 205);
   assert.deepEqual([p.day, p.offerId, p.currency], ['2026-10-16', 'of1', 'EUR']);
-  // Aynı hesap: sipariş proformasının satırları (ad dışında) birebir
-  assert.deepEqual(p.lines.map((l) => [l.unit, l.qty, l.price]), proformaLines(offer()).map((l) => [l.unit, l.qty, l.eur]));
+  // Aynı hesap: sipariş proformasının (ve faturanın) satırları (ad dışında) birebir
+  assert.deepEqual(p.lines.map((l) => [l.unit, l.qty, l.amount]), glassDocLines(offer(), 1, 0).map((l) => [l.unit, l.qty, l.eurTotal]));
   assert.ok(!JSON.stringify(p).includes('"30"') && !JSON.stringify(p).includes('unitPrice'), 'satış (fabrika) fiyatı kopyaya girmez');
 });
 

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import {
   CRATE_LINE, EVENTS, atOfferPrice, availableActions, isCrateLine, isSalesCrate, offerProblems, offerSubmitter, offerTotals,
 } from '../server/orders/rules.js';
-import { glassTotals, invoiceLines, proformaLines } from '../server/glass/billing.js';
+import { glassDocLines, glassTotals, invoiceLines } from '../server/glass/billing.js';
 import { offerExportData } from '../server/orders/offer-export.js';
 import { STAFF_EVENT_POLICY, eventsFor } from '../server/orders/order-view.js';
 import { formatOfferProblems } from '../server/i18n/format.js';
@@ -43,7 +43,7 @@ test('toplamlar: sandık ücreti tutara BİR kez girer, cam adedine girmez (offe
   assert.deepEqual(offerTotals(lines.filter((l) => !l.crateFee)), { metraj: 3, amount: 180, adet: 6, cnc: 1, delik: 0, crate: 2 });
 });
 
-test('belgeler: sandık parası faturada ve yükleme dökümünde camın tutarına eklenir, proformada ayrı adetli satır (ürün sahibinin kararı); iki kez sayılmaz', () => {
+test('belgeler: sandık parası faturada, proformada (karar 323) ve yükleme dökümünde camın tutarına eklenir; iki kez sayılmaz', () => {
   const offer = { lines: plain([glass(), cnc(), salesCrate(), glass({ id: 'g2', description: 'Temper', descriptionRo: 'Securizat', adet: 4, offerPrice: '20' })]) };
   const customerTotal = offerTotals(atOfferPrice(offer.lines)).amount; // 50 + 15 + 60 + 40 = 165
   assert.equal(customerTotal, 165);
@@ -54,10 +54,11 @@ test('belgeler: sandık parası faturada ve yükleme dökümünde camın tutarı
   // RON fatura satırları: aynı parçalardan (kur 5, TVA 21) — toplam tek kez
   const inv = invoiceLines(offer, 5, 21);
   assert.equal(inv.reduce((s, l) => s + l.net, 0), 825);
-  // Proforma: sandık ayrı adetli satır (Romence adıyla), CNC gibi — ürün sahibinin kararı (karar 214): proforma değişmedi
-  const pro = proformaLines(offer);
-  assert.deepEqual(pro.map((r) => [r.name, r.qty, r.eur]), [['Sticlă', 1, 50], ['Prelucrare CNC', 1, 15], [CRATE_LINE.ro, 2, 30], ['Securizat', 2, 20]]);
-  assert.equal(Math.round(pro.reduce((s, r) => s + r.qty * r.eur, 0) * 100) / 100, customerTotal);
+  // Proforma (karar 323): faturanın satırlarıyla aynı — sandık ve CNC birinci camın tutarında
+  const pro = glassDocLines(offer, 5, 21);
+  assert.deepEqual(pro.map((r) => [r.name, r.qty, r.eurTotal]), [['Sticlă', 1, 125], ['Securizat', 2, 40]]);
+  assert.deepEqual(pro.map((r) => r.net), inv.map((l) => l.net));
+  assert.equal(Math.round(pro.reduce((s, r) => s + r.eurTotal, 0) * 100) / 100, customerTotal);
 });
 
 test('teklif eksikleri: sandık parası (satışın ya da yöneticinin) bağımsız, numaralı kalem — "n. satır (Sandık parası)"', () => {

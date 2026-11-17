@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assignPieceBases, atOfferPrice, isSplitKey, offerLineTotals, offerProblems, offerTotals, pieceStartArea, sharedOpsGlasses, splitOnePiece } from '../server/orders/rules.js';
-import { glassLines, glassTotals, invoiceLines, proformaLines } from '../server/glass/billing.js';
+import { glassDocLines, glassLines, glassTotals, invoiceLines } from '../server/glass/billing.js';
+const proformaLines = (o) => glassDocLines(o, 5.0912, 21); // proforma = fatura düzeni (karar 323)
 import { itemAsLine, lineTotals, snapshotLine } from '../server/loading/confirmation.js';
 
 const glass = (extra = {}) => ({ id: 'L1', kind: 'CAM', description: 'Temper', descriptionRo: 'Securizat', enMm: 333, boyMm: 1000, adet: 5, unit: 'm2', unitPrice: '41.50', offerPrice: '66.96', free: false, ...extra });
@@ -121,7 +122,7 @@ test('proforma ve fatura: ayrılmış cam ayrı satır / parça olmaz — belgel
   // Teklifte 5'lik camdan biri ayrıldı; karşılaştırma camla ilgili olsun diye eklenen delik bedelsiz
   const after = { lines: splitWithHole(before.lines, 0, hole({ free: true, unitPrice: '0', offerPrice: '0' })) };
   assert.deepEqual(proformaLines(after), proformaLines(before));
-  assert.deepEqual(proformaLines(before).map((l) => [l.name, l.qty, l.eur]), [['Securizat', 1.67, 66.96], ['Laminat', 1.48, 77.77]]);
+  assert.deepEqual(proformaLines(before).map((l) => [l.name, l.qty, l.eurTotal]), [['Securizat', 1.67, 111.82], ['Laminat', 1.48, 115.1]]);
   assert.deepEqual(glassLines(after), glassLines(before));
   assert.deepEqual(glassTotals(after), glassTotals(before));
   for (const rate of [4.9763, 5.0912, 5.2020]) {
@@ -130,20 +131,21 @@ test('proforma ve fatura: ayrılmış cam ayrı satır / parça olmaz — belgel
   // Maliyet tarafı (satış fiyatıyla, bedelsiz dahil) da aynı
   const opts = { nameOf: (l) => l.description, priceOf: (l) => l.unitPrice, includeFree: true };
   assert.deepEqual(glassTotals(after, opts), glassTotals(before, opts));
-  // Eski hesapta (pieceBase yok) satır başına yuvarlama 1,33 + 0,33 = 1,66 m² verirdi — proformada tek satırda (P4) da öyle;
+  // Eski hesapta (pieceBase yok) satır başına yuvarlama 1,33 + 0,33 = 1,66 m² verirdi — proformada tek satırda da öyle;
   // ayırma kuralı (pieceBase) 1,67'yi korur
   assert.deepEqual(proformaLines({ lines: naive(after.lines) }).map((l) => [l.qty, l.parts.map((p) => p.qty)]), [[1.66, [1.33, 0.33]], [1.48, [1.48]]]);
   // Ücretli delik: yalnızca kendi satırı / tutarı eklenir, cam satırı aynı kalır
   const paid = { lines: splitWithHole(before.lines) };
-  assert.deepEqual(proformaLines(paid).map((l) => [l.name, l.qty, l.eur]), [['Securizat', 1.67, 66.96], ['Gaură', 2, 5], ['Laminat', 1.48, 77.77]]);
+  // Ücretli delik camın tutarına eklenir (karar 323)
+  assert.deepEqual(proformaLines(paid).map((l) => [l.name, l.qty, l.eurTotal]), [['Securizat', 1.67, 121.82], ['Laminat', 1.48, 115.1]]);
   assert.equal(glassTotals(paid)[0].total, Math.round((glassTotals(before)[0].total + 10) * 100) / 100);
   assert.equal(glassTotals(paid)[0].qty, 1.67);
   // Ayrılan cama yönetici başka müşteri fiyatı verdiyse ayrı satırdır (fiyat farklı); m² toplamı yine 1,67
   const other = { lines: after.lines.map((l, i) => (i === 1 ? { ...l, offerPrice: '70.00' } : l)) };
-  // Proforma (P4 — karar 242): aynı cam tek satır, iki fiyat parça olarak kalır; gösterilen fiyat ağırlıklı ortalama
+  // Proforma: aynı cam tek satır, iki fiyat parça olarak kalır; birim fiyat parçaların RON tutarından, 2 hane (karar 323)
   const [o0] = proformaLines(other);
-  assert.deepEqual([o0.qty, o0.averaged, o0.parts], [1.67, true, [{ qty: 1.33, eur: 66.96 }, { qty: 0.34, eur: 70 }]]);
-  assert.equal(o0.eur, Math.round(((1.33 * 66.96 + 0.34 * 70) / 1.67) * 100) / 100);
+  assert.deepEqual([o0.qty, o0.parts], [1.67, [{ qty: 1.33, price: 66.96 }, { qty: 0.34, price: 70 }]]);
+  assert.equal(o0.ron, Math.round(((Math.round(1.33 * Math.round(66.96 * 5.0912 * 100)) / 100 + Math.round(0.34 * Math.round(70 * 5.0912 * 100)) / 100) / 1.67) * 100) / 100);
 });
 
 test('onaylı yükleme: kalemler satırın sırasını (pieceBase) taşır; yüklenen m², satış ve maliyet ayrılmamış satırla aynı', () => {

@@ -190,7 +190,7 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
   let grp = await groupOf(D1, A);
   assert.deepEqual(grp.orders[0].lines.map((l) => [l.pieces, l.m2, l.amount]), [[8, 8, 420]]);
   const i1 = await invoice(D1, A, fgo);
-  assert.deepEqual([fgo.calls[0]['Continut[0][NrProduse]'], fgo.calls[0]['Continut[0][PretTotal]']], ['8', '2541.00']); // (8 × 50 + 2 × 10) × 5 × 1,21
+  assert.deepEqual([fgo.calls[0]['Continut[0][NrProduse]'], fgo.calls[0]['Continut[0][PretUnitar]']], ['8', '262.50']); // (8 × 50 + 2 × 10) × 5 = 2100 / 8 (× 1,21 = 2541,00; karar 323)
   // Kârlılık: 16.10'da yalnızca yüklenen (A: 8 cam + CNC; B: 3 cam)
   let profit = await dayProfit(D1);
   assert.deepEqual([profit.m2, profit.byCur.EUR.sale, profit.byCur.EUR.cost], [11, 570, 340]);
@@ -239,7 +239,7 @@ dbTest('10 planlı → 8 yüklendi + 2 yüklenmedi; kalan 2 ileri güne aktarıl
   assert.deepEqual(grp.orders[0].lines.map((l) => [l.pieces, l.amount]), [[1, 50]]);
   const i2 = await invoice(F1, A, fgo);
   const i3 = await invoice(F2, A, fgo);
-  assert.deepEqual(fgo.calls.map((f) => [f['Continut[0][NrProduse]'], f['Continut[0][PretTotal]']]), [['8', '2541.00'], ['1', '302.50'], ['1', '302.50']]);
+  assert.deepEqual(fgo.calls.map((f) => [f['Continut[0][NrProduse]'], f['Continut[0][PretUnitar]']]), [['8', '262.50'], ['1', '250.00'], ['1', '250.00']]);
   assert.equal(await groupOf(F2, A), null, 'aynı kapsam ikinci kez faturalanamaz');
   const after1 = await db.billingBatch.findUnique({ where: { id: i1.id }, include: { document: true, lines: { orderBy: { sortOrder: 'asc' } } } });
   const frozen = (x) => JSON.stringify([x.status, x.sourceTotal, x.ronNet, x.fxRate, x.lines, x.document.series, x.document.number, x.document.total]);

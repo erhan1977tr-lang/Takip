@@ -138,10 +138,10 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
 
   // --- FGO kalemi: açıklama = kaynak sipariş; ad, birim, miktar, fiyat, TVA, IdExtern değişmedi
   const form = fgo.calls[0];
-  assert.deepEqual(keys(form, 'Denumire'), ['6.2.6., Sticla, Gri-Transparent, securizata', 'Prelucrare CNC']);
-  assert.deepEqual(keys(form, 'Descriere'), ['Comanda UMI7', 'Comanda UMI7']);
-  assert.deepEqual([form['Continut[0][UM]'], form['Continut[0][NrProduse]'], form['Continut[0][PretUnitar]'], form['Continut[0][CotaTVA]']], ['mp', '2', '250.00', '21']);
-  assert.deepEqual([form['Continut[1][UM]'], form['Continut[1][NrProduse]'], form['Continut[1][PretUnitar]']], ['buc', '2', '50.00']);
+  // Proforma faturanın düzeninde (karar 323): CNC camın tutarında, ayrı satır yok
+  assert.deepEqual(keys(form, 'Denumire'), ['6.2.6., Sticla, Gri-Transparent, securizata']);
+  assert.deepEqual(keys(form, 'Descriere'), ['Comanda UMI7']);
+  assert.deepEqual([form['Continut[0][UM]'], form['Continut[0][NrProduse]'], form['Continut[0][PretUnitar]'], form['Continut[0][CotaTVA]']], ['mp', '2', '300.00', '21']);
   assert.deepEqual([form.IdExtern, form.Valuta, 'Numar' in form], ['UMI7-P', 'RON', false]);
   assert.match(form.Text, /^Curs BNR: 5\.0000 RON\/EUR \(data \d{2}\.\d{2}\.\d{4}\)\.$/, 'Paket C (karar 235): kur cümlesi');
   // FGO'ya e-posta gönderme isteği / alanı yok: müşterinin e-postası yalnızca müşteri kartı bilgisi olarak gider
@@ -413,9 +413,9 @@ dbTest('müşteri partisi: her kalem kendi siparişini taşır; e-postada ve mü
   const fgo = fakeFgo(500, { total: '1936.00' });
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: made.batchId })), { done: 1, failed: 0 });
   const form = fgo.calls[0];
-  // Her kalem KENDİ siparişi (o2'nin iki kalemi var: cam + CNC); bütün siparişler her kaleme yazılmaz
-  assert.deepEqual(keys(form, 'Descriere'), [o1, o2, o2, o3].map((o) => `Comanda ${o.orderNo}`));
-  assert.ok(keys(form, 'Denumire').every((name, i) => name.startsWith(`Comanda ${[o1, o2, o2, o3][i].orderNo} — `)), 'kalem adı değişmedi');
+  // Her kalem KENDİ siparişi (o2'nin CNC'si camın tutarında — karar 323); bütün siparişler her kaleme yazılmaz
+  assert.deepEqual(keys(form, 'Descriere'), [o1, o2, o3].map((o) => `Comanda ${o.orderNo}`));
+  assert.ok(keys(form, 'Denumire').every((name, i) => name.startsWith(`Comanda ${[o1, o2, o3][i].orderNo} — `)), 'kalem adı değişmedi');
   assert.deepEqual([form.IdExtern, form['Continut[0][UM]'], form['Continut[0][PretUnitar]'], form['Continut[0][CotaTVA]']], [`LOT-${made.batchId}`, 'mp', '250.00', '21']);
   const doc = await db.fgoDocument.findUnique({ where: { batchId: made.batchId } });
   assert.equal((await emails(doc.id)).length, 1);

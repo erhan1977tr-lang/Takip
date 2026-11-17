@@ -12,7 +12,7 @@ import { runOrderAction } from '../../server/orders/transitions.js';
 import { atOfferPrice, offerTotals } from '../../server/orders/rules.js';
 import { supplierData } from '../../server/accounting/supplier.js';
 import { previewLoading, summarize } from '../../server/loading/confirmation.js';
-import { invoiceLines, proformaLines } from '../../server/glass/billing.js';
+import { glassDocLines, invoiceLines } from '../../server/glass/billing.js';
 
 let db;
 let firm;
@@ -85,8 +85,8 @@ dbTest('sandık parası: fabrika maliyeti kayda 0 EUR yazılır (yeni satır, ye
   const v2 = await latest(o.id);
   assert.deepEqual(v2.lines.map(row), [['Cam', 'm2', 2, '40', '50', false], ['Sandık parası', 'adet', 1, '0', '35', true]]);
 
-  // Belge kuralları değişmedi: proformada sandık AYRI satır; nihai faturada cam tutarına eklenir (tek satır)
-  assert.deepEqual(proformaLines(v2).map((l) => [l.unit, l.qty, l.eur]), [['mp', 1, 50], ['buc', 1, 35]]);
+  // Belge kuralları: proformada da (karar 323) ve nihai faturada sandık cam tutarına eklenir (tek satır)
+  assert.deepEqual(glassDocLines(v2, 5, 21).map((l) => [l.unit, l.qty, l.eurTotal]), [['mp', 1, 85]]);
   const inv = invoiceLines(v2, 5, 21);
   assert.deepEqual([inv.length, inv[0].qty], [1, 1]);
 

@@ -144,7 +144,7 @@ dbTest('onaylı yükleme → müşteri başına TEK fatura: yalnızca LOADED kal
   const ga = groupsOf(r, abc)[0];
   assert.deepEqual(ga.orders.map((o) => o.orderNo), [a1.orderNo, a2.orderNo], 'NOT_LOADED sipariş faturaya girmez');
   // Fatura kuralı (sipariş faturasıyla aynı): yalnızca cam satırı, CNC cama eklenir; önizleme = kesilecek belge
-  assert.deepEqual(ga.orders[0].lines, [{ name: `Comanda ${a1.orderNo} — Sticla 10 mm`, pieces: 2, m2: 2, amount: 120, net: 600, gross: 726 }]);
+  assert.deepEqual(ga.orders[0].lines, [{ name: `Comanda ${a1.orderNo} — Sticla 10 mm`, pieces: 2, m2: 2, amount: 120, ron: 300, net: 600, gross: 726 }]);
   assert.deepEqual([ga.chain, ga.currency, ga.sourceTotal, ga.ronNet, ga.ronGross, ga.payable, ga.problems, ga.storno], [null, 'EUR', 220, 1100, 1331, 1331, [], []]);
   assert.deepEqual([ga.fx.policy, ga.fx.finalRate, ga.fx.source], ['BNR', '5.0000', 'BNR'], 'doğrudan fatura: kur müşterinin kur politikasından');
   assert.ok(!/unitCost|costAmount|unitPrice/.test(JSON.stringify(r)), 'fabrika maliyeti önizlemede yok');
@@ -174,7 +174,7 @@ dbTest('onaylı yükleme → müşteri başına TEK fatura: yalnızca LOADED kal
   // Nihai fatura (karar 252): ad önekinde sipariş numarası yok; karar 322: her cam kaleminin açıklamasında kendi siparişi
   assert.deepEqual(names(f), ['Sticla 10 mm', 'Sticla 10 mm']);
   assert.deepEqual([f['Continut[0][Descriere]'], f['Continut[1][Descriere]']], [`Comanda ${a1.orderNo}`, `Comanda ${a2.orderNo}`]);
-  assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][UM]'], f['Continut[0][PretTotal]'], f['Continut[1][PretTotal]']], ['2', 'mp', '726.00', '605.00']);
+  assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][UM]'], f['Continut[0][PretUnitar]'], f['Continut[1][PretUnitar]']], ['2', 'mp', '300.00', '250.00']);
   // Karar 252: faturanın alt metni YALNIZCA belgenin kendi kur cümlesi (kayıtlı kur; sipariş / yükleme açıklaması yok)
   assert.match(f.Text, /^Curs BNR: 5\.0000 RON\/EUR \(data \d{2}\.\d{2}\.\d{4}\)\.$/);
   assert.ok(!('Numar' in f), 'numarayı FGO verir');
@@ -213,11 +213,11 @@ dbTest('kısmi yükleme: 10 adedin 8\'i yüklendiyse yalnızca 8 faturalanır; k
   await db.offerLine.updateMany({ where: { offer: { orderId: o.id } }, data: { offerPrice: '99', adet: 3, descriptionRo: 'ALTCEVA' } });
   await db.order.update({ where: { id: o.id }, data: { estimatedShipDate: noon(30) } });
   const g1 = groupsOf(await billing(d1), c)[0];
-  assert.deepEqual(g1.orders[0].lines, [{ name: `Comanda ${o.orderNo} — Sticla 10 mm`, pieces: 8, m2: 8, amount: 400, net: 2000, gross: 2420 }]);
+  assert.deepEqual(g1.orders[0].lines, [{ name: `Comanda ${o.orderNo} — Sticla 10 mm`, pieces: 8, m2: 8, amount: 400, ron: 250, net: 2000, gross: 2420 }]);
   const r1 = await createInvoice(d1, g1);
   const fgo = fakeFgo(200);
   await b.dispatchBatchJobs(db, ctx(fgo));
-  assert.deepEqual([fgo.calls[0]['Continut[0][NrProduse]'], fgo.calls[0]['Continut[0][PretTotal]']], ['8', '2420.00']);
+  assert.deepEqual([fgo.calls[0]['Continut[0][NrProduse]'], fgo.calls[0]['Continut[0][PretUnitar]']], ['8', '250.00']);
 
   // Kalan 2 adet sonra yüklenir: yeni onay → yeni fatura, yalnızca 2 adet (ilk 8 yeniden faturalanmaz)
   await db.offerLine.updateMany({ where: { offer: { orderId: o.id } }, data: { offerPrice: '50', adet: 2, descriptionRo: 'Sticlă securizată 10 mm' } });
@@ -285,7 +285,7 @@ dbTest('müşteri proforması zinciri: yalnızca onaylanan kapsam faturalanır; 
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: i1.batchId }));
   const f1 = fgo.calls[2];
   assert.deepEqual(names(f1), ['Sticla 10 mm', 'Stornare avans conform factură GKH302']);
-  assert.deepEqual([f1['Continut[0][PretTotal]'], f1['Continut[1][NrProduse]'], f1['Continut[1][PretUnitar]']], ['605.00', '-1', '495.87']);
+  assert.deepEqual([f1['Continut[0][PretUnitar]'], f1['Continut[1][NrProduse]'], f1['Continut[1][PretUnitar]']], ['250.00', '-1', '495.87']);
   assert.ok(![c2.orderNo, c3.orderNo].some((x) => JSON.stringify(f1).includes(x)), 'proformanın kalan kapsamı bu faturada yok');
   const I1 = await batchOf(i1.batchId);
   assert.deepEqual([I1.parentId, I1.fxRate.toString(), I1.fxResolvedAt.toISOString(), I1.fxSourceDate.toISOString()], [pr.batchId, P.fxRate.toString(), P.fxResolvedAt.toISOString(), P.fxSourceDate.toISOString()], 'zincirin kur kaydı yeniden kullanılır');
@@ -359,8 +359,8 @@ dbTest('uyumsuz kapsam tek faturada birleştirilmez: farklı para birimi ve fark
   await b.dispatchBatchJobs(db, ctx(fgo));
   assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, kind: 'INVOICE' } }), 4);
   assert.equal(await db.billingBatch.count({ where: { confirmationId: conf.id, kind: 'INVOICE', chainOrderId: own.id } }), 1);
-  const totals = fgo.calls.slice(1).map((f) => f['Continut[0][PretTotal]']).sort();
-  assert.deepEqual(totals, ['121.00', '592.90', '605.00', '617.10'], 'RON 100 · EUR 100 × 4,9 · EUR 100 × 5,0 · EUR 100 × 5,1 (TVA dahil)');
+  const totals = fgo.calls.slice(1).map((f) => f['Continut[0][PretUnitar]']).sort();
+  assert.deepEqual(totals, ['245.00', '250.00', '255.00', '50.00'], '2 m²: RON 100 · EUR 100 × 4,9 · EUR 100 × 5,0 · EUR 100 × 5,1 (TVA hariç birim fiyat, 2 hane — karar 323)');
 });
 
 dbTest('kesilemeyen fatura kapsamı tutar ve yeniden denenir; vazgeçilirse ya da fatura FGO\'da silinirse yalnızca belge durumu geri alınır — yükleme onayı değişmez', async () => {
@@ -568,7 +568,7 @@ dbTest('doğrudan faturada elle kur: partiye MANUAL olarak kaydedilir, fatura ta
   const fgo = fakeFgo(800);
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r.batchId, bnrImpl: never('BNR') })), { done: 1, failed: 0 });
   const f = fgo.calls[0];
-  assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][PretTotal]'], f.Valuta], ['2', '635.25', 'RON']);
+  assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][PretUnitar]'], f.Valuta], ['2', '262.50', 'RON']);
   // Karar 252: nihai faturanın alt metni yalnızca kayıtlı (elle) kurun cümlesi
   assert.match(f.Text, /^Curs de schimb aplicat: 5\.2500 RON\/EUR\.$/, 'Paket C (karar 235): belgenin kayıtlı elle kuru yazılır');
   assert.doesNotMatch(f.Text, /%/, 'yüzde hiçbir yerde yazmaz');
@@ -690,7 +690,7 @@ dbTest('sipariş seçimi — proforma: uygun siparişlerden seçilenlerle TEK be
   assert.equal(r2.ok, true);
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r2.batchId }));
   assert.equal(fgo.calls.length, 2);
-  assert.deepEqual(names(fgo.calls[1]), [`Comanda ${s2.orderNo} — Sticlă securizată 10 mm`, `Comanda ${s2.orderNo} — Prelucrare CNC`]);
+  assert.deepEqual(names(fgo.calls[1]), [`Comanda ${s2.orderNo} — Sticlă securizată 10 mm`], 'proforma faturanın düzeninde: CNC camın tutarında (karar 323)');
   assert.deepEqual((await batchOf(r2.batchId)).loadingDays.map((x) => x.toISOString().slice(0, 10)), [dayKey(d1)]);
   assert.equal(await db.billingBatchOrder.count({ where: { orderId: { in: [s1.id, s2.id, s3.id] }, activeKey: { not: null } } }), 3, 'her sipariş tek bir etkin partide');
 }));
@@ -731,7 +731,7 @@ dbTest('sipariş seçimi — fatura: onaylı yüklemenin uygun siparişlerinden 
   const fgo = fakeFgo(1200);
   await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: r1.batchId }));
   assert.deepEqual(names(fgo.calls[0]), ['Sticla 10 mm', 'Sticla 10 mm']);
-  assert.deepEqual([fgo.calls[0]['Continut[1][NrProduse]'], fgo.calls[0]['Continut[1][PretTotal]'], fgo.calls[0].IdExtern], ['8', '2420.00', `LOT-${r1.batchId}`]);
+  assert.deepEqual([fgo.calls[0]['Continut[1][NrProduse]'], fgo.calls[0]['Continut[1][PretUnitar]'], fgo.calls[0].IdExtern], ['8', '250.00', `LOT-${r1.batchId}`]);
   assert.ok(![o2, ron].some((o) => JSON.stringify(fgo.calls[0]).includes(o.orderNo)));
   const b1 = await batchOf(r1.batchId);
   assert.deepEqual([b1.orders.map(no), b1.orders.map((o) => o.activeKey), b1.uniqueKey, b1.confirmationId, b1.status],

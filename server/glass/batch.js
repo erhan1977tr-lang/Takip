@@ -29,11 +29,11 @@ import { loadedDays } from '../loading/confirmation.js';
 import { bnrRate } from '../fx/bnr.js';
 import { FxUnavailable, fxSnapshot, resolveExchangeRate } from '../fx/resolve.js';
 import {
-  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, grossOf, missingBilling, orderDetail, reserveInvoiceNumber, ronPrice, uncertainEmit,
+  FgoError, afterInvoiceIssued, dailyLimitReached, emitereForm, fgoEmit, fgoKey, fgoReady, fgoStatus, getFgoSettings, missingBilling, orderDetail, reserveInvoiceNumber, uncertainEmit,
 } from '../integrations/fgo.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { dayDate, localDay, localDayStart } from '../profile/dates.js';
-import { GLASS_FGO, glassDocText, proformaAmount, proformaFgoLines, proformaLines, sentOffer } from './billing.js';
+import { GLASS_FGO, glassDocLines, glassDocText, ronGroup, sentOffer } from './billing.js';
 import { queueDocEmail } from '../documents/delivery.js';
 import { centsText, toCents } from '../finance/payments.js';
 import { linkCoveredPayments } from '../finance/service.js';
@@ -108,9 +108,11 @@ export function planOrder(order, { day, loaded = false, pendingOrderJob = false 
   if (offer.currency !== 'EUR' && offer.currency !== 'RON') return no('CURRENCY');
   // Müşteri fiyatı: bedelsiz olmayan her satırda olmalı (eksik fiyatlı teklif belgeye yarım girmez)
   if (offer.lines.some((l) => !l.free && l.offerPrice == null)) return no('NO_PRICES');
-  // Aynı teknik cam sipariş içinde tek satır (P4 — karar 242); tutar parça parça (ortalama fiyattan değil)
-  const lines = proformaLines(offer).map((l) => ({
-    name: `Comanda ${order.orderNo} — ${l.name}`.slice(0, 250), unit: l.unit, qty: l.qty, price: l.eur, amount: proformaAmount(l), averaged: l.averaged, parts: l.parts,
+  // Faturanın düzeni (karar 323): aynı cam tek satır, CNC / delik / diğer kalemler camın tutarına eklenir. RON tutarı kur
+  // belli olunca parçalardan hesaplanır (ronGroup); price yalnızca gösterim (kaynak tutar / m²), averaged: birden çok fiyat
+  const lines = glassDocLines(offer, 1, 0).map((l) => ({
+    name: `Comanda ${order.orderNo} — ${l.name}`.slice(0, 250), unit: l.unit, qty: l.qty, price: round2(l.eurTotal / l.qty), amount: l.eurTotal,
+    averaged: l.parts.some((p) => p.price !== l.parts[0].price), parts: l.parts.map((p) => ({ qty: p.qty, eur: p.price })),
   }));
   if (lines.length === 0) return no('NO_PRICES');
   return { ...out, lines, subtotal: round2(lines.reduce((s, l) => s + l.amount, 0)) };
@@ -262,13 +264,11 @@ export async function previewBatch(db, { customerId, days, orderIds = null, now 
   if (fx && currencies.length === 1) {
     vatRate ??= (await getFgoSettings(db)).vatRate;
     ronNet = 0; ronGross = 0;
-    // Birleşmiş cam satırı parça parça (FGO'ya PretTotal — proformaFgoLines); diğerleri adet × round2(fiyat × kur)
+    // FGO'nun hesabıyla (karar 323): satır = m² × 2 haneli RON birim fiyat (ronGroup), TVA satır başına
     for (const l of included.flatMap((o) => o.lines)) {
-      for (const p of l.parts?.length ? l.parts : [{ qty: l.qty, eur: l.price }]) {
-        const n = round2(p.qty * ronPrice(p.eur, fx.rate));
-        ronNet = round2(ronNet + n);
-        ronGross = round2(ronGross + grossOf(n, vatRate));
-      }
+      const r = ronGroup(l.parts, l.qty, fx.rate, vatRate);
+      ronNet = round2(ronNet + r.net);
+      ronGross = round2(ronGross + r.gross);
     }
   }
   const byDay = selected.map((day) => ({ day, orders: orders.filter((o) => o.day === day) }));
@@ -324,13 +324,13 @@ export async function createBatch(db, { customerId, days, orderIds = null, key, 
             })),
           },
           lines: {
-            // Birleşmiş cam satırı (birden çok parça): RON TVA hariç / dahil toplamı partinin kuruyla bir kez yazılır; işçi FGO'ya
-            // PretTotal gönderir (batchFgoLines → ronGross). Tek parçalı satır eskisi gibi birim fiyatla.
+            // RON birim fiyat (2 hane), TVA hariç / dahil tutar partinin kuruyla bir kez yazılır (karar 323); işçi FGO'ya
+            // birim fiyatla gönderir (batchFgoLines → ronUnit → PretUnitar)
             create: p.included.flatMap((o) => o.lines.map((l) => {
-              const ron = (l.parts?.length ?? 0) > 1 ? proformaFgoLines([{ code: '', name: l.name, unit: l.unit, qty: l.qty, eur: l.price, parts: l.parts }], p.fx.rate, settings.vatRate)[0] : null;
+              const ron = ronGroup(l.parts, l.qty, p.fx.rate, settings.vatRate);
               return {
                 orderId: o.orderId, name: l.name, unit: l.unit, quantity: String(l.qty), unitPrice: l.price.toFixed(2), amount: l.amount.toFixed(2),
-                ...(ron ? { ronNet: ron.net.toFixed(2), ronGross: ron.gross.toFixed(2) } : {}),
+                ronUnit: ron.ron.toFixed(2), ronNet: ron.net.toFixed(2), ronGross: ron.gross.toFixed(2),
               };
             }))
               .map((l, i) => ({ ...l, sortOrder: i })),

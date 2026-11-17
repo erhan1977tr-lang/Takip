@@ -56,7 +56,7 @@ const bnr = (rate) => async () => ({ ok: true, rate, date: dayOf(0), url: 'https
 const ctx = (fgo, extra = {}) => ({ secret: SECRET, appUrl: 'https://t', timeZone: TZ, fetchImpl: fgo.fetchImpl, sleep: async () => {}, bnrImpl: bnr('5.0000'), ...extra });
 const lines = (form) => {
   const out = [];
-  for (let i = 0; form[`Continut[${i}][Denumire]`] != null; i++) out.push([form[`Continut[${i}][Denumire]`], form[`Continut[${i}][PretTotal]`] ?? null, form[`Continut[${i}][NrProduse]`]]);
+  for (let i = 0; form[`Continut[${i}][Denumire]`] != null; i++) out.push([form[`Continut[${i}][Denumire]`], form[`Continut[${i}][PretTotal]`] ?? null, form[`Continut[${i}][NrProduse]`], form[`Continut[${i}][PretUnitar]`] ?? null]);
   return out;
 };
 
@@ -170,7 +170,9 @@ dbTest('onay yoksa fatura yok (tarih + 2 gün kuralı yok); onaylı yükleme + s
   assert.equal(lines(form).length, 1);
   // Nihai fatura (karar 252): kalem adında sipariş numarası yok
   assert.ok(lines(form)[0][0].length > 0 && !lines(form)[0][0].includes('Comanda'), lines(form)[0][0]);
-  assert.equal(lines(form)[0][1], '605.00');
+  // Birim fiyat 2 hane (karar 323): PretUnitar; adet × birim × 1,21 = 605,00
+  assert.equal(lines(form)[0][1], null);
+  assert.equal(Math.round(Number(lines(form)[0][2]) * Number(lines(form)[0][3]) * 1.21 * 100) / 100, 605);
   // Proformanın ödeme kaydı faturayla değişmez
   const pf2 = await db.fgoDocument.findUnique({ where: { id: pf.id } });
   assert.deepEqual([String(pf2.paid ?? 0), String(pf2.total)], [String(pf.paid ?? 0), String(pf.total)]);

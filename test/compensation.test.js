@@ -11,7 +11,8 @@ import {
 } from '../server/orders/compensation.js';
 import { removeOrder, restoreOrder } from '../server/orders/removal.js';
 import { EVENTS, atOfferPrice, maskName, offerTotals } from '../server/orders/rules.js';
-import { invoiceLines, proformaLines } from '../server/glass/billing.js';
+import { glassDocLines, invoiceLines } from '../server/glass/billing.js';
+const proformaLines = (o) => glassDocLines(o, 5, 21); // proforma = fatura düzeni (karar 323)
 import { renderInApp } from '../server/notifications/inapp.js';
 
 const glass = (extra = {}) => ({ id: 'g1', kind: 'CAM', unit: 'm2', description: 'Temper Lamine 44.2', descriptionRo: 'Sticlă laminată 44.2', enMm: 1000, boyMm: 2000, adet: 10, unitPrice: '30', offerPrice: '66.96', listPrice: '30', weightKgM2: '20.8', glassProductId: 'p1', free: false, sortOrder: 0, ...extra });
@@ -185,9 +186,9 @@ test('belgeler: bedelsiz telafi belgeye girmez; aynı / farklı fiyatta işlemle
   // BEDELSİZ: hiçbir satır yok — belgeye yazılacak bir şey kalmaz
   assert.deepEqual(proformaLines(offerOf('FREE')), []);
   assert.deepEqual(invoiceLines(offerOf('FREE'), 5, 21), []);
-  // AYNI FİYAT / FARKLI FİYAT: kaynağın kendi satırları gibi — proformada cam + CNC + delik; faturada işlemler cam satırına eklenir
+  // AYNI FİYAT / FARKLI FİYAT: kaynağın kendi satırları gibi — proformada ve faturada işlemler cam satırına eklenir (karar 323)
   for (const [o, eur] of [[offerOf('NORMAL'), 66.96], [offerOf('CUSTOM', false, '35'), 66.96], [offerOf('CUSTOM', true, '50'), 50]]) {
-    assert.deepEqual(proformaLines(o).map((r) => [r.unit, r.qty, r.eur]), [['mp', 2, eur], ['buc', 1, 8], ['buc', 2, 3]]);
+    assert.deepEqual(proformaLines(o).map((r) => [r.unit, r.qty, r.eurTotal]), [['mp', 2, Math.round((2 * eur + 8 + 6) * 100) / 100]]);
     const inv = invoiceLines(o, 5, 21);
     assert.deepEqual([inv.length, inv[0].qty], [1, 2]);
   }

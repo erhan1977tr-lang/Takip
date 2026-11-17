@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.23 — 17.11.2026
+
+**Cam proforma ve faturada birim fiyat 2 hane** (ürün sahibi, 17.11.2026; karar 323):
+
+- FGO'ya giden cam proforması (sipariş ve müşteri proforması) ve nihai fatura satırlarında birim fiyat (Pret unitar)
+  virgülden sonra 2 hanedir; satırlar artık TVA dahil toplamla (PretTotal) değil, birim fiyatla gider.
+- Proforma faturanın düzeniyle kesilir: aynı cam tek satır; CNC, delik ve sandık bedeli camın satırına katılır.
+  Böylece aynı kapsam için proforma ile fatura tutarı kuruşu kuruşuna aynıdır.
+- Avans faturası, profil belgeleri, TVA, kur, numara ve kesilmiş belgeler değişmedi.
+
 ## 4.2.22 — 17.11.2026
 
 **Nihai faturada cam kaleminin altında sipariş numarası** (ürün sahibi, 17.11.2026; karar 322):
