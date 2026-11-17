@@ -171,9 +171,9 @@ dbTest('onaylı yükleme → müşteri başına TEK fatura: yalnızca LOADED kal
   assert.equal(fgo.calls.length, 1, 'tek FGO faturası');
   const f = fgo.calls[0];
   assert.deepEqual([f.Serie, f.Valuta, f.IdExtern, f.TipFactura], ['GKH', 'RON', `LOT-${batchId}`, 'Factura']);
-  // Nihai fatura (karar 252): kalemde sipariş numarası yok — ad önekinde de açıklamada da
+  // Nihai fatura (karar 252): ad önekinde sipariş numarası yok; karar 322: her cam kaleminin açıklamasında kendi siparişi
   assert.deepEqual(names(f), ['Sticla 10 mm', 'Sticla 10 mm']);
-  assert.ok(!Object.keys(f).some((k) => /Descriere/.test(k)), 'faturada kalem açıklaması (Comanda …) yok');
+  assert.deepEqual([f['Continut[0][Descriere]'], f['Continut[1][Descriere]']], [`Comanda ${a1.orderNo}`, `Comanda ${a2.orderNo}`]);
   assert.deepEqual([f['Continut[0][NrProduse]'], f['Continut[0][UM]'], f['Continut[0][PretTotal]'], f['Continut[1][PretTotal]']], ['2', 'mp', '726.00', '605.00']);
   // Karar 252: faturanın alt metni YALNIZCA belgenin kendi kur cümlesi (kayıtlı kur; sipariş / yükleme açıklaması yok)
   assert.match(f.Text, /^Curs BNR: 5\.0000 RON\/EUR \(data \d{2}\.\d{2}\.\d{4}\)\.$/);

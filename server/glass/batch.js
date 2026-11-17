@@ -399,14 +399,15 @@ export async function reviewFailedBatch(db, { batchId, action, actor, now = new 
  * Kalemin FGO açıklaması (Continut[Descriere], karar 111): satırın KENDİ kaynak siparişi ("Comanda UMI7") — partinin
  * kayıtlı sipariş listesinden; bütün siparişler her kaleme yazılmaz. Tek siparişe ait olmayan satırda (müşteri
  * proformasının avansı, avans düşümü) açıklama yoktur.
- * NİHAİ FATURA (karar 252): kalemde sipariş numarası YOKTUR — ne ürün adının başında ("Comanda X — " öneki, kayıtta
- * durur ama FGO'ya gitmez) ne de açıklamada; satırda yalnızca cam / ürün adı. Proforma ve avans değişmez. Tutar, miktar,
- * birim ve TVA aynıdır.
+ * NİHAİ FATURA (karar 252): ürün adının başında sipariş numarası YOKTUR ("Comanda X — " öneki, kayıtta durur ama
+ * FGO'ya gitmez); satırda yalnızca cam / ürün adı. 4.2.22 (karar 322): her cam kaleminin açıklamasına (Descriere,
+ * "detalii articol") proforma ve avanstaki gibi kendi siparişi yazılır ("Comanda UMI7"); avans düşümü (eksi) satırında yoktur.
+ * Tutar, miktar, birim ve TVA aynıdır.
  */
 export const batchFgoLines = (batch) => batch.lines.map((l) => {
   const orderNo = l.orderId ? batch.orders.find((o) => o.orderId === l.orderId)?.orderNo ?? null : null;
   const invoice = batch.kind === 'INVOICE';
-  const base = { code: '', name: invoice ? invoiceLineName(l.name, orderNo) : l.name, unit: l.unit, qty: Number(l.quantity), ...(orderNo && !invoice ? { detail: orderDetail(orderNo) } : {}) };
+  const base = { code: '', name: invoice ? invoiceLineName(l.name, orderNo) : l.name, unit: l.unit, qty: Number(l.quantity), ...(orderNo && (!invoice || Number(l.quantity) > 0) ? { detail: orderDetail(orderNo) } : {}) };
   if (l.ronUnit != null) return { ...base, ron: Number(l.ronUnit) };
   if (l.ronGross != null) return { ...base, net: Number(l.ronNet), gross: Number(l.ronGross) };
   return { ...base, eur: Number(l.unitPrice) };

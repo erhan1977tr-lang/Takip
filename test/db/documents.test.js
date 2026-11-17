@@ -472,9 +472,15 @@ dbTest('müşteri kendi proforma, avans faturası ve faturasını görür; ödem
   // Onaylı yükleme → nihai fatura yükleme gününden, siparişin zincirinde (karar 239); proforma "faturalandı"
   const fin = await issueFinal(o, fgo);
   assert.deepEqual([fin.done, fin.failed], [1, 0]);
-  // Nihai fatura (karar 252): kalemlerde sipariş numarası yok (açıklama da ad öneki de)
-  assert.deepEqual(keys(fgo.calls[2], 'Descriere'), [], 'faturada kalem açıklaması yok');
+  // Nihai fatura (karar 252): kalem adında sipariş numarası yok; karar 322: cam kaleminin açıklamasında kendi siparişi,
+  // avans düşümü (eksi) satırında açıklama yok
   assert.ok(!keys(fgo.calls[2], 'Denumire').some((n) => n.includes('Comanda')));
+  const finLines = Object.keys(fgo.calls[2]).filter((k) => /^Continut\[\d+\]\[Denumire\]$/.test(k)).map((k) => k.match(/\d+/)[0]);
+  assert.ok(finLines.length >= 2);
+  for (const i of finLines) {
+    const storno = fgo.calls[2][`Continut[${i}][Denumire]`].startsWith('Stornare avans');
+    assert.equal(fgo.calls[2][`Continut[${i}][Descriere]`], storno ? undefined : `Comanda ${o.orderNo}`, fgo.calls[2][`Continut[${i}][Denumire]`]);
+  }
   const invDoc = await finalDocOf(fin.batchId);
   await db.fgoDocument.update({ where: { id: invDoc.id }, data: { total: '305.00', paid: '0' } });
   assert.deepEqual((await view()).sort(), [['ADVANCE', 'GKH602', 'PAID'], ['INVOICE', 'GKH603', 'UNPAID'], ['PROFORMA', 'PRF601', 'REPLACED']]);
