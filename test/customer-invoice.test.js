@@ -107,7 +107,7 @@ test('belge açıklaması: kaynak siparişler; faturada onaylı yükleme günü,
   for (const kind of ['INVOICE', 'ADVANCE', 'PROFORMA']) assert.doesNotMatch(batchText({ kind, orders, confirmation: { shipDay: day }, loadingDays: [day] }), /curs|RON|%/i);
 });
 
-test('nihai fatura (karar 252): kalemde sipariş numarası yok (ad öneki ve açıklama); alt metin yalnızca kayıtlı kurun cümlesi; proforma değişmez', () => {
+test('nihai fatura (karar 252, 322): ad önekinde sipariş yok, cam kaleminin açıklamasında kendi siparişi; avans düşümünde yok; alt metin yalnızca kayıtlı kurun cümlesi; proforma değişmez', () => {
   const orders = [{ orderId: 'o1', orderNo: 'ACU1' }, { orderId: 'o2', orderNo: 'ACU2' }];
   const day = new Date('2026-10-05T00:00:00Z');
   const lines = [
@@ -118,7 +118,7 @@ test('nihai fatura (karar 252): kalemde sipariş numarası yok (ad öneki ve aç
   const fx = { currency: 'EUR', fxRate: '6.0000', fxSource: 'MANUAL', fxPolicy: 'BT_UNIT_SELL', fxDate: day, fxSourceDate: day };
   const invoice = { kind: 'INVOICE', orders, lines, confirmation: { shipDay: day }, loadingDays: [day], ...fx };
   const inv = batchFgoLines(invoice);
-  assert.deepEqual(inv.map((l) => [l.name, l.detail ?? null, l.qty]), [['Sticla 8.3.8. GRI+GRI', null, 295.41], ['Sticla 10 mm', null, 2], ['Stornare avans conform factură GKH699', null, -1]]);
+  assert.deepEqual(inv.map((l) => [l.name, l.detail ?? null, l.qty]), [['Sticla 8.3.8. GRI+GRI', 'Comanda ACU1', 295.41], ['Sticla 10 mm', 'Comanda ACU2', 2], ['Stornare avans conform factură GKH699', null, -1]]);
   // Tutarlar, birim ve miktar aynen
   assert.deepEqual([inv[0].net, inv[0].gross, inv[1].gross, inv[2].ron], [127617.1, 154416.69, 726, 44972.47]);
   // Alt metin: yalnızca uygulanan kur — kayıtlı kurla (sabit değer değil); sipariş / yükleme açıklaması yok
@@ -130,8 +130,11 @@ test('nihai fatura (karar 252): kalemde sipariş numarası yok (ad öneki ve aç
   const settings = { cui: '1', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
   const f = emitereForm({ settings, key: 'K', kind: 'invoice', orderNo: 'ACU1, ACU2', appUrl: '', customer: { name: 'Acu' }, lines: inv, rate: 6, extern: 'LOT-b1', text: batchDocText(invoice), rateNote: false });
   assert.equal(f.Text, 'Curs de schimb aplicat: 6.0000 RON/EUR.');
-  assert.ok(!Object.entries(f).some(([k, v]) => k.startsWith('Continut') && /Comanda/.test(String(v))), 'faturanın hiçbir kaleminde "Comanda" yok');
-  assert.ok(!Object.keys(f).some((k) => /Descriere/.test(k)));
+  // Ürün adında sipariş yok; sipariş yalnızca cam kaleminin açıklamasında (Descriere — "detalii articol")
+  assert.ok(!Object.entries(f).some(([k, v]) => /\[Denumire\]$/.test(k) && /Comanda/.test(String(v))), 'kalem adında "Comanda" yok');
+  assert.deepEqual([f['Continut[0][Descriere]'], f['Continut[1][Descriere]'], f['Continut[2][Descriere]']], ['Comanda ACU1', 'Comanda ACU2', undefined]);
+  // Tutar alanları değişmez
+  assert.deepEqual([f['Continut[0][PretTotal]'], f['Continut[1][PretTotal]'], f['Continut[2][PretUnitar]'], f['Continut[2][NrProduse]']], ['154416.69', '726.00', '44972.47', '-1']);
   // Proforma ve avans değişmez: kalem adı kayıttaki gibi, açıklamada kendi siparişi; metinde siparişler + günler + kur
   const proforma = { ...invoice, kind: 'PROFORMA', lines: lines.slice(0, 2).map((l) => ({ ...l, ronNet: null, ronGross: null, unitPrice: '50.00' })) };
   assert.deepEqual(batchFgoLines(proforma).map((l) => [l.name, l.detail]), [['Comanda ACU1 — Sticla 8.3.8. GRI+GRI', 'Comanda ACU1'], ['Comanda ACU2 — Sticla 10 mm', 'Comanda ACU2']]);

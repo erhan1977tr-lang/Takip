@@ -1,7 +1,8 @@
 // Cam siparişi FGO belge akışı — saf kurallar.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { billingState, glassLines, invoiceLines, netOf, orderChain, proformaFgoLines, proformaLines, renderDocEmail } from '../server/glass/billing.js';
+import { billingState, fgoUnitLine, glassDocLines, glassLines, invoiceLines, netOf, orderChain, renderDocEmail, ronGroup } from '../server/glass/billing.js';
+import { emitereForm } from '../server/integrations/fgo.js';
 import { grossOf, ronPrice } from '../server/integrations/fgo.js';
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -26,7 +27,7 @@ test('belge satırları: yalnızca cam (Romence nitelik, ölçü/adet yok); CNC 
   assert.equal(netOf(1210, 21), 1000);
 });
 
-test('fatura RON satırları: eklenen kalemler TVA hariç; genel toplam proformayla kuruşu kuruşuna aynı (karar 63)', () => {
+test('belge RON satırları (karar 323): birim fiyat 2 hane; proforma faturanın düzeninde; iki belge kuruşu kuruşuna aynı', () => {
   const offer = { lines: [
     { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1235, boyMm: 1000, adet: 1, offerPrice: '47.3' },
     { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 3, offerPrice: '12.7' },
@@ -38,32 +39,28 @@ test('fatura RON satırları: eklenen kalemler TVA hariç; genel toplam proforma
   const inv = invoiceLines(offer, rate, 21);
   assert.deepEqual(inv.map((l) => [l.name, l.unit, l.qty]), [['Securizat 8 mm', 'mp', 2.13], ['Laminat 44.2', 'mp', 0.78]]);
   assert.ok(!inv.some((l) => /CNC|Gaură/.test(l.name)), 'faturada yalnızca cam');
-  // Proforma (P4 — karar 242): aynı cam tek satır (iki parça → TVA hariç / dahil toplamla); CNC ve delik ayrı satır
-  const fgo = proformaFgoLines(proformaLines(offer), rate, 21);
-  assert.deepEqual(fgo.map((l) => l.name), ['Securizat 8 mm', 'Prelucrare CNC', 'Gaură', 'Laminat 44.2']);
-  const pf = fgo.map((l) => (l.net != null ? l.net : round2(l.qty * ronPrice(l.eur, rate))));
-  const pg = fgo.map((l, i) => (l.gross != null ? l.gross : grossOf(pf[i], 21)));
-  const sum = (xs) => round2(xs.reduce((s, x) => s + x, 0));
-  assert.equal(sum(inv.map((l) => l.net)), sum(pf), 'TVA hariç toplam = proforma');
-  assert.equal(sum(inv.map((l) => l.gross)), sum(pg), 'TVA dahil toplam = proforma');
-  // CNC/delik cama TVA hariç eklenir: Securizat = iki cam (proformanın birleşik satırı) + 3 CNC + 7 delik
-  assert.equal(inv[0].net, sum([pf[0], pf[1], pf[2]]));
+  // Proforma: aynı satırlar (CNC ve delik camın tutarında), aynı birim fiyat ve tutar
+  const pro = glassDocLines(offer, rate, 21);
+  assert.deepEqual(pro.map((l) => [l.name, l.qty, l.ron, l.net, l.gross]), inv.map((l) => [l.name, l.qty, l.ron, l.net, l.gross]));
+  // Birim fiyat: grubun kesin tutarı / m², 2 haneye yuvarlanmış; satır tutarı FGO'nun hesabı (m² × birim fiyat)
+  const exact = round2(round2(2.13 * ronPrice(47.3, rate)) + round2(3 * ronPrice(12.7, rate)) + round2(7 * ronPrice(1.33, rate)));
+  assert.equal(inv[0].ron, round2(exact / 2.13));
+  assert.equal(inv[0].net, round2(2.13 * inv[0].ron));
+  assert.equal(inv[0].gross, grossOf(inv[0].net, 21));
+  for (const l of inv) assert.equal(Number(l.ron.toFixed(2)), l.ron, '2 hane');
+  // FGO'ya PretUnitar (2 hane) gider, PretTotal gitmez — proforma ve fatura aynı
+  const settings = { cui: '1', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 };
+  for (const [kind, rows] of [['proforma', pro], ['invoice', inv]]) {
+    const f = emitereForm({ settings, key: 'K', kind, orderNo: 'X1', appUrl: '', customer: { name: 'X SRL' }, rate, lines: rows.map(fgoUnitLine) });
+    assert.deepEqual([f['Continut[0][PretUnitar]'], f['Continut[0][PretTotal]'], f['Continut[1][PretUnitar]']], [inv[0].ron.toFixed(2), undefined, inv[1].ron.toFixed(2)], kind);
+  }
 });
 
-test('proforma satırları ayrıntılı: cam (nitelik, m²), CNC ve delik ayrı satırlarda; ölçü/adet adda yok', () => {
-  const lines = proformaLines({ lines: [
-    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 2000, adet: 2, offerPrice: '50' },
-    { kind: 'CNC', unit: 'adet', description: 'CNC', adet: 3, offerPrice: '10' },
-    { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 4, offerPrice: '2', free: true },
-    { kind: 'DELIK', unit: 'adet', description: 'Delik', adet: 2, offerPrice: '2.5' },
-    { kind: 'CAM', unit: 'm2', description: 'Temper', descriptionRo: 'Securizat 8 mm', enMm: 1000, boyMm: 1000, adet: 1, offerPrice: '50' },
-  ] });
-  // Aynı teknik cam tek satır (P4 — karar 242); CNC ve delik ayrı satırlar, birbirleriyle de birleşmez
-  assert.deepEqual(lines, [
-    { code: '', name: 'Securizat 8 mm', unit: 'mp', qty: 5, eur: 50, averaged: false, parts: [{ qty: 4, eur: 50 }, { qty: 1, eur: 50 }] },
-    { code: '', name: 'Prelucrare CNC', unit: 'buc', qty: 3, eur: 10, averaged: false, parts: [{ qty: 3, eur: 10 }] },
-    { code: '', name: 'Gaură', unit: 'buc', qty: 2, eur: 2.5, averaged: false, parts: [{ qty: 2, eur: 2.5 }] },
-  ]);
+test('ronGroup (karar 323): tek parça tek fiyatta birim fiyat = round2(EUR × kur); birleşen kalemlerde ortalama 2 hane', () => {
+  assert.deepEqual(ronGroup([{ qty: 295.41, price: 72.5 }], 295.41, 5.096, 21), { ron: 369.46, net: round2(295.41 * 369.46), gross: grossOf(round2(295.41 * 369.46), 21) });
+  // 48,36 m² × 65 € + 12 CNC × 15 €: birim fiyat 350,21 (önce 350,2078 çıkıyordu)
+  assert.equal(ronGroup([{ qty: 48.36, price: 65 }, { qty: 12, price: 15 }], 48.36, 5.096, 21).ron, 350.21);
+  assert.deepEqual(ronGroup([], 0, 5, 21), { ron: 0, net: 0, gross: 0 });
 });
 
 test('düğmeler (karar 239): proforma → (tahsilat) → avans; nihai fatura sipariş sayfasında YOK — ne tarih ne ödeme açar', () => {

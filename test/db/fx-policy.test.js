@@ -118,8 +118,8 @@ dbTest('BNR + %2: proforma BNR × 1,02 ile kesilir; kur kaydı saklanır ve sonr
   assert.equal(fin.created?.ok, true, JSON.stringify(fin.group?.problems ?? fin.created));
   assert.equal(fin.group.fx.finalRate, '5.2020', 'grup kuru proformanın kaydı');
   assert.equal(fgo.calls.length, 3);
-  // Fatura: 2 m² × 50 EUR × 5,2020 = 520,20 + TVA %21 = 629,44
-  assert.equal(fgo.calls[2]['Continut[0][PretTotal]'], '629.44', 'fatura proformanın kuruyla (5,2020), yeni BNR / BT ile değil');
+  // Fatura: 2 m² × 50 EUR × 5,2020 = 520,20 (+ TVA %21 = 629,44); birim fiyat 2 hane (karar 323): 260,10
+  assert.equal(fgo.calls[2]['Continut[0][PretUnitar]'], '260.10', 'fatura proformanın kuruyla (5,2020), yeni BNR / BT ile değil');
   const batch = await db.billingBatch.findUnique({ where: { id: fin.created.batchId } });
   assert.equal(batch.fxRate.toString(), '5.202');
   const b2 = await billing(o);

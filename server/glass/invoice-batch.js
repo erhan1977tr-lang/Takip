@@ -236,7 +236,7 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
 }
 
 /**
- * @typedef {{ name: string, pieces: number, m2: number, amount: number, net: number, gross: number }} InvoiceLine
+ * @typedef {{ name: string, pieces: number, m2: number, amount: number, ron: number, net: number, gross: number }} InvoiceLine
  * @typedef {{ orderId: string, orderNo: string, title: string | null, offerId: string | null, lines: InvoiceLine[], sourceTotal: number, ronNet: number, ronGross: number }} InvoiceOrder
  * @typedef {{ advanceBatchId: string | null, advanceDocId?: string | null, ref: string | null, gross: number, net: number }} StornoLine
  * @typedef {{ batchId: string, status: string, ref: string | null, link: string | null, total: number | null, paid: number | null, lastError: string | null, orders: string[], impacts: OrderImpact[] }} IssuedInvoice
@@ -259,7 +259,7 @@ function orderInvoiceLines(orderNo, items, rate, vatRate) {
   const src = glassLines(offer);
   const pieces = glassTotals(offer);
   return invoiceLines(offer, rate, vatRate).map((l, i) => ({
-    name: `Comanda ${orderNo} — ${l.name}`.slice(0, 250), pieces: pieces[i]?.adet ?? 0, m2: l.qty, amount: src[i]?.eurTotal ?? 0, net: l.net, gross: l.gross,
+    name: `Comanda ${orderNo} — ${l.name}`.slice(0, 250), pieces: pieces[i]?.adet ?? 0, m2: l.qty, amount: src[i]?.eurTotal ?? 0, ron: l.ron, net: l.net, gross: l.gross,
   }));
 }
 
@@ -559,7 +559,7 @@ export async function loadingBilling(db, { day, now = new Date(), bnrImpl = bnrR
       if (picked && chosen.length === 0) problems.push('NOTHING_SELECTED');
       /** @type {InvoiceOrder[]} */
       const list = chosen.map(({ order, items, offerId }) => {
-        const lines = rate ? orderInvoiceLines(order.orderNo, items, rate.rate, vatRate) : orderInvoiceLines(order.orderNo, items, 0, vatRate).map((l) => ({ ...l, net: 0, gross: 0 }));
+        const lines = rate ? orderInvoiceLines(order.orderNo, items, rate.rate, vatRate) : orderInvoiceLines(order.orderNo, items, 0, vatRate).map((l) => ({ ...l, ron: 0, net: 0, gross: 0 }));
         return {
           orderId: order.id, orderNo: order.orderNo, title: order.title ?? null, offerId: offerId ?? null, lines,
           sourceTotal: round2(lines.reduce((s, l) => s + l.amount, 0)), ronNet: round2(lines.reduce((s, l) => s + l.net, 0)), ronGross: round2(lines.reduce((s, l) => s + l.gross, 0)),
@@ -675,7 +675,9 @@ export async function createInvoiceBatch(db, { day, groupKey, previewKey, orderI
       const shipDay = shipDayDate(day);
       const stornoNet = round2(g.storno.reduce((s, y) => s + y.net, 0));
       const goods = g.orders.flatMap((o) => o.lines.map((l) => ({
-        orderId: o.orderId, name: l.name, unit: 'mp', quantity: String(l.m2), pieces: l.pieces, amount: l.amount.toFixed(2), ronNet: l.net.toFixed(2), ronGross: l.gross.toFixed(2),
+        orderId: o.orderId, name: l.name, unit: 'mp', quantity: String(l.m2), pieces: l.pieces, amount: l.amount.toFixed(2),
+        // 2 haneli RON birim fiyat (karar 323): FGO'ya PretUnitar olarak gider (batchFgoLines → ronUnit)
+        ronUnit: l.ron.toFixed(2), ronNet: l.net.toFixed(2), ronGross: l.gross.toFixed(2),
       })));
       // Avans düşümü: eksi satır (miktar −1, TVA hariç birim fiyat); hangi avanstan ne kadar düşüldüğü satırda saklanır
       // Siparişin kendi zincirinde düşüm satırı o siparişindir (FGO kaleminde "Comanda …" — sipariş faturasıyla aynı, karar 111)

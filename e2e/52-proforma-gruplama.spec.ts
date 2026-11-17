@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { ADMIN, ADMIN_PW, as } from './helpers';
 
-// P4 — proformada aynı teknik cam tek satır (karar 242), müşteri proforması önizlemesi (gerçek sunucu):
+// Proforma faturanın düzeninde (karar 323; karar 242'nin yerine), müşteri proforması önizlemesi (gerçek sunucu):
 //  - aynı cam farklı fiyatla → tek satır; gösterilen fiyat m² ağırlıklı ortalama ("ort." / "medie"); tutar parça parça
-//  - CNC ve sandık bedeli ayrı satır; başka teknik cam ayrı satır
+//  - CNC ve sandık bedeli camın satırına katılır (üstteki cam); başka teknik cam ayrı satır
 //  - kaynak ve RON toplamı birleştirmeden öncekiyle aynı; Türkçe ve Romence ekranda aynı satırlar
 // FGO bu veritabanında KAPALIDIR: hiçbir belge kesilmez (yalnızca önizleme).
 test.describe.configure({ mode: 'serial' });
@@ -41,28 +41,28 @@ test('veri: bir firma, aynı camın iki fiyatlı satırları + CNC + başka cam 
   await db.$disconnect();
 });
 
-test('önizleme: aynı cam tek satır (ortalama fiyat işaretli), CNC / sandık / başka cam ayrı; toplamlar değişmez; TR ve RO aynı', async ({ browser }) => {
+test('önizleme: aynı cam tek satır (ortalama fiyat işaretli), CNC / sandık camın satırında, başka cam ayrı; toplamlar değişmez; TR ve RO aynı', async ({ browser }) => {
   const page = await as(browser, ADMIN, ADMIN_PW);
   const url = `${PAGE}?musteri=${firmId}&gun=${DAY}`;
   await page.goto(url);
   const prev = page.locator('#onizleme');
   await expect(prev).toBeVisible();
   const rows = prev.locator('tr.glass-row');
-  // Sıra: ilk görülen yerde birleşik cam satırı, sonra CNC, laminat, sandık (bedelsiz yok)
-  await expect(rows).toHaveCount(4);
+  // Sıra: ilk görülen yerde birleşik cam satırı (CNC ve sandık bedeli içinde), sonra laminat
+  await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText('Comanda GRE1 — Sticlă securizată 10 mm');
-  await expect(rows.nth(1)).toContainText('Comanda GRE1 — Prelucrare CNC');
-  await expect(rows.nth(2)).toContainText('Comanda GRE1 — Sticlă laminată 44.2');
-  await expect(rows.nth(3)).toContainText('Comanda GRE1 — Ambalaj (ladă)');
-  // Birleşik satır: 2 + 1 = 3 m²; gösterilen fiyat (2 × 50 + 1 × 60) / 3 = 53,33 "ort."; tutar parça parça 160,00
+  await expect(rows.nth(1)).toContainText('Comanda GRE1 — Sticlă laminată 44.2');
+  await expect(prev).not.toContainText('Prelucrare CNC');
+  await expect(prev).not.toContainText('Ambalaj (ladă)');
+  // Birleşik satır: 2 + 1 = 3 m²; tutar 2 × 50 + 2 × 10 (CNC) + 1 × 60 + 25 (sandık) = 205,00; gösterilen fiyat 205 / 3 = 68,33 "ort."
   const cells = rows.nth(0).locator('td');
   await expect(cells.nth(1)).toHaveText('3,00');
-  await expect(cells.nth(3)).toContainText('53,33');
+  await expect(cells.nth(3)).toContainText('68,33');
   await expect(rows.nth(0).locator('[data-avg-price]')).toContainText('ort.');
-  await expect(cells.nth(4)).toHaveText('160,00');
+  await expect(cells.nth(4)).toHaveText('205,00');
   // Tek fiyatlı satırlarda ortalama işareti yok
   await expect(prev.locator('[data-avg-price]')).toHaveCount(1);
-  // Toplam: kaynak 160 + 20 + 80 + 25 = 285 EUR; kur 5,1 → 1.453,50 RON (TVA hariç) — birleştirmeden öncekiyle aynı
+  // Toplam: kaynak 205 + 80 = 285 EUR; kur 5,1 → 1.453,50 RON (TVA hariç) — birleştirmeden öncekiyle aynı
   await expect(prev.locator('.stats')).toContainText('285,00');
   await expect(prev.locator('.stats')).toContainText('1.453,50');
 
@@ -71,7 +71,7 @@ test('önizleme: aynı cam tek satır (ortalama fiyat işaretli), CNC / sandık 
   try {
     await page.goto(url);
     const ro = page.locator('#onizleme');
-    await expect(ro.locator('tr.glass-row')).toHaveCount(4);
+    await expect(ro.locator('tr.glass-row')).toHaveCount(2);
     await expect(ro.locator('tr.glass-row').nth(0)).toContainText('Comanda GRE1 — Sticlă securizată 10 mm');
     await expect(ro.locator('[data-avg-price]')).toContainText('medie');
     await expect(ro.locator('.stats')).toContainText('1.453,50');

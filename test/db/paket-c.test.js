@@ -116,7 +116,7 @@ dbTest('otomatik sandık bağı (karar 234): yeni sandık firmanın o günkü b�
 });
 
 dbTest('FGO (karar 235–236): bedelsiz telafi camı faturaya / proformaya girmez (çift faturalama yok); nihai fatura adı "Sticla …"; açıklama kur cümlesi', offline(async () => {
-  const { invoiceLines, proformaLines, glassDocText } = await import('../../server/glass/billing.js');
+  const { invoiceLines, glassDocLines, glassDocText } = await import('../../server/glass/billing.js');
   const o = await order(firmA, {
     offers: { create: { status: 'GONDERILDI', currency: 'EUR', amount: '60', offerAmount: '100', createdById: U.admin.id, sentAt: new Date(),
       lines: { create: [
@@ -127,6 +127,6 @@ dbTest('FGO (karar 235–236): bedelsiz telafi camı faturaya / proformaya girme
   const offer = o.offers[0];
   const inv = invoiceLines(offer, 5, 21);
   assert.deepEqual(inv.map((l) => [l.name, l.qty, l.net]), [['Sticla 4.2.4., PVB OPAQUE (GRI+GRI)', 2, 500]], 'bedelsiz cam faturada yok; ad "Sticla …"');
-  assert.deepEqual(proformaLines(offer).map((l) => [l.name, l.qty]), [['STICLĂ SECURIZATĂ LAMINATĂ 4.2.4., PVB OPAQUE (GRI+GRI)', 2]], 'proforma adı değişmez; bedelsiz satır yok');
+  assert.deepEqual(glassDocLines(offer, 5, 21).map((l) => [l.name, l.qty]), [['STICLĂ SECURIZATĂ LAMINATĂ 4.2.4., PVB OPAQUE (GRI+GRI)', 2]], 'proforma adı değişmez; bedelsiz satır yok');
   assert.equal(glassDocText('EUR', { fxRate: '5', fxPolicy: 'BT_UNIT_SELL', fxSource: 'MANUAL_DAY' }), 'Curs de vânzare BT: 5.0000 RON/EUR.');
 }));

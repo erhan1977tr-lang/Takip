@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.23 — 17.11.2026
+
+**Cam proforma ve faturada birim fiyat 2 hane** (ürün sahibi, 17.11.2026; karar 323):
+
+- FGO'ya giden cam proforması (sipariş ve müşteri proforması) ve nihai fatura satırlarında birim fiyat (Pret unitar)
+  virgülden sonra 2 hanedir; satırlar artık TVA dahil toplamla (PretTotal) değil, birim fiyatla gider.
+- Proforma faturanın düzeniyle kesilir: aynı cam tek satır; CNC, delik ve sandık bedeli camın satırına katılır.
+  Böylece aynı kapsam için proforma ile fatura tutarı kuruşu kuruşuna aynıdır.
+- Avans faturası, profil belgeleri, TVA, kur, numara ve kesilmiş belgeler değişmedi.
+
+## 4.2.22 — 17.11.2026
+
+**Nihai faturada cam kaleminin altında sipariş numarası** (ürün sahibi, 17.11.2026; karar 322):
+
+- Nihai faturada (FGO) her cam kaleminin açıklamasına ("detalii articol") o camın siparişi yazılır: "Comanda GLA68".
+  Proforma ve avans faturasında bu zaten vardı. Avans düşümü satırına yazılmaz.
+- Tutar, miktar, birim fiyat, KDV, kur, numara ve faturanın alt metni değişmedi; kesilmiş faturalar değişmez.
+
 ## 4.2.21 — 16.11.2026
 
 **Bildirim zili 50 bildirim gösterir** (ürün sahibi, 16.11.2026; karar 321):

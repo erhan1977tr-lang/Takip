@@ -139,16 +139,16 @@ dbTest('bir müşteri + birden çok yükleme günü + birden çok sipariş → T
   const f = fgo.calls[0];
   // Satırlar siparişler arasında birleştirilmez; her açıklama kaynak sipariş numarasıyla başlar
   assert.deepEqual(names(f), [
-    `Comanda ${a1.orderNo} — Sticlă securizată 10 mm`, `Comanda ${a1.orderNo} — Prelucrare CNC`,
+    `Comanda ${a1.orderNo} — Sticlă securizată 10 mm`,
     `Comanda ${a2.orderNo} — Sticlă securizată 10 mm`, `Comanda ${a4.orderNo} — Sticlă securizată 10 mm`,
   ]);
-  assert.equal(f['Continut[1][PretUnitar]'], '50.00', 'CNC 10 EUR × 5');
+  assert.equal(f['Continut[0][PretUnitar]'], '300.00', '(100 + 20 CNC) EUR × 5 tek cam satırında (karar 323)');
   assert.ok(f.Text.startsWith(`Comenzi: ${a1.orderNo}, ${a2.orderNo}, ${a4.orderNo}. Încărcări planificate: `));
   assert.ok(!JSON.stringify(f).includes(a5.orderNo) && !JSON.stringify(f).includes(x1.orderNo), 'seçilmeyen gün ve başka müşteri belgede yok');
   const bt = await batchOf(r.batchId);
   assert.deepEqual(bt.loadingDays.map((d) => d.toISOString().slice(0, 10)), [K1, K2], 'seçilen günler partide');
   assert.deepEqual(bt.orders.map((o) => [o.orderNo, o.loadingDay.toISOString().slice(0, 10), o.sourceAmount.toString()]), [[a1.orderNo, K1, '120'], [a2.orderNo, K1, '100'], [a4.orderNo, K2, '100']]);
-  assert.deepEqual([bt.currency, bt.sourceTotal.toString(), bt.ronNet.toString(), bt.lines.length], ['EUR', '320', '1600', 4]);
+  assert.deepEqual([bt.currency, bt.sourceTotal.toString(), bt.ronNet.toString(), bt.lines.length], ['EUR', '320', '1600', 3]);
 
   // Cam Tahsilat: müşteri proforması BİR kez; borç bir kez sayılır
   const docs = (await listDocuments(db, 'GLASS_ORDER')).filter((d) => d.batchId === r.batchId);

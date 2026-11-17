@@ -98,11 +98,11 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(pf.IdExtern, 'GLA68-P');
   assert.equal(pf['Continut[0][UM]'], 'mp');
   assert.equal(pf['Continut[0][NrProduse]'], '2');
-  assert.equal(pf['Continut[0][PretUnitar]'], '250.00', '50 EUR × 5');
+  assert.equal(pf['Continut[0][PretUnitar]'], '300.00', 'faturanın düzeni (karar 323): (2 m² × 50 EUR + CNC 10 EUR) × 5 / 2 m²');
   assert.equal(pf['Continut[0][Denumire]'], 'Securizat', 'yalnızca cam niteliği, Romence');
   assert.equal(pf.Text, 'Curs de vânzare BT: 5.0000 RON/EUR.', 'Paket C (karar 235): açıklamada sipariş başlığı değil, belgenin kuru');
-  assert.equal(pf['Continut[1][Denumire]'], 'Prelucrare CNC', 'proformada CNC ayrı satır');
-  assert.equal(pf['Continut[1][PretUnitar]'], '50.00');
+  assert.ok(!('Continut[1][Denumire]' in pf), 'proformada CNC ayrı satır değil, camın tutarında (karar 323)');
+  assert.equal(pf['Continut[0][PretTotal]'], undefined, 'birim fiyatla gider (PretUnitar, 2 hane)');
   let docs = await db.fgoDocument.findMany({ where: { orderId: o.id } });
   assert.deepEqual(docs.map((d) => `${d.kind}:${d.series}${d.number}`), ['PROFORMA:PRF552']);
   assert.equal(docs[0].total.toString(), '1210');
@@ -152,7 +152,7 @@ dbTest('cam FGO: proforma → ödeme → avans → yüklenince fatura (avans dü
   assert.equal(invForm.IdExtern, `LOT-${created.batchId}`);
   assert.equal(invForm['Continut[0][Denumire]'], 'Securizat', 'nihai faturada sipariş numarası yok (karar 252)');
   assert.ok(!('Numar' in invForm), 'fatura numarasını FGO verir');
-  assert.equal(invForm['Continut[0][PretTotal]'], '726.00', 'faturada CNC cama eklenir: cam 605 + CNC 121 (TVA dahil), proforma kuru');
+  assert.equal(invForm['Continut[0][PretUnitar]'], '300.00', 'faturada CNC cama eklenir: (cam 500 + CNC 100) / 2 m², proforma kuru; proformayla aynı birim fiyat (karar 323)');
   assert.equal(invForm['Continut[1][NrProduse]'], '-1');
   assert.match(invForm['Continut[1][Denumire]'], /^Stornare avans conform factură GKH553/);
   assert.equal(invForm['Continut[1][PretUnitar]'], '600.00', 'avans faturanın tutarını aşmadan düşülür (726 TVA dahil → 600)');

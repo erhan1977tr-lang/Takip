@@ -8,7 +8,7 @@ import { createGlassOrder, suggestNextNo } from '../../server/orders/create.js';
 import { runOrderAction } from '../../server/orders/transitions.js';
 import { CRATE_LINE, atOfferPrice, isSalesCrate, offerTotals } from '../../server/orders/rules.js';
 import { adminOfferGroups, salesOfferGroups } from '../../server/orders/queues.js';
-import { glassTotals, proformaAmount, proformaLines } from '../../server/glass/billing.js';
+import { glassDocLines, glassTotals } from '../../server/glass/billing.js';
 
 let db;
 let firm;
@@ -112,13 +112,13 @@ dbTest('satışın sandık ücreti: satış ekler / değiştirir (işaretsiz, ad
   assert.deepEqual([sent.status, String(sent.offerAmount), String(sent.amount)], ['GONDERILDI', '260', '130']);
   const lines = plain(sent.lines);
   assert.deepEqual([offerTotals(atOfferPrice(lines)).amount, offerTotals(lines).crate, offerTotals(lines).adet], [260, 4, 3]);
-  // Belgeler: fatura gruplarının toplamı = müşteri toplamı (sandık parası üstündeki camın grubunda); proformada ayrı satır
-  // (ürün sahibinin kararı, karar 214 — proforma değişmedi)
+  // Belgeler: fatura gruplarının toplamı = müşteri toplamı (sandık parası üstündeki camın grubunda); proforma da faturanın
+  // düzeninde (karar 323)
   const groups = glassTotals({ lines });
   assert.equal(Math.round(groups.reduce((s, g) => s + g.total, 0) * 100) / 100, 260);
-  const pro = proformaLines({ lines });
-  assert.deepEqual(pro.filter((r) => r.name === CRATE_LINE.ro).map((r) => [r.qty, r.eur]), [[3, 30], [1, 45]]);
-  assert.equal(Math.round(pro.reduce((s, r) => s + proformaAmount(r), 0) * 100) / 100, 260);
+  const pro = glassDocLines({ lines }, 5, 21);
+  assert.ok(!pro.some((r) => r.name === CRATE_LINE.ro), 'sandık ayrı satır değil');
+  assert.equal(Math.round(pro.reduce((s, r) => s + r.eurTotal, 0) * 100) / 100, 260);
 }));
 
 dbTest('geri alma: yalnızca gönderen satışçı, yönetici göndermeden; teklif satışa döner, kuyruktan çıkar; geçmiş ve denetim durur; yeniden gönderim kuyruğa girer', offline(async () => {

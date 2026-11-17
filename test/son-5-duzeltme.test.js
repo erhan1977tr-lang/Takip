@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { compareOrderNo, isPlainNo, parseCustomerOrderNo, sortByOrderNo } from '../server/orders/order-number.js';
 import { assignPieceBases, offerLineTotals, offerTotals, pieceAreaFromDims, pieceStartArea } from '../server/orders/rules.js';
-import { proformaLines, invoiceLines, proformaAmount } from '../server/glass/billing.js';
+import { glassDocLines, invoiceLines } from '../server/glass/billing.js';
 import { snapshotLine, itemAsLine, snapshotOfItem } from '../server/loading/confirmation.js';
 import { offerExportData } from '../server/orders/offer-export.js';
 import { compensationLines } from '../server/orders/compensation.js';
@@ -75,9 +75,9 @@ test('metraj: ayrılmış cam grubu (karar 114) aynı parça m²siyle kalemin to
 
 test('metraj: proforma / fatura / yükleme onayı / dışa aktarma 3. ondalığı kaybetmez; fiyat ve TVA yuvarlaması aynı', () => {
   const offer = { lines: [L({ id: 'a', descriptionRo: 'Sticlă X', offerPrice: '100', pieceM2: '2.386' }), L({ id: 'b', descriptionRo: 'Sticlă X', offerPrice: '100', pieceM2: '1.001', adet: 1 })] };
-  const pf = proformaLines(offer);
+  const pf = glassDocLines(offer, 1, 0);
   assert.deepEqual(pf.map((r) => [r.qty, r.parts.map((p) => p.qty)]), [[5.773, [4.772, 1.001]]]);
-  assert.equal(proformaAmount(pf[0]), 577.3);
+  assert.equal(pf[0].eurTotal, 577.3);
   assert.equal(invoiceLines(offer, 5, 21)[0].qty, 5.773);
   // Onay kalemi parça m²sini taşır; m² ve tutar teklifteki kuralla
   const item = snapshotLine({ id: 'o', customerId: 'c' }, { currency: 'EUR' }, { ...offer.lines[0], id: 'a', unitPrice: '50' });

@@ -1,9 +1,8 @@
-// P4 — proformada aynı teknik cam tek satır (karar 242), veritabanı + işçi + sahte FGO ile:
-//   - sipariş proforması: aynı cam farklı ölçü / fiyat → tek satır (TVA dahil toplamla, PretTotal); CNC, delik, sandık parası ayrı;
-//     farklı katalog camı ayrı; belge toplamı birleştirilmemiş proformayla kuruşu kuruşuna aynı;
-//   - müşteri proforması (parti): aynı kural sipariş İÇİNDE; RON tutarlar partide bir kez saklanır, işçi saklananı gönderir;
-//     siparişler arasında birleştirme yok;
-//   - nihai fatura satırları değişmez.
+// Karar 323 — cam proforması faturanın düzeninde, birim fiyat 2 hane; veritabanı + işçi + sahte FGO ile:
+//   - sipariş proforması: aynı cam tek satır, CNC / delik / sandık camın tutarında; FGO'ya PretUnitar (2 hane), PretTotal yok;
+//     satırlar ve tutar nihai faturanın kuralıyla (invoiceLines) aynı;
+//   - müşteri proforması (parti): aynı kural sipariş İÇİNDE; RON birim fiyat / tutar partide bir kez saklanır, işçi saklananı
+//     gönderir; siparişler arasında birleştirme yok.
 // FGO'ya / BNR'ye GERÇEK istek yapılmaz (sahte fetchImpl / bnrImpl; offline).
 import { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,20 +48,8 @@ function rowsOf(form) {
   }
   return out;
 }
-/** FGO'nun belge toplamı (TVA dahil): PretTotal verilen satır o tutar; diğerleri adet × birim, KDV satır başına */
+/** FGO'nun belge toplamı (TVA dahil): adet × birim, KDV satır başına (PretTotal verilen satır o tutar) */
 const formGross = (form, vat = 21) => round2(rowsOf(form).reduce((s, r) => s + (r.total != null ? Number(r.total) : grossOf(round2(Number(r.qty) * Number(r.unit)), vat)), 0));
-/** Birleştirmeden önceki (her teklif satırı ayrı) proformanın TVA dahil toplamı — eski kural */
-function ungroupedGross(lines, rate, vat = 21) {
-  let s = 0;
-  for (const l of lines) {
-    if (l.free || l.offerPrice == null) continue;
-    const isGlass = l.kind === 'CAM' && l.unit === 'm2';
-    const qty = isGlass ? Math.round(((l.enMm * l.boyMm * l.adet) / 1e6 + Number.EPSILON) * 100) / 100 : l.adet;
-    s = round2(s + grossOf(round2(qty * ronPrice(l.offerPrice, rate)), vat));
-  }
-  return s;
-}
-
 const SEC = (en, boy, adet, price, extra = {}) => ({ description: 'Temper 8', descriptionRo: 'Sticlă securizată 8 mm', glassProductId: 'gp-sec8', enMm: en, boyMm: boy, adet, unit: 'm2', unitPrice: '30', offerPrice: price, kind: 'CAM', ...extra });
 const LINES = [
   SEC(1234, 1000, 1, '47.30'),
@@ -103,68 +90,56 @@ before(async () => {
 });
 after(closeDb);
 
-dbTest('sipariş proforması: aynı teknik cam tek satır (farklı ölçü / fiyat), CNC / delik / sandık ayrı, başka teknik cam ayrı; toplam kuruşu kuruşuna aynı', offline(async () => {
+dbTest('sipariş proforması: faturanın düzeni — aynı cam tek satır, işlemler ve sandık camın tutarında, başka cam ayrı; birim fiyat 2 hane (PretUnitar); faturayla aynı tutar', offline(async () => {
   const o = await glassOrder(firm, 801, new Date(Date.now() + 10 * 86_400_000));
   const fgo = fakeFgo(700);
   assert.deepEqual(await g.requestGlassDocument(db, { orderId: o.id, kind: 'PROFORMA', actor: actor() }), { ok: true });
   assert.deepEqual(await g.dispatchGlassJobs(db, ctx(fgo, { onlyOrderId: o.id })), { done: 1, failed: 0 });
   const form = fgo.calls[0];
   const rows = rowsOf(form);
-  // Securizat: 1,23 + 1,77 + 1,50 m² = 4,50 m² tek satır (ilk görüldüğü yerde); fiyatlar farklı → TVA dahil toplamla
+  // Securizat 8: 1,23 + 1,77 + 1,50 = 4,50 m² (CNC ve 7 delik onun tutarında); laminat; securizat 10 (sandık ve son 2 delik onun tutarında)
   assert.deepEqual(rows.map((r) => [r.name, r.um, r.qty]), [
     ['Sticlă securizată 8 mm', 'mp', '4.5'],
-    ['Prelucrare CNC', 'buc', '3'],
-    ['Gaură', 'buc', '7'],
     ['Sticlă laminată 44.2', 'mp', '0.78'],
-    ['Sticlă securizată 10 mm', 'mp', '1'], // başka teknik cam — ayrı
-    ['Ambalaj (ladă)', 'buc', '1'],
-    ['Gaură', 'buc', '2'], // delik satırları birbirleriyle de birleşmez
+    ['Sticlă securizată 10 mm', 'mp', '1'],
   ]);
-  assert.equal(rows[0].unit, null, 'birleşmiş satır birim fiyatla değil');
-  assert.notEqual(rows[0].total, null, 'birleşmiş satır TVA dahil toplamla (PretTotal)');
-  assert.ok(rows.slice(1).every((r) => r.unit != null && r.total == null), 'tek parçalı satırlar eskisi gibi birim fiyatla');
-  // Birleşik satırın toplamı = parçalarının (eski satırların) toplamı
-  const parts = [[1.23, '47.30'], [1.77, '49.90'], [1.5, '47.30']];
-  assert.equal(Number(rows[0].total), round2(parts.reduce((s, [q, p]) => s + grossOf(round2(q * ronPrice(p, RATE)), 21), 0)));
-  // Belge toplamı: birleştirmeden önceki proformayla aynı (bedelsiz satır yok)
-  assert.equal(formGross(form), ungroupedGross(LINES, RATE));
-  // Kayıtlı tutar (TVA hariç) da aynı hesaptan
-  const doc = await db.fgoDocument.findFirst({ where: { orderId: o.id, kind: 'PROFORMA' } });
-  assert.ok(doc, 'proforma kaydedildi');
-  // Aynı teklif yeniden hesaplanırsa aynı satırlar (belirleyici)
+  assert.ok(rows.every((r) => r.total == null && /^\d+\.\d{2}$/.test(r.unit)), 'her satır 2 haneli birim fiyatla, PretTotal yok');
+  // Aynı teklifin nihai fatura satırları: aynı m², aynı birim fiyat → aynı tutar (ad faturada kısalır)
   const full = await db.order.findUnique({ where: { id: o.id }, include: { offers: { include: { lines: { orderBy: { sortOrder: 'asc' } } } } } });
-  const offer = full.offers[0];
-  assert.deepEqual(g.proformaLines(offer), g.proformaLines({ lines: offer.lines.map((l) => ({ ...l, offerPrice: l.offerPrice == null ? null : String(l.offerPrice) })) }));
-  // Nihai fatura satırları değişmedi: yalnızca cam (CNC / delik / sandık cama eklenir), aynı ad bir grup
-  const inv = g.invoiceLines(offer, RATE, 21);
-  assert.deepEqual(inv.map((l) => [l.name, l.qty]), [['Sticla 8 mm', 4.5], ['Sticla 44.2', 0.78], ['Sticla 10 mm', 1]]);
+  const inv = g.invoiceLines(full.offers[0], RATE, 21);
+  assert.deepEqual(inv.map((l) => [String(l.qty), l.ron.toFixed(2)]), rows.map((r) => [r.qty, r.unit]));
+  assert.equal(formGross(form), round2(inv.reduce((s, l) => s + l.gross, 0)), 'proforma toplamı = fatura toplamı');
+  // Birim fiyat: grubun kesin tutarı / m² — securizat 8: üç cam parçası + 3 CNC + 7 delik
+  const exact = round2([[1.23, '47.30'], [1.77, '49.90'], [3, '12.70'], [7, '1.33'], [1.5, '47.30']].reduce((s, [q, p]) => s + round2(q * ronPrice(p, RATE)), 0));
+  assert.equal(rows[0].unit, round2(exact / 4.5).toFixed(2));
+  assert.ok(await db.fgoDocument.findFirst({ where: { orderId: o.id, kind: 'PROFORMA' } }), 'proforma kaydedildi');
 }));
 
-dbTest('müşteri proforması: aynı kural sipariş içinde; RON toplamı partide saklanır, FGO saklananı alır; siparişler arasında birleştirme yok', offline(async () => {
+dbTest('müşteri proforması: aynı kural sipariş içinde; RON birim fiyat partide saklanır, FGO saklananı alır; siparişler arasında birleştirme yok', offline(async () => {
   const day = new Date(Date.now() + 12 * 86_400_000);
   const days = [dayKey(day)];
-  const simple = [SEC(1000, 1000, 2, '47.30'), SEC(1000, 500, 1, '50.00')];
+  const simple = [SEC(1000, 1000, 2, '47.30'), { description: 'CNC', adet: 3, unit: 'adet', unitPrice: '5', offerPrice: '12.70', kind: 'CNC' }, SEC(1000, 500, 1, '50.00')];
   const o1 = await glassOrder(bnrFirm, 901, day, simple);
   const o2 = await glassOrder(bnrFirm, 902, day, simple);
   const p = await b.previewBatch(db, { customerId: bnrFirm.id, days, bnrImpl: bnr('5.0912') });
   assert.equal(p.ok, true);
-  // Her sipariş kendi satırı (Comanda …); sipariş içinde iki fiyatlı aynı cam tek satır, gösterilen fiyat ağırlıklı ortalama
+  const amount = round2(2 * 47.3 + 3 * 12.7 + 0.5 * 50);
   const lines = p.included.flatMap((o) => o.lines);
-  assert.deepEqual(lines.map((l) => [l.name, l.qty, l.price, l.amount, l.averaged]), [
-    [`Comanda ${o1.orderNo} — Sticlă securizată 8 mm`, 2.5, round2((2 * 47.3 + 0.5 * 50) / 2.5), round2(2 * 47.3 + 0.5 * 50), true],
-    [`Comanda ${o2.orderNo} — Sticlă securizată 8 mm`, 2.5, round2((2 * 47.3 + 0.5 * 50) / 2.5), round2(2 * 47.3 + 0.5 * 50), true],
+  assert.deepEqual(lines.map((l) => [l.name, l.qty, l.amount, l.averaged]), [
+    [`Comanda ${o1.orderNo} — Sticlă securizată 8 mm`, 2.5, amount, true],
+    [`Comanda ${o2.orderNo} — Sticlă securizată 8 mm`, 2.5, amount, true],
   ]);
-  assert.equal(p.sourceTotal, round2(2 * (2 * 47.3 + 0.5 * 50)), 'kaynak toplamı değişmez');
-  const expected = round2(2 * (grossOf(round2(2 * ronPrice('47.30', RATE)), 21) + grossOf(round2(0.5 * ronPrice('50.00', RATE)), 21)));
-  assert.equal(p.ronGross, expected, 'önizlemedeki RON (TVA dahil) = parça parça');
+  const exact = round2(round2(2 * ronPrice('47.30', RATE)) + round2(3 * ronPrice('12.70', RATE)) + round2(0.5 * ronPrice('50.00', RATE)));
+  const unit = round2(exact / 2.5);
+  const expected = round2(2 * grossOf(round2(2.5 * unit), 21));
+  assert.equal(p.ronGross, expected, 'önizlemedeki RON (TVA dahil) = m² × 2 haneli birim fiyat');
   const made = await b.createBatch(db, { customerId: bnrFirm.id, days, key: p.key, actor: actor(), bnrImpl: bnr('5.0912') });
   assert.equal(made.ok, true);
   const stored = await db.billingBatchLine.findMany({ where: { batchId: made.batchId }, orderBy: { sortOrder: 'asc' } });
-  assert.ok(stored.every((l) => l.ronGross != null && l.ronUnit == null), 'birleşmiş satırın RON toplamı saklandı');
-  assert.equal(round2(stored.reduce((s, l) => s + Number(l.ronGross), 0)), expected);
+  assert.deepEqual(stored.map((l) => [Number(l.ronUnit), Number(l.ronGross)]), [[unit, expected / 2], [unit, expected / 2]]);
   const fgo = fakeFgo(800);
   assert.deepEqual(await b.dispatchBatchJobs(db, ctx(fgo, { onlyBatchId: made.batchId })), { done: 1, failed: 0 });
   const rows = rowsOf(fgo.calls[0]);
-  assert.deepEqual(rows.map((r) => [r.qty, r.total]), stored.map((l) => [String(Number(l.quantity)), Number(l.ronGross).toFixed(2)]));
+  assert.deepEqual(rows.map((r) => [r.qty, r.unit, r.total]), [['2.5', unit.toFixed(2), null], ['2.5', unit.toFixed(2), null]]);
   assert.equal(formGross(fgo.calls[0]), expected, 'FGO belge toplamı = önizleme');
 }));

@@ -108,9 +108,9 @@ test('yönetici: müşteri → yükleme günleri → önizleme (tek proforma); s
   // Gün → sipariş → satır; her satır kaynak sipariş numarasıyla
   await expect(prev.locator('tr.group-total')).toHaveCount(2);
   await expect(prev.locator('tr.sub:not(.glass-row) a.order-no')).toHaveText(['LOT1', 'LOT2', 'LOT4']);
-  await expect(prev.locator('tr.glass-row')).toHaveCount(6);
+  await expect(prev.locator('tr.glass-row')).toHaveCount(3);
   await expect(prev.locator('tr.glass-row').first()).toContainText('Comanda LOT1 — Sticlă securizată 10 mm');
-  await expect(prev.locator('tr.glass-row').nth(1)).toContainText('Comanda LOT1 — Prelucrare CNC');
+  await expect(prev).not.toContainText('Prelucrare CNC'); // CNC camın satırında (karar 323)
   await expect(prev).not.toContainText('LOT5');
   // Karşılanmış sipariş nedeniyle dışarıda
   await expect(prev.locator('#disarida')).toContainText('LOT6');
