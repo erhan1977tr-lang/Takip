@@ -14,6 +14,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 - Depoya giden bilgide plaka yerine **kurye ile gönderim** yazar: depo e-postası (konu ve "Transport: LIVRARE PRIN CURIER"),
   Comanda Depozit PDF'i ("TRANSPORT : LIVRARE PRIN CURIER"), depo bağlantısı sayfası ve teslim onayı e-postası.
   Sipariş sayfasındaki teslim kartında "Araç plakası: Kurye ile gönderim" görünür.
+- **Fiyat listeli müşterinin yeni profil siparişinde telefon ve araç plakası artık zorunlu** (ya da "Kurye ile gönderim");
+  sunucu da denetler, eksikse sipariş gönderilmez. Formdaki not: bilgiler sipariş depoya gönderilene kadar (en geç alış
+  gününden bir gün önce) sipariş sayfasından değiştirilebilir. Fiyat listesi olmayan müşterinin formu değişmedi (bilgiler
+  yine teklif onayında zorunlu).
 - Kutu işaretlenmezse her şey eskisi gibi (plaka kuralı, telefon, alış günü değişmedi). Yalnızca yeni bir sütun eklendi
   (`ProfileOrder.courier`, varsayılan hayır); mevcut siparişler değişmez.
 - Test düzeltmesi (uygulama değişmedi): `test/db/dwg-undo.test.js` sabit Aralık 2026 tarihleri yerine siparişin kendi

@@ -97,8 +97,8 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
     <form action={action} ref={formRef} onSubmit={onSubmit}>
       {draft && <input type="hidden" name="draftId" value={draft.id} />}
       <input type="hidden" name="requestKey" value={requestKey} />
-      {/* Fiyat listesiyle doğrudan sipariş (karar 229): sayfanın üstünde fiyat listesi bilgisi, alış günü (zorunlu), telefon ve
-          plaka (isteğe bağlı) — "Teklifi onaylayın" adımı yok; sipariş doğrudan iletilir, proforma gelir */}
+      {/* Fiyat listesiyle doğrudan sipariş (karar 229): sayfanın üstünde fiyat listesi bilgisi, alış günü, telefon ve plaka
+          (hepsi zorunlu — 4.2.24, karar 324; kurye seçilirse plaka yok) — "Teklifi onaylayın" adımı yok; sipariş doğrudan iletilir */}
       {direct && (
         <div className="card turn" id="dogrudan" data-direct-order>
           <h2>{m.direct.title}</h2>
@@ -126,13 +126,14 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
               {direct.minPickup && <div className="hint">{interpolate(m.direct.dateHint, { date: direct.minPickup.split('-').reverse().join('.') })}</div>}
             </div>
             <div>
-              <label htmlFor="dg-phone">{m.direct.phone}</label>
-              <input id="dg-phone" name="phone" type="tel" maxLength={40} autoComplete="tel" defaultValue={v?.phone ?? ''} />
+              {/* 4.2.24 (karar 324): telefon ve plaka (ya da kurye) zorunlu — sunucu da denetler */}
+              <label htmlFor="dg-phone">{m.direct.phone}{directNow ? ' *' : ''}</label>
+              <input id="dg-phone" name="phone" type="tel" maxLength={40} autoComplete="tel" required={directNow && selected > 0} defaultValue={v?.phone ?? ''} />
             </div>
             <div>
               {/* Kurye ile gönderim (4.2.24, karar 324): seçilirse plaka istenmez */}
-              <CourierPlateField id="dg-plate" label={m.direct.plate} courierLabel={m.direct.courier} courierHint={m.direct.courierHint}
-                placeholder="B 123 ABC" defaultPlate={v?.plate ?? ''} defaultCourier={!!v?.courier} />
+              <CourierPlateField id="dg-plate" label={`${m.direct.plate}${directNow ? ' *' : ''}`} courierLabel={m.direct.courier} courierHint={m.direct.courierHint}
+                placeholder="B 123 ABC" defaultPlate={v?.plate ?? ''} defaultCourier={!!v?.courier} required={directNow && selected > 0} />
             </div>
           </div>
           <p className="hint">{m.direct.later}</p>

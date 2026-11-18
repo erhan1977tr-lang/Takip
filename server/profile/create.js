@@ -9,7 +9,7 @@ import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { formatTypedNo, pickNumber, requestedNumbers } from '../orders/create.js';
 import { slaDeadline } from '../orders/rules.js';
-import { PROFILE_TYPE, cleanPhone, cleanPlate, courierFlag, missingPrices, optionalField, orderStatusFor, profileTotals } from './rules.js';
+import { PROFILE_TYPE, cleanPhone, cleanPlate, courierFlag, missingPrices, orderStatusFor, profileTotals } from './rules.js';
 import { PROFILE_CURRENCY, priceFingerprint, profilePricesFor } from './pricing.js';
 import { recordStockShortage } from './stock.js';
 import { DEPOT_CALENDAR, dayDate, dayKeyOf, pickupProblem } from './dates.js';
@@ -97,12 +97,13 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         const overrides = await calendarOverrides(tx, DEPOT_CALENDAR, { now });
         const problem = pickupProblem(day, { now, overrides, staff: false });
         if (problem) throw new WorkflowError(problem);
-        const phone = optionalField(pickup?.phone, cleanPhone);
-        if (phone === undefined) throw new WorkflowError('BAD_PHONE');
-        // Kurye ile gönderim (4.2.24, karar 324): plaka istenmez
+        // 4.2.24 (karar 324): fiyat listeli doğrudan siparişte telefon ve araç plakası ZORUNLU (sipariş gönderilmeden önce);
+        // "Kurye ile gönderim" seçilirse plaka istenmez
+        const phone = cleanPhone(pickup?.phone);
+        if (!phone) throw new WorkflowError('BAD_PHONE');
         const courier = courierFlag(pickup?.courier);
-        const plate = courier ? null : optionalField(pickup?.plate, cleanPlate);
-        if (plate === undefined) throw new WorkflowError('BAD_PLATE');
+        const plate = courier ? null : cleanPlate(pickup?.plate);
+        if (!courier && !plate) throw new WorkflowError('BAD_PLATE');
         info = { pickupDate: dayDate(dayKeyOf(day)), contactPhone: phone, vehiclePlate: plate, courier };
       }
       const amount = profileTotals(lines).amount.toFixed(2);

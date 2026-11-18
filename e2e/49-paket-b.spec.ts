@@ -92,7 +92,7 @@ test('"Bir mesajınız var": listede kırmızı uyarı; sayfayı açmak okumaz �
   }
 });
 
-test('fiyat listeli müşteri: formda fiyat, toplam ve alış günü; sipariş doğrudan onaylı açılır; eksik telefon / plaka uyarısı müşteri tamamlayınca kalkar', async ({ browser }) => {
+test('fiyat listeli müşteri: formda fiyat, toplam, alış günü, zorunlu telefon ve plaka / kurye; sipariş doğrudan onaylı açılır; teslim bilgisi değiştirilir', async ({ browser }) => {
   const page = await as(browser, CUST, TEAM_PW);
   await page.goto('/siparisler/yeni?tip=PROFILE_ORDER');
   const card = page.locator('#dogrudan');
@@ -104,6 +104,12 @@ test('fiyat listeli müşteri: formda fiyat, toplam ve alış günü; sipariş d
   await gkRow.locator('input[name=p_qty]').fill('3');
   await expect(card.locator('[data-direct-total]')).toHaveAttribute('data-direct-total', '29.70');
   await expect(page.locator('#dg-date')).not.toHaveValue('');
+  // 4.2.24 (karar 324): telefon ve plaka zorunlu; "Kurye ile gönderim" seçilince plaka alanı kapanır
+  await expect(page.locator('#dg-phone')).toHaveAttribute('required', '');
+  await expect(page.locator('#dg-plate')).toHaveAttribute('required', '');
+  await page.locator('#dg-phone').fill('0723 000 000');
+  await card.locator('input[data-courier]').check();
+  await expect(page.locator('#dg-plate')).toBeDisabled();
   // Gönder (stok uyarısı çıkarsa "Yine de gönder")
   await page.locator('.submit-bar').getByRole('button', { name: 'Siparişi gönder' }).click();
   const anyway = page.getByRole('button', { name: 'Yine de gönder' });
@@ -117,21 +123,23 @@ test('fiyat listeli müşteri: formda fiyat, toplam ve alış günü; sipariş d
   try {
     const o = await db.order.findUniqueOrThrow({ where: { id }, include: { profile: true, offers: true, price: true } });
     expect([o.profile!.stage, o.profile!.direct, o.offers[0].status, String(o.price!.amount)]).toEqual(['ONAYLANDI', true, 'GONDERILDI', '29.7']);
+    expect([o.profile!.contactPhone, o.profile!.vehiclePlate, o.profile!.courier]).toEqual(['0723 000 000', null, true]);
     // FGO e2e'de kapalı: proforma işi yazılmaz, gerçek FGO'ya istek yok
     expect(await db.notificationOutbox.count({ where: { orderId: id, type: 'FGO_PROFORMA' } })).toBe(0);
   } finally {
     await db.$disconnect();
   }
-  // Teslim bilgileri eksik: ne eksik açıkça yazılır; müşteri tamamlar
-  const missing = page.locator('#teslim-eksik');
-  await expect(missing).toHaveAttribute('data-pickup-missing', 'contactPhone,vehiclePlate');
-  await expect(missing).toContainText('telefon, araç plakası');
+  // Teslim bilgileri tam (kurye): eksik uyarısı yok; teslim kartında kurye yazar. Müşteri araca geçer: plaka girer
+  await expect(page.locator('#teslim-eksik')).toHaveCount(0);
+  await expect(page.locator('[data-courier-row]')).toContainText('Kurye ile gönderim');
   await expect(page.locator('[data-pickup-deadline]')).toBeVisible();
-  await page.locator('#up-phone').fill('0723 000 000');
+  await page.locator('#teslim summary').click();
+  await page.locator('#teslim input[data-courier]').uncheck();
   await page.locator('#up-plate').fill('b 77 pbx');
   await page.locator('#teslim').getByRole('button', { name: 'Kaydet' }).click();
   await expect(page).toHaveURL(/ok=pickup_updated/);
-  await expect(page.locator('#teslim-eksik')).toHaveCount(0);
+  await expect(page.locator('[data-courier-row]')).toHaveCount(0);
+  await expect(page.locator('#teslim')).toContainText('B 77 PBX');
   await page.context().close();
 });
 
