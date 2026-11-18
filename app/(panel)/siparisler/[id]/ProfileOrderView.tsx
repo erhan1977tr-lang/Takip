@@ -28,6 +28,7 @@ import { STOCK_SHORTAGE_ALERT, customerShortageView, stockLevels } from '@/serve
 import { profilePricesFor } from '@/server/profile/pricing.js';
 import { getEnv } from '@/server/env.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
+import { CourierPlateField } from '@/components/CourierPlateField';
 import { PreviewFor } from '@/components/PreviewFor';
 import { PhotoThumb } from '@/components/FilePreview';
 import { ProfileReturns } from './ProfileReturns';
@@ -221,8 +222,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                   <input id="pk-phone" name="phone" type="tel" required maxLength={40} autoComplete="tel" defaultValue={user.phone ?? ''} />
                 </div>
                 <div>
-                  <label htmlFor="pk-plate">{t('profile.page.approve.plate')}</label>
-                  <input id="pk-plate" name="plate" required maxLength={60} placeholder={t('profile.page.approve.platePlaceholder')} style={{ textTransform: 'uppercase' }} />
+                  {/* Kurye ile gönderim (4.2.24, karar 324): seçilirse plaka istenmez */}
+                  <CourierPlateField id="pk-plate" label={t('profile.page.approve.plate')} courierLabel={t('profile.page.pickup.courier')} courierHint={t('profile.page.pickup.courierHint')}
+                    placeholder={t('profile.page.approve.platePlaceholder')} required />
                 </div>
               </div>
               <div className="row end" style={{ marginTop: 10 }}>
@@ -501,7 +503,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                     </td></tr>
                   )}
                   <tr><td>{t('profile.page.pickup.phone')}</td><td>{p.contactPhone ?? '—'}</td></tr>
-                  <tr><td>{t('profile.page.pickup.plate')}</td><td>{p.vehiclePlate ?? '—'}</td></tr>
+                  {p.courier
+                    ? <tr data-courier-row><td>{t('profile.page.pickup.plate')}</td><td><b>{t('profile.page.pickup.courierValue')}</b></td></tr>
+                    : <tr><td>{t('profile.page.pickup.plate')}</td><td>{p.vehiclePlate ?? '—'}</td></tr>}
                   {signedLinks && <tr data-signed-row><td>{t('delivery.signed.label')}</td><td>{signedLinks}</td></tr>}
                 </tbody></table>
               ) : minPickup ? (
@@ -539,8 +543,8 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
                     <label htmlFor="up-phone" className="small">{t('profile.page.pickup.phone')}</label>
                     {/* Depoya gitmeden önce telefon / plaka boş bırakılabilir (karar 229); depodaki siparişte zorunlu */}
                     <input id="up-phone" name="phone" type="tel" required={stage === 'DEPODA'} maxLength={40} defaultValue={p.contactPhone ?? ''} />
-                    <label htmlFor="up-plate" className="small">{t('profile.page.pickup.plate')}</label>
-                    <input id="up-plate" name="plate" required={stage === 'DEPODA'} maxLength={60} defaultValue={p.vehiclePlate ?? ''} style={{ textTransform: 'uppercase' }} />
+                    <CourierPlateField id="up-plate" labelClassName="small" label={t('profile.page.pickup.plate')} courierLabel={t('profile.page.pickup.courier')}
+                      courierHint={t('profile.page.pickup.courierHint')} defaultPlate={p.vehiclePlate ?? ''} defaultCourier={p.courier} required={stage === 'DEPODA'} />
                     <div className="row end" style={{ marginTop: 8 }}><button className="btn btn-primary">{t('profile.page.pickup.save')}</button></div>
                   </form>
                   {/* "Depoya iletilene kadar" notu müşterinin değiştirebildiği adımlar için; depodaki siparişte yöneticiye adminHint yeter */}

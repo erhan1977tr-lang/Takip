@@ -4,6 +4,30 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.25 — 18.11.2026
+
+**Fiyat listeli profil siparişinde telefon ve plaka zorunlu** (ürün sahibi, 18.11.2026; karar 324):
+
+- **Fiyat listeli müşterinin yeni profil siparişinde telefon ve araç plakası artık zorunlu** (ya da "Kurye ile gönderim");
+  sunucu da denetler, eksikse sipariş gönderilmez. Formdaki not: bilgiler sipariş depoya gönderilene kadar (en geç alış
+  gününden bir gün önce) sipariş sayfasından değiştirilebilir. Fiyat listesi olmayan müşterinin formu değişmedi (bilgiler
+  yine teklif onayında zorunlu).
+
+## 4.2.24 — 18.11.2026
+
+**Profil siparişinde "Kurye ile gönderim"** (ürün sahibi, 18.11.2026; karar 324):
+
+- Müşterinin teslim bilgilerinde (fiyat listeli yeni sipariş, teklif onayı, "Bilgileri değiştir") araç plakası alanının
+  altında **"Kurye ile gönderim"** kutusu var. İşaretlenince araç plakası istenmez (alan kapanır, yazılmış plaka silinir);
+  sipariş plakasız depoya iletilebilir.
+- Depoya giden bilgide plaka yerine **kurye ile gönderim** yazar: depo e-postası (konu ve "Transport: LIVRARE PRIN CURIER"),
+  Comanda Depozit PDF'i ("TRANSPORT : LIVRARE PRIN CURIER"), depo bağlantısı sayfası ve teslim onayı e-postası.
+  Sipariş sayfasındaki teslim kartında "Araç plakası: Kurye ile gönderim" görünür.
+- Kutu işaretlenmezse her şey eskisi gibi (plaka kuralı, telefon, alış günü değişmedi). Yalnızca yeni bir sütun eklendi
+  (`ProfileOrder.courier`, varsayılan hayır); mevcut siparişler değişmez.
+- Test düzeltmesi (uygulama değişmedi): `test/db/dwg-undo.test.js` sabit Aralık 2026 tarihleri yerine siparişin kendi
+  yükleme gününe göre tarih kullanır; takvim ilerleyince sabit gün varsayılan güne denk gelip testi bozuyordu.
+
 ## 4.2.23 — 17.11.2026
 
 **Cam proforma ve faturada birim fiyat 2 hane** (ürün sahibi, 17.11.2026; karar 323):

@@ -3,6 +3,7 @@
 // aynı alıcılar). Yalnızca gövde üretilir; ortak GKH düzeni (logo) server/mail/layout.js'tedir.
 
 import { brandedHtml } from '../layout.js';
+import { COURIER_TEXT_RO } from '../../profile/rules.js';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -20,7 +21,7 @@ export function deliveredStamp(d, timeZone = 'Europe/Bucharest') {
 const CELL = 'border:1px solid #e5e7eb;padding:6px 8px';
 
 /**
- * @param {{ orderNo: string, firmName: string, contactPerson?: string | null, phone?: string | null, plate?: string | null,
+ * @param {{ orderNo: string, firmName: string, contactPerson?: string | null, phone?: string | null, plate?: string | null, courier?: boolean,
  *   pickupDate?: Date | string | null, deliveredAt: Date | string, timeZone?: string,
  *   items: { code: string, name: string, unit: string, qty: number }[], documents?: string[], test?: boolean }} p
  * @returns {{ subject: string, text: string, html: string }}
@@ -41,7 +42,7 @@ export function renderDeliveredEmail(p) {
     `Data ridicării planificată: ${day(p.pickupDate)}`,
     `Client: ${p.firmName}${p.contactPerson ? ` — ${p.contactPerson}` : ''}`,
     `Telefon: ${p.phone ?? '—'}`,
-    `Nr. mașină: ${p.plate ?? '—'}`,
+    p.courier ? `Transport: ${COURIER_TEXT_RO.toUpperCase()}` : `Nr. mașină: ${p.plate ?? '—'}`,
     '',
     'Produse predate:',
     ...rows.map((r) => `  - ${r}`),
@@ -57,7 +58,7 @@ export function renderDeliveredEmail(p) {
 <tr><td style="color:#6b7280">Ridicare planificată</td><td>${esc(day(p.pickupDate))}</td></tr>
 <tr><td style="color:#6b7280">Client</td><td>${esc(p.firmName)}${p.contactPerson ? ` <span style="color:#6b7280">— ${esc(p.contactPerson)}</span>` : ''}</td></tr>
 <tr><td style="color:#6b7280">Telefon</td><td>${esc(p.phone ?? '—')}</td></tr>
-<tr><td style="color:#6b7280">Nr. mașină</td><td>${esc(p.plate ?? '—')}</td></tr>
+${p.courier ? `<tr><td style="color:#6b7280">Transport</td><td><b>${esc(COURIER_TEXT_RO.toUpperCase())}</b></td></tr>` : `<tr><td style="color:#6b7280">Nr. mașină</td><td>${esc(p.plate ?? '—')}</td></tr>`}
 </table>
 <p style="margin-top:14px"><b>Produse predate</b></p>
 <table cellpadding="5" style="border-collapse:collapse;border:1px solid #e5e7eb">

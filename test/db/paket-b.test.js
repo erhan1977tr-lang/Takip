@@ -41,7 +41,7 @@ async function order(lines, { f = firm, who = 'cust', pickup = undefined, reques
   const next = await suggestNextNo(db, f.id, 'PROFILE_ORDER');
   return createProfileOrder(db, {
     actor: actor(people[who]), firm: f, title: null, requestedNo: next, suggestedNo: next, items: await itemsOf(lines),
-    pickup: pickup === undefined ? { pickupDate: pickDay() } : pickup, requestKey,
+    pickup: pickup === undefined ? { pickupDate: pickDay(), phone: '0723 000 000', plate: 'B 1 PKB' } : pickup, requestKey,
   });
 }
 const load = (id) => db.order.findUniqueOrThrow({
@@ -81,7 +81,7 @@ dbTest('fiyat listesi yok: olağan akış (yönetici fiyatlandırması) — alı
   assert.deepEqual([o.status, o.profile.stage, o.profile.direct, o.profile.pickupDate, o.offers[0].status, o.price], ['YENI', 'FIYAT_BEKLIYOR', false, null, 'YONETIMDE', null]);
 }));
 
-dbTest('fiyat listesi var: sipariş DOĞRUDAN onaylı açılır — fiyatlar listeden (yoksa katalog), gönderilmiş teklif kopyası, tutar, alış günü; telefon / plaka boş; FGO açıksa tek proforma işi; stok rezervesine girer', offline(async () => {
+dbTest('fiyat listesi var: sipariş DOĞRUDAN onaylı açılır — fiyatlar listeden (yoksa katalog), gönderilmiş teklif kopyası, tutar, alış günü; telefon / plaka formdan (4.2.24: zorunlu); FGO açıksa tek proforma işi; stok rezervesine girer', offline(async () => {
   await saveFgoSettings(db, { enabled: true, dailyLimit: 0, env: 'test', cui: '123456', proformaSeries: 'PRF', invoiceSeries: 'GKH', proformaType: 'Proforma', invoiceType: 'Factura', vatRate: 21 },
     { key: 'GIZLI', secret: FGO_SECRET }, actor(people.admin));
   const gk = await db.profileProduct.findUniqueOrThrow({ where: { code: 'GK15' } });
@@ -89,7 +89,7 @@ dbTest('fiyat listesi var: sipariş DOĞRUDAN onaylı açılır — fiyatlar lis
   const r = await order([['GK15', 4], ['SPIGOTI', 10]]);
   assert.equal(r.direct, true);
   const o = await load(r.id);
-  assert.deepEqual([o.status, o.profile.stage, o.profile.direct, o.profile.contactPhone, o.profile.vehiclePlate], ['HAZIRLANIYOR', 'ONAYLANDI', true, null, null]);
+  assert.deepEqual([o.status, o.profile.stage, o.profile.direct, o.profile.contactPhone, o.profile.vehiclePlate], ['HAZIRLANIYOR', 'ONAYLANDI', true, '0723 000 000', 'B 1 PKB']);
   assert.equal(o.profile.pickupDate.toISOString().slice(0, 10), pickDay().toISOString().slice(0, 10));
   assert.equal(o.offers.length, 1);
   assert.deepEqual([o.offers[0].status, !!o.offers[0].sentAt, o.profile.approvedOfferId], ['GONDERILDI', true, o.offers[0].id]);
@@ -142,7 +142,14 @@ dbTest('doğrudan sipariş: alış günü zorunlu ve depo kuralına uymalı; ge�
   assert.equal(await codeOf(order([['GK15', 1]], { pickup: {} })), 'PICKUP_MISSING');
   assert.notEqual(await codeOf(order([['GK15', 1]], { pickup: { pickupDate: today() } })), 'OK', 'bugün depo kuralından erken');
   assert.equal(await codeOf(order([['GK15', 1]], { pickup: { pickupDate: pickDay(), phone: 'abc' } })), 'BAD_PHONE');
-  assert.equal(await db.order.count({ where: { customerId: firm.id } }), n0);
+  // 4.2.24 (karar 324): telefon ve plaka sipariş gönderilmeden önce zorunlu; kurye seçilirse plaka istenmez
+  assert.equal(await codeOf(order([['GK15', 1]], { pickup: { pickupDate: pickDay(), plate: 'B 1 ABC' } })), 'BAD_PHONE');
+  assert.equal(await codeOf(order([['GK15', 1]], { pickup: { pickupDate: pickDay(), phone: '0723 000 000' } })), 'BAD_PLATE');
+  assert.equal(await codeOf(order([['GK15', 1]], { pickup: { pickupDate: pickDay(), phone: '0723 000 000', plate: '', courier: false } })), 'BAD_PLATE');
+  const kur = await order([['GK15', 1]], { pickup: { pickupDate: pickDay(), phone: '0723 000 000', plate: '', courier: true } });
+  const ko = await load(kur.id);
+  assert.deepEqual([ko.profile.stage, ko.profile.courier, ko.profile.vehiclePlate, ko.profile.contactPhone], ['ONAYLANDI', true, null, '0723 000 000']);
+  assert.equal(await db.order.count({ where: { customerId: firm.id } }), n0 + 1, 'yalnızca kuryeli geçerli sipariş açıldı');
 }));
 
 dbTest('fiyatı olmayan ürün ya da pasif liste: sipariş olağan akışa gider (fiyat uydurulmaz)', offline(async () => {
@@ -159,6 +166,8 @@ dbTest('fiyatı olmayan ürün ya da pasif liste: sipariş olağan akışa gider
 
 dbTest('teslim bilgisi eksik: ödeme kaydedilir ama depoya GİTMEZ (e-posta yok, stok düşülmez); elle gönderim reddedilir; müşteri tamamlayınca bir kez iletilir', offline(async () => {
   const r = await order([['GK15', 2]]);
+  // Sipariş telefon + plakayla açılır (4.2.24); depoya gitmeden önce müşteri bunları silebilir — eksik bilgi yolu böyle oluşur
+  await run(r.id, 'update_pickup', 'cust', { phone: '', plate: '' });
   const day = today();
   const paid = await run(r.id, 'mark_paid', 'admin', { paidDate: day });
   assert.deepEqual(paid.result.pickupMissing, ['contactPhone', 'vehiclePlate']);
@@ -185,7 +194,7 @@ dbTest('son gün kuralı: müşteri alış gününden bir gün öncesine kadar d
   const r = await order([['GK15', 1]]);
   await db.profileOrder.update({ where: { orderId: r.id }, data: { pickupDate: today() } });
   assert.equal(await codeOf(run(r.id, 'update_pickup', 'cust', { phone: '0723 222 222' })), 'PICKUP_DEADLINE');
-  assert.equal((await load(r.id)).profile.contactPhone, null);
+  assert.equal((await load(r.id)).profile.contactPhone, '0723 000 000');
   await run(r.id, 'update_pickup', 'admin', { phone: '0723 222 222' });
   assert.equal((await load(r.id)).profile.contactPhone, '0723 222 222');
   assert.equal(await codeOf(run(r.id, 'update_pickup', 'plainCust', { phone: '0723 333 333' })), 'NOT_FOUND');

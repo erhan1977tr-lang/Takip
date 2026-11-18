@@ -74,7 +74,7 @@ export async function approveProfileAction(fd: FormData) {
   const id = idOf(fd);
   await act(user, id, 'approve_profile_offer', {
     offerId: String(fd.get('offerId') ?? ''), pickupDate: parseDateOnly(String(fd.get('pickupDate') ?? '')) ?? new Date('x'),
-    phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''),
+    phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''), courier: fd.get('courier') === '1',
   });
   done(id, 'ok=approved');
 }
@@ -88,7 +88,7 @@ export async function updatePickupAction(fd: FormData) {
   const id = idOf(fd);
   const r = await act(user, id, 'update_pickup', {
     pickupDate: parseDateOnly(String(fd.get('pickupDate') ?? '')) ?? new Date('x'),
-    phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''),
+    phone: String(fd.get('phone') ?? ''), plate: String(fd.get('plate') ?? ''), courier: fd.get('courier') === '1',
     expectedVersion: expectedVersion(fd),
   });
   // Ödemesi alınmış, bilgisi eksik sipariş bilgiler tamamlanınca depoya iletildi (karar 229)

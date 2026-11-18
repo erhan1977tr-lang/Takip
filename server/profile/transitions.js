@@ -7,7 +7,7 @@ import { getEnv } from '../env.js';
 import { executeAction } from '../orders/transitions.js';
 import { cancelLock } from '../orders/financial-lock.js';
 import { DEPOT_CALENDAR, DEPOT_TIME_ZONE, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
-import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, customerPickupOpen, missingPickup, missingPrices, optionalField, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
+import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, courierFlag, customerPickupOpen, missingPickup, missingPrices, optionalField, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
 import { calendarOverrides } from '../calendar/service.js';
 import { can } from '../auth/permissions.js';
 import { deductOrderStock, returnOrderStock, shortages, stockLevels, stockLockKeys } from './stock.js';
@@ -151,7 +151,12 @@ async function pickupInput(h, { requireAll }) {
     if (phone === undefined || (!optional && !phone)) throw new WorkflowError('BAD_PHONE');
     out.contactPhone = phone;
   }
-  if (p.plate !== undefined || requireAll) {
+  // Kurye ile gönderim (4.2.24, karar 324): seçiliyse araç plakası istenmez ve silinir; formda kutu yoksa (undefined) değişmez
+  const courier = p.courier === undefined ? undefined : courierFlag(p.courier);
+  if (courier !== undefined) out.courier = courier;
+  if (courier === true) {
+    out.vehiclePlate = null;
+  } else if (p.plate !== undefined || requireAll) {
     const plate = optional ? optionalField(p.plate, cleanPlate) : cleanPlate(p.plate);
     if (plate === undefined || (!optional && !plate)) throw new WorkflowError('BAD_PLATE');
     out.vehiclePlate = plate;
@@ -296,7 +301,7 @@ const ACTIONS = {
     // Müşteri alış gününden BİR GÜN ÖNCESİNE kadar değiştirebilir (karar 229; depo günü, sunucu saati)
     if (!staff && !customerPickupOpen({ pickupDay: prev, today: localDay(h.now, DEPOT_TIME_ZONE) })) throw new WorkflowError('PICKUP_DEADLINE');
     const info = await pickupInput(h, { requireAll: false });
-    const before = { pickupDate: prev, contactPhone: h.order.profile.contactPhone, vehiclePlate: h.order.profile.vehiclePlate };
+    const before = { pickupDate: prev, contactPhone: h.order.profile.contactPhone, vehiclePlate: h.order.profile.vehiclePlate, courier: h.order.profile.courier };
     await h.tx.profileOrder.update({ where: { orderId: h.order.id }, data: info });
     const date = info.pickupDate ?? h.order.profile.pickupDate;
     const day = date ? dayKeyOf(date) : null;

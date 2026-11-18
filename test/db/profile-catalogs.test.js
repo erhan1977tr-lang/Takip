@@ -31,7 +31,7 @@ async function order(lines, { f = atico, who = 'atico', priceTableId = null, pri
   const next = await suggestNextNo(db, f.id, 'PROFILE_ORDER');
   return createProfileOrder(db, {
     actor: actor(people[who]), firm: f, title: null, requestedNo: next, suggestedNo: next, items: await itemsOf(lines),
-    pickup: { pickupDate: pickDay() }, priceTableId, priceFingerprint: fp,
+    pickup: { pickupDate: pickDay(), phone: '0723 000 000', plate: 'B 1 CAT' }, priceTableId, priceFingerprint: fp,
   });
 }
 const shown = () => db.profileProduct.findMany({ where: { isActive: true }, select: { id: true, listPrice: true } });
@@ -154,7 +154,7 @@ dbTest('taslak: adetler ve not korunur, yeniden açılınca aynı; taslaktan sip
   const row = await db.orderDraft.findUniqueOrThrow({ where: { id: saved.id } });
   assert.deepEqual([row.note, readProfileDraftItems(row.items).map((l) => l.qty)], ['Notum kalsın', [3, 7]]);
   const next = await suggestNextNo(db, atico.id, 'PROFILE_ORDER');
-  const r = await createProfileOrder(db, { actor: actor(people.atico), firm: atico, title: 'Taslak', requestedNo: next, suggestedNo: next, items, note: 'Notum kalsın', draftId: saved.id, pickup: { pickupDate: pickDay() } });
+  const r = await createProfileOrder(db, { actor: actor(people.atico), firm: atico, title: 'Taslak', requestedNo: next, suggestedNo: next, items, note: 'Notum kalsın', draftId: saved.id, pickup: { pickupDate: pickDay(), phone: '0723 000 000', plate: 'B 1 CAT' } });
   const o = await load(r.id);
   assert.deepEqual([o.profile.priceTableName, o.offers[0].lines.map((l) => [l.adet, String(l.offerPrice)])], ['ATICO', [[3, '137'], [7, '3']]]);
   assert.equal(await db.orderDraft.count({ where: { id: saved.id } }), 0);

@@ -2,6 +2,7 @@
 // Bağlantı: depo, müşteri malı alınca buradan imzalı teslim belgesini yükler ve teslimi onaylar.
 
 import { brandedHtml } from '../layout.js';
+import { COURIER_TEXT_RO } from '../../profile/rules.js';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -9,12 +10,13 @@ function esc(s) {
 const day = (d) => (d ? new Date(d).toISOString().slice(0, 10).split('-').reverse().join('.') : '—');
 
 /**
- * @param {{ orderNo: string, firmName: string, pickupDate: Date | null, phone: string | null, plate: string | null,
+ * @param {{ orderNo: string, firmName: string, pickupDate: Date | null, phone: string | null, plate: string | null, courier?: boolean,
  *   items: { code: string, name: string, unit: string, qty: number }[], link: string, validDays: number, resend?: boolean }} p
  * @returns {{ subject: string, text: string, html: string }}
  */
 export function renderWarehouseEmail(p) {
-  const subject = `${p.resend ? '[RETRIMIS] ' : ''}Comanda depozit ${p.orderNo} — ${p.firmName} — ridicare ${day(p.pickupDate)}`;
+  // Kurye ile gönderim (4.2.24, karar 324): plaka yerine "Livrare prin curier" (konu ve tablo)
+  const subject = `${p.resend ? '[RETRIMIS] ' : ''}Comanda depozit ${p.orderNo} — ${p.firmName} — ridicare ${day(p.pickupDate)}${p.courier ? ` — ${COURIER_TEXT_RO.toUpperCase()}` : ''}`;
   const rows = p.items.map((i) => `${i.qty} ${i.unit} — ${i.name} (${i.code})`);
   const text = [
     'Bună ziua,',
@@ -23,7 +25,7 @@ export function renderWarehouseEmail(p) {
     '',
     `Data ridicării: ${day(p.pickupDate)}`,
     `Telefon: ${p.phone ?? '—'}`,
-    `Nr. mașină: ${p.plate ?? '—'}`,
+    p.courier ? `Transport: ${COURIER_TEXT_RO.toUpperCase()}` : `Nr. mașină: ${p.plate ?? '—'}`,
     '',
     'Produse:',
     ...rows.map((r) => `  - ${r}`),
@@ -41,7 +43,7 @@ export function renderWarehouseEmail(p) {
 <table cellpadding="4" style="border-collapse:collapse">
 <tr><td style="color:#6b7280">Data ridicării</td><td><b>${esc(day(p.pickupDate))}</b></td></tr>
 <tr><td style="color:#6b7280">Telefon</td><td>${esc(p.phone ?? '—')}</td></tr>
-<tr><td style="color:#6b7280">Nr. mașină</td><td>${esc(p.plate ?? '—')}</td></tr>
+${p.courier ? `<tr><td style="color:#6b7280">Transport</td><td><b>${esc(COURIER_TEXT_RO.toUpperCase())}</b></td></tr>` : `<tr><td style="color:#6b7280">Nr. mașină</td><td>${esc(p.plate ?? '—')}</td></tr>`}
 </table>
 <p style="margin-top:14px"><b>Produse</b></p>
 <table cellpadding="5" style="border-collapse:collapse;border:1px solid #e5e7eb">

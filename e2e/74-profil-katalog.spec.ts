@@ -105,6 +105,9 @@ test('müşteri: katalog seçimi — fiyat, tutar ve toplam yenilenmeden değiş
   await expect(card.locator('[data-direct-total]')).toHaveAttribute('data-direct-total', '286.00');
   await select.selectOption(t2Id!);
   await expect(card.locator('[data-direct-total]')).toHaveAttribute('data-direct-total', '263.00');
+  // Telefon ve plaka zorunlu (4.2.24, karar 324)
+  await page.locator('#dg-phone').fill('0723 000 000');
+  await page.locator('#dg-plate').fill('B 74 KAT');
   await page.locator('.submit-bar').getByRole('button', { name: 'Siparişi gönder' }).click();
   const anyway = page.getByRole('button', { name: 'Yine de gönder' });
   await expect(async () => {
@@ -145,6 +148,8 @@ test('seçili katalog gönderimden önce firmadan kaldırılırsa sunucu reddede
   const gkRow = page.locator('tr', { has: page.locator('.mono', { hasText: 'GK15' }) }).first();
   await gkRow.locator('input[name=p_qty]').fill('1');
   await expect(gkRow.locator('td[data-price]')).toHaveAttribute('data-price', '125');
+  await page.locator('#dg-phone').fill('0723 000 000'); // 4.2.25: telefon / plaka gönderimden önce zorunlu
+  await page.locator('#dg-plate').fill('B 74 KAT');
   const db = await prisma();
   let before = 0;
   try {
