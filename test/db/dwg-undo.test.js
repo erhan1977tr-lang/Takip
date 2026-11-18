@@ -37,6 +37,15 @@ async function dwgOrder() {
   await run(o.id, 'send_to_drawing', 'sales');
   return o;
 }
+/**
+ * Siparişin kendi tahmini yükleme gününden `offset` gün sonrası (UTC gece yarısı). Sabit tarih kullanılmaz: sabit gün,
+ * takvim ilerledikçe siparişin varsayılan gününe denk gelip SHIP_DATE_UNCHANGED verir (4.2.24'te 18.11.2026'da oldu).
+ */
+async function shipDayAfter(id, offset) {
+  const o = await db.order.findUniqueOrThrow({ where: { id }, select: { estimatedShipDate: true } });
+  const base = o.estimatedShipDate ?? new Date();
+  return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + offset));
+}
 /** Teklif müşteride (satış hazırlar, yönetici fiyatlayıp gönderir) */
 async function sendOffer(id) {
   await run(id, 'save_offer', 'sales', { lines: LINES });
@@ -194,7 +203,7 @@ dbTest('1b · Sipariş otomatik üretime geçmiş (URETIMDE): fiilî üretim kay
 dbTest('2 · Tamamlanmış sonraki işlem varsa reddedilir (çizimci dahil): sandık, mali belge, telafi — hiçbir şey yazılmaz', offline(async () => {
   // Sandık girilmiş (yükleme günü olan, üretime girmemiş sipariş)
   const a = await dwgOrder();
-  const day = new Date('2026-12-07T00:00:00Z');
+  const day = await shipDayAfter(a.id, 30);
   await run(a.id, 'set_ship_date', 'sales', { date: day });
   await run(a.id, 'dwg_ready', 'drawer');
   const saved = await saveDayCrates(db, { day: dayKey(day), customerId: firm.id, actor: actor(P.sales), rows: [{ crateNo: 7, lengthMm: 2000, widthMm: 1000, heightMm: 800, netKg: 100, grossKg: 150, note: null, orderIds: [a.id] }] });
@@ -217,7 +226,7 @@ dbTest('2 · Tamamlanmış sonraki işlem varsa reddedilir (çizimci dahil): san
 
 dbTest('2b · Sandık ve geri alma eşzamanlı: sandık kilidi (crates:<gün>) geri almayı bekletir; sandık işlendiyse geri alma reddedilir — denetim ile kayıt arasına sandık giremez', offline(async () => {
   const o = await dwgOrder();
-  const day = new Date('2026-12-08T00:00:00Z');
+  const day = await shipDayAfter(o.id, 31);
   await run(o.id, 'set_ship_date', 'sales', { date: day });
   await run(o.id, 'dwg_ready', 'drawer');
   // Sandık yazan işlem kilidi alır ve sandığı yazar, henüz işlemez (commit yok)
@@ -246,7 +255,7 @@ dbTest('2b · Sandık ve geri alma eşzamanlı: sandık kilidi (crates:<gün>) g
   // geri alma hiçbir zaman sandığı görmeden sandıkla birlikte işlenmez
   for (let i = 0; i < 4; i++) {
     const p = await dwgOrder();
-    const d = new Date(Date.UTC(2026, 11, 10 + i));
+    const d = await shipDayAfter(p.id, 40 + i);
     await run(p.id, 'set_ship_date', 'sales', { date: d });
     await run(p.id, 'dwg_ready', 'drawer');
     const [u, c] = await Promise.all([

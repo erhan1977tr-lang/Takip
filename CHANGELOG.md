@@ -16,6 +16,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   Sipariş sayfasındaki teslim kartında "Araç plakası: Kurye ile gönderim" görünür.
 - Kutu işaretlenmezse her şey eskisi gibi (plaka kuralı, telefon, alış günü değişmedi). Yalnızca yeni bir sütun eklendi
   (`ProfileOrder.courier`, varsayılan hayır); mevcut siparişler değişmez.
+- Test düzeltmesi (uygulama değişmedi): `test/db/dwg-undo.test.js` sabit Aralık 2026 tarihleri yerine siparişin kendi
+  yükleme gününe göre tarih kullanır; takvim ilerleyince sabit gün varsayılan güne denk gelip testi bozuyordu.
 
 ## 4.2.23 — 17.11.2026
 
