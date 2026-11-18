@@ -4,6 +4,15 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.25 — 18.11.2026
+
+**Fiyat listeli profil siparişinde telefon ve plaka zorunlu** (ürün sahibi, 18.11.2026; karar 324):
+
+- **Fiyat listeli müşterinin yeni profil siparişinde telefon ve araç plakası artık zorunlu** (ya da "Kurye ile gönderim");
+  sunucu da denetler, eksikse sipariş gönderilmez. Formdaki not: bilgiler sipariş depoya gönderilene kadar (en geç alış
+  gününden bir gün önce) sipariş sayfasından değiştirilebilir. Fiyat listesi olmayan müşterinin formu değişmedi (bilgiler
+  yine teklif onayında zorunlu).
+
 ## 4.2.24 — 18.11.2026
 
 **Profil siparişinde "Kurye ile gönderim"** (ürün sahibi, 18.11.2026; karar 324):
@@ -14,10 +23,6 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 - Depoya giden bilgide plaka yerine **kurye ile gönderim** yazar: depo e-postası (konu ve "Transport: LIVRARE PRIN CURIER"),
   Comanda Depozit PDF'i ("TRANSPORT : LIVRARE PRIN CURIER"), depo bağlantısı sayfası ve teslim onayı e-postası.
   Sipariş sayfasındaki teslim kartında "Araç plakası: Kurye ile gönderim" görünür.
-- **Fiyat listeli müşterinin yeni profil siparişinde telefon ve araç plakası artık zorunlu** (ya da "Kurye ile gönderim");
-  sunucu da denetler, eksikse sipariş gönderilmez. Formdaki not: bilgiler sipariş depoya gönderilene kadar (en geç alış
-  gününden bir gün önce) sipariş sayfasından değiştirilebilir. Fiyat listesi olmayan müşterinin formu değişmedi (bilgiler
-  yine teklif onayında zorunlu).
 - Kutu işaretlenmezse her şey eskisi gibi (plaka kuralı, telefon, alış günü değişmedi). Yalnızca yeni bir sütun eklendi
   (`ProfileOrder.courier`, varsayılan hayır); mevcut siparişler değişmez.
 - Test düzeltmesi (uygulama değişmedi): `test/db/dwg-undo.test.js` sabit Aralık 2026 tarihleri yerine siparişin kendi
