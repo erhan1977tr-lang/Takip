@@ -117,7 +117,7 @@ export async function buildDepotPdf(db, orderId, now = new Date(), timeZone = 'E
     if (!cats.some((c) => c.code === it.categoryCode)) cats.push({ code: it.categoryCode, name: it.categoryCode, unit: unitLabel(it.unitCode, 'ro').toUpperCase() });
   }
   const buf = depotFormPdf({
-    orderNo: order.orderNo, firmName: order.customer.name, phone: order.profile?.contactPhone ?? null, plate: order.profile?.vehiclePlate ?? null,
+    orderNo: order.orderNo, firmName: order.customer.name, phone: order.profile?.contactPhone ?? null, plate: order.profile?.vehiclePlate ?? null, courier: order.profile?.courier === true,
     pickupDate: order.profile?.pickupDate ?? null, date: dayDate(localDay(now, timeZone)),
     categories: cats, products: listed, qty, note: order.notes[0]?.text ?? null,
   });
@@ -170,7 +170,7 @@ export async function dispatchWarehouseEmails(db, { transport, from, appUrl, now
       const expires = new Date(now.getTime() + DEPOT_LINK_DAYS * 86_400_000);
       await db.profileOrder.update({ where: { orderId: order.id }, data: { depotTokenHash: hashToken(token), depotTokenExpiresAt: expires } });
       const mail = renderWarehouseEmail({
-        orderNo: order.orderNo, firmName: order.customer.name, pickupDate: order.profile.pickupDate, phone: order.profile.contactPhone, plate: order.profile.vehiclePlate,
+        orderNo: order.orderNo, firmName: order.customer.name, pickupDate: order.profile.pickupDate, phone: order.profile.contactPhone, plate: order.profile.vehiclePlate, courier: order.profile.courier === true,
         items: order.profileItems.map((i) => ({ code: i.code, name: i.nameRo, unit: unitLabel(i.unitCode, 'ro'), qty: i.qty })),
         link: `${appUrl}/depo/${token}`, validDays: DEPOT_LINK_DAYS, resend: !!row.payload?.resend,
       });
@@ -250,7 +250,7 @@ export async function dispatchDeliveredEmails(db, { transport, from, now = new D
       const settings = await getWarehouseSettings(db);
       const mail = renderDeliveredEmail({
         orderNo: order.orderNo, firmName: order.customer.name, contactPerson: order.customer.contactPerson,
-        phone: order.profile.contactPhone, plate: order.profile.vehiclePlate, pickupDate: order.profile.pickupDate,
+        phone: order.profile.contactPhone, plate: order.profile.vehiclePlate, courier: order.profile.courier === true, pickupDate: order.profile.pickupDate,
         deliveredAt: order.profile.deliveredAt, timeZone,
         items: order.profileItems.map((i) => ({ code: i.code, name: i.nameRo, unit: unitLabel(i.unitCode, 'ro'), qty: i.qty })),
         documents: order.files.map((f) => f.name),

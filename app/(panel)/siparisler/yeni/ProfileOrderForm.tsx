@@ -8,6 +8,7 @@ import { parseCustomerOrderNo } from '@/server/orders/order-number.js';
 import { createProfileOrderAction, type ProfileOrderState } from './actions';
 import { checkProfileStockAction, type StockCheckLine } from './profile-calc-actions';
 import { ProfileCalculator, type CalcOptions } from './ProfileCalculator';
+import { CourierPlateField } from '@/components/CourierPlateField';
 
 /** Katalog ürünü, kullanıcının dilinde */
 export type ProfileOption = { id: string; code: string; name: string; unit: string; imageId: string | null; categoryCode: string };
@@ -129,8 +130,9 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
               <input id="dg-phone" name="phone" type="tel" maxLength={40} autoComplete="tel" defaultValue={v?.phone ?? ''} />
             </div>
             <div>
-              <label htmlFor="dg-plate">{m.direct.plate}</label>
-              <input id="dg-plate" name="plate" maxLength={60} placeholder="B 123 ABC" defaultValue={v?.plate ?? ''} style={{ textTransform: 'uppercase' }} />
+              {/* Kurye ile gönderim (4.2.24, karar 324): seçilirse plaka istenmez */}
+              <CourierPlateField id="dg-plate" label={m.direct.plate} courierLabel={m.direct.courier} courierHint={m.direct.courierHint}
+                placeholder="B 123 ABC" defaultPlate={v?.plate ?? ''} defaultCourier={!!v?.courier} />
             </div>
           </div>
           <p className="hint">{m.direct.later}</p>

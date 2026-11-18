@@ -50,7 +50,7 @@ export default async function DepotPage({ params, searchParams }: { params: Prom
       <h1 style={{ fontSize: 20, margin: '8px 0 4px' }}>{t('profile.depot.title')}</h1>
       <p style={{ margin: 0 }}><b>{t('profile.depot.intro', { orderNo: o.orderNo, firm: o.customer.name })}</b></p>
       <p className="muted small" style={{ marginTop: 4 }}>
-        {t('profile.depot.pickup', { date: fmtDate(p.pickupDate) })}{p.contactPhone ? ` · ${p.contactPhone}` : ''}{p.vehiclePlate ? ` · ${p.vehiclePlate}` : ''}
+        {t('profile.depot.pickup', { date: fmtDate(p.pickupDate) })}{p.contactPhone ? ` · ${p.contactPhone}` : ''}{p.courier ? ` · ${t('profile.depot.courier')}` : p.vehiclePlate ? ` · ${p.vehiclePlate}` : ''}
       </p>
       {sp.ok === 'done' && <div className="alert alert-ok">{t('profile.depot.done')}</div>}
       {sp.ok === 'added' && <div className="alert alert-ok">{t('profile.depot.added')}</div>}

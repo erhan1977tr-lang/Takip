@@ -185,7 +185,7 @@ export async function keepDraftGlassAction(formData: FormData) {
 // ---------------- Profil siparişi (Aşama 6) ----------------
 export type ProfileOrderState = {
   error?: string;
-  values?: { title: string; no: string; note: string; qty: Record<string, string>; pickupDate?: string; phone?: string; plate?: string; priceTableId?: string };
+  values?: { title: string; no: string; note: string; qty: Record<string, string>; pickupDate?: string; phone?: string; plate?: string; courier?: boolean; priceTableId?: string };
 };
 
 /** Profil siparişi: yalnızca adedi > 0 olan ürünler siparişe girer. Taslak da buradan kaydedilir. */
@@ -206,6 +206,7 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
   const values = {
     title, no: noRaw, note, qty,
     pickupDate: String(formData.get('pickupDate') ?? '').slice(0, 10), phone: String(formData.get('phone') ?? '').slice(0, 60), plate: String(formData.get('plate') ?? '').slice(0, 80),
+    courier: formData.get('courier') === '1',
     priceTableId: String(formData.get('priceTableId') ?? '').slice(0, 40),
   };
   const fail = (error: string) => ({ error, values });
@@ -249,6 +250,7 @@ export async function createProfileOrderAction(_prev: ProfileOrderState, formDat
     pickupDate: parseDateOnly(String(formData.get('pickupDate') ?? '')) ?? undefined,
     phone: String(formData.get('phone') ?? '').slice(0, 60),
     plate: String(formData.get('plate') ?? '').slice(0, 80),
+    courier: formData.get('courier') === '1', // Kurye ile gönderim (4.2.24, karar 324)
   };
   const requestKey = String(formData.get('requestKey') ?? '').slice(0, 64) || null;
   // Katalog seçimi + fiyat parmak izi (4.2.17): yalnızca kimlikler gider; fiyatlar sunucuda yeniden hesaplanır

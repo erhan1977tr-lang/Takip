@@ -3,6 +3,7 @@
 // ürünlerin adedi yazılır ve satır vurgulanır. Metin Romence (depo Romanya'da).
 import { PdfDoc, fitText, wrapText } from './pdf.js';
 import { BRAND, brandImage, drawBrandLogo, finishPages } from './brand.js';
+import { COURIER_TEXT_RO } from '../profile/rules.js';
 
 const M = 40; // kenar boşluğu
 const COL = { img: 64, qty: 90 };
@@ -17,6 +18,7 @@ const day = (d) => (d ? new Date(d).toISOString().slice(0, 10).split('-').revers
  * @param {string} p.firmName
  * @param {string | null} p.phone
  * @param {string | null} p.plate
+ * @param {boolean} [p.courier]      kurye ile gönderim (4.2.24, karar 324): NR MASINI yerine TRANSPORT : LIVRARE PRIN CURIER
  * @param {Date | null} p.pickupDate   DATA DE LIVRARE
  * @param {Date} p.date                DATA (gönderim günü)
  * @param {{ code: string, name: string, unit: string }[]} p.categories  sıralı; unit: kategorinin birimi (CUTII…)
@@ -53,7 +55,8 @@ export function depotFormPdf(p) {
       };
       info('FIRMA :', p.firmName, 142);
       info('TELEFON :', p.phone, 160);
-      info('NR MASINI :', p.plate, 178);
+      if (p.courier) info('TRANSPORT :', COURIER_TEXT_RO.toUpperCase(), 178);
+      else info('NR MASINI :', p.plate, 178);
       y = 192;
       if (p.note) {
         // Müşterinin notu tablonun üstünde (en fazla 2 satır)

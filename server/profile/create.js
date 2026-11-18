@@ -9,7 +9,7 @@ import { outboxEvent } from '../domain/outbox.js';
 import { enqueueOutbox, writeAudit, writeHistory } from '../orders/journal.js';
 import { formatTypedNo, pickNumber, requestedNumbers } from '../orders/create.js';
 import { slaDeadline } from '../orders/rules.js';
-import { PROFILE_TYPE, cleanPhone, cleanPlate, missingPrices, optionalField, orderStatusFor, profileTotals } from './rules.js';
+import { PROFILE_TYPE, cleanPhone, cleanPlate, courierFlag, missingPrices, optionalField, orderStatusFor, profileTotals } from './rules.js';
 import { PROFILE_CURRENCY, priceFingerprint, profilePricesFor } from './pricing.js';
 import { recordStockShortage } from './stock.js';
 import { DEPOT_CALENDAR, dayDate, dayKeyOf, pickupProblem } from './dates.js';
@@ -45,7 +45,7 @@ export const profileRequestKey = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-
  * @param {import('@prisma/client').PrismaClient} db
  * @param {{ actor: { id: string, role: string, ip?: string | null }, firm: { id: string, prefix: string }, title: string | null,
  *   requestedNo: string | number, suggestedNo: string | number | null, items: object[], note?: string | null, draftId?: string | null,
- *   pickup?: { pickupDate?: unknown, phone?: unknown, plate?: unknown } | null, requestKey?: string | null,
+ *   pickup?: { pickupDate?: unknown, phone?: unknown, plate?: unknown, courier?: unknown } | null, requestKey?: string | null,
  *   priceTableId?: string | null, priceFingerprint?: string | null, now?: Date }} p
  *   items: profileOrderItems() sonucu
  *   pickup / requestKey: Paket B (karar 229) — fiyat listesiyle doğrudan siparişte alış günü (zorunlu), telefon ve plaka
@@ -99,9 +99,11 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         if (problem) throw new WorkflowError(problem);
         const phone = optionalField(pickup?.phone, cleanPhone);
         if (phone === undefined) throw new WorkflowError('BAD_PHONE');
-        const plate = optionalField(pickup?.plate, cleanPlate);
+        // Kurye ile gönderim (4.2.24, karar 324): plaka istenmez
+        const courier = courierFlag(pickup?.courier);
+        const plate = courier ? null : optionalField(pickup?.plate, cleanPlate);
         if (plate === undefined) throw new WorkflowError('BAD_PLATE');
-        info = { pickupDate: dayDate(dayKeyOf(day)), contactPhone: phone, vehiclePlate: plate };
+        info = { pickupDate: dayDate(dayKeyOf(day)), contactPhone: phone, vehiclePlate: plate, courier };
       }
       const amount = profileTotals(lines).amount.toFixed(2);
       const stage = direct ? 'ONAYLANDI' : 'FIYAT_BEKLIYOR';

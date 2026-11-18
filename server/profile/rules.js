@@ -182,6 +182,17 @@ export function cleanPlate(v) {
   return s;
 }
 
+/**
+ * "Kurye ile gönderim" işareti (4.2.24, karar 324): formdaki onay kutusu ("1" / "on" / true) → true; başka her şey false.
+ * @param {unknown} v
+ */
+export function courierFlag(v) {
+  return v === true || v === '1' || v === 'on' || v === 'true';
+}
+
+/** Depoya giden belgelerde (e-posta, Comanda Depozit PDF, depo sayfası) kurye ile gönderimin Romence metni */
+export const COURIER_TEXT_RO = 'Livrare prin curier';
+
 // ---------- fiyat listesiyle doğrudan sipariş ve teslim bilgisi (Paket B — karar 229) ----------
 // Müşteriye bağlı ETKİN bir profil fiyat tablosu varsa ve siparişin her ürününün fiyatı belliyse (tablo fiyatı ya da
 // katalog liste fiyatı — mevcut fiyat kuralı, server/profile/pricing.js), sipariş yönetici teklifi ve müşteri onayı
@@ -194,11 +205,13 @@ export const PICKUP_REQUIRED = ['pickupDate', 'contactPhone', 'vehiclePlate'];
 
 /**
  * Eksik teslim bilgileri (sıra sabit). Boş liste: depoya gönderilebilir.
- * @param {{ pickupDate?: unknown, contactPhone?: string | null, vehiclePlate?: string | null } | null | undefined} profile
+ * @param {{ pickupDate?: unknown, contactPhone?: string | null, vehiclePlate?: string | null, courier?: boolean } | null | undefined} profile
  * @returns {('pickupDate' | 'contactPhone' | 'vehiclePlate')[]}
  */
 export function missingPickup(profile) {
   return /** @type {any} */ (PICKUP_REQUIRED.filter((k) => {
+    // Kurye ile gönderim (4.2.24, karar 324): araç plakası gerekmez
+    if (k === 'vehiclePlate' && profile?.courier === true) return false;
     const v = profile?.[k];
     return v == null || (typeof v === 'string' && !v.trim());
   }));

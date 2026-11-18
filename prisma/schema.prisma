@@ -1444,6 +1444,8 @@ model ProfileOrder {
   pickupDate       DateTime?    @db.Date
   contactPhone     String?
   vehiclePlate     String?
+  // 4.2.24 (karar 324): "Kurye ile gönderim" — araç plakası gerekmez, depoya "prin curier" olarak gider
+  courier          Boolean      @default(false)
   // Proforma / ödeme / depo / teslim / fatura
   proformaNo       String?
   proformaAt       DateTime?
