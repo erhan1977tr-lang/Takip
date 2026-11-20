@@ -40,6 +40,7 @@ import { removalPreview } from '@/server/orders/removal.js';
 import { cancelLock, priceLock } from '@/server/orders/financial-lock.js';
 import { loadPriceChanges, type PriceChangeEntry } from '@/lib/price-history';
 import { historyInline } from '@/server/orders/history-placement.js';
+import { lastReturn } from '@/server/orders/offer-return.js';
 import { lineDisplayName } from '@/server/orders/op-names.js';
 import { GuestHostFields } from './GuestHost';
 import { setGuestHostAction } from './guest-host-actions';
@@ -512,6 +513,16 @@ export default async function OrderPage({
       {revision && order.status === 'URETIMDE' && (
         <div className="alert alert-warn" role="note" data-revision-production-warning>{t('order.revision.productionWarning')}</div>
       )}
+      {/* Yöneticinin geri gönderme nedeni (FOL17): satış teklifi yeniden hazırlarken tablonun üstünde; not rolüne göre süzülmüş olaydan */}
+      {(() => {
+        const ret = editable && !updating && offer ? lastReturn(order.events, offer.status) : null;
+        return ret ? (
+          <div className="alert alert-warn" role="note" data-offer-returned>
+            <b>{t('order.offerReturned', { date: fmtDateTime(ret.at) })}</b>
+            <div className="pre note-text" style={{ marginTop: 4 }}>{ret.note}</div>
+          </div>
+        ) : null;
+      })()}
       {(editable || updating) && offer && (
         <OfferEditor
           // Sipariş sürümü her işlemde artar: işlemden (kayıt, PDF aktarımı…) sonra düzenleyici kayıtlı satırlarla yeniden kurulur.
