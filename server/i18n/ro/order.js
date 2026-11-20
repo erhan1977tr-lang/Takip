@@ -413,6 +413,8 @@ export default {
     },
   },
   // Mesajele de eroare ale acțiunilor de pe server (?error=...)
+  // Motivul returnării de către administrator, deasupra tabelului ofertei (FOL17 — server/orders/offer-return.js)
+  offerReturned: 'Administratorul a returnat oferta ({date}). Motiv:',
   // Aprobarea producției de către client (4.2.1) — server/orders/production-approval.js
   // Revizuirea ofertei cerută de client (4.2.10, decizia 306): ecranele vânzărilor și administratorului
   revision: {

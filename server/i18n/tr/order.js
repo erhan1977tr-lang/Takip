@@ -412,6 +412,8 @@ export default {
       },
     },
   },
+  // Yöneticinin geri gönderme nedeni teklif tablosunun üstünde (FOL17 — server/orders/offer-return.js)
+  offerReturned: 'Yönetici teklifi geri gönderdi ({date}). Neden:',
   // Müşteri üretim onayı (4.2.1) — server/orders/production-approval.js
   // Müşteri teklif revizyonu (4.2.10, karar 306): satış ve yönetici ekranları
   revision: {

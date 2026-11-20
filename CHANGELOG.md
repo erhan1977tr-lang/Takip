@@ -4,6 +4,16 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.26 — 20.11.2026
+
+**Yöneticinin geri gönderme nedeni teklif tablosunun üstünde** (ürün sahibi, 20.11.2026 — FOL17; karar 325):
+
+- Yönetici teklifi satışa geri gönderdiğinde yazdığı neden, satışçı teklifi yeniden hazırlarken **teklif tablosunun hemen
+  üstünde** sarı kutuda görünür ("Yönetici teklifi geri gönderdi (tarih). Neden: …"). Neden daha önce yalnızca sol menünün
+  altındaki "Hareketler"de duruyordu ve gözden kaçıyordu. Satışçı teklifi yeniden yöneticiye gönderince (ya da teklif
+  müşteriye gidince) kutu kalkar. "Hareketler" satırı değişmedi.
+- Yalnızca gösterim: yeni veri, yazma, bildirim yok; nedeni kimin gördüğü değişmedi (aynı olay görünürlük kuralı).
+
 ## 4.2.25 — 18.11.2026
 
 **Fiyat listeli profil siparişinde telefon ve plaka zorunlu** (ürün sahibi, 18.11.2026; karar 324):
