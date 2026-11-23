@@ -8,8 +8,13 @@ import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
 import { cleanDays, createBatch, dispatchBatchJobs, reviewFailedBatch } from '@/server/glass/batch.js';
+import { recordBatchPayment } from '@/server/finance/batch-payment.js';
+import { getT, type MsgKey } from '@/lib/i18n';
+import { matchLines, type MatchView } from '@/lib/finance';
+import type { PaymentFormState } from '@/app/(panel)/siparisler/[id]/finance-actions';
 
 const PAGE = '/admin/muhasebe/cam/proforma';
+const BATCH_PAYMENT_CODES = ['DATE', 'FUTURE', 'AMOUNT', 'CURRENCY', 'METHOD', 'REFERENCE', 'NOTE', 'NO_PROFORMA', 'ORDER_STATE', 'NOT_FOUND', 'REQUEST_KEY', 'FORBIDDEN'];
 
 /** Seçimi (müşteri + günler + elle kur + seçilen siparişler) adrese geri yazar: hata sonrası aynı önizleme açılır */
 function back(customerId: string, days: string[], rate: string, extra: Record<string, string>, hash = '', orderIds: string[] | null = null) {
@@ -84,4 +89,27 @@ export async function resolveBatchUncertainAction(fd: FormData) {
     redirect(back(customerId, [], '', extra, '#belirsiz'));
   }
   redirect(back(customerId, [], '', { uncOk: action }, '#belirsiz'));
+}
+
+/**
+ * Proforma satırından elle ödeme kaydı (karar 326): kayıt partinin zincirine yazılır (server/finance/batch-payment.js →
+ * recordManualPayment). Belge kesmez; aynı müşteride aynı tutar varsa onay istenir. Sonuç formda gösterilir.
+ */
+export async function recordBatchPaymentAction(_prev: PaymentFormState, fd: FormData): Promise<PaymentFormState> {
+  const user = await requirePermission('ACCOUNTING_MANAGE');
+  const { t } = await getT();
+  const batchId = String(fd.get('batchId') ?? '');
+  const r = await recordBatchPayment(db, {
+    batchId: /^[a-z0-9]{8,40}$/i.test(batchId) ? batchId : '',
+    input: { paidOn: fd.get('paidOn'), amount: fd.get('amount'), currency: fd.get('currency'), method: fd.get('method'), reference: fd.get('reference'), note: fd.get('note') },
+    requestKey: String(fd.get('requestKey') ?? ''),
+    ack: String(fd.get('ack') ?? '') || null,
+    actor: await actorOf(user),
+  });
+  if (r.ok) {
+    revalidatePath(PAGE);
+    return { ok: true, at: Date.now() };
+  }
+  if (r.code === 'DUPLICATE_RISK') return { ok: false, error: t('finance.payment.duplicate'), matches: matchLines(t, ((r as { matches?: unknown[] }).matches ?? []) as MatchView[]), ackKey: (r as { ackKey?: string }).ackKey };
+  return { ok: false, error: t(`finance.payment.errors.${BATCH_PAYMENT_CODES.includes(r.code) ? r.code : 'NOT_FOUND'}` as MsgKey) };
 }

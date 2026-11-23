@@ -1726,7 +1726,7 @@ model BillingBatchOrder {
   order        Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderNo      String
   offerId      String?  // proforma: müşteriye gönderilmiş teklif sürümü (kopyanın kaynağı); fatura: kaynak onay kalemleridir
-  loadingDay   DateTime @db.Date // parti oluşturulurkenki planlanan yükleme günü
+  loadingDay   DateTime? @db.Date // parti oluşturulurkenki planlanan yükleme günü; günü belli olmayan siparişte boş (karar 326)
   sourceAmount Decimal  @db.Decimal(14, 2)
   // Çift faturalama engeli (veritabanında): parti etkinken "<kind>:<orderId>", parti geçersiz olunca boş.
   // Aynı sipariş aynı türden iki etkin partide olamaz.
