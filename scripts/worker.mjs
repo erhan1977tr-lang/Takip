@@ -22,6 +22,7 @@ import { AV_STATUS_KEY, getAvSettings, scanPending } from '../server/files/antiv
 import { dispatchDeliveredEmails, dispatchWarehouseEmails } from '../server/profile/warehouse.js';
 import { dispatchFgoJobs, dispatchProfileAdvanceJobs } from '../server/profile/fgo-jobs.js';
 import { financeReviewTick as reviewFinance } from '../server/finance/service.js';
+import { AUTO_ADVANCE_EVERY_MS, autoAdvanceTick } from '../server/glass/auto-advance.js';
 import { dispatchDocEmails, dispatchGlassJobs } from '../server/glass/billing.js';
 import { dispatchBatchJobs } from '../server/glass/batch.js';
 import { syncFgoDocuments } from '../server/accounting/receivables.js';
@@ -134,6 +135,17 @@ async function fgoSyncTick() {
   const env = getEnv();
   const r = await syncFgoDocuments(db, { now: new Date(), secret: env.AUTH_SECRET, appUrl: env.APP_URL ?? '', log });
   if (r.ran) log('FGO durum eşitleme:', JSON.stringify({ checked: r.checked, failed: r.failed }));
+}
+
+// On dakikada bir (karar 326): müşteri proformasına FGO'dan gelen tahsilattan otomatik avans faturası partisi. Aynı müşteride
+// aynı tutar riski varsa kesilmez, muhasebeye bildirim düşer (onay yöneticinin). Belge sonraki turda parti işçisiyle kesilir.
+let autoAdvancedAt = 0;
+async function autoAdvanceRun() {
+  if (once) return; // --once (testler): kural test/db/auto-advance.test.js'te doğrudan denenir
+  if (Date.now() - autoAdvancedAt < AUTO_ADVANCE_EVERY_MS) return;
+  autoAdvancedAt = Date.now();
+  const r = await autoAdvanceTick(db, { now: new Date(), log });
+  if (r.issued || r.held || r.failed) log('otomatik avans:', JSON.stringify(r));
 }
 
 // Saatte bir (ve işçi başlarken): geçersiz oturum satırları + eski hatalı giriş kayıtları silinir (SEC-11).
@@ -282,6 +294,11 @@ while (!stopping) {
     await fgoSyncTick();
   } catch (e) {
     log('FGO durum eşitleme hatası:', e?.message ?? e);
+  }
+  try {
+    await autoAdvanceRun();
+  } catch (e) {
+    log('otomatik avans hatası:', e?.message ?? e);
   }
   try {
     await pruneTick();

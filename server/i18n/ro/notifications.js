@@ -41,6 +41,7 @@ export default {
     FGO_FAILED: { title: 'Documentul nu a putut fi emis în FGO' },
     FGO_UNCERTAIN: { title: 'Rezultatul documentului FGO este incert: verificați în FGO și decideți' },
     ADVANCE_REQUIRED: { title: 'Încasare pe proformă: este necesară factura de avans' },
+    ADVANCE_AUTO_HELD: { title: 'Factura de avans automată a fost oprită: aceeași sumă la același client — este necesară confirmarea' },
     COMPENSATION_PENDING: { title: 'O sticlă de înlocuire așteaptă aprobarea dvs.' },
     // Sticlă de înlocuire deschisă (decizia 157) — doar administratorului, o notificare per înlocuire; decizia este în titlu
     COMPENSATION_FREE: { title: 'Sticlă de înlocuire deschisă: gratuit' },
@@ -75,6 +76,7 @@ export default {
     FGO_FAILED: '{error}',
     FGO_UNCERTAIN: 'Identificator FGO (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avans de facturat {amount} RON',
+    ADVANCE_AUTO_HELD: '{ref} · {amount} RON · verificați și confirmați din pagina proformei',
     // {qty}: numărul de rânduri cu preț diferit de tabelul fabricii
     ORDER_PRICE_OVERRIDE: '{qty} rânduri diferite · detalii în Decizii importante',
     COMPENSATION_PENDING: '{qty} buc. · sursa {ref}',

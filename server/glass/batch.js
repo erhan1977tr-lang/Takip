@@ -63,7 +63,7 @@ export const loadingDayOf = (order) => {
  * @typedef {'CANCELLED' | 'ON_HOLD' | 'ALREADY_LOADED' | 'NO_SENT_OFFER' | 'NO_PRICES' | 'CURRENCY' | 'ORDER_DOCUMENT' | 'ORDER_PENDING' | 'IN_BATCH'} ExcludeReason
  * @typedef {{ name: string, unit: string, qty: number, price: number, amount: number, averaged?: boolean, parts?: { qty: number, eur: number }[] }} BatchLine  price: gösterilen birim fiyat
  *   (birleşmiş camda m² ağırlıklı ortalama), amount: parça parça kesin tutar (P4 — karar 242)
- * @typedef {{ orderId: string, orderNo: string, title: string | null, day: string, offerId: string | null, currency: string | null, reason: ExcludeReason | null,
+ * @typedef {{ orderId: string, orderNo: string, title: string | null, day: string | null, slot?: string, offerId: string | null, currency: string | null, reason: ExcludeReason | null,
  *   ref: string | null, lines: BatchLine[], subtotal: number }} BatchOrder
  * @typedef {import('../fx/resolve.js').FxResult} FxResult
  * @typedef {{ ok: true, customer: any, today: string, days: string[], byDay: { day: string, orders: BatchOrder[] }[], included: BatchOrder[], excluded: BatchOrder[], unselected: BatchOrder[],
@@ -124,25 +124,54 @@ const ORDER_INCLUDE = {
   billingBatchOrders: { where: { activeKey: { not: null } }, select: { activeKey: true, batch: { select: { id: true, status: true, document: { select: { series: true, number: true } } } } } },
 };
 
-/** Müşterinin bugünden (dahil) sonraki yükleme günlerine planlı cam siparişleri, planlanmış hâlleriyle */
-async function plannedOrders(db, { customerId, today }) {
+/**
+ * "Yükleme günü belli olmayan / geçmiş" grubu (karar 326 — ürün sahibi, 23.11.2026): yükleme günü girilmemiş ya da planlı
+ * günü geçmiş ama YÜKLENMEMİŞ siparişler de müşteri proformasına seçilebilir. Seçim formunda gün yerine bu anahtar gider.
+ * Geçmiş tarihli sipariş yalnızca üretim akışındaysa (HAZIRLANIYOR / URETIMDE) ve tarihi son OPEN_PAST_DAYS gün içindeyse
+ * listelenir (eski, TAKİP'te onaylanmamış yüklemeler listeyi doldurmasın); onaylı yüklemesi olan sipariş her zaman
+ * "yüklendi" olarak hariçtir (loadedDays).
+ */
+export const OPEN_SLOT = 'bekleyen';
+export const OPEN_PAST_DAYS = 60;
+const OPEN_STATUSES = ['YENI', 'HAZIRLANIYOR', 'URETIMDE'];
+const OPEN_PAST_STATUSES = ['HAZIRLANIYOR', 'URETIMDE'];
+/** Siparişin seçim anahtarı: gelecekteki gün (bugün dahil) ya da OPEN_SLOT; listeye girmeyecekse null */
+export function slotOf(order, today) {
+  const day = loadingDayOf(order);
+  if (day != null && day >= today) return day;
+  if (day == null) return OPEN_STATUSES.includes(order.status) ? OPEN_SLOT : null;
+  const oldest = new Date(new Date(`${today}T00:00:00Z`).getTime() - OPEN_PAST_DAYS * 86_400_000).toISOString().slice(0, 10);
+  return OPEN_PAST_STATUSES.includes(order.status) && order.actualShipDate == null && day >= oldest ? OPEN_SLOT : null;
+}
+/** Aday siparişlerin kaba sorgusu (kesin karar slotOf'ta) */
+function candidateWhere(today) {
   const from = new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000);
+  const oldest = new Date(new Date(`${today}T00:00:00Z`).getTime() - (OPEN_PAST_DAYS + 1) * 86_400_000);
+  return [
+    { actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } },
+    { actualShipDate: null, estimatedShipDate: null, status: { in: OPEN_STATUSES } },
+    { actualShipDate: null, estimatedShipDate: { gte: oldest }, status: { in: OPEN_PAST_STATUSES } },
+  ];
+}
+
+/** Müşterinin bugünden (dahil) sonraki yükleme günlerine planlı + günü belli olmayan / geçmiş yüklenmemiş cam siparişleri */
+async function plannedOrders(db, { customerId, today }) {
   const rows = await db.order.findMany({
     where: {
       customerId, orderTypeCode: 'GLASS_ORDER', removedAt: null, // silinmiş sipariş önizlemede "hariç" olarak da görünmez (karar 110)
-      OR: [{ actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } }],
+      OR: candidateWhere(today),
     },
     include: ORDER_INCLUDE,
     orderBy: [{ orderNo: 'asc' }],
   });
-  const future = sortByOrderNo(rows, (o) => o.orderNo).map((o) => ({ o, day: loadingDayOf(o) })).filter((x) => x.day != null && x.day >= today);
+  const future = sortByOrderNo(rows, (o) => o.orderNo).map((o) => ({ o, day: loadingDayOf(o), slot: slotOf(o, today) })).filter((x) => x.slot != null);
   const ids = future.map((x) => x.o.id);
   const [loaded, jobs] = await Promise.all([
     loadedDays(db, ids),
     ids.length ? db.notificationOutbox.findMany({ where: { orderId: { in: ids }, type: GLASS_FGO, status: 'PENDING' }, select: { orderId: true } }) : [],
   ]);
   const pending = new Set(jobs.map((j) => j.orderId));
-  return future.map(({ o, day }) => planOrder(o, { day, loaded: loaded.has(o.id), pendingOrderJob: pending.has(o.id) }));
+  return future.map(({ o, day, slot }) => ({ ...planOrder(o, { day, loaded: loaded.has(o.id), pendingOrderJob: pending.has(o.id) }), slot }));
 }
 
 /**
@@ -151,25 +180,24 @@ async function plannedOrders(db, { customerId, today }) {
  */
 export async function batchCustomers(db, { now = new Date() } = {}) {
   const today = dayKey(now);
-  const from = new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000);
   const rows = await db.order.findMany({
     where: {
-      orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, customer: { type: 'CUSTOMER' },
+      orderTypeCode: 'GLASS_ORDER', onHold: false, status: { not: 'IPTAL' }, removedAt: null, customer: { type: 'CUSTOMER' },
       offers: { some: { status: 'GONDERILDI' } },
-      OR: [{ actualShipDate: { gte: from } }, { actualShipDate: null, estimatedShipDate: { gte: from } }],
+      OR: candidateWhere(today),
     },
-    select: { customerId: true, actualShipDate: true, estimatedShipDate: true, customer: { select: { name: true } } },
+    select: { customerId: true, status: true, actualShipDate: true, estimatedShipDate: true, customer: { select: { name: true } } },
   });
   const by = new Map();
   for (const o of rows) {
-    const day = loadingDayOf(o);
-    if (day == null || day < today) continue;
+    const day = slotOf(o, today);
+    if (day == null) continue;
     const c = by.get(o.customerId) ?? { id: o.customerId, name: o.customer.name, daySet: new Set(), orders: 0 };
     c.daySet.add(day);
     c.orders += 1;
     by.set(o.customerId, c);
   }
-  return [...by.values()].map((c) => ({ id: c.id, name: c.name, days: c.daySet.size, orders: c.orders })).sort((a, b) => a.name.localeCompare(b.name));
+  return [...by.values()].map((c) => ({ id: c.id, name: c.name, days: [...c.daySet].filter((d) => d !== OPEN_SLOT).length, orders: c.orders })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -180,18 +208,20 @@ export async function customerLoadingDays(db, { customerId, now = new Date() }) 
   const orders = await plannedOrders(db, { customerId, today: dayKey(now) });
   const by = new Map();
   for (const o of orders) {
-    const d = by.get(o.day) ?? { day: o.day, eligible: 0, excluded: 0 };
+    const d = by.get(o.slot) ?? { day: o.slot, eligible: 0, excluded: 0 };
     if (o.reason) d.excluded += 1; else d.eligible += 1;
-    by.set(o.day, d);
+    by.set(o.slot, d);
   }
-  return [...by.values()].sort((a, b) => a.day.localeCompare(b.day));
+  // Gelecekteki günler tarih sırasıyla, "günü belli olmayan / geçmiş" grubu en sonda
+  return [...by.values()].sort((a, b) => (a.day === OPEN_SLOT) - (b.day === OPEN_SLOT) || a.day.localeCompare(b.day));
 }
 
 /**
  * Seçilen günler: geçerli, yinelenmeyen, sıralı "YYYY-AA-GG" listesi
  * @param {unknown} days  @returns {string[]}
  */
-export const cleanDays = (days) => [...new Set((Array.isArray(days) ? days : [days]).map((d) => String(d ?? '')).filter((d) => parseDateOnly(d)))].sort();
+export const cleanDays = (days) => [...new Set((Array.isArray(days) ? days : [days]).map((d) => String(d ?? '')).filter((d) => d === OPEN_SLOT || parseDateOnly(d)))]
+  .sort((a, b) => (a === OPEN_SLOT) - (b === OPEN_SLOT) || a.localeCompare(b));
 
 /** İçeriğin parmak izi: müşteri, günler, siparişler (teklif sürümü + satırlar), para birimi ve uygulanan kur */
 function batchKey({ customerId, days, orders, currency, fx }) {
@@ -219,7 +249,7 @@ export async function previewBatch(db, { customerId, days, orderIds = null, now 
   const customer = await db.customer.findUnique({ where: { id: customerId } });
   if (!customer || customer.type !== 'CUSTOMER') return { ok: false, code: 'NOT_FOUND' };
   const all = await plannedOrders(db, { customerId, today });
-  const orders = all.filter((o) => selected.includes(o.day));
+  const orders = all.filter((o) => selected.includes(o.slot));
   const eligible = orders.filter((o) => !o.reason);
   const excluded = orders.filter((o) => o.reason);
   // Sipariş seçimi: yalnızca uygun siparişler daraltılır; uygunluk kararı yukarıdaki sunucu hesabındadır
@@ -231,7 +261,7 @@ export async function previewBatch(db, { customerId, days, orderIds = null, now 
   /** @type {string[]} */
   const problems = [];
   if (selected.length === 0) problems.push('NO_DAYS');
-  else if (selected.some((d) => d < today)) problems.push('PAST_DAY');
+  else if (selected.some((d) => d !== OPEN_SLOT && d < today)) problems.push('PAST_DAY');
   // Seçilen sipariş uygun değil (başka belgeyle karşılanıyor, yüklenmiş, fiyatsız, seçilen günlerde değil …): parti oluşturulmaz
   if (picked && [...picked].some((id) => !eligible.some((o) => o.orderId === id))) problems.push('NOT_ELIGIBLE');
   if (selected.length > 0 && eligible.length === 0) problems.push('NOTHING_ELIGIBLE');
@@ -271,7 +301,7 @@ export async function previewBatch(db, { customerId, days, orderIds = null, now 
       ronGross = round2(ronGross + r.gross);
     }
   }
-  const byDay = selected.map((day) => ({ day, orders: orders.filter((o) => o.day === day) }));
+  const byDay = selected.map((day) => ({ day, orders: orders.filter((o) => o.slot === day) }));
   return {
     ok: true, customer, today, days: selected, byDay, included, excluded, unselected, currency, currencies, sourceTotal, fx, fxError, ronNet, ronGross,
     missingBilling: missing, problems, key: batchKey({ customerId, days: selected, orders: included, currency, fx }),
@@ -311,7 +341,8 @@ export async function createBatch(db, { customerId, days, orderIds = null, key, 
       if (p.key !== key) return { ok: false, code: 'STALE_PREVIEW' };
       const docDay = dayDate(localDay(now, tz));
       // Belgenin günleri: sipariş seçildiyse yalnızca seçilen siparişlerin yükleme günleri (belge metni de bunları yazar)
-      const batchDays = p.unselected.length ? [...new Set(p.included.map((o) => o.day))].sort() : p.days;
+      // Günü belli olmayan sipariş belgede gün olarak yazılmaz; geçmiş tarihli (yüklenmemiş) siparişin planlı günü yazılır
+      const batchDays = p.unselected.length || p.days.includes(OPEN_SLOT) ? [...new Set(p.included.map((o) => o.day).filter(Boolean))].sort() : p.days;
       const batch = await tx.billingBatch.create({
         data: {
           customerId, kind: BATCH_KIND, status: 'PENDING', currency: p.currency, loadingDays: batchDays.map((d) => new Date(`${d}T00:00:00Z`)),
@@ -319,7 +350,7 @@ export async function createBatch(db, { customerId, days, orderIds = null, key, 
           ...fxSnapshot(p.fx, docDay),
           orders: {
             create: p.included.map((o) => ({
-              orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: new Date(`${o.day}T00:00:00Z`), sourceAmount: o.subtotal.toFixed(2),
+              orderId: o.orderId, orderNo: o.orderNo, offerId: o.offerId, loadingDay: o.day ? new Date(`${o.day}T00:00:00Z`) : null, sourceAmount: o.subtotal.toFixed(2),
               activeKey: activeKeyOf(o.orderId),
             })),
           },
@@ -341,7 +372,7 @@ export async function createBatch(db, { customerId, days, orderIds = null, key, 
       const statuses = new Map((await tx.order.findMany({ where: { id: { in: p.included.map((o) => o.orderId) } }, select: { id: true, status: true } })).map((o) => [o.id, o.status]));
       const dayText = batchDays.map(ddmmyyyy).join(', ');
       for (const o of p.included) {
-        await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_REQUESTED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: actor.id, note: `PROFORMA · ${dayText}` });
+        await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_REQUESTED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: actor.id, note: dayText ? `PROFORMA · ${dayText}` : 'PROFORMA' });
       }
       await writeAudit(tx, {
         action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id,
@@ -440,6 +471,7 @@ export function batchText(batch) {
   if (batch.kind === 'INVOICE') return `${orders} Încărcare confirmată: ${batch.confirmation ? ddmmyyyy(dayOf(batch.confirmation.shipDay)) : '—'}.`;
   if (batch.kind === 'ADVANCE') return orders;
   const days = batch.loadingDays.map((d) => ddmmyyyy(dayOf(d)));
+  if (days.length === 0) return orders; // yalnızca günü belli olmayan siparişler (karar 326)
   return `${orders} ${days.length === 1 ? 'Încărcare planificată' : 'Încărcări planificate'}: ${days.join(', ')}.`;
 }
 

@@ -4,6 +4,24 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.27 — 23.11.2026
+
+**Toplu müşteri proforması, proforma satırından ödeme, FGO tahsilatından otomatik avans faturası** (ürün sahibi, 23.11.2026; karar 326):
+
+- **Muhasebe → Cam → Müşteri proforması:** gelecekteki yükleme günlerinin yanında yeni bir **"Yükleme günü belli olmayan /
+  geçmiş yüklenmemiş"** seçeneği var: yükleme günü girilmemiş siparişler ve son 60 gün içinde günü geçip yüklemesi
+  onaylanmamış siparişler. "Tümünü göster" bütün grupları birden açar; sipariş kutucuklarıyla bir kısmı ya da hepsi
+  seçilip TEK proforma kesilir. Proformadaki satırlar, kur ve uygunluk kuralları değişmedi; günü belli olmayan sipariş
+  belgede gün olmadan yazılır.
+- **Ödeme girişi:** kesilmiş her müşteri proformasının satırında "Ödeme kaydet" var (tarih, tutar, para birimi, yöntem,
+  referans). Kayıt o proformanın zincirine yazılır; aynı firmada aynı tutar görülürse onay kutusu ister (önceki kural).
+- **Otomatik avans faturası:** FGO'da müşteri proformasına tahsilat görünürse sistem (10 dakikada bir) avans faturasını
+  kendisi keser ve müşteriye e-postayla gider. **Aynı firmada aynı tutar daha önce görüldüyse kesmez**: muhasebeye bildirim
+  düşer, yönetici sayfadaki onay kutusuyla keser. Elle girilen ödemenin avans faturası yine yöneticinin düğmesiyle kesilir.
+- Nihai fatura değişmedi: yükleme günü başına, sipariş detaylı satırlar ve en altta "Stornare avans". Tek sipariş
+  proforması, profil siparişleri ve diğer bütün akışlar değişmedi.
+- Veritabanı: `BillingBatchOrder.loadingDay` boş olabilir (yalnızca ekleme; bu sürümden sonra `takip rollback` reddeder).
+
 ## 4.2.26 — 20.11.2026
 
 **Yöneticinin geri gönderme nedeni teklif tablosunun üstünde** (ürün sahibi, 20.11.2026 — FOL17; karar 325):

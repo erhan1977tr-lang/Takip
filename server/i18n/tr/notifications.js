@@ -41,6 +41,7 @@ export default {
     FGO_FAILED: { title: "FGO'da belge kesilemedi" },
     FGO_UNCERTAIN: { title: "FGO belgesinin sonucu belirsiz: FGO'yu kontrol edip karar verin" },
     ADVANCE_REQUIRED: { title: 'Proformaya tahsilat geldi: avans faturası gerekli' },
+    ADVANCE_AUTO_HELD: { title: 'Otomatik avans faturası bekletildi: aynı müşteride aynı tutar — onayınız gerekli' },
     COMPENSATION_PENDING: { title: 'Telafi camı onayınızı bekliyor' },
     // Telafi camı açıldı (karar 157) — yalnızca yöneticiye, telafi başına bir bildirim; karar başlıkta
     COMPENSATION_FREE: { title: 'Telafi camı açıldı: bedelsiz' },
@@ -75,6 +76,7 @@ export default {
     FGO_FAILED: '{error}',
     FGO_UNCERTAIN: 'FGO kimliği (IdExtern) {ref}',
     ADVANCE_REQUIRED: '{ref} · avansı kesilecek {amount} RON',
+    ADVANCE_AUTO_HELD: '{ref} · {amount} RON · proforma sayfasından kontrol edip onaylayın',
     // {qty}: fabrika fiyat tablosundaki fiyattan farklı satır sayısı
     ORDER_PRICE_OVERRIDE: '{qty} satır farklı · ayrıntı Önemli kararlar\'da',
     COMPENSATION_PENDING: '{qty} adet · kaynak {ref}',

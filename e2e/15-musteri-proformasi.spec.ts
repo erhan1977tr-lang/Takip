@@ -101,7 +101,7 @@ test('yönetici: müşteri → yükleme günleri → önizleme (tek proforma); s
   await expect(chips.nth(1)).toContainText(dmy(D2));
   await chips.nth(0).click();
   await chips.nth(1).click();
-  await page.locator('#gunler button').click();
+  await page.locator('#gunler button.btn-primary').click();
 
   const prev = page.locator('#onizleme');
   await expect(prev).toBeVisible();

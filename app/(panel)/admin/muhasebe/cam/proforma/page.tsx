@@ -9,7 +9,7 @@ import { ConfirmButton } from '@/components/ConfirmButton';
 import { FxInfo, FxUnavailableNote } from '@/components/FxInfo';
 import { bnrRate } from '@/server/fx/bnr.js';
 import { getFgoSettings } from '@/server/integrations/fgo.js';
-import { batchCustomers, cleanDays, customerLoadingDays, listBatches, previewBatch } from '@/server/glass/batch.js';
+import { OPEN_SLOT, batchCustomers, cleanDays, customerLoadingDays, listBatches, previewBatch } from '@/server/glass/batch.js';
 import { chainState } from '@/server/glass/invoice-batch.js';
 import { FgoDocLink } from '@/components/FgoDocLink';
 import { DuplicateAck } from '@/components/DuplicateAck';
@@ -18,7 +18,11 @@ import { dupTexts, matchLines, type MatchView } from '@/lib/finance';
 import { advanceRisk } from '@/server/finance/service.js';
 import { parkedJobs } from '@/server/finance/uncertain.js';
 import { createAdvanceAction, reviewInvoiceBatchAction } from '@/app/(panel)/yuklemeler/billing-actions';
-import { createBatchAction, resolveBatchUncertainAction, reviewBatchAction } from './actions';
+import { createBatchAction, recordBatchPaymentAction, resolveBatchUncertainAction, reviewBatchAction } from './actions';
+import { randomUUID } from 'node:crypto';
+import { ManualPaymentForm } from '@/app/(panel)/siparisler/[id]/ManualPaymentForm';
+import { localDay } from '@/server/profile/dates.js';
+import { getEnv } from '@/server/env.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +39,8 @@ type Batch = Prisma.BillingBatchGetPayload<{ include: {
 const INVOICE_ERRORS = ['FORBIDDEN', 'NOT_FOUND', 'NOT_ALLOWED', 'FGO_DISABLED', 'FGO_DAILY_LIMIT', 'NOTHING_TO_ADVANCE', 'ADVANCE_PENDING', 'DUPLICATE_RISK'];
 const dmy = (day: string) => day.split('-').reverse().join('.');
 const dayText = (d: Date) => dmy(new Date(d).toISOString().slice(0, 10));
+// Seçim anahtarı: gelecekteki gün ya da "yükleme günü belli olmayan / günü geçmiş" grubu (karar 326)
+const isOpen = (slot: string) => slot === OPEN_SLOT;
 
 /**
  * Müşteri düzeyinde yükleme öncesi proforma (Aşama 7D-2): müşteri → gelecekteki yükleme günleri → önizleme → tek FGO
@@ -42,11 +48,11 @@ const dayText = (d: Date) => dmy(new Date(d).toISOString().slice(0, 10));
  */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePermission('ACCOUNTING_MANAGE');
-  const { t } = await getT();
+  const { t, m } = await getT();
   const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
   const customerId = one(sp.musteri);
-  const days = cleanDays(sp.gun ?? []);
+  const showAll = one(sp.hepsi) === '1';
   const rate = one(sp.kur).trim();
   // Sipariş seçimi (karar 125): "sec=1" ile gelen "sip" listesi; yoksa uygun siparişlerin hepsi
   const picked = one(sp.sec) === '1' ? [...new Set(([] as string[]).concat(sp.sip ?? []).filter(Boolean))].slice(0, 500) : null;
@@ -61,6 +67,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     getFgoSettings(db),
   ]);
   // Önizleme: BNR 30 dakika saklanır; kur alınamazsa "alınamadı" gösterilir ve parti oluşturulamaz
+  // "Tümünü göster": müşterinin bütün grupları (gün seçimi zorunlu değil — karar 326)
+  const days = showAll ? loadingDays.map((d) => d.day) : cleanDays(sp.gun ?? []);
   const preview = chosen && days.length > 0
     ? await previewBatch(db, { customerId: chosen.id, days, orderIds: picked, manualRate: rate || null, vatRate: settings.vatRate, bnrImpl: (o) => bnrRate({ ...o, timeoutMs: 6000 }) })
     : null;
@@ -82,6 +90,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       });
     }
   }
+  // Proforma satırından elle ödeme (karar 326): seçili müşterinin kesilmiş proformaları (en az bir siparişi iptal / silinmemiş)
+  const today = localDay(new Date(), getEnv().APP_TIMEZONE);
+  const payable = chosen ? batches.filter((b) => b.kind === 'PROFORMA' && b.status === 'ISSUED' && b.document) : [];
   // Sonucu belirsiz parti işleri (karar 209): seçili müşterinin partileri (proforma, avans, fatura)
   const customerBatchIds = chosen ? (await db.billingBatch.findMany({ where: { customerId: chosen.id }, select: { id: true } })).map((x) => x.id) : [];
   const parked = await parkedJobs(db, { batchIds: customerBatchIds });
@@ -143,14 +154,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 {loadingDays.map((d) => (
                   <label key={d.day} className="chip" style={{ margin: 0 }}>
                     <input type="checkbox" name="gun" value={d.day} defaultChecked={days.includes(d.day)} />
-                    <span>
-                      {t('accounting.batch.dayOption', { day: dmy(d.day), n: d.eligible + d.excluded })}
+                    <span {...(isOpen(d.day) ? { 'data-open-slot': '' } : {})}>
+                      {isOpen(d.day) ? t('accounting.batch.openOption', { n: d.eligible + d.excluded }) : t('accounting.batch.dayOption', { day: dmy(d.day), n: d.eligible + d.excluded })}
                       {d.excluded > 0 && ` (${t('accounting.batch.dayExcluded', { n: d.excluded })})`}
                     </span>
                   </label>
                 ))}
               </div>
-              <button className="btn btn-primary">{t('accounting.batch.preview')}</button>
+              <div className="row">
+                <button className="btn btn-primary">{t('accounting.batch.preview')}</button>
+                <button className="btn" name="hepsi" value="1" data-show-all>{t('accounting.batch.showAll')}</button>
+              </div>
             </>
           )}
         </form>
@@ -179,7 +193,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                     if (list.length === 0) return null;
                     return [
                       <tr className="group-total" key={d.day}>
-                        <td colSpan={4}><b className="group-name">{t('accounting.batch.dayHead', { day: dmy(d.day) })}</b></td>
+                        <td colSpan={4}><b className="group-name">{isOpen(d.day) ? t('accounting.batch.openHead') : t('accounting.batch.dayHead', { day: dmy(d.day) })}</b></td>
                         <td className="num">{fmtMoney(list.filter((o) => selectedIds.has(o.orderId)).reduce((s, o) => s + o.subtotal, 0), list[0].currency ?? '')}</td>
                       </tr>,
                       ...list.flatMap((o) => [
@@ -189,6 +203,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                             <input type="checkbox" form="siparis-secimi" name="sip" value={o.orderId} defaultChecked={selectedIds.has(o.orderId)} aria-label={t('accounting.batch.select.label', { order: o.orderNo })} />{' '}
                             <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link>
                             {o.title && <span className="muted small"> · {o.title}</span>}
+                            {isOpen(d.day) && <span className="muted small"> · {o.day ? dmy(o.day) : t('accounting.batch.noDay')}</span>}
                             {!selectedIds.has(o.orderId) && <span className="muted small"> — {t('accounting.batch.select.unselected')}</span>}
                           </td>
                           <td className="num">{selectedIds.has(o.orderId) ? fmtMoney(o.subtotal, o.currency ?? '') : '—'}</td>
@@ -230,7 +245,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               <ul className="small">
                 {p.excluded.map((o) => (
                   <li key={o.orderId}>
-                    <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link> · {dmy(o.day)} — {t(`accounting.batch.reason.${o.reason}` as MsgKey)}{o.ref ? ` (${o.ref})` : ''}
+                    <Link className="order-no" href={`/siparisler/${o.orderId}`}>{o.orderNo}</Link> · {o.day ? dmy(o.day) : t('accounting.batch.noDay')} — {t(`accounting.batch.reason.${o.reason}` as MsgKey)}{o.ref ? ` (${o.ref})` : ''}
                   </li>
                 ))}
               </ul>
@@ -333,6 +348,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                       )}
                     </td>
                     <td className="actions">
+                      {payable.some((x) => x.id === b.id) && <Link className="btn" href={`${PAGE}?musteri=${b.customerId}&odeme=${b.id}#odeme-${b.id}`} data-batch-payment-link>{t('accounting.batch.payment.open')}</Link>}
                       {/* Proformaya tahsilat gelmiş ve avansı kesilmemiş: avans faturası (yükleme öncesi ya da sonrası) */}
                       {chains.has(b.id) && chains.get(b.id)!.advanceRequired > 0 && !chains.get(b.id)!.advancePending && (
                         <form action={createAdvanceAction}>
@@ -370,6 +386,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </div>
         )}
       </div>
+
+      {/* 5. Proformaya elle ödeme (karar 326): kayıt proformanın zincirine yazılır, belge kesmez; avans faturası ayrıca */}
+      {payable.map((b) => {
+        const ref = `${b.document!.series}${b.document!.number}`;
+        const rateText = b.currency === 'EUR' ? Number(b.fxRate).toFixed(4).replace('.', ',') : null;
+        return (
+          <details key={b.id} className="card" id={`odeme-${b.id}`} data-batch-payment={b.id} open={one(sp.odeme) === b.id}>
+            <summary><b>{t('accounting.batch.payment.title', { ref })}</b> <span className="muted small">· {b.orders.map((o) => o.orderNo).join(', ')}</span></summary>
+            <p className="hint">{t('accounting.batch.payment.hint')}</p>
+            <ManualPaymentForm
+              batchId={b.id} idPrefix={`mp-${b.id}`} submit={recordBatchPaymentAction} requestKey={randomUUID()} today={today}
+              currencies={rateText ? ['EUR', 'RON'] : ['RON']} rate={rateText} m={m.finance}
+            />
+          </details>
+        );
+      })}
     </>
   );
 }
