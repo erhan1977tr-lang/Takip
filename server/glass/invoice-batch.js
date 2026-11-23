@@ -183,11 +183,36 @@ export async function chainState(db, proformaBatchId) {
  */
 export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new Date(), ack = null }) {
   if (!can(actor?.role, 'ACCOUNTING_MANAGE')) return { ok: false, code: 'FORBIDDEN' };
+  return issueAdvance(db, { proformaBatchId, actor, now, ack, auto: false });
+}
+
+/** Otomatik avansın (işçi) dayanağı: yalnızca FGO'nun gösterdiği tahsilat (elle kayıt FGO'yu aşmıyor, uyuşmazlık yok) — karar 326 */
+export const autoAdvanceBasis = (st) => (st.basis === 'FGO' || st.basis === 'FGO_MANUAL') && st.match !== 'MISMATCH';
+
+/**
+ * Müşteri proformasına FGO'dan gelen tahsilattan OTOMATİK avans faturası partisi (işçi; karar 326 — ürün sahibi, 23.11.2026).
+ * Yöneticinin düğmesiyle aynı çekirdek (issueAdvance): aynı kilitler, aynı tutar kuralı, aynı benzersiz anahtar. Farkları:
+ * yalnızca FGO dayanaklı tahsilat (autoAdvanceBasis; elle kayda dayanan avans yöneticinin düğmesiyle kalır) ve aynı müşteride
+ * aynı tutar riski varsa KESİLMEZ (DUPLICATE_RISK döner; onay yöneticinin — karar 208). Kullanıcı yetkisi yoktur: dışarıdan
+ * çağrılabilen tek yol işçinin turudur (server/glass/auto-advance.js).
+ * @param {any} db
+ * @param {{ proformaBatchId: string, now?: Date }} o
+ */
+export function autoAdvanceBatch(db, { proformaBatchId, now = new Date() }) {
+  return issueAdvance(db, { proformaBatchId, actor: null, now, ack: null, auto: true });
+}
+
+/** Avans partisi çekirdeği — yalnızca createAdvanceBatch (yetkili kullanıcı) ve autoAdvanceBatch (işçi) çağırır */
+async function issueAdvance(db, { proformaBatchId, actor: user, now, ack, auto }) {
   const settings = await getFgoSettings(db);
   if (!fgoReady(settings)) return { ok: false, code: 'FGO_DISABLED' };
   if (await dailyLimitReached(db, settings, localDayStart(now, getEnv().APP_TIMEZONE))) return { ok: false, code: 'FGO_DAILY_LIMIT' };
-  const head = await db.billingBatch.findUnique({ where: { id: proformaBatchId }, select: { customerId: true } });
+  const head = await db.billingBatch.findUnique({ where: { id: proformaBatchId }, select: { customerId: true, createdById: true } });
   if (!head) return { ok: false, code: 'NOT_FOUND' };
+  // Otomatik kesimde işlemi yapan kişi yoktur: geçmiş / denetim kaydında kullanıcı boş, rol SYSTEM; partinin zorunlu
+  // "oluşturan" alanı proformayı oluşturan yöneticidir (avans onun proformasının zinciridir)
+  const actor = auto ? { id: null, role: 'SYSTEM', system: true, autoAdvance: true, ip: null } : user;
+  const creatorId = auto ? head.createdById : user.id;
   try {
     return await db.$transaction(async (tx) => {
       // Kilit sırası: müşteri finans kilidi (elle ödeme kaydıyla sıralanır, karar 206) → müşteri parti kilidi
@@ -198,9 +223,10 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
       if (st.batch.status !== 'ISSUED' || !st.batch.document) return { ok: false, code: 'NOT_ALLOWED' };
       if (st.advancePending) return { ok: false, code: 'ADVANCE_PENDING' };
       if (!(st.advanceRequired > 0)) return { ok: false, code: 'NOTHING_TO_ADVANCE' };
-      // Aynı müşteride aynı tutar (karar 208): yönetici gördüğü eşleşmeleri onaylamadan avans partisi açılmaz
+      if (auto && !autoAdvanceBasis(st)) return { ok: false, code: 'MANUAL_BASIS' };
+      // Aynı müşteride aynı tutar (karar 208): yönetici gördüğü eşleşmeleri onaylamadan avans partisi açılmaz (otomatik kesim hiç onaylamaz)
       const risk = await advanceRisk(tx, { customerId: head.customerId, ron: st.advanceRequired, chainKey: `batch:${proformaBatchId}`, now });
-      if (risk.matches.length && ack !== risk.ackKey) return { ok: false, code: 'DUPLICATE_RISK', matches: risk.matches, ackKey: risk.ackKey };
+      if (risk.matches.length && (auto || ack !== risk.ackKey)) return { ok: false, code: 'DUPLICATE_RISK', matches: risk.matches, ackKey: risk.ackKey, amount: st.advanceRequired, ref: st.ref };
       const p = st.batch;
       const gross = st.advanceRequired;
       const net = netOf(gross, settings.vatRate);
@@ -209,7 +235,7 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
       const batch = await tx.billingBatch.create({
         data: {
           customerId: p.customerId, kind: 'ADVANCE', status: 'PENDING', parentId: p.id, uniqueKey, currency: p.currency, loadingDays: p.loadingDays,
-          selectionKey: uniqueKey, sourceTotal: '0.00', ronNet: net.toFixed(2), createdById: actor.id, createdAt: now, basis: st.basis,
+          selectionKey: uniqueKey, sourceTotal: '0.00', ronNet: net.toFixed(2), createdById: creatorId, createdAt: now, basis: st.basis,
           // Avans RON'dur; zincirin kur kaydı (proformanınki) partide de durur
           fxRate: p.fxRate, fxDate: p.fxDate, fxSource: p.fxSource, fxPolicy: p.fxPolicy, fxCurrency: p.fxCurrency, fxBaseRate: p.fxBaseRate,
           fxMarkupPercent: p.fxMarkupPercent, fxSourceDate: p.fxSourceDate, fxResolvedAt: p.fxResolvedAt, fxManual: p.fxManual,
@@ -224,7 +250,7 @@ export async function createAdvanceBatch(db, { proformaBatchId, actor, now = new
       for (const o of orders) await writeHistory(tx, { orderId: o.orderId, event: 'FGO_DOC_REQUESTED', from: statuses.get(o.orderId), to: statuses.get(o.orderId), actorId: actor.id, note: `ADVANCE · ${st.ref}` });
       await writeAudit(tx, {
         action: 'BILLING_BATCH_CREATED', entityType: 'BillingBatch', entityId: batch.id, userId: actor.id,
-        details: { customerId: p.customerId, kind: 'ADVANCE', proforma: st.ref, proformaBatchId: p.id, basis: st.basis, paid: st.paid, manualRon: st.manualRon, advancedBefore: st.advanced, amountRon: gross, ...(risk.matches.length ? { duplicateAck: risk.matches.map((m) => m.key) } : {}) },
+        details: { customerId: p.customerId, kind: 'ADVANCE', proforma: st.ref, proformaBatchId: p.id, basis: st.basis, paid: st.paid, manualRon: st.manualRon, advancedBefore: st.advanced, amountRon: gross, ...(auto ? { auto: true } : {}), ...(risk.matches.length ? { duplicateAck: risk.matches.map((m) => m.key) } : {}) },
       }, actor);
       if (risk.matches.length) await recordDuplicateAck(tx, { orderId: null, customerId: p.customerId, subject: 'ADVANCE', matches: risk.matches, amountRon: gross, actor, key: `batch:${batch.id}` });
       return { ok: true, batchId: batch.id, amount: gross };
