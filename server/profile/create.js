@@ -14,6 +14,7 @@ import { PROFILE_CURRENCY, priceFingerprint, profilePricesFor } from './pricing.
 import { recordStockShortage } from './stock.js';
 import { DEPOT_CALENDAR, dayDate, dayKeyOf, pickupProblem } from './dates.js';
 import { calendarOverrides } from '../calendar/service.js';
+import { getLoadingDateSetting, profilePickupFloor } from '../orders/loading-date-setting.js';
 import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
 
 /** FGO proforma kuyruk olayı (server/profile/transitions.js → FGO_PROFORMA ile aynı ad) */
@@ -95,7 +96,8 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         const day = pickup?.pickupDate;
         if (!(day instanceof Date) || Number.isNaN(day.getTime())) throw new WorkflowError('PICKUP_MISSING');
         const overrides = await calendarOverrides(tx, DEPOT_CALENDAR, { now });
-        const problem = pickupProblem(day, { now, overrides, staff: false });
+        const floor = profilePickupFloor(await getLoadingDateSetting(tx), now); // sabit sonraki tahmini yükleme tarihi (4.2.34)
+        const problem = pickupProblem(day, { now, overrides, staff: false, floor });
         if (problem) throw new WorkflowError(problem);
         // 4.2.24 (karar 324): fiyat listeli doğrudan siparişte telefon ve araç plakası ZORUNLU (sipariş gönderilmeden önce);
         // "Kurye ile gönderim" seçilirse plaka istenmez

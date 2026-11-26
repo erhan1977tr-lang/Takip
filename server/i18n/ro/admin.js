@@ -345,6 +345,31 @@ export default {
       fake: "MOD DE TEST: furnizorul fals de traducere este activ (TRANSLATE_FAKE=1). Notele nu sunt traduse cu adevărat și nu se trimit cereri la Google. Această setare nu trebuie să existe pe serverul real.",
     },
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
+    // Data estimată de încărcare fixă (4.2.34)
+    loadingDate: {
+      title: "Data estimată de încărcare",
+      intro: "Setare separată pentru comenzile de sticlă și de profile. Cu „Calcul automat” regula actuală rămâne neschimbată. Dacă alegeți „Dată fixă” și introduceți o zi, aceasta se folosește pentru comenzile de acum înainte.",
+      kind: { glass: "Comenzi de sticlă", profile: "Comenzi de profile" },
+      auto: {
+        glass: "Calcul automat (săptămâna miercuri–marți + 23 de zile, vineri)",
+        profile: "Calcul automat (calendarul depozitului din România, regula orei 12:00)",
+      },
+      fixed: "Dată fixă — următoarea dată estimată de încărcare:",
+      date: "Data",
+      stateAuto: "Acum se folosește calculul automat.",
+      stateFixed: {
+        glass: "Acum fixă: data estimată de încărcare a comenzilor noi de sticlă este {date}.",
+        profile: "Acum fixă: clientul poate alege ridicarea cel mai devreme pe {date} (sau următoarea zi deschisă a depozitului).",
+      },
+      stateExpired: "Data fixă ({date}) a trecut — se folosește calculul automat. Introduceți o dată nouă sau alegeți „Calcul automat”.",
+      bad: {
+        BAD_DATE: "Cu „Dată fixă” selectată introduceți o zi validă.",
+        PAST_DATE: "Data fixă nu poate fi înainte de azi.",
+        TOO_FAR: "Data fixă poate fi cel mult la {max} zile de azi.",
+      },
+      hint: "Afectează doar deciziile NOI: la sticlă data comenzilor create de acum înainte, la profile ziua de ridicare aleasă de client de acum înainte. Data comenzilor existente nu se schimbă; vânzările / administratorul o modifică în continuare din pagina comenzii. După ce data fixă trece, sistemul revine automat la calculul automat.",
+      saved: "Setarea datei estimate de încărcare a fost salvată.",
+    },
     // Aprobarea producției de către client (4.2.1)
     productionApproval: {
       title: "Aprobarea producției de către client",

@@ -87,19 +87,25 @@ export function depotReadyDay(at, overrides = null) {
 
 /**
  * Müşterinin seçebileceği en erken alış günü: sipariş şimdi depoya iletilse hesaplanan gün.
- * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null }} p
+ * `floor` (4.2.34): Ayarlar'daki sabit "sonraki tahmini yükleme tarihi" ("YYYY-MM-DD", server/orders/loading-date-setting.js →
+ * profilePickupFloor) — depo kuralının günü bundan erkense en erken gün, bu gün ya da ondan sonraki ilk açık depo günüdür.
+ * null = yalnızca depo kuralı (bugünkü davranış).
+ * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null, floor?: string | null }} p
  */
-export function earliestPickup({ now, overrides = null }) {
-  return depotReadyDay(now, overrides);
+export function earliestPickup({ now, overrides = null, floor = null }) {
+  const ready = depotReadyDay(now, overrides);
+  if (!floor || floor <= dayKeyOf(ready)) return ready;
+  return dayDate(must(openOnOrAfter(DEPOT_CALENDAR, floor, overrides)));
 }
 
 /**
  * Alış günü sorunu ya da null. Kodlar: PICKUP_INVALID | PICKUP_WEEKEND | PICKUP_CLOSED | PICKUP_PAST | PICKUP_TOO_EARLY |
  * PICKUP_TOO_LATE. staff (yönetici): en erken kural uygulanmaz; yalnızca açık gün, bugünden önce değil.
  * @param {Date} date
- * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null, staff?: boolean }} ctx
+ * floor: sabit sonraki tahmini yükleme tarihi (yalnızca müşteri için en erken günü öne çeker; yönetici etkilenmez).
+ * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null, staff?: boolean, floor?: string | null }} ctx
  */
-export function pickupProblem(date, { now, overrides = null, staff = false }) {
+export function pickupProblem(date, { now, overrides = null, staff = false, floor = null }) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'PICKUP_INVALID';
   const key = dayKeyOf(date);
   const st = dayStatus(DEPOT_CALENDAR, key, overrides);
@@ -109,7 +115,7 @@ export function pickupProblem(date, { now, overrides = null, staff = false }) {
   if (!staff) {
     let earliest;
     try {
-      earliest = earliestPickup({ now, overrides });
+      earliest = earliestPickup({ now, overrides, floor });
     } catch (e) {
       if (e instanceof NoOpenDayError) return 'PICKUP_CLOSED';
       throw e;

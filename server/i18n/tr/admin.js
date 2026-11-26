@@ -348,6 +348,31 @@ export default {
       fake: "TEST MODU: sahte çeviri sağlayıcısı açık (TRANSLATE_FAKE=1). Notlar gerçekten çevrilmiyor ve Google'a istek gitmiyor. Gerçek sunucuda bu ayar bulunmamalı.",
     },
     // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
+    // Sabit tahmini yükleme tarihi (4.2.34)
+    loadingDate: {
+      title: "Tahmini yükleme tarihi",
+      intro: "Cam ve profil siparişleri için ayrı ayar. \"Otomatik hesap\" seçiliyken bugünkü kural aynen çalışır. \"Sabit tarih\" seçip bir gün girerseniz bundan sonraki siparişlerde bu gün kullanılır.",
+      kind: { glass: "Cam siparişleri", profile: "Profil siparişleri" },
+      auto: {
+        glass: "Otomatik hesap (Çarşamba–Salı haftası + 23 gün, Cuma)",
+        profile: "Otomatik hesap (Romanya depo takvimi, 12:00 kuralı)",
+      },
+      fixed: "Sabit tarih — sonraki tahmini yükleme tarihi:",
+      date: "Tarih",
+      stateAuto: "Şu an otomatik hesap kullanılıyor.",
+      stateFixed: {
+        glass: "Şu an sabit: yeni cam siparişlerinin tahmini yükleme tarihi {date}.",
+        profile: "Şu an sabit: müşteri en erken {date} (ya da sonraki ilk açık depo günü) alış günü seçebilir.",
+      },
+      stateExpired: "Sabit tarih ({date}) geçti — otomatik hesap kullanılıyor. Yeni bir tarih girin ya da \"Otomatik hesap\"ı seçin.",
+      bad: {
+        BAD_DATE: "Sabit tarih seçiliyken geçerli bir gün girin.",
+        PAST_DATE: "Sabit tarih bugünden önce olamaz.",
+        TOO_FAR: "Sabit tarih bugünden en fazla {max} gün sonrası olabilir.",
+      },
+      hint: "Yalnızca YENİ kararları etkiler: cam için bundan sonra oluşturulan siparişlerin tarihi, profil için müşterinin bundan sonra seçeceği alış günü. Mevcut siparişlerin tarihi değişmez; satış / yönetici tarihi eskisi gibi sipariş sayfasından değiştirir. Sabit tarih geçince sistem kendiliğinden otomatik hesaba döner.",
+      saved: "Tahmini yükleme tarihi ayarı kaydedildi.",
+    },
     // Müşteri üretim onayı (4.2.1)
     productionApproval: {
       title: "Müşteri üretim onayı",

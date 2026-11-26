@@ -4,6 +4,17 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.34 — 26.11.2026 — Sabit tahmini yükleme tarihi ayarı (karar 332)
+
+- **Ayarlar → Entegrasyonlar → "Tahmini yükleme tarihi"**: cam ve profil siparişleri için ayrı ayar. Varsayılan ikisi de
+  **Otomatik hesap** (bugünkü kural; ayar kaydedilmeden hiçbir şey değişmez).
+- **Cam — Sabit tarih:** bundan sonra oluşturulan cam siparişlerinin tahmini yükleme tarihi girilen gündür (ör. 15.01.2027);
+  Yeni Sipariş formundaki "tahmini yükleme tarihi … olacak" bilgisi de aynı günü gösterir.
+- **Profil — Sabit tarih:** müşteri bu günden (depo kapalıysa sonraki açık günden) önce alış günü seçemez (doğrudan sipariş,
+  teklif onayı, bilgileri değiştir). Yönetici kısıtlanmaz.
+- Mevcut siparişlerin tarihi değişmez; satış / yönetici sipariş sayfasından değiştirmeye devam eder. Sabit gün geçince
+  sistem kendiliğinden otomatik hesaba döner. Ayar değişikliği denetim kaydına yazılır.
+
 ## 4.2.32 — 26.11.2026 — Telefonda yeni profil siparişi formu okunur (karar 330)
 
 - Fiyat listesi olan müşteride yeni profil siparişi formunun ürün listesi telefonda sığmıyordu: ürün adı sütunu tek harfe sıkışıyor, adet kutusu sağda kesiliyordu. Dar ekranda (≤ 640 px) liste artık sipariş sayfasındaki gibi kart: görsel + ürün adı üstte, altında etiketli U.M., birim fiyat, tutar ve adet kutusu.
