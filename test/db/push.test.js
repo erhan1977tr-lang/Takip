@@ -176,7 +176,7 @@ dbTest('duyuru e-postası: yalnızca yetkili ve onaylı, bir kez; alıcı kural�
   assert.ok(!to.includes('a2@gla.test'));
   const ion = sent.find((m) => m.to === 'a1@gla.test');
   assert.match(ion.subject, /telefonul/);
-  assert.match(ion.text, /https:\/\/takip\.test\/ayarlar#telefon/);
+  assert.match(ion.text, /https:\/\/takip\.test\/dil\?l=ro&next=\/kurulum/);
   // Gönderim sırasında yarıda kalan satır (işaretli) yeniden gönderilmez
   const half = await db.notificationOutbox.create({ data: { type: an.ANNOUNCEMENT_EMAIL, payload: { key: an.ANNOUNCEMENT_KEY, userId: U.a1.id, lang: 'ro', sendingAt: new Date().toISOString() }, inAppAt: new Date() } });
   const before2 = sent.length;
