@@ -7,9 +7,16 @@
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tok = Read-Host -Prompt 'TAKİP anahtarı (btk_ ile başlar)' -AsSecureString
-$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($tok))
+$plain = ([Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($tok))).Trim()
 if (-not $plain.StartsWith('btk_')) { Write-Host 'Anahtar btk_ ile başlamalı.' -ForegroundColor Red; exit 1 }
-$tok | ConvertFrom-SecureString | Set-Content -Path (Join-Path $Here 'anahtar.dat') -Encoding ASCII
+# Kırpılmış anahtar, kullanıcıya bağlı DPAPI ile şifrelenip satır sonu olmadan yazılır; hemen geri okunarak denetlenir
+$enc = ConvertTo-SecureString -String $plain -AsPlainText -Force | ConvertFrom-SecureString
+$keyFile = Join-Path $Here 'anahtar.dat'
+[IO.File]::WriteAllText($keyFile, $enc, [Text.Encoding]::ASCII)
+$check = ConvertTo-SecureString -String ([IO.File]::ReadAllText($keyFile).Trim())
+$back = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($check))
+if ($back -ne $plain) { Write-Host 'Anahtar dosyası doğrulanamadı.' -ForegroundColor Red; exit 1 }
+Write-Host 'Anahtar kaydedildi.' -ForegroundColor Green
 
 $script = Join-Path $Here 'bt-kur.ps1'
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`""
@@ -19,5 +26,6 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatt
 Register-ScheduledTask -TaskName 'TAKIP BT kuru' -Action $action -Trigger $triggers -Settings $settings `
   -Description 'Günün BT kurunu (În unitățile BT, EUR Vânzare) TAKİP''e gönderir.' -Force | Out-Null
 Write-Host "Görev oluşturuldu. Şimdi bir deneme gönderiliyor..." -ForegroundColor Green
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
-Get-Content -Path (Join-Path $Here 'bt-kur.log') -Tail 3
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Once
+$log = Join-Path $Here 'bt-kur.log'
+if (Test-Path $log) { Get-Content -Path $log -Tail 3 }
