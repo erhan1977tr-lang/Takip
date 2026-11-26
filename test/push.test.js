@@ -9,6 +9,7 @@ import {
 } from '../server/push/webpush.js';
 import { PWA_ICONS } from '../server/push/icons.js';
 import { GUIDE_VIDEOS } from '../server/push/guide-videos.js';
+import { GUIDE_VIDEO_NAMES } from '../server/push/guide-video-list.js';
 import { SW_SOURCE } from '../server/push/sw.js';
 import { pushText } from '../server/push/service.js';
 import { renderAnnouncementPwa } from '../server/mail/templates/announcement-pwa.js';
@@ -165,7 +166,8 @@ test('kurulum videoları: üretilmiş dosya varlıklarla aynı; rehber herkese a
   for (const [name, b64] of Object.entries(GUIDE_VIDEOS)) {
     assert.equal(fs.readFileSync(path.join(ROOT, 'assets', 'kurulum', name)).toString('base64'), b64, name);
   }
-  assert.deepEqual(Object.keys(GUIDE_VIDEOS).sort(), ['ro.mp4', 'tr.mp4']);
+  assert.deepEqual(Object.keys(GUIDE_VIDEOS).sort(), ['android-ro.mp4', 'android-tr.mp4', 'iphone-ro.mp4']);
+  assert.deepEqual([...GUIDE_VIDEO_NAMES], Object.keys(GUIDE_VIDEOS).sort());
   const page = read('app/kurulum/page.tsx');
   assert.doesNotMatch(page, /@\/lib\/db|prisma|getCurrentUser|requireUser/);
   assert.match(read('components/PushSettings.tsx'), /href="\/kurulum"/);

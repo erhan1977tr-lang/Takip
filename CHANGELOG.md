@@ -6,8 +6,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 ## 4.2.37 — 26.11.2026 — Kurulum videosuna iPhone adımları (karar 331)
 
-- Romence kurulum videosuna iPhone (Safari) bölümü eklendi: Partajare → „Mai multe” → „Adăugați la ecranul principal” → „Adăugați” → simgeden açma → Setări → „Permiteți” (7 adım). Ekran görüntülerindeki müşteri adı ve kişiler bulanıklaştırıldı.
-- Videolardaki adım etiketi artık "Android 1 / 6", "iPhone 1 / 7" biçiminde.
+- Kurulum videoları ayrıldı: Android (Türkçe + Romence, 6 adım) ve iPhone (Romence, 7 adım: Partajare → „Mai multe” → „Adăugați la ecranul principal” → „Adăugați” → simgeden açma → Setări → „Permiteți”). /kurulum sayfasında her video kendi bölümünde; iPhone videosu olmayan dilde (Türkçe) yalnız yazılı adımlar gösterilir. Ekran görüntülerindeki müşteri adı ve kişiler bulanıklaştırıldı.
+- Videolardaki açıklama yazıları büyütüldü (başlık ve açıklama yaklaşık %40 daha büyük; video 720 piksel genişlikte).
 - Romence iPhone metinleri (kurulum sayfası, ayarlar, duyuru e-postası) iPhone'un gerçek Romence etiketlerine göre güncellendi.
 - 4.2.36 yayınlanmadı; tümü bu sürümle gelir.
 

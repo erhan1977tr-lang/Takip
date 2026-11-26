@@ -41,7 +41,7 @@ export default {
     title: 'TAKİP\'i telefona kurma',
     intro: 'TAKİP\'i telefonunuzda uygulama gibi kullanmak ve bildirimleri telefona almak için aşağıdaki adımları izleyin. Uygulama mağazasından bir şey indirmeniz gerekmez.',
     android: 'Android (Chrome)',
-    video: 'Kısa video (yaklaşık 25 saniye):',
+    video: 'Kısa video (yaklaşık yarım dakika):',
     android1: 'Chrome ile takip.gkh.ro adresini açın ve giriş yapın.',
     android2: 'Sağ üstteki üç noktaya (⋮) dokunun.',
     android3: 'Menüde "Yükle ve kısayol oluştur"a dokunun.',

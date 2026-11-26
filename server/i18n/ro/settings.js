@@ -41,7 +41,7 @@ export default {
     title: 'Instalarea TAKİP pe telefon',
     intro: 'Pentru a folosi TAKİP pe telefon ca o aplicație și a primi notificările pe telefon, urmați pașii de mai jos. Nu trebuie să descărcați nimic din magazinul de aplicații.',
     android: 'Android (Chrome)',
-    video: 'Video scurt (aproximativ 25 de secunde):',
+    video: 'Video scurt (aproximativ jumătate de minut):',
     android1: 'Deschideți takip.gkh.ro în Chrome și autentificați-vă.',
     android2: 'Atingeți cele trei puncte (⋮) din dreapta sus.',
     android3: 'În meniu atingeți „Instalează și creează o comandă rapidă”.',
