@@ -31,7 +31,7 @@ for ($i = 1; $i -le $Tries; $i++) {
     $bytes = $ms.ToArray()
     $res = Invoke-WebRequest -Uri $Takip -Method Post -UseBasicParsing -TimeoutSec 30 -Body $bytes `
       -ContentType 'text/html; charset=utf-8' -Headers @{ Authorization = "Bearer $Token" }
-    Log "deneme $i: TAKİP yanıtı $($res.Content)"
+    Log "deneme ${i}: TAKİP yanıtı $($res.Content)"
     exit 0
   } catch {
     $code = $null
