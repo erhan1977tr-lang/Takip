@@ -4,6 +4,14 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.29 — 26.11.2026
+
+**Profil sipariş sayfasında "Depo" kutusu** (ürün sahibi, 26.11.2026; karar 327):
+
+- Müşterinin profil sipariş sayfasında, proforma kesildikten teslim alınana kadar (Proforma / Depoda) **"Depo" kutusu**:
+  tıklanabilir Google Maps bağlantısı ve dokununca aranan telefonlar (Adrian, Enis). 4.2.28 ile aynı kaynak; zil
+  bildirimi ve diğer ekranlar değişmedi.
+
 ## 4.2.28 — 26.11.2026
 
 **Profil proformasında depo konumu ve iletişim kişileri** (ürün sahibi, 26.11.2026; karar 327):
@@ -13,8 +21,6 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   **Contact GKH: Enis +40 750 492 221** (bağlantı ve telefonlar tıklanabilir). FGO'dan kesilen proformanın e-postasında
   (Romence) ve elle kesilen proformanın bildirim e-postasında (müşterinin dilinde) aynı bilgi.
 - Müşterinin "Proforma kesildi" zil bildiriminde de aynı bilgi metin olarak yazar.
-- Müşterinin profil sipariş sayfasında, proforma kesildikten teslim alınana kadar (Proforma / Depoda) **"Depo" kutusu**:
-  tıklanabilir Google Maps bağlantısı ve dokununca aranan telefonlar.
 - Değişmeyen: cam siparişleri, avans ve fatura e-postaları, diğer bütün e-postalar / bildirimler / belgeler, alıcılar ve
   gönderim zamanı. Veritabanı değişikliği yok.
 
