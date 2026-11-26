@@ -1,0 +1,21 @@
+name: bt-erisim-denemesi
+on:
+  push:
+    branches: ['deneme/bt-kur-erisim']
+permissions:
+  contents: read
+jobs:
+  dene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: BT kur sayfasi GitHub'dan okunabiliyor mu
+        run: |
+          for v in 4 6; do
+            code=$(curl -$v -s -o bt.html -w "%{http_code}" --max-time 20 https://www.bancatransilvania.ro/curs-valutar \
+              -H "user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+              -H "accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" -H "accept-language: ro-RO,ro;q=0.9" || echo "ERR")
+            echo "IPv$v -> HTTP $code"
+            grep -o "Actualizare: [0-9-]*" bt.html | head -1 || true
+            grep -o "Acces blocat" bt.html | head -1 || true
+          done
