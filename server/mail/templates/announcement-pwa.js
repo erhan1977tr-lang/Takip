@@ -30,7 +30,7 @@ const TEXT = {
     steps: [
       (url) => `Deschideți pe telefon adresa ${url} și autentificați-vă.`,
       () => 'Android (Chrome): atingeți cele trei puncte (⋮) din dreapta sus → „Instalează și creează o comandă rapidă” → „Instalează pagina ca aplicație” → „Instalează”. (Nu alegeți „Creează o comandă rapidă”.)',
-      () => 'iPhone (Safari): butonul Partajare de jos (pătratul cu săgeată în sus; pe iOS nou întâi „•••”, apoi „Partajare”) → „Adaugă pe ecranul principal” → „Adaugă”.',
+      () => 'iPhone (Safari): butonul Partajare de jos (pătratul cu săgeată în sus; pe iOS nou întâi „•••”, apoi „Partajare”) → „Mai multe”, dacă e nevoie → „Adăugați la ecranul principal” → „Adăugați”.',
       () => 'Deschideți TAKİP din pictograma de pe ecranul principal, apăsați pe pagina Setări butonul „Activează notificările pe acest dispozitiv” și permiteți notificările.',
     ],
     after: 'De acum, notificările despre oferte, aprobarea desenelor și data încărcării vă vor ajunge și pe telefon. Notificările nu conțin sume sau prețuri; atingând notificarea se deschide comanda respectivă. Le puteți dezactiva oricând din aceeași pagină.',

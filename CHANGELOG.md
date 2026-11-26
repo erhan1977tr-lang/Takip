@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.37 — 26.11.2026 — Kurulum videosuna iPhone adımları (karar 331)
+
+- Romence kurulum videosuna iPhone (Safari) bölümü eklendi: Partajare → „Mai multe” → „Adăugați la ecranul principal” → „Adăugați” → simgeden açma → Setări → „Permiteți” (7 adım). Ekran görüntülerindeki müşteri adı ve kişiler bulanıklaştırıldı.
+- Videolardaki adım etiketi artık "Android 1 / 6", "iPhone 1 / 7" biçiminde.
+- Romence iPhone metinleri (kurulum sayfası, ayarlar, duyuru e-postası) iPhone'un gerçek Romence etiketlerine göre güncellendi.
+- 4.2.36 yayınlanmadı; tümü bu sürümle gelir.
+
 ## 4.2.36 — 26.11.2026 — Ana ekrana ekleme, telefon bildirimleri ve kurulum rehberi (karar 331)
 
 Ara sürümler 4.2.33 – 4.2.34 yayınlanmadı; tümü bu sürümle gelir.
