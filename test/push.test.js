@@ -13,6 +13,7 @@ import { GUIDE_VIDEO_NAMES } from '../server/push/guide-video-list.js';
 import { SW_SOURCE } from '../server/push/sw.js';
 import { pushText } from '../server/push/service.js';
 import { renderAnnouncementPwa } from '../server/mail/templates/announcement-pwa.js';
+import { wallToUtc, defaultSendAt } from '../server/push/announce.js';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -159,6 +160,11 @@ test('duyuru e-postası: iki dil, ayarlar bağlantısı, fiyat yok, HTML kaçı�
     assert.ok(m.subject.length > 10);
   }
   assert.match(renderAnnouncementPwa({ lang: 'tr', appUrl: 'https://x' }).subject, /telefon/);
+  // Bildirimi açma adımları ayrıntılı: Ayarlar, kutu, izin, yeşil yazı, deneme bildirimi (4.2.39)
+  const tr = renderAnnouncementPwa({ lang: 'tr', appUrl: 'https://x' }).text;
+  for (const w of ['"Ayarlar"', '"Telefon bildirimleri"', '"Bu cihazda bildirimleri aç"', '"İzin ver"', '"Bu cihazda açık"', '"Deneme bildirimi gönder"']) assert.ok(tr.includes(w), w);
+  const ro = renderAnnouncementPwa({ lang: 'ro', appUrl: 'https://x' }).text;
+  for (const w of ['„Setări”', '„Notificări pe telefon”', '„Activează notificările pe acest dispozitiv”', '„Permiteți”', '„Activate pe acest dispozitiv”', '„Trimite o notificare de test”']) assert.ok(ro.includes(w), w);
   assert.match(renderAnnouncementPwa({ lang: 'ro', appUrl: 'https://x' }).subject, /telefon/);
 });
 
@@ -171,4 +177,15 @@ test('kurulum videoları: üretilmiş dosya varlıklarla aynı; rehber herkese a
   const page = read('app/kurulum/page.tsx');
   assert.doesNotMatch(page, /@\/lib\/db|prisma|getCurrentUser|requireUser/);
   assert.match(read('components/PushSettings.tsx'), /href="\/kurulum"/);
+  assert.match(page, /g\.end7/);
+  assert.match(page, /g\.trouble4/);
+});
+
+test('duyuru gönderim saati: Bükreş duvar saati → UTC (4.2.39)', () => {
+  assert.equal(wallToUtc('2026-11-27', '10:00').toISOString(), '2026-11-27T08:00:00.000Z');
+  assert.equal(wallToUtc('2026-07-01', '10:00').toISOString(), '2026-07-01T07:00:00.000Z');
+  assert.equal(wallToUtc('2026-13-01', '10:00'), null);
+  assert.equal(wallToUtc('2026-11-27', '25:00'), null);
+  assert.equal(wallToUtc('', ''), null);
+  assert.deepEqual(defaultSendAt(new Date('2026-11-26T18:00:00Z')), { day: '2026-11-27', time: '10:00' });
 });

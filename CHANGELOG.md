@@ -4,6 +4,13 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.39 — 26.11.2026 — Duyuru: mali belge adresine, zamanlı gönderim, ayrıntılı bildirim adımları (karar 331)
+
+- Müşteri duyuru e-postası artık **her firmanın mali belge adresine** gider (fatura e-postası, yoksa firma e-postası — proforma / fatura e-postalarıyla aynı kural). Aynı adres birden çok firmada geçiyorsa tek ileti gider. Adresi olmayan firmalar ayrıca listelenir.
+- **Gönderim zamanı seçilir:** /admin/duyuru sayfasında gün ve saat (Romanya saati; varsayılan yarın 10:00). E-postalar o saatte gider; geçmiş saat ve 14 günden ileri tarih kabul edilmez.
+- Sayfada **alıcı listesi** (firma, adres, kaynak, dil) gösterilir; gönderim anında adres değişmişse eski adrese gitmez.
+- Duyuru e-postasında ve /kurulum sayfasında telefon bildirimini açma adımları ayrıntılandırıldı (simgeden açma, üst menüyü kaydırıp Ayarlar, "Telefon bildirimleri" kutusu, mavi düğme + İzin ver, yeşil "Bu cihazda açık", deneme bildirimi) ve "Bildirim gelmiyorsa" bölümü eklendi.
+
 ## 4.2.38 — 26.11.2026 — Ayrı Android / iPhone kurulum videoları (karar 331)
 
 - Kurulum videoları ayrıldı: Android (Türkçe + Romence, 6 adım) ve iPhone (Romence, 7 adım: Partajare → „Mai multe” → „Adăugați la ecranul principal” → „Adăugați” → simgeden açma → Setări → „Permiteți”). /kurulum sayfasında her video kendi bölümünde; iPhone videosu olmayan dilde (Türkçe) yalnız yazılı adımlar gösterilir. Ekran görüntülerindeki müşteri adı ve kişiler bulanıklaştırıldı.
