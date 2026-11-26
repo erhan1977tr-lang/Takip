@@ -6,6 +6,11 @@ BT (Banca Transilvania) sunucumuzun ve bütün veri merkezlerinin IP adreslerini
 sunucu almaz. İzin verilen bir bilgisayardaki Windows görevi sayfayı alır ve olduğu gibi TAKİP'e gönderir; kuru
 okuyan ve denetleyen TAKİP'tir (sayfa denetimden geçmezse hiçbir şey yazılmaz).
 
+BT, PowerShell'in doğrudan isteğini ve görünmez (headless) Edge'i de reddediyor (403 / Access Denied). Bu yüzden görev
+önce doğrudan dener; olmazsa Edge'i ayrı bir profille (`edge-profil` klasörü — kullanıcının kendi Edge'i, sekmeleri ve
+oturumları kullanılmaz) ekranın dışında normal pencerede açar, sayfayı yerel hata ayıklama bağlantısından
+(127.0.0.1:9333) okur ve yalnızca bu Edge'i kapatır. Elle deneme: `powershell -ExecutionPolicy Bypass -File .\bt-kur.ps1 -Once`.
+
 ## Kurulum (bir kez)
 
 1. TAKİP → Ayarlar → Entegrasyonlar → **Otomatik okuma**: kutuyu işaretleyin → Kaydet → **Yeni anahtar oluştur**.
