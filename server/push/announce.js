@@ -5,14 +5,17 @@
 //     işareti aynı işlemde yazılır, kilit altında; ikinci istek ALREADY (çift tıklama / iki sekme ikinci e-posta üretmez).
 //   - Alıcı (4.2.39, Erhan): firmanın mali belge adresi — financialRecipient (fatura e-postası, yoksa firma e-postası).
 //     Firma başına bir ileti; aynı adres birden çok firmada geçiyorsa bir kez. Yalnızca panele girebilen (etkin, silinmemiş,
-//     şifresini kurmuş) en az bir müşteri kullanıcısı olan firmalar. Dil: firmanın ilk kullanıcısının dili (yoksa Romence).
+//     şifresini kurmuş) en az bir müşteri kullanıcısı olan firmalar. Dil: her zaman Romence (4.2.40, Erhan).
+//   - Adres düzeltme (4.2.40, Erhan): Admin bu duyuru için bir firmanın adresini sayfada değiştirebilir (yalnızca bu duyuru;
+//     firma kaydı değişmez). Düzeltilmiş adres kuyruk satırında override: true ile saklanır; gönderimde firmanın hâlâ
+//     panele girebilen kullanıcısı varsa gider.
 //   - Zaman: Admin'in seçtiği an (Bucharest saatiyle; şimdiden sonra, en çok 14 gün sonra) → kuyruk satırı o ana kadar bekler.
 //   - Gönderim işçide (dispatchAnnouncements): alıcı başına en çok bir ileti — gönderimden ÖNCE işaret (sendingAt); işaretli
 //     bulunan satır (işçi gönderim sırasında durdu) FAILED / UNKNOWN olur, kendiliğinden yeniden gönderilmez. Yalnızca SMTP'ye
 //     hiç bağlanılamadıysa (CONN) yeniden denenir (en çok 3).
 import { can } from '../auth/permissions.js';
 import { writeAudit } from '../orders/journal.js';
-import { financialRecipient } from '../documents/delivery.js';
+import { financialRecipient, isEmail } from '../documents/delivery.js';
 import { sendBrandedMail } from '../mail/send.js';
 import { renderAnnouncementPwa } from '../mail/templates/announcement-pwa.js';
 
@@ -24,12 +27,11 @@ const MARK = `announcement:${ANNOUNCEMENT_KEY}`;
 const MAX_ATTEMPTS = 3;
 const FORBIDDEN = /** @type {{ ok: false, code: 'FORBIDDEN' }} */ ({ ok: false, code: 'FORBIDDEN' });
 const allowed = (actor) => !!actor?.id && can(actor.role, 'USER_MANAGE');
-const langOf = (u) => ((u?.fixedLanguage || u?.language) === 'tr' ? 'tr' : 'ro');
 
 const USER_WHERE = { type: 'CUSTOMER', appRole: 'MUSTERI', isActive: true, deletedAt: null, passwordHash: { not: null } };
 const FIRM_SELECT = {
   id: true, name: true, email: true, billingEmail: true,
-  users: { where: USER_WHERE, select: { language: true, fixedLanguage: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+  users: { where: USER_WHERE, select: { id: true }, take: 1 },
 };
 
 /** Firma → alıcı (adres yoksa null). Gönderimde de aynı kural kullanılır. */
@@ -38,26 +40,31 @@ function firmRecipient(c) {
   const to = financialRecipient(c);
   if (!to) return null;
   const billing = String(c.billingEmail ?? '').trim() === to;
-  return { to, source: billing ? 'BILLING' : 'FIRM', lang: langOf(c.users[0]) };
+  return { to, source: billing ? 'BILLING' : 'FIRM', lang: /** @type {'ro'} */ ('ro') };
 }
 
 /**
  * Duyuruyu alacak adresler (firma başına; aynı adres bir kez) ve adresi olmayan firmalar.
- * @returns {Promise<{ recipients: { to: string, lang: 'tr' | 'ro', source: 'BILLING' | 'FIRM', customerIds: string[], firms: string[] }[], missing: string[] }>}
+ * overrides: firma kimliği → bu duyuru için kullanılacak adres (Admin'in sayfada düzelttiği; doğrulanmış).
+ * @param {any} db
+ * @param {Record<string, string>} [overrides]
+ * @returns {Promise<{ recipients: { to: string, lang: 'tr' | 'ro', source: 'BILLING' | 'FIRM' | 'OVERRIDE', customerIds: string[], firms: string[] }[], missing: string[] }>}
  */
-export async function announcementRecipients(db) {
+export async function announcementRecipients(db, overrides = {}) {
   const firms = await db.customer.findMany({
     where: { type: 'CUSTOMER', users: { some: USER_WHERE } }, select: FIRM_SELECT, orderBy: { name: 'asc' },
   });
   const byAddr = new Map();
   const missing = [];
   for (const c of firms) {
-    const r = firmRecipient(c);
+    const o = Object.hasOwn(overrides, c.id) ? overrides[c.id] : null;
+    const base = firmRecipient(c);
+    const r = o && o.toLowerCase() !== base?.to.toLowerCase() ? { to: o, source: 'OVERRIDE', lang: 'ro' } : base;
     if (!r) { missing.push(c.name); continue; }
     const k = r.to.toLowerCase();
     const cur = byAddr.get(k);
     if (cur) { cur.customerIds.push(c.id); cur.firms.push(c.name); continue; }
-    byAddr.set(k, { to: r.to, lang: r.lang, source: r.source, customerIds: [c.id], firms: [c.name] });
+    byAddr.set(k, { to: r.to, lang: /** @type {'ro'} */ ('ro'), source: /** @type {any} */ (r.source), customerIds: [c.id], firms: [c.name] });
   }
   return { recipients: [...byAddr.values()], missing };
 }
@@ -114,31 +121,40 @@ export async function announcementStatus(db, actor) {
 /**
  * Duyuruyu kuyruğa yazar (bir kez). Admin'in açık onayı (confirm) ve gönderim zamanı (sendAt) zorunlu.
  * @param {any} db
- * @param {{ actor: any, confirm: boolean, sendAt: Date | null, ip?: string | null, now?: Date }} p
- * @returns {Promise<{ ok: true, queued: number, sendAt: string } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM' | 'SEND_AT' | 'ALREADY' | 'NO_RECIPIENTS' }>}
+ * overrides: firma kimliği → bu duyuru için adres (boş = firmanın mali belge adresi). Her biri tek geçerli adres olmalı.
+ * @param {{ actor: any, confirm: boolean, sendAt: Date | null, overrides?: Record<string, string>, ip?: string | null, now?: Date }} p
+ * @returns {Promise<{ ok: true, queued: number, sendAt: string } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM' | 'SEND_AT' | 'ADDRESS' | 'ALREADY' | 'NO_RECIPIENTS' }>}
  */
-export async function queueAnnouncement(db, { actor, confirm, sendAt, ip = null, now = new Date() }) {
+export async function queueAnnouncement(db, { actor, confirm, sendAt, overrides = {}, ip = null, now = new Date() }) {
   if (!allowed(actor)) return FORBIDDEN;
   if (confirm !== true) return { ok: false, code: 'CONFIRM' };
+  /** @type {Record<string, string>} */
+  const fixed = {};
+  for (const [id, raw] of Object.entries(overrides ?? {})) {
+    const v = String(raw ?? '').trim();
+    if (!v) continue;
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !isEmail(v)) return { ok: false, code: 'ADDRESS' };
+    fixed[id] = v;
+  }
   if (!(sendAt instanceof Date) || Number.isNaN(sendAt.getTime()) || sendAt <= now || sendAt.getTime() - now.getTime() > MAX_AHEAD_MS) {
     return { ok: false, code: 'SEND_AT' };
   }
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${MARK}, 0))`;
     if (await tx.integrationSetting.findUnique({ where: { key: MARK } })) return { ok: false, code: 'ALREADY' };
-    const { recipients } = await announcementRecipients(tx);
+    const { recipients } = await announcementRecipients(tx, fixed);
     if (!recipients.length) return { ok: false, code: 'NO_RECIPIENTS' };
     const at = new Date();
     await tx.integrationSetting.create({ data: { key: MARK, value: { queuedAt: at.toISOString(), sendAt: sendAt.toISOString(), byId: actor.id, count: recipients.length } } });
     await tx.notificationOutbox.createMany({
       data: recipients.map((r) => ({
         type: ANNOUNCEMENT_EMAIL, availableAt: sendAt, inAppAt: at,
-        payload: { key: ANNOUNCEMENT_KEY, to: r.to, customerIds: r.customerIds, lang: r.lang },
+        payload: { key: ANNOUNCEMENT_KEY, to: r.to, customerIds: r.customerIds, lang: r.lang, ...(r.source === 'OVERRIDE' ? { override: true } : {}) },
       })),
     });
     await writeAudit(tx, {
       action: 'ANNOUNCEMENT_QUEUED', entityType: 'Announcement', entityId: ANNOUNCEMENT_KEY, userId: actor.id,
-      details: { key: ANNOUNCEMENT_KEY, count: recipients.length, sendAt: sendAt.toISOString(), recipient: 'FINANCIAL' },
+      details: { key: ANNOUNCEMENT_KEY, count: recipients.length, sendAt: sendAt.toISOString(), recipient: 'FINANCIAL', lang: 'ro', overrides: recipients.filter((r) => r.source === 'OVERRIDE').length },
     }, { role: actor.role, ip });
     return { ok: true, queued: recipients.length, sendAt: sendAt.toISOString() };
   });
@@ -172,7 +188,10 @@ export async function dispatchAnnouncements(db, { transport, from, appUrl, now =
     const firms = ids.length && typeof p.to === 'string'
       ? await db.customer.findMany({ where: { id: { in: ids }, type: 'CUSTOMER' }, select: FIRM_SELECT })
       : [];
-    const still = firms.some((c) => firmRecipient(c)?.to.toLowerCase() === String(p.to).toLowerCase());
+    // Admin'in bu duyuru için düzelttiği adres: firmanın hâlâ panele girebilen kullanıcısı varsa gider
+    const still = p.override === true
+      ? firms.some((c) => c.users?.length > 0) && isEmail(String(p.to))
+      : firms.some((c) => firmRecipient(c)?.to.toLowerCase() === String(p.to).toLowerCase());
     const user = still ? { email: String(p.to) } : null;
     if (!user) {
       await db.notificationOutbox.update({ where: { id: row.id }, data: { status: 'SKIPPED', lastError: 'NO_RECIPIENT' } });
@@ -180,7 +199,7 @@ export async function dispatchAnnouncements(db, { transport, from, appUrl, now =
       continue;
     }
     await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...p, sendingAt: now.toISOString() } } });
-    const lang = p.lang === 'tr' ? 'tr' : 'ro';
+    const lang = 'ro'; // duyuru her zaman Romence (4.2.40)
     const mail = renderAnnouncementPwa({ lang, name: null, appUrl });
     try {
       await sendBrandedMail(transport, { from, to: user.email, subject: mail.subject, text: mail.text, html: mail.html, lang });

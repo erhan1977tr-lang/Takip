@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic';
 const ERR: Record<string, MsgKey> = {
   CONFIRM: 'admin.announce.errors.CONFIRM',
   SEND_AT: 'admin.announce.errors.SEND_AT',
+  ADDRESS: 'admin.announce.errors.ADDRESS',
   ALREADY: 'admin.announce.errors.ALREADY',
   NO_RECIPIENTS: 'admin.announce.errors.NO_RECIPIENTS',
   FORBIDDEN: 'admin.announce.errors.FORBIDDEN',
@@ -27,7 +28,7 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
   const st = await announcementStatus(db, await actorOf(user));
   if (!st.ok) return null;
   const appUrl = getEnv().APP_URL || '';
-  const previews = (['tr', 'ro'] as const).map((lang) => ({ lang, mail: renderAnnouncementPwa({ lang, name: null, appUrl }) }));
+  const previews = (['ro'] as const).map((lang) => ({ lang, mail: renderAnnouncementPwa({ lang, name: null, appUrl }) }));
   const errKey = sp.error ? ERR[sp.error] : undefined;
   const def = defaultSendAt();
   // Gönderim zamanı her zaman Romanya saatiyle gösterilir (ayardan bağımsız)
@@ -41,7 +42,7 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
       <section className="card" data-announce-status>
         <h2>{t('admin.announce.recipientsTitle')}</h2>
         <p data-announce-count={st.recipients.total}>
-          {t('admin.announce.recipients', { total: st.recipients.total, tr: st.recipients.tr, ro: st.recipients.ro })}
+          {t('admin.announce.recipients', { total: st.recipients.total })}
         </p>
         <p className="muted small">{t('admin.announce.recipientsRule')}</p>
         {st.queuedAt
@@ -52,7 +53,7 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
             </div>
           )
           : (
-            <form action={queueAnnouncementAction} className="stack" data-announce-form>
+            <form action={queueAnnouncementAction} className="stack" id="duyuru-form" data-announce-form>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <label className="field">{t('admin.announce.sendAtLabel')}
                   <input type="date" name="day" defaultValue={def.day} required data-announce-day />
@@ -68,17 +69,24 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
           )}
       </section>
       <section className="card" data-announce-list>
+        <p className="muted small">{t('admin.announce.addrHint')}</p>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>#</th><th>{t('admin.announce.colFirm')}</th><th>{t('admin.announce.colEmail')}</th><th>{t('admin.announce.colSource')}</th><th>{t('admin.announce.colLang')}</th></tr></thead>
+            <thead><tr><th>#</th><th>{t('admin.announce.colFirm')}</th><th>{t('admin.announce.colEmail')}</th><th>{t('admin.announce.colSource')}</th></tr></thead>
             <tbody>
               {st.list.map((r, i) => (
                 <tr key={r.to} data-announce-to={r.to}>
                   <td>{i + 1}</td>
                   <td>{r.firms.join(', ')}</td>
-                  <td className="mono">{r.to}</td>
-                  <td>{t(r.source === 'BILLING' ? 'admin.announce.sourceBILLING' : 'admin.announce.sourceFIRM')}</td>
-                  <td>{t(r.lang === 'tr' ? 'admin.announce.langTr' : 'admin.announce.langRo')}</td>
+                  <td className="mono">
+                    {st.queuedAt
+                      ? r.to
+                      : (
+                        <input type="email" form="duyuru-form" name={`addr_${r.customerIds[0]}`} defaultValue={r.to}
+                          aria-label={t('admin.announce.colEmail')} data-announce-addr={r.customerIds[0]} />
+                      )}
+                  </td>
+                  <td>{t(r.source === 'BILLING' ? 'admin.announce.sourceBILLING' : r.source === 'OVERRIDE' ? 'admin.announce.sourceOVERRIDE' : 'admin.announce.sourceFIRM')}</td>
                 </tr>
               ))}
             </tbody>
@@ -93,7 +101,7 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
       </section>
       {previews.map(({ lang, mail }) => (
         <section className="card" key={lang} data-announce-preview={lang}>
-          <h2>{t(lang === 'tr' ? 'admin.announce.previewTr' : 'admin.announce.previewRo')}</h2>
+          <h2>{t('admin.announce.previewRo')}</h2>
           <p><strong>{t('admin.announce.subject')}:</strong> {mail.subject}</p>
           <pre className="pre">{mail.text}</pre>
         </section>
