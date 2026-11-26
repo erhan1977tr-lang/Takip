@@ -51,7 +51,14 @@ test('telefon: yeni profil siparişi ve sipariş sayfası okunur (taşma yok, ad
   await cust.goto('/siparisler/yeni?tip=PROFILE_ORDER');
   await noHorizontalOverflow(cust);
   await cust.fill('#title', 'Telefon görünümü');
-  await cust.locator('tr', { hasText: 'GK15' }).locator('input.qty-input').fill('2');
+  // 4.2.32: sipariş formunun ürün listesi de kart — ürün adı tam genişlikte (harf harf bölünmez), adet kutusu ekranda
+  const pick = cust.locator('table.profile-pick').first();
+  await expect(pick.locator('thead')).toBeHidden();
+  const pickRow = pick.locator('tbody tr', { hasText: 'GK15' });
+  const nameBox = await pickRow.locator('td.pl-name').boundingBox();
+  expect(nameBox!.width, 'ürün adı geniş').toBeGreaterThan(200);
+  await inViewport(cust, pickRow.locator('input.qty-input'));
+  await pickRow.locator('input.qty-input').fill('2');
   await cust.getByRole('button', { name: 'Siparişi gönder' }).click();
   const again = cust.locator('#stok-uyari').getByRole('button', { name: 'Yine de gönder' });
   // Stok uyarısı (karar 177) çıkarsa "Yine de gönder"; çıkmazsa sipariş doğrudan oluşur

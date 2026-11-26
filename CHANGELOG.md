@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.32 — 26.11.2026 — Telefonda yeni profil siparişi formu okunur (karar 330)
+
+- Fiyat listesi olan müşteride yeni profil siparişi formunun ürün listesi telefonda sığmıyordu: ürün adı sütunu tek harfe sıkışıyor, adet kutusu sağda kesiliyordu. Dar ekranda (≤ 640 px) liste artık sipariş sayfasındaki gibi kart: görsel + ürün adı üstte, altında etiketli U.M., birim fiyat, tutar ve adet kutusu.
+- Yalnızca görünüm: aynı form alanları, aynı değerler, aynı hesap; geniş ekran değişmedi.
+
 ## 4.2.31 — 26.11.2026
 
 **Telefonda profil siparişi okunur** (ürün sahibi, 26.11.2026; karar 329 — müşteri telefondan profil siparişi verirken
