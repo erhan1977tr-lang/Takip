@@ -19,8 +19,10 @@ function Log($m) {
 }
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$sec = Get-Content -Path (Join-Path $Here 'anahtar.dat') -Raw | ConvertTo-SecureString
-$Token = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+# Dosyanın sonundaki satır sonu / boşluk ConvertTo-SecureString'i bozar: önce kırp
+$enc = (Get-Content -Path (Join-Path $Here 'anahtar.dat') -Raw).Trim()
+$sec = ConvertTo-SecureString -String $enc
+$Token = ([Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))).Trim()
 
 for ($i = 1; $i -le $Tries; $i++) {
   try {
