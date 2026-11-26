@@ -15,6 +15,7 @@ import { SessionActivity } from '@/components/SessionActivity';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { PreviewProvider } from '@/components/FilePreview';
 import { AssistantChat } from '@/components/AssistantChat';
+import { PushEndpointField, ServiceWorkerRegister } from '@/components/PushEndpointField';
 import { loadFeed } from '@/lib/notifications';
 import { db } from '@/lib/db';
 import { unreadTotal } from '@/server/notes/unread.js';
@@ -101,6 +102,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             />
             <LanguageSelect locale={locale} names={m.lang} title={t('lang.label')} />
             <form action={logoutAction}>
+              <PushEndpointField />
               <button type="submit" className="btn btn-link">{t('common.logout')}</button>
             </form>
           </div>
@@ -108,6 +110,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         <Suspense fallback={null}><NavLinks items={nav} variant="mobile" /></Suspense>
         <main className="content"><PreviewProvider text={{ ...m.files.preview, download: m.common.download }}>{children}</PreviewProvider></main>
         <AutoRefresh />
+        <ServiceWorkerRegister />
         {/* 30 dakika etkinlik olmayan oturum kapanır (karar 135): gerçek etkinliği bildirir; yenilemeler uzatmaz */}
         <SessionActivity remainingMs={await sessionRemainingMs()} />
         {/* Panel AI asistanı (karar 290): yalnızca ASSISTANT_PANEL (ilk aşamada yalnızca yönetici). Sayfa açılışında istek yapmaz. */}

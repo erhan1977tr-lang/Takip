@@ -2,6 +2,9 @@ import { requireUser } from '@/lib/auth/session';
 import { userCan } from '@/lib/permissions';
 import { getT } from '@/lib/i18n';
 import { saveSettingsAction } from './actions';
+import { db } from '@/lib/db';
+import { getPushSettings } from '@/server/push/service.js';
+import { PushSettings } from '@/components/PushSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +18,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   // Bildirim e-postası tercihi müşteri hesabına aittir (iç ekibin iş e-postaları bu ayara bağlı değildir)
   const customerAccount = userCan(user, 'ACCOUNT_SETTINGS');
+  // Telefon bildirimi (4.2.33): tarayıcıya yalnızca açık anahtar verilir (kapalıysa hiç)
+  const push = await getPushSettings(db);
   return (
     <>
       <div className="page-head">
@@ -48,6 +53,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </div>
         <div className="row end"><button className="btn btn-primary">{t('settings.save')}</button></div>
       </form>
+      <PushSettings publicKey={push.ready ? push.publicKey : null} texts={m.settings.push} />
     </>
   );
 }

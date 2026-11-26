@@ -8,7 +8,7 @@ import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus
 import { AV_ERRORS, safeSignature } from '@/server/files/clamav.js';
 import {
   saveAccountingAction, saveAntivirusAction, saveProductionApprovalAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
-  testAntivirusAction, testFgoAction, testTranslateAction,
+  savePushSettingsAction, testAntivirusAction, testFgoAction, testTranslateAction,
 } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
 import { btRateFor, getDailyRate } from '@/server/fx/bt.js';
@@ -24,6 +24,7 @@ import { failedTranslations, getTranslateSettings } from '@/server/notes/transla
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 import { SettingsTabs } from './SettingsTabs';
 import { verifyResult } from '@/server/security/signed-param.js';
+import { getPushSettings, pushStats } from '@/server/push/service.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,6 +97,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const approval = full ? await getApprovalSetting(db) : null;
   // Not çevirisi (karar 127): anahtarın kendisi buraya hiç gelmez — yalnızca kayıtlı olup olmadığı
   const [noteTr, trFailed] = await Promise.all([getTranslateSettings(db), failedTranslations(db)]);
+  const [pushCfg, pushNums] = full ? await Promise.all([getPushSettings(db), pushStats(db)]) : [null, null];
   const trBad = ['KEY', 'KEY_FORMAT', 'FORBIDDEN'].includes(sp.detail ?? '') ? sp.detail : 'KEY_FORMAT';
   const trReason = TRANSLATE_ERRORS.includes(sp.code ?? '') ? sp.code : 'ERROR';
   const [wh, whPending, whFailed] = await Promise.all([
@@ -269,6 +271,23 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <div className="hint">{t('admin.integrations.productionApproval.hint')}</div>
       </form>
       </>)}
+
+      {/* Telefon bildirimleri (4.2.33, karar 331): tümünü açma / kapama (acil durdurma) — yalnızca SETTINGS_MANAGE */}
+      {full && pushCfg && pushNums && (
+      <form action={savePushSettingsAction} className="card" id="push">
+        <h2>{t('admin.integrations.push.title')}</h2>
+        <p className="muted small">{t('admin.integrations.push.intro')}</p>
+        {sp.ok === 'push' && <div className="alert alert-ok">{t('admin.integrations.push.saved')}</div>}
+        <label className="check"><input type="checkbox" name="enabled" defaultChecked={pushCfg.enabled} /> {t('admin.integrations.push.enabled')}</label>
+        <p className="muted small" data-push-stats>
+          {pushCfg.publicKey ? t('admin.integrations.push.stats', { devices: pushNums.subscriptions, users: pushNums.users }) : t('admin.integrations.push.noKeys')}
+        </p>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <button className="btn btn-primary">{t('admin.integrations.push.save')}</button>
+          <Link className="btn" href="/admin/duyuru">{t('admin.integrations.push.announce')}</Link>
+        </div>
+      </form>
+      )}
 
       {/* Not çevirisi (karar 127): sipariş notları yazılırken bir kez çevrilir; anahtar yalnızca burada girilir, gösterilmez */}
       {full && (<>

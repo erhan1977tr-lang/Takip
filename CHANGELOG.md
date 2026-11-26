@@ -4,6 +4,21 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.33 — 26.11.2026 — Ana ekrana ekleme ve telefon bildirimleri (karar 331)
+
+- **Ana ekrana ekle:** TAKİP telefonda uygulama gibi açılır (Android "Ana ekrana ekle / Uygulamayı yükle", iPhone Safari
+  "Ana Ekrana Ekle"): kendi simgesi, tam ekran. Uygulama mağazası yok; sayfalar önbelleğe alınmaz (her açılış güncel).
+- **Telefon bildirimleri (Web Push):** zildeki her bildirim, kullanıcı "Ayarlar → Bu cihazda bildirimleri aç" dediyse o
+  cihaza da gider — tüm roller, zildeki alıcı kuralının aynısı. Metin kısa: başlık + sipariş no (iç ekipte maskeli firma);
+  tutar, fiyat, not içeriği yazmaz; dokununca ilgili sayfa açılır. iPhone'da önce ana ekrana ekleme gerekir.
+- Çıkış yapılan cihaza, kapatılmış / silinmiş kullanıcıya bildirim gitmez; aynı telefonda başka hesapla giriş cihazı o
+  hesaba geçirir. Yönetici Ayarlar → Entegrasyonlar'dan tümünü kapatabilir. Anahtarlar işçide otomatik oluşur (sunucuda
+  ayar yok); içerik push hizmetinden uçtan uca şifreli geçer; yalnızca bilinen push hizmeti adreslerine istek atılır.
+- **Müşterilere bilgi e-postası:** Yönetici → Ayarlar → Entegrasyonlar → "Müşterilere bilgi e-postası" sayfası: önizleme
+  (Türkçe / Romence) + alıcı sayısı → onay kutusu → "Gönder". Bir kez gönderilir; etkin, şifresini kurmuş, e-posta
+  bildirimleri açık müşteri kullanıcılarına kendi dillerinde; kullanıcı başına en çok bir ileti.
+- Test: `test/push.test.js` (RFC 8291 test vektörü, VAPID imzası, adres listesi, yapı), `test/db/push.test.js`.
+
 ## 4.2.32 — 26.11.2026 — Telefonda yeni profil siparişi formu okunur (karar 330)
 
 - Fiyat listesi olan müşteride yeni profil siparişi formunun ürün listesi telefonda sığmıyordu: ürün adı sütunu tek harfe sıkışıyor, adet kutusu sağda kesiliyordu. Dar ekranda (≤ 640 px) liste artık sipariş sayfasındaki gibi kart: görsel + ürün adı üstte, altında etiketli U.M., birim fiyat, tutar ve adet kutusu.

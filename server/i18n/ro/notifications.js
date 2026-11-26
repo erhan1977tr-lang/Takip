@@ -27,6 +27,7 @@ export default {
     reminder: 'Memento: se așteaptă aprobarea dvs. pentru producție',
   },
   types: {
+    PUSH_TEST: { title: 'Notificare de test: notificările TAKİP pe telefon funcționează', customer: 'Notificare de test: notificările TAKİP pe telefon funcționează' },
     LOADING_NOT_LOADED: { title: 'Sticlă neîncărcată: este necesară replanificarea' },
     LOADING_REPLANNED: { title: 'Sticla neîncărcată a fost replanificată', customer: 'Sticla neîncărcată a fost replanificată la o nouă zi de încărcare' },
     // Situație specială (decizia 124) — doar pentru clienți: firma comenzii (PLACED / CANCELLED) și firma lăzii (HOSTED / UNHOSTED)

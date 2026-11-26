@@ -32,6 +32,8 @@ import { readMailConfig } from '../server/mail/config.js';
 import { createTransport } from '../server/mail/transport.js';
 import { outboxTransport } from '../server/mail/outbox-transport.js';
 import { getEnv, startupEnv } from '../server/env.js';
+import { dispatchPush, ensureVapidKeys } from '../server/push/service.js';
+import { dispatchAnnouncements } from '../server/push/announce.js';
 import { createAssistant } from '../server/assistant/bot.js';
 import { createPanelServer } from '../server/assistant/panel.js';
 import { dispatchNotifications } from '../server/notifications/email.js';
@@ -124,6 +126,9 @@ async function profileTick() {
   // Profil iadesi depo e-postaları (DÜZELTME 10 M8): açılış ve depo teslimi; alıcı başına en çok bir ileti
   const rt = await dispatchReturnEmails(db, { transport: mail.transport, from: mail.from, appUrl: mail.appUrl, now, log });
   if (rt.sent || rt.failed || rt.retried) log('iade e-postası:', JSON.stringify(rt));
+  // Müşterilere tek seferlik bilgi e-postası (4.2.33): yalnızca yöneticinin "Gönder"i ile kuyruğa giren işler
+  const an = await dispatchAnnouncements(db, { transport: mail.transport, from: mail.from, appUrl: mail.appUrl, now, log });
+  if (an.sent || an.failed || an.skipped) log('duyuru e-postası:', JSON.stringify(an));
   // Sipariş olaylarının bildirim e-postaları (işlem tamamlandıktan sonra, kuyruktan)
   if (getEnv().NOTIFY_EMAILS) {
     const n = await dispatchNotifications(db, { ...mail, now, timeZone: getEnv().APP_TIMEZONE, log });
@@ -283,6 +288,30 @@ if (!once) {
   }
 }
 
+// Telefon bildirimleri (Web Push, 4.2.33 — karar 331): VAPID anahtarları ilk açılışta oluşturulur (sunucuda ayar gerekmez);
+// zildeki yeni bildirimler ayrı, kısa bir döngüyle (10 sn) bildirimi açan cihazlara gönderilir. --once ile dış istek yok.
+const PUSH_INTERVAL_MS = 10_000;
+let pushRun = Promise.resolve();
+if (!once) {
+  try {
+    const k = await ensureVapidKeys(db, { secret: env.AUTH_SECRET });
+    if (k === 'CREATED') log('telefon bildirimi anahtarları oluşturuldu');
+  } catch (e) {
+    log('telefon bildirimi anahtarları oluşturulamadı:', e?.name ?? 'Error');
+  }
+  pushRun = (async () => {
+    while (!stopping) {
+      try {
+        const p = await dispatchPush(db, { secret: env.AUTH_SECRET, subject: env.APP_URL || 'mailto:noreply@localhost', log });
+        if (p.sent || p.failed || p.gone) log('telefon bildirimi:', JSON.stringify(p));
+      } catch (e) {
+        log('telefon bildirimi hatası:', e?.name ?? 'Error');
+      }
+      await new Promise((r) => setTimeout(r, PUSH_INTERVAL_MS).unref());
+    }
+  })();
+}
+
 while (!stopping) {
   try {
     await inAppTick();
@@ -355,6 +384,7 @@ while (!stopping) {
 }
 // Asistan döngüsünün bitmesi en çok 30 sn beklenir; zamanlayıcı süreci açık tutmaz (--once hemen çıkar)
 assistantStop.abort();
+await Promise.race([pushRun, new Promise((r) => setTimeout(r, 15_000).unref())]);
 await Promise.race([assistantRun, new Promise((r) => setTimeout(r, 30_000).unref())]);
 if (panel) await Promise.race([panel.close(), new Promise((r) => setTimeout(r, 5_000).unref())]);
 await db.$disconnect();

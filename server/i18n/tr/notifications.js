@@ -27,6 +27,7 @@ export default {
     reminder: 'Hatırlatma: üretim onayınız bekleniyor',
   },
   types: {
+    PUSH_TEST: { title: 'Deneme bildirimi: TAKİP telefon bildirimleri çalışıyor', customer: 'Deneme bildirimi: TAKİP telefon bildirimleri çalışıyor' },
     LOADING_NOT_LOADED: { title: 'Yüklenmeyen cam: yeniden planlama gerekli' },
     LOADING_REPLANNED: { title: 'Yüklenmeyen cam ileri yüklemeye aktarıldı', customer: 'Yüklenmeyen camınız yeni yükleme gününe aktarıldı' },
     // Özel durum (karar 124) — yalnızca müşterilere: sipariş sahibi firmaya (PLACED / CANCELLED) ve sandığın firmasına (HOSTED / UNHOSTED)

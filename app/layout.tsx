@@ -10,10 +10,12 @@ export async function generateMetadata(): Promise<Metadata> {
     title: t('common.appTitle'),
     description: t('common.appDescription'),
     robots: { index: false, follow: false },
+    // "Ana ekrana ekle" (4.2.33): iPhone'da tam ekran açılış ve simge adı; manifest app/manifest.ts
+    appleWebApp: { capable: true, title: 'TAKİP', statusBarStyle: 'default' },
   };
 }
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#ffffff' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Sayfa dili: tarayıcının otomatik çeviri önermemesi ve ekran okuyucular için doğru dil
