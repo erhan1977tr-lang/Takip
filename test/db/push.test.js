@@ -134,27 +134,46 @@ dbTest('cihaz başka hesaba geçer; çıkış / kapatma / silme / pasif kullanı
   assert.equal(await db.pushSubscription.count({ where: { userId: tmp.id } }), 0);
 }));
 
-dbTest('duyuru e-postası: yalnızca yetkili ve onaylı, bir kez; alıcı kuralı; gönderim kullanıcı başına bir ileti', offline(async () => {
-  await user('off@gla.test', 'Pasif', 'MUSTERI', A.id, { isActive: false });
-  await user('nomail@gla.test', 'E-posta istemiyor', 'MUSTERI', A.id, { emailNotifications: false });
-  await user('nopw@gla.test', 'Şifresiz', 'MUSTERI', A.id, { passwordHash: null });
-  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.sales), confirm: true })).code, 'FORBIDDEN');
-  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: false })).code, 'CONFIRM');
+dbTest('duyuru e-postası: yalnızca yetkili, onaylı ve zamanlı, bir kez; alıcı = firmanın mali belge adresi; gönderim adres başına bir ileti, seçilen saatte', offline(async () => {
+  const now = new Date();
+  const later = new Date(now.getTime() + 3600_000);
+  // B: fatura e-postası var (iki kullanıcı → yine tek ileti, dil ilk kullanıcının); C: aynı fatura adresi (bir kez);
+  // D: adres yok (eksik listesinde); E: kullanıcısı yalnızca pasif (alıcı değil)
+  const B = await db.customer.create({ data: { name: 'BETA SRL', prefix: 'BET', email: 'firma@beta.test', billingEmail: 'fatura@beta.test' } });
+  const C = await db.customer.create({ data: { name: 'CETA SRL', prefix: 'CET', billingEmail: 'FATURA@beta.test' } });
+  const D = await db.customer.create({ data: { name: 'DELTA SRL', prefix: 'DEL' } });
+  const E = await db.customer.create({ data: { name: 'EPSI SRL', prefix: 'EPS', email: 'e@epsi.test' } });
+  await user('b1@beta.test', 'B1', 'MUSTERI', B.id, { language: 'tr' });
+  await user('b2@beta.test', 'B2', 'MUSTERI', B.id, { language: 'ro', emailNotifications: false });
+  await user('c1@ceta.test', 'C1', 'MUSTERI', C.id);
+  await user('d1@delta.test', 'D1', 'MUSTERI', D.id);
+  await user('e1@epsi.test', 'E1', 'MUSTERI', E.id, { isActive: false });
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.sales), confirm: true, sendAt: later })).code, 'FORBIDDEN');
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: false, sendAt: later })).code, 'CONFIRM');
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: null })).code, 'SEND_AT');
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: new Date(now.getTime() - 1000) })).code, 'SEND_AT');
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: new Date(now.getTime() + 15 * 86400_000) })).code, 'SEND_AT');
   const st = await an.announcementStatus(db, actor(U.admin));
-  const expected = (await db.user.findMany({ where: { type: 'CUSTOMER', isActive: true, deletedAt: null, emailNotifications: true, passwordHash: { not: null } } })).length;
-  assert.equal(st.recipients.total, expected);
-  assert.ok(st.recipients.tr >= 1 && st.recipients.ro >= 1);
+  const byTo = Object.fromEntries(st.list.map((r) => [r.to.toLowerCase(), r]));
+  assert.ok(byTo['a@gla.test'], 'firma e-postası (fatura e-postası yok)');
+  assert.equal(byTo['a@gla.test'].source, 'FIRM');
+  assert.equal(byTo['a@gla.test'].lang, 'ro');
+  assert.deepEqual(byTo['fatura@beta.test'].firms.sort(), ['BETA SRL', 'CETA SRL']);
+  assert.equal(byTo['fatura@beta.test'].source, 'BILLING');
+  assert.equal(byTo['fatura@beta.test'].lang, 'tr');
+  assert.ok(!byTo['firma@beta.test'] && !byTo['e@epsi.test'] && !byTo['a1@gla.test']);
+  assert.ok(st.missing.includes('DELTA SRL'));
+  assert.ok(!st.missing.includes('EPSI SRL'));
+  const expected = st.recipients.total;
   const [x, y] = await Promise.all([
-    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true }),
-    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true }),
+    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later }),
+    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later }),
   ]);
   assert.deepEqual([x.ok, y.ok].sort(), [false, true]);
   assert.equal([x, y].find((r) => !r.ok).code, 'ALREADY');
   assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL } }), expected);
-  // Uygulama içi bildirim üretmez
   assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL, inAppAt: null } }), 0);
-  // Gönderim: bir kullanıcı bu arada e-postayı kapattı → atlanır; SMTP bağlantı hatası → yeniden denenir; ikinci tur tekrar göndermez
-  await db.user.update({ where: { id: U.a2.id }, data: { emailNotifications: false } });
+  assert.equal((await an.announcementStatus(db, actor(U.admin))).sendAt, later.toISOString());
   const sent = [];
   let failOnce = true;
   const transport = { sendMail: async (m) => {
@@ -162,25 +181,33 @@ dbTest('duyuru e-postası: yalnızca yetkili ve onaylı, bir kez; alıcı kural�
     sent.push(m);
     return { messageId: 'x' };
   } };
-  const r1 = await an.dispatchAnnouncements(db, { transport, from: 'noreply@takip.test', appUrl: 'https://takip.test' });
+  const send = (at) => an.dispatchAnnouncements(db, { transport, from: 'noreply@takip.test', appUrl: 'https://takip.test', now: at });
+  // Seçilen saatten önce hiçbir şey gitmez
+  assert.deepEqual(await send(now), { sent: 0, failed: 0, skipped: 0 });
+  assert.equal(sent.length, 0);
+  // Bu arada GLA'nın e-postası değişti → eski adrese gitmez (atlanır)
+  await db.customer.update({ where: { id: A.id }, data: { email: 'yeni@gla.test' } });
+  const at = new Date(later.getTime() + 1000);
+  const r1 = await send(at);
   assert.equal(r1.skipped, 1);
   assert.equal(r1.failed, 1);
   const retry = await db.notificationOutbox.findFirst({ where: { type: an.ANNOUNCEMENT_EMAIL, lastError: 'CONN' } });
   assert.equal(retry.status, 'PENDING');
-  await db.notificationOutbox.update({ where: { id: retry.id }, data: { availableAt: new Date() } });
-  await an.dispatchAnnouncements(db, { transport, from: 'noreply@takip.test', appUrl: 'https://takip.test' });
-  await an.dispatchAnnouncements(db, { transport, from: 'noreply@takip.test', appUrl: 'https://takip.test' });
-  const to = sent.map((m) => m.to);
-  assert.equal(new Set(to).size, to.length, 'kullanıcı başına bir ileti');
+  await db.notificationOutbox.update({ where: { id: retry.id }, data: { availableAt: at } });
+  await send(at);
+  await send(at);
+  const to = sent.map((m) => m.to.toLowerCase());
+  assert.equal(new Set(to).size, to.length, 'adres başına bir ileti');
   assert.equal(to.length, expected - 1);
-  assert.ok(!to.includes('a2@gla.test'));
-  const ion = sent.find((m) => m.to === 'a1@gla.test');
-  assert.match(ion.subject, /telefonul/);
-  assert.match(ion.text, /https:\/\/takip\.test\/dil\?l=ro&next=\/kurulum/);
+  assert.ok(!to.includes('a@gla.test') && !to.includes('yeni@gla.test'));
+  const beta = sent.find((m) => m.to.toLowerCase() === 'fatura@beta.test');
+  assert.match(beta.subject, /telefonunuzda/);
+  assert.match(beta.text, /https:\/\/takip\.test\/dil\?l=tr&next=\/kurulum/);
+  assert.match(beta.text, /Deneme bildirimi gönder/);
   // Gönderim sırasında yarıda kalan satır (işaretli) yeniden gönderilmez
-  const half = await db.notificationOutbox.create({ data: { type: an.ANNOUNCEMENT_EMAIL, payload: { key: an.ANNOUNCEMENT_KEY, userId: U.a1.id, lang: 'ro', sendingAt: new Date().toISOString() }, inAppAt: new Date() } });
+  const half = await db.notificationOutbox.create({ data: { type: an.ANNOUNCEMENT_EMAIL, payload: { key: an.ANNOUNCEMENT_KEY, to: 'fatura@beta.test', customerIds: [B.id], lang: 'tr', sendingAt: new Date().toISOString() }, inAppAt: new Date() } });
   const before2 = sent.length;
-  await an.dispatchAnnouncements(db, { transport, from: 'noreply@takip.test', appUrl: 'https://takip.test' });
+  await send(at);
   assert.equal(sent.length, before2);
   assert.equal((await db.notificationOutbox.findUnique({ where: { id: half.id } })).lastError, 'UNKNOWN');
   assert.equal(await db.auditLog.count({ where: { action: 'ANNOUNCEMENT_QUEUED' } }), 1);

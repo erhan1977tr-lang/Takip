@@ -41,7 +41,18 @@ export default async function GuidePage() {
           <li>{g.end1}</li>
           <li>{g.end2}</li>
           <li>{g.end3}</li>
+          <li>{g.end4}</li>
+          <li>{g.end5}</li>
+          <li>{g.end6}</li>
+          <li>{g.end7}</li>
         </ol>
+        <h2>{g.trouble}</h2>
+        <ul data-guide-trouble>
+          <li>{g.trouble1}</li>
+          <li>{g.trouble2}</li>
+          <li>{g.trouble3}</li>
+          <li>{g.trouble4}</li>
+        </ul>
         <p className="muted">{g.privacy}</p>
         <a className="btn btn-primary btn-block" href="/login">{g.open}</a>
       </div>
