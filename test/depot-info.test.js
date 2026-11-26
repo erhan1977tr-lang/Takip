@@ -4,7 +4,8 @@
 // Veritabanıyla uçtan uca: test/db/profile.test.js (FGO proforma / fatura e-postası + bildirim), test/db/documents.test.js (cam).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEPOT_CONTACTS, DEPOT_MAPS_URL, depotHtml, depotRows, isProfileProforma, DEPOT_LABELS_RO } from '../server/profile/depot-info.js';
+import { DEPOT_CONTACTS, DEPOT_MAPS_URL, depotHtml, depotRows, isProfileProforma, DEPOT_LABELS_RO, showDepotCard, telHref } from '../server/profile/depot-info.js';
+import fs from 'node:fs';
 import { renderDocEmail } from '../server/documents/delivery.js';
 import { NOTIFY_RULES, renderNotification } from '../server/notifications/email.js';
 import { renderInApp } from '../server/notifications/inapp.js';
@@ -82,4 +83,21 @@ test('uygulama içi: profil proforması bildirimi depo bilgisini taşır; öbür
       for (const l of ['tr', 'ro']) assert.ok(!MARKERS.test(JSON.stringify(renderInApp(l, { type, params: { aud, orderNo: 'GLAP12', firm: 'GLA**********', day: '2026-11-27' } }))), `${type} ${aud} ${l}`);
     }
   }
+});
+
+test('sipariş sayfasındaki "Depo" kutusu: yalnızca müşteri, PROFORMA / DEPODA, iptal değil', () => {
+  for (const stage of ['PROFORMA', 'DEPODA']) assert.equal(showDepotCard({ isCustomer: true, stage, cancelled: false }), true, stage);
+  for (const stage of ['FIYAT_BEKLIYOR', 'TEKLIF_GONDERILDI', 'ONAYLANDI', 'TESLIM_EDILDI', 'FATURALANDI', null, undefined]) {
+    assert.equal(showDepotCard({ isCustomer: true, stage, cancelled: false }), false, String(stage));
+  }
+  assert.equal(showDepotCard({ isCustomer: true, stage: 'PROFORMA', cancelled: true }), false, 'iptal');
+  assert.equal(showDepotCard({ isCustomer: false, stage: 'PROFORMA', cancelled: false }), false, 'iç ekip');
+  assert.deepEqual(DEPOT_CONTACTS.map((c) => telHref(c.phone)), ['tel:+40723344443', 'tel:+40750492221']);
+  // Yapı: kutu yalnızca profil sipariş sayfasında, aynı kural ve aynı kaynakla; tıklanabilir harita ve telefon
+  const page = fs.readFileSync(new URL('../app/(panel)/siparisler/[id]/ProfileOrderView.tsx', import.meta.url), 'utf8');
+  assert.match(page, /showDepotCard\(\{ isCustomer, stage, cancelled \}\) && \(/);
+  assert.match(page, /href=\{DEPOT_MAPS_URL\}/);
+  assert.match(page, /href=\{telHref\(c\.phone\)\}/);
+  const glassPage = fs.readFileSync(new URL('../app/(panel)/siparisler/[id]/page.tsx', import.meta.url), 'utf8');
+  assert.ok(!/depot-info/.test(glassPage), 'cam sipariş sayfası değişmedi');
 });

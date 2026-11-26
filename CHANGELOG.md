@@ -13,6 +13,8 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   **Contact GKH: Enis +40 750 492 221** (bağlantı ve telefonlar tıklanabilir). FGO'dan kesilen proformanın e-postasında
   (Romence) ve elle kesilen proformanın bildirim e-postasında (müşterinin dilinde) aynı bilgi.
 - Müşterinin "Proforma kesildi" zil bildiriminde de aynı bilgi metin olarak yazar.
+- Müşterinin profil sipariş sayfasında, proforma kesildikten teslim alınana kadar (Proforma / Depoda) **"Depo" kutusu**:
+  tıklanabilir Google Maps bağlantısı ve dokununca aranan telefonlar.
 - Değişmeyen: cam siparişleri, avans ve fatura e-postaları, diğer bütün e-postalar / bildirimler / belgeler, alıcılar ve
   gönderim zamanı. Veritabanı değişikliği yok.
 

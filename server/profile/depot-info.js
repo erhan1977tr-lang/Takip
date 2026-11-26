@@ -16,6 +16,17 @@ export const DEPOT_CONTACTS = Object.freeze([
 export const isProfileProforma = ({ orderTypeCode, kind }) => orderTypeCode === 'PROFILE_ORDER' && kind === 'PROFORMA';
 
 /**
+ * Müşterinin profil sipariş sayfasındaki "Depo" kutusu (4.2.28): proforma kesildikten teslim alınana kadar (PROFORMA, DEPODA),
+ * iptal edilmemiş siparişte, yalnızca müşteri rolüne. Öbür aşamalar / roller / cam siparişleri: kutu yok.
+ * @param {{ isCustomer: boolean, stage: string | null | undefined, cancelled: boolean }} p
+ */
+export const DEPOT_CARD_STAGES = Object.freeze(['PROFORMA', 'DEPODA']);
+export const showDepotCard = ({ isCustomer, stage, cancelled }) => isCustomer === true && !cancelled && DEPOT_CARD_STAGES.includes(String(stage ?? ''));
+
+/** tel: bağlantısı ("+40 723 344 443" → "tel:+40723344443") */
+export const telHref = (phone) => `tel:${String(phone).replace(/[^\d+]/g, '')}`;
+
+/**
  * Metin satırları (alıcının dilinde): [etiket, değer]. labels: { location, contactDepot, contactGkh } (i18n'den ya da sabit Romence).
  * @param {{ location: string, contactDepot: string, contactGkh: string }} labels
  * @returns {[string, string][]}
@@ -30,7 +41,7 @@ export function depotRows(labels) {
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const tel = (phone) => `tel:${String(phone).replace(/[^\d+]/g, '')}`;
+const tel = telHref;
 
 /**
  * E-posta gövdesine eklenen HTML bölümü (başlık + Maps bağlantısı + tıklanabilir telefonlar).

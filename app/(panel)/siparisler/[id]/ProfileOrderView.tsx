@@ -32,6 +32,7 @@ import { CourierPlateField } from '@/components/CourierPlateField';
 import { PreviewFor } from '@/components/PreviewFor';
 import { PhotoThumb } from '@/components/FilePreview';
 import { ProfileReturns } from './ProfileReturns';
+import { DEPOT_CONTACTS, DEPOT_MAPS_URL, showDepotCard, telHref } from '@/server/profile/depot-info.js';
 import {
   approveProfileAction, cancelProfileAction, deliveredAction, deliveryPhotoAction, deliveryReportAction, invoicedAction, paidAction,
   profilePricesAction, proformaAction, resendWarehouseAction, retryFgoAction, updatePickupAction, warehouseAction,
@@ -201,6 +202,19 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
         </div>
         {isCustomer && !cancelled && <p className="muted small" style={{ margin: '8px 0 0' }}>{summary.next}</p>}
       </div>
+
+      {/* ---------- müşteri: deponun konumu + iletişim (4.2.28, karar 327): proformadan teslim alınana kadar ---------- */}
+      {showDepotCard({ isCustomer, stage, cancelled }) && (
+        <div className="card" id="depo" data-depot-card>
+          <h2>{t('notify.depot.title')}</h2>
+          <table className="kv"><tbody>
+            <tr><td>{t('notify.depot.location')}</td><td><a href={DEPOT_MAPS_URL} target="_blank" rel="noopener noreferrer" data-depot-map>{t('notify.depot.mapsLink')}</a></td></tr>
+            {DEPOT_CONTACTS.map((c) => (
+              <tr key={c.key}><td>{t(c.key === 'depot' ? 'notify.depot.contactDepot' : 'notify.depot.contactGkh')}</td><td>{c.name}: <a href={telHref(c.phone)} data-depot-tel={c.key}>{c.phone}</a></td></tr>
+            ))}
+          </tbody></table>
+        </div>
+      )}
 
       {/* ---------- müşteri: onay ---------- */}
       {isCustomer && stage === 'TEKLIF_GONDERILDI' && !cancelled && sent && (
