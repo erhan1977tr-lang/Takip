@@ -80,7 +80,7 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   // (12:00 kuralı, depo açık günleri — sunucuda; tarayıcı saati kullanılmaz). Yönetici bugünden itibaren açık bir gün seçer.
   const overrides = await calendarOverrides(db, DEPOT_CALENDAR, { now });
   let minPickupDate: Date | null = null;
-  // Sabit sonraki tahmini yükleme tarihi (4.2.34, Ayarlar): müşterinin en erken gününe alt sınır (sunucu aynı kuralla denetler)
+  // Sabit sonraki tahmini yükleme tarihi (4.2.35, Ayarlar): müşterinin en erken gününe alt sınır (sunucu aynı kuralla denetler)
   const pickupFloor = profilePickupFloor(await getLoadingDateSetting(db), now);
   try { minPickupDate = earliestPickup({ now, overrides, floor: pickupFloor }); } catch { minPickupDate = null; }
   const minPickup = minPickupDate ? isoDay(minPickupDate) : '';
