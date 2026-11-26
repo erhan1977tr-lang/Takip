@@ -16,6 +16,14 @@ export default {
   changeTranslation: 'Türkçe çeviri (otomatik)',
   newOrder: 'Yeni sipariş',
   open: 'Siparişi aç',
+  // Profil proformasında müşteriye: deponun konumu + iletişim kişileri (4.2.28 — server/profile/depot-info.js)
+  depot: {
+    title: 'Teslim alma — depo',
+    location: 'Depo konumu',
+    mapsLink: "Google Maps'te aç",
+    contactDepot: 'Depo iletişim',
+    contactGkh: 'GKH iletişim',
+  },
   footer: 'Bu e-posta Takip portalı (GKH Trading Invest SRL) tarafından otomatik gönderildi. Bağlantıyı açmak için giriş yapmanız gerekir.',
   // Yöneticinin e-postaları (Yönetici Paneli Paketi 1, karar 218): olayın açıklaması — tutar yazılmaz
   description: 'Açıklama',

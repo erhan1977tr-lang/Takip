@@ -4,6 +4,18 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.28 — 26.11.2026
+
+**Profil proformasında depo konumu ve iletişim kişileri** (ürün sahibi, 26.11.2026; karar 327):
+
+- Profil siparişinin proforması müşteriye gittiğinde e-postada **"Ridicare marfă — depozit"** kutusu yer alır: deponun
+  Google Maps bağlantısı (https://maps.app.goo.gl/KcRhnfGEa84iNEPv9), **Contact depozit: Adrian +40 723 344 443** ve
+  **Contact GKH: Enis +40 750 492 221** (bağlantı ve telefonlar tıklanabilir). FGO'dan kesilen proformanın e-postasında
+  (Romence) ve elle kesilen proformanın bildirim e-postasında (müşterinin dilinde) aynı bilgi.
+- Müşterinin "Proforma kesildi" zil bildiriminde de aynı bilgi metin olarak yazar.
+- Değişmeyen: cam siparişleri, avans ve fatura e-postaları, diğer bütün e-postalar / bildirimler / belgeler, alıcılar ve
+  gönderim zamanı. Veritabanı değişikliği yok.
+
 ## 4.2.27 — 23.11.2026
 
 **Toplu müşteri proforması, proforma satırından ödeme, FGO tahsilatından otomatik avans faturası** (ürün sahibi, 23.11.2026; karar 326):

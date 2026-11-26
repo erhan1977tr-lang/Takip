@@ -19,6 +19,7 @@ import {
   APPROVAL_REMINDER_TYPE, APPROVAL_REQUEST_TYPES, approvalForMail, approvalOfferId, inAppDeliveredAt, markDelivered, markUndelivered,
 } from '../orders/production-approval-delivery.js';
 import { approvalGateSetting } from '../orders/loading-approval.js';
+import { depotHtml, depotText, isProfileProforma } from '../profile/depot-info.js';
 
 /**
  * customerFirm: siparişin FİRMASININ bütün etkin, silinmemiş, e-posta bildirimi açık müşteri kullanıcıları + firmanın genel
@@ -300,11 +301,15 @@ export function renderNotification({ type, order, createdAt, recipient, appUrl, 
   ];
   const subject = `${order.orderNo} — ${what}`;
   const extra = DELIVERY_DAY_TYPES.includes(type) ? t('notify.deliveryNote') : approval ? t('notify.approval.text') : null;
-  const text = [...rows.map(([k, v]) => `${k}: ${v}`), ...(extra ? ['', extra] : []), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
+  // Profil proformasında müşteriye deponun konumu + iletişim kişileri (4.2.28 — server/profile/depot-info.js)
+  const depotLabels = !recipient.role && type === 'ORDER_PROFORMA' && isProfileProforma({ orderTypeCode: order.orderTypeCode, kind: 'PROFORMA' })
+    ? { title: t('notify.depot.title'), location: t('notify.depot.location'), mapsLink: t('notify.depot.mapsLink'), contactDepot: t('notify.depot.contactDepot'), contactGkh: t('notify.depot.contactGkh') }
+    : null;
+  const text = [...rows.map(([k, v]) => `${k}: ${v}`), ...(extra ? ['', extra] : []), ...(depotLabels ? ['', depotText(depotLabels)] : []), '', `${t('notify.open')}: ${link}`, '', t('notify.footer')].join('\n');
   // Ortak GKH düzeni (logo başlığı — server/mail/layout.js); burada yalnızca gövde üretilir
   const html = brandedHtml({ lang: recipient.locale, title: subject, body: `<p style="margin:0 0 12px"><b>${esc(what)}</b></p>
 <table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280;vertical-align:top">${esc(k)}</td><td style="white-space:pre-wrap"><b>${esc(v)}</b></td></tr>`).join('')}</table>
-${extra ? `<p style="color:#6b7280;margin:12px 0 0">${esc(extra)}</p>` : ''}
+${extra ? `<p style="color:#6b7280;margin:12px 0 0">${esc(extra)}</p>` : ''}${depotLabels ? `\n${depotHtml(depotLabels)}` : ''}
 <p style="margin-top:16px"><a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold">${esc(t('notify.open'))}</a></p>
 <p style="color:#6b7280;font-size:12px;margin-bottom:0">${esc(t('notify.footer'))}</p>` });
   return { subject, text, html };
