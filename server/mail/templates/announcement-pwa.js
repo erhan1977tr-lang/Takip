@@ -29,7 +29,7 @@ const TEXT = {
     intro: 'Portalul GKH TAKİP poate fi folosit acum pe telefon ca o aplicație. Nu trebuie să descărcați nimic din magazinul de aplicații.',
     steps: [
       (url) => `Deschideți pe telefon adresa ${url} și autentificați-vă.`,
-      () => 'Android (Chrome): atingeți cele trei puncte (⋮) din dreapta sus → opțiunea de instalare → instalare ca aplicație (nu „comandă rapidă”) → „Instalați”.',
+      () => 'Android (Chrome): atingeți cele trei puncte (⋮) din dreapta sus → „Instalează și creează o comandă rapidă” → „Instalează pagina ca aplicație” → „Instalează”. (Nu alegeți „Creează o comandă rapidă”.)',
       () => 'iPhone (Safari): butonul Partajare de jos (pătratul cu săgeată în sus; pe iOS nou întâi „•••”, apoi „Partajare”) → „Adaugă pe ecranul principal” → „Adaugă”.',
       () => 'Deschideți TAKİP din pictograma de pe ecranul principal, apăsați pe pagina Setări butonul „Activează notificările pe acest dispozitiv” și permiteți notificările.',
     ],
