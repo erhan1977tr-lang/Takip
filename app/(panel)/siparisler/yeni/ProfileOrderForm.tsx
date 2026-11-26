@@ -180,7 +180,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
             </div>
             <div className="table-wrap">
               {/* Sütun genişlikleri sabit: birim ve adet sütunları her kategoride aynı hizada */}
-              <table className="profile-table profile-pick">
+              <table className="profile-table profile-pick profile-lines">
                 <thead><tr><th className="c-thumb" /><th>{m.colProduct}</th><th className="c-unit">{m.colUnit}</th>{direct && <><th className="c-price num">{m.direct.colPrice}</th><th className="c-price num">{m.direct.colAmount}</th></>}<th className="c-qty num">{m.colQty}</th></tr></thead>
                 <tbody>
                   {list.map((p) => {
@@ -189,7 +189,7 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
                     return (
                       <tr key={p.id} className={picked(q) ? 'picked' : undefined}>
                         <td className="thumb">{p.imageId ? <img src={`/dosya/urun/${p.imageId}`} alt="" loading="lazy" /> : null}</td>
-                        <td>
+                        <td className="pl-name">
                           <label htmlFor={`q-${p.id}`}><b>{p.name}</b></label>
                           <div className="muted small mono">
                             {p.code}
@@ -198,14 +198,14 @@ export function ProfileOrderForm({ categories, products, suggestedNo, prefix, dr
                               : <> <span className="badge badge-warn" data-calc-mark="edited">{mc.markEdited}</span></>)}
                           </div>
                         </td>
-                        <td className="muted">{p.unit}</td>
+                        <td className="muted" data-label={m.colUnit}>{p.unit}</td>
                         {direct && (
                           <>
-                            <td className="num" data-price={priceOf(p.id) ?? ''}>{priceOf(p.id) != null ? money(priceOf(p.id)!) : <span className="muted small">{m.direct.noPrice}</span>}</td>
-                            <td className="num">{picked(q) && priceOf(p.id) != null ? money(cents(priceOf(p.id)!, Number(q)) / 100) : ''}</td>
+                            <td className="num" data-label={m.direct.colPrice} data-price={priceOf(p.id) ?? ''}>{priceOf(p.id) != null ? money(priceOf(p.id)!) : <span className="muted small">{m.direct.noPrice}</span>}</td>
+                            <td className="num" data-label={m.direct.colAmount}>{picked(q) && priceOf(p.id) != null ? money(cents(priceOf(p.id)!, Number(q)) / 100) : ''}</td>
                           </>
                         )}
-                        <td className="num">
+                        <td className="num" data-label={m.colQty}>
                           <input type="hidden" name="p_id" value={p.id} />
                           <input id={`q-${p.id}`} name="p_qty" type="number" inputMode="numeric" min={0} max={100000} step={1} value={q} placeholder="0"
                             className="qty-input" aria-label={`${p.name} — ${m.colQty}`}
