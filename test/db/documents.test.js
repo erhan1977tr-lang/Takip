@@ -166,6 +166,7 @@ dbTest('sipariş belgesi: kalemde "Comanda UMI7"; belge yazılınca aynı işlem
   assert.ok(!('replyTo' in mail), 'yanıt adresi eklenmez (yanıtlar gönderen adrese gider)');
   for (const re of [/Tip document: Proformă/, /Număr document: PRF101/, /Data emiterii: \d{2}\.\d{2}\.\d{4}/, /Comanda: UMI7/, /Total: 605,00 RON \(cu TVA\)/, /https:\/\/takip\.test\/belgeler/]) assert.match(mail.text, re);
   assert.ok(!/fgo\.ro/.test(mail.text) && !/fgo\.ro/.test(mail.html), 'e-postada FGO adresi yok');
+  assert.ok(!/google\.com\/maps|maps\.app\.goo\.gl|Adrian|Enis/.test(`${mail.text} ${mail.html}`), 'cam proforma e-postasında depo bilgisi yok (4.2.28 yalnızca profil)');
   assert.deepEqual([mail.attachments.length, mail.attachments[0].filename, mail.attachments[0].contentType, Buffer.compare(mail.attachments[0].content, PDF)], [2, 'PRF101.pdf', 'application/pdf', 0]);
   // Ortak GKH başlığı (karar 129): HTML'in başında gömülü logo; logo satır içi ek olarak PDF'in ARDINDAN gelir; düz metin aynen
   assert.deepEqual([mail.attachments[1].cid, mail.attachments[1].contentType, mail.attachments[1].contentDisposition], ['gkh-logo@takip', 'image/png', 'inline']);

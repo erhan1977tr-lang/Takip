@@ -21,6 +21,25 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   kural aynen geçerlidir.
 - Entegrasyonlar → "Otomatik okuma (BT sitesi)": açık / kapalı, gönderen görev için gizli anahtar (yalnızca bir kez
   gösterilir), son okuma ve son hata.
+## 4.2.29 — 26.11.2026
+
+**Profil sipariş sayfasında "Depo" kutusu** (ürün sahibi, 26.11.2026; karar 327):
+
+- Müşterinin profil sipariş sayfasında, proforma kesildikten teslim alınana kadar (Proforma / Depoda) **"Depo" kutusu**:
+  tıklanabilir Google Maps bağlantısı ve dokununca aranan telefonlar (Adrian, Enis). 4.2.28 ile aynı kaynak; zil
+  bildirimi ve diğer ekranlar değişmedi.
+
+## 4.2.28 — 26.11.2026
+
+**Profil proformasında depo konumu ve iletişim kişileri** (ürün sahibi, 26.11.2026; karar 327):
+
+- Profil siparişinin proforması müşteriye gittiğinde e-postada **"Ridicare marfă — depozit"** kutusu yer alır: deponun
+  Google Maps bağlantısı (https://maps.app.goo.gl/KcRhnfGEa84iNEPv9), **Contact depozit: Adrian +40 723 344 443** ve
+  **Contact GKH: Enis +40 750 492 221** (bağlantı ve telefonlar tıklanabilir). FGO'dan kesilen proformanın e-postasında
+  (Romence) ve elle kesilen proformanın bildirim e-postasında (müşterinin dilinde) aynı bilgi.
+- Müşterinin "Proforma kesildi" zil bildiriminde de aynı bilgi metin olarak yazar.
+- Değişmeyen: cam siparişleri, avans ve fatura e-postaları, diğer bütün e-postalar / bildirimler / belgeler, alıcılar ve
+  gönderim zamanı. Veritabanı değişikliği yok.
 
 ## 4.2.27 — 23.11.2026
 

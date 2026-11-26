@@ -20,6 +20,7 @@ import { DOC_EMAIL } from '../documents/delivery.js';
 import { GUEST_ASSIGNED, GUEST_REMOVED } from '../loading/crates.js';
 import { approvalDueText } from '../orders/production-approval.js';
 import { approvalGateSetting } from '../orders/loading-approval.js';
+import { DEPOT_CONTACTS, DEPOT_MAPS_URL } from '../profile/depot-info.js';
 
 const rolesWith = (pred) => Object.keys(ROLE_PERMISSIONS).filter(pred);
 /** Alıcı kümeleri → roller (yetkiden türetilir) */
@@ -198,6 +199,8 @@ export function renderInApp(locale, n) {
       date: dmy(p.day), from: dmy(p.from), qty: p.qty ?? '', ref: p.ref ?? '—', amount: p.amount ?? '', error: String(p.error ?? '').slice(0, 160),
       crate: p.crate ?? '', guest: p.guest ?? '', guestOrder: p.guestOrder ?? '', user: String(p.user ?? '').slice(0, 200),
       supplier: String(p.supplier ?? '').slice(0, 200),
+      // Profil proformasında depo konumu + iletişim (4.2.28 — yalnızca notifications.detail.ORDER_PROFORMA kullanır)
+      maps: DEPOT_MAPS_URL, depot: `${DEPOT_CONTACTS[0].name}: ${DEPOT_CONTACTS[0].phone}`, gkh: `${DEPOT_CONTACTS[1].name}: ${DEPOT_CONTACTS[1].phone}`,
     })
     : '';
   const order = p.orderNo ? (customer ? t('notifications.order', { orderNo: p.orderNo }) : String(p.orderNo)) : '';

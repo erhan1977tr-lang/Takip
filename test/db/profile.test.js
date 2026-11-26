@@ -449,6 +449,12 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   ]);
   assert.ok(mails.every((m) => m.html.includes('cid:gkh-logo@takip') && m.attachments.at(-1).cid === 'gkh-logo@takip'), 'belge e-postaları ortak GKH başlığıyla');
   assert.ok(mails.every((m) => m.from === 'GKH Trading Invest SRL <info@gkh.ro>'), 'mali belge e-postalarının göndereni (karar 133)');
+  // 4.2.28: profil PROFORMA e-postasında depo konumu (Google Maps) + iletişim kişileri; fatura e-postasında yok
+  const { DEPOT_MAPS_URL } = await import('../../server/profile/depot-info.js');
+  for (const part of [mails[0].text, mails[0].html]) {
+    for (const s of [DEPOT_MAPS_URL.replace(/&/g, part === mails[0].html ? '&amp;' : '&'), 'Adrian', '+40 723 344 443', 'Enis', '+40 750 492 221']) assert.ok(part.includes(s), `proforma e-postasında: ${s}`);
+  }
+  assert.ok(!/google\.com\/maps|maps\.app\.goo\.gl|Adrian|Enis/.test(`${mails[1].text} ${mails[1].html}`), 'fatura e-postası değişmedi (depo bilgisi yok)');
   // Aynı olay için ikinci (genel bildirim) e-postası gitmez: PROFORMA / INVOICED olayı belge e-postasıyla karşılanır
   const before = mails.length;
   await db.integrationSetting.upsert({ where: { key: 'notify.since' }, create: { key: 'notify.since', value: { at: new Date(0).toISOString() } }, update: { value: { at: new Date(0).toISOString() } } });
@@ -467,6 +473,15 @@ dbTest('FGO: onayda proforma müşterinin kur politikasıyla (BNR, RON), teslimd
   for (let i = 0; i < 20 && (await dispatchInApp(db)).events > 0; i++) { /* kuyruk boşalana kadar */ }
   assert.equal(await db.notification.count({ where: { orderId: id, type: { in: Object.values(DOC_NOTICE) } } }), 0);
   assert.ok((await db.notification.count({ where: { orderId: id, type: 'ORDER_PROFORMA', userId: people.cust.id } })) === 1);
+  // 4.2.28: müşterinin proforma bildirimi depo konumu + iletişim kişilerini taşır (okuyanın dilinde)
+  const { renderInApp } = await import('../../server/notifications/inapp.js');
+  const pn = await db.notification.findFirst({ where: { orderId: id, type: 'ORDER_PROFORMA', userId: people.cust.id } });
+  for (const l of ['ro', 'tr']) {
+    const body = renderInApp(l, pn).body;
+    for (const s of [DEPOT_MAPS_URL, 'Adrian: +40 723 344 443', 'Enis: +40 750 492 221']) assert.ok(body.includes(s), `${l} bildirim: ${s}`);
+  }
+  const invN = await db.notification.findFirst({ where: { orderId: id, type: 'ORDER_INVOICED', userId: people.cust.id } });
+  if (invN) assert.ok(!/Adrian|maps\.app\.goo\.gl|google\.com\/maps/.test(JSON.stringify(renderInApp('ro', invN))), 'fatura bildirimi değişmedi');
   // Müşteri ekranı: profil belgeleri + aynı firmanın cam belgesi tek listede; başka firma göremez
   const glass = await db.order.create({ data: { orderNo: 'GLA9001', customerOrderNo: '9001', title: 'Cam', orderTypeCode: 'GLASS_ORDER', customerId: firm.id, createdById: people.admin.id, status: 'URETIMDE' } });
   await db.fgoDocument.create({ data: { orderId: glass.id, kind: 'PROFORMA', series: 'PRF', number: '9001', issuedAt: new Date(Date.now() + 1000), total: '605.00', paid: '605.00' } });
