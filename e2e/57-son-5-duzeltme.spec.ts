@@ -166,6 +166,10 @@ test('PDF aktarımı: metraj 3 ondalık, normal / şekilli cam, satırlar silini
   await expect(dlg.locator('[data-pdf-file="97701"] [data-code="ALREADY_IMPORTED"]')).toBeVisible();
   await expect(dlg.getByRole('button', { name: 'Teklif tablosuna aktar' })).toBeDisabled();
   await dlg.getByRole('button', { name: 'Kapat' }).click();
+  // Adres hâlâ önceki kaydın "?ok=offer_saved" işaretini taşıyor: aşağıdaki kayıttan sonra toHaveURL hemen geçer ve
+  // kayıt bitmeden yükleme başlardı (kayıt bitince düzenleyici yeniden kurulur, açık diyalog ve yükleme kaybolur).
+  // Temiz adresle başlayınca toHaveURL gerçekten yeni kaydın yönlendirmesini bekler.
+  await sales.goto(orderUrl);
 
   // Satış aktarılan satırların TAMAMINI siler ve kaydeder → aynı PDF yeniden yüklenir, ön izlenir ve onaylanır
   while (await sales.getByRole('button', { name: 'Satırı sil' }).count() > 0 && (await values(sales, 'En')).some(Boolean)) {

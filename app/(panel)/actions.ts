@@ -6,9 +6,13 @@ import { audit } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { setLocaleCookie } from '@/lib/i18n';
 import { isLocale } from '@/server/i18n/index.js';
+import { removeSubscription } from '@/server/push/service.js';
 
-export async function logoutAction() {
+export async function logoutAction(formData?: FormData) {
   const user = await getCurrentUser();
+  // Bu cihazın telefon bildirimi aboneliği (4.2.33): çıkış yapılan telefona artık bildirim gitmez (yalnızca kendi kaydı)
+  const endpoint = String(formData?.get('pushEndpoint') ?? '');
+  if (user && endpoint) await removeSubscription(db, { userId: user.id, endpoint }).catch(() => 0);
   await destroySession();
   if (user) await audit('USER_LOGOUT', 'User', user.id, user.id);
   redirect('/login?info=logout');

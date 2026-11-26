@@ -167,6 +167,7 @@ model User {
   drawingsDecided    Drawing[]      @relation("DrawingDecidedBy")
   drawingFiles       DrawingFile[]  @relation("DrawingFileUploadedBy")
   notifications      Notification[]
+  pushSubscriptions  PushSubscription[]
   auditLogs          AuditLog[]
   settingsUpdated    IntegrationSetting[]
   // Satışçının fiyat tablosu (Aşama 3b): tek tablo; boşsa varsayılan tablo kullanılır
@@ -1178,9 +1179,29 @@ model Notification {
   // (işçi yeniden denese / iki işçi aynı anda çalışsa da) — veritabanında benzersiz.
   dedupeKey String?
   readAt    DateTime?
+  // Telefon bildirimi (4.2.33, karar 331): işçi bu satırı push hizmetine verdiği an yazılır (koşullu — bir kez)
+  pushedAt  DateTime?
 
   @@unique([userId, dedupeKey])
   @@index([userId, isRead, createdAt])
+  @@index([pushedAt, createdAt])
+}
+
+// Telefon (Web Push) aboneliği (4.2.33, karar 331): kullanıcının "Bu cihazda bildirimleri aç" dediği her tarayıcı / cihaz.
+// Uç nokta yalnızca bilinen push hizmetlerinden biridir (server/push/webpush.js → pushEndpoint). Oturuma değil KULLANICIYA
+// bağlıdır (30 dakikalık hareketsizlik çıkışında bildirim sürer); o cihazdan "Çıkış" yapılınca silinir. 404 / 410 → silinir.
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+  failures   Int       @default(0)
+
+  @@index([userId])
 }
 
 // Bildirim kuyruğu (ADR 0006): iş akışı işlemi aynı veritabanı işleminde buraya yazar; gönderim ayrı çalışır (Aşama 8).

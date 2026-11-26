@@ -4,6 +4,35 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.38 — 26.11.2026 — Ayrı Android / iPhone kurulum videoları (karar 331)
+
+- Kurulum videoları ayrıldı: Android (Türkçe + Romence, 6 adım) ve iPhone (Romence, 7 adım: Partajare → „Mai multe” → „Adăugați la ecranul principal” → „Adăugați” → simgeden açma → Setări → „Permiteți”). /kurulum sayfasında her video kendi bölümünde; iPhone videosu olmayan dilde (Türkçe) yalnız yazılı adımlar gösterilir. Ekran görüntülerindeki müşteri adı ve kişiler bulanıklaştırıldı.
+- Videolardaki açıklama yazıları büyütüldü (başlık ve açıklama yaklaşık %40 daha büyük; video 720 piksel genişlikte).
+- Romence iPhone metinleri (kurulum sayfası, ayarlar, duyuru e-postası) iPhone'un gerçek Romence etiketlerine göre güncellendi.
+- 4.2.36 ve 4.2.37 yayınlanmadı; tümü bu sürümle gelir.
+
+## 4.2.36 — 26.11.2026 — Ana ekrana ekleme, telefon bildirimleri ve kurulum rehberi (karar 331)
+
+Ara sürümler 4.2.33 – 4.2.34 yayınlanmadı; tümü bu sürümle gelir.
+
+- **Ana ekrana ekle:** TAKİP telefonda uygulama gibi açılır (Android Chrome ⋮ → "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle",
+  iPhone Safari "Ana Ekrana Ekle"): kendi simgesi, tam ekran. Uygulama mağazası yok; sayfalar önbelleğe alınmaz (her açılış güncel).
+- **Telefon bildirimleri (Web Push):** zildeki her bildirim, kullanıcı "Ayarlar → Bu cihazda bildirimleri aç" dediyse o
+  cihaza da gider — tüm roller, zildeki alıcı kuralının aynısı. Metin kısa: başlık + sipariş no (iç ekipte maskeli firma);
+  tutar, fiyat, not içeriği yazmaz; dokununca ilgili sayfa açılır. iPhone'da önce ana ekrana ekleme gerekir.
+- Çıkış yapılan cihaza, kapatılmış / silinmiş kullanıcıya bildirim gitmez; aynı telefonda başka hesapla giriş cihazı o
+  hesaba geçirir. Yönetici Ayarlar → Entegrasyonlar'dan tümünü kapatabilir. Anahtarlar işçide otomatik oluşur (sunucuda
+  ayar yok); içerik push hizmetinden uçtan uca şifreli geçer; yalnızca bilinen push hizmeti adreslerine istek atılır.
+- **Müşterilere bilgi e-postası:** Yönetici → Ayarlar → Entegrasyonlar → "Müşterilere bilgi e-postası" sayfası: önizleme
+  (Türkçe / Romence) + alıcı sayısı → onay kutusu → "Gönder". Bir kez gönderilir; etkin, şifresini kurmuş, e-posta
+  bildirimleri açık müşteri kullanıcılarına kendi dillerinde; kullanıcı başına en çok bir ileti.
+- Test: `test/push.test.js` (RFC 8291 test vektörü, VAPID imzası, adres listesi, yapı), `test/db/push.test.js`.
+- **Kurulum rehberi `/kurulum`:** herkese açık sayfa (oturum gerekmez, veri okumaz): Android / iPhone adımları ve 24 sn
+  video (TR + RO; gerçek Android ekranları, kişisel veriler bulanık; `assets/kurulum/*.mp4` → `server/push/guide-videos.js`,
+  `node scripts/guide-videos.mjs`; iPhone Safari için Range / 206 desteği). Duyuru e-postası ve Ayarlar kartı buraya bağlanır.
+- Android adımları Chrome'un gerçek menü adlarıyla (TR: "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle";
+  RO: „Instalează și creează o comandă rapidă” → „Instalează pagina ca aplicație”): duyuru e-postası, Ayarlar kartı, rehber.
+
 ## 4.2.35 — 26.11.2026 — Sabit tahmini yükleme tarihi ayarı (karar 332)
 
 - **Ayarlar → Entegrasyonlar → "Tahmini yükleme tarihi"**: cam ve profil siparişleri için ayrı ayar. Varsayılan ikisi de

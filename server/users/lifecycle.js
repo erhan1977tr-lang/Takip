@@ -66,6 +66,7 @@ export async function anonymizeUser(tx, userId, now) {
   await tx.session.deleteMany({ where: { userId } });
   await tx.userInvite.deleteMany({ where: { userId } });
   await tx.notification.deleteMany({ where: { userId } });
+  await tx.pushSubscription.deleteMany({ where: { userId } }); // telefon bildirimi (4.2.33) — silinen kullanıcıya gitmez
   await tx.orderNoteRead.deleteMany({ where: { userId } });
   await tx.teamTagOnUser.deleteMany({ where: { userId } });
   await tx.user.update({
@@ -188,6 +189,8 @@ export async function applyEmailChange(db, { targetId, oldEmail, newEmail, invit
       if (taken) return fail('EMAIL_TAKEN');
       await tx.user.update({ where: { id }, data: { email: parsed.email, passwordHash: null } });
       const sessions = await tx.session.deleteMany({ where: { userId: id } });
+      // Hesap başka bir kişiye geçmiş olabilir: eski cihazlara telefon bildirimi gitmez (4.2.33)
+      await tx.pushSubscription.deleteMany({ where: { userId: id } });
       await tx.userInvite.updateMany({ where: { userId: id, usedAt: null }, data: { usedAt: now } });
       await tx.userInvite.create({ data: { userId: id, codeHash: invite.codeHash, expiresAt: invite.expiresAt, sentAt: now } });
       await writeAudit(tx, {

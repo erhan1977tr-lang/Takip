@@ -267,6 +267,11 @@ dialog.modal::backdrop { background: rgba(22, 28, 38, .42); }
   background-size: 50px 50px;
 }
 .auth-card { width: 100%; max-width: 430px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 30px; box-shadow: var(--shadow-md); }
+.guide h1 { font-size: 1.35rem; margin: 4px 0 8px; }
+.guide h2 { font-size: 1.05rem; margin: 20px 0 6px; }
+.guide ol { padding-left: 20px; margin: 6px 0; }
+.guide li { margin: 0 0 6px; }
+.guide-video { display: block; width: 100%; max-width: 360px; margin: 8px auto 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
 .brand-logo { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .brand-logo img { display: block; max-width: 100%; height: auto; }
 .version { font-size: 12px; line-height: 1.4; font-weight: 600; background: var(--surface-3); color: var(--muted); padding: 1px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); }

@@ -19,6 +19,7 @@ import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting
 import { saveTranslateSettings, testTranslation } from '@/server/notes/translation.js';
 import { signResult } from '@/server/security/signed-param.js';
 import { saveApprovalSetting } from '@/server/orders/production-approval-service.js';
+import { savePushSettings } from '@/server/push/service.js';
 import { saveLoadingDateSetting } from '@/server/orders/loading-date-setting.js';
 
 const back = (q: Record<string, string | number>) =>
@@ -163,6 +164,14 @@ export async function saveTranslateAction(formData: FormData) {
   if (!r.ok) redirect(back({ error: 'translate', detail: r.code }) + '#ceviri');
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'translate' }) + '#ceviri');
+}
+
+/** Telefon bildirimleri (4.2.33, karar 331): tümünü aç / kapat (acil durdurma). Anahtarlara ve aboneliklere dokunmaz. */
+export async function savePushSettingsAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  await savePushSettings(db, { enabled: formData.get('enabled') === 'on' }, await actorOf(user));
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'push' }) + '#push');
 }
 
 /** Çeviri bağlantısını dener: kayıtlı anahtarla zararsız bir ifade çevrilir. Hiçbir not okunmaz / değişmez. */
