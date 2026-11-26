@@ -4,6 +4,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.31 — 26.11.2026
+
+**Telefonda profil siparişi okunur** (ürün sahibi, 26.11.2026; karar 329 — müşteri telefondan profil siparişi verirken
+sayfa düzgün okunmuyordu). Yalnızca görünüm; hiçbir işlev, değer, izin veya akış değişmedi:
+
+- **Adım çubuğu** (sipariş sayfası, profil ve cam): dar ekranda (≤ 560 px) adımlar **alt alta**; adım adları artık kelime
+  ortasından bölünmez ("Profor / mă" yerine "Proformă").
+- **Ürün / teklif satırları** (profil sipariş sayfası): telefonda (≤ 640 px) her ürün bir **kart**: görsel + ürün adı,
+  altında etiketli Birim / Adet / Birim fiyat / Tutar. Adet, fiyat ve tutar artık yatay kaydırmanın arkasında kalmaz.
+  Geniş ekranda tablo aynı.
+- **Cam siparişi dosya satırı:** Önizle / Aç / İndir düğmeleri dar ekranda dosya adının altına iner; sayfa genişleyip
+  küçülmez.
+- Demo rozeti (yalnızca demo ortamı) en dar ekranda (≤ 420 px) gizlenir; üst çubuk taşmaz.
+- Test: `e2e/76-telefon-gorunumu.spec.ts` (360 px telefon: yatay taşma yok, adımlar tek satır ve alt alta, ürün / teklif
+  kartında adet, birim fiyat, tutar ekranda; geniş ekranda tablo ve yatay adımlar değişmedi).
+
 ## 4.2.30 — 26.11.2026
 
 **Günün BT kuru otomatik** (ürün sahibi, 26.11.2026; karar 328):

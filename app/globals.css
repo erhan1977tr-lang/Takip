@@ -727,6 +727,8 @@ input.input-changed { background: var(--primary-soft); border-color: #6f9ad8; }
   .who .sub { font-size: var(--fs-meta); }
   .lang-select { padding: 5px 22px 5px 7px; font-size: var(--fs-meta); max-width: 96px; }
 }
+/* Telefon (4.2.31): demo rozeti (yalnızca demo ortamı) en dar ekranda üst çubuğu taşırıp sayfayı küçültmesin */
+@media (max-width: 420px) { .topbar-right .badge-warn { display: none; } }
 
 /* teklif görünümü: uzun (Romence) sütun başlıkları iki satıra inebilir, açıklama sütunu fazla daralmaz */
 #teklif th { white-space: normal; }
@@ -881,6 +883,35 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   .grid-3 { grid-template-columns: 1fr; }
   .profile-table td.thumb img { width: 44px; height: 36px; }
   .qty-input { width: 76px; }
+}
+/* Telefon (4.2.31): profil siparişinin ürün / teklif satırları kart olarak — her satır: görsel + ürün adı, altında iki sütunda
+   etiketli U.M. / adet / fiyat / tutar. Sütunlar yatay kaydırmanın arkasında kalmaz; yalnızca görünüm (aynı hücreler, aynı değerler). */
+@media (max-width: 640px) {
+  .profile-lines, .profile-lines tbody, .profile-lines tfoot { display: block; width: 100%; }
+  .profile-lines thead { display: none; }
+  .profile-lines tbody tr { display: grid; grid-template-columns: 52px repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--divider); }
+  .profile-lines tbody td { display: block; padding: 0; border: 0; text-align: left; white-space: normal; min-width: 0; }
+  .profile-lines tbody td.thumb { width: auto; grid-column: 1; grid-row: 1; padding: 0; }
+  .profile-lines tbody td[data-label]:nth-child(odd) { grid-column: 2; }
+  .profile-lines tbody td[data-label]:nth-child(even) { grid-column: 3; }
+  .profile-lines tbody td.pl-name { grid-column: 2 / -1; overflow-wrap: break-word; }
+  .profile-lines tbody td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: var(--fs-meta); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .profile-lines tbody td .price-input { width: 100%; }
+  .profile-lines tfoot tr { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .profile-lines tfoot td { padding: 12px 0; border: 0; }
+  /* Dosya satırı (cam siparişi): düğmeler dar ekranda dosya adının altına iner, sayfayı genişletmez */
+  .file-row { flex-wrap: wrap; }
+  .file-row .grow { flex-basis: calc(100% - 54px); }
+  .file-row > .row { flex-wrap: wrap !important; margin-left: 54px; }
+}
+/* Telefon (4.2.31): adım çubuğu dikey — adım adları kelime ortasından bölünmez ("Profor / mă" yerine "Proformă") */
+@media (max-width: 560px) {
+  .stepper { flex-direction: column; align-items: stretch; }
+  .stepper .step { flex: none; flex-direction: row; flex-wrap: wrap; align-items: center; text-align: left; gap: 4px 12px; padding-bottom: 10px; }
+  .stepper .step:last-child { padding-bottom: 0; }
+  .stepper .step:not(:last-child)::after { top: 28px; bottom: 0; left: 13px; right: auto; width: 2px; height: auto; }
+  .stepper .step .lbl { margin-top: 0; padding: 0; font-size: var(--fs-sm); line-height: 1.35; overflow-wrap: normal; }
+  .stepper .step .sla-chip { margin-top: 0; }
 }
 /* Depo bağlantısı (giriş gerektirmeyen tek sayfa) */
 .depot-page { max-width: 720px; margin: 24px auto; padding: 0 16px; }
