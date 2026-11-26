@@ -644,15 +644,15 @@ function Thumb({ id }: { id: string | null | undefined }) {
 function ItemsTable({ order, t, locale }: { order: OrderDetail; t: T; locale: 'tr' | 'ro' }) {
   return (
     <div className="table-wrap">
-      <table className="profile-table">
+      <table className="profile-table profile-lines">
         <thead><tr><th style={{ width: 64 }} /><th>{t('profile.page.colProduct')}</th><th>{t('profile.page.colUnit')}</th><th className="num">{t('profile.page.colQty')}</th></tr></thead>
         <tbody>
           {order.profileItems.map((i) => (
             <tr key={i.id}>
               <td className="thumb"><Thumb id={i.imageId} /></td>
-              <td><b>{locale === 'tr' ? i.nameTr : i.nameRo}</b><div className="muted small mono">{i.code}</div></td>
-              <td className="muted">{unitLabel(i.unitCode, locale)}</td>
-              <td className="num"><b>{i.qty}</b></td>
+              <td className="pl-name"><b>{locale === 'tr' ? i.nameTr : i.nameRo}</b><div className="muted small mono">{i.code}</div></td>
+              <td className="muted" data-label={t('profile.page.colUnit')}>{unitLabel(i.unitCode, locale)}</td>
+              <td className="num" data-label={t('profile.page.colQty')}><b>{i.qty}</b></td>
             </tr>
           ))}
         </tbody>
@@ -673,7 +673,7 @@ function LinesTable({ lines, itemOf, t, locale, levels, admin, editable = false 
   const total = profileTotals(lines.map((l) => ({ adet: l.adet, offerPrice: priceOf(l) }))).amount;
   return (
     <div className="table-wrap">
-      <table className="profile-table">
+      <table className="profile-table profile-lines">
         <thead>
           <tr>
             <th style={{ width: 64 }} /><th>{t('profile.page.colProduct')}</th><th>{t('profile.page.colUnit')}</th><th className="num">{t('profile.page.colQty')}</th>
@@ -690,12 +690,12 @@ function LinesTable({ lines, itemOf, t, locale, levels, admin, editable = false 
             return (
               <tr key={l.id}>
                 <td className="thumb"><Thumb id={it?.imageId} /></td>
-                <td><b>{locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description}</b><div className="muted small mono">{l.poz}</div></td>
-                <td className="muted">{unitLabel(l.unitCode ?? '', locale)}</td>
-                <td className="num"><b>{l.adet}</b></td>
-                {admin && <td className={`num${stock != null && stock < l.adet ? ' danger' : ''}`}>{stock ?? '—'}{stock != null && stock < l.adet && <div className="small">{t('profile.page.stockShort', { n: l.adet - stock })}</div>}</td>}
-                {admin && <td className="num muted">{l.listPrice != null ? fmtNum(l.listPrice.toString()) : '—'}</td>}
-                <td className="num">
+                <td className="pl-name"><b>{locale === 'ro' && l.descriptionRo ? l.descriptionRo : l.description}</b><div className="muted small mono">{l.poz}</div></td>
+                <td className="muted" data-label={t('profile.page.colUnit')}>{unitLabel(l.unitCode ?? '', locale)}</td>
+                <td className="num" data-label={t('profile.page.colQty')}><b>{l.adet}</b></td>
+                {admin && <td data-label={t('profile.page.colStock')} className={`num${stock != null && stock < l.adet ? ' danger' : ''}`}>{stock ?? '—'}{stock != null && stock < l.adet && <div className="small">{t('profile.page.stockShort', { n: l.adet - stock })}</div>}</td>}
+                {admin && <td className="num muted" data-label={t('profile.page.colListPrice')}>{l.listPrice != null ? fmtNum(l.listPrice.toString()) : '—'}</td>}
+                <td className="num" data-label={t('profile.page.colPrice')}>
                   {editable ? (
                     <>
                       <input type="hidden" name="l_id" value={l.id} />
@@ -703,7 +703,7 @@ function LinesTable({ lines, itemOf, t, locale, levels, admin, editable = false 
                     </>
                   ) : price != null ? fmtNum(price) : '—'}
                 </td>
-                <td className="num">{price != null ? fmtNum(price * l.adet) : '—'}</td>
+                <td className="num" data-label={t('profile.page.colAmount')}>{price != null ? fmtNum(price * l.adet) : '—'}</td>
               </tr>
             );
           })}
