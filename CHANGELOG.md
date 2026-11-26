@@ -4,6 +4,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.40 — 26.11.2026 — Duyuru: tümü Romence, adres düzeltme (karar 331)
+
+- Müşteri duyuru e-postası artık **her alıcıya Romence** gider (Erhan); sayfada yalnızca Romence önizleme kalır.
+- /admin/duyuru listesinde her adres bir kutuda: yanlış adres **yalnızca bu duyuru için** düzeltilebilir (firmanın fatura e-postası değişmez). Düzeltilen adres "Kuyruğa al" ile kaydedilir; geçersiz adres reddedilir, gönderimde firmanın panele girebilen kullanıcısı hâlâ varsa gider.
+
 ## 4.2.39 — 26.11.2026 — Duyuru: mali belge adresine, zamanlı gönderim, ayrıntılı bildirim adımları (karar 331)
 
 - Müşteri duyuru e-postası artık **her firmanın mali belge adresine** gider (fatura e-postası, yoksa firma e-postası — proforma / fatura e-postalarıyla aynı kural). Aynı adres birden çok firmada geçiyorsa tek ileti gider. Adresi olmayan firmalar ayrıca listelenir.

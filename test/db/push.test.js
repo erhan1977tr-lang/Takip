@@ -160,19 +160,26 @@ dbTest('duyuru e-postası: yalnızca yetkili, onaylı ve zamanlı, bir kez; alı
   assert.equal(byTo['a@gla.test'].lang, 'ro');
   assert.deepEqual(byTo['fatura@beta.test'].firms.sort(), ['BETA SRL', 'CETA SRL']);
   assert.equal(byTo['fatura@beta.test'].source, 'BILLING');
-  assert.equal(byTo['fatura@beta.test'].lang, 'tr');
+  assert.equal(byTo['fatura@beta.test'].lang, 'ro', 'duyuru her zaman Romence (4.2.40)');
+  assert.ok(st.list.every((x) => x.lang === 'ro'));
   assert.ok(!byTo['firma@beta.test'] && !byTo['e@epsi.test'] && !byTo['a1@gla.test']);
   assert.ok(st.missing.includes('DELTA SRL'));
   assert.ok(!st.missing.includes('EPSI SRL'));
   const expected = st.recipients.total;
+  // Adres düzeltme (4.2.40): geçersiz adres reddedilir, hiçbir şey yazılmaz
+  assert.equal((await an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later, overrides: { [E.id]: 'a@b.test, c@d.test' } })).code, 'ADDRESS');
+  assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL } }), 0);
+  // BETA'nın adresi bu duyuru için düzeltilir (CETA aynı adresi kullanmaya devam eder → iki ayrı ileti)
+  const ov = { [B.id]: ' laura@beta.test ' };
   const [x, y] = await Promise.all([
-    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later }),
-    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later }),
+    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later, overrides: ov }),
+    an.queueAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later, overrides: ov }),
   ]);
   assert.deepEqual([x.ok, y.ok].sort(), [false, true]);
   assert.equal([x, y].find((r) => !r.ok).code, 'ALREADY');
-  assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL } }), expected);
+  assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL } }), expected + 1);
   assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL, inAppAt: null } }), 0);
+  assert.equal((await db.customer.findUnique({ where: { id: B.id } })).billingEmail, 'fatura@beta.test', 'firma kaydı değişmez');
   assert.equal((await an.announcementStatus(db, actor(U.admin))).sendAt, later.toISOString());
   const sent = [];
   let failOnce = true;
@@ -198,12 +205,13 @@ dbTest('duyuru e-postası: yalnızca yetkili, onaylı ve zamanlı, bir kez; alı
   await send(at);
   const to = sent.map((m) => m.to.toLowerCase());
   assert.equal(new Set(to).size, to.length, 'adres başına bir ileti');
-  assert.equal(to.length, expected - 1);
+  assert.equal(to.length, expected);
+  assert.ok(to.includes('laura@beta.test') && to.includes('fatura@beta.test'));
   assert.ok(!to.includes('a@gla.test') && !to.includes('yeni@gla.test'));
-  const beta = sent.find((m) => m.to.toLowerCase() === 'fatura@beta.test');
-  assert.match(beta.subject, /telefonunuzda/);
-  assert.match(beta.text, /https:\/\/takip\.test\/dil\?l=tr&next=\/kurulum/);
-  assert.match(beta.text, /Deneme bildirimi gönder/);
+  const beta = sent.find((m) => m.to.toLowerCase() === 'laura@beta.test');
+  assert.match(beta.subject, /telefonul dumneavoastră/);
+  assert.match(beta.text, /https:\/\/takip\.test\/dil\?l=ro&next=\/kurulum/);
+  assert.ok(sent.every((m) => /Bună ziua/.test(m.text)), 'tümü Romence');
   // Gönderim sırasında yarıda kalan satır (işaretli) yeniden gönderilmez
   const half = await db.notificationOutbox.create({ data: { type: an.ANNOUNCEMENT_EMAIL, payload: { key: an.ANNOUNCEMENT_KEY, to: 'fatura@beta.test', customerIds: [B.id], lang: 'tr', sendingAt: new Date().toISOString() }, inAppAt: new Date() } });
   const before2 = sent.length;
