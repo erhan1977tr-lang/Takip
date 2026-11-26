@@ -19,6 +19,7 @@ import { isParked } from '@/server/finance/uncertain.js';
 import { BEFORE_WAREHOUSE, PROFILE_STAGES, PROFILE_STAGE_TONE, PICKUP_EDITABLE, customerPickupOpen, missingPickup, pickupEditDeadline, profileActions, profileTotals } from '@/server/profile/rules.js';
 import { DEPOT_CALENDAR, depotPhase, depotToday, earliestPickup, localDay, dayDate } from '@/server/profile/dates.js';
 import { calendarOverrides } from '@/server/calendar/service.js';
+import { getLoadingDateSetting, profilePickupFloor } from '@/server/orders/loading-date-setting.js';
 import { coverageGaps, hasYearData } from '@/server/calendar/rules.js';
 import { DELIVERY_DOC_STAGES, takesDeliveryDocs } from '@/server/delivery/rules.js';
 import { deliveryDocs } from '@/server/delivery/service.js';
@@ -79,7 +80,9 @@ export async function ProfileOrderView({ order, user, sp, t, m, locale, files, n
   // (12:00 kuralı, depo açık günleri — sunucuda; tarayıcı saati kullanılmaz). Yönetici bugünden itibaren açık bir gün seçer.
   const overrides = await calendarOverrides(db, DEPOT_CALENDAR, { now });
   let minPickupDate: Date | null = null;
-  try { minPickupDate = earliestPickup({ now, overrides }); } catch { minPickupDate = null; }
+  // Sabit sonraki tahmini yükleme tarihi (4.2.35, Ayarlar): müşterinin en erken gününe alt sınır (sunucu aynı kuralla denetler)
+  const pickupFloor = profilePickupFloor(await getLoadingDateSetting(db), now);
+  try { minPickupDate = earliestPickup({ now, overrides, floor: pickupFloor }); } catch { minPickupDate = null; }
   const minPickup = minPickupDate ? isoDay(minPickupDate) : '';
   const staffMin = isoDay(depotToday(now));
   const phase = depotPhase({ stage, status: order.status, pickupDate: p?.pickupDate ?? null, now });

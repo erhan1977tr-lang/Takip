@@ -19,6 +19,7 @@ import { parseUninvoicedDays, saveAccountingSettings } from '@/server/accounting
 import { saveTranslateSettings, testTranslation } from '@/server/notes/translation.js';
 import { signResult } from '@/server/security/signed-param.js';
 import { saveApprovalSetting } from '@/server/orders/production-approval-service.js';
+import { saveLoadingDateSetting } from '@/server/orders/loading-date-setting.js';
 
 const back = (q: Record<string, string | number>) =>
   `/admin/entegrasyonlar?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)])).toString()}`;
@@ -125,6 +126,26 @@ export async function saveProductionApprovalAction(formData: FormData) {
   if (!r.ok) redirect(back({ error: 'productionApproval' }) + '#uretim-onayi');
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'productionApproval' }) + '#uretim-onayi');
+}
+
+/**
+ * Sabit tahmini yükleme tarihi (4.2.35): cam ve profil için ayrı "otomatik / sabit gün" seçimi. Yalnızca ayar satırı ve
+ * denetim kaydı yazılır — mevcut siparişler değişmez. Hata kodu sabit listeden (BAD_DATE / PAST_DATE / TOO_FAR).
+ */
+export async function saveLoadingDateAction(formData: FormData) {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const r = await saveLoadingDateSetting(db, {
+    glass: { fixed: formData.get('glassMode') === 'FIXED', date: String(formData.get('glassDate') ?? '') },
+    profile: { fixed: formData.get('profileMode') === 'FIXED', date: String(formData.get('profileDate') ?? '') },
+    actor: await actorOf(user),
+    timeZone: getEnv().APP_TIMEZONE,
+  });
+  if (!r.ok) {
+    const code = ['BAD_DATE', 'PAST_DATE', 'TOO_FAR'].includes(r.code) ? r.code : 'BAD_DATE';
+    redirect(back({ error: 'loadingDate', code, kind: r.kind === 'profile' ? 'profile' : 'glass' }) + '#yukleme-tarihi');
+  }
+  revalidatePath('/admin/entegrasyonlar');
+  redirect(back({ ok: 'loadingDate' }) + '#yukleme-tarihi');
 }
 
 /**

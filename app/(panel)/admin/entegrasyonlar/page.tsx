@@ -7,7 +7,7 @@ import { fmtDateTime } from '@/lib/format';
 import { AV_STATUS_KEY, avHealth, getAvSettings } from '@/server/files/antivirus.js';
 import { AV_ERRORS, safeSignature } from '@/server/files/clamav.js';
 import {
-  saveAccountingAction, saveAntivirusAction, saveProductionApprovalAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
+  saveAccountingAction, saveAntivirusAction, saveProductionApprovalAction, saveLoadingDateAction, saveDailyRateAction, saveFgoAction, saveTranslateAction, saveWarehouseAction, scanNowAction,
   testAntivirusAction, testFgoAction, testTranslateAction,
 } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
@@ -20,6 +20,7 @@ import { SERVER_IGNORED, ignoredOnServer } from '@/server/env.js';
 import { getWarehouseSettings } from '@/server/profile/warehouse.js';
 import { UNINVOICED_MAX_DAYS, getAccountingSettings } from '@/server/accounting/uninvoiced.js';
 import { getApprovalSetting } from '@/server/orders/production-approval-service.js';
+import { FIXED_MAX_DAYS, activeFixedDay, getLoadingDateSetting, localDayKey } from '@/server/orders/loading-date-setting.js';
 import { failedTranslations, getTranslateSettings } from '@/server/notes/translation.js';
 import { TRANSLATE_ERRORS, fakeTranslateOn } from '@/server/notes/provider.js';
 import { SettingsTabs } from './SettingsTabs';
@@ -94,6 +95,9 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const accounting = await getAccountingSettings(db);
   // Müşteri üretim onayı (4.2.1): yalnızca bundan sonra oluşturulan müşteri cam siparişlerini kapsar
   const approval = full ? await getApprovalSetting(db) : null;
+  // Sabit tahmini yükleme tarihi (4.2.35): cam / profil ayrı; varsayılan otomatik hesap
+  const loadingDate = full ? await getLoadingDateSetting(db) : null;
+  const ldToday = localDayKey(new Date(), getEnv().APP_TIMEZONE);
   // Not çevirisi (karar 127): anahtarın kendisi buraya hiç gelmez — yalnızca kayıtlı olup olmadığı
   const [noteTr, trFailed] = await Promise.all([getTranslateSettings(db), failedTranslations(db)]);
   const trBad = ['KEY', 'KEY_FORMAT', 'FORBIDDEN'].includes(sp.detail ?? '') ? sp.detail : 'KEY_FORMAT';
@@ -246,6 +250,48 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           <button className="btn btn-primary">{t('common.save')}</button>
         </div>
         <div className="hint">{t('admin.integrations.accounting.hint', { max: UNINVOICED_MAX_DAYS })}</div>
+      </form>
+      </>)}
+
+      {/* Sabit tahmini yükleme tarihi (4.2.35): otomatik hesabın yanında cam ve profil için ayrı "sonraki tahmini yükleme
+          tarihi". Yalnızca YENİ siparişleri / müşterinin yeni gün seçimini etkiler; geçmişte kalan gün kendiliğinden yok sayılır. */}
+      {full && loadingDate && (<>
+      {sp.ok === 'loadingDate' && <div className="alert alert-ok">{t('admin.integrations.loadingDate.saved')}</div>}
+      {sp.error === 'loadingDate' && (
+        <div className="alert alert-error">
+          {t(`admin.integrations.loadingDate.kind.${sp.kind === 'profile' ? 'profile' : 'glass'}` as MsgKey)}: {t(`admin.integrations.loadingDate.bad.${['BAD_DATE', 'PAST_DATE', 'TOO_FAR'].includes(sp.code ?? '') ? sp.code : 'BAD_DATE'}` as MsgKey, { max: FIXED_MAX_DAYS })}
+        </div>
+      )}
+      <form action={saveLoadingDateAction} className="card" id="yukleme-tarihi">
+        <h2>{t('admin.integrations.loadingDate.title')}</h2>
+        <p className="muted small">{t('admin.integrations.loadingDate.intro')}</p>
+        {(['glass', 'profile'] as const).map((kind) => {
+          const cur = loadingDate[kind];
+          const active = activeFixedDay(loadingDate, kind, ldToday);
+          const expired = cur.mode === 'FIXED' && !active;
+          return (
+            <fieldset key={kind} className="loading-date-kind" data-loading-date={kind} style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '10px 12px', marginTop: 10 }}>
+              <legend style={{ fontWeight: 600, padding: '0 6px' }}>{t(`admin.integrations.loadingDate.kind.${kind}` as MsgKey)}</legend>
+              <label className="check"><input type="radio" name={`${kind}Mode`} value="AUTO" defaultChecked={cur.mode !== 'FIXED'} /> {t(`admin.integrations.loadingDate.auto.${kind}` as MsgKey)}</label>
+              <label className="check"><input type="radio" name={`${kind}Mode`} value="FIXED" defaultChecked={cur.mode === 'FIXED'} /> {t('admin.integrations.loadingDate.fixed')}</label>
+              <div className="row" style={{ marginTop: 6 }}>
+                <label htmlFor={`ld-${kind}`} style={{ margin: 0 }}>{t('admin.integrations.loadingDate.date')}</label>
+                <input id={`ld-${kind}`} name={`${kind}Date`} type="date" min={ldToday} defaultValue={cur.date ?? ''} style={{ width: 170 }} />
+              </div>
+              <div className="muted small" style={{ marginTop: 6 }} data-loading-date-state={active ? 'fixed' : 'auto'}>
+                {active
+                  ? t(`admin.integrations.loadingDate.stateFixed.${kind}` as MsgKey, { date: active.split('-').reverse().join('.') })
+                  : expired
+                    ? t('admin.integrations.loadingDate.stateExpired', { date: (cur.date ?? '').split('-').reverse().join('.') })
+                    : t('admin.integrations.loadingDate.stateAuto')}
+              </div>
+            </fieldset>
+          );
+        })}
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn btn-primary">{t('common.save')}</button>
+        </div>
+        <div className="hint">{t('admin.integrations.loadingDate.hint')}</div>
       </form>
       </>)}
 

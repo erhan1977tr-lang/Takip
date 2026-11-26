@@ -7,7 +7,8 @@
 // Aynı firmanın siparişleri firma bazlı bir kilitle sırayla oluşturulur (pg_advisory_xact_lock).
 import { WorkflowError } from '../domain/workflow.js';
 import { outboxEvent } from '../domain/outbox.js';
-import { glassLoadingDate, slaDeadline } from './rules.js';
+import { slaDeadline } from './rules.js';
+import { LOADING_DATE_SETTING_KEY, glassShipDate, parseLoadingDateSetting } from './loading-date-setting.js';
 import { CUSTOMER_GLASS_TYPES } from '../catalog/glass.js';
 import { isLegacyMultiGlass } from './drafts.js';
 import { getEnv } from '../env.js';
@@ -132,7 +133,9 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     // Müşteri üretim onayı (4.2.1, karar 305): ayar açık ve tahmini yükleme günü kesim günü (06.11.2026) ya da sonrasıysa
     // sipariş kapsama girer (bir kez yazılır; ayar sonradan değişse de siparişin kuralı değişmez). Aksi halde eski kural.
     const approvalSetting = await tx.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
-    const estimatedShipDate = glassLoadingDate(now, getEnv().APP_TIMEZONE);
+    // Ayarlar'da sabit tahmini yükleme tarihi seçiliyse (4.2.35) o gün, değilse otomatik hesap (glassLoadingDate)
+    const loadingDateRow = await tx.integrationSetting.findUnique({ where: { key: LOADING_DATE_SETTING_KEY }, select: { value: true } });
+    const estimatedShipDate = glassShipDate(parseLoadingDateSetting(loadingDateRow?.value), now, getEnv().APP_TIMEZONE);
     const productionApprovalRequired = approvalSettingOn(approvalSetting?.value)
       && inApprovalScope(dayKey(estimatedShipDate), approvalCutoff(approvalSetting?.value));
     const order = await tx.order.create({
