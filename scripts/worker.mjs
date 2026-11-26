@@ -15,6 +15,8 @@
 //     alınır. Saatte bir (server/orders/auto-archive.js). Yalnızca veritabanı.
 //   - Tedarikçi siparişleri (Paket 6): yöneticinin onaylayıp gönderdiği siparişin Türkçe e-postası (teknik eklerle), en çok
 //     bir kez (server/suppliers/dispatch.js); tahmini yükleme tarihinden 2 gün önce yöneticiye hatırlatma (saatte bir).
+//   - Günün BT kuru (4.2.30): otomatik okuma açıkken bir okuma saatinin (07:00 / 12:30 / 15:00) penceresi bittiğinde kur
+//     gelmediyse ve bugün kur yoksa yöneticiye bildirim (server/fx/bt-auto.js). Yalnızca veritabanı; BT'ye istek atılmaz.
 //   node scripts/worker.mjs          → her dakika
 //   node scripts/worker.mjs --once   → bir tur (testler)
 import { PrismaClient } from '@prisma/client';
@@ -43,6 +45,7 @@ import { APPROVAL_REMIND_EVERY_MS, remindApprovalCustomers, remindApprovalOverdu
 import { dispatchReceiptEmails } from '../server/suppliers/receipt-mail.js';
 import { dispatchReturnEmails } from '../server/profile/returns-mail.js';
 import { remindSupplierEta } from '../server/suppliers/service.js';
+import { btAutoWatchTick } from '../server/fx/bt-auto.js';
 
 const once = process.argv.includes('--once');
 const INTERVAL_MS = 60_000;
@@ -233,6 +236,12 @@ async function inAppTick() {
   if (a.created) log('uygulama içi bildirim:', JSON.stringify(a));
 }
 
+// Her dakika: otomatik BT kuru gözetimi (yalnızca veritabanı; aynı saat için bir kez bildirim)
+async function btAutoTick() {
+  if (once) return; // --once (testler): kural test/bt-auto.test.js'te doğrudan denenir
+  await btAutoWatchTick(db, { now: new Date(), timeZone: getEnv().APP_TIMEZONE, log });
+}
+
 async function tick() {
   const settings = await getAvSettings(db);
   const r = await scanPending(db, settings, { log });
@@ -329,6 +338,11 @@ while (!stopping) {
     await approvalTick();
   } catch (e) {
     log('üretim onayı denetimi hatası:', e?.message ?? e);
+  }
+  try {
+    await btAutoTick();
+  } catch (e) {
+    log('BT kuru gözetimi hatası:', e?.message ?? e);
   }
   if (once) break;
   await new Promise((resolve) => {

@@ -1,7 +1,8 @@
 // Banca Transilvania kuru.
 // 1) "Günün BT kuru" (elle): yönetici Entegrasyonlar ekranına BT sitesindeki "În unitățile BT → Vânzare" EUR kurunu girer;
 //    kur politikası BT_UNIT_SELL olan müşterilerin belgeleri o gün bu kurla kesilir (server/fx/resolve.js). Bu değer
-//    otomatik alınamıyor: site sunucu isteklerini reddediyor ve yapısal bir resmî kaynak bulunamadı.
+//    sunucudan alınamıyor (site sunucu isteklerini reddediyor); 4.2.30'dan beri otomatik okuma server/fx/bt-auto.js'tedir
+//    ve aynı kayda yazar (kaynak AUTO).
 // 2) BT'nin geliştirici dosyası (exchange.xml) okuyucusu yalnızca TANI içindir (scripts/fx-check.mjs → "takip kur"):
 //    bu dosyadaki kur "În unitățile BT" kurundan FARKLIDIR ve hiçbir belgenin kuru olarak kullanılmaz.
 import { WAITING_JOBS } from '../integrations/fgo-claim.js';
@@ -154,11 +155,15 @@ export function parseManualRate(v) {
 // o gün kesilen proformalar bu kurla kesilir (kaynak: MANUAL_DAY). Ertesi gün yeniden girilmesi gerekir.
 export const FX_DAILY_KEY = 'fx.daily';
 
-/** @returns {Promise<{ day: string, rate: number } | null>} */
+/** @returns {Promise<{ day: string, rate: number, source?: string, at?: string, slot?: string } | null>} */
 export async function getDailyRate(db) {
   const row = await db.integrationSetting.findUnique({ where: { key: FX_DAILY_KEY } });
   const v = row?.value && typeof row.value === 'object' ? row.value : null;
-  return v && typeof v.day === 'string' && plausible(Number(v.rate)) ? { day: v.day, rate: Number(v.rate) } : null;
+  if (!(v && typeof v.day === 'string' && plausible(Number(v.rate)))) return null;
+  const out = { day: v.day, rate: Number(v.rate) };
+  // 4.2.30: otomatik okunan kur (server/fx/bt-auto.js) kaynağını taşır; elle girilen kayıtta bu alanlar yoktur
+  if (v.source === 'AUTO') Object.assign(out, { source: 'AUTO', at: typeof v.at === 'string' ? v.at : undefined, slot: typeof v.slot === 'string' ? v.slot : undefined });
+  return out;
 }
 
 /** Günün kuru: yalnızca bugünün kaydı geçerli */
@@ -167,11 +172,57 @@ export async function dailyRateFor(db, day) {
   return r && r.day === day ? r.rate : null;
 }
 
-export async function saveDailyRate(db, { day, rate }, actor, writeAudit) {
+// ---------- otomatik okuma anahtarı ve yedek kural (4.2.30) ----------
+// Otomatik okuma (server/fx/bt-auto.js) Entegrasyonlar'dan açılır / kapanır. KAPALIYKEN hiçbir şey değişmez: günün kuru
+// yalnızca girildiği gün geçerlidir. AÇIKKEN (ürün sahibinin kararı, 26.11.2026): bugün için kur yoksa son doğru kur en çok
+// FX_CARRY_DAYS gün daha kullanılır (belge beklemez); bu kur kaydında kaynak günü olarak eski gün saklanır.
+export const FX_AUTO_ON_KEY = 'fx.btAutoOn';
+export const FX_CARRY_DAYS = 3;
+
+/** @returns {Promise<boolean>} */
+export async function getBtAutoEnabled(db) {
+  const row = await db.integrationSetting.findUnique({ where: { key: FX_AUTO_ON_KEY } });
+  return Boolean(row?.value && typeof row.value === 'object' && row.value.enabled === true);
+}
+
+export async function saveBtAutoEnabled(db, enabled, actor, writeAudit) {
   await db.$transaction(async (tx) => {
-    const value = { day, rate };
-    await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
-    await writeAudit(tx, { action: 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: actor.id, details: value }, actor);
+    const value = { enabled: enabled === true };
+    await tx.integrationSetting.upsert({ where: { key: FX_AUTO_ON_KEY }, create: { key: FX_AUTO_ON_KEY, value, updatedById: actor.id }, update: { value, updatedById: actor.id } });
+    await writeAudit(tx, { action: 'FX_AUTO_SETTING', entityType: 'IntegrationSetting', entityId: FX_AUTO_ON_KEY, userId: actor.id, details: value }, actor);
+  });
+}
+
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+
+/**
+ * BT_UNIT_SELL politikasının kuru (çözücü yalnızca bunu çağırır).
+ * @param {any} db @param {string} day  belge günü
+ * @returns {Promise<{ rate: number, source: 'MANUAL_DAY' | 'BT_AUTO', sourceDay: string } | null>}
+ */
+export async function btRateFor(db, day) {
+  const r = await getDailyRate(db);
+  if (!r) return null;
+  const source = r.source === 'AUTO' ? 'BT_AUTO' : 'MANUAL_DAY';
+  if (r.day === day) return { rate: r.rate, source, sourceDay: r.day };
+  const age = daysBetween(r.day, day);
+  if (age > 0 && age <= FX_CARRY_DAYS && (await getBtAutoEnabled(db))) return { rate: r.rate, source, sourceDay: r.day };
+  return null;
+}
+
+/**
+ * Günün kurunu yazar. Elle (yönetici, actor dolu) ya da otomatik okuma (actor null, source 'AUTO').
+ * @param {any} db
+ * @param {{ day: string, rate: number, source?: 'AUTO', at?: string, slot?: string, pageDay?: string }} d
+ * @param {{ id: string } | null} actor
+ */
+export async function saveDailyRate(db, { day, rate, source, at, slot, pageDay }, actor, writeAudit) {
+  await db.$transaction(async (tx) => {
+    const auto = source === 'AUTO';
+    const value = auto ? { day, rate, source: 'AUTO', at, slot, pageDay } : { day, rate };
+    const by = actor?.id ?? null;
+    await tx.integrationSetting.upsert({ where: { key: FX_DAILY_KEY }, create: { key: FX_DAILY_KEY, value, updatedById: by }, update: { value, updatedById: by } });
+    await writeAudit(tx, { action: auto ? 'FX_DAILY_RATE_AUTO' : 'FX_DAILY_RATE', entityType: 'IntegrationSetting', entityId: FX_DAILY_KEY, userId: by, details: value }, actor ?? {});
     // Kur bekleyen proformalar hemen denensin (işçi bir dakika içinde keser). Yalnızca hata nedeniyle bekleyenler:
     // o anda kesilmekte olan (işlem kirasındaki) iş öne alınmaz — yoksa ikinci bir işçi aynı belgeyi FGO'ya gönderebilirdi.
     await tx.notificationOutbox.updateMany({ where: { type: { in: ['FGO_PROFORMA', 'FGO_GLASS'] }, status: 'PENDING', ...WAITING_JOBS }, data: { availableAt: new Date() } });

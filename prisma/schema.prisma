@@ -1462,7 +1462,7 @@ model ProfileOrder {
   // FGO (Aşama 6b): RON belge kuru = proforma günündeki BT EUR satış kuru; fatura aynı kurla kesilir
   fxRate           Decimal?     @db.Decimal(10, 4) // uygulanan kur (proformada bir kez yazılır; fatura aynı kurla)
   fxDate           DateTime?    @db.Date
-  fxSource         String?      // BNR | MANUAL | MANUAL_DAY
+  fxSource         String?      // BNR | MANUAL | MANUAL_DAY | BT_AUTO (4.2.30)
   // Kur kaydının kalanı (karar 96, 98; GlassBilling ile aynı alanlar)
   fxPolicy         String?
   fxCurrency       String?

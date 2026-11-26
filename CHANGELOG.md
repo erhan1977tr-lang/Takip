@@ -4,6 +4,23 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.30 — 26.11.2026
+
+**Günün BT kuru otomatik** (ürün sahibi, 26.11.2026; karar 328):
+
+- BT sitesindeki **„În unitățile BT" → EUR Vânzare** kuru her gün **07:00, 12:30 ve 15:00'te** (Bükreş saati) otomatik
+  alınır ve Entegrasyonlar'daki **"Günün BT kuru"** kaydına **OTOMATİK** diye yazılır. Kur politikası "BT – în unitățile BT"
+  olan müşterilerin proforma / fatura kuru buradan gelir; hesap, belge cümlesi ("Curs de vânzare BT: …") ve kesilmiş
+  belgelerin kuru değişmedi. BNR müşterileri etkilenmez.
+- BT sunucumuzu ve veri merkezi adreslerini engellediği için sayfayı izinli bir bilgisayardaki **zamanlanmış görev**
+  (`scripts/bt-kur/`) alır ve TAKİP'e gönderir; kuru okuyan ve denetleyen TAKİP'tir (seçili sekme, tablo başlığı, sütunlar,
+  güncelleme tarihi, EUR satırı, satış > alış, BNR'ye yakınlık). Biri tutmazsa hiçbir şey yazılmaz.
+- **Yönetici o gün elle kur girdiyse** otomatik okuma onu değiştirmez.
+- **Yedek kural (yalnızca otomatik okuma açıkken):** bugün kur gelmezse son doğru kur en çok 3 gün kullanılır; okuma
+  saatinin 1 saatlik penceresi biter ve bugün kur yoksa yöneticiye zil bildirimi gider. Otomatik okuma kapalıyken bugünkü
+  kural aynen geçerlidir.
+- Entegrasyonlar → "Otomatik okuma (BT sitesi)": açık / kapalı, gönderen görev için gizli anahtar (yalnızca bir kez
+  gösterilir), son okuma ve son hata.
 ## 4.2.29 — 26.11.2026
 
 **Profil sipariş sayfasında "Depo" kutusu** (ürün sahibi, 26.11.2026; karar 327):

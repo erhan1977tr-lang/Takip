@@ -11,7 +11,9 @@ import {
   testAntivirusAction, testFgoAction, testTranslateAction,
 } from './actions';
 import { getFgoSettings, manualInvoiceNumber } from '@/server/integrations/fgo.js';
-import { getDailyRate } from '@/server/fx/bt.js';
+import { btRateFor, getDailyRate } from '@/server/fx/bt.js';
+import { BT_AUTO_ERRORS, getBtAutoSettings, getBtAutoState } from '@/server/fx/bt-auto.js';
+import { BtAutoForm } from './BtAutoForm';
 import { localDay } from '@/server/profile/dates.js';
 import { getEnv } from '@/lib/env';
 import { SERVER_IGNORED, ignoredOnServer } from '@/server/env.js';
@@ -83,6 +85,10 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     db.notificationOutbox.count({ where: { type: { in: ['FGO_PROFORMA', 'FGO_INVOICE'] }, status: 'FAILED' } }),
     getDailyRate(db),
   ]);
+  // Otomatik BT kuru (4.2.30): anahtarın kendisi buraya hiç gelmez — yalnızca var olup olmadığı
+  const [btAuto, btState, btToday] = await Promise.all([getBtAutoSettings(db), getBtAutoState(db), btRateFor(db, fxToday)]);
+  const btReason = (code: unknown) => (BT_AUTO_ERRORS.includes(code as never) ? t(`admin.integrations.fgo.auto.reason.${code}` as MsgKey) : '—');
+  const btAt = (iso: unknown) => (typeof iso === 'string' ? fmtDateTime(new Date(iso)) : '—');
   // Fatura numarasını FGO verir; burada yalnızca yöneticinin (varsa) tek seferlik elle numarası gösterilir
   const nextInvoice = manualInvoiceNumber(fgo);
   const accounting = await getAccountingSettings(db);
@@ -206,7 +212,28 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
               : daily ? t('admin.integrations.fgo.dailyOld', { rate: daily.rate.toFixed(4), day: daily.day.split('-').reverse().join('.') }) : t('admin.integrations.fgo.dailyNone')}
           </span>
         </div>
+        {/* Otomatik okuma durumu (4.2.30) — herkes için yalnızca okunur bilgi; ayar yalnızca yöneticide */}
+        {daily?.day === fxToday && daily.source === 'AUTO' && <p className="small">{t('admin.integrations.fgo.auto.statusAuto', { rate: daily.rate.toFixed(4), slot: daily.slot ?? '—', at: btAt(daily.at) })}</p>}
+        {btAuto.enabled && daily?.day === fxToday && daily.source !== 'AUTO' && <p className="small">{t('admin.integrations.fgo.auto.statusManual')}</p>}
+        {btAuto.enabled && btToday && btToday.sourceDay !== fxToday && <p className="small danger">{t('admin.integrations.fgo.auto.statusCarry', { rate: btToday.rate.toFixed(4), day: btToday.sourceDay.split('-').reverse().join('.') })}</p>}
       </form>
+      <div className="card" id="kur-otomatik-kart">
+        <h2>{t('admin.integrations.fgo.auto.title')}</h2>
+        <p className="muted small">{t('admin.integrations.fgo.auto.intro')}</p>
+        {btState.last && <p className="small">{t('admin.integrations.fgo.auto.lastRead', { rate: Number(btState.last.rate).toFixed(4), at: btAt(btState.last.at) })}</p>}
+        {btState.lastError && <p className="small danger">{t('admin.integrations.fgo.auto.lastError', { at: btAt(btState.lastError.at), reason: btReason(btState.lastError.code) })}</p>}
+        {full && (
+          <BtAutoForm
+            enabled={btAuto.enabled} hasToken={btAuto.hasToken} tokenSetAt={btAuto.tokenSetAt ? fmtDateTime(new Date(btAuto.tokenSetAt)) : null}
+            m={{
+              enabled: t('admin.integrations.fgo.auto.enabled'), save: t('admin.integrations.fgo.auto.save'), rotate: t('admin.integrations.fgo.auto.rotate'),
+              rotateConfirm: t('admin.integrations.fgo.auto.rotateConfirm'), saved: t('admin.integrations.fgo.auto.saved'),
+              tokenTitle: t('admin.integrations.fgo.auto.tokenTitle'), tokenHint: t('admin.integrations.fgo.auto.tokenHint'),
+              tokenNone: t('admin.integrations.fgo.auto.tokenNone'), tokenSet: t('admin.integrations.fgo.auto.tokenSet', { at: '{at}' }),
+            }}
+          />
+        )}
+      </div>
 
       {/* Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam kaç gün sonra uyarılır */}
       {sp.ok === 'accounting' && <div className="alert alert-ok">{t('admin.integrations.accounting.saved')}</div>}

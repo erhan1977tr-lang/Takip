@@ -53,6 +53,7 @@ export default {
     // Securitate (decizia 149) — doar pentru administrator: limita de încercări pe e-mail a unui cont a fost atinsă
     AUTH_LOCKED: { title: 'Securitate: autentificarea unui cont a fost blocată după prea multe încercări greșite' },
     // Aprovizionare (Pachetul 6) — doar administratorului
+    FX_AUTO_FAILED: { title: 'Cursul BT nu a putut fi citit automat: lipsește cursul de azi' },
     SUPPLIER_ETA: { title: 'Comandă furnizor: încărcare estimată în 2 zile' },
     // Aprobarea producției (4.2.1): termen depășit, fără aprobare — către administrator, o singură dată pe versiune
     PRODUCTION_APPROVAL_OVERDUE: { title: 'Aprobarea producției întârzie: clientul nu a aprobat încă oferta' },
@@ -89,6 +90,7 @@ export default {
     DOC_ADVANCE: 'document {ref}',
     DOC_INVOICE: 'document {ref}',
     AUTH_LOCKED: '{user}',
+    FX_AUTO_FAILED: '{date} · citirea de la ora {ref} · Integrări → Cursul BT al zilei',
     SUPPLIER_ETA: '{ref} · {supplier} · încărcare estimată {date}',
     PRODUCTION_APPROVAL_OVERDUE: 'termen de aprobare {date}',
     PRODUCTION_APPROVAL_UNDELIVERED: 'retrimiteți din pagina comenzii',

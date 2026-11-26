@@ -13,7 +13,7 @@
 // Elle kur (manualRate): yönetici belgeyi isterken açıkça girer; her politikanın önüne geçer ve MANUAL diye işaretlenir.
 // Gereken kur alınamazsa başka bir kaynağa sessizce geçilmez: hata verilir (belge bekler / yönetici elle kur girer).
 
-import { dailyRateFor, parseManualRate } from './bt.js';
+import { btRateFor, parseManualRate } from './bt.js';
 import { bnrRate } from './bnr.js';
 import { RATE_PLACES, applyMarkup, dec, fmt, padRate } from './decimal.js';
 
@@ -30,7 +30,7 @@ const PERCENT_PLACES = 3;
  * @property {string | null} markupPercent  yalnızca BNR_PLUS_PERCENT ve elle değilse
  * @property {string} finalRate  uygulanan kur, 4 ondalık metin
  * @property {number} rate  finalRate sayı olarak (FGO tutar hesabı için)
- * @property {string} source  BNR | MANUAL (bu belge için elle) | MANUAL_DAY (günün BT kuru, elle)
+ * @property {string} source  BNR | MANUAL (bu belge için elle) | MANUAL_DAY (günün BT kuru, elle) | BT_AUTO (günün BT kuru, otomatik — 4.2.30)
  * @property {string} sourceDate  YYYY-AA-GG
  * @property {string} resolvedAt  ISO zaman
  * @property {boolean} manual
@@ -124,12 +124,13 @@ export async function resolveExchangeRate(db, { customer, currency = 'EUR', day,
     return out(r.rate, final, 'BNR', r.date, false, percent);
   }
 
-  // BT_UNIT_SELL: otomatik kaynak yok → yöneticinin bugün girdiği BT kuru (yalnızca EUR). BT XML'i hiç okunmaz.
+  // BT_UNIT_SELL: günün BT kuru — yöneticinin girdiği (MANUAL_DAY, elle) ya da otomatik okunan (BT_AUTO, 4.2.30); otomatik
+  // okuma açıkken bugün kur yoksa son doğru kur en çok 3 gün kullanılır (kaynak günü eski gün). BT XML'i hiç okunmaz.
   if (currency !== 'EUR') throw new FxUnavailable('CURRENCY', `Bu kur politikasında yalnızca EUR desteklenir: ${currency}`);
-  const m = await dailyRateFor(db, day);
+  const m = await btRateFor(db, day);
   if (m == null) throw new FxUnavailable('BT_MANUAL_REQUIRED', 'BT "În unitățile BT" kuru otomatik alınamıyor; Entegrasyonlar → Günün BT kuru girilince (ya da kur elle girilince) belge kesilir');
-  const r = m.toFixed(4);
-  return out(r, r, 'MANUAL_DAY', day, true);
+  const r = m.rate.toFixed(4);
+  return out(r, r, m.source, m.sourceDay, m.source === 'MANUAL_DAY');
 }
 
 /**

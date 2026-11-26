@@ -102,7 +102,8 @@ test('adres → sınır: giriş ve diğer olağan adresler 2 MB; büyük sınır
     '/depo/x1', '/siparisler/tedarik', '/siparisler/tedarik/x1', '/siparisler/tedarik/yeni', '/siparisler/x1', '/siparisler/x1/cizim/x1', '/siparisler/yeni',
   ]);
   assert.deepEqual(pages.filter((p) => limitFor(p) === MB6).sort(), ['/admin/fiyatlar', '/admin/katalog', '/admin/musteri-fiyatlari', '/admin/profil-katalogu', '/admin/stok']);
-  // Gövde alan tek adres işleyicisi (route handler) oturum etkinliğidir: küçük JSON, varsayılan kademede
+  // Gövde alan adres işleyicileri (route handler): oturum etkinliği (küçük JSON) ve 4.2.30'dan beri günün BT kuru
+  // (/kur/bt — BT sayfası ~256 KB, en çok 1,9 MB; anahtarla). İkisi de varsayılan 2 MB kademesinde.
   const posts = [];
   const routes = (dir) => {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -111,7 +112,8 @@ test('adres → sınır: giriş ve diğer olağan adresler 2 MB; büyük sınır
     }
   };
   routes('app');
-  assert.deepEqual(posts, ['app/oturum/etkinlik/route.ts']);
+  assert.deepEqual(posts, ['app/kur/bt/route.ts', 'app/oturum/etkinlik/route.ts']);
+  assert.equal(limitFor('/kur/bt'), MB2);
 });
 
 test('dosya yükleyen her sunucu işlemi, formunun bulunduğu sayfada yeterli sınıra sahiptir (uygulama sınırı ≤ vekil sınırı)', () => {
