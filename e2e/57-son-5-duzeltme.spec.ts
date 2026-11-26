@@ -123,13 +123,15 @@ test('PDF aktarımı: metraj 3 ondalık, normal / şekilli cam, satırlar silini
   await sales.getByRole('button', { name: 'Teklife Gönder', exact: true }).click();
   const dlg = sales.locator('dialog.pdf-import[open]');
   const upload = async (name: string) => {
-    // Sayfa yeniden yüklendikten hemen sonra düğme henüz etkileşimli olmayabilir (hidrasyon): açılana kadar yeniden dene
+    // Sayfa yeniden yüklendikten hemen sonra düğme henüz etkileşimli olmayabilir (hidrasyon). Kaydetmeden sonra teklif
+    // düzenleyicisi yeni sürümle yeniden kurulur (key = teklif + sipariş sürümü): o anda açılmış diyalog kapanır. Bu yüzden
+    // açma, dosya seçme ve "Yükle" birlikte yeniden denenir — kapanmış diyalogdaki düğmeyi süresiz beklemez.
     await expect(async () => {
       if (!(await dlg.isVisible())) await sales.getByRole('button', { name: "PDF'den Aktar" }).click();
       await expect(dlg).toBeVisible({ timeout: 2_000 });
+      await dlg.locator('#pdf-files').setInputFiles([file(name, pdf)]);
+      await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click({ timeout: 2_000 });
     }).toPass({ timeout: 30_000 });
-    await sales.setInputFiles('#pdf-files', [file(name, pdf)]);
-    await dlg.getByRole('button', { name: 'Yükle ve ön izle' }).click();
     await expect(dlg.locator('[data-pdf-file="97701"]')).toBeVisible({ timeout: 60_000 });
   };
   await upload('fabrika-sekilli.pdf');
