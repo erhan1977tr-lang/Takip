@@ -9,6 +9,7 @@ import { cancelLock } from '../orders/financial-lock.js';
 import { DEPOT_CALENDAR, DEPOT_TIME_ZONE, NoOpenDayError, dayDate, dayKeyOf, localDay, pickupOnForward, pickupProblem } from './dates.js';
 import { BEFORE_WAREHOUSE, PICKUP_EDITABLE, PROFILE_TYPE, cleanPhone, cleanPlate, courierFlag, customerPickupOpen, missingPickup, missingPrices, optionalField, orderStatusFor, parsePrice, profileActions, profileTotals } from './rules.js';
 import { calendarOverrides } from '../calendar/service.js';
+import { getLoadingDateSetting, profilePickupFloor } from '../orders/loading-date-setting.js';
 import { can } from '../auth/permissions.js';
 import { deductOrderStock, returnOrderStock, shortages, stockLevels, stockLockKeys } from './stock.js';
 import { fgoReady, getFgoSettings } from '../integrations/fgo.js';
@@ -139,7 +140,9 @@ async function pickupInput(h, { requireAll }) {
   const out = {};
   if (p.pickupDate !== undefined || requireAll) {
     const d = p.pickupDate;
-    const problem = pickupProblem(d, { now: h.now, overrides: await depotOverrides(h), staff: isStaff(h) });
+    // Sabit sonraki tahmini yükleme tarihi (4.2.35): yalnızca müşterinin seçimine alt sınır; yönetici etkilenmez
+    const floor = isStaff(h) ? null : profilePickupFloor(await getLoadingDateSetting(h.tx), h.now);
+    const problem = pickupProblem(d, { now: h.now, overrides: await depotOverrides(h), staff: isStaff(h), floor });
     if (problem) throw new WorkflowError(problem);
     out.pickupDate = dayDate(dayKeyOf(d));
   }

@@ -4,15 +4,9 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 4.2.34 — 26.11.2026 — Telefona kurma rehberi ve videosu (karar 331)
+## 4.2.36 — 26.11.2026 — Ana ekrana ekleme, telefon bildirimleri ve kurulum rehberi (karar 331)
 
-- **Kurulum rehberi `/kurulum`:** herkese açık sayfa (oturum gerekmez, veri okumaz): Android / iPhone adımları ve 24 sn
-  video (TR + RO; gerçek Android ekranları, kişisel veriler bulanık; `assets/kurulum/*.mp4` → `server/push/guide-videos.js`,
-  `node scripts/guide-videos.mjs`; iPhone Safari için Range / 206 desteği). Duyuru e-postası ve Ayarlar kartı buraya bağlanır.
-- Android adımları Chrome'un gerçek menü adlarıyla (TR: "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle";
-  RO: „Instalează și creează o comandă rapidă” → „Instalează pagina ca aplicație”): duyuru e-postası, Ayarlar kartı, rehber.
-
-## 4.2.33 — 26.11.2026 — Ana ekrana ekleme ve telefon bildirimleri (karar 331)
+Ara sürümler 4.2.33 – 4.2.34 yayınlanmadı; tümü bu sürümle gelir.
 
 - **Ana ekrana ekle:** TAKİP telefonda uygulama gibi açılır (Android Chrome ⋮ → "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle",
   iPhone Safari "Ana Ekrana Ekle"): kendi simgesi, tam ekran. Uygulama mağazası yok; sayfalar önbelleğe alınmaz (her açılış güncel).
@@ -26,6 +20,22 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
   (Türkçe / Romence) + alıcı sayısı → onay kutusu → "Gönder". Bir kez gönderilir; etkin, şifresini kurmuş, e-posta
   bildirimleri açık müşteri kullanıcılarına kendi dillerinde; kullanıcı başına en çok bir ileti.
 - Test: `test/push.test.js` (RFC 8291 test vektörü, VAPID imzası, adres listesi, yapı), `test/db/push.test.js`.
+- **Kurulum rehberi `/kurulum`:** herkese açık sayfa (oturum gerekmez, veri okumaz): Android / iPhone adımları ve 24 sn
+  video (TR + RO; gerçek Android ekranları, kişisel veriler bulanık; `assets/kurulum/*.mp4` → `server/push/guide-videos.js`,
+  `node scripts/guide-videos.mjs`; iPhone Safari için Range / 206 desteği). Duyuru e-postası ve Ayarlar kartı buraya bağlanır.
+- Android adımları Chrome'un gerçek menü adlarıyla (TR: "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle";
+  RO: „Instalează și creează o comandă rapidă” → „Instalează pagina ca aplicație”): duyuru e-postası, Ayarlar kartı, rehber.
+
+## 4.2.35 — 26.11.2026 — Sabit tahmini yükleme tarihi ayarı (karar 332)
+
+- **Ayarlar → Entegrasyonlar → "Tahmini yükleme tarihi"**: cam ve profil siparişleri için ayrı ayar. Varsayılan ikisi de
+  **Otomatik hesap** (bugünkü kural; ayar kaydedilmeden hiçbir şey değişmez).
+- **Cam — Sabit tarih:** bundan sonra oluşturulan cam siparişlerinin tahmini yükleme tarihi girilen gündür (ör. 15.01.2027);
+  Yeni Sipariş formundaki "tahmini yükleme tarihi … olacak" bilgisi de aynı günü gösterir.
+- **Profil — Sabit tarih:** müşteri bu günden (depo kapalıysa sonraki açık günden) önce alış günü seçemez (doğrudan sipariş,
+  teklif onayı, bilgileri değiştir). Yönetici kısıtlanmaz.
+- Mevcut siparişlerin tarihi değişmez; satış / yönetici sipariş sayfasından değiştirmeye devam eder. Sabit gün geçince
+  sistem kendiliğinden otomatik hesaba döner. Ayar değişikliği denetim kaydına yazılır.
 
 ## 4.2.32 — 26.11.2026 — Telefonda yeni profil siparişi formu okunur (karar 330)
 

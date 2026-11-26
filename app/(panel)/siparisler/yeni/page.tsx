@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/auth/session';
 import { getT } from '@/lib/i18n';
 import { suggestNextNo } from '@/lib/orders';
 import { fmtDate } from '@/lib/format';
-import { glassLoadingDate } from '@/server/orders/rules.js';
+import { getLoadingDateSetting, glassShipDate, profilePickupFloor } from '@/server/orders/loading-date-setting.js';
 import { getEnv } from '@/lib/env';
 import { glassLabel } from '@/server/catalog/glass.js';
 import { isLegacyMultiGlass, readDraftItems } from '@/server/orders/drafts.js';
@@ -106,7 +106,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     let minPickup = '';
     if (pricing.direct) {
       const now = new Date();
-      try { minPickup = earliestPickup({ now, overrides: await calendarOverrides(db, DEPOT_CALENDAR, { now }) }).toISOString().slice(0, 10); } catch { minPickup = ''; }
+      try { minPickup = earliestPickup({ now, overrides: await calendarOverrides(db, DEPOT_CALENDAR, { now }), floor: profilePickupFloor(await getLoadingDateSetting(db), now) }).toISOString().slice(0, 10); } catch { minPickup = ''; }
     }
     // Birden fazla katalog (4.2.17, karar 312): yalnızca bu firmanın kataloglarının fiyatları gelir (seçim anında yenilenmeden
     // fiyat / toplam değişsin diye); her katalog için parmak izi — gönderimde sunucu güncel fiyatlarla karşılaştırır
@@ -264,7 +264,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       {droppedGlass > 0 && <div className="alert alert-warn">{t('newOrder.draftGlassGone', { n: droppedGlass })}</div>}
       <NewOrderForm
         key={draftRow ? `${draftRow.id}-${draftRow.updatedAt.getTime()}` : 'new'}
-        catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(glassLoadingDate(new Date(), getEnv().APP_TIMEZONE))} draft={draft} m={m.newOrder.form}
+        catalog={catalog} suggestedNo={suggestedNo} prefix={firm.prefix} shipDate={fmtDate(glassShipDate(await getLoadingDateSetting(db), new Date(), getEnv().APP_TIMEZONE))} draft={draft} m={m.newOrder.form}
         requestKey={randomUUID()}
       />
       {draftRow && (
