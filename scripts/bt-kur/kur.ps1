@@ -26,6 +26,6 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatt
 Register-ScheduledTask -TaskName 'TAKIP BT kuru' -Action $action -Trigger $triggers -Settings $settings `
   -Description 'Günün BT kurunu (În unitățile BT, EUR Vânzare) TAKİP''e gönderir.' -Force | Out-Null
 Write-Host "Görev oluşturuldu. Şimdi bir deneme gönderiliyor..." -ForegroundColor Green
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Once
 $log = Join-Path $Here 'bt-kur.log'
 if (Test-Path $log) { Get-Content -Path $log -Tail 3 }
