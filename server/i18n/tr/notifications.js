@@ -53,6 +53,7 @@ export default {
     // Güvenlik (karar 149) — yalnızca yöneticiye: bir hesabın e-posta geneli deneme sınırı doldu
     AUTH_LOCKED: { title: 'Güvenlik: bir hesabın girişi çok sayıda hatalı deneme nedeniyle kilitlendi' },
     // Tedarik ve satın alma (Paket 6) — yalnızca yöneticiye
+    FX_AUTO_FAILED: { title: 'BT kuru otomatik okunamadı: bugünün kuru yok' },
     SUPPLIER_ETA: { title: 'Tedarikçi siparişi: tahmini yükleme 2 gün içinde' },
     // Müşteri üretim onayı (4.2.1): süre doldu, onay yok — yöneticiye, sürüm başına bir kez
     PRODUCTION_APPROVAL_OVERDUE: { title: 'Üretim onayı gecikti: müşteri teklifi henüz onaylamadı' },
@@ -87,6 +88,7 @@ export default {
     DOC_ADVANCE: 'belge {ref}',
     DOC_INVOICE: 'belge {ref}',
     AUTH_LOCKED: '{user}',
+    FX_AUTO_FAILED: '{date} · saat {ref} okuması · Entegrasyonlar → Günün BT kuru',
     SUPPLIER_ETA: '{ref} · {supplier} · tahmini yükleme {date}',
     PRODUCTION_APPROVAL_OVERDUE: 'son onay günü {date}',
     PRODUCTION_APPROVAL_UNDELIVERED: 'sipariş sayfasından yeniden gönderin',

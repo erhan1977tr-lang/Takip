@@ -25,7 +25,7 @@ export function fxPolicyLabel(t: T, policy: string | null | undefined, percent: 
 export function FxInfo({ fx, t }: { fx: FxView; t: T }) {
   const bnr = !fx.manual && (fx.policy === 'BNR' || fx.policy === 'BNR_PLUS_PERCENT');
   const baseKey = fx.source === 'MANUAL' ? 'MANUAL' : bnr ? 'BNR' : 'BT';
-  const knownSource = ['BNR', 'MANUAL', 'MANUAL_DAY'].includes(fx.source);
+  const knownSource = ['BNR', 'MANUAL', 'MANUAL_DAY', 'BT_AUTO'].includes(fx.source);
   const money = (v: string) => t('fx.rate', { rate: rateText(v), currency: fx.currency });
   return (
     <table className="kv fx-info">

@@ -11,6 +11,7 @@ import { avErrorCode, eicar, safeSignature, scanBuffer } from '@/server/files/cl
 import { parseRecipients, saveWarehouseSettings } from '@/server/profile/warehouse.js';
 import { fgoKey, fgoTest, getFgoSettings, saveFgoSettings, validateFgoSettings } from '@/server/integrations/fgo.js';
 import { parseManualRate, saveDailyRate } from '@/server/fx/bt.js';
+import { saveBtAutoSettings } from '@/server/fx/bt-auto.js';
 import { localDay } from '@/server/profile/dates.js';
 import { writeAudit } from '@/server/orders/journal.js';
 import { getEnv } from '@/lib/env';
@@ -170,4 +171,19 @@ export async function saveDailyRateAction(formData: FormData) {
   await saveDailyRate(db, { day: localDay(new Date(), getEnv().APP_TIMEZONE), rate }, await actorOf(user), writeAudit);
   revalidatePath('/admin/entegrasyonlar');
   redirect(back({ ok: 'fxDaily', rate: rate.toFixed(4) }) + '#kur');
+}
+
+export type BtAutoState = { ok?: 'saved' | 'token'; token?: string };
+
+/**
+ * Günün BT kurunun otomatik alınması (4.2.30): açık / kapalı ve gönderen görev için gizli anahtar. Yalnızca yönetici
+ * (SETTINGS_MANAGE). Yeni anahtar YALNIZCA bu yanıtta bir kez döner (adrese, denetim kaydına, günlüğe yazılmaz);
+ * veritabanında yalnızca özeti durur. Yeni anahtar eskisini hemen geçersiz kılar.
+ */
+export async function saveBtAutoAction(_prev: BtAutoState, formData: FormData): Promise<BtAutoState> {
+  const user = await requirePermission('SETTINGS_MANAGE');
+  const rotate = formData.get('rotate') === '1';
+  const { token } = await saveBtAutoSettings(db, { enabled: formData.get('enabled') === 'on', rotate }, await actorOf(user), writeAudit);
+  revalidatePath('/admin/entegrasyonlar');
+  return token ? { ok: 'token', token } : { ok: 'saved' };
 }
