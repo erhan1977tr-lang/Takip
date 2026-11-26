@@ -16,6 +16,14 @@ export default {
   deliveryNote: 'Data este estimativă: se calculează după zilele lucrătoare ale depozitului și regula orei 12:00, fără a ține cont de stoc.',
   newOrder: 'Comandă nouă',
   open: 'Deschide comanda',
+  // Profil proformasında müşteriye: deponun konumu + iletişim kişileri (4.2.28 — server/profile/depot-info.js)
+  depot: {
+    title: 'Ridicare marfă — depozit',
+    location: 'Locație depozit',
+    mapsLink: 'Deschide în Google Maps',
+    contactDepot: 'Contact depozit',
+    contactGkh: 'Contact GKH',
+  },
   footer: 'Acest e-mail a fost trimis automat de portalul Takip (GKH Trading Invest SRL). Pentru a deschide linkul trebuie să vă autentificați.',
   // E-mailurile administratorului (Pachetul 1 al panoului de administrare, decizia 218): descrierea evenimentului — fără sume
   description: 'Descriere',

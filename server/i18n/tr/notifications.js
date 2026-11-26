@@ -62,6 +62,8 @@ export default {
     ORDER_NOTE_ADDED: { title: 'Siparişte yeni mesaj', customer: 'Siparişinizde yeni mesaj var' },
   },
   detail: {
+    // Profil proformasında müşteriye depo konumu + iletişim (4.2.28 — server/profile/depot-info.js)
+    ORDER_PROFORMA: 'Depo konumu: {maps} · Depo iletişim: {depot} · GKH iletişim: {gkh}',
     ORDER_SHIP_DATE: 'yeni tarih {date}',
     ORDER_DELIVERY_DATE_CHANGED: 'yeni tahmini teslim günü {date}',
     ORDER_PICKUP_MOVED: 'yeni tahmini teslim günü {date}',

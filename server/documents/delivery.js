@@ -20,6 +20,7 @@ import { writeAudit, writeHistory } from '../orders/journal.js';
 import { claimFgoJob } from '../integrations/fgo-claim.js';
 import { fgoKey, fgoPrint, fgoReady, fgoStatus, getFgoSettings } from '../integrations/fgo.js';
 import { PDF_MAX_BYTES, downloadFgoPdf, pdfUrl } from './fgo-pdf.js';
+import { DEPOT_LABELS_RO, depotHtml, depotText, isProfileProforma } from '../profile/depot-info.js';
 
 // Bağlantı kuralı ve indirme server/documents/fgo-pdf.js'tedir (bağımsız dosya); eski içe aktarmalar için buradan da verilir
 export { PDF_MAX_BYTES, pdfUrl };
@@ -140,7 +141,7 @@ const dayRo = (d, timeZone) => new Intl.DateTimeFormat('ro-RO', { timeZone, day:
  *   firmName: string, attached?: boolean, portalUrl?: string | null, link?: string | null, timeZone?: string }} p
  *   link: yalnızca PDF eklenemediyse (belgenin FGO'daki bağlantısı); FGO adresi değilse e-postaya yazılmaz
  */
-export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos, total = null, currency = 'RON', firmName, attached = false, portalUrl = null, link = null, timeZone = 'Europe/Bucharest' }) {
+export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos, total = null, currency = 'RON', firmName, attached = false, portalUrl = null, link = null, timeZone = 'Europe/Bucharest', depot = false }) {
   const type = DOC_KIND_RO[kind] ?? 'Document';
   const ref = `${series}${number}`;
   // E-postaya yalnızca FGO'nun kendi adresi yazılır (FGO'nun verdiği bağlantı dış veridir — AUD-7); değilse bağlantı satırı yok
@@ -159,6 +160,8 @@ export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos
     !attached && link ? `Document (PDF): ${link}` : null,
     portalUrl ? `Îl găsiți oricând și în portalul TAKİP, la „Documente financiare”: ${portalUrl}` : null,
   ].filter(Boolean);
+  // Profil proformasında deponun konumu + iletişim kişileri (4.2.28 — server/profile/depot-info.js; çağıran karar verir)
+  const depotPart = depot ? depotText(DEPOT_LABELS_RO) : null;
   const text = [
     `Stimate client ${firmName},`,
     '',
@@ -168,6 +171,7 @@ export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos
     '',
     ...access,
     '',
+    ...(depotPart ? [depotPart, ''] : []),
     'Cu stimă,',
     'GKH',
   ].join('\n');
@@ -177,7 +181,7 @@ export function renderDocEmail({ kind, series, number, issuedAt = null, orderNos
 <p>Vă transmitem documentul <b>${esc(type)} ${esc(ref)}</b>.</p>
 <table cellpadding="4" style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="color:#6b7280">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table>
 ${attached ? '<p>Documentul este atașat acestui e-mail (PDF).</p>' : ''}${!attached && link ? `<p><a href="${esc(link)}">Deschide documentul (PDF)</a></p>` : ''}
-${portalUrl ? `<p>Îl găsiți oricând și în portalul TAKİP, la „Documente financiare”:<br><a href="${esc(portalUrl)}">${esc(portalUrl)}</a></p>` : ''}
+${portalUrl ? `<p>Îl găsiți oricând și în portalul TAKİP, la „Documente financiare”:<br><a href="${esc(portalUrl)}">${esc(portalUrl)}</a></p>` : ''}${depot ? `\n${depotHtml(DEPOT_LABELS_RO)}` : ''}
 <p style="margin-bottom:0">Cu stimă,<br>GKH</p>` });
   return { subject, text, html };
 }
@@ -269,6 +273,7 @@ export async function dispatchDocEmails(db, { transport, from, appUrl, now = new
       const mail = renderDocEmail({
         kind: doc.kind, series: doc.series, number: doc.number, issuedAt: doc.issuedAt, orderNos: orders.map((o) => o.orderNo), total: doc.total, currency: doc.currency,
         firmName: customer.name, attached: pdf.ok, portalUrl: appUrl ? `${appUrl}/belgeler` : null, link: pdf.ok ? null : pdf.link, timeZone,
+        depot: isProfileProforma({ orderTypeCode: doc.order?.orderTypeCode, kind: doc.kind }),
       });
       // Gönderim işareti: bundan sonra yarıda kalan iş otomatik yeniden gönderilmez (D11 — tedarikçi e-postasıyla aynı kural)
       await db.notificationOutbox.update({ where: { id: row.id }, data: { payload: { ...payload, sendingAt: new Date().toISOString() } } });

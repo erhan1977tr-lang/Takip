@@ -62,6 +62,8 @@ export default {
     ORDER_NOTE_ADDED: { title: 'Mesaj nou la comandă', customer: 'Aveți un mesaj nou la comandă' },
   },
   detail: {
+    // Profil proformasında müşteriye depo konumu + iletişim (4.2.28 — server/profile/depot-info.js)
+    ORDER_PROFORMA: 'Locație depozit: {maps} · Contact depozit: {depot} · Contact GKH: {gkh}',
     ORDER_SHIP_DATE: 'data nouă {date}',
     ORDER_DELIVERY_DATE_CHANGED: 'noua dată estimată de livrare {date}',
     ORDER_PICKUP_MOVED: 'noua dată estimată de livrare {date}',
