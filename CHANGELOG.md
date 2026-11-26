@@ -6,8 +6,11 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 
 ## 4.2.33 — 26.11.2026 — Ana ekrana ekleme ve telefon bildirimleri (karar 331)
 
-- **Ana ekrana ekle:** TAKİP telefonda uygulama gibi açılır (Android "Ana ekrana ekle / Uygulamayı yükle", iPhone Safari
-  "Ana Ekrana Ekle"): kendi simgesi, tam ekran. Uygulama mağazası yok; sayfalar önbelleğe alınmaz (her açılış güncel).
+- **Ana ekrana ekle:** TAKİP telefonda uygulama gibi açılır (Android Chrome ⋮ → "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle",
+  iPhone Safari "Ana Ekrana Ekle"): kendi simgesi, tam ekran. Uygulama mağazası yok; sayfalar önbelleğe alınmaz (her açılış güncel).
+- **Kurulum rehberi `/kurulum`:** herkese açık sayfa (oturum gerekmez, veri okumaz): Android / iPhone adımları ve 24 sn
+  video (TR + RO; gerçek Android ekranları, kişisel veriler bulanık; `assets/kurulum/*.mp4` → `server/push/guide-videos.js`,
+  `node scripts/guide-videos.mjs`; iPhone Safari için Range / 206 desteği). Duyuru e-postası ve Ayarlar kartı buraya bağlanır.
 - **Telefon bildirimleri (Web Push):** zildeki her bildirim, kullanıcı "Ayarlar → Bu cihazda bildirimleri aç" dediyse o
   cihaza da gider — tüm roller, zildeki alıcı kuralının aynısı. Metin kısa: başlık + sipariş no (iç ekipte maskeli firma);
   tutar, fiyat, not içeriği yazmaz; dokununca ilgili sayfa açılır. iPhone'da önce ana ekrana ekleme gerekir.

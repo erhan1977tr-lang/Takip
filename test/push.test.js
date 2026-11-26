@@ -8,6 +8,7 @@ import {
   encryptPayload, generateVapidKeys, parseSubscription, pushEndpoint, pushOutcome, pushPayload, vapidAuthorization, vapidKeysValid,
 } from '../server/push/webpush.js';
 import { PWA_ICONS } from '../server/push/icons.js';
+import { GUIDE_VIDEOS } from '../server/push/guide-videos.js';
 import { SW_SOURCE } from '../server/push/sw.js';
 import { pushText } from '../server/push/service.js';
 import { renderAnnouncementPwa } from '../server/mail/templates/announcement-pwa.js';
@@ -150,11 +151,22 @@ test('yapı: push isteği yalnızca service.js atar; uygulama özel anahtarı ok
 test('duyuru e-postası: iki dil, ayarlar bağlantısı, fiyat yok, HTML kaçışlı', () => {
   for (const lang of /** @type {const} */ (['tr', 'ro'])) {
     const m = renderAnnouncementPwa({ lang, name: '<b>Ion</b>', appUrl: 'https://takip.gkh.ro/' });
-    assert.match(m.text, /https:\/\/takip\.gkh\.ro\/ayarlar#telefon/);
+    assert.ok(m.text.includes(`https://takip.gkh.ro/dil?l=${lang}&next=/kurulum`));
+    assert.ok(m.html.includes(`https://takip.gkh.ro/dil?l=${lang}&amp;next=/kurulum`));
     assert.doesNotMatch(m.html, /<b>Ion<\/b>/);
     assert.match(m.html, /&lt;b&gt;Ion/);
     assert.ok(m.subject.length > 10);
   }
   assert.match(renderAnnouncementPwa({ lang: 'tr', appUrl: 'https://x' }).subject, /telefon/);
   assert.match(renderAnnouncementPwa({ lang: 'ro', appUrl: 'https://x' }).subject, /telefon/);
+});
+
+test('kurulum videoları: üretilmiş dosya varlıklarla aynı; rehber herkese açık ve veri okumaz', () => {
+  for (const [name, b64] of Object.entries(GUIDE_VIDEOS)) {
+    assert.equal(fs.readFileSync(path.join(ROOT, 'assets', 'kurulum', name)).toString('base64'), b64, name);
+  }
+  assert.deepEqual(Object.keys(GUIDE_VIDEOS).sort(), ['ro.mp4', 'tr.mp4']);
+  const page = read('app/kurulum/page.tsx');
+  assert.doesNotMatch(page, /@\/lib\/db|prisma|getCurrentUser|requireUser/);
+  assert.match(read('components/PushSettings.tsx'), /href="\/kurulum"/);
 });

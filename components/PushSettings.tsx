@@ -8,7 +8,7 @@ import { pushStatusAction, removePushAction, savePushAction, testPushAction } fr
 type Texts = {
   title: string, intro: string, on: string, off: string, enable: string, disable: string, test: string, testSent: string,
   working: string, unsupported: string, iosInstall: string, denied: string, notReady: string, failed: string, rateLimit: string,
-  installTitle: string, installAndroid: string, installIos: string, installButton: string, installed: string,
+  installTitle: string, installAndroid: string, installIos: string, installButton: string, installed: string, guideLink: string,
 };
 
 type Phase = 'loading' | 'unsupported' | 'ios-install' | 'not-ready' | 'off' | 'on' | 'denied';
@@ -151,6 +151,7 @@ export function PushSettings({ publicKey, texts }: { publicKey: string | null, t
             <li>{texts.installAndroid}</li>
             <li>{texts.installIos}</li>
           </ul>
+          <p style={{ marginTop: 8 }}><a href="/kurulum" data-guide-link>{texts.guideLink}</a></p>
         </>}
     </section>
   );

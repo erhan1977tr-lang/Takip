@@ -13,11 +13,13 @@ const TEXT = {
     intro: 'GKH TAKİP portalını artık telefonunuzda bir uygulama gibi kullanabilirsiniz. Uygulama mağazasından bir şey indirmeniz gerekmez.',
     steps: [
       (url) => `Telefonunuzda ${url} adresini açın ve giriş yapın.`,
-      () => 'Ana ekrana ekleyin — Android (Chrome): sağ üstteki ⋮ menüsü → "Ana ekrana ekle" ya da "Uygulamayı yükle". iPhone (Safari): alttaki Paylaş düğmesi (yukarı oklu kare) → "Ana Ekrana Ekle".',
+      () => 'Android (Chrome): sağ üstteki üç noktaya (⋮) dokunun → "Yükle ve kısayol oluştur" → "Sayfayı uygulama olarak yükle" → "Yükle". ("Kısayol oluştur"u seçmeyin.)',
+      () => 'iPhone (Safari): alttaki Paylaş düğmesi (yukarı oklu kare; yeni iOS sürümlerinde önce "•••", sonra "Paylaş") → "Ana Ekrana Ekle" → "Ekle".',
       () => 'Ana ekrandaki TAKİP simgesinden açın, Ayarlar sayfasında "Bu cihazda bildirimleri aç" düğmesine basın ve izin verin.',
     ],
     after: 'Bundan sonra teklif, çizim onayı ve yükleme tarihi gibi bildirimler telefonunuza da gelir. Bildirimlerde tutar ve fiyat yazmaz; bildirime dokununca ilgili sipariş açılır. Bildirimleri aynı sayfadan istediğiniz zaman kapatabilirsiniz.',
-    button: 'Ayarlar sayfasını aç',
+    button: 'Adım adım anlatımı ve videoyu aç',
+    guideHint: 'Ekran görüntülü anlatım ve kısa video:',
     questions: 'Sorularınız için bize her zamanki iletişim kanallarımızdan yazabilirsiniz.',
     sign: 'Saygılarımızla,\nGKH Trading Invest SRL',
   },
@@ -27,11 +29,13 @@ const TEXT = {
     intro: 'Portalul GKH TAKİP poate fi folosit acum pe telefon ca o aplicație. Nu trebuie să descărcați nimic din magazinul de aplicații.',
     steps: [
       (url) => `Deschideți pe telefon adresa ${url} și autentificați-vă.`,
-      () => 'Adăugați-l pe ecranul principal — Android (Chrome): meniul ⋮ din dreapta sus → „Adăugați pe ecranul de pornire” sau „Instalați aplicația”. iPhone (Safari): butonul Partajare de jos (pătratul cu săgeată în sus) → „Adaugă pe ecranul principal”.',
+      () => 'Android (Chrome): atingeți cele trei puncte (⋮) din dreapta sus → opțiunea de instalare → instalare ca aplicație (nu „comandă rapidă”) → „Instalați”.',
+      () => 'iPhone (Safari): butonul Partajare de jos (pătratul cu săgeată în sus; pe iOS nou întâi „•••”, apoi „Partajare”) → „Adaugă pe ecranul principal” → „Adaugă”.',
       () => 'Deschideți TAKİP din pictograma de pe ecranul principal, apăsați pe pagina Setări butonul „Activează notificările pe acest dispozitiv” și permiteți notificările.',
     ],
     after: 'De acum, notificările despre oferte, aprobarea desenelor și data încărcării vă vor ajunge și pe telefon. Notificările nu conțin sume sau prețuri; atingând notificarea se deschide comanda respectivă. Le puteți dezactiva oricând din aceeași pagină.',
-    button: 'Deschide pagina Setări',
+    button: 'Deschide ghidul pas cu pas și videoul',
+    guideHint: 'Ghid cu imagini și video scurt:',
     questions: 'Pentru întrebări, vă rugăm să ne scrieți pe canalele de comunicare obișnuite.',
     sign: 'Cu stimă,\nGKH Trading Invest SRL',
   },
@@ -44,9 +48,10 @@ const TEXT = {
 export function renderAnnouncementPwa({ lang, name = null, appUrl }) {
   const x = TEXT[lang === 'tr' ? 'tr' : 'ro'];
   const base = String(appUrl ?? '').replace(/\/+$/, '');
-  const link = `${base}/ayarlar#telefon`;
+  // Dil çerezini yazıp herkese açık rehbere gider (/dil yalnızca çerez yazar; /kurulum oturum istemez)
+  const link = `${base}/dil?l=${lang === 'tr' ? 'tr' : 'ro'}&next=/kurulum`;
   const steps = x.steps.map((f, i) => `${i + 1}. ${f(base)}`);
-  const text = [x.hello(name), '', x.intro, '', ...steps, '', x.after, '', `${x.button}: ${link}`, '', x.questions, '', x.sign].join('\n');
+  const text = [x.hello(name), '', x.intro, '', ...steps, '', x.after, '', `${x.guideHint} ${link}`, '', x.questions, '', x.sign].join('\n');
   const body = `<p style="margin:0 0 12px">${esc(x.hello(name))}</p>
 <p>${esc(x.intro)}</p>
 <ol style="padding-left:20px">${x.steps.map((f) => `<li style="margin:0 0 8px">${esc(f(base))}</li>`).join('')}</ol>
