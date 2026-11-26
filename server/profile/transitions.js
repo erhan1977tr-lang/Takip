@@ -140,7 +140,7 @@ async function pickupInput(h, { requireAll }) {
   const out = {};
   if (p.pickupDate !== undefined || requireAll) {
     const d = p.pickupDate;
-    // Sabit sonraki tahmini yükleme tarihi (4.2.34): yalnızca müşterinin seçimine alt sınır; yönetici etkilenmez
+    // Sabit sonraki tahmini yükleme tarihi (4.2.35): yalnızca müşterinin seçimine alt sınır; yönetici etkilenmez
     const floor = isStaff(h) ? null : profilePickupFloor(await getLoadingDateSetting(h.tx), h.now);
     const problem = pickupProblem(d, { now: h.now, overrides: await depotOverrides(h), staff: isStaff(h), floor });
     if (problem) throw new WorkflowError(problem);

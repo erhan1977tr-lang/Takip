@@ -87,7 +87,7 @@ export function depotReadyDay(at, overrides = null) {
 
 /**
  * Müşterinin seçebileceği en erken alış günü: sipariş şimdi depoya iletilse hesaplanan gün.
- * `floor` (4.2.34): Ayarlar'daki sabit "sonraki tahmini yükleme tarihi" ("YYYY-MM-DD", server/orders/loading-date-setting.js →
+ * `floor` (4.2.35): Ayarlar'daki sabit "sonraki tahmini yükleme tarihi" ("YYYY-MM-DD", server/orders/loading-date-setting.js →
  * profilePickupFloor) — depo kuralının günü bundan erkense en erken gün, bu gün ya da ondan sonraki ilk açık depo günüdür.
  * null = yalnızca depo kuralı (bugünkü davranış).
  * @param {{ now: Date, overrides?: Map<string, { open: boolean }> | null, floor?: string | null }} p

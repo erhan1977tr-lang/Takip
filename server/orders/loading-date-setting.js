@@ -1,4 +1,4 @@
-// Sabit tahmini yükleme tarihi (4.2.34): Ayarlar → Entegrasyonlar'da cam ve profil siparişleri için AYRI ayar.
+// Sabit tahmini yükleme tarihi (4.2.35): Ayarlar → Entegrasyonlar'da cam ve profil siparişleri için AYRI ayar.
 //   - AUTO (varsayılan, ayar hiç kaydedilmemişse de): bugünkü otomatik hesap aynen çalışır
 //     (cam: rules.js → glassLoadingDate; profil: dates.js → earliestPickup / depo kuralı).
 //   - FIXED + gün: cam → yeni siparişin tahmini yükleme tarihi bu gündür; profil → müşterinin seçebileceği en erken alış

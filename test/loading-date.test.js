@@ -1,4 +1,4 @@
-// Sabit tahmini yükleme tarihi (4.2.34) — saf kurallar + yapı. Tarih / saat hep ENJEKTE edilir; DB yok.
+// Sabit tahmini yükleme tarihi (4.2.35) — saf kurallar + yapı. Tarih / saat hep ENJEKTE edilir; DB yok.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

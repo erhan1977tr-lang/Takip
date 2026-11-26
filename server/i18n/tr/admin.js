@@ -348,7 +348,7 @@ export default {
       fake: "TEST MODU: sahte çeviri sağlayıcısı açık (TRANSLATE_FAKE=1). Notlar gerçekten çevrilmiyor ve Google'a istek gitmiyor. Gerçek sunucuda bu ayar bulunmamalı.",
     },
     // Muhasebe uyarısı (karar 126): yüklenmiş ama kapanış faturası kesilmemiş cam
-    // Sabit tahmini yükleme tarihi (4.2.34)
+    // Sabit tahmini yükleme tarihi (4.2.35)
     loadingDate: {
       title: "Tahmini yükleme tarihi",
       intro: "Cam ve profil siparişleri için ayrı ayar. \"Otomatik hesap\" seçiliyken bugünkü kural aynen çalışır. \"Sabit tarih\" seçip bir gün girerseniz bundan sonraki siparişlerde bu gün kullanılır.",

@@ -345,7 +345,7 @@ export default {
       fake: "MOD DE TEST: furnizorul fals de traducere este activ (TRANSLATE_FAKE=1). Notele nu sunt traduse cu adevărat și nu se trimit cereri la Google. Această setare nu trebuie să existe pe serverul real.",
     },
     // Avertizare contabilă (decizia 126): sticlă încărcată fără factura finală
-    // Data estimată de încărcare fixă (4.2.34)
+    // Data estimată de încărcare fixă (4.2.35)
     loadingDate: {
       title: "Data estimată de încărcare",
       intro: "Setare separată pentru comenzile de sticlă și de profile. Cu „Calcul automat” regula actuală rămâne neschimbată. Dacă alegeți „Dată fixă” și introduceți o zi, aceasta se folosește pentru comenzile de acum înainte.",

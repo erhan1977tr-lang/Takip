@@ -133,7 +133,7 @@ export async function createGlassOrder(db, { actor, firm, title, requestedNo, su
     // Müşteri üretim onayı (4.2.1, karar 305): ayar açık ve tahmini yükleme günü kesim günü (06.11.2026) ya da sonrasıysa
     // sipariş kapsama girer (bir kez yazılır; ayar sonradan değişse de siparişin kuralı değişmez). Aksi halde eski kural.
     const approvalSetting = await tx.integrationSetting.findUnique({ where: { key: APPROVAL_SETTING_KEY }, select: { value: true } });
-    // Ayarlar'da sabit tahmini yükleme tarihi seçiliyse (4.2.34) o gün, değilse otomatik hesap (glassLoadingDate)
+    // Ayarlar'da sabit tahmini yükleme tarihi seçiliyse (4.2.35) o gün, değilse otomatik hesap (glassLoadingDate)
     const loadingDateRow = await tx.integrationSetting.findUnique({ where: { key: LOADING_DATE_SETTING_KEY }, select: { value: true } });
     const estimatedShipDate = glassShipDate(parseLoadingDateSetting(loadingDateRow?.value), now, getEnv().APP_TIMEZONE);
     const productionApprovalRequired = approvalSettingOn(approvalSetting?.value)

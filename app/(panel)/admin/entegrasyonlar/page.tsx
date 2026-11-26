@@ -95,7 +95,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const accounting = await getAccountingSettings(db);
   // Müşteri üretim onayı (4.2.1): yalnızca bundan sonra oluşturulan müşteri cam siparişlerini kapsar
   const approval = full ? await getApprovalSetting(db) : null;
-  // Sabit tahmini yükleme tarihi (4.2.34): cam / profil ayrı; varsayılan otomatik hesap
+  // Sabit tahmini yükleme tarihi (4.2.35): cam / profil ayrı; varsayılan otomatik hesap
   const loadingDate = full ? await getLoadingDateSetting(db) : null;
   const ldToday = localDayKey(new Date(), getEnv().APP_TIMEZONE);
   // Not çevirisi (karar 127): anahtarın kendisi buraya hiç gelmez — yalnızca kayıtlı olup olmadığı
@@ -253,7 +253,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
       </form>
       </>)}
 
-      {/* Sabit tahmini yükleme tarihi (4.2.34): otomatik hesabın yanında cam ve profil için ayrı "sonraki tahmini yükleme
+      {/* Sabit tahmini yükleme tarihi (4.2.35): otomatik hesabın yanında cam ve profil için ayrı "sonraki tahmini yükleme
           tarihi". Yalnızca YENİ siparişleri / müşterinin yeni gün seçimini etkiler; geçmişte kalan gün kendiliğinden yok sayılır. */}
       {full && loadingDate && (<>
       {sp.ok === 'loadingDate' && <div className="alert alert-ok">{t('admin.integrations.loadingDate.saved')}</div>}

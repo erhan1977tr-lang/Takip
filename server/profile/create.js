@@ -96,7 +96,7 @@ export async function createProfileOrder(db, { actor, firm, title, requestedNo, 
         const day = pickup?.pickupDate;
         if (!(day instanceof Date) || Number.isNaN(day.getTime())) throw new WorkflowError('PICKUP_MISSING');
         const overrides = await calendarOverrides(tx, DEPOT_CALENDAR, { now });
-        const floor = profilePickupFloor(await getLoadingDateSetting(tx), now); // sabit sonraki tahmini yükleme tarihi (4.2.34)
+        const floor = profilePickupFloor(await getLoadingDateSetting(tx), now); // sabit sonraki tahmini yükleme tarihi (4.2.35)
         const problem = pickupProblem(day, { now, overrides, staff: false, floor });
         if (problem) throw new WorkflowError(problem);
         // 4.2.24 (karar 324): fiyat listeli doğrudan siparişte telefon ve araç plakası ZORUNLU (sipariş gönderilmeden önce);

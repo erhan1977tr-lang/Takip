@@ -4,7 +4,7 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
-## 4.2.34 — 26.11.2026 — Sabit tahmini yükleme tarihi ayarı (karar 332)
+## 4.2.35 — 26.11.2026 — Sabit tahmini yükleme tarihi ayarı (karar 332)
 
 - **Ayarlar → Entegrasyonlar → "Tahmini yükleme tarihi"**: cam ve profil siparişleri için ayrı ayar. Varsayılan ikisi de
   **Otomatik hesap** (bugünkü kural; ayar kaydedilmeden hiçbir şey değişmez).

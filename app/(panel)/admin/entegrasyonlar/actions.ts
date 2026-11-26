@@ -129,7 +129,7 @@ export async function saveProductionApprovalAction(formData: FormData) {
 }
 
 /**
- * Sabit tahmini yükleme tarihi (4.2.34): cam ve profil için ayrı "otomatik / sabit gün" seçimi. Yalnızca ayar satırı ve
+ * Sabit tahmini yükleme tarihi (4.2.35): cam ve profil için ayrı "otomatik / sabit gün" seçimi. Yalnızca ayar satırı ve
  * denetim kaydı yazılır — mevcut siparişler değişmez. Hata kodu sabit listeden (BAD_DATE / PAST_DATE / TOO_FAR).
  */
 export async function saveLoadingDateAction(formData: FormData) {
