@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ADMIN, ADMIN_PW, SALES, TEAM_PW, as, login } from './helpers';
+import { ADMIN, ADMIN_PW, as, login } from './helpers';
 
 // Müşteri "Fiyat listem" (4.3.0, karar 333) — gerçek sunucu:
 //  - müşteri yalnızca KENDİ firmasına bağlı müşteri fiyat tablosunu görür (fiyatı dolu, aktif cam), seçili dilde;
@@ -12,6 +12,7 @@ const PW = 'FiyatListem2026';
 const U1 = 'fiyat1@e2e.test';
 const U2 = 'fiyat2@e2e.test';
 const U3 = 'fiyat3@e2e.test';
+const STAFF = 'fiyat-listem-satis@e2e.test'; // bu dosyaya özel satışçı (satis@e2e.test 05'te bilerek kilitleniyor)
 const FACTORY_PRICES = ['17,17', '18,18', '19,19'];
 
 async function prisma() {
@@ -40,6 +41,8 @@ test.beforeAll(async () => {
     for (const [email, firm] of [[U1, firms[0]], [U2, firms[1]], [U3, firms[2]]] as const) {
       await db.user.create({ data: { email, name: email, type: 'CUSTOMER', appRole: 'MUSTERI', customerId: firm.id, passwordHash: hash, fixedLanguage: null, language: 'tr' } });
     }
+    const factoryFirm = await db.customer.findFirstOrThrow({ where: { type: 'FACTORY' } });
+    await db.user.create({ data: { email: STAFF, name: 'Fiyat Listem Satış', type: 'INTERNAL', appRole: 'SATIS', customerId: factoryFirm.id, passwordHash: hash, fixedLanguage: null, language: 'tr' } });
   } finally {
     await db.$disconnect();
   }
@@ -86,7 +89,7 @@ test('her firmanın listesi ayrı; fabrika tablosu bağlı firma boş liste gör
 });
 
 test('iç roller sayfayı açamaz ve menüde görmez', async ({ browser }) => {
-  for (const [email, pw] of [[ADMIN, ADMIN_PW], [SALES, TEAM_PW]]) {
+  for (const [email, pw] of [[ADMIN, ADMIN_PW], [STAFF, PW]]) {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await login(page, email, pw);
