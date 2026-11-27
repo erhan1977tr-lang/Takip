@@ -1448,3 +1448,7 @@ tr.report-total td { font-weight: 700; background: var(--surface-2); }
   .asst-expand-hide { display: none; }
 }
 @media print { .asst-fab, .asst-panel { display: none; } }
+
+/* Müşteri "Fiyat listem" (karar 333): cam adı dar ekranda sarar, fiyat her zaman görünür */
+.price-list .pl-glass { white-space: normal; overflow-wrap: anywhere; }
+.card-flush .table-wrap .price-list td.pl-glass { white-space: normal; }

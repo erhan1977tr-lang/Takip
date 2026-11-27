@@ -56,5 +56,6 @@ export default {
   mySettings: 'Hesap ayarları',
   myLoadings: 'Yükleme takvimim',
   financeDocs: 'Mali belgeler',
+  priceList: 'Fiyat listem',
   demoMail: 'Demo posta kutusu',
 };

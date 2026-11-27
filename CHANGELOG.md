@@ -4,6 +4,12 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.3.0 — 27.11.2026 — Müşteri paneli: "Fiyat listem" (karar 333)
+- Müşteri panelinin sol menüsüne **"Fiyat listem"** (RO: "Lista mea de prețuri") eklendi: firmanın KENDİ müşteri fiyat tablosu (Yönetici → Müşteri Fiyatları'nda firmaya bağlı tablo), salt okunur.
+- Yalnızca fiyatı dolu (> 0) ve katalogda aktif cam kombinasyonları listelenir; cam adı seçili dilde (TR / RO), fiyat m² başına, KDV hariç; cam adına göre arama. Delik / CNC fiyatları, tablo adı ve cam sayısı gösterilmez.
+- **Fabrika satış fiyatları (Fiyat Tabloları) asla görünmez:** liste sunucuda, yalnızca `kind = CUSTOMER` + aktif + bu firmaya bağlı tablodan okunur; firmaya yanlışlıkla fabrika tablosu bağlanmışsa liste boş çıkar. Firma oturumdan alınır (adres parametresiyle başka firmanın listesi açılamaz). Yeni yetki `OWN_PRICE_LIST_VIEW` yalnızca müşteri rolünde; iç roller sayfayı açamaz.
+- Başka hiçbir işlev değişmedi.
+
 ## 4.2.41 — 27.11.2026 — Duyuru: gönderim zamanı değiştirilebilir (karar 331)
 - Duyuru: kuyruktaki duyurunun gönderim zamanı Admin → Duyuru sayfasından değiştirilebilir ("Gönderim zamanını değiştir"; onay kutusu, yalnızca henüz denenmemiş e-postalar taşınır, denetim kaydı `ANNOUNCEMENT_RESCHEDULED`).
 - Önerilen gönderim zamanı: bugün 10:00 henüz geçmediyse bugün, yoksa yarın 10:00 (eskiden her zaman yarın — sabah kuyruğa alınan duyuru bir gün sonraya düşüyordu).

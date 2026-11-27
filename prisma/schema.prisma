@@ -96,6 +96,7 @@ enum PermissionKey {
   ASSISTANT_PANEL
   PROFILE_RETURN_MANAGE
   LOADING_APPROVAL_OVERRIDE
+  OWN_PRICE_LIST_VIEW
 }
 
 // Giriş logu (karar 223): yalnızca yönetici görür, 365 gün saklanır (işçi siler). Şifre, kod, belirteç, çerez, tarayıcı
