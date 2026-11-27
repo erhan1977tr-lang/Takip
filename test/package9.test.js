@@ -211,8 +211,8 @@ test('dil ayarı (karar 198): bütün roller için (kendi kaydı); e-posta terci
   assert.equal(translate('ro', 'settings.languageNone'), 'Automat');
   const roles = read('lib/roles.ts');
   assert.equal((roles.match(/\{ href: '\/ayarlar', key: 'nav\.mySettings' \}/g) ?? []).length, 4, 'yönetici, satış, çizim, denetimci');
-  // Belgeler sayfası müşteriye özel kalır (ACCOUNT_SETTINGS iç ekibe verilmedi)
-  assert.ok(read('server/auth/permissions.js').includes("const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];"));
+  // Belgeler sayfası müşteriye özel kalır (ACCOUNT_SETTINGS iç ekibe verilmedi); 4.3.0: müşteri fiyat listesi de (karar 333)
+  assert.ok(read('server/auth/permissions.js').includes("const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS', 'OWN_PRICE_LIST_VIEW'];"));
 });
 
 test('anlık arama (karar 201): bekleme süresi (yalnızca son değer gider), adres parametreleri korunur, kutu sunucudan ezilmez, firma adıyla arama yok', () => {

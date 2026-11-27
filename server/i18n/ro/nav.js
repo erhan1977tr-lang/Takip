@@ -56,5 +56,6 @@ export default {
   mySettings: 'Setările contului',
   myLoadings: 'Calendarul meu de încărcări',
   financeDocs: 'Documente financiare',
+  priceList: 'Lista mea de prețuri',
   demoMail: 'Cutie poștală demo',
 };

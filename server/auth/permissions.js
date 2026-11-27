@@ -52,11 +52,12 @@ export const PERMISSIONS = {
   REPORT_VIEW: 'Yönetici raporları (karar 284): sipariş, cam, profil / stok, yükleme ve finans raporlarını görür ve Excel\'e aktarır — salt okunur; satış, maliyet, kâr ve tahsilat içerir (yönetici ve yönetici yardımcısı)',
   PROFILE_RETURN_MANAGE: 'Profil iadesi (DÜZELTME 10 M8): teslim edilmiş profil siparişinde kısmi / tam iade açar, depo teslimini yönetici olarak onaylar, mali karşılığı (para iadesi / mahsup niyeti) ve gerçek iadeyi işaretler — FGO belgesi kesmez (yalnızca yönetici)',
   LOADING_APPROVAL_OVERRIDE: 'Müşteri üretim onayı olmayan kapsamdaki siparişin yüklenmesine gerekçeyle istisnai izin verir — müşteri onayı yerine geçmez, denetim kaydına girer (4.2.5; yalnızca yönetici)',
+  OWN_PRICE_LIST_VIEW: 'Müşteri: firmasının KENDİ müşteri fiyat listesini (yalnızca fiyatı dolu cam kombinasyonları, m² fiyatı) salt okunur görür — fabrika / satış fiyat tabloları asla (karar 333; yalnızca müşteri)',
   ASSISTANT_PANEL: 'Panel AI asistanı (karar 290): yönetici panelinde TAKİP verisi hakkında soru sorar — salt okunur, Telegram asistanıyla aynı araçlar ve veri en aza indirme kuralları (yalnızca yönetici)',
 };
 
 // Yalnızca müşterinin yapabildikleri (yönetici müşteri adına işlem yapamaz; o özellik Aşama 9).
-const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS'];
+const CUSTOMER_ONLY = ['ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'ACCOUNT_SETTINGS', 'OWN_PRICE_LIST_VIEW'];
 /** Yalnızca gerçek yöneticinin yetkileri (karar 219): Yönetici Yardımcısında bulunmaz. Panel AI asistanı ilk aşamada
  * yalnızca yöneticidedir (karar 290) — başka role açmak ayrı bir karardır. */
 export const ADMIN_ONLY = ['USER_MANAGE', 'SETTINGS_MANAGE', 'AUDIT_VIEW', 'ASSISTANT_PANEL', 'PROFILE_RETURN_MANAGE', 'LOADING_APPROVAL_OVERRIDE'];
@@ -73,7 +74,7 @@ export const ROLE_PERMISSIONS = {
   CIZIM: ['ORDER_VIEW', 'DRAWING_WORK', 'DRAWING_PRODUCTION_UNDO', 'FILE_UPLOAD', 'FILE_INTERNAL_VIEW', 'NOTE_ADD', 'NOTE_INTERNAL_VIEW'],
   MUSTERI: [
     'ORDER_VIEW', 'ORDER_CREATE', 'DRAWING_APPROVE', 'OFFER_APPROVE', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW',
-    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT', 'ACCOUNT_SETTINGS',
+    'FILE_UPLOAD', 'NOTE_ADD', 'CUSTOMER_NAME_VIEW', 'OFFER_EXPORT', 'ACCOUNT_SETTINGS', 'OWN_PRICE_LIST_VIEW',
   ],
   DENETIMCI: [
     'ORDER_VIEW', 'OFFER_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW', 'NOTE_INTERNAL_VIEW',
@@ -85,7 +86,7 @@ export const ROLE_PERMISSIONS = {
 export const READ_ONLY = new Set([
   'ORDER_VIEW', 'OFFER_VIEW', 'OFFER_DRAFT_VIEW', 'PRICE_FINAL_VIEW', 'SHIPMENT_VIEW', 'TRANSPORT_LIST_VIEW', 'FILE_INTERNAL_VIEW',
   'NOTE_INTERNAL_VIEW', 'CUSTOMER_NAME_VIEW', 'AUDIT_VIEW', 'OFFER_EXPORT', 'STOCK_VIEW', 'REPORT_VIEW',
-  'ASSISTANT_PANEL',
+  'ASSISTANT_PANEL', 'OWN_PRICE_LIST_VIEW',
 ]);
 
 /**
