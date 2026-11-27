@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/session';
 import { actorOf } from '@/lib/actor';
-import { queueAnnouncement, wallToUtc } from '@/server/push/announce.js';
+import { queueAnnouncement, rescheduleAnnouncement, wallToUtc } from '@/server/push/announce.js';
 
 // Müşterilere bilgi e-postası (4.2.33, karar 331): yalnızca Admin'in açık onayıyla, bir kez kuyruğa girer.
 export async function queueAnnouncementAction(formData: FormData) {
@@ -19,4 +19,13 @@ export async function queueAnnouncementAction(formData: FormData) {
   }
   const r = await queueAnnouncement(db, { actor, confirm: formData.get('confirm') === 'on', sendAt, overrides, ip: actor.ip });
   redirect(r.ok ? `/admin/duyuru?ok=${r.queued}` : `/admin/duyuru?error=${r.code}`);
+}
+
+// Kuyruktaki duyurunun gönderim zamanını değiştir (4.2.41): yalnızca henüz denenmemiş satırlar taşınır.
+export async function rescheduleAnnouncementAction(formData: FormData) {
+  const user = await requirePermission('USER_MANAGE');
+  const actor = await actorOf(user);
+  const sendAt = wallToUtc(String(formData.get('day') ?? ''), String(formData.get('time') ?? ''));
+  const r = await rescheduleAnnouncement(db, { actor, confirm: formData.get('confirm') === 'on', sendAt, ip: actor.ip });
+  redirect(r.ok ? `/admin/duyuru?moved=${r.moved}` : `/admin/duyuru?error=${r.code}`);
 }

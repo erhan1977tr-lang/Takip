@@ -181,6 +181,22 @@ dbTest('duyuru e-postası: yalnızca yetkili, onaylı ve zamanlı, bir kez; alı
   assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL, inAppAt: null } }), 0);
   assert.equal((await db.customer.findUnique({ where: { id: B.id } })).billingEmail, 'fatura@beta.test', 'firma kaydı değişmez');
   assert.equal((await an.announcementStatus(db, actor(U.admin))).sendAt, later.toISOString());
+  // Zaman değiştirme (4.2.41): yetki, onay, geçerli zaman; yalnızca denenmemiş PENDING satırlar taşınır
+  const other = new Date(later.getTime() + 86400_000);
+  assert.equal((await an.rescheduleAnnouncement(db, { actor: actor(U.sales), confirm: true, sendAt: other })).code, 'FORBIDDEN');
+  assert.equal((await an.rescheduleAnnouncement(db, { actor: actor(U.admin), confirm: false, sendAt: other })).code, 'CONFIRM');
+  assert.equal((await an.rescheduleAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: new Date(now.getTime() - 1000) })).code, 'SEND_AT');
+  const tried = await db.notificationOutbox.findFirst({ where: { type: an.ANNOUNCEMENT_EMAIL } });
+  await db.notificationOutbox.update({ where: { id: tried.id }, data: { attempts: 1 } });
+  const mv = await an.rescheduleAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: other });
+  assert.deepEqual(mv, { ok: true, moved: expected, sendAt: other.toISOString() });
+  assert.equal((await db.notificationOutbox.findUnique({ where: { id: tried.id } })).availableAt.toISOString(), later.toISOString(), 'denenmiş satır taşınmaz');
+  assert.equal((await an.announcementStatus(db, actor(U.admin))).sendAt, other.toISOString());
+  await db.notificationOutbox.update({ where: { id: tried.id }, data: { attempts: 0 } });
+  const back = await an.rescheduleAnnouncement(db, { actor: actor(U.admin), confirm: true, sendAt: later });
+  assert.equal(back.moved, expected + 1);
+  assert.equal(await db.notificationOutbox.count({ where: { type: an.ANNOUNCEMENT_EMAIL, availableAt: later } }), expected + 1);
+  assert.equal(await db.auditLog.count({ where: { action: 'ANNOUNCEMENT_RESCHEDULED' } }), 2);
   const sent = [];
   let failOnce = true;
   const transport = { sendMail: async (m) => {
