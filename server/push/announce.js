@@ -87,10 +87,12 @@ export function wallToUtc(day, hhmm, timeZone = ANNOUNCEMENT_TZ) {
   return new Date(ms);
 }
 
-/** Sayfanın önerdiği zaman: yarın 10:00 (Bucharest) */
+/** Sayfanın önerdiği zaman: bugün 10:00 henüz geçmediyse bugün, yoksa yarın 10:00 (Bucharest; 4.2.41) */
 export function defaultSendAt(now = new Date()) {
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: ANNOUNCEMENT_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
   const today = fmt.format(now);
+  const at = wallToUtc(today, '10:00');
+  if (at && at > now) return { day: today, time: '10:00' };
   const [y, m, d] = today.split('-').map(Number);
   const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
   return { day: next, time: '10:00' };
@@ -157,6 +159,40 @@ export async function queueAnnouncement(db, { actor, confirm, sendAt, overrides 
       details: { key: ANNOUNCEMENT_KEY, count: recipients.length, sendAt: sendAt.toISOString(), recipient: 'FINANCIAL', lang: 'ro', overrides: recipients.filter((r) => r.source === 'OVERRIDE').length },
     }, { role: actor.role, ip });
     return { ok: true, queued: recipients.length, sendAt: sendAt.toISOString() };
+  });
+}
+
+/**
+ * Kuyruktaki duyurunun gönderim zamanını değiştirir (4.2.41, Erhan). Yalnızca henüz hiç denenmemiş (attempts 0, işaretsiz)
+ * PENDING satırlar taşınır; gönderilmiş / denenmiş satıra dokunulmaz. İşaret (sendAt) ve denetim kaydı aynı işlemde.
+ * @param {any} db
+ * @param {{ actor: any, confirm: boolean, sendAt: Date | null, ip?: string | null, now?: Date }} p
+ * @returns {Promise<{ ok: true, moved: number, sendAt: string } | { ok: false, code: 'FORBIDDEN' | 'CONFIRM' | 'SEND_AT' | 'NOT_QUEUED' | 'NOTHING_PENDING' }>}
+ */
+export async function rescheduleAnnouncement(db, { actor, confirm, sendAt, ip = null, now = new Date() }) {
+  if (!allowed(actor)) return FORBIDDEN;
+  if (confirm !== true) return { ok: false, code: 'CONFIRM' };
+  if (!(sendAt instanceof Date) || Number.isNaN(sendAt.getTime()) || sendAt <= now || sendAt.getTime() - now.getTime() > MAX_AHEAD_MS) {
+    return { ok: false, code: 'SEND_AT' };
+  }
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${MARK}, 0))`;
+    const mark = await tx.integrationSetting.findUnique({ where: { key: MARK } });
+    if (!mark) return { ok: false, code: 'NOT_QUEUED' };
+    const rows = await tx.notificationOutbox.findMany({
+      where: { type: ANNOUNCEMENT_EMAIL, status: 'PENDING', attempts: 0, payload: { path: ['key'], equals: ANNOUNCEMENT_KEY } },
+      select: { id: true, payload: true },
+    });
+    const ids = rows.filter((r) => !r.payload?.sendingAt).map((r) => r.id);
+    if (!ids.length) return { ok: false, code: 'NOTHING_PENDING' };
+    const moved = await tx.notificationOutbox.updateMany({ where: { id: { in: ids }, status: 'PENDING', attempts: 0 }, data: { availableAt: sendAt } });
+    const prev = mark.value?.sendAt ?? null;
+    await tx.integrationSetting.update({ where: { key: MARK }, data: { value: { ...mark.value, sendAt: sendAt.toISOString() } } });
+    await writeAudit(tx, {
+      action: 'ANNOUNCEMENT_RESCHEDULED', entityType: 'Announcement', entityId: ANNOUNCEMENT_KEY, userId: actor.id,
+      details: { key: ANNOUNCEMENT_KEY, moved: moved.count, from: prev, to: sendAt.toISOString() },
+    }, { role: actor.role, ip });
+    return { ok: true, moved: moved.count, sendAt: sendAt.toISOString() };
   });
 }
 

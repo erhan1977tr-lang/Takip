@@ -4,6 +4,10 @@ Sürüm numarası logonun altında görünür ve her güncellemede artar:
 **yeni özellik → ikinci hane** (3.1.0), **düzeltme → üçüncü hane** (3.0.1).
 Önceki sistem v2.25 olduğu için yeni sistem 3.0.0 ile başladı.
 
+## 4.2.41 — 27.11.2026 — Duyuru: gönderim zamanı değiştirilebilir (karar 331)
+- Duyuru: kuyruktaki duyurunun gönderim zamanı Admin → Duyuru sayfasından değiştirilebilir ("Gönderim zamanını değiştir"; onay kutusu, yalnızca henüz denenmemiş e-postalar taşınır, denetim kaydı `ANNOUNCEMENT_RESCHEDULED`).
+- Önerilen gönderim zamanı: bugün 10:00 henüz geçmediyse bugün, yoksa yarın 10:00 (eskiden her zaman yarın — sabah kuyruğa alınan duyuru bir gün sonraya düşüyordu).
+
 ## 4.2.40 — 26.11.2026 — Duyuru: tümü Romence, adres düzeltme (karar 331)
 
 - Müşteri duyuru e-postası artık **her alıcıya Romence** gider (Erhan); sayfada yalnızca Romence önizleme kalır.

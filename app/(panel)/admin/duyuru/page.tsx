@@ -6,7 +6,7 @@ import { fmtDateTime } from '@/lib/format';
 import { getEnv } from '@/lib/env';
 import { ANNOUNCEMENT_TZ, announcementStatus, defaultSendAt } from '@/server/push/announce.js';
 import { renderAnnouncementPwa } from '@/server/mail/templates/announcement-pwa.js';
-import { queueAnnouncementAction } from './actions';
+import { queueAnnouncementAction, rescheduleAnnouncementAction } from './actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +17,8 @@ const ERR: Record<string, MsgKey> = {
   ALREADY: 'admin.announce.errors.ALREADY',
   NO_RECIPIENTS: 'admin.announce.errors.NO_RECIPIENTS',
   FORBIDDEN: 'admin.announce.errors.FORBIDDEN',
+  NOT_QUEUED: 'admin.announce.errors.NOT_QUEUED',
+  NOTHING_PENDING: 'admin.announce.errors.NOTHING_PENDING',
 };
 
 // Müşterilere tek seferlik bilgi e-postası: önizleme + alıcı sayısı → onay → Gönder (4.2.33, karar 331).
@@ -38,6 +40,7 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
       <h1>{t('admin.announce.title')}</h1>
       <p className="muted">{t('admin.announce.intro')}</p>
       {sp.ok && <div className="alert alert-ok">{t('admin.announce.queued', { n: sp.ok.replace(/\D/g, ''), at: roTime(st.sendAt) })}</div>}
+      {sp.moved && <div className="alert alert-ok" data-announce-moved>{t('admin.announce.moved', { n: sp.moved.replace(/\D/g, ''), at: roTime(st.sendAt) })}</div>}
       {errKey && <div className="alert alert-error">{t(errKey)}</div>}
       <section className="card" data-announce-status>
         <h2>{t('admin.announce.recipientsTitle')}</h2>
@@ -52,6 +55,25 @@ export default async function AnnouncementPage({ searchParams }: { searchParams:
               {t('admin.announce.jobs', { sent: st.jobs.sent, pending: st.jobs.pending, failed: st.jobs.failed, skipped: st.jobs.skipped })}
             </div>
           )
+          : null}
+        {st.queuedAt && st.jobs.pending > 0 && (
+          <form action={rescheduleAnnouncementAction} className="stack" data-announce-reschedule>
+            <h3>{t('admin.announce.rescheduleTitle')}</h3>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <label className="field">{t('admin.announce.sendAtLabel')}
+                <input type="date" name="day" defaultValue={def.day} required data-announce-day />
+              </label>
+              <label className="field">&nbsp;
+                <input type="time" name="time" defaultValue={def.time} required data-announce-time />
+              </label>
+            </div>
+            <p className="muted small">{t('admin.announce.sendAtHint')}</p>
+            <label className="check"><input type="checkbox" name="confirm" required /> {t('admin.announce.rescheduleConfirm')}</label>
+            <div><button className="btn btn-primary" data-announce-reschedule-btn>{t('admin.announce.reschedule')}</button></div>
+          </form>
+        )}
+        {st.queuedAt
+          ? null
           : (
             <form action={queueAnnouncementAction} className="stack" id="duyuru-form" data-announce-form>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>

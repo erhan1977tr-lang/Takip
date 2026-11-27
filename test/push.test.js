@@ -188,4 +188,7 @@ test('duyuru gönderim saati: Bükreş duvar saati → UTC (4.2.39)', () => {
   assert.equal(wallToUtc('2026-11-27', '25:00'), null);
   assert.equal(wallToUtc('', ''), null);
   assert.deepEqual(defaultSendAt(new Date('2026-11-26T18:00:00Z')), { day: '2026-11-27', time: '10:00' });
+  // Bugün 10:00 henüz gelmediyse bugün önerilir (4.2.41): 27.11 06:31 Bucharest → 27.11 10:00
+  assert.deepEqual(defaultSendAt(new Date('2026-11-27T04:31:00Z')), { day: '2026-11-27', time: '10:00' });
+  assert.deepEqual(defaultSendAt(new Date('2026-11-27T08:00:00Z')), { day: '2026-11-28', time: '10:00' });
 });
